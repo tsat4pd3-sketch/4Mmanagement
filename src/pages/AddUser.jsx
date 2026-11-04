@@ -163,7 +163,7 @@ export default function AddUser() {
            JIG MTN · DIE MTN) เป็น department ที่ `parent_id is null` = ขึ้นตรงฝ่าย ไม่มี section
            ⇒ เดิมช่องติ๊กมีแต่ section ⇒ บัญชีที่ scope = 'JIG MTN' (6 ใบ) / 'QA' (6 ใบ)
              **เปิดโมดัลมาแล้วไม่มีอะไรติ๊ก** ทั้งที่ตั้งไว้แล้ว = อ่านหน้าจอแล้วเข้าใจผิดว่ายังไม่ได้ตั้ง */
-        setOrphanDeptOpts(orphanDepts(nodes.filter(n => n.kind === 'department')).map(n => n.code || n.name));
+        setOrphanDeptOpts(orphanDepts(nodes.filter(n => n.kind === 'department'), nodes).map(n => n.code || n.name));
         setOrgNodes({ sections: nodes.filter(n => n.kind === 'section'), depts: nodes.filter(n => n.kind === 'department') });
         setOrgAllNodes(nodes);
       });

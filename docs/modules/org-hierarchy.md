@@ -552,6 +552,14 @@
 
 ---
 
+## 🏢 ชั้นบนของผัง (company_group → spg → company → plant) — กฎอยู่ `src/utils/orgLayers.js` (2026-11-04)
+
+ผังจริงของกลุ่ม (template Com Code 03/11): Group → SPG → Company (SAP 4 หลัก) → Plant → ส่วนงาน · วันนี้ `org_nodes` ยังมีแต่ชั้นหน่วย
+- **ห้ามเขียน "ราก = parent_id ว่าง" / "ขึ้นตรง = `!parent_id`" ใหม่** — ถาม `unitRoots()` / `isOrphanDept()` / `unitParentId()` (ด่าน `org-upper-layers-ready`)
+- **การตกทอดทุกชนิด (CC · ส่วนงาน · ขอบเขต) หยุดที่ชั้นบน** — รหัส/ขอบเขตของ plant/company ไม่ไหลลงหน่วย (`unitChain()` · `ccOfNode` ใช้ `unitParentId`)
+- `orphanDepts(deptNodes, allNodes)` — ไม่ส่ง `allNodes` = แม่ที่หาไม่เจอถือว่าเป็นหน่วย (พฤติกรรมเดิม) ⇒ จอที่โหลดแค่ department ต้องส่งผังทั้งต้นก่อนจะมีโหนด plant
+- DB `org_nodes_kind_check` รับ 8 kind แล้ว (`20261104_org_nodes_upper_kinds_main.sql` apply แล้ว) · **ยังไม่มีแถวชั้นบน** — เงื่อนไขก่อนเติม → `docs/ORG-SCALE-GLOBAL-DESIGN.md` §4 ขั้น 0
+
 ## 🏭 ทะเบียน `cost_centers` ครบทุกโรงงานในเครือ — จากไฟล์บัญชี "Activity Rate 2027" (2026-11-03)
 
 user ส่ง `cost_center.xlsx` (Activity Rate 2027 · 4,795 แถว = cost center × activity type) + template Com Code ของกลุ่ม

@@ -8103,3 +8103,37 @@ test('🛡️ pair-scan-one-side — สแกนเปิดใบต้อง�
   assert.doesNotMatch(body, /setPendingPairId\(/,
     '\n\n❌ กลับมาบังคับ "ใบถัดไป = คู่" (pendingPairId) — คนยิงข้างเดียวกันต่อ = ผูก LH กับ LH\n');
 });
+
+/* ═══ 🏢 org-upper-layers-ready — ผังรับชั้นบน (plant/company) ได้โดยไม่ทำให้ส่วนงานหาย ═══ 04/11
+   ที่มา: template Com Code + ไฟล์ Activity Rate 2027 (03/11) ⇒ ผังจริงของกลุ่ม = Group → SPG → Company → Plant → ส่วนงาน
+   บล็อกเดิม (ORG-SCALE-GLOBAL-DESIGN §4 ขั้น 0): orgScope.js ถือว่า "ราก = ส่วนงาน" (`kids.get('')`) ⇒ เติมโหนด plant
+   เหนือส่วนงาน = ส่วนงานหายจาก picker ทั้งระบบ · กฎรวมอยู่ที่ `src/utils/orgLayers.js` ที่เดียว
+   🔴 ทุกจุดที่ตัดสิน "ขึ้นตรง/ราก/ตกทอด" ต้องถาม orgLayers — ห้ามเขียน `!n.parent_id` / `kind === 'section' ||` ใหม่ */
+test('🏢 org-upper-layers-ready — รากของชั้นหน่วย/การตกทอดต้องผ่าน orgLayers.js', () => {
+  const os = stripComments(readFileSync(join(ROOT, 'src/utils/orgScope.js'), 'utf8'));
+  assert.match(os, /unitRoots\(act\)/, '🔴 orgScope.js: topNodes ต้องมาจาก unitRoots() ไม่ใช่ kids.get(\'\')');
+  assert.doesNotMatch(os, /kids\.get\(''\)[^\n]*kind === 'section'/, 'ห้ามกลับไปอ่านรากจาก parent_id ว่างแล้วกรอง kind');
+
+  const cc = stripComments(readFileSync(join(ROOT, 'src/utils/ccScope.js'), 'utf8'));
+  assert.match(cc, /unitParentId\(cur, byId\)/, '🔴 ccOfNode ต้องหยุดไล่สายที่ชั้นบน — รหัสของ plant ห้ามไหลลงหน่วย');
+
+  for (const [f, pat, why] of [
+    ['src/utils/assignmentOverlay.js', /isUpperKind\(cur\.kind\)/, 'ส่วนงานของหน่วยที่ได้รับมอบ ต้องหยุดที่ชั้นบน'],
+    ['src/utils/scopePicker.js', /isUpperKind\(n\.kind\)/, 'โหนดชั้นขอบเขตต้องข้ามชั้นบน (path[0] อาจเป็น company)'],
+    ['src/utils/orgDivisions.js', /isOrphanDept\(n, byId\)/, 'แผนกขึ้นตรง = ไม่มีแม่เป็นหน่วย'],
+    ['src/utils/sectionScope.js', /unitParentId\(d, allNodes\) == null/, 'orphanDepts ต้องรับผังทั้งต้น'],
+    ['src/components/OrgTreeView.jsx', /unitParentId\(n, byId\) == null/, 'หน่วยลอย = ไม่มีแม่เป็นหน่วย'],
+    ['src/pages/ManpowerBoard.jsx', /isOrphanDept\(n, nodes\)/, 'บอร์ดของแผนกขึ้นตรง'],
+    ['src/pages/OrgSetup.jsx', /isOrphanDept\(n, nodes\)/, 'ตะกร้า "ขึ้นตรง" ใน /org-setup'],
+  ]) {
+    const s = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    assert.match(s, pat, `🔴 ${f}: ${why}`);
+  }
+  /* จุดที่ยังเขียน "แผนกขึ้นตรง = parent_id ว่าง" เองต้องไม่เพิ่ม (ของเก่าที่เหลือถูกย้ายหมดแล้ว 04/11) */
+  const bad = [];
+  for (const f of ['src/utils/orgDivisions.js', 'src/pages/ManpowerBoard.jsx', 'src/pages/OrgSetup.jsx', 'src/components/OrgTreeView.jsx', 'src/utils/orgScope.js']) {
+    const s = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    if (/kind === 'department' && !n\.parent_id/.test(s) || /n\.kind !== 'section' && !n\.parent_id/.test(s)) bad.push(f);
+  }
+  assert.deepEqual(bad, [], 'ตัดสิน "ขึ้นตรง" จาก parent_id ว่างเอง — ใช้ isOrphanDept()/unitParentId()');
+});

@@ -57,7 +57,8 @@ test('🛡️ ไฟล์ที่ใช้ orphanDepts/cascade แผนก �
     + bad.map(b => '   • ' + b).join('\n') + '\n');
 });
 
-test('🛡️ orphanDepts ยังตัดสินจาก parent_id จริง (ถ้าเปลี่ยนนิยาม ให้แก้ชื่อ/ด่านนี้ด้วย)', () => {
+test('🛡️ orphanDepts ยังตัดสินจาก "แม่ที่เป็นหน่วย" ผ่าน orgLayers (04/11: parent_id ว่าง หรือแม่เป็นชั้นบน plant/company)', () => {
   const src = readFileSync(join(ROOT, 'src/utils/sectionScope.js'), 'utf8');
-  assert.match(src, /orphanDepts\s*=\s*\(deptNodes\s*=\s*\[\]\)\s*=>\s*deptNodes\.filter\(d\s*=>\s*!d\.parent_id\)/);
+  assert.match(src, /orphanDepts\s*=\s*\(deptNodes\s*=\s*\[\],\s*allNodes\s*=\s*deptNodes\)\s*=>\s*deptNodes\.filter\(d\s*=>\s*unitParentId\(d,\s*allNodes\)\s*==\s*null\)/,
+    'นิยาม "ขึ้นตรง" ต้องมาจาก orgLayers.unitParentId — ห้ามกลับไป !d.parent_id (เติม plant เหนือแผนกแล้วแผนกจะหายจากลิสต์ขึ้นตรง)');
 });
