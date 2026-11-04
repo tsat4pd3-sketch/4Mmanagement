@@ -57,6 +57,9 @@ import { pickUnusedColor } from '../utils/colorPick';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import CollapseCard from '../components/CollapseCard';
+import OverflowMenu from '../components/OverflowMenu';   // ⋯ คำสั่งอื่นๆ — ปุ่มตายตัว ≤2 (UI §6.35 · 04/11)
+import KpiTile from '../components/KpiTile';             // การ์ดตัวเลขโครงเดียว (UI §6.35)
+import NoticeBar from '../components/NoticeBar';         // แถบแจ้งบรรทัดเดียว (UI §6.35)
 import FilterBar from '../components/FilterBar';
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
@@ -3264,20 +3267,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           const over7 = overdueAlert.filter(o => o.age > STALE_SESSION_DAYS);
           const oldest = overdueAlert[0]?.age || 0;
           return (
-            <button onClick={onGoStale}
-              title="เปิดแท็บ ⏰ กะค้าง — ไล่ปิด/อนุมัติทีละกะ"
-              style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left', flexWrap: 'wrap', cursor: 'pointer',
-                background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 10, padding: '8px 14px', marginBottom: 14,
-                fontSize: 12.5, fontWeight: 800, color: '#ef4444' }}>
-              ⏰ กะค้างยังไม่ปิด {overdueAlert.length} กะ
-              {over7.length > 0 && (
-                <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 10, background: 'rgba(239,68,68,0.22)', border: '1px solid rgba(239,68,68,0.55)' }}>
-                  เกิน {STALE_SESSION_DAYS} วัน {over7.length} กะ · เก่าสุด {oldest} วัน
-                </span>
-              )}
-              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}>ไม่เกี่ยวกับกะที่กำลังทำอยู่ — เริ่มกะใหม่ได้ตามปกติ</span>
-              <span style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 800 }}>ไปไล่ปิด →</span>
-            </button>
+            <NoticeBar tone="warn" action={{ label: 'ไปไล่ปิด →', onClick: onGoStale, title: 'เปิดแท็บ กะค้าง — ไล่ปิด/อนุมัติทีละกะ' }}>
+              <b>กะค้างยังไม่ปิด {overdueAlert.length} กะ</b>
+              {over7.length > 0 && <> · เกิน {STALE_SESSION_DAYS} วัน {over7.length} กะ · เก่าสุด {oldest} วัน</>}
+              {' '}— ไม่เกี่ยวกับกะที่กำลังทำอยู่ เริ่มกะใหม่ได้ตามปกติ
+            </NoticeBar>
           );
         })()}
 
@@ -3317,50 +3311,65 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     </div>
                   )}
                 </div>
+                {/* ── คำสั่งของกะ (UI-CONVENTIONS §6.35 · 04/11 · user "เอาปุ่มตายตัวดีกว่า") ──
+                    ปุ่มตายตัวไม่เกิน 2 ต่อสถานะ · ที่เหลือเข้า ⋯ (OverflowMenu) · เงื่อนไข/สิทธิ์/handler ทุกตัวเหมือนเดิมเป๊ะ
+                      open          : [เปิดกะใหม่] [ปิดกะ/ขอปิดกะ ●หลัก]
+                      pending_close : SV = [ตรวจสอบ & อนุมัติ ●หลัก] [ปฏิเสธ] · คนอื่น = ป้าย "รอ SV" + [เปิดกะใหม่]
+                      closed        : [เปิดกะใหม่]
+                    ⋯ : จัดกำลังคน · ใบรายงานปัญหา (ป้ายงานค้าง) · แก้เวลากะ · ทำกะเปล่าเป็นโมฆะ · (เปิดกะใหม่ เมื่อ 2 ช่องถูกใช้โดยอนุมัติ/ปฏิเสธ) */}
+                {(() => {
+                  const openNewShift = () => { /* 🔴 วัน+กะ ต้องรีเฟรชคู่กัน — ดู `openShiftDefaults` (มีด่าน) */
+                    setOpenForm(f => ({ ...f, ...openShiftDefaults() })); setShowOpen(true); };
+                  const isPending = selSession.status === 'pending_close';
+                  const svDecides = isPending && canApproveClose;   // 2 ช่องถูกใช้โดย อนุมัติ/ปฏิเสธ
+                  const canVoid = canDeleteSession && SESSION_STATUSES_LIVE.includes(selSession.status)
+                    && sessLoadErrList.length === 0
+                    && prodOrders.length === 0 && dtLogs.length === 0 && defectLogs.length === 0;
+                  const hasProblems = dtLogs.length > 0 || defectLogs.length > 0;
+                  const pend = hasProblems ? countPendingFix({ downtimes: dtLogs, defects: defectLogs }) : { total: 0 };
+                  const menuItems = [
+                    /* เปิดกะใหม่ได้เสมอไม่ว่ากะที่เลือกอยู่จะสถานะไหน — SV ทำงานแค่กะเช้าแต่ไลน์ผลิต 24 ชม.
+                       (handleOpenSession เช็คซ้ำเฉพาะไลน์+กะ+วันที่เดียวกันอยู่แล้ว) · ตอน SV กำลังตัดสิน 2 ช่องเต็ม ⇒ อยู่ในเมนู */
+                    { key: 'open', icon: '+', label: 'เปิดกะใหม่', onClick: openNewShift, hidden: !(canOpen && svDecides) },
+                    /* 🔄 ไปจัดกำลังคน "ของไลน์นี้" — พาบริบทไปด้วย (?line=) แล้วมีปุ่มกลับที่ส่ง line กลับมา
+                       ⚠️ เช็คสิทธิ์ก่อนเสมอ ไม่มีสิทธิ์ = ไม่โชว์ (ห้ามพาไปแล้วโดนเด้ง) */
+                    { key: 'manpower', icon: '👥', label: 'จัดกำลังคน / ผังไลน์', title: `จัดกำลังคน / ผังไลน์ ของ ${selSession.line_name}`,
+                      onClick: () => navigate(`/management?line=${encodeURIComponent(selSession.line_name)}&from=daily-report`),
+                      hidden: !canAccessPage('/management', role) },
+                    /* ใบรายงานปัญหาการผลิต — ดึง downtime/ของเสียของกะนี้มาเติมให้ (feedback 2026-08-19 · 28)
+                       badge = รายการที่ยังไม่ลงวิธีแก้ไข (ใบจะออกมาไม่ครบ) · ป้ายนิ่ง ไม่ใช่ alarm */
+                    { key: 'problem', icon: '📝', label: 'ใบรายงานปัญหาการผลิต', badge: pend.total || null,
+                      title: pend.total
+                        ? `ยังมี ${pend.total} รายการที่ยังไม่ลงวิธีแก้ไข (ช่องนั้นจะว่างต้องเขียนมือ)`
+                        : 'พิมพ์ใบรายงานปัญหาการผลิต โดยดึงปัญหาของกะนี้มาเติมให้อัตโนมัติ',
+                      onClick: () => {
+                        const R = buildProblemReport({ downtimes: dtLogs, defects: defectLogs, minMinutes: PROBLEM_MIN_MINUTES });
+                        setProblemSheet({ title: R.headline || '' });
+                      },
+                      hidden: !hasProblems },
+                    /* closed/pending_close — SV+/leader แก้เวลาและคำนวณ OEE ใหม่ */
+                    { key: 'times', icon: '✎', label: 'แก้เวลากะ', onClick: openEditTimes,
+                      hidden: !((canManage || canRequestClose) && ['closed', 'pending_close'].includes(selSession.status)) },
+                    /* กะเปิดผิด (เปล่า) — โมฆะ แทนลบ (19/10 · กฎ production_sessions.status)
+                       🔴 sessLoadErrList: โหลดพลาด = ลิสต์ว่างเหมือนกะเปล่า → "อ่านไม่ได้" ≠ "ไม่มี" ห้ามให้แตะตอนไม่รู้ */
+                    { key: 'void', icon: '⌀', label: 'ทำกะเปล่าเป็นโมฆะ', danger: true, onClick: handleVoidEmptySession,
+                      title: 'กะเปล่าที่เปิดผิด — ทำเป็นโมฆะ (เก็บแถวไว้ ไม่ถูกนับเป็นกะจริง) แทนการลบ', hidden: !canVoid },
+                  ];
+                  return (
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                  {/* 🔄 ไปจัดกำลังคน "ของไลน์นี้" — พาบริบทไปด้วย (?line=) แล้วมีปุ่มกลับที่ส่ง line กลับมา
-                      = สลับ 2 หน้าโดยไม่ต้องเลือกไลน์ใหม่ทุกครั้ง (ไม่รวมเป็นหน้าเดียว: คนละ layout — บอร์ดจอ TV vs หน้ากรอกข้อมูล)
-                      ⚠️ เช็คสิทธิ์ก่อนเสมอ ไม่มีสิทธิ์ = ไม่โชว์ปุ่ม (ห้ามพาไปแล้วโดนเด้ง) */}
-                  {canAccessPage('/management', role) && (
-                    <button onClick={() => navigate(`/management?line=${encodeURIComponent(selSession.line_name)}&from=daily-report`)}
-                      title={`จัดกำลังคน / ผังไลน์ ของ ${selSession.line_name}`}
-                      style={{ ...cancelBtnStyle, fontWeight: 700 }}>🔄 จัดกำลังคน</button>
-                  )}
-                  {/* เปิดกะใหม่ได้เสมอไม่ว่ากะที่เลือกอยู่จะสถานะไหน — กะรออนุมัติ SV (pending_close)
-                      ไม่ควรบล็อกการเริ่มกะถัดไป เพราะ SV ทำงานแค่กะเช้าแต่ไลน์ผลิตทำงาน 24 ชม.
-                      (handleOpenSession เช็คซ้ำเฉพาะไลน์+กะ+วันที่เดียวกันอยู่แล้ว ป้องกันเปิดทับกะเดิมจริงๆ) */}
-                  {canOpen && (
-                    <button onClick={() => { /* 🔴 วัน+กะ ต้องรีเฟรชคู่กัน — ดู `openShiftDefaults` (มีด่าน) */
-                  setOpenForm(f => ({ ...f, ...openShiftDefaults() })); setShowOpen(true); }} style={saveBtnStyle}>+ เปิดกะใหม่</button>
+                  {isPending && (
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--amber)', padding: '0 4px' }}>
+                      {canApproveClose ? `รออนุมัติปิดกะ · ขอโดย ${selSession.close_requested_by_name || '—'}` : 'รอ SV อนุมัติปิดกะ'}
+                    </span>
                   )}
 
-                  {/* pending_close — SV sees approve/reject */}
-                  {selSession.status === 'pending_close' && canApproveClose && (
-                    <>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 6, padding: '4px 10px' }}>
-                        ⏳ รออนุมัติปิดกะ · ขอโดย {selSession.close_requested_by_name || '—'}
-                      </div>
-                      <button onClick={() => setShowApproveReview(true)}
-                        style={{ ...saveBtnStyle, background: '#22c55e', fontWeight: 700 }}>
-                        🔍 ตรวจสอบ & อนุมัติ
-                      </button>
-                      <button onClick={() => { setRejectReason(''); setShowRejectModal(true); }}
-                        style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
-                        ✕ ปฏิเสธ
-                      </button>
-                    </>
+                  {canOpen && !svDecides && (
+                    <button type="button" className="pg-btn" onClick={openNewShift}>+ เปิดกะใหม่</button>
                   )}
 
-                  {/* pending_close — leader sees waiting status */}
-                  {selSession.status === 'pending_close' && !canApproveClose && (
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 6, padding: '4px 10px' }}>
-                      ⏳ รอ SV อนุมัติปิดกะ...
-                    </div>
-                  )}
-
-                  {/* open — request/direct close button */}
+                  {/* open — request/direct close (ปุ่มหลักของหน้า) */}
                   {selSession.status === 'open' && canRequestClose && (
-                    <button onClick={() => {
+                    <button type="button" className="pg-btn primary" onClick={() => {
                       setCloseEndTime(guessCloseEndTime()); setCloseStartTime(selSession.start_time || '');
                       setDtCarryDecisions({}); setDtCloseTimes({}); setCloseNote('');
                       // ใบที่กรอกยอดไว้ระหว่างกะแล้ว — เติมให้ในช่อง "ยอดที่ทำได้จริง" เลย ไม่ต้องพิมพ์ซ้ำ (แก้ทับได้)
@@ -3373,62 +3382,23 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       setShowCloseShift(true);
                     }}
                       disabled={sessLoadErrList.length > 0}
-                      title={sessLoadErrList.length ? `โหลด ${sessLoadErrList.join(' / ')} ไม่สำเร็จ — ปิดกะตอนนี้จะบันทึก OEE/ของเสียผิดถาวร` : undefined}
-                      style={{ ...cancelBtnStyle, borderColor: '#ef4444', color: '#ef4444', fontWeight: 700,
-                        ...(sessLoadErrList.length ? { opacity: 0.45, cursor: 'not-allowed' } : null) }}>
-                      {closeIsRequest ? '📋 ขอปิดกะ' : '🔒 ปิดกะ'}
+                      title={sessLoadErrList.length ? `โหลด ${sessLoadErrList.join(' / ')} ไม่สำเร็จ — ปิดกะตอนนี้จะบันทึก OEE/ของเสียผิดถาวร` : undefined}>
+                      {closeIsRequest ? 'ขอปิดกะ' : 'ปิดกะนี้'}
                     </button>
                   )}
 
-                  {/* closed/pending_close — SV+/leader แก้เวลาและคำนวณ OEE ใหม่ */}
-                  {(canManage || canRequestClose) && ['closed', 'pending_close'].includes(selSession.status) && (
-                    <button onClick={openEditTimes}
-                      style={{ ...cancelBtnStyle, borderColor: '#6366f1', color: '#6366f1', fontWeight: 700 }}>
-                      ✏️ แก้เวลากะ
-                    </button>
+                  {/* pending_close — SV sees approve/reject (คู่ตัดสิน = 2 ช่องของแถว) */}
+                  {svDecides && (
+                    <>
+                      <button type="button" className="pg-btn primary" onClick={() => setShowApproveReview(true)}>ตรวจสอบ & อนุมัติ</button>
+                      <button type="button" className="pg-btn danger" onClick={() => { setRejectReason(''); setShowRejectModal(true); }}>ปฏิเสธ</button>
+                    </>
                   )}
 
-                  {/* ใบรายงานปัญหาการผลิต — ดึง downtime/ของเสียของกะนี้มาเติมให้ (ไม่ต้องเขียนมือ)
-                      หน้างานออกใบนี้ทุกครั้งที่หยุด/คุณภาพ/รอ เกิน 30 นาที (feedback 2026-08-19) */}
-                  {(dtLogs.length > 0 || defectLogs.length > 0) && (() => {
-                    const pend = countPendingFix({ downtimes: dtLogs, defects: defectLogs });
-                    return (
-                      <button onClick={() => {
-                        // เปิดช่อง "ปัญหา :" ให้ตรวจ/แก้ก่อนพิมพ์ — เดิมช่องนี้ออกมาว่างทุกใบ
-                        // (feedback หน้างาน 2026-08-28: "ปัญหาลงตรงไหนได้บ้าง" — ไม่มีที่ให้ลงจริงๆ)
-                        const R = buildProblemReport({ downtimes: dtLogs, defects: defectLogs, minMinutes: PROBLEM_MIN_MINUTES });
-                        setProblemSheet({ title: R.headline || '' });
-                      }}
-                        style={{ ...cancelBtnStyle, borderColor: '#f59e0b', color: '#f59e0b', fontWeight: 700 }}
-                        title={pend.total
-                          ? `พิมพ์ใบรายงานปัญหาการผลิต — ยังมี ${pend.total} รายการที่ยังไม่ลงวิธีแก้ไข (ช่องนั้นจะว่างต้องเขียนมือ)`
-                          : 'พิมพ์ใบรายงานปัญหาการผลิต โดยดึงปัญหาของกะนี้มาเติมให้อัตโนมัติ'}>
-                        📝 ใบรายงานปัญหา
-                        {/* งานค้าง = ป้ายนิ่ง ไม่กระพริบ (ไม่ใช่ alarm) — บอกว่าใบจะออกมาไม่ครบ */}
-                        {pend.total > 0 && (
-                          <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, padding: '1px 6px',
-                            borderRadius: 20, background: '#f59e0b', color: '#fff' }}>
-                            🛠 {pend.total}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })()}
-
-                  {/* กะเปิดผิด (เปล่า ไม่มี Order/Downtime/Defect) — จัดการจากจอ Live เลย ไม่ต้องปิดกะก่อน
-                      🔴 19/10 เปลี่ยนจาก "ลบ" เป็น **โมฆะ** (เก็บประวัติ · กฎ `production_sessions.status`)
-                      🔴 sessLoadErrList: โหลดพลาด = ทั้ง 3 ลิสต์ว่างเหมือนกะเปล่าเป๊ะ → ปุ่มจะโผล่กับ
-                         กะที่มีข้อมูลจริง (audit 2026-09-02) · "อ่านไม่ได้" ≠ "ไม่มี" ห้ามให้แตะตอนไม่รู้ */}
-                  {canDeleteSession && SESSION_STATUSES_LIVE.includes(selSession.status)
-                    && sessLoadErrList.length === 0
-                    && prodOrders.length === 0 && dtLogs.length === 0 && defectLogs.length === 0 && (
-                    <button onClick={handleVoidEmptySession}
-                      title="กะเปล่าที่เปิดผิด — ทำเป็นโมฆะ (เก็บแถวไว้ ไม่ถูกนับเป็นกะจริง) แทนการลบ"
-                      style={{ ...cancelBtnStyle, borderColor: '#94a3b8', color: '#94a3b8', fontWeight: 700 }}>
-                      🚫 ทำกะเปล่าเป็นโมฆะ
-                    </button>
-                  )}
+                  <OverflowMenu items={menuItems} />
                 </div>
+                  );
+                })()}
               </div>
 
               {/* 🔴 ข้อมูลกะโหลดไม่ครบ — ต้องบอกให้ชัดว่าตัวเลขบนจอ "ยังไม่ใช่ของจริง"
@@ -3579,22 +3549,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>📊 ภาพรวมทั้งกะ
                     {pt.hasPair && <span style={{ textTransform: 'none', fontWeight: 500, color: 'var(--muted)', marginLeft: 6 }}>· งานคู่ RH/LH นับเป็น 1 คู่ (1 ปั๊ม) ไม่บวกชิ้นซ้ำ</span>}
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 12, marginBottom: 16 }}>
-                    {[
-                      { label: 'เปิด Order', value: prodOrders.filter(o => o.status === 'open').length, unit: 'ใบ', color: '#f59e0b' },
-                      { label: 'ปิดแล้ว',   value: prodOrders.filter(o => o.status === 'confirmed').length, unit: 'ใบ', color: '#22c55e' },
-                      { label: 'เป้ารวม',   value: totalTarget,    unit: 'ชิ้น', color: '#4d9fff' },
-                      { label: 'ผลิตได้',   value: totalConfirmed, unit: 'ชิ้น', color: '#22c55e' },
-                      { label: 'Input ต้องเบิก', value: totalInputNeeded, unit: totalNg > 0 ? `ชิ้น (รวม NG ${totalNg})` : 'ชิ้น', color: '#f59e0b' },
-                      { label: 'Downtime',  value: fmtMin(totalDT), unit: '',    color: '#a855f7', small: true },
-                      { label: 'นอกแผน',   value: fmtMin(unplannedDT), unit: '', color: '#ef4444', small: true },
-                    ].map(k => (
-                      <div key={k.label} style={{ background: 'var(--card)', border: `1px solid ${k.color}25`, borderRadius: 10, padding: '10px 12px', textAlign: 'center' }}>
-                        <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>{k.label}</div>
-                        <div style={{ fontSize: k.small ? 13 : 22, fontWeight: 800, color: k.color, lineHeight: 1 }}>{k.value ?? 0}</div>
-                        {k.unit && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{k.unit}</div>}
-                      </div>
-                    ))}
+                  {/* 📊 การ์ดโครงเดียว (KpiTile · UI §6.35) — เดิม 7 ใบ 5 สี ⇒ 5 ใบ ตัวเลขสีเดียว ข้อมูลเดิมครบ
+                      (เป้ารวม → บรรทัดใต้ "ผลิตได้" · เปิด/ปิดแล้ว → "ใบผลิต" · นอกแผน → บรรทัดใต้ "Downtime") */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10, marginBottom: 16 }}>
+                    <KpiTile label="ผลิตได้" value={totalConfirmed} unit="ชิ้น"
+                      note={totalTarget > 0 ? `${pct}% ของเป้า ${totalTarget.toLocaleString()}` : 'ยังไม่มีเป้า (ไม่มีใบผลิต)'}
+                      tone={totalTarget > 0 ? (pct >= 100 ? 'ok' : pct >= 60 ? 'warn' : 'info') : undefined} />
+                    <KpiTile label="ใบผลิต" value={prodOrders.filter(o => o.status === 'confirmed').length} unit={`/ ${prodOrders.length} ใบ`}
+                      note={`ปิดแล้ว ${prodOrders.filter(o => o.status === 'confirmed').length} · เปิด ${prodOrders.filter(o => o.status === 'open').length}`} />
+                    <KpiTile label="Input ต้องเบิก" value={totalInputNeeded} unit="ชิ้น"
+                      note={totalNg > 0 ? `รวม NG ${totalNg.toLocaleString()} ชิ้น` : 'ไม่มี NG'} tone={totalNg > 0 ? 'warn' : undefined} />
+                    <KpiTile label="Downtime" value={fmtMin(totalDT)}
+                      note={unplannedDT > 0 ? `นอกแผน ${fmtMin(unplannedDT)}` : 'ไม่มีหยุดนอกแผน'} tone={unplannedDT > 0 ? 'bad' : undefined} />
                     {/* Overall progress bar */}
                     {prodOrders.length > 0 && (
                       <div style={{ gridColumn: '1/-1', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 16px' }}>

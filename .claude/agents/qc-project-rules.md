@@ -261,6 +261,7 @@ model: inherit
   "โหลดไม่สำเร็จ" ห้ามขึ้น "ยังไม่มีรายการตรวจ" · PMSchedule/PmForecast ห้าม `.in()` ดิบ + ต้องอ่าน error (แถบแดง)
 
 ### หมวด F — UI Conventions (docs/UI-CONVENTIONS.md)
+- **[F-ACT]** คำสั่งระดับหน้า/การ์ด: ปุ่มตายตัว ≤2 (`.pg-btn` / `.pg-btn.primary`) ที่เหลือ `<OverflowMenu>` · แถบแจ้ง = `<NoticeBar>` แถบเดียว · การ์ดตัวเลข = `<KpiTile>` (ตัวเลขสีเดียว) · ป้ายปุ่มไม่มี emoji · grep: `actions={` แล้วนับ `<button` · `rgba(239,68,68` ในแถบเตือนใหม่ · 📄 `UI-CONVENTIONS.md` §6.35
 - **[F-I18N]** ป้ายโครงหลัก (เมนู/หมวด/ชื่อหน้า/แท็บ/ป้ายกรอง) แปลผ่าน `tr()` จาก `utils/useLang` เท่านั้น · 🔴 ห้าม `lang === 'en' ?` / `getLang() === 'en' ?` กระจายในหน้า (grep: `=== 'en' ?`) · ห้ามแก้ค่าไทยใน `NAV_ITEMS`/ชื่อหมวด (เป็นคีย์) · เมนู/หน้าใหม่ต้องมีคำใน `src/i18n/en.js` (ด่าน `i18n.test.mjs`) · 📄 `UI-CONVENTIONS.md` §6.34
 - **[F-TVFIT]** จอบอร์ด fit-to-viewport (ผัง A4 / grid ที่ต้องเต็มจอไม่เลื่อน — ต้นแบบ `/obeya`, UI-CONVENTIONS §6.14 · 2026-09-15):
   🔴 กล่องที่ถูก `ResizeObserver` วัด **ห้ามมี `padding`** (`clientHeight` รวม padding ⇒ แถวล่างถูก `overflow:clip` ตัดหายเงียบ) ·

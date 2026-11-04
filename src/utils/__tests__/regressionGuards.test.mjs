@@ -6813,6 +6813,37 @@ test('🔄 บันทึกขั้นใบ MO เสร็จ ต้อง�
     + '   แก้: เรียก invalidateMyQueue() ใน onSaved ของ StepModal\n');
 });
 
+/* ═══ 🧭 คำสั่งระดับหน้า = ปุ่มตายตัว ≤2 + ⋯ (UI-CONVENTIONS §6.35) ═══  2026-11-04 · คำสั่ง user
+   *"ปัญหาของโปรแกรมเราตอนนี้คือ ux/ui ใช้งานยาก ปุ่มเยอะ และ pattern ไม่ค่อยเหมือนกันในแต่ละหน้า"*
+   ⇒ `actions=` ของ <PageHeader> มี <button ได้ไม่เกิน 2 · ที่เหลือเข้า <OverflowMenu> (components/OverflowMenu.jsx)
+   นับแบบ static (ปุ่มที่มีเงื่อนไขก็นับ — ถ้าเงื่อนไขทำให้เกิน 2 พร้อมกันได้ ก็ต้องเข้าเมนู)
+   🕰️ หน้าที่มีปุ่ม >2 อยู่ก่อนกฎ = ทยอยแก้ **ห้ามเพิ่มหน้าใหม่เข้าลิสต์นี้** */
+test('🧭 PageHeader actions= มีปุ่มตายตัวไม่เกิน 2 — ที่เหลือเข้า <OverflowMenu>', () => {
+  const LEGACY_MANY_ACTIONS = [
+    'src/pages/BbsCheck.jsx', 'src/pages/Checkin.jsx', 'src/pages/MachineDatabase.jsx',
+    'src/pages/MorningMeeting.jsx', 'src/pages/PMSetup.jsx', 'src/pages/RackCenter.jsx',
+  ];
+  const bad = [];
+  for (const f of walk(join(ROOT, 'src/pages'), ['.jsx'])) {
+    const rel = relative(ROOT, f);
+    if (LEGACY_MANY_ACTIONS.includes(rel)) continue;
+    const code = stripComments(readFileSync(f, 'utf8'));
+    let at = 0;
+    while ((at = code.indexOf('<PageHeader', at)) !== -1) {
+      const i = code.indexOf('actions={', at);
+      at += 11;
+      if (i < 0 || i > at + 4000) continue;
+      let j = i + 'actions={'.length; let depth = 1;
+      while (j < code.length && depth) { if (code[j] === '{') depth++; else if (code[j] === '}') depth--; j++; }
+      const blk = code.slice(i, j);
+      const n = (blk.match(/<button\b/g) || []).length;
+      if (n > 2 && !/<OverflowMenu\b/.test(blk)) bad.push(`${rel} (${n} ปุ่ม)`);
+    }
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ปุ่มใน actions= ของ PageHeader เกิน 2: ' + bad.join(', ') + '\n'
+    + '   แก้: เหลือปุ่มหลัก ≤2 แล้วย้ายที่เหลือเข้า <OverflowMenu items={[…]}/> (UI-CONVENTIONS §6.35)\n');
+});
+
 /* ═══ 🧹 ปุ่มล้างตัวกรอง = ของกลาง ห้ามวาดเองในหน้า ═══  2026-10-22 · คำสั่ง user
    *"ขอปุ่มล้างตัวกรองด้วยได้มั้ย และควรจะมีทุกหน้านะที่มีระบบกรอง"*
    ⇒ ฝังใน <FilterBar> + <TimeRangeBar> ⇒ 51 หน้าที่ใช้ FilterBar และ 18 หน้าที่ใช้ TimeRangeBar ได้ฟรี
