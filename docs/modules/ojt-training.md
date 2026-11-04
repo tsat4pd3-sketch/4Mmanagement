@@ -69,6 +69,7 @@
 คำขอ 2 ข้อจากหัวหน้า PD4: *"OJT ขอเพิ่มแนบรูปภาพ/เพิ่มเอกสารได้ด้วยครับ"* · *"และเปิดผิดลบได้ด้วยครับ"*
 
 ### ไฟล์แนบ — ตาราง `ojt_training_files` (Main · migration `20261101_ojt_attachments_main.sql`)
+**apply แล้ว 2026-11-03** (user รันเอง — ตาราง + bucket `ojt-files` + storage policy 4 ตัว + GRANT ครบ)
 
 | คอลัมน์ | ใช้ทำอะไร |
 |---|---|

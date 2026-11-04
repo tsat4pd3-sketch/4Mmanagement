@@ -8503,3 +8503,73 @@ test('🛡️ แถบแม่ใน /products: ต้องเปิดตา
     '\n\n❌ แถบแม่ไม่ได้นับ `bomIx.orphans` แล้ว\n'
     + '   แถวที่อยู่ในใบปิดใช้งานจะหายจากแถบเงียบๆ — ตัวเลข "ถูกใช้เป็นลูกของ N ที่" จะต่ำกว่าจริง\n');
 });
+
+test('🔕 notify-mute-single-choke-point — ตัวกรอง "ปิดแจ้งเตือนเอง" ต้องอยู่ฝั่ง DB ที่เดียว', () => {
+  /* why (03/11 · ข้อเสนอจากหน้างาน ข้อ 4 · คำสั่ง user "เอาแบบล็อกไม่ให้ปิดงานที่รอเรา"):
+     `notification_user_prefs` เป็น "ของส่วนตัว" ที่ RLS ให้เห็นแค่แถวตัวเอง ⇒ หน้าจอไหนเอามากรอง
+     กระดิ่ง/ลิสต์เองฝั่ง client จะได้ผลครึ่งๆ และ **ข้ามการล็อกได้** (เรื่องที่ `can_mute=false`
+     ยังถูกซ่อนบนจอ ทั้งที่กฎบอกว่าต้องเห็นเสมอ) ⇒ งานที่รอคนลงมือเงียบหายโดยไม่มีใครรู้
+     กฎ: ตัวกรองจริงอยู่ใน `notify_recipients` (migration 20261103) จุดเดียว —
+         ฝั่ง client แตะตารางนี้ได้เฉพาะ "จอตั้งค่า" (NotifyPrefsModal) เพื่อเขียน/ลบค่าของตัวเอง
+     🔴 ห้ามแก้ด้วยการกรองในหน้า — ต้องแก้ที่ RPC ฝั่ง DB เท่านั้น */
+  const OK = ['src/components/NotifyPrefsModal.jsx', 'src/utils/notifyPrefs.js'];
+  const hits = walk(join(ROOT, 'src'), ['.js', '.jsx'])
+    .filter(f => readFileSync(f, 'utf8').includes('notification_user_prefs'))
+    .map(f => relative(ROOT, f))
+    .filter(f => !OK.includes(f));
+  assert.deepEqual(hits, [],
+    '\n\n❌ มีไฟล์อื่นแตะตาราง `notification_user_prefs` ฝั่ง client:\n   '
+    + hits.join('\n   ')
+    + '\n   ผล: กรองกระดิ่งเองในหน้า = ข้ามการล็อก "งานที่รอเรา" (can_mute=false) ได้\n'
+    + '   แก้: ให้ตัวกรองอยู่ใน notify_recipients ฝั่ง DB เท่านั้น\n');
+
+  /* ด่านคู่: เรื่องที่ล็อกต้อง **ยังโชว์** บนจอตั้งค่า (ซ่อน = คนงงว่าทำไมยังมีแจ้งเตือนโผล่) */
+  const util = readFileSync(join(ROOT, 'src/utils/notifyPrefs.js'), 'utf8');
+  assert.doesNotMatch(util, /filter\([^)]*can_mute\s*===\s*false/,
+    '\n\n❌ myNotifyRows กรองเรื่องที่ล็อกออกจากลิสต์แล้ว — ต้องคืนมาพร้อมธง `locked` ไม่ใช่ตัดทิ้ง\n');
+  assert.match(util, /locked:\s*x\.can_mute === false/,
+    '\n\n❌ myNotifyRows ไม่ได้ติดธง `locked` จาก `can_mute` — จอจะเปิดสวิตช์ให้กดเรื่องที่ปิดไม่ได้\n');
+  const modal = readFileSync(join(ROOT, 'src/components/NotifyPrefsModal.jsx'), 'utf8');
+  assert.match(modal, /disabled=\{r\.locked/,
+    '\n\n❌ โมดัลไม่ได้ปิดสวิตช์ของเรื่องที่ล็อก — กดได้แต่ฝั่ง DB ไม่กรองให้ = สวิตช์หลอก\n');
+});
+
+test('🧑‍🔧 mo-export-shows-real-techs — ไฟล์ Excel ของ MO ต้องมีคอลัมน์ "ช่างซ่อมจริง" แยกจาก "ช่างที่มอบหมาย"', () => {
+  /* why (04/11 · feedback ทีม MTN ข้อ 2 "การปิด MO"):
+     "ช่างซ่อมหลักและช่างซ่อมรองที่ให้กรอก ไม่ได้แสดงในเอกสาร MO ที่ Export"
+     รอบ 02/11 แก้ใบพิมพ์ไปแล้ว (ด่าน mo-print-shows-techs) — รอบนี้ปิดฝั่งไฟล์ Excel
+     🔴 **"มอบหมาย" ≠ "ซ่อมจริง" ห้ามยุบเป็นคอลัมน์เดียว** — มอบหมาย 2 คนแล้วคนเดียวทำ /
+        ส่งต่อให้คนอื่นทำ = เกิดปกติ ⇒ รายงานต้องเห็นทั้ง 2 แกน ไม่งั้น KPI ช่างผิดคน
+     🔴 **`tech_main`/`tech_secondary` ห้ามเข้า `MO_LIST_COLS`** — คิวรีรายการยิง ~1,389 ครั้ง/วัน
+        ที่เพดาน 1000 ใบ · คอลัมน์ที่มีแต่ปุ่ม export อ่าน ไปอยู่ในนั้น = คนเปิดจอจ่าย egress แทน
+        ⇒ ต้องโหลดตอนกดปุ่ม ผ่าน `loadRepairTechsFor()` (chunk .in() ให้เอง) */
+  /* 🔴 คอลัมน์อยู่ในทะเบียนชุดเดียว `MO_EXPORT_COLS` (03/11 · ข้อ A8) — ไม่ใช่ put() ในไฟล์ทำ Excel */
+  const xl = readFileSync(join(ROOT, 'src/utils/mtnMoExportCols.js'), 'utf8');
+  const iAssigned = xl.indexOf("h: 'ช่างที่มอบหมาย'");
+  const iReal = xl.indexOf("h: 'ช่างซ่อมจริง (หลัก/รอง)'");
+  assert.ok(iReal > 0,
+    '\n\n❌ คอลัมน์ "ช่างซ่อมจริง (หลัก/รอง)" หายจากทะเบียน MO_EXPORT_COLS แล้ว\n'
+    + '   ผล: กลับไปเป็นอาการที่ทีม MTN แจ้ง — export มาแล้วไม่รู้ว่าใครซ่อม\n');
+  assert.ok(iAssigned > 0 && iAssigned < iReal,
+    '\n\n❌ "ช่างที่มอบหมาย" ต้องยังอยู่ และอยู่ก่อน "ช่างซ่อมจริง" — 2 คอลัมน์คนละคำถาม ห้ามยุบรวม\n'
+    + '   (มอบหมายตอนรับงาน ≠ ลงมือจริงตอนปิดงาน · ยุบ = KPI ช่างไปลงผิดคน)\n');
+  assert.match(xl, /techsError \? '⚠/,
+    '\n\n❌ โหลดชื่อช่างไม่ติดแล้วไม่เขียนกำกับ — ช่องว่างจะอ่านเป็น "ไม่ได้กรอก" (จอโกหก)\n');
+  /* ตัวทำไฟล์ต้องส่ง techsBy/techsError ลงทะเบียน ไม่งั้นคอลัมน์ว่างทั้งไฟล์เงียบๆ */
+  const mk = readFileSync(join(ROOT, 'src/lib/mtnMoExportExcel.js'), 'utf8');
+  assert.match(mk, /cellCtx\s*=\s*\{[^}]*techsBy[^}]*techsError/,
+    '\n\n❌ exportMoExcel ไม่ได้ส่ง techsBy/techsError เข้า cellCtx — คอลัมน์ช่างซ่อมจริงจะว่างทุกแถว\n');
+  /* ด่านคู่: ตัวโหลดต้องผ่าน fetchByIds (chunk) และคอลัมน์ต้องไม่ไปโป่งในคิวรีรายการ */
+  const ld = readFileSync(join(ROOT, 'src/lib/moRepairTechs.js'), 'utf8');
+  assert.match(ld, /fetchByIds\(/,
+    '\n\n❌ loadRepairTechsFor ไม่ได้ผ่าน fetchByIds — `.in()` ยาวเกินเพดาน proxy = คืนค่าว่างเงียบ\n');
+  const page = readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8');
+  const listCols = page.slice(page.indexOf('const MO_LIST_COLS'), page.indexOf('const SCOPE_OPTS'));
+  assert.ok(listCols.length > 100, 'หา MO_LIST_COLS ไม่เจอ — ด่านนี้ต้องตามไปด้วยถ้าย้ายโค้ด');
+  for (const col of ['tech_main', 'tech_secondary']) {
+    assert.doesNotMatch(listCols, new RegExp(`'${col}'`),
+      `\n\n❌ '${col}' ถูกเติมเข้า MO_LIST_COLS แล้ว — คิวรีรายการ MO ยิง ~1,389 ครั้ง/วัน\n`
+      + '   ผล: ทุกคนที่เปิดจอจ่าย egress เพิ่ม แทนคนที่กด export\n'
+      + '   แก้: โหลดตอนกดปุ่มผ่าน loadRepairTechsFor() (src/lib/moRepairTechs.js)\n');
+  }
+});

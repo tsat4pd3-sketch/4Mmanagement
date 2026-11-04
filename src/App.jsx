@@ -13,6 +13,7 @@ import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 const FeedbackModal = lazy(() => import('./components/FeedbackModal'));
+const NotifyPrefsModal = lazy(() => import('./components/NotifyPrefsModal'));  // 🔕 ตั้งค่าแจ้งเตือนของฉัน
 import { loadPermissions, canAccessPage, setDeptAdmin, setSharedAccount, can } from './utils/permissions';
 /* 🏷️ รุ่นของเว็บ (full / nm) — สลับตอน build ด้วย alias ใน vite.nm.config.js · 📄 src/appEdition.js */
 import { EDITION_LABEL, EDITION_HOME } from './appEdition';
@@ -470,6 +471,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
   }, []);
   const [sigUrl,        setSigUrl]        = useState(userSignatureUrl);
   const [pwdModalOpen,  setPwdModalOpen]  = useState(false);
+  const [notifyOpen,    setNotifyOpen]    = useState(false);   // 🔕 ตั้งค่าแจ้งเตือนของฉัน
   // 📷 เปลี่ยนรูปโปรไฟล์ — เดิมมีเฉพาะหน้า Home (DeptHub) sidebar ไม่มี (drift · แก้ 2026-08-21)
   const avatarRef = useRef(null);
   const [avatarFile, setAvatarFile] = useState(null);   // ไฟล์ที่เลือก → ส่งเข้า ImageCropModal
@@ -616,6 +618,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
       avatar:       () => avatarRef.current?.click(),
       signature:    () => setSigModalOpen(true),
       password:     () => setPwdModalOpen(true),
+      notifyPrefs:  () => setNotifyOpen(true),
       feedback:     () => setFbOpen(true),
       viewAs:       onOpenViewAs,
       toggleRemote: onToggleRemote,
@@ -704,6 +707,13 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
       onClose={() => setPwdModalOpen(false)}
       userEmail={userEmail}
     />
+    {/* 🔕 ตั้งค่าแจ้งเตือนของฉัน — ส่ง **role จริง** ไม่ใช่ role ที่จำลองมุมมองอยู่
+        (กระดิ่งของจริงยิงตาม `profiles.role` · โชว์สวิตช์ตาม role ปลอม = สวิตช์หลอก) */}
+    {notifyOpen && (
+      <Suspense fallback={null}>
+        <NotifyPrefsModal role={realRole ?? userRole} onClose={() => setNotifyOpen(false)} />
+      </Suspense>
+    )}
   </>);
 
   /* แถวเมนู 1 แถว — **ตัวเดียวใช้ทั้งแผงลอยและ drawer** ห้ามก๊อปแยก (เคยแยกแล้วหน้าตาเพี้ยนกัน)

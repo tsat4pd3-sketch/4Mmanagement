@@ -60,6 +60,17 @@ export const MO_EXPORT_COLS = Object.freeze([
   { key: 'pinpoint', h: 'ชี้เป้าได้?', w: 10,
     val: (r) => (r.planned ? 'ตามแผน' : r.vague ? 'ไม่ได้' : 'ได้'), opt: (r) => ({ align: 'center', fill: r.vague ? 'FFFFF2CC' : undefined }) },
   { key: 'techs', h: 'ช่างที่มอบหมาย', w: 22, val: (r) => joinTechs(assignedTechsOf(r.o)) || DASH, opt: () => ({ size: 9, wrap: true }) },
+  /* 🧑‍🔧 ใครลงมือซ่อมจริง (04/11 · feedback MTN ข้อ 2 "ช่างซ่อมหลัก/รองไม่แสดงในเอกสาร MO ที่ Export")
+     🔴 **คนละคอลัมน์กับ "ช่างที่มอบหมาย" ห้ามยุบรวม** — มอบหมาย (ขั้นรับงาน) ≠ ลงมือจริง (ขั้นปิดงาน)
+        มอบหมาย 2 คนแล้วคนเดียวทำ / ส่งต่อให้คนอื่นทำ = เกิดปกติ ⇒ ยุบ = KPI ช่างไปลงผิดคน
+     🔴 ว่าง 3 ความหมาย: โหลดไม่ติด = ⚠ · **ปิดใบแล้วไม่มีใครกรอก = ไฮไลต์เหลือง** · ใบยังค้าง = ว่าง (ถูกแล้ว)
+     ค่ามาจาก `loadRepairTechsFor()` (src/lib/moRepairTechs.js) — โหลดตอนกด export เท่านั้น
+     เพราะ `tech_main`/`tech_secondary` ห้ามอยู่ใน `MO_LIST_COLS` (egress · ดูไฟล์นั้น) */
+  { key: 'real_techs', h: 'ช่างซ่อมจริง (หลัก/รอง)', w: 24,
+    val: (r, c) => (c.techsError ? '⚠ โหลดชื่อช่างซ่อมไม่สำเร็จ'
+      : (((c.techsBy || {})[r.o.id]?.names || []).join(' / ') || '')),
+    opt: (r, c) => ({ size: 9, wrap: true,
+      fill: (!c.techsError && !((c.techsBy || {})[r.o.id]?.names || []).length && !r.open) ? 'FFFFF2CC' : undefined }) },
   { key: 'repair_path', h: 'เส้นทางงานซ่อม', w: 22, val: (r) => repairPathMeta(r.o.repair_path)?.label || DASH, opt: () => ({ size: 9 }) },
   /* 💳 I/O (02/11 · A8 "IO ขึ้นขาด") — เลขที่กรอกในใบ (ตอนเลือกเครื่องระบบเติมจาก `machines.io_no` ให้)
      🔴 ส่งเป็น **ข้อความ** เสมอ: I/O 12 หลักเป็นตัวเลขล้วน ส่งเป็น number แล้ว Excel โชว์ 2.15031E+11 = หลักหาย
@@ -78,7 +89,7 @@ export const moExportWidths = () => MO_EXPORT_COLS.map(c => c.w);
 
 const CTX_DEFAULTS = {
   statusLabel: (o) => o?.status, teamName: (k) => k, cmtOf: () => [], commentText: () => '',
-  commentsError: null, prsBy: {}, prsError: null,
+  commentsError: null, prsBy: {}, prsError: null, techsBy: {}, techsError: null,
 };
 
 /**

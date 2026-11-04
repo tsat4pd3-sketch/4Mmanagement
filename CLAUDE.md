@@ -544,6 +544,8 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 
 - 🔔 **แจ้งเตือนใหม่ทุกตัว = ในแอป (`notification_rules` → `notifications`) ห้ามเพิ่มทาง Telegram** (คำสั่ง user 24/09 · ย้ำ 20/10 "ยังไม่ยกเลิกแต่โฟกัสในแอพ")
   · ผู้รับต้องแคบ (role กว้าง = ไม่มีใครอ่าน · 📄 `docs/modules/notify-inapp-audit.md`) · ตัวส่งนอก edge อ่านกฎเดียวกัน (`scripts/acct-import/run_queue.mjs`)
+- 🔕 **ผู้ใช้ปิดแจ้งเตือนรายเรื่องเองได้** (เมนูโปรไฟล์) — **กรองใน `notify_recipients` ฝั่ง DB ที่เดียว ห้ามกรองในหน้า** (มีด่าน)
+  · คิวงานที่รอคนลงมือ = `notification_rules.can_mute=false` (**ทะเบียน** ตั้งที่ `/notification-config` ห้าม hardcode) · ยิงถึงเจ้าของงานตรง (`extra_user_ids`) ปิดไม่ได้อยู่แล้ว
 - Endpoint: `POST /functions/v1/send-notification`
 > 📄 รายละเอียดเต็ม → `docs/modules/edge-functions.md`
 
@@ -777,7 +779,6 @@ Platform:    Render.com (Static Site)
   - **ข้อยกเว้น (ต้องหยุดถามก่อน merge):** ถ้าเงื่อนไข 2 ไม่ผ่าน/ไม่แน่ใจว่ากระทบส่วนอื่น, หรือเป็นการเปลี่ยน schema/RLS/พฤติกรรมที่ย้อนยาก, หรือเป็น product decision ที่ตีความได้หลายแบบ → หยุดถาม user ก่อน อย่า auto-merge
 - ถ้า development branch ที่กำหนดมา merge เข้า main ไปแล้ว (ไม่มี commit ใหม่ค้าง) ให้ restart จาก main ล่าสุด: `git checkout -B <branch> origin/main` ก่อนทำงานต่อ ห้าม stack งานใหม่บน history ที่ merge ไปแล้ว
 - **ห้ามแก้ RLS policy / schema migration แบบ blanket** (loop เปลี่ยน policy หลายตารางพร้อมกัน) โดยไม่รู้ว่าตารางอยู่ project ไหนและ client ฝั่งไหนอ่าน — ดู §Supabase Projects
-- เปลี่ยน DB schema ทุกครั้ง ให้เขียนเป็น migration file ใน `supabase/migrations/` เพื่อให้ session อื่นเห็นประวัติ ไม่ใช่แก้ตรงผ่าน MCP เฉยๆ
 
 ---
 

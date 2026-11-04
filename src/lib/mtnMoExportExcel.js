@@ -96,6 +96,10 @@ export async function exportMoExcel({
   commentsBy = {}, commentsError = null,
   /* 🛒 ใบขอซื้อ (14/10) — map id ใบ → [{pr_no,status}] · ใบที่ยกเลิกไม่นับ (กฎ prNumbersOf) */
   prsBy = {}, prsError = null,
+  /* 🧑‍🔧 ช่างที่ซ่อมจริง (04/11 · feedback MTN ข้อ 2) — map id ใบ → {main,secondary,names}
+     โหลดจาก `loadRepairTechsFor()` ตอนกดปุ่มเท่านั้น (ไม่อยู่ใน MO_LIST_COLS — เหตุผลในไฟล์นั้น)
+     🔴 **คนละคอลัมน์กับ "ช่างที่มอบหมาย"** — มอบหมายไว้ ≠ ลงมือจริง ห้ามยุบรวม */
+  techsBy = {}, techsError = null,
 }) {
   const df = await getDocForm('mtn_mo_monthly_export', { title: 'สรุปใบแจ้งซ่อม MO รายเดือน' });
   const ExcelJS = (await import('exceljs')).default;   // lazy — ก้อน ~960KB ใช้ร่วมกับ export ตัวอื่น
@@ -159,7 +163,7 @@ export async function exportMoExcel({
   }
   head(ws1, 4, H1, moExportWidths());
 
-  const cellCtx = { statusLabel, teamName, cmtOf, commentText: moCommentText, commentsError, prsBy, prsError };
+  const cellCtx = { statusLabel, teamName, cmtOf, commentText: moCommentText, commentsError, prsBy, prsError, techsBy, techsError };
   enriched.forEach((r, i) => {
     const n = 5 + i;
     moExportCells(r, cellCtx).forEach((cell, ci) => put(ws1, `${colRef(ci)}${n}`, cell.value, cell.opt));
