@@ -19,6 +19,10 @@
 --       `security definer` เท่านั้น · ห่อ `exception when others then null` ตามกฎ fn_audit:
 --       **audit ล้มเหลวห้ามทำให้การปิดใบพัง**
 --
+-- ✅ apply แล้ว 2026-11-04 ผ่าน MCP (คอลัมน์ 1 · function 1 · trigger `trg_prod_order_cross_close_audit`)
+--    🔴 ไม่ชนกับ `trg_audit_update_closed` ที่มีอยู่เดิม — ตัวนั้นยิงเมื่อ `old.status <> 'open'`
+--       แต่ปิดใบคือ `open → confirmed` ⇒ ตัวนั้นไม่เคยยิงตอนปิดใบ (ตรวจแล้ว 04/11)
+--
 -- ย้อนกลับ: drop trigger + function · คอลัมน์ทิ้งไว้ได้ (nullable ไม่มีใครบังคับใช้)
 -- ═══════════════════════════════════════════════════════════════════════════
 

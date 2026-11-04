@@ -7500,7 +7500,8 @@ test('📤 cross-line-close-guards — ปิดใบข้ามไลน์�
         ⇒ เจอหลายใบต้อง `ambiguous` ให้คนเลือก **ห้ามเดา**
      ② กะเจ้าของใบที่ `pending_close`/`closed` **stamp ยอด/OEE ไปแล้ว** ⇒ ห้ามปิดใบย้อนหลัง
      ③ ปิดใบไลน์อื่น = เขียนข้ามหน่วยงาน · ฝั่ง DR วิ่ง `anon` **ไม่มีด่านฝั่ง DB**
-        ⇒ `canWriteLine` ในตัวเขียนเป็นด่านเดียวที่มี */
+        ⇒ `canWriteLine` ในตัวเขียนเป็นด่านเดียวที่มี
+     ④ 03/11 ถอดการกดยืนยันออกตามคำสั่ง user ⇒ ต้องมี `closed_from_line` + ด่าน stale แทน */
   const bad = [];
   const CL = 'src/utils/crossLineClose.js';
   const cl = readFileSync(join(ROOT, CL), 'utf8');
@@ -7528,11 +7529,29 @@ test('📤 cross-line-close-guards — ปิดใบข้ามไลน์�
     if (!/crossLineCloseState\s*\(/.test(body)) bad.push(`${DR} doCrossLineClose: ② ไม่ได้เช็คซ้ำตอนกดจริง (การ์ดบนจอเป็นแค่ภาพตอนค้น)`);
     if (!/checkWriteRows\s*\(/.test(body)) bad.push(`${DR} doCrossLineClose: ต้องนับแถว — RLS/แข่งกันปิด = "สำเร็จ 0 แถว ไม่มี error"`);
     if (!/\.eq\(\s*'status'\s*,\s*'open'\s*\)/.test(body)) bad.push(`${DR} doCrossLineClose: ต้อง CAS .eq('status','open') กันปิดซ้ำ`);
+    /* 🔄 03/11 (คำสั่ง user): *"ถ้าเป็นยอดงานของ user นั้นรับผิดชอบ อยากให้ไม่ต้องคอนเฟิร์มเลย
+       แต่มีการเก็บ log ไว้ตรวจสอบได้"* ⇒ การยืนยันถูกถอด **ความปลอดภัยย้ายไปอยู่ที่ log**
+       🔴 ไม่ stamp `closed_from_line` = trigger `trg_prod_order_cross_close_audit` ไม่ยิง
+          = ปิดข้ามไลน์ได้ฟรีโดยไม่มีร่องรอยเลย (แย่กว่าตอนมีปุ่มยืนยัน) */
+    if (!/closed_from_line\s*:/.test(body))
+      bad.push(`${DR} doCrossLineClose: ต้อง stamp closed_from_line — ไม่มี = audit_log ไม่ถูกเขียน (log หายเงียบ)`);
+    if (/window\.confirm/.test(body))
+      bad.push(`${DR} doCrossLineClose: เอา window.confirm กลับมา — user สั่งถอดออก 03/11 (ด่านคือ canWriteLine + log)`);
   }
-  /* 🔴 ห้าม auto-confirm ใบข้ามไลน์จาก Enter ของเครื่องสแกน — สแกนพลาด = ปิดใบไลน์อื่นเงียบ */
+  /* 🔴 สแกนปิดข้ามไลน์อัตโนมัติ — 3 เงื่อนไขที่ถอดแล้วพังเงียบ */
   const chg = dr.match(/const\s+handleCloseProdNoChange\s*=[\s\S]*?\n  \};/);
-  if (chg && /hasEnter\s*&&\s*!found[\s\S]{0,120}doCrossLineClose/.test(chg[0]))
-    bad.push(`${DR}: ห้าม auto-confirm ใบข้ามไลน์จาก Enter ของเครื่องสแกน — ต้องให้คนกดยืนยัน`);
+  if (chg && !/hasEnter\s*&&\s*!found[\s\S]{0,120}crossLookup\([^)]*auto:\s*true/.test(chg[0]))
+    bad.push(`${DR} handleCloseProdNoChange: Enter จากเครื่องสแกนต้องเรียก crossLookup(v, { auto: true }) — ไม่งั้นทางหลักของคนคุมหลายไลน์ตาย`);
+  const look = dr.match(/const\s+crossLookup\s*=[\s\S]*?\n  \};/);
+  if (!look) bad.push(`${DR}: หา crossLookup ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้ด้วย`);
+  else {
+    /* ① เลขซ้ำหลายไลน์ (ของจริง LINE A `35`/`42`/`43`/`45`) ห้ามให้ระบบเดาแล้วปิดให้ */
+    if (!/auto\s*&&\s*out\.state\s*===\s*'ready'/.test(look[0]))
+      bad.push(`${DR} crossLookup: ปิดอัตโนมัติต้องจำกัดที่ state 'ready' เท่านั้น (ambiguous = ให้คนเลือกไลน์)`);
+    /* กฎเขียน DB ข้อ 4: สแกนเลขใหม่ทับระหว่างรอผล = ผลเก่าย้อนมาปิดใบที่คนไม่ได้สแกน */
+    if (!/crossReqRef\.current/.test(look[0]))
+      bad.push(`${DR} crossLookup: ไม่มีด่าน stale (crossReqRef) — ผลค้นของเลขเก่าจะย้อนมาปิดใบอัตโนมัติ`);
+  }
 
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
     + '\n\n   ปิดใบผิดไลน์ = ยอด/OEE ของไลน์ที่ไม่เกี่ยวเปลี่ยน โดยไม่มีใครเห็นบนจอ\n');
