@@ -15,6 +15,7 @@
  * 🔴 ไฟล์นี้ pure — ไม่แตะ DB (App.jsx โหลดแถวมาให้)
  */
 import { isGranting } from './orgAssignments.js';
+import { unitParentId, isUpperKind } from './orgLayers.js';
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
 const keyOf = (n) => (n?.code || n?.name || '').toString().trim();
@@ -23,11 +24,12 @@ const keyOf = (n) => (n?.code || n?.name || '').toString().trim();
 function sectionKeyOf(nodeId, byId) {
   const seen = new Set();
   let cur = byId.get(String(nodeId ?? '')), top = null;
-  while (cur && !seen.has(String(cur.id))) {
+  while (cur && !seen.has(String(cur.id)) && !isUpperKind(cur.kind)) {
     seen.add(String(cur.id));
     top = cur;
     if (cur.kind === 'section') break;
-    cur = cur.parent_id == null ? null : byId.get(String(cur.parent_id));
+    const pid = unitParentId(cur, byId);   // 🏢 แม่เป็น plant/company = จบสาย (หน่วยขึ้นตรงใช้ตัวเองเป็นส่วนงาน)
+    cur = pid == null ? null : byId.get(String(pid));
   }
   return keyOf(top) || null;
 }

@@ -122,6 +122,8 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 > 🔴 **แกนที่ 2 ของชั้น ③ = Cost Center (`src/utils/ccScope.js` · `canWriteScope`)** — ตั้งที่ `/add-user` ช่อง ④
 >   (`profiles.resp_cost_centers` · `UserContext.respCostCenters`) · **ว่าง = ถอยไปใช้ `section` เหมือนเดิม**
 >   🔴 **ลำดับชั้นมาจาก `org_nodes.parent_id` เท่านั้น — เลขรหัสไม่ได้บอกชั้น**
+>   🏢 **ผังรับชั้นบน `company_group→spg→company→plant` แล้ว (04/11) — "ราก/ขึ้นตรง/ตกทอด" ถาม `src/utils/orgLayers.js` เท่านั้น**
+>     (`unitRoots`/`isOrphanDept`/`unitParentId` · ตกทอดหยุดที่ชั้นบน · ห้ามเขียน `!parent_id` ใหม่ · ด่าน `org-upper-layers-ready`)
 >   · ทีมไม่มีรหัส = **ตกทอดจากแม่** · ไล่ขึ้นไม่เจอ = fail-closed · กฎ "CC ของโหนด" **ห้ามเขียนชุดที่ 2**
 >   (`costCenterOfNode()` อยู่ไฟล์นี้ที่เดียว · มีด่าน `cc-scope-layer`)
 >   🔴 **หน่วยแม่ของขอบเขตเรา ≠ "หน่วยอื่น"** (28/10 · คำสั่ง user "ยุบเหลือแกนเดียว · CC ละเอียดกว่า")

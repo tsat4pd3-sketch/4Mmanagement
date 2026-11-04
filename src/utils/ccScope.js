@@ -26,7 +26,8 @@
    🧩 ตัวนี้ไม่สร้างต้นไม้ใหม่ — ใช้ดัชนีเดิม `buildOrgScope()` (`utils/orgScope.js`) ที่มี
       `canonicalScope` (รหัส → หน่วยเจ้าของ) + `scopeCovers` (หน่วยนี้ครอบหน่วยนั้นไหม) อยู่แล้ว
       และคำนวณ CC ต่อโหนดจาก `org_nodes` ชุดเดียวกับที่ `useOrgScope` โหลด (ไม่ยิงคิวรีเพิ่ม) */
-import { PLANT, isPlant, canonicalScope, scopeCovers } from './orgScope.js';   // .js เพื่อให้ node:test resolve ได้ (bundler ไม่สน)
+import { PLANT, isPlant, canonicalScope, scopeCovers } from './orgScope.js';
+import { unitParentId } from './orgLayers.js';   // 🏢 ตกทอดรหัสหยุดที่ชั้นบน (plant/company) — 04/11   // .js เพื่อให้ node:test resolve ได้ (bundler ไม่สน)
 
 const norm = (s) => (s ?? '').toString().trim();
 
@@ -48,7 +49,9 @@ export function buildCcIndex(nodes = []) {
     while (cur && hops < 12) {
       const cc = norm(cur.cost_center);
       if (cc) { out = { cc, from: cur, inherited: hops > 0, reason: hops > 0 ? 'inherited' : 'own' }; break; }
-      cur = cur.parent_id == null ? null : byId.get(String(cur.parent_id));
+      /* 🔴 แม่เป็นชั้นบน (plant/company) = จบสาย — รหัสของโรงงาน/บริษัทห้ามไหลลงมาเป็นรหัสของหน่วย */
+      const pid = unitParentId(cur, byId);
+      cur = pid == null ? null : byId.get(String(pid));
       hops += 1;
     }
     /* 🔴 ไม่เจอรหัสทั้งสาย = "ไม่รู้" ไม่ใช่ "ไม่มีสิทธิ์เฉยๆ" — จอต้องเขียนบอกว่าผังยังไม่ผูกรหัส */

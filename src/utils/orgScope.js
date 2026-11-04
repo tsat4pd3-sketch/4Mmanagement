@@ -20,6 +20,7 @@
      🔴 ชื่อ section เทียบแบบ normalize (PLN & STO vs Planning&Store — ผังใช้ code แต่ไลน์เก็บ text)
    ═══════════════════════════════════════════════════════════════════════════════════════════════ */
 import { orgNodeCompare, naturalCompare } from './listOrder.js';
+import { unitRoots, unitParentId, isUpperKind } from './orgLayers.js';   // 🏢 รากของชั้นหน่วย (ส่วนงาน/แผนกขึ้นตรง) — รองรับชั้นบน plant/company (04/11)
 
 export const SCOPE_KIND_META = {
   plant:       { label: 'ทั้งโรงงาน', short: 'โรงงาน', icon: '🏭', depth: 0 },
@@ -116,7 +117,8 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
     let cur = n;
     for (let i = 0; cur && i < 10; i++) {
       if (cur.division) return cur.division;
-      cur = cur.parent_id == null ? null : byId.get(String(cur.parent_id));
+      const pid = unitParentId(cur, byId);   // 🏢 ป้ายฝ่ายของ plant/company ห้ามไหลลงมาเป็นฝ่ายของหน่วย
+      cur = pid == null ? null : byId.get(String(pid));
     }
     return null;
   };
@@ -156,7 +158,10 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
   // ── ฝ่าย (ป้าย ไม่ใช่ node) ──
   const divList = (divisions && divisions.length ? divisions : [])
     .slice().sort((a, b) => (a.sort_order ?? 99) - (b.sort_order ?? 99));
-  const topNodes = (kids.get('') || []).filter(n => n.kind === 'section' || n.kind === 'department');
+  /* 🏢 รากของชั้นหน่วย = ส่วนงาน/แผนกที่ไม่มีแม่เป็นหน่วย — เดิมอ่าน `kids.get('')` (parent_id ว่าง) ⇒ เติมโหนด plant/company
+     เหนือส่วนงานเมื่อไหร่ ส่วนงานหายจาก picker ทั้งระบบ (บล็อกใน ORG-SCALE-GLOBAL-DESIGN §4 ขั้น 0 · ปิด 04/11)
+     ชั้นบนไม่ถูกวาดใน picker (รากยังเป็น `plant` เสมือนตัวเดิม) · ลำดับตามผัง */
+  const topNodes = unitRoots(act).sort(bySort);
   const divCodes = [...new Set([...divList.map(d => d.code), ...topNodes.map(divisionOf).filter(Boolean)])];
   const divLabel = (code) => divList.find(d => d.code === code)?.label || code;
   const divIcon = (code) => divList.find(d => d.code === code)?.icon || '🏢';
@@ -273,7 +278,7 @@ export function buildOrgScope({ nodes = [], lines = [], divisions = [], costCent
   const addCc = (cc, names) => { if (!cc) return; if (!ccLines.has(cc)) ccLines.set(cc, new Set()); names.forEach(x => ccLines.get(cc).add(x)); };
   liveLines.forEach(l => addCc(l.cost_center, [l.name]));
   act.forEach((n) => {
-    if (!n.cost_center) return;
+    if (!n.cost_center || isUpperKind(n.kind)) return;   // 🏢 รหัสของ plant/company ไม่ใช่รหัสของหน่วยในโรงงาน
     const k = scopeKey(n.kind === 'line' ? 'line' : n.kind, nodeCode(n));
     addCc(n.cost_center, linesOf.get(k) ? [...linesOf.get(k)] : []);
   });
