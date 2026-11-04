@@ -153,7 +153,7 @@ JIG MTN จะท่วมห้อง · ให้เห็นบนจอแ�
 - กะที่กำลังเดิน = ยังไม่ตัดสิน (ดูแท็บสถานะวันนี้ · ไม่งั้นต้นกะขึ้น "ขาด" ทั้งที่อยู่ในกรอบ 60 นาที)
 - สถานะช่อง `checkDayState` · สัญลักษณ์ `CHECK_DAY_META`/`CHECK_DAY_LEGEND` · ผลตรวจในช่อง `AM_RESULT_META` (`OK`/`NG`/`!` — เทสคุมว่าไม่ชนสถานะวัน)
 - **% ความครบ = เครื่อง-วันที่ตรวจแล้ว ÷ (ตรวจแล้ว + ขาด)** · ไม่มีวันต้องตรวจ = `–` · NG = จำนวนเครื่อง-วันที่ผลตรวจ `fail`
-- Excel = doc_key **`xlsx_am_monthly`** (เลขฟอร์มที่ชื่อไฟล์ · ชีต 2 = คำอธิบาย/ข้อจำกัด) — migration `20261103_doc_forms_xlsx_am_monthly_main.sql` (**MAIN · ยังไม่ apply**)
+- Excel = doc_key **`xlsx_am_monthly`** (เลขฟอร์มที่ชื่อไฟล์ · ชีต 2 = คำอธิบาย/ข้อจำกัด) — migration `20261103_doc_forms_xlsx_am_monthly_main.sql` (**MAIN · apply แล้ว**)
 - `loadRunDays()` (`utils/runDays.js`) **แบ่งหน้าแล้ว + คืน `byKey`** (คีย์ → ชื่อไลน์ที่เปิดกะ) — additive, LPA/Poka-Yoke ไม่กระทบ
 
 **ข้อจำกัดที่รู้ตัว (ยังไม่ทำ):** ทะเบียนที่ปิดใช้ (`is_active=false`) ไม่มีวันปิด ⇒ เครื่องที่เอาออกแล้วไม่โผล่ย้อนหลัง ·
@@ -175,7 +175,7 @@ NG นับระดับ "เครื่อง-วัน" ไม่ใช่
 
 ### B3 — AM ผิดปกติ ⇒ ต้องเปิด MO หรือเขียนเหตุผล + ติดตามจนปิด
 - โมดัลหลังบันทึก NG (PMCheckData) ใบ AM: ไม่มีปุ่ม "ไว้ก่อน" แล้ว — ต้อง 🔧 เปิดใบแจ้งซ่อม **หรือ** "ไม่เปิดใบ (ระบุเหตุผล ≥5 ตัวอักษร)"
-  → `inspections.mo_waived_reason/by/at` (migration `20261102_am_ng_mo_waiver_dr.sql` · DR · **ยังไม่ apply** = ปุ่มเหตุผลขึ้น error ให้เปิด MO แทน)
+  → `inspections.mo_waived_reason/by/at` (migration `20261102_am_ng_mo_waiver_dr.sql` · DR · **apply แล้ว**)
   · ปิดหน้าต่างได้ แต่รายการค้าง "⚠ ยังไม่เปิดใบแจ้งซ่อม" บนบอร์ด + ประวัติ · คนที่ไม่มี `mtn_repair:report` เห็นโมดัลเช่นกัน (ทางเหตุผล)
 - บอร์ด AM: ชิป NG มีสถานะ MO (`moStatusLabel()` เท่านั้น) / เหตุผล / "ยังไม่เปิดใบ" · `moFollow.ok=false` = เขียน "อ่านสถานะใบซ่อมไม่ได้"
 - 🔧 **"แจ้งซ่อมแล้ว ยังไม่แก้ไข"** — MO ที่มาจากผลตรวจ AM ก่อนกะนี้และยังไม่จบ (`amCarryOverByJig`) ติดป้ายบนเครื่องทุกวันจนปิด · จอ subscribe `mtn_orders`
@@ -186,7 +186,7 @@ NG นับระดับ "เครื่อง-วัน" ไม่ใช่
 - **ตอนนี้ (ใบของทีม AM เท่านั้น — ตัดสินจาก checklist ของใบ):** ผู้อนุมัติ = ชั้นแรกในบันได 40 หัวหน้ากลุ่ม → 50 หัวหน้าแผนก/ส่วน → 60 ผู้จัดการ
   ที่ **สูงกว่าตำแหน่งคนตรวจ** (`positionRank(profiles.position)`) · ต่ำกว่า = `rank_too_low` · สูงกว่า = `skip_level` · ใบตัวเอง = `self`
   · ไม่รู้ตำแหน่ง = ไม่บล็อก + เขียนบนจอ · ด่านซ้ำใน handleApprove/handleReject · ป้ายประวัติ "รอหัวหน้ากลุ่ม/…"
-- สิทธิ์ชั้น ② = `am:approve` (migration `20261102_am_approve_permission_main.sql` · Main · **ยังไม่ apply** = ถอยไป `pm:approve` เดิม) — seed = ผู้ถือ pm:approve + `leader`
+- สิทธิ์ชั้น ② = `am:approve` (migration `20261102_am_approve_permission_main.sql` · Main · **apply แล้ว**) — seed = ผู้ถือ pm:approve + `leader`
 - ⚠️ ข้อยกเว้นที่ 2 ของกฎ "ตำแหน่งห้ามล็อกการกด" (positions.js) — คำสั่งจากประชุม 02/11 · ผลข้างเคียง: ไลน์ที่ไม่มีบัญชีหัวหน้ากลุ่ม ใบค้างรอ (ทางออก = ตั้งตำแหน่งที่ `/add-user`)
 - ✅ ขั้น "หัวหน้าแผนก/ส่วนทบทวนรายเดือน" ทำแล้ว 2026-11-03 → §7 · **ยังไม่ทำ:** ใบ PM ของช่างยังเป็นอนุมัติขั้นเดียวเดิม
 
@@ -197,7 +197,7 @@ NG นับระดับ "เครื่อง-วัน" ไม่ใช่
 
 | ชิ้น | ไฟล์ |
 |---|---|
-| ตาราง `am_monthly_signoffs` (**Main** · migration `20261103_am_monthly_signoffs_main.sql` · **ยังไม่ apply**) | — |
+| ตาราง `am_monthly_signoffs` (**Main** · migration `20261103_am_monthly_signoffs_main.sql` · **apply แล้ว 04/11**) | — |
 | ตัวห่อ DB (โหลด/ลงนาม/เพิกถอน · `isMissingTableError`) | `src/lib/amMonthlySignoff.js` |
 | ด่านใครลงนาม/เพิกถอนได้ (pure · เทส) | `amMonthlySignoffVerdict()` · `amMonthlyRevokeVerdict()` ใน `src/utils/amApproval.js` |
 | เดือนจบไหม · snapshot · เทียบ snapshot กับของสด · ชีต Excel (pure · เทส `src/lib/__tests__/amMonthlySignoff.test.mjs`) | `amMonthComplete()` · `amSignoffSnapshot()` · `amSignoffDrift()` · `amSignoffAoa()` ใน `src/lib/amMonthly.js` |

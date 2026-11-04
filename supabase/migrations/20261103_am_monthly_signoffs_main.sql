@@ -1,6 +1,6 @@
 -- ════════════════════════════════════════════════════════════════════════════════════════════
 -- ✍️ ลงนามทบทวน AM รายเดือน — ขั้น 3 ของสาย AM (หัวหน้าแผนก/ส่วน) · 2026-11-03 (user ตัดสิน 03/11)
--- Project: **Main** (ชื่อในจอ Supabase "MAIN" · ewhdfqwfwofivojtsizn)
+-- Project: **Main** (ชื่อในจอ Supabase "MAIN" · ewhdfqwfwofivojtsizn) · **apply แล้ว 2026-11-04 ผ่าน MCP**
 --
 -- สาย AM: พนักงานตรวจทุกต้นกะ → หัวหน้ากลุ่มรับทราบ (รายวัน · inspections ฝั่ง DR) → **หัวหน้าแผนก/ส่วนทบทวน (รายเดือน · ตารางนี้)**
 -- ทำไมอยู่ Main ไม่ใช่ DR: ลายเซ็นต้องผูก "ตัวคนที่ login" (auth.uid() + has_perm) — supabaseDR เป็น anon เสมอ
@@ -118,6 +118,7 @@ create policy ams_revoke on public.am_monthly_signoffs for update to authenticat
 -- 🔴 GRANT ระดับตาราง (RLS ผ่านแต่ GRANT ขาด = PostgREST 401 · db-write-rules ข้อ 3.1) · ไม่ให้ delete ใคร
 revoke all on public.am_monthly_signoffs from anon;
 grant select, insert, update on public.am_monthly_signoffs to authenticated;
+revoke delete, truncate, references, trigger on public.am_monthly_signoffs from authenticated;   -- default privileges แจกมาให้ (apply 04/11)
 
 -- ── คีย์สิทธิ์ ───────────────────────────────────────────────────────────────────────────
 insert into public.permission_catalog (resource, action, label, group_name, sort)
