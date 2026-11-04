@@ -8146,6 +8146,9 @@ test('🛡️ line-request-not-self-made — ไลน์ขอเบิกพ�
     const s = stripComments(readFileSync(join(ROOT, f), 'utf8'));
     if (/source:\s*'line_adhoc'/.test(s) && !/selfMadeRequestBlock\(/.test(s))
       bad.push(`${f} — สร้างใบ line_adhoc โดยไม่เช็ค selfMadeRequestBlock()`);
+    // 04/11 — พาร์ทที่ทำเอง ต้องแตก BOM ผ่าน lineRequestFromBom (ห้ามขอตัวเอง · ห้ามไล่ BOM เองในหน้า)
+    if (/source:\s*'line_adhoc'/.test(s) && !/lineRequestFromBom\(/.test(s))
+      bad.push(`${f} — เลือกพาร์ทที่ไลน์ทำเองแล้วไม่แตก BOM ผ่าน lineRequestFromBom()`);
   }
   // จอใหม่ที่สร้างใบ line_adhoc ต้องเช็คเหมือนกัน
   for (const abs of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {

@@ -91,3 +91,31 @@ test('selfMadeRequestBlock: พาร์ทที่ไลน์ผลิตเ�
   assert.equal(selfMadeRequestBlock('LINE B ( 600 Ton )', '10104918', null)?.code, 'unknown');   // อ่านไม่ได้ = fail-closed
   assert.equal(selfMadeRequestBlock('LINE B ( 600 Ton )', '10104918', [])?.code, 'unknown');
 });
+
+/* 🔁 04/11 — ไลน์จะผลิตพาร์ทตัวเอง → แตก BOM เป็นของที่ต้องเบิก */
+import { lineRequestFromBom } from '../partRefStock.js';
+import { buildBomIndex } from '../bomTree.js';
+test('lineRequestFromBom: แตก BOM — ข้ามของที่ไลน์ทำเอง/ชั้น OP ลงไปหาลูก · รวมตัวซ้ำ', () => {
+  const products = [
+    { id: 'p1', mat_no: '10088644', line_name: 'LINE C', is_active: true },
+    { id: 'p2', mat_no: '20063136', line_name: 'LINE D', is_active: true },
+    { id: 'p3', mat_no: '20099001', line_name: 'LINE C', is_active: true },               // ไลน์เดียวกันทำเอง (ขั้นกลาง)
+    { id: 'p4', mat_no: '20099002', line_name: 'LINE C', is_active: true, is_operation: true },
+  ];
+  const matOf = Object.fromEntries(products.map(p => [p.id, p.mat_no]));
+  const rows = [
+    { product_id: 'p1', mat_no: '20063136', qty_per_unit: 1 },
+    { product_id: 'p1', mat_no: '20099001', qty_per_unit: 2 },
+    { product_id: 'p3', mat_no: '50000001', qty_per_unit: 0.5 },
+    { product_id: 'p3', mat_no: '20099002', qty_per_unit: 1 },
+    { product_id: 'p4', mat_no: '30000001', qty_per_unit: 4 },
+    { product_id: 'p2', mat_no: '50027623', qty_per_unit: 0.57 },   // ลูกของงาน LINE D — LINE C ไม่ต้องเบิก
+  ];
+  const ix = buildBomIndex(rows, matOf);
+  const r = lineRequestFromBom('LINE C', '10088644', 500, ix, products);
+  assert.deepEqual(r.items.map(i => [i.mat_no, i.qty]), [['20063136', 500], ['30000001', 4000], ['50000001', 500]]);
+  assert.equal(r.noBom, false);
+  // ไม่มี BOM = noBom (ห้ามถอยไปขอตัวเอง)
+  assert.equal(lineRequestFromBom('LINE C', '50000001', 10, ix, products).noBom, true);
+  assert.equal(lineRequestFromBom('LINE C', '10088644', 0, ix, products).items.length, 0);
+});

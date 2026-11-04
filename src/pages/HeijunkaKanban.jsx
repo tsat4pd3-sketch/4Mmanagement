@@ -3,7 +3,7 @@ import { urlParam, urlPick, urlBool } from '../utils/urlInit';
 import { lineNameCompare } from '../utils/lineHierarchy';
 import { canWriteUnit, writeBlockText } from '../utils/writeScope';
 import ReadOnlyNote from '../components/ReadOnlyNote';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { loadStorageLocations } from '../utils/useStorageLocations';
@@ -1235,12 +1235,13 @@ const matchQ = (q, ...fields) => {
   return fields.some(f => String(f ?? '').toLowerCase().includes(s));
 };
 
-function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false, rounds, deliveries, view, onConfirm, confirming, onReceive, imgOf,
+function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false, focus = null, rounds, deliveries, view, onConfirm, confirming, onReceive, imgOf,
   lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, purchaseRequests, purchaseErr, busy, onAdvanceLot, onIssueRaw, onAdvanceWip, onAdvancePurchase, setBulkBuy, fmt, workDate, nowMs, canOperate, lotMats = null, inflowRules = null }) {
 
   const { roundAlloc } = view;
   const [buyFilter, setBuyFilter] = useState(() => urlPick('buy', ['3', '5'], ''));   // '' | '3' | '5' · ?buy= (จอวนหน้า)
-  const [q, setQ] = useState('');                   // ค้นหา: รหัส / ชื่อ / ไลน์ปลายทาง
+  const [q, setQ] = useState(() => focus?.q || '');   // ค้นหา: รหัส / ชื่อ / ไลน์ปลายทาง
+  useEffect(() => { if (focus?.at) setQ(focus.q || ''); }, [focus?.at, focus?.q]);   // 🔍 กดจากแถบไลน์เรียกของ
   const [showDone, setShowDone] = useState(() => urlBool('sdone', false));  // ?sdone= · default = เฉพาะงานค้าง (ให้ตรงกับตัวเลขบนแท็บ)
   const confirmedSet = useMemo(() => { const s = new Set(); deliveries.forEach(d => s.add(`${d.line_name}|${d.shift}|${d.round_no}`)); return s; }, [deliveries]);
   const receivedMap  = useMemo(() => { const m = {}; deliveries.forEach(d => { m[`${d.line_name}|${d.shift}|${d.round_no}`] = d; }); return m; }, [deliveries]);
@@ -1572,6 +1573,8 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null }) {
   useEffect(() => { loadDocForms(); }, []);
   const { fullName, role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   const navigate = useNavigate();
+  const location = useLocation();
+  const storeFocus = location.state?.storeFocus || null;   // 🔍 มาจากปุ่ม "ไปเตรียมงาน" บนแถบไลน์เรียกของ (StoreCallSiren)
   const canOperate = isOps && can('heijunka', 'operate', role);   // 🔴 monitor = ห้ามกดทำรายการ (มีด่าน heijunka-monitor-only)
   const canOverride = can('wip_request', 'override', role);
   /* ด่านชั้นเขียนจริง (ไม่พึ่งการซ่อนปุ่ม) — ทุกฟังก์ชันที่ขยับสถานะ/ยอดในหน้านี้เรียกตัวนี้ก่อน (มีด่าน heijunka-monitor-only) */
@@ -1661,6 +1664,12 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null }) {
   const [bulkBuy, setBulkBuy]                   = useState(null);   // {g, next, label} — เลื่อนสถานะรวมทั้งพาร์ท
   // default = คิวเติม WIP (งานจริงของสโตร์) — เดิม 'fg' คือแท็บรอบส่งซึ่งว่างเปล่าตลอดเมื่อไม่มีรอบ (audit 2026-09-07)
   const [unifiedStore, setUnifiedStore] = useState(() => urlPick('store', opsStores || ['fg', 'child', 'purchase', 'raw', 'rack', 'wip', 'plating'], (opsStores || ['wip'])[0])); // 'fg' | 'child' | 'purchase' | 'raw' | 'rack' | 'wip'
+  useEffect(() => {
+    if (!storeFocus?.store) return;
+    setViewMode('unified');
+    setUnifiedStore(storeFocus.store);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- เปลี่ยนเฉพาะตอนมีการกดใหม่ (at)
+  }, [storeFocus?.at]);
   const [showNoBom, setShowNoBom]       = useState(() => urlBool('nobom', false));   // ?nobom= // รายชื่อ product ที่ไม่มี BOM — พับไว้ ตัวเลขยังเห็นบนแถบสรุป
   const [breakPolicies, setBreakPolicies] = useState([]);
   /* 🖼️ รูปชิ้นงาน (2026-09-25 · คำสั่ง user "ควรจะมีรูปภาพชิ้นงานด้วยนะ")
@@ -2961,7 +2970,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null }) {
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
         ) : viewMode === 'unified' ? (
           <UnifiedStoreBoard
-            store={unifiedStore} setStore={setUnifiedStore} opsStores={opsStores} readOnly={!isOps}
+            store={unifiedStore} setStore={setUnifiedStore} opsStores={opsStores} readOnly={!isOps} focus={storeFocus}
             rounds={rounds} deliveries={deliveries} view={view}
             onConfirm={confirmRound} confirming={confirming} onReceive={openReceive}
             lotRequests={lotRequests} rawRequests={rawRequests} rackRequests={rackRequests} pkgRequests={pkgRequests} wipRequests={wipRequests} purchaseRequests={purchaseRequests} purchaseErr={purchaseErr} setBulkBuy={setBulkBuy}
