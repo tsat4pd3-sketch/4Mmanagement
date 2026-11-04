@@ -13,13 +13,17 @@
  * 🔴 ไฟล์นี้ pure — รับดัชนีจาก `buildCcIndex()` (`ccScope.js`) ไม่สร้างกฎ CC ชุดที่ 2
  */
 
+import { isUpperKind } from './orgLayers.js';
+
 const norm = (s) => String(s ?? '').trim().toLowerCase();
 const keyOf = (n) => (n?.code || n?.name || '').toString().trim();
 
-/** โหนด "ชั้นขอบเขต" ของเส้นทางนี้ = section บนสุด · ไม่มี section (แผนกขึ้นตรงฝ่าย) = รากของสาย */
+/** โหนด "ชั้นขอบเขต" ของเส้นทางนี้ = section บนสุด · ไม่มี section (แผนกขึ้นตรงฝ่าย) = หน่วยบนสุดของสาย
+ *  🏢 ข้ามชั้นบน (plant/company) — เส้นทางจาก `pathOfNode` เริ่มที่รากจริงของผัง (04/11) */
 function scopeNodeOfPath(path) {
   if (!path?.length) return null;
-  return path.find((n) => n.kind === 'section') || path[0];
+  const units = path.filter((n) => !isUpperKind(n.kind));
+  return units.find((n) => n.kind === 'section') || units[0] || null;
 }
 
 /** ส่วนงานที่ "เห็น" จาก CC ที่ติ๊ก — คืน `{ sections, unknown }` · `unknown` = รหัสที่ผังไม่รู้จัก */

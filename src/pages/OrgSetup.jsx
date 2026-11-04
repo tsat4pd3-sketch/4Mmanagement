@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useContext } from 'react';
+import { isOrphanDept } from '../utils/orgLayers.js';   // 🏢 แผนกขึ้นตรง = ไม่มีแม่เป็นหน่วย (04/11)
 import { supabase } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
@@ -88,7 +89,7 @@ export default function OrgSetup() {
   const ORPHAN = '__ORPHAN__';
   const sections = useMemo(() => nodes.filter(n => n.kind === 'section'), [nodes]);
   const allDepts = useMemo(() => nodes.filter(n => n.kind === 'department'), [nodes]);
-  const orphanDepts = useMemo(() => nodes.filter(n => n.kind === 'department' && !n.parent_id), [nodes]);
+  const orphanDepts = useMemo(() => nodes.filter(n => isOrphanDept(n, nodes)), [nodes]);
   const deptsOf = (sectionId) => sectionId === ORPHAN
     ? orphanDepts
     : nodes.filter(n => n.kind === 'department' && n.parent_id === sectionId);
