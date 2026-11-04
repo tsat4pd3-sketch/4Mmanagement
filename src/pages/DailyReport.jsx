@@ -505,7 +505,6 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const qtyBusyRef = useRef(new Set());     // กันกด 💾/ปิดใบ ซ้ำต่อใบ
   const closeProdInputRef = useRef(null);
   const [savingProdOpen, setSavingProdOpen] = useState(false);
-  const [pendingPairId, setPendingPairId] = useState(null); // order id ที่รอสแกนคู่ RH/LH ต่อ
   // Overflow confirmation modal
   const [overflowInfo, setOverflowInfo]   = useState(null); // { prodNo, matNo, qty, std, overMin, remainMin, newOrderMin }
 
@@ -1830,23 +1829,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const pairWhy = rawPartner ? pairBlockReason(meProd, products.find(p => p.mat_no === rawPartner) || { mat_no: rawPartner }) : null;
     if (pairWhy) toast.error(`ไม่ผูกคู่ RH/LH ให้: ${pairWhy} — แก้ช่อง "MAT.NO คู่" ที่ Product Master`);
     const partnerMatNo = pairWhy ? null : rawPartner;
-    let nextMatNo = openProdForm.mat_no;
+    const nextMatNo = openProdForm.mat_no;   // 🔴 MAT คงข้างเดิมเสมอ (ด่าน pair-scan-one-side)
 
-    if (pendingPairId) {
-      // separate_order: นี่คือการสแกนคู่ RH/LH ใบที่สอง — ผูกกลับไปยังใบแรกที่รออยู่
-      // sync opened_at ให้ตรงกับใบแรก เพราะผลิตพร้อมกันจริงแม้สแกนคนละเวลา
-      const firstOrder = prodOrders.find(o => o.id === pendingPairId);
-      /* 🔴 นับแถว — คู่ที่ผูกไม่ติดจะถูกนับเป็น 2 ใบแยกกัน ⇒ เวลามาตรฐานของ %P เบิ้ล
-         (กฎเหล็ก "ชิ้น ≠ shot" · collapsePairShots อ่าน paired_order_id เป็นตัวตัดสิน) */
-      checkWriteRows(await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', pendingPairId).select('id'), 'ผูกคู่ RH/LH (ใบแรก)');
-      checkWriteRows(await supabaseDR.from('prod_orders').update({
-        paired_order_id: pendingPairId,
-        ...(firstOrder?.opened_at ? { opened_at: firstOrder.opened_at } : {}),
-      }).eq('id', data.id).select('id'), 'ผูกคู่ RH/LH (ใบที่สอง)');
-      setPendingPairId(null);
-      toast.success(`เปิด Order คู่ RH/LH พร้อมกัน ✓ (${prodNo})`);
-    } else if (partnerMatNo) {
-      const existingPartner = prodOrders.find(o => o.mat_no === partnerMatNo && o.status === 'open' && !o.paired_order_id);
+    /* 🔴 03/11 (หน้างานแจ้งด่วน "ให้สแกนทีละข้างไปเลย ตอนนี้บังคับสแกนสลับ พนักงานสแกนมั่ว"):
+       เดิมสแกนข้างแรกแล้วระบบ **เปลี่ยน MAT ในช่องเป็นของคู่ + จำว่าใบถัดไปคือคู่** (pendingPairId)
+       ⇒ คนยิง Tag ข้าง LH ติดกันหลายใบ (วิธีทำงานจริง) = ใบที่ 2 ถูกบันทึกเป็น MAT ของ RH และ LH ผูกกับ LH
+       ตอนนี้: **MAT คงที่ข้างเดิม** (ยิงข้างเดียวกันต่อกันได้) · ผูกคู่อัตโนมัติกับ "ใบข้างคู่ที่เปิดอยู่และยังไม่มีคู่
+       ที่เก่าสุด" (FIFO) — ยิง LH ทั้งหมดก่อน แล้วเปลี่ยน MAT ไปยิง RH ก็ผูกกันครบเอง (ด่าน pair-scan-one-side) */
+    if (partnerMatNo) {
+      const pool = prodOrders
+        .filter(o => o.mat_no === partnerMatNo && o.status === 'open' && !o.paired_order_id && o.id !== data.id)
+        .sort((a, b) => String(a.opened_at || '').localeCompare(String(b.opened_at || '')));
+      const existingPartner = pool[0];
       if (existingPartner) {
         checkWriteRows(await supabaseDR.from('prod_orders').update({ paired_order_id: data.id }).eq('id', existingPartner.id).select('id'), 'ผูกคู่ RH/LH (ใบที่เปิดค้าง)');
         checkWriteRows(await supabaseDR.from('prod_orders').update({
@@ -1855,9 +1849,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         }).eq('id', data.id).select('id'), 'ผูกคู่ RH/LH (ใบใหม่)');
         toast.success(`เปิด Order ${prodNo} ✓ และผูกคู่กับ ${existingPartner.prod_no} (RH/LH) อัตโนมัติ`);
       } else {
-        setPendingPairId(data.id);
-        nextMatNo = partnerMatNo;
-        toast.info(`เปิด ${prodNo} แล้ว — สแกน PROD.NO ของคู่ RH/LH (MAT.NO ${partnerMatNo}) ต่อได้เลย`);
+        const waiting = prodOrders.filter(o => o.mat_no === matNo && o.status === 'open' && !o.paired_order_id).length + 1;
+        toast.info(`เปิด ${prodNo} แล้ว ✓ — ข้างนี้รอคู่ ${waiting} ใบ · ยิงข้างเดิมต่อได้เลย แล้วค่อยเปลี่ยน MAT ไป ${partnerMatNo} ระบบผูกคู่ให้เอง`);
       }
     } else {
       toast.success(`เปิด Order ${prodNo} · ${matNo} · ${qty} ชิ้น ✓`);
@@ -5735,11 +5728,6 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 สแกน PROD.NO → กด Enter → บันทึกอัตโนมัติ — ไม่ต้องคลิกปุ่ม
               </div>
 
-              {pendingPairId && (
-                <div style={{ padding: '8px 12px', background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: 8, fontSize: 12, color: '#a855f7', fontWeight: 600, marginBottom: 12 }}>
-                  🔗 รอสแกนคู่ RH/LH (MAT.NO {openProdForm.mat_no}) — เปิดเสร็จจะผูกคู่กับใบแรกอัตโนมัติ
-                </div>
-              )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <Field label="PROD.NO (สแกน barcode ตัวล่าง Sender/ID บน Tag Card) *">
@@ -5953,7 +5941,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               )}
 
               <div className={isMobile ? 'm-modalfoot' : undefined} style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
-                <button onClick={() => { setShowScanOpen(false); setPendingPairId(null); }} style={cancelBtnStyle}>ปิด</button>
+                <button onClick={() => { setShowScanOpen(false); }} style={cancelBtnStyle}>ปิด</button>
                 <button onClick={handleScanOpen}
                   disabled={savingProdOpen || !openProdForm.prod_no || !openProdForm.mat_no || !openProdForm.qty || (openProdForm.is_backfill && !openProdForm.backfill_time) || !!prodOrders.find(o => o.prod_no === openProdForm.prod_no)}
                   style={{ ...saveBtnStyle, background: '#f59e0b', color: '#000', fontSize: 14,

@@ -1,13 +1,9 @@
 /* ═══ NpiUi — ชิ้นส่วน UI ร่วมของโมดูล NPI (/npi + component ย่อย) ═══
    เก็บไว้ที่เดียวให้ทุกแท็บหน้าตาเดียวกัน — Modal (ไม่ปิดจาก backdrop ตาม UI §5) · Pill · ไฟสี · ฟิลด์ · ปุ่ม
    + ตัวอัปโหลดไฟล์เข้า bucket npi-files (PDF/รูป/office ≤20MB · รูปบีบ 2560px ก่อน) */
-import { useState } from 'react';
-import { supabase } from '../supabaseClient';
-import { toast } from './Toast';
 import { LIGHT } from '../utils/npi';
-import { toDecodableImage, isHeicFile } from '../utils/heicToJpeg';
-import { looksLikeImage, isGifFile, GIF_MAX_BYTES, GIF_TOO_BIG_MSG } from '../utils/imageFileKind';
-import { uploadOpts } from '../utils/storageUpload';
+import { uploadAttachment, removeAttachment, attachFileName } from '../utils/fileAttach';
+import FilePickBase from './FilePick';
 
 export const inp = {
   width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)',
@@ -89,53 +85,15 @@ export function WarnBar({ children, color = '#ef4444' }) {
   );
 }
 
-const MAX_MB = 20;
+/* 📎 ไฟล์แนบ NPI — สูตรจริง (HEIC · GIF · บีบรูป · uploadOpts) อยู่ที่ `utils/fileAttach.js`
+   🔴 ห้ามเขียนสูตรซ้ำที่นี่ — ย้ายออกไป 01/11 เพื่อให้โมดูลอื่น (OJT ฯลฯ) ใช้ชุดเดียวกัน */
+const NPI_BUCKET = 'npi-files';
 /** อัปโหลดไฟล์เข้า bucket npi-files → public URL · null = ล้มเหลว (toast แล้ว) */
-export async function uploadNpiFile(folder, file) {
-  if (!file) return null;
-  if (file.size > MAX_MB * 1024 * 1024) { toast.error(`ไฟล์ใหญ่เกิน ${MAX_MB}MB`); return null; }
-  // HEIC/HEIF จากกล้องมือถือ → แปลงเป็น JPEG ก่อน (กฎ storage-images.md: ทุกจุดรับรูปต้องผ่าน toDecodableImage)
-  // แปลงไม่ได้ = หยุดทั้งอัปโหลด + บอกวิธีแก้ — ห้ามส่งไฟล์ HEIC ดิบขึ้นไปเงียบๆ (ใครเปิดก็ดูไม่ได้)
-  if (isHeicFile(file)) {
-    try { file = await toDecodableImage(file); }
-    catch (e) { toast.error(e?.message || 'อ่านไฟล์รูปไม่ได้'); return null; }
-  }
-  /* 🔴 ชนิดไฟล์ตัดสินที่ `utils/imageFileKind.js` จุดเดียว **ห้ามเทียบ `file.type` เองในหน้า**
-     — Android/ตัวจัดการไฟล์ส่ง MIME ว่างมากับรูปจริง ⇒ `type.startsWith('image/')` เป็นเท็จ
-     = ข้ามการบีบทั้งหมด อัปไฟล์ดิบถึง 20MB ขึ้น `npi-files` เงียบๆ (QC audit 20/10)
-     🔴 และ GIF ต้องมีเพดาน 2MB (บีบไม่ได้ — บีบแล้วภาพเคลื่อนไหวหาย · บทเรียน egress 11/09) */
-  if (isGifFile(file) && file.size > GIF_MAX_BYTES) { toast.error(GIF_TOO_BIG_MSG); return null; }
-  let toUpload = file;
-  let ext = (file.name.split('.').pop() || 'bin').toLowerCase();
-  if (looksLikeImage(file) && !isGifFile(file)) {
-    try {
-      // รูปแบบ/หลักฐาน = tier drawing (ต้องซูมอ่านได้) — สเปคเดียวกับ pe-images/qa-drawings
-      const { default: imageCompression } = await import('browser-image-compression');
-      toUpload = await imageCompression(file, { maxSizeMB: 2.5, maxWidthOrHeight: 2560, initialQuality: 0.9, fileType: 'image/jpeg' });
-      ext = 'jpg';
-    } catch { /* บีบไม่ได้ — ส่งไฟล์เดิมภายใต้ cap */ }
-  }
-  const path = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
-  const { error } = await supabase.storage.from('npi-files').upload(path, toUpload, uploadOpts({ upsert: true }));
-  if (error) { toast.error(`อัพโหลดไม่สำเร็จ: ${error.message}`); return null; }
-  return supabase.storage.from('npi-files').getPublicUrl(path).data.publicUrl;
-}
+export const uploadNpiFile = (folder, file) => uploadAttachment(NPI_BUCKET, folder, file);
 /** ลบไฟล์ใน bucket จาก public URL (best-effort) */
-export function removeNpiFile(url) {
-  const p = url?.split('/npi-files/')[1];
-  if (p) supabase.storage.from('npi-files').remove([decodeURIComponent(p)]).catch(() => {});
-}
+export const removeNpiFile = (url) => removeAttachment(NPI_BUCKET, url);
 
-/** ปุ่มเลือกไฟล์ + สถานะกำลังอัป */
-export function FilePick({ onFile, accept = '.pdf,image/*,.xlsx,.docx,.pptx', label = '📎 แนบไฟล์', disabled }) {
-  const [busy, setBusy] = useState(false);
-  return (
-    <label style={{ ...ghost, display: 'inline-block', opacity: disabled || busy ? 0.6 : 1 }}>
-      {busy ? '⏳ กำลังอัป…' : label}
-      <input type="file" accept={accept} disabled={disabled || busy} style={{ display: 'none' }}
-        onChange={async e => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; setBusy(true); try { await onFile(f); } finally { setBusy(false); } }} />
-    </label>
-  );
-}
+/** ปุ่มเลือกไฟล์ + สถานะกำลังอัป (ตัวจริง = components/FilePick.jsx · ที่นี่แค่ผูกสไตล์ ghost ของ NPI) */
+export function FilePick(props) { return <FilePickBase baseStyle={ghost} {...props} />; }
 
-export const fileName = (url) => { try { return decodeURIComponent(url.split('/').pop().split('?')[0]).replace(/^\d+_[a-z0-9]+\./, ''); } catch { return 'ไฟล์'; } };
+export const fileName = attachFileName;
