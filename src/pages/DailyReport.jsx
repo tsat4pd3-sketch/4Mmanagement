@@ -2354,14 +2354,22 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       is_trial:         !!defectForm.is_trial,
       defect_img:       defectImgUrl,
     };
-    const { error } = defectForm.id
-      ? await supabaseDR.from('defect_logs').update(payload).eq('id', defectForm.id)
-      : await supabaseDR.from('defect_logs').insert({
-          ...payload,
-          session_id:       selSession.id,
-          reported_by_name: fullName,
-          reported_by_uid:  user?.id,
-        });
+    /* 🗑️ ขอแถวที่เพิ่งเขียนกลับมาด้วย **รูปทรงเดียวกับ `loadDefectLogs`** — เอาไปเปิดขั้น "ลงถัง" ต่อทันที
+       (โมดัลอ่าน `prod_orders.mat_no/part_name` + `dr_defect_types.name_th` ⇒ ต้อง embed ให้ครบ
+        ประกอบ object เองจาก payload = พลาดง่ายเวลาคนอื่นเพิ่มฟิลด์ทีหลัง) */
+    const INS_SELECT = '*, dr_defect_types(name_th, color, excl_from_q), prod_orders(prod_no, mat_no, part_name)';
+    let inserted = null, error = null;
+    if (defectForm.id) {
+      ({ error } = await supabaseDR.from('defect_logs').update(payload).eq('id', defectForm.id));
+    } else {
+      const res = await supabaseDR.from('defect_logs').insert({
+        ...payload,
+        session_id:       selSession.id,
+        reported_by_name: fullName,
+        reported_by_uid:  user?.id,
+      }).select(INS_SELECT).single();
+      inserted = res.data; error = res.error;
+    }
     setSavingDefect(false);
     if (error) { toast.error(error.message); return; }
     /* 🔴 ลบไฟล์เก่าได้หลังเขียนแถวสำเร็จเท่านั้น (กฎเหล็ก db-write ข้อ 2) */
@@ -2384,6 +2392,19 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     setDefectForm({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false, defect_img: '' });
     setDefectFile(null);
     loadDefectLogs(selSession.id);
+    /* ═══ 🗑️ ต่อขั้น "ของชุดนี้ไปถังไหน" ทันที (2026-11-05 · คำสั่ง user) ═══════════════
+       วัดจริง 90 วัน: บันทึกงานเสีย 252 รายการ (NG 248 · 965 ชิ้น) แต่ **ผูกใบถังแค่ 46 = 18%**
+       ⇒ 82% ของของเสียไม่มีใบถังเลย · ใบถังเหลืองทั้งระบบมีใบเดียว
+       ต้นเหตุไม่ใช่สิทธิ์/ปุ่มหาย — ปุ่ม `🗑️ ลงถัง` อยู่ทุกแถวและใช้สิทธิ์เดียวกับการบันทึกงานเสีย
+       แต่มันเป็น **ขั้นที่ 2 หลังฟอร์มปิดไปแล้ว** · คนที่ทำ ทำทันที (median 9 นาที · 19/51 ใบ ใน 5 นาที)
+       ⇒ ต่อขั้นให้ติดกัน จะเก็บที่หายไปได้
+       🔴 **ยังไม่สร้างใบให้อัตโนมัติ** — โมดัลเปิดมาให้ "คนกดยืนยัน" เหมือนเดิม และกด "ยังไม่ลงถัง"
+          เพื่อข้ามได้ (ของที่ยังไม่ได้เอาลงถังจริง ห้ามบังคับให้ออกใบ · กฎเดิมของโมดูลถังเหลือง-แดง)
+       🔴 เฉพาะ **ตอนเพิ่มใหม่** — ตอนแก้ไขไม่เด้ง (แถวนั้นอาจลงถังไปแล้ว กดเองที่ปุ่มในแถวได้)
+       📄 docs/modules/production-problem-report-bins.md §ต่อขั้นลงถัง */
+    if (inserted && ((inserted.qty_ng || 0) > 0 || (inserted.qty_suspect || 0) > 0)) {
+      setBinTarget({ defect: inserted, existing: null, chained: true });
+    }
   };
 
   const handleDeleteDefectLog = async (id) => {
@@ -4132,6 +4153,21 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       NG: {defectLogs.reduce((s,d)=>s+(d.qty_ng||0),0)} · สงสัย: {defectLogs.reduce((s,d)=>s+(d.qty_suspect||0),0)} · ซ่อม: {defectLogs.reduce((s,d)=>s+(d.qty_repair||0),0)}
                     </span>
                   </div>
+                  {/* 🗑️ งานค้าง "ยังไม่ลงถัง" (05/11) — ข้ามขั้นลงถังได้ แต่ห้ามให้มันหายไปเงียบ
+                      วัดจริง 90 วัน: ของเสีย 252 รายการ ผูกใบถังแค่ 46 (18%) ⇒ อีก 82% ไม่มีใครเห็นว่าค้าง
+                      🔴 นับจาก `binLinks` ที่โหลดมาแล้วเท่านั้น (ไม่ยิง DB เพิ่ม) · 0 = ไม่วาดชิป */}
+                  {(() => {
+                    const pend = defectLogs.filter(d => ((d.qty_ng || 0) > 0 || (d.qty_suspect || 0) > 0)
+                      && !(binLinks[d.id] && (binLinks[d.id].yellow > 0 || binLinks[d.id].red > 0)));
+                    if (!pend.length) return null;
+                    return (
+                      <span title={`ของเสีย ${pend.length} รายการยังไม่มีใบถังเหลือง/แดง — กดปุ่ม 🗑️ ลงถัง ในแถวนั้น`}
+                        style={{ fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', color: 'var(--amber)',
+                          background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 20, padding: '2px 9px' }}>
+                        🗑️ ยังไม่ลงถัง {pend.length}
+                      </span>
+                    );
+                  })()}
                 </div>
                 {defOpen && (<>
                 <div style={DEFECT_GRID}>
@@ -4387,7 +4423,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         {binTarget && (
           <QualityBinLinkModal
             defect={binTarget.defect} session={selSession} actorName={fullName}
-            existing={binTarget.existing}
+            existing={binTarget.existing} chained={!!binTarget.chained}
             onClose={() => setBinTarget(null)}
             onSaved={() => loadDefectLogs(selSession.id)}
           />

@@ -7786,6 +7786,47 @@ test('📤 cross-line-close-guards — ปิดใบข้ามไลน์�
     + '\n\n   ปิดใบผิดไลน์ = ยอด/OEE ของไลน์ที่ไม่เกี่ยวเปลี่ยน โดยไม่มีใครเห็นบนจอ\n');
 });
 
+test('🗑️ defect-to-bin-chained — บันทึกงานเสียแล้วต้องต่อขั้น "ลงถัง" + งานค้างต้องเห็น', () => {
+  /* 05/11 (คำสั่ง user "ข้อมูลไม่ผูกกับใบถังเหลือง/แดง") — วัดจริง 90 วันฝั่ง DR:
+     ของเสีย 252 รายการ (NG 248 · 965 ชิ้น) **ผูกใบถังแค่ 46 = 18%** · ใบถังเหลืองทั้งระบบ 1 ใบ
+     ปุ่ม `🗑️ ลงถัง` มีทุกแถวและสิทธิ์เดียวกับการบันทึกงานเสีย แต่เป็นขั้นที่ 2 หลังฟอร์มปิด
+     ⇒ ต่อขั้นให้ติดกัน (คนยังต้องกดยืนยัน — **ห้ามสร้างใบถังอัตโนมัติ** ตามกฎเดิมของโมดูล)
+     📄 docs/modules/production-problem-report-bins.md */
+  const bad = [];
+  const DR = 'src/pages/DailyReport.jsx';
+  const dr = readFileSync(join(ROOT, DR), 'utf8');
+  const code = stripComments(dr);
+  const fn = code.match(/const\s+handleAddDefectLog\s*=[\s\S]*?\n  \};/);
+  if (!fn) bad.push(`${DR}: หา handleAddDefectLog ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้`);
+  else {
+    const body = fn[0];
+    /* ต้องขอแถวที่เพิ่งเขียนกลับมา ไม่งั้นไม่มี id/embed ให้เปิดโมดัลต่อ */
+    if (!/\.insert\([\s\S]{0,400}\.select\(/.test(body))
+      bad.push(`${DR} handleAddDefectLog: insert ต้อง .select() แถวกลับมา — ไม่งั้นต่อขั้นลงถังไม่ได้`);
+    if (!/setBinTarget\(\s*\{[^}]*chained:\s*true/.test(body))
+      bad.push(`${DR} handleAddDefectLog: บันทึกงานเสียแล้วต้องเปิดขั้นลงถังต่อ (setBinTarget …chained: true)`);
+    /* 🔴 เฉพาะตอนเพิ่มใหม่ — ตอนแก้ไขห้ามเด้ง (แถวนั้นอาจลงถังไปแล้ว) */
+    if (!/if\s*\(\s*inserted\s*&&/.test(body))
+      bad.push(`${DR} handleAddDefectLog: ต้องเด้งเฉพาะตอน insert (ตรวจ \`inserted\`) ไม่ใช่ตอนแก้ไข`);
+  }
+  /* 🔴 ข้ามได้ แต่ของที่ข้ามต้องไม่หายเงียบ — ชิปนับงานค้างบนหัวข้อของเสีย */
+  if (!/ยังไม่ลงถัง \{pend\.length\}/.test(code))
+    bad.push(`${DR}: ต้องมีชิปนับ "🗑️ ยังไม่ลงถัง N" บนหัวข้อบันทึกงานเสีย (ข้ามแล้วห้ามหายเงียบ)`);
+
+  const M = 'src/components/QualityBinLinkModal.jsx';
+  const m = readFileSync(join(ROOT, M), 'utf8');
+  const mcode = stripComments(m);
+  if (!/chained\s*=\s*false/.test(mcode))
+    bad.push(`${M}: ต้องรับ prop \`chained\` (เปิดต่อจากการบันทึกงานเสีย) เพื่อบอกผู้ใช้ว่าเป็นขั้นถัดไป`);
+  if (!/ยังไม่ลงถัง — ไว้ทีหลัง/.test(m))
+    bad.push(`${M}: โหมด chained ต้องมีปุ่มข้ามที่อ่านรู้เรื่อง ("ยังไม่ลงถัง — ไว้ทีหลัง") ห้ามบังคับออกใบ`);
+  /* 🔴 กฎเดิมของโมดูล: ห้ามเขียนใบถังเองโดยไม่มีคนกด — ตัวเขียนต้องอยู่ในโมดัลเท่านั้น */
+  if (/from\('quality_bin_records'\)[\s\S]{0,80}\.insert\(/.test(stripComments(dr)))
+    bad.push(`${DR}: ห้ามเขียน quality_bin_records จากหน้าโดยตรง — "เอาของลงถัง" ต้องมีคนกดยืนยันในโมดัล`);
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   ของเสียที่ไม่มีใบถัง = ของจริงอยู่ในถังแต่ระบบไม่รู้ สืบกลับไม่ได้\n');
+});
+
 test('📊 mat-breakdown-default-collapsed — แท็บ Live ต้องขึ้นภาพรวมก่อน รายชิ้นงานยุบไว้', () => {
   /* 05/11 (คำสั่ง user): *"แยกตามชิ้นงาน default มันเปิดไว้ มันจะรก มันควรจะ default ซ่อนไว้ใน
      ความคืบหน้ารวมทั้งกะ ถ้าจะกดดูรายละเอียดค่อยคลิกจากแถบภาพรวม"*
