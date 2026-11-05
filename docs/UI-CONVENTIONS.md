@@ -1595,7 +1595,9 @@ npx vite --config audit/vite.audit.mjs &        # เปิดค้างที
 >   · **ห้าม `${color}20` ต่อ alpha บน token** (เป็น `var()` ไม่ใช่ hex — ใช้ `-dim`/`-line` แทน)
 > · ยกเว้น: กราฟ/ผังที่ต้องการสีแยกชุด (พาเรโต · QC 7 tools · ไทม์ไลน์ · VSM — ลิสต์ `CHART_FILES` ในด่าน) · `src/lib` ใบพิมพ์
 > · **ด่าน ratchet `colorRatchet.test.mjs`**: จำนวนสีดิบต่อไฟล์ลงได้อย่างเดียว (baseline `fixtures/colorBaseline.json` · รีเฟรชด้วย `node scripts/color-baseline.mjs` หลังไล่สีหน้าเสร็จ) · ไฟล์ใหม่ = 0
-> · ไล่ทีละหน้า: Daily Report (ทำแล้ว 04/11 · 32 เฉด → 0) → Home (ทำแล้ว 04/11) → OBEYA (ทำแล้ว 04/11 · 4 ไฟล์ 150+ จุด → 0 · StatusLamp/WarnNote รับ tone key) → TV
+> · ไล่ทีละหน้า: Daily Report (ทำแล้ว 04/11 · 32 เฉด → 0) → Home (ทำแล้ว 04/11) → OBEYA (ทำแล้ว 04/11) → จอ TV (ทำแล้ว 05/11 · Andon/ไทม์ไลน์/OEE รายไลน์ 250+ จุด → 0)
+> · 🔴 **ของที่รับ `color` แล้วต่อ alpha (`${c}55`) ต้องผ่านตัวแปลง** — ต้นแบบ `tint()` ใน `components/FactoryMiniMap.jsx` (token → `-dim`/`-line` · hex เดิมยังต่อได้) · **SVG `fill` ที่ค่าผิด = ดำทั้งกล่อง** (เจอจริง 05/11 บน Andon)
+> · ยังเป็น hex โดยตั้งใจ (อยู่ใน `utils` ไม่ถูกนับ · รอรอบถัดไป): สเกลสกิล `utils/skillLevels.js` (5 ขั้น = สเกล ไม่ใช่สถานะ) · `ROUTINE_MAP_COLOR` ฟ้าอมเขียวบนผัง (ห้ามชนสีสถานะ — ดูเหตุผลใน `utils/prodRoutine.js`)
 
 ```js
 import { toneOf, toneInk, statusColor } from '../utils/statusTone';
