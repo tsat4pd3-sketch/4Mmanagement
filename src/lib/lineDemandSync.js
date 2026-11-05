@@ -14,6 +14,7 @@ import { SESSION_STATUSES_LIVE } from '../utils/sessionStatus';
 import { madeHereMats } from '../utils/partRefStock';
 import { planLineRequest } from '../utils/packRound';
 import { isCoilUom } from '../utils/coilUom';
+import { planConfirmText } from '../utils/linePlanText';
 import { getActor } from '../utils/actorStamp';
 import { can } from '../utils/permissions';
 
@@ -69,6 +70,28 @@ export async function openDemandMatsByLine(lineNames = []) {
   return new Map(lines.map((l, i) => [l, res[i].error ? null : new Set(res[i].need.keys())]));
 }
 
+const NO_PERM = 'บัญชีนี้ไม่มีสิทธิ์แจ้งสโตร์ (wip_request:decide / wip_request:receive) — ให้หัวหน้าไลน์กด หรือขอสิทธิ์ที่ /permissions';
+/** สิทธิ์ชุดเดียวกับ RLS ของ wip_replenish_requests (Main) */
+export const canNotifyStore = (role) => can('wip_request', 'decide', role) || can('wip_request', 'receive', role)
+  || can('heijunka', 'operate', role) || can('line_levels', 'manage', role);
+
+/**
+ * 💬 คำนวณ → popup ให้คนเห็นก่อน (หน่วย · ของหน้าไลน์ · ขาด · สะสมอีกเท่าไหร่) → ตกลงแล้วค่อยเขียน (05/11 · คำสั่ง user)
+ * ใช้ทั้งตอนเปิดใบผลิต (DailyReport) และตอนกดขอเบิกเอง/แตก BOM (LinePartCallPanel)
+ * @returns ผลแบบ syncLineOrderDemand + `cancelled` (คนกดยกเลิก) / `nothingToSend` (ไม่มีอะไรต้องแจ้ง แสดงให้ดูแล้ว)
+ */
+export async function confirmAndSyncLineDemand({ lineName, role, extra = [], title = '', focus = [],
+  confirmFn = (t) => window.confirm(t), alertFn = (t) => window.alert(t) }) {
+  const empty = { rows: [], inserted: 0, raised: 0, dup: 0, writeErrors: [] };
+  if (!canNotifyStore(role)) return { ...empty, error: NO_PERM };
+  const dry = await syncLineOrderDemand({ lineName, role, extra, dryRun: true });
+  if (dry.error || !dry.rows.length) return dry;
+  const { text, sendCount } = planConfirmText(dry.rows, { title, focus });
+  if (!sendCount) { alertFn(text); return { ...dry, nothingToSend: true }; }
+  if (!confirmFn(text)) return { ...dry, cancelled: true };
+  return syncLineOrderDemand({ lineName, role, extra });
+}
+
 /**
  * @param {{ lineName: string, role: string, extra?: {mat_no, part_name?, need}[], dryRun?: boolean }} a
  *   extra = ที่ไลน์กดขอเพิ่มเอง (แตก BOM แล้ว) — บวกเข้ากับความต้องการจากใบผลิตที่เปิดอยู่
@@ -80,9 +103,8 @@ export async function syncLineOrderDemand({ lineName, role, extra = [], dryRun =
   const empty = { rows: [], inserted: 0, raised: 0, dup: 0, writeErrors: [] };
   if (!line) return { ...empty, error: 'ไม่รู้ไลน์' };
   /* สิทธิ์ชุดเดียวกับ RLS ของ wip_replenish_requests (Main) — ไม่มี = ไม่เขียน + บอกตรงๆ (ห้ามปล่อยให้ได้ error ดิบ) */
-  const canWrite = can('wip_request', 'decide', role) || can('wip_request', 'receive', role)
-    || can('heijunka', 'operate', role) || can('line_levels', 'manage', role);
-  if (!dryRun && !canWrite) return { ...empty, error: 'บัญชีนี้ไม่มีสิทธิ์แจ้งสโตร์ (wip_request:decide / wip_request:receive) — ให้หัวหน้าไลน์กด หรือขอสิทธิ์ที่ /permissions' };
+  const canWrite = canNotifyStore(role);
+  if (!dryRun && !canWrite) return { ...empty, error: NO_PERM };
 
   // 1-2) ใบผลิตที่เปิดอยู่ → แตก BOM ลูกตรง (ชุดเดียวกับตอนตัดสต็อก)
   const od = await loadOpenOrderDemand(line);
