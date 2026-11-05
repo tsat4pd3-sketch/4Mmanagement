@@ -32,6 +32,9 @@ import SimpleMasterPanel from '../components/SimpleMasterPanel';
 import SupplierSelect from '../components/SupplierSelect';
 import { invalidateCustomers } from '../utils/useCustomers';
 import { SUPPLIER_KINDS, invalidateSuppliers } from '../utils/useSuppliers';
+import { useUomUnitsState, invalidateUomUnits } from '../utils/useUomUnits'; // 📏 ทะเบียนหน่วยนับ (05/11)
+import { buildUomIndex, normUom, uomOptions, DEFAULT_UOM } from '../utils/uom';
+import { registryFailText } from '../utils/useMasterRows.js';
 
 import InfoMore from '../components/InfoMore';
 import BomTreeView from '../components/BomTreeView';
@@ -264,6 +267,9 @@ function ReadyChips({ ready, onGo, compact }) {
 }
 
 export default function ProductMaster() {
+  /* 📏 ทะเบียนหน่วยนับ — ทุกจุดที่เขียนหน่วยลงฐานผ่าน normUom (EA/pcs → PC · utils/uom.js) */
+  const uomState = useUomUnitsState();
+  const uomIdx = useMemo(() => buildUomIndex(uomState.rows), [uomState.rows]);
   // ทะเบียนเอกสาร — ชื่อไฟล์ CSV อ่านเลขฟอร์มจาก cache นี้ (lazy chunk ต้องโหลดเอง)
   useEffect(() => { loadDocForms(); }, []);
   const { role, fullName, isDeptAdmin, section: homeSection, sections: scopeSecs,
@@ -279,7 +285,7 @@ export default function ProductMaster() {
      ⚠️ ห้ามตั้งชื่อตัวแปรท้องถิ่นว่า `canDelete` อีก — มีด่าน `no-shadow-candelete` */
   const mayDelete = canDeleteUtil('products', 'create', role);
   // ผูกแท็บกับ URL ตาม UI-CONVENTIONS §6.8 (2026-08-20 — worklist ใน /vsm ต้อง deep-link มาที่ ?tab=routing ได้)
-  const [mainTab, setMainTab] = useTabParam(['products', 'bom', 'bomdup', 'phantom', 'packaging', 'parts', 'kanban', 'routing', 'ct', 'customers', 'suppliers', 'export'], 'products');
+  const [mainTab, setMainTab] = useTabParam(['products', 'bom', 'bomdup', 'phantom', 'packaging', 'parts', 'kanban', 'routing', 'ct', 'customers', 'suppliers', 'uom', 'export'], 'products');
   /* 🧩 เด้งไปแท็บ BOM แล้วเลือกแถวนั้นให้เลย (?tab=bom&mat=…) — ลิสต์ BOM ยาว 100+ แถว
      บอกให้ "ไปหาเอง" = คนไม่ไป (บทเรียนเดียวกับ worklist ที่ต้องกดได้ ไม่ใช่แค่บอกว่ามีปัญหา) */
   const [searchParams, setSearchParams] = useSearchParams();
@@ -865,7 +871,7 @@ export default function ProductMaster() {
         const ex = existingByMat.get(r.mat_no);
         return {
           mat_no: r.mat_no, part_name: r.part_name,
-          part_no: r.part_no || null, uom: r.uom || 'EA',
+          part_no: r.part_no || null, uom: normUom(r.uom, uomIdx) || DEFAULT_UOM,
           qty_per_pkg: r.qty_per_pkg ? Number(r.qty_per_pkg) : null,
           supplier: r.supplier || null, note: r.note || null, is_active: true,
           material_cost: costVal(r.material_cost, ex?.material_cost),
@@ -904,7 +910,7 @@ export default function ProductMaster() {
         </>}
         tabs={[{ key:'parts', label:'1️⃣ 🗂 Parts Master' }, { key:'bom', label:'2️⃣ 📦 BOM' }, { key:'bomdup', label:'🔁 BOM ซ้ำ 2 ใบ' }, { key:'phantom', label:'🫧 ของลม (phantom)' }, { key:'products', label:'3️⃣ 🔩 Products' },
           { key:'routing', label:'🔀 Routing' }, { key:'packaging', label:'📦 Packaging' }, { key:'kanban', label:'🎴 Kanban Std' },
-          { key:'customers', label:'🏷️ ลูกค้า' }, { key:'suppliers', label:'🏭 Supplier' },
+          { key:'customers', label:'🏷️ ลูกค้า' }, { key:'suppliers', label:'🏭 Supplier' }, { key:'uom', label:'📏 หน่วยนับ' },
           { key:'ct', label:'⏱ ทบทวน CT' }, { key:'export', label:'📤 Export' }]}
         tab={mainTab} onTab={setMainTab} />
 
@@ -1633,6 +1639,21 @@ export default function ProductMaster() {
             { key: 'note', label: 'หมายเหตุ' },
           ]} />
       )}
+      {/* 📏 ทะเบียนหน่วยนับ (05/11 · คำสั่ง user) — parts_master.uom / bom_items.uom / material_request_items.unit
+          เก็บ code (text ไม่ผูก FK) · alias = สะกดอื่นที่ import แม็ปเข้ารหัสนี้ (EA/pcs → PC) · กฎ `utils/uom.js` */}
+      {mainTab === 'uom' && (
+        <SimpleMasterPanel client={supabaseDR} table="uom_units" keyCol="code" canManage={canEdit}
+          onBeforeDelete={masterDeleteGuard(supabaseDR, 'uom_units')}
+          stampCol="updated_by_name" stampName={fullName} onChanged={invalidateUomUnits}
+          title="📏 ทะเบียนหน่วยนับ (UOM)"
+          help="ใช้กับช่องหน่วยใน Parts Master · นำเข้า BOM จาก SAP · ใบเบิกวัสดุ — คอลัมน์ปลายทางเก็บรหัสนี้เป็น text · สะกดอื่น (เช่น EA, PCS ของ PC) ถูกแม็ปเข้ารหัสหลักตอนบันทึก/นำเข้า"
+          /* รหัสกรอกเอง (PC/KG…) — DB บังคับตัวพิมพ์ใหญ่ไม่มีช่องว่าง (CHECK uom_units_code_upper) */
+          fields={[
+            { key: 'name', label: 'ชื่อหน่วย', required: true },
+            { key: 'aliases', label: 'สะกดอื่นที่แม็ปเข้ารหัสนี้', type: 'tags', placeholder: 'คั่นด้วย , เช่น EA, PCS' },
+            { key: 'note', label: 'หมายเหตุ' },
+          ]} />
+      )}
       {mainTab === 'export' && <ExportPanel />}
 
       {/* ════ CSV Preview / Duplicate Detection Modal ════ */}
@@ -1752,6 +1773,9 @@ const TD = ({ children, style }) => (
 );
 
 function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
+  /* 📏 ทะเบียนหน่วยนับ — ทุกจุดที่เขียนหน่วยลงฐานผ่าน normUom (EA/pcs → PC · utils/uom.js) */
+  const uomState = useUomUnitsState();
+  const uomIdx = useMemo(() => buildUomIndex(uomState.rows), [uomState.rows]);
   const isMobile = useIsMobile(); // ≤768px: two-pane ยุบเป็นคอลัมน์เดียว (desktop ไม่เปลี่ยน)
   const plLines = useProductionLines(); // ทะเบียนไลน์ (LINE_COLUMNS) สำหรับ <LineSelect> ช่อง source_line (2026-09-07)
   const [products, setProducts]     = useState([]);
@@ -1898,7 +1922,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
       .filter(pr => pr.mat_no && !pr._op && !inPm.has(k(pr.mat_no)) && pr.id !== selProduct?.id)
       .map(pr => ({
         id: `made:${pr.id}`, mat_no: pr.mat_no, part_name: pr.name || '',   // 🔴 ไม่มีชื่อ = ว่าง ห้ามเติมเลข MAT แทนชื่อ (ด่าน regressionGuards)
-        part_no: pr.p_no || '', supplier: pr.customer || '', uom: 'pcs', qty_per_pkg: null,
+        part_no: pr.p_no || '', supplier: pr.customer || '', uom: DEFAULT_UOM, qty_per_pkg: null,
         _made: true,                       // ← ยังไม่อยู่ในทะเบียน ลงให้ตอนบันทึก
       }));
     return [...partsMaster, ...made];
@@ -2000,7 +2024,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
     if (!f) return;
     setSapBusy(true);
     let parsed;
-    try { parsed = parseSapBom(decodeSapExport(await f.arrayBuffer())); }
+    try { parsed = parseSapBom(decodeSapExport(await f.arrayBuffer()), { uomIndex: uomIdx }); }
     catch (err) { setSapBusy(false); toast.error(`อ่านไฟล์ไม่สำเร็จ: ${err?.message || err}`); return; }
     if (!parsed.rows.length) { setSapBusy(false); toast.error(parsed.warnings[0] || 'ไม่พบบรรทัด component ในไฟล์นี้'); return; }
 
@@ -2022,7 +2046,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
     if (error) { toast.error(`อ่าน BOM เดิมไม่สำเร็จ: ${error.message}`); return; }
 
     const opMap = opInfoSync();
-    const diff = diffSapBom(parsed.rows, curRows || [], { isOpMat: (m) => !!opMap[m] });
+    const diff = diffSapBom(parsed.rows, curRows || [], { isOpMat: (m) => !!opMap[m], uomIndex: uomIdx });
     const miss = missingInPartsMaster(parsed.rows, partsMaster.map(x => x.mat_no));
 
     /* 🏷️ เสนอ Part No. จากข้อความชื่อ — เรียนคำนำหน้าจากทะเบียนจริงทั้ง 2 ฝั่ง ไม่ hardcode
@@ -2307,7 +2331,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
         part_no:      x.part.part_no || null,
         qty_per_unit: parseFloat(x.qty_per_unit),
         qty_per_pkg:  x.part.qty_per_pkg || null,
-        uom:          x.part.uom || 'pcs',
+        uom:          normUom(x.part.uom, uomIdx) || DEFAULT_UOM,
         supplier:     x.part.supplier || null,
         item_no:      (() => { const v = seq; seq = Math.min(9999, seq + 10); return v; })(),
         created_by:   fullName,
@@ -2335,7 +2359,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
     const newToRegister = pickerSel
       .filter(x => x.part._made && rows.some(r => r.mat_no === x.part.mat_no))
       .map(x => ({ mat_no: x.part.mat_no, part_name: x.part.part_name, part_no: x.part.part_no || null,
-                   uom: x.part.uom || 'pcs', supplier: x.part.supplier || null,
+                   uom: normUom(x.part.uom, uomIdx) || DEFAULT_UOM, supplier: x.part.supplier || null,
                    is_active: true, created_by: fullName }));
     if (newToRegister.length) {
       const { error: pmErr } = await supabaseDR.from('parts_master')
@@ -3302,10 +3326,8 @@ function ExportPanel() {
    (1=FG · 2=Child ผลิตเอง · 3=Child ซื้อนอก · 5=Raw · 9=เลขภายใน)
    ⚠️ ห้ามกลับไปเทียบ 3 ตัวแรก — เลข FG รันทะลุ 100xxxxx ไปเป็น 101xxxxx แล้ว
 ═══════════════════════════════════════════════════════════════ */
-/* หน่วยนับของฟอร์ม Parts Master — ยังไม่มีทะเบียน UOM (ค่าเดิมนอกลิสต์โชว์ในช่องเป็น "ค่าเดิม") */
-const UOM_OPTIONS = ['EA', 'PC', 'KG', 'M', 'SET', 'BOX', 'ROLL'];
 const EMPTY_PART = {
-  mat_no: '', part_name: '', part_no: '', uom: 'EA',
+  mat_no: '', part_name: '', part_no: '', uom: DEFAULT_UOM,
   qty_per_pkg: '', supplier: '', note: '', is_active: true, image_url: '',
   // ต้นทุน/ชิ้น (cost saving ใน /improvements · 2026-08-11): standard_cost (บช. รวม mat+DL+OH+DP) ชนะ material_cost เสมอ
   material_cost: '', standard_cost: '',
@@ -3314,6 +3336,9 @@ const EMPTY_PART = {
 const MAT_PREFIXES = MAT_CLASSES.map(c => ({ prefix: c.digit, label: `${c.digit}xxxxxxx — ${c.label}`, color: c.color }));
 
 function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadKey }) {
+  /* 📏 ทะเบียนหน่วยนับ — ทุกจุดที่เขียนหน่วยลงฐานผ่าน normUom (EA/pcs → PC · utils/uom.js) */
+  const uomState = useUomUnitsState();
+  const uomIdx = useMemo(() => buildUomIndex(uomState.rows), [uomState.rows]);
   const [parts, setParts]         = useState([]);
   const [search, setSearch]       = useState('');
   const [prefixFilter, setPFilter] = useState('');
@@ -3444,7 +3469,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
       }
       const payload = {
         mat_no: form.mat_no.trim(), part_name: form.part_name.trim(),
-        part_no: (form.part_no || '').trim() || null, uom: (form.uom || '').trim() || 'EA',
+        part_no: (form.part_no || '').trim() || null, uom: normUom(form.uom, uomIdx) || DEFAULT_UOM,
         qty_per_pkg: form.qty_per_pkg !== '' ? Number(form.qty_per_pkg) : null,
         supplier: (form.supplier || '').trim() || null, note: (form.note || '').trim() || null,
         is_active: form.is_active, image_url: imageUrl,
@@ -3700,12 +3725,11 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
                   <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>UOM</label>
-                  <select style={inputSt} value={form.uom} onChange={e => setForm(f => ({ ...f, uom: e.target.value }))}>
-                    {/* ค่าเดิมที่ไม่อยู่ในลิสต์ (เช่น `pcs` 10 แถวใน parts_master) ต้องโชว์ตามจริง — ไม่งั้นช่องขึ้น "EA"
-                        ทั้งที่ฐานเก็บค่าอื่น = จอโกหก (05/11 audit dropdown) · ยังไม่มีทะเบียน UOM */}
-                    {form.uom && !UOM_OPTIONS.includes(form.uom) && <option value={form.uom}>{form.uom} (ค่าเดิม · ไม่อยู่ในลิสต์)</option>}
-                    {UOM_OPTIONS.map(u => <option key={u}>{u}</option>)}
+                  <select style={inputSt} value={form.uom || ''} onChange={e => setForm(f => ({ ...f, uom: e.target.value }))}>
+                    {/* ลิสต์จากทะเบียน `uom_units` (/products แท็บ 📏 หน่วยนับ) · ค่าเดิมนอกทะเบียนโชว์เป็น "ค่าเดิม" ไม่ขึ้นตัวแรกแทน */}
+                    {uomOptions(uomIdx, form.uom).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
+                  {uomState.failed && <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>{registryFailText('ทะเบียนหน่วยนับ', uomState.stale)}</div>}
                 </div>
                 <div>
                   <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Qty / Packaging</label>

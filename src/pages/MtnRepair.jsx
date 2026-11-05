@@ -29,6 +29,8 @@ import { findOpenOnMachine, dupLevel } from '../utils/mtnDuplicate';
 import { moFormatHint, moMonthKeyOf, moNoOf, moSeqKeyOf } from '../utils/moNumber';
 /* ⏳ ใบค้างขั้นเดิม — สูตร "ค้างกี่วัน/ขั้นไหน" อยู่ที่นี่ที่เดียว ห้ามนับวันในหน้า (13/10) */
 import { buildMoStaleBoard } from '../utils/mtnStale';
+/* 🏃 แผงไล่งาน — "ใบค้างนี้รอใครลงมือ" (05/11) · กฎการแบ่งฝั่ง/หาเป้าอยู่ util ที่เดียว */
+import { buildMoChaseBoard } from '../utils/moChase';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions, teamRowOwner, teamRowLockNote, canWriteTeam, teamBlockText } from '../utils/mtnTeams';
@@ -71,6 +73,10 @@ import { moNoteCheck, MO_NOTE_HINT } from '../utils/moNoteQuality';
 import useTabParam, { useMergeParams } from '../utils/useTabParam';
 
 import InfoMore from '../components/InfoMore';
+import OverflowMenu from '../components/OverflowMenu';   // ⋯ ปุ่มตายตัว ≤2 ที่เหลือเข้าเมนู (UI §6.35)
+import NoticeBar from '../components/NoticeBar';         // แถบแจ้งแถบเดียวต่อเรื่อง (UI §6.35)
+import Icon, { stripIcon } from '../components/Icon';          // ตัด emoji นำหน้าป้ายที่จุดวาด (UI §6.36)
+import { toneVar, toneDim, toneLine } from '../utils/statusTone';   // สี = ความหมาย ผ่าน token (UI §6.17)
 import SearchSelect from '../components/SearchSelect';
 // picker กลาง (single-source audit 2026-09-07) — ไลน์/เครื่อง/คน/ลูกค้า อ่านจากทะเบียน ห้ามพิมพ์เองเงียบๆ
 import LineSelect, { scopeLines as pickerLines } from '../components/LineSelect';
@@ -172,6 +178,15 @@ const NAME_CASCADE = {
    (`transferred` หลุดมาจริง: ไม่มีตัวเลือกใน dropdown ฟิลเตอร์ + การ์ดขึ้นสีแดงขั้น 1)
    **ห้ามเขียนตารางสถานะกลับมาที่นี่อีก** · dropdown ฟิลเตอร์สร้างจาก STATUS_META ที่ import มา */
 const statusMetaOf = moStatusMeta;   // สี/ขั้นจากตาราง + ป้ายจาก moStatusLabel() เสมอ
+/* 🎨 ชิปสถานะในหน้านี้วาดด้วยพาเลต 5 สี (05/11 · UI §6.17): แดง = รอรับงาน (ยังไม่มีใครถือ) · อำพัน = อยู่ระหว่างทำ/ตีกลับ ·
+   ฟ้า = รออนุมัติปิด/ส่งต่อ · เขียว = ปิดแล้ว · เทา = ยกเลิก — `MO_STATUS_META.color` (hex) ยังอยู่ให้จออื่นที่ยังไม่ได้ไล่ */
+const STATUS_TONE = { pending: 'bad', assigned: 'warn', repairing: 'warn', repaired: 'warn', checked: 'warn', qa: 'warn',
+  handover: 'info', closed: 'good', returned: 'warn', rejected: 'none', transferred: 'info' };
+const statusChipStyle = (o) => {
+  const t = STATUS_TONE[String(o?.status || '').trim()] || 'none';
+  return { fontSize: 11.5, fontWeight: 700, color: toneVar(t), background: toneDim(t), border: `1px solid ${toneLine(t)}`,
+    borderRadius: 20, padding: '2px 9px', whiteSpace: 'nowrap' };
+};
 
 /* 🔴🔴 คอลัมน์ที่ "จอรายการ" ใช้จริง — ห้ามกลับไปเป็น `select('*')` (2026-09-17 · งานลด egress)
    `mtn_orders` มี **116 คอลัมน์** · วัดจริง 16/09: `select('*')&limit=1000` = **1.59 MB/ครั้ง**
@@ -228,9 +243,9 @@ const SAT_DIMS = [
   { key: 'readiness',  label: 'ความกระตือรือร้น' },
 ];
 const SAT_LEVELS = [
-  { v: 1, t: 'พอใช้',   color: '#94a3b8' },
-  { v: 2, t: 'ปานกลาง', color: '#f59e0b' },
-  { v: 3, t: 'ดี',      color: '#22c55e' },
+  { v: 1, t: 'พอใช้',   color: 'var(--muted)' },
+  { v: 2, t: 'ปานกลาง', color: 'var(--amber)' },
+  { v: 3, t: 'ดี',      color: 'var(--green)' },
 ];
 const satLabel = (v) => (SAT_LEVELS.find(l => l.v === Number(v)) || {}).t || '-';
 const satAvg = (s) => { if (!s) return null; const vs = SAT_DIMS.map(d => Number(s[d.key])).filter(v => v >= 1 && v <= 3); return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null; };
@@ -302,8 +317,8 @@ function SignField({ signatureUrl, existing, onChange }) {
   return (
     <div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
-        {signatureUrl && <button type="button" onClick={() => setMode('profile')} style={{ ...(mode === 'profile' ? btnPri : btnGhost), padding: '5px 12px', fontSize: 12 }}>✔ ใช้ลายเซ็นของฉัน</button>}
-        <button type="button" onClick={() => setMode('draw')} style={{ ...(mode === 'draw' ? btnPri : btnGhost), padding: '5px 12px', fontSize: 12 }}>✏️ เซ็นใหม่</button>
+        {signatureUrl && <button type="button" onClick={() => setMode('profile')} style={{ ...(mode === 'profile' ? btnPri : btnGhost), padding: '5px 12px', fontSize: 12 }}>ใช้ลายเซ็นของฉัน</button>}
+        <button type="button" onClick={() => setMode('draw')} style={{ ...(mode === 'draw' ? btnPri : btnGhost), padding: '5px 12px', fontSize: 12 }}>เซ็นใหม่</button>
         {existing && mode !== 'draw' && !signatureUrl && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ใช้ลายเซ็นเดิม</span>}
       </div>
       {mode === 'profile'
@@ -318,7 +333,7 @@ function SignField({ signatureUrl, existing, onChange }) {
 function ImgField({ label, value, onPick, required }) {
   return (
     <div>
-      <label style={lbl}>{label}{required && <span style={{ color: '#ef4444' }}> *</span>}</label>
+      <label style={lbl}>{label}{required && <span style={{ color: 'var(--red)' }}> *</span>}</label>
       {value && <img src={value} alt="" style={{ display: 'block', maxHeight: 120, borderRadius: 8, border: '1px solid var(--border)', marginBottom: 6 }} />}
       {/* reset value เสมอ — ไม่งั้นเลือก "รูปเดิม" ซ้ำแล้ว change ไม่ยิง (feedback 2026-09-08 "รูปเดิมก็ลงไม่ได้") */}
       <input type="file" accept="image/*" onChange={async e => { const p = e.target.files?.[0]; e.target.value = ''; const f = await acceptImageFile(p); if (f) onPick(f); }} style={{ fontSize: 12 }} />
@@ -355,7 +370,7 @@ function ModalShell({ title, onClose, children, wide, dirty }) {
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: wide ? 'min(96vw, 1200px)' : 'min(96vw, 640px)', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, background: 'var(--card)', zIndex: 1 }}>
           <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{title}</div>
-          <button onClick={askClose} style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+          <button onClick={askClose} aria-label="ปิด" style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
         </div>
         <div style={{ padding: 18 }}>{children}</div>
       </div>
@@ -363,7 +378,7 @@ function ModalShell({ title, onClose, children, wide, dirty }) {
   );
 }
 const Field = ({ label, required, children }) => (
-  <div><label style={lbl}>{label}{required && <span style={{ color: '#ef4444' }}> *</span>}</label>{children}</div>
+  <div><label style={lbl}>{label}{required && <span style={{ color: 'var(--red)' }}> *</span>}</label>{children}</div>
 );
 const DateField = ({ label, value, onChange, required }) => (
   <Field label={label} required={required}>
@@ -716,7 +731,9 @@ export default function MtnRepair() {
       { key: 'repair', label: 'ประเภทงานซ่อม', value: fRepairType, on: !!fRepairType,
         test: o => (o.repair_type || '') === fRepairType },
       { key: 'text', label: 'คำค้น', value: fText.trim(), on: !!t,
-        test: o => [o.mo_no, o.machine_no, o.item_type, o.problem_characteristic, o.report_note, o.line_name, o.reported_by_name, o.reporter_prod].some(v => (v || '').toLowerCase().includes(t)) },
+        /* 🔴 `assigned_to` อยู่ในช่องค้นหาด้วย (05/11) — แถบไล่งานกดชื่อช่างแล้วกรองด้วยคำค้น
+           ถอดออก = ชิปช่างกดแล้วไม่มีอะไรเกิดขึ้น (ด่าน mo-chase-search-covers-tech) */
+        test: o => [o.mo_no, o.machine_no, o.item_type, o.problem_characteristic, o.report_note, o.line_name, o.reported_by_name, o.reporter_prod, o.assigned_to].some(v => (v || '').toLowerCase().includes(t)) },
     ];
   }, [scopeLines, scopeSecs, fStatus, fLine, fDept, fShift, fRepairType, fText, lines, knownLineNames]);
 
@@ -892,6 +909,15 @@ export default function MtnRepair() {
     teamOf: (o) => teamKeyOf(o.mtn_dept || deptForItem(o.item_type)) || '',
   }), [scopedOrders, ordersAt]);
 
+  /* 🏃 แผงไล่งานของหัวหน้าช่าง (05/11 · คำสั่ง user "ทำแผงไล่ MO ค้างให้หัวหน้าช่าง")
+     🔴 ฐานเดียวกับ `staleBoard` เป๊ะ (`scopedOrders` + `ordersAt`) — คนละฐาน = 2 เลขบนแผงเดียวกัน
+     🔴 ไม่ยิงคิวรีเพิ่ม · สูตรทั้งหมดอยู่ `utils/moChase.js` ห้ามตัดสินฝั่ง/นับวันในหน้านี้ */
+  const chaseBoard = useMemo(() => buildMoChaseBoard(scopedOrders, {
+    now: ordersAt,
+    teamOf: (o) => teamKeyOf(o.mtn_dept || deptForItem(o.item_type)) || '',
+    teamName: deptNameOf,
+  }), [scopedOrders, ordersAt]);
+
   /* 📊 first-response ของช่างฝ่ายผลิต — "เข้าไป action แล้วแก้เองได้กี่ครั้ง / ส่งต่อกี่ครั้ง"
      (คำสั่ง user 2026-09-14: "เก็บเป็นประวัติไว้ว่าเข้าไป action ก่อนแล้วกี่ครั้ง ทำเองได้/ไม่ได้กี่ครั้ง")
      นับเฉพาะใบที่**ลงมือจริงแล้ว** (มี repair_done_at = ผ่านขั้น 3) — ใบที่ยังไม่มีใครแตะไม่ใช่ first-response
@@ -936,8 +962,8 @@ export default function MtnRepair() {
     <Page>
       <PageHeader
         title="แจ้งซ่อม MTN (MO)" icon="🛠️"
-        sub={<>ค้างดำเนินการ <b style={{ color: openCount ? '#ef4444' : '#22c55e' }}>{openCount}</b> ใบ
-          {firstResp.total > 0 && <> · 🔧 ช่างฝ่ายผลิตแก้เองจบ <b style={{ color: firstResp.pct >= 60 ? '#22c55e' : '#f59e0b' }}>{firstResp.pct}%</b>
+        sub={<>ค้างดำเนินการ <b style={{ color: openCount ? 'var(--red)' : 'var(--green)' }}>{openCount}</b> ใบ
+          {firstResp.total > 0 && <> · ช่างฝ่ายผลิตแก้เองจบ <b style={{ color: firstResp.pct >= 60 ? 'var(--green)' : 'var(--amber)' }}>{firstResp.pct}%</b>
             <span style={{ color: 'var(--muted)' }}> ({firstResp.passed} ใบ · ส่งต่อช่างเฉพาะทาง {firstResp.sent} ใบ)</span></>}</>}
         tabs={TAB_DEFS} tab={tab} onTab={setTab}
       />
@@ -949,15 +975,15 @@ export default function MtnRepair() {
           scale={tr.scale} from={tr.from} to={tr.to} today={tr.today}
           onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} onView={tr.setView}
           scales={null} periods={['day', 'week', 'month', 'year']} finest="hour"
-          note={<>📅 วันของใบ = <b>วันทำงาน</b> (ก่อน 08:00 นับเป็นวันก่อนหน้า) · กะอนุมานจาก
-            <b> เวลาที่กดแจ้ง</b> (เช้า 08:00–19:59 · ดึก 20:00–07:59) — ใบที่แจ้งย้อนหลังจะตกกะตามเวลาที่กด ไม่ใช่กะที่เครื่องเสียจริง</>}
+          note={<InfoMore id="mo-date-rule" label="วันของใบ / กะ นับอย่างไร">วันของใบ = <b>วันทำงาน</b> (ก่อน 08:00 นับเป็นวันก่อนหน้า) · กะอนุมานจาก
+            <b> เวลาที่กดแจ้ง</b> (เช้า 08:00–19:59 · ดึก 20:00–07:59) — ใบที่แจ้งย้อนหลังจะตกกะตามเวลาที่กด ไม่ใช่กะที่เครื่องเสียจริง</InfoMore>}
         >
           <select value={fDept} onChange={e => setFDept(e.target.value)}><option value="">{ALL.unit}</option><TeamOpts list={mtnDepts} /></select>
           {/* dropdown ไลน์ = <LineSelect> เท่านั้น (UI-CONVENTIONS §5.3 ข้อ 9) — scopedLineObjs กรอง scope ไว้แล้ว · 2026-09-07 */}
           <LineSelect lines={scopedLineObjs} value={fLine} onChange={setFLine} placeholder={ALL.line} />
           <select value={fStatus} onChange={e => setFStatus(e.target.value)}>
-            <option value="all">{ALL.status}</option><option value="open">🔵 ยังไม่ปิด</option>
-            {Object.entries(STATUS_META).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
+            <option value="all">{ALL.status}</option><option value="open">ยังไม่ปิด</option>
+            {Object.entries(STATUS_META).map(([k, m]) => <option key={k} value={k}>{stripIcon(m.label)}</option>)}
           </select>
           {/* กะ = 3 ตัวเลือก ⇒ <Segmented> ไม่ใช่ dropdown (UI-STANDARD §3) */}
           <Segmented value={fShift} onChange={setFShift} label="กะที่แจ้ง" options={SHIFT_OPTIONS} />
@@ -975,70 +1001,60 @@ export default function MtnRepair() {
           </select>
           {/* 🛒 งาน PR (20/10) — ตัวเลขในวงเล็บนับหลังตัวกรองอื่น (ยกเว้นตัวนี้เอง) · สถานะคิดที่ `prQueueStateOf()` */}
           <select value={fPr} onChange={e => setFPr(e.target.value)} aria-label="งาน PR"
-            style={prCounts.waiting && !fPr ? { borderColor: '#f59e0b', color: '#f59e0b', fontWeight: 700 } : undefined}>
+            style={prCounts.waiting && !fPr ? { borderColor: 'var(--amber)', color: 'var(--amber)', fontWeight: 700 } : undefined}>
             <option value="">{allOf('งาน PR')}</option>
             {/* ตัวรวมไม่โชว์ในลิสต์ — ยกเว้นตอนที่ถูกเลือกอยู่จริง (มาจากลิงก์กระดิ่ง) ไม่งั้นช่องจะว่างทั้งที่กรองอยู่ */}
             {PR_FILTERS.filter(x => !x.hidden || x.v === fPr).map(x => <option key={x.v} value={x.v}>{x.label} ({prCounts[x.v] ?? 0})</option>)}
           </select>
-          <SearchInput value={fText} onChange={setFText} fields="เลข MO / เครื่อง / ปัญหา / ชื่อผู้แจ้ง" />
+          <SearchInput value={fText} onChange={setFText} fields="เลข MO / เครื่อง / ปัญหา / ชื่อผู้แจ้ง / ช่างที่รับงาน" />
           <span className="spacer" />
           <span className="filter-count">{shown.length} รายการ</span>
           {prIgnoresDate && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>· งาน PR แสดงทุกช่วงเวลา (ไม่ตัดตามวันที่)</span>}
-          {fPr && openPrs.error && <span style={{ fontSize: 11.5, color: '#ef4444' }}>⚠ โหลดใบขอซื้อไม่สำเร็จ — ตัวกรองงาน PR อาจไม่ครบ</span>}
+          {fPr && openPrs.error && <span data-warn="1" style={{ fontSize: 11.5, color: 'var(--red)' }}>⚠ โหลดใบขอซื้อไม่สำเร็จ — ตัวกรองงาน PR อาจไม่ครบ</span>}
           {/* ⬇️ Export ข้อมูล MO ของช่วงที่เลือก (06/10 · user: "ยังไม่มีระบบ export data ของ mo
               ที่เกิดขึ้นในแต่ละช่วงเดือน" — เดิมมีแต่พิมพ์ใบทีละใบ)
               ส่ง `shown` = ใบที่เห็นบนจอจริง ⇒ ไฟล์ตรงกับที่คนกรองไว้ ไม่ใช่ทั้งฐาน */}
-          <button onClick={doExport} disabled={exporting || !shown.length}
+          {/* ปุ่มตายตัว 2 ปุ่มของหน้า (UI §6.35): Excel · แจ้งซ่อมใหม่ */}
+          <button type="button" className="pg-btn" onClick={doExport} disabled={exporting || !shown.length}
             title={shown.length ? `ออกไฟล์ Excel ${shown.length} ใบ ตามช่วง/ตัวกรองที่เลือกอยู่` : 'ไม่มีใบในช่วง/ตัวกรองที่เลือก'}
-            style={{ ...btnGhost, height: 'var(--ctl-h)', padding: '0 13px', fontSize: 'var(--ctl-fs)',
-              opacity: (exporting || !shown.length) ? 0.5 : 1, cursor: (exporting || !shown.length) ? 'not-allowed' : 'pointer' }}>
-            {exporting ? '⏳ กำลังทำไฟล์…' : '⬇️ Excel'}
+            style={{ height: 'var(--ctl-h)', opacity: (exporting || !shown.length) ? 0.5 : 1, cursor: (exporting || !shown.length) ? 'not-allowed' : 'pointer' }}>
+            {exporting ? 'กำลังทำไฟล์…' : 'Excel'}
           </button>
-          {can('mtn_repair', 'report', role) && <button onClick={() => setShowReport(true)} style={{ ...btnPri, height: 'var(--ctl-h)', padding: '0 16px', fontSize: 'var(--ctl-fs)' }}>➕ แจ้งซ่อมใหม่</button>}
+          {can('mtn_repair', 'report', role) && <button type="button" className="pg-btn primary" onClick={() => setShowReport(true)} style={{ height: 'var(--ctl-h)' }}>+ แจ้งซ่อมใหม่</button>}
         </TimeRangeBar>
         {ordersErr && (
-          <div role="alert" style={{ fontSize: 12.5, fontWeight: 700, color: '#ef4444', border: '1px solid #ef4444', borderRadius: 8, padding: '7px 11px', marginBottom: 10 }}>
-            ⚠️ โหลดรายการใบซ่อมไม่สำเร็จ: {ordersErr} — รายการด้านล่างอาจไม่ใช่ข้อมูลล่าสุด
-          </div>
+          <NoticeBar tone="bad" style={{ marginBottom: 10 }}><b>โหลดรายการใบซ่อมไม่สำเร็จ:</b> {ordersErr} — รายการด้านล่างอาจไม่ใช่ข้อมูลล่าสุด</NoticeBar>
         )}
         {/* ✍️ มาจากป้าย "รอคุณเซ็นรับทราบ" ในคิวงาน — ต้องเขียนบนจอว่ากำลังกรองอะไรอยู่
                (กฎ: กรองแถวออกแล้วต้องบอก · ไม่งั้นคนอ่านว่าใบหายไปไหนหมด) */}
         {fAck === 'pending' && (
-          <div style={{ fontSize: 12, color: 'var(--text2)', background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.40)', borderRadius: 8, padding: '7px 11px', marginBottom: 10, lineHeight: 1.6 }}>
-            ✍️ กรองเฉพาะ <b>ใบทีม MTN ที่ผู้จัดการต้นสังกัดยังไม่เซ็นรับทราบ</b> — ช่องนี้ <b>ไม่บล็อกงาน</b> ใบจึงเดินต่อและปิดไปได้ทั้งที่ยังไม่เซ็น
-            <div style={{ color: 'var(--muted)', marginTop: 2 }}>
-              เปิดใบแล้วกดปุ่ม "✍️ อนุมัติใบ MO (ผู้จัดการต้นสังกัด)" · <b>ใบที่ปิดไปแล้วก็ย้อนเซ็นได้</b> —
-              สลับช่องสถานะเป็น "ทุกสถานะ" เพื่อให้ใบที่ปิดแล้วขึ้นมาด้วย
-            </div>
-          </div>
+          <NoticeBar tone="info" style={{ marginBottom: 10 }}>
+            กรองเฉพาะ <b>ใบทีม MTN ที่ผู้จัดการต้นสังกัดยังไม่เซ็นรับทราบ</b> — ช่องนี้ <b>ไม่บล็อกงาน</b>
+            <InfoMore id="mo-ack-how" label="วิธีเซ็น">เปิดใบแล้วกดปุ่ม "อนุมัติใบ MO (ผู้จัดการต้นสังกัด)" · <b>ใบที่ปิดไปแล้วก็ย้อนเซ็นได้</b> —
+              สลับช่องสถานะเป็น "ทุกสถานะ" เพื่อให้ใบที่ปิดแล้วขึ้นมาด้วย</InfoMore>
+          </NoticeBar>
         )}
         {orders.length >= ORDER_CAP && (
-          <div style={{ fontSize: 12, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 11px', marginBottom: 10 }}>
-            ⚠️ ใบที่<b>ปิดแล้ว</b>แสดงเฉพาะ {ORDER_CAP.toLocaleString()} ใบล่าสุด — ที่เก่ากว่านั้นไม่ได้โหลดมา (ค้นด้วยเลข MO ที่หน้าสอบกลับ/ประวัติเครื่อง) · <b>ใบที่ยังไม่ปิดโหลดมาครบทุกใบ</b>
-          </div>
+          <NoticeBar tone="warn" style={{ marginBottom: 10 }}>
+            ใบที่<b>ปิดแล้ว</b>แสดงเฉพาะ {ORDER_CAP.toLocaleString()} ใบล่าสุด · <b>ใบที่ยังไม่ปิดโหลดมาครบทุกใบ</b>
+            <InfoMore id="mo-cap-why" label="ที่เก่ากว่านั้น?">ที่เก่ากว่านั้นไม่ได้โหลดมา — ค้นด้วยเลข MO ที่หน้าสอบกลับ/ประวัติเครื่อง</InfoMore>
+          </NoticeBar>
         )}
         {/* 🔴 ชุด "ใบยังไม่ปิด" มีปัญหา = ใบค้างอาจหายจากลิสต์ ⇒ ห้ามเงียบ */}
         {(openLoadErr || openCapped) && (
-          <div style={{ fontSize: 12, color: 'var(--amber)', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 11px', marginBottom: 10 }}>
+          <NoticeBar tone="warn" style={{ marginBottom: 10 }}>
             {openLoadErr
-              ? `⚠️ โหลดชุด "ใบที่ยังไม่ปิด" ไม่สำเร็จ (${openLoadErr}) — ใบค้างที่เก่ากว่า ${ORDER_CAP.toLocaleString()} ใบล่าสุดอาจไม่อยู่ในลิสต์นี้`
-              : `⚠️ ใบที่ยังไม่ปิดชนเพดาน ${OPEN_CAP.toLocaleString()} ใบ — อาจมีใบค้างที่ยังไม่ได้โหลดมา`}
-          </div>
+              ? `โหลดชุด "ใบที่ยังไม่ปิด" ไม่สำเร็จ (${openLoadErr}) — ใบค้างที่เก่ากว่า ${ORDER_CAP.toLocaleString()} ใบล่าสุดอาจไม่อยู่ในลิสต์นี้`
+              : `ใบที่ยังไม่ปิดชนเพดาน ${OPEN_CAP.toLocaleString()} ใบ — อาจมีใบค้างที่ยังไม่ได้โหลดมา`}
+          </NoticeBar>
         )}
         {/* ใบที่ตกนอกกรอบวันที่ — ต้องบอก ห้ามหายเงียบ (โดยเฉพาะใบที่ยังไม่ปิด) */}
         {dateHidden.n > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text2)',
-            background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 11px', marginBottom: 10 }}>
-            <span>📅 ตัวกรองวันที่ซ่อนอยู่ <b>{dateHidden.n}</b> ใบ
-              {dateHidden.open > 0 && <> — ในนั้น <b style={{ color: '#ef4444' }}>{dateHidden.open} ใบยังไม่ปิด</b></>}</span>
-            {oldestDate && oldestDate < tr.from && (
-              <button onClick={() => tr.setRange(oldestDate, tr.to)}
-                style={{ height: 'var(--ctl-h)', padding: '0 11px', borderRadius: 'var(--ctl-r)', fontSize: 'var(--ctl-fs)', fontWeight: 700,
-                  cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-                ดูทั้งหมด (ตั้งแต่ {oldestDate})
-              </button>
-            )}
-          </div>
+          <NoticeBar tone={dateHidden.open > 0 ? 'warn' : 'info'} style={{ marginBottom: 10 }}
+            action={oldestDate && oldestDate < tr.from ? { label: `ดูทั้งหมด (ตั้งแต่ ${oldestDate})`, onClick: () => tr.setRange(oldestDate, tr.to) } : undefined}>
+            ตัวกรองวันที่ซ่อนอยู่ <b>{dateHidden.n}</b> ใบ
+            {dateHidden.open > 0 && <> — ในนั้น <b style={{ color: 'var(--red)' }}>{dateHidden.open} ใบยังไม่ปิด</b></>}
+          </NoticeBar>
         )}
         {/* ⏳ ใบค้างขั้นเดิมเกินเกณฑ์ — อยู่เหนือลิสต์ที่มันพูดถึง (13/10 · user อนุมัติ 12/10)
             🔴 **ไม่ใช่แท็บใหม่** (หน้านี้มี 2 แท็บ ห้ามเพิ่ม) และ **ไม่ยิงคิวรีเพิ่ม** — นับจาก `orders`
@@ -1050,19 +1066,23 @@ export default function MtnRepair() {
           onStage={(stage) => { setFStatus('open'); setFWait(stage); }}
           onTeam={(dept) => { setFStatus('open'); setFDept(dept); }}
           teamName={deptNameOf} statusLabel={moStatusLabel} onOpen={openDetail}
+          /* 🏃 แถบไล่งาน — กดเป้าแล้วตั้งตัวกรองของแถบด้านบน (ไม่สร้างตัวกรองชุดที่ 2) */
+          chase={chaseBoard}
+          onLine={(line) => { setFStatus('open'); setFLine(line); }}
+          onText={(q) => { setFStatus('open'); setFText(q); }}
         />
         {/* 🕳️ กรองแล้วไม่เหลือใบเลย — ต้องบอกว่า "ตัวไหนตัดทิ้ง" + "ปลดแล้วได้คืนกี่ใบ"  (26/10 · คำถาม user)
             กฎความซื่อสัตย์ของจอ: "ไม่มีรายการ" เฉยๆ อ่านได้ว่า "ไม่มีงานค้าง" ทั้งที่มีงานค้างอยู่
             🔴 ปุ่มที่โผล่ = ตัวกรองที่ **ปลดตัวเดียวแล้วได้ของคืนจริง** (ตัวเลขคำนวณมา ไม่ใช่เดา) */}
         {emptyWhy && (
-          <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'rgba(245,158,11,0.10)',
-            border: '1px solid rgba(245,158,11,0.40)', borderRadius: 10, padding: '10px 13px', marginBottom: 10, lineHeight: 1.7 }}>
+          <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--amber-dim)',
+            border: '1px solid var(--amber-line)', borderRadius: 10, padding: '10px 13px', marginBottom: 10, lineHeight: 1.7 }}>
             <div style={{ fontWeight: 800, color: 'var(--text)', fontSize: 13 }}>
               🕳️ ตัวกรองที่เลือกอยู่ตัดใบออกหมด — ไม่ได้แปลว่าไม่มีงาน
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5, marginTop: 4 }}>
               {ladderSteps(emptyWhy.ladder).map((r, i) => (
-                <span key={r.key || `all-${i}`} style={{ color: r.n === 0 ? '#ef4444' : 'var(--text2)', fontWeight: r.n === 0 ? 800 : 400 }}>
+                <span key={r.key || `all-${i}`} style={{ color: r.n === 0 ? 'var(--red)' : 'var(--text2)', fontWeight: r.n === 0 ? 800 : 400 }}>
                   {i > 0 && <span style={{ color: 'var(--muted)', fontWeight: 400 }}>→ </span>}
                   {r.label}{r.value ? ` "${r.value}"` : ''} <b>{r.n.toLocaleString()}</b> ใบ
                 </span>
@@ -1076,7 +1096,7 @@ export default function MtnRepair() {
                     title={`ปลดตัวกรอง "${c.label}" แล้วจะเห็น ${c.n} ใบ`}
                     style={{ height: 'var(--ctl-h)', padding: '0 11px', borderRadius: 'var(--ctl-r)', fontSize: 'var(--ctl-fs)',
                       fontWeight: 700, cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-                    ✕ {c.label}{c.value ? `: ${c.value}` : ''} → {c.n.toLocaleString()} ใบ
+                    {c.label}{c.value ? `: ${c.value}` : ''} → {c.n.toLocaleString()} ใบ
                   </button>
                 ) : (
                   <span key={c.key} style={{ color: 'var(--muted)' }}>
@@ -1148,7 +1168,7 @@ function MoCard({ o, onOpen }) {
     <button type="button" onClick={onOpen} className={`mo-card${o.status === 'pending' ? ' mo-card-alert-rail' : ''}`}>
       <div className="mo-card-top">
         <b>{o.mo_no || <span style={{ color: 'var(--muted)', fontWeight: 600 }}>(ยังไม่ออกเลข)</span>}</b>
-        <span style={{ fontSize: 11.5, fontWeight: 700, color: m.color, background: m.bg, borderRadius: 20, padding: '3px 9px', whiteSpace: 'nowrap' }}>{m.label}</span>
+        <span style={statusChipStyle(o)}>{stripIcon(m.label)}</span>
       </div>
       <div className="mo-card-where"><b>{o.line_name || '—'}</b>{(o.item_type || o.machine_no) && <> · {o.item_type || ''}{o.machine_no ? <> <b>{o.machine_no}</b></> : ''}</>}</div>
       <div className="mo-card-what">{o.problem_characteristic || '—'}{o.report_note ? <span> — {o.report_note}</span> : null}</div>
@@ -1177,7 +1197,7 @@ function MoRow({ o, onOpen }) {
     <tr onClick={onOpen} tabIndex={0} role="button" className={pending ? 'mo-row-alert' : ''}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}>
       <td style={{ fontWeight: 800, whiteSpace: 'nowrap' }}>{o.mo_no || <span style={{ color: 'var(--muted)', fontWeight: 600 }}>(ยังไม่ออกเลข)</span>}</td>
-      <td><span style={{ fontSize: 11.5, fontWeight: 700, color: m.color, background: m.bg, borderRadius: 20, padding: '3px 9px', whiteSpace: 'nowrap' }}>{m.label}</span></td>
+      <td><span style={statusChipStyle(o)}>{stripIcon(m.label)}</span></td>
       <td style={{ whiteSpace: 'nowrap' }}>
         {o.status === 'rejected' ? <span style={{ color: 'var(--muted)' }}>—</span> : <>
           <div style={{ fontSize: 11.5, color: 'var(--text2)' }}>{o.current_step}/{last}</div>
@@ -1544,7 +1564,7 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
   };
 
   return (
-    <ModalShell title="➕ แจ้งซ่อมใหม่ (Step 1)" onClose={onClose} dirty={dirty}>
+    <ModalShell title="แจ้งซ่อมใหม่ (Step 1)" onClose={onClose} dirty={dirty}>
       {/* 📝 คอลัมน์เดียว ไล่กรอกลงทีละขั้น · แต่ละมิติเรียง "ใหญ่ → เล็ก" (05/10 · คำสั่ง user — เดิม 2 คอลัมน์ ตาต้องสลับซ้าย-ขวา)
           ① ทีม/ชนิดงาน → ② ที่ไหน (แผนก → ส่วนงาน → ไลน์) → ③ อุปกรณ์ (ชนิด → เลข) → ④ ปัญหา (กลุ่ม → หัวข้อย่อย → รายละเอียด → รูป)
           → ⑤ ช่องฟอร์ม MTN → ⑥ กำหนดการ/ผู้แจ้ง · cascade 2 ทาง แผนก↔ไลน์↔เครื่อง ยังทำงานเหมือนเดิม */}
@@ -1584,7 +1604,7 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
               เคสจริง 29/10 หน้างานแจ้ง "เลือกไลน์ผลิตไม่ได้ ไม่มีข้อมูล" แล้วเข้าใจว่าเป็นเรื่องสิทธิ์
               ⇒ ต้องเขียนตรงนี้ด้วย ไม่ใช่แค่แถบรวมด้านบนของแอป */}
           {(lineLoadErr || !lines.length) && (
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: '#ef4444', marginTop: 3 }}>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--red)', marginTop: 3 }}>
               ⚠️ ทะเบียนไลน์โหลดไม่สำเร็จ — <b>ไม่ใช่เรื่องสิทธิ์ และไลน์ไม่ได้ถูกลบ</b>
               <div style={{ fontWeight: 400, color: 'var(--text2)' }}>
                 กดปุ่มข้างล่างนี้ก่อน · ถ้ายังไม่หาย ให้ออกจากระบบแล้วเข้าใหม่
@@ -1592,7 +1612,7 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
                   onClick={() => onReloadLines?.()}
                   style={{ marginLeft: 6, fontSize: 11.5, padding: '2px 10px', borderRadius: 6, cursor: 'pointer',
                            background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-                  🔄 โหลดทะเบียนไลน์ใหม่
+                  โหลดทะเบียนไลน์ใหม่
                 </button>
               </div>
             </div>
@@ -1630,13 +1650,13 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
               : <>🔗 เติมจากประวัติเครื่อง {f.machine_no} — ใบ MO ที่ผ่านมาเลือกชนิดนี้ {histItem.votes}/{histItem.counted} ใบ · ไม่ใช่? เลือกใหม่ได้เลย</>}</div>
           )}
           {histKey && histSug.key === histKey && histSug.error && !f.item_type && (
-            <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 3 }}>⚠ โหลดประวัติเครื่อง {f.machine_no} ไม่ได้ — ระบบเติมชนิดให้ไม่ได้ เลือกเองไปก่อน</div>
+            <div style={{ fontSize: 11.5, color: 'var(--amber)', marginTop: 3 }}>⚠ โหลดประวัติเครื่อง {f.machine_no} ไม่ได้ — ระบบเติมชนิดให้ไม่ได้ เลือกเองไปก่อน</div>
           )}
           {wantDie && !f.machine_no && (
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>🔨 งานแม่พิมพ์: เลือกหมายเลขแม่พิมพ์ด้านล่างก่อนได้เลย — ระบบเติมชนิดจากทะเบียนให้เอง</div>
           )}
           {wantDie && f.machine_no && dieItemMap && !dieDerived?.itemType && (
-            <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 3 }}>⚠ แม่พิมพ์ {f.machine_no} {dieDerived ? `(${[dieDerived.opLabel && `OP ${dieDerived.opLabel}`, dieDerived.kindLabel && `ชุดแบบ ${dieDerived.kindLabel}`].filter(Boolean).join(' · ')}) ยังไม่ได้ตั้ง "ชนิดอุปกรณ์ในใบแจ้งซ่อม"` : 'ยังไม่ผูกชุด/ประเภท OP ในทะเบียน'} — เลือกชนิดเองไปก่อน</div>
+            <div style={{ fontSize: 11.5, color: 'var(--amber)', marginTop: 3 }}>⚠ แม่พิมพ์ {f.machine_no} {dieDerived ? `(${[dieDerived.opLabel && `OP ${dieDerived.opLabel}`, dieDerived.kindLabel && `ชุดแบบ ${dieDerived.kindLabel}`].filter(Boolean).join(' · ')}) ยังไม่ได้ตั้ง "ชนิดอุปกรณ์ในใบแจ้งซ่อม"` : 'ยังไม่ผูกชุด/ประเภท OP ในทะเบียน'} — เลือกชนิดเองไปก่อน</div>
           )}
         </Field>}
         <Field label={wantDie ? `หมายเลขแม่พิมพ์ (${lineMachines.length} ตัว · ทุกไลน์)` : 'หมายเลขเครื่อง'}>
@@ -1645,7 +1665,7 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
             <MachineSelect value={f.machine_no} onChange={onMachinePick} machines={lineMachines} lines={lineFam} kinds={machineKinds} strict={machineStrict} allowFree history={machineHist}
               placeholder={wantDie ? 'ค้นเลขแม่พิมพ์ / สแกน' : 'ค้นเลขเครื่อง / ชื่อ / สแกน'} style={{ flex: 1, minWidth: 0 }} inputStyle={{ background: 'var(--bg)' }} />
             <button type="button" className="tbtn" onClick={() => setScanOpen(true)} title="สแกน QR ที่ติดเครื่อง — เติมไลน์ให้อัตโนมัติ"
-              style={{ flexShrink: 0, padding: '0 12px', height: 36, borderRadius: 8, border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 16, cursor: 'pointer' }}>📷</button>
+              style={{ flexShrink: 0, padding: '0 12px', height: 36, borderRadius: 8, border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 16, cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }} aria-label="สแกน QR"><Icon name="QrCode" size={17} /></button>
           </div>
           {/* 🔗 บอกตรงๆ ว่ากำลังกรองอยู่ + ทางออกคลิกเดียว (ห้ามกรองเงียบ — คนหาเครื่องไม่เจอจะนึกว่าระบบพัง) */}
           {!wantDie && f.line_name && (
@@ -1662,25 +1682,25 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
                   </button>
                 </>
               ) : (
-                <span style={{ color: '#f59e0b' }}>⚠ {f.line_name} ยังไม่มีเครื่องลงทะเบียน — แสดงทุกไลน์ไว้ก่อน (ลงทะเบียนได้ที่ /equipment)</span>
+                <span style={{ color: 'var(--amber)' }}>⚠ {f.line_name} ยังไม่มีเครื่องลงทะเบียน — แสดงทุกไลน์ไว้ก่อน (ลงทะเบียนได้ที่ /equipment)</span>
               )}
             </div>
           )}
           {wantDie && (
-            <div style={{ fontSize: 11.5, color: lineMachines.length ? 'var(--muted)' : '#f59e0b', marginTop: 3 }}>
+            <div style={{ fontSize: 11.5, color: lineMachines.length ? 'var(--muted)' : 'var(--amber)', marginTop: 3 }}>
               {!lineMachines.length
                 ? '⚠️ ยังไม่มีแม่พิมพ์ในทะเบียน — ลงข้อมูลที่ /equipment (แท็บแม่พิมพ์) ก่อน (พิมพ์เลขเองได้)'
                 : f.line_name && dieFamCount === 0
                   /* คอมเมนต์ทีม DIE 06/10 (BENDING E50 · GOR · LWR BAR): ลิสต์ขึ้นแม่พิมพ์ LINE A มาก่อน = ดูเหมือน "ไม่มี Part Name"
                      ที่จริงไลน์นี้ยังไม่มีแม่พิมพ์ลงทะเบียนเลย ⇒ บอกตรงๆ (ห้ามปล่อยให้คนนึกว่าระบบพัง) */
-                  ? <span style={{ color: '#f59e0b' }}>⚠ ไลน์ {f.line_name} ยังไม่มีแม่พิมพ์ลงทะเบียน — ลิสต์ด้านบนเป็นแม่พิมพ์ไลน์อื่น · แจ้งทีม DIE ลงทะเบียนที่ /equipment (แท็บแม่พิมพ์) หรือพิมพ์เลขแม่พิมพ์เองไปก่อน</span>
+                  ? <span style={{ color: 'var(--amber)' }}>⚠ ไลน์ {f.line_name} ยังไม่มีแม่พิมพ์ลงทะเบียน — ลิสต์ด้านบนเป็นแม่พิมพ์ไลน์อื่น · แจ้งทีม DIE ลงทะเบียนที่ /equipment (แท็บแม่พิมพ์) หรือพิมพ์เลขแม่พิมพ์เองไปก่อน</span>
                   : '🔨 ลิสต์แม่พิมพ์ทั้งหมด (แม่พิมพ์ของไลน์ที่เลือกขึ้นก่อน — ถอดย้ายเครื่องได้) · พิมพ์เลขเพื่อค้น'}
             </div>
           )}
           {/* 🔁 เตือนใบซ้ำ — **เตือนเท่านั้น ห้ามบล็อก** (เครื่องเดียวเสีย 2 เรื่องในวันเดียวเกิดได้จริง)
               แดง = มีใบของทีมอื่นค้างอยู่ (เสี่ยง 2 ทีมวิ่งไปทำงานเดียวกัน) · เหลือง = ทีมเดียวกัน */}
           {dupLv !== 'none' && (() => {
-            const c = dupLv === 'cross' ? '#ef4444' : '#f59e0b';
+            const c = dupLv === 'cross' ? 'var(--red)' : 'var(--amber)';
             return (
               <div style={{
                 marginTop: 6, padding: '7px 9px', borderRadius: 8,
@@ -1698,7 +1718,7 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
                       <b style={{ color: 'var(--text)' }}>{o.mo_no || '(ยังไม่ออกเลข)'}</b>
                       <span>· {deptNameOf(o.mtn_dept) || '—'}</span>
                       <span>· {moStatusLabel(o)}</span>
-                      {o._days != null && <span style={{ color: o._days >= 7 ? '#ef4444' : 'var(--muted)' }}>· ค้าง {o._days} วัน</span>}
+                      {o._days != null && <span style={{ color: o._days >= 7 ? 'var(--red)' : 'var(--muted)' }}>· ค้าง {o._days} วัน</span>}
                       {o.problem_characteristic && <span style={{ color: 'var(--muted)' }}>· {o.problem_characteristic}</span>}
                     </div>
                   ))}
@@ -1746,7 +1766,7 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
         <Field label="ระบุรายละเอียดปัญหา (พิมพ์เอง)" required={noteCheck.level === 'required'}>
           <textarea value={f.report_note} onChange={e => set('report_note', e.target.value)}
             placeholder={MO_NOTE_HINT} style={{ ...inp, minHeight: 72 }} />
-          <div style={{ fontSize: 11.5, marginTop: 3, color: noteCheck.message ? '#f59e0b' : 'var(--muted)' }}>
+          <div style={{ fontSize: 11.5, marginTop: 3, color: noteCheck.message ? 'var(--amber)' : 'var(--muted)' }}>
             {noteCheck.message ? `⚠ ${noteCheck.message}` : `✓ รายละเอียดครบพอให้ช่างเตรียมตัว (${noteCheck.len} ตัวอักษร)`}
           </div>
         </Field>
@@ -2593,12 +2613,12 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
     return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, marginBottom: 8, background: done ? 'var(--bg2)' : 'transparent', opacity: done || note || skipped ? 1 : 0.55 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: done ? 'var(--accent)' : (skipped || note) ? '#f59e0b' : 'var(--muted)' }}>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: done ? 'var(--accent)' : (skipped || note) ? 'var(--amber)' : 'var(--muted)' }}>
           {mark} ขั้น {n}: {meta?.title}
           <span style={{ fontWeight: 600, color: 'var(--muted)', marginLeft: 6, fontSize: 11 }}>· {meta?.who}</span>
-          {skipped && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: '#f59e0b', background: 'rgba(245,158,11,0.14)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>⏭ {qaAppliesTo(o) ? 'ข้าม (ไม่เกี่ยวกับคุณภาพ)' : 'ไม่ต้องตรวจ (งานปรับปรุง/สร้าง)'}</span>}
+          {skipped && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>⏭ {qaAppliesTo(o) ? 'ข้าม (ไม่เกี่ยวกับคุณภาพ)' : 'ไม่ต้องตรวจ (งานปรับปรุง/สร้าง)'}</span>}
         </div>
-        {done && n >= 2 && canEditStep(n) && <button onClick={() => onStep(n, true)} className="tbtn" style={{ ...btnGhost, padding: '3px 9px', fontSize: 11 }}>✏️ แก้ไข</button>}
+        {done && n >= 2 && canEditStep(n) && <button onClick={() => onStep(n, true)} className="tbtn" style={{ ...btnGhost, padding: '3px 9px', fontSize: 11 }}>แก้ไข</button>}
       </div>
       {note}
       {done && children}
@@ -2615,7 +2635,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
      กล่องรับมอบ · ใบ MTN แสดงคำอธิบาย "ลูปนี้ไม่มี QA" ไว้ท้ายชุดขั้นตอนแทน */
   const qa5 = mtnForm ? 'none' : moQaState(o);
   const qa5Note = qa5 === 'skipped' ? (
-    <div style={{ fontSize: 12, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
+    <div style={{ fontSize: 12, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
       ⏭ <b>ไม่ต้องตรวจ QA — {mtnForm ? 'ใบซ่อมของทีม MTN ไม่มีขั้น QA ในลูป' : qaAppliesTo(o) ? 'งานนี้ไม่เกี่ยวกับคุณภาพ' : `งาน${PURPOSES.find(x => x.key === o.purpose)?.label || ''} ไม่ต้องผ่านการตรวจคุณภาพ`}</b>
       <div style={{ color: 'var(--text2)' }}>
         {/* 4 ที่มาของ "ข้าม" ต้องแยกให้ออก: ฟอร์ม MTN ไม่มี QA เลย · QA กดเอง · ใบเก่าที่ขั้น 4 เลือกไว้ · จุดประสงค์ของงาน */}
@@ -2631,48 +2651,80 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
     </div>
   ) : null;
 
+  const doPrint = async () => {
+      const dept = o.mtn_dept || deptForItem(o.item_type);
+      const key = teamKeyOf(dept) === 'maintenance' ? 'mo_report_mtn' : 'mo_report';
+      /* 💬 โหลดคอมเมนต์ **ตอนกดพิมพ์** ไม่ใช่ตอนเปิดใบ — คนเปิดดูเฉยๆ ไม่ต้องจ่าย query
+         (คอมเมนต์ที่โชว์บนจอเป็นของ <EventComments> ซึ่งโหลดเองอยู่แล้ว)
+         🔴 error ไม่กลืน — ส่งต่อให้ใบพิมพ์เขียนบนใบว่าคอมเมนต์อาจไม่ครบ */
+      /* 📄 ใบที่ปิดแล้ว = พิมพ์จาก **บันทึกต้นฉบับ** ไม่ generate สด (12/10 · คำสั่ง user)
+         ตัวตัดสินอยู่ที่ `moPrintSource()`/`moFromSnapshot()` ที่เดียว
+         🔴 ห้ามเช็ค `status`/`snapshot` เองที่นี่ · เลขฟอร์ม/Rev/โลโก้ ยังอ่านสดจาก
+            ทะเบียน /doc-forms เสมอ (ไม่อยู่ใน snapshot — doc_control ต้องแก้ได้) */
+      const snap = moFromSnapshot(o.snapshot);
+      const fromSnap = o.status === 'closed' && !!snap;
+      const [logo, cmtLive] = await Promise.all([
+        logoDataUrl(docFormSync(key).logo_url),
+        fromSnap ? Promise.resolve(NO_CMT) : loadMoComments(o.id),
+      ]);
+      if (!fromSnap && cmtLive.error) toast.error('โหลดคอมเมนต์ของใบนี้ไม่สำเร็จ — ใบที่พิมพ์จะเขียนกำกับไว้');
+      // 🛒 เลข PR ทุกใบของ MO นี้ (ไม่นับที่ยกเลิก) — ใบพิมพ์วางตาม prPlacement() · โหลดไม่ได้ = ถอยไปช่อง pr_no เดิม + toast
+      const prRes = await supabaseDR.from('mtn_purchase_requests').select('order_id, pr_no, status').eq('order_id', o.id);
+      if (prRes.error) toast.error('โหลดเลข PR ของใบนี้ไม่สำเร็จ — ใบพิมพ์ใช้เฉพาะเลข PR ที่กรอกในใบ');
+      const prs = prRes.data || [];
+      printMoReport(
+        fromSnap ? { ...snap.order, _prs: prs } : { ...o, _prs: prs },
+        fromSnap ? snap.parts : dparts,
+        logo,
+        fromSnap ? snap.labor : dlabor,
+        fromSnap ? snap.cmt   : cmtLive,
+        fromSnap ? null       : dcostErr,
+        moPrintNote(o),
+        sigByUid,   // ✍️ ลายเซ็นสดจากโปรไฟล์ (ยังไม่โหลดเสร็จ = null ⇒ ถอยไปใช้ค่าที่ใบเก็บไว้)
+      );
+    };
   return (
-    <ModalShell title={`${o.mo_no || '(ยังไม่ออกเลข MO)'} · ${m.label} · ${deptNameOf(dept)}`} onClose={onClose} wide>
+    <ModalShell title={`${o.mo_no || '(ยังไม่ออกเลข MO)'} · ${stripIcon(m.label)} · ${deptNameOf(dept)}`} onClose={onClose} wide>
       {affectedLines.length > 0 && (
-        <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.5)', fontSize: 12.5, color: '#ef4444', fontWeight: 700 }}>
+        <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--red-dim)', border: '1px solid var(--red-line)', fontSize: 12.5, color: 'var(--red)', fontWeight: 700 }}>
           ⚠️ อุปกรณ์นี้จ่ายให้ {affectedLines.length} ไลน์ — หยุดซ่อม/ตัดไฟจะกระทบ: <b>{affectedLines.join(', ')}</b>
         </div>
       )}
       {openImps.length > 0 && (
-        <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: 'rgba(124,108,240,0.12)', border: '1px solid rgba(124,108,240,0.4)', fontSize: 12.5, color: '#a78bfa' }}
+        <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', fontSize: 12.5, color: 'var(--blue)' }}
           title={openImps.map(i => i.title).join('\n')}>
           💡 มีโปรเจคปรับปรุงกำลังทำ {openImps.length} โปรเจคสำหรับเครื่อง/ไลน์นี้
         </div>
       )}
       {repeatIssue && (
-        <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.5)', fontSize: 12.5, color: '#f59e0b' }}>
+        <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', fontSize: 12.5, color: 'var(--amber)' }}>
           ⚠️ ติดตามผลได้ว่า "{o.follow_up}" — ควรเปิดโปรเจคปรับปรุงแก้ที่ต้นเหตุ
         </div>
       )}
       {o.status === 'returned' && (
-        <div style={{ marginBottom: 10, padding: '10px 12px', borderRadius: 8, background: 'rgba(224,137,74,0.12)', border: '1px solid rgba(224,137,74,0.5)' }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: '#e0894a' }}>↩️ ใบนี้ถูกตีกลับ — ผิดแผนก</div>
+        <div style={{ marginBottom: 10, padding: '10px 12px', borderRadius: 8, background: 'var(--amber-dim)', border: '1px solid var(--amber-line)' }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)' }}>↩️ ใบนี้ถูกตีกลับ — ผิดแผนก</div>
           <div style={{ fontSize: 12.5, color: 'var(--text)', margin: '4px 0' }}>เหตุผล: <b>{o.reject_reason || '-'}</b>{o.returned_from_dept ? ` (ตีกลับจากทีม ${deptNameOf(o.returned_from_dept)})` : ''}</div>
           {can('mtn_repair', 'report', role) ? (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 6 }}>
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>ส่งใหม่ให้ทีม:</span>
               <select value={resubDept} onChange={e => setResubDept(e.target.value)} style={{ ...inp, width: 160 }}><TeamOpts list={mtnDepts} /></select>
-              <button onClick={resubmit} disabled={resubBusy} style={{ ...btnPri, padding: '7px 14px' }}>{resubBusy ? 'กำลังส่ง…' : '✏️ แก้แผนก & ส่งใหม่'}</button>
+              <button onClick={resubmit} disabled={resubBusy} style={{ ...btnPri, padding: '7px 14px' }}>{resubBusy ? 'กำลังส่ง…' : 'แก้แผนก & ส่งใหม่'}</button>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>เวลาเริ่มนับใหม่ให้แผนกที่ถูก</span>
             </div>
           ) : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4 }}>ผู้แจ้งต้องแก้แผนกแล้วส่งใหม่</div>}
         </div>
       )}
       {o.status !== 'returned' && o.bounce_count > 0 && (
-        <div style={{ marginBottom: 10, padding: '6px 10px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)', fontSize: 11.5, color: '#e0894a' }}>
+        <div style={{ marginBottom: 10, padding: '6px 10px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)', fontSize: 11.5, color: 'var(--amber)' }}>
           ↩️ ใบนี้เคยถูกตีกลับ {o.bounce_count} ครั้ง{o.first_report_at ? ` · เปิดครั้งแรก ${fmtDateTime(o.first_report_at)}` : ''} — เวลา KPI นับจากรอบล่าสุด
         </div>
       )}
       {/* 🔎 ใบนี้ถูกส่งต่อ**มา** — ทีมใหม่ต้องเห็นว่าทีมก่อนหน้าเข้าไปดูอะไรมาแล้ว
           อ่านจากใบต้นทางโดยตรง (ใบเดิมไม่ถูกล้าง) ไม่ต้องพึ่ง snapshot — 2026-09-14 รอบ 2 */}
       {handoffIn && (
-        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: 'rgba(96,165,250,0.09)', border: '1px solid rgba(96,165,250,0.45)' }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: '#60a5fa', marginBottom: 3 }}>
+        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: 'var(--blue-dim)', border: '1px solid var(--blue-line)' }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--blue)', marginBottom: 3 }}>
             ➡️ ส่งต่อมาจาก {handoffIn.src?.mo_no || o.transferred_from_mo || 'ใบก่อนหน้า'} · ทีม {deptNameOf(handoffIn.from_dept) || '—'}
           </div>
           <div style={{ fontSize: 11.5, lineHeight: 1.7 }}>
@@ -2691,7 +2743,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
         <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)' }}>
           {handoffOut.map(h => (
             <div key={h.id} style={{ fontSize: 11.5, lineHeight: 1.7 }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: '#e0894a' }}>➡️ ใบนี้ส่งต่อให้ทีม {deptNameOf(h.to_dept)} แล้ว — จบที่ทีมนี้</div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--amber)' }}>➡️ ใบนี้ส่งต่อให้ทีม {deptNameOf(h.to_dept)} แล้ว — จบที่ทีมนี้</div>
               <div style={{ color: 'var(--text)' }}>เหตุผล: {h.reason}</div>
               <div style={{ color: 'var(--muted)' }}>โดย {h.handed_by || '—'} · {fmtDateTime(h.handed_at)} · งานต่อจากนี้ตามที่ใบใหม่ของทีม {deptNameOf(h.to_dept)}</div>
             </div>
@@ -2703,8 +2755,8 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
              (คนละเรื่องกับ "รออนุมัติก่อนเริ่มงาน" ของงานปรับปรุง/สร้าง) */}
       {mtnForm && needsPlantMgrByCost(o, dlabor, dparts) && !o.plant_manager_at && (
         <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8,
-          background: 'rgba(245,158,11,0.10)', border: '1px solid #f59e0b' }}>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: '#f59e0b' }}>
+          background: 'var(--amber-dim)', border: '1px solid var(--amber)' }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--amber)' }}>
             💰 ค่าใช้จ่าย {Number(orderCostTotal(o, dlabor, dparts) || 0).toLocaleString()} บาท — เกิน {PLANT_MGR_COST_LIMIT.toLocaleString()} บาท
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
@@ -2716,8 +2768,8 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
       {/* 📤 ส่งซ่อมภายนอก — ของอยู่กับ supplier · ใบยังเปิด ผู้แจ้งเห็นสถานะชัด (2026-09-21) */}
       {o.status === VENDOR_STATUS && (
         <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8,
-          background: 'rgba(14,165,233,0.10)', border: '1px solid #0ea5e9' }}>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: '#0ea5e9' }}>
+          background: 'var(--blue-dim)', border: '1px solid var(--blue)' }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--blue)' }}>
             📤 ส่งซ่อมภายนอก — อยู่กับ {o.supplier || 'supplier'} มาแล้ว {vendorHoldLabel(o)}
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
@@ -2727,8 +2779,8 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
           </div>
           {canReceiveVendor(o) && canEditStep(3) && (
             <button onClick={doVendorBack} disabled={venBusy}
-              style={{ ...btnPri, marginTop: 8, padding: '7px 14px', background: '#0ea5e9' }}>
-              {venBusy ? 'กำลังบันทึก…' : '📥 ของกลับแล้ว — ช่างทำต่อ'}
+              style={{ ...btnPri, marginTop: 8, padding: '7px 14px', background: 'var(--blue)' }}>
+              {venBusy ? 'กำลังบันทึก…' : 'ของกลับแล้ว — ช่างทำต่อ'}
             </button>
           )}
         </div>
@@ -2748,7 +2800,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
                 แต่เวลาที่รอของจะ<b style={{ color: 'var(--text2)' }}>ไม่ถูกนับเป็นเวลาซ่อมของช่าง</b>
               </div>
               <button onClick={() => { setVenSup(o.supplier || ''); setVenNote(''); setShowVendor(true); }}
-                style={{ ...btnGhost, color: '#0ea5e9', borderColor: '#0ea5e9' }}>📤 ส่งซ่อมภายนอก</button>
+                style={{ ...btnGhost, color: 'var(--blue)', borderColor: 'var(--blue)' }}>ส่งซ่อมภายนอก</button>
             </div>
           ) : (
             <>
@@ -2762,15 +2814,15 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
                   placeholder="เช่น ถอดมอเตอร์ส่งพันขดลวด นัดรับ 3 วัน" style={{ ...inp, fontSize: 12.5, minHeight: 52 }} />
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5, lineHeight: 1.6 }}>
-                กดแล้ว: ใบเปลี่ยนเป็น <b style={{ color: '#0ea5e9' }}>“📤 ส่งซ่อมภายนอก (รอ supplier)”</b> (ยังไม่ปิด)
+                กดแล้ว: ใบเปลี่ยนเป็น <b style={{ color: 'var(--blue)' }}>“📤 ส่งซ่อมภายนอก (รอ supplier)”</b> (ยังไม่ปิด)
                 · <b style={{ color: 'var(--text2)' }}>แจ้งผู้เปิดใบ + หัวหน้าส่วนงาน</b> ทันที
                 · ค่าใช้จ่ายลงช่องเดิมตอนซ่อมเสร็จ (ค่าแรง / ค่าอะไหล่)
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 <button onClick={() => setShowVendor(false)} style={btnGhost}>ยกเลิก</button>
                 <button onClick={doVendorSend} disabled={venBusy}
-                  style={{ ...btnPri, padding: '7px 14px', background: '#0ea5e9' }}>
-                  {venBusy ? 'กำลังบันทึก…' : '📤 ยืนยันส่งซ่อมภายนอก'}
+                  style={{ ...btnPri, padding: '7px 14px', background: 'var(--blue)' }}>
+                  {venBusy ? 'กำลังบันทึก…' : 'ยืนยันส่งซ่อมภายนอก'}
                 </button>
               </div>
             </>
@@ -2785,7 +2837,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
               <div style={{ fontSize: 11.5, color: 'var(--muted)', flex: 1, minWidth: 190 }}>
                 ดูแล้วเกินมือทีมนี้? <b style={{ color: 'var(--text2)' }}>ส่งต่อให้ช่างเฉพาะทางได้เลย</b> — ระบบปิดใบนี้ให้ แล้วเปิดใบใหม่ของทีมนั้นพร้อมผลตรวจที่ทำมา
               </div>
-              <button onClick={() => { setHoDept(''); setHoReason(''); setShowHandoff(true); }} style={{ ...btnGhost, color: '#60a5fa', borderColor: '#60a5fa' }}>➡️ ส่งต่อทีมอื่น</button>
+              <button onClick={() => { setHoDept(''); setHoReason(''); setShowHandoff(true); }} style={{ ...btnGhost, color: 'var(--blue)', borderColor: 'var(--blue)' }}>ส่งต่อทีมอื่น</button>
             </div>
           ) : (
             <>
@@ -2810,7 +2862,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                 <button onClick={() => setShowHandoff(false)} style={btnGhost}>ยกเลิก</button>
-                <button onClick={doHandoff} disabled={hoBusy} style={{ ...btnPri, padding: '7px 14px' }}>{hoBusy ? 'กำลังส่งต่อ…' : '➡️ ยืนยันส่งต่อ'}</button>
+                <button onClick={doHandoff} disabled={hoBusy} style={{ ...btnPri, padding: '7px 14px' }}>{hoBusy ? 'กำลังส่งต่อ…' : 'ยืนยันส่งต่อ'}</button>
               </div>
             </>
           )}
@@ -2819,8 +2871,8 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
       {/* ✍️ ลายเซ็นผู้จัดการของใบ MTN — "บล็อกงาน" กับ "รับทราบตามหลัง" ต้องหน้าตาต่างกันชัด
              (งานซ่อมขึ้นกล่องแดงว่ารออนุมัติ = หน้างานจะหยุดรอทั้งที่ไม่ต้องรอ) */}
       {mtnForm && appr && (appr.missing.length > 0 || o.dept_manager_at || o.plant_manager_at) && (
-        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: appr.blocked ? 'rgba(239,68,68,0.10)' : 'var(--bg2)', border: `1px solid ${appr.blocked ? '#ef4444' : 'var(--border)'}` }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: appr.blocked ? '#ef4444' : 'var(--text)' }}>
+        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: appr.blocked ? 'var(--red-dim)' : 'var(--bg2)', border: `1px solid ${appr.blocked ? 'var(--red)' : 'var(--border)'}` }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: appr.blocked ? 'var(--red)' : 'var(--text)' }}>
             {appr.blocked
               ? `🔒 งาน${PURPOSES.find(x => x.key === appr.purpose)?.label || ''} — ต้องอนุมัติก่อนช่างเริ่มงาน`
               : appr.ackPending ? '✍️ รอผู้จัดการเซ็นรับทราบ (ไม่บล็อกงาน — ช่างทำงานต่อได้เลย)' : '✅ ลายเซ็นผู้จัดการครบแล้ว'}
@@ -2836,8 +2888,8 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
             {appr.needPlant && <div>ผู้จัดการโรงงาน (งานสร้าง): {o.plant_manager_at ? <b style={{ color: 'var(--accent)' }}>✔ {o.plant_manager_name || '—'} · {fmtDateTime(o.plant_manager_at)}</b> : <span style={{ color: 'var(--muted)' }}>ยังไม่เซ็น{o.plant_manager_name ? ` (ระบุไว้: ${o.plant_manager_name})` : ''}</span>}</div>}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
-            {canSignMtnApproval('dept', stepCtx).ok && <button onClick={() => signApproval('dept')} disabled={signBusy === 'dept'} style={{ ...btnPri, padding: '6px 12px', fontSize: 12 }}>{signBusy === 'dept' ? 'กำลังเซ็น…' : '✍️ อนุมัติใบ MO (ผู้จัดการต้นสังกัด)'}</button>}
-            {appr.needPlant && canSignMtnApproval('plant', stepCtx).ok && <button onClick={() => signApproval('plant')} disabled={signBusy === 'plant'} style={{ ...btnPri, padding: '6px 12px', fontSize: 12 }}>{signBusy === 'plant' ? 'กำลังเซ็น…' : '✍️ อนุมัติใบ MO (ผจก.โรงงาน)'}</button>}
+            {canSignMtnApproval('dept', stepCtx).ok && <button onClick={() => signApproval('dept')} disabled={signBusy === 'dept'} style={{ ...btnPri, padding: '6px 12px', fontSize: 12 }}>{signBusy === 'dept' ? 'กำลังเซ็น…' : 'อนุมัติใบ MO (ผู้จัดการต้นสังกัด)'}</button>}
+            {appr.needPlant && canSignMtnApproval('plant', stepCtx).ok && <button onClick={() => signApproval('plant')} disabled={signBusy === 'plant'} style={{ ...btnPri, padding: '6px 12px', fontSize: 12 }}>{signBusy === 'plant' ? 'กำลังเซ็น…' : 'อนุมัติใบ MO (ผจก.โรงงาน)'}</button>}
             {appr.missing.length > 0 && !canSignMtnApproval(appr.missing[0], stepCtx).ok && (
               /* 🔴 ห้ามล้มเหลวเงียบ — บอกเหตุผลที่เซ็นไม่ได้ให้ตรงตัว ไม่ใช่ข้อความรวมอันเดียว */
               <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }}>{
@@ -2854,7 +2906,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
       )}
       {/* ผู้เปิดใบตรวจรับ (ขั้น 4) และรับมอบ (ขั้น 6) ของใบตัวเองได้เสมอ — บอกให้รู้ว่าทำไมกดได้ */}
       {isOrderReporter(o, fullName) && o.status !== 'closed' && (
-        <div style={{ marginBottom: 10, padding: '6px 10px', borderRadius: 8, background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.4)', fontSize: 11.5, color: '#22c55e' }}>
+        <div style={{ marginBottom: 10, padding: '6px 10px', borderRadius: 8, background: 'var(--green-dim)', border: '1px solid var(--green-line)', fontSize: 11.5, color: 'var(--green)' }}>
           🙋 คุณเป็น<b>ผู้เปิดใบนี้</b> — ตรวจรับงานหลังซ่อม (ขั้น 4) และรับมอบ/ติดตามผล (ขั้น 6) ได้เอง
         </div>
       )}
@@ -2870,7 +2922,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
             <Row k="ลักษณะปัญหา" v={o.problem_characteristic} /><Row k="รายละเอียด" v={o.problem_detail} /><Row k="ระบุเพิ่มเติม" v={o.report_note} />
             <Row k="ต้องการเสร็จ" v={o.want_at && beEcho(String(o.want_at).slice(0, 10))} />
             <Row k="ผู้แจ้ง (ผลิต/QA)" v={[o.reporter_prod, o.reporter_qa].filter(Boolean).join(' / ')} />
-            {canEditStep(1) && <div style={{ marginTop: 4 }}><button onClick={() => onStep(1, true)} className="tbtn" style={{ ...btnGhost, padding: '3px 9px', fontSize: 11 }}>✏️ แก้ไขข้อมูลแจ้งซ่อม</button></div>}
+            {canEditStep(1) && <div style={{ marginTop: 4 }}><button onClick={() => onStep(1, true)} className="tbtn" style={{ ...btnGhost, padding: '3px 9px', fontSize: 11 }}>แก้ไขข้อมูลแจ้งซ่อม</button></div>}
             <div style={{ marginTop: 6 }}><Img label="รูปก่อนซ่อม" url={o.before_img} /></div>
           </StepBox>
           <StepBox n={2} done={o.current_step >= 2 || o.status === 'rejected'}>
@@ -2931,15 +2983,15 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
             <StepBox n={8} done={!!o.cost_mgr_at || o.status === 'closed'}>
               <Row k="ปิดใบเมื่อ" v={o.cost_mgr_at && fmtDateTime(o.cost_mgr_at)} /><Row k="ผจก.ฝ่ายที่แจ้ง" v={o.cost_mgr_name} /><Img label="ลายเซ็นปิดใบ" url={sgn(o.cost_mgr_uid, o.cost_mgr_sign)} /><Row k="ความคิดเห็นเพิ่มเติม" v={o.extra_comment} />
             </StepBox>
-            <div style={{ fontSize: 11.5, color: 'var(--muted)', border: '1px dashed var(--border)', borderRadius: 8, padding: '6px 9px', marginBottom: 8, lineHeight: 1.6 }}>
-              🧪 ใบของทีม MTN <b>ไม่มีขั้นตรวจคุณภาพ (QA) ในลูป</b> — ขั้น 5 ของฟอร์ม JIG/DIE (ตรวจคุณภาพโดย QA)
+            <div style={{ marginBottom: 8 }}><InfoMore id="mo-mtn-loop" label="ใบทีม MTN ไม่มีขั้น QA · ช่องลายเซ็น 7 จุดบนใบพิมพ์">
+              ใบของทีม MTN <b>ไม่มีขั้นตรวจคุณภาพ (QA) ในลูป</b> — ขั้น 5 ของฟอร์ม JIG/DIE (ตรวจคุณภาพโดย QA)
               {' '}ถูกแทนด้วย <b>“รับมอบ / ติดตามผล”</b> ⇒ ใบนี้มี 8 ขั้น และไม่มีขั้นไหนรอ QA เลย
               <div style={{ marginTop: 3 }}>
-                📄 <b>ช่องลายเซ็น 7 จุดบนใบพิมพ์</b> FM-MTN-006 เป็นคนละชุดกับชื่อขั้นข้างบน
+                <b>ช่องลายเซ็น 7 จุดบนใบพิมพ์</b> FM-MTN-006 เป็นคนละชุดกับชื่อขั้นข้างบน
                 {' '}(ผู้แจ้ง → ผจก.ต้นสังกัดผู้แจ้งรับทราบ → ช่างรับงาน → ผจก.ช่างรับทราบ → หัวหน้าแผนกช่างตรวจ → ผจก.ช่างอนุมัติ → ผจก.ฝ่ายที่แจ้งปิดใบ)
                 {' '}— ช่องที่ 2 และ 4 เป็นการ <b>รับทราบนอกลูป</b> เซ็นตามหลังได้ ไม่บล็อกงาน จึงไม่มีเป็นขั้นบนจอ
               </div>
-            </div>
+            </InfoMore></div>
           </> : (
             <StepBox n={7} done={o.current_step >= 7}>
               <Row k="อนุมัติเมื่อ" v={o.approve_at && fmtDateTime(o.approve_at)} /><Row k="ผู้อนุมัติ" v={o.approver_name} /><Img label="ลายเซ็นอนุมัติ" url={sgn(o.approver_uid, o.approve_sign)} />
@@ -2956,7 +3008,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
       {/* ⚠️ ปุ่มขั้นถัดไปหายเพราะสิทธิ์ = ต้องบอกเหตุผล ห้ามให้เดาเอง (UI-CONVENTIONS §6.9)
              เคสที่เจอจริง: ช่างฝ่ายผลิตเปิดใบได้แต่กดรับงานไม่ได้ แล้วไม่มีอะไรอธิบาย */}
       {next && !canEditStep(next.step) && (
-        <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '9px 12px', marginTop: 12, fontSize: 12.5, lineHeight: 1.7 }}>
+        <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 8, padding: '9px 12px', marginTop: 12, fontSize: 12.5, lineHeight: 1.7 }}>
           🔒 <b>บัญชีนี้ทำขั้นถัดไปไม่ได้</b> — {next.label}
           <div style={{ color: 'var(--text2)', marginTop: 3 }}>
             {(stepDenyHint(next.step, { teamName: deptNameOf(orderTeam), reporterName: o.reported_by_name || o.reporter_prod, outOfScope: canDoStep(next.step, stepCtx).code === 'out_of_scope', otherTeam: canDoStep(next.step, stepCtx).code === 'other_team',
@@ -2969,16 +3021,16 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
               const hint = canDoStep(next.step, stepCtx).ok
                 ? assumptionHint(stepAssumptions(next.step, { mtnForm, toolTeam: isToolTeamOrder(o), actorSide, posRank }))
                 : null;
-              return hint ? <div style={{ color: '#f59e0b', marginTop: 3 }}>{hint}</div> : null;
+              return hint ? <div style={{ color: 'var(--amber)', marginTop: 3 }}>{hint}</div> : null;
             })()}
             {isWaitingQa(o) && (skipQa.ok
-              ? <div style={{ color: '#f59e0b', marginTop: 3 }}>⏭ ถ้างานนี้ <b>ไม่เกี่ยวกับคุณภาพ</b> คุณกดข้าม QA ไปรับมอบ (ขั้น 6) ได้เลย — ปุ่มด้านล่าง</div>
+              ? <div style={{ color: 'var(--amber)', marginTop: 3 }}>⏭ ถ้างานนี้ <b>ไม่เกี่ยวกับคุณภาพ</b> คุณกดข้าม QA ไปรับมอบ (ขั้น 6) ได้เลย — ปุ่มด้านล่าง</div>
               : <div style={{ marginTop: 3 }}>⏭ ถ้างานนี้ไม่เกี่ยวกับคุณภาพ <b>ต้องให้ QA เป็นผู้กด</b> (ขั้น 5) — ฝ่ายที่แจ้ง/ผู้เปิดใบ ข้ามขั้น QA เองไม่ได้แล้ว ตั้งแต่ 14/09/2026</div>)}
             {/* 🔴 ขั้น 6 ต้องบอก "ใครคนนั้น" ไม่ใช่แค่ตำแหน่ง — 2026-09-09 (ใบค้างรอรับมอบ 140 ใบ)
                 ก่อนหน้านี้กล่องนี้บอกแค่ "หัวหน้าแผนกของฝ่ายที่แจ้ง" ลอยๆ คนเปิดดูจึงไม่รู้ว่าต้องไปตาม
                 ใคร แล้วใบก็ค้างต่อ · ชื่อผู้แจ้งมีอยู่ในใบแล้ว (reported_by_name — stamp ตอนเปิดใบ) */}
             {stageOf(next.step, { mtnForm }) === 'handover' && (
-              <div style={{ marginTop: 5, paddingTop: 5, borderTop: '1px dashed rgba(245,158,11,0.45)', color: 'var(--text)' }}>
+              <div style={{ marginTop: 5, paddingTop: 5, borderTop: '1px dashed var(--amber-line)', color: 'var(--text)' }}>
                 🤝 <b>ฝั่งช่างทำงานเสร็จหมดแล้ว — เหลือขั้นสุดท้ายของฝ่ายที่แจ้ง (รับมอบ/ติดตามผล)</b>
                 <div style={{ color: 'var(--text2)', marginTop: 2 }}>
                   คนที่ต้องกด: <b style={{ color: 'var(--text)' }}>{o.reported_by_name || o.reporter_prod || '— (ใบนี้ไม่ได้บันทึกชื่อผู้แจ้ง)'}</b>
@@ -3001,59 +3053,34 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
       {/* 🖥️ แถบปุ่มท้ายใบ — เกาะล่างของการ์ดโมดัลบนจอคอม (28/10 · คำสั่ง user)
           ใบที่เซ็นครบหลายขั้นสูง ~3 จอ ปุ่ม "ขั้นถัดไป" เคยอยู่ก้นใบ ⇒ เปิดใบทีต้องเลื่อนสุดก่อนทำงาน
           ปุ่ม/ตรรกะเดิมทั้งหมด ไม่แยกชุดใหม่ · มือถือมี `.m-actbar` ของตัวเองอยู่แล้ว (CSS คืนเป็นแถวธรรมดา) */}
+      {/* 🖨️ พิมพ์ใบ MO — ย้ายออกจาก inline ของปุ่ม (05/11) เพราะปุ่มไปอยู่ในเมนู ⋯ · ตรรกะเดิมทุกบรรทัด */}
       <div className="mo-actbar-desk" style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-        {/* 🖥️ บัญชีกลางลบไม่ได้ — **ซ่อนปุ่มได้ แต่ห้ามซ่อนเหตุผล** (UI §6.9) ไม่งั้นช่างคิดว่าระบบพัง */}
-        {canDelete('mtn_repair', 'manage_master', role)
-          ? (removal.mode === MO_REMOVE_BLOCKED
-            /* ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล (UI §6.9) — ไม่งั้นคนคิดว่าระบบพัง */
-            ? <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }} title={removal.why}>🔒 {removal.why}</span>
-            : <button onClick={del} title={removal.why} style={{ ...btnGhost, color: '#ef4444', borderColor: '#ef4444' }}>
-                {removal.mode === MO_REMOVE_DELETE ? '🗑 ลบใบนี้' : '🚫 ยกเลิกใบนี้'}
-              </button>)
-          : isSharedAccount()
+        {/* 🖥️ บัญชีกลางลบไม่ได้ — **ซ่อนปุ่มได้ แต่ห้ามซ่อนเหตุผล** (UI §6.9) ไม่งั้นช่างคิดว่าระบบพัง
+            ลบ/ยกเลิกใบ ย้ายเข้าเมนู ⋯ (danger) — เหตุผลที่ลบไม่ได้ยังเขียนไว้ตรงนี้ */}
+        {canDelete('mtn_repair', 'manage_master', role) && removal.mode === MO_REMOVE_BLOCKED
+          ? <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }} title={removal.why}>🔒 {removal.why}</span>
+          : !canDelete('mtn_repair', 'manage_master', role) && isSharedAccount()
             ? <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }}
                 title="บัญชีกลางใช้ร่วมกันหลายคน ลบแล้วสอบกลับไม่ได้ว่าใครกด — ให้ล็อกอินด้วยบัญชีของตัวเองถ้าต้องลบจริง">
                 🔒 บัญชีกลางลบใบไม่ได้
               </span>
             : <span />}
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {o.machine_no && <button onClick={() => setShowHist(true)} style={btnGhost} title="ใบแจ้งซ่อมทุกใบของเครื่องนี้ · ค่าใช้จ่าย · PR · เวลาซ่อม">📜 ประวัติเครื่องนี้</button>}
-          {can('improvements', 'manage', role) && <button onClick={() => onOpenImprovement(o)} style={{ ...btnGhost, ...(repeatIssue ? { color: '#a78bfa', borderColor: '#7c6cf0' } : {}) }}>💡 เปิดโปรเจคปรับปรุง</button>}
-          <button onClick={async () => {
-            const dept = o.mtn_dept || deptForItem(o.item_type);
-            const key = teamKeyOf(dept) === 'maintenance' ? 'mo_report_mtn' : 'mo_report';
-            /* 💬 โหลดคอมเมนต์ **ตอนกดพิมพ์** ไม่ใช่ตอนเปิดใบ — คนเปิดดูเฉยๆ ไม่ต้องจ่าย query
-               (คอมเมนต์ที่โชว์บนจอเป็นของ <EventComments> ซึ่งโหลดเองอยู่แล้ว)
-               🔴 error ไม่กลืน — ส่งต่อให้ใบพิมพ์เขียนบนใบว่าคอมเมนต์อาจไม่ครบ */
-            /* 📄 ใบที่ปิดแล้ว = พิมพ์จาก **บันทึกต้นฉบับ** ไม่ generate สด (12/10 · คำสั่ง user)
-               ตัวตัดสินอยู่ที่ `moPrintSource()`/`moFromSnapshot()` ที่เดียว
-               🔴 ห้ามเช็ค `status`/`snapshot` เองที่นี่ · เลขฟอร์ม/Rev/โลโก้ ยังอ่านสดจาก
-                  ทะเบียน /doc-forms เสมอ (ไม่อยู่ใน snapshot — doc_control ต้องแก้ได้) */
-            const snap = moFromSnapshot(o.snapshot);
-            const fromSnap = o.status === 'closed' && !!snap;
-            const [logo, cmtLive] = await Promise.all([
-              logoDataUrl(docFormSync(key).logo_url),
-              fromSnap ? Promise.resolve(NO_CMT) : loadMoComments(o.id),
-            ]);
-            if (!fromSnap && cmtLive.error) toast.error('โหลดคอมเมนต์ของใบนี้ไม่สำเร็จ — ใบที่พิมพ์จะเขียนกำกับไว้');
-            // 🛒 เลข PR ทุกใบของ MO นี้ (ไม่นับที่ยกเลิก) — ใบพิมพ์วางตาม prPlacement() · โหลดไม่ได้ = ถอยไปช่อง pr_no เดิม + toast
-            const prRes = await supabaseDR.from('mtn_purchase_requests').select('order_id, pr_no, status').eq('order_id', o.id);
-            if (prRes.error) toast.error('โหลดเลข PR ของใบนี้ไม่สำเร็จ — ใบพิมพ์ใช้เฉพาะเลข PR ที่กรอกในใบ');
-            const prs = prRes.data || [];
-            printMoReport(
-              fromSnap ? { ...snap.order, _prs: prs } : { ...o, _prs: prs },
-              fromSnap ? snap.parts : dparts,
-              logo,
-              fromSnap ? snap.labor : dlabor,
-              fromSnap ? snap.cmt   : cmtLive,
-              fromSnap ? null       : dcostErr,
-              moPrintNote(o),
-              sigByUid,   // ✍️ ลายเซ็นสดจากโปรไฟล์ (ยังไม่โหลดเสร็จ = null ⇒ ถอยไปใช้ค่าที่ใบเก็บไว้)
-            );
-          }} style={btnGhost}>🖨️ พิมพ์ / บันทึก PDF</button>
-          <button onClick={onClose} style={btnGhost}>ปิด</button>
-          {!isMobile && skipQa.ok && <button onClick={() => onStep(5, false, { skipQa: true })} style={{ ...btnGhost, color: '#f59e0b', borderColor: '#f59e0b' }} title="QA ตัดสินว่างานนี้ไม่เกี่ยวกับคุณภาพชิ้นงาน — ไม่ต้องตรวจ ส่งไปรับมอบ/ติดตามผลเลย (เฉพาะ QA กดได้)">⏭ QA ระบุว่าไม่เกี่ยวกับคุณภาพ — ไปขั้น 6</button>}
-          {!isMobile && next && canEditStep(next.step) && <button onClick={() => onStep(next.step, false)} style={btnPri}>{next.label}</button>}
+        {/* ปุ่มตายตัว ≤2 (UI §6.35): [ขั้นถัดไป (primary)] [ปิด] + ⋯ (ประวัติเครื่อง · โปรเจคปรับปรุง · พิมพ์ · QA ข้าม · ลบ/ยกเลิก) */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <OverflowMenu drop="up" items={[
+            { key: 'hist', icon: '📜', label: 'ประวัติเครื่องนี้', onClick: () => setShowHist(true), hidden: !o.machine_no,
+              title: 'ใบแจ้งซ่อมทุกใบของเครื่องนี้ · ค่าใช้จ่าย · PR · เวลาซ่อม' },
+            { key: 'improve', icon: '💡', label: repeatIssue ? 'เปิดโปรเจคปรับปรุง (ปัญหาซ้ำ)' : 'เปิดโปรเจคปรับปรุง', onClick: () => onOpenImprovement(o),
+              hidden: !can('improvements', 'manage', role) },
+            { key: 'print', icon: '📄', label: 'พิมพ์ / บันทึก PDF', onClick: doPrint },
+            { key: 'skipqa', icon: '✅', label: 'QA ระบุว่าไม่เกี่ยวกับคุณภาพ — ไปขั้น 6', onClick: () => onStep(5, false, { skipQa: true }),
+              hidden: isMobile || !skipQa.ok,
+              title: 'QA ตัดสินว่างานนี้ไม่เกี่ยวกับคุณภาพชิ้นงาน — ไม่ต้องตรวจ ส่งไปรับมอบ/ติดตามผลเลย (เฉพาะ QA กดได้)' },
+            { key: 'remove', icon: '🗑', label: removal.mode === MO_REMOVE_DELETE ? 'ลบใบนี้' : 'ยกเลิกใบนี้', onClick: del, danger: true,
+              title: removal.why, hidden: !canDelete('mtn_repair', 'manage_master', role) || removal.mode === MO_REMOVE_BLOCKED },
+          ]} />
+          <button type="button" className="pg-btn" onClick={onClose}>ปิด</button>
+          {!isMobile && next && canEditStep(next.step) && <button type="button" className="pg-btn primary" onClick={() => onStep(next.step, false)}>{stripIcon(next.label)}</button>}
         </div>
       </div>
       {/* 📱 มือถือ: ปุ่ม "ขั้นถัดไป" เกาะล่างของใบ (15/10 · MOBILE-UX-STANDARD §2 ข้อ 2)
@@ -3061,7 +3088,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
           = ช่างต้องเลื่อน ~3 จอก่อนจะรับงานได้ · ย้ายมาเกาะล่าง (ปุ่มเดียวกัน onStep เดียวกัน ไม่แยกตรรกะ) */}
       {isMobile && ((next && canEditStep(next.step)) || skipQa.ok) && (
         <div className="m-savebar m-actbar">
-          {skipQa.ok && <button type="button" className="m-actbar-alt" onClick={() => onStep(5, false, { skipQa: true })}>⏭ ไม่เกี่ยวกับคุณภาพ — ไปขั้น 6</button>}
+          {skipQa.ok && <button type="button" className="m-actbar-alt" onClick={() => onStep(5, false, { skipQa: true })}>ไม่เกี่ยวกับคุณภาพ — ไปขั้น 6</button>}
           {next && canEditStep(next.step) && <button type="button" onClick={() => onStep(next.step, false)}>{next.label}</button>}
         </div>
       )}
@@ -3084,7 +3111,7 @@ function TechMultiPick({ value = [], groups, onChange }) {
       style={{ padding: '5px 10px', borderRadius: 999, fontSize: 12, cursor: 'pointer', fontWeight: sel.has(t.name) ? 700 : 500,
         border: `1px solid ${sel.has(t.name) ? 'var(--accent)' : 'var(--border)'}`,
         background: sel.has(t.name) ? 'var(--accent-dim)' : 'var(--bg)', color: 'var(--text)' }}>
-      {sel.has(t.name) ? '✓ ' : ''}{t.name}{other && t.dept ? ` · ${deptNameOf(t.dept)}` : ''}
+      {sel.has(t.name) ? '' : ''}{t.name}{other && t.dept ? ` · ${deptNameOf(t.dept)}` : ''}
     </button>
   );
   const orphan = (value || []).filter(n => !groups.mine.some(t => t.name === n) && !groups.others.some(t => t.name === n));
@@ -3097,7 +3124,7 @@ function TechMultiPick({ value = [], groups, onChange }) {
       </div>
       {groups.others.length > 0 && (
         <button type="button" onClick={() => setShowOthers(v => !v)} style={{ ...btnGhost, padding: '4px 10px', fontSize: 11.5, marginTop: 6 }}>
-          {showOthers ? '▲ ซ่อนช่างทีมอื่น' : `▼ ช่างทีมอื่น (${groups.others.length}) — รับงานข้ามทีม`}
+          {showOthers ? 'ซ่อนช่างทีมอื่น' : `ช่างทีมอื่น (${groups.others.length}) — รับงานข้ามทีม`}
         </button>
       )}
       {showOthers && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>{groups.others.map(t => chip(t, true))}</div>}
@@ -3287,7 +3314,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         id: p.id, label: p.name || '(ไม่มีชื่อ)',
         sub: [p.code, p.shelf && `ชั้น ${p.shelf}`, p.used_with && `ใช้กับ ${p.used_with}`].filter(Boolean).join(' · '),
         badge: `${st}${p.unit ? ' ' + p.unit : ''}`,
-        badgeColor: st <= 0 ? '#ef4444' : (lo > 0 && st <= lo ? '#f59e0b' : 'var(--text2)'),
+        badgeColor: st <= 0 ? 'var(--red)' : (lo > 0 && st <= lo ? 'var(--amber)' : 'var(--text2)'),
         group: gname[g],
         keywords: [p.code, p.mat_no, p.part_no, p.shelf, p.used_with, p.supplier].filter(Boolean).join(' '),
         _g: g, _unit: p.unit || '', _stock: st,
@@ -3697,10 +3724,10 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
 
   // หัวโมดัล = stepLabel() ตัวเดียวกับปุ่มขั้นถัดไป — ห้ามพิมพ์ชื่อขั้นซ้ำที่นี่ (เคยมี map `titles` แล้ว drift)
   return (
-    <ModalShell title={`${o.mo_no || o.item_type || ''} · ${skipQa ? '⏭ ข้าม QA — งานไม่เกี่ยวกับคุณภาพ (ขั้น 5 → 6)' : `${editMode ? '✏️ แก้ไข ' : ''}${stepLabel(step, { mtnForm: isMtnForm, toolTeam: isToolTeam })}`}`} onClose={onClose} dirty={dirty}>
+    <ModalShell title={`${o.mo_no || o.item_type || ''} · ${skipQa ? 'ข้าม QA — งานไม่เกี่ยวกับคุณภาพ (ขั้น 5 → 6)' : `${editMode ? 'แก้ไข ' : ''}${stripIcon(stepLabel(step, { mtnForm: isMtnForm, toolTeam: isToolTeam }))}`}`} onClose={onClose} dirty={dirty}>
       <div style={{ display: 'grid', gap: 12 }}>
         {skipQa && (
-          <div style={{ fontSize: 12, color: 'var(--text2)', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '8px 10px', lineHeight: 1.6 }}>
+          <div style={{ fontSize: 12, color: 'var(--text2)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '8px 10px', lineHeight: 1.6 }}>
             ⏭ ใบนี้ค้างรอ QA เพราะขั้น 4 ระบุว่า <b>“เกี่ยวกับคุณภาพ”</b> — ถ้างานซ่อมนี้ไม่กระทบคุณภาพชิ้นงานจริง
             กดยืนยันเพื่อข้ามการตรวจ QA แล้วไป <b>รับมอบ / ติดตามผล (ขั้น 6)</b> ทันที · ระบบบันทึกชื่อคุณและเหตุผลไว้ในใบ
           </div>
@@ -3726,7 +3753,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         </>}
         {modalStage === 'assign' && <>
           <Field label={`ประเภทงานซ่อม${o.repair_type && !editMode ? ' (ผู้แจ้งระบุมา — แก้ได้ก่อนออกเลข MO)' : ''}`} required><select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>{teamRepairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}</select></Field>
-          {isReject ? <><div style={{ fontSize: 11.5, color: canBounceBack(o) ? '#e0894a' : '#ef4444', background: canBounceBack(o) ? 'rgba(224,137,74,0.1)' : 'rgba(239,68,68,0.12)', border: `1px solid ${canBounceBack(o) ? 'rgba(224,137,74,0.3)' : 'rgba(239,68,68,0.5)'}`, borderRadius: 8, padding: '7px 10px' }}>{canBounceBack(o) ? '↩️ ตีกลับให้ผู้แจ้ง — ใบจะเด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ · เวลาเริ่มนับใหม่ให้แผนกที่ถูก)' : `⛔ ใบนี้เดินไปถึงขั้น ${o.current_step} แล้ว — ตีกลับไม่ได้ (ผลงาน/ลายเซ็นขั้น 3 เป็นต้นไปจะหายจากใบ) กดบันทึกจะไม่ผ่าน · ถ้าแจ้งผิดแผนกจริง ให้ปิดใบนี้แล้วเปิดใบใหม่ให้ทีมที่ถูก`}</div><Field label="เหตุผลที่ตีกลับ (เช่น ผิดแผนก — ควรแจ้ง JIG MTN)" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></> : <>
+          {isReject ? <><div style={{ fontSize: 11.5, color: canBounceBack(o) ? 'var(--amber)' : 'var(--red)', background: canBounceBack(o) ? 'var(--amber-dim)' : 'var(--red-dim)', border: `1px solid ${canBounceBack(o) ? 'var(--amber-line)' : 'var(--red-line)'}`, borderRadius: 8, padding: '7px 10px' }}>{canBounceBack(o) ? '↩️ ตีกลับให้ผู้แจ้ง — ใบจะเด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ · เวลาเริ่มนับใหม่ให้แผนกที่ถูก)' : `⛔ ใบนี้เดินไปถึงขั้น ${o.current_step} แล้ว — ตีกลับไม่ได้ (ผลงาน/ลายเซ็นขั้น 3 เป็นต้นไปจะหายจากใบ) กดบันทึกจะไม่ผ่าน · ถ้าแจ้งผิดแผนกจริง ให้ปิดใบนี้แล้วเปิดใบใหม่ให้ทีมที่ถูก`}</div><Field label="เหตุผลที่ตีกลับ (เช่น ผิดแผนก — ควรแจ้ง JIG MTN)" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></> : <>
             {/* หัวหน้าช่าง = <PersonSelect> (role ซ่อมบำรุง/หัวหน้าขึ้นก่อน) — เก็บชื่อ snapshot เหมือนเดิม · 2026-09-07 */}
             <Field label="ผู้รับเรื่อง / จ่ายงาน (หัวหน้าช่าง)"><PersonSelect value={f.accepted_by} source="both" roles={MTN_HEAD_ROLES} teams={acceptTeams} onChange={res => set('accepted_by', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
             <Field label={`มอบหมายช่างซ่อม — เลือกได้หลายคน${techGroups.teamKey ? ` (ทีม ${deptNameOf(techGroups.teamKey)})` : ''}`} required>
@@ -3734,7 +3761,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
               {/* ⚠️ ไม่มีช่างในทีมของใบเลย = ต้องบอกว่าเพราะอะไรและแก้ที่ไหน ห้ามปล่อยให้ไล่หาเอง
                   เคสที่เจอจริง: ช่างฝ่ายผลิตยังไม่ถูกติ๊ก employees.mtn_team จึงไม่โผล่สักคน */}
               {techGroups.teamKey && techGroups.mine.length === 0 && (
-                <div style={{ fontSize: 11.5, color: '#e0894a', background: 'rgba(224,137,74,0.1)', border: '1px solid rgba(224,137,74,0.3)', borderRadius: 8, padding: '7px 10px', marginTop: 6, lineHeight: 1.6 }}>
+                <div style={{ fontSize: 11.5, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '7px 10px', marginTop: 6, lineHeight: 1.6 }}>
                   ⚠️ ยังไม่มีใครถูกตั้งเป็นช่างทีม <b>{deptNameOf(techGroups.teamKey)}</b> เลย
                   <div>ไปตั้งที่ <b>ฐานข้อมูลพนักงาน (/operator)</b> → แก้ไขพนักงาน → ช่อง <b>🔧 ทีมช่างซ่อม</b></div>
                   <div style={{ opacity: 0.85 }}>ระหว่างนี้เลือกช่างทีมอื่นไปก่อนได้</div>
@@ -3790,7 +3817,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
               </div>
               {laborState === 'loading' && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>กำลังโหลดค่าแรงเดิมของใบนี้…</div>}
               {laborState === 'error' && (
-                <div role="alert" style={{ fontSize: 12, color: '#ef4444', fontWeight: 700, marginBottom: 6 }}>
+                <div role="alert" style={{ fontSize: 12, color: 'var(--red)', fontWeight: 700, marginBottom: 6 }}>
                   ⚠️ โหลดค่าแรงเดิมไม่สำเร็จ ({laborErr}) — ยังบันทึกขั้นนี้ไม่ได้ (กันค่าแรงเดิมหาย){' '}
                   <button type="button" onClick={loadLabor} style={{ ...btnGhost, padding: '2px 8px', fontSize: 12 }}>โหลดใหม่</button>
                 </div>
@@ -3807,7 +3834,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
                   <span style={{ color: 'var(--muted)' }}>×</span>
                   <input type="number" min="0" step="0.5" value={r.hours} onChange={e => setLabor(i, 'hours', e.target.value)} style={{ ...inp, width: 70, flexShrink: 0 }} placeholder="ชม." />
                   <span style={{ width: 70, textAlign: 'right', fontWeight: 700, flexShrink: 0 }}>{laborAmount(r) == null ? '—' : laborAmount(r).toLocaleString()}</span>
-                  <button type="button" onClick={() => { touch(); setLaborRows(x => x.filter((_, j) => j !== i)); }} className="tbtn" style={{ ...btnGhost, padding: '6px 8px', flexShrink: 0 }}>✕</button>
+                  <button type="button" onClick={() => { touch(); setLaborRows(x => x.filter((_, j) => j !== i)); }} className="tbtn" aria-label="ลบแถว" title="ลบแถว" style={{ ...btnGhost, padding: '6px 8px', flexShrink: 0 }}>✕</button>
                 </div>
               ))}
               {laborState === 'ok' && !laborRows.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่ได้ลงค่าแรง — กด “+ เพิ่มคน” (ช่องล่างยังกรอกยอดรวมเองได้)</div>}
@@ -3829,7 +3856,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
                    ("ใบนี้ยังไม่ลงอะไหล่" กับ "โหลดไม่ติด") ปล่อยให้เดาเอง = บันทึกทับของจริงหาย */}
             {partsState === 'loading' && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>กำลังโหลดรายการอะไหล่เดิมของใบนี้…</div>}
             {partsState === 'error' && (
-              <div style={{ fontSize: 12, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 8, padding: '6px 9px', marginBottom: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 12, color: 'var(--red)', background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 8, padding: '6px 9px', marginBottom: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <span>โหลดรายการอะไหล่เดิมไม่สำเร็จ ({partsErr}) — บันทึกไม่ได้จนกว่าจะโหลดติด</span>
                 <button type="button" onClick={loadParts} style={{ ...btnGhost, padding: '2px 8px', fontSize: 12 }}>โหลดใหม่</button>
               </div>
@@ -3855,11 +3882,11 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
                              title="ว่าง = ดึงราคาจากทะเบียนอะไหล่ให้อัตโนมัติ" />
                     )}
                     <span style={{ fontSize: 11, color: 'var(--muted)', width: 34, flexShrink: 0, paddingTop: 9, overflow: 'hidden' }}>{p.unit || ''}</span>
-                    <button type="button" onClick={() => { touch(); setUsedParts(x => x.filter((_, j) => j !== i)); }} className="tbtn" style={{ ...btnGhost, padding: '6px 8px', flexShrink: 0 }}>✕</button>
+                    <button type="button" onClick={() => { touch(); setUsedParts(x => x.filter((_, j) => j !== i)); }} className="tbtn" aria-label="ลบแถว" title="ลบแถว" style={{ ...btnGhost, padding: '6px 8px', flexShrink: 0 }}>✕</button>
                   </div>
                   {/* ⚠️ เบิกเกินสต็อก — RPC mtn_stock_move กันติดลบอยู่แล้ว บอกก่อนกดบันทึกจะได้ไม่เสียเที่ยว */}
                   {over && (
-                    <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
+                    <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>
                       ⚠ เบิก {p.qty} แต่คงเหลือ {master.stock_qty} {master.unit || ''} — บันทึกไม่ผ่าน ต้องรับเข้าคลังก่อน หรือลดจำนวน
                     </div>
                   )}
@@ -3935,7 +3962,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
                       const on = Number(f.satisfaction?.[d.key]) === lv.v;
                       return <button key={lv.v} type="button" onClick={() => set('satisfaction', { ...f.satisfaction, [d.key]: on ? undefined : lv.v })}
                         style={{ padding: '5px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                          border: `1px solid ${on ? lv.color : 'var(--border)'}`, background: on ? lv.color : 'var(--bg3)', color: on ? '#0b0d14' : 'var(--text2)' }}>{lv.t}</button>;
+                          border: `1px solid ${on ? lv.color : 'var(--border)'}`, background: on ? lv.color : 'var(--bg3)', color: on ? 'var(--bg)' : 'var(--text2)' }}>{lv.t}</button>;
                     })}
                   </div>
                 </div>
@@ -3967,12 +3994,12 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         {modalStage === 'cost_mgr_close' && <>
           <Field label="ชื่อ ผจก. ของฝ่ายที่แจ้ง (ช่องเซ็นที่ 7 — ช่อง “ผู้จัดการ” ท้ายใบ)"><PersonSelect value={f.cost_mgr_name} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} onChange={res => set('cost_mgr_name', res.name)} inputStyle={{ background: 'var(--bg)' }} placeholder="ค้นชื่อผู้จัดการ" /></Field>
           <Field label="ความคิดเห็นเพิ่มเติม (ท้ายใบ)"><textarea value={f.extra_comment} onChange={e => set('extra_comment', e.target.value)} style={{ ...inp, minHeight: 50 }} /></Field>
-          {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ลายเซ็นจุดสุดท้ายของใบ — อนุมัติแล้วสถานะจะเป็น <b style={{ color: '#22c55e' }}>Close MO</b></div>}
+          {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ลายเซ็นจุดสุดท้ายของใบ — อนุมัติแล้วสถานะจะเป็น <b style={{ color: 'var(--green)' }}>Close MO</b></div>}
         </>}
         {modalStage === 'close' && <>
           {/* ผู้อนุมัติปิดใบ = <PersonSelect> profiles role supervisor/manager ของฝ่ายที่แจ้งขึ้นก่อน · 2026-09-07 */}
           <Field label="ชื่อผู้อนุมัติ (หัวหน้าแผนก/ส่วน/ผจก. ฝ่ายที่แจ้ง)"><PersonSelect value={f.approver_name} source="profiles" roles={DEPT_HEAD_ROLES} lines={orderFam} section={o.dept_section} history={approverHist} onChange={res => set('approver_name', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
-          {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>อนุมัติแล้วสถานะจะเป็น <b style={{ color: '#22c55e' }}>Close MO</b></div>}
+          {!editMode && <div style={{ fontSize: 12, color: 'var(--muted)' }}>อนุมัติแล้วสถานะจะเป็น <b style={{ color: 'var(--green)' }}>Close MO</b></div>}
         </>}
         {/* 💰 สรุปค่าใช้จ่ายในขั้นเซ็นอนุมัติ/ปิดใบ — อ่านอย่างเดียว  (22/10 · MTN แจ้ง)
                เดิมโมดัลขั้นปิดใบมีแค่ช่องชื่อ+ความคิดเห็น ⇒ คนเซ็นอนุมัติค่าใช้จ่ายโดยไม่เห็นค่าใช้จ่าย
@@ -3981,7 +4008,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
           <div style={{ fontSize: 12.5, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', lineHeight: 1.6 }}>
             <div style={{ fontWeight: 800, marginBottom: 4 }}>💰 ค่าใช้จ่ายของใบนี้</div>
             {partsState === 'loading' && <div style={{ color: 'var(--muted)' }}>กำลังโหลดรายการอะไหล่…</div>}
-            {partsState === 'error' && <div style={{ color: '#ef4444' }}>โหลดรายการอะไหล่ไม่สำเร็จ ({partsErr}) — ยอดอะไหล่ข้างล่างอาจไม่ครบ</div>}
+            {partsState === 'error' && <div style={{ color: 'var(--red)' }}>โหลดรายการอะไหล่ไม่สำเร็จ ({partsErr}) — ยอดอะไหล่ข้างล่างอาจไม่ครบ</div>}
             {partsState === 'ok' && (usedParts.length
               ? <div style={{ color: 'var(--text2)' }}>🔩 อะไหล่ {usedParts.length} รายการ: {usedParts.map(x => `${x.name} ×${x.qty}${x.unit || ''}`).join(', ')}</div>
               : <div style={{ color: 'var(--muted)' }}>🔩 ไม่มีการเบิกอะไหล่ในใบนี้</div>)}
@@ -3998,7 +4025,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
       <div className={isMobile ? 'm-savebar m-stepbar' : undefined}
         style={isMobile ? undefined : { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
         <button onClick={tryClose} style={isMobile ? undefined : btnGhost}>ยกเลิก</button>
-        <button onClick={save} disabled={saving} style={isMobile ? undefined : btnPri}>{saving ? 'บันทึก…' : skipQa ? '⏭ ยืนยันข้าม QA ไปขั้น 6' : (editMode ? 'บันทึกการแก้ไข' : 'บันทึก')}</button>
+        <button onClick={save} disabled={saving} style={isMobile ? undefined : btnPri}>{saving ? 'บันทึก…' : skipQa ? 'ยืนยันข้าม QA ไปขั้น 6' : (editMode ? 'บันทึกการแก้ไข' : 'บันทึก')}</button>
       </div>
     </ModalShell>
   );
@@ -4120,7 +4147,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
             <div key={it.id} style={{ ...techRowGrid, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', opacity: 0.9 }}>
               <span style={{ fontSize: 13, minWidth: 0 }}>{it.name}{it.emp_code ? <span style={{ color: 'var(--muted)', fontSize: 11 }}> · {it.emp_code}</span> : null}</span>
               <span />
-              <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', fontWeight: 700, justifySelf: 'start' }}>👤 จากฐานพนักงาน</span>
+              <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', fontWeight: 700, justifySelf: 'start' }}>👤 จากฐานพนักงาน</span>
               <span />
               <span />
             </div>

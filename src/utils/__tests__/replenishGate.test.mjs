@@ -194,3 +194,24 @@ test('reqSourceMeta — 3 ค่าแยกฝั่งถูก และค�
     assert.equal(reqSourceMeta(v).side, 'line');
   }
 });
+
+test('🧲 coil (uom KG · จ่ายเป็นม้วน): ม้วนหนักกว่าที่ต้องใช้ = ไม่บล็อก · พาร์ทชิ้นยังบล็อกเหมือนเดิม', () => {
+  const coil = { request_qty: 121, uom: 'KG' };
+  const r = checkPickQty({ request: coil, qty: 480.5 });
+  assert.equal(r.block, false); assert.equal(r.status, 'ok'); assert.equal(r.coilOver, true);
+  assert.match(r.message, /kg/);
+  assert.equal(checkPickQty({ request: coil, qty: 100 }).status, 'under');
+  assert.equal(checkPickQty({ request: { request_qty: 60 }, qty: 61 }).block, true);
+  assert.equal(checkPickQty({ request: { request_qty: 60, uom: null }, qty: 61 }).status, 'over');
+});
+
+import { unreceivedAge } from '../replenishGate.js';
+test('📭 unreceivedAge: ส่งแล้วยังไม่รับ — เขียนเวลา · ข้ามวันทำงาน = overdue · ไม่ใช่ delivered = null', () => {
+  const now = new Date(2026, 10, 5, 10, 0);   // เวลาเครื่อง (getWorkDate อ่านเวลาเครื่อง)
+  const a = unreceivedAge({ status: 'delivered', delivered_at: new Date(2026, 10, 5, 8, 30).toISOString() }, now);
+  assert.equal(a.min, 90); assert.equal(a.overdue, false); assert.match(a.text, /1 ชม\. 30 นาที/);
+  // ส่งตอนกะดึก 07:30 = วันทำงาน 04/11 → ตอนนี้ 05/11 10:00 = ข้ามวันทำงาน
+  assert.equal(unreceivedAge({ status: 'delivered', delivered_at: new Date(2026, 10, 5, 7, 30).toISOString() }, now).overdue, true);
+  assert.equal(unreceivedAge({ status: 'received', delivered_at: '2026-11-04T08:30:00+07:00' }, now), null);
+  assert.equal(unreceivedAge({ status: 'delivered', delivered_at: null }, now), null);
+});

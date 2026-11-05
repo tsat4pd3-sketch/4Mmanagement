@@ -73,12 +73,22 @@ export function packSplitText(r, fmt = (x) => Number(x).toLocaleString('th-TH'))
      target   = ปัดลงเต็มกล่อง(short)  ← ไม่ถึง 1 กล่อง = รอ (user เคาะ 04/11)
    ใบ "ยังไม่หยิบ" (pending) มีได้ใบเดียวต่อ ไลน์+พาร์ท ⇒ ไม่มี = เปิดใหม่ · มีแต่น้อยกว่า target = เพิ่มยอด · **ห้ามลดเอง**
    (ใบที่หยิบแล้ว ยอดย้ายเข้าไลน์ไปแล้ว ⇒ อยู่ใน base แล้ว ไม่นับซ้ำ) */
-export function planLineRequest({ need, onHand, pendingQty = 0, pkg }) {
+export function planLineRequest({ need, onHand, pendingQty = 0, pkg, coil = false }) {
   const n = Number(need) > 0 ? Number(need) : 0;
   const base = Math.max(0, Number(onHand) || 0);
   const short = Math.max(0, Math.round((n - base) * 1e6) / 1e6);
-  const split = packSplit(short, pkg);
   const pend = Number(pendingQty) > 0 ? Number(pendingQty) : 0;
+  /* 🧲 05/11 — เหล็ก coil (kg) "จ่ายเป็นม้วน" (user เลือก): ไม่ปัดกล่อง · ขาดเท่าไหร่ขอเท่านั้น (ปัด kg ขึ้นที่กรัม)
+     สโตร์เลือกม้วนแล้วกรอกน้ำหนักจริงตอนหยิบ (เกินได้ — `checkPickQty`) · ส่วนเกินอยู่ใน base รอบหน้า */
+  if (coil) {
+    const q = Math.ceil(Math.round(short * 1e6) / 1e3) / 1e3;
+    const out = { need: n, base, short, state: q > 0 ? 'send' : 'none', send: q, carry: 0, packs: null, pkg: null, pending: pend, coil: true };
+    if (!n || !q) return { ...out, action: 'covered' };
+    if (!pend) return { ...out, action: 'insert', qty: q };
+    if (pend < q) return { ...out, action: 'raise', qty: q };
+    return { ...out, action: 'covered' };
+  }
+  const split = packSplit(short, pkg);
   const out = { need: n, base, short, ...split, pending: pend };
   if (!n || !short) return { ...out, action: 'covered' };
   if (split.state === 'no_pkg') return { ...out, action: 'no_pkg' };

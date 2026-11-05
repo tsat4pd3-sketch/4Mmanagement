@@ -58,6 +58,17 @@ function stripComments(src) {
    scan: โฟลเดอร์ที่ตรวจ · ext: นามสกุล · re: regex (global) · allow: ไฟล์ที่ยกเว้น + เหตุผล */
 const RULES = [
   {
+    id: 'uom-write-via-normuom',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับ default หน่วยแบบเดิม: `uom: x || 'EA'` · `unit: x || 'Pcs'` · `uom: 'pcs'` */
+    re: /\b(uom|unit)\s*:\s*(?:[^,\n}]*\|\|\s*)?['"](EA|ea|pcs|Pcs|PCS)['"]/g,
+    why: '📏 user ตัดสิน 05/11: **EA = pcs = PC (หน่วยเดียวกัน) · หน่วยหลัก = PC** — ฐานเคยมี PC/EA/pcs ปนกัน '
+       + 'เพราะแต่ละทางเขียน default คนละแบบ (ฟอร์ม/import = EA · ลงทะเบียนจาก BOM = pcs · ใบเบิก = Pcs) '
+       + '⇒ แก้ข้อมูล 392 แถวแล้ว (archive.uom_fix_20261105) · default แบบเดิมโผล่กลับ = ปนใหม่เงียบๆ',
+    fix: "ใช้ `normUom(raw, uomIdx) || DEFAULT_UOM` จาก src/utils/uom.js (ทะเบียน DR `uom_units` · useUomUnitsState)",
+    allow: {},
+  },
+  {
     id: 'myqueue-next-step-not-current-step',
     scan: ['src/utils/myQueue.js'], ext: ['.js'],
     /* จับการอ่านเลขขั้นตรงจาก current_step ในตัวตัดสิน "ใบนี้รอใคร" */
@@ -7009,7 +7020,7 @@ test('🔄 บันทึกขั้นใบ MO เสร็จ ต้อง�
    🕰️ หน้าที่มีปุ่ม >2 อยู่ก่อนกฎ = ทยอยแก้ **ห้ามเพิ่มหน้าใหม่เข้าลิสต์นี้** */
 test('🧭 PageHeader actions= มีปุ่มตายตัวไม่เกิน 2 — ที่เหลือเข้า <OverflowMenu>', () => {
   const LEGACY_MANY_ACTIONS = [
-    'src/pages/BbsCheck.jsx', 'src/pages/Checkin.jsx', 'src/pages/MachineDatabase.jsx',
+    'src/pages/BbsCheck.jsx', 'src/pages/MachineDatabase.jsx',
     'src/pages/MorningMeeting.jsx', 'src/pages/PMSetup.jsx', 'src/pages/RackCenter.jsx',
   ];
   const bad = [];
@@ -8699,4 +8710,62 @@ test('🛡️ bom-phantom-no-seed — migration ห้าม insert ทะเบ
     + '     (รอบ 4/11 seed 45 แถวแล้วทำให้ confirm 10100286 ข้าม 20059342 — ล้างทิ้งแล้ว)\n'
     + 'fix: ปล่อยทะเบียนว่าง ให้ PE ติ๊กเองที่ /products?tab=phantom ·\n'
     + '     โซ่ที่เดินไม่ถึงให้โชว์ผ่าน fn_bom_deduct_gaps() ห้ามกลบด้วยการติ๊กของลม\n');
+});
+
+test('🏃 mo-chase-side-via-registry — แผงไล่งานต้องถามฝั่งจากทะเบียนขั้น ห้ามเทียบเลขขั้น/ชื่อ stage เอง', () => {
+  /* why (05/11 · คำสั่ง user "ทำแผงไล่ MO ค้างให้หัวหน้าช่าง"):
+     แผงนี้แบ่งกองด้วย "ใบนี้รอฝั่งช่าง หรือรอฝ่ายที่แจ้ง" ซึ่ง **ไม่ใช่ฟังก์ชันของเลขขั้น** —
+     ขั้น 4 (ตรวจรับงานหลังซ่อม) ของทีมเครื่องมือ (JIG/DIE) เป็น **ฝั่งช่าง** (หัวหน้าแผนกช่างตรวจ
+     เพราะของยังอยู่ห้องช่าง) แต่ของทีม production เป็น **ฝั่งผู้แจ้ง** (เครื่องกลับมาเดินที่ไลน์แล้ว)
+     ⇒ ใครเขียน `step === 4 → reporter` เองในหน้า/ใน util นี้ จะโยนใบ JIG/DIE ~35 ใบไปกองผิดฝั่ง
+        แล้วหัวหน้าช่างโทรตามผิดคน (วัด 05/11: ใบค้าง accept_work ของ jig/die = 3 ใบ)
+     กฎ: ฝั่งมาจาก `moWaitMeta(order).meta.side` ที่เดียว · ขั้น QA ไม่มี side (แยกถังเอง)
+     🔴 ห้ามนับวันซ้ำ — อายุการค้างต้องมาจาก `stageAgeOf` ของ mtnStale.js (2 สูตร = 2 จอคนละเลข) */
+  const src = stripComments(readFileSync(join(ROOT, 'src/utils/moChase.js'), 'utf8'));
+  assert.match(src, /moWaitMeta\(/,
+    '\n\n❌ moChase ไม่ได้ถาม moWaitMeta แล้ว — ฝั่งจะถูกเดาเอง\n');
+  assert.match(src, /meta\?\.side === 'mtn'/,
+    '\n\n❌ ไม่ได้อ่าน `meta.side` จากทะเบียนขั้น\n');
+  assert.doesNotMatch(src, /step\s*===\s*\d/,
+    '\n\n❌ moChase กลับไปเทียบเลขขั้นตรงๆ แล้ว — ขั้นเดียวกันคนละฝั่งตามทีม (JIG/DIE vs production)\n'
+    + '   ผล: ใบไปกองผิดฝั่ง หัวหน้าช่างโทรตามผิดคน\n');
+  assert.match(src, /stageAgeOf/,
+    '\n\n❌ ไม่ได้ใช้ stageAgeOf — อายุการค้างต้องมาจากสูตรเดียวกับแผงใบค้าง\n');
+  /* จอต้องไม่ตัดสินฝั่งเอง และต้องส่ง board มาจากหน้าแม่ (ไม่ยิงคิวรีในแผง) */
+  const panel = stripComments(readFileSync(join(ROOT, 'src/components/MoStalePanel.jsx'), 'utf8'));
+  assert.doesNotMatch(panel, /\.side\s*===\s*'(mtn|reporter)'/,
+    '\n\n❌ แผงเทียบฝั่งเองแล้ว — ต้องรับ `chase` ที่ประกอบจาก buildMoChaseBoard มาวาดเท่านั้น\n');
+  assert.doesNotMatch(panel, /supabase/,
+    '\n\n❌ แผงยิงคิวรีเอง — ต้องนับจาก orders ที่หน้าโหลดไว้แล้ว (egress 0)\n');
+
+  /* ชิป "ชื่อช่าง" กดแล้วกรองด้วยคำค้น ⇒ ช่องค้นหาต้องครอบ assigned_to ไม่งั้นเป็นปุ่มหลอก */
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  const textFilter = page.slice(page.indexOf("key: 'text'"), page.indexOf("key: 'text'") + 500);
+  assert.match(textFilter, /o\.assigned_to/,
+    '\n\n❌ ช่องค้นหาของหน้า MO ไม่ครอบ `assigned_to` แล้ว\n'
+    + '   ผล: กดชื่อช่างในแถบ "ไล่งาน" แล้วลิสต์ไม่กรองอะไรเลย (ปุ่มหลอก)\n');
+});
+
+/* ═══ 🧲 coil-request-via-bom — 2026-11-05 · คำสั่ง user ══════════════════════════════════
+   *"สโตร์จะจ่ายงานเหล็ก coil เป็น kgs. ไม่ใช่ชิ้น ตอนเบิกพาร์ทต้องแตกผ่านบอม"* · *"ต้องเบิกผ่านพาร์ท"*
+   ⇒ ตัวออกใบ (lib/lineDemandSync.js) ต้องรู้ coil จาก parts_master.uom + บล็อกการขอ coil ตรง +
+     ประทับ uom ลงใบ · ทางแตก BOM ในแผงไลน์ต้องส่ง viaBom (ไม่งั้น coil ที่แตกจาก BOM ถูกบล็อกด้วย)  */
+test('🧲 coil-request-via-bom — coil ขอตรงไม่ได้ · ใบต้องประทับ uom', () => {
+  const bad = [];
+  const sync = stripComments(readFileSync(join(ROOT, 'src/lib/lineDemandSync.js'), 'utf8'));
+  if (!/select\('[^']*\buom\b[^']*'\)/.test(sync)) bad.push('lineDemandSync — ไม่อ่าน parts_master.uom');
+  if (!/directCoil/.test(sync)) bad.push('lineDemandSync — ไม่บล็อก coil ที่ขอตรง');
+  if (!/uom: r\.uom/.test(sync)) bad.push('lineDemandSync — ไม่ประทับ uom ลงใบ');
+  const panel = stripComments(readFileSync(join(ROOT, 'src/components/LinePartCallPanel.jsx'), 'utf8'));
+  if (!/viaBom: true/.test(panel)) bad.push('LinePartCallPanel — ทางแตก BOM ไม่ส่ง viaBom');
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
+
+/* ═══ 🔒 line-adhoc-picker-strict — 2026-11-05 · คำสั่ง user ═══════════════════════════════
+   ช่อง "ขอเบิกพาร์ทนี้เลย" ห้ามโชว์พาร์ทของไลน์อื่น (*"ไม่ควรขึ้นเพื่อกันการงง"*) ⇒ ProductSelect ต้อง strict */
+test('🔒 line-adhoc-picker-strict — ช่องขอเบิกเองโชว์เฉพาะพาร์ทของไลน์นี้', () => {
+  const s = stripComments(readFileSync(join(ROOT, 'src/components/LinePartCallPanel.jsx'), 'utf8'));
+  assert.match(s, /<ProductSelect strict value=\{adhocMat\}/, 'ProductSelect ของฟอร์มขอเบิกเองต้องมี strict');
+  assert.match(s, /<ProductSelect strict value=\{newMat\}/, 'ProductSelect ของโมดัลตั้งจุดเรียกเติมต้องมี strict');
+  assert.doesNotMatch(s, /useColumnHistory\(supabaseDR, 'line_part_levels'/, 'ห้ามดึงประวัติ mat ของทุกไลน์มาเป็นตัวเลือก');
 });
