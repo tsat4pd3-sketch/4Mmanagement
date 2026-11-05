@@ -9,11 +9,11 @@
        { key: 'manpower', icon: '🔄', label: 'จัดกำลังคน', onClick, title },
        { key: 'void', label: 'ทำกะเปล่าเป็นโมฆะ', onClick, danger: true, hidden: !canVoid },
      ]} />
-   `badge` = ตัวเลข/ข้อความสั้นท้ายรายการ (งานค้างในใบ) · `disabled` + `title` = กดไม่ได้พร้อมเหตุผล */
+   `badge` = ตัวเลข/ข้อความสั้นท้ายรายการ (งานค้างในใบ) · `disabled` + `title` = กดไม่ได้พร้อมเหตุผล · `drop="up"` = กางขึ้น (ปุ่มอยู่แถบล่าง) */
 import { useEffect, useRef, useState } from 'react';
 import Icon from './Icon';
 
-export default function OverflowMenu({ items = [], label = 'เพิ่มเติม', size = 34, align = 'right', style }) {
+export default function OverflowMenu({ items = [], label = 'เพิ่มเติม', size = 34, align = 'right', drop = 'down', style }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
   const list = items.filter(it => it && !it.hidden);
@@ -39,7 +39,8 @@ export default function OverflowMenu({ items = [], label = 'เพิ่มเ�
         </span>
       </button>
       {open && (
-        <div role="menu" className="pg-menu" style={{ [align === 'left' ? 'left' : 'right']: 0 }}>
+        /* `drop="up"` = เมนูกางขึ้น — ใช้เมื่อปุ่มอยู่แถบล่างของโมดัล/จอ (กางลงจะโดนขอบตัด · เจอจริง MO 05/11) */
+        <div role="menu" className="pg-menu" style={{ [align === 'left' ? 'left' : 'right']: 0, ...(drop === 'up' ? { top: 'auto', bottom: 'calc(100% + 6px)' } : {}) }}>
           {list.map(it => (
             <button key={it.key || it.label} type="button" role="menuitem" className={`pg-menu-item${it.danger ? ' danger' : ''}`}
               disabled={it.disabled} title={it.title}
