@@ -7786,45 +7786,54 @@ test('📤 cross-line-close-guards — ปิดใบข้ามไลน์�
     + '\n\n   ปิดใบผิดไลน์ = ยอด/OEE ของไลน์ที่ไม่เกี่ยวเปลี่ยน โดยไม่มีใครเห็นบนจอ\n');
 });
 
-test('🗑️ defect-to-bin-chained — บันทึกงานเสียแล้วต้องต่อขั้น "ลงถัง" + งานค้างต้องเห็น', () => {
-  /* 05/11 (คำสั่ง user "ข้อมูลไม่ผูกกับใบถังเหลือง/แดง") — วัดจริง 90 วันฝั่ง DR:
-     ของเสีย 252 รายการ (NG 248 · 965 ชิ้น) **ผูกใบถังแค่ 46 = 18%** · ใบถังเหลืองทั้งระบบ 1 ใบ
-     ปุ่ม `🗑️ ลงถัง` มีทุกแถวและสิทธิ์เดียวกับการบันทึกงานเสีย แต่เป็นขั้นที่ 2 หลังฟอร์มปิด
-     ⇒ ต่อขั้นให้ติดกัน (คนยังต้องกดยืนยัน — **ห้ามสร้างใบถังอัตโนมัติ** ตามกฎเดิมของโมดูล)
-     📄 docs/modules/production-problem-report-bins.md */
+test('🟡 defect-auto-yellow — ลงงานเสียต้องตั้งแท็กเหลือง "รอพิจารณา" ให้เอง + มีจอเคลียร์คิว', () => {
+  /* 05/11 (คำสั่ง user): *"พอลงว่ามีงานเสีย ต้องเด้งเข้าถังเหลืองอัตโนมัติเลย เพื่อพิจารณาว่า
+     กลับมาดีได้หรือเสียแน่ๆ · หน้าสรุปงานที่ค้างเคลียร์จากรอพิจารณา … ยังไม่มี"*
+     🔴 **กฎนี้แทนกฎเดิม** ("ห้ามสร้างใบถังอัตโนมัติ · ต้องมีคนกดยืนยัน" 19/08) — หลักฐานที่ทำให้เปลี่ยน:
+        วัด 90 วัน ของเสีย 252 รายการ ผูกใบถังแค่ 46 = 18% · ถังเหลืองทั้งระบบ 1 ใบ
+     ⚠️ ไม่แตะ %Q: `suspectState()` ดู `qty_suspect` เท่านั้น ⇒ แท็กจากแถว NG ล้วนไม่ขยับตัวเลขกะ */
   const bad = [];
+  const U = 'src/utils/qualityBin.js';
+  const u = stripComments(readFileSync(join(ROOT, U), 'utf8'));
+  if (!/export function yellowRowFromDefect/.test(u))
+    bad.push(`${U}: ต้องมี yellowRowFromDefect() — payload ของแท็กเหลืองมีที่เดียว ห้ามประกอบเองในหน้า`);
+  if (!/export function pendingYellow/.test(u))
+    bad.push(`${U}: ต้องมี pendingYellow() — กฎ "ยังรอพิจารณา" มีที่เดียว`);
+  /* 🔴 ห้ามเดาผลให้ — ไฟล์ payload ต้องไม่ตั้ง qa_decision */
+  const yf = u.match(/export function yellowRowFromDefect[\s\S]*?\n\}/);
+  if (yf && /qa_decision\s*:/.test(yf[0]))
+    bad.push(`${U} yellowRowFromDefect: ห้ามตั้ง qa_decision — ระบบตั้งแท็ก คนตัดสินผล`);
+
   const DR = 'src/pages/DailyReport.jsx';
-  const dr = readFileSync(join(ROOT, DR), 'utf8');
-  const code = stripComments(dr);
-  const fn = code.match(/const\s+handleAddDefectLog\s*=[\s\S]*?\n  \};/);
+  const dr = stripComments(readFileSync(join(ROOT, DR), 'utf8'));
+  const fn = dr.match(/const\s+handleAddDefectLog\s*=[\s\S]*?\n  \};/);
   if (!fn) bad.push(`${DR}: หา handleAddDefectLog ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้`);
   else {
     const body = fn[0];
-    /* ต้องขอแถวที่เพิ่งเขียนกลับมา ไม่งั้นไม่มี id/embed ให้เปิดโมดัลต่อ */
     if (!/\.insert\([\s\S]{0,400}\.select\(/.test(body))
-      bad.push(`${DR} handleAddDefectLog: insert ต้อง .select() แถวกลับมา — ไม่งั้นต่อขั้นลงถังไม่ได้`);
-    if (!/setBinTarget\(\s*\{[^}]*chained:\s*true/.test(body))
-      bad.push(`${DR} handleAddDefectLog: บันทึกงานเสียแล้วต้องเปิดขั้นลงถังต่อ (setBinTarget …chained: true)`);
-    /* 🔴 เฉพาะตอนเพิ่มใหม่ — ตอนแก้ไขห้ามเด้ง (แถวนั้นอาจลงถังไปแล้ว) */
-    if (!/if\s*\(\s*inserted\s*&&/.test(body))
-      bad.push(`${DR} handleAddDefectLog: ต้องเด้งเฉพาะตอน insert (ตรวจ \`inserted\`) ไม่ใช่ตอนแก้ไข`);
+      bad.push(`${DR} handleAddDefectLog: insert ต้อง .select() แถวกลับมา (แท็กเหลืองต้องใช้ id + embed)`);
+    if (!/yellowRowFromDefect\(/.test(body))
+      bad.push(`${DR} handleAddDefectLog: ต้องตั้งแท็กเหลืองผ่าน yellowRowFromDefect() ทุกครั้งที่ลงงานเสีย`);
+    /* 🔴 ตั้งแท็กไม่สำเร็จ = บอกให้ไปกดเอง ห้ามเงียบ (งานเสียถูกบันทึกไปแล้ว) */
+    if (!/binErr[\s\S]{0,200}toast\.error/.test(body))
+      bad.push(`${DR} handleAddDefectLog: ตั้งแท็กเหลืองล้มเหลวต้องขึ้น toast บอกทางแก้ ห้ามล้มเหลวเงียบ`);
   }
-  /* 🔴 ข้ามได้ แต่ของที่ข้ามต้องไม่หายเงียบ — ชิปนับงานค้างบนหัวข้อของเสีย */
-  if (!/ยังไม่ลงถัง \{pend\.length\}/.test(code))
-    bad.push(`${DR}: ต้องมีชิปนับ "🗑️ ยังไม่ลงถัง N" บนหัวข้อบันทึกงานเสีย (ข้ามแล้วห้ามหายเงียบ)`);
+  if (!/ยังไม่ลงถัง \{pend\.length\}/.test(dr))
+    bad.push(`${DR}: ต้องมีชิปนับ "🗑️ ยังไม่ลงถัง N" บนหัวข้อบันทึกงานเสีย`);
 
-  const M = 'src/components/QualityBinLinkModal.jsx';
-  const m = readFileSync(join(ROOT, M), 'utf8');
-  const mcode = stripComments(m);
-  if (!/chained\s*=\s*false/.test(mcode))
-    bad.push(`${M}: ต้องรับ prop \`chained\` (เปิดต่อจากการบันทึกงานเสีย) เพื่อบอกผู้ใช้ว่าเป็นขั้นถัดไป`);
-  if (!/ยังไม่ลงถัง — ไว้ทีหลัง/.test(m))
-    bad.push(`${M}: โหมด chained ต้องมีปุ่มข้ามที่อ่านรู้เรื่อง ("ยังไม่ลงถัง — ไว้ทีหลัง") ห้ามบังคับออกใบ`);
-  /* 🔴 กฎเดิมของโมดูล: ห้ามเขียนใบถังเองโดยไม่มีคนกด — ตัวเขียนต้องอยู่ในโมดัลเท่านั้น */
-  if (/from\('quality_bin_records'\)[\s\S]{0,80}\.insert\(/.test(stripComments(dr)))
-    bad.push(`${DR}: ห้ามเขียน quality_bin_records จากหน้าโดยตรง — "เอาของลงถัง" ต้องมีคนกดยืนยันในโมดัล`);
+  const Q = 'src/components/QualityBins.jsx';
+  const q = stripComments(readFileSync(join(ROOT, Q), 'utf8'));
+  if (!/pendingYellow\(/.test(q))
+    bad.push(`${Q}: ต้องมีคิว "รอพิจารณา" (pendingYellow) — จุดที่คนเคลียร์ว่ากลับมาดีหรือเสียแน่`);
+  for (const [t, why] of [['งานดี', 'ตรวจแล้วใช้ได้'], ['ซ่อมแล้วดี', 'rework แล้วดี'], ['เสียแน่', 'rework ไม่ได้ → ถังแดง']]) {
+    if (!q.includes(t)) bad.push(`${Q}: คิวรอพิจารณาต้องมีปุ่ม "${t}" (${why})`);
+  }
+  /* 🔴 RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" ⇒ ปุ่มตัดสินต้องนับแถว */
+  const dec = q.match(/const\s+decide\s*=[\s\S]*?\n  \};/);
+  if (dec && !/checkWriteRows\(/.test(dec[0]))
+    bad.push(`${Q} decide(): ต้องใช้ checkWriteRows — RLS ปฏิเสธ UPDATE เงียบ (กฎเขียน DB ข้อ 2)`);
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
-    + '\n\n   ของเสียที่ไม่มีใบถัง = ของจริงอยู่ในถังแต่ระบบไม่รู้ สืบกลับไม่ได้\n');
+    + '\n\n   ของจริงอยู่ในถังแต่ระบบไม่รู้ = สืบกลับไม่ได้ว่าของหายไปไหน\n');
 });
 
 test('📊 mat-breakdown-default-collapsed — แท็บ Live ต้องขึ้นภาพรวมก่อน รายชิ้นงานยุบไว้', () => {
