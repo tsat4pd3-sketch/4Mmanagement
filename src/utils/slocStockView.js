@@ -13,18 +13,19 @@
       (กฎความซื่อสัตย์ของจอ · `slocOfLine` คืน null = "ยังไม่ผูก" ไม่ใช่ "ไม่มีของ")
 
    ไฟล์นี้ pure — ห้าม import react/supabase (เทสตรงได้) */
-import { slocOfLine, slocLabel } from './storageLoc.js';
+import { slocOfStockRow, slocLabel } from './storageLoc.js';
 
 const num = (v) => (Number.isFinite(parseFloat(v)) ? parseFloat(v) : 0);
 
 /**
  * @param {Array} rows   แถว line_stock_summary — ต้องมี { line_name, mat_no, qty_on_hand, part_name? }
- * @param {{ slocs: Array, lines: Array }} reg  ทะเบียนรหัสคลัง + ทะเบียนไลน์ (ไว้ไล่สายบน)
+ * @param {{ slocs: Array, lines: Array, homeOf?: Map }} reg  ทะเบียนรหัสคลัง + ทะเบียนไลน์ (ไว้ไล่สายบน)
+ *   + homeOf = ที่จัดเก็บหลักของพาร์ท (05/11) — แถวกองคลัง (STORE/FG WAREHOUSE) จัดกลุ่มตามพาร์ท ไม่ใช่ตามการผูกไลน์
  * @returns {Array<{key, code, name, kind, lineNames, parts}>}
  *   · `code: null` = กลุ่ม "ยังไม่ผูกพื้นที่" (อยู่ท้ายเสมอ)
  *   · parts[] = { mat_no, part_name, qty, lineQtys:[{line_name, qty}] } เรียงตาม mat_no
  */
-export function groupStockBySloc(rows, { slocs = [], lines = [] } = {}) {
+export function groupStockBySloc(rows, { slocs = [], lines = [], homeOf = null } = {}) {
   const orderOf = {};
   (slocs || []).forEach((s, i) => {
     const c = slocLabel(s?.code);
@@ -34,7 +35,7 @@ export function groupStockBySloc(rows, { slocs = [], lines = [] } = {}) {
   const groups = new Map();   // key → group
   (rows || []).forEach(r => {
     const line = (r?.line_name ?? '').toString();
-    const hit = slocOfLine(slocs, lines, line);
+    const hit = slocOfStockRow(slocs, lines, line, r?.mat_no, homeOf);
     const code = hit?.code || null;
     const key = code || '￿__none__';       // ￿ = ไม่ผูก ไปท้ายลิสต์เสมอ
     if (!groups.has(key)) {
@@ -72,6 +73,6 @@ export function groupStockBySloc(rows, { slocs = [], lines = [] } = {}) {
 
 /** ป้ายหัวกลุ่มของโหมดพื้นที่ — `code` ว่าง = ยังไม่ผูก (ต้องเขียนบนจอ ห้ามปล่อยว่าง) */
 export function slocGroupTitle(g) {
-  if (!g?.code) return '🏬 ยังไม่ผูกพื้นที่ SAP';
+  if (!g?.code) return '🏬 ยังไม่ผูกพื้นที่ SAP / ยังไม่ตั้งที่จัดเก็บหลัก';
   return `🏬 ${g.code}${g.name ? ` · ${g.name}` : ''}`;
 }

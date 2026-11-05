@@ -29,7 +29,8 @@ import DeliverScanModal from '../components/DeliverScanModal';
 import PickScanModal from '../components/PickScanModal';
 import { DELIVER_GATES, PICK_GATES, reqSourceMeta, unreceivedAge } from '../utils/replenishGate';
 import { openDemandMatsByLine } from '../lib/lineDemandSync';
-import { slocCodeOfLine } from '../utils/storageLoc';
+import { slocCodeOfLine, homeSlocOf } from '../utils/storageLoc';
+import { loadHomeSlocs } from '../utils/homeSloc';   // 🏠 ที่จัดเก็บหลักของพาร์ท (05/11)
 import { buildReceiptRows, RECEIPT_LINE } from '../utils/stockReceipt';
 import { rawSourceLocOf, splitRawConsume, inflowDestOf } from '../utils/partRefStock';   // 📤 ตัดวัตถุดิบล็อตจากคลังที่ของอยู่จริง (2026-10-12)   // 📥 ของซื้อเข้าคลัง ไม่ใช่เข้าไลน์ (2026-10-01)   // 🏬 ชั้นบัญชี SAP — tag ใบ/ledger ตอนเขียน (2026-09-08)
 import { lotMatsOf, lotOrphanRisk } from '../utils/stockReceipts';   // 🔧 พาร์ทที่ยอดเข้าคลังทางปิดล็อตทางเดียว
@@ -1255,7 +1256,7 @@ const matchQ = (q, ...fields) => {
   return fields.some(f => String(f ?? '').toLowerCase().includes(s));
 };
 
-function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false, focus = null, direction = null, areaOf = () => null, rounds, deliveries, view, onConfirm, confirming, onReceive, imgOf,
+function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false, focus = null, direction = null, areaOf = () => null, homeOf = () => null, rounds, deliveries, view, onConfirm, confirming, onReceive, imgOf,
   lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, purchaseRequests, purchaseErr, busy, onAdvanceLot, onIssueRaw, onAdvanceWip, onCancelWip, onAdvancePurchase, setBulkBuy, fmt, workDate, nowMs, canOperate, lotMats = null, inflowRules = null }) {
 
   const { roundAlloc } = view;
@@ -1285,6 +1286,11 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
   const [areaSel, setAreaSel] = useState('');
   const areaKey = (line) => areaOf(line) || '—';
   const areaOk = (line) => !direction || !areaSel || areaKey(line) === areaSel;
+  /* 🏠 05/11 (คำสั่ง user) — ฝั่งสโตร์ = "ที่จัดเก็บหลัก" ของพาร์ท (parts_master.home_sloc) ไม่ใช่การผูกไลน์
+     ยังไม่ตั้ง = '—' (ห้ามเดาจากเลข MAT) */
+  const [storeSel, setStoreSel] = useState('');
+  const storeKey = (mat) => homeOf(mat) || '—';
+  const storeOk = (mat) => !direction || !storeSel || storeKey(mat) === storeSel;
   const [showDone, setShowDone] = useState(() => urlBool('sdone', false));  // ?sdone= · default = เฉพาะงานค้าง (ให้ตรงกับตัวเลขบนแท็บ)
   const confirmedSet = useMemo(() => { const s = new Set(); deliveries.forEach(d => s.add(`${d.line_name}|${d.shift}|${d.round_no}`)); return s; }, [deliveries]);
   const receivedMap  = useMemo(() => { const m = {}; deliveries.forEach(d => { m[`${d.line_name}|${d.shift}|${d.round_no}`] = d; }); return m; }, [deliveries]);
@@ -1312,7 +1318,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
     return true;
   });
 
-  const vLots  = sift(lotRequests, 'child', store === 'lots' ? 'lots' : 'child', r => r.child_mat_no, r => r.part_name, r => r.source_line).filter(r => areaOk(r.source_line, 'src'));
+  const vLots  = sift(lotRequests, 'child', store === 'lots' ? 'lots' : 'child', r => r.child_mat_no, r => r.part_name, r => r.source_line).filter(r => areaOk(r.source_line, 'src') && storeOk(r.child_mat_no));
   const vRaws  = sift(rawRequests, 'raw',   'raw',   r => r.raw_mat_no,   r => r.part_name)
     .filter(r => areaOk(lotRequests.find(l => l.id === r.lot_request_id)?.source_line));
   const vRacks = sift(rackRequests, 'rack', 'rack',  r => r.container_name, r => r.line_name);
@@ -1323,7 +1329,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
   wipRequests.forEach(r => {
     const k = storeOfMat(r.mat_no);
     if (!showDone && isDoneRow.wip?.(r)) { tally[k].done++; return; }
-    if (!areaOk(r.line_name)) { tally[k].search++; return; }
+    if (!areaOk(r.line_name) || !storeOk(r.mat_no)) { tally[k].search++; return; }
     if (!matchQ(q, r.mat_no, r.point_name, r.line_name, r.part_name)) { tally[k].search++; return; }
     vWipsBy[k].push(r);
   });
@@ -1394,6 +1400,8 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
                      /* 👤 20/10 — สโตร์ต้องรู้ว่า "ใครเรียก" ไว้โทรกลับถามเวลาของไม่ตรง/ไลน์เปลี่ยนรุ่น
                         ใบเก่าของไลน์ไม่มีชื่อ (เพิ่ง stamp 20/10 ที่ LinePartCallPanel) ⇒ ไม่มีชื่อ = ไม่โชว์แถว ห้ามเดา */
                      { k: src.who, v: w.requested_by || null },
+                     /* 🏠 05/11 — หยิบจากไหน = ที่จัดเก็บหลักของพาร์ท · ไปไหน = พื้นที่ของไลน์ที่ขอ */
+                     { k: '🏬 จาก → ไป', v: `${homeOf(w.mat_no) || 'ยังไม่ตั้งที่จัดเก็บหลัก'} → ${areaOf(w.line_name) || 'ไลน์ยังไม่ผูกพื้นที่'}` },
                      { k: 'หยิบแล้ว', v: pickMeta || null },
                      { k: 'ถึงไลน์', v: gateMeta || null },
                      /* 📭 05/11 ข้อ D — ส่งแล้วไลน์ยังไม่กดรับ (unreceivedAge · replenishGate.js) */
@@ -1440,11 +1448,16 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
             ? [...wipRequests.map(r => r.line_name), ...rounds.map(r => r.line_name), ...lotRequests.map(l => l.source_line)]
             : lotRequests.map(l => l.source_line);
           const opts = [...new Set(lines.filter(Boolean).map(areaKey))].sort();
-          const storeArea = areaKey('STORE');
+          const mats = direction === 'out'
+            ? [...wipRequests.map(r => r.mat_no), ...lotRequests.map(l => l.child_mat_no)]
+            : lotRequests.map(l => l.child_mat_no);
+          const storeOpts = [...new Set(mats.filter(Boolean).map(storeKey))].sort();
+          const sideLbl = direction === 'out' ? 'ต้นทาง' : 'ปลายทาง';
           return (<>
-            <span style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
-              {direction === 'out' ? `ต้นทาง: 🏬 สโตร์ ${storeArea}` : `ปลายทาง: 🏬 สโตร์ ${storeArea}`}
-            </span>
+            <select value={storeSel} onChange={e => setStoreSel(e.target.value)} aria-label={`พื้นที่สโตร์${sideLbl}`}>
+              <option value="">{sideLbl}: ทุกพื้นที่สโตร์</option>
+              {storeOpts.map(a => <option key={a} value={a}>{sideLbl}: 🏬 {a === '—' ? 'พาร์ทที่ยังไม่ตั้งที่จัดเก็บหลัก' : a}</option>)}
+            </select>
             <select value={areaSel} onChange={e => setAreaSel(e.target.value)} aria-label={direction === 'out' ? 'พื้นที่ปลายทาง' : 'พื้นที่ต้นทาง'}>
               <option value="">{direction === 'out' ? 'ปลายทาง: ทุกพื้นที่ผลิต' : 'ต้นทาง: ทุกพื้นที่ผลิต'}</option>
               {opts.map(a => <option key={a} value={a}>{direction === 'out' ? 'ปลายทาง' : 'ต้นทาง'}: {a === '—' ? 'ไลน์ที่ยังไม่ผูกพื้นที่ SAP' : a}</option>)}
@@ -1804,6 +1817,17 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
   /* 🏬 ทะเบียนรหัสคลัง SAP (DR) — ใบขอเติม/ledger ต้องแปะ storage_location ตอนเขียน (derive จากไลน์ผ่าน slocCodeOfLine)
      ไลน์ที่ยังไม่ผูก = null ไม่เดา · ตารางยังไม่มีคอลัมน์ line_names (ยังไม่ apply 20260908) = ทุกไลน์ยังไม่ผูก */
   const [slocs, setSlocs] = useState([]);
+  /* 🏠 ที่จัดเก็บหลักของพาร์ท (05/11) — master แทบไม่เปลี่ยน โหลดครั้งเดียวตอนเปิดหน้า (ไม่ผูกกับรอบ poll) */
+  const [homeSloc, setHomeSloc] = useState({ map: new Map(), error: null });
+  useEffect(() => {
+    let alive = true;
+    loadHomeSlocs().then(r => {
+      if (!alive) return;
+      setHomeSloc(r);
+      if (r.error && r.error !== 'not_ready') toast.error(`โหลดที่จัดเก็บหลักของพาร์ทไม่ได้ — ${r.error}`);
+    });
+    return () => { alive = false; };
+  }, []);
   const [deliverModal, setDeliverModal] = useState(null);   // ใบจากไลน์ที่กำลังจะมาร์ก delivered (รอสแกนจุดส่ง)
   const [pickModal, setPickModal] = useState(null);         // ใบจากไลน์ที่กำลังจะมาร์ก preparing (รอสแกนพาร์ท+จำนวน · ขั้น 5)
   const [purchaseRequests, setPurchaseRequests] = useState([]);   // ของซื้อ 300/500 — สรุป "รายพาร์ท" จากวิว ไม่ใช่รายใบ
@@ -2342,7 +2366,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
     /* 🏬 มุม SAP ของรายการเดียวกัน: ไลน์ → P4xx (ตกทอดจากไลน์แม่) · STORE → S401 — tag ตอนเขียน ไม่เดา
        ใบมี storage_location อยู่แล้ว (snapshot ตอนสร้าง) ใช้ตัวนั้นก่อน กันทะเบียนถูกแก้ระหว่างทางแล้วใบกับ ledger ไม่ตรงกัน */
     const lineSloc  = w.storage_location || slocCodeOfLine(slocs, linesArr, w.line_name);
-    const storeSloc = slocCodeOfLine(slocs, linesArr, 'STORE');
+    const storeSloc = homeSlocOf(homeSloc.map, w.mat_no);   // 🏠 05/11 — ที่จัดเก็บหลักของพาร์ท (ไม่ตั้ง = null ไม่เดา)
     const rows = [{ ...base, line_name: w.line_name, qty, type: 'issue', storage_location: lineSloc }];
     if (stErr) note = `เช็คสต็อก STORE ไม่ได้: ${stErr.message}`;
     else if (!st) note = 'STORE ไม่มีแถวสต็อกของพาร์ทนี้ — บวกเข้าไลน์แล้ว แต่ไม่หัก STORE (ลงรับเข้า STORE ก่อน)';
@@ -3141,7 +3165,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
         ) : viewMode === 'unified' ? (
           <UnifiedStoreBoard
             store={unifiedStore} setStore={setUnifiedStore} opsStores={opsStores} readOnly={!isOps} focus={storeFocus}
-            direction={direction} areaOf={(ln) => slocCodeOfLine(slocs, linesArr, ln)}
+            direction={direction} areaOf={(ln) => slocCodeOfLine(slocs, linesArr, ln)} homeOf={(mat) => homeSlocOf(homeSloc.map, mat)}
             rounds={rounds} deliveries={deliveries} view={view}
             onConfirm={confirmRound} confirming={confirming} onReceive={openReceive}
             lotRequests={lotRequests} rawRequests={rawRequests} rackRequests={rackRequests} pkgRequests={pkgRequests} wipRequests={wipRequests} purchaseRequests={purchaseRequests} purchaseErr={purchaseErr} setBulkBuy={setBulkBuy}
