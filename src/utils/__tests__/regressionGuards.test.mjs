@@ -8625,3 +8625,24 @@ test('🛡️ short-receipt-not-lost — รับไม่ครบต้อง
   }
   assert.deepEqual(bad, [], bad.join('\n'));
 });
+
+/* ═══ ⛔ ห้าม seed ทะเบียน "ของลม" — 2026-11-05 · กฎ user ════════════════════════════════
+   กฎ: *"ควรจะตัดลูกที่ติดตัว ลูกมีหน้าที่ไปตัดหลาน และสร้างผัง bom ทีเดียว"*
+   ⇒ **ค่าเริ่มต้นคือตัดลูกตรงเสมอ** · ของลม = ข้อยกเว้นที่ PE ติ๊กเองบนจอ
+   บั๊กจริง 4/11: migration รุ่นแรก seed 45 แถวจากการเดา ⇒ confirm 10100286 ข้าม 20059342
+   ไปตัด 20059343 แทน = ขัดกฎข้างบน · ล้างทิ้ง 5/11 แล้ว · ด่านนี้กัน migration หน้า seed ซ้ำ  */
+test('🛡️ bom-phantom-no-seed — migration ห้าม insert ทะเบียนของลมให้เอง', () => {
+  const dir = join(ROOT, 'supabase/migrations');
+  const strip = (s) => s.split('\n').filter(l => !l.trim().startsWith('--')).join('\n');
+  const bad = [];
+  for (const f of readdirSync(dir).filter(f => f.endsWith('.sql'))) {
+    const sql = strip(readFileSync(join(dir, f), 'utf8'));
+    if (/insert\s+into\s+(public\.)?bom_phantom_mats/i.test(sql)) bad.push(f);
+  }
+  assert.deepEqual(bad, [],
+    `\n\n❌ migration seed ทะเบียนของลม: ${bad.join(', ')}\n`
+    + 'why: ติ๊กของลมให้เอง = ระบบข้ามลูกกลางไปตัดหลาน ขัดกฎ "ตัดลูกที่ติดตัว ลูกไปตัดหลาน"\n'
+    + '     (รอบ 4/11 seed 45 แถวแล้วทำให้ confirm 10100286 ข้าม 20059342 — ล้างทิ้งแล้ว)\n'
+    + 'fix: ปล่อยทะเบียนว่าง ให้ PE ติ๊กเองที่ /products?tab=phantom ·\n'
+    + '     โซ่ที่เดินไม่ถึงให้โชว์ผ่าน fn_bom_deduct_gaps() ห้ามกลบด้วยการติ๊กของลม\n');
+});
