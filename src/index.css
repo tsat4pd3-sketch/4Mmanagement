@@ -700,6 +700,21 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   animation: dtAlarmBlink 0.9s ease-in-out infinite;
   border-color: #ef4444 !important;
 }
+/* ── 🚨 แถบ Andon ลอย (DowntimeSiren · StoreCallSiren) — มือถือต้องอ่านข้อความออก (2026-11-05)
+   เคสจริง (mobilesweep @390px): แถบ "ไลน์เรียกของ" เป็น flex แถวเดียว `nowrap` ที่มีของตายตัว
+   ไอคอน 27 + ชิปเปิดเสียง 99 + ปุ่ม 118 + ปุ่ม 133 = 377px > กล่อง 374px
+   ⇒ กล่องข้อความ (flex:1 · min-width:0) **ถูกบีบเหลือกว้าง 0** = เห็นแต่ไอคอนกับปุ่ม
+     ไม่รู้ว่าไลน์ไหนเรียกอะไร + แถบล้นแล้วปัดไม่ได้ ⇒ Andon ที่อ่านไม่ออก = ไม่มีประโยชน์
+   🔴 แก้ที่ CSS ใต้ media query เท่านั้น — จอคอม/จอ TV ต้องเหมือนเดิมทุกพิกเซล (ด่าน desktopdiff)
+   🔴 ข้อความต้องได้เต็มบรรทัด (`flex: 1 0 100%`) ปุ่มค่อยไหลลงบรรทัดถัดไป
+      **ห้ามแก้ด้วยการย่อฟอนต์/ซ่อนปุ่ม** (ฟอนต์ขั้นต่ำ 11px · ปุ่มรับทราบคือทางปิดเสียงทางเดียว) */
+@media (max-width: 768px) {
+  .andon-bar { flex-wrap: wrap; row-gap: 8px; }
+  /* 🔴 ต้อง `!important` — กล่องข้อความตั้ง `flex: 1` ไว้ที่ inline style (ของจอคอม ห้ามถอด)
+     ซึ่งชนะ CSS เสมอ ⇒ ไม่ใส่ = กฎนี้ไม่มีผล ข้อความยังถูกบีบแคบเหมือนเดิม (พิสูจน์แล้ว 05/11) */
+  .andon-bar .andon-bar-msg { flex: 1 0 100% !important; }
+}
+
 /* ขอบกระพริบเบา สำหรับการ์ดใหญ่ (เช่นการ์ดใบซ่อม MTN รอรับงาน) — glow เล็กกว่า marker มาก */
 @keyframes moCardBlink {
   0%, 100% { box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.35); border-color: rgba(239, 68, 68, 0.55); }

@@ -139,6 +139,14 @@ model: inherit
   เจ้าของกฎ `utils/downtimeBands.js` + `components/DowntimeBand.jsx` **ห้ามวาดเองในหน้า**
   · ด่านอัตโนมัติ: `downtime-band-central` ใน `regressionGuards` · 📄 UI §6.31
 
+- **B-ANDON** 🚨 **แถบ Andon ลอย (`position: fixed`) ต้องอ่านออกและกดรับทราบได้บนมือถือ** (05/11)
+  — flex แถวเดียว `nowrap` ที่มีปุ่ม/ชิปความกว้างตายตัวหลายตัว จะ**บีบกล่องข้อความเหลือกว้าง 0**
+  บนจอ 390px (วัดจริง: ของตายตัว 377px > กล่อง 374px) · แก้ด้วย class กลาง `andon-bar` +
+  `andon-bar-msg` ใน `src/index.css` ใต้ `@media (max-width:768px)` **ต้องมี `!important`**
+  (inline `flex:1` ชนะ CSS) · **ห้ามย่อฟอนต์/ซ่อนปุ่มแทน** · แถบที่ wrap แล้วสูงขึ้น 4 เท่า ⇒
+  **มือถือโชว์ทีละใบ + เขียนว่าเหลืออีกกี่ใบ** (ซ้อนกันเกินจอ = ปุ่มรับทราบตกนอกจอ กดไม่ได้)
+  · ด่านอัตโนมัติ: `andon-bar-mobile` ใน `regressionGuards` · 📄 UI §6.32
+
 ### หมวด C — Permissions (data-driven)
 
 - **[C-RLS-1]** policy RLS ฝั่ง Main ที่เขียนได้ (`for all/update/delete`) ห้าม hardcode `role = any(array[...])` — ต้องเป็น `has_perm('<คีย์เดียวกับ can() ของปุ่มนั้น>')` (2026-09-04 · `20260904_rls_match_ui_permissions.sql`) · ตรวจ: `grep -n "ARRAY\['admin'" supabase/migrations/*.sql` เทียบกับ pg_policies ปัจจุบัน
