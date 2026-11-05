@@ -1,9 +1,10 @@
 -- 2026-11-04 · DR ("Product DB" · eyhclzkifitbhbljgoav)
--- ⏳ สถานะ 05/11: ยังไม่ apply — รอ user อนุมัติคำขอ apply ผ่าน MCP
 -- ยอด "รับไม่ครบ" ต้องไม่หาย (คำสั่ง user: "ต้องไม่หาย เป็น report transaction ที่มีปัญหา ไว้เพื่อสรุปรายเดือน
 --   แก้ไขกันระหว่างผลิตกับสโตร์ ชนกันใน SAP")
 -- · ตอนไลน์รับไม่ครบ: ส่วนที่ขาดย้ายจากไลน์ → คลังพัก 'ผลต่างรอเคลียร์' (ledger) + ทะเบียนเคสตารางนี้
 -- · เคลียร์ = คืน STORE หรือ ตัดหาย (ledger ออกจากคลังพัก) + เก็บผู้เคลียร์/เลข SAP
+-- · 🔴 ยืนยันคู่ (user 05/11 "ยืนยันคู่"): ฝ่ายหนึ่งเสนอผล (status=proposed) → อีกฝ่าย (คนละคน คนละฝ่าย) ยืนยัน
+--   แล้วจึงขยับ ledger · ฝ่าย = 'store' (heijunka:operate) / 'line' (wip_request:receive) · ตัดสินที่ utils/stockDiscrepancy.js
 -- ย้อนได้: drop table public.stock_discrepancies; (ledger ในคลังพักลบด้วย note like 'ผลต่าง:%')
 create table if not exists public.stock_discrepancies (
   id            uuid primary key default gen_random_uuid(),
@@ -19,13 +20,19 @@ create table if not exists public.stock_discrepancies (
   work_date     date not null,
   reported_by   text,
   note          text,
-  status        text not null default 'open' check (status in ('open', 'returned', 'written_off')),
+  status        text not null default 'open' check (status in ('open', 'proposed', 'returned', 'written_off')),
+  proposed_outcome text check (proposed_outcome in ('returned', 'written_off')),
+  proposed_by   text,
+  proposed_side text check (proposed_side in ('store', 'line')),
+  proposed_at   timestamptz,
+  confirmed_by  text,
+  confirmed_side text check (confirmed_side in ('store', 'line')),
   resolved_at   timestamptz,
   resolved_by   text,
   resolve_note  text,
   sap_doc       text
 );
-create index if not exists stock_discrepancies_open_idx on public.stock_discrepancies (work_date) where status = 'open';
+create index if not exists stock_discrepancies_open_idx on public.stock_discrepancies (work_date) where status in ('open', 'proposed');
 create index if not exists stock_discrepancies_month_idx on public.stock_discrepancies (work_date);
 
 alter table public.stock_discrepancies enable row level security;

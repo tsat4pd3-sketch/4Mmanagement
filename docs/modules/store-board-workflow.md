@@ -666,3 +666,15 @@ user: *"tab นี้ยกเลิกเลย ให้ย้ายไปเ�
   · ตัวเลขบนแท็บ + "ซ่อนอยู่" นับใบเบิกเข้าตู้ของมันเอง · Store FG โผล่เมื่อมีรอบ **หรือ** มีใบ 1xx
 - `?store=wip` (ลิงก์เก่า) ตกกลับตู้แรก · ปุ่ม "ไปเตรียมงาน" บนแถบไลน์เรียกของพาไปตู้ตามเลขพาร์ทของใบ
 - S401/S402 (พื้นที่ SAP ของสโตร์) **ยังไม่ได้แยก** — รอ user เคาะว่าแยกตามเลขพาร์ท หรือแยกเป็นคลังจริง
+
+## ⚠️ คลังพัก "ผลต่างรอเคลียร์" — รับไม่ครบต้องไม่หาย + ยืนยันคู่ (05/11 · คำสั่ง user)
+user: *"ต้องไม่หาย เป็น report transaction ที่มีปัญหา ไว้เพื่อสรุปรายเดือน แก้ไขกันระหว่างผลิตกับสโตร์ ชนกันใน SAP"* · *"ทางนี้เลย มีหน้าคลังพัก"* · *"ยืนยันคู่"*
+- รับไม่ครบ (ใบขอเติม `LinePartCallPanel.receive` · รอบคัมบัง `submitReceive`) ⇒ ledger ไลน์ − ขาด / `ผลต่างรอเคลียร์` + ขาด
+  (`shortReceiptRows`) + เคส `stock_discrepancies` (DR · migration `20261104d_…_dr.sql` apply แล้ว · ไม่มี GRANT delete · ผูก audit)
+- เคลียร์ 2 จังหวะ (`/line-stock?tab=diff` · `StockDiscrepancyReport`): ฝ่ายหนึ่งเสนอ (คืน STORE / ตัดหาย + เลข SAP) →
+  **อีกฝ่าย คนละคน** ยืนยัน (`confirmBlock`) ⇒ claim สถานะก่อน แล้ว ledger ออกจากคลังพัก (`resolveLedgerRows`) · ledger ล้ม = คืน `proposed`
+  · ไม่เห็นด้วย = ตีกลับเป็น `open` + เหตุผล · ฝ่าย: สโตร์ = `heijunka:operate` · ผลิต = `wip_request:receive`
+- สรุปรายเดือน (`monthlySummary`) + Export CSV `csv_stock_discrepancy` (migration Main `20261105_…` apply แล้ว)
+- ด่าน regressionGuards `short-receipt-not-lost` · กฎ `utils/stockDiscrepancy.js` (เทส)
+- ลงย้อนหลัง 05/11: เคสรับไม่ครบ 2 เคสของ 04/11 (LINE C 50029610 × 50 · LINE A 50024698 × 50) ที่ถูกตัดทิ้ง ⇒ คลังพัก +100 + เคส `source='backfill'`
+  · ledger `created_by='system:backfill-0511'` · ย้อน: ลบแถว ledger นั้น + `update stock_discrepancies set status=…` (ห้าม delete เคส — ไม่มีสิทธิ์)

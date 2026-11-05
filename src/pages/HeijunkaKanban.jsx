@@ -21,6 +21,7 @@ import StoreCallSiren from '../components/StoreCallSiren';
 import PurchaseBulkModal from '../components/PurchaseBulkModal';
 import OpenOrderDemandPanel from '../components/OpenOrderDemandPanel';
 import { storeOfMat, WIP_STORES } from '../utils/storeOps';   // 🗂️ ใบเบิก-ส่งเข้าไลน์ไปอยู่ตู้ตามเลขพาร์ท (04/11)
+import { shortReceiptRows } from '../utils/stockDiscrepancy';   // ⚠️ รับไม่ครบ = ย้ายไปคลังพัก ไม่ตัดทิ้ง (05/11)
 import PlatingBoard from '../components/PlatingBoard';
 import DeliverScanModal from '../components/DeliverScanModal';
 import PickScanModal from '../components/PickScanModal';
@@ -2543,6 +2544,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null }) {
     try {
       let shortageNote = '';
       let shortRows = [];
+      const shortCases = [];
       if (mode === 'partial') {
         // ตรวจค่าที่กรอกก่อนคิด shortfall — ช่องว่าง ('') coerce เป็น 0 = ตีความว่า "รับ 0 ชิ้น"
         // แล้ว consume เต็มจำนวนเงียบๆ · ค่าลบ/เกินยอดส่ง ก็บล็อกก่อน (QC flow-audit #41)
@@ -2558,15 +2560,14 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null }) {
           const actual = (raw === '' || raw == null) ? p.netTotal : Number(raw);
           const shortfall = p.netTotal - actual;
           if (shortfall > 0) {
-            shortRows.push({
-              line_name: round.line_name, mat_no: p.mat_no, part_name: p.part_name, qty: shortfall,
-              type: 'consume', work_date: workDate,
-              note: `รับไม่ครบ — Kanban ${round.line_name} รอบ ${round.round_no} (ปรับยอดตามจริง)`,
-              created_by: fullName || 'ผลิต',
-            });
+            /* ⚠️ 05/11 — ส่วนที่ขาดย้ายไปคลังพัก (ไม่ตัดทิ้ง) + เปิดเคสผลต่าง · `utils/stockDiscrepancy.js` */
+            shortRows.push(...shortReceiptRows({ line: round.line_name, mat: p.mat_no, part: p.part_name, short: shortfall,
+              workDate, by: fullName || 'ผลิต', ref: `Kanban ${round.line_name} รอบ ${round.round_no} ส่ง ${p.netTotal} รับจริง ${actual}` }));
+            shortCases.push({ source: 'kanban_round', line_name: round.line_name, mat_no: p.mat_no, part_name: p.part_name || null,
+              sent_qty: p.netTotal, received_qty: actual, short_qty: shortfall, work_date: workDate, reported_by: fullName || null });
           }
         });
-        shortageNote = shortRows.map(s => `${s.mat_no} ขาด ${s.qty}`).join(', ');
+        shortageNote = shortCases.map(s => `${s.mat_no} ขาด ${s.short_qty}`).join(', ');
       }
       // claim สถานะก่อนแล้วค่อยเขียน consume — 2 เครื่องกดพร้อมกันมีแค่คนเดียวที่ claim ได้
       // (เดิม insert consume ก่อน update = กดซ้ำ consume shortfall สองรอบ · pattern เดียวกับ confirmRound)
@@ -2597,7 +2598,11 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null }) {
             : `บันทึกสถานะรับแล้ว แต่ปรับยอดของที่ขาดไม่สำเร็จ และคืนสถานะไม่ได้ — แจ้ง admin: ${eShort.message}`);
         }
       }
-      toast.success(mode === 'full' ? '✔️ ยืนยันรับครบแล้ว' : '⚠️ บันทึกรับไม่ครบแล้ว');
+      if (shortCases.length) {
+        const { error: eCase } = await supabaseDR.from('stock_discrepancies').insert(shortCases.map(c => ({ ...c, ref_id: String(claimed[0].id) })));
+        if (eCase) toast.error(`ย้ายส่วนที่ขาดไปคลังพักแล้ว แต่เปิดเคสผลต่างไม่สำเร็จ: ${eCase.message} — แจ้ง admin (ยอดยังอยู่ที่คลังพัก ไม่หาย)`);
+      }
+      toast.success(mode === 'full' ? '✔️ ยืนยันรับครบแล้ว' : '⚠️ บันทึกรับไม่ครบแล้ว — ส่วนที่ขาดอยู่คลังพัก รอผลิต+สโตร์เคลียร์');
       setReceiveModal(null);
       await loadDeliveries();
     } catch (err) { toast.error(err.message); }
