@@ -13,3 +13,4 @@ supabase/.temp/
 
 # ผลสวีป handheld (สร้างใหม่ทุกรอบ)
 audit/handheld-report.json
+docs/meetings/roadshow_build/_video_build/
