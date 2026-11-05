@@ -18,7 +18,7 @@ import { frameMin, breaksToFrame } from '../utils/timeFrame';
 import { getRoundStatus } from '../utils/deliveryRounds';
 import PageHeader from '../components/PageHeader';
 import Page, { Hub } from '../components/Page';
-import { OPS_STORES_WORK, OPS_STORES_BUY } from '../utils/storeOps';
+import { OPS_STORES_OUT, OPS_STORES_IN } from '../utils/storeOps';
 import SapPendingReport from '../components/SapPendingReport';
 import StockDiscrepancyReport from '../components/StockDiscrepancyReport';
 import TimeRangeBar from '../components/TimeRangeBar';
@@ -47,7 +47,6 @@ import { fetchAllPages } from '../utils/fetchByIds';
 import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import SearchSelect from '../components/SearchSelect';
-import StockReceiptQueue from '../components/StockReceiptQueue';
 import PartLevelCoveragePanel from '../components/PartLevelCoveragePanel';
 import Segmented from '../components/Segmented';
 import PartThumb from '../components/PartThumb';
@@ -1707,13 +1706,14 @@ function InflowRulesTab({ canEdit }) {
 /* 🏬🛒 04/11 (คำสั่ง user) — งานที่ขยับยอดของสโตร์ย้ายมาที่นี่ · /heijunka เหลือดูสัญญาณ Kanban อย่างเดียว
    ฝังหน้าเดิมทั้งดุ้นแบบ /equipment (โหมด ops) — กฎ/ปุ่ม/ด่านเดิมทุกตัว ไม่เขียนใหม่ · `?view=`/`?store=` ไม่ชน `?tab=` */
 const HeijunkaKanban = lazy(() => import('./HeijunkaKanban'));
+const LEGACY_TABS = { store: 'out', purchase: 'in', receipts: 'in' };
 const TABS = [
-  { key:'store',     label:'🏬 งานสโตร์' },      // เบิก-ส่งพาร์ทเข้าไลน์ · รับของผลิตเสร็จ · จ่ายวัตถุดิบ · งานชุบ
-  { key:'purchase',  label:'🛒 จัดซื้อ' },        // ขาสั่งของกับ supplier → รับเข้าสโตร์
+  /* 05/11 (คำสั่ง user) — แยกตามทิศของ: ขาออก = สโตร์ → พื้นที่ผลิต · ขาเข้า = supplier/พื้นที่ผลิต → สโตร์ */
+  { key:'out',       label:'📤 ขาออก (สโตร์ → ผลิต)' },
+  { key:'in',        label:'📥 ขาเข้า (→ สโตร์)' },
   { key:'sap',       label:'🧾 ค้างตัด SAP' },    // ใบที่ส่งถึงไลน์แล้วแต่ตัดจ่ายใน SAP ไม่ได้ (04/11)
   { key:'diff',      label:'⚠️ คลังพัก/ผลต่าง' },  // รับไม่ครบ = ส่วนที่ขาดพักไว้ รอผลิต+สโตร์ยืนยันคู่ (05/11)
   { key:'stock',     label:'📦 Stock' },
-  { key:'receipts',  label:'📥 รอรับเข้า' },   // ปิดใบผลิตแล้ว รอคลังนับของจริงแล้วกดรับ (กฎโหมด 🟡 · 2026-10-02)
   { key:'count',     label:'📋 ตรวจนับ/เฟิร์มยอด' },   // กระทบยอดขาออกที่หลุด + ตรวจนับทั้งคลัง (2026-09-23)
   { key:'wip',       label:'🔩 WIP ค้างระหว่างขั้น' },   // ยอดค้าง — คนละเรื่องกับ 'คิวเติม WIP' ในบอร์ดคัมบัง
   /* 📍 20/10 — ลูป "ผลิตเรียก → สโตร์เห็น" ตายที่ขั้น "ถึง min แล้วเสนอให้เบิก" เพราะไม่มีใครตั้งจุดเรียกเติม
@@ -1732,6 +1732,12 @@ export default function LineStock() {
   const { role, fullName, lineId, sections } = useContext(UserContext);
   const canEdit = can('line_stock', 'manage_rounds', role);
   const [activeTab, setActiveTab] = useTabParam(TABS.map(t => t.key), 'stock');
+  /* ลิงก์เก่าก่อน 05/11 (`?tab=store|purchase|receipts`) → แท็บใหม่ · ใช้ได้เพราะ useTabParam ตกกลับ default ก่อน */
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('tab');
+    if (LEGACY_TABS[t]) setActiveTab(LEGACY_TABS[t]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- ทำครั้งเดียวตอนเปิดหน้า
+  }, []);
   // scope มาตรฐานส่งต่อให้ทุกแท็บ — dropdown ไลน์ต้องกรองด้วย ไม่ใช่แค่ query (CLAUDE.md)
   const scope = useMemo(() => ({ role, lineId, sections }), [role, lineId, sections]);
 
@@ -1743,18 +1749,18 @@ export default function LineStock() {
         tabs={TABS} tab={activeTab} onTab={setActiveTab}
       />
 
-      {(activeTab === 'store' || activeTab === 'purchase') && (
+      {(activeTab === 'out' || activeTab === 'in') && (
         <Hub>
           <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด…</div>}>
             {/* key แยก = state ตู้ของ 2 แท็บไม่ปนกัน */}
-            <HeijunkaKanban key={activeTab} mode="ops" opsStores={activeTab === 'store' ? OPS_STORES_WORK : OPS_STORES_BUY} />
+            <HeijunkaKanban key={activeTab} mode="ops" direction={activeTab}
+              opsStores={activeTab === 'out' ? OPS_STORES_OUT : OPS_STORES_IN} />
           </Suspense>
         </Hub>
       )}
       {activeTab === 'sap'       && <SapPendingReport />}
       {activeTab === 'diff'      && <StockDiscrepancyReport />}
       {activeTab === 'stock'     && <StockTab role={role} scope={scope} />}
-      {activeTab === 'receipts'  && <StockReceiptQueue />}
       {activeTab === 'count'     && <StockCountSheet role={role} scope={scope} />}
       {activeTab === 'wip'       && <WipBetweenSteps />}
       {activeTab === 'levels'    && <PartLevelCoveragePanel />}

@@ -43,6 +43,7 @@ import useColumnHistory from '../utils/useColumnHistory';
 import { splitLevels, refStockOf, madeHereMats, selfMadeRequestBlock, lineRequestFromBom } from '../utils/partRefStock';
 import { buildBomIndex } from '../utils/bomTree';
 import { shortReceiptRows } from '../utils/stockDiscrepancy';
+import { syncLineOrderDemand, syncSummaryText } from '../lib/lineDemandSync';
 import { fetchAllRows } from '../utils/fetchAllRows';   // 🏭 ของที่ไลน์ผลิตเอง อ้างยอดคลัง (2026-10-08) // 📜 MAT ที่เคยตั้งระดับไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
@@ -365,6 +366,18 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
      user: *"การส่งไปหาสโตร์ ต้องแปลงผ่าน BOM ไปเรียกวัตถุดิบ ไม่ใช่เรียกตัวเอง"*
      กติกา `lineRequestFromBom` (partRefStock.js) · ต้นไม้ BOM ผ่าน `buildBomIndex` เท่านั้น ·
      ไม่มี BOM / อ่าน BOM ไม่ได้ = ไม่สร้างใบ + บอกบนจอ (ห้ามถอยไปขอตัวเอง) */
+  /* สรุปผลการแจ้งสโตร์ (ตัวเดียวกับตอนเปิดใบผลิต) — สำเร็จต้องล้างช่อง · ไม่ถึงกล่อง/ไม่มี packing std ต้องบอกบนจอ */
+  const reportSync = (r, what) => {
+    const text = syncSummaryText(r);
+    if (r.error || r.writeErrors?.length) toast.error(`${what} — ${text}`);
+    else if (r.inserted || r.raised) {
+      toast.success(`📦 ${what} — ${text}`);
+      notifyEvent({ event: 'wip_request_placed', type: 'info', ref_table: 'wip_replenish_requests', line_name: lineName, actor: fullName,
+        lines: [`🏭 ไลน์: ${lineName}`, `🔁 ${what}`, ...r.rows.filter(x => x.action === 'insert' || x.action === 'raise').slice(0, 5).map(x => `🔩 ${x.mat_no} × ${fmtQty(x.qty)}`)] });
+    } else toast.info(`${what} — ${text}`);
+    if (!r.error) { setAdhocMat(''); setAdhocName(''); setAdhocQty(''); setAdhocKnown(false); }
+    load();
+  };
   const placeFromBom = async (mat, qty) => {
     setBusy(`adhoc:${mat}`);
     const { data: bomRows, error: bomErr } = await fetchAllRows(supabaseDR, 'bom_items', 'id, product_id, mat_no, part_name, qty_per_unit, parent_mat, item_no',
@@ -382,32 +395,11 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     }
     const list = res.items.map(i => `• ${i.part_name ? `${i.part_name} · ` : ''}MAT ${i.mat_no} × ${fmtQty(i.qty)}`).join('\n');
     if (!window.confirm(`${mat} เป็นพาร์ทที่ ${lineName} ผลิตเอง — ผลิต ${qty.toLocaleString()} ชิ้น ต้องเบิกจากสโตร์ตาม BOM:\n\n${list}\n\nแจ้งสโตร์ ${res.items.length} รายการ?`)) { setBusy(null); return; }
-    let ok = 0, dup = 0;
-    const errs = [];
-    for (const i of res.items) {
-      const { error } = await insertReq({
-        line_name: lineName, mat_no: i.mat_no, part_name: i.part_name || null,
-        request_qty: i.qty, status: 'pending', source: 'line_adhoc',
-        requested_at: new Date().toISOString(), decided_by_name: fullName || null,
-        on_hand_at_req: onHand.has(i.mat_no) ? onHand.get(i.mat_no) : null, min_at_req: null,
-      });
-      if (!error) ok++;
-      else if (error.code === '23505') dup++;
-      else errs.push(`${i.mat_no}: ${error.message}`);
-    }
+    /* 🔁 05/11 — ผ่านตัวเดียวกับ "เปิดใบผลิต" (lib/lineDemandSync.js): รวมความต้องการจากใบผลิตที่เปิดอยู่ +
+       ที่ขอเพิ่มนี้ เทียบยอดหน้าไลน์ แล้วปัดเต็มกล่อง packing std · ไม่ถึงกล่อง = สะสมรอ */
+    const r = await syncLineOrderDemand({ lineName, role, extra: res.items.map(i => ({ mat_no: i.mat_no, part_name: i.part_name, need: i.qty })) });
     setBusy(null);
-    if (ok) {
-      notifyEvent({
-        event: 'wip_request_placed', type: 'info', ref_table: 'wip_replenish_requests',
-        line_name: lineName, actor: fullName,
-        lines: [`🏭 ไลน์: ${lineName}`, `🔁 จะผลิต ${mat} × ${qty.toLocaleString()} — เบิกตาม BOM ${ok} รายการ`,
-          ...res.items.slice(0, 5).map(i => `🔩 ${i.mat_no} × ${fmtQty(i.qty)}`)],
-      });
-      toast.success(`📦 แจ้งสโตร์แล้ว ${ok} รายการ (แตกจาก BOM ของ ${mat})`);
-    }
-    if (dup) toast.info(`${dup} รายการมีใบค้างอยู่แล้ว — ไม่ได้สร้างซ้ำ (ดูรายการข้างล่าง)`);
-    if (errs.length) toast.error(`แจ้งไม่สำเร็จ ${errs.length} รายการ: ${errs[0]}`);
-    if (ok) { setAdhocMat(''); setAdhocName(''); setAdhocQty(''); setAdhocKnown(false); }
+    reportSync(r, `จะผลิต ${mat} × ${qty.toLocaleString()} (แตก BOM ${res.items.length} รายการ)`);
     load();
   };
 
@@ -418,7 +410,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     const qty = Number(adhocQty);
     if (!mat) { toast.error('เลือกพาร์ทที่จะขอเบิกก่อน'); return; }
     if (!(qty > 0)) { toast.error('ระบุจำนวนที่ต้องการเบิก'); return; }
-    if (reqByMat.has(norm(mat))) { toast.error(`${mat} มีใบค้างอยู่แล้ว — ดูในรายการข้างล่าง (กด ↻ ถ้าไม่เห็น)`); return; }
+    /* 05/11 — มีใบค้างแล้วก็ขอเพิ่มได้: ใบที่ยังรอหยิบจะถูกเพิ่มยอด (syncLineOrderDemand) แทนการเปิดใบซ้ำ */
     /* 🔴 04/11 (คำสั่ง user) — พาร์ทที่ไลน์นี้ผลิตเอง ขอจากสโตร์ไม่ได้ (ขอผิดทิศ · ต้องผลิตเติม/เบิกลูกใน BOM)
        ทะเบียนอ่านไม่ได้ = บล็อก (ตรวจไม่ได้ ห้ามปล่อยผ่าน) · กติกา `selfMadeRequestBlock` (partRefStock.js) */
     const selfBlock = selfMadeRequestBlock(lineName, mat, whErr ? null : refCtx.products);
@@ -426,34 +418,10 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     if (selfBlock) { toast.error(selfBlock.text); return; }
     if (!adhocKnown && !window.confirm(`"${mat}" ไม่อยู่ในทะเบียนสินค้า/BOM ของไลน์นี้\n\nยืนยันว่าจะขอเบิกพาร์ทนี้?`)) return;
     setBusy(`adhoc:${mat}`);
-    const have = onHand.has(mat) ? onHand.get(mat) : null;
-    const { error } = await insertReq({
-      line_name: lineName, mat_no: mat, part_name: adhocName || null,
-      request_qty: qty, status: 'pending', source: 'line_adhoc',
-      requested_at: new Date().toISOString(), decided_by_name: fullName || null,
-      on_hand_at_req: have, min_at_req: null,
-    });
+    /* 🔁 05/11 — หลักการเดียวกับเปิดใบผลิต: รวมกับความต้องการที่มีอยู่ เทียบยอดหน้าไลน์ ปัดเต็มกล่อง */
+    const r = await syncLineOrderDemand({ lineName, role, extra: [{ mat_no: mat, part_name: adhocName || null, need: qty }] });
     setBusy(null);
-    if (error) {
-      /* 23505 = ใบค้างของพาร์ทนี้มีอยู่แล้ว (unique index) · 23514 = CHECK source ยังไม่กว้างพอ
-         ⇒ ยังไม่ apply migration 20261021 — ต้องบอกตรงๆ ห้ามให้คนเดาว่าทำไมขอไม่ได้ */
-      toast.error(error.code === '23505' ? 'พาร์ทนี้มีใบขอเบิกค้างอยู่แล้ว — กด ↻ ดูรายการ'
-        : error.code === '23514' ? 'ยังไม่ได้ apply migration 20261021_wip_replenish_source_line_adhoc (Main) — ขอเบิกเองยังใช้ไม่ได้'
-        : `ขอเบิกไม่สำเร็จ: ${error.message}`);
-      load(); return;
-    }
-    notifyEvent({
-      event: 'wip_request_placed', type: 'info', ref_table: 'wip_replenish_requests',
-      line_name: lineName, actor: fullName,
-      lines: [
-        `🏭 ไลน์: ${lineName}`,
-        `🔩 ${mat} · ขอเบิก ${qty.toLocaleString()} ชิ้น`,
-        `➕ ไลน์ขอเบิกเอง (ไม่ได้มาจากจุดเรียกเติม)${have != null ? ` · ในไลน์เหลือ ${fmtQty(have)}` : ' · ยังไม่เคยมียอดพาร์ทนี้หน้าไลน์'}`,
-      ],
-    });
-    toast.success(`📦 แจ้งสโตร์แล้ว — ${mat} ${qty.toLocaleString()} ชิ้น`);
-    setAdhocMat(''); setAdhocName(''); setAdhocQty(''); setAdhocKnown(false);
-    load();
+    reportSync(r, `ขอเพิ่ม ${mat} × ${qty.toLocaleString()}`);
   };
 
   const hold = async (s) => {

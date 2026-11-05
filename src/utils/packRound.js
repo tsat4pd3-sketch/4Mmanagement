@@ -62,3 +62,28 @@ export function packSplitText(r, fmt = (x) => Number(x).toLocaleString('th-TH'))
     default: return '';
   }
 }
+
+/* ═══ 🔁 วางแผนใบเบิกจาก "ใบผลิตที่เปิดอยู่" (2026-11-05 · คำสั่ง user) ═══════════════════════
+   user: *"เมื่อกดเปิด order ระบบจะแตก bom ไปเรียกลูกที่จะใช้งาน และคิดกับ wip ค้างในไลน์ว่าพอมั้ย ถ้าไม่พอ
+          จะสะสมจนครบ packing std. เมื่อครบจะแจ้งไปหาส่วนสโตร์ … หรือสามารถกดเบิกเองจากช่องด้านขวา ด้วยหลักการเดียวกัน"*
+   ต่อ ไลน์ + พาร์ท (stateless — คิดใหม่ทั้งก้อนทุกครั้ง ไม่มีตัวสะสมที่ต้องดูแล):
+     need     = Σ(ยอดใบผลิตที่เปิดอยู่ × qty_per_unit ลูกตรง) + ยอดที่ขอเพิ่มเอง (manual)
+     base     = max(0, ยอดหน้าไลน์)   ← ติดลบ (backflush ยังไม่ครบ) ห้ามนับเป็นของ
+     short    = need − base            ← "สะสม" = ใบผลิตเปิดเพิ่ม → short โตขึ้นเอง
+     target   = ปัดลงเต็มกล่อง(short)  ← ไม่ถึง 1 กล่อง = รอ (user เคาะ 04/11)
+   ใบ "ยังไม่หยิบ" (pending) มีได้ใบเดียวต่อ ไลน์+พาร์ท ⇒ ไม่มี = เปิดใหม่ · มีแต่น้อยกว่า target = เพิ่มยอด · **ห้ามลดเอง**
+   (ใบที่หยิบแล้ว ยอดย้ายเข้าไลน์ไปแล้ว ⇒ อยู่ใน base แล้ว ไม่นับซ้ำ) */
+export function planLineRequest({ need, onHand, pendingQty = 0, pkg }) {
+  const n = Number(need) > 0 ? Number(need) : 0;
+  const base = Math.max(0, Number(onHand) || 0);
+  const short = Math.max(0, Math.round((n - base) * 1e6) / 1e6);
+  const split = packSplit(short, pkg);
+  const pend = Number(pendingQty) > 0 ? Number(pendingQty) : 0;
+  const out = { need: n, base, short, ...split, pending: pend };
+  if (!n || !short) return { ...out, action: 'covered' };
+  if (split.state === 'no_pkg') return { ...out, action: 'no_pkg' };
+  if (split.state === 'wait') return { ...out, action: pend ? 'covered' : 'wait' };
+  if (!pend) return { ...out, action: 'insert', qty: split.send };
+  if (pend < split.send) return { ...out, action: 'raise', qty: split.send };
+  return { ...out, action: 'covered' };
+}

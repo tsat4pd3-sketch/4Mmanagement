@@ -676,6 +676,11 @@ user ส่งคลิปจอมือถือมา: **เนื้อห�
 | ส่วนงาน / แผนก **ที่เป็น "สังกัด" ของคน/เอกสาร/ใบงาน** | `useOrgSections()` / `useOrgDepts()` → `<select>` (§5.3) | org_nodes | code |
 | **ขอบเขตดูข้อมูล / ตั้ง KPI** (ตัวกรองบนหัวจอ OBEYA · KPI · รายงานตามหน่วยงาน) | `<OrgScopePicker>` — ทุกมิติของผัง: ฝ่าย/ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์/CC (2026-09-23 · คำสั่ง user "กรองได้ทุกมิติในผังองค์กร") · **ห้ามวาด select จาก `org_nodes kind='section'` เอง** (แผนกขึ้นตรงฝ่าย MTN/JIG MTN/QA จะหาย) | `useOrgScope(lines)` → `src/utils/orgScope.js` | `{kind,value}` → URL `?scope=kind:value` · DB `scope_kind/scope_value` |
 
+> 🧹 **2026-11-05 audit dropdown ทั้งระบบ (423 ช่อง `<select>`)** — เก็บทีม A/B/C ที่ยัง hardcode 3 จุดเข้า `useOrgTeams()`:
+> `/oee-analytics` ตัวกรองทีม · `/manpower-board` คอลัมน์ทีมในแผงตั้งค่า (+ ทีมที่มีแผนแล้วแต่ไม่อยู่ในผัง ต่อท้าย ไม่ซ่อน) · `/operator` ช่องทีม (เลิกคิดเองในหน้า)
+> · 🔴 **`<select>` ลิสต์ตายตัวที่ค่าในฐานอาจหลุดลิสต์ ต้องโชว์ค่าเดิมเป็นตัวเลือก "(ค่าเดิม · ไม่อยู่ในลิสต์)"** — ไม่งั้นช่องขึ้นตัวแรกทั้งที่ฐานเก็บค่าอื่น = จอโกหก
+>   (ต้นแบบ: UOM ฟอร์ม Parts Master `/products` · `parts_master` มี `pcs` นอกลิสต์) · ยังไม่มีทะเบียน UOM
+
 > #### 🔢 ตัวเลข KPI: หน่วย/ทศนิยม = **2 ชั้น** · วิธีรวม 12 เดือน = **ชั้นเดียว** (2026-09-24 · คำสั่ง user)
 > - **ห้ามอ่าน `kpi_catalog.unit/decimals/summary_mode` ตรงๆ ในหน้า** (ด่าน `kpi-unit-decimals-via-helper`)
 >   ใช้ `unitOf(d)` · `decimalsOf(d)` · `summaryModeOf(d)` · `fmtKpi(v, d)` · `summaryOf(months, d)` จาก `utils/kpiSetup.js`
@@ -1590,7 +1595,9 @@ npx vite --config audit/vite.audit.mjs &        # เปิดค้างที
 >   · **ห้าม `${color}20` ต่อ alpha บน token** (เป็น `var()` ไม่ใช่ hex — ใช้ `-dim`/`-line` แทน)
 > · ยกเว้น: กราฟ/ผังที่ต้องการสีแยกชุด (พาเรโต · QC 7 tools · ไทม์ไลน์ · VSM — ลิสต์ `CHART_FILES` ในด่าน) · `src/lib` ใบพิมพ์
 > · **ด่าน ratchet `colorRatchet.test.mjs`**: จำนวนสีดิบต่อไฟล์ลงได้อย่างเดียว (baseline `fixtures/colorBaseline.json` · รีเฟรชด้วย `node scripts/color-baseline.mjs` หลังไล่สีหน้าเสร็จ) · ไฟล์ใหม่ = 0
-> · ไล่ทีละหน้า: Daily Report (ทำแล้ว 04/11 · 32 เฉด → 0) → Home (ทำแล้ว 04/11) → OBEYA (ทำแล้ว 04/11 · 4 ไฟล์ 150+ จุด → 0 · StatusLamp/WarnNote รับ tone key) → TV
+> · ไล่ทีละหน้า: Daily Report (ทำแล้ว 04/11 · 32 เฉด → 0) → Home (ทำแล้ว 04/11) → OBEYA (ทำแล้ว 04/11) → จอ TV (ทำแล้ว 05/11 · Andon/ไทม์ไลน์/OEE รายไลน์ 250+ จุด → 0)
+> · 🔴 **ของที่รับ `color` แล้วต่อ alpha (`${c}55`) ต้องผ่านตัวแปลง** — ต้นแบบ `tint()` ใน `components/FactoryMiniMap.jsx` (token → `-dim`/`-line` · hex เดิมยังต่อได้) · **SVG `fill` ที่ค่าผิด = ดำทั้งกล่อง** (เจอจริง 05/11 บน Andon)
+> · ยังเป็น hex โดยตั้งใจ (อยู่ใน `utils` ไม่ถูกนับ · รอรอบถัดไป): สเกลสกิล `utils/skillLevels.js` (5 ขั้น = สเกล ไม่ใช่สถานะ) · `ROUTINE_MAP_COLOR` ฟ้าอมเขียวบนผัง (ห้ามชนสีสถานะ — ดูเหตุผลใน `utils/prodRoutine.js`)
 
 ```js
 import { toneOf, toneInk, statusColor } from '../utils/statusTone';

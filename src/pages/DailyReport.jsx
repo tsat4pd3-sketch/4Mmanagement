@@ -1,4 +1,5 @@
 import { useState, useEffect, useContext, useCallback, useRef, useMemo } from 'react';
+import { syncLineOrderDemand, syncSummaryText } from '../lib/lineDemandSync';   // 🔁 เปิดใบผลิต → แจ้งสโตร์ (05/11)
 import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายยาวพับไว้ (UI §6.10)
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -1747,6 +1748,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     }
   };
 
+  /* 🔁 05/11 (คำสั่ง user) — เปิดใบผลิต ⇒ แตก BOM ลูกตรง เทียบ WIP หน้าไลน์ ขาดครบ packing std ⇒ แจ้งสโตร์เอง
+     ตัวเดียวกับช่อง "ขอเบิกพาร์ทนี้เลย" (lib/lineDemandSync.js) · ไม่บล็อกการเปิดใบ แต่ผลต้องขึ้นบนจอ ห้ามเงียบ */
+  const syncDemandAfterOpen = (lineName) => {
+    if (!lineName) return;
+    syncLineOrderDemand({ lineName, role }).then(r => {
+      const t = syncSummaryText(r);
+      if (r.error || r.writeErrors.length) toast.error(`แจ้งสโตร์อัตโนมัติไม่สำเร็จ — ${t}`);
+      else if (r.inserted || r.raised || r.rows.some(x => x.action === 'no_pkg' || x.action === 'wait')) toast.info(`📦 แจ้งสโตร์อัตโนมัติ: ${t}`);
+    }).catch(e => toast.error(`แจ้งสโตร์อัตโนมัติไม่สำเร็จ — ${e?.message || e}`));
+  };
+
   // insert จริง (ใช้ทั้งจาก handleScanOpen และ handleOverflowForce)
   const doInsertProdOrder = async (prodNo, matNo, qty, std, status = 'open') => {
     const opened_at = backfillOpenedAt();
@@ -1768,7 +1780,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     if (error?.code === '23505') {
       return { error: { ...error, message: `PROD.NO ${prodNo} ถูกเปิดโดยเครื่องอื่นแล้วในกะนี้ — รีเฟรชรายการก่อน` }, data: null };
     }
-    if (!error && status === 'open' && data?.id) await attachMachine(data.id);
+    if (!error && status === 'open' && data?.id) { await attachMachine(data.id); syncDemandAfterOpen(selSession?.line_name); }
     return { error, data };
   };
 
@@ -2160,7 +2172,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     }).select().single();
     setSavingManual(false);
     if (error) { toast.error(error.message); return; }
-    if (created?.id) await attachMachine(created.id);
+    if (created?.id) { await attachMachine(created.id); syncDemandAfterOpen(selSession?.line_name); }
     toast.success(manualForm.is_backfill
       ? `เปิดเป้า ${matNo} · ${qty} ชิ้น ✓ (ย้อนหลังตั้งแต่ ${manualForm.backfill_time}) — อัพเดทยอดสะสมได้เลย`
       : `เปิดเป้า ${matNo} · ${qty} ชิ้น ✓ — ให้พนักงานอัพเดทยอดสะสมทุกช่วงเบรค`);
