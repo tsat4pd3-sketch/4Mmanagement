@@ -671,6 +671,7 @@ user ส่งคลิปจอมือถือมา: **เนื้อห�
 | เลขพาร์ท P/N ลูกค้า (CAPA / NCR / SPC / เคลม — กุญแจหาเอกสาร PE) | `<PartSelect>` | `usePartOptions` (pe_doc_sets ∪ qa_parts ∪ dr_products) | `part_no` text (+part_name) |
 | เครื่องมือวัด / วิธีตรวจ | `<InstrumentSelect>` | `useInstruments` (Main qa_instruments) | code text |
 | หน่วยนับ (UOM) — Parts Master · ใบเบิกวัสดุ · นำเข้า BOM SAP (2026-11-05) | `<select>` จาก `uomOptions()` (ใบเบิก = `<SelectOrFree>`) · **ค่าที่เขียนลงฐานผ่าน `normUom()` เสมอ** (`utils/uom.js` · EA/pcs → PC) | `useUomUnitsState` (DR `uom_units`) → fallback `DEFAULT_UOMS` | code text |
+| เหตุผลจองเครื่องทดลอง · ประเภทภาชนะ (2026-11-05) | `<select>` จากทะเบียน (ค่าเดิมนอกทะเบียนโชว์เป็น "ค่าเดิม") | `useTrialReasonsState` (DR `trial_reasons`) · `useContainerCategoriesState` (DR `container_categories`) | label text · code text |
 | ค่าที่มีลิสต์สั้น + ต้องยอมระบุเองจริง (ส่วนงาน/แผนก/ฝ่าย · สถานี · ไลน์ปั๊มแม่พิมพ์) | `<SelectOrFree>` (select + "✏️ ระบุเอง" ช่องเดียว · ค่าเดิมนอกลิสต์เปิดในโหมดระบุเอง) | org_nodes / workstations / ที่มีอยู่ | text |
 | ไลน์ผลิต | `<LineSelect>` (§5.3 ข้อ 9) | `useProductionLines` | name / id |
 | ทีม A/B/C | `useOrgTeams()` → `<select>` | org_nodes kind='team' → fallback A/B/C | code |
