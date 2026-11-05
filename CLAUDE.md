@@ -128,7 +128,7 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 >   (`costCenterOfNode()` อยู่ไฟล์นี้ที่เดียว · มีด่าน `cc-scope-layer`)
 >   🔴 **หน่วยแม่ของขอบเขตเรา ≠ "หน่วยอื่น"** (28/10 · คำสั่ง user "ยุบเหลือแกนเดียว · CC ละเอียดกว่า")
 >     ถาม `canWriteUnit(ctx,'<ส่วนงาน>')` ทั้งที่ถือ CC ระดับแผนก = **`partial_unit` (ok)** ไม่ใช่บล็อก
->     — บล็อก = ติ๊ก CC แล้วใช้จอไหนไม่ได้เลย (โดน 15/15 ใบ) · **ความละเอียดอยู่ที่ชั้นรายไลน์/รายแถว**
+>     — บล็อก = ติ๊ก CC แล้วใช้จอไหนไม่ได้เลย · **ความละเอียดอยู่ที่ชั้นรายไลน์/รายแถว**
 >     (แผนกพี่น้องยัง ❌ เหมือนเดิม) ⇒ **จอต้องเช็คซ้ำตอนเขียนจริง ห้ามถือ `partial_unit` เป็นใบผ่าน**
 >   🔑 **จอไม่ต้องรู้เรื่อง 2 แกน** — `canWriteUnit`/`canWriteLine` สลับให้เองเมื่อ ctx มี `respCostCenters`
 >     **+ `scopeIdx`** ⇒ **ctx ของด่านทุกจอต้องส่ง 2 ช่องนี้** (ด่านตรวจรายบรรทัดใน `write-scope-layer`) ·
@@ -493,14 +493,17 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 > — **จอชี้อย่างเดียว ห้ามยุบ/ลบ/แก้ qty ของ `bom_items` ให้เอง** (PE แก้เอง · คำสั่ง user 19/10 · มีด่าน)
 > 🔴 **ตัดสินว่า "ยุบได้" ต้องดูทุกใบที่นิยามพาร์ทนั้น ไม่ใช่ 2 ใบ** (`auditBomSheetGroups()` ไฟล์เดียวกัน)
 >
-> ### 🔻 confirm ใบผลิต = **ตัดลูกตรงชั้นเดียว ไม่ตัดหลาน** (หลัก SAP · 4/11 · คำสั่ง user)
+> ### 🔻 confirm ใบผลิต = **ตัดลูกที่ติดตัวมัน · ลูกไปตัดหลาน** (หลัก SAP · 5/11 · คำสั่ง user)
+> 🔴 **ผัง BOM สร้างใบเดียว — ลูก/หลานไม่ต้องมีใบ BOM แยก** · "ลูกของ mat นี้" ถาม
+>   **`fn_bom_kid_rows(mat, sheet)`** (ใบที่กางอยู่ → ใบของตัวเอง → ใบอื่นที่นิยามลูกไว้ ใบเดียว ห้ามรวม)
 > 🔴 **รายการที่จะตัดมาจาก `fn_bom_direct_demand(mat)` (DR) ที่เดียว — trigger
 >   `fn_explode_child_demand` ห้ามวน `bom_items` ทั้งใบ** (`parent_mat` ⇒ ทั้งใบ ≠ ลูกตรง · มี 2 ด่าน)
 >   · ลูกไม่พอ = ออกใบให้**ลูกไปผลิตเอง** แล้วใบของลูกค่อยตัดลูกของมันต่อ
-> 🔴 **"ของลม" (phantom) = `bom_phantom_mats` + ขั้น OP** — ไม่ถูกตัดในฐานะตัวมันเอง แต่**ลูกของมัน
->   ถูกดึงขึ้นมาตัดที่ชั้นแม่** · ตัดสินที่ `fn_bom_is_phantom()` / ตีป้ายจอที่ `src/utils/bomPhantom.js`
->   · 🔴 **ไม่ติ๊กของลม + ไม่เคยมีใบผลิตเอง = โซ่ขาด ลูกไม่ถูกตัดที่ไหนเลย** (จอ `/products?tab=phantom`
->   ต้องเหลือ 0) · อ่าน `ownOrders` ไม่ได้ = `unknown` ห้ามบีบเป็น 0
+> 🔴 **"ของลม" (`bom_phantom_mats` · `fn_bom_is_phantom()`) = ข้อยกเว้นที่ PE ติ๊กเอง ไม่ใช่ค่าเริ่มต้น**
+>   (ขั้น OP อัตโนมัติ) — ติ๊กแล้วข้ามตัวมันไปตัดลูกที่ชั้นแม่ · **ห้าม seed/เดาให้ใคร**
+> 🔴 **โซ่ขาด (`fn_bom_deduct_gaps()`) = mat ที่อยู่ใน BOM แต่ไม่มีใบไหนตัดเลย — จอ
+>   `/products?tab=phantom` ต้องโชว์ ห้ามซ่อน ห้ามกลบด้วยการติ๊กของลม** (ป้ายจอ `utils/bomPhantom.js`
+>   · อ่าน `ownOrders` ไม่ได้ = `unknown` ห้ามบีบเป็น 0)
 > 🔴 **"ต่อ 1 FG" ฝั่งแผน (`explodeBom`) ≠ สิ่งที่ตัดตอน confirm** — ฝั่งแผนคูณสะสมทุกชั้น · ห้ามสลับ
 > 📄 `docs/modules/bom-levels.md`
 
@@ -562,9 +565,8 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 ## Storage & รูปภาพ (กติกาสำคัญ — 2026-07-09)
 
 - อัปโหลดรูปทุกหน้าต้องผ่าน `ImageCropModal` (crop + บีบ JPEG 480px q0.85 อัตโนมัติ)
-- **🔴 ทุก `.upload()` ต้องส่ง options ผ่าน `uploadOpts()` (`src/utils/storageUpload.js` · มีด่าน)** — ไม่ส่ง `cacheControl` = โหลดซ้ำทุกชั่วโมง · path ที่ `upsert` ทับได้ต้องใส่ `mutable: true`
-- **🔴 ทุกช่อง `<input type="file" accept="image/*">` ต้องผ่าน `acceptImageFile()`** (`src/utils/acceptImageFile.js` · มีด่าน) — HEIC จาก iPhone
-  เบราว์เซอร์อื่น decode ไม่ได้ · ที่เข้าหน้าครอปใช้ `<ImageCropModal>` (มีในตัวแล้ว)
+- **🔴 ทุก `.upload()` ต้องส่ง options ผ่าน `uploadOpts()` (`src/utils/storageUpload.js` · มีด่าน)** · path ที่ `upsert` ทับได้ต้องใส่ `mutable: true`
+- **🔴 ทุกช่อง `<input type="file" accept="image/*">` ต้องผ่าน `acceptImageFile()`** (`src/utils/acceptImageFile.js` · มีด่าน — HEIC) · เข้าหน้าครอปใช้ `<ImageCropModal>`
 - **🚫 รูปพนักงานไม่รับ GIF** (`allowGif={false}` · ตัวตรวจชนิดไฟล์ = `src/utils/imageFileKind.js` จุดเดียว ดูนามสกุลด้วย) ·
   **ปฏิเสธไฟล์ต้องขึ้น toast บอกเหตุผล+ทางแก้ ห้ามปิดเงียบ**
 > 📄 เหตุการณ์ egress · ตัวเลข GIF · กับดัก HEIC → `docs/modules/storage-images.md`
@@ -643,10 +645,9 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 > (อย่าให้มี 2 ชุด — section นี้เป็นเจ้าของเรื่อง **ด่าน build** เท่านั้น)
 > · เอกสารบังคับอ่าน → §File Structure · DB → §Supabase Projects (**2 projects!**) + migration เสมอ
 
-> ### 🕗 **หน้าต่าง deploy — ห้าม deploy ในเวลาทำงาน** (2026-10-26 · เหตุการณ์จริง)
+> ### 🕗 **หน้าต่าง deploy — ห้าม deploy ในเวลาทำงาน** (2026-10-26)
 > **08:00–17:30 deploy ได้เฉพาะของที่ "ไม่แก้แล้วหน้างานทำงานไม่ได้"** · ที่เหลือรอหลังเลิกกะ/ก่อนเข้ากะ
-> 🔴 **deploy = สลับไฟล์ชุดใหม่ ⇒ แท็บที่เปิดค้างพังพร้อมกันทุกเครื่อง** · merge แล้วยังไม่ deploy = รอได้เสมอ
-> 📄 `docs/modules/deploy.md` §หน้าต่าง deploy
+> (deploy = สลับไฟล์ชุดใหม่ ⇒ แท็บที่เปิดค้างพังพร้อมกันทุกเครื่อง) · 📄 `docs/modules/deploy.md`
 
 **build ผ่าน (`npm run build`) ก่อน commit เสมอ** · merge เข้า `main` = **deploy แบบกันถี่** (ห่างรอบก่อน ≥60 น. = ทันที · ไม่งั้นรอเงียบ 30 น. · `.github/workflows/scheduled-deploy.yml` · ด่วนกด Run workflow) · 🔴 **ห้ามเปิด Auto-Deploy ของ Render คืน** (นาที build หมดกลางเดือน · 📄 `docs/modules/deploy.md`)
 📄 **ที่มาของทุกด่าน + เคสจริงที่ทำให้ต้องมี → `docs/modules/build-gates.md`** (อ่านก่อนจะแตะ/ถอดด่านใดๆ)

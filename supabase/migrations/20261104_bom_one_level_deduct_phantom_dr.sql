@@ -190,39 +190,69 @@ $fn$;
 comment on function public.fn_bom_intermediates() is
   'จอ /products?tab=phantom — ลูกกลาง + หลักฐาน ⇒ ตีป้ายที่ src/utils/bomPhantom.js (pure · มีเทส)';
 
+-- ─── 5b) 🔴 โซ่ขาด — "mat ไหนอยู่ใน BOM แต่ไม่มีใบไหนตัดมันเลย" (apply 5/11) ──────────────
+-- กฎ "ลูกไปตัดหลาน" ใช้ได้ต่อเมื่อโซ่เดินถึงทุกชั้น ⇒ ต้องตอบคำถามนี้ได้ · จอต้องโชว์ ห้ามซ่อน
+create or replace function public.fn_bom_deduct_gaps()
+returns table (
+  mat_no text, part_name text, reason text,
+  in_products boolean, own_orders bigint, on_hand numeric,
+  hangs_under text, in_sheets text
+) language sql stable as $fn$
+  with defined as (
+    select distinct upper(btrim(b.mat_no)) as m
+      from public.bom_items b join public.dr_products p on p.id = b.product_id
+     where b.is_active and p.is_active
+  ),
+  deducted as (
+    select distinct upper(btrim(k.mat_no)) as m
+      from public.dr_products p
+      cross join lateral public.fn_bom_kid_rows(p.mat_no, null::uuid) k
+     where p.is_active
+  )
+  select d.m,
+    (select dp.name from public.dr_products dp where upper(btrim(dp.mat_no)) = d.m and dp.is_active limit 1),
+    case
+      when not exists (select 1 from public.dr_products dp
+                        where upper(btrim(dp.mat_no)) = d.m and dp.is_active)
+        then 'ไม่อยู่ในทะเบียนสินค้า — เปิดใบผลิตให้มันไม่ได้ ⇒ ต้องลงทะเบียน หรือย้ายไปห้อยใต้ตัวที่เปิดใบได้'
+      when (select count(*) from public.prod_orders o
+             join public.child_demand_explosions e on e.order_id = o.id
+             where upper(btrim(o.mat_no)) = d.m) = 0
+        then 'ตัวแม่ที่มันห้อยอยู่ไม่เคยเปิดใบผลิตเอง ⇒ โซ่ไม่เคยเดินถึงมัน'
+      else 'ตัวมันเองมีใบผลิต แต่ไม่มีใบไหนตัดมันไปใช้ ⇒ แม่ของมันอาจชี้ผิดตัว หรือเป็นงานส่งออกไปชุบ/จ้างนอก'
+    end,
+    exists (select 1 from public.dr_products dp where upper(btrim(dp.mat_no)) = d.m and dp.is_active),
+    (select count(*) from public.prod_orders o
+       join public.child_demand_explosions e on e.order_id = o.id
+      where upper(btrim(o.mat_no)) = d.m),
+    coalesce((select sum(s.qty_on_hand) from public.line_stock_summary s
+               where upper(btrim(s.mat_no)) = d.m), 0),
+    (select string_agg(distinct coalesce(b2.parent_mat, p2.mat_no), ', ')
+       from public.bom_items b2 join public.dr_products p2 on p2.id = b2.product_id
+      where b2.is_active and p2.is_active and upper(btrim(b2.mat_no)) = d.m),
+    (select string_agg(distinct p3.mat_no, ', ')
+       from public.bom_items b3 join public.dr_products p3 on p3.id = b3.product_id
+      where b3.is_active and p3.is_active and upper(btrim(b3.mat_no)) = d.m)
+  from defined d
+ where not exists (select 1 from deducted x where x.m = d.m);
+$fn$;
+
+comment on function public.fn_bom_deduct_gaps() is
+  'โซ่ขาด — mat ที่อยู่ใน BOM แต่ไม่มีใบไหนตัดมันเมื่อ confirm · จอ /products?tab=phantom ต้องโชว์
+   ห้ามซ่อน ห้ามกลบด้วยการติ๊กของลม · ระบบชี้อย่างเดียว PE ตัดสิน';
+
+grant execute on function public.fn_bom_deduct_gaps()             to anon, authenticated;
 grant execute on function public.fn_bom_is_phantom(text)          to anon, authenticated;
 grant execute on function public.fn_bom_kid_rows(text, uuid)      to anon, authenticated;
 grant execute on function public.fn_bom_direct_demand(text)       to anon, authenticated;
 grant execute on function public.fn_bom_intermediates()           to anon, authenticated;
 
--- ─── 6) seed ทะเบียนของลม — ⛔ กันตัวเอง: ทะเบียนมีแถวแล้ว = PE คุมเองแล้ว ห้ามเขียนทับ ──
-do $seed$
-declare v_n int;
-begin
-  if exists (select 1 from public.bom_phantom_mats) then
-    raise notice 'bom_phantom_mats มีข้อมูลแล้ว — ข้าม seed';
-    return;
-  end if;
-
-  insert into public.bom_phantom_mats (mat_no, note, seeded, created_by)
-  select distinct b.parent_mat,
-         'seed 4/11: ไม่เคยมีใบผลิตของตัวเอง ⇒ เดาว่าเป็นของลม (ลูกถูกดึงขึ้นมาตัดที่ชั้นแม่) — PE ยืนยันด้วย',
-         true, 'migration'
-    from public.bom_items b join public.dr_products p on p.id = b.product_id
-   where b.is_active and p.is_active
-     and b.parent_mat is not null and b.parent_mat <> p.mat_no
-     and not exists (
-       select 1 from public.prod_orders o
-        join public.child_demand_explosions e on e.order_id = o.id
-        join public.dr_products dp
-          on upper(btrim(dp.mat_no)) = upper(btrim(o.mat_no)) and dp.is_active
-        where upper(btrim(o.mat_no)) = upper(btrim(b.parent_mat)))
-  on conflict (mat_no) do nothing;
-
-  select count(*) into v_n from public.bom_phantom_mats;
-  raise notice 'seed bom_phantom_mats: % แถว', v_n;      -- ของจริง 4/11 = 45 แถว
-end
-$seed$;
+-- ─── 6) ⛔ ไม่ seed ทะเบียนของลม — กฎ user 5/11 ────────────────────────────────────────
+-- *"ควรจะตัดลูกที่ติดตัว ลูกมีหน้าที่ไปตัดหลาน และสร้างผัง bom ทีเดียว"*
+-- ⇒ **ค่าเริ่มต้นคือตัดลูกตรงเสมอ** · ของลม = ข้อยกเว้นที่ PE ติ๊กเองที่ /products?tab=phantom
+-- 🔴 migration รุ่นแรก (4/11) เคย seed 45 แถวจากการเดา = ทำให้ระบบข้ามลูกกลาง ขัดกฎข้างบน
+--    ⇒ ล้างทิ้งแล้ว 5/11 (`delete from bom_phantom_mats where seeded`) · **ห้าม seed ซ้ำ**
+--    (มีด่าน `bom-phantom-no-seed` ใน regressionGuards)
 
 -- ─── 7) trigger — โครงเดิมทั้งหมด เปลี่ยนแค่ "วนอะไร" ─────────────────────────────────
 create or replace function public.fn_explode_child_demand()
@@ -324,17 +354,17 @@ $function$;
 --    where not exists (select 1 from new n where upper(btrim(n.m))=upper(btrim(o.m)))
 --      and not coalesce(public.fn_bom_is_phantom(o.m),false);
 --
--- ❷ สรุปทะเบียนของลม (4/11 = 84 ลูกกลาง · 45 seeded · 39 ของจริง · 0 โซ่ขาด)
---   select count(*) total, count(*) filter (where in_registry and seeded) seeded,
---          count(*) filter (where in_registry and not seeded) confirmed,
---          count(*) filter (where not in_registry and not is_operation and own_orders>0) real_part,
---          count(*) filter (where not in_registry and not is_operation and own_orders=0) gap
---     from public.fn_bom_intermediates();
+-- ❷ 🔴 โซ่ขาด — mat ที่อยู่ใน BOM แต่ไม่มีใบไหนตัดมันเลย (5/11 = 23 รายการ · จอต้องโชว์ ห้ามซ่อน)
+--   select mat_no, part_name, reason, own_orders, on_hand, hangs_under
+--     from public.fn_bom_deduct_gaps() order by in_products desc, own_orders desc, mat_no;
+--
+-- ❷b ทะเบียนของลมต้องว่าง เว้นแต่ PE ติ๊กเอง (ห้าม seed · 5/11 = 0 แถว)
+--   select count(*) from public.bom_phantom_mats;
 --
 -- ❸ ใบ confirm แล้วตัดอะไร (เทียบกับที่เห็นบนจอ BOM)
 --   select * from public.fn_bom_direct_demand('10100286') order by mat_no;
 --
--- ❹ ไม่ควรมีใบไหนตัด mat เดิมหลายแถวอีก (เดิม 0121060580 ตัด 30042566 ถึง 5 แถว)
+-- ❹ ไม่ควรมีใบไหนตัด mat เดิมหลายแถวอีก (เดิม 0121060580 ตัด 30042566 ถึง 5 แถว · ต้องได้ 0 แถว)
 --   select t.ref_order_id, o.prod_no, o.mat_no fg, t.mat_no, count(*) rows_cnt
 --     from line_stock_transactions t join prod_orders o on o.id=t.ref_order_id
 --    where t.type='consume' and t.created_by='auto' and t.created_at > now() - interval '1 day'
