@@ -572,7 +572,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     </div>
   );
 
-  const nothing = !err && !whErr && !(SHOW_LEVEL_REFILL && suggest.length) && !holds.length && !inFlight.length && !(SHOW_LEVEL_REFILL && noLevel.length) && !stuckUp.length
+  const nothing = !err && !whErr && !(SHOW_LEVEL_REFILL && suggest.length) && !holds.length && !inFlight.length && !(SHOW_LEVEL_REFILL && noLevel.length)
     && !split.produceDue.length && !split.produceUnknown.length;   // produceNoStd ตัวเดียวไม่เปิดแผง (ไม่งั้นทุกไลน์ที่ผลิตของขึ้นแผงหมด)
   /* 🔴 15/10 feedback หน้างาน ("ไม่มีปุ่ม เรียก Part จาก Store ครับ แล้วตั้งจุดเรียกเติมยังไงครับ"):
      ไลน์ที่ยังไม่มีของ + ยังไม่ตั้ง min = `nothing` ⇒ แผงหายทั้งใบ ⇒ **ปุ่ม ⚙️ ตั้งจุดเรียกเติม ก็หายไปด้วย**
@@ -607,7 +607,9 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
         {plan == null && <span style={{ fontSize: 11, color: 'var(--muted)' }}>กำลังคำนวณ…</span>}
         {plan && !plan.error && (
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-            {planRows.length ? `${planRows.length} พาร์ท` : 'ไม่มีใบผลิตเปิดอยู่ / ไม่มีชิ้นส่วนที่ต้องเบิก'}
+            {plan.area?.code ? `พื้นที่ ${plan.area.code} (${(plan.area.lines || []).join(' · ')})` : 'ไลน์นี้ยังไม่ผูกพื้นที่ SAP — คิดเฉพาะไลน์นี้'}
+            {` · ใบผลิตเปิดอยู่ ${plan.orders ?? 0} ใบ`}
+            {planRows.length ? ` · ลูกที่ต้องใช้ ${planRows.length} พาร์ท` : ''}
             {planSend.length ? <> · <b style={{ color: 'var(--amber)' }}>ยังไม่ได้แจ้งสโตร์ {planSend.length}</b></> : null}
           </span>
         )}
@@ -618,6 +620,16 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
         )}
       </div>
       {plan?.error && <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--red)' }}>⚠ คำนวณไม่ได้ — {plan.error}</div>}
+      {/* 05/11 (คำสั่ง user "มีออเดอร์เปิดอยู่ แจ้งแบบนี้ได้ไง") — ใบผลิตที่ MAT ไม่มีลูกใน BOM ต้องบอกตรงๆ ห้ามบอกว่า "ไม่ต้องเบิก" */}
+      {plan?.noBom?.length > 0 && (
+        <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--red)', lineHeight: 1.7 }}>
+          ⚠ <b>ใบผลิต {plan.noBom.length} ตัวไม่มีลูกใน BOM — แตกไม่ได้ ระบบจึงไม่รู้ว่าต้องเบิกอะไร:</b>{' '}
+          {plan.noBom.slice(0, 5).map(x => `${x.mat_no} × ${fmtQty(x.qty)}`).join(' · ')} — แจ้ง PE ตั้ง BOM (/products) หรือกด ➕ ขอเบิกเอง
+        </div>
+      )}
+      {plan && !plan.error && plan.orders > 0 && !planRows.length && !plan.noBom?.length && (
+        <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--muted)' }}>ลูกใน BOM ทั้งหมดเป็นของที่พื้นที่นี้ผลิตเอง — ไม่มีอะไรต้องเบิกจากสโตร์</div>
+      )}
       {planSend.length > 0 && (
         <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7 }}>
           📤 ครบกล่องแล้วแต่ยังไม่ได้แจ้ง (ใบผลิตเปิดก่อนมีระบบนี้ หรือเพิ่งเพิ่มยอด) — กด 🔁 เพื่อแจ้งสโตร์:{' '}
@@ -739,7 +751,8 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
 
       {/* ⬆ ของยังกองที่ไลน์แม่ — ไม่นับเป็นของไลน์นี้ แต่ห้ามเงียบ
           นี่คือเหตุผลที่ระบบไม่เสนอเติมทั้งที่ยอดรวมในระบบดูเหมือนมี */}
-      {stuckUp.length > 0 && (
+      {/* 🙈 05/11 (คำสั่ง user) — ไม่โชว์ "ของค้างที่ไลน์แม่" แล้ว: การเบิกคิดรวมทั้งพื้นที่ SAP (แม่-ลูกนับที่เดียวกัน) */}
+      {SHOW_LEVEL_REFILL && stuckUp.length > 0 && (
         <div style={{ fontSize: 11.5, color: 'var(--text2)', background: 'rgba(245,158,11,0.09)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '8px 11px', marginBottom: 10, lineHeight: 1.7 }}>
           <b style={{ color: '#f59e0b' }}>⬆ ของ {stuckUp.length} พาร์ทยังอยู่ที่ไลน์แม่ ไม่ได้อยู่หน้าไลน์นี้</b>
           <br />ระบบนับเฉพาะของที่อยู่ที่ <b>{lineName}</b> จริง (หน่วยย่อยที่สุด) — ของที่ไลน์แม่จึงไม่ถูกนับให้

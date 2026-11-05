@@ -113,3 +113,16 @@ export function slocOfStockRow(slocs, lines, lineName, mat, homeOf) {
   return slocOfLine(slocs, lines, lineName);
 }
 export const slocCodeOfStockRow = (...a) => slocOfStockRow(...a)?.code || null;
+
+/* ═══ 📍 "พื้นที่เดียวกัน" ตามรหัส SAP (2026-11-05 · คำสั่ง user) ═══════════════════════════════
+   user: *"เราคุยกันที่พื้นที่ที่ตั้งไว้อ้างอิงจาก SAP ไม่สนว่าอยู่ไลน์แม่หรือลูก — GOR · Assy GOR · Laser GOR คือ P410
+          ก็นับว่าอยู่ที่เดียวกัน"* ⇒ ความต้องการ/ของคงเหลือ/ใบรอหยิบ ของการเบิกจากสโตร์ คิดรวมทั้งพื้นที่
+   · ไลน์ที่ยังไม่ผูกพื้นที่ = คิดเฉพาะไลน์ตัวเอง (`code: null`) — จอต้องเขียนว่ายังไม่ผูก ห้ามเดาไปรวมกับไลน์อื่น */
+export function areaLinesOf(slocs, lines, lineName) {
+  const ln = norm(lineName);
+  const hit = slocOfLine(slocs, lines, ln);
+  if (!hit) return { code: null, lines: ln ? [ln] : [] };
+  const own = (hit.sloc?.line_names || []).map(norm);
+  const all = [...new Set([ln, ...own, ...linesOfSloc(slocs, lines, hit.code)].filter(Boolean))];
+  return { code: hit.code, lines: all };
+}

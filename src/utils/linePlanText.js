@@ -19,23 +19,31 @@ export function planActionText(r) {
 }
 
 /** บรรทัดรายละเอียดต่อพาร์ท: ต้องใช้ · หน้าไลน์มี · ขาด */
-export function planRowText(r) {
+export function planRowText(r, where = 'หน้าไลน์') {
   const u = qtyUnit(r.uom);
   const name = r.part_name ? `${r.part_name} · ` : '';
-  return `• ${name}MAT ${r.mat_no}${r.coil ? ' 🧲 coil' : ''}\n   ต้องใช้ ${f(r.need)} ${u} · หน้าไลน์มี ${f(r.base)} ${u} · ขาด ${f(r.short)} ${u}\n   ${planActionText(r)}`;
+  return `• ${name}MAT ${r.mat_no}${r.coil ? ' 🧲 coil' : ''}\n   ต้องใช้ ${f(r.need)} ${u} · ${where}มี ${f(r.base)} ${u} · ขาด ${f(r.short)} ${u}\n   ${planActionText(r)}`;
 }
 
 /**
  * @param rows ผล dryRun
- * @param {{ title: string, focus?: string[], max?: number }} o  focus = MAT ที่เกี่ยวกับการกดครั้งนี้ (ขึ้นก่อน)
+ * @param {{ title: string, focus?: string[], max?: number, area?: {code, lines}, noBom?: Array }} o  focus = MAT ที่เกี่ยวกับการกดครั้งนี้ (ขึ้นก่อน)
+ *   area = พื้นที่ SAP ที่คิดรวม (แม่-ลูกนับที่เดียว) · noBom = ใบผลิตที่ MAT ไม่มีลูกใน BOM (แตกไม่ได้ — ต้องบอก)
  * @returns {{ text: string, sendCount: number }}
  */
-export function planConfirmText(rows = [], { title = '', focus = [], max = 12 } = {}) {
+export function planConfirmText(rows = [], { title = '', focus = [], max = 12, area = null, noBom = [] } = {}) {
   const fs = new Set((focus || []).map(m => String(m).trim()));
   const sorted = [...rows].sort((a, b) => (fs.has(b.mat_no) ? 1 : 0) - (fs.has(a.mat_no) ? 1 : 0));
   const send = rows.filter(r => r.action === 'insert' || r.action === 'raise').length;
-  const shown = sorted.slice(0, max).map(planRowText);
+  const where = area?.code ? `พื้นที่ ${area.code} ` : 'หน้าไลน์';
+  const shown = sorted.slice(0, max).map(r => planRowText(r, where));
   const more = sorted.length > max ? `\n… อีก ${sorted.length - max} พาร์ท (ดูครบที่แผง 📦 เรียกชิ้นส่วนจากสโตร์)` : '';
   const tail = send ? `\n\nแจ้งสโตร์ ${send} รายการ?` : '\n\nตอนนี้ยังไม่มีรายการที่ต้องแจ้งสโตร์';
-  return { text: `${title}\n(ความต้องการรวมของใบผลิตที่เปิดอยู่ทั้งไลน์ หักของหน้าไลน์แล้ว)\n\n${shown.join('\n\n')}${more}${tail}`, sendCount: send };
+  const scope = area?.code
+    ? `(รวมทั้งพื้นที่ ${area.code}: ${(area.lines || []).join(' · ')} — ใบผลิตที่เปิดอยู่ทั้งพื้นที่ หักของในพื้นที่แล้ว)`
+    : '(ไลน์นี้ยังไม่ผูกพื้นที่ SAP — คิดเฉพาะไลน์นี้ · ใบผลิตที่เปิดอยู่ หักของหน้าไลน์แล้ว)';
+  const nb = (noBom || []).length
+    ? `\n\n⚠️ ใบผลิต ${noBom.length} ตัวไม่มีลูกใน BOM — แตกไม่ได้ จึงไม่ได้ขอของให้: ${noBom.slice(0, 5).map(x => `${x.mat_no} × ${f(x.qty)}`).join(' · ')} (แจ้ง PE ตั้ง BOM ที่ /products)`
+    : '';
+  return { text: `${title}\n${scope}${shown.length ? `\n\n${shown.join('\n\n')}` : ''}${more}${nb}${tail}`, sendCount: send };
 }
