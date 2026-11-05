@@ -49,7 +49,8 @@ import { buildEcIndex, ecOf, countSuperseded } from '../utils/ecRevisions';
 const upMat = (m) => String(m ?? '').trim().toUpperCase();
 import { productReadiness, READINESS_COLOR } from '../utils/productReadiness';
 import { uomLabel, itemNoLabel, nextItemNo, byItemNo, buildBomIndex, moveBomLine, explodeBom } from '../utils/bomTree';
-import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT } from '../utils/storageLoc';
+import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT, STORE_SLOC_KINDS } from '../utils/storageLoc';
+import StorageLocSelect from '../components/StorageLocSelect';   // 🏠 ที่จัดเก็บหลักของพาร์ท (05/11)
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import Page from '../components/Page';
@@ -3329,6 +3330,7 @@ function ExportPanel() {
 const EMPTY_PART = {
   mat_no: '', part_name: '', part_no: '', uom: DEFAULT_UOM,
   qty_per_pkg: '', supplier: '', note: '', is_active: true, image_url: '',
+  home_sloc: '',   // 🏠 ที่จัดเก็บหลัก (05/11) — สโตร์จ่ายออกจากที่นี่ · ว่าง = ยังไม่ตั้ง
   // ต้นทุน/ชิ้น (cost saving ใน /improvements · 2026-08-11): standard_cost (บช. รวม mat+DL+OH+DP) ชนะ material_cost เสมอ
   material_cost: '', standard_cost: '',
 };
@@ -3472,6 +3474,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
         part_no: (form.part_no || '').trim() || null, uom: normUom(form.uom, uomIdx) || DEFAULT_UOM,
         qty_per_pkg: form.qty_per_pkg !== '' ? Number(form.qty_per_pkg) : null,
         supplier: (form.supplier || '').trim() || null, note: (form.note || '').trim() || null,
+        home_sloc: slocLabel(form.home_sloc) || null,
         is_active: form.is_active, image_url: imageUrl,
         material_cost: form.material_cost !== '' && form.material_cost != null ? Number(form.material_cost) : null,
         standard_cost: form.standard_cost !== '' && form.standard_cost != null ? Number(form.standard_cost) : null,
@@ -3573,6 +3576,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>Part No.</th>
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>UOM</th>
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'right' }}>Qty/Pkg</th>
+                <th title="ที่จัดเก็บหลัก (05/11) — สโตร์หยิบจากพื้นที่นี้" style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' }}>ที่จัดเก็บ</th>
                 <th title="Material Cost บาท/ชิ้น (raw mat)" style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'right', whiteSpace: 'nowrap' }}>Mat ฿</th>
                 <th title="Standard Cost บาท/ชิ้น จากบัญชี (รวม mat+DL+OH+DP) — ใช้คิด cost saving" style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'right', whiteSpace: 'nowrap' }}>Std ฿</th>
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>Supplier</th>
@@ -3582,7 +3586,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
             </thead>
             <tbody>
               {filtered.length === 0 && (
-                <tr><td colSpan={canEdit ? 12 : 11} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+                <tr><td colSpan={canEdit ? 13 : 12} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
                   {parts.length === 0 ? 'ยังไม่มีข้อมูล — กด ➕ เพิ่มพาร์ท เพื่อเริ่มต้น' : 'ไม่พบรายการที่ตรงเงื่อนไข'}
                 </td></tr>
               )}
@@ -3626,6 +3630,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                   <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text2)', fontFamily: 'monospace', borderTop: '1px solid var(--border)' }}>{p.part_no || '-'}</td>
                   <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--muted)', borderTop: '1px solid var(--border)' }}>{p.uom}</td>
                   <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text2)', textAlign: 'right', fontFamily: 'monospace', borderTop: '1px solid var(--border)' }}>{p.qty_per_pkg ?? '-'}</td>
+                  <td style={{ padding: '8px 12px', fontSize: 12, fontFamily: 'monospace', borderTop: '1px solid var(--border)', color: p.home_sloc ? 'var(--text2)' : 'var(--muted)' }}>{p.home_sloc || 'ยังไม่ตั้ง'}</td>
                   <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text2)', textAlign: 'right', fontFamily: 'monospace', borderTop: '1px solid var(--border)' }}>{p.material_cost != null ? Number(p.material_cost).toLocaleString() : '-'}</td>
                   <td style={{ padding: '8px 12px', fontSize: 12, color: p.standard_cost != null ? 'var(--accent)' : 'var(--text2)', fontWeight: p.standard_cost != null ? 700 : 400, textAlign: 'right', fontFamily: 'monospace', borderTop: '1px solid var(--border)' }}>{p.standard_cost != null ? Number(p.standard_cost).toLocaleString() : '-'}</td>
                   <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text2)', borderTop: '1px solid var(--border)' }}>{p.supplier || '-'}</td>
@@ -3759,6 +3764,14 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                 <SupplierSelect value={form.supplier || ''} kinds={['material', 'internal']}
                   onChange={r => setForm(f => ({ ...f, supplier: r.supplier }))}
                   placeholder="ชื่อ Supplier / ผู้ผลิต" inputStyle={inputSt} />
+              </div>
+              <div>
+                {/* 🏠 05/11 (คำสั่ง user) — "ที่จัดเก็บหลัก" ของพาร์ท ≠ ไลน์ที่ผลิต · สโตร์หยิบจากที่นี่ แล้วส่งไปพื้นที่ของไลน์ที่เปิดใบผลิตแม่
+                    เลือกได้เฉพาะรหัสสโตร์/คลัง (S/R/W) · ว่าง = ยังไม่ตั้ง (ระบบไม่เดาจากเลข MAT) */}
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ที่จัดเก็บหลัก (สโตร์/คลัง)</label>
+                <StorageLocSelect value={form.home_sloc || ''} kinds={STORE_SLOC_KINDS} allowFree={false}
+                  onChange={v => setForm(f => ({ ...f, home_sloc: typeof v === 'string' ? v : (v?.code || '') }))}
+                  placeholder="เช่น S402 · R401 · W401" inputStyle={inputSt} />
               </div>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>หมายเหตุ</label>

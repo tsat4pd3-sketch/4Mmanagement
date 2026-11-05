@@ -53,6 +53,7 @@ import PartThumb from '../components/PartThumb';
 import usePartImages from '../utils/usePartImages';
 import { useStorageLocationsState } from '../utils/useStorageLocations';
 import { groupStockBySloc, slocGroupTitle } from '../utils/slocStockView';
+import { loadHomeSlocs } from '../utils/homeSloc';   // 🏠 ที่จัดเก็บหลักของพาร์ท (05/11)
 import { INFLOW_MODES, inflowModeOf, inflowPatchFor, inflowModesFor } from '../utils/stockReceipts';
 import { IconButton, DeleteButton } from '../components/IconButton';
 
@@ -127,6 +128,9 @@ function StockTab({ role, scope }) {
   };
   const imgOf = usePartImages();                    // 🖼️ รูปชิ้นงาน — ของกลางเดียวกับบอร์ดสโตร์ (UI §6.23)
   const slocReg = useStorageLocationsState();       // ทะเบียนรหัสคลัง — ว่างเพราะไม่มี vs โหลดไม่ได้ ต้องแยกให้ออก
+  /* 🏠 05/11 — ยอดในกองคลัง (STORE/FG WAREHOUSE) จัดกลุ่มพื้นที่ตาม "ที่จัดเก็บหลัก" ของพาร์ท (parts_master.home_sloc) */
+  const [homeSloc, setHomeSloc] = useState({ map: new Map(), error: null });
+  useEffect(() => { let alive = true; loadHomeSlocs().then(r => { if (alive) setHomeSloc(r); }); return () => { alive = false; }; }, []);
   const [knownMats, setKnownMats] = useState(() => new Set()); // mat ที่มีในฐาน (parts_master/BOM) — กันสร้างของผี
   const [products, setProducts] = useState([]);     // [{id, name, mat_no, line_name}]
   // 📜 MAT ที่เคยบันทึกใน line_stock_transactions (DR) — เคยรับ/จ่ายไปแล้วแต่ยังไม่อยู่ในทะเบียนใด ยังเลือกซ้ำได้ (save ยังถามยืนยันเหมือนพิมพ์เอง) · 2026-09-07
@@ -436,14 +440,14 @@ function StockTab({ role, scope }) {
 
   /* 🏬 ทะเบียนรหัสคลังใช้ได้ไหม — โหลดไม่สำเร็จ หรือยังไม่มีรหัสที่ผูกไลน์เลย = ไม่มีอะไรให้จัดกลุ่ม
      ⇒ บังคับโหมดไลน์ + เขียนเหตุผลบนจอ (ห้ามโชว์กลุ่ม "ยังไม่ผูก" ก้อนเดียวแล้วให้เดาเอง) */
-  const slocUsable = !slocReg.failed && (slocReg.rows || []).some(s => s?.is_active !== false && (s?.line_names || []).length);
+  const slocUsable = !slocReg.failed && ((slocReg.rows || []).some(s => s?.is_active !== false && (s?.line_names || []).length) || homeSloc.map.size > 0);
   const groupMode = slocUsable ? groupBy : 'line';
 
   /* กลุ่มที่เอาไปวาด — 2 โหมดคืนรูปร่างเดียวกัน (key · title · parts[{mat_no, part_name, qty, lineQtys}])
      เพื่อให้ตารางมีตัววาดชุดเดียว (เดิมโหมดไลน์วาดจาก row ดิบ — ก๊อป 2 ชุด = ดริฟต์แน่นอน) */
   const groups = useMemo(() => {
     if (groupMode === 'sloc') {
-      return groupStockBySloc(filteredStock, { slocs: slocReg.rows || [], lines })
+      return groupStockBySloc(filteredStock, { slocs: slocReg.rows || [], lines, homeOf: homeSloc.map })
         .map(g => ({ ...g, title: slocGroupTitle(g) }));
     }
     return Object.entries(stockByLine).map(([lineName, rows]) => ({
@@ -455,7 +459,7 @@ function StockTab({ role, scope }) {
         lineQtys: [{ line_name: lineName, qty: parseFloat(r.qty_on_hand) || 0 }],
       })),
     }));
-  }, [groupMode, filteredStock, slocReg.rows, lines, stockByLine]);
+  }, [groupMode, filteredStock, slocReg.rows, lines, stockByLine, homeSloc.map]);
 
   return (
     <>
@@ -620,6 +624,11 @@ function StockTab({ role, scope }) {
               {keys.length} {groupMode === 'sloc' ? 'พื้นที่' : 'ไลน์/คลัง'} · แตะหัวกลุ่มเพื่อย่อ-กาง
               {groupMode === 'sloc' && ' · ยอดในพื้นที่เดียวกันรวมข้ามไลน์แล้ว (MIN/MAX เป็นค่าต่อ MAT ระดับพื้นที่)'}
             </span>
+            {groupMode === 'sloc' && homeSloc.error && (
+              <span style={{ fontSize:11, color:'var(--red)', fontWeight:700 }}>
+                🏠 {homeSloc.error === 'not_ready' ? 'ยังไม่มีช่องที่จัดเก็บหลักในฐานข้อมูล' : `โหลดที่จัดเก็บหลักไม่สำเร็จ (${homeSloc.error})`} — ยอดในสโตร์/คลังจะอยู่กลุ่ม "ยังไม่ตั้ง"
+              </span>
+            )}
             {/* ทะเบียนใช้ไม่ได้ = ต้องบอกว่าทำไมปุ่มพื้นที่ไม่ทำงาน ห้ามเงียบ */}
             {!slocUsable && (
               <span style={{ fontSize:11, color:'#f59e0b', fontWeight:700 }}>
