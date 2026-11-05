@@ -8760,3 +8760,10 @@ test('🧲 coil-request-via-bom — coil ขอตรงไม่ได้ · �
   if (!/viaBom: true/.test(panel)) bad.push('LinePartCallPanel — ทางแตก BOM ไม่ส่ง viaBom');
   assert.deepEqual(bad, [], bad.join('\n'));
 });
+
+/* ═══ 🔒 line-adhoc-picker-strict — 2026-11-05 · คำสั่ง user ═══════════════════════════════
+   ช่อง "ขอเบิกพาร์ทนี้เลย" ห้ามโชว์พาร์ทของไลน์อื่น (*"ไม่ควรขึ้นเพื่อกันการงง"*) ⇒ ProductSelect ต้อง strict */
+test('🔒 line-adhoc-picker-strict — ช่องขอเบิกเองโชว์เฉพาะพาร์ทของไลน์นี้', () => {
+  const s = stripComments(readFileSync(join(ROOT, 'src/components/LinePartCallPanel.jsx'), 'utf8'));
+  assert.match(s, /<ProductSelect strict value=\{adhocMat\}/, 'ProductSelect ของฟอร์มขอเบิกเองต้องมี strict');
+});
