@@ -165,7 +165,7 @@ export default function ScanModal({
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2400, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={box}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-          <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)' }}>📷 {title}</h3>
+          <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)' }}>{title}</h3>
           <button onClick={onClose} className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>✕</button>
         </div>
         <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 12 }}>{hint}</div>
@@ -176,7 +176,7 @@ export default function ScanModal({
           {!camOn && (
             <button onClick={startCam} className="tbtn"
               style={{ padding: '12px 22px', borderRadius: 10, border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-              📷 เปิดกล้องสแกน
+              เปิดกล้องสแกน
             </button>
           )}
           {camOn && (
@@ -195,7 +195,7 @@ export default function ScanModal({
         {/* เครื่องยิง / พิมพ์เอง */}
         <div style={{ marginTop: 14 }}>
           <label style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>
-            🔫 ยิงด้วยเครื่องสแกน หรือพิมพ์รหัสเอง
+            ยิงด้วยเครื่องสแกน หรือพิมพ์รหัสเอง
           </label>
           <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
             <input

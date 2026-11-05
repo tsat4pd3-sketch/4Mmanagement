@@ -170,7 +170,7 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
       borderRadius: 'var(--radius-lg)', padding: 12, marginBottom: 14,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: rows.length || disabled ? 9 : 0 }}>
-        <b style={{ fontSize: 14 }}>🔔 ฝ่ายผลิตเรียกตรวจ (FME)</b>
+        <b style={{ fontSize: 14 }}>ฝ่ายผลิตเรียกตรวจ (FME)</b>
         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
           เรียกอัตโนมัติเมื่อ <b>เปลี่ยนกะ</b> / <b>เปลี่ยนรุ่น</b> — นับเป็นรุ่น ไม่ใช่ต่อออเดอร์
         </span>
@@ -182,7 +182,7 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
         )}
         <span style={{ flex: 1 }} />
         <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 20, padding: 2 }}>
-          {[{ k: 'list', t: '📋 รายการ' }, { k: 'board', t: '🗓️ ไทม์ไลน์' }].map(v => (
+          {[{ k: 'list', t: 'รายการ' }, { k: 'board', t: 'ไทม์ไลน์' }].map(v => (
             <button key={v.k} onClick={() => setViewSaved(v.k)}
               title={v.k === 'board' ? 'เห็นทั้งวันว่าต้องไปตรวจไลน์ไหน กี่โมง' : 'คิวที่ต้องทำตอนนี้'}
               style={{ padding: '3px 11px', borderRadius: 18, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', border: 'none',
@@ -191,7 +191,7 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
           ))}
         </div>
         {canManage && (
-          <button onClick={() => setShowCfg(v => !v)} style={btn('var(--bg3)', 'var(--text2)')}>⚙️ ตั้งค่าการเรียกตรวจ</button>
+          <button onClick={() => setShowCfg(v => !v)} style={btn('var(--bg3)', 'var(--text2)')}>ตั้งค่าการเรียกตรวจ</button>
         )}
       </div>
 
@@ -228,7 +228,7 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
               เดิมเป็น "นาที" ตัวเดียวทั้งโรงงาน ซึ่งใช้กับของจริงไม่ได้ —
               ไลน์ลอทใหญ่ผลิตทั้งวันต้องตรวจซ้ำ · ไลน์ลอทสั้นอาจไม่ต้องมีเลย */}
           <div style={{ marginTop: 10, paddingTop: 9, borderTop: '1px dashed var(--border)' }}>
-            <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>🔁 ตรวจระหว่างผลิต (Middle)</div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>ตรวจระหว่างผลิต (Middle)</div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
               {[
                 { k: 'lot', label: 'ตามยอดผลิต (lot size)' },
@@ -317,7 +317,7 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
                   )}
                 </span>
                 {o.status === 'acked' && (
-                  <span style={{ fontSize: 11.5, fontWeight: 700, color: '#4d9fff', whiteSpace: 'nowrap' }}>📝 กำลังตรวจ</span>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: '#4d9fff', whiteSpace: 'nowrap' }}>กำลังตรวจ</span>
                 )}
                 <span style={{ fontSize: 11.5, whiteSpace: 'nowrap', color: isLate ? '#ef4444' : 'var(--muted)', fontWeight: isLate ? 700 : 400 }}>
                   {isLate ? `เกิน ${lateMin} นาที` : `ภายใน ${fmtTime(o.due_at)}`}
@@ -347,7 +347,7 @@ function ReadinessList({ readiness, enabled, onRecheck }) {
     <div style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '8px 10px', marginBottom: 9 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
         <span style={{ fontSize: 12, fontWeight: 700 }}>
-          🚦 ความพร้อมก่อนเปิด{readiness ? (readiness.canEnable ? ' — พร้อม' : ' — ยังไม่พร้อม') : ' — กำลังตรวจ…'}
+          ความพร้อมก่อนเปิด{readiness ? (readiness.canEnable ? ' — พร้อม' : ' — ยังไม่พร้อม') : ' — กำลังตรวจ…'}
         </span>
         {enabled && readiness && !readiness.canEnable && (
           <span style={{ fontSize: 11.5, color: '#ef4444', fontWeight: 700 }}>ระบบเปิดอยู่ทั้งที่ยังไม่พร้อม — QA อาจได้คิวที่เปิดใบไม่ได้</span>

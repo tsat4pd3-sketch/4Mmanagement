@@ -553,7 +553,7 @@ function OtMasterDataPanel() {
   return (
     <div className="card mgrid" style={{ padding: 16, marginBottom: 14, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
       <div>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>🚐 สายรถรับส่ง</div>
+        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>สายรถรับส่ง</div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
           <input placeholder="รหัส เช่น A17" value={newRouteCode} onChange={e => setNewRouteCode(e.target.value)} style={{ width: 70, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
           <input placeholder="ชื่อสาย เช่น มาบยางพร-ปลวกแดง" value={newRouteName} onChange={e => setNewRouteName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
@@ -572,7 +572,7 @@ function OtMasterDataPanel() {
       </div>
 
       <div>
-        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>🛠️ งานที่ทำ OT</div>
+        <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>งานที่ทำ OT</div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
           <input placeholder="ชื่องาน เช่น ผลิตตามแผน" value={newTaskName} onChange={e => setNewTaskName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
           <button onClick={addTask} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
@@ -591,9 +591,9 @@ function OtMasterDataPanel() {
 
       {/* master ของหน้าเช็คชื่อ/จัดกำลังคนอีก 2 ลิสต์ (เลิก hardcode ในโค้ด — QC audit 2026-08-19)
           สิทธิ์เดียวกับแผงนี้ (ot_master:manage) — กลุ่มเดียวกัน ไม่เพิ่ม permission key ใหม่ */}
-      <SimpleNameMaster table="special_task_types" title="📋 งานนอกไลน์ (หน้า จัดการไลน์ผลิต)"
+      <SimpleNameMaster table="special_task_types" title="งานนอกไลน์ (หน้า จัดการไลน์ผลิต)"
         placeholder="เช่น 5ส, คัดงาน" offNote="จะไม่ขึ้นให้เลือกตอนมอบหมายงานนอกไลน์" />
-      <SimpleNameMaster table="leave_types" title="🏖️ ประเภทลา (หน้า เช็คชื่อ)"
+      <SimpleNameMaster table="leave_types" title="ประเภทลา (หน้า เช็คชื่อ)"
         placeholder="เช่น ลากิจ, ลาป่วย" offNote="จะไม่ขึ้นให้เลือกตอนบันทึกการลา" />
     </div>
   );
@@ -1227,7 +1227,7 @@ table{border-collapse:collapse;width:100%}
 
       {station && (
         <div style={{ marginBottom: 12, padding: '8px 14px', borderRadius: 8, background: 'var(--accent-dim)', border: '1px solid rgba(61,214,92,0.2)', display: 'inline-flex', gap: 10, alignItems: 'center' }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)' }}>📍 {station.station_name}</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)' }}>{station.station_name}</span>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>{station.line_name}</span>
         </div>
       )}
@@ -1933,19 +1933,19 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
       {qaApproveModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px 24px 20px', width: 'min(460px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
-            <h3 style={{ margin: '0 0 4px', color: 'var(--blue)', fontFamily: 'var(--font-display)' }}>🔍 QA ยืนยันคุณภาพงาน</h3>
+            <h3 style={{ margin: '0 0 4px', color: 'var(--blue)', fontFamily: 'var(--font-display)' }}>QA ยืนยันคุณภาพงาน</h3>
             <p style={{ margin: '0 0 14px', color: 'var(--muted)', fontSize: 13 }}>
               {qaApproveModal.line_name} · {qaApproveModal.category} · {qaApproveModal.description}
             </p>
             {/* Request image preview */}
             {qaApproveModal.request_image_url && (
               <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>📎 รูปจากผู้แจ้ง</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>รูปจากผู้แจ้ง</div>
                 <img src={qaApproveModal.request_image_url} style={{ maxHeight: 130, maxWidth: '100%', borderRadius: 8, objectFit: 'contain', border: '1px solid var(--border2)', cursor: 'pointer' }}
                   onClick={() => setImageViewModal({ url: qaApproveModal.request_image_url, title: 'รูปจากผู้แจ้ง' })} />
               </div>
             )}
-            <div style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600, marginBottom: 6 }}>📷 แนบรูปยืนยันคุณภาพ <span style={{ color: 'var(--muted)' }}>(ไม่บังคับ)</span></div>
+            <div style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600, marginBottom: 6 }}>แนบรูปยืนยันคุณภาพ <span style={{ color: 'var(--muted)' }}>(ไม่บังคับ)</span></div>
             <div style={{ border: `2px dashed ${qaImageFile ? 'var(--blue)' : 'var(--border2)'}`, borderRadius: 8, padding: '10px 12px', background: qaImageFile ? 'var(--blue-dim)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center' }}
               onClick={() => document.getElementById('qa-img-input').click()}>
               <input id="qa-img-input" type="file" accept="image/*" style={{ display: 'none' }}
@@ -1961,7 +1961,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                 }} />
               {qaImagePreview
                 ? <img src={qaImagePreview} style={{ maxHeight: 140, maxWidth: '100%', borderRadius: 6, objectFit: 'contain' }} />
-                : <div style={{ color: 'var(--muted)', fontSize: 13 }}>📷 แตะเพื่อเลือกรูปยืนยัน</div>}
+                : <div style={{ color: 'var(--muted)', fontSize: 13 }}>แตะเพื่อเลือกรูปยืนยัน</div>}
             </div>
             {qaImageFile && (
               <button type="button" onClick={() => { setQaImageFile(null); setQaImagePreview(null); }}
@@ -2092,7 +2092,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
         focusRow ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '8px 12px', borderRadius: 8,
             background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', fontSize: 12.5, color: 'var(--text)' }}>
-            <span>🔗 เน้นใบที่เลือกมา — <b>{focusRow.line_name || 'ไม่ระบุไลน์'}</b> · {focusRow.category} · {fmtDate(focusRow.work_date)}</span>
+            <span>เน้นใบที่เลือกมา — <b>{focusRow.line_name || 'ไม่ระบุไลน์'}</b> · {focusRow.category} · {fmtDate(focusRow.work_date)}</span>
             <button onClick={() => setFocus('')} style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
               ล้างการเน้น
             </button>
@@ -2146,13 +2146,13 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                       {l.reject_reason && <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 3 }}>เหตุผล: {l.reject_reason}</div>}
                       <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
                         {l.request_image_url && (
-                          <button onClick={() => setImageViewModal({ url: l.request_image_url, title: '📎 รูปจากผู้แจ้ง' })}
+                          <button onClick={() => setImageViewModal({ url: l.request_image_url, title: 'รูปจากผู้แจ้ง' })}
                             style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', fontWeight: 600 }}>
                             รูปแจ้ง
                           </button>
                         )}
                         {l.qa_image_url && (
-                          <button onClick={() => setImageViewModal({ url: l.qa_image_url, title: '🔍 รูป QA ยืนยัน' })}
+                          <button onClick={() => setImageViewModal({ url: l.qa_image_url, title: 'รูป QA ยืนยัน' })}
                             style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', fontWeight: 600 }}>
                             รูป QA
                           </button>
@@ -2309,7 +2309,7 @@ function DocumentControlPanel() {
 
   return (
     <div className="card" style={{ padding: 16, marginBottom: 14 }}>
-      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>⚙️ จัดการเอกสาร — Changing Point Control Record</div>
+      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>จัดการเอกสาร — Changing Point Control Record</div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 10 }}>
         <div>
@@ -2341,7 +2341,7 @@ function DocumentControlPanel() {
         background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', opacity: saving ? 0.6 : 1, marginBottom: 18,
       }}>{saving ? 'กำลังบันทึก...' : 'บันทึกข้อมูลเอกสาร'}</button>
 
-      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>📜 ประวัติการแก้ไขเอกสาร (Revision History)</div>
+      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>ประวัติการแก้ไขเอกสาร (Revision History)</div>
       <div style={{ overflowX: 'auto', marginBottom: 10 }}>
         <table style={{ minWidth: 720 }}>
           <thead>
@@ -2648,7 +2648,7 @@ ${catHeaderCells}
                       <div>
                         <div style={{ fontWeight: 700, fontSize: 14 }}>{emp.name}</div>
                         <div style={{ fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code}
-                          {emp._isHelper && <span style={{ marginLeft: 5, color: 'var(--blue)', fontWeight: 700 }}>🤝 ยืมจาก {emp._helperFrom}</span>}
+                          {emp._isHelper && <span style={{ marginLeft: 5, color: 'var(--blue)', fontWeight: 700 }}>ยืมจาก {emp._helperFrom}</span>}
                         </div>
                       </div>
                     </div>
@@ -2737,7 +2737,7 @@ ${catHeaderCells}
                             style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 700,
                               color: 'var(--blue)', background: 'var(--blue)18', border: '1px solid var(--blue)44',
                               borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>
-                            🤝 ยืมจาก {emp._helperFrom}
+                            ยืมจาก {emp._helperFrom}
                           </div>
                         )}
                         {avg !== null && (
@@ -3218,7 +3218,7 @@ function MultiSkillFormTab() {
                   ) : (
                     <label style={{ display: 'block', cursor: 'pointer' }}>
                       <div style={{ height: 48, border: '1px dashed var(--border2)', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--muted)' }}>
-                        📎 อัปโหลดลายเซ็น
+                        อัปโหลดลายเซ็น
                       </div>
                       <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async e => {
                         const picked = e.target.files?.[0];
@@ -3880,7 +3880,7 @@ function SkillAllowanceTab() {
           {loading ? 'กำลังโหลด...' : 'ดึงข้อมูล'}
         </button>
         {rows.length > 0 && (
-          <span className="filter-count" style={{ fontStyle: 'italic' }}>🖨️ กด Export ด้านล่างเพื่อพิมพ์</span>
+          <span className="filter-count" style={{ fontStyle: 'italic' }}>กด Export ด้านล่างเพื่อพิมพ์</span>
         )}
         {rows.length > 0 && (
           <CsvBtn onClick={() => {
@@ -4529,7 +4529,7 @@ function AttendanceFormTab() {
           {loading ? 'กำลังโหลด...' : 'ดึงข้อมูล'}
         </button>
         {empRows.length > 0 && (
-          <span className="filter-count" style={{ fontStyle: 'italic' }}>🖨️ กด Export ด้านล่างเพื่อพิมพ์</span>
+          <span className="filter-count" style={{ fontStyle: 'italic' }}>กด Export ด้านล่างเพื่อพิมพ์</span>
         )}
         {empRows.length > 0 && (
           <CsvBtn onClick={() => {

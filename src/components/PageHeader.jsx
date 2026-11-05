@@ -14,12 +14,12 @@ import Icon, { stripIcon } from './Icon';   // ✒️ ไอคอนเส้�
    ใช้:
      const [tab, setTab] = useTabParam(['list','kpi'], 'list');
      <PageHeader title="แจ้งซ่อม MTN (MO)" icon="🛠️" sub="ค้างดำเนินการ 3 ใบ"
-       actions={<button…/>} tabs={[{key:'list',label:'📋 รายการ MO'},…]} tab={tab} onTab={setTab} />
+       actions={<button…/>} tabs={[{key:'list',label: 'รายการ MO'},…]} tab={tab} onTab={setTab} />
 
    • breadcrumb (หมวด › ชื่อหน้า) generate เองจาก NAV_ITEMS ตาม pathname — ไม่ต้องใส่มือ
    • เว้น paddingRight ให้พ้น 🔔 มุมขวาบนตามกติกา UI §7
    • แท็บ: แบบ "เส้นใต้" ทรงเดียวกันทั้งระบบ (2026-11-05 · UI §6.36) · เลื่อนแนวนอนได้บนมือถือ · แท็บที่ถูกเลือก = ตัวหนา + เส้น accent ใต้
-     ป้ายแท็บถูกตัด emoji นำหน้าออกที่จุดวาด (`stripIcon`) — ทะเบียน `label:'📋 รายการ'` ในหน้าไม่ต้องแก้
+     ป้ายแท็บถูกตัด emoji นำหน้าออกที่จุดวาด (`stripIcon`) — ทะเบียน `label: 'รายการ'` ในหน้าไม่ต้องแก้
    ═════════════════════════════════════════════════════════════════════════════════════════ */
 
 /* ── 🔦 ตัวชี้แท็บที่ "ไถลตาม" + เรืองแสง (2026-09-23 · คำสั่ง user จากคลิป Navigation Tabs V2) ──

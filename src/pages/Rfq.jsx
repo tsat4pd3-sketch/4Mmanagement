@@ -349,7 +349,7 @@ export default function Rfq() {
             </Field>
             <Field label="APW (ชิ้น/สัปดาห์ เฉลี่ย)"><input type="number" style={inp} value={rfqModal.apw} onChange={e => setRfqModal({ ...rfqModal, apw: e.target.value })} /></Field>
             <Field label="MPW (ชิ้น/สัปดาห์ สูงสุด)"><input type="number" style={inp} value={rfqModal.mpw} onChange={e => setRfqModal({ ...rfqModal, mpw: e.target.value })} /></Field>
-            <Field label="🔒 ราคาเป้าหมายลูกค้า (THB/pc)" hint="MKT เห็นคนเดียว"><input type="number" step="0.01" style={inp} value={rfqModal.customer_target_price} onChange={e => setRfqModal({ ...rfqModal, customer_target_price: e.target.value })} /></Field>
+            <Field label="ราคาเป้าหมายลูกค้า (THB/pc)" hint="MKT เห็นคนเดียว"><input type="number" step="0.01" style={inp} value={rfqModal.customer_target_price} onChange={e => setRfqModal({ ...rfqModal, customer_target_price: e.target.value })} /></Field>
             <Field label="หมายเหตุ" span={3}><textarea style={{ ...inp, minHeight: 56 }} value={rfqModal.remark || ''} onChange={e => setRfqModal({ ...rfqModal, remark: e.target.value })} /></Field>
           </div>
         </Modal>
@@ -377,7 +377,7 @@ export default function Rfq() {
       )}
 
       {npiModal && rfq && (
-        <Modal title="📨 ส่ง CRD → โปรเจค NPI (IEC)" onClose={() => setNpiModal(null)} width={760}
+        <Modal title="ส่ง CRD → โปรเจค NPI (IEC)" onClose={() => setNpiModal(null)} width={760}
           footer={<><button style={ghost} onClick={() => setNpiModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveNpi}>{npiModal.mode === 'create' ? 'สร้างโปรเจค + ผูก' : 'ผูกโปรเจค'}</button></>}>
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
             <button style={npiModal.mode === 'create' ? btn() : ghost} onClick={() => setNpiModal({ ...npiModal, mode: 'create' })}>สร้างโปรเจคใหม่จาก RFQ นี้</button>
@@ -420,7 +420,7 @@ export default function Rfq() {
       )}
 
       {awardModal && rfq && (
-        <Modal title={`🏁 ผลของ ${rfq.rfq_no}`} onClose={() => setAwardModal(null)} width={700}
+        <Modal title={`ผลของ ${rfq.rfq_no}`} onClose={() => setAwardModal(null)} width={700}
           footer={<><button style={ghost} onClick={() => setAwardModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveAward}>บันทึกผล</button></>}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 10, alignItems: 'start' }}>
             <Field label="ผล">
@@ -469,7 +469,7 @@ function RfqTable({ rows, hidden, awardOf, npiOf, onPick, today }) {
                   <td style={tdSt}><Pill label={st.label} color={statusColor(st.tone)} small /></td>
                   <td style={{ ...tdSt, textAlign: 'right' }}>{fmtN(r.annual_volume)}{r.annual_volume != null && !r.volume_source && <span title="ไม่ได้บอกที่มา" style={{ color: statusColor('warn') }}> ?</span>}</td>
                   <td style={{ ...tdSt, color: late ? statusColor('bad') : undefined, fontWeight: late ? 800 : 400 }}>{r.due_date ? fmtDate(r.due_date) : '—'}{late && ' เลย'}</td>
-                  <td style={tdSt}>{r.crd_no ? `CRD ${r.crd_no}` : (r.npi_project_id ? '' : <span style={{ color: 'var(--muted)' }}>ยังไม่ส่ง</span>)}{r.npi_project_id && <span style={{ marginLeft: 6 }}>🚀 {npiOf[r.npi_project_id]?.project_code || 'NPI'}</span>}</td>
+                  <td style={tdSt}>{r.crd_no ? `CRD ${r.crd_no}` : (r.npi_project_id ? '' : <span style={{ color: 'var(--muted)' }}>ยังไม่ส่ง</span>)}{r.npi_project_id && <span style={{ marginLeft: 6 }}>{npiOf[r.npi_project_id]?.project_code || 'NPI'}</span>}</td>
                   <td style={tdSt}>{a ? <Pill label={RFQ_OUTCOMES[a.outcome]?.label || a.outcome} color={statusColor(RFQ_OUTCOMES[a.outcome]?.tone || 'none')} small /> : '—'}</td>
                 </tr>
               );
@@ -520,7 +520,7 @@ function RfqSheet({ rfq, award, parts, mainParts, npi, canEdit, canAward, status
 
       {/* CRD → NPI */}
       <div style={card}>
-        <div style={{ fontWeight: 800, marginBottom: 6 }}>📨 CRD → IEC / โปรเจค NPI</div>
+        <div style={{ fontWeight: 800, marginBottom: 6 }}>CRD → IEC / โปรเจค NPI</div>
         {rfq.npi_project_id ? (<>
           {row('เลขที่ CRD', rfq.crd_no)}
           {row('วันส่ง CRD', rfq.crd_sent_at ? fmtDate(rfq.crd_sent_at) : '—')}
@@ -536,7 +536,7 @@ function RfqSheet({ rfq, award, parts, mainParts, npi, canEdit, canAward, status
       {/* พาร์ท */}
       <div style={{ ...card, gridColumn: '1 / -1' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-          <div style={{ fontWeight: 800 }}>📦 พาร์ทในงาน <span style={{ color: 'var(--muted)', fontWeight: 400 }}>· {mainParts.length} พาร์ท · {parts.length - mainParts.length} ชิ้นย่อย</span></div>
+          <div style={{ fontWeight: 800 }}>พาร์ทในงาน <span style={{ color: 'var(--muted)', fontWeight: 400 }}>· {mainParts.length} พาร์ท · {parts.length - mainParts.length} ชิ้นย่อย</span></div>
           {canEdit && <button style={btn()} onClick={onAddPart}>+ พาร์ท</button>}
         </div>
         <table className="rec-list" style={{ width: '100%' }}>
@@ -561,7 +561,7 @@ function RfqSheet({ rfq, award, parts, mainParts, npi, canEdit, canAward, status
       {/* ผล + ใบแจ้งจัดทำ */}
       <div style={{ ...card, gridColumn: '1 / -1' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
-          <div style={{ fontWeight: 800 }}>🏁 ผลได้งาน / ไม่ได้งาน {award && <Pill label={RFQ_OUTCOMES[award.outcome]?.label || award.outcome} color={statusColor(RFQ_OUTCOMES[award.outcome]?.tone || 'none')} />}</div>
+          <div style={{ fontWeight: 800 }}>ผลได้งาน / ไม่ได้งาน {award && <Pill label={RFQ_OUTCOMES[award.outcome]?.label || award.outcome} color={statusColor(RFQ_OUTCOMES[award.outcome]?.tone || 'none')} />}</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {canAward && <button style={award ? ghost : btn()} onClick={onAward}>{award ? 'แก้ผล' : 'บันทึกผล'}</button>}
             {canAward && award?.outcome === 'awarded' && !award.production_order_no && <button style={btn()} onClick={onIssue}>ออกใบแจ้งจัดทำ F-MKT-001/002</button>}

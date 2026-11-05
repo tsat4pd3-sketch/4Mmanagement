@@ -154,7 +154,7 @@ export default function StoreCallSiren({ slot = 0 }) {
         style={fixed({ bottom: chipBottom, right: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7,
           background: 'rgba(20,16,6,0.94)', border: '1px solid rgba(251,191,36,0.5)', borderRadius: 10,
           padding: '7px 11px', fontSize: 11.5, fontWeight: 800, color: '#fbbf24', boxShadow: 'var(--shadow-lg)' })}>
-        🔇 เสียงเตือน "ไลน์เรียกของ" ยังไม่พร้อม — แตะที่นี่ 1 ครั้ง
+        เสียงเตือน "ไลน์เรียกของ" ยังไม่พร้อม — แตะที่นี่ 1 ครั้ง
       </div>
     );
   }
@@ -172,7 +172,7 @@ export default function StoreCallSiren({ slot = 0 }) {
             <span style={{ fontSize: 22 }}>📦</span>
             <div className="andon-bar-msg" style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff' }}>
-                📦 ไลน์เรียกของ — {a.line_name || 'ไม่ระบุไลน์'}
+                ไลน์เรียกของ — {a.line_name || 'ไม่ระบุไลน์'}
               </div>
               {/* ชื่อชิ้นงานต้องผ่าน <MatLabel> — Part No. → Part Name → MAT SAP (ด่าน matOrderSweep) */}
               <MatLabel mat={a.mat_no} name={a.part_name} size={12.5} />
@@ -186,13 +186,13 @@ export default function StoreCallSiren({ slot = 0 }) {
             {muted && (
               <span onClick={unlockNow} title="เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ"
                 style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: '#fbbf24', cursor: 'pointer' }}>
-                🔇 แตะเพื่อเปิดเสียง
+                แตะเพื่อเปิดเสียง
               </span>
             )}
             <button onClick={() => goPrep(a)} title="ไปหน้าเตรียมงาน — Line Stock › 📤 ขาออก › ตู้ตามเลขพาร์ท (กรองเฉพาะพาร์ทนี้)"
               style={{ flexShrink: 0, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 8,
                 padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
-              🔍 ไปเตรียมงาน
+              ไปเตรียมงาน
             </button>
             <button onClick={() => ack(a)}
               title={canAck ? 'หยุดเสียงเท่านั้น — ใบยังรอหยิบอยู่ในคิวสโตร์เหมือนเดิม'

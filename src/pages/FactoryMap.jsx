@@ -2509,7 +2509,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                 {isReview ? `📅 ยอดทั้งวัน ${fmtThaiDate(reviewDate)}` : '⚡ สดวันนี้'}
               </span>
               {cycleList.length > 1 && cycleOn && (
-                <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--muted)' }}>🔁 เรื่องที่ {cycleList.indexOf(metric) + 1}/{cycleList.length}</span>
+                <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--muted)' }}>เรื่องที่ {cycleList.indexOf(metric) + 1}/{cycleList.length}</span>
               )}
             </div>
             <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 25, fontWeight: 800 }}>
@@ -2539,7 +2539,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
           <span title={`${energyMonth ? monthLabel(energyMonth) : 'ยังไม่มีข้อมูล'} · กรอกมือรายเดือน · สีกรอบ = เทียบเดือนก่อน (ลดลง = เขียว)${energyEf ? '' : ' · ยังไม่ตั้งค่าการปล่อย → ไม่มี tCO2e'}`}
             style={{ alignSelf: 'center', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, whiteSpace: 'nowrap' }}>
             <b style={{ color: 'var(--amber)', background: 'var(--amber)1a', border: '1px solid var(--amber)55', borderRadius: 6, padding: '3px 8px' }}>
-              📅 {energyMonth ? monthLabel(energyMonth) : 'ยังไม่มีข้อมูล'} · ✍️ กรอกมือรายเดือน
+              {energyMonth ? monthLabel(energyMonth) : 'ยังไม่มีข้อมูล'} · ✍️ กรอกมือรายเดือน
             </b>
             <span style={{ color: 'var(--muted)' }}>
               {energyMonth && energyMonth !== monthKeyOf() && <b style={{ color: 'var(--amber)' }}>เดือนล่าสุดที่มีข้อมูล · </b>}
@@ -2645,7 +2645,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
           {!drawing && <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title="ทำซ้ำ (Ctrl+Y)">Redo</button>}
           {drawing && (
             <>
-              <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>🖊️ คลิกทีละจุดล้อมพื้นที่ (L/U ได้) · กด <b>Shift</b> = เส้นตั้งฉาก · เข้าใกล้จุดแรก = ดูดปิดรูป</span>
+              <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>คลิกทีละจุดล้อมพื้นที่ (L/U ได้) · กด <b>Shift</b> = เส้นตั้งฉาก · เข้าใกล้จุดแรก = ดูดปิดรูป</span>
               <button onClick={finishDraw} disabled={draft.length < 3} style={btn(true)}>เสร็จ ({draft.length} จุด)</button>
               <button onClick={() => setDraft(p => p.slice(0, -1))} disabled={!draft.length} style={btn(false)}>ลบจุดล่าสุด</button>
               <button onClick={cancelDraw} style={btn(false)}>ยกเลิก</button>
@@ -2678,7 +2678,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
             <div style={{ alignSelf: 'stretch', position: 'relative', zIndex: 3, background: 'var(--bg)', padding: '2px 4px', display: 'flex', flexWrap: 'wrap', gap: '2px 12px', fontSize: 11.5, color: 'var(--muted)', marginBottom: Math.round(wrapW * 0.1),
               /* 📺 TV: แถวนี้เหลือแค่ตัวนับป้ายแน่น ⇒ ห้ามมีพื้นทึบทับป้ายเสาที่ยกขึ้นมา · เว้นหัวเพิ่มให้ป้ายตัวใหญ่ */
               ...(tv ? { background: 'transparent', zIndex: 'auto', marginBottom: Math.round(wrapW * 0.1) + 48 } : {}) }}>
-              <span className="tv-hide">🧊 มุมมอง 3D (ทดลอง) · {pillarLegend(metric)}</span>
+              <span className="tv-hide">มุมมอง 3D (ทดลอง) · {pillarLegend(metric)}</span>
               <span className="tv-hide">กรอบไลน์ = กล่อง · ▣ เสา = ยอดรวมกลุ่ม · ป้ายที่ชนกันถูกยกขึ้นสูง มีเส้นโยงลง · คลิกกล่อง/เสาเปิดไลน์</span>
               {pillarCrowded > 0 && <b style={{ color: 'var(--amber)', ...(tv ? { fontSize: 18 } : {}) }}>ป้ายแน่นจนวางไม่ได้ {pillarCrowded} ใบ<span className="tv-hide"> — ชี้/แตะกล่องเพื่อดู</span></b>}
               {/* 🔄 มุมกล้อง — ลากบนผังก็หมุนได้ · ปุ่มไว้สำหรับจอ TV (ไม่มีเมาส์) · stopPropagation กันปุ่มเริ่ม "ลาก" */}
@@ -2928,7 +2928,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 11, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}>
                         <span style={{ color: dCol }}>{d == null ? 'ไม่มีฐานเทียบ' : `${d > 0 ? '+' : ''}${d}%`}</span>
-                        {st.kwhCo2 != null && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· 🌱 {fmtTco2e(st.kwhCo2)} t</span>}
+                        {st.kwhCo2 != null && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· {fmtTco2e(st.kwhCo2)} t</span>}
                         {st.kwhCost > 0 && <span style={{ color: 'rgba(255,255,255,0.55)' }}>· ฿{fmtKwh(st.kwhCost)}</span>}
                       </div>
                     </div>
@@ -3001,7 +3001,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                 <>
                   {isReview ? (<>
                     <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      📅 {fmtThaiDate(reviewDate)}
+                      {fmtThaiDate(reviewDate)}
                       {reviewDate !== reviewDefaultDate() && <button className="tv-hide" onClick={() => setReviewDate(reviewDefaultDate())} style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11 }}>วันล่าสุด</button>}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>ภาพรวมทั้งวัน (กะเช้า+ดึก) สำหรับประชุมผู้จัดการ · เปลี่ยนวันที่ที่สวิตช์เหนือผัง · เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน<span className="tv-hide"> · คลิกแถวเปิดรายละเอียดไลน์</span></div>
@@ -3130,7 +3130,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                 );
                 return (
                   <>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>🏛️ สถานะวันนี้ (สด) — ทั้งโรงงาน</div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>สถานะวันนี้ (สด) — ทั้งโรงงาน</div>
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
                       หัวข้อแบบห้อง OBEYA (SQDCM) · {B.lineCount} ไลน์ · เปิดกะแล้ว {B.openCount} ไลน์<span className="tv-hide"> — กดหัวข้อเพื่อดูว่าไลน์ไหนเป็นต้นเหตุ</span>
                     </div>
@@ -3304,7 +3304,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                 ยอดจาก ledger คลังกลาง (FG WAREHOUSE / STORE) — ระบบยังไม่นับยอดรายโซนจริง
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, textAlign: 'center', fontWeight: 700 }}>
-                🏬 คลิกเพื่อดูรายการ MAT ทั้งหมดในโซน
+                คลิกเพื่อดูรายการ MAT ทั้งหมดในโซน
               </div>
             </div>
           );
@@ -3394,7 +3394,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 660, maxHeight: '90vh', overflowY: 'auto', padding: '20px 22px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 4 }}>
                 <div>
-                  <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>🧮 {oeeExplain.title}</div>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{oeeExplain.title}</div>
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>ค่าเฉลี่ยถ่วงน้ำหนัก — ไม่ใช่เอา % มาบวกกันแล้วหาร</div>
                 </div>
                 <button onClick={() => setOeeExplain(null)} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 30, height: 30, cursor: 'pointer', color: 'var(--text2)', fontSize: 15 }}>✕</button>
@@ -3477,7 +3477,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
               {/* หัว */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, padding: '18px 20px 12px', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 19, fontWeight: 800, color: 'var(--text)' }}>📋 {storyLine}</div>
+                  <div style={{ fontSize: 19, fontWeight: 800, color: 'var(--text)' }}>{storyLine}</div>
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
                     {storyDate === getWorkDate()
                       ? <span style={{ color: 'var(--accent)', fontWeight: 700 }}>⚡ วันนี้ (สด)</span>
@@ -3485,7 +3485,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                   </div>
                   {metric !== 'health' && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 6, fontSize: 12 }}>
-                      <span style={{ color: 'var(--text2)', fontWeight: 700 }}>🔎 {storyAll ? 'แสดงทุกเรื่อง' : `แสดงเฉพาะเรื่อง ${M.label}`}</span>
+                      <span style={{ color: 'var(--text2)', fontWeight: 700 }}>{storyAll ? 'แสดงทุกเรื่อง' : `แสดงเฉพาะเรื่อง ${M.label}`}</span>
                       <button onClick={() => setStoryAll(v => !v)} style={{ ...miniTab(storyAll), fontSize: 11.5, padding: '3px 10px' }}>
                         {storyAll ? `กลับไปเฉพาะ ${M.label}` : 'ดูทุกเรื่องของไลน์'}
                       </button>
@@ -3502,7 +3502,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                 : { overflowY: 'auto', padding: '16px 20px 20px' }}>
               {showMap && (
                 <div style={{ minWidth: 0, overflowY: isMobile ? 'visible' : 'auto', marginBottom: isMobile ? 16 : 0 }}>
-                  {/* 📦 ยอดผลิต = บอร์ด Heijunka ของไลน์ · 👷 คน = ผังจุดงาน+คนประจำ (user 16/10 — ปุ่ม "ผังไลน์+พนักงาน" ไม่จำเป็นแล้ว) */}
+                  {/* 📦 ยอดผลิต = บอร์ด Heijunka ของไลน์ · คน = ผังจุดงาน+คนประจำ (user 16/10 — ปุ่ม "ผังไลน์+พนักงาน" ไม่จำเป็นแล้ว) */}
                   {lens === 'productivity' ? (
                     <LineOrderBoard lineName={storyLine} family={familyNames(storyLine)} date={storyDate} lines={lines}
                       height={isMobile ? undefined : 'calc(92vh - 300px)'} onSelectCard={isMobile ? undefined : setLensSel} />
@@ -3559,7 +3559,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
 
                   {/* รายกะ */}
                   {sec('shifts') && s.sessionCount > 0 && (
-                  <StorySection title="🕐 แยกตามกะ">
+                  <StorySection title="แยกตามกะ">
                     <div style={{ display: 'grid', gap: 6 }}>
                       {s.shifts.map(x => {
                         const p = x.target > 0 ? Math.round(x.produced / x.target * 100) : null;
@@ -3588,7 +3588,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
 
                   {/* ผลิตรายพาร์ท */}
                   {sec('parts') && s.parts.length > 0 && (
-                    <StorySection title={`📦 ผลิตรายชิ้นงาน (${s.parts.length})`}>
+                    <StorySection title={`ผลิตรายชิ้นงาน (${s.parts.length})`}>
                       <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 420, fontVariantNumeric: 'tabular-nums' }}>
                           {/* ⚠️ index.css มี `th { text-align: left }` — rule ตรงชนะ inherit จาก <tr> ต้องสั่ง textAlign ที่ th เอง ไม่งั้นหัวกับค่าเหลื่อมกัน */}
@@ -3622,7 +3622,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                       ⚠️ ยังไม่ผูกกับเวลาหยุดจริง (ต้องรู้ buffer ครบก่อนถึงบอกได้ว่ากระทบเมื่อไหร่)
                          ตอนนี้บอกแค่ "เชื่อมกับใคร" ซึ่งก็ยังดีกว่าไม่มีอะไรเลย — ห้ามเขียนให้ดูเหมือนคำตอบสำเร็จรูป */}
                   {sec('flow') && (s.flowDown?.length > 0 || s.flowUp?.length > 0) && (
-                    <StorySection title="🔗 สายการไหลระหว่างไลน์">
+                    <StorySection title="สายการไหลระหว่างไลน์">
                       <div style={{ display: 'grid', gap: 6 }}>
                         {s.flowDown?.length > 0 && (
                           <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
@@ -3660,7 +3660,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
 
                   {/* Downtime + เหตุผล */}
                   {s.sessionCount > 0 && (<>
-                  {sec('dt') && <StorySection title={`🔧 Downtime นอกแผน (${s.dtUnplanned.length} ครั้ง · ${fmtNum(s.dtUnplannedMin)} นาที)`}>
+                  {sec('dt') && <StorySection title={`Downtime นอกแผน (${s.dtUnplanned.length} ครั้ง · ${fmtNum(s.dtUnplannedMin)} นาที)`}>
                     {s.dtUnplanned.length === 0 ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มี — ไม่มีเครื่องหยุดนอกแผน 👍</div> : (
                       <div style={{ display: 'grid', gap: 5 }}>
                         {s.dtUnplanned.map(d => (
@@ -3672,7 +3672,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                               {d.carry_over && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ยกข้ามกะ</span>}
                               <span style={{ marginLeft: 'auto', fontSize: 13, fontWeight: 800, color: d.open ? 'var(--red)' : 'var(--amber)' }}>{d.open ? fmtDtElapsed(d.mins) : `${fmtNum(d.mins)} น.`}</span>
                             </div>
-                            {d.note && <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 3 }}>💬 {d.note}</div>}
+                            {d.note && <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 3 }}>{d.note}</div>}
                           </div>
                         ))}
                       </div>
@@ -3685,7 +3685,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                   </StorySection>}
 
                   {/* ของเสีย */}
-                  {sec('ng') && <StorySection title={`🚫 ของเสีย (${fmtNum(s.ngTotal)} ชิ้น)`}>
+                  {sec('ng') && <StorySection title={`ของเสีย (${fmtNum(s.ngTotal)} ชิ้น)`}>
                     {s.defects.length === 0 ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มีของเสีย 👍</div> : (
                       <div style={{ display: 'grid', gap: 5 }}>
                         {s.defects.map(d => (
@@ -3698,7 +3698,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                                 {d.repair > 0 && <Chip label="ซ่อม" val={fmtNum(d.repair)} color="var(--text2)" />}
                               </span>
                             </div>
-                            {d.notes.length > 0 && <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 3 }}>💬 {d.notes.join(' · ')}</div>}
+                            {d.notes.length > 0 && <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 3 }}>{d.notes.join(' · ')}</div>}
                           </div>
                         ))}
                       </div>
@@ -3708,7 +3708,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
 
                   {/* 4M */}
                   {sec('fourm') && s.fourM.length > 0 && (
-                    <StorySection title={`🔄 4M วันนี้ (${s.fourM.length})`}>
+                    <StorySection title={`4M วันนี้ (${s.fourM.length})`}>
                       <div style={{ display: 'grid', gap: 5 }}>
                         {s.fourM.map(f => (
                           <div key={f.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 10px', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
@@ -3735,12 +3735,12 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                     const pmDue = (s.pmRows || []).filter(r => r.bucket !== 'ok' && (storyAll || (metric !== 'pm' && metric !== 'am') || (metric === 'am' ? r.am : !r.am)));   // เกิน/ใกล้ครบ/ไม่เคยตรวจ/ไม่ตั้งรอบ
                     const eDelta = st.kwhPrev ? deltaPct(st.kwh, st.kwhPrev) : null;
                     return (
-                      <StorySection title="🧭 สถานะปัจจุบันของไลน์ (ไม่ขึ้นกับวันที่เลือก)">
+                      <StorySection title="สถานะปัจจุบันของไลน์ (ไม่ขึ้นกับวันที่เลือก)">
                         <div style={{ display: 'grid', gap: 9 }}>
                           {/* 🛠️ PM — ตัวที่ผังโชว์บนป้าย ต้องกดเข้ามาแล้วเห็นว่า "เครื่องไหน" */}
                           {sec('pm') && <div>
                             <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>
-                              🛠️ PM เครื่องจักร{st.pmTotal ? ` · ${st.pmTotal} แผน` : ''}
+                              PM เครื่องจักร{st.pmTotal ? ` · ${st.pmTotal} แผน` : ''}
                             </div>
                             {s.pmRows == null ? (
                               <div style={{ fontSize: 11.5, color: 'var(--amber)', marginTop: 3 }}>⚠ ดึงรายการ PM ไม่สำเร็จ</div>
@@ -3775,7 +3775,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
 
                           {/* 🔧 ใบซ่อม MO ค้าง */}
                           {sec('mo') && <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
-                            <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>🔧 ใบซ่อม MO ที่ยังไม่ปิด</div>
+                            <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>ใบซ่อม MO ที่ยังไม่ปิด</div>
                             {s.moRows == null ? (
                               <div style={{ fontSize: 11.5, color: 'var(--amber)', marginTop: 3 }}>⚠ ดึงใบซ่อมไม่สำเร็จ</div>
                             ) : !s.moRows.length ? (
@@ -3796,10 +3796,10 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                             </>)}
                           </div>}
 
-                          {/* 👷 คน & จุดงาน · ⚡ ไฟฟ้า · 🔗 Supply route — ตัวเลขชุดเดียวกับแท็บบนผัง */}
+                          {/* 👷 คน & จุดงาน · ⚡ ไฟฟ้า · Supply route — ตัวเลขชุดเดียวกับแท็บบนผัง */}
                           {(sec('people') || sec('energy') || sec('supply')) && <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px,1fr))', gap: 8 }}>
                             {sec('people') && <div>
-                              <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>👷 คน & จุดงาน (ตอนนี้)</div>
+                              <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>คน & จุดงาน (ตอนนี้)</div>
                               {st.headTotal || st.stationTotal ? (
                                 <div style={{ fontSize: 12.5, color: 'var(--text)', marginTop: 3, fontWeight: 700 }}>
                                   มา {fmtNum(st.present)}/{fmtNum(st.headTotal)} คน
@@ -3820,14 +3820,14 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                             </div>}
                             {sec('supply') && (st.supList?.length > 0 ? (
                               <div>
-                                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>🔗 ระบบสนับสนุนที่จ่ายให้</div>
+                                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)' }}>ระบบสนับสนุนที่จ่ายให้</div>
                                 <div style={{ fontSize: 12, color: st.supAtRisk ? 'var(--red)' : 'var(--text2)', marginTop: 3, fontWeight: st.supAtRisk ? 800 : 500 }}>
                                   {st.supAtRisk ? '⚠ มีเครื่องกำลังซ่อม: ' : 'ปกติ · '}
                                   {[...new Set(st.supList.filter(x => !st.supAtRisk || x.atRisk).map(x => x.name || x.no))].slice(0, 4).join(' · ')}
                                 </div>
                               </div>
                             ) : metric === 'supply' ? (
-                              <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>🔗 ไลน์นี้ยังไม่ได้ผูกระบบสนับสนุน (supply route)</div>
+                              <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ไลน์นี้ยังไม่ได้ผูกระบบสนับสนุน (supply route)</div>
                             ) : null)}
                           </div>}
                         </div>
@@ -4033,15 +4033,15 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '22px 24px', width: '100%', maxWidth: 360 }}>
             {(() => { const okAssign = assignLine === '__new__' ? !!newZone.trim() : !!assignLine; const prodOpts = assignableLines(); const leafOpts = assignableLeafs(); const facOpts = assignableFacility(); const dieOpts = assignableDie(); const storeOpts = assignableStore(); return <>
-            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>🖊️ ตีกรอบให้ไลน์/โซนไหน?</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>ตีกรอบให้ไลน์/โซนไหน?</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>เลือกไลน์ผลิต หรือโซน MTN/facility ที่จะผูกกับรูปที่วาด ({assignFor.length} จุด) · กลุ่มที่ตีรายไลน์ลูกครบแล้วไม่ขึ้นในลิสต์ (ไม่ต้องตีแม่ซ้ำ)</div>
             <select value={assignLine} onChange={e => setAssignLine(e.target.value)} autoFocus style={{ width: '100%', padding: '10px 12px', borderRadius: 8, fontSize: 14, marginBottom: newZone !== '' || assignLine === '__new__' ? 8 : 16 }}>
               <option value="">— เลือกไลน์/โซน —</option>
-              {prodOpts.length > 0 && <optgroup label="🏭 ไลน์ผลิต (ยังไม่มีกรอบ)">{prodOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
+              {prodOpts.length > 0 && <optgroup label="ไลน์ผลิต (ยังไม่มีกรอบ)">{prodOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
               {leafOpts.length > 0 && <optgroup label="↳ ไลน์ย่อยที่ยังไม่ได้ตี (กลุ่มตีเป็นรายลูก)">{leafOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
-              {facOpts.length > 0 && <optgroup label="🔧 โซน MTN / Facility">{facOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
-              {dieOpts.length > 0 && <optgroup label="🔨 คลังแม่พิมพ์ (ผังจัดเก็บใน /die-registry)">{dieOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
-              {storeOpts.length > 0 && <optgroup label="🏬 โซนคลังสินค้า (ทะเบียนใน /line-stock แท็บโซนคลัง)">{storeOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
+              {facOpts.length > 0 && <optgroup label="โซน MTN / Facility">{facOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
+              {dieOpts.length > 0 && <optgroup label="คลังแม่พิมพ์ (ผังจัดเก็บใน /die-registry)">{dieOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
+              {storeOpts.length > 0 && <optgroup label="โซนคลังสินค้า (ทะเบียนใน /line-stock แท็บโซนคลัง)">{storeOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
               <optgroup label="อื่นๆ"><option value="__new__">พิมพ์ชื่อโซนใหม่…</option></optgroup>
             </select>
             {assignLine === '__new__' && (

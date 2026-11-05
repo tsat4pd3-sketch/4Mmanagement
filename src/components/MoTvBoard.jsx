@@ -178,16 +178,16 @@ function MoCard({ r, tv, fz, showStage }) {
         </span>
       </div>
       <div style={{ fontSize: fz(14, 28), fontWeight: 800, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        🏭 {o.machine_no || '–'}{o.line_name ? ` · ${o.line_name}` : ''}
+        {o.machine_no || '–'}{o.line_name ? ` · ${o.line_name}` : ''}
       </div>
       <div style={{ fontSize: fz(13, 24), color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {o.problem_characteristic || o.problem_group || o.item_type || '–'}
       </div>
       <div style={{ fontSize: fz(12, 22), color: 'var(--text2)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        <span>🔧 {deptNameOf(o.mtn_dept) || '–'}</span>
+        <span>{deptNameOf(o.mtn_dept) || '–'}</span>
         {showStage && <span style={{ fontWeight: 800, color: 'var(--text)' }}>{r.waitIcon} {r.waitTitle}</span>}
         {!showStage && r.waitWho && <span>รอ: {r.waitWho}</span>}
-        {techs ? <span>👷 {techs}</span> : (reporter && <span>ผู้แจ้ง: {reporter}</span>)}
+        {techs ? <span>{techs}</span> : (reporter && <span>ผู้แจ้ง: {reporter}</span>)}
         {r.group === 'other' && <span>{moStatusLabel(o)}</span>}
       </div>
     </div>

@@ -63,8 +63,8 @@ const WAIT_LEADER   = ['suggested', 'hold'];
 const ST = {
   hold:      { label: '⏸ พักไว้ก่อน',    color: '#f59e0b' },
   pending:   { label: '⏳ รอสโตร์หยิบ',   color: '#f59e0b' },
-  preparing: { label: '📦 สโตร์กำลังจัด', color: '#38bdf8' },
-  delivered: { label: '🚚 ส่งถึงไลน์แล้ว', color: '#22c55e' },
+  preparing: { label: 'สโตร์กำลังจัด', color: '#38bdf8' },
+  delivered: { label: 'ส่งถึงไลน์แล้ว', color: '#22c55e' },
 };
 
 const fmtQty = (v) => (v == null ? '—' : Number(v).toLocaleString());
@@ -562,7 +562,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
      ตัวเลขระดับนี้ไม่มีความหมาย — บอกให้ไปเปิดที่ไลน์ลูกแทน **ห้ามโชว์ตัวเลขให้เข้าใจผิด** */
   if (!isLeaf) return (
     <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '12px 16px', marginBottom: 16 }}>
-      <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>📦 เรียกชิ้นส่วนจากสโตร์</div>
+      <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>เรียกชิ้นส่วนจากสโตร์</div>
       <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.7 }}>
         <b>{lineName}</b> เป็นไลน์แม่ (มีไลน์ย่อย {kidNames.length}) — ของอยู่ที่ <b>ไลน์ย่อย</b>
         <br />เปิดกะที่ไลน์ย่อยเพื่อดู/เบิก: {kidNames.map(n => (
@@ -603,7 +603,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   const orderBlock = (
     <div style={{ marginBottom: 12, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '9px 12px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>🧾 ความต้องการจากใบผลิตที่เปิดอยู่</span>
+        <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>ความต้องการจากใบผลิตที่เปิดอยู่</span>
         {plan == null && <span style={{ fontSize: 11, color: 'var(--muted)' }}>กำลังคำนวณ…</span>}
         {plan && !plan.error && (
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
@@ -632,7 +632,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       )}
       {planSend.length > 0 && (
         <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7 }}>
-          📤 ครบกล่องแล้วแต่ยังไม่ได้แจ้ง (ใบผลิตเปิดก่อนมีระบบนี้ หรือเพิ่งเพิ่มยอด) — กด 🔁 เพื่อแจ้งสโตร์:{' '}
+          ครบกล่องแล้วแต่ยังไม่ได้แจ้ง (ใบผลิตเปิดก่อนมีระบบนี้ หรือเพิ่งเพิ่มยอด) — กด 🔁 เพื่อแจ้งสโตร์:{' '}
           {planSend.slice(0, 6).map(x => `${x.mat_no} × ${fmtQty(x.qty)}${x.coil ? ' kg' : ''}`).join(' · ')}{planSend.length > 6 ? ` · +${planSend.length - 6}` : ''}
         </div>
       )}
@@ -677,7 +677,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
             {/* ⚠️ input ใน flex row ต้องกำหนด width เอง — index.css ตั้ง input{width:100%} จะดันปุ่มแตกแถว */}
             <input value={adhocQty} onChange={e => setAdhocQty(e.target.value)} inputMode="numeric"
               placeholder="จำนวน (ชิ้น)" style={{ width: 130, padding: '5px 10px', borderRadius: 7, fontSize: 12 }} />
-            <button disabled={!!busy} onClick={placeAdhoc} style={btn('#22c55e', '#04140a')}>📦 แจ้งสโตร์</button>
+            <button disabled={!!busy} onClick={placeAdhoc} style={btn('#22c55e', '#04140a')}>แจ้งสโตร์</button>
             <button onClick={() => { setAdhocOpen(false); setAdhocMat(''); setAdhocName(''); setAdhocQty(''); setAdhocKnown(false); }}
               style={btn('transparent', 'var(--muted)', 'var(--border2)')}>ยกเลิก</button>
           </div>
@@ -706,14 +706,14 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     return (
       <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: canDecide ? 10 : 0 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>📦 เรียกชิ้นส่วนจากสโตร์</div>
+          <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>เรียกชิ้นส่วนจากสโตร์</div>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>
             {lineName}{SHOW_LEVEL_REFILL ? ` · ${noLevel.length || split.produceNoStd?.length ? 'ยังไม่ได้ตั้งจุดเรียกเติม' : 'ไม่มีพาร์ทไหนถึงจุดเรียกเติม'}` : ''}
           </span>
           <button onClick={load} title="รีเฟรช" style={{ marginLeft: 'auto', ...btn('var(--bg3)', 'var(--text2)', 'var(--border2)') }}>↻</button>
           {canSetLv && (
             <button onClick={() => setShowSetup(true)} style={btn('var(--bg3)', 'var(--text2)', 'var(--border2)')}>
-              ⚙️ ตั้งจุดเรียกเติม
+              ตั้งจุดเรียกเติม
             </button>
           )}
         </div>
@@ -727,13 +727,13 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   return (
     <div style={card}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>📦 เรียกชิ้นส่วนจากสโตร์</div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>เรียกชิ้นส่วนจากสโตร์</div>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>{lineName}</span>
         <button onClick={load} title="รีเฟรช"
           style={{ marginLeft: 'auto', ...btn('var(--bg3)', 'var(--text2)', 'var(--border2)') }}>↻</button>
         {canSetLv && (
           <button onClick={() => setShowSetup(true)} style={btn('var(--bg3)', 'var(--text2)', 'var(--border2)')}>
-            ⚙️ ตั้งจุดเรียกเติม
+            ตั้งจุดเรียกเติม
           </button>
         )}
       </div>
@@ -780,7 +780,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
           {split.produceDue.length > 0 && (
             <>
               <div style={{ fontSize: 11.5, fontWeight: 800, color: '#38bdf8', marginBottom: 6 }}>
-                🏭 ยอดคลังต่ำกว่าขั้นต่ำ (แท็บคำนวณ Kanban) {split.produceDue.length} พาร์ท — ต้องผลิตเติม
+                ยอดคลังต่ำกว่าขั้นต่ำ (แท็บคำนวณ Kanban) {split.produceDue.length} พาร์ท — ต้องผลิตเติม
               </div>
               {split.produceDue.map(s => {
                 const short = s.have <= 0;
@@ -828,7 +828,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
           ))}
           {!canDecide && (
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-              👁 ดูอย่างเดียว — คนตัดสินใจเบิกคือหัวหน้ากลุ่มของไลน์ (สิทธิ์ <code>wip_request:decide</code>)
+              ดูอย่างเดียว — คนตัดสินใจเบิกคือหัวหน้ากลุ่มของไลน์ (สิทธิ์ <code>wip_request:decide</code>)
             </div>
           )}
         </div>
@@ -863,7 +863,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       {inFlight.length > 0 && (
         <div>
           <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text2)', marginBottom: 6 }}>
-            🚚 แจ้งสโตร์แล้ว {inFlight.length} รายการ
+            แจ้งสโตร์แล้ว {inFlight.length} รายการ
           </div>
           {inFlight.map(r => {
             const meta = ST[r.status] || { label: r.status, color: 'var(--muted)' };
@@ -895,7 +895,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
                 )}
                 {/* 📭 05/11 — ส่งแล้วยังไม่กดรับ ต้องเห็นว่าค้างมานานแค่ไหน (`unreceivedAge` · replenishGate.js) */}
                 {(() => { const ua = unreceivedAge(r); return ua ? (
-                  <span style={{ fontSize: 11, fontWeight: ua.overdue ? 800 : 600, color: ua.overdue ? 'var(--red)' : 'var(--amber)' }}>📭 {ua.text}</span>
+                  <span style={{ fontSize: 11, fontWeight: ua.overdue ? 800 : 600, color: ua.overdue ? 'var(--red)' : 'var(--amber)' }}>{ua.text}</span>
                 ) : null; })()}
                 {r.status === 'delivered' && canReceive && (
                   <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
@@ -912,7 +912,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       {/* ── worklist: ไลน์ยังไม่ตั้ง "จุดส่งงาน" — สโตร์ส่งได้ แต่ระบบตรวจไม่ได้ว่าวางถูกจุดไหม (เฟส 4 · ไม่รู้ = ห้ามบล็อก แต่ห้ามเงียบ) ── */}
       {!hasDeliveryPoint && (
         <div style={{ marginTop: 10, fontSize: 11, color: '#f59e0b' }}>
-          🎯 ไลน์นี้ยังไม่ตั้งจุดส่งงาน — สโตร์ยิง QR ยืนยันจุดวางของไม่ได้ · ตั้งที่ <b>⚙️ ตั้งค่าผังไลน์ → 🎯 จุดส่งงาน</b> แล้วพิมพ์ป้ายที่ 🏷️ พิมพ์ป้าย QR
+          ไลน์นี้ยังไม่ตั้งจุดส่งงาน — สโตร์ยิง QR ยืนยันจุดวางของไม่ได้ · ตั้งที่ <b>ตั้งค่าผังไลน์ → 🎯 จุดส่งงาน</b> แล้วพิมพ์ป้ายที่ 🏷️ พิมพ์ป้าย QR
         </div>
       )}
 
@@ -955,7 +955,7 @@ function SuggestRow({ s, canDecide, busy, onPlace, onHold, btn }) {
           <input type="number" value={qty} onChange={e => setQty(e.target.value)} placeholder="จำนวน"
             title={s.suggestQty ? `ระบบเสนอ ${s.suggestQty} (เติมให้ถึง max)` : 'ยังไม่ได้ตั้ง max/จำนวนเบิก — กรอกเอง'}
             style={{ width: 84, padding: '4px 8px', borderRadius: 6, fontSize: 12 }} />
-          <button disabled={busy} onClick={() => onPlace(s, qty)} style={btn('#22c55e', '#04140a')}>📦 เบิก</button>
+          <button disabled={busy} onClick={() => onPlace(s, qty)} style={btn('#22c55e', '#04140a')}>เบิก</button>
           <button disabled={busy} onClick={() => onHold(s)} style={btn('transparent', '#f59e0b', 'rgba(245,158,11,0.5)')}>⏸ พักไว้</button>
         </span>
       )}
@@ -1033,7 +1033,7 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, re
       {/* ⚠️ ไม่ปิดจากการคลิกพื้นหลัง — กรอกตัวเลขหลายสิบช่องแล้วเผลอแตะ = หายทั้งหมด (UI-CONVENTIONS §5) */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, width: 'min(820px, 96vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border2)' }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>⚙️ ตั้งจุดเรียกเติม — {lineName}</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>ตั้งจุดเรียกเติม — {lineName}</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
             เหลือถึง <b>min</b> เมื่อไหร่ ระบบจะเสนอให้เบิก · <b>max</b> ใช้คำนวณว่าเบิกเท่าไหร่ (เติมให้เต็ม)
             <br />ไม่กรอก min = <b>ไม่เฝ้าพาร์ทนั้น</b> ระบบจะไม่เตือนเลย — คนที่ยืนหน้าไลน์เป็นคนรู้ว่าควรตั้งเท่าไหร่
@@ -1076,7 +1076,7 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, re
                     </td>
                     {r.std ? (
                       <td colSpan={3} style={{ padding: '3px 4px 3px 0', fontSize: 11.5, color: 'var(--text2)' }}>
-                        🎴 {r.std.min != null ? `ขั้นต่ำ ${fmtQty(r.std.min)} · สูงสุด ${fmtQty(r.std.max)}` : 'ยังไม่ตั้งในแท็บคำนวณ Kanban'}
+                        {r.std.min != null ? `ขั้นต่ำ ${fmtQty(r.std.min)} · สูงสุด ${fmtQty(r.std.max)}` : 'ยังไม่ตั้งในแท็บคำนวณ Kanban'}
                         <span style={{ color: 'var(--muted)' }}> — แก้ที่แท็บคำนวณ Kanban</span>
                       </td>
                     ) : ['min_qty', 'max_qty', 'reorder_qty'].map(k => (

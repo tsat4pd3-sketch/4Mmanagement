@@ -496,11 +496,11 @@ function StockTab({ role, scope }) {
           </button>
         )}
         <InfoMore label="สโตร์ กับ จัดส่ง ต่างกันยังไง" size={11.5} style={{ flexBasis: '100%' }}>
-          🏬 สโตร์ = Store ป้อนของเข้าไลน์ (3xx ซื้อนอก · 5xx raw · 2xx ผลิตเอง) · 🚚 จัดส่ง = Warehouse + Delivery ส่งลูกค้า (FG 1xx)
+          🏬 สโตร์ = Store ป้อนของเข้าไลน์ (3xx ซื้อนอก · 5xx raw · 2xx ผลิตเอง) · จัดส่ง = Warehouse + Delivery ส่งลูกค้า (FG 1xx)
         </InfoMore>
       </FilterBar>
       <p style={{ margin:'0 0 12px', fontSize:13, color:'var(--muted)' }}>
-        <b style={{ color:'var(--text2)' }}>📦 พาร์ทย่อยคงเหลือในไลน์</b> — Store จ่ายพาร์ทเข้าไลน์ · ระบบหักอัตโนมัติตอน close กะ (BOM × qty_ok)
+        <b style={{ color:'var(--text2)' }}>พาร์ทย่อยคงเหลือในไลน์</b> — Store จ่ายพาร์ทเข้าไลน์ · ระบบหักอัตโนมัติตอน close กะ (BOM × qty_ok)
       </p>
       {/* ── คิวอนุมัติ (store review) ── */}
       {showPending && (
@@ -628,13 +628,13 @@ function StockTab({ role, scope }) {
             </span>
             {groupMode === 'sloc' && homeSloc.error && (
               <span style={{ fontSize:11, color:'var(--red)', fontWeight:700 }}>
-                🏠 {homeSloc.error === 'not_ready' ? 'ยังไม่มีช่องที่จัดเก็บหลักในฐานข้อมูล' : `โหลดที่จัดเก็บหลักไม่สำเร็จ (${homeSloc.error})`} — ยอดในสโตร์/คลังจะอยู่กลุ่ม "ยังไม่ตั้ง"
+                {homeSloc.error === 'not_ready' ? 'ยังไม่มีช่องที่จัดเก็บหลักในฐานข้อมูล' : `โหลดที่จัดเก็บหลักไม่สำเร็จ (${homeSloc.error})`} — ยอดในสโตร์/คลังจะอยู่กลุ่ม "ยังไม่ตั้ง"
               </span>
             )}
             {/* ทะเบียนใช้ไม่ได้ = ต้องบอกว่าทำไมปุ่มพื้นที่ไม่ทำงาน ห้ามเงียบ */}
             {!slocUsable && (
               <span style={{ fontSize:11, color:'var(--amber)', fontWeight:700 }}>
-                🏬 {slocReg.failed ? 'โหลดทะเบียนรหัสคลังไม่สำเร็จ' : 'ยังไม่มีรหัสคลังที่ผูกไลน์ไว้'} — แสดงตามไลน์ไปก่อน
+                {slocReg.failed ? 'โหลดทะเบียนรหัสคลังไม่สำเร็จ' : 'ยังไม่มีรหัสคลังที่ผูกไลน์ไว้'} — แสดงตามไลน์ไปก่อน
                 (ตั้งที่แท็บ 🏬 โซนคลัง)
               </span>
             )}
@@ -673,13 +673,13 @@ function StockTab({ role, scope }) {
                     <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
                       {/* โหมดพื้นที่ต้องบอกว่าก้อนนี้มาจากไลน์ไหนบ้าง — ไม่งั้นตัวเลขรวมไม่มีที่มา */}
                       {groupMode === 'sloc' && g.lineNames.length > 0 && (
-                        <span style={{ fontSize:11, color:'var(--muted)' }}>📍 {g.lineNames.join(' · ')}</span>
+                        <span style={{ fontSize:11, color:'var(--muted)' }}>{g.lineNames.join(' · ')}</span>
                       )}
                       {lowParts.length > 0 && <span style={{ fontSize:11, padding:'2px 9px', borderRadius:10, background:'var(--red-dim)', color:'var(--red)', fontWeight:700 }}>⚠️ {lowParts.length} รายการหมด</span>}
                       {noLvParts.length > 0 && (
                         <span title={`ยังไม่ได้ตั้ง MIN/MAX ${noLvParts.length} พาร์ท — แถวนั้นขึ้น "—" และสถานะใช้เกณฑ์สำรอง (เหลือน้อยเมื่อต่ำกว่า 10 ชิ้น) · ตั้งค่าจริงที่ /products → แท็บ 🎴 Kanban Std`}
                           style={{ fontSize:11, padding:'2px 9px', borderRadius:10, background:'var(--amber-dim)', color:'var(--amber)', fontWeight:700 }}>
-                          📐 {noLvParts.length} พาร์ทยังไม่ตั้ง MIN/MAX
+                          {noLvParts.length} พาร์ทยังไม่ตั้ง MIN/MAX
                         </span>
                       )}
                       <span style={{ fontSize:11, color:'var(--muted)' }}>{g.parts.length} พาร์ท</span>
@@ -741,7 +741,7 @@ function StockTab({ role, scope }) {
                                   {isFgMat(p.mat_no) ? (
                                     <span title='FG งานสำเร็จ — หักอัตโนมัติเมื่อกด "ส่งแล้ว" ที่หน้า Delivery ไม่ต้องจ่ายเข้าไลน์'
                                       style={{ fontSize:11, fontWeight:700, color:'var(--muted)', whiteSpace:'nowrap' }}>
-                                      🚚 หักผ่าน Delivery
+                                      หักผ่าน Delivery
                                     </span>
                                   ) : (
                                     <button title={oneLine ? `จ่ายเข้า ${oneLine}` : 'พาร์ทนี้อยู่หลายไลน์ในพื้นที่เดียวกัน — เลือกไลน์ปลายทางในฟอร์ม'}
@@ -770,7 +770,7 @@ function StockTab({ role, scope }) {
         <div style={{ ...card, padding:0, overflow:'hidden' }}>
           <div style={{ padding:'12px 16px', background:'var(--bg2)', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
             <div style={{ fontWeight:700, fontSize:14 }}>
-              📋 ประวัติ Transaction {txnTr.from} – {txnTr.to} · {txnLoading ? 'กำลังโหลด…' : `${txnRows.length.toLocaleString()} รายการ`}
+              ประวัติ Transaction {txnTr.from} – {txnTr.to} · {txnLoading ? 'กำลังโหลด…' : `${txnRows.length.toLocaleString()} รายการ`}
               {txnQ.trim() && !txnLoading ? <span style={{ fontWeight:400, fontSize:12, color:'var(--muted)' }}> (ซ่อน {(txnScoped.rows.length - txnRows.length).toLocaleString()} ที่ไม่ตรงคำค้น)</span> : null}
             </div>
             {canIssue && (
@@ -898,7 +898,7 @@ function StockTab({ role, scope }) {
 
               {/* เลือก MAT จาก BOM ของ product */}
               <div>
-                <label style={{ fontSize:11, fontWeight:700, color:'var(--blue)', display:'block', marginBottom:4 }}>📦 ดึง MAT จาก BOM ของ Product (ไม่บังคับ)</label>
+                <label style={{ fontSize:11, fontWeight:700, color:'var(--blue)', display:'block', marginBottom:4 }}>ดึง MAT จาก BOM ของ Product (ไม่บังคับ)</label>
                 <SearchSelect value={String(bomProduct || '')} placeholder="— ค้นหา Product (MAT/ชื่อ) เพื่อดูพาร์ทย่อยใน BOM —" inputStyle={inputSt}
                   /* 🔴 เลข MAT ต้องอยู่ช่อง `code` (nowrap ห้ามตัด) ไม่ใช่ต่อท้าย `label`
                      — label ถูก ellipsis ตัดท้าย ⇒ MAT ที่อยู่ท้ายสุดหายทุกแถว (QC 06/10)
@@ -1189,7 +1189,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
           {Object.entries(grouped).map(([lineName, rndList]) => (
             <div key={lineName} style={{ ...card, padding:0, overflow:'hidden' }}>
               <div style={{ padding:'12px 16px', background:'var(--bg2)', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                <div style={{ fontWeight:800, fontSize:15, fontFamily:'var(--font-display)', color:'var(--text)' }}>📍 {lineName}</div>
+                <div style={{ fontWeight:800, fontSize:15, fontFamily:'var(--font-display)', color:'var(--text)' }}>{lineName}</div>
                 <span style={{ fontSize:11, color:'var(--muted)' }}>{rndList.length} รอบ</span>
               </div>
               <div style={{ overflowX:'auto' }}>
@@ -1357,7 +1357,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                 </div>
                 {form.delivery_time && (
                   <div style={{ fontSize:12, color:'var(--amber)', fontWeight:700 }}>
-                    🏁 เสร็จประมาณ {addMins(form.delivery_time, (parseInt(form.points_count)||1)*(parseInt(form.time_per_point_min)||10))}
+                    เสร็จประมาณ {addMins(form.delivery_time, (parseInt(form.points_count)||1)*(parseInt(form.time_per_point_min)||10))}
                     {' '}({form.points_count||1} จุด × {form.time_per_point_min||10} น.)
                   </div>
                 )}
@@ -1466,7 +1466,7 @@ function DeliveryTimeBoardTab() {
   return (
     <>
       <InternalTimeBoard
-        title={`🕐 บอร์ดรอบส่งภายในวันนี้ — Store → ไลน์ผลิต`}
+        title={`บอร์ดรอบส่งภายในวันนี้ — Store → ไลน์ผลิต`}
         hint="ตั้งค่ารอบที่แท็บ ⏰ รอบจัดส่ง · กดยืนยันส่ง/รับที่หน้า 🎴 บอร์ดคัมบัง"
         groups={groups} nowMin={nm} breaks={breaksToFrame(breakPolicies)}
         onItemClick={(r, x, y) => setPopup({ r, x, y })}
@@ -1487,14 +1487,14 @@ function DeliveryTimeBoardTab() {
                   <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)' }}>{r.shift === 'night' ? '🌙' : '☀️'} รอบ {r.round_no}</span>
                   <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: st.color }}>{st.label}</span>
                 </div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', marginTop: 2 }}>📍 {r.line_name}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', marginTop: 2 }}>{r.line_name}</div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.8 }}>
                   ตัดยอด {(r.cutoff_time || '').slice(0, 5) || '—'} → ส่ง {(r.delivery_time || '').slice(0, 5)}<br />
                   {r.points_count || 1} จุด × {r.time_per_point_min || 10} นาที · เตรียม {r.prep_minutes || 60} นาที
                 </div>
                 {st.d?.confirmed_by && <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 4 }}>✓ ส่งโดย {st.d.confirmed_by}</div>}
                 {st.d?.received_by && <div style={{ fontSize: 11, color: st.d.received_status === 'full' ? 'var(--green)' : 'var(--amber)' }}>{st.d.received_status === 'full' ? '✔️' : '⚠️'} รับโดย {st.d.received_by}</div>}
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>👉 กดยืนยันส่ง/รับของที่หน้า 🎴 Kanban Board</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>กดยืนยันส่ง/รับของที่หน้า 🎴 Kanban Board</div>
               </div>
             </div>
           </>
@@ -1610,7 +1610,7 @@ function InflowRulesTab({ canEdit }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 720 }}>
       <div style={card}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>⚙️ รับงานเข้า stock เมื่อปิดออเดอร์</div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>รับงานเข้า stock เมื่อปิดออเดอร์</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, lineHeight: 1.7 }}>
           สแกนปิดออเดอร์ (confirm) แล้วของไปเข้าคลังปลายทางตามกฎ — FG (เบอร์ 1xxx) เข้า warehouse · พาร์ทลูก (เบอร์ 2xxx) เข้าสโตร์
           <br />แต่ละกฎเลือกได้: <b>{INFLOW_MODES.auto.label}</b> = {INFLOW_MODES.auto.hint} ·
@@ -1644,7 +1644,7 @@ function InflowRulesTab({ canEdit }) {
                 <td style={{ padding: '8px 14px', fontSize: 13, fontWeight: 700, color: 'var(--amber)' }}>
                   {/* 🔧 โหมดปิดล็อต: ยอดลงที่ไลน์ผลิตของล็อต — คลังในแถวไม่ถูกใช้ ห้ามโชว์เหมือนเป็นปลายทางจริง */}
                   {inflowModeOf(r) === 'lot'
-                    ? <span style={{ color: INFLOW_MODES.lot.color, fontSize: 12 }}>📍 ไลน์ผลิตของล็อต (ตอนปิดล็อต)</span>
+                    ? <span style={{ color: INFLOW_MODES.lot.color, fontSize: 12 }}>ไลน์ผลิตของล็อต (ตอนปิดล็อต)</span>
                     : <>📍 {r.dest_line_name}</>}
                 </td>
                 <td style={{ padding: '8px 14px' }}>
@@ -1704,7 +1704,7 @@ function InflowRulesTab({ canEdit }) {
       )}
       {!canEdit && (
         <div style={{ ...card, borderColor: 'var(--amber-line)', fontSize: 12, color: 'var(--amber)' }}>
-          👁 โหมดดูอย่างเดียว — แก้กฎได้เฉพาะผู้มีสิทธิ์จัดการรอบจัดส่ง (ตั้งได้ที่หน้า จัดการสิทธิ์)
+          โหมดดูอย่างเดียว — แก้กฎได้เฉพาะผู้มีสิทธิ์จัดการรอบจัดส่ง (ตั้งได้ที่หน้า จัดการสิทธิ์)
         </div>
       )}
     </div>

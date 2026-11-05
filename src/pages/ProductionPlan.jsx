@@ -703,7 +703,7 @@ export default function ProductionPlan() {
           {bomErr ? (
             <span style={{ color: 'var(--amber)', fontWeight: 700 }}>⚠ อ่าน BOM ไม่ได้ — แผนนับเฉพาะพาร์ทที่ลูกค้าสั่งตรง (ไลน์ที่ทำพาร์ทลูกจะดูเหมือนไม่มีงาน)</span>
           ) : !useBom ? (
-            <span>🌳 ปิดการรวมงานจาก BOM อยู่ — แผนนับเฉพาะพาร์ทที่ลูกค้าสั่งตรง</span>
+            <span>ปิดการรวมงานจาก BOM อยู่ — แผนนับเฉพาะพาร์ทที่ลูกค้าสั่งตรง</span>
           ) : demandPcs.bom ? (
             <>🌳 รวมงานที่ระเบิดจาก BOM แล้ว: <b>{Math.round(demandPcs.bom.childPcs).toLocaleString()} ชิ้น</b> จากพาร์ทที่มี BOM {demandPcs.bom.rootsWithBom} ตัว
               {demandPcs.bom.rootsNoBom > 0 && <span> · ยังไม่มี BOM {demandPcs.bom.rootsNoBom} ตัว (ลูกของพาร์ทเหล่านี้ยังไม่เข้าแผน)</span>}
@@ -718,7 +718,7 @@ export default function ProductionPlan() {
           )}
           {demandPcs.buffer && (
             <div style={{ marginTop: 2 }}>
-              📦 {useBuffer
+              {useBuffer
                 ? <>หักของที่มีใน <b>STORE</b> แล้ว <b>{Math.round(demandPcs.buffer.dailyAbsorbed).toLocaleString()} ชิ้น</b> (รายวัน) ·
                     <b> {Math.round(demandPcs.buffer.monthlyAbsorbed).toLocaleString()} ชิ้น</b> (รายเดือน) จาก {demandPcs.buffer.mats} พาร์ทที่มีของคงเหลือ
                     {' · '}<span title="backflush ยังไม่ทำงานครบ (issue 5,908 : consume 40) ⇒ ยอดคงเหลือที่ไลน์สูงกว่าความจริง เอามาหักแล้วจะสั่งผลิตน้อยเกินไป">
@@ -850,7 +850,7 @@ export default function ProductionPlan() {
           canManage={canSeeded('production_plan', 'write', role)}
           onBeforeDelete={masterDeleteGuard(supabaseDR, 'trial_reasons')}
           stampCol="updated_by_name" stampName={fullName} onChanged={invalidateTrialReasons}
-          title="🧪 เหตุผลจองเครื่องทดลอง"
+          title="เหตุผลจองเครื่องทดลอง"
           help="ตัวเลือกในหน้าต่าง 🧪 จองเครื่องทดลอง (แท็บแผนสั่งงาน) — ใบจองเก็บข้อความเหตุผลนี้ · ยังเลือก 'อื่นๆ (พิมพ์เอง)' ได้เสมอ"
           keyFrom={r => String(r.label || '').trim().toUpperCase().replace(/\s+/g, ' ')}
           fields={[
@@ -884,10 +884,10 @@ export default function ProductionPlan() {
           const mustWork = daily.filter(r => r.recall75Days > 0);
           return (
             <div style={{ ...card, borderColor: 'var(--blue)66' }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--blue)', marginBottom: 6 }}>⚖️ มาตรการหยุดจ่าย 75% (ม.75) — ช่วง {DAILY_HORIZON} วันข้างหน้า</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--blue)', marginBottom: 6 }}>มาตรการหยุดจ่าย 75% (ม.75) — ช่วง {DAILY_HORIZON} วันข้างหน้า</div>
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12 }}>
                 <div style={{ flex: '1 1 260px' }}>
-                  <div style={{ color: 'var(--green)', fontWeight: 700, marginBottom: 4 }}>🛑 หยุดตามมาตรการได้ ({stoppable.length} ไลน์)</div>
+                  <div style={{ color: 'var(--green)', fontWeight: 700, marginBottom: 4 }}>หยุดตามมาตรการได้ ({stoppable.length} ไลน์)</div>
                   {stoppable.length === 0 ? <div style={{ color: 'var(--muted)' }}>— ไม่มี —</div>
                     : stoppable.map(r => <div key={r.line.id} style={{ color: 'var(--text2)' }}>{r.line.name} <span style={{ color: 'var(--muted)' }}>· หยุดได้ทั้ง {r.sd75Total} วัน</span></div>)}
                 </div>
@@ -908,13 +908,13 @@ export default function ProductionPlan() {
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>{line.section} · {orderCount} ออเดอร์</span>
               {/* สรุปทั้งช่วง */}
               {endBacklog > 0.05
-                ? <span style={chip('var(--red)')}>🚨 ต่อให้เปิดเต็มที่ยังไม่ทัน — ค้าง ~{endBacklog.toFixed(1)} กะ ณ สิ้นช่วง</span>
+                ? <span style={chip('var(--red)')}>ต่อให้เปิดเต็มที่ยังไม่ทัน — ค้าง ~{endBacklog.toFixed(1)} กะ ณ สิ้นช่วง</span>
                 : (otDays + nightDays + recall75Days + holidayDays === 0
                   ? <span style={chip('var(--green)')}>✅ กะเช้าปกติพอ ไม่ต้องเปิด OT</span>
                   : <span style={chip('var(--amber)')}>ต้องเปิด: {nightDays ? `กะดึก ${nightDays} วัน · ` : ''}{otDays ? `OT ${otDays} วัน · ` : ''}{recall75Days ? `ยกเลิกหยุด75% ${recall75Days} วัน · ` : ''}{holidayDays ? `ทำวันหยุด OT ${holidayDays} วัน` : ''}</span>)}
               {sd75Total > 0 && (recall75Days > 0
                 ? <span style={chip('var(--blue)')} title="วัน ม.75 ที่มี order ชน/งานค้าง — ต้องเรียกพนักงานมาทำงาน (ค่าแรงปกติ)">⚡ ม.75: หยุดได้ {sd75Stoppable}/{sd75Total} วัน — ต้องเรียกมาทำ {recall75Days} วัน</span>
-                : <span style={chip('var(--green)')} title="ทุกวัน ม.75 ในช่วงนี้ ไลน์นี้ไม่มี order ชน — หยุดตามมาตรการได้">🛑 ม.75: หยุดได้ทั้ง {sd75Total} วัน (order ไม่ชน)</span>)}
+                : <span style={chip('var(--green)')} title="ทุกวัน ม.75 ในช่วงนี้ ไลน์นี้ไม่มี order ชน — หยุดตามมาตรการได้">ม.75: หยุดได้ทั้ง {sd75Total} วัน (order ไม่ชน)</span>)}
               {carryPcs > 0 && <span style={chip('var(--amber)')} title="ออเดอร์ pending ที่วันส่งผ่านมาแล้ว (ย้อน 30 วัน) — รวมเป็นงานค้างตั้งต้นของแผน (convention เดียวกับ Rundown: ค้างเก่ารวมเข้าวันนี้)">⏰ ยกมาจากค้างส่งเก่า {Math.round(carryPcs).toLocaleString()} ชิ้น</span>}
               {unknownCap > 0 && <span style={chip('var(--muted)')} title="พาร์ทที่ยังไม่มีประวัติกำลังผลิต/ไม่รู้จักไลน์">{unknownCap.toLocaleString()} ชิ้นไม่รู้กำลัง</span>}
             </div>
@@ -948,7 +948,7 @@ export default function ProductionPlan() {
               })}
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap', fontSize: 11, color: 'var(--muted)' }}>
-              <span>☀ กะเช้าพอ</span><span>⏰ ต้องเปิด OT</span><span>🌙 ต้องเปิดกะดึก</span><span style={{ color: 'var(--blue)' }}>⚡ ยกเลิกหยุด 75% (ค่าแรงปกติ)</span><span style={{ color: 'var(--red)' }}>⚠ ทำวันหยุด OT (×1.5/×2)</span>
+              <span>กะเช้าพอ</span><span>⏰ ต้องเปิด OT</span><span>ต้องเปิดกะดึก</span><span style={{ color: 'var(--blue)' }}>⚡ ยกเลิกหยุด 75% (ค่าแรงปกติ)</span><span style={{ color: 'var(--red)' }}>⚠ ทำวันหยุด OT (×1.5/×2)</span>
             </div>
           </div>
         ))}

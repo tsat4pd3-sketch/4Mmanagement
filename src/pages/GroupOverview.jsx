@@ -481,7 +481,7 @@ export default function GroupOverview() {
         title={<>
           {ORG.code} — ภาพรวมกลุ่มบริษัท
           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 999, padding: '2px 10px' }}>
-            🧪 MOCKUP · ตัวอย่างหน้าจอ
+            MOCKUP · ตัวอย่างหน้าจอ
           </span>
         </>}
         sub={<>
@@ -524,7 +524,7 @@ export default function GroupOverview() {
       {!loading && !!baseLines.length && (
         <div style={{ ...card, padding: '10px 13px' }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-            <span className="filter-label" style={{ fontWeight: 700 }}>🏭 ประเภทไลน์:</span>
+            <span className="filter-label" style={{ fontWeight: 700 }}>ประเภทไลน์:</span>
             {[{ value: null, label: ALL.type }, ...LTYPES.filter(t => (tree.typeCount[t.value] || 0) > 0)].map(t => {
               const on = ltFilter === t.value;
               return (
@@ -580,13 +580,13 @@ export default function GroupOverview() {
             sub={compNode ? `บริษัท ${compNode.code}`
               : bizNode ? `${bizNode.lines.length} ไลน์ผลิตรวม`
                 : `${tree.allComps.length} บริษัท · ${tree.allLines.length} ไลน์`} />
-          <Kpi label="📦 ผลิตรวม" value={fmtNum(scope.actual)} color={pctCol(scope.pct)}
+          <Kpi label="ผลิตรวม" value={fmtNum(scope.actual)} color={pctCol(scope.pct)}
             sub={`เป้า ${fmtNum(scope.target)} · ${scope.pct == null ? '—' : scope.pct + '%'}`} />
-          <Kpi label="⚙️ OEE (ถ่วงน้ำหนัก)" value={scope.oee == null ? '—' : scope.oee + '%'} color={oeeCol(scope.oee)}
+          <Kpi label="OEE (ถ่วงน้ำหนัก)" value={scope.oee == null ? '—' : scope.oee + '%'} color={oeeCol(scope.oee)}
             sub="ถ่วงด้วยเวลารับภาระของแต่ละไลน์" />
-          <Kpi label="🔧 Downtime นอกแผน" value={fmtNum(scope.dtMin)} sub="นาที" color={scope.dtMin > 0 ? 'var(--amber)' : undefined} />
-          <Kpi label="🚫 ของเสีย" value={fmtNum(scope.ng)} sub="ชิ้น (NG + สงสัย)" color={scope.ng > 0 ? 'var(--red)' : undefined} />
-          <Kpi label="👷 คนเข้างาน" value={pplText(scope.present, scope.head)}
+          <Kpi label="Downtime นอกแผน" value={fmtNum(scope.dtMin)} sub="นาที" color={scope.dtMin > 0 ? 'var(--amber)' : undefined} />
+          <Kpi label="ของเสีย" value={fmtNum(scope.ng)} sub="ชิ้น (NG + สงสัย)" color={scope.ng > 0 ? 'var(--red)' : undefined} />
+          <Kpi label="คนเข้างาน" value={pplText(scope.present, scope.head)}
             sub={scope.head ? `${Math.round(scope.present / scope.head * 100)}% ของกำลังคน` : 'ยังไม่มีรายชื่อพนักงานผูกไลน์'} />
         </div>
 
@@ -597,7 +597,7 @@ export default function GroupOverview() {
           {sel.axis === 'map' && lv1View === 'map' && (
             <div style={card}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 10 }}>
-                <div style={{ fontSize: 15, fontWeight: 700 }}>🌏 แผนที่โรงงานทั่วโลก</div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>แผนที่โรงงานทั่วโลก</div>
                 {lv1Switch}
                 <span style={{ fontSize: 12, color: 'var(--muted)' }}>
                   {tree.allComps.length} โรงงาน · {new Set(tree.allComps.map(c => c.cc)).size} ประเทศ · ขนาดวง = ยอดผลิตของวันที่เลือก
@@ -617,7 +617,7 @@ export default function GroupOverview() {
           {(sel.axis !== 'map' || lv1View === 'rank') && (
           <div style={card}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 10 }}>
-              <div style={{ fontSize: 15, fontWeight: 700 }}>📊 เทียบผลการผลิต{sel.axis === 'map' ? 'รายโซนพื้นที่' : 'รายกลุ่มธุรกิจ'}</div>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>เทียบผลการผลิต{sel.axis === 'map' ? 'รายโซนพื้นที่' : 'รายกลุ่มธุรกิจ'}</div>
               {sel.axis === 'map' && lv1Switch}
             </div>
             <RankBars items={axisNodes} onPick={(g) => setSel(s => ({ ...s, node: g.key, comp: null }))} />
@@ -663,9 +663,9 @@ export default function GroupOverview() {
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, fontSize: 12 }}>
-                      <Mini label="🔧 DT" value={`${fmtNum(g.dtMin)} น.`} color={g.dtMin > 0 ? 'var(--amber)' : undefined} />
-                      <Mini label="🚫 NG" value={fmtNum(g.ng)} color={g.ng > 0 ? 'var(--red)' : undefined} />
-                      <Mini label="👷 คน" value={pplText(g.present, g.head)} />
+                      <Mini label="DT" value={`${fmtNum(g.dtMin)} น.`} color={g.dtMin > 0 ? 'var(--amber)' : undefined} />
+                      <Mini label="NG" value={fmtNum(g.ng)} color={g.ng > 0 ? 'var(--red)' : undefined} />
+                      <Mini label="คน" value={pplText(g.present, g.head)} />
                     </div>
 
                     {/* (05/10) เลิกแถวชิป "ส่วนผสมกลุ่มธุรกิจ" ของโซน — ซ้ำกับไอคอนกลุ่มที่นำหน้าชิปบริษัทข้างล่างอยู่แล้ว
@@ -702,7 +702,7 @@ export default function GroupOverview() {
           {sel.axis === 'map' && bizNode.thaiMap && (
             <div style={card}>
               <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>
-                🗺️ {bizNode.icon} {bizNode.name} — แผนที่พื้นที่
+                {bizNode.icon} {bizNode.name} — แผนที่พื้นที่
               </div>
               <ThailandZoneMap
                 zones={[bizNode]}
@@ -716,7 +716,7 @@ export default function GroupOverview() {
           )}
 
           <div style={card}>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>📊 เทียบผลการผลิตรายบริษัท — {bizNode.icon} {bizNode.name}</div>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>เทียบผลการผลิตรายบริษัท — {bizNode.icon} {bizNode.name}</div>
             <RankBars items={bizNode.companies} onPick={(c) => setPickComp(c)} />
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 9 }}>
               เรียงตาม OEE · <b>คลิกชื่อบริษัทเพื่อดูรายไลน์</b>
@@ -764,9 +764,9 @@ export default function GroupOverview() {
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, fontSize: 12 }}>
-                      <Mini label="🔧 DT" value={`${fmtNum(c.dtMin)} น.`} color={c.dtMin > 0 ? 'var(--amber)' : undefined} />
-                      <Mini label="🚫 NG" value={fmtNum(c.ng)} color={c.ng > 0 ? 'var(--red)' : undefined} />
-                      <Mini label="👷 คน" value={pplText(c.present, c.head)} />
+                      <Mini label="DT" value={`${fmtNum(c.dtMin)} น.`} color={c.dtMin > 0 ? 'var(--amber)' : undefined} />
+                      <Mini label="NG" value={fmtNum(c.ng)} color={c.ng > 0 ? 'var(--red)' : undefined} />
+                      <Mini label="คน" value={pplText(c.present, c.head)} />
                     </div>
 
                     <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 9, minHeight: 34 }}>
@@ -791,7 +791,7 @@ export default function GroupOverview() {
           <div style={card}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 }}>
               <div style={{ fontSize: 15, fontWeight: 700 }}>
-                🏭 {compNode.flag} {compNode.code} — รายไลน์ ({compNode.lines.length})
+                {compNode.flag} {compNode.code} — รายไลน์ ({compNode.lines.length})
               </div>
               {compNode.real
                 ? <span style={{ fontSize: 11, color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 4, padding: '1px 7px' }}>ข้อมูลจริง</span>
@@ -836,7 +836,7 @@ export default function GroupOverview() {
         {/* ── ไลน์ที่ต้องดูแลด่วน (ตามขอบเขตที่กำลังดู) ── */}
         <div style={card}>
           <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>
-            🚨 ไลน์ที่ต้องดูแลด่วน — {compNode ? compNode.code : bizNode ? bizNode.name : ORG.code}
+            ไลน์ที่ต้องดูแลด่วน — {compNode ? compNode.code : bizNode ? bizNode.name : ORG.code}
             <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)', marginLeft: 8 }}>เรียงตามจำนวนชิ้นที่ขาดเป้า (ข้ามบริษัท/กลุ่มธุรกิจ)</span>
           </div>
           <div style={{ overflowX: 'auto' }}>
@@ -912,8 +912,8 @@ export default function GroupOverview() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, margin: '13px 0 15px' }}>
               <Mini label="OEE" value={pickComp.oee == null ? '—' : pickComp.oee + '%'} color={oeeCol(pickComp.oee)} />
               <Mini label="ผลิต/เป้า" value={`${pickComp.pct == null ? '—' : pickComp.pct + '%'}`} color={pctCol(pickComp.pct)} />
-              <Mini label="🔧 DT" value={`${fmtNum(pickComp.dtMin)} น.`} color={pickComp.dtMin > 0 ? 'var(--amber)' : undefined} />
-              <Mini label="🚫 NG" value={fmtNum(pickComp.ng)} color={pickComp.ng > 0 ? 'var(--red)' : undefined} />
+              <Mini label="DT" value={`${fmtNum(pickComp.dtMin)} น.`} color={pickComp.dtMin > 0 ? 'var(--amber)' : undefined} />
+              <Mini label="NG" value={fmtNum(pickComp.ng)} color={pickComp.ng > 0 ? 'var(--red)' : undefined} />
             </div>
 
             <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 8 }}>จะดูแบบไหน?</div>
@@ -928,7 +928,7 @@ export default function GroupOverview() {
                 border: `1px solid ${pickComp.real ? 'var(--accent)' : 'var(--border)'}`,
                 color: 'var(--text)', cursor: pickComp.real ? 'pointer' : 'not-allowed', opacity: pickComp.real ? 1 : 0.72,
               }}>
-              <div style={{ fontSize: 14.5, fontWeight: 800 }}>🗺️ เข้าหน้าผังโรงงาน (Floor Plan) ของ {pickComp.code}</div>
+              <div style={{ fontSize: 14.5, fontWeight: 800 }}>เข้าหน้าผังโรงงาน (Floor Plan) ของ {pickComp.code}</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
                 {pickComp.real
                   ? 'เปิดผังรวมโรงงานจริง — เห็นทุกไลน์บนผัง สีตามสถานะ กดเข้าไลน์ดูรายละเอียดได้'
@@ -944,7 +944,7 @@ export default function GroupOverview() {
               width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 10,
               background: 'var(--bg3)', border: '1px solid var(--accent)', color: 'var(--text)', cursor: 'pointer',
             }}>
-              <div style={{ fontSize: 14.5, fontWeight: 800 }}>📊 ดูภาพรวมในหน้านี้ ({pickComp.lines.length} ไลน์)</div>
+              <div style={{ fontSize: 14.5, fontWeight: 800 }}>ดูภาพรวมในหน้านี้ ({pickComp.lines.length} ไลน์)</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
                 อยู่หน้าเดิม — เห็นตารางรายไลน์ (เป้า/ผลิต/OEE/DT/NG/คน) แล้วกดย้อนกลับขึ้นโซนหรือกลุ่มได้ทันที
               </div>

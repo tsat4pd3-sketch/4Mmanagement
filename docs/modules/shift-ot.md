@@ -236,3 +236,91 @@
 แต่ไม่มีอะไรบอกว่า*ทีมไหน*ขึ้นเช้า ⇒ ต้องมีคนตอบ 1 ครั้งต่อหน่วย (`STORE` 10 คนหมุน · `Die MTN` 5 ·
 `Mechanic` 1 · `Preventive` 1 · ไม่ระบุแผนก 3) = **20 คนที่ยังรอข้อมูลตั้งต้น**
 
+
+---
+
+## 🗂️ ยุบ "แกนหน่วยงาน" เหลือแกนเดียว — หน่วยสนับสนุนเข้าทะเบียนไลน์ (2026-11-05 · คำสั่ง user "ลุยจัดข้อมูลเลย")
+
+### ปัญหาเดิม — 2 แกนคู่ขนาน
+| | แกนไลน์ `production_lines` | แกนชื่อแผนก `shift_schedules.dept_name` |
+|---|---|---|
+| ทะเบียน | มี (+ FK) | **ไม่มี · เป็น text ลอย** |
+| ไลน์แม่-ลูก (ตกทอดกะ) | ✅ | ❌ |
+| ปุ่มเติมตารางกะล่วงหน้า | ✅ | ❌ `detectRotation` ปฏิเสธทั้ง 14 ชื่อ (ประวัติ 1-5 สัปดาห์) |
+| เช็คชื่อ · ยืมคน · manpower · ผังองค์กร | ✅ | ❌ |
+
+วัดจากฐานจริง 05/11 ก่อนย้าย: คน **101 คนไม่มี `line_id`** จึงพึ่งแกนขวา ·
+ชื่อในแกนขวา 14 ชื่อ จับคู่ `employees.department` ติดแค่ **7/14** · กำพร้า 6 ชื่อ ·
+มี `Smail Press` ปนกับ `SMALL PRESS` (ไม่มีอะไรห้าม เพราะไม่ผูก FK)
+
+### สิ่งที่ทำ — migration `20261105d_support_units_line_axis_main.sql` (**apply แล้ว 05/11**)
+1. สร้างหน่วยสนับสนุน **14 แถว** ใน `production_lines` (`unit_kind='support'`) ผังตรงกับ `org_nodes` เป๊ะ
+   (ชื่อ · ลำดับชั้น · `cost_center` ลอกจากหน่วยเดียวกันใน `org_nodes` ⇒ `ccScope` ตัดสินตรงกัน)
+
+| หน่วย (id) | แม่ | ส่วนงาน | cost_center | คน |
+|---|---|---|---|---|
+| QA (75) | – | QA | 2140441000 | 3 |
+| PQA-Press (76) · PQA-Incoming (77) · Inspection (78) · QA Measuring & Testing (79) · QA Improvement & Service (80) | QA | QA | 2140541800 / …900 / …300 / …200 / …100 | 5·5·21·5·7 |
+| STORE (81) | – | Planning&Store | 2140524000 | 11 |
+| Tooling MTN (82) | – | Tooling MTN | 2140459100 | 4 |
+| Die MTN (83) | Tooling MTN | Tooling MTN | 2140559101 | 7 |
+| JIG MTN (84) | – | JIG MTN | 2140563100 | 8 |
+| Maintenance (85) | – | Maintenance | 2140456000 | 2 |
+| Mechanic (86) · Preventive (87) · Electric (88) | Maintenance | Maintenance | 2140556200 / …300 / …100 | 3·2·2 |
+
+2. ย้ายคน **85 คน** (`line_id` NULL → หน่วยของตัวเอง) · snapshot `archive.employees_line_id_20261105`
+3. ลอกแถวตารางกะฝั่ง `dept_name` → ฝั่ง `line_id` **1,162 แถว** (QA 5 หน่วย × 189 + Electric 217)
+   `note='from-dept-row 20261105'` ⇒ แกนไลน์เลี้ยงตัวเองได้ และปุ่มเติมล่วงหน้ามีประวัติให้จับจังหวะ
+   (ตรวจแล้ว: 4 หน่วย QA ได้ `AABBAABB…` = รอบ 2 สัปดาห์สะอาด · `Inspection`/`Electric` มีสัปดาห์เก่าเพี้ยน
+   แต่หน้าต่างของ `detectRotation` ตัดทิ้งแล้วเข้ารูป = ปุ่มใช้ได้ทั้ง 6)
+4. ลบชื่อแผนกกำพร้า **28 แถว** (`QA` 14 · `Smail Press` 7 · `ฝ่าผลิต` 7) — เฉพาะชื่อที่
+   **ไม่มีพนักงานคนไหนใช้ชื่อนั้นเลย** · snapshot `archive.shift_dept_rows_dropped_20261105`
+   · ชื่อที่ยังมีคนใช้ (GOR · LWRBAR · ทั่วไป · BIG/SMALL PRESS · Electric · Inspection · PQA-*) **ไม่แตะ**
+
+### 🟢 พิสูจน์ว่าไม่กระทบใคร (เงื่อนไข auto-merge ข้อ 2)
+สร้าง digest md5 ของ **"กะที่ระบบตอบต่อคน-ต่อวัน"** (เลียน `scheduleTeamFor`: ไลน์ → แม่ 6 ชั้น → `department`)
+เก็บไว้ที่ `archive.shift_resolve_before_20261105` **ก่อน** ย้าย แล้วคิดใหม่หลังย้าย:
+
+| | ก่อน | หลัง |
+|---|---|---|
+| พนักงาน active ที่ตรวจ | 289 | 289 · **digest ตรงกัน 289/289 · ต่าง 0** |
+| ช่อง (คน × วัน) ที่ตอบกะได้ | 69,433 | **69,433** |
+| คนที่ยังไม่มีกะเลย | 55 | 55 |
+| ไลน์ผลิตในทะเบียน | 36 (active 33) | **36 (active 33)** — ไม่มีหน่วยใหม่หลุดเข้าจอผลิต |
+
+เหตุผลที่เท่ากันเป๊ะ: `scheduleTeamFor` ลองไลน์ก่อน **แล้วถอยไป `department` เสมอ** ⇒ หน่วยที่ยังไม่มีแถวกะ
+(STORE · Die MTN · JIG MTN · Mechanic · Preventive · Tooling MTN · Maintenance · QA) ตกไปใช้ทางเดิม ·
+หน่วยที่มีแถว ได้ค่าที่ลอกมาเท่าเดิมทุกวัน (รวมสัปดาห์ 26/10 ของ `Inspection` ที่หลุดจังหวะมาก่อนหน้านี้ —
+**ตั้งใจไม่แก้** เพราะสัปดาห์นั้นผ่านไปแล้ว แก้ = เขียนประวัติเช็คชื่อใหม่)
+
+### กฎที่ตามมา
+- 🔴 **ห้ามเพิ่มชื่อใหม่ในแกน `dept_name`** — หน่วยงานใหม่ให้สร้างเป็นแถวใน `production_lines`
+  (`unit_kind='support'`) ที่ `/line-setup` · แกน `dept_name` เหลือไว้เป็นตัวสำรองของ fallback เท่านั้น
+- 🔴 **ตั้ง `unit_kind='support'` ให้ชัดเจนทุกครั้ง** — ปล่อยว่าง = default `production` = โผล่ในจอผลิต/ตัวหาร OEE
+- `line_type` ของหน่วยสนับสนุน ปล่อย `NULL` (ไม่มีชนิดกระบวนการ · ตะกร้ารับท้ายลิสต์รองรับแล้ว)
+- **ไม่แตะ** `employees.org_node_id` / `employees.cost_center` (กฎ manpower-board) — ย้ายแค่ `line_id`
+
+### งานค้างหลังรอบนี้
+- **20 คนยังไม่มีตารางกะ** (STORE 10 · Die MTN 5 · Tooling MTN ไม่ระบุแผนก 3 · Mechanic 1 · Preventive 1)
+  — **ทีมที่ขึ้นกะเช้า (A/B) เป็นนโยบายของหน่วย ระบบเดาแทนไม่ได้** (ไม่มีประวัติให้จับจังหวะ)
+  ⇒ user ตั้งบล็อกแรกเองที่ `/shift-organize` แล้วปุ่มเติมล่วงหน้าทำงานต่อได้ (จังหวะ = §กฎจังหวะกะ ข้างบน)
+- **8 คน JIG MTN ยังไม่ได้ตั้งทีม A/B/C** ใน HR ⇒ ต่อให้มีตารางกะก็ยังไม่มีกะ (ตั้งที่ `/operator`)
+- **16 คนยังไม่ผูกไลน์** = พนักงานในส่วนงานผลิต PD1-PD4 ที่ HR ยังไม่ระบุไลน์
+  (ไม่ระบุแผนก 12 · HYDROFORM 2 · BIG PRESS 1 · SMALL PRESS 1) — **คนละเรื่องกับงานนี้ ต้องให้คนเลือกไลน์**
+- `Office PD4` ยังเป็น `unit_kind='production'` ทั้งที่เป็นสำนักงาน (เคสต้นเรื่องของ `unitKind.js` เอง)
+  — ยังไม่แก้ เพราะเปลี่ยนแล้วหายจากจอผลิต/ตัวหาร ต้องให้ user ยืนยันก่อน
+
+### ย้อนกลับ
+```sql
+-- a) คืน line_id เดิม (ทุกคนในรอบนี้เดิมเป็น NULL)
+update employees e set line_id = a.line_id_before
+  from archive.employees_line_id_20261105 a where a.employee_uuid = e.id;
+-- b) แถวกะที่ลอกมา
+delete from shift_schedules where note = 'from-dept-row 20261105';
+-- c) ชื่อกำพร้าที่ลบไป
+insert into shift_schedules (id, work_date, line_id, day_team, note, created_by, created_at, is_manual, dept_name)
+select id, work_date, line_id, day_team, note, created_by, created_at, is_manual, dept_name
+  from archive.shift_dept_rows_dropped_20261105;
+-- d) หน่วยสนับสนุน (cascade ลบแถวกะของหน่วยนั้นด้วย — ทำ b ก่อนให้ชัดเจน)
+delete from production_lines where id between 75 and 88 and unit_kind = 'support';
+```

@@ -454,7 +454,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
 
       {view === 'facility' && (armedJig || armedMachine) && (
         <div style={{ fontSize: 12, color: 'var(--accent2)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px' }}>
-          📍 คลิกบนผังเพื่อวาง <b>{armedJig ? (jigInfo[armedJig]?.jig_no || jigInfo[armedJig]?.name) : (facMachines.find(m => m.id === armedMachine)?.machine_no)}</b>{armedMachine ? ' (ดึงจากฐานเครื่องจักร)' : ''} · <span onClick={() => { setArmedJig(null); setArmedMachine(null) }} style={{ cursor: 'pointer', textDecoration: 'underline' }}>ยกเลิก</span>
+          คลิกบนผังเพื่อวาง <b>{armedJig ? (jigInfo[armedJig]?.jig_no || jigInfo[armedJig]?.name) : (facMachines.find(m => m.id === armedMachine)?.machine_no)}</b>{armedMachine ? ' (ดึงจากฐานเครื่องจักร)' : ''} · <span onClick={() => { setArmedJig(null); setArmedMachine(null) }} style={{ cursor: 'pointer', textDecoration: 'underline' }}>ยกเลิก</span>
         </div>
       )}
 
@@ -476,7 +476,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
                (user ทัก 2026-08-26) → เลื่อนมาให้เห็นเองทุกครั้งที่เลือกหมุด */
             <div ref={detailRef} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>⚙️ {selLabel}{selInfo.name && selInfo.name !== selLabel ? ` · ${selInfo.name}` : ''}</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{selLabel}{selInfo.name && selInfo.name !== selLabel ? ` · ${selInfo.name}` : ''}</div>
                 <button onClick={() => setSelId(null)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 8px', fontSize: 12, cursor: 'pointer' }}>✕</button>
               </div>
               {selChecklists.length === 0 ? (
@@ -533,7 +533,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
               const dCol = d == null ? 'var(--muted)' : d <= -5 ? 'var(--green)' : d > 10 ? 'var(--red)' : 'var(--text2)'
               return (
                 <div style={{ border: '1px solid var(--border)', borderLeft: '3px solid var(--accent)', borderRadius: 10, padding: '10px 12px', background: 'var(--bg2)', display: 'flex', flexDirection: 'column', gap: 11 }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>📊 สถานะโซนนี้</div>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>สถานะโซนนี้</div>
                   {/* 🛠️ PM — นับจากอุปกรณ์ที่สังกัดโซน (เกณฑ์เดียวกับผังรวมโรงงาน) ไม่ใช่แค่หมุดบนผัง */}
                   {(() => {
                     const rows = (zonePm?.rows || []).filter(r => (dept === 'all' ? !r.am : r.dept === dept))   // ทุกทีม = PM ช่าง · AM ดูจอ AM
@@ -542,7 +542,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
                     return (
                       <div>
                         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>
-                          🛠️ PM อุปกรณ์ · {zonePm?.equipCount ?? 0} ตัวในโซน{facPoints.length ? ` · ${facPoints.length} จุดบนผัง` : ''}
+                          PM อุปกรณ์ · {zonePm?.equipCount ?? 0} ตัวในโซน{facPoints.length ? ` · ${facPoints.length} จุดบนผัง` : ''}
                         </div>
                         {!rows.length ? (
                           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>
@@ -595,7 +595,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
                     )
                   })()}
                   <div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>🔧 ใบซ่อม MO ค้างของโซนนี้</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ใบซ่อม MO ค้างของโซนนี้</div>
                     <div style={{ fontSize: zoneMo.length ? 17 : 12, fontWeight: 900, color: zoneMo.length ? 'var(--amber)' : 'var(--green)', marginTop: 3 }}>
                       {zoneMo.length ? `${zoneMo.length} ใบ` : '✅ ไม่มีใบค้าง'}
                     </div>

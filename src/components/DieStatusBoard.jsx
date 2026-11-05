@@ -1,4 +1,4 @@
-/* ═══ DieStatusBoard — 📊 สถานะแม่พิมพ์ (แท็บใน /die-registry) — 2026-08-19 ═══════════════
+/* ═══ DieStatusBoard — สถานะแม่พิมพ์ (แท็บใน /die-registry) — 2026-08-19 ═══════════════
    บอร์ดติดตามสถานะแม่พิมพ์ทั้งทะเบียน: สรุปตัวนับต่อสถานะ + ตารางไล่ดู/เปลี่ยนสถานะรายตัว
    • สถานะ manual (die_status) เปลี่ยนได้จาก select ในแถว (สิทธิ์ machines:edit)
    • "มีใบซ่อม MO ค้าง" derive สดจาก mtn_orders — คอลัมน์นี้ทำงานได้แม้ยังไม่ apply migration
@@ -146,7 +146,7 @@ export default function DieStatusBoard({
         <LineSelect
           lines={prodLines.filter(l => lineNames.includes(l.name))}
           value={fLine} onChange={setFLine} placeholder={ALL.line}
-          extraGroups={[{ label: '🔨 กลุ่มเครื่องปั๊ม', options: lineNames.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
+          extraGroups={[{ label: 'กลุ่มเครื่องปั๊ม', options: lineNames.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
         />
         {/* ชิปสถานะ = ตัวกรอง (กดเพื่อกรอง) ⇒ อยู่ "ใน" แถบกรอง ไม่ใช่แถวการ์ดเหนือมัน (UI-STANDARD §2.1) */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -224,7 +224,7 @@ export default function DieStatusBoard({
                       <div style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={d.machine_no}>{d.machine_no}</div>
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                         {setNameOf(d) || '—'}{e.op_seq != null ? ` · OP${e.op_seq}` : ''}
-                        {feedLineOf(d) ? <> · 🏭 ป้อนไลน์ <b style={{ color: 'var(--text2)' }}>{feedLineOf(d)}</b></> : null}
+                        {feedLineOf(d) ? <> · ป้อนไลน์ <b style={{ color: 'var(--text2)' }}>{feedLineOf(d)}</b></> : null}
                       </div>
                     </td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{d.line_name || '—'}</td>
@@ -244,7 +244,7 @@ export default function DieStatusBoard({
                       {placed ? (
                         <button onClick={() => onShowOnMap(d)} title="ดูตำแหน่งบนผังจัดเก็บ"
                           style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7, padding: '3px 9px', fontSize: 11.5, color: 'var(--text)', cursor: 'pointer' }}>
-                          🗺️ {areaNameOf(e.area_id) || 'ดูบนผัง'}
+                          {areaNameOf(e.area_id) || 'ดูบนผัง'}
                         </button>
                       ) : (
                         <span style={{ fontSize: 11.5, color: '#f59e0b' }} title="ไปวางที่แท็บผังจัดเก็บ">ยังไม่วางบนผัง</span>

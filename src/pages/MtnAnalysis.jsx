@@ -480,12 +480,12 @@ export default function MtnAnalysis() {
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 12, marginBottom: 8 }}>
                   {paretoSplit.planned.length > 0 && (
                     <span style={{ color: 'var(--muted)' }}>
-                      🗓️ กัน <b style={{ color: 'var(--text2)' }}>{paretoSplit.planned.length} ใบ</b> ที่เป็น “งานตามแผน (PM)” ออกจากพาเรโตปัญหาแล้ว
+                      กัน <b style={{ color: 'var(--text2)' }}>{paretoSplit.planned.length} ใบ</b> ที่เป็น “งานตามแผน (PM)” ออกจากพาเรโตปัญหาแล้ว
                     </span>
                   )}
                   {typed.filled > 0 && (
                     <span style={{ color: 'var(--muted)' }} title="พจนานุกรมมาจากทะเบียนอาการของโรงงาน + ใบที่ช่างจัดกลุ่มไว้แล้ว — เจาะดูคำที่ใช้เดาได้ที่มิติ 🔎">
-                      🔎 เดาหมวดให้ <b style={{ color: 'var(--text2)' }}>{typed.filled} ใบ</b> จากคำที่พนักงานพิมพ์ (เดิมเป็น “อื่นๆ”) — เจาะดูที่มาได้ในมิติ 🔎
+                      เดาหมวดให้ <b style={{ color: 'var(--text2)' }}>{typed.filled} ใบ</b> จากคำที่พนักงานพิมพ์ (เดิมเป็น “อื่นๆ”) — เจาะดูที่มาได้ในมิติ 🔎
                     </span>
                   )}
                   {paretoNote && (
@@ -560,7 +560,7 @@ export default function MtnAnalysis() {
           )}
 
           <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.8 }}>
-            📌 แหล่งข้อมูล: {src === 'mo' ? 'ใบแจ้งซ่อม (MO)' : 'บันทึกเครื่องหยุดจาก Daily Report'} ·
+            แหล่งข้อมูล: {src === 'mo' ? 'ใบแจ้งซ่อม (MO)' : 'บันทึกเครื่องหยุดจาก Daily Report'} ·
             ชนิดสินทรัพย์ตัดสินจาก "ชนิดอุปกรณ์" ในทะเบียนเครื่องจักร ไม่ใช่ทีมช่างที่รับงาน ·
             หน้านี้อ่านอย่างเดียว ไม่แก้ข้อมูล และไม่ดึงซ้ำอัตโนมัติ (กด ↻ เมื่อต้องการข้อมูลล่าสุด)
           </div>

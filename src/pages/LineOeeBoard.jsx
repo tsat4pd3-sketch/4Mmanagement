@@ -408,7 +408,7 @@ export default function LineOeeBoard() {
       {/* header — ไม่ใช้ PageHeader (บอร์ดจอ TV — ข้อยกเว้นเดียวกับ Dashboard/Management)
           ph-chrome = กรอบจอ TV ซ่อน (แถบบนของกรอบโชว์ไลน์ที่ตั้งจากลิงก์ + นาฬิกาแทน · index.css) */}
       <div className="ph-chrome" style={{ ...card, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '10px 16px' }}>
-        <span style={{ fontSize: 17, fontWeight: 900, color: 'var(--text)' }}>📟 OEE รายไลน์ (Weekly)</span>
+        <span style={{ fontSize: 17, fontWeight: 900, color: 'var(--text)' }}>OEE รายไลน์ (Weekly)</span>
         {/* picker กลาง (UI §5.1.2) — ลำดับชั้นแม่→ลูกครบ · width กัน index.css select width:100% */}
         <LineSelect lines={boardLines} value={line} onChange={setLine} placeholder={null}
           role={role} lineId={lineId} sections={sections}
@@ -532,7 +532,7 @@ export default function LineOeeBoard() {
           <div style={rowSt(1.5)}>
             {barChart(`Alarm Top 6 (นาที · ${DAYS_KPI} วัน)`, C.dtTop6, 'var(--amber)',
                       `เฉพาะหยุดนอกแผน — หยุดตามแผนไม่ใช่ loss${C.dtTrash?.vague
-                        ? ` · 🗑️ ไม่ได้ระบุสาเหตุ ${C.dtTrash.vague} ใบ (${
+                        ? ` · ไม่ได้ระบุสาเหตุ ${C.dtTrash.vague} ใบ (${
                           C.dtTrash.guessed ? `🔎 เดาจากคำ ${C.dtTrash.guessed} · ` : ''}แตกตามเครื่อง${
                           C.dtTrash.noMachine ? ` · ${C.dtTrash.noMachine} ใบไม่กรอกเครื่อง = ชี้เป้าไม่ได้` : ''})` : ''}`,
                       // จอประชุม: เก็บแค่เรื่องที่ทำให้แท่งเชื่อไม่ได้ (ใบไม่ระบุสาเหตุ) — ห้ามหายเงียบ

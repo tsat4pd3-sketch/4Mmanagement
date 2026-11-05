@@ -553,7 +553,7 @@ function QualityDashboard() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(340px, 100%), 1fr))', gap: 14 }}>
         <div style={cardSt}>
-          <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 10 }}>📈 แนวโน้ม PPM รายวัน</div>
+          <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 10 }}>แนวโน้ม PPM รายวัน</div>
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={stat.ppmTrend} margin={{ top: 6, right: 12, left: 4, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -566,7 +566,7 @@ function QualityDashboard() {
         </div>
 
         <div style={cardSt}>
-          <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 10 }}>🏭 ของเสียรายไลน์ (Top 12)</div>
+          <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 10 }}>ของเสียรายไลน์ (Top 12)</div>
           {stat.lineRows.length === 0 ? (
             <div style={{ color: 'var(--muted)', fontSize: 12, padding: 30, textAlign: 'center' }}>ไม่มีข้อมูล</div>
           ) : (
@@ -591,7 +591,7 @@ function QualityDashboard() {
           ⚠️ ห้ามย้ายกลับเข้ากริดแล้วใส่ `gridColumn: '1 / -1'` — auto-fit จะดันมันลงบรรทัดใหม่
           แล้ว**เหลือช่องว่างครึ่งแถวข้างบน** (ลองแล้ว 23/09 · ผิดกฎ "ห้ามเหลือขอบข้างว่างเยอะ") */}
       <div style={{ ...cardSt, marginTop: 14 }}>
-        <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 10 }}>📊 Pareto ของเสียตามประเภท (NG + Suspect)</div>
+        <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 10 }}>Pareto ของเสียตามประเภท (NG + Suspect)</div>
         {stat.pareto.length === 0 ? (
           <div style={{ color: 'var(--muted)', fontSize: 12, padding: 30, textAlign: 'center' }}>ไม่มีข้อมูลของเสียในช่วงนี้</div>
         ) : (
@@ -858,7 +858,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
 
             {/* Histogram */}
             <div style={cardSt}>
-              <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 8 }}>📊 Histogram เทียบ Spec</div>
+              <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 8 }}>Histogram เทียบ Spec</div>
               {hist.length ? (
                 <ResponsiveContainer width="100%" height={230}>
                   <BarChart data={hist} margin={{ top: 6, right: 12, left: 4, bottom: 0 }}>
@@ -1181,7 +1181,7 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
       )}
 
       {detail && (
-        <Modal title={`📄 ${detail.ncr_no}`} onClose={() => setDetail(null)} width={640}>
+        <Modal title={`${detail.ncr_no}`} onClose={() => setDetail(null)} width={640}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
             <Chip label={NCR_STATUS[detail.status]?.label || detail.status} color={NCR_STATUS[detail.status]?.color || '#6b7280'} />
             <Chip label={NCR_SEV[detail.severity]?.label || detail.severity} color={NCR_SEV[detail.severity]?.color || '#6b7280'} />
@@ -1436,7 +1436,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
             และต้องบอกปลายทางที่ "ดูได้จริง" (ที่นี่กางกลับไม่ได้ ⇒ ชี้ไปบอร์ดคุณภาพ) */}
         {hiddenCount > 0 && (
           <span className="filter-count" title="ใบของส่วนงานอื่น — ดูรายละเอียดได้ที่บอร์ดคุณภาพ แต่แก้/ปิดไม่ได้">
-            🔒 ไม่แสดง {hiddenCount} ใบของส่วนงานอื่น
+            ไม่แสดง {hiddenCount} ใบของส่วนงานอื่น
           </span>
         )}
         {canRecord && <button style={btnSt()} onClick={() => setDetail({
@@ -1579,7 +1579,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
           )}
           {!detail.id && (
             <div style={{ marginTop: 12, padding: '8px 11px', borderRadius: 8, border: '1px dashed var(--border2)', fontSize: 11.5, color: 'var(--muted)' }}>
-              💾 บันทึกก่อน แล้วแผง <b>🔗 เอกสารที่ต้องตามแก้</b> (PFMEA / Control Plan) จะขึ้นให้ใช้งาน
+              บันทึกก่อน แล้วแผง <b>เอกสารที่ต้องตามแก้</b> (PFMEA / Control Plan) จะขึ้นให้ใช้งาน
             </div>
           )}
 

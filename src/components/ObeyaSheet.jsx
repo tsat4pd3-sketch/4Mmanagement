@@ -274,7 +274,7 @@ export const FocusAxisNote = ({ k, loText, fixed = false }) => (
     : 'โหมดโฟกัส: ยกพื้นแกนขึ้นเพื่อขยายช่วงที่ค่ากระจุกอยู่ — ความสูงแท่งเทียบสัดส่วนกันไม่ได้ (กดปุ่ม 🎯 บนแถบกรองเพื่อปิด)'}
     style={{ position: 'absolute', top: 0, right: 6, zIndex: 1, fontSize: Math.max(11, Math.round(9.5 * k)), fontWeight: 700, color: 'var(--amber)',
       background: 'var(--card)', border: '1px solid var(--amber)55', borderRadius: 4, padding: '0 5px', lineHeight: 1.5 }}>
-    🎯 แกนเริ่ม {loText} ไม่ใช่ 0
+    แกนเริ่ม {loText} ไม่ใช่ 0
   </div>
 );
 

@@ -231,7 +231,7 @@ export default function StorageLocPanel() {
     <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16, marginBottom: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', marginBottom: 10 }}>
         <div>
-          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🏬 พื้นที่ SAP · ทะเบียนรหัสคลัง (Storage Location)</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>พื้นที่ SAP · ทะเบียนรหัสคลัง (Storage Location)</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
             รหัสบัญชีคลังแบบ SAP ที่อ้างในทุกบรรทัดของ BOM · {SLOC_FORMAT_HINT}
             <br />🔗 <b>ผูกไลน์แม่ครั้งเดียว ไลน์ลูกตกทอด</b> (P411 = ทั้ง Apron Assy) — ระบบแปะรหัสคลังให้ใบขอเติม / ledger / จุดส่ง เองตอนเขียน
@@ -293,7 +293,7 @@ export default function StorageLocPanel() {
       {/* worklist: ไลน์ย่อยที่ยังไม่มีมุม SAP — ใบ/ledger ของไลน์พวกนี้จะไม่ถูกแปะรหัส (ห้ามซ่อน · ไม่เดาให้) */}
       {!missing && !noLineMap && !loading && unmappedLeaf.length > 0 && (
         <div style={{ padding: '10px 12px', borderRadius: 8, background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.3)', fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
-          <b style={{ color: '#3b82f6' }}>🔗 ไลน์ที่ยังไม่ผูกรหัสคลัง {unmappedLeaf.length} ไลน์</b> — ใบขอเติม/ตัดสต็อกของไลน์เหล่านี้จะไม่มีมุม SAP จนกว่าจะผูก (ผูกที่ไลน์แม่ทีเดียวได้)
+          <b style={{ color: '#3b82f6' }}>ไลน์ที่ยังไม่ผูกรหัสคลัง {unmappedLeaf.length} ไลน์</b> — ใบขอเติม/ตัดสต็อกของไลน์เหล่านี้จะไม่มีมุม SAP จนกว่าจะผูก (ผูกที่ไลน์แม่ทีเดียวได้)
           <div style={{ marginTop: 4, color: 'var(--muted)', lineHeight: 1.6 }}>{unmappedLeaf.slice(0, 30).join(' · ')}{unmappedLeaf.length > 30 ? ` … (+${unmappedLeaf.length - 30})` : ''}</div>
         </div>
       )}
@@ -329,10 +329,10 @@ export default function StorageLocPanel() {
                   {!noLineMap && (
                     <div style={{ fontSize: 11, marginTop: 3, lineHeight: 1.5 }}>
                       {own.length
-                        ? <><span style={{ color: '#3b82f6', fontWeight: 700 }}>🔗 {own.join(' · ')}</span>
+                        ? <><span style={{ color: '#3b82f6', fontWeight: 700 }}>{own.join(' · ')}</span>
                             {inherited.length > 0 && <span style={{ color: 'var(--muted)' }}> → ตกทอด {inherited.length} ไลน์: {inherited.slice(0, 8).join(' · ')}{inherited.length > 8 ? ` … (+${inherited.length - 8})` : ''}</span>}</>
                         : isStoreKind(r.kind)
-                          ? <span style={{ color: 'var(--muted)' }}>🏠 ที่จัดเก็บหลักของ {homeCount == null ? '? (อ่านไม่ได้)' : (homeCount[slocLabel(r.code)] || 0)} พาร์ท · สโตร์/คลังไม่ต้องผูกไลน์ — ตั้งที่ทะเบียนพาร์ท (/products แท็บ Parts)</span>
+                          ? <span style={{ color: 'var(--muted)' }}>ที่จัดเก็บหลักของ {homeCount == null ? '? (อ่านไม่ได้)' : (homeCount[slocLabel(r.code)] || 0)} พาร์ท · สโตร์/คลังไม่ต้องผูกไลน์ — ตั้งที่ทะเบียนพาร์ท (/products แท็บ Parts)</span>
                           : <span style={{ color: 'var(--muted)' }}>— ยังไม่ผูกไลน์ (ไม่มีอะไรถูกแปะรหัสนี้อัตโนมัติ)</span>}
                     </div>
                   )}
@@ -413,14 +413,14 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
             {/* 💡 ระบบเสนอจากตัวอักษรนำหน้า **คนกดยืนยันเอง** ไม่เติมให้อัตโนมัติ */}
             {guess && guess !== f.kind && (
               <div onClick={() => setF(v => ({ ...v, kind: guess }))} style={{ fontSize: 11, color: '#0ea5e9', cursor: 'pointer', marginTop: 3, fontWeight: 700 }}>
-                💡 รหัสขึ้นต้น {code[0]} — น่าจะเป็น “{slocKindMeta(guess).label}” (กดเพื่อใช้)
+                รหัสขึ้นต้น {code[0]} — น่าจะเป็น “{slocKindMeta(guess).label}” (กดเพื่อใช้)
               </div>
             )}
           </div>
 
           {/* 🔗 ไลน์ที่ตกอยู่ในพื้นที่นี้ — ใส่ไลน์แม่ครั้งเดียว ลูกตกทอด */}
           <div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>🔗 ไลน์/พื้นที่ที่อยู่ในรหัสคลังนี้</label>
+            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ไลน์/พื้นที่ที่อยู่ในรหัสคลังนี้</label>
             {noLineMap ? (
               <div style={{ fontSize: 11.5, color: '#f59e0b' }}>ยังไม่ได้ apply migration <code>{MIG_DR}</code> (DR) — ผูกไลน์ยังไม่ได้</div>
             ) : (
@@ -437,7 +437,7 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
                     style={{ width: 260, padding: '6px 9px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12.5 }} />
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
-                  {isStoreKind(f.kind) && <div style={{ color: 'var(--text2)', fontWeight: 700 }}>🏠 รหัสสโตร์/คลัง ไม่ต้องผูกไลน์ — พาร์ทไหนเก็บที่นี่ ให้ตั้ง "ที่จัดเก็บหลัก" ที่ทะเบียนพาร์ท (/products แท็บ Parts)</div>}
+                  {isStoreKind(f.kind) && <div style={{ color: 'var(--text2)', fontWeight: 700 }}>รหัสสโตร์/คลัง ไม่ต้องผูกไลน์ — พาร์ทไหนเก็บที่นี่ ให้ตั้ง "ที่จัดเก็บหลัก" ที่ทะเบียนพาร์ท (/products แท็บ Parts)</div>}
                   ไลน์ลูกตกทอดจากไลน์แม่อัตโนมัติ · ไลน์ลูกที่ผูกรหัสอื่นเองจะชนะแม่ · ไลน์หนึ่งอยู่ได้พื้นที่เดียว
                   {preview.length > 0 && <div style={{ color: 'var(--text2)' }}>→ ครอบเพิ่ม {preview.length} ไลน์: {preview.slice(0, 10).join(' · ')}{preview.length > 10 ? ` … (+${preview.length - 10})` : ''}</div>}
                 </div>

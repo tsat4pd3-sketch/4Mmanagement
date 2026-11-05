@@ -527,7 +527,7 @@ export default function MorningMeeting() {
         actor: fullName,
         lines: [
           `📌 ${actModal.problem.trim()}`,
-          `🏭 ไลน์: ${actModal.line_name || '—'} · 📅 ประชุม ${meetingDate}`,
+          `🏭 ไลน์: ${actModal.line_name || '—'} · ประชุม ${meetingDate}`,
           `🙋 ผู้รับผิดชอบ: ${actModal.assignee?.trim() || '(ยังไม่ระบุ)'}`,
           actModal.due_date ? `⏰ กำหนดเสร็จ ${actModal.due_date}` : '',
           actModal.root_cause?.trim() ? `🔍 ${actModal.root_cause.trim()}` : '',
@@ -742,7 +742,7 @@ export default function MorningMeeting() {
 
   const MissedPanel = ({ bounded } = {}) => (
     <div style={card}>
-      <h2 style={h2St}>📉 งานหลุดแผน <span style={chip(missedOrders.length ? 'var(--red)' : 'var(--green)')}>{missedOrders.length} รายการ</span></h2>
+      <h2 style={h2St}>งานหลุดแผน <span style={chip(missedOrders.length ? 'var(--red)' : 'var(--green)')}>{missedOrders.length} รายการ</span></h2>
       {missedOrders.length === 0 ? (
         <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 700 }}>✅ ทุกใบงานได้ตามเป้า</div>
       ) : (
@@ -794,7 +794,7 @@ export default function MorningMeeting() {
   const DtDefectPanel = () => (
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: 10 }}>
       <div style={{ ...card, height: '100%' }}>
-        <h2 style={h2St}>🛠️ Top Downtime นอกแผน <span style={chip(sum.dtMin ? 'var(--red)' : 'var(--green)')}>{sum.dtMin} นาที</span></h2>
+        <h2 style={h2St}>Top Downtime นอกแผน <span style={chip(sum.dtMin ? 'var(--red)' : 'var(--green)')}>{sum.dtMin} นาที</span></h2>
         {topDowntime.unplanned.length === 0 ? <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 700 }}>✅ ไม่มี Downtime นอกแผน</div> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {topDowntime.unplanned.map(t => (
@@ -832,7 +832,7 @@ export default function MorningMeeting() {
         {topDowntime.planned.length > 0 && (
           <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed var(--border)', opacity: 0.65 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>
-              🗓 ในแผน (planned) — รวม {sum.dtPlannedMin.toLocaleString()} นาที (ไม่นับใน %)
+              ในแผน (planned) — รวม {sum.dtPlannedMin.toLocaleString()} นาที (ไม่นับใน %)
             </div>
             {topDowntime.planned.map(t => (
               <div key={t.name} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11, color: 'var(--muted)' }}
@@ -845,7 +845,7 @@ export default function MorningMeeting() {
         )}
       </div>
       <div style={{ ...card, height: '100%' }}>
-        <h2 style={h2St}>🔍 Top ของเสีย (NG/Suspect)</h2>
+        <h2 style={h2St}>Top ของเสีย (NG/Suspect)</h2>
         {topDefects.length === 0 ? <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 700 }}>✅ ไม่มีของเสียที่บันทึก</div> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {topDefects.map((t, i) => (
@@ -882,7 +882,7 @@ export default function MorningMeeting() {
     routine.forEach(m => { routineByLine[m.line_name] = (routineByLine[m.line_name] || 0) + 1; });
     return (
       <div style={card}>
-        <h2 style={h2St}>🔄 4M Change เมื่อวาน <span style={chip('var(--blue)')}>{fourM.length} รายการ</span></h2>
+        <h2 style={h2St}>4M Change เมื่อวาน <span style={chip('var(--blue)')}>{fourM.length} รายการ</span></h2>
         {fourM.length === 0 ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>— ไม่มีบันทึก 4M —</div> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5, ...(bounded ? { maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' } : null) }}>
             {notable.map(m => {
@@ -933,7 +933,7 @@ export default function MorningMeeting() {
 
   const ReadinessPanel = ({ bounded } = {}) => (
     <div style={card}>
-      <h2 style={h2St}>☀️ ความพร้อมเช้านี้</h2>
+      <h2 style={h2St}>ความพร้อมเช้านี้</h2>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, ...(bounded ? { maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' } : null) }}>
         {/* เครื่องยังซ่อมค้าง — Andon แดง (กระพริบเฉพาะที่ยังค้างจริง ตามกฎ) */}
         {openDts.length > 0 ? openDts.map(d => (
@@ -977,7 +977,7 @@ export default function MorningMeeting() {
   const ActionsPanel = ({ bounded } = {}) => (
     <div style={card}>
       <h2 style={h2St}>
-        📌 Action Items <span style={chip(openActions.length ? 'var(--amber)' : 'var(--green)')}>{openActions.length} ค้าง</span>
+        Action Items <span style={chip(openActions.length ? 'var(--amber)' : 'var(--green)')}>{openActions.length} ค้าง</span>
         {canRecord && (
           <button onClick={() => openActModal()} style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 7, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>
             เพิ่ม Action
@@ -1001,7 +1001,7 @@ export default function MorningMeeting() {
                   {a.root_cause && <span style={{ color: 'var(--muted)', fontSize: 11 }}>สาเหตุ: {a.root_cause}</span>}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                  {a.assignee && <span style={chip('var(--blue)')}>👤 {a.assignee}</span>}
+                  {a.assignee && <span style={chip('var(--blue)')}>{a.assignee}</span>}
                   {a.due_date && <span style={chip(overdue ? 'var(--red)' : 'var(--muted)')}>{overdue ? '⚠ เลยกำหนด ' : '📅 '}{fmtDate(a.due_date)}</span>}
                   <span style={chip(st.color)}>{st.label}</span>
                   {canRecord && ['open', 'doing'].includes(a.status) && (
@@ -1022,18 +1022,18 @@ export default function MorningMeeting() {
 
   /* ── วาระสำหรับโหมด TV (ไล่ทีละสไลด์) ── */
   const slides = [
-    { title: '🎯 ภาพรวมเมื่อวาน — ได้ตามเป้ามั้ย', render: () => (
+    { title: 'ภาพรวมเมื่อวาน — ได้ตามเป้ามั้ย', render: () => (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <KpiStrip />
         <SectionHead icon="🏭" title="ผลรายไลน์" extra={`เปิดกะ ${lineResults.filter(r => r.shifts.length).length}/${lineResults.length} ไลน์`} />
         <LineCards />
       </div>
     ) },
-    { title: '📉 งานหลุดแผน — เกิดเพราะอะไร', render: () => <MissedPanel /> },
-    { title: '🛠️ Downtime & ของเสีย', render: () => <DtDefectPanel /> },
-    { title: '🔄 4M Change', render: () => <FourMPanel /> },
-    { title: '☀️ ความพร้อมเช้านี้', render: () => <ReadinessPanel /> },
-    { title: '📌 Action Items', render: () => <ActionsPanel /> },
+    { title: 'งานหลุดแผน — เกิดเพราะอะไร', render: () => <MissedPanel /> },
+    { title: 'Downtime & ของเสีย', render: () => <DtDefectPanel /> },
+    { title: '4M Change', render: () => <FourMPanel /> },
+    { title: 'ความพร้อมเช้านี้', render: () => <ReadinessPanel /> },
+    { title: 'Action Items', render: () => <ActionsPanel /> },
   ];
 
   // คีย์บอร์ดในโหมด TV: ◀ ▶ เปลี่ยนวาระ · Esc ออก
@@ -1128,13 +1128,13 @@ export default function MorningMeeting() {
             <div style={{ fontSize: 22, fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
               {slides[slide].title}
             </div>
-            <span style={{ fontSize: 14, color: 'var(--muted)' }}>🌅 ประชุมแถวเช้า · {fmtDate(meetingDate)} · {scopeLabel}</span>
+            <span style={{ fontSize: 14, color: 'var(--muted)' }}>ประชุมแถวเช้า · {fmtDate(meetingDate)} · {scopeLabel}</span>
             <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
               <button onClick={() => setSlide(s => Math.max(0, s - 1))} disabled={slide === 0} style={{ ...btnSt(false), fontSize: 16, opacity: slide === 0 ? 0.4 : 1 }}>◀</button>
               <span style={{ fontSize: 13, color: 'var(--text2)', fontWeight: 700 }}>{slide + 1}/{slides.length}</span>
               <button onClick={() => setSlide(s => Math.min(slides.length - 1, s + 1))} disabled={slide === slides.length - 1} style={{ ...btnSt(false), fontSize: 16, opacity: slide === slides.length - 1 ? 0.4 : 1 }}>▶</button>
               <button onClick={() => setGestureOn(v => !v)} style={{ ...btnSt(gestureOn), position: 'relative' }}
-                title={'ควบคุมด้วยท่ามือผ่านกล้อง (ประมวลผลในเครื่อง ไม่ส่งภาพออกไปไหน)\n☝️ ชี้นิ้ว ◀/▶ ค้าง = เปลี่ยนวาระ · ชี้ ▲/▼ ค้าง = เลื่อนหน้า\n✋ ปัดซ้าย/ขวา = เปลี่ยนวาระ · 👍 ค้าง = ถัดไป · ✊ ค้าง = ออกจากโหมด'}>
+                title={'ควบคุมด้วยท่ามือผ่านกล้อง (ประมวลผลในเครื่อง ไม่ส่งภาพออกไปไหน)\n☝️ ชี้นิ้ว ◀/▶ ค้าง = เปลี่ยนวาระ · ชี้ ▲/▼ ค้าง = เลื่อนหน้า\n✋ ปัดซ้าย/ขวา = เปลี่ยนวาระ · ค้าง = ถัดไป · ✊ ค้าง = ออกจากโหมด'}>
                 {gestureOn ? 'ปิดท่ามือ' : 'คุมด้วยท่ามือ'}
                 <ToggleDot on={gestureOn} />
               </button>

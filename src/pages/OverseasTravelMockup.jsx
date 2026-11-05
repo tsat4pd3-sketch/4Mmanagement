@@ -294,7 +294,7 @@ export default function OverseasTravelMockup() {
       <PageHeader
         title="เบิกเงินเดินทางต่างประเทศ"
         icon="✈️"
-        sub={<span><b style={{ color: 'var(--amber)' }}>🧪 MOCKUP</b> · ข้อมูลจำลองในหน้านี้ ไม่บันทึกลงฐานข้อมูล (รีเฟรช = เริ่มใหม่)</span>}
+        sub={<span><b style={{ color: 'var(--amber)' }}>MOCKUP</b> · ข้อมูลจำลองในหน้านี้ ไม่บันทึกลงฐานข้อมูล (รีเฟรช = เริ่มใหม่)</span>}
         tabs={tabs} tab={tab} onTab={setTab}
       />
       <div style={{ marginBottom: 12 }}>

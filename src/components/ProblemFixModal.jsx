@@ -129,7 +129,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
         padding: 20, width: 'min(96vw, 620px)', maxHeight: '90vh', overflowY: 'auto',
       }}>
         <div style={{ fontSize: 15.5, fontWeight: 800, color: 'var(--text)', marginBottom: 3 }}>
-          🛠 วิธีแก้ไข &amp; ผลตรวจติดตาม
+          วิธีแก้ไข &amp; ผลตรวจติดตาม
         </div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>{title}</div>
 
@@ -144,7 +144,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
         {wiHits.length > 0 && (
           <div style={{ marginTop: 8, marginBottom: 4 }}>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 5 }}>
-              📕 อาการ/พาร์ทนี้มี <b style={{ color: 'var(--text)' }}>WI การซ่อม</b> ขึ้นทะเบียนไว้ (WI-PD3-069 §6) — ซ่อมแล้วอ้างเล่มนี้
+              อาการ/พาร์ทนี้มี <b style={{ color: 'var(--text)' }}>WI การซ่อม</b> ขึ้นทะเบียนไว้ (WI-PD3-069 §6) — ซ่อมแล้วอ้างเล่มนี้
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {wiHits.map(w => (
@@ -168,7 +168,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
         {past.length > 0 && (
           <div style={{ marginTop: 8, marginBottom: 4 }}>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 5 }}>
-              💡 เคยแก้ปัญหาชนิดนี้มาก่อน — กดเพื่อใช้ข้อความเดิม
+              เคยแก้ปัญหาชนิดนี้มาก่อน — กดเพื่อใช้ข้อความเดิม
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {past.map(p => (

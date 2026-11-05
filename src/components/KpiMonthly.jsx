@@ -161,7 +161,7 @@ function ChartModal({ c, curIdx, onClose }) {
     <div className="modal-scroll" onClick={onClose} /* ดูกราฟอย่างเดียว ไม่ใช่ฟอร์มกรอก → ปิดจาก backdrop ได้ตามกฎ */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, padding: '16px 18px', width: 'min(860px, 96vw)' }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
-          <b style={{ fontSize: 14.5, color: 'var(--text)' }}>📈 {c.title}</b>
+          <b style={{ fontSize: 14.5, color: 'var(--text)' }}>{c.title}</b>
           <button onClick={onClose} style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--muted)', fontSize: 16, cursor: 'pointer' }}>✕</button>
         </div>
         <div style={{ position: 'relative', width: '100%', height: 300 }}>
@@ -769,7 +769,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       <table style="border-collapse:collapse;width:100%">
         <tr><th style="${th};text-align:left">KPI</th>${TH_M.map(m => `<th style="${th}">${m}</th>`).join('')}<th style="${th}">สรุปทั้งปี</th></tr>
         ${rows}
-        ${manRows ? `<tr><td colspan="14" style="${td};text-align:left;background:#f4f4f4;font-weight:bold">📝 KPI กรอกมือ (นอกระบบ)${!isPlant(scope) ? ' — รวมนิยามที่ตกทอดจากระดับแม่ (ติดป้ายในวงเล็บ)' : ''}</td></tr>${manRows}` : ''}
+        ${manRows ? `<tr><td colspan="14" style="${td};text-align:left;background:#f4f4f4;font-weight:bold">KPI กรอกมือ (นอกระบบ)${!isPlant(scope) ? ' — รวมนิยามที่ตกทอดจากระดับแม่ (ติดป้ายในวงเล็บ)' : ''}</td></tr>${manRows}` : ''}
       </table>
       ${months.tot.costMissQty > 0 ? `<div style="font-size:11px;color:#b45309;margin-top:6px">⚠ ของเสีย ${months.tot.costMissQty.toLocaleString()} ชิ้นยังตีมูลค่าไม่ได้ (พาร์ทไม่มีต้นทุน/ชิ้นใน Parts Master) — Cost of defect จึงต่ำกว่าจริง</div>` : ''}
       <table style="margin-top:26px;width:60%"><tr>${(Array.isArray(df?.sig_blocks) && df.sig_blocks.length ? df.sig_blocks : ['Issued', 'Checked', 'Approved']).map(s2 => `<td style="text-align:center;font-size:11px;padding-top:30px;border-top:1px solid #999">${typeof s2 === 'string' ? s2 : s2?.label || ''}</td>`).join('')}</tr></table>`;
@@ -1037,14 +1037,14 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
           <>
             <span className="spacer" />
             <button onClick={handleExcel} style={btnSt}>⬇️ Excel 3 ชีท</button>
-            <button onClick={handlePrint} style={btnSt}>🖨️ พิมพ์ / PDF</button>
+            <button onClick={handlePrint} style={btnSt}>พิมพ์ / PDF</button>
           </>
         )}
       </FilterBar>
 
       {ccAsUnit && (
         <div style={{ ...card, fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.6 }}>
-          💰 รหัส <b>{org.ccLabel ? org.ccLabel(scope.value) : scope.value}</b> = หน่วย <b>{org.labelOf(kpiScope.kind, kpiScope.value)}</b> —
+          รหัส <b>{org.ccLabel ? org.ccLabel(scope.value) : scope.value}</b> = หน่วย <b>{org.labelOf(kpiScope.kind, kpiScope.value)}</b> —
           KPI เก็บและแสดงที่หน่วยเจ้าของรหัส (ชุดเดียวกับเลือก {org.labelOf(kpiScope.kind, kpiScope.value)} ที่ช่องหน่วยงาน) · ตั้ง/แก้ที่นี่ = ตั้งให้หน่วยนั้น
         </div>
       )}
@@ -1067,7 +1067,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       {!loading && !err && months && (
         <div style={{ ...card, overflowX: 'auto' }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>
-            🤖 KPI คำนวณอัตโนมัติ — {scopeLabel}
+            KPI คำนวณอัตโนมัติ — {scopeLabel}
           </div>
           <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 1060 }}>
             <thead>
@@ -1109,7 +1109,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                       {r.key === 'oee' ? (
                         /* ⚠️ เป้า OEE มีแหล่งเดียวคือ `oee_targets` — ตั้งซ้ำที่นี่ = เป้า 2 ชุด drift */
                         <span title="เป้า OEE ใช้ร่วมทั้งระบบ (จอผัง · OEE Analytics · OBEYA) ตั้งที่ปุ่ม 🎯 ในหน้า OEE Analytics"
-                          style={{ fontSize: 11, color: 'var(--muted)' }}>🔒 ทะเบียนเป้า OEE</span>
+                          style={{ fontSize: 11, color: 'var(--muted)' }}>ทะเบียนเป้า OEE</span>
                       ) : (
                         <button onClick={() => setAutoTgt(r)} title="ตั้งเป้า / ทิศทาง / commitment ของ KPI ตัวนี้"
                           style={{ cursor: 'pointer', background: 'none', border: 'none', fontSize: 13 }}>
@@ -1166,7 +1166,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         <div style={{ ...card, overflowX: 'auto' }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
             <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>
-              📝 KPI นอกระบบ (กรอกมือ) — DL/OH % · Satisfaction · Safety · HR
+              KPI นอกระบบ (กรอกมือ) — DL/OH % · Satisfaction · Safety · HR
             </span>
             {canManage && (
               <button onClick={() => setEditDef({})} style={{ ...btnSt, padding: '4px 10px', fontSize: 12 }}>＋ เพิ่ม KPI</button>
@@ -1179,24 +1179,24 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                   {copying ? '⏳ กำลังคัดลอก…' : '📋 คัดลอกชุด KPI จากปีอื่น'}
                 </button>
                 <button onClick={() => setShowCat(true)} title="ดู/แก้ชื่อ KPI ในทะเบียน — แก้ชื่อแล้วเปลี่ยนพร้อมกันทุกปีทุกส่วนงาน"
-                  style={{ ...btnSt, padding: '4px 10px', fontSize: 12 }}>🗂 ทะเบียนชื่อ KPI ({catalog.length})</button>
+                  style={{ ...btnSt, padding: '4px 10px', fontSize: 12 }}>ทะเบียนชื่อ KPI ({catalog.length})</button>
               </>
             )}
             {/* 📘 ทะเบียนมาตรฐานของกลุ่ม — เปิดดูได้ทุก role (เป็นเอกสารอ้างอิง) ปุ่ม "หยิบ" ข้างในถึงค่อยเช็คสิทธิ์ */}
             <button onClick={() => setShowStd(true)}
               title="ดูข้อ KPI มาตรฐานของกลุ่มสำหรับหน่วยงานนี้ — ข้อไหนบังคับ ข้อไหนเลือกได้ และใบนี้หยิบครบหรือยัง"
-              style={{ ...btnSt, padding: '4px 10px', fontSize: 12 }}>📘 มาตรฐานกลุ่ม</button>
+              style={{ ...btnSt, padding: '4px 10px', fontSize: 12 }}>มาตรฐานกลุ่ม</button>
             {/* แผนรายเดือน — ปิดไว้ก่อนเพราะเปิดแล้วตารางสูงเท่าตัว · เปิดดูได้ทุก role (กรอกถึงเช็ค kpi:manage) */}
             <button onClick={() => setShowPlan(v => !v)} aria-pressed={showPlan}
               title="แสดงแถวแผนรายเดือน 12 ค่า — สำหรับ KPI ที่แผนไม่เท่ากันทุกเดือน (DL/OH ตาม budget) และ KPI สะสมที่เทียบเป้าทั้งปีตั้งแต่กลางปีไม่ได้"
               style={{ ...btnSt, padding: '4px 10px', fontSize: 12,
                 background: showPlan ? 'var(--accent-dim)' : undefined,
                 borderColor: showPlan ? 'var(--accent)' : undefined }}>
-              📅 แผนรายเดือน{showPlan ? ' ✓' : ''}
+              แผนรายเดือน{showPlan ? ' ✓' : ''}
             </button>
             {!isPlant(scope) && (
               <span style={{ fontSize: 11.5, color: '#f59e0b' }}>
-                📍 ขอบเขต <b>{scopePathText(org, scope)}</b> — แถวที่ติดป้ายในวงเล็บ = นิยามระดับแม่ที่ตกทอดมา (แก้ที่ระดับนั้น)
+                ขอบเขต <b>{scopePathText(org, scope)}</b> — แถวที่ติดป้ายในวงเล็บ = นิยามระดับแม่ที่ตกทอดมา (แก้ที่ระดับนั้น)
               </span>
             )}
             {mtnTeam && (
@@ -1211,7 +1211,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
           {closedDefs.length > 0 && (
             <details style={{ margin: '6px 0 10px', fontSize: 12, color: 'var(--text2)' }}>
               <summary style={{ cursor: 'pointer', fontWeight: 700 }}>
-                🗄️ ปิดใช้งานอยู่ {closedDefs.length} รายการ — เปิดคืนได้ (เพิ่มชื่อเดิมซ้ำไม่ได้จนกว่าจะเปิดคืนหรือลบจริงในฐาน)
+                ปิดใช้งานอยู่ {closedDefs.length} รายการ — เปิดคืนได้ (เพิ่มชื่อเดิมซ้ำไม่ได้จนกว่าจะเปิดคืนหรือลบจริงในฐาน)
               </summary>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
                 {closedDefs.map(d2 => {
@@ -1231,7 +1231,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
           )}
           <InfoMore id="kpi-table-backfill" size={11.5} lead="ลงย้อนหลังได้ — เลือกปีที่หัวเพจ" label="วิธีกรอกย้อนหลัง · คัดลอกชุด KPI" style={{ marginBottom: 8 }}>
             กรอกได้ครบทั้ง 12 เดือน (ไม่ล็อกเฉพาะเดือนปัจจุบัน) ·
-            ปีที่ยังไม่มีชุด KPI กด <b>📋 คัดลอกชุด KPI จากปีอื่น</b> จะได้รายการเดิมมาทั้งชุดโดยไม่ต้องพิมพ์ชื่อใหม่
+            ปีที่ยังไม่มีชุด KPI กด <b>คัดลอกชุด KPI จากปีอื่น</b> จะได้รายการเดิมมาทั้งชุดโดยไม่ต้องพิมพ์ชื่อใหม่
             {!catMissing && ' · ชื่อ KPI ผูกกับทะเบียนกลาง ⇒ เทียบข้ามปีได้แม้เปลี่ยนชื่อทีหลัง'}
           </InfoMore>
           <ReadOnlyNote show={!canManageKpi} role={role} compact
@@ -1296,14 +1296,14 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                             )}
                             {fInfo[(valueDefOf(d2) || d2).id] && (() => { const fi = fInfo[(valueDefOf(d2) || d2).id]; const missN = Object.keys(fi.missing).filter(m => !fi.usedManual.includes(Number(m))).length; return (
                               <span title={formulaSummaryText(fi)} style={{ marginLeft: 5, fontSize: 11, color: missN ? '#f59e0b' : '#38bdf8' }}>
-                                🧮 คำนวณจากตัวเลขฐาน{missN ? ` · ขาดตัวเลขฐาน ${missN} เดือน` : ''}{fi.usedManual.length ? ` · ✍️ ${fi.usedManual.length} เดือนยังใช้ค่ากรอกมือ` : ''}
+                                คำนวณจากตัวเลขฐาน{missN ? ` · ขาดตัวเลขฐาน ${missN} เดือน` : ''}{fi.usedManual.length ? ` · ✍️ ${fi.usedManual.length} เดือนยังใช้ค่ากรอกมือ` : ''}
                               </span>); })()}
                             {defScopeTag(d2) && <span title="นิยามระดับแม่ที่ตกทอดมา — แก้ไขที่ขอบเขตนั้น" style={{ marginLeft: 5, fontSize: 11, color: 'var(--muted)' }}>({defScopeTag(d2)})</span>}
                             {plantKpi && vDef && (
                               <span title={sharedRO ? 'ค่าโรงงาน — ทุกหน่วยที่ถือ KPI นี้ใช้ตัวเลขเดียวกัน · กรอกที่ขอบเขต ทั้งโรงงาน (เป้า/น้ำหนักของแถวนี้ยังเป็นของหน่วยงาน)' : 'ค่าโรงงาน — ทุกหน่วยที่ถือ KPI นี้อ่านตัวเลขจากแถวนี้'}
                                 style={{ marginLeft: 5, fontSize: 11, color: '#38bdf8', cursor: sharedRO ? 'pointer' : 'default' }}
                                 onClick={sharedRO ? () => setScope({ ...PLANT }) : undefined}>
-                                🏭 ค่าโรงงาน{sharedRO ? ' → กรอกที่ ทั้งโรงงาน' : ''}
+                                ค่าโรงงาน{sharedRO ? ' → กรอกที่ ทั้งโรงงาน' : ''}
                               </span>
                             )}
                             {plantKpi && !vDef && (
@@ -1377,7 +1377,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                             <tr style={{ background: 'var(--bg2)' }}>
                               <td style={{ ...tdSt, textAlign: 'left', whiteSpace: 'normal', fontSize: 11.5, color: 'var(--text2)' }}
                                 title="แผนรายเดือน (kpi_month_plans) — ใบจริงของ DL/OH/TS Academy ตั้งแผนไม่เท่ากันทุกเดือนตาม budget">
-                                📅 แผน
+                                แผน
                                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>เว้นว่าง = เดือนนั้นยังไม่ตั้งแผน</div>
                               </td>
                               {Array.from({ length: 12 }, (_, i) => (
@@ -1485,7 +1485,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
           <InfoMore id="kpi-monthly-howto" size={11} lead="กรอกแล้วบันทึกทันทีตอนออกจากช่อง" label="วิธีกรอก · ความหมายสัญลักษณ์" style={{ marginTop: 8 }}>
             (Enter/คลิกที่อื่น) · ลบค่า = เว้นว่าง ·
             ○△✗ ตัดสินจากเป้า/Commitment + ทิศทาง (≥/≤) ที่ตั้งในนิยาม KPI (เกณฑ์ทางการ ถึงเป้า ○ · ถึง Commitment △ · ไม่ถึง ✗) ·
-            <b>📅 แผนรายเดือน</b> = สำหรับ KPI ที่แผนไม่เท่ากันทุกเดือน และ KPI สะสมที่เทียบเป้าทั้งปีตั้งแต่กลางปีไม่ได้ —
+            <b>แผนรายเดือน</b> = สำหรับ KPI ที่แผนไม่เท่ากันทุกเดือน และ KPI สะสมที่เทียบเป้าทั้งปีตั้งแต่กลางปีไม่ได้ —
             ป้าย ▲ ตามแผน / ▼ ช้ากว่าแผน เป็น<b>ข้อมูลประกอบ ไม่ใช่คะแนน</b> (คะแนน ○ △ ✗ ยังตัดสินจากเป้าทั้งปีเหมือนเดิม) ·
             เส้นประเทาในกราฟเล็ก = แผน
           </InfoMore>
@@ -1566,7 +1566,7 @@ function AutoTargetModal({ row, def, year, scopeText, deep, onClose, onSave }) {
   return (
     <div className="modal-scroll" /* modal-scroll = เลื่อนถึงปุ่มล่างได้เมื่อจอเตี้ย/คีย์บอร์ดเด้ง (UI-CONVENTIONS §4 · index.css) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, padding: 18, width: 'min(560px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>🎯 ตั้งเป้า — {f.name}</div>
+        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>ตั้งเป้า — {f.name}</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, marginBottom: 12, lineHeight: 1.6 }}>
           {scope}<br />
           <b style={{ color: 'var(--accent)' }}>⚡ ค่ารายเดือนระบบคำนวณให้เอง</b> — ที่ตั้งตรงนี้คือ "เกณฑ์ตัดสิน ○△✗" เท่านั้น
@@ -1609,7 +1609,7 @@ function AutoTargetModal({ row, def, year, scopeText, deep, onClose, onSave }) {
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
           <button onClick={close} style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-          <button onClick={() => onSave(f)} style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: 'pointer', fontSize: 13 }}>💾 บันทึก</button>
+          <button onClick={() => onSave(f)} style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: 'pointer', fontSize: 13 }}>บันทึก</button>
         </div>
       </div>
     </div>
@@ -1680,7 +1680,7 @@ function CatalogModal({ rows, canManage, usedNames = [], onClose, onChanged, onP
     /* ⚠️ ไม่ใช่ฟอร์มที่กรอกค้าง — ปิดจาก backdrop ได้ (UI-CONVENTIONS §5) */
     <div className="modal-scroll" /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, padding: 18, width: 'min(760px, 96vw)', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>🗂 ทะเบียนชื่อ KPI</div>
+        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>ทะเบียนชื่อ KPI</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.6 }}>
           ชื่อ + <b>ค่าตั้งต้น</b> (หน่วย · ทศนิยม · ทิศทาง · วิธีรวม 12 เดือน) ของ KPI แต่ละตัว —
           <b>ทุกช่องที่นี่มีผลทุกปี ทุกส่วนงาน</b> · เพิ่มชื่อใหม่ทำตอนกด ＋ เพิ่ม KPI แล้วพิมพ์ชื่อที่ยังไม่มี
@@ -2002,7 +2002,7 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
           <button onClick={onClose} style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-          <button onClick={() => onSave(f)} style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: 'pointer', fontSize: 13 }}>💾 บันทึก</button>
+          <button onClick={() => onSave(f)} style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: 'pointer', fontSize: 13 }}>บันทึก</button>
         </div>
       </div>
     </div>

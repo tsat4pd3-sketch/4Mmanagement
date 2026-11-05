@@ -595,7 +595,7 @@ export default function PEDocs() {
                           const extra = c.state === 'better' ? ` ${c.rpnItem} < ${c.rpnMaster}` : c.state === 'behind' ? ` → v${mItem?.version}` : c.state === 'diverged' ? ` (master ${c.rpnMaster ?? '—'})` : '';
                           return <>
                             <span title={`${meta.label}${mItem ? ` · master v${mItem.version} RPN ${c.rpnMaster ?? '—'}` : ''}`} style={{ fontSize: 11, fontWeight: 800, color: meta.color, border: `1px solid ${tint(meta.color, 'line')}`, borderRadius: 5, padding: '1px 6px', whiteSpace: 'nowrap' }}>{meta.icon} {meta.label}{extra}</span>
-                            {pendingSrc.has(it.id) ? <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700 }}>📬 เสนอแล้ว</span>
+                            {pendingSrc.has(it.id) ? <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700 }}>เสนอแล้ว</span>
                               : canEdit && (c.state === 'better' || c.state === 'unlinked') && <button style={btnSm} onClick={() => proposeOne(it)}>{c.state === 'better' ? 'เสนอเข้า master' : 'เสนอเป็นรายการใหม่'}</button>}
                           </>;
                         })()}
@@ -613,7 +613,7 @@ export default function PEDocs() {
                         {(it.recommended_action || it.action_taken) && (
                           <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: 8 }}>
                             <b style={lbl}>Action</b>{multiline(it.recommended_action)}
-                            {it.responsibility && <div style={{ color: 'var(--muted)' }}>👤 {it.responsibility}{it.target_date ? ` · เป้า ${fmtDate(it.target_date)}` : ''}</div>}
+                            {it.responsibility && <div style={{ color: 'var(--muted)' }}>{it.responsibility}{it.target_date ? ` · เป้า ${fmtDate(it.target_date)}` : ''}</div>}
                             {it.action_taken && <div style={{ marginTop: 4, color: 'var(--green)' }}>✔ {it.action_taken}</div>}
                           </div>
                         )}
@@ -652,7 +652,7 @@ export default function PEDocs() {
                           <td style={tdSt}>{it.char_no ?? '—'}</td>
                           <td style={tdSt}>
                             {it.product_char && <div style={{ fontWeight: 700, color: 'var(--text)' }}>{it.product_char}</div>}
-                            {it.process_char && <div style={{ color: 'var(--muted)' }}>⚙ {it.process_char}</div>}
+                            {it.process_char && <div style={{ color: 'var(--muted)' }}>{it.process_char}</div>}
                           </td>
                           <td style={tdSt}>{classChip(it.special_class)}</td>
                           <td style={tdSt}>{it.person || '—'}</td>
@@ -822,14 +822,14 @@ export default function PEDocs() {
             <label style={lbl}>เลข OP *<input value={procModal.op_no} onChange={e => setProcModal({ ...procModal, op_no: e.target.value })} placeholder="130 หรือ 100.8" style={{ marginTop: 4, fontFamily: 'monospace' }} /></label>
             <label style={lbl}>ลำดับ (เรียงผัง)<input type="number" step="any" value={procModal.seq} onChange={e => setProcModal({ ...procModal, seq: e.target.value })} style={{ marginTop: 4 }} /></label>
             <label style={{ ...lbl, gridColumn: '1 / -1' }}>ชื่อกระบวนการ *<input value={procModal.name} onChange={e => setProcModal({ ...procModal, name: e.target.value })} placeholder="PROJECTION WELD NUT" style={{ marginTop: 4 }} /></label>
-            <div style={{ ...lbl, gridColumn: '1 / -1' }}>📚 กระบวนการมาตรฐาน (คลัง PFMEA)
+            <div style={{ ...lbl, gridColumn: '1 / -1' }}>กระบวนการมาตรฐาน (คลัง PFMEA)
               <select value={procModal.master_process_id || ''} onChange={e => setProcModal({ ...procModal, master_process_id: e.target.value })} style={{ marginTop: 4 }}>
                 <option value="">— ไม่ผูก —</option>
                 {masters.filter(m => m.is_active !== false).map(m => <option key={m.id} value={m.id}>{m.name}{m.confirmed_at ? '' : ' (รอยืนยัน)'}</option>)}
               </select>
               {!procModal.master_process_id && (() => {
                 const sg = suggestMaster(procModal.name, procModal.kind, masters);
-                return sg.master ? <div onClick={() => setProcModal({ ...procModal, master_process_id: sg.master.id })} style={{ fontSize: 11, color: 'var(--blue)', marginTop: 3, cursor: 'pointer' }}>💡 ชื่อ{sg.exact ? 'ตรงกับ' : 'คล้าย'} "{sg.master.name}" — คลิกเพื่อผูก</div> : null;
+                return sg.master ? <div onClick={() => setProcModal({ ...procModal, master_process_id: sg.master.id })} style={{ fontSize: 11, color: 'var(--blue)', marginTop: 3, cursor: 'pointer' }}>ชื่อ{sg.exact ? 'ตรงกับ' : 'คล้าย'} "{sg.master.name}" — คลิกเพื่อผูก</div> : null;
               })()}
               {procModal.master_process_id && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>ผูกแล้วดึง failure mode มาตรฐานได้ที่แท็บ PFMEA → 📚 เติมจาก master</div>}
             </div>

@@ -68,7 +68,7 @@ export default function SapPendingReport() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ ...card, display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center' }}>
         <div>
-          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>🧾 ค้างตัดใน SAP</div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ค้างตัดใน SAP</div>
           <div style={{ fontSize: 24, fontWeight: 900, color: sum.totalSlips ? 'var(--amber)' : 'var(--green)' }}>{fmt(sum.totalSlips)} ใบ</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{fmt(sum.parts.length)} พาร์ท</div>
         </div>

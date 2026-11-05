@@ -629,7 +629,7 @@ export default function DieRegistry() {
       {/* แม่พิมพ์ที่ยังไม่ผูกชุด */}
       {unlinked.length > 0 && (
         <div style={{ ...warnBox, marginBottom: 12 }}>
-          <b>🧩 ยังไม่ได้อยู่ชุดไหน ({unlinked.length})</b>
+          <b>ยังไม่ได้อยู่ชุดไหน ({unlinked.length})</b>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
             {unlinked.map(d => (
               <button key={d.id} onClick={() => canEdit && openDie(d)} disabled={!canEdit} title={d.machine_name || ''}
@@ -765,7 +765,7 @@ export default function DieRegistry() {
                           </tbody>
                         </table>
                       </div>
-                      {s.note && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>📝 {s.note}</div>}
+                      {s.note && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>{s.note}</div>}
                     </div>
                   )}
                 </div>
@@ -778,7 +778,7 @@ export default function DieRegistry() {
       {/* ⚙️ ทะเบียนกลุ่มเครื่องปั๊ม/ไลน์ของแม่พิมพ์ (DR die_press_lines · 2026-09-08) — พับไว้ท้ายแท็บ (ตั้งค่านานๆ ครั้ง)
           code กรอกเอง (สั้น เช่น LINE-A) · ref_production_line = ชื่อไลน์ผลิตจริงเมื่อกลุ่มนั้นคือไลน์ (HDF1) ไว้ต่อ linkage OEE
           SimpleMasterPanel ยืนยันก่อนปิดใช้/ลบเอง (UI-CONVENTIONS §5.4) */}
-      <CollapseCard id="die_press_lines" title="⚙️ กลุ่มเครื่องปั๊ม / ไลน์ของแม่พิมพ์ (ทะเบียน)" count={pressLines.length} defaultOpen={false} storePrefix="die_registry">
+      <CollapseCard id="die_press_lines" title="กลุ่มเครื่องปั๊ม / ไลน์ของแม่พิมพ์ (ทะเบียน)" count={pressLines.length} defaultOpen={false} storePrefix="die_registry">
         <SimpleMasterPanel client={supabaseDR} table="die_press_lines" keyCol="code" canManage={canEdit}
           /* ด่านนับปลายทางก่อนลบ — die_sets.line_name + machines.line_name (เฉพาะ equipment_kind=die) */
           onBeforeDelete={masterDeleteGuard(supabaseDR, 'die_press_lines')}
@@ -797,7 +797,7 @@ export default function DieRegistry() {
           key สร้างให้อัตโนมัติ — คนกรอกแค่ชื่อ · mo_item_type = ชนิดอุปกรณ์ที่ใบแจ้งซ่อมเติมให้เมื่อเลือกแม่พิมพ์ */}
       {/* ⚙️ ทะเบียนประเภท OP ของแม่พิมพ์ (DR die_op_types · แผงจัดการ 2026-10-06) — เดิมมีตารางแต่ไม่มีที่แก้บนจอ
           mo_item_type = ชนิดอุปกรณ์ในใบแจ้งซ่อม **ชนะรูปแบบชุด** (HDF: ชุดเดียวมี HYDRO/BENDING/PREFORM — คอมเมนต์ทีม DIE 06/10) */}
-      <CollapseCard id="die_op_types" title="⚙️ ประเภท OP ของแม่พิมพ์ (ทะเบียน)" count={opTypes.length} defaultOpen={false} storePrefix="die_registry">
+      <CollapseCard id="die_op_types" title="ประเภท OP ของแม่พิมพ์ (ทะเบียน)" count={opTypes.length} defaultOpen={false} storePrefix="die_registry">
         <SimpleMasterPanel client={supabaseDR} table="die_op_types" keyCol="key" canManage={canEdit}
           onBeforeDelete={masterDeleteGuard(supabaseDR, 'die_op_types', r => r?.label)}
           keyFrom={dieSetKindKey}
@@ -810,7 +810,7 @@ export default function DieRegistry() {
           ]} />
       </CollapseCard>
 
-      <CollapseCard id="die_set_kinds" title="⚙️ รูปแบบชุดแม่พิมพ์ (ทะเบียน)" count={setKinds.filter(k => k.is_active).length} defaultOpen={false} storePrefix="die_registry">
+      <CollapseCard id="die_set_kinds" title="รูปแบบชุดแม่พิมพ์ (ทะเบียน)" count={setKinds.filter(k => k.is_active).length} defaultOpen={false} storePrefix="die_registry">
         <SimpleMasterPanel client={supabaseDR} table="die_set_kinds" keyCol="key" canManage={canEdit}
           onBeforeDelete={masterDeleteGuard(supabaseDR, 'die_set_kinds', r => r?.label)}
           keyFrom={dieSetKindKey}

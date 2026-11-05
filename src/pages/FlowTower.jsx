@@ -339,7 +339,7 @@ export default function FlowTower() {
       <div style={{ ...card, padding: '14px 16px', marginBottom: 16, borderColor: (S.blocks?.length ? 'var(--red-line)' : 'var(--border)') }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
           <div style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
-            🚧 จุดที่ความต้องการค้าง ไม่กลายเป็นใบสั่ง
+            จุดที่ความต้องการค้าง ไม่กลายเป็นใบสั่ง
           </div>
           <div style={{ fontSize: 12, color: S.blocks?.length ? 'var(--red)' : 'var(--green)', fontWeight: 800 }}>
             {S.blocks?.length ? `${fmt(S.blocks.length)} พาร์ท · ${fmt(S.blockQty)} ชิ้น` : 'ไม่มีจุดตัน'}
@@ -394,7 +394,7 @@ export default function FlowTower() {
 
       {/* ── ตารางข้อต่อ: ใช้เล่าตอนนำเสนอ ── */}
       <div style={{ ...card, padding: '14px 16px' }}>
-        <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 10, fontFamily: 'var(--font-display)' }}>🔍 ข้อต่อของสายข้อมูล — ใครส่งให้ใคร ด้วยกลไกอะไร</div>
+        <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 10, fontFamily: 'var(--font-display)' }}>ข้อต่อของสายข้อมูล — ใครส่งให้ใคร ด้วยกลไกอะไร</div>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead><tr style={{ background: 'var(--bg2)' }}>

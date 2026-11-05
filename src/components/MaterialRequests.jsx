@@ -501,7 +501,7 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
         <b style={{ fontSize: 13 }}>รายการสินค้าคงคลัง</b>
         <span style={{ flex: 1 }} />
         {canRecord && <>
-          <button onClick={() => onPick(null)} style={btnSt()}>🗂 เลือกจาก Parts Master</button>
+          <button onClick={() => onPick(null)} style={btnSt()}>เลือกจาก Parts Master</button>
           <button onClick={addItem} style={btnSt()}>＋ เพิ่มแถว</button>
         </>}
       </div>
@@ -566,9 +566,9 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
         <button onClick={onClose} style={btnSt()}>ปิด</button>
         {canRecord && <>
-          <button onClick={() => onSave()} style={btnSt()}>💾 บันทึก</button>
+          <button onClick={() => onSave()} style={btnSt()}>บันทึก</button>
           {req.status === 'draft' &&
-            <button onClick={() => onSave('submitted')} style={btnSt('var(--accent)')}>📤 บันทึก + ส่งขออนุมัติ</button>}
+            <button onClick={() => onSave('submitted')} style={btnSt('var(--accent)')}>บันทึก + ส่งขออนุมัติ</button>}
         </>}
       </div>
     </Modal>

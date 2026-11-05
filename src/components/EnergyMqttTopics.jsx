@@ -155,10 +155,10 @@ export default function EnergyMqttTopics({ points, canEdit }) {
                 onChange={e => { const [k, ...n] = e.target.value.split('::'); setForm(f => ({ ...f, scope_kind: k || 'zone', scope_name: n.join('::') })); }}
                 style={inp}>
                 <option value="">— เลือกจุดวัด —</option>
-                <optgroup label="🔧 โซน utility / facility">
+                <optgroup label="โซน utility / facility">
                   {points.filter(p => p.kind === 'zone').map(p => <option key={`z${p.name}`} value={`zone::${p.name}`}>{p.name}</option>)}
                 </optgroup>
-                <optgroup label="🏭 ไลน์ผลิต">
+                <optgroup label="ไลน์ผลิต">
                   {points.filter(p => p.kind === 'line').map(p => <option key={`l${p.name}`} value={`line::${p.name}`}>{p.name}</option>)}
                 </optgroup>
               </select></label>
@@ -213,7 +213,7 @@ export default function EnergyMqttTopics({ points, canEdit }) {
 
       {/* ── ทะเบียน topic ── */}
       <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
-        <div style={{ ...secTitle, padding: '12px 14px 0' }}>📋 topic ที่ตั้งไว้ ({rows.length})</div>
+        <div style={{ ...secTitle, padding: '12px 14px 0' }}>topic ที่ตั้งไว้ ({rows.length})</div>
         {rows.length === 0 ? (
           <div style={{ padding: 14, fontSize: 12.5, color: 'var(--muted)' }}>
             ยังไม่มี topic — {canEdit ? 'เพิ่มจากฟอร์มด้านบน' : 'ต้องมีสิทธิ์บันทึกถึงจะเพิ่มได้'}

@@ -165,7 +165,7 @@ export default function OrgScopePicker({
         <optgroup key={g.label} label={g.label}>
           {g.items.map(o => (
             <option key={o.key} value={o.key}>
-              {`💰 ${o.value}${o.cc_name ? ` · ${o.cc_name}` : ''}`}
+              {`${o.value}${o.cc_name ? ` · ${o.cc_name}` : ''}`}
             </option>
           ))}
         </optgroup>

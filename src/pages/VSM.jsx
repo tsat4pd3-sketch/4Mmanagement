@@ -620,7 +620,7 @@ export default function VSM() {
           return (
             <div style={{ ...S.card, marginBottom: 12, padding: '10px 14px' }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: gaps.length ? 8 : 0 }}>
-                📋 ข้อมูลที่ VSM ยังขาด{gaps.length ? ` · ${gaps.length} รายการ` : ''}
+                ข้อมูลที่ VSM ยังขาด{gaps.length ? ` · ${gaps.length} รายการ` : ''}
                 {gaps.length > 0 && <span style={{ fontWeight: 400, fontSize: 11, color: 'var(--muted)' }}> — กดปุ่มท้ายรายการเพื่อไปลงข้อมูลที่ต้นทาง</span>}
               </div>
               {!gaps.length && <div style={{ fontSize: 12.5, color: 'var(--accent)', marginTop: 6 }}>✅ ข้อมูลครบทุกช่องของใบนี้แล้ว</div>}
@@ -710,7 +710,7 @@ export default function VSM() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10, alignContent: 'start' }}>
             <div>
               <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>
-                🚚 ลูกค้า — {model.customer.name || model.header.customer || 'ไม่ระบุ'}
+                ลูกค้า — {model.customer.name || model.header.customer || 'ไม่ระบุ'}
               </label>
               <input value={overrides.__customer_pattern || ''} onChange={e => setTopOv('__customer_pattern', e.target.value)}
                 placeholder={model.customer.roundsPerDay ? `ระบบเห็น ${model.customer.roundsPerDay} รอบ/วัน` : 'เช่น 1:4:2'}
@@ -719,7 +719,7 @@ export default function VSM() {
             {model.suppliers.map(sp => (
               <div key={sp.matNo}>
                 <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>
-                  🏭 {sp.supplier || 'ยังไม่ระบุผู้ส่งมอบ'} · {sp.matNo}
+                  {sp.supplier || 'ยังไม่ระบุผู้ส่งมอบ'} · {sp.matNo}
                 </label>
                 <input value={(overrides.__supplier_pattern || {})[sp.matNo] || ''} onChange={e => setSupPattern(sp.matNo, e.target.value)}
                   placeholder="เช่น 7:1:1"
@@ -841,7 +841,7 @@ export default function VSM() {
               ))}
               {(liveData?.summary?.plannedOpen || 0) > 0 && (
                 <span style={{ fontSize: 12, padding: '5px 12px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
-                  🗓️ หยุดตามแผนค้าง {liveData.summary.plannedOpen} รายการ (ไม่นับเป็น Andon)
+                  หยุดตามแผนค้าง {liveData.summary.plannedOpen} รายการ (ไม่นับเป็น Andon)
                 </span>
               )}
             </div>
@@ -849,7 +849,7 @@ export default function VSM() {
             {/* ── Downtime ค้าง (Andon) — ต้องเห็นก่อนอย่างอื่น ห้ามซ่อน ── */}
             {(liveData?.summary?.alarms || []).length > 0 && (
               <div style={{ background: 'var(--red-dim)', borderLeft: '3px solid var(--red)', borderRadius: 6, padding: '8px 12px', marginBottom: 12 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--red)', marginBottom: 4 }}>🚨 Downtime ค้างในสายธารนี้</div>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--red)', marginBottom: 4 }}>Downtime ค้างในสายธารนี้</div>
                 {liveData.summary.alarms.map((a, i) => (
                   <div key={i} style={{ fontSize: 12.5, color: 'var(--text)', padding: '2px 0' }}>
                     <b>{a.line}</b>{a.machineNo ? ` · ${a.machineNo}` : ''} — {a.typeName || 'ไม่ระบุประเภท'}
@@ -909,12 +909,12 @@ export default function VSM() {
                     <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{oee.note}</div>
                     {(lv?.alarms || []).map((a, j) => (
                       <div key={j} style={{ fontSize: 11.5, color: 'var(--red)' }}>
-                        🚨 {a.machineNo || 'ไม่ระบุเครื่อง'} · {a.typeName || '—'}{a.openMin != null ? ` · ค้าง ${a.openMin} นาที` : ''}
+                        {a.machineNo || 'ไม่ระบุเครื่อง'} · {a.typeName || '—'}{a.openMin != null ? ` · ค้าง ${a.openMin} นาที` : ''}
                       </div>
                     ))}
                     {(lv?.plannedOpen || []).length > 0 && (
                       <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                        🗓️ หยุดตามแผนค้าง {lv.plannedOpen.length} รายการ
+                        หยุดตามแผนค้าง {lv.plannedOpen.length} รายการ
                       </div>
                     )}
                   </div>

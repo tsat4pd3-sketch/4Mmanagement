@@ -78,7 +78,7 @@ export default function PickScanModal({ request, canOverride = false, fullName, 
         <div onClick={e => e.stopPropagation()} className="modal-scroll"
           style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(520px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)' }}>🔍 เริ่มเตรียม — สแกนยืนยันของที่หยิบ</h3>
+            <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)' }}>เริ่มเตรียม — สแกนยืนยันของที่หยิบ</h3>
             <button onClick={onClose} className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>✕</button>
           </div>
 
@@ -115,7 +115,7 @@ export default function PickScanModal({ request, canOverride = false, fullName, 
           )}
           {!overriding && (
             <button onClick={() => setScanOpen(true)} disabled={busy} style={{ ...btn('var(--accent)', 'var(--accent-ink)', 'transparent', busy), marginTop: 8 }}>
-              📷 {partOk ? 'สแกนใหม่' : 'สแกนพาร์ท'}
+              {partOk ? 'สแกนใหม่' : 'สแกนพาร์ท'}
             </button>
           )}
 
@@ -139,7 +139,7 @@ export default function PickScanModal({ request, canOverride = false, fullName, 
           )}
 
           <div style={{ marginTop: 12, fontSize: 11.5, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 8, padding: '7px 10px' }}>
-            💾 กดยืนยัน = ระบบ<b>ตัดสต็อกให้เลย</b> (คลัง STORE −{fmt(Number(qty) || 0)} · ไลน์ {request?.line_name} +{fmt(Number(qty) || 0)}) ตามขั้น "Scan for SAP update" — ไม่ต้องไปบันทึกจ่ายที่ Line Stock ซ้ำ
+            กดยืนยัน = ระบบ<b>ตัดสต็อกให้เลย</b> (คลัง STORE −{fmt(Number(qty) || 0)} · ไลน์ {request?.line_name} +{fmt(Number(qty) || 0)}) ตามขั้น "Scan for SAP update" — ไม่ต้องไปบันทึกจ่ายที่ Line Stock ซ้ำ
           </div>
 
           {!overriding && (
@@ -157,11 +157,11 @@ export default function PickScanModal({ request, canOverride = false, fullName, 
                 !overriding ? (
                   <button onClick={() => setOverriding(true)} disabled={busy}
                     style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
-                    🔓 สแกนไม่ได้ / ป้ายพาร์ทหาย → ปลดบล็อกโดยหัวหน้า (บันทึกชื่อ+เหตุผล)
+                    สแกนไม่ได้ / ป้ายพาร์ทหาย → ปลดบล็อกโดยหัวหน้า (บันทึกชื่อ+เหตุผล)
                   </button>
                 ) : (
                   <div>
-                    <div style={{ fontSize: 12.5, fontWeight: 800, color: '#ef4444' }}>🔓 ปลดบล็อก — ระบุเหตุผล (ถูกบันทึกเป็นข้อมูล)</div>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: '#ef4444' }}>ปลดบล็อก — ระบุเหตุผล (ถูกบันทึกเป็นข้อมูล)</div>
                     <select value={reasonKey} onChange={e => setReasonKey(e.target.value)} style={{ ...inputSt, marginTop: 6 }}>
                       <option value="">— เลือกเหตุผล —</option>
                       {OVERRIDE_REASONS.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}

@@ -124,7 +124,7 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', width: 'min(1180px, 100%)', maxHeight: '92vh', overflow: 'auto', padding: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <b style={{ fontSize: 14, color: 'var(--text)' }}>📥 นำเข้าตัวเลขฐานจาก Excel ของบัญชี — ปี {year + 543}</b>
+          <b style={{ fontSize: 14, color: 'var(--text)' }}>นำเข้าตัวเลขฐานจาก Excel ของบัญชี — ปี {year + 543}</b>
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>ค่ากลาง → ทั้งโรงงาน · ยอดเงินของหน่วย → {unitLabel}</span>
           <span style={{ flex: 1 }} />
           <button onClick={onClose} style={{ ...inp, cursor: 'pointer' }}>ปิด</button>

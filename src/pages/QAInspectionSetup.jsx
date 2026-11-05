@@ -4,7 +4,7 @@
  * หน้าตั้งค่าฝั่ง QA: สร้าง part master แล้วกด "🎯 ตั้งค่าจุดตรวจ & Drawing" เปิดโมดัล
  * `QaPointsEditor` — **ตัวเดียวกับ PM ตั้งค่าจุดตรวจ** (อัปรูป/Drawing หลายแผ่น · ซูม · ปักหมุด ·
  * การ์ดจุดตรวจ · รูปโคลสอัพ · แถบไปที่จุด · กดบันทึกครั้งเดียว) ต่างแค่ช่องสเปคแบบ QA
- * (Variable/Attribute · LSL/USL · Rank · Stage · ความถี่) — 📄 docs/modules/inspection-point-setup.md
+ * (Variable/Attribute · LSL/USL · Rank · Stage · ความถี่) — docs/modules/inspection-point-setup.md
  * หน้านี้เหลือ: รายการพาร์ท · ดู drawing+หมุด (อ่านอย่างเดียว) · ตารางมาตรฐาน · ส่งเข้า SPC
  *
  * ตาราง: qa_parts, qa_part_drawings, qa_inspection_items (MAIN project) — เขียนได้เฉพาะ qa:manage
@@ -433,7 +433,7 @@ export default function QAInspectionSetup() {
               {/* 🔐 มีสิทธิ์ qa:manage แต่พาร์ทนี้เป็นของไลน์ส่วนงานอื่น — เขียนบอก ห้ามซ่อนปุ่มเงียบ */}
               {canManage && !partWrite.ok && (
                 <div style={{ fontSize: 12, color: 'var(--amber)', padding: '6px 0' }}>
-                  🔒 {writeBlockText(partWrite, { what: 'พาร์ทนี้' })}
+                  {writeBlockText(partWrite, { what: 'พาร์ทนี้' })}
                 </div>
               )}
               {canManage && partWrite.ok && (
@@ -457,7 +457,7 @@ export default function QAInspectionSetup() {
             {/* drawings + หมุด — อ่านอย่างเดียว (แก้ในโมดัล 🎯 ตั้งค่าจุดตรวจ — ตัวปักหมุดตัวเดียวกับ PM) */}
             <div style={cardSt}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
-                <div style={{ fontWeight: 800, fontSize: 13.5 }}>🖼 Drawings ({drawings.length} แผ่น){sel.drawing_rev ? ` · Rev ${sel.drawing_rev}` : ''}</div>
+                <div style={{ fontWeight: 800, fontSize: 13.5 }}>Drawings ({drawings.length} แผ่น){sel.drawing_rev ? ` · Rev ${sel.drawing_rev}` : ''}</div>
                 {canEdit && drawings.length > 0 && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>แตะหมุด = ไปแก้จุดนั้น</div>}
               </div>
               {drawings.length === 0 ? (
@@ -486,7 +486,7 @@ export default function QAInspectionSetup() {
             <div style={{ ...cardSt, padding: 0 }}>
               <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
                 <div style={{ fontWeight: 800, fontSize: 13.5 }}>
-                  📋 มาตรฐานการตรวจ ({items.length} จุด
+                  มาตรฐานการตรวจ ({items.length} จุด
                   {items.some(i => i.rank) ? ` · Rank M ${items.filter(i => i.rank === 'M').length} / SC ${items.filter(i => i.rank === 'SC').length}` : ''})
                 </div>
                 {(canEdit || (canManage && items.length > 0)) && (
@@ -516,7 +516,7 @@ export default function QAInspectionSetup() {
                           {it.image_path && <span title="มีรูปโคลสอัพของจุดนี้" style={{ marginLeft: 4, fontSize: 11 }}>🔍</span>}
                           {it.pos_x != null && drawings.length > 1 && (
                             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 500, marginTop: 1 }}>
-                              🖼 {drawings.find(d => d.id === it.drawing_id)?.title || drawings[0]?.title || '—'}
+                              {drawings.find(d => d.id === it.drawing_id)?.title || drawings[0]?.title || '—'}
                             </div>
                           )}
                         </td>
@@ -560,7 +560,7 @@ export default function QAInspectionSetup() {
         <Modal title={partModal.id ? `✏️ แก้ไข ${partModal.part_no}` : '➕ เพิ่ม Part'} onClose={() => { setPartModal(null); setBomSearch(''); }}>
           {/* เลือกจากฐานข้อมูล BOM / Product Master → เติมฟอร์มให้ (แก้ทับได้) */}
           <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: 'var(--bg3)', border: '1px dashed var(--border2)' }}>
-            <Field label="🔍 เลือกจากฐานข้อมูล BOM / Product Master">
+            <Field label="เลือกจากฐานข้อมูล BOM / Product Master">
               <input style={inputSt} value={bomSearch} onChange={e => setBomSearch(e.target.value)}
                 placeholder={bomOptions === null ? 'กำลังโหลดฐานข้อมูล…' : `พิมพ์ค้นหา Part No. / ชื่อพาร์ท / MAT.NO (${bomOptions.length.toLocaleString()} รายการ)`} />
             </Field>

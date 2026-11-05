@@ -350,7 +350,7 @@ export default function NPI() {
               (ปุ่มที่กดไปแล้วไม่ตรงรุ่น แย่กว่าไม่มีปุ่ม · ยังไม่ผูก = ไปติ๊กที่ ✏️ โปรเจค) */}
           {nmBoardHref && (
             <a href={nmBoardHref} style={{ ...ghost, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
-              title="เปิดบอร์ด New Model (IEC) ของรุ่นนี้">🧭 บอร์ด New Model</a>
+              title="เปิดบอร์ด New Model (IEC) ของรุ่นนี้">บอร์ด New Model</a>
           )}
           {project && canEdit && <button type="button" className="pg-btn" onClick={() => setProjModal({ ...emptyProject, ...project })}>โปรเจค</button>}
           {canEdit && <button type="button" className="pg-btn" onClick={() => setProjModal({ ...emptyProject, project_code: nextProjectCode(projects.map(p => p.project_code), today), template_id: templates[0]?.id || '' })}>+ โปรเจค</button>}
@@ -447,7 +447,7 @@ export default function NPI() {
             {/* 🔗 ผูกกับบอร์ด New Model (/nm-board) — 2026-10-06 · คำสั่ง user "2 หน้านี้ต้อง link กัน"
                 🔴 ระบบ **เรียง** ตัวที่น่าจะใช่ขึ้นก่อนเท่านั้น ห้ามเลือกให้เอง — ผูกผิดรุ่น = บอร์ดโชว์ตัวเลขของรุ่นอื่น
                    ซึ่งแย่กว่าไม่โชว์เลย (กฎความซื่อสัตย์ของจอ) */}
-            <Field label="🧭 รุ่นบนบอร์ด New Model" span={2}
+            <Field label="รุ่นบนบอร์ด New Model" span={2}
               hint="ผูกแล้วบอร์ด /nm-board จะดึงตัวเลขจริงจากโปรเจคนี้ไปแสดง และกดข้ามไปมาได้ · เว้นว่าง = ยังไม่ผูก">
               <select style={inp} value={projModal.nm_board_id || ''}
                 onChange={e => setProjModal({ ...projModal, nm_board_id: e.target.value })}>
@@ -529,7 +529,7 @@ function PartsTable({ parts, rollByPart, partId, onPick, canEdit, onAdd, onEdit,
   return (
     <div style={{ ...card, marginBottom: 14 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-        <div style={{ fontSize: 14, fontWeight: 800 }}>📦 พาร์ทในโปรเจค ({parts.length})</div>
+        <div style={{ fontSize: 14, fontWeight: 800 }}>พาร์ทในโปรเจค ({parts.length})</div>
         {canEdit && <button style={btn()} onClick={onAdd}>+ พาร์ท</button>}
       </div>
       {!parts.length ? <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>ยังไม่มีพาร์ท — กด + พาร์ท (เลือกจากชุด PFC/FMEA/CP ที่มีอยู่ได้เลย เช่น 060/061)</div> : (
@@ -604,10 +604,10 @@ function Board({ projects, rollByProject, templates, project, tplPhases, parts, 
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>{pj.project_code} · {pj.customer || '—'} · {tpl?.label || '—'}</div>
               <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 12.5, flexWrap: 'wrap' }}>
-                <span>📦 {r.parts} พาร์ท</span>
-                <span>📄 {r.done}/{r.total} ({r.pct}%)</span>
+                <span>{r.parts} พาร์ท</span>
+                <span>{r.done}/{r.total} ({r.pct}%)</span>
                 {r.overdue > 0 && <span style={{ color: 'var(--red)', fontWeight: 800 }}>⏰ เลย {r.overdue}</span>}
-                <span style={{ color: left != null && left < 0 ? 'var(--red)' : 'var(--text2)' }}>🏁 SOP {pj.sop_date ? fmtDate(pj.sop_date) : '—'}{left != null ? ` (${left >= 0 ? `อีก ${left} วัน` : `เลย ${-left} วัน`})` : ''}</span>
+                <span style={{ color: left != null && left < 0 ? 'var(--red)' : 'var(--text2)' }}>SOP {pj.sop_date ? fmtDate(pj.sop_date) : '—'}{left != null ? ` (${left >= 0 ? `อีก ${left} วัน` : `เลย ${-left} วัน`})` : ''}</span>
               </div>
               <div style={{ height: 6, background: 'var(--bg2)', borderRadius: 3, marginTop: 8, overflow: 'hidden' }}>
                 <div style={{ width: `${r.pct}%`, height: '100%', background: (LIGHT[r.light] || LIGHT.grey).color }} />
@@ -630,7 +630,7 @@ function Board({ projects, rollByProject, templates, project, tplPhases, parts, 
           </div>
 
           <div style={{ ...card }}>
-            <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>🗂️ พาร์ท × เฟส — {project.name}</div>
+            <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>พาร์ท × เฟส — {project.name}</div>
             {!parts.length ? <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>ยังไม่มีพาร์ท — เพิ่มที่แท็บ 📦 พาร์ท & PPAP</div>
               : !tplPhases.length ? <div style={{ color: 'var(--amber)', fontSize: 12.5, fontWeight: 700 }}>แม่แบบของโปรเจคนี้ยังไม่มีเฟส — ตั้งที่แท็บ ⚙️ แม่แบบ</div> : (
               <div style={{ overflowX: 'auto' }}>

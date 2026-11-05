@@ -369,7 +369,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
     <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
       {/* Left: Form fields */}
       <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>📋 ข้อมูล Event</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>ข้อมูล Event</div>
 
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div>
@@ -474,7 +474,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
       {/* Right: Checklist preview */}
       <div className="card">
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 16 }}>
-          📋 Checklist ตาม Matrix
+          Checklist ตาม Matrix
           {selectedEvent && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400, marginLeft: 8 }}>Event #{selectedEvent.event_no} · {eventChecks.length} รายการ</span>}
         </div>
 
@@ -1329,7 +1329,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
         {/* Checklist */}
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>
-            📋 Checklist ({completions.filter(c => c.result !== 'pending').length}/{eventChecks.length} รายการเสร็จ)
+            Checklist ({completions.filter(c => c.result !== 'pending').length}/{eventChecks.length} รายการเสร็จ)
           </div>
           {loadingChecks ? (
             <div style={{ color: 'var(--muted)', fontSize: 12 }}>กำลังโหลด...</div>

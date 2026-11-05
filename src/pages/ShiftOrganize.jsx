@@ -535,7 +535,7 @@ export default function ShiftOrganize() {
             ))}
           </div>
           <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--muted)' }}>
-            กด <b>+ กำหนด</b> ที่แถวนั้น หรือ <b>🔁 เติมกะล่วงหน้า</b> — ไลน์ที่สร้างใหม่หลังเติมตารางไปแล้ว จะไม่มีแถวของตัวเอง
+            กด <b>+ กำหนด</b> ที่แถวนั้น หรือ <b>เติมกะล่วงหน้า</b> — ไลน์ที่สร้างใหม่หลังเติมตารางไปแล้ว จะไม่มีแถวของตัวเอง
             {' '}· ไลน์ลูกที่ขึ้น <b>↳ ตามไลน์แม่</b> ถือว่ามีกะแล้ว ไม่อยู่ในลิสต์นี้
           </div>
         </div>
@@ -548,8 +548,8 @@ export default function ShiftOrganize() {
             <tr>
               <th style={{ minWidth: 180 }}>ไลน์ผลิต</th>
               <th style={{ minWidth: 80 }}>Section</th>
-              <th style={{ textAlign: 'center', minWidth: 130 }}>☀️ กะเช้า</th>
-              <th style={{ textAlign: 'center', minWidth: 130 }}>🌙 กะดึก</th>
+              <th style={{ textAlign: 'center', minWidth: 130 }}>กะเช้า</th>
+              <th style={{ textAlign: 'center', minWidth: 130 }}>กะดึก</th>
               {canEdit && <th style={{ textAlign: 'center', minWidth: 90 }}>จัดการ</th>}
             </tr>
           </thead>
@@ -649,7 +649,7 @@ export default function ShiftOrganize() {
       {deptRows.length > 0 && (
         <>
           <h3 style={{ margin: '0 0 4px', fontFamily: 'var(--font-display)', fontSize: 15, color: 'var(--text2)' }}>
-            🏢 หน่วยงานสนับสนุน (ตั้งกะทั้งแผนก)
+            หน่วยงานสนับสนุน (ตั้งกะทั้งแผนก)
           </h3>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12, padding: '0 2px' }}>
             พนักงานที่ไม่ได้ผูกกับไลน์ผลิต (ช่างซ่อมบำรุง · QA · คลัง) หมุน A/B พร้อมกันทั้งแผนก
@@ -663,8 +663,8 @@ export default function ShiftOrganize() {
                 <tr>
                   <th style={{ minWidth: 180 }}>หน่วยงาน</th>
                   <th style={{ minWidth: 120 }}>พนักงาน</th>
-                  <th style={{ textAlign: 'center', minWidth: 130 }}>☀️ กะเช้า</th>
-                  <th style={{ textAlign: 'center', minWidth: 130 }}>🌙 กะดึก</th>
+                  <th style={{ textAlign: 'center', minWidth: 130 }}>กะเช้า</th>
+                  <th style={{ textAlign: 'center', minWidth: 130 }}>กะดึก</th>
                   {canEditDept && <th style={{ textAlign: 'center', minWidth: 90 }}>จัดการ</th>}
                 </tr>
               </thead>
@@ -683,8 +683,8 @@ export default function ShiftOrganize() {
                             ⚠ นอกผัง
                           </span>
                         )}
-                        {d.orphan && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--muted)' }} title="แผนกขึ้นตรงฝ่าย ไม่สังกัดส่วนงานผลิต">🏛️ ขึ้นตรงฝ่าย</span>}
-                        {isMyUnit(d) && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: 'var(--green)' }} title="หน่วยงานที่บัญชีนี้ดูแล">🏠 หน่วยงานของฉัน</span>}
+                        {d.orphan && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--muted)' }} title="แผนกขึ้นตรงฝ่าย ไม่สังกัดส่วนงานผลิต">ขึ้นตรงฝ่าย</span>}
+                        {isMyUnit(d) && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: 'var(--green)' }} title="หน่วยงานที่บัญชีนี้ดูแล">หน่วยงานของฉัน</span>}
                       </td>
                       <td style={{ fontSize: 12, color: 'var(--muted)' }}>
                         {d.total} คน
@@ -715,7 +715,7 @@ export default function ShiftOrganize() {
                           {!canEditDeptRow(d) ? (
                             <span style={{ fontSize: 11, color: 'var(--muted)' }}
                               title={`หน่วยงานนี้ไม่ใช่ของคุณ — บัญชีนี้ตั้งหน่วยงานไว้เป็น "${mySection}"`}>
-                              🔒 ของหน่วยงานอื่น
+                              ของหน่วยงานอื่น
                             </span>
                           ) : (
                           <button onClick={() => toggleDept(d.name)}
@@ -758,7 +758,7 @@ export default function ShiftOrganize() {
       {/* Individual Overrides */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h3 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 15, color: 'var(--text2)' }}>
-          🔀 รายการพิเศษรายบุคคล (สัปดาห์นี้)
+          รายการพิเศษรายบุคคล (สัปดาห์นี้)
         </h3>
         {canEdit && (
           <button
@@ -994,7 +994,7 @@ export default function ShiftOrganize() {
         <div className="overlay">
           <div className="modal">
             <h3 style={{ marginTop: 0, marginBottom: 18, fontFamily: 'var(--font-display)', color: 'var(--text)', fontSize: 16 }}>
-              🔀 เพิ่มรายการพิเศษรายบุคคล
+              เพิ่มรายการพิเศษรายบุคคล
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>

@@ -145,7 +145,7 @@ export default function SimpleMasterPanel({
       ) : (
         <>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
-            <input placeholder="🔍 ค้นหา…" value={q} onChange={e => setQ(e.target.value)} style={{ ...inp, width: 220 }} />
+            <input placeholder="ค้นหา…" value={q} onChange={e => setQ(e.target.value)} style={{ ...inp, width: 220 }} />
             {offCount > 0 && <label style={{ fontSize: 11.5, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 4 }}><input type="checkbox" checked={showOff} onChange={e => setShowOff(e.target.checked)} /> แสดงที่ปิดใช้ ({offCount})</label>}
             <div style={{ flex: 1 }} />
             {canManage && !adding && <button onClick={() => setAdding({})} style={btn('var(--accent)', 'var(--accent-ink)')}>+ เพิ่ม</button>}

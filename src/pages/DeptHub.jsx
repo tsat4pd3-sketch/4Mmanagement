@@ -563,7 +563,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             {tr(isDayShift ? '☀️ กะเช้า 08:00–20:00' : '🌙 กะดึก 20:00–08:00')}
           </span>
           <span className="hub-date" style={{ fontFamily: 'var(--font-body)', fontSize: 12, fontWeight: 600, color: 'var(--text2)', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, padding: '5px 12px' }}>
-            📅 {thaiDate}
+            {thaiDate}
           </span>
         </div>
       </div>

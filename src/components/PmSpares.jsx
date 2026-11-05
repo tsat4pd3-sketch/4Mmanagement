@@ -138,7 +138,7 @@ export function PlanSparesModal({ row, canEdit, canIssue, byName, byUid, onClose
   }
 
   return (
-    <Shell title="🔩 อะไหล่ที่ใช้ใน PM รอบหนึ่ง" onClose={onClose}
+    <Shell title="อะไหล่ที่ใช้ใน PM รอบหนึ่ง" onClose={onClose}
       sub={<>{eqLabel || '—'}{row.eq?.line_name ? ` · ${row.eq.line_name}` : ''} · รอบ: <b>{row.cycleText || '—'}</b>{row.nextDue ? ` · PM ครั้งถัดไป ${row.nextDue.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short' })}` : ''}</>}>
       {loadErr && <div style={{ color: '#ef4444', fontSize: 12.5, fontWeight: 700, marginBottom: 8 }}>⚠️ {loadErr}</div>}
       {loading ? <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด…</div> : (<>
@@ -177,7 +177,7 @@ export function PlanSparesModal({ row, canEdit, canIssue, byName, byUid, onClose
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap', marginTop: 10 }}>
             <div style={{ flex: '1 1 260px', minWidth: 0 }}>
               <SearchSelect value={pick.id} text={pick.text} options={options} onChange={({ id, text }) => setPick({ id: id || '', text: text || '' })}
-                placeholder="🔎 ค้นอะไหล่จากคลัง (ชื่อ / รหัส / ชั้นวาง)" emptyText="ไม่พบในคลังอะไหล่ — เพิ่มอะไหล่ใหม่ที่ ทะเบียนอุปกรณ์ → คลังอะไหล่" />
+                placeholder="ค้นอะไหล่จากคลัง (ชื่อ / รหัส / ชั้นวาง)" emptyText="ไม่พบในคลังอะไหล่ — เพิ่มอะไหล่ใหม่ที่ ทะเบียนอุปกรณ์ → คลังอะไหล่" />
             </div>
             <input type="number" min="0" step="any" value={pickQty} onChange={e => setPickQty(e.target.value)} style={{ ...inp, width: 80 }} aria-label="จำนวนต่อรอบ" />
             <button onClick={addLine} disabled={busy || !pick.id} style={{ ...btn('#3dd65c', true), opacity: pick.id ? 1 : 0.5 }}>+ เพิ่ม</button>
@@ -192,7 +192,7 @@ export function PlanSparesModal({ row, canEdit, canIssue, byName, byUid, onClose
           </span>
           {canIssue
             ? <button onClick={issue} disabled={busy || !ready.allOk} title={ready.allOk ? 'ตัดสต็อกทุกรายการในครั้งเดียว' : 'มีอะไหล่ไม่พอ'}
-                style={{ ...btn('#4a90e0', true), opacity: ready.allOk ? 1 : 0.45, cursor: ready.allOk ? 'pointer' : 'not-allowed' }}>📦 เบิกอะไหล่ตามแผน PM</button>
+                style={{ ...btn('#4a90e0', true), opacity: ready.allOk ? 1 : 0.45, cursor: ready.allOk ? 'pointer' : 'not-allowed' }}>เบิกอะไหล่ตามแผน PM</button>
             : <span style={{ fontSize: 12, color: 'var(--muted)' }}>เบิกได้เฉพาะผู้มีสิทธิ์เบิกอะไหล่</span>}
         </div>
 
@@ -267,7 +267,7 @@ function SpareDemandModal({ demand, error, onClose, onOpenPlan }) {
   const [openRow, setOpenRow] = useState(null)
   const s = demand.summary
   return (
-    <Shell title={`🔩 อะไหล่ที่ PM ${s.horizonDays} วันข้างหน้าต้องใช้`} width={920} onClose={onClose}
+    <Shell title={`อะไหล่ที่ PM ${s.horizonDays} วันข้างหน้าต้องใช้`} width={920} onClose={onClose}
       sub="รวมทุกครั้งที่ PM จะเกิดในช่วงนี้ (รายสัปดาห์ = หลายครั้ง) ทุกทีม เทียบสต็อกคงเหลือ · ขาด = ต้องสั่ง/รับของเข้าก่อนวันที่ระบุ">
       {error && <div style={{ color: '#ef4444', fontSize: 12.5, fontWeight: 700, marginBottom: 8 }}>⚠️ {error} — ตัวเลขด้านล่างไม่ครบ</div>}
       <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>

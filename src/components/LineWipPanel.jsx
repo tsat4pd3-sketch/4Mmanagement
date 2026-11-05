@@ -193,7 +193,7 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
      ตัวเลข WIP ระดับนี้ไม่มีความหมาย — บอกให้ไปเปิดที่ไลน์ลูก **ห้ามโชว์ตัวเลขให้เข้าใจผิด** */
   if (!isLeaf) return (
     <div style={{ ...card, borderColor: 'rgba(59,130,246,0.3)', marginBottom: 16, padding: '12px 14px' }}>
-      <div style={{ fontSize: 13, fontWeight: 800, color: '#60a5fa', marginBottom: 4 }}>📦 WIP ที่ไลน์</div>
+      <div style={{ fontSize: 13, fontWeight: 800, color: '#60a5fa', marginBottom: 4 }}>WIP ที่ไลน์</div>
       <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.7 }}>
         <b>{lineName}</b> เป็นไลน์แม่ (มีไลน์ย่อย {kidNames.length}) — ของและยอดค้างอยู่ที่ <b>ไลน์ย่อย</b>
         <br />เปิดกะที่ไลน์ย่อยเพื่อดู: {kidNames.map(n => (
@@ -217,15 +217,15 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
       <div onClick={() => setOpen(o => !o)}
         style={{ padding: '10px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 13, fontWeight: 800, color: '#60a5fa' }}>
-          📦 WIP ที่ไลน์ ({wip.parts.length} พาร์ท)
+          WIP ที่ไลน์ ({wip.parts.length} พาร์ท)
         </span>
         {/* ตัวเลขหลักต้องเห็นแม้พับ — ไม่งั้นต้องกดทุกครั้งถึงจะรู้ว่ามีอะไร */}
         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-          📥 รับ {fmt(t.received)} · 🏭 ใช้ {fmt(t.usedCalc)} · 📦 ค้าง <b style={{ color: t.shouldRemain < 0 ? TONE.crit : 'var(--accent)' }}>{fmt(t.shouldRemain)}</b>
+          รับ {fmt(t.received)} · ใช้ {fmt(t.usedCalc)} · ค้าง <b style={{ color: t.shouldRemain < 0 ? TONE.crit : 'var(--accent)' }}>{fmt(t.shouldRemain)}</b>
         </span>
         {t.negative > 0     && <span style={chip('rgba(239,68,68,0.14)', TONE.crit)}>🔴 ใช้เกินที่รับ {t.negative}</span>}
-        {t.neverIssued > 0  && <span style={chip('rgba(245,158,11,0.14)', TONE.warn)}>📭 ไม่มีบันทึกรับเข้า {t.neverIssued}</span>}
-        {SHOW_UP && stuckUp.length > 0 && <span style={chip('rgba(245,158,11,0.14)', TONE.warn)}>🔀 ค้างที่ไลน์แม่ {stuckUp.length} พาร์ท</span>}
+        {t.neverIssued > 0  && <span style={chip('rgba(245,158,11,0.14)', TONE.warn)}>ไม่มีบันทึกรับเข้า {t.neverIssued}</span>}
+        {SHOW_UP && stuckUp.length > 0 && <span style={chip('rgba(245,158,11,0.14)', TONE.warn)}>ค้างที่ไลน์แม่ {stuckUp.length} พาร์ท</span>}
         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>{open ? '▾' : '▸'}</span>
       </div>
 
@@ -329,9 +329,9 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
             <div style={{ display: 'flex', gap: 8, fontSize: 11, color: 'var(--muted)', fontWeight: 700, padding: '2px 0', borderBottom: '1px solid var(--border2)' }}>
               <span style={{ width: 18 }} />
               <span style={{ flex: 1 }}>พาร์ท</span>
-              <span style={{ width: 74, textAlign: 'right' }}>📥 รับเข้า</span>
-              <span style={{ width: 74, textAlign: 'right' }}>🏭 ตัดเป็น FG</span>
-              <span style={{ width: 74, textAlign: 'right' }}>📦 ค้าง</span>
+              <span style={{ width: 74, textAlign: 'right' }}>รับเข้า</span>
+              <span style={{ width: 74, textAlign: 'right' }}>ตัดเป็น FG</span>
+              <span style={{ width: 74, textAlign: 'right' }}>ค้าง</span>
             </div>
             {rows.map(p => {
               const meta = WIP_STATUS[p.status] || WIP_STATUS.ok;

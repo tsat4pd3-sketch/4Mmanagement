@@ -49,8 +49,8 @@ const KINDS = [
 ];
 const STATUS = {
   new:     { label: '🆕 ใหม่',      color: '#ef4444' },
-  seen:    { label: '👀 รับทราบ',   color: '#f59e0b' },
-  doing:   { label: '🔧 กำลังแก้',  color: '#3b82f6' },
+  seen:    { label: 'รับทราบ',   color: '#f59e0b' },
+  doing:   { label: 'กำลังแก้',  color: '#3b82f6' },
   done:    { label: '✅ แก้แล้ว',   color: '#22c55e' },
   wontfix: { label: '⏸ ยังไม่ทำ',  color: 'var(--muted)' },
 };
@@ -164,7 +164,7 @@ export default function FeedbackModal({ onClose }) {
     if (row.user_id && row.user_id !== user?.id) {
       supabase.from('notifications').insert({
         user_id: row.user_id, type: 'info',
-        title: '💬 ทีมงานตอบเรื่องที่คุณแจ้งแล้ว',
+        title: 'ทีมงานตอบเรื่องที่คุณแจ้งแล้ว',
         body: text.slice(0, 160),
       }).then(({ error }) => { if (error) console.warn('feedback reply notify:', error.message); });
     }
@@ -293,7 +293,7 @@ export default function FeedbackModal({ onClose }) {
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 14, width: '100%', maxWidth: 620, maxHeight: '86vh', display: 'flex', flexDirection: 'column' }}>
 
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ fontSize: 15, fontWeight: 800, flex: 1 }}>💬 แจ้งปัญหา / ข้อเสนอแนะ</div>
+          <div style={{ fontSize: 15, fontWeight: 800, flex: 1 }}>แจ้งปัญหา / ข้อเสนอแนะ</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
 
@@ -340,7 +340,7 @@ export default function FeedbackModal({ onClose }) {
                     style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 8,
                       border: '1px dashed var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
                       cursor: shots.length >= MAX_SHOTS ? 'default' : 'pointer', opacity: shots.length >= MAX_SHOTS ? 0.5 : 1 }}>
-                    📎 แนบรูปหน้าจอ
+                    แนบรูปหน้าจอ
                   </button>
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                     {shots.length ? `${shots.length}/${MAX_SHOTS} รูป` : `วงกรอบ/ชี้จุดมาจากมือถือได้เลย (สูงสุด ${MAX_SHOTS} รูป)`}
@@ -382,7 +382,7 @@ export default function FeedbackModal({ onClose }) {
                 </label>
                 <button onClick={copyForClaude} title="คัดลอกเรื่องที่แสดงอยู่เป็นข้อความ แล้วเอาไปวางในแชท Claude ให้ช่วยดู/แก้"
                   style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 6, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>
-                  📋 คัดลอกให้ Claude
+                  คัดลอกให้ Claude
                 </button>
                 <button onClick={load} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>↻ รีเฟรช</button>
               </div>
@@ -419,7 +419,7 @@ export default function FeedbackModal({ onClose }) {
                         <div style={{ marginTop: 7, padding: '7px 9px', borderRadius: 8,
                           background: 'var(--accent-dim)', borderLeft: '3px solid var(--accent)' }}>
                           <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--accent)', marginBottom: 3 }}>
-                            💬 คำตอบจากทีมงาน{r.handled_by ? ` · ${r.handled_by}` : ''}
+                            คำตอบจากทีมงาน{r.handled_by ? ` · ${r.handled_by}` : ''}
                           </div>
                           <div style={{ fontSize: 12.5, color: 'var(--text)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{r.admin_note}</div>
                         </div>

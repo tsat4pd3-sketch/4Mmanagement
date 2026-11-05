@@ -1066,7 +1066,7 @@ export default function Operator() {
             padding: '4px 8px', borderRadius: 6,
             background: 'var(--blue-dim)', border: '1px solid var(--blue-line)',
           }}>
-            🏢 {scopeSecs.join(', ')}
+            {scopeSecs.join(', ')}
           </div>
         )}
         {isLeader && myLineName && (
@@ -1075,7 +1075,7 @@ export default function Operator() {
             padding: '4px 8px', borderRadius: 6,
             background: 'var(--green-dim)', border: '1px solid var(--green-line)',
           }}>
-            📍 {myLineName}
+            {myLineName}
           </div>
         )}
         </>) : null}
@@ -1223,7 +1223,7 @@ export default function Operator() {
               background: 'var(--blue-dim)', border: '1px solid var(--blue-line)',
             }}>
               <span style={{ fontSize: 12.5, color: 'var(--blue)', fontWeight: 700 }}>
-                📷 ยังไม่มีรูป {noPhotoCount} คน
+                ยังไม่มีรูป {noPhotoCount} คน
               </span>
               <span style={{ fontSize: 11, color: 'var(--text2)' }}>
                 เปิดแก้ไขรายคนแล้วอัปรูปได้เลย · <b>ใช้รูปนิ่ง JPG/PNG เท่านั้น (ไม่รับ GIF)</b> —
@@ -1321,7 +1321,7 @@ export default function Operator() {
                   {activeSkillDefs.map(sd => (
                     <th key={sd.name} style={{ fontSize: 11, color: sd.color, whiteSpace: 'nowrap' }}>
                       <div>{SKILL_CAT_META_FULL[sd.category || 'hard_skill']?.icon || '🔧'} {sd.label}</div>
-                      {(sd.scope_division || sd.scope_section) && <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>📍{skillScopeLabel(sd)}</div>}
+                      {(sd.scope_division || sd.scope_section) && <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>{skillScopeLabel(sd)}</div>}
                     </th>
                   ))}
                   <th style={{ textAlign: 'center', position: 'sticky', right: 0, background: 'var(--bg2)', zIndex: 12, boxShadow: '-2px 0 6px rgba(0,0,0,0.15)' }}>จัดการ</th>
@@ -1391,7 +1391,7 @@ export default function Operator() {
                           style={{ display: 'inline-block', marginTop: 2, fontSize: 11, fontWeight: 700,
                             padding: '0 5px', borderRadius: 4, whiteSpace: 'nowrap',
                             background: '#0ea5e918', color: '#0ea5e9', border: '1px solid #0ea5e944' }}>
-                          🤝 ยืมจาก {emp._helperFrom}
+                          ยืมจาก {emp._helperFrom}
                         </div>
                       )}
                     </td>
@@ -1532,25 +1532,25 @@ export default function Operator() {
                           <div style={{ display: 'flex', gap: 4, marginTop: 2, flexWrap: 'wrap' }}>
                             {(sd.scope_division || sd.scope_section) && (
                               <span style={{ fontSize: 11, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>
-                                📍 {skillScopeLabel(sd)}
+                                {skillScopeLabel(sd)}
                               </span>
                             )}
                             {!sd.scope_division && !sd.scope_section && (
                               /* สกิลกลาง = แก้แล้วกระทบทุกส่วนงาน — ต้องเขียนบนจอ ไม่ใช่ปล่อยให้เดาจากช่องว่าง */
                               <span title="ไม่ได้ผูกส่วนงาน — ใช้กับพนักงานทุกส่วนงาน แก้/ลบแล้วกระทบทั้งโรงงาน"
                                 style={{ fontSize: 11, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>
-                                🌐 สกิลกลาง (ทุกส่วนงาน)
+                                สกิลกลาง (ทุกส่วนงาน)
                               </span>
                             )}
                             {!sdOk && (
                               <span title={writeBlockText(sdWrite(sd.scope_section), { what: 'สกิลนี้', unit: sd.scope_section || '' })}
                                 style={{ fontSize: 11, background: 'rgba(148,163,184,0.15)', color: 'var(--muted)', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>
-                                🔒 ดูได้ แก้ไม่ได้
+                                ดูได้ แก้ไม่ได้
                               </span>
                             )}
                             {sd.allowance_type && (
                               <span style={{ fontSize: 11, background: 'rgba(34,197,94,0.12)', color: '#22c55e', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>
-                                💰 {sd.allowance_type}
+                                {sd.allowance_type}
                               </span>
                             )}
                             <span style={{ fontSize: 11, color: 'var(--muted)' }}>{sd.name}</span>
@@ -1638,7 +1638,7 @@ export default function Operator() {
                 {isAddingSkill ? 'กำลังบันทึก...' : 'เพิ่มสกิล'}
               </button>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
-                🔑 Key สร้างอัตโนมัติแบบ UUID — ชื่อไทยหรืออักขระพิเศษใช้ได้ทั้งหมด ไม่มีการชนกัน
+                Key สร้างอัตโนมัติแบบ UUID — ชื่อไทยหรืออักขระพิเศษใช้ได้ทั้งหมด ไม่มีการชนกัน
               </div>
             </div>
 
@@ -1849,7 +1849,7 @@ export default function Operator() {
                       {needsDoc && canApprove && (
                         <div style={{ marginTop: 10 }}>
                           <div style={{ fontSize: 11, color: '#a855f7', fontWeight: 600, marginBottom: 4 }}>
-                            📄 แนบเอกสารการอบรมเฉพาะทาง <span style={{ color: '#ef4444' }}>*</span>
+                            แนบเอกสารการอบรมเฉพาะทาง <span style={{ color: '#ef4444' }}>*</span>
                           </div>
                           <div style={{ border: `2px dashed ${luDocFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 7, padding: '8px 12px', cursor: 'pointer', background: luDocFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', textAlign: 'center' }}
                             onClick={() => document.getElementById(`doc-${req.id}`).click()}>
@@ -1956,7 +1956,7 @@ export default function Operator() {
         <div className="overlay">
           <div className="modal" style={{ width: 'min(1360px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
             <h3 style={{ marginTop: 0, borderBottom: '1px solid var(--border)', paddingBottom: 12, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
-              📝 แก้ไขข้อมูลพนักงาน
+              แก้ไขข้อมูลพนักงาน
             </h3>
             {/* จอ ≥1100px: ซ้าย = ข้อมูลพนักงาน · ขวา = ระดับทักษะ (landscape ตาม UI-CONVENTIONS §5) */}
             <form onSubmit={handleUpdate} className="modal-2col" style={{ marginTop: 16 }}>
@@ -2119,7 +2119,7 @@ export default function Operator() {
                   ส่วนงานผลิตมีหลายชื่อ (PD1/PD2/GOR…) เดาเหมาจะไปโดน QA/ธุรการด้วย
                   → ต้องติ๊กเอง ไม่งั้นช่างฝ่ายผลิตไม่มีวันโผล่ในลิสต์ (feedback 2026-08-21) */}
               <div>
-                <label style={labelSt}>🔧 ทีมช่างซ่อม (เฉพาะคนที่เป็นช่าง)</label>
+                <label style={labelSt}>ทีมช่างซ่อม (เฉพาะคนที่เป็นช่าง)</label>
                 <select value={teamKeyOf(editingEmp.mtn_team) || ''}
                   onChange={e => setEditingEmp({ ...editingEmp, mtn_team: e.target.value || null })}>
                   <option value="">— ไม่ใช่ช่าง —</option>
@@ -2204,7 +2204,7 @@ export default function Operator() {
               </div>
 
               <div>
-                <label style={labelSt}>🚐 สายรถรับส่ง (สำหรับจองรถ OT)</label>
+                <label style={labelSt}>สายรถรับส่ง (สำหรับจองรถ OT)</label>
                 <select value={editingEmp.bus_route_id || ''} onChange={e => setEditingEmp({ ...editingEmp, bus_route_id: e.target.value || null })}>
                   <option value="">— ไม่ระบุ —</option>
                   {busRoutes.map(r => <option key={r.id} value={r.id}>{r.code} {r.name}</option>)}
@@ -2214,15 +2214,15 @@ export default function Operator() {
               </div>
 
               <div style={{ background: 'var(--bg2)', padding: 14, borderRadius: 10 }}>
-                <label style={{ ...labelSt, marginBottom: canEditSkills ? 12 : 6, display: 'block' }}>📊 ระดับทักษะ</label>
+                <label style={{ ...labelSt, marginBottom: canEditSkills ? 12 : 6, display: 'block' }}>ระดับทักษะ</label>
                 {!canEditSkillsFor(editingEmp) && (
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
-                    🔒 ดูอย่างเดียว — {canEditSkills ? `แก้ได้เฉพาะพนักงานในส่วนงาน ${homeSection || 'ของตัวเอง'}` : 'บัญชีนี้ไม่มีสิทธิ์แก้ระดับทักษะ'} (ข้อมูลอื่นในฟอร์มยังแก้ได้ตามปกติ)
+                    ดูอย่างเดียว — {canEditSkills ? `แก้ได้เฉพาะพนักงานในส่วนงาน ${homeSection || 'ของตัวเอง'}` : 'บัญชีนี้ไม่มีสิทธิ์แก้ระดับทักษะ'} (ข้อมูลอื่นในฟอร์มยังแก้ได้ตามปกติ)
                   </div>
                 )}
                 {canEditSkillsFor(editingEmp) && !canEditHighSkill && (
                   <div style={{ fontSize: 11, color: '#f59e0b', background: '#f59e0b15', border: '1px solid #f59e0b40', borderRadius: 6, padding: '6px 9px', marginBottom: 12, lineHeight: 1.5 }}>
-                    ⚖️ ตั้งคะแนนเองได้ถึง <b>{scoreCap}</b> (ระดับ “{getLevel(scoreCap).label}”) — สูงกว่านี้ต้องให้หัวหน้าส่วนขึ้นไปเป็นคนตั้ง
+                    ตั้งคะแนนเองได้ถึง <b>{scoreCap}</b> (ระดับ “{getLevel(scoreCap).label}”) — สูงกว่านี้ต้องให้หัวหน้าส่วนขึ้นไปเป็นคนตั้ง
                     <div style={{ color: 'var(--muted)', marginTop: 2 }}>
                       คะแนนที่สะสมเองจากการทำงานจริงยังขึ้นเกิน {scoreCap} ได้ตามปกติ ผ่านด่านอนุมัติอัพระดับ
                     </div>
@@ -2372,10 +2372,10 @@ export default function Operator() {
                                 <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 3 }}>⏳ รอ approve Lv.{pending}</div>
                               )}
                               {lockedHigh && (
-                                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>🔒 เกินเพดาน {scoreCap} — แก้/เอาออกไม่ได้</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>เกินเพดาน {scoreCap} — แก้/เอาออกไม่ได้</div>
                               )}
                               {lockedAllowance && (
-                                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>🔒 หัวหน้าแผนกขึ้นไปเท่านั้น</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>หัวหน้าแผนกขึ้นไปเท่านั้น</div>
                               )}
                             </div>
                           );
@@ -2539,7 +2539,7 @@ function SkillSubItemsModal({ skill, onClose }) {
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2200, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div className="card" style={{ width: 'min(560px, 96vw)', maxHeight: '88vh', overflowY: 'auto', padding: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-          <h3 style={{ margin: 0, fontSize: 16 }}>📝 หัวข้อการพิจารณา</h3>
+          <h3 style={{ margin: 0, fontSize: 16 }}>หัวข้อการพิจารณา</h3>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>✕</button>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>

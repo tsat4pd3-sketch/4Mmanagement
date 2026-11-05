@@ -154,7 +154,7 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
         padding: 20, width: 'min(96vw, 640px)', maxHeight: '90vh', overflowY: 'auto' }}>
 
         <div style={{ fontSize: 15.5, fontWeight: 800, color: 'var(--text)', marginBottom: 3 }}>
-          🗑️ ลงถังเหลือง / ถังแดง
+          ลงถังเหลือง / ถังแดง
         </div>
 
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>

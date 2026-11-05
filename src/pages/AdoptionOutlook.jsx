@@ -923,7 +923,7 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
                       background: 'var(--blue-dim)', border: '1px dashed var(--blue)',
                     }}>
                       <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap', marginBottom: 7 }}>
-                        <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--blue)' }}>🧪 ตัวอย่างคำตอบเมื่อข้อมูลครบ</span>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--blue)' }}>ตัวอย่างคำตอบเมื่อข้อมูลครบ</span>
                         <span style={{
                           fontSize: 11, fontWeight: 700, color: 'var(--blue)',
                           border: '1px dashed var(--blue)', borderRadius: 4, padding: '1px 6px',
@@ -939,7 +939,7 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
                         <div style={{
                           marginTop: 8, paddingTop: 7, borderTop: '1px solid var(--border)',
                           fontSize: 12, lineHeight: 1.55, fontStyle: 'italic',
-                        }}>💡 {dm.note}</div>
+                        }}>{dm.note}</div>
                       )}
                     </div>
                   );
@@ -1017,7 +1017,7 @@ function LadderTab({ c, navigate, isMobile }) {
 
       {/* กุญแจที่ปลดล็อกได้เยอะที่สุด — นับว่าข้อมูลชิ้นไหนถูกใช้ในหลายคำถามที่สุด แล้วยังไม่มี */}
       <div style={{ ...cardSt, borderLeft: '4px solid var(--red)' }}>
-        <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 3 }}>🔑 ข้อมูลชิ้นไหนปลดล็อกได้เยอะที่สุด</div>
+        <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 3 }}>ข้อมูลชิ้นไหนปลดล็อกได้เยอะที่สุด</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
           นับจากสายข้อมูลของทุกคำถาม — ชิ้นที่ยังไม่มี และถูกใช้ในหลายคำถามที่สุด ควรทำก่อน
         </div>
@@ -1067,7 +1067,7 @@ function DeptTab({ c, navigate, isMobile }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* สรุปความพร้อมรวม — เรียงแผนกที่ห่างเป้าที่สุดขึ้นก่อน (ชี้เป้าให้ลงมือ) */}
       <div style={{ ...cardSt }}>
-        <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 9 }}>📊 ความครบของข้อมูล — เทียบกันทุกแผนก</div>
+        <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 9 }}>ความครบของข้อมูล — เทียบกันทุกแผนก</div>
         <div style={{ display: 'grid', gap: 9, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(auto-fit, minmax(min(220px,100%),1fr))', alignContent: 'start' }}>
           {[...rows].sort((a, b) => (a.ready ?? 999) - (b.ready ?? 999)).map(r => {
             const col = r.ready == null ? 'var(--muted)' : r.ready >= 80 ? '#22c55e' : r.ready >= 40 ? '#f59e0b' : '#ef4444';
@@ -1210,7 +1210,7 @@ function RoiTab({ c, loss, rates, demoOn, day, navigate, isMobile }) {
           {/* โหมดสาธิต: สมมติต้นทุน/ชิ้น เพื่อให้เห็นว่าช่องนี้จะตอบอะไรเมื่อกรอกต้นทุนแล้ว */}
           {noNgCost && demoOn ? (
             <div style={{ background: 'var(--blue-dim)', border: '1px dashed var(--blue)', borderRadius: 8, padding: '10px 12px' }}>
-              <div style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 700 }}>🧪 ของเสียคิดเป็นเงิน (จำลอง)</div>
+              <div style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 700 }}>ของเสียคิดเป็นเงิน (จำลอง)</div>
               <div style={{ fontSize: 23, fontWeight: 800, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>
                 {fmtBaht(loss.ngQty * (60 + rnd(`${day}|ngcost`) * 120))}<span style={{ fontSize: 13, fontWeight: 700 }}> บาท</span>
               </div>
@@ -1419,7 +1419,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 800 }}>
-              🔬 {S.line_name} · {S.work_date} · {shiftTh}
+              {S.line_name} · {S.work_date} · {shiftTh}
             </div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
               กะที่ <b>OEE ต่ำสุดและมีเนื้อให้เจาะ</b> ในช่วง {dd.from} – {dd.to} —
@@ -1457,7 +1457,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
         </div>
         {tgt > 0 && act < tgt && (
           <div style={{ marginTop: 9, fontSize: 12.5, lineHeight: 1.6 }}>
-            👉 ขาดเป้า <b style={{ color: 'var(--red)' }}>{fmtNum(tgt - act)} ชิ้น</b>
+            ขาดเป้า <b style={{ color: 'var(--red)' }}>{fmtNum(tgt - act)} ชิ้น</b>
             {ct ? <> · ที่ CT {ct} วิ/ชิ้น = เวลาที่หายไปราว <b>{fmtNum((tgt - act) * ct / 60)} นาที</b></> : null}
           </div>
         )}
@@ -1505,7 +1505,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
                 ))}
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 7, lineHeight: 1.55, borderTop: '1px solid var(--border)', paddingTop: 6 }}>
-                💡 แนวทางแก้: {g.meta.fix}
+                แนวทางแก้: {g.meta.fix}
               </div>
             </div>
           ))}
@@ -1591,7 +1591,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
 
         {/* 4M ที่ "เปลี่ยนวันนั้น" — Changing Point คือ 4M ตัวจริงที่โรงงานใช้ */}
         <div style={{ marginTop: 11 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 5 }}>📝 4M ที่เปลี่ยนในวันนั้น (Changing Point)</div>
+          <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 5 }}>4M ที่เปลี่ยนในวันนั้น (Changing Point)</div>
           {dd.fourM.length > 0 ? (
             <div style={{ display: 'grid', gap: 4 }}>
               {dd.fourM.slice(0, 6).map((m, i) => (
@@ -1688,7 +1688,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
 
         {demoOn && !peReady && (
           <div style={{ marginTop: 10, fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
-            🧪 ทั้ง 3 การ์ดข้างบนเป็น<b>ตัวอย่างคำตอบ</b> — ชื่อเครื่อง/อาการ/ประเภทของเสีย
+            ทั้ง 3 การ์ดข้างบนเป็น<b>ตัวอย่างคำตอบ</b> — ชื่อเครื่อง/อาการ/ประเภทของเสีย
             เป็นของจริงจากกะนี้ แต่ค่า S-O-D · RPN · ความถี่ใน Control Plan เป็น<b>ตัวเลขสมมติ</b>
           </div>
         )}
@@ -1826,7 +1826,7 @@ export default function AdoptionOutlook() {
           ...cardSt, borderLeft: '4px solid var(--blue)', background: 'var(--blue-dim)',
           marginBottom: 12, fontSize: 12.5, lineHeight: 1.6,
         }}>
-          <b style={{ color: 'var(--blue)' }}>🧪 โหมดสาธิตเปิดอยู่</b> — ส่วนที่ข้อมูลจริงยังไม่มี ถูกเติมด้วย
+          <b style={{ color: 'var(--blue)' }}>โหมดสาธิตเปิดอยู่</b> — ส่วนที่ข้อมูลจริงยังไม่มี ถูกเติมด้วย
           <b> ตัวเลขจำลอง</b> เพื่อให้เห็นว่า “หน้าตาคำตอบ” เป็นยังไงเมื่อทุกแผนกใช้ครบ
           <div style={{ marginTop: 5, color: 'var(--muted)' }}>
             ชื่อไลน์ · เครื่องจักร · สินค้า · ลูกค้า = <b>ของจริงจากฐานข้อมูล</b> ·

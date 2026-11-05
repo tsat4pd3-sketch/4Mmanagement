@@ -555,7 +555,7 @@ export default function Energy() {
           sub={cover.coverPct != null
             ? <>{cover.coverPct}% ของบิล · {metered.filled}/{metered.total} จุดที่มีมิเตอร์</>
             : `${metered.filled}/${metered.total} จุดที่มีมิเตอร์`} />
-        <Kpi label="🌱 คาร์บอน (tCO2e)" value={ef ? fmtTco2e(co2) : '—'}
+        <Kpi label="คาร์บอน (tCO2e)" value={ef ? fmtTco2e(co2) : '—'}
           tone={ef ? 'var(--green)' : 'var(--muted)'} warn={!ef}
           sub={ef
             ? <>Scope 2 · {usingBill ? 'จากบิล' : 'จากผลรวมที่วัดได้'} · เทียบเดือนก่อน {deltaChip(deltaPct(co2, co2Prev))}</>
@@ -563,7 +563,7 @@ export default function Energy() {
         <Kpi label="ค่าไฟรวม (บาท)" value={fmtBaht(bill?.cost ?? metered.cost)}
           sub={`บาท/หน่วย ${bahtPerUnit(bill?.cost ?? metered.cost, bill?.qty ?? metered.qty) ?? '—'} (ปกติ 3.5–5)`} />
         {/* ⭐ SEC — ตัวเดียวที่แยก "ผลิตเยอะขึ้น" ออกจาก "ใช้ไฟเปลืองขึ้น" (ยอด kWh ขึ้น ≠ แย่ลง) */}
-        <Kpi label="⚙️ kWh ต่อชิ้น (SEC)"
+        <Kpi label="kWh ต่อชิ้น (SEC)"
           value={sec == null ? '—' : sec}
           tone={secDelta == null ? undefined : secDelta <= -3 ? GOOD : secDelta > 3 ? BAD : undefined}
           sub={sec == null
@@ -584,7 +584,7 @@ export default function Energy() {
         : tab === 'input' ? (
           <>
             {/* ① ทั้งโรงงาน — บิล vs ผลรวมที่วัดได้ vs ส่วนที่ยังไม่ได้แยกมิเตอร์ */}
-            <h3 style={secTitle}>🏢 ทั้งโรงงาน</h3>
+            <h3 style={secTitle}>ทั้งโรงงาน</h3>
             <div style={{ ...card, padding: 0, overflowX: 'auto', marginBottom: 8 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
                 {head()}
@@ -609,7 +609,7 @@ export default function Energy() {
             </div>
 
             {/* ② จุดที่มีมิเตอร์ — ที่กรอกจริง */}
-            <h3 style={secTitle}>🔌 จุดที่มีมิเตอร์ ({meteredPts.length}) <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--muted)' }}>— รวมขึ้นไปเป็นยอดที่วัดได้</span></h3>
+            <h3 style={secTitle}>จุดที่มีมิเตอร์ ({meteredPts.length}) <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--muted)' }}>— รวมขึ้นไปเป็นยอดที่วัดได้</span></h3>
             {/* กติกาที่คนกรอกต้องรู้ก่อนพิมพ์ตัวแรก — เขียนไว้ตรงนี้ ไม่ใช่ให้เดาจากผลลัพธ์ */}
             <div style={{ fontSize: 11.5, color: 'var(--text2)', margin: '-4px 0 8px', lineHeight: 1.6 }}>
               📏 <b>ลงตามที่มิเตอร์อ่านได้จริง</b> — เบรกเกอร์แยก HDF-01 / HDF-02 ก็ลงแยกได้เลย ไม่ต้องบวกมือรวมที่ไลน์แม่<br />
@@ -631,7 +631,7 @@ export default function Energy() {
 
             {/* ③ จุดที่ยังไม่มีมิเตอร์ — พับไว้ ไม่ให้ 13 แถวเปล่ากลบของที่กรอกจริง */}
             <h3 style={{ ...secTitle, display: 'flex', alignItems: 'center', gap: 8 }}>
-              🏭 จุดที่ยังไม่มีมิเตอร์ ({otherPts.length})
+              จุดที่ยังไม่มีมิเตอร์ ({otherPts.length})
               <button onClick={() => setShowUnmetered(v => !v)}
                 style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
                 {showUnmetered ? 'ซ่อน' : 'แสดง'}
@@ -646,13 +646,13 @@ export default function Energy() {
                 </table>
               </div>
             )}
-            {!canEdit && <div style={{ padding: 10, fontSize: 12, color: 'var(--muted)' }}>🔒 ไม่มีสิทธิ์กรอก — ดูอย่างเดียว</div>}
+            {!canEdit && <div style={{ padding: 10, fontSize: 12, color: 'var(--muted)' }}>ไม่มีสิทธิ์กรอก — ดูอย่างเดียว</div>}
           </>
         ) : tab === 'summary' ? (
           <>
             {/* ① เทรนด์ 12 เดือน + เทียบปีก่อน */}
             <div style={{ ...card, marginBottom: 14 }}>
-              <div style={secTitle}>📈 แนวโน้ม {TREND_MONTHS} เดือน {hasYoy && <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--muted)' }}>— เส้นประ = เดือนเดียวกันปีก่อน</span>}</div>
+              <div style={secTitle}>แนวโน้ม {TREND_MONTHS} เดือน {hasYoy && <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--muted)' }}>— เส้นประ = เดือนเดียวกันปีก่อน</span>}</div>
               {!hasTrend ? <div style={{ color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีข้อมูลในช่วงนี้ — ไปกรอกที่แท็บ 📝</div> : (
                 <ResponsiveContainer width="100%" height={260}>
                   <ComposedChart data={trend} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
@@ -671,7 +671,7 @@ export default function Energy() {
 
             {/* ② พลังงานเทียบยอดผลิต (SEC) — "ยอดไฟขึ้น" ต่างจาก "ใช้ไฟเปลืองขึ้น" */}
             <div style={{ ...card, marginBottom: 14 }}>
-              <div style={secTitle}>⚙️ พลังงานเทียบยอดผลิต · kWh ต่อชิ้น (SEC)</div>
+              <div style={secTitle}>พลังงานเทียบยอดผลิต · kWh ต่อชิ้น (SEC)</div>
               {prod == null ? <div style={{ color: 'var(--muted)', fontSize: 13 }}>กำลังรวมยอดผลิต…</div>
                 : !trend.some(t => t.sec != null) ? (
                   <div style={{ color: 'var(--muted)', fontSize: 13 }}>
@@ -720,7 +720,7 @@ export default function Energy() {
                     </ResponsiveContainer>
                     <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
                       <span>📏 <b>{PIECE_BASIS_LABEL}</b> — ต่างจากจอผลิตที่นับเป็น stroke (1 ปั๊ม = 1)</span>
-                      {kgPerPiece != null && <span>🌱 คาร์บอนต่อชิ้น <b>{kgPerPiece}</b> kgCO2e (ช่วง gate-to-gate เท่านั้น ยังไม่รวมวัสดุที่ซื้อเข้ามา)</span>}
+                      {kgPerPiece != null && <span>คาร์บอนต่อชิ้น <b>{kgPerPiece}</b> kgCO2e (ช่วง gate-to-gate เท่านั้น ยังไม่รวมวัสดุที่ซื้อเข้ามา)</span>}
                     </div>
                     <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4 }}>
                       ⚠️ ระดับ<b>ทั้งโรงงาน</b>เท่านั้น (ไฟทั้งโรงงาน ÷ ชิ้นทั้งโรงงาน) — แยกรายไลน์/รายพาร์ทต้องรอมิเตอร์รายไลน์
@@ -732,7 +732,7 @@ export default function Energy() {
             {/* ③ อะไรทำให้เดือนนี้เปลี่ยน — คำถามที่กราฟเรียงยอดตอบไม่ได้ */}
             <div style={{ ...card, marginBottom: 14 }}>
               <div style={secTitle}>
-                🔍 อะไรทำให้เดือนนี้เปลี่ยน · {monthLabel(month)} เทียบ {monthLabel(prevMonth)}
+                อะไรทำให้เดือนนี้เปลี่ยน · {monthLabel(month)} เทียบ {monthLabel(prevMonth)}
               </div>
               {!contribRows.length ? (
                 <div style={{ color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีเดือนก่อนให้เทียบ หรือไม่มีจุดไหนเปลี่ยน</div>
@@ -775,7 +775,7 @@ export default function Energy() {
             {/* ④ สัดส่วนการใช้ — โครงสร้างเปลี่ยนหรือแค่ยอดรวมเปลี่ยน */}
             {compPts.length > 0 && (
               <div style={{ ...card, marginBottom: 14 }}>
-                <div style={secTitle}>🧩 สัดส่วนการใช้รายจุด · 6 เดือนล่าสุด</div>
+                <div style={secTitle}>สัดส่วนการใช้รายจุด · 6 เดือนล่าสุด</div>
                 <ResponsiveContainer width="100%" height={230}>
                   <BarChart data={compData} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -794,7 +794,7 @@ export default function Energy() {
 
             {/* ⑤ ตารางรายจุด 6 เดือน — จับจุดที่ค่อยๆ ไต่ขึ้นทีละนิด */}
             <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
-              <div style={{ ...secTitle, padding: '12px 14px 0' }}>📋 รายจุด · 6 เดือนล่าสุด (kWh)</div>
+              <div style={{ ...secTitle, padding: '12px 14px 0' }}>รายจุด · 6 เดือนล่าสุด (kWh)</div>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
                 <thead><tr>
                   <th style={th}>จุด</th>
@@ -876,7 +876,7 @@ function EfSetup({ factors, canEdit, cfgMissing, onSaved, month }) {
 
   return (
     <div style={{ ...card }}>
-      <div style={secTitle}>🌱 ค่าการปล่อยก๊าซเรือนกระจก (Emission Factor)</div>
+      <div style={secTitle}>ค่าการปล่อยก๊าซเรือนกระจก (Emission Factor)</div>
       <div style={{ fontSize: 12.5, color: 'var(--text2)', marginBottom: 12, lineHeight: 1.6 }}>
         ใช้แปลง <b>kWh → kgCO2e</b> (Scope 2) · ค่านี้ประกาศโดย <b>TGO</b> และ<b>เปลี่ยนเกือบทุกปี</b><br />
         ระบบ<b>ไม่ใส่ค่าเริ่มต้นให้โดยตั้งใจ</b> — ต้องเอาตัวเลขจากประกาศจริงมากรอก พร้อมระบุที่มา

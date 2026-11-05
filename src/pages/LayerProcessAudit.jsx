@@ -1088,7 +1088,7 @@ ${issuesHtml}
       {!lineWrite.ok && selLine && (
         <div className="card" style={{ padding: '9px 12px', marginBottom: 10, fontSize: 12, color: 'var(--text2)',
           background: 'var(--amber-dim)', border: '1px solid var(--amber-line)' }}>
-          🔒 {writeBlockText(lineWrite, { what: `ใบตรวจ/แผน LPA ของไลน์ "${selLine}"` })}
+          {writeBlockText(lineWrite, { what: `ใบตรวจ/แผน LPA ของไลน์ "${selLine}"` })}
         </div>
       )}
 
@@ -1143,7 +1143,7 @@ ${issuesHtml}
             return (
               <div key={mk} style={{ marginTop: 12, border: isFocus ? '1px solid var(--accent)' : '1px solid var(--border2)', borderRadius: 10, overflow: 'hidden' }}>
                 <div style={{ padding: '7px 12px', background: isFocus ? 'var(--green-dim)' : 'var(--bg3)', fontWeight: 800, fontSize: 14, color: isFocus ? 'var(--accent)' : 'var(--text)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  📅 {monthLabel(mk)}
+                  {monthLabel(mk)}
                   {isFocus ? <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted)' }}>(เดือนที่เลือก — ใช้พิมพ์/รายงาน)</span>
                     : <button onClick={() => setSelMonth(mk)} style={{ ...btnGhost, padding: '2px 8px', fontSize: 11 }}>เลือกเดือนนี้</button>}
                 </div>
@@ -1306,7 +1306,7 @@ ${issuesHtml}
           {removedAnswers.length > 0 && (
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-                📦 ข้อที่ถอดออกจากเช็คลิสต์แล้ว — เก็บไว้จากตอนตรวจ ({removedAnswers.length} ข้อ)
+                ข้อที่ถอดออกจากเช็คลิสต์แล้ว — เก็บไว้จากตอนตรวจ ({removedAnswers.length} ข้อ)
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', padding: '4px 0' }}>
                 ข้อเหล่านี้ถูกลบ/ปิดใช้งาน/ซ่อนของไลน์นี้ไปหลังวันที่ตรวจ — แสดงไว้ให้ใบตรวจอ่านครบตามที่ตรวจจริง (แก้ไม่ได้)
@@ -1498,7 +1498,7 @@ ${issuesHtml}
             </div>
             {issues.length > 0 && (
               <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--red)', marginBottom: 6 }}>🚩 บันทึกปัญหาที่พบ (N / T)</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--red)', marginBottom: 6 }}>บันทึกปัญหาที่พบ (N / T)</div>
                 {issues.map((i, idx) => (
                   <div key={idx} style={{ fontSize: 12, color: 'var(--text2)', padding: '4px 0', borderBottom: '1px dashed var(--border)' }}>
                     <b style={{ color: ansMeta(i.ans).color }}>[{i.ans}]</b> {thDate(i.date)} · {i.q} — <b style={{ color: 'var(--text)' }}>{i.note || '-'}</b>
@@ -1519,7 +1519,7 @@ ${issuesHtml}
             <div>
               <div style={lb}>จัดการคำถามของ</div>
               <LineSelect lines={visibleLines} value={qScope} onChange={(v) => { setQScopePicked(true); setQScope(v); }} style={{ minWidth: 220 }}
-                placeholder="🌐 ทะเบียนกลาง (ใช้ร่วมทุกไลน์)" />
+                placeholder="ทะเบียนกลาง (ใช้ร่วมทุกไลน์)" />
             </div>
             <button
               onClick={() => setQEditing({ category: 'safety', seq: (Math.max(0, ...questions.map(q => q.seq)) + 1), question: '', line_name: qScope || '', issue_start: '', issue_end: '', is_active: true })}
@@ -1535,9 +1535,9 @@ ${issuesHtml}
           }}>
             {qScope ? (
               <>
-                <b style={{ fontSize: 13, color: 'var(--accent)' }}>🏭 กำลังแก้หัวข้อตรวจของไลน์ "{qScope}"</b>
+                <b style={{ fontSize: 13, color: 'var(--accent)' }}>กำลังแก้หัวข้อตรวจของไลน์ "{qScope}"</b>
                 <div style={{ color: 'var(--text2)', marginTop: 2 }}>
-                  ข้อที่ติดป้าย <b>🌐 ทะเบียนกลาง</b> = ของส่วนรวม แก้เนื้อหา/ลบที่นี่ไม่ได้ —
+                  ข้อที่ติดป้าย <b>ทะเบียนกลาง</b> = ของส่วนรวม แก้เนื้อหา/ลบที่นี่ไม่ได้ —
                   ไม่อยากใช้ข้อไหนที่ไลน์นี้ กด <b>ไม่ใช้ที่ไลน์นี้</b> (ไลน์อื่นไม่กระทบ) ·
                   ข้อที่ติดป้าย <b>เฉพาะไลน์นี้</b> เป็นของไลน์คุณเอง เพิ่ม/แก้/ลบได้เต็มที่
                 </div>
@@ -1551,7 +1551,7 @@ ${issuesHtml}
               </>
             ) : (
               <>
-                <b style={{ fontSize: 13, color: 'var(--amber)' }}>🌐 กำลังแก้ “ทะเบียนกลาง” — ทุกไลน์ใช้ร่วมกัน</b>
+                <b style={{ fontSize: 13, color: 'var(--amber)' }}>กำลังแก้ “ทะเบียนกลาง” — ทุกไลน์ใช้ร่วมกัน</b>
                 <div style={{ color: 'var(--text2)', marginTop: 2 }}>
                   แก้/ลบที่นี่ <b>กระทบใบตรวจของทุกไลน์พร้อมกัน</b> ·
                   ถ้าจะเพิ่ม/เอาออกเฉพาะแผนกตัวเอง ให้เลือกไลน์จากช่อง “จัดการคำถามของ” ด้านบนก่อน ·
@@ -1577,11 +1577,11 @@ ${issuesHtml}
                         <b>{q.seq}.</b> {q.question}
                         {/* ป้ายขอบเขตต้องขึ้น**ทั้ง 2 มุมมอง** — เดิมมุมมอง "ทุกไลน์" ไม่มีป้ายเลย
                             คนกดจึงไม่รู้ว่าแถวที่กำลังลบเป็นของส่วนรวม (เคส 12/10) */}
-                        {isCommon && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 4, padding: '0 5px', marginLeft: 6 }}>🌐 ทะเบียนกลาง</span>}
+                        {isCommon && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 4, padding: '0 5px', marginLeft: 6 }}>ทะเบียนกลาง</span>}
                         {lineOwn && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-dim)', border: '1px solid var(--accent)', borderRadius: 4, padding: '0 5px', marginLeft: 6 }}>เฉพาะไลน์นี้</span>}
                         {!qScope && q.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · ไลน์ {q.line_name}</span>}
                         {(q.issue_start || q.issue_end) && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · {thDate(q.issue_start)} - {thDate(q.issue_end)}</span>}
-                        {hiddenHere && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}> · 🚫 ไลน์นี้ไม่ใช้ข้อนี้</span>}
+                        {hiddenHere && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}> · ไลน์นี้ไม่ใช้ข้อนี้</span>}
                         {!q.is_active && <span style={{ fontSize: 11, color: 'var(--red)' }}> · ปิดใช้งาน</span>}
                       </div>
                       {qScope && isCommon ? (

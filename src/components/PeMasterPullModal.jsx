@@ -27,7 +27,7 @@ export default function PeMasterPullModal({ procs, fmea, masters, masterItems, i
   };
 
   return (
-    <Modal title="📚 เติม failure mode จาก master" onClose={onClose} width={760}
+    <Modal title="เติม failure mode จาก master" onClose={onClose} width={760}
       footer={<><button style={ghost} onClick={onClose}>ยกเลิก</button><button style={btn()} disabled={saving || !chosen.length} onClick={run}>{saving ? 'กำลังเพิ่ม…' : `➕ เพิ่ม ${chosen.length} รายการ`}</button></>}>
       {!linked.length ? <WarnBar color="#f59e0b">ยังไม่มี OP ไหนผูกกระบวนการมาตรฐาน — ไปที่แท็บ Flow → ✏️ OP → เลือก "กระบวนการมาตรฐาน" ก่อน</WarnBar> : (
         <>

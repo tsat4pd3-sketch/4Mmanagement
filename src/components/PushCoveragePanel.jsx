@@ -73,7 +73,7 @@ export default function PushCoveragePanel() {
   return (
     <div style={card}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-        <span style={{ fontSize: 14, fontWeight: 800 }}>📲 เครื่องที่รับแจ้งเตือนเข้ามือถือ</span>
+        <span style={{ fontSize: 14, fontWeight: 800 }}>เครื่องที่รับแจ้งเตือนเข้ามือถือ</span>
         <button onClick={load} disabled={busy}
           style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent)', background: 'none',
                    border: 'none', cursor: busy ? 'default' : 'pointer', padding: 0, textDecoration: 'underline' }}>

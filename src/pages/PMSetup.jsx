@@ -218,7 +218,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
       <div style={{ display: 'flex', gap: 6, marginBottom: (isVar || cp.type === 'measure') ? 10 : 0, flexWrap: 'wrap' }}>
         {['variable', 'measure', 'attribute', 'note'].map(t => {
           const colors = { variable: 'var(--blue)', measure: 'var(--green)', attribute: '#9b8de8', note: '#f59a3f' }
-          const lbl = { variable: '📏 Variable', measure: '📊 ค่าวัด', attribute: '✅ OK/NG', note: '📝 Note' }
+          const lbl = { variable: '📏 Variable', measure: '📊 ค่าวัด', attribute: '✅ OK/NG', note: 'Note' }
           return (
             <button key={t} onClick={() => onChange(t === 'variable' ? { type: t } : { type: t, calc: null })} style={S.typeBtn(cp.type === t, colors[t])}>{lbl[t]}</button>
           )
@@ -1027,7 +1027,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             return (
               <div style={{ padding: '10px 12px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>
-                  🗂️ รายการตรวจของเครื่องนี้ (แยกตามแผนก)
+                  รายการตรวจของเครื่องนี้ (แยกตามแผนก)
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {deptSummary.length === 0
@@ -1076,7 +1076,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                           </select>
                           {/* กรองออกแล้วต้องบอก — ไม่งั้นดูเหมือนระบบมีแค่ไม่กี่ทีม */}
                           {hidden > 0 && (
-                            <span style={{ fontSize: 11, color: 'var(--muted)' }}>🔒 ซ่อน {hidden} ทีมที่ไม่ใช่ทีมของคุณ</span>
+                            <span style={{ fontSize: 11, color: 'var(--muted)' }}>ซ่อน {hidden} ทีมที่ไม่ใช่ทีมของคุณ</span>
                           )}
                         </>
                       )
@@ -1194,7 +1194,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                 })()}
                 {others.length > 0 && (
                   <p style={{ fontSize: 11, color: 'var(--muted)', margin: '6px 0 0' }}>
-                    💡 จุดตรวจของแผนกอื่นแก้ที่แท็บแผนกนั้น (สลับแท็บด้านบนของหน้า)
+                    จุดตรวจของแผนกอื่นแก้ที่แท็บแผนกนั้น (สลับแท็บด้านบนของหน้า)
                   </p>
                 )}
               </div>
@@ -1505,7 +1505,7 @@ function EquipmentTable({ groups, canSetup, onEdit, onDelete }) {
             <Fragment key={g.key}>
               <tr style={{ cursor: 'default' }}>
                 <td colSpan={cols} style={{ background: 'var(--bg3)', fontWeight: 800, fontSize: 12.5, color: g.known ? 'var(--accent)' : 'var(--muted)' }}>
-                  📍 {g.label}{g.section ? <span style={{ color: 'var(--muted)', fontWeight: 600 }}> · {g.section}</span> : null}
+                  {g.label}{g.section ? <span style={{ color: 'var(--muted)', fontWeight: 600 }}> · {g.section}</span> : null}
                   <span style={{ color: 'var(--muted)', fontWeight: 600 }}> ({g.rows.length})</span>
                   {!g.known && <span style={{ color: 'var(--muted)', fontWeight: 500 }}> — ไม่อยู่ในทะเบียนไลน์ (กรองตามไลน์ไม่ได้)</span>}
                 </td>

@@ -435,7 +435,7 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
 
       {topMovers.length > 0 && (
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>🔝 คนที่ถูกย้ายจุดงานบ่อยสุด (ช่วงนี้)</div>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>คนที่ถูกย้ายจุดงานบ่อยสุด (ช่วงนี้)</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {topMovers.map(t => (
               <div key={t.id} style={{ display: 'flex', gap: 8, fontSize: 12.5, alignItems: 'center' }}>
@@ -627,7 +627,7 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
 
       {bySection.length > 0 && (
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>📊 ส่วนงานที่มีคนออกมากสุด (เฉพาะที่รู้วันที่ออก · N={knownExits.length})</div>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>ส่วนงานที่มีคนออกมากสุด (เฉพาะที่รู้วันที่ออก · N={knownExits.length})</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {bySection.map(s => (
               <div key={s.section} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
@@ -643,7 +643,7 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
       )}
 
       <div className="card table-sticky" style={{ overflowX: 'auto', marginBottom: 16 }}>
-        <div style={{ padding: '10px 14px', fontWeight: 700, fontSize: 13, borderBottom: '1px solid var(--border)' }}>📋 รายชื่อที่ inactive — รู้วันที่ออก</div>
+        <div style={{ padding: '10px 14px', fontWeight: 700, fontSize: 13, borderBottom: '1px solid var(--border)' }}>รายชื่อที่ inactive — รู้วันที่ออก</div>
         <table style={{ minWidth: 640 }}>
           <thead><tr><th>รหัส</th><th>ชื่อ</th><th>ส่วนงาน</th><th>แผนก</th><th>ตำแหน่ง</th><th>เริ่มงาน</th><th>ออกงาน</th><th>อายุงาน</th></tr></thead>
           <tbody>
@@ -904,7 +904,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
 
       {isCurrentMonth && willExceed.length > 0 && (
         <div className="card" style={{ padding: 14, marginBottom: 14, borderLeft: '4px solid var(--accent2)' }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>🔔 ยังไม่เกิน แต่กำลังจะเกิน ({willExceed.length} คน)</div>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>ยังไม่เกิน แต่กำลังจะเกิน ({willExceed.length} คน)</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {willExceed.slice(0, 30).map(r => (
               <span key={r.employeeId} style={{ fontSize: 11.5, padding: '3px 8px', borderRadius: 6, background: 'var(--bg3)' }}>
@@ -917,7 +917,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
 
       <div className="card table-sticky" style={{ overflowX: 'auto', marginBottom: 14 }}>
         <div style={{ padding: '10px 14px', fontWeight: 700, fontSize: 13, borderBottom: '1px solid var(--border)' }}>
-          📋 {onlyOver ? `คนที่ทำ OT ตั้งแต่ ${threshold} วันขึ้นไป` : 'คนที่ทำ OT ทั้งหมด'} — {monthLabel(month)} ({shown.length} คน)
+          {onlyOver ? `คนที่ทำ OT ตั้งแต่ ${threshold} วันขึ้นไป` : 'คนที่ทำ OT ทั้งหมด'} — {monthLabel(month)} ({shown.length} คน)
           <span style={{ fontWeight: 400, color: 'var(--muted)', marginLeft: 8, fontSize: 11.5 }}>คลิกแถวเพื่อดูรายวัน</span>
         </div>
         <table style={{ minWidth: 980 }}>
@@ -991,7 +991,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
 
       {topReasons.length > 0 && (
         <div className="card" style={{ padding: 16 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>🔎 งานที่ทำ OT บ่อยสุดของเดือน (จากใบจอง OT)</div>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>งานที่ทำ OT บ่อยสุดของเดือน (จากใบจอง OT)</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {topReasons.map(t => {
               const pct = Math.round((t.n / topReasons[0].n) * 100);

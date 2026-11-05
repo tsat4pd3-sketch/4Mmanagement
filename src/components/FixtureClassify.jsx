@@ -137,7 +137,7 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
         <SearchInput value={q} onChange={setQ} fields="เลขเครื่อง / ชื่อ" />
         <span className="spacer" />
         {hiddenCount > 0 && (
-          <span className="filter-count">👁 ซ่อนอยู่ {hiddenCount} รายการ (ไม่ตรงตัวกรอง)</span>
+          <span className="filter-count">ซ่อนอยู่ {hiddenCount} รายการ (ไม่ตรงตัวกรอง)</span>
         )}
         <button onClick={pickAllShown} style={{ padding: '0 12px', borderRadius: 8, fontSize: 12.5,
                 background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>

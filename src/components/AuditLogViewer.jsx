@@ -122,7 +122,7 @@ export default function AuditLogViewer({ client, tables, limit = 300, intro, fmt
               <span style={{ color: 'var(--muted)' }}>{tableLabel(r.table_name)}</span>
               <b style={{ color: 'var(--text)' }}>{rowLabel(r)}</b>
               <span style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: 11.5 }}>
-                👤 {r.actor || '— (ระบบ/migration)'} · {fmtDT(r.changed_at)}
+                {r.actor || '— (ระบบ/migration)'} · {fmtDT(r.changed_at)}
               </span>
             </div>
             {r.action === 'UPDATE' && !!fields.length && (

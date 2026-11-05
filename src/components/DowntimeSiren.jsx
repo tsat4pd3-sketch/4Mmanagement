@@ -53,8 +53,8 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
      "เรียกช่างแล้วยังไม่รับทราบ" ชนะเสมอ (ด่วนกว่า + ปุ่มรับทราบต้องไปลงช่องที่ถูก) */
   const kindOf = (d) => (d.call_mtn && !d.call_mtn_ack_at ? 'call' : 'open')
   const META = {
-    call: { ackField: 'call_mtn_ack_at', label: '📞 เรียกช่าง MTN เข้าหน้างาน', color: '#e05c4a', icon: '🔧' },  // ป้ายจริงเติมชื่อทีมใน metaOf
-    open: { ackField: 'open_ack_at',     label: '🚨 เครื่องหยุดเกินกำหนด',      color: '#f59a3f', icon: '🚨' },
+    call: { ackField: 'call_mtn_ack_at', label: 'เรียกช่าง MTN เข้าหน้างาน', color: '#e05c4a', icon: '🔧' },  // ป้ายจริงเติมชื่อทีมใน metaOf
+    open: { ackField: 'open_ack_at',     label: 'เครื่องหยุดเกินกำหนด',      color: '#f59a3f', icon: '🚨' },
   }
   /* 🔴 แถบเตือน "เรียกช่าง" ต้องบอกทีมที่ถูกเรียก (06/10 · ทีม MTN: "จะรู้ได้ยังไงว่าเค้าเรียกเรา")
      ไม่ระบุทีม = เขียนตรงๆ ว่าไม่ระบุ ห้ามเดาให้ */
@@ -154,7 +154,7 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
                  display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(20,16,6,0.94)',
                  border: '1px solid rgba(251,191,36,0.5)', borderRadius: 10, padding: '7px 11px',
                  fontSize: 11.5, fontWeight: 800, color: '#fbbf24', boxShadow: 'var(--shadow-lg)' }}>
-        🔇 เสียงเตือนยังไม่พร้อม — แตะที่นี่ 1 ครั้ง
+        เสียงเตือนยังไม่พร้อม — แตะที่นี่ 1 ครั้ง
       </div>
     )
   }
@@ -176,7 +176,7 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
           {muted && (
             <span onClick={unlockNow}
               title="เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ" style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: '#fbbf24', cursor: 'pointer' }}>
-              🔇 แตะเพื่อเปิดเสียง
+              แตะเพื่อเปิดเสียง
             </span>
           )}
           <button onClick={() => ack(a)} style={{ flexShrink: 0, background: m.color, color: '#fff', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>รับทราบ · หยุดเสียง</button>

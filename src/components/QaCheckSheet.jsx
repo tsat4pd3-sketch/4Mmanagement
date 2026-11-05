@@ -778,7 +778,7 @@ export default function QaCheckSheet({ canRecord }) {
           {drawings.length > 0 && (
             <div style={{ ...cardSt, position: isMobile ? 'static' : 'sticky', top: 10 }}>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-                <div style={{ fontWeight: 800, fontSize: 13 }}>🖼 แบบ + จุดตรวจ</div>
+                <div style={{ fontWeight: 800, fontSize: 13 }}>แบบ + จุดตรวจ</div>
                 <span style={{ flex: 1 }} />
                 <button style={ghostBtn} onClick={() => setShowDrawing(s => !s)}>
                   {showDrawing ? '▾ ซ่อนแบบ' : '▸ แสดงแบบ'}
@@ -853,7 +853,7 @@ export default function QaCheckSheet({ canRecord }) {
           {/* สรุปต่อจุด (อ่านอย่างเดียว — ค่าทุกชิ้นที่วัดแล้ว · เปิด NCR จากจุดที่ตกได้ที่นี่) */}
           <div style={{ ...cardSt, padding: 0 }}>
             <div style={{ padding: '12px 16px', fontWeight: 800, fontSize: 13.5, borderBottom: '1px solid var(--border)' }}>
-              📋 สรุปต่อจุด ({items.length})
+              สรุปต่อจุด ({items.length})
               {loading && <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 12 }}> · กำลังโหลด…</span>}
               <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 12 }}>
                 {' '}· {readOnly && canRecord ? 'ใบปิดแล้ว' : !canRecord ? 'ไม่มีสิทธิ์บันทึก — ดูอย่างเดียว' : 'บันทึกที่แผงตรวจทีละชิ้นด้านบน'}
@@ -878,7 +878,7 @@ export default function QaCheckSheet({ canRecord }) {
       {/* ประวัติใบตรวจของพาร์ทนี้ */}
       {recent.length > 0 && (
         <div style={{ ...cardSt, marginTop: 12 }}>
-          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>🗂 ใบตรวจล่าสุดของพาร์ทนี้</div>
+          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>ใบตรวจล่าสุดของพาร์ทนี้</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {recent.map(s => {
               const cur = s.id === sheet?.id;
@@ -944,7 +944,7 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
             <Chip label={item.item_type === 'variable' ? 'Variable' : 'Attribute'} color={item.item_type === 'variable' ? '#4d9fff' : '#a78bfa'} />
             {item.rank && <Chip label={`Rank ${item.rank}`} color={RANK[item.rank].color} />}
             {item.stage && <Chip label={STAGE[item.stage]?.label || item.stage} color={STAGE[item.stage]?.color || '#6b7280'} />}
-            {res?.ncr_id && <Chip label="🚨 เปิด NCR แล้ว" color="#ef4444" />}
+            {res?.ncr_id && <Chip label="เปิด NCR แล้ว" color="#ef4444" />}
           </div>
         </div>
 
@@ -1022,13 +1022,13 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
           <Chip label={JUDGE[judged].label} color={JUDGE[judged].color} />
           {res.values_json?.length > 0 && <span>ค่าที่วัด: {res.values_json.join(', ')}</span>}
           {judged === 'ng' && res.qty_ng > 0 && <span>· NG {res.qty_ng} ชิ้น</span>}
-          {res.note && <span>· 💬 {res.note}</span>}
+          {res.note && <span>· {res.note}</span>}
           {res.recorded_by && <span>· โดย {res.recorded_by}</span>}
           {/* เปิด NCR ได้แม้ใบปิดแล้ว — NCR เป็นงานตามหลัง ไม่ใช่การแก้ผลตรวจ */}
           {judged === 'ng' && !res.ncr_id && canRecord && (
             <button onClick={e => { e.stopPropagation(); onOpenNcr(res); }} disabled={busy}
               style={{ ...ghostBtn, padding: '4px 10px', borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
-              🚨 เปิด NCR
+              เปิด NCR
             </button>
           )}
         </div>

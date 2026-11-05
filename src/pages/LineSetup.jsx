@@ -1105,7 +1105,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700,
                   zIndex: 20, boxShadow: 'var(--shadow-float)', pointerEvents: 'none',
                 }}>
-                  🔗 ใช้รูปผังจากไลน์หลัก — อัปโหลดรูปใหม่เพื่อแยกเป็นของตัวเอง
+                  ใช้รูปผังจากไลน์หลัก — อัปโหลดรูปใหม่เพื่อแยกเป็นของตัวเอง
                 </div>
               )}
               <img
@@ -1148,7 +1148,7 @@ export default function LineSetup({ embedded = false } = {}) {
                       </div>
                       {st.skill_allowance && (
                         <div style={{ ...pillSt, fontSize: badgeFont, color: 'var(--green)', fontWeight: 800 }}>
-                          💰 {st.skill_allowance_type || ''}
+                          {st.skill_allowance_type || ''}
                         </div>
                       )}
                     </div>
@@ -1223,7 +1223,7 @@ export default function LineSetup({ embedded = false } = {}) {
                         )}
                         {p.redundancy_group && (
                           <div style={{ ...subPillSt, color: '#d8b4fe' }}>
-                            🔀 {p.redundancy_group}
+                            {p.redundancy_group}
                           </div>
                         )}
                       </div>
@@ -1275,7 +1275,7 @@ export default function LineSetup({ embedded = false } = {}) {
             paddingBottom: 10, marginBottom: 12,
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <span style={{ ...labelSt, marginBottom: 0 }}>🏭 ไลน์ที่กำลังตั้งค่า</span>
+              <span style={{ ...labelSt, marginBottom: 0 }}>ไลน์ที่กำลังตั้งค่า</span>
               {mpDirty && <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--amber)', marginLeft: 'auto' }}>● ยังไม่บันทึก</span>}
             </div>
             <LineSelect lines={lines} value={selectedLine} onChange={selectLine} placeholder="เลือกไลน์…" includeSupport
@@ -1283,7 +1283,7 @@ export default function LineSetup({ embedded = false } = {}) {
           </div>
         )}
 
-        <CollapseCard id="lineList" storePrefix="ls" title="🏭 ไลน์ผลิต" count={lines.length} defaultOpen={!selectedLine}>
+        <CollapseCard id="lineList" storePrefix="ls" title="ไลน์ผลิต" count={lines.length} defaultOpen={!selectedLine}>
           {lines.length > 6 && (
             <SearchInput value={lineSearch} onChange={setLineSearch} fields="ไลน์"
               style={{ marginBottom: 8 }} inputStyle={{ fontSize: 12.5, background: 'var(--bg3)' }} />
@@ -1524,7 +1524,7 @@ export default function LineSetup({ embedded = false } = {}) {
                     onChange={e => setFormData({ ...formData, skill_allowance: e.target.checked })}
                     style={{ width: 16, height: 16, accentColor: 'var(--green)' }} />
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: formData.skill_allowance ? 'var(--green)' : 'var(--text2)' }}>💰 จุดงานได้ค่าฝีมือ</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: formData.skill_allowance ? 'var(--green)' : 'var(--text2)' }}>จุดงานได้ค่าฝีมือ</div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>พนักงานที่ถูก assign จุดนี้จะได้ค่าฝีมือรายวัน</div>
                   </div>
                 </label>
@@ -1555,7 +1555,7 @@ export default function LineSetup({ embedded = false } = {}) {
               </div>
             )}
           </div>
-          <CollapseCard id="stations" storePrefix="ls" title="📍 รายการจุดงาน" count={stations.length} defaultOpen={stations.length > 0}>
+          <CollapseCard id="stations" storePrefix="ls" title="รายการจุดงาน" count={stations.length} defaultOpen={stations.length > 0}>
           {stations.length > 6 && (
             <SearchInput value={pointSearch} onChange={setPointSearch} fields="จุดงาน"
               style={{ marginBottom: 8 }} inputStyle={{ fontSize: 12.5, background: 'var(--bg3)' }} />
@@ -1568,7 +1568,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   <div onClick={() => canEdit && editStation(st)} style={{ cursor: canEdit ? 'pointer' : 'default', flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 5 }}>
                       {st.station_name}
-                      {st.skill_allowance && <span style={{ fontSize: 11, background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>💰 ค่าฝีมือ{st.skill_allowance_type ? ` (${st.skill_allowance_type})` : ''}</span>}
+                      {st.skill_allowance && <span style={{ fontSize: 11, background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>ค่าฝีมือ{st.skill_allowance_type ? ` (${st.skill_allowance_type})` : ''}</span>}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                       {reqs.length > 0
@@ -1597,7 +1597,7 @@ export default function LineSetup({ embedded = false } = {}) {
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, textDecoration: 'none',
                   background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginBottom: 14 }}>
                 <div>
-                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>🏭 ฐานข้อมูลเครื่องจักร</div>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>ฐานข้อมูลเครื่องจักร</div>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>{drMachines.length} เครื่องในไลน์นี้ · เพิ่ม/แก้ไข/กำหนดประเภทเครื่องจักรที่นี่</div>
                 </div>
                 <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700, flexShrink: 0 }}>เปิดหน้า ↗</span>
@@ -1650,7 +1650,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   {canEdit ? <>คลิกบนรูปภาพเพื่อเพิ่มจุดเครื่องจักร<br />หรือคลิกที่จุดเดิมเพื่อแก้ไข</> : '👁️ โหมดดูอย่างเดียว — ไม่มีสิทธิ์แก้ไข'}
                 </div>
               )}
-              <CollapseCard id="machinePoints" storePrefix="ls" title="⚙️ รายการจุดเครื่องจักร" count={machinePoints.length} defaultOpen={machinePoints.length > 0}>
+              <CollapseCard id="machinePoints" storePrefix="ls" title="รายการจุดเครื่องจักร" count={machinePoints.length} defaultOpen={machinePoints.length > 0}>
               {machinePoints.length > 6 && (
                 <SearchInput value={pointSearch} onChange={setPointSearch} fields="เลขเครื่อง / ชื่อเครื่อง"
                   style={{ marginBottom: 8 }} inputStyle={{ fontSize: 12.5, background: 'var(--bg3)' }} />
@@ -1664,7 +1664,7 @@ export default function LineSetup({ embedded = false } = {}) {
                         <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{p.machine_no}</div>
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{mc?.machine_name || ''}</div>
                         {p.redundancy_group && (
-                          <div style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700, marginTop: 2 }}>🔀 {p.redundancy_group}</div>
+                          <div style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700, marginTop: 2 }}>{p.redundancy_group}</div>
                         )}
                       </div>
                       {canDel && <DeleteButton onClick={() => deleteMachinePoint(p.id)} title="ลบจุดเครื่องจักร" />}
@@ -1677,7 +1677,7 @@ export default function LineSetup({ embedded = false } = {}) {
               </div>
               </CollapseCard>
 
-              <CollapseCard id="flowLinks" storePrefix="ls" title="🔗 เส้นทางการผลิต" count={flowLinks.length}
+              <CollapseCard id="flowLinks" storePrefix="ls" title="เส้นทางการผลิต" count={flowLinks.length}
                 defaultOpen={flowLinks.length > 0}
                 right={canEdit && (
                   <button
@@ -1710,7 +1710,7 @@ export default function LineSetup({ embedded = false } = {}) {
                     const to = machinePoints.find(p => p.id === link.to_machine_point_id);
                     return (
                       <div key={link.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid var(--border)', fontSize: 12 }}>
-                        <span style={{ color: 'var(--text)' }}>⚙️ {from?.machine_no || '?'} → {to?.machine_no || '?'}</span>
+                        <span style={{ color: 'var(--text)' }}>{from?.machine_no || '?'} → {to?.machine_no || '?'}</span>
                         {canDel && <DeleteButton onClick={() => deleteFlowLink(link.id)} title="ลบเส้นทางไหล" />}
                       </div>
                     );
@@ -1745,7 +1745,7 @@ export default function LineSetup({ embedded = false } = {}) {
           <div>
             {/* ══ ข้อมูลของกลุ่ม — ไลน์ย่อยที่ไม่ได้ตั้งเอง จะตกทอดค่าจากไลน์แม่ ══ */}
             <div style={groupHeadSt}>
-              🏢 ข้อมูลของกลุ่ม <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· ไลน์ย่อยที่ไม่ได้ตั้งเอง จะตามไลน์แม่</span>
+              ข้อมูลของกลุ่ม <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· ไลน์ย่อยที่ไม่ได้ตั้งเอง จะตามไลน์แม่</span>
             </div>
             {parentLineObj && (
               <div style={inheritNoteSt}>
@@ -1761,13 +1761,13 @@ export default function LineSetup({ embedded = false } = {}) {
             )}
             <div style={{ display: 'flex', gap: 10, marginBottom: 6 }}>
               <div style={{ flex: 1 }}>
-                <label style={labelSt}>☀️ กะเช้า (คน)</label>
+                <label style={labelSt}>กะเช้า (คน)</label>
                 <input type="number" min={0} value={stdDay} disabled={!canEdit}
                   onChange={e => setStdDay(e.target.value)}
                   style={{ marginTop: 4, fontSize: 18, fontWeight: 700, textAlign: 'center' }} />
               </div>
               <div style={{ flex: 1 }}>
-                <label style={labelSt}>🌙 กะดึก (คน)</label>
+                <label style={labelSt}>กะดึก (คน)</label>
                 <input type="number" min={0} value={stdNight} disabled={!canEdit}
                   onChange={e => setStdNight(e.target.value)}
                   style={{ marginTop: 4, fontSize: 18, fontWeight: 700, textAlign: 'center' }} />
@@ -1779,7 +1779,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   <>
                     ไลน์แม่ <strong style={{ color: 'var(--text)' }}>{parentLineObj.name}</strong> ตั้งกำลังคน
                     <strong style={{ color: 'var(--text)' }}> ของทั้งกลุ่ม</strong> ไว้แล้ว
-                    (☀️ {parentLineObj.std_day_shift || 0} · 🌙 {parentLineObj.std_night_shift || 0} คน) —
+                    (☀️ {parentLineObj.std_day_shift || 0} · {parentLineObj.std_night_shift || 0} คน) —
                     ระบบใช้ตัวเลขนั้นเป็นยอดกลุ่ม ตัวเลขในช่องนี้จะ<strong style={{ color: 'var(--text)' }}>ไม่ถูกนับซ้ำ</strong>
                     {((parseInt(stdDay) || 0) > 0 || (parseInt(stdNight) || 0) > 0) &&
                       ' · ถ้าอยากให้นับแยกรายไลน์จริง ต้องล้างตัวเลขที่ไลน์แม่ให้เป็น 0 แล้วกรอกทุกไลน์ย่อยแทน'}
@@ -1791,7 +1791,7 @@ export default function LineSetup({ embedded = false } = {}) {
               </Hint>
             )}
             <div style={{ marginBottom: 12 }}>
-              <label style={labelSt}>🏷️ Cost Center</label>
+              <label style={labelSt}>Cost Center</label>
               {/* 2026-09-08: เลือกจากทะเบียน cost_centers (Main) ผ่าน <CostCenterSelect> — UI-CONVENTIONS §5.1.2 ห้าม input/datalist เอง
                   section ของไลน์ → รหัสของส่วนงานนี้ขึ้นก่อน · history = รหัสที่ไลน์อื่นใช้อยู่ (ยังไม่ลงทะเบียนก็เลือกได้ ป้าย ⚠) */}
               <div style={{ marginTop: 4 }}>
@@ -1808,7 +1808,7 @@ export default function LineSetup({ embedded = false } = {}) {
                 *"ไลน์นึงมีหัวหน้าได้ 2-3 คน แล้วแต่ว่ามีกี่กะการทำงาน"* ⇒ ช่องข้อความช่องเดียวตอบไม่ได้
                 กฎทั้งหมดอยู่ใน utils/lineHeads.js (จอใบค่าฝีมือใช้ชุดเดียวกัน) */}
             <div style={{ marginBottom: 14 }}>
-              <label style={labelSt}>👨‍🔧 หัวหน้างานของไลน์นี้ <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· ใช้ในใบค่าฝีมือ</span></label>
+              <label style={labelSt}>หัวหน้างานของไลน์นี้ <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· ใช้ในใบค่าฝีมือ</span></label>
               <div style={{ marginTop: 4, padding: '8px 10px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)' }}>
                 {lineHeads.rows.length ? (
                   <>
@@ -1869,7 +1869,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   เปลี่ยนชื่อ/เว้นวรรคเมื่อไหร่ ความเชื่อมโยงขาดเงียบ (เคยเกิด: "ณัฐพล  คำผาง" เว้น 2 เคาะ) */}
               {lineHeads.unlinkedAccounts.length > 0 && (
                 <div style={{ marginTop: 6, fontSize: 11, color: 'var(--muted)' }}>
-                  🔑 บัญชีผู้ใช้ที่ยังไม่ได้ผูกกับทะเบียนพนักงาน: <strong>{lineHeads.unlinkedAccounts.join(' · ')}</strong>
+                  บัญชีผู้ใช้ที่ยังไม่ได้ผูกกับทะเบียนพนักงาน: <strong>{lineHeads.unlinkedAccounts.join(' · ')}</strong>
                   {' '}— ตอนนี้จับคู่ด้วย<u>ชื่อ</u> ถ้าชื่อเปลี่ยนจะขาดจากกันเงียบๆ · ผูกให้ถาวรที่ทะเบียนผู้ใช้
                 </div>
               )}
@@ -1897,11 +1897,11 @@ export default function LineSetup({ embedded = false } = {}) {
             {/* ══ ข้อมูลเฉพาะไลน์นี้ — คุณสมบัติเครื่อง/การไหลงานจริง ไม่ตกทอดถึงไลน์ย่อย ══
                 แยกพื้นหลัง+เส้นคั่นให้เห็นชัดว่า "คนละเรื่องกับกำลังคนข้างบน" (user ทักว่าของปนกันในแผงเดียว) */}
             <div style={{ ...groupHeadSt, borderTop: '2px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
-              🏭 คุณสมบัติของไลน์นี้ <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· ไม่ใช่เรื่องกำลังคน · ไม่ตกทอดถึงไลน์ย่อย ตั้งแยกทุกไลน์</span>
+              คุณสมบัติของไลน์นี้ <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· ไม่ใช่เรื่องกำลังคน · ไม่ตกทอดถึงไลน์ย่อย ตั้งแยกทุกไลน์</span>
             </div>
             {/* ชนิดหน่วย ต้องมาก่อน "ประเภทไลน์" — ตอบคำถามที่ใหญ่กว่า (เป็นไลน์ผลิตไหม) */}
             <div style={{ marginBottom: 12 }}>
-              <label style={labelSt}>🧭 ชนิดหน่วย</label>
+              <label style={labelSt}>ชนิดหน่วย</label>
               <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
                 {UNIT_KINDS.map(k => (
                   <button key={k.key} type="button" disabled={!canEdit} title={k.desc}
@@ -1920,7 +1920,7 @@ export default function LineSetup({ embedded = false } = {}) {
               </div>
             </div>
             <div style={{ marginBottom: 12 }}>
-              <label style={labelSt}>🏭 ประเภทไลน์</label>
+              <label style={labelSt}>ประเภทไลน์</label>
               <select value={lineType} disabled={!canEdit}
                 onChange={e => setLineType(e.target.value)}
                 style={{ marginTop: 4, fontSize: 13, fontWeight: 600 }}>
@@ -1929,7 +1929,7 @@ export default function LineSetup({ embedded = false } = {}) {
               </select>
             </div>
             <div style={{ marginBottom: 12 }}>
-              <label style={labelSt}>🔀 รูปแบบการไหลงาน (บอร์ด Heijunka)</label>
+              <label style={labelSt}>รูปแบบการไหลงาน (บอร์ด Heijunka)</label>
               <select value={flowMode} disabled={!canEdit}
                 onChange={e => setFlowMode(e.target.value)}
                 style={{ marginTop: 4, fontSize: 13, fontWeight: 600 }}>
@@ -1944,7 +1944,7 @@ export default function LineSetup({ embedded = false } = {}) {
               </div>
               <div style={{ marginTop: 8 }}>
                 <label style={{ ...labelSt, fontSize: 11 }}>
-                  ⚙️ จำนวนเครื่องหลักวิ่งขนาน (N) — ใช้หัก Downtime ที่ระบุเครื่อง 1/N ในสูตร OEE
+                  จำนวนเครื่องหลักวิ่งขนาน (N) — ใช้หัก Downtime ที่ระบุเครื่อง 1/N ในสูตร OEE
                 </label>
                 <input type="number" min="1" value={parallelStations} disabled={!canEdit}
                   onChange={e => setParallelStations(e.target.value)}

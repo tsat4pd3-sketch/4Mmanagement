@@ -17,7 +17,7 @@
    4. **อ่านอย่างเดียว ไม่เขียนอะไรลง DB** — เป็นแค่ทางแยก ไม่ใช่หน้าทำงาน
    5. **ทางเข้ากลาง "สแกนอะไรก็ได้"** (2026-10-19 · คำสั่ง user — QA ตรวจชิ้นงาน · AM · PM · อุปกรณ์)
       ไม่ใช่เครื่อง/จิ๊ก/จุดส่ง ⇒ ลองเป็น **ใบผลิต (`prod_no`)** แล้ว **MAT/พาร์ท** (บาร์โค้ดคัมบัง/กล่อง)
-      → ปุ่ม ✅ ตรวจชิ้นงาน QA (`/qa?tab=sheet&part=`) · 🔎 สอบกลับ · ปุ่ม AM/PM แยกป้ายตาม `isAmTeam`
+      → ปุ่ม ✅ ตรวจชิ้นงาน QA (`/qa?tab=sheet&part=`) · สอบกลับ · ปุ่ม AM/PM แยกป้ายตาม `isAmTeam`
       · ตัวแปลง/ตัดสินอยู่ `qrCode.js` ที่เดียว (`resolveProduct`/`findQaPartByScan`) ห้ามเทียบเองในหน้านี้
    6. **เฟส 3 "สแกนอะไรก็เปิดหน้าของสิ่งนั้น"** (2026-10-28 · คำสั่ง user)
       ป้ายไลน์ (ESM:L / ชื่อไลน์เปล่า) → หน้าของไลน์นั้น · บัตรพนักงาน (รหัสล้วน) → การ์ดคน ·
@@ -265,7 +265,7 @@ export default function ScanLanding() {
       {raw && !loading && pointHit && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={card}>
-            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>🎯 จุดส่งงาน</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>จุดส่งงาน</div>
             <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1.2 }}>{pointHit.name || pointHit.code || '—'}</div>
             <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
               {[pointHit.code && `รหัส ${pointHit.code}`, (pointHit.line_names || []).join(', ')].filter(Boolean).join(' · ')}
@@ -291,7 +291,7 @@ export default function ScanLanding() {
             const q = encodeURIComponent(lineHit.name);
             return (<>
               <div style={card}>
-                <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>🏭 ไลน์ผลิต</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>ไลน์ผลิต</div>
                 <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1.2 }}>{lineHit.name}</div>
                 <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
                   {[lineHit.section && `ส่วนงาน ${lineHit.section}`, lineHit.parent_line_name && `ใต้ ${lineHit.parent_line_name}`].filter(Boolean).join(' · ')}
@@ -311,7 +311,7 @@ export default function ScanLanding() {
 
           {emp && (<>
             <div style={card}>
-              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>🪪 พนักงาน</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>พนักงาน</div>
               <div style={{ fontSize: 24, fontWeight: 900, lineHeight: 1.2 }}>{emp.name || '—'}</div>
               <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
                 {[`รหัส ${emp.employee_id_code}`, emp.position, lineById[String(emp.line_id)]?.name, emp.section].filter(Boolean).join(' · ')}
@@ -326,7 +326,7 @@ export default function ScanLanding() {
 
           {storageHit && (
             <div style={card}>
-              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>🏬 ที่เก็บ / รหัสคลัง</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>ที่เก็บ / รหัสคลัง</div>
               <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1.2 }}>{storageHit.code}</div>
               <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
                 {[storageHit.name, storageHit.kind, (storageHit.line_names || []).join(', ')].filter(Boolean).join(' · ')}

@@ -219,7 +219,7 @@ function NpiLinkCard({ proj, isMobile }) {
   const linkable = linkedPanelCount(proj.panels);
 
   if (loading) {
-    return <div style={{ ...CARD, marginBottom: 12, fontSize: 12, color: 'var(--muted)' }}>🔗 กำลังอ่านโปรเจค NPI ที่ผูกกับรุ่นนี้…</div>;
+    return <div style={{ ...CARD, marginBottom: 12, fontSize: 12, color: 'var(--muted)' }}>กำลังอ่านโปรเจค NPI ที่ผูกกับรุ่นนี้…</div>;
   }
   if (error) {
     /* 🔴 โหลดล่ม ต้องเขียนว่าล่ม ห้ามกลืนเป็น "ยังไม่ผูก" */
@@ -236,7 +236,7 @@ function NpiLinkCard({ proj, isMobile }) {
       <div className="nmb-card" data-eva="none" style={{ ...CARD, marginBottom: 12, padding: '12px 13px 12px 17px', borderRadius: 10, fontSize: 12.5, lineHeight: 1.6 }}>
         🔗 <b>รุ่นนี้ยังไม่ผูกกับโปรเจค NPI</b> — บอร์ดจึงแสดงได้แค่สิ่งที่ถอดจากบอร์ดกระดาษ
         <div style={{ color: 'var(--text2)', marginTop: 4 }}>
-          ผูกที่ <a href="/npi" style={{ color: 'var(--accent)' }}>🚀 พาร์ทใหม่ APQP / PPAP</a> → เลือกโปรเจค → <b>✏️ โปรเจค</b> → ช่อง
+          ผูกที่ <a href="/npi" style={{ color: 'var(--accent)' }}>พาร์ทใหม่ APQP / PPAP</a> → เลือกโปรเจค → <b>✏️ โปรเจค</b> → ช่อง
           <b> “🧭 รุ่นบนบอร์ด New Model”</b> → เลือก <b>{proj.title}</b>
           {linkable > 0 && <> · ผูกแล้ว <b>{linkable}</b> แผงบนบอร์ดนี้จะกดเข้าไปดูของจริงได้</>}
         </div>
@@ -411,7 +411,7 @@ function LevelOverview({ data, go }) {
           ))}
         </div>
         <div style={CARD}>
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>🚨 แผงที่ต้องรีบดู ({attention.length})</div>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>แผงที่ต้องรีบดู ({attention.length})</div>
           {!attention.length ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มี</div> : attention.map((p, i) => (
             <button key={i} onClick={() => go({ cust: p.project.customer, proj: p.project.id, panel: p.key })}
               style={{ background: 'none', border: 'none', borderBottom: '1px solid var(--border)', width: '100%',
@@ -640,7 +640,7 @@ function ResponsibleCard({ proj, isMobile }) {
           <div key={r.email} style={{ ...CARD, display: 'flex', flexDirection: 'column', gap: 3 }}>
             <div style={{ fontSize: 11.5, color: 'var(--accent)', fontWeight: 700 }}>{r.role}</div>
             <div style={{ fontSize: 13, fontWeight: 700 }}>{r.name}</div>
-            <a href={`tel:${r.tel}`} style={{ fontSize: 12.5, color: 'var(--text2)' }}>📞 {r.tel}</a>
+            <a href={`tel:${r.tel}`} style={{ fontSize: 12.5, color: 'var(--text2)' }}>{r.tel}</a>
             <a href={`mailto:${r.email}`} style={{ fontSize: 11.5, color: 'var(--text2)', wordBreak: 'break-all' }}>✉️ {r.email}</a>
           </div>
         ))}
@@ -676,7 +676,7 @@ function LevelProject({ proj, go }) {
       <ResponsibleCard proj={proj} isMobile={isMobile} />
 
       {proj.partsNote && (
-        <div style={{ ...CARD, marginBottom: 12, fontSize: 12, color: 'var(--text2)' }}>📦 {proj.partsNote}</div>
+        <div style={{ ...CARD, marginBottom: 12, fontSize: 12, color: 'var(--text2)' }}>{proj.partsNote}</div>
       )}
 
       <div style={{ ...CARD, marginBottom: 12 }}>

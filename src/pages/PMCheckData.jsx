@@ -7,7 +7,7 @@ import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
 import { can, isActionSeeded } from '../utils/permissions'
 import { positionRank } from '../utils/positions'
-// ✍️ B2 (02/11) — สายอนุมัติ AM ตามลำดับชั้น · 🔧 B3 — ป้าย MO / เหตุผลที่ไม่เปิดใบ
+// ✍️ B2 (02/11) — สายอนุมัติ AM ตามลำดับชั้น · B3 — ป้าย MO / เหตุผลที่ไม่เปิดใบ
 import { amApprovalVerdict, amApprovalText, amApprovalAssumptionText, amApproveAllowed, amNextApprover } from '../utils/amApproval'
 import { moStatusLabel } from '../utils/mtnStepPerm'
 import { amWaiverReasonValid, AM_WAIVER_MIN_LEN } from '../lib/pmDailyStatus'
@@ -267,14 +267,14 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
             {frameShimPins.map(sp => (
               <CalloutPin key={`shim-${sp.point.id}`} xPct={sp.pin.x * 100} yPct={sp.pin.y * 100} layerW={imgBox.rw} layerH={imgBox.rh} size={PK}
                 label={sp.point.point_no} color={SHIM_PIN_COLOR} selected={false} hollow={!sp.done}
-                title={`🔩 จุดชิม ${sp.point.point_no}${sp.point.name ? ` · ${sp.point.name}` : ''} — ${sp.done ? 'กรอกค่าแล้ว' : 'ยังไม่วัด'}${sp.point.current_shim_mm != null ? ` · ชิมรวม ${sp.point.current_shim_mm} mm` : ''}`}
+                title={`จุดชิม ${sp.point.point_no}${sp.point.name ? ` · ${sp.point.name}` : ''} — ${sp.done ? 'กรอกค่าแล้ว' : 'ยังไม่วัด'}${sp.point.current_shim_mm != null ? ` · ชิมรวม ${sp.point.current_shim_mm} mm` : ''}`}
                 onClick={e => { e.stopPropagation(); onShimPinClick?.(sp.point.id) }} />
             ))}
           </div>
         )}
       </div>
       {/* 🔴 แถบคุมรูปต้องอยู่ **ใต้รูป ไม่ทับรูป** (user 23/09 "ไม่บังรูปได้มั้ย")
-          เดิมวางทับบนรูป 3 จุด (▶ หมุนเอง · 🔄 3/7 · ป้าย "ลากซ้าย/ขวา") — บนมือถือรูปเล็กอยู่แล้ว
+          เดิมวางทับบนรูป 3 จุด (▶ หมุนเอง · 3/7 · ป้าย "ลากซ้าย/ขวา") — บนมือถือรูปเล็กอยู่แล้ว
           ป้ายพวกนี้กินพื้นที่รูปไปเกือบครึ่ง แล้วบังจุดที่ต้องตรวจพอดี (จุดตรวจอยู่กลางรูปบ่อย) */}
       {spin && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', marginTop: compact ? 6 : 8 }}>
@@ -288,7 +288,7 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
                 style={{ width: 10, height: 10, borderRadius: '50%', border: 'none', cursor: 'pointer', padding: 0, background: i === frameIdx ? 'var(--accent)' : 'var(--border2)' }} />
             ))}
           </div>
-          <span style={{ fontSize: 11, color: 'var(--muted)' }}>🔄 {frameIdx + 1}/{frames.length} · ลากซ้าย-ขวาบนรูปเพื่อหมุน</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{frameIdx + 1}/{frames.length} · ลากซ้าย-ขวาบนรูปเพื่อหมุน</span>
         </div>
       )}
       {/* 🔑 คำอธิบายสัญลักษณ์ — หมุดต่างกันที่ "ทรง + สี" ต้องบอกบนจอ ไม่งั้นคนเดาเอาเอง */}
@@ -307,7 +307,7 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
       {/* บอกให้รู้ว่าหมุดที่มี 🔍 กดดูรูปซูมได้ — ไม่งั้นไม่มีใครรู้ว่ากดได้ */}
       {!compact && framePins.some(c => c.image_path) && (
         <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', marginTop: 6 }}>
-          🔍 หมุดที่มีสัญลักษณ์แว่นขยาย = แตะเพื่อดูรูปซูมของจุดนั้น
+          หมุดที่มีสัญลักษณ์แว่นขยาย = แตะเพื่อดูรูปซูมของจุดนั้น
         </div>
       )}
       {zoomCp && <CpZoom cp={zoomCp} idx={cpIndex[zoomCp.id]} onClose={() => setZoomCp(null)} />}
@@ -341,7 +341,7 @@ function VariableRow({ cp, idx, r, onChange, methodIndex, calcText }) {
         {c && <span style={{ fontSize: 11, fontWeight: 700, color: c.text }}>{status === 'pass' ? '●' : status === 'warning' ? '⚠' : '✕'}</span>}
       </div>
       {calcText && (
-        <div style={{ fontSize: 11.5, color: 'var(--blue)', fontWeight: 700 }}>🧮 ค่า = {calcText} · ระบบคิดให้จากค่าที่วัด ไม่ต้องกรอก</div>
+        <div style={{ fontSize: 11.5, color: 'var(--blue)', fontWeight: 700 }}>ค่า = {calcText} · ระบบคิดให้จากค่าที่วัด ไม่ต้องกรอก</div>
       )}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         {['v1', 'v2', 'v3'].map((k, i) => (
@@ -399,7 +399,7 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
       </div>
       {cp.description && (
         <p style={{ fontSize: 11.5, color: 'var(--text2)', whiteSpace: 'pre-line', margin: '0 0 0 24px', lineHeight: 1.5 }}>
-          📐 {cp.description}
+          {cp.description}
         </p>
       )}
       {cp.type === 'note' && <input value={note} onChange={e => onChangeNote(e.target.value)} placeholder="หมายเหตุ (ถ้ามี)..." />}
@@ -489,7 +489,7 @@ function NgRecheckPanel({ result, cp, onSaved, canRecord = false, deptWrite = nu
       <div style={{ marginTop: 6, borderRadius: 8, background: 'rgba(224,92,74,0.06)', border: '1px solid rgba(224,92,74,0.25)', padding: '8px 12px' }}>
         <p style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>NG — ยังไม่มี action</p>
         <p style={{ fontSize: 11.5, color: 'var(--muted)', margin: '2px 0 0', lineHeight: 1.45 }}>
-          🔒 {deptWrite && !deptWrite.ok
+          {deptWrite && !deptWrite.ok
             ? teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')
             : 'บันทึก action / ค่าวัดใหม่ได้เฉพาะผู้มีสิทธิ์ลงผลตรวจของทีมนี้'}
         </p>
@@ -721,7 +721,7 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
                       <PointThumb url={getPublicUrl(r.evidence_path)} height={90} mobileMax={90} label={null} color="var(--red)"
                         name={`หลักฐานสภาพจริง · ${cp.name}`} />
-                      <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>📎 หลักฐานสภาพจริง (แตะเพื่อซูม)</span>
+                      <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>หลักฐานสภาพจริง (แตะเพื่อซูม)</span>
                     </div>
                   )}
                 </div>
@@ -1396,7 +1396,7 @@ export default function PMCheckData() {
     {!deptWrite.ok && (
       <div style={{ margin: '0 0 10px', padding: '8px 10px', borderLeft: '4px solid var(--amber)',
         background: 'var(--card)', borderRadius: 8, fontSize: 12.5 }}>
-        🔒 {teamBlockText(deptWrite, `งานตรวจของทีม "${deptNameOf(department) || department}"`)}
+        {teamBlockText(deptWrite, `งานตรวจของทีม "${deptNameOf(department) || department}"`)}
       </div>
     )}
     <div style={S.page}>
@@ -1489,7 +1489,7 @@ export default function PMCheckData() {
               )}
               {lineNames.map(ln => (
                 <div key={ln} style={{ marginBottom: 10 }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: deptColor, padding: '2px 4px 4px' }}>🏭 {ln} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· ตรวจแล้ว {byLine[ln].filter(j => checkedThisShift[j.id]).length}/{byLine[ln].length}</span></div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: deptColor, padding: '2px 4px 4px' }}>{ln} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· ตรวจแล้ว {byLine[ln].filter(j => checkedThisShift[j.id]).length}/{byLine[ln].length}</span></div>
                   {byLine[ln].map(jig => {
                     const st = checkedThisShift[jig.id]
                     return (
@@ -1524,7 +1524,7 @@ export default function PMCheckData() {
             {jigGroups.map(g => (
               <div key={g.key}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: g.known ? 'var(--text2)' : 'var(--amber)', margin: '8px 2px 5px', lineHeight: 1.4 }}>
-                  📍 {g.label} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· {g.rows.length}</span>
+                  {g.label} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· {g.rows.length}</span>
                 </div>
                 {g.rows.map(({ jig }) => (
                   <div key={jig.id} onClick={() => selectJig(jig)} style={S.jigItem(selectedJig?.id === jig.id, deptColor)}>
@@ -1629,7 +1629,7 @@ export default function PMCheckData() {
                       {otherDepts.length > 0 && (
                         <div style={{ marginTop: 16, padding: '12px 14px', display: 'inline-block', textAlign: 'left', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10 }}>
                           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 7 }}>
-                            🔎 เครื่องนี้มีจุดตรวจอยู่ใต้แผนกอื่น — กดเพื่อดู
+                            เครื่องนี้มีจุดตรวจอยู่ใต้แผนกอื่น — กดเพื่อดู
                           </div>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                             {otherDepts.map(d => {
@@ -1650,7 +1650,7 @@ export default function PMCheckData() {
                       {/* จิ๊กที่มีจุดชิมแต่ยังไม่มีจุดตรวจ PM (เช่น JHYD12-01) — ค่าชิมบันทึกที่ /fixture ได้เลย ไม่ต้องรอใบตรวจ */}
                       {shimPoints.length > 0 && (
                         <div style={{ fontSize: 12, marginTop: 10, color: SHIM_PIN_COLOR }}>
-                          🔩 เครื่องนี้มีจุดชิม {shimPoints.length} จุดในทะเบียน — ยังบันทึกค่าชิมได้ที่{' '}
+                          เครื่องนี้มีจุดชิม {shimPoints.length} จุดในทะเบียน — ยังบันทึกค่าชิมได้ที่{' '}
                           <Link to="/equipment?tab=jig&fx=shim" style={{ color: SHIM_PIN_COLOR, fontWeight: 700 }}>ทะเบียนจิ๊ก → 🔧 บันทึกชิม</Link>
                           {' '}(ตั้งจุดตรวจ PM แล้ว จะกรอกค่าชิมพร้อมใบตรวจได้ที่นี่)
                         </div>
@@ -1714,7 +1714,7 @@ export default function PMCheckData() {
                       {focusOn && !activeCpId && !activeShimId && (
                         <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '22px 12px', lineHeight: 1.8,
                           border: '1px dashed var(--border2)', borderRadius: 12, background: 'var(--bg3)' }}>
-                          👆 แตะหมุดบนรูปเพื่อตรวจจุดนั้น
+                          แตะหมุดบนรูปเพื่อตรวจจุดนั้น
                           <div style={{ fontSize: 11.5, marginTop: 2 }}>ขึ้นทีละข้อ ไม่ต้องเลื่อนหา · อยากเห็นทุกข้อพร้อมกันกดปุ่ม “📍 เฉพาะจุดที่แตะ” เพื่อสลับ</div>
                           {todo.length > 0 && (
                             <button onClick={() => setActiveCpId(todo[0].id)}
@@ -1792,7 +1792,7 @@ export default function PMCheckData() {
                         return (
                           <div style={{ marginTop: 12 }}>
                             <div style={{ padding: '7px 12px', borderRadius: 8, marginBottom: 8, background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', fontSize: 12.5, fontWeight: 800, color: SHIM_PIN_COLOR }}>
-                              🔩 จุดชิม (Shim Record) · {shimPoints.length} จุด{dueN ? <span style={{ color: 'var(--red)' }}> · ถึงรอบ {dueN}</span> : null}
+                              จุดชิม (Shim Record) · {shimPoints.length} จุด{dueN ? <span style={{ color: 'var(--red)' }}> · ถึงรอบ {dueN}</span> : null}
                               <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted)', marginTop: 2 }}>
                                 วัดค่าชิมรวมตอนนี้แล้วกรอกเป็น mm — บันทึกพร้อมใบตรวจนี้ลงประวัติชิมของจุด (ไม่บังคับ · จุดที่ไม่กรอก = ไม่แตะ)
                                 {shimPins.length < shimPoints.length && <span> · {shimPoints.length - shimPins.length} จุดยังไม่ปักบนรูป — ปักที่ /fixture แท็บทะเบียนจุด</span>}
@@ -1800,7 +1800,7 @@ export default function PMCheckData() {
                             </div>
                             {!canShim && (
                               <div style={{ fontSize: 11.5, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '6px 10px', marginBottom: 8 }}>
-                                🔒 บัญชีนี้ดูค่าชิมได้แต่บันทึกไม่ได้ — ต้องมีสิทธิ์ fixture_shim:record (admin เปิดให้ที่ /permissions)
+                                บัญชีนี้ดูค่าชิมได้แต่บันทึกไม่ได้ — ต้องมีสิทธิ์ fixture_shim:record (admin เปิดให้ที่ /permissions)
                               </div>
                             )}
                             {shimPoints.filter(pt => !focusOn || pt.id === activeShimId).map(pt => {
@@ -1925,7 +1925,7 @@ export default function PMCheckData() {
                           {/* NG ใบนี้ถูกส่งซ่อมหรือยัง — ตอบคำถาม "ที่เจอเมื่อวาน แก้แล้วรึยัง" ได้จากตรงนี้เลย */}
                           {moByInsp[insp.id] && (
                             <span style={{ fontSize: 11, fontWeight: 700, color: '#fb923c' }}>
-                              🔧 ใบซ่อม {moByInsp[insp.id].mo_no || '(รอออกเลข)'} · {moStatusLabel(moByInsp[insp.id])}
+                              ใบซ่อม {moByInsp[insp.id].mo_no || '(รอออกเลข)'} · {moStatusLabel(moByInsp[insp.id])}
                             </span>
                           )}
                           {insp.status === 'fail' && !moByInsp[insp.id] && insp.mo_waived_reason && (

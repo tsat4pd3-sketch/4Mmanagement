@@ -1100,7 +1100,7 @@ export default function Management() {
           </div>
           {worker.employees?.section && (
             <div style={{ fontSize: 11, color: 'var(--blue)', background: 'var(--blue-dim)', borderRadius: 3, padding: isMobile ? '1px 6px' : '1px 6px', marginTop: 2, display: isMobile ? 'inline-block' : 'block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 140 : '100%', whiteSpace: 'nowrap', textAlign: 'center' }}>
-              📍 {worker.employees.section}
+              {worker.employees.section}
             </div>
           )}
         </div>
@@ -1162,7 +1162,7 @@ export default function Management() {
         {helperMap[worker.employee_id] && (
           <div title={`ยืมตัวจากไลน์ ${allLines.find(l => l.id === worker.employees?.line_id)?.name || 'อื่น'} มาช่วยกะนี้`}
             style={{ fontSize: 11, fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', borderRadius: 3, padding: '1px 6px', flexShrink: 0, whiteSpace: 'nowrap' }}>
-            🤝 ยืมตัว
+            ยืมตัว
           </div>
         )}
         {/* assign to special task */}
@@ -1345,12 +1345,12 @@ export default function Management() {
           )}
           {mergedChildNames.length > 0 && (
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-              🔗 รวมไลน์ย่อย: {mergedChildNames.join(', ')}
+              รวมไลน์ย่อย: {mergedChildNames.join(', ')}
             </div>
           )}
           {mergedParentNames.length > 0 && (
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-              🔗 รวมจุดของไลน์หลัก: {mergedParentNames.join(', ')}
+              รวมจุดของไลน์หลัก: {mergedParentNames.join(', ')}
             </div>
           )}
         </div>
@@ -1358,7 +1358,7 @@ export default function Management() {
         {/* instruction banner on mobile when worker selected */}
         {isMobile && selectedWorker && (
           <div style={{ marginBottom: 8, padding: '8px 12px', borderRadius: 8, background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', fontSize: 12, fontWeight: 600, color: 'var(--blue)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-            <span>👆 แตะ station ด้านล่างเพื่อจัดตำแหน่ง</span>
+            <span>แตะ station ด้านล่างเพื่อจัดตำแหน่ง</span>
             <button onClick={() => setSelectedWorker(null)} style={{ background: 'none', border: 'none', color: 'var(--blue)', fontSize: 18, cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button>
           </div>
         )}
@@ -1388,11 +1388,11 @@ export default function Management() {
                 </div>
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
-                📅 {boardDate}{boardDate === todayWorkDate ? ' (วันนี้)' : ''} · เปลี่ยนวันที่ได้ที่แถบ Heijunka ด้านบน
+                {boardDate}{boardDate === todayWorkDate ? ' (วันนี้)' : ''} · เปลี่ยนวันที่ได้ที่แถบ Heijunka ด้านบน
               </div>
               {!isLiveView && (
                 <div style={{ fontSize: 11, color: 'var(--blue)', marginTop: 4, lineHeight: 1.5 }}>
-                  👁 โหมดย้อนหลัง — <b>อ่านอย่างเดียว จัดคนไม่ได้</b> · แสดงจุดงานสุดท้ายของกะนั้น
+                  โหมดย้อนหลัง — <b>อ่านอย่างเดียว จัดคนไม่ได้</b> · แสดงจุดงานสุดท้ายของกะนั้น
                   <button onClick={() => { setBoardDate(todayWorkDate); setViewShift(getCurrentShift()); }}
                     style={{ marginLeft: 6, padding: '2px 9px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>
                     ⟳ กลับมาดูสด
@@ -1406,7 +1406,7 @@ export default function Management() {
           {!isMobile && selectedLine && (familyManpower.total > 0 || familyManpower.hidden.length > 0) && (
             <div style={{ marginBottom: 8, padding: '8px 10px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, flexShrink: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>👷 กำลังคนกลุ่มนี้</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>กำลังคนกลุ่มนี้</span>
                 <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent)' }}>{familyManpower.total} คน</span>
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
@@ -1585,7 +1585,7 @@ export default function Management() {
               </button>
             );
           })}
-          <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>· 🎴 kanban เยอะ — สลับดูทีละมุมเต็มจอ</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>· kanban เยอะ — สลับดูทีละมุมเต็มจอ</span>
         </div>
         )}
 
@@ -1818,7 +1818,7 @@ export default function Management() {
                 } else if (projEndMs <= DAY_OT_END) {
                   chips.push({ color: 'var(--amber)', text: `${sLabel} คาดเสร็จ ${projLabel} — ⏰ ต้องเปิด OT ~${otMin} นาที (เลิก 17:30 → ผลิตถึง ${projLabel})` });
                 } else {
-                  chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกินกรอบ OT (20:00) ควรวางแผนยกยอด/เพิ่มกำลังผลิต` });
+                  chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — เกินกรอบ OT (20:00) ควรวางแผนยกยอด/เพิ่มกำลังผลิต` });
                 }
                 return;
               }
@@ -1841,7 +1841,7 @@ export default function Management() {
               if (projEndMs <= FRAME_END) {
                 chips.push({ color: 'var(--green)', text: `${sLabel} คาดเสร็จ ${projLabel} — จบภายในกะ (ก่อน 08:00)` });
               } else {
-                chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกิน 08:00 ควรวางแผนยกยอดไปกะถัดไป` });
+                chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — เกิน 08:00 ควรวางแผนยกยอดไปกะถัดไป` });
               }
             });
             return chips;
@@ -1863,8 +1863,8 @@ export default function Management() {
               {/* Header — ขนาดอ่านได้จากระยะยืนดูจอ ไม่ใช่ตัวจิ๋วทั้งที่พื้นที่แนวนอนเหลือเยอะ */}
               <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, background: 'var(--bg2)' }}>
                 <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>
-                  📊 Heijunka — {selectedLine}
-                  {isHistorical && <span style={{ marginLeft: 8, fontSize: 11, padding: '2px 9px', borderRadius: 10, background: 'var(--blue-dim)', color: 'var(--blue)' }}>📅 ย้อนหลัง {boardDate}</span>}
+                  Heijunka — {selectedLine}
+                  {isHistorical && <span style={{ marginLeft: 8, fontSize: 11, padding: '2px 9px', borderRadius: 10, background: 'var(--blue-dim)', color: 'var(--blue)' }}>ย้อนหลัง {boardDate}</span>}
                 </span>
                 <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap' }}>
                   <button onClick={() => shiftBoardDate(-1)} style={{ padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>◀</button>
@@ -1917,7 +1917,7 @@ export default function Management() {
               {/* Kanban ที่เปิดอยู่ ต่อ MAT.NO */}
               {matNoChips.length > 0 && (
                 <div style={{ padding: '7px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center', background: 'var(--bg)' }}>
-                  <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>🎴 Kanban เปิดอยู่:</span>
+                  <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>Kanban เปิดอยู่:</span>
                   {matNoChips.map(([matNo, count]) => (
                     <span key={matNo} style={{ fontSize: 11, padding: '2px 9px', borderRadius: 20, fontWeight: 700, background: 'var(--blue-dim)', color: 'var(--blue)', fontFamily: 'monospace' }}>
                       {matNo} · {count} ใบ
@@ -1947,7 +1947,7 @@ export default function Management() {
               {/* 🧠 Smart planner — คาดการณ์เวลาเสร็จ / คำแนะนำ OT */}
               {plannerChips.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, padding: '7px 14px', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>🧠 PLANNER</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>PLANNER</span>
                   {plannerChips.map((c, i) => (
                     <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: '3px 11px', borderRadius: 10, background: 'var(--card)', color: c.color, border: `1px solid ${c.color}` }}>{/* สีจาก token ธีม (--green/--amber/--red) — เดิม hex สว่าง + พื้นโปร่ง 1f ⇒ ธีมสว่างมองไม่เห็น (02/10) */}
                       {c.text}
@@ -2102,8 +2102,8 @@ export default function Management() {
                     {/* Hour header — เวลาคู่: บรรทัดบน ☀️ 08–19 / บรรทัดล่าง 🌙 20–07 คอลัมน์เดียวกัน */}
                     <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
                       <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '3px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 3, background: 'var(--bg2)' } : null) }}>
-                        <span>☀️ กะเช้า{isMobile ? '' : ' (แถบบน)'}</span>
-                        <span>🌙 กะดึก{isMobile ? '' : ' (แถบล่าง)'}</span>
+                        <span>กะเช้า{isMobile ? '' : ' (แถบบน)'}</span>
+                        <span>กะดึก{isMobile ? '' : ' (แถบล่าง)'}</span>
                       </div>
                       {/* ป้ายเวลาปัจจุบัน ลอยตรงตำแหน่ง playhead (คอลัมน์ใช้ร่วม 2 กะ — ไอคอนบอกว่าอยู่กะไหน) */}
                       {(() => {
@@ -2660,7 +2660,7 @@ export default function Management() {
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{radarWorker.employees?.employee_id_code}</div>
                 <div style={{ display: 'flex', gap: 5, marginTop: 5, flexWrap: 'wrap' }}>
                   {radarWorker.employees?.team && <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', borderRadius: 4, padding: '1px 6px' }}>Team {radarWorker.employees.team}</span>}
-                  {radarWorker.employees?.section && <span style={{ fontSize: 11, color: 'var(--blue)', background: 'var(--blue-dim)', borderRadius: 4, padding: '1px 6px' }}>📍 {radarWorker.employees.section}</span>}
+                  {radarWorker.employees?.section && <span style={{ fontSize: 11, color: 'var(--blue)', background: 'var(--blue-dim)', borderRadius: 4, padding: '1px 6px' }}>{radarWorker.employees.section}</span>}
                 </div>
               </div>
               <button onClick={() => setRadarWorker(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', padding: '0 4px', alignSelf: 'flex-start' }}>✕</button>
@@ -2747,7 +2747,7 @@ export default function Management() {
                   )}
                   {detailSheet.worker.employees?.section && (
                     <span style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa', background: 'rgba(167,139,250,0.13)', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 5, padding: '2px 8px' }}>
-                      📍 สังกัด: {detailSheet.worker.employees.section}
+                      สังกัด: {detailSheet.worker.employees.section}
                     </span>
                   )}
                   {detailSheet.stationName && (
@@ -2862,7 +2862,7 @@ export default function Management() {
                           >บันทึกตำแหน่งประจำ</button>
                         )}
                         {homePositions[workerHere.employee_id] === String(st.id) && (
-                          <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontWeight: 700 }}>🏠 ตำแหน่งประจำ</span>
+                          <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontWeight: 700 }}>ตำแหน่งประจำ</span>
                         )}
                         {canAssignManpower && <button
                           onClick={() => { assignWorker(workerHere.id, 'Pool'); setStationModal(null); }}
@@ -2916,7 +2916,7 @@ export default function Management() {
       {specialModal && (
         <div className="overlay">
           <div className="modal" style={{ width: 'min(360px, 94vw)' }}>
-            <h3 style={{ marginTop: 0, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>🏷 กำหนดงานนอกไลน์</h3>
+            <h3 style={{ marginTop: 0, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>กำหนดงานนอกไลน์</h3>
             <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -10 }}>{specialModal.employees?.name}</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
               {specialTaskOptions.map(t => (
@@ -2947,7 +2947,7 @@ export default function Management() {
       {pendingDocModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--card)', borderRadius: 12, padding: 24, width: '100%', maxWidth: 420, display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{ fontWeight: 700, fontSize: 16 }}>📎 แนบเอกสาร OJT</div>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>แนบเอกสาร OJT</div>
             <div style={{ fontSize: 13, color: 'var(--text2)' }}>
               <b>{pendingDocModal.log.category}</b> · {pendingDocModal.log.line_name}<br/>
               {pendingDocModal.log.description}
@@ -2963,7 +2963,7 @@ export default function Management() {
               >
                 {docImagePreview
                   ? <img src={docImagePreview} alt="" style={{ maxHeight: 140, borderRadius: 6, objectFit: 'contain' }} />
-                  : <span style={{ color: 'var(--muted)', fontSize: 13 }}>📸 แตะเพื่อเลือกรูป</span>
+                  : <span style={{ color: 'var(--muted)', fontSize: 13 }}>แตะเพื่อเลือกรูป</span>
                 }
               </div>
               <input id="doc-img-input" type="file" accept="image/*" style={{ display: 'none' }}
@@ -3034,7 +3034,7 @@ export default function Management() {
       {show4MModal && (
         <div className="overlay">
           <div className="modal" style={{ width: 'min(420px, 94vw)' }}>
-            <h3 style={{ marginTop: 0, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>🚨 บันทึก 4M Change</h3>
+            <h3 style={{ marginTop: 0, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>บันทึก 4M Change</h3>
             <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -10 }}>ไลน์: {show4MModal.lineName}</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
@@ -3121,7 +3121,7 @@ export default function Management() {
                 return (
                   <div>
                     <label style={{ ...labelSt, color: 'var(--blue)' }}>
-                      📎 {log4MForm.category === 'Man' ? 'รูปหลักฐาน OJT' : 'รูปรายละเอียดการเปลี่ยนแปลง'} <span style={{ color: 'var(--red)' }}>*</span>
+                      {log4MForm.category === 'Man' ? 'รูปหลักฐาน OJT' : 'รูปรายละเอียดการเปลี่ยนแปลง'} <span style={{ color: 'var(--red)' }}>*</span>
                     </label>
                     <div style={{ border: `2px dashed ${reqImageFile ? 'var(--blue)' : 'var(--border2)'}`, borderRadius: 8, padding: '10px 12px', background: reqImageFile ? 'var(--blue-dim)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center', position: 'relative' }}
                       onClick={() => document.getElementById('req-img-input').click()}>
@@ -3138,7 +3138,7 @@ export default function Management() {
                         }} />
                       {reqImagePreview
                         ? <img src={reqImagePreview} style={{ maxHeight: 140, maxWidth: '100%', borderRadius: 6, objectFit: 'contain' }} />
-                        : <div style={{ color: 'var(--muted)', fontSize: 13 }}>📷 แตะเพื่อเลือกรูป (JPG/PNG/WebP)</div>}
+                        : <div style={{ color: 'var(--muted)', fontSize: 13 }}>แตะเพื่อเลือกรูป (JPG/PNG/WebP)</div>}
                     </div>
                     {reqImageFile && (
                       <button type="button" onClick={() => { setReqImageFile(null); setReqImagePreview(null); }}
@@ -3240,7 +3240,7 @@ function WorkerHoverCard({ card, skillDefs }) {
             {fit && <div style={{ fontSize: 11, fontWeight: 700, color: fc }}>{fitLabel(fit.score)}</div>}
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
               {emp?.team && <span style={{ fontSize: 11, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px' }}>Team {emp.team}</span>}
-              {emp?.section && <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 4, padding: '1px 5px' }}>📍 {emp.section}</span>}
+              {emp?.section && <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 4, padding: '1px 5px' }}>{emp.section}</span>}
             </div>
           </div>
         </div>
@@ -3385,7 +3385,7 @@ function PointDetailCard({ detail, alarms, onClose }) {
             )}
             <div style={{ display: 'flex', gap: 5, marginTop: 6, flexWrap: 'wrap' }}>
               {mtype && <span style={chipSt(mtype.color || '#4d9fff')}>{mtype.icon ? `${mtype.icon} ` : ''}{mtype.label}</span>}
-              {machine?.line_name && <span style={chipSt('#a78bfa')}>📍 {machine.line_name}</span>}
+              {machine?.line_name && <span style={chipSt('#a78bfa')}>{machine.line_name}</span>}
               {machine?.process_type && <span style={chipSt('#4d9fff')}>{machine.process_type}</span>}
             </div>
           </div>
@@ -3395,7 +3395,7 @@ function PointDetailCard({ detail, alarms, onClose }) {
         {/* Downtime ที่ยังเปิดค้างของเครื่องนี้ */}
         {alarms && (
           <div className="dt-alarm-blink" style={{ background: 'rgba(239,68,68,0.12)', border: '1.5px solid #ef4444', borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
-            <div style={{ fontSize: 12, fontWeight: 900, color: '#ef4444', marginBottom: 4 }}>🚨 DOWNTIME</div>
+            <div style={{ fontSize: 12, fontWeight: 900, color: '#ef4444', marginBottom: 4 }}>DOWNTIME</div>
             {alarms.map((d, i) => {
               const ongoing = !d.ended_at && d.duration_min == null;
               const elapsed = dtElapsedMin(d);

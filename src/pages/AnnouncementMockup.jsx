@@ -253,7 +253,7 @@ export default function AnnouncementMockup() {
     const list = inbox(to);
     return (
       <div style={card}>
-        <h3 style={h3}>🔔 {title} ({list.length})</h3>
+        <h3 style={h3}>{title} ({list.length})</h3>
         {list.length ? (
           <div style={{ display: 'grid', gap: 6 }}>
             {list.map(n => (
@@ -272,11 +272,11 @@ export default function AnnouncementMockup() {
       <PageHeader
         title="ประกาศ / ชี้แจงบริษัท"
         icon="📢"
-        sub={<span><b style={{ color: 'var(--amber)' }}>🧪 MOCKUP</b> · ข้อมูลจำลองในหน้านี้ ไม่บันทึกลงฐานข้อมูล (รีเฟรช = เริ่มใหม่)</span>}
+        sub={<span><b style={{ color: 'var(--amber)' }}>MOCKUP</b> · ข้อมูลจำลองในหน้านี้ ไม่บันทึกลงฐานข้อมูล (รีเฟรช = เริ่มใหม่)</span>}
         tabs={tabs} tab={tab} onTab={setTab}
         filters={(
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, color: 'var(--muted)' }}>📅 วันที่จำลอง</span>
+            <span style={{ fontSize: 13, color: 'var(--muted)' }}>วันที่จำลอง</span>
             <button type="button" style={btnGhost} onClick={() => setToday(d => addDaysStr(d, -1))}>‹</button>
             <input type="date" value={today} onChange={e => e.target.value && setToday(e.target.value)} />
             <button type="button" style={btnGhost} onClick={() => setToday(d => addDaysStr(d, 1))}>›</button>
@@ -297,7 +297,7 @@ export default function AnnouncementMockup() {
       {tab === 'issue' && (
         <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', alignItems: 'start' }}>
           <div style={{ ...card, display: 'grid', gap: 10 }}>
-            <h3 style={{ ...h3, margin: 0 }}>📝 ออกประกาศใหม่</h3>
+            <h3 style={{ ...h3, margin: 0 }}>ออกประกาศใหม่</h3>
             <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>หัวข้อ (Topic)
               <input value={form.topic} onChange={e => setForm(f => ({ ...f, topic: e.target.value }))} placeholder="เช่น ประกาศวันหยุด / ชี้แจงกฎความปลอดภัย" />
             </label>
@@ -361,7 +361,7 @@ export default function AnnouncementMockup() {
       {tab === 'board' && (
         <div style={{ display: 'grid', gap: 12 }}>
           <div style={{ ...card, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13 }}>👷 ดูในฐานะพนักงานของ</span>
+            <span style={{ fontSize: 13 }}>ดูในฐานะพนักงานของ</span>
             <OrgScopePicker index={index} failed={failed} value={myUnit} onChange={(v) => { setMyUnit(v); setMeId(''); }} costCenter={false} plantLabel="— เลือกหน่วยงานของพนักงาน —" />
             <select value={meId} onChange={e => setMeId(e.target.value)} disabled={!myPeople.length} style={{ width: 240 }}>
               <option value="">{myPeople.length ? '— ฉันคือ (รายชื่อจำลอง) —' : 'หน่วยนี้ไม่มีรายชื่อจำลอง'}</option>
