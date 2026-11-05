@@ -44,6 +44,7 @@ import { splitLevels, refStockOf, madeHereMats, selfMadeRequestBlock, lineReques
 import { buildBomIndex } from '../utils/bomTree';
 import { shortReceiptRows } from '../utils/stockDiscrepancy';
 import { syncLineOrderDemand, syncSummaryText } from '../lib/lineDemandSync';
+import { qtyUnit } from '../utils/coilUom';
 import { fetchAllRows } from '../utils/fetchAllRows';   // 🏭 ของที่ไลน์ผลิตเอง อ้างยอดคลัง (2026-10-08) // 📜 MAT ที่เคยตั้งระดับไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
@@ -397,7 +398,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     if (!window.confirm(`${mat} เป็นพาร์ทที่ ${lineName} ผลิตเอง — ผลิต ${qty.toLocaleString()} ชิ้น ต้องเบิกจากสโตร์ตาม BOM:\n\n${list}\n\nแจ้งสโตร์ ${res.items.length} รายการ?`)) { setBusy(null); return; }
     /* 🔁 05/11 — ผ่านตัวเดียวกับ "เปิดใบผลิต" (lib/lineDemandSync.js): รวมความต้องการจากใบผลิตที่เปิดอยู่ +
        ที่ขอเพิ่มนี้ เทียบยอดหน้าไลน์ แล้วปัดเต็มกล่อง packing std · ไม่ถึงกล่อง = สะสมรอ */
-    const r = await syncLineOrderDemand({ lineName, role, extra: res.items.map(i => ({ mat_no: i.mat_no, part_name: i.part_name, need: i.qty })) });
+    const r = await syncLineOrderDemand({ lineName, role, extra: res.items.map(i => ({ mat_no: i.mat_no, part_name: i.part_name, need: i.qty, viaBom: true })) });
     setBusy(null);
     reportSync(r, `จะผลิต ${mat} × ${qty.toLocaleString()} (แตก BOM ${res.items.length} รายการ)`);
     load();
@@ -488,7 +489,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     let qty = issued;
     let note = null;
     if (!full) {
-      const a = window.prompt(`ได้รับจริงกี่ชิ้น? (สโตร์ส่งมา ${fmtQty(issued)})`, '');
+      const a = window.prompt(`ได้รับจริงกี่${qtyUnit(r.uom)}? (สโตร์ส่งมา ${fmtQty(issued)} ${qtyUnit(r.uom)})`, '');
       if (a === null) return;
       qty = Number(a);
       if (!(qty >= 0)) { toast.error('จำนวนไม่ถูกต้อง'); return; }
@@ -755,7 +756,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
               background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8 }}>
               <MatLabel mat={r.mat_no} name={r.part_name} size={12.5} />
               <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                ขอ {fmtQty(r.request_qty)} ชิ้น · พักเมื่อ {hhmm(r.hold_at)}{r.hold_by_name ? ` โดย ${r.hold_by_name}` : ''}
+                ขอ {fmtQty(r.request_qty)} {qtyUnit(r.uom)} · พักเมื่อ {hhmm(r.hold_at)}{r.hold_by_name ? ` โดย ${r.hold_by_name}` : ''}
               </span>
               {r.hold_reason && <span style={{ fontSize: 11.5, color: 'var(--text2)', fontStyle: 'italic' }}>“{r.hold_reason}”</span>}
               {canDecide && (
@@ -783,7 +784,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
                 background: 'var(--bg3)', border: '1px solid var(--border2)', borderLeft: `3px solid ${meta.color}`, borderRadius: 8 }}>
                 <MatLabel mat={r.mat_no} name={r.part_name} size={12.5} />
                 <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                  {r.source === 'store_forecast' ? `🏬 สโตร์ส่งตามแผนผลิต ${fmtQty(r.request_qty)} ชิ้น · เปิด ${hhmm(r.requested_at)}` : `ขอ ${fmtQty(r.request_qty)} ชิ้น · แจ้ง ${hhmm(r.requested_at)}${r.source === 'line_adhoc' ? ' · ➕ ขอเอง' : ''}`}
+                  {r.source === 'store_forecast' ? `🏬 สโตร์ส่งตามแผนผลิต ${fmtQty(r.request_qty)} ${qtyUnit(r.uom)} · เปิด ${hhmm(r.requested_at)}` : `ขอ ${fmtQty(r.request_qty)} ${qtyUnit(r.uom)} · แจ้ง ${hhmm(r.requested_at)}${r.source === 'line_adhoc' ? ' · ➕ ขอเอง' : ''}`}
                 </span>
                 <span style={{ fontSize: 11.5, fontWeight: 800, color: meta.color }}>{meta.label}</span>
                 {wait != null && (

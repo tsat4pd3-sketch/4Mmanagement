@@ -8745,3 +8745,18 @@ test('🏃 mo-chase-side-via-registry — แผงไล่งานต้อ�
     '\n\n❌ ช่องค้นหาของหน้า MO ไม่ครอบ `assigned_to` แล้ว\n'
     + '   ผล: กดชื่อช่างในแถบ "ไล่งาน" แล้วลิสต์ไม่กรองอะไรเลย (ปุ่มหลอก)\n');
 });
+
+/* ═══ 🧲 coil-request-via-bom — 2026-11-05 · คำสั่ง user ══════════════════════════════════
+   *"สโตร์จะจ่ายงานเหล็ก coil เป็น kgs. ไม่ใช่ชิ้น ตอนเบิกพาร์ทต้องแตกผ่านบอม"* · *"ต้องเบิกผ่านพาร์ท"*
+   ⇒ ตัวออกใบ (lib/lineDemandSync.js) ต้องรู้ coil จาก parts_master.uom + บล็อกการขอ coil ตรง +
+     ประทับ uom ลงใบ · ทางแตก BOM ในแผงไลน์ต้องส่ง viaBom (ไม่งั้น coil ที่แตกจาก BOM ถูกบล็อกด้วย)  */
+test('🧲 coil-request-via-bom — coil ขอตรงไม่ได้ · ใบต้องประทับ uom', () => {
+  const bad = [];
+  const sync = stripComments(readFileSync(join(ROOT, 'src/lib/lineDemandSync.js'), 'utf8'));
+  if (!/select\('[^']*\buom\b[^']*'\)/.test(sync)) bad.push('lineDemandSync — ไม่อ่าน parts_master.uom');
+  if (!/directCoil/.test(sync)) bad.push('lineDemandSync — ไม่บล็อก coil ที่ขอตรง');
+  if (!/uom: r\.uom/.test(sync)) bad.push('lineDemandSync — ไม่ประทับ uom ลงใบ');
+  const panel = stripComments(readFileSync(join(ROOT, 'src/components/LinePartCallPanel.jsx'), 'utf8'));
+  if (!/viaBom: true/.test(panel)) bad.push('LinePartCallPanel — ทางแตก BOM ไม่ส่ง viaBom');
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
