@@ -670,6 +670,7 @@ user ส่งคลิปจอมือถือมา: **เนื้อห�
 | รหัสคลัง Stor.Loc. | `<StorageLocSelect>` | `useStorageLocations` (DR storage_locations) | code |
 | เลขพาร์ท P/N ลูกค้า (CAPA / NCR / SPC / เคลม — กุญแจหาเอกสาร PE) | `<PartSelect>` | `usePartOptions` (pe_doc_sets ∪ qa_parts ∪ dr_products) | `part_no` text (+part_name) |
 | เครื่องมือวัด / วิธีตรวจ | `<InstrumentSelect>` | `useInstruments` (Main qa_instruments) | code text |
+| หน่วยนับ (UOM) — Parts Master · ใบเบิกวัสดุ · นำเข้า BOM SAP (2026-11-05) | `<select>` จาก `uomOptions()` (ใบเบิก = `<SelectOrFree>`) · **ค่าที่เขียนลงฐานผ่าน `normUom()` เสมอ** (`utils/uom.js` · EA/pcs → PC) | `useUomUnitsState` (DR `uom_units`) → fallback `DEFAULT_UOMS` | code text |
 | ค่าที่มีลิสต์สั้น + ต้องยอมระบุเองจริง (ส่วนงาน/แผนก/ฝ่าย · สถานี · ไลน์ปั๊มแม่พิมพ์) | `<SelectOrFree>` (select + "✏️ ระบุเอง" ช่องเดียว · ค่าเดิมนอกลิสต์เปิดในโหมดระบุเอง) | org_nodes / workstations / ที่มีอยู่ | text |
 | ไลน์ผลิต | `<LineSelect>` (§5.3 ข้อ 9) | `useProductionLines` | name / id |
 | ทีม A/B/C | `useOrgTeams()` → `<select>` | org_nodes kind='team' → fallback A/B/C | code |
@@ -679,7 +680,7 @@ user ส่งคลิปจอมือถือมา: **เนื้อห�
 > 🧹 **2026-11-05 audit dropdown ทั้งระบบ (423 ช่อง `<select>`)** — เก็บทีม A/B/C ที่ยัง hardcode 3 จุดเข้า `useOrgTeams()`:
 > `/oee-analytics` ตัวกรองทีม · `/manpower-board` คอลัมน์ทีมในแผงตั้งค่า (+ ทีมที่มีแผนแล้วแต่ไม่อยู่ในผัง ต่อท้าย ไม่ซ่อน) · `/operator` ช่องทีม (เลิกคิดเองในหน้า)
 > · 🔴 **`<select>` ลิสต์ตายตัวที่ค่าในฐานอาจหลุดลิสต์ ต้องโชว์ค่าเดิมเป็นตัวเลือก "(ค่าเดิม · ไม่อยู่ในลิสต์)"** — ไม่งั้นช่องขึ้นตัวแรกทั้งที่ฐานเก็บค่าอื่น = จอโกหก
->   (ต้นแบบ: UOM ฟอร์ม Parts Master `/products` · `parts_master` มี `pcs` นอกลิสต์) · ยังไม่มีทะเบียน UOM
+>   (ต้นแบบ: `uomOptions()` ใน `utils/uom.js` — ทะเบียน `uom_units` มีแล้ว 05/11 · ดูแถว "หน่วยนับ" ในตารางข้างบน)
 
 > #### 🔢 ตัวเลข KPI: หน่วย/ทศนิยม = **2 ชั้น** · วิธีรวม 12 เดือน = **ชั้นเดียว** (2026-09-24 · คำสั่ง user)
 > - **ห้ามอ่าน `kpi_catalog.unit/decimals/summary_mode` ตรงๆ ในหน้า** (ด่าน `kpi-unit-decimals-via-helper`)

@@ -58,6 +58,17 @@ function stripComments(src) {
    scan: โฟลเดอร์ที่ตรวจ · ext: นามสกุล · re: regex (global) · allow: ไฟล์ที่ยกเว้น + เหตุผล */
 const RULES = [
   {
+    id: 'uom-write-via-normuom',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับ default หน่วยแบบเดิม: `uom: x || 'EA'` · `unit: x || 'Pcs'` · `uom: 'pcs'` */
+    re: /\b(uom|unit)\s*:\s*(?:[^,\n}]*\|\|\s*)?['"](EA|ea|pcs|Pcs|PCS)['"]/g,
+    why: '📏 user ตัดสิน 05/11: **EA = pcs = PC (หน่วยเดียวกัน) · หน่วยหลัก = PC** — ฐานเคยมี PC/EA/pcs ปนกัน '
+       + 'เพราะแต่ละทางเขียน default คนละแบบ (ฟอร์ม/import = EA · ลงทะเบียนจาก BOM = pcs · ใบเบิก = Pcs) '
+       + '⇒ แก้ข้อมูล 392 แถวแล้ว (archive.uom_fix_20261105) · default แบบเดิมโผล่กลับ = ปนใหม่เงียบๆ',
+    fix: "ใช้ `normUom(raw, uomIdx) || DEFAULT_UOM` จาก src/utils/uom.js (ทะเบียน DR `uom_units` · useUomUnitsState)",
+    allow: {},
+  },
+  {
     id: 'myqueue-next-step-not-current-step',
     scan: ['src/utils/myQueue.js'], ext: ['.js'],
     /* จับการอ่านเลขขั้นตรงจาก current_step ในตัวตัดสิน "ใบนี้รอใคร" */
@@ -4405,6 +4416,29 @@ test('🛡️ pr-order-vs-receive-split — "รอสั่ง" กับ "ร�
     + '      ยังไม่ใช่ "สั่งแล้ว" (เลขมาจาก SAP ทีหลัง เหมือน `pr_no`)\n');
 });
 
+test('🛡️ mo-open-rows-not-capped-by-recency — ใบที่ยังไม่ปิดต้องโหลดครบ ห้ามพึ่งหน้าต่างล่าสุด', () => {
+  const src = readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8');
+
+  /* 🔴 เคสจริง 05/11 (หน้างาน): *"ทำไมบอกมีงาน กดเข้าไปไม่เจออะไรเลย"*
+     หน้าโหลดชุดเดียว `order(report_at desc).limit(1000)` · ทั้งตาราง 1,616 ใบ
+     ⇒ หน้าต่างจบที่ 06/10 · 618 ใบเก่าไม่เคยถูกโหลด (เป็นใบยังไม่ปิด 47 ใบ)
+     แต่กระดิ่ง/คิวนับจากชุดเต็ม ⇒ ป้ายบอก "รอคุณเซ็น 27 ใบ" กดแล้วลิสต์ 0 รายการ
+     🔑 ขยายกรอบวันที่ช่วยไม่ได้ — แถวไม่เคยถูกขอมาตั้งแต่ต้น */
+  assert.ok(/not\('status',\s*'in',/.test(src),
+    '\n\n❌ หน้ารายการ MO เลิกยิงคิวรี "ใบที่ยังไม่ปิด" แยกแล้ว\n'
+    + '   ⇒ กลับไปพึ่งหน้าต่าง "N ใบล่าสุด" ใบเดียว = ใบค้างที่เก่ากว่านั้นหายจากจอเงียบๆ\n'
+    + '   ⇒ กระดิ่งบอกว่ามีงาน กดเข้าไปจอว่าง (ขยายกรอบวันที่ไม่ช่วย แถวไม่เคยถูกขอมา)\n');
+
+  assert.ok(/MO_DONE_STATUSES\.join\(/.test(src),
+    '\n\n❌ คิวรี "ใบที่ยังไม่ปิด" ไม่ได้อ่านชุดสถานะจาก `MO_DONE_STATUSES`\n'
+    + '   ⇒ รายชื่อสถานะถูกพิมพ์ซ้ำ 2 ที่ แล้วหลุดจากกันเงียบๆ (เพิ่มสถานะใหม่ = ลิสต์เพี้ยน)\n');
+
+  /* ชุดนี้ล้ม/ชนเพดาน = ใบค้างหาย ⇒ ต้องเขียนบนจอ */
+  assert.ok(/openLoadErr/.test(src) && /openCapped/.test(src),
+    '\n\n❌ ไม่ได้บอกบนจอเมื่อชุด "ใบที่ยังไม่ปิด" ล้มหรือชนเพดาน\n'
+    + '   "ไม่มีรายการ" ทั้งที่คิวรีล่ม = จอโกหก (ห้ามล้มเหลวเงียบ)\n');
+});
+
 test('🛡️ mo-scope-unknown-line-falls-back — ไลน์ที่ทะเบียนไม่รู้จัก ห้ามตัดใบทิ้ง', () => {
   const src = readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8');
   const i = src.indexOf("key: 'scope', label: 'ขอบเขตไลน์ของคุณ'");
@@ -8676,4 +8710,38 @@ test('🛡️ bom-phantom-no-seed — migration ห้าม insert ทะเบ
     + '     (รอบ 4/11 seed 45 แถวแล้วทำให้ confirm 10100286 ข้าม 20059342 — ล้างทิ้งแล้ว)\n'
     + 'fix: ปล่อยทะเบียนว่าง ให้ PE ติ๊กเองที่ /products?tab=phantom ·\n'
     + '     โซ่ที่เดินไม่ถึงให้โชว์ผ่าน fn_bom_deduct_gaps() ห้ามกลบด้วยการติ๊กของลม\n');
+});
+
+test('🏃 mo-chase-side-via-registry — แผงไล่งานต้องถามฝั่งจากทะเบียนขั้น ห้ามเทียบเลขขั้น/ชื่อ stage เอง', () => {
+  /* why (05/11 · คำสั่ง user "ทำแผงไล่ MO ค้างให้หัวหน้าช่าง"):
+     แผงนี้แบ่งกองด้วย "ใบนี้รอฝั่งช่าง หรือรอฝ่ายที่แจ้ง" ซึ่ง **ไม่ใช่ฟังก์ชันของเลขขั้น** —
+     ขั้น 4 (ตรวจรับงานหลังซ่อม) ของทีมเครื่องมือ (JIG/DIE) เป็น **ฝั่งช่าง** (หัวหน้าแผนกช่างตรวจ
+     เพราะของยังอยู่ห้องช่าง) แต่ของทีม production เป็น **ฝั่งผู้แจ้ง** (เครื่องกลับมาเดินที่ไลน์แล้ว)
+     ⇒ ใครเขียน `step === 4 → reporter` เองในหน้า/ใน util นี้ จะโยนใบ JIG/DIE ~35 ใบไปกองผิดฝั่ง
+        แล้วหัวหน้าช่างโทรตามผิดคน (วัด 05/11: ใบค้าง accept_work ของ jig/die = 3 ใบ)
+     กฎ: ฝั่งมาจาก `moWaitMeta(order).meta.side` ที่เดียว · ขั้น QA ไม่มี side (แยกถังเอง)
+     🔴 ห้ามนับวันซ้ำ — อายุการค้างต้องมาจาก `stageAgeOf` ของ mtnStale.js (2 สูตร = 2 จอคนละเลข) */
+  const src = stripComments(readFileSync(join(ROOT, 'src/utils/moChase.js'), 'utf8'));
+  assert.match(src, /moWaitMeta\(/,
+    '\n\n❌ moChase ไม่ได้ถาม moWaitMeta แล้ว — ฝั่งจะถูกเดาเอง\n');
+  assert.match(src, /meta\?\.side === 'mtn'/,
+    '\n\n❌ ไม่ได้อ่าน `meta.side` จากทะเบียนขั้น\n');
+  assert.doesNotMatch(src, /step\s*===\s*\d/,
+    '\n\n❌ moChase กลับไปเทียบเลขขั้นตรงๆ แล้ว — ขั้นเดียวกันคนละฝั่งตามทีม (JIG/DIE vs production)\n'
+    + '   ผล: ใบไปกองผิดฝั่ง หัวหน้าช่างโทรตามผิดคน\n');
+  assert.match(src, /stageAgeOf/,
+    '\n\n❌ ไม่ได้ใช้ stageAgeOf — อายุการค้างต้องมาจากสูตรเดียวกับแผงใบค้าง\n');
+  /* จอต้องไม่ตัดสินฝั่งเอง และต้องส่ง board มาจากหน้าแม่ (ไม่ยิงคิวรีในแผง) */
+  const panel = stripComments(readFileSync(join(ROOT, 'src/components/MoStalePanel.jsx'), 'utf8'));
+  assert.doesNotMatch(panel, /\.side\s*===\s*'(mtn|reporter)'/,
+    '\n\n❌ แผงเทียบฝั่งเองแล้ว — ต้องรับ `chase` ที่ประกอบจาก buildMoChaseBoard มาวาดเท่านั้น\n');
+  assert.doesNotMatch(panel, /supabase/,
+    '\n\n❌ แผงยิงคิวรีเอง — ต้องนับจาก orders ที่หน้าโหลดไว้แล้ว (egress 0)\n');
+
+  /* ชิป "ชื่อช่าง" กดแล้วกรองด้วยคำค้น ⇒ ช่องค้นหาต้องครอบ assigned_to ไม่งั้นเป็นปุ่มหลอก */
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  const textFilter = page.slice(page.indexOf("key: 'text'"), page.indexOf("key: 'text'") + 500);
+  assert.match(textFilter, /o\.assigned_to/,
+    '\n\n❌ ช่องค้นหาของหน้า MO ไม่ครอบ `assigned_to` แล้ว\n'
+    + '   ผล: กดชื่อช่างในแถบ "ไล่งาน" แล้วลิสต์ไม่กรองอะไรเลย (ปุ่มหลอก)\n');
 });
