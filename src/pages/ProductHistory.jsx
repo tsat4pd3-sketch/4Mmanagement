@@ -283,7 +283,7 @@ export default function ProductHistory() {
       {loadWarn && (
         <div style={{
           marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700,
-          background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', color: '#ef4444',
+          background: 'var(--red-dim)', border: '1px solid var(--red-line)', color: 'var(--red)',
         }}>
           ⚠ {loadWarn} — ตัวเลขในหน้านี้ต่ำกว่าความจริง อย่าเพิ่งใช้ตัดสินใจ (ลองแคบช่วงวันที่ลง แล้วโหลดใหม่)
         </div>
@@ -352,7 +352,7 @@ export default function ProductHistory() {
               <div>
                 <div style={{ fontSize: 16, fontWeight: 800 }}>
                   {groupMode && canGroup
-                    ? <>🔗 {selMat.p_no} · {selMat.name} <span style={{ fontSize: 12, fontWeight: 700, color: '#4d9fff' }}>(รวม {groupMats.length} MAT SAP)</span></>
+                    ? <>🔗 {selMat.p_no} · {selMat.name} <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--blue)' }}>(รวม {groupMats.length} MAT SAP)</span></>
                     : <>{selMat.p_no ? `${selMat.p_no} · ` : ''}{selMat.name}</>}
                 </div>
                 {/* ลำดับ Part No. → ชื่องาน (บรรทัดบน) → MAT (บรรทัดล่าง) — UI §6.21 · 2026-09-30 */}
@@ -365,15 +365,15 @@ export default function ProductHistory() {
                   <button onClick={() => setGroupMode(g => !g)}
                     title={`สินค้าที่ใช้เลขลูกค้า ${selMat.p_no} เหมือนกัน — ต่างกันที่ปลายทางส่งลูกค้า`}
                     style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
-                      background: groupMode ? '#4d9fff' : 'var(--bg2)', color: groupMode ? '#fff' : 'var(--text)',
-                      border: `1px solid ${groupMode ? '#4d9fff' : 'var(--border2)'}` }}>
-                    {groupMode ? `🔗 ดูรวมทั้งกลุ่ม (${groupMats.length}) — กดเพื่อดูเฉพาะตัวนี้` : `🔗 ดูรวมทั้งกลุ่ม (${groupMats.length} MAT SAP)`}
+                      background: groupMode ? 'var(--blue)' : 'var(--bg2)', color: groupMode ? '#fff' : 'var(--text)',
+                      border: `1px solid ${groupMode ? 'var(--blue)' : 'var(--border2)'}` }}>
+                    {groupMode ? `ดูรวมทั้งกลุ่ม (${groupMats.length}) — กดเพื่อดูเฉพาะตัวนี้` : `ดูรวมทั้งกลุ่ม (${groupMats.length} MAT SAP)`}
                   </button>
                 )}
                 <button onClick={() => { setSelMat(null); setPickerOpen(true); setGroupMode(false); }}
                   style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
                     background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-                  ✕ ปิด — เลือกสินค้าอื่น
+                  ปิด — เลือกสินค้าอื่น
                 </button>
               </div>
             </div>
@@ -407,8 +407,8 @@ export default function ProductHistory() {
           {/* ⚠️ มีพี่น้องในกลุ่มแต่ยังดูตัวเดียว = ตัวเลขอาจไม่ใช่ภาพจริง ต้องบอก ห้ามเงียบ
               (ออเดอร์มักถูกบันทึกใต้ mat ตัวเดียวของกลุ่ม → ดูเดี่ยวเห็น "ขาด/เกิน" ที่ไม่จริง) */}
           {canGroup && !groupMode && (
-            <div style={{ ...card, marginBottom: 16, borderColor: '#4d9fff66', background: '#4d9fff14', padding: '10px 14px' }}>
-              <div style={{ fontSize: 12.5, fontWeight: 800, color: '#4d9fff' }}>
+            <div style={{ ...card, marginBottom: 16, borderColor: 'var(--blue)66', background: 'var(--blue)14', padding: '10px 14px' }}>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--blue)' }}>
                 🔗 สินค้านี้มีอีก {groupMats.length - 1} MAT SAP ที่เป็น product เดียวกัน (P/N {selMat.p_no})
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 3, lineHeight: 1.7 }}>
@@ -422,10 +422,10 @@ export default function ProductHistory() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 10, marginBottom: 16 }}>
             {[
               { label: 'จำนวนใบ', value: summary.orders, color: 'var(--text)' },
-              { label: 'ผลิตได้รวม', value: summary.produced.toLocaleString(), color: '#22c55e' },
-              { label: 'เป้ารวม', value: summary.target.toLocaleString(), color: '#4d9fff' },
-              { label: 'NG รวม', value: summary.ng.toLocaleString(), color: '#ef4444' },
-              { label: 'ผลิตกี่ไลน์', value: summary.linesUsed.length, color: '#a78bfa' },
+              { label: 'ผลิตได้รวม', value: summary.produced.toLocaleString(), color: 'var(--green)' },
+              { label: 'เป้ารวม', value: summary.target.toLocaleString(), color: 'var(--blue)' },
+              { label: 'NG รวม', value: summary.ng.toLocaleString(), color: 'var(--red)' },
+              { label: 'ผลิตกี่ไลน์', value: summary.linesUsed.length, color: 'var(--blue)' },
             ].map(s => (
               <div key={s.label} style={card}>
                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>{s.label}</div>
@@ -466,10 +466,10 @@ export default function ProductHistory() {
                 data={daily.map(d => ({
                   key: d.d, label: fmtDate(d.d), empty: d.empty,
                   segs: [{ v: d.produced, color: 'var(--accent)', name: 'ผลิตดี' },
-                    { v: d.ng, color: '#ef4444', name: 'NG' }],
+                    { v: d.ng, color: 'var(--red)', name: 'NG' }],
                 }))} />
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
-                <span style={{ color: 'var(--accent)', fontWeight: 700 }}>■ ผลิตดี</span> · <span style={{ color: '#ef4444', fontWeight: 700 }}>■ NG</span> · แท่งเตี้ยสีเทา = วันนั้นไม่มีการผลิต (แกนวันต่อเนื่อง ไม่ข้ามวัน) · สูงสุดในช่วง = {dailyMax.toLocaleString()} ชิ้น · ตัวเลขบนแท่ง = ผลิตดี+NG รวม
+                <span style={{ color: 'var(--accent)', fontWeight: 700 }}>■ ผลิตดี</span> · <span style={{ color: 'var(--red)', fontWeight: 700 }}>■ NG</span> · แท่งเตี้ยสีเทา = วันนั้นไม่มีการผลิต (แกนวันต่อเนื่อง ไม่ข้ามวัน) · สูงสุดในช่วง = {dailyMax.toLocaleString()} ชิ้น · ตัวเลขบนแท่ง = ผลิตดี+NG รวม
               </div>
             </CollapseCard>
           )}
@@ -497,8 +497,8 @@ export default function ProductHistory() {
                           <td style={{ ...td, fontWeight: 800 }}>{dOpen ? '▾' : '▸'} {fmtDayFull(g.date)}</td>
                           <td style={{ ...td, textAlign: 'right' }}>{g.orders}</td>
                           <td style={{ ...td, textAlign: 'right' }}>{g.target.toLocaleString()}</td>
-                          <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#22c55e' }}>{g.produced.toLocaleString()}</td>
-                          <td style={{ ...td, textAlign: 'right', color: g.ng ? '#ef4444' : 'var(--muted)' }}>{g.ng || '—'}</td>
+                          <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: 'var(--green)' }}>{g.produced.toLocaleString()}</td>
+                          <td style={{ ...td, textAlign: 'right', color: g.ng ? 'var(--red)' : 'var(--muted)' }}>{g.ng || '—'}</td>
                           <td style={{ ...td, color: 'var(--muted)' }}>{g.shifts.map(s => s.shift === 'day' ? '☀️' : '🌙').join(' ')}</td>
                           <td style={td}></td>
                         </tr>
@@ -511,8 +511,8 @@ export default function ProductHistory() {
                                 <td style={{ ...td, paddingLeft: 28, fontWeight: 700 }}>{sOpen ? '▾' : '▸'} {s.shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'} · {s.line || '—'}</td>
                                 <td style={{ ...td, textAlign: 'right' }}>{s.items.length}</td>
                                 <td style={{ ...td, textAlign: 'right' }}>{s.target.toLocaleString()}</td>
-                                <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: '#22c55e' }}>{s.produced.toLocaleString()}</td>
-                                <td style={{ ...td, textAlign: 'right', color: s.ng ? '#ef4444' : 'var(--muted)' }}>{s.ng || '—'}</td>
+                                <td style={{ ...td, textAlign: 'right', fontWeight: 700, color: 'var(--green)' }}>{s.produced.toLocaleString()}</td>
+                                <td style={{ ...td, textAlign: 'right', color: s.ng ? 'var(--red)' : 'var(--muted)' }}>{s.ng || '—'}</td>
                                 <td style={td}></td><td style={td}></td>
                               </tr>
                               {sOpen && s.items.map(r => (
@@ -520,8 +520,8 @@ export default function ProductHistory() {
                                   <td style={{ ...td, paddingLeft: 52, color: 'var(--muted)' }}>└ {r.prod_no || 'ใบผลิต'}{r.machine_no ? ` · ${r.machine_no}` : ''}</td>
                                   <td style={td}></td>
                                   <td style={{ ...td, textAlign: 'right' }}>{(r.target || 0).toLocaleString()}</td>
-                                  <td style={{ ...td, textAlign: 'right', color: '#22c55e' }}>{(r.produced || 0).toLocaleString()}</td>
-                                  <td style={{ ...td, textAlign: 'right', color: r.ng ? '#ef4444' : 'var(--muted)' }}>{r.ng || '—'}</td>
+                                  <td style={{ ...td, textAlign: 'right', color: 'var(--green)' }}>{(r.produced || 0).toLocaleString()}</td>
+                                  <td style={{ ...td, textAlign: 'right', color: r.ng ? 'var(--red)' : 'var(--muted)' }}>{r.ng || '—'}</td>
                                   <td style={td}>{STATUS_TH(r.status)}</td>
                                   <td style={{ ...td, color: 'var(--muted)' }}>{fmtDT(r.opened_at)}{r.confirmed_at ? ` – ${fmtDT(r.confirmed_at)}` : ''}</td>
                                 </tr>
@@ -538,7 +538,7 @@ export default function ProductHistory() {
                 <button onClick={() => setShowAllDays(true)}
                   style={{ marginTop: 8, fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 8, cursor: 'pointer',
                     background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-                  ▼ แสดงอีก {(dayGroups.length - 45).toLocaleString()} วัน (ทั้งหมด {dayGroups.length.toLocaleString()} วัน)
+                  แสดงอีก {(dayGroups.length - 45).toLocaleString()} วัน (ทั้งหมด {dayGroups.length.toLocaleString()} วัน)
                 </button>
               )}
             </div>
@@ -560,7 +560,7 @@ export default function ProductHistory() {
                     </div>
                     {a.action === 'UPDATE' && (a.changed_fields || []).map(f => (
                       <div key={f} style={{ fontSize: 12 }}>
-                        <b>{AUDIT_FIELD_TH[f] || f}</b>: <span style={{ color: '#ef4444' }}>{String(a.old_data?.[f] ?? '—')}</span> → <span style={{ color: '#22c55e' }}>{String(a.new_data?.[f] ?? '—')}</span>
+                        <b>{AUDIT_FIELD_TH[f] || f}</b>: <span style={{ color: 'var(--red)' }}>{String(a.old_data?.[f] ?? '—')}</span> → <span style={{ color: 'var(--green)' }}>{String(a.new_data?.[f] ?? '—')}</span>
                       </div>
                     ))}
                   </div>

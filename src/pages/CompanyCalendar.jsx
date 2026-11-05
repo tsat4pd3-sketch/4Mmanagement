@@ -8,6 +8,7 @@ import { DAY_TYPE_META } from '../utils/companyCalendar';
 import InfoMore from '../components/InfoMore';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 const MONTH_NAMES = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 const WEEKDAY_HEAD = ['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
 const DAY_TYPES = ['working', 'ot15', 'ot2', 'shutdown75'];
@@ -219,7 +220,7 @@ export default function CompanyCalendar() {
                         color: type === 'working' ? 'var(--text2)' : meta.color,
                         fontWeight: type === 'working' ? 400 : 700,
                         cursor: canEdit ? 'pointer' : 'default',
-                        border: isDirty ? `1px dashed ${meta.color}` : (type === 'working' ? '1px solid transparent' : `1px solid ${meta.color}66`),
+                        border: isDirty ? `1px dashed ${meta.color}` : (type === 'working' ? '1px solid transparent' : `1px solid ${tint(meta.color, 'line')}`),
                         boxShadow: isDirty ? `0 0 0 1px ${meta.color}` : 'none',
                       }}
                     >
@@ -249,7 +250,7 @@ export default function CompanyCalendar() {
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={handleDiscardDraft} disabled={saving} style={cancelBtnSt}>ยกเลิก</button>
-            <button onClick={handleSaveDraft} disabled={saving} style={saveBtnSt}>{saving ? 'กำลังบันทึก...' : `💾 บันทึก (${pendingCount})`}</button>
+            <button onClick={handleSaveDraft} disabled={saving} style={saveBtnSt}>{saving ? 'กำลังบันทึก...' : `บันทึก (${pendingCount})`}</button>
           </div>
         </div>
       )}

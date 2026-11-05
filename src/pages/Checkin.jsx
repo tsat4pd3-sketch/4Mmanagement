@@ -13,7 +13,6 @@ import { can } from '../utils/permissions';
 import useIsMobile from '../utils/useIsMobile';
 import { toast } from '../components/Toast';
 import { fetchByIds } from '../utils/fetchByIds';
-import ToggleDot from '../components/ToggleDot';
 import { loadCompanyCalendar, getDayType, isOtHolidayType } from '../utils/companyCalendar';
 import { holidayPeriodsForShift, defaultHolidayPeriod, otPeriodLabel, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
@@ -30,6 +29,12 @@ import { checkWrite } from '../utils/dbWrite';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
+import Segmented from '../components/Segmented';
+import OverflowMenu from '../components/OverflowMenu';   // ⋯ ปุ่มตายตัว ≤2 (UI §6.35)
+import NoticeBar from '../components/NoticeBar';         // แถบแจ้งแถบเดียวต่อเรื่อง (UI §6.35)
+import InfoMore from '../components/InfoMore';
+import Icon from '../components/Icon';
+import { toneVar, toneDim, toneLine } from '../utils/statusTone';   // สี = ความหมาย ผ่าน token (UI §6.17)
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
 import { useDraftAutosave, loadDraft, clearDraft } from '../utils/formDraft';   // 📝 ร่างในเครื่อง (มือถือ · 22/10)
@@ -93,15 +98,17 @@ function getRowStatus(rec) {
   return 'partial';
 }
 
+/* พาเลต 5 สี (05/11 · UI §6.17): เขียว พร้อม · อำพัน PPE ไม่ครบ · แดง ขาด · ฟ้า ลาทุกแบบ (เดิมม่วง/ฟ้า 3 เฉด) — สีผ่าน token ใน statusTone.js */
 const STATUS_META = {
-  'ready':          { bg: 'rgba(34,197,94,0.06)',   label: '🟢 พร้อม',             color: '#22c55e' },
-  'partial':        { bg: 'rgba(245,158,11,0.06)',  label: '🟡 PPE ไม่ครบ',        color: '#f59e0b' },
-  'absent':         { bg: 'rgba(231,76,60,0.06)',   label: '🔴 ขาดงาน',            color: '#ef4444' },
-  'leave-full':     { bg: 'rgba(139,92,246,0.06)',  label: '🟣 ลาเต็มวัน',         color: '#a855f7' },
-  'leave-half-am':  { bg: 'rgba(77,159,255,0.06)',  label: '🔵 ลาช่วงเช้า',        color: '#4d9fff' },
-  'leave-half-pm':  { bg: 'rgba(34,197,94,0.06)',   label: '🔵 ลาช่วงบ่าย',        color: '#38bdf8' },
-  'leave-hours':    { bg: 'rgba(77,159,255,0.06)',  label: '🔵 ลาบางส่วน',         color: '#4d9fff' },
+  'ready':          { tone: 'good', label: 'พร้อม' },
+  'partial':        { tone: 'warn', label: 'PPE ไม่ครบ' },
+  'absent':         { tone: 'bad',  label: 'ขาดงาน' },
+  'leave-full':     { tone: 'info', label: 'ลาเต็มวัน' },
+  'leave-half-am':  { tone: 'info', label: 'ลาช่วงเช้า' },
+  'leave-half-pm':  { tone: 'info', label: 'ลาช่วงบ่าย' },
+  'leave-hours':    { tone: 'info', label: 'ลาบางส่วน' },
 };
+for (const m of Object.values(STATUS_META)) { m.color = toneVar(m.tone); m.bg = toneDim(m.tone); m.line = toneLine(m.tone); }
 
 export default function Checkin() {
   const { role, lineId, team, sections: scopeSecs = [], fullName, scopeIdx } = useContext(UserContext);
@@ -368,7 +375,7 @@ export default function Checkin() {
 
     if (!empData) return;
 
-    /* ── 🤝 ยืมตัวข้ามไลน์ (line_helpers) — best-effort: ยังไม่ apply migration = ทำงานแบบเดิมเป๊ะ ──
+    /* ── ยืมตัวข้ามไลน์ (line_helpers) — best-effort: ยังไม่ apply migration = ทำงานแบบเดิมเป๊ะ ──
        แถวของวัน+กะนี้ทั้งโรงงาน แล้วแยก 2 ขา:
        - ยืมเข้า (to_line อยู่ใน scope เรา) → ดึง employees ตัวจริงมารวมในรายชื่อ + ป้าย 🤝
        - ยืมออก (คนใน roster เราถูกยืมไปไลน์นอก scope) → ป้าย "→ ไปช่วยไลน์ X" (ไม่ตัดออกจากลิสต์) */
@@ -846,7 +853,7 @@ export default function Checkin() {
         const changed = shown.filter(e => attKey(attendance[e.id]) !== attKey(baseline.att[e.id]));
         const changedNames = changed.slice(0, 15).map(e => {
           const st = getRowStatus(attendance[e.id]);
-          return `• ${e.name} — ${STATUS_META[st]?.label || (attendance[e.id]?.is_present ? '🟢 มา' : '🔴 ขาด')}`;
+          return `• ${e.name} — ${STATUS_META[st]?.label || (attendance[e.id]?.is_present ? 'มา' : 'ขาด')}`;
         }).join('\n') + (changed.length > 15 ? `\n…และอีก ${changed.length - 15} คน` : '');
         post('checkin_update', { summary: {
           line_name: lineNamesText, shift: shiftInfo.shift, shift_label: shiftInfo.label,
@@ -1281,7 +1288,7 @@ export default function Checkin() {
           <div className="ck-top">
             <div style={{ flex: 1, minWidth: 0 }}>{cEmp}</div>
             <div className="ck-status" style={{ color: meta.color }}>
-              {emp.assignedShift ? (emp.assignedShift === 'day' ? '☀️ ' : '🌙 ') : ''}{meta.label}
+              {emp.assignedShift ? (emp.assignedShift === 'day' ? 'เช้า · ' : 'ดึก · ') : ''}{meta.label}
               {hasLeave && rec.leave_type && <div style={{ fontSize: 11, opacity: 0.85 }}>{rec.leave_type}</div>}
             </div>
           </div>
@@ -1290,9 +1297,9 @@ export default function Checkin() {
             {tg(rec.has_helmet, '⛑️ หมวก', () => toggle(emp.id, 'has_helmet'), !rec.is_present)}
             {tg(rec.has_boots, '🥾 รองเท้า', () => toggle(emp.id, 'has_boots'), !rec.is_present)}
             {tg(rec.has_gloves, '🧤 ถุงมือ', () => toggle(emp.id, 'has_gloves'), !rec.is_present)}
-            {tg(rec.has_ot, '⏰ OT', () => toggleOt(emp, rec), !rec.is_present, '#f59e0b')}
+            {tg(rec.has_ot, 'OT', () => toggleOt(emp, rec), !rec.is_present, 'var(--amber)')}
             {(emp.assignedShift === 'day' || shiftInfo.shift === 'day') && rec.has_ot
-              && tg(rec.has_extended_ot, 'OT+23', () => toggle(emp.id, 'has_extended_ot'), false, '#ef4444')}
+              && tg(rec.has_extended_ot, 'OT+23', () => toggle(emp.id, 'has_extended_ot'), false, 'var(--red)')}
           </div>
           <div className="ck-more">
             <div><div className="ck-lbl">🏖️ การลา</div>{cLeave}</div>
@@ -1329,14 +1336,14 @@ export default function Checkin() {
                         <div style={{ fontWeight: 600, fontSize: 14 }}>{emp.name}</div>
                         <div style={{ fontSize: 12, color: 'var(--muted)' }}>{emp.employee_id_code}</div>
                         {emp._helperRowId && (
-                          <div style={{ fontSize: 11, color: '#06b6d4', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                            <span>🤝 ยืมตัวจาก {emp._helperFrom}</span>
+                          <div style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                            <span>ยืมตัวจาก {emp._helperFrom}</span>
                             {canRecord && (
                               <button
                                 onClick={() => unborrowEmployee(emp)}
                                 title="ยกเลิกยืมตัว — คืนกลับไลน์เดิม"
-                                style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(6,182,212,0.12)', color: '#06b6d4', border: '1px solid rgba(6,182,212,0.4)' }}
-                              >✕ คืน</button>
+                                style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)' }}
+                              >คืน</button>
                             )}
                           </div>
                         )}
@@ -1356,9 +1363,9 @@ export default function Checkin() {
                         onChange={e => setLeaveType(emp.id, e.target.value)}
                         style={{
                           padding: '5px 8px', borderRadius: 6, fontSize: 12,
-                          border: `1px solid ${hasLeave ? '#a855f744' : 'var(--border2)'}`,
-                          background: hasLeave ? 'rgba(168,85,247,0.08)' : 'var(--bg3)',
-                          color: hasLeave ? '#a855f7' : 'var(--text2)',
+                          border: `1px solid ${hasLeave ? 'var(--blue-line)' : 'var(--border2)'}`,
+                          background: hasLeave ? 'var(--blue-dim)' : 'var(--bg3)',
+                          color: hasLeave ? 'var(--blue)' : 'var(--text2)',
                           width: '100%',
                         }}
                       >
@@ -1375,8 +1382,8 @@ export default function Checkin() {
                           onChange={e => setAttendance(prev => ({ ...prev, [emp.id]: { ...prev[emp.id], remark: e.target.value } }))}
                           style={{
                             padding: '4px 8px', borderRadius: 6, fontSize: 11,
-                            border: '1px solid rgba(168,85,247,0.4)',
-                            background: 'rgba(168,85,247,0.06)', color: 'var(--text)',
+                            border: '1px solid var(--blue-line)',
+                            background: 'var(--blue-dim)', color: 'var(--text)',
                             width: '100%',
                           }}
                         />
@@ -1392,7 +1399,7 @@ export default function Checkin() {
                               style={{
                                 flex: 1, padding: '3px 0', fontSize: 11, fontWeight: 700,
                                 borderRadius: 5, border: 'none', cursor: 'pointer',
-                                background: rec.leave_duration === opt.value ? '#a855f7' : 'var(--bg2)',
+                                background: rec.leave_duration === opt.value ? 'var(--blue)' : 'var(--bg2)',
                                 color: rec.leave_duration === opt.value ? '#fff' : 'var(--text2)',
                                 transition: 'all 0.15s',
                               }}
@@ -1414,7 +1421,7 @@ export default function Checkin() {
                               style={{
                                 flex: 1, padding: '3px 4px', fontSize: 11, fontWeight: 700,
                                 borderRadius: 5, border: 'none', cursor: 'pointer',
-                                background: rec.leave_period === opt.value ? '#0ea5e9' : 'var(--bg2)',
+                                background: rec.leave_period === opt.value ? 'var(--blue)' : 'var(--bg2)',
                                 color: rec.leave_period === opt.value ? '#fff' : 'var(--text2)',
                                 transition: 'all 0.15s', lineHeight: 1.3,
                               }}
@@ -1458,7 +1465,7 @@ export default function Checkin() {
                           <span style={{ fontSize: 11, color: 'var(--muted)' }}>{shortDateLabel(addDaysToDateStr(shiftInfo.workDateStr, 1))}</span>
                           <input
                             type="checkbox"
-                            style={{ transform: 'scale(1.4)', accentColor: '#06b6d4', width: 'auto' }}
+                            style={{ transform: 'scale(1.4)', accentColor: 'var(--blue)', width: 'auto' }}
                             checked={!!otBookings[emp.id]}
                             onChange={() => toggleOtBooking(emp.id)}
                           />
@@ -1469,7 +1476,7 @@ export default function Checkin() {
                                   value={otPeriods[emp.id] || ''}
                                   onChange={e => setOtPeriod(emp.id, e.target.value)}
                                   title="วันหยุด — เลือกช่วงเวลา OT"
-                                  style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130, color: '#f59e0b', fontWeight: 700 }}
+                                  style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130, color: 'var(--amber)', fontWeight: 700 }}
                                 >
                                   <option value="">— ช่วงเวลา OT —</option>
                                   {holidayPeriodsForShift('night').map(p => (
@@ -1495,7 +1502,7 @@ export default function Checkin() {
                               value={otPeriods[emp.id] || ''}
                               onChange={e => setOtPeriod(emp.id, e.target.value)}
                               title="วันหยุด — เลือกช่วงเวลา OT"
-                              style={{ fontSize: 11, padding: '2px 4px', maxWidth: 140, color: '#f59e0b', fontWeight: 700 }}
+                              style={{ fontSize: 11, padding: '2px 4px', maxWidth: 140, color: 'var(--amber)', fontWeight: 700 }}
                             >
                               <option value="">— ช่วงเวลา OT —</option>
                               {holidayPeriodsForShift('day').map(p => (
@@ -1519,10 +1526,10 @@ export default function Checkin() {
                       {/* จองรถล่วงหน้าเพิ่ม — วันหยุดต่อเนื่อง */}
                       {extraAdvanceDates.map(d => (
                         <div key={d} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 4, borderTop: '1px dashed var(--border)' }}>
-                          <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>{shortDateLabel(d)} 🔶</span>
+                          <span style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>{shortDateLabel(d)} 🔶</span>
                           <input
                             type="checkbox"
-                            style={{ transform: 'scale(1.3)', accentColor: '#f59e0b', width: 'auto' }}
+                            style={{ transform: 'scale(1.3)', accentColor: 'var(--amber)', width: 'auto' }}
                             checked={!!otExtraBookings[emp.id]?.[d]}
                             onChange={() => toggleOtExtraBooking(emp.id, d)}
                           />
@@ -1532,7 +1539,7 @@ export default function Checkin() {
                                 value={otExtraPeriods[emp.id]?.[d] || ''}
                                 onChange={e => setOtExtraPeriod(emp.id, d, e.target.value)}
                                 title="วันหยุด — เลือกช่วงเวลา OT"
-                                style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130, color: '#f59e0b', fontWeight: 700 }}
+                                style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130, color: 'var(--amber)', fontWeight: 700 }}
                               >
                                 <option value="">— ช่วงเวลา OT —</option>
                                 {holidayPeriodsForShift(shiftInfo.shift).map(p => (
@@ -1602,7 +1609,7 @@ export default function Checkin() {
                   {/* OT */}
                   <td style={{ textAlign: 'center' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-                      <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: '#f59e0b', width: 'auto' }} checked={rec.has_ot} onChange={() => toggleOt(emp, rec)} disabled={!rec.is_present} />
+                      <input type="checkbox" style={{ transform: 'scale(1.4)', accentColor: 'var(--amber)', width: 'auto' }} checked={rec.has_ot} onChange={() => toggleOt(emp, rec)} disabled={!rec.is_present} />
                       {/* Special extended OT (day shift 20:00–23:00) — rare case */}
                       {(emp.assignedShift === 'day' || shiftInfo.shift === 'day') && rec.has_ot && (
                         <div
@@ -1613,9 +1620,9 @@ export default function Checkin() {
                           <div style={{
                             fontSize: 11, fontWeight: 700, letterSpacing: '0.05em',
                             padding: '2px 5px', borderRadius: 4,
-                            background: rec.has_extended_ot ? 'rgba(239,68,68,0.15)' : 'var(--bg2)',
-                            color: rec.has_extended_ot ? '#ef4444' : 'var(--muted)',
-                            border: `1px solid ${rec.has_extended_ot ? 'rgba(239,68,68,0.4)' : 'var(--border)'}`,
+                            background: rec.has_extended_ot ? 'var(--red-dim)' : 'var(--bg2)',
+                            color: rec.has_extended_ot ? 'var(--red)' : 'var(--muted)',
+                            border: `1px solid ${rec.has_extended_ot ? 'var(--red-line)' : 'var(--border)'}`,
                             transition: 'all 0.15s',
                           }}>
                             {rec.has_extended_ot ? '🔴 OT+23' : '○ OT+23'}
@@ -1671,7 +1678,7 @@ export default function Checkin() {
               {shiftInfo.label} · {shiftInfo.workDateStr} — คนที่ยืมจะโผล่ในรายชื่อเช็คชื่อและผังจัดกำลังคนของไลน์ปลายทาง เฉพาะกะนี้ (ไม่ย้ายสังกัดถาวร) · หมดกะแล้วหลุดเอง ไม่ต้องกดคืน — กด ✕ คืน เฉพาะเมื่อจะให้ไลน์อื่นยืมต่อในกะเดียวกัน
             </div>
             {!helpersReady && (
-              <div style={{ padding: '8px 12px', borderRadius: 8, marginBottom: 10, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', fontSize: 12, color: '#ef4444', fontWeight: 600 }}>
+              <div style={{ padding: '8px 12px', borderRadius: 8, marginBottom: 10, background: 'var(--red-dim)', border: '1px solid var(--red-line)', fontSize: 12, color: 'var(--red)', fontWeight: 600 }}>
                 ⚠️ ระบบยืมตัวยังใช้ไม่ได้ — ยังไม่ได้ apply migration <code>20260819_line_helpers_main.sql</code> (แจ้ง admin)
               </div>
             )}
@@ -1706,7 +1713,7 @@ export default function Checkin() {
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.employee_id_code} · {homeLine}{r.team ? ` · ทีม ${r.team}` : ''}</div>
                     </div>
                     {borrowedHere
-                      ? <span style={{ fontSize: 11, color: '#06b6d4', fontWeight: 700, whiteSpace: 'nowrap' }}>🤝 ยืมแล้ว → {lines.find(l => l.id === already._helperToLineId)?.name || 'ไลน์ใน scope'}</span>
+                      ? <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700, whiteSpace: 'nowrap' }}>🤝 ยืมแล้ว → {lines.find(l => l.id === already._helperToLineId)?.name || 'ไลน์ใน scope'}</span>
                       : inRoster
                         ? <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>อยู่ในรายชื่อแล้ว</span>
                         : (
@@ -1714,7 +1721,7 @@ export default function Checkin() {
                             onClick={() => borrowEmployee(r)}
                             disabled={!helpersReady}
                             style={{ padding: '5px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: helpersReady ? 'pointer' : 'not-allowed', background: helpersReady ? 'var(--accent)' : 'var(--muted)', color: '#fff', border: 'none', whiteSpace: 'nowrap' }}
-                          >🤝 ยืมตัว</button>
+                          >ยืมตัว</button>
                         )}
                   </div>
                 );
@@ -1729,94 +1736,41 @@ export default function Checkin() {
         sub={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{
             padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700,
-            background: shiftInfo.shift === 'day' ? 'rgba(245,158,11,0.15)' : 'rgba(77,159,255,0.15)',
-            color:      shiftInfo.shift === 'day' ? '#f59e0b'               : '#4d9fff',
-            border: `1px solid ${shiftInfo.shift === 'day' ? 'rgba(245,158,11,0.3)' : 'rgba(77,159,255,0.3)'}`,
+            background: shiftInfo.shift === 'day' ? 'var(--amber-dim)' : 'var(--blue-dim)',
+            color:      shiftInfo.shift === 'day' ? 'var(--amber)'     : 'var(--blue)',
+            border: `1px solid ${shiftInfo.shift === 'day' ? 'var(--amber-line)' : 'var(--blue-line)'}`,
           }}>
             {shiftInfo.label} · {shiftInfo.timeRange}
           </span>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>{shiftInfo.workDateStr}</span>
         </span>}
+        filters={<>
+          {/* "เฉพาะกะนี้ / ทุกคน" = ตัวกรองการดู ⇒ อยู่แถบกรองใต้แท็บ ไม่ใช่ปุ่มคำสั่ง (05/11 · UI §6.35 · เดิมเป็นปุ่ม toggle บนหัว) */}
+          <Segmented value={filterShift ? 'shift' : 'all'} onChange={v => setFilterShift(v === 'shift')} label="แสดงใคร"
+            options={[{ value: 'shift', label: 'เฉพาะกะนี้' }, { value: 'all', label: 'ทุกคน' }]} />
+          {previewNight && <span data-warn="1" style={{ fontSize: 12, color: 'var(--amber)', fontWeight: 700 }}>กำลัง Preview กะดึก</span>}
+        </>}
         actions={<>
-        {/* ปุ่ม Preview กะดึก + ปุ่มข้างๆ — กล่อง actions ของ PageHeader wrap ให้เอง (เดิมล้นจอ 320px) */}
-          {realShiftInfo.shift === 'day' && (
-            <button
-              onClick={() => setPreviewNight(p => !p)}
-              title="ดูตัวอย่างหน้าจอกะดึก (รวมคอลัมน์ OT พรุ่งนี้) — ปิดปุ่มบันทึกอัตโนมัติระหว่าง preview"
-              style={{
-                position: 'relative',
-                padding: '8px 14px', borderRadius: 8,
-                border: '1px solid var(--border2)', fontSize: 12, cursor: 'pointer',
-                background: previewNight ? 'rgba(6,182,212,0.15)' : 'var(--bg3)',
-                color:      previewNight ? '#06b6d4'              : 'var(--text2)',
-                fontWeight: previewNight ? 700 : 400,
-              }}
-            >
-              {previewNight ? '👁 กำลัง Preview กะดึก' : '🌙 Preview กะดึก'}
-              <ToggleDot on={previewNight} />
-            </button>
-          )}
-          <button
-            onClick={() => setFilterShift(f => !f)}
-            style={{
-              position: 'relative',
-              padding: '8px 14px', borderRadius: 8,
-              border: '1px solid var(--border2)', fontSize: 12, cursor: 'pointer',
-              background: filterShift ? 'rgba(77,159,255,0.12)' : 'var(--bg3)',
-              color:      filterShift ? 'var(--blue)'           : 'var(--text2)',
-              fontWeight: filterShift ? 600 : 400,
-            }}
-          >
-            {filterShift ? '👁 เฉพาะกะนี้' : '👥 ทุกคน'}
-            <ToggleDot on={filterShift} />
-          </button>
-          <button
-            onClick={() => { setExportSection(selSection || ''); setShowExport(true); }}
-            style={{
-              padding: '8px 14px', borderRadius: 8,
-              border: '1px solid var(--border2)', fontSize: 12, cursor: 'pointer',
-              background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 600,
-            }}
-          >
-            📄 ส่งออกฟอร์ม
-          </button>
-          <button
-            onClick={openOtBookModal}
-            title="จองรถ OT วันที่/ไลน์/ทีมใดก็ได้ ไม่ต้องรอเช็คชื่อกะนั้น"
-            style={{
-              padding: '8px 14px', borderRadius: 8,
-              border: '1px solid var(--border2)', fontSize: 12, cursor: 'pointer',
-              background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 600,
-            }}
-          >
-            🚐 จองรถ OT
-          </button>
+          {/* ปุ่มตายตัว ≤2 (UI §6.35): [ยืมพนักงาน] [บันทึก] · ที่เหลือ (Preview กะดึก · ส่งออกฟอร์ม · จองรถ OT) อยู่ใน ⋯ */}
+          <OverflowMenu items={[
+            { key: 'preview', icon: '🌙', label: previewNight ? 'ออกจาก Preview กะดึก' : 'Preview กะดึก', onClick: () => setPreviewNight(p => !p),
+              hidden: realShiftInfo.shift !== 'day', badge: previewNight ? 'เปิดอยู่' : undefined,
+              title: 'ดูตัวอย่างหน้าจอกะดึก (รวมคอลัมน์ OT พรุ่งนี้) — ปิดปุ่มบันทึกอัตโนมัติระหว่าง preview' },
+            { key: 'export', icon: '📄', label: 'ส่งออกฟอร์ม', onClick: () => { setExportSection(selSection || ''); setShowExport(true); } },
+            { key: 'otbook', icon: '🚚', label: 'จองรถ OT', onClick: openOtBookModal, title: 'จองรถ OT วันที่/ไลน์/ทีมใดก็ได้ ไม่ต้องรอเช็คชื่อกะนั้น' },
+          ]} />
           {canRecord && (
-            <button
-              onClick={openBorrowModal}
-              title="ดึงพนักงานจากไลน์/ส่วนงานอื่นมาช่วยกะนี้ — จะโผล่ในรายชื่อเช็คชื่อและผังจัดกำลังคนของไลน์ปลายทาง"
-              style={{
-                padding: '8px 14px', borderRadius: 8,
-                border: '1px solid var(--border2)', fontSize: 12, cursor: 'pointer',
-                background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 600,
-              }}
-            >
-              🤝 ยืมพนักงาน
+            <button type="button" className="pg-btn" onClick={openBorrowModal}
+              title="ดึงพนักงานจากไลน์/ส่วนงานอื่นมาช่วยกะนี้ — จะโผล่ในรายชื่อเช็คชื่อและผังจัดกำลังคนของไลน์ปลายทาง">
+              ยืมพนักงาน
             </button>
           )}
-          <button
+          <button type="button" className="pg-btn primary"
             onClick={() => setConfirmSave(true)}
             disabled={isSaving || previewNight || !canRecord}
             title={previewNight ? 'ปิดโหมด Preview ก่อนบันทึก' : !canRecord ? 'บัญชีของคุณไม่มีสิทธิ์บันทึกเช็คชื่อ' : undefined}
-            style={{
-              padding: '10px 22px',
-              background: (isSaving || previewNight || !canRecord) ? 'var(--muted)' : 'var(--accent)',
-              color: '#fff', border: 'none', borderRadius: 8,
-              fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14,
-              cursor: (previewNight || !canRecord) ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {isSaving ? '⏳ กำลังบันทึก...' : previewNight ? '🔒 ปิด Preview ก่อนบันทึก' : !canRecord ? '🔒 ไม่มีสิทธิ์บันทึก' : '💾 บันทึก'}
+            style={{ opacity: (isSaving || previewNight || !canRecord) ? 0.55 : 1, cursor: (previewNight || !canRecord) ? 'not-allowed' : 'pointer' }}>
+            {isSaving ? 'กำลังบันทึก...' : previewNight ? 'ปิด Preview ก่อนบันทึก' : !canRecord ? 'ไม่มีสิทธิ์บันทึก' : 'บันทึก'}
           </button>
         </>} />
 
@@ -1827,7 +1781,7 @@ export default function Checkin() {
         background: 'var(--accent-dim)', border: '1px solid var(--accent)',
         borderRadius: 10, padding: '9px 14px', marginBottom: 14,
       }}>
-        <span style={{ fontSize: 18 }}>👤</span>
+        <Icon glyph="👤" size={20} style={{ color: 'var(--accent)' }} />
         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <span style={{ fontSize: 13, color: 'var(--text)', fontWeight: 700 }}>
             กำลังเช็คชื่อในนาม: <span style={{ color: 'var(--accent)' }}>{fullName || 'ไม่ทราบชื่อ'}</span>
@@ -1836,16 +1790,9 @@ export default function Checkin() {
             {roleLabel(role)} · {myScopeLabel}
           </span>
         </div>
-        <button
-          onClick={handleSwitchUser}
-          title="ออกจากระบบเครื่องนี้ แล้วให้คนที่จะเช็คชื่อ login ด้วยบัญชีตัวเอง"
-          style={{
-            marginLeft: 'auto', padding: '7px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700,
-            cursor: 'pointer', whiteSpace: 'nowrap',
-            background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)',
-          }}
-        >
-          🔄 ไม่ใช่ฉัน — สลับผู้ใช้
+        <button type="button" className="pg-btn" onClick={handleSwitchUser} style={{ marginLeft: 'auto' }}
+          title="ออกจากระบบเครื่องนี้ แล้วให้คนที่จะเช็คชื่อ login ด้วยบัญชีตัวเอง">
+          ไม่ใช่ฉัน — สลับผู้ใช้
         </button>
       </div>
 
@@ -1853,18 +1800,11 @@ export default function Checkin() {
           ⇒ เขียนบนจอตรงๆ ว่ากำลังเห็นทั้งโรงงาน (กฎความซื่อสัตย์ของจอ — ไม่บล็อก เพราะบล็อก
           = เช็คชื่อไม่ได้ทั้งกะ) · Andon เหลือง = นิ่ง ไม่กระพริบ */}
       {scopeAnchorless({ role, lineId, sections: scopeSecs }) && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
-          background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
-          borderRadius: 10, padding: '8px 13px', marginBottom: 14, fontSize: 12, color: 'var(--text)',
-        }}>
-          <span style={{ fontSize: 15 }}>⚠️</span>
-          <span>
-            บัญชีนี้เป็น<b>หัวหน้ากลุ่ม</b>แต่<b>ยังไม่ได้ผูกไลน์ และไม่ได้ตั้งขอบเขตส่วนงาน</b> —
-            รายชื่อข้างล่างจึงเป็น<b>พนักงานทั้งโรงงาน</b> ไม่ใช่เฉพาะไลน์ที่ดูแล
-            <span style={{ color: 'var(--muted)' }}> · ให้แอดมินตั้งไลน์หรือขอบเขตส่วนงานที่ทะเบียนผู้ใช้</span>
-          </span>
-        </div>
+        <NoticeBar tone="warn" style={{ marginBottom: 14 }}>
+          บัญชีนี้เป็น<b>หัวหน้ากลุ่ม</b>แต่<b>ยังไม่ได้ผูกไลน์ และไม่ได้ตั้งขอบเขตส่วนงาน</b> —
+          รายชื่อข้างล่างจึงเป็น<b>พนักงานทั้งโรงงาน</b> ไม่ใช่เฉพาะไลน์ที่ดูแล
+          <span style={{ color: 'var(--muted)' }}> · ให้แอดมินตั้งไลน์หรือขอบเขตส่วนงานที่ทะเบียนผู้ใช้</span>
+        </NoticeBar>
       )}
 
       {/* Section & Line filter bar — supervisor only */}
@@ -1881,7 +1821,7 @@ export default function Checkin() {
           <span className="filter-count">
             แสดง <span style={{ color: 'var(--text)', fontWeight: 700 }}>{displayed.length}</span> คน
             {noLineCount > 0 && (
-              <span style={{ marginLeft: 8, fontSize: 11, color: '#f59e0b', fontWeight: 700 }}
+              <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}
                 title="คนเหล่านี้อยู่ส่วนงานนี้แต่ยังไม่ได้ผูกไลน์ — จะไม่ขึ้นเมื่อกรองรายไลน์ ไปผูกที่ ฐานข้อมูลพนักงาน (ช่อง Group / กลุ่ม)">
                 ⚠ {noLineCount} คนยังไม่ผูกไลน์
               </span>
@@ -1895,7 +1835,7 @@ export default function Checkin() {
         {Object.entries(STATUS_META).map(([key, m]) => counts[key] ? (
           <span key={key} style={{
             fontSize: 12, padding: '3px 10px', borderRadius: 20,
-            background: m.bg, color: m.color, border: `1px solid ${m.color}44`, fontWeight: 600,
+            background: m.bg, color: m.color, border: `1px solid ${m.line}`, fontWeight: 600,
           }}>
             {m.label} {counts[key]}
           </span>
@@ -1906,55 +1846,36 @@ export default function Checkin() {
       <DraftRestoreBar draft={ckPending} what="การเช็คชื่อกะนี้" onRestore={restoreCkDraft}
         onDiscard={() => { if (ckDraftKey) clearDraft(ckDraftKey); setCkPending(null); }} />
       {shiftChanged && (
-        <div style={{
-          padding: '10px 14px', borderRadius: 8, marginBottom: 14,
-          background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)',
-          fontSize: 13, color: '#f59e0b', display: 'flex', alignItems: 'center', gap: 10, fontWeight: 600, flexWrap: 'wrap',
-        }}>
-          ⏰ เวลาข้ามเข้า {shiftChanged.label} ({shiftChanged.workDateStr}) แล้ว — หน้านี้ยังเป็นรายชื่อ{realShiftInfo.label} ({realShiftInfo.workDateStr})
+        <NoticeBar tone="warn" style={{ marginBottom: 14 }}
+          action={{ label: 'โหลดรายชื่อกะใหม่', title: 'สิ่งที่ยังไม่บันทึกจะหาย',
+            onClick: () => { setPreviewNight(false); setShiftChanged(null); setRealShiftInfo(getShiftInfo()); } }}>
+          <b>เวลาข้ามเข้า {shiftChanged.label} ({shiftChanged.workDateStr}) แล้ว</b> — หน้านี้ยังเป็นรายชื่อ{realShiftInfo.label} ({realShiftInfo.workDateStr})
           · กดบันทึกตอนนี้ = บันทึกของกะเดิม (ถูกต้องถ้ายังกรอกกะเดิมอยู่)
-          <button onClick={() => { setPreviewNight(false); setShiftChanged(null); setRealShiftInfo(getShiftInfo()); }}
-            style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #f59e0b', background: 'transparent', color: '#f59e0b', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>
-            โหลดรายชื่อกะใหม่ (สิ่งที่ยังไม่บันทึกจะหาย)
-          </button>
-        </div>
+        </NoticeBar>
       )}
 
       {previewNight && (
-        <div style={{
-          padding: '10px 14px', borderRadius: 8, marginBottom: 14,
-          background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)',
-          fontSize: 13, color: '#ef4444', display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600,
-        }}>
-          🔒 <span>โหมด Preview กะดึก — เวลาจริงยังเป็นกะเช้า ปุ่มบันทึกถูกปิดไว้เพื่อป้องกันข้อมูลผิดพลาด กดปุ่ม "👁 กำลัง Preview กะดึก" อีกครั้งเพื่อออก</span>
-        </div>
+        <NoticeBar tone="bad" style={{ marginBottom: 14 }} action={{ label: 'ออกจาก Preview', onClick: () => setPreviewNight(false) }}>
+          <b>โหมด Preview กะดึก</b> — เวลาจริงยังเป็นกะเช้า ปุ่มบันทึกถูกปิดไว้กันข้อมูลผิดพลาด
+        </NoticeBar>
       )}
 
       {/* มือถือไม่โชว์ — อธิบาย "คอลัมน์" ของตาราง ซึ่งมุมมองการ์ดไม่มี (การ์ดเขียนป้าย 🚐 จองรถ OT ในตัวแล้ว)
           เดิมกล่องนี้ + คำเตือนดันรายชื่อลงจอที่ 2 บน handheld 360×640 */}
-      {!isMobile && <div style={{
-        padding: '10px 14px', borderRadius: 8, marginBottom: 14,
-        background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.25)',
-        fontSize: 13, color: '#06b6d4', display: 'flex', alignItems: 'center', gap: 8,
-      }}>
-        🚐 <span>
+      {/* คำอธิบายคอลัมน์จองรถ OT = ข้อความอธิบาย ⇒ พับใน ⓘ (UI §6.10) · วันหยุดต่อเนื่องที่เพิ่มช่องให้ = ข้อเท็จจริง เขียนบนจอ */}
+      {!isMobile && <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14, fontSize: 12.5 }}>
+        <InfoMore id="ck-ot-col" label="คอลัมน์ จองรถ OT / งานที่ทำ คืออะไร">
           {shiftInfo.shift === 'night'
             ? <>คอลัมน์ <strong>จองรถ OT / งานที่ทำ</strong> = จองล่วงหน้าว่าจะมาทำ OT คืนวันที่ {addDaysToDateStr(shiftInfo.workDateStr, 1)} พร้อมระบุงานที่จะทำ เพื่อใช้ออกรายงานให้ธุรการจองรถรับส่ง (ดูที่หน้า Report)</>
             : <>ติ๊ก <strong>OT</strong> แล้วเลือก <strong>งานที่ทำ</strong> ในคอลัมน์ขวา เพื่อใช้ออกรายงานให้ธุรการจองรถรับส่ง (ดูที่หน้า Report)</>}
-          {!!extraAdvanceDates.length && (
-            <> · 🔶 พบวันหยุดต่อเนื่อง <strong>{extraAdvanceDates.map(shortDateLabel).join(', ')}</strong> — เพิ่มช่องจองรถล่วงหน้าให้แล้ว (วันหยุดเลือกช่วงเวลา OT ได้: 8 ชม. หรือ 10 ชม.)</>
-          )}
-        </span>
+        </InfoMore>
+        {!!extraAdvanceDates.length && (
+          <span data-warn="1" style={{ color: 'var(--amber)' }}>พบวันหยุดต่อเนื่อง <strong>{extraAdvanceDates.map(shortDateLabel).join(', ')}</strong> — เพิ่มช่องจองรถล่วงหน้าให้แล้ว (เลือก OT 8 หรือ 10 ชม.)</span>
+        )}
       </div>}
 
       {noSchedule && (
-        <div style={{
-          padding: '10px 14px', borderRadius: 8, marginBottom: 14,
-          background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)',
-          fontSize: 13, color: 'var(--amber)', display: 'flex', alignItems: 'center', gap: 8,
-        }}>
-          ⚠️ <span>ยังไม่มีตาราง shift สำหรับวันนี้ — ไปกำหนดได้ที่หน้า <strong>ตารางกะ</strong></span>
-        </div>
+        <NoticeBar tone="warn" style={{ marginBottom: 14 }}>ยังไม่มีตาราง shift สำหรับวันนี้ — ไปกำหนดได้ที่หน้า <strong>ตารางกะ</strong></NoticeBar>
       )}
 
       {/* 🔴 "บางคนกะไม่ขึ้น" ต้องบอกว่าใคร/ไลน์ไหน (2026-10-13 · feedback หน้างาน PD2)
@@ -1962,12 +1883,8 @@ export default function Checkin() {
           หัวหน้าเห็นช่องกะว่างปนกับคนที่มีกะ แล้วเดาเองว่าข้อมูลพนักงานผิด (ของจริง: ตารางกะไม่มีแถวของไลน์นั้น)
           ⚠️ คนกลุ่มนี้ **ยังอยู่ในลิสต์ให้เช็คชื่อได้ตามปกติ** — คำเตือนนี้อธิบายเหตุ ไม่ได้บล็อกงาน */}
       {!noSchedule && noShiftRows.length > 0 && (
-        <div style={{
-          padding: '10px 14px', borderRadius: 8, marginBottom: 14,
-          background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.28)',
-          fontSize: 12.5, color: 'var(--red)',
-        }}>
-          ⚠️ <strong>{noShiftPeople} คนยังไม่มีกะ</strong> — ตารางกะสัปดาห์นี้ยังไม่มีแถวของไลน์เหล่านี้
+        <NoticeBar tone="bad" style={{ marginBottom: 14 }}>
+          <strong>{noShiftPeople} คนยังไม่มีกะ</strong> — ตารางกะสัปดาห์นี้ยังไม่มีแถวของไลน์เหล่านี้
           (และไม่มีไลน์แม่ให้ตกทอด) · เช็คชื่อได้ตามปกติ แต่กะจะว่างและกำลังคนของไลน์นับเป็น 0
           <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {noShiftRows.map(([nm, n]) => (
@@ -1980,14 +1897,14 @@ export default function Checkin() {
           <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--muted)' }}>
             แก้ที่หน้า <strong>ตารางกะ</strong> — กด <b>+ กำหนด</b> ที่ไลน์นั้น (ไลน์ที่สร้างใหม่หลังเติมตารางล่วงหน้าไปแล้ว จะไม่มีแถวของตัวเอง)
           </div>
-        </div>
+        </NoticeBar>
       )}
 
       {isMobile && canRecord && displayed.length > 0 && (
         <button type="button" onClick={() => setBadgeScanOpen(true)}
           style={{ width: '100%', minHeight: 52, marginBottom: 12, borderRadius: 12, border: '2px solid var(--accent)', background: 'var(--accent-dim)',
             color: 'var(--accent)', fontSize: 16, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
-          🪪 สแกนบัตรพนักงานเช็คชื่อ
+          สแกนบัตรพนักงานเช็คชื่อ
         </button>
       )}
       {badgeScanOpen && (
@@ -1995,14 +1912,14 @@ export default function Checkin() {
           hint="ส่องกล้องที่ QR บนบัตร หรือกดปุ่มสแกนข้างเครื่อง — สแกนต่อได้ทีละคนจนครบ แล้วปิดหน้าต่างนี้กด 💾 บันทึก"
           onScan={onBadgeScan} onClose={() => setBadgeScanOpen(false)}
           footer={<div style={{ marginTop: 12, fontSize: 13, fontWeight: 700, color: 'var(--text2)' }}>
-            มางาน {displayed.filter(e => attendance[e.id]?.is_present).length}/{displayed.length} คน · <span style={{ color: '#f59e0b' }}>ยังไม่ได้บันทึก</span>
+            มางาน {displayed.filter(e => attendance[e.id]?.is_present).length}/{displayed.length} คน · <span style={{ color: 'var(--amber)' }}>ยังไม่ได้บันทึก</span>
           </div>} />
       )}
       {isMobile ? (
         <div className="ck-cards">
           {displayed.map(renderCheckinRow)}
           {displayed.length === 0 && (
-            <div style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>ไม่มีพนักงานในกะนี้ — ลองกด 👥 ทุกคน</div>
+            <div style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>ไม่มีพนักงานในกะนี้ — ลองเลือก "ทุกคน"</div>
           )}
         </div>
       ) : (
@@ -2017,10 +1934,10 @@ export default function Checkin() {
               <th style={{ textAlign: 'center', minWidth: 64 }}>รองเท้า</th>
               <th style={{ textAlign: 'center', minWidth: 64 }}>ถุงมือ</th>
               <th style={{ textAlign: 'center', minWidth: 72 }} title="OT ปกติ | OT+23 = กะเช้าต่อถึง 23:00 (พิเศษ)">OT</th>
-              <th style={{ minWidth: 220 }}>🏖️ การลา</th>
+              <th style={{ minWidth: 220 }}>การลา</th>
               <th style={{ minWidth: 140 }}>หมายเหตุ</th>
               <th style={{ textAlign: 'center', minWidth: 110 }}>สถานะ</th>
-              <th style={{ textAlign: 'center', minWidth: 150 }} title="จองรถรับส่งสำหรับ OT พร้อมระบุงานที่ทำ — ใช้ออกรายงานให้ธุรการจองรถรับส่ง · ช่อง 🔶 = จองล่วงหน้าเพิ่มสำหรับวันหยุดต่อเนื่อง (ตามปฏิทินบริษัท)">🚐 จองรถ OT / งานที่ทำ</th>
+              <th style={{ textAlign: 'center', minWidth: 150 }} title="จองรถรับส่งสำหรับ OT พร้อมระบุงานที่ทำ — ใช้ออกรายงานให้ธุรการจองรถรับส่ง · ช่อง 🔶 = จองล่วงหน้าเพิ่มสำหรับวันหยุดต่อเนื่อง (ตามปฏิทินบริษัท)">จองรถ OT / งานที่ทำ</th>
             </tr>
           </thead>
           <tbody>
@@ -2029,7 +1946,7 @@ export default function Checkin() {
             {displayed.length === 0 && (
               <tr>
                 <td colSpan={11} style={{ textAlign: 'center', color: 'var(--muted)', padding: 24, fontSize: 13 }}>
-                  ไม่มีพนักงานในกะนี้ — ลองกด 👥 ทุกคน
+                  ไม่มีพนักงานในกะนี้ — ลองเลือก "ทุกคน"
                 </td>
               </tr>
             )}
@@ -2044,7 +1961,7 @@ export default function Checkin() {
         <div className="m-savebar">
           <span className="m-savebar-sum">มา {displayed.filter(e => attendance[e.id]?.is_present).length}/{displayed.length} คน</span>
           <button type="button" onClick={() => setConfirmSave(true)} disabled={isSaving || previewNight || !canRecord}>
-            {isSaving ? '⏳ กำลังบันทึก...' : previewNight ? '🔒 ปิด Preview ก่อน' : !canRecord ? '🔒 ไม่มีสิทธิ์บันทึก' : '💾 บันทึก'}
+            {isSaving ? 'กำลังบันทึก...' : previewNight ? 'ปิด Preview ก่อน' : !canRecord ? 'ไม่มีสิทธิ์บันทึก' : 'บันทึก'}
           </button>
         </div>
       )}
@@ -2082,13 +1999,13 @@ export default function Checkin() {
                 onClick={handleSwitchUser}
                 style={{ flex: 1, padding: '11px 0', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer',
                   background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
-                🔄 ไม่ใช่ฉัน
+                ไม่ใช่ฉัน
               </button>
               <button
                 onClick={handleSave}
                 style={{ flex: 2, padding: '11px 0', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: 'pointer',
                   background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
-                ✓ ใช่ บันทึกเลย
+                ใช่ บันทึกเลย
               </button>
             </div>
           </div>
@@ -2122,7 +2039,7 @@ export default function Checkin() {
             </div>
 
             {isHolidayDate(otBookDate) && (
-              <div style={{ fontSize: 12, color: '#f59e0b', fontWeight: 700, marginBottom: 10 }}>
+              <div style={{ fontSize: 12, color: 'var(--amber)', fontWeight: 700, marginBottom: 10 }}>
                 🔶 วันที่เลือกเป็นวันหยุด — เลือกช่วงเวลา OT ให้พนักงานแต่ละคน (8 ชม. / 10 ชม.)
               </div>
             )}
@@ -2170,7 +2087,7 @@ export default function Checkin() {
                       {isHolidayDate(otBookDate) && (
                         <select value={otBookPeriods[emp.id] || ''} onChange={e => setOtBookPeriods(prev => ({ ...prev, [emp.id]: e.target.value }))}
                           title="วันหยุด — เลือกช่วงเวลา OT"
-                          style={{ fontSize: 11, padding: '4px 6px', borderRadius: 6, border: '1px solid rgba(245,158,11,0.45)', background: 'var(--bg)', color: '#f59e0b', fontWeight: 700, width: 150 }}>
+                          style={{ fontSize: 11, padding: '4px 6px', borderRadius: 6, border: '1px solid var(--amber-line)', background: 'var(--bg)', color: 'var(--amber)', fontWeight: 700, width: 150 }}>
                           <option value="">— ช่วงเวลา OT —</option>
                           {holidayPeriodsForShift(otBookShift).map(p => (
                             <option key={p.value} value={p.value}>{p.hours} ชม. · {p.time}</option>
@@ -2192,7 +2109,7 @@ export default function Checkin() {
               <button onClick={() => setShowOtBookModal(false)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>
               <button onClick={handleSaveOtBookModal} disabled={otBookSaving || !otBookLineId || !canRecord}
                 style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: otBookSaving || !otBookLineId ? 'not-allowed' : 'pointer', opacity: otBookSaving || !otBookLineId ? 0.6 : 1 }}>
-                {otBookSaving ? '⏳ กำลังบันทึก...' : '💾 บันทึกการจอง'}
+                {otBookSaving ? 'กำลังบันทึก...' : 'บันทึกการจอง'}
               </button>
             </div>
           </div>
@@ -2232,7 +2149,7 @@ export default function Checkin() {
               <button onClick={() => setShowExport(false)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>
               <button onClick={handleExportForms} disabled={exporting}
                 style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer' }}>
-                {exporting ? '⏳ กำลังสร้าง...' : '⬇ สร้าง PDF'}
+                {exporting ? 'กำลังสร้าง...' : 'สร้าง PDF'}
               </button>
             </div>
           </div>

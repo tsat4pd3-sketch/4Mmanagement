@@ -58,6 +58,17 @@ function stripComments(src) {
    scan: โฟลเดอร์ที่ตรวจ · ext: นามสกุล · re: regex (global) · allow: ไฟล์ที่ยกเว้น + เหตุผล */
 const RULES = [
   {
+    id: 'uom-write-via-normuom',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับ default หน่วยแบบเดิม: `uom: x || 'EA'` · `unit: x || 'Pcs'` · `uom: 'pcs'` */
+    re: /\b(uom|unit)\s*:\s*(?:[^,\n}]*\|\|\s*)?['"](EA|ea|pcs|Pcs|PCS)['"]/g,
+    why: '📏 user ตัดสิน 05/11: **EA = pcs = PC (หน่วยเดียวกัน) · หน่วยหลัก = PC** — ฐานเคยมี PC/EA/pcs ปนกัน '
+       + 'เพราะแต่ละทางเขียน default คนละแบบ (ฟอร์ม/import = EA · ลงทะเบียนจาก BOM = pcs · ใบเบิก = Pcs) '
+       + '⇒ แก้ข้อมูล 392 แถวแล้ว (archive.uom_fix_20261105) · default แบบเดิมโผล่กลับ = ปนใหม่เงียบๆ',
+    fix: "ใช้ `normUom(raw, uomIdx) || DEFAULT_UOM` จาก src/utils/uom.js (ทะเบียน DR `uom_units` · useUomUnitsState)",
+    allow: {},
+  },
+  {
     id: 'myqueue-next-step-not-current-step',
     scan: ['src/utils/myQueue.js'], ext: ['.js'],
     /* จับการอ่านเลขขั้นตรงจาก current_step ในตัวตัดสิน "ใบนี้รอใคร" */
@@ -4405,44 +4416,98 @@ test('🛡️ pr-order-vs-receive-split — "รอสั่ง" กับ "ร�
     + '      ยังไม่ใช่ "สั่งแล้ว" (เลขมาจาก SAP ทีหลัง เหมือน `pr_no`)\n');
 });
 
-test('🛡️ ojt-approver-self-sign-only — ช่อง "ระดับจัดการอนุมัติ" ต้องเซ็นเอง ห้ามแปะของคนอื่น', () => {
+test('🛡️ mo-open-rows-not-capped-by-recency — ใบที่ยังไม่ปิดต้องโหลดครบ ห้ามพึ่งหน้าต่างล่าสุด', () => {
+  const src = readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8');
+
+  /* 🔴 เคสจริง 05/11 (หน้างาน): *"ทำไมบอกมีงาน กดเข้าไปไม่เจออะไรเลย"*
+     หน้าโหลดชุดเดียว `order(report_at desc).limit(1000)` · ทั้งตาราง 1,616 ใบ
+     ⇒ หน้าต่างจบที่ 06/10 · 618 ใบเก่าไม่เคยถูกโหลด (เป็นใบยังไม่ปิด 47 ใบ)
+     แต่กระดิ่ง/คิวนับจากชุดเต็ม ⇒ ป้ายบอก "รอคุณเซ็น 27 ใบ" กดแล้วลิสต์ 0 รายการ
+     🔑 ขยายกรอบวันที่ช่วยไม่ได้ — แถวไม่เคยถูกขอมาตั้งแต่ต้น */
+  assert.ok(/not\('status',\s*'in',/.test(src),
+    '\n\n❌ หน้ารายการ MO เลิกยิงคิวรี "ใบที่ยังไม่ปิด" แยกแล้ว\n'
+    + '   ⇒ กลับไปพึ่งหน้าต่าง "N ใบล่าสุด" ใบเดียว = ใบค้างที่เก่ากว่านั้นหายจากจอเงียบๆ\n'
+    + '   ⇒ กระดิ่งบอกว่ามีงาน กดเข้าไปจอว่าง (ขยายกรอบวันที่ไม่ช่วย แถวไม่เคยถูกขอมา)\n');
+
+  assert.ok(/MO_DONE_STATUSES\.join\(/.test(src),
+    '\n\n❌ คิวรี "ใบที่ยังไม่ปิด" ไม่ได้อ่านชุดสถานะจาก `MO_DONE_STATUSES`\n'
+    + '   ⇒ รายชื่อสถานะถูกพิมพ์ซ้ำ 2 ที่ แล้วหลุดจากกันเงียบๆ (เพิ่มสถานะใหม่ = ลิสต์เพี้ยน)\n');
+
+  /* ชุดนี้ล้ม/ชนเพดาน = ใบค้างหาย ⇒ ต้องเขียนบนจอ */
+  assert.ok(/openLoadErr/.test(src) && /openCapped/.test(src),
+    '\n\n❌ ไม่ได้บอกบนจอเมื่อชุด "ใบที่ยังไม่ปิด" ล้มหรือชนเพดาน\n'
+    + '   "ไม่มีรายการ" ทั้งที่คิวรีล่ม = จอโกหก (ห้ามล้มเหลวเงียบ)\n');
+});
+
+test('🛡️ mo-scope-unknown-line-falls-back — ไลน์ที่ทะเบียนไม่รู้จัก ห้ามตัดใบทิ้ง', () => {
+  const src = readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8');
+  const i = src.indexOf("key: 'scope', label: 'ขอบเขตไลน์ของคุณ'");
+  assert.ok(i > 0, '\n\n❌ หาด่านขอบเขตไลน์ใน baseFilters ไม่เจอ\n');
+  const body = src.slice(Math.max(0, i - 200), i + 900);
+
+  /* 🔴 เคสจริง 05/11 (หน้างาน): *"ทำไมบอกมีงาน กดเข้าไปไม่เจออะไรเลย"*
+     กระดิ่ง/คิวตัดสินขอบเขตด้วย `dept_section` (scopeStateOf) · หน้านี้ตัดสินด้วย `line_name`
+     เทียบทะเบียนตรงตัว ⇒ ใบ PD4 ที่เขียนชื่อไลน์ `Assy GOR`/`Laser LWR` (ทะเบียนชื่อ
+     `GOR ASSY`/`LWRBAR LASER`) ถูกตัดทิ้ง 68 ใบ ทั้งที่อยู่ในขอบเขตของคนกด */
+  assert.ok(/knownLineNames\.has\(/.test(body),
+    '\n\n❌ ด่านขอบเขตกลับไปเทียบชื่อไลน์กับทะเบียนตรงตัวโดยไม่ถามว่า "ทะเบียนรู้จักไลน์นี้ไหม"\n'
+    + '   ⇒ ใบที่ชื่อไลน์ไม่ตรงทะเบียน ถูกตัดทิ้งทั้งที่เป็นใบของหน่วยงานเรา\n'
+    + '   ⇒ กระดิ่งบอกว่ามีงาน กดเข้าไปจอว่าง (คลาสเดียวกับ orderInReporterScope 02/11)\n');
+  assert.ok(/dept_section/.test(body),
+    '\n\n❌ ไลน์ที่ทะเบียนไม่รู้จัก ไม่ได้ถอยไปดู `dept_section`\n'
+    + '   🔑 คิวตัดสินด้วยแกนนั้น — 2 แกนต้องให้คำตอบเดียวกัน ไม่งั้นป้ายกับลิสต์ขัดกันเสมอ\n');
+});
+
+test('🛡️ ojt-approver-self-sign-only — ช่องลายเซ็นหัวใบ OJT ต้องเซ็นเอง ห้ามแปะของคนอื่น', () => {
   const src = readFileSync(join(ROOT, 'src/pages/OjtTraining.jsx'), 'utf8');
 
-  /* 🔴 เคสจริง (02/11 · คำสั่ง user เลือกทาง "ข"): เดิมช่องนี้เป็น PersonSelect —
-     ใครแก้ใบได้ เลือกชื่อคนจาก profiles แล้วดึง `signature_url` ของคนนั้นมาแปะ
-     วัด 02/11: 74 ใบ · 62 ใบมีภาพลายเซ็นผู้อนุมัติ · 61 ใบที่ชื่อผู้อนุมัติ ≠ คนสร้างใบ
-     กฎของโมดูลนี้ห้ามอยู่แล้ว (28/10): "ลายเซ็นที่เก็บไว้แล้วเอามาแปะ = ตรายาง ไม่ใช่การลงนาม" */
-  assert.ok(!/sigPicker\(\s*'ระดับจัดการอนุมัติ'/.test(src),
-    '\n\n❌ ช่อง "ระดับจัดการอนุมัติ" กลับไปเป็น picker เลือกคนอื่นแล้ว\n'
-    + '   ⇒ ธุรการเลือกชื่อผู้จัดการ แล้วลายเซ็นประจำตัวของผู้จัดการถูกแปะลงใบ\n'
-    + '   แก้ยังไง: ปุ่ม "เซ็นอนุมัติ" ที่เขียนชื่อ+uid+เวลา **ของคนที่ล็อกอินอยู่** เท่านั้น\n');
+  /* 🔴 เคสจริง: เดิมช่องพวกนี้เป็น PersonSelect — ใครแก้ใบได้ เลือกชื่อคนจาก profiles
+     แล้วดึง `signature_url` ของคนนั้นมาแปะ (วัด 02/11: 74 ใบ · 61 ใบที่ผู้อนุมัติ ≠ คนสร้างใบ)
+     กฎของโมดูลนี้ห้ามอยู่แล้ว (28/10): "ลายเซ็นที่เก็บไว้แล้วเอามาแปะ = ตรายาง ไม่ใช่การลงนาม"
+     · 02/11 ปิดช่อง "ระดับจัดการอนุมัติ" · 05/11 ปิดช่อง "ผู้รับทราบ" (คำสั่ง user "hr เซ็นเองด้วย") */
+  for (const label of ['ระดับจัดการอนุมัติ', 'ผู้รับทราบ']) {
+    assert.ok(!new RegExp(`sigPicker\\(\\s*'${label}'`).test(src),
+      `\n\n❌ ช่อง "${label}" กลับไปเป็น picker เลือกคนอื่นแล้ว\n`
+      + '   ⇒ ธุรการเลือกชื่อคน แล้วลายเซ็นประจำตัวของคนนั้นถูกแปะลงใบ\n'
+      + '   แก้ยังไง: ปุ่มที่เขียนชื่อ+uid+เวลา **ของคนที่ล็อกอินอยู่** เท่านั้น (`signSelfOjt`)\n');
+  }
 
-  /* ตัวบันทึกใบ (ธุรการ) ต้องเขียน approver_* ไม่ได้ */
-  assert.ok(!/approver_name:\s*editing\.approver_name/.test(src),
-    '\n\n❌ payload ของ `handleSave` กลับมาเขียน `approver_name` แล้ว\n'
-    + '   ⇒ ใครที่แก้ใบได้ ก็เขียนช่องอนุมัติได้ตามเดิม (ด่านที่ปุ่มไม่มีความหมาย)\n');
+  /* ตัวบันทึกใบ (ธุรการ) ต้องเขียนช่องลายเซ็นพวกนี้ไม่ได้ */
+  for (const k of ['approver_name', 'hr_name']) {
+    assert.ok(!new RegExp(`${k}:\\s*editing\\.${k}`).test(src),
+      `\n\n❌ payload ของ \`handleSave\` กลับมาเขียน \`${k}\` แล้ว\n`
+      + '   ⇒ ใครที่แก้ใบได้ ก็เขียนช่องลายเซ็นได้ตามเดิม (ด่านที่ปุ่มไม่มีความหมาย)\n');
+  }
 
   /* ตัวเซ็นต้อง: ถามยืนยัน → เขียน uid ของคนกด → นับแถว (RLS ปฏิเสธ = 0 แถว ไม่มี error) */
-  const i = src.indexOf('const signApproveOjt = async');
-  assert.ok(i > 0, '\n\n❌ หา `signApproveOjt` ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้ด้วย\n');
+  const i = src.indexOf('const signSelfOjt = async');
+  assert.ok(i > 0, '\n\n❌ หา `signSelfOjt` ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้ด้วย\n');
   const body = src.slice(i, i + 2200);
   const cAt = body.indexOf('confirmSign('), uAt = body.indexOf('.update(');
   assert.ok(cAt > 0 && uAt > 0 && cAt < uAt,
-    '\n\n❌ `signApproveOjt` เขียน DB โดยไม่ถามยืนยันก่อน (ลายเซ็นเป็น one-way)\n');
-  assert.ok(/approver_uid:\s*user\.id/.test(body),
-    '\n\n❌ ไม่ได้เขียน `approver_uid` = uid ของคนที่ล็อกอิน\n'
+    '\n\n❌ `signSelfOjt` เขียน DB โดยไม่ถามยืนยันก่อน (ลายเซ็นเป็น one-way)\n');
+  assert.ok(/\[S\.uidKey\]:\s*user\.id/.test(body),
+    '\n\n❌ ไม่ได้เขียน uid ของคนที่ล็อกอิน\n'
     + '   ⇒ กลับไปเป็นลายเซ็นที่ตรวจย้อนไม่ได้ว่าใครกด (เดิม 67 จาก 74 ใบเป็นแบบนั้น)\n');
   assert.ok(/checkWriteRows\(/.test(body),
     '\n\n❌ ไม่ได้นับแถวที่เขียนจริง — RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error"\n'
-    + '   ⇒ จอขึ้น "เซ็นอนุมัติแล้ว" ทั้งที่ฐานไม่มีอะไรเปลี่ยน (กฎเขียน DB ข้อ 2)\n');
+    + '   ⇒ จอขึ้น "เซ็นแล้ว" ทั้งที่ฐานไม่มีอะไรเปลี่ยน (กฎเขียน DB ข้อ 2)\n');
   assert.ok(/MANAGER_SIGN_MIN_RANK/.test(src),
     '\n\n❌ ไม่เช็คระดับตำแหน่ง — ต้องใช้ค่าจาก `utils/signRank.js` ห้ามเขียนเลขเองในหน้า\n');
 
-  /* ลายเซ็นเดิมที่ไม่มี uid = ของก่อนเปลี่ยนกฎ ⇒ จอต้องเขียนบอก ห้ามแสดงเป็นการอนุมัติที่ยืนยันแล้ว */
-  assert.ok(/!editing\.approver_uid/.test(src) && /ลายเซ็นเดิม/.test(src),
-    '\n\n❌ จอไม่แยก "ลายเซ็นเดิมที่ไม่ทราบผู้กด" ออกจากการอนุมัติที่ยืนยันแล้ว\n'
-    + '   61 ใบเก่ามีภาพลายเซ็นแต่ไม่มี uid/เวลา — แสดงเป็นอนุมัติปกติ = จอโกหก\n');
+  /* 🔴 ด่านของ 2 ช่องไม่เท่ากัน — อนุมัติ = การตัดสินใจ (ตำแหน่ง+ขอบเขต) ·
+     รับทราบ = การลงนามรับรู้ (HR เป็นหน่วยกลาง ใบอยู่คนละส่วนงานเสมอ ⇒ ใส่ด่านขอบเขต = ไม่มีใครเซ็นได้) */
+  assert.ok(/gated:\s*true/.test(src) && /gated:\s*false/.test(src),
+    '\n\n❌ ทะเบียน `SELF_SIGN` ไม่แยก `gated` แล้ว\n'
+    + '   🔴 ใส่ด่านตำแหน่ง/ขอบเขตให้ช่อง "ผู้รับทราบ" = HR เซ็นใบของส่วนงานผลิตไม่ได้เลย\n'
+    + '   🔴 ถอดด่านออกจากช่อง "อนุมัติ" = ใครก็อนุมัติได้ (เคสจริง 30/10)\n');
+
+  /* ลายเซ็นเดิมที่ไม่มี uid = ของก่อนเปลี่ยนกฎ ⇒ จอต้องเขียนบอก ห้ามแสดงเป็นการลงนามที่ยืนยันแล้ว */
+  assert.ok(/!editing\[S\.uidKey\]/.test(src) && /ลายเซ็นเดิม/.test(src),
+    '\n\n❌ จอไม่แยก "ลายเซ็นเดิมที่ไม่ทราบผู้กด" ออกจากการลงนามที่ยืนยันแล้ว\n'
+    + '   ใบเก่ามีภาพลายเซ็นแต่ไม่มี uid/เวลา — แสดงเป็นปกติ = จอโกหก\n');
 });
+
 
 test('🛡️ approve-needs-confirm-4m — ปุ่มอนุมัติ 4M (SV) ต้องถามยืนยันก่อนเขียน DB', () => {
   const src = readFileSync(join(ROOT, 'src/pages/Report.jsx'), 'utf8');
@@ -6954,10 +7019,7 @@ test('🔄 บันทึกขั้นใบ MO เสร็จ ต้อง�
    นับแบบ static (ปุ่มที่มีเงื่อนไขก็นับ — ถ้าเงื่อนไขทำให้เกิน 2 พร้อมกันได้ ก็ต้องเข้าเมนู)
    🕰️ หน้าที่มีปุ่ม >2 อยู่ก่อนกฎ = ทยอยแก้ **ห้ามเพิ่มหน้าใหม่เข้าลิสต์นี้** */
 test('🧭 PageHeader actions= มีปุ่มตายตัวไม่เกิน 2 — ที่เหลือเข้า <OverflowMenu>', () => {
-  const LEGACY_MANY_ACTIONS = [
-    'src/pages/BbsCheck.jsx', 'src/pages/Checkin.jsx', 'src/pages/MachineDatabase.jsx',
-    'src/pages/MorningMeeting.jsx', 'src/pages/PMSetup.jsx', 'src/pages/RackCenter.jsx',
-  ];
+  const LEGACY_MANY_ACTIONS = [];   // 05/11: ไล่ครบทุกหน้าแล้ว — ห้ามเติมชื่อใหม่ (หน้าใหม่ต้องผ่านตั้งแต่แรก)
   const bad = [];
   for (const f of walk(join(ROOT, 'src/pages'), ['.jsx'])) {
     const rel = relative(ROOT, f);
@@ -8709,4 +8771,74 @@ test('🛡️ bom-phantom-no-seed — migration ห้าม insert ทะเบ
     + '     (รอบ 4/11 seed 45 แถวแล้วทำให้ confirm 10100286 ข้าม 20059342 — ล้างทิ้งแล้ว)\n'
     + 'fix: ปล่อยทะเบียนว่าง ให้ PE ติ๊กเองที่ /products?tab=phantom ·\n'
     + '     โซ่ที่เดินไม่ถึงให้โชว์ผ่าน fn_bom_deduct_gaps() ห้ามกลบด้วยการติ๊กของลม\n');
+});
+
+test('🏃 mo-chase-side-via-registry — แผงไล่งานต้องถามฝั่งจากทะเบียนขั้น ห้ามเทียบเลขขั้น/ชื่อ stage เอง', () => {
+  /* why (05/11 · คำสั่ง user "ทำแผงไล่ MO ค้างให้หัวหน้าช่าง"):
+     แผงนี้แบ่งกองด้วย "ใบนี้รอฝั่งช่าง หรือรอฝ่ายที่แจ้ง" ซึ่ง **ไม่ใช่ฟังก์ชันของเลขขั้น** —
+     ขั้น 4 (ตรวจรับงานหลังซ่อม) ของทีมเครื่องมือ (JIG/DIE) เป็น **ฝั่งช่าง** (หัวหน้าแผนกช่างตรวจ
+     เพราะของยังอยู่ห้องช่าง) แต่ของทีม production เป็น **ฝั่งผู้แจ้ง** (เครื่องกลับมาเดินที่ไลน์แล้ว)
+     ⇒ ใครเขียน `step === 4 → reporter` เองในหน้า/ใน util นี้ จะโยนใบ JIG/DIE ~35 ใบไปกองผิดฝั่ง
+        แล้วหัวหน้าช่างโทรตามผิดคน (วัด 05/11: ใบค้าง accept_work ของ jig/die = 3 ใบ)
+     กฎ: ฝั่งมาจาก `moWaitMeta(order).meta.side` ที่เดียว · ขั้น QA ไม่มี side (แยกถังเอง)
+     🔴 ห้ามนับวันซ้ำ — อายุการค้างต้องมาจาก `stageAgeOf` ของ mtnStale.js (2 สูตร = 2 จอคนละเลข) */
+  const src = stripComments(readFileSync(join(ROOT, 'src/utils/moChase.js'), 'utf8'));
+  assert.match(src, /moWaitMeta\(/,
+    '\n\n❌ moChase ไม่ได้ถาม moWaitMeta แล้ว — ฝั่งจะถูกเดาเอง\n');
+  assert.match(src, /meta\?\.side === 'mtn'/,
+    '\n\n❌ ไม่ได้อ่าน `meta.side` จากทะเบียนขั้น\n');
+  assert.doesNotMatch(src, /step\s*===\s*\d/,
+    '\n\n❌ moChase กลับไปเทียบเลขขั้นตรงๆ แล้ว — ขั้นเดียวกันคนละฝั่งตามทีม (JIG/DIE vs production)\n'
+    + '   ผล: ใบไปกองผิดฝั่ง หัวหน้าช่างโทรตามผิดคน\n');
+  assert.match(src, /stageAgeOf/,
+    '\n\n❌ ไม่ได้ใช้ stageAgeOf — อายุการค้างต้องมาจากสูตรเดียวกับแผงใบค้าง\n');
+  /* จอต้องไม่ตัดสินฝั่งเอง และต้องส่ง board มาจากหน้าแม่ (ไม่ยิงคิวรีในแผง) */
+  const panel = stripComments(readFileSync(join(ROOT, 'src/components/MoStalePanel.jsx'), 'utf8'));
+  assert.doesNotMatch(panel, /\.side\s*===\s*'(mtn|reporter)'/,
+    '\n\n❌ แผงเทียบฝั่งเองแล้ว — ต้องรับ `chase` ที่ประกอบจาก buildMoChaseBoard มาวาดเท่านั้น\n');
+  assert.doesNotMatch(panel, /supabase/,
+    '\n\n❌ แผงยิงคิวรีเอง — ต้องนับจาก orders ที่หน้าโหลดไว้แล้ว (egress 0)\n');
+
+  /* ชิป "ชื่อช่าง" กดแล้วกรองด้วยคำค้น ⇒ ช่องค้นหาต้องครอบ assigned_to ไม่งั้นเป็นปุ่มหลอก */
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  const textFilter = page.slice(page.indexOf("key: 'text'"), page.indexOf("key: 'text'") + 500);
+  assert.match(textFilter, /o\.assigned_to/,
+    '\n\n❌ ช่องค้นหาของหน้า MO ไม่ครอบ `assigned_to` แล้ว\n'
+    + '   ผล: กดชื่อช่างในแถบ "ไล่งาน" แล้วลิสต์ไม่กรองอะไรเลย (ปุ่มหลอก)\n');
+});
+
+/* ═══ 🧲 coil-request-via-bom — 2026-11-05 · คำสั่ง user ══════════════════════════════════
+   *"สโตร์จะจ่ายงานเหล็ก coil เป็น kgs. ไม่ใช่ชิ้น ตอนเบิกพาร์ทต้องแตกผ่านบอม"* · *"ต้องเบิกผ่านพาร์ท"*
+   ⇒ ตัวออกใบ (lib/lineDemandSync.js) ต้องรู้ coil จาก parts_master.uom + บล็อกการขอ coil ตรง +
+     ประทับ uom ลงใบ · ทางแตก BOM ในแผงไลน์ต้องส่ง viaBom (ไม่งั้น coil ที่แตกจาก BOM ถูกบล็อกด้วย)  */
+test('🧲 coil-request-via-bom — coil ขอตรงไม่ได้ · ใบต้องประทับ uom', () => {
+  const bad = [];
+  const sync = stripComments(readFileSync(join(ROOT, 'src/lib/lineDemandSync.js'), 'utf8'));
+  if (!/select\('[^']*\buom\b[^']*'\)/.test(sync)) bad.push('lineDemandSync — ไม่อ่าน parts_master.uom');
+  if (!/directCoil/.test(sync)) bad.push('lineDemandSync — ไม่บล็อก coil ที่ขอตรง');
+  if (!/uom: r\.uom/.test(sync)) bad.push('lineDemandSync — ไม่ประทับ uom ลงใบ');
+  const panel = stripComments(readFileSync(join(ROOT, 'src/components/LinePartCallPanel.jsx'), 'utf8'));
+  if (!/viaBom: true/.test(panel)) bad.push('LinePartCallPanel — ทางแตก BOM ไม่ส่ง viaBom');
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
+
+/* ═══ 🔒 line-adhoc-picker-strict — 2026-11-05 · คำสั่ง user ═══════════════════════════════
+   ช่อง "ขอเบิกพาร์ทนี้เลย" ห้ามโชว์พาร์ทของไลน์อื่น (*"ไม่ควรขึ้นเพื่อกันการงง"*) ⇒ ProductSelect ต้อง strict */
+test('🔒 line-adhoc-picker-strict — ช่องขอเบิกเองโชว์เฉพาะพาร์ทของไลน์นี้', () => {
+  const s = stripComments(readFileSync(join(ROOT, 'src/components/LinePartCallPanel.jsx'), 'utf8'));
+  assert.match(s, /<ProductSelect strict value=\{adhocMat\}/, 'ProductSelect ของฟอร์มขอเบิกเองต้องมี strict');
+  assert.match(s, /<ProductSelect strict value=\{newMat\}/, 'ProductSelect ของโมดัลตั้งจุดเรียกเติมต้องมี strict');
+  assert.doesNotMatch(s, /useColumnHistory\(supabaseDR, 'line_part_levels'/, 'ห้ามดึงประวัติ mat ของทุกไลน์มาเป็นตัวเลือก');
+});
+
+/* ═══ 🏠 store-area-via-home-sloc — 2026-11-05 · คำสั่ง user ══════════════════════════════
+   *"สโตร์ไม่จำเป็นต้องไปตั้งไลน์ · part master แต่ละตัวควรตั้งได้ว่าที่จัดเก็บหลักอยู่ที่ไหน"*
+   ⇒ พื้นที่ของกองคลัง (STORE / FG WAREHOUSE) = parts_master.home_sloc ของพาร์ท ห้ามถามผ่านการผูกไลน์  */
+test('🏠 store-area-via-home-sloc — ห้ามหา SLoc ของกองคลังด้วย slocCodeOfLine/slocOfLine', () => {
+  const bad = [];
+  for (const f of ['src/pages/HeijunkaKanban.jsx', 'src/pages/LineStock.jsx', 'src/utils/slocStockView.js', 'src/components/LinePartCallPanel.jsx']) {
+    const s = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    if (/slocO(?:f|fLine|deOfLine)?\w*\([^)]*'(?:STORE|FG WAREHOUSE)'/.test(s)) bad.push(`${f} — หาพื้นที่ของกองคลังผ่านการผูกไลน์`);
+  }
+  assert.deepEqual(bad, [], bad.join('\n'));
 });

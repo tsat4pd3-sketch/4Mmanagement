@@ -15,6 +15,7 @@ import { coalesce, makeIdleGate } from '../utils/liveRefresh';
 import { loadDivisions, divisionsSync, divisionMeta } from '../utils/orgDivisions';
 import { liveChannel } from '../utils/liveChannel';
 import { openOnly } from '../utils/shipStatus';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ══ 🔗 Flow Control Tower — สายธารของ "ความต้องการ" ตั้งแต่ลูกค้าถึงวัตถุดิบ ═══════════
    ตอบคำถามเดียว: **ความต้องการของลูกค้าไหลย้อนกลับไปถึงต้นน้ำครบหรือยัง ตันตรงไหน**
@@ -47,10 +48,10 @@ function getWorkDate() {
 
 /* สถานะข้อต่อ — ห้ามยุบ 3 อย่างนี้เป็นอย่างเดียว (ดูหัวไฟล์) */
 const ST = {
-  flow:  { dot: '#22c55e', label: 'ไหลจริง',   bg: 'rgba(34,197,94,0.10)' },
-  block: { dot: '#ef4444', label: 'ตัน',       bg: 'rgba(239,68,68,0.10)' },
-  idle:  { dot: '#64748b', label: 'ยังไม่ใช้', bg: 'rgba(100,116,139,0.10)' },
-  human: { dot: '#f59e0b', label: 'ส่งต่อด้วยคน', bg: 'rgba(245,158,11,0.10)' },
+  flow:  { dot: 'var(--green)', label: 'ไหลจริง',   bg: 'var(--green-dim)' },
+  block: { dot: 'var(--red)', label: 'ตัน',       bg: 'var(--red-dim)' },
+  idle:  { dot: 'var(--muted)', label: 'ยังไม่ใช้', bg: 'rgba(100,116,139,0.10)' },
+  human: { dot: 'var(--amber)', label: 'ส่งต่อด้วยคน', bg: 'var(--amber-dim)' },
 };
 
 /* ⚠️ ข้อยกเว้นทางการ — หน้านี้ **ไม่ scope ตามส่วนงาน ทุก role เห็นทั้งโรงงาน**
@@ -244,7 +245,7 @@ export default function FlowTower() {
   // ฝ่ายของแต่ละสถานี — ชื่อ/สี/ไอคอนจากผังองค์กร · ไม่รู้จัก code = บอกตรงๆ ห้ามเดาชื่อ
   const divOf = (code) => {
     const m = divisionMeta(code);
-    return { code, color: m?.color || '#64748b', name: m?.label || null, icon: m?.icon || '' };
+    return { code, color: m?.color || 'var(--muted)', name: m?.label || null, icon: m?.icon || '' };
   };
   const usedDivs = [...new Set(stations.map(st2 => st2.divCode))].map(divOf).filter(x => x.name);
 
@@ -255,11 +256,11 @@ export default function FlowTower() {
       <PageHeader
         title="สายธารความต้องการ (Flow Control Tower)" icon="🔗"
         sub={`ความต้องการของลูกค้าไหลย้อนไปถึงวัตถุดิบครบหรือยัง · ข้อมูลสด ${workDate}`}
-        actions={<button onClick={load} style={{ ...card, padding: '7px 14px', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>↻ รีเฟรช</button>}
+        actions={<button type="button" className="pg-btn" onClick={load} style={{ cursor: 'pointer' }}>รีเฟรช</button>}
       />
 
       {err && (
-        <div style={{ ...card, borderColor: 'rgba(239,68,68,0.5)', background: 'rgba(239,68,68,0.08)', padding: '10px 14px', marginBottom: 12, fontSize: 13, color: '#ef4444', fontWeight: 700 }}>
+        <div style={{ ...card, borderColor: 'var(--red-line)', background: 'var(--red-dim)', padding: '10px 14px', marginBottom: 12, fontSize: 13, color: 'var(--red)', fontWeight: 700 }}>
           ⚠️ {err}
         </div>
       )}
@@ -270,11 +271,11 @@ export default function FlowTower() {
         {divs.length === 0 ? (
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>กำลังอ่านผังองค์กร…</span>
         ) : usedDivs.length === 0 ? (
-          <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>
+          <span style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>
             ⚠️ ฝ่ายที่หน้านี้อ้างถึงยังไม่มีในผังองค์กร — ตั้งที่ /org-setup แล้วชื่อฝ่ายจะขึ้นเอง
           </span>
         ) : usedDivs.map(dv => (
-          <span key={dv.code} style={{ fontSize: 11, fontWeight: 800, padding: '4px 10px', borderRadius: 20, color: dv.color, background: `${dv.color}18`, border: `1px solid ${dv.color}55` }}>
+          <span key={dv.code} style={{ fontSize: 11, fontWeight: 800, padding: '4px 10px', borderRadius: 20, color: dv.color, background: `${tint(dv.color, 'dim')}`, border: `1px solid ${tint(dv.color, 'line')}` }}>
             {dv.icon} {dv.name}
           </span>
         ))}
@@ -334,12 +335,12 @@ export default function FlowTower() {
       </div>
 
       {/* ── จุดที่ตัน ── */}
-      <div style={{ ...card, padding: '14px 16px', marginBottom: 16, borderColor: (S.blocks?.length ? 'rgba(239,68,68,0.45)' : 'var(--border)') }}>
+      <div style={{ ...card, padding: '14px 16px', marginBottom: 16, borderColor: (S.blocks?.length ? 'var(--red-line)' : 'var(--border)') }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
           <div style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
             🚧 จุดที่ความต้องการค้าง ไม่กลายเป็นใบสั่ง
           </div>
-          <div style={{ fontSize: 12, color: S.blocks?.length ? '#ef4444' : '#22c55e', fontWeight: 800 }}>
+          <div style={{ fontSize: 12, color: S.blocks?.length ? 'var(--red)' : 'var(--green)', fontWeight: 800 }}>
             {S.blocks?.length ? `${fmt(S.blocks.length)} พาร์ท · ${fmt(S.blockQty)} ชิ้น` : 'ไม่มีจุดตัน'}
           </div>
         </div>
@@ -363,7 +364,7 @@ export default function FlowTower() {
                     {S.blocks.slice(0, 12).map(b => (
                       <tr key={b.mat_no} style={{ borderTop: '1px solid var(--border)' }}>
                         <td style={{ padding: '7px 12px', maxWidth: 340 }}><MatLabel mat={b.mat_no} name={b.part_name} /></td>
-                        <td style={{ padding: '7px 12px', textAlign: 'right', fontWeight: 800, color: '#ef4444' }}>{fmt(b.pending_qty)}</td>
+                        <td style={{ padding: '7px 12px', textAlign: 'right', fontWeight: 800, color: 'var(--red)' }}>{fmt(b.pending_qty)}</td>
                         <td style={{ padding: '7px 12px', fontSize: 11, color: 'var(--muted)' }}>
                           {b.demand_kind === 'purchase' ? '🚛 สั่งซื้อ' : `🔨 ผลิตเอง${b.maker_line ? ` · ${b.maker_line}` : ''}`}
                         </td>
@@ -372,11 +373,11 @@ export default function FlowTower() {
                           {/* backlog_capped = ตั้งล็อตแล้ว (ค้างเพราะเพดาน MAX_LOTS) — ห้ามโชว์ปุ่มตั้งล็อต
                               (กดแล้วจะเขียนทับ lot_size ที่คนตั้งไว้ด้วยค่าเสนอ 1 กล่อง) · วิวเก่าไม่มีคอลัมน์นี้ = undefined = พฤติกรรมเดิม */}
                           {b.block_reason === 'backlog_capped'
-                            ? <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }} title="ตั้งขนาดล็อตแล้ว — ยอดค้างเกินเพดานการออกใบต่อรอบ (50 ใบ/การปิดออเดอร์) จะทยอยออกใบเองเมื่อมีการปิดใบผลิตครั้งถัดไป">⏳ รอทยอยออกใบ</span>
+                            ? <span style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }} title="ตั้งขนาดล็อตแล้ว — ยอดค้างเกินเพดานการออกใบต่อรอบ (50 ใบ/การปิดออเดอร์) จะทยอยออกใบเองเมื่อมีการปิดใบผลิตครั้งถัดไป">⏳ รอทยอยออกใบ</span>
                             : canFix && b.suggested_lot > 0 && (
                             <button onClick={() => setLot(b)} disabled={busy === b.mat_no}
-                              style={{ padding: '4px 10px', borderRadius: 7, border: '1px solid rgba(34,197,94,0.5)', background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 800, fontSize: 11, cursor: busy ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}>
-                              {busy === b.mat_no ? '…' : '✓ ตั้งล็อต'}
+                              style={{ padding: '4px 10px', borderRadius: 7, border: '1px solid var(--green-line)', background: 'var(--green-dim)', color: 'var(--green)', fontWeight: 800, fontSize: 11, cursor: busy ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}>
+                              {busy === b.mat_no ? '…' : 'ตั้งล็อต'}
                             </button>
                           )}
                         </td>
@@ -425,8 +426,8 @@ export default function FlowTower() {
         </div>
         <div style={{ marginTop: 10, fontSize: 11, color: 'var(--muted)', lineHeight: 1.6 }}>
           <b>⚪ ยังไม่ใช้</b> = แผนกนั้นยังไม่เริ่มทดลองใช้ (โปรเจคทยอยขยายผลรายแผนก) — <b>ไม่ใช่ระบบพัง</b> ·
-          <b style={{ color: '#ef4444' }}> 🔴 ตัน</b> = มีความต้องการค้างจริงแต่ไม่ไหลออก ต้องแก้ ·
-          <b style={{ color: '#f59e0b' }}> 🟠 ส่งต่อด้วยคน</b> = ยังไม่มีเส้นข้อมูลอัตโนมัติ ใช้คนตัดสินใจแทน
+          <b style={{ color: 'var(--red)' }}> 🔴 ตัน</b> = มีความต้องการค้างจริงแต่ไม่ไหลออก ต้องแก้ ·
+          <b style={{ color: 'var(--amber)' }}> 🟠 ส่งต่อด้วยคน</b> = ยังไม่มีเส้นข้อมูลอัตโนมัติ ใช้คนตัดสินใจแทน
         </div>
       </div>
     </Page>

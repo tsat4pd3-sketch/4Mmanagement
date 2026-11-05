@@ -19,6 +19,7 @@
  */
 import { useState, useCallback } from 'react';
 import ScanModal from './ScanModal';
+import { qtyUnit, isCoilUom } from '../utils/coilUom';
 import { checkPickPart, checkPickQty, buildPickPayload, validatePickPayload, overrideReasonOk, OVERRIDE_REASONS } from '../utils/replenishGate';
 
 const fmt = (v) => (v == null ? '—' : Number(v).toLocaleString());
@@ -91,7 +92,7 @@ export default function PickScanModal({ request, canOverride = false, fullName, 
               <div style={{ fontSize: request?.part_name ? 11 : 15, fontWeight: request?.part_name ? 400 : 900, fontFamily: 'monospace', color: request?.part_name ? 'var(--muted)' : 'var(--text)', wordBreak: 'break-all' }}>MAT {request?.mat_no || '—'}</div>
             </div>
             <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '8px 10px' }}>
-              <div style={{ fontSize: 11, color: 'var(--muted)' }}>จำนวนที่ขอ</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)' }}>{isCoilUom(request?.uom) ? 'ต้องใช้ (kg · จ่ายเป็นม้วน)' : 'จำนวนที่ขอ'}</div>
               <div style={{ fontSize: 20, fontWeight: 900, color: 'var(--text)' }}>{fmt(request?.request_qty)}</div>
             </div>
             <div style={{ background: 'rgba(59,130,246,0.12)', borderRadius: 10, padding: '8px 10px' }}>
@@ -119,21 +120,21 @@ export default function PickScanModal({ request, canOverride = false, fullName, 
           )}
 
           {/* ② จำนวน */}
-          <div style={{ marginTop: 14, fontSize: 12.5, fontWeight: 800, color: 'var(--text2)' }}>② จำนวนที่หยิบได้จริง</div>
+          <div style={{ marginTop: 14, fontSize: 12.5, fontWeight: 800, color: 'var(--text2)' }}>{isCoilUom(request?.uom) ? '② น้ำหนักม้วนที่จ่ายจริง (kg)' : '② จำนวนที่หยิบได้จริง'}</div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
             <input type="number" min="0" value={qty} onChange={e => { setQty(e.target.value); setShortOk(false); }}
               style={{ ...inputSt, width: 140, fontSize: 16, fontWeight: 800 }} />
-            <span style={{ fontSize: 12, color: 'var(--muted)' }}>/ {fmt(request?.request_qty)} ชิ้น</span>
-            {qtyCheck.status !== 'ok' && (
-              <span style={{ fontSize: 12, fontWeight: 700, color: qtyCheck.block ? '#ef4444' : '#f59e0b', flex: '1 1 100%' }}>
-                {qtyCheck.block ? '🔴' : '🟡'} {qtyCheck.message}
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>/ {fmt(request?.request_qty)} {qtyUnit(request?.uom)}</span>
+            {(qtyCheck.status !== 'ok' || qtyCheck.coilOver) && (
+              <span style={{ fontSize: 12, fontWeight: 700, color: qtyCheck.block ? '#ef4444' : qtyCheck.coilOver ? 'var(--muted)' : '#f59e0b', flex: '1 1 100%' }}>
+                {qtyCheck.block ? '🔴' : qtyCheck.coilOver ? '🧲' : '🟡'} {qtyCheck.message}
               </span>
             )}
           </div>
           {qtyCheck.status === 'under' && (
             <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, fontSize: 12.5, color: 'var(--text)' }}>
               <input type="checkbox" checked={shortOk} onChange={e => setShortOk(e.target.checked)} style={{ width: 'auto' }} />
-              ยืนยันว่าส่งไม่ครบ {fmt(-qtyCheck.diff)} ชิ้น — ไลน์จะเห็นตอนกดรับของ
+              ยืนยันว่าส่งไม่ครบ {fmt(-qtyCheck.diff)} {qtyUnit(request?.uom)} — ไลน์จะเห็นตอนกดรับของ
             </label>
           )}
 

@@ -86,3 +86,43 @@ export function linesOfSloc(slocs, lines, code) {
   const c = slocLabel(code);
   return (lines || []).map(l => l.name).filter(n => slocCodeOfLine(slocs, lines, n) === c);
 }
+
+/* ═══ 🏠 ที่จัดเก็บหลักของพาร์ท (2026-11-05 · คำสั่ง user) ═══════════════════════════════════
+   user: *"สโตร์ไม่จำเป็นต้องไปตั้งไลน์ · part master แต่ละตัวควรตั้งได้ว่าที่จัดเก็บหลักอยู่ที่ไหน
+          ส่วนไปที่ไหนก็ตามพาร์ทแม่ที่เรียกไปผลิต — 20056789 ผลิตที่ P401 แต่เก็บที่ S402 คนละประเด็นกัน"*
+   · กองยอดสต็อกฝั่งคลัง (`STOCK_BUCKETS` = STORE / FG WAREHOUSE) ยังเป็นกองเดียวใน ledger
+     แต่ "อยู่พื้นที่ไหน" = **`parts_master.home_sloc` ของพาร์ทนั้น** ไม่ใช่การผูกไลน์ใน storage_locations
+   · ไลน์ผลิต = ผูกไลน์เหมือนเดิม (`slocOfLine`) — ปลายทางของสโตร์ = พื้นที่ของไลน์ที่เปิดใบผลิต
+   · 🔴 พาร์ทที่ยังไม่ตั้ง = null → จอเขียน "ยังไม่ตั้งที่จัดเก็บ" **ห้ามเดาจากเลข MAT** */
+export const STOCK_BUCKETS = ['STORE', 'FG WAREHOUSE'];
+export const STORE_SLOC_KINDS = ['store_part', 'raw', 'warehouse'];
+export const isStockBucket = (line) => STOCK_BUCKETS.includes(norm(line).toUpperCase());
+
+/** ที่จัดเก็บหลักของ MAT จาก Map(mat → code) · ไม่ตั้ง = null */
+export const homeSlocOf = (homeOf, mat) => {
+  const c = slocLabel(homeOf?.get?.(norm(mat)));
+  return c || null;
+};
+
+/** พื้นที่ของ "แถวยอด" (กอง + MAT): กองคลัง = ที่จัดเก็บหลักของพาร์ท · ไลน์ผลิต = ผูกไลน์ (ไล่สายแม่) */
+export function slocOfStockRow(slocs, lines, lineName, mat, homeOf) {
+  if (isStockBucket(lineName)) {
+    const code = homeSlocOf(homeOf, mat);
+    return code ? { code, via: 'home', sloc: (slocs || []).find(s => slocLabel(s?.code) === code) || null } : null;
+  }
+  return slocOfLine(slocs, lines, lineName);
+}
+export const slocCodeOfStockRow = (...a) => slocOfStockRow(...a)?.code || null;
+
+/* ═══ 📍 "พื้นที่เดียวกัน" ตามรหัส SAP (2026-11-05 · คำสั่ง user) ═══════════════════════════════
+   user: *"เราคุยกันที่พื้นที่ที่ตั้งไว้อ้างอิงจาก SAP ไม่สนว่าอยู่ไลน์แม่หรือลูก — GOR · Assy GOR · Laser GOR คือ P410
+          ก็นับว่าอยู่ที่เดียวกัน"* ⇒ ความต้องการ/ของคงเหลือ/ใบรอหยิบ ของการเบิกจากสโตร์ คิดรวมทั้งพื้นที่
+   · ไลน์ที่ยังไม่ผูกพื้นที่ = คิดเฉพาะไลน์ตัวเอง (`code: null`) — จอต้องเขียนว่ายังไม่ผูก ห้ามเดาไปรวมกับไลน์อื่น */
+export function areaLinesOf(slocs, lines, lineName) {
+  const ln = norm(lineName);
+  const hit = slocOfLine(slocs, lines, ln);
+  if (!hit) return { code: null, lines: ln ? [ln] : [] };
+  const own = (hit.sloc?.line_names || []).map(norm);
+  const all = [...new Set([ln, ...own, ...linesOfSloc(slocs, lines, hit.code)].filter(Boolean))];
+  return { code: hit.code, lines: all };
+}

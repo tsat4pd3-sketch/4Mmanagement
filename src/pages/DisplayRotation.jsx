@@ -251,9 +251,9 @@ export default function DisplayRotation() {
 
   const actions = selId && canEdit ? (
     <>
-      {plans[selId] && <button type="button" onClick={removePlan} style={btnGhost}>🗑 ลบรอบ</button>}
+      {plans[selId] && <button type="button" onClick={removePlan} style={btnGhost}>ลบรอบ</button>}
       <button type="button" onClick={save} disabled={saving || !dirty} style={btnPrimary}>
-        {saving ? 'กำลังบันทึก…' : dirty ? '💾 บันทึก' : '✓ บันทึกแล้ว'}
+        {saving ? 'กำลังบันทึก…' : dirty ? 'บันทึก' : 'บันทึกแล้ว'}
       </button>
     </>
   ) : null;
@@ -304,7 +304,7 @@ export default function DisplayRotation() {
                   📍 {secs.length ? secs.join(', ') : 'ยังไม่ตั้งส่วนงาน (เห็นทั้งโรงงาน)'}
                 </span>
                 <span style={{ fontSize: 12, color: plan ? (plan.enabled ? 'var(--green)' : 'var(--muted)') : 'var(--muted)' }}>
-                  {plan ? (plan.enabled ? `🔁 วน ${n} หน้า` : '⏸ ปิดการวน') : '— ยังไม่ตั้งรอบ'}
+                  {plan ? (plan.enabled ? `วน ${n} หน้า` : 'ปิดการวน') : '— ยังไม่ตั้งรอบ'}
                 </span>
                 {plan?.note && <span style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{plan.note}</span>}
               </button>
@@ -434,12 +434,12 @@ export default function DisplayRotation() {
                 </div>
               )}
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'prev' })}>◀ ก่อนหน้า</button>
+                <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'prev' })}>ก่อนหน้า</button>
                 {live?.held
-                  ? <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'resume' })}>▶ วนต่อ</button>
-                  : <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'hold' })}>⏸ หยุดค้าง</button>}
+                  ? <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'resume' })}>วนต่อ</button>
+                  : <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'hold' })}>หยุดค้าง</button>}
                 <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'next' })}>ถัดไป ▶▶</button>
-                <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'reload' })} title="ให้จอโหลดใหม่ — ใช้หลังบันทึกรอบใหม่">🔄 รีโหลดจอ</button>
+                <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'reload' })} title="ให้จอโหลดใหม่ — ใช้หลังบันทึกรอบใหม่">รีโหลดจอ</button>
               </div>
               {savedPlayable.length > 0 && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -774,7 +774,7 @@ function Field({ label, children }) {
 }
 
 const warnBox = { padding: 12, marginBottom: 12, borderRadius: 10, fontSize: 13, lineHeight: 1.6,
-  border: '1px solid var(--amber)', background: 'var(--card)', backgroundImage: 'linear-gradient(rgba(245,158,11,.10), rgba(245,158,11,.10))', color: 'var(--text)' };
+  border: '1px solid var(--amber)', background: 'var(--card)', backgroundImage: 'linear-gradient(var(--amber-dim), var(--amber-dim))', color: 'var(--text)' };
 const infoBox = { padding: 12, marginBottom: 12, borderRadius: 10, fontSize: 12, lineHeight: 1.7,
   border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)' };
 const chipSt = { padding: '3px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700,

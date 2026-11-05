@@ -205,7 +205,9 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
 
   /* ไม่มีทั้ง ledger และการใช้ของ = ไลน์นี้ยังไม่เข้าระบบ WIP → ไม่ต้องรกจอ
      ⚠️ แต่ถ้ามีของค้างอยู่ที่ไลน์แม่ ต้องโชว์ — นั่นคือคำอธิบายว่าทำไมไลน์นี้ถึงว่าง */
-  if (!err && !wip.parts.length && !stuckUp.length) return null;
+  /* 🙈 05/11 (คำสั่ง user "พวกโชว์ของค้างอยู่ไลน์แม่ ไม่ต้องโชว์ให้งง · พื้นที่อ้างอิง SAP ไม่สนแม่หรือลูก") — ปิดการโชว์ของค้างที่ไลน์แม่ */
+  const SHOW_UP = false;
+  if (!err && !wip.parts.length && !(SHOW_UP && stuckUp.length)) return null;
 
   const t = wip.totals;
   const rows = showAll ? wip.parts : wip.parts.slice(0, 8);
@@ -223,7 +225,7 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
         </span>
         {t.negative > 0     && <span style={chip('rgba(239,68,68,0.14)', TONE.crit)}>🔴 ใช้เกินที่รับ {t.negative}</span>}
         {t.neverIssued > 0  && <span style={chip('rgba(245,158,11,0.14)', TONE.warn)}>📭 ไม่มีบันทึกรับเข้า {t.neverIssued}</span>}
-        {stuckUp.length > 0 && <span style={chip('rgba(245,158,11,0.14)', TONE.warn)}>🔀 ค้างที่ไลน์แม่ {stuckUp.length} พาร์ท</span>}
+        {SHOW_UP && stuckUp.length > 0 && <span style={chip('rgba(245,158,11,0.14)', TONE.warn)}>🔀 ค้างที่ไลน์แม่ {stuckUp.length} พาร์ท</span>}
         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>{open ? '▾' : '▸'}</span>
       </div>
 
@@ -257,7 +259,7 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
 
           {/* ⚠️ ของที่จ่ายไว้ที่ไลน์แม่ — ไม่นับเป็นของไลน์นี้ แต่ต้องเห็น (ห้ามเงียบ)
               นี่คือคำอธิบายว่าทำไมยอดค้างของไลน์ถึงน้อย/ติดลบ ทั้งที่สโตร์จ่ายมาแล้ว */}
-          {stuckUp.length > 0 && (
+          {SHOW_UP && stuckUp.length > 0 && (
             <div style={{ ...card, borderColor: 'rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.07)', padding: '9px 12px', marginBottom: 10, fontSize: 11.5, color: 'var(--text2)' }}>
               🔀 <b style={{ color: TONE.warn }}>มีของค้างอยู่ที่ไลน์แม่ {stuckUp.length} พาร์ท</b> — ยังไม่ถูกย้ายลงมาที่ไลน์นี้ จึงไม่นับรวมด้านล่าง
               <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 5 }}>

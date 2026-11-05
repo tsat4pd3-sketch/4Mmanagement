@@ -201,7 +201,7 @@ export default function Transport() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {byLine.map(g => (
               <div key={g.line} style={{ ...card, padding: 0, overflow: 'hidden' }}>
-                <div style={{ padding: '9px 14px', borderBottom: '1px solid var(--border2)', fontWeight: 800, fontSize: 14, color: '#f59e0b', background: 'var(--bg2)' }}>🏭 {g.line}</div>
+                <div style={{ padding: '9px 14px', borderBottom: '1px solid var(--border2)', fontWeight: 800, fontSize: 14, color: 'var(--amber)', background: 'var(--bg2)' }}>🏭 {g.line}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(280px, 100%), 1fr))', gap: 10, padding: 12 }}>
                   {g.rounds.map(r => {
                     const st = getRoundStatus(r, confirmedSet, dlvMap, workDate, nowMs);
@@ -257,7 +257,7 @@ export default function Transport() {
             {canManage && (
               <button onClick={() => setEditCarrier({ name: '', emp_code: '', shift: 'day', vehicles: [], section: '', is_active: true, note: '' })}
                 style={{ padding: '7px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
-                ➕ เพิ่มคนขับ
+                เพิ่มคนขับ
               </button>
             )}
           </div>
@@ -449,8 +449,8 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
               {canManage && stopIds.length >= 3 && (
                 <button onClick={optimizeOrder} disabled={busy === round.id}
                   title="ให้ระบบหาลำดับแวะที่ระยะรวมสั้นสุด (จุดแรกคงเป็นต้นทางเดิม)"
-                  style={{ padding: '3px 9px', borderRadius: 14, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, background: 'var(--accent-dim, rgba(74,222,128,.15))', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
-                  ✨ เรียงให้สั้นสุด
+                  style={{ padding: '3px 9px', borderRadius: 14, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, background: 'var(--accent-dim, var(--green-dim))', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
+                  เรียงให้สั้นสุด
                 </button>
               )}
             </div>
@@ -461,7 +461,7 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                 const seg = i > 0 ? route.segments[i - 1] : null;
                 const broken = seg && !seg.ok;
                 return (
-                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, background: 'var(--bg2)', border: `1px solid ${broken ? '#ef4444' : 'var(--border)'}`, borderRadius: 8, padding: '5px 8px' }}>
+                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, background: 'var(--bg2)', border: `1px solid ${broken ? 'var(--red)' : 'var(--border)'}`, borderRadius: 8, padding: '5px 8px' }}>
                     <span style={{ width: 20, height: 20, borderRadius: '50%', background: k.color, color: '#08130a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, flex: '0 0 auto' }}>{i + 1}</span>
                     {(() => {
                       const act = actionOf(s);
@@ -471,21 +471,21 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                           disabled={!canManage || busy === round.id}
                           title={canManage ? 'คลิกสลับ รับของ ⇄ ส่งของ' : undefined}
                           style={{ flex: '0 0 auto', padding: '1px 7px', borderRadius: 10, fontSize: 11, fontWeight: 800, cursor: canManage ? 'pointer' : 'default',
-                            background: isLoad ? 'rgba(56,189,248,0.15)' : 'rgba(74,222,128,0.15)',
-                            color: isLoad ? '#38bdf8' : 'var(--accent)',
-                            border: `1px solid ${isLoad ? 'rgba(56,189,248,0.5)' : 'var(--accent)'}` }}>
-                          {isLoad ? '⬆ รับ' : '⬇ ส่ง'}
+                            background: isLoad ? 'var(--blue-dim)' : 'var(--green-dim)',
+                            color: isLoad ? 'var(--blue)' : 'var(--accent)',
+                            border: `1px solid ${isLoad ? 'var(--blue-line)' : 'var(--accent)'}` }}>
+                          {isLoad ? 'รับ' : 'ส่ง'}
                         </button>
                       );
                     })()}
                     <span style={{ flex: 1, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {k.icon} {n?.name || n?.line_name || '(จุดไม่มีชื่อ)'}
-                      {broken && <span style={{ color: '#ef4444', fontSize: 11 }}> · ⚠ ถนนขาด</span>}
+                      {broken && <span style={{ color: 'var(--red)', fontSize: 11 }}> · ⚠ ถนนขาด</span>}
                     </span>
                     {canManage && <>
                       <button onClick={() => moveStop(i, -1)} disabled={i === 0 || busy === round.id} style={miniBtn}>▲</button>
                       <button onClick={() => moveStop(i, 1)} disabled={i === stopIds.length - 1 || busy === round.id} style={miniBtn}>▼</button>
-                      <button onClick={() => removeStop(i)} disabled={busy === round.id} style={{ ...miniBtn, color: '#ef4444' }}>✕</button>
+                      <button onClick={() => removeStop(i)} disabled={busy === round.id} style={{ ...miniBtn, color: 'var(--red)' }}>✕</button>
                     </>}
                   </div>
                 );
@@ -509,10 +509,10 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                       return (
                         <button key={n.id} onClick={() => addStop(n.id)} disabled={busy === round.id}
                           style={{ padding: '4px 9px', borderRadius: 16, cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
-                            background: mine ? 'var(--accent-dim, rgba(74,222,128,.15))' : 'var(--bg2)',
+                            background: mine ? 'var(--accent-dim, var(--green-dim))' : 'var(--bg2)',
                             color: mine ? 'var(--accent)' : 'var(--text2)',
                             border: `1px solid ${mine ? 'var(--accent)' : 'var(--border)'}` }}>
-                          {mine ? '🎯 ' : ''}{nodeKind(n.kind).icon} {n.name || n.line_name || 'จุด'}
+                          {mine ? ' ' : ''}{nodeKind(n.kind).icon} {n.name || n.line_name || 'จุด'}
                         </button>
                       );
                     })}
@@ -527,7 +527,7 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
               ) : route.ok ? (
                 <span style={{ color: 'var(--accent)', fontWeight: 700 }}>✅ เส้นทางรวม ≈ {route.distance.toFixed(1)} หน่วยผัง · {route.nodePath.length - 1} ช่วง</span>
               ) : (
-                <span style={{ color: '#ef4444', fontWeight: 700 }}>⚠ ถนนขาดช่วง — จุดจอดบางคู่ยังเชื่อมกันไม่ถึง (เพิ่มถนนที่หน้า Store/AMR)</span>
+                <span style={{ color: 'var(--red)', fontWeight: 700 }}>⚠ ถนนขาดช่วง — จุดจอดบางคู่ยังเชื่อมกันไม่ถึง (เพิ่มถนนที่หน้า Store/AMR)</span>
               )}
             </div>
 
@@ -575,11 +575,11 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                 )}
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 2 }}>
                   <button onClick={() => { if (simFrac >= 1) setSimFrac(0); setSimRun(r => !r); }} style={{ padding: '6px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, fontWeight: 800, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
-                    {simRun ? '⏸ หยุด' : '▶ จำลองการวิ่ง'}
+                    {simRun ? 'หยุด' : 'จำลองการวิ่ง'}
                   </button>
                   <button onClick={() => { setSimRun(false); setSimFrac(0); }} style={{ padding: '6px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>↺</button>
                   {simMinNow != null && (
-                    <span style={{ fontSize: 12, color: simState.dwellAt ? '#f59e0b' : 'var(--accent)', fontWeight: 700 }}>
+                    <span style={{ fontSize: 12, color: simState.dwellAt ? 'var(--amber)' : 'var(--accent)', fontWeight: 700 }}>
                       ⏱ {fmtMin(simMinNow)}{simState.dwellAt ? ` · ⏸ แวะจุด ${simState.dwellAt}` : ''}
                     </span>
                   )}
@@ -604,18 +604,18 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
               {/* ถนนทั้งโรงงาน — เห็นครบทุกเส้น เส้นที่ไม่ได้ใช้ = เทาบาง (คำสั่ง user 2026-08-03) */}
               {edges.map(e => { const a = nById[e.a_node], b = nById[e.b_node]; if (!a || !b) return null;
-                return <line key={e.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#94a3b8" strokeOpacity="0.55" strokeWidth="2" vectorEffect="non-scaling-stroke" />; })}
+                return <line key={e.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--muted)" strokeOpacity="0.55" strokeWidth="2" vectorEffect="non-scaling-stroke" />; })}
               {/* เส้นทางที่เลือก (เด่น) — วาด "ราย segment เฉพาะที่หากันถึงจริง"
                   ⚠️ ห้ามวาด polyline เดียวจาก nodePath: คู่ที่ถนนขาดจะกลายเป็นเส้นเขียว
                   ลากตรงทะลุกำแพง ดูสมบูรณ์ทั้งที่ไปไม่ถึง (QC audit 2026-08-20 · T2-11) */}
               {route.segments.filter(s => s.ok && s.path.length > 1).map((s, i) => (
                 <polyline key={`seg-${i}`} points={s.path.map(id => nById[id]).filter(Boolean).map(p => `${p.x},${p.y}`).join(' ')}
-                  fill="none" stroke="#4ade80" strokeWidth="3.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+                  fill="none" stroke="var(--green)" strokeWidth="3.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
               ))}
               {/* คู่ที่ถนนขาด = เส้นประแดงตรงๆ ให้เห็นว่า "ตรงนี้ยังไปไม่ถึง" ไม่ใช่ซ่อนเงียบ */}
               {route.segments.filter(s => !s.ok).map((s, i) => {
                 const a = nById[s.from], b = nById[s.to]; if (!a || !b) return null;
-                return <line key={`brk-${i}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#ef4444" strokeWidth="2.5" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />;
+                return <line key={`brk-${i}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="var(--red)" strokeWidth="2.5" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />;
               })}
             </svg>
             {/* node markers ทั้งหมด (จาง) + จุดจอดของรอบ (เลขลำดับ + บทบาท ⬆รับ/⬇ส่ง) */}
@@ -624,13 +624,13 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
               return (
                 <div key={n.id} title={idx >= 0 ? `${idx + 1}. ${n.name || n.line_name || ''} · ${act === 'load' ? '⬆ รับของ' : '⬇ ส่งของ'}` : undefined}
                   style={{ position: 'absolute', left: `${n.x}%`, top: `${n.y}%`, transform: 'translate(-50%,-50%)',
-                  width: idx >= 0 ? 22 : 10, height: idx >= 0 ? 22 : 10, borderRadius: '50%', background: idx >= 0 ? k.color : '#64748b',
+                  width: idx >= 0 ? 22 : 10, height: idx >= 0 ? 22 : 10, borderRadius: '50%', background: idx >= 0 ? k.color : 'var(--muted)',
                   opacity: idx >= 0 ? 1 : 0.55, border: idx >= 0 ? '2px solid #fff' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: 11, fontWeight: 800, color: '#08130a', boxShadow: idx >= 0 ? '0 1px 5px rgba(0,0,0,0.5)' : 'none', zIndex: idx >= 0 ? 2 : 1 }}>
                   {idx >= 0 ? idx + 1 : ''}
                   {idx >= 0 && (
                     <span style={{ position: 'absolute', top: -7, right: -8, width: 14, height: 14, borderRadius: '50%',
-                      background: act === 'load' ? '#38bdf8' : '#4ade80', border: '1.5px solid #fff',
+                      background: act === 'load' ? 'var(--blue)' : 'var(--green)', border: '1.5px solid #fff',
                       display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 900, color: '#08130a' }}>
                       {act === 'load' ? '⬆' : '⬇'}
                     </span>
@@ -642,24 +642,24 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
             {simPos && simFrac > 0 && (
               <div title={simState.dwellAt ? `⏸ แวะจอดจุด ${simState.dwellAt} (${dwellMin} น.)` : undefined}
                 style={{ position: 'absolute', left: `${simPos.x}%`, top: `${simPos.y}%`, transform: 'translate(-50%,-50%)', width: 28, height: 28, borderRadius: '50%',
-                  background: simState.dwellAt ? '#f59e0b' : '#22d3ee', border: '2px solid #fff',
-                  boxShadow: simState.dwellAt ? '0 0 12px 3px rgba(245,158,11,0.75)' : '0 0 12px 3px rgba(34,211,238,0.7)',
+                  background: simState.dwellAt ? 'var(--amber)' : '#22d3ee', border: '2px solid #fff',
+                  boxShadow: simState.dwellAt ? '0 0 12px 3px var(--amber-line)' : '0 0 12px 3px rgba(34,211,238,0.7)',
                   zIndex: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>{veh?.icon || '🚚'}</div>
             )}
           </div>
           {/* legend ใต้แผนที่ */}
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', marginTop: 7, fontSize: 11.5, color: 'var(--muted)' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 22, height: 3.5, borderRadius: 2, background: '#4ade80', display: 'inline-block' }} /> เส้นทางรอบนี้
+              <span style={{ width: 22, height: 3.5, borderRadius: 2, background: 'var(--green)', display: 'inline-block' }} /> เส้นทางรอบนี้
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 22, height: 2, borderRadius: 2, background: '#94a3b8', opacity: 0.7, display: 'inline-block' }} /> ถนนทั้งโรงงาน (ไม่ได้ใช้รอบนี้)
+              <span style={{ width: 22, height: 2, borderRadius: 2, background: 'var(--muted)', opacity: 0.7, display: 'inline-block' }} /> ถนนทั้งโรงงาน (ไม่ได้ใช้รอบนี้)
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 13, height: 13, borderRadius: '50%', background: '#38bdf8', color: '#08130a', fontSize: 11, fontWeight: 900, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>⬆</span> รับของ (load)
+              <span style={{ width: 13, height: 13, borderRadius: '50%', background: 'var(--blue)', color: '#08130a', fontSize: 11, fontWeight: 900, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>⬆</span> รับของ (load)
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 13, height: 13, borderRadius: '50%', background: '#4ade80', color: '#08130a', fontSize: 11, fontWeight: 900, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>⬇</span> ส่งของ (drop)
+              <span style={{ width: 13, height: 13, borderRadius: '50%', background: 'var(--green)', color: '#08130a', fontSize: 11, fontWeight: 900, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>⬇</span> ส่งของ (drop)
             </span>
           </div>
           </>
@@ -772,7 +772,7 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
         </div>
         <div style={{ display: 'flex', gap: 10, marginTop: 18, justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 13, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>ยกเลิก</button>
-          <button onClick={save} disabled={saving} style={{ padding: '8px 18px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{saving ? 'กำลังบันทึก...' : '💾 บันทึก'}</button>
+          <button onClick={save} disabled={saving} style={{ padding: '8px 18px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
         </div>
       </div>
     </div>

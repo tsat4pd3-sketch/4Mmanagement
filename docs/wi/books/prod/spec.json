@@ -1,0 +1,496 @@
+[
+{
+"id": "ci_main",
+"p": "Checkin",
+"marks": [
+"เฉพาะกะนี้",
+"ขอบเขต",
+"หมวก",
+"การลา",
+"สถานะ",
+"=💾 บันทึก"
+]
+},
+{
+"id": "ci_borrow",
+"p": "Checkin",
+"click": "🤝 ยืมพนักงาน",
+"marks": [
+"ยืมพนักงานมาช่วยกะนี้",
+"มาช่วยไลน์",
+"พิมพ์ชื่อหรือรหัสพนักงาน"
+],
+"loose": true
+},
+{
+"id": "ci_ot",
+"p": "Checkin",
+"click": "🚐 จองรถ OT",
+"marks": [
+"วันที่ทำ OT",
+"=กะ",
+"=ไลน์",
+"บันทึกการจอง"
+]
+},
+{
+"id": "mg_map",
+"p": "Management",
+"marks": [
+"ไลน์ผลิต",
+"เช้า",
+"พร้อมทำงาน",
+"งานนอกไลน์",
+"ผังไลน์ + คน",
+"Heijunka"
+]
+},
+{
+"id": "mg_4m",
+"p": "Management",
+"click": "⚙️ Machine",
+"marks": [
+"ประเภทการเปลี่ยนแปลง",
+"Replace",
+"⚠️ Change",
+"รายละเอียด",
+"บันทึก 4M Log"
+],
+"loose": true
+},
+{
+"id": "dr_open",
+"p": "DailyReport",
+"q": "tab=live",
+"ls": {
+"dr_live_collapse_prod_orders": "0",
+"dr_live_collapse_defects": "0",
+"dr_live_collapse_downtime": "0"
+},
+"click": "+ เปิดกะใหม่",
+"marks": [
+"วันที่ผลิต",
+"ไลน์การผลิต",
+"กะทำงาน",
+"ตอนนี้",
+"=เปิดกะ"
+]
+},
+{
+"id": "dr_orders",
+"p": "DailyReport",
+"q": "tab=live",
+"ls": {
+"dr_live_collapse_prod_orders": "0",
+"dr_live_collapse_defects": "0",
+"dr_live_collapse_downtime": "0"
+},
+"marks": [
+"Prod Orders",
+"Scan เปิด Order",
+"เปิดเป้า (ไม่มีบาร์โค้ด)",
+"Scan ปิด / Confirm"
+],
+"top": "Prod Orders ("
+},
+{
+"id": "dr_defect",
+"p": "DailyReport",
+"q": "tab=live",
+"ls": {
+"dr_live_collapse_prod_orders": "0",
+"dr_live_collapse_defects": "0",
+"dr_live_collapse_downtime": "0"
+},
+"click": "🔴 บันทึกงานเสีย",
+"marks": [
+"MAT.NO ที่เสีย",
+"ประเภทงานเสีย",
+"รูปงานเสีย",
+"งานทดลอง (Try-out)",
+"=บันทึกงานเสีย"
+],
+"loose": true
+},
+{
+"id": "dr_dt",
+"p": "DailyReport",
+"q": "tab=live",
+"ls": {
+"dr_live_collapse_prod_orders": "0",
+"dr_live_collapse_defects": "0",
+"dr_live_collapse_downtime": "0"
+},
+"click": "+ บันทึก Downtime",
+"marks": [
+"ประเภท Downtime",
+"เวลาเริ่มหยุด",
+"เวลากลับมาทำงาน",
+"เครื่องจักร (ถ้ามี)",
+"=บันทึก Downtime"
+]
+},
+{
+"id": "dr_call",
+"p": "DailyReport",
+"q": "tab=live",
+"marks": [
+"เรียกชิ้นส่วนจากสโตร์",
+"ขอเบิกพาร์ทนี้เลย",
+"=📦 เบิก",
+"รับครบ",
+"ได้ไม่ครบ"
+],
+"top": "เรียกชิ้นส่วนจากสโตร์"
+},
+{
+"id": "dr_close",
+"p": "DailyReport",
+"q": "tab=live",
+"ls": {
+"dr_live_collapse_prod_orders": "0",
+"dr_live_collapse_defects": "0",
+"dr_live_collapse_downtime": "0"
+},
+"click": "🔒 ปิดกะ",
+"marks": [
+"เวลาปิดกะจริง",
+"เครื่องกลับมาแล้ว",
+"ยังซ่อมอยู่"
+],
+"loose": true
+},
+{
+"id": "dr_prob",
+"p": "DailyReport",
+"q": "tab=live",
+"ls": {
+"dr_live_collapse_prod_orders": "0",
+"dr_live_collapse_defects": "0",
+"dr_live_collapse_downtime": "0"
+},
+"click": "📝 ใบรายงานปัญหา",
+"marks": [
+"ปัญหา (หัวเรื่องบนหัวใบ)",
+"ออกใบ + พิมพ์"
+],
+"loose": true
+},
+{
+"id": "am_status",
+"p": "DailyChecker",
+"q": "tab=pm",
+"marks": [
+"Autonomous Maintenance (AM)",
+"สถานะวันนี้",
+"ไปตรวจเครื่องของไลน์นี้"
+]
+},
+{
+"id": "py_check",
+"p": "DailyChecker",
+"q": "tab=pokayoke",
+"marks": [
+"Poka-Yoke Check",
+"กะเช้า (Shift 01)",
+"ผ่าน (จับ NG ได้)",
+"ไม่ผ่าน",
+"เพิ่มอุปกรณ์"
+]
+},
+{
+"id": "sr_bins",
+"p": "ScrapReport",
+"q": "tab=bins",
+"marks": [
+"ถังเหลือง / ถังแดง",
+"ถังเหลือง — ชิ้นงานต้องสงสัย",
+"ถังแดง — ชิ้นงานเสีย",
+"+ บันทึกรายการ",
+"พิมพ์ใบ ถังเหลือง",
+"ทะเบียน WI ซ่อม"
+]
+},
+{
+"id": "sr_binform",
+"p": "ScrapReport",
+"q": "tab=bins",
+"click": "+ บันทึกรายการ",
+"marks": [
+"วันที่ลงถัง",
+"จำนวน (ชิ้น)",
+"=สาเหตุ",
+"ผู้ตรวจสอบ (QA)",
+"งานดี"
+],
+"loose": true
+},
+{
+"id": "sr_new",
+"p": "ScrapReport",
+"q": "tab=scrap",
+"click": "+ เปิดใบใหม่",
+"marks": [
+"ดึงจากถังแดง",
+"ดึงจาก Daily Report",
+"ดึงจากใบเบิก QA",
+"เพิ่มจาก SAP/BOM",
+"บันทึกใบ"
+]
+},
+{
+"id": "mm_main",
+"p": "MorningMeeting",
+"marks": [
+"วันที่ประชุม",
+"ผลรายไลน์",
+"งานหลุดแผน",
+"=➕ Action",
+"โหมดประชุม",
+"=🖨️ พิมพ์",
+"ส่งสรุป Telegram"
+],
+"loose": true
+},
+{
+"id": "mm_action",
+"p": "MorningMeeting",
+"click": "➕ เพิ่ม Action",
+"marks": [
+"ปัญหา / สิ่งที่ต้องทำ",
+"สาเหตุ (สรุปในที่ประชุม)",
+"กำหนดเสร็จ",
+"ผู้รับผิดชอบ",
+"=💾 บันทึก"
+]
+},
+{
+"id": "dr_stale",
+"p": "DailyReport",
+"q": "tab=stale",
+"marks": [
+"กะค้าง",
+"รอ SV อนุมัติ",
+"หัวหน้ากลุ่มยังไม่ขอปิด",
+"ตรวจหากะเปล่า",
+"เปิดกะนี้"
+]
+},
+{
+"id": "dr_approve",
+"p": "DailyReport",
+"q": "tab=stale",
+"click": [
+"⏳ รอ SV อนุมัติ",
+"เปิดกะนี้ →"
+],
+"marks": [
+"รออนุมัติปิดกะ",
+"ตรวจสอบ & อนุมัติ",
+"ปฏิเสธ"
+]
+},
+{
+"id": "lpa_audit",
+"p": "DailyChecker",
+"q": "tab=lpa",
+"marks": [
+"บันทึกผลตรวจ",
+"กะเช้า (Shift 01)",
+"ข้อที่ยังไม่ตอบ = Y",
+"เซ็นใหม่",
+"=💾 บันทึกผลตรวจ"
+]
+},
+{
+"id": "lpa_plan",
+"p": "DailyChecker",
+"q": "tab=lpa&sub=plan",
+"marks": [
+"แผนตรวจ",
+"ไตรมาสถัดไป",
+"ดึงจุดงานในไลน์",
+"เติมแผนทั้งไตรมาส",
+"บันทึกแผนไตรมาส",
+"พิมพ์ ("
+]
+},
+{
+"id": "lpa_report",
+"p": "DailyChecker",
+"q": "tab=lpa&sub=report",
+"marks": [
+"=📊 รายงาน",
+"พิมพ์รายงาน FM-QMR-008",
+"=⚙️ คำถาม"
+]
+},
+{
+"id": "bbs",
+"p": "DailyChecker",
+"q": "tab=bbs",
+"marks": [
+"สังเกตพฤติกรรมความปลอดภัย (BBS)",
+"ข้อตกลง (15)",
+"เติมจากผลตรวจ PPE",
+"พิมพ์ / PDF",
+"พฤติกรรมเหมาะสม",
+"ไม่ได้ตรวจ"
+]
+},
+{
+"id": "mpb_org",
+"p": "ManpowerBoard",
+"q": "tab=org",
+"marks": [
+"ผังกำลังคน",
+"มาวันนี้",
+"ช่องว่าง",
+"โหมดจอ TV",
+"ตั้งค่าบอร์ด"
+]
+},
+{
+"id": "mpb_fourm",
+"p": "ManpowerBoard",
+"q": "tab=fourm",
+"marks": [
+"ผัง LAYOUT",
+"ป้ายสถานะ 4M"
+]
+},
+{
+"id": "mpb_staff",
+"p": "ManpowerBoard",
+"q": "tab=staffing",
+"marks": [
+"แผน vs มาจริง",
+"ประวัติการเปลี่ยนช่อง",
+"=30"
+]
+},
+{
+"id": "mpb_setup",
+"p": "ManpowerBoard",
+"q": "tab=org",
+"click": "⚙️ ตั้งค่าบอร์ด",
+"marks": [
+"1. จำนวนช่องตำแหน่งต่อทีม",
+"2. คนต่อกะของแต่ละจุดงาน",
+"ตั้งจุดที่ยังว่าง = 1 คน/กะ",
+"=✕ ปิด"
+],
+"loose": true
+},
+{
+"id": "imp_new",
+"p": "Improvements",
+"click": "➕ เพิ่มโปรเจคปรับปรุง",
+"marks": [
+"ชื่อโปรเจค",
+"ประเภทปัญหา",
+"เครื่องจักร/จุดงาน",
+"วันเริ่มแก้ไข",
+"=💾 บันทึก"
+],
+"loose": true
+},
+{
+"id": "imp_list",
+"p": "Improvements",
+"marks": [
+"ทุกสถานะ",
+"กำลังติดตามผล",
+"ติดตามต่อ",
+"=📐 PE",
+"=📋 A3",
+"แก้ไข"
+]
+},
+{
+"id": "sr_list",
+"p": "ScrapReport",
+"q": "tab=scrap",
+"marks": [
+"ใบรายงานของเสีย",
+"+ เปิดใบใหม่",
+"=🖨️ PDF",
+"Excel",
+"=✏️"
+]
+},
+{
+"id": "pp_plan",
+"p": "ProductionPlan",
+"q": "tab=plan",
+"marks": [
+"กำลังการผลิต",
+"รวมงานจาก BOM",
+"หักสต็อก STORE",
+"ปกติ (median)",
+"รายวัน (21",
+"รายเดือน (Forecast)",
+"โหมดสไลด์โรงงาน"
+]
+},
+{
+"id": "pp_lots",
+"p": "ProductionPlan",
+"q": "tab=lots",
+"marks": [
+"แผนสั่งงาน (ล็อต)",
+"=☀️ กะเช้า",
+"ไหลต่อได้",
+"จองเครื่องทดลอง",
+"เสนอลำดับ",
+"บันทึกแล้ว"
+]
+},
+{
+"id": "dr_hist",
+"p": "DailyReport",
+"q": "tab=history",
+"marks": [
+"=📋 ประวัติ",
+"PR 0001",
+"ออกใบรายงานปัญหา",
+"=🚫 โมฆะ"
+]
+},
+{
+"id": "dr_export",
+"p": "DailyReport",
+"q": "tab=export",
+"marks": [
+"=📤 Export",
+"ดูตัวอย่าง",
+"=⬇ CSV",
+"=⬇ PDF",
+"PDF ฟอร์ม"
+]
+},
+{
+"id": "dr_setup",
+"p": "DailyReport",
+"q": "tab=setup",
+"marks": [
+"ประเภท Downtime",
+"ประเภทงานเสีย",
+"นโยบายหยุดพัก",
+"=🏭 กระบวนการ",
+"+ เพิ่มประเภท"
+]
+},
+{
+"id": "am_reg",
+"p": "DailyChecker",
+"q": "tab=pm&sub=registry",
+"marks": [
+"ลงทะเบียนเครื่องตรวจ",
+"วิธีใช้งาน Autonomous Maintenance (AM)",
+"ลงทะเบียนแล้ว",
+"ยังไม่ลงทะเบียน"
+],
+"loose": true
+}
+]
