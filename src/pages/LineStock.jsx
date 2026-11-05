@@ -56,6 +56,7 @@ import { groupStockBySloc, slocGroupTitle } from '../utils/slocStockView';
 import { loadHomeSlocs } from '../utils/homeSloc';   // 🏠 ที่จัดเก็บหลักของพาร์ท (05/11)
 import { INFLOW_MODES, inflowModeOf, inflowPatchFor, inflowModesFor } from '../utils/stockReceipts';
 import { IconButton, DeleteButton } from '../components/IconButton';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
    Store จ่ายพาร์ทเข้าไลน์ → บันทึก transaction type='issue'
@@ -237,10 +238,10 @@ function StockTab({ role, scope }) {
   // สถานะ stock ตาม min/max จริง (kanban_standards) — ถ้าไม่มี min ตั้งไว้ fallback < 10
   const stockStatus = useCallback((qty, mat_no) => {
     const min = ksMap[mat_no]?.min;
-    if (qty <= 0) return { label:'🔴 หมด/ติดลบ', color:'#ef4444', bg:'rgba(239,68,68,0.1)', low:true };
-    if (min != null && qty <= min) return { label:`🟡 ต่ำกว่า min (${min})`, color:'#f59e0b', bg:'rgba(245,158,11,0.1)', low:true };
-    if (min == null && qty < 10)   return { label:'🟡 เหลือน้อย', color:'#f59e0b', bg:'rgba(245,158,11,0.1)', low:true };
-    return { label:'🟢 ปกติ', color:'#22c55e', bg:'rgba(34,197,94,0.1)', low:false };
+    if (qty <= 0) return { label:'🔴 หมด/ติดลบ', color:'var(--red)', bg:'var(--red-dim)', low:true };
+    if (min != null && qty <= min) return { label:`🟡 ต่ำกว่า min (${min})`, color:'var(--amber)', bg:'var(--amber-dim)', low:true };
+    if (min == null && qty < 10)   return { label:'🟡 เหลือน้อย', color:'var(--amber)', bg:'var(--amber-dim)', low:true };
+    return { label:'🟢 ปกติ', color:'var(--green)', bg:'var(--green-dim)', low:false };
   }, [ksMap]);
 
   // on-hand ปัจจุบันของ line+mat (จาก stock ที่โหลดมา) — ใช้โชว์ในฟอร์ม + กันติดลบ
@@ -478,18 +479,18 @@ function StockTab({ role, scope }) {
         <span className="spacer" />
         {(pendingMine.length > 0 || canApprove) && (
           <button onClick={() => setShowPending(v => !v)}
-            style={{ ...btn(showPending ? '#f59e0b' : 'var(--bg2)', showPending ? '#1a1206' : 'var(--text)'),
+            style={{ ...btn(showPending ? 'var(--amber)' : 'var(--bg2)', showPending ? '#1a1206' : 'var(--text)'),
               position: 'relative',
-              border: pendingMine.length > 0 ? '1px solid #f59e0b' : '1px solid var(--border)' }}>
-            ⏳ รออนุมัติ{pendingMine.length > 0 ? ` (${pendingMine.length})` : ''}
+              border: pendingMine.length > 0 ? '1px solid var(--amber)' : '1px solid var(--border)' }}>
+            รออนุมัติ{pendingMine.length > 0 ? ` (${pendingMine.length})` : ''}
             <ToggleDot on={showPending} />
           </button>
         )}
         <button onClick={() => setShowTxn(v => !v)} style={btn(showTxn ? 'var(--accent)' : 'var(--bg2)', showTxn ? 'var(--accent-ink)' : 'var(--text)')}>
-          {showTxn ? '📊 ดู Stock' : '📋 ประวัติ Transaction'}
+          {showTxn ? 'ดู Stock' : 'ประวัติ Transaction'}
         </button>
         {canIssue && (
-          <button onClick={() => { setForm({ ...EMPTY_FORM, type:'issue', work_date:getToday() }); setShowForm(true); }} style={btn('#16a34a')}>
+          <button onClick={() => { setForm({ ...EMPTY_FORM, type:'issue', work_date:getToday() }); setShowForm(true); }} style={btn('var(--accent)')}>
             + จ่ายพาร์ทเข้าไลน์
           </button>
         )}
@@ -502,9 +503,9 @@ function StockTab({ role, scope }) {
       </p>
       {/* ── คิวอนุมัติ (store review) ── */}
       {showPending && (
-        <div style={{ ...card, padding:0, overflow:'hidden', marginBottom:16, borderColor:'rgba(245,158,11,0.4)' }}>
-          <div style={{ padding:'12px 16px', background:'rgba(245,158,11,0.08)', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8 }}>
-            <div style={{ fontWeight:800, fontSize:14, color:'#f59e0b' }}>⏳ รายการรออนุมัติ ({pendingMine.length})
+        <div style={{ ...card, padding:0, overflow:'hidden', marginBottom:16, borderColor:'var(--amber-line)' }}>
+          <div style={{ padding:'12px 16px', background:'var(--amber-dim)', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:8 }}>
+            <div style={{ fontWeight:800, fontSize:14, color:'var(--amber)' }}>⏳ รายการรออนุมัติ ({pendingMine.length})
               {pendingHidden > 0 && <span style={{ fontWeight:600, fontSize:12, color:'var(--muted)' }}>
                 {' '}· ซ่อน {pendingHidden} ใบของส่วนงานอื่น (ดูได้ที่ประวัติ แต่อนุมัติไม่ได้)</span>}
             </div>
@@ -533,7 +534,7 @@ function StockTab({ role, scope }) {
                       <MatLabel mat={t.mat_no} name={t.part_name} />
                     </td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)' }}>
-                      <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, fontWeight:700, background:`${TYPE_COLOR[t.type]}18`, color:TYPE_COLOR[t.type] }}>{TYPE_LABEL[t.type]}</span>
+                      <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, fontWeight:700, background:`${tint(TYPE_COLOR[t.type], 'dim')}`, color:TYPE_COLOR[t.type] }}>{TYPE_LABEL[t.type]}</span>
                     </td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontWeight:800, fontSize:14, textAlign:'right' }}>{parseFloat(t.qty).toLocaleString()}</td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)' }}>{t.note || '—'}</td>
@@ -542,12 +543,12 @@ function StockTab({ role, scope }) {
                       {canApprove ? (
                         <div style={{ display:'flex', gap:6 }}>
                           <button onClick={() => reviewTxn(t, 'approved')} disabled={reviewing === t.id}
-                            style={{ ...btn('#16a34a'), padding:'4px 10px', fontSize:11, opacity: reviewing === t.id ? 0.6 : 1 }}>อนุมัติ</button>
+                            style={{ ...btn('var(--accent)'), padding:'4px 10px', fontSize:11, opacity: reviewing === t.id ? 0.6 : 1 }}>อนุมัติ</button>
                           <button onClick={() => { setRejectTx(t); setRejectReason(''); }} disabled={reviewing === t.id}
-                            style={{ ...btn('var(--bg)', '#ef4444'), border:'1px solid #ef444440', padding:'4px 10px', fontSize:11 }}>ปฏิเสธ</button>
+                            style={{ ...btn('var(--bg)', 'var(--red)'), border:'1px solid var(--red)40', padding:'4px 10px', fontSize:11 }}>ปฏิเสธ</button>
                         </div>
                       ) : (
-                        <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, fontWeight:700, background:`${STATUS_COLOR.pending}18`, color:STATUS_COLOR.pending }}>{STATUS_LABEL.pending}</span>
+                        <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, fontWeight:700, background:`${tint(STATUS_COLOR.pending, 'dim')}`, color:STATUS_COLOR.pending }}>{STATUS_LABEL.pending}</span>
                       )}
                     </td>
                   </tr>
@@ -579,9 +580,9 @@ function StockTab({ role, scope }) {
           { label:'Stock หมด / ติดลบ', value: totalLow, unit:'รายการ', icon:'⚠️', warn: totalLow > 0,
             sub: filteredStock.length > 0 ? `${Math.round(totalLow / filteredStock.length * 100)}% ของ ${filteredStock.length} รายการ` : 'ยังไม่มีรายการ' },
         ].map(c => (
-          <div key={c.label} style={{ ...card, padding:'12px 16px', borderColor: c.warn ? 'rgba(239,68,68,0.4)' : 'var(--border)' }}>
+          <div key={c.label} style={{ ...card, padding:'12px 16px', borderColor: c.warn ? 'var(--red-line)' : 'var(--border)' }}>
             <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700 }}>{c.icon} {c.label}</div>
-            <div style={{ fontSize:26, fontWeight:900, fontFamily:'var(--font-display)', color: c.warn ? '#ef4444' : 'var(--text)', marginTop:2 }}>
+            <div style={{ fontSize:26, fontWeight:900, fontFamily:'var(--font-display)', color: c.warn ? 'var(--red)' : 'var(--text)', marginTop:2 }}>
               {c.value}<span style={{ fontSize:12, fontWeight:600, color:'var(--text2)', marginLeft:3 }}>{c.unit}</span>
             </div>
             {c.sub && <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{c.sub}</div>}
@@ -617,7 +618,7 @@ function StockTab({ role, scope }) {
             {keys.length > 1 && (
               <button type="button" onClick={() => persistCollapsed(allFolded ? new Set() : new Set(keys))}
                 style={{ ...inputSt, width:'auto', cursor:'pointer', fontSize:12, padding:'6px 12px' }}>
-                {allFolded ? '▼ กางทั้งหมด' : '▶ ย่อทั้งหมด'}
+                {allFolded ? 'กางทั้งหมด' : 'ย่อทั้งหมด'}
               </button>
             )}
             <span style={{ fontSize:11, color:'var(--muted)' }}>
@@ -631,7 +632,7 @@ function StockTab({ role, scope }) {
             )}
             {/* ทะเบียนใช้ไม่ได้ = ต้องบอกว่าทำไมปุ่มพื้นที่ไม่ทำงาน ห้ามเงียบ */}
             {!slocUsable && (
-              <span style={{ fontSize:11, color:'#f59e0b', fontWeight:700 }}>
+              <span style={{ fontSize:11, color:'var(--amber)', fontWeight:700 }}>
                 🏬 {slocReg.failed ? 'โหลดทะเบียนรหัสคลังไม่สำเร็จ' : 'ยังไม่มีรหัสคลังที่ผูกไลน์ไว้'} — แสดงตามไลน์ไปก่อน
                 (ตั้งที่แท็บ 🏬 โซนคลัง)
               </span>
@@ -673,10 +674,10 @@ function StockTab({ role, scope }) {
                       {groupMode === 'sloc' && g.lineNames.length > 0 && (
                         <span style={{ fontSize:11, color:'var(--muted)' }}>📍 {g.lineNames.join(' · ')}</span>
                       )}
-                      {lowParts.length > 0 && <span style={{ fontSize:11, padding:'2px 9px', borderRadius:10, background:'rgba(239,68,68,0.12)', color:'#ef4444', fontWeight:700 }}>⚠️ {lowParts.length} รายการหมด</span>}
+                      {lowParts.length > 0 && <span style={{ fontSize:11, padding:'2px 9px', borderRadius:10, background:'var(--red-dim)', color:'var(--red)', fontWeight:700 }}>⚠️ {lowParts.length} รายการหมด</span>}
                       {noLvParts.length > 0 && (
                         <span title={`ยังไม่ได้ตั้ง MIN/MAX ${noLvParts.length} พาร์ท — แถวนั้นขึ้น "—" และสถานะใช้เกณฑ์สำรอง (เหลือน้อยเมื่อต่ำกว่า 10 ชิ้น) · ตั้งค่าจริงที่ /products → แท็บ 🎴 Kanban Std`}
-                          style={{ fontSize:11, padding:'2px 9px', borderRadius:10, background:'rgba(245,158,11,0.12)', color:'#f59e0b', fontWeight:700 }}>
+                          style={{ fontSize:11, padding:'2px 9px', borderRadius:10, background:'var(--amber-dim)', color:'var(--amber)', fontWeight:700 }}>
                           📐 {noLvParts.length} พาร์ทยังไม่ตั้ง MIN/MAX
                         </span>
                       )}
@@ -744,7 +745,7 @@ function StockTab({ role, scope }) {
                                   ) : (
                                     <button title={oneLine ? `จ่ายเข้า ${oneLine}` : 'พาร์ทนี้อยู่หลายไลน์ในพื้นที่เดียวกัน — เลือกไลน์ปลายทางในฟอร์ม'}
                                       onClick={() => { setForm({ ...EMPTY_FORM, line_name: oneLine, mat_no: p.mat_no, part_name: name || '', type:'issue', work_date:getToday() }); setShowForm(true); }}
-                                      style={{ ...btn('rgba(34,197,94,0.1)', '#22c55e'), padding:'4px 10px', fontSize:11, border:'1px solid rgba(34,197,94,0.3)' }}>
+                                      style={{ ...btn('var(--green-dim)', 'var(--green)'), padding:'4px 10px', fontSize:11, border:'1px solid var(--green-line)' }}>
                                       + จ่าย
                                     </button>
                                   )}
@@ -775,7 +776,7 @@ function StockTab({ role, scope }) {
               <div style={{ display:'flex', gap:6 }}>
                 {['issue','return','adjust'].map(t => (
                   <button key={t} onClick={() => { setForm({ ...EMPTY_FORM, type:t, work_date:getToday() }); setShowForm(true); }}
-                    style={{ ...btn('var(--bg)', TYPE_COLOR[t]), border:`1px solid ${TYPE_COLOR[t]}40`, fontSize:11, padding:'4px 10px' }}>
+                    style={{ ...btn('var(--bg)', TYPE_COLOR[t]), border:`1px solid ${tint(TYPE_COLOR[t], 'line')}`, fontSize:11, padding:'4px 10px' }}>
                     {TYPE_LABEL[t]}
                   </button>
                 ))}
@@ -786,7 +787,7 @@ function StockTab({ role, scope }) {
             <TimeRangeBar scale={txnTr.scale} from={txnTr.from} to={txnTr.to} today={txnTr.today} scales={null}
               onFrom={txnTr.setFrom} onTo={txnTr.setTo} onPreset={txnTr.setPreset} onReload={loadTxns} loading={txnLoading}>
               <SearchInput value={txnQ} onChange={setTxnQ} fields="MAT / ชื่อพาร์ท / ไลน์ / หมายเหตุ / ผู้บันทึก" ariaLabel="ค้นหาประวัติ transaction" />
-              <button onClick={exportTxns} disabled={!txnRows.length} style={{ ...btn('var(--bg)', 'var(--text)'), border:'1px solid var(--border2)', fontSize:12 }}>⬇️ Export CSV</button>
+              <button onClick={exportTxns} disabled={!txnRows.length} style={{ ...btn('var(--bg)', 'var(--text)'), border:'1px solid var(--border2)', fontSize:12 }}>Export CSV</button>
             </TimeRangeBar>
             {txnErr && <div style={{ marginTop:8, fontSize:12.5, color:'var(--red)', fontWeight:700 }}>{txnErr}</div>}
           </div>
@@ -811,9 +812,9 @@ function StockTab({ role, scope }) {
                       <MatLabel mat={t.mat_no} name={t.part_name} />
                     </td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)' }}>
-                      <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, fontWeight:700, background:`${TYPE_COLOR[t.type]}18`, color:TYPE_COLOR[t.type] }}>{TYPE_LABEL[t.type]}</span>
+                      <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, fontWeight:700, background:`${tint(TYPE_COLOR[t.type], 'dim')}`, color:TYPE_COLOR[t.type] }}>{TYPE_LABEL[t.type]}</span>
                       {t.status && t.status !== 'approved' && (
-                        <span title={t.reject_reason || ''} style={{ marginLeft:6, fontSize:11, padding:'2px 6px', borderRadius:8, fontWeight:700, background:`${STATUS_COLOR[t.status]}18`, color:STATUS_COLOR[t.status] }}>{STATUS_LABEL[t.status]}</span>
+                        <span title={t.reject_reason || ''} style={{ marginLeft:6, fontSize:11, padding:'2px 6px', borderRadius:8, fontWeight:700, background:`${tint(STATUS_COLOR[t.status], 'dim')}`, color:STATUS_COLOR[t.status] }}>{STATUS_LABEL[t.status]}</span>
                       )}
                     </td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontWeight:800, fontSize:14, color: t.status !== 'approved' ? 'var(--muted)' : t.type === 'consume' ? '#94a3b8' : t.type === 'return' ? '#f59e0b' : '#22c55e', textAlign:'right', opacity: t.status !== 'approved' ? 0.55 : 1 }}>
@@ -852,7 +853,7 @@ function StockTab({ role, scope }) {
                   {['issue','return','adjust'].map(t => (
                     <button key={t} onClick={() => setForm(f => ({ ...f, type:t }))}
                       style={{ padding:'6px 14px', borderRadius:8, border:`1px solid ${form.type===t ? TYPE_COLOR[t] : 'var(--border)'}`, cursor:'pointer', fontSize:12, fontWeight:700,
-                        background: form.type===t ? `${TYPE_COLOR[t]}18` : 'var(--bg2)',
+                        background: form.type===t ? `${tint(TYPE_COLOR[t], 'dim')}` : 'var(--bg2)',
                         color: form.type===t ? TYPE_COLOR[t] : 'var(--muted)',
                         fontFamily:'var(--font-body)' }}>
                       {TYPE_LABEL[t]}
@@ -873,7 +874,7 @@ function StockTab({ role, scope }) {
                       จะถูกหักตอนปิดใบผลิตไม่ได้เลย (backflush หาด้วยชื่อไลน์ที่เปิดกะ)
                       เตือนอย่างเดียว ไม่บล็อก — บางกรณีอาจตั้งใจฝากไว้ที่แผนกจริง */}
                   {childLinesOf[form.line_name]?.length > 0 && (
-                    <div style={{ marginTop: 6, fontSize: 11, color: '#f59e0b', lineHeight: 1.6 }}>
+                    <div style={{ marginTop: 6, fontSize: 11, color: 'var(--amber)', lineHeight: 1.6 }}>
                       ⚠️ <b>{form.line_name}</b> เป็นไลน์ระดับแผนก (มีไลน์ลูก {childLinesOf[form.line_name].join(' · ')})
                       — ของที่จ่ายเข้าที่นี่ <b>ระบบจะหักตอนปิดใบผลิตไม่ได้</b> เพราะงานเปิดกะที่ไลน์ลูก
                       <br />แนะนำให้เลือก<b>ไลน์ลูก</b>ที่ใช้พาร์ทนี้จริงแทน
@@ -883,7 +884,7 @@ function StockTab({ role, scope }) {
                       "coil ไปกองอยู่แผนกประกอบ" ที่ต้องมาตามย้ายทีหลัง (feedback 2026-09-03)
                       ⚠️ เตือนอย่างเดียว ไม่บล็อก (บางไลน์ปั๊ม+ประกอบรวมกันจริง) */}
                   {placementWarn && (
-                    <div style={{ marginTop: 6, fontSize: 11, color: '#ef4444', fontWeight: 700, lineHeight: 1.6 }}>
+                    <div style={{ marginTop: 6, fontSize: 11, color: 'var(--red)', fontWeight: 700, lineHeight: 1.6 }}>
                       🔴 {placementWarn.text}
                     </div>
                   )}
@@ -896,7 +897,7 @@ function StockTab({ role, scope }) {
 
               {/* เลือก MAT จาก BOM ของ product */}
               <div>
-                <label style={{ fontSize:11, fontWeight:700, color:'#0ea5e9', display:'block', marginBottom:4 }}>📦 ดึง MAT จาก BOM ของ Product (ไม่บังคับ)</label>
+                <label style={{ fontSize:11, fontWeight:700, color:'var(--blue)', display:'block', marginBottom:4 }}>📦 ดึง MAT จาก BOM ของ Product (ไม่บังคับ)</label>
                 <SearchSelect value={String(bomProduct || '')} placeholder="— ค้นหา Product (MAT/ชื่อ) เพื่อดูพาร์ทย่อยใน BOM —" inputStyle={inputSt}
                   /* 🔴 เลข MAT ต้องอยู่ช่อง `code` (nowrap ห้ามตัด) ไม่ใช่ต่อท้าย `label`
                      — label ถูก ellipsis ตัดท้าย ⇒ MAT ที่อยู่ท้ายสุดหายทุกแถว (QC 06/10)
@@ -919,9 +920,9 @@ function StockTab({ role, scope }) {
                           onClick={() => setForm(f => ({ ...f, mat_no: c.mat_no, part_name: c.part_name || f.part_name }))}
                           title={c.part_name || ''}
                           style={{ padding:'5px 10px', borderRadius:8, cursor:'pointer', fontSize:12, fontFamily:'monospace', fontWeight:700,
-                            background: sel ? 'rgba(14,165,233,0.18)' : 'var(--bg2)',
-                            color: sel ? '#0ea5e9' : 'var(--text2)',
-                            border:`1px solid ${sel ? '#0ea5e9' : 'var(--border)'}` }}>
+                            background: sel ? 'var(--blue-dim)' : 'var(--bg2)',
+                            color: sel ? 'var(--blue)' : 'var(--text2)',
+                            border:`1px solid ${sel ? 'var(--blue)' : 'var(--border)'}` }}>
                           {c.mat_no}
                         </button>
                       );
@@ -954,10 +955,10 @@ function StockTab({ role, scope }) {
                 <div>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:6 }}>ทิศทางปรับ</label>
                   <div style={{ display:'flex', gap:6 }}>
-                    {[{ k:'up', l:'➕ เพิ่มยอด', c:'#22c55e' }, { k:'down', l:'➖ ลดยอด', c:'#ef4444' }].map(d => (
+                    {[{ k:'up', l:'➕ เพิ่มยอด', c:'var(--green)' }, { k:'down', l:'➖ ลดยอด', c:'var(--red)' }].map(d => (
                       <button key={d.k} type="button" onClick={() => setForm(f => ({ ...f, dir:d.k }))}
                         style={{ flex:1, padding:'7px 10px', borderRadius:8, cursor:'pointer', fontSize:12, fontWeight:800, fontFamily:'var(--font-body)',
-                          background: form.dir===d.k ? `${d.c}18` : 'var(--bg2)', color: form.dir===d.k ? d.c : 'var(--muted)',
+                          background: form.dir===d.k ? `${tint(d.c, 'dim')}` : 'var(--bg2)', color: form.dir===d.k ? d.c : 'var(--muted)',
                           border:`1px solid ${form.dir===d.k ? d.c : 'var(--border)'}` }}>{d.l}</button>
                     ))}
                   </div>
@@ -968,7 +969,7 @@ function StockTab({ role, scope }) {
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:4 }}>
                   <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)' }}>จำนวน (ชิ้น) *</label>
                   {form.line_name && form.mat_no.trim() && (
-                    <span style={{ fontSize:11, color:'var(--muted)' }}>คงเหลือปัจจุบัน: <b style={{ color: onHandOf(form.line_name, form.mat_no) <= 0 ? '#ef4444' : 'var(--text)' }}>{onHandOf(form.line_name, form.mat_no).toLocaleString()}</b></span>
+                    <span style={{ fontSize:11, color:'var(--muted)' }}>คงเหลือปัจจุบัน: <b style={{ color: onHandOf(form.line_name, form.mat_no) <= 0 ? 'var(--red)' : 'var(--text)' }}>{onHandOf(form.line_name, form.mat_no).toLocaleString()}</b></span>
                   )}
                 </div>
                 <input type="number" min="0.001" step="any" style={{ ...inputSt, fontSize:20, fontWeight:900, textAlign:'center' }}
@@ -984,7 +985,7 @@ function StockTab({ role, scope }) {
             <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
               <button onClick={() => setShowForm(false)} style={{ ...btn('var(--bg2)', 'var(--text)'), border:'1px solid var(--border)' }}>ยกเลิก</button>
               <button onClick={handleSave} disabled={saving} style={{ ...btn(TYPE_COLOR[form.type]), opacity:saving ? 0.6 : 1 }}>
-                {saving ? '...' : '💾 บันทึก'}
+                {saving ? '...' : 'บันทึก'}
               </button>
             </div>
           </div>
@@ -997,14 +998,14 @@ function StockTab({ role, scope }) {
           <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(420px,100%)' }}>
             <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:6, fontFamily:'var(--font-display)' }}>❌ ปฏิเสธคำขอ</div>
             <div style={{ fontSize:12, color:'var(--muted)', marginBottom:14 }}>
-              {TYPE_LABEL[rejectTx.type]} · <span style={{ fontFamily:'monospace', color:'#0ea5e9' }}>{rejectTx.mat_no}</span> · {rejectTx.line_name} · {parseFloat(rejectTx.qty).toLocaleString()}
+              {TYPE_LABEL[rejectTx.type]} · <span style={{ fontFamily:'monospace', color:'var(--blue)' }}>{rejectTx.mat_no}</span> · {rejectTx.line_name} · {parseFloat(rejectTx.qty).toLocaleString()}
             </div>
             <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>เหตุผลที่ปฏิเสธ</label>
             <input style={inputSt} value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="เช่น ยอดไม่ตรงกับการนับจริง" autoFocus />
             <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
               <button onClick={() => setRejectTx(null)} style={{ ...btn('var(--bg2)', 'var(--text)'), border:'1px solid var(--border)' }}>ยกเลิก</button>
               <button onClick={() => reviewTxn(rejectTx, 'rejected', rejectReason)} disabled={reviewing === rejectTx.id}
-                style={{ ...btn('#ef4444'), opacity: reviewing === rejectTx.id ? 0.6 : 1 }}>ยืนยันปฏิเสธ</button>
+                style={{ ...btn('var(--red)'), opacity: reviewing === rejectTx.id ? 0.6 : 1 }}>ยืนยันปฏิเสธ</button>
             </div>
           </div>
         </div>
@@ -1205,12 +1206,12 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                       <tr key={r.id}>
                         <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)' }}>
                           <span style={{ fontSize:11, padding:'2px 9px', borderRadius:10, fontWeight:700,
-                            background: r.shift==='day' ? 'rgba(234,179,8,0.12)' : r.shift==='night' ? 'rgba(99,102,241,0.12)' : 'rgba(34,197,94,0.1)',
+                            background: r.shift==='day' ? 'var(--amber-dim)' : r.shift==='night' ? 'rgba(99,102,241,0.12)' : 'var(--green-dim)',
                             color: r.shift==='day' ? '#ca8a04' : r.shift==='night' ? '#818cf8' : '#22c55e' }}>
                             {SHIFT_LABELS[r.shift] || r.shift}
                           </span>
                         </td>
-                        <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontWeight:900, fontSize:16, color:'#0ea5e9' }}>
+                        <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontWeight:900, fontSize:16, color:'var(--blue)' }}>
                           #{r.round_no}
                         </td>
                         <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontSize:13, color:'var(--text2)' }}>
@@ -1225,7 +1226,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                         <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontSize:13, color:'var(--text2)', textAlign:'center' }}>
                           {r.points_count || 1}×{r.time_per_point_min || 10}น.
                         </td>
-                        <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontSize:13, color:'#f59e0b', fontWeight:700 }}>
+                        <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontFamily:'monospace', fontSize:13, color:'var(--amber)', fontWeight:700 }}>
                           {addMins(r.delivery_time?.slice(0,5), (r.points_count||1)*(r.time_per_point_min||10))}
                         </td>
                         <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)' }}>
@@ -1354,7 +1355,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                   </div>
                 </div>
                 {form.delivery_time && (
-                  <div style={{ fontSize:12, color:'#f59e0b', fontWeight:700 }}>
+                  <div style={{ fontSize:12, color:'var(--amber)', fontWeight:700 }}>
                     🏁 เสร็จประมาณ {addMins(form.delivery_time, (parseInt(form.points_count)||1)*(parseInt(form.time_per_point_min)||10))}
                     {' '}({form.points_count||1} จุด × {form.time_per_point_min||10} น.)
                   </div>
@@ -1374,7 +1375,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
             <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
               <button onClick={() => setShowModal(false)} style={{ ...btn('var(--bg2)', 'var(--text)'), border:'1px solid var(--border)' }}>ยกเลิก</button>
               <button onClick={handleSave} disabled={saving} style={{ ...btn('#0284c7'), opacity:saving ? 0.6 : 1 }}>
-                {saving ? '...' : '💾 บันทึก'}
+                {saving ? '...' : 'บันทึก'}
               </button>
             </div>
           </div>
@@ -1478,20 +1479,20 @@ function DeliveryTimeBoardTab() {
         return (
           <>
             <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: `1px solid ${st.color}66`, borderRadius: 12, boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
+            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: `1px solid ${tint(st.color, 'line')}`, borderRadius: 12, boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
               <div style={{ height: 4, background: st.color }} />
               <div style={{ padding: '10px 14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)' }}>{r.shift === 'night' ? '🌙' : '☀️'} รอบ {r.round_no}</span>
                   <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: st.color }}>{st.label}</span>
                 </div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', marginTop: 2 }}>📍 {r.line_name}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', marginTop: 2 }}>📍 {r.line_name}</div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.8 }}>
                   ตัดยอด {(r.cutoff_time || '').slice(0, 5) || '—'} → ส่ง {(r.delivery_time || '').slice(0, 5)}<br />
                   {r.points_count || 1} จุด × {r.time_per_point_min || 10} นาที · เตรียม {r.prep_minutes || 60} นาที
                 </div>
-                {st.d?.confirmed_by && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 4 }}>✓ ส่งโดย {st.d.confirmed_by}</div>}
-                {st.d?.received_by && <div style={{ fontSize: 11, color: st.d.received_status === 'full' ? '#22c55e' : '#f59e0b' }}>{st.d.received_status === 'full' ? '✔️' : '⚠️'} รับโดย {st.d.received_by}</div>}
+                {st.d?.confirmed_by && <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 4 }}>✓ ส่งโดย {st.d.confirmed_by}</div>}
+                {st.d?.received_by && <div style={{ fontSize: 11, color: st.d.received_status === 'full' ? 'var(--green)' : 'var(--amber)' }}>{st.d.received_status === 'full' ? '✔️' : '⚠️'} รับโดย {st.d.received_by}</div>}
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>👉 กดยืนยันส่ง/รับของที่หน้า 🎴 Kanban Board</div>
               </div>
             </div>
@@ -1613,7 +1614,7 @@ function InflowRulesTab({ canEdit }) {
           สแกนปิดออเดอร์ (confirm) แล้วของไปเข้าคลังปลายทางตามกฎ — FG (เบอร์ 1xxx) เข้า warehouse · พาร์ทลูก (เบอร์ 2xxx) เข้าสโตร์
           <br />แต่ละกฎเลือกได้: <b>{INFLOW_MODES.auto.label}</b> = {INFLOW_MODES.auto.hint} ·
           {' '}<b>{INFLOW_MODES.confirm.label}</b> = {INFLOW_MODES.confirm.hint} (แท็บ 📥 รอรับเข้า) ·
-          {' '}<b style={{ color: '#ef4444' }}>{INFLOW_MODES.off.label}</b> = {INFLOW_MODES.off.hint}
+          {' '}<b style={{ color: 'var(--red)' }}>{INFLOW_MODES.off.label}</b> = {INFLOW_MODES.off.hint}
           <br /><b style={{ color: INFLOW_MODES.lot.color }}>{INFLOW_MODES.lot.label}</b> (เฉพาะกฎ MAT ตรงตัว) = {INFLOW_MODES.lot.hint}
           · ระบบตั้งให้เองเมื่อสโตร์เปิดล็อตพาร์ทใหม่ — พาร์ทที่เลิกใช้ล็อตแล้ว เปลี่ยนเป็น 🟡/🟢 ที่นี่
           <br />กฎแบบ <strong>MAT ตรงตัว</strong> ชนะแบบ <strong>ขึ้นต้นด้วย</strong> · รายการที่เข้าแล้วดูได้ที่แท็บ 📦 Stock (ผู้บันทึก = auto)
@@ -1636,10 +1637,10 @@ function InflowRulesTab({ canEdit }) {
               <tr key={r.id} style={{ borderTop: '1px solid var(--border)' }}>
                 <td style={{ padding: '8px 14px', fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
                   {r.match_type === 'prefix'
-                    ? <>ขึ้นต้นด้วย <span style={{ fontFamily: 'monospace', color: '#0ea5e9', fontSize: 14 }}>{r.match_value}</span></>
-                    : <span style={{ fontFamily: 'monospace', color: '#0ea5e9', fontSize: 14 }}>{r.match_value}</span>}
+                    ? <>ขึ้นต้นด้วย <span style={{ fontFamily: 'monospace', color: 'var(--blue)', fontSize: 14 }}>{r.match_value}</span></>
+                    : <span style={{ fontFamily: 'monospace', color: 'var(--blue)', fontSize: 14 }}>{r.match_value}</span>}
                 </td>
-                <td style={{ padding: '8px 14px', fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>
+                <td style={{ padding: '8px 14px', fontSize: 13, fontWeight: 700, color: 'var(--amber)' }}>
                   {/* 🔧 โหมดปิดล็อต: ยอดลงที่ไลน์ผลิตของล็อต — คลังในแถวไม่ถูกใช้ ห้ามโชว์เหมือนเป็นปลายทางจริง */}
                   {inflowModeOf(r) === 'lot'
                     ? <span style={{ color: INFLOW_MODES.lot.color, fontSize: 12 }}>📍 ไลน์ผลิตของล็อต (ตอนปิดล็อต)</span>
@@ -1654,8 +1655,8 @@ function InflowRulesTab({ canEdit }) {
                 <td style={{ padding: '8px 14px', textAlign: 'right' }}>
                   {canEdit && (
                     <button onClick={() => deleteRule(r)}
-                      style={{ padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', fontFamily: 'var(--font-body)' }}>
-                      🗑 ลบ
+                      style={{ padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', fontFamily: 'var(--font-body)' }}>
+                      ลบ
                     </button>
                   )}
                 </td>
@@ -1695,13 +1696,13 @@ function InflowRulesTab({ canEdit }) {
                 extraGroups={[{ label: '🏬 คลัง', options: [...new Set([...WAREHOUSE_LOCATIONS, ...dests.filter(d => !lines.some(l => l.name === d))])].sort().map(n => ({ value: n })) }]} />
             </div>
             <button onClick={addRule} disabled={saving} style={{ ...btn('var(--accent)', 'var(--accent-ink)'), opacity: saving ? 0.6 : 1 }}>
-              {saving ? '...' : '💾 บันทึก'}
+              {saving ? '...' : 'บันทึก'}
             </button>
           </div>
         </div>
       )}
       {!canEdit && (
-        <div style={{ ...card, borderColor: 'rgba(245,158,11,0.4)', fontSize: 12, color: '#f59e0b' }}>
+        <div style={{ ...card, borderColor: 'var(--amber-line)', fontSize: 12, color: 'var(--amber)' }}>
           👁 โหมดดูอย่างเดียว — แก้กฎได้เฉพาะผู้มีสิทธิ์จัดการรอบจัดส่ง (ตั้งได้ที่หน้า จัดการสิทธิ์)
         </div>
       )}

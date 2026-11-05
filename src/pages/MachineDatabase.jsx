@@ -28,6 +28,7 @@ import { DeleteButton } from '../components/IconButton';
 import MachineRepairHistory from '../components/MachineRepairHistory';
 import { showsShutHeight } from '../utils/pressMachine';
 import { useNavigate } from 'react-router-dom';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ─── shared little UI bits ─────────────────────────────────── */
 function Field({ label, hint, children }) {
@@ -66,7 +67,7 @@ const EQUIP_CATS = [
 ];
 // utility เดิม (ก่อน apply migration รวมหมวด) → นับเป็น facility ทุกที่ · ค่าว่าง = production
 const normCat = (c) => (c === 'utility' ? 'facility' : (c || 'production'));
-const emptyType    = { id: null, label: '', color: '#4d9fff', icon: '', sort_order: 0, is_active: true };
+const emptyType    = { id: null, label: '', color: 'var(--blue)', icon: '', sort_order: 0, is_active: true };
 const TYPE_COLORS  = ['#4d9fff', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#ec4899', '#06b6d4', '#84cc16', '#6b7280'];
 
 /* ═══════════════════════════════════════════════════════════════
@@ -472,7 +473,7 @@ export default function MachineDatabase() {
                     {item.brand && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }} title="ยี่ห้อ">🏷️ {item.brand}</span>}
                     {item.io_no && <span style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'monospace' }}>I/O {item.io_no}</span>}
                     {item.machine_types && (
-                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: `${item.machine_types.color}22`, color: item.machine_types.color, fontWeight: 700 }}>
+                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: `${tint(item.machine_types.color, 'dim')}`, color: item.machine_types.color, fontWeight: 700 }}>
                         {item.machine_types.icon || ''} {item.machine_types.label}
                       </span>
                     )}

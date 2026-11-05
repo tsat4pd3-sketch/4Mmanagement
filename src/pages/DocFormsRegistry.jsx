@@ -236,15 +236,15 @@ export default function DocFormsRegistry() {
                   </td>
                   <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                     {r.used_route
-                      ? <a href={r.used_route} style={{ fontSize: 12, color: '#4d9fff', textDecoration: 'none' }}>{r.used_route}</a>
+                      ? <a href={r.used_route} style={{ fontSize: 12, color: 'var(--blue)', textDecoration: 'none' }}>{r.used_route}</a>
                       : '—'}
                   </td>
                   <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                     <button className="tbtn" onClick={() => preview(r)} title="ทดลองพิมพ์ / บันทึกเป็น PDF (ตัวอย่าง มีลายน้ำ)"
-                      style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', marginRight: 6 }}>🖨️ ตัวอย่าง</button>
+                      style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', marginRight: 6 }}>ตัวอย่าง</button>
                     {canManage && (
                       <button className="tbtn" onClick={() => openEdit(r)}
-                        style={{ padding: '4px 12px', borderRadius: 6, fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>✏️ แก้ไข</button>
+                        style={{ padding: '4px 12px', borderRadius: 6, fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>แก้ไข</button>
                     )}
                   </td>
                 </tr>
@@ -347,7 +347,7 @@ export default function DocFormsRegistry() {
                             ? (sc.sig_names || []).map((n, i) => n ? `${(sc.sig_blocks || editing.sig_blocks || [])[i] || ''}: ${n}` : null).filter(Boolean).join(' · ')
                             : <span style={{ color: 'var(--muted)' }}>เปลี่ยนเฉพาะป้ายช่อง</span>}
                         </span>
-                        <button onClick={() => preview(editing, sc.section)} style={sbtn}>🖨️ ตัวอย่าง</button>
+                        <button onClick={() => preview(editing, sc.section)} style={sbtn}>ตัวอย่าง</button>
                         {canManage && <button onClick={() => openScope(editing, sc)} style={sbtn}>✏️</button>}
                         {canManage && <DeleteButton onClick={() => removeScope(sc)} title="ลบ" />}
                       </div>
@@ -410,7 +410,7 @@ export default function DocFormsRegistry() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
                 <button onClick={() => setEditing(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
                 <button onClick={save} disabled={saving} style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13, opacity: saving ? 0.6 : 1 }}>
-                  {saving ? '⏳...' : '💾 บันทึก'}
+                  {saving ? '...' : 'บันทึก'}
                 </button>
               </div>
             </div>
@@ -469,7 +469,7 @@ export default function DocFormsRegistry() {
                 <textarea rows={2} value={scopeEdit.legend} onChange={e => setScopeEdit(v => ({ ...v, legend: e.target.value }))} style={{ width: '100%', fontSize: 12.5 }} /></div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                 <button onClick={() => setScopeEdit(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-                <button onClick={saveScope} style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>💾 บันทึก</button>
+                <button onClick={saveScope} style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>บันทึก</button>
               </div>
             </div>
           </div>

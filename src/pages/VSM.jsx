@@ -65,9 +65,9 @@ const TABS = [
   { key: 'live', label: '⚡ สายธารสด (Realtime)' },
 ];
 const WARN_STYLE = {
-  error: { bg: 'rgba(239,68,68,0.12)', bd: '#ef4444', icon: '⛔' },
-  warn: { bg: 'rgba(245,158,11,0.12)', bd: '#f59e0b', icon: '⚠️' },
-  info: { bg: 'rgba(59,130,246,0.10)', bd: '#3b82f6', icon: 'ℹ️' },
+  error: { bg: 'var(--red-dim)', bd: 'var(--red)', icon: '⛔' },
+  warn: { bg: 'var(--amber-dim)', bd: 'var(--amber)', icon: '⚠️' },
+  info: { bg: 'var(--blue-dim)', bd: 'var(--blue)', icon: 'ℹ️' },
 };
 
 export default function VSM() {
@@ -509,16 +509,16 @@ export default function VSM() {
         <span className="spacer" />
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button onClick={() => generate(false)} disabled={!matNo || busy} style={btn('var(--accent)', { opacity: (!matNo || busy) ? 0.5 : 1 })}>
-            {busy ? '⏳ กำลังดึง…' : '⚡ สร้างร่างจากข้อมูลจริง'}
+            {busy ? 'กำลังดึง…' : 'สร้างร่างจากข้อมูลจริง'}
           </button>
           {model && rawRef && (
-            <button onClick={() => generate(true)} disabled={busy} style={btn('var(--bg3)', { color: 'var(--text)' })}>↻ ดึงข้อมูลใหม่</button>
+            <button onClick={() => generate(true)} disabled={busy} style={btn('var(--bg3)', { color: 'var(--text)' })}>ดึงข้อมูลใหม่</button>
           )}
-          {model && canManage && <button onClick={save} disabled={busy} style={btn('#3b82f6', { color: '#fff' })}>💾 บันทึก</button>}
-          {model && <button onClick={() => doPrint('a3')} style={btn('#f59e0b')}>📋 A3 Report (Toyota)</button>}
-          {model && <button onClick={() => doPrint('sheet')} style={btn('var(--bg3)', { color: 'var(--text)' })}>🖨️ ใบ VSM</button>}
-          {model && <button onClick={() => setShowA3(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>✍️ เนื้อหา A3</button>}
-          <button onClick={() => setShowLoad(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>📂 ใบที่บันทึกไว้ ({savedMaps.length})</button>
+          {model && canManage && <button onClick={save} disabled={busy} style={btn('var(--blue)', { color: '#fff' })}>บันทึก</button>}
+          {model && <button onClick={() => doPrint('a3')} style={btn('var(--amber)')}>A3 Report (Toyota)</button>}
+          {model && <button onClick={() => doPrint('sheet')} style={btn('var(--bg3)', { color: 'var(--text)' })}>ใบ VSM</button>}
+          {model && <button onClick={() => setShowA3(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>เนื้อหา A3</button>}
+          <button onClick={() => setShowLoad(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>ใบที่บันทึกไว้ ({savedMaps.length})</button>
         </div>
       </FilterBar>
 
@@ -606,8 +606,8 @@ export default function VSM() {
         {/* ⚠️ ข้อมูลดิบโหลดไม่ครบ — ต่างจาก worklist ข้างล่าง (นั่นคือ "ยังไม่มีใครลงข้อมูล")
             อันนี้คือ "มีข้อมูลแต่ดึงมาไม่หมด" ⇒ ตัวเลขต่ำกว่าจริง ห้ามบันทึกเป็นเอกสาร */}
         {loadWarn && (
-          <div style={{ ...S.card, marginBottom: 12, padding: '10px 14px', border: '1px solid #f59e0b', background: 'rgba(245,158,11,0.10)' }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>⚠️ {loadWarn}</div>
+          <div style={{ ...S.card, marginBottom: 12, padding: '10px 14px', border: '1px solid var(--amber)', background: 'var(--amber-dim)' }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)' }}>⚠️ {loadWarn}</div>
             <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 3 }}>ลองกด "↻ ดึงข้อมูลใหม่" อีกครั้ง — ถ้ายังขึ้นซ้ำให้แจ้งผู้ดูแลระบบ</div>
           </div>
         )}
@@ -657,7 +657,7 @@ export default function VSM() {
           <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>ปรับค่าในกล่องกระบวนการ</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
             ช่องว่าง = ใช้ค่าที่ระบบคำนวณให้ · กรอกทับเมื่อค่าจริงไม่ตรง ·
-            <b style={{ color: '#f59e0b' }}> คงคลังระหว่างทาง (WIP) ระบบไม่ได้เก็บ ต้องกรอกเอง</b>
+            <b style={{ color: 'var(--amber)' }}> คงคลังระหว่างทาง (WIP) ระบบไม่ได้เก็บ ต้องกรอกเอง</b>
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
             <thead><tr style={{ background: 'var(--bg2)' }}>
@@ -674,7 +674,7 @@ export default function VSM() {
                       title={src ? `ค่าที่ระบบคำนวณ: ${val ?? '—'} (จาก ${src})` : 'ระบบไม่มีข้อมูล'}
                       style={{
                         width: 82, fontSize: 12, padding: '4px 6px', borderRadius: 5, background: 'var(--bg2)', color: 'var(--text)',
-                        border: `1px solid ${val == null && !ov[field] ? '#f59e0b' : 'var(--border)'}`,
+                        border: `1px solid ${val == null && !ov[field] ? 'var(--amber)' : 'var(--border)'}`,
                       }} />
                   </td>
                 );
@@ -682,8 +682,8 @@ export default function VSM() {
                 return <tr key={b.key}>
                   <td style={{ padding: '6px 8px', fontSize: 12, color: 'var(--muted)', borderTop: '1px solid var(--border)' }}>{i + 1}</td>
                   <td style={{ padding: '6px 8px', fontSize: 12.5, fontWeight: 700, color: 'var(--text)', borderTop: '1px solid var(--border)' }}>
-                    {b.name}{b.isOutsourced && <span style={{ color: '#a78bfa', fontWeight: 400 }}> · จ้างนอก</span>}
-                    {b.isFallback && <span style={{ color: '#ef4444', fontWeight: 400, fontSize: 11 }}> · ยังไม่ลง routing</span>}
+                    {b.name}{b.isOutsourced && <span style={{ color: 'var(--blue)', fontWeight: 400 }}> · จ้างนอก</span>}
+                    {b.isFallback && <span style={{ color: 'var(--red)', fontWeight: 400, fontSize: 11 }}> · ยังไม่ลง routing</span>}
                   </td>
                   <td style={{ padding: '6px 8px', fontSize: 12, color: 'var(--muted)', borderTop: '1px solid var(--border)' }}>{b.line || '—'}</td>
                   {cell('ct_sec', b.ct, b.ctSrc)}
@@ -786,7 +786,7 @@ export default function VSM() {
               สถานะไลน์ / ยอดวันนี้ / คงคลัง ▲ = <b style={{ color: 'var(--accent)' }}>สด</b><br />
               มุมมองนี้<b>ไม่บันทึก/ไม่พิมพ์</b> — เอกสาร VSM ทางการ (snapshot) อยู่แท็บ 📋
             </div>
-            {liveRaw && <button onClick={loadLive} style={btn('var(--bg3)', { color: 'var(--text)' })}>↻ รีเฟรชตอนนี้</button>}
+            {liveRaw && <button onClick={loadLive} style={btn('var(--bg3)', { color: 'var(--text)' })}>รีเฟรชตอนนี้</button>}
           </FilterBar>
 
           {!matNo && (
@@ -800,13 +800,13 @@ export default function VSM() {
           {/* โหลดโครงพลาด (เน็ตสะดุด ฯลฯ) — ห้ามจอว่างตัน ต้องมีปุ่มลองใหม่ */}
           {matNo && !liveBusy && !liveModel && liveErr && (
             <div style={{ ...S.card, textAlign: 'center', padding: 30 }}>
-              <div style={{ fontSize: 13.5, color: '#ef4444', fontWeight: 700, marginBottom: 6 }}>
+              <div style={{ fontSize: 13.5, color: 'var(--red)', fontWeight: 700, marginBottom: 6 }}>
                 ⛔ โหลดโครงสายธารไม่สำเร็จ
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
                 {liveErr} — มักเป็นสัญญาณเน็ตสะดุดชั่วคราว ลองใหม่ได้เลย
               </div>
-              <button onClick={() => setLiveTick(t => t + 1)} style={btn('var(--accent)')}>🔄 ลองใหม่</button>
+              <button onClick={() => setLiveTick(t => t + 1)} style={btn('var(--accent)')}>ลองใหม่</button>
             </div>
           )}
 
@@ -818,12 +818,12 @@ export default function VSM() {
                 padding: '5px 12px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--text)',
               }}>
                 {/* จุดสถานะ live = นิ่ง+เรืองแสง ห้ามกระพริบ (Andon สงวนกระพริบให้แดง) */}
-                <span style={{ width: 8, height: 8, borderRadius: 99, background: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
+                <span style={{ width: 8, height: 8, borderRadius: 99, background: 'var(--green)', boxShadow: '0 0 6px var(--green)' }} />
                 REALTIME · อัปเดต {liveData?.at ? new Date(liveData.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
                 <span style={{ color: 'var(--muted)', fontWeight: 400 }}>· วันงาน {liveData?.workDate || getWorkDate()}</span>
               </span>
               {liveData?.partial && (
-                <span style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 999, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid #f59e0b' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 999, background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber)' }}>
                   ⚠ โหลดข้อมูลสดไม่ครบ — ตัวเลขบางส่วนอาจขาด (จะลองใหม่รอบถัดไป)
                 </span>
               )}
@@ -847,13 +847,13 @@ export default function VSM() {
 
             {/* ── Downtime ค้าง (Andon) — ต้องเห็นก่อนอย่างอื่น ห้ามซ่อน ── */}
             {(liveData?.summary?.alarms || []).length > 0 && (
-              <div style={{ background: 'rgba(239,68,68,0.10)', borderLeft: '3px solid #ef4444', borderRadius: 6, padding: '8px 12px', marginBottom: 12 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 800, color: '#ef4444', marginBottom: 4 }}>🚨 Downtime ค้างในสายธารนี้</div>
+              <div style={{ background: 'var(--red-dim)', borderLeft: '3px solid var(--red)', borderRadius: 6, padding: '8px 12px', marginBottom: 12 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--red)', marginBottom: 4 }}>🚨 Downtime ค้างในสายธารนี้</div>
                 {liveData.summary.alarms.map((a, i) => (
                   <div key={i} style={{ fontSize: 12.5, color: 'var(--text)', padding: '2px 0' }}>
                     <b>{a.line}</b>{a.machineNo ? ` · ${a.machineNo}` : ''} — {a.typeName || 'ไม่ระบุประเภท'}
                     {a.description ? ` · 💬 ${a.description}` : ''}
-                    {a.openMin != null && <span style={{ color: '#ef4444', fontWeight: 700 }}> · ค้าง {a.openMin} นาที</span>}
+                    {a.openMin != null && <span style={{ color: 'var(--red)', fontWeight: 700 }}> · ค้าง {a.openMin} นาที</span>}
                   </div>
                 ))}
               </div>
@@ -876,8 +876,8 @@ export default function VSM() {
               <VsmCanvas model={liveModel} palette={palette} live={liveData} />
             </div>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 14 }}>
-              ขอบกล่องกระบวนการ: <b style={{ color: '#ef4444' }}>แดงกระพริบ = Downtime ค้าง</b> ·
-              <b style={{ color: '#22c55e' }}> เขียว = กำลังผลิต</b> · เส้นประจาง = ยังไม่เปิดกะวันนี้ —
+              ขอบกล่องกระบวนการ: <b style={{ color: 'var(--red)' }}>แดงกระพริบ = Downtime ค้าง</b> ·
+              <b style={{ color: 'var(--green)' }}> เขียว = กำลังผลิต</b> · เส้นประจาง = ยังไม่เปิดกะวันนี้ —
               วางเมาส์บนกล่องเพื่อดูสถานะ · ▲ คงคลัง/PLT/%VA คำนวณจากยอดคงเหลือปัจจุบัน
             </div>
 
@@ -907,7 +907,7 @@ export default function VSM() {
                     </div>
                     <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{oee.note}</div>
                     {(lv?.alarms || []).map((a, j) => (
-                      <div key={j} style={{ fontSize: 11.5, color: '#ef4444' }}>
+                      <div key={j} style={{ fontSize: 11.5, color: 'var(--red)' }}>
                         🚨 {a.machineNo || 'ไม่ระบุเครื่อง'} · {a.typeName || '—'}{a.openMin != null ? ` · ค้าง ${a.openMin} นาที` : ''}
                       </div>
                     ))}

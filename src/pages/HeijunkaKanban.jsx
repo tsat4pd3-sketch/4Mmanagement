@@ -57,6 +57,7 @@ import PartThumb from '../components/PartThumb';
 import { loadPartImages, partImageOf, imageCoverage } from '../utils/partImages';
 import { loadDocForms } from '../utils/docForms';
 import { downloadCsvDoc } from '../utils/csvDoc';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* 🧭 ทะเบียนมุมมองของบอร์ดสโตร์ (2026-09-25 · คำสั่ง user *"สับสนการใช้งาน แต่ละ tab มากๆ"*)
 
@@ -119,7 +120,7 @@ function LineBoardLink({ line }) {
       title="เปิดบอร์ด Heijunka ของไลน์นี้ (จอเดียวกับที่ไลน์ผลิตเห็น)"
       style={{ padding: '2px 9px', borderRadius: 12, cursor: 'pointer', fontSize: 11, fontWeight: 700,
         background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', flexShrink: 0 }}>
-      📊 บอร์ดไลน์
+      บอร์ดไลน์
     </button>
   );
 }
@@ -147,11 +148,11 @@ function OnDemandStrip({ wipRequests = [], nowMs, onGo }) {
   return (
     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12, alignItems: 'stretch' }}>
       {tile('🚚', 'โหมดส่งตามคำขอ', 'เบิกตอนไหนส่งตอนนั้น', 'ไม่มีไลน์ไหนใช้รอบ · คิวเรียงตามเวลาแจ้ง')}
-      {tile('🔔', 'รอหยิบ', n('pending'), oldest ? `รอนานสุด ${oldest.min} นาที · ${oldest.w.mat_no} → ${oldest.w.line_name}` : 'ไม่มีใบรอ', oldest && oldest.min > 60 ? '#ef4444' : undefined)}
+      {tile('🔔', 'รอหยิบ', n('pending'), oldest ? `รอนานสุด ${oldest.min} นาที · ${oldest.w.mat_no} → ${oldest.w.line_name}` : 'ไม่มีใบรอ', oldest && oldest.min > 60 ? 'var(--red)' : undefined)}
       {tile('🔧', 'กำลังเตรียม', n('preparing'), 'สแกนพาร์ทแล้ว · ตัดสต็อกแล้ว')}
       {tile('📍', 'ส่งแล้ว รอไลน์รับ', n('delivered'), 'ไลน์กดรับใน Daily Report → ใบจบ')}
       <button onClick={onGo} style={{ alignSelf: 'center', padding: '9px 14px', borderRadius: 8, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
-        🔄 เปิดตู้งานสโตร์
+        เปิดตู้งานสโตร์
       </button>
     </div>
   );
@@ -173,7 +174,7 @@ function OnDemandLineBlock({ lineName, lineMap, wipRequests = [], onGoChart, onG
       <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>🚚 ส่งตามคำขอ</span>
       <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>เบิกตอนไหนส่งตอนนั้น — ไลน์นี้ไม่ใช้รอบ</span>
       {tickets.length
-        ? <span style={{ fontSize: 11.5, fontWeight: 700, color: '#38bdf8' }}>
+        ? <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--blue)' }}>
             📋 ใบค้าง {tickets.length} · {Object.entries(byStatus).map(([s, n]) => `${WIP_ST_SHORT[s] || s} ${n}`).join(' · ')}
           </span>
         : <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>📋 ยังไม่มีใบส่งค้าง</span>}
@@ -224,7 +225,7 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
         const demand = groupDemand[lineName] || { parts: [], totalKanban: 0 };
         return (
           <div key={lineName}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
               🏭 {lineName}
               <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}>
                 {demand.parts.length} พาร์ท · {demand.totalKanban} การ์ด (ทั้งวัน)
@@ -264,31 +265,31 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
                         {r.points_count || 1} จุด × {r.time_per_point_min || 10} น. · เสร็จ ~{finishTime}
                       </div>
                       <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(128,128,128,0.15)', fontSize: 12 }}>
-                        🔩 {alloc.parts.length} พาร์ท · 🎴 <span style={{ fontWeight: 900, color: '#f59e0b' }}>{alloc.totalKanban}</span> การ์ด <span style={{ fontSize: 11, color: 'var(--muted)' }}>(รอบนี้)</span>
+                        🔩 {alloc.parts.length} พาร์ท · 🎴 <span style={{ fontWeight: 900, color: 'var(--amber)' }}>{alloc.totalKanban}</span> การ์ด <span style={{ fontSize: 11, color: 'var(--muted)' }}>(รอบนี้)</span>
                       </div>
                       {confirmedBy && (
-                        <div style={{ fontSize: 11, color: '#22c55e', marginTop: 4 }}>✓ {confirmedBy}</div>
+                        <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 4 }}>✓ {confirmedBy}</div>
                       )}
                       {canOperate && needAction && (
                         <button onClick={e => { e.stopPropagation(); onConfirm(r, alloc.parts); }} disabled={confirming === r.id}
-                          style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
-                          {confirming === r.id ? 'กำลังบันทึก…' : '✅ ยืนยันส่งแล้ว'}
+                          style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', fontFamily: 'var(--font-body)' }}>
+                          {confirming === r.id ? 'กำลังบันทึก…' : 'ยืนยันส่งแล้ว'}
                         </button>
                       )}
                       {canOperate && isConf && !isReceived && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 8 }} onClick={e => e.stopPropagation()}>
                           <button onClick={() => onReceive(r, alloc.parts, 'full')}
                             style={storeBtn('primary', { flex: 1, padding: '10px 6px' })}>
-                            ✔️ รับครบ
+                            รับครบ
                           </button>
                           <button onClick={() => onReceive(r, alloc.parts, 'partial')}
-                            style={storeBtn('secondary', { flex: 1, padding: '10px 6px', color: '#f59e0b', borderColor: 'rgba(245,158,11,0.45)' })}>
-                            ⚠️ รับไม่ครบ
+                            style={storeBtn('secondary', { flex: 1, padding: '10px 6px', color: 'var(--amber)', borderColor: 'var(--amber-line)' })}>
+                            รับไม่ครบ
                           </button>
                         </div>
                       )}
                       {isReceived && (
-                        <div style={{ fontSize: 11, color: receivedMap[key].received_status === 'full' ? '#22c55e' : '#f59e0b', marginTop: 4 }}>
+                        <div style={{ fontSize: 11, color: receivedMap[key].received_status === 'full' ? 'var(--green)' : 'var(--amber)', marginTop: 4 }}>
                           {receivedMap[key].received_status === 'full' ? '✔️' : '⚠️'} {receivedMap[key].received_by} รับของแล้ว
                           {receivedMap[key].received_note ? ` — ${receivedMap[key].received_note}` : ''}
                         </div>
@@ -305,7 +306,7 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
                                 <MatLabel mat={p.mat_no} name={p.part_name} size={11} style={{ maxWidth: 150 }} />
                               </div>
                               <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                                <div style={{ fontWeight: 800, color: p.netTotal > 0 ? '#f59e0b' : '#22c55e' }}>
+                                <div style={{ fontWeight: 800, color: p.netTotal > 0 ? 'var(--amber)' : 'var(--green)' }}>
                                   {p.netTotal <= 0 ? '✓ stock พอ' : per ? `${p.cards} ใบ` : `${fmt(p.netTotal)} ${p.uom}`}
                                 </div>
                                 <div style={{ color: 'var(--muted)', fontSize: 11 }}>ต้องใช้ {fmt(p.qty)}{p.netTotal > 0 && p.netTotal !== p.qty ? ` · NET ${fmt(p.netTotal)}` : ''}</div>
@@ -384,10 +385,10 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
           <div key={i} style={{
             flex: 1, minWidth: 0, textAlign: 'center', fontSize: 11,
             fontWeight: isNow ? 800 : isShiftBound ? 600 : 400,
-            color: isNow ? '#4d9fff' : isShiftBound ? 'var(--text2)' : 'var(--muted)',
+            color: isNow ? 'var(--blue)' : isShiftBound ? 'var(--text2)' : 'var(--muted)',
             padding: '4px 0', lineHeight: 1,
             borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`,
-            background: isNow ? 'rgba(77,159,255,0.12)' : 'transparent',
+            background: isNow ? 'var(--blue-dim)' : 'transparent',
           }}>
             {String(h).padStart(2,'0')}:00
           </div>
@@ -436,7 +437,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
         const slotMs = half.startMs + i * 3600000;
         const isNow = nowMs >= slotMs && nowMs < slotMs + 3600000;
         const isShiftBound = h === 8 || h === 20;
-        return <div key={i} style={{ flex: 1, minWidth: 0, height: '100%', borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`, background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent' }} />;
+        return <div key={i} style={{ flex: 1, minWidth: 0, height: '100%', borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`, background: isNow ? 'var(--blue-dim)' : 'transparent' }} />;
       })}
       {(() => {
         /* 🏭 แถบพัก "ของไลน์แถวนี้" (break_line_rules · 20/10) · ชื่อพักมาจาก band.policies
@@ -479,7 +480,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
               onClick={() => setExpanded(expanded === expandKey ? null : expandKey)}
               style={{
                 position: 'absolute', top: 4, bottom: 4, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 46,
-                background: `${status.top}28`, border: `1.5px solid ${hitBreak ? '#f59e0b' : `${status.top}cc`}`,
+                background: `${tint(status.top, 'dim')}`, border: `1.5px solid ${hitBreak ? 'var(--amber)' : `${tint(status.top, 'line')}`}`,
                 borderRadius: 4, overflow: 'hidden', cursor: 'pointer', zIndex: 1,
                 display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '0 3px',
               }}>
@@ -503,13 +504,13 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', padding: '6px 10px', background: 'var(--bg2)', borderRadius: 8, border: '1px solid var(--border2)' }}>
         {[
           { c: 'var(--border2)', icon: '⬜', label: 'รอ' },
-          { c: '#0ea5e9', icon: '⏳', label: 'กำลังเตรียม / ส่งแล้วรอรับ' },
-          { c: '#22c55e', icon: '✔️', label: 'รับครบแล้ว' },
-          { c: '#f59e0b', icon: '⚠️', label: 'รับไม่ครบ' },
-          { c: '#ef4444', icon: '🔴', label: 'ค้างส่ง' },
+          { c: 'var(--blue)', icon: '⏳', label: 'กำลังเตรียม / ส่งแล้วรอรับ' },
+          { c: 'var(--green)', icon: '✔️', label: 'รับครบแล้ว' },
+          { c: 'var(--amber)', icon: '⚠️', label: 'รับไม่ครบ' },
+          { c: 'var(--red)', icon: '🔴', label: 'ค้างส่ง' },
         ].map(item => (
           <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ width: 18, height: 18, borderRadius: 4, background: `${item.c}28`, border: `1.5px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, flexShrink: 0 }}>{item.icon}</span>
+            <span style={{ width: 18, height: 18, borderRadius: 4, background: `${tint(item.c, 'dim')}`, border: `1.5px solid ${tint(item.c, 'line')}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, flexShrink: 0 }}>{item.icon}</span>
             <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{item.label}</span>
           </div>
         ))}
@@ -520,7 +521,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
         return (
           <div key={lineName} style={{ border: '1px solid var(--border2)', borderRadius: 10, overflow: 'hidden' }}>
             <div style={{ padding: '8px 14px', background: 'var(--bg2)', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b', display: 'inline-flex', alignItems: 'center', gap: 8 }}>🏭 {lineName} <LineBoardLink line={lineName} /></span>
+              <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)', display: 'inline-flex', alignItems: 'center', gap: 8 }}>🏭 {lineName} <LineBoardLink line={lineName} /></span>
               <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{demand.parts.length} พาร์ท · 🎴 {demand.totalKanban} การ์ด (ทั้งวัน)</span>
             </div>
             <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
@@ -562,7 +563,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
                         const per = kanbanStd[p.mat_no];
                         return (
                           <span key={p.mat_no} style={chip('var(--bg2)', 'var(--text2)')}>
-                            <span style={{ fontFamily: 'monospace', color: '#0ea5e9' }}>{p.mat_no}</span> · {p.netTotal <= 0 ? '✓ stock พอ' : per ? `${p.cards} ใบ` : `${fmt(p.netTotal)} ${p.uom}`}
+                            <span style={{ fontFamily: 'monospace', color: 'var(--blue)' }}>{p.mat_no}</span> · {p.netTotal <= 0 ? '✓ stock พอ' : per ? `${p.cards} ใบ` : `${fmt(p.netTotal)} ${p.uom}`}
                           </span>
                         );
                       })}
@@ -640,35 +641,35 @@ function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onRece
                         const tp = tripsFor?.(r.id, alloc.totalKanban);
                         if (!tp) return null;
                         return (
-                          <div style={{ fontSize: 11, marginTop: 2, color: tp.trips > 1 ? '#f59e0b' : 'var(--muted)', fontWeight: tp.trips > 1 ? 700 : 400 }}
+                          <div style={{ fontSize: 11, marginTop: 2, color: tp.trips > 1 ? 'var(--amber)' : 'var(--muted)', fontWeight: tp.trips > 1 ? 700 : 400 }}
                             title={tp.assigned ? 'คิดจากรถของคนขับที่มอบหมายรอบนี้ (หน้า มอบหมายขนส่ง)' : (tp.capFallback ? 'รถของคนขับที่มอบหมายยังไม่ตั้งความจุ — คิดจากคันจุมากสุดในระบบแทน (ตั้งจุที่หน้า มอบหมายขนส่ง)' : 'ยังไม่มอบหมายคนขับ — คิดจากรถที่จุมากสุด')}>
                             {tp.veh.icon} {alloc.totalKanban} กล่อง ÷ จุ {tp.cap} = <b>{tp.trips} เที่ยว</b>{tp.assigned ? '' : (tp.capFallback ? ' (รถคนขับยังไม่ตั้งจุ)' : ' (ยังไม่มอบหมายรถ)')}
                           </div>
                         );
                       })()}
-                      {confirmedBy && <div style={{ fontSize: 11, color: '#22c55e', marginTop: 3 }}>✓ {confirmedBy}</div>}
+                      {confirmedBy && <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 3 }}>✓ {confirmedBy}</div>}
                       {/* gate เดียวกับ StoreBoardView/UnifiedStoreBoard — ยืนยันได้เฉพาะตอนถึงจังหวะจริง
                           (⏳ กำลังเตรียม / 🔴 ค้างส่ง) ไม่ใช่ตั้งแต่ ⬜ รอ ก่อน cutoff (QC flow-audit #38) */}
                       {canOperate && !isConf && (status.label === '⏳ กำลังเตรียม' || status.label === '🔴 ค้างส่ง') && (
                         <button onClick={() => onConfirm(r, parts)} disabled={confirming === r.id}
-                          style={{ marginTop: 6, width: '100%', padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(34,197,94,0.1)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontFamily: 'var(--font-body)' }}>
-                          {confirming === r.id ? 'กำลังบันทึก…' : '✅ ยืนยันส่งแล้ว'}
+                          style={{ marginTop: 6, width: '100%', padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', fontFamily: 'var(--font-body)' }}>
+                          {confirming === r.id ? 'กำลังบันทึก…' : 'ยืนยันส่งแล้ว'}
                         </button>
                       )}
                       {canOperate && isConf && !isReceived && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                           <button onClick={() => onReceive(r, parts, 'full')}
                             style={storeBtn('primary', { flex: 1, padding: '10px 6px', fontSize: 13 })}>
-                            ✔️ รับครบ
+                            รับครบ
                           </button>
                           <button onClick={() => onReceive(r, parts, 'partial')}
-                            style={storeBtn('secondary', { flex: 1, padding: '10px 6px', fontSize: 13, color: '#f59e0b', borderColor: 'rgba(245,158,11,0.45)' })}>
-                            ⚠️ ไม่ครบ
+                            style={storeBtn('secondary', { flex: 1, padding: '10px 6px', fontSize: 13, color: 'var(--amber)', borderColor: 'var(--amber-line)' })}>
+                            ไม่ครบ
                           </button>
                         </div>
                       )}
                       {isReceived && (
-                        <div style={{ fontSize: 11, color: receivedMap[key].received_status === 'full' ? '#22c55e' : '#f59e0b', marginTop: 3 }}>
+                        <div style={{ fontSize: 11, color: receivedMap[key].received_status === 'full' ? 'var(--green)' : 'var(--amber)', marginTop: 3 }}>
                           {receivedMap[key].received_status === 'full' ? '✔️' : '⚠️'} {receivedMap[key].received_by} รับของแล้ว
                         </div>
                       )}
@@ -778,20 +779,20 @@ function PlannerStrip({ rounds, deliveries, roundAlloc, workDate, breakPolicies,
         {tile('⏱', 'ตัดยอดถัดไป',
           nextCut ? `อีก ${nextCutMins} นาที` : isToday ? '—' : '—',
           nextCut ? `${nextCut.r.line_name} รอบ ${nextCut.r.round_no} · ตัดยอด ${nextCut.r.cutoff_time?.slice(0, 5)}` : (isToday ? 'ไม่มีรอบที่รอตัดยอด' : 'นอกกรอบวันงานที่เลือก'),
-          nextCut && nextCutMins <= 15 ? '#f59e0b' : 'var(--text)')}
+          nextCut && nextCutMins <= 15 ? 'var(--amber)' : 'var(--text)')}
         {tile('⏭', 'รอบส่งถัดไป',
           next ? (nextMins > 0 ? `อีก ${nextMins} นาที` : '🚚 กำลังส่ง') : isToday ? 'ครบทุกรอบแล้ว' : '—',
           next ? `${next.r.line_name} รอบ ${next.r.round_no} · ส่ง ${next.r.delivery_time?.slice(0, 5)}` : (isToday ? '' : 'นอกกรอบวันงานที่เลือก'),
-          next && nextMins <= 15 ? '#f59e0b' : 'var(--text)')}
+          next && nextMins <= 15 ? 'var(--amber)' : 'var(--text)')}
         {tile('🔴', 'รอบค้างส่ง', overdue.length,
           overdue.length ? overdue.slice(0, 2).map(r => `${r.line_name} รอบ ${r.round_no}`).join(' · ') + (overdue.length > 2 ? ` +${overdue.length - 2}` : '') : 'ไม่มี',
-          overdue.length ? '#ef4444' : '#22c55e')}
-        {tile('🎴', 'การ์ดรอเตรียมส่ง', cardsLeft, `${pending.length} รอบที่ยังไม่ยืนยันส่ง`, cardsLeft > 0 ? '#f59e0b' : '#22c55e')}
-        {tile('✅', 'ยืนยันส่งแล้ว', `${confirmedCount}/${rounds.length}`, isToday ? 'รอบของวันนี้ทั้งหมด' : `รอบของ ${workDate} ทั้งหมด`, confirmedCount === rounds.length ? '#22c55e' : 'var(--text)')}
+          overdue.length ? 'var(--red)' : 'var(--green)')}
+        {tile('🎴', 'การ์ดรอเตรียมส่ง', cardsLeft, `${pending.length} รอบที่ยังไม่ยืนยันส่ง`, cardsLeft > 0 ? 'var(--amber)' : 'var(--green)')}
+        {tile('✅', 'ยืนยันส่งแล้ว', `${confirmedCount}/${rounds.length}`, isToday ? 'รอบของวันนี้ทั้งหมด' : `รอบของ ${workDate} ทั้งหมด`, confirmedCount === rounds.length ? 'var(--green)' : 'var(--text)')}
       </div>
       {warnings.length > 0 && (
-        <div style={{ marginTop: 10, padding: '10px 14px', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 'var(--radius-lg)' }}>
-          <div style={{ fontSize: 12, fontWeight: 800, color: '#ef4444', marginBottom: 4 }}>⚠️ ตารางรอบจัดส่งมีจุดที่ควรแก้ ({warnings.length})</div>
+        <div style={{ marginTop: 10, padding: '10px 14px', background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 'var(--radius-lg)' }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--red)', marginBottom: 4 }}>⚠️ ตารางรอบจัดส่งมีจุดที่ควรแก้ ({warnings.length})</div>
           {warnings.map((w, i) => (
             <div key={i} style={{ fontSize: 11, color: 'var(--text2)', lineHeight: 1.8 }}>• {w}</div>
           ))}
@@ -813,10 +814,10 @@ function KanbanCardGrid({ rowList, kanbanStd, fmt, imgOf }) {
         const covered = r.netTotal === 0;
         /* 3 สถานะของแถว: สต็อกพอแล้ว · ต้องเบิกและรู้ว่ากี่ใบ · ไม่มี std คิดใบไม่ได้ */
         const tone = covered
-          ? { c: '#22c55e', bg: 'rgba(34,197,94,0.1)',  bd: 'rgba(34,197,94,0.3)',  label: '✓ สต็อกพอ' }
+          ? { c: 'var(--green)', bg: 'var(--green-dim)',  bd: 'var(--green-line)',  label: '✓ สต็อกพอ' }
           : per
-            ? { c: '#f59e0b', bg: 'rgba(245,158,11,0.1)', bd: 'rgba(245,158,11,0.3)', label: '🎴 ต้องเบิก' }
-            : { c: '#ef4444', bg: 'rgba(239,68,68,0.1)',  bd: 'rgba(239,68,68,0.3)',  label: '⚠ ไม่มี std' };
+            ? { c: 'var(--amber)', bg: 'var(--amber-dim)', bd: 'var(--amber-line)', label: '🎴 ต้องเบิก' }
+            : { c: 'var(--red)', bg: 'var(--red-dim)',  bd: 'var(--red-line)',  label: '⚠ ไม่มี std' };
         return (
           <PartCard key={r.mat_no}
             code={r.mat_no} name={r.part_name} sub={r.supplier} img={imgOf?.(r.mat_no)} matTone={matColor(r.mat_no)}
@@ -840,25 +841,25 @@ function AccCard({ a, fmt }) {
   const pct = a.pct == null ? null : Math.min(100, a.pct);
   const done = a.pct != null && a.pct >= 100;
   return (
-    <div style={{ background: 'var(--bg2)', border: `1px solid ${done ? 'rgba(34,197,94,0.45)' : 'var(--border)'}`, borderRadius: 10, padding: 12 }}>
+    <div style={{ background: 'var(--bg2)', border: `1px solid ${done ? 'var(--green-line)' : 'var(--border)'}`, borderRadius: 10, padding: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <span style={{ fontFamily: 'monospace', fontWeight: 800, color: matColor(a.child_mat_no), fontSize: 13 }}>{a.child_mat_no}</span>
         {/* ค้างนาน = สัญญาณว่าของไม่ไหลแล้ว ห้ามปล่อยให้ดูเหมือนแถวปกติ */}
-        {a.stale && <span title={`ไม่ขยับเกิน ${STALE_DAYS} วัน`} style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b' }}>⏳</span>}
+        {a.stale && <span title={`ไม่ขยับเกิน ${STALE_DAYS} วัน`} style={{ fontSize: 11, fontWeight: 800, color: 'var(--amber)' }}>⏳</span>}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 6 }}>
         <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{fmt(a.pending_qty)}</span>
-        <span style={{ fontSize: 11, color: a.lot ? 'var(--muted)' : '#f59e0b', fontWeight: a.lot ? 400 : 800 }}>
+        <span style={{ fontSize: 11, color: a.lot ? 'var(--muted)' : 'var(--amber)', fontWeight: a.lot ? 400 : 800 }}>
           {a.lot ? `/ ${fmt(a.lot)} ล็อต` : 'ยังไม่ตั้ง lot'}
         </span>
       </div>
       {a.lot && (
         <>
           <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden', marginTop: 6 }}>
-            <div style={{ width: `${pct}%`, height: '100%', background: done ? '#22c55e' : '#7c3aed' }} />
+            <div style={{ width: `${pct}%`, height: '100%', background: done ? 'var(--green)' : '#7c3aed' }} />
           </div>
           {/* บอก % ตรงๆ — แถบอย่างเดียวเทียบข้ามการ์ดด้วยสายตาไม่ได้ */}
-          <div style={{ fontSize: 11, fontWeight: 700, color: done ? '#22c55e' : 'var(--muted)', marginTop: 3 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: done ? 'var(--green)' : 'var(--muted)', marginTop: 3 }}>
             {done ? `ครบล็อตแล้ว (${Math.round(a.pct)}%)` : `${Math.round(a.pct)}% ของล็อต`}
           </div>
         </>
@@ -894,7 +895,7 @@ function AccGroup({ title, hint, color, rows, fmt, defaultOpen, cap = 0 }) {
       {open && hidden > 0 && (
         <button className="tbtn" onClick={() => setAll(true)}
           style={{ marginTop: 8, padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', fontFamily: 'var(--font-body)' }}>
-          ▾ ดูอีก {hidden} รายการที่เหลือ
+          ดูอีก {hidden} รายการที่เหลือ
         </button>
       )}
     </div>
@@ -905,16 +906,16 @@ function AccumulatorGroups({ groups, fmt }) {
   const { ready, waiting, noLot, staleCount } = groups;
   return (
     <>
-      <AccGroup defaultOpen rows={ready} fmt={fmt} color="#22c55e"
+      <AccGroup defaultOpen rows={ready} fmt={fmt} color="var(--green)"
         title="🟢 ครบล็อตแล้ว — ออกใบสั่งผลิตได้" hint="ระบบจะออกใบให้เองรอบถัดไปที่ demand เข้า" />
       <AccGroup defaultOpen rows={waiting} fmt={fmt} color="#7c3aed" cap={12}
         title="🟣 กำลังสะสม" hint="เรียงตาม % ของล็อต — ใกล้ครบอยู่บนสุด" />
       {/* ยังไม่ตั้ง lot = **ไม่มีวันครบ ไม่มีวันออกใบ** — เป็นงานตั้งค่า ไม่ใช่งานรอ
           ยุบไว้เพราะไม่ใช่งานประจำวันของสโตร์ แต่หัวกลุ่มยังบอกจำนวน + ทางแก้เสมอ */}
-      <AccGroup rows={noLot} fmt={fmt} color="#f59e0b" defaultOpen={false}
+      <AccGroup rows={noLot} fmt={fmt} color="var(--amber)" defaultOpen={false}
         title="⚠️ ยังไม่ตั้งขนาดล็อต — สะสมไปก็ไม่ออกใบ" hint="ตั้ง lot ที่ /products แท็บ Kanban Std ก่อน" />
       {staleCount > 0 && (
-        <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>
+        <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>
           ⏳ {staleCount} รายการไม่ขยับเกิน {STALE_DAYS} วัน — demand ค้างที่ของอาจไม่ไหลแล้ว
         </div>
       )}
@@ -932,9 +933,9 @@ function AccumulatorGroups({ groups, fmt }) {
       ตามใบเบิก** ⇒ เป็นเหตุการณ์ของสโตร์เต็มตัว คำว่า "รับของเข้าสโตร์" จึงตรงกับของจริง
    🔴 ห้ามเปลี่ยนกลับไปใช้คำฝั่งผลิตโดยไม่ถาม user — ไลน์ผลิตเป็นคนทำของ แต่**สโตร์เป็นคนบันทึก** */
 const LOT_STATUS = {
-  pending:   { label: '🆕 รอปล่อยเข้าไลน์', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)',  border: 'rgba(245,158,11,0.3)', next: 'producing', nextLabel: '📤 ปล่อยเข้าไลน์' },
-  producing: { label: '🔧 อยู่ที่ไลน์ผลิต',  color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)',  border: 'rgba(14,165,233,0.3)', next: 'done',      nextLabel: '📥 รับของเข้าสโตร์' },
-  done:      { label: '✅ รับเข้าสโตร์แล้ว', color: '#22c55e', bg: 'rgba(34,197,94,0.1)',   border: 'rgba(34,197,94,0.3)', next: null,        nextLabel: null },
+  pending:   { label: '🆕 รอปล่อยเข้าไลน์', color: 'var(--amber)', bg: 'var(--amber-dim)',  border: 'var(--amber-line)', next: 'producing', nextLabel: '📤 ปล่อยเข้าไลน์' },
+  producing: { label: '🔧 อยู่ที่ไลน์ผลิต',  color: 'var(--blue)', bg: 'var(--blue-dim)',  border: 'var(--blue-line)', next: 'done',      nextLabel: '📥 รับของเข้าสโตร์' },
+  done:      { label: '✅ รับเข้าสโตร์แล้ว', color: 'var(--green)', bg: 'var(--green-dim)',   border: 'var(--green-line)', next: null,        nextLabel: null },
 };
 /* ── ⓪ ถึงจุดต้องปล่อยคัมบัง — สต็อก ≤ ขั้นต่ำ (2026-10-26 · feedback สโตร์) ──────────────
    สโตร์: *"ให้แสดงรายการที่สต็อกต่ำกว่าหรือเท่ากับค่า min เพื่อให้สโตร์ทราบถึงสถานะงานที่จะต้องปล่อยคัมบังเข้าไลน์"*
@@ -970,10 +971,10 @@ function ReleaseDueSection({ due, fmt }) {
             const out = r.have <= 0;
             return (
               <div key={r.mat_no} style={{ padding: '9px 11px', borderRadius: 9,
-                background: out ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.07)',
-                border: `1px solid ${out ? 'rgba(239,68,68,0.35)' : 'rgba(245,158,11,0.3)'}` }}>
+                background: out ? 'var(--red-dim)' : 'var(--amber-dim)',
+                border: `1px solid ${out ? 'var(--red-line)' : 'var(--amber-line)'}` }}>
                 <MatLabel mat={r.mat_no} name={r.part_name} size={12.5} />
-                <div style={{ fontSize: 11.5, color: out ? '#ef4444' : 'var(--text2)', fontWeight: out ? 800 : 400, marginTop: 3 }}>
+                <div style={{ fontSize: 11.5, color: out ? 'var(--red)' : 'var(--text2)', fontWeight: out ? 800 : 400, marginTop: 3 }}>
                   เหลือ {fmt(r.have)} / ขั้นต่ำ {fmt(r.min)}{r.shortage > 0 ? ` · ขาด ${fmt(r.shortage)}` : ''}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
@@ -1047,7 +1048,7 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, releaseD
           const queue = lineLots.filter(l => l.status !== 'done');
           return (
             <div key={lineName} style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: '#3b82f6', marginBottom: 8 }}>🏭 {lineName} <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· คิว {queue.length}</span></div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--blue)', marginBottom: 8 }}>🏭 {lineName} <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· คิว {queue.length}</span></div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(290px, 100%), 1fr))', gap: 12 }}>
                 {lineLots.map(lot => {
                   const st = LOT_STATUS[lot.status] || LOT_STATUS.pending;
@@ -1100,7 +1101,7 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, releaseD
                                   <span style={{ color: 'var(--muted)', marginLeft: 6 }}>{fmt(r.qty)}</span>
                                 </div>
                                 {issued
-                                  ? <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>✔ จ่ายแล้ว</span>
+                                  ? <span style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>✔ จ่ายแล้ว</span>
                                   : canOperate
                                     ? <button onClick={() => onIssueRaw(r)} disabled={busy === r.id}
                                         style={storeBtn('primary', { padding: '8px 18px', fontSize: 13 })}>
@@ -1155,12 +1156,12 @@ const STORE_TABS = [
 ];
 // ของซื้อจาก supplier (300 child ซื้อ / 500 raw) — 2 สเต็ป: สั่งซื้อ → รับเข้า (เติม stock)
 const PURCHASE_STATUS = {
-  pending:  { label: '🆕 รอสั่งซื้อ',  color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.3)', next: 'ordered',  nextLabel: '🛒 สั่งซื้อแล้ว' },
-  ordered:  { label: '🚚 รอของเข้า',   color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)', border: 'rgba(14,165,233,0.3)', next: 'received', nextLabel: '✅ รับเข้าสโตร์' },
-  received: { label: '✅ รับเข้าแล้ว',  color: '#22c55e', bg: 'rgba(34,197,94,0.1)',  border: 'rgba(34,197,94,0.3)',  next: null,       nextLabel: null },
+  pending:  { label: '🆕 รอสั่งซื้อ',  color: 'var(--amber)', bg: 'var(--amber-dim)', border: 'var(--amber-line)', next: 'ordered',  nextLabel: '🛒 สั่งซื้อแล้ว' },
+  ordered:  { label: '🚚 รอของเข้า',   color: 'var(--blue)', bg: 'var(--blue-dim)', border: 'var(--blue-line)', next: 'received', nextLabel: '✅ รับเข้าสโตร์' },
+  received: { label: '✅ รับเข้าแล้ว',  color: 'var(--green)', bg: 'var(--green-dim)',  border: 'var(--green-line)',  next: null,       nextLabel: null },
   // ใบที่ถูกยกเลิก (เช่นล้างใบขยะจากบั๊ก lot_size) — ปกติถูกกรองออกตั้งแต่ query แล้ว
   // แต่ต้องมี meta กันหลุด: เดิม fallback ไป pending ทำใบยกเลิกโชว์เป็น "🆕 รอสั่งซื้อ" + มีปุ่มเดินต่อ
-  cancelled: { label: '⛔ ยกเลิกแล้ว', color: '#64748b', bg: 'rgba(100,116,139,0.1)', border: 'rgba(100,116,139,0.3)', next: null, nextLabel: null },
+  cancelled: { label: '⛔ ยกเลิกแล้ว', color: 'var(--muted)', bg: 'rgba(100,116,139,0.1)', border: 'rgba(100,116,139,0.3)', next: null, nextLabel: null },
 };
 const PURCHASE_FILTERS = [
   { key: '',  label: ALL.type },
@@ -1168,9 +1169,9 @@ const PURCHASE_FILTERS = [
   { key: '5', label: '🟣 Raw Mat (5xxxxxxx)' },
 ];
 const WIP_STATUS = {
-  pending:   { label: '🔔 เรียกแล้ว',   color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.3)', next: '🔧 เริ่มเตรียม' },
-  preparing: { label: '🔧 กำลังเตรียม', color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)', border: 'rgba(14,165,233,0.3)', next: '✅ ส่งเติมแล้ว' },
-  delivered: { label: '✅ เติมแล้ว',    color: '#22c55e', bg: 'rgba(34,197,94,0.1)',  border: 'rgba(34,197,94,0.3)', next: null },
+  pending:   { label: '🔔 เรียกแล้ว',   color: 'var(--amber)', bg: 'var(--amber-dim)', border: 'var(--amber-line)', next: '🔧 เริ่มเตรียม' },
+  preparing: { label: '🔧 กำลังเตรียม', color: 'var(--blue)', bg: 'var(--blue-dim)', border: 'var(--blue-line)', next: '✅ ส่งเติมแล้ว' },
+  delivered: { label: '✅ เติมแล้ว',    color: 'var(--green)', bg: 'var(--green-dim)',  border: 'var(--green-line)', next: null },
 };
 /* 🗂️ โซนตามสถานะของคิวสโตร์ (2026-10-02 · feedback หน้างาน "แถบสี/ป้ายสถานะไม่สะดุดตา อยากแยกโซน")
    ลำดับ = **งานในมือก่อนงานใหม่** (ของที่สแกนหยิบ/ตัดสต็อกแล้วต้องไปถึงไลน์ก่อน ค่อยเริ่มใบใหม่)
@@ -1194,8 +1195,8 @@ const PUR_ZONES = (withDone) => [
   ...(withDone ? [zoneOf(PURCHASE_STATUS.received, ['received'], 'ของเข้าสโตร์แล้ว')] : []),
 ];
 const RAW_ZONES = (withDone) => [
-  { key: 'pending', statuses: ['pending'], label: '🆕 รอจ่าย', color: '#f59e0b', hint: 'จ่ายวัตถุดิบเข้าการผลิต child' },
-  ...(withDone ? [{ key: 'issued', statuses: ['issued'], label: '✔ จ่ายแล้ว', color: '#22c55e', hint: '' }] : []),
+  { key: 'pending', statuses: ['pending'], label: '🆕 รอจ่าย', color: 'var(--amber)', hint: 'จ่ายวัตถุดิบเข้าการผลิต child' },
+  ...(withDone ? [{ key: 'issued', statuses: ['issued'], label: '✔ จ่ายแล้ว', color: 'var(--green)', hint: '' }] : []),
 ];
 /* ═══ QueueCard — การ์ดคิวงานสโตร์ = `<PartCard>` + คำศัพท์ของคิว (2026-09-25)
 
@@ -1230,10 +1231,10 @@ function QueueCard({ code, name, qty, unit, qtyLabel = 'จำนวน', destin
   );
 }
 const RACK_STATUS = {
-  requested: { label: '🔔 เรียกแล้ว', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.3)', next: '🔧 เริ่มเตรียม' },
-  preparing: { label: '🔧 กำลังเตรียม', color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)', border: 'rgba(14,165,233,0.3)', next: '🚚 จัดส่งแล้ว' },
-  delivered: { label: '🚚 จัดส่งแล้ว', color: '#a855f7', bg: 'rgba(168,85,247,0.1)', border: 'rgba(168,85,247,0.3)', next: '✅ ยืนยันรับ' },
-  received:  { label: '✅ รับแล้ว', color: '#22c55e', bg: 'rgba(34,197,94,0.1)', border: 'rgba(34,197,94,0.3)', next: null },
+  requested: { label: '🔔 เรียกแล้ว', color: 'var(--amber)', bg: 'var(--amber-dim)', border: 'var(--amber-line)', next: '🔧 เริ่มเตรียม' },
+  preparing: { label: '🔧 กำลังเตรียม', color: 'var(--blue)', bg: 'var(--blue-dim)', border: 'var(--blue-line)', next: '🚚 จัดส่งแล้ว' },
+  delivered: { label: '🚚 จัดส่งแล้ว', color: 'var(--blue)', bg: 'var(--blue-dim)', border: 'var(--blue-line)', next: '✅ ยืนยันรับ' },
+  received:  { label: '✅ รับแล้ว', color: 'var(--green)', bg: 'var(--green-dim)', border: 'var(--green-line)', next: null },
 };
 /* ⚠️ กฎของบอร์ดสโตร์ (2026-08-25 · user: "ใช้งานยากมาก · ดูรก · ระบบ filter ก็ไม่ดี")
    1. **ตัวเลขบนแท็บต้องเท่ากับจำนวนการ์ดที่เห็น** — เดิมแท็บนับเฉพาะงานค้าง แต่ลิสต์ render ทุกแถวที่โหลดมา
@@ -1392,7 +1393,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
                 statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
                 actionLabel={canOperate ? nextLabel : null} busy={busy === w.id} onAction={() => onAdvanceWip(w)}
                 footerExtra={canOperate && onCancelWip && orphanOrderReq(w) ? (
-                  <button onClick={() => onCancelWip(w)} disabled={busy === w.id} style={storeBtn('secondary', { width: '100%', marginTop: 6 })}>✕ ยกเลิกใบเบิกนี้ (ใบผลิตปิดแล้ว)</button>
+                  <button onClick={() => onCancelWip(w)} disabled={busy === w.id} style={storeBtn('secondary', { width: '100%', marginTop: 6 })}>ยกเลิกใบเบิกนี้ (ใบผลิตปิดแล้ว)</button>
                 ) : null}
                 rows={[{ k: 'ที่มา', v: src.label },
                      { k: w.source === 'store_forecast' ? 'เปิดใบ' : 'ไลน์แจ้ง',
@@ -1468,7 +1469,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
           padding: '7px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
           background: showDone ? 'var(--bg2)' : 'var(--accent)', color: showDone ? 'var(--text2)' : '#08130a',
           border: `1px solid ${showDone ? 'var(--border)' : 'var(--accent)'}`,
-        }}>{showDone ? '📋 ทั้งหมด (รวมที่เสร็จแล้ว)' : '⏳ เฉพาะงานค้าง'}</button>
+        }}>{showDone ? 'ทั้งหมด (รวมที่เสร็จแล้ว)' : 'เฉพาะงานค้าง'}</button>
       </FilterBar>
 
       {store === 'fg' && (<>
@@ -1594,7 +1595,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
               options={PURCHASE_FILTERS.map(f => ({ value: f.key, label: f.label }))} />
           </FilterBar>
           {purchaseErr && (
-            <div style={{ fontSize: 12, color: '#ef4444', fontWeight: 700, marginBottom: 10 }}>🔴 โหลดคิวจัดซื้อไม่ได้ — {purchaseErr}</div>
+            <div style={{ fontSize: 12, color: 'var(--red)', fontWeight: 700, marginBottom: 10 }}>🔴 โหลดคิวจัดซื้อไม่ได้ — {purchaseErr}</div>
           )}
           {purGroups.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
             {purchaseRequests.length === 0 ? 'ยังไม่มีรายการจัดซื้อ — เกิดอัตโนมัติเมื่อของซื้อ (300/500) ในสโตร์ไม่พอต่อแผนผลิต' : `ไม่มีรายการที่ตรงกับตัวกรอง${q ? ` / คำค้น "${q}"` : ''}`}
@@ -1649,8 +1650,8 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
             return (
               <QueueCard key={r.id} code={r.raw_mat_no} name={r.part_name} showImg img={imgOf(r.raw_mat_no)}
                 qty={fmt(r.qty)} unit="" qtyLabel="จำนวนที่ต้องจ่าย" destination={parentLot?.source_line || '—'}
-                statusLabel={issued ? '✔ จ่ายแล้ว' : '🆕 รอจ่าย'} statusColor={issued ? '#22c55e' : '#f59e0b'}
-                statusBg={issued ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)'} statusBorder={issued ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}
+                statusLabel={issued ? '✔ จ่ายแล้ว' : '🆕 รอจ่าย'} statusColor={issued ? 'var(--green)' : 'var(--amber)'}
+                statusBg={issued ? 'var(--green-dim)' : 'var(--amber-dim)'} statusBorder={issued ? 'var(--green-line)' : 'var(--amber-line)'}
                 actionLabel={issued || !canOperate ? null : 'จ่ายวัตถุดิบ'} busy={busy === r.id} onAction={() => onIssueRaw(r)}
                 rows={[{ k: 'ใช้กับ', v: r.lot_request_id ? parentLot?.child_mat_no || null : null }]} />
             );
@@ -1662,7 +1663,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
           {hiddenNote}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>👁️ แสดงคิวภาชนะ/Packaging แบบอ่านอย่างเดียว — เลื่อนสถานะ/จ่ายที่หน้า Rack Center (เจ้าของเดียว กันแข่งกันเขียน)</span>
-            <Link to="/rack-center" style={{ fontSize: 12, fontWeight: 800, color: '#0ea5e9', textDecoration: 'none', padding: '5px 12px', borderRadius: 8, border: '1px solid rgba(14,165,233,0.4)', background: 'rgba(14,165,233,0.08)', whiteSpace: 'nowrap' }}>
+            <Link to="/rack-center" style={{ fontSize: 12, fontWeight: 800, color: 'var(--blue)', textDecoration: 'none', padding: '5px 12px', borderRadius: 8, border: '1px solid var(--blue-line)', background: 'var(--blue-dim)', whiteSpace: 'nowrap' }}>
               🗃️ จัดการที่ Rack Center →
             </Link>
           </div>
@@ -1689,8 +1690,8 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
                 return (
                   <QueueCard key={p.id} code={p.packaging_code} name={p.packaging_name}
                     qty={p.qty} unit="" qtyLabel="จำนวนที่เบิก" destination={p.source_line || '—'}
-                    statusLabel={issued ? '✔ จ่ายแล้ว' : '🆕 รอจ่าย'} statusColor={issued ? '#22c55e' : '#f59e0b'}
-                    statusBg={issued ? 'rgba(34,197,94,0.1)' : 'rgba(245,158,11,0.1)'} statusBorder={issued ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}
+                    statusLabel={issued ? '✔ จ่ายแล้ว' : '🆕 รอจ่าย'} statusColor={issued ? 'var(--green)' : 'var(--amber)'}
+                    statusBg={issued ? 'var(--green-dim)' : 'var(--amber-dim)'} statusBorder={issued ? 'var(--green-line)' : 'var(--amber-line)'}
                     actionLabel={null} busy={busy === p.id}
                     rows={[
                       { k: 'สินค้า', v: p.product_name || null },
@@ -3045,7 +3046,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
             <div style={{
               marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 8, padding: '4px 10px',
               borderRadius: 999, fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
-              background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.35)', color: '#f59e0b',
+              background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--amber)',
             }}>
               📅 กำลังดูวันที่ {workDate} (ไม่ใช่วันงานปัจจุบัน)
               <button onClick={() => setWorkDate(liveWorkDate)} style={{
@@ -3074,7 +3075,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
         {MAT_PREFIXES.map(m => (
           <button key={m.prefix} onClick={() => setMatFilter(matFilter === m.prefix ? '' : m.prefix)} style={{
             padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
-            background: matFilter === m.prefix ? `${m.color}28` : 'var(--bg2)',
+            background: matFilter === m.prefix ? `${tint(m.color, 'dim')}` : 'var(--bg2)',
             color: matFilter === m.prefix ? m.color : 'var(--text2)',
             border: `1px solid ${matFilter === m.prefix ? m.color : 'var(--border)'}`,
           }}>{m.label}</button>
@@ -3083,7 +3084,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
         <button onClick={exportCSV} style={{
           padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700,
           background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)',
-        }}>⬇ CSV</button>
+        }}>CSV</button>
       </FilterBar>
 
       {/* Summary — แถบเดียว ไม่ใช่การ์ดใหญ่ 4 ใบ (2026-08-25: หัวหน้าสโตร์ทักว่าหัวหน้าเพจกินครึ่งจอ
@@ -3099,7 +3100,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
           </span>
         ))}
         {view.noBom.length > 0 && (
-          <span onClick={() => setShowNoBom(v => !v)} style={{ fontSize: 12, fontWeight: 800, color: '#f59e0b', cursor: 'pointer', marginLeft: 'auto' }}>
+          <span onClick={() => setShowNoBom(v => !v)} style={{ fontSize: 12, fontWeight: 800, color: 'var(--amber)', cursor: 'pointer', marginLeft: 'auto' }}>
             {showNoBom ? '▾' : '▸'} ⚠️ Product ไม่มี BOM <b style={{ fontSize: 17, fontFamily: 'var(--font-display)' }}>{view.noBom.length}</b>
           </span>
         )}
@@ -3107,11 +3108,11 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
 
       {/* No-BOM warning — พับไว้ (12 ชิป 2 แถวดันเนื้อหาลงไปฟรีๆ) แต่ตัวเลขบนแถบสรุปยังเห็นเสมอ */}
       {view.noBom.length > 0 && showNoBom && (
-        <div style={{ ...card, borderColor: 'rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.05)', marginBottom: 12, padding: '12px 16px' }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b', marginBottom: 6 }}>⚠️ มีแผนผลิตที่ยังแตกพาร์ทย่อยไม่ได้ — product เหล่านี้ยังไม่มี BOM</div>
+        <div style={{ ...card, borderColor: 'var(--amber-line)', background: 'var(--amber-dim)', marginBottom: 12, padding: '12px 16px' }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)', marginBottom: 6 }}>⚠️ มีแผนผลิตที่ยังแตกพาร์ทย่อยไม่ได้ — product เหล่านี้ยังไม่มี BOM</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {view.noBom.map(p => (
-              <span key={p.mat_no || p.name} style={chip('rgba(245,158,11,0.12)', '#f59e0b')}>
+              <span key={p.mat_no || p.name} style={chip('var(--amber-dim)', 'var(--amber)')}>
                 {p.name} · แผน {fmt(p.qty)} ชิ้น
               </span>
             ))}
@@ -3138,8 +3139,8 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
       }}>
         <span style={{
           fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 999, whiteSpace: 'nowrap',
-          background: viewAct ? 'rgba(34,197,94,0.12)' : 'rgba(148,163,184,0.14)',
-          color: viewAct ? '#22c55e' : 'var(--muted)',
+          background: viewAct ? 'var(--green-dim)' : 'rgba(148,163,184,0.14)',
+          color: viewAct ? 'var(--green)' : 'var(--muted)',
         }}>{viewAct ? '🖐 กดทำงานได้' : '👁️ ดูอย่างเดียว'}</span>
         <span style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 600 }}>
           {isOps ? VIEW_META[viewMode]?.purpose : (VIEW_META[viewMode]?.monitor || VIEW_META[viewMode]?.purpose)}
@@ -3224,9 +3225,9 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
                     </th>
                   ))}
                   <th style={{ padding: '10px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'right' }}>Gross</th>
-                  <th style={{ padding: '10px 12px', fontSize: 11, fontWeight: 800, color: '#22c55e', textAlign: 'right' }}>📦 Stock</th>
+                  <th style={{ padding: '10px 12px', fontSize: 11, fontWeight: 800, color: 'var(--green)', textAlign: 'right' }}>📦 Stock</th>
                   <th style={{ padding: '10px 12px', fontSize: 11, fontWeight: 800, color: 'var(--accent)', textAlign: 'right' }}>NET</th>
-                  <th style={{ padding: '10px 12px', fontSize: 11, fontWeight: 800, color: '#f59e0b', textAlign: 'right' }}>🎴 KANBAN</th>
+                  <th style={{ padding: '10px 12px', fontSize: 11, fontWeight: 800, color: 'var(--amber)', textAlign: 'right' }}>🎴 KANBAN</th>
                 </tr>
               </thead>
               <tbody>
@@ -3241,7 +3242,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
                           <div style={{ minWidth: 0 }}>
                             <MatLabel mat={r.mat_no} name={r.part_name} />
                             {r.supplier && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.supplier}</div>}
-                            {stockCovered && <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>✓ stock พอ</div>}
+                            {stockCovered && <div style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>✓ stock พอ</div>}
                           </div>
                         </div>
                       </td>
@@ -3253,17 +3254,17 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
                       <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', textAlign: 'right', fontSize: 13, color: 'var(--muted)' }}>
                         {fmt(r.grossTotal)}
                       </td>
-                      <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', textAlign: 'right', fontSize: 13, fontWeight: 700, color: '#22c55e' }}>
+                      <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', textAlign: 'right', fontSize: 13, fontWeight: 700, color: 'var(--green)' }}>
                         {r.totalStock > 0 ? fmt(r.totalStock) : '—'}
                       </td>
-                      <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', textAlign: 'right', fontSize: 15, fontWeight: 900, color: stockCovered ? '#22c55e' : 'var(--accent)' }}>
+                      <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', textAlign: 'right', fontSize: 15, fontWeight: 900, color: stockCovered ? 'var(--green)' : 'var(--accent)' }}>
                         {stockCovered ? '✓ พอ' : fmt(r.netTotal)} <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{r.uom}</span>
                       </td>
                       <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)', textAlign: 'right' }}>
                         {stockCovered
-                          ? <span style={chip('rgba(34,197,94,0.1)', '#22c55e')}>ไม่ต้องเบิก</span>
+                          ? <span style={chip('var(--green-dim)', 'var(--green)')}>ไม่ต้องเบิก</span>
                           : per
-                            ? <span style={chip('rgba(245,158,11,0.12)', '#f59e0b')}>{Math.ceil(r.netTotal / per)} ใบ × {per}</span>
+                            ? <span style={chip('var(--amber-dim)', 'var(--amber)')}>{Math.ceil(r.netTotal / per)} ใบ × {per}</span>
                             : <span style={{ fontSize: 11, color: 'var(--muted)' }}>ไม่มี std</span>}
                       </td>
                     </tr>
@@ -3365,7 +3366,7 @@ function ReceiveModal({ round, parts, mode, fmt, saving, onCancel, onSubmit }) {
           <button onClick={onCancel} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>ยกเลิก</button>
           <button onClick={() => onSubmit(actual)} disabled={saving}
             style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: mode === 'full' ? '#22c55e' : '#f59e0b', color: '#08130a', cursor: 'pointer', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
-            {saving ? '...' : mode === 'full' ? '✔️ ยืนยันรับครบ' : '⚠️ บันทึกรับไม่ครบ'}
+            {saving ? '...' : mode === 'full' ? 'ยืนยันรับครบ' : 'บันทึกรับไม่ครบ'}
           </button>
         </div>
       </div>

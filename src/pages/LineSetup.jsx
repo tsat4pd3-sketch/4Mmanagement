@@ -34,6 +34,7 @@ import { uploadOpts } from '../utils/storageUpload';
 import SearchInput from '../components/SearchInput';
 import { DeleteButton } from '../components/IconButton';
 import { isGifFile, GIF_MAX_BYTES, GIF_TOO_BIG_MSG } from '../utils/imageFileKind';   // ตัวตรวจชนิดไฟล์ + เพดาน GIF = จุดเดียว
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ลำดับแท็บมาตรฐานทั้งระบบ: คน → เครื่องจักร (ตามลำดับ 4M: Man, Machine) ให้ตรงกับปุ่ม filter
    MAN/MACHINE ที่หน้า Management — UI-CONVENTIONS §1
@@ -48,10 +49,10 @@ const TABS = [
 
 
 const SKILL_CAT_META = {
-  hard_skill:    { label: 'Hard Skill',    color: '#ef4444', icon: '🔧', desc: 'ทักษะการทำงานรูปแบบต่างๆ' },
-  machine_skill: { label: 'Machine Skill', color: '#f97316', icon: '⚙️', desc: 'ใช้ ปรับตั้ง ควบคุมเครื่องจักร' },
-  product_skill: { label: 'Product Skill', color: '#3b82f6', icon: '📦', desc: 'คุณภาพกระบวนการผลิต' },
-  soft_skill:    { label: 'Soft Skill',    color: '#a855f7', icon: '🧠', desc: 'หลักการคิด ระบบการทำงาน' },
+  hard_skill:    { label: 'Hard Skill',    color: 'var(--red)', icon: '🔧', desc: 'ทักษะการทำงานรูปแบบต่างๆ' },
+  machine_skill: { label: 'Machine Skill', color: 'var(--amber)', icon: '⚙️', desc: 'ใช้ ปรับตั้ง ควบคุมเครื่องจักร' },
+  product_skill: { label: 'Product Skill', color: 'var(--blue)', icon: '📦', desc: 'คุณภาพกระบวนการผลิต' },
+  soft_skill:    { label: 'Soft Skill',    color: 'var(--blue)', icon: '🧠', desc: 'หลักการคิด ระบบการทำงาน' },
 };
 
 // กล่องตำแหน่งในหน้า setup นี้เป็นแค่ "หมุด" บอกตำแหน่งจริงบนผัง ไม่ใช่ขนาดการ์ดที่ใช้แสดงผลจริง
@@ -1039,8 +1040,8 @@ export default function LineSetup({ embedded = false } = {}) {
           ))}
           {canEdit && (
             <>
-              <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={{ ...undoBtnStyle(hist.canUndo && !hist.busy), marginLeft: 'auto' }} title="ย้อนกลับ — จุดบนผังไลน์นี้ (Ctrl+Z)">↩️ Undo</button>
-              <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title="ทำซ้ำ (Ctrl+Y)">↪️ Redo</button>
+              <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={{ ...undoBtnStyle(hist.canUndo && !hist.busy), marginLeft: 'auto' }} title="ย้อนกลับ — จุดบนผังไลน์นี้ (Ctrl+Z)">Undo</button>
+              <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title="ทำซ้ำ (Ctrl+Y)">Redo</button>
             </>
           )}
           <button
@@ -1054,7 +1055,7 @@ export default function LineSetup({ embedded = false } = {}) {
               background: showPills ? 'var(--accent-dim)' : 'var(--bg2)',
               color: showPills ? 'var(--accent)' : 'var(--text2)',
             }}>
-            {showPills ? '🏷️ ซ่อนป้าย' : '🏷️ โชว์ป้าย'}
+            {showPills ? 'ซ่อนป้าย' : 'โชว์ป้าย'}
             <ToggleDot on={showPills} />
           </button>
         </div>
@@ -1089,7 +1090,7 @@ export default function LineSetup({ embedded = false } = {}) {
               {collisionWarn && (
                 <div style={{
                   position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)',
-                  background: 'rgba(245,158,11,0.95)', color: '#fff',
+                  background: 'var(--amber-line)', color: '#fff',
                   padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
                   zIndex: 20, boxShadow: 'var(--shadow-float)',   // ป้ายเตือนลอยทับรูปผังจริง
                   whiteSpace: 'nowrap', pointerEvents: 'none',
@@ -1100,7 +1101,7 @@ export default function LineSetup({ embedded = false } = {}) {
               {usingParentLayout && (
                 <div style={{
                   position: 'absolute', top: 8, left: 8,
-                  background: 'rgba(77,159,255,0.92)', color: '#fff',
+                  background: 'var(--blue-line)', color: '#fff',
                   padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700,
                   zIndex: 20, boxShadow: 'var(--shadow-float)', pointerEvents: 'none',
                 }}>
@@ -1130,8 +1131,8 @@ export default function LineSetup({ embedded = false } = {}) {
                       position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
                       width: MK, height: MK, borderRadius: '50%',
                       border: isSelected ? '2px solid var(--green)' : '2px solid rgba(255,255,255,0.75)',
-                      backgroundColor: isSelected ? 'rgba(34,197,94,0.18)' : 'rgba(0,0,0,0.82)',
-                      boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
+                      backgroundColor: isSelected ? 'var(--green-dim)' : 'rgba(0,0,0,0.82)',
+                      boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isSelected ? '0 0 8px var(--green-line)' : '0 2px 6px rgba(0,0,0,0.6)',
                       cursor: isDragging ? 'grabbing' : 'grab', display: 'flex',
                       touchAction: canEdit ? 'none' : undefined,   // โหมดแก้ไข: กันจอ scroll ระหว่างลากหมุดบนจอทัช
                       alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto',
@@ -1146,7 +1147,7 @@ export default function LineSetup({ embedded = false } = {}) {
                         {st.station_name}
                       </div>
                       {st.skill_allowance && (
-                        <div style={{ ...pillSt, fontSize: badgeFont, color: '#22c55e', fontWeight: 800 }}>
+                        <div style={{ ...pillSt, fontSize: badgeFont, color: 'var(--green)', fontWeight: 800 }}>
                           💰 {st.skill_allowance_type || ''}
                         </div>
                       )}
@@ -1178,8 +1179,8 @@ export default function LineSetup({ embedded = false } = {}) {
                     const x2 = parseFloat(to.pos_left), y2 = parseFloat(to.pos_top);
                     return (
                       <g key={link.id}>
-                        <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#f97316" strokeWidth={0.4} />
-                        <circle cx={x2} cy={y2} r={1} fill="#f97316" />
+                        <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="var(--amber)" strokeWidth={0.4} />
+                        <circle cx={x2} cy={y2} r={1} fill="var(--amber)" />
                       </g>
                     );
                   })}
@@ -1200,9 +1201,9 @@ export default function LineSetup({ embedded = false } = {}) {
                     style={{
                       position: 'absolute', top, left, transform: 'translate(-50%, -50%)',
                       width: SUB, height: SUB, borderRadius: '50%',
-                      border: isConnectSource ? '2px solid #f97316' : isSelected ? '2px solid var(--green)' : p.redundancy_group ? '2px dashed #a855f7' : '2px solid rgba(255,255,255,0.75)',
-                      backgroundColor: isConnectSource ? 'rgba(249,115,22,0.22)' : isSelected ? 'rgba(34,197,94,0.18)' : p.redundancy_group ? 'rgba(168,85,247,0.15)' : 'rgba(0,0,0,0.82)',
-                      boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isConnectSource ? '0 0 8px rgba(249,115,22,0.7)' : isSelected ? '0 0 8px rgba(34,197,94,0.5)' : '0 2px 6px rgba(0,0,0,0.6)',
+                      border: isConnectSource ? '2px solid var(--amber)' : isSelected ? '2px solid var(--green)' : p.redundancy_group ? '2px dashed var(--blue)' : '2px solid rgba(255,255,255,0.75)',
+                      backgroundColor: isConnectSource ? 'var(--amber-dim)' : isSelected ? 'var(--green-dim)' : p.redundancy_group ? 'var(--blue-dim)' : 'rgba(0,0,0,0.82)',
+                      boxShadow: isDragging ? '0 0 10px rgba(61,214,92,0.7)' : isConnectSource ? '0 0 8px var(--amber-line)' : isSelected ? '0 0 8px var(--green-line)' : '0 2px 6px rgba(0,0,0,0.6)',
                       cursor: isDragging ? 'grabbing' : connectMode ? 'pointer' : 'grab', display: 'flex',
                       touchAction: canEdit ? 'none' : undefined,   // โหมดแก้ไข: กันจอ scroll ระหว่างลากหมุดบนจอทัช
                       alignItems: 'center', justifyContent: 'center', pointerEvents: 'auto',
@@ -1212,7 +1213,7 @@ export default function LineSetup({ embedded = false } = {}) {
                     <span style={{ fontSize: subPinIconSz, lineHeight: 1 }}>⚙️</span>
                     {(pillsOn || isSelected || isConnectSource) && (
                       <div style={{ ...pillStackSt, ...pillEdgeStyle(pillEdgeAlign(left, { pillW: subPillMaxW, mapW: imgBox?.rw || 0 })) }}>
-                        <div style={{ ...subPillSt, color: isConnectSource ? '#f97316' : isSelected ? 'var(--green)' : '#fff' }}>
+                        <div style={{ ...subPillSt, color: isConnectSource ? 'var(--amber)' : isSelected ? 'var(--green)' : '#fff' }}>
                           {p.machine_no}
                         </div>
                         {mc?.machine_name && (
@@ -1275,7 +1276,7 @@ export default function LineSetup({ embedded = false } = {}) {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
               <span style={{ ...labelSt, marginBottom: 0 }}>🏭 ไลน์ที่กำลังตั้งค่า</span>
-              {mpDirty && <span style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b', marginLeft: 'auto' }}>● ยังไม่บันทึก</span>}
+              {mpDirty && <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--amber)', marginLeft: 'auto' }}>● ยังไม่บันทึก</span>}
             </div>
             <LineSelect lines={lines} value={selectedLine} onChange={selectLine} placeholder="เลือกไลน์…" includeSupport
               style={{ width: '100%', fontSize: 13, fontWeight: 700, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--accent)' }} />
@@ -1350,7 +1351,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   ) : (
                     <span style={{ fontSize: 13, flex: 1, minWidth: 0, color: selectedLine === l.name ? 'var(--accent)' : 'var(--text)', fontWeight: selectedLine === l.name ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {l.name}
-                      {l._orphan && <span style={{ fontSize: 11, color: '#ef4444', marginLeft: 4 }}>!parent missing</span>}
+                      {l._orphan && <span style={{ fontSize: 11, color: 'var(--red)', marginLeft: 4 }}>!parent missing</span>}
                     </span>
                   )}
                   {editingLineId === l.id ? (
@@ -1442,8 +1443,8 @@ export default function LineSetup({ embedded = false } = {}) {
               {/* ลบได้เฉพาะผังของตัวเอง — ผังที่ยืมจากไลน์แม่ไม่มีปุ่ม (ของแม่ ไปลบที่ไลน์แม่) */}
               {!usingParentLayout && (
                 <button onClick={handleDeleteLayout}
-                  style={{ fontSize: 12, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-body)' }}>
-                  🗑 ลบรูปผังนี้{lines.find(l => l.name === selectedLine)?.parent_line_name ? ' (กลับไปใช้ผังไลน์แม่)' : ''}
+                  style={{ fontSize: 12, color: 'var(--red)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-body)' }}>
+                  ลบรูปผังนี้{lines.find(l => l.name === selectedLine)?.parent_line_name ? ' (กลับไปใช้ผังไลน์แม่)' : ''}
                 </button>
               )}
               <label style={{ fontSize: 12, color: 'var(--blue)', cursor: 'pointer' }}>
@@ -1477,7 +1478,7 @@ export default function LineSetup({ embedded = false } = {}) {
                       if (catSkills.length === 0) return null;
                       return (
                         <div key={catKey}>
-                          <div style={{ marginBottom: 4, paddingBottom: 3, borderBottom: `1px solid ${catMeta.color}33`, display: 'flex', alignItems: 'baseline', gap: 7 }}>
+                          <div style={{ marginBottom: 4, paddingBottom: 3, borderBottom: `1px solid ${tint(catMeta.color, 'dim')}`, display: 'flex', alignItems: 'baseline', gap: 7 }}>
                             <span style={{ fontSize: 11, fontWeight: 800, color: catMeta.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{catMeta.icon} {catMeta.label}</span>
                             {catMeta.desc && <span style={{ fontSize: 11, color: catMeta.color, opacity: 0.7 }}>{catMeta.desc}</span>}
                           </div>
@@ -1488,7 +1489,7 @@ export default function LineSetup({ embedded = false } = {}) {
                                 <div key={skill.name} style={{
                                   display: 'flex', alignItems: 'center', gap: 6,
                                   padding: '5px 8px', borderRadius: 6,
-                                  background: checked ? `${catMeta.color}12` : 'var(--bg3)',
+                                  background: checked ? `${tint(catMeta.color, 'dim')}` : 'var(--bg3)',
                                   border: `1px solid ${checked ? catMeta.color + '55' : 'var(--border)'}`,
                                 }}>
                                   <input type="checkbox" style={{ width: 'auto', flexShrink: 0 }}
@@ -1517,13 +1518,13 @@ export default function LineSetup({ embedded = false } = {}) {
                 )}
                 {/* skill allowance toggle */}
                 <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
-                  background: formData.skill_allowance ? 'rgba(34,197,94,0.1)' : 'var(--bg3)',
-                  border: `1.5px solid ${formData.skill_allowance ? 'rgba(34,197,94,0.4)' : 'var(--border2)'}` }}>
+                  background: formData.skill_allowance ? 'var(--green-dim)' : 'var(--bg3)',
+                  border: `1.5px solid ${formData.skill_allowance ? 'var(--green-line)' : 'var(--border2)'}` }}>
                   <input type="checkbox" checked={formData.skill_allowance}
                     onChange={e => setFormData({ ...formData, skill_allowance: e.target.checked })}
-                    style={{ width: 16, height: 16, accentColor: '#22c55e' }} />
+                    style={{ width: 16, height: 16, accentColor: 'var(--green)' }} />
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: formData.skill_allowance ? '#22c55e' : 'var(--text2)' }}>💰 จุดงานได้ค่าฝีมือ</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: formData.skill_allowance ? 'var(--green)' : 'var(--text2)' }}>💰 จุดงานได้ค่าฝีมือ</div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>พนักงานที่ถูก assign จุดนี้จะได้ค่าฝีมือรายวัน</div>
                   </div>
                 </label>
@@ -1567,7 +1568,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   <div onClick={() => canEdit && editStation(st)} style={{ cursor: canEdit ? 'pointer' : 'default', flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 5 }}>
                       {st.station_name}
-                      {st.skill_allowance && <span style={{ fontSize: 11, background: 'rgba(34,197,94,0.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>💰 ค่าฝีมือ{st.skill_allowance_type ? ` (${st.skill_allowance_type})` : ''}</span>}
+                      {st.skill_allowance && <span style={{ fontSize: 11, background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>💰 ค่าฝีมือ{st.skill_allowance_type ? ` (${st.skill_allowance_type})` : ''}</span>}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                       {reqs.length > 0
@@ -1663,7 +1664,7 @@ export default function LineSetup({ embedded = false } = {}) {
                         <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{p.machine_no}</div>
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{mc?.machine_name || ''}</div>
                         {p.redundancy_group && (
-                          <div style={{ fontSize: 11, color: '#a855f7', fontWeight: 700, marginTop: 2 }}>🔀 {p.redundancy_group}</div>
+                          <div style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700, marginTop: 2 }}>🔀 {p.redundancy_group}</div>
                         )}
                       </div>
                       {canDel && <DeleteButton onClick={() => deleteMachinePoint(p.id)} title="ลบจุดเครื่องจักร" />}
@@ -1684,11 +1685,11 @@ export default function LineSetup({ embedded = false } = {}) {
                     style={{
                       position: 'relative', flexShrink: 0,
                       padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-                      border: `1px solid ${connectMode ? '#f97316' : 'var(--border2)'}`,
-                      background: connectMode ? 'rgba(249,115,22,0.18)' : 'var(--bg2)',
-                      color: connectMode ? '#f97316' : 'var(--text2)',
+                      border: `1px solid ${connectMode ? 'var(--amber)' : 'var(--border2)'}`,
+                      background: connectMode ? 'var(--amber-dim)' : 'var(--bg2)',
+                      color: connectMode ? 'var(--amber)' : 'var(--text2)',
                     }}>
-                    {connectMode ? '✓ กำลังเชื่อม' : '🔗 เชื่อมต่อ'}
+                    {connectMode ? 'กำลังเชื่อม' : 'เชื่อมต่อ'}
                     <ToggleDot on={connectMode} />
                   </button>
                 )}>
@@ -1697,7 +1698,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   เครื่องที่ <b>ไม่เชื่อม</b> ถือว่าทำงานแบบ Parallel — Downtime จะกระทบแค่เครื่องนั้นเครื่องเดียว
                 </Hint>
                 {connectMode && (
-                  <div style={{ fontSize: 11, color: '#f97316', background: 'rgba(249,115,22,0.1)', padding: '8px 10px', borderRadius: 8, marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, color: 'var(--amber)', background: 'var(--amber-dim)', padding: '8px 10px', borderRadius: 8, marginBottom: 10 }}>
                     {connectFrom
                       ? `คลิกเครื่องจักรเครื่องที่ 2 บนรูปเพื่อเชื่อมจาก ${machinePoints.find(p => p.id === connectFrom)?.machine_no || ''}`
                       : 'คลิกเครื่องจักรเครื่องแรกบนรูปเพื่อเริ่มเชื่อมสายงาน'}
@@ -1730,14 +1731,14 @@ export default function LineSetup({ embedded = false } = {}) {
             title={<>⚙️ ตั้งค่าไลน์ <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)' }}>· กำลังคน + คุณสมบัติไลน์</span></>}
             right={canEdit && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                {mpDirty && <span style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b' }}>● ยังไม่บันทึก</span>}
+                {mpDirty && <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--amber)' }}>● ยังไม่บันทึก</span>}
                 <button onClick={handleSaveStdManpower} disabled={mpSaving || !mpDirty}
                   title={mpDirty ? 'บันทึกการตั้งค่าไลน์นี้' : 'ยังไม่มีอะไรเปลี่ยน'}
                   style={{ padding: '6px 14px', background: mpSaving || !mpDirty ? 'var(--bg3)' : 'var(--accent)',
                     color: mpSaving || !mpDirty ? 'var(--muted)' : '#fff',
                     border: `1px solid ${mpSaving || !mpDirty ? 'var(--border2)' : 'var(--accent)'}`,
                     borderRadius: 7, fontWeight: 700, fontSize: 12, cursor: mpDirty && !mpSaving ? 'pointer' : 'default' }}>
-                  {mpSaving ? 'กำลังบันทึก...' : '💾 บันทึก'}
+                  {mpSaving ? 'กำลังบันทึก...' : 'บันทึก'}
                 </button>
               </div>
             )}>
@@ -1845,7 +1846,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   เพราะ role ของบัญชี = ชุดสิทธิ์ใช้ระบบ ไม่ใช่ตำแหน่งงาน (กฎ CLAUDE.md) */}
               {lineHeads.conflicts.length > 0 && (
                 <div style={{ marginTop: 6, padding: '7px 10px', borderRadius: 8, fontSize: 11.5,
-                  background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', color: 'var(--text)' }}>
+                  background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--text)' }}>
                   <div style={{ fontWeight: 700, color: 'var(--amber)', marginBottom: 3 }}>
                     ⚠️ บัญชีผู้ใช้กับทะเบียนพนักงานไม่ตรงกัน {lineHeads.conflicts.length} รายการ
                   </div>
@@ -1957,7 +1958,7 @@ export default function LineSetup({ embedded = false } = {}) {
                 </div>
                 {flowMode === 'parallel_machine' && !(parseInt(parallelStations) > 0) && (
                   // ⚠️ ไลน์เครื่องขนานที่ไม่ตั้ง N = ผังรวมคำนวณกำลังผลิตไม่ได้ ต้องถอยไปสูตรอัตราตามเวลา — ห้ามปล่อยเงียบ
-                  <div style={{ fontSize: 11, lineHeight: 1.45, color: '#f59e0b', background: '#f59e0b14', border: '1px solid #f59e0b44', borderRadius: 6, padding: '6px 8px', marginTop: 6 }}>
+                  <div style={{ fontSize: 11, lineHeight: 1.45, color: 'var(--amber)', background: 'var(--amber)14', border: '1px solid var(--amber)44', borderRadius: 6, padding: '6px 8px', marginTop: 6 }}>
                     ⚠️ ไลน์นี้ตั้งเป็น "เครื่องขนาน" แต่ยังไม่ได้กรอก N — ระบบไม่รู้ว่าเดินกี่เครื่องพร้อมกัน
                     จึงคิด "ควรผลิตได้ตอนนี้" จากสัดส่วนเวลาที่ผ่านไปแทน (หยาบกว่า) และหัก Downtime เต็มเหมือนไลน์เครื่องเดียว
                   </div>
@@ -1971,7 +1972,7 @@ export default function LineSetup({ embedded = false } = {}) {
             {canEdit && selLineObj && (
               <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12, marginTop: 4, padding: '8px 10px',
                 borderTop: '1px solid var(--border)', paddingTop: 12,
-                color: selLineObj.is_active === false ? '#f59e0b' : 'var(--muted)', cursor: 'pointer' }}>
+                color: selLineObj.is_active === false ? 'var(--amber)' : 'var(--muted)', cursor: 'pointer' }}>
                 <input type="checkbox" checked={selLineObj.is_active === false} onChange={e => handleToggleRetire(e.target.checked)} />
                 <span>⏸ ปลดระวางไลน์นี้ {selLineObj.is_active === false
                   ? '(ไม่โผล่ให้เลือกใหม่แล้ว · ข้อมูลเก่ายังอ่านได้)'
@@ -2020,7 +2021,7 @@ function Hint({ children, label = 'คำอธิบาย' }) {
       <button type="button" onClick={() => setOpen(v => !v)}
         style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer',
           fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-body)', textDecoration: 'underline dotted' }}>
-        {open ? '▴ ซ่อนคำอธิบาย' : `(?) ${label}`}
+        {open ? 'ซ่อนคำอธิบาย' : `(?) ${label}`}
       </button>
       {open && (
         <div style={{ fontSize: 11, lineHeight: 1.45, color: 'var(--muted)', background: 'var(--bg2)',

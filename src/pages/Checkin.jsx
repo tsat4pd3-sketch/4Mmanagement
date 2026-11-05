@@ -1343,7 +1343,7 @@ export default function Checkin() {
                                 onClick={() => unborrowEmployee(emp)}
                                 title="ยกเลิกยืมตัว — คืนกลับไลน์เดิม"
                                 style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)' }}
-                              >✕ คืน</button>
+                              >คืน</button>
                             )}
                           </div>
                         )}
@@ -2109,7 +2109,7 @@ export default function Checkin() {
               <button onClick={() => setShowOtBookModal(false)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>
               <button onClick={handleSaveOtBookModal} disabled={otBookSaving || !otBookLineId || !canRecord}
                 style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: otBookSaving || !otBookLineId ? 'not-allowed' : 'pointer', opacity: otBookSaving || !otBookLineId ? 0.6 : 1 }}>
-                {otBookSaving ? '⏳ กำลังบันทึก...' : 'บันทึกการจอง'}
+                {otBookSaving ? 'กำลังบันทึก...' : 'บันทึกการจอง'}
               </button>
             </div>
           </div>
@@ -2149,7 +2149,7 @@ export default function Checkin() {
               <button onClick={() => setShowExport(false)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>
               <button onClick={handleExportForms} disabled={exporting}
                 style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer' }}>
-                {exporting ? '⏳ กำลังสร้าง...' : '⬇ สร้าง PDF'}
+                {exporting ? 'กำลังสร้าง...' : 'สร้าง PDF'}
               </button>
             </div>
           </div>

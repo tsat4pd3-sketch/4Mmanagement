@@ -454,12 +454,10 @@ export default function ShiftOrganize() {
       {/* Header — PageHeader เว้นที่ให้ 🔔 (fixed top-right) เอง ไม่ทับปุ่ม 💾 บันทึก */}
       <PageHeader title="ตารางกะการทำงาน" icon="🗓"
         actions={(canEdit || canEditDept) && pendingCount > 0 ? (
-          <button
+          <button type="button" className="pg-btn primary"
             onClick={handleSave}
-            disabled={isSaving}
-            style={{ padding: '10px 22px', background: isSaving ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 14 }}
-          >
-            {isSaving ? '⏳ กำลังบันทึก...' : `💾 บันทึก (${pendingCount} รายการ)`}
+            disabled={isSaving}>
+            {isSaving ? 'กำลังบันทึก...' : `บันทึก (${pendingCount} รายการ)`}
           </button>
         ) : null} />
 
@@ -468,7 +466,7 @@ export default function ShiftOrganize() {
            — ปุ่มไม่โผล่เพราะ role ไม่มี `shift_schedule:edit` แต่หน้าจอไม่ได้บอกเลย
            คนเลยเข้าใจว่าระบบพัง/ทำไม่เสร็จ = ความล้มเหลวแบบเงียบ) */}
       {!canEdit && canEditDept && (
-        <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '10px 12px', marginBottom: 14, fontSize: 12.5, lineHeight: 1.65 }}>
+        <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 8, padding: '10px 12px', marginBottom: 14, fontSize: 12.5, lineHeight: 1.65 }}>
           🏢 <b>บัญชีนี้แก้ได้เฉพาะตาราง “หน่วยงานสนับสนุน”</b>{myUnit ? <> — เฉพาะหน่วยงาน <b>{mySection}</b></> : ''} (ตารางล่าง) — ตารางกะไลน์ผลิตด้านบนดูได้อย่างเดียว
           <div style={{ color: 'var(--text2)', marginTop: 3 }}>
             {!myUnit && <>ยังไม่ได้ตั้ง “หน่วยงาน” ให้บัญชีนี้ → แก้ได้ทุกหน่วยงานที่เห็น ·
@@ -498,9 +496,9 @@ export default function ShiftOrganize() {
         {canEditDept && (
           <button onClick={() => setShowAutoFill(true)}
             title="ต่อรอบสลับกะที่ตั้งไว้แล้วไปข้างหน้า — ไม่ทับสัปดาห์ที่ตั้งไว้ และต้องดู preview ก่อนยืนยัน"
-            style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid rgba(77,159,255,0.5)',
-              background: 'rgba(77,159,255,0.12)', color: '#4d9fff', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
-            🔁 เติมกะล่วงหน้า
+            style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid var(--blue-line)',
+              background: 'var(--blue-dim)', color: 'var(--blue)', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
+            เติมกะล่วงหน้า
           </button>
         )}
       </div>
@@ -520,8 +518,8 @@ export default function ShiftOrganize() {
       {noShiftLines.length > 0 && (
         <div style={{
           padding: '10px 14px', borderRadius: 8, marginBottom: 10,
-          background: noShiftPeople ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.08)',
-          border: `1px solid ${noShiftPeople ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.25)'}`,
+          background: noShiftPeople ? 'var(--red-dim)' : 'var(--amber-dim)',
+          border: `1px solid ${noShiftPeople ? 'var(--red-line)' : 'var(--amber-line)'}`,
           fontSize: 12.5, color: noShiftPeople ? 'var(--red)' : 'var(--amber)',
         }}>
           ⚠️ <strong>{noShiftLines.length} ไลน์ยังไม่มีกะในสัปดาห์นี้</strong>
@@ -567,7 +565,7 @@ export default function ShiftOrganize() {
                   <td style={{ fontWeight: 600, fontSize: 14 }}>
                     {line.name}
                     {following && team && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, color: 'var(--muted)' }} title={`ตามไลน์แม่ (${parentName})`}>↳ ตามไลน์แม่</span>}
-                    {isChild && !following && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#f59e0b' }} title="ตั้งกะเอง ไม่ตามไลน์แม่">✎ แก้เอง</span>}
+                    {isChild && !following && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: 'var(--amber)' }} title="ตั้งกะเอง ไม่ตามไลน์แม่">✎ แก้เอง</span>}
                     {/* 🔴 ไม่มีกะ + มีคนอยู่ = คนกลุ่มนั้นกะไม่ขึ้นทั้งใบเช็คชื่อ/กำลังคน — ต้องเห็นที่แถว ไม่ใช่แค่ขีด — */}
                     {!team && (empCountByLine[line.id] || 0) > 0 && (
                       <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 800, color: 'var(--red)' }}
@@ -582,10 +580,10 @@ export default function ShiftOrganize() {
                       <span style={{
                         display: 'inline-block', padding: '5px 20px', borderRadius: 7,
                         fontSize: 14, fontWeight: 800,
-                        background: team === 'A' ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.15)',
-                        color:      team === 'A' ? '#22c55e'              : '#f59e0b',
+                        background: team === 'A' ? 'var(--green-dim)' : 'var(--amber-dim)',
+                        color:      team === 'A' ? 'var(--green)'              : 'var(--amber)',
                         border: isPending
-                          ? `2px solid ${team === 'A' ? '#22c55e' : '#f59e0b'}`
+                          ? `2px solid ${team === 'A' ? 'var(--green)' : 'var(--amber)'}`
                           : '1px solid transparent',
                       }}>
                         Team {team}
@@ -599,8 +597,8 @@ export default function ShiftOrganize() {
                       <span style={{
                         display: 'inline-block', padding: '5px 20px', borderRadius: 7,
                         fontSize: 14, fontWeight: 800,
-                        background: night === 'A' ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.08)',
-                        color:      night === 'A' ? 'rgba(34,197,94,0.6)'  : 'rgba(245,158,11,0.6)',
+                        background: night === 'A' ? 'var(--green-dim)' : 'var(--amber-dim)',
+                        color:      night === 'A' ? 'var(--green-line)'  : 'var(--amber-line)',
                         border: '1px solid transparent',
                       }}>
                         Team {night}
@@ -616,17 +614,17 @@ export default function ShiftOrganize() {
                         style={{
                           padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
                           border: '1px solid var(--border2)',
-                          background: isPending ? 'rgba(245,158,11,0.12)' : 'var(--bg3)',
+                          background: isPending ? 'var(--amber-dim)' : 'var(--bg3)',
                           color: isPending ? 'var(--amber)' : 'var(--text2)',
                           cursor: 'pointer',
                         }}
                       >
-                        {team ? '⇄ สลับ' : '+ กำหนด'}
+                        {team ? 'สลับ' : '+ กำหนด'}
                       </button>
                       {isChild && !following && (
                         <button onClick={() => resetToParent(line.id)} title="กลับไปใช้กะตามไลน์แม่"
                           style={{ marginLeft: 6, padding: '6px 10px', borderRadius: 7, fontSize: 12, fontWeight: 600, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>
-                          ↳ ตามแม่
+                          ตามแม่
                         </button>
                       )}
                     </td>
@@ -656,7 +654,7 @@ export default function ShiftOrganize() {
             พนักงานที่ไม่ได้ผูกกับไลน์ผลิต (ช่างซ่อมบำรุง · QA · คลัง) หมุน A/B พร้อมกันทั้งแผนก
             {deptNoLineTotal > 0 && <> · ตอนนี้มี <b style={{ color: 'var(--amber)' }}>{deptNoLineTotal} คน</b> ที่ยังไม่มีกะเพราะไม่ได้ผูกไลน์</>}
             {' '}· คนที่ไม่หมุนกะให้ตั้งเป็น <b>Team C</b> (เข้ากะเช้าตลอด)
-            {!canEdit && canEditDept && myUnit && <> · <b style={{ color: '#22c55e' }}>บัญชีนี้แก้ได้เฉพาะ 🏠 {mySection}</b> หน่วยงานอื่นดูได้อย่างเดียว</>}
+            {!canEdit && canEditDept && myUnit && <> · <b style={{ color: 'var(--green)' }}>บัญชีนี้แก้ได้เฉพาะ 🏠 {mySection}</b> หน่วยงานอื่นดูได้อย่างเดียว</>}
           </div>
           <div className="card table-sticky" style={{ marginBottom: 24, overflowX: 'auto' }}>
             <table>
@@ -679,13 +677,13 @@ export default function ShiftOrganize() {
                       <td style={{ fontWeight: 600, fontSize: 14 }}>
                         {d.name}
                         {d.inOrg === undefined && (
-                          <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#f59e0b' }}
+                          <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: 'var(--amber)' }}
                             title="ชื่อแผนกนี้ไม่มีในผังองค์กร — พนักงานกรอกไว้เอง (ตั้งกะได้ปกติ แต่ควรจัดให้ตรงผังที่ /org-setup)">
                             ⚠ นอกผัง
                           </span>
                         )}
                         {d.orphan && <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--muted)' }} title="แผนกขึ้นตรงฝ่าย ไม่สังกัดส่วนงานผลิต">🏛️ ขึ้นตรงฝ่าย</span>}
-                        {isMyUnit(d) && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#22c55e' }} title="หน่วยงานที่บัญชีนี้ดูแล">🏠 หน่วยงานของฉัน</span>}
+                        {isMyUnit(d) && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: 'var(--green)' }} title="หน่วยงานที่บัญชีนี้ดูแล">🏠 หน่วยงานของฉัน</span>}
                       </td>
                       <td style={{ fontSize: 12, color: 'var(--muted)' }}>
                         {d.total} คน
@@ -695,9 +693,9 @@ export default function ShiftOrganize() {
                         {team ? (
                           <span style={{
                             display: 'inline-block', padding: '5px 20px', borderRadius: 7, fontSize: 14, fontWeight: 800,
-                            background: team === 'A' ? 'rgba(34,197,94,0.15)' : 'rgba(245,158,11,0.15)',
-                            color:      team === 'A' ? '#22c55e'              : '#f59e0b',
-                            border: isPending ? `2px solid ${team === 'A' ? '#22c55e' : '#f59e0b'}` : '1px solid transparent',
+                            background: team === 'A' ? 'var(--green-dim)' : 'var(--amber-dim)',
+                            color:      team === 'A' ? 'var(--green)'              : 'var(--amber)',
+                            border: isPending ? `2px solid ${team === 'A' ? 'var(--green)' : 'var(--amber)'}` : '1px solid transparent',
                           }}>Team {team}</span>
                         ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่กำหนด</span>}
                       </td>
@@ -705,8 +703,8 @@ export default function ShiftOrganize() {
                         {night ? (
                           <span style={{
                             display: 'inline-block', padding: '5px 20px', borderRadius: 7, fontSize: 14, fontWeight: 800,
-                            background: night === 'A' ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.08)',
-                            color:      night === 'A' ? 'rgba(34,197,94,0.6)'  : 'rgba(245,158,11,0.6)',
+                            background: night === 'A' ? 'var(--green-dim)' : 'var(--amber-dim)',
+                            color:      night === 'A' ? 'var(--green-line)'  : 'var(--amber-line)',
                             border: '1px solid transparent',
                           }}>Team {night}</span>
                         ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>—</span>}
@@ -723,10 +721,10 @@ export default function ShiftOrganize() {
                             style={{
                               padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
                               border: '1px solid var(--border2)',
-                              background: isPending ? 'rgba(245,158,11,0.12)' : 'var(--bg3)',
+                              background: isPending ? 'var(--amber-dim)' : 'var(--bg3)',
                               color: isPending ? 'var(--amber)' : 'var(--text2)', cursor: 'pointer',
                             }}>
-                            {team ? '⇄ สลับ' : '+ กำหนด'}
+                            {team ? 'สลับ' : '+ กำหนด'}
                           </button>
                           )}
                         </td>
@@ -764,9 +762,9 @@ export default function ShiftOrganize() {
         {canEdit && (
           <button
             onClick={() => { setOvrDate(weekStart); setShowOvrModal(true); }}
-            style={{ padding: '7px 16px', background: 'rgba(77,159,255,0.15)', color: 'var(--blue)', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 8, fontSize: 13, fontWeight: 600 }}
+            style={{ padding: '7px 16px', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', borderRadius: 8, fontSize: 13, fontWeight: 600 }}
           >
-            ➕ เพิ่มรายการ
+            เพิ่มรายการ
           </button>
         )}
       </div>
@@ -799,8 +797,8 @@ export default function ShiftOrganize() {
                 <td style={{ textAlign: 'center' }}>
                   <span style={{
                     padding: '3px 10px', borderRadius: 5, fontSize: 12, fontWeight: 700,
-                    background: o.shift === 'day' ? 'rgba(245,158,11,0.15)' : 'rgba(77,159,255,0.15)',
-                    color: o.shift === 'day' ? '#f59e0b' : '#4d9fff',
+                    background: o.shift === 'day' ? 'var(--amber-dim)' : 'var(--blue-dim)',
+                    color: o.shift === 'day' ? 'var(--amber)' : 'var(--blue)',
                   }}>
                     {o.shift === 'day' ? '☀️ เช้า' : '🌙 ดึก'}
                   </span>
@@ -825,9 +823,9 @@ export default function ShiftOrganize() {
         {canEdit && (
           <button
             onClick={() => { setMrgStart(weekStart); setMrgEnd(toDateStr(weekDates[6])); setShowMergeModal(true); }}
-            style={{ padding: '7px 16px', background: 'rgba(239,68,68,0.12)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: 13, fontWeight: 600 }}
+            style={{ padding: '7px 16px', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', borderRadius: 8, fontSize: 13, fontWeight: 600 }}
           >
-            ➕ สร้างเหตุการณ์ยุบกะ
+            สร้างเหตุการณ์ยุบกะ
           </button>
         )}
       </div>
@@ -862,15 +860,15 @@ export default function ShiftOrganize() {
                   <td>
                     <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{scopeLabel}</span>
                     {cnt !== null && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--muted)' }}>({cnt} คน)</span>}
-                    {isActive && <span style={{ marginLeft: 6, fontSize: 11, padding: '2px 6px', borderRadius: 4, background: 'rgba(239,68,68,0.12)', color: '#ef4444', fontWeight: 700 }}>กำลังใช้งาน</span>}
+                    {isActive && <span style={{ marginLeft: 6, fontSize: 11, padding: '2px 6px', borderRadius: 4, background: 'var(--red-dim)', color: 'var(--red)', fontWeight: 700 }}>กำลังใช้งาน</span>}
                   </td>
                   <td style={{ textAlign: 'center', fontSize: 13, whiteSpace: 'nowrap' }}>{evt.start_date}</td>
                   <td style={{ textAlign: 'center', fontSize: 13, whiteSpace: 'nowrap' }}>{evt.end_date}</td>
                   <td style={{ textAlign: 'center' }}>
                     <span style={{
                       padding: '3px 10px', borderRadius: 5, fontSize: 12, fontWeight: 700,
-                      background: evt.target_shift === 'day' ? 'rgba(245,158,11,0.15)' : 'rgba(77,159,255,0.15)',
-                      color: evt.target_shift === 'day' ? '#f59e0b' : '#4d9fff',
+                      background: evt.target_shift === 'day' ? 'var(--amber-dim)' : 'var(--blue-dim)',
+                      color: evt.target_shift === 'day' ? 'var(--amber)' : 'var(--blue)',
                     }}>
                       {evt.target_shift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'}
                     </span>
@@ -910,7 +908,7 @@ export default function ShiftOrganize() {
                         background: mrgScope === s ? 'var(--accent-dim)' : 'var(--bg3)',
                         color: mrgScope === s ? 'var(--accent)' : 'var(--text2)',
                       }}>
-                      {s === 'section' ? '🏭 Section' : '📋 ไลน์เดียว'}
+                      {s === 'section' ? 'Section' : 'ไลน์เดียว'}
                     </button>
                   ))}
                 </div>
@@ -963,7 +961,7 @@ export default function ShiftOrganize() {
 
               {/* Preview */}
               {(mrgScope === 'section' ? mrgSection : mrgLineId) && (
-                <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.2)', fontSize: 12 }}>
+                <div style={{ padding: '10px 14px', borderRadius: 8, background: 'var(--red-dim)', border: '1px solid var(--red-dim)', fontSize: 12 }}>
                   <strong>ผลกระทบ:</strong>{' '}
                   {mrgScope === 'section'
                     ? `พนักงานทุกคนใน ${mrgSection} (${employees.filter(e => e.production_lines?.section === mrgSection).length} คน)`
@@ -978,7 +976,7 @@ export default function ShiftOrganize() {
                   onClick={handleAddMergeEvent}
                   disabled={!(mrgScope === 'section' ? mrgSection : mrgLineId) || !mrgStart || !mrgEnd}
                   style={{ flex: 2, padding: 11, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)', opacity: !(mrgScope === 'section' ? mrgSection : mrgLineId) ? 0.5 : 1 }}>
-                  ✅ ยืนยันยุบกะ
+                  ยืนยันยุบกะ
                 </button>
                 <button onClick={() => setShowMergeModal(false)}
                   style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8 }}>

@@ -43,6 +43,7 @@ import { loadBreakPolicies } from '../utils/oeeMasters';
 import { fetchAllRows } from '../utils/fetchAllRows';
 import SearchInput from '../components/SearchInput';
 import { urlPick, urlBool, urlParam } from '../utils/urlInit';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* เกณฑ์ "อัตราการมาทำงาน" ของจอนี้ — การ์ดบนสุดกับการ์ดรายไลน์ต้องใช้ชุดเดียวกัน (2026-10-19)
    เดิมการ์ดไลน์ตัดที่ 80% และเอา 4M มาปนสีมาทำงาน ⇒ ไลน์มา 91% ขึ้น "⚠ Risk" · มา 82% ขึ้น "✓ Normal" */
@@ -123,7 +124,7 @@ function ThumbMap({ imageUrl, alt, markers }) {
                     className={m.personAlarm ? (m.personAlarm.kind === 'red' ? 'person-alarm-red' : 'person-alarm-amber') : undefined}
                     style={{
                       width: 26, height: 26, borderRadius: '50%',
-                      border: `2px solid ${m.color}`, boxShadow: `0 0 6px ${m.color}88`,
+                      border: `2px solid ${m.color}`, boxShadow: `0 0 6px ${tint(m.color, 'line')}`,
                       overflow: 'hidden', background: 'var(--bg)',
                     }}>
                     {m.img
@@ -974,7 +975,7 @@ export default function Dashboard({ view = 'timeline' }) {
     <div className="page-content" style={{ maxWidth: '100%' }}>
       {!isPeople && <DowntimeSiren mode="open_15min" />}
       {prodErr && (
-        <div role="alert" style={{ margin: '0 0 12px', padding: '10px 14px', borderRadius: 10, border: '1px solid #ef444488', background: '#ef444414', color: 'var(--red)', fontSize: 14, fontWeight: 700 }}>
+        <div role="alert" style={{ margin: '0 0 12px', padding: '10px 14px', borderRadius: 10, border: '1px solid var(--red)88', background: 'var(--red)14', color: 'var(--red)', fontSize: 14, fontWeight: 700 }}>
           {prodErr}
         </div>
       )}
@@ -1055,7 +1056,7 @@ export default function Dashboard({ view = 'timeline' }) {
           {tvScroll && !isMobile && (
             <button type="button" onClick={() => setScrollMode(false)}
               style={{ padding: '7px 12px', borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-              📺 กลับเป็นหมุนหน้า
+              กลับเป็นหมุนหน้า
             </button>
           )}
         </motion.div>
@@ -1085,12 +1086,12 @@ export default function Dashboard({ view = 'timeline' }) {
           <button className="tv-hide" onClick={() => setSelectedShift('all')} style={{
             padding: '6px 12px', borderRadius: 8, border: '1px solid var(--amber-line)',
             background: 'transparent', color: 'var(--amber)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-          }}>👁 ดูรวมทุกกะ</button>
+          }}>ดูรวมทุกกะ</button>
           {canAccessPage('/shift-organize', role) && (
             <button onClick={() => navigate('/shift-organize')} style={{
               padding: '6px 12px', borderRadius: 8, border: 'none',
               background: 'var(--amber)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-            }}>🗓️ ไปตั้งตารางกะ</button>
+            }}>ไปตั้งตารางกะ</button>
           )}
         </div>
       )}
@@ -1575,7 +1576,7 @@ export default function Dashboard({ view = 'timeline' }) {
                     style={{ width: 210, marginLeft: 'auto' }} inputStyle={{ fontSize: 12.5, background: 'var(--bg2)' }} />
                   {(effSel || boardQuery) && (
                     <button onClick={() => { setBoardLineSel(''); setBoardQuery(''); }}
-                      style={{ ...chip(false), color: 'var(--muted)' }}>✕ ล้างตัวกรอง</button>
+                      style={{ ...chip(false), color: 'var(--muted)' }}>ล้างตัวกรอง</button>
                   )}
                 </div>
               );
@@ -1947,8 +1948,8 @@ export default function Dashboard({ view = 'timeline' }) {
                                 style={{
                                   position: 'absolute', top: 4, bottom: 4,
                                   left: `${tailLeftPct}%`, width: `${tailWidthPct}%`,
-                                  background: 'repeating-linear-gradient(45deg, #ef444433 0px, #ef444433 4px, #ef444412 4px, #ef444412 8px)',
-                                  border: '1.5px dashed #ef4444aa', borderLeft: 'none',
+                                  background: 'repeating-linear-gradient(45deg, var(--red)33 0px, var(--red)33 4px, var(--red)12 4px, var(--red)12 8px)',
+                                  border: '1.5px dashed var(--red)aa', borderLeft: 'none',
                                   borderRadius: '0 4px 4px 0', zIndex: 1, pointerEvents: 'none',
                                 }} />
                             )}

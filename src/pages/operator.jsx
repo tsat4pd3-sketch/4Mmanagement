@@ -45,6 +45,7 @@ import SkillEvidencePanel from '../components/SkillEvidencePanel';
 import { DeleteButton } from '../components/IconButton';
 import { isMissingColumnError } from '../utils/employeeSignature';
 import { useOrgTeams } from '../utils/useOrgSections';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 // การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (/skills-report)
 // lazy: recharts โหลดเฉพาะตอนเปิดการ์ด ไม่ถ่วงตอนเปิดหน้าฐานข้อมูลพนักงาน
@@ -194,7 +195,7 @@ export default function Operator() {
   const [empCropFile, setEmpCropFile] = useState(null);
   const [empSigOpen, setEmpSigOpen] = useState(false);   // ✍️ โมดัลลายเซ็นพนักงาน (C1 · 03/11)
   const [isSaving, setIsSaving] = useState(false);
-  const [newSkill, setNewSkill] = useState({ label: '', color: '#4d9fff', category: 'hard_skill', scope_division: '', scope_section: '', allowance_type: '' });
+  const [newSkill, setNewSkill] = useState({ label: '', color: 'var(--blue)', category: 'hard_skill', scope_division: '', scope_section: '', allowance_type: '' });
   const skillColorTouched = useRef(false); // ผู้ใช้เลือกสีเองแล้ว — อย่าสุ่มทับ
   // สกิลโหลดเสร็จ → เสนอสีที่ยังไม่ซ้ำเป็นค่าตั้งต้น (เฉพาะตอนผู้ใช้ยังไม่แตะช่องสี)
   useEffect(() => {
@@ -1060,18 +1061,18 @@ export default function Operator() {
         actions={(scopeSecs.length > 0 || (isLeader && myLineName)) ? (<>
         {scopeSecs.length > 0 && (
           <div style={{
-            fontSize: 11, color: '#4d9fff', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4,
+            fontSize: 11, color: 'var(--blue)', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4,
             padding: '4px 8px', borderRadius: 6,
-            background: 'rgba(77,159,255,0.1)', border: '1px solid rgba(77,159,255,0.25)',
+            background: 'var(--blue-dim)', border: '1px solid var(--blue-line)',
           }}>
             🏢 {scopeSecs.join(', ')}
           </div>
         )}
         {isLeader && myLineName && (
           <div style={{
-            fontSize: 11, color: '#22c55e', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4,
+            fontSize: 11, color: 'var(--green)', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4,
             padding: '4px 8px', borderRadius: 6,
-            background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.25)',
+            background: 'var(--green-dim)', border: '1px solid var(--green-line)',
           }}>
             📍 {myLineName}
           </div>
@@ -1144,16 +1145,16 @@ export default function Operator() {
                 ส่วน Direct/Indirect ข้างล่าง = ประเภทแรงงานเชิงต้นทุน (derive จากแผนกในผังองค์กร) */}
             <span style={{ width: 1, height: 20, background: 'var(--border2)', margin: '0 2px' }} />
             {[
-              { k: 'shopfloor',  icon: '🧑‍🏭', label: 'หน้างาน',  color: '#22c55e', title: 'พนักงานหน้าไลน์ — เช็คชื่อ · นับเป็นกำลังคนของไลน์' },
-              { k: 'technician', icon: '🔧', label: 'ช่าง',     color: '#38bdf8', title: 'ช่างซ่อมบำรุง/จิ๊ก/แม่พิมพ์ — เช็คชื่อได้ แต่ไม่นับเป็นกำลังคนของไลน์ (ซ่อมข้ามไลน์)' },
-              { k: 'support',    icon: '🗂️', label: 'สนับสนุน', color: '#a78bfa', title: 'QA · วิศวกรรม · ธุรการ · สโตร์ — เช็คชื่อได้ ไม่นับกำลังคนของไลน์' },
+              { k: 'shopfloor',  icon: '🧑‍🏭', label: 'หน้างาน',  color: 'var(--green)', title: 'พนักงานหน้าไลน์ — เช็คชื่อ · นับเป็นกำลังคนของไลน์' },
+              { k: 'technician', icon: '🔧', label: 'ช่าง',     color: 'var(--blue)', title: 'ช่างซ่อมบำรุง/จิ๊ก/แม่พิมพ์ — เช็คชื่อได้ แต่ไม่นับเป็นกำลังคนของไลน์ (ซ่อมข้ามไลน์)' },
+              { k: 'support',    icon: '🗂️', label: 'สนับสนุน', color: 'var(--blue)', title: 'QA · วิศวกรรม · ธุรการ · สโตร์ — เช็คชื่อได้ ไม่นับกำลังคนของไลน์' },
             ].map(t => {
               const active = filterStaffKind === t.k;
               return (
                 <button key={t.k} title={t.title} onClick={() => setFilterStaffKind(active ? '' : t.k)}
                   style={{ padding: '4px 11px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
                     border: `1px solid ${active ? t.color : 'var(--border2)'}`,
-                    background: active ? `${t.color}22` : 'var(--bg3)',
+                    background: active ? `${tint(t.color, 'dim')}` : 'var(--bg3)',
                     color: active ? t.color : 'var(--muted)', transition: 'all 0.15s' }}>
                   {t.icon} {t.label}
                 </button>
@@ -1171,7 +1172,7 @@ export default function Operator() {
                 <button key={t} onClick={() => setFilterLabor(active ? '' : t)}
                   style={{ padding: '4px 11px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
                     border: `1px solid ${active ? m.color : 'var(--border2)'}`,
-                    background: active ? `${m.color}22` : 'var(--bg3)',
+                    background: active ? `${tint(m.color, 'dim')}` : 'var(--bg3)',
                     color: active ? m.color : 'var(--muted)', transition: 'all 0.15s' }}>
                   {m.icon} {m.short}
                 </button>
@@ -1183,14 +1184,14 @@ export default function Operator() {
             <SearchInput value={empSearch} onChange={setEmpSearch} fields="ชื่อ / รหัส / ตำแหน่ง" />
             <span className="spacer" />
             {empSearch && (
-              <span className="filter-count" style={{ color: displayed.length ? 'var(--accent)' : '#f59e0b', fontWeight: 700, whiteSpace: 'normal' }}>
+              <span className="filter-count" style={{ color: displayed.length ? 'var(--accent)' : 'var(--amber)', fontWeight: 700, whiteSpace: 'normal' }}>
                 {displayed.length ? `พบ ${displayed.length} คน` : `ไม่พบ "${empSearch.trim()}" — ลองคำสั้นลง หรือค้นด้วยรหัส`}
               </span>
             )}
             {(filterSection || filterDept || filterGroup || filterTeam || filterGrade || filterLabor || filterStaffKind || empSearch) && (
               <button onClick={() => { setFilterSection(''); setFilterDept(''); setFilterGroup(''); setFilterTeam(''); setFilterGrade(''); setFilterLabor(''); setFilterStaffKind(''); setEmpSearch(''); }}
                 style={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>
-                ✕ ล้าง
+                ล้าง
               </button>
             )}
           </FilterBar>
@@ -1201,12 +1202,12 @@ export default function Operator() {
               style={{
                 position: 'relative',
                 padding: '6px 12px', borderRadius: 7, border: 'none', fontSize: 12, cursor: 'pointer',
-                background: showInactive ? 'rgba(231,76,60,0.15)' : 'var(--bg3)',
+                background: showInactive ? 'var(--red-dim)' : 'var(--bg3)',
                 color: showInactive ? 'var(--red)' : 'var(--text2)',
               }}>
               {showInactive
-                ? `✅ ดูพนักงานใช้งาน (${employees.length})`
-                : `❌ ปิดใช้งาน (${inactiveEmployees.length})`}
+                ? `ดูพนักงานใช้งาน (${employees.length})`
+                : `ปิดใช้งาน (${inactiveEmployees.length})`}
               <ToggleDot on={showInactive} />
             </button>
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>· คลิกที่พนักงานเพื่อดูสรุปทักษะ (Radar Chart)</span>
@@ -1218,9 +1219,9 @@ export default function Operator() {
             <div style={{
               display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12,
               padding: '9px 12px', borderRadius: 8,
-              background: 'rgba(56,189,248,0.10)', border: '1px solid rgba(56,189,248,0.35)',
+              background: 'var(--blue-dim)', border: '1px solid var(--blue-line)',
             }}>
-              <span style={{ fontSize: 12.5, color: '#38bdf8', fontWeight: 700 }}>
+              <span style={{ fontSize: 12.5, color: 'var(--blue)', fontWeight: 700 }}>
                 📷 ยังไม่มีรูป {noPhotoCount} คน
               </span>
               <span style={{ fontSize: 11, color: 'var(--text2)' }}>
@@ -1230,10 +1231,10 @@ export default function Operator() {
               <button onClick={() => setFilterNoPhoto(v => !v)}
                 style={{
                   position: 'relative', marginLeft: 'auto',
-                  padding: '6px 12px', borderRadius: 7, border: '1px solid rgba(56,189,248,0.5)', fontSize: 12, cursor: 'pointer',
-                  background: filterNoPhoto ? 'rgba(56,189,248,0.28)' : 'transparent', color: '#38bdf8', fontWeight: 700,
+                  padding: '6px 12px', borderRadius: 7, border: '1px solid var(--blue-line)', fontSize: 12, cursor: 'pointer',
+                  background: filterNoPhoto ? 'var(--blue-line)' : 'transparent', color: 'var(--blue)', fontWeight: 700,
                 }}>
-                {filterNoPhoto ? '✅ กำลังดูเฉพาะคนที่ยังไม่มีรูป' : '🔎 ดูเฉพาะคนที่ยังไม่มีรูป'}
+                {filterNoPhoto ? 'กำลังดูเฉพาะคนที่ยังไม่มีรูป' : 'ดูเฉพาะคนที่ยังไม่มีรูป'}
                 <ToggleDot on={filterNoPhoto} ring="var(--bg)" />
               </button>
             </div>
@@ -1244,26 +1245,26 @@ export default function Operator() {
             <div style={{
               display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12,
               padding: '9px 12px', borderRadius: 8,
-              background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)',
+              background: 'var(--amber-dim)', border: '1px solid var(--amber-line)',
             }}>
-              <span style={{ fontSize: 12.5, color: '#f59e0b', fontWeight: 700 }}>
+              <span style={{ fontSize: 12.5, color: 'var(--amber)', fontWeight: 700 }}>
                 ⚠️ ข้อมูลไม่ตรงผังองค์กร {offOrgStat.total} คน
               </span>
               <span style={{ fontSize: 11, color: 'var(--text2)' }}>
                 แผนก/กลุ่มไม่มีในผัง หรือ <b>ยังไม่ผูกไลน์ (คนหน้างานที่ไม่มีไลน์จะไม่ขึ้นในหน้าเช็คชื่อ)</b> — เปิดแก้ไขแล้วเลือกใหม่จาก dropdown ได้เลย
                 · <b>ไลน์มาจาก "กลุ่ม" ไม่ใช่ "แผนก"</b> — ตั้งแผนกอย่างเดียวยังไม่พอ
                 {offOrgStat.blocked > 0 && (
-                  <> · <b style={{ color: '#f59e0b' }}>ในนี้ {offOrgStat.blocked} คน ({offOrgStat.blockedSecs.join(', ')}) แก้ที่ฟอร์มยังไม่ได้</b> —
-                    ผังยังไม่มีแผนกของส่วนงานนี้ ต้องเพิ่มที่ <Link to="/org-setup" style={{ color: '#f59e0b', fontWeight: 700 }}>ผังองค์กร</Link> ก่อน</>
+                  <> · <b style={{ color: 'var(--amber)' }}>ในนี้ {offOrgStat.blocked} คน ({offOrgStat.blockedSecs.join(', ')}) แก้ที่ฟอร์มยังไม่ได้</b> —
+                    ผังยังไม่มีแผนกของส่วนงานนี้ ต้องเพิ่มที่ <Link to="/org-setup" style={{ color: 'var(--amber)', fontWeight: 700 }}>ผังองค์กร</Link> ก่อน</>
                 )}
               </span>
               <button onClick={() => setFilterOffOrg(v => !v)}
                 style={{
                   position: 'relative', marginLeft: 'auto',
-                  padding: '6px 12px', borderRadius: 7, border: '1px solid rgba(245,158,11,0.5)', fontSize: 12, cursor: 'pointer',
-                  background: filterOffOrg ? 'rgba(245,158,11,0.28)' : 'transparent', color: '#f59e0b', fontWeight: 700,
+                  padding: '6px 12px', borderRadius: 7, border: '1px solid var(--amber-line)', fontSize: 12, cursor: 'pointer',
+                  background: filterOffOrg ? 'var(--amber-line)' : 'transparent', color: 'var(--amber)', fontWeight: 700,
                 }}>
-                {filterOffOrg ? '✅ กำลังดูเฉพาะที่ต้องแก้' : '🔎 ดูเฉพาะที่ต้องแก้'}
+                {filterOffOrg ? 'กำลังดูเฉพาะที่ต้องแก้' : 'ดูเฉพาะที่ต้องแก้'}
                 <ToggleDot on={filterOffOrg} ring="var(--bg)" />
               </button>
             </div>
@@ -1272,7 +1273,7 @@ export default function Operator() {
           {/* Scroll hint chip */}
           {!scrollState.hinted && scrollState.right && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--accent)', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 20, padding: '3px 10px' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--accent)', background: 'var(--green-dim)', border: '1px solid var(--green-line)', borderRadius: 20, padding: '3px 10px' }}>
                 ← เลื่อนดูสกิลเพิ่มเติม →
               </div>
             </div>
@@ -1396,7 +1397,7 @@ export default function Operator() {
                     <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
                       {emp.section || '—'}
                       {emp.section && (() => { const m = laborMeta(empLabor(emp)); return (
-                        <span title={m.label} style={{ marginLeft: 5, fontSize: 11, padding: '0 4px', borderRadius: 3, background: `${m.color}18`, color: m.color, border: `1px solid ${m.color}44`, fontWeight: 700 }}>{m.icon}</span>
+                        <span title={m.label} style={{ marginLeft: 5, fontSize: 11, padding: '0 4px', borderRadius: 3, background: `${tint(m.color, 'dim')}`, color: m.color, border: `1px solid ${tint(m.color, 'line')}`, fontWeight: 700 }}>{m.icon}</span>
                       ); })()}
                     </td>
                     {/* ค่าที่ไม่มีในผังองค์กรทำเป็นสีเหลืองนิ่ง + tooltip บอกเหตุผล (ไม่กระพริบ — ไม่ใช่ alarm) */}
@@ -1633,7 +1634,7 @@ export default function Operator() {
               </div>
               <button onClick={handleAddSkill} disabled={isAddingSkill || !newSkill.label.trim()}
                 style={{ padding: '9px 24px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: 'pointer', opacity: (!newSkill.label.trim() || isAddingSkill) ? 0.5 : 1 }}>
-                {isAddingSkill ? 'กำลังบันทึก...' : '➕ เพิ่มสกิล'}
+                {isAddingSkill ? 'กำลังบันทึก...' : 'เพิ่มสกิล'}
               </button>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
                 🔑 Key สร้างอัตโนมัติแบบ UUID — ชื่อไทยหรืออักขระพิเศษใช้ได้ทั้งหมด ไม่มีการชนกัน
@@ -1715,7 +1716,7 @@ export default function Operator() {
                   <div style={{ display: 'flex', gap: 10 }}>
                     <button onClick={handleUpdateSkill}
                       style={{ flex: 2, padding: 11, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>
-                      💾 บันทึก
+                      บันทึก
                     </button>
                     <button onClick={() => setEditingSkill(null)}
                       style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
@@ -1741,7 +1742,7 @@ export default function Operator() {
                 style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
                   background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)',
                   opacity: runningWeekly ? 0.6 : 1 }}>
-                {runningWeekly ? 'กำลังรัน...' : '🔄 Run Weekly Update'}
+                {runningWeekly ? 'กำลังรัน...' : 'Run Weekly Update'}
               </button>
             )}
             {can('skills', 'run_weekly_update', role) && (
@@ -1750,13 +1751,13 @@ export default function Operator() {
                   style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
                     background: 'rgba(132,204,18,0.12)', color: '#84cc16', border: '1px solid rgba(132,204,18,0.3)',
                     opacity: expBusy ? 0.6 : 1 }}>
-                  {expBusy === 'rebuild' ? 'กำลังคำนวณ...' : '🧮 คำนวณหลักฐานใหม่'}
+                  {expBusy === 'rebuild' ? 'กำลังคำนวณ...' : 'คำนวณหลักฐานใหม่'}
                 </button>
                 <button onClick={() => runReeval(true)} disabled={!!expBusy} title="ประเมินคำขอค้างทั้งคิวตามเกณฑ์ใหม่ (ดูผลก่อน แล้วค่อยยืนยัน)"
                   style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
                     background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)',
                     opacity: expBusy ? 0.6 : 1 }}>
-                  {expBusy === 'reeval' ? 'กำลังประเมิน...' : '🧪 ประเมินคิวใหม่'}
+                  {expBusy === 'reeval' ? 'กำลังประเมิน...' : 'ประเมินคิวใหม่'}
                 </button>
                 <button onClick={toggleExpLive} disabled={!!expBusy}
                   title={expCfg?.is_enabled ? 'กำลังใช้สูตร EXP v2 กับคะแนนจริง' : 'สูตร EXP v2 คำนวณคู่ขนานอยู่ ยังไม่แตะคะแนนจริง'}
@@ -1764,7 +1765,7 @@ export default function Operator() {
                     background: expCfg?.is_enabled ? 'rgba(34,197,94,0.12)' : 'var(--bg2)',
                     color: expCfg?.is_enabled ? '#22c55e' : 'var(--muted)',
                     border: `1px solid ${expCfg?.is_enabled ? 'rgba(34,197,94,0.35)' : 'var(--border2)'}` }}>
-                  {expCfg?.is_enabled ? '🟢 EXP v2: ใช้จริง' : '⚪ EXP v2: โหมดทดลอง'}
+                  {expCfg?.is_enabled ? 'EXP v2: ใช้จริง' : 'EXP v2: โหมดทดลอง'}
                 </button>
               </>
             )}
@@ -1887,12 +1888,12 @@ export default function Operator() {
                           style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
                             background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)',
                             opacity: isReviewing ? 0.6 : 1 }}>
-                          ✅ อนุมัติ
+                          อนุมัติ
                         </button>
                         <button onClick={() => { setRejectLuModal(req); setRejectLuReason(''); }} disabled={isReviewing}
                           style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
                             background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}>
-                          ❌ ไม่อนุมัติ
+                          ไม่อนุมัติ
                         </button>
                       </div>
                     )}
@@ -2409,7 +2410,7 @@ export default function Operator() {
                     <button type="button" onClick={() => setEmpSigOpen(true)}
                       style={{ width: 'auto', padding: '6px 12px', fontSize: 12, borderRadius: 6, cursor: 'pointer',
                         background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
-                      {editingEmp.signature_url ? '✏️ เปลี่ยนลายเซ็น' : '＋ เพิ่มลายเซ็น'}
+                      {editingEmp.signature_url ? 'เปลี่ยนลายเซ็น' : '＋ เพิ่มลายเซ็น'}
                     </button>
                   )}
                 </div>
@@ -2430,7 +2431,7 @@ export default function Operator() {
               <div className="m2c-span" style={{ display: 'flex', gap: 10, marginTop: 8 }}>
                 <button type="submit" disabled={isSaving}
                   style={{ flex: 2, padding: 12, background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)' }}>
-                  {isSaving ? 'กำลังบันทึก...' : '💾 บันทึกข้อมูล'}
+                  {isSaving ? 'กำลังบันทึก...' : 'บันทึกข้อมูล'}
                 </button>
                 <button type="button" onClick={() => setEditingEmp(null)}
                   style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8 }}>

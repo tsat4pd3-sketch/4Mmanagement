@@ -43,6 +43,7 @@ import {
   buildMaintenanceLevels, summarizeItems, actionsOf, splitWindows,
   PRIORITY, TREND_META, THRESH, WINDOW,
 } from '../utils/maintenanceLevels';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
 const inp = { padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
@@ -70,7 +71,7 @@ function Chip({ color, children, title }) {
   return (
     <span title={title} style={{
       display: 'inline-block', padding: '2px 9px', borderRadius: 12, fontSize: 11.5, fontWeight: 800,
-      color, border: `1px solid ${color}66`, background: `${color}1a`, whiteSpace: 'nowrap',
+      color, border: `1px solid ${tint(color, 'line')}`, background: `${tint(color, 'dim')}`, whiteSpace: 'nowrap',
     }}>{children}</span>
   );
 }
@@ -252,7 +253,7 @@ export default function MaintenanceLevels() {
     <Page style={{ display: 'grid', gap: 14 }}>
       {/* อยู่ใต้ /pm (Hub) เท่านั้น ⇒ ชื่อหน้าถูกซ่อนโดย Hub · ใส่ไว้เพื่อให้หน้านี้ยังมีหัวถ้าเปิดเดี่ยว (UI-STANDARD §2) */}
       <PageHeader title="3 ระดับ PM" icon="🧭" />
-      {loadErr && <div style={{ ...card, borderColor: '#ef4444', color: '#ef4444', fontSize: 13, fontWeight: 700 }}>⚠️ {loadErr}</div>}
+      {loadErr && <div style={{ ...card, borderColor: 'var(--red)', color: 'var(--red)', fontSize: 13, fontWeight: 700 }}>⚠️ {loadErr}</div>}
 
       {/* ── ตัวกรอง ── */}
       <FilterBar>
@@ -263,7 +264,7 @@ export default function MaintenanceLevels() {
         ]} />
         <SearchInput value={q} onChange={setQ} fields="เลขเครื่อง / ชื่อ / ไลน์" ariaLabel="ค้นหาอุปกรณ์" />
         <span className="spacer" />
-        <button onClick={() => setReloadKey(k => k + 1)} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '0 12px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>🔄 รีเฟรช</button>
+        <button onClick={() => setReloadKey(k => k + 1)} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '0 12px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>รีเฟรช</button>
       </FilterBar>
       {/* 🔴 การ์ดสถิติ 3 ใบ = **เนื้อหา** ต้องอยู่ใต้แถบกรอง (UI-STANDARD §2.1 ลำดับตายตัว)
           ย้ายลงมา 20/10 — ตัวเลขในการ์ดก็มาจาก `sum` ที่คิดจากของที่ผ่านตัวกรองแล้ว */}
@@ -275,16 +276,16 @@ export default function MaintenanceLevels() {
             ? `ช่องว่าง: ${sum.preventive.failingNoPlan} อุปกรณ์เสีย ≥${THRESH.minStops} ครั้ง/30 วัน แต่ยังไม่มีแผน PM ที่มีรอบ`
             : 'แผนที่เป็น "ตามรอบ" ไม่มีวันครบกำหนด = ระบบเตือนล่วงหน้าไม่ได้'}>
           <Stat label="มีแผน PM" value={sum.preventive.withPlan} sub={`(มีรอบจริง ${sum.preventive.withCycle})`} />
-          <Stat label="เลยกำหนด" value={sum.preventive.overdue} color={sum.preventive.overdue ? '#ef4444' : undefined} />
+          <Stat label="เลยกำหนด" value={sum.preventive.overdue} color={sum.preventive.overdue ? 'var(--red)' : undefined} />
           <Stat label="ใกล้ครบกำหนด" value={sum.preventive.dueSoon} color={sum.preventive.dueSoon ? '#f59a3f' : undefined} />
           <Stat label="มีรอบแต่ยังไม่เคยตรวจ" value={sum.preventive.never} />
         </LevelCard>
 
-        <LevelCard step="2" title="Predictive — ดูจากข้อมูลจริง" en="Reliability-based (downtime)" color="#a855f7"
+        <LevelCard step="2" title="Predictive — ดูจากข้อมูลจริง" en="Reliability-based (downtime)" color="var(--blue)"
           question="เครื่องกำลังเสียบ่อยขึ้นไหม · จะเสียอีกเมื่อไหร่"
           foot={`เทียบ ${WINDOW.recentDays} วันล่าสุด (ตั้งแต่ ${fmtYmd(cov?.recentFrom)}) กับ ${WINDOW.baseDays} วันก่อนหน้า · ต่อชั่วโมงเดินเครื่องจริง (หักพักแล้ว)`}>
           <Stat label="วิเคราะห์ได้" value={sum.predictive.analysed} sub={sum.predictive.nodata ? `(ไม่รู้ชั่วโมงเดิน ${sum.predictive.nodata})` : ''} />
-          <Stat label="แนวโน้มแย่ลง" value={sum.predictive.worse} color={sum.predictive.worse ? '#ef4444' : undefined} />
+          <Stat label="แนวโน้มแย่ลง" value={sum.predictive.worse} color={sum.predictive.worse ? 'var(--red)' : undefined} />
           <Stat label={`คาดเสียภายใน ${THRESH.soonDays} วัน`} value={sum.predictive.etaSoon} color={sum.predictive.etaSoon ? '#f59a3f' : undefined} />
           <Stat label="ดีขึ้น" value={sum.predictive.better} color={sum.predictive.better ? '#3dd65c' : undefined} />
           <Stat label="เวลาหยุดที่คาด 30 วันข้างหน้า" value={fmtDur(sum.predictive.riskMin30)} />
@@ -319,7 +320,7 @@ export default function MaintenanceLevels() {
           return (
             <button key={`p${p}`} onClick={() => setPrio(p)} style={{
               padding: '5px 12px', borderRadius: 16, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              border: `1.5px solid ${on ? c : 'var(--border2)'}`, background: on ? `${p ? c : '#3dd65c'}1a` : 'var(--bg3)',
+              border: `1.5px solid ${on ? c : 'var(--border2)'}`, background: on ? `${tint(p ? c : '#3dd65c', 'dim')}` : 'var(--bg3)',
               color: on ? c : 'var(--muted)', marginLeft: p === 0 ? 8 : 0,
             }}>{p ? PRIORITY[p].label : ALL.priority}</button>
           );

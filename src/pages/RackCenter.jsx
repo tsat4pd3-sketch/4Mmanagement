@@ -28,6 +28,7 @@ import { LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import PartCard, { partCardGrid } from '../components/PartCard';
 import { storeBtn } from '../utils/storeUi';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ─── RACK CENTER — เรียกภาชนะ/แร็คเปล่าคืนกลับมาใช้ ──────────────────────
    ไลน์ผลิตส่งกล่อง/ถาด/แร็คเปล่ากลับ rack center → ขอภาชนะชุดใหม่กลับมาใช้
@@ -449,7 +450,7 @@ export default function RackCenter() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(260px, 100%), 1fr))', gap: 14 }}>
         {STATUS_COLS.map(col => (
           <div key={col.key} style={{ ...card, padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '12px 16px', background: 'var(--bg2)', borderBottom: `2px solid ${col.color}40`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ padding: '12px 16px', background: 'var(--bg2)', borderBottom: `2px solid ${tint(col.color, 'line')}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ fontWeight: 800, fontSize: 14, color: col.color, fontFamily: 'var(--font-display)' }}>{col.label}</div>
               <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{(byStatus[col.key] || []).length}</span>
             </div>
@@ -458,7 +459,7 @@ export default function RackCenter() {
                 <div style={{ padding: '16px 8px', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>—</div>
               ) : (
                 (byStatus[col.key] || []).map(r => (
-                  <div key={r.id} style={{ background: 'var(--bg2)', border: `1px solid ${col.color}30`, borderRadius: 10, padding: '10px 12px' }}>
+                  <div key={r.id} style={{ background: 'var(--bg2)', border: `1px solid ${tint(col.color, 'dim')}`, borderRadius: 10, padding: '10px 12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                       <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--text)' }}>📍 {r.line_name}</div>
                       <span style={{ fontSize: 11, fontWeight: 800, color: col.color }}>×{r.qty}</span>
@@ -501,7 +502,7 @@ export default function RackCenter() {
         return (
           <>
             <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: `1px solid ${col.color}66`, borderRadius: 12, boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
+            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: `1px solid ${tint(col.color, 'line')}`, borderRadius: 12, boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
               <div style={{ height: 4, background: col.color }} />
               <div style={{ padding: '10px 14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>

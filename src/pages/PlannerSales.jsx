@@ -879,7 +879,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {!canUpload && (
-        <div style={{ ...card, borderColor: 'rgba(245,158,11,0.4)', fontSize: 13, color: '#f59e0b' }}>
+        <div style={{ ...card, borderColor: 'var(--amber-line)', fontSize: 13, color: 'var(--amber)' }}>
           👁 โหมดดูอย่างเดียว — การอัพโหลดทำได้เฉพาะ role: Sale / Manager / Admin
         </div>
       )}
@@ -897,7 +897,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
             </label>
             {fileName && <span style={{ alignSelf: 'center', fontSize: 12, color: 'var(--muted)' }}>📄 {fileName} · {rows.length} แถว</span>}
             <button type="button" onClick={() => setShowFmt(v => !v)} style={{ ...btn(false), marginLeft: 'auto' }}>
-              🧩 ฟอร์แมตไฟล์ลูกค้า{fmtRows.length ? ` (${fmtRows.length})` : ''}
+              ฟอร์แมตไฟล์ลูกค้า{fmtRows.length ? ` (${fmtRows.length})` : ''}
             </button>
           </div>
 
@@ -905,7 +905,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
               (ลูกค้าที่เพิ่มไว้ในทะเบียนจะอ่านไม่ออกจนกว่าจะโหลดได้) */}
           {fmtErr && (
             <div style={{ padding: '8px 10px', borderRadius: 8, fontSize: 12, marginBottom: 8,
-              background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.5)', color: 'var(--text)' }}>
+              background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--text)' }}>
               ⚠ อ่านทะเบียนฟอร์แมตไฟล์ (<code>customer_pull_formats</code>) ไม่ได้ — ใช้ชื่อคอลัมน์ค่าสำรองในโค้ด (Ford 830/862) ·
               ไฟล์ของลูกค้าที่เพิ่มไว้ในทะเบียนจะยังอ่านไม่ออก
             </div>
@@ -916,8 +916,8 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           {showFmt && <div style={{ marginBottom: 10 }}><CustomerFileFormats canManage={canUpload} onChanged={loadFormats} /></div>}
 
           {edi && (
-            <div style={{ border: '1px solid rgba(77,159,255,0.35)', background: 'rgba(77,159,255,0.05)', borderRadius: 10, padding: 14, marginBottom: 4 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#4d9fff', marginBottom: 8 }}>
+            <div style={{ border: '1px solid var(--blue-line)', background: 'var(--blue-dim)', borderRadius: 10, padding: 14, marginBottom: 4 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--blue)', marginBottom: 8 }}>
                 📡 EDI {ediKind === 'orders' ? '862 — Shipping Schedule (รอบส่งงาน)' : '830 — Planning Forecast'}
               </div>
 
@@ -928,10 +928,10 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
               <div style={{
                 display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10,
                 padding: '8px 10px', borderRadius: 8, fontSize: 12,
-                background: edi.kindGuess?.sure ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.12)',
-                border: `1px solid ${edi.kindGuess?.sure ? 'rgba(34,197,94,0.35)' : 'rgba(245,158,11,0.5)'}`,
+                background: edi.kindGuess?.sure ? 'var(--green-dim)' : 'var(--amber-dim)',
+                border: `1px solid ${edi.kindGuess?.sure ? 'var(--green-line)' : 'var(--amber-line)'}`,
               }}>
-                <span style={{ color: edi.kindGuess?.sure ? '#22c55e' : '#f59e0b', fontWeight: 700 }}>
+                <span style={{ color: edi.kindGuess?.sure ? 'var(--green)' : 'var(--amber)', fontWeight: 700 }}>
                   {edi.kindGuess?.sure ? '✓ ระบบอ่านชนิดได้' : '⚠️ ระบบแยกชนิดไม่ชัด'}
                 </span>
                 <span style={{ color: 'var(--text2)' }}>{edi.kindGuess?.reason}</span>
@@ -942,16 +942,16 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                       onClick={() => setEdi(e => ({ ...e, kindForced: k }))}
                       style={{
                         padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
-                        border: `1px solid ${ediKind === k ? '#4d9fff' : 'var(--border)'}`,
-                        background: ediKind === k ? 'rgba(77,159,255,0.18)' : 'transparent',
-                        color: ediKind === k ? '#4d9fff' : 'var(--text2)',
+                        border: `1px solid ${ediKind === k ? 'var(--blue)' : 'var(--border)'}`,
+                        background: ediKind === k ? 'var(--blue-dim)' : 'transparent',
+                        color: ediKind === k ? 'var(--blue)' : 'var(--text2)',
                         fontWeight: ediKind === k ? 800 : 500,
                       }}>{label}</button>
                   ))}
                 </span>
               </div>
               {edi.skipped > 0 && (
-                <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 8 }}>
+                <div style={{ fontSize: 12, color: 'var(--amber)', marginBottom: 8 }}>
                   ℹ️ ข้าม {edi.skipped} แถว — ส่วนใหญ่คือบรรทัดที่ลูกค้าส่งยอด 0 (ปกติของ EDI) · จะผิดก็ต่อเมื่อ
                   “จับคู่พาร์ทได้” ด้านบนต่ำผิดปกติด้วย
                 </div>
@@ -970,14 +970,14 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                 <span title="แทนที่เฉพาะชุดที่อยู่ในไฟล์ · dock/พาร์ทที่ไม่ได้ส่งมา = ไม่มีอัพเดท เก็บของเดิม · วันที่หายกลางช่วงของชุด = ยกเลิก">
                   🔁 อัพเดท {new Set(edi.records.map(r => `${r.shipTo}|${ediKind === 'orders' ? (r.dock || '') : ''}|${r.part}`)).size} ชุด (ที่เหลือคงเดิม)
                 </span>
-                <span style={{ color: edi.unmatched.length ? '#f59e0b' : '#22c55e' }}>
+                <span style={{ color: edi.unmatched.length ? 'var(--amber)' : 'var(--green)' }}>
                   🔗 จับคู่พาร์ทได้ {edi.records.length - edi.records.filter(r => edi.unmatched.includes(r.part)).length}/{edi.records.length}
                 </span>
               </div>
               {/* 📊 ยอดค้างตาม Cum (ship-to ที่ใช้ e-SMART) — ไม่สร้างใบ แต่ต้องเห็นตัวเลข (ห้ามทิ้งเงียบ) */}
               {ediKind === 'orders' && edi.catchUp?.length > 0 && (
                 <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 8, padding: '8px 10px', borderRadius: 8,
-                  background: 'rgba(77,159,255,0.08)', border: '1px solid rgba(77,159,255,0.3)' }}>
+                  background: 'var(--blue-dim)', border: '1px solid var(--blue-line)' }}>
                   📊 <strong>ยอดค้างตาม Cum ของลูกค้า {edi.catchUp.length} รายการ</strong> (แถววันออกไฟล์ที่ไม่มีเวลา = Cum ที่ลูกค้าต้องการ − Cum ที่ลูกค้ารับแล้ว)
                   — <strong>ไม่สร้างเป็นใบส่ง</strong> เพราะ {[...new Set(edi.catchUp.map(r => r.shipTo))].map(c => custLabel ? custLabel(c) : c).join(', ')} ใช้ e-SMART ดึงเป็นเที่ยวจริงอยู่แล้ว
                   <div style={{ marginTop: 4, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -988,7 +988,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                 </div>
               )}
               {ediKind === 'orders' && edi.pullErr && (
-                <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 8 }}>
+                <div style={{ fontSize: 12, color: 'var(--amber)', marginBottom: 8 }}>
                   ⚠️ อ่านตารางรอบ e-SMART ไม่ได้ ({edi.pullErr}) — รอบนี้จะสร้างแถวยอดค้างตาม Cum เป็นใบส่งเหมือนเดิม
                 </div>
               )}
@@ -1003,7 +1003,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={doImportEdi} disabled={saving}
                   style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
-                  {saving ? 'กำลังนำเข้า...' : '⬆ ยืนยันนำเข้า EDI'}
+                  {saving ? 'กำลังนำเข้า...' : 'ยืนยันนำเข้า EDI'}
                 </button>
                 <button onClick={() => setEdi(null)} style={{ ...btn(false) }}>ยกเลิก</button>
               </div>
@@ -1045,7 +1045,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
               </div>
               <button onClick={doImport} disabled={saving}
                 style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
-                {saving ? 'กำลังนำเข้า...' : `⬆ นำเข้าข้อมูล ${kind === 'forecast' ? 'Forecast' : 'Orders'}`}
+                {saving ? 'กำลังนำเข้า...' : `นำเข้าข้อมูล ${kind === 'forecast' ? 'Forecast' : 'Orders'}`}
               </button>
             </>
           )}
@@ -1063,7 +1063,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                   <span style={{ color: 'var(--muted)' }}> · {b.row_count} แถว · {b.uploaded_by} · {new Date(b.uploaded_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}</span>
                 </div>
                 {canUpload && (
-                  <button onClick={() => deleteBatch(b)} style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', flexShrink: 0, fontFamily: 'var(--font-body)' }}>🗑 ลบ</button>
+                  <button onClick={() => deleteBatch(b)} style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', flexShrink: 0, fontFamily: 'var(--font-body)' }}>ลบ</button>
                 )}
               </div>
             ))}
@@ -1165,8 +1165,8 @@ function PlannerTab({ refreshKey, custLabel }) {
                 <YAxis tickFormatter={fmtAxis} width="auto" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
                 <Tooltip contentStyle={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, fontSize: 12 }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="Forecast" fill="#4d9fff" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Orders" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Forecast" fill="var(--blue)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Orders" fill="var(--green)" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -1190,9 +1190,9 @@ function PlannerTab({ refreshKey, custLabel }) {
             { label: `≈ วันผลิต (${HOURS_PER_DAY} ชม./วัน/ไลน์)`, value: fmt(totalLoadHours / HOURS_PER_DAY), icon: '📅' },
             ...(noCtCount ? [{ label: 'พาร์ทไม่มี cycle time', value: noCtCount, icon: '⚠️', warn: true }] : []),
           ].map(c => (
-            <div key={c.label} style={{ flex: '1 1 150px', background: 'var(--bg2)', border: `1px solid ${c.warn ? 'rgba(245,158,11,0.4)' : 'var(--border)'}`, borderRadius: 8, padding: '8px 12px' }}>
+            <div key={c.label} style={{ flex: '1 1 150px', background: 'var(--bg2)', border: `1px solid ${c.warn ? 'var(--amber-line)' : 'var(--border)'}`, borderRadius: 8, padding: '8px 12px' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{c.icon} {c.label}</div>
-              <div style={{ fontSize: 20, fontWeight: 900, color: c.warn ? '#f59e0b' : 'var(--text)', fontFamily: 'var(--font-display)' }}>{c.value}</div>
+              <div style={{ fontSize: 20, fontWeight: 900, color: c.warn ? 'var(--amber)' : 'var(--text)', fontFamily: 'var(--font-display)' }}>{c.value}</div>
             </div>
           ))}
         </div>
@@ -1213,12 +1213,12 @@ function PlannerTab({ refreshKey, custLabel }) {
                       <div style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace' }}>MAT {r.mat_no}</div>
                     </td>
                     <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--text2)' }}>{r.customer ? (custLabel ? custLabel(r.customer) : r.customer) : '—'}</td>
-                    <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 13, fontWeight: 700, textAlign: 'right', color: '#4d9fff' }}>{fmt(r.forecast)}</td>
-                    <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 13, fontWeight: 700, textAlign: 'right', color: '#22c55e' }}>{fmt(r.ordered)}</td>
+                    <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 13, fontWeight: 700, textAlign: 'right', color: 'var(--blue)' }}>{fmt(r.forecast)}</td>
+                    <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 13, fontWeight: 700, textAlign: 'right', color: 'var(--green)' }}>{fmt(r.ordered)}</td>
                     <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 12, fontWeight: 800, textAlign: 'right', color: r.coverage == null ? 'var(--muted)' : r.coverage > 110 ? '#ef4444' : r.coverage >= 80 ? '#22c55e' : '#f59e0b' }}>
                       {r.coverage == null ? '—' : `${fmt(r.coverage)}%`}
                     </td>
-                    <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 12, fontWeight: 700, textAlign: 'right', color: r.loadHours == null ? '#f59e0b' : 'var(--text)' }}>
+                    <td style={{ padding: '7px 12px', borderTop: '1px solid var(--border)', fontSize: 12, fontWeight: 700, textAlign: 'right', color: r.loadHours == null ? 'var(--amber)' : 'var(--text)' }}>
                       {r.loadHours == null ? 'ไม่มี CT' : fmt(r.loadHours)}
                     </td>
                   </tr>
@@ -1644,7 +1644,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
         🔎 แยกพาร์ทตาม <b style={{ color: 'var(--text2)' }}>กระบวนการผลิต (process_type)</b> — {calcType === 'production'
           ? <>แท็บนี้แสดงเฉพาะงาน <b style={{ color: 'var(--text2)' }}>ปั๊ม/ผลิตเป็น lot (metal_forming)</b> · งานปั๊มที่ขายตรงเป็น FG ก็อยู่ที่นี่ (ดูกระบวนการ ไม่ดูเลข MAT)</>
           : <>แท็บนี้แสดงงาน <b style={{ color: 'var(--text2)' }}>เบิกถอน/ประกอบ</b> (ไม่ใช่ปั๊ม)</>}
-        {otherProcCount > 0 && <> · <span style={{ color: '#f59e0b' }}>ซ่อน {otherProcCount} พาร์ทที่เป็นอีกกระบวนการ</span> (อยู่อีกแท็บ)</>}
+        {otherProcCount > 0 && <> · <span style={{ color: 'var(--amber)' }}>ซ่อน {otherProcCount} พาร์ทที่เป็นอีกกระบวนการ</span> (อยู่อีกแท็บ)</>}
         {' '}· ตั้ง process_type ต่อพาร์ทที่ Product Master
       </div>
 
@@ -1660,24 +1660,24 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
         )}
         <span className="filter-label">เดือน Forecast ที่ใช้คำนวณ</span>
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
-        <span className="filter-label">📅 วันทำงาน/เดือน <span style={{ color: '#0ea5e9' }}>(จากปฏิทิน)</span></span>
+        <span className="filter-label">📅 วันทำงาน/เดือน <span style={{ color: 'var(--blue)' }}>(จากปฏิทิน)</span></span>
         {/* ช่องตัวเลขสั้น — คงความกว้างไว้ (ค่าตั้งต้นของเบราว์เซอร์กว้างเกินตัวเลข 2-3 หลัก) */}
         <input type="number" value={settings.working_days} onChange={e => setSettings(s => ({ ...s, working_days: e.target.value }))} style={{ width: 80 }} />
         {calcType === 'withdrawal' ? (<>
           <span className="filter-label">Efficiency %</span>
           <input type="number" value={settings.efficiency_pct} onChange={e => setSettings(s => ({ ...s, efficiency_pct: e.target.value }))} style={{ width: 80 }} />
         </>) : (<>
-          <span className="filter-label">⏱ ชม.ทำงาน/วัน <span style={{ color: '#0ea5e9' }}>(คิด capacity)</span></span>
+          <span className="filter-label">⏱ ชม.ทำงาน/วัน <span style={{ color: 'var(--blue)' }}>(คิด capacity)</span></span>
           <input type="number" value={settings.hours_per_day} onChange={e => setSettings(s => ({ ...s, hours_per_day: e.target.value }))} style={{ width: 80 }} />
         </>)}
-        {canApply && <button onClick={saveSettings} style={btn(false)}>💾 ค่ากลาง</button>}
+        {canApply && <button onClick={saveSettings} style={btn(false)}>ค่ากลาง</button>}
         <span className="spacer" />
-        <span className="filter-count">{rows.length} พาร์ท · <b style={{ color: '#f59e0b' }}>{changedRows.length}</b> เปลี่ยน</span>
+        <span className="filter-count">{rows.length} พาร์ท · <b style={{ color: 'var(--amber)' }}>{changedRows.length}</b> เปลี่ยน</span>
         {canApply && (
           <button onClick={() => setPreview(changedRows)} disabled={changedRows.length === 0}
-            style={{ ...btn(changedRows.length > 0), opacity: changedRows.length ? 1 : 0.5 }}>🎴 Preview &amp; Apply</button>
+            style={{ ...btn(changedRows.length > 0), opacity: changedRows.length ? 1 : 0.5 }}>Preview &amp; Apply</button>
         )}
-        <button onClick={exportCSV} disabled={rows.length === 0} style={{ ...btn(false), opacity: rows.length ? 1 : 0.5 }}>⬇ CSV</button>
+        <button onClick={exportCSV} disabled={rows.length === 0} style={{ ...btn(false), opacity: rows.length ? 1 : 0.5 }}>CSV</button>
       </FilterBar>
 
       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
@@ -1688,13 +1688,13 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
 
       {/* CAP/ชม. ที่กรอก vs กำลังจริงจาก OEE — ไม่แทนค่าให้เอง แต่ต้องเห็นว่าห่างกันแค่ไหน */}
       {capGap.length > 0 && (
-        <div style={{ ...card, marginBottom: 12, borderColor: '#f59e0b', background: 'rgba(245,158,11,0.06)', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ ...card, marginBottom: 12, borderColor: 'var(--amber)', background: 'var(--amber-dim)', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ fontSize: 22 }}>⚡</span>
           <div style={{ flex: 1, minWidth: 220 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>{capGap.length} พาร์ท CAP/ชม. ที่กรอก ห่างจากกำลังจริง ≥ 20%</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)' }}>{capGap.length} พาร์ท CAP/ชม. ที่กรอก ห่างจากกำลังจริง ≥ 20%</div>
             <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
               ช่อง CAP/ชม. ตั้งต้นเป็น <b>กำลังทางทฤษฎี</b> (3600 ÷ CT) ซึ่งไม่หัก downtime/ของเสีย ·
-              ตัวเลข <b style={{ color: '#f59e0b' }}>จริง ~</b> ใต้ช่อง = (3600 ÷ CT) × OEE จริงของไลน์นั้น (กะที่ปิดแล้ว 90 วัน) <b>คลิกเพื่อใช้ค่านั้น</b>
+              ตัวเลข <b style={{ color: 'var(--amber)' }}>จริง ~</b> ใต้ช่อง = (3600 ÷ CT) × OEE จริงของไลน์นั้น (กะที่ปิดแล้ว 90 วัน) <b>คลิกเพื่อใช้ค่านั้น</b>
               <div style={{ marginTop: 2 }}>⚠️ ระบบ<b>ไม่แทนค่าให้เอง</b> — จะวางแผนด้วยกำลังทฤษฎีหรือกำลังจริงเป็นการตัดสินใจของผู้วางแผน</div>
             </div>
           </div>
@@ -1703,16 +1703,16 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
 
       {/* (#2) แจ้งเตือนพาร์ทที่จับคู่เลข SAP ไม่ได้ */}
       {unmapped.length > 0 && (
-        <div style={{ ...card, marginBottom: 12, borderColor: '#f59e0b', background: 'rgba(245,158,11,0.06)', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ ...card, marginBottom: 12, borderColor: 'var(--amber)', background: 'var(--amber-dim)', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ fontSize: 22 }}>⚠️</span>
           <div style={{ flex: 1, minWidth: 200 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>{unmapped.length} พาร์ทจับคู่เลข SAP ภายในไม่ได้ (forecast โชว์เป็นเลขพาร์ทลูกค้า)</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)' }}>{unmapped.length} พาร์ทจับคู่เลข SAP ภายในไม่ได้ (forecast โชว์เป็นเลขพาร์ทลูกค้า)</div>
             <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
               ยังไม่มีใน Product Master (dr_products) → คำนวณ kanban ไม่ได้ และ Store/Planner จะไม่ sync จนกว่าจะจับคู่ p_no
-              {Object.keys(suggestByCust).length > 0 && <span style={{ color: '#22c55e', fontWeight: 700 }}> · 💡 ระบบแนะนำได้ {Object.keys(suggestByCust).length} พาร์ท (ตัด revision เทียบ base)</span>}
+              {Object.keys(suggestByCust).length > 0 && <span style={{ color: 'var(--green)', fontWeight: 700 }}> · 💡 ระบบแนะนำได้ {Object.keys(suggestByCust).length} พาร์ท (ตัด revision เทียบ base)</span>}
             </div>
           </div>
-          {canApply && <button onClick={openMapModal} style={{ ...btn(true) }}>🔗 จับคู่เลข SAP</button>}
+          {canApply && <button onClick={openMapModal} style={{ ...btn(true) }}>จับคู่เลข SAP</button>}
         </div>
       )}
 
@@ -1730,7 +1730,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                     <th key={h.t} title={h.tip || ''} style={{ padding: '6px 8px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'center', whiteSpace: 'nowrap', textTransform: 'uppercase', cursor: h.tip ? 'help' : undefined }}>
                       <div>{h.t}{h.tip ? ' ⓘ' : ''}</div>
                       {/* หน่วยต้องเห็นตลอด ห้ามซ่อนใน tooltip — คนกรอกไม่มีทางรู้ว่าช่องนี้เป็นใบหรือชิ้น */}
-                      {h.u && <div style={{ fontSize: 11, fontWeight: 600, color: h.u === 'ใบ' ? '#f59e0b' : 'var(--muted)', textTransform: 'none', opacity: 0.9 }}>({h.u})</div>}
+                      {h.u && <div style={{ fontSize: 11, fontWeight: 600, color: h.u === 'ใบ' ? 'var(--amber)' : 'var(--muted)', textTransform: 'none', opacity: 0.9 }}>({h.u})</div>}
                     </th>
                   ))}
                 </tr>
@@ -1739,19 +1739,19 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                 {rows.map(row => {
                   const { r, ks } = row;
                   return (
-                    <tr key={row.mat} style={{ background: row.changed ? 'rgba(245,158,11,0.05)' : undefined }}>
-                      <td style={{ ...tdc, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9', textAlign: 'left' }}>{row.mat}</td>
+                    <tr key={row.mat} style={{ background: row.changed ? 'var(--amber-dim)' : undefined }}>
+                      <td style={{ ...tdc, fontFamily: 'monospace', fontWeight: 700, color: 'var(--blue)', textAlign: 'left' }}>{row.mat}</td>
                       <td style={{ ...tdc, textAlign: 'left', maxWidth: 200 }}><div style={{ color: 'var(--text)' }}>{row.name || '—'}</div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{row.line || '—'}{row.customer ? ` · ${row.customer}` : ''}</div></td>
                       <td style={{ ...tdc, textAlign: 'right', fontWeight: 800 }}>{fmt(row.order)}</td>
                       {NCOLS.map(c => (
                         <td key={c} style={{ ...tdc, textAlign: 'center' }}>
                           <input type="number" value={row.pp[c]} disabled={!canApply}
                             onChange={e => setEdit(row.mat, c, e.target.value)}
-                            style={{ ...numInput, borderColor: (edits[row.mat] || {})[c] != null ? '#0ea5e9' : 'var(--border)' }} />
+                            style={{ ...numInput, borderColor: (edits[row.mat] || {})[c] != null ? 'var(--blue)' : 'var(--border)' }} />
                           {/* ช่อง Lot กรอกเป็น "ใบ" แต่ค่าที่บันทึกลง kanban_standards เป็น "ชิ้น"
                               → ต้องเห็นตัวเลขที่จะถูกบันทึกจริงตรงนี้ ห้ามให้ไปรู้ตอนของระเบิดแล้ว */}
                           {c === 'lot_size' && (
-                            <div style={{ fontSize: 11, marginTop: 2, whiteSpace: 'nowrap', color: lotPcsOf(calcType, row.pp) > 0 ? 'var(--muted)' : '#f59e0b' }}>
+                            <div style={{ fontSize: 11, marginTop: 2, whiteSpace: 'nowrap', color: lotPcsOf(calcType, row.pp) > 0 ? 'var(--muted)' : 'var(--amber)' }}>
                               {lotPcsOf(calcType, row.pp) > 0 ? `= ${fmt(lotPcsOf(calcType, row.pp))} ชิ้น` : 'ต้องมี Pkg'}
                             </div>
                           )}
@@ -1765,7 +1765,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                                     onClick={() => canApply && setEdit(row.mat, 'capacity_pc_hr', row.capReal)}
                                     title={`กำลังจริง = (3600 ÷ CT) × OEE ${row.oeePct.toFixed(1)}% ของไลน์ ${row.line}\nจากกะที่ปิดแล้ว ${row.oeeN} กะ ใน 90 วัน\nคลิกเพื่อใช้ค่านี้`}
                                     style={{ fontSize: 11, marginTop: 2, whiteSpace: 'nowrap', cursor: canApply ? 'pointer' : 'default',
-                                             color: far ? '#f59e0b' : 'var(--muted)', fontWeight: far ? 800 : 500, textDecoration: canApply ? 'underline dotted' : 'none' }}>
+                                             color: far ? 'var(--amber)' : 'var(--muted)', fontWeight: far ? 800 : 500, textDecoration: canApply ? 'underline dotted' : 'none' }}>
                                     จริง ~{fmt(row.capReal)}
                                   </div>
                                 );
@@ -1779,9 +1779,9 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                       <td style={{ ...tdc, textAlign: 'right', fontWeight: 900, color: r.valid ? 'var(--accent)' : 'var(--muted)', fontSize: 14 }}>{r.valid ? r.totalKanban : '—'}</td>
                       <td style={{ ...tdc, textAlign: 'right', color: 'var(--muted)' }}>{r.valid ? `${fmt(r.minPcs)}→${fmt(r.maxPcs)}` : '—'}</td>
                       <td style={{ ...tdc, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                        {!r.valid ? <span title={calcType === 'production' ? 'ต้องมี Pkg + CAP + Lot Qty' : 'ต้องมี Pkg + CAP'} style={{ fontSize: 11, color: '#ef4444' }}>⚠️ ขาด param</span>
-                          : row.changed ? <span style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b' }}>ต่างจากเดิม ({ks.total_kanban ?? '—'}→{r.totalKanban})</span>
-                          : <span style={{ fontSize: 11, color: '#22c55e' }}>✓ ตรงแล้ว</span>}
+                        {!r.valid ? <span title={calcType === 'production' ? 'ต้องมี Pkg + CAP + Lot Qty' : 'ต้องมี Pkg + CAP'} style={{ fontSize: 11, color: 'var(--red)' }}>⚠️ ขาด param</span>
+                          : row.changed ? <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)' }}>ต่างจากเดิม ({ks.total_kanban ?? '—'}→{r.totalKanban})</span>
+                          : <span style={{ fontSize: 11, color: 'var(--green)' }}>✓ ตรงแล้ว</span>}
                       </td>
                     </tr>
                   );
@@ -1842,18 +1842,18 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                         <ProductSelect value={mapSel[u.mat] || ''} placeholder="ค้นเลข SAP / ชื่อ…"
                           onChange={({ mat_no }) => setMapSel(s => ({ ...s, [u.mat]: mat_no }))}
                           inputStyle={{ padding: '5px 30px 5px 8px', fontSize: 12,
-                            borderColor: mapSel[u.mat] && drMap[mapSel[u.mat]] ? '#22c55e' : mapSel[u.mat] ? '#ef4444' : 'var(--border)' }} />
+                            borderColor: mapSel[u.mat] && drMap[mapSel[u.mat]] ? 'var(--green)' : mapSel[u.mat] ? 'var(--red)' : 'var(--border)' }} />
                         {mapSel[u.mat] && (drMap[mapSel[u.mat]]
-                          ? <div style={{ fontSize: 11, color: '#22c55e', marginTop: 2 }}>✓ {drMap[mapSel[u.mat]].name}{drMap[mapSel[u.mat]].line_name ? ` · ${drMap[mapSel[u.mat]].line_name}` : ''}</div>
-                          : <div style={{ fontSize: 11, color: '#ef4444', marginTop: 2 }}>✗ ไม่พบเลข SAP นี้ใน Product Master</div>)}
+                          ? <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 2 }}>✓ {drMap[mapSel[u.mat]].name}{drMap[mapSel[u.mat]].line_name ? ` · ${drMap[mapSel[u.mat]].line_name}` : ''}</div>
+                          : <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 2 }}>✗ ไม่พบเลข SAP นี้ใน Product Master</div>)}
                         {suggestByCust[u.mat] && (
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 3 }}>
                             {suggestByCust[u.mat].map(c => (
                               <button key={c.sap} onClick={() => setMapSel(s => ({ ...s, [u.mat]: c.sap }))}
                                 title="แนะนำจาก base part (revision ต่างกัน)"
-                                style={{ fontSize: 11, padding: '2px 6px', borderRadius: 5, cursor: 'pointer', border: '1px solid #22c55e',
-                                  background: mapSel[u.mat] === c.sap ? 'rgba(34,197,94,0.18)' : 'transparent', color: '#22c55e', fontWeight: 700 }}>
-                                💡 {c.sap} · {c.name}
+                                style={{ fontSize: 11, padding: '2px 6px', borderRadius: 5, cursor: 'pointer', border: '1px solid var(--green)',
+                                  background: mapSel[u.mat] === c.sap ? 'var(--green-dim)' : 'transparent', color: 'var(--green)', fontWeight: 700 }}>
+                                {c.sap} · {c.name}
                               </button>
                             ))}
                           </div>
@@ -1869,7 +1869,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
               <button onClick={() => setMapModal(false)} style={{ ...btn(false) }}>ปิด</button>
               <button onClick={doMapping} disabled={mapping || Object.values(mapSel).filter(v => v && drMap[v]).length === 0}
                 style={{ ...btn(true), opacity: mapping || Object.values(mapSel).filter(v => v && drMap[v]).length === 0 ? 0.5 : 1 }}>
-                {mapping ? '...' : `🔗 จับคู่ (${Object.values(mapSel).filter(v => v && drMap[v]).length})`}
+                {mapping ? '...' : `จับคู่ (${Object.values(mapSel).filter(v => v && drMap[v]).length})`}
               </button>
             </div>
           </div>
@@ -1895,11 +1895,11 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                     const lotDiff = lotOld != null && Number(lotOld) !== lotNew;
                     return (
                     <tr key={row.mat}>
-                      <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', fontFamily: 'monospace', color: '#0ea5e9' }}>{row.mat}</td>
+                      <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', fontFamily: 'monospace', color: 'var(--blue)' }}>{row.mat}</td>
                       <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', textAlign: 'right', color: 'var(--muted)' }}>{row.ks.total_kanban ?? '—'}</td>
                       <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', textAlign: 'right', fontWeight: 800, color: 'var(--accent)' }}>{row.r.totalKanban}</td>
                       <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(row.r.maxPcs)}</td>
-                      <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: lotDiff ? 800 : 500, color: lotDiff ? '#f59e0b' : 'var(--muted)' }}>
+                      <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontWeight: lotDiff ? 800 : 500, color: lotDiff ? 'var(--amber)' : 'var(--muted)' }}>
                         {lotDiff && <span style={{ opacity: 0.7, fontWeight: 500 }}>{fmt(lotOld)} → </span>}{lotNew > 0 ? fmt(lotNew) : '—'}
                       </td>
                     </tr>
@@ -1910,7 +1910,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
               <button onClick={() => setPreview(null)} style={{ ...btn(false) }}>ยกเลิก</button>
-              <button onClick={doApply} disabled={applying} style={{ ...btn(true), opacity: applying ? 0.6 : 1 }}>{applying ? '...' : `✅ ยืนยัน Apply (${changedRows.length})`}</button>
+              <button onClick={doApply} disabled={applying} style={{ ...btn(true), opacity: applying ? 0.6 : 1 }}>{applying ? '...' : `ยืนยัน Apply (${changedRows.length})`}</button>
             </div>
           </div>
         </div>

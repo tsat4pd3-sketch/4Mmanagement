@@ -57,7 +57,7 @@ const inp = {
   background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box',
 };
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 14 };
-const Blank = () => <span style={{ color: '#f59e0b', fontWeight: 700 }} title="ยังไม่ได้กรอก">—</span>;
+const Blank = () => <span style={{ color: 'var(--amber)', fontWeight: 700 }} title="ยังไม่ได้กรอก">—</span>;
 
 function Field({ label, hint, children }) {
   return (
@@ -437,11 +437,11 @@ export default function FixtureRegistry() {
               <span>พาร์ทที่จับ: {shadow?.part_no ? <b style={{ color: 'var(--text)' }}>{shadow.part_no}</b> : <Blank />}</span>
               <span>
                 shot สะสม: {shot.shots == null
-                  ? <span style={{ color: '#f59e0b', fontWeight: 700 }}>ยังนับไม่ได้</span>
+                  ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>ยังนับไม่ได้</span>
                   : <b style={{ color: 'var(--text)' }}>{shot.shots.toLocaleString()}</b>}
                 {shot.note && <span style={{ marginLeft: 6 }}>· {shot.note}</span>}
               </span>
-              <span>ชิ้นต่อ 1 ครั้ง: {fx.pieces_per_cycle ?? <span style={{ color: '#f59e0b' }}>ยังไม่ตั้ง (ถือว่า 1)</span>}</span>
+              <span>ชิ้นต่อ 1 ครั้ง: {fx.pieces_per_cycle ?? <span style={{ color: 'var(--amber)' }}>ยังไม่ตั้ง (ถือว่า 1)</span>}</span>
             </div>
           )}
         </>
@@ -452,7 +452,7 @@ export default function FixtureRegistry() {
           ⇒ stdsweep วัดระยะแท็บ→แถบกรองได้ 75px เวลาที่แถบเตือนโผล่ (แก้ 08/10)
           ⚠️ ยังอยู่บนสุดของเนื้อหา — คนต้องเห็นก่อนเชื่อตัวเลขด้านล่าง */}
       {dataWarn && (
-        <div style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.45)',
+        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-line)',
                       borderRadius: 10, padding: '9px 14px', fontSize: 12.5, marginBottom: 12 }}>
           ⚠️ {dataWarn}
         </div>
@@ -472,7 +472,7 @@ export default function FixtureRegistry() {
             จุดที่ต้องดูแล — เกินเพดานชิม · ถึงกำหนดตรวจ · ใกล้ครบ · จากทุกฟิกเจอร์ในขอบเขตของคุณ
           </div>
           {!statusRows.length ? (
-            <div style={{ background: 'rgba(34,197,94,0.10)', border: '1px solid rgba(34,197,94,0.45)',
+            <div style={{ background: 'var(--green-dim)', border: '1px solid var(--green-line)',
                           borderRadius: 10, padding: '14px 16px', fontSize: 13 }}>
               ✅ ไม่มีจุดที่ต้องดูแลตอนนี้
               {!allPoints.length && (
@@ -500,10 +500,10 @@ export default function FixtureRegistry() {
                       <td style={{ padding: '7px 10px' }}>
                         {kindMeta(p.kind_code).icon} {p.point_no}
                       </td>
-                      <td style={{ padding: '7px 10px', color: st.level === 'over' ? '#ef4444' : st.level === 'warn' ? '#f59e0b' : 'inherit' }}>
+                      <td style={{ padding: '7px 10px', color: st.level === 'over' ? 'var(--red)' : st.level === 'warn' ? 'var(--amber)' : 'inherit' }}>
                         {st.current ?? '—'} / {p.max_shim_mm ?? '—'} mm
                       </td>
-                      <td style={{ padding: '7px 10px', color: due.due ? '#ef4444' : due.level === 'soon' ? '#f59e0b' : 'var(--muted)' }}>
+                      <td style={{ padding: '7px 10px', color: due.due ? 'var(--red)' : due.level === 'soon' ? 'var(--amber)' : 'var(--muted)' }}>
                         {due.text}
                       </td>
                       <td style={{ padding: '7px 10px' }}>
@@ -522,7 +522,7 @@ export default function FixtureRegistry() {
         <div style={{ fontSize: 13, color: 'var(--muted)' }}>
           เลือกจิ๊ก/ฟิกเจอร์ก่อน
           {!fixtures.length && (
-            <div style={{ marginTop: 8, color: '#f59e0b' }}>
+            <div style={{ marginTop: 8, color: 'var(--amber)' }}>
               ⚠️ ยังไม่มีอุปกรณ์ที่เป็นชนิด “จิ๊ก / ฟิกเจอร์” ในขอบเขตของคุณ —
               ไปที่แท็บ <b>⚙️ จัดชนิดอุปกรณ์</b> เพื่อติ๊กเครื่องที่จริงๆ เป็นจิ๊กก่อน
             </div>
@@ -545,14 +545,14 @@ export default function FixtureRegistry() {
           {canManage && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button onClick={() => setEditing({ ...emptyPoint })}
-                      style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8,
+                      style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8,
                                padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                ➕ เพิ่มจุด
+                เพิ่มจุด
               </button>
               <button onClick={genTemplate}
                       style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)',
                                borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }}>
-                🧩 สร้างจากแม่แบบ
+                สร้างจากแม่แบบ
               </button>
               <button onClick={copyFrom}
                       style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)',
@@ -587,12 +587,12 @@ export default function FixtureRegistry() {
                     .map(({ p, pin }) => ({ key: p.id, x: pin.x, y: pin.y, label: p.point_no,
                       label_dx: p.label_dx, label_dy: p.label_dy,
                       selected: armPoint === p.id,
-                      color: armPoint === p.id ? 'var(--accent)' : '#a78bfa' }))}
+                      color: armPoint === p.id ? 'var(--accent)' : 'var(--blue)' }))}
                   onPlace={canManage ? placePin : undefined}
                   onRemovePin={canManage ? (key) => { const p = points.find(x => x.id === key); if (p && pointPin(p, cpById)?.source === 'own') removePin(key); else toast.info('หมุดนี้ยืมจากจุดตรวจ PM — แก้ที่ PM Setup'); } : undefined} />
               </div>
             ) : (
-              <div style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.6 }}>
+              <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.6 }}>
                 📷 ยังไม่มีรูปเครื่องของ <b>{fx.machine_no}</b> จึงยังปักตำแหน่งจุดบนรูปไม่ได้ —
                 อัปโหลดรูป (หลายมุมได้) ที่ <Link to="/pm?tab=setup" style={{ color: 'var(--accent)', fontWeight: 700 }}>PM Setup → ⚙️ ตั้งค่าจุดตรวจ</Link> แล้วกลับมาปักที่นี่
                 {!shadow && <div style={{ marginTop: 4, color: 'var(--muted)' }}>(เครื่องนี้ยังไม่มีแถวลงทะเบียนอุปกรณ์ PM — สร้างที่ PM Setup ก่อน)</div>}
@@ -628,7 +628,7 @@ export default function FixtureRegistry() {
                         <td style={{ padding: '7px 10px' }}>{kindMeta(p.kind_code).icon} {kindMeta(p.kind_code).label}</td>
                         <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', fontSize: 11.5 }}>
                           {(() => { const pin = pointPin(p, cpById); return pin
-                            ? <span style={{ color: '#a78bfa', fontWeight: 700 }} title={pin.source === 'checkpoint' ? 'ยืมหมุดจากจุดตรวจ PM' : 'หมุดของจุดนี้เอง'}>📍 {pin.source === 'checkpoint' ? 'จาก PM' : `เฟรม ${Math.max(1, frames.findIndex(f => f._key === (pin.imageId ?? frames[0]?._key)) + 1)}`}</span>
+                            ? <span style={{ color: 'var(--blue)', fontWeight: 700 }} title={pin.source === 'checkpoint' ? 'ยืมหมุดจากจุดตรวจ PM' : 'หมุดของจุดนี้เอง'}>📍 {pin.source === 'checkpoint' ? 'จาก PM' : `เฟรม ${Math.max(1, frames.findIndex(f => f._key === (pin.imageId ?? frames[0]?._key)) + 1)}`}</span>
                             : <span style={{ color: 'var(--muted)' }}>—</span>; })()}
                           {canManage && frames.length > 0 && (
                             <button onClick={() => setArmPoint(a => a === p.id ? '' : p.id)} title="วางตำแหน่งบนรูป"
@@ -639,7 +639,7 @@ export default function FixtureRegistry() {
                         </td>
                         <td style={{ padding: '7px 10px' }}>{p.baseline_shim_mm ?? <Blank />}</td>
                         <td style={{ padding: '7px 10px',
-                                     color: st.level === 'over' ? '#ef4444' : st.level === 'warn' ? '#f59e0b' : 'inherit',
+                                     color: st.level === 'over' ? 'var(--red)' : st.level === 'warn' ? 'var(--amber)' : 'inherit',
                                      fontWeight: st.level === 'over' || st.level === 'warn' ? 700 : 400 }}>
                           {st.current ?? <Blank />}
                         </td>
@@ -647,12 +647,12 @@ export default function FixtureRegistry() {
                           {p.max_shim_mm ?? <span style={{ color: 'var(--muted)' }} title="ไม่ตั้ง = ไม่เตือน">ไม่ตั้ง</span>}
                         </td>
                         <td style={{ padding: '7px 10px', fontSize: 11.5,
-                                     color: due.due ? '#ef4444' : due.level === 'soon' ? '#f59e0b' : 'var(--muted)' }}>
+                                     color: due.due ? 'var(--red)' : due.level === 'soon' ? 'var(--amber)' : 'var(--muted)' }}>
                           {due.text}
                         </td>
                         <td style={{ padding: '7px 10px', fontSize: 11.5 }}>
                           {life.pct == null ? <span style={{ color: 'var(--muted)' }}>—</span>
-                            : <span style={{ color: life.level === 'over' ? '#ef4444' : life.level === 'warn' ? '#f59e0b' : 'inherit' }}>
+                            : <span style={{ color: life.level === 'over' ? 'var(--red)' : life.level === 'warn' ? 'var(--amber)' : 'inherit' }}>
                                 {Math.round(life.pct)}%
                               </span>}
                         </td>
@@ -685,7 +685,7 @@ export default function FixtureRegistry() {
           )}
 
           {points.some(p => p.baseline_shim_mm == null) && (
-            <div style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)',
+            <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)',
                           borderRadius: 10, padding: '10px 14px', fontSize: 12.5 }}>
               ⚠️ ยังไม่ได้วัด baseline <b>{points.filter(p => p.baseline_shim_mm == null).length}</b> จุด —
               ถ้าไม่มี baseline ระบบจะตอบได้แค่ “ใส่ชิมไปกี่ครั้ง” แต่ตอบไม่ได้ว่า
@@ -722,7 +722,7 @@ export default function FixtureRegistry() {
                       style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)',
                                borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
               <button onClick={runTemplate}
-                      style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8,
+                      style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8,
                                padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>สร้างจุด</button>
             </div>
           </div>
@@ -795,7 +795,7 @@ export default function FixtureRegistry() {
                       style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)',
                                borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
               <button onClick={savePoint}
-                      style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8,
+                      style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8,
                                padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>บันทึก</button>
             </div>
           </div>
