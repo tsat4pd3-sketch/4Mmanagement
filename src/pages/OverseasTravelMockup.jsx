@@ -19,12 +19,12 @@ import { getWorkDate, addDaysStr } from '../utils/workDate';
    ═══════════════════════════════════════════════════════════════════════════════════════════ */
 
 const TABS = [
-  { key: 'overview', label: '🗺️ ภาพรวม' },
-  { key: 'traveler', label: '🧳 ผู้เดินทาง' },
-  { key: 'approver', label: '✅ ผู้อนุมัติ' },
-  { key: 'hr', label: '🛂 HR / Compliance' },
-  { key: 'admin', label: '🎫 Travel / Admin' },
-  { key: 'finance', label: '💰 Finance / ECM' },
+  { key: 'overview', label: 'ภาพรวม' },
+  { key: 'traveler', label: 'ผู้เดินทาง' },
+  { key: 'approver', label: 'ผู้อนุมัติ' },
+  { key: 'hr', label: 'HR / Compliance' },
+  { key: 'admin', label: 'Travel / Admin' },
+  { key: 'finance', label: 'Finance / ECM' },
 ];
 
 const PHASES = ['ขอเดินทาง', 'อนุมัติ', 'HR / Compliance', 'เตรียมเดินทาง', 'เดินทาง', 'ยื่นเบิก', 'Finance ปิดงาน'];
@@ -170,11 +170,11 @@ function PhaseBar({ r }) {
         const done = i < at;
         const bad = !!r.returned && i === 1;
         const cur = i === at && !bad;
-        const c = bad ? '#ef4444' : done ? '#22c55e' : cur ? 'var(--accent)' : 'var(--muted)';
+        const c = bad ? 'var(--red)' : done ? 'var(--green)' : cur ? 'var(--accent)' : 'var(--muted)';
         return (
           <div key={label} style={{ position: 'relative', display: 'grid', justifyItems: 'center', alignContent: 'start', gap: 3, textAlign: 'center' }}>
             {i < PHASES.length - 1 && (
-              <span style={{ position: 'absolute', top: 10, left: '50%', width: '100%', height: 2, background: i < at ? '#22c55e' : 'var(--border2)' }} />
+              <span style={{ position: 'absolute', top: 10, left: '50%', width: '100%', height: 2, background: i < at ? 'var(--green)' : 'var(--border2)' }} />
             )}
             <span aria-current={cur ? 'step' : undefined}
               style={{ position: 'relative', width: 22, height: 22, borderRadius: '50%', boxSizing: 'border-box', display: 'grid', placeItems: 'center',
@@ -190,7 +190,7 @@ function PhaseBar({ r }) {
 }
 
 function Check({ ok, children }) {
-  return <div style={{ fontSize: 13, color: ok ? '#22c55e' : 'var(--muted)' }}>{ok ? '✓' : '○'} {children}</div>;
+  return <div style={{ fontSize: 13, color: ok ? 'var(--green)' : 'var(--muted)' }}>{ok ? '✓' : '○'} {children}</div>;
 }
 
 export default function OverseasTravelMockup() {
@@ -256,7 +256,7 @@ export default function OverseasTravelMockup() {
   const reqCard = (r, children, opts = {}) => {
     const waits = waitsOf(r);
     return (
-      <div key={r.id} style={{ ...card, display: 'grid', gap: 8, borderLeft: `4px solid ${r.returned ? '#ef4444' : r.fin.archived ? '#22c55e' : 'var(--accent)'}` }}>
+      <div key={r.id} style={{ ...card, display: 'grid', gap: 8, borderLeft: `4px solid ${r.returned ? 'var(--red)' : r.fin.archived ? 'var(--green)' : 'var(--accent)'}` }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
           <b style={{ fontSize: 14 }}>{r.no}</b>
           <span style={{ fontSize: 14 }}>{r.purpose}</span>
@@ -267,11 +267,11 @@ export default function OverseasTravelMockup() {
           <span>Advance: {r.advReq ? baht(r.advAmount) : 'ไม่ขอ'}</span>
         </div>
         <PhaseBar r={r} />
-        {r.returned && <div style={{ fontSize: 13, color: '#ef4444' }}>↩ {r.returned.by} ส่งกลับแก้ไข: {r.returned.reason}</div>}
+        {r.returned && <div style={{ fontSize: 13, color: 'var(--red)' }}>↩ {r.returned.by} ส่งกลับแก้ไข: {r.returned.reason}</div>}
         <div style={{ fontSize: 13 }}>
           {waits.length
             ? <>⏳ รอ: {waits.map(w => `${ROLE_LABEL[w.role]} — ${w.text}`).join(' · ')}</>
-            : <span style={{ color: '#22c55e', fontWeight: 700 }}>✓ ปิดงานแล้ว (ECM จัดเก็บเอกสาร)</span>}
+            : <span style={{ color: 'var(--green)', fontWeight: 700 }}>✓ ปิดงานแล้ว (ECM จัดเก็บเอกสาร)</span>}
         </div>
         {opts.log && (
           <details style={{ fontSize: 12 }}>
@@ -294,7 +294,7 @@ export default function OverseasTravelMockup() {
       <PageHeader
         title="เบิกเงินเดินทางต่างประเทศ"
         icon="✈️"
-        sub={<span><b style={{ color: '#f59e0b' }}>🧪 MOCKUP</b> · ข้อมูลจำลองในหน้านี้ ไม่บันทึกลงฐานข้อมูล (รีเฟรช = เริ่มใหม่)</span>}
+        sub={<span><b style={{ color: 'var(--amber)' }}>🧪 MOCKUP</b> · ข้อมูลจำลองในหน้านี้ ไม่บันทึกลงฐานข้อมูล (รีเฟรช = เริ่มใหม่)</span>}
         tabs={tabs} tab={tab} onTab={setTab}
       />
       <div style={{ marginBottom: 12 }}>
@@ -348,12 +348,12 @@ export default function OverseasTravelMockup() {
             <h3 style={h3}>งานที่รอผู้เดินทาง ({counts.traveler})</h3>
             {mine('traveler').length ? mine('traveler').map(r => reqCard(r, (
               <div style={{ display: 'grid', gap: 8 }}>
-                {r.returned && <div><button type="button" style={btnPrimary} onClick={() => startEdit(r)}>✏️ แก้ไขคำขอ</button></div>}
+                {r.returned && <div><button type="button" style={btnPrimary} onClick={() => startEdit(r)}>แก้ไขคำขอ</button></div>}
                 {!r.returned && r.admin.visaReq && !r.visaDocsSent && !r.ready && (
-                  <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.visaDocsSent = true; return n; }, 'ผู้เดินทางส่งเอกสาร Visa')}>📄 ส่งเอกสาร Visa</button></div>
+                  <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.visaDocsSent = true; return n; }, 'ผู้เดินทางส่งเอกสาร Visa')}>ส่งเอกสาร Visa</button></div>
                 )}
                 {r.ready && !r.trip.started && (
-                  <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.trip.started = true; return n; }, 'เริ่มเดินทางปฏิบัติงาน')}>✈️ เริ่มเดินทาง</button></div>
+                  <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.trip.started = true; return n; }, 'เริ่มเดินทางปฏิบัติงาน')}>เริ่มเดินทาง</button></div>
                 )}
                 {r.trip.started && !r.trip.ended && (
                   <div style={{ display: 'grid', gap: 6 }}>
@@ -365,7 +365,7 @@ export default function OverseasTravelMockup() {
                         upd(r.id, n => { n.trip.activities = [...n.trip.activities, activity.trim()]; return n; }); setActivity('');
                       }}>+ บันทึก</button>
                     </div>
-                    <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.trip.ended = true; return n; }, 'จบการเดินทาง')}>🏠 จบการเดินทาง</button></div>
+                    <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.trip.ended = true; return n; }, 'จบการเดินทาง')}>จบการเดินทาง</button></div>
                   </div>
                 )}
                 {r.trip.ended && !r.claim.submitted && (
@@ -373,7 +373,7 @@ export default function OverseasTravelMockup() {
                     <b style={{ fontSize: 13 }}>Expense Claim — ค่าใช้จ่าย + เอกสารประกอบ</b>
                     {r.claim.lines.map((l, i) => (
                       <div key={i} style={{ fontSize: 13, display: 'flex', gap: 8 }}>
-                        <span>• {l.cat}</span><span>{baht(l.amount)}</span><span style={{ color: l.receipt ? '#22c55e' : '#f59e0b' }}>{l.receipt ? 'มีใบเสร็จ' : 'ไม่มีใบเสร็จ'}</span>
+                        <span>• {l.cat}</span><span>{baht(l.amount)}</span><span style={{ color: l.receipt ? 'var(--green)' : 'var(--amber)' }}>{l.receipt ? 'มีใบเสร็จ' : 'ไม่มีใบเสร็จ'}</span>
                         <button type="button" style={{ ...btnGhost, padding: '0 8px' }} onClick={() => upd(r.id, n => { n.claim.lines = n.claim.lines.filter((_, j) => j !== i); return n; })}>✕</button>
                       </div>
                     ))}
@@ -426,13 +426,13 @@ export default function OverseasTravelMockup() {
                 {returnFor === r.id ? (
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     <input value={reason} onChange={e => setReason(e.target.value)} placeholder="เหตุผลที่ส่งกลับแก้ไข (บังคับ)" style={{ flex: 1, minWidth: 220 }} />
-                    <button type="button" style={{ ...btnGhost, color: '#ef4444' }} onClick={() => doReturn(r)}>ยืนยันส่งกลับ</button>
+                    <button type="button" style={{ ...btnGhost, color: 'var(--red)' }} onClick={() => doReturn(r)}>ยืนยันส่งกลับ</button>
                     <button type="button" style={btnGhost} onClick={() => { setReturnFor(null); setReason(''); }}>ยกเลิก</button>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.appr[lvl.k] = true; return n; }, `${lvl.label} อนุมัติ`)}>✅ อนุมัติ (ในฐานะ {lvl.label})</button>
-                    <button type="button" style={btnGhost} onClick={() => { setReturnFor(r.id); setReason(''); }}>↩ ส่งกลับแก้ไข</button>
+                    <button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.appr[lvl.k] = true; return n; }, `${lvl.label} อนุมัติ`)}>อนุมัติ (ในฐานะ {lvl.label})</button>
+                    <button type="button" style={btnGhost} onClick={() => { setReturnFor(r.id); setReason(''); }}>ส่งกลับแก้ไข</button>
                   </div>
                 )}
               </div>
@@ -447,8 +447,8 @@ export default function OverseasTravelMockup() {
           {mine('hr').length ? mine('hr').map(r => reqCard(r, (
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {!r.hrOk
-                ? <button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.hrOk = true; return n; }, 'HR ตรวจสิทธิ์การเดินทาง: ผ่าน')}>🛂 HR: สิทธิ์การเดินทางผ่าน</button>
-                : <button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.compOk = true; return n; }, `Compliance ตรวจข้อกำหนด ${r.country}: ผ่าน`)}>📋 Compliance: ข้อกำหนดประเทศ/ลูกค้าผ่าน</button>}
+                ? <button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.hrOk = true; return n; }, 'HR ตรวจสิทธิ์การเดินทาง: ผ่าน')}>HR: สิทธิ์การเดินทางผ่าน</button>
+                : <button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.compOk = true; return n; }, `Compliance ตรวจข้อกำหนด ${r.country}: ผ่าน`)}>Compliance: ข้อกำหนดประเทศ/ลูกค้าผ่าน</button>}
             </div>
           ))) : empty('ไม่มีคำขอรอ HR / Compliance')}
         </div>
@@ -480,12 +480,12 @@ export default function OverseasTravelMockup() {
                     ? <button type="button" style={btnPrimary} onClick={() => tick('visaApplied', 'ยื่น Visa และติดตามผล')}>ยื่น Visa แล้ว</button>
                     : <span style={muted}>รอผู้เดินทางส่งเอกสาร Visa</span>)}
                   {a.passport && a.visaReq != null && (!a.visaReq || a.visaApplied) && nextStep && (
-                    <button type="button" style={btnPrimary} onClick={() => tick(nextStep.k, nextStep.label)}>✓ {nextStep.label}</button>
+                    <button type="button" style={btnPrimary} onClick={() => tick(nextStep.k, nextStep.label)}>{nextStep.label}</button>
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', borderTop: '1px dashed var(--border)', paddingTop: 8 }}>
                   <button type="button" style={btnPrimary} disabled={blockers.length > 0}
-                    onClick={() => upd(r.id, n => { n.ready = true; return n; }, 'Ready to Travel Check: ยืนยันการเดินทาง')}>🧳 Ready to Travel Check</button>
+                    onClick={() => upd(r.id, n => { n.ready = true; return n; }, 'Ready to Travel Check: ยืนยันการเดินทาง')}>Ready to Travel Check</button>
                   {blockers.length > 0 && <span style={muted}>ยังกดไม่ได้: {blockers.join(' · ')}</span>}
                 </div>
               </div>
@@ -507,7 +507,7 @@ export default function OverseasTravelMockup() {
             return reqCard(r, (
               <div style={{ display: 'grid', gap: 6 }}>
                 {!r.budgetOk && (
-                  <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.budgetOk = true; return n; }, `Finance ตรวจงบประมาณ ${baht(r.budget)}: ผ่าน`)}>💰 Budget Verification: งบผ่าน</button></div>
+                  <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.budgetOk = true; return n; }, `Finance ตรวจงบประมาณ ${baht(r.budget)}: ผ่าน`)}>Budget Verification: งบผ่าน</button></div>
                 )}
                 {r.budgetOk && r.advReq && !r.adv.approved && !r.ready && (
                   <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.adv.approved = true; return n; }, `อนุมัติ Advance ${baht(r.advAmount)}`)}>อนุมัติ Advance {baht(r.advAmount)} (ตามระเบียบ)</button></div>
@@ -520,7 +520,7 @@ export default function OverseasTravelMockup() {
                     <b style={{ fontSize: 13 }}>Expense Claim</b>
                     {r.claim.lines.length
                       ? r.claim.lines.map((l, i) => (
-                        <div key={i} style={{ fontSize: 13 }}>• {l.cat} {baht(l.amount)} <span style={{ color: l.receipt ? '#22c55e' : '#f59e0b' }}>{l.receipt ? '(มีใบเสร็จ)' : '(ไม่มีใบเสร็จ)'}</span></div>))
+                        <div key={i} style={{ fontSize: 13 }}>• {l.cat} {baht(l.amount)} <span style={{ color: l.receipt ? 'var(--green)' : 'var(--amber)' }}>{l.receipt ? '(มีใบเสร็จ)' : '(ไม่มีใบเสร็จ)'}</span></div>))
                       : <div style={muted}>ไม่มีรายการค่าใช้จ่าย</div>}
                     <div style={{ fontSize: 13 }}>รวมค่าใช้จ่าย <b>{baht(claimSum)}</b></div>
                     <div style={{ fontSize: 13 }}>
@@ -528,21 +528,21 @@ export default function OverseasTravelMockup() {
                     </div>
                     <div style={{ fontSize: 13 }}>หักล้าง Advance {r.adv.paid ? `− ${baht(r.advAmount)}` : '(ไม่มี)'}</div>
                     {settle != null && (
-                      <div style={{ fontSize: 14, fontWeight: 800, color: settle >= 0 ? 'var(--text)' : '#f59e0b' }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: settle >= 0 ? 'var(--text)' : 'var(--amber)' }}>
                         {settle >= 0 ? `บริษัทจ่ายเพิ่มให้ผู้เดินทาง ${baht(settle)}` : `ผู้เดินทางคืนเงินบริษัท ${baht(-settle)}`}
                       </div>
                     )}
                     {r.report.text && <div style={muted}>Trip report: {r.report.text}</div>}
-                    {r.claim.lines.some(l => !l.receipt) && <div style={{ fontSize: 12, color: '#f59e0b' }}>⚠ มีรายการที่ไม่มีใบเสร็จ — ตรวจตามนโยบายก่อนผ่าน</div>}
+                    {r.claim.lines.some(l => !l.receipt) && <div style={{ fontSize: 12, color: 'var(--amber)' }}>⚠ มีรายการที่ไม่มีใบเสร็จ — ตรวจตามนโยบายก่อนผ่าน</div>}
                     <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                       <Check ok={f.verified}>ตรวจค่าใช้จ่าย</Check><Check ok={f.finalOk}>Final Approval</Check>
                       <Check ok={f.posted}>ลงบัญชี</Check><Check ok={f.archived}>ECM ปิดงาน</Check>
                     </div>
                     <div>
-                      {!f.verified && <button type="button" style={btnPrimary} onClick={() => set('verified', 'Finance ตรวจค่าใช้จ่าย (ใบเสร็จ/นโยบาย) + คำนวณเบี้ยเลี้ยง + หักล้าง Advance')}>✓ ตรวจค่าใช้จ่ายผ่าน</button>}
-                      {f.verified && !f.finalOk && <button type="button" style={btnPrimary} onClick={() => set('finalOk', 'Final Approval อนุมัติค่าใช้จ่าย')}>✓ Final Approval</button>}
-                      {f.finalOk && !f.posted && <button type="button" style={btnPrimary} onClick={() => set('posted', 'Accounting ลงบัญชีค่าใช้จ่าย')}>✓ ลงบัญชี</button>}
-                      {f.posted && !f.archived && <button type="button" style={btnPrimary} onClick={() => set('archived', 'ECM จัดเก็บเอกสารและปิดงาน')}>🗄️ ECM จัดเก็บเอกสาร / ปิดงาน</button>}
+                      {!f.verified && <button type="button" style={btnPrimary} onClick={() => set('verified', 'Finance ตรวจค่าใช้จ่าย (ใบเสร็จ/นโยบาย) + คำนวณเบี้ยเลี้ยง + หักล้าง Advance')}>ตรวจค่าใช้จ่ายผ่าน</button>}
+                      {f.verified && !f.finalOk && <button type="button" style={btnPrimary} onClick={() => set('finalOk', 'Final Approval อนุมัติค่าใช้จ่าย')}>Final Approval</button>}
+                      {f.finalOk && !f.posted && <button type="button" style={btnPrimary} onClick={() => set('posted', 'Accounting ลงบัญชีค่าใช้จ่าย')}>ลงบัญชี</button>}
+                      {f.posted && !f.archived && <button type="button" style={btnPrimary} onClick={() => set('archived', 'ECM จัดเก็บเอกสารและปิดงาน')}>ECM จัดเก็บเอกสาร / ปิดงาน</button>}
                     </div>
                   </div>
                 )}

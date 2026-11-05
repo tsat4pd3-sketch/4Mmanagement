@@ -47,7 +47,7 @@ import { DeleteButton } from '../components/IconButton';
      · เลขพาร์ทลูกค้าใน RFQ เป็นของใหม่ (ยังไม่มีในทะเบียนไหน) ⇒ พิมพ์เองได้โดยตั้งใจ
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const TABS = [{ key: 'list', label: '📋 รายการ RFQ' }, { key: 'report', label: '📈 ได้งาน / ไม่ได้งาน' }];
+const TABS = [{ key: 'list', label: 'รายการ RFQ' }, { key: 'report', label: 'ได้งาน / ไม่ได้งาน' }];
 const RFQ_COLS = 'id, rfq_no, customer, model, title, process_type, priority, received_date, due_date, sop_date_customer, status, '
   + 'customer_target_price, annual_volume, volume_source, apw, mpw, crd_no, crd_sent_at, npi_project_id, owner_name, remark, created_by_name, created_at';
 const AWARD_COLS = 'id, rfq_id, outcome, decided_at, loss_reason, unit_price, tooling_price, annual_volume, annual_sales, po_no, to_no, '
@@ -299,8 +299,8 @@ export default function Rfq() {
           </FilterBar>
         )}
         actions={<>
-          {rfq && <button style={ghost} onClick={() => setRfq('')}>← รายการ</button>}
-          {canEdit && <button style={btn()} onClick={() => setRfqModal({ ...emptyRfq, rfq_no: nextRfqNo(rfqs.map(r => r.rfq_no), today), received_date: today })}>+ RFQ</button>}
+          {rfq && <button type="button" className="pg-btn" onClick={() => setRfq('')}>รายการ</button>}
+          {canEdit && <button type="button" className="pg-btn" onClick={() => setRfqModal({ ...emptyRfq, rfq_no: nextRfqNo(rfqs.map(r => r.rfq_no), today), received_date: today })}>+ RFQ</button>}
         </>}
         tabs={TABS} tab={tab} onTab={setTab} />
 
@@ -325,11 +325,11 @@ export default function Rfq() {
         <RfqTable rows={filtered} hidden={hidden} awardOf={awardOf} npiOf={npiOf} onPick={setRfq} today={today} />
       )}
 
-      {rfqId && !rfq && !loading && <WarnBar color="#f59e0b">ไม่พบ RFQ ตามลิงก์นี้ (อาจถูกลบ หรือคุณไม่มีสิทธิ์เห็น) — <button style={ghost} onClick={() => setRfq('')}>กลับไปรายการ</button></WarnBar>}
+      {rfqId && !rfq && !loading && <WarnBar color="var(--amber)">ไม่พบ RFQ ตามลิงก์นี้ (อาจถูกลบ หรือคุณไม่มีสิทธิ์เห็น) — <button style={ghost} onClick={() => setRfq('')}>กลับไปรายการ</button></WarnBar>}
 
       {rfqModal && (
         <Modal title={rfqModal.id ? `✏️ ${rfqModal.rfq_no}` : '+ RFQ ใหม่'} onClose={() => setRfqModal(null)} width={760}
-          footer={<><button style={ghost} onClick={() => setRfqModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveRfq}>💾 บันทึก</button></>}>
+          footer={<><button style={ghost} onClick={() => setRfqModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveRfq}>บันทึก</button></>}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 10, alignItems: 'start' }}>
             <Field label="เลข RFQ" hint="ระบบออกให้ แก้ได้"><input style={inp} value={rfqModal.rfq_no} onChange={e => setRfqModal({ ...rfqModal, rfq_no: e.target.value })} /></Field>
             <Field label="ลูกค้า (OEM)" span={2}><CustomerSelect value={rfqModal.customer} onChange={({ customer }) => setRfqModal({ ...rfqModal, customer })} history={custHist} /></Field>
@@ -357,7 +357,7 @@ export default function Rfq() {
 
       {partModal && rfq && (
         <Modal title={partModal.id ? `✏️ ${partModal.part_no}` : '+ พาร์ท / ชิ้นย่อย'} onClose={() => setPartModal(null)} width={720}
-          footer={<><button style={ghost} onClick={() => setPartModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={savePart}>💾 บันทึก</button></>}>
+          footer={<><button style={ghost} onClick={() => setPartModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={savePart}>บันทึก</button></>}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 10, alignItems: 'start' }}>
             <Field label="Part No. (ของลูกค้า)" hint="พาร์ทใหม่ ยังไม่มีในทะเบียน"><input style={inp} value={partModal.part_no} onChange={e => setPartModal({ ...partModal, part_no: e.target.value })} placeholder="MB3C-2B614-AA" /></Field>
             <Field label="Part Name" span={2}><input style={inp} value={partModal.part_name || ''} onChange={e => setPartModal({ ...partModal, part_name: e.target.value })} /></Field>
@@ -378,7 +378,7 @@ export default function Rfq() {
 
       {npiModal && rfq && (
         <Modal title="📨 ส่ง CRD → โปรเจค NPI (IEC)" onClose={() => setNpiModal(null)} width={760}
-          footer={<><button style={ghost} onClick={() => setNpiModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveNpi}>{npiModal.mode === 'create' ? '🚀 สร้างโปรเจค + ผูก' : '🔗 ผูกโปรเจค'}</button></>}>
+          footer={<><button style={ghost} onClick={() => setNpiModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveNpi}>{npiModal.mode === 'create' ? 'สร้างโปรเจค + ผูก' : 'ผูกโปรเจค'}</button></>}>
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
             <button style={npiModal.mode === 'create' ? btn() : ghost} onClick={() => setNpiModal({ ...npiModal, mode: 'create' })}>สร้างโปรเจคใหม่จาก RFQ นี้</button>
             <button style={npiModal.mode === 'link' ? btn() : ghost} onClick={() => setNpiModal({ ...npiModal, mode: 'link' })}>ผูกโปรเจคที่มีอยู่แล้ว</button>
@@ -421,7 +421,7 @@ export default function Rfq() {
 
       {awardModal && rfq && (
         <Modal title={`🏁 ผลของ ${rfq.rfq_no}`} onClose={() => setAwardModal(null)} width={700}
-          footer={<><button style={ghost} onClick={() => setAwardModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveAward}>💾 บันทึกผล</button></>}>
+          footer={<><button style={ghost} onClick={() => setAwardModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveAward}>บันทึกผล</button></>}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 10, alignItems: 'start' }}>
             <Field label="ผล">
               <select style={inp} value={awardModal.outcome} onChange={e => setAwardModal({ ...awardModal, outcome: e.target.value })}>
@@ -526,10 +526,10 @@ function RfqSheet({ rfq, award, parts, mainParts, npi, canEdit, canAward, status
           {row('วันส่ง CRD', rfq.crd_sent_at ? fmtDate(rfq.crd_sent_at) : '—')}
           {row('โปรเจค NPI', npi ? <Link to={`/npi?project=${rfq.npi_project_id}`}>🚀 {npi.project_code} · {npi.name}</Link> : <span style={{ color: statusColor('warn') }}>ผูกไว้แต่ไม่พบโปรเจค (ถูกลบ?)</span>)}
           {npi && row('สถานะ NPI', `${npi.status || '—'} · SOP ${npi.sop_date ? fmtDate(npi.sop_date) : '—'}`)}
-          {canEdit && <button style={{ ...ghost, marginTop: 6 }} onClick={onNpi}>🔗 แก้การผูก / เลข CRD</button>}
+          {canEdit && <button style={{ ...ghost, marginTop: 6 }} onClick={onNpi}>แก้การผูก / เลข CRD</button>}
         </>) : (<>
           <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 8 }}>ยังไม่ได้ส่ง CRD — ส่งแล้วระบบจะสร้างโปรเจค NPI ให้ IEC ทำ APQP/PPAP ต่อ (ชื่อ/พาร์ทระบบเสนอ คุณยืนยัน)</div>
-          {canEdit && <button style={btn()} onClick={onNpi} disabled={isClosed(rfq.status)}>📨 ส่ง CRD → สร้าง/ผูกโปรเจค NPI</button>}
+          {canEdit && <button style={btn()} onClick={onNpi} disabled={isClosed(rfq.status)}>ส่ง CRD → สร้าง/ผูกโปรเจค NPI</button>}
         </>)}
       </div>
 
@@ -563,9 +563,9 @@ function RfqSheet({ rfq, award, parts, mainParts, npi, canEdit, canAward, status
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
           <div style={{ fontWeight: 800 }}>🏁 ผลได้งาน / ไม่ได้งาน {award && <Pill label={RFQ_OUTCOMES[award.outcome]?.label || award.outcome} color={statusColor(RFQ_OUTCOMES[award.outcome]?.tone || 'none')} />}</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {canAward && <button style={award ? ghost : btn()} onClick={onAward}>{award ? '✏️ แก้ผล' : '🏁 บันทึกผล'}</button>}
-            {canAward && award?.outcome === 'awarded' && !award.production_order_no && <button style={btn()} onClick={onIssue}>🖨️ ออกใบแจ้งจัดทำ F-MKT-001/002</button>}
-            {award?.production_order_no && <button style={ghost} onClick={onReprint}>🖨️ พิมพ์ซ้ำ {award.production_order_no}</button>}
+            {canAward && <button style={award ? ghost : btn()} onClick={onAward}>{award ? 'แก้ผล' : 'บันทึกผล'}</button>}
+            {canAward && award?.outcome === 'awarded' && !award.production_order_no && <button style={btn()} onClick={onIssue}>ออกใบแจ้งจัดทำ F-MKT-001/002</button>}
+            {award?.production_order_no && <button style={ghost} onClick={onReprint}>พิมพ์ซ้ำ {award.production_order_no}</button>}
           </div>
         </div>
         {!award ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ยังไม่มีผล — ลูกค้าตัดสินแล้วมาบันทึกที่นี่ (ได้งาน = ออกใบแจ้งจัดทำให้โรงงานได้ทันที)</div> : (
@@ -623,7 +623,7 @@ function ReportTab({ rfqs, awards, onOpen }) {
         <Kpi label="ไม่ได้งาน" value={`${s.lost} ใบ · ${fmtN(s.sales.lost, 0)} THB/ปี`} tone="bad" />
         <Kpi label="แม่พิมพ์ (ได้ / เสีย)" value={`${fmtN(s.tooling.awarded, 0)} / ${fmtN(s.tooling.lost, 0)}`} />
       </div>
-      {s.unknownSales > 0 && <WarnBar color="#f59e0b">{s.unknownSales} ใบคิดยอดขายไม่ได้ (ขาด volume หรือราคา) — ยอดรวมข้างบนไม่รวมใบเหล่านี้</WarnBar>}
+      {s.unknownSales > 0 && <WarnBar color="var(--amber)">{s.unknownSales} ใบคิดยอดขายไม่ได้ (ขาด volume หรือราคา) — ยอดรวมข้างบนไม่รวมใบเหล่านี้</WarnBar>}
       <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
         <div style={{ maxHeight: '60vh', overflow: 'auto' }}>
           <table className="rec-list" style={{ width: '100%' }}>

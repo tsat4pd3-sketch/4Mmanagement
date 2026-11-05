@@ -36,19 +36,19 @@ const MaintenanceLevels = lazy(() => import('./MaintenanceLevels'));
 /* เรียงตาม "ความถี่ที่ใช้จริง" ไม่ใช่ลำดับ workflow —
    ช่างเปิดจอมาเพื่อ *ตรวจ* ทุกวัน ส่วน *ตั้งค่า* นานๆ ครั้ง (หลักเดียวกับ DailyChecker) */
 const TABS = [
-  { key: 'check',    label: '✅ ตรวจอุปกรณ์',        page: '/pm-check',        Comp: PMCheckData,
+  { key: 'check',    label: 'ตรวจอุปกรณ์',        page: '/pm-check',        Comp: PMCheckData,
     hint: 'บันทึกผลตรวจตามจุดที่ตั้งไว้ — ตรวจครบแล้วรอบถัดไปเลื่อนให้เอง' },
-  { key: 'plan',     label: '📅 แผน PM',              page: '/pm-schedule',     Comp: PMSchedule,
+  { key: 'plan',     label: 'แผน PM',              page: '/pm-schedule',     Comp: PMSchedule,
     hint: 'ปฏิทิน/ไทม์ไลน์ว่าเครื่องไหนครบกำหนดวันไหน + ผลตรวจจริงของวันนั้น' },
-  { key: 'forecast', label: '🔮 ล่วงหน้า (Planner)',  page: '/pm-forecast',     Comp: PmForecast,
+  { key: 'forecast', label: 'ล่วงหน้า (Planner)',  page: '/pm-forecast',     Comp: PmForecast,
     hint: 'คาดวันที่จะต้อง PM + buffer ที่ต้องผลิตเผื่อก่อนเครื่องหยุด' },
   /* 3 ระดับ Preventive → Predictive → Prescriptive (2026-09-23) — อ่านอย่างเดียว
      piggyback สิทธิ์ page:/pm-forecast (ทุก role เข้าได้อยู่แล้ว) ⇒ ไม่ต้อง seed สิทธิ์ใหม่ · ไม่มี route แยก */
-  { key: 'levels',   label: '🧭 3 ระดับ PM',   page: '/pm-forecast', Comp: MaintenanceLevels,
+  { key: 'levels',   label: '3 ระดับ PM',   page: '/pm-forecast', Comp: MaintenanceLevels,
     hint: 'แผนบอกว่าถึงเวลาไหม → ข้อมูลเสียจริงบอกว่าแย่ลงไหม → ระบบแนะนำว่าควรทำอะไร ภายในเมื่อไหร่ เพราะอะไร' },
-  { key: 'coord',    label: '🗓️ ประสานงาน',           page: '/pm-coordination', Comp: PmCoordination,
+  { key: 'coord',    label: 'ประสานงาน',           page: '/pm-coordination', Comp: PmCoordination,
     hint: 'งาน PM ที่กินหลายวัน — นัด Production ล่วงหน้า + ช่วง Production Support' },
-  { key: 'setup',    label: '⚙️ ตั้งค่าจุดตรวจ',      page: '/pm-setup',        Comp: PMSetup,
+  { key: 'setup',    label: 'ตั้งค่าจุดตรวจ',      page: '/pm-setup',        Comp: PMSetup,
     hint: 'ลงทะเบียนอุปกรณ์ + จุดที่ต้องตรวจ + รอบเวลา/ยอดผลิต' },
 ];
 

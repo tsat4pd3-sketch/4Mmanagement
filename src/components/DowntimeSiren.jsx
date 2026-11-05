@@ -12,6 +12,7 @@ import { checkWriteRows } from '../utils/dbWrite';
 import useSiren, { SIREN_PATTERN_ALARM } from '../utils/useSiren';
 /* ทีมที่ถูกเรียกเก็บเป็น key — แปลงเป็นชื่อผ่านของกลางเท่านั้น (utils/mtnTeams.js) */
 import { teamKeyOf, deptNameOf } from '../utils/mtnTeams'
+import useIsMobile from '../utils/useIsMobile';
 
 /* เสียง+แถบเตือน downtime บนเว็บ — แยกตามหน้า (คำสั่ง user 2026-07-14):
      mode='call_mtn'   → ดังหน้า Maintenance (มีคนกดปุ่ม "เรียกช่าง")
@@ -39,6 +40,10 @@ import { teamKeyOf, deptNameOf } from '../utils/mtnTeams'
    🔴 ใบที่ **ไม่ได้ระบุทีม = ดังทุกห้อง** (fail-open) — เงียบเพราะข้อมูลไม่ครบ คือความเสี่ยงที่
       แย่กว่าดังเกิน · ห้ามเปลี่ยนเป็น fail-closed */
 export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
+  /* 📱 มือถือโชว์ทีละใบ (05/11 · เหตุผลเดียวกับ StoreCallSiren) — แถบ Andon ขึ้นบรรทัดใหม่บนจอแคบ
+     หลายใบซ้อนกันจะยาวเกินจอ แล้วปุ่ม "รับทราบ" ของใบล่างตกนอกจอ (แถบเป็น position: fixed)
+     🔴 ที่เกินต้องเขียนบนจอว่าเหลืออีกกี่ใบ **ห้ามตัดทิ้งเงียบ** · จอคอม/TV ได้ทุกใบเหมือนเดิม */
+  const isMobile = useIsMobile();
   const [raw, setRaw] = useState([])       // แถวดิบที่ยังไม่รับทราบ (กะเปิดอยู่)
   const [thr, setThr] = useState(null)     // เกณฑ์นาที (dt_alert_config)
   const [loadErr, setLoadErr] = useState(false) // อ่านรายการเครื่องหยุดไม่ได้ — ห้ามเงียบ (จอ TV ไม่มีใครเฝ้า)
@@ -155,12 +160,13 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
   }
   return (
     <div style={{ position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 4000, width: 'min(96vw, 620px)', display: 'flex', flexDirection: 'column', gap: 8, pointerEvents: 'none' }}>
-      {alerts.map(a => {
+      {(isMobile ? alerts.slice(0, 1) : alerts).map(a => {
         const m = metaOf(a)
         return (
-        <div key={a.id} className="dt-alarm-blink" style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(20,10,10,0.96)', border: `2px solid ${m.color}`, borderRadius: 12, padding: '10px 14px', boxShadow: 'var(--shadow-float)' }}>
+        /* 📱 `andon-bar` — เหตุผลเดียวกับ StoreCallSiren (index.css · มือถือเท่านั้น) */
+        <div key={a.id} className="dt-alarm-blink andon-bar" style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(20,10,10,0.96)', border: `2px solid ${m.color}`, borderRadius: 12, padding: '10px 14px', boxShadow: 'var(--shadow-float)' }}>
           <span style={{ fontSize: 22 }}>{m.icon}</span>
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="andon-bar-msg" style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff' }}>{m.label}</div>
             <div style={{ fontSize: 12, color: '#f0c9c2' }}>
               <b>{a.production_sessions?.line_name || '—'}</b> · {a.machine_no || 'ไม่ระบุเครื่อง'} · {a.dr_downtime_types?.name_th || 'Downtime'}
@@ -177,6 +183,14 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
         </div>
         )
       })}
+      {isMobile && alerts.length > 1 && (
+        /* 🎨 สีจาก token เท่านั้น (ด่าน colorRatchet · UI §6.17) — ไฟล์นี้ยังมีสีดิบเก่าค้างอยู่
+           แต่ของใหม่ห้ามเพิ่ม */
+        <div style={{ pointerEvents: 'auto', background: 'var(--card)', border: '1px solid var(--red-line)',
+          borderRadius: 10, padding: '7px 12px', fontSize: 11.5, fontWeight: 800, color: 'var(--red)', textAlign: 'center' }}>
+          + อีก {alerts.length - 1} เครื่องที่ยังไม่มีใครรับทราบ — กดรับทราบใบบนก่อน แล้วใบถัดไปจะขึ้นแทน
+        </div>
+      )}
     </div>
   )
 }

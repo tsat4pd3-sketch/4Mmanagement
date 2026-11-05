@@ -76,7 +76,7 @@ const SOURCES = [
      ⇒ เดิมลากงานที่ไม่เกี่ยวกับช่างมา 96.8% — พาเรโตของจอซ่อมบำรุงเลยไม่ใช่ปัญหาของช่าง
      ชุดข้อมูล = ใบ MO ทั้งหมด **+** ดาวน์ไทม์ที่เรียกช่างแล้วแต่ยังไม่ได้เปิดใบ (เหลือ 19 ครั้ง)
      ⇒ ไม่นับซ้ำ เพราะดาวน์ไทม์ที่เปิดใบแล้วถูกนับผ่านใบ MO อยู่แล้ว (`source_downtime_id`) */
-  { key: 'mo', label: '🛠️ ใบซ่อม MO', unit: 'ใบ', note: 'งานที่เปิดใบแจ้งซ่อมจริง — มีสาเหตุ/วิธีแก้/ค่าใช้จ่าย' },
+  { key: 'mo', label: 'ใบซ่อม MO', unit: 'ใบ', note: 'งานที่เปิดใบแจ้งซ่อมจริง — มีสาเหตุ/วิธีแก้/ค่าใช้จ่าย' },
 ];
 
 const fmt = (n, d = 0) => (n == null ? '—' : Number(n).toLocaleString('en-US', { maximumFractionDigits: d }));
@@ -101,7 +101,7 @@ const evKey = (iso, scale) => {
 const KPI = ({ label, value, unit, sub, warn }) => (
   <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 11px', minWidth: 0 }}>
     <div style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
-    <div style={{ fontSize: 19, fontWeight: 800, color: value == null ? 'var(--muted)' : warn ? '#f59e0b' : 'var(--text)', lineHeight: 1.25 }}>
+    <div style={{ fontSize: 19, fontWeight: 800, color: value == null ? 'var(--muted)' : warn ? 'var(--amber)' : 'var(--text)', lineHeight: 1.25 }}>
       {value == null ? '—' : value}{value != null && unit ? <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}> {unit}</span> : null}
     </div>
     {/* ค่า null = "ยังวัดไม่ได้" ต้องเขียนบอก ไม่ใช่โชว์ 0 ให้คนอ่านว่าดีเยี่ยม */}
@@ -110,8 +110,8 @@ const KPI = ({ label, value, unit, sub, warn }) => (
 );
 
 const MAIN_TABS = [
-  { key: 'kpi', label: '📊 KPI ช่าง' },
-  { key: 'qc7', label: '🧪 QC 7 Tools (แยกชนิดอุปกรณ์)' },
+  { key: 'kpi', label: 'KPI ช่าง' },
+  { key: 'qc7', label: 'QC 7 Tools (แยกชนิดอุปกรณ์)' },
 ];
 
 export default function MtnAnalysis() {
@@ -369,12 +369,12 @@ export default function MtnAnalysis() {
   /* มิติเจาะลึกของ ParetoAbcChart = **ชื่อคีย์ในแถวดิบ** (component อ่าน `r[dim.key]` เอง)
      ⚠️ ห้ามใส่ฟังก์ชัน `of` — มันไม่ถูกเรียก แล้วจะได้ช่องว่างเงียบๆ */
   const PARETO_DIMS = useMemo(() => ([
-    { key: 'sub', label: '🛑 อาการย่อย' },
-    { key: 'machine', label: '⚙️ อุปกรณ์' },
-    { key: 'line', label: '🏭 ไลน์' },
-    { key: 'team', label: '👷 ทีมช่าง' },
-    { key: 'note', label: '💬 อาการที่แจ้ง (จับกลุ่มคำ)', cluster: true },
-    { key: 'why', label: '🔎 ที่มาของหมวด' },
+    { key: 'sub', label: 'อาการย่อย' },
+    { key: 'machine', label: 'อุปกรณ์' },
+    { key: 'line', label: 'ไลน์' },
+    { key: 'team', label: 'ทีมช่าง' },
+    { key: 'note', label: 'อาการที่แจ้ง (จับกลุ่มคำ)', cluster: true },
+    { key: 'why', label: 'ที่มาของหมวด' },
   ]), []);
 
   const assetTabs = ASSET_CLASSES.map(a => ({
@@ -394,8 +394,8 @@ export default function MtnAnalysis() {
           /* ตัวกรองแหล่งข้อมูล/ช่วงเวลา เป็นของแท็บ QC7 เท่านั้น (อยู่ใน TimeRangeBar ข้างล่าง) — แผง KPI มีตัวกรองของตัวเอง
              โชว์ทั้งคู่พร้อมกัน = คนกดแล้วไม่เห็นอะไรเปลี่ยน แล้วคิดว่าจอค้าง */
           tab === 'qc7' ? null : (
-            <button onClick={load} disabled={loading} style={{ padding: '6px 12px', borderRadius: 8, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', fontSize: 12.5, cursor: loading ? 'default' : 'pointer' }}>
-              {loading ? 'กำลังโหลด…' : '↻ รีเฟรช'}
+            <button type="button" className="pg-btn" onClick={load} disabled={loading} style={{ cursor: loading ? 'default' : 'pointer' }}>
+              {loading ? 'กำลังโหลด…' : 'รีเฟรช'}
             </button>
           )
         }
@@ -423,7 +423,7 @@ export default function MtnAnalysis() {
       )}
 
       {err && (
-        <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid #ef4444', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: '#ef4444', marginBottom: 12 }}>
+        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--red)', marginBottom: 12 }}>
           โหลดข้อมูลไม่สำเร็จ — {err} · กด ↻ รีเฟรช อีกครั้ง (ยังไม่ได้แสดงตัวเลขใดๆ เพื่อไม่ให้อ่านผิด)
         </div>
       )}
@@ -489,7 +489,7 @@ export default function MtnAnalysis() {
                     </span>
                   )}
                   {paretoNote && (
-                    <span style={{ color: paretoNote.level === 'warn' ? '#f59e0b' : 'var(--muted)', fontWeight: paretoNote.level === 'warn' ? 700 : 400 }}>
+                    <span style={{ color: paretoNote.level === 'warn' ? 'var(--amber)' : 'var(--muted)', fontWeight: paretoNote.level === 'warn' ? 700 : 400 }}>
                       ⚠️ {paretoNote.text}
                     </span>
                   )}

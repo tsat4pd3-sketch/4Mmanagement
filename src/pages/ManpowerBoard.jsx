@@ -229,30 +229,30 @@ export default function ManpowerBoard() {
         title="Manpower Control Board" icon="🧑‍🤝‍🧑"
         sub="ผังกำลังคน · ผังจุดงาน · ป้ายสถานะ 4M ของส่วนงาน — อ่านอย่างเดียว ตามทะเบียนพนักงาน/ตารางกะ/เช็คชื่อวันนี้"
         tabs={[
-          { key: 'org', label: '🧑‍🤝‍🧑 ผังกำลังคน' },
-          { key: 'layout', label: '🗺️ ผัง LAYOUT' },
-          { key: 'fourm', label: '🚦 ป้ายสถานะ 4M' },
-          { key: 'staffing', label: '📊 แผน vs มาจริง' },
-          { key: 'history', label: '📜 ประวัติการเปลี่ยนช่อง' },
+          { key: 'org', label: 'ผังกำลังคน' },
+          { key: 'layout', label: 'ผัง LAYOUT' },
+          { key: 'fourm', label: 'ป้ายสถานะ 4M' },
+          { key: 'staffing', label: 'แผน vs มาจริง' },
+          { key: 'history', label: 'ประวัติการเปลี่ยนช่อง' },
         ]}
         tab={tab} onTab={setTab}
         filters={filters}
         actions={(<>
           {canSetup && section && (
-            <button type="button" onClick={() => setSetupOpen(true)}
+            <button type="button" className="pg-btn" onClick={() => setSetupOpen(true)}
               style={{ padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
                 border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)' }}
-              title="ตั้งจำนวนช่องตำแหน่งต่อทีม + ผูกช่างประจำไลน์ (สิทธิ์ manpower_board:edit)">⚙️ ตั้งค่าบอร์ด</button>
+              title="ตั้งจำนวนช่องตำแหน่งต่อทีม + ผูกช่างประจำไลน์ (สิทธิ์ manpower_board:edit)">ตั้งค่าบอร์ด</button>
           )}
-          <button type="button" onClick={() => merge({ tv: tv ? '0' : '1' })} aria-pressed={tv}
+          <button type="button" className="pg-btn" onClick={() => merge({ tv: tv ? '0' : '1' })} aria-pressed={tv}
             style={{ padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
               border: `1px solid ${tv ? 'var(--accent)' : 'var(--border2)'}`, background: tv ? 'var(--accent-dim)' : 'var(--bg2)', color: tv ? 'var(--accent)' : 'var(--text2)' }}
             title="จอ TV ไม่มีเมาส์: ไม่เลื่อน แบ่งเป็นหน้า เปลี่ยนหน้าเองทุก 20 วิ (← → หรือรีโมตก็ได้)">
-            📺 {tv ? 'ออกจากโหมดจอ TV' : 'โหมดจอ TV'}
+            {tv ? 'ออกจากโหมดจอ TV' : 'โหมดจอ TV'}
           </button>
         </>)}
       />
-      {err && <div className="card" style={{ padding: 10, marginBottom: 12, borderLeft: '4px solid #ef4444', fontSize: 13 }}>⚠️ โหลดข้อมูลไม่ครบ — {err}</div>}
+      {err && <div className="card" style={{ padding: 10, marginBottom: 12, borderLeft: '4px solid var(--red)', fontSize: 13 }}>⚠️ โหลดข้อมูลไม่ครบ — {err}</div>}
       {loading ? <div style={{ padding: 24, color: 'var(--muted)' }}>กำลังโหลด…</div>
         : !board ? <div className="card" style={{ padding: 24 }}>ยังไม่มีส่วนงานในผังองค์กร (ตั้งที่ /org-setup)</div>
         : tab === 'org' ? (tv ? <OrgTv board={board} depts={depts} skills={skills} /> : <OrgTab board={board} depts={depts} skills={skills} />)
@@ -306,7 +306,7 @@ function AttendDot({ p }) {
   return <span title={label} style={{ fontSize: 11, fontWeight: 700, color: m.color, whiteSpace: 'nowrap' }}>● {label}</span>;
 }
 
-/** 🤝 ป้ายคนยืมตัว (UI §6.13 — ฟ้า #0ea5e9 = ข้อมูลบริบท ไม่ใช่ Andon)
+/** 🤝 ป้ายคนยืมตัว (UI §6.13 — ฟ้า var(--blue) = ข้อมูลบริบท ไม่ใช่ Andon)
  *  ยืมมา = ต้นสังกัดยังเป็นที่เดิม มาช่วยเฉพาะวันนี้ · ไปช่วย = คนในสังกัดที่วันนี้ไปยืนไลน์อื่น */
 const SHIFT_TH = { day: 'กะเช้า', night: 'กะดึก' };
 function HelperTag({ p }) {
@@ -316,7 +316,7 @@ function HelperTag({ p }) {
   const text = b ? `🤝 ยืมจาก ${b.from || 'ไลน์อื่น'}` : `↗ ไปช่วย ${l.to || 'ไลน์อื่น'}`;
   const title = b ? `มาช่วย ${b.to}${sh(b)} เฉพาะวันนี้ — ต้นสังกัดยังเป็น ${b.from || 'ที่เดิม'}`
     : `วันนี้ไปช่วย ${l.to}${sh(l)} — ยังสังกัดแผนกนี้`;
-  return <span title={title} style={{ fontSize: 11, fontWeight: 700, color: '#0ea5e9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</span>;
+  return <span title={title} style={{ fontSize: 11, fontWeight: 700, color: 'var(--blue)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</span>;
 }
 
 /** 🏃 ป้ายคนวิ่งข้ามแผนก — "ไปช่วยประจำ" ไม่ใช่ "ยืมวันนี้" และไม่ใช่ "ย้ายสังกัด"
@@ -412,7 +412,7 @@ function SkillCard({ p, skills }) {
       <HelperTag p={p} />
       <FlexTag p={p} />
       <ActingTag p={p} />
-      {p.unknownPos && <span style={{ fontSize: 11, color: '#f59e0b' }} title="ตำแหน่งนี้ไม่อยู่ในทะเบียนตำแหน่ง — แก้ที่ /operator">⚠️ {p.position}</span>}
+      {p.unknownPos && <span style={{ fontSize: 11, color: 'var(--amber)' }} title="ตำแหน่งนี้ไม่อยู่ในทะเบียนตำแหน่ง — แก้ที่ /operator">⚠️ {p.position}</span>}
       {top.length ? top.map(s => {
         const d = skills.defs[s.skill_name];
         return (
@@ -499,8 +499,8 @@ function OrgTab({ board, depts, skills }) {
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <Counter label="แผน (std 2 กะ)" value={t.plan} sub={t.plan == null ? 'ยังไม่ตั้ง std' : null} />
           <Counter label="ในทะเบียน" value={t.ops} sub="เฉพาะพนักงาน" />
-          <Counter label="มาวันนี้" value={t.present} tone="#22c55e" />
-          {t.borrowed > 0 && <Counter label="ยืมมาช่วย" value={t.borrowed} tone="#0ea5e9" />}
+          <Counter label="มาวันนี้" value={t.present} tone="var(--green)" />
+          {t.borrowed > 0 && <Counter label="ยืมมาช่วย" value={t.borrowed} tone="var(--blue)" />}
           {t.flex > 0 && <Counter label="วิ่งข้ามมาช่วย" value={t.flex} sub="ไม่นับในทะเบียน" />}
         </div>
       </div>
@@ -520,18 +520,18 @@ function OrgTab({ board, depts, skills }) {
             </div>
             <Counter label="แผน เช้า/ดึก" value={d.planTotal == null ? null : `${d.plan.day ?? '–'}/${d.plan.night ?? '–'}`} sub={d.planTotal == null ? 'ยังไม่ตั้ง std ที่ไลน์' : null} />
             <Counter label="ในทะเบียน" value={d.opsTotal} sub="เฉพาะพนักงาน" />
-            <Counter label="มาวันนี้" value={d.present} tone="#22c55e" />
-            {d.borrowed.length > 0 && <Counter label="ยืมมาช่วย" value={d.borrowed.length} tone="#0ea5e9" />}
+            <Counter label="มาวันนี้" value={d.present} tone="var(--green)" />
+            {d.borrowed.length > 0 && <Counter label="ยืมมาช่วย" value={d.borrowed.length} tone="var(--blue)" />}
             {d.flex.length > 0 && <Counter label="วิ่งข้ามมาช่วย" value={d.flex.length} sub="ไม่นับในทะเบียน" />}
           </div>
           {d.stationInfo && (
             <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 8 }}>
               📍 ช่องว่างคิดจากจุดงาน {d.stationInfo.planned}/{d.stationInfo.total} จุดที่ตั้งจำนวนคนไว้ (ต้องการ เช้า {d.stationInfo.need.day} · ดึก {d.stationInfo.need.night} คน)
-              {d.stationInfo.noHome > 0 && <span style={{ color: '#f59e0b' }}> · ⚠️ {d.stationInfo.noHome} คนยังไม่มีจุดประจำในไลน์ของแผนก — ไม่ถูกนับลงจุดไหน ช่องว่างอาจมากกว่าจริง (ตั้งจุดประจำที่ /management)</span>}
+              {d.stationInfo.noHome > 0 && <span style={{ color: 'var(--amber)' }}> · ⚠️ {d.stationInfo.noHome} คนยังไม่มีจุดประจำในไลน์ของแผนก — ไม่ถูกนับลงจุดไหน ช่องว่างอาจมากกว่าจริง (ตั้งจุดประจำที่ /management)</span>}
             </div>
           )}
           {d.unknownShiftTeams.length > 0 && (
-            <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 8 }}>
+            <div style={{ fontSize: 12, color: 'var(--amber)', marginBottom: 8 }}>
               ⚠️ ทีม {d.unknownShiftTeams.join(', ')} ยังไม่ได้ตั้งตารางกะวันนี้ — ไม่รู้ว่าเข้ากะไหน จึงยังไม่คำนวณช่องว่าง (ตั้งที่ /shift-organize)
             </div>
           )}
@@ -541,7 +541,7 @@ function OrgTab({ board, depts, skills }) {
           {d.borrowed.length > 0 && (
             <div style={{ marginTop: 8 }}>
               {/* 🤝 ไม่นับรวมในทะเบียน/ช่องว่างของแผนก — มาช่วยเฉพาะวันนี้ ต้นสังกัดยังเป็นที่เดิม (UI §6.13) */}
-              <span style={{ display: 'inline-block', fontSize: 11.5, fontWeight: 800, padding: '2px 8px', borderRadius: 4, background: '#0ea5e9', color: '#fff' }}>
+              <span style={{ display: 'inline-block', fontSize: 11.5, fontWeight: 800, padding: '2px 8px', borderRadius: 4, background: 'var(--blue)', color: '#fff' }}>
                 🤝 ยืมมาช่วยวันนี้ {d.borrowed.length} คน</span>
               <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>ไม่นับรวมในทะเบียนของแผนก</span>
               <div style={{ ...CARD_GRID, marginTop: 6 }}>
@@ -657,12 +657,12 @@ function LayoutTab({ board, depts, lines, attendance, maps, tv, stationPlans, sk
           <span style={{ color: 'var(--muted)' }}>จาง = ลา/ขาด · ✳ = ย้ายมาวันนี้ · ↗ = วันนี้ไปจุดอื่น · วงประ + สีกะ = ขาดคนประจำกะนั้น</span>
         </span>
       </FilterBar>
-      {err && <div style={{ fontSize: 12, color: '#ef4444' }}>⚠️ {err}</div>}
+      {err && <div style={{ fontSize: 12, color: 'var(--red)' }}>⚠️ {err}</div>}
       <div style={{ fontSize: 12, color: 'var(--muted)' }}>
         {stations.length} จุดงาน · ยังไม่มีคนประจำ {emptyStations} จุด{unplaced ? ` · ยังไม่วางพิกัด ${unplaced} จุด` : ''}
-        {shortage.n > 0 && <span style={{ color: '#f59e0b' }}> · 📍 ขาดคนประจำ เช้า {shortage.day} · ดึก {shortage.night} ช่อง{shortage.unknown ? ` · ยังไม่รู้กะ ${shortage.unknown} ช่อง (ตั้งตารางกะที่ /shift-organize)` : ''}</span>} — ตั้งจุดประจำที่ /management
+        {shortage.n > 0 && <span style={{ color: 'var(--amber)' }}> · 📍 ขาดคนประจำ เช้า {shortage.day} · ดึก {shortage.night} ช่อง{shortage.unknown ? ` · ยังไม่รู้กะ ${shortage.unknown} ช่อง (ตั้งตารางกะที่ /shift-organize)` : ''}</span>} — ตั้งจุดประจำที่ /management
       </div>
-      <div style={{ fontSize: 12, color: fitGaps.gaps.length ? '#f59e0b' : 'var(--muted)' }}>
+      <div style={{ fontSize: 12, color: fitGaps.gaps.length ? 'var(--amber)' : 'var(--muted)' }}>
         🎯 ฝีมือตรงจุดไหม (คนที่มาวันนี้): ตรวจ {fitGaps.checked} คน · ผ่านครบทุกทักษะ {fitGaps.ok} คน
         {fitGaps.gaps.length > 0 && <b> · ยืนจุดที่ทักษะยังไม่ถึง {fitGaps.gaps.length} คน</b>}
         {fitGaps.onlyApproval > 0 && <span> (⏳ ในนี้ {fitGaps.onlyApproval} คนได้ขั้นแล้ว แค่รอหัวหน้าอนุมัติที่ /operator?tab=levelup)</span>}
@@ -687,7 +687,7 @@ function SkillGapTable({ gaps, defs }) {
         <tbody>
           {gaps.map(g => (
             <tr key={`${g.emp.id}-${g.station.id}`}>
-              <td style={{ ...td, fontWeight: 700 }}>{g.emp.name}{g.temp && <span title="ย้ายมายืนจุดนี้วันนี้ (จุดประจำอยู่ที่อื่น)" style={{ marginLeft: 6, color: '#0ea5e9' }}>✳ ย้ายมาวันนี้</span>}</td>
+              <td style={{ ...td, fontWeight: 700 }}>{g.emp.name}{g.temp && <span title="ย้ายมายืนจุดนี้วันนี้ (จุดประจำอยู่ที่อื่น)" style={{ marginLeft: 6, color: 'var(--blue)' }}>✳ ย้ายมาวันนี้</span>}</td>
               <td style={td}>{g.station.station_name || '–'}</td>
               <td style={{ ...td, whiteSpace: 'nowrap', color: shiftMeta(g.shift).color }}>{shiftMeta(g.shift).label}</td>
               <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{g.fit.passed}/{g.fit.total}</td>
@@ -698,7 +698,7 @@ function SkillGapTable({ gaps, defs }) {
                       border: `1px ${m.assessed ? 'solid' : 'dashed'} var(--border2)`, color: m.assessed ? 'var(--text)' : 'var(--muted)' }}>
                       {defs[m.skill_name]?.label || m.skill_name}{' '}
                       {m.assessed ? <b style={{ fontVariantNumeric: 'tabular-nums' }}>{m.actual}/{m.required}</b> : <span>ยังไม่ประเมิน (ต้องการ {m.required})</span>}
-                      {m.pending != null && <span title="ได้ขั้นนี้แล้วจากการสะสม EXP — รอหัวหน้ากดอนุมัติ" style={{ marginLeft: 4, color: m.waitApproval ? '#0ea5e9' : 'var(--muted)' }}>⏳ รออนุมัติขั้น {m.pending}</span>}
+                      {m.pending != null && <span title="ได้ขั้นนี้แล้วจากการสะสม EXP — รอหัวหน้ากดอนุมัติ" style={{ marginLeft: 4, color: m.waitApproval ? 'var(--blue)' : 'var(--muted)' }}>⏳ รออนุมัติขั้น {m.pending}</span>}
                     </span>
                   ))}
                 </span>
@@ -747,7 +747,7 @@ function LayoutMap({ layout, placed, reserve = 12 }) {
                       </div>
                     );
                   }) : !missing ? (
-                    <div title={`${station.station_name} · ยังไม่มีคนประจำ`} style={{ width: sz, height: sz, borderRadius: '50%', border: '2px dashed #64748b', background: 'rgba(0,0,0,.35)', color: '#cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>+</div>
+                    <div title={`${station.station_name} · ยังไม่มีคนประจำ`} style={{ width: sz, height: sz, borderRadius: '50%', border: '2px dashed var(--muted)', background: 'rgba(0,0,0,.35)', color: '#cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>+</div>
                   ) : null}
                   {/* 📍 ช่องที่ขาดต่อกะ (station_slot_plans) — วงประสีของกะ ⇒ เห็นเลยว่าจุดไหนขาดคนกะไหน */}
                   {missing && ['day', 'night', 'unknown'].flatMap(sh => Array.from({ length: missing[sh] || 0 }, (_, i) => (
@@ -781,7 +781,7 @@ function FourMCard({ d, logs, tv }) {
       <div style={{ marginBottom: 8 }}><RoleTag>ป้ายแจ้งสถานะ {d.name}</RoleTag>
         <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>สถานะการเปลี่ยนแปลงวันนี้ · {d.lines.length} ไลน์</span>
       </div>
-      {!d.lines.length && <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 6 }}>⚠️ แผนกนี้ยังไม่ผูกไลน์ผลิต — ตัดสิน 4M ไม่ได้</div>}
+      {!d.lines.length && <div style={{ fontSize: 12, color: 'var(--amber)', marginBottom: 6 }}>⚠️ แผนกนี้ยังไม่ผูกไลน์ผลิต — ตัดสิน 4M ไม่ได้</div>}
       <div style={{ display: 'grid', gap: 6 }}>
         {FOUR_M.map(m => {
           const s = st[m.key];
@@ -956,7 +956,7 @@ function OrgTv({ board, depts, skills }) {
           </div>
           <Counter label="แผน" value={t.plan} />
           <Counter label="ในทะเบียน" value={t.ops} sub="เฉพาะพนักงาน" />
-          <Counter label="มาวันนี้" value={t.present} tone="#22c55e" />
+          <Counter label="มาวันนี้" value={t.present} tone="var(--green)" />
         </div>
         {!d ? <div className="card" style={{ padding: 24, color: 'var(--muted)' }}>ส่วนงานนี้ยังไม่มีพนักงานหน้างานในทะเบียน</div> : (
           <>
@@ -966,7 +966,7 @@ function OrgTv({ board, depts, skills }) {
                 {d.heads.map(p => <MiniPerson key={p.id} p={p} />)}
                 {d.techs.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap', alignSelf: 'center' }}>🔧 ช่างประจำไลน์ {d.techs.length}:</span>}
                 {d.techs.map(p => <MiniPerson key={p.id} p={p} />)}
-                {d.borrowed.length > 0 && <span style={{ fontSize: 12, color: '#0ea5e9', fontWeight: 700, whiteSpace: 'nowrap', alignSelf: 'center' }}>🤝 ยืมมาช่วย {d.borrowed.length}:</span>}
+                {d.borrowed.length > 0 && <span style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 700, whiteSpace: 'nowrap', alignSelf: 'center' }}>🤝 ยืมมาช่วย {d.borrowed.length}:</span>}
                 {d.borrowed.map(p => <MiniPerson key={p.id} p={p} />)}
                 {/* 🏃 คนวิ่งข้ามแผนก — ไม่นับเป็นกำลังคนของแผนกนี้ (เทา ไม่ใช่สีบริบทฟ้าของคนยืม) */}
                 {d.flex.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700, whiteSpace: 'nowrap', alignSelf: 'center' }}>🏃 วิ่งข้ามมาช่วย {d.flex.length}:</span>}
@@ -974,7 +974,7 @@ function OrgTv({ board, depts, skills }) {
               </div>
               <Counter label="แผน เช้า/ดึก" value={d.planTotal == null ? null : `${d.plan.day ?? '–'}/${d.plan.night ?? '–'}`} />
               <Counter label="ในทะเบียน" value={d.opsTotal} sub="เฉพาะพนักงาน" />
-              <Counter label="มาวันนี้" value={d.present} tone="#22c55e" />
+              <Counter label="มาวันนี้" value={d.present} tone="var(--green)" />
             </div>
             <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: TV_GAP }}>
               {pg.cols.map(({ col: c, items, more }) => {
@@ -1113,9 +1113,9 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
         คิดจาก<b>ค่าตั้งบอร์ด/std และทะเบียนพนักงานปัจจุบัน</b> (ตัดคนที่เริ่มงานหลังวันนั้น — คนที่ลาออกไปแล้วไม่อยู่ในตัวเลขย้อนหลัง) ·
         กะที่ไม่มีใครในแผนกถูกเช็คชื่อเลย = <b>ไม่ได้เช็คชื่อ</b> ไม่นับเป็นขาด
       </div>
-      {clipped && <div style={{ fontSize: 12, color: '#f59e0b' }}>⚠️ ช่วงที่เลือกยาวเกิน {STAFFING_MAX_DAYS} วัน — แสดงเฉพาะ {from} ถึง {to}</div>}
-      {state.errors.length > 0 && <div className="card" style={{ padding: 10, borderLeft: '4px solid #ef4444', fontSize: 13 }}>⚠️ โหลดไม่ครบ — {state.errors.join(' · ')} (ตัวเลขที่เห็นอาจขาดส่วนนี้)</div>}
-      {state.truncated && <div style={{ fontSize: 12, color: '#f59e0b' }}>⚠️ ข้อมูลช่วงนี้เกินเพดานที่โหลดได้ — ย่อช่วงวันที่ ตัวเลขยังไม่ครบ</div>}
+      {clipped && <div style={{ fontSize: 12, color: 'var(--amber)' }}>⚠️ ช่วงที่เลือกยาวเกิน {STAFFING_MAX_DAYS} วัน — แสดงเฉพาะ {from} ถึง {to}</div>}
+      {state.errors.length > 0 && <div className="card" style={{ padding: 10, borderLeft: '4px solid var(--red)', fontSize: 13 }}>⚠️ โหลดไม่ครบ — {state.errors.join(' · ')} (ตัวเลขที่เห็นอาจขาดส่วนนี้)</div>}
+      {state.truncated && <div style={{ fontSize: 12, color: 'var(--amber)' }}>⚠️ ข้อมูลช่วงนี้เกินเพดานที่โหลดได้ — ย่อช่วงวันที่ ตัวเลขยังไม่ครบ</div>}
       {raw.borrowed.missing > 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ℹ️ คนยืมตัว {raw.borrowed.missing} รายการไม่อยู่ในทะเบียนพนักงานปัจจุบัน (ลาออก/ไม่ใช่พนักงานหน้างาน) — ไม่ได้นับเป็นยืมเข้า</div>}
       {state.loading ? <div style={{ padding: 24, color: 'var(--muted)' }}>กำลังโหลด…</div> : !summary.length ? (
         <div className="card" style={{ padding: 24, color: 'var(--muted)' }}>ไม่มีแผนกที่มีคน/ช่องในช่วงที่เลือก</div>
@@ -1134,7 +1134,7 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
               <tbody>
                 {summary.map(sm => (
                   <tr key={sm.key}>
-                    <td style={{ ...td, fontWeight: 700, whiteSpace: 'normal', minWidth: 140 }}>{sm.name}{sm.noPlanShifts > 0 && <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 400 }}>⚠️ {sm.noPlanShifts} กะมีทีมที่ไม่มีแผนช่อง</div>}</td>
+                    <td style={{ ...td, fontWeight: 700, whiteSpace: 'normal', minWidth: 140 }}>{sm.name}{sm.noPlanShifts > 0 && <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 400 }}>⚠️ {sm.noPlanShifts} กะมีทีมที่ไม่มีแผนช่อง</div>}</td>
                     <td style={num}>{sm.shifts}</td>
                     <td style={num}>{sm.shifts ? `${sm.shortShifts} (${pct(sm.shortShifts / sm.shifts)})` : '–'}</td>
                     <td style={num}>{sm.shifts ? `${sm.onFloor} / ${sm.registered} (${pct(sm.fill)})` : '–'}</td>
@@ -1148,7 +1148,7 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
                         <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>ตัดตามผัง {sm.capped}</div>
                       )}
                       {sm.stdUnknownShifts > 0 && (
-                        <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 400 }}>⚠️ ไม่รู้กำลังคนผัง {sm.stdUnknownShifts} กะ</div>
+                        <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 400 }}>⚠️ ไม่รู้กำลังคนผัง {sm.stdUnknownShifts} กะ</div>
                       )}
                     </td><td style={num}>{sm.leave}</td><td style={num}>{sm.absent}</td>
                     <td style={num}>{sm.unchecked}</td><td style={num}>{sm.lentOut}</td><td style={num}>{sm.borrowedIn}</td>
@@ -1188,7 +1188,7 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
                       <td style={num}>{g(c.low)}</td>
                       <td style={{ ...num, fontWeight: 800 }}>
                         {c.verdict === 'none' ? <span style={{ fontWeight: 400, color: 'var(--muted)' }}>ไม่มีกะผลิตที่ปิดแล้วในกะที่เช็คชื่อ</span>
-                          : c.verdict === 'thin' ? <span style={{ fontWeight: 400, color: '#f59e0b' }}>กะน้อยเกินจะสรุป (ต้องมีฝั่งละ ≥ {MIN_SHIFTS_TO_COMPARE} กะ)</span>
+                          : c.verdict === 'thin' ? <span style={{ fontWeight: 400, color: 'var(--amber)' }}>กะน้อยเกินจะสรุป (ต้องมีฝั่งละ ≥ {MIN_SHIFTS_TO_COMPARE} กะ)</span>
                           : c.diffOee == null ? '–' : `${c.diffOee > 0 ? '+' : ''}${c.diffOee} จุด`}
                       </td>
                     </tr>
@@ -1225,7 +1225,7 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
                       /* 🔴 ช่องสีแดง = "คนขาดจริง" เท่านั้น — ช่องว่างอัตรากำลังไม่ใช่เหตุการณ์ของวันนั้น
                          (เดิมใช้ gap รวม ⇒ ทั้งตารางแดงหมดทุกวันจนดูไม่ออกว่าวันไหนมีปัญหาจริง · 15/10) */
                       if (s.absentGap > 0) return <td key={d.date} title={tip(s, deptOf(r.key, d.date)?.sessions?.[r.sh])} style={{ ...base, fontWeight: 800, color: 'var(--text)', background: `rgba(239,68,68,${Math.min(0.15 + s.absentGap * 0.08, 0.6).toFixed(2)})` }}>{s.absentGap}</td>;
-                      if (s.absentGap < 0) return <td key={d.date} title={tip(s, deptOf(r.key, d.date)?.sessions?.[r.sh])} style={{ ...base, color: '#0ea5e9' }}>+{-s.absentGap}</td>;
+                      if (s.absentGap < 0) return <td key={d.date} title={tip(s, deptOf(r.key, d.date)?.sessions?.[r.sh])} style={{ ...base, color: 'var(--blue)' }}>+{-s.absentGap}</td>;
                       return <td key={d.date} title={tip(s, deptOf(r.key, d.date)?.sessions?.[r.sh])} style={{ ...base, color: 'var(--muted)' }}>✓</td>;
                     })}
                   </tr>
@@ -1315,8 +1315,8 @@ function HistoryTab({ section, dept, deptParam, nodes, lines, stations, employee
       <TimeRangeBar scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset}
         note={`ส่วนงาน ${section?.name || '–'}${deptParam ? ` · แผนก ${dept?.name || '(ไม่อยู่ในส่วนงานนี้)'}` : ''} · ช่องต่อทีม · คนต่อกะของจุดงาน · ช่างประจำไลน์ (จากบันทึกการแก้ไขของระบบ)`} />
-      {state.error && <div className="card" style={{ padding: 10, borderLeft: '4px solid #ef4444', fontSize: 13 }}>⚠️ โหลดประวัติไม่สำเร็จ — {state.error}</div>}
-      {state.truncated && <div style={{ fontSize: 12, color: '#f59e0b' }}>⚠️ แสดงได้ไม่เกิน {HISTORY_CAP.toLocaleString()} รายการ — ช่วงนี้มีมากกว่านั้น ให้ย่อช่วงวันที่</div>}
+      {state.error && <div className="card" style={{ padding: 10, borderLeft: '4px solid var(--red)', fontSize: 13 }}>⚠️ โหลดประวัติไม่สำเร็จ — {state.error}</div>}
+      {state.truncated && <div style={{ fontSize: 12, color: 'var(--amber)' }}>⚠️ แสดงได้ไม่เกิน {HISTORY_CAP.toLocaleString()} รายการ — ช่วงนี้มีมากกว่านั้น ให้ย่อช่วงวันที่</div>}
       {!state.loading && scoped.unattributed > 0 && (
         <div style={{ fontSize: 12, color: 'var(--muted)' }}>ℹ️ อีก {scoped.unattributed} รายการเป็นจุดงานที่ถูกลบไปแล้ว สืบไม่ได้ว่าเป็นของแผนกไหน — ไม่ได้แสดงในตัวกรองแผนก (เลือก "{ALL.dept}" เพื่อดู)</div>
       )}

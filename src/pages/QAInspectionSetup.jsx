@@ -38,11 +38,12 @@ import useTabParam from '../utils/useTabParam';
 import QaInspectorScopes from '../components/QaInspectorScopes';
 import Page from '../components/Page';
 import SearchInput from '../components/SearchInput';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* 📐 แท็บของหน้านี้ — `?tab=` (UI-CONVENTIONS §6.8: ห้ามวาดแถบแท็บเอง ใช้ PageHeader+useTabParam) */
 const MAIN_TABS = [
-  { key: 'std',        label: '📐 มาตรฐานการตรวจ & Drawing' },
-  { key: 'inspectors', label: '🔬 QC ประจำไลน์' },
+  { key: 'std',        label: 'มาตรฐานการตรวจ & Drawing' },
+  { key: 'inspectors', label: 'QC ประจำไลน์' },
 ];
 
 const fmtDT = s => s ? new Date(s).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
@@ -66,9 +67,9 @@ const tdSt = { padding: '7px 10px', fontSize: 12.5, color: 'var(--text)', border
 
 /* ตามฟอร์ม FM-QA-112: Part Classification + Rank ของจุดตรวจ */
 const PART_RANK = {
-  safety:    { label: 'Safety part',                 color: '#ef4444' },
-  important: { label: 'Important / Regulation part', color: '#f59e0b' },
-  general:   { label: 'General part',                color: '#4d9fff' },
+  safety:    { label: 'Safety part',                 color: 'var(--red)' },
+  important: { label: 'Important / Regulation part', color: 'var(--amber)' },
+  general:   { label: 'General part',                color: 'var(--blue)' },
 };
 const PART_KIND = {
   completed:    'Completed part',
@@ -80,7 +81,7 @@ function Chip({ label, color }) {
   return (
     <span style={{
       display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700,
-      color, background: `${color}1f`, border: `1px solid ${color}55`, whiteSpace: 'nowrap',
+      color, background: `${tint(color, 'dim')}`, border: `1px solid ${tint(color, 'line')}`, whiteSpace: 'nowrap',
     }}>{label}</span>
   );
 }
@@ -367,7 +368,7 @@ export default function QAInspectionSetup() {
     <Page>
       <PageHeader title="มาตรฐานการตรวจ & Drawing" icon="📐"
         tabs={MAIN_TABS} tab={tab} onTab={setTab}
-        sub="อัพโหลดแบบชิ้นงาน วาง balloon จุดตรวจ และกำหนดมาตรฐานการตรวจสอบต่อ part — จุด variable ส่งเข้า SPC (หน้า Quality Control Center) ได้" />
+        sub="อัพโหลดแบบชิ้นงาน วาง balloon จุดตรวจ และกำหนดมาตรฐานการตรวจต่อ part" />
 
       {tab === 'inspectors' && <QaInspectorScopes canManage={canManage} />}
 
@@ -419,7 +420,7 @@ export default function QAInspectionSetup() {
                 <div style={{ fontWeight: 900, fontSize: 17, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   {sel.part_no} <span style={{ fontWeight: 500, color: 'var(--text2)' }}>{sel.part_name || ''}</span>
                   {sel.part_rank && <Chip label={PART_RANK[sel.part_rank]?.label || sel.part_rank} color={PART_RANK[sel.part_rank]?.color || '#6b7280'} />}
-                  {sel.part_kind && <Chip label={PART_KIND[sel.part_kind] || sel.part_kind} color="#a78bfa" />}
+                  {sel.part_kind && <Chip label={PART_KIND[sel.part_kind] || sel.part_kind} color="var(--blue)" />}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
                   {[sel.customer && `ลูกค้า: ${sel.customer}`, sel.model && `Model: ${sel.model}`, sel.line_name && `ไลน์: ${sel.line_name}`,
@@ -431,7 +432,7 @@ export default function QAInspectionSetup() {
               </div>
               {/* 🔐 มีสิทธิ์ qa:manage แต่พาร์ทนี้เป็นของไลน์ส่วนงานอื่น — เขียนบอก ห้ามซ่อนปุ่มเงียบ */}
               {canManage && !partWrite.ok && (
-                <div style={{ fontSize: 12, color: '#eab308', padding: '6px 0' }}>
+                <div style={{ fontSize: 12, color: 'var(--amber)', padding: '6px 0' }}>
                   🔒 {writeBlockText(partWrite, { what: 'พาร์ทนี้' })}
                 </div>
               )}
@@ -439,7 +440,7 @@ export default function QAInspectionSetup() {
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button style={btnSt()} onClick={() => setEditor({})}
                     title="แผ่น Drawing/รูปชิ้นงาน + ปักหมุด + สเปคทุกจุด — หน้าตาและวิธีใช้เดียวกับตั้งค่าจุดตรวจ PM">
-                    🎯 ตั้งค่าจุดตรวจ & Drawing
+                    ตั้งค่าจุดตรวจ & Drawing
                   </button>
                   <button style={ghostBtn} onClick={() => setPartModal({
                     ...EMPTY_PART, ...sel,
@@ -447,8 +448,8 @@ export default function QAInspectionSetup() {
                     line_name: sel.line_name || '', dwg_no: sel.dwg_no || '', drawing_rev: sel.drawing_rev || '',
                     concern_no: sel.concern_no || '', part_rank: sel.part_rank || '', part_kind: sel.part_kind || '',
                     mat_no: sel.mat_no || '',
-                  })}>✏️ แก้ไข Part</button>
-                  <button style={{ ...ghostBtn, color: '#ef4444', borderColor: 'rgba(239,68,68,0.4)' }} onClick={delPart}>🗑 ลบ</button>
+                  })}>แก้ไข Part</button>
+                  <button style={{ ...ghostBtn, color: 'var(--red)', borderColor: 'var(--red-line)' }} onClick={delPart}>ลบ</button>
                 </div>
               )}
             </div>
@@ -474,7 +475,7 @@ export default function QAInspectionSetup() {
                     pins={items.filter(onSheet).map(i => ({
                       key: i.id, x: Number(i.pos_x) / 100, y: Number(i.pos_y) / 100, label: i.balloon_no,
                       label_dx: i.label_dx, label_dy: i.label_dy,
-                      color: i.rank ? QA_RANK[i.rank]?.color : '#4d9fff' }))}
+                      color: i.rank ? QA_RANK[i.rank]?.color : 'var(--blue)' }))}
                     pinHasDetail={Object.fromEntries(items.map(i => [i.id, !!i.image_path]))}
                     onPinClick={key => { if (canEdit) setEditor({ focusItemId: key }); }} />
                 );
@@ -492,9 +493,9 @@ export default function QAInspectionSetup() {
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                     {/* คัดลอก "ออกจาก" พาร์ทนี้ไม่ได้แก้พาร์ทนี้ ⇒ ไม่ต้องผ่าน partWrite · ปลายทางเช็คขอบเขตในโมดัล */}
                     {canManage && items.length > 0 && (
-                      <button style={ghostBtn} onClick={() => setCopyOpen(true)} title="คัดลอกจุดตรวจชุดนี้ไปพาร์ทอื่นที่ยังไม่มีจุดตรวจ">📋 คัดลอกไปพาร์ทอื่น</button>
+                      <button style={ghostBtn} onClick={() => setCopyOpen(true)} title="คัดลอกจุดตรวจชุดนี้ไปพาร์ทอื่นที่ยังไม่มีจุดตรวจ">คัดลอกไปพาร์ทอื่น</button>
                     )}
-                    {canEdit && <button style={btnSt()} onClick={() => setEditor({})}>🎯 แก้ไข / เพิ่มจุดตรวจ</button>}
+                    {canEdit && <button style={btnSt()} onClick={() => setEditor({})}>แก้ไข / เพิ่มจุดตรวจ</button>}
                   </div>
                 )}
               </div>
@@ -510,7 +511,7 @@ export default function QAInspectionSetup() {
                     {items.map(it => (
                       <tr key={it.id} style={{ opacity: it.is_active ? 1 : 0.45 }}>
                         <td style={{ ...tdSt, fontWeight: 900, whiteSpace: 'nowrap' }}>
-                          <span style={{ color: it.rank ? QA_RANK[it.rank]?.color : '#4d9fff' }}>{it.rank ? '◆' : '●'} {it.balloon_no}</span>
+                          <span style={{ color: it.rank ? QA_RANK[it.rank]?.color : 'var(--blue)' }}>{it.rank ? '◆' : '●'} {it.balloon_no}</span>
                           {it.pos_x == null && <span title="ยังไม่วางบน drawing" style={{ marginLeft: 4, fontSize: 11, color: 'var(--muted)' }}>∅</span>}
                           {it.image_path && <span title="มีรูปโคลสอัพของจุดนี้" style={{ marginLeft: 4, fontSize: 11 }}>🔍</span>}
                           {it.pos_x != null && drawings.length > 1 && (
@@ -520,7 +521,7 @@ export default function QAInspectionSetup() {
                           )}
                         </td>
                         <td style={tdSt}>{it.characteristic}{it.remark ? <div style={{ fontSize: 11, color: 'var(--muted)' }}>{it.remark}</div> : null}</td>
-                        <td style={tdSt}><Chip label={it.item_type === 'variable' ? 'Variable' : 'Attribute'} color={it.item_type === 'variable' ? '#4d9fff' : '#a78bfa'} /></td>
+                        <td style={tdSt}><Chip label={it.item_type === 'variable' ? 'Variable' : 'Attribute'} color={it.item_type === 'variable' ? 'var(--blue)' : 'var(--blue)'} /></td>
                         <td style={{ ...tdSt, whiteSpace: 'nowrap' }} title={it.spec_text ? `ข้อความตามแบบ: ${it.spec_text}` : undefined}>
                           {/* ข้อความเดียวกับที่จอตรวจโชว์ (utils/qaSpec — ห้ามประกอบเอง) */}
                           {specLabel(it)}
@@ -534,7 +535,7 @@ export default function QAInspectionSetup() {
                             {canEdit && <button className="tbtn" title="แก้ไขจุดนี้ (เปิดตั้งค่าจุดตรวจที่การ์ดของจุดนี้)" onClick={() => setEditor({ focusItemId: it.id })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>}
                             {it.item_type === 'variable' && (
                               <button className="tbtn" title="สร้างจุดควบคุม SPC จากจุดตรวจนี้" onClick={() => sendToSPC(it)}
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--accent)', fontWeight: 800 }}>→SPC</button>
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--accent)', fontWeight: 800 }}>SPC</button>
                             )}
                           </td>
                         )}
@@ -572,7 +573,7 @@ export default function QAInspectionSetup() {
                       background: 'var(--card)', border: '1px solid var(--border)',
                       display: 'flex', gap: 8, alignItems: 'center',
                     }}>
-                    <Chip label={o.tag} color={o.tag === 'BOM' ? '#f59e0b' : '#4d9fff'} />
+                    <Chip label={o.tag} color={o.tag === 'BOM' ? 'var(--amber)' : 'var(--blue)'} />
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>{o.part_no || '—'} <span style={{ fontWeight: 500, color: 'var(--text2)' }}>{o.part_name}</span></div>
                       {o.sub && <div style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.sub}</div>}

@@ -50,6 +50,7 @@ import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
 import OverflowMenu from '../components/OverflowMenu';
 import InfoMore from '../components/InfoMore';   // ⋯ ปุ่มตายตัว ≤2 (UI §6.35)
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 /* สีจาก token (var(--red) …) ต่อ alpha-hex ไม่ได้ (SVG/CSS parse พัง = ดำ · UI §6.17) ⇒ ย่อยเป็น -dim/-line · hex จาก DB ยังต่อ alpha ได้เหมือนเดิม */
 const tintOf = (c, lvl) => {
   const m = /^var\(--(green|amber|red|blue)\)$/.exec(c || '');
@@ -62,7 +63,7 @@ const tintOf = (c, lvl) => {
 const DEPT_COLORS = {
   maintenance:     '#fb923c',
   jig_maintenance: '#34d399',
-  die_maintenance: '#4d9fff',
+  die_maintenance: 'var(--blue)',
   production:      '#3dd65c',
   qa:              '#9b8de8',
 }
@@ -159,8 +160,8 @@ const S = {
   }),
   typeBtn: (active, color) => ({
     flex: 1, padding: '7px 4px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-    border: `1.5px solid ${active ? `${color}50` : 'var(--border)'}`,
-    background: active ? `${color}15` : 'var(--bg3)',
+    border: `1.5px solid ${active ? `${tint(color, 'line')}` : 'var(--border)'}`,
+    background: active ? `${tint(color, 'dim')}` : 'var(--bg3)',
     color: active ? color : 'var(--muted)',
   }),
   modeBtn: (active) => ({
@@ -1348,7 +1349,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
               {/* <LineSelect> แทนช่องพิมพ์เอง — jigs.line_name เป็นคีย์จัดกลุ่ม DailyPM/PMSchedule/FactoryMap · พื้นที่ facility
                   แยก optgroup จาก pm_facility_areas · ค่าเก่าที่ไม่อยู่ในทะเบียนยังโชว์ ⚠ ไม่หายเงียบ · 2026-09-07 */}
               <LineSelect lines={lineOptions} value={lineName} onChange={setLineName} placeholder="— เลือกไลน์ / พื้นที่ —" includeRetired
-                extraGroups={[{ label: '🏭 พื้นที่ Facility / Utility', options: facilityAreas.filter(a => !lineOptions.some(l => l.name === a.name)).map(a => ({ value: a.name, label: a.name })) }]}
+                extraGroups={[{ label: 'พื้นที่ Facility / Utility', options: facilityAreas.filter(a => !lineOptions.some(l => l.name === a.name)).map(a => ({ value: a.name, label: a.name })) }]}
                 style={{ width: '100%' }} />
             </div>
           )}
@@ -1380,9 +1381,9 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             <label style={S.label}>รูปแบบแผน PM</label>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {[
-                { v: 'time', label: '🗓️ ตามเวลา', hint: 'ครบรอบตามความถี่' },
-                { v: 'usage', label: '📈 ตามการใช้งาน', hint: 'ครบเมื่อผลิตถึงยอด' },
-                { v: 'hybrid', label: '⚖️ ผสม', hint: 'อันไหนถึงก่อนใช้อันนั้น' },
+                { v: 'time', label: 'ตามเวลา', hint: 'ครบรอบตามความถี่' },
+                { v: 'usage', label: 'ตามการใช้งาน', hint: 'ครบเมื่อผลิตถึงยอด' },
+                { v: 'hybrid', label: 'ผสม', hint: 'อันไหนถึงก่อนใช้อันนั้น' },
               ].map(({ v, label, hint }) => (
                 <button key={v} onClick={() => setPlanType(v)} title={hint} style={S.modeBtn(planType === v)}>{label}</button>
               ))}
@@ -1415,7 +1416,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
           <div>
             <label style={S.label}>รูปแบบ Check Sheet</label>
             <div style={{ display: 'flex', gap: 8 }}>
-              {[{ v: 'image_pin', label: '📍 รูป + จุดตรวจ' }, { v: 'list', label: '📋 รายการหัวข้อ' }].map(({ v, label }) => (
+              {[{ v: 'image_pin', label: 'รูป + จุดตรวจ' }, { v: 'list', label: 'รายการหัวข้อ' }].map(({ v, label }) => (
                 <button key={v} onClick={() => setLayoutType(v)} style={S.modeBtn(layoutType === v)}>{label}</button>
               ))}
             </div>

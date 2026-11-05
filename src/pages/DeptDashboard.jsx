@@ -377,7 +377,7 @@ function ProductionView({ d, ctx }) {
     </Section>
 
     <ParetoAbcChart title="🔧 Downtime นอกแผน 7 วัน (ABC)" records={dtRecords} unit="นาที"
-      dims={[{ key: 'machine', label: '⚙️ เครื่องจักร' }, { key: 'line', label: '🏭 ไลน์' }, { key: 'shift', label: '🕐 กะ' }, { key: 'date', label: '📅 วัน' }, { key: 'note', label: '💬 หมายเหตุ', cluster: true }]}
+      dims={[{ key: 'machine', label: 'เครื่องจักร' }, { key: 'line', label: 'ไลน์' }, { key: 'shift', label: 'กะ' }, { key: 'date', label: 'วัน' }, { key: 'note', label: 'หมายเหตุ', cluster: true }]}
       sectionStyle={cardSt} emptyText="ไม่มี downtime นอกแผนใน 7 วัน" />
 
     <Section title="🔗 ทางลัด">
@@ -827,7 +827,7 @@ function QaView({ d, ctx }) {
     </div>
 
     <ParetoAbcChart title="🚫 ของเสีย 7 วัน แยกตามประเภท (ABC)" records={defRecords} unit="ชิ้น"
-      dims={[{ key: 'line', label: '🏭 ไลน์' }, { key: 'product', label: '📦 ชิ้นงาน' }, { key: 'shift', label: '🕐 กะ' }, { key: 'date', label: '📅 วัน' }, { key: 'note', label: '💬 หมายเหตุ', cluster: true }]}
+      dims={[{ key: 'line', label: 'ไลน์' }, { key: 'product', label: 'ชิ้นงาน' }, { key: 'shift', label: 'กะ' }, { key: 'date', label: 'วัน' }, { key: 'note', label: 'หมายเหตุ', cluster: true }]}
       sectionStyle={cardSt} emptyText="ไม่มีบันทึกของเสียใน 7 วัน — ตรวจสอบว่าลงบันทึกครบหรือยัง" />
 
     <Section title="🔗 ทางลัด">
@@ -945,7 +945,7 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
         <PageHeader
           title={embedded ? OBEYA_TITLE : 'Dashboard ส่วนงาน'} icon={embedded ? OBEYA_ICON : '📊'}
           sub={<>วันงาน {fmtDate(workDate)} · {scopeText} · อ่านอย่างเดียว (กดที่รายการเพื่อไปหน้าที่ทำงานจริง)</>}
-          actions={<button onClick={load} style={tvBtn(false)}>🔄 รีเฟรช</button>}
+          actions={<button type="button" className="pg-btn" onClick={load}>รีเฟรช</button>}
           /* 📑 KPI รายเดือน ย้ายไป `/obeya?tab=table` แล้ว (17/09 · user ทักว่าซ้ำกับบอร์ด KPI ของ Obeya)
              เหตุผล: หน้านี้ตัดด้วย `?dept=` = หน้าที่/ฝ่าย · แต่ตาราง KPI ตัดด้วยส่วนงาน × กลุ่มไลน์ × ปี
              = แกนของ Obeya ⇒ มันไม่เคยใช้แกนของหน้านี้เลย (คอมเมนต์เดิมด้านล่างก็เขียนไว้เอง)
@@ -961,7 +961,7 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
             {/* 📺 จอเฝ้าระวังย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28) — ปุ่มนี้คงทางเข้าเดิมไว้ (ห้ามตัดทางออกของใคร) */}
             <button className="ctl-btn" onClick={() => navigate(`/tv?dept=${dept === 'store' ? 'store' : dept === 'production' ? 'production' : 'maintenance'}`)}
               title="เปิด Andon Board สำหรับแขวนทีวี (ผัง + เครื่องหยุด + เสียงเตือน)"
-              style={tvBtn(false)}>📺 Andon Board (จอแขวน)</button>
+              style={tvBtn(false)}>Andon Board (จอแขวน)</button>
           </>) : undefined}
         />
 

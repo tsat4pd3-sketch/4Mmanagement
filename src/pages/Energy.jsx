@@ -28,6 +28,8 @@ import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { scopeLines as pickerLines } from '../components/LineSelect';   // ตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง"
 import { getLineFamilyNames, toHierarchicalOptions, visibleDepths } from '../utils/lineHierarchy';
 import PageHeader from '../components/PageHeader';
+import InfoMore from '../components/InfoMore';
+import NoticeBar from '../components/NoticeBar';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import useTabParam from '../utils/useTabParam';
@@ -398,7 +400,7 @@ export default function Energy() {
   }), [months, countedQty, compPts]);
 
   const Kpi = ({ label, value, sub, tone, warn }) => (
-    <div style={{ ...card, flex: '1 1 190px', minWidth: 170, borderColor: warn ? '#f59e0b' : 'var(--border)' }}>
+    <div style={{ ...card, flex: '1 1 190px', minWidth: 170, borderColor: warn ? 'var(--amber)' : 'var(--border)' }}>
       <div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>{label}</div>
       <div style={{ fontSize: 24, fontWeight: 800, color: tone || 'var(--text)', marginTop: 3 }}>{value}</div>
       {sub && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>{sub}</div>}
@@ -440,7 +442,7 @@ export default function Energy() {
           )}
           {/* ⚠️ ห้ามให้ค่าแม่กับค่าลูกบวกกันเงียบๆ — บอกตรงๆ ว่าแถวนี้ถูกนับที่ไหน */}
           {coveredName && (
-            <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 400, marginTop: 2 }}
+            <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 400, marginTop: 2 }}
               title="ไลน์แม่กรอกค่ารวมไว้แล้ว ค่าแถวนี้จึงเป็นรายละเอียดย่อย ไม่ถูกบวกซ้ำเข้ายอดรวม">
               ↳ นับรวมอยู่ใน <b>{coveredName}</b> แล้ว · ไม่บวกซ้ำเข้ายอดที่วัดได้
             </div>
@@ -461,7 +463,7 @@ export default function Energy() {
                 จ่ายให้: {feeds.slice(0, 4).join(', ')}{feeds.length > 4 ? ` +${feeds.length - 4}` : ''}
               </div>
             ) : (
-              <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 400, marginTop: 2 }}
+              <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 400, marginTop: 2 }}
                 title="ตั้งที่ /machine-database → แก้เครื่อง facility → แผง 🔗 Supply route">
                 ⚠ ยังไม่ได้ตั้งว่าจ่ายให้ไลน์ไหน
               </div>
@@ -472,23 +474,23 @@ export default function Energy() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <input type="number" defaultValue={r?.qty ?? ''} readOnly={!canEdit} placeholder="—"
               onBlur={e => { const v = numOrNull(e.target.value); if (v !== (r?.qty ?? null)) saveCell(target, { qty: v }); }}
-              style={{ ...inp, width: 108, ...(odd ? { borderColor: '#f59e0b' } : null), ...(canEdit ? null : { background: 'var(--bg2)' }) }} />
-            {odd && <span style={{ color: '#f59e0b', fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap' }}
+              style={{ ...inp, width: 108, ...(odd ? { borderColor: 'var(--amber)' } : null), ...(canEdit ? null : { background: 'var(--bg2)' }) }} />
+            {odd && <span style={{ color: 'var(--amber)', fontSize: 11.5, fontWeight: 700, whiteSpace: 'nowrap' }}
               title={`เดือนอื่นของจุดนี้อยู่แถว ${fmtKwh(odd.median)} kWh — ค่านี้ต่างกัน ${odd.ratio} เท่า ตรวจว่ากรอกผิดหลักไหม`}>⚠ {odd.ratio}×</span>}
           </div>
         </td>
         <td style={td}><input type="number" defaultValue={r?.cost ?? ''} readOnly={!canEdit} placeholder="—"
           onBlur={e => { const v = numOrNull(e.target.value); if (v !== (r?.cost ?? null)) saveCell(target, { cost: v }); }}
           style={{ ...inp, width: 108, ...(canEdit ? null : { background: 'var(--bg2)' }) }} /></td>
-        <td style={{ ...td, color: rateOdd ? '#f59e0b' : 'var(--text2)', fontWeight: rateOdd ? 700 : 400 }}
+        <td style={{ ...td, color: rateOdd ? 'var(--amber)' : 'var(--text2)', fontWeight: rateOdd ? 700 : 400 }}
           title={rateOdd ? 'ผิดปกติ — ปกติ 3.5-5 บาท/kWh ลองตรวจว่ากรอกผิดหลักไหม' : ''}>
           {rate ?? '—'}{rateOdd ? ' ⚠' : ''}</td>
         <td style={td}>{deltaChip(d)}</td>
         <td style={td}>
           <select value={r?.source || 'manual'} disabled={!canEdit || !r}
             onChange={e => saveCell(target, { source: e.target.value })} style={{ ...inp, width: 112 }}>
-            <option value="manual">✍️ กรอกมือ</option>
-            <option value="meter">🔌 จากมิเตอร์</option>
+            <option value="manual">กรอกมือ</option>
+            <option value="meter">จากมิเตอร์</option>
             <option value="estimated">≈ ประมาณการ</option>
           </select></td>
         <td style={td}><input defaultValue={r?.note ?? ''} readOnly={!canEdit} placeholder="—"
@@ -500,7 +502,7 @@ export default function Energy() {
               title={meteredSet.has(keyOf(p)) ? 'มีมิเตอร์ — นับเข้าผลรวมที่วัดได้' : 'ยังไม่มีมิเตอร์ — กดเพื่อย้ายไปกลุ่มที่วัดได้'}
               style={{ padding: '4px 9px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: canEdit ? 'pointer' : 'default',
                 border: '1px solid var(--border2)', background: 'var(--bg3)', color: meteredSet.has(keyOf(p)) ? GOOD : 'var(--muted)' }}>
-              {meteredSet.has(keyOf(p)) ? '🔌 มีมิเตอร์' : '+ มีมิเตอร์'}
+              {meteredSet.has(keyOf(p)) ? 'มีมิเตอร์' : '+ มีมิเตอร์'}
             </button>
           </td>
         )}
@@ -520,8 +522,8 @@ export default function Energy() {
   return (
     <Page>
       <PageHeader title="พลังงานไฟฟ้า" icon="⚡" sub={`${monthLabel(month)} · เฟส 1 กรอกรายเดือน`}
-        tabs={[{ key: 'input', label: '📝 กรอกรายเดือน' }, { key: 'summary', label: '📊 สรุป & วิเคราะห์' }, { key: 'setup', label: '⚙️ ค่าการปล่อย' },
-          ...(mqttReady ? [{ key: 'mqtt', label: '📡 มิเตอร์ / MQTT' }] : [])]}
+        tabs={[{ key: 'input', label: 'กรอกรายเดือน' }, { key: 'summary', label: 'สรุป & วิเคราะห์' }, { key: 'setup', label: 'ค่าการปล่อย' },
+          ...(mqttReady ? [{ key: 'mqtt', label: 'มิเตอร์ / MQTT' }] : [])]}
         tab={tab} onTab={setTab}
       />
       {/* แถบเดือน = FilterBar มาตรฐาน (UI-STANDARD 2026-09-24 — เดิมอยู่ในช่องปุ่มหัวเพจ ช่องสูง 31/33 มุม 7) */}
@@ -533,13 +535,12 @@ export default function Energy() {
           style={{ ...monthBtn, cursor: month >= monthKeyOf() ? 'not-allowed' : 'pointer', opacity: month >= monthKeyOf() ? 0.4 : 1 }}>▶</button>
       </FilterBar>
 
-      <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12.5, color: 'var(--text2)' }}>
-        ✍️ <b>เฟส 1 — ตัวเลขมาจากการกรอกมือ</b> ยังไม่ได้ต่อมิเตอร์อัตโนมัติ · ใช้ดูแนวโน้มและเทียบเดือนได้
-        แต่ยังไม่ใช่ค่าที่วัดแบบ realtime · ค่าที่กรอกไปแสดงบนผังรวมโรงงาน (metric <b>⚡ พลังงาน</b>)
-      </div>
+      <NoticeBar tone="info" style={{ marginBottom: 12 }}><b>เฟส 1 — ตัวเลขมาจากการกรอกมือ</b> ยังไม่ได้ต่อมิเตอร์อัตโนมัติ
+        <InfoMore label="ใช้ยังไง">ใช้ดูแนวโน้มและเทียบเดือนได้ แต่ยังไม่ใช่ค่าที่วัดแบบ realtime · ค่าที่กรอกไปแสดงบนผังรวมโรงงาน (metric พลังงาน)</InfoMore>
+      </NoticeBar>
 
       {cfgMissing && (
-        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12.5 }}>
+        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red)', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12.5 }}>
           ⚠️ <b>ยังไม่ได้ apply migration <code>20260819_energy_carbon_c1</code></b> — ยังตั้งชั้นจุดวัด (มีมิเตอร์/ยังไม่มี)
           และคำนวณ CO2e ไม่ได้ · ส่วนการกรอกหน่วยไฟยังใช้ได้ปกติ (แจ้ง admin ให้รัน migration)
         </div>
@@ -555,10 +556,10 @@ export default function Energy() {
             ? <>{cover.coverPct}% ของบิล · {metered.filled}/{metered.total} จุดที่มีมิเตอร์</>
             : `${metered.filled}/${metered.total} จุดที่มีมิเตอร์`} />
         <Kpi label="🌱 คาร์บอน (tCO2e)" value={ef ? fmtTco2e(co2) : '—'}
-          tone={ef ? '#22c55e' : 'var(--muted)'} warn={!ef}
+          tone={ef ? 'var(--green)' : 'var(--muted)'} warn={!ef}
           sub={ef
             ? <>Scope 2 · {usingBill ? 'จากบิล' : 'จากผลรวมที่วัดได้'} · เทียบเดือนก่อน {deltaChip(deltaPct(co2, co2Prev))}</>
-            : <span style={{ color: '#f59e0b' }}>ยังไม่ได้ตั้งค่าการปล่อย → แท็บ ⚙️</span>} />
+            : <span style={{ color: 'var(--amber)' }}>ยังไม่ได้ตั้งค่าการปล่อย → แท็บ ⚙️</span>} />
         <Kpi label="ค่าไฟรวม (บาท)" value={fmtBaht(bill?.cost ?? metered.cost)}
           sub={`บาท/หน่วย ${bahtPerUnit(bill?.cost ?? metered.cost, bill?.qty ?? metered.qty) ?? '—'} (ปกติ 3.5–5)`} />
         {/* ⭐ SEC — ตัวเดียวที่แยก "ผลิตเยอะขึ้น" ออกจาก "ใช้ไฟเปลืองขึ้น" (ยอด kWh ขึ้น ≠ แย่ลง) */}
@@ -573,7 +574,7 @@ export default function Energy() {
 
       {/* ⚠️ เตือนเฉพาะ "ผิดจริง" — ผลรวมมากกว่าบิลเป็นไปไม่ได้ · น้อยกว่าบิลคือเรื่องปกติที่ยังไม่ได้ติดมิเตอร์ */}
       {cover.over && (
-        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12.5 }}>
+        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red)', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12.5 }}>
           🔴 <b>ผลรวมรายจุด ({fmtKwh(cover.metered)}) มากกว่ายอดบิล ({fmtKwh(cover.bill)})</b> — เป็นไปไม่ได้
           ตรวจว่ามีจุดที่นับซ้ำ (มิเตอร์แม่กับมิเตอร์ลูกติ๊กว่ามีมิเตอร์ทั้งคู่) หรือกรอกผิดหลัก
         </div>
@@ -587,7 +588,7 @@ export default function Energy() {
             <div style={{ ...card, padding: 0, overflowX: 'auto', marginBottom: 8 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
                 {head()}
-                <tbody>{row({ isPlant: true, label: '🏢 ยอดจากบิลค่าไฟ (PEA)' })}</tbody>
+                <tbody>{row({ isPlant: true, label: 'ยอดจากบิลค่าไฟ (PEA)' })}</tbody>
               </table>
             </div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20, fontSize: 12.5 }}>
@@ -633,7 +634,7 @@ export default function Energy() {
               🏭 จุดที่ยังไม่มีมิเตอร์ ({otherPts.length})
               <button onClick={() => setShowUnmetered(v => !v)}
                 style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
-                {showUnmetered ? '▲ ซ่อน' : '▼ แสดง'}
+                {showUnmetered ? 'ซ่อน' : 'แสดง'}
               </button>
               <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--muted)' }}>— ทุกไลน์ในกลุ่ม + โซน · กรอกได้ถ้ามีตัวเลข แต่ยังไม่นับเข้าผลรวมที่วัดได้ (กด <b>+ มีมิเตอร์</b> เพื่อย้ายขึ้นไป)</span>
             </h3>
@@ -662,7 +663,7 @@ export default function Energy() {
                     <Legend wrapperStyle={{ fontSize: 11.5 }} />
                     <Bar dataKey="bill" name="บิลทั้งโรงงาน" fill={ACCENT} radius={[3, 3, 0, 0]} />
                     <Bar dataKey="metered" name="ที่วัดได้จากมิเตอร์" fill={GOOD} radius={[3, 3, 0, 0]} />
-                    {hasYoy && <Line type="monotone" dataKey="lastYear" name="ปีก่อน (เดือนเดียวกัน)" stroke="#f59e0b" strokeDasharray="5 4" dot={false} strokeWidth={2} />}
+                    {hasYoy && <Line type="monotone" dataKey="lastYear" name="ปีก่อน (เดือนเดียวกัน)" stroke="var(--amber)" strokeDasharray="5 4" dot={false} strokeWidth={2} />}
                   </ComposedChart>
                 </ResponsiveContainer>
               )}
@@ -675,7 +676,7 @@ export default function Energy() {
                 : !trend.some(t => t.sec != null) ? (
                   <div style={{ color: 'var(--muted)', fontSize: 13 }}>
                     ยังคำนวณไม่ได้ — ต้องมีทั้ง <b>หน่วยไฟ</b> และ <b>ยอดผลิต</b> ของเดือนเดียวกัน
-                    {prodErr && <div style={{ color: '#f59e0b', marginTop: 4 }}>⚠ ดึงยอดผลิตมีปัญหา: {prodErr}</div>}
+                    {prodErr && <div style={{ color: 'var(--amber)', marginTop: 4 }}>⚠ ดึงยอดผลิตมีปัญหา: {prodErr}</div>}
                   </div>
                 ) : (
                   <>
@@ -707,14 +708,14 @@ export default function Energy() {
                         <Bar dataKey="pieces" name="ผลิตได้ (ชิ้น)" fill={NEUTRAL} radius={[3, 3, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
-                    <div style={{ fontSize: 11.5, fontWeight: 700, color: '#f59e0b', marginTop: 6, marginBottom: 2 }}>kWh ต่อชิ้น (SEC)</div>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--amber)', marginTop: 6, marginBottom: 2 }}>kWh ต่อชิ้น (SEC)</div>
                     <ResponsiveContainer width="100%" height={140}>
                       <LineChart data={trend} margin={{ top: 4, right: 12, left: 0, bottom: 0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                         <XAxis dataKey="label" tick={{ fontSize: 11, fill: 'var(--muted)' }} />
-                        <YAxis tickFormatter={fmtAxis} width={alignedYWidth([...trend.map(t => fmtPieces(t.pieces)), ...trend.map(t => fmtAxis(t.sec))])} tick={{ fontSize: 11, fill: '#f59e0b' }} />
+                        <YAxis tickFormatter={fmtAxis} width={alignedYWidth([...trend.map(t => fmtPieces(t.pieces)), ...trend.map(t => fmtAxis(t.sec))])} tick={{ fontSize: 11, fill: 'var(--amber)' }} />
                         <Tooltip contentStyle={tipStyle} formatter={(v) => [v == null ? '—' : v, 'kWh ต่อชิ้น (SEC)']} />
-                        <Line type="monotone" dataKey="sec" name="kWh ต่อชิ้น (SEC)" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} connectNulls={false} />
+                        <Line type="monotone" dataKey="sec" name="kWh ต่อชิ้น (SEC)" stroke="var(--amber)" strokeWidth={2} dot={{ r: 3 }} connectNulls={false} />
                       </LineChart>
                     </ResponsiveContainer>
                     <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
@@ -880,7 +881,7 @@ function EfSetup({ factors, canEdit, cfgMissing, onSaved, month }) {
         ใช้แปลง <b>kWh → kgCO2e</b> (Scope 2) · ค่านี้ประกาศโดย <b>TGO</b> และ<b>เปลี่ยนเกือบทุกปี</b><br />
         ระบบ<b>ไม่ใส่ค่าเริ่มต้นให้โดยตั้งใจ</b> — ต้องเอาตัวเลขจากประกาศจริงมากรอก พร้อมระบุที่มา
         (ใส่เลขมั่วไว้ก่อน = ตัวเลขคาร์บอนผิดที่ดูเหมือนถูก ซึ่งอันตรายกว่าไม่มีตัวเลข)<br />
-        <span style={{ color: '#f59e0b' }}>⚠️ เพิ่มแถวใหม่เมื่อ EF เปลี่ยน — <b>ห้ามแก้ทับของเก่า</b> ไม่งั้นตัวเลขที่รายงานไปแล้วจะเปลี่ยนตาม</span>
+        <span style={{ color: 'var(--amber)' }}>⚠️ เพิ่มแถวใหม่เมื่อ EF เปลี่ยน — <b>ห้ามแก้ทับของเก่า</b> ไม่งั้นตัวเลขที่รายงานไปแล้วจะเปลี่ยนตาม</span>
       </div>
 
       <div style={{ ...card, background: 'var(--bg3)', marginBottom: 14 }}>
@@ -892,7 +893,7 @@ function EfSetup({ factors, canEdit, cfgMissing, onSaved, month }) {
               มีผลตั้งแต่ {cur.effective_from} · ที่มา: {cur.source_ref}
             </div>
           </div>
-        ) : <div style={{ fontSize: 13, color: '#f59e0b', marginTop: 3 }}>ยังไม่มีค่าที่ครอบเดือนนี้ — tCO2e จะขึ้นเป็น “—” จนกว่าจะกรอก</div>}
+        ) : <div style={{ fontSize: 13, color: 'var(--amber)', marginTop: 3 }}>ยังไม่มีค่าที่ครอบเดือนนี้ — tCO2e จะขึ้นเป็น “—” จนกว่าจะกรอก</div>}
       </div>
 
       {canEdit && !cfgMissing && (

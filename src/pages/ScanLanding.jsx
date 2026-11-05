@@ -255,7 +255,7 @@ export default function ScanLanding() {
             ส่อง QR ที่ติดเครื่องด้วยกล้องมือถือ หรือกดสแกนจากในแอป
           </p>
           <button onClick={() => setRescan(true)} style={{ minHeight: 44, padding: '0 20px', fontSize: 14, fontWeight: 800 }}>
-            📷 สแกนเลย
+            สแกนเลย
           </button>
         </div>
       )}
@@ -269,7 +269,7 @@ export default function ScanLanding() {
             <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1.2 }}>{pointHit.name || pointHit.code || '—'}</div>
             <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
               {[pointHit.code && `รหัส ${pointHit.code}`, (pointHit.line_names || []).join(', ')].filter(Boolean).join(' · ')}
-              {pointHit.is_active === false && <b style={{ color: 'var(--red, #ef4444)' }}> · ปิดใช้งานแล้ว</b>}
+              {pointHit.is_active === false && <b style={{ color: 'var(--red, var(--red))' }}> · ปิดใช้งานแล้ว</b>}
             </div>
             <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '10px 0 0', lineHeight: 1.7 }}>
               ป้ายนี้ใช้ยืนยันตอน <b>สโตร์ส่งของถึงไลน์</b> — สแกนจากปุ่ม 📍 ในใบเติม WIP (หน้า Heijunka) ไม่ใช่ป้ายเครื่องจักร
@@ -280,7 +280,7 @@ export default function ScanLanding() {
           )}
           <button onClick={() => setRescan(true)}
             style={{ minHeight: 44, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 13 }}>
-            📷 สแกนป้ายอื่น
+            สแกนป้ายอื่น
           </button>
         </div>
       )}
@@ -295,15 +295,15 @@ export default function ScanLanding() {
                 <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1.2 }}>{lineHit.name}</div>
                 <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
                   {[lineHit.section && `ส่วนงาน ${lineHit.section}`, lineHit.parent_line_name && `ใต้ ${lineHit.parent_line_name}`].filter(Boolean).join(' · ')}
-                  {lineHit.is_active === false && <b style={{ color: 'var(--red, #ef4444)' }}> · ปิดใช้งานแล้ว</b>}
+                  {lineHit.is_active === false && <b style={{ color: 'var(--red, var(--red))' }}> · ปิดใช้งานแล้ว</b>}
                 </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {canAccessPage('/daily-report', role) && <ActionLink to={`/daily-report?line=${q}`} icon="📋" label="Daily Report ของไลน์นี้" sub="เปิดกะ · สแกนใบผลิต · ลง Downtime / งานเสีย" />}
-                {canAccessPage('/line-oee', role) && <ActionLink to={`/line-oee?line=${q}`} icon="📈" label="OEE สดของไลน์" sub="A × P × Q ของกะนี้" tone="#22c55e" />}
-                {canAccessPage('/management', role) && <ActionLink to={`/management?line=${q}`} icon="🗓️" label="แผน / สถานะงานของไลน์" sub="ใบผลิตที่กำลังเดิน + คิวถัดไป" tone="#60a5fa" />}
-                {canAccessPage('/people-board', role) && <ActionLink to={`/people-board?line=${q}`} icon="🧑‍🤝‍🧑" label="คนในไลน์ / จุดงาน" sub="ใครอยู่จุดไหน กะนี้" tone="#a78bfa" />}
-                {canAccessPage('/pm-check', role) && <ActionLink to={`/pm?tab=check&line=${q}`} icon="✅" label="ตรวจ AM / PM ของไลน์" sub="ใบตรวจของอุปกรณ์ในไลน์นี้" tone="#f59e0b" />}
+                {canAccessPage('/line-oee', role) && <ActionLink to={`/line-oee?line=${q}`} icon="📈" label="OEE สดของไลน์" sub="A × P × Q ของกะนี้" tone="var(--green)" />}
+                {canAccessPage('/management', role) && <ActionLink to={`/management?line=${q}`} icon="🗓️" label="แผน / สถานะงานของไลน์" sub="ใบผลิตที่กำลังเดิน + คิวถัดไป" tone="var(--blue)" />}
+                {canAccessPage('/people-board', role) && <ActionLink to={`/people-board?line=${q}`} icon="🧑‍🤝‍🧑" label="คนในไลน์ / จุดงาน" sub="ใครอยู่จุดไหน กะนี้" tone="var(--blue)" />}
+                {canAccessPage('/pm-check', role) && <ActionLink to={`/pm?tab=check&line=${q}`} icon="✅" label="ตรวจ AM / PM ของไลน์" sub="ใบตรวจของอุปกรณ์ในไลน์นี้" tone="var(--amber)" />}
                 {canAccessPage('/qr-labels', role) && <ActionLink to={`/qr-labels?kind=sheet&line=${q}`} icon="🗒️" label="พิมพ์ใบสแกนประจำไลน์ (A4)" sub="QR ประเภท Downtime / งานเสียของไลน์นี้" tone="var(--muted)" />}
               </div>
             </>);
@@ -315,12 +315,12 @@ export default function ScanLanding() {
               <div style={{ fontSize: 24, fontWeight: 900, lineHeight: 1.2 }}>{emp.name || '—'}</div>
               <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
                 {[`รหัส ${emp.employee_id_code}`, emp.position, lineById[String(emp.line_id)]?.name, emp.section].filter(Boolean).join(' · ')}
-                {emp.is_active === false && <b style={{ color: 'var(--red, #ef4444)' }}> · พ้นสภาพ / ปิดใช้งาน</b>}
+                {emp.is_active === false && <b style={{ color: 'var(--red, var(--red))' }}> · พ้นสภาพ / ปิดใช้งาน</b>}
               </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {canAccessPage('/operator', role) && <ActionLink to={`/operator?q=${encodeURIComponent(emp.employee_id_code)}`} icon="👤" label="ข้อมูลพนักงาน / ทักษะ" sub="เปิดฐานข้อมูลพนักงานที่คนนี้" />}
-              {canAccessPage('/checkin', role) && <ActionLink to="/checkin" icon="🪪" label="เช็คชื่อด้วยบัตร" sub="หน้าเช็คชื่อ → ปุ่ม 🪪 สแกนบัตรพนักงาน" tone="#22c55e" />}
+              {canAccessPage('/checkin', role) && <ActionLink to="/checkin" icon="🪪" label="เช็คชื่อด้วยบัตร" sub="หน้าเช็คชื่อ → ปุ่ม 🪪 สแกนบัตรพนักงาน" tone="var(--green)" />}
             </div>
           </>)}
 
@@ -330,7 +330,7 @@ export default function ScanLanding() {
               <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1.2 }}>{storageHit.code}</div>
               <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
                 {[storageHit.name, storageHit.kind, (storageHit.line_names || []).join(', ')].filter(Boolean).join(' · ')}
-                {storageHit.is_active === false && <b style={{ color: 'var(--red, #ef4444)' }}> · ปิดใช้งานแล้ว</b>}
+                {storageHit.is_active === false && <b style={{ color: 'var(--red, var(--red))' }}> · ปิดใช้งานแล้ว</b>}
               </div>
               <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '10px 0 0', lineHeight: 1.7 }}>
                 ป้ายนี้ใช้ <b>ยิงในช่องรหัสคลัง</b> (ช่องที่มีปุ่ม 📷) แทนการเลือกจากรายการ
@@ -347,7 +347,7 @@ export default function ScanLanding() {
                 <div style={{ fontSize: 24, fontWeight: 900, lineHeight: 1.2 }}>{t.name_th || '—'}</div>
                 <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
                   {[isDt && (t.category === 'planned' ? 'ในแผน' : 'นอกแผน'), t.process_type && `กระบวนการ ${t.process_type}`].filter(Boolean).join(' · ')}
-                  {t.is_active === false && <b style={{ color: 'var(--red, #ef4444)' }}> · ปิดใช้งานแล้ว — ยิงลงใบไม่ได้ พิมพ์แผ่นใหม่</b>}
+                  {t.is_active === false && <b style={{ color: 'var(--red, var(--red))' }}> · ปิดใช้งานแล้ว — ยิงลงใบไม่ได้ พิมพ์แผ่นใหม่</b>}
                 </div>
                 <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '10px 0 0', lineHeight: 1.7 }}>
                   ป้ายนี้มาจาก <b>ใบสแกนประจำไลน์</b> — ใช้ยิงตอนบันทึก {isDt ? 'Downtime' : 'งานเสีย'} ใน Daily Report (ปุ่ม 📷 ข้างช่องประเภท หรือกดปุ่มสแกนข้างเครื่องตอนฟอร์มเปิดอยู่)
@@ -360,7 +360,7 @@ export default function ScanLanding() {
           {!prodFound && (
             <button onClick={() => setRescan(true)}
               style={{ minHeight: 44, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 13 }}>
-              📷 สแกนป้ายอื่น
+              สแกนป้ายอื่น
             </button>
           )}
         </div>
@@ -389,26 +389,26 @@ export default function ScanLanding() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {canAccessPage('/qa', role) && (qaPart
                 ? <ActionLink to={`/qa?tab=sheet&part=${encodeURIComponent(qaPart.mat_no || qaPart.part_no)}`} icon="✅"
-                    label="ตรวจชิ้นงาน (ใบตรวจ QA)" sub={`เปิดใบตรวจของ ${qaPart.part_no || qaPart.mat_no} — วันงาน/กะปัจจุบัน`} tone="#22c55e" />
+                    label="ตรวจชิ้นงาน (ใบตรวจ QA)" sub={`เปิดใบตรวจของ ${qaPart.part_no || qaPart.mat_no} — วันงาน/กะปัจจุบัน`} tone="var(--green)" />
                 : <ActionLink to="/qa-setup" icon="📐" label="ยังไม่มีมาตรฐานการตรวจของพาร์ทนี้"
                     sub="ตั้งจุดตรวจที่ มาตรฐานการตรวจ & Drawing ก่อน จึงจะเปิดใบตรวจได้" tone="var(--muted)" />)}
               {canAccessPage('/order-trace', role) && (order
-                ? <ActionLink to={`/order-trace?prod=${encodeURIComponent(order.prod_no)}`} icon="🔎" label="สอบกลับใบผลิตนี้" sub="ทุกเหตุการณ์ของใบ — คน/เครื่อง/ของเสีย/4M" tone="#60a5fa" />
-                : <ActionLink to={`/order-trace?q=${encodeURIComponent(mat)}`} icon="🔎" label="ดูใบผลิตของพาร์ทนี้" sub="ค้นใบผลิตในช่วงวันล่าสุด" tone="#60a5fa" />)}
+                ? <ActionLink to={`/order-trace?prod=${encodeURIComponent(order.prod_no)}`} icon="🔎" label="สอบกลับใบผลิตนี้" sub="ทุกเหตุการณ์ของใบ — คน/เครื่อง/ของเสีย/4M" tone="var(--blue)" />
+                : <ActionLink to={`/order-trace?q=${encodeURIComponent(mat)}`} icon="🔎" label="ดูใบผลิตของพาร์ทนี้" sub="ค้นใบผลิตในช่วงวันล่าสุด" tone="var(--blue)" />)}
             </div>
             {prodHit.err.length > 0 && (
-              <div style={{ fontSize: 12, color: 'var(--red, #ef4444)' }}>⚠️ โหลด{prodHit.err.join(' · ')}ไม่สำเร็จ — ปุ่มบางอันอาจหายไปเพราะอ่านไม่ได้ ไม่ใช่เพราะไม่มี</div>
+              <div style={{ fontSize: 12, color: 'var(--red, var(--red))' }}>⚠️ โหลด{prodHit.err.join(' · ')}ไม่สำเร็จ — ปุ่มบางอันอาจหายไปเพราะอ่านไม่ได้ ไม่ใช่เพราะไม่มี</div>
             )}
             <button onClick={() => setRescan(true)}
               style={{ minHeight: 44, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 13 }}>
-              📷 สแกนป้ายอื่น
+              สแกนป้ายอื่น
             </button>
           </div>
         );
       })()}
 
       {raw && !loading && !found && !pointHit && !extraFound && !extraLoading && (!tryProduct || (prodHit && !prodFound)) && (
-        <div style={{ ...card, borderColor: 'var(--amber, #f59e0b)' }}>
+        <div style={{ ...card, borderColor: 'var(--amber, var(--amber))' }}>
           <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>⚠️ ไม่พบสิ่งที่ตรงกับป้ายนี้</div>
           <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.8 }}>
             รหัสที่อ่านได้: <code style={{ background: 'var(--bg3)', padding: '1px 6px', borderRadius: 4 }}>{scan?.raw || raw}</code><br />
@@ -418,10 +418,10 @@ export default function ScanLanding() {
               <><br />ป้ายชนิดนี้ถูกต้อง แต่<b>ไม่พบแถวในทะเบียน</b> (อาจถูกลบ/เปลี่ยนรหัส) — พิมพ์ป้ายใหม่จากหน้า QR Labels</>
             )}
             {scan?.kind === null && <><br />ลองแล้ว: เครื่อง/จิ๊ก · ใบผลิต · MAT · บัตรพนักงาน · ชื่อไลน์</>}
-            {(mFailed || jigErr || pointErr || prodHit?.err?.length > 0 || extraErr) && <><br /><b style={{ color: 'var(--red, #ef4444)' }}>⚠️ โหลดทะเบียนไม่ครบ — อาจไม่ใช่ว่าไม่มีเครื่องนี้จริง ลองใหม่อีกครั้ง</b></>}
+            {(mFailed || jigErr || pointErr || prodHit?.err?.length > 0 || extraErr) && <><br /><b style={{ color: 'var(--red, var(--red))' }}>⚠️ โหลดทะเบียนไม่ครบ — อาจไม่ใช่ว่าไม่มีเครื่องนี้จริง ลองใหม่อีกครั้ง</b></>}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-            <button onClick={() => setRescan(true)} style={{ minHeight: 44, padding: '0 16px', fontWeight: 700 }}>📷 สแกนใหม่</button>
+            <button onClick={() => setRescan(true)} style={{ minHeight: 44, padding: '0 16px', fontWeight: 700 }}>สแกนใหม่</button>
             <button onClick={() => navigate('/')} style={{ minHeight: 44, padding: '0 16px', background: 'var(--bg3)' }}>หน้าแรก</button>
           </div>
         </div>
@@ -441,14 +441,14 @@ export default function ScanLanding() {
             {/* 🔨 แม่พิมพ์ → เด้งเข้าหมุดบนผังจัดเก็บ (แผงหมุดมีเปลี่ยนสถานะ + ใบซ่อมค้าง) · ตัวตัดสิน = findDieByScan ใน DieRegistry */}
             {isDie && canAccessPage('/die-registry', role) && (
               <ActionLink to={`/equipment?tab=die&die=layout&focus=${encodeURIComponent(hit.machine.id)}`} icon="🗺️"
-                label="ดูตำแหน่งบนผังจัดเก็บ / เปลี่ยนสถานะ" sub="เด้งไปหมุดของแม่พิมพ์ตัวนี้" tone="#a78bfa" />
+                label="ดูตำแหน่งบนผังจัดเก็บ / เปลี่ยนสถานะ" sub="เด้งไปหมุดของแม่พิมพ์ตัวนี้" tone="var(--blue)" />
             )}
             {hit.jig && canAccessPage('/pm-check', role) && (pmDepts?.length
               ? pmDepts.map(d => (
                   <ActionLink key={d} to={`/pm?tab=check&equip=${hit.jig.id}&dept=${encodeURIComponent(d)}`} icon={isAm(d) ? '🏭' : '✅'}
                     label={isAm(d) ? `ตรวจ AM (ผลิตตรวจเอง)${pmDepts.filter(isAm).length > 1 ? ` — ${teamLabel(d)}` : ''}`
                       : `ตรวจ PM (ช่าง)${pmDepts.filter(x => !isAm(x)).length > 1 ? ` — ${teamLabel(d)}` : ''}`}
-                    sub={`${teamLabel(d)} · เปิดใบตรวจตามจุดที่ตั้งไว้`} tone={isAm(d) ? '#22c55e' : 'var(--accent)'} />
+                    sub={`${teamLabel(d)} · เปิดใบตรวจตามจุดที่ตั้งไว้`} tone={isAm(d) ? 'var(--green)' : 'var(--accent)'} />
                 ))
               : (
                 <ActionLink to={`/pm?tab=check&equip=${hit.jig.id}`} icon="✅" label="ตรวจ PM เครื่องนี้"
@@ -456,7 +456,7 @@ export default function ScanLanding() {
               ))}
             {canAccessPage('/mtn-repair', role) && (
               <ActionLink to={`/mtn-repair?tab=list&q=${encodeURIComponent(hit.machine?.machine_no || hit.jig?.machine_no || hit.jig?.jig_no || '')}`}
-                icon="🔧" label="แจ้งซ่อม / ดูใบซ่อมของเครื่องนี้" sub="ใบ MO ที่ค้างอยู่ + เปิดใบใหม่" tone="#f59e0b" />
+                icon="🔧" label="แจ้งซ่อม / ดูใบซ่อมของเครื่องนี้" sub="ใบ MO ที่ค้างอยู่ + เปิดใบใหม่" tone="var(--amber)" />
             )}
             {!hit.jig && canAccessPage('/pm-setup', role) && (
               <ActionLink to={`/pm?tab=setup`} icon="⚙️" label="ยังไม่มีแผน PM — ไปตั้งจุดตรวจ"
@@ -465,22 +465,22 @@ export default function ScanLanding() {
             {hit.machine?.machine_no && canAccessPage('/mtn-repair', role) && (
               <button onClick={() => setShowHist(true)} style={{
                 display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '10px 14px', textAlign: 'left',
-                borderRadius: 10, border: '1px solid #f59e0b', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer',
+                borderRadius: 10, border: '1px solid var(--amber)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer',
               }}>
                 <span style={{ fontSize: 22 }}>📜</span>
-                <span><div style={{ fontSize: 15, fontWeight: 800, color: '#f59e0b' }}>ประวัติซ่อมเครื่องนี้</div>
+                <span><div style={{ fontSize: 15, fontWeight: 800, color: 'var(--amber)' }}>ประวัติซ่อมเครื่องนี้</div>
                   <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ใบ MO ทั้งหมด · เวลาซ่อม · ค่าใช้จ่าย</div></span>
               </button>
             )}
             {hit.machine?.machine_no && canAccessPage('/order-trace', role) && (
               <ActionLink to={`/order-trace?tab=symptom&machine=${encodeURIComponent(hit.machine.machine_no)}`} icon="📋"
-                label="สอบกลับ / ประวัติเหตุการณ์ของเครื่องนี้" sub="เครื่องหยุด + ของเสียที่ผูกเครื่องนี้ ในช่วงวันที่เลือก" tone="#60a5fa" />
+                label="สอบกลับ / ประวัติเหตุการณ์ของเครื่องนี้" sub="เครื่องหยุด + ของเสียที่ผูกเครื่องนี้ ในช่วงวันที่เลือก" tone="var(--blue)" />
             )}
           </div>
 
           <button onClick={() => setRescan(true)}
             style={{ minHeight: 44, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 13 }}>
-            📷 สแกนป้ายอื่น
+            สแกนป้ายอื่น
           </button>
         </div>
       )}

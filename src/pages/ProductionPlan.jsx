@@ -36,6 +36,7 @@ import { buildBomIndex, explodeBom } from '../utils/bomTree';
 import { explodeDemand, netOffBuffer } from '../utils/demandExplode';
 import { scheduleBackward, makePrevWorkDay } from '../utils/backwardPlan';
 import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ═══ วางแผนการผลิต (Active Planner) — 🗓️ /production-plan ══════════════════
    จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบกับกำลังผลิต "ที่ทำได้จริง"
@@ -59,12 +60,12 @@ const CAPACITY_HORIZON = 12; // แท็บ 📊 Capacity มองไกลก
 const OT_SHIFT_FRAC = 0.25;  // OT ต่อท้ายกะเช้า ≈ 25% ของกะ (2-3 ชม.)
 
 const PLAN_META = {
-  day:          { label: 'กะเช้า', color: '#22c55e' },
-  night:        { label: '+กะดึก', color: '#8b5cf6' },
-  ot:           { label: '+OT', color: '#f59e0b' },
+  day:          { label: 'กะเช้า', color: 'var(--green)' },
+  night:        { label: '+กะดึก', color: 'var(--blue)' },
+  ot:           { label: '+OT', color: 'var(--amber)' },
   // ม.75: กำลังไม่พอ → "ยกเลิกหยุด 75%" (เรียกมาทำงาน = ค่าแรงปกติ) ก่อนไปเปิด OT วันหยุดจริง (คำสั่ง user 2026-07-21)
-  recall75:     { label: '⚡ ยกเลิกหยุด75% มาทำงาน', color: '#a78bfa' },
-  holiday_work: { label: '⚠ ทำวันหยุด OT', color: '#ef4444' },
+  recall75:     { label: 'ยกเลิกหยุด75% มาทำงาน', color: 'var(--blue)' },
+  holiday_work: { label: 'ทำวันหยุด OT', color: 'var(--red)' },
 };
 
 export default function ProductionPlan() {
@@ -618,12 +619,12 @@ export default function ProductionPlan() {
         // ตัดสิน: ปกติพอ / OT / กะดึก / กะดึก+OT / ยกเลิกหยุด 75% (ก่อน OT วันหยุดเสมอ) / เกินกำลัง
         let verdict, color;
         if (!matCnt) { verdict = '—'; color = 'var(--muted)'; }
-        else if (shiftsNeeded <= dayShifts) { verdict = 'กะเช้าพอ'; color = '#22c55e'; }
-        else if (shiftsNeeded <= dayShifts * (1 + OT_SHIFT_FRAC)) { verdict = `ต้องเปิด OT ~${Math.ceil((shiftsNeeded - dayShifts) / OT_SHIFT_FRAC)} วัน`; color = '#f59e0b'; }
-        else if (hasNight && shiftsNeeded <= capShifts) { verdict = `ต้องเปิดกะดึก ~${Math.ceil(shiftsNeeded - dayShifts)} วัน`; color = '#8b5cf6'; }
-        else if (hasNight && shiftsNeeded <= fullCap) { verdict = 'กะดึก + OT เต็มเดือน'; color = '#ef4444'; }
-        else if (sd75Shifts > 0 && shiftsNeeded <= fullCap + sd75Shifts) { verdict = `⚡ ยกเลิกหยุด 75% มาทำงาน ~${Math.ceil((shiftsNeeded - fullCap) / (hasNight ? 2 : 1))} วัน (ค่าแรงปกติ)`; color = '#a78bfa'; }
-        else { verdict = '🚨 เกินกำลัง — ต้องเพิ่มไลน์/คน' + (sd75 ? ' (รวมยกเลิกหยุด 75% แล้ว)' : ''); color = '#ef4444'; }
+        else if (shiftsNeeded <= dayShifts) { verdict = 'กะเช้าพอ'; color = 'var(--green)'; }
+        else if (shiftsNeeded <= dayShifts * (1 + OT_SHIFT_FRAC)) { verdict = `ต้องเปิด OT ~${Math.ceil((shiftsNeeded - dayShifts) / OT_SHIFT_FRAC)} วัน`; color = 'var(--amber)'; }
+        else if (hasNight && shiftsNeeded <= capShifts) { verdict = `ต้องเปิดกะดึก ~${Math.ceil(shiftsNeeded - dayShifts)} วัน`; color = 'var(--blue)'; }
+        else if (hasNight && shiftsNeeded <= fullCap) { verdict = 'กะดึก + OT เต็มเดือน'; color = 'var(--red)'; }
+        else if (sd75Shifts > 0 && shiftsNeeded <= fullCap + sd75Shifts) { verdict = `⚡ ยกเลิกหยุด 75% มาทำงาน ~${Math.ceil((shiftsNeeded - fullCap) / (hasNight ? 2 : 1))} วัน (ค่าแรงปกติ)`; color = 'var(--blue)'; }
+        else { verdict = '🚨 เกินกำลัง — ต้องเพิ่มไลน์/คน' + (sd75 ? ' (รวมยกเลิกหยุด 75% แล้ว)' : ''); color = 'var(--red)'; }
         return { mk, pcs, shiftsNeeded, dayShifts, capShifts, verdict, color, unknownCap, fcCount: matCnt };
       });
       return { line, rows };
@@ -632,21 +633,21 @@ export default function ProductionPlan() {
 
   /* ── styles ── */
   const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
-  const chip = (color, bg) => ({ fontSize: 11, fontWeight: 800, color, background: bg || `${color}1f`, border: `1px solid ${color}55`, borderRadius: 6, padding: '2px 7px', whiteSpace: 'nowrap' });
+  const chip = (color, bg) => ({ fontSize: 11, fontWeight: 800, color, background: bg || `${tint(color, 'dim')}`, border: `1px solid ${tint(color, 'line')}`, borderRadius: 6, padding: '2px 7px', whiteSpace: 'nowrap' });
   const th = { padding: '5px 8px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap', textAlign: 'right' };
   const td = { padding: '5px 8px', fontSize: 12, whiteSpace: 'nowrap', textAlign: 'right' };
-  const confChip = (c) => c === 'high' ? null : <span style={chip(c === 'med' ? '#f59e0b' : '#ef4444')}>{c === 'med' ? 'ข้อมูลปานกลาง' : 'ข้อมูลน้อย'}</span>;
+  const confChip = (c) => c === 'high' ? null : <span style={chip(c === 'med' ? 'var(--amber)' : 'var(--red)')}>{c === 'med' ? 'ข้อมูลปานกลาง' : 'ข้อมูลน้อย'}</span>;
 
   return (
     <Page style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <PageHeader
         title="วางแผนการผลิต" icon="🗓️"
         tabs={[
-          { key: 'plan', label: '📊 กำลังการผลิต' },
+          { key: 'plan', label: 'กำลังการผลิต' },
           /* 📋 แท็บเดียวของหน้านี้ที่ **เขียน DB** — แท็บกำลังการผลิตวิเคราะห์อย่างเดียว
              (งาน lot size ที่ไม่ได้เดินตามคัมบัง ต้องมีคนวางคิวให้ ไม่ใช่ first come first serve) */
-          { key: 'lots', label: '📋 แผนสั่งงาน (ล็อต)' },
-          { key: 'settings', label: '⚙️ ตั้งค่า' },
+          { key: 'lots', label: 'แผนสั่งงาน (ล็อต)' },
+          { key: 'settings', label: 'ตั้งค่า' },
         ]}
         tab={tab} onTab={setTab}
       />
@@ -682,13 +683,13 @@ export default function ProductionPlan() {
       {planWarn && (
         <div style={{
           margin: '0 0 12px', padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700,
-          background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', color: '#ef4444',
+          background: 'var(--red-dim)', border: '1px solid var(--red-line)', color: 'var(--red)',
         }}>⚠ {planWarn}</div>
       )}
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
         กำลังผลิตคำนวณจาก <b>median ยอดดีจริงต่อกะ</b> ใน {HISTORY_DAYS} วันล่าสุด (ตัดค่าโดดอัตโนมัติ) · พาร์ทที่ไม่มีประวัติ fallback เป็น cycle time × OEE
         {shiftNet && <> บนฐาน <b>เวลาทำงานสุทธิ {shiftNet.netMin} นาที/กะ</b> (เวลากะ {DEFAULT_SHIFT_MIN} − พักตามนโยบาย {Math.round(shiftNet.brkMin)})
-          {shiftNet.fallback && <span style={{ color: '#f59e0b', fontWeight: 700 }}> ⚠ ใช้ค่าพักสำรอง (อ่านตารางเวลาพักไม่ได้)</span>}</>}
+          {shiftNet.fallback && <span style={{ color: 'var(--amber)', fontWeight: 700 }}> ⚠ ใช้ค่าพักสำรอง (อ่านตารางเวลาพักไม่ได้)</span>}</>}
         {pairsCollapsed.length > 0 && (
           <> · 🔗 <b>งานคู่ {pairsCollapsed.length} คู่</b> ปั๊มทีเดียวได้ 2 ข้าง — ยอด<b>ชิ้น</b>บวกทั้งคู่ แต่<b>ภาระเวลา</b>นับครั้งเดียว
             <span style={{ marginLeft: 4 }}>({pairsCollapsed.slice(0, 3).map(([a, b]) => `${a}↔${b}`).join(' · ')}{pairsCollapsed.length > 3 ? ' …' : ''})</span></>
@@ -700,7 +701,7 @@ export default function ProductionPlan() {
       {!loading && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
           {bomErr ? (
-            <span style={{ color: '#f59e0b', fontWeight: 700 }}>⚠ อ่าน BOM ไม่ได้ — แผนนับเฉพาะพาร์ทที่ลูกค้าสั่งตรง (ไลน์ที่ทำพาร์ทลูกจะดูเหมือนไม่มีงาน)</span>
+            <span style={{ color: 'var(--amber)', fontWeight: 700 }}>⚠ อ่าน BOM ไม่ได้ — แผนนับเฉพาะพาร์ทที่ลูกค้าสั่งตรง (ไลน์ที่ทำพาร์ทลูกจะดูเหมือนไม่มีงาน)</span>
           ) : !useBom ? (
             <span>🌳 ปิดการรวมงานจาก BOM อยู่ — แผนนับเฉพาะพาร์ทที่ลูกค้าสั่งตรง</span>
           ) : demandPcs.bom ? (
@@ -734,13 +735,13 @@ export default function ProductionPlan() {
         const mine = late.filter(l => lineOfMat(l.mat_no));      // เฉพาะที่เป็นงานของไลน์ใน scope
         const show = (mine.length ? mine : late).slice(0, 6);
         return (
-          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
-            🚨 <b style={{ color: '#ef4444' }}>สายแล้ว {late.length} รายการ</b> — ไล่ย้อนจากวันส่งแล้ว ต้องเริ่มผลิตตั้งแต่ก่อนวันนี้
+          <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+            🚨 <b style={{ color: 'var(--red)' }}>สายแล้ว {late.length} รายการ</b> — ไล่ย้อนจากวันส่งแล้ว ต้องเริ่มผลิตตั้งแต่ก่อนวันนี้
             <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 11.5, display: 'grid', gap: 2 }}>
               {show.map((l, i) => (
                 <div key={`${l.mat_no}-${l.needBy}-${i}`}>
                   <b style={{ color: 'var(--text2)' }}>{l.mat_no}</b> {Math.round(l.qty).toLocaleString()} ชิ้น ·
-                  ต้องเริ่ม <b style={{ color: '#ef4444' }}>{fmtDate(l.needBy)}</b> เพื่อให้ทันดิว {fmtDate(l.dueOfParent)}
+                  ต้องเริ่ม <b style={{ color: 'var(--red)' }}>{fmtDate(l.needBy)}</b> เพื่อให้ทันดิว {fmtDate(l.dueOfParent)}
                   {l.days > 1 && <span> · ใช้เวลาผลิต ~{l.days} วัน{l.capped ? ' (ตัดที่เพดาน 60 วัน — กำลังผลิตที่ระบบรู้ต่ำผิดปกติ ตรวจ CT/ประวัติพาร์ทนี้)' : ''}</span>}
                   {l.root !== l.mat_no && <span> (ของใบ {l.root})</span>}
                 </div>
@@ -756,7 +757,7 @@ export default function ProductionPlan() {
 
       {/* 🧹 worklist ให้ PE/Planning — ระบบไม่แก้ข้อมูลให้เอง (กฎของ bomTree.js) */}
       {!loading && useBom && demandPcs.bom?.flatDupes?.length > 0 && (
-        <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+        <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
           🧹 <b>BOM แบนซ้ำ {demandPcs.bom.flatDupes.length} จุด</b> — ชิ้นเดียวกันถูกใส่ไว้ทั้งชั้น 1 และในชั้นลึกของใบเดียวกัน
           <div style={{ marginTop: 3, color: 'var(--muted)', fontSize: 11.5 }}>
             แผนนี้ <b>ต่อโซ่แบบ SAP</b> (นับครั้งเดียว ไม่นับแถวชั้น 1 ที่ซ้ำ) — ตัวเลขจึงถูกแล้ว
@@ -769,13 +770,13 @@ export default function ProductionPlan() {
         </div>
       )}
       {!loading && useBom && demandPcs.bom?.cycles > 0 && (
-        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: '#ef4444', fontWeight: 700 }}>
+        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--red)', fontWeight: 700 }}>
           ⛔ BOM วนลูป {demandPcs.bom.cycles} จุด — ระบบตัดการไล่ชั้นทิ้งเพื่อไม่ให้ค้าง ⇒ ความต้องการของกิ่งนั้นอาจขาด (ไปแก้ที่ /products แท็บ BOM)
         </div>
       )}
 
       {!loading && demandGaps.noLine > 0 && (
-        <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+        <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
           ⚠️ <b>{demandGaps.noLine} รายการความต้องการยังไม่ถูกนับในแผน</b> — พาร์ท {demandGaps.noLineParts.size} ตัวนี้<b>ยังไม่ได้ผูกไลน์ผลิต</b> (หรือชื่อไลน์ไม่มีในทะเบียนไลน์)
           <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 11.5, wordBreak: 'break-word' }}>
             {[...demandGaps.noLineParts].slice(0, 8).join(' · ')}{demandGaps.noLineParts.size > 8 ? ' …' : ''}
@@ -790,7 +791,7 @@ export default function ProductionPlan() {
       )}
 
       {!loading && (unmapped.orders > 0 || unmapped.fcParts.size > 0) && (
-        <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+        <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
           ⚠️ <b>ยังจับคู่เลข SAP ไม่ได้ {unmapped.orders} ออเดอร์ · {unmapped.parts.size} พาร์ท{unmapped.fcParts.size > 0 ? ` · forecast ${unmapped.fcParts.size} พาร์ท` : ''}</b> — พาร์ทเหล่านี้**ไม่ถูกนับในแผน** (ยังไม่ได้ตั้ง `p_no`/SAP ใน Product Master ให้ตรงเลขลูกค้า)
           {unmapped.parts.size > 0 && <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 11.5, wordBreak: 'break-word' }}>ตัวอย่าง: {[...unmapped.parts].slice(0, 8).join(' · ')}{unmapped.parts.size > 8 ? ' …' : ''}</div>}
           <div style={{ marginTop: 3, color: 'var(--muted)', fontSize: 11.5 }}>→ ไปตั้ง p_no ที่หน้า Product Master หรือใช้ปุ่ม 🔗 จับคู่เลข SAP ในหน้า Planner &amp; Sales</div>
@@ -824,7 +825,7 @@ export default function ProductionPlan() {
             value={cap} onChange={setCap}
             options={[
               { value: 'day', label: `📅 รายวัน (${DAILY_HORIZON} วัน · ออเดอร์จริง)` },
-              { value: 'month', label: '📆 รายเดือน (Forecast)' },
+              { value: 'month', label: 'รายเดือน (Forecast)' },
             ]}
           />
           <button type="button" onClick={() => setMode(mode === 'slide' ? 'chart' : 'slide')}
@@ -836,7 +837,7 @@ export default function ProductionPlan() {
               background: mode === 'slide' ? 'var(--accent-dim)' : 'var(--bg2)',
               color: mode === 'slide' ? 'var(--accent)' : 'var(--text2)',
             }}>
-            🖥️ {mode === 'slide' ? 'กลับไปดูกราฟ' : 'โหมดสไลด์โรงงาน'}
+            {mode === 'slide' ? 'กลับไปดูกราฟ' : 'โหมดสไลด์โรงงาน'}
           </button>
         </div>
       ) : null}
@@ -882,18 +883,18 @@ export default function ProductionPlan() {
           const stoppable = daily.filter(r => r.sd75Total > 0 && r.recall75Days === 0);
           const mustWork = daily.filter(r => r.recall75Days > 0);
           return (
-            <div style={{ ...card, borderColor: '#a78bfa66' }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#a78bfa', marginBottom: 6 }}>⚖️ มาตรการหยุดจ่าย 75% (ม.75) — ช่วง {DAILY_HORIZON} วันข้างหน้า</div>
+            <div style={{ ...card, borderColor: 'var(--blue)66' }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--blue)', marginBottom: 6 }}>⚖️ มาตรการหยุดจ่าย 75% (ม.75) — ช่วง {DAILY_HORIZON} วันข้างหน้า</div>
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 12 }}>
                 <div style={{ flex: '1 1 260px' }}>
-                  <div style={{ color: '#22c55e', fontWeight: 700, marginBottom: 4 }}>🛑 หยุดตามมาตรการได้ ({stoppable.length} ไลน์)</div>
+                  <div style={{ color: 'var(--green)', fontWeight: 700, marginBottom: 4 }}>🛑 หยุดตามมาตรการได้ ({stoppable.length} ไลน์)</div>
                   {stoppable.length === 0 ? <div style={{ color: 'var(--muted)' }}>— ไม่มี —</div>
                     : stoppable.map(r => <div key={r.line.id} style={{ color: 'var(--text2)' }}>{r.line.name} <span style={{ color: 'var(--muted)' }}>· หยุดได้ทั้ง {r.sd75Total} วัน</span></div>)}
                 </div>
                 <div style={{ flex: '1 1 260px' }}>
-                  <div style={{ color: '#a78bfa', fontWeight: 700, marginBottom: 4 }}>⚡ หยุดไม่ได้ — order ไม่ลด ต้องเรียกมาทำ ({mustWork.length} ไลน์)</div>
+                  <div style={{ color: 'var(--blue)', fontWeight: 700, marginBottom: 4 }}>⚡ หยุดไม่ได้ — order ไม่ลด ต้องเรียกมาทำ ({mustWork.length} ไลน์)</div>
                   {mustWork.length === 0 ? <div style={{ color: 'var(--muted)' }}>— ไม่มี —</div>
-                    : mustWork.map(r => <div key={r.line.id} style={{ color: 'var(--text2)' }}>{r.line.name} <span style={{ color: '#a78bfa', fontWeight: 700 }}>· เรียกมา {r.recall75Days}/{r.sd75Total} วัน</span>{r.sd75Stoppable > 0 && <span style={{ color: 'var(--muted)' }}> (อีก {r.sd75Stoppable} วันหยุดได้)</span>}</div>)}
+                    : mustWork.map(r => <div key={r.line.id} style={{ color: 'var(--text2)' }}>{r.line.name} <span style={{ color: 'var(--blue)', fontWeight: 700 }}>· เรียกมา {r.recall75Days}/{r.sd75Total} วัน</span>{r.sd75Stoppable > 0 && <span style={{ color: 'var(--muted)' }}> (อีก {r.sd75Stoppable} วันหยุดได้)</span>}</div>)}
                 </div>
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>ตัดสินจาก order ค้างส่งจริง ณ ตอนนี้ + กำลังผลิตของแต่ละไลน์ — มาทำงานวัน ม.75 = ค่าแรงปกติ (ไม่ใช่ OT วันหยุด) · ดูวันไหนต้องมาที่แถบปฏิทินของไลน์ด้านล่าง (⚡)</div>
@@ -907,15 +908,15 @@ export default function ProductionPlan() {
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>{line.section} · {orderCount} ออเดอร์</span>
               {/* สรุปทั้งช่วง */}
               {endBacklog > 0.05
-                ? <span style={chip('#ef4444')}>🚨 ต่อให้เปิดเต็มที่ยังไม่ทัน — ค้าง ~{endBacklog.toFixed(1)} กะ ณ สิ้นช่วง</span>
+                ? <span style={chip('var(--red)')}>🚨 ต่อให้เปิดเต็มที่ยังไม่ทัน — ค้าง ~{endBacklog.toFixed(1)} กะ ณ สิ้นช่วง</span>
                 : (otDays + nightDays + recall75Days + holidayDays === 0
-                  ? <span style={chip('#22c55e')}>✅ กะเช้าปกติพอ ไม่ต้องเปิด OT</span>
-                  : <span style={chip('#f59e0b')}>ต้องเปิด: {nightDays ? `กะดึก ${nightDays} วัน · ` : ''}{otDays ? `OT ${otDays} วัน · ` : ''}{recall75Days ? `ยกเลิกหยุด75% ${recall75Days} วัน · ` : ''}{holidayDays ? `ทำวันหยุด OT ${holidayDays} วัน` : ''}</span>)}
+                  ? <span style={chip('var(--green)')}>✅ กะเช้าปกติพอ ไม่ต้องเปิด OT</span>
+                  : <span style={chip('var(--amber)')}>ต้องเปิด: {nightDays ? `กะดึก ${nightDays} วัน · ` : ''}{otDays ? `OT ${otDays} วัน · ` : ''}{recall75Days ? `ยกเลิกหยุด75% ${recall75Days} วัน · ` : ''}{holidayDays ? `ทำวันหยุด OT ${holidayDays} วัน` : ''}</span>)}
               {sd75Total > 0 && (recall75Days > 0
-                ? <span style={chip('#a78bfa')} title="วัน ม.75 ที่มี order ชน/งานค้าง — ต้องเรียกพนักงานมาทำงาน (ค่าแรงปกติ)">⚡ ม.75: หยุดได้ {sd75Stoppable}/{sd75Total} วัน — ต้องเรียกมาทำ {recall75Days} วัน</span>
-                : <span style={chip('#22c55e')} title="ทุกวัน ม.75 ในช่วงนี้ ไลน์นี้ไม่มี order ชน — หยุดตามมาตรการได้">🛑 ม.75: หยุดได้ทั้ง {sd75Total} วัน (order ไม่ชน)</span>)}
-              {carryPcs > 0 && <span style={chip('#f59e0b')} title="ออเดอร์ pending ที่วันส่งผ่านมาแล้ว (ย้อน 30 วัน) — รวมเป็นงานค้างตั้งต้นของแผน (convention เดียวกับ Rundown: ค้างเก่ารวมเข้าวันนี้)">⏰ ยกมาจากค้างส่งเก่า {Math.round(carryPcs).toLocaleString()} ชิ้น</span>}
-              {unknownCap > 0 && <span style={chip('#94a3b8')} title="พาร์ทที่ยังไม่มีประวัติกำลังผลิต/ไม่รู้จักไลน์">{unknownCap.toLocaleString()} ชิ้นไม่รู้กำลัง</span>}
+                ? <span style={chip('var(--blue)')} title="วัน ม.75 ที่มี order ชน/งานค้าง — ต้องเรียกพนักงานมาทำงาน (ค่าแรงปกติ)">⚡ ม.75: หยุดได้ {sd75Stoppable}/{sd75Total} วัน — ต้องเรียกมาทำ {recall75Days} วัน</span>
+                : <span style={chip('var(--green)')} title="ทุกวัน ม.75 ในช่วงนี้ ไลน์นี้ไม่มี order ชน — หยุดตามมาตรการได้">🛑 ม.75: หยุดได้ทั้ง {sd75Total} วัน (order ไม่ชน)</span>)}
+              {carryPcs > 0 && <span style={chip('var(--amber)')} title="ออเดอร์ pending ที่วันส่งผ่านมาแล้ว (ย้อน 30 วัน) — รวมเป็นงานค้างตั้งต้นของแผน (convention เดียวกับ Rundown: ค้างเก่ารวมเข้าวันนี้)">⏰ ยกมาจากค้างส่งเก่า {Math.round(carryPcs).toLocaleString()} ชิ้น</span>}
+              {unknownCap > 0 && <span style={chip('var(--muted)')} title="พาร์ทที่ยังไม่มีประวัติกำลังผลิต/ไม่รู้จักไลน์">{unknownCap.toLocaleString()} ชิ้นไม่รู้กำลัง</span>}
             </div>
             {/* 📊 กราฟก่อน ตารางทีหลัง — โรงงานอ่านกราฟเร็วกว่า (user 06/10)
                 แท่ง = ภาระของวันนั้น (กะ) · เส้น = กำลังที่มี ⇒ แท่งพ้นเส้น = ต้องเปิดเพิ่ม */}
@@ -937,9 +938,9 @@ export default function ProductionPlan() {
                 return (
                   <div key={d.date} title={`${fmtDate(d.date)}${d.sd75 ? ' (หยุดจ่าย 75% — ม.75)' : d.holiday ? ' (วันหยุด)' : ''}\nดิววันนี้ ${Math.round(d.duePcs).toLocaleString()} ชิ้น (${d.dueLoad.toFixed(2)} กะ)\nแผน: ${d.plan.map(p => PLAN_META[p]?.label || p).join(' ') || (d.holiday ? 'หยุด' : 'ว่าง')}\nค้างยกไป ${d.backlog.toFixed(2)} กะ`}
                     style={{ flexShrink: 0, width: 40, textAlign: 'center' }}>
-                    <div style={{ fontSize: 11, color: d.sd75 ? '#a78bfa' : d.holiday ? '#ef4444' : 'var(--muted)' }}>{['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'][dd.getDay()]}</div>
+                    <div style={{ fontSize: 11, color: d.sd75 ? 'var(--blue)' : d.holiday ? 'var(--red)' : 'var(--muted)' }}>{['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'][dd.getDay()]}</div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)' }}>{dd.getDate()}</div>
-                    <div style={{ height: 26, marginTop: 2, borderRadius: 5, background: top ? `${top.color}33` : (d.holiday ? 'var(--bg3)' : 'var(--bg2)'), border: `1px solid ${top ? top.color : 'var(--border2)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>
+                    <div style={{ height: 26, marginTop: 2, borderRadius: 5, background: top ? `${tint(top.color, 'dim')}` : (d.holiday ? 'var(--bg3)' : 'var(--bg2)'), border: `1px solid ${top ? top.color : 'var(--border2)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>
                       {top === PLAN_META.holiday_work ? '⚠' : top === PLAN_META.recall75 ? '⚡' : top === PLAN_META.night ? '🌙' : top === PLAN_META.ot ? '⏰' : top === PLAN_META.day ? '☀' : (d.holiday ? '·' : '')}
                     </div>
                   </div>
@@ -947,7 +948,7 @@ export default function ProductionPlan() {
               })}
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 6, flexWrap: 'wrap', fontSize: 11, color: 'var(--muted)' }}>
-              <span>☀ กะเช้าพอ</span><span>⏰ ต้องเปิด OT</span><span>🌙 ต้องเปิดกะดึก</span><span style={{ color: '#a78bfa' }}>⚡ ยกเลิกหยุด 75% (ค่าแรงปกติ)</span><span style={{ color: '#ef4444' }}>⚠ ทำวันหยุด OT (×1.5/×2)</span>
+              <span>☀ กะเช้าพอ</span><span>⏰ ต้องเปิด OT</span><span>🌙 ต้องเปิดกะดึก</span><span style={{ color: 'var(--blue)' }}>⚡ ยกเลิกหยุด 75% (ค่าแรงปกติ)</span><span style={{ color: 'var(--red)' }}>⚠ ทำวันหยุด OT (×1.5/×2)</span>
             </div>
           </div>
         ))}

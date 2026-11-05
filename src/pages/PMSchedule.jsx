@@ -32,6 +32,7 @@ import { useProductionLinesState } from '../utils/useProductionLines'
 import { lineKnownSet } from '../utils/pmEquipList'
 import { filterPlanRows } from '../utils/pmPlanFilter'
 import { resolveJig } from '../utils/qrCode'
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 // role ที่ควรขึ้นก่อนตอนเลือก "ผู้ที่ตกลงเลื่อนด้วย" (prefer ไม่ restrict — ตกลงทางโทรศัพท์กับใครก็พิมพ์ได้)
 const AGREE_ROLES = ['planner_store', 'supervisor', 'manager']
 
@@ -55,10 +56,10 @@ function parseLocalDate(s) {
 
 
 const VIEW_OPTIONS = [
-  { key: 'timeline', label: '📊 Timeline' },
-  { key: 'calendar', label: '📅 ปฏิทิน' },
-  { key: 'buckets', label: '🗂️ การ์ด' },
-  { key: 'table', label: '📋 ตาราง' },
+  { key: 'timeline', label: 'Timeline' },
+  { key: 'calendar', label: 'ปฏิทิน' },
+  { key: 'buckets', label: 'การ์ด' },
+  { key: 'table', label: 'ตาราง' },
 ]
 const MONTHS_TH = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']
 const DOW_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
@@ -76,7 +77,7 @@ const S = {
   sub: { fontSize: 13, color: 'var(--muted)', marginTop: 4, marginBottom: 20 },
   summaryBar: { display: 'flex', gap: 12, marginBottom: 24, flexWrap: 'wrap' },
   summaryCard: (color) => ({
-    background: 'var(--card)', border: `1px solid ${color}30`,
+    background: 'var(--card)', border: `1px solid ${tint(color, 'dim')}`,
     borderRadius: 'var(--radius-lg)', padding: '12px 20px', minWidth: 120,
     textAlign: 'center',
   }),
@@ -86,12 +87,12 @@ const S = {
     return {
       display: 'inline-flex', alignItems: 'center', gap: 4,
       padding: '3px 10px', borderRadius: 12, fontSize: 11, fontWeight: 700,
-      background: `${meta.color}18`, color: meta.color, border: `1px solid ${meta.color}30`,
+      background: `${tint(meta.color, 'dim')}`, color: meta.color, border: `1px solid ${tint(meta.color, 'dim')}`,
     }
   },
   actionBtn: (color) => ({
     padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600,
-    border: `1px solid ${color}30`, background: `${color}12`, color,
+    border: `1px solid ${tint(color, 'dim')}`, background: `${tint(color, 'dim')}`, color,
     cursor: 'pointer',
   }),
 }
@@ -373,7 +374,7 @@ export default function PMSchedule() {
               แสดง <b style={{ color: 'var(--text)' }}>{shownRows.length}</b> จาก {rows.length} แผน
             </span>
           )}
-          {filtered && <button type="button" onClick={clearFilters} style={S.actionBtn('#8b8b96')}>✕ ล้างตัวกรอง</button>}
+          {filtered && <button type="button" onClick={clearFilters} style={S.actionBtn('var(--muted)')}>ล้างตัวกรอง</button>}
         </>} />
 
       {/* ไลน์ว่าง/ไม่อยู่ทะเบียน หลุดจากตัวกรองไลน์ — ต้องบอก ห้ามหายเงียบ (ตะกร้ารับท้ายลิสต์) */}
@@ -431,7 +432,7 @@ export default function PMSchedule() {
             <span style={{ color: 'var(--muted)' }}> ({noDue.filter(r => !r.cycle).length} ยังไม่ตั้งรอบ · {noDue.filter(r => r.cycle).length} มีรอบแต่ยังไม่เคยตรวจ) — ระบบเตือนล่วงหน้าไม่ได้</span>
           </span>
           {canDefer
-            ? <button onClick={() => setCycleFor(noDue)} style={{ ...S.actionBtn('#f59a3f'), fontSize: 13, fontWeight: 800 }}>📅 ตั้งรอบ / วัน PM ครั้งถัดไป</button>
+            ? <button onClick={() => setCycleFor(noDue)} style={{ ...S.actionBtn('#f59a3f'), fontSize: 13, fontWeight: 800 }}>ตั้งรอบ / วัน PM ครั้งถัดไป</button>
             : <span style={{ fontSize: 12, color: 'var(--muted)' }}>ให้หัวหน้าช่าง/ผู้มีสิทธิ์ตั้งค่า PM เป็นคนตั้ง</span>}
         </div>
       )}
@@ -441,11 +442,11 @@ export default function PMSchedule() {
           <Segmented value={view} onChange={setView} label="มุมมอง"
             options={VIEW_OPTIONS.map(v => ({ value: v.key, label: v.label }))} />
           <button onClick={() => setScanOpen(true)} title="สแกนป้าย QR ที่เครื่อง → ดูเฉพาะแผนของเครื่องนั้น"
-            style={{ ...S.actionBtn(deptColor), fontSize: 13, fontWeight: 800, minHeight: 36 }}>📷 สแกนเครื่อง</button>
+            style={{ ...S.actionBtn(deptColor), fontSize: 13, fontWeight: 800, minHeight: 36 }}>สแกนเครื่อง</button>
           {focusEq && (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, padding: '4px 6px 4px 12px', borderRadius: 999, border: '1px solid var(--accent)', background: 'var(--bg3)' }}>
               🎯 {focusName ? <>เฉพาะ <b>{focusName}</b> ({shownRows.length} แผน)</> : <b style={{ color: '#f59a3f' }}>ไม่พบแผนของอุปกรณ์นี้ในทีมนี้</b>}
-              <button onClick={() => setParams({ focus: null })} style={{ fontSize: 12, padding: '2px 10px', borderRadius: 999, border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--text2)', cursor: 'pointer' }}>✕ ทั้งหมด</button>
+              <button onClick={() => setParams({ focus: null })} style={{ fontSize: 12, padding: '2px 10px', borderRadius: 999, border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--text2)', cursor: 'pointer' }}>ทั้งหมด</button>
             </span>
           )}
         </div>
@@ -462,14 +463,14 @@ export default function PMSchedule() {
       ) : loadErr ? (
         /* 🔴 โหลดล้ม ต้องเขียนว่า "โหลดไม่สำเร็จ" ห้ามใช้หน้าตาเดียวกับ "ยังไม่มีแผน" (QC audit 08/10)
               — คนอ่านว่า "แผนกนี้ไม่มีแผน PM" แล้วไปตั้งใหม่ทับ หรือเชื่อว่าไม่มีงานค้าง */
-        <div style={{ background: 'var(--card)', border: '1px solid rgba(239,68,68,0.5)', borderRadius: 'var(--radius-lg)', padding: '40px 24px', textAlign: 'center' }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--red-line)', borderRadius: 'var(--radius-lg)', padding: '40px 24px', textAlign: 'center' }}>
           <div style={{ fontSize: 36, marginBottom: 12 }}>⚠️</div>
-          <p style={{ fontSize: 15, fontWeight: 700, color: '#ef4444', marginBottom: 8 }}>โหลดแผน PM ไม่สำเร็จ</p>
+          <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--red)', marginBottom: 8 }}>โหลดแผน PM ไม่สำเร็จ</p>
           <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 10 }}>
             <b>ไม่ได้หมายความว่าแผนกนี้ไม่มีแผน</b> — ตารางด้านล่างว่างเพราะอ่านข้อมูลไม่ได้<br />เหตุผลจากระบบ: {loadErr}
           </p>
           <button onClick={fetchData} style={{ fontSize: 13, fontWeight: 700, padding: '7px 16px', borderRadius: 8, cursor: 'pointer',
-            background: 'var(--accent)', color: 'var(--accent-ink)', border: '1px solid var(--accent)' }}>↻ ลองโหลดอีกครั้ง</button>
+            background: 'var(--accent)', color: 'var(--accent-ink)', border: '1px solid var(--accent)' }}>ลองโหลดอีกครั้ง</button>
         </div>
       ) : rows.length === 0 ? (
         <div style={{ background: 'var(--card)', border: '1px dashed var(--border2)', borderRadius: 'var(--radius-lg)', padding: '48px 24px', textAlign: 'center' }}>
@@ -481,7 +482,7 @@ export default function PMSchedule() {
         <div style={{ background: 'var(--card)', border: '1px dashed var(--border2)', borderRadius: 'var(--radius-lg)', padding: '40px 24px', textAlign: 'center' }}>
           <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>ไม่มีแผนที่ตรงกับตัวกรอง</p>
           <p style={{ fontSize: 13, color: 'var(--muted)' }}>ทีมนี้มีทั้งหมด {rows.length} แผน{droppedNoLine ? ` (ไม่ระบุไลน์ ${droppedNoLine})` : ''}</p>
-          {filtered && <button type="button" onClick={clearFilters} style={{ ...S.actionBtn(deptColor), marginTop: 10 }}>✕ ล้างตัวกรอง</button>}
+          {filtered && <button type="button" onClick={clearFilters} style={{ ...S.actionBtn(deptColor), marginTop: 10 }}>ล้างตัวกรอง</button>}
         </div>
       ) : view === 'table' ? (
         <div className="table-sticky" style={{ overflowX: 'auto' }}>
@@ -560,16 +561,16 @@ export default function PMSchedule() {
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                        <button onClick={() => setSpareFor(r)} title={spareErr ? `นับจำนวนอะไหล่ที่ผูกไว้ไม่ได้ (${spareErr}) — เปิดดูในโมดัลได้` : "อะไหล่ที่ใช้ใน PM รอบหนึ่ง + เบิกตามแผน"} style={{ ...S.actionBtn(spareErr ? '#f59e0b' : spareCount.get(cl.id) ? '#4a90e0' : '#8b8b96') }}>🔩 {spareErr ? 'อะไหล่ ?' : spareCount.get(cl.id) ? `อะไหล่ ${spareCount.get(cl.id)}` : 'อะไหล่'}</button>
-                        {canDefer && <button onClick={() => setCycleFor([r])} style={{ ...S.actionBtn((nextDue || runDay) ? '#8b8b96' : '#f59a3f') }} title="ตั้งรอบ PM / วัน PM ครั้งถัดไป">📅 {(nextDue || runDay) ? 'รอบ/วัน' : 'ตั้งวัน PM'}</button>}
+                        <button onClick={() => setSpareFor(r)} title={spareErr ? `นับจำนวนอะไหล่ที่ผูกไว้ไม่ได้ (${spareErr}) — เปิดดูในโมดัลได้` : "อะไหล่ที่ใช้ใน PM รอบหนึ่ง + เบิกตามแผน"} style={{ ...S.actionBtn(spareErr ? '#f59e0b' : spareCount.get(cl.id) ? '#4a90e0' : '#8b8b96') }}>{spareErr ? 'อะไหล่ ?' : spareCount.get(cl.id) ? `อะไหล่ ${spareCount.get(cl.id)}` : 'อะไหล่'}</button>
+                        {canDefer && <button onClick={() => setCycleFor([r])} style={{ ...S.actionBtn((nextDue || runDay) ? 'var(--muted)' : '#f59a3f') }} title="ตั้งรอบ PM / วัน PM ครั้งถัดไป">{(nextDue || runDay) ? 'รอบ/วัน' : 'ตั้งวัน PM'}</button>}
                         {canDefer && r.plan?.id && (isDeferred
-                          ? <button onClick={() => cancelDefer(r)} style={{ ...S.actionBtn('#8b8b96') }} title="ยกเลิกการเลื่อน">✕ ยกเลิกเลื่อน</button>
-                          : <button onClick={() => setDeferFor(r)} style={{ ...S.actionBtn('#4a90e0') }} title="เลื่อนแผน PM (คิวผลิตแน่น ฯลฯ)">⏭ เลื่อนแผน</button>)}
+                          ? <button onClick={() => cancelDefer(r)} style={{ ...S.actionBtn('var(--muted)') }} title="ยกเลิกการเลื่อน">ยกเลิกเลื่อน</button>
+                          : <button onClick={() => setDeferFor(r)} style={{ ...S.actionBtn('#4a90e0') }} title="เลื่อนแผน PM (คิวผลิตแน่น ฯลฯ)">เลื่อนแผน</button>)}
                         <button
                           onClick={() => navigate(`/pm?tab=check&dept=${department}&equip=${cl.equipment_id}`)}
                           style={S.actionBtn(deptColor)}
                         >
-                          ✓ ตรวจ
+                          ตรวจ
                         </button>
                       </div>
                     </td>
@@ -696,7 +697,7 @@ function CycleModal({ rows, byName, byUid, deptWrite, onClose, onSaved }) {
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
           {[CYCLE_BASIS.CALENDAR, CYCLE_BASIS.RUN_DAY].map(b => (
             <button key={b} onClick={() => setBasis(b)} style={chip(basis === b)} title={BASIS_HINT[b]}>
-              {b === CYCLE_BASIS.RUN_DAY ? '🏃 ' : '🗓️ '}{BASIS_LABEL[b]}
+              {b === CYCLE_BASIS.RUN_DAY ? ' ' : ' '}{BASIS_LABEL[b]}
             </button>
           ))}
         </div>
@@ -907,12 +908,12 @@ function TimelineView({ rows, today, onCheck }) {
                   <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: 'var(--muted)' }}>— ยังไม่มีวัน PM ครั้งถัดไป</span>
                 ) : days < 0 ? (
                   <div style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', display: 'flex', alignItems: 'center', gap: 7 }}>
-                    <span style={{ width: 13, height: 13, borderRadius: '50%', background: meta.color, boxShadow: `0 0 6px ${meta.color}aa` }} />
+                    <span style={{ width: 13, height: 13, borderRadius: '50%', background: meta.color, boxShadow: `0 0 6px ${tint(meta.color, 'line')}` }} />
                     <span style={{ fontSize: 11.5, fontWeight: 700, color: meta.color }}>เกินกำหนด {Math.abs(days)} วัน</span>
                   </div>
                 ) : (
                   <>
-                    <div style={{ position: 'absolute', left: 0, width: `${x}%`, top: '50%', height: 4, transform: 'translateY(-50%)', background: `${meta.color}40`, borderRadius: 2 }} />
+                    <div style={{ position: 'absolute', left: 0, width: `${x}%`, top: '50%', height: 4, transform: 'translateY(-50%)', background: `${tint(meta.color, 'line')}`, borderRadius: 2 }} />
                     <div style={{ position: 'absolute', left: `${x}%`, top: '50%', transform: 'translate(-50%,-50%)', width: 14, height: 14, borderRadius: '50%', background: meta.color, border: '2px solid var(--card)', boxShadow: `0 0 0 1.5px ${meta.color}` }} />
                     <span style={labelLeft
                       ? { position: 'absolute', left: `calc(${x}% + 13px)`, top: '50%', transform: 'translateY(-50%)', fontSize: 11.5, color: 'var(--text2)', whiteSpace: 'nowrap' }
@@ -1042,7 +1043,7 @@ function DayModal({ sel, onClose, onCheck }) {
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{r.eq.name ?? '—'}</div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.eq.line_name ?? '—'} · {r.cycleText} · <span style={{ color: meta.color, fontWeight: 700 }}>{meta.label}</span></div>
                 </div>
-                <button onClick={() => onCheck(r.cl.equipment_id)} style={{ flexShrink: 0, padding: '5px 12px', borderRadius: 7, fontSize: 12, fontWeight: 700, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer' }}>✓ ตรวจ</button>
+                <button onClick={() => onCheck(r.cl.equipment_id)} style={{ flexShrink: 0, padding: '5px 12px', borderRadius: 7, fontSize: 12, fontWeight: 700, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer' }}>ตรวจ</button>
               </div>
             )
           })}
@@ -1099,12 +1100,12 @@ function BucketView({ rows, today, onCheck }) {
     else b.later.push(r)
   })
   const cols = [
-    { key: 'overdue', label: '🔴 เกินกำหนด', color: '#e05c4a' },
-    { key: 'week', label: '🟠 ครบใน 7 วัน', color: '#f59a3f' },
-    { key: 'month', label: '🟡 ครบในเดือนนี้', color: '#e0b34a' },
-    { key: 'later', label: '🟢 ถัดไป', color: '#3dd65c' },
-    { key: 'run', label: '🏃 ตามวันเดินเครื่อง', color: '#527855' },
-    { key: 'none', label: '⚪ ยังไม่มีวัน PM ครั้งถัดไป', color: '#9b8de8' },
+    { key: 'overdue', label: 'เกินกำหนด', color: '#e05c4a' },
+    { key: 'week', label: 'ครบใน 7 วัน', color: '#f59a3f' },
+    { key: 'month', label: 'ครบในเดือนนี้', color: '#e0b34a' },
+    { key: 'later', label: 'ถัดไป', color: '#3dd65c' },
+    { key: 'run', label: 'ตามวันเดินเครื่อง', color: '#527855' },
+    { key: 'none', label: 'ยังไม่มีวัน PM ครั้งถัดไป', color: '#9b8de8' },
   ]
   return (
     <div style={{ display: 'flex', gap: 12, overflowX: 'auto', alignItems: 'stretch', paddingBottom: 8 }}>
@@ -1112,7 +1113,7 @@ function BucketView({ rows, today, onCheck }) {
         <div key={c.key} style={{ flex: '1 1 240px', minWidth: 240, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 320px)' }}>
           <div style={{ padding: '10px 12px', borderBottom: `2px solid ${c.color}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
             <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>{c.label}</span>
-            <span style={{ fontSize: 12, fontWeight: 800, color: c.color, background: `${c.color}18`, borderRadius: 10, padding: '1px 8px' }}>{b[c.key].length}</span>
+            <span style={{ fontSize: 12, fontWeight: 800, color: c.color, background: `${tint(c.color, 'dim')}`, borderRadius: 10, padding: '1px 8px' }}>{b[c.key].length}</span>
           </div>
           <div style={{ overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
             {b[c.key].length === 0

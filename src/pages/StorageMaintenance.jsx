@@ -4,6 +4,7 @@ import Page from '../components/Page';
 import ImageSqueezePanel from '../components/ImageSqueezePanel';
 import { UserContext } from '../App';
 import { can, isActionSeeded } from '../utils/permissions';
+import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 /* ══ 🗜️ ดูแลพื้นที่จัดเก็บ / ค่าเน็ต — /storage-maintenance ═══════════════════════════
    2026-09-22 · คำสั่ง user: "ที่จริงฟังก์ชันปุ่มบีบอัดรูปน่าจะอยู่ที่ setting"
@@ -41,12 +42,12 @@ export default function StorageMaintenance() {
         “จำนวนไบต์ที่ส่งออกไปหาเครื่องผู้ใช้” (egress) — ไม่ใช่จำนวนครั้ง
         · รูปผัง PNG ใบเดียว 8 MB × จอที่เปิด 40 เครื่อง = 320 MB จากรูปใบเดียว
         <br />
-        <span style={{ color: 'var(--muted)' }}>
+        <InfoMore label="ทำไมต้องบีบรูป" size={11.5}>
           เคยเกิดจริง 11 ก.ย. 2026: โควต้าเต็ม → Supabase ระงับบริการทั้ง organization →
           <b style={{ color: 'var(--accent2)' }}> ทั้งโรงงาน login ไม่ได้</b>
           {' '}· WebP เล็กกว่า PNG/JPEG ราวครึ่งหนึ่งที่คุณภาพเท่ากัน และ
           <b> ไม่ลดความละเอียด</b> (เคยลดแล้วผังเบลออ่านไม่ออก — ห้ามทำซ้ำ)
-        </span>
+        </InfoMore>
       </div>
 
       <ImageSqueezePanel canRun={canRun} />

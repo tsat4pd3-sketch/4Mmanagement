@@ -10,6 +10,7 @@ import CollapseCard from '../components/CollapseCard'
 import PushCoveragePanel from '../components/PushCoveragePanel'  // 📲 ใครยังไม่มีเครื่องรับแจ้งเตือน — 2026-10-20
 import { reachLabel, reachWarnings } from '../utils/notifReach'   // 🏷️ ป้ายราคาต่อเรื่อง — สูตรอยู่ util ที่เดียว (มีเทส)
 import PageHeader from '../components/PageHeader';
+import { ALL } from '../utils/filterLabels';
 import Page from '../components/Page';
 import { UserContext } from '../App';
 import { NOTIFY_CATEGORY_LABEL } from '../utils/notifyPrefs';   // 🔕 ป้ายหมวด — ของกลาง ใช้ร่วมกับโมดัลของผู้ใช้
@@ -326,9 +327,9 @@ export default function NotificationConfig() {
   return (
     <Page width="form">
       <PageHeader title="ตั้งค่าระบบแจ้งเตือน (Telegram)" icon="🔔" />
-      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, marginBottom: 22 }}>
+      <InfoMore label="วิธีจัดห้อง" size={11.5} style={{ marginBottom: 22 }}>
         1 บอทยิงได้หลายห้อง · สร้าง/ลบห้องได้เอง · เลือกได้ว่าเรื่องไหนเข้าห้องไหน · ห้องที่ยังไม่ใส่ chat_id จะไปเข้ากลุ่มเดิม (fallback)
-      </div>
+      </InfoMore>
 
       {/* ── 📲 เครื่องที่รับแจ้งเตือนเข้ามือถือ (2026-10-20 · feedback "มือถือไม่มีแจ้งเตือนใบซ่อม") ──
           วางไว้บนสุดโดยเจตนา: ตัวกั้นใหญ่สุดของการแจ้งเตือนไม่ใช่กติกา/ห้อง Telegram
@@ -360,9 +361,9 @@ export default function NotificationConfig() {
             ส่วนอื่นของหน้านี้ (ห้อง · เรื่องที่แจ้ง · ผู้รับ) ตั้งได้ตามปกติ
           </div>
         )}
-        <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--muted)' }}>
+        <InfoMore label="เรื่อง token" size={11.5} style={{ flexBasis: '100%' }}>
           🔒 token เก็บแบบเข้ารหัสฝั่ง server — บันทึกแล้วดูย้อนหลังไม่ได้ (โชว์แค่ 4 ตัวท้าย) · ถ้าไม่ตั้งที่นี่ ระบบใช้ token เดิมที่ตั้งไว้ในระบบ
-        </div>
+        </InfoMore>
       </div>
 
       {/* ── Downtime open-alert threshold ── */}
@@ -404,12 +405,12 @@ export default function NotificationConfig() {
               <input type="checkbox" checked={room.is_active} onChange={e => patchRoom(room.id, 'is_active', e.target.checked)} />เปิด
             </label>
             <select value={room.team ?? ''} onChange={e => patchRoom(room.id, 'team', e.target.value || null)} title="ห้องของทีมช่างซ่อมไหน (ใบแจ้งซ่อม MO จะเข้าห้องของทีมตามหน่วยงาน)" style={{ ...inputStyle, width: 150, flex: '0 0 auto' }}>
-              <option value="">🔧 ทุกทีม (รวม)</option>
+              <option value="">{ALL.team}</option>
               {/* 2026-09-07: วนทีมจาก mtn_teams (pmTeamsSync — data-driven) · ค่าที่เก็บ = key เสมอ */}
               {pmTeamsSync().map(t => <option key={t.key} value={t.key}>ทีม {t.icon ? `${t.icon} ` : ''}{deptNameOf(t.key)}</option>)}
             </select>
             <button onClick={() => saveRoom(room)} disabled={busy === room.id} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>บันทึก</button>
-            <button onClick={() => testRoom(room)} disabled={busy === `test-${room.id}`} style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: 12, cursor: 'pointer' }}>📤 ทดสอบ</button>
+            <button onClick={() => testRoom(room)} disabled={busy === `test-${room.id}`} style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: 12, cursor: 'pointer' }}>ทดสอบ</button>
             <button onClick={() => deleteRoom(room)} style={{ background: 'transparent', color: '#e05c4a', border: '1px solid rgba(224,92,74,0.4)', borderRadius: 8, padding: '8px 10px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
             {!(room.chat_id ?? '').trim() && (
               <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--accent2)' }}>
@@ -514,7 +515,7 @@ export default function NotificationConfig() {
                       {reachWarnings(rule, reach[rule.event_key]).map((w, i) => (
                         <div key={i} style={{
                           fontSize: 11, lineHeight: 1.5, display: 'flex', gap: 5, alignItems: 'flex-start',
-                          color: w.level === 'red' ? '#ef4444' : 'var(--accent2)',
+                          color: w.level === 'red' ? 'var(--red)' : 'var(--accent2)',
                         }}>
                           <span style={{ flexShrink: 0 }}>{w.level === 'red' ? '🔴' : '⚠️'}</span>
                           <span>{w.text}</span>
@@ -528,7 +529,7 @@ export default function NotificationConfig() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                           <button onClick={() => setOpenTarget(openTarget === rule.event_key ? null : rule.event_key)}
                             style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>
-                            🎯 {openTarget === rule.event_key ? 'ปิดตัวจำกัดผู้รับ' : 'จำกัดผู้รับ (ส่วนงาน / แผนก)'}
+                            {openTarget === rule.event_key ? 'ปิดตัวจำกัดผู้รับ' : 'จำกัดผู้รับ (ส่วนงาน / แผนก)'}
                           </button>
                           <span style={{ fontSize: 11, color: (rule.inapp_sections?.length || rule.inapp_depts?.length || rule.inapp_match_section) ? 'var(--accent)' : 'var(--muted)' }}>
                             {targetSummary(rule)}
@@ -664,7 +665,7 @@ export default function NotificationConfig() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <button onClick={() => editingTpl === rule.event_key ? setEditingTpl(null) : startEditTpl(rule)}
                         style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>
-                        ✏️ {editingTpl === rule.event_key ? 'ปิดตัวแก้ข้อความ' : 'ปรับข้อความ'}
+                        {editingTpl === rule.event_key ? 'ปิดตัวแก้ข้อความ' : 'ปรับข้อความ'}
                       </button>
                       <span style={{ fontSize: 11, color: rule.template ? 'var(--accent)' : 'var(--muted)' }}>
                         {rule.template ? '● ใช้ข้อความที่กำหนดเอง' : '○ ใช้ข้อความมาตรฐานของระบบ'}

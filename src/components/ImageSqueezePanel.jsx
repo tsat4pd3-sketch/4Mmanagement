@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { toast } from './Toast';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { recompressLayouts } from '../utils/recompressLayouts';
+import InfoMore from './InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 /* ══ 🗜️ ImageSqueezePanel — แผงบีบรูปที่อัปไว้แล้วทั้งระบบ ═══════════════════════════
    ย้ายมาจาก `/linesetup` (2026-09-22 · คำสั่ง user: "ฟังก์ชันปุ่มบีบอัดรูปน่าจะอยู่ที่ setting")
@@ -98,10 +99,10 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
             <b style={{ color: 'var(--text)', fontSize: 14 }}>🗜️ บีบรูปที่อัปไว้แล้วให้เล็กลง</b><br />
             แปลงเป็น <b>WebP</b> — <b>ความละเอียดเท่าเดิม ไม่เบลอ</b> แต่ไฟล์เล็กลงราวครึ่งหนึ่ง
             <br />
-            <span style={{ color: 'var(--muted)' }}>
+            <InfoMore label="แผงนี้มีไว้ทำไม" id="squeeze-why" size={12}>
               รูปที่อัปใหม่หลังจากนี้ถูกบีบตั้งแต่ตอนอัปอยู่แล้ว — แผงนี้มีไว้ตามเก็บ “รูปเก่า”
               · กดซ้ำได้เรื่อยๆ ใบที่ทำแล้วถูกข้ามก่อนโหลด (ไม่เสียค่าเน็ตซ้ำ)
-            </span>
+            </InfoMore>
           </div>
           <button
             onClick={handleRun}

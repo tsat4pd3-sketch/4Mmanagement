@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { naturalCompare } from '../utils/listOrder';
 import { pushCoverageFailText } from '../utils/pushPrompt';
+import InfoMore from './InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 const DAYS = 7;
 const card = {
@@ -108,10 +109,10 @@ export default function PushCoveragePanel() {
                     {stat.noDevMtn > 0 && <> (ในนั้นได้แจ้งเตือนใบซ่อม {stat.noDevMtn} คน)</>}
                   </>
                 )}
-                <div style={{ color: 'var(--muted)', fontSize: 11.5, marginTop: 3 }}>
+                <InfoMore label="ตัวเลขนี้นับจากอะไร" id="push-cov-def" size={11.5} style={{ marginTop: 3 }}>
                   นับจาก <b>คนที่ได้รับแจ้งเตือนในแอปจริงใน {DAYS} วันล่าสุด</b> ไม่ใช่พนักงานทั้งหมด ·
                   คนที่ไม่มีเครื่องยัง<b>เห็นกระดิ่งในแอปครบ</b> แต่มือถือไม่เด้ง
-                </div>
+                </InfoMore>
               </>
             )}
           </div>

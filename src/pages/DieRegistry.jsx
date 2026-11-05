@@ -60,7 +60,7 @@ const inputStyle = {
   background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box',
 };
 const saveBtnStyle = {
-  background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8,
+  background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8,
   padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
 };
 const cancelBtnStyle = {
@@ -68,7 +68,7 @@ const cancelBtnStyle = {
   borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer',
 };
 const warnBox = {
-  background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)',
+  background: 'var(--amber-dim)', border: '1px solid var(--amber-line)',
   borderRadius: 10, padding: '10px 14px', fontSize: 12.5, color: 'var(--text)',
 };
 
@@ -84,7 +84,7 @@ function Field({ label, hint, children }) {
 }
 
 /** ช่องที่ยังว่าง = งานที่ต้องไล่เก็บ ไม่ใช่ error — แสดงเป็นขีดสีส้มให้สะดุดตาแต่ไม่ตกใจ */
-const Blank = () => <span style={{ color: '#f59e0b', fontWeight: 700 }} title="ยังไม่ได้กรอก">—</span>;
+const Blank = () => <span style={{ color: 'var(--amber)', fontWeight: 700 }} title="ยังไม่ได้กรอก">—</span>;
 
 const numOrNull = (v) => {
   const s = String(v ?? '').trim();
@@ -169,7 +169,7 @@ function SetPairNote({ set, products, role, onDone, prodLines = [] }) {
     } finally { setBusy(false); }
   }
 
-  const color = r.state === 'mismatch' ? '#ef4444' : '#f59e0b';
+  const color = r.state === 'mismatch' ? 'var(--red)' : 'var(--amber)';
   return (
     <div style={{ marginTop: 4, fontSize: 11, color }}>
       {r.state === 'mismatch' ? '⚠️ ' : 'ℹ️ '}{msg}
@@ -520,15 +520,15 @@ export default function DieRegistry() {
         title="ทะเบียนแม่พิมพ์" icon="🔨"
         sub={`1 พาร์ท = 1 ชุด · ตัวตนของแม่พิมพ์อยู่ในฐานเดียวกับเครื่องจักร (เลขเครื่อง/QR/ประวัติซ่อมใช้ร่วมกัน)${scopeActive ? ' · เห็นเฉพาะส่วนงานของคุณ' : ''}`}
         tabs={[
-          { key: 'registry', label: '📋 ทะเบียน' },
-          { key: 'layout', label: '🗺️ ผังจัดเก็บ' },
-          { key: 'status', label: '📊 สถานะ', badge: moDieCount ? `🔧 ${moDieCount}` : null },
+          { key: 'registry', label: 'ทะเบียน' },
+          { key: 'layout', label: 'ผังจัดเก็บ' },
+          { key: 'status', label: 'สถานะ', badge: moDieCount ? `🔧 ${moDieCount}` : null },
         ]}
         tab={tab} onTab={setTab}
       />
 
       {dataWarn && (
-        <div style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.45)',
+        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-line)',
                       borderRadius: 10, padding: '9px 14px', fontSize: 12.5, marginBottom: 12 }}>
           ⚠️ {dataWarn}
         </div>
@@ -598,11 +598,11 @@ export default function DieRegistry() {
           { t: 'ชุดที่ข้อมูลไม่ครบ', v: stat.todo, warn: stat.todo > 0 },
         ].map(c => (
           <div key={c.t} title={c.hint || undefined} style={{
-            background: 'var(--card)', border: `1px solid ${c.warn ? 'rgba(245,158,11,0.5)' : 'var(--border)'}`,
+            background: 'var(--card)', border: `1px solid ${c.warn ? 'var(--amber-line)' : 'var(--border)'}`,
             borderRadius: 10, padding: '8px 14px', minWidth: 110,
           }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{c.t}</div>
-            <div style={{ fontSize: 19, fontWeight: 800, color: c.warn ? '#f59e0b' : 'var(--text)' }}>{c.v}</div>
+            <div style={{ fontSize: 19, fontWeight: 800, color: c.warn ? 'var(--amber)' : 'var(--text)' }}>{c.v}</div>
           </div>
         ))}
       </div>
@@ -617,11 +617,11 @@ export default function DieRegistry() {
             {stat.unlinked > 0 && <> · แม่พิมพ์ที่ยังไม่ได้อยู่ชุดไหน <b>{stat.unlinked}</b> ตัว</>}
           </div>
           <button onClick={() => setTodoOnly(v => !v)} style={{
-            marginTop: 8, background: todoOnly ? '#f59e0b' : 'var(--bg2)', color: todoOnly ? '#111' : 'var(--text)',
-            border: '1px solid rgba(245,158,11,0.5)', borderRadius: 8, padding: '5px 12px',
+            marginTop: 8, background: todoOnly ? 'var(--amber)' : 'var(--bg2)', color: todoOnly ? '#111' : 'var(--text)',
+            border: '1px solid var(--amber-line)', borderRadius: 8, padding: '5px 12px',
             fontSize: 12, fontWeight: 700, cursor: 'pointer',
           }}>
-            {todoOnly ? '✓ กำลังดูเฉพาะที่ต้องแก้' : '🔎 ดูเฉพาะที่ต้องแก้'}
+            {todoOnly ? 'กำลังดูเฉพาะที่ต้องแก้' : 'ดูเฉพาะที่ต้องแก้'}
           </button>
         </div>
       )}
@@ -664,7 +664,7 @@ export default function DieRegistry() {
               return (
                 <div key={s.id} style={{
                   background: 'var(--card)', borderRadius: 10,
-                  border: `1px solid ${s.issues.length ? 'rgba(245,158,11,0.45)' : 'var(--border)'}`,
+                  border: `1px solid ${s.issues.length ? 'var(--amber-line)' : 'var(--border)'}`,
                   overflow: 'hidden',
                 }}>
                   {/* หัวชุด */}
@@ -685,25 +685,25 @@ export default function DieRegistry() {
                     <span style={{
                       fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999,
                       background: 'var(--bg3)', color: 'var(--text2)', whiteSpace: 'nowrap',
-                    ...(s.kind ? null : { color: '#f59e0b' }) }}>{s.kind ? dieSetKindLabel(s.kind, setKinds) : 'ยังไม่ระบุรูปแบบ'}</span>
+                    ...(s.kind ? null : { color: 'var(--amber)' }) }}>{s.kind ? dieSetKindLabel(s.kind, setKinds) : 'ยังไม่ระบุรูปแบบ'}</span>
                     <span style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                       {s.members.length} ตัว{s.op_total ? ` / ${s.op_total} OP` : ''}
                     </span>
                     {/* 🔴 "ยังไม่รู้" ต้องเห็นต่างจาก "1 ชิ้น" — เดิมโชว์เฉพาะ >1 ⇒ 2 กรณีนี้หน้าตาเหมือนกันเป๊ะ
                            ทั้งที่กรณีแรกแปลว่า PM แม่พิมพ์ยังคิดเป็น shot ไม่ได้ */}
                     {s.pieces_per_stroke == null ? (
-                      <span style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', whiteSpace: 'nowrap' }}
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)', whiteSpace: 'nowrap' }}
                         title="ยังไม่รู้ว่า 1 stroke ได้กี่ชิ้น — PM แม่พิมพ์จะนับเป็น shot ไม่ได้จนกว่าจะกรอก">
                         ยังไม่ระบุ ชิ้น/stroke
                       </span>
                     ) : s.pieces_per_stroke > 1 ? (
-                      <span style={{ fontSize: 11, fontWeight: 700, color: '#22c55e', whiteSpace: 'nowrap' }}
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', whiteSpace: 'nowrap' }}
                         title="1 stroke ได้กี่ชิ้น — งานคู่ LH/RH ปั๊มครั้งเดียวได้ 2 ชิ้น">
                         {s.pieces_per_stroke} ชิ้น/stroke
                       </span>
                     ) : null}
                     {s.issues.length > 0 && (
-                      <span style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)', whiteSpace: 'nowrap' }}>
                         ⚠ {s.issues.length}
                       </span>
                     )}
@@ -716,7 +716,7 @@ export default function DieRegistry() {
                   {open && (
                     <div style={{ borderTop: '1px solid var(--border)', padding: '10px 12px' }}>
                       {s.issues.length > 0 && (
-                        <ul style={{ margin: '0 0 10px', paddingLeft: 18, fontSize: 12, color: '#f59e0b', lineHeight: 1.7 }}>
+                        <ul style={{ margin: '0 0 10px', paddingLeft: 18, fontSize: 12, color: 'var(--amber)', lineHeight: 1.7 }}>
                           {s.issues.map((t, i) => <li key={i}>{t}</li>)}
                         </ul>
                       )}

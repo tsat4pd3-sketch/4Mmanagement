@@ -7786,6 +7786,70 @@ test('📤 cross-line-close-guards — ปิดใบข้ามไลน์�
     + '\n\n   ปิดใบผิดไลน์ = ยอด/OEE ของไลน์ที่ไม่เกี่ยวเปลี่ยน โดยไม่มีใครเห็นบนจอ\n');
 });
 
+test('📊 mat-breakdown-default-collapsed — แท็บ Live ต้องขึ้นภาพรวมก่อน รายชิ้นงานยุบไว้', () => {
+  /* 05/11 (คำสั่ง user): *"แยกตามชิ้นงาน default มันเปิดไว้ มันจะรก มันควรจะ default ซ่อนไว้ใน
+     ความคืบหน้ารวมทั้งกะ ถ้าจะกดดูรายละเอียดค่อยคลิกจากแถบภาพรวม"*
+     ของจริง: SUB APRON 10 MAT.NO ⇒ ต้องเลื่อนผ่าน 10 แท่งกว่าจะเจอตัวเลขรวม ·
+     ไลน์ MAT เดียวยิ่งซ้ำ — แท่งเดียวกันโผล่ 2 ที่
+     🔴 `liveCollapsed(key, auto)` กับ `toggleLiveCollapse(key, auto)` ต้องส่ง auto ตัวเดียวกัน
+        ไม่งั้นคลิกแรก = "ปิดของที่ปิดอยู่แล้ว" (จอไม่ขยับ) — คลาสบั๊กของ API คู่นี้ */
+  const bad = [];
+  const DR = 'src/pages/DailyReport.jsx';
+  const code = stripComments(readFileSync(join(ROOT, DR), 'utf8'));
+  if (!/liveCollapsed\(\s*'mat_breakdown'\s*,\s*true\s*\)/.test(code))
+    bad.push(`${DR}: "แยกตามชิ้นงาน" ต้อง default ยุบ — liveCollapsed('mat_breakdown', true)`);
+  for (const m of code.matchAll(/toggleLiveCollapse\(\s*'mat_breakdown'\s*([^)]*)\)/g)) {
+    if (!/,\s*true/.test(m[1]))
+      bad.push(`${DR}: toggleLiveCollapse('mat_breakdown') ต้องส่ง true ด้วย — ไม่งั้นคลิกแรกไม่มีอะไรเกิดขึ้น`);
+  }
+  /* 🔴 ยุบแล้วต้องยังบอกจำนวน (ห้ามซ่อนเงียบ) */
+  if (!/แยกตามชิ้นงาน \{productRows\.length\} MAT\.NO/.test(code))
+    bad.push(`${DR}: หัวข้อที่ยุบต้องเขียนจำนวน MAT.NO เสมอ (กฎความซื่อสัตย์ของจอ)`);
+  /* ภาพรวมต้องมาก่อนรายละเอียด — เทียบตำแหน่งในไฟล์ */
+  const iOverview = code.indexOf('📊 ภาพรวมทั้งกะ');
+  const iDetail = code.indexOf('แยกตามชิ้นงาน');
+  if (iOverview < 0 || iDetail < 0) bad.push(`${DR}: หาหัวข้อภาพรวม/แยกตามชิ้นงานไม่เจอ — เปลี่ยนข้อความแล้วต้องแก้ด่านนี้`);
+  else if (iDetail < iOverview) bad.push(`${DR}: "แยกตามชิ้นงาน" ต้องอยู่ใต้ภาพรวมทั้งกะ ไม่ใช่เหนือ`);
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   ไลน์ที่มี 10 MAT.NO = ภาพรวมของกะถูกดันตกจอ · 📄 docs/modules/daily-report.md\n');
+});
+
+test('🚨 andon-bar-mobile — แถบ Andon ลอยต้องอ่านออก + กดรับทราบได้บนมือถือ', () => {
+  /* 05/11 (mobilesweep @390px ที่ /heijunka): แถบ "📦 ไลน์เรียกของ" เป็น flex แถวเดียว nowrap
+     ไอคอน 27 + ชิปเปิดเสียง 99 + ปุ่ม 118 + ปุ่ม 133 = 377px > กล่อง 374px
+     ⇒ กล่องข้อความ (flex:1 · min-width:0) **ถูกบีบเหลือกว้าง 0** = เห็นแต่ไอคอนกับปุ่ม
+        ไม่รู้ว่าไลน์ไหนเรียกอะไร · Andon ที่อ่านไม่ออก = ไม่มีประโยชน์
+     แก้แล้วแถบสูง 62→272px/ใบ ⇒ 3 ใบ = 894px บนจอ 844px **ปุ่มรับทราบใบล่างตกนอกจอ**
+     (position:fixed เลื่อนตามไม่ได้) ⇒ มือถือโชว์ทีละใบ + เขียนว่าเหลืออีกกี่ใบ
+     📄 docs/UI-CONVENTIONS.md §6.32 */
+  const bad = [];
+  const css = readFileSync(join(ROOT, 'src/index.css'), 'utf8');
+  /* กฎต้องอยู่ใต้ media query มือถือเท่านั้น — จอคอม/TV ห้ามขยับ (ด่าน desktopdiff) */
+  const mq = css.match(/@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\.andon-bar[\s\S]*?\n\}/);
+  if (!mq) bad.push('src/index.css: ไม่มีกฎ .andon-bar ใต้ @media (max-width:768px) — แถบ Andon จะบีบข้อความเหลือ 0 บนมือถือ');
+  else {
+    if (!/flex-wrap:\s*wrap/.test(mq[0])) bad.push('src/index.css: .andon-bar ต้อง flex-wrap: wrap บนมือถือ');
+    /* 🔴 inline style `flex: 1` ของกล่องข้อความชนะ CSS เสมอ — ไม่มี !important = กฎไม่มีผล */
+    if (!/\.andon-bar-msg\s*\{[^}]*!important/.test(mq[0]))
+      bad.push('src/index.css: .andon-bar-msg ต้องมี !important (inline style flex:1 ชนะ CSS ไม่งั้นข้อความยังถูกบีบ)');
+  }
+  for (const f of ['src/components/StoreCallSiren.jsx', 'src/components/DowntimeSiren.jsx']) {
+    const src = readFileSync(join(ROOT, f), 'utf8');
+    const code = stripComments(src);
+    if (!/className="dt-alarm-blink andon-bar"/.test(code))
+      bad.push(`${f}: แถบ Andon ต้องมี class "andon-bar" (ไม่มี = ข้อความกว้าง 0 บนจอ 390px)`);
+    if (!/className="andon-bar-msg"/.test(code))
+      bad.push(`${f}: กล่องข้อความต้องมี class "andon-bar-msg"`);
+    /* โชว์ทีละใบบนมือถือ + ต้องเขียนว่าเหลืออีกกี่ใบ (ห้ามตัดทิ้งเงียบ) */
+    if (!/useIsMobile/.test(code))
+      bad.push(`${f}: ต้องจำกัดจำนวนแถบบนมือถือด้วย useIsMobile() — ซ้อนกันหลายใบ = ปุ่มรับทราบตกนอกจอ`);
+    if (!/\+ อีก /.test(src))
+      bad.push(`${f}: ตัดแถบที่เกินแล้วต้องเขียนบนจอว่า "+ อีก N …" ห้ามหายเงียบ`);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   พิสูจน์ 2 ด้านเสมอ: node audit/mobilesweep.mjs (ต้องแก้ 0) + node audit/desktopdiff.mjs (ต้องต่าง 0)\n');
+});
+
 test('⛔ downtime-band-central — แถบเครื่องหยุดบนบอร์ดต้องผ่านตัวกลาง + เห็นจริง', () => {
   /* 04/11 (feedback หน้างาน · user): *"ปริ้น Tag มายิงประมาณพันกว่า แต่พอมาปิดแท็ก
      มันเรียงไม่ต่อเนื่องกัน"* → *"ต่อให้รับยอดมาจากการยกยอด มันก็ต้องเรียงต่อกันได้ดิ"*
@@ -8788,5 +8852,23 @@ test('🏠 store-area-via-home-sloc — ห้ามหา SLoc ของกอ�
     const s = stripComments(readFileSync(join(ROOT, f), 'utf8'));
     if (/slocO(?:f|fLine|deOfLine)?\w*\([^)]*'(?:STORE|FG WAREHOUSE)'/.test(s)) bad.push(`${f} — หาพื้นที่ของกองคลังผ่านการผูกไลน์`);
   }
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
+
+/* ═══ 🖱️ hover-intent-needs-settle — 2026-11-05 · feedback user ════════════════════════════
+   *"ลากเม้าส์ผ่านไม่ตั้งใจดู ก็ขึ้นมาเกะกะ แต่จะเป็นเยอะตอนเลือกไลน์จาก dropdown ...
+     มันเลยนับเวลาแช่เม้าสตั้งแต่ตอนเลือกไลน์รึป่าว"*
+   ⇒ การ์ดสกิลห้ามติดนาฬิกาจาก `mouseenter` — ต้องรอ `mousemove` แล้วนิ่ง (settle)
+     เพราะ Chromium ยิง `mouseenter` ให้เองเมื่อการ์ดถูก render มาโผล่ใต้เมาส์ที่วางนิ่งอยู่  */
+test('🖱️ hover-intent-needs-settle — การ์ดสกิลต้องรอเมาส์นิ่ง ห้ามนับจาก mouseenter', () => {
+  const bad = [];
+  const s = stripComments(readFileSync(join(ROOT, 'src/pages/Management.jsx'), 'utf8'));
+  const enter = s.slice(s.indexOf('const onHoverEnter ='), s.indexOf('const onHoverLeave ='));
+  if (!enter) bad.push('หา onHoverEnter ไม่เจอ');
+  if (/setTimeout/.test(enter)) bad.push('onHoverEnter ติดนาฬิกาเอง — ต้องรอ mousemove (ดูคอมเมนต์เคส ② ที่หัวบล็อก)');
+  if (!/const onHoverMove =/.test(s)) bad.push('ไม่มี onHoverMove — ไม่มีทางรู้ว่าเมาส์ขยับจริง');
+  if (!/armHover\(\)/.test(s)) bad.push('onHoverMove ไม่ติดนาฬิกา');
+  const moveWired = (s.match(/onMouseMove=\{!isMobile \? onHoverMove/g) || []).length;
+  if (moveWired < 2) bad.push(`การ์ดพนักงานผูก onMouseMove แค่ ${moveWired} จุด (ต้องครบทั้ง pool + จุดงาน)`);
   assert.deepEqual(bad, [], bad.join('\n'));
 });

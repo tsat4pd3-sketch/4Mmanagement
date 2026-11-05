@@ -52,8 +52,8 @@ const LEAVE_DURATION_OPTS = [
   { value: 'hours', label: 'ระบุชั่วโมง' },
 ];
 const LEAVE_PERIOD_OPTS = [
-  { value: 'morning',   label: '🌅 ลาช่วงเช้า', sub: 'มาบ่าย' },
-  { value: 'afternoon', label: '🌇 ลาช่วงบ่าย', sub: 'มาเช้า' },
+  { value: 'morning',   label: 'ลาช่วงเช้า', sub: 'มาบ่าย' },
+  { value: 'afternoon', label: 'ลาช่วงบ่าย', sub: 'มาเช้า' },
 ];
 
 function toLocalDateStr(date) {
@@ -202,7 +202,7 @@ export default function Checkin() {
     return () => clearInterval(t);
   }, [realShiftInfo]);
   const shiftInfo = previewNight
-    ? { ...realShiftInfo, shift: 'night', label: '🌙 กะดึก (Preview)' }
+    ? { ...realShiftInfo, shift: 'night', label: 'กะดึก (Preview)' }
     : realShiftInfo;
 
   /* 📝 ร่างในเครื่อง (มือถือ · 22/10 · audit handheld ข้อ 4) — เช็คชื่อ 20+ คนแล้วบันทึกทีเดียวตอนท้าย
@@ -1343,7 +1343,7 @@ export default function Checkin() {
                                 onClick={() => unborrowEmployee(emp)}
                                 title="ยกเลิกยืมตัว — คืนกลับไลน์เดิม"
                                 style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)' }}
-                              >✕ คืน</button>
+                              >คืน</button>
                             )}
                           </div>
                         )}
@@ -2032,8 +2032,8 @@ export default function Checkin() {
                 <select value={otBookShift}
                   onChange={e => { setOtBookShift(e.target.value); loadOtBookExisting(otBookDate, e.target.value); }}
                   style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }}>
-                  <option value="day">☀️ กะเช้า</option>
-                  <option value="night">🌙 กะดึก</option>
+                  <option value="day">กะเช้า</option>
+                  <option value="night">กะดึก</option>
                 </select>
               </div>
             </div>
@@ -2109,7 +2109,7 @@ export default function Checkin() {
               <button onClick={() => setShowOtBookModal(false)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>
               <button onClick={handleSaveOtBookModal} disabled={otBookSaving || !otBookLineId || !canRecord}
                 style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: otBookSaving || !otBookLineId ? 'not-allowed' : 'pointer', opacity: otBookSaving || !otBookLineId ? 0.6 : 1 }}>
-                {otBookSaving ? '⏳ กำลังบันทึก...' : 'บันทึกการจอง'}
+                {otBookSaving ? 'กำลังบันทึก...' : 'บันทึกการจอง'}
               </button>
             </div>
           </div>
@@ -2149,7 +2149,7 @@ export default function Checkin() {
               <button onClick={() => setShowExport(false)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>
               <button onClick={handleExportForms} disabled={exporting}
                 style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer' }}>
-                {exporting ? '⏳ กำลังสร้าง...' : '⬇ สร้าง PDF'}
+                {exporting ? 'กำลังสร้าง...' : 'สร้าง PDF'}
               </button>
             </div>
           </div>

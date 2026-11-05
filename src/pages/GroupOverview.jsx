@@ -130,14 +130,14 @@ const COUNTRY_META = [
    หมุดไหนเป็นกลุ่มไหน (ไอคอนในหมุด + ฟิลเตอร์กลุ่ม) และการ์ดโซนต้องโชว์ส่วนผสมของกลุ่มธุรกิจ
    หมุดบนแผนที่ใช้ lat/lon จริงของบริษัท → กรอบโซนคำนวณจากหมุด (ดู ThailandZoneMap) */
 const ZONES = [
-  { key: 'bangna', name: 'โซนบางนา', icon: '🏙️', color: '#38bdf8', thaiMap: true, desc: '🇹🇭 บางนา-ตราด · สมุทรปราการ · ฉะเชิงเทรา' },
-  { key: 'east', name: 'โซนตะวันออก', icon: '🌊', color: '#f59e0b', thaiMap: true, desc: '🇹🇭 ชลบุรี · แหลมฉบัง · ระยอง (Eastern Seaboard)' },
-  { key: 'vietnam', name: 'เวียดนาม', icon: '🇻🇳', color: '#a78bfa', desc: 'Hanoi' },
+  { key: 'bangna', name: 'โซนบางนา', icon: '🏙️', color: 'var(--blue)', thaiMap: true, desc: '🇹🇭 บางนา-ตราด · สมุทรปราการ · ฉะเชิงเทรา' },
+  { key: 'east', name: 'โซนตะวันออก', icon: '🌊', color: 'var(--amber)', thaiMap: true, desc: '🇹🇭 ชลบุรี · แหลมฉบัง · ระยอง (Eastern Seaboard)' },
+  { key: 'vietnam', name: 'เวียดนาม', icon: '🇻🇳', color: 'var(--blue)', desc: 'Hanoi' },
   { key: 'indonesia', name: 'อินโดนีเซีย', icon: '🇮🇩', color: '#f472b6', desc: 'Karawang' },
   { key: 'china', name: 'จีน', icon: '🇨🇳', color: '#fb7185', desc: 'Guangzhou' },
   { key: 'india', name: 'อินเดีย', icon: '🇮🇳', color: '#34d399', desc: 'Chennai' },
-  { key: 'usa', name: 'อเมริกาเหนือ', icon: '🇺🇸', color: '#60a5fa', desc: 'Howell, Michigan' },
-  { key: 'south_africa', name: 'แอฟริกาใต้', icon: '🇿🇦', color: '#fbbf24', desc: 'Durban' },
+  { key: 'usa', name: 'อเมริกาเหนือ', icon: '🇺🇸', color: 'var(--blue)', desc: 'Howell, Michigan' },
+  { key: 'south_africa', name: 'แอฟริกาใต้', icon: '🇿🇦', color: 'var(--amber)', desc: 'Durban' },
 ];
 
 /* ── ประเภทไลน์ (แกนย่อยใต้กลุ่มธุรกิจ) ────────────────────────────────────────────────
@@ -146,12 +146,12 @@ const ZONES = [
    กลุ่มพลาสติก/มอเตอร์ไซค์ต้องมี injection/painting/assembly เพิ่ม จึงต่อท้ายไว้ที่นี่และ
    ทำเครื่องหมาย extra:true (= ยังไม่มีใน master จริง ถ้าทำ multi-company ต้องไปเพิ่มใน LINE_TYPES) */
 const LTYPES = [
-  { value: 'stamping', label: '🔩 ปั๊มขึ้นรูป / Metal Forming' },   // รวมไฮโดรฟอร์มไว้ด้วย (ดู LT_MERGE)
+  { value: 'stamping', label: 'ปั๊มขึ้นรูป / Metal Forming' },   // รวมไฮโดรฟอร์มไว้ด้วย (ดู LT_MERGE)
   ...LINE_TYPES.filter(t => !['stamping', 'hydroform', 'other', 'outsource'].includes(t.value)),
-  { value: 'injection', label: '💉 ฉีด / Injection', extra: true },
-  { value: 'painting', label: '🎨 พ่นสี / Painting', extra: true },
-  { value: 'assembly', label: '🧰 ประกอบ / Assembly', extra: true },
-  { value: 'other', label: '📦 อื่นๆ / ยังไม่ตั้งประเภท' },
+  { value: 'injection', label: 'ฉีด / Injection', extra: true },
+  { value: 'painting', label: 'พ่นสี / Painting', extra: true },
+  { value: 'assembly', label: 'ประกอบ / Assembly', extra: true },
+  { value: 'other', label: 'อื่นๆ / ยังไม่ตั้งประเภท' },
 ];
 /* ยุบประเภทไลน์ที่เป็นงานเดียวกันในสายตาผู้บริหาร — ไฮโดรฟอร์มก็คือ metal forming เหมือนปั๊ม
    ⚠️ ยุบเฉพาะ "การแสดงผลในหน้านี้" เท่านั้น — ค่าใน `production_lines.line_type` ไม่ถูกแก้
@@ -439,8 +439,8 @@ export default function GroupOverview() {
               {it.companies
                 ? <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{it.companies.length} บริษัท</span>
                 : it.real
-                  ? <span style={{ fontSize: 11, color: '#22c55e', border: '1px solid #22c55e', borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>จริง</span>
-                  : <span style={{ fontSize: 11, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>จำลอง</span>}
+                  ? <span style={{ fontSize: 11, color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>จริง</span>
+                  : <span style={{ fontSize: 11, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>จำลอง</span>}
             </button>
             <div style={{ height: 22, background: 'var(--bg3)', borderRadius: 5, overflow: 'hidden', position: 'relative' }}>
               <div style={{ width: `${clamp(it.target / maxT * 100, 2, 100)}%`, height: '100%', background: 'var(--bg2)', position: 'absolute', inset: 0, borderRight: '1px dashed var(--border2)' }} />
@@ -462,7 +462,7 @@ export default function GroupOverview() {
   const lv1Switch = (
     <span style={{ marginLeft: 'auto' }}>
       <Segmented value={lv1View} onChange={setLv1View}
-        options={[{ value: 'map', label: '🌏 แผนที่' }, { value: 'rank', label: '📊 เทียบรายโซน' }]} />
+        options={[{ value: 'map', label: 'แผนที่' }, { value: 'rank', label: 'เทียบรายโซน' }]} />
     </span>
   );
   const crumbBtn = (label, onClick, active) => (
@@ -480,7 +480,7 @@ export default function GroupOverview() {
         icon="🏢"
         title={<>
           {ORG.code} — ภาพรวมกลุ่มบริษัท
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 999, padding: '2px 10px' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 999, padding: '2px 10px' }}>
             🧪 MOCKUP · ตัวอย่างหน้าจอ
           </span>
         </>}
@@ -495,26 +495,26 @@ export default function GroupOverview() {
           </span>
           <span style={{ display: 'block', marginTop: 3 }}>
             {fmtThaiDate(usedDate || date)}
-            {usedDate && usedDate !== date && <span style={{ color: '#f59e0b' }}> (ไม่มีข้อมูลวันที่เลือก — ถอยไปวันงานล่าสุดที่มีข้อมูล)</span>}
+            {usedDate && usedDate !== date && <span style={{ color: 'var(--amber)' }}> (ไม่มีข้อมูลวันที่เลือก — ถอยไปวันงานล่าสุดที่มีข้อมูล)</span>}
           </span>
         </>}
         filters={<>
           {/* สลับแกนมอง: ตามพื้นที่ (แผนที่) หรือ ตามกลุ่มธุรกิจ — เปลี่ยนแกนแล้วกลับไประดับ TSG */}
           <Segmented label="แกนมอง" value={sel.axis} onChange={k => setSel({ axis: k, node: null, comp: null })}
-            options={[{ value: 'map', label: '🗺️ ตามพื้นที่' }, { value: 'biz', label: '🗂️ ตามกลุ่มธุรกิจ' }]} />
+            options={[{ value: 'map', label: 'ตามพื้นที่' }, { value: 'biz', label: 'ตามกลุ่มธุรกิจ' }]} />
           <span className="sep" />
           <span className="filter-label">วันงาน</span>
           <button className="tbtn ctl-btn" onClick={() => setDate(shiftDate(date, -1))} style={btn}>◀</button>
           <input type="date" value={date} max={getWorkDate()} onChange={e => setDate(e.target.value)} />
           <button className="tbtn ctl-btn" onClick={() => setDate(shiftDate(date, 1))} disabled={date >= getWorkDate()} style={{ ...btn, opacity: date >= getWorkDate() ? 0.4 : 1 }}>▶</button>
         </>}
-        actions={<button onClick={load} style={{ ...btn, width: 'auto', padding: '7px 12px', fontSize: 13 }}>🔄 รีเฟรช</button>}
+        actions={<button type="button" className="pg-btn" onClick={load}>รีเฟรช</button>}
       />
 
       {/* ── จริง vs จำลอง — บรรทัดเดียวที่เห็นตลอด (กันเข้าใจผิดว่ามีหลายบริษัทในระบบแล้ว · ห้ามพับ)
            รายละเอียดวิธีอ่านพับไว้ใน InfoMore (UX audit 05/10: เดิมกล่องเส้นประ 4 บรรทัดดันเนื้อหาลง) ── */}
       <InfoMore id="group_overview_mock" tone="warn" size={12.5}
-        lead={<><b style={{ color: '#22c55e' }}>TSAT4 = ข้อมูลจริง</b> (กะที่ปิดแล้วของวันที่เลือก) · บริษัทอื่น = <b style={{ color: '#f59e0b' }}>ตัวเลขจำลอง</b> · หน้านี้ไม่เขียนข้อมูล</>}>
+        lead={<><b style={{ color: 'var(--green)' }}>TSAT4 = ข้อมูลจริง</b> (กะที่ปิดแล้วของวันที่เลือก) · บริษัทอื่น = <b style={{ color: 'var(--amber)' }}>ตัวเลขจำลอง</b> · หน้านี้ไม่เขียนข้อมูล</>}>
         โครงองค์กร: <b>{ORG.code}</b> → กลุ่มธุรกิจ ({ORG.groups.map(g => g.short).join(' / ')}) → บริษัท → ไลน์ผลิต · ดูอีกแกนเป็น <b>พื้นที่</b> ({ZONES.length} โซน/ประเทศ) ได้จากปุ่ม "แกนมอง" — <b>กดหมุด/การ์ด/ชื่อ เพื่อเจาะลึกลงชั้นถัดไป</b>
         · ตัวเลขจำลองปั้นจากข้อมูลจริงชุดเดียวกัน (สุ่มแบบคงที่ ไม่เปลี่ยนทุกครั้งที่รีเฟรช) · ยังไม่มีทะเบียนบริษัท/โรงงานจริง — ดู "ถ้าจะรองรับหลายบริษัทจริง" ท้ายหน้า
       </InfoMore>
@@ -556,7 +556,7 @@ export default function GroupOverview() {
 
       {loading && <div style={{ ...card, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลดข้อมูล...</div>}
       {!loading && loadErr && (
-        <div role="alert" style={{ ...card, borderColor: '#ef444488', background: '#ef444414', color: '#ef4444', fontSize: 14, fontWeight: 700 }}>
+        <div role="alert" style={{ ...card, borderColor: 'var(--red)88', background: 'var(--red)14', color: 'var(--red)', fontSize: 14, fontWeight: 700 }}>
           🔴 โหลดข้อมูลไม่สำเร็จ — ตัวเลขบนจอนี้ยังเชื่อไม่ได้ (ไม่ใช่ "ไม่มีผลิต")
           <div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, wordBreak: 'break-all' }}>{loadErr}</div>
         </div>
@@ -584,8 +584,8 @@ export default function GroupOverview() {
             sub={`เป้า ${fmtNum(scope.target)} · ${scope.pct == null ? '—' : scope.pct + '%'}`} />
           <Kpi label="⚙️ OEE (ถ่วงน้ำหนัก)" value={scope.oee == null ? '—' : scope.oee + '%'} color={oeeCol(scope.oee)}
             sub="ถ่วงด้วยเวลารับภาระของแต่ละไลน์" />
-          <Kpi label="🔧 Downtime นอกแผน" value={fmtNum(scope.dtMin)} sub="นาที" color={scope.dtMin > 0 ? '#f59e0b' : undefined} />
-          <Kpi label="🚫 ของเสีย" value={fmtNum(scope.ng)} sub="ชิ้น (NG + สงสัย)" color={scope.ng > 0 ? '#ef4444' : undefined} />
+          <Kpi label="🔧 Downtime นอกแผน" value={fmtNum(scope.dtMin)} sub="นาที" color={scope.dtMin > 0 ? 'var(--amber)' : undefined} />
+          <Kpi label="🚫 ของเสีย" value={fmtNum(scope.ng)} sub="ชิ้น (NG + สงสัย)" color={scope.ng > 0 ? 'var(--red)' : undefined} />
           <Kpi label="👷 คนเข้างาน" value={pplText(scope.present, scope.head)}
             sub={scope.head ? `${Math.round(scope.present / scope.head * 100)}% ของกำลังคน` : 'ยังไม่มีรายชื่อพนักงานผูกไลน์'} />
         </div>
@@ -663,8 +663,8 @@ export default function GroupOverview() {
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, fontSize: 12 }}>
-                      <Mini label="🔧 DT" value={`${fmtNum(g.dtMin)} น.`} color={g.dtMin > 0 ? '#f59e0b' : undefined} />
-                      <Mini label="🚫 NG" value={fmtNum(g.ng)} color={g.ng > 0 ? '#ef4444' : undefined} />
+                      <Mini label="🔧 DT" value={`${fmtNum(g.dtMin)} น.`} color={g.dtMin > 0 ? 'var(--amber)' : undefined} />
+                      <Mini label="🚫 NG" value={fmtNum(g.ng)} color={g.ng > 0 ? 'var(--red)' : undefined} />
                       <Mini label="👷 คน" value={pplText(g.present, g.head)} />
                     </div>
 
@@ -675,8 +675,8 @@ export default function GroupOverview() {
                       {g.companies.map(c => (
                         <button key={c.key} onClick={() => setPickComp(c)} style={{
                           fontSize: 11.5, fontWeight: 700, padding: '3px 8px', borderRadius: 999, cursor: 'pointer',
-                          background: c.real ? 'rgba(34,197,94,0.13)' : 'var(--bg3)',
-                          border: `1px ${c.real ? 'solid #22c55e' : 'dashed var(--border2)'}`,
+                          background: c.real ? 'var(--green-dim)' : 'var(--bg3)',
+                          border: `1px ${c.real ? 'solid var(--green)' : 'dashed var(--border2)'}`,
                           color: 'var(--text)',
                         }}>
                           {sel.axis === 'map' ? c.groupMeta.icon : c.flag} {c.code}
@@ -688,7 +688,7 @@ export default function GroupOverview() {
 
                   <button onClick={() => setSel(s => ({ ...s, node: g.key, comp: null }))}
                     style={{ ...btn, width: '100%', padding: '7px 10px', fontSize: 13, marginTop: 10 }}>
-                    ▸ ดูบริษัทในกลุ่ม ({g.companies.length})
+                    ดูบริษัทในกลุ่ม ({g.companies.length})
                   </button>
                 </div>
               );
@@ -741,8 +741,8 @@ export default function GroupOverview() {
                         </div>
                       </div>
                       {c.real
-                        ? <span style={{ fontSize: 11, color: '#22c55e', border: '1px solid #22c55e', borderRadius: 4, padding: '1px 6px' }}>ข้อมูลจริง</span>
-                        : <span style={{ fontSize: 11, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 4, padding: '1px 6px' }}>จำลอง</span>}
+                        ? <span style={{ fontSize: 11, color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 4, padding: '1px 6px' }}>ข้อมูลจริง</span>
+                        : <span style={{ fontSize: 11, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 4, padding: '1px 6px' }}>จำลอง</span>}
                     </div>
 
                     <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', margin: '10px 0 8px' }}>
@@ -764,8 +764,8 @@ export default function GroupOverview() {
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, fontSize: 12 }}>
-                      <Mini label="🔧 DT" value={`${fmtNum(c.dtMin)} น.`} color={c.dtMin > 0 ? '#f59e0b' : undefined} />
-                      <Mini label="🚫 NG" value={fmtNum(c.ng)} color={c.ng > 0 ? '#ef4444' : undefined} />
+                      <Mini label="🔧 DT" value={`${fmtNum(c.dtMin)} น.`} color={c.dtMin > 0 ? 'var(--amber)' : undefined} />
+                      <Mini label="🚫 NG" value={fmtNum(c.ng)} color={c.ng > 0 ? 'var(--red)' : undefined} />
                       <Mini label="👷 คน" value={pplText(c.present, c.head)} />
                     </div>
 
@@ -778,7 +778,7 @@ export default function GroupOverview() {
 
                   <button onClick={() => setPickComp(c)}
                     style={{ ...btn, width: '100%', padding: '7px 10px', fontSize: 13, marginTop: 8 }}>
-                    ▸ เปิดบริษัทนี้ ({c.lines.length} ไลน์)
+                    เปิดบริษัทนี้ ({c.lines.length} ไลน์)
                   </button>
                 </div>
               );
@@ -794,8 +794,8 @@ export default function GroupOverview() {
                 🏭 {compNode.flag} {compNode.code} — รายไลน์ ({compNode.lines.length})
               </div>
               {compNode.real
-                ? <span style={{ fontSize: 11, color: '#22c55e', border: '1px solid #22c55e', borderRadius: 4, padding: '1px 7px' }}>ข้อมูลจริง</span>
-                : <span style={{ fontSize: 11, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 4, padding: '1px 7px' }}>ตัวเลขจำลอง</span>}
+                ? <span style={{ fontSize: 11, color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 4, padding: '1px 7px' }}>ข้อมูลจริง</span>
+                : <span style={{ fontSize: 11, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 4, padding: '1px 7px' }}>ตัวเลขจำลอง</span>}
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>{compNode.name} · {compNode.region}</span>
             </div>
             <div style={{ overflowX: 'auto' }}>
@@ -816,8 +816,8 @@ export default function GroupOverview() {
                         <td style={TDR}>{fmtNum(l.actual)}</td>
                         <td style={{ ...TDR, color: pctCol(lp), fontWeight: 700 }}>{lp == null ? '—' : lp + '%'}</td>
                         <td style={{ ...TDR, color: oeeCol(l.oee, [l.line]), fontWeight: 700 }}>{l.oee == null ? '—' : l.oee}</td>
-                        <td style={{ ...TDR, color: l.dtMin > 0 ? '#f59e0b' : 'var(--muted)' }}>{fmtNum(l.dtMin)}</td>
-                        <td style={{ ...TDR, color: l.ng > 0 ? '#ef4444' : 'var(--muted)' }}>{fmtNum(l.ng)}</td>
+                        <td style={{ ...TDR, color: l.dtMin > 0 ? 'var(--amber)' : 'var(--muted)' }}>{fmtNum(l.dtMin)}</td>
+                        <td style={{ ...TDR, color: l.ng > 0 ? 'var(--red)' : 'var(--muted)' }}>{fmtNum(l.ng)}</td>
                         <td style={{ ...TDR, color: l.head ? undefined : 'var(--muted)' }}>{l.head ? `${fmtNum(l.present)}/${fmtNum(l.head)}` : '—'}</td>
                       </tr>
                     );
@@ -859,16 +859,16 @@ export default function GroupOverview() {
                             background: 'none', border: 'none', padding: 0, cursor: 'pointer',
                             color: 'var(--accent)', fontSize: 13, fontWeight: 700,
                           }}>{l.comp?.flag} {l.comp?.code}</button>
-                          {!l.comp?.real && <span style={{ fontSize: 11, color: '#f59e0b', marginLeft: 5 }}>(จำลอง)</span>}
+                          {!l.comp?.real && <span style={{ fontSize: 11, color: 'var(--amber)', marginLeft: 5 }}>(จำลอง)</span>}
                         </td>
                       )}
                       <td style={{ ...TD, fontWeight: 700 }}>{l.line}</td>
                       <td style={{ ...TD, fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{ltShort(l.ltype)}</td>
-                      <td style={{ ...TDR, color: '#ef4444', fontWeight: 700 }}>-{fmtNum(l.target - l.actual)}</td>
+                      <td style={{ ...TDR, color: 'var(--red)', fontWeight: 700 }}>-{fmtNum(l.target - l.actual)}</td>
                       <td style={{ ...TDR, color: pctCol(lp) }}>{fmtNum(l.actual)}/{fmtNum(l.target)} ({lp}%)</td>
                       <td style={{ ...TDR, color: oeeCol(l.oee, [l.line]), fontWeight: 700 }}>{l.oee == null ? '—' : l.oee}</td>
-                      <td style={{ ...TDR, color: l.dtMin > 0 ? '#f59e0b' : 'var(--muted)' }}>{fmtNum(l.dtMin)}</td>
-                      <td style={{ ...TDR, color: l.ng > 0 ? '#ef4444' : 'var(--muted)' }}>{fmtNum(l.ng)}</td>
+                      <td style={{ ...TDR, color: l.dtMin > 0 ? 'var(--amber)' : 'var(--muted)' }}>{fmtNum(l.dtMin)}</td>
+                      <td style={{ ...TDR, color: l.ng > 0 ? 'var(--red)' : 'var(--muted)' }}>{fmtNum(l.ng)}</td>
                     </tr>
                   );
                 })}
@@ -878,7 +878,7 @@ export default function GroupOverview() {
           </div>
           {hotspots.length > 5 && (
             <button onClick={() => setHotAll(v => !v)} style={{ ...btn, marginTop: 8, fontSize: 12.5, padding: '5px 12px' }}>
-              {hotAll ? '▴ แสดง 5 อันดับแรก' : `▾ แสดงอีก ${hotspots.length - 5} ไลน์`}
+              {hotAll ? 'แสดง 5 อันดับแรก' : `แสดงอีก ${hotspots.length - 5} ไลน์`}
             </button>
           )}
         </div>
@@ -903,8 +903,8 @@ export default function GroupOverview() {
                 </div>
               </div>
               {pickComp.real
-                ? <span style={{ fontSize: 11, color: '#22c55e', border: '1px solid #22c55e', borderRadius: 4, padding: '2px 7px' }}>ข้อมูลจริง</span>
-                : <span style={{ fontSize: 11, color: '#f59e0b', border: '1px dashed #f59e0b', borderRadius: 4, padding: '2px 7px' }}>จำลอง</span>}
+                ? <span style={{ fontSize: 11, color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 4, padding: '2px 7px' }}>ข้อมูลจริง</span>
+                : <span style={{ fontSize: 11, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 4, padding: '2px 7px' }}>จำลอง</span>}
               <button className="tbtn" onClick={() => setPickComp(null)} style={{ ...btn, padding: '3px 9px' }}>✕</button>
             </div>
 
@@ -912,8 +912,8 @@ export default function GroupOverview() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, margin: '13px 0 15px' }}>
               <Mini label="OEE" value={pickComp.oee == null ? '—' : pickComp.oee + '%'} color={oeeCol(pickComp.oee)} />
               <Mini label="ผลิต/เป้า" value={`${pickComp.pct == null ? '—' : pickComp.pct + '%'}`} color={pctCol(pickComp.pct)} />
-              <Mini label="🔧 DT" value={`${fmtNum(pickComp.dtMin)} น.`} color={pickComp.dtMin > 0 ? '#f59e0b' : undefined} />
-              <Mini label="🚫 NG" value={fmtNum(pickComp.ng)} color={pickComp.ng > 0 ? '#ef4444' : undefined} />
+              <Mini label="🔧 DT" value={`${fmtNum(pickComp.dtMin)} น.`} color={pickComp.dtMin > 0 ? 'var(--amber)' : undefined} />
+              <Mini label="🚫 NG" value={fmtNum(pickComp.ng)} color={pickComp.ng > 0 ? 'var(--red)' : undefined} />
             </div>
 
             <div style={{ fontSize: 13.5, fontWeight: 700, marginBottom: 8 }}>จะดูแบบไหน?</div>
@@ -954,7 +954,7 @@ export default function GroupOverview() {
               <button onClick={() => { setPickComp(null); navigate('/factory-map'); }} style={{
                 ...btn, width: '100%', marginTop: 9, fontSize: 12.5, padding: '8px 10px',
               }}>
-                🔎 ดูตัวอย่างหน้าผังโรงงาน (ใช้ผังจริงของ TSAT4)
+                ดูตัวอย่างหน้าผังโรงงาน (ใช้ผังจริงของ TSAT4)
               </button>
             )}
           </div>

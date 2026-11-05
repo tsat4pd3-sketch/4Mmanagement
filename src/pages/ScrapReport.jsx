@@ -48,6 +48,7 @@ import useIsMobile from '../utils/useIsMobile';
    ⚠️ แท็บที่ /qa ยังอยู่เหมือนเดิม (QA = คนพิจารณา) — ข้อมูลชุดเดียวกัน ไม่ได้ก๊อป */
 import QualityBins from '../components/QualityBins';
 import useTabParam from '../utils/useTabParam';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ── date helpers (ห้าม toISOString หา work date — ดู CLAUDE.md) ── */
 function localDateStr(d = new Date()) {
@@ -108,8 +109,8 @@ function Modal({ title, onClose, children, width = 560 }) {
 /* 📋 ใบรายงานของเสีย (งานเอกสารรายวัน) · 🗑️ ถังเหลือง/แดง (บันทึกหน้ากล่องก่อนถึง NCR/Scrap)
    = ของเสียชุดเดียวกัน คนละขั้นของเรื่อง ⇒ อยู่หน้าเดียวกันแต่คนละแท็บ (UI §6.8) */
 const TABS = [
-  { key: 'scrap', label: '♻️ ใบรายงานของเสีย' },
-  { key: 'bins',  label: '🗑️ ถังเหลือง / ถังแดง' },
+  { key: 'scrap', label: 'ใบรายงานของเสีย' },
+  { key: 'bins',  label: 'ถังเหลือง / ถังแดง' },
 ];
 
 export default function ScrapReport() {
@@ -686,14 +687,14 @@ export default function ScrapReport() {
               <div key={rep.id} className="sr-card">
                 <div className="sr-head">
                   <b>{rep.doc_no || '—'}</b>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 999, color: sm?.color, background: `${sm?.color}1f`, border: `1px solid ${sm?.color}55` }}>{sm?.label || rep.status}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 999, color: sm?.color, background: `${tint(sm?.color, 'dim')}`, border: `1px solid ${tint(sm?.color, 'line')}` }}>{sm?.label || rep.status}</span>
                 </div>
                 <div className="sr-line">{rep.line_name || '—'} · {fmtD(rep.report_date)}</div>
                 <div className="sr-sum"><ItemCount reportId={rep.id} /> · ของเสีย <ScrapSum reportId={rep.id} /></div>
                 <div className="sr-acts">
-                  {canRecord && <button className="sr-main" onClick={() => openEdit(rep)}>✏️ เปิด/แก้ใบ</button>}
-                  <button onClick={() => doPrint(rep)}>🖨️ PDF</button>
-                  <button onClick={() => doExport(rep)}>⬇ Excel</button>
+                  {canRecord && <button className="sr-main" onClick={() => openEdit(rep)}>เปิด/แก้ใบ</button>}
+                  <button onClick={() => doPrint(rep)}>PDF</button>
+                  <button onClick={() => doExport(rep)}>Excel</button>
                   {canDel && <DeleteButton onClick={() => delReport(rep)} title="ลบ" />}
                 </div>
               </div>
@@ -701,7 +702,7 @@ export default function ScrapReport() {
           })}
           {reports.length === 0 && (
             <div style={{ ...cardSt, fontSize: 13 }}>
-              {listErr ? <span style={{ color: '#ef4444', fontWeight: 700 }}>⚠️ โหลดรายการไม่สำเร็จ: {listErr} — ไม่ใช่ "ไม่มีใบ" ให้ลองใหม่อีกครั้ง</span>
+              {listErr ? <span style={{ color: 'var(--red)', fontWeight: 700 }}>⚠️ โหลดรายการไม่สำเร็จ: {listErr} — ไม่ใช่ "ไม่มีใบ" ให้ลองใหม่อีกครั้ง</span>
                 : outside ? (
                   <span style={{ color: 'var(--text2)' }}>
                     ไม่มีใบในช่วงนี้ — แต่<b>มีใบอยู่นอกช่วง</b> ล่าสุด <b style={{ color: 'var(--accent)' }}>{outside.latest}</b>{' '}
@@ -730,10 +731,10 @@ export default function ScrapReport() {
                 <td style={tdSt}>{rep.line_name || '—'}</td>
                 <td style={tdSt}><ItemCount reportId={rep.id} /></td>
                 <td style={tdSt}><ScrapSum reportId={rep.id} /></td>
-                <td style={tdSt}><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 999, color: STATUS_META[rep.status]?.color, background: `${STATUS_META[rep.status]?.color}1f`, border: `1px solid ${STATUS_META[rep.status]?.color}55` }}>{STATUS_META[rep.status]?.label || rep.status}</span></td>
+                <td style={tdSt}><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 999, color: STATUS_META[rep.status]?.color, background: `${tint(STATUS_META[rep.status]?.color, 'dim')}`, border: `1px solid ${tint(STATUS_META[rep.status]?.color, 'line')}` }}>{STATUS_META[rep.status]?.label || rep.status}</span></td>
                 <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
-                  <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px' }} onClick={() => doPrint(rep)}>🖨️ PDF</button>
-                  <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4 }} onClick={() => doExport(rep)}>⬇ Excel</button>
+                  <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px' }} onClick={() => doPrint(rep)}>PDF</button>
+                  <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4 }} onClick={() => doExport(rep)}>Excel</button>
                   {canRecord && <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4 }} onClick={() => openEdit(rep)}>✏️</button>}
                   {canDel && <DeleteButton style={{ marginLeft: 4 }} onClick={() => delReport(rep)} title="ลบ" />}
                 </td>
@@ -742,7 +743,7 @@ export default function ScrapReport() {
             {reports.length === 0 && (
               <tr><td style={tdSt} colSpan={7}>
                 {listErr ? (
-                  <span style={{ color: '#ef4444', fontWeight: 700 }}>⚠️ โหลดรายการไม่สำเร็จ: {listErr} — ไม่ใช่ "ไม่มีใบ" ให้ลองใหม่อีกครั้ง</span>
+                  <span style={{ color: 'var(--red)', fontWeight: 700 }}>⚠️ โหลดรายการไม่สำเร็จ: {listErr} — ไม่ใช่ "ไม่มีใบ" ให้ลองใหม่อีกครั้ง</span>
                 ) : outside ? (
                   <span style={{ color: 'var(--text2)' }}>
                     ไม่มีใบในช่วงนี้ — แต่<b>มีใบอยู่นอกช่วง</b> ล่าสุด <b style={{ color: 'var(--accent)' }}>{outside.latest}</b>{' '}
@@ -820,16 +821,16 @@ export default function ScrapReport() {
               title="ดึงรายการตามแท็กแดง (ถังแดง) ของไลน์+วันนี้ ที่ยังไม่เคยออกใบ — ทางที่ WI-PD3-069 §5.5 กำหนด">
               ⤵ ดึงจากถังแดง
             </button>
-            <button style={btnSt('#4d9fff')} onClick={pullFromDefectLogs}>⤵ ดึงจาก Daily Report</button>
+            <button style={btnSt('var(--blue)')} onClick={pullFromDefectLogs}>⤵ ดึงจาก Daily Report</button>
             {/* ทางที่ 2: ของที่ QA เบิกไปทดสอบแบบทำลาย (ใบ FM-STO-003) — 2026-08-24 */}
-            <button style={btnSt('#a855f7')} onClick={openReqPicker}>⤵ ดึงจากใบเบิก QA</button>
+            <button style={btnSt('var(--blue)')} onClick={openReqPicker}>⤵ ดึงจากใบเบิก QA</button>
             {opScan.opRowsCount > 0 && (
-              <button style={btnSt('#f97316')} onClick={() => explodeOpItems(editor.items)}
+              <button style={btnSt('var(--amber)')} onClick={() => explodeOpItems(editor.items)}
                 title="แทนแถวของขั้นตอนด้วยวัตถุดิบ/พาร์ทที่ใส่เข้าไปจนถึงขั้นนั้น — เลขที่สโตร์ตัด SAP ได้จริง">
-                🧩 ระเบิดขั้นตอน ({opScan.opRowsCount})
+                ระเบิดขั้นตอน ({opScan.opRowsCount})
               </button>
             )}
-            <button style={ghostBtn} onClick={() => { setSapPicker({ addSource: true }); setSapSearch(''); }}>🔍 เพิ่มจาก SAP/BOM</button>
+            <button style={ghostBtn} onClick={() => { setSapPicker({ addSource: true }); setSapSearch(''); }}>เพิ่มจาก SAP/BOM</button>
             <button style={ghostBtn} onClick={() => addItem('sub')}>+ พาร์ทย่อย (กรอกเอง)</button>
           </div>
 
@@ -838,9 +839,9 @@ export default function ScrapReport() {
           {opScan.opRowsCount > 0 && (
             <div style={{
               marginBottom: 8, padding: '8px 12px', borderRadius: 8, fontSize: 12, lineHeight: 1.65,
-              background: opScan.blocked.length ? 'rgba(239,68,68,0.10)' : 'rgba(249,115,22,0.10)',
-              border: `1px solid ${opScan.blocked.length ? 'rgba(239,68,68,0.45)' : 'rgba(249,115,22,0.45)'}`,
-              color: opScan.blocked.length ? '#ef4444' : '#f97316',
+              background: opScan.blocked.length ? 'var(--red-dim)' : 'var(--amber-dim)',
+              border: `1px solid ${opScan.blocked.length ? 'var(--red-line)' : 'var(--amber-line)'}`,
+              color: opScan.blocked.length ? 'var(--red)' : 'var(--amber)',
             }}>
               <b>🔩 {opScan.opRowsCount} รายการเป็น "ขั้นตอน (OP)" ไม่ใช่เลข SAP</b> — ชิ้นงานยังไม่สมบูรณ์
               จึงตัดตัวมันเองไม่ได้ ต้องตัดวัตถุดิบ/พาร์ทที่ใส่เข้าไปจนถึงขั้นนั้นแทน
@@ -868,12 +869,12 @@ export default function ScrapReport() {
                 {editor.items.map((it, i) => (
                   <tr key={it._key}>
                     <td style={tdSt} data-l="#" className="sr-c sr-no">{i + 1}
-                      {it.src_defect_from_logs && <span title="ดึงจาก Daily Report" style={{ marginLeft: 3, fontSize: 11, color: '#4d9fff' }}>⤵</span>}
-                      {it.src_request_item_id && <span title="ดึงจากใบเบิก QA (ทดสอบแบบทำลาย)" style={{ marginLeft: 3, fontSize: 11, color: '#a855f7' }}>📦</span>}
+                      {it.src_defect_from_logs && <span title="ดึงจาก Daily Report" style={{ marginLeft: 3, fontSize: 11, color: 'var(--blue)' }}>⤵</span>}
+                      {it.src_request_item_id && <span title="ดึงจากใบเบิก QA (ทดสอบแบบทำลาย)" style={{ marginLeft: 3, fontSize: 11, color: 'var(--blue)' }}>📦</span>}
                       {it.src_bin_id && <span title="ดึงจากถังแดง (แท็กแดง) — WI-PD3-069 §5.5" style={{ marginLeft: 3, fontSize: 11, color: '#e05252' }}>🔴</span>}
-                      {opInfoOf(it.mat_no, explodeCtx.opMap) && <span title="ขั้นตอน (OP) — เลขนี้ไม่มีใน SAP ตัดสต๊อกไม่ได้ ต้องระเบิดเป็นวัตถุดิบก่อน" style={{ marginLeft: 3, fontSize: 11, color: '#ef4444' }}>🔩</span>}
-                      {it.src_op_mat && <span title={`ระเบิดมาจากขั้น ${it.src_op_mat}`} style={{ marginLeft: 3, fontSize: 11, color: '#f97316' }}>🧩</span>}</td>
-                    <td style={tdSt} data-l="ที่มา" className="sr-c sr-src"><span style={{ fontSize: 11, fontWeight: 700, color: it.source === 'sub' ? '#f59e0b' : '#4d9fff' }}>{it.source === 'sub' ? 'ย่อย' : 'หลัก'}</span></td>
+                      {opInfoOf(it.mat_no, explodeCtx.opMap) && <span title="ขั้นตอน (OP) — เลขนี้ไม่มีใน SAP ตัดสต๊อกไม่ได้ ต้องระเบิดเป็นวัตถุดิบก่อน" style={{ marginLeft: 3, fontSize: 11, color: 'var(--red)' }}>🔩</span>}
+                      {it.src_op_mat && <span title={`ระเบิดมาจากขั้น ${it.src_op_mat}`} style={{ marginLeft: 3, fontSize: 11, color: 'var(--amber)' }}>🧩</span>}</td>
+                    <td style={tdSt} data-l="ที่มา" className="sr-c sr-src"><span style={{ fontSize: 11, fontWeight: 700, color: it.source === 'sub' ? 'var(--amber)' : 'var(--blue)' }}>{it.source === 'sub' ? 'ย่อย' : 'หลัก'}</span></td>
                     {/* 2026-09-07 MAT SAP = <ProductSelect> (Product Master ∪ BOM/parts_master) · ตรงทะเบียน → part_no/part_name ล็อกตามทะเบียน
                         allowFree เพราะบางพาร์ทใน master กรอกเลขเครื่องแทนเลขพาร์ท (badMaster) — ยังต้องพิมพ์เองได้พร้อมป้าย */}
                     {(() => {
@@ -891,7 +892,7 @@ export default function ScrapReport() {
                               onChange={r => pickSapForItem(it._key, r)} />
                             <button style={{ ...ghostBtn, padding: '4px 6px' }} title="เลือกจาก SAP/BOM" onClick={() => { setSapPicker({ itemKey: it._key }); setSapSearch(''); }}>🔍</button>
                             {opInfoOf(it.mat_no, explodeCtx.opMap) && (
-                              <button style={{ ...ghostBtn, padding: '4px 6px', borderColor: 'rgba(249,115,22,0.6)', color: '#f97316' }}
+                              <button style={{ ...ghostBtn, padding: '4px 6px', borderColor: 'var(--amber-line)', color: 'var(--amber)' }}
                                 title="ระเบิดขั้นนี้เป็นวัตถุดิบ/พาร์ทที่ใส่เข้าไป (เลขที่ตัด SAP ได้)"
                                 onClick={() => explodeOpItems(editor.items, it._key)}>🧩</button>
                             )}
@@ -939,7 +940,7 @@ export default function ScrapReport() {
                             alt="รูปของเสีย" loading="lazy" title={it._imgFile ? 'ยังไม่ได้อัปโหลด — จะอัปตอนกดบันทึกใบ' : 'กดเพื่อเปลี่ยน/ดูรูป'}
                             onClick={() => setPhotoItem(it._key)}
                             style={{ height: 30, width: 40, objectFit: 'cover', borderRadius: 4, cursor: 'pointer',
-                              border: `1px solid ${it._imgFile ? '#f59e0b' : 'var(--border)'}` }} />
+                              border: `1px solid ${it._imgFile ? 'var(--amber)' : 'var(--border)'}` }} />
                         </div>
                       ) : (
                         <button style={{ ...ghostBtn, padding: '4px 7px', opacity: 0.7 }} title="แนบรูปของเสีย (ไม่บังคับ)"
@@ -980,7 +981,7 @@ export default function ScrapReport() {
 
           <div className={isMobile ? 'sr-foot m-stickfoot' : 'sr-foot'} style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
             <button style={ghostBtn} onClick={closeEditor}>ยกเลิก</button>
-            {canRecord && <button style={btnSt()} onClick={saveReport}>💾 บันทึกใบ</button>}
+            {canRecord && <button style={btnSt()} onClick={saveReport}>บันทึกใบ</button>}
           </div>
         </Modal>
       )}
@@ -993,12 +994,12 @@ export default function ScrapReport() {
           <div style={{ marginTop: 10, maxHeight: 340, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {sapMatches.map((o, i) => (
               <button key={i} onClick={() => applySap(o)} style={{ textAlign: 'left', padding: '8px 10px', borderRadius: 8, cursor: 'pointer', background: 'var(--card)', border: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, color: o.source === 'sub' ? '#f59e0b' : '#4d9fff', background: o.source === 'sub' ? '#f59e0b1f' : '#4d9fff1f' }}>{o.source === 'sub' ? 'ย่อย' : 'หลัก'}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, color: o.source === 'sub' ? 'var(--amber)' : 'var(--blue)', background: o.source === 'sub' ? 'var(--amber)1f' : 'var(--blue)1f' }}>{o.source === 'sub' ? 'ย่อย' : 'หลัก'}</span>
                 <div style={{ minWidth: 0 }}>
                   {/* ลำดับ Part No. → ชื่องาน → MAT (UI §6.21) */}
                   <div style={{ fontSize: 12.5, fontWeight: 700 }}>{o.part_no || o.part_name || o.mat_no} <span style={{ fontWeight: 500, color: 'var(--text2)' }}>{o.part_no ? o.part_name : ''}{o.mat_no ? ` · MAT ${o.mat_no}` : ''}</span></div>
                   {o.line_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.line_name}</div>}
-                  {o.badMaster && <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>⚠ Master กรอกเลขพาร์ทเป็นหมายเลขเครื่อง "{o.badMaster}" — ต้องกรอก PART NO. เอง</div>}
+                  {o.badMaster && <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>⚠ Master กรอกเลขพาร์ทเป็นหมายเลขเครื่อง "{o.badMaster}" — ต้องกรอก PART NO. เอง</div>}
                 </div>
               </button>
             ))}
@@ -1021,12 +1022,12 @@ export default function ScrapReport() {
               return (
                 <button key={r.id} onClick={() => applyRequest(r)} style={{
                   textAlign: 'left', padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
-                  background: 'var(--card)', border: `1px solid ${mine ? '#a855f7' : 'var(--border)'}`,
+                  background: 'var(--card)', border: `1px solid ${mine ? 'var(--blue)' : 'var(--border)'}`,
                 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 700 }}>
                     {r.doc_no || '(ไม่มีเลขที่)'}
                     <span style={{ color: st.color, fontWeight: 700, marginLeft: 8, fontSize: 11.5 }}>{st.label}</span>
-                    {mine && <span style={{ color: '#a855f7', marginLeft: 6, fontSize: 11 }}>· ไลน์นี้</span>}
+                    {mine && <span style={{ color: 'var(--blue)', marginLeft: 6, fontSize: 11 }}>· ไลน์นี้</span>}
                   </div>
                   <div style={{ fontSize: 11.5, color: 'var(--text2)' }}>
                     {r.request_date} · {KIND_LABEL[r.kind] || r.kind} · {r.requester_dept || '—'}
@@ -1135,5 +1136,5 @@ function ItemCount({ reportId }) {
 function ScrapSum({ reportId }) {
   const [s, setS] = useState(null);
   useEffect(() => { supabaseDR.from('scrap_report_items').select('qty').eq('report_id', reportId).then(({ data }) => setS((data || []).reduce((a, x) => a + (Number(x.qty) || 0), 0))); }, [reportId]);
-  return <span style={{ fontWeight: 700, color: s ? '#ef4444' : undefined }}>{s == null ? '…' : s.toLocaleString()}</span>;
+  return <span style={{ fontWeight: 700, color: s ? 'var(--red)' : undefined }}>{s == null ? '…' : s.toLocaleString()}</span>;
 }
