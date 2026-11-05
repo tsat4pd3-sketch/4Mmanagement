@@ -53,6 +53,8 @@ import { planMatTimeWrites, MAT_TIME_SKIP_OPEN } from '../utils/matTimeEdit';
 import { resolveShiftTime, checkShiftTime, shiftWindow, windowLabel, fmtOffset, MAX_SHIFT_MIN, checkCloseTime } from '../utils/shiftWindow';
 import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
+import Segmented from '../components/Segmented';
+import { kindOf } from '../utils/equipmentKinds';
 import { resolveMachine, normCode, resolveTypeRow, QR_KINDS } from '../utils/qrCode';
 import { SCAN_EVENT } from '../utils/scanWedge';
 import { pickUnusedColor } from '../utils/colorPick';
@@ -219,6 +221,12 @@ const STALE_BUCKET_KEY = '__stale_bucket__';
    8 = จำนวนแถวที่ยังกวาดตาอ่านจบได้ในจอเดียวโดยไม่ต้องเลื่อน (ใบผลิตแถวละ ~67px · 8 แถว ≈ 540px)
    เกินเท่านี้ถือว่า "เยอะ" → แผงเริ่มต้นแบบยุบ และเมื่อกางก็ยังตัดเหลือ 8 แถวแรก + ปุ่มแสดงอีก */
 const AUTO_COLLAPSE_ROWS = 8;
+/* ตัวกรองชนิดของช่อง "เครื่องจักร" ในฟอร์ม Downtime — ป้ายชนิดตรงกับ EQUIPMENT_KINDS (utils/equipmentKinds) */
+const DT_KIND_OPTS = [
+  { value: 'all', label: 'ทั้งหมด' }, { value: 'machine', label: '🏭 เครื่องจักร' },
+  { value: 'jig', label: '🧩 จิ๊ก' }, { value: 'die', label: '🔨 แม่พิมพ์' }, { value: 'other', label: 'อื่นๆ' },
+];
+const DT_KIND_FIELD = { all: 'เครื่องจักร / อุปกรณ์', machine: 'เครื่องจักร', jig: 'จิ๊ก', die: 'แม่พิมพ์', other: 'อุปกรณ์อื่น' };
 const LIST_FIRST = 8;
 
 /* ── ลิสต์การ์ด/แถวยาวในหน้านี้ = grid หลายคอลัมน์ (2026-09-09 · feedback user
@@ -440,7 +448,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const [dtForm, setDtForm]   = useState({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
   // ช่องเครื่องจักรในฟอร์ม Downtime: ค่าเริ่ม = เฉพาะครอบครัวไลน์ · กดขยายค้นทั้งโรงงานได้ (19/10 · หน้างานทัก "เห็นทุกเครื่องในโรงงาน")
   const [dtMachineAll, setDtMachineAll] = useState(false);
-  useEffect(() => { if (showDT) setDtMachineAll(false); }, [showDT]);
+  /* ชนิดอุปกรณ์ของช่องเครื่องจักร (05/11 · คำสั่ง user "ไม่มีการแยกว่าดาวน์ไทม์เครื่องจักร/จิ๊ก/แม่พิมพ์")
+     = ตัวกรองลิสต์เท่านั้น ไม่เขียนลงฐาน (ชนิดจริงอ่านจากทะเบียน machines.equipment_kind เสมอ)
+     ค่าเริ่ม 'all' = ไม่บังคับเลือก = พฤติกรรมเดิม · 'other' = ชนิดที่ไม่ใช่ 3 ตัวหลัก (facility ฯลฯ) */
+  const [dtKind, setDtKind] = useState('all');
+  useEffect(() => { if (showDT) { setDtMachineAll(false); setDtKind('all'); } }, [showDT]);
   const [dtScanOpen, setDtScanOpen] = useState(false);   // สแกน QR เลือกเครื่องในฟอร์ม Downtime
   const [savingDT, setSavingDT] = useState(false);
 
@@ -6300,8 +6312,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
             };
             famCount = (machines || []).filter(m => m.machine_no && inFam(m)).length;
             const showAll = dtMachineAll || famCount === 0;
+            const kindHit = (m) => {
+              if (dtKind === 'all') return true;
+              const k = kindOf(m.equipment_kind);
+              return dtKind === 'other' ? !['machine', 'jig', 'die'].includes(k) : k === dtKind;
+            };
             return (machines || [])
-              .filter(m => showAll || inFam(m))
+              .filter(m => (showAll || inFam(m)) && kindHit(m))
               .map((m, i) => {
                 const r = rank(m);
                 return {
@@ -6462,8 +6479,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     </div>
                   )}
 
+                  <Field label="ชนิดอุปกรณ์ที่หยุด (ไม่บังคับ — ใช้กรองลิสต์ด้านล่าง)">
+                    <Segmented size="sm" label="ชนิดอุปกรณ์" value={dtKind} onChange={setDtKind} options={DT_KIND_OPTS} />
+                  </Field>
                   <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <Field label={`เครื่องจักร ${dtMachineOptional ? '(ถ้ามี)' : '*'}`}>
+                    <Field label={`${DT_KIND_FIELD[dtKind]} ${dtMachineOptional ? '(ถ้ามี)' : '*'}`}>
                       <div style={{ display: 'flex', gap: 6 }}>
                         <div style={{ flex: 1, minWidth: 0 }}>
                         {/* ค้นได้ทั้งทะเบียน (เครื่องจักร 500+ ตัว) — ห้ามกลับไปเป็น <select> ที่กรองไลน์ตรงเป๊ะ
@@ -6474,7 +6494,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           options={dtMachineOptions}
                           allowFree
                           placeholder={dtMachineAll || !famCount ? 'ค้นหาเครื่อง — ทั้งโรงงาน' : 'ค้นหาเครื่อง — ในไลน์นี้'}
-                          emptyText={dtMachineAll || !famCount ? 'ไม่พบเครื่องนี้ในทะเบียน' : 'ไม่พบในไลน์นี้ — กด "ค้นทั้งโรงงาน" ใต้ช่อง'}
+                          emptyText={dtKind !== 'all' ? `ไม่มี${DT_KIND_FIELD[dtKind]}ในลิสต์นี้ — กด "ทั้งหมด" ด้านบน หรือ "ค้นทั้งโรงงาน"` : (dtMachineAll || !famCount ? 'ไม่พบเครื่องนี้ในทะเบียน' : 'ไม่พบในไลน์นี้ — กด "ค้นทั้งโรงงาน" ใต้ช่อง')}
                           freeHint="ไม่ได้อยู่ในทะเบียน — ต่อใบซ่อม/ประวัติเครื่องไม่ได้"
                           inputStyle={inputStyle}
                           /* พิมพ์เองแล้วต่างจากทะเบียนแค่รูปแบบ (LS10 → LS-10) = เก็บเลขตามทะเบียน
@@ -6493,7 +6513,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           <span style={{ color: 'var(--amber)' }}>⚠ ไลน์นี้ยังไม่มีเครื่องลงทะเบียน — แสดงทั้งโรงงาน</span>
                         ) : (
                           <>
-                            <span>{dtMachineAll ? 'แสดงทั้งโรงงาน' : `เฉพาะไลน์นี้ + กลุ่มไลน์ (${famCount})`}</span>
+                            <span>{dtMachineAll ? 'แสดงทั้งโรงงาน' : `เฉพาะไลน์นี้ + กลุ่มไลน์ (${famCount})`}
+                              {dtKind !== 'all' && ` · กรองชนิดแล้วเหลือ ${dtMachineOptions.length}`}</span>
                             <button type="button" onClick={() => setDtMachineAll(v => !v)}
                               style={{ background: 'none', border: 'none', padding: 0, color: 'var(--accent)', fontSize: 11, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>
                               {dtMachineAll ? '↩ เฉพาะไลน์นี้' : '🏢 ค้นทั้งโรงงาน'}
