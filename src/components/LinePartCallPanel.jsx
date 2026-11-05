@@ -649,7 +649,9 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             {/* ช่องรับรหัสพาร์ทต้องเป็น picker กลาง ห้าม input เปล่า (UI-CONVENTIONS §5.1.2) */}
-            <ProductSelect value={adhocMat} lines={pickLines} extraOptions={adhocExtra}
+            {/* 🔒 05/11 (คำสั่ง user "ยังขึ้นของไลน์อื่นอยู่ ไม่ควรขึ้นเพื่อกันการงง") — `strict` = เฉพาะพาร์ทของไลน์นี้ (แม่/ลูก)
+                + ชิ้นส่วนลูก BOM ของไลน์นี้ (`adhocExtra`) · ห้ามถอด strict */}
+            <ProductSelect strict value={adhocMat} lines={pickLines} extraOptions={adhocExtra}
               placeholder="เลือกพาร์ทที่ต้องการ" style={{ width: 260 }} inputStyle={{ padding: '5px 26px 5px 10px', fontSize: 12 }}
               onChange={({ mat_no, opt, known }) => {
                 setAdhocMat(mat_no); setAdhocKnown(!!opt && known !== false);
