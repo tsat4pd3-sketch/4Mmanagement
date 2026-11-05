@@ -1,8 +1,8 @@
 {
   "_meta": {
     "generatedAt": "2026-11-05",
-    "files": 217,
-    "total": 4888
+    "files": 216,
+    "total": 4758
   },
   "files": {
     "src/components/AuditLogViewer.jsx": 3,
@@ -156,7 +156,6 @@
     "src/pages/AddUser.jsx": 70,
     "src/pages/AdoptionOutlook.jsx": 82,
     "src/pages/AnnouncementMockup.jsx": 13,
-    "src/pages/BbsCheck.jsx": 11,
     "src/pages/CustomerDemand.jsx": 85,
     "src/pages/DailyPM.jsx": 8,
     "src/pages/DieRegistry.jsx": 19,
@@ -174,12 +173,12 @@
     "src/pages/LineSetup.jsx": 46,
     "src/pages/LineStock.jsx": 72,
     "src/pages/Login.jsx": 3,
-    "src/pages/MachineDatabase.jsx": 17,
+    "src/pages/MachineDatabase.jsx": 10,
     "src/pages/MaintenanceLevels.jsx": 15,
     "src/pages/Management.jsx": 221,
     "src/pages/ManpowerBoard.jsx": 38,
     "src/pages/Monitoring.jsx": 1,
-    "src/pages/MorningMeeting.jsx": 73,
+    "src/pages/MorningMeeting.jsx": 3,
     "src/pages/MtnAnalysis.jsx": 5,
     "src/pages/MtnMachineLayout.jsx": 9,
     "src/pages/MtnRepair.jsx": 14,
@@ -194,7 +193,7 @@
     "src/pages/PEDocs.jsx": 15,
     "src/pages/PMCheckData.jsx": 82,
     "src/pages/PMSchedule.jsx": 48,
-    "src/pages/PMSetup.jsx": 37,
+    "src/pages/PMSetup.jsx": 20,
     "src/pages/PermissionsManagement.jsx": 16,
     "src/pages/PlannerSales.jsx": 68,
     "src/pages/PmCoordination.jsx": 36,
@@ -207,7 +206,7 @@
     "src/pages/QAInspectionSetup.jsx": 16,
     "src/pages/QrLabels.jsx": 18,
     "src/pages/QualityControl.jsx": 77,
-    "src/pages/RackCenter.jsx": 26,
+    "src/pages/RackCenter.jsx": 1,
     "src/pages/Register.jsx": 4,
     "src/pages/RemoteControl.jsx": 3,
     "src/pages/Report.jsx": 357,

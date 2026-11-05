@@ -7019,10 +7019,7 @@ test('🔄 บันทึกขั้นใบ MO เสร็จ ต้อง�
    นับแบบ static (ปุ่มที่มีเงื่อนไขก็นับ — ถ้าเงื่อนไขทำให้เกิน 2 พร้อมกันได้ ก็ต้องเข้าเมนู)
    🕰️ หน้าที่มีปุ่ม >2 อยู่ก่อนกฎ = ทยอยแก้ **ห้ามเพิ่มหน้าใหม่เข้าลิสต์นี้** */
 test('🧭 PageHeader actions= มีปุ่มตายตัวไม่เกิน 2 — ที่เหลือเข้า <OverflowMenu>', () => {
-  const LEGACY_MANY_ACTIONS = [
-    'src/pages/BbsCheck.jsx', 'src/pages/MachineDatabase.jsx',
-    'src/pages/MorningMeeting.jsx', 'src/pages/PMSetup.jsx', 'src/pages/RackCenter.jsx',
-  ];
+  const LEGACY_MANY_ACTIONS = [];   // 05/11: ไล่ครบทุกหน้าแล้ว — ห้ามเติมชื่อใหม่ (หน้าใหม่ต้องผ่านตั้งแต่แรก)
   const bad = [];
   for (const f of walk(join(ROOT, 'src/pages'), ['.jsx'])) {
     const rel = relative(ROOT, f);
