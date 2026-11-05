@@ -57,6 +57,7 @@ import { loadHomeSlocs } from '../utils/homeSloc';   // 🏠 ที่จัด�
 import { INFLOW_MODES, inflowModeOf, inflowPatchFor, inflowModesFor } from '../utils/stockReceipts';
 import { IconButton, DeleteButton } from '../components/IconButton';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
+import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 /* ─── LINE STOCK — Stock พาร์ทย่อยคงเหลือในแต่ละไลน์ผลิต ─────────────────
    Store จ่ายพาร์ทเข้าไลน์ → บันทึก transaction type='issue'
@@ -494,9 +495,9 @@ function StockTab({ role, scope }) {
             + จ่ายพาร์ทเข้าไลน์
           </button>
         )}
-        <div style={{ flexBasis:'100%', fontSize:11, color:'var(--muted)' }}>
+        <InfoMore label="สโตร์ กับ จัดส่ง ต่างกันยังไง" size={11.5} style={{ flexBasis: '100%' }}>
           🏬 สโตร์ = Store ป้อนของเข้าไลน์ (3xx ซื้อนอก · 5xx raw · 2xx ผลิตเอง) · 🚚 จัดส่ง = Warehouse + Delivery ส่งลูกค้า (FG 1xx)
-        </div>
+        </InfoMore>
       </FilterBar>
       <p style={{ margin:'0 0 12px', fontSize:13, color:'var(--muted)' }}>
         <b style={{ color:'var(--text2)' }}>📦 พาร์ทย่อยคงเหลือในไลน์</b> — Store จ่ายพาร์ทเข้าไลน์ · ระบบหักอัตโนมัติตอน close กะ (BOM × qty_ok)

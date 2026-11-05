@@ -262,7 +262,7 @@ export default function QrLabels() {
     return (
       <Page style={{ background: 'var(--bg)', minHeight: '100%' }}>
         <ReadOnlyNote show={!canPrint} role={role} what="พิมพ์ป้าย QR" permKey="qr_labels:print" />
-        <PageHeader title="พิมพ์ป้าย QR อุปกรณ์" icon="🏷️" sub="พิมพ์ป้ายติดเครื่องจักร/แม่พิมพ์/จิ๊ก/ชิ้นงาน แล้วส่องด้วยกล้องมือถือ → เปิดแอปมาที่เมนูของสิ่งนั้นเลย (ตรวจ AM/PM · แจ้งซ่อม · ตรวจ QA)" />
+        <PageHeader title="พิมพ์ป้าย QR อุปกรณ์" icon="🏷️" sub="พิมพ์ป้าย QR ติดอุปกรณ์ แล้วส่องด้วยมือถือเพื่อเปิดเมนูของอุปกรณ์นั้น" />
         <FilterBar>
           <Segmented value={kind} onChange={setKind} label="ชนิดป้าย" options={KIND_OPTIONS} />
         </FilterBar>
@@ -286,7 +286,7 @@ export default function QrLabels() {
           <span>🔗 ป้ายที่พิมพ์จะเป็น <b>ลิงก์</b> <code style={{ background: 'var(--bg3)', padding: '1px 5px', borderRadius: 4 }}>{origin}/scan</code>
             {' '}— ส่องด้วยกล้องมือถือปกติแล้วเปิดแอปมาที่เมนูของเครื่องตัวนั้นได้เลย ไม่ต้องเปิดแอปเองก่อน</span>
         ) : (
-          <span>⚠️ ตอนนี้เปิดจาก <code>{origin || '—'}</code> ซึ่งเครื่องอื่นเข้าไม่ได้ ⇒ ป้ายจะพิมพ์เป็น
+          <span data-warn="1">⚠️ ตอนนี้เปิดจาก <code>{origin || '—'}</code> ซึ่งเครื่องอื่นเข้าไม่ได้ ⇒ ป้ายจะพิมพ์เป็น
             <b> ข้อความแบบเดิม</b> (สแกนในแอปได้ แต่ส่องด้วยกล้องมือถือเฉยๆ ไม่เด้งเข้าแอป)
             {' '}— ถ้าต้องการป้ายแบบลิงก์ ให้พิมพ์จากเว็บจริงของระบบ</span>
         )}

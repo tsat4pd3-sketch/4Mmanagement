@@ -2000,7 +2000,7 @@ export default function LineSetup({ embedded = false } = {}) {
           {/* ผู้เซ็นใบค่าฝีมือ ราย section ย้ายไปตั้งที่ผังองค์กร (OrgSetup) — เป็นข้อมูลราย section ไม่ใช่ราย line */}
           <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 12px' }} />
           <div style={{ fontSize: 12, color: 'var(--muted)', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 10, padding: '10px 14px' }}>
-            ✍️ ผู้เซ็น/อนุมัติใบค่าฝีมือ (ราย section) ย้ายไปตั้งที่หน้า <a href="/org-setup" style={{ color: 'var(--accent)', fontWeight: 700 }}>ผังองค์กร</a> แล้ว — เพราะเป็นข้อมูลราย "ส่วนงาน" ใช้ร่วมกันทุกไลน์ในส่วนนั้น
+            ผู้เซ็น/อนุมัติใบค่าฝีมือ ตั้งที่หน้า <a href="/org-setup" style={{ color: 'var(--accent)', fontWeight: 700 }}>ผังองค์กร</a> แล้ว — เพราะเป็นข้อมูลราย "ส่วนงาน" ใช้ร่วมกันทุกไลน์ในส่วนนั้น
           </div>
 
         </>}

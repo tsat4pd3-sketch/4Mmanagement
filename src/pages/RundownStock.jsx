@@ -9,6 +9,7 @@ import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import { openOnly } from '../utils/shipStatus';
 import { periodHead, periodTone } from '../utils/periodHead';   // 🗓️ หัวคอลัมน์ชุดเดียวกับบอร์ด Monitoring (08/10)
+import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 /* ─── RUNDOWN STOCK — Balance FG รายวัน (แบบไฟล์ rundown stock ของหน้างาน) ────
    หน้าคู่กับ 📈 Planner & Sales: sale อัพโหลด order (EDI 862) → หน้านี้จำลองว่า
@@ -269,13 +270,13 @@ export default function RundownStock() {
                 </tbody>
               </table>
             </div>
-            <div style={{ padding: '8px 14px', borderTop: '1px solid var(--border2)', fontSize: 11, color: 'var(--muted)', lineHeight: 1.7 }}>
+            <InfoMore label="Balance คิดยังไง" size={11.5} style={{ padding: '8px 14px', borderTop: '1px solid var(--border2)' }}>
               Balance = stock พร้อมส่งตอนนี้ − ยอด order ที่ยังไม่ส่งสะสมรายวัน · stock เดินเองอัตโนมัติ
               (สแกนปิดออเดอร์ = รับเข้า · กด "ส่งแล้ว" = หักออก) จึงเป็นภาพ ณ ปัจจุบันเสมอ ไม่ต้องรอปิดกะ ·
               นับเฉพาะของใน<b>คลัง FG</b>{fgDest ? ` (${fgDest})` : ''} — ของที่ยังอยู่ mini-store ของไลน์ / STORE ก่อนแพ็ค ยังส่งลูกค้าไม่ได้ จึงไม่นับ ·
               แถวที่ขึ้น ❔ คือ<b>เลขบน order ยังจับคู่ MAT SAP ไม่ได้</b> (ไม่ได้แปลว่าไม่มีของ) — ตั้ง p_no ที่ Product Master
               หรือกดปุ่ม 🔗 จับคู่เลข SAP ในหน้า 📈 Planner &amp; Sales แล้วจะคำนวณให้ทันที
-            </div>
+            </InfoMore>
           </div>
         )}
       </div>

@@ -20,6 +20,7 @@ import ShiftAutoFillModal from '../components/ShiftAutoFillModal';
 import { checkWriteRows } from '../utils/dbWrite';
 import SearchSelect from '../components/SearchSelect';
 import PageHeader from '../components/PageHeader';
+import NoticeBar from '../components/NoticeBar';
 import Page from '../components/Page';
 import { DeleteButton } from '../components/IconButton';
 function getWeekDates(refDate) {
@@ -741,8 +742,8 @@ export default function ShiftOrganize() {
       {/* ⚠️ มีสิทธิ์แก้หน่วยงาน แต่ไม่มีแถวให้แก้ = ต้องอธิบายว่าทำไม ห้ามให้จอหายเฉยๆ
           เหตุที่พบจริง: ถูกตั้ง profiles.sections ไว้ → แผนกขึ้นตรงฝ่าย (MTN/JIG/DIE) หลุด scope */}
       {deptRows.length === 0 && canEditDept && role !== 'leader' && (
-        <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '10px 12px', marginBottom: 24, fontSize: 12.5, lineHeight: 1.65, color: 'var(--text2)' }}>
-          🏢 <b style={{ color: 'var(--text)' }}>ยังไม่มีหน่วยงานให้ตั้งกะ</b> — ตารางหน่วยงานลิสต์เฉพาะแผนกที่มีพนักงานอยู่จริง
+        <NoticeBar tone="warn" style={{ marginBottom: 24 }}><b>ยังไม่มีหน่วยงานให้ตั้งกะ</b>
+          <InfoMore label="ทำไม">ตารางหน่วยงานลิสต์เฉพาะแผนกที่มีพนักงานอยู่จริง
           {scopeSecs.length > 0
             ? <> · บัญชีนี้ถูกจำกัดส่วนงาน (<b>{scopeSecs.join(', ')}</b>) จึงเห็นเฉพาะแผนกใต้ส่วนงานนั้น —
                 <b> แผนกที่ขึ้นตรงฝ่าย (MTN / JIG MTN / DIE MTN / QA) จะไม่โผล่</b>
@@ -750,8 +751,8 @@ export default function ShiftOrganize() {
                   ? <> · ตั้งหน่วยงานไว้เป็น <b>{mySection}</b> แต่ยังไม่มีพนักงานคนไหนกรอกแผนกนี้ไว้ —
                       ตรวจที่ <b>ฐานข้อมูลพนักงาน (/operator)</b></>
                   : <> ให้ admin ตั้งช่อง “ส่วนงาน” ของบัญชีนี้เป็นหน่วยงานที่ดูแล (เช่น MTN / QA) ที่หน้า <b>/add-user</b></>}</>
-            : <> · ตรวจว่าพนักงานในแผนกกรอกช่อง “แผนก” ไว้แล้วหรือยัง ที่หน้า <b>ฐานข้อมูลพนักงาน (/operator)</b></>}
-        </div>
+            : <> · ตรวจว่าพนักงานในแผนกกรอกช่อง “แผนก” ไว้แล้วหรือยัง ที่หน้า <b>ฐานข้อมูลพนักงาน (/operator)</b></>}</InfoMore>
+        </NoticeBar>
       )}
 
       {/* Individual Overrides */}

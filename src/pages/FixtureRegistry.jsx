@@ -522,7 +522,7 @@ export default function FixtureRegistry() {
         <div style={{ fontSize: 13, color: 'var(--muted)' }}>
           เลือกจิ๊ก/ฟิกเจอร์ก่อน
           {!fixtures.length && (
-            <div style={{ marginTop: 8, color: 'var(--amber)' }}>
+            <div data-warn="1" style={{ marginTop: 8, color: 'var(--amber)' }}>
               ⚠️ ยังไม่มีอุปกรณ์ที่เป็นชนิด “จิ๊ก / ฟิกเจอร์” ในขอบเขตของคุณ —
               ไปที่แท็บ <b>⚙️ จัดชนิดอุปกรณ์</b> เพื่อติ๊กเครื่องที่จริงๆ เป็นจิ๊กก่อน
             </div>

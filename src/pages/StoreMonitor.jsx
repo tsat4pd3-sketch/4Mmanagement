@@ -19,6 +19,7 @@ import { ALL } from '../utils/filterLabels';
 import PartCard, { partCardGrid } from '../components/PartCard';
 import usePartImages from '../utils/usePartImages';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
+import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 /* ─── STORE MONITOR — เฝ้าระวังสต๊อก/รอบส่ง (Abnormality Monitor) ─────────────
    ถอดจากตาราง "Abnormality case of TEI-TEI system" (17 เคส) ของ Toyota TPS
@@ -130,7 +131,7 @@ export default function StoreMonitor() {
   return (
     <Page>
       <PageHeader title="เฝ้าระวังสต๊อก & รอบส่ง (Abnormality Monitor)" icon="🚨"
-        sub="จับความผิดปกติแล้วสรุปเป็นผล 🟥 จะขาด (Shortage) / 🟧 ล้น (Over stock) — แนวคิดจาก TEI-TEI ของ Toyota · เงื่อนไขตรวจอยู่ในวิว v_store_abnormal ที่เดียว (ตัวแจ้งเตือนใช้ตัวเดียวกัน)" />
+        sub="จับความผิดปกติของสต๊อก/รอบส่ง แล้วสรุปเป็น จะขาด / ล้น (แนวคิด TEI-TEI ของ Toyota)" />
 
 
       {/* UI-STANDARD 2026-09-24 — ไลน์ (ขอบเขต) ก่อน → ชนิดเรื่อง (Segmented) */}
@@ -208,10 +209,10 @@ export default function StoreMonitor() {
         </div>
       )}
 
-      <div style={{ marginTop: 16, fontSize: 11, color: 'var(--muted)', lineHeight: 1.7 }}>
+      <InfoMore label="แหล่งข้อมูลและขอบเขต" size={11.5} style={{ marginTop: 16 }}>
         แหล่งข้อมูล: on-hand (line_stock_summary) เทียบ Min/Max (kanban_standards จาก 🎴 คำนวณ Kanban) · รอบส่ง (kanban_delivery_rounds/kanban_deliveries) · สั่งซื้อ (purchase_requests) ·
         เคส "ผิดกล่อง/pattern/pallet" ในตาราง TPS 17 เคส ต้องมีการสแกนคัมบัง/leveling pattern ก่อน = เฟสถัดไป
-      </div>
+      </InfoMore>
     </Page>
   );
 }

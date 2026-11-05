@@ -1005,10 +1005,10 @@ export default function ProductMaster() {
             <span style={{ fontSize: 13, color: 'var(--amber)', fontWeight: 700 }}>
               🧩 ขั้นตอน (OP) ที่ยังไม่ผูก component {opNoBom.length} รายการ
             </span>
-            <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+            <InfoMore label="ทำไมต้องผูก" size={11.5}>
               เลขของขั้นไม่มีใน SAP ⇒ ของเสียที่หลุดขั้นนี้ <b>ตัดสต๊อกไม่ได้</b> จนกว่าจะบอกว่า "ขั้นนี้กินอะไรเข้าไป"
               {' '}· ผูกเฉพาะของที่<b>ขั้นนั้น</b>ใส่เข้าไป (ขั้นก่อนหน้าระบบไล่ให้เอง)
-            </span>
+            </InfoMore>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {opNoBom.map(i => (
                 <button key={i.id} onClick={() => openBomFor(i.mat_no)}
@@ -1047,10 +1047,10 @@ export default function ProductMaster() {
             {pill('var(--red-dim)', 'var(--red)', '✗ ยังขาด (บังคับแล้ว)', need, () => setReadyFilter('req'))}
             {pill('var(--amber-dim)', 'var(--amber)', '… รอ Routing/Packaging', wait, () => setReadyFilter('any'))}
             {readyFilter && <button type="button" onClick={() => setReadyFilter('')} style={{ ...btnSecondary, fontSize: 11, padding: '3px 10px' }}>ล้างตัวกรอง</button>}
-            <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+            <InfoMore label="ลำดับที่ต้องทำ" size={11.5}>
               ลำดับที่ต้องทำ: 🗂 Parts Master → 📦 BOM → 🔩 Products → 🔀 Routing → 🧳 Packaging → 🎴 Kanban
               {' '}· <b>🔀 Routing / 🧳 Packaging ยังไม่บังคับวันนี้</b> (อนาคตบังคับ) · กดชิปบนการ์ดเพื่อไปเติมได้เลย
-            </span>
+            </InfoMore>
           </div>
         );
       })()}

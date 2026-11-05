@@ -34,6 +34,7 @@ import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { fmtAxis } from '../utils/chartAxis';
 import { loadDocForms } from '../utils/docForms';
 import { downloadCsvDoc } from '../utils/csvDoc';
+import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 /* ─── PLANNER & SALES — Forecast Planner + อัพโหลดไฟล์จากลูกค้า ──────────────
    Sales อัพโหลด Excel 2 แบบ: (1) Forecast ล่วงหน้าจากลูกค้า (2) Order + รอบเวลาส่งงาน
@@ -1227,9 +1228,9 @@ function PlannerTab({ refreshKey, custLabel }) {
             </table>
           </div>
         )}
-        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>
+        <InfoMore label="Coverage คืออะไร" size={11.5} style={{ marginTop: 10 }}>
           Coverage = Order จริง ÷ Forecast · เกิน 110% (แดง) = ลูกค้าสั่งเกินที่พยากรณ์ ควรเช็คกำลังผลิต · ต่ำกว่า 80% (เหลือง) = order ยังมาไม่ครบตาม forecast
-        </div>
+        </InfoMore>
       </div>
     </div>
   );

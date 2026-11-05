@@ -42,6 +42,7 @@ import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import { liveChannel } from '../utils/liveChannel';
 import { DeleteButton } from '../components/IconButton';
+import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 const monthKeyNow = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 // วันงานตามกฎระบบ: ก่อน 08:00 = วันก่อนหน้า (กะดึกข้ามวัน) — ห้าม toISOString (UTC เพี้ยน)
@@ -541,10 +542,10 @@ export default function VSM() {
       {!model && (
         <div style={{ ...S.card, textAlign: 'center', padding: 40, color: 'var(--muted)', fontSize: 14 }}>
           เลือกสินค้าสำเร็จรูปแล้วกด <b style={{ color: 'var(--text)' }}>⚡ สร้างร่างจากข้อมูลจริง</b>
-          <div style={{ fontSize: 12, marginTop: 8 }}>
+          <InfoMore label="ลำดับกระบวนการมาจากไหน" size={11.5} style={{ marginTop: 8 }}>
             ลำดับกระบวนการ (ปั๊ม → ประกอบ → …) ตั้งที่ <b>Product Master → 🔀 Routing</b> —
             ยังไม่ได้ตั้ง ระบบจะใช้ไลน์เดียวจาก Product Master ไปก่อนแล้วเตือนไว้
-          </div>
+          </InfoMore>
         </div>
       )}
 

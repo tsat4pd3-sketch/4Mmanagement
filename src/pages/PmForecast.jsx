@@ -21,6 +21,7 @@ import { filterPlanRows } from '../utils/pmPlanFilter'
 import useTabParam from '../utils/useTabParam'
 import PmUsageBoard from '../components/PmUsageBoard'
 import { urlParam, urlPick } from '../utils/urlInit'
+import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 // PM ล่วงหน้า (Planner) — เห็นวันที่จะต้อง PM ล่วงหน้า 1-2 สัปดาห์ + buffer ที่ต้องผลิตเผื่อ
 //   sync ให้วางแผน/ผลิตเตรียมตัวก่อนเครื่องหยุดทำ PM (ดู CLAUDE.md "PM Predictive & Planner Sync")
@@ -296,10 +297,10 @@ export default function PmForecast() {
           </div>
         )}
 
-      <p style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6 }}>
+      <InfoMore label="สูตรคาดวัน PM" size={11.5}>
         * ตาม shot: คาดวัน PM = วันนี้ + (เกณฑ์ − shot สะสม) ÷ อัตราผลิต/วัน (จาก forecast ลูกค้าเดือนนี้ ÷ วันทำงานจริงจากปฏิทินบริษัท · ไม่มี forecast ใช้เฉลี่ยจริง 30 วัน) ·
         buffer = อัตรา/วัน × (ระยะ PM ÷ 16 ชม.) × (1 + เผื่อ%) · แถวส้ม = เข้า window (ใกล้ถึงภายใน lead time) · แถวแดง = เลยกำหนด
-      </p>
+      </InfoMore>
       </>)}
     </Page>
   )

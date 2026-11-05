@@ -248,7 +248,7 @@ export default function DailyPM() {
     <Page>
       <PageHeader title="Autonomous Maintenance (AM)" icon="🔧"
         sub={<>
-          พนักงานตรวจ/ดูแลเครื่องประจำวัน — ความพร้อมเครื่องจักร/อุปกรณ์/POKA-YOKE ต้นกะ · {shiftInfo.label} · {shiftInfo.workDateStr}
+          AM ตรวจเครื่อง/POKA-YOKE ต้นกะ · {shiftInfo.label} · {shiftInfo.workDateStr}
           {' · '}เตือนเมื่อเกิน {DAILY_PM_WINDOW_MIN} นาทีหลังเปิดใบผลิตใบแรก
         </>}
         tabs={[{ key: 'status', label: '📊 สถานะวันนี้' }, { key: 'monthly', label: '📅 รายงานรายเดือน' }, { key: 'registry', label: '⚙️ ลงทะเบียนเครื่องตรวจ' }]}

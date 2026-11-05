@@ -46,6 +46,7 @@ import { DeleteButton } from '../components/IconButton';
 import { isMissingColumnError } from '../utils/employeeSignature';
 import { useOrgTeams } from '../utils/useOrgSections';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
+import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 // การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (/skills-report)
 // lazy: recharts โหลดเฉพาะตอนเปิดการ์ด ไม่ถ่วงตอนเปิดหน้าฐานข้อมูลพนักงาน
@@ -1250,14 +1251,14 @@ export default function Operator() {
               <span style={{ fontSize: 12.5, color: 'var(--amber)', fontWeight: 700 }}>
                 ⚠️ ข้อมูลไม่ตรงผังองค์กร {offOrgStat.total} คน
               </span>
-              <span style={{ fontSize: 11, color: 'var(--text2)' }}>
+              <InfoMore label="เงื่อนไขที่นับว่า ไม่ตรงผัง" size={11.5}>
                 แผนก/กลุ่มไม่มีในผัง หรือ <b>ยังไม่ผูกไลน์ (คนหน้างานที่ไม่มีไลน์จะไม่ขึ้นในหน้าเช็คชื่อ)</b> — เปิดแก้ไขแล้วเลือกใหม่จาก dropdown ได้เลย
                 · <b>ไลน์มาจาก "กลุ่ม" ไม่ใช่ "แผนก"</b> — ตั้งแผนกอย่างเดียวยังไม่พอ
                 {offOrgStat.blocked > 0 && (
                   <> · <b style={{ color: 'var(--amber)' }}>ในนี้ {offOrgStat.blocked} คน ({offOrgStat.blockedSecs.join(', ')}) แก้ที่ฟอร์มยังไม่ได้</b> —
                     ผังยังไม่มีแผนกของส่วนงานนี้ ต้องเพิ่มที่ <Link to="/org-setup" style={{ color: 'var(--amber)', fontWeight: 700 }}>ผังองค์กร</Link> ก่อน</>
                 )}
-              </span>
+              </InfoMore>
               <button onClick={() => setFilterOffOrg(v => !v)}
                 style={{
                   position: 'relative', marginLeft: 'auto',

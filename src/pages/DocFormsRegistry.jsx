@@ -13,6 +13,7 @@ import PersonSelect from '../components/PersonSelect';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import { DeleteButton } from '../components/IconButton';
+import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 /* ══════════════════════════════════════════════════════════════
    📄 ทะเบียนเอกสาร & ฟอร์ม (Document Master) — หน้า /doc-forms
@@ -254,9 +255,9 @@ export default function DocFormsRegistry() {
         </div>
       )}
 
-      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10 }}>
+      <InfoMore label="ฟอร์มใหม่เข้าทะเบียนยังไง" size={11.5} style={{ marginTop: 10 }}>
         💡 ฟอร์มใหม่จะถูกเพิ่มเข้าทะเบียนโดยทีมพัฒนาเมื่อสร้างฟอร์มในระบบ (คีย์อ้างอิงผูกกับโค้ด) — หน้านี้แก้ เลขฟอร์ม/Rev/Effective/ช่องลายเซ็น/หมายเหตุ ได้เอง
-      </div>
+      </InfoMore>
 
       {/* modal แก้ไข (มีฟอร์ม — ไม่ปิดจาก backdrop) */}
       {editing && (

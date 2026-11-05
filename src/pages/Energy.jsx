@@ -28,6 +28,8 @@ import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { scopeLines as pickerLines } from '../components/LineSelect';   // ตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง"
 import { getLineFamilyNames, toHierarchicalOptions, visibleDepths } from '../utils/lineHierarchy';
 import PageHeader from '../components/PageHeader';
+import InfoMore from '../components/InfoMore';
+import NoticeBar from '../components/NoticeBar';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import useTabParam from '../utils/useTabParam';
@@ -533,10 +535,9 @@ export default function Energy() {
           style={{ ...monthBtn, cursor: month >= monthKeyOf() ? 'not-allowed' : 'pointer', opacity: month >= monthKeyOf() ? 0.4 : 1 }}>▶</button>
       </FilterBar>
 
-      <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12.5, color: 'var(--text2)' }}>
-        ✍️ <b>เฟส 1 — ตัวเลขมาจากการกรอกมือ</b> ยังไม่ได้ต่อมิเตอร์อัตโนมัติ · ใช้ดูแนวโน้มและเทียบเดือนได้
-        แต่ยังไม่ใช่ค่าที่วัดแบบ realtime · ค่าที่กรอกไปแสดงบนผังรวมโรงงาน (metric <b>⚡ พลังงาน</b>)
-      </div>
+      <NoticeBar tone="info" style={{ marginBottom: 12 }}><b>เฟส 1 — ตัวเลขมาจากการกรอกมือ</b> ยังไม่ได้ต่อมิเตอร์อัตโนมัติ
+        <InfoMore label="ใช้ยังไง">ใช้ดูแนวโน้มและเทียบเดือนได้ แต่ยังไม่ใช่ค่าที่วัดแบบ realtime · ค่าที่กรอกไปแสดงบนผังรวมโรงงาน (metric พลังงาน)</InfoMore>
+      </NoticeBar>
 
       {cfgMissing && (
         <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red)', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12.5 }}>

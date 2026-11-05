@@ -150,7 +150,7 @@ export default function PokaYokeCheck() {
   return (
     <Page>
       <PageHeader title="Poka-Yoke Check" icon="🛡️"
-        sub={`ทดสอบอุปกรณ์กันความผิดพลาด (error-proofing) ด้วยชิ้น master NG ทุกกะ — จับ NG ได้ = ผ่าน · ${SHIFT_LABEL[selShift]} · ${selDate}`} />
+        sub={`ทดสอบ error-proofing ด้วยชิ้น master NG ทุกกะ — จับ NG ได้ = ผ่าน · ${SHIFT_LABEL[selShift]}`} />
 
       {/* ตัวเลือก — UI-STANDARD 2026-09-24: FilterBar · กะ 2 ตัวเลือก = Segmented */}
       <FilterBar style={{ marginBottom: 12 }}>

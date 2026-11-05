@@ -2,7 +2,7 @@
   "_meta": {
     "generatedAt": "2026-11-05",
     "files": 197,
-    "total": 2577
+    "total": 2557
   },
   "files": {
     "src/components/AuditLogViewer.jsx": 3,
@@ -51,7 +51,7 @@
     "src/components/LineRegistryAlert.jsx": 4,
     "src/components/LineWipPanel.jsx": 18,
     "src/components/MachineFloorMap.jsx": 9,
-    "src/components/MachineReliability.jsx": 26,
+    "src/components/MachineReliability.jsx": 6,
     "src/components/MachineRepairHistory.jsx": 5,
     "src/components/MapPillars3D.jsx": 2,
     "src/components/MaterialRequests.jsx": 3,

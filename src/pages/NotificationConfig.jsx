@@ -326,9 +326,9 @@ export default function NotificationConfig() {
   return (
     <Page width="form">
       <PageHeader title="ตั้งค่าระบบแจ้งเตือน (Telegram)" icon="🔔" />
-      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, marginBottom: 22 }}>
+      <InfoMore label="วิธีจัดห้อง" size={11.5} style={{ marginBottom: 22 }}>
         1 บอทยิงได้หลายห้อง · สร้าง/ลบห้องได้เอง · เลือกได้ว่าเรื่องไหนเข้าห้องไหน · ห้องที่ยังไม่ใส่ chat_id จะไปเข้ากลุ่มเดิม (fallback)
-      </div>
+      </InfoMore>
 
       {/* ── 📲 เครื่องที่รับแจ้งเตือนเข้ามือถือ (2026-10-20 · feedback "มือถือไม่มีแจ้งเตือนใบซ่อม") ──
           วางไว้บนสุดโดยเจตนา: ตัวกั้นใหญ่สุดของการแจ้งเตือนไม่ใช่กติกา/ห้อง Telegram
@@ -360,9 +360,9 @@ export default function NotificationConfig() {
             ส่วนอื่นของหน้านี้ (ห้อง · เรื่องที่แจ้ง · ผู้รับ) ตั้งได้ตามปกติ
           </div>
         )}
-        <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--muted)' }}>
+        <InfoMore label="เรื่อง token" size={11.5} style={{ flexBasis: '100%' }}>
           🔒 token เก็บแบบเข้ารหัสฝั่ง server — บันทึกแล้วดูย้อนหลังไม่ได้ (โชว์แค่ 4 ตัวท้าย) · ถ้าไม่ตั้งที่นี่ ระบบใช้ token เดิมที่ตั้งไว้ในระบบ
-        </div>
+        </InfoMore>
       </div>
 
       {/* ── Downtime open-alert threshold ── */}

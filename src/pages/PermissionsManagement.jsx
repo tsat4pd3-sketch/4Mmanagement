@@ -17,6 +17,7 @@ import { POSITION_LEVELS } from '../utils/positions';
 import { SCOPE_DEPTH_META, SCOPE_DEPTHS } from '../utils/scopeDepth';
 import useTabParam from '../utils/useTabParam';
 import { NAV_GROUP_ORDER } from '../App';
+import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 // ชื่อ/สีชุดสิทธิ์อ่านจาก src/utils/roleMeta.js ที่เดียว (ห้ามนิยามซ้ำในหน้า)
 // PERMISSION_COLUMN_ROLES = base roles + คอลัมน์ 🛡️ แอดมินหน่วยงาน (bucket ของ flag is_dept_admin)
@@ -483,11 +484,11 @@ export default function PermissionsManagement() {
               </div>
             ))}
           </div>
-          <div style={{ padding: '9px 14px', fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6, borderTop: '1px solid var(--border)' }}>
+          <InfoMore label="ระดับที่ล็อกช่องเซ็น MO" size={11.5} style={{ padding: '9px 14px', borderTop: '1px solid var(--border)' }}>
             🪪 <b>ระดับที่ล็อกช่องเซ็น MO:</b>{' '}
             {POSITION_LEVELS.filter(l => l.rank >= 40).map(l => `${l.label} (${l.rank})`).join(' · ')}
             {' '}— ช่องส่งมอบต้อง ≥40 · ผู้ตรวจสอบ/หัวหน้าช่าง ≥50 · อนุมัติ/ปิดค่าใช้จ่าย ≥60
-          </div>
+          </InfoMore>
         </div>
 
         <FilterBar>

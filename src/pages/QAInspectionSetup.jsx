@@ -368,7 +368,7 @@ export default function QAInspectionSetup() {
     <Page>
       <PageHeader title="มาตรฐานการตรวจ & Drawing" icon="📐"
         tabs={MAIN_TABS} tab={tab} onTab={setTab}
-        sub="อัพโหลดแบบชิ้นงาน วาง balloon จุดตรวจ และกำหนดมาตรฐานการตรวจสอบต่อ part — จุด variable ส่งเข้า SPC (หน้า Quality Control Center) ได้" />
+        sub="อัพโหลดแบบชิ้นงาน วาง balloon จุดตรวจ และกำหนดมาตรฐานการตรวจต่อ part" />
 
       {tab === 'inspectors' && <QaInspectorScopes canManage={canManage} />}
 

@@ -16,6 +16,7 @@ import { loadDivisions, divisionsSync, divisionMeta } from '../utils/orgDivision
 import { liveChannel } from '../utils/liveChannel';
 import { openOnly } from '../utils/shipStatus';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
+import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 /* ══ 🔗 Flow Control Tower — สายธารของ "ความต้องการ" ตั้งแต่ลูกค้าถึงวัตถุดิบ ═══════════
    ตอบคำถามเดียว: **ความต้องการของลูกค้าไหลย้อนกลับไปถึงต้นน้ำครบหรือยัง ตันตรงไหน**
@@ -344,11 +345,11 @@ export default function FlowTower() {
             {S.blocks?.length ? `${fmt(S.blocks.length)} พาร์ท · ${fmt(S.blockQty)} ชิ้น` : 'ไม่มีจุดตัน'}
           </div>
         </div>
-        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
+        <InfoMore label="ทำไมยังออกใบสั่งไม่ได้" size={11.5} style={{ marginBottom: 10 }}>
           ระบบระเบิด BOM แล้วสะสมความต้องการไว้ แต่**ยังออกใบสั่งไม่ได้เพราะไม่ได้ตั้ง "ขนาดล็อต"** (จะสั่งครั้งละกี่ชิ้น)
           — เป็นการตัดสินใจของคน ระบบจึงไม่ตั้งให้เอง · ค่าที่เสนอ = 1 กล่องตามบรรจุจริง กดยืนยันแล้วแก้ทีหลังได้
           · แถว ⏳ = ตั้งล็อตแล้วแต่ยอดค้างเกินเพดานออกใบต่อรอบ (MAX_LOTS) — จะทยอยออกใบเองทุกครั้งที่ปิดใบผลิต
-        </div>
+        </InfoMore>
         {!d ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด…</div>
           : S.blocks.length === 0 ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ทุกพาร์ทตั้งขนาดล็อตครบแล้ว</div>
             : (
