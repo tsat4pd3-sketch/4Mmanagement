@@ -9,7 +9,8 @@
    · `X` มีการเปลี่ยนแปลง · `O` เปิดกะแล้วไม่มีการเปลี่ยนแปลง
    · `-` ไม่มีการทำงาน (ไลน์ไม่ได้เปิดกะนั้น — ตาม `production_sessions` ฝั่ง DR ผ่าน `utils/runDays.js`)
    · `?` อ่านข้อมูลกะไม่ได้ — 🔴 **ห้ามบีบเป็น `-`** (ไม่รู้ ≠ ไม่ได้ทำงาน) และต้องเขียนบนใบ
-   · ว่าง = ยังไม่ถึงวัน · เสาร์-อาทิตย์ทาพื้นเทาเสมอ (ตามใบจริง) แต่สัญลักษณ์ใช้กฎเดียวกับวันธรรมดา
+   · ว่าง = ยังไม่ถึงวัน · **วันหยุดตามปฏิทินบริษัททาพื้นเทา** (ไม่ใช่เสาร์-อาทิตย์ตายตัว · คำสั่ง user 05/11)
+     ตัดสินด้วย `isWorkingDayFrom()` (`utils/workingDay.js` กฎวันทำงานชุดเดียวของโปรเจค) · สัญลักษณ์ใช้กฎเดียวกับวันทำงาน
    ใบที่นับ = ทุกสถานะ **ยกเว้น `rejected`** (คำสั่ง user 05/11) */
 import { CHECKLIST_ITEMS, CATEGORY_COLOR, matchChecklistItem } from './changePointChecklist.js';
 
@@ -32,9 +33,10 @@ export const cpcCounts = (log) => log?.status !== 'rejected';
  * @param {string} p.month  'YYYY-MM'
  * @param {object[]} p.logs four_m_logs ของไลน์ (ครอบครัวไลน์) ในเดือนนั้น
  * @param {(date:string, shift:'day'|'night') => boolean|null} p.ranOn  เปิดกะไหม · null = ไม่รู้
+ * @param {(date:string) => boolean|null} [p.isWorkingDay] ปฏิทินบริษัท — `false` = วันหยุด (ทาเทา) · null = ไม่รู้ (ไม่ทา)
  * @param {string} p.today  วันทำงานปัจจุบัน 'YYYY-MM-DD' (ส่งเข้ามา — เทสตรึงค่าได้)
  */
-export function buildChangePointSheet({ month, logs = [], ranOn = () => null, today }) {
+export function buildChangePointSheet({ month, logs = [], ranOn = () => null, isWorkingDay = () => null, today }) {
   const [y, m] = String(month || '').split('-').map(Number);
   if (!y || !m) return null;
   const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -42,8 +44,7 @@ export function buildChangePointSheet({ month, logs = [], ranOn = () => null, to
   const days = Array.from({ length: daysInMonth }, (_, i) => {
     const d = i + 1;
     const date = `${month}-${pad(d)}`;
-    const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-    return { d, date, weekend: dow === 0 || dow === 6, future: !!today && date > today };
+    return { d, date, holiday: isWorkingDay(date) === false, future: !!today && date > today };
   });
 
   const used = (logs || []).filter(cpcCounts);
@@ -70,7 +71,7 @@ export function buildChangePointSheet({ month, logs = [], ranOn = () => null, to
           state = ran === true ? 'ok' : ran === false ? 'no_run' : 'unknown';
         }
         if (state === 'unknown') unknownCells++;
-        return { state, weekend: day.weekend };
+        return { state, holiday: day.holiday };
       }),
     })),
   }));
@@ -136,7 +137,7 @@ export function changePointSheetHtml(sheet, meta = {}) {
   const names = meta.names || {};
   const nm = (id) => (id ? esc(names[id] || '') : '');
   const fmt = meta.fmtDate || fmtD;
-  const dayCols = sheet.days.map(d => `<th class="day${d.weekend ? ' we' : ''}">${d.d}</th>`).join('');
+  const dayCols = sheet.days.map(d => `<th class="day${d.holiday ? ' we' : ''}">${d.d}</th>`).join('');
 
   const grid = sheet.rows.map((r, idx) => {
     const first = idx === 0 || sheet.rows[idx - 1].item.category !== r.item.category;
@@ -146,7 +147,7 @@ export function changePointSheetHtml(sheet, meta = {}) {
       ${first && si === 0 ? `<td class="cat" rowspan="${span}" style="background:${c.bg};color:${c.fg}">${esc(r.item.category)}</td>` : ''}
       ${si === 0 ? `<td class="lbl" rowspan="2">${esc(r.item.label)}</td>` : ''}
       <td class="sh${s.shift === 'night' ? ' n' : ''}">${s.shift === 'day' ? 'D' : 'N'}</td>
-      ${s.cells.map(cell => `<td class="mk ${cell.state}${cell.weekend ? ' we' : ''}">${CPC_MARK[cell.state]}</td>`).join('')}
+      ${s.cells.map(cell => `<td class="mk ${cell.state}${cell.holiday ? ' we' : ''}">${CPC_MARK[cell.state]}</td>`).join('')}
     </tr>`).join('');
   }).join('');
 

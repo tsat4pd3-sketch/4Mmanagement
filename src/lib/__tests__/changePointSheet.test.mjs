@@ -24,9 +24,12 @@ test('กะของใบ — เวลาไทย 08:00-19:59 = D · นอ�
   assert.equal(cpcShiftOf({ created_at: '2026-10-12T14:00:00Z' }), 'night')   // 21:00 ไทย
 })
 
-test('สัญลักษณ์: X มีเปลี่ยน · O เปิดกะ · - ไม่เปิดกะ · ? ไม่รู้ · ว่าง = อนาคต · rejected ไม่นับ', () => {
+test('วันหยุดตามปฏิทินบริษัท (ไม่ใช่ ส-อา ตายตัว) + สัญลักษณ์: X มีเปลี่ยน · O เปิดกะ · - ไม่เปิดกะ · ? ไม่รู้ · ว่าง = อนาคต · rejected ไม่นับ', () => {
   const ranOn = (date, shift) => (date === '2026-10-13' ? null : date === '2026-10-14' ? false : shift === 'day')
-  const s = buildChangePointSheet({ month: '2026-10', today: TODAY, ranOn, logs: [
+  // ปฏิทิน: 3 ต.ค. (เสาร์) มาร์คทำงาน · 5 ต.ค. (จันทร์) มาร์ควันหยุด · 4 ต.ค. (อาทิตย์) ไม่มาร์ค = หยุด
+  const cal = new Map([['2026-10-03', 'working'], ['2026-10-05', 'ot15']])
+  const isWorkingDay = (d) => (cal.has(d) ? cal.get(d) === 'working' : ![0, 6].includes(new Date(d + 'T00:00:00Z').getUTCDay()))
+  const s = buildChangePointSheet({ month: '2026-10', today: TODAY, ranOn, isWorkingDay, logs: [
     log({ id: 'a' }),
     log({ id: 'b', work_date: '2026-10-15', status: 'rejected' }),
     log({ id: 'c', work_date: '2026-10-16', category: 'Method', description: 'xyz' }),
@@ -44,7 +47,10 @@ test('สัญลักษณ์: X มีเปลี่ยน · O เปิ�
   assert.equal(s.details.length, 3)         // rejected ไม่อยู่ใน detail
   assert.equal(s.unmatchedCount, 1)
   assert.equal(s.pendingCount, 1)
-  assert.ok(s.days[2].weekend)              // 3 ต.ค. 2026 = เสาร์
+  assert.equal(s.days[2].holiday, false)     // เสาร์ที่ปฏิทินมาร์คทำงาน = ไม่ทาเทา
+  assert.equal(s.days[3].holiday, true)      // อาทิตย์ไม่มาร์ค = หยุด
+  assert.equal(s.days[4].holiday, true)      // จันทร์ที่ปฏิทินมาร์ควันหยุด = ทาเทา
+  assert.equal(s.days[5].holiday, false)
 })
 
 test('HTML: escape ข้อความคน · มีตาราง detail ≥10 แถว · legend มี "-" · ปี พ.ศ.', () => {

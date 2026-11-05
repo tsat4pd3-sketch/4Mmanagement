@@ -30,6 +30,7 @@ import { mergeBorrowedEmployees } from '../utils/lineHelpers';
 import tsLogoUrl from '../assets/TS logo.png';
 import { buildChangePointSheet, changePointSheetHtml, changePointPrintDoc, CPC_CSS } from '../lib/changePointSheet';
 import { loadRunDays, ranOn } from '../utils/runDays';
+import { isWorkingDayFrom } from '../utils/workingDay';
 import { fetchByIds } from '../utils/fetchByIds';
 import { positionLabel, loadPositions } from '../utils/positions';   // ตำแหน่งเก็บเป็น key — แสดง/พิมพ์ต้องแปลงเป็นชื่อ
 import PageHeader from '../components/PageHeader';
@@ -1709,7 +1710,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
     const monthEnd   = `${month}-${String(daysInMonth).padStart(2, '0')}`;
     const family = lineFamilyOf(lineName);
 
-    const [logsRes, runs, dfCpc, revisionRows, logoDataUrl] = await Promise.all([
+    const [logsRes, runs, dfCpc, revisionRows, logoDataUrl, cal] = await Promise.all([
       supabase.from('four_m_logs')
         .select('id, work_date, line_name, category, description, status, created_at, created_by, sv_approved_by, approved_by')
         .in('line_name', family).neq('status', 'rejected')
@@ -1721,12 +1722,14 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
       getDocForm('changing_point', {}),
       getDocFormRevisions('changing_point'),
       formLogo('changing_point'),
+      loadCompanyCalendar(),   // วันหยุดตามปฏิทินบริษัท = ทาเทา (ไม่ใช่ ส-อา ตายตัว · คำสั่ง user 05/11)
     ]);
     if (logsRes.error) throw new Error(`อ่านใบ 4M ไม่สำเร็จ: ${logsRes.error.message}`);
     const monthLogs = logsRes.data || [];
 
     const sheet = buildChangePointSheet({
       month, logs: monthLogs, today,
+      isWorkingDay: (date) => isWorkingDayFrom(cal, date),
       ranOn: (date, shift) => ranOn(runs, date, shift),   // null = ไม่รู้ ⇒ "?" ห้ามเป็น "-"
     });
 
