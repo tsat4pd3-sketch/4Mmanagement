@@ -5,6 +5,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { HubContext } from './Page';
 import MobileFilterFold, { splitFilterChildren } from './MobileFilterFold';
 import useLang from '../utils/useLang';   // 🌐 ชื่อหน้า/คำอธิบาย/แท็บ/breadcrumb แปลที่จุดวาด (utils/i18n.js)
+import Icon, { stripIcon } from './Icon';   // ✒️ ไอคอนเส้นแทน emoji · แท็บตัด emoji นำหน้า (UI §6.36)
 
 /* ══ 🧭 PageHeader — หัวหน้าเพจมาตรฐาน (breadcrumb + ชื่อหน้า + ปุ่ม + แท็บ) ══════════════
    ทุกหน้าควรขึ้นด้วย component นี้ ห้ามวาดหัวเรื่อง/แถบแท็บเอง
@@ -17,7 +18,8 @@ import useLang from '../utils/useLang';   // 🌐 ชื่อหน้า/ค�
 
    • breadcrumb (หมวด › ชื่อหน้า) generate เองจาก NAV_ITEMS ตาม pathname — ไม่ต้องใส่มือ
    • เว้น paddingRight ให้พ้น 🔔 มุมขวาบนตามกติกา UI §7
-   • แท็บ: ปุ่มทรงเดียวกันทั้งระบบ · เลื่อนแนวนอนได้บนมือถือ · แท็บที่ถูกเลือกใช้สี accent
+   • แท็บ: แบบ "เส้นใต้" ทรงเดียวกันทั้งระบบ (2026-11-05 · UI §6.36) · เลื่อนแนวนอนได้บนมือถือ · แท็บที่ถูกเลือก = ตัวหนา + เส้น accent ใต้
+     ป้ายแท็บถูกตัด emoji นำหน้าออกที่จุดวาด (`stripIcon`) — ทะเบียน `label:'📋 รายการ'` ในหน้าไม่ต้องแก้
    ═════════════════════════════════════════════════════════════════════════════════════════ */
 
 /* ── 🔦 ตัวชี้แท็บที่ "ไถลตาม" + เรืองแสง (2026-09-23 · คำสั่ง user จากคลิป Navigation Tabs V2) ──
@@ -50,7 +52,7 @@ export default function PageHeader({
   const navigate = useNavigate();
   const navItem = NAV_ITEMS.find(n => n.to === pathname);
   const tabList = (tabs || []).filter(Boolean);
-  const tabLabel = tr(tabList.find(t => t.key === tab)?.label);
+  const tabLabel = stripIcon(tr(tabList.find(t => t.key === tab)?.label));
 
   const scrollRef = useRef(null);   // กล่องที่เลื่อนแนวนอน (มือถือ)
   const rowRef = useRef(null);      // แถวปุ่ม = offsetParent ของปุ่มและของตัวชี้
@@ -110,7 +112,7 @@ export default function PageHeader({
   const renderTabs = () => (
         <div ref={scrollRef} className="ph-chrome" style={{
           overflowX: isMobile ? 'auto' : 'visible',
-          paddingTop: 7, paddingBottom: 4,   // เผื่อที่ให้ลำแสง/แสงเรืองไม่โดนกล่องที่เลื่อนตัดหัว
+          paddingTop: 2, paddingBottom: 2,
         }}>
           {/* 🔖 `data-tabbar` = ที่จับให้ `audit/stdsweep.mjs` หาแถบแท็บของหน้าเพื่อไล่กดทุกแท็บ
               **ห้ามถอด** — ถอดเมื่อไหร่ stdsweep จะตรวจได้แค่แท็บแรกของทุกหน้าแบบเงียบๆ
@@ -118,27 +120,19 @@ export default function PageHeader({
                พอ uxsweep เลิกต้องการมันแล้วถอดออก stdsweep ก็ร่วงจากหลายมุมมองเหลือหน้าละ 1
                โดยไม่มีใครรู้ ⇒ ที่จับของเครื่องมือต้องเป็นของตัวเอง ห้ามยืมของเครื่องมืออื่น) */}
           <div ref={rowRef} data-tabbar="1" style={{
-            position: 'relative', display: 'flex', gap: 7,
+            position: 'relative', display: 'flex', gap: 2, borderBottom: '1px solid var(--border)',
             flexWrap: isMobile ? 'nowrap' : 'wrap',
             width: isMobile ? 'max-content' : 'auto',
           }}>
             {ind && (
+              /* เส้นใต้ที่ "ไถลตาม" แท็บที่เลือก (05/11 เปลี่ยนจากแคปซูลทาสีเต็ม+แสงเรือง → เส้น 2px ใต้ป้าย)
+                 ยังวัดจากปุ่มจริง (กติกา 1–4 ข้างบนคงเดิม) · วางที่ก้นปุ่ม = y + h − 2 ทับเส้นฐานของแถว */
               <span aria-hidden="true" data-tab-ind="" style={{
-                position: 'absolute', left: 0, top: 0, width: ind.w, height: ind.h,
-                transform: `translate3d(${ind.x}px, ${ind.y}px, 0)`,
-                borderRadius: 999, background: 'var(--accent)',
-                boxShadow: '0 0 13px -2px var(--accent-glow), 0 0 4px -1px var(--accent-glow)',
-                transition: slide, pointerEvents: 'none', zIndex: 0,
-              }}>
-                {/* ลำแสงบนขอบบน — ของเด่นของดีไซน์นี้ (อยู่ในกรอบ paddingTop จึงไม่ถูกตัด)
-                    ไล่เฉดให้จางที่ปลายทั้งสองข้าง ไม่งั้นอ่านเป็น "ติ่ง" ที่งอกจากปุ่ม ไม่ใช่แสง */}
-                <span style={{
-                  position: 'absolute', left: '50%', top: -5, width: '34%', height: 2,
-                  transform: 'translateX(-50%)', borderRadius: 2,
-                  background: 'linear-gradient(90deg, transparent, var(--accent), transparent)',
-                  boxShadow: '0 0 10px 1px var(--accent-glow)',
-                }} />
-              </span>
+                position: 'absolute', left: 0, top: 0, width: ind.w, height: 2,
+                transform: `translate3d(${ind.x}px, ${ind.y + ind.h - 2}px, 0)`,
+                borderRadius: 2, background: 'var(--accent)',
+                transition: slide, pointerEvents: 'none', zIndex: 1,
+              }} />
             )}
 
             {tabList.map(t => {
@@ -147,16 +141,15 @@ export default function PageHeader({
               return (
                 <button key={t.key} ref={(el) => { btnRefs.current[t.key] = el; }}
                   onClick={() => onTab && onTab(t.key)} style={{
-                    position: 'relative', zIndex: 1,
-                    fontSize: 13.5, fontWeight: 700, padding: '7px 14px', borderRadius: 999, cursor: 'pointer',
-                    whiteSpace: 'nowrap', flexShrink: 0,
-                    background: on ? (selfPaint ? 'var(--accent)' : 'transparent') : 'var(--bg3)',
-                    color: on ? 'var(--accent-ink)' : 'var(--text)',
-                    border: `1px solid ${on ? (selfPaint ? 'var(--accent)' : 'transparent') : 'var(--border2)'}`,
+                    position: 'relative', zIndex: 0,
+                    fontSize: 13.5, fontWeight: on ? 700 : 500, padding: '8px 12px', borderRadius: 0, cursor: 'pointer',
+                    whiteSpace: 'nowrap', flexShrink: 0, background: 'transparent', border: 'none',
+                    color: on ? 'var(--text)' : 'var(--muted)',
+                    boxShadow: selfPaint ? 'inset 0 -2px 0 var(--accent)' : 'none',
                     transition: moving ? 'color .18s ease' : 'none',
                   }}>
-                  {tr(t.label)}
-                  {t.badge ? <span style={{ marginLeft: 6, color: on ? 'var(--accent-ink)' : '#f59e0b' }}>{t.badge}</span> : null}
+                  {stripIcon(tr(t.label))}
+                  {t.badge ? <span className="ph-tab-badge">{t.badge}</span> : null}
                 </button>
               );
             })}
@@ -206,7 +199,7 @@ export default function PageHeader({
         <div className="ph-chrome" style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap', fontSize: 12, color: 'var(--muted)' }}>
           <button onClick={() => navigate('/')} style={{
             background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--muted)', fontSize: 12,
-          }}>🏠 {tr('หน้าหลัก')}</button>
+          }}><Icon glyph="🏠" size={12} style={{ marginRight: 4 }} />{tr('หน้าหลัก')}</button>
           <span>›</span>
           <span>{tr(navItem.group)}</span>
           <span>›</span>
@@ -227,11 +220,11 @@ export default function PageHeader({
                🔴 จอคอม = แบบเดิมเป๊ะ (เคยใช้ทั้ง 2 จอ ⇒ ชิป MOCKUP ใน title ของ /group-overview ชิดชื่อขึ้น 9px · desktopdiff จับได้) */
             isMobile ? (
               <h2 style={{ margin: 0, fontSize: 19, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'nowrap' }}>
-                {icon && <span style={{ flexShrink: 0 }}>{icon}</span>}<span style={{ minWidth: 0 }}>{tr(title)}</span>
+                {icon && <Icon glyph={icon} size={19} strokeWidth={1.6} style={{ color: 'var(--accent)' }} />}<span style={{ minWidth: 0 }}>{tr(title)}</span>
               </h2>
             ) : (
             <h2 style={{ margin: 0, fontSize: 23, display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
-              {icon && <span>{icon}</span>}{tr(title)}
+              {icon && <Icon glyph={icon} size={22} strokeWidth={1.6} style={{ color: 'var(--accent)' }} />}{tr(title)}
             </h2>
             )
           )}

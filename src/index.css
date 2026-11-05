@@ -949,7 +949,7 @@ body.has-mnav { --mnav-h: calc(56px + env(safe-area-inset-bottom, 0px)); padding
   color: var(--text2); font-family: var(--font-body);
 }
 .mnav > button.on { color: var(--accent); box-shadow: inset 0 3px 0 var(--accent); background: var(--accent-dim); }
-.mnav .mnav-ico { font-size: 20px; line-height: 1; }
+.mnav .mnav-ico { font-size: 20px; line-height: 1; display: flex; justify-content: center; }
 .mnav .mnav-lbl { font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 
 /* ─── 🔎 พับแถบกรองบนมือถือ (MobileFilterFold · 2026-10-15) — class เหล่านี้ถูก render เฉพาะมือถือ ─── */
@@ -1186,6 +1186,9 @@ body.esm-tv-shell .tv-hide { display: none !important; }
 .pg-menu-item:hover { background: var(--accent-dim); opacity: 1; }
 .pg-menu-item.danger { color: var(--red); }
 .pg-menu-ico { width: 18px; text-align: center; flex-shrink: 0; opacity: 0.85; }
+.pg-menu-ico { display: inline-flex; align-items: center; justify-content: center; }
+/* ป้ายตัวเลขท้ายแท็บ PageHeader (05/11 · แท็บเส้นใต้) — เหลืองอำพัน = งานค้าง */
+.ph-tab-badge { margin-left: 6px; font-size: 11.5px; font-weight: 700; color: var(--amber); }
 .pg-menu-badge { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--bg3); color: var(--text2); flex-shrink: 0; }
 
 /* การ์ด KPI โครงเดียว (components/KpiTile.jsx) — ชื่อ → ตัวเลข → บรรทัดบริบท · ตัวเลขสีเดียว สีอยู่ที่บรรทัดล่าง */
