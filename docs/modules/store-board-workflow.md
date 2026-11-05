@@ -678,3 +678,16 @@ user: *"ต้องไม่หาย เป็น report transaction ที่
 - ด่าน regressionGuards `short-receipt-not-lost` · กฎ `utils/stockDiscrepancy.js` (เทส)
 - ลงย้อนหลัง 05/11: เคสรับไม่ครบ 2 เคสของ 04/11 (LINE C 50029610 × 50 · LINE A 50024698 × 50) ที่ถูกตัดทิ้ง ⇒ คลังพัก +100 + เคส `source='backfill'`
   · ledger `created_by='system:backfill-0511'` · ย้อน: ลบแถว ledger นั้น + `update stock_discrepancies set status=…` (ห้าม delete เคส — ไม่มีสิทธิ์)
+
+## 🔁 เปิดใบผลิต ⇒ แตก BOM ⇒ เทียบ WIP หน้าไลน์ ⇒ ครบ packing std ⇒ แจ้งสโตร์เอง (05/11 · คำสั่ง user)
+user: *"เมื่อกดเปิด order ระบบจะแตก bom ไปเรียกลูกที่จะใช้งาน และคิดกับ wip ค้างในไลน์ว่าพอมั้ย ถ้าไม่พอจะสะสมจนครบ packing std.
+เมื่อครบจะแจ้งไปหาส่วนสโตร์ … หรือสามารถกดเบิกเองจากช่องด้านขวา ด้วยหลักการเดียวกัน"*
+- ตัวเดียว: `syncLineOrderDemand({ lineName, extra })` (`src/lib/lineDemandSync.js`) — เรียกจาก Daily Report หลังเปิดใบ (ทั้งสแกน/เปิดเป้า)
+  และช่อง "➕ ขอเบิกพาร์ทนี้เลย" (`extra` = ที่ขอเพิ่ม · พาร์ทที่ไลน์ทำเองแตก BOM ก่อน)
+- ลูก = `fn_bom_direct_demand(FG)` (ชุดเดียวกับตอนตัดสต็อก) · ข้ามลูกที่ไลน์นี้ผลิตเอง · packing std = `parts_master.qty_per_pkg`
+- กฎต่อ ไลน์+พาร์ท `planLineRequest()` (`utils/packRound.js` · เทส): `need − max(0, ยอดหน้าไลน์)` ปัดลงเต็มกล่อง ·
+  ไม่ถึงกล่อง = รอ (ใบผลิตถัดไปทำให้ short โตเอง = "สะสม" แบบไม่ต้องมีตัวนับ) · ใบ pending มีอยู่ = เพิ่มยอด (CAS) ห้ามลด · ไม่มี packing std = ไม่ออก + บอก
+- ใบที่ออก `source='line_order'` ป้าย "🧾 ไลน์เปิดใบผลิต (แตก BOM)" (`replenishGate.js`) · ไซเรนสโตร์ดังเหมือนใบไลน์
+- migration Main `20261105b_wip_replenish_line_order_main.sql` (apply แล้ว): source ใหม่ + unique "1 ใบรอหยิบ/ไลน์+พาร์ท" นับเฉพาะ suggested/hold/pending
+  (เดิมนับ preparing/delivered = บล็อกความต้องการรอบใหม่ทั้งที่ยอดย้ายเข้าไลน์แล้ว)
+- จำลองกับใบผลิตที่เปิดอยู่จริง 05/11: จะออกใบ ~26 รายการ · รอครบกล่อง ~50 · ไม่มี packing std 8 (30054973/4 · 30055923 · 50026850 · 50027079 · 50026143 · 50027723 · 50026144)

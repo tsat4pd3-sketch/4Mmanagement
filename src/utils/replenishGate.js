@@ -19,7 +19,7 @@
    ไฟล์นี้ pure — ห้าม import supabase/react                                                    */
 
 /* ═══ 🏷️ "ใบนี้มาจากไหน" — `wip_replenish_requests.source` (2026-10-21) ════════════════════
-   3 ค่า (CHECK ฝั่ง DB · migration `20261021_wip_replenish_source_line_adhoc_main.sql`):
+   4 ค่า (CHECK ฝั่ง DB · migration `20261021_…` + `20261105b_wip_replenish_line_order_main.sql` เพิ่ม `line_order`):
      `line`           = ระบบเสนอเพราะยอดถึง min (มี `min_at_req`)
      `line_adhoc`     = หัวหน้าไลน์ **ขอเบิกเอง** ไม่ต้องมี min ไม่ต้องรอถึง min
      `store_forecast` = สโตร์สร้างใบจากแผนผลิต
@@ -31,6 +31,8 @@ export const REQ_SOURCES = {
   line:           { label: '📦 ไลน์ขอเบิก (ถึง min)', short: 'ถึง min',  side: 'line',  who: 'คนเรียก' },
   line_adhoc:     { label: '📦 ไลน์ขอเบิกเอง',        short: 'ขอเอง',    side: 'line',  who: 'คนขอ' },
   store_forecast: { label: '🏬 สโตร์ส่งตามแผนผลิต',    short: 'ตามแผน',   side: 'store', who: 'ผู้เปิดใบ' },
+  // 05/11 — ระบบออกเองจากใบผลิตที่ไลน์เปิด (แตก BOM ลูกตรง เทียบ WIP หน้าไลน์ ครบ packing std) · lib/lineDemandSync.js
+  line_order:     { label: '🧾 ไลน์เปิดใบผลิต (แตก BOM)', short: 'เปิดใบผลิต', side: 'line', who: 'ผู้เปิดใบผลิต' },
 };
 /** meta ของที่มาใบ — ไม่รู้จัก/ว่าง = ถือเป็นใบจากไลน์ (ห้ามคืน null) */
 export const reqSourceMeta = (s) => REQ_SOURCES[String(s ?? '').trim()] || REQ_SOURCES.line;
