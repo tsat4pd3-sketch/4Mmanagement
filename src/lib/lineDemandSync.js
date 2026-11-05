@@ -20,6 +20,56 @@ import { can } from '../utils/permissions';
 const key = (s) => String(s ?? '').trim();
 
 /**
+ * ความต้องการลูกตรงจาก "ใบผลิตที่เปิดอยู่" ของไลน์ (ยังไม่หักของหน้าไลน์ · ไม่รวมลูกที่ไลน์ผลิตเอง)
+ * ใช้ร่วม: ตัวออกใบ (ข้างล่าง) + จอสโตร์เช็คว่าใบเบิกยังมีใบผลิตรองรับไหม (`openDemandMatsByLine`)
+ * @returns {Promise<{ error?: string, need: Map<string,{need:number,part_name:string|null}>, made: Set<string> }>}
+ */
+export async function loadOpenOrderDemand(lineName, products = null) {
+  const line = key(lineName);
+  const out = { need: new Map(), made: new Set() };
+  if (!line) return { ...out, error: 'ไม่รู้ไลน์' };
+  const [ordRes, prods] = await Promise.all([
+    fetchAllPages(() => supabaseDR.from('prod_orders')
+      .select('id, mat_no, qty, production_sessions!inner(line_name, status)')
+      .eq('status', 'open').eq('production_sessions.line_name', line).in('production_sessions.status', SESSION_STATUSES_LIVE)),
+    products ? Promise.resolve(products) : loadProductsMaster().catch(() => null),
+  ]);
+  if (ordRes.error || ordRes.truncated) return { ...out, error: 'อ่านใบผลิตที่เปิดอยู่ไม่ได้' };
+  if (!prods) return { ...out, error: 'อ่านทะเบียนสินค้าไม่ได้' };
+  const made = new Set(madeHereMats(line, prods));
+  const qtyByFg = new Map();
+  for (const o of ordRes.rows || []) {
+    const m = key(o.mat_no); const q = Number(o.qty) || 0;
+    if (m && q > 0) qtyByFg.set(m, (qtyByFg.get(m) || 0) + q);
+  }
+  const fgs = [...qtyByFg.keys()];
+  const bomRes = await Promise.all(fgs.map(fg => supabaseDR.rpc('fn_bom_direct_demand', { p_fg_mat: fg })));
+  const bomErr = bomRes.find(r => r.error);
+  if (bomErr) return { ...out, made, error: `แตก BOM ไม่ได้ (${bomErr.error.message})` };
+  const need = new Map();
+  fgs.forEach((fg, i) => (bomRes[i].data || []).forEach(k => {
+    const m = key(k.mat_no); const q = qtyByFg.get(fg) * (Number(k.qty_per_unit) || 0);
+    if (!m || !(q > 0) || made.has(m)) return;
+    const cur = need.get(m) || { need: 0, part_name: k.part_name || null };
+    cur.need += q; cur.part_name = cur.part_name || k.part_name || null;
+    need.set(m, cur);
+  }));
+  return { need, made };
+}
+
+/**
+ * 🧾 จอสโตร์: ไลน์ไหน "ยังมีใบผลิตเปิดอยู่ที่ใช้พาร์ทนี้" — ใบเบิกจากใบผลิต (`line_order`) ที่ไม่มีใบผลิตรองรับแล้ว
+ * = ใบผลิตต้นทางปิด/ยกเลิก ⇒ เตือนบนการ์ด ให้คนตัดสินเอง (ระบบไม่ยกเลิก/ลดยอดเอง · คำสั่ง user 05/11)
+ * @returns {Promise<Map<string, Set<string>|null>>} null = อ่านไม่ได้ (ห้ามเตือน — ไม่รู้ ≠ ไม่มี)
+ */
+export async function openDemandMatsByLine(lineNames = []) {
+  const lines = [...new Set(lineNames.map(key).filter(Boolean))];
+  const products = await loadProductsMaster().catch(() => null);
+  const res = await Promise.all(lines.map(l => loadOpenOrderDemand(l, products)));
+  return new Map(lines.map((l, i) => [l, res[i].error ? null : new Set(res[i].need.keys())]));
+}
+
+/**
  * @param {{ lineName: string, role: string, extra?: {mat_no, part_name?, need}[], dryRun?: boolean }} a
  *   extra = ที่ไลน์กดขอเพิ่มเอง (แตก BOM แล้ว) — บวกเข้ากับความต้องการจากใบผลิตที่เปิดอยู่
  *   🧲 extra ที่เป็นเหล็ก coil (kg) ต้องมาจากการแตก BOM (`viaBom: true`) — ขอ coil ตรงๆ = ไม่เขียน + คืน error
@@ -34,23 +84,10 @@ export async function syncLineOrderDemand({ lineName, role, extra = [], dryRun =
     || can('heijunka', 'operate', role) || can('line_levels', 'manage', role);
   if (!dryRun && !canWrite) return { ...empty, error: 'บัญชีนี้ไม่มีสิทธิ์แจ้งสโตร์ (wip_request:decide / wip_request:receive) — ให้หัวหน้าไลน์กด หรือขอสิทธิ์ที่ /permissions' };
 
-  // 1) ใบผลิตที่เปิดอยู่ของไลน์นี้ (กะที่ยังเปิด)
-  const [ordRes, products] = await Promise.all([
-    fetchAllPages(() => supabaseDR.from('prod_orders')
-      .select('id, mat_no, qty, production_sessions!inner(line_name, status)')
-      .eq('status', 'open').eq('production_sessions.line_name', line).in('production_sessions.status', SESSION_STATUSES_LIVE)),
-    loadProductsMaster().catch(() => null),
-  ]);
-  if (ordRes.error || ordRes.truncated) return { ...empty, error: 'อ่านใบผลิตที่เปิดอยู่ไม่ได้' };
-  if (!products) return { ...empty, error: 'อ่านทะเบียนสินค้าไม่ได้' };
-  const made = new Set(madeHereMats(line, products));
-
-  // 2) แตก BOM ลูกตรงของแต่ละ FG (ชุดเดียวกับตอนตัดสต็อก)
-  const qtyByFg = new Map();
-  for (const o of ordRes.rows || []) {
-    const m = key(o.mat_no); const q = Number(o.qty) || 0;
-    if (m && q > 0) qtyByFg.set(m, (qtyByFg.get(m) || 0) + q);
-  }
+  // 1-2) ใบผลิตที่เปิดอยู่ → แตก BOM ลูกตรง (ชุดเดียวกับตอนตัดสต็อก)
+  const od = await loadOpenOrderDemand(line);
+  if (od.error) return { ...empty, error: od.error };
+  const made = od.made;
   const need = new Map();   // mat → { need, part_name, fromOrders, direct }
   const add = (mat, q, name, fromOrders, direct = false) => {
     const m = key(mat); if (!m || !(q > 0) || made.has(m)) return;
@@ -59,11 +96,7 @@ export async function syncLineOrderDemand({ lineName, role, extra = [], dryRun =
     cur.direct = cur.direct || direct;
     need.set(m, cur);
   };
-  const fgs = [...qtyByFg.keys()];
-  const bomRes = await Promise.all(fgs.map(fg => supabaseDR.rpc('fn_bom_direct_demand', { p_fg_mat: fg })));
-  const bomErr = bomRes.find(r => r.error);
-  if (bomErr) return { ...empty, error: `แตก BOM ไม่ได้ (${bomErr.error.message})` };
-  fgs.forEach((fg, i) => (bomRes[i].data || []).forEach(k => add(k.mat_no, qtyByFg.get(fg) * (Number(k.qty_per_unit) || 0), k.part_name, true)));
+  od.need.forEach((v, m) => add(m, v.need, v.part_name, true));
   (extra || []).forEach(x => add(x.mat_no, Number(x.need) || 0, x.part_name, false, !x.viaBom));
   const mats = [...need.keys()];
   if (!mats.length) return { ...empty };

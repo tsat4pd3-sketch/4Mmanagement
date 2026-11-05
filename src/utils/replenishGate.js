@@ -18,6 +18,7 @@
 
    ไฟล์นี้ pure — ห้าม import supabase/react                                                    */
 import { isCoilUom, qtyUnit } from './coilUom.js';
+import { getWorkDate, workDateOfTime } from './workDate.js';
 
 
 /* ═══ 🏷️ "ใบนี้มาจากไหน" — `wip_replenish_requests.source` (2026-10-21) ════════════════════
@@ -271,4 +272,19 @@ export function validatePickPayload(p) {
   if (gate === 'scanned') return norm(p.picked_scan_raw) ? null : 'สแกนพาร์ทก่อนเริ่มเตรียม';
   if (gate === 'override') return norm(p.picked_override_reason) ? null : 'ปลดบล็อกต้องระบุเหตุผล';
   return 'ต้องสแกนพาร์ท หรือให้หัวหน้าปลดบล็อก ก่อนกด "เริ่มเตรียม"';
+}
+
+/* 📭 ส่งถึงไลน์แล้วแต่ไลน์ยังไม่กดรับ (2026-11-05 · คำสั่ง user ข้อ D)
+   · เขียนเวลาที่ค้างบนการ์ดทุกใบที่ `delivered` (ทั้งจอสโตร์และแผงไลน์)
+   · `overdue` = ส่งตั้งแต่วันทำงานก่อนหน้า (ข้ามวันทำงานแล้วยังไม่รับ) — ใช้ขอบ "วันทำงาน" แทนตัวเลขชั่วโมงที่ต้องเดา
+   · ไม่รู้เวลาส่ง = null ห้ามเดา · `now` รับเป็นพารามิเตอร์ (เทสตรึงเวลา) */
+export function unreceivedAge(req, now = new Date()) {
+  if (req?.status !== 'delivered' || !req?.delivered_at) return null;
+  const t = new Date(req.delivered_at).getTime();
+  if (!Number.isFinite(t)) return null;
+  const min = Math.max(0, Math.round((now.getTime() - t) / 60000));
+  const dWork = workDateOfTime(req.delivered_at);
+  const overdue = !!dWork && dWork < getWorkDate(now);
+  const span = min >= 60 ? `${Math.floor(min / 60)} ชม. ${min % 60} นาที` : `${min} นาที`;
+  return { min, overdue, text: `ส่งถึงไลน์แล้ว ${span} — ไลน์ยังไม่กดรับ${overdue ? ' (ข้ามวันทำงานแล้ว)' : ''}` };
 }

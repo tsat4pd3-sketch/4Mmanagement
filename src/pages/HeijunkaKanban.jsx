@@ -27,7 +27,8 @@ import StockReceiptQueue from '../components/StockReceiptQueue';   // 📥 ข�
 import PlatingBoard from '../components/PlatingBoard';
 import DeliverScanModal from '../components/DeliverScanModal';
 import PickScanModal from '../components/PickScanModal';
-import { DELIVER_GATES, PICK_GATES, reqSourceMeta } from '../utils/replenishGate';
+import { DELIVER_GATES, PICK_GATES, reqSourceMeta, unreceivedAge } from '../utils/replenishGate';
+import { openDemandMatsByLine } from '../lib/lineDemandSync';
 import { slocCodeOfLine } from '../utils/storageLoc';
 import { buildReceiptRows, RECEIPT_LINE } from '../utils/stockReceipt';
 import { rawSourceLocOf, splitRawConsume, inflowDestOf } from '../utils/partRefStock';   // 📤 ตัดวัตถุดิบล็อตจากคลังที่ของอยู่จริง (2026-10-12)   // 📥 ของซื้อเข้าคลัง ไม่ใช่เข้าไลน์ (2026-10-01)   // 🏬 ชั้นบัญชี SAP — tag ใบ/ledger ตอนเขียน (2026-09-08)
@@ -1204,7 +1205,7 @@ const RAW_ZONES = (withDone) => [
    `showImg` = "การ์ดใบนี้เป็นของชิ้นงาน" (มี mat) — การ์ดรอบส่ง/ภาชนะไม่ใช่ จึงไม่มีช่องรูป
    แยกจาก `img` เพราะ "ไม่มีรูป" (ต้องขึ้นกล่องให้ไปเพิ่มรูป) กับ "ไม่ใช่ชิ้นงาน" คนละเรื่องกัน */
 function QueueCard({ code, name, qty, unit, qtyLabel = 'จำนวน', destination, destLabel = 'ปลายทาง', statusLabel, statusColor, statusBg, statusBorder,
-                     actionLabel, onAction, busy, meta, rows, img, showImg }) {
+                     actionLabel, onAction, busy, meta, rows, img, showImg, footerExtra = null }) {
   return (
     <PartCard
       code={code} name={name} img={img} showImg={showImg} matTone={matColor(code)}
@@ -1212,13 +1213,18 @@ function QueueCard({ code, name, qty, unit, qtyLabel = 'จำนวน', destin
       metric={{ label: qtyLabel, value: qty, unit }}
       aside={destination ? { label: destLabel, value: destination } : null}
       rows={rows} note={meta}
-      footer={actionLabel
+      footer={(actionLabel || footerExtra)
         ? (
           /* 🔴 ปุ่มลงมือ = `storeBtn` เท่านั้น (สูง 44px · พื้น accent ทึบ · UI §6.24)
              เดิมพื้น alpha .10 บนพื้นเข้ม = "ดูบาง หายาก" ตาม feedback หน้างาน 25/09 */
-          <button onClick={onAction} disabled={busy} style={storeBtn('primary', { width: '100%', opacity: busy ? 0.55 : 1 })}>
-            {busy ? 'กำลังบันทึก…' : actionLabel}
-          </button>
+          <>
+            {actionLabel && (
+              <button onClick={onAction} disabled={busy} style={storeBtn('primary', { width: '100%', opacity: busy ? 0.55 : 1 })}>
+                {busy ? 'กำลังบันทึก…' : actionLabel}
+              </button>
+            )}
+            {footerExtra}
+          </>
         ) : null} />
   );
 }
@@ -1250,11 +1256,29 @@ const matchQ = (q, ...fields) => {
 };
 
 function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false, focus = null, direction = null, areaOf = () => null, rounds, deliveries, view, onConfirm, confirming, onReceive, imgOf,
-  lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, purchaseRequests, purchaseErr, busy, onAdvanceLot, onIssueRaw, onAdvanceWip, onAdvancePurchase, setBulkBuy, fmt, workDate, nowMs, canOperate, lotMats = null, inflowRules = null }) {
+  lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, purchaseRequests, purchaseErr, busy, onAdvanceLot, onIssueRaw, onAdvanceWip, onCancelWip, onAdvancePurchase, setBulkBuy, fmt, workDate, nowMs, canOperate, lotMats = null, inflowRules = null }) {
 
   const { roundAlloc } = view;
   const [buyFilter, setBuyFilter] = useState(() => urlPick('buy', ['3', '5'], ''));   // '' | '3' | '5' · ?buy= (จอวนหน้า)
   const [q, setQ] = useState(() => focus?.q || '');   // ค้นหา: รหัส / ชื่อ / ไลน์ปลายทาง
+  /* 🧾 05/11 (คำสั่ง user ข้อ B) — ใบเบิกจากใบผลิต (`line_order`) ที่ยังรอหยิบ แต่ไลน์ไม่มีใบผลิตเปิดอยู่ที่ใช้พาร์ทนั้นแล้ว
+     (ใบผลิตต้นทางปิด/ยกเลิก) ⇒ เตือนบนการ์ด + ให้คนกดยกเลิกเอง · **ระบบไม่ยกเลิก/ลดยอดเอง**
+     คิดใหม่เฉพาะเมื่อชุดใบรอหยิบเปลี่ยน (คีย์ string — กฎ DB ข้อ 9) · อ่านไม่ได้ = ไม่เตือน (ไม่รู้ ≠ ไม่มี) */
+  const orderReqKey = wipRequests.filter(w => w.source === 'line_order' && w.status === 'pending')
+    .map(w => `${w.id}|${w.line_name}|${w.mat_no}`).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).join(',');
+  const [demandByLine, setDemandByLine] = useState(() => new Map());
+  useEffect(() => {
+    if (!orderReqKey) { setDemandByLine(new Map()); return undefined; }
+    let alive = true;
+    const lines = [...new Set(orderReqKey.split(',').map(x => x.split('|')[1]))];
+    openDemandMatsByLine(lines).then(m => { if (alive) setDemandByLine(m); }).catch(() => { if (alive) setDemandByLine(new Map()); });
+    return () => { alive = false; };
+  }, [orderReqKey]);
+  const orphanOrderReq = (w) => {
+    if (w.source !== 'line_order' || w.status !== 'pending') return false;
+    const set = demandByLine.get(String(w.line_name || '').trim());
+    return !!set && !set.has(String(w.mat_no || '').trim());
+  };
   useEffect(() => { if (focus?.at) setQ(focus.q || ''); }, [focus?.at, focus?.q]);   // 🔍 กดจากแถบไลน์เรียกของ
   /* 🗺️ 05/11 (คำสั่ง user) — กรองพื้นที่: ขาออก = ปลายทาง (พื้นที่ผลิต) · ขาเข้า = ต้นทาง (พื้นที่ผลิต)
      ฝั่งสโตร์มีคลังเดียวตอนนี้ (STORE → พื้นที่ของมัน) โชว์เป็นป้ายตายตัว · พื้นที่ = รหัส SAP ที่ผูกไลน์ไว้ (slocCodeOfLine) · ไม่ผูก = '—' */
@@ -1361,6 +1385,9 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
                 qty={fmt(w.request_qty)} unit={isCoilUom(w.uom) ? 'kg · จ่ายเป็นม้วน' : ''} qtyLabel={isCoilUom(w.uom) ? '🧲 coil ต้องใช้' : 'จำนวนที่ต้องส่ง'} destination={w.line_name}
                 statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
                 actionLabel={canOperate ? nextLabel : null} busy={busy === w.id} onAction={() => onAdvanceWip(w)}
+                footerExtra={canOperate && onCancelWip && orphanOrderReq(w) ? (
+                  <button onClick={() => onCancelWip(w)} disabled={busy === w.id} style={storeBtn('secondary', { width: '100%', marginTop: 6 })}>✕ ยกเลิกใบเบิกนี้ (ใบผลิตปิดแล้ว)</button>
+                ) : null}
                 rows={[{ k: 'ที่มา', v: src.label },
                      { k: w.source === 'store_forecast' ? 'เปิดใบ' : 'ไลน์แจ้ง',
                        v: at ? `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')} น.` : null },
@@ -1369,6 +1396,9 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
                      { k: src.who, v: w.requested_by || null },
                      { k: 'หยิบแล้ว', v: pickMeta || null },
                      { k: 'ถึงไลน์', v: gateMeta || null },
+                     /* 📭 05/11 ข้อ D — ส่งแล้วไลน์ยังไม่กดรับ (unreceivedAge · replenishGate.js) */
+                     { k: '📭 รอไลน์รับ', v: unreceivedAge(w)?.text || null },
+                     { k: '⚠️ ใบผลิต', v: orphanOrderReq(w) ? 'ไลน์ไม่มีใบผลิตเปิดอยู่ที่ใช้พาร์ทนี้แล้ว (ปิด/ยกเลิก) — ถามไลน์ก่อนเตรียม ถ้าไม่ใช้แล้วกดยกเลิกใบ' : null },
                      /* 🔴 คิวนี้ = "ของที่สโตร์ตัดจ่ายเข้าไลน์" ⇒ ต้องเป็น 2xxx/3xxx/5xxx
                         เลข 1xxx คือ FG ที่ไลน์ "ผลิตออกมา" — สโตร์ไม่มีเลขนี้ให้จ่าย หาในคลังก็ไม่เจอ
                         (user แจ้ง 02/10: "สโตร์จะไม่รู้เลขนี้ จะมองหาเลขที่ต้องตัดจ่ายคือพวก 5xxx 3xxx 2xxx")
@@ -2337,6 +2367,24 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
   };
 
   // gate = { payload, event } จาก DeliverScanModal / PickScanModal
+  /* ✕ ยกเลิกใบเบิกที่ยังรอหยิบ (05/11 ข้อ B) — เหตุผลบังคับ · CAS เฉพาะใบ pending (หยิบแล้ว = ตัดสต็อกแล้ว ห้ามยกเลิกทางนี้) */
+  const cancelWip = async (w) => {
+    if (!opsGuard()) return;
+    if (!okToOperate(w?.line_name, 'คิวเติมของไลน์นี้')) return;
+    const reason = window.prompt(`ยกเลิกใบเบิก ${w.mat_no} × ${fmt(w.request_qty)} → ${w.line_name}\n\nเหตุผล (บังคับ):`, 'ใบผลิตต้นทางปิด/ยกเลิกแล้ว');
+    if (reason === null) return;
+    if (!reason.trim()) { toast.error('ต้องใส่เหตุผลการยกเลิก'); return; }
+    setPullBusy(w.id);
+    const res = await supabase.from('wip_replenish_requests')
+      .update({ status: 'cancelled', cancel_reason: reason.trim(), cancelled_at: new Date().toISOString(), cancelled_by_name: fullName || null })
+      .eq('id', w.id).eq('status', 'pending').select('id');
+    setPullBusy(null);
+    if (res.error) { toast.error(`ยกเลิกไม่สำเร็จ: ${res.error.message}`); return; }
+    if (!res.data?.length) { toast.info('ใบนี้ถูกหยิบ/เปลี่ยนสถานะจากเครื่องอื่นแล้ว — โหลดคิวใหม่'); await loadPull(); return; }
+    toast.success(`ยกเลิกใบเบิก ${w.mat_no} แล้ว`);
+    await loadPull();
+  };
+
   const advanceWip = async (w, gate) => {
     if (!opsGuard()) return;   // 🔴 /heijunka = monitor · เขียนได้เฉพาะโหมด ops (/line-stock)
     const next = { pending: 'preparing', preparing: 'delivered' }[w.status];
@@ -3097,7 +3145,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
             rounds={rounds} deliveries={deliveries} view={view}
             onConfirm={confirmRound} confirming={confirming} onReceive={openReceive}
             lotRequests={lotRequests} rawRequests={rawRequests} rackRequests={rackRequests} pkgRequests={pkgRequests} wipRequests={wipRequests} purchaseRequests={purchaseRequests} purchaseErr={purchaseErr} setBulkBuy={setBulkBuy}
-            busy={pullBusy} onAdvanceLot={advanceLot} onIssueRaw={issueRaw} onAdvanceWip={advanceWip} onAdvancePurchase={advancePurchase}
+            busy={pullBusy} onAdvanceLot={advanceLot} onIssueRaw={issueRaw} onAdvanceWip={advanceWip} onCancelWip={cancelWip} onAdvancePurchase={advancePurchase}
             lotMats={lotMats}
             inflowRules={inflowRules}
             fmt={fmt} workDate={workDate} nowMs={nowMs} canOperate={canOperate} imgOf={imgOf}
