@@ -109,3 +109,22 @@ export async function resolveEmployeeSigner(client, code) {
     state: 'unknown', note: SIGNER_NOTE.unknown, error: res.error };
   return signerFromRows(code, res.rows, { sigColumnMissing: res.sigColumnMissing });
 }
+
+/* ══ ผู้ตรวจบนใบ export: "รหัสที่บันทึกไว้" ชนะ "บัญชีที่ login" (05/11 · C1 ใบตรวจ AM/QA) ══
+   เครื่องหน้างานใช้บัญชีกลาง ⇒ ถ้าใบมีรหัสผู้ตรวจ = คนนั้นคือผู้ตรวจจริง
+   🔴 มีรหัสแต่หาลายเซ็นไม่ได้ (ไม่พบ/ซ้ำ/ไม่มีลายเซ็น/อ่านไม่ได้) = **เว้นช่องให้เซ็นมือ + note**
+      ห้ามถอยไปใช้ลายเซ็นของบัญชีที่ login (= ลายเซ็นคนอื่นบนใบ ผิดตัวคน)
+   · ไม่มีรหัส = พฤติกรรมเดิม (บัญชีที่ login → `signatureOfPerson`)
+   @param {{ code?: string|null, signer?: object|null, accountName?: string|null, accountSig?: string|null }} p
+   @returns {{ name: string|null, signatureUrl: string|null, source: 'code'|'account', note: string }} */
+export function inspectorForExport({ code = null, signer = null, accountName = null, accountSig = null } = {}) {
+  const q = normBadgeCode(code);
+  if (!q) return { name: accountName || null, signatureUrl: accountSig || null, source: 'account', note: '' };
+  const s = signer || { state: 'unknown', note: SIGNER_NOTE.unknown };
+  return {
+    name: s.name || `รหัส ${q}`,
+    signatureUrl: s.state === 'ok' ? (s.signatureUrl || null) : null,
+    source: 'code',
+    note: s.state === 'ok' ? '' : (s.note || SIGNER_NOTE.unknown),
+  };
+}

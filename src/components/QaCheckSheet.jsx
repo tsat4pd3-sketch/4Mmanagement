@@ -30,6 +30,7 @@ import QaFmeQueue from './QaFmeQueue';
 import { QA_STAGES, FME_SHEET_STAGE } from '../utils/qaStages';
 import { notifyEvent } from '../utils/notifyEvent';
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
+import InspectorCodeField from './InspectorCodeField';   // ✍️ รหัสผู้ตรวจจริง (C1 · 05/11)
 import { specLabel, judgeVariable } from '../utils/qaSpec';
 import { evalSequence } from '../utils/qaSequential';
 import { can } from '../utils/permissions';
@@ -105,6 +106,10 @@ export default function QaCheckSheet({ canRecord }) {
   const fmeKeyRef = useRef(null);                 // คีย์ (พาร์ท|วัน|กะ) ที่คิวตั้งไว้
 
   const [sheet, setSheet] = useState(null);          // แถว qa_inspection_sheets ของคีย์ปัจจุบัน
+  /* ✍️ รหัสผู้ตรวจจริง (C1 · 05/11) — ใบถูกสร้างตอนบันทึกครั้งแรก ⇒ ถือรหัสไว้ก่อนแล้วใส่ตอน insert
+     · คงค่าข้ามใบในแท็บนี้ (QA คนเดียวตรวจหลายรอบ/หลายพาร์ทติดกัน) */
+  const [pendingCode, setPendingCodeRaw] = useState(() => { try { return sessionStorage.getItem('qa:inspector_code') || ''; } catch { return ''; } });
+  const setPendingCode = (v) => { setPendingCodeRaw(v); try { v ? sessionStorage.setItem('qa:inspector_code', v) : sessionStorage.removeItem('qa:inspector_code'); } catch { /* ไม่มี storage = จำไม่ได้ ไม่พัง */ } };
   const [results, setResults] = useState([]);        // ผลของใบนั้น
   const [pieces, setPieces] = useState([]);          // ผลต่อชิ้น (ตรวจทีละชิ้น · 2026-09-07)
   const [actions, setActions] = useState([]);        // action ที่ปิด alarm แต่ละรอบ
@@ -307,6 +312,7 @@ export default function QaCheckSheet({ canRecord }) {
       line_name: part.line_name || null,
       work_date: workDate, shift, round_no: roundNo, stage: sheetStage,
       inspector_name: fullName || null, created_by: fullName || null,
+      inspector_code: pendingCode.trim() || null,
     }).select().single();
     if (error) {
       // ใบถูกสร้างพร้อมกันจากอีกเครื่อง → ดึงของจริงมาใช้ต่อ (unique key กันซ้ำให้แล้ว)
@@ -689,9 +695,17 @@ export default function QaCheckSheet({ canRecord }) {
               onChange={e => setRoundNo(Math.min(20, Math.max(1, parseInt(e.target.value, 10) || 1)))} />
           </div>
           <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-            ผู้ตรวจ: <b style={{ color: 'var(--text2)' }}>{sheet?.inspector_name || fullName || '—'}</b>
+            ผู้ตรวจ (บัญชี): <b style={{ color: 'var(--text2)' }}>{sheet?.inspector_name || fullName || '—'}</b>
             {part?.line_name && <div>ไลน์: <b style={{ color: 'var(--text2)' }}>{part.line_name}</b></div>}
           </div>
+          <InspectorCodeField disabled={!canRecord} value={matchesKey(sheet) ? (sheet.inspector_code || '') : pendingCode}
+            onChange={async (v) => {
+              setPendingCode(v);
+              const sh = matchesKey(sheet) ? sheet : null;
+              if (!sh) return;                                   // ยังไม่มีใบ = ใส่ตอนสร้างใบ
+              if (checkWriteRows(await supabase.from('qa_inspection_sheets').update({ inspector_code: v || null }).eq('id', sh.id).select('id'), 'รหัสผู้ตรวจ'))
+                setSheet(cur => (cur && cur.id === sh.id ? { ...cur, inspector_code: v || null } : cur));
+            }} />
         </div>
 
         {/* สรุปสถานะใบ */}

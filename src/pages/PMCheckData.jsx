@@ -43,7 +43,8 @@ import { filterPlanRows } from '../utils/pmPlanFilter'
 import useIsMobile from '../utils/useIsMobile'
 import { useDraftAutosave, loadDraft, clearDraft } from '../utils/formDraft'   // 📝 ร่างในเครื่อง (มือถือ · 22/10)
 import DraftRestoreBar from '../components/DraftRestoreBar'
-import { loadEmployeeSigners, signatureOfPerson } from '../utils/employeeSignature'   // ✍️ ลายเซ็นในฐานพนักงาน (C1 · 03/11)
+import { loadEmployeeSigners, signatureOfPerson, resolveEmployeeSigner, inspectorForExport } from '../utils/employeeSignature'
+import InspectorCodeField from '../components/InspectorCodeField'   // ✍️ รหัสผู้ตรวจจริง (C1 · 05/11)   // ✍️ ลายเซ็นในฐานพนักงาน (C1 · 03/11)
 
 /* 🔩 จุดชิมของ fixture บนใบตรวจ PM (2026-09-08 · คำสั่ง user "shim record กับการตรวจใช้กลไกเดียวกัน")
    ข้อมูลแยกตาราง (fixture_points/fixture_shim_events) แต่ "รูป + หมุด" ชุดเดียวกับจุดตรวจ PM:
@@ -627,7 +628,17 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
       sigCache[uid] = url ? await resolveSignatureDataUrl(url) : null
       return sigCache[uid]
     }
-    const inspector = { email: profMap[insp.inspector_id]?.full_name ?? 'Inspector', signature_data: await getSig(insp.inspector_id) }
+    /* ✍️ C1 (05/11): ใบที่บันทึกรหัสผู้ตรวจไว้ = คนตามรหัสเซ็น (เครื่องหน้างานใช้บัญชีกลาง)
+       หาลายเซ็นไม่ได้ = เว้นช่อง + บอกเหตุผล · ห้ามถอยไปใช้ลายเซ็นบัญชีที่ login (inspectorForExport) */
+    let inspector
+    if (insp.inspector_code) {
+      const signer = await resolveEmployeeSigner(supabase, insp.inspector_code)
+      const who = inspectorForExport({ code: insp.inspector_code, signer })
+      if (who.note) toast.info(`ผู้ตรวจรหัส ${insp.inspector_code}: ${who.note}`)
+      inspector = { email: who.name ?? 'Inspector', signature_data: who.signatureUrl ? await resolveSignatureDataUrl(who.signatureUrl) : null }
+    } else {
+      inspector = { email: profMap[insp.inspector_id]?.full_name ?? 'Inspector', signature_data: await getSig(insp.inspector_id) }
+    }
     const approver = insp.approved_by ? { email: profMap[insp.approved_by]?.full_name ?? 'Approver', signature_data: await getSig(insp.approved_by) } : null
     // ชื่อใต้ลายเซ็น = ชื่อจริง (profiles.full_name) ไม่ใช่อีเมล — เดิมช่อง APPROVED ขึ้น "tsat4pd3" (20/10)
     const exporter = { email: profMap[userId]?.full_name ?? currentUserEmail ?? 'Exporter', signature_data: await getSig(userId) }
@@ -872,6 +883,9 @@ export default function PMCheckData() {
   /* 🧮 จุดคำนวณ (A − B) เติมค่า ①②③ จากจุด A/B ให้เอง — ทุกที่ที่อ่าน `results` (ตัดสิน/นับครบ/บันทึก) เห็นค่าชุดเดียวกัน */
   const results = useMemo(() => pmCalcResults(checkpoints, rawResults), [checkpoints, rawResults])
   const [notes, setNotes] = useState('')
+  /* ✍️ รหัสผู้ตรวจจริง — คงค่าข้ามเครื่องในแท็บนี้ (คนเดียวไล่ตรวจหลายเครื่องติดกัน) · ล้างเมื่อปิดแท็บ */
+  const [inspectorCode, setInspectorCodeRaw] = useState(() => { try { return sessionStorage.getItem('pm:inspector_code') || '' } catch { return '' } })
+  const setInspectorCode = (v) => { setInspectorCodeRaw(v); try { v ? sessionStorage.setItem('pm:inspector_code', v) : sessionStorage.removeItem('pm:inspector_code') } catch { /* ไม่มี storage = จำไม่ได้ ไม่พัง */ } }
   const [saving, setSaving] = useState(false)
   /* 📝 ร่างในเครื่อง (มือถือ · 22/10 · audit handheld ข้อ 4) — ผลตรวจบันทึกทีเดียวตอนท้าย และ "เปลี่ยน/สแกนเครื่องอื่น"
      ล้างทุกช่องที่กรอกทันที ⇒ เก็บร่างต่อ เครื่อง|แผนก|คนกรอก แล้วถามกู้คืนเมื่อกลับมาเครื่องเดิม (utils/formDraft.js) */
@@ -1228,6 +1242,7 @@ export default function PMCheckData() {
       const overall = computeOverall()
       const { data: insp, error: e1 } = await supabaseDR.from('inspections').insert({
         jig_id: selectedJig.id, checklist_id: checklistId, inspector_id: userId, status: overall, notes: notes.trim() || null,
+        inspector_code: inspectorCode.trim() || null,
       }).select().single()
       if (e1) throw e1
 
@@ -1831,6 +1846,7 @@ export default function PMCheckData() {
                           </div>
                         )
                       })()}
+                      <InspectorCodeField value={inspectorCode} onChange={setInspectorCode} style={{ marginTop: 8 }} />
                       <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="หมายเหตุ (ถ้ามี)..." style={{ marginTop: 8 }} />
                       {/* 🔴 ปุ่มบันทึก "สีต้องตรงกับความจริง" (06/10 · คอมเมนต์ทีม MTN ข้อ 3)
                           *"ถ้ากรอกรายละเอียดไม่ครบทุกจุด ให้ปุ่มบันทึกขึ้นเป็นสีแดงหรือสีเหลืองไว้ก่อนได้มั้ย
