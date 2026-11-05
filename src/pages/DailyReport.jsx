@@ -3523,19 +3523,64 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               const barClr = pct >= 100 ? 'var(--green)' : pct >= 60 ? 'var(--amber)' : 'var(--blue)';
 
               const unassignedDT = dtLogs.filter(d => !d.mat_no).reduce((s, d) => s + (d.duration_min || 0), 0);
+              /* 🔴 default = **ยุบ** (05/11 · คำสั่ง user) — ภาพรวมต้องมาก่อน รายละเอียดกดดูเอา
+                 (ส่ง autoCollapsed=true เข้าทั้ง `liveCollapsed`/`toggleLiveCollapse` ให้ตรงกัน
+                  ไม่งั้นคลิกแรกจะ "ปิดของที่ปิดอยู่แล้ว" = กดแล้วไม่มีอะไรเกิดขึ้น) */
+              const matOpen = !liveCollapsed('mat_breakdown', true);
 
               return (
                 <>
-                  {productRows.length > 0 && (() => {
-                    const matOpen = !liveCollapsed('mat_breakdown');
-                    return (
-                    <div style={{ marginBottom: 16 }}>
-                      <div onClick={() => toggleLiveCollapse('mat_breakdown')}
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: matOpen ? 8 : 0, cursor: 'pointer', userSelect: 'none' }}>
-                        <span style={{ fontSize: 11, color: 'var(--muted)', transform: matOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
-                        🔩 แยกตามชิ้นงาน ({productRows.length} MAT.NO)
+                  {/* ภาพรวมทั้งกะ (รวมทุกชิ้นงาน) */}
+                  <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>📊 ภาพรวมทั้งกะ
+                    {pt.hasPair && <span style={{ textTransform: 'none', fontWeight: 500, color: 'var(--muted)', marginLeft: 6 }}>· งานคู่ RH/LH นับเป็น 1 คู่ (1 ปั๊ม) ไม่บวกชิ้นซ้ำ</span>}
+                  </div>
+                  {/* 📊 การ์ดโครงเดียว (KpiTile · UI §6.35) — เดิม 7 ใบ 5 สี ⇒ 5 ใบ ตัวเลขสีเดียว ข้อมูลเดิมครบ
+                      (เป้ารวม → บรรทัดใต้ "ผลิตได้" · เปิด/ปิดแล้ว → "ใบผลิต" · นอกแผน → บรรทัดใต้ "Downtime") */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10, marginBottom: 16 }}>
+                    <KpiTile label="ผลิตได้" value={totalConfirmed} unit="ชิ้น"
+                      note={totalTarget > 0 ? `${pct}% ของเป้า ${totalTarget.toLocaleString()}` : 'ยังไม่มีเป้า (ไม่มีใบผลิต)'}
+                      tone={totalTarget > 0 ? (pct >= 100 ? 'ok' : pct >= 60 ? 'warn' : 'info') : undefined} />
+                    <KpiTile label="ใบผลิต" value={prodOrders.filter(o => o.status === 'confirmed').length} unit={`/ ${prodOrders.length} ใบ`}
+                      note={`ปิดแล้ว ${prodOrders.filter(o => o.status === 'confirmed').length} · เปิด ${prodOrders.filter(o => o.status === 'open').length}`} />
+                    <KpiTile label="Input ต้องเบิก" value={totalInputNeeded} unit="ชิ้น"
+                      note={totalNg > 0 ? `รวม NG ${totalNg.toLocaleString()} ชิ้น` : 'ไม่มี NG'} tone={totalNg > 0 ? 'warn' : undefined} />
+                    <KpiTile label="Downtime" value={fmtMin(totalDT)}
+                      note={unplannedDT > 0 ? `นอกแผน ${fmtMin(unplannedDT)}` : 'ไม่มีหยุดนอกแผน'} tone={unplannedDT > 0 ? 'bad' : undefined} />
+                    {/* Overall progress bar */}
+                    {prodOrders.length > 0 && (
+                      /* 🔽 แถบนี้ = "หัวข้อ" ของรายละเอียดรายชิ้นงาน (05/11 · คำสั่ง user)
+                         เดิมกาง "แยกตามชิ้นงาน" ไว้เหนือภาพรวม ⇒ ไลน์ที่มี 10 MAT.NO รกจนหาภาพรวมไม่เจอ
+                         (ไลน์ที่มี MAT เดียวยิ่งซ้ำ — แถบเดียวกันโผล่ 2 ที่) ⇒ ยุบมาไว้ใต้ภาพรวม กดดูเอา
+                         🔴 ยุบแล้ว **ต้องเขียนจำนวนบนหัวข้อเสมอ** (กี่ MAT.NO) ห้ามซ่อนเงียบ
+                         🔴 ผู้ใช้กดกางเอง = จำไว้ (localStorage `dr_live_collapse_mat_breakdown`) */
+                      <div style={{ gridColumn: '1/-1', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 16px' }}>
+                        <div onClick={productRows.length > 0 ? () => toggleLiveCollapse('mat_breakdown', true) : undefined}
+                          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 6, fontSize: 12,
+                            cursor: productRows.length > 0 ? 'pointer' : 'default', userSelect: 'none' }}>
+                          <span style={{ color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                            {productRows.length > 0 && (
+                              <span style={{ display: 'inline-block', transform: matOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
+                            )}
+                            ความคืบหน้ากะนี้ (รวมทุกชิ้นงาน)
+                          </span>
+                          <span style={{ fontWeight: 800, color: barClr, whiteSpace: 'nowrap' }}>{totalConfirmed} / {totalTarget} ชิ้น ({pct}%)</span>
+                        </div>
+                        <div style={{ height: 10, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${pct}%`, background: barClr, borderRadius: 99, transition: 'width 0.5s ease' }} />
+                        </div>
+                        {productRows.length > 0 && (
+                          <div onClick={() => toggleLiveCollapse('mat_breakdown', true)}
+                            style={{ marginTop: 7, fontSize: 11, color: 'var(--muted)', fontWeight: 700, cursor: 'pointer', userSelect: 'none' }}>
+                            🔩 แยกตามชิ้นงาน {productRows.length} MAT.NO{matOpen ? '' : ' · คลิกเพื่อดูรายละเอียด'}
+                          </div>
+                        )}
                       </div>
-                      {matOpen && (<>
+                    )}
+                  </div>
+
+                  {/* รายละเอียดรายชิ้นงาน — กางจากแถบความคืบหน้าด้านบน (default ยุบ) */}
+                  {productRows.length > 0 && matOpen && (
+                    <div style={{ marginBottom: 16 }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {productRows.map(r => {
                           const rowClr = r.rowPct >= 100 ? 'var(--green)' : r.rowPct >= 60 ? 'var(--amber)' : 'var(--blue)';
@@ -3578,40 +3623,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       {unassignedDT > 0 && (
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>⏱ Downtime ที่ไม่ระบุชิ้นงาน: {fmtMin(unassignedDT)}</div>
                       )}
-                      </>)}
+                      {unassignedDT > 0 && (
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>⏱ Downtime ที่ไม่ระบุชิ้นงาน: {fmtMin(unassignedDT)}</div>
+                      )}
                     </div>
-                    );
-                  })()}
-
-                  {/* ภาพรวมทั้งกะ (รวมทุกชิ้นงาน) */}
-                  <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', marginBottom: 8 }}>📊 ภาพรวมทั้งกะ
-                    {pt.hasPair && <span style={{ textTransform: 'none', fontWeight: 500, color: 'var(--muted)', marginLeft: 6 }}>· งานคู่ RH/LH นับเป็น 1 คู่ (1 ปั๊ม) ไม่บวกชิ้นซ้ำ</span>}
-                  </div>
-                  {/* 📊 การ์ดโครงเดียว (KpiTile · UI §6.35) — เดิม 7 ใบ 5 สี ⇒ 5 ใบ ตัวเลขสีเดียว ข้อมูลเดิมครบ
-                      (เป้ารวม → บรรทัดใต้ "ผลิตได้" · เปิด/ปิดแล้ว → "ใบผลิต" · นอกแผน → บรรทัดใต้ "Downtime") */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 10, marginBottom: 16 }}>
-                    <KpiTile label="ผลิตได้" value={totalConfirmed} unit="ชิ้น"
-                      note={totalTarget > 0 ? `${pct}% ของเป้า ${totalTarget.toLocaleString()}` : 'ยังไม่มีเป้า (ไม่มีใบผลิต)'}
-                      tone={totalTarget > 0 ? (pct >= 100 ? 'ok' : pct >= 60 ? 'warn' : 'info') : undefined} />
-                    <KpiTile label="ใบผลิต" value={prodOrders.filter(o => o.status === 'confirmed').length} unit={`/ ${prodOrders.length} ใบ`}
-                      note={`ปิดแล้ว ${prodOrders.filter(o => o.status === 'confirmed').length} · เปิด ${prodOrders.filter(o => o.status === 'open').length}`} />
-                    <KpiTile label="Input ต้องเบิก" value={totalInputNeeded} unit="ชิ้น"
-                      note={totalNg > 0 ? `รวม NG ${totalNg.toLocaleString()} ชิ้น` : 'ไม่มี NG'} tone={totalNg > 0 ? 'warn' : undefined} />
-                    <KpiTile label="Downtime" value={fmtMin(totalDT)}
-                      note={unplannedDT > 0 ? `นอกแผน ${fmtMin(unplannedDT)}` : 'ไม่มีหยุดนอกแผน'} tone={unplannedDT > 0 ? 'bad' : undefined} />
-                    {/* Overall progress bar */}
-                    {prodOrders.length > 0 && (
-                      <div style={{ gridColumn: '1/-1', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 16px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 12 }}>
-                          <span style={{ color: 'var(--muted)' }}>ความคืบหน้ากะนี้ (รวมทุกชิ้นงาน)</span>
-                          <span style={{ fontWeight: 800, color: barClr }}>{totalConfirmed} / {totalTarget} ชิ้น ({pct}%)</span>
-                        </div>
-                        <div style={{ height: 10, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
-                          <div style={{ height: '100%', width: `${pct}%`, background: barClr, borderRadius: 99, transition: 'width 0.5s ease' }} />
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </>
               );
             })()}
