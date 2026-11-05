@@ -145,11 +145,11 @@ export default function StoreMonitor() {
           <LineSelect
             lines={prodLines.filter(l => lines.includes(l.name))}
             value={lineFilter} onChange={setLineFilter} placeholder={ALL.line}
-            extraGroups={[{ label: '🏬 คลัง', options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
+            extraGroups={[{ label: 'คลัง', options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
           />
         )}
         <Segmented value={kindFilter} onChange={setKindFilter} label="ชนิดความผิดปกติ"
-          options={[{ value: 'all', label: ALL.type }, { value: 'shortage', label: '🟥 จะขาด' }, { value: 'over', label: '🟧 ล้น' }]} />
+          options={[{ value: 'all', label: ALL.type }, { value: 'shortage', label: 'จะขาด' }, { value: 'over', label: 'ล้น' }]} />
       </FilterBar>
 
       {/* 🔴 การ์ดนับ = **เนื้อหา** ต้องอยู่ใต้แถบกรอง (UI-STANDARD §2.1) — ย้ายลงมา 20/10

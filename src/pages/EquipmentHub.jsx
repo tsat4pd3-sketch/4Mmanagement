@@ -45,15 +45,15 @@ const FixtureRegistry = lazy(() => import('./FixtureRegistry'));
 /* เรียงตาม "ของที่เปิดดูบ่อย" — ช่างค้นอะไหล่/เครื่องทุกวัน ส่วนผังคลังนานๆ ครั้ง
    (หลักเดียวกับ PmHub: ความถี่ที่ใช้จริง ไม่ใช่ลำดับตามตัวอักษร) */
 const TABS = [
-  { key: 'machine', label: '🏭 เครื่องจักร', page: '/machine-database',
+  { key: 'machine', label: 'เครื่องจักร', page: '/machine-database',
     hint: 'ทะเบียนเครื่อง + ชนิดอุปกรณ์ (equipment_kind) ที่เป็นตัวแยกกลุ่มให้ทุกจอในระบบ' },
-  { key: 'die',     label: '🔨 แม่พิมพ์ (DIE)', page: '/die-registry',
+  { key: 'die',     label: 'แม่พิมพ์ (DIE)', page: '/die-registry',
     hint: 'ทะเบียน + ผังจัดเก็บ + สถานะแม่พิมพ์' },
-  { key: 'jig',     label: '📐 JIG / Fixture', page: '/fixture',
+  { key: 'jig',     label: 'JIG / Fixture', page: '/fixture',
     hint: 'ทะเบียนจุดชิม + บันทึกชิม + สถานะ + จัดชนิดอุปกรณ์' },
-  { key: 'spare',   label: '🔩 คลังอะไหล่', page: '/mtn-repair',
+  { key: 'spare',   label: 'คลังอะไหล่', page: '/mtn-repair',
     hint: 'ค้นอะไหล่/ชั้นวาง · ยอดคงเหลือ · Rank A/B/C' },
-  { key: 'rack',    label: '🗺️ ผังคลังอะไหล่', page: '/mtn-repair',
+  { key: 'rack',    label: 'ผังคลังอะไหล่', page: '/mtn-repair',
     hint: 'วางช่องอะไหล่บนรูปชั้นวางจริง — กดช่องแล้วรู้ว่ามีอะไรอยู่' },
 ];
 

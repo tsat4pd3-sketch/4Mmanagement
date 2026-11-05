@@ -38,7 +38,7 @@ import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-he
    ─────────────────────────────────────────────────────────────────────────── */
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16 };
-const VIEW_TABS = [{ key: 'board', label: '📋 บอร์ดสถานะ' }, { key: 'time', label: '🕐 บอร์ดเวลา' }, { key: 'sla', label: '⚙️ SLA' }];
+const VIEW_TABS = [{ key: 'board', label: 'บอร์ดสถานะ' }, { key: 'time', label: 'บอร์ดเวลา' }, { key: 'sla', label: 'SLA' }];
 const inputSt = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box', fontFamily: 'var(--font-body)' };
 const btn = (bg, color = '#fff') => ({ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 700, background: bg, color, fontFamily: 'var(--font-body)' });
 
@@ -420,8 +420,8 @@ export default function RackCenter() {
             นับจากเวลาที่ไลน์กดเรียก — เกินกำหนดแล้วยังไม่ถึงสถานะ บล็อกบนบอร์ดเวลาจะเปลี่ยนเป็น 🟠/🔴 ให้เห็นทันที
           </div>
           {[
-            { k: 'prepare_within_min', label: '🔧 ต้องเริ่มเตรียมภายใน (นาที)' },
-            { k: 'deliver_within_min', label: '🚚 ต้องส่งถึงไลน์ภายใน (นาที)' },
+            { k: 'prepare_within_min', label: 'ต้องเริ่มเตรียมภายใน (นาที)' },
+            { k: 'deliver_within_min', label: 'ต้องส่งถึงไลน์ภายใน (นาที)' },
           ].map(f => (
             <div key={f.k} style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
               <span style={{ fontSize: 13, color: 'var(--text2)', flex: 1 }}>{f.label}</span>

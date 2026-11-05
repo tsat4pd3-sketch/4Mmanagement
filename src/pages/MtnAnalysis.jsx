@@ -76,7 +76,7 @@ const SOURCES = [
      ⇒ เดิมลากงานที่ไม่เกี่ยวกับช่างมา 96.8% — พาเรโตของจอซ่อมบำรุงเลยไม่ใช่ปัญหาของช่าง
      ชุดข้อมูล = ใบ MO ทั้งหมด **+** ดาวน์ไทม์ที่เรียกช่างแล้วแต่ยังไม่ได้เปิดใบ (เหลือ 19 ครั้ง)
      ⇒ ไม่นับซ้ำ เพราะดาวน์ไทม์ที่เปิดใบแล้วถูกนับผ่านใบ MO อยู่แล้ว (`source_downtime_id`) */
-  { key: 'mo', label: '🛠️ ใบซ่อม MO', unit: 'ใบ', note: 'งานที่เปิดใบแจ้งซ่อมจริง — มีสาเหตุ/วิธีแก้/ค่าใช้จ่าย' },
+  { key: 'mo', label: 'ใบซ่อม MO', unit: 'ใบ', note: 'งานที่เปิดใบแจ้งซ่อมจริง — มีสาเหตุ/วิธีแก้/ค่าใช้จ่าย' },
 ];
 
 const fmt = (n, d = 0) => (n == null ? '—' : Number(n).toLocaleString('en-US', { maximumFractionDigits: d }));
@@ -110,8 +110,8 @@ const KPI = ({ label, value, unit, sub, warn }) => (
 );
 
 const MAIN_TABS = [
-  { key: 'kpi', label: '📊 KPI ช่าง' },
-  { key: 'qc7', label: '🧪 QC 7 Tools (แยกชนิดอุปกรณ์)' },
+  { key: 'kpi', label: 'KPI ช่าง' },
+  { key: 'qc7', label: 'QC 7 Tools (แยกชนิดอุปกรณ์)' },
 ];
 
 export default function MtnAnalysis() {
@@ -369,12 +369,12 @@ export default function MtnAnalysis() {
   /* มิติเจาะลึกของ ParetoAbcChart = **ชื่อคีย์ในแถวดิบ** (component อ่าน `r[dim.key]` เอง)
      ⚠️ ห้ามใส่ฟังก์ชัน `of` — มันไม่ถูกเรียก แล้วจะได้ช่องว่างเงียบๆ */
   const PARETO_DIMS = useMemo(() => ([
-    { key: 'sub', label: '🛑 อาการย่อย' },
-    { key: 'machine', label: '⚙️ อุปกรณ์' },
-    { key: 'line', label: '🏭 ไลน์' },
-    { key: 'team', label: '👷 ทีมช่าง' },
-    { key: 'note', label: '💬 อาการที่แจ้ง (จับกลุ่มคำ)', cluster: true },
-    { key: 'why', label: '🔎 ที่มาของหมวด' },
+    { key: 'sub', label: 'อาการย่อย' },
+    { key: 'machine', label: 'อุปกรณ์' },
+    { key: 'line', label: 'ไลน์' },
+    { key: 'team', label: 'ทีมช่าง' },
+    { key: 'note', label: 'อาการที่แจ้ง (จับกลุ่มคำ)', cluster: true },
+    { key: 'why', label: 'ที่มาของหมวด' },
   ]), []);
 
   const assetTabs = ASSET_CLASSES.map(a => ({

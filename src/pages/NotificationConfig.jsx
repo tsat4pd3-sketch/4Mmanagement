@@ -10,6 +10,7 @@ import CollapseCard from '../components/CollapseCard'
 import PushCoveragePanel from '../components/PushCoveragePanel'  // 📲 ใครยังไม่มีเครื่องรับแจ้งเตือน — 2026-10-20
 import { reachLabel, reachWarnings } from '../utils/notifReach'   // 🏷️ ป้ายราคาต่อเรื่อง — สูตรอยู่ util ที่เดียว (มีเทส)
 import PageHeader from '../components/PageHeader';
+import { ALL } from '../utils/filterLabels';
 import Page from '../components/Page';
 import { UserContext } from '../App';
 import { NOTIFY_CATEGORY_LABEL } from '../utils/notifyPrefs';   // 🔕 ป้ายหมวด — ของกลาง ใช้ร่วมกับโมดัลของผู้ใช้
@@ -404,7 +405,7 @@ export default function NotificationConfig() {
               <input type="checkbox" checked={room.is_active} onChange={e => patchRoom(room.id, 'is_active', e.target.checked)} />เปิด
             </label>
             <select value={room.team ?? ''} onChange={e => patchRoom(room.id, 'team', e.target.value || null)} title="ห้องของทีมช่างซ่อมไหน (ใบแจ้งซ่อม MO จะเข้าห้องของทีมตามหน่วยงาน)" style={{ ...inputStyle, width: 150, flex: '0 0 auto' }}>
-              <option value="">🔧 ทุกทีม (รวม)</option>
+              <option value="">{ALL.team}</option>
               {/* 2026-09-07: วนทีมจาก mtn_teams (pmTeamsSync — data-driven) · ค่าที่เก็บ = key เสมอ */}
               {pmTeamsSync().map(t => <option key={t.key} value={t.key}>ทีม {t.icon ? `${t.icon} ` : ''}{deptNameOf(t.key)}</option>)}
             </select>

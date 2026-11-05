@@ -298,7 +298,7 @@ export default function ProductHistory() {
         {/* <LineSelect> กลาง (ลำดับชั้น + scope + ตัดปลดระวาง) — เฉพาะไลน์ที่มีสินค้าจริง · ชื่อนอกทะเบียนแยก optgroup ห้ามซ่อน (2026-09-07) */}
         <LineSelect lines={lines.filter(l => lineGroups.inUse.has(l.name))} value={filterLine} onChange={setFilterLine}
           role={role} lineId={lineId} sections={sections} placeholder={ALL.line}
-          extraGroups={[{ label: '⚠ นอกผัง (ชื่อไลน์ไม่ตรงทะเบียนไลน์ผลิต)', options: lineGroups.off.map(n => ({ value: n })) }]} />
+          extraGroups={[{ label: 'นอกผัง (ชื่อไลน์ไม่ตรงทะเบียนไลน์ผลิต)', options: lineGroups.off.map(n => ({ value: n })) }]} />
         <SearchInput value={search} onChange={setSearch} fields="MAT.NO / ชื่อ / P/N" />
       </TimeRangeBar>
 

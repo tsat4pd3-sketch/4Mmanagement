@@ -146,12 +146,12 @@ const ZONES = [
    กลุ่มพลาสติก/มอเตอร์ไซค์ต้องมี injection/painting/assembly เพิ่ม จึงต่อท้ายไว้ที่นี่และ
    ทำเครื่องหมาย extra:true (= ยังไม่มีใน master จริง ถ้าทำ multi-company ต้องไปเพิ่มใน LINE_TYPES) */
 const LTYPES = [
-  { value: 'stamping', label: '🔩 ปั๊มขึ้นรูป / Metal Forming' },   // รวมไฮโดรฟอร์มไว้ด้วย (ดู LT_MERGE)
+  { value: 'stamping', label: 'ปั๊มขึ้นรูป / Metal Forming' },   // รวมไฮโดรฟอร์มไว้ด้วย (ดู LT_MERGE)
   ...LINE_TYPES.filter(t => !['stamping', 'hydroform', 'other', 'outsource'].includes(t.value)),
-  { value: 'injection', label: '💉 ฉีด / Injection', extra: true },
-  { value: 'painting', label: '🎨 พ่นสี / Painting', extra: true },
-  { value: 'assembly', label: '🧰 ประกอบ / Assembly', extra: true },
-  { value: 'other', label: '📦 อื่นๆ / ยังไม่ตั้งประเภท' },
+  { value: 'injection', label: 'ฉีด / Injection', extra: true },
+  { value: 'painting', label: 'พ่นสี / Painting', extra: true },
+  { value: 'assembly', label: 'ประกอบ / Assembly', extra: true },
+  { value: 'other', label: 'อื่นๆ / ยังไม่ตั้งประเภท' },
 ];
 /* ยุบประเภทไลน์ที่เป็นงานเดียวกันในสายตาผู้บริหาร — ไฮโดรฟอร์มก็คือ metal forming เหมือนปั๊ม
    ⚠️ ยุบเฉพาะ "การแสดงผลในหน้านี้" เท่านั้น — ค่าใน `production_lines.line_type` ไม่ถูกแก้
@@ -462,7 +462,7 @@ export default function GroupOverview() {
   const lv1Switch = (
     <span style={{ marginLeft: 'auto' }}>
       <Segmented value={lv1View} onChange={setLv1View}
-        options={[{ value: 'map', label: '🌏 แผนที่' }, { value: 'rank', label: '📊 เทียบรายโซน' }]} />
+        options={[{ value: 'map', label: 'แผนที่' }, { value: 'rank', label: 'เทียบรายโซน' }]} />
     </span>
   );
   const crumbBtn = (label, onClick, active) => (
@@ -501,7 +501,7 @@ export default function GroupOverview() {
         filters={<>
           {/* สลับแกนมอง: ตามพื้นที่ (แผนที่) หรือ ตามกลุ่มธุรกิจ — เปลี่ยนแกนแล้วกลับไประดับ TSG */}
           <Segmented label="แกนมอง" value={sel.axis} onChange={k => setSel({ axis: k, node: null, comp: null })}
-            options={[{ value: 'map', label: '🗺️ ตามพื้นที่' }, { value: 'biz', label: '🗂️ ตามกลุ่มธุรกิจ' }]} />
+            options={[{ value: 'map', label: 'ตามพื้นที่' }, { value: 'biz', label: 'ตามกลุ่มธุรกิจ' }]} />
           <span className="sep" />
           <span className="filter-label">วันงาน</span>
           <button className="tbtn ctl-btn" onClick={() => setDate(shiftDate(date, -1))} style={btn}>◀</button>

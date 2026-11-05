@@ -361,8 +361,8 @@ export default function OrgSetup() {
     <Page>
       <PageHeader title="แผนผังองค์กร" icon="🏢"
         sub="จัดการโครงสร้าง Section/ส่วน → Department/แผนก → Group/กลุ่ม พร้อม Cost Center (master data ที่หน้าอื่นใช้อ้างอิง)"
-        tabs={[{ key: 'tree', label: '🌳 มุมมองผัง' }, { key: 'manage', label: '🗂 จัดการหน่วยงาน' },
-               { key: 'teams', label: '👥 ทีม (จัดกะ)' }]}
+        tabs={[{ key: 'tree', label: 'มุมมองผัง' }, { key: 'manage', label: 'จัดการหน่วยงาน' },
+               { key: 'teams', label: 'ทีม (จัดกะ)' }]}
         tab={tab} onTab={setTab} />
 
       {/* ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล (UI-CONVENTIONS §6.9) — ต้องรู้ว่าแก้อะไรได้/ไม่ได้ และต้องไปขอใคร */}
@@ -574,7 +574,7 @@ export default function OrgSetup() {
                 <div>
                   <label style={labelSt}>{PARENT_LABEL[modal.kind]}</label>
                   <select value={modal.parentId ?? ''} onChange={e => setModal(m => ({ ...m, parentId: e.target.value || null }))}>
-                    {isAdmin && modal.kind === 'department' && <option value="">🏛️ ขึ้นตรงฝ่าย — ไม่อยู่ใต้ Section ใด</option>}
+                    {isAdmin && modal.kind === 'department' && <option value="">ขึ้นตรงฝ่าย — ไม่อยู่ใต้ Section ใด</option>}
                     {parentChoices.rows.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
                   </select>
                   {/* 🔴 กรองแถวออกแล้วต้องเขียนบนจอว่าซ่อนกี่รายการ — ไม่งั้นดูเหมือนผังมีแค่นี้ */}
@@ -622,8 +622,8 @@ export default function OrgSetup() {
                 <div>
                   <label style={labelSt}>ประเภทแรงงาน (Direct/Indirect)</label>
                   <select value={formLaborType} onChange={e => setFormLaborType(e.target.value)}>
-                    <option value="direct">🔧 Direct — ฝ่ายผลิต (operator ทำงานผลิตโดยตรง)</option>
-                    <option value="indirect">🗂️ Indirect — สนับสนุน (ช่างซ่อมบำรุง/QA/ธุรการ/ขาย)</option>
+                    <option value="direct">Direct — ฝ่ายผลิต (operator ทำงานผลิตโดยตรง)</option>
+                    <option value="indirect">Indirect — สนับสนุน (ช่างซ่อมบำรุง/QA/ธุรการ/ขาย)</option>
                   </select>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                     พนักงานใน{modal.kind === 'section' ? 'ส่วน' : 'แผนก'}นี้จะถูกจัดเป็นประเภทนี้อัตโนมัติ{modal.kind === 'section' ? ' (แผนกตั้งทับได้)' : ' (ช่างส่วนใหญ่อยู่ระดับแผนก)'}

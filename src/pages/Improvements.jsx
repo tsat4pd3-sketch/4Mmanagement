@@ -104,9 +104,9 @@ const buildParetoIndex = (all, keyOf) => {
 };
 
 const STATUS_META = {
-  monitoring: { label: '👁 กำลังติดตามผล', color: 'var(--amber)', bg: 'var(--amber-dim)' },
-  done:       { label: '✅ สำเร็จ',          color: 'var(--green)', bg: 'var(--green-dim)' },
-  cancelled:  { label: '✖ ยกเลิก',           color: 'var(--muted)', bg: 'rgba(139,139,150,0.14)' },
+  monitoring: { label: 'กำลังติดตามผล', color: 'var(--amber)', bg: 'var(--amber-dim)' },
+  done:       { label: 'สำเร็จ',          color: 'var(--green)', bg: 'var(--green-dim)' },
+  cancelled:  { label: 'ยกเลิก',           color: 'var(--muted)', bg: 'rgba(139,139,150,0.14)' },
 };
 
 const EMPTY_FORM = {
@@ -969,9 +969,9 @@ export default function Improvements() {
       <FilterBar style={{ marginBottom: 8 }}>
         <Segmented value={statusFilter} onChange={setStatusFilter} label="สถานะ" options={[
           { value: 'all', label: ALL.status },
-          { value: 'monitoring', label: '👁 กำลังติดตามผล' },
-          { value: 'done', label: '✅ สำเร็จ' },
-          { value: 'cancelled', label: '✖ ยกเลิก' },
+          { value: 'monitoring', label: 'กำลังติดตามผล' },
+          { value: 'done', label: 'สำเร็จ' },
+          { value: 'cancelled', label: 'ยกเลิก' },
         ]} />
       </FilterBar>
 
@@ -1454,9 +1454,9 @@ export default function Improvements() {
                   </label>
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>ประเภทปัญหา *
                     <select value={modal.problem_source} onChange={e => setModal({ ...modal, problem_source: e.target.value, problem_type_id: '', problem_label: '' })} style={{ marginTop: 4 }}>
-                      <option value="downtime">🛑 Downtime</option>
-                      <option value="defect">🔍 ของเสีย/คุณภาพ</option>
-                      <option value="mtn">🛠️ ใบซ่อม MTN</option>
+                      <option value="downtime">Downtime</option>
+                      <option value="defect">ของเสีย/คุณภาพ</option>
+                      <option value="mtn">ใบซ่อม MTN</option>
                     </select>
                   </label>
                 </div>

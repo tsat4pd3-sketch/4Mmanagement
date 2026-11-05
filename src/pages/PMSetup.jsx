@@ -1349,7 +1349,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
               {/* <LineSelect> แทนช่องพิมพ์เอง — jigs.line_name เป็นคีย์จัดกลุ่ม DailyPM/PMSchedule/FactoryMap · พื้นที่ facility
                   แยก optgroup จาก pm_facility_areas · ค่าเก่าที่ไม่อยู่ในทะเบียนยังโชว์ ⚠ ไม่หายเงียบ · 2026-09-07 */}
               <LineSelect lines={lineOptions} value={lineName} onChange={setLineName} placeholder="— เลือกไลน์ / พื้นที่ —" includeRetired
-                extraGroups={[{ label: '🏭 พื้นที่ Facility / Utility', options: facilityAreas.filter(a => !lineOptions.some(l => l.name === a.name)).map(a => ({ value: a.name, label: a.name })) }]}
+                extraGroups={[{ label: 'พื้นที่ Facility / Utility', options: facilityAreas.filter(a => !lineOptions.some(l => l.name === a.name)).map(a => ({ value: a.name, label: a.name })) }]}
                 style={{ width: '100%' }} />
             </div>
           )}
@@ -1381,9 +1381,9 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             <label style={S.label}>รูปแบบแผน PM</label>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {[
-                { v: 'time', label: '🗓️ ตามเวลา', hint: 'ครบรอบตามความถี่' },
-                { v: 'usage', label: '📈 ตามการใช้งาน', hint: 'ครบเมื่อผลิตถึงยอด' },
-                { v: 'hybrid', label: '⚖️ ผสม', hint: 'อันไหนถึงก่อนใช้อันนั้น' },
+                { v: 'time', label: 'ตามเวลา', hint: 'ครบรอบตามความถี่' },
+                { v: 'usage', label: 'ตามการใช้งาน', hint: 'ครบเมื่อผลิตถึงยอด' },
+                { v: 'hybrid', label: 'ผสม', hint: 'อันไหนถึงก่อนใช้อันนั้น' },
               ].map(({ v, label, hint }) => (
                 <button key={v} onClick={() => setPlanType(v)} title={hint} style={S.modeBtn(planType === v)}>{label}</button>
               ))}
@@ -1416,7 +1416,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
           <div>
             <label style={S.label}>รูปแบบ Check Sheet</label>
             <div style={{ display: 'flex', gap: 8 }}>
-              {[{ v: 'image_pin', label: '📍 รูป + จุดตรวจ' }, { v: 'list', label: '📋 รายการหัวข้อ' }].map(({ v, label }) => (
+              {[{ v: 'image_pin', label: 'รูป + จุดตรวจ' }, { v: 'list', label: 'รายการหัวข้อ' }].map(({ v, label }) => (
                 <button key={v} onClick={() => setLayoutType(v)} style={S.modeBtn(layoutType === v)}>{label}</button>
               ))}
             </div>

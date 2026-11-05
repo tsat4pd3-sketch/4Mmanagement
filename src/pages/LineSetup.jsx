@@ -43,8 +43,8 @@ import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-he
    เหตุผล + ตัวเลขที่วัดได้ → docs/modules/demand-flow-tower.md §เลิกจุด WIP
    ⚠️ ห้ามเอากลับมาโดยไม่ถาม user — ตาราง `wip_buffer_points` ยังอยู่ (ประวัติ) แต่ไม่มีจอไหนเขียนแล้ว */
 const TABS = [
-  { key: 'stations', label: '📍 จุดงาน' },
-  { key: 'machines', label: '⚙️ เครื่องจักร' },
+  { key: 'stations', label: 'จุดงาน' },
+  { key: 'machines', label: 'เครื่องจักร' },
 ];
 
 

@@ -1075,10 +1075,10 @@ ${issuesHtml}
       <PageHeader title="Layer Process Audit (LPA)" icon="📋"
         sub={`แผนตรวจ + บันทึกผล + รายงาน ${lpaFormNo} — Leader ทุกวัน · Supervisor รายสัปดาห์ · Manager รายเดือน · GM รายไตรมาส`}
         tabs={[
-          { key: 'audit', label: '✅ บันทึกผลตรวจ' },
-          { key: 'plan', label: '📅 แผนตรวจ' },
-          { key: 'report', label: '📊 รายงาน' },
-          canManage && { key: 'questions', label: '⚙️ คำถาม' },
+          { key: 'audit', label: 'บันทึกผลตรวจ' },
+          { key: 'plan', label: 'แผนตรวจ' },
+          { key: 'report', label: 'รายงาน' },
+          canManage && { key: 'questions', label: 'คำถาม' },
         ]}
         tab={tab} onTab={setTab} />
 

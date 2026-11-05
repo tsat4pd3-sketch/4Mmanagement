@@ -417,9 +417,9 @@ export default function MtnMachineLayout({ setupMode = false }) {
           <button type="button" className="pg-btn" onClick={() => navigate('/factory-map')} style={S.viewBtn(false)}>กลับผังรวมโรงงาน</button>
         )}
         tabs={[
-          !setupMode && { key: 'overview', label: '🗺️ ภาพรวมทั้งโรงงาน' },
-          { key: 'production', label: '🏭 ไลน์ผลิต' },
-          { key: 'facility', label: '🔌 Facility / Utility' },
+          !setupMode && { key: 'overview', label: 'ภาพรวมทั้งโรงงาน' },
+          { key: 'production', label: 'ไลน์ผลิต' },
+          { key: 'facility', label: 'Facility / Utility' },
         ]}
         tab={view} onTab={k => { setView(k); setSelId(null) }} />
 

@@ -308,15 +308,15 @@ export default function DailyReport() {
         title="Daily Production Report" icon="📊"
         sub="บันทึกผลผลิตและ Downtime แบบ Real-time รายกะ"
         tabs={[
-          { key: 'live', label: '⚡ Live กะนี้' },
+          { key: 'live', label: 'Live กะนี้' },
           // ไม่มีกะค้าง = ไม่ต้องมีแท็บให้รก · โหลดไม่สำเร็จก็ต้องโชว์ (จะได้เข้าไปเห็นสาเหตุ ห้ามเงียบ)
           ...((stale.rows.length || stale.error) ? [{
             key: 'stale',
             label: stale.error ? '⏰ กะค้าง ⚠' : `⏰ กะค้าง ${stale.rows.length}${staleOver ? ` · เกิน ${STALE_SESSION_DAYS} วัน ${staleOver}` : ''}`,
           }] : []),
-          { key: 'history', label: '📋 ประวัติ' },
-          { key: 'export', label: '📤 Export' },
-          ...(canSetup ? [{ key: 'setup', label: '⚙️ ตั้งค่า' }] : []),
+          { key: 'history', label: 'ประวัติ' },
+          { key: 'export', label: 'Export' },
+          ...(canSetup ? [{ key: 'setup', label: 'ตั้งค่า' }] : []),
         ]}
         tab={tab} onTab={setTab}
       />
@@ -4488,8 +4488,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 </Field>
                 <Field label="กะทำงาน">
                   <select value={openForm.shift} onChange={e => setOpenForm(f => ({ ...f, shift: e.target.value, start_time: shiftStartTime(e.target.value) }))} style={inputStyle}>
-                    <option value="day">☀️ กะเช้า (08:00–20:00)</option>
-                    <option value="night">🌙 กะดึก (20:00–08:00)</option>
+                    <option value="day">กะเช้า (08:00–20:00)</option>
+                    <option value="night">กะดึก (20:00–08:00)</option>
                   </select>
                 </Field>
 
@@ -6202,9 +6202,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
                   {[
-                    { key: 'qty_ng',      label: '🔴 NG / เสีย',    color: 'var(--red)' },
-                    { key: 'qty_suspect', label: '🟡 ต้องสงสัย',    color: 'var(--amber)' },
-                    { key: 'qty_repair',  label: '🔧 ซ่อม/Rework',  color: 'var(--blue)' },
+                    { key: 'qty_ng',      label: 'NG / เสีย',    color: 'var(--red)' },
+                    { key: 'qty_suspect', label: 'ต้องสงสัย',    color: 'var(--amber)' },
+                    { key: 'qty_repair',  label: 'ซ่อม/Rework',  color: 'var(--blue)' },
                   ].map(q => (
                     <div key={q.key}>
                       <div style={{ fontSize: 11, color: q.color, fontWeight: 700, marginBottom: 3 }}>{q.label}</div>
@@ -8067,10 +8067,10 @@ function SetupTab({ role }) {
     <div>
       <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', borderRadius: 8, padding: 4, marginBottom: 20, width: 'fit-content', flexWrap: 'wrap' }}>
         {[
-          { key: 'downtime',  label: '⏱ ประเภท Downtime' },
-          { key: 'defects',   label: '🔴 ประเภทงานเสีย' },
-          { key: 'breaks',    label: '☕ นโยบายหยุดพัก' },
-          { key: 'process',   label: '🏭 กระบวนการ' },
+          { key: 'downtime',  label: 'ประเภท Downtime' },
+          { key: 'defects',   label: 'ประเภทงานเสีย' },
+          { key: 'breaks',    label: 'นโยบายหยุดพัก' },
+          { key: 'process',   label: 'กระบวนการ' },
         ].map(t => (
           <button key={t.key} onClick={() => setSubTab(t.key)}
             style={{ padding: '6px 14px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600,
@@ -8157,8 +8157,8 @@ function DefectTypeSetup({ role }) {
 
       {[
         ...activeProcessTypes().map(pt => ({ key: pt.key, label: `${pt.icon || ''} ${pt.label}`.trim(), color: pt.color || 'var(--muted)' })),
-        { key: 'common',          label: '🔗 Common (ทุกกระบวนการ)', color: 'var(--muted)' },
-        { key: null,              label: '❔ ยังไม่กำหนดกระบวนการ',   color: 'var(--muted)' },
+        { key: 'common',          label: 'Common (ทุกกระบวนการ)', color: 'var(--muted)' },
+        { key: null,              label: 'ยังไม่กำหนดกระบวนการ',   color: 'var(--muted)' },
       ].map(pg => {
         const pgItems = items.filter(i => (i.process_type || null) === pg.key);
         if (pgItems.length === 0) return null;
@@ -8204,9 +8204,9 @@ function DefectTypeSetup({ role }) {
               </Field>
               <Field label="กระบวนการ">
                 <select value={form.process_type} onChange={e => setForm(f => ({ ...f, process_type: e.target.value }))} style={inputStyle}>
-                  <option value="">❔ ยังไม่กำหนด (แสดงทุกไลน์)</option>
+                  <option value="">ยังไม่กำหนด (แสดงทุกไลน์)</option>
                   {activeProcessTypes().map(pt => <option key={pt.key} value={pt.key}>{`${pt.icon || ''} ${pt.label}`.trim()}</option>)}
-                  <option value="common">🔗 Common (ทุกกระบวนการ)</option>
+                  <option value="common">Common (ทุกกระบวนการ)</option>
                 </select>
               </Field>
               <Field label="สี">
@@ -8554,8 +8554,8 @@ function BreakPolicySetup({ role }) {
                   ตั้งแบบนี้แถวเดียวครอบทุกรูปแบบวัน ไม่ต้องแตกแถวตาม ot_scope อีก */}
               <Field label="ยึดเวลาจาก">
                 <select value={form.anchor} onChange={e => setForm(f => ({ ...f, anchor: e.target.value }))} style={inputStyle}>
-                  <option value="clock">🕐 เวลานาฬิกา (เริ่มเวลาเดิมทุกวัน)</option>
-                  <option value="shift_end">🔚 ท้ายกะ (เลื่อนตามเวลาเลิกกะของวันนั้น)</option>
+                  <option value="clock">เวลานาฬิกา (เริ่มเวลาเดิมทุกวัน)</option>
+                  <option value="shift_end">ท้ายกะ (เลื่อนตามเวลาเลิกกะของวันนั้น)</option>
                 </select>
               </Field>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -8596,16 +8596,16 @@ function BreakPolicySetup({ role }) {
               )}
               <Field label="ใช้กับกะ">
                 <select value={form.shift} onChange={e => setForm(f => ({ ...f, shift: e.target.value }))} style={inputStyle}>
-                  <option value="both">⏰ ทั้งสองกะ</option>
-                  <option value="day">☀️ กะเช้าเท่านั้น</option>
-                  <option value="night">🌙 กะดึกเท่านั้น</option>
+                  <option value="both">ทั้งสองกะ</option>
+                  <option value="day">กะเช้าเท่านั้น</option>
+                  <option value="night">กะดึกเท่านั้น</option>
                 </select>
               </Field>
               <Field label="ใช้กับวันแบบไหน">
                 <select value={form.ot_scope} onChange={e => setForm(f => ({ ...f, ot_scope: e.target.value }))} style={inputStyle}>
                   <option value="always">ทุกวัน (ปกติ)</option>
-                  <option value="ot">🕕 เฉพาะวันที่ทำโอ</option>
-                  <option value="no_ot">🚫 เฉพาะวันที่ไม่ทำโอ</option>
+                  <option value="ot">เฉพาะวันที่ทำโอ</option>
+                  <option value="no_ot">เฉพาะวันที่ไม่ทำโอ</option>
                 </select>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
                   ใช้กับพักที่มี 2 รอบสลับกันระหว่างวันทำโอ/ไม่ทำโอ เช่น พักเบรค OT —
@@ -8616,7 +8616,7 @@ function BreakPolicySetup({ role }) {
               </Field>
               <Field label="ใช้กับกระบวนการ">
                 <select value={form.process_type} onChange={e => setForm(f => ({ ...f, process_type: e.target.value }))} style={inputStyle}>
-                  <option value="common">🔗 ทุกกระบวนการ</option>
+                  <option value="common">ทุกกระบวนการ</option>
                   {activeProcessTypes().map(pt => <option key={pt.key} value={pt.key}>{`${pt.icon || ''} ${pt.label} เท่านั้น`.trim()}</option>)}
                 </select>
               </Field>
@@ -9135,7 +9135,7 @@ function DowntimeTypeSetup({ role }) {
 
   const processGroups = [
     ...activeProcessTypes().map(pt => ({ key: pt.key, label: `${pt.icon || ''} ${pt.label}`.trim(), color: pt.color || 'var(--muted)' })),
-    { key: 'common',          label: '🔗 Common (ทุกประเภท)', color: 'var(--muted)' },
+    { key: 'common',          label: 'Common (ทุกประเภท)', color: 'var(--muted)' },
   ];
 
   function DowntimeRow({ item }) {
@@ -9211,13 +9211,13 @@ function DowntimeTypeSetup({ role }) {
               <Field label="กระบวนการ">
                 <select value={form.process_type} onChange={e => setForm(f => ({ ...f, process_type: e.target.value }))} style={inputStyle}>
                   {activeProcessTypes().map(pt => <option key={pt.key} value={pt.key}>{`${pt.icon || ''} ${pt.label}`.trim()}</option>)}
-                  <option value="common">🔗 Common (ทุกกระบวนการ)</option>
+                  <option value="common">Common (ทุกกระบวนการ)</option>
                 </select>
               </Field>
               <Field label="หมวดหมู่ (ใช้คิด OEE)">
                 <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={inputStyle}>
-                  <option value="unplanned">⚠ นอกแผน (Unplanned)</option>
-                  <option value="planned">📋 ในแผน (Planned)</option>
+                  <option value="unplanned">นอกแผน (Unplanned)</option>
+                  <option value="planned">ในแผน (Planned)</option>
                 </select>
               </Field>
               {/* แกน Lean — แยกจาก category ที่ใช้คิด OEE โดยตั้งใจ (ดู src/utils/oee.js §6)

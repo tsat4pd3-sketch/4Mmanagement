@@ -19,12 +19,12 @@ import { getWorkDate, addDaysStr } from '../utils/workDate';
    ═══════════════════════════════════════════════════════════════════════════════════════════ */
 
 const TABS = [
-  { key: 'overview', label: '🗺️ ภาพรวม' },
-  { key: 'traveler', label: '🧳 ผู้เดินทาง' },
-  { key: 'approver', label: '✅ ผู้อนุมัติ' },
-  { key: 'hr', label: '🛂 HR / Compliance' },
-  { key: 'admin', label: '🎫 Travel / Admin' },
-  { key: 'finance', label: '💰 Finance / ECM' },
+  { key: 'overview', label: 'ภาพรวม' },
+  { key: 'traveler', label: 'ผู้เดินทาง' },
+  { key: 'approver', label: 'ผู้อนุมัติ' },
+  { key: 'hr', label: 'HR / Compliance' },
+  { key: 'admin', label: 'Travel / Admin' },
+  { key: 'finance', label: 'Finance / ECM' },
 ];
 
 const PHASES = ['ขอเดินทาง', 'อนุมัติ', 'HR / Compliance', 'เตรียมเดินทาง', 'เดินทาง', 'ยื่นเบิก', 'Finance ปิดงาน'];

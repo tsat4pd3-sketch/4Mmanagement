@@ -911,10 +911,10 @@ export default function ProductMaster() {
           <Link to="/heijunka" style={{ color: 'var(--accent)', textDecoration: 'none' }}>Heijunka Kanban</Link> และ{' '}
           <Link to="/oee-analytics" style={{ color: 'var(--accent)', textDecoration: 'none' }}>OEE Analytics</Link>
         </>}
-        tabs={[{ key:'parts', label:'1️⃣ 🗂 Parts Master' }, { key:'bom', label:'2️⃣ 📦 BOM' }, { key:'bomdup', label:'🔁 BOM ซ้ำ 2 ใบ' }, { key:'phantom', label:'🫧 ของลม (phantom)' }, { key:'products', label:'3️⃣ 🔩 Products' },
-          { key:'routing', label:'🔀 Routing' }, { key:'packaging', label:'📦 Packaging' }, { key:'kanban', label:'🎴 Kanban Std' },
-          { key:'customers', label:'🏷️ ลูกค้า' }, { key:'suppliers', label:'🏭 Supplier' }, { key:'uom', label:'📏 หน่วยนับ' },
-          { key:'ct', label:'⏱ ทบทวน CT' }, { key:'export', label:'📤 Export' }]}
+        tabs={[{ key:'parts', label:'1️⃣ 🗂 Parts Master' }, { key:'bom', label:'2️⃣ 📦 BOM' }, { key:'bomdup', label: 'BOM ซ้ำ 2 ใบ' }, { key:'phantom', label: 'ของลม (phantom)' }, { key:'products', label:'3️⃣ 🔩 Products' },
+          { key:'routing', label: 'Routing' }, { key:'packaging', label: 'Packaging' }, { key:'kanban', label: 'Kanban Std' },
+          { key:'customers', label: 'ลูกค้า' }, { key:'suppliers', label: 'Supplier' }, { key:'uom', label: 'หน่วยนับ' },
+          { key:'ct', label: 'ทบทวน CT' }, { key:'export', label: 'Export' }]}
         tab={mainTab} onTab={setMainTab} />
 
       {mainTab === 'products' && (<>
@@ -935,7 +935,7 @@ export default function ProductMaster() {
       <FilterBar style={{ marginBottom: 16 }}>
         {/* 2026-09-07: กรองไลน์ผ่าน <LineSelect> (ลำดับชั้น/ตัดปลดระวาง) แทนลิสต์แบนจากแถวสินค้า */}
         <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} placeholder={ALL.line}
-          extraGroups={[{ label: '⚠ ไม่มีในทะเบียนไลน์', options: orphanLineOpts }]} />
+          extraGroups={[{ label: 'ไม่มีในทะเบียนไลน์', options: orphanLineOpts }]} />
         {/* ✅ ตัวกรองความครบ (2026-09-22) — แยก "บังคับแล้ว" กับ "อนาคตบังคับ" คนละตัวเลือก
             ถ้ารวมเป็นตัวเดียว = เกือบทั้งฐานเด้งขึ้นมา (101 ตัวยังไม่มี routing · 106 ยังไม่มี packaging)
             ⇒ ตัวกรองที่ไม่เคยกรองอะไรออก = คนเลิกใช้ */}
@@ -943,7 +943,7 @@ export default function ProductMaster() {
         <select value={readyFilter} onChange={e => setReadyFilter(e.target.value)}
           title="กรองตามความครบของข้อมูล — Routing/Packaging ยังไม่บังคับวันนี้ (อนาคตบังคับ)">
           <option value="">{ALL.status}</option>
-          <option value="req">⚠ ยังไม่ครบ (ที่บังคับแล้ว)</option>
+          <option value="req">ยังไม่ครบ (ที่บังคับแล้ว)</option>
           <option value="any">… ยังไม่ครบ (รวมที่อนาคตบังคับ)</option>
         </select>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--muted)' }}>
@@ -1399,8 +1399,8 @@ export default function ProductMaster() {
               </Field>
               <Field label="รูปแบบขึ้นกัมบัง *">
                 <select value={form.posting_mode} onChange={e => setForm(f => ({ ...f, posting_mode: e.target.value }))} style={inputSt}>
-                  <option value="immediate">📌 มีกัมบังก็ผลิต (ขึ้น Order ทุกครั้งที่ scan)</option>
-                  <option value="lot_accumulate">📥 สะสม Lot ก่อนขึ้น Order (Lot Post)</option>
+                  <option value="immediate">มีกัมบังก็ผลิต (ขึ้น Order ทุกครั้งที่ scan)</option>
+                  <option value="lot_accumulate">สะสม Lot ก่อนขึ้น Order (Lot Post)</option>
                 </select>
               </Field>
               {form.posting_mode === 'lot_accumulate' && (
@@ -2771,7 +2771,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                               style={{ ...inputSt, width: 140, padding: '4px 6px', fontSize: 11.5 }}>
                               <option value="">— ชั้น 1 (ใต้ {selProduct.mat_no || 'FG'}) —</option>
                               {items.filter(o => o.id !== it.id && o.mat_no).map(o => (
-                                <option key={o.id} value={o.mat_no}>↳ ใต้ {o.mat_no}</option>
+                                <option key={o.id} value={o.mat_no}>ใต้ {o.mat_no}</option>
                               ))}
                             </select>
                           ) : (
@@ -2862,7 +2862,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                   style={{ ...inputSt, width: 260, padding: '5px 8px', fontSize: 12, background: 'var(--bg2)' }}>
                   <option value="">— ชั้น 1 (ใต้ {selProduct?.mat_no || 'FG'}) —</option>
                   {[...new Map(items.filter(o => o.mat_no).map(o => [o.mat_no, o])).values()].map(o => (
-                    <option key={o.id} value={o.mat_no}>↳ ใต้ {o.part_name || o.mat_no}{o.part_name ? ` · MAT ${o.mat_no}` : ''}</option>
+                    <option key={o.id} value={o.mat_no}>ใต้ {o.part_name || o.mat_no}{o.part_name ? ` · MAT ${o.mat_no}` : ''}</option>
                   ))}
                 </select>
                 {pickerParent && (
@@ -3030,7 +3030,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                       {slocChoices.map(s => (
                         <option key={s.code} value={s.code}>{s.code} · {s.name}</option>
                       ))}
-                      <option value="__free">✏️ พิมพ์รหัสเอง (ยังไม่ลงทะเบียน)</option>
+                      <option value="__free">พิมพ์รหัสเอง (ยังไม่ลงทะเบียน)</option>
                     </select>
                   )}
                   <div style={{ fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>

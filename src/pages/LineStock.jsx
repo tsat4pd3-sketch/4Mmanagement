@@ -239,10 +239,10 @@ function StockTab({ role, scope }) {
   // สถานะ stock ตาม min/max จริง (kanban_standards) — ถ้าไม่มี min ตั้งไว้ fallback < 10
   const stockStatus = useCallback((qty, mat_no) => {
     const min = ksMap[mat_no]?.min;
-    if (qty <= 0) return { label:'🔴 หมด/ติดลบ', color:'var(--red)', bg:'var(--red-dim)', low:true };
+    if (qty <= 0) return { label: 'หมด/ติดลบ', color:'var(--red)', bg:'var(--red-dim)', low:true };
     if (min != null && qty <= min) return { label:`🟡 ต่ำกว่า min (${min})`, color:'var(--amber)', bg:'var(--amber-dim)', low:true };
-    if (min == null && qty < 10)   return { label:'🟡 เหลือน้อย', color:'var(--amber)', bg:'var(--amber-dim)', low:true };
-    return { label:'🟢 ปกติ', color:'var(--green)', bg:'var(--green-dim)', low:false };
+    if (min == null && qty < 10)   return { label: 'เหลือน้อย', color:'var(--amber)', bg:'var(--amber-dim)', low:true };
+    return { label: 'ปกติ', color:'var(--green)', bg:'var(--green-dim)', low:false };
   }, [ksMap]);
 
   // on-hand ปัจจุบันของ line+mat (จาก stock ที่โหลดมา) — ใช้โชว์ในฟอร์ม + กันติดลบ
@@ -474,7 +474,7 @@ function StockTab({ role, scope }) {
         <LineSelect
           lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
           placeholder={allOf('ไลน์/คลัง')}
-          extraGroups={[{ label: '🏬 คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
+          extraGroups={[{ label: 'คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
         />
         <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="รายการ" />
         <span className="spacer" />
@@ -615,7 +615,7 @@ function StockTab({ role, scope }) {
         return (
           <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10, flexWrap:'wrap' }}>
             <Segmented value={groupMode} onChange={pickGroupBy}
-              options={[{ value:'sloc', label:'🏬 ตามพื้นที่ SAP' }, { value:'line', label:'📍 ตามไลน์' }]} />
+              options={[{ value:'sloc', label: 'ตามพื้นที่ SAP' }, { value:'line', label: 'ตามไลน์' }]} />
             {keys.length > 1 && (
               <button type="button" onClick={() => persistCollapsed(allFolded ? new Set() : new Set(keys))}
                 style={{ ...inputSt, width:'auto', cursor:'pointer', fontSize:12, padding:'6px 12px' }}>
@@ -869,7 +869,7 @@ function StockTab({ role, scope }) {
                   <LineSelect
                     lines={lines} value={form.line_name} {...scope} style={inputSt} placeholder="เลือกไลน์..."
                     onChange={v => setForm(f => ({ ...f, line_name: v }))}
-                    extraGroups={[{ label: '🏬 คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
+                    extraGroups={[{ label: 'คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
                   />
                   {/* ⚠️ ไลน์แม่ = ระดับแผนก งานผลิตเปิดกะที่ไลน์ลูก — ของที่ฝากไว้ที่ไลน์แม่
                       จะถูกหักตอนปิดใบผลิตไม่ได้เลย (backflush หาด้วยชื่อไลน์ที่เปิดกะ)
@@ -1279,8 +1279,8 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                       (ตรวจแล้วไม่มีแถวไหนใช้ 'all' เลย — ถอดได้ไม่กระทบใคร)
                       จะรองรับจริงต้องแก้ `roundWindows`/`roundAlloc` ให้แยกคีย์ตามกะด้วย ไม่ใช่แค่ปล่อยตัวเลือกไว้ */}
                   <select value={form.shift} onChange={e => setForm(f => ({ ...f, shift: e.target.value, round_no: editId ? f.round_no : String(nextRoundNo(f.line_name, e.target.value)) }))} style={inputSt}>
-                    <option value="day">☀️ กะเช้า (day)</option>
-                    <option value="night">🌙 กะดึก (night)</option>
+                    <option value="day">กะเช้า (day)</option>
+                    <option value="night">กะดึก (night)</option>
                   </select>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
                     กะดึกต้องตั้งรอบของตัวเองแยก — รอบกะเช้าไม่ครอบกะดึกให้
@@ -1694,7 +1694,7 @@ function InflowRulesTab({ canEdit }) {
                   พิมพ์ผิด = "ไลน์ผี" ที่มีของแต่ไม่มีใครเห็น → เลือกจากทะเบียนไลน์ + คลังกลางเท่านั้น (2026-09-07 · บั๊กคลาสเดียวกับรอบจัดส่ง) */}
               <LineSelect lines={lines} value={form.dest_line_name} onChange={v => setForm(f => ({ ...f, dest_line_name: v }))} {...scope}
                 placeholder="— เลือกปลายทาง —" style={{ ...inputSt, width: 240 }}
-                extraGroups={[{ label: '🏬 คลัง', options: [...new Set([...WAREHOUSE_LOCATIONS, ...dests.filter(d => !lines.some(l => l.name === d))])].sort().map(n => ({ value: n })) }]} />
+                extraGroups={[{ label: 'คลัง', options: [...new Set([...WAREHOUSE_LOCATIONS, ...dests.filter(d => !lines.some(l => l.name === d))])].sort().map(n => ({ value: n })) }]} />
             </div>
             <button onClick={addRule} disabled={saving} style={{ ...btn('var(--accent)', 'var(--accent-ink)'), opacity: saving ? 0.6 : 1 }}>
               {saving ? '...' : 'บันทึก'}
@@ -1720,23 +1720,23 @@ const HeijunkaKanban = lazy(() => import('./HeijunkaKanban'));
 const LEGACY_TABS = { store: 'out', purchase: 'in', receipts: 'in' };
 const TABS = [
   /* 05/11 (คำสั่ง user) — แยกตามทิศของ: ขาออก = สโตร์ → พื้นที่ผลิต · ขาเข้า = supplier/พื้นที่ผลิต → สโตร์ */
-  { key:'out',       label:'📤 ขาออก (สโตร์ → ผลิต)' },
-  { key:'in',        label:'📥 ขาเข้า (→ สโตร์)' },
-  { key:'sap',       label:'🧾 ค้างตัด SAP' },    // ใบที่ส่งถึงไลน์แล้วแต่ตัดจ่ายใน SAP ไม่ได้ (04/11)
-  { key:'diff',      label:'⚠️ คลังพัก/ผลต่าง' },  // รับไม่ครบ = ส่วนที่ขาดพักไว้ รอผลิต+สโตร์ยืนยันคู่ (05/11)
-  { key:'stock',     label:'📦 Stock' },
-  { key:'count',     label:'📋 ตรวจนับ/เฟิร์มยอด' },   // กระทบยอดขาออกที่หลุด + ตรวจนับทั้งคลัง (2026-09-23)
-  { key:'wip',       label:'🔩 WIP ค้างระหว่างขั้น' },   // ยอดค้าง — คนละเรื่องกับ 'คิวเติม WIP' ในบอร์ดคัมบัง
+  { key:'out',       label: 'ขาออก (สโตร์ → ผลิต)' },
+  { key:'in',        label: 'ขาเข้า (→ สโตร์)' },
+  { key:'sap',       label: 'ค้างตัด SAP' },    // ใบที่ส่งถึงไลน์แล้วแต่ตัดจ่ายใน SAP ไม่ได้ (04/11)
+  { key:'diff',      label: 'คลังพัก/ผลต่าง' },  // รับไม่ครบ = ส่วนที่ขาดพักไว้ รอผลิต+สโตร์ยืนยันคู่ (05/11)
+  { key:'stock',     label: 'Stock' },
+  { key:'count',     label: 'ตรวจนับ/เฟิร์มยอด' },   // กระทบยอดขาออกที่หลุด + ตรวจนับทั้งคลัง (2026-09-23)
+  { key:'wip',       label: 'WIP ค้างระหว่างขั้น' },   // ยอดค้าง — คนละเรื่องกับ 'คิวเติม WIP' ในบอร์ดคัมบัง
   /* 📍 20/10 — ลูป "ผลิตเรียก → สโตร์เห็น" ตายที่ขั้น "ถึง min แล้วเสนอให้เบิก" เพราะไม่มีใครตั้งจุดเรียกเติม
      เดิมเห็นทีละไลน์ (แผงใน /layout-setup) ⇒ ไม่มีจอไหนตอบว่าทั้งโรงงานขาดกี่จุด */
-  { key:'levels',    label:'📍 จุดเรียกเติม (ทั้งโรงงาน)' },
+  { key:'levels',    label: 'จุดเรียกเติม (ทั้งโรงงาน)' },
   /* 🔴 13/10 feedback: ชื่อแท็บเดิมเขียนแต่ "โซนคลัง (ผัง)" = ชื่อของแผงล่าง
      แต่คนมาหา "พื้นที่ SAP / รหัสคลัง" ซึ่งเป็นแผงบนของแท็บนี้ แล้วหาไม่เจอ (user: "ยังหาไม่เจอ")
      ⇒ ชื่อแท็บต้องบอกของที่อยู่ข้างในทั้ง 2 ชั้น */
-  { key:'zones',     label:'🏬 พื้นที่ SAP / โซนคลัง' },
-  { key:'delivery',  label:'⏰ รอบจัดส่ง' },
-  { key:'timeboard', label:'🕐 บอร์ดเวลา (ดูอย่างเดียว)' },   // กดยืนยันส่ง/รับที่บอร์ดคัมบัง
-  { key:'inflow',    label:'⚙️ กฎรับเข้า' },
+  { key:'zones',     label: 'พื้นที่ SAP / โซนคลัง' },
+  { key:'delivery',  label: 'รอบจัดส่ง' },
+  { key:'timeboard', label: 'บอร์ดเวลา (ดูอย่างเดียว)' },   // กดยืนยันส่ง/รับที่บอร์ดคัมบัง
+  { key:'inflow',    label: 'กฎรับเข้า' },
 ];
 
 export default function LineStock() {

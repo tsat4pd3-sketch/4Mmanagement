@@ -301,9 +301,9 @@ function MetricColumn({ label, value, target, color }) {
 }
 
 const STATUS_BADGE = {
-  open:          { label: '● RUNNING',    bg: 'var(--green-dim)',  color: 'var(--green)' },
-  pending_close: { label: '◐ รออนุมัติปิด', bg: 'var(--amber-dim)', color: 'var(--amber)' },
-  closed:        { label: '■ ปิดกะแล้ว',   bg: 'rgba(148,163,184,0.15)', color: 'var(--muted)' },
+  open:          { label: 'RUNNING',    bg: 'var(--green-dim)',  color: 'var(--green)' },
+  pending_close: { label: 'รออนุมัติปิด', bg: 'var(--amber-dim)', color: 'var(--amber)' },
+  closed:        { label: 'ปิดกะแล้ว',   bg: 'rgba(148,163,184,0.15)', color: 'var(--muted)' },
 };
 
 // ── Main Component ───────────────────────────────────────────────
@@ -1375,17 +1375,17 @@ export default function OEEAnalytics() {
   }, [defects, partCost]);
 
   // `cluster: true` = จับกลุ่มจากข้อความอิสระ (ทางเดียวที่จะเจาะ "อื่นๆ" ซึ่งบังคับกรอกรายละเอียดอยู่แล้ว)
-  const NOTE_DIM = { key: 'note', label: '💬 หมายเหตุ (จับกลุ่มคำ)', cluster: true };
+  const NOTE_DIM = { key: 'note', label: 'หมายเหตุ (จับกลุ่มคำ)', cluster: true };
   const DT_DIMS = [
     NOTE_DIM,
-    { key: 'machine', label: '⚙️ เครื่องจักร' }, { key: 'line', label: '🏭 ไลน์' },
-    { key: 'product', label: '📦 ชิ้นงาน' }, { key: 'shift', label: '🕐 กะ' },
-    { key: 'man', label: '👤 ผู้บันทึก' }, { key: 'date', label: '📅 วัน' },
+    { key: 'machine', label: 'เครื่องจักร' }, { key: 'line', label: 'ไลน์' },
+    { key: 'product', label: 'ชิ้นงาน' }, { key: 'shift', label: 'กะ' },
+    { key: 'man', label: 'ผู้บันทึก' }, { key: 'date', label: 'วัน' },
   ];
   const DEF_DIMS = [
     NOTE_DIM,
-    { key: 'product', label: '📦 ชิ้นงาน' }, { key: 'line', label: '🏭 ไลน์' },
-    { key: 'shift', label: '🕐 กะ' }, { key: 'man', label: '👤 ผู้บันทึก' }, { key: 'date', label: '📅 วัน' },
+    { key: 'product', label: 'ชิ้นงาน' }, { key: 'line', label: 'ไลน์' },
+    { key: 'shift', label: 'กะ' }, { key: 'man', label: 'ผู้บันทึก' }, { key: 'date', label: 'วัน' },
   ];
 
   // ── Styles ─────────────────────────────────────────────────────
@@ -1403,9 +1403,9 @@ export default function OEEAnalytics() {
         title="OEE Analytics" icon="📈"
         sub="วิเคราะห์ประสิทธิภาพการผลิต — Availability · Performance · Quality"
         tabs={[
-          { key: 'today', label: '⚡ ภาพรวมวันนี้' },
-          { key: 'trend', label: '📊 แนวโน้ม/ประวัติ' },
-          { key: 'insight', label: '🧠 วิเคราะห์สาเหตุ' },
+          { key: 'today', label: 'ภาพรวมวันนี้' },
+          { key: 'trend', label: 'แนวโน้ม/ประวัติ' },
+          { key: 'insight', label: 'วิเคราะห์สาเหตุ' },
         ]}
         tab={viewTab} onTab={setViewTab}
         actions={<>
@@ -1966,7 +1966,7 @@ export default function OEEAnalytics() {
       >
         {/* ทะเบียนไลน์ (scope แล้ว) ผ่าน <LineSelect> กลาง — เดิมสร้างจากชื่อใน sessions: ไลน์ที่ rename แล้วโชว์ชื่อเก่า / ไลน์ที่ยังไม่มี session หาย (2026-09-07) */}
         <LineSelect lines={linesFull} value={selLine} onChange={setSelLine} placeholder={ALL.line}
-          extraGroups={[{ label: '⚠ นอกทะเบียน (ชื่อใน sessions ไม่ตรงทะเบียนไลน์)', options: trOrphanLines.map(n => ({ value: n })) }]} />
+          extraGroups={[{ label: 'นอกทะเบียน (ชื่อใน sessions ไม่ตรงทะเบียนไลน์)', options: trOrphanLines.map(n => ({ value: n })) }]} />
         <Segmented value={selShift} onChange={setSelShift} options={SHIFT_OPTIONS} label="กะ" />
       </TimeRangeBar>
 
@@ -2239,7 +2239,7 @@ export default function OEEAnalytics() {
               {[
                 { k: 'all',   label: 'ของเสียทั้งหมด',            sub: 'รวมงานทดลอง',                      color: 'var(--red)', qty: defectCost.qtyAll },
                 { k: 'line',  label: 'จากไลน์ผลิต',               sub: 'ตัวที่คิดเข้า %Q (ไม่รวมงานทดลอง/ของรอ QA)', color: 'var(--amber)', qty: defectCost.qtyLine },
-                { k: 'trial', label: '🧪 งานทดลอง (Try-out)',     sub: 'ไม่ถูกนับใน %Q',                    color: 'var(--blue)', qty: defectCost.qtyTrial },
+                { k: 'trial', label: 'งานทดลอง (Try-out)',     sub: 'ไม่ถูกนับใน %Q',                    color: 'var(--blue)', qty: defectCost.qtyTrial },
               ].map(c => (
                 <div key={c.k} style={{ background: 'var(--card)', border: `1px solid ${tint(c.color, 'line')}`, borderLeft: `4px solid ${c.color}`, borderRadius: 10, padding: '10px 14px' }}>
                   <div style={{ fontSize: 11.5, color: 'var(--text2)', fontWeight: 700 }}>{c.label}</div>

@@ -57,12 +57,12 @@ import { DeleteButton } from '../components/IconButton';
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const TABS_BASE = [
-  { key: 'board',    label: '📊 บอร์ด' },
-  { key: 'parts',    label: '📦 พาร์ท & PPAP' },
-  { key: 'drawings', label: '📐 แบบ & ECI' },
-  { key: 'tooling',  label: '🔧 Tooling' },
-  { key: 'tasks',    label: '✅ งาน' },
-  { key: 'templates', label: '⚙️ แม่แบบ' },
+  { key: 'board',    label: 'บอร์ด' },
+  { key: 'parts',    label: 'พาร์ท & PPAP' },
+  { key: 'drawings', label: 'แบบ & ECI' },
+  { key: 'tooling',  label: 'Tooling' },
+  { key: 'tasks',    label: 'งาน' },
+  { key: 'templates', label: 'แม่แบบ' },
 ];
 const ALL_KEYS = TABS_BASE.map(t => t.key);
 

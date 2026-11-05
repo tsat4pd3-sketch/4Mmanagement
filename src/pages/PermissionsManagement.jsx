@@ -445,9 +445,9 @@ export default function PermissionsManagement() {
         title="จัดการสิทธิ์" icon="🔐"
         sub="กำหนดว่าแต่ละ role เข้าหน้าไหนได้ (แท็บแรก) และทำอะไรในหน้านั้นได้บ้าง เช่น สร้าง/แก้/ลบ/อนุมัติ (แท็บสอง)"
         tabs={[
-          { key: 'matrix', label: '🔭 ภาพรวม (ใครทำอะไรได้)' },
-          { key: 'pages', label: '📄 การเข้าถึงหน้า' },
-          { key: 'actions', label: '🛠️ สิทธิ์การทำงาน (สร้าง/แก้/ลบ/อนุมัติ)' },
+          { key: 'matrix', label: 'ภาพรวม (ใครทำอะไรได้)' },
+          { key: 'pages', label: 'การเข้าถึงหน้า' },
+          { key: 'actions', label: 'สิทธิ์การทำงาน (สร้าง/แก้/ลบ/อนุมัติ)' },
         ]}
         tab={tab} onTab={setTab}
       />
@@ -496,8 +496,8 @@ export default function PermissionsManagement() {
         <FilterBar>
           <Segmented value={kind} onChange={setKind} label="ชนิดสิทธิ์" size="sm" options={[
             { value: 'all', label: 'ทั้งหมด' },
-            { value: 'page', label: '📄 เข้าหน้า' },
-            { value: 'action', label: '🛠️ การทำงาน' },
+            { value: 'page', label: 'เข้าหน้า' },
+            { value: 'action', label: 'การทำงาน' },
           ]} />
           <SearchInput value={q} onChange={setQ} fields="ชื่อฟังก์ชัน / คีย์สิทธิ์" />
           <label className="tbtn" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>

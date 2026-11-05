@@ -1208,8 +1208,8 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                               onChange={e => setAtt(idx, 'eval_agree', e.target.value === '' ? null : e.target.value === '1')}
                               style={{ width: 'auto', padding: '4px 6px', borderRadius: 6, fontSize: 12 }}>
                               <option value="">—</option>
-                              <option value="1">✓ เห็นด้วย</option>
-                              <option value="0">✗ ไม่เห็นด้วย</option>
+                              <option value="1">เห็นด้วย</option>
+                              <option value="0">ไม่เห็นด้วย</option>
                             </select>
                           </td>
                           <td>

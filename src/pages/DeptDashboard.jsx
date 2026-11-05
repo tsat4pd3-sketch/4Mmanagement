@@ -377,7 +377,7 @@ function ProductionView({ d, ctx }) {
     </Section>
 
     <ParetoAbcChart title="🔧 Downtime นอกแผน 7 วัน (ABC)" records={dtRecords} unit="นาที"
-      dims={[{ key: 'machine', label: '⚙️ เครื่องจักร' }, { key: 'line', label: '🏭 ไลน์' }, { key: 'shift', label: '🕐 กะ' }, { key: 'date', label: '📅 วัน' }, { key: 'note', label: '💬 หมายเหตุ', cluster: true }]}
+      dims={[{ key: 'machine', label: 'เครื่องจักร' }, { key: 'line', label: 'ไลน์' }, { key: 'shift', label: 'กะ' }, { key: 'date', label: 'วัน' }, { key: 'note', label: 'หมายเหตุ', cluster: true }]}
       sectionStyle={cardSt} emptyText="ไม่มี downtime นอกแผนใน 7 วัน" />
 
     <Section title="🔗 ทางลัด">
@@ -827,7 +827,7 @@ function QaView({ d, ctx }) {
     </div>
 
     <ParetoAbcChart title="🚫 ของเสีย 7 วัน แยกตามประเภท (ABC)" records={defRecords} unit="ชิ้น"
-      dims={[{ key: 'line', label: '🏭 ไลน์' }, { key: 'product', label: '📦 ชิ้นงาน' }, { key: 'shift', label: '🕐 กะ' }, { key: 'date', label: '📅 วัน' }, { key: 'note', label: '💬 หมายเหตุ', cluster: true }]}
+      dims={[{ key: 'line', label: 'ไลน์' }, { key: 'product', label: 'ชิ้นงาน' }, { key: 'shift', label: 'กะ' }, { key: 'date', label: 'วัน' }, { key: 'note', label: 'หมายเหตุ', cluster: true }]}
       sectionStyle={cardSt} emptyText="ไม่มีบันทึกของเสียใน 7 วัน — ตรวจสอบว่าลงบันทึกครบหรือยัง" />
 
     <Section title="🔗 ทางลัด">

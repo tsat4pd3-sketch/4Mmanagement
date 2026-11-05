@@ -489,8 +489,8 @@ export default function Energy() {
         <td style={td}>
           <select value={r?.source || 'manual'} disabled={!canEdit || !r}
             onChange={e => saveCell(target, { source: e.target.value })} style={{ ...inp, width: 112 }}>
-            <option value="manual">✍️ กรอกมือ</option>
-            <option value="meter">🔌 จากมิเตอร์</option>
+            <option value="manual">กรอกมือ</option>
+            <option value="meter">จากมิเตอร์</option>
             <option value="estimated">≈ ประมาณการ</option>
           </select></td>
         <td style={td}><input defaultValue={r?.note ?? ''} readOnly={!canEdit} placeholder="—"
@@ -522,8 +522,8 @@ export default function Energy() {
   return (
     <Page>
       <PageHeader title="พลังงานไฟฟ้า" icon="⚡" sub={`${monthLabel(month)} · เฟส 1 กรอกรายเดือน`}
-        tabs={[{ key: 'input', label: '📝 กรอกรายเดือน' }, { key: 'summary', label: '📊 สรุป & วิเคราะห์' }, { key: 'setup', label: '⚙️ ค่าการปล่อย' },
-          ...(mqttReady ? [{ key: 'mqtt', label: '📡 มิเตอร์ / MQTT' }] : [])]}
+        tabs={[{ key: 'input', label: 'กรอกรายเดือน' }, { key: 'summary', label: 'สรุป & วิเคราะห์' }, { key: 'setup', label: 'ค่าการปล่อย' },
+          ...(mqttReady ? [{ key: 'mqtt', label: 'มิเตอร์ / MQTT' }] : [])]}
         tab={tab} onTab={setTab}
       />
       {/* แถบเดือน = FilterBar มาตรฐาน (UI-STANDARD 2026-09-24 — เดิมอยู่ในช่องปุ่มหัวเพจ ช่องสูง 31/33 มุม 7) */}
@@ -588,7 +588,7 @@ export default function Energy() {
             <div style={{ ...card, padding: 0, overflowX: 'auto', marginBottom: 8 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
                 {head()}
-                <tbody>{row({ isPlant: true, label: '🏢 ยอดจากบิลค่าไฟ (PEA)' })}</tbody>
+                <tbody>{row({ isPlant: true, label: 'ยอดจากบิลค่าไฟ (PEA)' })}</tbody>
               </table>
             </div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20, fontSize: 12.5 }}>

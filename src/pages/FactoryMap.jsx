@@ -217,7 +217,7 @@ const METRICS = {
   /* 🚦 แท็บ default — ตอบ "ทั้งโรงงานปกติไหม" ในแวบเดียว: เขียวหมด = จบ · ผิดปกติ = สีตามเรื่องของมัน
      + ข้อความบอกเหตุผล · โซนสนับสนุนโชว์ด้วย (นี่คือบ้านของภาพรวม) · แท็บอื่น = มุมเจาะรายเรื่อง */
   health: {
-    label: '🚦 ปกติ/ผิดปกติ', desc: true,
+    label: 'ปกติ/ผิดปกติ', desc: true,
     value: s => HEALTH_RANK[s.isFac ? facHealthOf(s) : prodHealthCat(s)] || 0,
     cat: s => (s.isFac ? facHealthOf(s) : prodHealthCat(s)),
     text: s => (s.isFac ? facHealthTextOf(s) : prodHealthText(s)),
@@ -232,7 +232,7 @@ const METRICS = {
      สี = เทียบเดือนก่อน (ลดลง=เขียว) · ไม่มีฐานเทียบ = เทา ไม่ใช่เขียว
      ⚠️ facilityNA ต้องไม่ตั้ง — โซนคอมเพรสเซอร์/คูลลิ่งคือตัวกินไฟหลัก metric นี้มีความหมายเต็มที่ */
   energy: {
-    label: '⚡ พลังงาน', worstFirst: true, desc: true,
+    label: 'พลังงาน', worstFirst: true, desc: true,
     value: s => s.kwh ?? null,
     text: s => {
       if (s.kwh == null) return 'ยังไม่กรอก';
@@ -245,7 +245,7 @@ const METRICS = {
   productivity: {
     // เทียบ "เป้า ณ เวลาปัจจุบัน (on-time)" ไม่ใช่เป้าเต็มกะ — % จึงบอกว่า "ทันจังหวะมั้ย" แบบ real-time
     // ฟอร์แมต: ทำได้ / เป้า ณ เวลานี้ / เป้าเต็มกะ · สี = ทำได้เทียบเป้า ณ เวลานี้
-    label: '📦 ยอดผลิต', worstFirst: true, facilityNA: true,
+    label: 'ยอดผลิต', worstFirst: true, facilityNA: true,
     // เป้า 0 = ไม่มี order → ไม่มี pace ให้จัดอันดับ (คืน null → ลงไปท้ายรายการ ไม่ปนกับไลน์ตกจังหวะ)
     value: s => s.target > 0 ? (s.onTimeTarget >= 1 ? Math.round(s.actual / s.onTimeTarget * 100) : 100) : null,
     // แยกให้เห็นชัด: มี order → ทำได้/เป้า ณ เวลานี้/เต็มกะ · เปิดกะแต่ยังไม่มี order · ยังไม่เปิดกะ
@@ -258,7 +258,7 @@ const METRICS = {
     short: s => s.target > 0 ? (s.onTimeTarget >= 1 ? `${Math.round(s.actual / s.onTimeTarget * 100)}%` : `${s.actual}`) : '',
   },
   oee: {
-    label: '⚙️ OEE', worstFirst: true, facilityNA: true,
+    label: 'OEE', worstFirst: true, facilityNA: true,
     value: s => s.oee,
     text: s => s.oee != null
       ? `OEE ${Math.round(s.oee)}%${s.oeeLive ? ' (สด)' : ''}${s.oeeCtPartial ? ' ⚠CT ไม่ครบ' : ''}${s.oeePOver ? ` ⚠%P ตัน (${Math.round(s.oeePRaw)}%)` : ''}`
@@ -274,7 +274,7 @@ const METRICS = {
     cat: s => { if (s.oee == null) return 'idle'; const t = statusOf(s.oee, s.oeeTarget); return t === 'good' ? 'good' : t === 'warn' ? 'ok' : t === 'bad' ? 'bad' : 'idle'; },
   },
   breakdown: {
-    label: '🔧 Downtime', worstFirst: true, desc: true, facilityNA: true,
+    label: 'Downtime', worstFirst: true, desc: true, facilityNA: true,
     // sidebar อันดับ = สะสมทั้งวันงาน (นอกแผน + รวมเวลาที่กำลังหยุด)
     value: s => s.dtMin,
     text: s => s.dtActive ? `🔴 หยุด ${fmtDtElapsed(s.dtOpenMin)}` : s.dtMin > 0 ? `${s.dtMin} นาที` : (s.hasOpen ? 'ไม่มี' : ''),
@@ -287,7 +287,7 @@ const METRICS = {
     short: s => s.dtActive ? `🔴 ${fmtDtElapsed(s.dtOpenMin)}` : s.dtMinHour > 0 ? `${s.dtMinHour}น.` : '',
   },
   ng: {
-    label: '🚫 ของเสีย', worstFirst: true, desc: true, facilityNA: true,
+    label: 'ของเสีย', worstFirst: true, desc: true, facilityNA: true,
     value: s => s.ng,
     text: s => s.ng > 0 ? `NG ${s.ng}` : (s.hasOpen ? 'NG 0' : ''),
     cat: s => !s.hasOpen && s.ng === 0 ? 'idle' : s.ng === 0 ? 'good' : s.ng < 20 ? 'ok' : 'bad',
@@ -296,7 +296,7 @@ const METRICS = {
   people: {
     // 👷 รวม "คน/เข้างาน" + "จุดงานเข้าประจำ" เป็นแท็บเดียว (2026-08-04 คำสั่ง user) —
     // ป้าย: คนมา/ทั้งหมด · จุดที่มีคนเข้าประจำ/จุดทั้งหมด · ⚠PPE — สี = ด้านที่แย่กว่า
-    label: '👷 คน & จุดงาน', worstFirst: false, facilityNA: true,
+    label: 'คน & จุดงาน', worstFirst: false, facilityNA: true,
     value: s => s.headTotal > 0 ? Math.round(s.present / s.headTotal * 100) : (s.stationTotal > 0 ? Math.round(s.stationFilled / s.stationTotal * 100) : null),
     text: s => {
       const parts = [];
@@ -324,7 +324,7 @@ const METRICS = {
         — pm_plans บอกแค่ "ครบกำหนดเมื่อไหร่" ไม่ได้บอกว่าช่างลงมือวันไหน · ตัวนี้ชนะทุกสถานะ
         (สิ่งที่เกิดอยู่ตอนนี้สำคัญกว่าสิ่งที่ค้าง) และเป็นสีฟ้า **ไม่ใช่ alarm ห้ามกระพริบ** */
   pm: {
-    label: '🛠️ PM ช่าง (Preventive)', worstFirst: true, desc: true,
+    label: 'PM ช่าง (Preventive)', worstFirst: true, desc: true,
     value: s => s.pmBusy ? 2000 + s.pmBusy : (s.pmTotal ? s.pmOverdue * 1000 + s.pmNever * 50 + s.pmNoCycle * 20 + s.pmDueSoon : null),
     text: s => s.pmBusy ? `🔧 กำลังทำ PM วันนี้${s.pmBusyText ? ` · ${s.pmBusyText}` : ''}` : pmPlanText(s),
     cat: s => s.pmBusy ? 'busy' : !s.pmTotal ? 'idle' : s.pmOverdue ? 'bad' : (s.pmDueSoon || s.pmNever || s.pmNoCycle) ? 'ok' : 'good',
@@ -337,13 +337,13 @@ const METRICS = {
      · แผน AM ที่ยังเป็นรอบปฏิทิน (`amOverdue`/`amDueSoon`) = สัญญาณเสริม ยังโชว์
      · มีแผน AM แต่ไม่มีจุดตรวจรายวัน = ช่องว่างทะเบียน **ต้องเขียนบนจอ** ไม่ใช่เขียว "ปกติ" */
   am: {
-    label: '🏭 AM (ผลิตตรวจเอง)', worstFirst: true, desc: true,
+    label: 'AM (ผลิตตรวจเอง)', worstFirst: true, desc: true,
     value: s => (s.amDTotal || s.amTotal) ? amDailyRank(s) : null,
     text: amDailyText, cat: amDailyCat, short: amDailyShort,
   },
   supply: {
     // 🔗 Supply route — ไลน์ผลิต: utility จ่ายไลน์นี้ กำลังซ่อม = กระทบ · โซน facility: เครื่องในโซน down = กระทบไลน์ที่จ่าย
-    label: '🔗 Supply Route', worstFirst: true, desc: true,
+    label: 'Supply Route', worstFirst: true, desc: true,
     value: s => s.supList.length ? (s.supAtRisk ? 1000 + s.supList.length : s.supList.length) : null,
     text: s => {
       const feeds = s.isFac && s.supFeeds?.length ? ` → ${s.supFeeds.join(', ')}` : '';
@@ -2466,8 +2466,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
       {!editing && (
         <div className="tv-hide" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
           <Segmented label="ช่วงเวลาของทั้งหน้า" value={viewMode} onChange={setViewMode} options={[
-            { value: 'live', label: '⚡ Live (วันนี้สด)', title: 'ผัง แผงขวา และรายละเอียดที่คลิก = ข้อมูลสดของวันนี้' },
-            { value: 'review', label: '📅 ทบทวนรายวัน', title: 'ผัง แผงขวา และรายละเอียดที่คลิก = ยอดทั้งวันของวันที่เลือก' },
+            { value: 'live', label: 'Live (วันนี้สด)', title: 'ผัง แผงขวา และรายละเอียดที่คลิก = ข้อมูลสดของวันนี้' },
+            { value: 'review', label: 'ทบทวนรายวัน', title: 'ผัง แผงขวา และรายละเอียดที่คลิก = ยอดทั้งวันของวันที่เลือก' },
           ]} />
           {isReview && (<>
             <button onClick={() => setReviewDate(d => shiftDate(d, -1))} style={navBtn}>◀</button>
@@ -4042,7 +4042,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
               {facOpts.length > 0 && <optgroup label="🔧 โซน MTN / Facility">{facOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
               {dieOpts.length > 0 && <optgroup label="🔨 คลังแม่พิมพ์ (ผังจัดเก็บใน /die-registry)">{dieOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
               {storeOpts.length > 0 && <optgroup label="🏬 โซนคลังสินค้า (ทะเบียนใน /line-stock แท็บโซนคลัง)">{storeOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
-              <optgroup label="อื่นๆ"><option value="__new__">➕ พิมพ์ชื่อโซนใหม่…</option></optgroup>
+              <optgroup label="อื่นๆ"><option value="__new__">พิมพ์ชื่อโซนใหม่…</option></optgroup>
             </select>
             {assignLine === '__new__' && (
               <div style={{ marginBottom: 16, display: 'grid', gap: 8 }}>

@@ -888,7 +888,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
         <div style={card}>
           <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)', marginBottom: 12, fontFamily: 'var(--font-display)' }}>📤 อัพโหลดไฟล์จากลูกค้า</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-            {[{ k: 'forecast', label: '📈 Forecast ล่วงหน้า' }, { k: 'orders', label: '🚚 Order + รอบส่งงาน' }].map(t => (
+            {[{ k: 'forecast', label: 'Forecast ล่วงหน้า' }, { k: 'orders', label: 'Order + รอบส่งงาน' }].map(t => (
               <button key={t.k} onClick={() => { setKind(t.k); setHeaders([]); setRows([]); setFileName(''); }} style={btn(kind === t.k)}>{t.label}</button>
             ))}
             <label style={{ ...btn(false), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -1631,8 +1631,8 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       {/* เลือกชนิด Kanban — ทำหน้าที่ "แท็บย่อย" (data-subtab · UI-STANDARD §2.1) */}
       <div data-subtab="1" style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
         {[
-          { id: 'withdrawal', label: '🔄 Withdrawal (เบิกถอน FG)' },
-          { id: 'production', label: '🏭 Production (ผลิต press)' },
+          { id: 'withdrawal', label: 'Withdrawal (เบิกถอน FG)' },
+          { id: 'production', label: 'Production (ผลิต press)' },
         ].map(t => (
           <button key={t.id} onClick={() => { setCalcType(t.id); setPreview(null); }}
             style={{ ...btn(calcType === t.id), fontSize: 12.5 }}>{t.label}</button>
@@ -1656,7 +1656,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
           /* ไลน์ที่มีพาร์ทในตาราง — จัดลำดับชั้นตามผัง (แม่→ลูก) แทนลิสต์แบนเรียงตัวอักษร */
           <LineSelect lines={prodLines.filter(l => lines.includes(l.name))}
             value={lineFilter} onChange={setLineFilter} placeholder={ALL.line}
-            extraGroups={[{ label: '⚠ ไม่มีในทะเบียนไลน์', options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
+            extraGroups={[{ label: 'ไม่มีในทะเบียนไลน์', options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
           />
         )}
         <span className="filter-label">เดือน Forecast ที่ใช้คำนวณ</span>
@@ -1950,10 +1950,10 @@ export default function PlannerSales() {
         title="Planner & Sales — Forecast จากลูกค้า" icon="📈"
         sub="Sales อัพโหลด Forecast/Order จากลูกค้า → ระบบวางแผนภาระการผลิตล่วงหน้า · ติดตามรอบส่งงานรายวันที่หน้า 🚚 Delivery"
         tabs={[
-          { key: 'planner', label: '📈 Forecast Planner' },
-          { key: 'kanban', label: '🎴 คำนวณ Kanban' },
-          { key: 'upload', label: '📤 อัพโหลด (Sales)' },
-          { key: 'monitoring', label: '📗 Monitoring (Planning)' },
+          { key: 'planner', label: 'Forecast Planner' },
+          { key: 'kanban', label: 'คำนวณ Kanban' },
+          { key: 'upload', label: 'อัพโหลด (Sales)' },
+          { key: 'monitoring', label: 'Monitoring (Planning)' },
         ]}
         tab={tab} onTab={setTab}
       />

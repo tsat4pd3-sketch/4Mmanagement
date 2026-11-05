@@ -21,9 +21,9 @@ import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบาย
       เก่ากว่านั้นถูกลบอัตโนมัติ — ต้องเก็บยาวกว่านี้ให้ export ออกก่อน                        */
 
 const SRC = {
-  main: { label: '🗄️ ระบบหลัก', client: supabase,
+  main: { label: 'ระบบหลัก', client: supabase,
     desc: 'สิทธิ์/ผู้ใช้ · พนักงาน & ทักษะ · ผังองค์กร & ไลน์ · ทะเบียนเอกสาร · แจ้งเตือน · เอกสาร PE' },
-  dr:   { label: '🏭 ข้อมูลผลิต', client: supabaseDR,
+  dr:   { label: 'ข้อมูลผลิต', client: supabaseDR,
     desc: 'สินค้า & คัมบัง · เครื่องจักร & แม่พิมพ์ · แผน PM · ข้อมูลตั้งต้นงานซ่อม · ประเภท Downtime/ของเสีย' },
 };
 

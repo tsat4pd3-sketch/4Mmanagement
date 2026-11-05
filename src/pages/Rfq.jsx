@@ -47,7 +47,7 @@ import { DeleteButton } from '../components/IconButton';
      · เลขพาร์ทลูกค้าใน RFQ เป็นของใหม่ (ยังไม่มีในทะเบียนไหน) ⇒ พิมพ์เองได้โดยตั้งใจ
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const TABS = [{ key: 'list', label: '📋 รายการ RFQ' }, { key: 'report', label: '📈 ได้งาน / ไม่ได้งาน' }];
+const TABS = [{ key: 'list', label: 'รายการ RFQ' }, { key: 'report', label: 'ได้งาน / ไม่ได้งาน' }];
 const RFQ_COLS = 'id, rfq_no, customer, model, title, process_type, priority, received_date, due_date, sop_date_customer, status, '
   + 'customer_target_price, annual_volume, volume_source, apw, mpw, crd_no, crd_sent_at, npi_project_id, owner_name, remark, created_by_name, created_at';
 const AWARD_COLS = 'id, rfq_id, outcome, decided_at, loss_reason, unit_price, tooling_price, annual_volume, annual_sales, po_no, to_no, '

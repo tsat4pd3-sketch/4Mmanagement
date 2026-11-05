@@ -216,7 +216,7 @@ export default function PmForecast() {
         sub={tab === 'due'
           ? 'คาดวันที่จะต้อง PM ล่วงหน้า + buffer ที่ต้องผลิตเผื่อ ก่อนเครื่องหยุด · sync ให้วางแผน/ผลิตเตรียมตัว'
           : 'ยอดผลิตสะสมของอุปกรณ์แต่ละตัว — ฐานของ PM แบบนับยอดผลิต (condition-based) แทนรอบเวลา'}
-        tabs={[{ key: 'due', label: '🗓 PM ที่จะครบกำหนด' }, { key: 'usage', label: '📊 ยอดผลิตสะสมรายอุปกรณ์' }]}
+        tabs={[{ key: 'due', label: 'PM ที่จะครบกำหนด' }, { key: 'usage', label: 'ยอดผลิตสะสมรายอุปกรณ์' }]}
         tab={tab} onTab={setTab}
         actions={<button type="button" className="pg-btn" onClick={load} style={{ cursor: 'pointer' }}>รีเฟรช</button>}
       />

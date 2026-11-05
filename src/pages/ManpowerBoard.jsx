@@ -229,11 +229,11 @@ export default function ManpowerBoard() {
         title="Manpower Control Board" icon="🧑‍🤝‍🧑"
         sub="ผังกำลังคน · ผังจุดงาน · ป้ายสถานะ 4M ของส่วนงาน — อ่านอย่างเดียว ตามทะเบียนพนักงาน/ตารางกะ/เช็คชื่อวันนี้"
         tabs={[
-          { key: 'org', label: '🧑‍🤝‍🧑 ผังกำลังคน' },
-          { key: 'layout', label: '🗺️ ผัง LAYOUT' },
-          { key: 'fourm', label: '🚦 ป้ายสถานะ 4M' },
-          { key: 'staffing', label: '📊 แผน vs มาจริง' },
-          { key: 'history', label: '📜 ประวัติการเปลี่ยนช่อง' },
+          { key: 'org', label: 'ผังกำลังคน' },
+          { key: 'layout', label: 'ผัง LAYOUT' },
+          { key: 'fourm', label: 'ป้ายสถานะ 4M' },
+          { key: 'staffing', label: 'แผน vs มาจริง' },
+          { key: 'history', label: 'ประวัติการเปลี่ยนช่อง' },
         ]}
         tab={tab} onTab={setTab}
         filters={filters}

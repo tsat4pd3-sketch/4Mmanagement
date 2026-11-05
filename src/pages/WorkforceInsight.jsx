@@ -1055,10 +1055,10 @@ export default function WorkforceInsight() {
         title="กำลังคน & Turnover" icon="📈"
         sub="เช็คชื่อรายวัน · การเปลี่ยนจุดงาน · อัตราการเข้า-ออก · OT รายบุคคลรายเดือน — อ่านอย่างเดียว"
         tabs={[
-          { key: 'manpower', label: '📊 กำลังคนรายวัน' },
-          { key: 'moves', label: '🔀 เปลี่ยนจุดงานรายวัน' },
-          { key: 'turnover', label: '📉 Turnover' },
-          { key: 'ot', label: '⏱️ OT รายบุคคล' },
+          { key: 'manpower', label: 'กำลังคนรายวัน' },
+          { key: 'moves', label: 'เปลี่ยนจุดงานรายวัน' },
+          { key: 'turnover', label: 'Turnover' },
+          { key: 'ot', label: 'OT รายบุคคล' },
         ]}
         tab={tab} onTab={setTab}
       />
