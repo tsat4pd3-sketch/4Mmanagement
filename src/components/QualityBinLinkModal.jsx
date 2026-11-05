@@ -40,7 +40,10 @@ const BINS = [
     color: '#e05252', from: 'qty_ng', fromLabel: 'NG' },
 ];
 
-export default function QualityBinLinkModal({ defect, session, actorName, existing, onClose, onSaved }) {
+/** `chained` = เปิดต่อจากการบันทึกงานเสียทันที (ไม่ได้กดปุ่มในแถวเอง · 05/11)
+ *  ⇒ ต้องบอกให้ชัดว่า "งานเสียบันทึกแล้ว นี่คือขั้นถัดไป" และปุ่มปิดต้องอ่านว่า **ข้ามได้**
+ *     (ของที่ยังไม่ได้เอาลงถังจริง ห้ามบังคับออกใบ — กฎเดิมของโมดูลนี้) */
+export default function QualityBinLinkModal({ defect, session, actorName, existing, chained = false, onClose, onSaved }) {
   const matNo = defect?.prod_orders?.mat_no || '';
   const [partNo, setPartNo] = useState('');
   const [saving, setSaving] = useState(false);
@@ -154,6 +157,15 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
         <div style={{ fontSize: 15.5, fontWeight: 800, color: 'var(--text)', marginBottom: 3 }}>
           ลงถังเหลือง / ถังแดง
         </div>
+        {chained && !created && (
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)', background: 'var(--green-dim)',
+            border: '1px solid var(--green-line)', borderRadius: 8, padding: '7px 11px', marginBottom: 10, lineHeight: 1.6 }}>
+            ✓ บันทึกงานเสียเรียบร้อยแล้ว — ขั้นต่อไป: <b>ของชุดนี้เอาไปไว้ถังไหน?</b>
+            <div style={{ fontWeight: 500, color: 'var(--text2)', marginTop: 2 }}>
+              ยังไม่ได้เอาลงถังจริง กด “ยังไม่ลงถัง — ไว้ทีหลัง” ได้เลย · กลับมากดที่ปุ่ม 🗑️ ในรายการของเสียได้ตลอด
+            </div>
+          </div>
+        )}
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
           {defectName}
           {/* ลำดับ Part No. → ชื่องาน → MAT (UI §6.21) */}
@@ -276,7 +288,7 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
           <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)',
             background: 'none', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>
-            {created ? 'ปิด' : 'ยกเลิก'}</button>
+            {created ? 'ปิด' : chained ? 'ยังไม่ลงถัง — ไว้ทีหลัง' : 'ยกเลิก'}</button>
           {!created && (
             <button onClick={save} disabled={saving || !picked.length} style={{
               padding: '8px 20px', borderRadius: 8, border: 'none',
