@@ -10,8 +10,12 @@
 // 🔗 08/10 (audit AM↔PM) — กติกาต้องตรงกับบอร์ด `src/lib/dailyAmBoard.js` + `computeDailyPmStatus` ทุกข้อ:
 //   · ทีม AM = mtn_teams.kind='am' (ไม่ hardcode 'production') · ใบตรวจ status 'pending' = ยังไม่ตรวจ
 //   · กะ void ไม่ใช่กะจริง (ไม่เริ่มนาฬิกา) · ครอบครัวไลน์ = ทุกชั้นบน-ล่าง · อ่าน sessions/orders ล้ม = หยุด
+//   · ⚙️ B1 (05/11): เครื่องไหนต้องตรวจ = เครื่องที่มีใบผลิตสแกนกะนี้ (`prod_orders.machine_no`) · นาฬิกาเริ่มที่ใบแรกของเครื่องนั้น
+//     ใบไม่ลงเลขเครื่อง = ถอยไปตัดสินทั้งไลน์ (ตรงกับ amTargetsByRun ฝั่งจอ)
 //   แก้ที่นี่แล้วต้องแก้ฝั่งบอร์ดด้วย (และกลับกัน) — ไม่งั้นส้มยิงทั้งที่บอร์ดเขียว
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+// ⚙️ B1 (05/11) — ตัดสินรายเครื่องจากใบผลิตที่สแกน · สำเนากติกาของจอ (ด่าน pmDailyScanParity)
+import { runOfOrders, amTargetsByRun } from './amRun.js';
 
 const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
@@ -112,17 +116,22 @@ Deno.serve(async () => {
     const sessLine: Record<string, string> = {};
     (sessions ?? []).forEach(s => { sessLine[s.id] = s.line_name; });
     const firstOrder: Record<string, string> = {};
+    const ordersByLine: Record<string, { machine_no: string | null; at: string | null }[]> = {};
     if (sessions && sessions.length) {
       /* ⚠️ "เริ่มผลิต" = `opened_at` (เปิดใบ) ไม่ใช่ `confirmed_at` (ปิดใบ = ผลิตเสร็จ)
          ต้องตรงกับหน้า /daily-checker?tab=pm ไม่งั้นจอกับตัวเตือนตัดสินคนละเวลา
          (แก้ 2026-08-24 — เดิมนาฬิกาเริ่มนับตอนใบแรกจบ ใบที่กินหลายชั่วโมงเลยไม่เคยถูกเตือน) */
-      const { data: orders, error: eOrd } = await db.from('prod_orders').select('session_id, opened_at, confirmed_at').in('session_id', sessions.map(s => s.id));
+      const { data: orders, error: eOrd } = await db.from('prod_orders').select('session_id, opened_at, confirmed_at, machine_no').in('session_id', sessions.map(s => s.id));
       if (eOrd) throw new Error('อ่านใบผลิตไม่สำเร็จ — ไม่รู้เวลาเริ่มผลิต หยุดไว้ก่อน: ' + eOrd.message);
       for (const o of orders ?? []) {
         const ln = sessLine[o.session_id];
         const at = o.opened_at || o.confirmed_at;
         if (!ln || !at) continue;
         if (!firstOrder[ln] || at < firstOrder[ln]) firstOrder[ln] = at;
+      }
+      for (const o of orders ?? []) {
+        const ln = sessLine[o.session_id];
+        if (ln) (ordersByLine[ln] ||= []).push({ machine_no: o.machine_no ?? null, at: o.opened_at || o.confirmed_at || null });
       }
     }
 
@@ -174,20 +183,29 @@ Deno.serve(async () => {
       return best;
     };
 
+    // ใบผลิตทั้งครอบครัวไลน์ (ชุดเดียวกับ runningMachinesByLine ฝั่งจอ)
+    const familyOrders = (line: string) => (famOf[line] ?? [line]).flatMap(n => ordersByLine[n] ?? []);
+
     const now = Date.now();
-    let sent = 0, failed = 0;
+    let sent = 0, failed = 0, skippedNotRunning = 0;
     for (const line of lines) {
       if (alerted.has(line)) continue;
       const fo = startedFor(line);
       if (!fo) continue;                                            // not producing yet
       if (now - new Date(fo).getTime() <= WINDOW_MIN * 60000) continue;  // still in the grace window
-      const jigIds = byLine[line];
-      const missing = jigIds.filter(id => !checked.has(id));
-      if (missing.length === 0) continue;                           // complete
+      /* ⚙️ B1 — เครื่องที่ไม่มีใบผลิตสแกนกะนี้ = ไม่ต้องตรวจ (ไม่ใช่ขาดตรวจ) · นาฬิกาของแต่ละเครื่อง = ใบแรกของเครื่องนั้น */
+      const tgAll = byLine[line].map(id => ({ jig_id: id, machine_no: jigById[id]?.machine_no ?? null }));
+      const split = amTargetsByRun(tgAll, runOfOrders(familyOrders(line)));
+      const required = split.required as { jig_id: string; startAt?: string }[];
+      if (!required.length) { skippedNotRunning++; continue; }       // ไม่มีเครื่องในทะเบียนเดินกะนี้
+      const missing = required.filter(t => !checked.has(t.jig_id));
+      const late = missing.filter(t => now - new Date(t.startAt ?? fo).getTime() > WINDOW_MIN * 60000);
+      if (late.length === 0) continue;                              // complete หรือเครื่องที่ยังไม่ตรวจยังอยู่ในช่วงผ่อนผัน
       const sentOk = await notify({
         color: 'orange', line_name: line, shift_label: si.label, work_date: si.workDateStr,
-        checked: jigIds.length - missing.length, total: jigIds.length,
-        missing: missing.map(id => { const j = jigById[id]; return j?.machine_no ? `${j.machine_no}·${j.name}` : (j?.name ?? id); }),
+        checked: required.length - missing.length, total: required.length,
+        missing: late.map(t => { const j = jigById[t.jig_id]; return j?.machine_no ? `${j.machine_no}·${j.name}` : (j?.name ?? t.jig_id); }),
+        am_mode: split.mode, not_running: split.notRunning.length,
       });
       // ส่งไม่สำเร็จ = ไม่ mark → รอบสแกนถัดไป (อีก 10 นาที) ลองใหม่เอง ยังอยู่ในกะเดิม
       if (!sentOk) { failed++; continue; }
@@ -198,7 +216,7 @@ Deno.serve(async () => {
     }
     // hierarchy = 'unavailable' → ไลน์แม่ที่กะเปิดอยู่ที่ไลน์ลูก จะไม่ถูกเตือน (ต้องเห็น ห้ามเงียบ)
     // ส่งพลาดต้องดังพอให้เห็น — cron ขึ้น succeeded ทุกรอบอยู่แล้ว ถ้าไม่บอกก็ไม่มีใครรู้
-    return new Response(JSON.stringify({ ok: failed === 0, lines: lines.length, sent, failed, hierarchy, shift: si.shift, work_date: si.workDateStr }), {
+    return new Response(JSON.stringify({ ok: failed === 0, lines: lines.length, sent, failed, skippedNotRunning, hierarchy, shift: si.shift, work_date: si.workDateStr }), {
       status: failed ? 502 : 200, headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
