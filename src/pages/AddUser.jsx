@@ -74,6 +74,28 @@ const RoleOptGroups = ({ withDesc = false }) => ROLE_GROUPS.map(g => (
    (= พื้นที่ที่เขาไปตรวจ) เพราะติ๊ก PD3 ไว้ในช่องการมองเห็น
    ⇒ บ้านจริงของบัญชีของคน **อ่านจากทะเบียนพนักงานเท่านั้น** (สูตรเดียวกับ App.jsx: `emp.section ?? profile.section`)
      · บัญชีกลาง (ไม่ใช่คน) ไม่มีตัวตนในทะเบียน ⇒ เลือกเองได้ 1 ส่วนงาน (`homeSection`) */
+/* 🗑️ ป้ายไทยของคอลัมน์ "ผู้กระทำ" ที่กันลบบัญชี (FK ไป profiles/auth.users แบบ NO ACTION) — edge delete-user
+   คืน `${tbl}.${col}` ดิบ · ไม่มีในนี้ = โชว์ชื่อดิบ ห้ามซ่อน (ตารางใหม่ในอนาคตถูกนับเองฝั่ง DB) */
+const REF_LABEL = {
+  'daily_production_logs.checked_by':      'ใบเช็คชื่อรายวัน (ผู้ตรวจ)',
+  'four_m_logs.created_by':                'ใบ 4M (ผู้สร้าง)',
+  'four_m_logs.sv_approved_by':            'ใบ 4M (หัวหน้าอนุมัติ)',
+  'shift_schedules.created_by':            'ตารางกะ (ผู้ตั้ง)',
+  'shift_overrides.created_by':            'สลับกะรายวัน (ผู้ตั้ง)',
+  'operator_special_tasks.assigned_by':    'งานพิเศษพนักงาน (ผู้มอบ)',
+  'role_permissions.updated_by':           'ตั้งค่าสิทธิ์ (ผู้แก้)',
+  'employees.created_by':                  'ฐานพนักงาน (ผู้เพิ่ม)',
+  'skill_level_up_requests.reviewed_by':   'คำขอขึ้นขั้นทักษะ (ผู้พิจารณา)',
+  'cqi15_event_logs.reported_by':          'CQI-15 (ผู้รายงาน)',
+  'cqi15_event_logs.created_by':           'CQI-15 (ผู้สร้าง)',
+  'cqi15_event_approvals.approved_by':     'CQI-15 (ผู้อนุมัติ)',
+  'cqi15_check_completions.completed_by':  'CQI-15 รายการตรวจ (ผู้ทำ)',
+  'document_controls.updated_by':          'ทะเบียนเอกสาร (ผู้แก้)',
+  'document_controls.issued_by':           'ทะเบียนเอกสาร (ผู้ออก)',
+  'document_controls.approved_by':         'ทะเบียนเอกสาร (ผู้อนุมัติ)',
+  'wip_buffer_points.updated_by':          'จุด WIP เดิม (ผู้แก้)',
+};
+
 const emptyForm = { email: '', password: '', fullName: '', role: 'supervisor', position: '', sections: [], homeSection: '', respCcs: [], mtnTeams: [], deptAdmin: false, lineId: '', team: '', notifyEmail: '', scopeDepth: 'unit',
   // ⚠️ บัญชีของคน ต้องผูกกับตัวตนใน `employees` — ทีม/ไลน์/ส่วนงาน อ่านจากที่นั่น ห้ามให้ admin กรอกเอง
   //    (เคสจริง: หัวหน้า 2 คนทีมสลับกัน เพราะ admin เดาตอนสร้างบัญชี → เช็คชื่อมองไม่เห็นกะตัวเอง)
@@ -123,6 +145,10 @@ export default function AddUser() {
   const [error,         setError]         = useState(null);
   const [resetPw,       setResetPw]       = useState(''); // ช่องตั้งรหัสใหม่ใน modal แก้ไข
   const [resetPwBusy,   setResetPwBusy]   = useState(false);
+  /* 🗑️ ลบแล้วติดประวัติ (edge ตอบ 409 + blockers) — โชว์ว่าติดอะไรกี่แถว + ให้เลือกบัญชีที่จะรับโอนประวัติ
+     (เฉพาะบัญชีซ้ำของคนเดียวกัน) · null = ไม่ติด/ยังไม่ได้กด */
+  const [deleteBlock,   setDeleteBlock]   = useState(null);
+  const [reassignTo,    setReassignTo]    = useState('');
 
   const [emps, setEmps] = useState([]);      // ฐานพนักงาน — ใช้เป็นตัวตนของบัญชีแบบ 'person'
   const [empSearch, setEmpSearch] = useState('');
@@ -206,7 +232,9 @@ export default function AddUser() {
       created_at: authMap[p.id]?.created_at || null,
       /* 🔴 ห้ามเขียน `|| null` ที่นี่ — undefined (อ่านไม่ได้/migration ยังไม่ลง) ต้องต่างจาก
          null (ไม่เคยเข้าเลย) ไม่งั้นจอชวนให้ลบบัญชีที่คนใช้อยู่ทุกวัน · กฎอยู่ utils/accountActivity.js */
-      last_sign_in_at: authMap[p.id] ? (authMap[p.id].last_sign_in_at ?? null) : undefined,
+      /* 🔴 RPC คืนแถวแต่ "ไม่มีคีย์" last_sign_in_at (migration 20261029 ยังไม่ apply — เกิดจริง 05/11: ทุกใบขึ้น
+         "ไม่เคยเข้าใช้" ทั้งที่คนใช้อยู่ทุกวัน) ก็ต้องเป็น undefined เหมือนอ่านไม่ได้ · `?? null` ตีความคีย์ที่หายเป็น "ไม่เคยเข้า" */
+      last_sign_in_at: authMap[p.id] && ('last_sign_in_at' in authMap[p.id]) ? authMap[p.id].last_sign_in_at : undefined,
     })));
     setFetchingUsers(false);
   };
@@ -591,6 +619,7 @@ export default function AddUser() {
   };
 
   const openEdit = (u) => {
+    setDeleteBlock(null); setReassignTo('');
     setForm({
       email:       u.email,
       password:    '',
@@ -700,9 +729,15 @@ export default function AddUser() {
     finally { setResetPwBusy(false); }
   };
 
-  const handleDelete = async () => {
+  /* ลบบัญชี · `moveTo` = id บัญชีที่จะรับโอนประวัติก่อนลบ (กดจากแผง deleteBlock หลังรอบแรกติด 409)
+     🔴 ประวัติ "ใครตรวจ/ใครสร้าง" ห้ามหายเงียบ — edge ไม่ลบจนกว่าจะไม่มีอะไรผูก หรือสั่งโอนชัดๆ (edge-functions.md §delete-user) */
+  const handleDelete = async (moveTo = null) => {
     const who = form.fullName || form.email;
-    if (!window.confirm(`ลบผู้ใช้ "${who}" ถาวร?\n\nบัญชี login และสิทธิ์ทั้งหมดจะถูกลบ กู้คืนไม่ได้`)) return;
+    const dest = moveTo ? users.find(u => u.id === moveTo) : null;
+    const ask = moveTo
+      ? `โอนประวัติทั้งหมดของ "${who}" ให้บัญชี "${dest?.full_name || dest?.email || moveTo}" แล้วลบ "${who}" ถาวร?\n\nใช้เฉพาะกรณีเป็นคนเดียวกัน — ประวัติ (ใครตรวจ/ใครสร้าง) จะกลายเป็นชื่อบัญชีปลายทาง กู้คืนไม่ได้`
+      : `ลบผู้ใช้ "${who}" ถาวร?\n\nบัญชี login และสิทธิ์ทั้งหมดจะถูกลบ กู้คืนไม่ได้`;
+    if (!window.confirm(ask)) return;
     setLoading(true); setError(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -713,11 +748,20 @@ export default function AddUser() {
           'Authorization': `Bearer ${session.access_token}`,
           'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
         },
-        body: JSON.stringify({ user_id: editingId }),
+        body: JSON.stringify(moveTo ? { user_id: editingId, reassign_to: moveTo } : { user_id: editingId }),
       });
       const data = await res.json();
+      if (res.status === 409 && Array.isArray(data.blockers) && data.blockers.length) {
+        setDeleteBlock({ blockers: data.blockers });
+        setError(null);
+        return;
+      }
       if (!res.ok) throw new Error(data.error || 'ลบไม่สำเร็จ');
-      setMessage(`ลบผู้ใช้ "${who}" แล้ว`);
+      const movedN = (data.moved || []).reduce((s, m) => s + Number(m.n || 0), 0);
+      setMessage(movedN
+        ? `ลบผู้ใช้ "${who}" แล้ว · โอนประวัติ ${movedN} รายการให้ "${dest?.full_name || dest?.email || ''}"`
+        : `ลบผู้ใช้ "${who}" แล้ว`);
+      setDeleteBlock(null); setReassignTo('');
       setShowModal(false);
       fetchUsers();
     } catch (err) { setError(err.message); }
@@ -2247,9 +2291,43 @@ export default function AddUser() {
                 </div>
               )}
 
+              {/* 🗑️ ลบแล้วติดประวัติ — เขียนให้เห็นว่าติดอะไรกี่แถว แล้วให้เลือกบัญชีรับโอน (คนเดียวกันเท่านั้น) */}
+              {modalMode === 'edit' && deleteBlock && (() => {
+                const total = deleteBlock.blockers.reduce((s, b) => s + Number(b.n || 0), 0);
+                const others = users.filter(u => u.id !== editingId && u.role !== 'display');
+                return (
+                  <div style={{ gridColumn: '1 / -1', padding: '10px 12px', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, fontSize: 12, lineHeight: 1.6 }}>
+                    <div style={{ fontWeight: 700, color: 'var(--amber)', fontSize: 13 }}>
+                      ⛔ ลบไม่ได้ — บัญชีนี้มีประวัติผูกอยู่ {total} รายการ
+                    </div>
+                    <ul style={{ margin: '4px 0 6px', paddingLeft: 18, color: 'var(--text2)' }}>
+                      {deleteBlock.blockers.map(b => (
+                        <li key={`${b.tbl}.${b.col}`}>{REF_LABEL[`${b.tbl}.${b.col}`] || `${b.tbl}.${b.col}`} <b>{b.n}</b> รายการ</li>
+                      ))}
+                    </ul>
+                    <div style={{ color: 'var(--text2)' }}>
+                      ถ้าใบนี้เป็น<b>บัญชีซ้ำของคนเดียวกัน</b> ให้โอนประวัติไปบัญชีที่ใช้จริงแล้วค่อยลบ — ประวัติ "ใครตรวจ/ใครสร้าง" จะไม่หาย ·
+                      ถ้าเป็นคนละคน <b>อย่าโอน</b> ให้เปลี่ยนรหัสผ่าน/ลดสิทธิ์แทนการลบ
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
+                      <select value={reassignTo} onChange={e => setReassignTo(e.target.value)} style={{ flex: 1, minWidth: 220 }}>
+                        <option value="">— เลือกบัญชีที่จะรับโอนประวัติ —</option>
+                        {others.map(u => (
+                          <option key={u.id} value={u.id}>{u.full_name || '(ไม่มีชื่อ)'} · {u.email}</option>
+                        ))}
+                      </select>
+                      <button type="button" disabled={!reassignTo || loading} onClick={() => handleDelete(reassignTo)}
+                        style={{ padding: '8px 12px', background: reassignTo ? 'var(--red-dim)' : 'var(--bg3)', color: reassignTo ? 'var(--red)' : 'var(--muted)', border: '1px solid var(--red-line)', borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: reassignTo && !loading ? 'pointer' : 'default' }}>
+                        🔀 โอนประวัติแล้วลบ
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8, marginTop: 4 }}>
                 {modalMode === 'edit' && form.role !== 'admin' && (
-                  <button type="button" onClick={handleDelete} disabled={loading}
+                  <button type="button" onClick={() => handleDelete()} disabled={loading}
                     title="ลบบัญชีถาวร (ลบตัวเอง/บัญชี admin ไม่ได้)"
                     style={{ padding: '12px 16px', background: 'rgba(239,68,68,0.12)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: loading ? 'default' : 'pointer' }}>
                     🗑 ลบผู้ใช้
