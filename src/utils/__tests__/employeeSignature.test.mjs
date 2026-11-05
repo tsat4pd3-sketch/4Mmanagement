@@ -87,3 +87,17 @@ test('loader: ค้นด้วย id ได้ (บัญชีที่ผู
   const r = await loadEmployeeSigners(fakeClient(), { ids: ['e1'] });
   assert.equal(r.rows[0].signature_url, 'https://x/signatures/emp/e1/1.png');
 });
+
+test('inspectorForExport — มีรหัส = คนตามรหัสเซ็น · ห้ามถอยไปลายเซ็นบัญชีกลาง', async () => {
+  const { inspectorForExport } = await import('../employeeSignature.js');
+  const acc = { accountName: 'บัญชีกลาง', accountSig: 'acc.png' };
+  assert.deepEqual(inspectorForExport({ ...acc }), { name: 'บัญชีกลาง', signatureUrl: 'acc.png', source: 'account', note: '' });
+  const ok = inspectorForExport({ ...acc, code: '61234', signer: { state: 'ok', name: 'สมชาย', signatureUrl: 'emp.png', note: '' } });
+  assert.equal(ok.name, 'สมชาย'); assert.equal(ok.signatureUrl, 'emp.png'); assert.equal(ok.source, 'code');
+  for (const state of ['no_signature', 'not_found', 'ambiguous', 'unknown']) {
+    const r = inspectorForExport({ ...acc, code: '61234', signer: { state, name: state === 'no_signature' ? 'สมชาย' : null, note: 'x' } });
+    assert.equal(r.signatureUrl, null, `${state}: ห้ามเอาลายเซ็นบัญชีกลางมาแทน`);
+    assert.ok(r.note, `${state}: ต้องมีเหตุผล`);
+    assert.ok(r.name && r.name !== 'บัญชีกลาง', `${state}: ชื่อต้องไม่ใช่บัญชีกลาง`);
+  }
+});

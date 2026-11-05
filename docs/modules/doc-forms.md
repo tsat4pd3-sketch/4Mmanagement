@@ -133,6 +133,10 @@ migration `20261008_doc_forms_csv_round2_main.sql` (MAIN · **apply แล้ว
 > · เทียบกับคีย์ที่โค้ดอ่านจริง: `grep -rhoE "['\"](csv|xlsx)_[a-z0-9_]+['\"]" src/`
 >   (⚠️ `/daily-report` ประกอบคีย์แบบ `csv_dr_${reportType}` ⇒ grep ตรงๆ ไม่เห็น 4 คีย์นั้น)
 
+**เพิ่ม 05/11:** `qa_inspection_sheet` — ใบตรวจตามมาตรฐาน QA (ปุ่ม 🖨️ ใน `/qa` แท็บใบตรวจ · `src/lib/qaSheetPrint.js` · แถว `src/utils/qaPrintRows.js`)
+· migration `20261105_doc_forms_qa_inspection_sheet_main.sql` (MAIN · **apply แล้ว**) · `form_code` ว่าง — doc_control ตั้งเลข/ช่องเซ็นที่ `/doc-forms` (fallback ช่องเซ็น: ผู้ตรวจ · ผู้ทบทวน)
+· 🔴 จุดที่ยังไม่ตรวจต้องพิมพ์ด้วย (แถว "ยังไม่ตรวจ" + หัวใบ "ตรวจแล้ว X/Y จุด") · ใบที่ยังไม่ปิด = แถบเตือนบนใบ
+
 **เพิ่ม 03/11:** `xlsx_am_monthly` — Excel รายงาน AM รายเดือน (`/daily-checker?tab=pm&sub=monthly` ·
 `components/AmMonthlyReport.jsx`) · migration `20261103_doc_forms_xlsx_am_monthly_main.sql` (MAIN · **ยังไม่ apply** —
 ก่อน apply ได้ชื่อไฟล์เดิม `AM_Monthly_<เดือน>_<กะ>.xlsx` ไม่ล้ม)
