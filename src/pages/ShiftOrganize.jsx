@@ -1015,8 +1015,8 @@ export default function ShiftOrganize() {
               <div>
                 <label style={labelSt}>กะ</label>
                 <select value={ovrShift} onChange={e => setOvrShift(e.target.value)}>
-                  <option value="day">☀️ กะเช้า (08:00–19:59)</option>
-                  <option value="night">🌙 กะดึก (20:00–07:59)</option>
+                  <option value="day">กะเช้า (08:00–19:59)</option>
+                  <option value="night">กะดึก (20:00–07:59)</option>
                 </select>
               </div>
               <div>

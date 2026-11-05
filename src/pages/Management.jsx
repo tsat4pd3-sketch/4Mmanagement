@@ -153,9 +153,9 @@ const getManCase = ({ moveType, skillOk, hasHistory }) => {
   return 3;
 };
 const MAN_CASE_META = {
-  1: { label: '✅ เก็บ log อัตโนมัติ ไม่ต้องอนุมัติ', color: 'var(--green)', bg: 'var(--green-dim)', needsImage: false, requiresQa: false, autoApprove: true },
-  2: { label: '🟡 ต้องแนบรูป OJT + SV อนุมัติ',      color: 'var(--amber)', bg: 'var(--amber-dim)', needsImage: true,  requiresQa: false, autoApprove: false },
-  3: { label: '🔴 ต้องแนบรูป OJT + SV + QA อนุมัติ', color: 'var(--red)', bg: 'var(--red-dim)',  needsImage: true,  requiresQa: true,  autoApprove: false },
+  1: { label: 'เก็บ log อัตโนมัติ ไม่ต้องอนุมัติ', color: 'var(--green)', bg: 'var(--green-dim)', needsImage: false, requiresQa: false, autoApprove: true },
+  2: { label: 'ต้องแนบรูป OJT + SV อนุมัติ',      color: 'var(--amber)', bg: 'var(--amber-dim)', needsImage: true,  requiresQa: false, autoApprove: false },
+  3: { label: 'ต้องแนบรูป OJT + SV + QA อนุมัติ', color: 'var(--red)', bg: 'var(--red-dim)',  needsImage: true,  requiresQa: true,  autoApprove: false },
 };
 
 export default function Management() {
@@ -3055,7 +3055,7 @@ export default function Management() {
                     <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 2 }}>ลักษณะการย้ายงาน</div>
                     {/* move type */}
                     <div style={{ display: 'flex', gap: 8 }}>
-                      {[{ v: 'same', label: '🏭 ไลน์เดิม', desc: 'ย้ายในไลน์/ส่วนงานเดียวกัน' }, { v: 'cross', label: '🔀 ข้ามไลน์', desc: 'ย้ายข้ามไลน์ / ข้ามส่วนงาน' }].map(opt => (
+                      {[{ v: 'same', label: 'ไลน์เดิม', desc: 'ย้ายในไลน์/ส่วนงานเดียวกัน' }, { v: 'cross', label: 'ข้ามไลน์', desc: 'ย้ายข้ามไลน์ / ข้ามส่วนงาน' }].map(opt => (
                         <label key={opt.v} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '7px 6px', borderRadius: 7, cursor: 'pointer',
                           border: `2px solid ${log4MForm.moveType === opt.v ? 'var(--blue)' : 'var(--border2)'}`,
                           background: log4MForm.moveType === opt.v ? 'var(--blue-dim)' : 'transparent' }}>
@@ -3087,7 +3087,7 @@ export default function Management() {
                 <div style={{ background: 'var(--amber-dim)', borderRadius: 8, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 2 }}>ลักษณะการเปลี่ยนแปลง</div>
                   <div style={{ display: 'flex', gap: 10 }}>
-                    {[{ v: 'replace', label: '🔄 Replace', desc: 'สลับ / ทดแทน' }, { v: 'change', label: '⚠️ Change', desc: 'เปลี่ยนแปลง' }].map(opt => (
+                    {[{ v: 'replace', label: 'Replace', desc: 'สลับ / ทดแทน' }, { v: 'change', label: 'Change', desc: 'เปลี่ยนแปลง' }].map(opt => (
                       <label key={opt.v} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '8px 6px', borderRadius: 7, cursor: 'pointer',
                         border: `2px solid ${log4MForm.subtype === opt.v ? (opt.v === 'replace' ? 'var(--green)' : 'var(--red)') : 'var(--border2)'}`,
                         background: log4MForm.subtype === opt.v ? (opt.v === 'replace' ? 'var(--green-dim)' : 'var(--red-dim)') : 'transparent' }}>

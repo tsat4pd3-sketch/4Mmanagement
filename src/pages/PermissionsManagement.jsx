@@ -445,9 +445,9 @@ export default function PermissionsManagement() {
         title="จัดการสิทธิ์" icon="🔐"
         sub="กำหนดว่าแต่ละ role เข้าหน้าไหนได้ (แท็บแรก) และทำอะไรในหน้านั้นได้บ้าง เช่น สร้าง/แก้/ลบ/อนุมัติ (แท็บสอง)"
         tabs={[
-          { key: 'matrix', label: '🔭 ภาพรวม (ใครทำอะไรได้)' },
-          { key: 'pages', label: '📄 การเข้าถึงหน้า' },
-          { key: 'actions', label: '🛠️ สิทธิ์การทำงาน (สร้าง/แก้/ลบ/อนุมัติ)' },
+          { key: 'matrix', label: 'ภาพรวม (ใครทำอะไรได้)' },
+          { key: 'pages', label: 'การเข้าถึงหน้า' },
+          { key: 'actions', label: 'สิทธิ์การทำงาน (สร้าง/แก้/ลบ/อนุมัติ)' },
         ]}
         tab={tab} onTab={setTab}
       />
@@ -469,6 +469,7 @@ export default function PermissionsManagement() {
       {tab === 'matrix' && (<>
         {/* ── 3 แกนที่ตัดสินว่า "คนคนหนึ่งทำอะไรได้" — เขียนไว้บนจอ เพราะคนเข้าใจผิดซ้ำว่า role = ตำแหน่ง ── */}
         <div data-page-note="1" style={{ ...s.section, padding: 0, overflow: 'hidden' }}>
+          <InfoMore label="3 แกนที่ตัดสินว่าคนคนหนึ่งทำอะไรได้ (role · ขอบเขต · ตำแหน่ง)" id="perm-3axis" size={11.5} style={{ padding: '9px 14px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 1, background: 'var(--border)' }}>
             {[
               { ic: '🔐', t: 'ชุดสิทธิ์ (role)', c: 'var(--accent)',
@@ -484,6 +485,7 @@ export default function PermissionsManagement() {
               </div>
             ))}
           </div>
+          </InfoMore>
           <InfoMore label="ระดับที่ล็อกช่องเซ็น MO" size={11.5} style={{ padding: '9px 14px', borderTop: '1px solid var(--border)' }}>
             🪪 <b>ระดับที่ล็อกช่องเซ็น MO:</b>{' '}
             {POSITION_LEVELS.filter(l => l.rank >= 40).map(l => `${l.label} (${l.rank})`).join(' · ')}
@@ -494,8 +496,8 @@ export default function PermissionsManagement() {
         <FilterBar>
           <Segmented value={kind} onChange={setKind} label="ชนิดสิทธิ์" size="sm" options={[
             { value: 'all', label: 'ทั้งหมด' },
-            { value: 'page', label: '📄 เข้าหน้า' },
-            { value: 'action', label: '🛠️ การทำงาน' },
+            { value: 'page', label: 'เข้าหน้า' },
+            { value: 'action', label: 'การทำงาน' },
           ]} />
           <SearchInput value={q} onChange={setQ} fields="ชื่อฟังก์ชัน / คีย์สิทธิ์" />
           <label className="tbtn" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>

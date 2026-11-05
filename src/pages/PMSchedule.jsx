@@ -56,10 +56,10 @@ function parseLocalDate(s) {
 
 
 const VIEW_OPTIONS = [
-  { key: 'timeline', label: '📊 Timeline' },
-  { key: 'calendar', label: '📅 ปฏิทิน' },
-  { key: 'buckets', label: '🗂️ การ์ด' },
-  { key: 'table', label: '📋 ตาราง' },
+  { key: 'timeline', label: 'Timeline' },
+  { key: 'calendar', label: 'ปฏิทิน' },
+  { key: 'buckets', label: 'การ์ด' },
+  { key: 'table', label: 'ตาราง' },
 ]
 const MONTHS_TH = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม']
 const DOW_TH = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
@@ -1100,12 +1100,12 @@ function BucketView({ rows, today, onCheck }) {
     else b.later.push(r)
   })
   const cols = [
-    { key: 'overdue', label: '🔴 เกินกำหนด', color: '#e05c4a' },
-    { key: 'week', label: '🟠 ครบใน 7 วัน', color: '#f59a3f' },
-    { key: 'month', label: '🟡 ครบในเดือนนี้', color: '#e0b34a' },
-    { key: 'later', label: '🟢 ถัดไป', color: '#3dd65c' },
-    { key: 'run', label: '🏃 ตามวันเดินเครื่อง', color: '#527855' },
-    { key: 'none', label: '⚪ ยังไม่มีวัน PM ครั้งถัดไป', color: '#9b8de8' },
+    { key: 'overdue', label: 'เกินกำหนด', color: '#e05c4a' },
+    { key: 'week', label: 'ครบใน 7 วัน', color: '#f59a3f' },
+    { key: 'month', label: 'ครบในเดือนนี้', color: '#e0b34a' },
+    { key: 'later', label: 'ถัดไป', color: '#3dd65c' },
+    { key: 'run', label: 'ตามวันเดินเครื่อง', color: '#527855' },
+    { key: 'none', label: 'ยังไม่มีวัน PM ครั้งถัดไป', color: '#9b8de8' },
   ]
   return (
     <div style={{ display: 'flex', gap: 12, overflowX: 'auto', alignItems: 'stretch', paddingBottom: 8 }}>

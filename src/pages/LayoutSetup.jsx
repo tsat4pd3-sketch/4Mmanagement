@@ -14,10 +14,10 @@ import TransportMapEditor from '../components/TransportMapEditor'
 //   หลักการ: หน้า display (/factory-map, dashboard) ดู+popup เท่านั้น · การตั้งค่าผังมารวมที่นี่ แยกแท็บตาม POV
 //   เฟส1: แท็บภาพรวมโรงงาน (FactoryMap setupMode) · ผลิต/MTN ลิงก์ไปหน้าเดิม · Store/AMR = อนาคต
 const TABS = [
-  { key: 'factory', label: '🗺️ ภาพรวมโรงงาน', desc: 'รูปผังใหญ่ + วาดกรอบ (polygon) ต่อไลน์ — ฐานของหน้า “ผังรวมโรงงาน”' },
-  { key: 'production', label: '🏭 ผลิต (ผังไลน์)', desc: 'ผังไลน์ + จุดงาน/เครื่องจักร/WIP ต่อไลน์' },
-  { key: 'mtn', label: '🔧 ซ่อมบำรุง (MTN)', desc: 'ผัง Facility + วางเครื่องจักร/จุดตรวจของ MTN' },
-  { key: 'store', label: '📦 Store / AMR', desc: 'วาดถนน/ทางเดินรถ (node/แยก/จุดจอด + เส้นเชื่อม) ทับผังใหญ่ — ฐานคำนวณเส้นทาง Teiki-bin/AMR' },
+  { key: 'factory', label: 'ภาพรวมโรงงาน', desc: 'รูปผังใหญ่ + วาดกรอบ (polygon) ต่อไลน์ — ฐานของหน้า “ผังรวมโรงงาน”' },
+  { key: 'production', label: 'ผลิต (ผังไลน์)', desc: 'ผังไลน์ + จุดงาน/เครื่องจักร/WIP ต่อไลน์' },
+  { key: 'mtn', label: 'ซ่อมบำรุง (MTN)', desc: 'ผัง Facility + วางเครื่องจักร/จุดตรวจของ MTN' },
+  { key: 'store', label: 'Store / AMR', desc: 'วาดถนน/ทางเดินรถ (node/แยก/จุดจอด + เส้นเชื่อม) ทับผังใหญ่ — ฐานคำนวณเส้นทาง Teiki-bin/AMR' },
 ]
 
 export default function LayoutSetup() {

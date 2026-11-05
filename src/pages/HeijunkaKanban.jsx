@@ -71,15 +71,15 @@ import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-he
 const VIEW_META = {
   // ⚠️ แต่ละตู้มีขั้นไม่เหมือนกัน (FG เตรียม→ส่ง→รับ · Child ปล่อยเข้าไลน์→รับเข้าสโตร์ ·
   //    จัดซื้อ สั่งซื้อ→รับเข้า) ⇒ ห้ามเขียนลำดับขั้นเดียวครอบทุกตู้ คนจะหาปุ่มที่ไม่มีอยู่จริง
-  unified:  { label: '🗄️ ตู้ Kanban รวม',   act: true,  purpose: 'คิวงานของสโตร์ทุกตู้ — สโตร์เป็นคนกดบันทึกสถานะ (แต่ละตู้มีขั้นของตัวเอง ดูคำบนปุ่ม)',
+  unified:  { label: 'ตู้ Kanban รวม',   act: true,  purpose: 'คิวงานของสโตร์ทุกตู้ — สโตร์เป็นคนกดบันทึกสถานะ (แต่ละตู้มีขั้นของตัวเอง ดูคำบนปุ่ม)',
               monitor: 'สัญญาณ Kanban ทุกตู้ — ดูสถานะอย่างเดียว' },
-  chart:    { label: '🕐 Store Time Chart', act: true,  purpose: 'ไลน์ไหนจะขาดของกี่โมง — เลือกพาร์ทแล้วกดสร้างใบส่งได้จากที่นี่',
+  chart:    { label: 'Store Time Chart', act: true,  purpose: 'ไลน์ไหนจะขาดของกี่โมง — เลือกพาร์ทแล้วกดสร้างใบส่งได้จากที่นี่',
               monitor: 'ไลน์ไหนจะขาดของกี่โมง — ดูอย่างเดียว' },
-  board:    { label: '🏪 Store Board',      act: false, purpose: 'สรุปรายไลน์ว่ามีใบค้างกี่ใบ — เป็นทางลัดเข้าไปทำงานต่อ ไม่มีปุ่มทำงานเอง' },
-  timeline: { label: '📊 Heijunka Board',   act: false, purpose: 'กริดรอบส่ง 24 ชม. — ดูว่ารอบไหนส่งอะไรบ้าง (มีเฉพาะไลน์ที่ใช้รอบ)' },
-  pull:     { label: '🔄 Pull / ใบสั่งผลิต', act: true,  purpose: 'ระบบดึง: demand สะสมครบล็อตแล้วออกใบสั่งผลิต + ใบเบิกวัตถุดิบ',
+  board:    { label: 'Store Board',      act: false, purpose: 'สรุปรายไลน์ว่ามีใบค้างกี่ใบ — เป็นทางลัดเข้าไปทำงานต่อ ไม่มีปุ่มทำงานเอง' },
+  timeline: { label: 'Heijunka Board',   act: false, purpose: 'กริดรอบส่ง 24 ชม. — ดูว่ารอบไหนส่งอะไรบ้าง (มีเฉพาะไลน์ที่ใช้รอบ)' },
+  pull:     { label: 'Pull / ใบสั่งผลิต', act: true,  purpose: 'ระบบดึง: demand สะสมครบล็อตแล้วออกใบสั่งผลิต + ใบเบิกวัตถุดิบ',
               monitor: 'ระบบดึง: demand สะสมครบล็อตแล้วออกใบสั่งผลิต + ใบเบิกวัตถุดิบ — ดูอย่างเดียว' },
-  demand:   { label: '📋 ความต้องการวันนี้', act: false, purpose: 'ต้องใช้พาร์ทอะไร กี่ชิ้น กี่ใบคัมบัง — สลับดูแบบการ์ดหรือตารางได้' },
+  demand:   { label: 'ความต้องการวันนี้', act: false, purpose: 'ต้องใช้พาร์ทอะไร กี่ชิ้น กี่ใบคัมบัง — สลับดูแบบการ์ดหรือตารางได้' },
 };
 
 /* ─── HEIJUNKA KANBAN — Subcomponent Part Demand ──────────────────────────
@@ -814,10 +814,10 @@ function KanbanCardGrid({ rowList, kanbanStd, fmt, imgOf }) {
         const covered = r.netTotal === 0;
         /* 3 สถานะของแถว: สต็อกพอแล้ว · ต้องเบิกและรู้ว่ากี่ใบ · ไม่มี std คิดใบไม่ได้ */
         const tone = covered
-          ? { c: 'var(--green)', bg: 'var(--green-dim)',  bd: 'var(--green-line)',  label: '✓ สต็อกพอ' }
+          ? { c: 'var(--green)', bg: 'var(--green-dim)',  bd: 'var(--green-line)',  label: 'สต็อกพอ' }
           : per
-            ? { c: 'var(--amber)', bg: 'var(--amber-dim)', bd: 'var(--amber-line)', label: '🎴 ต้องเบิก' }
-            : { c: 'var(--red)', bg: 'var(--red-dim)',  bd: 'var(--red-line)',  label: '⚠ ไม่มี std' };
+            ? { c: 'var(--amber)', bg: 'var(--amber-dim)', bd: 'var(--amber-line)', label: 'ต้องเบิก' }
+            : { c: 'var(--red)', bg: 'var(--red-dim)',  bd: 'var(--red-line)',  label: 'ไม่มี std' };
         return (
           <PartCard key={r.mat_no}
             code={r.mat_no} name={r.part_name} sub={r.supplier} img={imgOf?.(r.mat_no)} matTone={matColor(r.mat_no)}
@@ -933,9 +933,9 @@ function AccumulatorGroups({ groups, fmt }) {
       ตามใบเบิก** ⇒ เป็นเหตุการณ์ของสโตร์เต็มตัว คำว่า "รับของเข้าสโตร์" จึงตรงกับของจริง
    🔴 ห้ามเปลี่ยนกลับไปใช้คำฝั่งผลิตโดยไม่ถาม user — ไลน์ผลิตเป็นคนทำของ แต่**สโตร์เป็นคนบันทึก** */
 const LOT_STATUS = {
-  pending:   { label: '🆕 รอปล่อยเข้าไลน์', color: 'var(--amber)', bg: 'var(--amber-dim)',  border: 'var(--amber-line)', next: 'producing', nextLabel: '📤 ปล่อยเข้าไลน์' },
-  producing: { label: '🔧 อยู่ที่ไลน์ผลิต',  color: 'var(--blue)', bg: 'var(--blue-dim)',  border: 'var(--blue-line)', next: 'done',      nextLabel: '📥 รับของเข้าสโตร์' },
-  done:      { label: '✅ รับเข้าสโตร์แล้ว', color: 'var(--green)', bg: 'var(--green-dim)',   border: 'var(--green-line)', next: null,        nextLabel: null },
+  pending:   { label: 'รอปล่อยเข้าไลน์', color: 'var(--amber)', bg: 'var(--amber-dim)',  border: 'var(--amber-line)', next: 'producing', nextLabel: '📤 ปล่อยเข้าไลน์' },
+  producing: { label: 'อยู่ที่ไลน์ผลิต',  color: 'var(--blue)', bg: 'var(--blue-dim)',  border: 'var(--blue-line)', next: 'done',      nextLabel: '📥 รับของเข้าสโตร์' },
+  done:      { label: 'รับเข้าสโตร์แล้ว', color: 'var(--green)', bg: 'var(--green-dim)',   border: 'var(--green-line)', next: null,        nextLabel: null },
 };
 /* ── ⓪ ถึงจุดต้องปล่อยคัมบัง — สต็อก ≤ ขั้นต่ำ (2026-10-26 · feedback สโตร์) ──────────────
    สโตร์: *"ให้แสดงรายการที่สต็อกต่ำกว่าหรือเท่ากับค่า min เพื่อให้สโตร์ทราบถึงสถานะงานที่จะต้องปล่อยคัมบังเข้าไลน์"*
@@ -1156,22 +1156,22 @@ const STORE_TABS = [
 ];
 // ของซื้อจาก supplier (300 child ซื้อ / 500 raw) — 2 สเต็ป: สั่งซื้อ → รับเข้า (เติม stock)
 const PURCHASE_STATUS = {
-  pending:  { label: '🆕 รอสั่งซื้อ',  color: 'var(--amber)', bg: 'var(--amber-dim)', border: 'var(--amber-line)', next: 'ordered',  nextLabel: '🛒 สั่งซื้อแล้ว' },
-  ordered:  { label: '🚚 รอของเข้า',   color: 'var(--blue)', bg: 'var(--blue-dim)', border: 'var(--blue-line)', next: 'received', nextLabel: '✅ รับเข้าสโตร์' },
-  received: { label: '✅ รับเข้าแล้ว',  color: 'var(--green)', bg: 'var(--green-dim)',  border: 'var(--green-line)',  next: null,       nextLabel: null },
+  pending:  { label: 'รอสั่งซื้อ',  color: 'var(--amber)', bg: 'var(--amber-dim)', border: 'var(--amber-line)', next: 'ordered',  nextLabel: '🛒 สั่งซื้อแล้ว' },
+  ordered:  { label: 'รอของเข้า',   color: 'var(--blue)', bg: 'var(--blue-dim)', border: 'var(--blue-line)', next: 'received', nextLabel: '✅ รับเข้าสโตร์' },
+  received: { label: 'รับเข้าแล้ว',  color: 'var(--green)', bg: 'var(--green-dim)',  border: 'var(--green-line)',  next: null,       nextLabel: null },
   // ใบที่ถูกยกเลิก (เช่นล้างใบขยะจากบั๊ก lot_size) — ปกติถูกกรองออกตั้งแต่ query แล้ว
   // แต่ต้องมี meta กันหลุด: เดิม fallback ไป pending ทำใบยกเลิกโชว์เป็น "🆕 รอสั่งซื้อ" + มีปุ่มเดินต่อ
-  cancelled: { label: '⛔ ยกเลิกแล้ว', color: 'var(--muted)', bg: 'rgba(100,116,139,0.1)', border: 'rgba(100,116,139,0.3)', next: null, nextLabel: null },
+  cancelled: { label: 'ยกเลิกแล้ว', color: 'var(--muted)', bg: 'rgba(100,116,139,0.1)', border: 'rgba(100,116,139,0.3)', next: null, nextLabel: null },
 };
 const PURCHASE_FILTERS = [
   { key: '',  label: ALL.type },
-  { key: '3', label: '🟠 Child ซื้อ (3xxxxxxx)' },
-  { key: '5', label: '🟣 Raw Mat (5xxxxxxx)' },
+  { key: '3', label: 'Child ซื้อ (3xxxxxxx)' },
+  { key: '5', label: 'Raw Mat (5xxxxxxx)' },
 ];
 const WIP_STATUS = {
-  pending:   { label: '🔔 เรียกแล้ว',   color: 'var(--amber)', bg: 'var(--amber-dim)', border: 'var(--amber-line)', next: '🔧 เริ่มเตรียม' },
-  preparing: { label: '🔧 กำลังเตรียม', color: 'var(--blue)', bg: 'var(--blue-dim)', border: 'var(--blue-line)', next: '✅ ส่งเติมแล้ว' },
-  delivered: { label: '✅ เติมแล้ว',    color: 'var(--green)', bg: 'var(--green-dim)',  border: 'var(--green-line)', next: null },
+  pending:   { label: 'เรียกแล้ว',   color: 'var(--amber)', bg: 'var(--amber-dim)', border: 'var(--amber-line)', next: '🔧 เริ่มเตรียม' },
+  preparing: { label: 'กำลังเตรียม', color: 'var(--blue)', bg: 'var(--blue-dim)', border: 'var(--blue-line)', next: '✅ ส่งเติมแล้ว' },
+  delivered: { label: 'เติมแล้ว',    color: 'var(--green)', bg: 'var(--green-dim)',  border: 'var(--green-line)', next: null },
 };
 /* 🗂️ โซนตามสถานะของคิวสโตร์ (2026-10-02 · feedback หน้างาน "แถบสี/ป้ายสถานะไม่สะดุดตา อยากแยกโซน")
    ลำดับ = **งานในมือก่อนงานใหม่** (ของที่สแกนหยิบ/ตัดสต็อกแล้วต้องไปถึงไลน์ก่อน ค่อยเริ่มใบใหม่)
@@ -1195,8 +1195,8 @@ const PUR_ZONES = (withDone) => [
   ...(withDone ? [zoneOf(PURCHASE_STATUS.received, ['received'], 'ของเข้าสโตร์แล้ว')] : []),
 ];
 const RAW_ZONES = (withDone) => [
-  { key: 'pending', statuses: ['pending'], label: '🆕 รอจ่าย', color: 'var(--amber)', hint: 'จ่ายวัตถุดิบเข้าการผลิต child' },
-  ...(withDone ? [{ key: 'issued', statuses: ['issued'], label: '✔ จ่ายแล้ว', color: 'var(--green)', hint: '' }] : []),
+  { key: 'pending', statuses: ['pending'], label: 'รอจ่าย', color: 'var(--amber)', hint: 'จ่ายวัตถุดิบเข้าการผลิต child' },
+  ...(withDone ? [{ key: 'issued', statuses: ['issued'], label: 'จ่ายแล้ว', color: 'var(--green)', hint: '' }] : []),
 ];
 /* ═══ QueueCard — การ์ดคิวงานสโตร์ = `<PartCard>` + คำศัพท์ของคิว (2026-09-25)
 
@@ -1231,10 +1231,10 @@ function QueueCard({ code, name, qty, unit, qtyLabel = 'จำนวน', destin
   );
 }
 const RACK_STATUS = {
-  requested: { label: '🔔 เรียกแล้ว', color: 'var(--amber)', bg: 'var(--amber-dim)', border: 'var(--amber-line)', next: '🔧 เริ่มเตรียม' },
-  preparing: { label: '🔧 กำลังเตรียม', color: 'var(--blue)', bg: 'var(--blue-dim)', border: 'var(--blue-line)', next: '🚚 จัดส่งแล้ว' },
-  delivered: { label: '🚚 จัดส่งแล้ว', color: 'var(--blue)', bg: 'var(--blue-dim)', border: 'var(--blue-line)', next: '✅ ยืนยันรับ' },
-  received:  { label: '✅ รับแล้ว', color: 'var(--green)', bg: 'var(--green-dim)', border: 'var(--green-line)', next: null },
+  requested: { label: 'เรียกแล้ว', color: 'var(--amber)', bg: 'var(--amber-dim)', border: 'var(--amber-line)', next: '🔧 เริ่มเตรียม' },
+  preparing: { label: 'กำลังเตรียม', color: 'var(--blue)', bg: 'var(--blue-dim)', border: 'var(--blue-line)', next: '🚚 จัดส่งแล้ว' },
+  delivered: { label: 'จัดส่งแล้ว', color: 'var(--blue)', bg: 'var(--blue-dim)', border: 'var(--blue-line)', next: '✅ ยืนยันรับ' },
+  received:  { label: 'รับแล้ว', color: 'var(--green)', bg: 'var(--green-dim)', border: 'var(--green-line)', next: null },
 };
 /* ⚠️ กฎของบอร์ดสโตร์ (2026-08-25 · user: "ใช้งานยากมาก · ดูรก · ระบบ filter ก็ไม่ดี")
    1. **ตัวเลขบนแท็บต้องเท่ากับจำนวนการ์ดที่เห็น** — เดิมแท็บนับเฉพาะงานค้าง แต่ลิสต์ render ทุกแถวที่โหลดมา
@@ -3154,7 +3154,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
         {viewMode === 'demand' && (
           <span style={{ marginLeft: 'auto' }}>
             <Segmented value={demandFmt} onChange={setDemandFmt} label="รูปแบบการแสดงผล"
-              options={[{ value: 'cards', label: '🎴 การ์ด' }, { value: 'table', label: '📋 ตาราง' }]} />
+              options={[{ value: 'cards', label: 'การ์ด' }, { value: 'table', label: 'ตาราง' }]} />
           </span>
         )}
       </div>

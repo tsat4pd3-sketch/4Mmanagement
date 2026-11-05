@@ -105,7 +105,7 @@ import { prPlacement, assignedTechsOf, joinTechs, prQueueStateOf, PR_QUEUE_META 
       แต่กระดิ่ง `mtn_pr_waiting` เก็บลิงก์ `/mtn-repair?pr=waiting` ไว้ใน `notification_rules`
       ⇒ ถอดทิ้ง = กดกระดิ่งแล้วจอไม่กรองอะไรเลย (ค่าที่ไม่รู้จัก = ไม่กรอง) · ด่าน `pr-filter-keeps-waiting` */
 const PR_FILTERS = [
-  { v: 'waiting', label: '🛒 รอแอดมินช่าง (เปิด PR + กรอกเลข)', hidden: true },
+  { v: 'waiting', label: 'รอแอดมินช่าง (เปิด PR + กรอกเลข)', hidden: true },
   /* 🔴 **3 ขั้นเท่านั้น** (02/11 ทีม MTN: "จริงๆควรมีแค่ 3 Filter") — ห้ามเพิ่มถังที่ 4
      ขั้น ② จบที่ **เลข PO** ไม่ใช่เลข PR (04/11 · ดู prQueueStateOf) */
   { v: 'need',  label: PR_QUEUE_META.need.label },
@@ -393,8 +393,8 @@ export default function MtnRepair() {
   const isMobile = useIsMobile();   // 📱 รายการ = การ์ดต่อใบ (15/10 · docs/MOBILE-UX-STANDARD.md §4 ชนิด B)
   // แท็บผูก ?tab= (แชร์ลิงก์/refresh/Back อยู่แท็บเดิม) — ⚙️ ข้อมูลหลัก อยู่ท้ายสุดและโผล่ตามสิทธิ์
   const TAB_DEFS = [
-    { key: 'list', label: '📋 รายการ MO' },
-    ...(can('mtn_repair', 'manage_master', role) ? [{ key: 'master', label: '⚙️ ข้อมูลหลัก' }] : []),
+    { key: 'list', label: 'รายการ MO' },
+    ...(can('mtn_repair', 'manage_master', role) ? [{ key: 'master', label: 'ข้อมูลหลัก' }] : []),
   ];
   /* 'kpi'/'equip' = คีย์เก่าที่ **ย้ายออกไปหน้า `/mtn-analysis` แล้ว** (2026-09-22 · คำสั่ง user
      "ฟังก์ชันของช่างกระจายหลายหน้า") — ต้องคงไว้ในลิสต์ ไม่งั้น useTabParam ตีเป็นค่าไม่รู้จัก
@@ -758,7 +758,7 @@ export default function MtnRepair() {
   /* ชั้น "คิว" — ดูลิสต์ตัวกรองด้านบนว่าทำไมต้องเขียนเป็นลิสต์ */
   const queueFilters = useMemo(() => [
     { key: 'wait', label: 'รอขั้น', value: fWait, on: !!fWait, test: o => waitStageOf(o) === fWait },
-    { key: 'ack', label: '✍️ รอ ผจก.ต้นสังกัดเซ็นรับทราบ', on: fAck === 'pending',
+    { key: 'ack', label: 'รอ ผจก.ต้นสังกัดเซ็นรับทราบ', on: fAck === 'pending',
       test: o => isMtnFormOrder(o) && !o.dept_manager_at },
     { key: 'pr', label: 'งาน PR', value: PR_FILTERS.find(x => x.v === fPr)?.label || fPr,
       on: !!fPr && PR_FILTERS.some(x => x.v === fPr), test: prMatch },
@@ -4321,7 +4321,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
           {teamed && (
             /* เพิ่มของกลาง (🌐) ได้เฉพาะหัวหน้า — คนทีมเดียวเพิ่มได้แต่ของทีมตัวเอง */
             <select value={nwTeam || fTeam} onChange={e => setNwTeam(e.target.value)} style={{ ...inp, width: '100%', minWidth: 0 }}>
-              {(isBoss || unscoped) && <option value="">🌐 ใช้ร่วมทุกทีม</option>}
+              {(isBoss || unscoped) && <option value="">ใช้ร่วมทุกทีม</option>}
               {teamOpts.filter(t => isBoss || unscoped || myKeys.includes(teamKeyOf(t.key)))
                 .map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
             </select>
@@ -4358,7 +4358,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
             {teamed && (
               <select value={it.team || ''} disabled={!ok} onChange={e => changeTeam(it, e.target.value)}
                 title={ok ? 'ทีมที่ใช้รายการนี้' : lockNote(it)} style={{ ...inp, ...(ok ? null : ro), width: '100%', minWidth: 0 }}>
-                <option value="">🌐 ใช้ร่วมทุกทีม</option>
+                <option value="">ใช้ร่วมทุกทีม</option>
                 {teamOpts.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
               </select>
             )}

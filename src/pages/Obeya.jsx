@@ -61,10 +61,10 @@ export default function Obeya() {
   const canTodo = todoOk || !boardsOk;
 
   const tabs = useMemo(() => ([
-    canBoards && { key: 'kpi', label: '📋 บอร์ด KPI ส่วนงาน (รายเดือน)' },
-    canBoards && { key: 'sqdcm', label: '🖥️ จอ SQDCM (สัปดาห์/เดือน/ปี)' },
-    canTodo && { key: 'todo', label: '📌 งานค้างของส่วนงาน (วันนี้)' },
-    canBoards && { key: 'table', label: '⚙️ ตั้งค่า KPI / กรอกผล' },
+    canBoards && { key: 'kpi', label: 'บอร์ด KPI ส่วนงาน (รายเดือน)' },
+    canBoards && { key: 'sqdcm', label: 'จอ SQDCM (สัปดาห์/เดือน/ปี)' },
+    canTodo && { key: 'todo', label: 'งานค้างของส่วนงาน (วันนี้)' },
+    canBoards && { key: 'table', label: 'ตั้งค่า KPI / กรอกผล' },
   ].filter(Boolean)), [canBoards, canTodo]);
   const [tab, setTab] = useTabParam(tabs.map(t => t.key), tabs[0]?.key || 'kpi');
 

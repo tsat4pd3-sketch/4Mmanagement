@@ -251,7 +251,7 @@ export default function DailyPM() {
           AM ตรวจเครื่อง/POKA-YOKE ต้นกะ · {shiftInfo.label} · {shiftInfo.workDateStr}
           {' · '}เตือนเมื่อเกิน {DAILY_PM_WINDOW_MIN} นาทีหลังเปิดใบผลิตใบแรก
         </>}
-        tabs={[{ key: 'status', label: '📊 สถานะวันนี้' }, { key: 'monthly', label: '📅 รายงานรายเดือน' }, { key: 'registry', label: '⚙️ ลงทะเบียนเครื่องตรวจ' }]}
+        tabs={[{ key: 'status', label: 'สถานะวันนี้' }, { key: 'monthly', label: 'รายงานรายเดือน' }, { key: 'registry', label: 'ลงทะเบียนเครื่องตรวจ' }]}
         tab={tab} onTab={setTab} />
 
       {tab === 'status' && (

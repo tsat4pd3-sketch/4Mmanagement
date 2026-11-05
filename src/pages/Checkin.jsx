@@ -52,8 +52,8 @@ const LEAVE_DURATION_OPTS = [
   { value: 'hours', label: 'ระบุชั่วโมง' },
 ];
 const LEAVE_PERIOD_OPTS = [
-  { value: 'morning',   label: '🌅 ลาช่วงเช้า', sub: 'มาบ่าย' },
-  { value: 'afternoon', label: '🌇 ลาช่วงบ่าย', sub: 'มาเช้า' },
+  { value: 'morning',   label: 'ลาช่วงเช้า', sub: 'มาบ่าย' },
+  { value: 'afternoon', label: 'ลาช่วงบ่าย', sub: 'มาเช้า' },
 ];
 
 function toLocalDateStr(date) {
@@ -202,7 +202,7 @@ export default function Checkin() {
     return () => clearInterval(t);
   }, [realShiftInfo]);
   const shiftInfo = previewNight
-    ? { ...realShiftInfo, shift: 'night', label: '🌙 กะดึก (Preview)' }
+    ? { ...realShiftInfo, shift: 'night', label: 'กะดึก (Preview)' }
     : realShiftInfo;
 
   /* 📝 ร่างในเครื่อง (มือถือ · 22/10 · audit handheld ข้อ 4) — เช็คชื่อ 20+ คนแล้วบันทึกทีเดียวตอนท้าย
@@ -2032,8 +2032,8 @@ export default function Checkin() {
                 <select value={otBookShift}
                   onChange={e => { setOtBookShift(e.target.value); loadOtBookExisting(otBookDate, e.target.value); }}
                   style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }}>
-                  <option value="day">☀️ กะเช้า</option>
-                  <option value="night">🌙 กะดึก</option>
+                  <option value="day">กะเช้า</option>
+                  <option value="night">กะดึก</option>
                 </select>
               </div>
             </div>

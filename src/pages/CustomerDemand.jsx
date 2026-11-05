@@ -54,14 +54,14 @@ const workDateStr = () => { const d = new Date(); if (d.getHours() < 8) d.setDat
 
 /* ─── Shipping Time Chart Tab (Logistic) ──────────────────────────────────── */
 const SHIP_STATUS = {
-  pending:   { label: '🕐 รอยืนยัน',    color: 'var(--amber)', next: 'confirmed', nextLabel: '✔️ ยืนยันออเดอร์แล้ว' },
-  confirmed: { label: '✔️ ยืนยันแล้ว',  color: 'var(--blue)', next: 'prepared',  nextLabel: '📦 เตรียมของแล้ว' },
-  prepared:  { label: '📦 เตรียมแล้ว',  color: 'var(--blue)', next: 'loaded',    nextLabel: '🚛 โหลดขึ้นรถแล้ว' },
-  loaded:    { label: '🚛 โหลดแล้ว',    color: 'var(--blue)', next: 'shipped',   nextLabel: '🚚 ส่งถึงลูกค้าแล้ว' },
-  shipped:   { label: '✅ ส่งแล้ว',     color: 'var(--green)', next: null,        nextLabel: null },
+  pending:   { label: 'รอยืนยัน',    color: 'var(--amber)', next: 'confirmed', nextLabel: '✔️ ยืนยันออเดอร์แล้ว' },
+  confirmed: { label: 'ยืนยันแล้ว',  color: 'var(--blue)', next: 'prepared',  nextLabel: '📦 เตรียมของแล้ว' },
+  prepared:  { label: 'เตรียมแล้ว',  color: 'var(--blue)', next: 'loaded',    nextLabel: '🚛 โหลดขึ้นรถแล้ว' },
+  loaded:    { label: 'โหลดแล้ว',    color: 'var(--blue)', next: 'shipped',   nextLabel: '🚚 ส่งถึงลูกค้าแล้ว' },
+  shipped:   { label: 'ส่งแล้ว',     color: 'var(--green)', next: null,        nextLabel: null },
   /* ปิดใบโดยไม่ได้ส่ง (ลูกค้ายกเลิก / ใบผี / นำเข้าผิด) — ไม่มี next ไม่นับเป็นงานค้าง
      ⚠️ ไม่มีใน SHIP_RANK ตั้งใจ: มันไม่ใช่ "ขั้นหนึ่งของ workflow" แต่เป็นทางออกข้างทาง */
-  cancelled: { label: '🚫 ยกเลิก',      color: 'var(--muted)', next: null,        nextLabel: null },
+  cancelled: { label: 'ยกเลิก',      color: 'var(--muted)', next: null,        nextLabel: null },
 };
 const SHIP_RANK = { pending: 0, confirmed: 1, prepared: 2, loaded: 3, shipped: 4 };
 function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shipToMap }) {
@@ -989,8 +989,8 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
             <span className="sep" />
             <span className="filter-label">เรียง:</span>
             <Segmented value={sortMode} onChange={setSortMode} label="เรียงลำดับ" options={[
-              { value: 'urgent', label: '⚡ ใกล้ดิวก่อน', title: 'ใบที่หลุดเฟส/deadline ใกล้สุดขึ้นแถวบน' },
-              { value: 'time',   label: '🕐 ตามเวลาส่ง' },
+              { value: 'urgent', label: 'ใกล้ดิวก่อน', title: 'ใบที่หลุดเฟส/deadline ใกล้สุดขึ้นแถวบน' },
+              { value: 'time',   label: 'ตามเวลาส่ง' },
             ]} />
             <span className="spacer" />
             <span className="filter-count">{orders.length} รอบส่ง</span>
@@ -1080,10 +1080,10 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
    จากเวลาส่งถึงลูกค้า ถอยกลับเป็น deadline ต่อเฟส — scanner (ทุก 10 นาที) ใช้ตารางนี้
    ตัดสินว่า "หลุดเฟสไหน" แล้วแจ้ง Smart Logistic ทันที ไม่ต้องรอตก due ─────────── */
 const REQ_STATUS_OPTIONS = [
-  { value: 'confirmed', label: '✔️ ยืนยันออเดอร์แล้ว' },
-  { value: 'prepared',  label: '📦 เตรียมของแล้ว' },
-  { value: 'loaded',    label: '🚛 โหลดขึ้นรถแล้ว' },
-  { value: 'shipped',   label: '🚚 ส่งถึงลูกค้าแล้ว' },
+  { value: 'confirmed', label: 'ยืนยันออเดอร์แล้ว' },
+  { value: 'prepared',  label: 'เตรียมของแล้ว' },
+  { value: 'loaded',    label: 'โหลดขึ้นรถแล้ว' },
+  { value: 'shipped',   label: 'ส่งถึงลูกค้าแล้ว' },
 ];
 function WorkflowSection({ canEdit }) {
   const [steps, setSteps] = useState([]);
@@ -1189,7 +1189,7 @@ function WorkflowSection({ canEdit }) {
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ชุดเฟสของ:</span>
         <select value={scope} onChange={e => setScope(e.target.value)} style={{ ...inputSt, width: 220 }}>
-          <option value="">🌐 ค่ามาตรฐาน (ทุกลูกค้า)</option>
+          <option value="">ค่ามาตรฐาน (ทุกลูกค้า)</option>
           {codes.map(c => (
             <option key={c.code} value={c.code}>
               {c.customer_name && c.customer_name !== c.code ? `${c.customer_name} (${c.code})` : c.code}
@@ -1421,9 +1421,9 @@ export default function CustomerDemand() {
         title="Delivery — ติดตามการส่งงานลูกค้า" icon="🚚"
         sub="Logistic ติดตามรอบส่งงานรายวันตาม standard workflow · Forecast/อัพโหลดไฟล์ของ Sales อยู่หน้า 📈 Planner & Sales"
         tabs={[
-          { key: 'shipping', label: '🕐 Shipping Chart' },
-          { key: 'log', label: '📜 ประวัติ order เข้าระบบ' },
-          { key: 'shipto', label: '⚙️ Ship-to Config' },   // ⚠️ แท็บตั้งค่าอยู่ท้ายสุดเสมอ (UI-CONVENTIONS §6.8 ข้อ 4)
+          { key: 'shipping', label: 'Shipping Chart' },
+          { key: 'log', label: 'ประวัติ order เข้าระบบ' },
+          { key: 'shipto', label: 'Ship-to Config' },   // ⚠️ แท็บตั้งค่าอยู่ท้ายสุดเสมอ (UI-CONVENTIONS §6.8 ข้อ 4)
         ]}
         tab={tab} onTab={setTab}
       />

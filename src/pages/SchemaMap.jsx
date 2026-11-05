@@ -39,12 +39,12 @@ import USAGE from 'virtual:schema-usage';
 
 const PROJ = {
   main: {
-    key: 'main', label: '🗄️ ระบบหลัก', short: 'Main', screen: 'MAIN',
+    key: 'main', label: 'ระบบหลัก', short: 'Main', screen: 'MAIN',
     id: 'ewhdfqwfwofivojtsizn', client: supabase, color: 'var(--green)',
     desc: 'ผู้ใช้/สิทธิ์ · พนักงาน & ทักษะ · ไลน์/องค์กร · 4M · QA · PE · NPI · KPI · ทะเบียนเอกสาร',
   },
   dr: {
-    key: 'dr', label: '🏭 ข้อมูลผลิต', short: 'DR', screen: 'Product DB',
+    key: 'dr', label: 'ข้อมูลผลิต', short: 'DR', screen: 'Product DB',
     id: 'eyhclzkifitbhbljgoav', client: supabaseDR, color: 'var(--blue)',
     desc: 'ใบผลิต/กะ · Downtime & ของเสีย · เครื่องจักร/แม่พิมพ์/จิ๊ก · สินค้า & BOM · สโตร์ · งานซ่อม',
   },
@@ -248,9 +248,9 @@ export default function SchemaMap() {
           : `${total} ตาราง/วิว · ${totalFk} เส้นความสัมพันธ์ (FK) · ${USAGE.pages?.length || 0} หน้าในระบบ`}
         actions={<button type="button" className="pg-btn" onClick={reload}>อ่านใหม่</button>}
         tabs={[
-          { key: 'tables', label: '📋 ตาราง / คีย์ / ความสัมพันธ์' },
-          { key: 'pages', label: '🧭 หน้าไหนใช้ตารางไหน' },
-          { key: 'audit', label: '🩺 ตรวจสุขภาพโครงสร้าง', badge: auditBadge || undefined },
+          { key: 'tables', label: 'ตาราง / คีย์ / ความสัมพันธ์' },
+          { key: 'pages', label: 'หน้าไหนใช้ตารางไหน' },
+          { key: 'audit', label: 'ตรวจสุขภาพโครงสร้าง', badge: auditBadge || undefined },
         ]}
         tab={tab} onTab={setTab}
       />

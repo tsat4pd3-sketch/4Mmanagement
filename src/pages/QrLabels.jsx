@@ -40,19 +40,19 @@ import ScanSheetPanel from '../components/ScanSheetPanel';
       แท็บจิ๊ก = จิ๊กใน machines (ESM:M) + อุปกรณ์ที่มีแต่แผน PM ใน `jigs` (ESM:J) รวมผ่าน mergeJigLabelRows()
    ⇒ **ชนิดรหัสในป้ายเป็นของ "แถว" (`r._qr`) ไม่ใช่ของแท็บ** — แท็บเดียวมีได้ 2 ชนิด */
 const KIND_OPTIONS = [
-  { value: 'machine', label: '⚙️ เครื่องจักร' },
-  { value: 'die', label: '🔨 แม่พิมพ์' },
-  { value: 'jig', label: '🧩 จิ๊ก' },
-  { value: 'delivery', label: '🎯 จุดส่งงาน' },
+  { value: 'machine', label: 'เครื่องจักร' },
+  { value: 'die', label: 'แม่พิมพ์' },
+  { value: 'jig', label: 'จิ๊ก' },
+  { value: 'delivery', label: 'จุดส่งงาน' },
   /* 📦 ชิ้นงาน/คัมบัง (2026-10-20 · คำสั่ง user) — ป้าย `ESM:P:<mat_no>` แบบลิงก์ ⇒ ส่องด้วยกล้องมือถือแล้ว /scan
      พาไป ✅ ใบตรวจ QA ของพาร์ท / 🔎 ใบผลิต · ด่านสโตร์ (checkPickPart) อ่านป้ายนี้ได้เหมือนบาร์โค้ด MAT เดิม
      id ของแถว = mat_no (ไม่ใช่ uuid) — mat_no คือภาษากลางของโรงงาน+SAP (เหตุผลใน qrCode.js) */
-  { value: 'part', label: '📦 ชิ้นงาน/คัมบัง' },
+  { value: 'part', label: 'ชิ้นงาน/คัมบัง' },
   /* 🏬 รหัสคลัง + 🗒️ ใบสแกนประจำไลน์ (เฟส 2 "ทุกอย่างสแกนได้" · 2026-10-28 · คำสั่ง user)
      รหัสคลัง = ป้าย `ESM:W:<code>` ติดชั้น/โซน → ช่องเลือกคลัง (StorageLocSelect 📷) ยิงแทนการพิมพ์
      ใบสแกน = แผ่น A4 แยกตามไลน์ (QR ไลน์ + ประเภท Downtime + ประเภทงานเสีย) — `ScanSheetPanel` */
-  { value: 'storage', label: '🏬 รหัสคลัง' },
-  { value: 'sheet', label: '🗒️ ใบสแกนประจำไลน์ (A4)' },
+  { value: 'storage', label: 'รหัสคลัง' },
+  { value: 'sheet', label: 'ใบสแกนประจำไลน์ (A4)' },
 ];
 const tabLabelOf = (k) => KIND_OPTIONS.find(o => o.value === k)?.label || k;
 
@@ -274,7 +274,7 @@ export default function QrLabels() {
   return (
     <Page style={{ background: 'var(--bg)', minHeight: '100%' }}>
       <ReadOnlyNote show={!canPrint} role={role} what="พิมพ์ป้าย QR" permKey="qr_labels:print" />
-      <PageHeader title="พิมพ์ป้าย QR อุปกรณ์" icon="🏷️" sub="พิมพ์ป้ายติดเครื่องจักร/แม่พิมพ์/จิ๊ก/ชิ้นงาน แล้วส่องด้วยกล้องมือถือ → เปิดแอปมาที่เมนูของสิ่งนั้นเลย (ตรวจ AM/PM · แจ้งซ่อม · ตรวจ QA)" />
+      <PageHeader title="พิมพ์ป้าย QR อุปกรณ์" icon="🏷️" sub="พิมพ์ป้าย QR ติดอุปกรณ์ แล้วส่องด้วยมือถือเพื่อเปิดเมนูของอุปกรณ์นั้น" />
 
       {/* บอกตรงๆ ว่าป้ายที่กำลังจะพิมพ์เป็นแบบไหน — ป้ายอยู่หน้างานเป็นปี พิมพ์ผิดแบบแล้วต้องรื้อใหม่ทั้งโรงงาน */}
       <div data-page-note="1" style={{
@@ -300,7 +300,7 @@ export default function QrLabels() {
         <LineSelect
           lines={prodLines.filter(l => lineOpts.includes(l.name))}
           value={filterLine} onChange={setFilterLine} placeholder={ALL.line}
-          extraGroups={[{ label: '🔧 อื่นๆ', options: lineOpts.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
+          extraGroups={[{ label: 'อื่นๆ', options: lineOpts.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
         />
         <SearchInput value={q} onChange={setQ} fields="เลข/ชื่อ" />
         <span className="spacer" />

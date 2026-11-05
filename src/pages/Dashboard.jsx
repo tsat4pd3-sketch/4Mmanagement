@@ -1028,8 +1028,8 @@ export default function Dashboard({ view = 'timeline' }) {
             {[
               /* "ทุก…" ซ้ายสุดเสมอ + ป้ายจากทะเบียน (UI-STANDARD §3) — คงสีกะไว้เพราะเป็นบอร์ด TV */
               { val: 'all',   label: ALL.shift,   active: 'rgba(255,255,255,0.1)', color: 'var(--text2)' },
-              { val: 'day',   label: '☀️ กะเช้า', active: 'var(--amber-dim)', color: 'var(--amber)' },
-              { val: 'night', label: '🌙 กะดึก',  active: 'var(--blue-dim)', color: 'var(--blue)' },
+              { val: 'day',   label: 'กะเช้า', active: 'var(--amber-dim)', color: 'var(--amber)' },
+              { val: 'night', label: 'กะดึก',  active: 'var(--blue-dim)', color: 'var(--blue)' },
             ].map(s => (
               <button key={s.val} onClick={() => setSelectedShift(s.val)}
                 style={{

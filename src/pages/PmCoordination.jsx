@@ -44,10 +44,10 @@ const btnPri = { background: 'var(--accent)', color: 'var(--accent-ink)', border
 const btnGhost = { background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
 
 const STATUS_META = {
-  draft:     { label: '📝 ร่าง', color: 'var(--muted)' },
-  notified:  { label: '📤 แจ้งแล้ว', color: '#4a90e0' },
-  done:      { label: '✅ เสร็จสิ้น', color: 'var(--green)' },
-  cancelled: { label: '✖ ยกเลิก', color: 'var(--red)' },
+  draft:     { label: 'ร่าง', color: 'var(--muted)' },
+  notified:  { label: 'แจ้งแล้ว', color: '#4a90e0' },
+  done:      { label: 'เสร็จสิ้น', color: 'var(--green)' },
+  cancelled: { label: 'ยกเลิก', color: 'var(--red)' },
 };
 
 function todayStr() {
@@ -217,7 +217,7 @@ export default function PmCoordination() {
       <FilterBar>
         <Segmented value={fStatus} onChange={setFStatus} label="สถานะแผน" options={[
           { value: 'all', label: ALL.status }, { value: 'active', label: 'กำลังดำเนินการ' },
-          { value: 'notified', label: '📤 แจ้งแล้ว' }, { value: 'done', label: '✅ เสร็จ' },
+          { value: 'notified', label: 'แจ้งแล้ว' }, { value: 'done', label: 'เสร็จ' },
         ]} />
         <LineScopeSelect lines={scopeLineList} section={fScope.section} line={fScope.line}
           onChange={(section, line, info) => setFScope({ section, line, names: info?.lines?.length ? info.lines : (section || line ? [line || section] : null) })} />

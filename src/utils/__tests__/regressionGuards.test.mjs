@@ -8234,6 +8234,18 @@ test('🕵️ account-activity-never-vs-unknown — ห้ามบีบ "อ�
   const au = stripComments(readFileSync(join(ROOT, 'src/pages/AddUser.jsx'), 'utf8'));
   assert.doesNotMatch(au, /last_sign_in_at:[^,\n]*\|\|\s*null/,
     '🔴 `last_sign_in_at: … || null` = undefined กลายเป็น "ไม่เคยเข้าใช้" ⇒ ชวนลบบัญชีที่ยังใช้อยู่');
+  // 05/11 เกิดจริง: migration ที่เติมคอลัมน์ยังไม่ apply ⇒ RPC คืนแถวที่ "ไม่มีคีย์" ⇒ `?? null` ตีเป็น "ไม่เคยเข้า" ทั้งจอ
+  assert.doesNotMatch(au, /last_sign_in_at:[^,\n]*\?\?\s*null/,
+    '🔴 `last_sign_in_at: … ?? null` — คีย์ที่ไม่มาในแถว (migration ยังไม่ลง) ต้องเป็น undefined = "อ่านไม่ได้" ไม่ใช่ "ไม่เคยเข้า"');
+  assert.match(au, /'last_sign_in_at' in authMap\[p\.id\]/,
+    'ต้องเช็คว่าแถวมีคีย์ last_sign_in_at จริงก่อนอ่านค่า');
+
+  // 🗑️ ลบบัญชีที่มีประวัติผูก (FK NO ACTION) — edge ตอบ 409 + blockers · จอต้องเขียนว่าติดอะไร ห้ามกลืนเป็น "ลบไม่สำเร็จ"
+  assert.match(au, /res\.status === 409 && Array\.isArray\(data\.blockers\)/,
+    '🔴 handleDelete ต้องรับ 409/blockers จาก edge delete-user แล้วเปิดแผงโอนประวัติ (edge-functions.md §delete-user)');
+  const delFn = readFileSync(join(ROOT, 'supabase/functions/delete-user/index.ts'), 'utf8');
+  assert.match(delFn, /fn_profile_ref_blockers/, '🔴 delete-user ต้องถาม fn_profile_ref_blockers ก่อนลบ');
+  assert.match(delFn, /fn_profile_reassign_refs/, '🔴 delete-user ต้องโอนประวัติผ่าน fn_profile_reassign_refs ฝั่ง DB ห้ามไล่ตารางเอง');
   assert.match(au, /activityOf\(u\.last_sign_in_at/,
     'คอลัมน์ต้องตัดสินผ่าน activityOf() ห้ามเทียบวันเองในหน้า');
   assert.match(au, /ACT_UNKNOWN \? '—'/,

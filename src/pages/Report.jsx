@@ -1445,11 +1445,11 @@ const STATUS_META = {
         และทุกจอที่นับ "ค้างรออนุมัติ" กรอง `.in('status',['pending','pending_qa'])` อยู่แล้ว
      ⇒ ขาดป้ายนี้ = ตกไปที่ fallback `STATUS_META.pending` แล้วจอโกหกว่า "รอ SV Approve"
         (ขัดกฎ §4M "4M ที่ระบบสร้างเอง ห้ามเข้าคิวอนุมัติเงียบๆ") */
-  pending_doc: { label: '📎 รอแนบเอกสาร OJT', color: 'var(--blue)', bg: 'var(--blue-dim)' },
-  pending:     { label: '⏳ รอ SV Approve',  color: 'var(--amber)', bg: 'var(--amber-dim)'  },
-  pending_qa:  { label: '🔍 รอ QA Approve',  color: 'var(--blue)', bg: 'var(--blue-dim)'  },
-  approved:    { label: '✅ Approved',        color: 'var(--green)', bg: 'var(--green-dim)'   },
-  rejected:    { label: '❌ Rejected',        color: 'var(--red)', bg: 'var(--red-dim)'   },
+  pending_doc: { label: 'รอแนบเอกสาร OJT', color: 'var(--blue)', bg: 'var(--blue-dim)' },
+  pending:     { label: 'รอ SV Approve',  color: 'var(--amber)', bg: 'var(--amber-dim)'  },
+  pending_qa:  { label: 'รอ QA Approve',  color: 'var(--blue)', bg: 'var(--blue-dim)'  },
+  approved:    { label: 'Approved',        color: 'var(--green)', bg: 'var(--green-dim)'   },
+  rejected:    { label: 'Rejected',        color: 'var(--red)', bg: 'var(--red-dim)'   },
 };
 
 /* deep-link: focusId = ใบที่ถูกคลิกมาจากหน้าอื่น (เน้นแถว + เลื่อนไปหา) · initStatus/initFrom =

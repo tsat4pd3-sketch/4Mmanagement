@@ -57,13 +57,13 @@ const monthBounds = mk => {
   return { from: `${mk}-01`, to: `${mk}-${String(last).padStart(2, '0')}` };
 };
 const STATES = [
-  { key: 'current', label: '📍 Current state' },
-  { key: 'future', label: '🎯 Future state' },
-  { key: 'ideal', label: '✨ Ideal state' },
+  { key: 'current', label: 'Current state' },
+  { key: 'future', label: 'Future state' },
+  { key: 'ideal', label: 'Ideal state' },
 ];
 const TABS = [
-  { key: 'doc', label: '📋 เอกสาร VSM (snapshot)' },
-  { key: 'live', label: '⚡ สายธารสด (Realtime)' },
+  { key: 'doc', label: 'เอกสาร VSM (snapshot)' },
+  { key: 'live', label: 'สายธารสด (Realtime)' },
 ];
 const WARN_STYLE = {
   error: { bg: 'var(--red-dim)', bd: 'var(--red)', icon: '⛔' },

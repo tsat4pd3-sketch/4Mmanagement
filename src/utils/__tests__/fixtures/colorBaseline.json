@@ -2,7 +2,7 @@
   "_meta": {
     "generatedAt": "2026-11-05",
     "files": 197,
-    "total": 2557
+    "total": 2553
   },
   "files": {
     "src/components/AuditLogViewer.jsx": 3,
@@ -26,7 +26,7 @@
     "src/components/DieStatusBoard.jsx": 12,
     "src/components/DieStatusEditor.jsx": 1,
     "src/components/DowntimeSiren.jsx": 11,
-    "src/components/DowntimeTimeline.jsx": 9,
+    "src/components/DowntimeTimeline.jsx": 8,
     "src/components/DraftRestoreBar.jsx": 3,
     "src/components/EdiMatchFixer.jsx": 8,
     "src/components/EnergyMqttTopics.jsx": 9,
@@ -96,7 +96,7 @@
     "src/components/PmUsageBoard.jsx": 3,
     "src/components/PressSetupRules.jsx": 7,
     "src/components/ProblemFixModal.jsx": 5,
-    "src/components/ProcessTypeSetup.jsx": 6,
+    "src/components/ProcessTypeSetup.jsx": 3,
     "src/components/ProdLotPlanner.jsx": 17,
     "src/components/ProdProgressStrip.jsx": 2,
     "src/components/PullRoundsPanel.jsx": 7,

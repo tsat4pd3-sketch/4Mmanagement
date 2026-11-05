@@ -520,9 +520,9 @@ export default function DieRegistry() {
         title="ทะเบียนแม่พิมพ์" icon="🔨"
         sub={`1 พาร์ท = 1 ชุด · ตัวตนของแม่พิมพ์อยู่ในฐานเดียวกับเครื่องจักร (เลขเครื่อง/QR/ประวัติซ่อมใช้ร่วมกัน)${scopeActive ? ' · เห็นเฉพาะส่วนงานของคุณ' : ''}`}
         tabs={[
-          { key: 'registry', label: '📋 ทะเบียน' },
-          { key: 'layout', label: '🗺️ ผังจัดเก็บ' },
-          { key: 'status', label: '📊 สถานะ', badge: moDieCount ? `🔧 ${moDieCount}` : null },
+          { key: 'registry', label: 'ทะเบียน' },
+          { key: 'layout', label: 'ผังจัดเก็บ' },
+          { key: 'status', label: 'สถานะ', badge: moDieCount ? `🔧 ${moDieCount}` : null },
         ]}
         tab={tab} onTab={setTab}
       />

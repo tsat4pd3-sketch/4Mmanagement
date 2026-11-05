@@ -64,8 +64,8 @@ const PLAN_META = {
   night:        { label: '+กะดึก', color: 'var(--blue)' },
   ot:           { label: '+OT', color: 'var(--amber)' },
   // ม.75: กำลังไม่พอ → "ยกเลิกหยุด 75%" (เรียกมาทำงาน = ค่าแรงปกติ) ก่อนไปเปิด OT วันหยุดจริง (คำสั่ง user 2026-07-21)
-  recall75:     { label: '⚡ ยกเลิกหยุด75% มาทำงาน', color: 'var(--blue)' },
-  holiday_work: { label: '⚠ ทำวันหยุด OT', color: 'var(--red)' },
+  recall75:     { label: 'ยกเลิกหยุด75% มาทำงาน', color: 'var(--blue)' },
+  holiday_work: { label: 'ทำวันหยุด OT', color: 'var(--red)' },
 };
 
 export default function ProductionPlan() {
@@ -643,11 +643,11 @@ export default function ProductionPlan() {
       <PageHeader
         title="วางแผนการผลิต" icon="🗓️"
         tabs={[
-          { key: 'plan', label: '📊 กำลังการผลิต' },
+          { key: 'plan', label: 'กำลังการผลิต' },
           /* 📋 แท็บเดียวของหน้านี้ที่ **เขียน DB** — แท็บกำลังการผลิตวิเคราะห์อย่างเดียว
              (งาน lot size ที่ไม่ได้เดินตามคัมบัง ต้องมีคนวางคิวให้ ไม่ใช่ first come first serve) */
-          { key: 'lots', label: '📋 แผนสั่งงาน (ล็อต)' },
-          { key: 'settings', label: '⚙️ ตั้งค่า' },
+          { key: 'lots', label: 'แผนสั่งงาน (ล็อต)' },
+          { key: 'settings', label: 'ตั้งค่า' },
         ]}
         tab={tab} onTab={setTab}
       />
@@ -825,7 +825,7 @@ export default function ProductionPlan() {
             value={cap} onChange={setCap}
             options={[
               { value: 'day', label: `📅 รายวัน (${DAILY_HORIZON} วัน · ออเดอร์จริง)` },
-              { value: 'month', label: '📆 รายเดือน (Forecast)' },
+              { value: 'month', label: 'รายเดือน (Forecast)' },
             ]}
           />
           <button type="button" onClick={() => setMode(mode === 'slide' ? 'chart' : 'slide')}

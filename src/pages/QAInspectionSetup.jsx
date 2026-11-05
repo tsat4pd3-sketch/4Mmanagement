@@ -42,8 +42,8 @@ import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-he
 
 /* 📐 แท็บของหน้านี้ — `?tab=` (UI-CONVENTIONS §6.8: ห้ามวาดแถบแท็บเอง ใช้ PageHeader+useTabParam) */
 const MAIN_TABS = [
-  { key: 'std',        label: '📐 มาตรฐานการตรวจ & Drawing' },
-  { key: 'inspectors', label: '🔬 QC ประจำไลน์' },
+  { key: 'std',        label: 'มาตรฐานการตรวจ & Drawing' },
+  { key: 'inspectors', label: 'QC ประจำไลน์' },
 ];
 
 const fmtDT = s => s ? new Date(s).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';

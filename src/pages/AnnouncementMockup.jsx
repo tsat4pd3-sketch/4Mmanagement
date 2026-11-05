@@ -26,9 +26,9 @@ import { getWorkDate, addDaysStr } from '../utils/workDate';
    ═══════════════════════════════════════════════════════════════════════════════════════════ */
 
 const TABS = [
-  { key: 'issue', label: '📝 ผู้แจ้ง (Issue)' },
-  { key: 'approve', label: '✅ EVP อนุมัติ (Approve)' },
-  { key: 'board', label: '📢 พนักงาน (Publish)' },
+  { key: 'issue', label: 'ผู้แจ้ง (Issue)' },
+  { key: 'approve', label: 'EVP อนุมัติ (Approve)' },
+  { key: 'board', label: 'พนักงาน (Publish)' },
 ];
 
 const ISSUER = 'ผู้แจ้ง (ตัวอย่าง)';

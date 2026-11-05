@@ -109,8 +109,8 @@ function Modal({ title, onClose, children, width = 560 }) {
 /* 📋 ใบรายงานของเสีย (งานเอกสารรายวัน) · 🗑️ ถังเหลือง/แดง (บันทึกหน้ากล่องก่อนถึง NCR/Scrap)
    = ของเสียชุดเดียวกัน คนละขั้นของเรื่อง ⇒ อยู่หน้าเดียวกันแต่คนละแท็บ (UI §6.8) */
 const TABS = [
-  { key: 'scrap', label: '♻️ ใบรายงานของเสีย' },
-  { key: 'bins',  label: '🗑️ ถังเหลือง / ถังแดง' },
+  { key: 'scrap', label: 'ใบรายงานของเสีย' },
+  { key: 'bins',  label: 'ถังเหลือง / ถังแดง' },
 ];
 
 export default function ScrapReport() {

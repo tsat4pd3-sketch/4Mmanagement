@@ -45,9 +45,9 @@ const fmtTime = t => t ? new Date(t).toLocaleTimeString('th-TH', { timeZone: 'As
 const fmtDT = t => t ? new Date(t).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
 const fmtDate = s => { if (!s) return '—'; const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('th-TH', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' }); };
 const STATUS_META = {
-  open: { label: '● กำลังผลิต', color: 'var(--green)' }, confirmed: { label: '✓ ปิดใบแล้ว', color: 'var(--green)' },
-  carry_over: { label: '➡ ยกยอดข้ามกะ', color: 'var(--amber)' }, cancelled: { label: '✕ ยกเลิก', color: 'var(--red)' },
-  imported: { label: '⏬ ถูกยกไปกะถัดไป', color: 'var(--muted)' },
+  open: { label: 'กำลังผลิต', color: 'var(--green)' }, confirmed: { label: 'ปิดใบแล้ว', color: 'var(--green)' },
+  carry_over: { label: 'ยกยอดข้ามกะ', color: 'var(--amber)' }, cancelled: { label: 'ยกเลิก', color: 'var(--red)' },
+  imported: { label: 'ถูกยกไปกะถัดไป', color: 'var(--muted)' },
 };
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 16px' };
 /* ผลตรวจ PM/AM — นิยาม/กฎ "ห้ามเทียบด้วย regex" อยู่ที่ `src/utils/inspectionStatus.js` ที่เดียว */
@@ -996,8 +996,8 @@ export default function OrderTrace() {
           ? 'มีแต่อาการที่ลูกค้าแจ้ง → ค้นหาของเสีย/เครื่องหยุดที่เกี่ยวข้อง แล้วเจาะเข้าใบผลิต'
           : 'สแกน/ค้นหาใบผลิต → เห็นทุกเหตุการณ์ + สถานการณ์รอบข้าง ณ เวลาผลิตใบนั้น'}
         tabs={[
-          { key: 'order', label: '🔎 จากเลขใบผลิต' },
-          { key: 'symptom', label: '🩺 จากอาการที่แจ้ง' },
+          { key: 'order', label: 'จากเลขใบผลิต' },
+          { key: 'symptom', label: 'จากอาการที่แจ้ง' },
         ]}
         tab={tab} onTab={setTab}
       />

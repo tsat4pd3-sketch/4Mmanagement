@@ -1787,11 +1787,11 @@ export default function AdoptionOutlook() {
         title="ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร" icon="🔮"
         sub={`ข้อมูล ณ ${d.loss.to} · ฝั่ง "วันนี้" นับสดจากฐานจริงทั้งหมด ไม่มีตัวเลขสมมติ`}
         tabs={[
-          { key: 'dim', label: '🔍 มิติที่มองเห็นได้' },
-          { key: 'deep', label: '🔬 เจาะ 1 กะจริง' },
-          { key: 'ladder', label: '📈 4 ระดับ (ถึง Prescriptive)' },
-          { key: 'dept', label: '🏭 ก่อน-หลัง รายแผนก' },
-          { key: 'roi', label: '💰 เงินที่ประหยัดได้' },
+          { key: 'dim', label: 'มิติที่มองเห็นได้' },
+          { key: 'deep', label: 'เจาะ 1 กะจริง' },
+          { key: 'ladder', label: '4 ระดับ (ถึง Prescriptive)' },
+          { key: 'dept', label: 'ก่อน-หลัง รายแผนก' },
+          { key: 'roi', label: 'เงินที่ประหยัดได้' },
         ]}
         tab={tab} onTab={setTab}
         actions={

@@ -662,7 +662,7 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
                   <span style={{ display: 'grid', gap: 2 }}>
                     <LineSelect lines={lines} value={params[d.key] || ''} disabled={!canEdit}
                       sections={tvSections} placeholder={ALL.line}
-                      extraGroups={warehouseOpts.length ? [{ label: '🏬 คลัง', options: warehouseOpts.map(n => ({ value: n })) }] : undefined}
+                      extraGroups={warehouseOpts.length ? [{ label: 'คลัง', options: warehouseOpts.map(n => ({ value: n })) }] : undefined}
                       onChange={v => setParam(d.key, v)} />
                     {srcState('storeline') && <span style={{ fontSize: 11, color: 'var(--muted)' }}>คลัง: {srcState('storeline')}</span>}
                   </span>
