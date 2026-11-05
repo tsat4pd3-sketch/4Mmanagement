@@ -235,7 +235,7 @@ export default function PmCoordination() {
 
       {upcomingSupport.length > 0 && (
         <div style={{ marginBottom: 14, padding: '12px 14px', borderRadius: 12, background: 'var(--red-dim)', border: '1px solid var(--red-line)' }}>
-          <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--red)', marginBottom: 8 }}>🔔 ช่วง Production Support ที่กำลังจะถึง ({upcomingSupport.length})</div>
+          <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--red)', marginBottom: 8 }}>ช่วง Production Support ที่กำลังจะถึง ({upcomingSupport.length})</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             {upcomingSupport.map(t => (
               <div key={t.id} style={{ display: 'flex', gap: 10, alignItems: 'baseline', fontSize: 12.5, flexWrap: 'wrap' }}>
@@ -361,7 +361,7 @@ function PlanRow({ plan: p, sum, open, onToggle, tasks, canManage, pmPlan, fullN
         className={active && sum.overdue > 0 ? 'rec-row-alert' : undefined}>
         <td style={{ maxWidth: 280 }}>
           <div style={{ fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.title}>{p.title}</div>
-          {p.pm_plan_id && <span style={{ fontSize: 11, fontWeight: 700, color: '#4a90e0' }}>🔗 ผูกแผน PM</span>}
+          {p.pm_plan_id && <span style={{ fontSize: 11, fontWeight: 700, color: '#4a90e0' }}>ผูกแผน PM</span>}
         </td>
         <td style={{ whiteSpace: 'nowrap' }}>{[p.machine_name, p.machine_no].filter(Boolean).join(' · ') || '—'}</td>
         <td style={{ whiteSpace: 'nowrap', color: p.line_name ? 'var(--text2)' : 'var(--muted)' }}>{p.line_name || 'ไม่ระบุไลน์'}</td>
@@ -535,7 +535,7 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
 
         {plan._new && pmPlans.length > 0 && (
           <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 10, background: 'rgba(74,144,224,0.10)', border: '1px solid rgba(74,144,224,0.4)' }}>
-            <label style={{ ...lbl, color: '#4a90e0' }}>🔗 สร้างจากแผน PM เดิม (ผูกให้อัตโนมัติ + เติมวันครบกำหนด)</label>
+            <label style={{ ...lbl, color: '#4a90e0' }}>สร้างจากแผน PM เดิม (ผูกให้อัตโนมัติ + เติมวันครบกำหนด)</label>
             <SearchSelect value={String(f.pm_plan_id || '')} placeholder="— ไม่ผูก (สร้างแผนอิสระ) — พิมพ์ค้นหาเครื่อง/ไลน์" inputStyle={inp}
               options={pmPlans.map(p => ({ id: String(p.plan_id), label: [p.machine_name, p.machine_no].filter(Boolean).join(' ') || String(p.plan_id), sub: `${p.line_name || ''}${p.next_due_date ? ` · ครบ ${beDate(p.next_due_date)}` : ''}`, keywords: `${p.machine_no || ''} ${p.line_name || ''}` }))}
               onChange={({ id }) => fromPmPlan(id)} />
@@ -646,7 +646,7 @@ function printPlan(p, tasks) {
   <div class="hd"><img src="${logoSrc}" alt=""><div><h1>แผนประสานงาน PM / งานเครื่องจักร</h1>
     <div style="font-size:13px;color:#666;">Thai Summit — Maintenance</div></div></div>
   <div style="font-size:17px;font-weight:700;">${p.title || ''}</div>
-  <div class="meta">🔧 เครื่อง: <b>${[p.machine_name, p.machine_no].filter(Boolean).join(' ') || '—'}</b>${p.line_name ? ` &nbsp;·&nbsp; 🏭 ไลน์: <b>${p.line_name}</b>` : ''}</div>
+  <div class="meta">เครื่อง: <b>${[p.machine_name, p.machine_no].filter(Boolean).join(' ') || '—'}</b>${p.line_name ? ` &nbsp;·&nbsp; 🏭 ไลน์: <b>${p.line_name}</b>` : ''}</div>
   <div class="sec">แผนงาน &amp; รายละเอียด</div>
   <ul>${rows || '<li>—</li>'}</ul>
   ${p.remark ? `<div class="remark">Remark : ${p.remark}</div>` : ''}

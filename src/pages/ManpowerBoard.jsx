@@ -21,7 +21,7 @@ import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 /* 👥 🔴 **บอร์ดนี้ไม่กรอง `staff_kind` เลย — เป็น "ผังองค์กร" ไม่ใช่ "จอนับกำลังคน"**
    (คำสั่ง user 20/10: *"ต้องขึ้นคนให้ครบ ให้ตรงผังก่อน"*)
    บอร์ดวาดแถวของตัวเองครบทุกชั้น: ผู้จัดการ/หัวหน้าส่วน · วิศวกร·เจ้าหน้าที่ · หัวหน้าแผนก ·
-   หัวหน้ากลุ่ม · 🔧 ช่าง · พนักงาน ⇒ กรองกลุ่มไหนออก = **แถวนั้นว่างทั้งที่มีคนอยู่จริง**
+   หัวหน้ากลุ่ม · ช่าง · พนักงาน ⇒ กรองกลุ่มไหนออก = **แถวนั้นว่างทั้งที่มีคนอยู่จริง**
    เหตุการณ์จริง: backfill 14/10 ย้าย ผจก./หัวหน้าส่วน/หัวหน้าแผนก/วิศวกร/ธุรการ ไป `support`
    ⇒ ตัวกรองเดิมทำให้หัวผังของทุกส่วนงานขึ้น "ยังไม่มีผู้จัดการ/หัวหน้าส่วนในทะเบียน" เงียบๆ
    🔴 **ปลอดภัยเพราะตัวนับไม่ได้นับจาก "คนที่โหลดมา"** — `staffingOfDept()`/`opsTotal`/`present`
@@ -88,7 +88,7 @@ export default function ManpowerBoard() {
   const canSetup = canSeeded('manpower_board', 'edit', role);
   /* 🔐 ชั้น ③ — "ส่วนงานที่กำลังตั้งค่าเป็นของหน่วยงานเราไหม" (QC audit 20/10)
      `scopeSecs` = ขอบเขต "ที่เห็น" (**ว่าง = เห็นทั้งโรงงาน**) ⇒ เอามาตัดสินการแก้ไม่ได้ ·
-     ⚙️ แผงตั้งค่าเขียน `station_slot_plans` / `manpower_slot_plans` / `line_technicians` /
+     แผงตั้งค่าเขียน `station_slot_plans` / `manpower_slot_plans` / `line_technicians` /
      `employee_flex_units` ของส่วนงานนั้น และ RLS รู้แค่ `has_perm('manpower_board:edit')` ไม่รู้ขอบเขต */
   const wctx = useMemo(() => ({ role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx }),
     [role, homeSection, scopeSecs, allUnits, respCostCenters, scopeIdx]);
@@ -357,7 +357,7 @@ function PersonChip({ p }) {
         <div style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{positionLabel(p.position) || 'ไม่ระบุตำแหน่ง'}{p.team ? ` · ทีม ${p.team}` : ''}{p.external && p.department ? ` · สังกัด ${p.department}` : ''}</div>
         {p.linkedLines?.length > 0 && (
-          <div style={{ fontSize: 11, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`ช่างประจำไลน์: ${p.linkedLines.join(', ')}`}>🔧 {p.linkedLines.join(', ')}</div>
+          <div style={{ fontSize: 11, color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`ช่างประจำไลน์: ${p.linkedLines.join(', ')}`}>{p.linkedLines.join(', ')}</div>
         )}
         {p.acting && <ActingNote a={p.acting} />}
         <AttendDot p={p} />
@@ -375,7 +375,7 @@ function ActingTag({ p }) {
   return (
     <span title={`ตำแหน่งตามบริษัท: ${positionLabel(p.company_position) || p.company_position || '—'}`}
       style={{ fontSize: 11, color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-      🧭 ทำหน้าที่ {positionLabel(p.position) || p.position}
+      ทำหน้าที่ {positionLabel(p.position) || p.position}
     </span>
   );
 }
@@ -438,7 +438,7 @@ function EmptySlot({ station, h }) {
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, padding: 4, overflow: 'hidden',
       color: 'var(--muted)', fontSize: 12, fontWeight: 700, textAlign: 'center' }}>
       ช่องว่าง
-      {station && <span style={{ fontSize: 11.5, color: 'var(--text2)', overflowWrap: 'anywhere' }}>📍 {station}</span>}
+      {station && <span style={{ fontSize: 11.5, color: 'var(--text2)', overflowWrap: 'anywhere' }}>{station}</span>}
     </div>
   );
 }
@@ -526,7 +526,7 @@ function OrgTab({ board, depts, skills }) {
           </div>
           {d.stationInfo && (
             <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 8 }}>
-              📍 ช่องว่างคิดจากจุดงาน {d.stationInfo.planned}/{d.stationInfo.total} จุดที่ตั้งจำนวนคนไว้ (ต้องการ เช้า {d.stationInfo.need.day} · ดึก {d.stationInfo.need.night} คน)
+              ช่องว่างคิดจากจุดงาน {d.stationInfo.planned}/{d.stationInfo.total} จุดที่ตั้งจำนวนคนไว้ (ต้องการ เช้า {d.stationInfo.need.day} · ดึก {d.stationInfo.need.night} คน)
               {d.stationInfo.noHome > 0 && <span style={{ color: 'var(--amber)' }}> · ⚠️ {d.stationInfo.noHome} คนยังไม่มีจุดประจำในไลน์ของแผนก — ไม่ถูกนับลงจุดไหน ช่องว่างอาจมากกว่าจริง (ตั้งจุดประจำที่ /management)</span>}
             </div>
           )}
@@ -542,7 +542,7 @@ function OrgTab({ board, depts, skills }) {
             <div style={{ marginTop: 8 }}>
               {/* 🤝 ไม่นับรวมในทะเบียน/ช่องว่างของแผนก — มาช่วยเฉพาะวันนี้ ต้นสังกัดยังเป็นที่เดิม (UI §6.13) */}
               <span style={{ display: 'inline-block', fontSize: 11.5, fontWeight: 800, padding: '2px 8px', borderRadius: 4, background: 'var(--blue)', color: '#fff' }}>
-                🤝 ยืมมาช่วยวันนี้ {d.borrowed.length} คน</span>
+                ยืมมาช่วยวันนี้ {d.borrowed.length} คน</span>
               <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>ไม่นับรวมในทะเบียนของแผนก</span>
               <div style={{ ...CARD_GRID, marginTop: 6 }}>
                 {d.borrowed.map(p => <SkillCard key={p.id} p={p} skills={skills} />)}
@@ -555,7 +555,7 @@ function OrgTab({ board, depts, skills }) {
                   🔴 ไม่นับรวมในทะเบียน/ช่องว่างของแผนกนี้ · บ้านจริงนับเขาอยู่แล้ว (นับ 2 ที่ = กำลังคนปลอม)
                   🔴 cost center ยังอยู่ที่บ้านจริง — เขียนบนจอเสมอ ห้ามให้คนเข้าใจผิดว่าย้ายสังกัด */}
               <span style={{ display: 'inline-block', fontSize: 11.5, fontWeight: 800, padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)' }}>
-                🏃 วิ่งข้ามมาช่วยประจำ {d.flex.length} คน</span>
+                วิ่งข้ามมาช่วยประจำ {d.flex.length} คน</span>
               <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>
                 ไม่นับรวมในทะเบียนของแผนก · cost center ยังอยู่ที่หน่วยต้นสังกัด
               </span>
@@ -660,10 +660,10 @@ function LayoutTab({ board, depts, lines, attendance, maps, tv, stationPlans, sk
       {err && <div style={{ fontSize: 12, color: 'var(--red)' }}>⚠️ {err}</div>}
       <div style={{ fontSize: 12, color: 'var(--muted)' }}>
         {stations.length} จุดงาน · ยังไม่มีคนประจำ {emptyStations} จุด{unplaced ? ` · ยังไม่วางพิกัด ${unplaced} จุด` : ''}
-        {shortage.n > 0 && <span style={{ color: 'var(--amber)' }}> · 📍 ขาดคนประจำ เช้า {shortage.day} · ดึก {shortage.night} ช่อง{shortage.unknown ? ` · ยังไม่รู้กะ ${shortage.unknown} ช่อง (ตั้งตารางกะที่ /shift-organize)` : ''}</span>} — ตั้งจุดประจำที่ /management
+        {shortage.n > 0 && <span style={{ color: 'var(--amber)' }}> · ขาดคนประจำ เช้า {shortage.day} · ดึก {shortage.night} ช่อง{shortage.unknown ? ` · ยังไม่รู้กะ ${shortage.unknown} ช่อง (ตั้งตารางกะที่ /shift-organize)` : ''}</span>} — ตั้งจุดประจำที่ /management
       </div>
       <div style={{ fontSize: 12, color: fitGaps.gaps.length ? 'var(--amber)' : 'var(--muted)' }}>
-        🎯 ฝีมือตรงจุดไหม (คนที่มาวันนี้): ตรวจ {fitGaps.checked} คน · ผ่านครบทุกทักษะ {fitGaps.ok} คน
+        ฝีมือตรงจุดไหม (คนที่มาวันนี้): ตรวจ {fitGaps.checked} คน · ผ่านครบทุกทักษะ {fitGaps.ok} คน
         {fitGaps.gaps.length > 0 && <b> · ยืนจุดที่ทักษะยังไม่ถึง {fitGaps.gaps.length} คน</b>}
         {fitGaps.onlyApproval > 0 && <span> (⏳ ในนี้ {fitGaps.onlyApproval} คนได้ขั้นแล้ว แค่รอหัวหน้าอนุมัติที่ /operator?tab=levelup)</span>}
         {fitGaps.noReqStations > 0 && <span style={{ color: 'var(--muted)' }}> · ยังไม่ตั้งทักษะที่จุดต้องการ {fitGaps.noReqStations} จุด ({fitGaps.noReqPeople} คนที่ยืนอยู่ ตรวจไม่ได้ — ตั้งที่ /line-setup)</span>}
@@ -681,7 +681,7 @@ function SkillGapTable({ gaps, defs }) {
   const td = { padding: '7px 10px', fontSize: 13, borderTop: '1px solid var(--border)', verticalAlign: 'top' };
   return (
     <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
-      <div style={{ padding: '10px 12px', fontWeight: 800 }}>🎯 ยืนจุดที่ทักษะยังไม่ถึง <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--muted)' }}>(คนที่มาวันนี้ · เทียบกับทักษะที่จุดงานต้องการ)</span></div>
+      <div style={{ padding: '10px 12px', fontWeight: 800 }}>ยืนจุดที่ทักษะยังไม่ถึง <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--muted)' }}>(คนที่มาวันนี้ · เทียบกับทักษะที่จุดงานต้องการ)</span></div>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead><tr><th style={th}>พนักงาน</th><th style={th}>จุดงาน</th><th style={th}>กะ</th><th style={{ ...th, textAlign: 'right' }}>ผ่าน</th><th style={th}>ทักษะที่ยังไม่ถึง (มี / ต้องการ)</th></tr></thead>
         <tbody>
@@ -875,7 +875,7 @@ function useAutoPage(count) {
 /** ชิปคนแบบบรรทัดเดียว (แถบหัวจอ TV) */
 function MiniPerson({ p }) {
   return (
-    <div title={`${p.name} · ${positionLabel(p.position) || ''}${p.acting ? ` · 🎖️ รักษาการ (สังกัดจริง ${p.acting.nodeName || '—'}${p.acting.costCenter ? ` · CC ${p.acting.costCenter}` : ''})` : ''}`}
+    <div title={`${p.name} · ${positionLabel(p.position) || ''}${p.acting ? ` · รักษาการ (สังกัดจริง ${p.acting.nodeName || '—'}${p.acting.costCenter ? ` · CC ${p.acting.costCenter}` : ''})` : ''}`}
       style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 1 auto', minWidth: 0, maxWidth: 220 }}>
       <Photo p={p} size={26} />
       <div style={{ minWidth: 0, lineHeight: 1.2 }}>
@@ -944,7 +944,7 @@ function OrgTv({ board, depts, skills }) {
       <div ref={ref} style={fallback ? undefined : { height: fitH || undefined, overflow: 'clip', display: 'flex', flexDirection: 'column', gap: TV_GAP }}>
         {fallback ? (
           <>
-            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>📺 จอนี้เล็กเกินกว่าจะแบ่งหน้าแบบจอ TV ได้ — แสดงแบบเลื่อนแทน</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>จอนี้เล็กเกินกว่าจะแบ่งหน้าแบบจอ TV ได้ — แสดงแบบเลื่อนแทน</div>
             <OrgTab board={board} depts={depts} skills={skills} />
           </>
         ) : (<>
@@ -964,12 +964,12 @@ function OrgTv({ board, depts, skills }) {
               <RoleTag nowrap>หัวหน้าแผนก {d.name}{pg.parts > 1 ? ` · ส่วนที่ ${pg.part + 1}/${pg.parts}` : ''}</RoleTag>
               <div style={{ display: 'flex', gap: 14, flex: 1, minWidth: 0, overflow: 'hidden' }}>
                 {d.heads.map(p => <MiniPerson key={p.id} p={p} />)}
-                {d.techs.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap', alignSelf: 'center' }}>🔧 ช่างประจำไลน์ {d.techs.length}:</span>}
+                {d.techs.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap', alignSelf: 'center' }}>ช่างประจำไลน์ {d.techs.length}:</span>}
                 {d.techs.map(p => <MiniPerson key={p.id} p={p} />)}
-                {d.borrowed.length > 0 && <span style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 700, whiteSpace: 'nowrap', alignSelf: 'center' }}>🤝 ยืมมาช่วย {d.borrowed.length}:</span>}
+                {d.borrowed.length > 0 && <span style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 700, whiteSpace: 'nowrap', alignSelf: 'center' }}>ยืมมาช่วย {d.borrowed.length}:</span>}
                 {d.borrowed.map(p => <MiniPerson key={p.id} p={p} />)}
                 {/* 🏃 คนวิ่งข้ามแผนก — ไม่นับเป็นกำลังคนของแผนกนี้ (เทา ไม่ใช่สีบริบทฟ้าของคนยืม) */}
-                {d.flex.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700, whiteSpace: 'nowrap', alignSelf: 'center' }}>🏃 วิ่งข้ามมาช่วย {d.flex.length}:</span>}
+                {d.flex.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700, whiteSpace: 'nowrap', alignSelf: 'center' }}>วิ่งข้ามมาช่วย {d.flex.length}:</span>}
                 {d.flex.map(p => <MiniPerson key={p.id} p={p} />)}
               </div>
               <Counter label="แผน เช้า/ดึก" value={d.planTotal == null ? null : `${d.plan.day ?? '–'}/${d.plan.night ?? '–'}`} />
@@ -1126,8 +1126,8 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>
                 <th style={th}>แผนก</th><th style={{ ...th, textAlign: 'right' }}>กะที่เช็คแล้ว</th><th style={{ ...th, textAlign: 'right' }}>กะที่ขาดคน</th>
-                <th style={{ ...th, textAlign: 'right' }}>ยืนจริง / ในทะเบียน</th><th style={{ ...th, textAlign: 'right' }}>🧑 ขาดคน (คน-กะ)</th>
-                <th style={{ ...th, textAlign: 'right' }}>🪑 ช่องว่างอัตรากำลัง</th><th style={{ ...th, textAlign: 'right' }}>ลา</th><th style={{ ...th, textAlign: 'right' }}>ขาดงาน</th>
+                <th style={{ ...th, textAlign: 'right' }}>ยืนจริง / ในทะเบียน</th><th style={{ ...th, textAlign: 'right' }}>ขาดคน (คน-กะ)</th>
+                <th style={{ ...th, textAlign: 'right' }}>ช่องว่างอัตรากำลัง</th><th style={{ ...th, textAlign: 'right' }}>ลา</th><th style={{ ...th, textAlign: 'right' }}>ขาดงาน</th>
                 <th style={{ ...th, textAlign: 'right' }}>ยังไม่เช็ค</th><th style={{ ...th, textAlign: 'right' }}>ถูกยืมออก</th><th style={{ ...th, textAlign: 'right' }}>ยืมเข้า</th>
                 <th style={th}>ขาดหนักสุด</th><th style={{ ...th, textAlign: 'right' }}>กะไม่ได้เช็คชื่อ</th>
               </tr></thead>
@@ -1168,7 +1168,7 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
           </div>
 
           <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
-            <div style={{ padding: '10px 12px', fontWeight: 800 }}>🔗 คนมาน้อยแล้ว OEE เป็นอย่างไร <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--muted)' }}>(เทียบกะที่คนมาตามปกติ กับกะที่คนมาน้อยกว่าปกติ ของแผนกเดียวกัน)</span></div>
+            <div style={{ padding: '10px 12px', fontWeight: 800 }}>คนมาน้อยแล้ว OEE เป็นอย่างไร <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--muted)' }}>(เทียบกะที่คนมาตามปกติ กับกะที่คนมาน้อยกว่าปกติ ของแผนกเดียวกัน)</span></div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>
                 <th style={th}>แผนก</th>
@@ -1329,8 +1329,8 @@ function HistoryTab({ section, dept, deptParam, nodes, lines, stations, employee
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>
                 <th style={th}>เดือน</th><th style={{ ...th, textAlign: 'right' }}>แก้ (ครั้ง)</th>
-                <th style={{ ...th, textAlign: 'right' }}>🧑‍🤝‍🧑 ช่องต่อทีม สุทธิ</th><th style={{ ...th, textAlign: 'right' }}>📍 คน/กะของจุด สุทธิ</th>
-                <th style={{ ...th, textAlign: 'right' }}>🔧 ช่าง เข้า / ออก</th><th style={th}>คนแก้</th>
+                <th style={{ ...th, textAlign: 'right' }}>ช่องต่อทีม สุทธิ</th><th style={{ ...th, textAlign: 'right' }}>คน/กะของจุด สุทธิ</th>
+                <th style={{ ...th, textAlign: 'right' }}>ช่าง เข้า / ออก</th><th style={th}>คนแก้</th>
               </tr></thead>
               <tbody>
                 {months.map(m => (

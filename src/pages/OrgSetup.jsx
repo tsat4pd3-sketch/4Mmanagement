@@ -369,7 +369,7 @@ export default function OrgSetup() {
       {!isAdmin && (
         canOwn && mySecId ? (
           <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 9, border: '1px solid var(--green-line)', background: 'var(--green-dim)', fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
-            🛠️ คุณแก้ได้เฉพาะ <b>แผนก/กลุ่มใต้ส่วนงาน "{myUnit}"</b> ของตัวเอง — ส่วนงานอื่นและโครงระดับ Section เป็นของผู้ดูแลระบบ
+            คุณแก้ได้เฉพาะ <b>แผนก/กลุ่มใต้ส่วนงาน "{myUnit}"</b> ของตัวเอง — ส่วนงานอื่นและโครงระดับ Section เป็นของผู้ดูแลระบบ
           </div>
         ) : canOwn && !mySecId ? (
           <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 9, border: '1px solid var(--amber-line)', background: 'var(--amber-dim)', fontSize: 12, color: 'var(--amber)', lineHeight: 1.6 }}>
@@ -396,7 +396,7 @@ export default function OrgSetup() {
             👥 <b>ทีม A/B/C ใช้สำหรับจัดกะการทำงาน — ไม่ใช่ชั้นในผังองค์กร</b> จึงไม่ปรากฏในมุมมองผังและใบ export
             <div style={{ color: 'var(--muted)' }}>
               ค่าที่บันทึกคือช่อง <b>Code</b> (เช่น <code>A</code>) ซึ่งตรงกับ <code>employees.team</code> ·
-              ตารางกะใช้ที่ <b>🗓 ตารางกะการทำงาน</b> ({'/shift-organize'})
+              ตารางกะใช้ที่ <b>ตารางกะการทำงาน</b> ({'/shift-organize'})
             </div>
           </div>
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
@@ -460,7 +460,7 @@ export default function OrgSetup() {
             {!sections.length && <Empty text="ยังไม่มี Section" />}
             <div style={itemStyle(selSection === ORPHAN)} onClick={() => setSelSection(ORPHAN)}>
               <span style={{ fontSize: 13, color: 'var(--text2)' }}>
-                🏛️ ขึ้นตรงฝ่าย (ไม่มี Section)
+                ขึ้นตรงฝ่าย (ไม่มี Section)
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({orphanDepts.length} แผนก)</span>
               </span>
             </div>
@@ -580,7 +580,7 @@ export default function OrgSetup() {
                   {/* 🔴 กรองแถวออกแล้วต้องเขียนบนจอว่าซ่อนกี่รายการ — ไม่งั้นดูเหมือนผังมีแค่นี้ */}
                   {parentChoices.hidden > 0 && (
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.45 }}>
-                      🔒 ซ่อน {parentChoices.hidden} รายการที่อยู่นอกส่วนงานของคุณ — ย้ายข้ามส่วนงานต้องให้ admin ทำ
+                      ซ่อน {parentChoices.hidden} รายการที่อยู่นอกส่วนงานของคุณ — ย้ายข้ามส่วนงานต้องให้ admin ทำ
                     </div>
                   )}
                 </div>
@@ -608,7 +608,7 @@ export default function OrgSetup() {
                   <>
                     <input type="text" value={lineById[String(formRefLineId)]?.cost_center || ''} readOnly disabled
                       placeholder="— ยังไม่ได้ตั้งที่หน้าจัดการไลน์ —" style={{ opacity: 0.7, cursor: 'not-allowed' }} />
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>🔗 single source — cost center ของไลน์มาจากหน้า <strong>จัดการไลน์</strong> (แก้ที่นั่นที่เดียว)</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>single source — cost center ของไลน์มาจากหน้า <strong>จัดการไลน์</strong> (แก้ที่นั่นที่เดียว)</div>
                   </>
                 ) : (
                   <>
@@ -644,7 +644,7 @@ export default function OrgSetup() {
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                     ใช้แยก “สกิลของฝ่ายไหน” — ติดที่ตัวบนสุดพอ ตัวลูกตกทอดเอง
                     {modal.parentId ? ' (ตัวนี้มีแม่อยู่แล้ว ปล่อยว่างได้)' : ''}
-                    {!canDivisions && ' · 🔒 ต้องมีสิทธิ์ org:manage_divisions ถึงแก้ได้'}
+                    {!canDivisions && ' · ต้องมีสิทธิ์ org:manage_divisions ถึงแก้ได้'}
                   </div>
                 </div>
               )}
@@ -656,7 +656,7 @@ export default function OrgSetup() {
                 if (supportUnit && !formRefLineId) return (
                   <div style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)',
                                 border: '1px solid var(--border2)', borderRadius: 8, padding: '8px 10px' }}>
-                    🗂️ อยู่ใต้หน่วยงาน <b>สายสนับสนุน (Indirect)</b> — ไม่ต้องผูกไลน์ผลิต
+                    อยู่ใต้หน่วยงาน <b>สายสนับสนุน (Indirect)</b> — ไม่ต้องผูกไลน์ผลิต
                     <div style={{ marginTop: 2 }}>ถ้าหน่วยนี้มีไลน์ผลิตจริง ให้แก้ประเภทที่แผนกแม่เป็น Direct ก่อน</div>
                   </div>
                 );
@@ -717,7 +717,7 @@ function NodeLabel({ node, meta, children }) {
 function CostBadge({ code }) {
   return (
     <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border2)', whiteSpace: 'nowrap' }}>
-      💰{code}
+      {code}
     </span>
   );
 }

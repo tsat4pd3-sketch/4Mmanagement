@@ -199,7 +199,7 @@ export default function StoreWaitCards({ data, navigate, big = 1 }) {
   return (<>
     {/* ══ ① ไลน์เรียกของ ══ */}
     <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-      <span style={{ fontSize: 13 * big, fontWeight: 900 }}>🔔 ไลน์เรียกของ</span>
+      <span style={{ fontSize: 13 * big, fontWeight: 900 }}>ไลน์เรียกของ</span>
       {req.cards.length > 0 && (
         <span style={{ fontSize: 11 * big, fontWeight: 800, color: REQ_STATUS.pending.color }}>
           {req.cards.length} รายการ · {nLines} ไลน์
@@ -241,7 +241,7 @@ export default function StoreWaitCards({ data, navigate, big = 1 }) {
         ⚠ ดึงสถานะสโตร์ไม่สำเร็จ — รอบส่ง/พาร์ทจะขาดยังไม่ใช่ของจริง ({err})
       </div>
     )}
-    {waiting.length > 0 && <div style={{ fontSize: 12.5 * big, fontWeight: 900 }}>🚚 รอบส่งคัมบังค้าง</div>}
+    {waiting.length > 0 && <div style={{ fontSize: 12.5 * big, fontWeight: 900 }}>รอบส่งคัมบังค้าง</div>}
     {waiting.map(w => (
       <div key={w.line} onClick={goQueue}
         style={{
@@ -271,7 +271,7 @@ export default function StoreWaitCards({ data, navigate, big = 1 }) {
     {/* ══ ③ พาร์ทที่จะขาด — แถวเดียวต่อพาร์ท: รหัส/ชื่อ · เหลือ / Min ══ */}
     <div style={{ ...card, borderColor: short.rows.length ? '#facc15' : 'var(--border)' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 7 }}>
-        <span style={{ fontSize: 12.5 * big, fontWeight: 900 }}>📉 พาร์ทที่จะขาด (ต่ำกว่า Min)</span>
+        <span style={{ fontSize: 12.5 * big, fontWeight: 900 }}>พาร์ทที่จะขาด (ต่ำกว่า Min)</span>
         <span style={{ marginLeft: 'auto', fontSize: 12 * big, fontWeight: 900, color: short.rows.length ? '#facc15' : '#22c55e' }}>
           {short.rows.length}
         </span>
@@ -313,7 +313,7 @@ export default function StoreWaitCards({ data, navigate, big = 1 }) {
     {/* ══ ④ สั่งซื้อค้าง — นับรวมอย่างเดียว ห้ามโชว์รายใบ ══ */}
     {poPending.length > 0 && (
       <div onClick={goQueue} style={{ ...card, cursor: 'pointer', fontSize: 11.5 * big, color: 'var(--muted)' }}>
-        🧾 สั่งซื้อค้าง (ยังไม่รับเข้า) <b style={{ color: 'var(--text)' }}>{poPending.length}</b> พาร์ท — ดูที่บอร์ดสโตร์ ›
+        สั่งซื้อค้าง (ยังไม่รับเข้า) <b style={{ color: 'var(--text)' }}>{poPending.length}</b> พาร์ท — ดูที่บอร์ดสโตร์ ›
       </div>
     )}
   </>);

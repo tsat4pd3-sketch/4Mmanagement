@@ -445,7 +445,7 @@ export default function PMSchedule() {
             style={{ ...S.actionBtn(deptColor), fontSize: 13, fontWeight: 800, minHeight: 36 }}>สแกนเครื่อง</button>
           {focusEq && (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, padding: '4px 6px 4px 12px', borderRadius: 999, border: '1px solid var(--accent)', background: 'var(--bg3)' }}>
-              🎯 {focusName ? <>เฉพาะ <b>{focusName}</b> ({shownRows.length} แผน)</> : <b style={{ color: '#f59a3f' }}>ไม่พบแผนของอุปกรณ์นี้ในทีมนี้</b>}
+              {focusName ? <>เฉพาะ <b>{focusName}</b> ({shownRows.length} แผน)</> : <b style={{ color: '#f59a3f' }}>ไม่พบแผนของอุปกรณ์นี้ในทีมนี้</b>}
               <button onClick={() => setParams({ focus: null })} style={{ fontSize: 12, padding: '2px 10px', borderRadius: 999, border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--text2)', cursor: 'pointer' }}>ทั้งหมด</button>
             </span>
           )}
@@ -675,7 +675,7 @@ function CycleModal({ rows, byName, byUid, deptWrite, onClose, onSaved }) {
   return (
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, width: 'min(520px,96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
-        <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>📅 ตั้งรอบ PM / วัน PM ครั้งถัดไป</div>
+        <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>ตั้งรอบ PM / วัน PM ครั้งถัดไป</div>
         <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 14 }}>
           {single
             ? <>{single.eq?.name ?? '—'}{single.eq?.line_name ? ` · ${single.eq.line_name}` : ''} · รอบตอนนี้: <b>{single.cycleText}</b>{lastYmd ? ` · ตรวจล่าสุด ${new Date(lastYmd).toLocaleDateString('th-TH')}` : ' · ยังไม่เคยตรวจ'}</>
@@ -845,7 +845,7 @@ function RunDayCell({ res, cycle }) {
         {runDayText(res)}
       </span>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-        🏃 ทุก {cycle || '—'} วันเดินเครื่อง
+        ทุก {cycle || '—'} วันเดินเครื่อง
         {res.unknownUsage && <span style={{ color: '#f59a3f' }}> · ยังไม่รู้ยอดผลิต</span>}
       </div>
     </>
@@ -969,7 +969,7 @@ function CalendarView({ rows, insps = [], today, onCheck }) {
       )}
       {runN > 0 && (
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
-          🏃 {runN} แผนนับรอบจากวันเดินเครื่อง — ไม่มีวันปฏิทินจึงไม่อยู่ในช่องวัน (ดูสถานะที่มุมมองตาราง/Timeline)
+          {runN} แผนนับรอบจากวันเดินเครื่อง — ไม่มีวันปฏิทินจึงไม่อยู่ในช่องวัน (ดูสถานะที่มุมมองตาราง/Timeline)
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
@@ -1027,12 +1027,12 @@ function DayModal({ sel, onClose, onCheck }) {
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: 'min(94vw, 460px)', maxHeight: '86vh', overflowY: 'auto', padding: 18 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>📅 {sel.label}</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{sel.label}</div>
           <button onClick={onClose} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
         </div>
         {/* ── ① แผนที่ครบกำหนดวันนี้ ── */}
         {sel.items.length > 0 && (
-          <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--muted)', marginBottom: 6 }}>📋 แผนที่ครบกำหนดวันนี้</div>
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--muted)', marginBottom: 6 }}>แผนที่ครบกำหนดวันนี้</div>
         )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {sel.items.map(r => {

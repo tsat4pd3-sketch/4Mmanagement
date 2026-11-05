@@ -109,7 +109,7 @@ export default function EventComments({ refKind, refId, contextLabel = 'รา�
   return (
     <div style={{ marginTop: 12, border: '1px solid var(--border)', borderRadius: 10, background: 'var(--bg)', padding: '10px 12px' }}>
       <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text2)', marginBottom: 8 }}>
-        💬 คอมเมนต์{items ? ` (${items.length})` : ''}
+        คอมเมนต์{items ? ` (${items.length})` : ''}
         <span style={{ fontWeight: 500, color: 'var(--muted)', marginLeft: 8, fontSize: 11 }}>คุยกันใต้ใบงาน — ประวัติติดรายการนี้</span>
       </div>
 
@@ -129,7 +129,7 @@ export default function EventComments({ refKind, refId, contextLabel = 'รา�
                   <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--accent)' }}>{c.author_name}</span>
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}>{fmtDateTime(c.created_at)}</span>
                   {(c.mentions || []).map((m, i) => (
-                    <span key={i} style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', background: 'rgba(77,159,255,0.12)', borderRadius: 20, padding: '1px 8px' }}>🔔 {m.name}</span>
+                    <span key={i} style={{ fontSize: 11, fontWeight: 700, color: '#4d9fff', background: 'rgba(77,159,255,0.12)', borderRadius: 20, padding: '1px 8px' }}>{m.name}</span>
                   ))}
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--text)', marginTop: 2, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{c.body}</div>
@@ -141,7 +141,7 @@ export default function EventComments({ refKind, refId, contextLabel = 'รา�
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 6 }}>
             {mentions.map(m => (
               <span key={m.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 700, color: '#4d9fff', background: 'rgba(77,159,255,0.12)', border: '1px solid rgba(77,159,255,0.35)', borderRadius: 20, padding: '3px 10px' }}>
-                🔔 {m.full_name}
+                {m.full_name}
                 <button onClick={() => setMentions(x => x.filter(y => y.id !== m.id))}
                   style={{ background: 'none', border: 'none', color: '#4d9fff', cursor: 'pointer', fontSize: 12, padding: 0, lineHeight: 1 }}>✕</button>
               </span>
@@ -150,12 +150,12 @@ export default function EventComments({ refKind, refId, contextLabel = 'รา�
               <div style={{ position: 'relative' }}>
                 <button className="tbtn" onClick={() => setPickOpen(o => !o)}
                   style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', background: 'var(--bg2)', border: '1px dashed var(--border2)', borderRadius: 20, padding: '3px 10px', cursor: 'pointer' }}>
-                  🔔 แจ้งเตือนถึง... ▾
+                  แจ้งเตือนถึง... ▾
                 </button>
                 {pickOpen && (
                   <div style={{ position: 'absolute', bottom: 'calc(100% + 4px)', left: 0, zIndex: 50, width: 230, background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 10, boxShadow: 'var(--shadow-lg)', padding: 8 }}>
                     {/* width:'auto' กัน trap input{width:100%}? — อยู่ใน column เต็มกล่อง ใช้ 100% ได้ */}
-                    <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 ค้นหาชื่อ..."
+                    <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหาชื่อ..."
                       style={{ fontSize: 12, padding: '6px 9px', marginBottom: 6 }} />
                     <div style={{ maxHeight: 180, overflowY: 'auto' }}>
                       {shownUsers.map(u => (

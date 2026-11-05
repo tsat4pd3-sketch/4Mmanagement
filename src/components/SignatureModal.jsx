@@ -253,7 +253,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
           <div style={{ display: 'flex', gap: 0, marginBottom: 14, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}>
             {[
               { key: 'draw', label: '✏️ วาดลายเซ็น' },
-              { key: 'upload', label: '📁 อัปโหลดรูป' },
+              { key: 'upload', label: 'อัปโหลดรูป' },
             ].map(t => (
               <button key={t.key} onClick={() => setTab(t.key)} style={{
                 flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer',
@@ -288,7 +288,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
                 marginTop: 8, padding: '6px 14px', fontSize: 12, borderRadius: 6,
                 background: 'var(--bg3)', border: '1px solid var(--border2)',
                 color: 'var(--text2)', cursor: 'pointer',
-              }}>🗑️ ล้าง</button>
+              }}>ล้าง</button>
             </div>
           )}
 

@@ -116,7 +116,7 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
         {/* พาเรโตถูกย้ายไปแท็บ QC7 (แยกตามชนิดสินทรัพย์) — ต้องมีทางไปให้ชัด ไม่ใช่หายเงียบ */}
         {onGoQc7 && (
           <div>
-            🧪 อยากดู <b style={{ color: 'var(--text2)' }}>พาเรโต / ก้างปลา / ฮิสโตแกรม / กราฟควบคุม</b> แยกตามชนิดอุปกรณ์ →{' '}
+            อยากดู <b style={{ color: 'var(--text2)' }}>พาเรโต / ก้างปลา / ฮิสโตแกรม / กราฟควบคุม</b> แยกตามชนิดอุปกรณ์ →{' '}
             <button type="button" onClick={onGoQc7} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--accent)', fontWeight: 800, fontSize: 11.5, cursor: 'pointer', textDecoration: 'underline' }}>
               ไปแท็บ QC 7 Tools
             </button>
@@ -158,7 +158,7 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
         {/* หัวข้อคั่น — ส่วนนี้มีแถบกรองของตัวเอง (ช่วงวัน/ไลน์/ชนิด) คนละชุดกับด้านบน
             ไม่มีหัวข้อคั่น = คนเห็นแถบกรอง 2 ชุดติดกันแล้วงงว่าอันไหนคุมอะไร */}
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>
-          ⚙️ ความน่าเชื่อถือรายอุปกรณ์ — MTTR / MTBF
+          ความน่าเชื่อถือรายอุปกรณ์ — MTTR / MTBF
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
           นับจาก <b style={{ color: 'var(--text2)' }}>downtime จริงของเครื่อง</b> ไม่ใช่ใบแจ้งซ่อม — มีตัวกรองของตัวเองด้านล่าง

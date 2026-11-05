@@ -99,7 +99,7 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
         <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
           {dir === 'down' ? '➡️' : '⬅️'} {other}
         </span>
-        {l.buffer_label && <span style={{ fontSize: 11, color: 'var(--muted)' }}>📦 {l.buffer_label}</span>}
+        {l.buffer_label && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{l.buffer_label}</span>}
         {l.buffer_qty != null
           ? <span style={{ fontSize: 11, color: 'var(--text2)' }}>buffer {Number(l.buffer_qty).toLocaleString()} ชิ้น</span>
           : <span style={{ fontSize: 11, color: '#f59e0b' }}>⚠ ยังไม่ระบุ buffer</span>}

@@ -37,17 +37,17 @@ export default function LayoutSetup() {
       {tab === 'factory' && (
         can('factory_map', 'edit', role)
           ? <FactoryMap setupMode />
-          : <div style={{ color: 'var(--muted)', padding: 30 }}>🔒 ไม่มีสิทธิ์แก้ผังภาพรวมโรงงาน (ต้องมีสิทธิ์ factory_map:edit)</div>
+          : <div style={{ color: 'var(--muted)', padding: 30 }}>ไม่มีสิทธิ์แก้ผังภาพรวมโรงงาน (ต้องมีสิทธิ์ factory_map:edit)</div>
       )}
       {tab === 'production' && (
         can('line_setup', 'edit', role)
           ? <LineSetup embedded />
-          : <div style={{ color: 'var(--muted)', padding: 30 }}>🔒 ไม่มีสิทธิ์แก้ผังไลน์ (ต้องมีสิทธิ์ line_setup:edit) — <Link to="/linesetup" style={{ color: 'var(--accent)' }}>เปิดหน้าดูอย่างเดียว</Link></div>
+          : <div style={{ color: 'var(--muted)', padding: 30 }}>ไม่มีสิทธิ์แก้ผังไลน์ (ต้องมีสิทธิ์ line_setup:edit) — <Link to="/linesetup" style={{ color: 'var(--accent)' }}>เปิดหน้าดูอย่างเดียว</Link></div>
       )}
       {tab === 'mtn' && (
         can('pm', 'setup', role)
           ? <MtnMachineLayout setupMode />
-          : <div style={{ color: 'var(--muted)', padding: 30 }}>🔒 ไม่มีสิทธิ์ตั้งค่าผัง MTN (ต้องมีสิทธิ์ pm:setup)</div>
+          : <div style={{ color: 'var(--muted)', padding: 30 }}>ไม่มีสิทธิ์ตั้งค่าผัง MTN (ต้องมีสิทธิ์ pm:setup)</div>
       )}
       {tab === 'store' && <TransportMapEditor />}
       </Hub>

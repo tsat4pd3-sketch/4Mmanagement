@@ -51,7 +51,7 @@ export default function PlanFrameBar({ rec, lots = null, size = 12, compact = fa
         fontSize: size, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 6,
         padding: '2px 10px', borderRadius: 20, border: `1px dashed ${C.frame}66`,
       }}>
-        <b style={{ color: C.frame }}>🧾 ยังไม่มีกรอบแผนของวันนี้</b>
+        <b style={{ color: C.frame }}>ยังไม่มีกรอบแผนของวันนี้</b>
         {!compact && <span>— บอร์ดนี้เห็นเฉพาะใบที่สแกนเข้าระบบ (ว่าง ≠ ไม่มีงาน)</span>}
       </span>
     );

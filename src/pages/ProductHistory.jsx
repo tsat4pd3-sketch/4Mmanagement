@@ -319,7 +319,7 @@ export default function ProductHistory() {
               <div key={line}>
                 <div style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--bg3)', padding: '5px 12px',
                   fontSize: 11, fontWeight: 800, color: 'var(--accent)', borderBottom: '1px solid var(--border2)' }}>
-                  🏭 {line} <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· {items.length} รายการ</span>
+                  {line} <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· {items.length} รายการ</span>
                 </div>
                 {items.map(p => {
                   const sel = selMat?.id === p.id;
@@ -381,7 +381,7 @@ export default function ProductHistory() {
 
           {/* โหมดกลุ่ม: เห็นว่าแต่ละเลข SAP ผลิตไปเท่าไหร่ (ไลน์เดียวกัน แต่คนละปลายทางลูกค้า) */}
           {groupMode && canGroup && byMat.length > 1 && (
-            <CollapseCard id="bymat" title="🔗 ผลิตแยกตาม MAT SAP" count={`${byMat.length} เลข`}>
+            <CollapseCard id="bymat" title="ผลิตแยกตาม MAT SAP" count={`${byMat.length} เลข`}>
               <div style={{ display: 'grid', gap: 7 }}>
                 {byMat.map(r => {
                   const meta = groupMats.find(g => g.mat_no === r.mat);
@@ -409,7 +409,7 @@ export default function ProductHistory() {
           {canGroup && !groupMode && (
             <div style={{ ...card, marginBottom: 16, borderColor: 'var(--blue)66', background: 'var(--blue)14', padding: '10px 14px' }}>
               <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--blue)' }}>
-                🔗 สินค้านี้มีอีก {groupMats.length - 1} MAT SAP ที่เป็น product เดียวกัน (P/N {selMat.p_no})
+                สินค้านี้มีอีก {groupMats.length - 1} MAT SAP ที่เป็น product เดียวกัน (P/N {selMat.p_no})
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 3, lineHeight: 1.7 }}>
                 แยกเลขกันที่ <b>ปลายทางที่ส่งลูกค้า</b> — {groupMats.filter(g => g.mat_no !== selMat.mat_no).map(g => g.mat_no).join(' · ')}
@@ -436,7 +436,7 @@ export default function ProductHistory() {
 
           {/* แยกตามไลน์ */}
           {summary.byLine.length > 0 && (
-            <CollapseCard id="byline" title="🏭 ผลิตแยกตามไลน์" count={summary.byLine.length}>
+            <CollapseCard id="byline" title="ผลิตแยกตามไลน์" count={summary.byLine.length}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {summary.byLine.map(l => (
                   <div key={l.line} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -454,13 +454,13 @@ export default function ProductHistory() {
           {/* ── ผลิตเทียบกับความต้องการลูกค้า (2026-08-19 · คำสั่ง user) ──
               ตอบ "ผลิตพอกับที่ลูกค้าสั่งไหม · ต้องเร่งหรือชะลอ" ซึ่งเดิมดูไม่ได้เลย
               ⚠️ ไม่ผูกกับ daily.length — ไม่มีการผลิตเลย ยิ่งต้องเห็นว่าลูกค้าสั่งอยู่เท่าไหร่ */}
-          <CollapseCard id="demand" title="📦 ผลิตเทียบกับความต้องการลูกค้า" count="ออเดอร์ + forecast">
+          <CollapseCard id="demand" title="ผลิตเทียบกับความต้องการลูกค้า" count="ออเดอร์ + forecast">
             <DemandVsProduction products={activeMats} prodByDay={prodByDay} today={todayStr()} />
           </CollapseCard>
 
           {/* trend รายวัน */}
           {daily.length > 0 && (
-            <CollapseCard id="daily" title="📈 ผลิตรายวัน" count={`${daily.length} วัน`}>
+            <CollapseCard id="daily" title="ผลิตรายวัน" count={`${daily.length} วัน`}>
               {/* component กลาง — มีแกน Y + เส้น grid + ตัวเลขบนแท่ง (UI-CONVENTIONS §5.2) */}
               <DailyBars height={150} unit=" ชิ้น"
                 data={daily.map(d => ({
@@ -475,7 +475,7 @@ export default function ProductHistory() {
           )}
 
           {/* ตารางใบผลิต — drill-down วัน → ไลน์·กะ → รายใบ (รายวันคือระดับหลัก รายใบดูเมื่อต้องเจาะ) */}
-          <CollapseCard id="orders" title="📋 รายการใบผลิต" count={`${dayGroups.length} วัน · ${rows.length.toLocaleString()} ใบ`}>
+          <CollapseCard id="orders" title="รายการใบผลิต" count={`${dayGroups.length} วัน · ${rows.length.toLocaleString()} ใบ`}>
             {loading ? <div style={{ color: 'var(--muted)', fontSize: 12 }}>กำลังโหลด...</div> : rows.length === 0 ? <div style={{ color: 'var(--muted)', fontSize: 12 }}>ไม่มีการผลิตในช่วงนี้</div> : (
             <div style={{ overflowX: 'auto' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>คลิกวันเพื่อแตกราย "ไลน์·กะ" · คลิกกะเพื่อแตกรายใบ</div>
@@ -546,7 +546,7 @@ export default function ProductHistory() {
           </CollapseCard>
 
           {/* ประวัติการแก้ไขข้อมูลสินค้า (audit) — ว่าง = default พับ */}
-          <CollapseCard id="audit" title="🕵️ ประวัติการแก้ไขข้อมูลสินค้า (ใครแก้อะไรเมื่อไหร่)" count={audit.length} defaultOpen={audit.length > 0}>
+          <CollapseCard id="audit" title="ประวัติการแก้ไขข้อมูลสินค้า (ใครแก้อะไรเมื่อไหร่)" count={audit.length} defaultOpen={audit.length > 0}>
             {audit.length === 0 ? (
               <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                 ยังไม่มีประวัติ — ระบบ audit เริ่มเก็บหลัง apply migration <code>20260724_audit_log_dr.sql</code> (การแก้ไขก่อนหน้านั้นไม่ถูกบันทึก)

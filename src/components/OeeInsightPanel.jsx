@@ -353,13 +353,13 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
         {sectionHint && (
           <span title="ขอบเขตที่เจาะมา — เปลี่ยนได้ที่ตัวกรองส่วนงานในแท็บ ⚡ ภาพรวมวันนี้"
             style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 999, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
-            📁 {sectionHint}
+            {sectionHint}
           </span>
         )}
         <LineSelect lines={lines || []} value={selLine} onChange={setSelLine} placeholder={ALL.line} />
       </TimeRangeBar>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 14 }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>🧠 วิเคราะห์ภาพรวมอัตโนมัติ</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>วิเคราะห์ภาพรวมอัตโนมัติ</span>
         {meta && !meta.error && <span style={{ fontSize: 11, color: 'var(--muted)' }}>วิเคราะห์จาก {meta.nSess} กะที่ปิดแล้ว · Downtime นอกแผนรวม {meta.dtMin ?? 0} นาที</span>}
         {/* โหลดแถวลูกไม่ครบ = แผงนี้อาจสรุปว่า "ไม่มีปัญหา" ทั้งที่มี — อันตรายที่สุด ห้ามเงียบ */}
         {meta?.loadErr && (
@@ -388,7 +388,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
         return (
           <div style={{ marginBottom: 14, padding: '12px 14px', borderRadius: 10, background: 'var(--bg2)', border: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 800 }}>🧩 วิเคราะห์ความสูญเปล่าแบบ Lean</div>
+              <div style={{ fontSize: 13, fontWeight: 800 }}>วิเคราะห์ความสูญเปล่าแบบ Lean</div>
               <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
                 {[['six_big_loss', '6 Big Losses (TPM)'], ['waste_type', '8 Wastes (Lean)']].map(([k, lb]) => (
                   <button key={k} onClick={() => setLeanAxis(k)}
@@ -406,7 +406,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
             {/* ตีเป็นเงินไม่ได้ = ต้องบอกเหตุผล ห้ามแค่ไม่โชว์เฉยๆ */}
             {perHr == null && (
               <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 8, lineHeight: 1.55 }}>
-                💰 ยังตีเป็นเงินไม่ได้ — {!selLine
+                ยังตีเป็นเงินไม่ได้ — {!selLine
                   ? 'เลือกไลน์เจาะจง (แต่ละไลน์คนละ activity rate จึงรวมเป็นเงินก้อนเดียวไม่ได้)'
                   : `ไลน์ ${selLine} ยังไม่ตั้ง cost center หรือยังไม่มี activity rate — ตั้งที่ ผังองค์กร → 💰 Activity Rate`}
               </div>
@@ -433,7 +433,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                       {r.types.slice(0, 3).map(t => `${t.name} ${t.min.toLocaleString()}น.${perHr != null ? ` (${fmtB(baht(t.min))}฿)` : ''}`).join(' · ')}
                       {r.types.length > 3 ? ` +${r.types.length - 3} ประเภท` : ''}
-                      {r.meta?.fix ? <div style={{ color: c, marginTop: 2 }}>💡 {r.meta.fix}</div> : null}
+                      {r.meta?.fix ? <div style={{ color: c, marginTop: 2 }}>{r.meta.fix}</div> : null}
                     </div>
                   </div>
                 );
@@ -469,7 +469,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
             );
           })}
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-            💡 เจอปัญหาซ้ำที่คุ้มค่าแก้ → เปิดโปรเจคในหน้า Improvements (พาเรโต้จะ prefill เป้าให้) แล้วระบบติดตามผลก่อน/หลังให้อัตโนมัติ
+            เจอปัญหาซ้ำที่คุ้มค่าแก้ → เปิดโปรเจคในหน้า Improvements (พาเรโต้จะ prefill เป้าให้) แล้วระบบติดตามผลก่อน/หลังให้อัตโนมัติ
           </div>
         </div>
       )}

@@ -83,7 +83,7 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
         <div onClick={e => e.stopPropagation()} className="modal-scroll"
           style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(520px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)' }}>📍 ถึงไลน์แล้ว — สแกนจุดส่งก่อนปิดใบ</h3>
+            <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)' }}>ถึงไลน์แล้ว — สแกนจุดส่งก่อนปิดใบ</h3>
             <button onClick={onClose} className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>✕</button>
           </div>
 
@@ -162,7 +162,7 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
               {!overriding && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                   <button onClick={() => setScanOpen(true)} disabled={busy} style={btn('var(--accent)', 'var(--accent-ink)', 'transparent', busy)}>
-                    📷 {ok ? 'สแกนใหม่' : 'สแกน QR จุดส่ง'}
+                    {ok ? 'สแกนใหม่' : 'สแกน QR จุดส่ง'}
                   </button>
                   <div style={{ flex: 1 }} />
                   <button onClick={onClose} disabled={busy} style={btn('transparent', 'var(--muted)', 'var(--border2)', busy)}>ยกเลิก</button>
@@ -180,11 +180,11 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
                     !overriding ? (
                       <button onClick={() => setOverriding(true)} disabled={busy}
                         style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
-                        🔓 สแกนไม่ได้ / ป้ายหาย → ปลดบล็อกโดยหัวหน้า (บันทึกชื่อ+เหตุผล)
+                        สแกนไม่ได้ / ป้ายหาย → ปลดบล็อกโดยหัวหน้า (บันทึกชื่อ+เหตุผล)
                       </button>
                     ) : (
                       <div>
-                        <div style={{ fontSize: 12.5, fontWeight: 800, color: '#ef4444' }}>🔓 ปลดบล็อก — ระบุเหตุผล (ถูกบันทึกเป็นข้อมูล ไปแก้ต้นเหตุทีหลัง)</div>
+                        <div style={{ fontSize: 12.5, fontWeight: 800, color: '#ef4444' }}>ปลดบล็อก — ระบุเหตุผล (ถูกบันทึกเป็นข้อมูล ไปแก้ต้นเหตุทีหลัง)</div>
                         <select value={reasonKey} onChange={e => setReasonKey(e.target.value)}
                           style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }}>
                           <option value="">— เลือกเหตุผล —</option>

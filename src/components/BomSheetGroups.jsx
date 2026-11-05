@@ -58,7 +58,7 @@ export default function BomSheetGroups({ groups = [], counts = {}, search = '', 
       <div style={{ marginBottom: 10, padding: '10px 14px', borderRadius: 10, fontSize: 12, lineHeight: 1.65,
         color: 'var(--text2)', border: '1px solid var(--border)', background: 'var(--bg2)' }}>
         <div style={{ fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>
-          📋 พาร์ทที่ถูกนิยามลูกไว้หลายใบ — เทียบ “ทุกใบ” พร้อมกัน
+          พาร์ทที่ถูกนิยามลูกไว้หลายใบ — เทียบ “ทุกใบ” พร้อมกัน
         </div>
         ตารางคู่ด้านบนเทียบได้แค่ <b>2 ใบ</b> ⇒ ตกไป 2 แบบ ซึ่งมาโผล่ที่นี่:
         <b style={{ color: BAD }}> พาร์ทที่ไม่มีใบ BOM ของตัวเองเลย</b> (ตารางคู่ข้ามทั้งหมด) และ

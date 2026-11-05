@@ -170,7 +170,7 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
         background: 'var(--bg3)', border: '2px solid rgba(77,159,255,0.5)', borderRadius: 14,
         padding: 22, width: 'min(96vw,860px)', maxHeight: '92vh', overflowY: 'auto',
       }}>
-        <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: '#4d9fff' }}>🔁 เติมตารางกะล่วงหน้า</div>
+        <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: '#4d9fff' }}>เติมตารางกะล่วงหน้า</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.7 }}>
           ระบบดูรอบสลับที่ตั้งไว้จริงย้อนหลัง แล้วต่อไปข้างหน้าให้ — <b style={{ color: 'var(--text)' }}>เริ่มจากสัปดาห์ที่เปิดอยู่ ({weekStart})</b>
           {' '}· <b style={{ color: 'var(--text)' }}>ไม่ทับสัปดาห์ที่ตั้งไว้แล้ว</b> · เป็นค่าตั้งต้นให้ระบบมีอะไรใช้ ถ้าจริงๆ สลับต่างไป แก้ทับได้ตลอด

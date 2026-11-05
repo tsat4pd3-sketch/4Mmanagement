@@ -1221,7 +1221,7 @@ export default function Dashboard({ view = 'timeline' }) {
                   display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8,
                   background: 'rgba(0,0,0,0.25)', border: '1px solid var(--red-line)',
                 }}>
-                  <span style={{ fontSize: T(14, 22), fontWeight: 800, color: 'var(--red)' }}>⚙️ {d.machine_no || d.line_name}</span>
+                  <span style={{ fontSize: T(14, 22), fontWeight: 800, color: 'var(--red)' }}>{d.machine_no || d.line_name}</span>
                   <span style={{ fontSize: T(13, 20), color: 'var(--text2)' }}>{d.line_name}</span>
                   <span style={{ fontSize: T(13, 20), fontWeight: 700, color: 'var(--red)' }}>{d.dr_downtime_types?.name_th || 'Downtime'}</span>
                   {elapsed != null && (
@@ -1330,7 +1330,7 @@ export default function Dashboard({ view = 'timeline' }) {
                             <div className="dt-alarm-blink" onClick={() => setAndonLine({ title: line.name, names: cardNames })}
                               title="คลิกดูรายละเอียดเครื่องจักรที่ Downtime"
                               style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, color: '#fff', border: '1px solid var(--red)', cursor: 'pointer' }}>
-                              ⚙️ DT {cardDT.length}
+                              DT {cardDT.length}
                             </div>
                           )}
                         </div>
@@ -1416,7 +1416,7 @@ export default function Dashboard({ view = 'timeline' }) {
                                     <div className="dt-alarm-blink" onClick={() => setAndonLine({ title: cs.name, names: [cs.name] })}
                                       title="คลิกดูรายละเอียดเครื่องจักรที่ Downtime"
                                       style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, color: '#fff', border: '1px solid var(--red)', cursor: 'pointer' }}>
-                                      ⚙️ DT {csDT.length}
+                                      DT {csDT.length}
                                     </div>
                                   )}
                                 </div>
@@ -1520,9 +1520,9 @@ export default function Dashboard({ view = 'timeline' }) {
           <motion.div {...stagger(8)} style={{ marginBottom: 24 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
               <div style={{ fontSize: T(14, 22), fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                📊 Heijunka Board — ไทม์ไลน์การผลิต
-                {isHistorical && <span style={{ marginLeft: 8, fontSize: T(12, 17), padding: '2px 8px', borderRadius: 10, background: 'var(--blue-dim)', color: 'var(--blue)', letterSpacing: 0 }}>📅 ย้อนหลัง {boardDate}</span>}
-                {isFutureDay && <span style={{ marginLeft: 8, fontSize: 12, padding: '2px 8px', borderRadius: 10, background: 'var(--bg3)', color: 'var(--muted)', letterSpacing: 0 }}>📅 ล่วงหน้า {boardDate}</span>}
+                Heijunka Board — ไทม์ไลน์การผลิต
+                {isHistorical && <span style={{ marginLeft: 8, fontSize: T(12, 17), padding: '2px 8px', borderRadius: 10, background: 'var(--blue-dim)', color: 'var(--blue)', letterSpacing: 0 }}>ย้อนหลัง {boardDate}</span>}
+                {isFutureDay && <span style={{ marginLeft: 8, fontSize: 12, padding: '2px 8px', borderRadius: 10, background: 'var(--bg3)', color: 'var(--muted)', letterSpacing: 0 }}>ล่วงหน้า {boardDate}</span>}
               </div>
               <div className="tv-hide" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <button onClick={() => shiftDate(-1)} style={dateBtn}>◀</button>
@@ -1832,7 +1832,7 @@ export default function Dashboard({ view = 'timeline' }) {
                                       + ไปทับใบงานที่คร่อมช่วงพัก) — แถบลายเฉียงยังบอกว่าเป็นช่วงพัก ชี้เมาส์เห็นชื่อ */}
                                   {tlW > 0 && widthPct * tlW / 100 >= 52 && (
                                     <span style={{ fontSize: T(11, 17), fontWeight: 700, color: 'var(--muted)', whiteSpace: 'nowrap', marginBottom: 1 }}>
-                                      🚫{brkName}{band.lineRuleMin !== null ? ' 🏭' : ''}
+                                      {brkName}{band.lineRuleMin !== null ? ' 🏭' : ''}
                                     </span>
                                   )}
                                 </div>
@@ -2027,7 +2027,7 @@ export default function Dashboard({ view = 'timeline' }) {
                           });
                           const grossQty = Object.values(demandByMat).reduce((a, q) => a + q, 0);
                           if (ediQty <= 0 && stockUsed > 0) {
-                            chips.push({ color: 'var(--green)', text: `🌙📡 EDI ส่งพรุ่งนี้ ${grossQty.toLocaleString()} ชิ้น — 📦 stock พร้อมส่งครอบทั้งหมด ไม่ต้องผลิตเพิ่มคืนนี้` });
+                            chips.push({ color: 'var(--green)', text: `🌙📡 EDI ส่งพรุ่งนี้ ${grossQty.toLocaleString()} ชิ้น — stock พร้อมส่งครอบทั้งหมด ไม่ต้องผลิตเพิ่มคืนนี้` });
                           }
                           if (ediQty > 0) {
                             const NIGHT_OT_IN2 = gridStartMs + 12 * 3600000, NIGHT_REG_IN2 = gridStartMs + 14.5 * 3600000;
@@ -2058,7 +2058,7 @@ export default function Dashboard({ view = 'timeline' }) {
                                 if (of2 <= gridEndMs) {
                                   chips.push({ color: 'var(--amber)', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — ⏰ ควรเรียกเข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)} · ถ้าเข้า 22:30 จบ ~${fmtMs(nf)})${tail}` });
                                 } else {
-                                  chips.push({ color: 'var(--red)', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — 🚨 เกินกำลังแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)}) วางแผนล่วงหน้า${tail}` });
+                                  chips.push({ color: 'var(--red)', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — เกินกำลังแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)}) วางแผนล่วงหน้า${tail}` });
                                 }
                               }
                             }
@@ -2084,7 +2084,7 @@ export default function Dashboard({ view = 'timeline' }) {
                           } else if (projEndMs <= DAY_OT_END) {
                             chips.push({ color: 'var(--amber)', text: `${sLabel} คาดเสร็จ ${projLabel} — ⏰ ต้องเปิด OT ~${otMin} นาที (เลิก 17:30 → ผลิตถึง ${projLabel})` });
                           } else {
-                            chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกินกรอบ OT (20:00) ควรวางแผนยกยอด/เพิ่มกำลังผลิต` });
+                            chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — เกินกรอบ OT (20:00) ควรวางแผนยกยอด/เพิ่มกำลังผลิต` });
                           }
                           return;
                         }
@@ -2109,7 +2109,7 @@ export default function Dashboard({ view = 'timeline' }) {
                         if (projEndMs <= FRAME_END) {
                           chips.push({ color: 'var(--green)', text: `${sLabel} คาดเสร็จ ${projLabel} — จบภายในกะ (ก่อน 08:00)` });
                         } else {
-                          chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกิน 08:00 ควรวางแผนยกยอดไปกะถัดไป` });
+                          chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — เกิน 08:00 ควรวางแผนยกยอดไปกะถัดไป` });
                         }
                       });
                       return chips;
@@ -2117,7 +2117,7 @@ export default function Dashboard({ view = 'timeline' }) {
 
                     const plannerStrip = plannerChips.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '6px 10px', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
-                        <span style={{ fontSize: T(11, 17), fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>🧠 PLANNER</span>
+                        <span style={{ fontSize: T(11, 17), fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>PLANNER</span>
                         {plannerChips.map((c, i) => (
                           <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 10, background: 'var(--card)', color: c.color, border: `1px solid ${c.color}` }}>{/* สีจาก token ธีม — เดิม hex สว่าง+พื้นโปร่ง ธีมสว่างมองไม่เห็น (02/10) */}
                             {c.text}
@@ -2136,8 +2136,8 @@ export default function Dashboard({ view = 'timeline' }) {
                             หัวชั่วโมงแสดงเวลาคู่บน-ล่างในคอลัมน์เดียวกัน (โครงเดียวกับบอร์ดหน้าจัดการไลน์) */}
                         <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
                           <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: T(11, 17), fontWeight: 700, color: tv ? 'var(--text2)' : 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--bg2)' } : null) }}>
-                            <span>☀️ กะเช้า{isMobile ? '' : ' (แถบบน)'}</span>
-                            <span>🌙 กะดึก{isMobile ? '' : ' (แถบล่าง)'}</span>
+                            <span>กะเช้า{isMobile ? '' : ' (แถบบน)'}</span>
+                            <span>กะดึก{isMobile ? '' : ' (แถบล่าง)'}</span>
                           </div>
                           {/* ป้ายเวลาปัจจุบัน ลอยตรงตำแหน่ง playhead (คอลัมน์ใช้ร่วม 2 กะ — ไอคอนบอกว่าอยู่กะไหน) */}
                           {(() => {
@@ -2171,7 +2171,7 @@ export default function Dashboard({ view = 'timeline' }) {
                         {/* แถวที่ถูกกรองซ่อน — บอกจำนวนเสมอ ห้ามหายเงียบ */}
                         {hiddenRowCount > 0 && (
                           <div style={{ padding: '6px 12px', fontSize: 12, color: 'var(--muted)', background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
-                            🔎 ตัวกรอง "{boardQuery.trim()}" — ซ่อน {hiddenRowCount} พาร์ทของไลน์นี้{qRows.length === 0 ? ' (ไม่มีพาร์ทที่ตรง)' : ''}
+                            ตัวกรอง "{boardQuery.trim()}" — ซ่อน {hiddenRowCount} พาร์ทของไลน์นี้{qRows.length === 0 ? ' (ไม่มีพาร์ทที่ตรง)' : ''}
                           </div>
                         )}
                         {/* ✍️ ใบเปิดเอง — ยุบไว้ แต่ **ห้ามซ่อนเงียบ** ต้องบอกจำนวน + กดกางได้เสมอ
@@ -2278,7 +2278,7 @@ export default function Dashboard({ view = 'timeline' }) {
                         <div key={childName} style={{ flex: '1 1 220px', minWidth: 200, display: 'flex', flexDirection: 'column', gap: 8 }}>
                           {multi && (
                             <div style={{ fontSize: T(13, 20), fontWeight: 800, color: 'var(--amber)', borderBottom: '1px solid var(--border)', paddingBottom: 3 }}>
-                              🏭 {childName}
+                              {childName}
                               {emptyCount > 0 && <span style={{ fontSize: T(11, 17), fontWeight: 600, color: 'var(--muted)' }}> · {emptyCount} กะไม่มีแผน</span>}
                             </div>
                           )}
@@ -2357,7 +2357,7 @@ export default function Dashboard({ view = 'timeline' }) {
       {visibleProdStatus.length === 0 && !loading && (
         <div style={{ marginBottom: 24, padding: '18px 20px', borderRadius: 12, border: '1px dashed var(--border2)',
           background: 'var(--card)', color: 'var(--muted)', fontSize: 15, fontWeight: 600 }}>
-          🗓️ ยังไม่มีไลน์ไหนเปิดกะของวันที่ {boardDate}{!passAll ? ' (ในขอบเขต/ส่วนงานที่เลือก)' : ''}
+          ยังไม่มีไลน์ไหนเปิดกะของวันที่ {boardDate}{!passAll ? ' (ในขอบเขต/ส่วนงานที่เลือก)' : ''}
         </div>
       )}
       </>)}
@@ -2371,7 +2371,7 @@ export default function Dashboard({ view = 'timeline' }) {
         <motion.div {...stagger(12)}>
           <div className="card" style={{ padding: 20, height: '100%' }}>
             <div style={{ fontSize: T(15, 24), fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
-              🏭 Line Floor Maps
+              Line Floor Maps
             </div>
             {visibleLayouts.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: T(15, 24) }}>
@@ -2430,7 +2430,7 @@ export default function Dashboard({ view = 'timeline' }) {
                           {layout.line_name}
                         </span>
                         <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
-                          <span title="จำนวนคนที่เข้าประจำจุดงานบนผังนี้ (นับตามหมุด)" style={{ fontSize: T(12, 18), fontWeight: 700, color: 'var(--text2)', background: 'var(--bg2)', padding: '2px 6px', borderRadius: 4 }}>👷 {presentPeople}</span>
+                          <span title="จำนวนคนที่เข้าประจำจุดงานบนผังนี้ (นับตามหมุด)" style={{ fontSize: T(12, 18), fontWeight: 700, color: 'var(--text2)', background: 'var(--bg2)', padding: '2px 6px', borderRadius: 4 }}>{presentPeople}</span>
                           {totalStations > 0 && (
                             <span title="จุดงานที่มีคนเข้าประจำ / จุดงานทั้งหมดของผังนี้"
                               style={{ fontSize: T(12, 18), fontWeight: 700, color: allStaffed ? 'var(--green)' : 'var(--amber)', background: allStaffed ? 'var(--green-dim)' : 'var(--amber-dim)', padding: '2px 6px', borderRadius: 4 }}>
@@ -2539,7 +2539,7 @@ export default function Dashboard({ view = 'timeline' }) {
 
               {/* เครื่องจักร Downtime — กระพริบแดง */}
               <div style={{ fontSize: 13, fontWeight: 800, color: hasOngoingDT ? 'var(--red)' : 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 8px' }}>
-                ⚙️ เครื่องจักรหยุด (Downtime) · {dts.length} รายการ
+                เครื่องจักรหยุด (Downtime) · {dts.length} รายการ
               </div>
               {dts.length === 0 ? (
                 <div style={{ fontSize: 13, color: 'var(--muted)', padding: '8px 0 14px' }}>ไม่มีเครื่องจักร Downtime ที่ยังแจ้งเตือน</div>
@@ -2554,14 +2554,14 @@ export default function Dashboard({ view = 'timeline' }) {
                         padding: '10px 14px', borderRadius: 10,
                         background: 'var(--red-dim)', border: '1px solid var(--red-line)',
                       }}>
-                        <span style={{ fontSize: 16, fontWeight: 900, color: 'var(--red)', fontFamily: 'var(--font-display)' }}>⚙️ {d.machine_no || '—'}</span>
+                        <span style={{ fontSize: 16, fontWeight: 900, color: 'var(--red)', fontFamily: 'var(--font-display)' }}>{d.machine_no || '—'}</span>
                         <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--red)' }}>{d.dr_downtime_types?.name_th || 'Downtime'}</span>
-                        <span style={{ fontSize: 13, color: 'var(--text2)' }}>📍 {d.line_name}</span>
+                        <span style={{ fontSize: 13, color: 'var(--text2)' }}>{d.line_name}</span>
                         <span style={{ fontSize: 13, color: 'var(--muted)' }}>เริ่ม {fmtTime(d.started_at || d.created_at)}</span>
                         {ongoing
                           ? (elapsed != null && <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--amber)' }}>⏱ ค้างมาแล้ว {elapsed} นาที</span>)
                           : <span style={{ fontSize: 12, color: 'var(--muted)' }}>ปิดรายการแล้ว (เพิ่งบันทึก)</span>}
-                        {d.detail && <span style={{ fontSize: 13, color: 'var(--text2)', width: '100%' }}>📝 {d.detail}</span>}
+                        {d.detail && <span style={{ fontSize: 13, color: 'var(--text2)', width: '100%' }}>{d.detail}</span>}
                       </div>
                     );
                   })}
@@ -2575,16 +2575,16 @@ export default function Dashboard({ view = 'timeline' }) {
                 return (
                   <div style={{ marginBottom: 16 }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 7px' }}>
-                      🗓️ หยุดตามแผน · {planned.length} รายการ (ไม่นับเป็น Andon)
+                      หยุดตามแผน · {planned.length} รายการ (ไม่นับเป็น Andon)
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {planned.map(d => {
                         const el = dtElapsedMin(d, now.getTime());
                         return (
                           <div key={d.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 9, padding: '8px 12px', borderRadius: 9, background: 'var(--bg3)', border: '1px solid var(--border2)' }}>
-                            <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text2)' }}>⚙️ {d.machine_no || '—'}</span>
+                            <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text2)' }}>{d.machine_no || '—'}</span>
                             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--muted)' }}>{d.dr_downtime_types?.name_th || 'หยุดตามแผน'}</span>
-                            <span style={{ fontSize: 12, color: 'var(--muted)' }}>📍 {d.line_name}</span>
+                            <span style={{ fontSize: 12, color: 'var(--muted)' }}>{d.line_name}</span>
                             <span style={{ fontSize: 12, color: 'var(--muted)' }}>เริ่ม {fmtTime(d.started_at || d.created_at)}</span>
                             {el != null && <span style={{ fontSize: 12, color: 'var(--muted)' }}>⏱ {el} นาที</span>}
                           </div>
@@ -2610,7 +2610,7 @@ export default function Dashboard({ view = 'timeline' }) {
                 return (
                   <div style={{ marginBottom: 16 }}>
                     <div style={{ fontSize: 13, fontWeight: 800, color: q.ng > 0 ? 'var(--amber)' : 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 8px' }}>
-                      🚫 คุณภาพ (Quality) · ของเสียวันนี้ {q.ng.toLocaleString()} ชิ้น
+                      คุณภาพ (Quality) · ของเสียวันนี้ {q.ng.toLocaleString()} ชิ้น
                     </div>
                     {types.length === 0 ? (
                       <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>ไม่มีของเสียวันนี้ 👍</div>
@@ -2622,7 +2622,7 @@ export default function Dashboard({ view = 'timeline' }) {
                               <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--amber)', minWidth: 0, flex: 1 }}>{t.name}</span>
                               <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--amber)', whiteSpace: 'nowrap' }}>{t.qty.toLocaleString()} ชิ้น</span>
                             </div>
-                            {t.notes.length > 0 && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 3 }}>💬 {t.notes.join(' · ')}</div>}
+                            {t.notes.length > 0 && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 3 }}>{t.notes.join(' · ')}</div>}
                           </div>
                         ))}
                       </div>
@@ -2633,7 +2633,7 @@ export default function Dashboard({ view = 'timeline' }) {
 
               {/* 4M Alerts */}
               <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 8px' }}>
-                🚨 4M Changes · {fms.length} รายการ
+                4M Changes · {fms.length} รายการ
               </div>
               {fms.length === 0 ? (
                 <div style={{ fontSize: 13, color: 'var(--muted)', padding: '8px 0' }}>ไม่มีรายการ 4M ของวันนี้</div>
@@ -2647,7 +2647,7 @@ export default function Dashboard({ view = 'timeline' }) {
                       borderLeft: `3px solid ${f.status === 'approved' ? 'var(--green)' : f.status === 'rejected' ? 'var(--red)' : 'var(--amber)'}`,
                     }}>
                       <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{CAT_ICON[f.category] || '🔧'} {f.category}</span>
-                      <span style={{ fontSize: 13, color: 'var(--text2)' }}>📍 {f.line_name}</span>
+                      <span style={{ fontSize: 13, color: 'var(--text2)' }}>{f.line_name}</span>
                       <span style={{ fontSize: 12, color: 'var(--muted)' }}>{fmtTime(f.created_at)}</span>
                       <span style={{
                         fontSize: 12, fontWeight: 800, padding: '2px 8px', borderRadius: 6,
@@ -2693,7 +2693,7 @@ export default function Dashboard({ view = 'timeline' }) {
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                 <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 18, color: 'var(--text)' }}>
-                  🏭 {expandedLine}
+                  {expandedLine}
                 </div>
                 <button
                   onClick={closeExpandedLine}

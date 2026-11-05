@@ -62,8 +62,8 @@ const emptyMachine = { id: null, line_name: '', machine_no: '', machine_name: ''
 // รวม Facility + Utility เป็นหมวดเดียว (ทีมช่างดูแลทีมเดียวกัน + แยกยาก · คำสั่ง user 2026-07-24)
 // ค่าใน DB ใช้ 'facility' เป็นตัวแทน · 'utility' เดิม migrate มาเป็น facility แล้ว (โค้ดที่เหลือเช็ค !== 'production' อยู่แล้ว)
 const EQUIP_CATS = [
-  { v: 'production', t: '🏭 ไลน์ผลิต' },
-  { v: 'facility',   t: '🔧 Facility / Utility' },
+  { v: 'production', t: 'ไลน์ผลิต' },
+  { v: 'facility',   t: 'Facility / Utility' },
 ];
 // utility เดิม (ก่อน apply migration รวมหมวด) → นับเป็น facility ทุกที่ · ค่าว่าง = production
 const normCat = (c) => (c === 'utility' ? 'facility' : (c || 'production'));
@@ -459,7 +459,7 @@ export default function MachineDatabase() {
           <button type="button" onClick={() => toggleGroup(lineName)}
             style={{ width: '100%', textAlign: 'left', padding: '10px 16px', background: 'var(--bg2)', borderBottom: isCollapsed ? 'none' : '1px solid var(--border)', borderTop: 'none', borderLeft: 'none', borderRight: 'none', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', color: 'var(--text)' }}>
             <span style={{ fontSize: 11, color: 'var(--muted)', width: 12 }}>{isCollapsed ? '▶' : '▼'}</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>⚙️ {lineName}</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{lineName}</span>
             <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>{items.length} เครื่อง</span>
           </button>
           {!isCollapsed && (
@@ -470,7 +470,7 @@ export default function MachineDatabase() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 14, fontWeight: 800, fontFamily: 'monospace', color: 'var(--text)' }}>{item.machine_no}</span>
                     {item.machine_name && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{item.machine_name}</span>}
-                    {item.brand && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }} title="ยี่ห้อ">🏷️ {item.brand}</span>}
+                    {item.brand && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }} title="ยี่ห้อ">{item.brand}</span>}
                     {item.io_no && <span style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'monospace' }}>I/O {item.io_no}</span>}
                     {item.machine_types && (
                       <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: `${tint(item.machine_types.color, 'dim')}`, color: item.machine_types.color, fontWeight: 700 }}>
@@ -481,7 +481,7 @@ export default function MachineDatabase() {
                     {item.operation_mode && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }}>{operationDisplay(item.operation_mode)}{item.operation_mode === 'gang' && item.gang_count ? ` ×${item.gang_count}` : ''}</span>}
                     {item.equipment_category && item.equipment_category !== 'production' && <span style={{ fontSize: 11, color: 'var(--amber)' }}>Facility / Utility</span>}
                     {!item.machine_type_id && item.equipment_category === 'production' && <span style={{ fontSize: 11, color: 'var(--amber)' }}>ยังไม่ระบุประเภท</span>}
-                    {(supplyByMachine[item.id]?.length > 0) && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }} title={`จ่ายให้: ${supplyByMachine[item.id].join(', ')}`}>🔗 จ่าย {supplyByMachine[item.id].length} ไลน์</span>}
+                    {(supplyByMachine[item.id]?.length > 0) && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }} title={`จ่ายให้: ${supplyByMachine[item.id].join(', ')}`}>จ่าย {supplyByMachine[item.id].length} ไลน์</span>}
                     {!item.is_active && <span style={{ fontSize: 11, color: 'var(--red)' }}>(ปิดใช้)</span>}
                   </div>
                 </div>
@@ -523,7 +523,7 @@ export default function MachineDatabase() {
                 </div>
                 {kindOf(editing.equipment_kind) === 'die' && (
                   <div style={{ fontSize: 11, color: 'var(--accent2)', marginTop: 5, lineHeight: 1.5 }}>
-                    🔨 แม่พิมพ์มีรายละเอียดเพิ่ม (ชุด · ลำดับ OP · นับ shot · ลับคม) — ตั้งที่หน้า <b>ทะเบียนแม่พิมพ์</b>
+                    แม่พิมพ์มีรายละเอียดเพิ่ม (ชุด · ลำดับ OP · นับ shot · ลับคม) — ตั้งที่หน้า <b>ทะเบียนแม่พิมพ์</b>
                   </div>
                 )}
               </Field>
@@ -683,7 +683,7 @@ export default function MachineDatabase() {
                       if (!(laneN > 1) && !kids.length) {
                         if (!isParallelLine(lineRow?.flow_mode)) return null;
                         return (
-                          <Field label="🔀 หยุดแล้วกระทบกี่เลน">
+                          <Field label="หยุดแล้วกระทบกี่เลน">
                             <div style={{ fontSize: 11, color: 'var(--amber)', lineHeight: 1.6 }}>
                               ไลน์นี้เป็น <b>เครื่องขนาน</b> แต่ยังไม่ได้ตั้ง <b>จำนวนเลน</b> ที่ทะเบียนไลน์
                               ⇒ สูตร OEE ยังไม่หารเลน · กรอกช่องนี้จะไม่มีผล
@@ -722,7 +722,7 @@ export default function MachineDatabase() {
                 );
               })()}
               {(editing.equipment_category || 'production') !== 'production' && (
-                <Field label="🔗 จ่ายให้ไลน์ (Supply Route)">
+                <Field label="จ่ายให้ไลน์ (Supply Route)">
                   {!editing.id ? (
                     <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>บันทึกเครื่องก่อน แล้วเปิดแก้ไขอีกครั้งเพื่อตั้งไลน์ที่จ่าย</div>
                   ) : (
@@ -796,7 +796,7 @@ function BrandReviewModal({ proposals, onClose, onDone }) {
     <div className="overlay" style={{ zIndex: 2100 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 20, width: 'min(95vw,640px)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>🏷️ แยกยี่ห้อจากชื่อเครื่อง</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>แยกยี่ห้อจากชื่อเครื่อง</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.6 }}>
@@ -876,7 +876,7 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
     <div className="overlay" style={{ zIndex: 2100 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,460px)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>🏷️ ประเภทเครื่องจักร</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>ประเภทเครื่องจักร</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
         </div>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12 }}>

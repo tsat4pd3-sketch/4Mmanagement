@@ -208,8 +208,8 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>นับแบบ:</span>
         <Segmented value={mode} onChange={setMode} label="นับแบบ" options={[
-          { value: 'full', label: '🔧 มุมเครื่อง (นาทีเต็ม)', title: 'เครื่องตัวนั้นหยุดจริงกี่นาที — ใช้ตัดสินใจงานซ่อม/อะไหล่' },
-          { value: 'line', label: '🏭 มุมไลน์ (ถ่วง 1/N)', title: 'ไลน์เสียเวลาไปเท่าไหร่ — สูตรเดียวกับ %A ใน Daily Report (เครื่องขนาน N ตัว หยุด 1 ตัว = ไลน์เสีย 1/N)' },
+          { value: 'full', label: 'มุมเครื่อง (นาทีเต็ม)', title: 'เครื่องตัวนั้นหยุดจริงกี่นาที — ใช้ตัดสินใจงานซ่อม/อะไหล่' },
+          { value: 'line', label: 'มุมไลน์ (ถ่วง 1/N)', title: 'ไลน์เสียเวลาไปเท่าไหร่ — สูตรเดียวกับ %A ใน Daily Report (เครื่องขนาน N ตัว หยุด 1 ตัว = ไลน์เสีย 1/N)' },
         ]} />
         {summary.parallelLines > 0 && (
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
@@ -271,7 +271,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
           ⚠️ วัดได้เฉพาะครั้งที่กดครบจังหวะจริง — ต้องโชว์ตัวหารและเหตุผลที่วัดไม่ได้เสมอ ห้ามเฉลี่ยเงียบ */}
       <div style={{ ...card, borderColor: ph.n > 0 ? 'var(--border)' : 'rgba(245,158,11,0.45)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
-          <div style={{ fontSize: 13, fontWeight: 800 }}>🕐 เวลาหายไปกับอะไร (ตั้งแต่เครื่องหยุด → กลับมารัน)</div>
+          <div style={{ fontSize: 13, fontWeight: 800 }}>เวลาหายไปกับอะไร (ตั้งแต่เครื่องหยุด → กลับมารัน)</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
             วัดแยกช่วงได้ <b style={{ color: ph.n > 0 ? '#22c55e' : 'var(--amber)' }}>{ph.n}</b> ครั้ง
             {ph.oneShot > 0 && <> · ตัดใบที่กดรวดเดียว {ph.oneShot} ครั้ง</>}

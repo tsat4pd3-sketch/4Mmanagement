@@ -44,7 +44,7 @@ export default function DieStatusEditor({ die, canEdit, fullName, ready, onSaved
           alignSelf: 'start', justifySelf: 'start', fontSize: 12, fontWeight: 700, padding: '3px 10px',
           borderRadius: 999, color: meta.color, background: meta.bg, border: `1px solid ${meta.color}`,
         }}>{meta.icon} {meta.label}</span>
-        {ext.status_note && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>📝 {ext.status_note}</div>}
+        {ext.status_note && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{ext.status_note}</div>}
         {ext.status_updated_at && (
           <div style={{ fontSize: 11, color: 'var(--muted)' }}>
             อัพเดท {new Date(ext.status_updated_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}

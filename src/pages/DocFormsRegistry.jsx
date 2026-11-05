@@ -359,7 +359,7 @@ export default function DocFormsRegistry() {
 
               {/* ── ทดลองพิมพ์ ── */}
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>🖨️ ทดลองพิมพ์ / บันทึก PDF</span>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>ทดลองพิมพ์ / บันทึก PDF</span>
                 <select value={previewScope} onChange={e => setPreviewScope(e.target.value)} style={{ width: 220, fontSize: 12.5 }}>
                   <option value="">— ชุดกลาง (ทุกส่วนงาน) —</option>
                   {scopes.map(sc => <option key={sc.id} value={sc.section}>{sc.section}</option>)}
@@ -371,7 +371,7 @@ export default function DocFormsRegistry() {
 
               {/* Revision History — เขียนตรงเข้า doc_form_revisions ทันที (ไม่รอปุ่มบันทึกหลัก) */}
               <div style={{ borderTop: '1px solid var(--border2)', paddingTop: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>📜 ประวัติการแก้ไขเอกสาร (Revision History) <span style={{ color: 'var(--muted)', fontWeight: 600 }}>({revisions.length})</span></div>
+                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>ประวัติการแก้ไขเอกสาร (Revision History) <span style={{ color: 'var(--muted)', fontWeight: 600 }}>({revisions.length})</span></div>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', minWidth: 700, fontSize: 12 }}>
                     <thead><tr style={{ fontSize: 11, color: 'var(--muted)' }}>

@@ -391,7 +391,7 @@ const DateField = ({ label, value, onChange, required }) => (
 export default function MtnRepair() {
   const { role, lineId, sections: scopeSecs, mtnTeams: userMtnTeams, fullName, signatureUrl, allUnits } = useContext(UserContext);
   const isMobile = useIsMobile();   // 📱 รายการ = การ์ดต่อใบ (15/10 · docs/MOBILE-UX-STANDARD.md §4 ชนิด B)
-  // แท็บผูก ?tab= (แชร์ลิงก์/refresh/Back อยู่แท็บเดิม) — ⚙️ ข้อมูลหลัก อยู่ท้ายสุดและโผล่ตามสิทธิ์
+  // แท็บผูก ?tab= (แชร์ลิงก์/refresh/Back อยู่แท็บเดิม) — ข้อมูลหลัก อยู่ท้ายสุดและโผล่ตามสิทธิ์
   const TAB_DEFS = [
     { key: 'list', label: 'รายการ MO' },
     ...(can('mtn_repair', 'manage_master', role) ? [{ key: 'master', label: 'ข้อมูลหลัก' }] : []),
@@ -570,7 +570,7 @@ export default function MtnRepair() {
   // ทีมช่างของ user (จาก profiles.mtn_teams ที่ตั้งใน AddUser · fallback เดาจาก section) — default คิวงาน + default หน่วยงานตอนแจ้ง
   const userTeams = useMemo(() => teamsForUser(userMtnTeams, scopeSecs), [userMtnTeams, scopeSecs]);
   const teamDefaulted = useRef(false);
-  /* 🔗 เดินมาจากลิงก์ที่ "กรองกองมาให้แล้ว" (`?wait=` · `?ack=` · `?pr=`) — กระดิ่ง · 📌 คิวงานของฉัน ·
+  /* 🔗 เดินมาจากลิงก์ที่ "กรองกองมาให้แล้ว" (`?wait=` · `?ack=` · `?pr=`) — กระดิ่ง · คิวงานของฉัน ·
      แผงใบค้าง · แจ้งเตือน ⇒ **ต้องปลดช่องทีมให้ก่อน 1 ครั้ง**
 
      ทำไม: ป้ายพวกนั้นนับ **ข้ามทีม** (ชั้น floor เขียนว่า "ทั้งโรงถาม" · ป้าย "รอคุณเซ็น" = ทุกใบที่เรา
@@ -1078,7 +1078,7 @@ export default function MtnRepair() {
           <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--amber-dim)',
             border: '1px solid var(--amber-line)', borderRadius: 10, padding: '10px 13px', marginBottom: 10, lineHeight: 1.7 }}>
             <div style={{ fontWeight: 800, color: 'var(--text)', fontSize: 13 }}>
-              🕳️ ตัวกรองที่เลือกอยู่ตัดใบออกหมด — ไม่ได้แปลว่าไม่มีงาน
+              ตัวกรองที่เลือกอยู่ตัดใบออกหมด — ไม่ได้แปลว่าไม่มีงาน
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 5, marginTop: 4 }}>
               {ladderSteps(emptyWhy.ladder).map((r, i) => (
@@ -1174,7 +1174,7 @@ function MoCard({ o, onOpen }) {
       <div className="mo-card-what">{o.problem_characteristic || '—'}{o.report_note ? <span> — {o.report_note}</span> : null}</div>
       <div className="mo-card-meta">
         <span>{fmtDateTime(o.report_at)}</span><span>{deptNameOf(dept)}</span>
-        {main && <span>👤 {main}{extra ? ` · เปิดโดย ${extra}` : ''}</span>}
+        {main && <span>{main}{extra ? ` · เปิดโดย ${extra}` : ''}</span>}
       </div>
       {o.status !== 'rejected' && (
         <div className="mo-card-prog">
@@ -1627,7 +1627,7 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
             {/* ล็อกเพราะมาจากทะเบียนแม่พิมพ์ — ผู้แจ้งไม่ต้องเลือก (ข้อมูลผิดให้แก้ที่ทะเบียน ไม่ใช่ในใบ) */}
             <div style={{ ...inp, display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg3)' }}>
               <b>{f.item_type}</b>
-              <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>🔗 จากทะเบียนแม่พิมพ์ · {dieDerived.source === 'op' ? `ประเภท OP ${dieDerived.opLabel}` : `ชุดแบบ ${dieDerived.kindLabel}`}</span>
+              <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>จากทะเบียนแม่พิมพ์ · {dieDerived.source === 'op' ? `ประเภท OP ${dieDerived.opLabel}` : `ชุดแบบ ${dieDerived.kindLabel}`}</span>
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>ไม่ตรงกับของจริง? แจ้งทีมแม่พิมพ์แก้ประเภท OP / รูปแบบชุดที่ /equipment (แท็บแม่พิมพ์)</div>
           </Field>
@@ -1653,7 +1653,7 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
             <div style={{ fontSize: 11.5, color: 'var(--amber)', marginTop: 3 }}>⚠ โหลดประวัติเครื่อง {f.machine_no} ไม่ได้ — ระบบเติมชนิดให้ไม่ได้ เลือกเองไปก่อน</div>
           )}
           {wantDie && !f.machine_no && (
-            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>🔨 งานแม่พิมพ์: เลือกหมายเลขแม่พิมพ์ด้านล่างก่อนได้เลย — ระบบเติมชนิดจากทะเบียนให้เอง</div>
+            <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>งานแม่พิมพ์: เลือกหมายเลขแม่พิมพ์ด้านล่างก่อนได้เลย — ระบบเติมชนิดจากทะเบียนให้เอง</div>
           )}
           {wantDie && f.machine_no && dieItemMap && !dieDerived?.itemType && (
             <div style={{ fontSize: 11.5, color: 'var(--amber)', marginTop: 3 }}>⚠ แม่พิมพ์ {f.machine_no} {dieDerived ? `(${[dieDerived.opLabel && `OP ${dieDerived.opLabel}`, dieDerived.kindLabel && `ชุดแบบ ${dieDerived.kindLabel}`].filter(Boolean).join(' · ')}) ยังไม่ได้ตั้ง "ชนิดอุปกรณ์ในใบแจ้งซ่อม"` : 'ยังไม่ผูกชุด/ประเภท OP ในทะเบียน'} — เลือกชนิดเองไปก่อน</div>
@@ -1746,7 +1746,7 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
         </Field>
         {/* ค้นหาข้ามชั้น — ช่างที่รู้อยู่แล้วว่าจะเลือกอะไร ไม่ต้องไล่เลือกกลุ่มก่อน */}
         <div>
-          <Field label="🔍 หาเร็ว (พิมพ์อาการได้เลย ไม่ต้องเลือกกลุ่ม)">
+          <Field label="หาเร็ว (พิมพ์อาการได้เลย ไม่ต้องเลือกกลุ่ม)">
             <input value={probQ} onChange={e => setProbQ(e.target.value)} placeholder="เช่น ลมรั่ว / พันช์ / เซนเซอร์" style={inp} />
           </Field>
           {probHits && (
@@ -2693,7 +2693,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
       {openImps.length > 0 && (
         <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', fontSize: 12.5, color: 'var(--blue)' }}
           title={openImps.map(i => i.title).join('\n')}>
-          💡 มีโปรเจคปรับปรุงกำลังทำ {openImps.length} โปรเจคสำหรับเครื่อง/ไลน์นี้
+          มีโปรเจคปรับปรุงกำลังทำ {openImps.length} โปรเจคสำหรับเครื่อง/ไลน์นี้
         </div>
       )}
       {repeatIssue && (
@@ -2730,8 +2730,8 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
           <div style={{ fontSize: 11.5, lineHeight: 1.7 }}>
             <div style={{ color: 'var(--text)' }}>เหตุผลที่ส่งต่อ: <b>{handoffIn.reason}</b></div>
             <div style={{ color: 'var(--muted)' }}>ส่งโดย {handoffIn.handed_by || '—'} · {fmtDateTime(handoffIn.handed_at)}</div>
-            {handoffIn.src?.root_cause && <div style={{ color: 'var(--text2)' }}>🔎 สาเหตุที่ทีมก่อนหน้าตรวจพบ: {handoffIn.src.root_cause}</div>}
-            {handoffIn.src?.solution   && <div style={{ color: 'var(--text2)' }}>🛠 สิ่งที่ทำไปแล้ว: {handoffIn.src.solution}</div>}
+            {handoffIn.src?.root_cause && <div style={{ color: 'var(--text2)' }}>สาเหตุที่ทีมก่อนหน้าตรวจพบ: {handoffIn.src.root_cause}</div>}
+            {handoffIn.src?.solution   && <div style={{ color: 'var(--text2)' }}>สิ่งที่ทำไปแล้ว: {handoffIn.src.solution}</div>}
             {(handoffIn.src?.tech_main || handoffIn.src?.tech_secondary) && <div style={{ color: 'var(--muted)' }}>ช่างที่เข้าดู: {[handoffIn.src.tech_main, handoffIn.src.tech_secondary].filter(Boolean).join(' · ')}</div>}
             {handoffIn.src?.repair_done_at && <div style={{ color: 'var(--muted)' }}>ทีมก่อนหน้าใช้เวลา {minutesBetween(handoffIn.src.accept_at, handoffIn.src.repair_done_at) ?? '—'} นาที ก่อนตัดสินใจส่งต่อ</div>}
             {handoffIn.src?.after_img && <img src={handoffIn.src.after_img} alt="" style={{ maxHeight: 110, borderRadius: 8, border: '1px solid var(--border)', marginTop: 4 }} />}
@@ -2757,7 +2757,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
         <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8,
           background: 'var(--amber-dim)', border: '1px solid var(--amber)' }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--amber)' }}>
-            💰 ค่าใช้จ่าย {Number(orderCostTotal(o, dlabor, dparts) || 0).toLocaleString()} บาท — เกิน {PLANT_MGR_COST_LIMIT.toLocaleString()} บาท
+            ค่าใช้จ่าย {Number(orderCostTotal(o, dlabor, dparts) || 0).toLocaleString()} บาท — เกิน {PLANT_MGR_COST_LIMIT.toLocaleString()} บาท
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
             ต้องให้ <b style={{ color: 'var(--text2)' }}>ผจก.โรงงานเซ็น</b> — กด 🖨 พิมพ์ใบ แล้วส่งให้บัญชี
@@ -2770,11 +2770,11 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
         <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8,
           background: 'var(--blue-dim)', border: '1px solid var(--blue)' }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--blue)' }}>
-            📤 ส่งซ่อมภายนอก — อยู่กับ {o.supplier || 'supplier'} มาแล้ว {vendorHoldLabel(o)}
+            ส่งซ่อมภายนอก — อยู่กับ {o.supplier || 'supplier'} มาแล้ว {vendorHoldLabel(o)}
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
             ส่งเมื่อ {fmtDateTime(o.vendor_sent_at)}{o.vendor_sent_by ? ` โดย ${o.vendor_sent_by}` : ''}
-            {o.vendor_note ? <> · 📝 {o.vendor_note}</> : null}
+            {o.vendor_note ? <> · {o.vendor_note}</> : null}
             <br />⏳ ช่วงนี้ <b style={{ color: 'var(--text2)' }}>ไม่นับเป็นเวลาซ่อมของช่าง</b> แต่ <b style={{ color: 'var(--text2)' }}>ไลน์ยังนับหยุดอยู่</b>
           </div>
           {canReceiveVendor(o) && canEditStep(3) && (
@@ -2804,7 +2804,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
             </div>
           ) : (
             <>
-              <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>📤 ส่งซ่อมภายนอก — ส่งให้ใคร?</div>
+              <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>ส่งซ่อมภายนอก — ส่งให้ใคร?</div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>ผู้รับจ้าง (supplier)</div>
               <SupplierSelect value={venSup} kinds={['service']} onChange={res => setVenSup(res.supplier || '')}
                 placeholder="ค้นชื่อผู้รับจ้าง — พิมพ์เองได้ถ้ายังไม่มีในทะเบียน" inputStyle={{ background: 'var(--bg)' }} />
@@ -3048,7 +3048,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
           ⇒ ต้องเขียนบอกคนที่กำลังพิมพ์ ไม่งั้นเขาคิดว่าคุยกันในนี้แล้วหายไปเฉยๆ */}
       <EventComments refKind="mtn_order" refId={o.id} contextLabel={`ใบซ่อม ${o.mo_no || `#${o.id}`}${o.machine_no ? ` (${o.machine_no})` : ''}`} />
       <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 4 }}>
-        🖨️ คอมเมนต์ข้างบนจะถูกพิมพ์ลงใบ MO ด้วย — <b>ต่อท้ายรายละเอียดที่ผู้แจ้งเขียนไว้</b> (ของเดิมไม่ถูกแก้ทับ) พร้อมชื่อผู้คอมเมนต์และเวลา
+        คอมเมนต์ข้างบนจะถูกพิมพ์ลงใบ MO ด้วย — <b>ต่อท้ายรายละเอียดที่ผู้แจ้งเขียนไว้</b> (ของเดิมไม่ถูกแก้ทับ) พร้อมชื่อผู้คอมเมนต์และเวลา
       </div>
       {/* 🖥️ แถบปุ่มท้ายใบ — เกาะล่างของการ์ดโมดัลบนจอคอม (28/10 · คำสั่ง user)
           ใบที่เซ็นครบหลายขั้นสูง ~3 จอ ปุ่ม "ขั้นถัดไป" เคยอยู่ก้นใบ ⇒ เปิดใบทีต้องเลื่อนสุดก่อนทำงาน
@@ -3058,11 +3058,11 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
         {/* 🖥️ บัญชีกลางลบไม่ได้ — **ซ่อนปุ่มได้ แต่ห้ามซ่อนเหตุผล** (UI §6.9) ไม่งั้นช่างคิดว่าระบบพัง
             ลบ/ยกเลิกใบ ย้ายเข้าเมนู ⋯ (danger) — เหตุผลที่ลบไม่ได้ยังเขียนไว้ตรงนี้ */}
         {canDelete('mtn_repair', 'manage_master', role) && removal.mode === MO_REMOVE_BLOCKED
-          ? <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }} title={removal.why}>🔒 {removal.why}</span>
+          ? <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }} title={removal.why}>{removal.why}</span>
           : !canDelete('mtn_repair', 'manage_master', role) && isSharedAccount()
             ? <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }}
                 title="บัญชีกลางใช้ร่วมกันหลายคน ลบแล้วสอบกลับไม่ได้ว่าใครกด — ให้ล็อกอินด้วยบัญชีของตัวเองถ้าต้องลบจริง">
-                🔒 บัญชีกลางลบใบไม่ได้
+                บัญชีกลางลบใบไม่ได้
               </span>
             : <span />}
         {/* ปุ่มตายตัว ≤2 (UI §6.35): [ขั้นถัดไป (primary)] [ปิด] + ⋯ (ประวัติเครื่อง · โปรเจคปรับปรุง · พิมพ์ · QA ข้าม · ลบ/ยกเลิก) */}
@@ -3161,7 +3161,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
   const techOpts = (
     <>
       {techGroups.mine.length > 0 && (
-        <optgroup label={`👷 ช่างทีม ${deptNameOf(techGroups.teamKey)} (${techGroups.mine.length})`}>
+        <optgroup label={`ช่างทีม ${deptNameOf(techGroups.teamKey)} (${techGroups.mine.length})`}>
           {techGroups.mine.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
         </optgroup>
       )}
@@ -3734,7 +3734,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         )}
         {stepMeta(step, { mtnForm: isMtnForm, toolTeam: isToolTeam }) && !skipQa && (
           <div style={{ fontSize: 11.5, color: 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px' }}>
-            👤 ขั้นนี้เป็นหน้าที่ของ <b style={{ color: 'var(--text2)' }}>{stepMeta(step, { mtnForm: isMtnForm, toolTeam: isToolTeam }).who}</b>
+            ขั้นนี้เป็นหน้าที่ของ <b style={{ color: 'var(--text2)' }}>{stepMeta(step, { mtnForm: isMtnForm, toolTeam: isToolTeam }).who}</b>
             {stepMeta(step, { mtnForm: isMtnForm, toolTeam: isToolTeam }).byReporter && (o.reported_by_name || o.reporter_prod) ? <> · ใบนี้เปิดโดย <b style={{ color: 'var(--text2)' }}>{o.reported_by_name || o.reporter_prod}</b></> : null}
           </div>
         )}
@@ -3763,7 +3763,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
               {techGroups.teamKey && techGroups.mine.length === 0 && (
                 <div style={{ fontSize: 11.5, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '7px 10px', marginTop: 6, lineHeight: 1.6 }}>
                   ⚠️ ยังไม่มีใครถูกตั้งเป็นช่างทีม <b>{deptNameOf(techGroups.teamKey)}</b> เลย
-                  <div>ไปตั้งที่ <b>ฐานข้อมูลพนักงาน (/operator)</b> → แก้ไขพนักงาน → ช่อง <b>🔧 ทีมช่างซ่อม</b></div>
+                  <div>ไปตั้งที่ <b>ฐานข้อมูลพนักงาน (/operator)</b> → แก้ไขพนักงาน → ช่อง <b>ทีมช่างซ่อม</b></div>
                   <div style={{ opacity: 0.85 }}>ระหว่างนี้เลือกช่างทีมอื่นไปก่อนได้</div>
                 </div>
               )}
@@ -3776,7 +3776,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>คนละช่องกับ “รับรองโดย” ท้ายใบ (ขั้น 7) — ฟอร์มกระดาษเซ็น 2 จุดคนละวัน</div>
               </Field>
             )}
-            {!editMode && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>💡 เมื่อบันทึก ระบบจะออกเลข MO ให้อัตโนมัติ ({isMtnForm ? 'MTN.ปี/เดือน-ลำดับ (รีเซ็ตทุกเดือน ตามฟอร์มกระดาษ)' : `${repairTypes.find(r => r.name === f.repair_type)?.prefix}-DDMMYY-ลำดับ`})</div>}
+            {!editMode && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>เมื่อบันทึก ระบบจะออกเลข MO ให้อัตโนมัติ ({isMtnForm ? 'MTN.ปี/เดือน-ลำดับ (รีเซ็ตทุกเดือน ตามฟอร์มกระดาษ)' : `${repairTypes.find(r => r.name === f.repair_type)?.prefix}-DDMMYY-ลำดับ`})</div>}
           </>}
         </>}
         {modalStage === 'service' && <>
@@ -4006,12 +4006,12 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
                🔴 โหลดไม่ติดต้องเขียนบนจอ ห้ามโชว์ยอดว่างเฉยๆ (ลิสต์ว่าง 2 ความหมาย) */}
         {CLOSE_STAGES.includes(modalStage) && (
           <div style={{ fontSize: 12.5, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', lineHeight: 1.6 }}>
-            <div style={{ fontWeight: 800, marginBottom: 4 }}>💰 ค่าใช้จ่ายของใบนี้</div>
+            <div style={{ fontWeight: 800, marginBottom: 4 }}>ค่าใช้จ่ายของใบนี้</div>
             {partsState === 'loading' && <div style={{ color: 'var(--muted)' }}>กำลังโหลดรายการอะไหล่…</div>}
             {partsState === 'error' && <div style={{ color: 'var(--red)' }}>โหลดรายการอะไหล่ไม่สำเร็จ ({partsErr}) — ยอดอะไหล่ข้างล่างอาจไม่ครบ</div>}
             {partsState === 'ok' && (usedParts.length
-              ? <div style={{ color: 'var(--text2)' }}>🔩 อะไหล่ {usedParts.length} รายการ: {usedParts.map(x => `${x.name} ×${x.qty}${x.unit || ''}`).join(', ')}</div>
-              : <div style={{ color: 'var(--muted)' }}>🔩 ไม่มีการเบิกอะไหล่ในใบนี้</div>)}
+              ? <div style={{ color: 'var(--text2)' }}>อะไหล่ {usedParts.length} รายการ: {usedParts.map(x => `${x.name} ×${x.qty}${x.unit || ''}`).join(', ')}</div>
+              : <div style={{ color: 'var(--muted)' }}>ไม่มีการเบิกอะไหล่ในใบนี้</div>)}
             <div style={{ marginTop: 2 }}>
               ค่าแรง <b>{o.labor_cost == null ? '—' : Number(o.labor_cost).toLocaleString()}</b> + อะไหล่ <b>{o.parts_cost == null ? '—' : Number(o.parts_cost).toLocaleString()}</b>
               {(o.labor_cost != null || o.parts_cost != null) && <> = <b style={{ color: 'var(--accent2)' }}>{((Number(o.labor_cost) || 0) + (Number(o.parts_cost) || 0)).toLocaleString()}</b></>} บาท
@@ -4142,12 +4142,12 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
       </div>
       {mtnDepts.map(dep => { const list = techs.filter(t => sameTeam(t.dept || 'maintenance', dep)); if (!list.length) return null; return (
         <div key={dep} style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent2)', marginBottom: 4 }}>🏢 {dep} ({list.length})</div>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent2)', marginBottom: 4 }}>{dep} ({list.length})</div>
           <div style={{ display: 'grid', gap: 6 }}>{list.map(it => it.from_employee ? (
             <div key={it.id} style={{ ...techRowGrid, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', opacity: 0.9 }}>
               <span style={{ fontSize: 13, minWidth: 0 }}>{it.name}{it.emp_code ? <span style={{ color: 'var(--muted)', fontSize: 11 }}> · {it.emp_code}</span> : null}</span>
               <span />
-              <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', fontWeight: 700, justifySelf: 'start' }}>👤 จากฐานพนักงาน</span>
+              <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', fontWeight: 700, justifySelf: 'start' }}>จากฐานพนักงาน</span>
               <span />
               <span />
             </div>
@@ -4386,7 +4386,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
             <div />
             {ok
               ? <DeleteButton style={{ justifySelf: 'end' }} onClick={() => delRow(table, it.id)} title="ลบ" />
-              : <span title={lockNote(it)} style={{ justifySelf: 'end', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>🔒 ดูอย่างเดียว</span>}
+              : <span title={lockNote(it)} style={{ justifySelf: 'end', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>ดูอย่างเดียว</span>}
           </div>); })}
           {!shown.length && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 12 }}>
             ไม่มีรายการของทีมนี้ — เพิ่มด้านบน (หรือเลือก "ทุกทีม" เพื่อดูของทีมอื่น)

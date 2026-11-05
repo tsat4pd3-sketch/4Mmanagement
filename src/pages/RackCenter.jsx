@@ -219,7 +219,7 @@ export default function RackCenter() {
         <img src="${dataUrl}" />
         <div class="ln">${c.line}</div>
         <div class="ct">${c.ct.code ? c.ct.code + ' · ' : ''}${c.ct.name}</div>
-        <div class="hint">📱 สแกนเพื่อเรียกภาชนะ</div>
+        <div class="hint">สแกนเพื่อเรียกภาชนะ</div>
       </div>`);
     }
     const html = `<style>
@@ -339,7 +339,7 @@ export default function RackCenter() {
         return (
           <div style={{ ...card, marginBottom: 16, borderColor: 'var(--amber-line)' }}>
             <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--amber)', marginBottom: 10, fontFamily: 'var(--font-display)' }}>
-              📦 ใบเบิก Packaging จากการผลิต <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>({pending.length} รายการ)</span>
+              ใบเบิก Packaging จากการผลิต <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600 }}>({pending.length} รายการ)</span>
             </div>
             <div style={partCardGrid()}>
               {pending.map(p => (
@@ -404,7 +404,7 @@ export default function RackCenter() {
         const nm = frameMin(`${String(nowD.getHours()).padStart(2, '0')}:${String(nowD.getMinutes()).padStart(2, '0')}`);
         return (
           <InternalTimeBoard
-            title={`🕐 บอร์ดเวลาเรียกภาชนะ — วันงานปัจจุบัน`}
+            title={`บอร์ดเวลาเรียกภาชนะ — วันงานปัจจุบัน`}
             hint={`SLA: เริ่มเตรียมใน ${sla.prepare_within_min} นาที · ส่งถึงไลน์ใน ${sla.deliver_within_min} นาที (🟠 เลยเตรียม · 🔴 เลยส่ง)`}
             groups={groups} nowMin={nm} breaks={breaksToFrame(breakPolicies)}
             onItemClick={(r, x, y) => setPopup({ r, x, y })}
@@ -415,7 +415,7 @@ export default function RackCenter() {
       {/* ⚙️ SLA config — ปรับได้เหมือน ship-to config */}
       {view === 'sla' && (
         <div style={{ ...card, maxWidth: 560 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>⚙️ SLA การส่งภาชนะภายในโรงงาน</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>SLA การส่งภาชนะภายในโรงงาน</div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
             นับจากเวลาที่ไลน์กดเรียก — เกินกำหนดแล้วยังไม่ถึงสถานะ บล็อกบนบอร์ดเวลาจะเปลี่ยนเป็น 🟠/🔴 ให้เห็นทันที
           </div>
@@ -461,11 +461,11 @@ export default function RackCenter() {
                 (byStatus[col.key] || []).map(r => (
                   <div key={r.id} style={{ background: 'var(--bg2)', border: `1px solid ${tint(col.color, 'dim')}`, borderRadius: 10, padding: '10px 12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                      <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--text)' }}>📍 {r.line_name}</div>
+                      <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--text)' }}>{r.line_name}</div>
                       <span style={{ fontSize: 11, fontWeight: 800, color: col.color }}>×{r.qty}</span>
                     </div>
                     <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>{r.container_name}</div>
-                    {r.note && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>📝 {r.note}</div>}
+                    {r.note && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{r.note}</div>}
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
                       {r.requested_by ? `โดย ${r.requested_by} · ` : ''}{timeAgo(r.requested_at)}
                     </div>
@@ -506,13 +506,13 @@ export default function RackCenter() {
               <div style={{ height: 4, background: col.color }} />
               <div style={{ padding: '10px 14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)' }}>📍 {r.line_name}</span>
+                  <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)' }}>{r.line_name}</span>
                   <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'var(--bg3)', color: col.color }}>{col.label}</span>
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>{r.container_name} <b>×{r.qty}</b></div>
-                {r.note && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>📝 {r.note}</div>}
+                {r.note && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{r.note}</div>}
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
-                  🔔 {r.requested_by || '-'} · {timeAgo(r.requested_at)}
+                  {r.requested_by || '-'} · {timeAgo(r.requested_at)}
                   {r.delivered_by ? ` · 🚚 ${r.delivered_by}` : ''}{r.received_by ? ` · ✅ ${r.received_by}` : ''}
                 </div>
                 <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
@@ -538,7 +538,7 @@ export default function RackCenter() {
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 16, fontFamily: 'var(--font-display)' }}>
-              🔔 เรียกภาชนะ
+              เรียกภาชนะ
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
@@ -612,13 +612,13 @@ function QrScanModal({ onClose, onResult }) {
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
       <div style={{ ...card, width: 'min(94vw, 420px)' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>📷 สแกน QR เรียกภาชนะ</span>
+          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>สแกน QR เรียกภาชนะ</span>
           <button onClick={onClose} style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
         </div>
         {camErr
           ? <div style={{ fontSize: 12.5, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '8px 11px', marginBottom: 10 }}>{camErr}</div>
           : <video ref={videoRef} playsInline muted style={{ width: '100%', borderRadius: 10, background: '#000', marginBottom: 10 }} />}
-        <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>🔫 ปืนยิงสแกน / วางข้อความ QR แล้วกด Enter</div>
+        <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>ปืนยิงสแกน / วางข้อความ QR แล้วกด Enter</div>
         <input autoFocus value={manual} onChange={e => setManual(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && manual.trim()) onResult(manual); }}
           placeholder="ยิงสแกนลงช่องนี้ได้เลย…" style={inputSt} />
@@ -641,17 +641,17 @@ function QrLabelModal({ lines, containerTypes, onClose, onPrint }) {
     <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */ className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ ...card, width: 'min(94vw, 560px)', maxHeight: '86vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🏷️ พิมพ์ป้าย QR เรียกภาชนะ</span>
+          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>พิมพ์ป้าย QR เรียกภาชนะ</span>
           <button onClick={onClose} style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
         </div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
           เลือกไลน์ × ชนิดภาชนะ → ได้แผ่น A4 ป้ายละ 1 คู่ (QR = ลิงก์เปิดฟอร์มกรอกให้ครบ) เอาไปแปะจุดวางภาชนะหน้างาน
         </div>
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>🏭 ไลน์ ({selLines.size})</div>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>ไลน์ ({selLines.size})</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 12 }}>
           {lines.map(l => <button key={l.name} onClick={() => tgLine(l.name)} style={chip(selLines.has(l.name))}>{l.name}</button>)}
         </div>
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>📦 ชนิดภาชนะ ({selTypes.size})</div>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>ชนิดภาชนะ ({selTypes.size})</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 14 }}>
           {containerTypes.map(c => <button key={c.id} onClick={() => tgType(c.id)} style={chip(selTypes.has(c.id))}>{c.code ? `${c.code} · ` : ''}{c.name}</button>)}
         </div>

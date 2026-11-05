@@ -107,7 +107,7 @@ export default function ProdRoutineCard({ data, navigate, big = 1 }) {
 
   return (<>
     <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-      <span style={{ fontSize: 13 * big, fontWeight: 900 }}>📋 งานประจำกะที่ยังไม่ทำ</span>
+      <span style={{ fontSize: 13 * big, fontWeight: 900 }}>งานประจำกะที่ยังไม่ทำ</span>
       {shift && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{shift.label} · {shift.workDateStr} · เฉพาะไลน์ที่เปิดกะ ({openInScope ?? 0})</span>}
     </div>
     {errs.length > 0 && (
@@ -126,13 +126,13 @@ export default function ProdRoutineCard({ data, navigate, big = 1 }) {
       return (
         <div key={r.line} style={{ ...card, display: 'flex', flexDirection: 'column', gap: 4, borderLeft: `7px solid ${tone}`, borderColor: tone }}>
           <div style={{ fontSize: 14 * big, fontWeight: 900, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.line}</div>
-          {r.ng > 0 && <Item tone={bad} onClick={() => go('pm')} big={big} head={`🚨 ตรวจพบผิดปกติ ${r.ng} จุด`} sub={names(r.ngNames)} />}
+          {r.ng > 0 && <Item tone={bad} onClick={() => go('pm')} big={big} head={`ตรวจพบผิดปกติ ${r.ng} จุด`} sub={names(r.ngNames)} />}
           {r.am && <Item tone={r.am.late ? bad : warn} onClick={() => go('pm')} big={big}
-            head={`🔧 AM ยังไม่ตรวจ ${r.am.n}/${r.am.total}${r.am.late ? ' · เลยกรอบ' : ''}`} sub={names(r.am.names)} />}
+            head={`AM ยังไม่ตรวจ ${r.am.n}/${r.am.total}${r.am.late ? ' · เลยกรอบ' : ''}`} sub={names(r.am.names)} />}
           {r.poka && <Item tone={warn} onClick={() => go('pokayoke')} big={big}
-            head={`🛡️ Poka-Yoke ยังไม่ทดสอบ ${r.poka.n}/${r.poka.total} จุด`} sub={names(r.poka.names)} />}
+            head={`Poka-Yoke ยังไม่ทดสอบ ${r.poka.n}/${r.poka.total} จุด`} sub={names(r.poka.names)} />}
           {r.lpa && <Item tone={warn} onClick={() => go('lpa')} big={big}
-            head={`📋 LPA แผนวันนี้ยังไม่ตรวจ`} sub={`ชั้น ${r.lpa.layers.join(', ')}`} />}
+            head={`LPA แผนวันนี้ยังไม่ตรวจ`} sub={`ชั้น ${r.lpa.layers.join(', ')}`} />}
         </div>
       );
     })}

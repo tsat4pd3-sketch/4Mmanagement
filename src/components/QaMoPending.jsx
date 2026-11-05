@@ -77,7 +77,7 @@ export default function QaMoPending() {
     <div>
       <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 14, fontWeight: 800 }}>🔧 ใบซ่อมที่รอ QA ตรวจหลังซ่อม</span>
+          <span style={{ fontSize: 14, fontWeight: 800 }}>ใบซ่อมที่รอ QA ตรวจหลังซ่อม</span>
           <button onClick={load} disabled={busy}
             style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none',
                      cursor: busy ? 'default' : 'pointer', padding: 0, textDecoration: 'underline' }}>

@@ -429,7 +429,7 @@ export default function FixtureRegistry() {
               <input type="checkbox" checked={onlyWithImg} onChange={e => setOnlyWithImg(e.target.checked)} />
               📷 เฉพาะที่มีรูป ({withImgCount})
             </label>
-            {scopeOn && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>👥 เห็นเฉพาะส่วนงานของคุณ</span>}
+            {scopeOn && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>เห็นเฉพาะส่วนงานของคุณ</span>}
           </FilterBar>
 
           {fx && (
@@ -524,7 +524,7 @@ export default function FixtureRegistry() {
           {!fixtures.length && (
             <div data-warn="1" style={{ marginTop: 8, color: 'var(--amber)' }}>
               ⚠️ ยังไม่มีอุปกรณ์ที่เป็นชนิด “จิ๊ก / ฟิกเจอร์” ในขอบเขตของคุณ —
-              ไปที่แท็บ <b>⚙️ จัดชนิดอุปกรณ์</b> เพื่อติ๊กเครื่องที่จริงๆ เป็นจิ๊กก่อน
+              ไปที่แท็บ <b>จัดชนิดอุปกรณ์</b> เพื่อติ๊กเครื่องที่จริงๆ เป็นจิ๊กก่อน
             </div>
           )}
         </div>
@@ -571,7 +571,7 @@ export default function FixtureRegistry() {
                     เป็น overflowX:'clip' — ห้ามเปลี่ยนเป็น hidden/auto (กับดักใน CLAUDE.md) */
               <div style={{ ...card, display: 'grid', gap: 8, position: 'sticky', top: 0, zIndex: 3 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <b style={{ fontSize: 13 }}>📍 ตำแหน่งจุดชิมบนรูปเครื่อง</b>
+                  <b style={{ fontSize: 13 }}>ตำแหน่งจุดชิมบนรูปเครื่อง</b>
                   <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
                     ปักแล้ว {points.filter(p => pointPin(p, cpById)).length}/{points.length} จุด · รูปชุดเดียวกับใบตรวจ PM — เปลี่ยนรูปที่ PM Setup
                   </span>
@@ -593,7 +593,7 @@ export default function FixtureRegistry() {
               </div>
             ) : (
               <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.6 }}>
-                📷 ยังไม่มีรูปเครื่องของ <b>{fx.machine_no}</b> จึงยังปักตำแหน่งจุดบนรูปไม่ได้ —
+                ยังไม่มีรูปเครื่องของ <b>{fx.machine_no}</b> จึงยังปักตำแหน่งจุดบนรูปไม่ได้ —
                 อัปโหลดรูป (หลายมุมได้) ที่ <Link to="/pm?tab=setup" style={{ color: 'var(--accent)', fontWeight: 700 }}>PM Setup → ⚙️ ตั้งค่าจุดตรวจ</Link> แล้วกลับมาปักที่นี่
                 {!shadow && <div style={{ marginTop: 4, color: 'var(--muted)' }}>(เครื่องนี้ยังไม่มีแถวลงทะเบียนอุปกรณ์ PM — สร้างที่ PM Setup ก่อน)</div>}
               </div>
@@ -628,7 +628,7 @@ export default function FixtureRegistry() {
                         <td style={{ padding: '7px 10px' }}>{kindMeta(p.kind_code).icon} {kindMeta(p.kind_code).label}</td>
                         <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', fontSize: 11.5 }}>
                           {(() => { const pin = pointPin(p, cpById); return pin
-                            ? <span style={{ color: 'var(--blue)', fontWeight: 700 }} title={pin.source === 'checkpoint' ? 'ยืมหมุดจากจุดตรวจ PM' : 'หมุดของจุดนี้เอง'}>📍 {pin.source === 'checkpoint' ? 'จาก PM' : `เฟรม ${Math.max(1, frames.findIndex(f => f._key === (pin.imageId ?? frames[0]?._key)) + 1)}`}</span>
+                            ? <span style={{ color: 'var(--blue)', fontWeight: 700 }} title={pin.source === 'checkpoint' ? 'ยืมหมุดจากจุดตรวจ PM' : 'หมุดของจุดนี้เอง'}>{pin.source === 'checkpoint' ? 'จาก PM' : `เฟรม ${Math.max(1, frames.findIndex(f => f._key === (pin.imageId ?? frames[0]?._key)) + 1)}`}</span>
                             : <span style={{ color: 'var(--muted)' }}>—</span>; })()}
                           {canManage && frames.length > 0 && (
                             <button onClick={() => setArmPoint(a => a === p.id ? '' : p.id)} title="วางตำแหน่งบนรูป"

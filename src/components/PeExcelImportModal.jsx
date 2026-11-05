@@ -26,7 +26,7 @@ const inp = { marginTop: 4, padding: '7px 9px', fontSize: 12, borderRadius: 7, b
 const FILES = [
   { key: 'fmea', label: '⚠️ PFMEA', hint: 'ชีทละ OP · ได้ทั้ง failure mode และประวัติแก้ไข' },
   { key: 'cp', label: '✅ Control Plan (CNP)', hint: 'ใช้สร้างรายการ OP + ชื่อขั้นงาน + เครื่องจักร' },
-  { key: 'pfc', label: '🗺️ Process Flow (PFC)', hint: 'ใช้เฉพาะประวัติการแก้ไข (ไม่บังคับ)' },
+  { key: 'pfc', label: 'Process Flow (PFC)', hint: 'ใช้เฉพาะประวัติการแก้ไข (ไม่บังคับ)' },
 ];
 
 /** อ่าน 1 ไฟล์ → { sheets, revs, unreadable } (xlsx เป็น lazy chunk — ห้าม import แบบ static) */
@@ -187,7 +187,7 @@ export default function PeExcelImportModal({ sets = [], currentSetId = '', onClo
   return (
     <div className="overlay"><div className="modal" style={{ width: 'min(920px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>📥 นำเข้าจากไฟล์ Excel</h3>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>นำเข้าจากไฟล์ Excel</h3>
         <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
       </div>
 

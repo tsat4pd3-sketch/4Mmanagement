@@ -70,7 +70,7 @@ export default function TrialBookingModal({ lineName, dies = [], onClose, onAdd 
 
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 800 }}>🧪 จองเครื่องทดลองงานใหม่</div>
+            <div style={{ fontSize: 15, fontWeight: 800 }}>จองเครื่องทดลองงานใหม่</div>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
               {lineName} · งานนี้จะไปกินเวลาบนไทม์ไลน์เหมือนงานผลิตจริง เพื่อให้กะอื่นเห็นว่าเครื่องถูกจอง
             </div>

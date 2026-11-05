@@ -92,7 +92,7 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
     </button>
   );
   const readOnly = !canEdit && (
-    <div style={{ fontSize: 12, color: 'var(--muted)' }}>👁 ดูอย่างเดียว — คนที่มีสิทธิ์อัพโหลดเป็นคนตัดสินคู่พาร์ท</div>
+    <div style={{ fontSize: 12, color: 'var(--muted)' }}>ดูอย่างเดียว — คนที่มีสิทธิ์อัพโหลดเป็นคนตัดสินคู่พาร์ท</div>
   );
 
   /* ① แยกลูกค้าไม่ออก — ตัดสินราย ship-to (เลขเดียวกันไปคนละ MAT ตามปลายทาง) */
@@ -197,7 +197,7 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
 
       {base.length > 0 && (
         <div style={box('245,158,11')}>
-          <div style={head('#f59e0b')}>💡 {base.length} พาร์ท ระบบเดาจากเลขฐาน (rev ต่างกัน) — ยืนยันหรือเปลี่ยน</div>
+          <div style={head('#f59e0b')}>{base.length} พาร์ท ระบบเดาจากเลขฐาน (rev ต่างกัน) — ยืนยันหรือเปลี่ยน</div>
           <div style={hint}>
             rev สะกดต่างแต่เป็นพาร์ทเดิม = กด <b>✓ ถูก</b> · ถ้าเป็นพาร์ทใหม่จาก EC (ออกเลขใหม่) ให้เลือก MAT ใหม่แทน
             ไม่งั้นความต้องการจะเข้า MAT rev เก่า
@@ -230,7 +230,7 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
 
       {nonFg.length > 0 && (
         <div style={box('59,130,246')}>
-          <div style={head('#60a5fa')}>🏷️ {nonFg.length} พาร์ท ยังไม่ได้ผูกตัวขาย (1xx) — เลือกว่าส่งเบอร์ไหน</div>
+          <div style={head('#60a5fa')}>{nonFg.length} พาร์ท ยังไม่ได้ผูกตัวขาย (1xx) — เลือกว่าส่งเบอร์ไหน</div>
           <div style={hint}>
             ความต้องการลูกค้าควรลงที่ <b>ตัวขาย (1xx)</b> — งานต่างประเทศมักมีแพ็คเป็นขั้นสุดท้าย P/N เลยไปติดที่ตัวก่อนแพ็ค ·
             กดปุ่มเขียวเพื่อผูกกับตัวขาย หรือเลือก 1xx เอง · ไม่ต้องห่วงงาน 2xx — ความต้องการของมันมาจาก BOM ของ 1xx (งานแพ็คเรียกใช้)

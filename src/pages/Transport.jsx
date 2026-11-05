@@ -201,7 +201,7 @@ export default function Transport() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {byLine.map(g => (
               <div key={g.line} style={{ ...card, padding: 0, overflow: 'hidden' }}>
-                <div style={{ padding: '9px 14px', borderBottom: '1px solid var(--border2)', fontWeight: 800, fontSize: 14, color: 'var(--amber)', background: 'var(--bg2)' }}>🏭 {g.line}</div>
+                <div style={{ padding: '9px 14px', borderBottom: '1px solid var(--border2)', fontWeight: 800, fontSize: 14, color: 'var(--amber)', background: 'var(--bg2)' }}>{g.line}</div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(280px, 100%), 1fr))', gap: 10, padding: 12 }}>
                   {g.rounds.map(r => {
                     const st = getRoundStatus(r, confirmedSet, dlvMap, workDate, nowMs);
@@ -253,7 +253,7 @@ export default function Transport() {
       {tab === 'carriers' && (
         <div style={{ ...card }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-            <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)' }}>👷 คนขับ / ผู้ขน</span>
+            <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)' }}>คนขับ / ผู้ขน</span>
             {canManage && (
               <button onClick={() => setEditCarrier({ name: '', emp_code: '', shift: 'day', vehicles: [], section: '', is_active: true, note: '' })}
                 style={{ padding: '7px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
@@ -268,7 +268,7 @@ export default function Transport() {
               {carriers.map(c => (
                 <div key={c.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--bg2)', opacity: c.is_active ? 1 : 0.5 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'center' }}>
-                    <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>👷 {c.name}</span>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{c.name}</span>
                     {canManage && <button className="tbtn" onClick={() => setEditCarrier(c)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>}
                   </div>
                   <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
@@ -534,7 +534,7 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
             {stopIds.length >= 2 && route.ok && (
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed var(--border2)', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ fontSize: 12.5, color: 'var(--text2)' }}>
-                  📏 ระยะจริง: {realDist != null
+                  ระยะจริง: {realDist != null
                     ? <b style={{ color: 'var(--text)' }}>{realDist >= 1000 ? (realDist / 1000).toFixed(2) + ' กม.' : realDist.toFixed(0) + ' ม.'}</b>
                     : <span style={{ color: 'var(--muted)' }}>ยังไม่ตั้งมาตราส่วน (ตั้งที่ Store/AMR)</span>}
                 </div>
@@ -719,7 +719,7 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
         <h3 style={{ margin: '0 0 14px', fontSize: 17, fontWeight: 900, color: 'var(--text)' }}>{isNew ? '➕ เพิ่มคนขับ' : '✏️ แก้ไขคนขับ'}</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
           <div style={{ position: 'relative' }}>
-            <span style={lbl}>🔎 เลือกจากฐานพนักงาน</span>
+            <span style={lbl}>เลือกจากฐานพนักงาน</span>
             <input value={empQ} onChange={e => setEmpQ(e.target.value)} placeholder="ค้นหาชื่อ / รหัสพนักงาน…" style={inp} />
             {empMatches.length > 0 && (
               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 5, marginTop: 2, maxHeight: 220, overflowY: 'auto', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-float)' }}>
@@ -751,7 +751,7 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
             </select>
           </div>
           <div>
-            <span style={lbl}>🚚 ยานพาหนะที่ขับได้ (สกิล)</span>
+            <span style={lbl}>ยานพาหนะที่ขับได้ (สกิล)</span>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
               {vehicles.map(v => {
                 const on = f.vehicles.includes(v.code);

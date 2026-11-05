@@ -205,7 +205,7 @@ export default function CtReview({ lines = [] }) {
       {queue.length > 0 && (
         <div style={{ ...card, borderColor: '#f59e0b' }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: '#f59e0b', marginBottom: 8 }}>
-            📋 รออนุมัติ {queue.length} รายการ {!canApprove && <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· บัญชีคุณไม่มีสิทธิ์อนุมัติ (ต้องเป็นวิศวกร/ผู้จัดการ)</span>}
+            รออนุมัติ {queue.length} รายการ {!canApprove && <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· บัญชีคุณไม่มีสิทธิ์อนุมัติ (ต้องเป็นวิศวกร/ผู้จัดการ)</span>}
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>

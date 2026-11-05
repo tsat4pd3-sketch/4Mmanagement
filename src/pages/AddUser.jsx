@@ -924,7 +924,7 @@ export default function AddUser() {
         return (
           <div className="card" style={{ marginBottom: 12, padding: '9px 12px' }}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-              <b style={{ fontSize: 12.5, color: 'var(--text)' }}>🩺 งานค้างของทะเบียนบัญชี</b>
+              <b style={{ fontSize: 12.5, color: 'var(--text)' }}>งานค้างของทะเบียนบัญชี</b>
               <span style={{ fontSize: 12, color: issueIdx.fixUsers ? 'var(--red)' : 'var(--muted)', fontWeight: 700 }}>
                 {issueSummaryText(issueIdx)}
               </span>
@@ -988,7 +988,7 @@ export default function AddUser() {
             {openWl === 'unlinked' && tri.personUnlinked.length > 0 && (
               <div style={{ fontSize: 12, color: 'var(--text2)' }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--red)', marginBottom: 4 }}>
-                  🪪 บัญชีของคนแต่ยังไม่ผูกพนักงาน · {tri.personUnlinked.length} บัญชี
+                  บัญชีของคนแต่ยังไม่ผูกพนักงาน · {tri.personUnlinked.length} บัญชี
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>
                   ทีม/ไลน์/ส่วนงานของบัญชีเหล่านี้มาจากค่าที่แอดมินกรอกเอง — ผูกพนักงานแล้วระบบจะอ่านจากฐานพนักงานแทน
@@ -1070,7 +1070,7 @@ export default function AddUser() {
               if (!dual.length || openWl !== 'dual') return null;
               return (
                 <div style={{ fontSize: 12, color: 'var(--text2)' }}>
-                  <b style={{ color: 'var(--accent)' }}>🧭 ทำงานคนละตำแหน่งกับที่บริษัทบรรจุ · {dual.length} บัญชี</b>
+                  <b style={{ color: 'var(--accent)' }}>ทำงานคนละตำแหน่งกับที่บริษัทบรรจุ · {dual.length} บัญชี</b>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
                     <b>ไม่ใช่ข้อผิดพลาด</b> — 2 ช่องนี้ตอบคนละคำถาม และระบบ<b>ตัดสินสิทธิ์จากตำแหน่งที่ปฏิบัติงาน</b>
                     (ไม่ใช่ที่บรรจุ) จึงไม่มีปุ่มล้างค่า · แก้ตำแหน่งที่ปฏิบัติงานได้ที่ปุ่มแก้ไขบัญชี
@@ -1101,7 +1101,7 @@ export default function AddUser() {
             {tri.queue.length > 0 && openWl === 'unknown' && (
               <div style={{ fontSize: 12, color: 'var(--text2)' }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--amber)', marginBottom: 4 }}>
-                  🪪 ยังไม่รู้ว่าบัญชีนี้เป็นใคร · {tri.queue.length} บัญชี
+                  ยังไม่รู้ว่าบัญชีนี้เป็นใคร · {tri.queue.length} บัญชี
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 7, lineHeight: 1.6 }}>
                   ตัวตน (<b>ทีม / ไลน์ / ส่วนงาน</b>) อ่านจาก<b>ฐานพนักงาน</b>เมื่อผูกแล้ว —
@@ -1200,7 +1200,7 @@ export default function AddUser() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
               background: 'var(--red-dim)', border: '1px solid var(--red-line)',
               borderRadius: 10, padding: '9px 12px', marginBottom: 10, fontSize: 12, color: 'var(--text2)' }}>
-              <b style={{ color: 'var(--red)' }}>🔓 หัวหน้าหน้างานตั้งไว้ให้เห็นทั้งโรงงาน {toowide.length} บัญชี</b>
+              <b style={{ color: 'var(--red)' }}>หัวหน้าหน้างานตั้งไว้ให้เห็นทั้งโรงงาน {toowide.length} บัญชี</b>
               <span>
                 role <b>หัวหน้ากลุ่ม/หัวหน้างาน</b> แต่ตั้งความกว้างเป็น <b>“ทั้งโรงงาน”</b> —
                 ควรจำกัดที่หน่วยของตัวเอง · เปิดแก้ไขแล้วเลือกขอบเขตให้ตรงงานจริง
@@ -1215,7 +1215,7 @@ export default function AddUser() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
               background: 'var(--red-dim)', border: '1px solid var(--red-line)',
               borderRadius: 10, padding: '9px 12px', marginBottom: 10, fontSize: 12, color: 'var(--text2)' }}>
-              <b style={{ color: 'var(--red)' }}>🚩 ตั้งขอบเขตไว้แต่ไม่มีผลจริง {ghost.length} บัญชี</b>
+              <b style={{ color: 'var(--red)' }}>ตั้งขอบเขตไว้แต่ไม่มีผลจริง {ghost.length} บัญชี</b>
               <span>
                 เลือกความกว้างไว้แคบกว่า “ทั้งโรงงาน” แต่<b>ยังไม่ได้ติ๊กส่วนงาน</b> —
                 จำกัดให้อยู่ในหน่วยตัวเองไม่ได้ถ้าไม่เคยบอกว่าหน่วยไหน ⇒ <b>ยังเห็นทั้งโรงงานอยู่</b>
@@ -1230,7 +1230,7 @@ export default function AddUser() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
             background: 'var(--amber-dim)', border: '1px solid var(--amber-line)',
             borderRadius: 10, padding: '9px 12px', marginBottom: 10, fontSize: 12, color: 'var(--text2)' }}>
-            <b style={{ color: 'var(--amber)' }}>🔭 ยังไม่ได้ทบทวนขอบเขต {review.length} บัญชี</b>
+            <b style={{ color: 'var(--amber)' }}>ยังไม่ได้ทบทวนขอบเขต {review.length} บัญชี</b>
             <span>
               เห็น<b>ทั้งโรงงาน</b>เพราะไม่เคยตั้งขอบเขตไว้ — ไม่ใช่เพราะมีคนตั้งใจให้
               · เปิดแก้ไขแล้วเลือก “ขอบเขตการมองเห็น” ให้ตรงงานจริง แล้วรายการนี้จะหายไปเอง
@@ -1255,7 +1255,7 @@ export default function AddUser() {
         return (
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8, padding: '8px 12px',
             borderRadius: 8, border: '1px solid var(--red-line)', background: 'var(--red-dim)', fontSize: 12.5 }}>
-            <b>🔎 ตารางกรองเฉพาะ:</b>
+            <b>ตารางกรองเฉพาะ:</b>
             <span>{def ? `${def.icon} ${def.what}` : '🔴 ทุกบัญชีที่ต้องแก้'}</span>
             <span style={{ color: left ? 'var(--red)' : 'var(--green)', fontWeight: 700 }}>
               {left ? `เหลือ ${left} บัญชี` : '✓ เคลียร์ครบแล้ว'}
@@ -1344,7 +1344,7 @@ export default function AddUser() {
                       if (own.length) return (
                         <div title={`ตั้งเองที่ช่อง ④ — ชนะส่วนงาน: ${own.join(' · ')}`}
                           style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', marginTop: 2 }}>
-                          💰 CC {own.length} รหัส · ตั้งเอง
+                          CC {own.length} รหัส · ตั้งเอง
                         </div>
                       );
                       /* ไม่ได้ติ๊กเอง = ใช้ CC ของส่วนงานตามผัง — โชว์ให้เห็นว่าลิงก์กัน (ไม่ใช่ "ไม่มี") */
@@ -1354,7 +1354,7 @@ export default function AddUser() {
                       return (
                         <div title={`รหัสของส่วนงานตามผังองค์กร (ไม่ได้ตั้งเอง): ${derived.join(' · ')}`}
                           style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', marginTop: 2 }}>
-                          💰 {derived.join(' · ')} · จากผัง
+                          {derived.join(' · ')} · จากผัง
                         </div>
                       );
                     })()}
@@ -1400,7 +1400,7 @@ export default function AddUser() {
           🔴 **พับเป็นค่าเริ่มต้น** (21/10 · user "มันรก ถ้าคนอยากดูค่อยกด show") — เป็นเอกสารอ้างอิง
              ไม่ใช่ของที่ต้องอ่านทุกครั้งที่เปิดหน้า · CollapseCard จำสถานะที่คนเลือกไว้ให้เอง */}
       <CollapseCard id="role_ref" storePrefix="add_user" defaultOpen={false}
-        title="📚 ชุดสิทธิ์มีอะไรบ้าง / เข้าหน้าไหนได้" count={ROLE_OPTIONS.length}
+        title="ชุดสิทธิ์มีอะไรบ้าง / เข้าหน้าไหนได้" count={ROLE_OPTIONS.length}
         style={{ background: 'var(--bg3)', border: '1px solid var(--border2)' }}>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
           หมวดที่เข้าได้อ่านสดจากตารางสิทธิ์ปัจจุบัน — ปรับรายหน้าได้ที่เมนู 🔐 จัดการสิทธิ์
@@ -1425,7 +1425,7 @@ export default function AddUser() {
         {/* ⚠️ ย้ำให้ชัดว่า role ≠ ตำแหน่งงาน — เคยเข้าใจผิดว่า "ส่วนวิศวกรรม" คือตำแหน่งวิศวกร */}
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.5 }}>
           ชุดสิทธิ์ <b>ไม่ใช่ตำแหน่งงาน</b> — ตำแหน่งจริง (วิศวกร / ช่างเทคนิค / หัวหน้าแผนก) กรอกที่ช่อง “ตำแหน่งงาน” แยกต่างหาก<br />
-          เช่น <b>วิศวกรที่สังกัดแผนกซ่อมบำรุง</b> ให้เลือกชุดสิทธิ์ <b>🔧 ซ่อมบำรุง</b> แล้วกรอกตำแหน่งว่า “วิศวกร” — ไม่ใช่เลือก “ส่วนวิศวกรรม”
+          เช่น <b>วิศวกรที่สังกัดแผนกซ่อมบำรุง</b> ให้เลือกชุดสิทธิ์ <b>ซ่อมบำรุง</b> แล้วกรอกตำแหน่งว่า “วิศวกร” — ไม่ใช่เลือก “ส่วนวิศวกรรม”
         </div>
         {ROLE_GROUPS.map(g => (
           <div key={g.axis} style={{ marginBottom: 12 }}>
@@ -1480,7 +1480,7 @@ export default function AddUser() {
             <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))', gap: 13, alignItems: 'start' }}>
               {/* โซน 1: ตัวตน (ตำแหน่ง = แสดงผล) แยกชัดจากโซน 2: สิทธิ์ — เคยปนกันจน user งงว่าตำแหน่งคือสิทธิ์ */}
               <div style={{ gridColumn: '1 / -1', fontSize: 12, fontWeight: 800, color: 'var(--accent)', borderBottom: '1px solid var(--border)', paddingBottom: 5 }}>
-                👤 ข้อมูลบัญชี & ตัวตน
+                ข้อมูลบัญชี & ตัวตน
               </div>
               {modalMode === 'create' ? (
                 <>
@@ -1500,7 +1500,7 @@ export default function AddUser() {
                   </div>
                   {form.role !== 'admin' && (
                     <div>
-                      <label style={labelSt}>🔑 ตั้งรหัสผ่านใหม่ (กรณีลืมรหัส / login ไม่ได้)</label>
+                      <label style={labelSt}>ตั้งรหัสผ่านใหม่ (กรณีลืมรหัส / login ไม่ได้)</label>
                       <div style={{ display: 'flex', gap: 8 }}>
                         {/* input ใน flex row ต้องกำหนด width เอง (กฎ F5 — index.css default 100%) */}
                         <input type="text" placeholder="รหัสใหม่ อย่างน้อย 6 ตัว..." value={resetPw}
@@ -1597,7 +1597,7 @@ export default function AddUser() {
                     </select>
                     {empSearchMissed && (
                       <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4, lineHeight: 1.5 }}>
-                        🔎 ไม่พบชื่อที่ตรงกับ "{empSearch.trim()}" — <b>แสดงรายชื่อทั้งหมดไว้ให้เลือกแทน</b>
+                        ไม่พบชื่อที่ตรงกับ "{empSearch.trim()}" — <b>แสดงรายชื่อทั้งหมดไว้ให้เลือกแทน</b>
                         <div style={{ color: 'var(--muted)', marginTop: 2 }}>
                           ชื่อในฐานอาจสะกดต่างเล็กน้อย (เช่นไม่มี ์ ท้ายคำ) · ลองค้นด้วย<b>รหัสพนักงาน</b>หรือคำสั้นๆ
                           ก่อนกดเพิ่มคนใหม่ — เพิ่มซ้ำแล้วจะมีคนเดียวกัน 2 แถวในฐาน
@@ -1681,7 +1681,7 @@ export default function AddUser() {
                         {/* 🔔 ไม่มีส่วนงานทั้ง 2 ฝั่ง = ตัวกรองส่วนงานของการแจ้งเตือนใช้กับเขาไม่ได้ */}
                         {!newEmp.section && form.sections.length === 0 && (
                           <div style={{ fontSize: 11, color: 'var(--amber)', lineHeight: 1.5 }}>
-                            🔔 ไม่ได้ระบุส่วนงาน และบัญชีนี้ก็ยังไม่ได้ติ๊กขอบเขตส่วนงาน
+                            ไม่ได้ระบุส่วนงาน และบัญชีนี้ก็ยังไม่ได้ติ๊กขอบเขตส่วนงาน
                             ⇒ <b>เขาจะได้รับแจ้งเตือนของทุกส่วนงาน</b> (ระบบถือว่า "ไม่จำกัดขอบเขต")
                             <div style={{ color: 'var(--muted)', marginTop: 2 }}>
                               ถ้าเขาดูแลเฉพาะบางส่วนงาน ให้ติ๊ก "ขอบเขตส่วนงาน" ข้างล่างด้วย
@@ -1804,7 +1804,7 @@ export default function AddUser() {
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
                         ใช้ตอบว่า <b>“แก้ข้อมูลของใครได้”</b> (ชั้นสิทธิ์ที่ 3) — ไม่ใช่ช่อง ② ข้างล่างที่ตอบว่า “เห็นข้อมูลของใคร”
-                        {emp && <> · แก้ค่านี้ที่ <a href={empLink} style={{ color: 'var(--accent)', fontWeight: 600 }}>👥 ฐานข้อมูลพนักงาน →</a></>}
+                        {emp && <> · แก้ค่านี้ที่ <a href={empLink} style={{ color: 'var(--accent)', fontWeight: 600 }}>ฐานข้อมูลพนักงาน →</a></>}
                       </div>
                     </div>
                   );
@@ -1845,7 +1845,7 @@ export default function AddUser() {
                 const fixHint = linked && (
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                     แก้ค่านี้ที่ <a href={empLink} style={{ color: 'var(--accent)', fontWeight: 600 }}>
-                      👥 ฐานข้อมูลพนักงาน →</a> (หัวหน้าแผนกเป็นคนดูแล)
+                      ฐานข้อมูลพนักงาน →</a> (หัวหน้าแผนกเป็นคนดูแล)
                   </div>
                 );
                 return (<>
@@ -1886,7 +1886,7 @@ export default function AddUser() {
               })()}
 
               <div style={{ gridColumn: '1 / -1', fontSize: 12, fontWeight: 800, color: 'var(--accent2)', borderBottom: '1px solid var(--border)', paddingBottom: 5, marginTop: 4 }}>
-                🔐 สิทธิ์การใช้งานในระบบ (ไม่เกี่ยวกับตำแหน่งงานข้างบน)
+                สิทธิ์การใช้งานในระบบ (ไม่เกี่ยวกับตำแหน่งงานข้างบน)
               </div>
               {/* 🧭 3 ช่องข้างล่างตอบคนละคำถาม — เขียนไว้ตรงนี้ที่เดียว (15/10 · คำสั่ง user
                   "ตอนตั้งสิทธิ์ก็ดูจะคลุมเครือ สรุปช่องนี้คือสิทธิ์ หรือส่วนงาน") */}
@@ -1896,7 +1896,7 @@ export default function AddUser() {
                 <div><b style={{ color: 'var(--text2)' }}>② ขอบเขตการมองเห็น</b> = <b>เห็นข้อมูลของใคร</b> — กว้าง/แคบ</div>
                 <div><b style={{ color: 'var(--text2)' }}>③ หน่วยที่ดูแล (ตามผังองค์กร)</b> = <b>เห็น + แก้ข้อมูลของใครได้</b> — ติ๊กที่ต้นไม้ Cost Center ที่เดียว
                   · ติ๊กชั้นส่วนงาน = ได้ทุกแผนก/ไลน์ใต้ลงไป · <b>เห็น</b> = ส่วนงานของหน่วยที่ติ๊ก (ระบบเติมให้เอง) · <b>แก้</b> = เฉพาะหน่วยที่ติ๊ก
-                  {' · '}<span style={{ color: 'var(--text2)' }}>ไม่ติ๊กเลย = เห็นทุกส่วนงาน แต่แก้ได้แค่ <b>🏠 ส่วนงานที่สังกัด</b> (จากทะเบียนพนักงาน)</span></div>
+                  {' · '}<span style={{ color: 'var(--text2)' }}>ไม่ติ๊กเลย = เห็นทุกส่วนงาน แต่แก้ได้แค่ <b>ส่วนงานที่สังกัด</b> (จากทะเบียนพนักงาน)</span></div>
               </div>
 
               <div>
@@ -1975,7 +1975,7 @@ export default function AddUser() {
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                         {SCOPE_DEPTH_META[form.scopeDepth || 'unit'].desc}
                         {orgReco?.depth
-                          ? <> · 🧭 ผังแนะนำ “{SCOPE_DEPTH_META[orgReco.depth].label}” — {recoWhy} · <b>ตั้งต่างได้</b></>
+                          ? <> · ผังแนะนำ “{SCOPE_DEPTH_META[orgReco.depth].label}” — {recoWhy} · <b>ตั้งต่างได้</b></>
                           : lvl ? <> · ระดับ <b>{levelMeta(lvl)?.label || lvl}</b> ปกติใช้
                               “{SCOPE_DEPTH_META[suggested].label}” — <b>ตั้งต่างจากที่แนะนำได้</b> ของจริงมีข้อยกเว้นเสมอ</>
                             : <> · ยังไม่ได้เลือกตำแหน่ง — เลือกแล้วระบบจะแนะนำความกว้างที่เหมาะให้</>}
@@ -2043,7 +2043,7 @@ export default function AddUser() {
                   🔴 จอนี้ไม่ใช่ด่าน — ด่านจริงคือ `canWriteScope()` ในฟังก์ชันที่เขียน DB */}
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelSt}>
-                  🌳 ติ๊กหน่วยที่ดูแล (Cost Center · ตามผังองค์กร) — <span style={{ fontWeight: 600, color: 'var(--muted)' }}>“ติ๊กแม่ = ได้ทั้งกิ่ง”</span>
+                  ติ๊กหน่วยที่ดูแล (Cost Center · ตามผังองค์กร) — <span style={{ fontWeight: 600, color: 'var(--muted)' }}>“ติ๊กแม่ = ได้ทั้งกิ่ง”</span>
                 </label>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 5, lineHeight: 1.6 }}>
                   ติ๊ก<b>ชั้นส่วนงาน</b> = ได้ทุกแผนก/ไลน์/ทีมที่อยู่<b>ใต้ลงไป</b>ทั้งหมด — ไม่ต้องติ๊กลูกทีละตัว ·
@@ -2056,7 +2056,7 @@ export default function AddUser() {
                 {ccFromEmp && (
                   <div style={{ fontSize: 11, lineHeight: 1.6, marginBottom: 5, padding: '6px 9px', borderRadius: 7,
                     background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', color: 'var(--text)' }}>
-                    💡 พนักงานที่ผูกกับบัญชีนี้สังกัดหน่วยที่ CC <code>{ccFromEmp.cc}</code>
+                    พนักงานที่ผูกกับบัญชีนี้สังกัดหน่วยที่ CC <code>{ccFromEmp.cc}</code>
                     {ccFromEmp.from ? <> ({ccFromEmp.from}{ccFromEmp.inherited ? ' · ตกทอดจากหน่วยแม่' : ''})</> : null}
                     {!form.respCcs.includes(ccFromEmp.cc) && (
                       <button type="button" onClick={() => toggleCc(ccFromEmp.cc)}
@@ -2118,7 +2118,7 @@ export default function AddUser() {
                                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>⊂ ซ้ำซ้อน — อยู่ใต้ {red} ที่ติ๊กไว้แล้ว</span>
                               )}
                               {r.orphan && (
-                                <span style={{ fontSize: 11, color: 'var(--amber)' }}>🏚️ หน่วยแม่ไม่ได้ใช้งาน</span>
+                                <span style={{ fontSize: 11, color: 'var(--amber)' }}>หน่วยแม่ไม่ได้ใช้งาน</span>
                               )}
                             </label>
                           );
@@ -2165,7 +2165,7 @@ export default function AddUser() {
               {/* ทีมช่างซ่อม — แยกคิวใบแจ้งซ่อม MO (โผล่เฉพาะ role งานซ่อม) · แยกจาก Section ไม่กระทบ scope ข้อมูลผลิต */}
               {isMtnTeamRole(form.role) && (
                 <div style={{ gridColumn: '1 / -1' }}>
-                  <label style={labelSt}>🔧 ทีมช่างซ่อม (แยกคิวใบแจ้งซ่อม MO + บอกว่าอยู่ฝั่งช่าง)</label>
+                  <label style={labelSt}>ทีมช่างซ่อม (แยกคิวใบแจ้งซ่อม MO + บอกว่าอยู่ฝั่งช่าง)</label>
                   {/* 🔒 ช่องนี้ตัดสิน "ฝั่ง" ของด่านล็อกช่องเซ็นขั้น 6/7/8 ด้วย — ต้องเขียนบอกคนตั้งค่า
                       ไม่งั้น ผจก.ช่างที่ไม่ได้ติ๊กจะกดช่องของตัวเองไม่ได้ แล้วหาสาเหตุไม่เจอ */}
                   <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '-2px 0 6px', lineHeight: 1.6 }}>
@@ -2212,7 +2212,7 @@ export default function AddUser() {
                   <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 12px', borderRadius: 8,
                     background: form.deptAdmin ? 'var(--amber-dim)' : 'var(--bg3)', border: `1px solid ${form.deptAdmin ? 'var(--amber-line)' : 'var(--border2)'}` }}>
                     <input type="checkbox" checked={!!form.deptAdmin} onChange={e => setF('deptAdmin', e.target.checked)} style={{ margin: 0, width: 'auto' }} />
-                    <span style={{ fontSize: 13, fontWeight: 700, color: form.deptAdmin ? 'var(--amber)' : 'var(--text)' }}>🛡️ เป็นแอดมินหน่วยงาน</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: form.deptAdmin ? 'var(--amber)' : 'var(--text)' }}>เป็นแอดมินหน่วยงาน</span>
                   </label>
                   <InfoMore size={11} style={{ marginTop: 4 }} id="au_deptadmin"
                     lead={<>ให้สิทธิ์ <b>แก้ข้อมูล master/ตั้งค่า/อนุมัติ</b> เฉพาะหน่วยงานของตัวเอง · ไม่ติ๊ก = ใช้งานได้อย่างเดียว</>}>

@@ -82,7 +82,7 @@ function QaPointCard({ p, onChange, onDelete, isPinning, onPinToggle, onUnpin, h
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-        <button type="button" onClick={() => onChange({ item_type: 'variable' })} style={S.typeBtn(isVar, '#4d9fff')}>📏 Variable (ค่าตัวเลข)</button>
+        <button type="button" onClick={() => onChange({ item_type: 'variable' })} style={S.typeBtn(isVar, '#4d9fff')}>Variable (ค่าตัวเลข)</button>
         <button type="button" onClick={() => onChange({ item_type: 'attribute', calc: null })} style={S.typeBtn(!isVar, '#9b8de8')}>✅ Attribute (OK/NG)</button>
       </div>
 
@@ -151,7 +151,7 @@ function TitlePicker({ current, used, onPick, onClose }) {
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 2100, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, width: 'min(460px, 96vw)', padding: 18, boxShadow: 'var(--shadow-lg)' }}>
-        <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10 }}>🖼 ตั้งชื่อแผ่น/มุมมอง</div>
+        <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10 }}>ตั้งชื่อแผ่น/มุมมอง</div>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 12 }}>
           {STANDARD_VIEWS.map(v => {
             const taken = used.includes(v) && v !== current;

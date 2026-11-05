@@ -856,7 +856,7 @@ export default function OrderTrace() {
     // ⚠️ เปิด/ปิด = "เวลาสแกน" ไม่ใช่เวลาเริ่ม-จบผลิตจริง (พนักงานสแกนรวบหลายใบ — ดู scanBatch/orderAnalysis)
     const batchNote = (which) => {
       const n = scanBatch[which]?.members?.length || 0;
-      return n > 1 ? ` · 🧾 สแกนรวบ ${n} ใบ` : '';
+      return n > 1 ? ` · สแกนรวบ ${n} ใบ` : '';
     };
     if (sel.opened_at) ev.push({ t: sel.opened_at, icon: '🟢', text: `สแกนเปิดใบ ${sel.prod_no} เป้า ${sel.qty_target ?? sel.qty} ชิ้น โดย ${sel.opened_by || '—'}${sel.is_backfill ? ' (ยิงย้อนหลัง)' : ''}${sel.machine_no ? ` · เครื่อง ${sel.machine_no}` : ''}${batchNote('open')}` });
     trace.qtyUpdates.forEach(u => { if (!u.is_final) ev.push({ t: u.logged_at, icon: '✍️', text: `อัพเดทยอดสะสม ${u.qty_accum} (+${u.qty_delta}) โดย ${u.logged_by || '—'}` }); });
@@ -1065,7 +1065,7 @@ export default function OrderTrace() {
       {jul && (
         <div style={{ ...card, marginBottom: 16, borderColor: 'var(--amber)', background: 'var(--amber-dim)', fontSize: 12.5, lineHeight: 1.7 }}>
           <div style={{ fontWeight: 800, color: 'var(--amber)' }}>
-            🗓 {julianLabel(jul)} → <span style={{ color: 'var(--text)' }}>{fmtDate(jul.date)}</span>
+            {julianLabel(jul)} → <span style={{ color: 'var(--text)' }}>{fmtDate(jul.date)}</span>
             {julHits != null && <span style={{ fontWeight: 600, color: 'var(--text2)' }}> · เจอใบผลิตของวันนั้น {julHits.toLocaleString()} ใบ</span>}
           </div>
           <div style={{ color: 'var(--text2)' }}>
@@ -1161,14 +1161,14 @@ export default function OrderTrace() {
                       </td>
                       <td>
                         <div>{s.line_name || '—'}</div>
-                        {o.machine_no && <div style={{ fontSize: 11, color: 'var(--muted)' }}>⚙️ {o.machine_no}</div>}
+                        {o.machine_no && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.machine_no}</div>}
                       </td>
                       <td style={{ whiteSpace: 'nowrap' }}>
                         {fmtDate(s.work_date)} {s.shift === 'night' ? '🌙' : '☀️'}
                         {/* Julian ของวันผลิต — หน้างานเอาไปเทียบกับเลขที่ปั๊มบนชิ้นงานได้ทันที (ไม่ได้เก็บใน DB · คำนวณสด) */}
                         {s.work_date && <div style={{ fontSize: 11, color: jul && s.work_date === jul.date ? 'var(--amber)' : 'var(--muted)', fontWeight: jul && s.work_date === jul.date ? 800 : 400 }}
                           title="เลข Julian ที่ควรปั๊มบนชิ้นงานของใบนี้ (วัน 3 หลัก + ปี 2 หลัก + กะ A/B)">
-                          🗓 {toJulian(s.work_date, s.shift)}
+                          {toJulian(s.work_date, s.shift)}
                         </div>}
                       </td>
                       <td style={{ whiteSpace: 'nowrap', fontSize: 11.5, color: 'var(--text2)' }}>{fmtTime(o.opened_at)} → {o.confirmed_at ? fmtTime(o.confirmed_at) : '—'}</td>
@@ -1202,7 +1202,7 @@ export default function OrderTrace() {
               <span style={{ ...chip('var(--bg3)', stMeta.color) }}>{stMeta.label}</span>
               {sel.is_backfill && <span style={chip('var(--amber-dim)', 'var(--amber)')}>⏪ ยิงย้อนหลัง</span>}
               {(sel.reopen_count || 0) > 0 && <span style={chip('var(--red-dim)', 'var(--red)')}>↩️ เคยถอยใบ {sel.reopen_count} ครั้ง</span>}
-              {sel.paired_order_id && <span style={chip('var(--bg3)', 'var(--text2)')}>🔗 มีใบคู่ RH/LH</span>}
+              {sel.paired_order_id && <span style={chip('var(--bg3)', 'var(--text2)')}>มีใบคู่ RH/LH</span>}
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '8px 18px', marginTop: 10, fontSize: 13 }}>
               <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>ชิ้นงาน</span><br /><b>{sel.part_name || '—'}</b> <span style={{ color: 'var(--muted)' }}>{sel.mat_no}</span>{sel.customer ? <span style={{ color: 'var(--muted)' }}> · {sel.customer}</span> : ''}</div>
@@ -1213,7 +1213,7 @@ export default function OrderTrace() {
               <div><span style={{ color: 'var(--muted)', fontSize: 11 }}>OEE กะนี้ (A/P/Q)</span><br />{sess.oee != null ? <b>{Number(sess.oee).toFixed(1)}%</b> : '—'} <span style={{ color: 'var(--muted)', fontSize: 12 }}>({sess.oee_a ?? '—'}/{sess.oee_p ?? '—'}/{sess.oee_q ?? '—'})</span></div>
             </div>
             {sel.carry_over_note && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--amber)' }}>➡ {sel.carry_over_note}</div>}
-            {sess.close_approve_note && <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text2)' }}>📝 หมายเหตุผู้อนุมัติปิดกะ: {sess.close_approve_note}</div>}
+            {sess.close_approve_note && <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text2)' }}>หมายเหตุผู้อนุมัติปิดกะ: {sess.close_approve_note}</div>}
           </div>
 
           {loading && <div style={{ ...card, marginBottom: 16, color: 'var(--muted)' }}>⏳ กำลังรวบรวมข้อมูลสอบกลับ…</div>}
@@ -1222,7 +1222,7 @@ export default function OrderTrace() {
             <>
               {/* ── Timeline ── */}
               {/* ── 🔍 อาการที่ลูกค้าแจ้ง → โฟกัสหลักฐานเป็น 3 ขาแบบ 8D ── */}
-              <CollapseCard id="claim" storePrefix="ot" title="🔍 ลูกค้าแจ้งอาการอะไร — โฟกัสการสอบสวน (8D)"
+              <CollapseCard id="claim" storePrefix="ot" title="ลูกค้าแจ้งอาการอะไร — โฟกัสการสอบสวน (8D)"
                 count={claim ? claim.related.length : null} defaultOpen={!!trace.pe?.set}>
                 {!trace.pe?.set ? (
                   <div style={{ fontSize: 12.5, lineHeight: 1.7, color: 'var(--muted)' }}>
@@ -1303,7 +1303,7 @@ export default function OrderTrace() {
                           )}
                           {claim.noPmMachines > 0 && (
                             <div style={{ marginTop: 6, fontSize: 12.5, color: 'var(--amber)' }}>
-                              🔧 เครื่องที่เกี่ยวข้อง <b>{claim.noPmMachines} ตัวยังไม่มีแผน PM</b> — ไม่มีการบำรุงรักษาเชิงป้องกันรองรับ
+                              เครื่องที่เกี่ยวข้อง <b>{claim.noPmMachines} ตัวยังไม่มีแผน PM</b> — ไม่มีการบำรุงรักษาเชิงป้องกันรองรับ
                             </div>
                           )}
                         </div>
@@ -1368,7 +1368,7 @@ export default function OrderTrace() {
                                 : <>⚠ <b>ไม่มีข้อมูลการตัดส่ง</b> — ย้อนจากกล่องที่ลูกค้าเคลมกลับมาหากะที่ผลิตไม่ได้ ทำให้ขอบเขตการกันของกว้างเกินจำเป็น</>}
                             </div>
                             {claim.sameMode.length > 0 && (
-                              <div>🔁 อาการเดียวกันนี้ถูกระบุไว้ที่ <b>OP อื่นอีก {claim.sameMode.length} จุด</b> — ถ้าแก้จุดเดียวอาจไม่ครอบคลุม</div>
+                              <div>อาการเดียวกันนี้ถูกระบุไว้ที่ <b>OP อื่นอีก {claim.sameMode.length} จุด</b> — ถ้าแก้จุดเดียวอาจไม่ครอบคลุม</div>
                             )}
                           </div>
                         </div>
@@ -1383,7 +1383,7 @@ export default function OrderTrace() {
                 )}
               </CollapseCard>
 
-              <CollapseCard id="timeline" storePrefix="ot" title="🕐 Timeline เหตุการณ์" count={timeline.length}>
+              <CollapseCard id="timeline" storePrefix="ot" title="Timeline เหตุการณ์" count={timeline.length}>
                 <div style={{ display: 'grid', gap: 0 }}>
                   {timeline.map((e, i) => (
                     <div key={i} style={{ display: 'flex', gap: 10, padding: '5px 0', borderLeft: `3px solid ${e.warn ? 'var(--red)' : 'var(--border2)'}`, paddingLeft: 12, marginLeft: 6, opacity: e.dim ? 0.6 : 1 }}>
@@ -1396,7 +1396,7 @@ export default function OrderTrace() {
               </CollapseCard>
 
               {/* ── กำลังคน & จุดงาน (data mining) ── */}
-              <CollapseCard id="people" storePrefix="ot" title={`👷 กำลังคน & จุดงาน — ${sess.line_name} วันนั้น`} count={trace.people.length} defaultOpen={trace.people.length > 0}>
+              <CollapseCard id="people" storePrefix="ot" title={`กำลังคน & จุดงาน — ${sess.line_name} วันนั้น`} count={trace.people.length} defaultOpen={trace.people.length > 0}>
                 {(() => {
                   const present = trace.people.filter(p => p.is_present);
                   const absent = trace.people.filter(p => !p.is_present);
@@ -1418,7 +1418,7 @@ export default function OrderTrace() {
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
                         <span style={chip('var(--bg3)', present.length < std ? 'var(--red)' : 'var(--green)')}>มาทำงาน {present.length}{std ? `/${std} คน (มาตรฐานกะ)` : ' คน'}</span>
                         {absent.length > 0 && <span style={chip('var(--red-dim)', 'var(--red)')}>ขาด/ลา {absent.length}</span>}
-                        {movedN > 0 && <span style={chip('var(--amber-dim)', 'var(--amber)')}>🔀 ย้ายจุด {movedN}</span>}
+                        {movedN > 0 && <span style={chip('var(--amber-dim)', 'var(--amber)')}>ย้ายจุด {movedN}</span>}
                         {lowFitN > 0 && <span style={chip('var(--red-dim)', 'var(--red)')}>⚠️ ทักษะไม่ถึงจุด {lowFitN}</span>}
                         {ppeN > 0 && <span style={chip('var(--amber-dim)', 'var(--amber)')}>⚠️ PPE ไม่ครบ {ppeN}</span>}
                       </div>
@@ -1436,7 +1436,7 @@ export default function OrderTrace() {
                                 </td>
                                 <td style={{ whiteSpace: 'nowrap' }}>
                                   {p.aId && trace.stations[p.aId] ? <b>{trace.stations[p.aId]}</b> : <span style={{ color: 'var(--muted)' }}>—</span>}
-                                  {p.moved && <span style={{ marginLeft: 6, ...chip('var(--amber-dim)', 'var(--amber)') }}>🔀 ย้ายจุด</span>}
+                                  {p.moved && <span style={{ marginLeft: 6, ...chip('var(--amber-dim)', 'var(--amber)') }}>ย้ายจุด</span>}
                                 </td>
                                 <td style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>{p.hId && trace.stations[p.hId] ? trace.stations[p.hId] : <span style={{ color: 'var(--muted)' }}>—</span>}</td>
                                 <td>{p.fit != null ? <b style={{ color: fitColor(p.fit) }}>{p.fit}%</b> : <span style={{ color: 'var(--muted)' }}>—</span>}</td>
@@ -1484,7 +1484,7 @@ export default function OrderTrace() {
                   {orderAnalysis.groupMode && orderAnalysis.group && (
                     <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--accent)' }}>
                       <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent)', marginBottom: 8 }}>
-                        📦 ภาพรวมกลุ่มใบที่วิ่งต่อเนื่องช่วงเดียวกัน ({orderAnalysis.group.orders} ใบ
+                        ภาพรวมกลุ่มใบที่วิ่งต่อเนื่องช่วงเดียวกัน ({orderAnalysis.group.orders} ใบ
                         {orderAnalysis.group.mats.length > 1 ? ` · ${orderAnalysis.group.mats.length} ชิ้นงาน` : ''}) — ตัวเลขที่เชื่อถือได้
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px 18px', fontSize: 13 }}>
@@ -1543,19 +1543,19 @@ export default function OrderTrace() {
               {/* ── เครื่องจักร/ใบซ่อม ── */}
               {/* 🏭 อุปกรณ์ที่ใช้ผลิต — ตอบโจทย์ "ของเสีย → เครื่อง/แม่พิมพ์ตัวไหน · ขาด PM ไหม · ใครแตะล่าสุด" */}
               {trace.equip && (
-                <CollapseCard id="equip" storePrefix="ot" title="🏭 อุปกรณ์ที่ใช้ผลิต — สภาพบำรุงรักษา ณ เวลาผลิต"
+                <CollapseCard id="equip" storePrefix="ot" title="อุปกรณ์ที่ใช้ผลิต — สภาพบำรุงรักษา ณ เวลาผลิต"
                   count={trace.equip.rows.length}
                   defaultOpen={trace.equip.overdueCount > 0 || trace.equip.freshFixCount > 0 || !!trace.equip.confirmedNo}>
 
                   {/* ระดับความแน่ชัด — ห้ามให้ "ผู้ต้องสงสัย" ดูเหมือนคำตอบ */}
                   {trace.equip.confirmedNo ? (
                     <div style={{ fontSize: 12, marginBottom: 8, padding: '6px 10px', borderRadius: 6, background: 'var(--green-dim)', border: '1px solid var(--green-line)' }}>
-                      🎯 ใบนี้ระบุเครื่องไว้ชัดเจน: <b>{trace.equip.confirmedNo}</b> — สอบกลับได้ถึงตัวเครื่อง
+                      ใบนี้ระบุเครื่องไว้ชัดเจน: <b>{trace.equip.confirmedNo}</b> — สอบกลับได้ถึงตัวเครื่อง
                     </div>
                   ) : !trace.equip.isParallel ? (
                     /* ไลน์ไหลทีละชิ้น = งานผ่านทุกเครื่องตามลำดับ → ทุกตัว "ถูกใช้จริง" ไม่ใช่ผู้ต้องสงสัย */
                     <div style={{ fontSize: 12, marginBottom: 8, padding: '6px 10px', borderRadius: 6, background: 'var(--green-dim)', border: '1px solid var(--green-line)' }}>
-                      ⛓️ ไลน์ <b>{sess.line_name}</b> เป็นแบบ <b>ไหลทีละชิ้น (one-piece flow)</b> — ใบนี้ <b>ผ่านเครื่องทั้ง {trace.equip.machineCount} ตัวตามลำดับ</b> ทุกตัวจึงเกี่ยวข้องกับคุณภาพของงานใบนี้
+                      ไลน์ <b>{sess.line_name}</b> เป็นแบบ <b>ไหลทีละชิ้น (one-piece flow)</b> — ใบนี้ <b>ผ่านเครื่องทั้ง {trace.equip.machineCount} ตัวตามลำดับ</b> ทุกตัวจึงเกี่ยวข้องกับคุณภาพของงานใบนี้
                       <div style={{ color: 'var(--muted)', marginTop: 3 }}>
                         {trace.equip.hasStepOrder
                           ? 'เลข "ขั้นที่" มาจากลำดับเครื่องในทะเบียน · เรียงรายการตามตัวที่ควรสงสัยก่อน'
@@ -1576,8 +1576,8 @@ export default function OrderTrace() {
                     {trace.equip.overdueCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--red-dim)', color: 'var(--red)', fontWeight: 700 }}>🔴 PM เกินกำหนด ณ วันผลิต {trace.equip.overdueCount} รายการ</span>}
                     {trace.equip.freshFixCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--amber-dim)', color: 'var(--amber)', fontWeight: 700 }}>🟠 เพิ่งซ่อมเสร็จ ≤7 วันก่อนผลิต {trace.equip.freshFixCount} รายการ</span>}
                     <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--text2)' }}>
-                      ⚙️ {trace.equip.isParallel ? 'เครื่องในไลน์' : 'ผ่านเครื่อง'} {trace.equip.machineCount}</span>
-                    <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--text2)' }}>🧰 จิ๊ก/แม่พิมพ์ลงทะเบียน {trace.equip.dieCount}</span>
+                      {trace.equip.isParallel ? 'เครื่องในไลน์' : 'ผ่านเครื่อง'} {trace.equip.machineCount}</span>
+                    <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--text2)' }}>จิ๊ก/แม่พิมพ์ลงทะเบียน {trace.equip.dieCount}</span>
                     {trace.equip.noPlanCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--muted)' }}>ยังไม่มีแผน PM {trace.equip.noPlanCount}</span>}
                   </div>
 
@@ -1597,7 +1597,7 @@ export default function OrderTrace() {
 
                   {trace.equip.dieCount === 0 && (
                     <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>
-                      💡 ยังไม่มีจิ๊ก/แม่พิมพ์ตัวจริงลงทะเบียนในไลน์นี้ — ลงข้อมูลที่ PM Setup แล้วสอบกลับถึงตัวแม่พิมพ์ได้เหมือนเครื่องจักร
+                      ยังไม่มีจิ๊ก/แม่พิมพ์ตัวจริงลงทะเบียนในไลน์นี้ — ลงข้อมูลที่ PM Setup แล้วสอบกลับถึงตัวแม่พิมพ์ได้เหมือนเครื่องจักร
                     </div>
                   )}
 
@@ -1612,7 +1612,7 @@ export default function OrderTrace() {
                             {r.sortOrder != null && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ขั้นที่ {r.sortOrder}</span>}
                             <b style={{ fontSize: 13 }}>{r.kind === 'die' ? '🧱' : r.kind === 'jig' ? '🧰' : '⚙️'} {r.label}</b>
                             {r.name && <span style={{ fontSize: 11.5, color: 'var(--text2)' }}>{r.name}</span>}
-                            {r.confirmed && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)' }}>🎯 ใบนี้ระบุ</span>}
+                            {r.confirmed && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)' }}>ใบนี้ระบุ</span>}
                             {r.usage === 'suspect' && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ผู้ต้องสงสัย</span>}
                             {r.overdue > 0 && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>🔴 PM เกินกำหนด {r.overdue} วัน ณ วันผลิต</span>}
                             {r.daysSinceFix != null && r.daysSinceFix <= 7 && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)' }}>🟠 ซ่อมเสร็จ {r.daysSinceFix} วันก่อนผลิต</span>}
@@ -1620,7 +1620,7 @@ export default function OrderTrace() {
                             {r.amTarget && !r.amDone && <span style={{ fontSize: 11, color: 'var(--amber)' }}>⚠ วันนั้นยังไม่ได้ตรวจ AM</span>}
                           </div>
                           <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 4, display: 'grid', gap: 2 }}>
-                            <div>🛠️ แผน PM: {r.hasPmPlan
+                            <div>แผน PM: {r.hasPmPlan
                               ? <>{r.overdue > 0
                                   ? <b style={{ color: 'var(--red)' }}>ณ วันผลิต เลยกำหนดมาแล้ว {r.overdue} วัน (ควรตรวจ {fmtDate(r.dueAtProd)})</b>
                                   : r.neverInspected ? <b style={{ color: 'var(--amber)' }}>มีแผน PM แต่ไม่พบประวัติการตรวจก่อนวันผลิตเลย</b>
@@ -1631,12 +1631,12 @@ export default function OrderTrace() {
                                 {r.lastPlanDone ? <span style={{ color: 'var(--muted)' }}> · ทำล่าสุด {fmtDT(r.lastPlanDone)}</span> : ''}</>
                               : <span style={{ color: 'var(--muted)' }}>ยังไม่ได้ตั้งแผน PM ให้อุปกรณ์ตัวนี้</span>}</div>
                             {r.lastInsp && (
-                              <div>🔍 ตรวจล่าสุดก่อนผลิต: {fmtDT(r.lastInsp.inspected_at)} · <b>{r.inspName}</b>
+                              <div>ตรวจล่าสุดก่อนผลิต: {fmtDT(r.lastInsp.inspected_at)} · <b>{r.inspName}</b>
                                 {' · '}{inspVerdict(r.lastInsp.status)}
                                 {r.lastInsp.notes ? ` — ${r.lastInsp.notes}` : ''}</div>
                             )}
                             {r.mos.slice(0, 3).map((m, i) => (
-                              <div key={i}>🔧 {m.mo_no || '(รอเลข MO)'} {fmtDT(m.repair_done_at || m.created_at)}
+                              <div key={i}>{m.mo_no || '(รอเลข MO)'} {fmtDT(m.repair_done_at || m.created_at)}
                                 {m.problem_detail ? ` — อาการ: ${m.problem_detail}` : ''}
                                 {m.root_cause ? ` · สาเหตุ: ${m.root_cause}` : ''}
                                 {m.solution ? ` · แก้: ${m.solution}` : ` · สถานะ ${m.status}`}
@@ -1671,10 +1671,10 @@ export default function OrderTrace() {
                 </CollapseCard>
               )}
 
-              <CollapseCard id="machine" storePrefix="ot" title="🔧 Downtime & ใบซ่อม MO ในกะ" count={trace.downtimes.length} defaultOpen={trace.downtimes.length > 0 || trace.machineMos.length > 0}>
+              <CollapseCard id="machine" storePrefix="ot" title="Downtime & ใบซ่อม MO ในกะ" count={trace.downtimes.length} defaultOpen={trace.downtimes.length > 0 || trace.machineMos.length > 0}>
                 {sel.machine_no && (
                   <div style={{ marginBottom: 10, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 8, fontSize: 12.5 }}>
-                    ⚙️ ใบนี้ผลิตที่เครื่อง <b>{sel.machine_no}</b>
+                    ใบนี้ผลิตที่เครื่อง <b>{sel.machine_no}</b>
                     {trace.machineMos.length
                       ? <span style={{ color: 'var(--amber)' }}> · มีใบซ่อม {trace.machineMos.length} ใบใน 30 วันก่อนเปิดใบ</span>
                       : <span style={{ color: 'var(--green)' }}> · ไม่มีใบซ่อมใน 30 วันก่อนหน้า</span>}
@@ -1693,8 +1693,8 @@ export default function OrderTrace() {
                       <b style={{ color: planned ? 'var(--muted)' : 'var(--red)' }}>{d.dr_downtime_types?.name_th || '—'}</b>
                       {d.machine_no && <span> · เครื่อง <b>{d.machine_no}</b></span>} · {Math.round(d.duration_min || 0)} นาที
                       <span style={{ color: 'var(--muted)' }}> · {fmtTime(d.started_at)}{d.ended_at ? `–${fmtTime(d.ended_at)}` : ' (เปิดค้าง)'}</span>
-                      {d.description && <div style={{ color: 'var(--text2)' }}>💬 {d.description}</div>}
-                      {mo && <div style={{ color: 'var(--text2)' }}>🔧 MO <b>{mo.mo_no || '(รอเลข)'}</b> → {deptNameOf(mo.mtn_dept)} · {mo.root_cause ? `สาเหตุ: ${mo.root_cause} · ` : ''}{mo.solution ? `แก้: ${mo.solution}` : `สถานะ ${mo.status}`}{mo.assigned_to ? ` · ช่าง ${mo.assigned_to}` : ''}</div>}
+                      {d.description && <div style={{ color: 'var(--text2)' }}>{d.description}</div>}
+                      {mo && <div style={{ color: 'var(--text2)' }}>MO <b>{mo.mo_no || '(รอเลข)'}</b> → {deptNameOf(mo.mtn_dept)} · {mo.root_cause ? `สาเหตุ: ${mo.root_cause} · ` : ''}{mo.solution ? `แก้: ${mo.solution}` : `สถานะ ${mo.status}`}{mo.assigned_to ? ` · ช่าง ${mo.assigned_to}` : ''}</div>}
                     </div>
                   );
                 })}
@@ -1702,7 +1702,7 @@ export default function OrderTrace() {
               </CollapseCard>
 
               {/* ── 4M ── */}
-              <CollapseCard id="fourm" storePrefix="ot" title="📋 การเปลี่ยนแปลง 4M วันนั้น" count={trace.fourM.length} defaultOpen={trace.fourM.length > 0}>
+              <CollapseCard id="fourm" storePrefix="ot" title="การเปลี่ยนแปลง 4M วันนั้น" count={trace.fourM.length} defaultOpen={trace.fourM.length > 0}>
                 {trace.fourM.map((f, i) => (
                   <div key={i} style={{ padding: '5px 0', fontSize: 12.5, borderTop: i ? '1px solid var(--border2)' : 'none' }}>
                     <b>{f.category}</b>{f.change_subtype ? ` / ${f.change_subtype}` : ''} · {f.description || '—'}
@@ -1718,22 +1718,22 @@ export default function OrderTrace() {
                 defaultOpen={Boolean(trace.dailyPm || trace.poka.length || trace.lpa.length)}>
                 <div style={{ display: 'grid', gap: 6, fontSize: 12.5 }}>
                   {trace.dailyPm && (
-                    <div>🔧 Daily PM (AM): {trace.dailyPm.unknown
+                    <div>Daily PM (AM): {trace.dailyPm.unknown
                       ? <span style={{ color: 'var(--amber)' }}>⚠ ดึงผลตรวจไม่สำเร็จ — ไม่ทราบว่าตรวจแล้ว {trace.dailyPm.total} เครื่องหรือยัง</span>
                       : <>เช็คแล้ว <b>{trace.dailyPm.done}/{trace.dailyPm.total}</b> เครื่อง{trace.dailyPm.fail ? <span style={{ color: 'var(--red)' }}> · พบ NG {trace.dailyPm.fail} รายการ</span> : ''}</>}</div>
                   )}
                   {trace.poka.map((c, i) => (
-                    <div key={`p${i}`}>🛡️ Poka-Yoke {c.dev?.name || ''}{c.dev?.station ? ` (${c.dev.station})` : ''} — {c.result === 'pass' ? <span style={{ color: 'var(--green)' }}>ผ่าน</span> : <span style={{ color: 'var(--red)' }}>ไม่ผ่าน</span>} · {c.checker_name || '—'}</div>
+                    <div key={`p${i}`}>Poka-Yoke {c.dev?.name || ''}{c.dev?.station ? ` (${c.dev.station})` : ''} — {c.result === 'pass' ? <span style={{ color: 'var(--green)' }}>ผ่าน</span> : <span style={{ color: 'var(--red)' }}>ไม่ผ่าน</span>} · {c.checker_name || '—'}</div>
                   ))}
                   {trace.lpa.map((a, i) => (
-                    <div key={`l${i}`}>📋 LPA ชั้น <b>{a.layer}</b>{a.station ? ` @${a.station}` : ''} · ผู้ตรวจ {a.auditor_name || '—'}</div>
+                    <div key={`l${i}`}>LPA ชั้น <b>{a.layer}</b>{a.station ? ` @${a.station}` : ''} · ผู้ตรวจ {a.auditor_name || '—'}</div>
                   ))}
                   {!trace.dailyPm && !trace.poka.length && !trace.lpa.length && <div style={{ color: 'var(--muted)' }}>ไม่พบบันทึกการตรวจของวันนั้น</div>}
                 </div>
               </CollapseCard>
 
               {/* ── วัสดุ ── */}
-              <CollapseCard id="material" storePrefix="ot" title="🧾 วัสดุ / ล็อตพาร์ทย่อย (child → raw)" count={trace.childLots.length} defaultOpen={trace.childLots.length > 0}>
+              <CollapseCard id="material" storePrefix="ot" title="วัสดุ / ล็อตพาร์ทย่อย (child → raw)" count={trace.childLots.length} defaultOpen={trace.childLots.length > 0}>
                 {trace.childLots.map((c, i) => (
                   <div key={i} style={{ padding: '6px 0', fontSize: 12.5, borderTop: i ? '1px solid var(--border2)' : 'none' }}>
                     <b>{c.child_mat_no}</b> {c.part_name || ''} · ล็อต {Number(c.lot_qty).toLocaleString()} ชิ้น · ผลิตที่ {c.source_line || '(ของซื้อ)'} · {c.status}
@@ -1749,15 +1749,15 @@ export default function OrderTrace() {
               </CollapseCard>
 
               {/* ── stock ── */}
-              <CollapseCard id="stock" storePrefix="ot" title="📦 เส้นทาง Stock (เข้าคลัง → ส่งลูกค้า)" count={trace.stockIn.length + trace.stockOut.length} defaultOpen={trace.stockIn.length > 0}>
+              <CollapseCard id="stock" storePrefix="ot" title="เส้นทาง Stock (เข้าคลัง → ส่งลูกค้า)" count={trace.stockIn.length + trace.stockOut.length} defaultOpen={trace.stockIn.length > 0}>
                 {trace.stockIn.map((x, i) => (
-                  <div key={`i${i}`} style={{ fontSize: 12.5, padding: '4px 0' }}>📥 {fmtDT(x.created_at)} เข้าคลัง <b>{x.line_name}</b> +{Number(x.qty).toLocaleString()} <span style={{ color: 'var(--muted)' }}>(ผูกใบนี้โดยตรง)</span></div>
+                  <div key={`i${i}`} style={{ fontSize: 12.5, padding: '4px 0' }}>{fmtDT(x.created_at)} เข้าคลัง <b>{x.line_name}</b> +{Number(x.qty).toLocaleString()} <span style={{ color: 'var(--muted)' }}>(ผูกใบนี้โดยตรง)</span></div>
                 ))}
                 {trace.stockOut.map((x, i) => {
                   const sh = x.customer_shipping_orders;
                   return (
                     <div key={`o${i}`} style={{ fontSize: 12.5, padding: '4px 0', opacity: 0.75 }}>
-                      🚚 {fmtDT(x.created_at)} ตัดส่ง −{Number(x.qty).toLocaleString()} · {sh
+                      {fmtDT(x.created_at)} ตัดส่ง −{Number(x.qty).toLocaleString()} · {sh
                         ? <>รอบส่ง <b>{sh.due_date} {(sh.ship_time || '').slice(0, 5)}</b> · {sh.customer || '—'}{sh.order_no ? ` · PO ${sh.order_no}` : ''}{sh.shipped_by ? ` · ${sh.shipped_by}` : ''} <span style={{ color: 'var(--green)' }}>(ผูกรอบส่งแล้ว)</span></>
                         : x.note}
                     </div>
@@ -1773,7 +1773,7 @@ export default function OrderTrace() {
               </CollapseCard>
 
               {/* ── ใบอื่นในกะ ── */}
-              <CollapseCard id="sessorders" storePrefix="ot" title="🧭 บริบทกะ (กะก่อนหน้า + ใบอื่นในกะ)" count={trace.sessionOrders.length - 1} defaultOpen={false}>
+              <CollapseCard id="sessorders" storePrefix="ot" title="บริบทกะ (กะก่อนหน้า + ใบอื่นในกะ)" count={trace.sessionOrders.length - 1} defaultOpen={false}>
                 {trace.prevSession && (
                   <div style={{ marginBottom: 8, padding: '7px 10px', background: 'var(--bg3)', borderRadius: 8, fontSize: 12.5 }}>
                     ⏮ กะก่อนหน้าของไลน์: {fmtDate(trace.prevSession.work_date)} {trace.prevSession.shift === 'night' ? '🌙' : '☀️'}

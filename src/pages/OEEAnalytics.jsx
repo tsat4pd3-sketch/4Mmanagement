@@ -1525,8 +1525,8 @@ export default function OEEAnalytics() {
                 <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>เวลาที่หายไปก่อนถึง OEE (ในกะ)</div>
                 {tdKpi.shiftMinSum > 0 ? (<>
                   <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12 }}>
-                    <span>☕ พัก <b style={{ color: 'var(--text)' }}>{tdKpi.breakMinTotal.toLocaleString()}</b> น.</span>
-                    <span>🗓️ หยุดตามแผน <b style={{ color: 'var(--amber)' }}>{tdKpi.plannedMinTotal.toLocaleString()}</b> น.</span>
+                    <span>พัก <b style={{ color: 'var(--text)' }}>{tdKpi.breakMinTotal.toLocaleString()}</b> น.</span>
+                    <span>หยุดตามแผน <b style={{ color: 'var(--amber)' }}>{tdKpi.plannedMinTotal.toLocaleString()}</b> น.</span>
                     <span>= <b style={{ color: 'var(--amber)' }}>{((tdKpi.breakMinTotal + tdKpi.plannedMinTotal) / tdKpi.shiftMinSum * 100).toFixed(1)}%</b> ของเวลากะ</span>
                   </div>
                   <div style={{ display: 'flex', height: 9, borderRadius: 5, overflow: 'hidden', background: 'var(--bg3)', marginTop: 8 }}>
@@ -1755,7 +1755,7 @@ export default function OEEAnalytics() {
                 {tdHasParallel && (
                   <div style={{ fontSize: 11, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)',
                     borderRadius: 7, padding: '6px 9px', marginBottom: 10, lineHeight: 1.6 }}>
-                    🔀 ชุดนี้มี<b>ไลน์เครื่องขนาน</b> — เครื่องหยุดพร้อมกันหลายเครื่องนับเป็น<b>ไลน์หยุดครั้งเดียว</b> (หารจำนวนเลน)
+                    ชุดนี้มี<b>ไลน์เครื่องขนาน</b> — เครื่องหยุดพร้อมกันหลายเครื่องนับเป็น<b>ไลน์หยุดครั้งเดียว</b> (หารจำนวนเลน)
                     ตรงกับฐานเวลาของ %A ในหัวข้อ 1 · รวมนาทีที่พนักงานลงจริงทุกเครื่อง = <b>{tdDtByCause.rawTotal.toLocaleString()}</b> นาที-เครื่อง
                   </div>
                 )}
@@ -1874,7 +1874,7 @@ export default function OEEAnalytics() {
                           <div style={{ fontSize: 12, color: 'var(--red)' }}>โหลดย้อนหลังไม่สำเร็จ — {tdDrillHist.error}</div>
                         ) : (<>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8, marginBottom: 7 }}>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>🔁 ย้อนหลัง 30 วัน</div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>ย้อนหลัง 30 วัน</div>
                             <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
                               เกิด <b style={{ color: 'var(--text)' }}>{tdDrillHist.hitDays}</b> วัน · <b style={{ color: 'var(--text)' }}>{tdDrillHist.count}</b> ครั้ง ·
                               รวม <b style={{ color: 'var(--blue)' }}>{Math.round(tdDrillHist.total).toLocaleString()}</b> นาที
@@ -1937,7 +1937,7 @@ export default function OEEAnalytics() {
                                 {d.description || <span style={{ color: 'var(--muted)' }}>— ไม่ได้กรอกหมายเหตุ —</span>}
                                 {d.reported_by_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{d.reported_by_name}</div>}
                                 {/* วิธีแก้ไขที่หัวหน้ากลุ่มลงไว้ (feedback 2026-08-19) */}
-                                {d.fix_action && <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 3 }}>🛠 {d.fix_action}</div>}
+                                {d.fix_action && <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 3 }}>{d.fix_action}</div>}
                               </td>
                             </tr>
                           ))}
@@ -2078,8 +2078,8 @@ export default function OEEAnalytics() {
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>เวลาที่หายไปก่อนถึง OEE (ในกะ)</div>
           {kpi.shiftMinTotal > 0 ? (<>
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12.5 }}>
-              <span>☕ พักนโยบาย <b style={{ color: 'var(--text)' }}>{kpi.breakMinTotal.toLocaleString()}</b> น.</span>
-              <span>🗓️ หยุดตามแผน <b style={{ color: 'var(--amber)' }}>{kpi.plannedMinTotal.toLocaleString()}</b> น.</span>
+              <span>พักนโยบาย <b style={{ color: 'var(--text)' }}>{kpi.breakMinTotal.toLocaleString()}</b> น.</span>
+              <span>หยุดตามแผน <b style={{ color: 'var(--amber)' }}>{kpi.plannedMinTotal.toLocaleString()}</b> น.</span>
               <span>= <b style={{ color: 'var(--amber)' }}>{((kpi.breakMinTotal + kpi.plannedMinTotal) / kpi.shiftMinTotal * 100).toFixed(1)}%</b> ของเวลากะ</span>
             </div>
             {/* แถบสัดส่วน: เดินได้จริง (OEE) / เสียในเวลารับภาระ / พัก+หยุดตามแผน */}
@@ -2184,7 +2184,7 @@ export default function OEEAnalytics() {
       {/* 💰 มูลค่าดาวไทม์นอกแผน — link นาทีที่เสียกับเงิน (คู่กับแผงมูลค่าของเสียด้านล่าง) */}
       {dtCost.totalMin > 0 && (
         <div style={s.section}>
-          <div style={s.title}>💰 มูลค่าดาวไทม์นอกแผน (ช่วงที่เลือก)</div>
+          <div style={s.title}>มูลค่าดาวไทม์นอกแผน (ช่วงที่เลือก)</div>
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'stretch' }}>
             <div style={{ background: 'var(--card)', border: '1px solid var(--red-line)', borderLeft: '4px solid var(--red)', borderRadius: 10, padding: '10px 14px', minWidth: 210 }}>
               <div style={{ fontSize: 11.5, color: 'var(--text2)', fontWeight: 700 }}>รวมที่ตีมูลค่าได้</div>
@@ -2208,7 +2208,7 @@ export default function OEEAnalytics() {
                     style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12, color: 'var(--text2)', padding: '3px 6px', margin: '0 -6px', borderRadius: 6, cursor: 'pointer' }}
                     onMouseEnter={e => { e.currentTarget.style.background = 'var(--red-dim)'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🔍 {t}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t}</span>
                     <span style={{ whiteSpace: 'nowrap' }}><b style={{ color: 'var(--red)' }}>{fmtBaht(v.baht)}</b> บาท · {Math.round(v.min).toLocaleString()} น.</span>
                   </div>
                 ))}
@@ -2234,7 +2234,7 @@ export default function OEEAnalytics() {
         {/* 💰 มูลค่าของเสีย — แยกงานทดลองออกจากของเสียจากไลน์ผลิต (ตัวที่คิดเข้า %Q) */}
         {defectCost.qtyAll > 0 && (
           <div style={s.section}>
-            <div style={s.title}>💰 มูลค่าของเสีย (ช่วงที่เลือก)</div>
+            <div style={s.title}>มูลค่าของเสีย (ช่วงที่เลือก)</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10, alignContent: 'start' }}>
               {[
                 { k: 'all',   label: 'ของเสียทั้งหมด',            sub: 'รวมงานทดลอง',                      color: 'var(--red)', qty: defectCost.qtyAll },
@@ -2280,7 +2280,7 @@ export default function OEEAnalytics() {
                     style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12, color: 'var(--text2)', padding: '3px 6px', margin: '0 -6px', borderRadius: 6, cursor: 'pointer' }}
                     onMouseEnter={e => { e.currentTarget.style.background = 'var(--red-dim)'; }}
                     onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🔍 {t}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t}</span>
                     <span style={{ whiteSpace: 'nowrap' }}><b style={{ color: 'var(--red)' }}>{fmtBaht(v.baht)}</b> บาท · {v.qty.toLocaleString()} ชิ้น</span>
                   </div>
                 ))}
@@ -2477,7 +2477,7 @@ function OeeTargetModal({ groups, targets, fullName, onClose, onSaved }) {
       <div style={{ background: 'var(--card)', borderRadius: 12, border: '1px solid var(--border)', width: 'min(96vw, 760px)', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
           <div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>🎯 ตั้ง Target A / P / Q รายกรุ๊ป — OEE = A×P×Q</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>ตั้ง Target A / P / Q รายกรุ๊ป — OEE = A×P×Q</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
               ตั้งเฉพาะ A / P / Q — <strong>เป้า OEE คำนวณจาก A×P×Q ให้อัตโนมัติ</strong> · ระดับส่วน (section) ไม่ต้องตั้ง คำนวณเป็นค่าเฉลี่ยของกรุ๊ป · ช่องว่าง = ใช้ค่ามาตรฐาน (A {TARGET.a} / P {TARGET.p} / Q {TARGET.q} → OEE {TARGET.oee})
             </div>

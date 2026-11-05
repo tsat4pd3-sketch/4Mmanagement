@@ -130,7 +130,7 @@ export default function PmUsageBoard({ daily = [], lines = [], plans = [], today
       </div>
 
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', fontSize: 12.5 }}>
-        <span style={{ color: 'var(--text2)' }}>📦 30 วันล่าสุด <b style={{ color: 'var(--accent)', fontSize: 14 }}>{N(grand.d30)}</b> ชิ้น · ทั้งช่วง (120 วัน) <b>{N(grand.all)}</b> ชิ้น · {rows.length} ไลน์</span>
+        <span style={{ color: 'var(--text2)' }}>30 วันล่าสุด <b style={{ color: 'var(--accent)', fontSize: 14 }}>{N(grand.d30)}</b> ชิ้น · ทั้งช่วง (120 วัน) <b>{N(grand.all)}</b> ชิ้น · {rows.length} ไลน์</span>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text2)', cursor: 'pointer' }}>
           <input type="checkbox" checked={onlyWithThreshold} onChange={e => setOnlyWithThreshold(e.target.checked)} />เฉพาะไลน์ที่มีอุปกรณ์ตั้งเกณฑ์ PM ตามยอดผลิตแล้ว
         </label>

@@ -222,7 +222,7 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
   return (
     <div style={{ marginTop: 14, border: '1px solid var(--border)', borderRadius: 10, background: 'var(--bg2)' }}>
       <div style={{ padding: '9px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12.5, fontWeight: 800 }}>📉 ประสิทธิผลจากข้อมูลจริง</span>
+        <span style={{ fontSize: 12.5, fontWeight: 800 }}>ประสิทธิผลจากข้อมูลจริง</span>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>ของเสียต่อวันผลิต ก่อน/หลังมาตรการมีผล</span>
         {V && !loading && (
           <span style={{ marginLeft: 'auto', padding: '2px 9px', borderRadius: 999, fontSize: 11, fontWeight: 800, color: V.color, background: `${V.color}22`, border: `1px solid ${V.color}66` }}>

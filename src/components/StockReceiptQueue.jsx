@@ -30,7 +30,7 @@ const COLS = 'id, prod_order_id, prod_no, mat_no, part_name, qty_expected, dest_
 
 const ZONES = (withDone) => [
   { key: 'stale', statuses: ['stale'], label: '⏰ ค้างเกินกำหนด', color: '#ef4444', hint: 'ปิดใบผลิตนานแล้วยังไม่มีใครรับ — ตามของก่อน' },
-  { key: 'pending', statuses: ['pending'], label: '📥 รอรับเข้า', color: '#f59e0b', hint: 'นับของจริง → ตรงกดรับ · ไม่ตรงกรอกยอดที่นับได้' },
+  { key: 'pending', statuses: ['pending'], label: 'รอรับเข้า', color: '#f59e0b', hint: 'นับของจริง → ตรงกดรับ · ไม่ตรงกรอกยอดที่นับได้' },
   ...(withDone ? [{ key: 'received', statuses: ['received'], label: '✅ รับแล้ว (วันนี้)', color: '#22c55e', hint: '' }] : []),
 ];
 const hhmm = (iso) => {
@@ -124,7 +124,7 @@ export default function StockReceiptQueue() {
       </FilterBar>
 
       <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.6 }}>
-        📥 ไลน์สแกนปิดใบผลิตแล้ว ของถูกส่งมาที่คลังปลายทาง — <b>นับของจริงก่อน</b> ตรงกดรับ · ไม่ตรงกรอกยอดที่นับได้พร้อมเหตุผล ·
+        ไลน์สแกนปิดใบผลิตแล้ว ของถูกส่งมาที่คลังปลายทาง — <b>นับของจริงก่อน</b> ตรงกดรับ · ไม่ตรงกรอกยอดที่นับได้พร้อมเหตุผล ·
         สต็อกเข้าตามที่กดรับเท่านั้น · รอรับอยู่ <b>{pendingCount} ใบ · {fmt(pendingQty)} ชิ้น</b>
         {!canReceive && <span style={{ color: '#f59e0b', fontWeight: 700 }}> · บัญชีนี้ไม่มีสิทธิ์รับเข้า (line_stock:issue) — ดูได้อย่างเดียว</span>}
       </div>
@@ -143,7 +143,7 @@ export default function StockReceiptQueue() {
             return (
               <PartCard key={r.id} code={r.mat_no} name={r.part_name} img={imgOf(r.mat_no)} alert={stale}
                 status={pending
-                  ? (stale ? { label: '⏰ ค้าง', color: '#ef4444' } : { label: '📥 รอรับ', color: '#f59e0b' })
+                  ? (stale ? { label: '⏰ ค้าง', color: '#ef4444' } : { label: 'รอรับ', color: '#f59e0b' })
                   : { label: '✅ รับแล้ว', color: '#22c55e' }}
                 metric={{ label: pending ? 'ยอดตามใบผลิต' : 'รับเข้าจริง', value: fmt(pending ? r.qty_expected : r.qty_received), unit: 'ชิ้น' }}
                 aside={{ label: 'เข้าคลัง', value: r.dest_line_name }}

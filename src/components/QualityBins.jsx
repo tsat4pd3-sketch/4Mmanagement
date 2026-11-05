@@ -420,17 +420,17 @@ export default function QualityBins() {
         )}
         <span className="spacer" />
         {canRecord && <button onClick={openNew} style={{ padding: '8px 18px', borderRadius: 6, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>+ บันทึกรายการ</button>}
-        <button onClick={doPrint} style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>🖨️ พิมพ์ใบ {B.short}</button>
+        <button onClick={doPrint} style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>พิมพ์ใบ {B.short}</button>
         <button onClick={() => setShowWiReg(v => !v)}
           title="ทะเบียน QRs ↔ WI การซ่อม ตาม WI-PD3-069 §6 — อาการไหนซ่อมตาม WI เล่มไหน"
           style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid var(--border)', background: showWiReg ? 'var(--bg2)' : 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
-          📕 ทะเบียน WI ซ่อม
+          ทะเบียน WI ซ่อม
         </button>
       </TimeRangeBar>
 
       <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 8 }}>
         {loading ? 'กำลังโหลด…' : `${filtered.length} รายการ · รวม ${totalQty.toLocaleString('th-TH')} ชิ้น`}
-        {scopeNames && <span> · 👥 เฉพาะส่วนงานของคุณ ({scopeNames.length} ไลน์)</span>}
+        {scopeNames && <span> · เฉพาะส่วนงานของคุณ ({scopeNames.length} ไลน์)</span>}
         {!loading && overdueCount > 0 && (
           <span style={{ color: '#f97316', fontWeight: 700 }}> · ⏱ เกินอายุแท็ก {overdueCount} รายการ</span>
         )}
@@ -480,7 +480,7 @@ export default function QualityBins() {
                   {r.defect_log_id && (
                     <div style={{ fontSize: 11, color: '#0ea5e9' }}
                       title="สร้างจากบันทึกงานเสียในหน้า Daily Report — ไม่ได้คีย์ใหม่">
-                      📋 จาก Daily Report
+                      จาก Daily Report
                     </div>
                   )}
                   {/* 📷 ภาพย่อในตาราง — ไม่เพิ่มคอลัมน์ (หัวตาราง 2 ถังคนละชุด เพิ่มแล้วต้องแก้ 2 ที่)
@@ -532,7 +532,7 @@ export default function QualityBins() {
                 {!isY && <td style={{ ...td, whiteSpace: 'nowrap' }}>
                   {r.scrap_report_id
                     ? <span style={{ fontSize: 11.5, fontWeight: 700, color: '#22c55e' }}>
-                        🧾 {scrapDocs[r.scrap_report_id]?.doc_no || 'ออกใบแล้ว'}
+                        {scrapDocs[r.scrap_report_id]?.doc_no || 'ออกใบแล้ว'}
                       </span>
                     : <span title="ยังไม่ได้ออกใบรายงานของเสีย — ไปที่หน้า 🗑️ ใบรายงานของเสีย แล้วกด ⤵ ดึงจากถังแดง"
                         style={{ fontSize: 11.5, fontWeight: 700, color: '#f59e0b' }}>
@@ -573,7 +573,7 @@ export default function QualityBins() {
                (ไม่ใช่คอลัมน์อ้างอิง) ⇒ นับแบบ substring · ดู utils/masterRefs.js */
             onBeforeDelete={masterDeleteGuard(supabaseDR, 'repair_wi_registry', r => r?.wi_no)}
             canManage={canManage} stampCol="updated_by_name" stampName={fullName}
-            title="📕 ทะเบียน QRs ↔ WI การซ่อม"
+            title="ทะเบียน QRs ↔ WI การซ่อม"
             help="จาก WI-PD3-069 Rev.02 §6 — อาการที่ซ่อมได้ต้องอ้าง WI เล่มที่กำหนด · หัวหน้ากลุ่มจะเห็นชิปแนะนำ WI ตอนลงวิธีแก้ไขในหน้า Daily Report"
             emptyText="ยังไม่มีรายการ — เพิ่มจากตัว WI-PD3-069 §6"
             offNote="รายการนี้จะไม่ถูกแนะนำในโมดัลลงวิธีแก้ไขอีก (บันทึกเก่าที่อ้าง WI นี้ไว้แล้วไม่กระทบ)"
@@ -626,7 +626,7 @@ export default function QualityBins() {
                   ทำลายไปแล้วยังสืบย้อนได้ว่าเสียยังไง */}
               <div style={{ gridColumn: '1 / -1' }}>
                 <QualityPhotoField
-                  label="📷 รูปตอนพบของเสีย" hint="ไม่บังคับ — แนบไว้ช่วยให้ QA ตัดสินได้โดยไม่ต้องเดินไปดูของ"
+                  label="รูปตอนพบของเสีย" hint="ไม่บังคับ — แนบไว้ช่วยให้ QA ตัดสินได้โดยไม่ต้องเดินไปดูของ"
                   url={form.found_img || null} file={foundFile}
                   onPick={(f) => { setFoundFile(f); if (!f) setForm(fm => ({ ...fm, found_img: '' })); }}
                 />
@@ -692,7 +692,7 @@ export default function QualityBins() {
                 {/* 📷 รูปหลังซ่อม — ปิดลูป "ซ่อมแล้วใช้ได้จริง" คู่กับรายละเอียดการซ่อม (I DO I CHECK) */}
                 <div style={{ gridColumn: '1 / -1' }}>
                   <QualityPhotoField
-                    label="📷 รูปหลังซ่อม" hint="ไม่บังคับ — คู่กับรายละเอียดการซ่อม ใช้ยืนยันว่าซ่อมแล้วใช้ได้จริง"
+                    label="รูปหลังซ่อม" hint="ไม่บังคับ — คู่กับรายละเอียดการซ่อม ใช้ยืนยันว่าซ่อมแล้วใช้ได้จริง"
                     url={form.repair_img || null} file={repairFile}
                     onPick={(f) => { setRepairFile(f); if (!f) setForm(fm => ({ ...fm, repair_img: '' })); }}
                   />

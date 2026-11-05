@@ -154,7 +154,7 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
       <div style={{ ...card, marginBottom: 14 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <div style={{ fontSize: 14, fontWeight: 800 }}>📐 ทะเบียน revision แบบ</div>
+            <div style={{ fontSize: 14, fontWeight: 800 }}>ทะเบียน revision แบบ</div>
             <select value={partId} onChange={e => onPickPart(e.target.value)} style={{ ...inp, width: 'auto', minWidth: 200 }}>
               <option value="">— เลือกพาร์ท —</option>
               {parts.map(p => <option key={p.id} value={p.id}>{p.part_no} · {p.part_name || ''}</option>)}
@@ -177,8 +177,8 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
                     <td style={tdSt}><Pill label={DWG_STATUS[dw.status]?.label || dw.status} color={DWG_STATUS[dw.status]?.color} /></td>
                     <td style={{ ...tdSt, maxWidth: 260 }}>{dw.description || ''}</td>
                     <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
-                      {dw.file_url && <a href={dw.file_url} target="_blank" rel="noreferrer" style={{ color: '#4d9fff' }}>📎 {(dw.file_name || fileName(dw.file_url)).slice(0, 24)}</a>}
-                      {dw.external_url && <> <a href={dw.external_url} target="_blank" rel="noreferrer" style={{ color: '#4d9fff' }}>🔗 ลิงก์</a></>}
+                      {dw.file_url && <a href={dw.file_url} target="_blank" rel="noreferrer" style={{ color: '#4d9fff' }}>{(dw.file_name || fileName(dw.file_url)).slice(0, 24)}</a>}
+                      {dw.external_url && <> <a href={dw.external_url} target="_blank" rel="noreferrer" style={{ color: '#4d9fff' }}>ลิงก์</a></>}
                       {!dw.file_url && !dw.external_url && <span style={{ color: '#f59e0b', fontSize: 11.5 }}>ไม่มีไฟล์</span>}
                     </td>
                     <td style={tdSt}>{dw.released_by ? `${dw.released_by} · ${fmtDate(dw.released_at)}` : '—'}</td>
@@ -197,7 +197,7 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
       {/* ── ECI ── */}
       <div style={card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-          <div style={{ fontSize: 14, fontWeight: 800 }}>🔁 ECI / Engineering Change ({ecis.length})</div>
+          <div style={{ fontSize: 14, fontWeight: 800 }}>ECI / Engineering Change ({ecis.length})</div>
           {canEdit && <button style={btn()} onClick={() => setEciModal(blankEci())}>+ ECI</button>}
         </div>
         {!ecis.length ? <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>ยังไม่มี ECI ในโปรเจคนี้</div> : (
@@ -299,28 +299,28 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
           <div style={{ marginTop: 12, border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
             <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 6 }}>ผลกระทบ — ติ๊กแล้วต้องผูก "ของจริง" ก่อนปิดงาน</div>
             <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
-              <Leg on={eciModal.affects_drawing} label="📐 แบบ/Drawing rev ใหม่" onToggle={v => setEciModal({ ...eciModal, affects_drawing: v })}>
+              <Leg on={eciModal.affects_drawing} label="แบบ/Drawing rev ใหม่" onToggle={v => setEciModal({ ...eciModal, affects_drawing: v })}>
                 <select style={inp} value={eciModal.drawing_revision_id} onChange={e => setEciModal({ ...eciModal, drawing_revision_id: e.target.value })} disabled={!eciModal.affects_drawing}>
                   <option value="">— เลือก rev แบบของพาร์ท —</option>
                   {eciPartDrawings.map(d => <option key={d.id} value={d.id}>{DWG_KIND[d.kind]} Rev {d.rev} ({DWG_STATUS[d.status]?.label})</option>)}
                 </select>
                 {eciModal.affects_drawing && !eciPartDrawings.length && <div style={{ fontSize: 11, color: '#f59e0b' }}>พาร์ทนี้ยังไม่มี rev แบบ — เพิ่มที่ตารางแบบด้านบนก่อน</div>}
               </Leg>
-              <Leg on={eciModal.affects_pe} label="🗺️ PFC / PFMEA / Control Plan" onToggle={v => setEciModal({ ...eciModal, affects_pe: v })}>
+              <Leg on={eciModal.affects_pe} label="PFC / PFMEA / Control Plan" onToggle={v => setEciModal({ ...eciModal, affects_pe: v })}>
                 <select style={inp} value={eciModal.pe_change_request_id} onChange={e => setEciModal({ ...eciModal, pe_change_request_id: e.target.value })} disabled={!eciModal.affects_pe}>
                   <option value="">— เลือกคำขอแก้เอกสาร PE —</option>
                   {eciPeCrs.map(c => <option key={c.id} value={c.id}>[{c.doc_type}] {c.status} · {(c.proposal || '').slice(0, 60)}</option>)}
                 </select>
                 {eciModal.affects_pe && <div style={{ fontSize: 11, color: 'var(--muted)' }}>สร้างคำขอที่ <Link to={`/pe-docs${parts.find(p => p.id === eciModal.part_id)?.pe_set_id ? `?set=${parts.find(p => p.id === eciModal.part_id).pe_set_id}` : ''}`} style={{ color: '#4d9fff' }}>/pe-docs</Link> (กล่องคำขอแก้เอกสาร) แล้วกลับมาเลือก</div>}
               </Leg>
-              <Leg on={eciModal.affects_process} label="🔧 วิธีการผลิตหน้างาน (4M Method)" onToggle={v => setEciModal({ ...eciModal, affects_process: v })}>
+              <Leg on={eciModal.affects_process} label="วิธีการผลิตหน้างาน (4M Method)" onToggle={v => setEciModal({ ...eciModal, affects_process: v })}>
                 <select style={inp} value={eciModal.four_m_log_id} onChange={e => setEciModal({ ...eciModal, four_m_log_id: e.target.value })} disabled={!eciModal.affects_process}>
                   <option value="">— เลือกใบ 4M Method —</option>
                   {fourM.map(f => <option key={f.id} value={f.id}>{fmtDate(f.work_date)} · {f.line_name || '—'} · {f.status} · {(f.description || '').slice(0, 50)}</option>)}
                 </select>
                 {eciModal.affects_process && <div style={{ fontSize: 11, color: 'var(--muted)' }}>เปิดใบ 4M (Method) ที่หน้าเช็คชื่อ/Report ตามปกติ แล้วกลับมาผูก — ระบบไม่สร้างใบ 4M ให้เอง</div>}
               </Leg>
-              <Leg on={eciModal.affects_tooling} label="🧱 แม่พิมพ์/จิ๊ก/CF" onToggle={v => setEciModal({ ...eciModal, affects_tooling: v })}>
+              <Leg on={eciModal.affects_tooling} label="แม่พิมพ์/จิ๊ก/CF" onToggle={v => setEciModal({ ...eciModal, affects_tooling: v })}>
                 <select style={inp} value={eciModal.tooling_plan_id} onChange={e => setEciModal({ ...eciModal, tooling_plan_id: e.target.value })} disabled={!eciModal.affects_tooling}>
                   <option value="">— เลือกแผน tooling ของพาร์ท —</option>
                   {eciPartTooling.map(t => <option key={t.id} value={t.id}>{t.tool_name} ({t.status})</option>)}

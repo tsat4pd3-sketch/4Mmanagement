@@ -66,7 +66,7 @@ export default function NpiTemplates({ templates, onChanged }) {
     <div style={card}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <div style={{ fontSize: 14, fontWeight: 800 }}>⚙️ แม่แบบเฟส / รายการเอกสาร</div>
+          <div style={{ fontSize: 14, fontWeight: 800 }}>แม่แบบเฟส / รายการเอกสาร</div>
           <select value={tpl?.id || ''} onChange={e => setTplId(e.target.value)} style={{ ...inp, width: 'auto', minWidth: 240 }}>
             {templates.map(t => <option key={t.id} value={t.id}>{t.label}{t.customer ? ` (${t.customer})` : ''}{t.is_active ? '' : ' · ปิดใช้'}</option>)}
           </select>
@@ -125,7 +125,7 @@ export default function NpiTemplates({ templates, onChanged }) {
 
       {tplModal && (
         <Modal title={tplModal.id ? 'แก้ไขแม่แบบ' : 'สร้างแม่แบบ (ลูกค้าใหม่)'} onClose={() => setTplModal(null)} width={560}
-          footer={<><button style={ghost} onClick={() => setTplModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveTpl}>💾 บันทึก</button></>}>
+          footer={<><button style={ghost} onClick={() => setTplModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveTpl}>บันทึก</button></>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label="ชื่อแม่แบบ *" span={2}><input style={inp} value={tplModal.label} onChange={e => setTplModal({ ...tplModal, label: e.target.value })} placeholder="Isuzu NPD / Honda NMS" /></Field>
             {!tplModal.id && <Field label="code" hint="เว้นว่าง = สร้างจากชื่อ"><input style={inp} value={tplModal.code || ''} onChange={e => setTplModal({ ...tplModal, code: e.target.value })} /></Field>}
@@ -140,7 +140,7 @@ export default function NpiTemplates({ templates, onChanged }) {
       )}
       {phModal && (
         <Modal title={phModal.id ? 'แก้ไขเฟส' : 'เพิ่มเฟส'} onClose={() => setPhModal(null)} width={520}
-          footer={<><button style={ghost} onClick={() => setPhModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={savePhase}>💾 บันทึก</button></>}>
+          footer={<><button style={ghost} onClick={() => setPhModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={savePhase}>บันทึก</button></>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label="ชื่อเฟส *" span={2}><input style={inp} value={phModal.label} onChange={e => setPhModal({ ...phModal, label: e.target.value })} /></Field>
             <Field label="code" hint={phModal.id ? 'เปลี่ยนไม่ได้' : 'ว่าง = จากชื่อ'}><input style={inp} value={phModal.code || ''} disabled={!!phModal.id} onChange={e => setPhModal({ ...phModal, code: e.target.value })} /></Field>
@@ -152,7 +152,7 @@ export default function NpiTemplates({ templates, onChanged }) {
       )}
       {dvModal && (
         <Modal title={dvModal.id ? 'แก้ไขรายการ' : 'เพิ่มรายการเอกสาร'} onClose={() => setDvModal(null)} width={600}
-          footer={<><button style={ghost} onClick={() => setDvModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveDeliv}>💾 บันทึก</button></>}>
+          footer={<><button style={ghost} onClick={() => setDvModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveDeliv}>บันทึก</button></>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label="ชื่อรายการ *" span={2}><input style={inp} value={dvModal.label} onChange={e => setDvModal({ ...dvModal, label: e.target.value })} /></Field>
             <Field label="code" hint={dvModal.id ? 'เปลี่ยนไม่ได้' : 'ว่าง = จากชื่อ'}><input style={inp} value={dvModal.code || ''} disabled={!!dvModal.id} onChange={e => setDvModal({ ...dvModal, code: e.target.value })} /></Field>

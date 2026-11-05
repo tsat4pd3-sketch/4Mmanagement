@@ -808,9 +808,9 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
       const { left: delLeft, firstErr: delErr } = await deletePlanned(plans);
       if (delLeft) toast.error(`⚠️ ลงฉบับใหม่ครบแล้ว แต่ลบฉบับเดิมไม่ครบ ${delLeft} รายการ (${delErr}) — ยอดอาจซ้ำ ให้กดนำเข้าไฟล์นี้ซ้ำอีกครั้งเพื่อเคลียร์`);
       toast.success(`✅ นำเข้า EDI ${edi.records.length} รายการ — แทนที่เฉพาะชุด ship-to·dock·พาร์ทที่ไฟล์ส่งมา`
-        + (keptCount ? ` · 🔒 เก็บของเดิม ${keptCount} รายการ (ชุดที่ไฟล์นี้ไม่ได้ส่งมา = ไม่มีอัพเดท)` : '')
+        + (keptCount ? ` · เก็บของเดิม ${keptCount} รายการ (ชุดที่ไฟล์นี้ไม่ได้ส่งมา = ไม่มีอัพเดท)` : '')
         + (coveredCount ? ` · ⏭ ข้าม ${coveredCount} รายการที่ e-SMART/หน้างานทำไปแล้ว (ไม่สร้างใบซ้ำ)` : '')
-        + (pullCoveredCount ? ` · 📡 ข้าม ${pullCoveredCount} รายการในช่วงเวลาที่ e-SMART ยืนยันแล้ว (ใช้ยอด e-SMART แทนแผน 862)` : '')
+        + (pullCoveredCount ? ` · ข้าม ${pullCoveredCount} รายการในช่วงเวลาที่ e-SMART ยืนยันแล้ว (ใช้ยอด e-SMART แทนแผน 862)` : '')
         + (fcCount ? ` · 📅 ${fcCount} รายการไม่มีเวลาส่ง+เกิน ${FIRM_HORIZON_DAYS} วัน ลงเป็นแผนระยะยาว ไม่ใช่ใบส่งของ` : '')
         + (cumCount ? ` · 📊 ${cumCount} รายการเป็นยอดค้างตาม Cum ของลูกค้า (${cumQty.toLocaleString()} ชิ้น) ไม่สร้างเป็นใบส่ง — e-SMART ดึงตามจริง` : ''));
       // จับคู่ MAT ไม่ได้ = ลง customer_forecasts ไม่ได้ (mat_no NOT NULL) — ต้องบอก ห้ามหายเงียบ
@@ -881,22 +881,22 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {!canUpload && (
         <div style={{ ...card, borderColor: 'var(--amber-line)', fontSize: 13, color: 'var(--amber)' }}>
-          👁 โหมดดูอย่างเดียว — การอัพโหลดทำได้เฉพาะ role: Sale / Manager / Admin
+          โหมดดูอย่างเดียว — การอัพโหลดทำได้เฉพาะ role: Sale / Manager / Admin
         </div>
       )}
       {canUpload && (
         <div style={card}>
-          <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)', marginBottom: 12, fontFamily: 'var(--font-display)' }}>📤 อัพโหลดไฟล์จากลูกค้า</div>
+          <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)', marginBottom: 12, fontFamily: 'var(--font-display)' }}>อัพโหลดไฟล์จากลูกค้า</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
             {[{ k: 'forecast', label: 'Forecast ล่วงหน้า' }, { k: 'orders', label: 'Order + รอบส่งงาน' }].map(t => (
               <button key={t.k} onClick={() => { setKind(t.k); setHeaders([]); setRows([]); setFileName(''); }} style={btn(kind === t.k)}>{t.label}</button>
             ))}
             <label style={{ ...btn(false), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              📂 เลือกไฟล์ Excel/CSV (เลือกหลายไฟล์ได้)
+              เลือกไฟล์ Excel/CSV (เลือกหลายไฟล์ได้)
               <input type="file" accept=".xlsx,.xlsm,.xlsb,.xls,.csv" multiple style={{ display: 'none' }}
                 onChange={e => { mailRowsRef.current = []; handleFiles(e.target.files, kind); e.target.value = ''; }} />
             </label>
-            {fileName && <span style={{ alignSelf: 'center', fontSize: 12, color: 'var(--muted)' }}>📄 {fileName} · {rows.length} แถว</span>}
+            {fileName && <span style={{ alignSelf: 'center', fontSize: 12, color: 'var(--muted)' }}>{fileName} · {rows.length} แถว</span>}
             <button type="button" onClick={() => setShowFmt(v => !v)} style={{ ...btn(false), marginLeft: 'auto' }}>
               ฟอร์แมตไฟล์ลูกค้า{fmtRows.length ? ` (${fmtRows.length})` : ''}
             </button>
@@ -919,7 +919,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           {edi && (
             <div style={{ border: '1px solid var(--blue-line)', background: 'var(--blue-dim)', borderRadius: 10, padding: 14, marginBottom: 4 }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--blue)', marginBottom: 8 }}>
-                📡 EDI {ediKind === 'orders' ? '862 — Shipping Schedule (รอบส่งงาน)' : '830 — Planning Forecast'}
+                EDI {ediKind === 'orders' ? '862 — Shipping Schedule (รอบส่งงาน)' : '830 — Planning Forecast'}
               </div>
 
               {/* 🔴 ผลการเดาชนิดต้องขึ้นจอ + แก้ได้ (2026-09-17)
@@ -958,21 +958,21 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                 </div>
               )}
               <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: 'var(--text2)', marginBottom: 8 }}>
-                <span>📄 {edi.files.length} ไฟล์</span>
-                <span>🏭 Ship-to: <strong>{edi.shipTos.map(c => custLabel ? custLabel(c) : c).join(', ')}</strong></span>
-                <span>📅 {edi.dateFrom} → {edi.dateTo}</span>
-                <span>🧾 {edi.records.length} รายการ</span>
+                <span>{edi.files.length} ไฟล์</span>
+                <span>Ship-to: <strong>{edi.shipTos.map(c => custLabel ? custLabel(c) : c).join(', ')}</strong></span>
+                <span>{edi.dateFrom} → {edi.dateTo}</span>
+                <span>{edi.records.length} รายการ</span>
                 {ediKind === 'orders' && edi.zeroRecs?.length > 0 && (
                   <span title="ลูกค้าส่งยอด 0 = วันนั้นไม่ต้องส่ง · ใบ pending เดิมของพาร์ท/dock/วันนั้นจะถูกล้าง (ใบที่ยืนยัน/ส่งแล้วไม่ถูกแตะ)">
-                    🚫 ยอด 0 จากลูกค้า {edi.zeroRecs.length} แถว ({[...new Set(edi.zeroRecs.map(r => r.shipTo))].map(c => custLabel ? custLabel(c) : c).join(', ')}) → ล้างใบรอส่งเดิมของวันนั้น
+                    ยอด 0 จากลูกค้า {edi.zeroRecs.length} แถว ({[...new Set(edi.zeroRecs.map(r => r.shipTo))].map(c => custLabel ? custLabel(c) : c).join(', ')}) → ล้างใบรอส่งเดิมของวันนั้น
                   </span>
                 )}
                 {edi.mappedCount > 0 && <span title="จับคู่ตามที่คนยืนยันไว้ในทะเบียน edi_part_map">✅ ใช้คู่ที่ยืนยันไว้ {edi.mappedCount} รายการ</span>}
                 <span title="แทนที่เฉพาะชุดที่อยู่ในไฟล์ · dock/พาร์ทที่ไม่ได้ส่งมา = ไม่มีอัพเดท เก็บของเดิม · วันที่หายกลางช่วงของชุด = ยกเลิก">
-                  🔁 อัพเดท {new Set(edi.records.map(r => `${r.shipTo}|${ediKind === 'orders' ? (r.dock || '') : ''}|${r.part}`)).size} ชุด (ที่เหลือคงเดิม)
+                  อัพเดท {new Set(edi.records.map(r => `${r.shipTo}|${ediKind === 'orders' ? (r.dock || '') : ''}|${r.part}`)).size} ชุด (ที่เหลือคงเดิม)
                 </span>
                 <span style={{ color: edi.unmatched.length ? 'var(--amber)' : 'var(--green)' }}>
-                  🔗 จับคู่พาร์ทได้ {edi.records.length - edi.records.filter(r => edi.unmatched.includes(r.part)).length}/{edi.records.length}
+                  จับคู่พาร์ทได้ {edi.records.length - edi.records.filter(r => edi.unmatched.includes(r.part)).length}/{edi.records.length}
                 </span>
               </div>
               {/* 📊 ยอดค้างตาม Cum (ship-to ที่ใช้ e-SMART) — ไม่สร้างใบ แต่ต้องเห็นตัวเลข (ห้ามทิ้งเงียบ) */}
@@ -1054,7 +1054,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
       )}
 
       <div style={card}>
-        <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 10, fontFamily: 'var(--font-display)' }}>🗂 ประวัติการอัพโหลด</div>
+        <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 10, fontFamily: 'var(--font-display)' }}>ประวัติการอัพโหลด</div>
         {batches.length === 0 ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีการอัพโหลด</div> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {batches.map(b => (
@@ -1154,7 +1154,7 @@ function PlannerTab({ refreshKey, custLabel }) {
 
       {/* กราฟ Forecast vs Orders รายเดือน */}
       <div style={card}>
-        <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 10, fontFamily: 'var(--font-display)' }}>📊 Forecast vs Order จริง (ชิ้น/เดือน)</div>
+        <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', marginBottom: 10, fontFamily: 'var(--font-display)' }}>Forecast vs Order จริง (ชิ้น/เดือน)</div>
         {chartData.every(d => !d.Forecast && !d.Orders) ? (
           <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีข้อมูลในช่วงนี้ — อัพโหลดที่แท็บ 📤 อัพโหลด</div>
         ) : (
@@ -1177,7 +1177,7 @@ function PlannerTab({ refreshKey, custLabel }) {
       {/* ตารางราย mat_no ต่อเดือน + ภาระการผลิต */}
       <div style={card}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-          <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🧠 แผนภาระการผลิตรายพาร์ท</div>
+          <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>แผนภาระการผลิตรายพาร์ท</div>
           <FilterBar bare style={{ marginBottom: 0 }}>
             <select value={focusMonth} onChange={e => setFocusMonth(e.target.value)}>
               {months.map(m => <option key={m} value={m}>{monthLabel(m)}</option>)}
@@ -1642,7 +1642,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       {/* แยกพาร์ทตามกระบวนการผลิต — โปร่งใส ไม่ปล่อยพาร์ทหายเงียบ
           (คำอธิบายของมุมมองนี้ ไม่ขึ้นกับตัวกรอง ⇒ อยู่เหนือแถบกรองได้) */}
       <div data-page-note="1" style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, padding: '6px 10px', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8 }}>
-        🔎 แยกพาร์ทตาม <b style={{ color: 'var(--text2)' }}>กระบวนการผลิต (process_type)</b> — {calcType === 'production'
+        แยกพาร์ทตาม <b style={{ color: 'var(--text2)' }}>กระบวนการผลิต (process_type)</b> — {calcType === 'production'
           ? <>แท็บนี้แสดงเฉพาะงาน <b style={{ color: 'var(--text2)' }}>ปั๊ม/ผลิตเป็น lot (metal_forming)</b> · งานปั๊มที่ขายตรงเป็น FG ก็อยู่ที่นี่ (ดูกระบวนการ ไม่ดูเลข MAT)</>
           : <>แท็บนี้แสดงงาน <b style={{ color: 'var(--text2)' }}>เบิกถอน/ประกอบ</b> (ไม่ใช่ปั๊ม)</>}
         {otherProcCount > 0 && <> · <span style={{ color: 'var(--amber)' }}>ซ่อน {otherProcCount} พาร์ทที่เป็นอีกกระบวนการ</span> (อยู่อีกแท็บ)</>}
@@ -1661,7 +1661,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
         )}
         <span className="filter-label">เดือน Forecast ที่ใช้คำนวณ</span>
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
-        <span className="filter-label">📅 วันทำงาน/เดือน <span style={{ color: 'var(--blue)' }}>(จากปฏิทิน)</span></span>
+        <span className="filter-label">วันทำงาน/เดือน <span style={{ color: 'var(--blue)' }}>(จากปฏิทิน)</span></span>
         {/* ช่องตัวเลขสั้น — คงความกว้างไว้ (ค่าตั้งต้นของเบราว์เซอร์กว้างเกินตัวเลข 2-3 หลัก) */}
         <input type="number" value={settings.working_days} onChange={e => setSettings(s => ({ ...s, working_days: e.target.value }))} style={{ width: 80 }} />
         {calcType === 'withdrawal' ? (<>
@@ -1710,7 +1710,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
             <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)' }}>{unmapped.length} พาร์ทจับคู่เลข SAP ภายในไม่ได้ (forecast โชว์เป็นเลขพาร์ทลูกค้า)</div>
             <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
               ยังไม่มีใน Product Master (dr_products) → คำนวณ kanban ไม่ได้ และ Store/Planner จะไม่ sync จนกว่าจะจับคู่ p_no
-              {Object.keys(suggestByCust).length > 0 && <span style={{ color: 'var(--green)', fontWeight: 700 }}> · 💡 ระบบแนะนำได้ {Object.keys(suggestByCust).length} พาร์ท (ตัด revision เทียบ base)</span>}
+              {Object.keys(suggestByCust).length > 0 && <span style={{ color: 'var(--green)', fontWeight: 700 }}> · ระบบแนะนำได้ {Object.keys(suggestByCust).length} พาร์ท (ตัด revision เทียบ base)</span>}
             </div>
           </div>
           {canApply && <button onClick={openMapModal} style={{ ...btn(true) }}>จับคู่เลข SAP</button>}
@@ -1796,7 +1796,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       {/* สรุปภาระการผลิต (Type B) — Σ work-time/ไลน์ เทียบ available */}
       {calcType === 'production' && capacity && capacity.list.length > 0 && (
         <div style={{ ...card, marginTop: 14 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 2 }}>📊 สรุปภาระการผลิต (Capacity Load)</div>
+          <div style={{ fontSize: 14, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 2 }}>สรุปภาระการผลิต (Capacity Load)</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 12 }}>
             เวลาที่ต้องใช้ = Σ (setup + lot×CT) × (order/lot) ต่อไลน์ · Available = {fmt(settings.hours_per_day)} ชม./วัน × {fmt(settings.working_days)} วัน = {fmt(capacity.availSec / 3600)} ชม./เดือน · สี &lt;85% เขียว · 85–100% เหลือง · &gt;100% แดง (เกิน capacity)
           </div>
@@ -1824,7 +1824,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       {mapModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 22, width: 'min(760px,100%)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 4 }}>🔗 จับคู่เลขพาร์ทลูกค้า → เลข SAP ภายใน</div>
+            <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 4 }}>จับคู่เลขพาร์ทลูกค้า → เลข SAP ภายใน</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
               เลือกเลข SAP ภายในให้แต่ละพาร์ท → ระบบเขียน <b>p_no</b> ให้ Product Master (ใช้ auto-map รอบอัพโหลดถัดไป) และแก้ forecast เดิมให้ชี้เลข SAP ทันที · <b>{Object.values(mapSel).filter(Boolean).length}</b> เลือกแล้ว · 💡 = ระบบแนะนำจาก base part (กดชิปเขียวเพื่อเติม)
             </div>
@@ -1881,7 +1881,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
       {preview && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setPreview(null)}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 22, width: 'min(680px,100%)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
-            <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 4 }}>🎴 ยืนยันอัปเดต Kanban — {changedRows.length} รายการ</div>
+            <div style={{ fontSize: 16, fontWeight: 800, fontFamily: 'var(--font-display)', marginBottom: 4 }}>ยืนยันอัปเดต Kanban — {changedRows.length} รายการ</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
               เขียนค่า Min/Max/Total + <b>ขนาดล็อต</b> ใหม่เข้า kanban_standards (ระบบดึงทั้งองค์กรใช้ต่อทันที)
               <div style={{ marginTop: 3 }}>⚠️ <b>ขนาดล็อต</b> คือตัวที่ระบบใช้ตัดสินว่าสะสมความต้องการครบเมื่อไหร่ถึงออกใบสั่ง — ตั้งเล็กเกินจริง = ใบสั่งพุ่งเป็นร้อยใบ</div>

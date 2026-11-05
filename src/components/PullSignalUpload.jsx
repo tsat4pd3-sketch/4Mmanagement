@@ -41,7 +41,7 @@ const ACTION_META = {
   update:     { label: '✏️ อัพเดทยอด + ยืนยัน', color: '#22c55e' },
   create:     { label: '➕ สร้างใบใหม่',          color: '#0ea5e9' },
   same:       { label: '= ตรงกับ 862 อยู่แล้ว',   color: 'var(--muted)' },
-  locked:     { label: '🔒 ทำไปแล้ว — ไม่แตะ',    color: '#f59e0b' },
+  locked:     { label: 'ทำไปแล้ว — ไม่แตะ',    color: '#f59e0b' },
   unresolved: { label: '⚠ จับคู่ MAT ไม่ได้',     color: '#ef4444' },
 };
 
@@ -478,7 +478,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
       }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>
           <span style={{ fontSize: 15, fontWeight: 900, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
-            📥 อัพโหลด e-SMART — ยืนยัน order จากลูกค้า
+            อัพโหลด e-SMART — ยืนยัน order จากลูกค้า
           </span>
           <button className="tbtn" onClick={() => { reset(); onClose?.(); }}
             style={{ background: 'none', border: 'none', color: 'var(--text2)', fontSize: 18, cursor: 'pointer' }}>✕</button>
@@ -529,7 +529,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                 if (!made) return null;
                 const lag = Math.round((Date.now() - made.getTime()) / 60000);
                 return <div style={{ marginTop: 4 }}>
-                  🕐 ไฟล์ออกเมื่อ <b>{dateStr(made)} {timeStr(made)}</b>
+                  ไฟล์ออกเมื่อ <b>{dateStr(made)} {timeStr(made)}</b>
                   {lag >= 0 && <span style={{ color: lag > 120 ? '#f59e0b' : 'var(--muted)' }}> · ผ่านมาแล้ว {lag} นาที{lag > 120 ? ' (ข้อมูลอาจเก่า)' : ''}</span>}
                 </div>;
               })()}
@@ -537,7 +537,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
             {parsed.warnings.map((w, i) => <div key={i} style={{ ...noteBox('#f59e0b'), marginBottom: 6 }}>⚠ {w}</div>)}
             {dateRisk.length > 0 && (
               <div style={{ ...noteBox('#ef4444'), marginBottom: 8 }}>
-                <div style={{ fontWeight: 800, marginBottom: 4 }}>🚨 ตรวจวันที่ให้แน่ก่อนยืนยัน</div>
+                <div style={{ fontWeight: 800, marginBottom: 4 }}>ตรวจวันที่ให้แน่ก่อนยืนยัน</div>
                 <div style={{ fontSize: 12, marginBottom: 6 }}>
                   วันงานที่ระบบอ่านได้คือ <b>{workDate || '—'}</b> รอบส่ง <b>{shipTime || '—'}</b> —
                   ถ้าไม่ตรงกับไฟล์ ให้แก้ 2 ช่องด้านบนก่อน · <b>วันที่ผิด = ใบไปโผล่ผิดวันและสต็อกถูกตัดซ้ำ</b>
@@ -554,7 +554,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
             {dupUploads.length > 0 && (
               <div style={{ ...noteBox('#ef4444'), marginBottom: 10 }}>
                 <div style={{ fontWeight: 900, fontSize: 13, marginBottom: 4 }}>
-                  🚨 ไฟล์ชุดนี้เคยอัพเข้าระบบไปแล้ว {dupUploads.length > 1 ? `${dupUploads.length} ครั้ง` : ''}
+                  ไฟล์ชุดนี้เคยอัพเข้าระบบไปแล้ว {dupUploads.length > 1 ? `${dupUploads.length} ครั้ง` : ''}
                 </div>
                 {dupUploads.slice(0, 3).map(({ batch: b, reason }) => (
                   <div key={b.id} style={{ fontSize: 12, marginTop: 3 }}>
@@ -621,7 +621,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                 (สูตรเคยเดา 13:00 ทั้งที่ตารางจริงคือ 14:00 — ไม่มีใครรู้จนเทียบใบกระดาษ) */}
             {activeRound && (
               <div style={{ ...noteBox('#22c55e'), marginBottom: 8 }}>
-                🚚 ตามตารางรอบรับของลูกค้า — ช่วงดึง <b>{activeRound.period_start}-{activeRound.period_end}</b>
+                ตามตารางรอบรับของลูกค้า — ช่วงดึง <b>{activeRound.period_start}-{activeRound.period_end}</b>
                 {activeRound.dock_code ? <> · Dock <b>{activeRound.dock_code}</b></> : null}
                 {' '}→ รถมารับ <b>{String(activeRound.pickup_time).slice(0, 5)}</b>
                 {activeRound.delivery_time ? <> · ถึงลูกค้า {String(activeRound.delivery_time).slice(0, 5)}</> : null}
@@ -631,7 +631,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
             {roundsMissing && !activeRound && (
               <div style={{ ...noteBox('#f59e0b'), marginBottom: 8 }}>
                 ⚠️ ยังไม่มีตารางรอบรับในระบบ — ใช้สูตร “ปลายช่วง +{parsed.profile?.lead_min ?? 60} นาที” เดารอบให้
-                <b> ตรวจเวลารอบก่อนกดยืนยันทุกครั้ง</b> · ตั้งตารางจริงได้ที่แท็บ <b>⚙️ Ship-to Config</b>
+                <b> ตรวจเวลารอบก่อนกดยืนยันทุกครั้ง</b> · ตั้งตารางจริงได้ที่แท็บ <b>Ship-to Config</b>
               </div>
             )}
 
@@ -650,7 +650,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
             {/* ⭐ ไฟล์หลาย dock = หลายเที่ยวรถ — โชว์ให้เห็นว่าแต่ละ dock ไปลงรอบไหน วันงานไหน */}
             {legs.length > 1 && (
               <div style={{ ...noteBox('#0ea5e9'), marginBottom: 8 }}>
-                <div style={{ fontWeight: 800, marginBottom: 2 }}>🚚 ไฟล์นี้มี {legs.length} dock — แยกเป็น {legs.length} เที่ยว</div>
+                <div style={{ fontWeight: 800, marginBottom: 2 }}>ไฟล์นี้มี {legs.length} dock — แยกเป็น {legs.length} เที่ยว</div>
                 {legs.map(l => (
                   <div key={l.dock || '-'}>
                     • Dock <b>{l.dock || '—'}</b> {l.rows.length} แถว → รอบ <b>{l.shipTime || '—'}</b> วันงาน <b>{l.workDate || '—'}</b>
@@ -723,7 +723,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                 จะเขียน <b style={{ color: 'var(--accent)' }}>{willWrite}</b> ใบ
                 (อัพเดท {tally.update} · สร้างใหม่ {tally.create})
                 {tally.same ? ` · ตรงอยู่แล้ว ${tally.same}` : ''}
-                {tally.locked ? ` · 🔒 ทำไปแล้ว ${tally.locked}` : ''}
+                {tally.locked ? ` · ทำไปแล้ว ${tally.locked}` : ''}
                 {tally.unresolved ? ` · ⚠ จับคู่ไม่ได้ ${tally.unresolved}` : ''}
               </span>
               <button onClick={() => { reset(); onClose?.(); }} style={{ ...inputSt, cursor: 'pointer', fontWeight: 700 }}>ยกเลิก</button>

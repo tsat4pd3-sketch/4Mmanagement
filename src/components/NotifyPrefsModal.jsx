@@ -72,7 +72,7 @@ export default function NotifyPrefsModal({ role, onClose }) {
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3200, display: 'flex', padding: '4vh 3vw' }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: 'min(96vw, 560px)', boxShadow: 'var(--shadow-lg)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '13px 16px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>🔕 ตั้งค่าแจ้งเตือนของฉัน</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>ตั้งค่าแจ้งเตือนของฉัน</div>
           <button onClick={onClose} aria-label="ปิด" style={{ background: 'none', border: 'none', fontSize: 21, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
         </div>
 
@@ -126,7 +126,7 @@ export default function NotifyPrefsModal({ role, onClose }) {
                           style={{ width: 'auto', marginTop: 2, flexShrink: 0 }} />
                         <span style={{ fontSize: 12.5, color: r.locked ? 'var(--muted)' : 'var(--text)', lineHeight: 1.5, minWidth: 0 }}>
                           {r.label}
-                          {r.locked && <span style={{ fontSize: 11, color: toneVar('warn'), fontWeight: 700 }}> · 🔒 งานที่รอคุณ ปิดไม่ได้</span>}
+                          {r.locked && <span style={{ fontSize: 11, color: toneVar('warn'), fontWeight: 700 }}> · งานที่รอคุณ ปิดไม่ได้</span>}
                         </span>
                       </label>
                     );

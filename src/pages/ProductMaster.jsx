@@ -212,7 +212,7 @@ function PartsPickModal({ parts, onPick, onClose }) {
   return (
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 20, width: 'min(95vw,540px)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🗂 เลือกจากทะเบียนกลาง Parts Master</div>
+        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>เลือกจากทะเบียนกลาง Parts Master</div>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>ตัวตนสินค้า (MAT/ชื่อ) มาจากทะเบียนกลางที่เดียว — ไม่มีในลิสต์ = ไปเพิ่มที่ tab 🗂 Parts Master ก่อน</div>
         <SearchInput autoFocus value={q} onChange={setQ} fields="MAT / ชื่อ / P.NO / supplier"
           style={{ marginBottom: 10 }} inputStyle={inputSt} />
@@ -229,7 +229,7 @@ function PartsPickModal({ parts, onPick, onClose }) {
               {/* ลำดับ ชื่องาน → MAT (UI §6.21 · 2026-09-30) */}
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.part_name}</span>
               <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--blue)', flexShrink: 0 }}>MAT {p.mat_no}</span>
-              {p.qty_per_pkg > 0 && <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>📦 {p.qty_per_pkg}/pkg</span>}
+              {p.qty_per_pkg > 0 && <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>{p.qty_per_pkg}/pkg</span>}
             </div>
           ))}
         </div>
@@ -921,9 +921,9 @@ export default function ProductMaster() {
       {/* ── Callout: แนะนำ Parts Master สำหรับ 300/500 ── */}
       <div data-page-note="1" style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 13, color: 'var(--text2)', flex: 1 }}>
-          <span style={{ fontWeight: 700, color: 'var(--amber)' }}>📦 ชิ้นส่วนที่ซื้อจาก Supplier</span>
+          <span style={{ fontWeight: 700, color: 'var(--amber)' }}>ชิ้นส่วนที่ซื้อจาก Supplier</span>
           {' '}(ขึ้นต้น <strong>3</strong> · <strong>5</strong>) เพิ่มได้ที่ tab{' '}
-          <strong style={{ color: 'var(--text)' }}>🗂 Parts Master</strong>
+          <strong style={{ color: 'var(--text)' }}>Parts Master</strong>
           {' '}— หน้านี้รองรับเฉพาะเลขขึ้นต้น <strong>1</strong> (FG ส่งลูกค้า) และ <strong>2</strong> (Child Part ผลิตเอง)
         </div>
         <button onClick={() => setMainTab('parts')} style={{ ...btnPrimary, background: 'var(--amber)', fontSize: 12, padding: '6px 14px', whiteSpace: 'nowrap' }}>
@@ -981,7 +981,7 @@ export default function ProductMaster() {
         return (
           <div data-page-note="1" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 12, background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 10 }}>
             <span style={{ fontSize: 13, color: 'var(--amber)', fontWeight: 700 }}>
-              🔩 ขั้นตอน (OP) ที่ยอดกำลังถูกนับซ้ำ {risky.length} รายการ
+              ขั้นตอน (OP) ที่ยอดกำลังถูกนับซ้ำ {risky.length} รายการ
             </span>
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>
               ของที่ขั้นพวกนี้รับมา <b>มีใบผลิตของตัวเองอยู่แล้ว</b> ⇒ ชิ้นเดียวกันถูกนับ 2 รอบในยอดรวม —
@@ -1003,7 +1003,7 @@ export default function ProductMaster() {
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 12, background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 10 }}>
             <span style={{ fontSize: 13, color: 'var(--amber)', fontWeight: 700 }}>
-              🧩 ขั้นตอน (OP) ที่ยังไม่ผูก component {opNoBom.length} รายการ
+              ขั้นตอน (OP) ที่ยังไม่ผูก component {opNoBom.length} รายการ
             </span>
             <InfoMore label="ทำไมต้องผูก" size={11.5}>
               เลขของขั้นไม่มีใน SAP ⇒ ของเสียที่หลุดขั้นนี้ <b>ตัดสต๊อกไม่ได้</b> จนกว่าจะบอกว่า "ขั้นนี้กินอะไรเข้าไป"
@@ -1049,7 +1049,7 @@ export default function ProductMaster() {
             {readyFilter && <button type="button" onClick={() => setReadyFilter('')} style={{ ...btnSecondary, fontSize: 11, padding: '3px 10px' }}>ล้างตัวกรอง</button>}
             <InfoMore label="ลำดับที่ต้องทำ" size={11.5}>
               ลำดับที่ต้องทำ: 🗂 Parts Master → 📦 BOM → 🔩 Products → 🔀 Routing → 🧳 Packaging → 🎴 Kanban
-              {' '}· <b>🔀 Routing / 🧳 Packaging ยังไม่บังคับวันนี้</b> (อนาคตบังคับ) · กดชิปบนการ์ดเพื่อไปเติมได้เลย
+              {' '}· <b>Routing / 🧳 Packaging ยังไม่บังคับวันนี้</b> (อนาคตบังคับ) · กดชิปบนการ์ดเพื่อไปเติมได้เลย
             </InfoMore>
           </div>
         );
@@ -1094,7 +1094,7 @@ export default function ProductMaster() {
                         <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: item.posting_mode === 'lot_accumulate' ? 'var(--blue-dim)' : 'var(--blue-dim)', color: item.posting_mode === 'lot_accumulate' ? 'var(--blue)' : 'var(--blue)' }}>
                           {item.posting_mode === 'lot_accumulate' ? `📥 สะสม Lot ≥${item.lot_accumulate_threshold ?? '?'}` : '📌 มีกัมบังก็ผลิต'}
                         </span>
-                        {members.length > 1 && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}>🔄 {members.length} revisions</span>}
+                        {members.length > 1 && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}>{members.length} revisions</span>}
                         {!active && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(107,114,128,0.15)', color: '#6b7280', fontWeight: 700 }}>ปิดใช้งาน</span>}
                       </div>
                     )}
@@ -1103,7 +1103,7 @@ export default function ProductMaster() {
                       {item.is_operation && (
                         <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: item.op_parent_mat ? 'var(--blue-dim)' : 'var(--amber-dim)', color: item.op_parent_mat ? 'var(--blue)' : 'var(--amber)', fontWeight: 700 }}
                           title={item.op_parent_mat ? 'รายการขั้นตอน — ยอดรวมภาพใหญ่นับที่พาร์ทจริง ไม่บวกซ้ำ' : 'รายการขั้นตอนที่ยังไม่ผูกพาร์ทจริง — ยอดยังนับซ้ำได้ กดแก้ไขแล้วเลือกพาร์ทจริง'}>
-                          🔩 OP{item.op_seq ? ` ${item.op_seq}` : ''}{item.op_parent_mat ? ` · ของ ${item.op_parent_mat}` : ' · ยังไม่ผูกพาร์ทจริง'}
+                          OP{item.op_seq ? ` ${item.op_seq}` : ''}{item.op_parent_mat ? ` · ของ ${item.op_parent_mat}` : ' · ยังไม่ผูกพาร์ทจริง'}
                         </span>
                       )}
                       {/* 🚫 เลขวัตถุดิบ (5xx) ที่ยังไม่ได้ตั้งเป็นชั้น OP — เตือนให้ PE แก้ ห้ามบล็อก (utils/matPrefix.js) */}
@@ -1116,7 +1116,7 @@ export default function ProductMaster() {
                       {item.p_no   && <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)' }}>P.NO: {item.p_no}</span>}
                       {item.customer && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)' }}>{item.customer}</span>}
                       {item.code && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--muted)' }}>{item.code}</span>}
-                      {members.length > 1 && indented && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}>🔄 {members.length} rev</span>}
+                      {members.length > 1 && indented && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}>{members.length} rev</span>}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                       {[item.line_name && `📍 ${item.line_name}`, item.cycle_time_sec && `CT ${item.cycle_time_sec}s`, item.target_per_shift && `Target ${item.target_per_shift}/กะ`, !indented && item.effective_from && `ใช้ตั้งแต่ ${item.effective_from}`].filter(Boolean).join(' · ')}
@@ -1142,7 +1142,7 @@ export default function ProductMaster() {
                 </div>
                 {showHistory && archived.length > 0 && (
                   <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg2)', padding: '8px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>📋 ประวัติ Revision</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>ประวัติ Revision</div>
                     {archived.map(rev => (
                       <div key={rev.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, color: 'var(--muted)', opacity: 0.75 }}>
                         {/* ลำดับ Part No. → MAT (UI §6.21) */}
@@ -1157,7 +1157,7 @@ export default function ProductMaster() {
                 <div style={{ borderTop: '1px solid var(--border)' }}>
                   <button onClick={() => setExpandedFamilies(prev => ({ ...prev, [family_id]: !isExpandedKanban }))}
                     style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'var(--bg2)', border: 'none', cursor: 'pointer', color: 'var(--text2)', fontSize: 12, fontWeight: 700 }}>
-                    <span>🎴 Kanban Standards ({stds.length})</span>
+                    <span>Kanban Standards ({stds.length})</span>
                     <span style={{ fontSize: 11, color: 'var(--muted)' }}>{isExpandedKanban ? '▲' : '▼'}</span>
                   </button>
                   {isExpandedKanban && (
@@ -1231,9 +1231,9 @@ export default function ProductMaster() {
                       <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: repItem.posting_mode === 'lot_accumulate' ? 'var(--blue-dim)' : 'var(--blue-dim)', color: repItem.posting_mode === 'lot_accumulate' ? 'var(--blue)' : 'var(--blue)' }}>
                         {repItem.posting_mode === 'lot_accumulate' ? `📥 สะสม Lot ≥${repItem.lot_accumulate_threshold ?? '?'}` : '📌 มีกัมบังก็ผลิต'}
                       </span>
-                      <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}>👥 {nameFamilies.length} ลูกค้า</span>
-                      {totalBomAll > 0 && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(61,214,92,0.1)', color: 'var(--accent)', fontWeight: 700 }}>📦 BOM: {totalBomAll}</span>}
-                      <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: stds.filter(s => s.is_active).length > 0 ? 'var(--amber-dim)' : 'rgba(107,114,128,0.08)', color: stds.filter(s => s.is_active).length > 0 ? 'var(--amber)' : 'var(--muted)', fontWeight: 700 }}>🎴 Kanban: {stds.filter(s => s.is_active).length > 0 ? `${stds.filter(s => s.is_active).length} mat` : 'ยังไม่มี'}</span>
+                      <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}>{nameFamilies.length} ลูกค้า</span>
+                      {totalBomAll > 0 && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(61,214,92,0.1)', color: 'var(--accent)', fontWeight: 700 }}>BOM: {totalBomAll}</span>}
+                      <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: stds.filter(s => s.is_active).length > 0 ? 'var(--amber-dim)' : 'rgba(107,114,128,0.08)', color: stds.filter(s => s.is_active).length > 0 ? 'var(--amber)' : 'var(--muted)', fontWeight: 700 }}>Kanban: {stds.filter(s => s.is_active).length > 0 ? `${stds.filter(s => s.is_active).length} mat` : 'ยังไม่มี'}</span>
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                       {[repItem.line_name && `📍 ${repItem.line_name}`, repItem.cycle_time_sec && `CT ${repItem.cycle_time_sec}s`, repItem.target_per_shift && `Target ${repItem.target_per_shift}/กะ`].filter(Boolean).join(' · ')}
@@ -1249,7 +1249,7 @@ export default function ProductMaster() {
                 {isExpGroupExpanded && <>
                   {/* ตัวแปรตามลูกค้า / MAT.NO — รายการเดียว ไม่ใช่การ์ดซ้อนการ์ด */}
                   <div style={{ borderTop: '1px solid var(--border)', padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>👥 ตัวแปรตามลูกค้า / MAT.NO ({allVariants.length})</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ตัวแปรตามลูกค้า / MAT.NO ({allVariants.length})</div>
                     {allVariants.map(v => (
                       <div key={v.family_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'var(--bg)', borderRadius: 8, flexWrap: 'wrap' }}>
                         {v.image_url
@@ -1259,8 +1259,8 @@ export default function ProductMaster() {
                         {/* ลำดับ Part No. → MAT (UI §6.21) */}
                         {v.p_no && <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: 'var(--blue)' }}>{v.p_no}</span>}
                         <span style={{ fontSize: v.p_no ? 11 : 13, fontWeight: v.p_no ? 400 : 800, fontFamily: 'monospace', color: v.p_no ? 'var(--text2)' : 'var(--blue)' }}>MAT {v.mat_no}</span>
-                        {v.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>📍 {v.line_name}</span>}
-                        {v.revCount > 1 && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}>🔄 {v.revCount} rev</span>}
+                        {v.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{v.line_name}</span>}
+                        {v.revCount > 1 && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}>{v.revCount} rev</span>}
                         {/* ✅ แถบความครบแบบย่อ (ไอคอน+เครื่องหมาย) — แถวตัวแปรมีของเยอะแล้ว ใส่ชื่อขั้นเต็มจะล้น */}
                         <ReadyChips ready={readyOf(v)} onGo={goFixStep(v)} compact />
                         {(canEdit || mayDelete) && (
@@ -1278,7 +1278,7 @@ export default function ProductMaster() {
                   <div style={{ borderTop: '1px solid var(--border)' }}>
                     <button onClick={() => setExpandedFamilies(prev => ({ ...prev, [nameKey]: !isExpandedKanban }))}
                       style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'var(--bg2)', border: 'none', cursor: 'pointer', color: 'var(--text2)', fontSize: 12, fontWeight: 700 }}>
-                      <span>🎴 Kanban Standards ({stds.length})</span>
+                      <span>Kanban Standards ({stds.length})</span>
                       <span style={{ fontSize: 11, color: 'var(--muted)' }}>{isExpandedKanban ? '▲' : '▼'}</span>
                     </button>
                     {isExpandedKanban && (
@@ -1353,7 +1353,7 @@ export default function ProductMaster() {
                   {/* คำใบ้เคส OP (user ขอ 2026-08-17): SAP ไม่มีตัวตนของขั้น — ตั้งชื่อเอง ห้ามใช้เลขพาร์ทจริงซ้ำ */}
                   {form.is_operation && (
                     <div style={{ fontSize: 11, color: 'var(--blue)', marginTop: 4 }}>
-                      🔩 รายการ OP ไม่ใช้เลข MAT SAP — ตั้งเลข/ชื่อของขั้นเองไม่ซ้ำใคร (เลขพาร์ทจริงใส่ช่อง "เป็นขั้นของพาร์ทจริง" ด้านล่างเท่านั้น)
+                      รายการ OP ไม่ใช้เลข MAT SAP — ตั้งเลข/ชื่อของขั้นเองไม่ซ้ำใคร (เลขพาร์ทจริงใส่ช่อง "เป็นขั้นของพาร์ทจริง" ด้านล่างเท่านั้น)
                     </div>
                   )}
                   {/* เตือนเลขซ้ำตั้งแต่ตอนพิมพ์ — ไม่ต้องรอชน unique constraint ตอนกดบันทึก */}
@@ -1365,7 +1365,7 @@ export default function ProductMaster() {
                   {form.mat_no && !form.is_operation && pmParts.length > 0 && !matInRegistry(form.mat_no) && (
                     ecSource ? (
                       <div style={{ fontSize: 11, color: 'var(--blue)', marginTop: 4 }}>
-                        🗂 MAT ใหม่ — ระบบจะลงทะเบียน Parts Master ให้อัตโนมัติตอนบันทึก EC
+                        MAT ใหม่ — ระบบจะลงทะเบียน Parts Master ให้อัตโนมัติตอนบันทึก EC
                       </div>
                     ) : (
                       <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>
@@ -1427,7 +1427,7 @@ export default function ProductMaster() {
               <div style={{ border: '1px solid var(--blue-line)', borderRadius: 8, padding: '10px 12px', background: 'var(--blue-dim)' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input type="checkbox" checked={!!form.is_operation} onChange={e => setForm(f => ({ ...f, is_operation: e.target.checked }))} />
-                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--blue)' }}>🔩 รายการขั้นตอน (OP) — ไม่ใช่พาร์ทจริง</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--blue)' }}>รายการขั้นตอน (OP) — ไม่ใช่พาร์ทจริง</span>
                 </label>
                 <InfoMore size={11} style={{ marginTop: 4 }} id="pm_op"
                   lead={<>เช่น งานขับนัทแต่ละสเต็ปของชิ้นเดียวกัน</>}>
@@ -1617,7 +1617,7 @@ export default function ProductMaster() {
           /* ด่านนับปลายทางก่อนลบ (fail-closed) — ใบผลิต/ใบซ่อม/สินค้า/คัมบัง ฯลฯ เก็บชื่อนี้เป็น text ไม่ผูก FK */
           onBeforeDelete={masterDeleteGuard(supabaseDR, 'customers')}
           stampCol="updated_by_name" stampName={fullName} onChanged={invalidateCustomers}
-          title="🏷️ ทะเบียนลูกค้า"
+          title="ทะเบียนลูกค้า"
           help="คอลัมน์ customer ของสินค้า/เอกสารเก็บชื่อนี้เป็น text · alias ใช้แม็ปสะกดเก่าเข้าชื่อหลัก · ปิดใช้ = ไม่โผล่ให้เลือกใหม่"
           keyFrom={r => String(r.name || '').trim().toUpperCase().replace(/\s+/g, ' ')}
           fields={[
@@ -1630,7 +1630,7 @@ export default function ProductMaster() {
         <SimpleMasterPanel client={supabaseDR} table="suppliers" keyCol="code" canManage={canEdit}
           onBeforeDelete={masterDeleteGuard(supabaseDR, 'suppliers')}
           stampCol="updated_by_name" stampName={fullName} onChanged={invalidateSuppliers}
-          title="🏭 ทะเบียน Supplier / ผู้รับจ้าง"
+          title="ทะเบียน Supplier / ผู้รับจ้าง"
           help="ใช้กับช่อง Supplier ใน Parts Master · Packaging · Routing (จ้างนอก) · คลังอะไหล่ · NPI Tooling — คอลัมน์ปลายทางเก็บชื่อเป็น text · ชนิด (kind) ช่วยจัดลำดับตัวเลือกให้ตรงงาน · ปิดใช้ = ไม่โผล่ให้เลือกใหม่"
           keyFrom={r => String(r.name || '').trim().toUpperCase().replace(/\s+/g, ' ')}
           fields={[
@@ -1648,7 +1648,7 @@ export default function ProductMaster() {
         <SimpleMasterPanel client={supabaseDR} table="uom_units" keyCol="code" canManage={canEdit}
           onBeforeDelete={masterDeleteGuard(supabaseDR, 'uom_units')}
           stampCol="updated_by_name" stampName={fullName} onChanged={invalidateUomUnits}
-          title="📏 ทะเบียนหน่วยนับ (UOM)"
+          title="ทะเบียนหน่วยนับ (UOM)"
           help="ใช้กับช่องหน่วยใน Parts Master · นำเข้า BOM จาก SAP · ใบเบิกวัสดุ — คอลัมน์ปลายทางเก็บรหัสนี้เป็น text · สะกดอื่น (เช่น EA, PCS ของ PC) ถูกแม็ปเข้ารหัสหลักตอนบันทึก/นำเข้า"
           /* รหัสกรอกเอง (PC/KG…) — DB บังคับตัวพิมพ์ใหญ่ไม่มีช่องว่าง (CHECK uom_units_code_upper) */
           fields={[
@@ -1666,7 +1666,7 @@ export default function ProductMaster() {
             {/* header */}
             <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 8 }}>
-                📋 ตรวจสอบข้อมูลก่อนนำเข้า
+                ตรวจสอบข้อมูลก่อนนำเข้า
               </div>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: 'var(--green-dim)', color: 'var(--green)' }}>
@@ -2591,7 +2591,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
               style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: 'var(--bg2)', border: '1px dashed var(--blue-line)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  🔍 {h.name || h.mat}
+                  {h.name || h.mat}
                 </span>
                 <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 7px', borderRadius: 10, flexShrink: 0, background: 'var(--blue-dim)', color: 'var(--blue)' }}>
                   {h.sheets.reduce((n, x) => n + x.count, 0)} ลูก
@@ -2612,7 +2612,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
           {partView && (
             <div style={{ background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--blue)' }}>🔍 มุมมองพาร์ท {partView.mat}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--blue)' }}>มุมมองพาร์ท {partView.mat}</span>
                 <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{nameOfMat(partView.mat)}</span>
                 <button type="button" onClick={() => setPartView(null)}
                   style={{ ...btnSecondary, padding: '3px 10px', fontSize: 11.5, marginLeft: 'auto' }}>ปิดมุมมองนี้</button>
@@ -2689,7 +2689,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
               <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
                 <div onClick={() => setShowTree(v => !v)}
                   style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>
-                  🌳 โครงหลายชั้น (แบบ SAP Display Multilevel BOM)
+                  โครงหลายชั้น (แบบ SAP Display Multilevel BOM)
                   <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>{showTree ? '▾' : '▸'}</span>
                 </div>
                 {showTree && (
@@ -2819,7 +2819,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                           })()}
                         </TD>
                         <TD>{it.source_line
-                          ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: 'var(--blue-dim)', color: 'var(--blue)' }}>🏭 {it.source_line}</span>
+                          ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: 'var(--blue-dim)', color: 'var(--blue)' }}>{it.source_line}</span>
                           : <span style={{ color: 'var(--muted)' }}>—</span>}</TD>
                         <TD style={{ color: 'var(--muted)', fontSize: 12 }}>{it.supplier || '—'}</TD>
                         {(canEdit || mayDelete) && (
@@ -2908,7 +2908,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                         {p._made && (
                           <span title="พาร์ทที่เราผลิตเอง — ยังไม่อยู่ในทะเบียนชิ้นส่วน ระบบจะลงทะเบียนให้ตอนบันทึก"
                             style={{ marginRight: 5, fontSize: 11, fontWeight: 800, padding: '1px 6px', borderRadius: 10,
-                              background: 'var(--amber-dim)', color: 'var(--amber)' }}>🏭 ผลิตเอง</span>
+                              background: 'var(--amber-dim)', color: 'var(--amber)' }}>ผลิตเอง</span>
                         )}
                         {p.part_name}
                       </div>
@@ -3083,7 +3083,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}
             onClick={() => !sapBusy && setSapImp(null)}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(96vw, 880px)', maxHeight: '88vh', overflow: 'auto' }}>
-              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>📥 นำเข้า BOM จาก SAP</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>นำเข้า BOM จาก SAP</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', margin: '4px 0 12px' }}>
                 หัวใบ <b style={{ color: 'var(--text)', fontFamily: 'monospace' }}>{parsed.root.mat_no || '—'}</b> {parsed.root.description}
                 {parsed.root.plant && ` · Plant ${parsed.root.plant}`} · รูปแบบไฟล์ {parsed.layout === 'multilevel' ? 'Display Multilevel BOM' : 'BOM & Routing Report'}
@@ -3101,7 +3101,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                   ระบบถอดให้ดู **แต่ไม่เขียนเองจนกว่าจะติ๊ก** (user 05/10) */}
               <div style={{ fontSize: 11.5, color: 'var(--text2)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 8, padding: '8px 10px', marginBottom: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                 <span>
-                  <b style={{ color: 'var(--blue)' }}>🏷️ Part No.</b> ไฟล์ SAP ไม่มีคอลัมน์นี้ — ระบบถอดจากข้อความชื่อให้
+                  <b style={{ color: 'var(--blue)' }}>Part No.</b> ไฟล์ SAP ไม่มีคอลัมน์นี้ — ระบบถอดจากข้อความชื่อให้
                   (เรียนรูปแบบจากทะเบียนที่ใช้อยู่จริง) · <b>ติ๊กเท่านั้นจึงจะบันทึก</b> · พิมพ์แก้ในช่องได้
                   {sapImp.prop?.conflict > 0 && <> · <b style={{ color: 'var(--red)' }}>ไม่ตรงกับทะเบียนเดิม {sapImp.prop.conflict} แถว</b> (ไม่ติ๊กให้ ต้องดูเอง)</>}
                 </span>
@@ -3114,7 +3114,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
               </div>
               {pkgMissing > 0 && (
                 <div style={{ fontSize: 11.5, color: 'var(--text2)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
-                  <b style={{ color: 'var(--amber)' }}>📦 QTY/PKG ยังไม่มีค่า {pkgMissing} แถว</b> — จำนวนต่อกล่อง
+                  <b style={{ color: 'var(--amber)' }}>QTY/PKG ยังไม่มีค่า {pkgMissing} แถว</b> — จำนวนต่อกล่อง
                   <b> ไม่มีอยู่ในไฟล์ SAP เลย</b> เป็นข้อมูลของทะเบียนพาร์ท ต้องมีคนกรอก
                   (แถวที่ทะเบียนมีค่าแล้ว ระบบเติมให้เอง) · กรอกได้ที่แท็บ 1️⃣ Parts Master หรือปุ่มดินสอของแต่ละแถว
                 </div>
@@ -3196,7 +3196,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
       {showCopyBom && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)' }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 4 }}>📋 คัดลอก BOM จาก Product อื่น</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 4 }}>คัดลอก BOM จาก Product อื่น</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
               คัดลอกพาร์ทจาก BOM ของ product ที่เลือก เข้ามาใน <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{selProduct?.name}</span>
               <br/>(พาร์ทที่มีอยู่แล้วจะถูกข้าม)
@@ -3294,7 +3294,7 @@ function ExportPanel() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div>
-        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>📤 Export ข้อมูล</div>
+        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>Export ข้อมูล</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
           CSV มี BOM หน้าไฟล์ (Excel เปิดภาษาไทยไม่เพี้ยน) · เกิน 1,000 แถวระบบไล่ดึงเป็นหน้าให้เอง ไม่ขาดกลาง
         </div>
@@ -3622,7 +3622,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                       );
                       if (e.replacesMat) return (
                         <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 2, fontWeight: 700 }}>
-                          🔄 rev ล่าสุด · แทน <span style={{ fontFamily: 'monospace' }}>{e.replacesMat}</span>
+                          rev ล่าสุด · แทน <span style={{ fontFamily: 'monospace' }}>{e.replacesMat}</span>
                         </div>
                       );
                       return null;
@@ -3902,7 +3902,7 @@ function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: 'clamp(16px,2vw,20px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>📦 Packaging</h3>
+          <h3 style={{ margin: 0, fontSize: 'clamp(16px,2vw,20px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>Packaging</h3>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>ผูกภาชนะกับ product · พอ FG ผลิต → ยิงใบเบิกภาชนะไป Rack Center อัตโนมัติ · ใช้ฐานภาชนะเดียวกับ Rack Center</p>
         </div>
         {canEdit && <button onClick={() => setShowMaster(true)} style={{ ...btnSecondary }}>จัดการภาชนะ (Container Types) ({masters.length})</button>}
@@ -4001,7 +4001,7 @@ function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
       {showMaster && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(760px,100%)', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>🗃 ภาชนะ (Container Types)</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>ภาชนะ (Container Types)</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12 }}>ฐานข้อมูลเดียวกับที่ Rack Center ใช้</div>
             {canEdit && (
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr 1fr 1fr auto', gap: 8, alignItems: 'end', marginBottom: 14 }}>
@@ -4044,7 +4044,7 @@ function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
               <SimpleMasterPanel client={supabaseDR} table="container_categories" keyCol="code" canManage={canEdit}
                 onBeforeDelete={masterDeleteGuard(supabaseDR, 'container_categories')}
                 stampCol="updated_by_name" stampName={fullName} onChanged={invalidateContainerCategories}
-                title="🏷️ ประเภทภาชนะ" maxHeight={220}
+                title="ประเภทภาชนะ" maxHeight={220}
                 help="ตัวเลือกช่อง 'ประเภท' ด้านบน — รหัสตัวพิมพ์ใหญ่ (เช่น BOX, RACK)"
                 fields={[
                   { key: 'name', label: 'ชื่อประเภท', required: true },
@@ -4133,7 +4133,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
         <div>
           <h3 style={{ margin: 0, fontSize: 'clamp(16px,2vw,20px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-            🎴 Kanban Std — มาตรฐาน Qty/Kanban รายพาร์ท
+            Kanban Std — มาตรฐาน Qty/Kanban รายพาร์ท
           </h3>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
             UOM และข้อมูลพาร์ทดึงจาก 🗂 Parts Master โดยตรง (ไม่เก็บซ้ำ) · Qty/Kanban ตั้งต้นจาก Qty/Pkg (1 ใบ Kanban = 1 packaging)
@@ -4213,7 +4213,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 16, fontFamily: 'var(--font-display)' }}>
-              🎴 แก้ไข Kanban Std — {form.mat_no}
+              แก้ไข Kanban Std — {form.mat_no}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>

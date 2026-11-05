@@ -135,7 +135,7 @@ export default function StockDiscrepancyReport() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ ...card, display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center' }}>
         <div>
-          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>📦 ยอดในคลังพัก "{SUSPENSE_LOC}"</div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ยอดในคลังพัก "{SUSPENSE_LOC}"</div>
           <div style={{ fontSize: 24, fontWeight: 900, color: suspenseQty ? 'var(--amber)' : 'var(--green)' }}>{fmt(suspenseQty)}</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{fmt(rows.filter(r => r.status === 'open' || r.status === 'proposed').length)} เคสยังไม่เคลียร์</div>
         </div>

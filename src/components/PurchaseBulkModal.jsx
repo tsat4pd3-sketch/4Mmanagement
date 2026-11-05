@@ -186,14 +186,14 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
         width: 'min(560px, 100%)', maxHeight: '90vh', overflowY: 'auto', padding: 18 }}>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>🛒 {nextLabel} — รวมยอดทั้งพาร์ท</span>
+          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{nextLabel} — รวมยอดทั้งพาร์ท</span>
           <button onClick={onClose} disabled={busy}
             style={{ marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 7, cursor: busy ? 'not-allowed' : 'pointer',
               background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-body)' }}>✕</button>
         </div>
         <div style={{ fontSize: 12.5, color: 'var(--text2)', marginBottom: 12 }}>
           <b style={{ color: 'var(--text)' }}>{mat}</b> · {group.part_name || '—'}
-          {group.supplier && <> · 🏢 {group.supplier}</>}
+          {group.supplier && <> · {group.supplier}</>}
         </div>
 
         {slips === null && <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 12.5 }}>กำลังอ่านใบจริง…</div>}
@@ -238,7 +238,7 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
           {/* ปลายทางจริง — กลุ่มนี้อาจกระจายหลายไลน์ทั้งที่การ์ดโชว์ไลน์เดียว */}
           <div style={{ ...box, marginBottom: 10 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>
-              📍 ปลายทางของใบที่จะเลื่อน ({byDest.length} แห่ง)
+              ปลายทางของใบที่จะเลื่อน ({byDest.length} แห่ง)
               {next === 'received' && <span style={{ fontWeight: 400, color: 'var(--muted)' }}> — สต็อกจะถูกเติมแยกตามนี้</span>}
             </div>
             {byDest.map(d => (

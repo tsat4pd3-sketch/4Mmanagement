@@ -7806,7 +7806,7 @@ test('📊 mat-breakdown-default-collapsed — แท็บ Live ต้องข
   if (!/แยกตามชิ้นงาน \{productRows\.length\} MAT\.NO/.test(code))
     bad.push(`${DR}: หัวข้อที่ยุบต้องเขียนจำนวน MAT.NO เสมอ (กฎความซื่อสัตย์ของจอ)`);
   /* ภาพรวมต้องมาก่อนรายละเอียด — เทียบตำแหน่งในไฟล์ */
-  const iOverview = code.indexOf('📊 ภาพรวมทั้งกะ');
+  const iOverview = code.indexOf('ภาพรวมทั้งกะ');   // 05/11: หัวข้อไม่มี emoji แล้ว (UI §6.36)
   const iDetail = code.indexOf('แยกตามชิ้นงาน');
   if (iOverview < 0 || iDetail < 0) bad.push(`${DR}: หาหัวข้อภาพรวม/แยกตามชิ้นงานไม่เจอ — เปลี่ยนข้อความแล้วต้องแก้ด่านนี้`);
   else if (iDetail < iOverview) bad.push(`${DR}: "แยกตามชิ้นงาน" ต้องอยู่ใต้ภาพรวมทั้งกะ ไม่ใช่เหนือ`);

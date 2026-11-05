@@ -953,7 +953,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
 
       {filesOff && (
         <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--amber)', borderRadius: 9, padding: '8px 12px', fontSize: 12.5, fontWeight: 700, marginBottom: 10 }}>
-          📎 ไฟล์แนบยังใช้ไม่ได้ — ตาราง <code>ojt_training_files</code> ยังไม่มีในฐานข้อมูล (ยังไม่ได้รัน migration
+          ไฟล์แนบยังใช้ไม่ได้ — ตาราง <code>ojt_training_files</code> ยังไม่มีในฐานข้อมูล (ยังไม่ได้รัน migration
           <code> 20261101_ojt_attachments_main.sql</code>) · ใบอบรม/รายชื่อ/ลายเซ็น/พิมพ์ PDF ใช้ได้ปกติทุกอย่าง
           <div style={{ fontWeight: 400, fontSize: 11.5, marginTop: 2 }}>รายละเอียด: {filesOff}</div>
         </div>
@@ -980,7 +980,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                     {(t.ojt_training_files?.length ?? 0) > 0 && (
                       <span title={`มีไฟล์แนบ ${t.ojt_training_files.length} ไฟล์`}
                         style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-                        📎 {t.ojt_training_files.length}
+                        {t.ojt_training_files.length}
                       </span>
                     )}
                   </td>
@@ -1016,7 +1016,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '3vh 2vw' }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: 'min(96vw, 1150px)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>📖 {editing.isNew ? 'สร้าง' : 'แก้ไข'}ใบอบรมสอนงาน OJT</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{editing.isNew ? 'สร้าง' : 'แก้ไข'}ใบอบรมสอนงาน OJT</div>
               <button onClick={closeEdit} style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
             </div>
             <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1099,8 +1099,8 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                   รูปจะถูกต่อท้ายใบพิมพ์เป็นหน้าๆ (ดู handlePrint) — เอกสารแนบลิสต์ชื่อไว้บนใบ */}
               <div>
                 <div style={{ ...lb, fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <span>📎 ไฟล์แนบ ({(editing.files || []).length})</span>
-                  {canRecord && !filesOff && <FilePick onFile={addFile} label="📎 แนบรูป / เอกสาร" />}
+                  <span>ไฟล์แนบ ({(editing.files || []).length})</span>
+                  {canRecord && !filesOff && <FilePick onFile={addFile} label="แนบรูป / เอกสาร" />}
                   <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>
                     รูป · PDF · Word · Excel · PowerPoint — ไม่เกิน {ATTACH_MAX_MB}MB ต่อไฟล์ (รูปจาก iPhone ใช้ได้)
                   </span>
@@ -1136,9 +1136,9 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
 
               {/* ผู้เข้าอบรม */}
               <div>
-                <div style={{ ...lb, fontSize: 13, color: 'var(--text)' }}>👥 พนักงานผู้เข้าอบรม ({editing.attendees.length} คน)</div>
+                <div style={{ ...lb, fontSize: 13, color: 'var(--text)' }}>พนักงานผู้เข้าอบรม ({editing.attendees.length} คน)</div>
                 <div style={{ position: 'relative', marginBottom: 8 }}>
-                  <input type="text" placeholder="🔍 ค้นหาชื่อ/รหัสพนักงาน แล้วคลิกเพื่อเพิ่ม..." value={empSearch} onChange={e => setEmpSearch(e.target.value)}
+                  <input type="text" placeholder="ค้นหาชื่อ/รหัสพนักงาน แล้วคลิกเพื่อเพิ่ม..." value={empSearch} onChange={e => setEmpSearch(e.target.value)}
                     style={{ width: 'min(100%, 380px)', padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
                   {searchResults.length > 0 && (
                     <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 'min(100%, 380px)', maxHeight: 220, overflowY: 'auto', boxShadow: 'var(--shadow-float)' }}>
@@ -1147,7 +1147,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                           style={{ padding: '7px 10px', cursor: 'pointer', fontSize: 13, color: 'var(--text)', borderBottom: '1px solid var(--border)' }}>
                           <b>{e.employee_id_code}</b> · {e.name} <span style={{ color: 'var(--muted)', fontSize: 11 }}>({e.section || '-'})</span>
                           {e._isHelper && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--blue)', fontWeight: 700 }}>
-                            🤝 ยืมจาก {e._helperFrom} มาช่วย {e._helperTo}{e._helperShift ? ` (${e._helperShift === 'night' ? 'กะดึก' : 'กะเช้า'} ${fmtDate(editDate)})` : ''}
+                            ยืมจาก {e._helperFrom} มาช่วย {e._helperTo}{e._helperShift ? ` (${e._helperShift === 'night' ? 'กะดึก' : 'กะเช้า'} ${fmtDate(editDate)})` : ''}
                           </span>}
                         </div>
                       ))}

@@ -200,7 +200,7 @@ export default function RundownStock() {
         ) : (
           <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>📉 Balance FG รายวัน (เรียงพาร์ทที่จะขาดเร็วสุดขึ้นก่อน)</span>
+              <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>Balance FG รายวัน (เรียงพาร์ทที่จะขาดเร็วสุดขึ้นก่อน)</span>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>ตัวบน = ยอดต้องส่งวันนั้น · ตัวล่าง = Balance สะสม (แดง = จะขาด ต้องผลิตเพิ่ม/เปิด OT)</span>
             </div>
             <div className="table-sticky" style={{ overflowX: 'auto' }}>

@@ -266,7 +266,7 @@ export default function SchemaMap() {
             <br />• ตัวเลขแถว = <b>ค่าประมาณจากสถิติของฐาน</b> (ไม่ได้นับจริงทุกครั้ง) ใช้ดูขนาดคร่าวๆ เท่านั้น
             <br />• “หน้าไหนใช้ตารางไหน” มาจาก<b>การสแกนซอร์สตอน build</b> — จับเฉพาะที่โค้ดเขียนชื่อตารางตรงๆ
             ถ้าหน้าไหนเรียกผ่านฟังก์ชันกลางที่ส่งชื่อตารางเป็นตัวแปร จะไม่ขึ้นในลิสต์นี้
-            <br />• ข้อมูลโครงสร้าง cache ไว้ 12 ชม. — เพิ่ง apply migration ให้กด <b>🔄 อ่านใหม่</b>
+            <br />• ข้อมูลโครงสร้าง cache ไว้ 12 ชม. — เพิ่ง apply migration ให้กด <b>อ่านใหม่</b>
           </div>
         </InfoMore>
       </div>
@@ -345,7 +345,7 @@ export default function SchemaMap() {
             <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
               {!sel && (
                 <div style={{ ...card(), fontSize: 13, color: 'var(--muted)', lineHeight: 1.7 }}>
-                  👈 เลือกตารางทางซ้ายเพื่อดู <b>คอลัมน์ · คีย์หลัก (PK) · ความสัมพันธ์ (FK) · RLS · trigger</b>
+                  เลือกตารางทางซ้ายเพื่อดู <b>คอลัมน์ · คีย์หลัก (PK) · ความสัมพันธ์ (FK) · RLS · trigger</b>
                   <div style={{ marginTop: 8 }}>
                     {PKEYS.map(k => (
                       <div key={k} style={{ marginTop: 6 }}>
@@ -442,12 +442,12 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
               <span style={tag(d.rls ? 'var(--green)' : 'var(--amber)')}>{d.rls ? 'RLS เปิด' : 'RLS ปิด'}</span>
               {!!(d.triggers || []).length && <span style={tag()}>{d.triggers.length} trigger</span>}
             </div>
-            {d.note && <div style={{ fontSize: 12.5, color: 'var(--text2)' }}>📝 {d.note}</div>}
+            {d.note && <div style={{ fontSize: 12.5, color: 'var(--text2)' }}>{d.note}</div>}
 
             {/* คีย์ + ความสัมพันธ์ — ส่วนที่ user ขอมาตรงๆ */}
             <div style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', alignItems: 'start' }}>
               <div style={sub()}>
-                <div style={subTitle()}>🔑 คีย์หลัก (PK) — ใช้ระบุ “แถวไหน”</div>
+                <div style={subTitle()}>คีย์หลัก (PK) — ใช้ระบุ “แถวไหน”</div>
                 {(d.pk || []).length
                   ? <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>{d.pk.map(c => <span key={c} style={tag('var(--amber)')}>{c}</span>)}</div>
                   : <div style={{ fontSize: 12, color: 'var(--amber)' }}>— ไม่มี PK (แจ้งบัคแล้วบอกคีย์อื่นที่ใช้ระบุแถวแทน)</div>}
@@ -460,7 +460,7 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
               </div>
 
               <div style={sub()}>
-                <div style={subTitle()}>🔗 ความสัมพันธ์ (FK)</div>
+                <div style={subTitle()}>ความสัมพันธ์ (FK)</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 3 }}>ตารางนี้ชี้ออกไปหา:</div>
                 {(d.fks || []).length ? d.fks.map(f => (
                   <div key={f.name} style={{ fontSize: 12, marginBottom: 3 }}>
@@ -485,7 +485,7 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
 
             {/* หน้าไหนใช้ตารางนี้ */}
             <div style={sub()}>
-              <div style={subTitle()}>📄 หน้าที่ใช้ตารางนี้ (จากซอร์สตอน build)</div>
+              <div style={subTitle()}>หน้าที่ใช้ตารางนี้ (จากซอร์สตอน build)</div>
               {pages.length ? (
                 <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                   {pages.map(p => <button key={p} onClick={() => onGoPage(p)} style={chip(false)}>{pageLabel(p)}</button>)}
@@ -503,7 +503,7 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
 
       {detail && (
         <div style={{ ...card(), overflowX: 'auto' }}>
-          <div style={{ ...subTitle(), marginBottom: 6 }}>📑 คอลัมน์ทั้งหมด ({(d.columns || []).length})</div>
+          <div style={{ ...subTitle(), marginBottom: 6 }}>คอลัมน์ทั้งหมด ({(d.columns || []).length})</div>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 560, fontVariantNumeric: 'tabular-nums' }}>
             <thead>
               <tr>
@@ -543,7 +543,7 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
 
       {detail && (
         <div style={{ ...card(), fontSize: 12, lineHeight: 1.7 }}>
-          <InfoMore id="schema_tech" lead={<span style={subTitle()}>🔧 รายละเอียดเชิงเทคนิค (index · RLS policy · trigger)</span>}>
+          <InfoMore id="schema_tech" lead={<span style={subTitle()}>รายละเอียดเชิงเทคนิค (index · RLS policy · trigger)</span>}>
             <div style={{ marginTop: 6 }}>
               <div style={{ color: 'var(--muted)' }}>RLS policy ({(d.policies || []).length}) — ใครทำอะไรกับตารางนี้ได้:</div>
               {(d.policies || []).length ? d.policies.map(p => (

@@ -127,7 +127,7 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, padding: 18, width: 'min(1000px, 97vw)', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>
-          📘 KPI Standard ของกลุ่ม — ปี {year + 543} · {scopeText || 'ทั้งโรงงาน'}
+          KPI Standard ของกลุ่ม — ปี {year + 543} · {scopeText || 'ทั้งโรงงาน'}
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '4px 0 10px', lineHeight: 1.6 }}>
           ทะเบียนนี้มาจาก <b>KPI Guideline ของกลุ่ม</b> (อ่านอย่างเดียว) — ESM ไม่ได้คิดเกณฑ์เอง ·

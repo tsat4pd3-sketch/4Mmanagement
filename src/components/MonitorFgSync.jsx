@@ -171,7 +171,7 @@ export default function MonitorFgSync({ onClose, fullName, onSynced }) {
       <div className="modal" style={{ maxWidth: 760, width: 'min(96vw, 760px)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
           <h3 style={{ margin: 0, fontSize: 16, fontFamily: 'var(--font-display)' }}>
-            📦 สร้างบอร์ด FG จากออเดอร์ลูกค้า (EDI 862/830)
+            สร้างบอร์ด FG จากออเดอร์ลูกค้า (EDI 862/830)
           </h3>
           <button type="button" onClick={onClose} aria-label="ปิด"
             style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>

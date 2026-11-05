@@ -65,7 +65,7 @@ export default function QualityPhotoField({
               style={{
                 fontSize: 11.5, padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
                 border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)',
-              }}>🗑 เอารูปออก</button>
+              }}>เอารูปออก</button>
           )}
         </div>
       )}

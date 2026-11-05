@@ -122,7 +122,7 @@ export function ControlChart({ points, unit = 'นาที', minN = 8 }) {
         {c.inControl
           ? <span style={{ color: '#22c55e', fontWeight: 700 }}>✅ อยู่ในการควบคุม — ความผันแปรที่เห็นเป็นระดับปกติของงานนี้ (อย่าไล่แก้ทีละจุด ให้แก้ทั้งระบบถ้าอยากให้ดีขึ้น)</span>
           : <div style={{ color: '#ef4444', fontWeight: 700 }}>
-              🚨 พบสัญญาณผิดปกติ {c.signals.length} จุด — จุดพวกนี้มี “สาเหตุเฉพาะ” ให้ไปตามหา
+              พบสัญญาณผิดปกติ {c.signals.length} จุด — จุดพวกนี้มี “สาเหตุเฉพาะ” ให้ไปตามหา
               <ul style={{ margin: '4px 0 0 18px', padding: 0, fontWeight: 600, color: 'var(--text2)' }}>
                 {c.signals.slice(0, 5).map((s, i) => <li key={i}>{s.text}</li>)}
               </ul>

@@ -147,13 +147,13 @@ export default function SpinAnnotator({
 
         {spin && (
           <div style={{ position: 'absolute', top: 8, right: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 11, fontWeight: 700, borderRadius: 12, padding: '2px 9px', pointerEvents: 'none' }}>
-            🔄 {frameIdx + 1}/{frames.length}
+            {frameIdx + 1}/{frames.length}
           </div>
         )}
         {/* ซูมอยู่ = กรอบเป็นตัวเลื่อน ป้ายลอยจะเลื่อนหนีไปกับรูป ⇒ ย้ายไปเขียนใต้กรอบแทน */}
         {arming && !isPdf && cur && !zoomed && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 8, pointerEvents: 'none' }}>
-            <span style={{ padding: '5px 12px', borderRadius: 20, background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 11, fontWeight: 700 }}>📍 แตะที่รูปเพื่อวางตำแหน่ง</span>
+            <span style={{ padding: '5px 12px', borderRadius: 20, background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 11, fontWeight: 700 }}>แตะที่รูปเพื่อวางตำแหน่ง</span>
           </div>
         )}
       </div>
@@ -208,7 +208,7 @@ export default function SpinAnnotator({
       {/* เครื่องมือของรูปที่เปิดอยู่ — เปลี่ยนชื่อ/เปลี่ยนรูป (หมุดอยู่ที่เดิม) */}
       {!readOnlyFrames && cur && (onRenameFrame || onReplaceFrame) && (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>🖼 {cur.title || `รูปที่ ${frameIdx + 1}`}</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>{cur.title || `รูปที่ ${frameIdx + 1}`}</span>
           {onRenameFrame && <button type="button" style={tinyBtn} onClick={() => onRenameFrame(cur._key)}>✏️ ตั้งชื่อ</button>}
           {onReplaceFrame && (
             <>
@@ -219,7 +219,7 @@ export default function SpinAnnotator({
                 if (ok) onReplaceFrame(cur._key, ok)
               }} />
               <button type="button" style={tinyBtn} disabled={busy} onClick={() => replaceRef.current?.click()}
-                title="เปลี่ยนไฟล์รูป (เช่น Drawing Rev ใหม่) — หมุดอยู่ตำแหน่งเดิม">🔄 เปลี่ยนรูป</button>
+                title="เปลี่ยนไฟล์รูป (เช่น Drawing Rev ใหม่) — หมุดอยู่ตำแหน่งเดิม">เปลี่ยนรูป</button>
             </>
           )}
         </div>
@@ -235,11 +235,11 @@ export default function SpinAnnotator({
          เพราะคนตรวจจะไม่รู้ว่ามันอยู่ตรงไหนของเครื่อง */}
       {!readOnlyFrames && <div style={{ fontSize: 11, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px', lineHeight: 1.65 }}>
         💡 <b>รูปตรงนี้ = “แผนที่” ให้เห็น{subject === 'part' ? 'ทั้งชิ้นงาน' : 'ทั้งเครื่อง'}แล้วปักหมุด</b> — ส่วนรูปโคลสอัพของแต่ละจุด
-        ให้แนบที่ช่อง <b>📷 รูปจุด</b> ในการ์ดจุดตรวจ (หมุดจะขึ้น 🔍 · คนตรวจแตะหมุดแล้วซูมเข้าไปดูจุดนั้นได้)
+        ให้แนบที่ช่อง <b>รูปจุด</b> ในการ์ดจุดตรวจ (หมุดจะขึ้น 🔍 · คนตรวจแตะหมุดแล้วซูมเข้าไปดูจุดนั้นได้)
         {subject !== 'part' && <div style={{ marginTop: 3, opacity: 0.85 }}>อัปรูปโคลสอัพเป็นเฟรมแยกตรงนี้ = คนตรวจไม่รู้ว่าอยู่ตรงไหนของเครื่อง</div>}
         {/* 📐 บอกตรงจุดอัป (user 23/09) — คนอัปคือคนเดียวที่แก้เรื่องนี้ได้ ตอนถ่ายเท่านั้น
             ตัวจำกัดขนาดรูปบนมือถือคือ "ความสูง" ⇒ แนวนอน 4:3/16:9 เต็มความกว้างพอดี */}
-        <div style={{ marginTop: 3, opacity: 0.85 }}>📐 {subject === 'part' ? 'จัดแผ่น/ถ่ายรูปชิ้นงาน' : 'ถ่าย/จัดกรอบ'}เป็น <b>แนวนอน</b> รูปจะเต็มความกว้างจอมือถือตอนตรวจ — แนวตั้งจะเหลือขอบว่างข้างละครึ่งจอ</div>
+        <div style={{ marginTop: 3, opacity: 0.85 }}>{subject === 'part' ? 'จัดแผ่น/ถ่ายรูปชิ้นงาน' : 'ถ่าย/จัดกรอบ'}เป็น <b>แนวนอน</b> รูปจะเต็มความกว้างจอมือถือตอนตรวจ — แนวตั้งจะเหลือขอบว่างข้างละครึ่งจอ</div>
       </div>}
     </div>
   )

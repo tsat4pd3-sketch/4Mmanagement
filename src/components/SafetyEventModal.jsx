@@ -226,7 +226,7 @@ export default function SafetyEventModal({ init, section, date, lineRows = [], s
           {editing && (
             <button onClick={remove} disabled={busy}
               style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', cursor: 'pointer', fontSize: 12.5 }}>
-              🗑 ซ่อนออกจากบอร์ด
+              ซ่อนออกจากบอร์ด
             </button>
           )}
           <button onClick={close} disabled={busy}

@@ -40,17 +40,17 @@ const DEFAULT_TEMPLATES = {
   checkin_summary: '✅ เช็คชื่อเสร็จแล้ว\n🏭 ไลน์: {line_name} · {shift_label}\n📅 {work_date}\n👥 เข้างาน: {present}/{total} · OT {ot} · ลา {leave} · ขาด {absent}\n✍️ ตรวจโดย {checked_by}',
   checkin_update: '🔄 อัพเดทกำลังคน (แก้ระหว่างวัน)\n🏭 ไลน์: {line_name} · {shift_label}\n📅 {work_date}\n👥 เข้างาน: {present}/{total} · OT {ot} · ลา {leave} · ขาด {absent}\n✏️ เปลี่ยน {changed_count} คน:\n{changed_names}\n✍️ แก้โดย {checked_by}',
   ot_booking: '🚐 จองรถ OT\n🏭 ไลน์: {line_name} · {shift_label}\n📅 {date_label} ({work_date})\n👥 ทำ OT {count} คน:\n{items}\n✍️ จองโดย {booked_by}',
-  downtime: '🚨 เครื่องจักร DOWNTIME\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n🛑 {type_name}\n⏱ {duration_min} นาที\n🔩 {mat_no}\n📝 {description}\n👤 {reported_by}',
-  downtime_recovered: '✅ เครื่องกลับมารันได้แล้ว\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n⏱ หยุดรวม {duration_min} นาที\n👤 {reported_by}',
-  downtime_call_mtn: '📞🔧 เรียกช่าง MTN เข้าหน้างานด่วน\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n🛑 {type_name}\n🕐 เริ่มหยุด {start_time}\n📝 {description}\n🙋 {reported_by}',
-  downtime_open_15min: '🚨 เครื่องยังหยุด ยังไม่กลับมารัน — เกิน {open_min} นาที\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n🛑 {type_name}\n🕐 เริ่มหยุด {start_time}\n📝 {description}\n👤 {reported_by}',
-  prod_close: '{title}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n📦 ผลิตรวม {total_qty} · ✅ {qty_ok} ❌ NG {qty_ng}\n📊 OEE {oee}%\n👤 {actor}',
-  four_m_status: '🔔 {title}\n📅 {work_date} · 🏭 {line_name}\n📋 {category}\n📝 {description}\n🔖 {status_label}\n👤 {creator}',
+  downtime: '🚨 เครื่องจักร DOWNTIME\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · {work_date}\n🛑 {type_name}\n⏱ {duration_min} นาที\n🔩 {mat_no}\n📝 {description}\n👤 {reported_by}',
+  downtime_recovered: '✅ เครื่องกลับมารันได้แล้ว\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · {work_date}\n⏱ หยุดรวม {duration_min} นาที\n👤 {reported_by}',
+  downtime_call_mtn: '📞🔧 เรียกช่าง MTN เข้าหน้างานด่วน\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · {work_date}\n🛑 {type_name}\n🕐 เริ่มหยุด {start_time}\n📝 {description}\n🙋 {reported_by}',
+  downtime_open_15min: '🚨 เครื่องยังหยุด ยังไม่กลับมารัน — เกิน {open_min} นาที\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · {work_date}\n🛑 {type_name}\n🕐 เริ่มหยุด {start_time}\n📝 {description}\n👤 {reported_by}',
+  prod_close: '{title}\n🏭 {line_name} · {shift_label} · {work_date}\n📦 ผลิตรวม {total_qty} · ✅ {qty_ok} ❌ NG {qty_ng}\n📊 OEE {oee}%\n👤 {actor}',
+  four_m_status: '🔔 {title}\n📅 {work_date} · {line_name}\n📋 {category}\n📝 {description}\n🔖 {status_label}\n👤 {creator}',
   pm_daily_green: '🟢 ตรวจ Daily PM เรียบร้อย ทุกอย่างปกติ\n🏭 {line_name} · {shift_label}\n📅 {work_date}\n✅ ตรวจแล้ว {checked}/{total} เครื่อง',
   pm_daily_orange: '🟠 ยังตรวจ Daily PM ไม่ครบ (เกินเวลา)\n🏭 {line_name} · {shift_label}\n📅 {work_date}\n✅ ตรวจแล้ว {checked}/{total} · ⏳ ขาด: {missing}',
   pm_daily_red: '🔴 Daily PM พบความผิดปกติ\n🏭 {line_name} · {shift_label}\n📅 {work_date}\n⚠️ {ng}',
-  edi_import: '📡 นำเข้า EDI {kind_label}\n🏭 Ship-to: {ship_tos}\n🧾 {rows} รายการ · 📄 {files} ไฟล์\n📅 {date_from} → {date_to}\n👤 {uploaded_by}',
-  shipping_shipped: '🚚 ส่งงานลูกค้าแล้ว\n🕐 รอบ {ship_time} · 📅 {due_date}\n🏭 {customer} · Dock {dock_code}\n🔩 {mat_no} × {qty} ชิ้น\n👤 {shipped_by}',
+  edi_import: '📡 นำเข้า EDI {kind_label}\n🏭 Ship-to: {ship_tos}\n🧾 {rows} รายการ · {files} ไฟล์\n📅 {date_from} → {date_to}\n👤 {uploaded_by}',
+  shipping_shipped: '🚚 ส่งงานลูกค้าแล้ว\n🕐 รอบ {ship_time} · {due_date}\n🏭 {customer} · Dock {dock_code}\n🔩 {mat_no} × {qty} ชิ้น\n👤 {shipped_by}',
   shipping_overdue: '🔴 รอบส่งเลยเวลา {count} รอบ — วันงาน {work_date}\n{items}',
   shipping_phase_alert: '🟠 หลุดเฟสงานส่ง {total} รายการ — วันงาน {work_date}\n{items}',
   mtn_reported: '🛠️ แจ้งซ่อม {dept}\nไลน์การผลิต: {line_name}\nชื่อรายการ: {item_type}\nปัญหา: {problem}\nPD ผู้แจ้ง: {reporter_prod}\nเป้าหมาย: {want_at}\nสถานะ: รอดำเนินการ',
@@ -484,7 +484,7 @@ export default function NotificationConfig() {
                   {/* ── ผู้รับในแอป (กระดิ่ง+เสียง+push) ตาม role ── */}
                   <div style={{ flexBasis: '100%', borderTop: '1px dashed var(--border)', paddingTop: 8, marginTop: 2 }}>
                     <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 5 }}>
-                      📲 แจ้งในแอปด้วย (กระดิ่ง + เสียง + เด้งเข้ามือถือ) — เลือก role ผู้รับ · ไม่เลือก = เข้าแค่ Telegram
+                      แจ้งในแอปด้วย (กระดิ่ง + เสียง + เด้งเข้ามือถือ) — เลือก role ผู้รับ · ไม่เลือก = เข้าแค่ Telegram
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                       {ROLE_OPTIONS.filter(r => r.value !== 'display').map(r => {
@@ -510,7 +510,7 @@ export default function NotificationConfig() {
                         fontSize: 11.5, lineHeight: 1.5,
                         color: (rule.inapp_roles || []).length ? 'var(--text2)' : 'var(--muted)',
                       }}>
-                        🏷️ {reachLabel(rule, reach[rule.event_key])}
+                        {reachLabel(rule, reach[rule.event_key])}
                       </div>
                       {reachWarnings(rule, reach[rule.event_key]).map((w, i) => (
                         <div key={i} style={{
@@ -550,7 +550,7 @@ export default function NotificationConfig() {
                                 onChange={e => updateRule(rule.event_key, { inapp_cast: e.target.checked ? 'fallback' : 'always' })}
                                 style={{ marginTop: 2, flexShrink: 0 }} />
                               <span>
-                                <b>🎯 ส่งถึงเจ้าของงานก่อน — ยิงตาม role เฉพาะตอนที่รายการบอกตัวคนไม่ได้</b>
+                                <b>ส่งถึงเจ้าของงานก่อน — ยิงตาม role เฉพาะตอนที่รายการบอกตัวคนไม่ได้</b>
                                 <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2, lineHeight: 1.6 }}>
                                   ไม่ติ๊ก = ยิงตาม role ที่เลือกไว้<b>ทุกครั้ง</b> แม้รายการนั้นจะรู้อยู่แล้วว่าใครเกี่ยว (พฤติกรรมเดิม) ·
                                   ติ๊ก = ส่งให้<b>คนที่มีชื่ออยู่ในรายการนั้น</b> (ผู้แจ้ง / ผู้รับงาน / ผู้ตรวจ) ก่อน
@@ -574,7 +574,7 @@ export default function NotificationConfig() {
                                 onChange={e => updateRule(rule.event_key, { can_mute: !e.target.checked })}
                                 style={{ marginTop: 2, flexShrink: 0 }} />
                               <span>
-                                <b>🔒 ผู้ใช้ปิดแจ้งเตือนเรื่องนี้เองไม่ได้</b>
+                                <b>ผู้ใช้ปิดแจ้งเตือนเรื่องนี้เองไม่ได้</b>
                                 <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2, lineHeight: 1.6 }}>
                                   ไม่ติ๊ก = ใครก็ปิดเรื่องนี้เองได้ที่ <b>เมนูโปรไฟล์ → 🔕 ตั้งค่าแจ้งเตือนของฉัน</b> (ค่าเริ่มต้น) ·
                                   ติ๊ก = เด้งเสมอ แม้เขาจะกดปิด — ใช้กับ<b>คิวงานที่มีของรอคนกลุ่มนี้ลงมือ</b>
@@ -616,7 +616,7 @@ export default function NotificationConfig() {
 
                             <div>
                               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 5 }}>
-                                🏢 เฉพาะส่วนงาน — ไม่เลือก = ทุกส่วนงาน
+                                เฉพาะส่วนงาน — ไม่เลือก = ทุกส่วนงาน
                               </div>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                                 {secOpts.length === 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>— ยังไม่มีข้อมูลส่วนงาน —</span>}
@@ -636,7 +636,7 @@ export default function NotificationConfig() {
 
                             <div>
                               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 5 }}>
-                                🗂 เฉพาะแผนก — ไม่เลือก = ทุกแผนก
+                                เฉพาะแผนก — ไม่เลือก = ทุกแผนก
                                 <span style={{ marginLeft: 6 }}>(ใช้ได้เมื่อบัญชีผู้ใช้ถูกผูกกับพนักงานแล้วที่ “จัดการผู้ใช้งาน”)</span>
                               </div>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>

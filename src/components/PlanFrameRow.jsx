@@ -103,7 +103,7 @@ export default function PlanFrameRow({
         background: 'var(--card)', backgroundImage: `linear-gradient(${FRAME}14, ${FRAME}14)`,
         ...(isMobile ? { position: 'sticky', left: 0, zIndex: 3 } : null),
       }}>
-        <div style={{ fontSize: 11, fontWeight: 800, color: FRAME, lineHeight: 1.25 }}>🧾 กรอบแผน</div>
+        <div style={{ fontSize: 11, fontWeight: 800, color: FRAME, lineHeight: 1.25 }}>กรอบแผน</div>
         <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.3 }}>
           แพลนนิ่งตีไว้ {totalLots} ล็อต
         </div>

@@ -346,7 +346,7 @@ export default function DailyPM() {
                   {/* 🔧 B3 — MO จากผลตรวจ AM วันก่อนที่ยังไม่ปิด: ป้ายค้างบนเครื่องทุกวันจนกว่าใบจะปิด */}
                   {row.carry?.length > 0 && (
                     <div style={{ marginTop: 8 }}>
-                      <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>🔧 แจ้งซ่อมแล้ว ยังไม่แก้ไข ({row.carry.length})</div>
+                      <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>แจ้งซ่อมแล้ว ยังไม่แก้ไข ({row.carry.length})</div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
                         {row.carry.map(c => (
                           <span key={`${c.jig_id}-${c.mo.id}`} title={c.inspected_at ? `พบผิดปกติเมื่อ ${fmtDate(c.inspected_at)}` : undefined}
@@ -494,7 +494,7 @@ export default function DailyPM() {
                                   · ค่า '' = placeholder ไม่ยิง assign · scopedProdLines กรอง scope แล้ว */}
                               {noLine && canManage && (
                                 <div onClick={e => e.preventDefault()}>
-                                  <LineSelect lines={scopedProdLines} value="" onChange={v => v && assignJigLine(j, v)} placeholder="📍 เลือกไลน์ให้เครื่องนี้…"
+                                  <LineSelect lines={scopedProdLines} value="" onChange={v => v && assignJigLine(j, v)} placeholder="เลือกไลน์ให้เครื่องนี้…"
                                     style={{ width: '100%', marginTop: 6, padding: '4px 8px', fontSize: 12, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--amber-line)', color: 'var(--text)' }} />
                                 </div>
                               )}

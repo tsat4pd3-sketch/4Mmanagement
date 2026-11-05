@@ -106,7 +106,7 @@ function Modal({ title, onClose, children, width = 560 }) {
   );
 }
 
-/* 📋 ใบรายงานของเสีย (งานเอกสารรายวัน) · 🗑️ ถังเหลือง/แดง (บันทึกหน้ากล่องก่อนถึง NCR/Scrap)
+/* 📋 ใบรายงานของเสีย (งานเอกสารรายวัน) · ถังเหลือง/แดง (บันทึกหน้ากล่องก่อนถึง NCR/Scrap)
    = ของเสียชุดเดียวกัน คนละขั้นของเรื่อง ⇒ อยู่หน้าเดียวกันแต่คนละแท็บ (UI §6.8) */
 const TABS = [
   { key: 'scrap', label: 'ใบรายงานของเสีย' },
@@ -843,9 +843,9 @@ export default function ScrapReport() {
               border: `1px solid ${opScan.blocked.length ? 'var(--red-line)' : 'var(--amber-line)'}`,
               color: opScan.blocked.length ? 'var(--red)' : 'var(--amber)',
             }}>
-              <b>🔩 {opScan.opRowsCount} รายการเป็น "ขั้นตอน (OP)" ไม่ใช่เลข SAP</b> — ชิ้นงานยังไม่สมบูรณ์
+              <b>{opScan.opRowsCount} รายการเป็น "ขั้นตอน (OP)" ไม่ใช่เลข SAP</b> — ชิ้นงานยังไม่สมบูรณ์
               จึงตัดตัวมันเองไม่ได้ ต้องตัดวัตถุดิบ/พาร์ทที่ใส่เข้าไปจนถึงขั้นนั้นแทน
-              {opScan.ready.length > 0 && <> · กด <b>🧩 ระเบิดขั้นตอน</b> เพื่อแปลงให้อัตโนมัติ</>}
+              {opScan.ready.length > 0 && <> · กด <b>ระเบิดขั้นตอน</b> เพื่อแปลงให้อัตโนมัติ</>}
               {opScan.blocked.length > 0 && (
                 <div style={{ marginTop: 4 }}>
                   ⛔ ยังไม่ได้ผูกสูตรว่าขั้นนี้กินอะไร: <b>{[...new Set(opScan.blocked.map(b => b.item.mat_no))].join(' · ')}</b>
@@ -988,7 +988,7 @@ export default function ScrapReport() {
 
       {/* SAP / BOM picker */}
       {sapPicker && (
-        <Modal title="🔍 เลือกจาก SAP / BOM" onClose={() => { setSapPicker(null); setSapSearch(''); }} width={520}>
+        <Modal title="เลือกจาก SAP / BOM" onClose={() => { setSapPicker(null); setSapSearch(''); }} width={520}>
           <input autoFocus style={inputSt} value={sapSearch} onChange={e => setSapSearch(e.target.value)}
             placeholder={sapOptions === null ? 'กำลังโหลด…' : `พิมพ์ค้นหา MAT SAP / Part No / ชื่อ (${sapOptions.length})`} />
           <div style={{ marginTop: 10, maxHeight: 340, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -1010,7 +1010,7 @@ export default function ScrapReport() {
 
       {/* ใบเบิก QA — เลือกใบที่จะดึงของเข้าใบรายงานของเสีย (2026-08-24) */}
       {reqPicker && (
-        <Modal title="📦 เลือกใบเบิกทดสอบ (FM-STO-003)" onClose={() => setReqPicker(null)} width={640}>
+        <Modal title="เลือกใบเบิกทดสอบ (FM-STO-003)" onClose={() => setReqPicker(null)} width={640}>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8, lineHeight: 1.6 }}>
             แสดงเฉพาะใบที่<b>อนุมัติแล้ว</b>ขึ้นไป · ใบของไลน์ “{editor.report.line_name || '—'}” ขึ้นก่อน<br />
             จำนวนที่ดึงใช้ <b>จำนวนที่จ่ายจริง</b> ก่อน ไม่มีค่อยใช้จำนวนที่ขอเบิก · รายการที่ดึงไปแล้วจะไม่ซ้ำ
@@ -1057,7 +1057,7 @@ export default function ScrapReport() {
         if (!it) return null;
         const fromBin = !!it.src_bin_id;
         return (
-          <Modal title={`📷 รูปของเสีย — ${it.part_name || it.mat_no || 'รายการที่เลือก'}`} onClose={() => setPhotoItem(null)} width={460}>
+          <Modal title={`รูปของเสีย — ${it.part_name || it.mat_no || 'รายการที่เลือก'}`} onClose={() => setPhotoItem(null)} width={460}>
             <div style={{ padding: 16 }}>
               {fromBin && (
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 10 }}>

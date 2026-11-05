@@ -42,7 +42,7 @@ function CrRow({ cr, canDecide, onDecide, onApply }) {
           <Pill label={st.label} color={st.color} />
           {isSug && (
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-              🤖 ระบบเสนอ · ความมั่นใจ {cr.confidence != null ? `${Math.round(cr.confidence * 100)}%` : '—'}
+              ระบบเสนอ · ความมั่นใจ {cr.confidence != null ? `${Math.round(cr.confidence * 100)}%` : '—'}
             </span>
           )}
           {cr.ref_label && <span style={{ fontSize: 11, color: 'var(--muted)' }}>จาก {cr.ref_label}</span>}
@@ -260,7 +260,7 @@ export default function PeChangeRequests({
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 11px', background: 'var(--bg2)', flexWrap: 'wrap' }}>
-        <b style={{ fontSize: 12.5 }}>🔗 เอกสารที่ต้องตามแก้</b>
+        <b style={{ fontSize: 12.5 }}>เอกสารที่ต้องตามแก้</b>
         {pending > 0 && <Pill label={`ค้าง ${pending}`} color="#f59e0b" />}
         {rows.length === 0 && !loading && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>ยังไม่มีรายการ</span>}
         <span style={{ flex: 1 }} />

@@ -92,7 +92,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>🌳 {rootMat}</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{rootMat}</span>
         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{rootName || ''}</span>
         <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>
           {rows.length} รายการ · ลึก {maxLevel} ชั้น
@@ -206,7 +206,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
                     {r.fromOtherSheet && (
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}
                         title="นิยามไว้ครั้งเดียวในใบของตัวเอง — ใบนี้ยืมมากางให้ ไม่ได้กรอกซ้ำ">
-                        📄 ชั้นล่างมาจากใบของ {r.mat_no} เอง
+                        ชั้นล่างมาจากใบของ {r.mat_no} เอง
                       </div>
                     )}
                     {/* ⚠️ นิยามไว้ 2 ที่ — บอกตรงๆ ว่าต่างกันกี่รายการ ห้ามเงียบ (จอต้องซื่อสัตย์)
@@ -218,7 +218,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
                       if (!d) return (
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}
                           title={`${r.mat_no} มีใบ BOM ของตัวเอง — ใบขั้นงานบอก "ขั้นนี้กินอะไร" คนละคำถามกับใบพาร์ท จึงไม่เทียบให้`}>
-                          📄 {r.mat_no} มีใบของตัวเองด้วย (ใบขั้นงานไม่เทียบกับใบพาร์ท)
+                          {r.mat_no} มีใบของตัวเองด้วย (ใบขั้นงานไม่เทียบกับใบพาร์ท)
                         </div>
                       );
                       return (

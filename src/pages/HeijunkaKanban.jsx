@@ -171,13 +171,13 @@ function OnDemandLineBlock({ lineName, lineMap, wipRequests = [], onGoChart, onG
   );
   return (
     <div style={{ padding: '10px 14px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-      <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>🚚 ส่งตามคำขอ</span>
+      <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>ส่งตามคำขอ</span>
       <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>เบิกตอนไหนส่งตอนนั้น — ไลน์นี้ไม่ใช้รอบ</span>
       {tickets.length
         ? <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--blue)' }}>
-            📋 ใบค้าง {tickets.length} · {Object.entries(byStatus).map(([s, n]) => `${WIP_ST_SHORT[s] || s} ${n}`).join(' · ')}
+            ใบค้าง {tickets.length} · {Object.entries(byStatus).map(([s, n]) => `${WIP_ST_SHORT[s] || s} ${n}`).join(' · ')}
           </span>
-        : <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>📋 ยังไม่มีใบส่งค้าง</span>}
+        : <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>ยังไม่มีใบส่งค้าง</span>}
       <span style={{ flex: 1 }} />
       {onGoChart && linkBtn('☑ เลือกพาร์ทไปส่ง → Store Time Chart', onGoChart)}
       {onGoQueue && linkBtn('🔄 ใบเบิก-ส่งเข้าไลน์', onGoQueue)}
@@ -226,7 +226,7 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
         return (
           <div key={lineName}>
             <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-              🏭 {lineName}
+              {lineName}
               <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}>
                 {demand.parts.length} พาร์ท · {demand.totalKanban} การ์ด (ทั้งวัน)
               </span>
@@ -258,14 +258,14 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
                         <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 7px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: status.color }}>{status.label}</span>
                       </div>
                       <div style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)', marginBottom: 4 }}>
-                        📦 ส่ง {r.delivery_time?.slice(0, 5) || '—'}
+                        ส่ง {r.delivery_time?.slice(0, 5) || '—'}
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.7 }}>
                         ตัดยอด {r.cutoff_time?.slice(0, 5) || '—'} · เตรียม {r.prep_minutes || 60} น.<br />
                         {r.points_count || 1} จุด × {r.time_per_point_min || 10} น. · เสร็จ ~{finishTime}
                       </div>
                       <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(128,128,128,0.15)', fontSize: 12 }}>
-                        🔩 {alloc.parts.length} พาร์ท · 🎴 <span style={{ fontWeight: 900, color: 'var(--amber)' }}>{alloc.totalKanban}</span> การ์ด <span style={{ fontSize: 11, color: 'var(--muted)' }}>(รอบนี้)</span>
+                        {alloc.parts.length} พาร์ท · 🎴 <span style={{ fontWeight: 900, color: 'var(--amber)' }}>{alloc.totalKanban}</span> การ์ด <span style={{ fontSize: 11, color: 'var(--muted)' }}>(รอบนี้)</span>
                       </div>
                       {confirmedBy && (
                         <div style={{ fontSize: 11, color: 'var(--green)', marginTop: 4 }}>✓ {confirmedBy}</div>
@@ -521,8 +521,8 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
         return (
           <div key={lineName} style={{ border: '1px solid var(--border2)', borderRadius: 10, overflow: 'hidden' }}>
             <div style={{ padding: '8px 14px', background: 'var(--bg2)', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)', display: 'inline-flex', alignItems: 'center', gap: 8 }}>🏭 {lineName} <LineBoardLink line={lineName} /></span>
-              <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{demand.parts.length} พาร์ท · 🎴 {demand.totalKanban} การ์ด (ทั้งวัน)</span>
+              <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)', display: 'inline-flex', alignItems: 'center', gap: 8 }}>{lineName} <LineBoardLink line={lineName} /></span>
+              <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{demand.parts.length} พาร์ท · {demand.totalKanban} การ์ด (ทั้งวัน)</span>
             </div>
             <div style={isMobile ? { overflowX: 'auto', WebkitOverflowScrolling: 'touch' } : undefined}>
             <div style={isMobile ? { minWidth: 620 } : undefined}>
@@ -553,7 +553,7 @@ function DeliveryTimelineBoard({ rounds, deliveries, view, kanbanStd, fmt, lineM
               return (
                 <div key={expandKey} style={{ borderTop: '1px solid var(--border2)', padding: '10px 14px', background: 'var(--bg)' }}>
                   <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>
-                    {r.shift === 'night' ? '🌙' : '☀️'} รอบ {r.round_no} — ตัดยอด {(r.cutoff_time||'').slice(0,5) || '—'} · ส่ง {(r.delivery_time||'').slice(0,5)} · 🎴 {alloc.totalKanban} การ์ด · {getRoundStatus(r, confirmedSet, receivedMap, workDate, nowMs).label}
+                    {r.shift === 'night' ? '🌙' : '☀️'} รอบ {r.round_no} — ตัดยอด {(r.cutoff_time||'').slice(0,5) || '—'} · ส่ง {(r.delivery_time||'').slice(0,5)} · {alloc.totalKanban} การ์ด · {getRoundStatus(r, confirmedSet, receivedMap, workDate, nowMs).label}
                   </div>
                   {alloc.parts.length === 0 ? (
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>ไม่มี demand พาร์ทย่อยที่ตกในรอบนี้</div>
@@ -617,7 +617,7 @@ function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onRece
           {Object.keys(byLine).sort(lineNameCompare).map(lineName => (
             <div key={lineName} style={{ background: 'var(--bg2)', borderRadius: 8, padding: 12, border: '1px solid var(--border2)' }}>
               <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', marginBottom: 8, borderBottom: '1px solid var(--border)', paddingBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
-                🏭 {lineName} <LineBoardLink line={lineName} />
+                {lineName} <LineBoardLink line={lineName} />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {byLine[lineName].map(r => {
@@ -635,7 +635,7 @@ function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onRece
                         <span style={chip(status.bg, status.color)}>{status.label}</span>
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                        ตัดยอด {r.cutoff_time?.slice(0,5) || '—'} → ส่ง {r.delivery_time?.slice(0,5) || '—'} · 🎴 {alloc.totalKanban} การ์ด
+                        ตัดยอด {r.cutoff_time?.slice(0,5) || '—'} → ส่ง {r.delivery_time?.slice(0,5) || '—'} · {alloc.totalKanban} การ์ด
                       </div>
                       {(() => {
                         const tp = tripsFor?.(r.id, alloc.totalKanban);
@@ -1048,7 +1048,7 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, releaseD
           const queue = lineLots.filter(l => l.status !== 'done');
           return (
             <div key={lineName} style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--blue)', marginBottom: 8 }}>🏭 {lineName} <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· คิว {queue.length}</span></div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--blue)', marginBottom: 8 }}>{lineName} <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· คิว {queue.length}</span></div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(290px, 100%), 1fr))', gap: 12 }}>
                 {lineLots.map(lot => {
                   const st = LOT_STATUS[lot.status] || LOT_STATUS.pending;
@@ -1091,7 +1091,7 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, releaseD
                       </div>
                       {raws.length > 0 && (
                         <div style={{ borderTop: '1px solid rgba(128,128,128,0.15)', padding: '8px 14px', background: 'rgba(0,0,0,0.06)' }}>
-                          <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', marginBottom: 6 }}>📤 ใบเบิกวัตถุดิบ (Store Raw)</div>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', marginBottom: 6 }}>ใบเบิกวัตถุดิบ (Store Raw)</div>
                           {raws.map(r => {
                             const issued = r.status === 'issued';
                             return (
@@ -1127,8 +1127,8 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, releaseD
 
 /* ─── Unified Store Board — ตู้ Kanban รวมของทุกสโตร์ ─────────────────────────
    หน้างานจริงมีหลายสโตร์แยกกัน แต่ละสโตร์มี "ของ" และ "ปลายทาง" ต่างกัน:
-   🏭 Store FG (parent 100) → ไลน์ประกอบ · 🔧 Store Child (200 ผลิตเอง) → ปล่อยเข้าไลน์ แล้วรับของกลับ
-   🛒 จัดซื้อ (300/500 ซื้อ supplier) → รับเข้าสโตร์ · 📦 Rack Center (ภาชนะ+packaging) → ทุกไลน์
+   🏭 Store FG (parent 100) → ไลน์ประกอบ · Store Child (200 ผลิตเอง) → ปล่อยเข้าไลน์ แล้วรับของกลับ
+   🛒 จัดซื้อ (300/500 ซื้อ supplier) → รับเข้าสโตร์ · Rack Center (ภาชนะ+packaging) → ทุกไลน์
    ทุกสโตร์ใช้การ์ดหน้าตาเดียวกัน: สถานะ → ปลายทาง → ปุ่มขยับสถานะ ────────────── */
 const STORE_TABS = [
   { key: 'fg',       icon: '🏭', label: 'Store FG',      desc: 'งาน FG 1xx → ไลน์ประกอบ · รอบส่งคัมบัง' },
@@ -1357,7 +1357,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
   const hid = tally[store] || { done: 0, search: 0 };
   const hiddenNote = (hid.done || hid.search) ? (
     <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
-      👁 ซ่อนอยู่{hid.done ? ` · เสร็จแล้ว ${hid.done} รายการ` : ''}{hid.search ? ` · ไม่ตรงคำค้น/ตัวกรอง ${hid.search} รายการ` : ''}
+      ซ่อนอยู่{hid.done ? ` · เสร็จแล้ว ${hid.done} รายการ` : ''}{hid.search ? ` · ไม่ตรงคำค้น/ตัวกรอง ${hid.search} รายการ` : ''}
     </div>
   ) : null;
 
@@ -1367,7 +1367,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
     if (!wipAllBy[k]) return null;
     return (
       <div style={{ marginBottom: 18 }}>
-        <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)', margin: '0 0 8px' }}>🔄 ใบเบิก-ส่งเข้าไลน์ <span style={{ fontWeight: 500, color: 'var(--muted)', fontSize: 12 }}>· ไลน์เรียก/เปิดใบผลิต → สโตร์หยิบ → ส่งถึงไลน์</span></div>
+        <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)', margin: '0 0 8px' }}>ใบเบิก-ส่งเข้าไลน์ <span style={{ fontWeight: 500, color: 'var(--muted)', fontSize: 12 }}>· ไลน์เรียก/เปิดใบผลิต → สโตร์หยิบ → ส่งถึงไลน์</span></div>
         {rows.length === 0 ? <div style={{ padding: 18, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีใบเบิกที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> : (
         <StatusZones rows={rows} zones={WIP_ZONES(showDone)} renderCard={w => {
             const st = WIP_STATUS[w.status] || WIP_STATUS.pending;
@@ -1476,7 +1476,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
         {hiddenNote}
         {wipSection('fg')}
         {rounds.length === 0 && wipAllBy.fg > 0 ? null : rounds.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-          🚚 ทุกไลน์ใช้โหมด "ส่งตามคำขอ" (เบิกตอนไหนส่งตอนนั้น) — ไม่มีรอบให้ยืนยัน · ใบเบิก-ส่งงาน FG (1xx) อยู่ด้านบนของตู้นี้ · ชิ้นส่วนอื่นอยู่ตู้ตามเลขพาร์ท
+          ทุกไลน์ใช้โหมด "ส่งตามคำขอ" (เบิกตอนไหนส่งตอนนั้น) — ไม่มีรอบให้ยืนยัน · ใบเบิก-ส่งงาน FG (1xx) อยู่ด้านบนของตู้นี้ · ชิ้นส่วนอื่นอยู่ตู้ตามเลขพาร์ท
         </div> :
         vRounds.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีรอบที่ตรงกับคำค้น "{q}"</div> :
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(330px, 100%), 1fr))', gap: 12 }}>
@@ -1509,7 +1509,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
         {wipSection('child')}
         {/* ขาออก (/line-stock?tab=out) = เฉพาะใบเบิก-ส่งเข้าไลน์ · ใบล็อตย้ายไปขาเข้า (แท็บ 'lots') */}
         {direction !== 'out' && (<>
-        {wipAllBy.child > 0 && <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)', margin: '6px 0 8px' }}>🔧 ใบล็อตผลิต Semi Part</div>}
+        {wipAllBy.child > 0 && <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)', margin: '6px 0 8px' }}>ใบล็อตผลิต Semi Part</div>}
         {lotRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบสั่งผลิตพาร์ทย่อย</div> :
         vLots.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีใบสั่งผลิตที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
         <StatusZones rows={vLots} zones={LOT_ZONES(showDone)} renderCard={lot => {
@@ -1601,7 +1601,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
             {purchaseRequests.length === 0 ? 'ยังไม่มีรายการจัดซื้อ — เกิดอัตโนมัติเมื่อของซื้อ (300/500) ในสโตร์ไม่พอต่อแผนผลิต' : `ไม่มีรายการที่ตรงกับตัวกรอง${q ? ` / คำค้น "${q}"` : ''}`}
           </div> : (<>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
-              🧮 รวมยอดตามพาร์ท · <b style={{ color: 'var(--text)' }}>{purGroups.length} พาร์ท</b> จาก {fmt(purShown)} ใบ
+              รวมยอดตามพาร์ท · <b style={{ color: 'var(--text)' }}>{purGroups.length} พาร์ท</b> จาก {fmt(purShown)} ใบ
               {purGroups.some(g => g.slips > 1) && ' — ใบซ้ำพาร์ทเดียวกันเกิดจากระบบออกใบละล็อต · กดปุ่มบนการ์ดเพื่อเลื่อนสถานะรวมทีเดียว'}
             </div>
             {hiddenNote}
@@ -1641,7 +1641,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
       {store === 'raw' && (<>
         {hiddenNote}
         {wipSection('raw')}
-        {wipAllBy.raw > 0 && <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)', margin: '6px 0 8px' }}>🧱 ใบเบิกวัตถุดิบของใบล็อต</div>}
+        {wipAllBy.raw > 0 && <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)', margin: '6px 0 8px' }}>ใบเบิกวัตถุดิบของใบล็อต</div>}
         {rawRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบเบิกวัตถุดิบ</div> :
         vRaws.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีใบเบิกที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
         <StatusZones rows={vRaws} zones={RAW_ZONES(showDone)} statusOf={r => (r.status === 'issued' ? 'issued' : 'pending')} renderCard={r => {
@@ -1662,12 +1662,12 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
         <>
           {hiddenNote}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12, color: 'var(--muted)' }}>👁️ แสดงคิวภาชนะ/Packaging แบบอ่านอย่างเดียว — เลื่อนสถานะ/จ่ายที่หน้า Rack Center (เจ้าของเดียว กันแข่งกันเขียน)</span>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>แสดงคิวภาชนะ/Packaging แบบอ่านอย่างเดียว — เลื่อนสถานะ/จ่ายที่หน้า Rack Center (เจ้าของเดียว กันแข่งกันเขียน)</span>
             <Link to="/rack-center" style={{ fontSize: 12, fontWeight: 800, color: 'var(--blue)', textDecoration: 'none', padding: '5px 12px', borderRadius: 8, border: '1px solid var(--blue-line)', background: 'var(--blue-dim)', whiteSpace: 'nowrap' }}>
               🗃️ จัดการที่ Rack Center →
             </Link>
           </div>
-          <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 8 }}>🗃️ ภาชนะ (แร็ค/ถาด)</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 8 }}>ภาชนะ (แร็ค/ถาด)</div>
           {vRacks.length === 0 ? <div style={{ padding: '10px 0 20px', color: 'var(--muted)', fontSize: 13 }}>{rackRequests.length === 0 ? 'ยังไม่มีการเรียกภาชนะ' : 'ไม่มีการเรียกภาชนะที่ค้างอยู่'}</div> : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(330px, 100%), 1fr))', gap: 12, marginBottom: 20 }}>
               {vRacks.map(r => {
@@ -1682,7 +1682,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
               })}
             </div>
           )}
-          <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 8 }}>📦 Packaging (จากการผลิต)</div>
+          <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', marginBottom: 8 }}>Packaging (จากการผลิต)</div>
           {vPkgs.length === 0 ? <div style={{ padding: '10px 0', color: 'var(--muted)', fontSize: 13 }}>{pkgRequests.length === 0 ? 'ยังไม่มีใบเบิก packaging' : 'ไม่มีใบเบิก packaging ที่ค้างอยู่'}</div> : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(330px, 100%), 1fr))', gap: 12 }}>
               {vPkgs.map(p => {
@@ -3048,7 +3048,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
               borderRadius: 999, fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
               background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--amber)',
             }}>
-              📅 กำลังดูวันที่ {workDate} (ไม่ใช่วันงานปัจจุบัน)
+              กำลังดูวันที่ {workDate} (ไม่ใช่วันงานปัจจุบัน)
               <button onClick={() => setWorkDate(liveWorkDate)} style={{
                 padding: '2px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 700,
                 fontFamily: 'var(--font-body)', background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text2)',
@@ -3225,9 +3225,9 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
                     </th>
                   ))}
                   <th style={{ padding: '10px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'right' }}>Gross</th>
-                  <th style={{ padding: '10px 12px', fontSize: 11, fontWeight: 800, color: 'var(--green)', textAlign: 'right' }}>📦 Stock</th>
+                  <th style={{ padding: '10px 12px', fontSize: 11, fontWeight: 800, color: 'var(--green)', textAlign: 'right' }}>Stock</th>
                   <th style={{ padding: '10px 12px', fontSize: 11, fontWeight: 800, color: 'var(--accent)', textAlign: 'right' }}>NET</th>
-                  <th style={{ padding: '10px 12px', fontSize: 11, fontWeight: 800, color: 'var(--amber)', textAlign: 'right' }}>🎴 KANBAN</th>
+                  <th style={{ padding: '10px 12px', fontSize: 11, fontWeight: 800, color: 'var(--amber)', textAlign: 'right' }}>KANBAN</th>
                 </tr>
               </thead>
               <tbody>

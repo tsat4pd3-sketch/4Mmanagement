@@ -262,8 +262,8 @@ export default function ImageCropModal({
             <Segmented size="sm" label="โหมดรูป" value={useFull ? 'full' : 'crop'}
               onChange={v => setUseFull(v === 'full')}
               options={[
-                { value: 'full', label: '🖼️ ใช้ทั้งรูป' },
-                { value: 'crop', label: '🔍 ครอบ/ซูม' },
+                { value: 'full', label: 'ใช้ทั้งรูป' },
+                { value: 'crop', label: 'ครอบ/ซูม' },
               ]} />
           </div>
         )}
