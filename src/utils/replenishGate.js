@@ -17,6 +17,8 @@
       → **ตารางความจริงของ `validateDeliverPayload` ต้องตรงกับ trigger เป๊ะ** (มีเทสล็อก)
 
    ไฟล์นี้ pure — ห้าม import supabase/react                                                    */
+import { isCoilUom, qtyUnit } from './coilUom.js';
+
 
 /* ═══ 🏷️ "ใบนี้มาจากไหน" — `wip_replenish_requests.source` (2026-10-21) ════════════════════
    4 ค่า (CHECK ฝั่ง DB · migration `20261021_…` + `20261105b_wip_replenish_line_order_main.sql` เพิ่ม `line_order`):
@@ -238,11 +240,15 @@ export function checkPickPart({ request, scan }) {
 export function checkPickQty({ request, qty }) {
   const want = Number(request?.request_qty) || 0;
   const q = Number(qty);
-  if (!(q > 0)) return { status: 'invalid', block: true, needConfirm: false, diff: 0, message: 'ใส่จำนวนที่หยิบ (ต้องมากกว่า 0)' };
-  const diff = q - want;
+  const coil = isCoilUom(request?.uom);
+  const u = qtyUnit(request?.uom);
+  if (!(q > 0)) return { status: 'invalid', block: true, needConfirm: false, diff: 0, message: coil ? 'ใส่น้ำหนักม้วนที่จ่ายจริง (kg · ต้องมากกว่า 0)' : 'ใส่จำนวนที่หยิบ (ต้องมากกว่า 0)' };
+  const diff = Math.round((q - want) * 1e6) / 1e6;
+  /* 🧲 05/11 — coil "จ่ายเป็นม้วน" (user เลือก): ม้วนหนักกว่าที่ต้องใช้ = ปกติ ไม่บล็อก · ส่วนเกินค้างหน้าไลน์ ลดยอดรอบหน้า */
+  if (diff > 0 && coil) return { status: 'ok', block: false, needConfirm: false, diff, coilOver: true, message: `✓ จ่ายม้วน ${q.toLocaleString()} kg (ต้องใช้ ${want.toLocaleString()} kg) — เกิน ${diff.toLocaleString()} kg ค้างหน้าไลน์ ใช้รอบถัดไป` };
   if (diff > 0) return { status: 'over', block: true, needConfirm: false, diff, message: `หยิบเกินใบ ${diff.toLocaleString()} ชิ้น (ใบขอ ${want.toLocaleString()}) — ส่งเกินทำ WIP บวม ลดให้เท่าใบ` };
-  if (diff < 0) return { status: 'under', block: false, needConfirm: true, diff, message: `หยิบได้ ${q.toLocaleString()} / ${want.toLocaleString()} — ขาด ${(-diff).toLocaleString()} ชิ้น (ยืนยันว่าส่งไม่ครบ ไลน์จะเห็นตอนรับของ)` };
-  return { status: 'ok', block: false, needConfirm: false, diff: 0, message: `✓ ครบ ${want.toLocaleString()} ชิ้น` };
+  if (diff < 0) return { status: 'under', block: false, needConfirm: true, diff, message: `หยิบได้ ${q.toLocaleString()} / ${want.toLocaleString()} — ขาด ${(-diff).toLocaleString()} ${u} (ยืนยันว่าส่งไม่ครบ ไลน์จะเห็นตอนรับของ)` };
+  return { status: 'ok', block: false, needConfirm: false, diff: 0, message: `✓ ครบ ${want.toLocaleString()} ${u}` };
 }
 
 /** คอลัมน์ที่เขียนลงใบตอน pending → preparing */

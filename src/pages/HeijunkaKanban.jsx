@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'react';
+import { isCoilUom } from '../utils/coilUom';
 import { urlParam, urlPick, urlBool } from '../utils/urlInit';
 import { lineNameCompare } from '../utils/lineHierarchy';
 import { canWriteUnit, writeBlockText } from '../utils/writeScope';
@@ -1353,11 +1354,11 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
             const gateMeta = gate ? `${gate.icon} ${w.delivered_gate === 'scanned' ? (w.delivered_point_name || gate.label) : gate.label}${w.delivered_gate === 'override' && w.delivered_override_reason ? ` — ${w.delivered_override_reason}` : ''}` : '';
             const nextLabel = w.status === 'preparing' ? '📍 ถึงไลน์แล้ว · สแกนจุดส่ง' : w.status === 'pending' ? '🔍 เริ่มเตรียม · สแกนพาร์ท' : st.next;
             const pickMeta = w.picked_qty != null && w.status !== 'pending'
-              ? `${PICK_GATES[w.picked_gate]?.icon || '🔧'} หยิบ ${fmt(w.picked_qty)}${Number(w.picked_qty) < Number(w.request_qty) ? ` / ${fmt(w.request_qty)} (ไม่ครบ)` : ''}${w.stock_txn_ids?.length ? ' · ตัดสต็อกแล้ว' : (w.stock_txn_note ? ` · ⚠ ${w.stock_txn_note}` : '')}` : '';
+              ? `${PICK_GATES[w.picked_gate]?.icon || '🔧'} หยิบ ${fmt(w.picked_qty)}${isCoilUom(w.uom) ? ' kg' : ''}${Number(w.picked_qty) < Number(w.request_qty) ? ` / ${fmt(w.request_qty)} (ไม่ครบ)` : ''}${w.stock_txn_ids?.length ? ' · ตัดสต็อกแล้ว' : (w.stock_txn_note ? ` · ⚠ ${w.stock_txn_note}` : '')}` : '';
             return (
               <QueueCard key={w.id} code={code} showImg img={imgOf(w.mat_no)}
                 name={w.part_name || w.point_name || 'ไลน์ขอเบิกเข้าไลน์'}
-                qty={fmt(w.request_qty)} unit="" qtyLabel="จำนวนที่ต้องส่ง" destination={w.line_name}
+                qty={fmt(w.request_qty)} unit={isCoilUom(w.uom) ? 'kg · จ่ายเป็นม้วน' : ''} qtyLabel={isCoilUom(w.uom) ? '🧲 coil ต้องใช้' : 'จำนวนที่ต้องส่ง'} destination={w.line_name}
                 statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
                 actionLabel={canOperate ? nextLabel : null} busy={busy === w.id} onAction={() => onAdvanceWip(w)}
                 rows={[{ k: 'ที่มา', v: src.label },
