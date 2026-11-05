@@ -35,7 +35,7 @@ import { isLeafLine, getChildLineNames, getAncestorNames } from '../utils/lineHi
 import { notifyEvent } from '../utils/notifyEvent';
 import { getActor } from '../utils/actorStamp';
 import { getWorkDate } from '../utils/workDate';   // 👤 "ใครเรียก" — ที่เดียวของตัวตนผู้ทำรายการ
-import { pointsForLine, DELIVER_GATES } from '../utils/replenishGate';
+import { pointsForLine, DELIVER_GATES, unreceivedAge } from '../utils/replenishGate';
 import MatLabel from './MatLabel';
 import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 มุม SAP ของใบ (2026-09-08)
 import ProductSelect from './ProductSelect';
@@ -219,6 +219,22 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
 
   useEffect(() => { load(); }, [load]);
 
+  /* 🧾 05/11 (คำสั่ง user · ข้อ A+C) — ความต้องการจาก "ใบผลิตที่เปิดอยู่" ต้องเห็นบนแผงเสมอ ไม่ใช่แค่ toast ตอนกด
+     · ใบผลิตที่เปิดก่อนมีระบบนี้ = ยังไม่เคยถูกคำนวณ ⇒ ปุ่ม 🔁 ให้ไลน์กดคำนวณ + แจ้งสโตร์เองได้ทุกเมื่อ
+     · คำนวณแบบ dryRun (อ่านอย่างเดียว) ตอนเปิดแผง/สลับไลน์/หลังแจ้ง — ไม่ผูกกับ load() ที่ถูกเรียกถี่
+     · อ่านไม่ได้ = เขียน error บนจอ ห้ามโชว์ว่า "ไม่มีความต้องการ" */
+  const [plan, setPlan] = useState(null);       // { error?, rows } | null = กำลังคำนวณ
+  const [planTick, setPlanTick] = useState(0);
+  useEffect(() => {
+    if (!lineName) return undefined;
+    let alive = true;
+    setPlan(null);
+    syncLineOrderDemand({ lineName, role, dryRun: true })
+      .then(r => { if (alive) setPlan(r); })
+      .catch(e => { if (alive) setPlan({ error: e?.message || String(e), rows: [] }); });
+    return () => { alive = false; };
+  }, [lineName, role, planTick]);
+
   /* ── ยอดคงเหลือ "ของไลน์นี้เท่านั้น" ────────────────────────────────────────
      ⚠️ ห้ามบวกของไลน์แม่เข้ามา — ของที่แม่ยังไม่ได้ถูกจ่ายลงมาที่ไลน์นี้จริง
         และไลน์พี่น้องก็จะนับก้อนเดียวกันซ้ำอีก */
@@ -377,7 +393,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
         lines: [`🏭 ไลน์: ${lineName}`, `🔁 ${what}`, ...r.rows.filter(x => x.action === 'insert' || x.action === 'raise').slice(0, 5).map(x => `🔩 ${x.mat_no} × ${fmtQty(x.qty)}`)] });
     } else toast.info(`${what} — ${text}`);
     if (!r.error) { setAdhocMat(''); setAdhocName(''); setAdhocQty(''); setAdhocKnown(false); }
-    load();
+    load(); setPlanTick(t => t + 1);
   };
   const placeFromBom = async (mat, qty) => {
     setBusy(`adhoc:${mat}`);
@@ -567,6 +583,55 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       fullName={fullName} onClose={() => { setShowSetup(false); load(); }} />
   );
 
+  const syncNow = async () => {
+    setBusy('order-sync');
+    const r = await syncLineOrderDemand({ lineName, role });
+    setBusy(null);
+    reportSync(r, 'คำนวณจากใบผลิตที่เปิดอยู่');
+  };
+  const planRows = plan?.rows || [];
+  const planSend = planRows.filter(x => x.action === 'insert' || x.action === 'raise');
+  const planWait = planRows.filter(x => x.action === 'wait');
+  const planNoPkg = planRows.filter(x => x.action === 'no_pkg');
+  const orderBlock = (
+    <div style={{ marginBottom: 12, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '9px 12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>🧾 ความต้องการจากใบผลิตที่เปิดอยู่</span>
+        {plan == null && <span style={{ fontSize: 11, color: 'var(--muted)' }}>กำลังคำนวณ…</span>}
+        {plan && !plan.error && (
+          <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+            {planRows.length ? `${planRows.length} พาร์ท` : 'ไม่มีใบผลิตเปิดอยู่ / ไม่มีชิ้นส่วนที่ต้องเบิก'}
+            {planSend.length ? <> · <b style={{ color: 'var(--amber)' }}>ยังไม่ได้แจ้งสโตร์ {planSend.length}</b></> : null}
+          </span>
+        )}
+        {(canDecide || canReceive || canSetLv) && (
+          <button disabled={!!busy} onClick={syncNow} style={{ marginLeft: 'auto', ...btn('var(--bg2)', 'var(--blue)', 'var(--blue)') }}>
+            {busy === 'order-sync' ? '…' : '🔁 คำนวณ + แจ้งสโตร์'}
+          </button>
+        )}
+      </div>
+      {plan?.error && <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--red)' }}>⚠ คำนวณไม่ได้ — {plan.error}</div>}
+      {planSend.length > 0 && (
+        <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7 }}>
+          📤 ครบกล่องแล้วแต่ยังไม่ได้แจ้ง (ใบผลิตเปิดก่อนมีระบบนี้ หรือเพิ่งเพิ่มยอด) — กด 🔁 เพื่อแจ้งสโตร์:{' '}
+          {planSend.slice(0, 6).map(x => `${x.mat_no} × ${fmtQty(x.qty)}${x.coil ? ' kg' : ''}`).join(' · ')}{planSend.length > 6 ? ` · +${planSend.length - 6}` : ''}
+        </div>
+      )}
+      {planWait.length > 0 && (
+        <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7 }}>
+          ⏳ <b>ยังไม่ครบ 1 กล่อง — สะสมรอใบผลิตถัดไป {planWait.length} พาร์ท</b> (สโตร์ยังไม่เห็น):{' '}
+          {planWait.slice(0, 6).map(x => `${x.mat_no} ขาด ${fmtQty(x.short)} / กล่อง ${fmtQty(x.pkg)}`).join(' · ')}{planWait.length > 6 ? ` · +${planWait.length - 6}` : ''}
+        </div>
+      )}
+      {planNoPkg.length > 0 && (
+        <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--red)', lineHeight: 1.7 }}>
+          📦 <b>ยังไม่ตั้ง packing std {planNoPkg.length} พาร์ท — ระบบไม่แจ้งสโตร์ให้</b> (ตั้งขนาดกล่องที่ทะเบียนพาร์ท หรือกด ➕ ขอเบิกเอง):{' '}
+          {planNoPkg.slice(0, 6).map(x => `${x.mat_no} ขาด ${fmtQty(x.short)}`).join(' · ')}{planNoPkg.length > 6 ? ` · +${planNoPkg.length - 6}` : ''}
+        </div>
+      )}
+    </div>
+  );
+
   /* ➕ ฟอร์ม "ขอเบิกพาร์ทนี้เลย" — ต้องเข้าถึงได้**ทุกสถานะของแผง** รวมตอนไม่มีอะไรต้องทำ
      (บทเรียน 15/10: จอที่ซ่อนตัวเองเมื่อไม่มีข้อมูล ห้ามเป็นที่เดียวที่เข้าถึงงานของตัวเอง) */
   const adhocBlock = !canDecide ? null : (
@@ -631,6 +696,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
             </button>
           )}
         </div>
+        {orderBlock}
         {adhocBlock}
         {setupModal}
       </div>
@@ -651,7 +717,8 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
         )}
       </div>
 
-      {/* ➕ ขอเบิกเอง — อยู่บนสุดเสมอ: คนหน้าไลน์ต้องขอของได้ทุกเมื่อ ไม่ต้องรอยอดถึง min */}
+      {/* 🧾 ความต้องการจากใบผลิต (05/11) + ➕ ขอเบิกเอง — อยู่บนสุดเสมอ */}
+      {orderBlock}
       {adhocBlock}
 
       {/* โหลดไม่สำเร็จ = ต้องบอก ห้ามแสดงเป็น "ไม่มีอะไรต้องเบิก" */}
@@ -804,6 +871,10 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
                     {DELIVER_GATES[r.delivered_gate].icon} {r.delivered_gate === 'scanned' ? (r.delivered_point_name || DELIVER_GATES.scanned.label) : `${DELIVER_GATES[r.delivered_gate].label} ตอนส่ง`}
                   </span>
                 )}
+                {/* 📭 05/11 — ส่งแล้วยังไม่กดรับ ต้องเห็นว่าค้างมานานแค่ไหน (`unreceivedAge` · replenishGate.js) */}
+                {(() => { const ua = unreceivedAge(r); return ua ? (
+                  <span style={{ fontSize: 11, fontWeight: ua.overdue ? 800 : 600, color: ua.overdue ? 'var(--red)' : 'var(--amber)' }}>📭 {ua.text}</span>
+                ) : null; })()}
                 {r.status === 'delivered' && canReceive && (
                   <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
                     <button disabled={busy === r.id} onClick={() => receive(r, true)} style={btn('#22c55e', '#04140a')}>✔ รับครบ</button>
