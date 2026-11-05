@@ -60,8 +60,10 @@ const daysAgo = (iso, nowMs) => {
 };
 const blankLine = () => ({ key: Math.random().toString(36).slice(2), after: '', before: '', qty: '' });
 
-/* readOnly (04/11) — ฝังใน /heijunka (monitor) = ดูอย่างเดียว · ทำรายการที่ /line-stock?tab=store */
-export default function PlatingBoard({ q = '', showDone = false, readOnly = false }) {
+/* readOnly (04/11) — ฝังใน /heijunka (monitor) = ดูอย่างเดียว · ทำรายการที่ /line-stock?tab=out (ส่ง) · ?tab=in (รับกลับ) */
+/* part (05/11 · คำสั่ง user แยกขาออก/ขาเข้า): 'send' = ยอดที่ร้าน + ส่งไปชุบ + ส่งเข้า W/H + ตั้งค่า (ขาออก)
+   · 'receive' = การ์ดรอรับกลับจากร้าน (ขาเข้า) · 'all' = ทั้งหมด (จอดู /heijunka) */
+export default function PlatingBoard({ q = '', showDone = false, readOnly = false, part = 'all' }) {
   const { role, fullName } = useContext(UserContext);
   const canSend = !readOnly && canSeeded('plating', 'send', role);
   const canReceive = !readOnly && canSeeded('plating', 'receive', role);
@@ -140,7 +142,7 @@ export default function PlatingBoard({ q = '', showDone = false, readOnly = fals
   const [busy, setBusy] = useState(null);
   const rpc = async (key, fn, args, okMsg) => {
     // ด่านชั้นเขียนจริง — ไม่พึ่งการซ่อนปุ่ม (monitor = ห้ามขยับยอดเด็ดขาด)
-    if (readOnly) { toast.error('หน้านี้ดูอย่างเดียว — ทำรายการที่ Line Stock › 🏬 งานสโตร์'); return null; }
+    if (readOnly) { toast.error('หน้านี้ดูอย่างเดียว — ทำรายการที่ Line Stock › 📤 ขาออก / 📥 ขาเข้า'); return null; }
     setBusy(key);
     const { data, error } = await supabaseDR.rpc(fn, args);
     setBusy(null);
@@ -276,6 +278,7 @@ export default function PlatingBoard({ q = '', showDone = false, readOnly = fals
         </div>
       )}
 
+      {part !== 'receive' && (<>
       {/* ⏳ ยอดที่ร้าน (มอนิเตอร์) + ปุ่มส่ง */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'stretch' }}>
         {groups.map(g => {
@@ -358,7 +361,9 @@ export default function PlatingBoard({ q = '', showDone = false, readOnly = fals
           </div>
         </div>
       )}
+      </>)}
 
+      {part !== 'send' && (<>
       {/* 🃏 การ์ดใบส่งชุบ — รอรับกลับ */}
       <div style={muted}>
         🧪 อยู่ที่ร้านรวม <b>{fmt(totalOpen)} ชิ้น · {orders.length} ใบ</b> · งานกลับมา: นับของจริงก่อน ครบกดรับ · ไม่ครบกรอกยอดที่นับได้ + รายละเอียด
@@ -426,7 +431,9 @@ export default function PlatingBoard({ q = '', showDone = false, readOnly = fals
           );
         }} />
       )}
+      </>)}
 
+      {part !== 'receive' && (<>
       {/* 🏬 หลังชุบในคลัง → W/H */}
       {afterStock.length > 0 && (
         <div style={box}>
@@ -525,6 +532,7 @@ export default function PlatingBoard({ q = '', showDone = false, readOnly = fals
           </div>
         )}
       </div>
+      </>)}
     </div>
   );
 }

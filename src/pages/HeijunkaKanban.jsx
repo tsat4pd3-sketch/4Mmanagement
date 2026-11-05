@@ -22,6 +22,7 @@ import PurchaseBulkModal from '../components/PurchaseBulkModal';
 import OpenOrderDemandPanel from '../components/OpenOrderDemandPanel';
 import { storeOfMat, WIP_STORES } from '../utils/storeOps';   // 🗂️ ใบเบิก-ส่งเข้าไลน์ไปอยู่ตู้ตามเลขพาร์ท (04/11)
 import { shortReceiptRows } from '../utils/stockDiscrepancy';   // ⚠️ รับไม่ครบ = ย้ายไปคลังพัก ไม่ตัดทิ้ง (05/11)
+import StockReceiptQueue from '../components/StockReceiptQueue';   // 📥 ขาเข้า: รอรับเข้า (05/11)
 import PlatingBoard from '../components/PlatingBoard';
 import DeliverScanModal from '../components/DeliverScanModal';
 import PickScanModal from '../components/PickScanModal';
@@ -1139,6 +1140,10 @@ const STORE_TABS = [
   // ⚠️ แท็บนี้เป็นกระจกอ่านอย่างเดียวของหน้า /rack-center — ป้ายต้องบอกตั้งแต่บนแท็บ
   //    (เดิมชื่อ 'Rack Center' ซ้ำกับเมนูเป๊ะ คนกดเข้ามาแล้วทำงานต่อไม่ได้โดยไม่รู้ล่วงหน้า)
   { key: 'rack',     icon: '📦', label: 'ภาชนะ (ดูอย่างเดียว)', desc: 'ภาชนะ + Packaging → ทุกไลน์ · จัดการที่ ภาชนะ & Packaging' },
+  /* 📥 ขาเข้า (05/11 · คำสั่ง user "แยกขาออก/ขาเข้า") — โผล่เฉพาะ /line-stock?tab=in (opsStores) ไม่โผล่ในจอดู */
+  { key: 'lots',     icon: '🔧', label: 'ใบล็อตผลิต Semi Part', desc: 'พื้นที่ผลิต → สโตร์ · ปล่อยใบให้ไลน์ผลิต แล้วรับของกลับเข้าสโตร์', inOnly: true },
+  { key: 'receipts', icon: '📥', label: 'รอรับเข้า (ไลน์ปิดใบผลิต)', desc: 'พื้นที่ผลิต → สโตร์/W/H · นับของจริงแล้วกดรับ', inOnly: true },
+  { key: 'plating_in', icon: '🧪', label: 'รับกลับจากร้านชุบ', desc: 'ร้านชุบ → สโตร์ · นับรับต่อใบ', inOnly: true },
   // ตะกร้ารับท้าย — ใบเบิกที่เลขพาร์ทไม่เข้ากลุ่ม 1/2/3/5 (ห้ามหายจากจอ · โผล่เฉพาะตอนมีใบ)
   { key: 'other',    icon: '❔', label: 'ไม่เข้ากลุ่ม',  desc: 'ใบเบิกที่เลขพาร์ทไม่ใช่ 1xx/2xx/3xx/5xx — ตรวจเลขพาร์ท' },
   // 🧪 งานชุบภายนอก (13/10) — ร้านชุบทำหน้าที่เหมือนไลน์ผลิต (2xx ก่อนชุบ → 2xx หลังชุบ) แต่ไม่ยืนยันยอดเอง
@@ -1243,13 +1248,18 @@ const matchQ = (q, ...fields) => {
   return fields.some(f => String(f ?? '').toLowerCase().includes(s));
 };
 
-function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false, focus = null, rounds, deliveries, view, onConfirm, confirming, onReceive, imgOf,
+function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false, focus = null, direction = null, areaOf = () => null, rounds, deliveries, view, onConfirm, confirming, onReceive, imgOf,
   lotRequests, rawRequests, rackRequests, pkgRequests, wipRequests, purchaseRequests, purchaseErr, busy, onAdvanceLot, onIssueRaw, onAdvanceWip, onAdvancePurchase, setBulkBuy, fmt, workDate, nowMs, canOperate, lotMats = null, inflowRules = null }) {
 
   const { roundAlloc } = view;
   const [buyFilter, setBuyFilter] = useState(() => urlPick('buy', ['3', '5'], ''));   // '' | '3' | '5' · ?buy= (จอวนหน้า)
   const [q, setQ] = useState(() => focus?.q || '');   // ค้นหา: รหัส / ชื่อ / ไลน์ปลายทาง
   useEffect(() => { if (focus?.at) setQ(focus.q || ''); }, [focus?.at, focus?.q]);   // 🔍 กดจากแถบไลน์เรียกของ
+  /* 🗺️ 05/11 (คำสั่ง user) — กรองพื้นที่: ขาออก = ปลายทาง (พื้นที่ผลิต) · ขาเข้า = ต้นทาง (พื้นที่ผลิต)
+     ฝั่งสโตร์มีคลังเดียวตอนนี้ (STORE → พื้นที่ของมัน) โชว์เป็นป้ายตายตัว · พื้นที่ = รหัส SAP ที่ผูกไลน์ไว้ (slocCodeOfLine) · ไม่ผูก = '—' */
+  const [areaSel, setAreaSel] = useState('');
+  const areaKey = (line) => areaOf(line) || '—';
+  const areaOk = (line) => !direction || !areaSel || areaKey(line) === areaSel;
   const [showDone, setShowDone] = useState(() => urlBool('sdone', false));  // ?sdone= · default = เฉพาะงานค้าง (ให้ตรงกับตัวเลขบนแท็บ)
   const confirmedSet = useMemo(() => { const s = new Set(); deliveries.forEach(d => s.add(`${d.line_name}|${d.shift}|${d.round_no}`)); return s; }, [deliveries]);
   const receivedMap  = useMemo(() => { const m = {}; deliveries.forEach(d => { m[`${d.line_name}|${d.shift}|${d.round_no}`] = d; }); return m; }, [deliveries]);
@@ -1263,20 +1273,23 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
     raw: rawRequests.filter(r => r.status === 'pending').length,
     rack: rackRequests.filter(r => r.status !== 'received').length + pkgRequests.filter(p => p.status !== 'issued').length,
   };
+  counts.lots = counts.child;
+  if (direction === 'out') counts.child = 0;   // ขาออก: ตู้ Semi Part นับเฉพาะใบเบิก-ส่งเข้าไลน์
   // ใบเบิก-ส่งเข้าไลน์ที่ยังไม่ส่ง นับเข้าตู้ตามเลขพาร์ท
   wipRequests.filter(w => w.status !== 'delivered').forEach(w => { const k = storeOfMat(w.mat_no); counts[k] = (counts[k] || 0) + 1; });
 
   /* ตัวกรองกลาง — ใช้ทุกแท็บให้เหมือนกัน แล้วรายงานว่าซ่อนอะไรไปบ้าง (ห้ามหายเงียบ)
      ⚠️ ตัวนับต้องแยกต่อแท็บ — นับรวมทุกแท็บแล้วแถบ "ซ่อนอยู่" จะบอกเลขของแท็บอื่นปนมา */
-  const tally = { fg: { done: 0, search: 0 }, child: { done: 0, search: 0 }, raw: { done: 0, search: 0 }, rack: { done: 0, search: 0 }, ext: { done: 0, search: 0 }, other: { done: 0, search: 0 } };
+  const tally = { fg: { done: 0, search: 0 }, child: { done: 0, search: 0 }, lots: { done: 0, search: 0 }, raw: { done: 0, search: 0 }, rack: { done: 0, search: 0 }, ext: { done: 0, search: 0 }, other: { done: 0, search: 0 } };
   const sift = (rows, kind, tab, ...fieldsOf) => rows.filter(r => {
     if (!showDone && isDoneRow[kind]?.(r)) { tally[tab].done++; return false; }
     if (!matchQ(q, ...fieldsOf.map(f => f(r)))) { tally[tab].search++; return false; }
     return true;
   });
 
-  const vLots  = sift(lotRequests, 'child', 'child', r => r.child_mat_no, r => r.part_name, r => r.source_line);
-  const vRaws  = sift(rawRequests, 'raw',   'raw',   r => r.raw_mat_no,   r => r.part_name);
+  const vLots  = sift(lotRequests, 'child', store === 'lots' ? 'lots' : 'child', r => r.child_mat_no, r => r.part_name, r => r.source_line).filter(r => areaOk(r.source_line, 'src'));
+  const vRaws  = sift(rawRequests, 'raw',   'raw',   r => r.raw_mat_no,   r => r.part_name)
+    .filter(r => areaOk(lotRequests.find(l => l.id === r.lot_request_id)?.source_line));
   const vRacks = sift(rackRequests, 'rack', 'rack',  r => r.container_name, r => r.line_name);
   const vPkgs  = sift(pkgRequests, 'pkg',   'rack',  r => r.packaging_code, r => r.packaging_name, r => r.source_line);
   // ใบเบิก-ส่งเข้าไลน์ — กรองแล้วแยกตู้ตามเลขพาร์ท (ตัวนับ "ซ่อนอยู่" ลงตู้ของมันเอง)
@@ -1285,13 +1298,14 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
   wipRequests.forEach(r => {
     const k = storeOfMat(r.mat_no);
     if (!showDone && isDoneRow.wip?.(r)) { tally[k].done++; return; }
+    if (!areaOk(r.line_name)) { tally[k].search++; return; }
     if (!matchQ(q, r.mat_no, r.point_name, r.line_name, r.part_name)) { tally[k].search++; return; }
     vWipsBy[k].push(r);
   });
   const wipAllBy = {};
   WIP_STORES.forEach(k => { wipAllBy[k] = wipRequests.filter(r => storeOfMat(r.mat_no) === k).length; });
   const vRounds = rounds.filter(r => {
-    if (!matchQ(q, r.line_name, `รอบ ${r.round_no}`)) { tally.fg.search++; return false; }
+    if (!matchQ(q, r.line_name, `รอบ ${r.round_no}`) || !areaOk(r.line_name)) { tally.fg.search++; return false; }
     return true;
   });
 
@@ -1374,7 +1388,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
     <div style={{ padding: 16 }}>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         {/* แท็บ Store FG = รอบส่ง — ไม่มีรอบ active = ไม่มีอะไรให้ทำ ซ่อนไปเลย (โผล่เองเมื่อไลน์ตั้งรอบ) · audit 2026-09-07 */}
-        {STORE_TABS.filter(t => (!opsStores || opsStores.includes(t.key))
+        {STORE_TABS.filter(t => (opsStores ? opsStores.includes(t.key) : !t.inOnly)
           && (t.key !== 'fg' || rounds.length > 0 || wipAllBy.fg > 0)
           && (t.key !== 'other' || wipAllBy.other > 0)).map(t => (
           <button key={t.key} onClick={() => setStore(t.key)} title={t.desc}
@@ -1390,6 +1404,22 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
       {/* ── ค้นหา + สลับงานค้าง/ทั้งหมด (ใช้ได้ทุกแท็บ) ── */}
       <FilterBar bare style={{ marginBottom: 14 }}>
         <SearchInput value={q} onChange={setQ} fields="รหัส / ชื่อพาร์ท / ไลน์" grow={false} />
+        {direction && (() => {
+          const lines = direction === 'out'
+            ? [...wipRequests.map(r => r.line_name), ...rounds.map(r => r.line_name), ...lotRequests.map(l => l.source_line)]
+            : lotRequests.map(l => l.source_line);
+          const opts = [...new Set(lines.filter(Boolean).map(areaKey))].sort();
+          const storeArea = areaKey('STORE');
+          return (<>
+            <span style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+              {direction === 'out' ? `ต้นทาง: 🏬 สโตร์ ${storeArea}` : `ปลายทาง: 🏬 สโตร์ ${storeArea}`}
+            </span>
+            <select value={areaSel} onChange={e => setAreaSel(e.target.value)} aria-label={direction === 'out' ? 'พื้นที่ปลายทาง' : 'พื้นที่ต้นทาง'}>
+              <option value="">{direction === 'out' ? 'ปลายทาง: ทุกพื้นที่ผลิต' : 'ต้นทาง: ทุกพื้นที่ผลิต'}</option>
+              {opts.map(a => <option key={a} value={a}>{direction === 'out' ? 'ปลายทาง' : 'ต้นทาง'}: {a === '—' ? 'ไลน์ที่ยังไม่ผูกพื้นที่ SAP' : a}</option>)}
+            </select>
+          </>);
+        })()}
         <button onClick={() => setShowDone(v => !v)} style={{
           padding: '7px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
           background: showDone ? 'var(--bg2)' : 'var(--accent)', color: showDone ? 'var(--text2)' : '#08130a',
@@ -1432,7 +1462,50 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
       {store === 'child' && (<>
         {hiddenNote}
         {wipSection('child')}
+        {/* ขาออก (/line-stock?tab=out) = เฉพาะใบเบิก-ส่งเข้าไลน์ · ใบล็อตย้ายไปขาเข้า (แท็บ 'lots') */}
+        {direction !== 'out' && (<>
         {wipAllBy.child > 0 && <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)', margin: '6px 0 8px' }}>🔧 ใบล็อตผลิต Semi Part</div>}
+        {lotRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบสั่งผลิตพาร์ทย่อย</div> :
+        vLots.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีใบสั่งผลิตที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
+        <StatusZones rows={vLots} zones={LOT_ZONES(showDone)} renderCard={lot => {
+            const st = LOT_STATUS[lot.status] || LOT_STATUS.pending;
+            /* 🔴 27/10 (feedback สโตร์ ข้อ A2): *"ปุ่ม รับของเข้าสโตร์ ให้เอาออก ... ถ้าสโตร์มีการกดรับงาน
+               จากหน้า สต็อกในไลน์ > รอรับเข้า"* ⇒ ขั้นสุดท้ายของล็อตมี 2 ความหมาย แล้วแต่ "ของเข้าทางไหน":
+               · พาร์ทโหมด 🔧 ปิดล็อต = ปุ่มนี้คือที่ที่ของเข้าคลัง (ข้อความเดิม)
+               · พาร์ทโหมด 🟡 ยืนยันรับ = ของเข้าทางคิว "รอรับเข้า" แล้ว ⇒ ปุ่มนี้แค่ **ปิดใบ ไม่ลงสต็อก**
+               🔴 อ่านกฎไม่ได้ (`lotMats === null`) = **ไม่รู้** ⇒ เขียนบนการ์ดตรงๆ ห้ามเดาข้างใดข้างหนึ่ง */
+            const byLot = lotMats ? lotMats.has(String(lot.child_mat_no || '').trim()) : null;
+            const orphan = byLot === false && inflowRules ? lotOrphanRisk(lot, inflowRules) : false;
+            const doneLabel = byLot === null ? '✔ ปิดใบล็อต (ยังอ่านกฎรับเข้าไม่ได้)'
+              : byLot ? st.nextLabel
+              : orphan ? '⚠️ ปิดใบล็อต (ของจะไม่เข้าคลัง)' : '✔ ปิดใบล็อต · ไม่ลงสต็อกที่นี่';
+            /* 🔴 ใบที่ออกก่อนสลับโหมด = ไม่มีใบรับเข้ารองรับ ⇒ ปิดแล้วของหายจากบัญชี
+               ห้ามบอกว่า "ของเข้าคิวแล้ว" โดยไม่ดูว่าใบนี้ออกตอนไหน (`lotOrphanRisk` ข้างบน) */
+            const inflowNote = lot.status !== 'producing' ? null
+              : byLot === null ? '⚠️ อ่านกฎรับเข้าคลังไม่ได้ — ยังบอกไม่ได้ว่าของเข้าทางไหน'
+              : orphan ? '🔴 ใบนี้ออกก่อนเปลี่ยนวิธีรับเข้า — ไม่มีใบ "รอรับเข้า" รองรับ · ปิดแล้วของจะไม่เข้าคลัง แจ้งแอดมินก่อนกด'
+              /* 🔴 เขียนเท่าที่รู้จริง — กฎที่ถูกปิด (⚫) ไม่โผล่ในชุดนี้ (select กรอง is_active) ⇒
+                 ห้ามฟันธงว่า "ของเข้าคิวแล้ว" · บอกว่าเข้าตามกฎของพาร์ท แล้วให้ไปดูที่คิวจริง */
+              : byLot ? null : '📥 ของเข้าคลังตามกฎรับเข้าของพาร์ทนี้ (ดูที่ "สต็อกในไลน์ › รอรับเข้า") — ปุ่มนี้แค่ปิดใบ ไม่ลงสต็อก';
+            return (
+              <QueueCard key={lot.id} code={lot.child_mat_no} name={lot.part_name} showImg img={imgOf(lot.child_mat_no)}
+                /* 🔴 26/10 (feedback สโตร์) — ช่องนี้คือ **ไลน์ที่ผลิตล็อตนี้** ไม่ใช่ "ปลายทาง"
+                   ปลายทางจริงของของที่ผลิตเสร็จ = คลังตามกฎรับเข้า (STORE) · ป้ายเดิมอ่านแล้วเข้าใจผิดว่า
+                   ของจะไปกองที่ไลน์ ซึ่งตรงกับอาการที่สโตร์แจ้งพอดี */
+                qty={fmt(lot.lot_qty)} unit="ชิ้น" qtyLabel="ขนาดล็อต" destLabel="ไลน์ผลิต" destination={lot.source_line || 'ของซื้อ'}
+                statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
+                actionLabel={canOperate ? (st.next === 'done' ? doneLabel : st.nextLabel) : null}
+                busy={busy === lot.id} onAction={() => onAdvanceLot(lot, st.next)}
+                meta={inflowNote}
+                rows={[{ k: 'มาจาก FG', v: lot.source_prod_no || null }]} />
+            );
+          }} />}
+        </>)}
+      </>)}
+
+      {/* 📥 ขาเข้า: ใบล็อตผลิต Semi Part (พื้นที่ผลิต → สโตร์) — ปล่อยใบให้ไลน์ผลิต แล้วรับของกลับเข้าสโตร์ */}
+      {store === 'lots' && (<>
+        {hiddenNote}
         {lotRequests.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีใบสั่งผลิตพาร์ทย่อย</div> :
         vLots.length === 0 ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีใบสั่งผลิตที่ค้างอยู่{q ? ` และตรงกับคำค้น "${q}"` : ''}</div> :
         <StatusZones rows={vLots} zones={LOT_ZONES(showDone)} renderCard={lot => {
@@ -1587,7 +1660,9 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
       )}
 
       {/* 🧪 งานชุบ — โหลดข้อมูลเอง (ใบส่งชุบ/ยอดคลัง) · ใช้คำค้น + "เฉพาะงานค้าง" ชุดเดียวกับแท็บอื่น */}
-      {store === 'plating' && <PlatingBoard q={q} showDone={showDone} readOnly={readOnly} />}
+      {store === 'plating' && <PlatingBoard q={q} showDone={showDone} readOnly={readOnly} part={direction === 'out' ? 'send' : 'all'} />}
+      {store === 'plating_in' && <PlatingBoard q={q} showDone={showDone} readOnly={readOnly} part="receive" />}
+      {store === 'receipts' && <StockReceiptQueue />}
 
       {store === 'open' && <OpenOrderDemandPanel q={q} />}
 
@@ -1608,7 +1683,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
    · `mode='monitor'` (route /heijunka · ค่าเริ่ม) = ดูอย่างเดียว — ปุ่มที่ขยับสถานะ/ยอดสต็อกทุกตัวผูกกับ `canOperate` ⇒ บังคับ false
    · `mode='ops'` = ฝังใน `/line-stock` แท็บ 🏬 งานสโตร์ / 🛒 จัดซื้อ (ที่เดียวที่กดทำรายการได้) · สิทธิ์ปุ่มยังเป็น `heijunka:operate` เหมือนเดิม
    · `opsStores` = ตู้ที่แท็บนั้นโชว์ (`utils/storeOps.js` · จัดซื้อแยกแท็บ — ขาสั่งของ supplier + รับเข้าสโตร์) */
-export default function HeijunkaKanban({ mode = 'monitor', opsStores = null }) {
+export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, direction = null }) {
   const isOps = mode === 'ops';
   // ทะเบียนเอกสาร — ชื่อไฟล์ CSV อ่านเลขฟอร์มจาก cache นี้ (lazy chunk ต้องโหลดเอง)
   useEffect(() => { loadDocForms(); }, []);
@@ -1621,7 +1696,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null }) {
   /* ด่านชั้นเขียนจริง (ไม่พึ่งการซ่อนปุ่ม) — ทุกฟังก์ชันที่ขยับสถานะ/ยอดในหน้านี้เรียกตัวนี้ก่อน (มีด่าน heijunka-monitor-only) */
   const opsGuard = () => {
     if (isOps) return true;
-    toast.error('หน้านี้ดูสัญญาณอย่างเดียว — ทำรายการที่ Line Stock › 🏬 งานสโตร์ / 🛒 จัดซื้อ');
+    toast.error('หน้านี้ดูสัญญาณอย่างเดียว — ทำรายการที่ Line Stock › 📤 ขาออก / 📥 ขาเข้า');
     return false;
   };   // ปลดบล็อกสแกนจุดส่ง — "ระดับหัวหน้า ไม่ใช่คนที่ถูกบล็อก" (§4.6 ข้อ 5)
   const [workDate, setWorkDate]   = useState(getWorkDate());
@@ -2999,7 +3074,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null }) {
         {/* 👁 04/11 — /heijunka ดูสัญญาณอย่างเดียว · บอกทางไปจอทำรายการทุกมุมมอง */}
         {!isOps && (
           <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-            → ทำรายการที่ <Link to="/line-stock?tab=store">🏬 งานสโตร์</Link> · <Link to="/line-stock?tab=purchase">🛒 จัดซื้อ</Link>
+            → ทำรายการที่ <Link to="/line-stock?tab=out">📤 ขาออก</Link> · <Link to="/line-stock?tab=in">📥 ขาเข้า</Link>
           </span>
         )}
         {viewMode === 'demand' && (
@@ -3017,6 +3092,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null }) {
         ) : viewMode === 'unified' ? (
           <UnifiedStoreBoard
             store={unifiedStore} setStore={setUnifiedStore} opsStores={opsStores} readOnly={!isOps} focus={storeFocus}
+            direction={direction} areaOf={(ln) => slocCodeOfLine(slocs, linesArr, ln)}
             rounds={rounds} deliveries={deliveries} view={view}
             onConfirm={confirmRound} confirming={confirming} onReceive={openReceive}
             lotRequests={lotRequests} rawRequests={rawRequests} rackRequests={rackRequests} pkgRequests={pkgRequests} wipRequests={wipRequests} purchaseRequests={purchaseRequests} purchaseErr={purchaseErr} setBulkBuy={setBulkBuy}
