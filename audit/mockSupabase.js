@@ -158,6 +158,11 @@ const ROW = (i) => ({
   scrap_report_id: i % 2 === 0 ? `id-${i}` : null,   // ครึ่งหนึ่งออกใบแล้ว ครึ่งหนึ่งยังค้าง (ต้องได้ทั้ง 2 สาขา)
   from_yellow_id: null, defect_log_id: `id-${i}`,
   qa_decision: ['good', 'repair', 'use_as_is', 'scrap', null][i % 5],
+  /* 🪣 `bin` ของ `quality_bin_records` (2026-11-05) — เดิมไม่มีคีย์นี้เลย ⇒ ทุกโค้ดที่ถามว่า
+     "แถวนี้เหลืองหรือแดง" (`r.bin === 'yellow'`) ได้ false เสมอ = **คิวรอพิจารณา/สายถังเหลือง
+     ไม่เคยถูกเรนเดอร์ใน harness สักครั้ง** (bug class เดียวกับ session_id ที่เคยชี้ `s-${i}`)
+     คละ 2 ค่าเพื่อให้ได้ทั้ง 2 สาขาในชุดเดียว */
+  bin: i % 3 === 0 ? 'red' : 'yellow',
   special_use_doc_no: i % 5 === 2 ? `QA042-${i}` : null,
   /* ⚠️ `symptom` ต้องเป็นคำที่ **ปรากฏจริงในข้อความของแถวอื่น** (ยืมจาก DEF_NAMES) ไม่งั้น
      `matchRepairWi()` ไม่เคยจับคู่ติดเลยใน harness ⇒ ชิป 📕 WI ซ่อม ไม่เคยถูกเรนเดอร์

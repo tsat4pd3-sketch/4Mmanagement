@@ -44,6 +44,9 @@ import { downloadCsvDoc, csvText } from '../utils/csvDoc';
 import EventComments from '../components/EventComments';
 import ProblemFixModal from '../components/ProblemFixModal';
 import QualityBinLinkModal from '../components/QualityBinLinkModal';
+/* 🟡 ทุกบันทึกงานเสีย = ตั้งแท็กเหลือง "รอพิจารณา" ให้เอง (05/11 · คำสั่ง user)
+   payload มาจาก `yellowRowFromDefect()` ที่เดียว — ห้ามประกอบเองในหน้า */
+import { yellowRowFromDefect } from '../utils/qualityBin';
 import StoreLotQueue from '../components/StoreLotQueue';
 import LineWipPanel from '../components/LineWipPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
@@ -2392,18 +2395,29 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     setDefectForm({ id: null, mat_no: '', defect_type_id: '', qty_ng: '0', qty_suspect: '0', qty_repair: '0', description: '', is_trial: false, defect_img: '' });
     setDefectFile(null);
     loadDefectLogs(selSession.id);
-    /* ═══ 🗑️ ต่อขั้น "ของชุดนี้ไปถังไหน" ทันที (2026-11-05 · คำสั่ง user) ═══════════════
-       วัดจริง 90 วัน: บันทึกงานเสีย 252 รายการ (NG 248 · 965 ชิ้น) แต่ **ผูกใบถังแค่ 46 = 18%**
-       ⇒ 82% ของของเสียไม่มีใบถังเลย · ใบถังเหลืองทั้งระบบมีใบเดียว
-       ต้นเหตุไม่ใช่สิทธิ์/ปุ่มหาย — ปุ่ม `🗑️ ลงถัง` อยู่ทุกแถวและใช้สิทธิ์เดียวกับการบันทึกงานเสีย
-       แต่มันเป็น **ขั้นที่ 2 หลังฟอร์มปิดไปแล้ว** · คนที่ทำ ทำทันที (median 9 นาที · 19/51 ใบ ใน 5 นาที)
-       ⇒ ต่อขั้นให้ติดกัน จะเก็บที่หายไปได้
-       🔴 **ยังไม่สร้างใบให้อัตโนมัติ** — โมดัลเปิดมาให้ "คนกดยืนยัน" เหมือนเดิม และกด "ยังไม่ลงถัง"
-          เพื่อข้ามได้ (ของที่ยังไม่ได้เอาลงถังจริง ห้ามบังคับให้ออกใบ · กฎเดิมของโมดูลถังเหลือง-แดง)
-       🔴 เฉพาะ **ตอนเพิ่มใหม่** — ตอนแก้ไขไม่เด้ง (แถวนั้นอาจลงถังไปแล้ว กดเองที่ปุ่มในแถวได้)
-       📄 docs/modules/production-problem-report-bins.md §ต่อขั้นลงถัง */
-    if (inserted && ((inserted.qty_ng || 0) > 0 || (inserted.qty_suspect || 0) > 0)) {
-      setBinTarget({ defect: inserted, existing: null, chained: true });
+    /* ═══ 🟡 ตั้งแท็กเหลือง "รอพิจารณา" ให้อัตโนมัติ (2026-11-05 · คำสั่ง user) ═══════════
+       *"พอลงว่ามีงานเสีย ต้องเด้งเข้าถังเหลืองอัตโนมัติเลย เพื่อพิจารณาว่ากลับมาดีได้หรือเสียแน่ๆ"*
+       🔴 **แทนกฎเดิม** ("ห้ามสร้างใบถังอัตโนมัติ") — วัด 90 วัน: ของเสีย 252 รายการ ผูกใบถังแค่ 18%
+          ⇒ "ต้องมีคนกด" = 82% ของของจริงในถัง ระบบไม่รู้ว่ามีอยู่
+          ⇒ สลับเป็น **ระบบตั้งแท็กรอพิจารณา · คนตัดสินผล** (ผลพิจารณายังเป็นของคนเหมือนเดิม)
+       🔴 ล้มเหลวห้ามเงียบ — บันทึกงานเสียสำเร็จไปแล้ว ถ้าตั้งแท็กไม่ได้ต้องบอกให้ไปกดเอง
+       ⚠️ ไม่แตะ %Q: `suspectState()` ดู `qty_suspect` เท่านั้น ⇒ ใบเหลืองจากแถว NG ล้วนไม่ขยับตัวเลขกะ
+       📄 docs/modules/production-problem-report-bins.md §แท็กเหลืองอัตโนมัติ */
+    if (inserted) {
+      const yellow = yellowRowFromDefect(inserted, selSession, {
+        actorName: fullName,
+        partNo: products.find(p => p.mat_no === inserted?.prod_orders?.mat_no)?.p_no || null,
+      });
+      if (yellow) {
+        const { error: binErr } = await supabaseDR.from('quality_bin_records').insert(yellow);
+        if (binErr) {
+          toast.error(`บันทึกงานเสียแล้ว แต่ตั้งแท็กถังเหลืองไม่สำเร็จ: ${binErr.message}`
+            + ' — กดปุ่ม 🗑️ ลงถัง ในแถวนั้นเพื่อสร้างเอง');
+        } else {
+          toast.success(`🟡 ตั้งแท็กถังเหลือง ${yellow.qty} ชิ้น — รอพิจารณาว่าซ่อมกลับมาดีได้ หรือเสียแน่`);
+          loadDefectLogs(selSession.id);   // ให้ชิป "ยังไม่ลงถัง" กับปุ่มในแถวอัปเดตทันที
+        }
+      }
     }
   };
 
@@ -4423,7 +4437,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         {binTarget && (
           <QualityBinLinkModal
             defect={binTarget.defect} session={selSession} actorName={fullName}
-            existing={binTarget.existing} chained={!!binTarget.chained}
+            existing={binTarget.existing}
             onClose={() => setBinTarget(null)}
             onSaved={() => loadDefectLogs(selSession.id)}
           />

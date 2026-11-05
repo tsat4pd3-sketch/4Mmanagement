@@ -94,3 +94,70 @@ export function overdueBins(rows = [], today, redChildOf = new Set()) {
   }
   return out.sort((a, b) => b.age.days - a.age.days);
 }
+
+/* ── 🟡 ทุกบันทึกงานเสีย = ของเข้า "ถังเหลือง" รอพิจารณา (2026-11-05 · คำสั่ง user) ──────
+ *
+ * user: *"พอลงว่ามีงานเสีย ต้องเด้งเข้าถังเหลืองอัตโนมัติเลย เพื่อพิจารณาว่ากลับมาดีได้
+ *         หรือเสียแน่ๆ"*
+ *
+ * 🔴 **กฎนี้แทนกฎเดิม** ("ห้ามสร้างใบถังอัตโนมัติ ต้องมีคนกดยืนยัน" · 19/08) — user สั่งเปลี่ยนชัดเจน
+ *    เหตุผลที่เปลี่ยนมีหลักฐาน: วัด 90 วัน (05/11) ของเสีย 252 รายการ ผูกใบถังแค่ 46 = 18%
+ *    ⇒ "ต้องมีคนกด" แปลว่า 82% ของของจริงในถัง ระบบไม่รู้ว่ามีอยู่ · ถังเหลืองทั้งระบบมี 1 ใบ
+ *    ⇒ สลับเป็น **ระบบตั้งแท็กรอพิจารณาให้ · คนตัดสินผล** (การตัดสินยังเป็นของคนเหมือนเดิม)
+ *
+ * 🔴 ลำดับนี้ตรงกับ WI/ฟอร์มกระดาษอยู่แล้ว: ต้องสงสัย → ซ่อม → OK กลับเข้ากระบวนการ ·
+ *    NG → ติดแท็กแดง → ถังแดง → ใบรายงานของเสีย ⇒ **ถังเหลืองคือ "กล่องขาเข้า" ไม่ใช่ทางเลือก**
+ *
+ * ⚠️ **ไม่แตะสูตร %Q** — `suspectState()` ตัดสินจาก `qty_suspect` เท่านั้น (คืน `'none'` ทันทีเมื่อ
+ *    ไม่มีของสงสัย) ⇒ ใบเหลืองที่สร้างจากแถว NG ล้วน **ไม่เปลี่ยนตัวเลข %Q ของกะใดๆ**
+ *    อยากให้ผลพิจารณามีผลกับ %Q ต้องแก้ที่ `oee.js` โดยตั้งใจ ไม่ใช่ผลข้างเคียงของไฟล์นี้
+ */
+
+/** ของในแถวงานเสียที่ "ต้องเอาไปพิจารณา" = NG + ต้องสงสัย (ซ่อมไม่นับ — ของที่ซ่อมผ่านถังมาแล้ว) */
+export const binPiecesOf = (d) => (Number(d?.qty_ng) || 0) + (Number(d?.qty_suspect) || 0);
+
+/**
+ * แถว `quality_bin_records` (ถังเหลือง) ที่ต้องสร้างจากบันทึกงานเสีย 1 แถว
+ * pure — คนเรียกเป็นคน insert เอง (ไฟล์นี้ห้ามแตะ DB)
+ *
+ * @param defect  แถว defect_logs ที่เพิ่งเขียน (ต้อง embed `prod_orders`/`dr_defect_types`)
+ * @param session กะของแถวนั้น ({ line_name, work_date })
+ * @param opt     { actorName, partNo }
+ * @returns payload หรือ **`null` เมื่อไม่มีของให้พิจารณา** (0 ชิ้น = ไม่ต้องตั้งแท็ก)
+ */
+export function yellowRowFromDefect(defect, session, { actorName = '', partNo = null } = {}) {
+  const qty = binPiecesOf(defect);
+  if (!defect?.id || !qty) return null;
+  const typeName = defect?.dr_defect_types?.name_th || 'ของเสีย';
+  return {
+    bin: 'yellow',
+    /* 🔴 วันงานของกะ ไม่ใช่วันปฏิทิน — อายุแท็กนับจากวันนี้ และต้องเทียบกับ defect_logs ได้
+       (กะดึกลงของตอน 01:00 = วันงานเมื่อวาน · กับดักเดิมของหน้า /qa) */
+    work_date: session?.work_date || null,
+    line_name: session?.line_name || null,
+    mat_no:    defect?.prod_orders?.mat_no || null,
+    part_name: defect?.prod_orders?.part_name || null,
+    part_no:   partNo || null,
+    qty,
+    /* สาเหตุ = ประเภท + รายละเอียดที่คนกรอก · งานทดลองต้องติดป้ายไว้ (ของจริงยังต้องกำจัด
+       แต่ไม่นับ %Q) ไม่งั้น QA อ่านใบแล้วไม่รู้ว่ามาจากการลองเครื่อง */
+    cause: [typeName, defect?.description, defect?.is_trial ? '🧪 งานทดลอง' : '']
+      .map(x => String(x || '').trim()).filter(Boolean).join(' — '),
+    reported_by: defect?.reported_by_name || actorName || null,
+    defect_log_id: defect.id,
+    found_img: defect?.defect_img || null,
+    /* 🔴 `qa_decision` ต้องเป็น null = "ยังไม่พิจารณา" — นี่คือเหตุผลทั้งหมดของการตั้งแท็ก
+       ห้ามเดาผลให้ (กฎ §5.4) */
+  };
+}
+
+/**
+ * ใบเหลืองที่ยัง "รอพิจารณา" — ของที่หน้างานต้องมาเคลียร์ว่า กลับมาดี หรือ เสียแน่
+ * @param rows        แถวถังเหลือง (is_active)
+ * @param redChildOf  Set id ใบเหลืองที่ย้ายลงแดงแล้ว
+ * 🔴 "รอพิจารณา" = ยังไม่มีผล **และ** ยังไม่ปิดด้วยทางอื่น (กลับเข้ากระบวนการ/ย้ายแดง)
+ */
+export function pendingYellow(rows = [], redChildOf = new Set()) {
+  return (rows || []).filter(r => r && r.bin === 'yellow' && r.is_active !== false
+    && !r.qa_decision && !binClosed(r, { hasRedChild: redChildOf.has(r.id) }));
+}
