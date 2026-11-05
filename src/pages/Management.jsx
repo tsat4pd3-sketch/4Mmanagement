@@ -799,21 +799,52 @@ export default function Management() {
 
   /* ── Hover (desktop เมาส์จริงเท่านั้น) ──
      จอทัช/iPad จอกว้างจะยิง mouseenter ตอนแตะแต่ไม่มี mouseleave → การ์ดสกิลค้าง
-     จึงเปิด hover card เฉพาะอุปกรณ์ที่ hover ได้จริง (แตะใช้ radar modal ที่มีปุ่มปิดแทน) */
+     จึงเปิด hover card เฉพาะอุปกรณ์ที่ hover ได้จริง (แตะใช้ radar modal ที่มีปุ่มปิดแทน)
+
+     🔴 **หน่วงเวลาเฉยๆ ไม่พอ — ต้องรอให้เมาส์ "ขยับแล้วหยุดนิ่ง" บนการ์ดจริง** (05/11 · feedback user)
+     ของเดิมตั้ง `setTimeout` ตอน `mouseenter` แล้วจบ ⇒ พังได้ 2 ทาง:
+       ① ลากเมาส์ผ่านช้าๆ / การ์ดกว้าง — อยู่บนการ์ดครบ 500ms ทั้งที่ไม่ได้ตั้งใจดู
+       ② 🎯 **เลือกไลน์จาก dropdown แล้วการ์ดเด้งเอง** (user จับได้) — รายชื่อ re-render
+          แล้วมีการ์ดมาโผล่ **ใต้เมาส์ที่วางนิ่งอยู่แล้ว** ⇒ Chromium ยิง `mouseenter` ให้
+          ทั้งที่ผู้ใช้ไม่ได้ขยับเมาส์เลยสักพิกเซล ⇒ นับเวลาแล้วเด้งขึ้นมาเกะกะ
+
+     กติกาใหม่: **`mouseenter` ไม่ติดนาฬิกา** — ติดเมื่อมี `mousemove` บนการ์ดเท่านั้น
+       · ขยับอยู่เรื่อยๆ (ลากผ่าน) = รีเซ็ตนาฬิกาทุกครั้ง ⇒ ไม่มีวันเด้ง
+       · ขยับแล้วหยุด = เด้งหลังนิ่งครบ `HOVER_SETTLE_MS`
+       · การ์ดโผล่ใต้เมาส์ที่ไม่ขยับ = **ไม่มี mousemove เลย ⇒ ไม่เด้ง** (ปิดเคส ②)
+     ⚠️ `HOVER_JITTER_PX` กันมือสั่น/trackpad — ขยับไม่ถึงเกณฑ์ถือว่ายังนิ่ง ไม่รีเซ็ตนาฬิกา
+     · อยากดูทันทีไม่ต้องรอ = **คลิก** (เปิด radar modal ที่มีปุ่มปิด — ใช้ได้ทั้งเมาส์และจอทัช) */
   const canHover = typeof window !== 'undefined' && window.matchMedia?.('(hover: hover)').matches;
+  const HOVER_SETTLE_MS = 450;
+  const HOVER_JITTER_PX = 6;
+  const hoverPend = useRef(null);   // การ์ดที่ "รอเด้ง" (null = ไม่ได้อยู่บนการ์ดไหน)
+  const hoverPos  = useRef({ x: 0, y: 0 });
+
+  const armHover = () => {
+    clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => {
+      if (hoverPend.current) setHoverCard(hoverPend.current);
+    }, HOVER_SETTLE_MS);
+  };
   const onHoverEnter = (e, worker, fit = null, stationName = null) => {
     if (isMobile || !canHover) return;
-    clearTimeout(hoverTimer.current);
-    const rect = e.currentTarget.getBoundingClientRect();
-    // hover-intent 500ms — ต้องวางเม้าส์ค้างจริงถึงเด้ง (กันเผลอลากผ่าน marker แล้วการ์ดโผล่รบกวน)
-    hoverTimer.current = setTimeout(() => setHoverCard({ worker, fit, rect, stationName }), 500);
+    clearTimeout(hoverTimer.current);            // 🔴 เข้าเฉยๆ ยังไม่ติดนาฬิกา (ดูเคส ② ข้างบน)
+    hoverPend.current = { worker, fit, rect: e.currentTarget.getBoundingClientRect(), stationName };
+    hoverPos.current = { x: e.clientX, y: e.clientY };
   };
-  const onHoverLeave = () => { clearTimeout(hoverTimer.current); setHoverCard(null); };
+  const onHoverMove = (e) => {
+    if (isMobile || !canHover || !hoverPend.current) return;
+    const d = Math.abs(e.clientX - hoverPos.current.x) + Math.abs(e.clientY - hoverPos.current.y);
+    if (d < HOVER_JITTER_PX) return;             // สั่นเล็กน้อย = ยังถือว่านิ่ง
+    hoverPos.current = { x: e.clientX, y: e.clientY };
+    armHover();                                  // ขยับ = เริ่มนับใหม่ ⇒ ลากผ่านไม่มีวันเด้ง
+  };
+  const onHoverLeave = () => { hoverPend.current = null; clearTimeout(hoverTimer.current); setHoverCard(null); };
 
   // กันการ์ดค้างทุกกรณี: แตะ/scroll ที่ไหนก็ได้ = ปิด + auto-hide 8 วินาที
   useEffect(() => {
     if (!hoverCard) return;
-    const clear = () => { clearTimeout(hoverTimer.current); setHoverCard(null); };
+    const clear = () => { hoverPend.current = null; clearTimeout(hoverTimer.current); setHoverCard(null); };
     window.addEventListener('touchstart', clear, { passive: true });
     window.addEventListener('scroll', clear, true);
     const t = setTimeout(clear, 8000);
@@ -856,6 +887,7 @@ export default function Management() {
   /* ── Touch tap on pool card ── */
   const handlePoolTap = (worker) => {
     if (!isMobile) {
+      hoverPend.current = null;
       clearTimeout(hoverTimer.current);
       setHoverCard(null);
       setRadarWorker(worker);
@@ -1092,6 +1124,7 @@ export default function Management() {
         onDragStart={!isMobile && isLiveView ? (e) => handleDragStart(e, worker) : undefined}
         onDragEnd={!isMobile ? handleDragEnd : undefined}
         onMouseEnter={!isMobile ? (e) => onHoverEnter(e, worker) : undefined}
+        onMouseMove={!isMobile ? onHoverMove : undefined}
         onMouseLeave={!isMobile ? onHoverLeave : undefined}
         onClick={() => isLiveView && handlePoolTap(worker)}
         style={{
@@ -1156,6 +1189,7 @@ export default function Management() {
         onDragStart={!isMobile && isLiveView ? (e) => handleDragStart(e, worker) : undefined}
         onDragEnd={!isMobile ? handleDragEnd : undefined}
         onMouseEnter={!isMobile ? (e) => onHoverEnter(e, worker, fit, stationName) : undefined}
+        onMouseMove={!isMobile ? onHoverMove : undefined}
         onMouseLeave={!isMobile ? onHoverLeave : undefined}
         style={{ position: 'relative', width: size, height: size, cursor: isMobile ? 'pointer' : (isLiveView ? 'grab' : 'default'), userSelect: 'none' }}
         title={pend4m ? `⏳ รออนุมัติ 4M — ${pend4m.description}` : undefined}
