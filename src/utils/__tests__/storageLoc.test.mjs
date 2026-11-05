@@ -96,3 +96,16 @@ test('ไลน์ที่ผูก SLoc เองชนะแม่ · linesOf
   assert.deepEqual(linesOfSloc(S2, LINES, 'P411').sort(), ['LINE APRON ASSY', 'Line 60', 'Line 61']);
   assert.deepEqual(linesOfSloc(S2, LINES, 'p412'), ['SUB APRON']);
 });
+
+import { slocOfStockRow, homeSlocOf, isStockBucket } from '../storageLoc.js';
+test('🏠 ที่จัดเก็บหลัก: กองคลังใช้ home_sloc ของพาร์ท · ไลน์ผลิตใช้ผูกไลน์ · ไม่ตั้ง = null (ไม่เดาจากเลข MAT)', () => {
+  const slocs = [{ code: 'P401', line_names: ['LINE A'], is_active: true }, { code: 'S402', line_names: [], is_active: true },
+                 { code: 'S401', line_names: ['STORE'], is_active: true }];
+  const home = new Map([['20056789', 's402']]);
+  assert.equal(slocOfStockRow(slocs, [], 'STORE', '20056789', home)?.code, 'S402');
+  // กองคลังไม่สนการผูกไลน์ใน storage_locations อีก (ไม่ตั้ง = null แม้ S401 ยังผูก STORE ค้าง)
+  assert.equal(slocOfStockRow(slocs, [], 'STORE', '50027079', home), null);
+  assert.equal(slocOfStockRow(slocs, [], 'LINE A', '20056789', home)?.code, 'P401');
+  assert.equal(isStockBucket(' fg warehouse '), true);
+  assert.equal(homeSlocOf(null, 'x'), null);
+});

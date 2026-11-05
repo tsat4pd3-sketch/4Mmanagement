@@ -28,7 +28,8 @@ import { can } from '../utils/permissions';
 import { isLeafLine } from '../utils/lineHierarchy';
 import ReadOnlyNote from './ReadOnlyNote';
 import LineSelect from './LineSelect';
-import { SLOC_KINDS, slocKindMeta, slocKindGuess, slocLabel, slocValid, SLOC_FORMAT_HINT, slocOfLine, linesOfSloc } from '../utils/storageLoc';
+import { SLOC_KINDS, slocKindMeta, slocKindGuess, slocLabel, slocValid, SLOC_FORMAT_HINT, slocOfLine, linesOfSloc, STORE_SLOC_KINDS } from '../utils/storageLoc';
+import { loadHomeSlocs } from '../utils/homeSloc';
 import { DeleteButton } from './IconButton';
 
 const inputSt = {
@@ -36,7 +37,9 @@ const inputSt = {
   background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-body)',
 };
 /** "ไลน์" เสมือนที่ไม่อยู่ใน production_lines แต่มีสต็อกใน line_stock_summary — ให้ผูก SLoc ได้ด้วยชิปเดียว */
-const VIRTUAL_LINES = ['STORE', 'FG WAREHOUSE'];
+/* 🏠 05/11 (คำสั่ง user "สโตร์ไม่จำเป็นต้องไปตั้งไลน์") — เลิกเสนอชิป STORE / FG WAREHOUSE (กองคลังเสมือน)
+   พื้นที่ของยอดในกองคลัง = ที่จัดเก็บหลักของพาร์ท (`parts_master.home_sloc` · ตั้งที่ทะเบียนพาร์ท) */
+const isStoreKind = (k) => STORE_SLOC_KINDS.includes(k);
 const MIG_DR = '20260908_storage_locations_line_map.sql';
 
 export default function StorageLocPanel() {
@@ -52,6 +55,17 @@ export default function StorageLocPanel() {
      ⇒ ย้ายไปนับฝั่ง DB ด้วย RPC `dr_sloc_usage()` (ไม่มีเพดาน + payload เล็ก) */
   const [used, setUsed]     = useState([]);
   const [lines, setLines]   = useState([]);      // production_lines (Main) — ลำดับชั้นสำหรับตกทอด
+  /* 🏠 จำนวนพาร์ทที่ตั้งรหัสนี้เป็นที่จัดเก็บหลัก — null = อ่านไม่ได้ (ห้ามโชว์ 0) */
+  const [homeCount, setHomeCount] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    loadHomeSlocs().then(r => {
+      if (!alive) return;
+      if (r.error) { setHomeCount(null); return; }
+      const m = {}; r.map.forEach(c => { m[c] = (m[c] || 0) + 1; }); setHomeCount(m);
+    });
+    return () => { alive = false; };
+  }, []);
   const [missing, setMissing] = useState(false); // ตารางยังไม่ apply (42P01) — ห้ามเงียบ
   const [noLineMap, setNoLineMap] = useState(false); // มีตารางแต่ยังไม่มี line_names (ยังไม่ apply 20260908)
   const [untagged, setUntagged] = useState(null); // แถว ledger ที่ยังไม่แปะ SLoc (null = นับไม่ได้)
@@ -317,7 +331,9 @@ export default function StorageLocPanel() {
                       {own.length
                         ? <><span style={{ color: '#3b82f6', fontWeight: 700 }}>🔗 {own.join(' · ')}</span>
                             {inherited.length > 0 && <span style={{ color: 'var(--muted)' }}> → ตกทอด {inherited.length} ไลน์: {inherited.slice(0, 8).join(' · ')}{inherited.length > 8 ? ` … (+${inherited.length - 8})` : ''}</span>}</>
-                        : <span style={{ color: 'var(--muted)' }}>— ยังไม่ผูกไลน์ (ไม่มีอะไรถูกแปะรหัสนี้อัตโนมัติ)</span>}
+                        : isStoreKind(r.kind)
+                          ? <span style={{ color: 'var(--muted)' }}>🏠 ที่จัดเก็บหลักของ {homeCount == null ? '? (อ่านไม่ได้)' : (homeCount[slocLabel(r.code)] || 0)} พาร์ท · สโตร์/คลังไม่ต้องผูกไลน์ — ตั้งที่ทะเบียนพาร์ท (/products แท็บ Parts)</span>
+                          : <span style={{ color: 'var(--muted)' }}>— ยังไม่ผูกไลน์ (ไม่มีอะไรถูกแปะรหัสนี้อัตโนมัติ)</span>}
                     </div>
                   )}
                 </div>
@@ -419,14 +435,9 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
                   <LineSelect lines={(lines || []).filter(l => !f.line_names.includes(l.name))} value={addLine} onChange={addName}
                     placeholder="+ เพิ่มไลน์ (ใส่ไลน์แม่ = ครอบทั้งแผนก)" role={role} lineId={lineId} sections={sections}
                     style={{ width: 260, padding: '6px 9px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12.5 }} />
-                  {VIRTUAL_LINES.filter(v => !f.line_names.includes(v)).map(v => (
-                    <button key={v} type="button" onClick={() => addName(v)} title={`"${v}" คือพื้นที่เสมือนที่ถือสต็อกใน Line Stock (ไม่ใช่ไลน์ผลิต)`}
-                      style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 12, border: '1px dashed var(--border2)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer' }}>
-                      + {v}
-                    </button>
-                  ))}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
+                  {isStoreKind(f.kind) && <div style={{ color: 'var(--text2)', fontWeight: 700 }}>🏠 รหัสสโตร์/คลัง ไม่ต้องผูกไลน์ — พาร์ทไหนเก็บที่นี่ ให้ตั้ง "ที่จัดเก็บหลัก" ที่ทะเบียนพาร์ท (/products แท็บ Parts)</div>}
                   ไลน์ลูกตกทอดจากไลน์แม่อัตโนมัติ · ไลน์ลูกที่ผูกรหัสอื่นเองจะชนะแม่ · ไลน์หนึ่งอยู่ได้พื้นที่เดียว
                   {preview.length > 0 && <div style={{ color: 'var(--text2)' }}>→ ครอบเพิ่ม {preview.length} ไลน์: {preview.slice(0, 10).join(' · ')}{preview.length > 10 ? ` … (+${preview.length - 10})` : ''}</div>}
                 </div>
