@@ -42,6 +42,7 @@ import ProductSelect from './ProductSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import { splitLevels, refStockOf, madeHereMats, selfMadeRequestBlock, lineRequestFromBom } from '../utils/partRefStock';
 import { buildBomIndex } from '../utils/bomTree';
+import { shortReceiptRows } from '../utils/stockDiscrepancy';
 import { fetchAllRows } from '../utils/fetchAllRows';   // 🏭 ของที่ไลน์ผลิตเอง อ้างยอดคลัง (2026-10-08) // 📜 MAT ที่เคยตั้งระดับไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
@@ -539,16 +540,24 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     const ledgered = r.stock_txn_ids?.length > 0;
     const short = ledgered ? Math.max(0, issued - qty) : 0;
     if (short > 0) {
-      const { error: eShort } = await supabaseDR.from('line_stock_transactions').insert({
-        line_name: r.line_name, mat_no: r.mat_no, part_name: r.part_name || null, qty: short, type: 'consume',
-        status: 'approved', work_date: getWorkDate(), created_by: fullName || 'ผลิต',
-        note: `รับไม่ครบ — ใบขอเติม ${r.mat_no} (ใบ ${String(r.id).slice(0, 8)}) ส่ง ${issued} รับจริง ${qty} (ปรับยอดตามจริง)`,
-      });
-      if (eShort) toast.error(`รับแล้ว แต่หักยอดส่วนที่ไม่ได้รับ (${short}) ออกจากไลน์ไม่สำเร็จ: ${eShort.message} — แจ้งสโตร์/admin ปรับยอด`);
+      /* ⚠️ 05/11 (คำสั่ง user "ต้องไม่หาย") — ส่วนที่ขาดย้ายไลน์ → คลังพัก "ผลต่างรอเคลียร์" + เปิดเคสให้ผลิต/สโตร์ยืนยันคู่
+         เดิม consume ทิ้งที่ไลน์ = ยอดหายจากทุกคลัง · กฎ `utils/stockDiscrepancy.js` */
+      const wd = getWorkDate();
+      const ref = `ใบขอเติม ${String(r.id).slice(0, 8)} ส่ง ${issued} รับจริง ${qty}`;
+      const { error: eShort } = await supabaseDR.from('line_stock_transactions').insert(
+        shortReceiptRows({ line: r.line_name, mat: r.mat_no, part: r.part_name, short, workDate: wd, by: fullName || 'ผลิต', ref }));
+      if (eShort) toast.error(`รับแล้ว แต่ย้ายส่วนที่ไม่ได้รับ (${short}) ไปคลังพักไม่สำเร็จ: ${eShort.message} — แจ้งสโตร์/admin`);
+      else {
+        const { error: eCase } = await supabaseDR.from('stock_discrepancies').insert({
+          source: 'wip_request', ref_id: String(r.id), line_name: r.line_name, mat_no: r.mat_no, part_name: r.part_name || null,
+          sent_qty: issued, received_qty: qty, short_qty: short, work_date: wd, reported_by: fullName || null, note,
+        });
+        if (eCase) toast.error(`ย้ายส่วนที่ขาดไปคลังพักแล้ว แต่เปิดเคสผลต่างไม่สำเร็จ: ${eCase.message} — แจ้ง admin (ยอดยังอยู่ที่คลังพัก ไม่หาย)`);
+      }
     }
     toast.success(`✅ ปิดงาน ${r.mat_no}${lead != null ? ` · ใช้เวลา ${lead} นาที` : ''}`
       + (ledgered
-        ? ` · ยอดเข้าไลน์ +${fmtQty(issued)} ตั้งแต่สโตร์เตรียมของแล้ว${short > 0 ? ` (หักที่ไม่ได้รับ −${fmtQty(short)})` : ''}`
+        ? ` · ยอดเข้าไลน์ +${fmtQty(issued)} ตั้งแต่สโตร์เตรียมของแล้ว${short > 0 ? ` (ส่วนที่ไม่ได้รับ ${fmtQty(short)} ย้ายไปคลังพัก รอผลิต+สโตร์เคลียร์)` : ''}`
         : ' · ⚠ ใบนี้ยังไม่ถูกตัดสต็อก — ยอดในไลน์ไม่เปลี่ยน แจ้งสโตร์'));
     if (r.stock_txn_note && /ไม่หัก STORE/.test(r.stock_txn_note)) toast.info('ℹ️ ฝั่งสโตร์ยังไม่ถูกหักยอด เพราะ STORE ไม่มียอดตั้งต้นของพาร์ทนี้ — สโตร์ต้องลงรับเข้า STORE ก่อน');
     load();

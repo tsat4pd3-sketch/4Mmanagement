@@ -8613,6 +8613,19 @@ test('🛡️ bomPhantom: ownOrders ที่อ่านไม่ได้ต�
   assert.equal(classifyIntermediate({ ownOrders: 0 }), 'gap');
 });
 
+/* 🛡️ short-receipt-not-lost (2026-11-05 · คำสั่ง user "ต้องไม่หาย")
+   รับไม่ครบเดิม consume ทิ้งที่ไลน์ = ยอดหายจากทุกคลัง ⇒ ต้องย้ายไปคลังพักผ่าน shortReceiptRows() + เปิดเคส stock_discrepancies */
+test('🛡️ short-receipt-not-lost — รับไม่ครบต้องย้ายไปคลังพัก ไม่ตัดทิ้ง', () => {
+  const bad = [];
+  for (const f of ['src/components/LinePartCallPanel.jsx', 'src/pages/HeijunkaKanban.jsx']) {
+    const s = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    if (!/shortReceiptRows\(/.test(s)) bad.push(`${f} — ไม่ใช้ shortReceiptRows()`);
+    if (!/from\('stock_discrepancies'\)\.insert/.test(s)) bad.push(`${f} — ไม่เปิดเคส stock_discrepancies`);
+    if (/\(ปรับยอดตามจริง\)/.test(s)) bad.push(`${f} — ยังมีทาง consume ทิ้ง "(ปรับยอดตามจริง)"`);
+  }
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
+
 /* ═══ ⛔ ห้าม seed ทะเบียน "ของลม" — 2026-11-05 · กฎ user ════════════════════════════════
    กฎ: *"ควรจะตัดลูกที่ติดตัว ลูกมีหน้าที่ไปตัดหลาน และสร้างผัง bom ทีเดียว"*
    ⇒ **ค่าเริ่มต้นคือตัดลูกตรงเสมอ** · ของลม = ข้อยกเว้นที่ PE ติ๊กเองบนจอ
