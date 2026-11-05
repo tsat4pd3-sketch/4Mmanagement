@@ -33,7 +33,7 @@ function fakeClient(answers = {}, log = []) {
 test('ทะเบียนที่ประกาศไว้ ต้องมี keysOf + targets ครบทุกตัว', () => {
   const regs = Object.keys(MASTER_REF_SPECS);
   assert.deepEqual(regs.sort(), [
-    'customers', 'die_op_types', 'die_press_lines', 'die_set_kinds', 'repair_wi_registry', 'suppliers',
+    'customers', 'die_op_types', 'die_press_lines', 'die_set_kinds', 'repair_wi_registry', 'suppliers', 'uom_units',
   ]);
   for (const [name, spec] of Object.entries(MASTER_REF_SPECS)) {
     assert.equal(typeof spec.keysOf, 'function', name);
@@ -144,4 +144,13 @@ test('masterDeleteGuard — ใช้ชื่อจาก nameOf และค�
 test('refs เป็น null/undefined = ข้อความบล็อก ไม่ใช่ null', () => {
   assert.ok(masterBlockMessage('customers', 'FVL', null));
   assert.ok(masterBlockMessage('customers', 'FVL', undefined));
+});
+
+test('📏 uom_units — นับ 3 ปลายทาง ด้วย code + สะกดอื่น (ค่าเก่า EA ที่ยังไม่แม็ปก็ต้องนับ)', async () => {
+  const log = [];
+  const refs = await loadMasterRefs(fakeClient({ parts_master: 2, bom_items: 5 }, log), 'uom_units', { code: 'PC', aliases: ['EA', 'PCS'] });
+  assert.equal(refs.total, 7);
+  assert.equal(refs.partial, false);
+  assert.deepEqual(log.map(q => `${q.table}.${q.col}`).sort(), ['bom_items.uom', 'material_request_items.unit', 'parts_master.uom']);
+  assert.deepEqual(log[0].vals, ['PC', 'EA', 'PCS']);
 });

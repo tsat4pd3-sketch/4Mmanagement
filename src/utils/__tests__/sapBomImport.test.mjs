@@ -102,10 +102,12 @@ test('diffSapBom — แยก เพิ่ม/แก้/เหมือนเ�
   ];
   const d = diffSapBom(sap, existing);
   assert.equal(d.same.length, 1);                       // 20067121 ตรงทุกช่อง
-  assert.equal(d.update.length, 1);                     // 30044771 จำนวน/หน่วย/คลัง ต่าง
+  assert.equal(d.update.length, 1);                     // 30044771 จำนวน/ITEM/คลัง ต่าง
   assert.equal(d.update[0].mat_no, '30044771');
   assert.equal(d.update[0].id, 'b');
-  assert.equal(d.update[0].diffs.length, 4);            // จำนวน · หน่วย · ITEM · คลัง
+  // 📏 05/11 user ตัดสิน EA = PC ⇒ ของเดิม 'EA' กับ SAP 'PC' ไม่นับเป็น "หน่วยต่าง" แล้ว (เดิม 4 ช่อง)
+  assert.equal(d.update[0].diffs.length, 3);            // จำนวน · ITEM · คลัง
+  assert.equal(d.update[0].diffs.some(x => x.startsWith('หน่วย')), false);
   assert.equal(d.add.length, 6);
   assert.deepEqual(d.extra.map(r => r.mat_no), ['99999999']);
 });
@@ -179,4 +181,18 @@ test('🔴 "Object description" ต้องไม่ถูกตีเป็น
   assert.equal(r.rows.filter(x => !x.part_name).length, 0, 'ต้องไม่มีแถวไหนชื่อว่าง');
   // ชื่อต้องไม่ใช่เลข MAT ซ้ำ (อาการที่หน้างานเห็น)
   assert.equal(r.rows.filter(x => x.part_name === x.mat_no).length, 0);
+});
+
+test('📏 parseSapBom — หน่วยแม็ปตามทะเบียน (EA/pcs → PC) · หน่วยนอกทะเบียน = เตือน ไม่บล็อก', () => {
+  const lines = FILE.split('\n');
+  const i = lines.findIndex(l => l.includes('30044771'));
+  lines[i] = lines[i].replace('\tPC\t', '\tEA\t');
+  const j = lines.findIndex(l => l.includes('20058483'));
+  lines[j] = lines[j].replace('\tPC\t', '\tDRUM\t');
+  const p = parseSapBom(lines.join('\n'));
+  const by = Object.fromEntries(p.rows.map(r => [r.mat_no, r]));
+  assert.equal(by['30044771'].uom, 'PC');
+  assert.equal(by['20058483'].uom, 'DRUM');               // ไม่รู้จัก = เก็บตามจริง ไม่เดา
+  assert.ok(p.warnings.some(w => w.includes('DRUM') && w.includes('ทะเบียนหน่วยนับ')));
+  assert.equal(p.rows.length, parseSapBom(FILE).rows.length);   // ไม่ตัดแถวทิ้ง
 });

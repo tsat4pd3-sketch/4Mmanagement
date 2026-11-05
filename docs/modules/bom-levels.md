@@ -1192,3 +1192,28 @@ migration `supabase/migrations/20261104_bom_one_level_deduct_phantom_dr.sql`
 🔴 **กลุ่มที่ 1 คือ "ก่อนชุบ/ก่อนแพ็ค" เกือบทั้งหมด** — เป็นงานที่ส่งออกไปชุบแล้วรับกลับเป็นเบอร์ใหม่
 ระบบยังไม่มีขั้น "ส่งออกจ้างนอก" ⇒ **ห้ามแก้ด้วยการติ๊กของลม** (จะกลับไปนับซ้ำแบบเดิม) ·
 ต้องให้ PE เลือกว่าใบของตัวหลังชุบใช้ "ตัวก่อนชุบ" หรือ "วัตถุดิบตรง" อย่างใดอย่างหนึ่ง
+
+
+## 📏 ทะเบียนหน่วยนับ (UOM) — `/products` แท็บ 📏 หน่วยนับ (2026-11-05 · คำสั่ง user)
+
+**ที่มา:** audit dropdown 05/11 — ฟอร์ม Parts Master hardcode 7 หน่วย · ทางเขียนอื่น (import Excel ·
+ลงทะเบียนอัตโนมัติจาก BOM · ใบเบิก) ใส่ default `'EA'` บ้าง `'pcs'`/`'Pcs'` บ้าง ⇒ ฐานมี PC/EA/pcs ปนกัน
+(`openOrderDemand`/`demandExplode` เทียบตัวพิมพ์ใหญ่ ⇒ `PC` ≠ `PCS` = ธง `uomConflict` เทียม)
+
+**user ตัดสิน 05/11:** **EA = pcs = PC (หน่วยเดียวกัน) · หน่วยหลัก = PC · แก้ข้อมูลในฐาน**
+
+- ทะเบียน DR **`uom_units`** (`code` PK ตัวพิมพ์ใหญ่ — CHECK `uom_units_code_upper` · `name` · `aliases[]` · `is_active`)
+  migration `20261105_uom_units_dr.sql` · seed PC(EA/PCS/EACH/PIECE) · KG(KGS) · M · SET · BOX · ROLL
+- ปลายทางเก็บ **code เป็น text ไม่ผูก FK**: `parts_master.uom` · `bom_items.uom` · `material_request_items.unit`
+  · ลบแถวทะเบียนผ่าน `masterDeleteGuard(supabaseDR, 'uom_units')` (นับ 3 ปลายทาง · keysOf รวม alias)
+- 🔴 **ทุกจุดที่เขียนหน่วยลงฐานต้องผ่าน `normUom(raw, idx)`** (`src/utils/uom.js`) — ฟอร์ม Parts Master ·
+  import Excel พาร์ท · ลงทะเบียนอัตโนมัติตอนเพิ่ม BOM · import SAP (`parseSapBom(text, { uomIndex })`) · ใบเบิกวัสดุ
+  · ไม่รู้จัก = เก็บตัวพิมพ์ใหญ่ของค่าเดิม (ห้ามเดา) · พรีวิว SAP เขียนเตือน ไม่บล็อก
+  · หน่วยตั้งต้นของพาร์ทใหม่ = `DEFAULT_UOM` (`'PC'`) **ห้ามเขียน `'EA'`/`'pcs'` เป็น default อีก**
+- `diffSapBom` เทียบหน่วย**หลังแม็ป** ⇒ ของเดิม EA กับ SAP PC ไม่นับเป็น "หน่วยต่าง"
+- ทะเบียนโหลดไม่ได้ = ใช้ `DEFAULT_UOMS` (ชุดเดียวกับ seed) แม็ป EA→PC ยังทำงาน + ช่องเขียน `registryFailText()`
+- `uomLabel()` (`bomTree.js` · ป้ายบนจอ BOM) แสดง pc/pcs/ea เป็น PC อยู่ก่อนแล้ว — ไม่ได้แก้
+
+**แก้ข้อมูล (apply 05/11):** `parts_master` 106 แถว (EA 96 · pcs 10) · `bom_items` 286 แถว (EA 266 · pcs 20) → `PC`
+· ค่าเดิมสำรองที่ `archive.uom_fix_20261105` (tbl · id · old_uom) · ย้อนกลับดูหัวไฟล์ migration
+· ไม่มี UPDATE trigger บน 2 ตารางนี้ (ตรวจแล้ว) ⇒ ไม่มีผลข้างเคียงต่อใบผลิต/ยอดตัด
