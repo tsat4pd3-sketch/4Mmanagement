@@ -31,6 +31,9 @@ import { QA_STAGES, FME_SHEET_STAGE } from '../utils/qaStages';
 import { notifyEvent } from '../utils/notifyEvent';
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import InspectorCodeField from './InspectorCodeField';   // ✍️ รหัสผู้ตรวจจริง (C1 · 05/11)
+import { printQaSheet } from '../lib/qaSheetPrint';         // 🖨️ ใบพิมพ์ QA (05/11)
+import { resolveEmployeeSigner, inspectorForExport, loadEmployeeSigners, signatureOfPerson } from '../utils/employeeSignature';
+import { stageLabel } from '../utils/qaStages';
 import { specLabel, judgeVariable } from '../utils/qaSpec';
 import { evalSequence } from '../utils/qaSequential';
 import { can } from '../utils/permissions';
@@ -609,6 +612,39 @@ export default function QaCheckSheet({ canRecord }) {
 
   const readOnly = !canRecord || sheet?.status === 'done';
 
+  /* 🖨️ พิมพ์ใบตรวจ (doc_key qa_inspection_sheet) — ผู้ตรวจ: รหัสที่บันทึกไว้ชนะบัญชี (inspectorForExport)
+     ไม่มีรหัส = บัญชีที่สร้างใบ (inspector_uid) → ลายเซ็นโปรไฟล์ → ลายเซ็นในฐานพนักงานที่ผูกไว้ · อ่านไม่ได้ = บอก */
+  const [printing, setPrinting] = useState(false);
+  const handlePrint = async () => {
+    const sh = matchesKey(sheet) ? sheet : null;
+    if (!sh) { toast.error('ยังไม่มีใบตรวจของรอบนี้ — บันทึกผลอย่างน้อย 1 จุดก่อนพิมพ์'); return; }
+    setPrinting(true);
+    try {
+      let accountName = sh.inspector_name || null, accountSig = null;
+      if (!sh.inspector_code && sh.inspector_uid) {
+        const { data: prof, error } = await supabase.from('profiles').select('full_name, signature_url, employee_id').eq('id', sh.inspector_uid).maybeSingle();
+        if (error) toast.error(`โหลดลายเซ็นผู้ตรวจไม่สำเร็จ — ใบจะเว้นช่องลายเซ็น (${error.message})`);
+        let empSig = null;
+        if (prof && !prof.signature_url && prof.employee_id) {
+          const er = await loadEmployeeSigners(supabase, { ids: [prof.employee_id] });
+          if (er.error) toast.error(`โหลดลายเซ็นจากฐานพนักงานไม่สำเร็จ (${er.error})`);
+          empSig = er.rows?.[0]?.signature_url || null;
+        }
+        accountName = prof?.full_name || accountName;
+        accountSig = signatureOfPerson({ profileSig: prof?.signature_url, employeeSig: empSig });
+      }
+      const signer = sh.inspector_code ? await resolveEmployeeSigner(supabase, sh.inspector_code) : null;
+      const who = inspectorForExport({ code: sh.inspector_code, signer, accountName, accountSig });
+      if (who.note) toast.info(`ผู้ตรวจรหัส ${sh.inspector_code}: ${who.note}`);
+      else if (!who.signatureUrl) toast.info('ผู้ตรวจยังไม่มีลายเซ็นในระบบ — ใบจะเว้นช่องให้เซ็นมือ');
+      const ok = await printQaSheet({ sheet: sh, items, results, pieces, actions,
+        inspector: { ...who, code: sh.inspector_code || '' }, stageLabel: sh.stage ? stageLabel(sh.stage) : '' });
+      if (!ok) toast.error('เปิดหน้าต่างพิมพ์ไม่ได้ — อนุญาต pop-up ของเว็บนี้ก่อน');
+    } catch (e) {
+      toast.error(`พิมพ์ใบตรวจไม่สำเร็จ: ${e?.message || e}`);
+    } finally { setPrinting(false); }
+  };
+
   /* ── UI ─────────────────────────────────────────────────────────────── */
   return (
     <div>
@@ -726,6 +762,11 @@ export default function QaCheckSheet({ canRecord }) {
               <span style={{ flex: 1 }} />
               {/* ใบปิดเองเมื่อตัวเดินกฎบอก "ยอมรับ" — ไม่มีปุ่มปิดใบ/ผ่านทั้งหมด (ตรวจทีละชิ้น 2026-09-07) */}
               <Chip label={`ชิ้นที่ตรวจแล้ว ${pieces.length}`} color="#6b7280" />
+              <button type="button" className="tbtn" disabled={printing || !matchesKey(sheet)} onClick={handlePrint}
+                title={matchesKey(sheet) ? 'พิมพ์/บันทึก PDF ใบตรวจรอบนี้' : 'ยังไม่มีใบตรวจของรอบนี้'}
+                style={{ padding: '5px 12px', fontSize: 12, fontWeight: 700 }}>
+                {printing ? 'กำลังเตรียม…' : '🖨️ พิมพ์ใบตรวจ'}
+              </button>
             </>
           )}
         </div>

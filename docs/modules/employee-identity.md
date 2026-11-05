@@ -58,7 +58,7 @@
 | เอกสาร | เก็บรหัสที่ | พฤติกรรม |
 |---|---|---|
 | ใบตรวจ AM/PM (`/daily-checker?tab=pm` · export FM-JIG-003) | `inspections.inspector_code` (DR · migration `20261105_inspector_code_am_dr.sql`) | ช่องเหนือหมายเหตุ · คงค่าข้ามเครื่องในแท็บ (`sessionStorage`) · export: มีรหัส = คนตามรหัสเซ็น |
-| ใบตรวจ QA (`QaCheckSheet`) | `qa_inspection_sheets.inspector_code` (Main · migration `20261105_inspector_code_qa_main.sql`) | ช่องในหัวใบ · ใบยังไม่ถูกสร้าง = ถือรหัสไว้ใส่ตอนสร้าง · **ใบพิมพ์ QA ยังไม่มี** (เก็บรหัสไว้ก่อน) |
+| ใบตรวจ QA (`QaCheckSheet`) | `qa_inspection_sheets.inspector_code` (Main · migration `20261105_inspector_code_qa_main.sql`) | ช่องในหัวใบ · ใบยังไม่ถูกสร้าง = ถือรหัสไว้ใส่ตอนสร้าง · ใบพิมพ์ `qa_inspection_sheet` (ปุ่ม 🖨️ · `src/lib/qaSheetPrint.js`) ใช้รหัสนี้หาลายเซ็น |
 - 🔴 **ผู้ตรวจบนใบ export = `inspectorForExport()` ที่เดียว** — มีรหัส = คนตามรหัส (เครื่องหน้างานใช้บัญชีกลาง) ·
   หาลายเซ็นไม่ได้ = **เว้นช่อง + toast เหตุผล ห้ามถอยไปลายเซ็นบัญชีที่ login** (= ลายเซ็นคนอื่น) · ไม่มีรหัส = พฤติกรรมเดิม
 - ยังไม่มีปุ่มให้พนักงาน "เซ็นเอง" ผ่านคีออส (ตอนนี้คนที่แก้พนักงานได้เป็นคนตั้งลายเซ็นให้)
