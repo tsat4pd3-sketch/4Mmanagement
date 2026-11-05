@@ -8766,4 +8766,6 @@ test('🧲 coil-request-via-bom — coil ขอตรงไม่ได้ · �
 test('🔒 line-adhoc-picker-strict — ช่องขอเบิกเองโชว์เฉพาะพาร์ทของไลน์นี้', () => {
   const s = stripComments(readFileSync(join(ROOT, 'src/components/LinePartCallPanel.jsx'), 'utf8'));
   assert.match(s, /<ProductSelect strict value=\{adhocMat\}/, 'ProductSelect ของฟอร์มขอเบิกเองต้องมี strict');
+  assert.match(s, /<ProductSelect strict value=\{newMat\}/, 'ProductSelect ของโมดัลตั้งจุดเรียกเติมต้องมี strict');
+  assert.doesNotMatch(s, /useColumnHistory\(supabaseDR, 'line_part_levels'/, 'ห้ามดึงประวัติ mat ของทุกไลน์มาเป็นตัวเลือก');
 });

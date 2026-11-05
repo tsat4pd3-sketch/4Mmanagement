@@ -39,7 +39,6 @@ import { pointsForLine, DELIVER_GATES, unreceivedAge } from '../utils/replenishG
 import MatLabel from './MatLabel';
 import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 มุม SAP ของใบ (2026-09-08)
 import ProductSelect from './ProductSelect';
-import useColumnHistory from '../utils/useColumnHistory';
 import { splitLevels, refStockOf, madeHereMats, selfMadeRequestBlock, lineRequestFromBom } from '../utils/partRefStock';
 import { buildBomIndex } from '../utils/bomTree';
 import { shortReceiptRows } from '../utils/stockDiscrepancy';
@@ -950,8 +949,10 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, re
   /* ⚠️ ต้องรวม "พาร์ทที่ยังค้างอยู่ที่ไลน์แม่" (upMats) เข้ามาด้วย
      ไลน์ลูกที่ยังไม่เคยมีแถวสต็อกจะได้ไม่เปิดมาเจอลิสต์ว่างแล้วตั้งอะไรไม่ได้เลย
      — ซึ่งเป็นสภาพจริงของทุกไลน์ตอนนี้ (ของยังกองที่ไลน์แม่) */
-  // 📜 MAT ที่เคยตั้งระดับไว้ใน line_part_levels (DR) — ไลน์อื่นเคยตั้งไว้แต่ Product Master/BOM ยังไม่มี ยังเลือกซ้ำได้ (2026-09-07)
-  const levelMatHist = useColumnHistory(supabaseDR, 'line_part_levels', 'mat_no', { upper: true });
+  /* 📜 MAT ที่ "ไลน์นี้" เคยตั้งระดับไว้ — Product Master/BOM ยังไม่มีก็ยังเลือกซ้ำได้
+     🔒 05/11 (คำสั่ง user "ตั้งจุดเรียกเติมก็ไม่ควรขึ้นของไลน์อื่น") — เดิมดึงประวัติทั้งตาราง (ทุกไลน์) ⇒ เหลือเฉพาะของไลน์นี้ */
+  const levelMatHist = useMemo(() => [...new Set((levels || []).map(l => String(l.mat_no || '').trim().toUpperCase()).filter(Boolean))],
+    [levels]);
   const [rows, setRows] = useState(() => {
     const byMat = new Map(levels.map(l => [l.mat_no, l]));
     const mats = [...new Set([...byMat.keys(), ...onHand.keys(), ...upMats, ...refHave.keys()])].sort();
@@ -1026,7 +1027,8 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, re
               style={{ width: 200, padding: '5px 10px', borderRadius: 7, fontSize: 12 }} />
             <span style={{ color: 'var(--border2)' }}>|</span>
             {/* 2026-09-07 <ProductSelect> — Product Master (ไลน์นี้ขึ้นก่อน) ∪ พาร์ทลูก BOM ∪ 📜 เคยตั้งไว้ · ไม่รับค่าพิมพ์เอง (known=false = นอกทะเบียน → ถามยืนยัน) */}
-            <ProductSelect value={newMat} lines={famNames} extraOptions={bomExtra} history={levelMatHist} placeholder="เพิ่มพาร์ท (เลือกจากทะเบียน)"
+            {/* 🔒 strict = เฉพาะพาร์ทของไลน์นี้ (แม่/ลูก) + ลูก BOM ของไลน์นี้ (05/11 · ห้ามถอด) */}
+            <ProductSelect strict value={newMat} lines={famNames} extraOptions={bomExtra} history={levelMatHist} placeholder="เพิ่มพาร์ท (เลือกจากทะเบียน)"
               style={{ width: 240 }} inputStyle={{ padding: '5px 26px 5px 10px', fontSize: 12 }}
               onChange={({ mat_no, opt, known }) => { setNewMat(mat_no); setNewMatKnown(!!opt && known !== false); }} />
             <button onClick={addMat} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 7, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>+ เพิ่ม</button>
