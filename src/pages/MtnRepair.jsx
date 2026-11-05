@@ -22,7 +22,7 @@ import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmoun
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded, isSharedAccount } from '../utils/permissions';
 import { confirmSign, needsSignConfirm } from '../utils/signConfirm';
-import { MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, orderReporterText, nextStepOf, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, moWaitMeta, qaRelatedView, moRemoveMode, MO_REMOVE_BLOCKED, MO_REMOVE_CANCEL, MO_REMOVE_DELETE, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
+import { MO_DONE_STATUSES, MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, orderReporterText, nextStepOf, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, moWaitMeta, qaRelatedView, moRemoveMode, MO_REMOVE_BLOCKED, MO_REMOVE_CANCEL, MO_REMOVE_DELETE, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
 import { positionRank } from '../utils/positions';
 import { findOpenOnMachine, dupLevel } from '../utils/mtnDuplicate';
 /* 🔢 เลข MO ออกยังไง — ต้องตรงกับ RPC `mtn_assign_mo_no` เป๊ะ (14/10 · ห้ามเดารูปแบบเองในหน้า) */
@@ -591,16 +591,32 @@ export default function MtnRepair() {
   /* โหลดใบล้ม / ชนเพดาน 1000 ใบ ต้องเขียนบนจอ (QC 05/10) — เดิม error ถูกกลืนแล้วขึ้น "ไม่มีรายการ"
      และใบเก่ากว่า 1000 ใบล่าสุดหายเงียบ (ตัวนับ "ตัวกรองวันที่ซ่อน" ก็นับไม่เห็น) */
   const ORDER_CAP = 1000;
+  /* 🔴🔴 **ใบที่ยังไม่ปิด ต้องโหลดมาครบเสมอ ห้ามพึ่งหน้าต่าง "1000 ใบล่าสุด"** (05/11 · หน้างานแจ้ง
+       *"ทำไมบอกมีงาน กดเข้าไปไม่เจออะไรเลย"*)
+     เดิมโหลดชุดเดียว = `order(report_at desc).limit(1000)` · วัดจริง 05/11: ทั้งตาราง 1,616 ใบ
+     ⇒ หน้าต่างจบที่ **06/10** · **618 ใบเก่าไม่เคยถูกโหลด — ในนั้นเป็นใบที่ยังไม่ปิด 47 ใบ**
+     แต่กระดิ่ง/คิวนับจาก**ชุดเต็ม** ⇒ ป้ายบอก "รอคุณเซ็น 27 ใบ" กดแล้วลิสต์ขึ้น 0 รายการ
+     🔑 **ขยายกรอบวันที่ช่วยไม่ได้** — แถวไม่เคยถูกขอมาตั้งแต่ต้น (ลิงก์ส่ง `from=` มาก็เท่านั้น)
+     ⇒ ยิงคิวรี "ใบที่ยังไม่ปิด" แยกอีกชุด **ไม่จำกัดวัน** แล้วรวมกับหน้าต่างล่าสุด
+        (ใบเปิดค้างจริง ~350 ใบ · ห่างเพดานมาก) · ป้ายเตือนชนเพดานแยกกัน 2 ชุด */
+  const OPEN_CAP = 2000;
   const [ordersErr, setOrdersErr] = useState('');
   /* ⏱️ เวลาที่ชุดใบนี้ถูกโหลด — ฐานนับ "ค้างกี่วัน" ของแผงใบค้าง
      🔴 ต้องจับเวลา **ตอนโหลด** ไม่ใช่ตอน render — `Date.now()` ใน useMemo/ตัวคำนวณ = impure
         (เลขวันขยับเองระหว่าง render · ด่าน react-hooks/purity) · ตรึงไว้แล้วมันสดเองทุกครั้งที่
         realtime พา reload มา ⇒ ไม่ต้องตั้ง timer เอง (กฎ "realtime ต้องมีเพดาน" ใน CLAUDE.md) */
   const [ordersAt, setOrdersAt] = useState(() => Date.now());
+  const [openLoadErr, setOpenLoadErr] = useState('');   // ชุด "ใบยังไม่ปิด" โหลดล้ม = ใบค้างหาย ต้องบอก
+  const [openCapped, setOpenCapped] = useState(false);  // ใบเปิดค้างชนเพดาน = ยังมีที่ไม่ได้โหลด
   const loadOrders = useCallback(async () => {
     // ⚠️ คอลัมน์ย่อเท่านั้น — ดูเหตุผล (egress) ที่ MO_LIST_COLS ด้านบน ห้ามเปลี่ยนกลับเป็น '*'
-    const [{ data, error }, prRes] = await Promise.all([
+    const [{ data, error }, openRes, prRes] = await Promise.all([
       supabaseDR.from('mtn_orders').select(MO_LIST_COLS).order('report_at', { ascending: false }).limit(ORDER_CAP),
+      /* ใบที่ยังไม่ปิด — ทุกใบ ไม่จำกัดวัน (ชุดที่กระดิ่ง/คิวชี้มา ต้องอยู่ในนี้เสมอ)
+         ชุดสถานะอ่านจาก `MO_DONE_STATUSES` ที่เดียว ห้ามพิมพ์รายชื่อสถานะซ้ำที่นี่ */
+      supabaseDR.from('mtn_orders').select(MO_LIST_COLS)
+        .not('status', 'in', `(${MO_DONE_STATUSES.join(',')})`)
+        .order('report_at', { ascending: false }).limit(OPEN_CAP),
       // 🛒 ใบขอซื้อที่ยังไม่ยกเลิก (ตัวกรองงาน PR · ตารางเล็ก 4 คอลัมน์) — ล้ม = ตัวกรองบอกบนจอ ไม่กลืน
       /* cap-ok: mtn_purchase_requests ทั้งตาราง 1 แถว (วัด 20/10) — โตเกิน 1000 เมื่อไหร่ต้องเปลี่ยนเป็น fetchAllRows */
       supabaseDR.from('mtn_purchase_requests').select('order_id, pr_no, status').neq('status', 'cancelled').not('order_id', 'is', null).limit(5000),
@@ -609,8 +625,16 @@ export default function MtnRepair() {
     (prRes.data || []).forEach(r => { (byOrder[r.order_id] || (byOrder[r.order_id] = [])).push(r); });
     setOpenPrs({ byOrder, error: prRes.error?.message || null });
     if (error) { setOrdersErr(error.message); return; }   // คงรายการเดิมไว้ ดีกว่าล้างเป็น "ไม่มีรายการ"
+    /* 🔴 ชุด "ใบยังไม่ปิด" ล้ม = **ใบค้างหายเงียบ** ⇒ ต้องเขียนบนจอ ห้ามกลืน (ห้ามล้มเหลวเงียบ) */
+    setOpenLoadErr(openRes.error?.message || '');
+    setOpenCapped((openRes.data || []).length >= OPEN_CAP);
     setOrdersErr('');
-    setOrders(data || []);
+    /* รวม 2 ชุด ตัดซ้ำด้วย id — คงลำดับใหม่→เก่าเหมือนเดิม */
+    const seen = new Set();
+    const merged = [...(data || []), ...(openRes.data || [])]
+      .filter(o => (o?.id && !seen.has(o.id)) && seen.add(o.id));
+    merged.sort((a, b) => String(b.report_at || '').localeCompare(String(a.report_at || '')));
+    setOrders(merged);
     setOrdersAt(Date.now());
   }, []);
 
@@ -1003,7 +1027,15 @@ export default function MtnRepair() {
         )}
         {orders.length >= ORDER_CAP && (
           <div style={{ fontSize: 12, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 11px', marginBottom: 10 }}>
-            ⚠️ แสดงเฉพาะ {ORDER_CAP.toLocaleString()} ใบล่าสุด — ใบที่เก่ากว่านั้นไม่ได้โหลดมา (ค้นใบเก่าด้วยเลข MO ที่หน้าสอบกลับ/ประวัติเครื่อง)
+            ⚠️ ใบที่<b>ปิดแล้ว</b>แสดงเฉพาะ {ORDER_CAP.toLocaleString()} ใบล่าสุด — ที่เก่ากว่านั้นไม่ได้โหลดมา (ค้นด้วยเลข MO ที่หน้าสอบกลับ/ประวัติเครื่อง) · <b>ใบที่ยังไม่ปิดโหลดมาครบทุกใบ</b>
+          </div>
+        )}
+        {/* 🔴 ชุด "ใบยังไม่ปิด" มีปัญหา = ใบค้างอาจหายจากลิสต์ ⇒ ห้ามเงียบ */}
+        {(openLoadErr || openCapped) && (
+          <div style={{ fontSize: 12, color: 'var(--amber)', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 11px', marginBottom: 10 }}>
+            {openLoadErr
+              ? `⚠️ โหลดชุด "ใบที่ยังไม่ปิด" ไม่สำเร็จ (${openLoadErr}) — ใบค้างที่เก่ากว่า ${ORDER_CAP.toLocaleString()} ใบล่าสุดอาจไม่อยู่ในลิสต์นี้`
+              : `⚠️ ใบที่ยังไม่ปิดชนเพดาน ${OPEN_CAP.toLocaleString()} ใบ — อาจมีใบค้างที่ยังไม่ได้โหลดมา`}
           </div>
         )}
         {/* ใบที่ตกนอกกรอบวันที่ — ต้องบอก ห้ามหายเงียบ (โดยเฉพาะใบที่ยังไม่ปิด) */}
