@@ -29,6 +29,8 @@ import { findOpenOnMachine, dupLevel } from '../utils/mtnDuplicate';
 import { moFormatHint, moMonthKeyOf, moNoOf, moSeqKeyOf } from '../utils/moNumber';
 /* ⏳ ใบค้างขั้นเดิม — สูตร "ค้างกี่วัน/ขั้นไหน" อยู่ที่นี่ที่เดียว ห้ามนับวันในหน้า (13/10) */
 import { buildMoStaleBoard } from '../utils/mtnStale';
+/* 🏃 แผงไล่งาน — "ใบค้างนี้รอใครลงมือ" (05/11) · กฎการแบ่งฝั่ง/หาเป้าอยู่ util ที่เดียว */
+import { buildMoChaseBoard } from '../utils/moChase';
 import { inSectionScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions, teamRowOwner, teamRowLockNote, canWriteTeam, teamBlockText } from '../utils/mtnTeams';
@@ -716,7 +718,9 @@ export default function MtnRepair() {
       { key: 'repair', label: 'ประเภทงานซ่อม', value: fRepairType, on: !!fRepairType,
         test: o => (o.repair_type || '') === fRepairType },
       { key: 'text', label: 'คำค้น', value: fText.trim(), on: !!t,
-        test: o => [o.mo_no, o.machine_no, o.item_type, o.problem_characteristic, o.report_note, o.line_name, o.reported_by_name, o.reporter_prod].some(v => (v || '').toLowerCase().includes(t)) },
+        /* 🔴 `assigned_to` อยู่ในช่องค้นหาด้วย (05/11) — แถบไล่งานกดชื่อช่างแล้วกรองด้วยคำค้น
+           ถอดออก = ชิปช่างกดแล้วไม่มีอะไรเกิดขึ้น (ด่าน mo-chase-search-covers-tech) */
+        test: o => [o.mo_no, o.machine_no, o.item_type, o.problem_characteristic, o.report_note, o.line_name, o.reported_by_name, o.reporter_prod, o.assigned_to].some(v => (v || '').toLowerCase().includes(t)) },
     ];
   }, [scopeLines, scopeSecs, fStatus, fLine, fDept, fShift, fRepairType, fText, lines, knownLineNames]);
 
@@ -892,6 +896,15 @@ export default function MtnRepair() {
     teamOf: (o) => teamKeyOf(o.mtn_dept || deptForItem(o.item_type)) || '',
   }), [scopedOrders, ordersAt]);
 
+  /* 🏃 แผงไล่งานของหัวหน้าช่าง (05/11 · คำสั่ง user "ทำแผงไล่ MO ค้างให้หัวหน้าช่าง")
+     🔴 ฐานเดียวกับ `staleBoard` เป๊ะ (`scopedOrders` + `ordersAt`) — คนละฐาน = 2 เลขบนแผงเดียวกัน
+     🔴 ไม่ยิงคิวรีเพิ่ม · สูตรทั้งหมดอยู่ `utils/moChase.js` ห้ามตัดสินฝั่ง/นับวันในหน้านี้ */
+  const chaseBoard = useMemo(() => buildMoChaseBoard(scopedOrders, {
+    now: ordersAt,
+    teamOf: (o) => teamKeyOf(o.mtn_dept || deptForItem(o.item_type)) || '',
+    teamName: deptNameOf,
+  }), [scopedOrders, ordersAt]);
+
   /* 📊 first-response ของช่างฝ่ายผลิต — "เข้าไป action แล้วแก้เองได้กี่ครั้ง / ส่งต่อกี่ครั้ง"
      (คำสั่ง user 2026-09-14: "เก็บเป็นประวัติไว้ว่าเข้าไป action ก่อนแล้วกี่ครั้ง ทำเองได้/ไม่ได้กี่ครั้ง")
      นับเฉพาะใบที่**ลงมือจริงแล้ว** (มี repair_done_at = ผ่านขั้น 3) — ใบที่ยังไม่มีใครแตะไม่ใช่ first-response
@@ -980,7 +993,7 @@ export default function MtnRepair() {
             {/* ตัวรวมไม่โชว์ในลิสต์ — ยกเว้นตอนที่ถูกเลือกอยู่จริง (มาจากลิงก์กระดิ่ง) ไม่งั้นช่องจะว่างทั้งที่กรองอยู่ */}
             {PR_FILTERS.filter(x => !x.hidden || x.v === fPr).map(x => <option key={x.v} value={x.v}>{x.label} ({prCounts[x.v] ?? 0})</option>)}
           </select>
-          <SearchInput value={fText} onChange={setFText} fields="เลข MO / เครื่อง / ปัญหา / ชื่อผู้แจ้ง" />
+          <SearchInput value={fText} onChange={setFText} fields="เลข MO / เครื่อง / ปัญหา / ชื่อผู้แจ้ง / ช่างที่รับงาน" />
           <span className="spacer" />
           <span className="filter-count">{shown.length} รายการ</span>
           {prIgnoresDate && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>· งาน PR แสดงทุกช่วงเวลา (ไม่ตัดตามวันที่)</span>}
@@ -1050,6 +1063,10 @@ export default function MtnRepair() {
           onStage={(stage) => { setFStatus('open'); setFWait(stage); }}
           onTeam={(dept) => { setFStatus('open'); setFDept(dept); }}
           teamName={deptNameOf} statusLabel={moStatusLabel} onOpen={openDetail}
+          /* 🏃 แถบไล่งาน — กดเป้าแล้วตั้งตัวกรองของแถบด้านบน (ไม่สร้างตัวกรองชุดที่ 2) */
+          chase={chaseBoard}
+          onLine={(line) => { setFStatus('open'); setFLine(line); }}
+          onText={(q) => { setFStatus('open'); setFText(q); }}
         />
         {/* 🕳️ กรองแล้วไม่เหลือใบเลย — ต้องบอกว่า "ตัวไหนตัดทิ้ง" + "ปลดแล้วได้คืนกี่ใบ"  (26/10 · คำถาม user)
             กฎความซื่อสัตย์ของจอ: "ไม่มีรายการ" เฉยๆ อ่านได้ว่า "ไม่มีงานค้าง" ทั้งที่มีงานค้างอยู่

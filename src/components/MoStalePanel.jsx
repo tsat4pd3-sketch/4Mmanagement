@@ -5,6 +5,12 @@
            ค้างที่ขั้นไหน/ทีมไหน · เก่าสุดกี่วัน** แล้วกดเข้าไปจัดการได้ทันที
    ใครใช้: ทีมช่าง + หัวหน้า/ผจก. ที่ต้องเซ็นขั้นท้าย (คนที่ต้องกดอยู่ในหน้านี้อยู่แล้ว)
 
+   🏃 **แถบ "ไล่งาน" (05/11 · คำสั่ง user)** — ตอบคำถามถัดไปของหัวหน้าช่าง: **ใบกองนี้รอ *ใคร***
+      วัดจริง 05/11: ใบค้าง ≥7 วัน 77 ใบ — **~47% รอฝ่ายที่แจ้ง** (ตรวจรับงาน/รับมอบ/ปิดใบ)
+      ซึ่งหัวหน้าช่าง**เลื่อนขั้นให้เองไม่ได้** ต้องโทรตาม · แผงเดิมบอกแค่ชื่อขั้น คนต้องรู้เองว่า
+      ขั้นไหนของฝั่งใคร ⇒ กองที่ "ไล่ได้เลย" กับ "ต้องไปตามคนอื่น" ปนกันอยู่ในเลขเดียว
+      🔴 กฎการแบ่งฝั่ง/หาเป้า อยู่ `src/utils/moChase.js` — **ห้ามเทียบ `side`/เลขขั้นในไฟล์นี้**
+
    ─── ข้อจำกัด / ของที่ห้ามทำ ─────────────────────────────────────────────────
    · สูตร "ค้างกี่วัน / ค้างขั้นไหน" อยู่ `src/utils/mtnStale.js` ทั้งหมด —
      **ห้ามคำนวณวันหรือเทียบเลขขั้นในไฟล์นี้** (เลขขั้นคนละความหมาย 2 ฟอร์ม · ด่าน mo-step-branch-via-stage)
@@ -18,6 +24,8 @@ import { useState } from 'react';
 import CollapseCard from './CollapseCard';
 import { statusColor, toneInk } from '../utils/statusTone';
 import { staleTone } from '../utils/mtnStale';
+/* 🏃 "ใบนี้รอใครลงมือ" — กฎการแบ่งฝั่ง/หาเป้าอยู่ util ที่เดียว (05/11 · ห้ามตัดสินฝั่งในไฟล์นี้) */
+import { chaseSideMeta } from '../utils/moChase';
 
 const FIRST_ROWS = 8;   // โชว์ก่อน 8 ใบ ที่เหลือพับ + บอกจำนวนที่พับ (§5.5 "ห้ามตัดข้อมูลเงียบ")
 
@@ -53,7 +61,11 @@ function Chip({ tone, label, sub, onClick, title }) {
 export default function MoStalePanel({
   board, loadErr = '', partial = false, onStage, onTeam, teamName = (k) => k,
   statusLabel = () => '', onOpen,
+  /* 🏃 แผงไล่งาน (05/11 · คำสั่ง user "ทำแผงไล่ MO ค้างให้หัวหน้าช่าง") — `chase` = ผลจาก
+     `buildMoChaseBoard()` · `null` = หน้าแม่ยังไม่ส่งมา (แผงเดิมทำงานเหมือนเดิมเป๊ะ) */
+  chase = null, onText, onLine,
 }) {
+  const [side, setSide] = useState('');   // ฝั่งที่กางอยู่ ('' = ยังไม่เลือก)
   const [all, setAll] = useState(false);
   if (!board) return null;    // ยังโหลดไม่เสร็จ — หน้าแม่โชว์ "กำลังโหลด…" อยู่แล้ว
 
@@ -157,6 +169,75 @@ export default function MoStalePanel({
                 ].filter(Boolean).join(' · ')} />
             ))}
           </div>
+
+          {/* ══ 🏃 ไล่งาน: ใบกองนี้รอ "ใคร" ลงมือ (05/11 · คำสั่ง user) ══════════════════
+              🔴 ฝั่ง/เป้า มาจาก `utils/moChase.js` — ห้ามเทียบ side หรือเลขขั้นที่นี่
+              🔴 กดแล้วตั้ง**ตัวกรองของแถบด้านบน** (ไลน์ / ทีม / ขั้น / คำค้น) ไม่สร้างตัวกรองชุดที่ 2
+              🔴 ถังที่ชี้เป้าไม่ได้ (ไม่มีชื่อช่าง/ไม่มีไลน์/ไม่รู้ฝั่ง) ต้องโชว์ — ซ่อน = งานหายจากคนไล่ */}
+          {chase && chase.sides.length > 0 && (
+            <div style={{ marginBottom: 9, paddingTop: 7, borderTop: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 5 }}>
+                <span style={lbl}>🏃 รอใครลงมือ:</span>
+                {chase.sides.map(s2 => (
+                  <Chip key={s2.side} tone={s2.tone}
+                    label={`${s2.meta.icon} ${s2.meta.label}`}
+                    sub={`${s2.n} ใบ`}
+                    onClick={() => setSide(side === s2.side ? '' : s2.side)}
+                    title={[s2.meta.hint,
+                      s2.hard > 0 && `เกิน ${hardDays} วัน ${s2.hard} ใบ`,
+                      s2.oldest != null && `เก่าสุด ${s2.oldest} วัน`,
+                      side === s2.side ? 'กดอีกครั้งเพื่อย่อ' : 'กดเพื่อดูว่าต้องไปตามใคร',
+                    ].filter(Boolean).join(' · ')} />
+                ))}
+              </div>
+              {/* ❓ ใบที่นับวันไม่ได้ ไม่ได้อยู่ในแถบนี้เลย — ต้องเขียนบอก ไม่ใช่ปล่อยให้ยอดไม่ตรงกันเงียบๆ */}
+              {chase.unknownAge > 0 && (
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 5 }}>
+                  ❓ อีก <b>{chase.unknownAge} ใบ</b> ไม่มีวันเวลาให้นับ จึงยังไม่รู้ว่ารอใครนานแค่ไหน (ไม่อยู่ในแถบนี้)
+                </div>
+              )}
+              {!side ? (
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                  กดกองด้านบนเพื่อดูรายชื่อ “ต้องไปตามใคร” — เรียงใบที่ดองนานสุดขึ้นก่อน
+                </div>
+              ) : (() => {
+                const sel = chase.sides.find(x => x.side === side);
+                if (!sel) return null;
+                return (<>
+                  <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 4, lineHeight: 1.5 }}>
+                    {sel.meta.icon} <b>{sel.meta.label}</b> — {sel.meta.hint}
+                  </div>
+                  <div style={{ display: 'grid', gap: 3, alignContent: 'start' }}>
+                    {sel.targets.map(t => {
+                      /* กดได้เมื่อมีตัวกรองที่ "ปลายทางตรงกับเป้า" จริงๆ — ไม่มี = ไม่ทำปุ่มหลอก */
+                      const act = t.line && onLine ? () => onLine(t.line)
+                        : t.text && onText ? () => onText(t.text)
+                          : t.stage && onStage ? () => onStage(t.stage)
+                            : undefined;
+                      return (
+                        <div key={t.key} onClick={act}
+                          style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'baseline', fontSize: 11.5,
+                            color: 'var(--text2)', padding: '4px 7px', borderRadius: 6, background: 'var(--bg3)',
+                            borderLeft: `3px solid ${statusColor(t.tone)}`, cursor: act ? 'pointer' : 'default' }}
+                          title={[`ค้างเกิน ${days} วัน ${t.n} ใบ`,
+                            t.hard > 0 && `เกิน ${hardDays} วัน ${t.hard} ใบ`,
+                            t.oldest != null && `เก่าสุด ${t.oldest} วัน`,
+                            act ? 'กดเพื่อกรองลิสต์ด้านล่างเฉพาะกองนี้' : 'ชี้เป้าไม่ได้ — กรองอัตโนมัติไม่ได้ ต้องเปิดดูทีละใบ',
+                          ].filter(Boolean).join(' · ')}>
+                          <b style={{ color: toneInk(t.tone), minWidth: 62 }}>{t.oldest} วัน</b>
+                          <b style={{ color: 'var(--text)' }}>{t.label}</b>
+                          {t.whoShort && t.kind !== 'role' && <span style={{ color: 'var(--muted)' }}>· ต้องกดโดย {t.whoShort}</span>}
+                          <span>· {t.n} ใบ</span>
+                          {t.hard > 0 && <span style={{ color: statusColor('bad'), fontWeight: 700 }}>· เกิน {hardDays} วัน {t.hard} ใบ</span>}
+                          {t.kind === 'no_target' && <span style={{ color: 'var(--muted)' }}>· ⓘ ใบไม่มีข้อมูลให้ชี้ตัวคน</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>);
+              })()}
+            </div>
+          )}
 
           {/* ── ใบที่ค้างนานสุดขึ้นก่อน ── */}
           <div style={{ display: 'grid', gap: 3, alignContent: 'start' }}>
