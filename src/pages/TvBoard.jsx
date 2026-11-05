@@ -43,6 +43,7 @@ import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 import { ALL } from '../utils/filterLabels';
 // วันงาน — ของกลาง (ตัด 08:00 · 12/10 เลิกก๊อปฟังก์ชันไว้ในไฟล์ตามกฎ CLAUDE.md)
 import { getWorkDate } from '../utils/workDate';
+import LineScopeSelect from '../components/LineScopeSelect'; // 🌳 ตัวกรองขอบเขตกลาง (05/11 audit dropdown)
 
 
 const DEPTS = [
@@ -201,13 +202,9 @@ export default function TvBoard({ onOpenMenu = null }) {
           ))}
           <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
           {/* ส่วนงาน — ค่าที่ไม่มีในลิสต์ (ส่วนงานถูกเปลี่ยนชื่อ) ต้องยังเลือกเห็นได้ ห้ามหายเงียบ */}
-          <select value={secFilter} onChange={e => setParam('sec', e.target.value)}
-            title="ทุกส่วนงานที่บัญชีนี้มีสิทธิ์เห็น"
-            style={{ width: 'auto', maxWidth: 220, height: 'var(--ctl-h)', fontSize: 'var(--ctl-fs)', padding: '0 var(--ctl-pad-x)', borderRadius: 'var(--ctl-r)', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-            <option value="">{ALL.section}</option>
-            {secOpts.map(s => <option key={s} value={s}>{s}</option>)}
-            {secFilter && !secOpts.includes(secFilter) && <option value={secFilter}>⚠ {secFilter} (ไม่มีในทะเบียน)</option>}
-          </select>
+          {/* 🌳 ต้นไม้ผังช่องเดียวหน้าตาเดียวกับทุกจอ (05/11 · audit dropdown) — ค่าที่ไม่อยู่ในผังยังโชว์เป็นแถว ⚠ (OrgScopePicker) */}
+          <LineScopeSelect lines={lines} section={secFilter} width={220}
+            pickKinds={['section']} onChange={(sec) => setParam('sec', sec || '')} />
           {dept === 'mo' && <>
             <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
             {[{ key: '', icon: '🧾', label: 'ทุกขั้น' }, ...MO_TV_GROUPS].map(x => (

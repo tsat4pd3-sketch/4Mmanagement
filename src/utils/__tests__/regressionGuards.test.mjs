@@ -58,6 +58,21 @@ function stripComments(src) {
    scan: โฟลเดอร์ที่ตรวจ · ext: นามสกุล · re: regex (global) · allow: ไฟล์ที่ยกเว้น + เหตุผล */
 const RULES = [
   {
+    id: 'scope-filter-via-tree',
+    scan: ['src'], ext: ['.jsx'],
+    /* ตัวกรองขอบเขตที่วาด <select> เองด้วยป้าย "ทุกส่วนงาน" / "ทุกแผนก" */
+    re: /<option\s+value=["'](?:all)?["']\s*>\s*\{ALL\.(section|dept)\}/g,
+    why: '🌳 user 05/11: *"dropdown ยังมั่วไม่เหมือนหน้าอื่น"* — ตัวกรองส่วนงาน/แผนกที่วาด <select> เองได้ลิสต์แบน '
+       + '(แผนกปนกลุ่มไลน์ ไม่มีลำดับชั้น) ขณะที่จออื่นเป็นต้นไม้ผัง 🏭›📁›📂›🔗›➖ · เจอซ้ำรอบ 2 (รอบแรก 02/10)',
+    fix: '`<LineScopeSelect>` ช่องเดียว · ข้อมูลกรองได้แค่ส่วนงาน → `pickKinds={[\'section\']}` · ส่วนงาน+แผนก → '
+       + "`pickDept pickKinds={['section','department']}` (ระดับอื่นโชว์เป็นหัวเทา · ค่าเป็น code||name เหมือน useOrgSections)",
+    allow: {
+      'src/pages/Checkin.jsx': 'ช่องในหน้าต่าง export ใบลงเวลา — เลือก 1 ส่วนงานเป็นพารามิเตอร์ ไม่ใช่แถบกรอง',
+      'src/pages/ManpowerBoard.jsx': 'แผนกมาจากตัวบอร์ด (board.depts) ไม่ใช่ผัง · บอร์ดต้องมีส่วนงานเสมอ (ไม่มี "ทั้งโรงงาน")',
+      'src/pages/DisplayRotation.jsx': 'ช่องตั้งค่าพารามิเตอร์ของสไลด์จอวน (เลือกได้แค่ส่วนงานในบัญชีจอ tvSections) — ไม่ใช่แถบกรอง',
+    },
+  },
+  {
     id: 'uom-write-via-normuom',
     scan: ['src'], ext: ['.jsx', '.js'],
     /* จับ default หน่วยแบบเดิม: `uom: x || 'EA'` · `unit: x || 'Pcs'` · `uom: 'pcs'` */

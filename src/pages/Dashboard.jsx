@@ -43,6 +43,8 @@ import { loadBreakPolicies } from '../utils/oeeMasters';
 import { fetchAllRows } from '../utils/fetchAllRows';
 import SearchInput from '../components/SearchInput';
 import { urlPick, urlBool, urlParam } from '../utils/urlInit';
+import { scopeLines as pickerLines } from '../components/LineSelect'; // ลิสต์ของ picker ผ่านตาข่ายกลาง (กรองแล้วไม่เหลือ = ไม่กรอง)
+import LineScopeSelect from '../components/LineScopeSelect'; // 🌳 ตัวกรองขอบเขตกลาง (05/11 audit dropdown)
 
 /* เกณฑ์ "อัตราการมาทำงาน" ของจอนี้ — การ์ดบนสุดกับการ์ดรายไลน์ต้องใช้ชุดเดียวกัน (2026-10-19)
    เดิมการ์ดไลน์ตัดที่ 80% และเอา 4M มาปนสีมาทำงาน ⇒ ไลน์มา 91% ขึ้น "⚠ Risk" · มา 82% ขึ้น "✓ Normal" */
@@ -1009,18 +1011,10 @@ export default function Dashboard({ view = 'timeline' }) {
         <motion.div {...stagger(1)} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', paddingRight: 52 }}>
           {/* Section filter — สำหรับจอ TV ดูเฉพาะส่วนงานตัวเอง */}
           {sections.length > 1 && (
-            <select
-              value={selectedSection}
-              onChange={e => changeSection(e.target.value)}
-              style={{
-                width: 'auto', maxWidth: 280,   // UI-STANDARD 2026-09-24 — กัน select{width:100%} ของธีมยืดเต็มแถว (เคยยืด 907px)
-                background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10,
-                padding: '7px 12px', fontSize: 14, fontWeight: 700, color: 'var(--text)',
-                cursor: 'pointer', outline: 'none',
-              }}>
-              <option value="all">{ALL.section}</option>
-              {sections.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            /* ส่วนงาน = ต้นไม้ผังช่องเดียว (05/11 · audit dropdown) · state หน้านี้ใช้ 'all' = ทั้งหมด */
+            <LineScopeSelect lines={pickerLines(lines, { role, lineId: userLineId, sections: scopeSecs })} sections={sections} width={280}
+              section={selectedSection === 'all' ? '' : selectedSection}
+              pickKinds={['section']} onChange={(sec) => changeSection(sec || 'all')} />
           )}
           {/* Shift toggle */}
           <div style={{ display: 'flex', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 3, gap: 2 }}>

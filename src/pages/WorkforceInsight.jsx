@@ -5,6 +5,7 @@ import { supabase } from '../supabaseClient';
 import { loadDocForms } from '../utils/docForms';
 import { downloadCsvDoc, csvText } from '../utils/csvDoc';
 import { loadLinesRes } from '../utils/useProductionLines';
+import LineScopeSelect from '../components/LineScopeSelect';
 import TimeRangeBar from '../components/TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
 import { onlyShopfloorStaff } from '../utils/staffKind';   // 👥 นับคน = เฉพาะพนักงานหน้างาน (กฎ staffKind.js)
@@ -139,7 +140,16 @@ function useEmployeeScope(lines) {
 }
 
 /* ══════════════════════════════ 📊 กำลังคนรายวัน ══════════════════════════════ */
-function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSecFilter, inScope }) {
+/* 🌳 ตัวกรองส่วนงาน = ต้นไม้ผังช่องเดียวหน้าตาเดียวกับทุกจอ (05/11 · audit dropdown — เดิม <select> ลิสต์แบน)
+   เลือกได้แค่ระดับส่วนงาน (ข้อมูลหน้านี้กรองด้วย employees.section) · ระดับอื่นโชว์เป็นหัวเทา */
+function SecPicker({ lines, sectionsList, secFilter, setSecFilter }) {
+  return (
+    <LineScopeSelect lines={lines || []} sections={sectionsList} section={secFilter} includeSupport
+      pickKinds={['section']} onChange={(sec) => setSecFilter(sec || '')} />
+  );
+}
+
+function ManpowerTab({ employees, empById, lines, sectionsList, scopeLines, secFilter, setSecFilter, inScope }) {
   /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · แท็บในหน้านี้ใช้ `?from=&to=` ร่วมกัน
      ⇒ สลับแท็บแล้วช่วงเวลาไม่หาย ซึ่งเป็นสิ่งที่คนคาดหวังอยู่แล้ว
      หน้านี้ไล่ข้อมูลรายวันตรงๆ ไม่ได้แบ่งถัง ⇒ `scales={null}` (ปุ่มตายแย่กว่าไม่มีปุ่ม) */
@@ -228,10 +238,7 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 16 }}
       >
-        <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
-          <option value="">{ALL.section}</option>
-          {sectionsList.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+        <SecPicker lines={scopeLines} sectionsList={sectionsList} secFilter={secFilter} setSecFilter={setSecFilter} />
         <Segmented value={shift} onChange={setShift} options={SHIFT_SEG} label="กะ" />
         <span className="spacer" />
         <button onClick={() => downloadCSV('csv_manpower_daily', `manpower_${from}_${to}.csv`,
@@ -310,7 +317,7 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
 }
 
 /* ══════════════════════════════ 🔀 เปลี่ยนจุดงานรายวัน ══════════════════════════════ */
-function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
+function MovesTab({ empById, sectionsList, scopeLines, secFilter, setSecFilter, inScope }) {
   /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · แท็บในหน้านี้ใช้ `?from=&to=` ร่วมกัน
      ⇒ สลับแท็บแล้วช่วงเวลาไม่หาย ซึ่งเป็นสิ่งที่คนคาดหวังอยู่แล้ว
      หน้านี้ไล่ข้อมูลรายวันตรงๆ ไม่ได้แบ่งถัง ⇒ `scales={null}` (ปุ่มตายแย่กว่าไม่มีปุ่ม) */
@@ -391,10 +398,7 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 16 }}
       >
-        <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
-          <option value="">{ALL.section}</option>
-          {sectionsList.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+        <SecPicker lines={scopeLines} sectionsList={sectionsList} secFilter={secFilter} setSecFilter={setSecFilter} />
         <span className="spacer" />
         <button onClick={() => downloadCSV('csv_station_moves', `station_moves_${from}_${to}.csv`,
           ['วันที่', 'กะ', 'รหัส', 'ชื่อ', 'ไลน์', 'จุดเดิม', 'จุดใหม่', 'เวลา', 'ผู้มอบหมาย'],
@@ -480,7 +484,7 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
 // (ไม่มีทางที่ปีเกิดจริงในอนาคตจะดูเหมือน "วันเริ่มงานที่ผ่านมาแล้ว" ได้ — กรองด้วย > วันนี้ ปลอดภัย)
 const isValidStartDate = (s, today) => !!s && s <= today;
 
-function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope }) {
+function TurnoverTab({ employees, sectionsList, scopeLines, secFilter, setSecFilter, inScope }) {
   const [monthsBack, setMonthsBack] = useState(6);
   const [exits, setExits] = useState(null); // null = ยังไม่โหลด
   const [loading, setLoading] = useState(false);
@@ -576,10 +580,7 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
   return (
     <div>
       <FilterBar style={{ marginBottom: 16 }}>
-        <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
-          <option value="">{ALL.section}</option>
-          {sectionsList.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+        <SecPicker lines={scopeLines} sectionsList={sectionsList} secFilter={secFilter} setSecFilter={setSecFilter} />
         <select value={monthsBack} onChange={e => setMonthsBack(Number(e.target.value))}>
           <option value={3}>3 เดือนล่าสุด</option>
           <option value={6}>6 เดือนล่าสุด</option>
@@ -692,7 +693,7 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
    ⚠️ ตัวเลขบนจอนี้มาจาก "เช็คชื่อรายวัน (has_ot)" + "ใบจอง OT" เท่านั้น — ไม่ใช่ระบบเงินเดือน
    วันที่ไม่มีใครเช็คชื่อเลย = ไม่รู้ (ไม่ใช่ 0) → แถบเตือน coverage ต้องอยู่บนจอเสมอ ห้ามถอด
    ═══════════════════════════════════════════════════════════════════════════════════════ */
-function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
+function OtMonthlyTab({ empById, sectionsList, scopeLines, secFilter, setSecFilter, inScope }) {
   const [month, setMonth] = useState(prevMonthKey(monthKey(getWorkDate())));
   const [threshold, setThreshold] = useState(20);
   const [useBookings, setUseBookings] = useState(true);
@@ -826,10 +827,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
   return (
     <div>
       <FilterBar style={{ marginBottom: 14 }}>
-        <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
-          <option value="">{ALL.section}</option>
-          {sectionsList.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+        <SecPicker lines={scopeLines} sectionsList={sectionsList} secFilter={secFilter} setSecFilter={setSecFilter} />
         <select value={month} onChange={e => setMonth(e.target.value)}>
           {monthOpts.map(m => <option key={m} value={m}>{monthLabel(m)}{m === monthKey(today) ? ' (เดือนนี้)' : ''}</option>)}
         </select>
@@ -1047,6 +1045,9 @@ export default function WorkforceInsight() {
     return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
   }, [lines, orgSectionList, role, userLineId, scopeSecs]);
 
+  // ไลน์ที่ให้ต้นไม้ส่วนงานตัดตัวเลือก — leader = ไลน์ตัวเอง (เดิมลิสต์มีแค่ส่วนงานของไลน์ตัวเอง)
+  const scopeLines = useMemo(() => (role === 'leader' && userLineId)
+    ? lines.filter(l => String(l.id) === String(userLineId)) : lines, [lines, role, userLineId]);
   const empById = useMemo(() => Object.fromEntries(employees.map(e => [e.id, e])), [employees]);
 
   return (
@@ -1063,19 +1064,19 @@ export default function WorkforceInsight() {
         tab={tab} onTab={setTab}
       />
       {tab === 'manpower' && (
-        <ManpowerTab employees={employees} empById={empById} lines={lines} sectionsList={sectionsList}
+        <ManpowerTab employees={employees} empById={empById} lines={lines} sectionsList={sectionsList} scopeLines={scopeLines}
           secFilter={secFilter} setSecFilter={setSecFilter} inScope={inScope} />
       )}
       {tab === 'moves' && (
-        <MovesTab empById={empById} sectionsList={sectionsList}
+        <MovesTab empById={empById} sectionsList={sectionsList} scopeLines={scopeLines}
           secFilter={secFilter} setSecFilter={setSecFilter} inScope={inScope} />
       )}
       {tab === 'turnover' && (
-        <TurnoverTab employees={employees} sectionsList={sectionsList}
+        <TurnoverTab employees={employees} sectionsList={sectionsList} scopeLines={scopeLines}
           secFilter={secFilter} setSecFilter={setSecFilter} inScope={inScope} />
       )}
       {tab === 'ot' && (
-        <OtMonthlyTab empById={empById} sectionsList={sectionsList}
+        <OtMonthlyTab empById={empById} sectionsList={sectionsList} scopeLines={scopeLines}
           secFilter={secFilter} setSecFilter={setSecFilter} inScope={inScope} />
       )}
     </Page>

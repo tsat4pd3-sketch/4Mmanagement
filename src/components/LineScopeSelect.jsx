@@ -34,6 +34,10 @@ const PICKABLE_DEPT = ['section', 'department', 'line_group', 'line'];
 export default function LineScopeSelect({
   lines: allLines = [], section = '', line = '', unit = '', pickDept = false, index: givenIndex = null,
   onChange, sections = [], valueKey = 'name', disabled, id, style, width = 260, includeSupport = false, onUnitLines,
+  /* 🎚️ ชนิดที่กดเลือกได้ (05/11 · audit dropdown) — หน้าที่ข้อมูลกรองได้แค่ "ส่วนงาน" หรือ "ส่วนงาน+แผนก"
+     (เช่นรายชื่อพนักงานที่ไม่มีมิติไลน์) ส่ง ['section'] / ['section','department'] ⇒ ได้ต้นไม้หน้าตาเดียวกับทุกจอ
+     ส่วนชนิดอื่นโชว์เป็นหัวเทา · ไม่ส่ง = PICKABLE/PICKABLE_DEPT เดิม */
+  pickKinds = null,
 }) {
   const ctx = useContext(UserContext) || {};
   /* 🔴 หน่วยสนับสนุนไม่ใช่ "ขอบเขตของการผลิต" — ติดมาด้วยแล้วทุกตัวเลขที่กรองด้วยขอบเขตนี้
@@ -87,7 +91,7 @@ export default function LineScopeSelect({
 
   return (
     <OrgScopePicker index={index} value={value} onChange={emit} scopeSet={scopeSet} sections={scopeSecs} failed={ownFailed}
-      costCenter={false} pickable={pickDept ? PICKABLE_DEPT : PICKABLE} disabled={disabled} id={id} style={style} width={width}
+      costCenter={false} pickable={pickKinds || (pickDept ? PICKABLE_DEPT : PICKABLE)} disabled={disabled} id={id} style={style} width={width}
       title="ขอบเขต: ส่วนงาน / กลุ่มไลน์ / ไลน์ (หัวสีเทา = ฝ่าย/แผนก ดูได้ที่จอ OBEYA)" />
   );
 }

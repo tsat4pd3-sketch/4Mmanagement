@@ -41,6 +41,7 @@ import { ALL } from '../utils/filterLabels';
 import { SESSION_STATUSES_REAL } from '../utils/sessionStatus';
 import { machineLaneCount } from '../utils/machineAssets';
 import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
+import LineScopeSelect from '../components/LineScopeSelect'; // 🌳 ตัวกรองขอบเขตกลาง (05/11 audit dropdown)
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 // Gesture Mode (MediaPipe) — lazy ทั้ง component และโค้ด MediaPipe ข้างใน: โหลดเฉพาะตอนผู้ใช้กด 📷
@@ -1087,12 +1088,11 @@ export default function MorningMeeting() {
           )}
         </>} />
       <FilterBar>
-        {sectionOpts.length > 1 && (
-          <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
-            <option value="">{ALL.section}</option>
-            {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        )}
+        {sectionOpts.length > 1 && (<>
+          {/* ส่วนงาน = ต้นไม้ผังช่องเดียวหน้าตาเดียวกับทุกจอ (05/11 · audit dropdown — เดิม <select> ลิสต์แบน) · เลือกได้แค่ระดับส่วนงาน กรองเหมือนเดิม */}
+          <LineScopeSelect lines={scopedLines} sections={sectionOpts} section={secFilter}
+            pickKinds={['section']} onChange={(sec) => setSecFilter(sec || '')} />
+        </>)}
         <span className="filter-label">วันที่ประชุม</span>
         <input type="date" value={meetingDate} onChange={e => setMeetingDate(e.target.value)} />
       </FilterBar>

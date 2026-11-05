@@ -35,7 +35,7 @@ import useTabParam from '../utils/useTabParam';
 import LineSelect from '../components/LineSelect';
 import LineScopeSelect from '../components/LineScopeSelect';
 import { useOrgSections, useOrgDepts, useOrgTeams } from '../utils/useOrgSections';
-import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
+import useProductionLines, { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
 import PersonSelect from '../components/PersonSelect';
 import CostCenterSelect from '../components/CostCenterSelect';
 import useColumnHistory from '../utils/useColumnHistory';
@@ -268,7 +268,6 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   const canManageMaster = can('ot_master', 'manage', role);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
-  const deptsOf        = useOrgDepts();
 
   const todayStr = getWorkDate();
 
@@ -333,6 +332,10 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   const sections = (role === 'leader' && userLineId)
     ? [...new Set(lines.filter(l => String(l.id) === String(userLineId)).map(l => l.section).filter(Boolean))]
     : scopeSecs.length ? allSections.filter(s => inSectionScope(scopeSecs, s)) : allSections;
+  // ไลน์ที่ให้ต้นไม้ใช้ตัดตัวเลือก — leader = ครอบครัวไลน์ตัวเอง (แบบเดียวกับ EmpScopeFilters) · ที่เหลือตัดตาม sections ใน LineScopeSelect
+  const otScopeLines = (role === 'leader' && userLineId)
+    ? (() => { const fam = new Set([...getLineFamilyIds(lines, Number(userLineId) || userLineId)].map(String)); return lines.filter(l => fam.has(String(l.id))); })()
+    : lines;
 
   const handleExportCsv = () => {
     downloadCSV(
@@ -391,14 +394,11 @@ table{border-collapse:collapse;width:100%}
   return (
     <div>
       <FilterBar style={{ marginBottom: 14 }}>
-        <select value={section} onChange={e => { setSection(e.target.value); setDeptFilter(''); }}>
-          <option value="">{ALL.section}</option>
-          {sections.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)}>
-          <option value="">{ALL.dept}</option>
-          {deptsOf(section).map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
+        {/* ขอบเขต = ต้นไม้ผังช่องเดียวแบบเดียวกับแท็บอื่น (05/11 · user: "dropdown ยังมั่วไม่เหมือนหน้าอื่น")
+            เดิม 2 ช่อง ส่วนงาน + แผนก (ลิสต์แบนไม่มีลำดับชั้น) · กรองเหมือนเดิม: ส่วนงาน = employees.section · แผนก = employees.department */}
+        <LineScopeSelect lines={otScopeLines} sections={sections} section={section} unit={deptFilter} pickDept includeSupport
+          pickKinds={['section', 'department']}
+          onChange={(sec, _ln, { unit }) => { setSection(unit ? '' : sec); setDeptFilter(unit || ''); }} />
         <span className="filter-label">วันที่ทำ OT</span>
         <input type="date" value={date} onChange={e => setDate(e.target.value)} />
         {calReady && (
@@ -852,7 +852,13 @@ function PerEmployeeTab() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
-  const deptsOf        = useOrgDepts();
+  /* ทะเบียนไลน์ — ให้ต้นไม้ขอบเขตตัดตัวเลือก (leader = ครอบครัวไลน์ตัวเอง · 05/11 audit dropdown) */
+  const plLines = useProductionLines();
+  const empScopeLines = useMemo(() => {
+    if (!(role === 'leader' && userLineId)) return plLines;
+    const fam = new Set([...getLineFamilyIds(plLines, Number(userLineId) || userLineId)].map(String));
+    return plLines.filter(l => fam.has(String(l.id)));
+  }, [plLines, role, userLineId]);
   const [employees, setEmployees] = useState([]);
   const [selected, setSelected] = useState('');
   const [logs, setLogs] = useState([]);
@@ -973,14 +979,11 @@ table{border-collapse:collapse;width:100%}
   return (
     <div>
       <FilterBar style={{ marginBottom: 16 }}>
-        <select value={empSection} onChange={e => { setEmpSection(e.target.value); setEmpDept(''); }}>
-          <option value="">{ALL.section}</option>
-          {empSections.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={empDept} onChange={e => setEmpDept(e.target.value)}>
-          <option value="">{ALL.dept}</option>
-          {deptsOf(empSection).map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
+        {/* ขอบเขต = ต้นไม้ผังช่องเดียว (05/11 · audit dropdown) — เดิม 2 ช่อง ส่วนงาน + แผนก ลิสต์แบน
+            กรองเหมือนเดิม: ส่วนงาน = employees.section · แผนก = employees.department */}
+        <LineScopeSelect lines={empScopeLines} sections={empSections} section={empSection} unit={empDept} pickDept includeSupport
+          pickKinds={['section', 'department']}
+          onChange={(sec, _ln, { unit }) => { setEmpSection(unit ? '' : sec); setEmpDept(unit || ''); }} />
         <select value={empTeam} onChange={e => setEmpTeam(e.target.value)}>
           <option value="">{ALL.team}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
@@ -1074,6 +1077,10 @@ function StationLogTab() {
     const all = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
     return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
   }, [lines, orgSectionList, role, userLineId, scopeSecs]);
+
+  // ไลน์ที่ให้ต้นไม้ส่วนงานตัดตัวเลือก — leader = ไลน์ตัวเอง (เดิมลิสต์มีแค่ส่วนงานของไลน์ตัวเอง)
+  const stationScopeLines = useMemo(() => (role === 'leader' && userLineId)
+    ? lines.filter(l => String(l.id) === String(userLineId)) : lines, [lines, role, userLineId]);
 
   // mandatory scope: leader → สถานีในไลน์ตัวเอง, role ที่ถูกจำกัด sections → สถานีของไลน์ในส่วนงานที่อยู่ใน scope
   // ระหว่างที่ lines ยังไม่โหลด (แต่ user ถูก scope) คืน [] ไปก่อน — fail-closed ไม่ให้ข้อมูลนอก scope หลุดชั่วคราว
@@ -1193,10 +1200,9 @@ table{border-collapse:collapse;width:100%}
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 16 }}
       >
-        <select value={stationSection} onChange={e => setStationSection(e.target.value)}>
-          <option value="">{ALL.section}</option>
-          {stationSectionsList.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+        {/* ส่วนงาน = ต้นไม้ผังช่องเดียว (05/11 · audit dropdown) · เลือกได้เฉพาะระดับส่วนงาน (กรองลิสต์จุดงานเหมือนเดิม) */}
+        <LineScopeSelect lines={stationScopeLines} sections={stationSectionsList} section={stationSection}
+          pickKinds={['section']} onChange={(sec) => setStationSection(sec || '')} />
         <select value={selectedStation} onChange={e => setSelectedStation(e.target.value)} style={{ minWidth: 200 }}>
           {Object.entries(byLine).map(([line, sts]) => (
             <optgroup key={line} label={line}>

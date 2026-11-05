@@ -36,6 +36,8 @@ import { buildBomIndex, explodeBom } from '../utils/bomTree';
 import { explodeDemand, netOffBuffer } from '../utils/demandExplode';
 import { scheduleBackward, makePrevWorkDay } from '../utils/backwardPlan';
 import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
+import { scopeLines as pickerLines } from '../components/LineSelect'; // ลิสต์ของ picker ผ่านตาข่ายกลาง (กรองแล้วไม่เหลือ = ไม่กรอง)
+import LineScopeSelect from '../components/LineScopeSelect'; // 🌳 ตัวกรองขอบเขตกลาง (05/11 audit dropdown)
 
 /* ═══ วางแผนการผลิต (Active Planner) — 🗓️ /production-plan ══════════════════
    จากยอดลูกค้า (order รายวัน + forecast รายเดือน) เทียบกับกำลังผลิต "ที่ทำได้จริง"
@@ -654,12 +656,11 @@ export default function ProductionPlan() {
       {tab !== 'settings' && (<>
       {/* UI-STANDARD 2026-09-24 — ตัวกรอง/ตัวเลือกแผนย้ายจาก actions ของหัวเพจมาเป็นแถบกรองเดียว */}
       <FilterBar style={{ marginBottom: 0 }}>
-        {sectionOpts.length > 1 && (
-          <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
-            <option value="">{ALL.section}</option>
-            {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        )}
+        {sectionOpts.length > 1 && (<>
+          {/* ส่วนงาน = ต้นไม้ผังช่องเดียวหน้าตาเดียวกับทุกจอ (05/11 · audit dropdown — เดิม <select> ลิสต์แบน) · เลือกได้แค่ระดับส่วนงาน กรองเหมือนเดิม */}
+          <LineScopeSelect lines={pickerLines(allLines, { role, lineId: userLineId, sections: scopeSecs })} sections={sectionOpts} section={secFilter}
+            pickKinds={['section']} onChange={(sec) => setSecFilter(sec || '')} />
+        </>)}
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}
           title="ระเบิด BOM ของพาร์ทที่ลูกค้าสั่ง เพื่อให้ไลน์ที่ทำพาร์ทลูกเห็นงานของตัวเองในแผนด้วย">
           <input type="checkbox" checked={useBom} onChange={e => setUseBom(e.target.checked)} style={{ width: 'auto' }} />
