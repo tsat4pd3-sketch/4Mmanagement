@@ -1,8 +1,8 @@
 {
   "_meta": {
     "generatedAt": "2026-11-05",
-    "files": 218,
-    "total": 4959
+    "files": 217,
+    "total": 4888
   },
   "files": {
     "src/components/AuditLogViewer.jsx": 3,
@@ -157,7 +157,6 @@
     "src/pages/AdoptionOutlook.jsx": 82,
     "src/pages/AnnouncementMockup.jsx": 13,
     "src/pages/BbsCheck.jsx": 11,
-    "src/pages/Checkin.jsx": 71,
     "src/pages/CustomerDemand.jsx": 85,
     "src/pages/DailyPM.jsx": 8,
     "src/pages/DieRegistry.jsx": 19,
