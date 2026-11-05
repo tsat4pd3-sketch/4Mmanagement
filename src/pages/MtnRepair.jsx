@@ -654,14 +654,31 @@ export default function MtnRepair() {
      (ชุดกรองจริง + ชุดอธิบาย) มันจะเพี้ยนกันวันใดวันหนึ่ง แล้วจอจะโกหกหนักกว่าเดิม
      🔴 **ลำดับในลิสต์ = ลำดับที่หน้าจอไล่กรองจริง** — บันได "ตกเหลือ 0 ตรงไหน" อ่านจากลำดับนี้
      🔴 `removable:false` = ขอบเขตสิทธิ์ ไม่ใช่ตัวกรองที่ user ปลดเองได้ (ห้ามวาดปุ่มปลดให้) */
+  /* ชื่อไลน์ที่ทะเบียนรู้จัก — ใช้แยก "ไลน์ของฝ่ายอื่น" ออกจาก "ไลน์ที่ทะเบียนไม่รู้จัก" (ดูด่าน scope ข้างล่าง) */
+  const knownLineNames = useMemo(() => new Set(lines.map(l => l.name).filter(Boolean)), [lines]);
+
   const baseFilters = useMemo(() => {
     // กางครอบครัวไลน์เสมอ — MO เก็บชื่อ "ไลน์ลูก" (HDF1/SUB APRON) แต่ dropdown เลือกระดับแม่ (HYDROFORM/LINE APRON ASSY) ได้
     // เทียบตรงตัวทำให้เลือกแม่แล้วใบของลูกหายหมด (feedback หน้างาน 2026-08-25) · fam ว่าง (ไลน์ไม่อยู่ในทะเบียน) = ถอยไปเทียบตรงตัว
     const fam = fLine ? new Set(getLineFamilyNames(lines, fLine)) : null;
     const t = fText.trim().toLowerCase();
     return [
+      /* 🔴 **ไลน์ที่ไม่อยู่ในทะเบียน = ตัดสินไม่ได้ ⇒ ถอยไปดูส่วนงาน** (05/11 · หน้างานแจ้ง
+           *"ทำไมบอกมีงาน กดเข้าไปไม่เจออะไรเลย"*)
+         กระดิ่ง/คิวตัดสินขอบเขตด้วย **`dept_section`** (`scopeStateOf` · utils/myQueue.js)
+         แต่หน้านี้ตัดสินด้วย **`line_name`** เทียบทะเบียนไลน์ตรงตัว ⇒ 2 แกนไม่ตรงกัน
+         วัดจริง 05/11: ใบ PD4 เขียนชื่อไลน์ `Assy GOR` / `Laser LWR` / `Assy  LWR` (เว้นวรรค 2 ที)
+         แต่ทะเบียนชื่อ `GOR ASSY` / `LWRBAR LASER` / `LWRBAR ASSY` ⇒ เทียบไม่ติด **68 ใบถูกตัดทิ้ง**
+         ทั้งที่ `dept_section='PD4'` อยู่ในขอบเขตของคนกด ⇒ กระดิ่งบอกมีงาน กดแล้วจอว่าง
+         🔑 หลักเดียวกับ `orderInReporterScope` (02/11): **ชื่อที่ทะเบียนไม่รู้จัก ห้ามตอบว่า "ไม่ใช่ของเรา"** */
       { key: 'scope', label: 'ขอบเขตไลน์ของคุณ', on: !!scopeLines, removable: false,
-        test: o => !o.line_name || scopeLines.has(o.line_name) },
+        test: (o) => {
+          if (!o.line_name) return true;
+          if (knownLineNames.has(o.line_name)) return scopeLines.has(o.line_name);
+          const ds = String(o.dept_section || '').trim().toLowerCase();
+          if (!ds || !(scopeSecs || []).length) return true;   // ไม่รู้ทั้ง 2 แกน = ไม่ตัดทิ้ง
+          return (scopeSecs || []).some(x => String(x || '').trim().toLowerCase() === ds);
+        } },
       { key: 'status', label: 'สถานะ', on: fStatus !== 'all',
         value: fStatus === 'open' ? 'ยังไม่ปิด' : (STATUS_META[fStatus]?.label || fStatus),
         // 🔵 "ยังไม่ปิด" = isMoOpen (รวม transferred = จบแล้ว · utils/mtnStepPerm) ห้ามเทียบ status ตรงๆ
@@ -677,7 +694,7 @@ export default function MtnRepair() {
       { key: 'text', label: 'คำค้น', value: fText.trim(), on: !!t,
         test: o => [o.mo_no, o.machine_no, o.item_type, o.problem_characteristic, o.report_note, o.line_name, o.reported_by_name, o.reporter_prod].some(v => (v || '').toLowerCase().includes(t)) },
     ];
-  }, [scopeLines, fStatus, fLine, fDept, fShift, fRepairType, fText, lines]);
+  }, [scopeLines, scopeSecs, fStatus, fLine, fDept, fShift, fRepairType, fText, lines, knownLineNames]);
 
   const beforeWait = useMemo(() => {
     const on = baseFilters.filter(f => f.on);
