@@ -1,0 +1,25 @@
+--- a/mock.js
++++ b/mock.js
+@@ -457,6 +457,8 @@
+     qty_received: i % 4 === 0 ? 55 : null, diff_reason: i % 4 === 0 ? 'ของเสีย 5' : null,
+     received_by: i % 4 === 0 ? 'สมชาย ใจดี' : null, received_at: i % 4 === 0 ? new Date().toISOString() : null,
+   }),
++  wip_replenish_requests: (r, i) => ({ ...r, mat_no: `2005${7000 + i}`, qty: 40, line_name: FAM_LINE,
++    status: ['pending','preparing','delivered'][i % 3], source: 'line_request' }),
+   child_lot_requests: (r, i) => ({
+     ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
+     lot_qty: isNullish(r) ? null : 14,
+@@ -563,9 +565,13 @@
+   production_sessions: (r, i) => ({
+     ...r,
+     line_name: i <= 12 ? LINE_NAME(((i - 1) % 4) + 1) : FAM_LINE,
++    /* WI patch: กะแรก (ที่จอเลือกเป็นค่าเริ่ม) อยู่ไลน์ย่อย 3 = ไลน์ใบ (ไม่ใช่ไลน์แม่) — ให้แผงเรียกชิ้นส่วนมีรายการ */
++    ...(i === 1 ? { line_name: LINE_NAME(3) } : {}),
+     ...(i === 15 ? { status: 'void', void_reason: 'เปิดกะผิดแล้วปิดทิ้ง (mock)',
+                      voided_at: '2026-08-05T09:00:00+07:00', voided_by_name: 'ผู้ทดสอบ',
+                      actual_qty: 0, qty_ok: 0, qty_ng: 0 } : {}),
++    /* WI patch: แถว 6 = ส่งขอปิดกะแล้ว รอ SV อนุมัติ (สไลด์อนุมัติปิดกะ) */
++    ...(i === 6 ? { status: 'pending_close', close_requested_by_name: 'หัวหน้ากลุ่ม ทดสอบ', close_requested_at: '2026-08-04T17:40:00+07:00' } : {}),
+   }),
+   /* 🔧 AM รายวัน (`/daily-checker?tab=pm`) — **4 ตารางนี้ต้องเชื่อมกันเสมอ ห้ามถอด** (2026-10-06)
+      `src/pages/DailyPM.jsx` ประกอบบอร์ดจาก `pm_daily_line_targets` → `jigs` → `inspections` ด้วย
