@@ -33,6 +33,7 @@ import SupplierSelect from '../components/SupplierSelect';
 import { invalidateCustomers } from '../utils/useCustomers';
 import { SUPPLIER_KINDS, invalidateSuppliers } from '../utils/useSuppliers';
 import { useUomUnitsState, invalidateUomUnits } from '../utils/useUomUnits'; // 📏 ทะเบียนหน่วยนับ (05/11)
+import { useContainerCategoriesState, containerCategoryOptions, invalidateContainerCategories } from '../utils/useContainerCategories'; // 📦 ประเภทภาชนะ (05/11)
 import { buildUomIndex, normUom, uomOptions, DEFAULT_UOM } from '../utils/uom';
 import { registryFailText } from '../utils/useMasterRows.js';
 
@@ -3792,11 +3793,12 @@ const EMPTY_KBS = { mat_no: '', qty_per_kanban: '', min_qty: '', max_qty: '', lo
    PANEL: PACKAGING — master กล่อง/พาเลท + link ต่อ product (เบิกจาก Rack Center)
    ───────────────────────────────────────────────────────────────────────────── */
 const EMPTY_PKG_LINK = { packaging_code: '', packaging_name: '', pcs_per_pkg: 1, note: '' };
-const PKG_CATEGORIES = ['BOX', 'RACK', 'BASKET', 'PALLETTE', 'Other'];
+/* ประเภทภาชนะมาจากทะเบียน DR `container_categories` (05/11 — เดิม hardcode PKG_CATEGORIES ที่นี่) */
 const EMPTY_PKG_MASTER = { code: '', name: '', category: 'BOX', supplier: '' };
 const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16 };
 
 function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
+  const catState = useContainerCategoriesState();   // 📦 ทะเบียนประเภทภาชนะ (05/11)
   const isMobile = useIsMobile(); // ≤768px: two-pane ยุบเป็นคอลัมน์เดียว (desktop ไม่เปลี่ยน)
   const [products, setProducts]   = useState([]);
   const [selProduct, setSelProduct] = useState(null);
@@ -3860,6 +3862,8 @@ function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
 
   const saveMaster = async () => {
     if (!masterForm.code.trim() || !masterForm.name.trim()) { toast.error('กรอก code + ชื่อ'); return; }
+    // 📦 ประเภทบังคับเลือกจากทะเบียน (user 05/11)
+    if (!String(masterForm.category || '').trim()) { toast.error('เลือกประเภทภาชนะ'); return; }
     setSaving(true);
     const payload = { code: masterForm.code.trim().toUpperCase(), name: masterForm.name.trim(), category: masterForm.category || null, supplier: (masterForm.supplier || '').trim() || null };
     const { error } = editMaster
@@ -3990,12 +3994,13 @@ function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>Code *</label><input style={inputSt} value={masterForm.code} onChange={e => setMasterForm(f => ({ ...f, code: e.target.value }))} placeholder="BOX-A" /></div>
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>ชื่อ *</label><input style={inputSt} value={masterForm.name} onChange={e => setMasterForm(f => ({ ...f, name: e.target.value }))} /></div>
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>ประเภท</label>
-                  {/* datalist = ค่ามาตรฐาน + หมวดที่มีใช้จริง — พิมพ์หมวดใหม่ได้เลยไม่ต้องแก้โค้ด (QC audit 2026-08-19) */}
-                  <input style={inputSt} list="pkg-category-opts" value={masterForm.category}
-                    onChange={e => setMasterForm(f => ({ ...f, category: e.target.value }))} placeholder="เช่น BOX, RACK" />
-                  <datalist id="pkg-category-opts">
-                    {[...new Set([...PKG_CATEGORIES, ...masters.map(m => m.category).filter(Boolean)])].map(t => <option key={t} value={t} />)}
-                  </datalist></div>
+                  {/* ทะเบียน `container_categories` — บังคับเลือก (user 05/11) · เพิ่มประเภทใหม่ได้ที่แผงด้านล่าง
+                      ค่าเดิมนอกทะเบียนโชว์เป็น "ค่าเดิม" ไม่ถูกเปลี่ยนเงียบๆ */}
+                  <select style={inputSt} value={masterForm.category || ''} onChange={e => setMasterForm(f => ({ ...f, category: e.target.value }))}>
+                    {!masterForm.category && <option value="">— เลือก —</option>}
+                    {containerCategoryOptions(catState.rows, masterForm.category).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                  {catState.failed && <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>{registryFailText('ทะเบียนประเภทภาชนะ', catState.stale)}</div>}</div>
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>Supplier</label>
                   {/* 2026-09-08: ทะเบียน suppliers — ผู้ขายบรรจุภัณฑ์อยู่ชนิด "อื่นๆ"/ชิ้นส่วน · พิมพ์เองได้ */}
                   <SupplierSelect value={masterForm.supplier || ''} kinds={['other', 'parts']}
@@ -4013,13 +4018,25 @@ function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
                     <TD>{m.name}</TD><TD style={{ color: 'var(--muted)' }}>{m.category || '—'}</TD>
                     <TD style={{ color: 'var(--muted)' }}>{m.supplier || '—'}</TD>
                     {canEdit && <TD><div style={{ display: 'flex', gap: 6 }}>
-                      <button className="tbtn" onClick={() => { setEditMaster(m); setMasterForm({ code: m.code, name: m.name, category: m.category || 'BOX', supplier: m.supplier || '' }); }} style={{ padding: '3px 7px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 11 }}>✏️</button>
+                      <button className="tbtn" onClick={() => { setEditMaster(m); setMasterForm({ code: m.code, name: m.name, category: m.category || '', supplier: m.supplier || '' }); }} style={{ padding: '3px 7px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 11 }}>✏️</button>
                       <DeleteButton onClick={() => delMaster(m)} title="ลบ" />
                     </div></TD>}
                   </tr>
                 ))}
               </tbody>
             </table>
+            {/* 📦 ทะเบียนประเภทภาชนะ (05/11) — container_types.category เก็บ code นี้ */}
+            <div style={{ marginTop: 16 }}>
+              <SimpleMasterPanel client={supabaseDR} table="container_categories" keyCol="code" canManage={canEdit}
+                onBeforeDelete={masterDeleteGuard(supabaseDR, 'container_categories')}
+                stampCol="updated_by_name" stampName={fullName} onChanged={invalidateContainerCategories}
+                title="🏷️ ประเภทภาชนะ" maxHeight={220}
+                help="ตัวเลือกช่อง 'ประเภท' ด้านบน — รหัสตัวพิมพ์ใหญ่ (เช่น BOX, RACK)"
+                fields={[
+                  { key: 'name', label: 'ชื่อประเภท', required: true },
+                  { key: 'note', label: 'หมายเหตุ' },
+                ]} />
+            </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
               <button onClick={() => { setShowMaster(false); setEditMaster(null); setMasterForm(EMPTY_PKG_MASTER); }} style={btnSecondary}>ปิด</button>
             </div>

@@ -18,6 +18,10 @@ import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
+import SimpleMasterPanel from '../components/SimpleMasterPanel';
+import { invalidateTrialReasons } from '../utils/useTrialReasons'; // 🧪 ทะเบียนเหตุผลจองเครื่องทดลอง (05/11)
+import { masterDeleteGuard } from '../utils/masterRefs';
+import { canSeeded } from '../utils/permissions';
 import CapacityBoard from '../components/CapacityBoard';
 import CapacityLoadChart from './../components/CapacityLoadChart';
 import ProdLotPlanner from '../components/ProdLotPlanner';
@@ -64,13 +68,13 @@ const PLAN_META = {
 };
 
 export default function ProductionPlan() {
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const isMobile = useIsMobile();
   /* 📊 ยุบ 3 แท็บแรกเป็นแท็บเดียว (user 06/10: *"3 tab แรกเราว่าฟุ่มเฟือย มันคือเรื่องเดียวกัน
      คนละมุมมอง ซึ่งโรงงานชอบแบบกราฟ"*) — รายวัน/รายเดือนคือ**คำถามเดียวกันคนละหน่วยเวลา**
      ⇒ เป็น "ช่วงเวลา" ของแท็บเดียว ไม่ใช่คนละแท็บ · สไลด์โรงงานเป็น**รูปแบบนำเสนอ** ไม่ใช่การวิเคราะห์ใหม่
      ⇒ เป็นปุ่มสลับโหมด · 🔴 แท็บซ้อนแท็บต้องคนละ query param (UI §6.8 ข้อ 2.4) ⇒ `?cap=` / `?mode=` */
-  const [tab, setTab] = useTabParam(['plan', 'lots'], 'plan');
+  const [tab, setTab] = useTabParam(['plan', 'lots', 'settings'], 'plan');
   const [cap, setCap] = useTabParam(['day', 'month'], 'day', 'cap');
   const [mode, setMode] = useTabParam(['chart', 'slide'], 'chart', 'mode');
 
@@ -642,9 +646,12 @@ export default function ProductionPlan() {
           /* 📋 แท็บเดียวของหน้านี้ที่ **เขียน DB** — แท็บกำลังการผลิตวิเคราะห์อย่างเดียว
              (งาน lot size ที่ไม่ได้เดินตามคัมบัง ต้องมีคนวางคิวให้ ไม่ใช่ first come first serve) */
           { key: 'lots', label: '📋 แผนสั่งงาน (ล็อต)' },
+          { key: 'settings', label: '⚙️ ตั้งค่า' },
         ]}
         tab={tab} onTab={setTab}
       />
+      {/* ⚙️ แท็บตั้งค่าไม่มีตัวกรอง/คำเตือนของแผน (05/11) */}
+      {tab !== 'settings' && (<>
       {/* UI-STANDARD 2026-09-24 — ตัวกรอง/ตัวเลือกแผนย้ายจาก actions ของหัวเพจมาเป็นแถบกรองเดียว */}
       <FilterBar style={{ marginBottom: 0 }}>
         {sectionOpts.length > 1 && (
@@ -833,8 +840,23 @@ export default function ProductionPlan() {
           </button>
         </div>
       ) : null}
+      </>)}
 
-      {loading ? (
+      {tab === 'settings' ? (
+        /* 🧪 ทะเบียนเหตุผลจองเครื่องทดลอง — ใช้ในหน้าต่าง "จองเครื่องทดลอง" ของแท็บแผนสั่งงาน
+           ปลายทาง production_plan_lots.trial_reason เก็บ label (text) · สิทธิ์เดียวกับคนวางแผน */
+        <SimpleMasterPanel client={supabaseDR} table="trial_reasons" keyCol="code"
+          canManage={canSeeded('production_plan', 'write', role)}
+          onBeforeDelete={masterDeleteGuard(supabaseDR, 'trial_reasons')}
+          stampCol="updated_by_name" stampName={fullName} onChanged={invalidateTrialReasons}
+          title="🧪 เหตุผลจองเครื่องทดลอง"
+          help="ตัวเลือกในหน้าต่าง 🧪 จองเครื่องทดลอง (แท็บแผนสั่งงาน) — ใบจองเก็บข้อความเหตุผลนี้ · ยังเลือก 'อื่นๆ (พิมพ์เอง)' ได้เสมอ"
+          keyFrom={r => String(r.label || '').trim().toUpperCase().replace(/\s+/g, ' ')}
+          fields={[
+            { key: 'label', label: 'เหตุผล', required: true },
+            { key: 'note', label: 'หมายเหตุ' },
+          ]} />
+      ) : loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังวิเคราะห์กำลังผลิต…</div>
       ) : tab === 'lots' ? (
         <ProdLotPlanner

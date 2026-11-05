@@ -1217,3 +1217,13 @@ migration `supabase/migrations/20261104_bom_one_level_deduct_phantom_dr.sql`
 **แก้ข้อมูล (apply 05/11):** `parts_master` 106 แถว (EA 96 · pcs 10) · `bom_items` 286 แถว (EA 266 · pcs 20) → `PC`
 · ค่าเดิมสำรองที่ `archive.uom_fix_20261105` (tbl · id · old_uom) · ย้อนกลับดูหัวไฟล์ migration
 · ไม่มี UPDATE trigger บน 2 ตารางนี้ (ตรวจแล้ว) ⇒ ไม่มีผลข้างเคียงต่อใบผลิต/ยอดตัด
+
+
+## 📦 ทะเบียนประเภทภาชนะ — แท็บ Packaging → จัดการภาชนะ (2026-11-05 · คำสั่ง user)
+
+- เดิม `PKG_CATEGORIES` hardcode 5 ตัว + ช่องพิมพ์เอง (datalist) ⇒ ทะเบียน DR **`container_categories`**
+  (code ตัวพิมพ์ใหญ่ CHECK · seed BOX/RACK/BASKET/PALLETTE/OTHER · migration `20261105b_…` **apply แล้ว**)
+- ปลายทาง `container_types.category` เก็บ **code** · ช่อง "ประเภท" = **select บังคับเลือก** (user เลือก) — บันทึกโดยไม่เลือก = toast ไม่บันทึก
+  · ค่าเดิมนอกทะเบียนโชว์เป็น "ค่าเดิม" · แก้แถวที่ประเภทว่าง **ไม่เติม BOX ให้เงียบๆ แล้ว** (เดิม `m.category || 'BOX'`)
+- แผงจัดการอยู่ใต้ตารางภาชนะในหน้าต่างเดียวกัน · ลบผ่าน `masterDeleteGuard(supabaseDR,'container_categories')`
+- ข้อมูลตอนสร้าง: ภาชนะ 5 ชนิด — RACK 1 · ว่าง 4 (ไม่ได้แก้ข้อมูลเดิม)

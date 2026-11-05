@@ -108,6 +108,18 @@ export const MASTER_REF_SPECS = {
       ['material_request_items', 'unit', 'รายการใบเบิกวัสดุ'],
     ],
   },
+  /* 🧪 เหตุผลจองเครื่องทดลอง (05/11) — ปลายทางเก็บ label */
+  trial_reasons: {
+    label: 'เหตุผลจองเครื่องทดลอง',
+    keysOf: r => uniq([r?.label, r?.code]),
+    targets: [['production_plan_lots', 'trial_reason', 'ใบจองเครื่องทดลอง']],
+  },
+  /* 📦 ประเภทภาชนะ (05/11) — ปลายทางเก็บ code */
+  container_categories: {
+    label: 'ประเภทภาชนะ',
+    keysOf: r => uniq([r?.code]),
+    targets: [['container_types', 'category', 'ชนิดภาชนะ']],
+  },
   repair_wi_registry: {
     label: 'WI ซ่อม',
     mode: 'contains',
