@@ -25,6 +25,7 @@ import { visibleInterval } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { liveChannel } from '../utils/liveChannel';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
+import Icon from '../components/Icon';   // ✒️ ไอคอนเส้นแทน emoji (UI §6.36)
 
 /* ── DeptHub — landing "Smart Factory / Industry 5.0" (redesign v2 2026-07-13) ──
    คอนเซปต์: Mission Control ของโรงงาน — ไม่ใช่แค่เมนู แต่เป็นแผงควบคุมที่มีชีวิต
@@ -491,7 +492,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
                       justifyContent: it.kind === 'toggle' ? 'space-between' : 'flex-start',
                     }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                      <span style={{ fontSize: 15, flexShrink: 0 }}>{it.icon}</span>
+                      <Icon glyph={it.icon} size={15} />
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.label}</span>
                     </span>
                     {it.kind === 'toggle' && (
@@ -611,7 +612,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
           <div className="hub-fav-list" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {favItems.map(it => (
               <button key={it.to} type="button" className="star-chip" onClick={() => navigate(it.to)} title={it.group}>
-                <span style={{ fontSize: 15 }}>{it.icon}</span>{tr(it.label)}
+                <Icon glyph={it.icon} size={15} />{tr(it.label)}
               </button>
             ))}
           </div>
@@ -644,7 +645,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
 
             {/* ไอคอน + ชื่อ */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-              <span style={{ fontSize: 30, lineHeight: 1 }}>{d.icon}</span>
+              <Icon glyph={d.icon} size={28} strokeWidth={1.5} />
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 'clamp(15px, 2vw, 17px)', fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', letterSpacing: '-0.01em', lineHeight: 1.2 }}>
                   {d.label}
@@ -681,7 +682,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
                     style={guest
                       ? { background: 'transparent', color: 'var(--text2)', border: '1px dashed var(--border2)' }
                       : { background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-                    <span style={{ fontSize: 12, opacity: guest ? 0.7 : 1 }}>{item.icon}</span>
+                    <Icon glyph={item.icon} size={12} style={{ opacity: guest ? 0.7 : 1 }} />
                     {tr(item.label)}
                     {guest && <span style={{ fontSize: 11, color: 'var(--muted)' }}>↗{tr(homeShort)}</span>}
                   </button>

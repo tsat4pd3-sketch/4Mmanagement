@@ -99,6 +99,7 @@ const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
 const ProgramUpdate = lazy(() => import('./pages/ProgramUpdate'));
 /* 🧭 ไม่ lazy โดยตั้งใจ — หน้านี้ต้องทำงานตอนบันเดิลเก่า/โหลด chunk ไม่ได้ (ดูหัวไฟล์) */
 import NotFound from './pages/NotFound';
+import Icon from './components/Icon';   // ✒️ emoji ในทะเบียนเมนู → ไอคอนเส้นที่จุดวาด (UI §6.36)
 const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
 const ProductMaster  = lazy(() => import('./pages/ProductMaster'));
 const LineStock      = lazy(() => import('./pages/LineStock'));
@@ -634,7 +635,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
         return (
           <Link key={it.key} to={it.to} onClick={closeNav} className="nav-link"
             style={{ color: location.pathname === it.to ? 'var(--accent)' : (it.color || 'var(--text2)') }}>
-            <span style={{ fontSize: 15, flexShrink: 0 }}>{it.icon}</span>
+            <Icon glyph={it.icon} size={15} />
             <span style={{ whiteSpace: 'nowrap' }}>{it.label}</span>
           </Link>
         );
@@ -644,7 +645,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
           <button key={it.key} onClick={it.onClick} className="nav-link"
             style={{ ...style, justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 15, flexShrink: 0 }}>{it.icon}</span>
+              <Icon glyph={it.icon} size={15} />
               <span style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>{it.label}</span>
             </div>
             <div style={{
@@ -664,7 +665,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
       return (
         <button key={it.key} onClick={() => { it.onClick?.(); if (it.key !== 'logout') closeNav?.(); }}
           className="nav-link" style={style}>
-          <span style={{ fontSize: 15, flexShrink: 0 }}>{it.icon}</span>
+          <Icon glyph={it.icon} size={15} />
           <span style={{ whiteSpace: 'nowrap' }}>{it.label}</span>
         </button>
       );
@@ -741,7 +742,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
         }}
         onClick={onClick}
       >
-        <span style={{ fontSize: 17, flexShrink: 0, opacity: guest ? 0.7 : 1 }}>{item.icon}</span>
+        <Icon glyph={item.icon} size={17} style={{ opacity: guest ? 0.7 : 1 }} />
         <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tr(item.label)}</span>
         {/* ป้าย "บ้านจริง" — บีบ gap/ฟอนต์ให้แคบที่สุดเท่าที่ยังอ่านออก เพราะเมนูชื่อยาวจะโดนเบียดจนตัดคำ
             (`title` มีชื่อเต็ม + บอกหมวดบ้านเสมอ จึงไม่มีข้อมูลหาย) */}
@@ -799,7 +800,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
             borderRadius: '0 3px 3px 0', background: 'var(--accent)',
           }} />
         )}
-        <span style={{ fontSize: 18, lineHeight: 1.15 }}>{icon}</span>
+        <Icon glyph={icon} size={19} />
         {/* 11px = ฟอนต์ขั้นต่ำตาม UI-CONVENTIONS — ชื่อย่อจาก NAV_GROUP_META ถูกเลือกให้พอดี 56px */}
         <span style={{ fontSize: 11, lineHeight: 1.2, maxWidth: 56, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
       </button>
@@ -899,7 +900,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
             boxShadow: pinned ? 'none' : '18px 0 40px rgba(0,0,0,0.45)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 2px 10px', borderBottom: '1px solid var(--border)', marginBottom: 8, flexShrink: 0 }}>
-              <span style={{ fontSize: 17, flexShrink: 0 }}>{panelMeta.icon}</span>
+              <Icon glyph={panelMeta.icon} size={17} />
               <span style={{ fontSize: 13.5, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{panelMeta.title}</span>
               {onTogglePin && <button onClick={onTogglePin} title={pinned ? 'เลิกปักหมุด — แผงจะปิดเองหลังเลือกเมนู' : 'ปักหมุดแผงค้างไว้ (เนื้อหาหลักจะแคบลง)'} style={{
                 width: 26, height: 26, borderRadius: 6, flexShrink: 0, cursor: 'pointer', outline: 'none',
@@ -948,7 +949,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                       : {}}
                     onClick={() => { if (!pinned) setPanel(null); }}
                   >
-                    <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
+                    <Icon glyph={item.icon} size={17} />
                     <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
                     <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', flexShrink: 0, maxWidth: '38%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.group}</span>
                   </Link>
@@ -1045,7 +1046,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                   : {}}
                 onClick={() => { setNavQ(''); if (isMobile) onClose(); }}
               >
-                <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
+                <Icon glyph={item.icon} size={17} />
                 <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
                 <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', flexShrink: 0, maxWidth: '42%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.group}</span>
               </Link>
@@ -1064,7 +1065,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                     : {}}
                   onClick={onClose}
                 >
-                  <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
+                  <Icon glyph={item.icon} size={17} />
                   <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
                 </Link>
               ))}
@@ -1092,7 +1093,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                       fontFamily: 'var(--font-display)',
                     }}
                   >
-                    <span style={{ fontSize: 15, flexShrink: 0 }}>{NAV_GROUP_META[group]?.icon || '📁'}</span>
+                    <Icon glyph={NAV_GROUP_META[group]?.icon || '📁'} size={15} />
                     <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tr(group)}</span>
                     <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600, color: 'var(--muted)', flexShrink: 0 }}>{items.length}</span>
                     <span style={{ fontSize: 12, opacity: 0.6, transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
