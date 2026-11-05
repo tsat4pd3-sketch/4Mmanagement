@@ -17,6 +17,8 @@
      A) Display Multilevel BOM : Plnt·SPT·Item·Level·Obj·Object description·Quantity·Un·CostRel·MS·SLoc·SLoc·…
      B) BOM & Routing Report   : Plant·Material No.·…·BOM Level·Component…·Component Quantity·…
    ═══════════════════════════════════════════════════════════════════════════════════════════════ */
+import { normUom, unknownUoms } from './uom.js'; // 📏 EA/pcs → PC ตามทะเบียน (05/11)
+
 
 const norm  = (s) => (s ?? '').toString().trim();
 const upper = (s) => norm(s).toUpperCase();
@@ -107,8 +109,9 @@ export function sapDepth(level) {
  * @returns {{root:object, rows:Array, warnings:string[], layout:string}}
  *   rows[] = { depth, item_no, mat_no, part_name, qty_per_unit, uom, parent_mat,
  *              prod_sloc, storage_location, plant, spt, cost_rel, mat_status, part_no, change_no }
+ * @param {object} [opts] `uomIndex` = buildUomIndex(ทะเบียน) · ไม่ส่ง = DEFAULT_UOMS (EA/PCS → PC)
  */
-export function parseSapBom(text) {
+export function parseSapBom(text, opts = {}) {
   const lines = String(text || '').split(/\r?\n/);
   const warnings = [];
   const root = { mat_no: '', description: '', plant: '', base_qty: null };
@@ -189,7 +192,7 @@ export function parseSapBom(text) {
       mat_no: mat,
       part_name: col.desc !== undefined ? norm(cells[col.desc]) : '',
       qty_per_unit: qty,
-      uom: col.uom !== undefined ? upper(cells[col.uom]) : '',
+      uom: col.uom !== undefined ? normUom(cells[col.uom], opts.uomIndex) : '',
       parent_mat: parent,
       prod_sloc: s1 || null,           // SAP "Prod.SLoc" — จุดที่ผลิตเบิกไปใช้
       storage_location: s2 || null,    // SAP "Stor. Loc." — ที่เก็บ (คอลัมน์เดิมของ ESM)
@@ -208,6 +211,9 @@ export function parseSapBom(text) {
   if (!root.mat_no && rows.length) warnings.push('ไฟล์ไม่ได้บอกเลข Material ของหัวใบ — ต้องเลือกใบปลายทางเอง');
   const noQty = rows.filter(r => r.qty_per_unit == null).length;
   if (noQty) warnings.push(`${noQty} แถวไม่มีจำนวน — ต้องเติมเองก่อนใช้คำนวณความต้องการวัตถุดิบ`);
+  /* 📏 หน่วยที่ไม่อยู่ในทะเบียน = เตือน ไม่บล็อก (ค่าเดิมยังเข้า ESM ตามที่ SAP ส่งมา · เพิ่มที่ /products แท็บ 📏 หน่วยนับ) */
+  const badUom = unknownUoms(rows.map(r => r.uom), opts.uomIndex);
+  if (badUom.length) warnings.push(`หน่วยที่ยังไม่อยู่ในทะเบียนหน่วยนับ: ${badUom.join(', ')} — นำเข้าได้ แต่ควรเพิ่มในแท็บ 📏 หน่วยนับ (หรือใส่เป็นสะกดอื่นของหน่วยเดิม)`);
   return { root, rows, warnings, layout };
 }
 
@@ -226,7 +232,8 @@ export function diffSapBom(sapRows, existing, opts = {}) {
     if (!old) { add.push(r); return }
     const diffs = [];
     if (r.qty_per_unit != null && Number(old.qty_per_unit) !== Number(r.qty_per_unit)) diffs.push(`จำนวน ${old.qty_per_unit} → ${r.qty_per_unit}`);
-    if (r.uom && upper(old.uom) !== r.uom) diffs.push(`หน่วย ${old.uom} → ${r.uom}`);
+    // เทียบหลังแม็ปทะเบียน — EA (ของเดิม) กับ PC (SAP) = หน่วยเดียวกัน ไม่ใช่ความต่าง (user 05/11)
+    if (r.uom && normUom(old.uom, opts.uomIndex) !== r.uom) diffs.push(`หน่วย ${old.uom} → ${r.uom}`);
     if (r.item_no != null && Number(old.item_no) !== Number(r.item_no)) diffs.push(`ITEM ${old.item_no ?? '—'} → ${r.item_no}`);
     if (r.storage_location && upper(old.storage_location) !== r.storage_location) diffs.push(`คลัง ${old.storage_location || '—'} → ${r.storage_location}`);
     (diffs.length ? update : same).push({ ...r, id: old.id, diffs });

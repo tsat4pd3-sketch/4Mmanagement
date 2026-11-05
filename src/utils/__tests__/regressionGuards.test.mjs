@@ -58,6 +58,17 @@ function stripComments(src) {
    scan: โฟลเดอร์ที่ตรวจ · ext: นามสกุล · re: regex (global) · allow: ไฟล์ที่ยกเว้น + เหตุผล */
 const RULES = [
   {
+    id: 'uom-write-via-normuom',
+    scan: ['src'], ext: ['.jsx', '.js'],
+    /* จับ default หน่วยแบบเดิม: `uom: x || 'EA'` · `unit: x || 'Pcs'` · `uom: 'pcs'` */
+    re: /\b(uom|unit)\s*:\s*(?:[^,\n}]*\|\|\s*)?['"](EA|ea|pcs|Pcs|PCS)['"]/g,
+    why: '📏 user ตัดสิน 05/11: **EA = pcs = PC (หน่วยเดียวกัน) · หน่วยหลัก = PC** — ฐานเคยมี PC/EA/pcs ปนกัน '
+       + 'เพราะแต่ละทางเขียน default คนละแบบ (ฟอร์ม/import = EA · ลงทะเบียนจาก BOM = pcs · ใบเบิก = Pcs) '
+       + '⇒ แก้ข้อมูล 392 แถวแล้ว (archive.uom_fix_20261105) · default แบบเดิมโผล่กลับ = ปนใหม่เงียบๆ',
+    fix: "ใช้ `normUom(raw, uomIdx) || DEFAULT_UOM` จาก src/utils/uom.js (ทะเบียน DR `uom_units` · useUomUnitsState)",
+    allow: {},
+  },
+  {
     id: 'myqueue-next-step-not-current-step',
     scan: ['src/utils/myQueue.js'], ext: ['.js'],
     /* จับการอ่านเลขขั้นตรงจาก current_step ในตัวตัดสิน "ใบนี้รอใคร" */
