@@ -43,7 +43,7 @@ import LineSelect from '../components/LineSelect';
 import LineScopeSelect, { deptLines } from '../components/LineScopeSelect';
 import useOrgScope from '../utils/useOrgScope';
 import { loadLinesRes, LINE_COLUMNS } from '../utils/useProductionLines';
-import { useOrgSections } from '../utils/useOrgSections';
+import { useOrgSections, useOrgTeams } from '../utils/useOrgSections';
 import { RATE } from '../utils/refreshRates';
 import { useLatestRequest } from '../utils/useLatestRequest';
 
@@ -396,7 +396,10 @@ export default function OEEAnalytics() {
   const [tdLine,   setTdLine]   = useState(() => urlParams.get('line') || '');
   /* ไลน์ของแท็บแนวโน้ม (ประกาศตรงนี้เพราะ effect ตรวจสิทธิ์ด้านล่างต้องเคลียร์มันด้วย) = ที่เจาะมา (`?line=` ละเอียดกว่า `?dept=`) */
   const [selLine,    setSelLine]    = useState(() => urlParams.get('line') || urlParams.get('dept') || '');
-  const [tdTeam,   setTdTeam]   = useState(() => (['A', 'B', 'C'].includes(urlParams.get('team')) ? urlParams.get('team') : ''));
+  /* 👥 ลิสต์ทีมจากผัง (`useOrgTeams` · ผังยังไม่มีทีม = A/B/C) — 05/11 audit dropdown เดิม hardcode A/B/C
+     `?team=` รับตามลิงก์ · ค่าที่ไม่อยู่ในผังยังโชว์ในช่อง (ติดป้าย) ไม่ทิ้งเงียบ */
+  const orgTeams = useOrgTeams();
+  const [tdTeam,   setTdTeam]   = useState(() => urlParams.get('team') || '');
   // แถบ "วันนี้เทียบค่าเฉลี่ย" พับเป็นค่าเริ่มต้น — หน้านี้คือภาพวันเดียว การเทียบย้อนหลังอยู่แท็บแนวโน้ม
   // ?cmp= / ?auto= (จอวนหน้า /display-rotation · ไม่มีในลิงก์ = ค่าเดิม)
   const [tdCmpOpen, setTdCmpOpen] = useState(() => urlBool('cmp', false));
@@ -1446,9 +1449,8 @@ export default function OEEAnalytics() {
 
             <select value={tdTeam} onChange={e => setTdTeam(e.target.value)}>
               <option value="">{ALL.team}</option>
-              <option value="A">Team A</option>
-              <option value="B">Team B</option>
-              <option value="C">Team C</option>
+              {tdTeam && !orgTeams.includes(tdTeam) && <option value={tdTeam}>Team {tdTeam} (ไม่อยู่ในผัง)</option>}
+              {orgTeams.map(t => <option key={t} value={t}>Team {t}</option>)}
             </select>
 
             <input type="date" value={tdDate} onChange={e => setTdDate(e.target.value)} />
