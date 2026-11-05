@@ -469,6 +469,7 @@ export default function PermissionsManagement() {
       {tab === 'matrix' && (<>
         {/* ── 3 แกนที่ตัดสินว่า "คนคนหนึ่งทำอะไรได้" — เขียนไว้บนจอ เพราะคนเข้าใจผิดซ้ำว่า role = ตำแหน่ง ── */}
         <div data-page-note="1" style={{ ...s.section, padding: 0, overflow: 'hidden' }}>
+          <InfoMore label="3 แกนที่ตัดสินว่าคนคนหนึ่งทำอะไรได้ (role · ขอบเขต · ตำแหน่ง)" id="perm-3axis" size={11.5} style={{ padding: '9px 14px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 1, background: 'var(--border)' }}>
             {[
               { ic: '🔐', t: 'ชุดสิทธิ์ (role)', c: 'var(--accent)',
@@ -484,6 +485,7 @@ export default function PermissionsManagement() {
               </div>
             ))}
           </div>
+          </InfoMore>
           <InfoMore label="ระดับที่ล็อกช่องเซ็น MO" size={11.5} style={{ padding: '9px 14px', borderTop: '1px solid var(--border)' }}>
             🪪 <b>ระดับที่ล็อกช่องเซ็น MO:</b>{' '}
             {POSITION_LEVELS.filter(l => l.rank >= 40).map(l => `${l.label} (${l.rank})`).join(' · ')}
