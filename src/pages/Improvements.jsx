@@ -27,6 +27,7 @@ import { classifyAbc } from '../utils/pareto';
 import { MIN_AFTER_DAYS, A3_FRAMEWORKS, a3Data, a3Sections, normFramework, resultMode } from '../utils/improvementA3';
 import { printImprovementA3 } from '../lib/improvementA3Print';
 import PageHeader from '../components/PageHeader';
+import InfoMore, { Why } from '../components/InfoMore';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
@@ -959,7 +960,7 @@ export default function Improvements() {
         permKey="improvements:manage" hint="ยังดูโปรเจค พาเรโต้ และผลก่อน/หลังได้ตามปกติ" />
       {/* header — UI-STANDARD 2026-09-24: ปุ่มหลักอยู่ใน actions · ตัวกรองสถานะ (4 ตัวเลือก) = Segmented */}
       <PageHeader title="Improvements — โปรเจคปรับปรุง" icon="💡"
-        sub="เลือกปัญหาจากพาเรโต้ Downtime / ของเสีย / ใบซ่อม MTN → บันทึกการแก้ไข → ระบบเทียบผลก่อน/หลังจากข้อมูลที่เกิดจริงให้อัตโนมัติ"
+        sub="เลือกปัญหาจากพาเรโต้ → บันทึกการแก้ไข → ระบบเทียบผลก่อน/หลังให้อัตโนมัติ"
         actions={canManage && (
           <button type="button" className="pg-btn primary" onClick={openCreate} style={{ cursor: 'pointer' }}>
             เพิ่มโปรเจคปรับปรุง
@@ -1015,11 +1016,11 @@ export default function Improvements() {
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>💰 Cost Saving รวม (บาท/เดือน)</span>
               {computed > 0 && <span style={{ fontSize: 16, fontWeight: 800, color: col(grand) }}>{grand > 0 ? '+' : ''}{fmtBaht(grand)}</span>}
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+              <InfoMore label="ที่มาของตัวเลข" id="imp-sum-src" size={11}>
                 {computed > 0 ? `จาก ${computed} โปรเจคที่ผลจริงยืนยันแล้ว (ลงมือแก้แล้ว · หลังแก้ ≥${MIN_AFTER_DAYS} วันผลิต · ไม่รวมที่ยกเลิก)` : 'ยังไม่มีโปรเจคที่ผลจริงยืนยันแล้ว'}
                 {earlyCnt > 0 ? ` · ⏳ อีก ${earlyCnt} โปรเจครอผลหลังแก้ (เพดานประหยัดถ้าแก้หายหมด ~${fmtBaht(earlyCap)}/เดือน — ยังไม่นับรวม)` : ''}
                 {pending > 0 ? ` · อีก ${pending} โปรเจคยังคำนวณไม่ได้ — ดู ⚠ บนการ์ด` : ''} · รวมขึ้นจากระดับกลุ่มตามผังองค์กร
-              </span>
+              </InfoMore>
             </div>
             {/* เป้าหมายของโปรเจคที่ยังไม่ลงมือ — แยกบรรทัดให้ขาด ห้ามเอาไปปนกับยอดประหยัดจริง */}
             {planCnt > 0 && (
@@ -1180,14 +1181,10 @@ export default function Improvements() {
                           )}
                         </div>
                       ) : (
-                        <div style={{ color: 'var(--amber)' }}>
-                          🎯 <b>ยังไม่ได้ตั้งเป้าหมาย</b> — กด ✏️ แก้ไข แล้วกรอกช่อง “เป้าหมาย” เพื่อให้ระบบคำนวณเงินที่คาดว่าจะประหยัดได้
-                        </div>
+                        <Why what="ยังไม่ได้ตั้งเป้าหมาย" how="กด แก้ไข แล้วกรอกช่อง “เป้าหมาย” เพื่อให้ระบบคำนวณเงินที่คาดว่าจะประหยัดได้" size={11.5} />
                       )}
-                      <div style={{ color: 'var(--muted)', marginTop: 3 }}>
-                        ⏳ <b>ผลจริงยังไม่คำนวณ</b> — โปรเจคนี้ยังอยู่ช่วงวิเคราะห์/วางแผน (Plan)
-                        กดยืนยัน <b>“เริ่มลงมือแก้จริง”</b> เมื่อไหร่ ระบบจะเริ่มนับก่อน/หลังจากวันนั้น แล้วผลจึงเข้ายอด Cost Saving รวม
-                      </div>
+                      <Why what="ยังอยู่ช่วงวางแผน — ยังไม่นับผลจริง" tone="muted" size={11.5} style={{ marginTop: 3 }}
+                        how="กดยืนยัน “เริ่มลงมือแก้จริง” เมื่อไหร่ ระบบจะเริ่มนับก่อน/หลังจากวันนั้น แล้วคำนวณผลจริงให้" />
                     </div>
                   )}
                   {imp.result_note && <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 6 }}><b style={{ color: 'var(--muted)' }}>สรุปผล:</b> {imp.result_note}</div>}
@@ -1233,11 +1230,9 @@ export default function Improvements() {
                           })}
                         </span>
                       </div>
-                      {cs.missing.map((m, i) => (
-                        <div key={i} style={{ fontSize: 11, color: 'var(--amber)', marginTop: 5 }}>⚠ {m}</div>
-                      ))}
+                      {cs.missing.map((m, i) => <Why key={i} msg={m} style={{ marginTop: 5 }} />)}
                       {cs.totalPerDay == null ? (
-                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5 }}>ยังคำนวณเป็นบาทไม่ได้ — เติมข้อมูลตามรายการด้านบนก่อน</div>
+                        <Why what="ยังคำนวณเป็นบาทไม่ได้" how="เติมข้อมูลตามรายการด้านบนก่อน ระบบจะคำนวณให้อัตโนมัติ" tone="muted" style={{ marginTop: 5 }} />
                       ) : (
                         <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
                           <div style={{ fontSize: 14, fontWeight: 800, color: good ? 'var(--green)' : bad ? 'var(--red)' : 'var(--muted)' }}>
@@ -1246,11 +1241,11 @@ export default function Improvements() {
                             <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}> ({workDaysMonth} วันทำงาน/เดือน)</span>
                           </div>
                           {tooEarly && (
-                            <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>
-                              {!started
-                                ? <>⏳ ยังไม่ได้ลงมือแก้ (อยู่ช่วงวิเคราะห์/วางแผน) · ตัวเลขนี้คือ<b>มูลค่าปัญหาก่อนแก้</b> = เพดานถ้าแก้หายหมด <b>ไม่ใช่ยอดที่ประหยัดแล้ว</b></>
-                                : <>⏳ ผลจริงหลังแก้ยังสรุปไม่ได้ — มีข้อมูลหลังแก้ {r.afterDays || 0}/{MIN_AFTER_DAYS} วันผลิต · ตัวเลขนี้คือมูลค่าปัญหาก่อนแก้ ไม่ใช่ยอดที่ประหยัดแล้ว</>}
-                            </div>
+                            !started
+                              ? <Why what="ยังไม่ได้ลงมือแก้ — ตัวเลขนี้คือมูลค่าปัญหาก่อนแก้" tone="warn"
+                                  how="โปรเจคอยู่ช่วงวิเคราะห์/วางแผน · ตัวเลขคือความสูญเสียต่อวันจาก baseline = เพดานที่จะประหยัดได้ถ้าแก้หายหมด" />
+                              : <Why what={`ผลจริงหลังแก้ยังสรุปไม่ได้ (${r.afterDays || 0}/${MIN_AFTER_DAYS} วันผลิต)`} tone="warn"
+                                  how={`ต้องมีข้อมูลหลังแก้อย่างน้อย ${MIN_AFTER_DAYS} วันผลิต · ระหว่างนี้ตัวเลขคือมูลค่าปัญหาก่อนแก้ ไม่ใช่ยอดประหยัดจริง`} />
                           )}
                           {/* breakdown DL/OH/DP โชว์ครบ 3 ก้อนเสมอ (ตกลง user 2026-08-11) — ก้อนที่ไม่เลือกขีดฆ่า ไม่เข้ายอดรวม */}
                           <div style={{ fontSize: 11, color: 'var(--text2)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -1269,9 +1264,8 @@ export default function Improvements() {
                             <span style={{ color: 'var(--muted)' }}>(บาท/วัน)</span>
                           </div>
                           {imp.problem_source === 'mtn' && costComps.includes('repair') && costComps.includes('idp') && (
-                            <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                              ℹ️ IDP (SAP — ค่าเสื่อมทางอ้อม "รวมค่าซ่อม") กับ ค่าซ่อมจริงจากใบ MO เป็นคนละแหล่งข้อมูล — เปิดนับทั้งคู่อาจทับซ้อนบางส่วน เลือกปิดก้อนใดก้อนหนึ่งได้ตามนโยบายบัญชี
-                            </div>
+                            <Why what="นับทั้ง IDP และค่าซ่อมจริง — อาจซ้ำซ้อน" tone="muted"
+                              how="IDP (SAP — ค่าเสื่อมทางอ้อม ‘รวมค่าซ่อม’) กับค่าซ่อมจริงจากใบ MO เป็นคนละแหล่งข้อมูล นับพร้อมกันจะซ้ำซ้อนได้ — เลือกนับก้อนใดก้อนหนึ่งตามนโยบายบัญชี" />
                           )}
                           {imp.problem_source === 'defect' && cs.defectParts.length > 0 && (
                             <div style={{ fontSize: 11, color: 'var(--muted)' }}>
