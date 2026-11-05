@@ -69,3 +69,15 @@ test('planLineRequest: ใบผลิตเปิด → เทียบ WIP �
   // ไม่รู้ขนาดกล่อง = ไม่เดา
   assert.equal(planLineRequest({ need: 500, onHand: 0, pkg: null }).action, 'no_pkg');
 });
+
+test('planLineRequest coil (kg · จ่ายเป็นม้วน): ไม่ปัดกล่อง ขาดเท่าไหร่ขอเท่านั้น', () => {
+  // 1,000 ชิ้น × 0.171 kg = 171 kg · หน้าไลน์มี 50 kg → ขอ 121 kg (ไม่มี packing std ก็ไม่ติด no_pkg)
+  assert.deepEqual((({ action, qty }) => ({ action, qty }))(planLineRequest({ need: 171, onHand: 50, pkg: null, coil: true })), { action: 'insert', qty: 121 });
+  // ปัดขึ้นที่กรัม ห้ามขาด
+  assert.equal(planLineRequest({ need: 0.1234, onHand: 0, coil: true }).qty, 0.124);
+  // ม้วนเดิมเหลือพอ (ส่วนเกินจากรอบก่อน) = ไม่ต้องขอ
+  assert.equal(planLineRequest({ need: 171, onHand: 400, coil: true }).action, 'covered');
+  // มีใบรอหยิบน้อยกว่า = เพิ่มยอด · มากกว่า = ไม่ลด
+  assert.equal(planLineRequest({ need: 300, onHand: 0, pendingQty: 121, coil: true }).action, 'raise');
+  assert.equal(planLineRequest({ need: 100, onHand: 0, pendingQty: 121, coil: true }).action, 'covered');
+});

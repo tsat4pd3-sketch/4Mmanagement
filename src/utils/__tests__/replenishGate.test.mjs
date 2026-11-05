@@ -194,3 +194,13 @@ test('reqSourceMeta — 3 ค่าแยกฝั่งถูก และค�
     assert.equal(reqSourceMeta(v).side, 'line');
   }
 });
+
+test('🧲 coil (uom KG · จ่ายเป็นม้วน): ม้วนหนักกว่าที่ต้องใช้ = ไม่บล็อก · พาร์ทชิ้นยังบล็อกเหมือนเดิม', () => {
+  const coil = { request_qty: 121, uom: 'KG' };
+  const r = checkPickQty({ request: coil, qty: 480.5 });
+  assert.equal(r.block, false); assert.equal(r.status, 'ok'); assert.equal(r.coilOver, true);
+  assert.match(r.message, /kg/);
+  assert.equal(checkPickQty({ request: coil, qty: 100 }).status, 'under');
+  assert.equal(checkPickQty({ request: { request_qty: 60 }, qty: 61 }).block, true);
+  assert.equal(checkPickQty({ request: { request_qty: 60, uom: null }, qty: 61 }).status, 'over');
+});
