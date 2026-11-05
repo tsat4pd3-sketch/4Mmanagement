@@ -52,3 +52,20 @@ test('ป้ายบนจอ', () => {
   assert.match(packSplitText(packSplit(60, 100)), /ยังไม่ถึง 1 กล่อง/);
   assert.match(packSplitText(packSplit(60, null)), /ยังไม่ได้ตั้งขนาดกล่อง/);
 });
+
+import { planLineRequest } from '../packRound.js';
+test('planLineRequest: ใบผลิตเปิด → เทียบ WIP หน้าไลน์ → ครบกล่องค่อยเบิก', () => {
+  // ต้องใช้ 1,036 · หน้าไลน์มี 0 · กล่อง 300 → เบิก 900 (ทด 136 รอใบถัดไป)
+  assert.deepEqual((({ action, qty, carry }) => ({ action, qty, carry }))(planLineRequest({ need: 1036, onHand: 0, pkg: 300 })), { action: 'insert', qty: 900, carry: 136 });
+  // หน้าไลน์ติดลบ = นับเป็น 0 ไม่ใช่ของติดลบมาเพิ่มความต้องการ
+  assert.equal(planLineRequest({ need: 500, onHand: -9000, pkg: 100 }).qty, 500);
+  // หน้าไลน์พอ = ไม่ต้องเบิก
+  assert.equal(planLineRequest({ need: 500, onHand: 600, pkg: 100 }).action, 'covered');
+  // ไม่ถึง 1 กล่อง = รอ (สะสมจากใบผลิตถัดไป)
+  assert.equal(planLineRequest({ need: 300, onHand: 0, pkg: 800 }).action, 'wait');
+  // มีใบรอหยิบอยู่แล้ว น้อยกว่าเป้า = เพิ่มยอด · มากกว่า/เท่า = ไม่ลดเอง
+  assert.deepEqual((({ action, qty }) => ({ action, qty }))(planLineRequest({ need: 2000, onHand: 0, pendingQty: 900, pkg: 300 })), { action: 'raise', qty: 1800 });
+  assert.equal(planLineRequest({ need: 300, onHand: 0, pendingQty: 900, pkg: 300 }).action, 'covered');
+  // ไม่รู้ขนาดกล่อง = ไม่เดา
+  assert.equal(planLineRequest({ need: 500, onHand: 0, pkg: null }).action, 'no_pkg');
+});
