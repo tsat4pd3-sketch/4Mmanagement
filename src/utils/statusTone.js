@@ -99,3 +99,15 @@ export const valueInk = (value, target, better = 'up') =>
 
 /** มี "เป้า" ให้เทียบจริงไหม — จอควรเขียนกำกับเมื่อไม่มี (ห้ามเงียบแล้วปล่อยให้เดาว่าเขียว = ดี) */
 export const hasTarget = (target) => target != null && !Number.isNaN(Number(target));
+
+/** 🎨 `tint(color, 'dim'|'line')` — พื้นจาง/เส้นขอบจากสีใดก็ได้ (05/11 · UI §6.17)
+ *  สี token (`var(--red)` …) ต่อ alpha-hex ไม่ได้ (CSS/SVG parse พัง = ดำ) ⇒ คืน `--red-dim` / `--red-line`
+ *  · token อื่น (`var(--muted)`) = พื้น/ขอบกลาง · hex จาก DB (สีประจำประเภท/แผนก) ยังต่อ alpha ได้เหมือนเดิม
+ *  ใช้แทน `${c}22` / `${c}55` ทุกจุด — ด่าน `regressionGuards` ห้ามต่อ alpha บน var() ตรงๆ */
+export const tint = (c, lvl = 'dim') => {
+  const m = /^var\(--(green|amber|red|blue)\)$/.exec(c || '');
+  if (m) return `var(--${m[1]}-${lvl === 'line' ? 'line' : 'dim'})`;
+  if (/^var\(/.test(c || '')) return lvl === 'line' ? 'var(--border2)' : 'var(--bg3)';
+  if (!c) return lvl === 'line' ? 'var(--border2)' : 'var(--bg3)';
+  return `${c}${lvl === 'line' ? '55' : '22'}`;
+};

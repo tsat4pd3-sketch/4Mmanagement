@@ -15,3 +15,13 @@ test('popup บอกหน่วย (kg/ชิ้น) + ของหน้า�
   assert.match(planActionText({ action: 'no_pkg' }), /packing std/);
   assert.match(planConfirmText([wait]).text, /ยังไม่มีรายการที่ต้องแจ้งสโตร์/);
 });
+
+test('📍 popup บอกพื้นที่ SAP ที่คิดรวม + ใบผลิตที่ไม่มี BOM ต้องบอก (ไม่ใช่ "ของพอ")', () => {
+  const r = { mat_no: '30043726', uom: null, ...planLineRequest({ need: 300, onHand: 100, pkg: 100 }) };
+  const t = planConfirmText([r], { title: 'x', area: { code: 'P412', lines: ['LWR BAR', 'Assy  LWR', 'Laser LWR'] } }).text;
+  assert.match(t, /รวมทั้งพื้นที่ P412: LWR BAR · Assy {2}LWR · Laser LWR/);
+  assert.match(t, /พื้นที่ P412 มี 100 ชิ้น/);
+  const nb = planConfirmText([], { title: 'x', noBom: [{ mat_no: 'BENDING LWR BAR 306', qty: 500 }] }).text;
+  assert.match(nb, /ไม่มีลูกใน BOM .*BENDING LWR BAR 306 × 500/);
+  assert.match(nb, /ยังไม่ผูกพื้นที่ SAP/);
+});

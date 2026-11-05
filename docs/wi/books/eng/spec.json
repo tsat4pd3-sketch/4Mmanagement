@@ -1,0 +1,479 @@
+[
+ {
+  "id": "pe_tabs",
+  "p": "PEDocs",
+  "q": "set=id-1&tab=flow",
+  "marks": [
+   "Model P703",
+   "Flow (8 OP)",
+   "PFMEA (6)",
+   "Control Plan (6)",
+   "Revisions (3)",
+   "คลัง PFMEA (5)"
+  ],
+  "loose": true
+ },
+ {
+  "id": "pe_newset",
+  "p": "PEDocs",
+  "q": "",
+  "click": "ชุดเอกสารใหม่",
+  "marks": [
+   "Part No. (ลูกค้า)",
+   "MAT SAP",
+   "ไลน์หลักที่ผลิต",
+   "Doc No. PFC",
+   "บันทึก"
+  ],
+  "loose": true
+ },
+ {
+  "id": "pe_import",
+  "p": "PEDocs",
+  "q": "",
+  "click": "นำเข้า Excel",
+  "loose": true,
+  "marks": [
+   "ชีทละ OP",
+   "ใช้สร้างรายการ OP",
+   "ใช้เฉพาะประวัติการแก้ไข",
+   "อ่านไฟล์ & ดูสรุป"
+  ]
+ },
+ {
+  "id": "pe_frommaster",
+  "p": "PEDocs",
+  "q": "",
+  "click": "ชุดใหม่จาก master",
+  "marks": [
+   "Part No. *",
+   "Doc No. PFC",
+   "คลังกระบวนการ (5)",
+   "สร้างชุด ("
+  ]
+ },
+ {
+  "id": "pe_flow",
+  "p": "PEDocs",
+  "q": "set=id-1&tab=flow",
+  "click": [
+   "ผังกระบวนการ ("
+  ],
+  "scroll": "เพิ่ม Process (OP)",
+  "marks": [
+   "เพิ่ม Process (OP)",
+   "เสนอ routing เข้า VSM",
+   "1 แถว",
+   "1 จุด"
+  ]
+ },
+ {
+  "id": "pe_op",
+  "p": "PEDocs",
+  "q": "set=id-1&tab=flow",
+  "click": "เพิ่ม Process (OP)",
+  "marks": [
+   "เลข OP *",
+   "ชื่อกระบวนการ *",
+   "กระบวนการมาตรฐาน (คลัง PFMEA)",
+   "เครื่องจักร (M/C No.)",
+   "Special Char.",
+   "บันทึก"
+  ],
+  "loose": true
+ },
+ {
+  "id": "pe_chart",
+  "p": "PEDocs",
+  "q": "set=id-1&tab=flow",
+  "marks": [
+   "ผังกระบวนการ (8",
+   "พิมพ์ผัง"
+  ]
+ },
+ {
+  "id": "pe_routing",
+  "p": "PEDocs",
+  "q": "set=id-1&tab=flow",
+  "click": "เสนอ routing เข้า VSM",
+  "loose": true,
+  "marks": [
+   "ยืนยันบันทึก"
+  ]
+ },
+ {
+  "id": "pe_fmea",
+  "p": "PEDocs",
+  "q": "set=id-1&tab=fmea",
+  "marks": [
+   "เพิ่ม Failure Mode",
+   "เฉพาะ RPN ≥ 100",
+   "เติมจาก master",
+   "ดาวน์โหลด Excel (PFMEA)",
+   "RPN 210",
+   "ต่างจาก master"
+  ]
+ },
+ {
+  "id": "pe_fmea_modal",
+  "p": "PEDocs",
+  "q": "set=id-1&tab=fmea",
+  "click": "เพิ่ม Failure Mode",
+  "marks": [
+   "Process (OP) *",
+   "Potential Failure Mode *",
+   "Causes (บรรทัดละสาเหตุ)",
+   "S (1-10)",
+   "RPN ="
+  ],
+  "loose": true
+ },
+ {
+  "id": "pe_pull",
+  "p": "PEDocs",
+  "q": "set=id-1&tab=fmea",
+  "click": "เติมจาก master",
+  "loose": true,
+  "marks": [
+   "เพิ่ม "
+  ]
+ },
+ {
+  "id": "pe_cp",
+  "p": "PEDocs",
+  "q": "set=id-1&tab=cp",
+  "marks": [
+   "เพิ่มจุดควบคุม",
+   "ดาวน์โหลด Excel (Control Plan)"
+  ]
+ },
+ {
+  "id": "pe_cr",
+  "p": "PEDocs",
+  "q": "set=id-1&tab=fmea",
+  "click": "คำขอแก้เอกสารจากหน้างาน",
+  "marks": [
+   "ค้าง 2 รายการ",
+   "รับเรื่อง",
+   "ออก revision",
+   "ไม่แก้"
+  ]
+ },
+ {
+  "id": "pe_rev",
+  "p": "PEDocs",
+  "q": "set=id-1&tab=rev",
+  "click": "ออก Revision ใหม่",
+  "marks": [
+   "Suffix (Part no.",
+   "Rev No.",
+   "เลขอ้างอิงต้นเหตุ",
+   "เนื้อหาการแก้ไข *",
+   "ผู้รับรอง",
+   "บันทึก"
+  ]
+ },
+ {
+  "id": "pe_master",
+  "p": "PEDocs",
+  "q": "set=id-1&tab=master",
+  "marks": [
+   "คลัง PFMEA (5)",
+   "มีข้อเสนออัพเดท master",
+   "รอยืนยัน",
+   "+ กระบวนการ",
+   "SPOT WELDING"
+  ],
+  "loose": true
+ },
+ {
+  "id": "pe_master_cur",
+  "p": "PEDocs",
+  "q": "set=id-1&tab=master",
+  "click": "SPOT WELDING",
+  "marks": [
+   "ยืนยันกระบวนการนี้",
+   "รับเข้า master",
+   "ไม่รับ",
+   "+ รายการ"
+  ]
+ },
+ {
+  "id": "npi_board",
+  "p": "NPI",
+  "q": "project=id-1",
+  "marks": [
+   "บอร์ด",
+   "P703 MCA 2027",
+   "พาร์ท × เฟส",
+   "บอร์ด New Model"
+  ],
+  "loose": true
+ },
+ {
+  "id": "npi_proj",
+  "p": "NPI",
+  "q": "",
+  "click": "+ โปรเจค",
+  "marks": [
+   "ชื่อโปรเจค *",
+   "แม่แบบเฟส (ลูกค้า) *",
+   "วัน SOP",
+   "Project leader",
+   "รุ่นบนบอร์ด New Model",
+   "บันทึก"
+  ],
+  "loose": true
+ },
+ {
+  "id": "npi_part",
+  "p": "NPI",
+  "q": "project=id-1&tab=parts",
+  "click": "+ พาร์ท",
+  "marks": [
+   "ชุด PFC/FMEA/CP ที่มีอยู่",
+   "สร้างจาก master",
+   "Part No. (ลูกค้า) *",
+   "มาตรฐานตรวจ QA (qa_parts)",
+   "PPAP level",
+   "บันทึก"
+  ],
+  "loose": true
+ },
+ {
+  "id": "npi_panel",
+  "p": "NPI",
+  "q": "project=id-1&tab=parts&part=id-1",
+  "marks": [
+   "พาร์ท & PPAP",
+   "+ พาร์ท",
+   "PFC/FMEA/CP MB3B",
+   "PPAP checklist",
+   "สถานะ PPAP/PSW",
+   "sync แม่แบบ",
+   "+ รายการ"
+  ]
+ },
+ {
+  "id": "npi_deliv",
+  "p": "NPI",
+  "q": "project=id-1&tab=parts&part=id-1",
+  "scroll": "เอกสารส่งมอบ / ทะเบียน PPAP",
+  "marks": [
+   "เอกสารส่งมอบ / ทะเบียน PPAP",
+   "ทุกรายการ",
+   "ยังไม่ปิด",
+   "เฉพาะ PPAP",
+   "เลยกำหนด"
+  ]
+ },
+ {
+  "id": "npi_ppap",
+  "p": "NPI",
+  "q": "project=id-1&tab=parts&part=id-1",
+  "click": "สถานะ PPAP/PSW",
+  "marks": [
+   "สถานะ PPAP",
+   "PSW No.",
+   "วันส่งลูกค้า",
+   "วันลูกค้าอนุมัติ",
+   "บันทึก"
+  ]
+ },
+ {
+  "id": "npi_dw",
+  "p": "NPI",
+  "q": "project=id-1&tab=drawings&part=id-1",
+  "marks": [
+   "แบบ & ECI",
+   "+ Rev แบบ",
+   "ปล่อย",
+   "+ ECI",
+   "ECI-2026-007"
+  ]
+ },
+ {
+  "id": "npi_eci",
+  "p": "NPI",
+  "q": "project=id-1&tab=drawings&part=id-1",
+  "click": "+ ECI",
+  "marks": [
+   "เลข ECI/ECN *",
+   "ผลกระทบ — ติ๊กแล้วต้องผูก",
+   "แบบ/Drawing rev ใหม่",
+   "PFC / PFMEA / Control Plan",
+   "วิธีการผลิตหน้างาน (4M Method)",
+   "แม่พิมพ์/จิ๊ก/CF"
+  ]
+ },
+ {
+  "id": "npi_tool",
+  "p": "NPI",
+  "q": "project=id-1&tab=tooling",
+  "click": "▼",
+  "marks": [
+   "Tooling",
+   "+ แผน tooling",
+   "Progressive die OP20",
+   "+ ขั้นงาน"
+  ]
+ },
+ {
+  "id": "npi_toolm",
+  "p": "NPI",
+  "q": "project=id-1&tab=tooling",
+  "click": "+ แผน tooling",
+  "marks": [
+   "ชื่อเครื่องมือ *",
+   "ผู้ทำ (maker)",
+   "แผนส่งมอบ",
+   "ผูกชุดแม่พิมพ์ (die_sets) หลัง transfer",
+   "บันทึก"
+  ],
+  "loose": true
+ },
+ {
+  "id": "npi_tasks",
+  "p": "NPI",
+  "q": "project=id-1&tab=tasks",
+  "marks": [
+   "งาน",
+   "+ งาน",
+   "เฉพาะของฉัน",
+   "เริ่ม",
+   "เสร็จ"
+  ]
+ },
+ {
+  "id": "npi_tpl",
+  "p": "NPI",
+  "q": "tab=templates",
+  "marks": [
+   "แม่แบบ",
+   "+ แม่แบบ",
+   "+ เฟส",
+   "+ รายการ"
+  ]
+ },
+ {
+  "id": "nm_over",
+  "p": "NewModelBoard",
+  "q": "",
+  "loose": true,
+  "marks": [
+   "Result KPI",
+   "Toyota",
+   "งานเลยกำหนด (4)",
+   "แผงที่ต้องรีบดู"
+  ]
+ },
+ {
+  "id": "nm_proj",
+  "p": "NewModelBoard",
+  "q": "cust=toyota&proj=737d-mlm",
+  "marks": [
+   "เปิดใน /npi",
+   "เปิดโหมดจอ TV",
+   "Delay",
+   "Master Schedule",
+   "ภาพรวม"
+  ]
+ },
+ {
+  "id": "rfq_list",
+  "p": "Rfq",
+  "q": "",
+  "marks": [
+   "+ RFQ",
+   "RFQ-2026-002",
+   "ได้งาน / ไม่ได้งาน"
+  ]
+ },
+ {
+  "id": "rfq_new",
+  "p": "Rfq",
+  "q": "",
+  "click": "+ RFQ",
+  "marks": [
+   "ลูกค้า (OEM)",
+   "Volume / ปี (ชิ้น)",
+   "ที่มาของ volume",
+   "ราคาเป้าหมายลูกค้า (THB/pc)",
+   "บันทึก"
+  ]
+ },
+ {
+  "id": "rfq_sheet",
+  "p": "Rfq",
+  "q": "rfq=id-1",
+  "marks": [
+   "รับ RFQ แล้ว",
+   "+ พาร์ท",
+   "ส่ง CRD → สร้าง/ผูกโปรเจค NPI",
+   "บันทึกผล"
+  ]
+ },
+ {
+  "id": "rfq_part",
+  "p": "Rfq",
+  "q": "rfq=id-1",
+  "click": "+ พาร์ท",
+  "marks": [
+   "Part No. (ของลูกค้า)",
+   "เป็นชิ้นย่อยของ",
+   "จำนวนต่อชิ้นแม่",
+   "วัตถุดิบ (spec)",
+   "บันทึก"
+  ],
+  "loose": true
+ },
+ {
+  "id": "rfq_crd",
+  "p": "Rfq",
+  "q": "rfq=id-1",
+  "click": "ส่ง CRD → สร้าง/ผูกโปรเจค NPI",
+  "marks": [
+   "สร้างโปรเจคใหม่จาก RFQ นี้",
+   "ผูกโปรเจคที่มีอยู่แล้ว",
+   "เลขที่ CRD",
+   "แม่แบบเฟส (ลูกค้า)",
+   "สร้างโปรเจค + ผูก"
+  ]
+ },
+ {
+  "id": "rfq_award",
+  "p": "Rfq",
+  "q": "rfq=id-1",
+  "click": "บันทึกผล",
+  "marks": [
+   "วันที่ตัดสิน",
+   "ราคาชิ้น (THB/pc)",
+   "ยอดขาย/ปี (คำนวณ)",
+   "PO จากลูกค้า",
+   "💾 บันทึกผล"
+  ]
+ },
+ {
+  "id": "rfq_issue",
+  "p": "Rfq",
+  "q": "rfq=id-3",
+  "scroll": "ผลได้งาน / ไม่ได้งาน",
+  "marks": [
+   "ผลได้งาน / ไม่ได้งาน",
+   "แก้ผล",
+   "ออกใบแจ้งจัดทำ F-MKT-001/002"
+  ]
+ },
+ {
+  "id": "rfq_report",
+  "p": "Rfq",
+  "q": "tab=report",
+  "marks": [
+   "ได้งาน / ไม่ได้งาน",
+   "ปีที่ตัดสิน",
+   "ตัดสินแล้ว (ใบ)",
+   "ได้งาน",
+   "ไม่ได้งาน"
+  ]
+ }
+]

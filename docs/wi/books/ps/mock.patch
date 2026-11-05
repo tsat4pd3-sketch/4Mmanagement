@@ -1,0 +1,11 @@
+--- a/mock.js
++++ b/mock.js
+@@ -457,6 +457,8 @@
+     qty_received: i % 4 === 0 ? 55 : null, diff_reason: i % 4 === 0 ? 'ของเสีย 5' : null,
+     received_by: i % 4 === 0 ? 'สมชาย ใจดี' : null, received_at: i % 4 === 0 ? new Date().toISOString() : null,
+   }),
++  wip_replenish_requests: (r, i) => ({ ...r, mat_no: `2005${7000 + i}`, qty: 40, line_name: FAM_LINE,
++    status: ['pending','preparing','delivered'][i % 3], source: 'line_request' }),
+   child_lot_requests: (r, i) => ({
+     ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
+     lot_qty: isNullish(r) ? null : 14,

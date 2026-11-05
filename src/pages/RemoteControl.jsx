@@ -4,6 +4,7 @@ import { UserContext, navItemsForGroups, NAV_GROUP_ORDER } from '../App';
 import { toast } from '../components/Toast';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ═══ RemoteControl (🎮 รีโมทจอ) — มือถือคุมจอ TV/โปรเจคเตอร์ที่เปิด "รับรีโมท" ═══
    คู่กับ RemoteReceiver (ฝังระดับ App บนจอ) ผ่าน Supabase Realtime — ใช้ได้ทุกหน้า
@@ -118,14 +119,14 @@ export default function RemoteControl() {
               placeholder="รหัส 6 หลัก" inputMode="numeric"
               style={{ width: 150, fontSize: 22, fontWeight: 900, letterSpacing: 5, textAlign: 'center', padding: '10px 12px', borderRadius: 10 }} />
             <button onClick={join} style={btn({ background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--accent)', flex: 1 })}>
-              🔗 เชื่อมต่อ
+              เชื่อมต่อ
             </button>
           </div>
         </div>
       ) : (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text2)' }}>
-            <span style={chipSt(linkOk ? '#22c55e' : '#f59e0b')}>{linkOk ? `🟢 เชื่อมกับจอ ${code}` : `🟡 ส่งหาห้อง ${code} (ยังไม่เห็นจอตอบ)`}</span>
+            <span style={chipSt(linkOk ? 'var(--green)' : 'var(--amber)')}>{linkOk ? `🟢 เชื่อมกับจอ ${code}` : `🟡 ส่งหาห้อง ${code} (ยังไม่เห็นจอตอบ)`}</span>
             <button onClick={leave} style={{ marginLeft: 'auto', ...btn({ fontSize: 12, padding: '6px 12px' }) }}>ตัดการเชื่อมต่อ</button>
           </div>
 
@@ -143,13 +144,13 @@ export default function RemoteControl() {
 
           {/* ── ปุ่มวาระ (โหมดประชุมแถวเช้า — ยิงปุ่มลูกศร) ── */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-            <button onClick={() => send({ type: 'key', key: 'ArrowLeft' })} style={btn({ fontSize: 18 })}>◀ ก่อนหน้า</button>
+            <button onClick={() => send({ type: 'key', key: 'ArrowLeft' })} style={btn({ fontSize: 18 })}>ก่อนหน้า</button>
             <button onClick={() => send({ type: 'key', key: 'ArrowRight' })} style={btn({ fontSize: 18 })}>ถัดไป ▶</button>
-            <button onClick={() => send({ type: 'key', key: 'Escape' })} style={btn({ color: '#f59e0b' })}>Esc ออกโหมด</button>
+            <button onClick={() => send({ type: 'key', key: 'Escape' })} style={btn({ color: 'var(--amber)' })}>Esc ออกโหมด</button>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            <button onClick={() => send({ type: 'scroll', dy: -Math.round(window.innerHeight * 0.5) })} style={btn()}>▲ เลื่อนขึ้น</button>
-            <button onClick={() => send({ type: 'scroll', dy: Math.round(window.innerHeight * 0.5) })} style={btn()}>▼ เลื่อนลง</button>
+            <button onClick={() => send({ type: 'scroll', dy: -Math.round(window.innerHeight * 0.5) })} style={btn()}>เลื่อนขึ้น</button>
+            <button onClick={() => send({ type: 'scroll', dy: Math.round(window.innerHeight * 0.5) })} style={btn()}>เลื่อนลง</button>
           </div>
 
           {/* ── สั่งจอเปลี่ยนหน้า — เมนูชุดเดียวกับ sidebar (สิทธิ์เข้าหน้าคุมที่ฝั่งจอเอง) ── */}
@@ -171,6 +172,6 @@ export default function RemoteControl() {
 }
 
 const chipSt = (color) => ({
-  fontSize: 12, fontWeight: 800, color, background: `${color}1f`,
-  border: `1px solid ${color}55`, borderRadius: 8, padding: '4px 10px',
+  fontSize: 12, fontWeight: 800, color, background: `${tint(color, 'dim')}`,
+  border: `1px solid ${tint(color, 'line')}`, borderRadius: 8, padding: '4px 10px',
 });

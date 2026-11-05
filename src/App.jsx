@@ -417,12 +417,12 @@ function SplashScreen({ onDone }) {
           <div style={{
             fontFamily: 'var(--font-display)', fontWeight: 700,
             fontSize: 13, letterSpacing: '2px', textTransform: 'uppercase',
-            color: 'rgba(255,255,255,0.9)',
+            color: 'var(--text)',
           }}>Thai Summit Group</div>
           <div style={{
             fontFamily: 'var(--font-display)', fontSize: 11,
             letterSpacing: '2px', textTransform: 'uppercase',
-            color: 'rgba(255,255,255,0.35)',
+            color: 'var(--muted)',
           }}>VX Production System</div>
         </div>
       </div>
@@ -433,7 +433,7 @@ function SplashScreen({ onDone }) {
         transition: 'opacity 0.5s ease 0.15s, transform 0.5s ease 0.15s',
         fontFamily: 'var(--font-display)', fontWeight: 700,
         fontSize: 'clamp(1.2rem,3.5vw,2.4rem)', letterSpacing: '0.5px',
-        color: 'var(--accent)', lineHeight: 1,
+        color: 'var(--text)', lineHeight: 1,   /* 05/11: ชื่อโปรแกรมสีตัวหนังสือปกติ — เขียวเหลือเฉพาะแถบโหลด (พาเลต §6.17) */
       }}>
         ENTERPRISE SHOPFLOOR MANAGEMENT
       </div>

@@ -143,9 +143,9 @@ const DEPT_CSS = `
    ตารางนี้เก็บแค่ "หน้าตา" ของการ์ด (รหัส/สี/ปลายทางเริ่มต้น/คำอธิบาย)
    ส่วน "มีเมนูอะไรบ้าง" ยังมาจาก NAV_ITEMS ผ่าน navItemsForGroups เสมอ */
 const CARD_META = {
-/* 🔴 **สีประจำโมดูล ห้ามเป็นสีสถานะ** (`STATUS_COLOR` ใน `utils/statusTone.js`: เขียว #22c55e ·
-   เหลือง #f59e0b · แดง #ef4444) — 23/09 ก้อน B · มีด่าน `module-identity-not-status-hue`
-   เดิม "ฝ่ายผลิต" เป็น #22c55e และ "Warehouse & Delivery" เป็น #f59e0b **เป๊ะตัวเดียวกับไฟสถานะ**
+/* 🔴 **สีประจำโมดูล ห้ามเป็นสีสถานะ** (`STATUS_COLOR` ใน `utils/statusTone.js`: เขียว var(--green) ·
+   เหลือง var(--amber) · แดง var(--red)) — 23/09 ก้อน B · มีด่าน `module-identity-not-status-hue`
+   เดิม "ฝ่ายผลิต" เป็น var(--green) และ "Warehouse & Delivery" เป็น var(--amber) **เป๊ะตัวเดียวกับไฟสถานะ**
    ที่การ์ด telemetry บนหน้าเดียวกันใช้อยู่ ⇒ จอเดียวกันมีแถบเขียว/เหลือง 2 ความหมายปนกัน
    คนหน้างานอ่านแถบเหลืองเหนือ Warehouse ว่า "คลังมีปัญหา" ทั้งที่มันแปลว่า "นี่คือการ์ดคลัง"
    ⇒ ย้ายไปโทนเย็นที่ไม่มีความหมายสถานะ (teal / indigo) · การ์ดยังแยกกันออกด้วย emoji + code + สีอื่น */
@@ -522,7 +522,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             color: 'var(--text)', cursor: 'pointer', fontSize: 16,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            {theme === 'dark' ? '☀️' : '🌙'}
+            {theme === 'dark' ? '️' : '🌙'}
           </button>
         )}
       </div>
@@ -671,7 +671,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {chips.map(item => {
                 /* 🚪 ชิป "ทางลัด" (หน้าที่บ้านจริงอยู่การ์ดอื่น · `alsoIn`) ต้องหน้าตาต่างจากของการ์ดนี้
-                   — จางลง + `↗ <หมวดบ้าน>` ท้ายชิป · ไม่งั้นการ์ดดูเหมือนเป็นเจ้าของหน้านั้นด้วย
+                   — จางลง + `<หมวดบ้าน>` ท้ายชิป · ไม่งั้นการ์ดดูเหมือนเป็นเจ้าของหน้านั้นด้วย
                    แล้วคำถาม "หน้านี้อยู่หมวดไหน" มี 2 คำตอบ (24/09 · คำสั่ง user — ดู `isNavGuest`) */
                 const guest = isNavGuest(item, d.group);
                 const homeShort = NAV_GROUP_META[item.group]?.short || item.group;
@@ -691,7 +691,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
               {hidden.length > 0 && (
                 <button type="button" className="dept-chip more-chip"
                   onClick={e => { e.stopPropagation(); setExpanded(s => ({ ...s, [d.key]: !open })); }}>
-                  {open ? `▲ ${tr('ย่อ')}` : `▾ ${tr('ดูทั้งหมด')} (${hidden.length})`}
+                  {open ? `${tr('ย่อ')}` : `${tr('ดูทั้งหมด')} (${hidden.length})`}
                 </button>
               )}
             </div>

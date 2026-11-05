@@ -671,6 +671,7 @@ user ส่งคลิปจอมือถือมา: **เนื้อห�
 | เลขพาร์ท P/N ลูกค้า (CAPA / NCR / SPC / เคลม — กุญแจหาเอกสาร PE) | `<PartSelect>` | `usePartOptions` (pe_doc_sets ∪ qa_parts ∪ dr_products) | `part_no` text (+part_name) |
 | เครื่องมือวัด / วิธีตรวจ | `<InstrumentSelect>` | `useInstruments` (Main qa_instruments) | code text |
 | หน่วยนับ (UOM) — Parts Master · ใบเบิกวัสดุ · นำเข้า BOM SAP (2026-11-05) | `<select>` จาก `uomOptions()` (ใบเบิก = `<SelectOrFree>`) · **ค่าที่เขียนลงฐานผ่าน `normUom()` เสมอ** (`utils/uom.js` · EA/pcs → PC) | `useUomUnitsState` (DR `uom_units`) → fallback `DEFAULT_UOMS` | code text |
+| เหตุผลจองเครื่องทดลอง · ประเภทภาชนะ (2026-11-05) | `<select>` จากทะเบียน (ค่าเดิมนอกทะเบียนโชว์เป็น "ค่าเดิม") | `useTrialReasonsState` (DR `trial_reasons`) · `useContainerCategoriesState` (DR `container_categories`) | label text · code text |
 | ค่าที่มีลิสต์สั้น + ต้องยอมระบุเองจริง (ส่วนงาน/แผนก/ฝ่าย · สถานี · ไลน์ปั๊มแม่พิมพ์) | `<SelectOrFree>` (select + "✏️ ระบุเอง" ช่องเดียว · ค่าเดิมนอกลิสต์เปิดในโหมดระบุเอง) | org_nodes / workstations / ที่มีอยู่ | text |
 | ไลน์ผลิต | `<LineSelect>` (§5.3 ข้อ 9) | `useProductionLines` | name / id |
 | ทีม A/B/C | `useOrgTeams()` → `<select>` | org_nodes kind='team' → fallback A/B/C | code |
@@ -1599,6 +1600,16 @@ npx vite --config audit/vite.audit.mjs &        # เปิดค้างที
 > · ไล่ทีละหน้า: Daily Report (ทำแล้ว 04/11 · 32 เฉด → 0) → Home (ทำแล้ว 04/11) → OBEYA (ทำแล้ว 04/11) → จอ TV (ทำแล้ว 05/11 · Andon/ไทม์ไลน์/OEE รายไลน์ 250+ จุด → 0)
 >   → แจ้งซ่อม MTN `/mtn-repair` (ทำแล้ว 05/11 · 123 → 14 = เหลือเฉพาะ CSS ใบพิมพ์บนกระดาษ · ใบ MO: ปุ่มท้ายใบ 7 → [ขั้นถัดไป][ปิด]+⋯ `drop="up"` ·
 >     ชิปสถานะผ่าน `STATUS_TONE` ในหน้า — `MO_STATUS_META.color` hex ยังอยู่ให้จออื่น · แถบแจ้ง 5 กล่อง → `<NoticeBar>` · กติกาวัน/กะ + หมายเหตุฟอร์ม MTN → `<InfoMore>`)
+>   → เช็คชื่อ & PPE `/checkin` (ทำแล้ว 05/11 · 75 → 0 · หัวเพจ 6 ปุ่ม → [ยืมพนักงาน][บันทึก]+⋯ (Preview กะดึก·ส่งออกฟอร์ม·จองรถ OT) ·
+>     "เฉพาะกะนี้/ทุกคน" เป็นตัวกรอง ⇒ ย้ายลง `filters=` เป็น `<Segmented>` · กล่องเตือน 6 กล่อง → `<NoticeBar>` · คำอธิบายคอลัมน์จองรถ → `<InfoMore>` ·
+>     สถานะคน: ลาทุกแบบ = ฟ้า (เดิมม่วง/ฟ้า 3 เฉด) · ถอดออกจาก `LEGACY_MANY_ACTIONS`)
+>   → BBS · ภาชนะ/Rack Center · ฐานข้อมูลเครื่องจักร · ประชุมแถวเช้า · ตั้งจุดตรวจ PM (ทำแล้ว 05/11 · ทุกหน้าเหลือปุ่มตายตัว ≤2 + ⋯ ·
+>     `LEGACY_MANY_ACTIONS` ว่างแล้ว **ห้ามเติมชื่อใหม่** · สีดิบ 164 → 34 — ที่เหลือคือ**สีประจำหมวด** (ชุดสีให้เลือกของประเภทเครื่อง `TYPE_COLORS` ·
+>     สีประจำแผนก/ชนิดอุปกรณ์ใน PMSetup) ซึ่งเป็นสีจำแนกหมวดแบบกราฟ ไม่ใช่สีสถานะ · helper ที่ต่อ alpha (`chip()`/`S.tag()`/`S.btnSm()`) ต้องผ่าน `tintOf()` ในไฟล์)
+>   → **กวาดทั้งระบบ (05/11 · 74 ไฟล์)**: hex/rgba เชิงความหมาย → token ทุกหน้า (ยกเว้นบรรทัดพาเลตหมวด ≥3 สี และ CSS ใบพิมพ์) · `${c}22`-แบบ dynamic
+>     ทุกจุด → **`tint(c, 'dim'|'line')` ของกลางใน `utils/statusTone.js`** (hex จาก DB ยังต่อ alpha ได้ · token ย่อยเป็น -dim/-line) ·
+>     ปุ่มทุกตัวตัด emoji นำหน้า (ปุ่มไอคอนล้วน 181 ตัวคงไว้) · ปุ่มหัวเพจ 22 หน้า → `.pg-btn` · สีดิบรวม 4,754 → 2,577
+>     (ที่เหลือ = พาเลตหมวด/กราฟ/ใบพิมพ์ + สีที่ไม่อยู่ในตาราง map) · **ยังไม่ได้ทำ**: emoji ในชิป/ข้อความ · กล่องเตือนวาดเองในเนื้อหา → `<NoticeBar>` · ข้อความยาว → `<InfoMore>` (ไล่ทีละหน้าต่อ)
 > · 🔴 **ของที่รับ `color` แล้วต่อ alpha (`${c}55`) ต้องผ่านตัวแปลง** — ต้นแบบ `tint()` ใน `components/FactoryMiniMap.jsx` (token → `-dim`/`-line` · hex เดิมยังต่อได้) · **SVG `fill` ที่ค่าผิด = ดำทั้งกล่อง** (เจอจริง 05/11 บน Andon)
 > · ยังเป็น hex โดยตั้งใจ (อยู่ใน `utils` ไม่ถูกนับ · รอรอบถัดไป): สเกลสกิล `utils/skillLevels.js` (5 ขั้น = สเกล ไม่ใช่สถานะ) · `ROUTINE_MAP_COLOR` ฟ้าอมเขียวบนผัง (ห้ามชนสีสถานะ — ดูเหตุผลใน `utils/prodRoutine.js`)
 

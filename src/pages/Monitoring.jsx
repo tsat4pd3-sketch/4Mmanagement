@@ -592,16 +592,16 @@ export default function Monitoring() {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {/* 📦 บอร์ด FG ไม่ได้มาจากไฟล์ Excel — ปุ่มจึงแยกจาก "นำเข้าจากไฟล์" ตั้งแต่หัวเพจ
                 (ปุ่มเดียวกันแล้วเดาจากแท็บ = คนกดผิดแล้วงงว่าทำไมไม่ขอไฟล์) */}
-            <button type="button" onClick={() => setShowFgSync(true)}
+            <button type="button" className="pg-btn" onClick={() => setShowFgSync(true)}
               title="สร้าง/อัพเดทบอร์ด FG ต่อลูกค้า จากออเดอร์ EDI 862/830 ที่นำเข้าไว้แล้ว"
               style={{ fontSize: 13, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
                 background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-              📦 สร้างบอร์ด FG จากออเดอร์
+              สร้างบอร์ด FG จากออเดอร์
             </button>
-            <button type="button" onClick={() => setShowImport(true)}
+            <button type="button" className="pg-btn" onClick={() => setShowImport(true)}
               style={{ fontSize: 13, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
                 background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
-              📗 นำเข้าจากไฟล์ Excel
+              นำเข้าจากไฟล์ Excel
             </button>
           </div>
         ) : null}
@@ -687,7 +687,7 @@ export default function Monitoring() {
         {/* 🔐 มีสิทธิ์จัดการบอร์ด แต่บอร์ดนี้เป็นของส่วนงานอื่น — เขียนบอก ห้ามให้ช่องเทาเฉยๆ */}
         {canEditPerm && !boardWrite.ok && (
           <div style={{ ...card, padding: '8px 10px', marginBottom: 8, fontSize: FS,
-            borderLeft: '4px solid #eab308' }}>
+            borderLeft: '4px solid var(--amber)' }}>
             🔒 {writeBlockText(boardWrite, { what: `บอร์ด "${board?.name || ''}"` })}
           </div>
         )}

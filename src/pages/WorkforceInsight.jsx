@@ -89,7 +89,7 @@ function downloadCSV(docKey, filename, headers, rows) {
 }
 
 // UI-STANDARD 2026-09-24 — ปุ่ม export ในแถบกรอง (ขนาดช่อง/ความสูงมาจาก .filter-bar)
-const csvBtnSt = { padding: '0 14px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: 'var(--blue)', border: '1px solid rgba(77,159,255,0.35)' };
+const csvBtnSt = { padding: '0 14px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)' };
 // กะ: state เดิมใช้ 'all' = ทุกกะ ⇒ map ค่าแรกของ SHIFT_OPTIONS ('' → 'all') คงความหมายเดิม
 const SHIFT_SEG = SHIFT_OPTIONS.map(o => (o.value === '' ? { ...o, value: 'all' } : o));
 const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px', minWidth: 130, flex: 1 };
@@ -238,7 +238,7 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
           ['วันที่', 'มาทำงาน', 'ลา', 'ขาด(ไม่ระบุเหตุ)', 'OT', 'รวมเช็คชื่อ'],
           daily.map(d => [d.date, d.present, d.leave, d.absent, d.ot, d.total]))}
           style={csvBtnSt}>
-          ⬇️ CSV
+          CSV
         </button>
       </TimeRangeBar>
 
@@ -400,7 +400,7 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
           ['วันที่', 'กะ', 'รหัส', 'ชื่อ', 'ไลน์', 'จุดเดิม', 'จุดใหม่', 'เวลา', 'ผู้มอบหมาย'],
           moves.map(mv => [mv.work_date, mv.shift, empById[mv.employee_id]?.employee_id_code, empById[mv.employee_id]?.name, mv.line_name, mv.from, mv.to, mv.at, mv.by]))}
           style={csvBtnSt}>
-          ⬇️ CSV
+          CSV
         </button>
       </TimeRangeBar>
 
@@ -820,7 +820,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
       exportRows().map((r, i) => [i + 1, r.code, r.name, r.position, r.section, r.department, r.working, r.holiday, r.total, r.reason]));
   };
 
-  const dayChipColor = (kind) => kind.type === 'shutdown75' ? 'var(--purple, #a78bfa)'
+  const dayChipColor = (kind) => kind.type === 'shutdown75' ? 'var(--purple, var(--blue))'
     : kind.holiday ? 'var(--red)' : 'var(--accent)';
 
   return (
@@ -849,8 +849,8 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
           นับใบจอง OT ที่ไม่มีเช็คชื่อด้วย
         </label>
         <span className="spacer" />
-        <button onClick={doExcel} style={csvBtnSt}>⬇️ Excel (ฟอร์ม HR)</button>
-        <button onClick={doCSV} style={csvBtnSt}>⬇️ CSV</button>
+        <button onClick={doExcel} style={csvBtnSt}>Excel (ฟอร์ม HR)</button>
+        <button onClick={doCSV} style={csvBtnSt}>CSV</button>
       </FilterBar>
 
       {loading && <div style={{ color: 'var(--muted)', fontSize: 12.5, marginBottom: 10 }}>กำลังโหลด…</div>}

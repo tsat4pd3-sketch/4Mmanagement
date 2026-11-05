@@ -48,11 +48,22 @@ import LineScopeSelect from '../components/LineScopeSelect';
 import Segmented from '../components/Segmented';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
+import OverflowMenu from '../components/OverflowMenu';
+import InfoMore from '../components/InfoMore';   // ⋯ ปุ่มตายตัว ≤2 (UI §6.35)
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
+/* สีจาก token (var(--red) …) ต่อ alpha-hex ไม่ได้ (SVG/CSS parse พัง = ดำ · UI §6.17) ⇒ ย่อยเป็น -dim/-line · hex จาก DB ยังต่อ alpha ได้เหมือนเดิม */
+const tintOf = (c, lvl) => {
+  const m = /^var\(--(green|amber|red|blue)\)$/.exec(c || '');
+  if (m) return `var(--${m[1]}-${lvl === 'line' ? 'line' : 'dim'})`;
+  if (/^var\(/.test(c || '')) return lvl === 'line' ? 'var(--border2)' : 'var(--bg3)';
+  return `${c}${lvl === 'line' ? '55' : '22'}`;
+};
+
 
 const DEPT_COLORS = {
   maintenance:     '#fb923c',
   jig_maintenance: '#34d399',
-  die_maintenance: '#4d9fff',
+  die_maintenance: 'var(--blue)',
   production:      '#3dd65c',
   qa:              '#9b8de8',
 }
@@ -120,14 +131,14 @@ const S = {
   tag: (color) => ({
     display: 'inline-flex', alignItems: 'center',
     padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 700,
-    background: `${color}18`, color, border: `1px solid ${color}30`,
+    background: tintOf(color), color, border: `1px solid ${tintOf(color, 'line')}`,
   }),
   // ปุ่มรองในแถบ "ไปที่จุด" — btnSm ต่อ alpha-hex ท้ายสี ใช้กับ var(--…) ไม่ได้
   jumpBtn: { padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', cursor: 'pointer',
     border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' },
   btnSm: (color) => ({
     padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600,
-    border: `1px solid ${color}30`, background: `${color}12`, color, cursor: 'pointer',
+    border: `1px solid ${tintOf(color, 'line')}`, background: tintOf(color), color, cursor: 'pointer',
   }),
   primaryBtn: {
     padding: '9px 18px', borderRadius: 'var(--radius)', fontSize: 14, fontWeight: 700,
@@ -149,8 +160,8 @@ const S = {
   }),
   typeBtn: (active, color) => ({
     flex: 1, padding: '7px 4px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-    border: `1.5px solid ${active ? `${color}50` : 'var(--border)'}`,
-    background: active ? `${color}15` : 'var(--bg3)',
+    border: `1.5px solid ${active ? `${tint(color, 'line')}` : 'var(--border)'}`,
+    background: active ? `${tint(color, 'dim')}` : 'var(--bg3)',
     color: active ? color : 'var(--muted)',
   }),
   modeBtn: (active) => ({
@@ -206,7 +217,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
 
       <div style={{ display: 'flex', gap: 6, marginBottom: (isVar || cp.type === 'measure') ? 10 : 0, flexWrap: 'wrap' }}>
         {['variable', 'measure', 'attribute', 'note'].map(t => {
-          const colors = { variable: '#4d9fff', measure: '#22c55e', attribute: '#9b8de8', note: '#f59a3f' }
+          const colors = { variable: 'var(--blue)', measure: 'var(--green)', attribute: '#9b8de8', note: '#f59a3f' }
           const lbl = { variable: '📏 Variable', measure: '📊 ค่าวัด', attribute: '✅ OK/NG', note: '📝 Note' }
           return (
             <button key={t} onClick={() => onChange(t === 'variable' ? { type: t } : { type: t, calc: null })} style={S.typeBtn(cp.type === t, colors[t])}>{lbl[t]}</button>
@@ -225,14 +236,14 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
         const setMode = m => onChange({ _mmode: m, ...(m === 'gte' ? { usl: '' } : m === 'lte' ? { lsl: '' } : {}) })
         const modeBtn = (m, t) => (
           <button key={m} onClick={() => setMode(m)} style={{ flex: 1, padding: '5px 0', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
-            border: `1.5px solid ${mMode === m ? '#22c55e' : 'var(--border)'}`, background: mMode === m ? 'rgba(34,197,94,0.12)' : 'var(--bg3)', color: mMode === m ? '#22c55e' : 'var(--muted)' }}>{t}</button>
+            border: `1.5px solid ${mMode === m ? 'var(--green)' : 'var(--border)'}`, background: mMode === m ? 'var(--green-dim)' : 'var(--bg3)', color: mMode === m ? 'var(--green)' : 'var(--muted)' }}>{t}</button>
         )
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', gap: 6 }}>{modeBtn('gte', '≥ ต่ำสุด')}{modeBtn('lte', '≤ สูงสุด')}{modeBtn('between', 'ช่วง min–max')}</div>
             <div className="mgrid" style={S.inputRow}>
-              {mMode !== 'lte' && <div><label style={{ ...S.label, color: '#22c55e' }}>{mMode === 'between' ? 'ค่าต่ำสุด (min)' : 'ค่าต่ำสุด (≥)'}</label><input type="number" value={cp.lsl} onChange={e => onChange({ lsl: e.target.value })} placeholder="0.45" /></div>}
-              {mMode !== 'gte' && <div><label style={{ ...S.label, color: '#22c55e' }}>{mMode === 'between' ? 'ค่าสูงสุด (max)' : 'ค่าสูงสุด (≤)'}</label><input type="number" value={cp.usl} onChange={e => onChange({ usl: e.target.value })} placeholder="—" /></div>}
+              {mMode !== 'lte' && <div><label style={{ ...S.label, color: 'var(--green)' }}>{mMode === 'between' ? 'ค่าต่ำสุด (min)' : 'ค่าต่ำสุด (≥)'}</label><input type="number" value={cp.lsl} onChange={e => onChange({ lsl: e.target.value })} placeholder="0.45" /></div>}
+              {mMode !== 'gte' && <div><label style={{ ...S.label, color: 'var(--green)' }}>{mMode === 'between' ? 'ค่าสูงสุด (max)' : 'ค่าสูงสุด (≤)'}</label><input type="number" value={cp.usl} onChange={e => onChange({ usl: e.target.value })} placeholder="—" /></div>}
               <div><label style={S.label}>หน่วย</label><input value={cp.unit} onChange={e => onChange({ unit: e.target.value })} placeholder="Mpa" /></div>
             </div>
             <p style={{ fontSize: 11, color: 'var(--muted)', margin: 0 }}>อ่านค่าครั้งเดียว → ระบบเทียบเกณฑ์ ขึ้น OK/NG ให้อัตโนมัติ</p>
@@ -260,8 +271,8 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
             <div><label style={S.label}>Unit</label><input value={cp.unit} onChange={e => onChange({ unit: e.target.value })} placeholder="mm" /></div>
           </div>
           <div className="mgrid" style={S.inputRow}>
-            <div><label style={{ ...S.label, color: '#e05c4a' }}>LSL</label><input type="number" value={cp.lsl} onChange={e => onChange({ lsl: e.target.value })} placeholder="—" /></div>
-            <div><label style={{ ...S.label, color: '#e05c4a' }}>USL</label><input type="number" value={cp.usl} onChange={e => onChange({ usl: e.target.value })} placeholder="—" /></div>
+            <div><label style={{ ...S.label, color: 'var(--red)' }}>LSL</label><input type="number" value={cp.lsl} onChange={e => onChange({ lsl: e.target.value })} placeholder="—" /></div>
+            <div><label style={{ ...S.label, color: 'var(--red)' }}>USL</label><input type="number" value={cp.usl} onChange={e => onChange({ usl: e.target.value })} placeholder="—" /></div>
           </div>
           <div className="mgrid" style={S.inputRow}>
             <div><label style={{ ...S.label, color: '#f59a3f' }}>LCL</label><input type="number" value={cp.lcl} onChange={e => onChange({ lcl: e.target.value })} placeholder="—" /></div>
@@ -274,7 +285,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 2 }}>
           <div style={{ display: 'flex', gap: 8 }}>
             <span style={{ padding: '3px 10px', borderRadius: 6, background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 11, fontWeight: 700, border: '1px solid var(--accent)' }}>OK</span>
-            <span style={{ padding: '3px 10px', borderRadius: 6, background: 'rgba(224,92,74,0.1)', color: '#e05c4a', fontSize: 11, fontWeight: 700, border: '1px solid rgba(224,92,74,0.3)' }}>NG</span>
+            <span style={{ padding: '3px 10px', borderRadius: 6, background: 'var(--red-dim)', color: 'var(--red)', fontSize: 11, fontWeight: 700, border: '1px solid var(--red-line)' }}>NG</span>
             {cp.type === 'note' && <span style={{ padding: '3px 10px', borderRadius: 6, background: 'var(--bg3)', color: 'var(--muted)', fontSize: 11, border: '1px solid var(--border)' }}>+ ข้อความ</span>}
           </div>
           <div>
@@ -1072,10 +1083,10 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                     })()}
                     <button type="button" disabled={!moveTo || moveBusy} onClick={() => handleTransfer('move')}
                       style={{ ...S.btnSm(deptColor), opacity: (!moveTo || moveBusy) ? 0.5 : 1 }} title="เปลี่ยนเจ้าของรายการตรวจ — ประวัติการตรวจย้ายตามไปด้วย">
-                      {moveBusy ? '…' : '➡️ ย้าย'}
+                      {moveBusy ? '…' : 'ย้าย'}
                     </button>
                     <button type="button" disabled={!moveTo || moveBusy} onClick={() => handleTransfer('copy')}
-                      style={{ ...S.btnSm('#3b9dff'), opacity: (!moveTo || moveBusy) ? 0.5 : 1 }} title="ทำสำเนาจุดตรวจให้อีกแผนก — ของเดิมยังอยู่ ประวัติแยกกัน">
+                      style={{ ...S.btnSm('var(--blue)'), opacity: (!moveTo || moveBusy) ? 0.5 : 1 }} title="ทำสำเนาจุดตรวจให้อีกแผนก — ของเดิมยังอยู่ ประวัติแยกกัน">
                       {moveBusy ? '…' : '⧉ คัดลอก'}
                     </button>
                   </div>
@@ -1106,20 +1117,20 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                       </div>
                       {/* 🔴 โหลดรายชื่อเครื่องล้ม = เขียนบนจอ ห้ามปล่อยให้ลิสต์ว่างแล้วอ่านว่า "ไม่มีเครื่อง" (08/10) */}
                       {allEquipErr && (
-                        <div style={{ fontSize: 11.5, fontWeight: 700, color: '#ef4444', marginBottom: 6 }}>
+                        <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--red)', marginBottom: 6 }}>
                           ⚠ โหลดรายชื่อเครื่องไม่สำเร็จ ({allEquipErr}) — ลิสต์ด้านล่าง<b>ไม่ครบ</b> ยังเลือกปลายทางไม่ได้อย่างมั่นใจ
                         </div>
                       )}
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 6 }}>
                         {/* ตัวกรองลิสต์ติ๊กหลายเครื่อง ⇒ ใช้ <SearchInput> (ไม่ใช่ MachineSelect ซึ่งเลือกได้ตัวเดียว) · UI-STANDARD §4 */}
                         <SearchInput value={copyQ} onChange={setCopyQ} fields="เลขเครื่อง / ไลน์" grow={false} />
-                        <button type="button" onClick={() => setCopyTo(shown.map(e => e.id))} style={S.btnSm('#3b9dff')}>
-                          ✓ เลือกที่เห็นทั้งหมด ({shown.length})
+                        <button type="button" onClick={() => setCopyTo(shown.map(e => e.id))} style={S.btnSm('var(--blue)')}>
+                          เลือกที่เห็นทั้งหมด ({shown.length})
                         </button>
                         {!!copyTo.length && <button type="button" onClick={() => setCopyTo([])} style={S.btnSm('#888')}>ล้าง</button>}
                         <span className="spacer" style={{ flex: 1 }} />
                         <button type="button" disabled={!copyTo.length || copyBusy} onClick={handleCopyToEquipment}
-                          style={{ ...S.btnSm('#3b9dff'), opacity: (!copyTo.length || copyBusy) ? 0.5 : 1, fontWeight: 800 }}>
+                          style={{ ...S.btnSm('var(--blue)'), opacity: (!copyTo.length || copyBusy) ? 0.5 : 1, fontWeight: 800 }}>
                           {copyBusy ? '…' : `⧉ คัดลอกไป ${copyTo.length} เครื่อง`}
                         </button>
                       </div>
@@ -1194,8 +1205,8 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             <div>
               <label style={S.label}>ประเภทการเพิ่ม</label>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => handleModeSwitch('workstation')} style={S.modeBtn(addMode === 'workstation')}>🏭 เลือกจาก Floor Map</button>
-                <button onClick={() => handleModeSwitch('manual')} style={S.modeBtn(addMode === 'manual')}>➕ Facility / อื่นๆ</button>
+                <button onClick={() => handleModeSwitch('workstation')} style={S.modeBtn(addMode === 'workstation')}>เลือกจาก Floor Map</button>
+                <button onClick={() => handleModeSwitch('manual')} style={S.modeBtn(addMode === 'manual')}>Facility / อื่นๆ</button>
               </div>
               <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
                 {addMode === 'workstation' ? 'เลือกเครื่องจักรจริงจาก Daily Report Machine Master' : 'เพิ่มเครื่องจักร/JIG ที่ไม่ได้อยู่ใน Machine Master เช่น Air Pump, Compressor'}
@@ -1480,7 +1491,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
 /* 🗂️ อุปกรณ์ 1 ตัว = 1 บรรทัด จัดกลุ่มตามไลน์ (13/10 · UI §6.25 — JIG MTN 106 ตัว การ์ดเลื่อนหาไม่เจอ)
    แถวกดได้ = เปิดแก้ไข (เฉพาะคนมีสิทธิ์ตั้งค่า) · รูปเล็กโหลดแบบ lazy */
 function EquipmentTable({ groups, canSetup, onEdit, onDelete }) {
-  const typeColor = { jig: '#3dd65c', die: '#4d9fff', machine: '#f59a3f', fixture: '#9b8de8', tool: '#e05c4a' }
+  const typeColor = { jig: '#3dd65c', die: '#4d9fff', machine: '#f59a3f', fixture: '#9b8de8', tool: 'var(--red)' }
   const cols = canSetup ? 8 : 7   // ต้องเท่าจำนวน <th> — ขาด 1 = แถบหัวกลุ่มไลน์ไม่เต็มแถว
   return (
     <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'auto', maxHeight: 'calc(100vh - 230px)' }}>
@@ -1745,7 +1756,7 @@ export default function PMSetup() {
           <div>{allRows.length} อุปกรณ์ · แผนก {teams.find(t => t.key === department)?.label ?? DEPT_LABEL[department] ?? department}</div>
           {/* AM (ผลิตตรวจเอง) กับ PM (ช่าง) คนละงานกัน — บอกให้ชัดว่ากำลังตั้งค่าของใคร */}
           <div style={{ marginTop: 2 }}>
-            <b>{teamKind(department).short} · {teamKind(department).full}</b> — {teamKind(department).desc}
+            <b>{teamKind(department).short} · {teamKind(department).full}</b> <InfoMore id="pm-team-kind" label="ต่างจากอีกแบบยังไง">{teamKind(department).desc}</InfoMore>
             {canSetup && (
               <>
                 {' '}
@@ -1770,19 +1781,22 @@ export default function PMSetup() {
           <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
             แสดง <b style={{ color: 'var(--text)' }}>{shownRows.length}</b> จาก {allRows.length}
           </span>
-          {filtered && <button type="button" onClick={clearFilters} style={S.jumpBtn}>✕ ล้างตัวกรอง</button>}
+          {filtered && <button type="button" onClick={clearFilters} style={S.jumpBtn}>ล้างตัวกรอง</button>}
         </>}
         actions={canSetup && <>
-          <button onClick={() => setTaxModal('category')} style={S.btnSm('var(--muted)')}>⚙ ประเภท</button>
-          <button onClick={() => setTaxModal('method')} style={S.btnSm('var(--muted)')}>⚙ วิธีตรวจ</button>
-          <button onClick={openCreate} style={S.primaryBtn}>+ เพิ่มอุปกรณ์</button>
+          {/* ปุ่มตายตัว ≤2 (UI §6.35): [+ เพิ่มอุปกรณ์] · ทะเบียนประเภท/วิธีตรวจ → ⋯ */}
+          <OverflowMenu items={[
+            { key: 'cat', icon: '⚙️', label: 'ทะเบียนประเภท', onClick: () => setTaxModal('category') },
+            { key: 'method', icon: '📋', label: 'ทะเบียนวิธีตรวจ', onClick: () => setTaxModal('method') },
+          ]} />
+          <button type="button" className="pg-btn primary" onClick={openCreate}>+ เพิ่มอุปกรณ์</button>
         </>} />
 
       {/* 🔴 โหลดไม่ครบต้องเขียนบนจอ — ห้ามปล่อยลิสต์ว่างแล้วอ่านว่า "ยังไม่มีอุปกรณ์" */}
       {loadErr && !loading && (
         <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--red)', color: 'var(--red)', fontSize: 12.5 }}>
           ⚠ โหลดข้อมูลไม่ครบ — ตัวเลข/รายการด้านล่างอาจขาด: {loadErr}
-          <button type="button" onClick={fetchData} style={{ ...S.jumpBtn, marginLeft: 8 }}>↻ ลองใหม่</button>
+          <button type="button" onClick={fetchData} style={{ ...S.jumpBtn, marginLeft: 8 }}>ลองใหม่</button>
         </div>
       )}
       {droppedNoLine > 0 && fStatus !== 'no_line' && (
@@ -1808,7 +1822,7 @@ export default function PMSetup() {
           <div style={S.empty}>
             <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>ไม่พบอุปกรณ์ตามตัวกรอง</p>
             <p style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 14 }}>ทีมนี้มีทั้งหมด {allRows.length} อุปกรณ์</p>
-            {filtered && <button type="button" onClick={clearFilters} style={S.jumpBtn}>✕ ล้างตัวกรอง</button>}
+            {filtered && <button type="button" onClick={clearFilters} style={S.jumpBtn}>ล้างตัวกรอง</button>}
           </div>
         ) : (
           <EquipmentTable groups={shownGroups} canSetup={canSetup} onEdit={openEdit} onDelete={handleDelete} />
