@@ -9,6 +9,7 @@ import SearchInput from './SearchInput';
 import Segmented from './Segmented';
 import { matColor, matLabel } from '../utils/matPrefix';
 import { statusColor } from '../utils/statusTone';
+import MatLabel from './MatLabel';
 import {
   classifyIntermediate, phantomCounts, sortIntermediates, PHANTOM_VERDICTS,
 } from '../utils/bomPhantom';
@@ -43,6 +44,7 @@ export default function BomPhantomPanel({ onOpenSheet }) {
 
   const [rows, setRows]   = useState([]);
   const [reg, setReg]     = useState([]);
+  const [gaps, setGaps]   = useState([]);     // mat ที่ไม่มีใบไหนตัดมันเลย (โซ่ขาด)
   const [loading, setLoading] = useState(true);
   const [loadFail, setLoadFail] = useState('');     // ลิสต์ว่างมี 2 ความหมาย — ต้องแยกให้เห็น
   const [search, setSearch] = useState('');
@@ -51,18 +53,20 @@ export default function BomPhantomPanel({ onOpenSheet }) {
 
   const load = useCallback(async (alive = () => true) => {
     setLoading(true);
-    const [a, b] = await Promise.all([
+    const [a, b, g] = await Promise.all([
       supabaseDR.rpc('fn_bom_intermediates'),
       supabaseDR.from('bom_phantom_mats').select('mat_no, seeded, note'),
+      supabaseDR.rpc('fn_bom_deduct_gaps'),
     ]);
     if (!alive()) return;
-    if (a.error || b.error) {
-      setLoadFail(a.error?.message || b.error?.message || 'อ่านข้อมูลไม่สำเร็จ');
-      setRows([]); setReg([]);
+    if (a.error || b.error || g.error) {
+      setLoadFail(a.error?.message || b.error?.message || g.error?.message || 'อ่านข้อมูลไม่สำเร็จ');
+      setRows([]); setReg([]); setGaps([]);
     } else {
       setLoadFail('');
       setRows(a.data || []);
       setReg(b.data || []);
+      setGaps(g.data || []);
     }
     setLoading(false);
   }, []);
@@ -149,9 +153,12 @@ export default function BomPhantomPanel({ onOpenSheet }) {
   return (
     <div>
       <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 10 }}>
-        🫧 <b style={{ color: 'var(--text)' }}>ของลม (phantom)</b> = ชิ้นที่ไม่มีวันถูกตัดสต็อกในฐานะตัวมันเอง —
-        คอนเฟิมใบแม่แล้วระบบจะ<b>ดึงลูกของมันขึ้นมาตัดที่ชั้นแม่แทน</b> (หลัก SAP) ·
-        ส่วนชิ้นที่เป็น<b>ของจริง</b> ใบแม่ตัดแค่ตัวมัน แล้ว<b>ใบผลิตของมันเอง</b>ค่อยไปตัดลูกของมันต่อ
+        🔻 <b style={{ color: 'var(--text)' }}>กฎการตัดสต็อก</b> — คอนเฟิมใบไหน ตัด<b>ลูกที่ติดตัวใบนั้น</b>เท่านั้น ·
+        <b>ลูกมีหน้าที่ไปตัดหลาน</b>เมื่อใบของลูกถูกคอนเฟิม · ผัง BOM สร้าง<b>ใบเดียว</b> ลูก/หลานไม่ต้องมีใบแยก
+        <div style={{ marginTop: 4 }}>
+          🫧 <b style={{ color: 'var(--text)' }}>ของลม (phantom)</b> = <b>ข้อยกเว้น</b> สำหรับชิ้นที่ไม่มีวันเปิดใบผลิตเอง —
+          ติ๊กแล้วระบบจะข้ามตัวมัน ไปตัดลูกของมันที่ชั้นแม่แทน (ขั้น OP เป็นของลมอัตโนมัติ)
+        </div>
         <div style={{ marginTop: 4 }}>
           🔴 จอนี้แก้ได้แค่ทะเบียนของลม — <b>ไม่แก้ BOM ให้</b> (PE เป็นเจ้าของข้อมูล)
         </div>
@@ -166,18 +173,41 @@ export default function BomPhantomPanel({ onOpenSheet }) {
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
         <Card n={counts.total} label="ลูกกลางทั้งหมด" />
-        <Card n={counts.gap} label="🔴 โซ่ขาด" color={counts.gap ? BAD : undefined} />
+        <Card n={gaps.length} label="🔴 โซ่ขาด (ไม่มีใครตัด)" color={gaps.length ? BAD : undefined} />
         <Card n={counts.seeded} label="🟡 ระบบเดา รอยืนยัน" color={counts.seeded ? WARN : undefined} />
         <Card n={counts.confirmed} label="ของลม ยืนยันแล้ว" color={OK} />
         <Card n={counts.real} label="ของจริง (มีใบผลิตเอง)" />
         {counts.unknown > 0 && <Card n={counts.unknown} label="⚠️ ตัดสินไม่ได้" color={WARN} />}
       </div>
 
-      {counts.gap > 0 && (
+      {/* 🔴 โซ่ขาด = mat ที่อยู่ใน BOM แต่ไม่มีใบไหนตัดมันเลย — ต้องโชว์ ห้ามซ่อน (กฎความซื่อสัตย์ของจอ) */}
+      {gaps.length > 0 && (
         <div style={{ background: 'var(--card)', border: `1px solid ${BAD}`, borderRadius: 8,
                       padding: '8px 12px', marginBottom: 10, fontSize: 12, lineHeight: 1.6 }}>
-          🔴 <b style={{ color: BAD }}>โซ่ขาด {counts.gap} ตัว</b> — ไม่ได้ติ๊กเป็นของลม แต่ไม่เคยมีใบผลิตของตัวเอง
-          ⇒ <b>ลูกของมันจะไม่ถูกตัดที่ไหนเลย</b> · ติ๊กเป็นของลม หรือเปิดใบผลิตให้มันจริง
+          🔴 <b style={{ color: BAD }}>โซ่ขาด {gaps.length} รายการ</b> — อยู่ใน BOM แต่
+          <b> ไม่มีใบผลิตไหนตัดมันไปใช้เลย</b> (กฎ: ตัดลูกตรง · ลูกไปตัดหลาน ⇒ โซ่ต้องเดินถึงทุกชั้น)
+          <div style={{ overflowX: 'auto', marginTop: 6 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr>
+                <th style={th}>ชิ้นงาน</th><th style={th}>ห้อยใต้</th>
+                <th style={{ ...th, textAlign: 'right' }}>ใบผลิตเอง</th>
+                <th style={{ ...th, textAlign: 'right' }}>คงเหลือ</th><th style={th}>ต้องทำอะไร</th>
+              </tr></thead>
+              <tbody>
+                {gaps.map(g => (
+                  <tr key={g.mat_no}>
+                    <td style={{ ...td, minWidth: 220 }}>
+                      <MatLabel mat={g.mat_no} name={g.part_name} size={12} />
+                    </td>
+                    <td style={{ ...td, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{g.hangs_under || '–'}</td>
+                    <td style={{ ...td, textAlign: 'right' }}>{fmtQty(g.own_orders)}</td>
+                    <td style={{ ...td, textAlign: 'right' }}>{fmtQty(g.on_hand)}</td>
+                    <td style={{ ...td, color: WARN, maxWidth: 420 }}>{g.reason}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -211,8 +241,7 @@ export default function BomPhantomPanel({ onOpenSheet }) {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <th style={th}>MAT</th>
-                <th style={th}>ชื่อ</th>
+                <th style={th}>ชิ้นงาน</th>
                 <th style={th}>สถานะ</th>
                 <th style={{ ...th, textAlign: 'right' }}>ใบผลิตเอง</th>
                 <th style={{ ...th, textAlign: 'right' }}>คงเหลือ</th>
@@ -227,8 +256,11 @@ export default function BomPhantomPanel({ onOpenSheet }) {
                 const isPhantom = r.verdict === 'seeded' || r.verdict === 'confirmed';
                 return (
                   <tr key={r.mat_no}>
-                    <td style={{ ...td, fontFamily: 'monospace', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                      <span style={{ color: matColor(r.mat_no) }} title={matLabel(r.mat_no)}>{r.mat_no}</span>
+                    <td style={{ ...td, minWidth: 220 }}>
+                      <MatLabel mat={r.mat_no} name={r.part_name} size={12} />
+                      <span title={matLabel(r.mat_no)} style={{ color: matColor(r.mat_no), fontSize: 11 }}>
+                        {' '}{matLabel(r.mat_no)}
+                      </span>
                       {onOpenSheet && r.has_own_sheet && (
                         <button onClick={() => onOpenSheet(r.mat_no)}
                           title={`เปิดใบ BOM ของ ${r.mat_no}`}
@@ -236,7 +268,6 @@ export default function BomPhantomPanel({ onOpenSheet }) {
                                    color: 'var(--accent)', cursor: 'pointer', padding: 0 }}>↗</button>
                       )}
                     </td>
-                    <td style={{ ...td, color: 'var(--muted)', maxWidth: 280 }}>{r.part_name || '–'}</td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>
                       <span title={meta.hint || ''}
                         style={{ fontSize: 11, fontWeight: 700, color: toneOf(r.verdict),
