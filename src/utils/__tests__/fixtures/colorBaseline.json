@@ -1,8 +1,8 @@
 {
   "_meta": {
     "generatedAt": "2026-11-05",
-    "files": 216,
-    "total": 4758
+    "files": 215,
+    "total": 4755
   },
   "files": {
     "src/components/AuditLogViewer.jsx": 3,
@@ -172,7 +172,6 @@
     "src/pages/LayerProcessAudit.jsx": 95,
     "src/pages/LineSetup.jsx": 46,
     "src/pages/LineStock.jsx": 72,
-    "src/pages/Login.jsx": 3,
     "src/pages/MachineDatabase.jsx": 10,
     "src/pages/MaintenanceLevels.jsx": 15,
     "src/pages/Management.jsx": 221,

@@ -191,7 +191,7 @@ body.esm-tv-shell .filter-bar { display: none !important; }
 /* ─── Splash Screen ──────────────────────────────────────────── */
 #splash {
   position: fixed; inset: 0;
-  background: #080f08;
+  background: var(--bg);   /* 05/11: ตามธีม (เดิม #080f08 เขียวดำ — ไม่เข้ากับพาเลตกลางใหม่ · ธีมสว่างก็ได้พื้นสว่าง) */
   z-index: 9000;
   display: flex;
   flex-direction: column;
@@ -210,7 +210,7 @@ body.esm-tv-shell .filter-bar { display: none !important; }
   font-size: clamp(0.65rem, 2.5vw, 0.85rem);
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: rgba(255,255,255,0.3);
+  color: var(--muted);
   opacity: 0;
   transform: translateY(12px);
   transition: opacity 0.5s ease 0.45s, transform 0.5s ease 0.45s;
@@ -219,7 +219,7 @@ body.esm-tv-shell .filter-bar { display: none !important; }
 
 .splash-bar-wrap {
   width: min(240px, 60vw); height: 2px;
-  background: rgba(255,255,255,0.08);
+  background: var(--border2);
   border-radius: 2px; overflow: hidden; margin-top: 8px;
 }
 .splash-bar-fill {

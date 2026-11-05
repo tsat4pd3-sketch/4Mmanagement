@@ -133,8 +133,8 @@ export default function Login() {
           {error && (
             <div style={{
               fontSize: 13, color: 'var(--red)',
-              background: 'rgba(224,92,74,0.1)',
-              border: '1px solid rgba(224,92,74,0.25)',
+              background: 'var(--red-dim)',
+              border: '1px solid var(--red-line)',
               borderRadius: 'var(--radius)', padding: '10px 14px',
             }}>
               {error}
@@ -144,7 +144,7 @@ export default function Login() {
           <button type="submit" disabled={loading} style={{
             marginTop: 6, padding: '13px',
             background: loading ? 'var(--muted)' : 'var(--accent)',
-            color: loading ? 'var(--text2)' : '#0a1f0c',
+            color: loading ? 'var(--text2)' : 'var(--accent-ink)',
             border: 'none', borderRadius: 'var(--radius)',
             fontFamily: 'var(--font-display)', fontWeight: 700,
             fontSize: 14, letterSpacing: '2px', textTransform: 'uppercase',
