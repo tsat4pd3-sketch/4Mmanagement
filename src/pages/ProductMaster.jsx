@@ -3302,6 +3302,8 @@ function ExportPanel() {
    (1=FG · 2=Child ผลิตเอง · 3=Child ซื้อนอก · 5=Raw · 9=เลขภายใน)
    ⚠️ ห้ามกลับไปเทียบ 3 ตัวแรก — เลข FG รันทะลุ 100xxxxx ไปเป็น 101xxxxx แล้ว
 ═══════════════════════════════════════════════════════════════ */
+/* หน่วยนับของฟอร์ม Parts Master — ยังไม่มีทะเบียน UOM (ค่าเดิมนอกลิสต์โชว์ในช่องเป็น "ค่าเดิม") */
+const UOM_OPTIONS = ['EA', 'PC', 'KG', 'M', 'SET', 'BOX', 'ROLL'];
 const EMPTY_PART = {
   mat_no: '', part_name: '', part_no: '', uom: 'EA',
   qty_per_pkg: '', supplier: '', note: '', is_active: true, image_url: '',
@@ -3699,7 +3701,10 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                 <div>
                   <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>UOM</label>
                   <select style={inputSt} value={form.uom} onChange={e => setForm(f => ({ ...f, uom: e.target.value }))}>
-                    {['EA', 'PC', 'KG', 'M', 'SET', 'BOX', 'ROLL'].map(u => <option key={u}>{u}</option>)}
+                    {/* ค่าเดิมที่ไม่อยู่ในลิสต์ (เช่น `pcs` 10 แถวใน parts_master) ต้องโชว์ตามจริง — ไม่งั้นช่องขึ้น "EA"
+                        ทั้งที่ฐานเก็บค่าอื่น = จอโกหก (05/11 audit dropdown) · ยังไม่มีทะเบียน UOM */}
+                    {form.uom && !UOM_OPTIONS.includes(form.uom) && <option value={form.uom}>{form.uom} (ค่าเดิม · ไม่อยู่ในลิสต์)</option>}
+                    {UOM_OPTIONS.map(u => <option key={u}>{u}</option>)}
                   </select>
                 </div>
                 <div>

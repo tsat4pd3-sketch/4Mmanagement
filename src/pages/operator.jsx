@@ -44,6 +44,7 @@ import { fetchByIds } from '../utils/fetchByIds';
 import SkillEvidencePanel from '../components/SkillEvidencePanel';
 import { DeleteButton } from '../components/IconButton';
 import { isMissingColumnError } from '../utils/employeeSignature';
+import { useOrgTeams } from '../utils/useOrgSections';
 
 // การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (/skills-report)
 // lazy: recharts โหลดเฉพาะตอนเปิดการ์ด ไม่ถ่วงตอนเปิดหน้าฐานข้อมูลพนักงาน
@@ -183,6 +184,7 @@ export default function Operator() {
   const [editingEmp, setEditingEmp] = useState(null);
   // กางสกิลนอกขอบเขตในโมดัลแก้ไขพนักงาน (default ปิด — ดูหัวข้อ visibleSkillDefs)
   const [showAllSkills, setShowAllSkills] = useState(false);
+  const orgTeams = useOrgTeams();   // ลิสต์ทีมของช่อง Team/กะ (05/11 audit — เลิกคิดเองในหน้า)
   const [orgAllNodes, setOrgAllNodes] = useState([]);   // ผังทั้งก้อน — ใช้ไล่หาฝ่ายแบบตกทอด
   const [divisionsReady, setDivisionsReady] = useState(0); // bump เมื่อ master ฝ่ายโหลดเสร็จ
   // หน่วยงานที่เจาะจงได้ใต้ฝ่ายนั้น (ส่วนงาน + แผนกขึ้นตรงฝ่าย เช่น MTN/QA)
@@ -2094,8 +2096,7 @@ export default function Operator() {
                     ป้ายกำกับมาจาก teamLabel() (shiftAssign.js) ที่เดียว · ลิสต์ทีมดึงจากผังองค์กร
                     (org_nodes kind='team' เหมือน /register) ผังยังไม่มีทีม = ถอยไป A/B/C เดิม */}
                 {(() => {
-                  const orgTeams = [...new Set(orgAllNodes.filter(n => n.kind === 'team').map(n => n.code || n.name).filter(Boolean))];
-                  const opts = orgTeams.length ? orgTeams : ['A', 'B', 'C'];
+                  const opts = orgTeams;   // useOrgTeams() — ผังยังไม่มีทีม = A/B/C (fallback อยู่ใน hook)
                   // ค่าเดิมของพนักงานที่ไม่มีในลิสต์ ต้องยังโชว์ได้ ไม่งั้นเปิดแก้ไขแล้วทีมหายเงียบ
                   const cur = editingEmp.team;
                   const all = cur && !opts.includes(cur) ? [cur, ...opts] : opts;

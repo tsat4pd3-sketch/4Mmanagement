@@ -9,6 +9,7 @@ import { positionLabel } from '../utils/positions';
 import PersonSelect from './PersonSelect';
 import { DeleteButton } from './IconButton';
 import { writeBlockText } from '../utils/writeScope';
+import { useOrgTeams } from '../utils/useOrgSections';
 
 /* ═══════════════════════════════════════════════════════════════════════════════════════
    ⚙️ ตั้งค่า Manpower Control Board ของส่วนงาน (2026-10-06 · คำสั่ง user "ทำส่วนที่ยังไม่ได้ทำต่อ")
@@ -22,11 +23,17 @@ import { writeBlockText } from '../utils/writeScope';
    🔴 RLS ปฏิเสธ UPDATE/DELETE = "สำเร็จ 0 แถว" ⇒ ทุกการเขียน `.select('id')` แล้วนับแถว (กฎเหล็กข้อ 2)
    ═══════════════════════════════════════════════════════════════════════════════════════ */
 
-const TEAMS = ['A', 'B', 'C', ''];          // '' = คอลัมน์ "ไม่ระบุทีม" บนบอร์ด
 const teamText = (t) => (t ? `ทีม ${t}` : 'ไม่ระบุทีม');
 
 export default function ManpowerBoardSetup({ section, nodes, lines, employees, slotPlans, lineTechs, stations = [], stationPlans = [], flexUnits = [], secWrite = { ok: true }, onChanged, onClose }) {
   const [busy, setBusy] = useState(false);
+  /* 👥 คอลัมน์ทีม = ทีมจากผัง (`useOrgTeams` · ผังยังไม่มีทีม = A/B/C) + ทีมที่มีแผนตั้งไว้แล้วแต่ไม่อยู่ในผัง
+     (ห้ามซ่อนค่าที่บันทึกไว้) + '' = คอลัมน์ "ไม่ระบุทีม" · 05/11 audit dropdown — เดิม hardcode A/B/C */
+  const orgTeams = useOrgTeams();
+  const TEAMS = useMemo(() => {
+    const extra = [...new Set((slotPlans || []).map(p => p.team).filter(t => t && !orgTeams.includes(t)))];
+    return [...orgTeams, ...extra, ''];
+  }, [orgTeams, slotPlans]);
   /* 🔐 ชั้น ③ จากหน้าแม่ (`canWriteUnit`) — **เช็คซ้ำต้นทุกฟังก์ชันที่เขียน DB**
      ไม่ใช่แค่ซ่อนปุ่ม: `?sec=` เปิดส่วนงานอื่นตรงได้ และ RLS ฝั่ง Main รู้แค่คีย์สิทธิ์ ไม่รู้ขอบเขต */
   const blocked = () => {
