@@ -109,3 +109,15 @@ test('🏠 ที่จัดเก็บหลัก: กองคลังใ�
   assert.equal(isStockBucket(' fg warehouse '), true);
   assert.equal(homeSlocOf(null, 'x'), null);
 });
+
+import { areaLinesOf } from '../storageLoc.js';
+test('📍 areaLinesOf: แม่-ลูกในพื้นที่ SAP เดียวกัน = ที่เดียวกัน · ไม่ผูก = ไลน์ตัวเอง', () => {
+  const slocs = [{ code: 'P412', line_names: ['LWR BAR', 'Assy  LWR', 'Laser LWR'], is_active: true },
+                 { code: 'P410', line_names: ['GOR'], is_active: true }];
+  const lines = [{ name: 'GOR' }, { name: 'Assy GOR', parent_line_name: 'GOR' }, { name: 'Laser GOR', parent_line_name: 'GOR' }, { name: 'X' }];
+  const a = areaLinesOf(slocs, lines, 'Laser LWR');
+  assert.equal(a.code, 'P412'); assert.deepEqual([...a.lines].sort(), ['Assy  LWR', 'LWR BAR', 'Laser LWR'].sort());
+  const g = areaLinesOf(slocs, lines, 'Laser GOR');
+  assert.equal(g.code, 'P410'); assert.deepEqual([...g.lines].sort(), ['Assy GOR', 'GOR', 'Laser GOR']);
+  assert.deepEqual(areaLinesOf(slocs, lines, 'X'), { code: null, lines: ['X'] });
+});
