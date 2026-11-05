@@ -1,5 +1,5 @@
 import { useState, useEffect, useContext, useCallback, useRef, useMemo } from 'react';
-import { syncLineOrderDemand, syncSummaryText } from '../lib/lineDemandSync';   // 🔁 เปิดใบผลิต → แจ้งสโตร์ (05/11)
+import { confirmAndSyncLineDemand, syncSummaryText } from '../lib/lineDemandSync';   // 🔁 เปิดใบผลิต → แจ้งสโตร์ (05/11)
 import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายยาวพับไว้ (UI §6.10)
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
@@ -1750,9 +1750,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
   /* 🔁 05/11 (คำสั่ง user) — เปิดใบผลิต ⇒ แตก BOM ลูกตรง เทียบ WIP หน้าไลน์ ขาดครบ packing std ⇒ แจ้งสโตร์เอง
      ตัวเดียวกับช่อง "ขอเบิกพาร์ทนี้เลย" (lib/lineDemandSync.js) · ไม่บล็อกการเปิดใบ แต่ผลต้องขึ้นบนจอ ห้ามเงียบ */
-  const syncDemandAfterOpen = (lineName) => {
+  /* 💬 05/11 (คำสั่ง user) — เปิดใบผลิตแล้วขึ้น popup ให้เห็นก่อนว่าจะแจ้งสโตร์อะไร (หน่วย · ของหน้าไลน์ · สะสมอีกเท่าไหร่)
+     ตกลง = แจ้ง · ยกเลิก = ใบผลิตยังเปิดอยู่ ไปกด 🔁 ที่แผงเรียกชิ้นส่วนทีหลังได้ */
+  const syncDemandAfterOpen = (lineName, matNo, qty) => {
     if (!lineName) return;
-    syncLineOrderDemand({ lineName, role }).then(r => {
+    confirmAndSyncLineDemand({ lineName, role, title: `📦 เปิดใบผลิต ${matNo || ''}${qty ? ` × ${Number(qty).toLocaleString()} ชิ้น` : ''} ที่ ${lineName} — ต้องเบิกจากสโตร์ตาม BOM:` }).then(r => {
+      if (r.cancelled) { toast.info('ยังไม่แจ้งสโตร์ — กด 🔁 คำนวณ + แจ้งสโตร์ ที่แผงเรียกชิ้นส่วนได้ภายหลัง'); return; }
+      if (r.nothingToSend) return;
       const t = syncSummaryText(r);
       if (r.error || r.writeErrors.length) toast.error(`แจ้งสโตร์อัตโนมัติไม่สำเร็จ — ${t}`);
       else if (r.inserted || r.raised || r.rows.some(x => x.action === 'no_pkg' || x.action === 'wait')) toast.info(`📦 แจ้งสโตร์อัตโนมัติ: ${t}`);
@@ -1780,7 +1784,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     if (error?.code === '23505') {
       return { error: { ...error, message: `PROD.NO ${prodNo} ถูกเปิดโดยเครื่องอื่นแล้วในกะนี้ — รีเฟรชรายการก่อน` }, data: null };
     }
-    if (!error && status === 'open' && data?.id) { await attachMachine(data.id); syncDemandAfterOpen(selSession?.line_name); }
+    if (!error && status === 'open' && data?.id) { await attachMachine(data.id); syncDemandAfterOpen(selSession?.line_name, matNo, qty); }
     return { error, data };
   };
 
@@ -2172,7 +2176,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     }).select().single();
     setSavingManual(false);
     if (error) { toast.error(error.message); return; }
-    if (created?.id) { await attachMachine(created.id); syncDemandAfterOpen(selSession?.line_name); }
+    if (created?.id) { await attachMachine(created.id); syncDemandAfterOpen(selSession?.line_name, matNo, qty); }
     toast.success(manualForm.is_backfill
       ? `เปิดเป้า ${matNo} · ${qty} ชิ้น ✓ (ย้อนหลังตั้งแต่ ${manualForm.backfill_time}) — อัพเดทยอดสะสมได้เลย`
       : `เปิดเป้า ${matNo} · ${qty} ชิ้น ✓ — ให้พนักงานอัพเดทยอดสะสมทุกช่วงเบรค`);

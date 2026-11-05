@@ -43,7 +43,7 @@ import useColumnHistory from '../utils/useColumnHistory';
 import { splitLevels, refStockOf, madeHereMats, selfMadeRequestBlock, lineRequestFromBom } from '../utils/partRefStock';
 import { buildBomIndex } from '../utils/bomTree';
 import { shortReceiptRows } from '../utils/stockDiscrepancy';
-import { syncLineOrderDemand, syncSummaryText } from '../lib/lineDemandSync';
+import { syncLineOrderDemand, syncSummaryText, confirmAndSyncLineDemand } from '../lib/lineDemandSync';
 import { qtyUnit } from '../utils/coilUom';
 import { fetchAllRows } from '../utils/fetchAllRows';   // 🏭 ของที่ไลน์ผลิตเอง อ้างยอดคลัง (2026-10-08) // 📜 MAT ที่เคยตั้งระดับไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 
@@ -385,6 +385,8 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
      ไม่มี BOM / อ่าน BOM ไม่ได้ = ไม่สร้างใบ + บอกบนจอ (ห้ามถอยไปขอตัวเอง) */
   /* สรุปผลการแจ้งสโตร์ (ตัวเดียวกับตอนเปิดใบผลิต) — สำเร็จต้องล้างช่อง · ไม่ถึงกล่อง/ไม่มี packing std ต้องบอกบนจอ */
   const reportSync = (r, what) => {
+    /* 💬 05/11 — popup ยืนยันแล้ว: กดยกเลิก / ไม่มีอะไรต้องแจ้ง (ดูรายละเอียดใน popup แล้ว) = ไม่ toast ซ้ำ */
+    if (r.cancelled || r.nothingToSend) { setPlanTick(t => t + 1); if (r.cancelled) toast.info(`${what} — ยกเลิก ยังไม่แจ้งสโตร์`); return; }
     const text = syncSummaryText(r);
     if (r.error || r.writeErrors?.length) toast.error(`${what} — ${text}`);
     else if (r.inserted || r.raised) {
@@ -410,11 +412,10 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       toast.error(`${mat} เป็นพาร์ทที่ ${lineName} ผลิตเอง แต่ยังไม่มีชิ้นส่วนลูกใน BOM — แตกเป็นของที่ต้องเบิกไม่ได้ (ตั้ง BOM ที่ /products ก่อน)`);
       return;
     }
-    const list = res.items.map(i => `• ${i.part_name ? `${i.part_name} · ` : ''}MAT ${i.mat_no} × ${fmtQty(i.qty)}`).join('\n');
-    if (!window.confirm(`${mat} เป็นพาร์ทที่ ${lineName} ผลิตเอง — ผลิต ${qty.toLocaleString()} ชิ้น ต้องเบิกจากสโตร์ตาม BOM:\n\n${list}\n\nแจ้งสโตร์ ${res.items.length} รายการ?`)) { setBusy(null); return; }
-    /* 🔁 05/11 — ผ่านตัวเดียวกับ "เปิดใบผลิต" (lib/lineDemandSync.js): รวมความต้องการจากใบผลิตที่เปิดอยู่ +
-       ที่ขอเพิ่มนี้ เทียบยอดหน้าไลน์ แล้วปัดเต็มกล่อง packing std · ไม่ถึงกล่อง = สะสมรอ */
-    const r = await syncLineOrderDemand({ lineName, role, extra: res.items.map(i => ({ mat_no: i.mat_no, part_name: i.part_name, need: i.qty, viaBom: true })) });
+    /* 💬 05/11 (คำสั่ง user) — popup บอกหน่วย · ของหน้าไลน์ · ขาด · สะสมอีกเท่าไหร่ถึงจะแจ้ง (utils/linePlanText.js) */
+    const r = await confirmAndSyncLineDemand({ lineName, role, focus: res.items.map(i => i.mat_no),
+      title: `${mat} เป็นพาร์ทที่ ${lineName} ผลิตเอง — ผลิต ${qty.toLocaleString()} ชิ้น ต้องเบิกจากสโตร์ตาม BOM:`,
+      extra: res.items.map(i => ({ mat_no: i.mat_no, part_name: i.part_name, need: i.qty, viaBom: true })) });
     setBusy(null);
     reportSync(r, `จะผลิต ${mat} × ${qty.toLocaleString()} (แตก BOM ${res.items.length} รายการ)`);
     load();
@@ -436,7 +437,8 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     if (!adhocKnown && !window.confirm(`"${mat}" ไม่อยู่ในทะเบียนสินค้า/BOM ของไลน์นี้\n\nยืนยันว่าจะขอเบิกพาร์ทนี้?`)) return;
     setBusy(`adhoc:${mat}`);
     /* 🔁 05/11 — หลักการเดียวกับเปิดใบผลิต: รวมกับความต้องการที่มีอยู่ เทียบยอดหน้าไลน์ ปัดเต็มกล่อง */
-    const r = await syncLineOrderDemand({ lineName, role, extra: [{ mat_no: mat, part_name: adhocName || null, need: qty }] });
+    const r = await confirmAndSyncLineDemand({ lineName, role, focus: [mat], title: `➕ ขอเบิก ${mat}${adhocName ? ` · ${adhocName}` : ''} เพิ่ม ${qty.toLocaleString()}:`,
+      extra: [{ mat_no: mat, part_name: adhocName || null, need: qty }] });
     setBusy(null);
     reportSync(r, `ขอเพิ่ม ${mat} × ${qty.toLocaleString()}`);
   };
@@ -585,7 +587,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
 
   const syncNow = async () => {
     setBusy('order-sync');
-    const r = await syncLineOrderDemand({ lineName, role });
+    const r = await confirmAndSyncLineDemand({ lineName, role, title: `🔁 ${lineName} — ความต้องการจากใบผลิตที่เปิดอยู่:` });
     setBusy(null);
     reportSync(r, 'คำนวณจากใบผลิตที่เปิดอยู่');
   };
