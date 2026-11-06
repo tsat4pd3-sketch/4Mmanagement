@@ -94,7 +94,7 @@ export default function Login() {
             fontFamily: 'var(--font-display)', fontWeight: 700,
             fontSize: 18, letterSpacing: '1px', color: 'var(--text)',
           }}>
-            4M · VX Production System
+            Enterprise Shopfloor Management
           </div>
           <div style={{
             fontSize: 11, color: 'var(--muted)', marginTop: 4,
@@ -161,7 +161,7 @@ export default function Login() {
           fontFamily: 'var(--font-display)',
           letterSpacing: '1.5px', textTransform: 'uppercase',
         }}>
-          Thai Summit Group — VX Production Intelligence
+          Thai Summit Group — Enterprise Shopfloor Management
         </div>
       </div>
     </div>
