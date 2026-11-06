@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef, useMemo, lazy, Suspense, useCallback } from 'react';
 import { fmtDateTime } from './utils/dateFormat';
-import tsLogo from './assets/TS logo.png';
+import tsLogo from './assets/TS logo transparent.png';   // splash: พื้นโปร่งใส (06/11)
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { supabase } from './supabaseClient';
 import { setActor } from './utils/actorStamp';
@@ -412,7 +412,7 @@ function SplashScreen({ onDone }) {
         transition: 'opacity 0.6s ease, transform 0.6s ease',
         display: 'flex', alignItems: 'center', gap: 14, marginBottom: 8,
       }}>
-        <img src={tsLogo} alt="Thai Summit Group" width={52} height={52} style={{ borderRadius: 5 }} />
+        <img src={tsLogo} alt="Thai Summit Group" width={52} height={52} />
         <div style={{ textAlign: 'left' }}>
           <div style={{
             fontFamily: 'var(--font-display)', fontWeight: 700,

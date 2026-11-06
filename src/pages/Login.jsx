@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import tsLogo from '../assets/TS logo.png';
+import tsLogo from '../assets/TS logo transparent.png';   // พื้นโปร่งใส — ใบพิมพ์ยังใช้ TS logo.png (พื้นขาว) เหมือนเดิม
 
 const ThaiSummitLogo = ({ size = 48 }) => (
   <img
@@ -159,7 +159,7 @@ export default function Login() {
           marginTop: 28, textAlign: 'center',
           fontSize: 11, color: 'var(--muted2)',
           fontFamily: 'var(--font-display)',
-          letterSpacing: '1.5px', textTransform: 'uppercase',
+          letterSpacing: 0, textTransform: 'uppercase', whiteSpace: 'nowrap',   // บรรทัดเดียวในการ์ด 400px (06/11 · ฟอนต์ขั้นต่ำ 11 ⇒ ลดระยะตัวอักษรแทน · วัดจริง ≤ 326px)
         }}>
           Thai Summit Group — Enterprise Shopfloor Management
         </div>
