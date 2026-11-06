@@ -18,7 +18,7 @@ import { fmtDate, fmtDateTime } from '../utils/dateFormat';
 import { can } from '../utils/permissions';
 import { loadCompanyCalendar, getDayType, isOtHolidayType, DAY_TYPE_META } from '../utils/companyCalendar';
 import { otPeriodMeta, WEEKDAY_OT_TIME } from '../utils/otPeriods';
-import { getLineFamilyNames, getLineFamilyIds, lineAncestorIds } from '../utils/lineHierarchy';
+import { getLineFamilyNames, getLineFamilyIds, lineAncestorIds, sortLineNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import {
   SKILL_LEVELS, getLevel, groupSkillsByCategory,
@@ -28,7 +28,10 @@ import { tsLogoHtml } from '../lib/individualSkillPrint';   // ใบ Multi-Skil
 import SkillRadarPanel from '../components/SkillRadarPanel';
 import { mergeBorrowedEmployees } from '../utils/lineHelpers';
 import tsLogoUrl from '../assets/TS logo.png';
-import { CHECKLIST_ITEMS, CATEGORY_COLOR, matchChecklistItem } from '../lib/changePointChecklist';
+import { buildChangePointSheet, changePointSheetHtml, changePointPrintDoc, CPC_CSS } from '../lib/changePointSheet';
+import { loadRunDays, ranOn } from '../utils/runDays';
+import { isWorkingDayFrom } from '../utils/workingDay';
+import { fetchByIds } from '../utils/fetchByIds';
 import { positionLabel, loadPositions } from '../utils/positions';   // ตำแหน่งเก็บเป็น key — แสดง/พิมพ์ต้องแปลงเป็นชื่อ
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
@@ -1515,6 +1518,9 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   const [isApprovingSaving, setIsApprovingSaving] = useState(false);
   const [cpcMonth, setCpcMonth] = useState(today.slice(0, 7)); // YYYY-MM สำหรับ Export Changing Point Control
   const [cpcExporting, setCpcExporting] = useState(false);
+  // มุมมองแท็บ 4M: 'table' รายการใบ · 'sheet' ใบ Changing Point บนจอ (ไม่ต้องกด Export) — 2026-11-05
+  const [fourMView, setFourMView] = useState(() => urlPick('view', ['table', 'sheet'], 'table'));
+  const [cpcSheet, setCpcSheet] = useState({ key: '', html: '', loading: false, error: '' });
   const [imageViewModal, setImageViewModal] = useState(null); // { url, title }
   const [showDocPanel, setShowDocPanel] = useState(false);
   const canManageDoc = can('four_m', 'manage_docs', role);
@@ -1695,193 +1701,96 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   };
 
 
-  // ── Export "Changing Point Control Record" — ปฏิทินรายเดือน 11 หัวข้อ Man/Machine/Method/Material ──
+  // ── ใบ "Changing Point Control Record" (FM-PD2-037) — ดูบนจอ + Export ใช้ HTML ชุดเดียว (`lib/changePointSheet.js`) ──
+  /* โหลดข้อมูลของใบ 1 ไลน์ × 1 เดือน → คืน HTML ของใบ (ไม่รวม <html>) หรือโยน error ให้ผู้เรียกบอกบนจอ
+     ใบที่นับ = ทุกสถานะยกเว้น rejected · "-" = ไลน์ไม่ได้เปิดกะ (production_sessions DR) · อ่านกะไม่ได้ = "?" */
+  const loadChangePointSheetHtml = async (lineName, month) => {
+    const [yStr, mStr] = month.split('-');
+    const daysInMonth = new Date(Date.UTC(Number(yStr), Number(mStr), 0)).getUTCDate();
+    const monthStart = `${month}-01`;
+    const monthEnd   = `${month}-${String(daysInMonth).padStart(2, '0')}`;
+    const family = lineFamilyOf(lineName);
+
+    const [logsRes, runs, dfCpc, revisionRows, logoDataUrl, cal] = await Promise.all([
+      supabase.from('four_m_logs')
+        .select('id, work_date, line_name, category, description, status, created_at, created_by, sv_approved_by, approved_by')
+        .in('line_name', family).neq('status', 'rejected')
+        .gte('work_date', monthStart).lte('work_date', monthEnd)
+        .order('work_date').order('created_at').order('id')
+        /* cap-ok: four_m_logs ต่อไลน์ต่อเดือน ≈ หลักร้อย (ทั้งโรงงาน ~1,000/เดือน วัด 05/11) */
+        .limit(5000),
+      loadRunDays({ lineNames: family, from: monthStart, to: monthEnd }),
+      getDocForm('changing_point', {}),
+      getDocFormRevisions('changing_point'),
+      formLogo('changing_point'),
+      loadCompanyCalendar(),   // วันหยุดตามปฏิทินบริษัท = ทาเทา (ไม่ใช่ ส-อา ตายตัว · คำสั่ง user 05/11)
+    ]);
+    if (logsRes.error) throw new Error(`อ่านใบ 4M ไม่สำเร็จ: ${logsRes.error.message}`);
+    const monthLogs = logsRes.data || [];
+
+    const sheet = buildChangePointSheet({
+      month, logs: monthLogs, today,
+      isWorkingDay: (date) => isWorkingDayFrom(cal, date),
+      ranOn: (date, shift) => ranOn(runs, date, shift),   // null = ไม่รู้ ⇒ "?" ห้ามเป็น "-"
+    });
+
+    // ชื่อคน (ผู้เปลี่ยนแปลง / หัวหน้างาน / QA / ผู้ออกเอกสาร) — อ่านไม่ได้ = ช่องว่าง ใบยังออกได้
+    const ids = [...new Set(monthLogs.flatMap(l => [l.created_by, l.sv_approved_by, l.approved_by]).concat(dfCpc.issued_by).filter(Boolean))];
+    const names = {};
+    let issuedSigUrl = null;
+    if (ids.length) {
+      const pr = await fetchByIds(ids, c => supabase.from('profiles').select('id, full_name, signature_url').in('id', c));
+      (pr.rows || []).forEach(p => { names[p.id] = p.full_name || ''; if (p.id === dfCpc.issued_by) issuedSigUrl = p.signature_url; });
+    }
+    const issuedSig = issuedSigUrl ? await urlToDataUrl(issuedSigUrl) : null;
+
+    return changePointSheetHtml(sheet, {
+      line: lineName,
+      section: lines.find(li => li.name === lineName)?.section || '',
+      logoDataUrl,
+      docNo: dfCpc.form_code || '', revision: dfCpc.rev ?? '',
+      effectiveDate: dfCpc.effective_date ? fmtDate(dfCpc.effective_date) : '',
+      legend: dfCpc.legend || '',
+      revisions: revisionRows || [],
+      issuedName: dfCpc.issued_by ? names[dfCpc.issued_by] : '',
+      issuedSig, names, fmtDate,
+    });
+  };
+
+  // ใบบนจอ — โหลดเมื่ออยู่โหมด "ใบ" + มีไลน์ + มีเดือน (guard กันคำตอบเก่ามาทับ)
+  useEffect(() => {
+    if (fourMView !== 'sheet' || !line || !cpcMonth || !linesLoaded) return;
+    let alive = true;
+    setCpcSheet({ key: `${line}|${cpcMonth}`, html: '', loading: true, error: '' });
+    loadChangePointSheetHtml(line, cpcMonth)
+      .then(html => { if (alive) setCpcSheet({ key: `${line}|${cpcMonth}`, html, loading: false, error: '' }); })
+      .catch(e => { if (alive) setCpcSheet({ key: `${line}|${cpcMonth}`, html: '', loading: false, error: e?.message || String(e) }); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fourMView, line, cpcMonth, linesLoaded]);
+
   const handleExportChangePointPdf = async () => {
-    if (!line) { toast.error('เลือกไลน์ก่อน'); return; }
-    if (!cpcMonth) { toast.error('เลือกเดือนก่อน'); return; } // ช่อง month เคลียร์เป็น '' ได้ → parseInt(undefined) = NaN ตารางพัง
+    // 🔴 เดิมปุ่มถูก disable เงียบๆ ตอนยังไม่เลือกไลน์ ⇒ คนกดไม่ไปแล้วไม่รู้ว่าต้องเลือกอะไร (feedback หน้างาน 05/11)
+    if (!line) {
+      toast.error('ใบ Changing Point ออกได้ทีละ 1 ไลน์ — เลือกไลน์ก่อน');
+      setFourMView('sheet');   // พาไปหน้าที่มีปุ่มเลือกไลน์ให้กด
+      return;
+    }
+    if (!cpcMonth) { toast.error('เลือกเดือนก่อน'); return; }
     setCpcExporting(true);
-    const [yStr, mStr] = cpcMonth.split('-');
-    const y = parseInt(yStr), m = parseInt(mStr); // m: 1-12
-    const daysInMonth = new Date(y, m, 0).getDate();
-    const monthStart = `${cpcMonth}-01`;
-    const monthEnd   = `${cpcMonth}-${String(daysInMonth).padStart(2, '0')}`;
-
-    const { data: monthLogs } = await supabase.from('four_m_logs')
-      .select('id, work_date, line_name, category, description, status, created_at, created_by, sv_approved_by, approved_by')
-      .in('line_name', lineFamilyOf(line)).eq('status', 'approved')
-      .gte('work_date', monthStart).lte('work_date', monthEnd)
-      /* cap-ok: four_m_logs ต่อเดือน สูงสุด 433 แถว (วัด 20/10) */
-      .limit(5000);
-
-    // กะถูก derive จากเวลาที่บันทึก (created_at) — ใช้กฎเดียวกับ getCurrentShift(): 08:00-19:59 = กะเช้า
-    // บังคับ timezone เป็น Asia/Bangkok เสมอ ไม่พึ่ง getHours() (ขึ้นกับ timezone ของเครื่อง ผิดได้ถ้าเครื่องตั้งเวลาไม่ตรง)
-    const shiftOf = (l) => {
-      if (!l.created_at) return 'day';
-      const h = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Bangkok', hour: 'numeric', hourCycle: 'h23' }).format(new Date(l.created_at)));
-      return (h >= 8 && h < 20) ? 'day' : 'night';
-    };
-
-    // จัด log แต่ละตัวเข้า checklist item (keyword match) แล้วทำ map: itemId -> { day: { day: [...], night: [...] } }
-    const dayMap = {}; // itemId -> { [day]: { day: [logs], night: [logs] } }
-    for (const l of (monthLogs || [])) {
-      const item = matchChecklistItem(l);
-      if (!item) continue;
-      const day = parseInt(l.work_date.slice(8, 10));
-      const shift = shiftOf(l);
-      (dayMap[item.id] ||= {});
-      (dayMap[item.id][day] ||= { day: [], night: [] });
-      dayMap[item.id][day][shift].push(l);
+    try {
+      const html = cpcSheet.key === `${line}|${cpcMonth}` && cpcSheet.html
+        ? cpcSheet.html
+        : await loadChangePointSheetHtml(line, cpcMonth);
+      const w = window.open('', '_blank');
+      if (!w) { toast.error('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ — อนุญาต pop-up แล้วกดใหม่'); return; }
+      w.document.write(changePointPrintDoc(html));
+      w.document.close();
+    } catch (e) {
+      toast.error(`ออกใบไม่สำเร็จ: ${e?.message || e}`);
+    } finally {
+      setCpcExporting(false);
     }
-
-    // เอกสารควบคุม (เลขฟอร์ม/rev/effective/legend/ผู้ออกเอกสาร) — ทะเบียนกลาง doc_forms (2026-07-30)
-    // ยังไม่ตั้งค่า/ทะเบียนล่ม = fallback ค่าว่าง ไม่ให้ export ล้ม
-    const dfCpc = await getDocForm('changing_point', {});
-    let issuedProfile = null;
-    if (dfCpc.issued_by) {
-      try {
-        const { data } = await supabase.from('profiles').select('full_name, signature_url').eq('id', dfCpc.issued_by).maybeSingle();
-        issuedProfile = data;
-      } catch { /* best-effort */ }
-    }
-    const docCtrl = {
-      doc_no: dfCpc.form_code || null, revision: dfCpc.rev || null,
-      effective_date: dfCpc.effective_date || null, legend: dfCpc.legend || null,
-      issued: issuedProfile,
-    };
-    const issuedSig = docCtrl?.issued?.signature_url ? await urlToDataUrl(docCtrl.issued.signature_url) : null;
-    const logoDataUrl = await formLogo('changing_point');
-
-    // ประวัติการแก้ไขเอกสาร (ตาราง Production Department ด้านบนซ้ายของฟอร์มจริง)
-    const revisionRows = await getDocFormRevisions('changing_point');
-
-    const lineSection = lines.find(li => li.name === line)?.section || '';
-
-    const thaiMonths = ['', 'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
-    const todayDate = parseInt(today.slice(8, 10));
-    const isCurrentMonth = today.slice(0, 7) === cpcMonth;
-    const isFutureMonth = cpcMonth > today.slice(0, 7);
-
-    const dayHeaderCells = Array.from({ length: daysInMonth }, (_, i) => {
-      const d = i + 1;
-      const dow = new Date(y, m - 1, d).getDay();
-      const weekend = dow === 0 || dow === 6;
-      return `<th style="border:1px solid #999;padding:2px;font-size:8px;min-width:15px;${weekend ? 'background:#ddd' : ''}">${d}</th>`;
-    }).join('');
-
-    // แยก Night/Day เป็นแถว (ไม่ใช่คอลัมน์) — แต่ละ checklist item จะมี 2 แถว: N (กะดึก) / D (กะเช้า) ตามฟอร์มจริง
-    const gridRowsHtml = CHECKLIST_ITEMS.flatMap((item, idx) => {
-      const color = CATEGORY_COLOR[item.category];
-      const isFirstOfCat = idx === 0 || CHECKLIST_ITEMS[idx - 1].category !== item.category;
-      const catRowSpan = CHECKLIST_ITEMS.filter(it => it.category === item.category).length * 2;
-      return ['night', 'day'].map((shift, shiftIdx) => {
-        const cells = Array.from({ length: daysInMonth }, (_, i) => {
-          const d = i + 1;
-          const dow = new Date(y, m - 1, d).getDay();
-          const weekend = dow === 0 || dow === 6;
-          const isFuture = isFutureMonth || (isCurrentMonth && d > todayDate);
-          const hit = dayMap[item.id]?.[d]?.[shift]?.length > 0;
-          const mark = isFuture ? '' : (hit ? 'X' : 'O');
-          return `<td style="border:1px solid #999;text-align:center;font-size:9px;font-weight:700;${weekend ? 'background:#eee' : ''};${hit ? 'color:#d11;background:#fde2e2' : 'color:#333'}">${mark}</td>`;
-        }).join('');
-        return `<tr>
-          ${(isFirstOfCat && shiftIdx === 0) ? `<td rowspan="${catRowSpan}" style="border:1px solid #999;background:${color};color:#fff;font-weight:700;text-align:center;font-size:10px;writing-mode:vertical-rl;padding:4px 2px">${item.category}</td>` : ''}
-          ${shiftIdx === 0 ? `<td rowspan="2" style="border:1px solid #999;padding:3px 6px;font-size:9px;white-space:nowrap">${item.label}</td>` : ''}
-          <td style="border:1px solid #999;padding:2px 5px;font-size:9px;font-weight:700;text-align:center;background:#f8f8f8" title="${shift === 'day' ? 'กะเช้า (Day)' : 'กะดึก (Night)'}">${shift === 'day' ? 'D' : 'N'}</td>
-          ${cells}
-        </tr>`;
-      });
-    }).join('');
-
-    // ใช้ปี ค.ศ. (Gregorian) เหมือนกับ fmtDate ที่ใช้ทั่วทั้งระบบ + บังคับ timezone Asia/Bangkok เพื่อไม่ให้วันที่คลาดเคลื่อนตาม timezone เครื่อง
-    const nowParts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Bangkok', year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(new Date());
-    const nowMap = Object.fromEntries(nowParts.map(p => [p.type, p.value]));
-    const todayStr = `${nowMap.day} ${thaiMonths[Number(nowMap.month)]} ${nowMap.year}`;
-    const docNo = docCtrl?.doc_no || '-';
-    const revision = docCtrl?.revision || '0';
-    const effectiveDateStr = docCtrl?.effective_date ? fmtDate(docCtrl.effective_date) : '-';
-    const legendText = docCtrl?.legend || 'X = ในกรณีที่เปลี่ยนแปลงในวันนั้น\nO = ไม่ในกรณีที่เปลี่ยนแปลงในวันนั้น';
-
-    const revHistoryRowsHtml = (revisionRows && revisionRows.length ? revisionRows : [{}]).map((r, i) => `<tr>
-      <td style="border:1px solid #000;padding:2px 4px;text-align:center;font-size:8px">${r.seq ?? (i + 1)}</td>
-      <td style="border:1px solid #000;padding:2px 4px;font-size:8px;white-space:nowrap">${r.record_date ? fmtDate(r.record_date) : ''}</td>
-      <td style="border:1px solid #000;padding:2px 4px;text-align:center;font-size:8px">${r.rev || ''}</td>
-      <td style="border:1px solid #000;padding:2px 4px;font-size:8px;white-space:nowrap">${r.issued_date ? fmtDate(r.issued_date) : ''}</td>
-      <td style="border:1px solid #000;padding:2px 4px;font-size:8px">${r.description || ''}</td>
-      <td style="border:1px solid #000;padding:2px 4px;text-align:center;font-size:8px">${r.responsible || ''}</td>
-      <td style="border:1px solid #000;padding:2px 4px;text-align:center;font-size:8px">${r.approved_name || ''}</td>
-    </tr>`).join('');
-
-    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>Changing Point Control Record</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
-  body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
-  table{border-collapse:collapse;width:100%}
-  @media print{@page{size:A3 landscape;margin:8mm}body{-webkit-print-color-adjust:exact}}
-</style></head><body style="padding:8mm">
-  <table style="margin-bottom:6px"><tr>
-    <td style="width:55%;vertical-align:top;padding:0 4px 0 0">
-      <div style="font-size:9px;font-weight:700;margin-bottom:2px">${docNo} Rev.${revision}</div>
-      <div style="font-size:8px;line-height:1.4;margin-bottom:4px">${legendText.split('\n').map(l => `<div>${l}</div>`).join('')}</div>
-      <table>
-        <thead><tr style="background:#f3f4f6">
-          <th style="border:1px solid #000;padding:2px;font-size:8px">ลำดับที่</th>
-          <th style="border:1px solid #000;padding:2px;font-size:8px">วันที่บันทึก</th>
-          <th style="border:1px solid #000;padding:2px;font-size:8px">Rev</th>
-          <th style="border:1px solid #000;padding:2px;font-size:8px">Issued date</th>
-          <th style="border:1px solid #000;padding:2px;font-size:8px">Description of Change (New Issued)</th>
-          <th style="border:1px solid #000;padding:2px;font-size:8px">Responsible (PD2)</th>
-          <th style="border:1px solid #000;padding:2px;font-size:8px">Approved</th>
-        </tr></thead>
-        <tbody>${revHistoryRowsHtml}</tbody>
-      </table>
-      <table style="margin-top:4px"><tr>
-        <td style="border:1px solid #000;padding:4px;font-size:8px;width:60%">Effective Date: <b>${effectiveDateStr}</b></td>
-        <td style="border:1px solid #000;padding:4px;font-size:8px;text-align:center">
-          <div>Issued</div>
-          ${issuedSig ? `<img src="${issuedSig}" style="max-height:26px;max-width:60px;object-fit:contain"/>` : '<div style="height:26px"></div>'}
-          <div>${docCtrl?.issued?.full_name || ''}</div>
-        </td>
-      </tr></table>
-    </td>
-    <td style="width:45%;vertical-align:top">
-      <table><tr>
-        <td style="width:90px;border:1px solid #000;padding:4px;text-align:center;vertical-align:middle">
-          ${logoDataUrl ? `<img src="${logoDataUrl}" style="max-width:80px;max-height:50px;object-fit:contain"/>` : ''}
-        </td>
-        <td style="background:#fde047;padding:8px;text-align:center;font-weight:700;font-size:14px;border:1px solid #000">
-          ใบบันทึกการเปลี่ยนแปลง<br/><span style="font-size:11px">Changing Point Control Record</span>
-        </td>
-        <td style="width:170px;border:1px solid #000;padding:4px;font-size:10px">
-          <div>ส่วน (Section): <b>${lineSection}</b></div>
-          <div>แผนก (Department): <b>${lineSection}</b></div>
-          <div>ไลน์ (Line): <b>${line}</b></div>
-        </td>
-        <td style="width:140px;border:1px solid #000;padding:4px;font-size:10px">
-          <div>เดือน: <b>${thaiMonths[m]} ${y}</b></div>
-          <div>พิมพ์วันที่: ${todayStr}</div>
-        </td>
-      </tr></table>
-    </td>
-  </tr></table>
-
-  <table>
-    <thead>
-      <tr style="background:#f3f4f6">
-        <th style="border:1px solid #999"></th>
-        <th style="border:1px solid #999;padding:3px;font-size:9px">Detail (รายละเอียด)</th>
-        <th style="border:1px solid #999;padding:3px;font-size:8px">N/D</th>
-        ${dayHeaderCells}
-      </tr>
-    </thead>
-    <tbody>${gridRowsHtml}</tbody>
-  </table>
-<script>window.onload = () => window.print();</script>
-</body></html>`;
-
-    const w = window.open('', '_blank');
-    w.document.write(html);
-    w.document.close();
-    setCpcExporting(false);
   };
 
   // Filter logs by section: cross-reference line_name to lines array to get section
@@ -2036,20 +1945,22 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
           // export ชุดเดียวกับตารางบนจอ (ผ่าน filter ส่วนงาน) — เดิมใช้ logs ดิบ CSV ไม่ตรงจอ
           fourMFilteredLogs.map(l => [l.work_date, DAY_TYPE_META[getDayType(l.work_date)]?.label || '', l.line_name, l.category, l.change_subtype || '', l.description, l.status, l.created_at ? fmtDateTime(l.created_at) : ''])
         )} />
+        <span className="sep" />
+        {/* 📅 สลับ "รายการใบ" ↔ "ใบ Changing Point" (แบบกระดาษ FM-PD2-037) — ดูบนจอได้ ไม่ต้องกด Export (05/11) */}
+        <Segmented value={fourMView} onChange={setFourMView} label="มุมมอง"
+          options={[{ value: 'table', label: 'ตาราง' }, { value: 'sheet', label: 'ใบ Changing Point' }]} />
+        <span className="filter-label">เดือนของใบ</span>
+        <input type="month" value={cpcMonth} onChange={e => setCpcMonth(e.target.value)} />
         {canExport && (
-          <>
-            <span className="sep" />
-            <span className="filter-label">เดือนของใบ Changing Point</span>
-            <input type="month" value={cpcMonth} onChange={e => setCpcMonth(e.target.value)} />
-            <button onClick={handleExportChangePointPdf} disabled={cpcExporting || !line}
-              title={!line ? 'เลือกไลน์ก่อน' : 'Export ใบบันทึกการเปลี่ยนแปลง (Changing Point Control Record)'}
-              style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                background: 'var(--amber-dim)', color: '#ca8a04', border: '1px solid var(--amber-line)',
-                opacity: (cpcExporting || !line) ? 0.5 : 1 }}>
-              {cpcExporting ? 'กำลังสร้าง...' : 'Export Changing Point'}
-            </button>
-          </>
+          <button onClick={handleExportChangePointPdf} disabled={cpcExporting}
+            title={!line ? 'ใบนี้ออกทีละ 1 ไลน์ — เลือกไลน์ในช่องขอบเขตก่อน' : 'Export ใบบันทึกการเปลี่ยนแปลง (Changing Point Control Record)'}
+            style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              background: 'var(--amber-dim)', color: '#ca8a04', border: '1px solid var(--amber-line)',
+              opacity: cpcExporting ? 0.5 : 1 }}>
+            {cpcExporting ? 'กำลังสร้าง...' : 'Export Changing Point'}
+          </button>
         )}
+        {!line && <span style={{ fontSize: 11, color: '#d97706' }}>ใบ Changing Point ต้องเลือก 1 ไลน์</span>}
         {canManageDoc && (
           <button onClick={() => setShowDocPanel(v => !v)} style={{
             position: 'relative',
@@ -2059,8 +1970,8 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
         )}
       </TimeRangeBar>
 
-      {/* การ์ดนับตามหมวด 4M (กดเพื่อกรองได้) = เนื้อหา ⇒ อยู่ใต้แถบกรอง (UI-STANDARD §2.1) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10, marginBottom: 16 }}>
+      {/* การ์ดนับตามหมวด 4M (กดเพื่อกรองได้) = เนื้อหา ⇒ อยู่ใต้แถบกรอง (UI-STANDARD §2.1) · โหมดใบ = ซ่อน (นับตามช่วงวันที่ ไม่ใช่เดือนของใบ) */}
+      {fourMView === 'table' && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10, marginBottom: 16 }}>
         {Object.entries(CAT_META).map(([k, m]) => (
           <div key={k} onClick={() => setCat(c => c === k ? '' : k)} style={{
             background: cat === k ? m.bg : 'var(--card)', border: `1px solid ${cat === k ? m.color : 'var(--border)'}`,
@@ -2071,9 +1982,54 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
             <div style={{ fontSize: 22, fontWeight: 800, color: m.color, fontFamily: 'var(--font-display)' }}>{kpi[k] || 0}</div>
           </div>
         ))}
-      </div>
+      </div>}
 
       {showDocPanel && canManageDoc && <DocumentControlPanel />}
+
+      {fourMView === 'sheet' && (() => {
+        /* 📅 ใบ Changing Point บนจอ — HTML ชุดเดียวกับใบที่ Export (`lib/changePointSheet.js`)
+           ใบนี้ออกทีละ 1 ไลน์ ⇒ ยังไม่เลือกไลน์ = บอกตรงๆ + ให้กดเลือกไลน์ในขอบเขตได้ทันที (เดิมปุ่มเทาเฉยๆ) */
+        if (!line) {
+          const scopeNames = fourMUnit.name ? fourMUnit.lines
+            : (allowedLineNames ? lines.filter(l => allowedLineNames.includes(l.name)) : lines)
+                .filter(l => !fourMSection || l.section === fourMSection).map(l => l.name);
+          const pickable = sortLineNames([...new Set(scopeNames)], lines);
+          return (
+            <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>เลือก 1 ไลน์เพื่อดูใบ Changing Point</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
+                ใบนี้ออกทีละไลน์ (1 ใบ = 1 ไลน์ × 1 เดือน) — กดชื่อไลน์ด้านล่าง หรือเลือกในช่องขอบเขตบนแถบกรอง
+              </div>
+              {pickable.length ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {pickable.map(n => (
+                    <button key={n} type="button" onClick={() => { setLine(n); setFourMSection(''); setFourMUnit({ name: '', lines: [] }); }}
+                      style={{ padding: '6px 12px', borderRadius: 7, fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              ) : <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มีไลน์ในขอบเขตที่เลือก</div>}
+            </div>
+          );
+        }
+        const fresh = cpcSheet.key === `${line}|${cpcMonth}`;
+        if (!cpcMonth) return <div className="card" style={{ padding: 16, marginBottom: 16 }}>เลือกเดือนของใบก่อน</div>;
+        if (!fresh || cpcSheet.loading) return <div className="card" style={{ padding: 16, marginBottom: 16, color: 'var(--muted)' }}>กำลังโหลดใบ Changing Point...</div>;
+        if (cpcSheet.error) return (
+          <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 8, fontSize: 12.5, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)' }}>
+            โหลดใบไม่สำเร็จ — {cpcSheet.error}
+          </div>
+        );
+        return (
+          <div style={{ overflowX: 'auto', background: '#fff', borderRadius: 8, padding: 12, marginBottom: 16, border: '1px solid var(--border)' }}>
+            <style>{CPC_CSS}</style>
+            <div dangerouslySetInnerHTML={{ __html: cpcSheet.html }} />
+          </div>
+        );
+      })()}
+
+      {fourMView === 'table' && (<>
 
       {/* 🔴 รู้ขอบเขตแล้วแต่ไม่มีไลน์เลย = คิวรีถูกบีบเป็น 0 แถว — ต้องบอกว่าเป็นเรื่อง "ทะเบียนไลน์"
           ห้ามปล่อยให้ไปโผล่เป็น "ไม่พบใบที่เลือก" (คนละสาเหตุ คนละทางแก้) */}
@@ -2225,6 +2181,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
           </table>
         </div>
       )}
+      </>)}
     </div>
   );
 }
