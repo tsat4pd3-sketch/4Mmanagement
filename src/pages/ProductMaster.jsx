@@ -53,6 +53,7 @@ import { uomLabel, itemNoLabel, nextItemNo, byItemNo, buildBomIndex, moveBomLine
 import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT, STORE_SLOC_KINDS } from '../utils/storageLoc';
 import StorageLocSelect from '../components/StorageLocSelect';   // 🏠 ที่จัดเก็บหลักของพาร์ท (05/11)
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
+import { opInputsOf } from '../utils/opInputs';   // 🔩 ขั้น OP กินอะไร (08/11)
 import { uploadOpts } from '../utils/storageUpload';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
@@ -1775,6 +1776,111 @@ const TD = ({ children, style }) => (
   <td style={{ padding: '8px 10px', fontSize: 13, color: 'var(--text)', borderTop: '1px solid var(--border)', ...style }}>{children}</td>
 );
 
+/* 🔩 ขั้น OP ของพาร์ทนี้ — โชว์ในหน้า BOM ของแม่ (08/11 · คำสั่ง user "ต้องไม่แยกกับบอมหลัก" · เลือกทาง ก)
+   · ข้อมูลยังเก็บที่ "ใบของขั้น" (`bom_items.product_id` = แถว OP) เหมือนกฎ 15/09 — ใบแม่ = BOM SAP ไม่แตะ
+   · ของที่ขั้นกิน = ใบของขั้น → ไม่มี + แม่มีลูกตัวเดียว = ลูกตัวนั้น → ไม่งั้น "ยังไม่ผูก" (`opInputsOf` · utils/opInputs.js)
+   · เพิ่ม/ลบได้จากหน้านี้ (สิทธิ์ `products:edit` = PE + supervisor ขึ้นไป) · เลือกได้เฉพาะลูกชั้น 1 ของแม่
+     ของที่ขั้นใส่เพิ่มนอก BOM แม่ (delta เช่นนัทของขั้น) → ปุ่มเปิดใบของขั้น */
+function OpStepsPanel({ parent, products, bomIx, parentKids, canEdit, fullName, onChanged, onOpenSheet }) {
+  const up = (m) => String(m ?? '').trim().toUpperCase();
+  const ops = useMemo(() => (products || [])
+    .filter(p => p._op && p.is_active !== false && up(p._op.parent) === up(parent?.mat_no))
+    .sort((a, b) => (a._op.seq ?? 1e9) - (b._op.seq ?? 1e9) || String(a.mat_no).localeCompare(String(b.mat_no))),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [products, parent?.mat_no]);
+  const [adding, setAdding] = useState(null);   // op.id ที่กำลังเลือกของ
+  const [pick, setPick] = useState({});          // mat → qty
+  const [busy, setBusy] = useState(false);
+  if (!parent?.mat_no || !ops.length) return null;
+  const save = async (op) => {
+    const rows = Object.entries(pick).filter(([, q]) => Number(q) > 0).map(([mat, q]) => {
+      const k = parentKids.find(x => up(x.mat_no) === up(mat));
+      return { product_id: op.id, mat_no: k?.mat_no || mat, part_name: k?.part_name || null, part_no: k?.part_no || null,
+        uom: k?.uom || null, qty_per_unit: Number(q), is_active: true, created_by: fullName, updated_at: new Date().toISOString() };
+    });
+    if (!rows.length) { toast.error('เลือกของที่ขั้นนี้กินอย่างน้อย 1 รายการ'); return; }
+    setBusy(true);
+    const res = await supabaseDR.from('bom_items').insert(rows).select('id');
+    setBusy(false);
+    if (!checkWriteRows(res, `ผูกของที่ขั้น ${op.mat_no} กิน`)) return;
+    toast.success(`🔩 ${op.mat_no}: ผูกของที่ขั้นนี้กิน ${rows.length} รายการแล้ว`);
+    setAdding(null); setPick({});
+    onChanged?.();
+  };
+  const remove = async (op, row) => {
+    if (!window.confirm(`เอา ${row.mat_no} ออกจาก "ของที่ขั้น ${op.mat_no} กิน"?\n\n(ไม่แตะ BOM ของแม่ ${parent.mat_no})`)) return;
+    setBusy(true);
+    const res = await supabaseDR.from('bom_items').delete().eq('id', row.id).select('id');
+    setBusy(false);
+    if (!checkWriteRows(res, `เอา ${row.mat_no} ออกจากขั้น ${op.mat_no}`)) return;
+    onChanged?.();
+  };
+  const fmtQ = (q) => Number(q).toLocaleString('th-TH', { maximumFractionDigits: 3 });
+  return (
+    <div style={{ background: 'var(--bg2)', border: '1px solid var(--blue-line)', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+      <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>🔩 ขั้น OP ของพาร์ทนี้ ({ops.length})
+        <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--muted)' }}> · ขั้นที่ SAP มองไม่เห็น — เปิดใบขั้นนี้ = เบิกของที่ขั้นกิน · เปิดใบ {parent.mat_no} = ไม่เบิกของที่ขั้นกินไปแล้วซ้ำ · BOM SAP ของแม่ไม่ถูกแก้</span>
+      </div>
+      {ops.map(op => {
+        const own = bomIx.bomOf(op.mat_no, op.id);
+        const r = opInputsOf({ ownKids: own, parentKids });
+        const ownSet = new Set(own.map(x => up(x.mat_no)));
+        const choices = parentKids.filter(k => !ownSet.has(up(k.mat_no)));
+        return (
+          <div key={op.id} style={{ marginTop: 8, padding: '8px 10px', borderRadius: 8, background: 'var(--card)', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5 }}>
+              <b style={{ color: 'var(--blue)' }}>🔩 {op.mat_no}</b>
+              <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{op.name || ''}{op.line_name ? ` · ${op.line_name}` : ''}{op._op.seq != null ? ` · ลำดับ ${op._op.seq}` : ''}</span>
+              <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                {canEdit && choices.length > 0 && adding !== op.id && (
+                  <button className="pg-btn" disabled={busy} onClick={() => { setAdding(op.id); setPick({}); }}>+ เลือกของที่ขั้นนี้กิน</button>
+                )}
+                <button className="pg-btn" onClick={() => onOpenSheet?.(op.mat_no)} title="ของที่ขั้นใส่เพิ่มนอก BOM แม่ (เช่นนัทของขั้น) แก้ที่ใบของขั้น">เปิดใบของขั้น</button>
+              </span>
+            </div>
+            <div style={{ marginTop: 5, fontSize: 12, lineHeight: 1.7 }}>
+              {r.via === 'op_bom' && own.map(x => (
+                <div key={x.id || x.mat_no} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <span>└ {x.part_name ? `${x.part_name} · ` : ''}<span style={{ fontFamily: 'monospace' }}>MAT {x.mat_no}</span> × {fmtQ(x.qty_per_unit)}</span>
+                  {canEdit && x.id && <button className="pg-btn" disabled={busy} onClick={() => remove(op, x)} title="เอาออกจากขั้นนี้ (ไม่แตะ BOM แม่)">✕</button>}
+                </div>
+              ))}
+              {r.via === 'auto_single' && (
+                <div style={{ color: 'var(--text2)' }}>└ {r.kids[0].part_name ? `${r.kids[0].part_name} · ` : ''}<span style={{ fontFamily: 'monospace' }}>MAT {r.kids[0].mat_no}</span> × {fmtQ(r.kids[0].qty_per_unit)}
+                  <span style={{ color: 'var(--muted)' }}> — อัตโนมัติ (แม่มีลูกตัวเดียว)</span></div>
+              )}
+              {r.via === 'unset' && (
+                <div style={{ color: 'var(--red)', fontWeight: 700 }}>⚠ ยังไม่ได้ผูกว่าขั้นนี้กินอะไร — เปิดใบขั้นนี้จะไม่เบิกของให้ (แม่มีลูก {parentKids.length} ตัว ระบบไม่เดา)</div>
+              )}
+            </div>
+            {adding === op.id && (
+              <div style={{ marginTop: 6, padding: '8px 10px', borderRadius: 8, background: 'var(--bg3)' }}>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 4 }}>เลือกจากลูกชั้น 1 ของ {parent.mat_no} · จำนวนต่อชิ้นตั้งต้น = ตาม BOM แม่</div>
+                {choices.map(k => {
+                  const on = pick[k.mat_no] != null;
+                  return (
+                    <label key={k.mat_no} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12, padding: '2px 0' }}>
+                      <input type="checkbox" checked={on} style={{ width: 'auto' }}
+                        onChange={e => setPick(p => { const n = { ...p }; if (e.target.checked) n[k.mat_no] = k.qty_per_unit ?? 1; else delete n[k.mat_no]; return n; })} />
+                      <span style={{ flex: 1 }}>{k.part_name ? `${k.part_name} · ` : ''}<span style={{ fontFamily: 'monospace' }}>MAT {k.mat_no}</span></span>
+                      {on && <input type="number" min="0" step="any" value={pick[k.mat_no]} style={{ width: 90 }}
+                        onChange={e => setPick(p => ({ ...p, [k.mat_no]: e.target.value }))} />}
+                    </label>
+                  );
+                })}
+                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                  <button className="pg-btn" disabled={busy} onClick={() => save(op)}>💾 บันทึก</button>
+                  <button className="pg-btn" disabled={busy} onClick={() => { setAdding(null); setPick({}); }}>ยกเลิก</button>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
   /* 📏 ทะเบียนหน่วยนับ — ทุกจุดที่เขียนหน่วยลงฐานผ่าน normUom (EA/pcs → PC · utils/uom.js) */
   const uomState = useUomUnitsState();
@@ -2679,6 +2785,12 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                 </div>
               )}
             </div>
+            {/* 🔩 08/11 — ขั้น OP ของพาร์ทนี้ (ข้อมูลอยู่ใบของขั้น · โชว์/แก้จากหน้านี้) */}
+            {selProduct?.mat_no && !selProduct._op && (
+              <OpStepsPanel parent={selProduct} products={products} bomIx={bomIx}
+                parentKids={items.filter(i => !String(i.parent_mat || '').trim())}
+                canEdit={canEdit} fullName={fullName} onChanged={loadAll} onOpenSheet={openSheetOfMat} />
+            )}
             {/* 🌳 โครงหลายชั้นแบบ SAP (CS12) — ตารางด้านล่างเป็นชั้น 1 อย่างเดียว
                 ต้องมีตัวกางถึงจะเห็นว่าของตัวไหนถูกนับซ้ำ (BOM ถูกแบนมาจาก SAP) */}
             {!loading && items.length > 0 && selProduct?.mat_no && (
