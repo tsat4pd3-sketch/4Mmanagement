@@ -1,6 +1,6 @@
 --- a/mock.js
 +++ b/mock.js
-@@ -457,6 +457,8 @@
+@@ -466,6 +466,8 @@
      qty_received: i % 4 === 0 ? 55 : null, diff_reason: i % 4 === 0 ? 'ของเสีย 5' : null,
      received_by: i % 4 === 0 ? 'สมชาย ใจดี' : null, received_at: i % 4 === 0 ? new Date().toISOString() : null,
    }),
@@ -9,7 +9,7 @@
    child_lot_requests: (r, i) => ({
      ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
      lot_qty: isNullish(r) ? null : 14,
-@@ -957,6 +959,70 @@
+@@ -966,6 +968,77 @@
      { board_part_id: 'mp-6', row_key: 'to_vendor', period_key: '2026-10-01', qty: 398, txt: null },
    ],
  }
@@ -61,8 +61,15 @@
 +    { id: 'pr-2', ship_to: 'GBL9A', dock_code: 'A1', supplier_code: 'TSAT', pattern: 'normal', period_start: '10:00:00', period_end: '12:00:00', prepare_from: '12:00:00', prepare_to: '13:00:00', pickup_time: '14:00:00', pickup_day_offset: 0, delivery_time: '15:00:00', note: '', is_active: true },
 +  ],
 +  container_types: [
-+    { id: 'ct-1', code: 'BOX-A', name: 'กล่องพลาสติก A', capacity: 50, is_active: true },
-+    { id: 'ct-2', code: 'RK-01', name: 'แร็คเหล็ก RK-01', capacity: 20, is_active: true },
++    { id: 'ct-1', code: 'BOX-A', name: 'กล่องพลาสติก A', capacity: 50, category: 'BOX', supplier: 'ไทยพลาสติก', is_active: true },
++    { id: 'ct-2', code: 'RK-01', name: 'แร็คเหล็ก RK-01', capacity: 20, category: 'RACK', supplier: null, is_active: true },
++  ],
++  container_categories: [
++    { code: 'BOX', name: 'กล่อง', note: null, sort_order: 10, is_active: true },
++    { code: 'RACK', name: 'แร็ค', note: null, sort_order: 20, is_active: true },
++    { code: 'BASKET', name: 'ตะกร้า', note: null, sort_order: 30, is_active: true },
++    { code: 'PALLETTE', name: 'พาเลท', note: null, sort_order: 40, is_active: true },
++    { code: 'OTHER', name: 'อื่นๆ', note: null, sort_order: 50, is_active: true },
 +  ],
 +  rack_requests: [
 +    { id: 'rr-1', line_name: LINE_NAME(1), container_type_id: 'ct-1', container_name: 'กล่องพลาสติก A', qty: 10, status: 'requested', requested_by: 'หัวหน้าไลน์ A', requested_at: WH_ISO(-25), note: 'ด่วน' },

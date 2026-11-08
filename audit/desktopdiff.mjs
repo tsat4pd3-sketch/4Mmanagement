@@ -56,13 +56,16 @@ for (const name of PAGES) {
       const cur = first.tabs.length ? await shoot(CUR, name, t) : first
       const base = await shoot(BASE, name, first.tabs.length ? t : null)
       views++
-      const px = Number(execFileSync('python3', ['-c', `
+      /* ⚡ ไฟล์เหมือนกันทุกไบต์ = ภาพเดียวกันแน่นอน ⇒ ไม่ต้องเรียก python
+         (เร็วกว่า และยังตรวจได้แม้เครื่องนั้น Pillow พัง — เจอจริง 08/11) */
+      const px = (fs.readFileSync(base.f).equals(fs.readFileSync(cur.f)) ? 0
+        : Number(execFileSync('python3', ['-c', `
 from PIL import Image, ImageChops
 a=Image.open('${base.f}').convert('RGB'); b=Image.open('${cur.f}').convert('RGB')
 if a.size!=b.size: print(-1)
 else:
   d=ImageChops.difference(a,b).convert('L').point(lambda v:255 if v>8 else 0)
-  print(d.histogram()[255])`]).toString().trim())
+  print(d.histogram()[255])`]).toString().trim()))
       if (px !== 0) diffs.push({ name, tab: first.tabs[t] || '(หน้าเดียว)', px })
     }
   } catch (e) { diffs.push({ name, tab: '?', px: `error ${String(e).slice(0, 60)}` }) }
