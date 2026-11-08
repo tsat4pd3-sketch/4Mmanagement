@@ -139,6 +139,14 @@ model: inherit
   เจ้าของกฎ `utils/downtimeBands.js` + `components/DowntimeBand.jsx` **ห้ามวาดเองในหน้า**
   · ด่านอัตโนมัติ: `downtime-band-central` ใน `regressionGuards` · 📄 UI §6.31
 
+- **B-ANDON** 🚨 **แถบ Andon ลอย (`position: fixed`) ต้องอ่านออกและกดรับทราบได้บนมือถือ** (05/11)
+  — flex แถวเดียว `nowrap` ที่มีปุ่ม/ชิปความกว้างตายตัวหลายตัว จะ**บีบกล่องข้อความเหลือกว้าง 0**
+  บนจอ 390px (วัดจริง: ของตายตัว 377px > กล่อง 374px) · แก้ด้วย class กลาง `andon-bar` +
+  `andon-bar-msg` ใน `src/index.css` ใต้ `@media (max-width:768px)` **ต้องมี `!important`**
+  (inline `flex:1` ชนะ CSS) · **ห้ามย่อฟอนต์/ซ่อนปุ่มแทน** · แถบที่ wrap แล้วสูงขึ้น 4 เท่า ⇒
+  **มือถือโชว์ทีละใบ + เขียนว่าเหลืออีกกี่ใบ** (ซ้อนกันเกินจอ = ปุ่มรับทราบตกนอกจอ กดไม่ได้)
+  · ด่านอัตโนมัติ: `andon-bar-mobile` ใน `regressionGuards` · 📄 UI §6.32
+
 ### หมวด C — Permissions (data-driven)
 
 - **[C-RLS-1]** policy RLS ฝั่ง Main ที่เขียนได้ (`for all/update/delete`) ห้าม hardcode `role = any(array[...])` — ต้องเป็น `has_perm('<คีย์เดียวกับ can() ของปุ่มนั้น>')` (2026-09-04 · `20260904_rls_match_ui_permissions.sql`) · ตรวจ: `grep -n "ARRAY\['admin'" supabase/migrations/*.sql` เทียบกับ pg_policies ปัจจุบัน
@@ -274,6 +282,7 @@ model: inherit
 
 ### หมวด F — UI Conventions (docs/UI-CONVENTIONS.md)
 - **[F-TXT]** คำอธิบาย > 1 บรรทัด (≈120 ตัวอักษร) ต้องอยู่หลัง `<InfoMore>` (+`title=` ได้) ไม่วางนิ่งบนจอ · ตรวจ `node audit/textsweep.mjs` ต้อง 0 ก้อนในหน้าที่แตะ · ความผิดปกติ/ข้อมูลไม่ครบห้ามพับ (ใช้ NoticeBar/WarnNote) · 📄 `UI-CONVENTIONS.md` §6.10
+- **[F-ICN]** แท็บ PageHeader = เส้นใต้ (ห้ามวาดแท็บเอง) · จุดวาดกลาง (เมนู/Home/OverflowMenu/หัวเพจ) ต้องวาดไอคอนผ่าน `<Icon glyph>` ไม่ใช่ `{it.icon}` ดิบ · emoji ใหม่ในทะเบียนเมนู/`icon=` ต้องอยู่ใน `ICON_MAP` (ด่าน `iconMap.test.mjs`) · 📄 `UI-CONVENTIONS.md` §6.36
 - **[F-PAL]** พาเลต 5 สี + เทา: หน้า/คอมโพเนนต์ใหม่ห้ามมี hex/rgba ดิบ (ใช้ `var(--green|--amber|--red|--blue)` + `-dim`/`-line` หรือ `toneVar/toneDim/toneLine`) · ห้าม `--purple` · ห้าม `${…}20` ต่อ alpha บน token · ด่าน ratchet `colorRatchet.test.mjs` (ไฟล์เดิมลดได้อย่างเดียว) · grep: `#[0-9a-f]{6}` `rgba(` ในไฟล์ที่แตะ · 📄 `UI-CONVENTIONS.md` §6.17
 - **[F-ACT]** คำสั่งระดับหน้า/การ์ด: ปุ่มตายตัว ≤2 (`.pg-btn` / `.pg-btn.primary`) ที่เหลือ `<OverflowMenu>` · แถบแจ้ง = `<NoticeBar>` แถบเดียว · การ์ดตัวเลข = `<KpiTile>` (ตัวเลขสีเดียว) · ป้ายปุ่มไม่มี emoji · grep: `actions={` แล้วนับ `<button` · `rgba(239,68,68` ในแถบเตือนใหม่ · 📄 `UI-CONVENTIONS.md` §6.35
 - **[F-I18N]** ป้ายโครงหลัก (เมนู/หมวด/ชื่อหน้า/แท็บ/ป้ายกรอง) แปลผ่าน `tr()` จาก `utils/useLang` เท่านั้น · 🔴 ห้าม `lang === 'en' ?` / `getLang() === 'en' ?` กระจายในหน้า (grep: `=== 'en' ?`) · ห้ามแก้ค่าไทยใน `NAV_ITEMS`/ชื่อหมวด (เป็นคีย์) · เมนู/หน้าใหม่ต้องมีคำใน `src/i18n/en.js` (ด่าน `i18n.test.mjs`) · 📄 `UI-CONVENTIONS.md` §6.34

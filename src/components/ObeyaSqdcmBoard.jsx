@@ -820,7 +820,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           display: 'flex', alignItems: 'center', gap: 12, padding: '6px 10px', flexShrink: 0,
           borderBottom: '1px solid var(--border)',
         }}>
-          <div style={{ fontSize: tv ? 26 : 18, fontWeight: 900 }}>🏛️ OBEYA</div>
+          <div style={{ fontSize: tv ? 26 : 18, fontWeight: 900 }}>OBEYA</div>
           <div style={{ fontSize: tv ? 22 : 13, color: tv ? 'var(--text2)' : 'var(--muted)', fontWeight: tv ? 700 : 400 }}>
             {scopeText} · {periodText}{tv ? '' : ` · ${from} → ${to} · ${shiftCount.toLocaleString()} กะ`}
           </div>
@@ -1149,7 +1149,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                 <textarea value={closing.result} rows={3} onChange={e => setClosing({ ...closing, result: e.target.value })}
                   style={{ marginTop: 3, fontSize: 13.5 }} placeholder="เช่น เปลี่ยนตัวจับชิ้นงานเป็นแบบ quick clamp · เวลาเปลี่ยนรุ่นลดจาก 25 → 14 นาที" />
               </label>
-              <QualityPhotoField label="📷 รูปหลักฐาน (ไม่บังคับ)" url={closing.a.result_img || null} file={closing.file}
+              <QualityPhotoField label="รูปหลักฐาน (ไม่บังคับ)" url={closing.a.result_img || null} file={closing.file}
                 hint="ถ่ายสิ่งที่แก้ไปจริง — เดือนหน้าปัญหาเดิมกลับมาจะได้ย้อนดูได้"
                 onPick={(f) => setClosing({ ...closing, file: f })} />
             </div>

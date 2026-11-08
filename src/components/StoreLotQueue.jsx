@@ -46,7 +46,7 @@ const chip = (bg, color) => ({
 
 const LOT_META = {
   pending:   { label: '🆕 รอผลิต',    color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.35)' },
-  producing: { label: '🔧 กำลังผลิต', color: '#0ea5e9', bg: 'rgba(14,165,233,0.12)', border: 'rgba(14,165,233,0.35)' },
+  producing: { label: 'กำลังผลิต', color: '#0ea5e9', bg: 'rgba(14,165,233,0.12)', border: 'rgba(14,165,233,0.35)' },
 };
 
 export default function StoreLotQueue({ lineName, lines = [], role }) {
@@ -288,8 +288,8 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
             พับแล้วยังตอบได้ว่า "มีงานรออยู่ไหม · ติดวัตถุดิบไหม" โดยไม่ต้องกด */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginRight: 'auto' }}>
           {head.pending   > 0 && <span style={chip(LOT_META.pending.bg,   LOT_META.pending.color)}>🆕 รอผลิต {head.pending}</span>}
-          {head.producing > 0 && <span style={chip(LOT_META.producing.bg, LOT_META.producing.color)}>🔧 กำลังผลิต {head.producing}</span>}
-          {head.upLines.length > 0 && <span style={chip('rgba(14,165,233,0.14)', '#0ea5e9')} title={`ของที่ต้องใช้ บางตัวมาจากไลน์: ${head.upLines.join(' · ')}`}>🏭 ต่อจากไลน์อื่น {head.upLines.length}</span>}
+          {head.producing > 0 && <span style={chip(LOT_META.producing.bg, LOT_META.producing.color)}>กำลังผลิต {head.producing}</span>}
+          {head.upLines.length > 0 && <span style={chip('rgba(14,165,233,0.14)', '#0ea5e9')} title={`ของที่ต้องใช้ บางตัวมาจากไลน์: ${head.upLines.join(' · ')}`}>ต่อจากไลน์อื่น {head.upLines.length}</span>}
           {head.noRoute.length > 0 && <span style={chip('rgba(245,158,11,0.14)', '#f59e0b')} title={`เบอร์ 2 = ผลิตภายใน แต่ยังไม่มีแถวใน Product Master:\n${head.noRoute.join(' · ')}\n\nระบบจึงไม่รู้ว่าไลน์ไหนทำ → ใบสั่งผลิตของพาร์ทพวกนี้ถูกสร้างโดยไม่มีไลน์ปลายทาง (ใบกำพร้า ไม่โผล่บนจอไลน์ไหนเลย)`}>❓ routing ยังไม่ตั้ง {head.noRoute.length}</span>}
           {head.self.length > 0 && <span style={chip('rgba(239,68,68,0.14)', '#ef4444')} title={`ของพวกนี้ไลน์นี้เป็นคนผลิตเอง — ไม่ควรมีใบเบิกจากสโตร์:\n${head.self.join(' · ')}`}>⚠️ ของที่ไลน์ทำเอง {head.self.length}</span>}
           {blocks.length  > 0 && <span style={chip('rgba(245,158,11,0.14)', '#f59e0b')}>⚠️ ออกใบไม่ได้ {blocks.length}</span>}
@@ -332,7 +332,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                     <span style={{ fontSize: 12, color: 'var(--text2)', flex: 1, minWidth: 120 }}>{g.part_name || '—'}</span>
                     <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>{fmt(g.qty)} <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>ชิ้นรวม</span></span>
                     {g.pending.length > 0 && <span style={chip(LOT_META.pending.bg,   LOT_META.pending.color)}>🆕 รอผลิต {g.pending.length}</span>}
-                    {g.producing     > 0 && <span style={chip(LOT_META.producing.bg, LOT_META.producing.color)}>🔧 กำลังผลิต {g.producing}</span>}
+                    {g.producing     > 0 && <span style={chip(LOT_META.producing.bg, LOT_META.producing.color)}>กำลังผลิต {g.producing}</span>}
                     {canOperate && g.pending.length > 0 && (
                       <button onClick={() => takeGroup(g)} disabled={busy === `g:${g.mat}`}
                         title={`เปลี่ยนสถานะ ${g.pending.length} ล็อตเป็น "กำลังผลิต" — ไม่แตะสต็อก`}
@@ -352,13 +352,13 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                         มันไม่ได้วัดว่าของมาหรือยัง — มันวัดว่ามีคนกดปุ่มบนบอร์ดสโตร์หรือยัง
                         ⇒ เลิกโชว์เป็นสัญญาณเตือน · โชว์ "ของที่ต้องใช้มาจากไหน" แทน (ตอบว่ารอ**ใคร**) */}
                     {g.mats === 0 ? (
-                      <span>· 🪨 ไม่มีใบเบิกวัตถุดิบผูกไว้</span>
+                      <span>· ไม่มีใบเบิกวัตถุดิบผูกไว้</span>
                     ) : (
                       <span title={`ใบเบิกที่ผูกกับล็อตชุดนี้ ${g.rawAll} ใบ · ปิดในระบบแล้ว ${g.rawAll - g.rawWait} ใบ
 (สถานะใบเบิกเปลี่ยนเป็น "จ่ายแล้ว" เมื่อสโตร์กด "จ่ายวัตถุดิบ" หรือกดปิดล็อตที่บอร์ดสโตร์ — ไม่ใช่ตัววัดว่าของถึงไลน์จริง)`}>
-                        · 🪨 ใช้ของ {g.mats} รายการ
-                        {g.upMats > 0 && <b style={{ color: '#0ea5e9' }}> · 🏭 ต่อจาก {g.upLines.join(', ')} ({g.upMats})</b>}
-                        {g.buy.length > 0 && <span> · 🛒 ของซื้อ {g.buy.length}</span>}
+                        · ใช้ของ {g.mats} รายการ
+                        {g.upMats > 0 && <b style={{ color: '#0ea5e9' }}> · ต่อจาก {g.upLines.join(', ')} ({g.upMats})</b>}
+                        {g.buy.length > 0 && <span> · ของซื้อ {g.buy.length}</span>}
                         {g.noRoute.length > 0 && <b style={{ color: '#f59e0b' }}> · ❓ routing ยังไม่ตั้ง {g.noRoute.length}</b>}
                         {g.self.length > 0 && <b style={{ color: '#ef4444' }}> · ⚠️ ไลน์นี้ทำเอง {g.self.length}</b>}
                       </span>

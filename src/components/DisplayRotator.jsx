@@ -368,14 +368,14 @@ export default function DisplayRotator({ userId, role, disabled, shell = false, 
     return (
       <div style={{ ...chipStyle, padding: '3px 9px', opacity: 0.55, gap: 6 }} role="status" aria-live="off"
         title="แตะจอเพื่อหยุดวน / ดูปุ่มควบคุม">
-        🔁 {Math.min(idx, n - 1) + 1}/{n} · {fmtSec(Math.max(0, cur.sec - elapsed))}
+        {Math.min(idx, n - 1) + 1}/{n} · {fmtSec(Math.max(0, cur.sec - elapsed))}
       </div>
     );
   }
 
   return (
     <div style={chipStyle} role="status" aria-live="off">
-      <span style={{ fontWeight: 800 }}>🔁 จอวนหน้า {Math.min(idx, n - 1) + 1}/{n}</span>
+      <span style={{ fontWeight: 800 }}>จอวนหน้า {Math.min(idx, n - 1) + 1}/{n}</span>
       <span style={{ color: 'var(--muted)' }}>{status}</span>
       {skipped.length > 0 && (
         <span title={skipTitle} style={{ color: 'var(--amber)', fontWeight: 700 }}>
@@ -431,7 +431,7 @@ function TvShellBar({ pathname, search, now, loadErr, active, idx, n, sec, elaps
       {active && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <span style={{ fontSize: 16, color: 'var(--muted)', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-            🔁 {idx + 1}/{n} · {status}
+            {idx + 1}/{n} · {status}
           </span>
           {skipped.length > 0 && (
             <span title={skipTitle} style={{ fontSize: 16, color: 'var(--amber)', fontWeight: 700, whiteSpace: 'nowrap' }}>⚠ ข้าม {skipped.length} หน้า</span>
@@ -440,7 +440,7 @@ function TvShellBar({ pathname, search, now, loadErr, active, idx, n, sec, elaps
         </div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
-        {secs.length > 0 && <span style={{ ...barChip, fontWeight: 800, color: 'var(--text)' }}>🏭 {secs.join(' · ')}</span>}
+        {secs.length > 0 && <span style={{ ...barChip, fontWeight: 800, color: 'var(--text)' }}>{secs.join(' · ')}</span>}
         <span style={{ fontSize: 17, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{shift} · วันงาน {wd}</span>
         <span style={{ fontSize: 26, fontWeight: 900, minWidth: 70, textAlign: 'right' }}>{hhmm}</span>
         {/* 🚪 ☀️ บัญชีจอ TV ไม่มี sidebar/เมนูโปรไฟล์ (ซ่อนทั้งชุดในโหมด TV) ⇒ เดิมออกจากระบบ/สลับธีมไม่ได้เลย

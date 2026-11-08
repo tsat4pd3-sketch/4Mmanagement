@@ -113,7 +113,7 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
       <div style={box}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 800 }}>📜 ประวัติการซ่อม — <span style={{ fontFamily: 'monospace' }}>{machineNo}</span></div>
+            <div style={{ fontSize: 15, fontWeight: 800 }}>ประวัติการซ่อม — <span style={{ fontFamily: 'monospace' }}>{machineNo}</span></div>
             <div style={{ fontSize: 11, color: 'var(--muted)' }}>
               นับจากใบแจ้งซ่อม (MO) ของเครื่องนี้ · ⬇️ Excel = ฟอร์ม FM-MTN-005 (ใบตีกลับไม่ลงประวัติ)
               {sum.spellings.length > 1 && <> · ⚠ เลขเครื่องถูกพิมพ์ {sum.spellings.length} แบบ: {sum.spellings.join(' / ')} (รวมให้แล้ว)</>}

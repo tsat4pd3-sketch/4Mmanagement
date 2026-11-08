@@ -233,14 +233,14 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
           <div style={{ color: 'var(--text2)' }}>
             {hhmm(sel.st)} – {sel.open ? <b style={{ color: '#ef4444' }}>ยังหยุดอยู่</b> : hhmm(sel.en)} · <b>{sel.mins}</b> นาที
           </div>
-          {sel.note && <div style={{ color: 'var(--text2)' }}>💬 {sel.note}</div>}
+          {sel.note && <div style={{ color: 'var(--text2)' }}>{sel.note}</div>}
           <button onClick={() => setSel(null)} style={{ marginTop: 4, background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 11, cursor: 'pointer', padding: 0 }}>✕ ปิด</button>
         </div>
       )}
 
       {totalUntimed > 0 && (
-        <div style={{ marginTop: 6, fontSize: 11, color: '#f59e0b', lineHeight: 1.55 }}>
-          ⏱ มี <b>{totalUntimed} รายการ</b> ที่กรอกแค่จำนวนนาที ไม่มีเวลาเริ่ม — วางบนไทม์ไลน์ไม่ได้
+        <div data-warn="1" style={{ marginTop: 6, fontSize: 11, color: 'var(--amber)', lineHeight: 1.55 }}>
+          มี <b>{totalUntimed} รายการ</b> ที่กรอกแค่จำนวนนาที ไม่มีเวลาเริ่ม — วางบนไทม์ไลน์ไม่ได้
           (ยอดรวมและพาเรโต้ด้านล่างยังนับให้ครบ) · กรอกเวลาเริ่มตอนบันทึก Downtime จะเห็นช่วงจริงบนแถบนี้
         </div>
       )}

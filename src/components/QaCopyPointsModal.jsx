@@ -1,5 +1,5 @@
 /**
- * QaCopyPointsModal — 📋 คัดลอกจุดตรวจของพาร์ทนี้ ไป "พาร์ทอื่น" ทีละหลายพาร์ท (/qa-setup · 2026-10-19)
+ * QaCopyPointsModal — คัดลอกจุดตรวจของพาร์ทนี้ ไป "พาร์ทอื่น" ทีละหลายพาร์ท (/qa-setup · 2026-10-19)
  * คู่กับ PM "คัดลอกไปเครื่องอื่น" — หลักเดียวกัน ระบบเดียว (📄 docs/modules/inspection-point-setup.md)
  * ตัวเขียนจริง = `copyQaPointsToParts()` (`lib/qaPointsCopy.js`)
  *
@@ -86,7 +86,7 @@ export default function QaCopyPointsModal({ part, itemCount, parts, lines, wctx,
   const skip = (report || []).filter(r => !r.copied);
 
   return (
-    <InspectEditorModal title={`📋 คัดลอกจุดตรวจของ ${partLabel(part)} ไปพาร์ทอื่น`}
+    <InspectEditorModal title={`คัดลอกจุดตรวจของ ${partLabel(part)} ไปพาร์ทอื่น`}
       subtitle={`${itemCount} จุด · สเปค/Rank/Stage/ความถี่ไปครบ · รูปโคลสอัพคัดลอกไปด้วย`}
       onClose={onClose} onSave={run} saving={busy}
       saveLabel={picked.length ? `📋 คัดลอกไป ${picked.length} พาร์ท` : 'เลือกพาร์ทปลายทาง'}>
@@ -103,7 +103,7 @@ export default function QaCopyPointsModal({ part, itemCount, parts, lines, wctx,
 
       <SearchInput value={search} onChange={setSearch} grow={false} placeholder="ค้น Part No. / ชื่อ / ลูกค้า / ไลน์..." />
       {blockedN > 0 && (
-        <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>🔒 {blockedN} พาร์ทอยู่ไลน์นอกส่วนงานของคุณ — แสดงจาง เลือกไม่ได้</div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{blockedN} พาร์ทอยู่ไลน์นอกส่วนงานของคุณ — แสดงจาง เลือกไม่ได้</div>
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 6, alignContent: 'start' }}>

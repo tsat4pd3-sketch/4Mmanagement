@@ -136,6 +136,20 @@ migration `20261013_production_lines_unit_kind_main.sql` (**apply แล้ว 1
 แถวที่ติดธงตอน apply (user เลือกเอง): `Office PD4` (7 คน) · `Coating` (0) · `Rework - PD1` (5 คน)
 — `test` / `test child` / `test child 2` **ไม่ได้ติดธง** (user ไม่ได้เลือก)
 
+⚠️ **ตรวจฐานจริง 05/11: แถวที่เป็น `support` มีแค่ `Coating` + `Finishing - PD1`**
+— `Office PD4` ยัง `production` อยู่ (เคสต้นเรื่องของคอลัมน์นี้เอง!) และ `Rework - PD1` ไม่มีในทะเบียนแล้ว
+(เปลี่ยนชื่อเป็น `Finishing - PD1`) ⇒ ย่อหน้าข้างบนเป็นสิ่งที่ *ตั้งใจ* ตอน 13/10 ไม่ใช่สิ่งที่ค้างอยู่จริง
+· แก้ `Office PD4` = หายจากจอผลิต/ตัวหาร ⇒ **ต้องให้ user ยืนยันก่อน ห้ามเปลี่ยนเอง**
+
+### 📈 รอบ 2 (05/11) — หน่วยงานสนับสนุนย้ายเข้าทะเบียนไลน์ทั้งก้อน
+เพิ่ม **14 แถว `support`** (id 75-88): QA (+ลูก 5) · STORE · Tooling MTN (+Die MTN) · JIG MTN ·
+Maintenance (+Mechanic/Preventive/Electric) — ผังและ `cost_center` ลอกจาก `org_nodes` เป๊ะ ·
+ย้ายพนักงาน 85 คนเข้ามา (`line_id` เดิม NULL ทั้งหมด)
+🟢 พิสูจน์แล้วว่า "กะที่ระบบตอบ" ไม่เปลี่ยนเลย 289/289 คน · ไลน์ผลิตยังเป็น 36 แถว (active 33)
+📄 รายละเอียด + ตาราง + วิธีย้อนกลับ → `docs/modules/shift-ot.md` §ยุบแกนหน่วยงาน
+🔴 **หน่วยงานใหม่ตั้งแต่นี้ไป = แถวใน `production_lines` (`unit_kind='support'`) เท่านั้น
+   ห้ามเพิ่มชื่อใหม่ในแกน `shift_schedules.dept_name`** (ข้อความลอย ไม่มีทะเบียน ไม่มี FK)
+
 ### กฎ
 🔴 **ตัดสินผ่าน `src/utils/unitKind.js` เท่านั้น** — `isProductionUnit()` / `isSupportUnit()` /
 `productionUnits()` / `splitUnitKinds()` · **ห้ามเทียบ `unit_kind === '…'` เองในหน้า**

@@ -89,7 +89,7 @@ function downloadCSV(docKey, filename, headers, rows) {
 }
 
 // UI-STANDARD 2026-09-24 — ปุ่ม export ในแถบกรอง (ขนาดช่อง/ความสูงมาจาก .filter-bar)
-const csvBtnSt = { padding: '0 14px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: 'var(--blue)', border: '1px solid rgba(77,159,255,0.35)' };
+const csvBtnSt = { padding: '0 14px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)' };
 // กะ: state เดิมใช้ 'all' = ทุกกะ ⇒ map ค่าแรกของ SHIFT_OPTIONS ('' → 'all') คงความหมายเดิม
 const SHIFT_SEG = SHIFT_OPTIONS.map(o => (o.value === '' ? { ...o, value: 'all' } : o));
 const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '14px 18px', minWidth: 130, flex: 1 };
@@ -238,7 +238,7 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
           ['วันที่', 'มาทำงาน', 'ลา', 'ขาด(ไม่ระบุเหตุ)', 'OT', 'รวมเช็คชื่อ'],
           daily.map(d => [d.date, d.present, d.leave, d.absent, d.ot, d.total]))}
           style={csvBtnSt}>
-          ⬇️ CSV
+          CSV
         </button>
       </TimeRangeBar>
 
@@ -400,7 +400,7 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
           ['วันที่', 'กะ', 'รหัส', 'ชื่อ', 'ไลน์', 'จุดเดิม', 'จุดใหม่', 'เวลา', 'ผู้มอบหมาย'],
           moves.map(mv => [mv.work_date, mv.shift, empById[mv.employee_id]?.employee_id_code, empById[mv.employee_id]?.name, mv.line_name, mv.from, mv.to, mv.at, mv.by]))}
           style={csvBtnSt}>
-          ⬇️ CSV
+          CSV
         </button>
       </TimeRangeBar>
 
@@ -435,7 +435,7 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
 
       {topMovers.length > 0 && (
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>🔝 คนที่ถูกย้ายจุดงานบ่อยสุด (ช่วงนี้)</div>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>คนที่ถูกย้ายจุดงานบ่อยสุด (ช่วงนี้)</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {topMovers.map(t => (
               <div key={t.id} style={{ display: 'flex', gap: 8, fontSize: 12.5, alignItems: 'center' }}>
@@ -627,7 +627,7 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
 
       {bySection.length > 0 && (
         <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>📊 ส่วนงานที่มีคนออกมากสุด (เฉพาะที่รู้วันที่ออก · N={knownExits.length})</div>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>ส่วนงานที่มีคนออกมากสุด (เฉพาะที่รู้วันที่ออก · N={knownExits.length})</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {bySection.map(s => (
               <div key={s.section} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
@@ -643,7 +643,7 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
       )}
 
       <div className="card table-sticky" style={{ overflowX: 'auto', marginBottom: 16 }}>
-        <div style={{ padding: '10px 14px', fontWeight: 700, fontSize: 13, borderBottom: '1px solid var(--border)' }}>📋 รายชื่อที่ inactive — รู้วันที่ออก</div>
+        <div style={{ padding: '10px 14px', fontWeight: 700, fontSize: 13, borderBottom: '1px solid var(--border)' }}>รายชื่อที่ inactive — รู้วันที่ออก</div>
         <table style={{ minWidth: 640 }}>
           <thead><tr><th>รหัส</th><th>ชื่อ</th><th>ส่วนงาน</th><th>แผนก</th><th>ตำแหน่ง</th><th>เริ่มงาน</th><th>ออกงาน</th><th>อายุงาน</th></tr></thead>
           <tbody>
@@ -820,7 +820,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
       exportRows().map((r, i) => [i + 1, r.code, r.name, r.position, r.section, r.department, r.working, r.holiday, r.total, r.reason]));
   };
 
-  const dayChipColor = (kind) => kind.type === 'shutdown75' ? 'var(--purple, #a78bfa)'
+  const dayChipColor = (kind) => kind.type === 'shutdown75' ? 'var(--purple, var(--blue))'
     : kind.holiday ? 'var(--red)' : 'var(--accent)';
 
   return (
@@ -849,8 +849,8 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
           นับใบจอง OT ที่ไม่มีเช็คชื่อด้วย
         </label>
         <span className="spacer" />
-        <button onClick={doExcel} style={csvBtnSt}>⬇️ Excel (ฟอร์ม HR)</button>
-        <button onClick={doCSV} style={csvBtnSt}>⬇️ CSV</button>
+        <button onClick={doExcel} style={csvBtnSt}>Excel (ฟอร์ม HR)</button>
+        <button onClick={doCSV} style={csvBtnSt}>CSV</button>
       </FilterBar>
 
       {loading && <div style={{ color: 'var(--muted)', fontSize: 12.5, marginBottom: 10 }}>กำลังโหลด…</div>}
@@ -904,7 +904,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
 
       {isCurrentMonth && willExceed.length > 0 && (
         <div className="card" style={{ padding: 14, marginBottom: 14, borderLeft: '4px solid var(--accent2)' }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>🔔 ยังไม่เกิน แต่กำลังจะเกิน ({willExceed.length} คน)</div>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>ยังไม่เกิน แต่กำลังจะเกิน ({willExceed.length} คน)</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {willExceed.slice(0, 30).map(r => (
               <span key={r.employeeId} style={{ fontSize: 11.5, padding: '3px 8px', borderRadius: 6, background: 'var(--bg3)' }}>
@@ -917,7 +917,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
 
       <div className="card table-sticky" style={{ overflowX: 'auto', marginBottom: 14 }}>
         <div style={{ padding: '10px 14px', fontWeight: 700, fontSize: 13, borderBottom: '1px solid var(--border)' }}>
-          📋 {onlyOver ? `คนที่ทำ OT ตั้งแต่ ${threshold} วันขึ้นไป` : 'คนที่ทำ OT ทั้งหมด'} — {monthLabel(month)} ({shown.length} คน)
+          {onlyOver ? `คนที่ทำ OT ตั้งแต่ ${threshold} วันขึ้นไป` : 'คนที่ทำ OT ทั้งหมด'} — {monthLabel(month)} ({shown.length} คน)
           <span style={{ fontWeight: 400, color: 'var(--muted)', marginLeft: 8, fontSize: 11.5 }}>คลิกแถวเพื่อดูรายวัน</span>
         </div>
         <table style={{ minWidth: 980 }}>
@@ -991,7 +991,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
 
       {topReasons.length > 0 && (
         <div className="card" style={{ padding: 16 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>🔎 งานที่ทำ OT บ่อยสุดของเดือน (จากใบจอง OT)</div>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>งานที่ทำ OT บ่อยสุดของเดือน (จากใบจอง OT)</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {topReasons.map(t => {
               const pct = Math.round((t.n / topReasons[0].n) * 100);
@@ -1055,10 +1055,10 @@ export default function WorkforceInsight() {
         title="กำลังคน & Turnover" icon="📈"
         sub="เช็คชื่อรายวัน · การเปลี่ยนจุดงาน · อัตราการเข้า-ออก · OT รายบุคคลรายเดือน — อ่านอย่างเดียว"
         tabs={[
-          { key: 'manpower', label: '📊 กำลังคนรายวัน' },
-          { key: 'moves', label: '🔀 เปลี่ยนจุดงานรายวัน' },
-          { key: 'turnover', label: '📉 Turnover' },
-          { key: 'ot', label: '⏱️ OT รายบุคคล' },
+          { key: 'manpower', label: 'กำลังคนรายวัน' },
+          { key: 'moves', label: 'เปลี่ยนจุดงานรายวัน' },
+          { key: 'turnover', label: 'Turnover' },
+          { key: 'ot', label: 'OT รายบุคคล' },
         ]}
         tab={tab} onTab={setTab}
       />

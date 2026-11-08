@@ -22,6 +22,7 @@ import SearchInput from '../components/SearchInput';
 import useTimeRange from '../utils/useTimeRange';
 import { useMergeParams } from '../utils/useTabParam';
 import { KINDS, USER_KINDS, kindOf, buildFeed, countByKind, limitFeed } from '../utils/changelog';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* เพดานรายการที่วาดต่อรอบ — ช่วงกว้างมาก (ทั้งประวัติ = 1,157 รายการ) ทำจอ TV/มือถือหน่วง
    🔴 ตัดแล้วต้องเขียนบนจอว่า "แสดงกี่จากกี่" + ปุ่มดูเพิ่ม **ห้ามตัดเงียบ** */
@@ -132,7 +133,7 @@ export default function ProgramUpdate() {
       />
 
       {err && (
-        <div style={{ background: 'var(--card)', border: '1px solid #ef444466', borderLeft: '4px solid #ef4444',
+        <div style={{ background: 'var(--card)', border: '1px solid var(--red)66', borderLeft: '4px solid var(--red)',
                       borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--text2)', lineHeight: 1.6 }}>
           ❌ <b>โหลดรายการอัพเดทไม่สำเร็จ</b> ({err}) — <b>ไม่ได้หมายความว่าไม่มีอัพเดท</b>
           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
@@ -150,7 +151,7 @@ export default function ProgramUpdate() {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 12, alignContent: 'start' }}>
             {KINDS.map(k => (
               <div key={k.key} style={{
-                background: 'var(--card)', border: `1px solid ${k.color}44`, borderLeft: `4px solid ${k.color}`,
+                background: 'var(--card)', border: `1px solid ${tint(k.color, 'line')}`, borderLeft: `4px solid ${k.color}`,
                 borderRadius: 10, padding: '8px 14px', minWidth: 132, boxShadow: 'var(--shadow-sm)',
               }}>
                 <div style={{ fontSize: 11.5, color: 'var(--text2)', fontWeight: 700 }}>{k.icon} {k.label}</div>
@@ -183,7 +184,7 @@ export default function ProgramUpdate() {
                 title="กางทุกวันเพื่ออ่านต่อเนื่อง หรือพับให้เห็นเฉพาะหัววัน"
                 style={{ padding: '3px 10px', borderRadius: 7, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
                          border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }}>
-                {(allOpen == null ? fewItems : allOpen) ? '▴ พับทุกวัน' : '▾ กางทุกวัน'}
+                {(allOpen == null ? fewItems : allOpen) ? 'พับทุกวัน' : 'กางทุกวัน'}
               </button>
             </div>
           )}
@@ -226,7 +227,7 @@ export default function ProgramUpdate() {
                   onClick={() => setDayCap(m => ({ ...m, [day.date]: day.items.length }))}
                   style={{ margin: '2px 0 6px', padding: '3px 10px', borderRadius: 7, fontSize: 11.5, fontWeight: 700,
                            cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }}>
-                  ▾ ดูอีก {(day.items.length - (dayCap[day.date] || DAY_ROWS)).toLocaleString()} รายการของวันนี้
+                  ดูอีก {(day.items.length - (dayCap[day.date] || DAY_ROWS)).toLocaleString()} รายการของวันนี้
                 </button>
               )}
             </div>);

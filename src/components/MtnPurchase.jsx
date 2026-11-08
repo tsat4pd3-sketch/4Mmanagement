@@ -178,7 +178,7 @@ function PrRow({ pr, canEdit, fullName, onChanged, showSource, mo = null, own = 
         {pr.pr_no
           ? <b style={{ fontFamily: 'monospace', fontSize: 13 }}>PR {pr.pr_no}</b>
           : <b style={{ fontSize: 12, color: waitNo ? '#f59e0b' : 'var(--muted)' }}>{waitNo ? '⏳ รอเลข PR จาก SAP' : '(ไม่มีเลข PR)'}</b>}
-        {mo && <a href={`/mtn-repair?mo=${encodeURIComponent(mo.id)}`} style={{ fontSize: 11.5, color: 'var(--accent)', fontWeight: 700 }} title="เปิดใบ MO">🔧 {mo.mo_no || 'ใบ MO (ยังไม่มีเลข)'}{mo.machine_no ? ` · ${mo.machine_no}` : ''}</a>}
+        {mo && <a href={`/mtn-repair?mo=${encodeURIComponent(mo.id)}`} style={{ fontSize: 11.5, color: 'var(--accent)', fontWeight: 700 }} title="เปิดใบ MO">{mo.mo_no || 'ใบ MO (ยังไม่มีเลข)'}{mo.machine_no ? ` · ${mo.machine_no}` : ''}</a>}
         <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>{st.label}</span>
         {showSource && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{PR_SOURCE_LABEL[pr.source] || pr.source}</span>}
         <span style={{ flex: 1, minWidth: 140 }}>{pr.item_name} × <b>{pr.qty}</b> {pr.unit || ''}</span>
@@ -197,14 +197,14 @@ function PrRow({ pr, canEdit, fullName, onChanged, showSource, mo = null, own = 
       </div>
       {/* 🔒 ไม่ใช่ของทีมเรา = เขียนบอกเหตุผล **ห้ามซ่อนปุ่มเงียบ** (กฎความซื่อสัตย์ของจอ) */}
       {canEdit && isPrOpen(pr) && !own.ok && (
-        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5 }}>🔒 {teamRowLockNote(pr, own.code)}</div>
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5 }}>{teamRowLockNote(pr, own.code)}</div>
       )}
       {canEdit && own.ok && isPrOpen(pr) && !mode && (
         <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
           <button disabled={busy} onClick={() => { setVal(pr.pr_no || ''); setMode('prno'); }}
             style={waitNo ? { ...btnGhost, color: '#f59e0b', borderColor: '#f59e0b', fontWeight: 800 } : btnGhost}>{waitNo ? '✏️ กรอกเลข PR (SAP)' : '✏️ แก้เลข PR'}</button>
-          {pr.status === 'requested' && <button disabled={busy} onClick={() => { setVal(''); setMode('order'); }} style={{ ...btnGhost, color: '#0ea5e9', borderColor: '#0ea5e9' }}>🚚 สั่งแล้ว</button>}
-          <button disabled={busy} onClick={() => { setVal(String(pr.qty ?? '')); setMode('receive'); }} style={{ ...btnGhost, color: '#22c55e', borderColor: '#22c55e' }}>📥 รับของเข้า</button>
+          {pr.status === 'requested' && <button disabled={busy} onClick={() => { setVal(''); setMode('order'); }} style={{ ...btnGhost, color: '#0ea5e9', borderColor: '#0ea5e9' }}>สั่งแล้ว</button>}
+          <button disabled={busy} onClick={() => { setVal(String(pr.qty ?? '')); setMode('receive'); }} style={{ ...btnGhost, color: '#22c55e', borderColor: '#22c55e' }}>รับของเข้า</button>
           <button disabled={busy} onClick={() => { setVal(''); setMode('cancel'); }} style={{ ...btnGhost, color: 'var(--muted)' }}>✖ ยกเลิก</button>
         </div>
       )}
@@ -272,7 +272,7 @@ function NewPrForm({ parts = [], glCodes = [], defaults = {}, fullName, onDone, 
 
   return (
     <div style={{ ...box, background: 'var(--card)' }}>
-      <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 2 }}>🛒 ขอซื้อ (PR) ใหม่</div>
+      <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 2 }}>ขอซื้อ (PR) ใหม่</div>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>เลข PR มาจาก SAP — รู้แล้วกรอกเลย ไม่รู้เว้นว่าง ใบจะเข้าคิว “⏳ รอเลข PR” ให้แอดมินช่างกรอกทีหลัง</div>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 2 }}>อะไหล่ในทะเบียน (เลือก = รับของแล้วเข้าสต็อกให้เอง · พิมพ์เอง = ของนอกทะเบียน/งานบริการ)</div>
       <SearchSelect value={f.part_id} text={f.item_name} options={partOpts} allowFree freeHint="ไม่เข้าสต็อก"
@@ -371,7 +371,7 @@ export function MtnPrPanel({ order, parts = [], fullName, canEdit = false, teamK
 
   return (
     <div style={box}>
-      <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 6 }}>🛒 เส้นทางงานซ่อม & ใบขอซื้อ (PR) {prs.length ? `· ${prs.length} ใบ` : ''}{openCount ? ` · ค้าง ${openCount}` : ''}</div>
+      <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 6 }}>เส้นทางงานซ่อม & ใบขอซื้อ (PR) {prs.length ? `· ${prs.length} ใบ` : ''}{openCount ? ` · ค้าง ${openCount}` : ''}</div>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
         {REPAIR_PATHS.map(p => (
           <button key={p.key} disabled={!canEdit} onClick={() => savePath(path === p.key ? '' : p.key)}
@@ -393,7 +393,7 @@ export function MtnPrPanel({ order, parts = [], fullName, canEdit = false, teamK
       {held && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>อะไหล่ PR ของใบนี้รับครบ = ระบบเริ่มนับต่อให้เอง</div>}
       {meta?.outsource && (
         <div style={{ fontSize: 11, color: 'var(--text2)', background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.35)', borderRadius: 8, padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
-          📤 ส่งซ่อมภายนอก: กดปุ่ม <b>“📤 ส่งซ่อมภายนอก”</b> ด้านบนเพื่อเริ่มนับช่วงอยู่กับ supplier —
+          ส่งซ่อมภายนอก: กดปุ่ม <b>“📤 ส่งซ่อมภายนอก”</b> ด้านบนเพื่อเริ่มนับช่วงอยู่กับ supplier —
           <b> MTTR ของช่างหยุดนับช่วงนั้น</b> แต่ <b>downtime / machine breakdown ของเครื่องนับเต็ม</b> · เปิด PR ค่าจ้าง (GL งานบริการ) ที่นี่
         </div>
       )}
@@ -402,7 +402,7 @@ export function MtnPrPanel({ order, parts = [], fullName, canEdit = false, teamK
       )}
       {loadErr && <div style={{ fontSize: 11, color: '#ef4444', marginBottom: 6 }}>⚠ โหลดใบขอซื้อไม่สำเร็จ: {loadErr}</div>}
       {prs.map(pr => <PrRow key={pr.id} pr={pr} canEdit={canEdit} fullName={fullName} onChanged={load} />)}
-      {prs.length > 1 && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>📝 ใบพิมพ์: มีหลายเลข PR ⇒ ช่อง PR.No. ข้างบนเว้นว่าง และพิมพ์ทุกเลขในช่องรายละเอียด</div>}
+      {prs.length > 1 && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>ใบพิมพ์: มีหลายเลข PR ⇒ ช่อง PR.No. ข้างบนเว้นว่าง และพิมพ์ทุกเลขในช่องรายละเอียด</div>}
       {canEdit && (adding
         ? <NewPrForm parts={parts} glCodes={glCodes} fullName={fullName}
             defaults={{ source: 'mo', order_id: orderId, order, team: teamKey, repairPath: path, supplier: path === 'outsource' ? order?.supplier : '' }}
@@ -471,7 +471,7 @@ export function MtnPrBoard({ parts = [], fullName, canEdit = false, onStockChang
        ⇒ ประกาศไว้ให้ `audit/stdsweep.mjs` ไม่ตีเป็นลำดับผิด (UI-STANDARD §2.1) */
     <div data-subpanel="1" style={{ ...box, marginBottom: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-        <b style={{ fontSize: 13.5 }}>🛒 ใบขอซื้ออะไหล่ (PR)</b>
+        <b style={{ fontSize: 13.5 }}>ใบขอซื้ออะไหล่ (PR)</b>
         <span style={{ fontSize: 11.5, color: needOrder.length ? '#ef4444' : 'var(--muted)' }}>ติด Min ยังไม่เปิด PR {needOrder.length} รายการ</span>
         <span style={{ fontSize: 11.5, color: noPrMos.length ? '#ef4444' : 'var(--muted)' }}>· ใบ MO รอเปิด PR {noPrMos.length}</span>
         <span style={{ fontSize: 11.5, color: waitNoList.length ? '#f59e0b' : 'var(--muted)' }}>· รอเลข PR {waitNoList.length}</span>
@@ -497,7 +497,7 @@ export function MtnPrBoard({ parts = [], fullName, canEdit = false, onStockChang
                 <span style={{ color: 'var(--muted)' }}>Min {p.min_qty}{p.max_qty ? ` · Max ${p.max_qty}` : ''}</span>
                 {open > 0 && <span style={{ color: '#0ea5e9' }}>PR ค้าง {open}</span>}
                 {need > 0
-                  ? (canEdit && <button onClick={() => setOpenFor(openFor === p.id ? null : p.id)} style={{ ...btnGhost, color: 'var(--accent)', borderColor: 'var(--accent)' }}>🛒 เปิด PR {need} {p.unit || ''}</button>)
+                  ? (canEdit && <button onClick={() => setOpenFor(openFor === p.id ? null : p.id)} style={{ ...btnGhost, color: 'var(--accent)', borderColor: 'var(--accent)' }}>เปิด PR {need} {p.unit || ''}</button>)
                   : <span style={{ fontSize: 11, color: '#22c55e' }}>✓ PR ค้างครอบแล้ว</span>}
               </div>
               {openFor === p.id && <NewPrForm parts={parts} glCodes={glCodes} fullName={fullName}
@@ -509,11 +509,11 @@ export function MtnPrBoard({ parts = [], fullName, canEdit = false, onStockChang
       )}
       {!below.length && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>✅ ไม่มีอะไหล่ที่ติด Min (เฉพาะรายการที่ตั้ง Min ไว้)</div>}
 
-      <div style={{ fontSize: 12, fontWeight: 700, margin: '6px 0 4px', color: noPrMos.length ? '#ef4444' : undefined }}>🔧 ใบ MO ที่ช่างเลือกว่าต้องเปิด PR — ยังไม่มีรายการขอซื้อ ({noPrMos.length})</div>
+      <div style={{ fontSize: 12, fontWeight: 700, margin: '6px 0 4px', color: noPrMos.length ? '#ef4444' : undefined }}>ใบ MO ที่ช่างเลือกว่าต้องเปิด PR — ยังไม่มีรายการขอซื้อ ({noPrMos.length})</div>
       {noPrMos.length ? noPrMos.map(o => (
         <div key={o.id}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, padding: '5px 9px', borderRadius: 8, background: 'var(--card)', border: '1px solid var(--border)', borderLeft: '4px solid #ef4444', marginBottom: 6 }}>
-            <a href={`/mtn-repair?mo=${encodeURIComponent(o.id)}`} style={{ color: 'var(--accent)', fontWeight: 800 }} title="เปิดใบ MO">🔧 {o.mo_no || 'ใบ MO (ยังไม่มีเลข)'}</a>
+            <a href={`/mtn-repair?mo=${encodeURIComponent(o.id)}`} style={{ color: 'var(--accent)', fontWeight: 800 }} title="เปิดใบ MO">{o.mo_no || 'ใบ MO (ยังไม่มีเลข)'}</a>
             <span style={{ flex: 1, minWidth: 160 }}>{[o.item_type, o.machine_no, o.line_name].filter(Boolean).join(' · ') || '—'}</span>
             <span style={{ color: 'var(--muted)' }}>{repairPathMeta(o.repair_path)?.label}</span>
             <span style={{ color: 'var(--muted)' }}>แจ้ง {fmtDateTime(o.report_at)}</span>
@@ -527,7 +527,7 @@ export function MtnPrBoard({ parts = [], fullName, canEdit = false, onStockChang
       <div style={{ fontSize: 12, fontWeight: 700, margin: '6px 0 4px', color: waitNoList.length ? '#f59e0b' : undefined }}>⏳ รอเลข PR จาก SAP ({waitNoList.length}) — แอดมินช่างกรอกเลขผูกกับใบ MO</div>
       {waitNoList.length ? waitNoList.map(pr => <PrRow key={pr.id} pr={pr} canEdit={canEdit} own={ownOf(pr)} fullName={fullName} onChanged={reload} showSource mo={mos[pr.order_id] || null} />)
         : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>ไม่มีใบที่รอเลข PR</div>}
-      <div style={{ fontSize: 12, fontWeight: 700, margin: '6px 0 4px' }}>📋 PR ค้าง — รอสั่ง / รอของ ({hasNoList.length})</div>
+      <div style={{ fontSize: 12, fontWeight: 700, margin: '6px 0 4px' }}>PR ค้าง — รอสั่ง / รอของ ({hasNoList.length})</div>
       {hasNoList.length ? hasNoList.map(pr => <PrRow key={pr.id} pr={pr} canEdit={canEdit} own={ownOf(pr)} fullName={fullName} onChanged={reload} showSource mo={mos[pr.order_id] || null} />)
         : <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ไม่มี PR ค้าง</div>}
       <button onClick={() => setShowDone(v => !v)} style={{ ...btnGhost, marginTop: 6 }}>{showDone ? 'ซ่อน' : 'ดู'} PR ที่จบแล้ว (50 ล่าสุด)</button>
@@ -564,7 +564,7 @@ export function MtnGlMaster({ canEdit = false, fullName }) {
     <div>
       <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.7 }}>
         รหัส GL ของงานช่าง — ใบขอซื้อ (PR) เติมรหัส <b>ตั้งต้นของหมวด</b> ให้เอง (แก้ทับในใบได้):
-        <b> 🧑‍🔧 งานบริการ</b> = จ้างภายนอก/ส่งซ่อม · <b>🔩 อะไหล่โรงงาน</b> = ซื้ออะไหล่เข้าคลัง
+        <b> งานบริการ</b> = จ้างภายนอก/ส่งซ่อม · <b>อะไหล่โรงงาน</b> = ซื้ออะไหล่เข้าคลัง
         · รอไฟล์ GL จากฝ่ายบัญชี/MTN มาเติม · ลบ = ปิดใช้งาน (PR เก่ายังอ่านรหัสเดิมได้)
       </div>
       {err && <div style={{ color: '#ef4444', fontSize: 12, marginBottom: 8 }}>⚠ โหลดทะเบียน GL ไม่สำเร็จ: {err}</div>}

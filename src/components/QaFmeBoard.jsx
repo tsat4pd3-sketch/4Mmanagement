@@ -209,7 +209,7 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
   return (
     <>
       <InternalTimeBoard
-        title="🗓️ วันนี้ต้องไปตรวจไลน์ไหน กี่โมง"
+        title="วันนี้ต้องไปตรวจไลน์ไหน กี่โมง"
         hint="บล็อกทึบ = งานตรวจจริง · เส้นประ = คาดการณ์จาก CT (ยังไม่ใช่งานตรวจ)"
         groups={groups} nowMin={nowMin} breaks={breaks}
         onItemClick={(d, x, y) => setPopup({ d, x, y })}
@@ -249,7 +249,7 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
                   <>
                     <b style={{ fontSize: 13 }}>{d.r.lineName} · {d.r.matNo}</b>
                     <div style={{ color: C.eta, fontWeight: 700, marginTop: 2 }}>
-                      🔮 คาดการณ์ — ยังไม่ใช่งานตรวจจริง
+                      คาดการณ์ — ยังไม่ใช่งานตรวจจริง
                     </div>
                     <div>น่าจะผลิตครบ ~<b>{hhmm(d.etaMin)}</b></div>
                     <div style={{ color: 'var(--muted)' }}>

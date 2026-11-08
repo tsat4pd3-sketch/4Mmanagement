@@ -191,7 +191,7 @@ body.esm-tv-shell .filter-bar { display: none !important; }
 /* ─── Splash Screen ──────────────────────────────────────────── */
 #splash {
   position: fixed; inset: 0;
-  background: #080f08;
+  background: var(--bg);   /* 05/11: ตามธีม (เดิม #080f08 เขียวดำ — ไม่เข้ากับพาเลตกลางใหม่ · ธีมสว่างก็ได้พื้นสว่าง) */
   z-index: 9000;
   display: flex;
   flex-direction: column;
@@ -210,7 +210,7 @@ body.esm-tv-shell .filter-bar { display: none !important; }
   font-size: clamp(0.65rem, 2.5vw, 0.85rem);
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: rgba(255,255,255,0.3);
+  color: var(--muted);
   opacity: 0;
   transform: translateY(12px);
   transition: opacity 0.5s ease 0.45s, transform 0.5s ease 0.45s;
@@ -219,7 +219,7 @@ body.esm-tv-shell .filter-bar { display: none !important; }
 
 .splash-bar-wrap {
   width: min(240px, 60vw); height: 2px;
-  background: rgba(255,255,255,0.08);
+  background: var(--border2);
   border-radius: 2px; overflow: hidden; margin-top: 8px;
 }
 .splash-bar-fill {
@@ -700,6 +700,21 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   animation: dtAlarmBlink 0.9s ease-in-out infinite;
   border-color: #ef4444 !important;
 }
+/* ── 🚨 แถบ Andon ลอย (DowntimeSiren · StoreCallSiren) — มือถือต้องอ่านข้อความออก (2026-11-05)
+   เคสจริง (mobilesweep @390px): แถบ "ไลน์เรียกของ" เป็น flex แถวเดียว `nowrap` ที่มีของตายตัว
+   ไอคอน 27 + ชิปเปิดเสียง 99 + ปุ่ม 118 + ปุ่ม 133 = 377px > กล่อง 374px
+   ⇒ กล่องข้อความ (flex:1 · min-width:0) **ถูกบีบเหลือกว้าง 0** = เห็นแต่ไอคอนกับปุ่ม
+     ไม่รู้ว่าไลน์ไหนเรียกอะไร + แถบล้นแล้วปัดไม่ได้ ⇒ Andon ที่อ่านไม่ออก = ไม่มีประโยชน์
+   🔴 แก้ที่ CSS ใต้ media query เท่านั้น — จอคอม/จอ TV ต้องเหมือนเดิมทุกพิกเซล (ด่าน desktopdiff)
+   🔴 ข้อความต้องได้เต็มบรรทัด (`flex: 1 0 100%`) ปุ่มค่อยไหลลงบรรทัดถัดไป
+      **ห้ามแก้ด้วยการย่อฟอนต์/ซ่อนปุ่ม** (ฟอนต์ขั้นต่ำ 11px · ปุ่มรับทราบคือทางปิดเสียงทางเดียว) */
+@media (max-width: 768px) {
+  .andon-bar { flex-wrap: wrap; row-gap: 8px; }
+  /* 🔴 ต้อง `!important` — กล่องข้อความตั้ง `flex: 1` ไว้ที่ inline style (ของจอคอม ห้ามถอด)
+     ซึ่งชนะ CSS เสมอ ⇒ ไม่ใส่ = กฎนี้ไม่มีผล ข้อความยังถูกบีบแคบเหมือนเดิม (พิสูจน์แล้ว 05/11) */
+  .andon-bar .andon-bar-msg { flex: 1 0 100% !important; }
+}
+
 /* ขอบกระพริบเบา สำหรับการ์ดใหญ่ (เช่นการ์ดใบซ่อม MTN รอรับงาน) — glow เล็กกว่า marker มาก */
 @keyframes moCardBlink {
   0%, 100% { box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.35); border-color: rgba(239, 68, 68, 0.55); }
@@ -949,7 +964,7 @@ body.has-mnav { --mnav-h: calc(56px + env(safe-area-inset-bottom, 0px)); padding
   color: var(--text2); font-family: var(--font-body);
 }
 .mnav > button.on { color: var(--accent); box-shadow: inset 0 3px 0 var(--accent); background: var(--accent-dim); }
-.mnav .mnav-ico { font-size: 20px; line-height: 1; }
+.mnav .mnav-ico { font-size: 20px; line-height: 1; display: flex; justify-content: center; }
 .mnav .mnav-lbl { font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 
 /* ─── 🔎 พับแถบกรองบนมือถือ (MobileFilterFold · 2026-10-15) — class เหล่านี้ถูก render เฉพาะมือถือ ─── */
@@ -1186,6 +1201,9 @@ body.esm-tv-shell .tv-hide { display: none !important; }
 .pg-menu-item:hover { background: var(--accent-dim); opacity: 1; }
 .pg-menu-item.danger { color: var(--red); }
 .pg-menu-ico { width: 18px; text-align: center; flex-shrink: 0; opacity: 0.85; }
+.pg-menu-ico { display: inline-flex; align-items: center; justify-content: center; }
+/* ป้ายตัวเลขท้ายแท็บ PageHeader (05/11 · แท็บเส้นใต้) — เหลืองอำพัน = งานค้าง */
+.ph-tab-badge { margin-left: 6px; font-size: 11.5px; font-weight: 700; color: var(--amber); }
 .pg-menu-badge { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--bg3); color: var(--text2); flex-shrink: 0; }
 
 /* การ์ด KPI โครงเดียว (components/KpiTile.jsx) — ชื่อ → ตัวเลข → บรรทัดบริบท · ตัวเลขสีเดียว สีอยู่ที่บรรทัดล่าง */

@@ -26,6 +26,7 @@ import useTabParam from '../utils/useTabParam';
 import OrgTreeView from '../components/OrgTreeView';   // 🌳 มุมมองผังต้นไม้ (22/10 · คำสั่ง user "อยากมีหน้าวาดผัง")
 import Page from '../components/Page';
 import { IconButton, DeleteButton } from '../components/IconButton';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 /* 🔴 ชั้นไหนมีพาเนล/ปุ่มเพิ่มบนจอ ต้องมีป้ายครบทุกชั้น — ขาดตัวไหน หัวโมดัลขึ้น "เพิ่ม undefined"
    (เกิดจริง 05/10 ตอนเพิ่มชั้นทีมแล้วลืมเติมที่นี่ · มีด่าน regressionGuards) */
 const KIND_LABEL = { section: 'Section / ส่วน', department: 'Department / แผนก', line: 'Group / กลุ่ม', team: 'Team / ทีม' };
@@ -352,7 +353,7 @@ export default function OrgSetup() {
   const itemStyle = (active) => ({
     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
     padding: '9px 12px', borderRadius: 8, cursor: 'pointer', marginBottom: 4,
-    background: active ? 'rgba(77,159,255,0.12)' : 'var(--bg2)',
+    background: active ? 'var(--blue-dim)' : 'var(--bg2)',
     border: `1px solid ${active ? 'var(--accent)' : 'var(--border2)'}`,
   });
 
@@ -360,18 +361,18 @@ export default function OrgSetup() {
     <Page>
       <PageHeader title="แผนผังองค์กร" icon="🏢"
         sub="จัดการโครงสร้าง Section/ส่วน → Department/แผนก → Group/กลุ่ม พร้อม Cost Center (master data ที่หน้าอื่นใช้อ้างอิง)"
-        tabs={[{ key: 'tree', label: '🌳 มุมมองผัง' }, { key: 'manage', label: '🗂 จัดการหน่วยงาน' },
-               { key: 'teams', label: '👥 ทีม (จัดกะ)' }]}
+        tabs={[{ key: 'tree', label: 'มุมมองผัง' }, { key: 'manage', label: 'จัดการหน่วยงาน' },
+               { key: 'teams', label: 'ทีม (จัดกะ)' }]}
         tab={tab} onTab={setTab} />
 
       {/* ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล (UI-CONVENTIONS §6.9) — ต้องรู้ว่าแก้อะไรได้/ไม่ได้ และต้องไปขอใคร */}
       {!isAdmin && (
         canOwn && mySecId ? (
-          <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 9, border: '1px solid rgba(34,197,94,0.35)', background: 'rgba(34,197,94,0.07)', fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
-            🛠️ คุณแก้ได้เฉพาะ <b>แผนก/กลุ่มใต้ส่วนงาน "{myUnit}"</b> ของตัวเอง — ส่วนงานอื่นและโครงระดับ Section เป็นของผู้ดูแลระบบ
+          <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 9, border: '1px solid var(--green-line)', background: 'var(--green-dim)', fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
+            คุณแก้ได้เฉพาะ <b>แผนก/กลุ่มใต้ส่วนงาน "{myUnit}"</b> ของตัวเอง — ส่วนงานอื่นและโครงระดับ Section เป็นของผู้ดูแลระบบ
           </div>
         ) : canOwn && !mySecId ? (
-          <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 9, border: '1px solid rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.08)', fontSize: 12, color: '#f59e0b', lineHeight: 1.6 }}>
+          <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 9, border: '1px solid var(--amber-line)', background: 'var(--amber-dim)', fontSize: 12, color: 'var(--amber)', lineHeight: 1.6 }}>
             ⚠️ บัญชีคุณมีสิทธิ์แก้ผังของหน่วยงานตัวเอง แต่ <b>ยังไม่ได้ตั้งว่าสังกัดส่วนงานไหน</b> จึงยังแก้อะไรไม่ได้
             <div style={{ color: 'var(--muted)' }}>ให้ผู้ดูแลระบบตั้งช่อง <b>Section</b> ให้บัญชีนี้ที่ <b>ตั้งค่า → จัดการผู้ใช้งาน</b>{myUnit ? '' : ' (ตอนนี้ว่างอยู่)'}</div>
           </div>
@@ -395,7 +396,7 @@ export default function OrgSetup() {
             👥 <b>ทีม A/B/C ใช้สำหรับจัดกะการทำงาน — ไม่ใช่ชั้นในผังองค์กร</b> จึงไม่ปรากฏในมุมมองผังและใบ export
             <div style={{ color: 'var(--muted)' }}>
               ค่าที่บันทึกคือช่อง <b>Code</b> (เช่น <code>A</code>) ซึ่งตรงกับ <code>employees.team</code> ·
-              ตารางกะใช้ที่ <b>🗓 ตารางกะการทำงาน</b> ({'/shift-organize'})
+              ตารางกะใช้ที่ <b>ตารางกะการทำงาน</b> ({'/shift-organize'})
             </div>
           </div>
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
@@ -459,7 +460,7 @@ export default function OrgSetup() {
             {!sections.length && <Empty text="ยังไม่มี Section" />}
             <div style={itemStyle(selSection === ORPHAN)} onClick={() => setSelSection(ORPHAN)}>
               <span style={{ fontSize: 13, color: 'var(--text2)' }}>
-                🏛️ ขึ้นตรงฝ่าย (ไม่มี Section)
+                ขึ้นตรงฝ่าย (ไม่มี Section)
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({orphanDepts.length} แผนก)</span>
               </span>
             </div>
@@ -499,7 +500,7 @@ export default function OrgSetup() {
               <div key={l.id} style={itemStyle(selLine === l.id)} onClick={() => setSelLine(l.id)}>
                 {/* จำนวนทีมใต้กลุ่ม — เห็นตั้งแต่ก่อนกด จะได้รู้ว่าทำไมลบไม่ได้ */}
                 <NodeLabel node={l} meta={teamsOf(l.id).length > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}> ({teamsOf(l.id).length} ทีม)</span>}>
-                  {!l.ref_line_id && <span key="nr" style={{ fontSize: 11, color: '#f59e0b', whiteSpace: 'nowrap' }}>(ไม่ผูก production_lines)</span>}
+                  {!l.ref_line_id && <span key="nr" style={{ fontSize: 11, color: 'var(--amber)', whiteSpace: 'nowrap' }}>(ไม่ผูก production_lines)</span>}
                   {lineCostCenter(l) && <CostBadge key="cc" code={lineCostCenter(l)} />}
                 </NodeLabel>
                 {canEditNode(l) && <RowActions node={l} onEdit={openEdit} onToggle={toggleActive} onDelete={handleDelete} />}
@@ -522,7 +523,7 @@ export default function OrgSetup() {
                   {sgEdit && (
                     <button onClick={saveSigners} disabled={sgSaving || !key}
                       style={{ padding: '7px 18px', background: sgSaving || !key ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: sgSaving || !key ? 'default' : 'pointer' }}>
-                      {sgSaving ? 'กำลังบันทึก...' : '💾 บันทึก'}
+                      {sgSaving ? 'กำลังบันทึก...' : 'บันทึก'}
                     </button>
                   )}
                 </div>
@@ -535,7 +536,7 @@ export default function OrgSetup() {
                   ตั้งครั้งเดียวต่อส่วนงาน ใช้ร่วมทุกไลน์ในส่วนนี้
                   (หัวหน้างานรายไลน์ตั้งที่หน้าจัดการไลน์)
                 </InfoMore>
-                {!key && <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 8 }}>⚠ ส่วนนี้ยังไม่มี Code/ชื่อที่ตรงกับ production_lines.section — ใบค่าฝีมืออาจดึงไม่เจอ</div>}
+                {!key && <div style={{ fontSize: 11, color: 'var(--amber)', marginBottom: 8 }}>⚠ ส่วนนี้ยังไม่มี Code/ชื่อที่ตรงกับ production_lines.section — ใบค่าฝีมืออาจดึงไม่เจอ</div>}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
                   {/* 2026-09-07: ผู้เซ็นเลือกจากทะเบียนผู้ใช้ผ่าน <PersonSelect> (allowFree — HR/TA อาจไม่มีบัญชี ESM · เก็บ snapshot ชื่อเหมือนเดิม) */}
                   <div><label style={labelSt}>ผู้จัดการต้นสังกัด</label><PersonSelect value={sgManager} onChange={({ name }) => setSgManager(name)} disabled={!sgEdit} style={{ marginTop: 4 }} inputStyle={sgEdit ? undefined : { opacity: 0.6 }} /></div>
@@ -573,13 +574,13 @@ export default function OrgSetup() {
                 <div>
                   <label style={labelSt}>{PARENT_LABEL[modal.kind]}</label>
                   <select value={modal.parentId ?? ''} onChange={e => setModal(m => ({ ...m, parentId: e.target.value || null }))}>
-                    {isAdmin && modal.kind === 'department' && <option value="">🏛️ ขึ้นตรงฝ่าย — ไม่อยู่ใต้ Section ใด</option>}
+                    {isAdmin && modal.kind === 'department' && <option value="">ขึ้นตรงฝ่าย — ไม่อยู่ใต้ Section ใด</option>}
                     {parentChoices.rows.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
                   </select>
                   {/* 🔴 กรองแถวออกแล้วต้องเขียนบนจอว่าซ่อนกี่รายการ — ไม่งั้นดูเหมือนผังมีแค่นี้ */}
                   {parentChoices.hidden > 0 && (
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.45 }}>
-                      🔒 ซ่อน {parentChoices.hidden} รายการที่อยู่นอกส่วนงานของคุณ — ย้ายข้ามส่วนงานต้องให้ admin ทำ
+                      ซ่อน {parentChoices.hidden} รายการที่อยู่นอกส่วนงานของคุณ — ย้ายข้ามส่วนงานต้องให้ admin ทำ
                     </div>
                   )}
                 </div>
@@ -593,7 +594,7 @@ export default function OrgSetup() {
                 <input type="text" value={formCode} onChange={e => setFormCode(e.target.value)}
                   placeholder={modal.kind === 'team' ? 'เช่น A' : 'เช่น PD5 / A'} />
                 {modal.kind === 'team' && !formCode.trim() && (
-                  <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.45 }}>
+                  <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4, lineHeight: 1.45 }}>
                     ⚠️ ไม่ใส่ Code = ตัวเลือกทีมจะใช้ชื่อเต็ม <b>"{formName.trim() || 'ชื่อทีม'}"</b> ซึ่ง
                     <b> ไม่ตรงกับทีมที่พนักงานถูกบันทึกไว้</b> (ของเดิมเก็บเป็น A / B / C)
                   </div>
@@ -607,7 +608,7 @@ export default function OrgSetup() {
                   <>
                     <input type="text" value={lineById[String(formRefLineId)]?.cost_center || ''} readOnly disabled
                       placeholder="— ยังไม่ได้ตั้งที่หน้าจัดการไลน์ —" style={{ opacity: 0.7, cursor: 'not-allowed' }} />
-                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>🔗 single source — cost center ของไลน์มาจากหน้า <strong>จัดการไลน์</strong> (แก้ที่นั่นที่เดียว)</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>single source — cost center ของไลน์มาจากหน้า <strong>จัดการไลน์</strong> (แก้ที่นั่นที่เดียว)</div>
                   </>
                 ) : (
                   <>
@@ -621,8 +622,8 @@ export default function OrgSetup() {
                 <div>
                   <label style={labelSt}>ประเภทแรงงาน (Direct/Indirect)</label>
                   <select value={formLaborType} onChange={e => setFormLaborType(e.target.value)}>
-                    <option value="direct">🔧 Direct — ฝ่ายผลิต (operator ทำงานผลิตโดยตรง)</option>
-                    <option value="indirect">🗂️ Indirect — สนับสนุน (ช่างซ่อมบำรุง/QA/ธุรการ/ขาย)</option>
+                    <option value="direct">Direct — ฝ่ายผลิต (operator ทำงานผลิตโดยตรง)</option>
+                    <option value="indirect">Indirect — สนับสนุน (ช่างซ่อมบำรุง/QA/ธุรการ/ขาย)</option>
                   </select>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                     พนักงานใน{modal.kind === 'section' ? 'ส่วน' : 'แผนก'}นี้จะถูกจัดเป็นประเภทนี้อัตโนมัติ{modal.kind === 'section' ? ' (แผนกตั้งทับได้)' : ' (ช่างส่วนใหญ่อยู่ระดับแผนก)'}
@@ -643,7 +644,7 @@ export default function OrgSetup() {
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                     ใช้แยก “สกิลของฝ่ายไหน” — ติดที่ตัวบนสุดพอ ตัวลูกตกทอดเอง
                     {modal.parentId ? ' (ตัวนี้มีแม่อยู่แล้ว ปล่อยว่างได้)' : ''}
-                    {!canDivisions && ' · 🔒 ต้องมีสิทธิ์ org:manage_divisions ถึงแก้ได้'}
+                    {!canDivisions && ' · ต้องมีสิทธิ์ org:manage_divisions ถึงแก้ได้'}
                   </div>
                 </div>
               )}
@@ -655,7 +656,7 @@ export default function OrgSetup() {
                 if (supportUnit && !formRefLineId) return (
                   <div style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)',
                                 border: '1px solid var(--border2)', borderRadius: 8, padding: '8px 10px' }}>
-                    🗂️ อยู่ใต้หน่วยงาน <b>สายสนับสนุน (Indirect)</b> — ไม่ต้องผูกไลน์ผลิต
+                    อยู่ใต้หน่วยงาน <b>สายสนับสนุน (Indirect)</b> — ไม่ต้องผูกไลน์ผลิต
                     <div style={{ marginTop: 2 }}>ถ้าหน่วยนี้มีไลน์ผลิตจริง ให้แก้ประเภทที่แผนกแม่เป็น Direct ก่อน</div>
                   </div>
                 );
@@ -665,7 +666,7 @@ export default function OrgSetup() {
                     <LineSelect lines={lines} value={formRefLineId} valueKey="id" includeSupport
                       placeholder="— ไม่ผูก —" onChange={setFormRefLineId} />
                     {supportUnit && (
-                      <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
+                      <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>
                         ⚠️ หน่วยแม่เป็นสายสนับสนุน (Indirect) แต่กลุ่มนี้ผูกไลน์ผลิตไว้ — ตรวจว่าตั้งใจไหม
                       </div>
                     )}
@@ -716,7 +717,7 @@ function NodeLabel({ node, meta, children }) {
 function CostBadge({ code }) {
   return (
     <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border2)', whiteSpace: 'nowrap' }}>
-      💰{code}
+      {code}
     </span>
   );
 }
@@ -743,7 +744,7 @@ function LaborBadge({ type }) {
   if (!type) return null;
   const m = laborMeta(type);
   return (
-    <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: `${m.color}18`, color: m.color, border: `1px solid ${m.color}44`, fontWeight: 600, whiteSpace: 'nowrap' }}>
+    <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: `${tint(m.color, 'dim')}`, color: m.color, border: `1px solid ${tint(m.color, 'line')}`, fontWeight: 600, whiteSpace: 'nowrap' }}>
       {m.icon}{m.short}
     </span>
   );

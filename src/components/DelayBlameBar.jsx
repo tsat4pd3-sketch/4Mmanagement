@@ -34,7 +34,7 @@ export default function DelayBlameBar({ day, chains = [], size = 12, maxChains =
         {lateJobs > 0 && (
           <span title="งานที่หลุดกรอบเวลาของตัวเองในวันงานนี้ — รวมใบที่ช้าแล้วปิดไปได้แล้ว (คนละเลขกับ 'ดีเลย์ N ใบ' ที่บอกว่าตอนนี้ค้างกี่ใบ)"
             style={chip('#ef4444')}>
-            📆 วันนี้หลุดกรอบ {lateJobs} งาน
+            วันนี้หลุดกรอบ {lateJobs} งาน
             <span style={{ fontSize: size - 1, fontWeight: 600, color: 'var(--muted)' }}>
               (ปิดช้า {lateDone} · ยังค้าง {stillLate})
             </span>
@@ -59,7 +59,7 @@ export default function DelayBlameBar({ day, chains = [], size = 12, maxChains =
               (วัดจริง 25/09: ใบ manual ที่เปิดคลุมทั้งกะกินเกิน 270–806 น. โดยไม่มีใบต่อท้ายเลย
                ถ้าพาดหัวว่า "ต้นเหตุ" คนจะไปไล่เบี้ยผิดใบ) · อันดับจัดโดย pushChainOf แล้ว */}
           {c.victimCount > 0
-            ? <span style={{ fontWeight: 800, color: '#ef4444' }}>🔗 ต้นเหตุ</span>
+            ? <span style={{ fontWeight: 800, color: '#ef4444' }}>ต้นเหตุ</span>
             : <span style={{ fontWeight: 800, color: '#f59e0b' }}>⏰ กินเวลาเกินกรอบ</span>}
           {c.root?.prod_no && (
             <span title="เลขใบผลิต (บาร์โค้ดบัตรคัมบัง)" style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--text)' }}>

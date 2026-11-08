@@ -734,3 +734,14 @@ median ของจริงรวมความสูญเสียไปแ�
 🔴 **ยังไม่ได้ทำ (ต้องให้ user เคาะ):** ขั้น OP ยังไม่ถูกนำไปคิด**ภาระกะ/กำลังผลิต**ในแท็บ 📊 Capacity
 — การเพิ่มยอดขั้น OP เข้าแกนกำลังผลิตจะเปลี่ยนตัวเลขของแท็บนั้นทั้งแท็บ (CT คนละค่า ไลน์เดียวกันอาจต้อง
 เดิน 2 รอบ) ⇒ แยกเป็นงานต่างหาก **ห้าม session ไหนเปิดเองโดยไม่ถาม**
+
+
+## 🧪 ทะเบียนเหตุผลจองเครื่องทดลอง — แท็บ ⚙️ ตั้งค่า (2026-11-05 · คำสั่ง user หลัง audit dropdown)
+
+- เดิม hardcode 6 ตัวใน `components/TrialBookingModal.jsx` ⇒ ย้ายเป็นทะเบียน DR **`trial_reasons`**
+  (migration `20261105b_trial_reasons_container_categories_dr.sql` · **apply แล้ว**) · seed = 6 ตัวเดิม ลำดับเดิม
+- ปลายทาง `production_plan_lots.trial_reason` ยังเก็บ **label เป็น text** (ไม่ผูก FK) · "อื่นๆ (พิมพ์เอง)" ยังมีเสมอ
+- จัดการที่ `/production-plan?tab=settings` (`SimpleMasterPanel` · สิทธิ์ `canSeeded('production_plan','write')`
+  เดียวกับคนวางแผน · ลบผ่าน `masterDeleteGuard(supabaseDR,'trial_reasons')`) · แท็บนี้**ไม่โชว์ตัวกรอง/คำเตือนของแผน**
+- loader `utils/useTrialReasons.js` · ทะเบียนโหลดไม่ได้ = `DEFAULT_TRIAL_REASONS` (จองต่อได้) + ช่องเขียน `registryFailText()`
+- ค่าที่เลือกไว้แต่ทะเบียนไม่มี (ถูกปิดใช้) ยังโชว์ในช่อง ไม่ขึ้นตัวแรกแทน

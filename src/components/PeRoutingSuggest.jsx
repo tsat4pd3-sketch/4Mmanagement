@@ -101,7 +101,7 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
   return (
     <div className="overlay"><div className="modal" style={{ width: 'min(860px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>🔀 เสนอ routing เข้า VSM — {set.part_no}</h3>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>เสนอ routing เข้า VSM — {set.part_no}</h3>
         <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
       </div>
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.6 }}>
@@ -158,7 +158,7 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
         )}
         {included > 10 && (
           <div style={{ fontSize: 11.5, color: '#f59e0b', marginBottom: 8 }}>
-            💡 ติ๊กไว้ {included} ขั้น — ใบ VSM ที่อ่านง่ายมักมี 5–8 กล่อง ลองติ๊กออกขั้นย่อย (เช่นจุดตรวจ/สปอตซ้ำๆ) ให้เหลือขั้นหลัก
+            ติ๊กไว้ {included} ขั้น — ใบ VSM ที่อ่านง่ายมักมี 5–8 กล่อง ลองติ๊กออกขั้นย่อย (เช่นจุดตรวจ/สปอตซ้ำๆ) ให้เหลือขั้นหลัก
           </div>
         )}
 

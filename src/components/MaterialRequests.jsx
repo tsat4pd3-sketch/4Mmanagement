@@ -35,6 +35,9 @@ import SearchSelect from './SearchSelect';
 import FilterBar from './FilterBar';
 import { ALL } from '../utils/filterLabels';
 import { DeleteButton } from './IconButton';
+import { useUomUnitsState } from '../utils/useUomUnits'; // 📏 ทะเบียนหน่วยนับ (05/11)
+import { buildUomIndex, normUom, uomOptions, DEFAULT_UOM } from '../utils/uom';
+import { registryFailText } from '../utils/useMasterRows.js';
 
 const today = () => {
   const d = new Date();
@@ -43,7 +46,7 @@ const today = () => {
 const monthOf = (d) => String(d || '').slice(0, 7);
 
 const EMPTY_ITEM = () => ({
-  _key: crypto.randomUUID(), mat_no: '', description: '', qty: '', unit: 'Pcs',
+  _key: crypto.randomUUID(), mat_no: '', description: '', qty: '', unit: DEFAULT_UOM,
   qty_issued: '', produced_date: '', batch_no: '',
 });
 
@@ -60,6 +63,9 @@ export default function MaterialRequests() {
   const { can } = usePerms();
   const canRecord = can('scrap', 'record');
   const canManage = can('scrap', 'manage');
+  /* 📏 หน่วยที่เขียนลงฐานผ่าน normUom (EA/pcs/Pcs → PC · utils/uom.js) */
+  const uomState = useUomUnitsState();
+  const uomIdx = useMemo(() => buildUomIndex(uomState.rows), [uomState.rows]);
 
   const [rows, setRows] = useState([]);
   const [lines, setLines] = useState([]);
@@ -218,7 +224,7 @@ export default function MaterialRequests() {
       request_id: id, seq: i + 1,
       mat_no: it.mat_no || null, description: it.description || null,
       qty: it.qty === '' ? null : Number(it.qty),
-      unit: it.unit || 'Pcs',
+      unit: normUom(it.unit, uomIdx) || DEFAULT_UOM,
       qty_issued: it.qty_issued === '' || it.qty_issued == null ? null : Number(it.qty_issued),
       produced_date: it.produced_date || null, batch_no: it.batch_no || null,
       updated_by_name: fullName || null,
@@ -284,11 +290,11 @@ export default function MaterialRequests() {
 
   const applyPart = (p) => {
     if (picker?.itemKey) {
-      setItem(picker.itemKey, { mat_no: p.mat_no, description: p.part_name || '', unit: p.uom || 'Pcs' });
+      setItem(picker.itemKey, { mat_no: p.mat_no, description: p.part_name || '', unit: normUom(p.uom, uomIdx) || DEFAULT_UOM });
     } else {
       setEditor(e => ({
         ...e,
-        items: [...e.items, { ...EMPTY_ITEM(), mat_no: p.mat_no, description: p.part_name || '', unit: p.uom || 'Pcs' }],
+        items: [...e.items, { ...EMPTY_ITEM(), mat_no: p.mat_no, description: p.part_name || '', unit: normUom(p.uom, uomIdx) || DEFAULT_UOM }],
       }));
     }
     setPicker(null); setPq('');
@@ -380,7 +386,7 @@ export default function MaterialRequests() {
 
       {editor && (
         <Editor
-          editor={editor} setReq={setReq} setItem={setItem} addItem={addItem} delItem={delItem}
+          editor={editor} setReq={setReq} setItem={setItem} addItem={addItem} delItem={delItem} uomIdx={uomIdx} uomState={uomState}
           canRecord={canRecord} role={role} signers={signers} scopedLines={scopedLines} parts={parts}
           onPick={(k) => setPicker({ itemKey: k })}
           onClose={() => setEditor(null)} onSave={save}
@@ -415,7 +421,7 @@ export default function MaterialRequests() {
 }
 
 /* ── ฟอร์มใบเบิก ─────────────────────────────────────────────────────────── */
-function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, signers, scopedLines, parts = [], onPick, onClose, onSave }) {
+function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, signers, scopedLines, parts = [], onPick, onClose, onSave, uomIdx, uomState }) {
   const { req, items } = editor;
   // 📜 ค่าที่เคยบันทึกใน material_requests (DR) — รหัสคลังที่ยังไม่ลง storage_locations / ผู้ขอที่ไม่มีบัญชี ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
   const destHist = useColumnHistory(supabaseDR, 'material_requests', 'dest_storage_location', { upper: true });
@@ -495,7 +501,7 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
         <b style={{ fontSize: 13 }}>รายการสินค้าคงคลัง</b>
         <span style={{ flex: 1 }} />
         {canRecord && <>
-          <button onClick={() => onPick(null)} style={btnSt()}>🗂 เลือกจาก Parts Master</button>
+          <button onClick={() => onPick(null)} style={btnSt()}>เลือกจาก Parts Master</button>
           <button onClick={addItem} style={btnSt()}>＋ เพิ่มแถว</button>
         </>}
       </div>
@@ -518,8 +524,11 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
                 </td>
                 <td style={tdSt}><input value={it.description || ''} readOnly={ro} onChange={e => setItem(it._key, { description: e.target.value })} style={{ ...inpSt, width: 230 }} /></td>
                 <td style={tdSt}><input type="number" min="0" value={it.qty ?? ''} readOnly={ro} onChange={e => setItem(it._key, { qty: e.target.value })} style={{ ...inpSt, width: 72 }} /></td>
-                <td style={tdSt}><input value={it.unit || ''} readOnly={ro || !!uomOf(it.mat_no)} title={uomOf(it.mat_no) ? 'หน่วยตาม Parts Master' : undefined}
-                  onChange={e => setItem(it._key, { unit: e.target.value })} style={{ ...inpSt, width: 54, ...(uomOf(it.mat_no) ? { opacity: 0.8 } : {}) }} /></td>
+                {/* 📏 หน่วยจากทะเบียน `uom_units` + ✏️ ระบุเอง (หน่วยนอกทะเบียน) · ล็อกตาม Parts Master เมื่อ MAT อยู่ในทะเบียน (เหมือนเดิม) */}
+                <td style={tdSt}><SelectOrFree compact value={it.unit || ''} readOnly={ro || !!uomOf(it.mat_no)} disabled={ro || !!uomOf(it.mat_no)}
+                  options={uomOptions(uomIdx).map(o => o.value)} onChange={v => setItem(it._key, { unit: v })}
+                  style={{ width: 96, ...(uomOf(it.mat_no) ? { opacity: 0.8 } : {}) }} selectStyle={{ ...inpSt, width: '100%' }} inputStyle={inpSt} />
+                  {i === 0 && uomState?.failed && <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 2, maxWidth: 160 }}>{registryFailText('ทะเบียนหน่วยนับ', uomState.stale)}</div>}</td>
                 <td style={tdSt}><input type="number" min="0" value={it.qty_issued ?? ''} readOnly={ro} onChange={e => setItem(it._key, { qty_issued: e.target.value })} style={{ ...inpSt, width: 84 }} /></td>
                 <td style={tdSt}><input type="date" value={it.produced_date || ''} readOnly={ro} onChange={e => setItem(it._key, { produced_date: e.target.value })} style={{ ...inpSt, width: 130 }} /></td>
                 <td style={tdSt}><input value={it.batch_no || ''} readOnly={ro} onChange={e => setItem(it._key, { batch_no: e.target.value })} style={{ ...inpSt, width: 90 }} /></td>
@@ -557,9 +566,9 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
         <button onClick={onClose} style={btnSt()}>ปิด</button>
         {canRecord && <>
-          <button onClick={() => onSave()} style={btnSt()}>💾 บันทึก</button>
+          <button onClick={() => onSave()} style={btnSt()}>บันทึก</button>
           {req.status === 'draft' &&
-            <button onClick={() => onSave('submitted')} style={btnSt('var(--accent)')}>📤 บันทึก + ส่งขออนุมัติ</button>}
+            <button onClick={() => onSave('submitted')} style={btnSt('var(--accent)')}>บันทึก + ส่งขออนุมัติ</button>}
         </>}
       </div>
     </Modal>

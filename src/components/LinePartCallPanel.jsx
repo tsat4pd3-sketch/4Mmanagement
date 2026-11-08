@@ -35,16 +35,22 @@ import { isLeafLine, getChildLineNames, getAncestorNames } from '../utils/lineHi
 import { notifyEvent } from '../utils/notifyEvent';
 import { getActor } from '../utils/actorStamp';
 import { getWorkDate } from '../utils/workDate';   // 👤 "ใครเรียก" — ที่เดียวของตัวตนผู้ทำรายการ
-import { pointsForLine, DELIVER_GATES } from '../utils/replenishGate';
+import { pointsForLine, DELIVER_GATES, unreceivedAge } from '../utils/replenishGate';
 import MatLabel from './MatLabel';
 import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 มุม SAP ของใบ (2026-09-08)
 import ProductSelect from './ProductSelect';
-import useColumnHistory from '../utils/useColumnHistory';
 import { splitLevels, refStockOf, madeHereMats, selfMadeRequestBlock, lineRequestFromBom } from '../utils/partRefStock';
 import { buildBomIndex } from '../utils/bomTree';
 import { shortReceiptRows } from '../utils/stockDiscrepancy';
-import { syncLineOrderDemand, syncSummaryText } from '../lib/lineDemandSync';
+import { syncLineOrderDemand, syncSummaryText, confirmAndSyncLineDemand } from '../lib/lineDemandSync';
+import { qtyUnit } from '../utils/coilUom';
 import { fetchAllRows } from '../utils/fetchAllRows';   // 🏭 ของที่ไลน์ผลิตเอง อ้างยอดคลัง (2026-10-08) // 📜 MAT ที่เคยตั้งระดับไว้ — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
+
+/* 🙈 05/11 (คำสั่ง user "งงกับตั้งจุดเรียกเติม … เอาออกก่อน user งง") — ซ่อนทางเบิกแบบ MIN/MAX หน้าไลน์ทั้งชุด
+   (ปุ่ม ⚙️ · โมดัล · ส่วน "ถึงจุดเรียกเติม" · "ยังไม่ตั้งจุดเรียกเติม" · "ยอดคลังต่ำกว่าขั้นต่ำ ต้องผลิตเติม")
+   เหลือ 2 ทาง: ① เปิดใบผลิตแตก BOM ② ขอเบิกเอง · **ข้อมูล line_part_levels ไม่ลบ** — เปิดกลับ = ตั้ง true
+   (ใบที่ "พักไว้" ยังโชว์ — เป็นใบที่มีอยู่จริง ห้ามหายจากจอ) */
+const SHOW_LEVEL_REFILL = false;
 
 const norm = (s) => String(s ?? '').trim().toLowerCase();
 const num = (v) => (v == null || v === '' ? null : Number(v));
@@ -57,8 +63,8 @@ const WAIT_LEADER   = ['suggested', 'hold'];
 const ST = {
   hold:      { label: '⏸ พักไว้ก่อน',    color: '#f59e0b' },
   pending:   { label: '⏳ รอสโตร์หยิบ',   color: '#f59e0b' },
-  preparing: { label: '📦 สโตร์กำลังจัด', color: '#38bdf8' },
-  delivered: { label: '🚚 ส่งถึงไลน์แล้ว', color: '#22c55e' },
+  preparing: { label: 'สโตร์กำลังจัด', color: '#38bdf8' },
+  delivered: { label: 'ส่งถึงไลน์แล้ว', color: '#22c55e' },
 };
 
 const fmtQty = (v) => (v == null ? '—' : Number(v).toLocaleString());
@@ -130,7 +136,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
 
   const canDecide  = can('wip_request', 'decide', role);
   const canReceive = can('wip_request', 'receive', role);
-  const canSetLv   = can('line_levels', 'manage', role);
+  const canSetLv   = SHOW_LEVEL_REFILL && can('line_levels', 'manage', role);
 
   /* ⚠️⚠️ กฎ "หน่วยย่อยที่สุด" (user เคาะ 2026-08-31) — ของอยู่ที่ leaf เสมอ
      ไลน์แม่ที่มีลูก = แผนก ไม่ใช่จุดวางของ ⇒ **ห้ามใช้ getLineFamilyNames กับสต็อก/min-max/ใบขอ**
@@ -217,6 +223,22 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   }, [lineName, upKey]);
 
   useEffect(() => { load(); }, [load]);
+
+  /* 🧾 05/11 (คำสั่ง user · ข้อ A+C) — ความต้องการจาก "ใบผลิตที่เปิดอยู่" ต้องเห็นบนแผงเสมอ ไม่ใช่แค่ toast ตอนกด
+     · ใบผลิตที่เปิดก่อนมีระบบนี้ = ยังไม่เคยถูกคำนวณ ⇒ ปุ่ม 🔁 ให้ไลน์กดคำนวณ + แจ้งสโตร์เองได้ทุกเมื่อ
+     · คำนวณแบบ dryRun (อ่านอย่างเดียว) ตอนเปิดแผง/สลับไลน์/หลังแจ้ง — ไม่ผูกกับ load() ที่ถูกเรียกถี่
+     · อ่านไม่ได้ = เขียน error บนจอ ห้ามโชว์ว่า "ไม่มีความต้องการ" */
+  const [plan, setPlan] = useState(null);       // { error?, rows } | null = กำลังคำนวณ
+  const [planTick, setPlanTick] = useState(0);
+  useEffect(() => {
+    if (!lineName) return undefined;
+    let alive = true;
+    setPlan(null);
+    syncLineOrderDemand({ lineName, role, dryRun: true })
+      .then(r => { if (alive) setPlan(r); })
+      .catch(e => { if (alive) setPlan({ error: e?.message || String(e), rows: [] }); });
+    return () => { alive = false; };
+  }, [lineName, role, planTick]);
 
   /* ── ยอดคงเหลือ "ของไลน์นี้เท่านั้น" ────────────────────────────────────────
      ⚠️ ห้ามบวกของไลน์แม่เข้ามา — ของที่แม่ยังไม่ได้ถูกจ่ายลงมาที่ไลน์นี้จริง
@@ -368,6 +390,8 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
      ไม่มี BOM / อ่าน BOM ไม่ได้ = ไม่สร้างใบ + บอกบนจอ (ห้ามถอยไปขอตัวเอง) */
   /* สรุปผลการแจ้งสโตร์ (ตัวเดียวกับตอนเปิดใบผลิต) — สำเร็จต้องล้างช่อง · ไม่ถึงกล่อง/ไม่มี packing std ต้องบอกบนจอ */
   const reportSync = (r, what) => {
+    /* 💬 05/11 — popup ยืนยันแล้ว: กดยกเลิก / ไม่มีอะไรต้องแจ้ง (ดูรายละเอียดใน popup แล้ว) = ไม่ toast ซ้ำ */
+    if (r.cancelled || r.nothingToSend) { setPlanTick(t => t + 1); if (r.cancelled) toast.info(`${what} — ยกเลิก ยังไม่แจ้งสโตร์`); return; }
     const text = syncSummaryText(r);
     if (r.error || r.writeErrors?.length) toast.error(`${what} — ${text}`);
     else if (r.inserted || r.raised) {
@@ -376,7 +400,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
         lines: [`🏭 ไลน์: ${lineName}`, `🔁 ${what}`, ...r.rows.filter(x => x.action === 'insert' || x.action === 'raise').slice(0, 5).map(x => `🔩 ${x.mat_no} × ${fmtQty(x.qty)}`)] });
     } else toast.info(`${what} — ${text}`);
     if (!r.error) { setAdhocMat(''); setAdhocName(''); setAdhocQty(''); setAdhocKnown(false); }
-    load();
+    load(); setPlanTick(t => t + 1);
   };
   const placeFromBom = async (mat, qty) => {
     setBusy(`adhoc:${mat}`);
@@ -393,11 +417,10 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       toast.error(`${mat} เป็นพาร์ทที่ ${lineName} ผลิตเอง แต่ยังไม่มีชิ้นส่วนลูกใน BOM — แตกเป็นของที่ต้องเบิกไม่ได้ (ตั้ง BOM ที่ /products ก่อน)`);
       return;
     }
-    const list = res.items.map(i => `• ${i.part_name ? `${i.part_name} · ` : ''}MAT ${i.mat_no} × ${fmtQty(i.qty)}`).join('\n');
-    if (!window.confirm(`${mat} เป็นพาร์ทที่ ${lineName} ผลิตเอง — ผลิต ${qty.toLocaleString()} ชิ้น ต้องเบิกจากสโตร์ตาม BOM:\n\n${list}\n\nแจ้งสโตร์ ${res.items.length} รายการ?`)) { setBusy(null); return; }
-    /* 🔁 05/11 — ผ่านตัวเดียวกับ "เปิดใบผลิต" (lib/lineDemandSync.js): รวมความต้องการจากใบผลิตที่เปิดอยู่ +
-       ที่ขอเพิ่มนี้ เทียบยอดหน้าไลน์ แล้วปัดเต็มกล่อง packing std · ไม่ถึงกล่อง = สะสมรอ */
-    const r = await syncLineOrderDemand({ lineName, role, extra: res.items.map(i => ({ mat_no: i.mat_no, part_name: i.part_name, need: i.qty })) });
+    /* 💬 05/11 (คำสั่ง user) — popup บอกหน่วย · ของหน้าไลน์ · ขาด · สะสมอีกเท่าไหร่ถึงจะแจ้ง (utils/linePlanText.js) */
+    const r = await confirmAndSyncLineDemand({ lineName, role, focus: res.items.map(i => i.mat_no),
+      title: `${mat} เป็นพาร์ทที่ ${lineName} ผลิตเอง — ผลิต ${qty.toLocaleString()} ชิ้น ต้องเบิกจากสโตร์ตาม BOM:`,
+      extra: res.items.map(i => ({ mat_no: i.mat_no, part_name: i.part_name, need: i.qty, viaBom: true })) });
     setBusy(null);
     reportSync(r, `จะผลิต ${mat} × ${qty.toLocaleString()} (แตก BOM ${res.items.length} รายการ)`);
     load();
@@ -419,7 +442,8 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     if (!adhocKnown && !window.confirm(`"${mat}" ไม่อยู่ในทะเบียนสินค้า/BOM ของไลน์นี้\n\nยืนยันว่าจะขอเบิกพาร์ทนี้?`)) return;
     setBusy(`adhoc:${mat}`);
     /* 🔁 05/11 — หลักการเดียวกับเปิดใบผลิต: รวมกับความต้องการที่มีอยู่ เทียบยอดหน้าไลน์ ปัดเต็มกล่อง */
-    const r = await syncLineOrderDemand({ lineName, role, extra: [{ mat_no: mat, part_name: adhocName || null, need: qty }] });
+    const r = await confirmAndSyncLineDemand({ lineName, role, focus: [mat], title: `➕ ขอเบิก ${mat}${adhocName ? ` · ${adhocName}` : ''} เพิ่ม ${qty.toLocaleString()}:`,
+      extra: [{ mat_no: mat, part_name: adhocName || null, need: qty }] });
     setBusy(null);
     reportSync(r, `ขอเพิ่ม ${mat} × ${qty.toLocaleString()}`);
   };
@@ -488,7 +512,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     let qty = issued;
     let note = null;
     if (!full) {
-      const a = window.prompt(`ได้รับจริงกี่ชิ้น? (สโตร์ส่งมา ${fmtQty(issued)})`, '');
+      const a = window.prompt(`ได้รับจริงกี่${qtyUnit(r.uom)}? (สโตร์ส่งมา ${fmtQty(issued)} ${qtyUnit(r.uom)})`, '');
       if (a === null) return;
       qty = Number(a);
       if (!(qty >= 0)) { toast.error('จำนวนไม่ถูกต้อง'); return; }
@@ -538,9 +562,9 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
      ตัวเลขระดับนี้ไม่มีความหมาย — บอกให้ไปเปิดที่ไลน์ลูกแทน **ห้ามโชว์ตัวเลขให้เข้าใจผิด** */
   if (!isLeaf) return (
     <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '12px 16px', marginBottom: 16 }}>
-      <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>📦 เรียกชิ้นส่วนจากสโตร์</div>
+      <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>เรียกชิ้นส่วนจากสโตร์</div>
       <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.7 }}>
-        <b>{lineName}</b> เป็นไลน์แม่ (มีไลน์ย่อย {kidNames.length}) — ของและจุดเรียกเติมอยู่ที่ <b>ไลน์ย่อย</b>
+        <b>{lineName}</b> เป็นไลน์แม่ (มีไลน์ย่อย {kidNames.length}) — ของอยู่ที่ <b>ไลน์ย่อย</b>
         <br />เปิดกะที่ไลน์ย่อยเพื่อดู/เบิก: {kidNames.map(n => (
           <span key={n} style={{ display: 'inline-block', margin: '3px 4px 0 0', padding: '2px 8px', borderRadius: 6, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)', fontSize: 11 }}>{n}</span>
         ))}
@@ -548,7 +572,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     </div>
   );
 
-  const nothing = !err && !whErr && !suggest.length && !holds.length && !inFlight.length && !noLevel.length && !stuckUp.length
+  const nothing = !err && !whErr && !(SHOW_LEVEL_REFILL && suggest.length) && !holds.length && !inFlight.length && !(SHOW_LEVEL_REFILL && noLevel.length)
     && !split.produceDue.length && !split.produceUnknown.length;   // produceNoStd ตัวเดียวไม่เปิดแผง (ไม่งั้นทุกไลน์ที่ผลิตของขึ้นแผงหมด)
   /* 🔴 15/10 feedback หน้างาน ("ไม่มีปุ่ม เรียก Part จาก Store ครับ แล้วตั้งจุดเรียกเติมยังไงครับ"):
      ไลน์ที่ยังไม่มีของ + ยังไม่ตั้ง min = `nothing` ⇒ แผงหายทั้งใบ ⇒ **ปุ่ม ⚙️ ตั้งจุดเรียกเติม ก็หายไปด้วย**
@@ -566,6 +590,67 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       fullName={fullName} onClose={() => { setShowSetup(false); load(); }} />
   );
 
+  const syncNow = async () => {
+    setBusy('order-sync');
+    const r = await confirmAndSyncLineDemand({ lineName, role, title: `🔁 ${lineName} — ความต้องการจากใบผลิตที่เปิดอยู่:` });
+    setBusy(null);
+    reportSync(r, 'คำนวณจากใบผลิตที่เปิดอยู่');
+  };
+  const planRows = plan?.rows || [];
+  const planSend = planRows.filter(x => x.action === 'insert' || x.action === 'raise');
+  const planWait = planRows.filter(x => x.action === 'wait');
+  const planNoPkg = planRows.filter(x => x.action === 'no_pkg');
+  const orderBlock = (
+    <div style={{ marginBottom: 12, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '9px 12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>ความต้องการจากใบผลิตที่เปิดอยู่</span>
+        {plan == null && <span style={{ fontSize: 11, color: 'var(--muted)' }}>กำลังคำนวณ…</span>}
+        {plan && !plan.error && (
+          <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+            {plan.area?.code ? `พื้นที่ ${plan.area.code} (${(plan.area.lines || []).join(' · ')})` : 'ไลน์นี้ยังไม่ผูกพื้นที่ SAP — คิดเฉพาะไลน์นี้'}
+            {` · ใบผลิตเปิดอยู่ ${plan.orders ?? 0} ใบ`}
+            {planRows.length ? ` · ลูกที่ต้องใช้ ${planRows.length} พาร์ท` : ''}
+            {planSend.length ? <> · <b style={{ color: 'var(--amber)' }}>ยังไม่ได้แจ้งสโตร์ {planSend.length}</b></> : null}
+          </span>
+        )}
+        {(canDecide || canReceive || canSetLv) && (
+          <button disabled={!!busy} onClick={syncNow} style={{ marginLeft: 'auto', ...btn('var(--bg2)', 'var(--blue)', 'var(--blue)') }}>
+            {busy === 'order-sync' ? '…' : '🔁 คำนวณ + แจ้งสโตร์'}
+          </button>
+        )}
+      </div>
+      {plan?.error && <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--red)' }}>⚠ คำนวณไม่ได้ — {plan.error}</div>}
+      {/* 05/11 (คำสั่ง user "มีออเดอร์เปิดอยู่ แจ้งแบบนี้ได้ไง") — ใบผลิตที่ MAT ไม่มีลูกใน BOM ต้องบอกตรงๆ ห้ามบอกว่า "ไม่ต้องเบิก" */}
+      {plan?.noBom?.length > 0 && (
+        <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--red)', lineHeight: 1.7 }}>
+          ⚠ <b>ใบผลิต {plan.noBom.length} ตัวไม่มีลูกใน BOM — แตกไม่ได้ ระบบจึงไม่รู้ว่าต้องเบิกอะไร:</b>{' '}
+          {plan.noBom.slice(0, 5).map(x => `${x.mat_no} × ${fmtQty(x.qty)}`).join(' · ')} — แจ้ง PE ตั้ง BOM (/products) หรือกด ➕ ขอเบิกเอง
+        </div>
+      )}
+      {plan && !plan.error && plan.orders > 0 && !planRows.length && !plan.noBom?.length && (
+        <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--muted)' }}>ลูกใน BOM ทั้งหมดเป็นของที่พื้นที่นี้ผลิตเอง — ไม่มีอะไรต้องเบิกจากสโตร์</div>
+      )}
+      {planSend.length > 0 && (
+        <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7 }}>
+          ครบกล่องแล้วแต่ยังไม่ได้แจ้ง (ใบผลิตเปิดก่อนมีระบบนี้ หรือเพิ่งเพิ่มยอด) — กด 🔁 เพื่อแจ้งสโตร์:{' '}
+          {planSend.slice(0, 6).map(x => `${x.mat_no} × ${fmtQty(x.qty)}${x.coil ? ' kg' : ''}`).join(' · ')}{planSend.length > 6 ? ` · +${planSend.length - 6}` : ''}
+        </div>
+      )}
+      {planWait.length > 0 && (
+        <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7 }}>
+          ⏳ <b>ยังไม่ครบ 1 กล่อง — สะสมรอใบผลิตถัดไป {planWait.length} พาร์ท</b> (สโตร์ยังไม่เห็น):{' '}
+          {planWait.slice(0, 6).map(x => `${x.mat_no} ขาด ${fmtQty(x.short)} / กล่อง ${fmtQty(x.pkg)}`).join(' · ')}{planWait.length > 6 ? ` · +${planWait.length - 6}` : ''}
+        </div>
+      )}
+      {planNoPkg.length > 0 && (
+        <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--red)', lineHeight: 1.7 }}>
+          📦 <b>ยังไม่ตั้ง packing std {planNoPkg.length} พาร์ท — ระบบไม่แจ้งสโตร์ให้</b> (ตั้งขนาดกล่องที่ทะเบียนพาร์ท หรือกด ➕ ขอเบิกเอง):{' '}
+          {planNoPkg.slice(0, 6).map(x => `${x.mat_no} ขาด ${fmtQty(x.short)}`).join(' · ')}{planNoPkg.length > 6 ? ` · +${planNoPkg.length - 6}` : ''}
+        </div>
+      )}
+    </div>
+  );
+
   /* ➕ ฟอร์ม "ขอเบิกพาร์ทนี้เลย" — ต้องเข้าถึงได้**ทุกสถานะของแผง** รวมตอนไม่มีอะไรต้องทำ
      (บทเรียน 15/10: จอที่ซ่อนตัวเองเมื่อไม่มีข้อมูล ห้ามเป็นที่เดียวที่เข้าถึงงานของตัวเอง) */
   const adhocBlock = !canDecide ? null : (
@@ -577,11 +662,13 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       ) : (
         <div style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, padding: '10px 12px' }}>
           <div style={{ fontSize: 11.5, fontWeight: 800, color: '#22c55e', marginBottom: 6 }}>
-            ➕ ขอเบิกพาร์ทนี้เลย <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· ไม่ต้องมีจุดเรียกเติม ไม่ต้องรอยอดถึง min · เลือกพาร์ทที่ไลน์นี้ผลิต = ใส่ยอดที่จะผลิต ระบบแตก BOM เป็นชิ้นส่วนที่ต้องเบิกให้</span>
+            ➕ ขอเบิกพาร์ทนี้เลย <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· เลือกพาร์ทที่ไลน์นี้ผลิต = ใส่ยอดที่จะผลิต ระบบแตก BOM เป็นชิ้นส่วนที่ต้องเบิกให้</span>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             {/* ช่องรับรหัสพาร์ทต้องเป็น picker กลาง ห้าม input เปล่า (UI-CONVENTIONS §5.1.2) */}
-            <ProductSelect value={adhocMat} lines={pickLines} extraOptions={adhocExtra}
+            {/* 🔒 05/11 (คำสั่ง user "ยังขึ้นของไลน์อื่นอยู่ ไม่ควรขึ้นเพื่อกันการงง") — `strict` = เฉพาะพาร์ทของไลน์นี้ (แม่/ลูก)
+                + ชิ้นส่วนลูก BOM ของไลน์นี้ (`adhocExtra`) · ห้ามถอด strict */}
+            <ProductSelect strict value={adhocMat} lines={pickLines} extraOptions={adhocExtra}
               placeholder="เลือกพาร์ทที่ต้องการ" style={{ width: 260 }} inputStyle={{ padding: '5px 26px 5px 10px', fontSize: 12 }}
               onChange={({ mat_no, opt, known }) => {
                 setAdhocMat(mat_no); setAdhocKnown(!!opt && known !== false);
@@ -590,15 +677,15 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
             {/* ⚠️ input ใน flex row ต้องกำหนด width เอง — index.css ตั้ง input{width:100%} จะดันปุ่มแตกแถว */}
             <input value={adhocQty} onChange={e => setAdhocQty(e.target.value)} inputMode="numeric"
               placeholder="จำนวน (ชิ้น)" style={{ width: 130, padding: '5px 10px', borderRadius: 7, fontSize: 12 }} />
-            <button disabled={!!busy} onClick={placeAdhoc} style={btn('#22c55e', '#04140a')}>📦 แจ้งสโตร์</button>
+            <button disabled={!!busy} onClick={placeAdhoc} style={btn('#22c55e', '#04140a')}>แจ้งสโตร์</button>
             <button onClick={() => { setAdhocOpen(false); setAdhocMat(''); setAdhocName(''); setAdhocQty(''); setAdhocKnown(false); }}
               style={btn('transparent', 'var(--muted)', 'var(--border2)')}>ยกเลิก</button>
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.6 }}>
-            ใบนี้จะขึ้นที่คิวสโตร์ทันทีโดยมีป้าย <b>“ไลน์ขอเบิกเอง”</b> (แยกจากใบที่ระบบเสนอ)
+            ใบนี้จะขึ้นที่คิวสโตร์ทันทีโดยมีป้าย <b>“ไลน์ขอเบิกเอง”</b> (ถ้าครบกล่อง — ดูรายละเอียดใน popup ก่อนกดยืนยัน)
             {adhocMat && onHand.has(String(adhocMat).trim())
               ? <> · ตอนนี้หน้าไลน์มี <b>{fmtQty(onHand.get(String(adhocMat).trim()))}</b> ชิ้น</>
-              : adhocMat ? <> · พาร์ทนี้<b>ยังไม่เคยมียอดหน้าไลน์นี้</b> (ระบบจึงไม่เคยเตือนให้เบิก)</> : null}
+              : adhocMat ? <> · พาร์ทนี้<b>ยังไม่เคยมียอดหน้าไลน์นี้</b></> : null}
             {canSetLv && <> · ถ้าต้องเบิกพาร์ทนี้บ่อย ให้ไป <button onClick={() => setShowSetup(true)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 11, fontWeight: 700, padding: 0 }}>ตั้งจุดเรียกเติม</button> แล้วระบบจะเตือนเอง</>}
           </div>
         </div>
@@ -619,17 +706,18 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     return (
       <div style={card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: canDecide ? 10 : 0 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>📦 เรียกชิ้นส่วนจากสโตร์</div>
+          <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>เรียกชิ้นส่วนจากสโตร์</div>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-            {lineName} · {noLevel.length || split.produceNoStd?.length ? 'ยังไม่ได้ตั้งจุดเรียกเติม' : 'ไม่มีพาร์ทไหนถึงจุดเรียกเติม'}
+            {lineName}{SHOW_LEVEL_REFILL ? ` · ${noLevel.length || split.produceNoStd?.length ? 'ยังไม่ได้ตั้งจุดเรียกเติม' : 'ไม่มีพาร์ทไหนถึงจุดเรียกเติม'}` : ''}
           </span>
           <button onClick={load} title="รีเฟรช" style={{ marginLeft: 'auto', ...btn('var(--bg3)', 'var(--text2)', 'var(--border2)') }}>↻</button>
           {canSetLv && (
             <button onClick={() => setShowSetup(true)} style={btn('var(--bg3)', 'var(--text2)', 'var(--border2)')}>
-              ⚙️ ตั้งจุดเรียกเติม
+              ตั้งจุดเรียกเติม
             </button>
           )}
         </div>
+        {orderBlock}
         {adhocBlock}
         {setupModal}
       </div>
@@ -639,18 +727,19 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   return (
     <div style={card}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>📦 เรียกชิ้นส่วนจากสโตร์</div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>เรียกชิ้นส่วนจากสโตร์</div>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>{lineName}</span>
         <button onClick={load} title="รีเฟรช"
           style={{ marginLeft: 'auto', ...btn('var(--bg3)', 'var(--text2)', 'var(--border2)') }}>↻</button>
         {canSetLv && (
           <button onClick={() => setShowSetup(true)} style={btn('var(--bg3)', 'var(--text2)', 'var(--border2)')}>
-            ⚙️ ตั้งจุดเรียกเติม
+            ตั้งจุดเรียกเติม
           </button>
         )}
       </div>
 
-      {/* ➕ ขอเบิกเอง — อยู่บนสุดเสมอ: คนหน้าไลน์ต้องขอของได้ทุกเมื่อ ไม่ต้องรอยอดถึง min */}
+      {/* 🧾 ความต้องการจากใบผลิต (05/11) + ➕ ขอเบิกเอง — อยู่บนสุดเสมอ */}
+      {orderBlock}
       {adhocBlock}
 
       {/* โหลดไม่สำเร็จ = ต้องบอก ห้ามแสดงเป็น "ไม่มีอะไรต้องเบิก" */}
@@ -662,7 +751,8 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
 
       {/* ⬆ ของยังกองที่ไลน์แม่ — ไม่นับเป็นของไลน์นี้ แต่ห้ามเงียบ
           นี่คือเหตุผลที่ระบบไม่เสนอเติมทั้งที่ยอดรวมในระบบดูเหมือนมี */}
-      {stuckUp.length > 0 && (
+      {/* 🙈 05/11 (คำสั่ง user) — ไม่โชว์ "ของค้างที่ไลน์แม่" แล้ว: การเบิกคิดรวมทั้งพื้นที่ SAP (แม่-ลูกนับที่เดียวกัน) */}
+      {SHOW_LEVEL_REFILL && stuckUp.length > 0 && (
         <div style={{ fontSize: 11.5, color: 'var(--text2)', background: 'rgba(245,158,11,0.09)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '8px 11px', marginBottom: 10, lineHeight: 1.7 }}>
           <b style={{ color: '#f59e0b' }}>⬆ ของ {stuckUp.length} พาร์ทยังอยู่ที่ไลน์แม่ ไม่ได้อยู่หน้าไลน์นี้</b>
           <br />ระบบนับเฉพาะของที่อยู่ที่ <b>{lineName}</b> จริง (หน่วยย่อยที่สุด) — ของที่ไลน์แม่จึงไม่ถูกนับให้
@@ -685,12 +775,12 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       )}
 
       {/* ── 🏭 ของที่ไลน์นี้ผลิตเอง: ยอดคลังต่ำกว่าจุดเรียกเติม → ต้องผลิตเติม (สัญญาณ ไม่สร้างใบเบิก) ── */}
-      {(split.produceDue.length > 0 || split.produceUnknown.length > 0 || split.produceNoStd.length > 0) && (
+      {SHOW_LEVEL_REFILL && (split.produceDue.length > 0 || split.produceUnknown.length > 0 || split.produceNoStd.length > 0) && (
         <div style={{ marginBottom: 12 }}>
           {split.produceDue.length > 0 && (
             <>
               <div style={{ fontSize: 11.5, fontWeight: 800, color: '#38bdf8', marginBottom: 6 }}>
-                🏭 ยอดคลังต่ำกว่าขั้นต่ำ (แท็บคำนวณ Kanban) {split.produceDue.length} พาร์ท — ต้องผลิตเติม
+                ยอดคลังต่ำกว่าขั้นต่ำ (แท็บคำนวณ Kanban) {split.produceDue.length} พาร์ท — ต้องผลิตเติม
               </div>
               {split.produceDue.map(s => {
                 const short = s.have <= 0;
@@ -727,7 +817,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       )}
 
       {/* ── ถึงจุดเรียกเติม → ระบบเสนอ คนตัดสิน ── */}
-      {suggest.length > 0 && (
+      {SHOW_LEVEL_REFILL && suggest.length > 0 && (
         <div style={{ marginBottom: holds.length || inFlight.length ? 12 : 0 }}>
           <div style={{ fontSize: 11.5, fontWeight: 800, color: '#f59e0b', marginBottom: 6 }}>
             ⚠️ ถึงจุดเรียกเติม {suggest.length} พาร์ท — จะเบิกหรือพักไว้ก่อน?
@@ -738,7 +828,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
           ))}
           {!canDecide && (
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-              👁 ดูอย่างเดียว — คนตัดสินใจเบิกคือหัวหน้ากลุ่มของไลน์ (สิทธิ์ <code>wip_request:decide</code>)
+              ดูอย่างเดียว — คนตัดสินใจเบิกคือหัวหน้ากลุ่มของไลน์ (สิทธิ์ <code>wip_request:decide</code>)
             </div>
           )}
         </div>
@@ -755,7 +845,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
               background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8 }}>
               <MatLabel mat={r.mat_no} name={r.part_name} size={12.5} />
               <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                ขอ {fmtQty(r.request_qty)} ชิ้น · พักเมื่อ {hhmm(r.hold_at)}{r.hold_by_name ? ` โดย ${r.hold_by_name}` : ''}
+                ขอ {fmtQty(r.request_qty)} {qtyUnit(r.uom)} · พักเมื่อ {hhmm(r.hold_at)}{r.hold_by_name ? ` โดย ${r.hold_by_name}` : ''}
               </span>
               {r.hold_reason && <span style={{ fontSize: 11.5, color: 'var(--text2)', fontStyle: 'italic' }}>“{r.hold_reason}”</span>}
               {canDecide && (
@@ -773,7 +863,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       {inFlight.length > 0 && (
         <div>
           <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text2)', marginBottom: 6 }}>
-            🚚 แจ้งสโตร์แล้ว {inFlight.length} รายการ
+            แจ้งสโตร์แล้ว {inFlight.length} รายการ
           </div>
           {inFlight.map(r => {
             const meta = ST[r.status] || { label: r.status, color: 'var(--muted)' };
@@ -783,7 +873,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
                 background: 'var(--bg3)', border: '1px solid var(--border2)', borderLeft: `3px solid ${meta.color}`, borderRadius: 8 }}>
                 <MatLabel mat={r.mat_no} name={r.part_name} size={12.5} />
                 <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                  {r.source === 'store_forecast' ? `🏬 สโตร์ส่งตามแผนผลิต ${fmtQty(r.request_qty)} ชิ้น · เปิด ${hhmm(r.requested_at)}` : `ขอ ${fmtQty(r.request_qty)} ชิ้น · แจ้ง ${hhmm(r.requested_at)}${r.source === 'line_adhoc' ? ' · ➕ ขอเอง' : ''}`}
+                  {r.source === 'store_forecast' ? `🏬 สโตร์ส่งตามแผนผลิต ${fmtQty(r.request_qty)} ${qtyUnit(r.uom)} · เปิด ${hhmm(r.requested_at)}` : `ขอ ${fmtQty(r.request_qty)} ${qtyUnit(r.uom)} · แจ้ง ${hhmm(r.requested_at)}${r.source === 'line_adhoc' ? ' · ➕ ขอเอง' : ''}`}
                 </span>
                 <span style={{ fontSize: 11.5, fontWeight: 800, color: meta.color }}>{meta.label}</span>
                 {wait != null && (
@@ -803,6 +893,10 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
                     {DELIVER_GATES[r.delivered_gate].icon} {r.delivered_gate === 'scanned' ? (r.delivered_point_name || DELIVER_GATES.scanned.label) : `${DELIVER_GATES[r.delivered_gate].label} ตอนส่ง`}
                   </span>
                 )}
+                {/* 📭 05/11 — ส่งแล้วยังไม่กดรับ ต้องเห็นว่าค้างมานานแค่ไหน (`unreceivedAge` · replenishGate.js) */}
+                {(() => { const ua = unreceivedAge(r); return ua ? (
+                  <span style={{ fontSize: 11, fontWeight: ua.overdue ? 800 : 600, color: ua.overdue ? 'var(--red)' : 'var(--amber)' }}>{ua.text}</span>
+                ) : null; })()}
                 {r.status === 'delivered' && canReceive && (
                   <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
                     <button disabled={busy === r.id} onClick={() => receive(r, true)} style={btn('#22c55e', '#04140a')}>✔ รับครบ</button>
@@ -818,12 +912,12 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       {/* ── worklist: ไลน์ยังไม่ตั้ง "จุดส่งงาน" — สโตร์ส่งได้ แต่ระบบตรวจไม่ได้ว่าวางถูกจุดไหม (เฟส 4 · ไม่รู้ = ห้ามบล็อก แต่ห้ามเงียบ) ── */}
       {!hasDeliveryPoint && (
         <div style={{ marginTop: 10, fontSize: 11, color: '#f59e0b' }}>
-          🎯 ไลน์นี้ยังไม่ตั้งจุดส่งงาน — สโตร์ยิง QR ยืนยันจุดวางของไม่ได้ · ตั้งที่ <b>⚙️ ตั้งค่าผังไลน์ → 🎯 จุดส่งงาน</b> แล้วพิมพ์ป้ายที่ 🏷️ พิมพ์ป้าย QR
+          ไลน์นี้ยังไม่ตั้งจุดส่งงาน — สโตร์ยิง QR ยืนยันจุดวางของไม่ได้ · ตั้งที่ <b>ตั้งค่าผังไลน์ → 🎯 จุดส่งงาน</b> แล้วพิมพ์ป้ายที่ 🏷️ พิมพ์ป้าย QR
         </div>
       )}
 
       {/* ── worklist: พาร์ทที่ยังไม่ตั้งจุดเรียกเติม — ไม่ตั้ง = ระบบไม่มีวันเตือน ── */}
-      {noLevel.length > 0 && (
+      {SHOW_LEVEL_REFILL && noLevel.length > 0 && (
         <div style={{ marginTop: 10, fontSize: 11, color: 'var(--muted)' }}>
           <button onClick={() => setShowNoLevel(v => !v)}
             style={{ background: 'none', border: 'none', color: '#f59e0b', cursor: 'pointer', fontSize: 11, fontWeight: 700, padding: 0 }}>
@@ -861,7 +955,7 @@ function SuggestRow({ s, canDecide, busy, onPlace, onHold, btn }) {
           <input type="number" value={qty} onChange={e => setQty(e.target.value)} placeholder="จำนวน"
             title={s.suggestQty ? `ระบบเสนอ ${s.suggestQty} (เติมให้ถึง max)` : 'ยังไม่ได้ตั้ง max/จำนวนเบิก — กรอกเอง'}
             style={{ width: 84, padding: '4px 8px', borderRadius: 6, fontSize: 12 }} />
-          <button disabled={busy} onClick={() => onPlace(s, qty)} style={btn('#22c55e', '#04140a')}>📦 เบิก</button>
+          <button disabled={busy} onClick={() => onPlace(s, qty)} style={btn('#22c55e', '#04140a')}>เบิก</button>
           <button disabled={busy} onClick={() => onHold(s)} style={btn('transparent', '#f59e0b', 'rgba(245,158,11,0.5)')}>⏸ พักไว้</button>
         </span>
       )}
@@ -874,8 +968,10 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, re
   /* ⚠️ ต้องรวม "พาร์ทที่ยังค้างอยู่ที่ไลน์แม่" (upMats) เข้ามาด้วย
      ไลน์ลูกที่ยังไม่เคยมีแถวสต็อกจะได้ไม่เปิดมาเจอลิสต์ว่างแล้วตั้งอะไรไม่ได้เลย
      — ซึ่งเป็นสภาพจริงของทุกไลน์ตอนนี้ (ของยังกองที่ไลน์แม่) */
-  // 📜 MAT ที่เคยตั้งระดับไว้ใน line_part_levels (DR) — ไลน์อื่นเคยตั้งไว้แต่ Product Master/BOM ยังไม่มี ยังเลือกซ้ำได้ (2026-09-07)
-  const levelMatHist = useColumnHistory(supabaseDR, 'line_part_levels', 'mat_no', { upper: true });
+  /* 📜 MAT ที่ "ไลน์นี้" เคยตั้งระดับไว้ — Product Master/BOM ยังไม่มีก็ยังเลือกซ้ำได้
+     🔒 05/11 (คำสั่ง user "ตั้งจุดเรียกเติมก็ไม่ควรขึ้นของไลน์อื่น") — เดิมดึงประวัติทั้งตาราง (ทุกไลน์) ⇒ เหลือเฉพาะของไลน์นี้ */
+  const levelMatHist = useMemo(() => [...new Set((levels || []).map(l => String(l.mat_no || '').trim().toUpperCase()).filter(Boolean))],
+    [levels]);
   const [rows, setRows] = useState(() => {
     const byMat = new Map(levels.map(l => [l.mat_no, l]));
     const mats = [...new Set([...byMat.keys(), ...onHand.keys(), ...upMats, ...refHave.keys()])].sort();
@@ -937,7 +1033,7 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, re
       {/* ⚠️ ไม่ปิดจากการคลิกพื้นหลัง — กรอกตัวเลขหลายสิบช่องแล้วเผลอแตะ = หายทั้งหมด (UI-CONVENTIONS §5) */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, width: 'min(820px, 96vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border2)' }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>⚙️ ตั้งจุดเรียกเติม — {lineName}</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>ตั้งจุดเรียกเติม — {lineName}</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
             เหลือถึง <b>min</b> เมื่อไหร่ ระบบจะเสนอให้เบิก · <b>max</b> ใช้คำนวณว่าเบิกเท่าไหร่ (เติมให้เต็ม)
             <br />ไม่กรอก min = <b>ไม่เฝ้าพาร์ทนั้น</b> ระบบจะไม่เตือนเลย — คนที่ยืนหน้าไลน์เป็นคนรู้ว่าควรตั้งเท่าไหร่
@@ -950,7 +1046,8 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, re
               style={{ width: 200, padding: '5px 10px', borderRadius: 7, fontSize: 12 }} />
             <span style={{ color: 'var(--border2)' }}>|</span>
             {/* 2026-09-07 <ProductSelect> — Product Master (ไลน์นี้ขึ้นก่อน) ∪ พาร์ทลูก BOM ∪ 📜 เคยตั้งไว้ · ไม่รับค่าพิมพ์เอง (known=false = นอกทะเบียน → ถามยืนยัน) */}
-            <ProductSelect value={newMat} lines={famNames} extraOptions={bomExtra} history={levelMatHist} placeholder="เพิ่มพาร์ท (เลือกจากทะเบียน)"
+            {/* 🔒 strict = เฉพาะพาร์ทของไลน์นี้ (แม่/ลูก) + ลูก BOM ของไลน์นี้ (05/11 · ห้ามถอด) */}
+            <ProductSelect strict value={newMat} lines={famNames} extraOptions={bomExtra} history={levelMatHist} placeholder="เพิ่มพาร์ท (เลือกจากทะเบียน)"
               style={{ width: 240 }} inputStyle={{ padding: '5px 26px 5px 10px', fontSize: 12 }}
               onChange={({ mat_no, opt, known }) => { setNewMat(mat_no); setNewMatKnown(!!opt && known !== false); }} />
             <button onClick={addMat} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 7, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>+ เพิ่ม</button>
@@ -979,7 +1076,7 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, re
                     </td>
                     {r.std ? (
                       <td colSpan={3} style={{ padding: '3px 4px 3px 0', fontSize: 11.5, color: 'var(--text2)' }}>
-                        🎴 {r.std.min != null ? `ขั้นต่ำ ${fmtQty(r.std.min)} · สูงสุด ${fmtQty(r.std.max)}` : 'ยังไม่ตั้งในแท็บคำนวณ Kanban'}
+                        {r.std.min != null ? `ขั้นต่ำ ${fmtQty(r.std.min)} · สูงสุด ${fmtQty(r.std.max)}` : 'ยังไม่ตั้งในแท็บคำนวณ Kanban'}
                         <span style={{ color: 'var(--muted)' }}> — แก้ที่แท็บคำนวณ Kanban</span>
                       </td>
                     ) : ['min_qty', 'max_qty', 'reorder_qty'].map(k => (

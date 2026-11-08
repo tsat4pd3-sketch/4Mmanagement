@@ -126,9 +126,9 @@ function SignPadModal({ title, onCancel, onDone }) {
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 10 }}>✍️ {title}</div>
         <SignCanvas ref={pad} />
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-          <button onClick={() => pad.current?.clear()} style={padBtn('var(--bg3)', 'var(--text2)')}>🗑️ ล้าง</button>
+          <button onClick={() => pad.current?.clear()} style={padBtn('var(--bg3)', 'var(--text2)')}>ล้าง</button>
           <button onClick={onCancel} style={padBtn('var(--bg3)', 'var(--text2)')}>ยกเลิก</button>
-          <button onClick={done} style={{ ...padBtn('var(--accent)', 'var(--accent-ink)', 'none'), padding: '7px 18px', fontWeight: 700 }}>✔ ใช้ลายเซ็นนี้</button>
+          <button onClick={done} style={{ ...padBtn('var(--accent)', 'var(--accent-ink)', 'none'), padding: '7px 18px', fontWeight: 700 }}>ใช้ลายเซ็นนี้</button>
         </div>
       </div>
     </div>
@@ -171,14 +171,14 @@ function SignQueueModal({ queue, onCancel, onDone }) {
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>รหัส {cur.code || '—'}{cur.hadSign ? ' · มีลายเซ็นเดิมอยู่แล้ว (เซ็นใหม่จะทับของเดิม)' : ''}</div>
         <SignCanvas ref={pad} height={190} />
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', marginTop: 12 }}>
-          <button onClick={() => pad.current?.clear()} style={padBtn('var(--bg3)', 'var(--text2)')}>🗑️ ล้าง</button>
+          <button onClick={() => pad.current?.clear()} style={padBtn('var(--bg3)', 'var(--text2)')}>ล้าง</button>
           <button onClick={() => { pad.current?.clear(); go(done); }} style={padBtn('var(--bg3)', 'var(--muted)')}>ข้ามคนนี้</button>
           <button onClick={() => onDone(done)} style={padBtn('var(--bg3)', 'var(--text2)')}>
             {done.size ? `หยุดแล้วบันทึก ${done.size} ลายเซ็น` : 'ปิด'}
           </button>
           <button onClick={async () => { const m = await keep(); if (m) go(m); }}
             style={{ ...padBtn('var(--accent)', 'var(--accent-ink)', 'none'), padding: '7px 20px', fontWeight: 800 }}>
-            {pos + 1 < total ? '✔ ถัดไป →' : '✔ เสร็จสิ้น'}
+            {pos + 1 < total ? 'ถัดไป →' : 'เสร็จสิ้น'}
           </button>
         </div>
       </div>
@@ -892,7 +892,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
             )}
             {mayDelete && (
               <button onClick={() => clearSelfSignOjt(kind)} style={{ alignSelf: 'flex-start', padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11 }}>
-                🔓 ปลดลายเซ็น
+                ปลดลายเซ็น
               </button>
             )}
           </div>
@@ -903,7 +903,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             <button onClick={() => signSelfOjt(kind)} style={{ alignSelf: 'flex-start', padding: '6px 12px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>
-              ✍️ {S.verb} (ในนาม {fullName || 'คุณ'})
+              {S.verb} (ในนาม {fullName || 'คุณ'})
             </button>
             {S.gated && posRank == null && (
               <div style={{ fontSize: 11, color: 'var(--amber)' }}>⚠️ บัญชีนี้ยังไม่ได้ตั้งตำแหน่ง — ระบบ<b>ไม่ได้ตรวจ</b>ว่าถึงระดับที่เซ็นช่องนี้ได้ (ตั้งที่ /add-user)</div>
@@ -945,15 +945,15 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
       <PageHeader title="อบรมสอนงาน OJT" icon="📖"
         sub={<>ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING) — paperless แทนฟอร์ม {ojtFormNo}</>}
         actions={canRecord ? (
-          <button onClick={() => setEditing(emptyDraft())}
+          <button type="button" className="pg-btn" onClick={() => setEditing(emptyDraft())}
             style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
-            ➕ สร้างใบอบรม
+            สร้างใบอบรม
           </button>
         ) : null} />
 
       {filesOff && (
-        <div style={{ background: 'rgba(245,158,11,0.14)', border: '1px solid rgba(245,158,11,0.5)', color: '#f59e0b', borderRadius: 9, padding: '8px 12px', fontSize: 12.5, fontWeight: 700, marginBottom: 10 }}>
-          📎 ไฟล์แนบยังใช้ไม่ได้ — ตาราง <code>ojt_training_files</code> ยังไม่มีในฐานข้อมูล (ยังไม่ได้รัน migration
+        <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--amber)', borderRadius: 9, padding: '8px 12px', fontSize: 12.5, fontWeight: 700, marginBottom: 10 }}>
+          ไฟล์แนบยังใช้ไม่ได้ — ตาราง <code>ojt_training_files</code> ยังไม่มีในฐานข้อมูล (ยังไม่ได้รัน migration
           <code> 20261101_ojt_attachments_main.sql</code>) · ใบอบรม/รายชื่อ/ลายเซ็น/พิมพ์ PDF ใช้ได้ปกติทุกอย่าง
           <div style={{ fontWeight: 400, fontSize: 11.5, marginTop: 2 }}>รายละเอียด: {filesOff}</div>
         </div>
@@ -980,7 +980,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                     {(t.ojt_training_files?.length ?? 0) > 0 && (
                       <span title={`มีไฟล์แนบ ${t.ojt_training_files.length} ไฟล์`}
                         style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-                        📎 {t.ojt_training_files.length}
+                        {t.ojt_training_files.length}
                       </span>
                     )}
                   </td>
@@ -989,8 +989,8 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                   <td style={{ textAlign: 'center', fontWeight: 700 }}>{t.ojt_training_attendees?.length ?? 0}</td>
                   <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                     <button onClick={() => handlePrint(t)} disabled={printing === t.id}
-                      style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.35)', marginRight: 6 }}>
-                      {printing === t.id ? '...' : '🖨️ PDF'}
+                      style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', marginRight: 6 }}>
+                      {printing === t.id ? '...' : 'PDF'}
                     </button>
                     {canRecord && (
                       <button onClick={() => openEdit(t)}
@@ -1016,7 +1016,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '3vh 2vw' }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: 'min(96vw, 1150px)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>📖 {editing.isNew ? 'สร้าง' : 'แก้ไข'}ใบอบรมสอนงาน OJT</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{editing.isNew ? 'สร้าง' : 'แก้ไข'}ใบอบรมสอนงาน OJT</div>
               <button onClick={closeEdit} style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
             </div>
             <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -1099,14 +1099,14 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                   รูปจะถูกต่อท้ายใบพิมพ์เป็นหน้าๆ (ดู handlePrint) — เอกสารแนบลิสต์ชื่อไว้บนใบ */}
               <div>
                 <div style={{ ...lb, fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <span>📎 ไฟล์แนบ ({(editing.files || []).length})</span>
-                  {canRecord && !filesOff && <FilePick onFile={addFile} label="📎 แนบรูป / เอกสาร" />}
+                  <span>ไฟล์แนบ ({(editing.files || []).length})</span>
+                  {canRecord && !filesOff && <FilePick onFile={addFile} label="แนบรูป / เอกสาร" />}
                   <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>
                     รูป · PDF · Word · Excel · PowerPoint — ไม่เกิน {ATTACH_MAX_MB}MB ต่อไฟล์ (รูปจาก iPhone ใช้ได้)
                   </span>
                 </div>
                 {filesOff ? (
-                  <div style={{ fontSize: 12, color: '#f59e0b', padding: '6px 2px', fontWeight: 700 }}>ยังแนบไฟล์ไม่ได้ — ดูเหตุผลที่แถบเตือนบนหน้ารายการ</div>
+                  <div style={{ fontSize: 12, color: 'var(--amber)', padding: '6px 2px', fontWeight: 700 }}>ยังแนบไฟล์ไม่ได้ — ดูเหตุผลที่แถบเตือนบนหน้ารายการ</div>
                 ) : (editing.files || []).length === 0 ? (
                   <div style={{ fontSize: 12, color: 'var(--muted)', padding: '6px 2px' }}>ยังไม่มีไฟล์แนบ</div>
                 ) : (
@@ -1125,7 +1125,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                           <span style={{ fontSize: 11, color: 'var(--muted)' }}>{kbText(f.size_bytes)}{f._new ? ' · ยังไม่บันทึก' : ''}</span>
                           {canRecord && (
                             <button onClick={() => removeFile(idx)} title="เอาไฟล์นี้ออก"
-                              style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13, padding: 0 }}>✕</button>
+                              style={{ background: 'transparent', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 13, padding: 0 }}>✕</button>
                           )}
                         </div>
                       </div>
@@ -1136,9 +1136,9 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
 
               {/* ผู้เข้าอบรม */}
               <div>
-                <div style={{ ...lb, fontSize: 13, color: 'var(--text)' }}>👥 พนักงานผู้เข้าอบรม ({editing.attendees.length} คน)</div>
+                <div style={{ ...lb, fontSize: 13, color: 'var(--text)' }}>พนักงานผู้เข้าอบรม ({editing.attendees.length} คน)</div>
                 <div style={{ position: 'relative', marginBottom: 8 }}>
-                  <input type="text" placeholder="🔍 ค้นหาชื่อ/รหัสพนักงาน แล้วคลิกเพื่อเพิ่ม..." value={empSearch} onChange={e => setEmpSearch(e.target.value)}
+                  <input type="text" placeholder="ค้นหาชื่อ/รหัสพนักงาน แล้วคลิกเพื่อเพิ่ม..." value={empSearch} onChange={e => setEmpSearch(e.target.value)}
                     style={{ width: 'min(100%, 380px)', padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
                   {searchResults.length > 0 && (
                     <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 'min(100%, 380px)', maxHeight: 220, overflowY: 'auto', boxShadow: 'var(--shadow-float)' }}>
@@ -1146,8 +1146,8 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                         <div key={e.id} onClick={() => addEmployee(e)}
                           style={{ padding: '7px 10px', cursor: 'pointer', fontSize: 13, color: 'var(--text)', borderBottom: '1px solid var(--border)' }}>
                           <b>{e.employee_id_code}</b> · {e.name} <span style={{ color: 'var(--muted)', fontSize: 11 }}>({e.section || '-'})</span>
-                          {e._isHelper && <span style={{ marginLeft: 6, fontSize: 11, color: '#06b6d4', fontWeight: 700 }}>
-                            🤝 ยืมจาก {e._helperFrom} มาช่วย {e._helperTo}{e._helperShift ? ` (${e._helperShift === 'night' ? 'กะดึก' : 'กะเช้า'} ${fmtDate(editDate)})` : ''}
+                          {e._isHelper && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--blue)', fontWeight: 700 }}>
+                            ยืมจาก {e._helperFrom} มาช่วย {e._helperTo}{e._helperShift ? ` (${e._helperShift === 'night' ? 'กะดึก' : 'กะเช้า'} ${fmtDate(editDate)})` : ''}
                           </span>}
                         </div>
                       ))}
@@ -1166,9 +1166,9 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                       <button onClick={() => setSignQueue(mk(rest.length ? rest : editing.attendees.map((a, idx) => ({ idx, a }))))}
                         disabled={signingQueue}
                         style={{ padding: '8px 16px', borderRadius: 9, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13, cursor: signingQueue ? 'wait' : 'pointer' }}>
-                        {signingQueue ? 'กำลังอัปลายเซ็น…' : `📱 ส่งแท็บเล็ตวนเซ็น (${rest.length || total} คน)`}
+                        {signingQueue ? 'กำลังอัปลายเซ็น…' : `ส่งแท็บเล็ตวนเซ็น (${rest.length || total} คน)`}
                       </button>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: signed === total ? '#22c55e' : 'var(--muted)' }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: signed === total ? 'var(--green)' : 'var(--muted)' }}>
                         เซ็นแล้ว {signed}/{total}{signed < total ? ` · ยังขาด ${total - signed}` : ' ✔ ครบแล้ว'}
                       </span>
                       <span style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -1201,15 +1201,15 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                               ? <img src={a.sign_url} alt="" onClick={() => canRecord && setSignTarget({ idx, title: `${a.emp_name} เซ็นใหม่` })}
                                   style={{ height: 26, background: '#fff', borderRadius: 4, padding: 2, cursor: 'pointer' }} title="คลิกเพื่อเซ็นใหม่" />
                               : <button onClick={() => setSignTarget({ idx, title: `${a.emp_name} ลงชื่อ` })}
-                                  style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer', background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.4)' }}>✍️ เซ็น</button>}
+                                  style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer', background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)' }}>เซ็น</button>}
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <select value={a.eval_agree === null || a.eval_agree === undefined ? '' : (a.eval_agree ? '1' : '0')}
                               onChange={e => setAtt(idx, 'eval_agree', e.target.value === '' ? null : e.target.value === '1')}
                               style={{ width: 'auto', padding: '4px 6px', borderRadius: 6, fontSize: 12 }}>
                               <option value="">—</option>
-                              <option value="1">✓ เห็นด้วย</option>
-                              <option value="0">✗ ไม่เห็นด้วย</option>
+                              <option value="1">เห็นด้วย</option>
+                              <option value="0">ไม่เห็นด้วย</option>
                             </select>
                           </td>
                           <td>
@@ -1217,7 +1217,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                             <PersonSelect source="both" value={a.evaluator_name || ''} history={evalHist} onChange={r => setAtt(idx, 'evaluator_name', r.name)}
                               style={{ width: 170 }} inputStyle={{ fontSize: 12, padding: '4px 24px 4px 6px' }} maxRows={20} />
                           </td>
-                          <td><button onClick={() => removeAttendee(idx)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button></td>
+                          <td><button onClick={() => removeAttendee(idx)} style={{ background: 'transparent', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>✕</button></td>
                         </tr>
                       ))}
                       {editing.attendees.length === 0 && (
@@ -1239,7 +1239,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                 <button onClick={closeEdit} style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
                 <button onClick={handleSave} disabled={saving || !canRecord}
                   style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 13, opacity: saving ? 0.6 : 1 }}>
-                  {saving ? '⏳ กำลังบันทึก...' : '💾 บันทึกใบอบรม'}
+                  {saving ? 'กำลังบันทึก...' : 'บันทึกใบอบรม'}
                 </button>
               </div>
             </div>

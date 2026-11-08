@@ -4,7 +4,8 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TAG_MAX_DAYS, QA_DECISIONS, decisionOf, binTagAge, binClosed, overdueBins } from '../qualityBin.js';
+import { TAG_MAX_DAYS, QA_DECISIONS, decisionOf, binTagAge, binClosed, overdueBins,
+  yellowRowFromDefect, pendingYellow, binPiecesOf } from '../qualityBin.js';
 
 test('อายุแท็กตาม WI: เหลือง 5 วัน · แดง 1 วัน', () => {
   assert.equal(TAG_MAX_DAYS.yellow, 5);
@@ -81,4 +82,60 @@ test('overdueBins — ใบเหลืองที่ย้ายลงถั�
   const rows = [{ id: 'y1', bin: 'yellow', work_date: '2026-09-01' }];
   assert.equal(overdueBins(rows, '2026-09-25').length, 1);
   assert.equal(overdueBins(rows, '2026-09-25', new Set(['y1'])).length, 0);
+});
+
+/* ── 🟡 แท็กเหลืองอัตโนมัติจากบันทึกงานเสีย (2026-11-05 · คำสั่ง user) ────────────────── */
+const SESS = { line_name: 'Line 60', work_date: '2026-11-05' };
+const DEF = (o = {}) => ({
+  id: 'd1', qty_ng: 3, qty_suspect: 2, qty_repair: 7,
+  description: 'รูเยื้อง', reported_by_name: 'สมชาย', defect_img: 'a.jpg',
+  prod_orders: { mat_no: '10101001', part_name: 'BRKT RH' },
+  dr_defect_types: { name_th: 'เจาะรูไม่ครบ' }, ...o,
+});
+
+test('🟡 ของที่ต้องพิจารณา = NG + สงสัย (ซ่อมไม่นับ — ของที่ซ่อมผ่านถังมาแล้ว)', () => {
+  assert.equal(binPiecesOf(DEF()), 5);
+  assert.equal(binPiecesOf({ qty_ng: 4 }), 4);
+  assert.equal(binPiecesOf({ qty_repair: 9 }), 0);
+  assert.equal(binPiecesOf(null), 0);
+});
+
+test('🟡 แปลงบันทึกงานเสีย → แถวถังเหลือง "รอพิจารณา"', () => {
+  const y = yellowRowFromDefect(DEF(), SESS, { actorName: 'ผู้ใช้', partNo: 'MB3B-1' });
+  assert.equal(y.bin, 'yellow');
+  assert.equal(y.qty, 5);
+  assert.equal(y.defect_log_id, 'd1');
+  /* 🔴 วันงานของกะ ไม่ใช่วันปฏิทิน — อายุแท็กกับการเทียบ defect_logs พึ่งค่านี้ */
+  assert.equal(y.work_date, '2026-11-05');
+  assert.equal(y.line_name, 'Line 60');
+  assert.equal(y.mat_no, '10101001');
+  assert.equal(y.part_no, 'MB3B-1');
+  assert.equal(y.found_img, 'a.jpg');
+  assert.equal(y.cause, 'เจาะรูไม่ครบ — รูเยื้อง');
+  /* 🔴 ห้ามเดาผลให้ — ทั้งหมดของฟีเจอร์นี้คือ "รอคนตัดสิน" */
+  assert.equal(y.qa_decision, undefined);
+});
+
+test('🧪 งานทดลองต้องติดป้ายในสาเหตุ (ของจริงยังต้องกำจัด แต่ QA ต้องรู้ที่มา)', () => {
+  const y = yellowRowFromDefect(DEF({ is_trial: true }), SESS, {});
+  assert.ok(y.cause.includes('🧪 งานทดลอง'));
+});
+
+test('🔴 ไม่มีของให้พิจารณา (0 ชิ้น) หรือไม่มี id = ไม่ตั้งแท็ก (คืน null)', () => {
+  assert.equal(yellowRowFromDefect(DEF({ qty_ng: 0, qty_suspect: 0 }), SESS, {}), null);
+  assert.equal(yellowRowFromDefect(DEF({ id: null }), SESS, {}), null);
+  assert.equal(yellowRowFromDefect(null, SESS, {}), null);
+});
+
+test('🟡 คิวรอพิจารณา = ยังไม่มีผล และยังไม่ปิดด้วยทางอื่น', () => {
+  const rows = [
+    { id: 'a', bin: 'yellow', is_active: true },                                  // รอ
+    { id: 'b', bin: 'yellow', is_active: true, qa_decision: 'good' },             // ตัดสินแล้ว
+    { id: 'c', bin: 'yellow', is_active: true, return_date: '2026-11-04' },       // กลับเข้ากระบวนการแล้ว
+    { id: 'd', bin: 'yellow', is_active: false },                                 // ลบแล้ว
+    { id: 'e', bin: 'red', is_active: true },                                     // คนละถัง
+    { id: 'f', bin: 'yellow', is_active: true },                                  // ย้ายลงแดงแล้ว
+  ];
+  assert.deepEqual(pendingYellow(rows, new Set(['f'])).map(r => r.id), ['a']);
+  assert.deepEqual(pendingYellow([], new Set()), []);
 });

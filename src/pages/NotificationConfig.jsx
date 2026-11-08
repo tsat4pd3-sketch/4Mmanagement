@@ -10,6 +10,7 @@ import CollapseCard from '../components/CollapseCard'
 import PushCoveragePanel from '../components/PushCoveragePanel'  // 📲 ใครยังไม่มีเครื่องรับแจ้งเตือน — 2026-10-20
 import { reachLabel, reachWarnings } from '../utils/notifReach'   // 🏷️ ป้ายราคาต่อเรื่อง — สูตรอยู่ util ที่เดียว (มีเทส)
 import PageHeader from '../components/PageHeader';
+import { ALL } from '../utils/filterLabels';
 import Page from '../components/Page';
 import { UserContext } from '../App';
 import { NOTIFY_CATEGORY_LABEL } from '../utils/notifyPrefs';   // 🔕 ป้ายหมวด — ของกลาง ใช้ร่วมกับโมดัลของผู้ใช้
@@ -39,17 +40,17 @@ const DEFAULT_TEMPLATES = {
   checkin_summary: '✅ เช็คชื่อเสร็จแล้ว\n🏭 ไลน์: {line_name} · {shift_label}\n📅 {work_date}\n👥 เข้างาน: {present}/{total} · OT {ot} · ลา {leave} · ขาด {absent}\n✍️ ตรวจโดย {checked_by}',
   checkin_update: '🔄 อัพเดทกำลังคน (แก้ระหว่างวัน)\n🏭 ไลน์: {line_name} · {shift_label}\n📅 {work_date}\n👥 เข้างาน: {present}/{total} · OT {ot} · ลา {leave} · ขาด {absent}\n✏️ เปลี่ยน {changed_count} คน:\n{changed_names}\n✍️ แก้โดย {checked_by}',
   ot_booking: '🚐 จองรถ OT\n🏭 ไลน์: {line_name} · {shift_label}\n📅 {date_label} ({work_date})\n👥 ทำ OT {count} คน:\n{items}\n✍️ จองโดย {booked_by}',
-  downtime: '🚨 เครื่องจักร DOWNTIME\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n🛑 {type_name}\n⏱ {duration_min} นาที\n🔩 {mat_no}\n📝 {description}\n👤 {reported_by}',
-  downtime_recovered: '✅ เครื่องกลับมารันได้แล้ว\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n⏱ หยุดรวม {duration_min} นาที\n👤 {reported_by}',
-  downtime_call_mtn: '📞🔧 เรียกช่าง MTN เข้าหน้างานด่วน\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n🛑 {type_name}\n🕐 เริ่มหยุด {start_time}\n📝 {description}\n🙋 {reported_by}',
-  downtime_open_15min: '🚨 เครื่องยังหยุด ยังไม่กลับมารัน — เกิน {open_min} นาที\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n🛑 {type_name}\n🕐 เริ่มหยุด {start_time}\n📝 {description}\n👤 {reported_by}',
-  prod_close: '{title}\n🏭 {line_name} · {shift_label} · 📅 {work_date}\n📦 ผลิตรวม {total_qty} · ✅ {qty_ok} ❌ NG {qty_ng}\n📊 OEE {oee}%\n👤 {actor}',
-  four_m_status: '🔔 {title}\n📅 {work_date} · 🏭 {line_name}\n📋 {category}\n📝 {description}\n🔖 {status_label}\n👤 {creator}',
+  downtime: '🚨 เครื่องจักร DOWNTIME\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · {work_date}\n🛑 {type_name}\n⏱ {duration_min} นาที\n🔩 {mat_no}\n📝 {description}\n👤 {reported_by}',
+  downtime_recovered: '✅ เครื่องกลับมารันได้แล้ว\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · {work_date}\n⏱ หยุดรวม {duration_min} นาที\n👤 {reported_by}',
+  downtime_call_mtn: '📞🔧 เรียกช่าง MTN เข้าหน้างานด่วน\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · {work_date}\n🛑 {type_name}\n🕐 เริ่มหยุด {start_time}\n📝 {description}\n🙋 {reported_by}',
+  downtime_open_15min: '🚨 เครื่องยังหยุด ยังไม่กลับมารัน — เกิน {open_min} นาที\n⚙️ {machine_no} {machine_name}\n🏭 {line_name} · {shift_label} · {work_date}\n🛑 {type_name}\n🕐 เริ่มหยุด {start_time}\n📝 {description}\n👤 {reported_by}',
+  prod_close: '{title}\n🏭 {line_name} · {shift_label} · {work_date}\n📦 ผลิตรวม {total_qty} · ✅ {qty_ok} ❌ NG {qty_ng}\n📊 OEE {oee}%\n👤 {actor}',
+  four_m_status: '🔔 {title}\n📅 {work_date} · {line_name}\n📋 {category}\n📝 {description}\n🔖 {status_label}\n👤 {creator}',
   pm_daily_green: '🟢 ตรวจ Daily PM เรียบร้อย ทุกอย่างปกติ\n🏭 {line_name} · {shift_label}\n📅 {work_date}\n✅ ตรวจแล้ว {checked}/{total} เครื่อง',
   pm_daily_orange: '🟠 ยังตรวจ Daily PM ไม่ครบ (เกินเวลา)\n🏭 {line_name} · {shift_label}\n📅 {work_date}\n✅ ตรวจแล้ว {checked}/{total} · ⏳ ขาด: {missing}',
   pm_daily_red: '🔴 Daily PM พบความผิดปกติ\n🏭 {line_name} · {shift_label}\n📅 {work_date}\n⚠️ {ng}',
-  edi_import: '📡 นำเข้า EDI {kind_label}\n🏭 Ship-to: {ship_tos}\n🧾 {rows} รายการ · 📄 {files} ไฟล์\n📅 {date_from} → {date_to}\n👤 {uploaded_by}',
-  shipping_shipped: '🚚 ส่งงานลูกค้าแล้ว\n🕐 รอบ {ship_time} · 📅 {due_date}\n🏭 {customer} · Dock {dock_code}\n🔩 {mat_no} × {qty} ชิ้น\n👤 {shipped_by}',
+  edi_import: '📡 นำเข้า EDI {kind_label}\n🏭 Ship-to: {ship_tos}\n🧾 {rows} รายการ · {files} ไฟล์\n📅 {date_from} → {date_to}\n👤 {uploaded_by}',
+  shipping_shipped: '🚚 ส่งงานลูกค้าแล้ว\n🕐 รอบ {ship_time} · {due_date}\n🏭 {customer} · Dock {dock_code}\n🔩 {mat_no} × {qty} ชิ้น\n👤 {shipped_by}',
   shipping_overdue: '🔴 รอบส่งเลยเวลา {count} รอบ — วันงาน {work_date}\n{items}',
   shipping_phase_alert: '🟠 หลุดเฟสงานส่ง {total} รายการ — วันงาน {work_date}\n{items}',
   mtn_reported: '🛠️ แจ้งซ่อม {dept}\nไลน์การผลิต: {line_name}\nชื่อรายการ: {item_type}\nปัญหา: {problem}\nPD ผู้แจ้ง: {reporter_prod}\nเป้าหมาย: {want_at}\nสถานะ: รอดำเนินการ',
@@ -326,9 +327,9 @@ export default function NotificationConfig() {
   return (
     <Page width="form">
       <PageHeader title="ตั้งค่าระบบแจ้งเตือน (Telegram)" icon="🔔" />
-      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4, marginBottom: 22 }}>
+      <InfoMore label="วิธีจัดห้อง" size={11.5} style={{ marginBottom: 22 }}>
         1 บอทยิงได้หลายห้อง · สร้าง/ลบห้องได้เอง · เลือกได้ว่าเรื่องไหนเข้าห้องไหน · ห้องที่ยังไม่ใส่ chat_id จะไปเข้ากลุ่มเดิม (fallback)
-      </div>
+      </InfoMore>
 
       {/* ── 📲 เครื่องที่รับแจ้งเตือนเข้ามือถือ (2026-10-20 · feedback "มือถือไม่มีแจ้งเตือนใบซ่อม") ──
           วางไว้บนสุดโดยเจตนา: ตัวกั้นใหญ่สุดของการแจ้งเตือนไม่ใช่กติกา/ห้อง Telegram
@@ -360,9 +361,9 @@ export default function NotificationConfig() {
             ส่วนอื่นของหน้านี้ (ห้อง · เรื่องที่แจ้ง · ผู้รับ) ตั้งได้ตามปกติ
           </div>
         )}
-        <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--muted)' }}>
+        <InfoMore label="เรื่อง token" size={11.5} style={{ flexBasis: '100%' }}>
           🔒 token เก็บแบบเข้ารหัสฝั่ง server — บันทึกแล้วดูย้อนหลังไม่ได้ (โชว์แค่ 4 ตัวท้าย) · ถ้าไม่ตั้งที่นี่ ระบบใช้ token เดิมที่ตั้งไว้ในระบบ
-        </div>
+        </InfoMore>
       </div>
 
       {/* ── Downtime open-alert threshold ── */}
@@ -404,12 +405,12 @@ export default function NotificationConfig() {
               <input type="checkbox" checked={room.is_active} onChange={e => patchRoom(room.id, 'is_active', e.target.checked)} />เปิด
             </label>
             <select value={room.team ?? ''} onChange={e => patchRoom(room.id, 'team', e.target.value || null)} title="ห้องของทีมช่างซ่อมไหน (ใบแจ้งซ่อม MO จะเข้าห้องของทีมตามหน่วยงาน)" style={{ ...inputStyle, width: 150, flex: '0 0 auto' }}>
-              <option value="">🔧 ทุกทีม (รวม)</option>
+              <option value="">{ALL.team}</option>
               {/* 2026-09-07: วนทีมจาก mtn_teams (pmTeamsSync — data-driven) · ค่าที่เก็บ = key เสมอ */}
               {pmTeamsSync().map(t => <option key={t.key} value={t.key}>ทีม {t.icon ? `${t.icon} ` : ''}{deptNameOf(t.key)}</option>)}
             </select>
             <button onClick={() => saveRoom(room)} disabled={busy === room.id} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>บันทึก</button>
-            <button onClick={() => testRoom(room)} disabled={busy === `test-${room.id}`} style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: 12, cursor: 'pointer' }}>📤 ทดสอบ</button>
+            <button onClick={() => testRoom(room)} disabled={busy === `test-${room.id}`} style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: 12, cursor: 'pointer' }}>ทดสอบ</button>
             <button onClick={() => deleteRoom(room)} style={{ background: 'transparent', color: '#e05c4a', border: '1px solid rgba(224,92,74,0.4)', borderRadius: 8, padding: '8px 10px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
             {!(room.chat_id ?? '').trim() && (
               <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--accent2)' }}>
@@ -483,7 +484,7 @@ export default function NotificationConfig() {
                   {/* ── ผู้รับในแอป (กระดิ่ง+เสียง+push) ตาม role ── */}
                   <div style={{ flexBasis: '100%', borderTop: '1px dashed var(--border)', paddingTop: 8, marginTop: 2 }}>
                     <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 5 }}>
-                      📲 แจ้งในแอปด้วย (กระดิ่ง + เสียง + เด้งเข้ามือถือ) — เลือก role ผู้รับ · ไม่เลือก = เข้าแค่ Telegram
+                      แจ้งในแอปด้วย (กระดิ่ง + เสียง + เด้งเข้ามือถือ) — เลือก role ผู้รับ · ไม่เลือก = เข้าแค่ Telegram
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                       {ROLE_OPTIONS.filter(r => r.value !== 'display').map(r => {
@@ -509,12 +510,12 @@ export default function NotificationConfig() {
                         fontSize: 11.5, lineHeight: 1.5,
                         color: (rule.inapp_roles || []).length ? 'var(--text2)' : 'var(--muted)',
                       }}>
-                        🏷️ {reachLabel(rule, reach[rule.event_key])}
+                        {reachLabel(rule, reach[rule.event_key])}
                       </div>
                       {reachWarnings(rule, reach[rule.event_key]).map((w, i) => (
                         <div key={i} style={{
                           fontSize: 11, lineHeight: 1.5, display: 'flex', gap: 5, alignItems: 'flex-start',
-                          color: w.level === 'red' ? '#ef4444' : 'var(--accent2)',
+                          color: w.level === 'red' ? 'var(--red)' : 'var(--accent2)',
                         }}>
                           <span style={{ flexShrink: 0 }}>{w.level === 'red' ? '🔴' : '⚠️'}</span>
                           <span>{w.text}</span>
@@ -528,7 +529,7 @@ export default function NotificationConfig() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                           <button onClick={() => setOpenTarget(openTarget === rule.event_key ? null : rule.event_key)}
                             style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>
-                            🎯 {openTarget === rule.event_key ? 'ปิดตัวจำกัดผู้รับ' : 'จำกัดผู้รับ (ส่วนงาน / แผนก)'}
+                            {openTarget === rule.event_key ? 'ปิดตัวจำกัดผู้รับ' : 'จำกัดผู้รับ (ส่วนงาน / แผนก)'}
                           </button>
                           <span style={{ fontSize: 11, color: (rule.inapp_sections?.length || rule.inapp_depts?.length || rule.inapp_match_section) ? 'var(--accent)' : 'var(--muted)' }}>
                             {targetSummary(rule)}
@@ -549,7 +550,7 @@ export default function NotificationConfig() {
                                 onChange={e => updateRule(rule.event_key, { inapp_cast: e.target.checked ? 'fallback' : 'always' })}
                                 style={{ marginTop: 2, flexShrink: 0 }} />
                               <span>
-                                <b>🎯 ส่งถึงเจ้าของงานก่อน — ยิงตาม role เฉพาะตอนที่รายการบอกตัวคนไม่ได้</b>
+                                <b>ส่งถึงเจ้าของงานก่อน — ยิงตาม role เฉพาะตอนที่รายการบอกตัวคนไม่ได้</b>
                                 <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2, lineHeight: 1.6 }}>
                                   ไม่ติ๊ก = ยิงตาม role ที่เลือกไว้<b>ทุกครั้ง</b> แม้รายการนั้นจะรู้อยู่แล้วว่าใครเกี่ยว (พฤติกรรมเดิม) ·
                                   ติ๊ก = ส่งให้<b>คนที่มีชื่ออยู่ในรายการนั้น</b> (ผู้แจ้ง / ผู้รับงาน / ผู้ตรวจ) ก่อน
@@ -573,7 +574,7 @@ export default function NotificationConfig() {
                                 onChange={e => updateRule(rule.event_key, { can_mute: !e.target.checked })}
                                 style={{ marginTop: 2, flexShrink: 0 }} />
                               <span>
-                                <b>🔒 ผู้ใช้ปิดแจ้งเตือนเรื่องนี้เองไม่ได้</b>
+                                <b>ผู้ใช้ปิดแจ้งเตือนเรื่องนี้เองไม่ได้</b>
                                 <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2, lineHeight: 1.6 }}>
                                   ไม่ติ๊ก = ใครก็ปิดเรื่องนี้เองได้ที่ <b>เมนูโปรไฟล์ → 🔕 ตั้งค่าแจ้งเตือนของฉัน</b> (ค่าเริ่มต้น) ·
                                   ติ๊ก = เด้งเสมอ แม้เขาจะกดปิด — ใช้กับ<b>คิวงานที่มีของรอคนกลุ่มนี้ลงมือ</b>
@@ -615,7 +616,7 @@ export default function NotificationConfig() {
 
                             <div>
                               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 5 }}>
-                                🏢 เฉพาะส่วนงาน — ไม่เลือก = ทุกส่วนงาน
+                                เฉพาะส่วนงาน — ไม่เลือก = ทุกส่วนงาน
                               </div>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                                 {secOpts.length === 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>— ยังไม่มีข้อมูลส่วนงาน —</span>}
@@ -635,7 +636,7 @@ export default function NotificationConfig() {
 
                             <div>
                               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 5 }}>
-                                🗂 เฉพาะแผนก — ไม่เลือก = ทุกแผนก
+                                เฉพาะแผนก — ไม่เลือก = ทุกแผนก
                                 <span style={{ marginLeft: 6 }}>(ใช้ได้เมื่อบัญชีผู้ใช้ถูกผูกกับพนักงานแล้วที่ “จัดการผู้ใช้งาน”)</span>
                               </div>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -664,7 +665,7 @@ export default function NotificationConfig() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <button onClick={() => editingTpl === rule.event_key ? setEditingTpl(null) : startEditTpl(rule)}
                         style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>
-                        ✏️ {editingTpl === rule.event_key ? 'ปิดตัวแก้ข้อความ' : 'ปรับข้อความ'}
+                        {editingTpl === rule.event_key ? 'ปิดตัวแก้ข้อความ' : 'ปรับข้อความ'}
                       </button>
                       <span style={{ fontSize: 11, color: rule.template ? 'var(--accent)' : 'var(--muted)' }}>
                         {rule.template ? '● ใช้ข้อความที่กำหนดเอง' : '○ ใช้ข้อความมาตรฐานของระบบ'}

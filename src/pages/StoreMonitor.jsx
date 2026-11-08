@@ -18,6 +18,8 @@ import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
 import PartCard, { partCardGrid } from '../components/PartCard';
 import usePartImages from '../utils/usePartImages';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
+import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 /* ─── STORE MONITOR — เฝ้าระวังสต๊อก/รอบส่ง (Abnormality Monitor) ─────────────
    ถอดจากตาราง "Abnormality case of TEI-TEI system" (17 เคส) ของ Toyota TPS
@@ -129,7 +131,7 @@ export default function StoreMonitor() {
   return (
     <Page>
       <PageHeader title="เฝ้าระวังสต๊อก & รอบส่ง (Abnormality Monitor)" icon="🚨"
-        sub="จับความผิดปกติแล้วสรุปเป็นผล 🟥 จะขาด (Shortage) / 🟧 ล้น (Over stock) — แนวคิดจาก TEI-TEI ของ Toyota · เงื่อนไขตรวจอยู่ในวิว v_store_abnormal ที่เดียว (ตัวแจ้งเตือนใช้ตัวเดียวกัน)" />
+        sub="จับความผิดปกติของสต๊อก/รอบส่ง แล้วสรุปเป็น จะขาด / ล้น (แนวคิด TEI-TEI ของ Toyota)" />
 
 
       {/* UI-STANDARD 2026-09-24 — ไลน์ (ขอบเขต) ก่อน → ชนิดเรื่อง (Segmented) */}
@@ -143,23 +145,23 @@ export default function StoreMonitor() {
           <LineSelect
             lines={prodLines.filter(l => lines.includes(l.name))}
             value={lineFilter} onChange={setLineFilter} placeholder={ALL.line}
-            extraGroups={[{ label: '🏬 คลัง', options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
+            extraGroups={[{ label: 'คลัง', options: lines.filter(n => !prodLines.some(l => l.name === n)).map(n => ({ value: n })) }]}
           />
         )}
         <Segmented value={kindFilter} onChange={setKindFilter} label="ชนิดความผิดปกติ"
-          options={[{ value: 'all', label: ALL.type }, { value: 'shortage', label: '🟥 จะขาด' }, { value: 'over', label: '🟧 ล้น' }]} />
+          options={[{ value: 'all', label: ALL.type }, { value: 'shortage', label: 'จะขาด' }, { value: 'over', label: 'ล้น' }]} />
       </FilterBar>
 
       {/* 🔴 การ์ดนับ = **เนื้อหา** ต้องอยู่ใต้แถบกรอง (UI-STANDARD §2.1) — ย้ายลงมา 20/10
           และตัวเลขพวกนี้นับจาก `scoped` ที่ผ่านตัวกรองแล้ว ⇒ อยู่ใต้แถบกรองอ่านตรงกว่า */}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
         {[
-          { icon: '🟥', label: 'จะขาด (Shortage)', value: nShort, warn: nShort > 0, tone: '#ef4444' },
-          { icon: '🟧', label: 'ล้น (Over stock)', value: nOver, warn: nOver > 0, tone: '#f59e0b' },
-          { icon: '⏰', label: 'รอบส่งเลยเวลา', value: nLate, warn: nLate > 0, tone: '#ef4444' },
+          { icon: '🟥', label: 'จะขาด (Shortage)', value: nShort, warn: nShort > 0, tone: 'var(--red)' },
+          { icon: '🟧', label: 'ล้น (Over stock)', value: nOver, warn: nOver > 0, tone: 'var(--amber)' },
+          { icon: '⏰', label: 'รอบส่งเลยเวลา', value: nLate, warn: nLate > 0, tone: 'var(--red)' },
           { icon: '📊', label: 'รายการทั้งหมด', value: scoped.length, tone: 'var(--text)' },
         ].map(c => (
-          <div key={c.label} style={{ flex: '1 1 140px', background: 'var(--bg2)', border: `1px solid ${c.warn ? 'rgba(239,68,68,0.4)' : 'var(--border)'}`, borderRadius: 8, padding: '8px 12px' }}>
+          <div key={c.label} style={{ flex: '1 1 140px', background: 'var(--bg2)', border: `1px solid ${c.warn ? 'var(--red-line)' : 'var(--border)'}`, borderRadius: 8, padding: '8px 12px' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{c.icon} {c.label}</div>
             <div style={{ fontSize: 22, fontWeight: 900, color: c.warn && c.value > 0 ? c.tone : 'var(--text)', fontFamily: 'var(--font-display)' }}>{c.value}</div>
           </div>
@@ -167,26 +169,26 @@ export default function StoreMonitor() {
       </div>
 
       {loadErr && (
-        <div style={{ ...card, borderColor: 'rgba(239,68,68,0.5)', background: 'rgba(239,68,68,0.08)', padding: '10px 14px', marginBottom: 12, fontSize: 13, color: '#ef4444', fontWeight: 700 }}>
+        <div style={{ ...card, borderColor: 'var(--red-line)', background: 'var(--red-dim)', padding: '10px 14px', marginBottom: 12, fontSize: 13, color: 'var(--red)', fontWeight: 700 }}>
           ⚠ โหลดข้อมูลเฝ้าระวังไม่สำเร็จ — <b>ไม่ได้แปลว่าไม่มีเรื่องผิดปกติ</b> ({loadErr})
         </div>
       )}
       {cutMsg && (
-        <div style={{ ...card, borderColor: 'rgba(245,158,11,0.5)', background: 'rgba(245,158,11,0.08)', padding: '10px 14px', marginBottom: 12, fontSize: 13, color: '#f59e0b', fontWeight: 700 }}>
+        <div style={{ ...card, borderColor: 'var(--amber-line)', background: 'var(--amber-dim)', padding: '10px 14px', marginBottom: 12, fontSize: 13, color: 'var(--amber)', fontWeight: 700 }}>
           ⚠ รายการผิดปกติเกิน {cutMsg} รายการ — แสดงเฉพาะที่รุนแรงที่สุด <b>ตัวเลขบนจอยังไม่ครบ</b>
         </div>
       )}
       {loading ? (
         <div style={{ ...card, padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>
       ) : shown.length === 0 ? (
-        <div style={{ ...card, padding: 40, textAlign: 'center', color: '#22c55e', fontSize: 14, fontWeight: 700 }}>
+        <div style={{ ...card, padding: 40, textAlign: 'center', color: 'var(--green)', fontSize: 14, fontWeight: 700 }}>
           ✅ ไม่พบความผิดปกติ — สต๊อกอยู่ในเกณฑ์ min/max และรอบส่งปกติ
         </div>
       ) : (
         <div style={partCardGrid()}>
           {shown.map((f, i) => {
             const red = f.kind === 'shortage';
-            const tone = red ? '#ef4444' : '#f59e0b';
+            const tone = red ? 'var(--red)' : 'var(--amber)';
             const blink = red && f.sev >= 3;   // Andon: แดงกระพริบเฉพาะรุนแรง (ขาดจริง/เลยเวลา) · เหลืองนิ่ง
             // กระพริบใช้ class กลาง .mo-card-alert (index.css) — มี [data-perf="lite"] override สำหรับจอ TV
             // ห้ามเขียน keyframes กระพริบเองต่อหน้า (UI-CONVENTIONS §2 · QC audit 2026-08-03)
@@ -197,7 +199,7 @@ export default function StoreMonitor() {
                 img={imgOf(f.mat)}
                 /* ป้ายสถานะบอกอาการเจาะจง (ต่ำกว่า Min / เกิน Max / เลยเวลา) — เดิมมี 2 ป้าย
                    ("ต่ำกว่า Min" + "จะขาด") ซึ่งพูดเรื่องเดียวกัน · สีบอก shortage/over อยู่แล้ว */
-                status={{ label: f.title, color: tone, bg: `${tone}1f`, border: `${tone}59` }}
+                status={{ label: f.title, color: tone, bg: `${tint(tone, 'dim')}`, border: `${tint(tone, 'line')}` }}
                 aside={{ label: red ? 'ไลน์ที่จะขาด' : 'ไลน์ที่ล้น', value: f.line || 'ทุกไลน์รวมกัน' }}
                 rows={[{ k: 'เคส', v: `${f.code} · ${red ? 'Shortage' : 'Over stock'}` }]}
                 note={f.detail}
@@ -207,10 +209,10 @@ export default function StoreMonitor() {
         </div>
       )}
 
-      <div style={{ marginTop: 16, fontSize: 11, color: 'var(--muted)', lineHeight: 1.7 }}>
+      <InfoMore label="แหล่งข้อมูลและขอบเขต" size={11.5} style={{ marginTop: 16 }}>
         แหล่งข้อมูล: on-hand (line_stock_summary) เทียบ Min/Max (kanban_standards จาก 🎴 คำนวณ Kanban) · รอบส่ง (kanban_delivery_rounds/kanban_deliveries) · สั่งซื้อ (purchase_requests) ·
         เคส "ผิดกล่อง/pattern/pallet" ในตาราง TPS 17 เคส ต้องมีการสแกนคัมบัง/leveling pattern ก่อน = เฟสถัดไป
-      </div>
+      </InfoMore>
     </Page>
   );
 }

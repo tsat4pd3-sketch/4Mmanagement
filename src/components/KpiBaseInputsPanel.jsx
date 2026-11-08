@@ -1,7 +1,7 @@
 /* ══ 💰 แผงกรอก "ตัวเลขฐาน" จากบัญชี/SAP — เดือนละครั้ง ระบบคำนวณ KPI การเงินให้ (2026-10-15 · คำสั่ง user) ════════
    user: "ควรให้คนคนนึงคอยกรอกค่าที่ใช้ร่วมกันทั้งโรงงาน · DL ของแต่ละส่วนงานก็ไปกรอกยอดเงินอย่างเดียว ระบบเอาไปหารกับยอดขายให้"
    · 2 ชั้น: 🏭 ค่ากลางทั้งโรงงาน (ยอดขาย · COGS · ตัวหารวัน) แก้ได้เฉพาะตอนดูขอบเขต ทั้งโรงงาน — คนกลางคนเดียว (ต้องมี kpi:manage + ใบผ่าน
-     scope:all_units ตามกฎสิทธิ์ 3 ชั้น) · 🏢 ยอดเงินของหน่วย (DL · OH · วัตถุดิบ …) แก้ที่ขอบเขตของหน่วยนั้น
+     scope:all_units ตามกฎสิทธิ์ 3 ชั้น) · ยอดเงินของหน่วย (DL · OH · วัตถุดิบ …) แก้ที่ขอบเขตของหน่วยนั้น
    · ตาราง `kpi_base_inputs` unique index มี `coalesce(scope_value,'')` = expression ⇒ **ห้าม upsert** (42P10 · กฎ DB ข้อ 3) → หาแถวเดิมจาก
      ดัชนีแล้ว update ตาม id ไม่มีค่อย insert · ทุกการเขียนนับแถว (RLS ปฏิเสธ = 0 แถวเงียบ · กฎ DB ข้อ 2)
    · สูตร/ตัวแปรอยู่ `utils/kpiSetup.js` + `utils/kpiFormula.js` — แผงนี้ไม่คำนวณอะไรเอง */
@@ -148,7 +148,7 @@ export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: 
   return (
     <details open={defaultOpen} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 16px' }}>
       <summary style={{ cursor: 'pointer', fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>
-        💰 ตัวเลขฐานจากบัญชี/SAP (กรอกเดือนละครั้ง) — ระบบคำนวณ %DL+OH · %RM · DSI · ยอดขาย/หัว ให้เอง
+        ตัวเลขฐานจากบัญชี/SAP (กรอกเดือนละครั้ง) — ระบบคำนวณ %DL+OH · %RM · DSI · ยอดขาย/หัว ให้เอง
         <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 500, color: 'var(--muted)' }}>
           ขอบเขต: {label} · {rows.length} ค่าในปี {year + 543}
         </span>
@@ -157,7 +157,7 @@ export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: 
           <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); setImporting(true); }}
             title="อัพโหลด monthly report ของบัญชี (.xlsx/.xlsb) แล้วให้ระบบอ่านแถว/เดือนให้ ตรวจก่อนบันทึก"
             style={{ marginLeft: 10, padding: '4px 12px', borderRadius: 8, border: '1px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 12, fontWeight: 700, verticalAlign: 'middle' }}>
-            📥 นำเข้าจาก Excel บัญชี
+            นำเข้าจาก Excel บัญชี
           </button>
         )}
       </summary>

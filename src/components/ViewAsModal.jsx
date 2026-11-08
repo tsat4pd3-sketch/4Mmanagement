@@ -68,7 +68,7 @@ export default function ViewAsModal({ current, onClose, onApply }) {
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 10001, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: 'var(--card)', border: '1.5px solid #a855f7', borderRadius: 14, padding: '20px 24px', maxWidth: 480, width: '100%', maxHeight: '88vh', overflowY: 'auto', boxShadow: 'var(--shadow-lg)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-          <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>🎭 จำลองมุมมอง role</div>
+          <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>จำลองมุมมอง role</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer', padding: 4 }}>✕</button>
         </div>
         <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 12 }}>
@@ -137,7 +137,7 @@ export default function ViewAsModal({ current, onClose, onApply }) {
         {role !== 'display' && (
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>
-              🔧 ทีมช่างซ่อมที่สังกัด (ไม่ติ๊ก = ไม่ได้ถูกตั้งทีม — ใบซ่อมขั้น 2-4 จะทำไม่ได้)
+              ทีมช่างซ่อมที่สังกัด (ไม่ติ๊ก = ไม่ได้ถูกตั้งทีม — ใบซ่อมขั้น 2-4 จะทำไม่ได้)
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {(teamRows || []).map(t => (
@@ -160,7 +160,7 @@ export default function ViewAsModal({ current, onClose, onApply }) {
           </button>
           <button onClick={apply}
             style={{ flex: 1.4, padding: '10px 0', borderRadius: 8, border: 'none', background: '#a855f7', color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>
-            🎭 เริ่มจำลองเป็น {roleLabel(role)}
+            เริ่มจำลองเป็น {roleLabel(role)}
           </button>
         </div>
       </div>

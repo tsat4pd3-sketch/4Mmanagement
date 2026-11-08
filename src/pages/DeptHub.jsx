@@ -25,6 +25,7 @@ import { visibleInterval } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { liveChannel } from '../utils/liveChannel';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
+import Icon from '../components/Icon';   // ✒️ ไอคอนเส้นแทน emoji (UI §6.36)
 
 /* ── DeptHub — landing "Smart Factory / Industry 5.0" (redesign v2 2026-07-13) ──
    คอนเซปต์: Mission Control ของโรงงาน — ไม่ใช่แค่เมนู แต่เป็นแผงควบคุมที่มีชีวิต
@@ -142,9 +143,9 @@ const DEPT_CSS = `
    ตารางนี้เก็บแค่ "หน้าตา" ของการ์ด (รหัส/สี/ปลายทางเริ่มต้น/คำอธิบาย)
    ส่วน "มีเมนูอะไรบ้าง" ยังมาจาก NAV_ITEMS ผ่าน navItemsForGroups เสมอ */
 const CARD_META = {
-/* 🔴 **สีประจำโมดูล ห้ามเป็นสีสถานะ** (`STATUS_COLOR` ใน `utils/statusTone.js`: เขียว #22c55e ·
-   เหลือง #f59e0b · แดง #ef4444) — 23/09 ก้อน B · มีด่าน `module-identity-not-status-hue`
-   เดิม "ฝ่ายผลิต" เป็น #22c55e และ "Warehouse & Delivery" เป็น #f59e0b **เป๊ะตัวเดียวกับไฟสถานะ**
+/* 🔴 **สีประจำโมดูล ห้ามเป็นสีสถานะ** (`STATUS_COLOR` ใน `utils/statusTone.js`: เขียว var(--green) ·
+   เหลือง var(--amber) · แดง var(--red)) — 23/09 ก้อน B · มีด่าน `module-identity-not-status-hue`
+   เดิม "ฝ่ายผลิต" เป็น var(--green) และ "Warehouse & Delivery" เป็น var(--amber) **เป๊ะตัวเดียวกับไฟสถานะ**
    ที่การ์ด telemetry บนหน้าเดียวกันใช้อยู่ ⇒ จอเดียวกันมีแถบเขียว/เหลือง 2 ความหมายปนกัน
    คนหน้างานอ่านแถบเหลืองเหนือ Warehouse ว่า "คลังมีปัญหา" ทั้งที่มันแปลว่า "นี่คือการ์ดคลัง"
    ⇒ ย้ายไปโทนเย็นที่ไม่มีความหมายสถานะ (teal / indigo) · การ์ดยังแยกกันออกด้วย emoji + code + สีอื่น */
@@ -491,7 +492,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
                       justifyContent: it.kind === 'toggle' ? 'space-between' : 'flex-start',
                     }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                      <span style={{ fontSize: 15, flexShrink: 0 }}>{it.icon}</span>
+                      <Icon glyph={it.icon} size={15} />
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.label}</span>
                     </span>
                     {it.kind === 'toggle' && (
@@ -521,7 +522,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             color: 'var(--text)', cursor: 'pointer', fontSize: 16,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            {theme === 'dark' ? '☀️' : '🌙'}
+            {theme === 'dark' ? '️' : '🌙'}
           </button>
         )}
       </div>
@@ -562,7 +563,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             {tr(isDayShift ? '☀️ กะเช้า 08:00–20:00' : '🌙 กะดึก 20:00–08:00')}
           </span>
           <span className="hub-date" style={{ fontFamily: 'var(--font-body)', fontSize: 12, fontWeight: 600, color: 'var(--text2)', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, padding: '5px 12px' }}>
-            📅 {thaiDate}
+            {thaiDate}
           </span>
         </div>
       </div>
@@ -611,7 +612,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
           <div className="hub-fav-list" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {favItems.map(it => (
               <button key={it.to} type="button" className="star-chip" onClick={() => navigate(it.to)} title={it.group}>
-                <span style={{ fontSize: 15 }}>{it.icon}</span>{tr(it.label)}
+                <Icon glyph={it.icon} size={15} />{tr(it.label)}
               </button>
             ))}
           </div>
@@ -644,7 +645,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
 
             {/* ไอคอน + ชื่อ */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-              <span style={{ fontSize: 30, lineHeight: 1 }}>{d.icon}</span>
+              <Icon glyph={d.icon} size={28} strokeWidth={1.5} />
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 'clamp(15px, 2vw, 17px)', fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', letterSpacing: '-0.01em', lineHeight: 1.2 }}>
                   {d.label}
@@ -670,7 +671,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {chips.map(item => {
                 /* 🚪 ชิป "ทางลัด" (หน้าที่บ้านจริงอยู่การ์ดอื่น · `alsoIn`) ต้องหน้าตาต่างจากของการ์ดนี้
-                   — จางลง + `↗ <หมวดบ้าน>` ท้ายชิป · ไม่งั้นการ์ดดูเหมือนเป็นเจ้าของหน้านั้นด้วย
+                   — จางลง + `<หมวดบ้าน>` ท้ายชิป · ไม่งั้นการ์ดดูเหมือนเป็นเจ้าของหน้านั้นด้วย
                    แล้วคำถาม "หน้านี้อยู่หมวดไหน" มี 2 คำตอบ (24/09 · คำสั่ง user — ดู `isNavGuest`) */
                 const guest = isNavGuest(item, d.group);
                 const homeShort = NAV_GROUP_META[item.group]?.short || item.group;
@@ -681,7 +682,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
                     style={guest
                       ? { background: 'transparent', color: 'var(--text2)', border: '1px dashed var(--border2)' }
                       : { background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-                    <span style={{ fontSize: 12, opacity: guest ? 0.7 : 1 }}>{item.icon}</span>
+                    <Icon glyph={item.icon} size={12} style={{ opacity: guest ? 0.7 : 1 }} />
                     {tr(item.label)}
                     {guest && <span style={{ fontSize: 11, color: 'var(--muted)' }}>↗{tr(homeShort)}</span>}
                   </button>
@@ -690,7 +691,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
               {hidden.length > 0 && (
                 <button type="button" className="dept-chip more-chip"
                   onClick={e => { e.stopPropagation(); setExpanded(s => ({ ...s, [d.key]: !open })); }}>
-                  {open ? `▲ ${tr('ย่อ')}` : `▾ ${tr('ดูทั้งหมด')} (${hidden.length})`}
+                  {open ? `${tr('ย่อ')}` : `${tr('ดูทั้งหมด')} (${hidden.length})`}
                 </button>
               )}
             </div>

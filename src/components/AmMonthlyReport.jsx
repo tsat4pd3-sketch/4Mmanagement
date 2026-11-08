@@ -37,8 +37,8 @@ import { xlsxDocName } from '../utils/csvDoc'
 
 // กะเป็น "ส่วนหนึ่งของคีย์" (AM ตรวจต้นกะ) ⇒ ไม่มีตัวเลือก "ทุกกะ" (filterLabels.js: ห้ามใช้ SHIFT_OPTIONS กับจอแบบนี้)
 const AM_SHIFT_OPTIONS = [
-  { value: 'day', label: '☀️ กะเช้า' },
-  { value: 'night', label: '🌙 กะดึก' },
+  { value: 'day', label: 'กะเช้า' },
+  { value: 'night', label: 'กะดึก' },
 ]
 const VIEW_OPTIONS = [
   { value: 'line', label: 'รายไลน์' },
