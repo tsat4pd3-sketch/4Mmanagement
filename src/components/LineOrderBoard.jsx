@@ -96,7 +96,7 @@ export default function LineOrderBoard({ lineName, family, date, lines, onSelect
   const box = { background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 10, padding: '14px 12px', fontSize: 12.5, color: 'var(--text2)' };
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-      <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>🎴 Heijunka · งานของไลน์นี้</span>
+      <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>Heijunka · งานของไลน์นี้</span>
       {state.loading ? <div style={box}>กำลังโหลดใบผลิต…</div>
         : state.error ? <div style={{ ...box, borderColor: '#ef4444', color: '#ef4444' }}>⚠ โหลดใบผลิตไม่สำเร็จ — {state.error}</div>
         : !view ? <div style={box}>ไม่มีการเปิดกะของไลน์นี้ในวันที่เลือก — ยังไม่มีงานบนบอร์ด</div>
@@ -158,7 +158,7 @@ export function OrderDetailCard({ c }) {
   const row = (k, v) => <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}><span style={{ color: 'var(--muted)' }}>{k}</span><b style={{ color: 'var(--text)', textAlign: 'right' }}>{v}</b></div>;
   return (
     <div style={{ background: 'var(--bg3)', border: `1px solid ${m.color}66`, borderLeft: `4px solid ${m.color}`, borderRadius: 9, padding: '8px 10px', fontSize: 12, display: 'grid', gap: 3 }}>
-      <div style={{ fontWeight: 800, color: 'var(--text)' }}>🎴 {c.prod_no || 'ใบไม่มีเลข'} — <span style={{ color: m.color }}>{m.label}</span></div>
+      <div style={{ fontWeight: 800, color: 'var(--text)' }}>{c.prod_no || 'ใบไม่มีเลข'} — <span style={{ color: m.color }}>{m.label}</span></div>
       <div style={{ color: 'var(--text2)' }}>{c.productLabel} · {c.mat_no}{c.line_name ? ` · ${c.line_name}` : ''}</div>
       {row('ทำได้ / สั่ง', `${c._made} / ${c.qty ?? '—'}`)}
       {row('เปิดใบ', c.orderStartMs ? fmtMs(c.orderStartMs) : 'ยังไม่เปิด')}

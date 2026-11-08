@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef, useMemo, lazy, Suspense, useCallback } from 'react';
 import { fmtDateTime } from './utils/dateFormat';
-import tsLogo from './assets/TS logo.png';
+import tsLogo from './assets/TS logo transparent.png';   // splash: พื้นโปร่งใส (06/11)
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { supabase } from './supabaseClient';
 import { setActor } from './utils/actorStamp';
@@ -412,17 +412,17 @@ function SplashScreen({ onDone }) {
         transition: 'opacity 0.6s ease, transform 0.6s ease',
         display: 'flex', alignItems: 'center', gap: 14, marginBottom: 8,
       }}>
-        <img src={tsLogo} alt="Thai Summit Group" width={52} height={52} style={{ borderRadius: 5 }} />
+        <img src={tsLogo} alt="Thai Summit Group" width={52} height={52} />
         <div style={{ textAlign: 'left' }}>
           <div style={{
             fontFamily: 'var(--font-display)', fontWeight: 700,
             fontSize: 13, letterSpacing: '2px', textTransform: 'uppercase',
-            color: 'rgba(255,255,255,0.9)',
+            color: 'var(--text)',
           }}>Thai Summit Group</div>
           <div style={{
             fontFamily: 'var(--font-display)', fontSize: 11,
             letterSpacing: '2px', textTransform: 'uppercase',
-            color: 'rgba(255,255,255,0.35)',
+            color: 'var(--muted)',
           }}>VX Production System</div>
         </div>
       </div>
@@ -433,7 +433,7 @@ function SplashScreen({ onDone }) {
         transition: 'opacity 0.5s ease 0.15s, transform 0.5s ease 0.15s',
         fontFamily: 'var(--font-display)', fontWeight: 700,
         fontSize: 'clamp(1.2rem,3.5vw,2.4rem)', letterSpacing: '0.5px',
-        color: 'var(--accent)', lineHeight: 1,
+        color: 'var(--text)', lineHeight: 1,   /* 05/11: ชื่อโปรแกรมสีตัวหนังสือปกติ — เขียวเหลือเฉพาะแถบโหลด (พาเลต §6.17) */
       }}>
         ENTERPRISE SHOPFLOOR MANAGEMENT
       </div>

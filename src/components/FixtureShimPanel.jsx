@@ -141,7 +141,7 @@ export default function FixtureShimPanel({
 
   if (!points.length) {
     return <div style={{ fontSize: 13, color: 'var(--muted)' }}>
-      ยังไม่มีจุดในทะเบียนของฟิกเจอร์ตัวนี้ — ไปที่แท็บ <b>📋 ทะเบียนจุด</b> เพื่อลงจุดก่อน
+      ยังไม่มีจุดในทะเบียนของฟิกเจอร์ตัวนี้ — ไปที่แท็บ <b>ทะเบียนจุด</b> เพื่อลงจุดก่อน
     </div>;
   }
 
@@ -295,7 +295,7 @@ export default function FixtureShimPanel({
           {canManage && (learned.suggested != null || (maxSug.suggested != null && point.max_shim_mm == null)) && (
             <div style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.35)',
                           borderRadius: 10, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.7 }}>
-              <b>💡 ข้อเสนอจากประวัติจริงของจุดนี้</b> — ระบบไม่ตั้งให้เอง ไปกดยืนยันที่แท็บทะเบียนจุด
+              <b>ข้อเสนอจากประวัติจริงของจุดนี้</b> — ระบบไม่ตั้งให้เอง ไปกดยืนยันที่แท็บทะเบียนจุด
               {learned.suggested != null && (
                 <div>• อายุชิ้นส่วนจริงเฉลี่ย <b>{learned.suggested.toLocaleString()} shot</b> (จาก {learned.samples} ช่วงการเปลี่ยน)</div>
               )}

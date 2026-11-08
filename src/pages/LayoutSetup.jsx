@@ -14,10 +14,10 @@ import TransportMapEditor from '../components/TransportMapEditor'
 //   หลักการ: หน้า display (/factory-map, dashboard) ดู+popup เท่านั้น · การตั้งค่าผังมารวมที่นี่ แยกแท็บตาม POV
 //   เฟส1: แท็บภาพรวมโรงงาน (FactoryMap setupMode) · ผลิต/MTN ลิงก์ไปหน้าเดิม · Store/AMR = อนาคต
 const TABS = [
-  { key: 'factory', label: '🗺️ ภาพรวมโรงงาน', desc: 'รูปผังใหญ่ + วาดกรอบ (polygon) ต่อไลน์ — ฐานของหน้า “ผังรวมโรงงาน”' },
-  { key: 'production', label: '🏭 ผลิต (ผังไลน์)', desc: 'ผังไลน์ + จุดงาน/เครื่องจักร/WIP ต่อไลน์' },
-  { key: 'mtn', label: '🔧 ซ่อมบำรุง (MTN)', desc: 'ผัง Facility + วางเครื่องจักร/จุดตรวจของ MTN' },
-  { key: 'store', label: '📦 Store / AMR', desc: 'วาดถนน/ทางเดินรถ (node/แยก/จุดจอด + เส้นเชื่อม) ทับผังใหญ่ — ฐานคำนวณเส้นทาง Teiki-bin/AMR' },
+  { key: 'factory', label: 'ภาพรวมโรงงาน', desc: 'รูปผังใหญ่ + วาดกรอบ (polygon) ต่อไลน์ — ฐานของหน้า “ผังรวมโรงงาน”' },
+  { key: 'production', label: 'ผลิต (ผังไลน์)', desc: 'ผังไลน์ + จุดงาน/เครื่องจักร/WIP ต่อไลน์' },
+  { key: 'mtn', label: 'ซ่อมบำรุง (MTN)', desc: 'ผัง Facility + วางเครื่องจักร/จุดตรวจของ MTN' },
+  { key: 'store', label: 'Store / AMR', desc: 'วาดถนน/ทางเดินรถ (node/แยก/จุดจอด + เส้นเชื่อม) ทับผังใหญ่ — ฐานคำนวณเส้นทาง Teiki-bin/AMR' },
 ]
 
 export default function LayoutSetup() {
@@ -37,17 +37,17 @@ export default function LayoutSetup() {
       {tab === 'factory' && (
         can('factory_map', 'edit', role)
           ? <FactoryMap setupMode />
-          : <div style={{ color: 'var(--muted)', padding: 30 }}>🔒 ไม่มีสิทธิ์แก้ผังภาพรวมโรงงาน (ต้องมีสิทธิ์ factory_map:edit)</div>
+          : <div style={{ color: 'var(--muted)', padding: 30 }}>ไม่มีสิทธิ์แก้ผังภาพรวมโรงงาน (ต้องมีสิทธิ์ factory_map:edit)</div>
       )}
       {tab === 'production' && (
         can('line_setup', 'edit', role)
           ? <LineSetup embedded />
-          : <div style={{ color: 'var(--muted)', padding: 30 }}>🔒 ไม่มีสิทธิ์แก้ผังไลน์ (ต้องมีสิทธิ์ line_setup:edit) — <Link to="/linesetup" style={{ color: 'var(--accent)' }}>เปิดหน้าดูอย่างเดียว</Link></div>
+          : <div style={{ color: 'var(--muted)', padding: 30 }}>ไม่มีสิทธิ์แก้ผังไลน์ (ต้องมีสิทธิ์ line_setup:edit) — <Link to="/linesetup" style={{ color: 'var(--accent)' }}>เปิดหน้าดูอย่างเดียว</Link></div>
       )}
       {tab === 'mtn' && (
         can('pm', 'setup', role)
           ? <MtnMachineLayout setupMode />
-          : <div style={{ color: 'var(--muted)', padding: 30 }}>🔒 ไม่มีสิทธิ์ตั้งค่าผัง MTN (ต้องมีสิทธิ์ pm:setup)</div>
+          : <div style={{ color: 'var(--muted)', padding: 30 }}>ไม่มีสิทธิ์ตั้งค่าผัง MTN (ต้องมีสิทธิ์ pm:setup)</div>
       )}
       {tab === 'store' && <TransportMapEditor />}
       </Hub>

@@ -37,10 +37,11 @@ test('ไลน์ลูกตกทอดจากไลน์แม่ แล�
     { line_name: 'Assembly Line D - GWM&RA', mat_no: '20011111', qty_on_hand: 50 },
     { line_name: 'Line 60', mat_no: '20059491', qty_on_hand: 10 },
     { line_name: 'STORE', mat_no: '30022222', qty_on_hand: 7 },
-  ], { slocs: SLOCS, lines: LINES });
+  ], { slocs: SLOCS, lines: LINES, homeOf: new Map([['30022222', 'S401']]) });
+  // 🏠 05/11 — กอง STORE จัดกลุ่มตาม "ที่จัดเก็บหลัก" ของพาร์ท (ไม่ใช่การผูกไลน์ STORE)
   assert.deepEqual(g.map(x => x.code), ['S401', 'P411', null], 'เรียงตาม sort_order · ไม่ผูก = ท้ายสุด');
   assert.equal(g[2].parts[0].mat_no, '20011111');
-  assert.equal(slocGroupTitle(g[2]), '🏬 ยังไม่ผูกพื้นที่ SAP');
+  assert.equal(slocGroupTitle(g[2]), '🏬 ยังไม่ผูกพื้นที่ SAP / ยังไม่ตั้งที่จัดเก็บหลัก');
   assert.equal(slocGroupTitle(g[1]), '🏬 P411 · Apron Assy');
 });
 
@@ -63,4 +64,9 @@ test('ยอดติดลบ/ค่าพัง ต้องไม่กลา
   ], { slocs: SLOCS, lines: LINES });
   assert.equal(g[0].parts[0].qty, -470);
   assert.equal(g[0].parts[0].lineQtys.length, 3);
+});
+
+test('🏠 กอง STORE: พาร์ทที่ยังไม่ตั้งที่จัดเก็บหลัก = กลุ่ม "ยังไม่ตั้ง" แม้ S401 ยังผูกชื่อ STORE ค้างอยู่ (ห้ามเดา)', () => {
+  const g = groupStockBySloc([{ line_name: 'STORE', mat_no: '50027079', qty_on_hand: 5 }], { slocs: SLOCS, lines: LINES, homeOf: new Map() });
+  assert.deepEqual(g.map(x => x.code), [null]);
 });

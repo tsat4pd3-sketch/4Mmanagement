@@ -42,7 +42,7 @@ export default function NotFound() {
 
       <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
         <button type="button" style={{ ...btn, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}
-          onClick={() => window.location.reload()}>🔄 โหลดใหม่</button>
+          onClick={() => window.location.reload()}>โหลดใหม่</button>
         <Link to="/" style={btn}>🏠 กลับหน้าหลัก</Link>
       </div>
     </Page>

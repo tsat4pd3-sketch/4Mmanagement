@@ -308,7 +308,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
           {!racks.length && <option value="">— ยังไม่มีผังชั้นวาง —</option>}
           {racks.map(r => <option key={r.id} value={r.id}>{r.section ? `[${sectionKeyOf(r.section)}] ` : ''}{r.name}</option>)}
         </select>
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 หาของ — พิมพ์ชื่อ/รหัส/MAT แล้วดูว่าอยู่ช่องไหน"
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="หาของ — พิมพ์ชื่อ/รหัส/MAT แล้วดูว่าอยู่ช่องไหน"
           style={{ ...inp, width: 340, flex: '1 1 240px' }} />
         {canEdit && <>
           <button onClick={() => { setEdit(v => !v); setSelCell(null); }} style={{ ...(edit ? btnPri : btnGhost), padding: '8px 14px', fontSize: 12.5 }}>
@@ -359,7 +359,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
               <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border)', borderRadius: 8 }}>
                 <div style={{ fontSize: 13, marginBottom: 10 }}>ยังไม่มีรูปชั้นวาง — อัปโหลดรูปด้านหน้าของชั้น</div>
                 {canEdit && <label style={{ ...btnPri, display: 'inline-block', cursor: 'pointer' }}>
-                  📷 อัปโหลดรูป<input type="file" accept="image/*" onChange={uploadImg} style={{ display: 'none' }} />
+                  อัปโหลดรูป<input type="file" accept="image/*" onChange={uploadImg} style={{ display: 'none' }} />
                 </label>}
               </div>
             ) : (
@@ -426,13 +426,13 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
             {selCell ? (
               <div style={{ background: 'var(--card)', border: '1px solid var(--accent)', borderRadius: 10, padding: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <div style={{ fontSize: 15, fontWeight: 800 }}>📍 {selCell.shelf_code}</div>
+                  <div style={{ fontSize: 15, fontWeight: 800 }}>{selCell.shelf_code}</div>
                   <button onClick={() => setSelCell(null)} className="tbtn" style={{ ...btnGhost, marginLeft: 'auto', padding: '3px 8px', fontSize: 12 }}>✕</button>
                 </div>
                 {edit && (
                   <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
                     <button onClick={() => renameCell(selCell)} style={{ ...btnGhost, padding: '5px 10px', fontSize: 12 }}>✏️ เปลี่ยนรหัส</button>
-                    <button onClick={() => delCell(selCell)} style={{ ...btnGhost, padding: '5px 10px', fontSize: 12, color: '#ef4444' }}>🗑 ลบช่อง</button>
+                    <button onClick={() => delCell(selCell)} style={{ ...btnGhost, padding: '5px 10px', fontSize: 12, color: '#ef4444' }}>ลบช่อง</button>
                   </div>
                 )}
                 {(() => {
@@ -634,7 +634,7 @@ function RackFormModal({ mode, rack, teams, myTeams, secOpts = [], defSection = 
           <div><label style={lbl}>หมายเหตุ</label><input value={note} onChange={e => setNote(e.target.value)} style={inp} /></div>
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-          {mode === 'edit' && <button onClick={del} style={{ ...btnGhost, color: '#ef4444', marginRight: 'auto' }}>🗑 ลบผัง</button>}
+          {mode === 'edit' && <button onClick={del} style={{ ...btnGhost, color: '#ef4444', marginRight: 'auto' }}>ลบผัง</button>}
           <button onClick={onClose} style={btnGhost}>ยกเลิก</button>
           <button onClick={save} disabled={saving} style={{ ...btnPri, opacity: saving ? 0.5 : 1 }}>บันทึก</button>
         </div>

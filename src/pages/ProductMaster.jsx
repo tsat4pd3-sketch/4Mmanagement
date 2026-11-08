@@ -33,6 +33,7 @@ import SupplierSelect from '../components/SupplierSelect';
 import { invalidateCustomers } from '../utils/useCustomers';
 import { SUPPLIER_KINDS, invalidateSuppliers } from '../utils/useSuppliers';
 import { useUomUnitsState, invalidateUomUnits } from '../utils/useUomUnits'; // 📏 ทะเบียนหน่วยนับ (05/11)
+import { useContainerCategoriesState, containerCategoryOptions, invalidateContainerCategories } from '../utils/useContainerCategories'; // 📦 ประเภทภาชนะ (05/11)
 import { buildUomIndex, normUom, uomOptions, DEFAULT_UOM } from '../utils/uom';
 import { registryFailText } from '../utils/useMasterRows.js';
 
@@ -49,7 +50,8 @@ import { buildEcIndex, ecOf, countSuperseded } from '../utils/ecRevisions';
 const upMat = (m) => String(m ?? '').trim().toUpperCase();
 import { productReadiness, READINESS_COLOR } from '../utils/productReadiness';
 import { uomLabel, itemNoLabel, nextItemNo, byItemNo, buildBomIndex, moveBomLine, explodeBom } from '../utils/bomTree';
-import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT } from '../utils/storageLoc';
+import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT, STORE_SLOC_KINDS } from '../utils/storageLoc';
+import StorageLocSelect from '../components/StorageLocSelect';   // 🏠 ที่จัดเก็บหลักของพาร์ท (05/11)
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import Page from '../components/Page';
@@ -65,6 +67,7 @@ import { loadFamilyQtyTotals, familyQtyChip } from '../utils/familyTotals';
 import { statusColor } from '../utils/statusTone';   // สีสถานะชุดเดียวทั้งระบบ (ห้ามตั้ง hex เอง)
 import { fetchAllRows } from '../utils/fetchAllRows';          // ทะเบียนที่โตได้ ห้าม select() เปล่า (เพดาน 1000 แถว)
 import { fetchAllPages } from '../utils/fetchByIds';            // คิวรีที่ต้องการ shape เอง (bom_items)
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
@@ -103,7 +106,7 @@ const inputSt = {
   fontFamily: 'var(--font-body)',
 };
 const btnPrimary = {
-  background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8,
+  background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8,
   padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)',
 };
 const btnSecondary = {
@@ -186,8 +189,8 @@ function MatSearchField({ value, onChange, options, placeholder, hint }) {
 function RelatedLinks({ matNo, productId }) {
   return (
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
-      <Link to="/heijunka" title="ดู Heijunka Kanban demand" style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, background: 'rgba(245,158,11,0.1)', color: '#f59e0b', textDecoration: 'none', fontWeight: 700 }}>🎴 Kanban</Link>
-      <Link to="/daily-report" title="บันทึกการผลิต" style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, background: 'rgba(14,165,233,0.1)', color: '#38bdf8', textDecoration: 'none', fontWeight: 700 }}>📊 Daily Report</Link>
+      <Link to="/heijunka" title="ดู Heijunka Kanban demand" style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, background: 'var(--amber-dim)', color: 'var(--amber)', textDecoration: 'none', fontWeight: 700 }}>🎴 Kanban</Link>
+      <Link to="/daily-report" title="บันทึกการผลิต" style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, background: 'var(--blue-dim)', color: 'var(--blue)', textDecoration: 'none', fontWeight: 700 }}>📊 Daily Report</Link>
     </div>
   );
 }
@@ -209,7 +212,7 @@ function PartsPickModal({ parts, onPick, onClose }) {
   return (
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 20, width: 'min(95vw,540px)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🗂 เลือกจากทะเบียนกลาง Parts Master</div>
+        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 4, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>เลือกจากทะเบียนกลาง Parts Master</div>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>ตัวตนสินค้า (MAT/ชื่อ) มาจากทะเบียนกลางที่เดียว — ไม่มีในลิสต์ = ไปเพิ่มที่ tab 🗂 Parts Master ก่อน</div>
         <SearchInput autoFocus value={q} onChange={setQ} fields="MAT / ชื่อ / P.NO / supplier"
           style={{ marginBottom: 10 }} inputStyle={inputSt} />
@@ -225,8 +228,8 @@ function PartsPickModal({ parts, onPick, onClose }) {
                 : <div style={{ width: 28, height: 28, borderRadius: 6, background: 'var(--bg2)', border: '1px solid var(--border)', flexShrink: 0 }} />}
               {/* ลำดับ ชื่องาน → MAT (UI §6.21 · 2026-09-30) */}
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.part_name}</span>
-              <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#0ea5e9', flexShrink: 0 }}>MAT {p.mat_no}</span>
-              {p.qty_per_pkg > 0 && <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>📦 {p.qty_per_pkg}/pkg</span>}
+              <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--blue)', flexShrink: 0 }}>MAT {p.mat_no}</span>
+              {p.qty_per_pkg > 0 && <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>{p.qty_per_pkg}/pkg</span>}
             </div>
           ))}
         </div>
@@ -256,7 +259,7 @@ function ReadyChips({ ready, onGo, compact }) {
         return (
           <button key={st.key} type="button" onClick={go} disabled={!go} title={title}
             style={{ fontSize: 11, fontWeight: 700, padding: compact ? '1px 6px' : '2px 8px', borderRadius: 10,
-              background: c.bg, color: c.fg, border: `1px solid ${c.fg}33`, cursor: go ? 'pointer' : 'default',
+              background: c.bg, color: c.fg, border: `1px solid ${tint(c.fg, 'dim')}`, cursor: go ? 'pointer' : 'default',
               fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
             {st.icon} {compact ? '' : st.label + ' '}{c.mark}{st.hint ? '*' : ''}
           </button>
@@ -908,22 +911,22 @@ export default function ProductMaster() {
           <Link to="/heijunka" style={{ color: 'var(--accent)', textDecoration: 'none' }}>Heijunka Kanban</Link> และ{' '}
           <Link to="/oee-analytics" style={{ color: 'var(--accent)', textDecoration: 'none' }}>OEE Analytics</Link>
         </>}
-        tabs={[{ key:'parts', label:'1️⃣ 🗂 Parts Master' }, { key:'bom', label:'2️⃣ 📦 BOM' }, { key:'bomdup', label:'🔁 BOM ซ้ำ 2 ใบ' }, { key:'phantom', label:'🫧 ของลม (phantom)' }, { key:'products', label:'3️⃣ 🔩 Products' },
-          { key:'routing', label:'🔀 Routing' }, { key:'packaging', label:'📦 Packaging' }, { key:'kanban', label:'🎴 Kanban Std' },
-          { key:'customers', label:'🏷️ ลูกค้า' }, { key:'suppliers', label:'🏭 Supplier' }, { key:'uom', label:'📏 หน่วยนับ' },
-          { key:'ct', label:'⏱ ทบทวน CT' }, { key:'export', label:'📤 Export' }]}
+        tabs={[{ key:'parts', label:'1️⃣ 🗂 Parts Master' }, { key:'bom', label:'2️⃣ 📦 BOM' }, { key:'bomdup', label: 'BOM ซ้ำ 2 ใบ' }, { key:'phantom', label: 'ของลม (phantom)' }, { key:'products', label:'3️⃣ 🔩 Products' },
+          { key:'routing', label: 'Routing' }, { key:'packaging', label: 'Packaging' }, { key:'kanban', label: 'Kanban Std' },
+          { key:'customers', label: 'ลูกค้า' }, { key:'suppliers', label: 'Supplier' }, { key:'uom', label: 'หน่วยนับ' },
+          { key:'ct', label: 'ทบทวน CT' }, { key:'export', label: 'Export' }]}
         tab={mainTab} onTab={setMainTab} />
 
       {mainTab === 'products' && (<>
       {/* ── Callout: แนะนำ Parts Master สำหรับ 300/500 ── */}
-      <div data-page-note="1" style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+      <div data-page-note="1" style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 10, background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 13, color: 'var(--text2)', flex: 1 }}>
-          <span style={{ fontWeight: 700, color: '#f59e0b' }}>📦 ชิ้นส่วนที่ซื้อจาก Supplier</span>
+          <span style={{ fontWeight: 700, color: 'var(--amber)' }}>ชิ้นส่วนที่ซื้อจาก Supplier</span>
           {' '}(ขึ้นต้น <strong>3</strong> · <strong>5</strong>) เพิ่มได้ที่ tab{' '}
-          <strong style={{ color: 'var(--text)' }}>🗂 Parts Master</strong>
+          <strong style={{ color: 'var(--text)' }}>Parts Master</strong>
           {' '}— หน้านี้รองรับเฉพาะเลขขึ้นต้น <strong>1</strong> (FG ส่งลูกค้า) และ <strong>2</strong> (Child Part ผลิตเอง)
         </div>
-        <button onClick={() => setMainTab('parts')} style={{ ...btnPrimary, background: '#f59e0b', fontSize: 12, padding: '6px 14px', whiteSpace: 'nowrap' }}>
+        <button onClick={() => setMainTab('parts')} style={{ ...btnPrimary, background: 'var(--amber)', fontSize: 12, padding: '6px 14px', whiteSpace: 'nowrap' }}>
           ไปที่ Parts Master →
         </button>
       </div>
@@ -932,7 +935,7 @@ export default function ProductMaster() {
       <FilterBar style={{ marginBottom: 16 }}>
         {/* 2026-09-07: กรองไลน์ผ่าน <LineSelect> (ลำดับชั้น/ตัดปลดระวาง) แทนลิสต์แบนจากแถวสินค้า */}
         <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} placeholder={ALL.line}
-          extraGroups={[{ label: '⚠ ไม่มีในทะเบียนไลน์', options: orphanLineOpts }]} />
+          extraGroups={[{ label: 'ไม่มีในทะเบียนไลน์', options: orphanLineOpts }]} />
         {/* ✅ ตัวกรองความครบ (2026-09-22) — แยก "บังคับแล้ว" กับ "อนาคตบังคับ" คนละตัวเลือก
             ถ้ารวมเป็นตัวเดียว = เกือบทั้งฐานเด้งขึ้นมา (101 ตัวยังไม่มี routing · 106 ยังไม่มี packaging)
             ⇒ ตัวกรองที่ไม่เคยกรองอะไรออก = คนเลิกใช้ */}
@@ -940,7 +943,7 @@ export default function ProductMaster() {
         <select value={readyFilter} onChange={e => setReadyFilter(e.target.value)}
           title="กรองตามความครบของข้อมูล — Routing/Packaging ยังไม่บังคับวันนี้ (อนาคตบังคับ)">
           <option value="">{ALL.status}</option>
-          <option value="req">⚠ ยังไม่ครบ (ที่บังคับแล้ว)</option>
+          <option value="req">ยังไม่ครบ (ที่บังคับแล้ว)</option>
           <option value="any">… ยังไม่ครบ (รวมที่อนาคตบังคับ)</option>
         </select>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--muted)' }}>
@@ -951,10 +954,10 @@ export default function ProductMaster() {
         <span className="spacer" />
         <span className="filter-count">{visibleGroups.length} part · {visibleFamilies.length} variant · {activeCount} ใช้งาน</span>
         {canCreate && <>
-          <button onClick={downloadProductTemplate} style={{ ...btnSecondary, fontSize: 12 }}>⬇️ CSV Template</button>
+          <button onClick={downloadProductTemplate} style={{ ...btnSecondary, fontSize: 12 }}>CSV Template</button>
           <button onClick={() => csvInputRef.current?.click()} disabled={csvImporting}
             style={{ ...btnSecondary, fontSize: 12, opacity: csvImporting ? 0.6 : 1 }}>
-            {csvImporting ? '⏳ กำลังนำเข้า...' : '⬆️ นำเข้า CSV'}
+            {csvImporting ? 'กำลังนำเข้า...' : 'นำเข้า CSV'}
           </button>
           <input ref={csvInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleProductCsvUpload} />
         </>}
@@ -976,9 +979,9 @@ export default function ProductMaster() {
         }).filter(Boolean);
         if (!risky.length) return null;
         return (
-          <div data-page-note="1" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 12, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10 }}>
-            <span style={{ fontSize: 13, color: '#f59e0b', fontWeight: 700 }}>
-              🔩 ขั้นตอน (OP) ที่ยอดกำลังถูกนับซ้ำ {risky.length} รายการ
+          <div data-page-note="1" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 12, background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 10 }}>
+            <span style={{ fontSize: 13, color: 'var(--amber)', fontWeight: 700 }}>
+              ขั้นตอน (OP) ที่ยอดกำลังถูกนับซ้ำ {risky.length} รายการ
             </span>
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>
               ของที่ขั้นพวกนี้รับมา <b>มีใบผลิตของตัวเองอยู่แล้ว</b> ⇒ ชิ้นเดียวกันถูกนับ 2 รอบในยอดรวม —
@@ -998,20 +1001,20 @@ export default function ProductMaster() {
           && !(bomCounts[i.id] > 0) && !(bomAwayOf(i) > 0));
         if (!opNoBom.length) return null;
         return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 12, background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.35)', borderRadius: 10 }}>
-            <span style={{ fontSize: 13, color: '#f97316', fontWeight: 700 }}>
-              🧩 ขั้นตอน (OP) ที่ยังไม่ผูก component {opNoBom.length} รายการ
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 12, background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 10 }}>
+            <span style={{ fontSize: 13, color: 'var(--amber)', fontWeight: 700 }}>
+              ขั้นตอน (OP) ที่ยังไม่ผูก component {opNoBom.length} รายการ
             </span>
-            <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+            <InfoMore label="ทำไมต้องผูก" size={11.5}>
               เลขของขั้นไม่มีใน SAP ⇒ ของเสียที่หลุดขั้นนี้ <b>ตัดสต๊อกไม่ได้</b> จนกว่าจะบอกว่า "ขั้นนี้กินอะไรเข้าไป"
               {' '}· ผูกเฉพาะของที่<b>ขั้นนั้น</b>ใส่เข้าไป (ขั้นก่อนหน้าระบบไล่ให้เอง)
-            </span>
+            </InfoMore>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {opNoBom.map(i => (
                 <button key={i.id} onClick={() => openBomFor(i.mat_no)}
                   title={`ตั้ง component ของ ${i.mat_no}${i.line_name ? ` · ${i.line_name}` : ''}`}
                   style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 10, cursor: 'pointer',
-                    background: 'rgba(249,115,22,0.14)', border: '1px solid rgba(249,115,22,0.4)', color: '#f97316' }}>
+                    background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--amber)' }}>
                   {i.mat_no} →
                 </button>
               ))}
@@ -1032,7 +1035,7 @@ export default function ProductMaster() {
         const pill = (bg, fg, txt, val, onClick) => (
           <button type="button" onClick={onClick} disabled={!onClick}
             style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: bg, color: fg,
-              border: `1px solid ${fg}33`, cursor: onClick ? 'pointer' : 'default', fontFamily: 'var(--font-body)' }}>
+              border: `1px solid ${tint(fg, 'dim')}`, cursor: onClick ? 'pointer' : 'default', fontFamily: 'var(--font-body)' }}>
             {txt} {val}
           </button>
         );
@@ -1041,13 +1044,13 @@ export default function ProductMaster() {
             background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>✅ ความครบข้อมูล ({rs.length} สินค้าที่ใช้งาน)</span>
             {pill('rgba(61,214,92,0.10)', 'var(--accent)', '✓ ครบ', full, null)}
-            {pill('rgba(239,68,68,0.10)', '#ef4444', '✗ ยังขาด (บังคับแล้ว)', need, () => setReadyFilter('req'))}
-            {pill('rgba(245,158,11,0.10)', '#f59e0b', '… รอ Routing/Packaging', wait, () => setReadyFilter('any'))}
+            {pill('var(--red-dim)', 'var(--red)', '✗ ยังขาด (บังคับแล้ว)', need, () => setReadyFilter('req'))}
+            {pill('var(--amber-dim)', 'var(--amber)', '… รอ Routing/Packaging', wait, () => setReadyFilter('any'))}
             {readyFilter && <button type="button" onClick={() => setReadyFilter('')} style={{ ...btnSecondary, fontSize: 11, padding: '3px 10px' }}>ล้างตัวกรอง</button>}
-            <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+            <InfoMore label="ลำดับที่ต้องทำ" size={11.5}>
               ลำดับที่ต้องทำ: 🗂 Parts Master → 📦 BOM → 🔩 Products → 🔀 Routing → 🧳 Packaging → 🎴 Kanban
-              {' '}· <b>🔀 Routing / 🧳 Packaging ยังไม่บังคับวันนี้</b> (อนาคตบังคับ) · กดชิปบนการ์ดเพื่อไปเติมได้เลย
-            </span>
+              {' '}· <b>Routing / 🧳 Packaging ยังไม่บังคับวันนี้</b> (อนาคตบังคับ) · กดชิปบนการ์ดเพื่อไปเติมได้เลย
+            </InfoMore>
           </div>
         );
       })()}
@@ -1085,35 +1088,35 @@ export default function ProductMaster() {
                     {!indented && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
                         <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{item.name}</span>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: `${procColor(item.process_type, '#22c55e')}26`, color: procColor(item.process_type, '#22c55e') }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: `${tint(procColor(item.process_type, 'var(--green)'), 'dim')}`, color: procColor(item.process_type, 'var(--green)') }}>
                           {procDisplay(item.process_type)}
                         </span>
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: item.posting_mode === 'lot_accumulate' ? 'rgba(168,85,247,0.15)' : 'rgba(56,189,248,0.12)', color: item.posting_mode === 'lot_accumulate' ? '#a855f7' : '#38bdf8' }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: item.posting_mode === 'lot_accumulate' ? 'var(--blue-dim)' : 'var(--blue-dim)', color: item.posting_mode === 'lot_accumulate' ? 'var(--blue)' : 'var(--blue)' }}>
                           {item.posting_mode === 'lot_accumulate' ? `📥 สะสม Lot ≥${item.lot_accumulate_threshold ?? '?'}` : '📌 มีกัมบังก็ผลิต'}
                         </span>
-                        {members.length > 1 && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>🔄 {members.length} revisions</span>}
+                        {members.length > 1 && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}>{members.length} revisions</span>}
                         {!active && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(107,114,128,0.15)', color: '#6b7280', fontWeight: 700 }}>ปิดใช้งาน</span>}
                       </div>
                     )}
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 4 }}>
-                      {item.mat_no && <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{item.mat_no}</span>}
+                      {item.mat_no && <span style={{ fontSize: 11, fontFamily: 'monospace', fontWeight: 700, color: 'var(--blue)' }}>{item.mat_no}</span>}
                       {item.is_operation && (
-                        <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: item.op_parent_mat ? 'rgba(14,165,233,0.12)' : 'rgba(245,158,11,0.15)', color: item.op_parent_mat ? '#0ea5e9' : '#f59e0b', fontWeight: 700 }}
+                        <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: item.op_parent_mat ? 'var(--blue-dim)' : 'var(--amber-dim)', color: item.op_parent_mat ? 'var(--blue)' : 'var(--amber)', fontWeight: 700 }}
                           title={item.op_parent_mat ? 'รายการขั้นตอน — ยอดรวมภาพใหญ่นับที่พาร์ทจริง ไม่บวกซ้ำ' : 'รายการขั้นตอนที่ยังไม่ผูกพาร์ทจริง — ยอดยังนับซ้ำได้ กดแก้ไขแล้วเลือกพาร์ทจริง'}>
-                          🔩 OP{item.op_seq ? ` ${item.op_seq}` : ''}{item.op_parent_mat ? ` · ของ ${item.op_parent_mat}` : ' · ยังไม่ผูกพาร์ทจริง'}
+                          OP{item.op_seq ? ` ${item.op_seq}` : ''}{item.op_parent_mat ? ` · ของ ${item.op_parent_mat}` : ' · ยังไม่ผูกพาร์ทจริง'}
                         </span>
                       )}
                       {/* 🚫 เลขวัตถุดิบ (5xx) ที่ยังไม่ได้ตั้งเป็นชั้น OP — เตือนให้ PE แก้ ห้ามบล็อก (utils/matPrefix.js) */}
                       {rawAsOutputWarning(item.mat_no, item.is_operation) && (
-                        <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(239,68,68,0.15)', color: '#ef4444', fontWeight: 700 }}
+                        <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--red-dim)', color: 'var(--red)', fontWeight: 700 }}
                           title={rawAsOutputWarning(item.mat_no, item.is_operation)}>
                           ⚠ วัตถุดิบ ไม่ใช่ของที่ผลิตได้
                         </span>
                       )}
                       {item.p_no   && <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text2)' }}>P.NO: {item.p_no}</span>}
-                      {item.customer && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', color: '#60a5fa' }}>{item.customer}</span>}
+                      {item.customer && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)' }}>{item.customer}</span>}
                       {item.code && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--muted)' }}>{item.code}</span>}
-                      {members.length > 1 && indented && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>🔄 {members.length} rev</span>}
+                      {members.length > 1 && indented && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}>{members.length} rev</span>}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                       {[item.line_name && `📍 ${item.line_name}`, item.cycle_time_sec && `CT ${item.cycle_time_sec}s`, item.target_per_shift && `Target ${item.target_per_shift}/กะ`, !indented && item.effective_from && `ใช้ตั้งแต่ ${item.effective_from}`].filter(Boolean).join(' · ')}
@@ -1129,22 +1132,22 @@ export default function ProductMaster() {
                   </div>
                   {(canEdit || mayDelete) && (
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'flex-start' }}>
-                      {canEdit && active && <button onClick={() => openEC(active)} title="Engineering Change" style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: '#a855f7', fontWeight: 700 }}>🔄 EC</button>}
+                      {canEdit && active && <button onClick={() => openEC(active)} title="Engineering Change" style={{ background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: 'var(--blue)', fontWeight: 700 }}>EC</button>}
                       {canEdit && <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
                       {/* สินค้าที่ปิดใช้งาน (ไม่ใช่ superseded โดย EC) → ปุ่มเปิดกลับ · สินค้าที่ยัง active → ✕ ปิดใช้งาน */}
-                      {mayDelete && !item.is_active && !item.superseded_by && <button onClick={() => handleReactivate(item.id)} title="เปิดใช้งานสินค้ากลับ" style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: '#22c55e', fontWeight: 700 }}>♻️ เปิดใช้งาน</button>}
-                      {mayDelete && item.is_active && <button className="tbtn" onClick={() => handleDelete(item.id)} title="ปิดใช้งานสินค้า (เก็บประวัติ)" style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 14 }}>✕</button>}
+                      {mayDelete && !item.is_active && !item.superseded_by && <button onClick={() => handleReactivate(item.id)} title="เปิดใช้งานสินค้ากลับ" style={{ background: 'var(--green-dim)', border: '1px solid var(--green-line)', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: 'var(--green)', fontWeight: 700 }}>เปิดใช้งาน</button>}
+                      {mayDelete && item.is_active && <button className="tbtn" onClick={() => handleDelete(item.id)} title="ปิดใช้งานสินค้า (เก็บประวัติ)" style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>✕</button>}
                     </div>
                   )}
                 </div>
                 {showHistory && archived.length > 0 && (
                   <div style={{ borderTop: '1px solid var(--border)', background: 'var(--bg2)', padding: '8px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>📋 ประวัติ Revision</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>ประวัติ Revision</div>
                     {archived.map(rev => (
                       <div key={rev.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 11, color: 'var(--muted)', opacity: 0.75 }}>
                         {/* ลำดับ Part No. → MAT (UI §6.21) */}
                         {rev.p_no && <span style={{ fontFamily: 'monospace', color: '#475569' }}>{rev.p_no}</span>}
-                        <span style={{ fontFamily: 'monospace', color: '#64748b' }}>MAT {rev.mat_no || '—'}</span>
+                        <span style={{ fontFamily: 'monospace', color: 'var(--muted)' }}>MAT {rev.mat_no || '—'}</span>
                         <span>{rev.effective_from || '?'} → {rev.superseded_at || '?'}</span>
                         <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.15)', color: '#6b7280' }}>superseded</span>
                       </div>
@@ -1154,7 +1157,7 @@ export default function ProductMaster() {
                 <div style={{ borderTop: '1px solid var(--border)' }}>
                   <button onClick={() => setExpandedFamilies(prev => ({ ...prev, [family_id]: !isExpandedKanban }))}
                     style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'var(--bg2)', border: 'none', cursor: 'pointer', color: 'var(--text2)', fontSize: 12, fontWeight: 700 }}>
-                    <span>🎴 Kanban Standards ({stds.length})</span>
+                    <span>Kanban Standards ({stds.length})</span>
                     <span style={{ fontSize: 11, color: 'var(--muted)' }}>{isExpandedKanban ? '▲' : '▼'}</span>
                   </button>
                   {isExpandedKanban && (
@@ -1167,19 +1170,19 @@ export default function ProductMaster() {
                           <div key={std.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 7, opacity: std.is_active ? 1 : 0.5 }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: isOldRev ? 'var(--muted)' : '#0ea5e9' }}>{std.mat_no}</span>
+                                <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: isOldRev ? 'var(--muted)' : 'var(--blue)' }}>{std.mat_no}</span>
                                 {isOldRev && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'rgba(107,114,128,0.12)', color: '#6b7280' }}>rev เก่า</span>}
-                                {!std.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}>ปิด</span>}
+                                {!std.is_active && <span style={{ fontSize: 11, color: 'var(--red)' }}>ปิด</span>}
                               </div>
                             </div>
                             <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                              <span style={{ fontSize: 18, fontWeight: 900, color: '#0ea5e9', lineHeight: 1 }}>{std.qty_per_kanban}</span>
+                              <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--blue)', lineHeight: 1 }}>{std.qty_per_kanban}</span>
                               <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 3 }}>ชิ้น/ใบ</span>
                             </div>
                             {(canEdit || mayDelete) && (
                               <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                                 {canEdit && <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
-                                {mayDelete && <button className="tbtn" onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>}
+                                {mayDelete && <button className="tbtn" onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 13 }}>✕</button>}
                               </div>
                             )}
                           </div>
@@ -1187,7 +1190,7 @@ export default function ProductMaster() {
                       })}
                       {canCreate && (
                         <button onClick={() => openKanbanEdit(null, active?.id || members[0]?.id || '', item.mat_no || '')}
-                          style={{ alignSelf: 'flex-start', marginTop: 2, background: 'rgba(14,165,233,0.08)', border: '1px dashed rgba(14,165,233,0.4)', borderRadius: 6, padding: '4px 12px', fontSize: 11, color: '#0ea5e9', cursor: 'pointer', fontWeight: 700 }}>
+                          style={{ alignSelf: 'flex-start', marginTop: 2, background: 'var(--blue-dim)', border: '1px dashed var(--blue-line)', borderRadius: 6, padding: '4px 12px', fontSize: 11, color: 'var(--blue)', cursor: 'pointer', fontWeight: 700 }}>
                           + เพิ่ม MAT.NO
                         </button>
                       )}
@@ -1222,15 +1225,15 @@ export default function ProductMaster() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
                       <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{partName}</span>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: `${procColor(repItem.process_type, '#22c55e')}26`, color: procColor(repItem.process_type, '#22c55e') }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: `${tint(procColor(repItem.process_type, 'var(--green)'), 'dim')}`, color: procColor(repItem.process_type, 'var(--green)') }}>
                         {procDisplay(repItem.process_type)}
                       </span>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: repItem.posting_mode === 'lot_accumulate' ? 'rgba(168,85,247,0.15)' : 'rgba(56,189,248,0.12)', color: repItem.posting_mode === 'lot_accumulate' ? '#a855f7' : '#38bdf8' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: repItem.posting_mode === 'lot_accumulate' ? 'var(--blue-dim)' : 'var(--blue-dim)', color: repItem.posting_mode === 'lot_accumulate' ? 'var(--blue)' : 'var(--blue)' }}>
                         {repItem.posting_mode === 'lot_accumulate' ? `📥 สะสม Lot ≥${repItem.lot_accumulate_threshold ?? '?'}` : '📌 มีกัมบังก็ผลิต'}
                       </span>
-                      <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(59,130,246,0.12)', color: '#60a5fa', fontWeight: 700 }}>👥 {nameFamilies.length} ลูกค้า</span>
-                      {totalBomAll > 0 && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(61,214,92,0.1)', color: 'var(--accent)', fontWeight: 700 }}>📦 BOM: {totalBomAll}</span>}
-                      <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: stds.filter(s => s.is_active).length > 0 ? 'rgba(245,158,11,0.1)' : 'rgba(107,114,128,0.08)', color: stds.filter(s => s.is_active).length > 0 ? '#f59e0b' : 'var(--muted)', fontWeight: 700 }}>🎴 Kanban: {stds.filter(s => s.is_active).length > 0 ? `${stds.filter(s => s.is_active).length} mat` : 'ยังไม่มี'}</span>
+                      <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}>{nameFamilies.length} ลูกค้า</span>
+                      {totalBomAll > 0 && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'rgba(61,214,92,0.1)', color: 'var(--accent)', fontWeight: 700 }}>BOM: {totalBomAll}</span>}
+                      <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: stds.filter(s => s.is_active).length > 0 ? 'var(--amber-dim)' : 'rgba(107,114,128,0.08)', color: stds.filter(s => s.is_active).length > 0 ? 'var(--amber)' : 'var(--muted)', fontWeight: 700 }}>Kanban: {stds.filter(s => s.is_active).length > 0 ? `${stds.filter(s => s.is_active).length} mat` : 'ยังไม่มี'}</span>
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                       {[repItem.line_name && `📍 ${repItem.line_name}`, repItem.cycle_time_sec && `CT ${repItem.cycle_time_sec}s`, repItem.target_per_shift && `Target ${repItem.target_per_shift}/กะ`].filter(Boolean).join(' · ')}
@@ -1239,32 +1242,32 @@ export default function ProductMaster() {
                   </div>
                   <button onClick={() => setExpandedNameGroups(p => ({ ...p, [nameKey]: !isExpGroupExpanded }))}
                     style={{ ...btnSecondary, fontSize: 11, padding: '4px 10px', flexShrink: 0 }}>
-                    {isExpGroupExpanded ? '▲ ย่อ' : '▼ ขยาย'}
+                    {isExpGroupExpanded ? 'ย่อ' : 'ขยาย'}
                   </button>
                 </div>
 
                 {isExpGroupExpanded && <>
                   {/* ตัวแปรตามลูกค้า / MAT.NO — รายการเดียว ไม่ใช่การ์ดซ้อนการ์ด */}
                   <div style={{ borderTop: '1px solid var(--border)', padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>👥 ตัวแปรตามลูกค้า / MAT.NO ({allVariants.length})</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ตัวแปรตามลูกค้า / MAT.NO ({allVariants.length})</div>
                     {allVariants.map(v => (
                       <div key={v.family_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'var(--bg)', borderRadius: 8, flexWrap: 'wrap' }}>
                         {v.image_url
                           ? <img src={v.image_url} alt="" loading="lazy" style={{ width: 28, height: 28, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', flexShrink: 0 }} />
                           : <div style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', flexShrink: 0 }} />}
-                        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)', color: '#60a5fa', fontWeight: 700, flexShrink: 0 }}>{v.customer || '—'}</span>
+                        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', color: 'var(--blue)', fontWeight: 700, flexShrink: 0 }}>{v.customer || '—'}</span>
                         {/* ลำดับ Part No. → MAT (UI §6.21) */}
-                        {v.p_no && <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: '#0ea5e9' }}>{v.p_no}</span>}
-                        <span style={{ fontSize: v.p_no ? 11 : 13, fontWeight: v.p_no ? 400 : 800, fontFamily: 'monospace', color: v.p_no ? 'var(--text2)' : '#0ea5e9' }}>MAT {v.mat_no}</span>
-                        {v.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>📍 {v.line_name}</span>}
-                        {v.revCount > 1 && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'rgba(168,85,247,0.12)', color: '#a855f7', fontWeight: 700 }}>🔄 {v.revCount} rev</span>}
+                        {v.p_no && <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: 'var(--blue)' }}>{v.p_no}</span>}
+                        <span style={{ fontSize: v.p_no ? 11 : 13, fontWeight: v.p_no ? 400 : 800, fontFamily: 'monospace', color: v.p_no ? 'var(--text2)' : 'var(--blue)' }}>MAT {v.mat_no}</span>
+                        {v.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{v.line_name}</span>}
+                        {v.revCount > 1 && <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 10, background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }}>{v.revCount} rev</span>}
                         {/* ✅ แถบความครบแบบย่อ (ไอคอน+เครื่องหมาย) — แถวตัวแปรมีของเยอะแล้ว ใส่ชื่อขั้นเต็มจะล้น */}
                         <ReadyChips ready={readyOf(v)} onGo={goFixStep(v)} compact />
                         {(canEdit || mayDelete) && (
                           <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', flexShrink: 0 }}>
-                            {canEdit && <button onClick={() => openEC(v)} title="Engineering Change" style={{ background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: '#a855f7', fontWeight: 700 }}>🔄 EC</button>}
+                            {canEdit && <button onClick={() => openEC(v)} title="Engineering Change" style={{ background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--blue)', fontWeight: 700 }}>EC</button>}
                             {canEdit && <button onClick={() => openEdit(v)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
-                            {mayDelete && <button className="tbtn" onClick={() => handleDelete(v.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>}
+                            {mayDelete && <button className="tbtn" onClick={() => handleDelete(v.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 13 }}>✕</button>}
                           </div>
                         )}
                       </div>
@@ -1275,7 +1278,7 @@ export default function ProductMaster() {
                   <div style={{ borderTop: '1px solid var(--border)' }}>
                     <button onClick={() => setExpandedFamilies(prev => ({ ...prev, [nameKey]: !isExpandedKanban }))}
                       style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px', background: 'var(--bg2)', border: 'none', cursor: 'pointer', color: 'var(--text2)', fontSize: 12, fontWeight: 700 }}>
-                      <span>🎴 Kanban Standards ({stds.length})</span>
+                      <span>Kanban Standards ({stds.length})</span>
                       <span style={{ fontSize: 11, color: 'var(--muted)' }}>{isExpandedKanban ? '▲' : '▼'}</span>
                     </button>
                     {isExpandedKanban && (
@@ -1285,19 +1288,19 @@ export default function ProductMaster() {
                           const v = variantById.get(std.product_id);
                           return (
                             <div key={std.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 10px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 7, opacity: std.is_active ? 1 : 0.5 }}>
-                              {v?.customer && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)', color: '#60a5fa', fontWeight: 700, flexShrink: 0 }}>{v.customer}</span>}
+                              {v?.customer && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', color: 'var(--blue)', fontWeight: 700, flexShrink: 0 }}>{v.customer}</span>}
                               <div style={{ flex: 1, minWidth: 0 }}>
-                                <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: '#0ea5e9' }}>{std.mat_no}</span>
-                                {!std.is_active && <span style={{ fontSize: 11, color: '#ef4444', marginLeft: 6 }}>ปิด</span>}
+                                <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'monospace', color: 'var(--blue)' }}>{std.mat_no}</span>
+                                {!std.is_active && <span style={{ fontSize: 11, color: 'var(--red)', marginLeft: 6 }}>ปิด</span>}
                               </div>
                               <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                                <span style={{ fontSize: 18, fontWeight: 900, color: '#0ea5e9', lineHeight: 1 }}>{std.qty_per_kanban}</span>
+                                <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--blue)', lineHeight: 1 }}>{std.qty_per_kanban}</span>
                                 <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 3 }}>ชิ้น/ใบ</span>
                               </div>
                               {(canEdit || mayDelete) && (
                                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                                   {canEdit && <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
-                                  {mayDelete && <button className="tbtn" onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 13 }}>✕</button>}
+                                  {mayDelete && <button className="tbtn" onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 13 }}>✕</button>}
                                 </div>
                               )}
                             </div>
@@ -1305,7 +1308,7 @@ export default function ProductMaster() {
                         })}
                         {canCreate && allVariants.filter(v => !stds.some(s => s.product_id === v.id)).map(v => (
                           <button key={v.id} onClick={() => openKanbanEdit(null, v.id, v.mat_no)}
-                            style={{ alignSelf: 'flex-start', marginTop: 2, background: 'rgba(14,165,233,0.08)', border: '1px dashed rgba(14,165,233,0.4)', borderRadius: 6, padding: '4px 12px', fontSize: 11, color: '#0ea5e9', cursor: 'pointer', fontWeight: 700 }}>
+                            style={{ alignSelf: 'flex-start', marginTop: 2, background: 'var(--blue-dim)', border: '1px dashed var(--blue-line)', borderRadius: 6, padding: '4px 12px', fontSize: 11, color: 'var(--blue)', cursor: 'pointer', fontWeight: 700 }}>
                             + เพิ่ม MAT.NO ({v.customer || v.mat_no})
                           </button>
                         ))}
@@ -1326,12 +1329,12 @@ export default function ProductMaster() {
       {/* ════ Add / Edit / EC modal ════ */}
       {editing && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: 'var(--bg3)', border: `1px solid ${ecSource ? 'rgba(168,85,247,0.5)' : 'var(--border2)'}`, borderRadius: 14, padding: 24, width: 'min(95vw,560px)', maxHeight: '90vh', overflowY: 'auto' }}>
+          <div style={{ background: 'var(--bg3)', border: `1px solid ${ecSource ? 'var(--blue-line)' : 'var(--border2)'}`, borderRadius: 14, padding: 24, width: 'min(95vw,560px)', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
               {ecSource ? '🔄 Engineering Change' : editing === 'new' ? '+ เพิ่มสินค้า' : 'แก้ไขสินค้า'}
             </div>
             {ecSource && (
-              <div style={{ fontSize: 12, color: '#a855f7', marginBottom: 16, padding: '8px 12px', background: 'rgba(168,85,247,0.08)', borderRadius: 8, border: '1px solid rgba(168,85,247,0.2)' }}>
+              <div style={{ fontSize: 12, color: 'var(--blue)', marginBottom: 16, padding: '8px 12px', background: 'var(--blue-dim)', borderRadius: 8, border: '1px solid var(--blue-dim)' }}>
                 ต่อจาก: <strong>{ecSource.p_no || ecSource.mat_no}</strong> {ecSource.p_no && `/ MAT ${ecSource.mat_no}`}<br />
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>MAT.NO เดิมถูก mark เป็น superseded อัตโนมัติ · MAT ใหม่ถูกลงทะเบียน Parts Master ให้เอง (สืบทอด uom/จำนวนต่อกล่อง/supplier — ต้นทุนให้บัญชีเติม)</span>
               </div>
@@ -1343,36 +1346,36 @@ export default function ProductMaster() {
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label={ecSource ? 'MAT.NO ใหม่ (SAP) *' : form.is_operation ? 'เลข/ชื่อของขั้น (ตั้งเอง — ไม่ใช่เลข SAP)' : 'MAT.NO (SAP)'}>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <input value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))} placeholder={form.is_operation ? 'เช่น 332 ขับนัท M6' : 'เช่น 10100399'} style={{ ...inputSt, flex: 1, minWidth: 0, fontFamily: 'monospace', fontWeight: 700, borderColor: ecSource ? 'rgba(168,85,247,0.5)' : undefined }} />
+                    <input value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))} placeholder={form.is_operation ? 'เช่น 332 ขับนัท M6' : 'เช่น 10100399'} style={{ ...inputSt, flex: 1, minWidth: 0, fontFamily: 'monospace', fontWeight: 700, borderColor: ecSource ? 'var(--blue-line)' : undefined }} />
                     <button type="button" onClick={() => setPartsPickFor('product')} title="เลือกจากทะเบียนกลาง Parts Master"
                       style={{ ...btnSecondary, padding: '6px 10px', flexShrink: 0 }}>🗂</button>
                   </div>
                   {/* คำใบ้เคส OP (user ขอ 2026-08-17): SAP ไม่มีตัวตนของขั้น — ตั้งชื่อเอง ห้ามใช้เลขพาร์ทจริงซ้ำ */}
                   {form.is_operation && (
-                    <div style={{ fontSize: 11, color: '#0ea5e9', marginTop: 4 }}>
-                      🔩 รายการ OP ไม่ใช้เลข MAT SAP — ตั้งเลข/ชื่อของขั้นเองไม่ซ้ำใคร (เลขพาร์ทจริงใส่ช่อง "เป็นขั้นของพาร์ทจริง" ด้านล่างเท่านั้น)
+                    <div style={{ fontSize: 11, color: 'var(--blue)', marginTop: 4 }}>
+                      รายการ OP ไม่ใช้เลข MAT SAP — ตั้งเลข/ชื่อของขั้นเองไม่ซ้ำใคร (เลขพาร์ทจริงใส่ช่อง "เป็นขั้นของพาร์ทจริง" ด้านล่างเท่านั้น)
                     </div>
                   )}
                   {/* เตือนเลขซ้ำตั้งแต่ตอนพิมพ์ — ไม่ต้องรอชน unique constraint ตอนกดบันทึก */}
                   {form.mat_no && items.some(i => i.mat_no === form.mat_no.trim() && i.id !== editing) && (
-                    <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4, fontWeight: 700 }}>
+                    <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4, fontWeight: 700 }}>
                       ⚠ เลขนี้มีสินค้าอยู่แล้วในระบบ — บันทึกไม่ผ่านแน่นอน{form.is_operation ? ' · รายการ OP ต้องตั้งเลข/ชื่อใหม่ของตัวเอง' : ' · ค้นหาแล้วแก้ไขตัวเดิมแทน'}
                     </div>
                   )}
                   {form.mat_no && !form.is_operation && pmParts.length > 0 && !matInRegistry(form.mat_no) && (
                     ecSource ? (
-                      <div style={{ fontSize: 11, color: '#a855f7', marginTop: 4 }}>
-                        🗂 MAT ใหม่ — ระบบจะลงทะเบียน Parts Master ให้อัตโนมัติตอนบันทึก EC
+                      <div style={{ fontSize: 11, color: 'var(--blue)', marginTop: 4 }}>
+                        MAT ใหม่ — ระบบจะลงทะเบียน Parts Master ให้อัตโนมัติตอนบันทึก EC
                       </div>
                     ) : (
-                      <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
+                      <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>
                         ⚠ MAT นี้ยังไม่มีในทะเบียนกลาง Parts Master — แนะนำเพิ่มที่ tab 🗂 ก่อน กันเลขหลุดทะเบียน
                       </div>
                     )
                   )}
                 </Field>
                 <Field label={ecSource ? 'P.NO ใหม่ *' : 'P.NO'}>
-                  <input value={form.p_no} onChange={e => setForm(f => ({ ...f, p_no: e.target.value }))} placeholder="เช่น RC3B16E061BB" style={{ ...inputSt, borderColor: ecSource ? 'rgba(168,85,247,0.5)' : undefined }} />
+                  <input value={form.p_no} onChange={e => setForm(f => ({ ...f, p_no: e.target.value }))} placeholder="เช่น RC3B16E061BB" style={{ ...inputSt, borderColor: ecSource ? 'var(--blue-line)' : undefined }} />
                 </Field>
               </div>
               {ecSource && (
@@ -1396,8 +1399,8 @@ export default function ProductMaster() {
               </Field>
               <Field label="รูปแบบขึ้นกัมบัง *">
                 <select value={form.posting_mode} onChange={e => setForm(f => ({ ...f, posting_mode: e.target.value }))} style={inputSt}>
-                  <option value="immediate">📌 มีกัมบังก็ผลิต (ขึ้น Order ทุกครั้งที่ scan)</option>
-                  <option value="lot_accumulate">📥 สะสม Lot ก่อนขึ้น Order (Lot Post)</option>
+                  <option value="immediate">มีกัมบังก็ผลิต (ขึ้น Order ทุกครั้งที่ scan)</option>
+                  <option value="lot_accumulate">สะสม Lot ก่อนขึ้น Order (Lot Post)</option>
                 </select>
               </Field>
               {form.posting_mode === 'lot_accumulate' && (
@@ -1421,10 +1424,10 @@ export default function ProductMaster() {
               {/* 🔩 ชั้น Operation — รายการที่เป็น "ขั้นตอน" ของพาร์ทจริง (เช่นงานขับนัท SUB APRON 1 รายการ/1 OP)
                   ใบงานยังเปิด/ปิดรายเครื่องได้ตามเดิม (หัวหน้าไลน์มอนิเตอร์รายขั้น) แต่ยอดรวมภาพใหญ่
                   จะนับที่พาร์ทจริงตัวเดียว ไม่บวกซ้ำ (collapseOps · migration 20260817_operation_items_dr) */}
-              <div style={{ border: '1px solid rgba(14,165,233,0.35)', borderRadius: 8, padding: '10px 12px', background: 'rgba(14,165,233,0.05)' }}>
+              <div style={{ border: '1px solid var(--blue-line)', borderRadius: 8, padding: '10px 12px', background: 'var(--blue-dim)' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input type="checkbox" checked={!!form.is_operation} onChange={e => setForm(f => ({ ...f, is_operation: e.target.checked }))} />
-                  <span style={{ fontSize: 13, fontWeight: 700, color: '#0ea5e9' }}>🔩 รายการขั้นตอน (OP) — ไม่ใช่พาร์ทจริง</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--blue)' }}>รายการขั้นตอน (OP) — ไม่ใช่พาร์ทจริง</span>
                 </label>
                 <InfoMore size={11} style={{ marginTop: 4 }} id="pm_op"
                   lead={<>เช่น งานขับนัทแต่ละสเต็ปของชิ้นเดียวกัน</>}>
@@ -1477,7 +1480,7 @@ export default function ProductMaster() {
                       return (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                           {issues.map((w, i) => (
-                            <div key={i} style={{ fontSize: 11, lineHeight: 1.5, color: w.level === 'crit' ? '#ef4444' : '#f59e0b' }}>
+                            <div key={i} style={{ fontSize: 11, lineHeight: 1.5, color: w.level === 'crit' ? 'var(--red)' : 'var(--amber)' }}>
                               {w.level === 'crit' ? '🔴' : '⚠️'} {w.text}
                             </div>
                           ))}
@@ -1493,12 +1496,12 @@ export default function ProductMaster() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingTop: 2 }}>
                           <button type="button" onClick={() => { setEditing(null); setEcSource(null); openBomFor(form.mat_no); }}
                             style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 8, cursor: 'pointer',
-                              background: n > 0 ? 'var(--bg3)' : 'rgba(249,115,22,0.14)',
-                              border: `1px solid ${n > 0 ? 'var(--border2)' : 'rgba(249,115,22,0.45)'}`,
-                              color: n > 0 ? 'var(--text2)' : '#f97316' }}>
-                            🧩 {n > 0 ? `component ของขั้นนี้ (${n} รายการ)` : 'ตั้ง component ของขั้นนี้'} →
+                              background: n > 0 ? 'var(--bg3)' : 'var(--amber-dim)',
+                              border: `1px solid ${n > 0 ? 'var(--border2)' : 'var(--amber-line)'}`,
+                              color: n > 0 ? 'var(--text2)' : 'var(--amber)' }}>
+                            {n > 0 ? `component ของขั้นนี้ (${n} รายการ)` : 'ตั้ง component ของขั้นนี้'} →
                           </button>
-                          <span style={{ fontSize: 11, color: n > 0 ? 'var(--muted)' : '#f97316' }}>
+                          <span style={{ fontSize: 11, color: n > 0 ? 'var(--muted)' : 'var(--amber)' }}>
                             {n > 0
                               ? 'ขั้นนี้บอกได้แล้วว่ากินอะไร — ใบของเสียระเบิดเป็นเลข SAP ได้'
                               : 'ยังไม่ผูก = ของเสียที่หลุดขั้นนี้ตัดสต๊อก SAP ไม่ได้'}
@@ -1542,7 +1545,7 @@ export default function ProductMaster() {
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
               <button onClick={() => { setEditing(null); setEcSource(null); }} style={btnSecondary}>ยกเลิก</button>
               <button onClick={handleSave} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1, background: ecSource ? '#7c3aed' : undefined }}>
-                {saving ? (imageUploading ? 'กำลังอัปโหลดรูป...' : '...') : ecSource ? '🔄 บันทึก EC' : 'บันทึก'}
+                {saving ? (imageUploading ? 'กำลังอัปโหลดรูป...' : '...') : ecSource ? 'บันทึก EC' : 'บันทึก'}
               </button>
             </div>
           </div>
@@ -1552,7 +1555,7 @@ export default function ProductMaster() {
       {/* ════ Kanban Standard modal ════ */}
       {kanbanEditing && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: 'var(--bg3)', border: '1px solid rgba(14,165,233,0.4)', borderRadius: 14, padding: 24, width: 'min(95vw,380px)' }}>
+          <div style={{ background: 'var(--bg3)', border: '1px solid var(--blue-line)', borderRadius: 14, padding: 24, width: 'min(95vw,380px)' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
               {kanbanEditing === 'new' ? '+ เพิ่ม Kanban Standard' : 'แก้ไข Kanban Standard'}
             </div>
@@ -1570,7 +1573,7 @@ export default function ProductMaster() {
                       return { ...f, mat_no, qty_per_kanban: qty };
                     })} />
                   {kanbanForm.mat_no && pmParts.length > 0 && !matInRegistry(kanbanForm.mat_no) && (
-                    <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>⚠ ยังไม่มีในทะเบียนกลาง Parts Master</div>
+                    <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>⚠ ยังไม่มีในทะเบียนกลาง Parts Master</div>
                   )}
                 </Field>
                 <Field label="Qty / Kanban Card *">
@@ -1614,7 +1617,7 @@ export default function ProductMaster() {
           /* ด่านนับปลายทางก่อนลบ (fail-closed) — ใบผลิต/ใบซ่อม/สินค้า/คัมบัง ฯลฯ เก็บชื่อนี้เป็น text ไม่ผูก FK */
           onBeforeDelete={masterDeleteGuard(supabaseDR, 'customers')}
           stampCol="updated_by_name" stampName={fullName} onChanged={invalidateCustomers}
-          title="🏷️ ทะเบียนลูกค้า"
+          title="ทะเบียนลูกค้า"
           help="คอลัมน์ customer ของสินค้า/เอกสารเก็บชื่อนี้เป็น text · alias ใช้แม็ปสะกดเก่าเข้าชื่อหลัก · ปิดใช้ = ไม่โผล่ให้เลือกใหม่"
           keyFrom={r => String(r.name || '').trim().toUpperCase().replace(/\s+/g, ' ')}
           fields={[
@@ -1627,7 +1630,7 @@ export default function ProductMaster() {
         <SimpleMasterPanel client={supabaseDR} table="suppliers" keyCol="code" canManage={canEdit}
           onBeforeDelete={masterDeleteGuard(supabaseDR, 'suppliers')}
           stampCol="updated_by_name" stampName={fullName} onChanged={invalidateSuppliers}
-          title="🏭 ทะเบียน Supplier / ผู้รับจ้าง"
+          title="ทะเบียน Supplier / ผู้รับจ้าง"
           help="ใช้กับช่อง Supplier ใน Parts Master · Packaging · Routing (จ้างนอก) · คลังอะไหล่ · NPI Tooling — คอลัมน์ปลายทางเก็บชื่อเป็น text · ชนิด (kind) ช่วยจัดลำดับตัวเลือกให้ตรงงาน · ปิดใช้ = ไม่โผล่ให้เลือกใหม่"
           keyFrom={r => String(r.name || '').trim().toUpperCase().replace(/\s+/g, ' ')}
           fields={[
@@ -1645,7 +1648,7 @@ export default function ProductMaster() {
         <SimpleMasterPanel client={supabaseDR} table="uom_units" keyCol="code" canManage={canEdit}
           onBeforeDelete={masterDeleteGuard(supabaseDR, 'uom_units')}
           stampCol="updated_by_name" stampName={fullName} onChanged={invalidateUomUnits}
-          title="📏 ทะเบียนหน่วยนับ (UOM)"
+          title="ทะเบียนหน่วยนับ (UOM)"
           help="ใช้กับช่องหน่วยใน Parts Master · นำเข้า BOM จาก SAP · ใบเบิกวัสดุ — คอลัมน์ปลายทางเก็บรหัสนี้เป็น text · สะกดอื่น (เช่น EA, PCS ของ PC) ถูกแม็ปเข้ารหัสหลักตอนบันทึก/นำเข้า"
           /* รหัสกรอกเอง (PC/KG…) — DB บังคับตัวพิมพ์ใหญ่ไม่มีช่องว่าง (CHECK uom_units_code_upper) */
           fields={[
@@ -1663,16 +1666,16 @@ export default function ProductMaster() {
             {/* header */}
             <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 8 }}>
-                📋 ตรวจสอบข้อมูลก่อนนำเข้า
+                ตรวจสอบข้อมูลก่อนนำเข้า
               </div>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: 'var(--green-dim)', color: 'var(--green)' }}>
                   ✅ ใหม่ {csvPreview.newRows.length} รายการ
                 </span>
-                <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: 'var(--amber-dim)', color: 'var(--amber)' }}>
                   ⚠️ ซ้ำ {csvPreview.dupRows.length} รายการ
                 </span>
-                <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: 'rgba(239,68,68,0.12)', color: '#ef4444' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: 'var(--red-dim)', color: 'var(--red)' }}>
                   ❌ ไม่สมบูรณ์ {csvPreview.invalidRows.length} รายการ
                 </span>
               </div>
@@ -1695,12 +1698,12 @@ export default function ProductMaster() {
               {/* new rows */}
               {csvPreview.newRows.length > 0 && (
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#22c55e', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>ใหม่ — จะ INSERT</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--green)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>ใหม่ — จะ INSERT</div>
                   {csvPreview.newRows.map((r, i) => (
-                    <div key={i} style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', marginBottom: 4, fontSize: 12, display: 'flex', flexWrap: 'wrap', gap: 6, wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                    <div key={i} style={{ padding: '8px 12px', borderRadius: 8, background: 'var(--green-dim)', border: '1px solid var(--green-line)', marginBottom: 4, fontSize: 12, display: 'flex', flexWrap: 'wrap', gap: 6, wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                       {/* ลำดับ ชื่องาน → MAT (UI §6.21) */}
                       <span style={{ color: 'var(--text)', fontWeight: 700 }}>{r.name || r.part_name}</span>
-                      <span style={{ fontFamily: 'monospace', color: '#0ea5e9', flexShrink: 0 }}>MAT {r.mat_no}</span>
+                      <span style={{ fontFamily: 'monospace', color: 'var(--blue)', flexShrink: 0 }}>MAT {r.mat_no}</span>
                     </div>
                   ))}
                 </div>
@@ -1708,19 +1711,19 @@ export default function ProductMaster() {
               {/* dup rows */}
               {csvPreview.dupRows.length > 0 && (
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#f59e0b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>ซ้ำ — จะ UPDATE ถ้าเลือก</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--amber)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>ซ้ำ — จะ UPDATE ถ้าเลือก</div>
                   {csvPreview.dupRows.map((d, i) => (
-                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '20px 1fr', columnGap: 8, width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 8, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', marginBottom: 6 }}>
+                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '20px 1fr', columnGap: 8, width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 8, background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', marginBottom: 6 }}>
                       <input type="checkbox" checked={d.include}
                         onChange={e => setCsvPreview(p => ({ ...p, dupRows: p.dupRows.map((x, xi) => xi === i ? { ...x, include: e.target.checked } : x) }))}
                         style={{ marginTop: 2, cursor: 'pointer' }} />
                       <div style={{ width: '100%', overflow: 'hidden' }}>
                         <div style={{ fontSize: 12, marginBottom: 4 }}>
-                          <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#0ea5e9' }}>{d.row.mat_no}</span>
+                          <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--blue)' }}>{d.row.mat_no}</span>
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6, wordBreak: 'break-word' }}>
                           <div>ปัจจุบัน: <span style={{ color: 'var(--text2)' }}>{d.existing?.name || d.existing?.part_name || '—'}</span></div>
-                          <div>ใหม่: <span style={{ color: '#f59e0b' }}>{d.row.name || d.row.part_name}</span></div>
+                          <div>ใหม่: <span style={{ color: 'var(--amber)' }}>{d.row.name || d.row.part_name}</span></div>
                         </div>
                       </div>
                     </div>
@@ -1730,9 +1733,9 @@ export default function ProductMaster() {
               {/* invalid rows */}
               {csvPreview.invalidRows.length > 0 && (
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#ef4444', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>ไม่สมบูรณ์ — จะถูกข้าม</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--red)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>ไม่สมบูรณ์ — จะถูกข้าม</div>
                   {csvPreview.invalidRows.map((r, i) => (
-                    <div key={i} style={{ padding: '8px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', marginBottom: 4, fontSize: 12, color: 'var(--muted)' }}>
+                    <div key={i} style={{ padding: '8px 12px', borderRadius: 8, background: 'var(--red-dim)', border: '1px solid var(--red-dim)', marginBottom: 4, fontSize: 12, color: 'var(--muted)' }}>
                       {r.mat_no || '(ไม่มี mat_no)'} — {r.name || r.part_name || '(ไม่มีชื่อ)'}
                     </div>
                   ))}
@@ -2537,8 +2540,8 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
           <button onClick={() => setHeadPick(true)} disabled={headBusy}
             style={{ marginTop: 8, width: '100%', fontSize: 12, fontWeight: 800, padding: '7px 10px', borderRadius: 8,
               cursor: headBusy ? 'wait' : 'pointer', fontFamily: 'var(--font-body)',
-              background: 'rgba(14,165,233,0.12)', color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.45)' }}>
-            {headBusy ? 'กำลังเปิดใบ…' : '➕ เปิดใบ BOM ให้พาร์ทจากทะเบียน'}
+              background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)' }}>
+            {headBusy ? 'กำลังเปิดใบ…' : 'เปิดใบ BOM ให้พาร์ทจากทะเบียน'}
           </button>
         )}
         {/* 📥 นำเข้าจาก SAP — **อยู่แผงซ้าย ไม่ใช่ในหัวใบที่เลือก** (user 01/10: "ควรมีตั้งแต่ยังไม่กดที่พาร์ท")
@@ -2549,8 +2552,8 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
             title="Display Multilevel BOM (CS12) หรือ BOM & Routing Report ที่ export จาก SAP — ระบบหาใบปลายทางจากเลข Material ในไฟล์เอง"
             style={{ marginTop: 6, width: '100%', fontSize: 12, fontWeight: 800, padding: '7px 10px', borderRadius: 8,
               cursor: sapBusy ? 'wait' : 'pointer', fontFamily: 'var(--font-body)',
-              background: 'rgba(168,85,247,0.12)', color: '#a855f7', border: '1px solid rgba(168,85,247,0.45)' }}>
-            {sapBusy ? '⏳ กำลังอ่าน…' : '📥 นำเข้า BOM จาก SAP'}
+              background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)' }}>
+            {sapBusy ? 'กำลังอ่าน…' : 'นำเข้า BOM จาก SAP'}
           </button>
         )}
         <input ref={sapFileRef} type="file" accept=".xls,.txt,.tsv,.csv" style={{ display: 'none' }} onChange={handleSapFile} />
@@ -2567,7 +2570,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
               <div key={p.id} onClick={() => { setSelProduct(p); setBomBack([]); }} style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: active ? 'rgba(61,214,92,0.1)' : 'var(--bg2)', border: `1px solid ${active ? 'rgba(61,214,92,0.4)' : 'var(--border)'}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: active ? 'var(--accent)' : 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {p._op && <span title="รายการขั้นตอน (OP) — สูตรที่นี่คือ 'ขั้นนี้กินอะไรเข้าไป' ใช้ตอนตัดของเสีย" style={{ color: '#0ea5e9', marginRight: 4 }}>🔩</span>}
+                    {p._op && <span title="รายการขั้นตอน (OP) — สูตรที่นี่คือ 'ขั้นนี้กินอะไรเข้าไป' ใช้ตอนตัดของเสีย" style={{ color: 'var(--blue)', marginRight: 4 }}>🔩</span>}
                     {p.name}
                   </span>
                   <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 7px', borderRadius: 10, flexShrink: 0, background: n > 0 ? 'rgba(61,214,92,0.15)' : 'rgba(255,255,255,0.06)', color: n > 0 ? 'var(--accent)' : 'var(--muted)' }}>{n > 0 ? `${n} พาร์ท` : 'ยังไม่มี'}</span>
@@ -2585,12 +2588,12 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
           {/* 🔍 พาร์ทที่ไม่มีใบของตัวเอง แต่มีคนกรอกลูกไว้ในใบอื่น — กดแล้วกางเป็นตัวตั้งต้น (อ่านอย่างเดียว) */}
           {noSheetHits.map(h => (
             <div key={h.mat} onClick={() => setPartView({ mat: h.mat, sheetId: h.sheets[0].sheetId, sheets: h.sheets })}
-              style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: 'var(--bg2)', border: '1px dashed rgba(14,165,233,0.5)' }}>
+              style={{ padding: '10px 12px', borderRadius: 8, cursor: 'pointer', background: 'var(--bg2)', border: '1px dashed var(--blue-line)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  🔍 {h.name || h.mat}
+                  {h.name || h.mat}
                 </span>
-                <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 7px', borderRadius: 10, flexShrink: 0, background: 'rgba(14,165,233,0.15)', color: '#0ea5e9' }}>
+                <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 7px', borderRadius: 10, flexShrink: 0, background: 'var(--blue-dim)', color: 'var(--blue)' }}>
                   {h.sheets.reduce((n, x) => n + x.count, 0)} ลูก
                 </span>
               </div>
@@ -2607,12 +2610,12 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
           {/* 🔍 มุมมองพาร์ทที่ "ยังไม่มีใบของตัวเอง" — กางจากใบที่กรอกลูกของมันไว้
               ⚠️ อ่านอย่างเดียว (ไม่ส่ง onDeleteDupes) — ลบแถวของ *ใบอื่น* จากหน้าต่างนี้ = ลบผิดใบเงียบๆ */}
           {partView && (
-            <div style={{ background: 'rgba(14,165,233,0.07)', border: '1px solid rgba(14,165,233,0.45)', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+            <div style={{ background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 800, color: '#0ea5e9' }}>🔍 มุมมองพาร์ท {partView.mat}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--blue)' }}>มุมมองพาร์ท {partView.mat}</span>
                 <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{nameOfMat(partView.mat)}</span>
                 <button type="button" onClick={() => setPartView(null)}
-                  style={{ ...btnSecondary, padding: '3px 10px', fontSize: 11.5, marginLeft: 'auto' }}>✕ ปิดมุมมองนี้</button>
+                  style={{ ...btnSecondary, padding: '3px 10px', fontSize: 11.5, marginLeft: 'auto' }}>ปิดมุมมองนี้</button>
               </div>
               {parentsBar(partView.mat)}
               <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7, margin: '8px 0' }}>
@@ -2625,9 +2628,9 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                       {partView.sheets.map(x => (
                         <button key={x.sheetId} type="button" onClick={() => setPartView(v => ({ ...v, sheetId: x.sheetId }))}
                           style={{ ...btnSecondary, padding: '3px 9px', fontSize: 11,
-                            background: x.sheetId === partView.sheetId ? 'rgba(14,165,233,0.18)' : 'var(--bg2)',
-                            color: x.sheetId === partView.sheetId ? '#0ea5e9' : 'var(--text2)' }}>
-                          📄 {sheetLabel(x.sheetId)} ({x.count})
+                            background: x.sheetId === partView.sheetId ? 'var(--blue-dim)' : 'var(--bg2)',
+                            color: x.sheetId === partView.sheetId ? 'var(--blue)' : 'var(--text2)' }}>
+                          {sheetLabel(x.sheetId)} ({x.count})
                         </button>
                       ))}
                     </div>
@@ -2658,12 +2661,12 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                       if (back) { setSelProduct(back); setSearch(back.mat_no || ''); }
                       else toast.info('ใบเดิมไม่อยู่ในลิสต์แล้ว — เลือกจากด้านซ้ายได้'); }}
                     style={{ ...btnSecondary, padding: '3px 10px', fontSize: 11.5, marginTop: 6 }}>
-                    ↩ กลับไปใบ {bomBack[bomBack.length - 1].mat_no || bomBack[bomBack.length - 1].name}
+                    กลับไปใบ {bomBack[bomBack.length - 1].mat_no || bomBack[bomBack.length - 1].name}
                   </button>
                 )}
                 {/* กติกาการคีย์สูตรของขั้น — ผิดข้อนี้แล้วของเสียถูกตัดเบิ้ล (ดู scrapExplode.js ข้อ 1) */}
                 {selProduct._op && (
-                  <div style={{ marginTop: 6, fontSize: 11.5, lineHeight: 1.6, padding: '7px 10px', borderRadius: 8, background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.35)', color: '#0ea5e9', maxWidth: 620 }}>
+                  <div style={{ marginTop: 6, fontSize: 11.5, lineHeight: 1.6, padding: '7px 10px', borderRadius: 8, background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', color: 'var(--blue)', maxWidth: 620 }}>
                     🔩 <b>รายการขั้นตอน (OP)</b>{selProduct._op.parent ? ` · เป็นขั้นของ ${selProduct._op.parent}` : ' · ยังไม่ผูกพาร์ทจริง'}
                     {selProduct._op.seq != null && ` · ลำดับขั้น ${selProduct._op.seq}`}
                     <br />สูตรที่นี่ = <b>ของที่ "ขั้นนี้" ใส่เข้าไป (delta) เท่านั้น — ห้ามคีย์แบบสะสม</b>
@@ -2675,7 +2678,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
               {canCreate && (
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button onClick={() => openPicker('')} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)' }}>+ เพิ่มพาร์ทย่อย</button>
-                  <button onClick={() => { setCopySource(''); setShowCopyBom(true); }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>📋 คัดลอก BOM จาก...</button>
+                  <button onClick={() => { setCopySource(''); setShowCopyBom(true); }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>คัดลอก BOM จาก...</button>
 
                 </div>
               )}
@@ -2686,7 +2689,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
               <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
                 <div onClick={() => setShowTree(v => !v)}
                   style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>
-                  🌳 โครงหลายชั้น (แบบ SAP Display Multilevel BOM)
+                  โครงหลายชั้น (แบบ SAP Display Multilevel BOM)
                   <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>{showTree ? '▾' : '▸'}</span>
                 </div>
                 {showTree && (
@@ -2709,8 +2712,8 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
               kidsElsewhere.length > 0 ? (() => {
                 const showId = kidsElsewhere.some(x => x.sheetId === borrowSheet) ? borrowSheet : kidsElsewhere[0].sheetId;
                 return (
-                  <div style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 10, padding: '10px 12px' }}>
-                    <div style={{ fontSize: 12.5, fontWeight: 800, color: '#f59e0b', marginBottom: 4 }}>
+                  <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 10, padding: '10px 12px' }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--amber)', marginBottom: 4 }}>
                       ⚠️ ใบนี้ยังไม่มีพาร์ทย่อยของตัวเอง — แต่ลูกของ {selProduct.mat_no} ถูกกรอกไว้ในใบอื่นแล้ว
                     </div>
                     <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7 }}>
@@ -2722,14 +2725,14 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                       {kidsElsewhere.map(x => (
                         <button key={x.sheetId} type="button" onClick={() => setBorrowSheet(x.sheetId)}
                           style={{ ...btnSecondary, padding: '3px 9px', fontSize: 11,
-                            background: x.sheetId === showId ? 'rgba(245,158,11,0.18)' : 'var(--bg2)',
-                            color: x.sheetId === showId ? '#f59e0b' : 'var(--text2)' }}>
-                          📄 {sheetLabel(x.sheetId)} ({x.count})
+                            background: x.sheetId === showId ? 'var(--amber-dim)' : 'var(--bg2)',
+                            color: x.sheetId === showId ? 'var(--amber)' : 'var(--text2)' }}>
+                          {sheetLabel(x.sheetId)} ({x.count})
                         </button>
                       ))}
                       <button type="button" onClick={() => openSheetOfMat(products.find(pr => pr.id === showId)?.mat_no || '')}
                         disabled={!products.find(pr => pr.id === showId)?.mat_no}
-                        style={{ ...btnSecondary, padding: '3px 9px', fontSize: 11 }}>↗ ไปเปิดใบนั้น</button>
+                        style={{ ...btnSecondary, padding: '3px 9px', fontSize: 11 }}>ไปเปิดใบนั้น</button>
                     </div>
                     <BomTreeView rootMat={selProduct.mat_no} rootName={selProduct.name}
                       bomOf={bomIx.bomOf} sheetFor={bomIx.sheetFor} ownSheetOf={bomIx.ownSheetOf}
@@ -2768,32 +2771,32 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                               style={{ ...inputSt, width: 140, padding: '4px 6px', fontSize: 11.5 }}>
                               <option value="">— ชั้น 1 (ใต้ {selProduct.mat_no || 'FG'}) —</option>
                               {items.filter(o => o.id !== it.id && o.mat_no).map(o => (
-                                <option key={o.id} value={o.mat_no}>↳ ใต้ {o.mat_no}</option>
+                                <option key={o.id} value={o.mat_no}>ใต้ {o.mat_no}</option>
                               ))}
                             </select>
                           ) : (
-                            <span style={{ fontSize: 11.5, color: it.parent_mat ? '#0ea5e9' : 'var(--muted)' }}>
+                            <span style={{ fontSize: 11.5, color: it.parent_mat ? 'var(--blue)' : 'var(--muted)' }}>
                               {it.parent_mat ? `↳ ใต้ ${it.parent_mat}` : 'ชั้น 1'}
                             </span>
                           )}
                           {it.op_no && (
-                            <span title="ขั้นตอน (PFC) ที่ชิ้นนี้ถูกใส่เข้าไป" style={{ marginLeft: 4, fontSize: 11, fontWeight: 700, padding: '1px 6px', borderRadius: 10, background: 'rgba(168,85,247,0.14)', color: '#a855f7', whiteSpace: 'nowrap' }}>
+                            <span title="ขั้นตอน (PFC) ที่ชิ้นนี้ถูกใส่เข้าไป" style={{ marginLeft: 4, fontSize: 11, fontWeight: 700, padding: '1px 6px', borderRadius: 10, background: 'var(--blue-dim)', color: 'var(--blue)', whiteSpace: 'nowrap' }}>
                               OP {it.op_no}
                             </span>
                           )}
                         </TD>
                         <TD style={{ fontWeight: 600 }}>{it.part_name}</TD>
                         <TD style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text2)' }}>{it.part_no || '—'}</TD>
-                        <TD style={{ fontWeight: 700, fontFamily: 'monospace', color: '#0ea5e9' }}>{it.mat_no}</TD>
+                        <TD style={{ fontWeight: 700, fontFamily: 'monospace', color: 'var(--blue)' }}>{it.mat_no}</TD>
                         {/* ⚠️ จำนวนต้องมีหน่วยติดตัว (user 2026-09-02) — coil เป็น KG ไม่ใช่ชิ้น
                             "0.341" กับ "5" ดูเหมือนหน่วยเดียวกันถ้าไม่บอก */}
                         <TD style={{ fontWeight: 800, color: 'var(--accent)', textAlign: 'right', whiteSpace: 'nowrap' }}>
                           {Number(it.qty_per_unit)}
                           <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginLeft: 3 }}>{uomLabel(it.uom) || '⚠'}</span>
                         </TD>
-                        <TD style={{ fontWeight: 700, color: '#f59e0b', textAlign: 'right' }}>{it.qty_per_pkg ? Number(it.qty_per_pkg) : '—'}</TD>
+                        <TD style={{ fontWeight: 700, color: 'var(--amber)', textAlign: 'right' }}>{it.qty_per_pkg ? Number(it.qty_per_pkg) : '—'}</TD>
                         {/* PC / EA / pcs ในฐานเป็นของเดียวกัน 3 สะกด — แสดงให้เป็นมาตรฐานเดียว (ไม่แก้ค่าใน DB) */}
-                        <TD style={{ color: it.uom ? 'var(--muted)' : '#f59e0b', fontWeight: it.uom ? 400 : 700 }}>
+                        <TD style={{ color: it.uom ? 'var(--muted)' : 'var(--amber)', fontWeight: it.uom ? 400 : 700 }}>
                           {uomLabel(it.uom) || '⚠ ไม่ระบุ'}
                         </TD>
                         {/* 🏬 คลังที่เบิกชิ้นส่วนบรรทัดนี้ (SAP Stor.Loc.)
@@ -2808,15 +2811,15 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                             return (
                               <span title={reg ? `${meta.icon} ${reg.name}` : 'ยังไม่อยู่ในทะเบียนรหัสคลัง'}
                                 style={{ fontWeight: 700, padding: '2px 7px', borderRadius: 10, whiteSpace: 'nowrap',
-                                  background: reg ? `${meta.color}1f` : 'rgba(245,158,11,0.14)',
-                                  color: reg ? meta.color : '#f59e0b' }}>
+                                  background: reg ? `${tint(meta.color, 'dim')}` : 'var(--amber-dim)',
+                                  color: reg ? meta.color : 'var(--amber)' }}>
                                 {reg ? '' : '⚠ '}{c}
                               </span>
                             );
                           })()}
                         </TD>
                         <TD>{it.source_line
-                          ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>🏭 {it.source_line}</span>
+                          ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: 'var(--blue-dim)', color: 'var(--blue)' }}>{it.source_line}</span>
                           : <span style={{ color: 'var(--muted)' }}>—</span>}</TD>
                         <TD style={{ color: 'var(--muted)', fontSize: 12 }}>{it.supplier || '—'}</TD>
                         {(canEdit || mayDelete) && (
@@ -2859,11 +2862,11 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                   style={{ ...inputSt, width: 260, padding: '5px 8px', fontSize: 12, background: 'var(--bg2)' }}>
                   <option value="">— ชั้น 1 (ใต้ {selProduct?.mat_no || 'FG'}) —</option>
                   {[...new Map(items.filter(o => o.mat_no).map(o => [o.mat_no, o])).values()].map(o => (
-                    <option key={o.id} value={o.mat_no}>↳ ใต้ {o.part_name || o.mat_no}{o.part_name ? ` · MAT ${o.mat_no}` : ''}</option>
+                    <option key={o.id} value={o.mat_no}>ใต้ {o.part_name || o.mat_no}{o.part_name ? ` · MAT ${o.mat_no}` : ''}</option>
                   ))}
                 </select>
                 {pickerParent && (
-                  <span style={{ fontSize: 11, color: '#0ea5e9' }}>
+                  <span style={{ fontSize: 11, color: 'var(--blue)' }}>
                     พาร์ทที่มีอยู่ใต้ตัวอื่นแล้ว ยังเลือกซ้ำมาใส่ตรงนี้ได้ (คนละชั้น = คนละบรรทัด)
                   </span>
                 )}
@@ -2898,21 +2901,21 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                         {!pickerParent && deepMats.has((p.mat_no || '').trim().toUpperCase()) && (
                           <span title={`${p.mat_no} อยู่ใต้ ${deepMats.get((p.mat_no || '').trim().toUpperCase())} ในใบนี้แล้ว — ใส่ชั้น 1 อีกจะกลายเป็นนับซ้ำ`}
                             style={{ marginRight: 5, fontSize: 11, fontWeight: 800, padding: '1px 6px', borderRadius: 10,
-                              background: 'rgba(239,68,68,0.16)', color: '#ef4444' }}>
+                              background: 'var(--red-dim)', color: 'var(--red)' }}>
                             🔴 อยู่ใต้ {deepMats.get((p.mat_no || '').trim().toUpperCase())} แล้ว
                           </span>
                         )}
                         {p._made && (
                           <span title="พาร์ทที่เราผลิตเอง — ยังไม่อยู่ในทะเบียนชิ้นส่วน ระบบจะลงทะเบียนให้ตอนบันทึก"
                             style={{ marginRight: 5, fontSize: 11, fontWeight: 800, padding: '1px 6px', borderRadius: 10,
-                              background: 'rgba(245,158,11,0.16)', color: '#f59e0b' }}>🏭 ผลิตเอง</span>
+                              background: 'var(--amber-dim)', color: 'var(--amber)' }}>ผลิตเอง</span>
                         )}
                         {p.part_name}
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
                         {/* ลำดับ Part No. → MAT (UI §6.21) */}
-                        {p.part_no && <span style={{ fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700 }}>{p.part_no}</span>}
-                        <span style={{ fontFamily: 'monospace', color: p.part_no ? 'var(--muted)' : '#0ea5e9', fontWeight: p.part_no ? 400 : 700 }}>{p.part_no ? ' · ' : ''}MAT {p.mat_no}</span>
+                        {p.part_no && <span style={{ fontFamily: 'monospace', color: 'var(--blue)', fontWeight: 700 }}>{p.part_no}</span>}
+                        <span style={{ fontFamily: 'monospace', color: p.part_no ? 'var(--muted)' : 'var(--blue)', fontWeight: p.part_no ? 400 : 700 }}>{p.part_no ? ' · ' : ''}MAT {p.mat_no}</span>
                         {p.supplier && <span> · {p.supplier}</span>}
                         <span> · {p.uom}</span>
                         {p.qty_per_pkg && <span> · {p.qty_per_pkg}/pkg</span>}
@@ -2956,7 +2959,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(380px,100%)' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 2 }}>✏️ แก้ไข BOM</div>
             {/* ลำดับ ชื่องาน → MAT (UI §6.21) */}
-            <div style={{ fontSize: 12, color: '#0ea5e9', fontFamily: 'monospace', marginBottom: 12 }}>MAT {editItem.mat_no}</div>
+            <div style={{ fontSize: 12, color: 'var(--blue)', fontFamily: 'monospace', marginBottom: 12 }}>MAT {editItem.mat_no}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {/* 🔴 02/10 (feedback user "กดปุ่มดินสอแก้ไขก็ไม่ได้"): เดิมชื่อพาร์ทเป็นข้อความอ่านอย่างเดียว
                   ⇒ แถวที่ชื่อเข้ามาผิด (เช่นนำเข้าแล้วได้เลข MAT เป็นชื่อ) **แก้ในจอไม่ได้เลย**
@@ -2966,7 +2969,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                 <input style={inputSt} value={form.part_name} onChange={e => setForm(f => ({ ...f, part_name: e.target.value }))}
                   placeholder="เช่น PACK SUPT ASY RAD-FVL" />
                 {String(form.part_name).trim() === String(editItem.mat_no).trim() && (
-                  <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 3 }}>⚠ ชื่อยังเป็นเลข MAT — แถวนี้นำเข้ามาตอนตัวแกะยังอ่านคอลัมน์ชื่อไม่ได้ (แก้แล้ว 02/10) · นำเข้าไฟล์เดิมซ้ำจะเติมชื่อให้เอง</div>
+                  <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, marginTop: 3 }}>⚠ ชื่อยังเป็นเลข MAT — แถวนี้นำเข้ามาตอนตัวแกะยังอ่านคอลัมน์ชื่อไม่ได้ (แก้แล้ว 02/10) · นำเข้าไฟล์เดิมซ้ำจะเติมชื่อให้เอง</div>
                 )}
               </div>
               <div>
@@ -3027,7 +3030,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                       {slocChoices.map(s => (
                         <option key={s.code} value={s.code}>{s.code} · {s.name}</option>
                       ))}
-                      <option value="__free">✏️ พิมพ์รหัสเอง (ยังไม่ลงทะเบียน)</option>
+                      <option value="__free">พิมพ์รหัสเอง (ยังไม่ลงทะเบียน)</option>
                     </select>
                   )}
                   <div style={{ fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
@@ -3035,13 +3038,13 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                       <div style={{ marginBottom: 2 }}>
                         <span style={{ color: 'var(--muted)' }}>{SLOC_FORMAT_HINT} · </span>
                         <span onClick={() => { setSlocFree(false); setForm(f => ({ ...f, storage_location: '' })); }}
-                          style={{ color: '#0ea5e9', cursor: 'pointer', fontWeight: 700 }}>เลือกจากทะเบียนแทน</span>
+                          style={{ color: 'var(--blue)', cursor: 'pointer', fontWeight: 700 }}>เลือกจากทะเบียนแทน</span>
                       </div>
                     )}
                     {/* ⚠ ต้องบอกทั้ง 2 กรณี: รูปแบบผิด (บันทึกไม่ได้) กับ ยังไม่ลงทะเบียน (บันทึกได้แต่ควรไปเพิ่ม) */}
-                    {slocBadFormat && <div style={{ color: '#ef4444', fontWeight: 700 }}>🔴 รูปแบบไม่ถูก — {SLOC_FORMAT_HINT}</div>}
+                    {slocBadFormat && <div style={{ color: 'var(--red)', fontWeight: 700 }}>🔴 รูปแบบไม่ถูก — {SLOC_FORMAT_HINT}</div>}
                     {!slocBadFormat && slocUnregistered && (
-                      <div style={{ color: '#f59e0b', fontWeight: 700 }}>⚠ รหัสนี้ยังไม่อยู่ในทะเบียน — บันทึกได้ แต่ควรไปเพิ่มที่ 📦 Line Stock → 🏬 โซนคลัง</div>
+                      <div style={{ color: 'var(--amber)', fontWeight: 700 }}>⚠ รหัสนี้ยังไม่อยู่ในทะเบียน — บันทึกได้ แต่ควรไปเพิ่มที่ 📦 Line Stock → 🏬 โซนคลัง</div>
                     )}
                     <div style={{ color: 'var(--muted)' }}>ยังไม่ผูกกับการตัดสต็อก — ระบบยังเบิกตามไลน์เหมือนเดิม</div>
                   </div>
@@ -3061,7 +3064,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
               <button onClick={() => setShowEdit(false)} style={btnSecondary}>ยกเลิก</button>
-              <button onClick={handleEditSave} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : '💾 บันทึก'}</button>
+              <button onClick={handleEditSave} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : 'บันทึก'}</button>
             </div>
           </div>
         </div>
@@ -3075,12 +3078,12 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
         const pnPicked = Object.values(sapPn).filter(v => v.use && String(v.value || '').trim()).length;
         const pkgOf = (mat) => partsMaster.find(x => upMat(x.mat_no) === upMat(mat))?.qty_per_pkg || null;
         const pkgMissing = [...diff.add, ...diff.update].filter(r => !pkgOf(r.mat_no)).length;
-        const pill = (bg, fg, txt) => <span style={{ fontSize: 12, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: bg, color: fg, border: `1px solid ${fg}33` }}>{txt}</span>;
+        const pill = (bg, fg, txt) => <span style={{ fontSize: 12, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: bg, color: fg, border: `1px solid ${tint(fg, 'dim')}` }}>{txt}</span>;
         return (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}
             onClick={() => !sapBusy && setSapImp(null)}>
             <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(96vw, 880px)', maxHeight: '88vh', overflow: 'auto' }}>
-              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>📥 นำเข้า BOM จาก SAP</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>นำเข้า BOM จาก SAP</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', margin: '4px 0 12px' }}>
                 หัวใบ <b style={{ color: 'var(--text)', fontFamily: 'monospace' }}>{parsed.root.mat_no || '—'}</b> {parsed.root.description}
                 {parsed.root.plant && ` · Plant ${parsed.root.plant}`} · รูปแบบไฟล์ {parsed.layout === 'multilevel' ? 'Display Multilevel BOM' : 'BOM & Routing Report'}
@@ -3088,19 +3091,19 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
                 {pill('rgba(61,214,92,0.10)', 'var(--accent)', `➕ เพิ่ม ${diff.add.length}`)}
-                {pill('rgba(245,158,11,0.10)', '#f59e0b', `✏️ แก้ ${diff.update.length}`)}
+                {pill('var(--amber-dim)', 'var(--amber)', `✏️ แก้ ${diff.update.length}`)}
                 {pill('rgba(107,114,128,0.10)', 'var(--muted)', `= เหมือนเดิม ${diff.same.length}`)}
-                {pill('rgba(168,85,247,0.10)', '#a855f7', `🗂 ลงทะเบียนพาร์ทใหม่ ${miss.length}`)}
-                {diff.extra.length > 0 && pill('rgba(239,68,68,0.10)', '#ef4444', `⚠ ESM มี แต่ SAP ไม่มี ${diff.extra.length}`)}
-                {pnPicked > 0 && pill('rgba(14,165,233,0.10)', '#0ea5e9', `🏷️ Part No. ที่ติ๊กไว้ ${pnPicked}`)}
+                {pill('var(--blue-dim)', 'var(--blue)', `🗂 ลงทะเบียนพาร์ทใหม่ ${miss.length}`)}
+                {diff.extra.length > 0 && pill('var(--red-dim)', 'var(--red)', `⚠ ESM มี แต่ SAP ไม่มี ${diff.extra.length}`)}
+                {pnPicked > 0 && pill('var(--blue-dim)', 'var(--blue)', `🏷️ Part No. ที่ติ๊กไว้ ${pnPicked}`)}
               </div>
               {/* 🏷️ SAP ไม่มีคอลัมน์ part no. — เบอร์ลูกค้าถูกพิมพ์ปนอยู่ใน Object description
                   ระบบถอดให้ดู **แต่ไม่เขียนเองจนกว่าจะติ๊ก** (user 05/10) */}
-              <div style={{ fontSize: 11.5, color: 'var(--text2)', background: 'rgba(14,165,233,0.06)', border: '1px solid rgba(14,165,233,0.3)', borderRadius: 8, padding: '8px 10px', marginBottom: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 11.5, color: 'var(--text2)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 8, padding: '8px 10px', marginBottom: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                 <span>
-                  <b style={{ color: '#0ea5e9' }}>🏷️ Part No.</b> ไฟล์ SAP ไม่มีคอลัมน์นี้ — ระบบถอดจากข้อความชื่อให้
+                  <b style={{ color: 'var(--blue)' }}>Part No.</b> ไฟล์ SAP ไม่มีคอลัมน์นี้ — ระบบถอดจากข้อความชื่อให้
                   (เรียนรูปแบบจากทะเบียนที่ใช้อยู่จริง) · <b>ติ๊กเท่านั้นจึงจะบันทึก</b> · พิมพ์แก้ในช่องได้
-                  {sapImp.prop?.conflict > 0 && <> · <b style={{ color: '#ef4444' }}>ไม่ตรงกับทะเบียนเดิม {sapImp.prop.conflict} แถว</b> (ไม่ติ๊กให้ ต้องดูเอง)</>}
+                  {sapImp.prop?.conflict > 0 && <> · <b style={{ color: 'var(--red)' }}>ไม่ตรงกับทะเบียนเดิม {sapImp.prop.conflict} แถว</b> (ไม่ติ๊กให้ ต้องดูเอง)</>}
                 </span>
                 <span style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
                   <button type="button" onClick={() => setSapPn(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, { ...v, use: true }])))}
@@ -3110,20 +3113,20 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                 </span>
               </div>
               {pkgMissing > 0 && (
-                <div style={{ fontSize: 11.5, color: 'var(--text2)', background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
-                  <b style={{ color: '#f59e0b' }}>📦 QTY/PKG ยังไม่มีค่า {pkgMissing} แถว</b> — จำนวนต่อกล่อง
+                <div style={{ fontSize: 11.5, color: 'var(--text2)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
+                  <b style={{ color: 'var(--amber)' }}>QTY/PKG ยังไม่มีค่า {pkgMissing} แถว</b> — จำนวนต่อกล่อง
                   <b> ไม่มีอยู่ในไฟล์ SAP เลย</b> เป็นข้อมูลของทะเบียนพาร์ท ต้องมีคนกรอก
                   (แถวที่ทะเบียนมีค่าแล้ว ระบบเติมให้เอง) · กรอกได้ที่แท็บ 1️⃣ Parts Master หรือปุ่มดินสอของแต่ละแถว
                 </div>
               )}
               {parsed.warnings.length > 0 && (
-                <div style={{ fontSize: 11.5, color: '#f59e0b', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
+                <div style={{ fontSize: 11.5, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
                   {parsed.warnings.map((w, i) => <div key={i}>⚠️ {w}</div>)}
                 </div>
               )}
               {diff.extra.length > 0 && (
-                <div style={{ fontSize: 11.5, color: 'var(--text2)', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
-                  <b style={{ color: '#ef4444' }}>ไม่ลบให้</b> — แถวที่ SAP ไม่มี อาจเป็นของที่หน้างานเพิ่มเอง ให้คนตัดสิน:{' '}
+                <div style={{ fontSize: 11.5, color: 'var(--text2)', background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
+                  <b style={{ color: 'var(--red)' }}>ไม่ลบให้</b> — แถวที่ SAP ไม่มี อาจเป็นของที่หน้างานเพิ่มเอง ให้คนตัดสิน:{' '}
                   <span style={{ fontFamily: 'monospace' }}>{diff.extra.map(r => r.mat_no).join(' · ')}</span>
                 </div>
               )}
@@ -3140,7 +3143,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                         <td style={cell}>{r._k}</td>
                         <td style={{ ...cell, color: 'var(--muted)' }}>{'·'.repeat(r.depth - 1)}{r.depth}</td>
                         <td style={{ ...cell, fontFamily: 'monospace' }}>{r.item_no ?? '—'}</td>
-                        <td style={cell}>{r.part_name}{r.diffs?.length ? <span style={{ color: '#f59e0b' }}> · {r.diffs.join(' · ')}</span> : null}</td>
+                        <td style={cell}>{r.part_name}{r.diffs?.length ? <span style={{ color: 'var(--amber)' }}> · {r.diffs.join(' · ')}</span> : null}</td>
                         {(() => {
                           const key = upMat(r.mat_no), sel = sapPn[key], hit = sel?.hit;
                           const old = sapImp.pmPn?.get(key) || '';
@@ -3156,23 +3159,23 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                                   onChange={e => setSapPn(m => ({ ...m, [key]: { ...m[key], use: e.target.checked } }))} />
                                 <input value={sel.value} onChange={e => setSapPn(m => ({ ...m, [key]: { ...m[key], value: e.target.value, use: true } }))}
                                   style={{ flex: 1, minWidth: 0, fontFamily: 'monospace', fontSize: 11.5, padding: '2px 6px', borderRadius: 5,
-                                    border: `1px solid ${hit?.conflict ? '#ef4444' : 'var(--border)'}`, background: 'var(--bg2)', color: 'var(--text)' }} />
+                                    border: `1px solid ${hit?.conflict ? 'var(--red)' : 'var(--border)'}`, background: 'var(--bg2)', color: 'var(--text)' }} />
                               </label>
-                              <div style={{ fontSize: 11, color: hit?.conflict ? '#ef4444' : hit?.confidence === 'high' ? 'var(--accent)' : '#f59e0b', marginTop: 2 }}>
+                              <div style={{ fontSize: 11, color: hit?.conflict ? 'var(--red)' : hit?.confidence === 'high' ? 'var(--accent)' : 'var(--amber)', marginTop: 2 }}>
                                 {hit?.conflict ? `⚠ ทะเบียนเดิมคือ ${hit.current}` : hit?.confidence === 'high' ? '✓ ' + hit.reason : '~ ' + hit?.reason}
                               </div>
                             </td>
                           );
                         })()}
-                        <td style={{ ...cell, fontFamily: 'monospace', color: '#0ea5e9', fontWeight: 700 }}>{r.mat_no}</td>
+                        <td style={{ ...cell, fontFamily: 'monospace', color: 'var(--blue)', fontWeight: 700 }}>{r.mat_no}</td>
                         <td style={{ ...cell, textAlign: 'right' }}>{r.qty_per_unit ?? '—'}</td>
                         <td style={cell}>{r.uom || '—'}</td>
-                        <td style={{ ...cell, textAlign: 'right', color: pkgOf(r.mat_no) ? '#f59e0b' : 'var(--muted)', fontWeight: pkgOf(r.mat_no) ? 700 : 400 }}>
+                        <td style={{ ...cell, textAlign: 'right', color: pkgOf(r.mat_no) ? 'var(--amber)' : 'var(--muted)', fontWeight: pkgOf(r.mat_no) ? 700 : 400 }}>
                           {pkgOf(r.mat_no) || <span title="ทะเบียนยังไม่ได้ตั้งจำนวนต่อกล่อง — ไฟล์ SAP ไม่มีข้อมูลนี้">ยังไม่ตั้ง</span>}
                         </td>
                         <td style={{ ...cell, fontFamily: 'monospace', color: 'var(--muted)' }}>{r.parent_mat || 'หัวใบ'}</td>
-                        <td style={{ ...cell, fontFamily: 'monospace', color: '#a855f7' }}>{r.prod_sloc || '—'}</td>
-                        <td style={{ ...cell, fontFamily: 'monospace', color: '#a855f7' }}>{r.storage_location || '—'}</td>
+                        <td style={{ ...cell, fontFamily: 'monospace', color: 'var(--blue)' }}>{r.prod_sloc || '—'}</td>
+                        <td style={{ ...cell, fontFamily: 'monospace', color: 'var(--blue)' }}>{r.storage_location || '—'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -3182,7 +3185,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                 <button onClick={() => setSapImp(null)} disabled={sapBusy} style={{ ...btnSecondary, padding: '8px 16px' }}>ยกเลิก</button>
                 <button onClick={applySapImport} disabled={sapBusy || (!diff.add.length && !diff.update.length && !miss.length)}
                   style={{ padding: '8px 18px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)', opacity: sapBusy ? 0.6 : 1 }}>
-                  {sapBusy ? '⏳ กำลังนำเข้า…' : `นำเข้า (เพิ่ม ${diff.add.length} · แก้ ${diff.update.length})`}
+                  {sapBusy ? 'กำลังนำเข้า…' : `นำเข้า (เพิ่ม ${diff.add.length} · แก้ ${diff.update.length})`}
                 </button>
               </div>
             </div>
@@ -3193,7 +3196,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
       {showCopyBom && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)' }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 4 }}>📋 คัดลอก BOM จาก Product อื่น</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 4 }}>คัดลอก BOM จาก Product อื่น</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 16 }}>
               คัดลอกพาร์ทจาก BOM ของ product ที่เลือก เข้ามาใน <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{selProduct?.name}</span>
               <br/>(พาร์ทที่มีอยู่แล้วจะถูกข้าม)
@@ -3212,7 +3215,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button onClick={() => setShowCopyBom(false)} style={btnSecondary}>ยกเลิก</button>
               <button onClick={handleCopyBom} disabled={copying || !copySource} style={{ ...btnPrimary, opacity: (copying || !copySource) ? 0.5 : 1 }}>
-                {copying ? '...' : '📋 คัดลอก BOM'}
+                {copying ? '...' : 'คัดลอก BOM'}
               </button>
             </div>
           </div>
@@ -3291,7 +3294,7 @@ function ExportPanel() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div>
-        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>📤 Export ข้อมูล</div>
+        <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>Export ข้อมูล</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
           CSV มี BOM หน้าไฟล์ (Excel เปิดภาษาไทยไม่เพี้ยน) · เกิน 1,000 แถวระบบไล่ดึงเป็นหน้าให้เอง ไม่ขาดกลาง
         </div>
@@ -3304,13 +3307,13 @@ function ExportPanel() {
             <div key={e.key} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14,
               display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>{e.icon} {e.label}</div>
-              <div style={{ fontSize: 11, color: missing ? '#f59e0b' : 'var(--muted)', fontFamily: 'monospace', flex: 1 }}>
+              <div style={{ fontSize: 11, color: missing ? 'var(--amber)' : 'var(--muted)', fontFamily: 'monospace', flex: 1 }}>
                 {e.key}{missing ? ' · ⚠️ อ่านไม่ได้' : n === undefined ? ' · กำลังนับ…' : ` · ${n.toLocaleString()} แถว`}
               </div>
               <button onClick={() => run(e)} disabled={!!busy || missing || !n}
                 style={{ ...btnPrimary, width: '100%', textAlign: 'center', fontSize: 12,
                   opacity: (busy || missing || !n) ? 0.5 : 1, cursor: (busy || missing || !n) ? 'not-allowed' : 'pointer' }}>
-                {busy === e.key ? 'กำลังดึง…' : '⬇️ ดาวน์โหลด CSV'}
+                {busy === e.key ? 'กำลังดึง…' : 'ดาวน์โหลด CSV'}
               </button>
             </div>
           );
@@ -3329,6 +3332,7 @@ function ExportPanel() {
 const EMPTY_PART = {
   mat_no: '', part_name: '', part_no: '', uom: DEFAULT_UOM,
   qty_per_pkg: '', supplier: '', note: '', is_active: true, image_url: '',
+  home_sloc: '',   // 🏠 ที่จัดเก็บหลัก (05/11) — สโตร์จ่ายออกจากที่นี่ · ว่าง = ยังไม่ตั้ง
   // ต้นทุน/ชิ้น (cost saving ใน /improvements · 2026-08-11): standard_cost (บช. รวม mat+DL+OH+DP) ชนะ material_cost เสมอ
   material_cost: '', standard_cost: '',
 };
@@ -3472,6 +3476,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
         part_no: (form.part_no || '').trim() || null, uom: normUom(form.uom, uomIdx) || DEFAULT_UOM,
         qty_per_pkg: form.qty_per_pkg !== '' ? Number(form.qty_per_pkg) : null,
         supplier: (form.supplier || '').trim() || null, note: (form.note || '').trim() || null,
+        home_sloc: slocLabel(form.home_sloc) || null,
         is_active: form.is_active, image_url: imageUrl,
         material_cost: form.material_cost !== '' && form.material_cost != null ? Number(form.material_cost) : null,
         standard_cost: form.standard_cost !== '' && form.standard_cost != null ? Number(form.standard_cost) : null,
@@ -3528,7 +3533,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
       {/* legend */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '10px 14px', background: 'var(--bg2)', borderRadius: 10, border: '1px solid var(--border)', fontSize: 11 }}>
         {MAT_PREFIXES.map(m => (
-          <span key={m.prefix} style={{ padding: '2px 10px', borderRadius: 12, background: `${m.color}22`, color: m.color, fontWeight: 700, fontFamily: 'monospace' }}>{m.label}</span>
+          <span key={m.prefix} style={{ padding: '2px 10px', borderRadius: 12, background: `${tint(m.color, 'dim')}`, color: m.color, fontWeight: 700, fontFamily: 'monospace' }}>{m.label}</span>
         ))}
       </div>
 
@@ -3549,13 +3554,13 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
         <SearchInput value={search} onChange={setSearch} fields="Part Name / Mat SAP / Part No. / Supplier" />
         <span className="spacer" />
         {canCreate && <>
-          <button onClick={downloadPartsTemplate} style={{ ...btnSecondary, fontSize: 12 }}>⬇️ CSV Template</button>
+          <button onClick={downloadPartsTemplate} style={{ ...btnSecondary, fontSize: 12 }}>CSV Template</button>
           <button onClick={() => csvRef.current?.click()} disabled={csvImporting}
             style={{ ...btnSecondary, fontSize: 12, opacity: csvImporting ? 0.6 : 1 }}>
-            {csvImporting ? '⏳ กำลังนำเข้า...' : '⬆️ นำเข้า CSV'}
+            {csvImporting ? 'กำลังนำเข้า...' : 'นำเข้า CSV'}
           </button>
           <input ref={csvRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handlePartsCsvUpload} />
-          <button onClick={openNew} style={btnPrimary}>➕ เพิ่มพาร์ท</button>
+          <button onClick={openNew} style={btnPrimary}>เพิ่มพาร์ท</button>
         </>}
       </FilterBar>
 
@@ -3573,6 +3578,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>Part No.</th>
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>UOM</th>
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'right' }}>Qty/Pkg</th>
+                <th title="ที่จัดเก็บหลัก (05/11) — สโตร์หยิบจากพื้นที่นี้" style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' }}>ที่จัดเก็บ</th>
                 <th title="Material Cost บาท/ชิ้น (raw mat)" style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'right', whiteSpace: 'nowrap' }}>Mat ฿</th>
                 <th title="Standard Cost บาท/ชิ้น จากบัญชี (รวม mat+DL+OH+DP) — ใช้คิด cost saving" style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'right', whiteSpace: 'nowrap' }}>Std ฿</th>
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>Supplier</th>
@@ -3582,7 +3588,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
             </thead>
             <tbody>
               {filtered.length === 0 && (
-                <tr><td colSpan={canEdit ? 12 : 11} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
+                <tr><td colSpan={canEdit ? 13 : 12} style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
                   {parts.length === 0 ? 'ยังไม่มีข้อมูล — กด ➕ เพิ่มพาร์ท เพื่อเริ่มต้น' : 'ไม่พบรายการที่ตรงเงื่อนไข'}
                 </td></tr>
               )}
@@ -3597,7 +3603,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                   <td style={{ padding: '8px 12px', borderTop: '1px solid var(--border)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 800, color: matColor(p.mat_no) }}>{p.mat_no}</span>
-                      {matClassOf(p.mat_no) && <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 8, background: `${matColor(p.mat_no)}22`, color: matColor(p.mat_no), fontWeight: 700 }}>{matLabel(p.mat_no)}</span>}
+                      {matClassOf(p.mat_no) && <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 8, background: `${tint(matColor(p.mat_no), 'dim')}`, color: matColor(p.mat_no), fontWeight: 700 }}>{matLabel(p.mat_no)}</span>}
                     </div>
                     {/* 🔄 สถานะ revision — อ่านจาก dr_products (ของจริง) ไม่ได้เก็บซ้ำในทะเบียน
                         ไม่รู้จัก (ไม่มีใน Products) = ไม่พูดอะไร ห้ามเดาว่า "ล่าสุด" */}
@@ -3605,7 +3611,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                       const e = ecOf(ecIx, p.mat_no);
                       if (!e) return null;
                       if (e.supersededByMat) return (
-                        <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 2, fontWeight: 700 }}
+                        <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 2, fontWeight: 700 }}
                           title={`ทำ EC ที่แท็บ 3️⃣ Products${e.supersededAt ? ` · มีผล ${e.supersededAt}` : ''}`}>
                           🔄 ถูกแทนโดย <span style={{ fontFamily: 'monospace' }}>{e.supersededByMat}</span>
                           {e.supersededAt && ` · ${e.supersededAt}`}
@@ -3616,7 +3622,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                       );
                       if (e.replacesMat) return (
                         <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 2, fontWeight: 700 }}>
-                          🔄 rev ล่าสุด · แทน <span style={{ fontFamily: 'monospace' }}>{e.replacesMat}</span>
+                          rev ล่าสุด · แทน <span style={{ fontFamily: 'monospace' }}>{e.replacesMat}</span>
                         </div>
                       );
                       return null;
@@ -3626,11 +3632,12 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                   <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text2)', fontFamily: 'monospace', borderTop: '1px solid var(--border)' }}>{p.part_no || '-'}</td>
                   <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--muted)', borderTop: '1px solid var(--border)' }}>{p.uom}</td>
                   <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text2)', textAlign: 'right', fontFamily: 'monospace', borderTop: '1px solid var(--border)' }}>{p.qty_per_pkg ?? '-'}</td>
+                  <td style={{ padding: '8px 12px', fontSize: 12, fontFamily: 'monospace', borderTop: '1px solid var(--border)', color: p.home_sloc ? 'var(--text2)' : 'var(--muted)' }}>{p.home_sloc || 'ยังไม่ตั้ง'}</td>
                   <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text2)', textAlign: 'right', fontFamily: 'monospace', borderTop: '1px solid var(--border)' }}>{p.material_cost != null ? Number(p.material_cost).toLocaleString() : '-'}</td>
                   <td style={{ padding: '8px 12px', fontSize: 12, color: p.standard_cost != null ? 'var(--accent)' : 'var(--text2)', fontWeight: p.standard_cost != null ? 700 : 400, textAlign: 'right', fontFamily: 'monospace', borderTop: '1px solid var(--border)' }}>{p.standard_cost != null ? Number(p.standard_cost).toLocaleString() : '-'}</td>
                   <td style={{ padding: '8px 12px', fontSize: 12, color: 'var(--text2)', borderTop: '1px solid var(--border)' }}>{p.supplier || '-'}</td>
                   <td style={{ padding: '8px 12px', textAlign: 'center', borderTop: '1px solid var(--border)' }}>
-                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 8, fontWeight: 700, background: p.is_active ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)', color: p.is_active ? '#22c55e' : '#ef4444' }}>
+                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 8, fontWeight: 700, background: p.is_active ? 'var(--green-dim)' : 'var(--red-dim)', color: p.is_active ? 'var(--green)' : 'var(--red)' }}>
                       {p.is_active ? 'ใช้งาน' : 'ปิดใช้'}
                     </span>
                   </td>
@@ -3639,7 +3646,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button className="tbtn" onClick={() => openEdit(p)} style={{ ...btnSecondary, padding: '4px 10px', fontSize: 12 }}>✏️</button>
                         <button onClick={() => toggleActive(p)} title={p.is_active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
-                          style={{ ...btnSecondary, padding: '4px 10px', fontSize: 12, color: p.is_active ? '#ef4444' : '#22c55e' }}>
+                          style={{ ...btnSecondary, padding: '4px 10px', fontSize: 12, color: p.is_active ? 'var(--red)' : 'var(--green)' }}>
                           {p.is_active ? '🚫' : '✅'}
                         </button>
                       </div>
@@ -3668,7 +3675,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
               {MAT_PREFIXES.map(m => (
                 <button key={m.prefix} onClick={() => setForm(f => ({ ...f, mat_no: f.mat_no.startsWith(m.prefix) ? f.mat_no : m.prefix }))}
-                  style={{ fontSize: 11, padding: '2px 10px', borderRadius: 10, border: `1px solid ${m.color}`, background: form.mat_no.startsWith(m.prefix) ? `${m.color}22` : 'transparent', color: m.color, cursor: 'pointer', fontWeight: 700 }}>
+                  style={{ fontSize: 11, padding: '2px 10px', borderRadius: 10, border: `1px solid ${m.color}`, background: form.mat_no.startsWith(m.prefix) ? `${tint(m.color, 'dim')}` : 'transparent', color: m.color, cursor: 'pointer', fontWeight: 700 }}>
                   {m.prefix}…
                 </button>
               ))}
@@ -3761,6 +3768,14 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                   placeholder="ชื่อ Supplier / ผู้ผลิต" inputStyle={inputSt} />
               </div>
               <div>
+                {/* 🏠 05/11 (คำสั่ง user) — "ที่จัดเก็บหลัก" ของพาร์ท ≠ ไลน์ที่ผลิต · สโตร์หยิบจากที่นี่ แล้วส่งไปพื้นที่ของไลน์ที่เปิดใบผลิตแม่
+                    เลือกได้เฉพาะรหัสสโตร์/คลัง (S/R/W) · ว่าง = ยังไม่ตั้ง (ระบบไม่เดาจากเลข MAT) */}
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ที่จัดเก็บหลัก (สโตร์/คลัง)</label>
+                <StorageLocSelect value={form.home_sloc || ''} kinds={STORE_SLOC_KINDS} allowFree={false}
+                  onChange={v => setForm(f => ({ ...f, home_sloc: typeof v === 'string' ? v : (v?.code || '') }))}
+                  placeholder="เช่น S402 · R401 · W401" inputStyle={inputSt} />
+              </div>
+              <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>หมายเหตุ</label>
                 <input style={inputSt}
                   value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
@@ -3772,7 +3787,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
               <button onClick={() => setShowModal(false)} style={btnSecondary}>ยกเลิก</button>
-              <button onClick={handleSave} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? (imageUploading ? 'กำลังอัปโหลดรูป...' : '...') : '💾 บันทึก'}</button>
+              <button onClick={handleSave} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? (imageUploading ? 'กำลังอัปโหลดรูป...' : '...') : 'บันทึก'}</button>
             </div>
           </div>
         </div>
@@ -3792,11 +3807,12 @@ const EMPTY_KBS = { mat_no: '', qty_per_kanban: '', min_qty: '', max_qty: '', lo
    PANEL: PACKAGING — master กล่อง/พาเลท + link ต่อ product (เบิกจาก Rack Center)
    ───────────────────────────────────────────────────────────────────────────── */
 const EMPTY_PKG_LINK = { packaging_code: '', packaging_name: '', pcs_per_pkg: 1, note: '' };
-const PKG_CATEGORIES = ['BOX', 'RACK', 'BASKET', 'PALLETTE', 'Other'];
+/* ประเภทภาชนะมาจากทะเบียน DR `container_categories` (05/11 — เดิม hardcode PKG_CATEGORIES ที่นี่) */
 const EMPTY_PKG_MASTER = { code: '', name: '', category: 'BOX', supplier: '' };
 const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16 };
 
 function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
+  const catState = useContainerCategoriesState();   // 📦 ทะเบียนประเภทภาชนะ (05/11)
   const isMobile = useIsMobile(); // ≤768px: two-pane ยุบเป็นคอลัมน์เดียว (desktop ไม่เปลี่ยน)
   const [products, setProducts]   = useState([]);
   const [selProduct, setSelProduct] = useState(null);
@@ -3860,6 +3876,8 @@ function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
 
   const saveMaster = async () => {
     if (!masterForm.code.trim() || !masterForm.name.trim()) { toast.error('กรอก code + ชื่อ'); return; }
+    // 📦 ประเภทบังคับเลือกจากทะเบียน (user 05/11)
+    if (!String(masterForm.category || '').trim()) { toast.error('เลือกประเภทภาชนะ'); return; }
     setSaving(true);
     const payload = { code: masterForm.code.trim().toUpperCase(), name: masterForm.name.trim(), category: masterForm.category || null, supplier: (masterForm.supplier || '').trim() || null };
     const { error } = editMaster
@@ -3884,10 +3902,10 @@ function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: 'clamp(16px,2vw,20px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>📦 Packaging</h3>
+          <h3 style={{ margin: 0, fontSize: 'clamp(16px,2vw,20px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>Packaging</h3>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>ผูกภาชนะกับ product · พอ FG ผลิต → ยิงใบเบิกภาชนะไป Rack Center อัตโนมัติ · ใช้ฐานภาชนะเดียวกับ Rack Center</p>
         </div>
-        {canEdit && <button onClick={() => setShowMaster(true)} style={{ ...btnSecondary }}>🗃 จัดการภาชนะ (Container Types) ({masters.length})</button>}
+        {canEdit && <button onClick={() => setShowMaster(true)} style={{ ...btnSecondary }}>จัดการภาชนะ (Container Types) ({masters.length})</button>}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(240px, 320px) 1fr', gap: 16, alignItems: 'start' }}>
@@ -3928,7 +3946,7 @@ function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
                     <tbody>
                       {links.map(it => (
                         <tr key={it.id}>
-                          <TD style={{ fontFamily: 'monospace', fontWeight: 700, color: '#f59e0b' }}>{it.packaging_code}</TD>
+                          <TD style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--amber)' }}>{it.packaging_code}</TD>
                           <TD>{it.packaging_name || '—'}</TD>
                           <TD style={{ fontWeight: 800, color: 'var(--accent)' }}>{it.pcs_per_pkg}</TD>
                           <TD style={{ color: 'var(--muted)', fontSize: 12 }}>{it.note || '—'}</TD>
@@ -3959,7 +3977,7 @@ function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
                   <option value="">— เลือกภาชนะ (Container Types) —</option>
                   {masters.map(m => <option key={m.id} value={m.code}>{m.code} · {m.name}{m.category ? ` (${m.category})` : ''}</option>)}
                 </select>
-                {masters.length === 0 && <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>ยังไม่มีภาชนะ — กด "🗃 จัดการภาชนะ" เพิ่มก่อน</div>}
+                {masters.length === 0 && <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>ยังไม่มีภาชนะ — กด "🗃 จัดการภาชนะ" เพิ่มก่อน</div>}
               </div>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>จำนวนชิ้น FG ต่อ 1 บรรจุภัณฑ์ *</label>
@@ -3973,7 +3991,7 @@ function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
               <button onClick={() => setShowLink(false)} style={btnSecondary}>ยกเลิก</button>
-              <button onClick={saveLink} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : '💾 บันทึก'}</button>
+              <button onClick={saveLink} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : 'บันทึก'}</button>
             </div>
           </div>
         </div>
@@ -3983,19 +4001,20 @@ function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
       {showMaster && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(760px,100%)', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>🗃 ภาชนะ (Container Types)</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4, fontFamily: 'var(--font-display)' }}>ภาชนะ (Container Types)</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12 }}>ฐานข้อมูลเดียวกับที่ Rack Center ใช้</div>
             {canEdit && (
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr 1fr 1fr auto', gap: 8, alignItems: 'end', marginBottom: 14 }}>
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>Code *</label><input style={inputSt} value={masterForm.code} onChange={e => setMasterForm(f => ({ ...f, code: e.target.value }))} placeholder="BOX-A" /></div>
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>ชื่อ *</label><input style={inputSt} value={masterForm.name} onChange={e => setMasterForm(f => ({ ...f, name: e.target.value }))} /></div>
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>ประเภท</label>
-                  {/* datalist = ค่ามาตรฐาน + หมวดที่มีใช้จริง — พิมพ์หมวดใหม่ได้เลยไม่ต้องแก้โค้ด (QC audit 2026-08-19) */}
-                  <input style={inputSt} list="pkg-category-opts" value={masterForm.category}
-                    onChange={e => setMasterForm(f => ({ ...f, category: e.target.value }))} placeholder="เช่น BOX, RACK" />
-                  <datalist id="pkg-category-opts">
-                    {[...new Set([...PKG_CATEGORIES, ...masters.map(m => m.category).filter(Boolean)])].map(t => <option key={t} value={t} />)}
-                  </datalist></div>
+                  {/* ทะเบียน `container_categories` — บังคับเลือก (user 05/11) · เพิ่มประเภทใหม่ได้ที่แผงด้านล่าง
+                      ค่าเดิมนอกทะเบียนโชว์เป็น "ค่าเดิม" ไม่ถูกเปลี่ยนเงียบๆ */}
+                  <select style={inputSt} value={masterForm.category || ''} onChange={e => setMasterForm(f => ({ ...f, category: e.target.value }))}>
+                    {!masterForm.category && <option value="">— เลือก —</option>}
+                    {containerCategoryOptions(catState.rows, masterForm.category).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                  {catState.failed && <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>{registryFailText('ทะเบียนประเภทภาชนะ', catState.stale)}</div>}</div>
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>Supplier</label>
                   {/* 2026-09-08: ทะเบียน suppliers — ผู้ขายบรรจุภัณฑ์อยู่ชนิด "อื่นๆ"/ชิ้นส่วน · พิมพ์เองได้ */}
                   <SupplierSelect value={masterForm.supplier || ''} kinds={['other', 'parts']}
@@ -4009,17 +4028,29 @@ function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
                 {masters.length === 0 && <tr><td colSpan={canEdit ? 5 : 4} style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีภาชนะ</td></tr>}
                 {masters.map(m => (
                   <tr key={m.id}>
-                    <TD style={{ fontFamily: 'monospace', fontWeight: 700, color: '#f59e0b' }}>{m.code}</TD>
+                    <TD style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--amber)' }}>{m.code}</TD>
                     <TD>{m.name}</TD><TD style={{ color: 'var(--muted)' }}>{m.category || '—'}</TD>
                     <TD style={{ color: 'var(--muted)' }}>{m.supplier || '—'}</TD>
                     {canEdit && <TD><div style={{ display: 'flex', gap: 6 }}>
-                      <button className="tbtn" onClick={() => { setEditMaster(m); setMasterForm({ code: m.code, name: m.name, category: m.category || 'BOX', supplier: m.supplier || '' }); }} style={{ padding: '3px 7px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 11 }}>✏️</button>
+                      <button className="tbtn" onClick={() => { setEditMaster(m); setMasterForm({ code: m.code, name: m.name, category: m.category || '', supplier: m.supplier || '' }); }} style={{ padding: '3px 7px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 11 }}>✏️</button>
                       <DeleteButton onClick={() => delMaster(m)} title="ลบ" />
                     </div></TD>}
                   </tr>
                 ))}
               </tbody>
             </table>
+            {/* 📦 ทะเบียนประเภทภาชนะ (05/11) — container_types.category เก็บ code นี้ */}
+            <div style={{ marginTop: 16 }}>
+              <SimpleMasterPanel client={supabaseDR} table="container_categories" keyCol="code" canManage={canEdit}
+                onBeforeDelete={masterDeleteGuard(supabaseDR, 'container_categories')}
+                stampCol="updated_by_name" stampName={fullName} onChanged={invalidateContainerCategories}
+                title="ประเภทภาชนะ" maxHeight={220}
+                help="ตัวเลือกช่อง 'ประเภท' ด้านบน — รหัสตัวพิมพ์ใหญ่ (เช่น BOX, RACK)"
+                fields={[
+                  { key: 'name', label: 'ชื่อประเภท', required: true },
+                  { key: 'note', label: 'หมายเหตุ' },
+                ]} />
+            </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
               <button onClick={() => { setShowMaster(false); setEditMaster(null); setMasterForm(EMPTY_PKG_MASTER); }} style={btnSecondary}>ปิด</button>
             </div>
@@ -4102,7 +4133,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
         <div>
           <h3 style={{ margin: 0, fontSize: 'clamp(16px,2vw,20px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-            🎴 Kanban Std — มาตรฐาน Qty/Kanban รายพาร์ท
+            Kanban Std — มาตรฐาน Qty/Kanban รายพาร์ท
           </h3>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
             UOM และข้อมูลพาร์ทดึงจาก 🗂 Parts Master โดยตรง (ไม่เก็บซ้ำ) · Qty/Kanban ตั้งต้นจาก Qty/Pkg (1 ใบ Kanban = 1 packaging)
@@ -4144,7 +4175,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--text2)' }}>{row.supplier || '—'}</td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--muted)' }}>{row.uom || '—'}</td>
                     <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 13, color: 'var(--text2)' }}>{row.qty_per_pkg != null ? row.qty_per_pkg.toLocaleString() : '—'}</td>
-                    <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontWeight: 900, fontSize: 15, color: mismatch ? '#f59e0b' : row.ks ? 'var(--accent)' : 'var(--muted)' }}>
+                    <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontWeight: 900, fontSize: 15, color: mismatch ? 'var(--amber)' : row.ks ? 'var(--accent)' : 'var(--muted)' }}>
                       {/* ⚠️ `kanban_standards.qty_per_kanban` เป็น nullable (default 0 แต่ไม่ NOT NULL)
                           แถวเดียวที่เป็น null เคยทำให้ทั้งแท็บพัง (undefined.toLocaleString) — guard เหมือนเซลล์อื่นในแถว */}
                       {row.ks?.qty_per_kanban != null ? row.ks.qty_per_kanban.toLocaleString() : '—'}
@@ -4165,7 +4196,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
                       <td style={{ padding: '8px 14px', borderTop: '1px solid var(--border)' }}>
                         <button onClick={() => openEdit(row)}
                           style={{ background: 'rgba(124,58,237,0.1)', color: '#7c3aed', padding: '4px 10px', fontSize: 11, border: '1px solid rgba(124,58,237,0.3)', borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
-                          ✏️ แก้ไข
+                          แก้ไข
                         </button>
                       </td>
                     )}
@@ -4182,7 +4213,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)', maxHeight: '90vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 16, fontFamily: 'var(--font-display)' }}>
-              🎴 แก้ไข Kanban Std — {form.mat_no}
+              แก้ไข Kanban Std — {form.mat_no}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
@@ -4221,7 +4252,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
                   <b style={{ color: 'var(--text)' }}>1</b> = ผลิตตามที่สั่ง ไม่ต้องรอสะสมล็อต (lot-for-lot — ใช้กับพาร์ทพิเศษที่ไม่มีขนาดล็อตประจำ)
                 </div>
                 {!String(form.lot_size || '').trim() && (
-                  <div style={{ fontSize: 11, lineHeight: 1.6, marginTop: 5, color: '#f59e0b', background: '#f59e0b14', border: '1px solid #f59e0b44', borderRadius: 6, padding: '6px 8px' }}>
+                  <div style={{ fontSize: 11, lineHeight: 1.6, marginTop: 5, color: 'var(--amber)', background: 'var(--amber)14', border: '1px solid var(--amber)44', borderRadius: 6, padding: '6px 8px' }}>
                     ⚠️ <b>เว้นว่าง = ความต้องการค้างถาวร</b> — ระบบจะสะสม demand ของพาร์ทนี้ไปเรื่อยๆ แต่<b>ไม่มีวันออกใบสั่ง</b>
                     <div style={{ opacity: 0.85, marginTop: 2 }}>ถ้าเป็นพาร์ทที่ผลิตตามสั่ง ให้ใส่ <b>1</b> · จุดที่ค้างอยู่ตอนนี้ดูได้ที่หน้า 🔗 สายธารความต้องการ</div>
                   </div>
@@ -4235,7 +4266,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
               <button onClick={() => setShowModal(false)} style={btnSecondary}>ยกเลิก</button>
               <button onClick={handleSave} disabled={saving} style={{ ...btnPrimary, background: '#7c3aed', opacity: saving ? 0.6 : 1 }}>
-                {saving ? '...' : '💾 บันทึก'}
+                {saving ? '...' : 'บันทึก'}
               </button>
             </div>
           </div>

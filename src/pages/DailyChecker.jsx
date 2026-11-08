@@ -20,10 +20,10 @@ const BbsCheck          = lazy(() => import('./BbsCheck'));
 
 // เพิ่มระบบเช็คใหม่ตรงนี้ (key/label/หน้าเดิมที่คุมสิทธิ์/component)
 const TABS = [
-  { key: 'pm',       label: '🔧 Autonomous Maintenance (AM)', page: '/daily-pm', Comp: DailyPM },
-  { key: 'pokayoke', label: '🛡️ Poka-Yoke Check',            page: '/pokayoke', Comp: PokaYokeCheck },
-  { key: 'lpa',      label: '📋 Layer Process Audit (LPA)',   page: '/lpa',      Comp: LayerProcessAudit },
-  { key: 'bbs',      label: '🦺 สังเกตพฤติกรรมความปลอดภัย (BBS)', page: '/bbs',  Comp: BbsCheck },
+  { key: 'pm',       label: 'Autonomous Maintenance (AM)', page: '/daily-pm', Comp: DailyPM },
+  { key: 'pokayoke', label: 'Poka-Yoke Check',            page: '/pokayoke', Comp: PokaYokeCheck },
+  { key: 'lpa',      label: 'Layer Process Audit (LPA)',   page: '/lpa',      Comp: LayerProcessAudit },
+  { key: 'bbs',      label: 'สังเกตพฤติกรรมความปลอดภัย (BBS)', page: '/bbs',  Comp: BbsCheck },
 ];
 
 export default function DailyChecker() {

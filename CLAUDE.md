@@ -452,11 +452,11 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 
 ## 🚀 NPI — พาร์ทใหม่ APQP / PPAP / Drawing Rev / ECI / Tooling Plan (`/npi` · 2026-09-07)
 
-ต้นน้ำของ ESM: ติดตามพาร์ทรุ่นใหม่ตั้งแต่รับงานถึง SOP (คำสั่ง user "ให้ ESM ครอบคลุม E-SPT — ทำส่วนที่ไม่ยุ่งกับ supplier ก่อน") · หมวด คุณภาพ & วิศวกรรม
+ต้นน้ำของ ESM: ติดตามพาร์ทรุ่นใหม่ตั้งแต่รับงานถึง SOP · หมวด คุณภาพ & วิศวกรรม
 · **ตาราง `npi_*` 13 ตัวอยู่ Main project — ห้ามย้ายไป DR** (เฟส 4 จะเปิดให้ supplier ภายนอก login · DR anon-open = supplier เห็นข้อมูลผลิตทั้งโรงงาน)
 · เฟส/รายการเอกสาร = **แม่แบบ data-driven ต่อลูกค้า** (APQP AIAG 5 เฟส + PPAP 18 elements · Toyota SPTT0-4) ห้าม hardcode · พาร์ทถือ snapshot + 🔄 sync เติมที่ขาด
 · ไฟสี/สรุปคำนวณใน `src/utils/npi.js` เท่านั้น · ECI ปิดได้ต่อเมื่อผูกของจริงครบทุกขา (แบบ rev ใหม่ / `pe_change_requests` / ใบ 4M Method / แผน tooling — DB check)
-· migration `20260907_npi_apqp_main.sql` (**apply แล้ว 2026-09-07**) · supplier portal = เฟส 4 ยังไม่ทำ
+· supplier portal = เฟส 4 ยังไม่ทำ
 > 📄 รายละเอียดเต็ม → `docs/modules/npi-apqp.md`
 
 ---
@@ -731,6 +731,7 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 - 🔴 **"คนนี้เข้ากะไหน" อ่านจาก `src/utils/shiftAssign.js` เท่านั้น** — `scheduleTeamFor(emp, maps)` (รายคน) ·
   `lineScheduleTeam(lineId, maps)` (รายไลน์) · **ห้ามอ่าน `maps.byLine[id]` ตรงๆ** และ `buildScheduleMaps(rows, **lines**)`
   ต้องส่ง `lines` เสมอ — **ไลน์ลูกตกทอดกะจากไลน์แม่** เหมือนจอตั้งค่า · ไม่ส่ง = ไลน์ลูกที่ยังไม่มีแถว = **คนไม่มีกะเงียบๆ** (2 ด่าน)
+- 🗂️ **หน่วยสนับสนุน (QA · STORE · Die/JIG/Tooling MTN · Maintenance) อยู่ในทะเบียนไลน์แล้ว** (`unit_kind='support'` + ไลน์แม่-ลูก · 05/11) ⇒ ตั้งกะ/เช็คชื่อ/ยืมคน ทางเดียวกับไลน์ · 🔴 **`shift_schedules.dept_name` = แกนเก่า ห้ามเพิ่มชื่อใหม่** (ข้อความลอย ไม่มีทะเบียน ไม่มี FK)
 - **วันหยุด = มา OT ทั้งกะ 4 รูปแบบ** (8/10 ชม. เช้า-ดึก) — ช่วงเวลา/label/default อ่านจาก **`src/utils/otPeriods.js` ที่เดียว ห้าม hardcode ซ้ำในหน้า**
 - 🔴 **"วันหยุด" มี 2 ความหมาย ห้ามเช็ค `!= 'working'` แบบเหมา** — (ก) วันหยุดโรงงาน (kanban/LPA/แผนงาน · `shutdown75` นับเป็นหยุด) (ข) **วันหยุดแบบ OT** ใช้ `isOtHolidayType()`/`isOtHoliday()` ใน `companyCalendar.js` = **ot15/ot2 เท่านั้น**
 > 📄 ตาราง 4 รูปแบบ OT + มาตรา 75 (`shutdown75`) + จุดจองทุกทาง + migration → `docs/modules/shift-ot.md`

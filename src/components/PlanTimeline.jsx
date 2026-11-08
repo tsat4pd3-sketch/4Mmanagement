@@ -214,7 +214,7 @@ export default function PlanTimeline({
       {/* ── บรรทัดความจริงใต้ราง ── */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', fontSize: 11.5, marginLeft: multi ? LABEL_W + 8 : 0 }}>
         <span style={{ color: 'var(--text2)' }}>
-          🏁 คิวจบ <b style={{ color: over ? '#ef4444' : 'var(--text)' }}>
+          คิวจบ <b style={{ color: over ? '#ef4444' : 'var(--text)' }}>
             {lay.unknownCount > 0 ? '—' : (spansDays || multi ? fmtDayHm(lay.endMs) : fmtHm(lay.endMs))}</b>
           {/* 🔴 "ล้น" ที่นี่ = ล้นเลย**ขอบเขตทั้งหมด** ไม่ใช่ล้นกะ — งานที่ล้นกะไหลไปกะถัดไปแล้ว */}
           {lay.overflowMin > 0 && <b style={{ color: '#ef4444' }}> · ล้นเลยขอบเขต {fmtMin(lay.overflowMin)}</b>}
@@ -229,7 +229,7 @@ export default function PlanTimeline({
             ⚠️ {lay.setupUnknownCount} ช่วงยังไม่รู้เวลาเปลี่ยนรุ่น (เส้นประส้ม) — เวลาที่เห็น<b>เร็วกว่าจริง</b>
           </span>
         )}
-        {editable && <span style={{ color: 'var(--muted)' }}>🧲 ลากกล่องเพื่อสลับก่อนหลัง (จอสัมผัสใช้ปุ่ม ↑↓ ในตารางด้านล่าง)</span>}
+        {editable && <span style={{ color: 'var(--muted)' }}>ลากกล่องเพื่อสลับก่อนหลัง (จอสัมผัสใช้ปุ่ม ↑↓ ในตารางด้านล่าง)</span>}
       </div>
     </div>
   );

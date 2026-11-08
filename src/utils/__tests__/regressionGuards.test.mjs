@@ -7040,10 +7040,7 @@ test('🔄 บันทึกขั้นใบ MO เสร็จ ต้อง�
    นับแบบ static (ปุ่มที่มีเงื่อนไขก็นับ — ถ้าเงื่อนไขทำให้เกิน 2 พร้อมกันได้ ก็ต้องเข้าเมนู)
    🕰️ หน้าที่มีปุ่ม >2 อยู่ก่อนกฎ = ทยอยแก้ **ห้ามเพิ่มหน้าใหม่เข้าลิสต์นี้** */
 test('🧭 PageHeader actions= มีปุ่มตายตัวไม่เกิน 2 — ที่เหลือเข้า <OverflowMenu>', () => {
-  const LEGACY_MANY_ACTIONS = [
-    'src/pages/BbsCheck.jsx', 'src/pages/MachineDatabase.jsx',
-    'src/pages/MorningMeeting.jsx', 'src/pages/PMSetup.jsx', 'src/pages/RackCenter.jsx',
-  ];
+  const LEGACY_MANY_ACTIONS = [];   // 05/11: ไล่ครบทุกหน้าแล้ว — ห้ามเติมชื่อใหม่ (หน้าใหม่ต้องผ่านตั้งแต่แรก)
   const bad = [];
   for (const f of walk(join(ROOT, 'src/pages'), ['.jsx'])) {
     const rel = relative(ROOT, f);
@@ -7810,6 +7807,120 @@ test('📤 cross-line-close-guards — ปิดใบข้ามไลน์�
     + '\n\n   ปิดใบผิดไลน์ = ยอด/OEE ของไลน์ที่ไม่เกี่ยวเปลี่ยน โดยไม่มีใครเห็นบนจอ\n');
 });
 
+test('🟡 defect-auto-yellow — ลงงานเสียต้องตั้งแท็กเหลือง "รอพิจารณา" ให้เอง + มีจอเคลียร์คิว', () => {
+  /* 05/11 (คำสั่ง user): *"พอลงว่ามีงานเสีย ต้องเด้งเข้าถังเหลืองอัตโนมัติเลย เพื่อพิจารณาว่า
+     กลับมาดีได้หรือเสียแน่ๆ · หน้าสรุปงานที่ค้างเคลียร์จากรอพิจารณา … ยังไม่มี"*
+     🔴 **กฎนี้แทนกฎเดิม** ("ห้ามสร้างใบถังอัตโนมัติ · ต้องมีคนกดยืนยัน" 19/08) — หลักฐานที่ทำให้เปลี่ยน:
+        วัด 90 วัน ของเสีย 252 รายการ ผูกใบถังแค่ 46 = 18% · ถังเหลืองทั้งระบบ 1 ใบ
+     ⚠️ ไม่แตะ %Q: `suspectState()` ดู `qty_suspect` เท่านั้น ⇒ แท็กจากแถว NG ล้วนไม่ขยับตัวเลขกะ */
+  const bad = [];
+  const U = 'src/utils/qualityBin.js';
+  const u = stripComments(readFileSync(join(ROOT, U), 'utf8'));
+  if (!/export function yellowRowFromDefect/.test(u))
+    bad.push(`${U}: ต้องมี yellowRowFromDefect() — payload ของแท็กเหลืองมีที่เดียว ห้ามประกอบเองในหน้า`);
+  if (!/export function pendingYellow/.test(u))
+    bad.push(`${U}: ต้องมี pendingYellow() — กฎ "ยังรอพิจารณา" มีที่เดียว`);
+  /* 🔴 ห้ามเดาผลให้ — ไฟล์ payload ต้องไม่ตั้ง qa_decision */
+  const yf = u.match(/export function yellowRowFromDefect[\s\S]*?\n\}/);
+  if (yf && /qa_decision\s*:/.test(yf[0]))
+    bad.push(`${U} yellowRowFromDefect: ห้ามตั้ง qa_decision — ระบบตั้งแท็ก คนตัดสินผล`);
+
+  const DR = 'src/pages/DailyReport.jsx';
+  const dr = stripComments(readFileSync(join(ROOT, DR), 'utf8'));
+  const fn = dr.match(/const\s+handleAddDefectLog\s*=[\s\S]*?\n  \};/);
+  if (!fn) bad.push(`${DR}: หา handleAddDefectLog ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้`);
+  else {
+    const body = fn[0];
+    if (!/\.insert\([\s\S]{0,400}\.select\(/.test(body))
+      bad.push(`${DR} handleAddDefectLog: insert ต้อง .select() แถวกลับมา (แท็กเหลืองต้องใช้ id + embed)`);
+    if (!/yellowRowFromDefect\(/.test(body))
+      bad.push(`${DR} handleAddDefectLog: ต้องตั้งแท็กเหลืองผ่าน yellowRowFromDefect() ทุกครั้งที่ลงงานเสีย`);
+    /* 🔴 ตั้งแท็กไม่สำเร็จ = บอกให้ไปกดเอง ห้ามเงียบ (งานเสียถูกบันทึกไปแล้ว) */
+    if (!/binErr[\s\S]{0,200}toast\.error/.test(body))
+      bad.push(`${DR} handleAddDefectLog: ตั้งแท็กเหลืองล้มเหลวต้องขึ้น toast บอกทางแก้ ห้ามล้มเหลวเงียบ`);
+  }
+  if (!/ยังไม่ลงถัง \{pend\.length\}/.test(dr))
+    bad.push(`${DR}: ต้องมีชิปนับ "🗑️ ยังไม่ลงถัง N" บนหัวข้อบันทึกงานเสีย`);
+
+  const Q = 'src/components/QualityBins.jsx';
+  const q = stripComments(readFileSync(join(ROOT, Q), 'utf8'));
+  if (!/pendingYellow\(/.test(q))
+    bad.push(`${Q}: ต้องมีคิว "รอพิจารณา" (pendingYellow) — จุดที่คนเคลียร์ว่ากลับมาดีหรือเสียแน่`);
+  for (const [t, why] of [['งานดี', 'ตรวจแล้วใช้ได้'], ['ซ่อมแล้วดี', 'rework แล้วดี'], ['เสียแน่', 'rework ไม่ได้ → ถังแดง']]) {
+    if (!q.includes(t)) bad.push(`${Q}: คิวรอพิจารณาต้องมีปุ่ม "${t}" (${why})`);
+  }
+  /* 🔴 RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" ⇒ ปุ่มตัดสินต้องนับแถว */
+  const dec = q.match(/const\s+decide\s*=[\s\S]*?\n  \};/);
+  if (dec && !/checkWriteRows\(/.test(dec[0]))
+    bad.push(`${Q} decide(): ต้องใช้ checkWriteRows — RLS ปฏิเสธ UPDATE เงียบ (กฎเขียน DB ข้อ 2)`);
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   ของจริงอยู่ในถังแต่ระบบไม่รู้ = สืบกลับไม่ได้ว่าของหายไปไหน\n');
+});
+
+test('📊 mat-breakdown-default-collapsed — แท็บ Live ต้องขึ้นภาพรวมก่อน รายชิ้นงานยุบไว้', () => {
+  /* 05/11 (คำสั่ง user): *"แยกตามชิ้นงาน default มันเปิดไว้ มันจะรก มันควรจะ default ซ่อนไว้ใน
+     ความคืบหน้ารวมทั้งกะ ถ้าจะกดดูรายละเอียดค่อยคลิกจากแถบภาพรวม"*
+     ของจริง: SUB APRON 10 MAT.NO ⇒ ต้องเลื่อนผ่าน 10 แท่งกว่าจะเจอตัวเลขรวม ·
+     ไลน์ MAT เดียวยิ่งซ้ำ — แท่งเดียวกันโผล่ 2 ที่
+     🔴 `liveCollapsed(key, auto)` กับ `toggleLiveCollapse(key, auto)` ต้องส่ง auto ตัวเดียวกัน
+        ไม่งั้นคลิกแรก = "ปิดของที่ปิดอยู่แล้ว" (จอไม่ขยับ) — คลาสบั๊กของ API คู่นี้ */
+  const bad = [];
+  const DR = 'src/pages/DailyReport.jsx';
+  const code = stripComments(readFileSync(join(ROOT, DR), 'utf8'));
+  if (!/liveCollapsed\(\s*'mat_breakdown'\s*,\s*true\s*\)/.test(code))
+    bad.push(`${DR}: "แยกตามชิ้นงาน" ต้อง default ยุบ — liveCollapsed('mat_breakdown', true)`);
+  for (const m of code.matchAll(/toggleLiveCollapse\(\s*'mat_breakdown'\s*([^)]*)\)/g)) {
+    if (!/,\s*true/.test(m[1]))
+      bad.push(`${DR}: toggleLiveCollapse('mat_breakdown') ต้องส่ง true ด้วย — ไม่งั้นคลิกแรกไม่มีอะไรเกิดขึ้น`);
+  }
+  /* 🔴 ยุบแล้วต้องยังบอกจำนวน (ห้ามซ่อนเงียบ) */
+  if (!/แยกตามชิ้นงาน \{productRows\.length\} MAT\.NO/.test(code))
+    bad.push(`${DR}: หัวข้อที่ยุบต้องเขียนจำนวน MAT.NO เสมอ (กฎความซื่อสัตย์ของจอ)`);
+  /* ภาพรวมต้องมาก่อนรายละเอียด — เทียบตำแหน่งในไฟล์ */
+  const iOverview = code.indexOf('ภาพรวมทั้งกะ');   // 05/11: หัวข้อไม่มี emoji แล้ว (UI §6.36)
+  const iDetail = code.indexOf('แยกตามชิ้นงาน');
+  if (iOverview < 0 || iDetail < 0) bad.push(`${DR}: หาหัวข้อภาพรวม/แยกตามชิ้นงานไม่เจอ — เปลี่ยนข้อความแล้วต้องแก้ด่านนี้`);
+  else if (iDetail < iOverview) bad.push(`${DR}: "แยกตามชิ้นงาน" ต้องอยู่ใต้ภาพรวมทั้งกะ ไม่ใช่เหนือ`);
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   ไลน์ที่มี 10 MAT.NO = ภาพรวมของกะถูกดันตกจอ · 📄 docs/modules/daily-report.md\n');
+});
+
+test('🚨 andon-bar-mobile — แถบ Andon ลอยต้องอ่านออก + กดรับทราบได้บนมือถือ', () => {
+  /* 05/11 (mobilesweep @390px ที่ /heijunka): แถบ "📦 ไลน์เรียกของ" เป็น flex แถวเดียว nowrap
+     ไอคอน 27 + ชิปเปิดเสียง 99 + ปุ่ม 118 + ปุ่ม 133 = 377px > กล่อง 374px
+     ⇒ กล่องข้อความ (flex:1 · min-width:0) **ถูกบีบเหลือกว้าง 0** = เห็นแต่ไอคอนกับปุ่ม
+        ไม่รู้ว่าไลน์ไหนเรียกอะไร · Andon ที่อ่านไม่ออก = ไม่มีประโยชน์
+     แก้แล้วแถบสูง 62→272px/ใบ ⇒ 3 ใบ = 894px บนจอ 844px **ปุ่มรับทราบใบล่างตกนอกจอ**
+     (position:fixed เลื่อนตามไม่ได้) ⇒ มือถือโชว์ทีละใบ + เขียนว่าเหลืออีกกี่ใบ
+     📄 docs/UI-CONVENTIONS.md §6.32 */
+  const bad = [];
+  const css = readFileSync(join(ROOT, 'src/index.css'), 'utf8');
+  /* กฎต้องอยู่ใต้ media query มือถือเท่านั้น — จอคอม/TV ห้ามขยับ (ด่าน desktopdiff) */
+  const mq = css.match(/@media\s*\(max-width:\s*768px\)\s*\{[\s\S]*?\.andon-bar[\s\S]*?\n\}/);
+  if (!mq) bad.push('src/index.css: ไม่มีกฎ .andon-bar ใต้ @media (max-width:768px) — แถบ Andon จะบีบข้อความเหลือ 0 บนมือถือ');
+  else {
+    if (!/flex-wrap:\s*wrap/.test(mq[0])) bad.push('src/index.css: .andon-bar ต้อง flex-wrap: wrap บนมือถือ');
+    /* 🔴 inline style `flex: 1` ของกล่องข้อความชนะ CSS เสมอ — ไม่มี !important = กฎไม่มีผล */
+    if (!/\.andon-bar-msg\s*\{[^}]*!important/.test(mq[0]))
+      bad.push('src/index.css: .andon-bar-msg ต้องมี !important (inline style flex:1 ชนะ CSS ไม่งั้นข้อความยังถูกบีบ)');
+  }
+  for (const f of ['src/components/StoreCallSiren.jsx', 'src/components/DowntimeSiren.jsx']) {
+    const src = readFileSync(join(ROOT, f), 'utf8');
+    const code = stripComments(src);
+    if (!/className="dt-alarm-blink andon-bar"/.test(code))
+      bad.push(`${f}: แถบ Andon ต้องมี class "andon-bar" (ไม่มี = ข้อความกว้าง 0 บนจอ 390px)`);
+    if (!/className="andon-bar-msg"/.test(code))
+      bad.push(`${f}: กล่องข้อความต้องมี class "andon-bar-msg"`);
+    /* โชว์ทีละใบบนมือถือ + ต้องเขียนว่าเหลืออีกกี่ใบ (ห้ามตัดทิ้งเงียบ) */
+    if (!/useIsMobile/.test(code))
+      bad.push(`${f}: ต้องจำกัดจำนวนแถบบนมือถือด้วย useIsMobile() — ซ้อนกันหลายใบ = ปุ่มรับทราบตกนอกจอ`);
+    if (!/\+ อีก /.test(src))
+      bad.push(`${f}: ตัดแถบที่เกินแล้วต้องเขียนบนจอว่า "+ อีก N …" ห้ามหายเงียบ`);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   พิสูจน์ 2 ด้านเสมอ: node audit/mobilesweep.mjs (ต้องแก้ 0) + node audit/desktopdiff.mjs (ต้องต่าง 0)\n');
+});
+
 test('⛔ downtime-band-central — แถบเครื่องหยุดบนบอร์ดต้องผ่านตัวกลาง + เห็นจริง', () => {
   /* 04/11 (feedback หน้างาน · user): *"ปริ้น Tag มายิงประมาณพันกว่า แต่พอมาปิดแท็ก
      มันเรียงไม่ต่อเนื่องกัน"* → *"ต่อให้รับยอดมาจากการยกยอด มันก็ต้องเรียงต่อกันได้ดิ"*
@@ -8153,6 +8264,18 @@ test('🕵️ account-activity-never-vs-unknown — ห้ามบีบ "อ�
   const au = stripComments(readFileSync(join(ROOT, 'src/pages/AddUser.jsx'), 'utf8'));
   assert.doesNotMatch(au, /last_sign_in_at:[^,\n]*\|\|\s*null/,
     '🔴 `last_sign_in_at: … || null` = undefined กลายเป็น "ไม่เคยเข้าใช้" ⇒ ชวนลบบัญชีที่ยังใช้อยู่');
+  // 05/11 เกิดจริง: migration ที่เติมคอลัมน์ยังไม่ apply ⇒ RPC คืนแถวที่ "ไม่มีคีย์" ⇒ `?? null` ตีเป็น "ไม่เคยเข้า" ทั้งจอ
+  assert.doesNotMatch(au, /last_sign_in_at:[^,\n]*\?\?\s*null/,
+    '🔴 `last_sign_in_at: … ?? null` — คีย์ที่ไม่มาในแถว (migration ยังไม่ลง) ต้องเป็น undefined = "อ่านไม่ได้" ไม่ใช่ "ไม่เคยเข้า"');
+  assert.match(au, /'last_sign_in_at' in authMap\[p\.id\]/,
+    'ต้องเช็คว่าแถวมีคีย์ last_sign_in_at จริงก่อนอ่านค่า');
+
+  // 🗑️ ลบบัญชีที่มีประวัติผูก (FK NO ACTION) — edge ตอบ 409 + blockers · จอต้องเขียนว่าติดอะไร ห้ามกลืนเป็น "ลบไม่สำเร็จ"
+  assert.match(au, /res\.status === 409 && Array\.isArray\(data\.blockers\)/,
+    '🔴 handleDelete ต้องรับ 409/blockers จาก edge delete-user แล้วเปิดแผงโอนประวัติ (edge-functions.md §delete-user)');
+  const delFn = readFileSync(join(ROOT, 'supabase/functions/delete-user/index.ts'), 'utf8');
+  assert.match(delFn, /fn_profile_ref_blockers/, '🔴 delete-user ต้องถาม fn_profile_ref_blockers ก่อนลบ');
+  assert.match(delFn, /fn_profile_reassign_refs/, '🔴 delete-user ต้องโอนประวัติผ่าน fn_profile_reassign_refs ฝั่ง DB ห้ามไล่ตารางเอง');
   assert.match(au, /activityOf\(u\.last_sign_in_at/,
     'คอลัมน์ต้องตัดสินผ่าน activityOf() ห้ามเทียบวันเองในหน้า');
   assert.match(au, /ACT_UNKNOWN \? '—'/,
@@ -8789,4 +8912,116 @@ test('🔒 line-adhoc-picker-strict — ช่องขอเบิกเอง�
   assert.match(s, /<ProductSelect strict value=\{adhocMat\}/, 'ProductSelect ของฟอร์มขอเบิกเองต้องมี strict');
   assert.match(s, /<ProductSelect strict value=\{newMat\}/, 'ProductSelect ของโมดัลตั้งจุดเรียกเติมต้องมี strict');
   assert.doesNotMatch(s, /useColumnHistory\(supabaseDR, 'line_part_levels'/, 'ห้ามดึงประวัติ mat ของทุกไลน์มาเป็นตัวเลือก');
+});
+
+/* ═══ 🏠 store-area-via-home-sloc — 2026-11-05 · คำสั่ง user ══════════════════════════════
+   *"สโตร์ไม่จำเป็นต้องไปตั้งไลน์ · part master แต่ละตัวควรตั้งได้ว่าที่จัดเก็บหลักอยู่ที่ไหน"*
+   ⇒ พื้นที่ของกองคลัง (STORE / FG WAREHOUSE) = parts_master.home_sloc ของพาร์ท ห้ามถามผ่านการผูกไลน์  */
+test('🏠 store-area-via-home-sloc — ห้ามหา SLoc ของกองคลังด้วย slocCodeOfLine/slocOfLine', () => {
+  const bad = [];
+  for (const f of ['src/pages/HeijunkaKanban.jsx', 'src/pages/LineStock.jsx', 'src/utils/slocStockView.js', 'src/components/LinePartCallPanel.jsx']) {
+    const s = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    if (/slocO(?:f|fLine|deOfLine)?\w*\([^)]*'(?:STORE|FG WAREHOUSE)'/.test(s)) bad.push(`${f} — หาพื้นที่ของกองคลังผ่านการผูกไลน์`);
+  }
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
+
+/* ═══ 🖱️ hover-intent-needs-settle — 2026-11-05 · feedback user ════════════════════════════
+   *"ลากเม้าส์ผ่านไม่ตั้งใจดู ก็ขึ้นมาเกะกะ แต่จะเป็นเยอะตอนเลือกไลน์จาก dropdown ...
+     มันเลยนับเวลาแช่เม้าสตั้งแต่ตอนเลือกไลน์รึป่าว"*
+   ⇒ การ์ดสกิลห้ามติดนาฬิกาจาก `mouseenter` — ต้องรอ `mousemove` แล้วนิ่ง (settle)
+     เพราะ Chromium ยิง `mouseenter` ให้เองเมื่อการ์ดถูก render มาโผล่ใต้เมาส์ที่วางนิ่งอยู่  */
+test('🖱️ hover-intent-needs-settle — การ์ดสกิลต้องรอเมาส์นิ่ง ห้ามนับจาก mouseenter', () => {
+  const bad = [];
+  const s = stripComments(readFileSync(join(ROOT, 'src/pages/Management.jsx'), 'utf8'));
+  const enter = s.slice(s.indexOf('const onHoverEnter ='), s.indexOf('const onHoverLeave ='));
+  if (!enter) bad.push('หา onHoverEnter ไม่เจอ');
+  if (/setTimeout/.test(enter)) bad.push('onHoverEnter ติดนาฬิกาเอง — ต้องรอ mousemove (ดูคอมเมนต์เคส ② ที่หัวบล็อก)');
+  if (!/const onHoverMove =/.test(s)) bad.push('ไม่มี onHoverMove — ไม่มีทางรู้ว่าเมาส์ขยับจริง');
+  if (!/armHover\(\)/.test(s)) bad.push('onHoverMove ไม่ติดนาฬิกา');
+  const moveWired = (s.match(/onMouseMove=\{!isMobile \? onHoverMove/g) || []).length;
+  if (moveWired < 2) bad.push(`การ์ดพนักงานผูก onMouseMove แค่ ${moveWired} จุด (ต้องครบทั้ง pool + จุดงาน)`);
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
+
+test('🛡️ pr-board-folded-but-counts-visible — แผง PR พับไว้ แต่ตัวนับ/คำเตือนต้องเห็นตอนพับ', () => {
+  const src = readFileSync(join(ROOT, 'src/components/MtnPurchase.jsx'), 'utf8');
+
+  /* 🔴 คำสั่ง user 08/11 (จากจอมือถือ `/equipment?tab=spare`):
+       *"พวก PR มันควร hide default ถ้าจะเยอะขนาดนี้ · KPI card มันควรอยู่บน
+         พวกรายการเกิน 10 row มันควรมี show/hide และ hide default ไม่ใช่โชว์ทุกอย่าง"*
+     แผงนี้มี 5 ลิสต์ซ้อนกัน (อะไหล่ติด Min จริง 58 แถว) ⇒ กางหมด = KPI คลังอะไหล่ตกจอไป 3 หน้าจอ
+     🔑 แต่ "พับ" ห้ามแปลว่า "เงียบ" — ของหมด/โหลดไม่ครบต้องเห็นจากหัวที่พับอยู่ */
+  const i = src.indexOf('<CollapseCard');
+  assert.ok(i > 0,
+    '\n\n❌ แผง PR ในคลังอะไหล่เลิกใช้ `CollapseCard` แล้ว\n'
+    + '   ⇒ กลับไปกาง 5 ลิสต์ซ้อนกันทั้งแผง = KPI คลังอะไหล่ตกจอ (คำสั่ง user 08/11)\n');
+  /* 🔑 หน้าต่างต้องจบ **ก่อน** children — ไม่งั้น `{err && <div>` ในเนื้อแผงมาตอบข้อล่างให้เอง
+     (ด่านผ่านทั้งที่ย้ายตัวนับลงไปใน children แล้ว = ด่านหลอก) */
+  const bodyStarts = src.indexOf('ลูปเดียวกับสโตร์', i);
+  assert.ok(bodyStarts > i && bodyStarts - i < 2000,
+    '\n\n❌ หาขอบเขต prop ของ <CollapseCard> ไม่เจอ — ด่านนี้วัดอะไรไม่ได้แล้ว ต้องแก้ด่าน\n');
+  const head = src.slice(i, bodyStarts);
+
+  assert.ok(/defaultOpen=\{false\}/.test(head),
+    '\n\n❌ แผง PR ไม่ได้พับเป็นค่าเริ่มต้น (`defaultOpen={false}`)\n'
+    + '   ⇒ user สั่งให้ hide default — แผงเตือนที่ซ้อนลิสต์ย่อยหลายอันห้ามกางทิ้งไว้\n'
+    + '   📄 docs/UI-CONVENTIONS.md §ลิสต์เกิน 10 แถว = พับ\n');
+
+  /* ตัวนับทั้ง 4 + ธงโหลดไม่สำเร็จ ต้องอยู่ใน `title` (ส่วนที่ CollapseCard วาดตอนพับ) */
+  for (const [needle, what] of [
+    ['needOrder.length', 'อะไหล่ติด Min ที่ยังไม่เปิด PR'],
+    ['noPrMos.length', 'ใบ MO ที่รอเปิด PR'],
+    ['waitNoList.length', 'ใบที่รอเลข PR จาก SAP'],
+    ['hasNoList.length', 'PR ค้าง'],
+    ['{err &&', 'ธง "โหลดไม่ครบ" (ต้องผูกกับ err)'],
+    ['โหลดไม่ครบ', 'ข้อความธงโหลดไม่สำเร็จ'],
+  ]) {
+    assert.ok(head.includes(needle),
+      `\n\n❌ หัวแผง PR (ตอนพับ) ไม่ได้โชว์ ${what}\n`
+      + '   ⇒ พับแล้วตัวเลขหาย = จอโกหก (อะไหล่หมด/คิวค้าง ไม่มีใครรู้ว่าต้องกางมาดู)\n'
+      + '   ⇒ ตัวนับต้องอยู่ใน prop `title` ไม่ใช่ใน children ของ CollapseCard\n');
+  }
+
+  /* ทุกลิสต์ย่อยพับแถวด้วยของกลางตัวเดียว ห้ามก๊อป slice เอง */
+  const folds = src.match(/<RowFold\b/g) || [];
+  assert.ok(folds.length >= 4,
+    `\n\n❌ ลิสต์ย่อยในแผง PR ใช้ <RowFold> แค่ ${folds.length} จุด (ต้อง ≥ 4)\n`
+    + '   ⇒ ลิสต์ที่ยาวเกิน 10 แถวกลับไป render แบนทั้งก้อน (อะไหล่ติด Min 58 แถว)\n');
+  assert.ok(!/\.slice\(0,\s*(8|10|12|15|20)\)/.test(src),
+    '\n\n❌ มี `.slice(0, N)` เขียนมือในแผง PR — ตัดแถวเงียบๆ ไม่บอกว่าซ่อนกี่รายการ\n'
+    + '   ⇒ ใช้ <RowFold> (`components/RowFold.jsx`) ซึ่งเขียน "ซ่อนอยู่ N" ให้เสมอ\n');
+});
+
+test('🛡️ row-fold-must-report-hidden — ตัวพับแถวของกลางต้องบอกจำนวนที่ซ่อน', () => {
+  const src = readFileSync(join(ROOT, 'src/components/RowFold.jsx'), 'utf8');
+  /* 🔑 ต้องเจอใน **template literal ที่วาดออกจอ** — เทียบแค่คำว่า "ซ่อนอยู่" ลอยๆ
+     คอมเมนต์หัวไฟล์ตอบให้เองได้ (ด่านผ่านทั้งที่ปุ่มเลิกบอกจำนวนแล้ว) */
+  assert.ok(/`[^`]*ซ่อนอยู่ \$\{hidden\}[^`]*`/.test(src),
+    '\n\n❌ `RowFold` เลิกเขียนว่าซ่อนอยู่กี่แถวบนปุ่ม\n'
+    + '   ⇒ ตัดแถวออกจากจอแล้วเงียบ = จอโกหก (กฎ "กรองแถวออกแล้วต้องเขียนว่าซ่อนกี่รายการ")\n');
+  assert.ok(/hidden\s*=\s*Math\.max\(0,\s*list\.length\s*-\s*max\)/.test(src),
+    '\n\n❌ `RowFold` ไม่ได้นับจำนวนที่ซ่อนจาก (ทั้งหมด − ที่โชว์)\n');
+  assert.ok(/export const ROW_FOLD_MAX\s*=\s*10/.test(src),
+    '\n\n❌ เกณฑ์ `ROW_FOLD_MAX` ไม่ใช่ 10 แล้ว — user กำหนด "เกิน 10 row" (08/11)\n'
+    + '   ⇒ อยากได้เกณฑ์อื่นในบางจอให้ส่ง prop `max` ที่จอนั้น ห้ามขยับค่ากลาง\n');
+});
+
+test('🛡️ spare-registry-table-not-flat — ทะเบียนอะไหล่ 295 แถวห้าม render แบนทั้งก้อน', () => {
+  const src = readFileSync(join(ROOT, 'src/components/SparePartMaster.jsx'), 'utf8');
+
+  /* 🔴 ภาพหน้างาน 08/11 (มือถือ): ทะเบียน 295 รายการ × รูป 1 ใบต่อแถว ไหลยาวทั้งหน้า
+     ⇒ เลื่อนไม่จบ + DOM หนัก · user: "พวกรายการเกิน 10 row มันควรมี show/hide"
+     🔑 แต่ตารางนี้คือเหตุผลที่หน้านี้มีอยู่ ⇒ หางยาว (50) ไม่ใช่ 10 และห้ามพับทั้งก้อน */
+  assert.ok(/<RowFold rows=\{filtered\}[^>]*colSpan=\{13\}/.test(src),
+    '\n\n❌ ตารางทะเบียนอะไหล่กลับไป `filtered.map()` แบนทั้งก้อน (หรือลืม colSpan)\n'
+    + '   ⇒ 295 แถวไหลยาวทั้งหน้าบนมือถือ · ปุ่มเปล่าใน <tbody> = HTML ผิด ปุ่มเด้งออกนอกตาราง\n'
+    + '   📄 docs/UI-CONVENTIONS.md §ลิสต์เกิน 10 แถว = พับ (ข้อ "ตารางหลักของหน้า")\n');
+
+  assert.ok(/<RowFold rows=\{filtered\} max=\{50\}/.test(src),
+    '\n\n❌ ทะเบียนอะไหล่ไม่ได้ใช้หางยาว `max={50}`\n'
+    + '   ⇒ ตัดทะเบียนเหลือ 10 แถว = ทะเบียนใช้งานไม่ได้ (คนละเคสกับลิสต์เตือนที่ซ้อนกัน)\n');
+
+  assert.ok(!/<CollapseCard[^>]*>\s*<table/.test(src),
+    '\n\n❌ เอาตารางทะเบียนไปพับทั้งก้อนใน CollapseCard — ห้าม (ตารางหลักของหน้า)\n');
 });

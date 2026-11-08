@@ -141,7 +141,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
           วางเป็น CollapseCard พี่น้องแยกจากตาราง rate: ทะเบียน = "รหัสมีอะไรบ้าง" · rate = "รหัสนั้นราคาเท่าไร"
           สิทธิ์เขียนใช้คีย์เดียวกับ RLS (cost_rate:manage) · แก้แล้ว invalidate cache ให้ <CostCenterSelect> ทุกหน้าเห็นทันที */}
       <CollapseCard id="cc_master" storePrefix="orgsetup" defaultOpen={false}
-        title={<span>💰 ทะเบียน Cost Center <span style={{ fontWeight: 600, color: 'var(--muted)' }}>(รหัสจากบัญชี — ช่อง Cost Center ทุกหน้าเลือกจากที่นี่)</span></span>}>
+        title={<span>ทะเบียน Cost Center <span style={{ fontWeight: 600, color: 'var(--muted)' }}>(รหัสจากบัญชี — ช่อง Cost Center ทุกหน้าเลือกจากที่นี่)</span></span>}>
         {/* 🔴 onBeforeDelete = ด่านนับปลายทางก่อนลบ (fail-closed) — ห้ามถอด
             06/10 มีการลบ 31 รหัสด้วยเหตุผล "ชื่อว่าง น่าจะไม่ได้ใช้" แต่ 29 รหัสในนั้น
             บัญชีตั้ง activity rate ปี 2026 ไว้ครบ (ชื่อหน่วยจริงอยู่ใน note ของแถว rate)
@@ -158,7 +158,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
           emptyText="ยังไม่มีรหัสในทะเบียน — กด + เพิ่ม (รหัสที่ไลน์/ผังใช้อยู่แล้วยังเลือกได้จากกลุ่ม 📜)" />
       </CollapseCard>
       <CollapseCard id="cc_rates" storePrefix="orgsetup" count={groupList.length}
-        title={<span>💰 Activity Rate ต่อ Cost Center <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({RATE_COMPONENTS.map(c => c.label).join('/')} บาท/ชม. — ใช้คิด cost saving ในโปรเจคปรับปรุง)</span></span>}>
+        title={<span>Activity Rate ต่อ Cost Center <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({RATE_COMPONENTS.map(c => c.label).join('/')} บาท/ชม. — ใช้คิด cost saving ในโปรเจคปรับปรุง)</span></span>}>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
           rate เป็นของ <b>รหัส Cost Center</b> (ไม่ได้ผูกกับไลน์) — ปกติบัญชีตั้งที่ <b>ชั้นกลุ่ม</b> แล้วชั้นแผนก/ส่วนรวมขึ้นเองตามลำดับชั้นในผัง
           · <b>บัญชีส่ง rate รอบใหม่ = กด “＋ rate ใหม่”</b> (ประวัติเดิมคงไว้ โปรเจคเก่าคำนวณด้วย rate ณ ช่วงนั้น) — ปุ่ม ✏️ ไว้แก้เฉพาะตอนกรอกตัวเลขผิด
@@ -213,7 +213,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                       <td style={{ padding: '7px 10px', fontSize: 11, color: 'var(--muted)', maxWidth: 260 }}>
                         {orgGroup.length > 0 && <span>▦ {orgGroup.join(', ')}</span>}
                         {orgGroup.length > 0 && lns.length > 0 && ' · '}
-                        {lns.length > 0 && <span>🏭 {lns.join(', ')}</span>}
+                        {lns.length > 0 && <span>{lns.join(', ')}</span>}
                         {orgOther.length > 0 && <span style={{ opacity: 0.7 }}>{(orgGroup.length || lns.length) ? ' · ' : ''}🏛️ {orgOther.join(', ')}</span>}
                         {!orgGroup.length && !lns.length && !orgOther.length && <span style={{ opacity: 0.6 }}>— ไม่มีในผัง/ไลน์แล้ว (ประวัติ)</span>}
                       </td>
@@ -323,10 +323,10 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                     {dateLocked ? (
                       <>
                         🔒 วัน Effective ล็อกกันแก้พลาด — <b>ปรับ rate รอบใหม่ให้กด ＋ rate ในตาราง</b> (แถวเดิมเก็บเป็นประวัติ โปรเจคที่เริ่มก่อนหน้ายังคิดด้วย rate เดิม)
-                        <button onClick={unlockDate} style={{ marginLeft: 6, background: 'none', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--accent)', fontSize: 11, fontWeight: 800, cursor: 'pointer', padding: '1px 7px' }}>🔓 แก้วันที่</button>
+                        <button onClick={unlockDate} style={{ marginLeft: 6, background: 'none', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--accent)', fontSize: 11, fontWeight: 800, cursor: 'pointer', padding: '1px 7px' }}>แก้วันที่</button>
                       </>
                     ) : (
-                      <span style={{ color: '#f59e0b', fontWeight: 700 }}>🔓 ปลดล็อกวันที่แล้ว — เปลี่ยนวันนี้ = เปลี่ยนย้อนหลังว่า rate นี้ครอบช่วงไหน cost saving ของโปรเจคที่คำนวณด้วย rate ช่วงนี้จะขยับตาม</span>
+                      <span style={{ color: '#f59e0b', fontWeight: 700 }}>ปลดล็อกวันที่แล้ว — เปลี่ยนวันนี้ = เปลี่ยนย้อนหลังว่า rate นี้ครอบช่วงไหน cost saving ของโปรเจคที่คำนวณด้วย rate ช่วงนี้จะขยับตาม</span>
                     )}
                     <div style={{ marginTop: 3, opacity: 0.85 }}>
                       เวลาที่แก้ระบบบันทึกเอง: สร้าง {fmtStamp(form.created_at)} · แก้ล่าสุด {fmtStamp(form.updated_at)} (ใครแก้ดูได้ที่ audit log)

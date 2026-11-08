@@ -177,7 +177,7 @@ export default function MoStalePanel({
           {chase && chase.sides.length > 0 && (
             <div style={{ marginBottom: 9, paddingTop: 7, borderTop: '1px solid var(--border)' }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 5 }}>
-                <span style={lbl}>🏃 รอใครลงมือ:</span>
+                <span style={lbl}>รอใครลงมือ:</span>
                 {chase.sides.map(s2 => (
                   <Chip key={s2.side} tone={s2.tone}
                     label={`${s2.meta.icon} ${s2.meta.label}`}

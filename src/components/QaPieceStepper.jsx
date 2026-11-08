@@ -28,7 +28,7 @@ const JUDGE = {
   na: { label: 'ข้าม', color: '#6b7280' },
 };
 export const DISPOSITION = {
-  rework: { label: '🔧 Rework (ซ่อมได้)', color: '#f59e0b' },
+  rework: { label: 'Rework (ซ่อมได้)', color: '#f59e0b' },
   scrap:  { label: '🔴 Scrap (ลงถังแดง)', color: '#ef4444' },
   hold:   { label: '⏸ Hold (กักไว้รอตัดสิน)', color: '#a78bfa' },
 };
@@ -166,8 +166,8 @@ export default function QaPieceStepper({
           {(actions || []).map(a => (
             <span key={a.id || a.round_no} title={String(a.action_text || '')}
               style={{ padding: '3px 9px', borderRadius: 999, fontWeight: 700, background: 'rgba(245,158,11,0.14)', color: '#f59e0b', border: '1px solid #f59e0b55' }}>
-              🛠 action รอบ {a.round_no}: {String(a.action_text || '—').slice(0, 40)}{String(a.action_text || '').length > 40 ? '…' : ''} — {a.action_by || '—'}
-              {a.four_m_log_id ? ' · 📋 4M' : ''}
+              action รอบ {a.round_no}: {String(a.action_text || '—').slice(0, 40)}{String(a.action_text || '').length > 40 ? '…' : ''} — {a.action_by || '—'}
+              {a.four_m_log_id ? ' · 4M' : ''}
             </span>
           ))}
         </div>
@@ -199,7 +199,7 @@ export default function QaPieceStepper({
                 )}
               </label>
               <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <button disabled={busy} onClick={submitAction} style={btn('#f59e0b', '#fff')}>🛠 บันทึก action แล้วให้ QA ตรวจต่อ</button>
+                <button disabled={busy} onClick={submitAction} style={btn('#f59e0b', '#fff')}>บันทึก action แล้วให้ QA ตรวจต่อ</button>
                 <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
                   ใบ 4M เปิดเมื่อ action เป็นการเปลี่ยน คน/เครื่อง/วัตถุดิบ/วิธี — เข้าคิวอนุมัติหัวหน้า → QA ตามปกติ · rework ชิ้นเดียวไม่ต้องเปิด
                 </span>
@@ -236,7 +236,7 @@ export default function QaPieceStepper({
                   </div>
                   {i.item_type === 'variable' && calcOf(i) && (
                     <span title="จุดคำนวณ — ระบบคิดจากจุดที่วัดของชิ้นนี้" style={{ ...inputSt, width: 'auto', minWidth: isMobile ? 110 : 96, padding: '6px 8px', display: 'inline-flex', gap: 6, alignItems: 'baseline', whiteSpace: 'nowrap', borderStyle: 'dashed' }}>
-                      <span style={{ fontSize: 11, color: '#4d9fff', fontWeight: 700 }}>🧮 {calcFormula(calcOf(i), id => labelById[id])} =</span>
+                      <span style={{ fontSize: 11, color: '#4d9fff', fontWeight: 700 }}>{calcFormula(calcOf(i), id => labelById[id])} =</span>
                       <b>{d.value !== '' && d.value != null ? d.value : '…'}</b>
                     </span>
                   )}

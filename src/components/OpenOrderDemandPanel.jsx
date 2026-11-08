@@ -113,11 +113,11 @@ export default function OpenOrderDemandPanel({ q = '' }) {
       ) : shown === 0 ? (
         <div style={{ ...card, padding: '30px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ไม่มีรายการที่ตรงกับคำค้น “{q}” (ซ่อน {data.rows.length} รายการ)</div>
       ) : (<>
-        {shown < data.rows.length && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>👁 ซ่อนอยู่ · ไม่ตรงคำค้น {data.rows.length - shown} รายการ</div>}
+        {shown < data.rows.length && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ซ่อนอยู่ · ไม่ตรงคำค้น {data.rows.length - shown} รายการ</div>}
         {groups.map(([line, rs]) => (
           <div key={line} style={{ ...card, padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '10px 16px', background: 'var(--bg2)', borderBottom: '1px solid var(--border)', fontWeight: 800, fontSize: 14 }}>
-              🏭 {line || '(ไม่ระบุไลน์)'} <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--muted)' }}>· {rs.length} ชิ้นส่วน</span>
+              {line || '(ไม่ระบุไลน์)'} <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--muted)' }}>· {rs.length} ชิ้นส่วน</span>
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>

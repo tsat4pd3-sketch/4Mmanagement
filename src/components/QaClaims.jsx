@@ -212,7 +212,7 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
           { value: 'all', label: ALL.status }, { value: 'active', label: 'ยังไม่ปิด' }, { value: 'closed', label: 'ปิดแล้ว' }, { value: 'cancelled', label: 'ยกเลิก' },
         ]} />
         <span className="spacer" />
-        {canRecord && <button style={btnSt()} onClick={() => setDetail(EMPTY())}>📮 รับเคลมใหม่</button>}
+        {canRecord && <button style={btnSt()} onClick={() => setDetail(EMPTY())}>รับเคลมใหม่</button>}
       </FilterBar>
 
       {/* ── สรุปสั้น: ตัวเลขที่ผู้จัดการถามก่อนเสมอ ── */}
@@ -246,7 +246,7 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
 
       {/* กรองตามขอบเขตแล้วต้องบอกว่าซ่อนกี่ใบ — "ไม่มีรายการ" ทั้งที่มี = จอโกหก (CLAUDE.md §สิทธิ์ 3 ชั้น) */}
       {hiddenN > 0 && (
-        <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '-4px 0 8px' }}>🔒 ซ่อน {hiddenN} ใบของไลน์นอกขอบเขตของคุณ</div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '-4px 0 8px' }}>ซ่อน {hiddenN} ใบของไลน์นอกขอบเขตของคุณ</div>
       )}
 
       <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
@@ -265,12 +265,12 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
                   onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
                   <td style={{ ...tdSt, fontWeight: 800, whiteSpace: 'nowrap' }}>
                     {c.claim_no}
-                    {sure && <div><Chip label="🔁 ซ้ำ" color="#ef4444" /></div>}
+                    {sure && <div><Chip label="ซ้ำ" color="#ef4444" /></div>}
                     {maybe && <div><Chip label="❓ อาจซ้ำ" color="#f59e0b" /></div>}
                   </td>
                   <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>{c.claim_date}</td>
                   <td style={tdSt}>{c.customer}{c.customer_ref && <div style={{ fontSize: 11, color: 'var(--muted)' }}>ref {c.customer_ref}</div>}</td>
-                  <td style={tdSt}>{c.part_no || '—'}{c.line_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>🏭 {c.line_name}</div>}</td>
+                  <td style={tdSt}>{c.part_no || '—'}{c.line_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{c.line_name}</div>}</td>
                   <td style={{ ...tdSt, maxWidth: 260 }}>{(c.defect_desc || '').slice(0, 70)}<div><Chip label={SEVERITY[c.severity]?.label} color={SEVERITY[c.severity]?.color} /> <span style={{ fontSize: 11, color: 'var(--muted)' }}>{CATEGORY[c.category]}</span></div></td>
                   <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>{c.qty_claim}{c.qty_returned ? ` / คืน ${c.qty_returned}` : ''}</td>
                   <td style={{ ...tdSt, whiteSpace: 'nowrap', color: late ? '#ef4444' : undefined, fontWeight: late ? 800 : undefined }}>
@@ -278,9 +278,9 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
                   </td>
                   <td style={tdSt}><Chip label={st.label} color={st.color} /></td>
                   <td style={tdSt}>
-                    {c.qa_capa ? <Chip label={`🛠 ${c.qa_capa.capa_no}`} color={c.qa_capa.status === 'closed' ? '#22c55e' : '#f59e0b'} />
+                    {c.qa_capa ? <Chip label={`${c.qa_capa.capa_no}`} color={c.qa_capa.status === 'closed' ? '#22c55e' : '#f59e0b'} />
                       : <span style={{ fontSize: 11, color: '#ef4444' }}>ยังไม่มี 8D</span>}
-                    {c.qa_ncr && <div style={{ marginTop: 3 }}><Chip label={`🚨 ${c.qa_ncr.ncr_no}`} color="#4d9fff" /></div>}
+                    {c.qa_ncr && <div style={{ marginTop: 3 }}><Chip label={`${c.qa_ncr.ncr_no}`} color="#4d9fff" /></div>}
                   </td>
                 </tr>
               );
@@ -304,7 +304,7 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
   return (
     <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2500, padding: 16 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(980px, 100%)', maxHeight: '92vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ margin: '0 0 14px', fontSize: 16 }}>📮 {detail.id ? detail.claim_no : 'รับเคลมลูกค้าใหม่'}</h3>
+        <h3 style={{ margin: '0 0 14px', fontSize: 16 }}>{detail.id ? detail.claim_no : 'รับเคลมลูกค้าใหม่'}</h3>
 
         {/* ⚠️ เคลมซ้ำ = 8D ก่อนหน้าไม่ได้ผล — ต้องเห็นก่อนเริ่มสอบสวน ไม่ใช่รู้ทีหลัง */}
         {repeats.length > 0 && (() => {
@@ -377,10 +377,10 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
           <div style={{ marginTop: 14, padding: '10px 13px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg2)', fontSize: 12.5, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <b>งานแก้ไข:</b>
             {detail.capa_id
-              ? <><Chip label="🛠 มี 8D แล้ว" color="#22c55e" /><button style={ghostBtn} onClick={() => openCapa(detail)}>เปิดใบ 8D →</button></>
+              ? <><Chip label="มี 8D แล้ว" color="#22c55e" /><button style={ghostBtn} onClick={() => openCapa(detail)}>เปิดใบ 8D →</button></>
               : <>
                 <span style={{ color: '#ef4444' }}>ยังไม่มี 8D — เคลมลูกค้าต้องมีการแก้ไขเป็นระบบเสมอ</span>
-                {canRecord && <button style={btnSt('#f59e0b')} disabled={busy} onClick={() => openCapa(detail)}>🛠 เปิด 8D จากเคลมนี้</button>}
+                {canRecord && <button style={btnSt('#f59e0b')} disabled={busy} onClick={() => openCapa(detail)}>เปิด 8D จากเคลมนี้</button>}
               </>}
             <span style={{ flex: 1 }} />
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>ในใบ 8D จะมีปุ่มให้ระบบค้น PFMEA/Control Plan ที่ต้องแก้ต่อ</span>
@@ -393,7 +393,7 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
           {!ro && detail.id && !detail.capa_id && (
             <button style={ghostBtn} disabled={busy} onClick={() => cancel(detail)}>❌ ยกเลิกใบนี้ (เปิดผิด)</button>
           )}
-          {!ro && <button style={btnSt('#f59e0b')} disabled={busy} onClick={() => save()}>💾 บันทึก</button>}
+          {!ro && <button style={btnSt('#f59e0b')} disabled={busy} onClick={() => save()}>บันทึก</button>}
           {!ro && detail.id && detail.status !== 'replied' && (
             <button style={btnSt('#4d9fff', '#fff')} disabled={busy} onClick={() => {
               if (!detail.reply_note?.trim()) { toast.error('กรอกสรุปที่ตอบลูกค้าก่อน'); return; }

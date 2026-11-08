@@ -53,7 +53,7 @@ export default function StockAdjustRequestModal({ req, by, onClose }) {
       <div className="modal" onClick={e => e.stopPropagation()} style={{ width: 'min(460px, 94vw)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>🔒 ขอปรับยอดคลัง — {mat}</div>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>ขอปรับยอดคลัง — {mat}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{partName || ' '}</div>
           </div>
           <button className="tbtn" onClick={onClose} aria-label="ปิด"

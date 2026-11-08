@@ -76,8 +76,8 @@ export default function PlannedLotQueue({ session, orders = [] }) {
         borderLeft: `3px solid ${carried && r.state === 'pending' ? '#f59e0b' : STATE_COLOR[r.state]}` }}>
         <b style={{ minWidth: 18, textAlign: 'center', color: 'var(--muted)' }}>{l.seq}</b>
         <MatLabel mat={l.mat_no} name={l.part_name} size={12} />
-        {l.machine_no && <span style={{ fontSize: 11, color: '#94a3b8' }}>⚙️ {l.machine_no}</span>}
-        {l.die_no && <span style={{ fontSize: 11, color: '#94a3b8' }}>🔧 {l.die_no}</span>}
+        {l.machine_no && <span style={{ fontSize: 11, color: '#94a3b8' }}>{l.machine_no}</span>}
+        {l.die_no && <span style={{ fontSize: 11, color: '#94a3b8' }}>{l.die_no}</span>}
         <span style={{ flex: 1 }} />
         <span style={{ fontSize: 12 }}>
           <b style={{ color: STATE_COLOR[r.state] }}>{qtyText(r.donePcs)}</b>
@@ -96,7 +96,7 @@ export default function PlannedLotQueue({ session, orders = [] }) {
   return (
     <div style={{ marginBottom: 10, padding: '10px 14px', background: 'rgba(77,159,255,0.07)', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 9 }}>
       <div style={{ fontSize: 12.5, fontWeight: 800, color: '#4d9fff', marginBottom: 2 }}>
-        📋 กรอบแผนจากทีมวางแผน
+        กรอบแผนจากทีมวางแผน
         {m.planPcs > 0 && (
           <span style={{ color: 'var(--text2)', fontWeight: 700 }}>
             {' '}— ทำได้ {qtyText(m.donePcs)}/{qtyText(m.planPcs)} ชิ้น ({m.pct}%) · เสร็จ {m.doneLots}/{m.rows.length} ล็อต

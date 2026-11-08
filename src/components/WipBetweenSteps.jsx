@@ -153,10 +153,10 @@ export default function WipBetweenSteps() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ ...card, background: 'rgba(14,165,233,0.06)', borderColor: 'rgba(14,165,233,0.3)', fontSize: 12.5, lineHeight: 1.7 }}>
-        <b style={{ color: '#0ea5e9' }}>📦 ยอดค้างระหว่างขั้น (คำนวณอัตโนมัติจากใบผลิต — ไม่ต้องคีย์รับ-จ่าย)</b><br />
+        <b style={{ color: '#0ea5e9' }}>ยอดค้างระหว่างขั้น (คำนวณอัตโนมัติจากใบผลิต — ไม่ต้องคีย์รับ-จ่าย)</b><br />
         ค้าง = ยอดสะสมที่ผ่านขั้นนั้น − ยอดปลายทางที่ประกอบ/ผลิตแล้ว (ทุกชิ้น 1:1 กับปลายทาง) ·
         เป็นบัญชี<b>ภายในแผนก</b>ไว้ดูจังหวะงาน ไม่เกี่ยว SAP/สต็อกทางการ ·
-        ของเสียระหว่างทางทำตัวเลขคลาดได้ → กด <b>📋 นับจริง</b> เพื่อตั้งต้นใหม่เป็นระยะ
+        ของเสียระหว่างทางทำตัวเลขคลาดได้ → กด <b>นับจริง</b> เพื่อตั้งต้นใหม่เป็นระยะ
         {baselineTableMissing && (
           <div style={{ marginTop: 6, color: '#f59e0b', fontWeight: 700 }}>
             ⚠ ยังไม่ได้ apply migration <code>20260818_wip_adjustments_dr</code> (DR) — ตัวเลขคิดจากใบผลิตทั้งหมดตั้งแต่เริ่มระบบ และปุ่มนับจริงยังบันทึกไม่ได้
@@ -180,10 +180,10 @@ export default function WipBetweenSteps() {
         return (
           <div key={pm} style={card}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-              <b style={{ fontSize: 14 }}>🎯 {pm}</b>
+              <b style={{ fontSize: 14 }}>{pm}</b>
               <span style={{ color: 'var(--text2)', fontSize: 12.5 }}>{chainView.parentName || ''}</span>
               {/* ชื่อไลน์ยาวได้ ⇒ ยอมตัดบรรทัด ไม่งั้นชิป nowrap ล้นขอบจอ handheld 360px (15/10) */}
-              {chainView.parentLine && <span style={{ ...chip('rgba(61,214,92,0.1)', 'var(--accent)'), whiteSpace: 'normal', maxWidth: '100%' }}>🏭 {chainView.parentLine}</span>}
+              {chainView.parentLine && <span style={{ ...chip('rgba(61,214,92,0.1)', 'var(--accent)'), whiteSpace: 'normal', maxWidth: '100%' }}>{chainView.parentLine}</span>}
               {chainView.parentIsProduced
                 ? <span style={chip('rgba(61,214,92,0.1)', 'var(--accent)')}>ปลายทางผลิตสะสม {parentCum.toLocaleString()}</span>
                 : <span style={chip('rgba(107,114,128,0.1)', 'var(--muted)')} title="parent เป็นพาร์ทซื้อนอก/ยังไม่มีใบผลิต — แสดงเฉพาะยอดสะสมของขั้น">ปลายทางไม่มีใบผลิต</span>}
@@ -191,7 +191,7 @@ export default function WipBetweenSteps() {
             {/* เฟส 2 — ความต้องการ → ต้องผลิต FG เพิ่มเท่าไหร่ (ทดสต็อก FG ให้) */}
             {chainView.parentIsProduced && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: 'var(--bg2)', fontSize: 12.5 }}>
-                <label style={{ fontWeight: 700 }}>📥 ความต้องการ (ชิ้น)</label>
+                <label style={{ fontWeight: 700 }}>ความต้องการ (ชิ้น)</label>
                 <input type="number" min="0" value={demandVal}
                   onChange={e => setDemand(d => ({ ...d, [pm]: e.target.value }))}
                   placeholder="0" style={{ width: 110, padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, fontWeight: 700 }} />
@@ -292,7 +292,7 @@ export default function WipBetweenSteps() {
         <div className="modal-scroll" /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div onClick={e => e.stopPropagation()} style={{ ...card, width: 'min(92vw, 420px)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <b>📋 นับจริง — {counting.label}</b>
+            <b>นับจริง — {counting.label}</b>
             <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
               กรอก<b>จำนวนที่นับได้จริงตอนนี้</b> (ของที่ผ่านขั้นนี้แล้วและยังไม่ถึงปลายทาง) — ระบบจะตั้งต้นจากเลขนี้แล้วนับใบผลิตต่อให้เอง
             </div>

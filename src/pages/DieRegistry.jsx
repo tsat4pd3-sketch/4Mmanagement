@@ -67,7 +67,7 @@ const inputStyle = {
   background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box',
 };
 const saveBtnStyle = {
-  background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8,
+  background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8,
   padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
 };
 const cancelBtnStyle = {
@@ -75,7 +75,7 @@ const cancelBtnStyle = {
   borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer',
 };
 const warnBox = {
-  background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)',
+  background: 'var(--amber-dim)', border: '1px solid var(--amber-line)',
   borderRadius: 10, padding: '10px 14px', fontSize: 12.5, color: 'var(--text)',
 };
 
@@ -91,7 +91,7 @@ function Field({ label, hint, children }) {
 }
 
 /** ช่องที่ยังว่าง = งานที่ต้องไล่เก็บ ไม่ใช่ error — แสดงเป็นขีดสีส้มให้สะดุดตาแต่ไม่ตกใจ */
-const Blank = () => <span style={{ color: '#f59e0b', fontWeight: 700 }} title="ยังไม่ได้กรอก">—</span>;
+const Blank = () => <span style={{ color: 'var(--amber)', fontWeight: 700 }} title="ยังไม่ได้กรอก">—</span>;
 
 const numOrNull = (v) => {
   const s = String(v ?? '').trim();
@@ -177,7 +177,7 @@ function SetPairNote({ set, products, role, onDone, prodLines = [] }) {
     } finally { setBusy(false); }
   }
 
-  const color = r.state === 'mismatch' ? '#ef4444' : '#f59e0b';
+  const color = r.state === 'mismatch' ? 'var(--red)' : 'var(--amber)';
   return (
     <div style={{ marginTop: 4, fontSize: 11, color }}>
       {r.state === 'mismatch' ? '⚠️ ' : 'ℹ️ '}{msg}
@@ -616,15 +616,15 @@ export default function DieRegistry() {
         title="ทะเบียนแม่พิมพ์" icon="🔨"
         sub={`แม่พิมพ์ 1 ตัว = 1 OP (เลข D-xxxx) · ชุด = รวม OP เป็นพาร์ท (ยืมแม่พิมพ์ข้ามชุดได้) · ตัวตนอยู่ฐานเดียวกับเครื่องจักร (QR/ประวัติซ่อมใช้ร่วมกัน)${scopeActive ? ' · เห็นเฉพาะส่วนงานของคุณ' : ''}`}
         tabs={[
-          { key: 'registry', label: '📋 ทะเบียน' },
-          { key: 'layout', label: '🗺️ ผังจัดเก็บ' },
-          { key: 'status', label: '📊 สถานะ', badge: moDieCount ? `🔧 ${moDieCount}` : null },
+          { key: 'registry', label: 'ทะเบียน' },
+          { key: 'layout', label: 'ผังจัดเก็บ' },
+          { key: 'status', label: 'สถานะ', badge: moDieCount ? `🔧 ${moDieCount}` : null },
         ]}
         tab={tab} onTab={setTab}
       />
 
       {dataWarn && (
-        <div style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.45)',
+        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-line)',
                       borderRadius: 10, padding: '9px 14px', fontSize: 12.5, marginBottom: 12 }}>
           ⚠️ {dataWarn}
         </div>
@@ -679,7 +679,7 @@ export default function DieRegistry() {
         {/* 📥 Excel ให้ทีม DIE เอาไปไล่ข้อมูล (05/11 · คำสั่ง user) — ทั้งหมดในขอบเขต ไม่ตามตัวกรอง (worklist ต้องครบ) */}
         <button onClick={exportExcel} disabled={exporting} title="แม่พิมพ์ราย OP + ชุด ทั้งหมดในขอบเขตของคุณ — ช่องว่าง = ยังไม่ได้กรอก"
           style={{ ...cancelBtnStyle, padding: '0 12px' }}>
-          {exporting ? 'กำลังสร้างไฟล์…' : '📥 Export Excel'}
+          {exporting ? 'กำลังสร้างไฟล์…' : 'Export Excel'}
         </button>
         {canEdit && (
           <button onClick={() => setEditSet({ ...emptySet, line_name: filterLine || '' })} style={{ ...saveBtnStyle, padding: '0 14px' }}>
@@ -706,11 +706,11 @@ export default function DieRegistry() {
           { t: 'ชุดที่ข้อมูลไม่ครบ', v: stat.todo, warn: stat.todo > 0 },
         ].map(c => (
           <div key={c.t} title={c.hint || undefined} style={{
-            background: 'var(--card)', border: `1px solid ${c.warn ? 'rgba(245,158,11,0.5)' : 'var(--border)'}`,
+            background: 'var(--card)', border: `1px solid ${c.warn ? 'var(--amber-line)' : 'var(--border)'}`,
             borderRadius: 10, padding: '8px 14px', minWidth: 110,
           }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{c.t}</div>
-            <div style={{ fontSize: 19, fontWeight: 800, color: c.warn ? '#f59e0b' : 'var(--text)' }}>{c.v}</div>
+            <div style={{ fontSize: 19, fontWeight: 800, color: c.warn ? 'var(--amber)' : 'var(--text)' }}>{c.v}</div>
           </div>
         ))}
       </div>
@@ -725,11 +725,11 @@ export default function DieRegistry() {
             {stat.unlinked > 0 && <> · แม่พิมพ์ที่ยังไม่ได้อยู่ชุดไหน <b>{stat.unlinked}</b> ตัว</>}
           </div>
           <button onClick={() => setTodoOnly(v => !v)} style={{
-            marginTop: 8, background: todoOnly ? '#f59e0b' : 'var(--bg2)', color: todoOnly ? '#111' : 'var(--text)',
-            border: '1px solid rgba(245,158,11,0.5)', borderRadius: 8, padding: '5px 12px',
+            marginTop: 8, background: todoOnly ? 'var(--amber)' : 'var(--bg2)', color: todoOnly ? '#111' : 'var(--text)',
+            border: '1px solid var(--amber-line)', borderRadius: 8, padding: '5px 12px',
             fontSize: 12, fontWeight: 700, cursor: 'pointer',
           }}>
-            {todoOnly ? '✓ กำลังดูเฉพาะที่ต้องแก้' : '🔎 ดูเฉพาะที่ต้องแก้'}
+            {todoOnly ? 'กำลังดูเฉพาะที่ต้องแก้' : 'ดูเฉพาะที่ต้องแก้'}
           </button>
         </div>
       )}
@@ -737,7 +737,7 @@ export default function DieRegistry() {
       {/* แม่พิมพ์ที่ยังไม่ผูกชุด */}
       {unlinked.length > 0 && (
         <div style={{ ...warnBox, marginBottom: 12 }}>
-          <b>🧩 ยังไม่ได้อยู่ชุดไหน ({unlinked.length})</b>
+          <b>ยังไม่ได้อยู่ชุดไหน ({unlinked.length})</b>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
             {unlinked.map(d => (
               <button key={d.id} onClick={() => canEdit && openDie(d)} disabled={!canEdit} title={d.machine_name || ''}
@@ -772,7 +772,7 @@ export default function DieRegistry() {
               return (
                 <div key={s.id} style={{
                   background: 'var(--card)', borderRadius: 10,
-                  border: `1px solid ${s.issues.length ? 'rgba(245,158,11,0.45)' : 'var(--border)'}`,
+                  border: `1px solid ${s.issues.length ? 'var(--amber-line)' : 'var(--border)'}`,
                   overflow: 'hidden',
                 }}>
                   {/* หัวชุด */}
@@ -793,7 +793,7 @@ export default function DieRegistry() {
                     <span style={{
                       fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999,
                       background: 'var(--bg3)', color: 'var(--text2)', whiteSpace: 'nowrap',
-                    ...(s.kind ? null : { color: '#f59e0b' }) }}>{s.kind ? dieSetKindLabel(s.kind, setKinds) : 'ยังไม่ระบุรูปแบบ'}</span>
+                    ...(s.kind ? null : { color: 'var(--amber)' }) }}>{s.kind ? dieSetKindLabel(s.kind, setKinds) : 'ยังไม่ระบุรูปแบบ'}</span>
                     <span style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                       {s.members.length} ตัว{s.op_total ? ` / ${s.op_total} OP` : ''}
                     </span>
@@ -802,13 +802,13 @@ export default function DieRegistry() {
                     {/* 05/11: ชิ้นออก/shot เป็นของ OP แล้ว — "ยังไม่ระบุ" ขึ้นในรายการ ⚠ ของชุด (นับราย OP ผ่าน ppsOf)
                            ป้ายนี้เหลือไว้บอกค่าระดับชุดที่กรอกไว้เดิม (ใช้เป็นค่าสำรองของ OP ที่ยังว่าง) */}
                     {s.pieces_per_stroke > 1 ? (
-                      <span style={{ fontSize: 11, fontWeight: 700, color: '#22c55e', whiteSpace: 'nowrap' }}
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', whiteSpace: 'nowrap' }}
                         title="ค่าสำรองระดับชุด — OP ที่ยังไม่กรอกชิ้นออก/shot จะใช้ค่านี้">
                         ชุด: {s.pieces_per_stroke} ชิ้น/shot
                       </span>
                     ) : null}
                     {s.issues.length > 0 && (
-                      <span style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)', whiteSpace: 'nowrap' }}>
                         ⚠ {s.issues.length}
                       </span>
                     )}
@@ -821,7 +821,7 @@ export default function DieRegistry() {
                   {open && (
                     <div style={{ borderTop: '1px solid var(--border)', padding: '10px 12px' }}>
                       {s.issues.length > 0 && (
-                        <ul style={{ margin: '0 0 10px', paddingLeft: 18, fontSize: 12, color: '#f59e0b', lineHeight: 1.7 }}>
+                        <ul style={{ margin: '0 0 10px', paddingLeft: 18, fontSize: 12, color: 'var(--amber)', lineHeight: 1.7 }}>
                           {s.issues.map((t, i) => <li key={i}>{t}</li>)}
                         </ul>
                       )}
@@ -861,7 +861,7 @@ export default function DieRegistry() {
                                     {isShared && (
                                       <span title={`แม่พิมพ์ของชุด ${home?.set_code || home?.part_name || '(ไม่มีชุดบ้าน)'} — ชุดนี้ยืมมาใช้ (common die) · แก้รายละเอียดที่ตัวแม่พิมพ์ได้เลย`}
                                         style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', marginRight: 6 }}>
-                                        🔗 ใช้ร่วม · {home?.set_code || home?.part_name || 'ไม่มีชุดบ้าน'}
+                                        ใช้ร่วม · {home?.set_code || home?.part_name || 'ไม่มีชุดบ้าน'}
                                       </span>
                                     )}
                                     {d.machine_no}
@@ -916,10 +916,10 @@ export default function DieRegistry() {
                       ) : (
                         <button onClick={() => setAddShare({ setId: s.id, machineId: '', opSeq: '' })}
                           style={{ ...cancelBtnStyle, padding: '4px 10px', fontSize: 11.5, marginTop: 8 }}>
-                          🔗 เพิ่มแม่พิมพ์ใช้ร่วมจากชุดอื่น
+                          + เพิ่มแม่พิมพ์ใช้ร่วมจากชุดอื่น
                         </button>
                       ))}
-                      {s.note && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>📝 {s.note}</div>}
+                      {s.note && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>{s.note}</div>}
                     </div>
                   )}
                 </div>
@@ -932,7 +932,7 @@ export default function DieRegistry() {
       {/* ⚙️ ทะเบียนกลุ่มเครื่องปั๊ม/ไลน์ของแม่พิมพ์ (DR die_press_lines · 2026-09-08) — พับไว้ท้ายแท็บ (ตั้งค่านานๆ ครั้ง)
           code กรอกเอง (สั้น เช่น LINE-A) · ref_production_line = ชื่อไลน์ผลิตจริงเมื่อกลุ่มนั้นคือไลน์ (HDF1) ไว้ต่อ linkage OEE
           SimpleMasterPanel ยืนยันก่อนปิดใช้/ลบเอง (UI-CONVENTIONS §5.4) */}
-      <CollapseCard id="die_press_lines" title="⚙️ กลุ่มเครื่องปั๊ม / ไลน์ของแม่พิมพ์ (ทะเบียน)" count={pressLines.length} defaultOpen={false} storePrefix="die_registry">
+      <CollapseCard id="die_press_lines" title="กลุ่มเครื่องปั๊ม / ไลน์ของแม่พิมพ์ (ทะเบียน)" count={pressLines.length} defaultOpen={false} storePrefix="die_registry">
         <SimpleMasterPanel client={supabaseDR} table="die_press_lines" keyCol="code" canManage={canEdit}
           /* ด่านนับปลายทางก่อนลบ — die_sets.line_name + machines.line_name (เฉพาะ equipment_kind=die) */
           onBeforeDelete={masterDeleteGuard(supabaseDR, 'die_press_lines')}
@@ -951,7 +951,7 @@ export default function DieRegistry() {
           key สร้างให้อัตโนมัติ — คนกรอกแค่ชื่อ · mo_item_type = ชนิดอุปกรณ์ที่ใบแจ้งซ่อมเติมให้เมื่อเลือกแม่พิมพ์ */}
       {/* ⚙️ ทะเบียนประเภท OP ของแม่พิมพ์ (DR die_op_types · แผงจัดการ 2026-10-06) — เดิมมีตารางแต่ไม่มีที่แก้บนจอ
           mo_item_type = ชนิดอุปกรณ์ในใบแจ้งซ่อม **ชนะรูปแบบชุด** (HDF: ชุดเดียวมี HYDRO/BENDING/PREFORM — คอมเมนต์ทีม DIE 06/10) */}
-      <CollapseCard id="die_op_types" title="⚙️ ประเภท OP ของแม่พิมพ์ (ทะเบียน)" count={opTypes.length} defaultOpen={false} storePrefix="die_registry">
+      <CollapseCard id="die_op_types" title="ประเภท OP ของแม่พิมพ์ (ทะเบียน)" count={opTypes.length} defaultOpen={false} storePrefix="die_registry">
         <SimpleMasterPanel client={supabaseDR} table="die_op_types" keyCol="key" canManage={canEdit}
           onBeforeDelete={masterDeleteGuard(supabaseDR, 'die_op_types', r => r?.label)}
           keyFrom={dieSetKindKey}
@@ -964,7 +964,7 @@ export default function DieRegistry() {
           ]} />
       </CollapseCard>
 
-      <CollapseCard id="die_set_kinds" title="⚙️ รูปแบบชุดแม่พิมพ์ (ทะเบียน)" count={setKinds.filter(k => k.is_active).length} defaultOpen={false} storePrefix="die_registry">
+      <CollapseCard id="die_set_kinds" title="รูปแบบชุดแม่พิมพ์ (ทะเบียน)" count={setKinds.filter(k => k.is_active).length} defaultOpen={false} storePrefix="die_registry">
         <SimpleMasterPanel client={supabaseDR} table="die_set_kinds" keyCol="key" canManage={canEdit}
           onBeforeDelete={masterDeleteGuard(supabaseDR, 'die_set_kinds', r => r?.label)}
           keyFrom={dieSetKindKey}

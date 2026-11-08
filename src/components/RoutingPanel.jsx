@@ -248,7 +248,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
                       </td>
                       <td style={{ padding: '7px 8px', fontSize: 12, color: 'var(--text)', borderTop: '1px solid var(--border)' }}>
                         {r.is_outsourced
-                          ? <span style={{ color: '#a78bfa' }}>🏭 จ้างนอก · {r.vendor_name}</span>
+                          ? <span style={{ color: '#a78bfa' }}>จ้างนอก · {r.vendor_name}</span>
                           : (r.line_name || '—')}
                       </td>
                       {[r.ct_sec, r.setup_sec, r.lot_size, r.operators].map((v, k) => (
@@ -300,7 +300,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
               <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <input type="checkbox" id="rt-out" checked={form.is_outsourced}
                   onChange={e => setForm(f => ({ ...f, is_outsourced: e.target.checked }))} style={{ width: 'auto' }} />
-                <label htmlFor="rt-out" style={{ fontSize: 12.5, color: 'var(--text)', cursor: 'pointer' }}>🏭 เป็นงานจ้างนอก (ส่งออกไปทำข้างนอก เช่น พ่นสี)</label>
+                <label htmlFor="rt-out" style={{ fontSize: 12.5, color: 'var(--text)', cursor: 'pointer' }}>เป็นงานจ้างนอก (ส่งออกไปทำข้างนอก เช่น พ่นสี)</label>
               </div>
               {form.is_outsourced ? (
                 <div style={{ gridColumn: '1 / -1' }}>

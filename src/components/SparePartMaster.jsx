@@ -27,6 +27,7 @@ import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import SearchSelect from './SearchSelect';
 import FilterBar from './FilterBar';
 import SearchInput from './SearchInput';
+import RowFold from './RowFold';
 import { ALL } from '../utils/filterLabels';
 import MachineSelect from './MachineSelect';
 import SupplierSelect from './SupplierSelect'; // ผู้ขาย = ทะเบียน DR suppliers (ชิ้นส่วน/อะไหล่ขึ้นก่อน) — 2026-09-08
@@ -318,9 +319,9 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
         </select>
         <SearchInput value={q} onChange={setQ} fields="ชื่อ / รหัส / MAT / Part no. / ผู้ขาย / ชั้นวาง / ใช้กับ" />
         <span className="spacer" />
-        <button onClick={printList} style={{ ...btnGhost, padding: '0 13px', fontSize: 12.5 }}>🖨️ พิมพ์</button>
-        {canEdit && <button onClick={() => setShowImport(true)} style={{ ...btnGhost, padding: '0 13px', fontSize: 12.5 }}>📥 นำเข้า/อัพเดท</button>}
-        {canEdit && <button onClick={() => setShowCats(true)} style={{ ...btnGhost, padding: '0 13px', fontSize: 12.5 }}>🏷️ หมวด</button>}
+        <button onClick={printList} style={{ ...btnGhost, padding: '0 13px', fontSize: 12.5 }}>พิมพ์</button>
+        {canEdit && <button onClick={() => setShowImport(true)} style={{ ...btnGhost, padding: '0 13px', fontSize: 12.5 }}>นำเข้า/อัพเดท</button>}
+        {canEdit && <button onClick={() => setShowCats(true)} style={{ ...btnGhost, padding: '0 13px', fontSize: 12.5 }}>หมวด</button>}
         {canEdit && <button onClick={() => setEditPart('new')} style={{ ...btnPri, padding: '0 15px', fontSize: 12.5 }}>➕ เพิ่มอะไหล่</button>}
       </FilterBar>
 
@@ -345,7 +346,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
       {/* กรองหน่วยงานแล้วซ่อนอะไรไปบ้าง — ห้ามหายเงียบ (กฎเดียวกับตัวกรองทีมใน ⚙️ ข้อมูลตั้งต้น) */}
       {!!hiddenBySection && (
         <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 12px', marginBottom: 10, fontSize: 12.5, color: 'var(--text2)' }}>
-          👁 กำลังดูคลังของ <b style={{ color: 'var(--text)' }}>{sectionLabel(fSection, orgSecs)}</b> (รวมของกลาง) ·
+          กำลังดูคลังของ <b style={{ color: 'var(--text)' }}>{sectionLabel(fSection, orgSecs)}</b> (รวมของกลาง) ·
           ซ่อนอยู่ <b>{hiddenBySection}</b> รายการของหน่วยงานอื่น
           <button onClick={() => setFSection('')} style={{ ...btnGhost, padding: '3px 10px', fontSize: 11.5, marginLeft: 8 }}>ดูทุกหน่วยงาน</button>
         </div>
@@ -380,7 +381,11 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
             <th style={{ ...th, width: 190 }}></th>
           </tr></thead>
           <tbody>
-            {filtered.map(p => {
+            {/* 🔻 295 แถว × รูป 1 ใบต่อแถว render แบนทั้งก้อน = มือถือเลื่อนไม่จบ + DOM หนัก (08/11 · คำสั่ง user)
+                ⇒ โชว์ 50 แถวแรก ที่เหลือกด "ดูทั้งหมด" · **ไม่ใช่ paging** — ข้อมูลครบเท่าเดิม
+                🔴 แถบกรอง/ค้นหาอยู่ข้างบนแล้ว ⇒ หาของเจอโดยไม่ต้องกางเสมอ
+                🔴 50 ไม่ใช่ 10 — ทะเบียนคือเหตุผลที่หน้านี้มีอยู่ ตัดเหลือ 10 = ใช้งานไม่ได้ */}
+            <RowFold rows={filtered} max={50} unit="รายการ" colSpan={13}>{p => {
               const st = p._state, rk = p._rank, c = catOf(p.category);
               return (
                 <tr key={p.id}>
@@ -441,7 +446,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
                   </td>
                 </tr>
               );
-            })}
+            }}</RowFold>
             {!filtered.length && !loading && (
               <tr><td colSpan={13} style={{ ...td, textAlign: 'center', color: 'var(--muted)', padding: 24 }}>
                 {parts.length ? 'ไม่พบอะไหล่ตามเงื่อนไขที่กรอง' : 'ยังไม่มีอะไหล่ในคลัง — กด "➕ เพิ่มอะไหล่"'}
@@ -478,7 +483,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
 const MOVE_META = {
   in: { title: '➕ รับเข้าคลัง', label: 'จำนวนที่รับเข้า', color: '#22c55e', note: 'เช่น รับของจากผู้ขาย / คืนของที่ไม่ได้ใช้' },
   issue: { title: '➖ เบิกออก', label: 'จำนวนที่เบิก', color: '#f59e0b', note: 'เบิกไปใช้นอกใบซ่อม (ถ้าเบิกในใบ MO ระบบหักให้เองตอนบันทึกขั้นซ่อม)' },
-  adjust: { title: '⚖ ปรับยอด (นับจริง)', label: 'ยอดคงเหลือที่นับได้จริง', color: 'var(--accent2)', note: 'ใช้ตอนตรวจนับสต๊อก — ระบบจะบันทึกส่วนต่างให้เอง' },
+  adjust: { title: 'ปรับยอด (นับจริง)', label: 'ยอดคงเหลือที่นับได้จริง', color: 'var(--accent2)', note: 'ใช้ตอนตรวจนับสต๊อก — ระบบจะบันทึกส่วนต่างให้เอง' },
 };
 function StockMoveModal({ part, type, fullName, onClose, onDone }) {
   const m = MOVE_META[type];
@@ -747,7 +752,7 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
             </div>
 
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent2)', marginBottom: 8 }}>📦 สต็อก & การจัดซื้อ</div>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent2)', marginBottom: 8 }}>สต็อก & การจัดซื้อ</div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 10 }}>
                 {isNew
                   ? <Field label="ยอดยกมา" hint="บันทึกเป็นรายการ 'รับเข้า'"><input type="number" min="0" value={f.stock_qty} onChange={e => set('stock_qty', e.target.value)} style={inp} /></Field>
@@ -763,7 +768,7 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
 
             {/* Rank */}
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent2)', marginBottom: 8 }}>🏷️ Rank ความสำคัญ (WI-JIG-010)</div>
+              <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent2)', marginBottom: 8 }}>Rank ความสำคัญ (WI-JIG-010)</div>
               <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, marginBottom: 10 }}>
                 {preview.calcRank ? (
                   <>ระบบคำนวณได้: <RankChip rank={preview.calcRank} />
@@ -829,7 +834,7 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
                       <button onClick={() => setImg('')} className="tbtn" style={{ ...btnGhost, position: 'absolute', top: 4, right: 4, padding: '3px 8px', fontSize: 12, color: '#ef4444' }}>✕</button>
                     </div>
                     : <label style={{ ...btnGhost, display: 'grid', placeItems: 'center', width: 140, height: 140, cursor: 'pointer', fontSize: 12, color: 'var(--muted)' }}>
-                      📷 เลือกรูป<input type="file" accept="image/*" onChange={onPick} style={{ display: 'none' }} />
+                      เลือกรูป<input type="file" accept="image/*" onChange={onPick} style={{ display: 'none' }} />
                     </label>}
                 </div>
                 <Field label="หมายเหตุ">
@@ -883,11 +888,11 @@ function HistoryModal({ part, usageRows, onClose }) {
     /* ประวัติอะไหล่ = popup แสดงผลอย่างเดียว ไม่มีช่องกรอก → ปิดจาก backdrop ได้ตามกฎ (UI-CONVENTIONS §5) */
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(660px, 96vw)', maxHeight: '90vh', overflow: 'auto' }}>
-        <div style={{ fontSize: 15, fontWeight: 800 }}>📜 ประวัติ · {part.name}</div>
+        <div style={{ fontSize: 15, fontWeight: 800 }}>ประวัติ · {part.name}</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 14 }}>คงเหลือปัจจุบัน {fmtNum(part.stock_qty)} {part.unit || ''}</div>
 
         <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent2)', marginBottom: 6 }}>
-          📊 การใช้ย้อนหลัง {RANK_RULE.windowMonths} เดือน (แทนคอลัมน์ PI/PO ในไฟล์เดิม)
+          การใช้ย้อนหลัง {RANK_RULE.windowMonths} เดือน (แทนคอลัมน์ PI/PO ในไฟล์เดิม)
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end', height: 90, marginBottom: 14, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
           {months.map(k => {
@@ -902,7 +907,7 @@ function HistoryModal({ part, usageRows, onClose }) {
           })}
         </div>
 
-        <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent2)', marginBottom: 6 }}>🧾 รายการเคลื่อนไหวล่าสุด</div>
+        <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent2)', marginBottom: 6 }}>รายการเคลื่อนไหวล่าสุด</div>
         {txns === null && <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>กำลังโหลด…</div>}
         {txns?.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>ยังไม่มีการเคลื่อนไหว</div>}
         {!!txns?.length && (
@@ -1058,17 +1063,17 @@ function ImportModal({ parts, cats, teams, fullName, ownOf = () => ({ ok: true }
   return (
     <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(820px, 96vw)', maxHeight: '92vh', overflow: 'auto' }}>
-        <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2 }}>📥 นำเข้า / อัพเดทคลังอะไหล่จากไฟล์</div>
+        <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2 }}>นำเข้า / อัพเดทคลังอะไหล่จากไฟล์</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 14 }}>
           รองรับ .xlsx / .csv · หัวคอลัมน์ไทยหรืออังกฤษก็ได้ · <b>อัพโหลดไฟล์เดิมซ้ำได้เรื่อยๆ</b> ระบบจะอัพเดททับตามคีย์ ไม่สร้างรายการซ้ำ
         </div>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
           <label style={{ ...btnPri, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.5 : 1 }}>
-            📄 เลือกไฟล์<input type="file" accept=".xlsx,.xls,.csv" disabled={busy} onChange={pick} style={{ display: 'none' }} />
+            เลือกไฟล์<input type="file" accept=".xlsx,.xls,.csv" disabled={busy} onChange={pick} style={{ display: 'none' }} />
           </label>
           <button onClick={template} style={{ ...btnGhost, padding: '8px 13px', fontSize: 12.5 }}>⬇️ ดาวน์โหลดไฟล์ตัวอย่าง</button>
-          {fileName && <span style={{ fontSize: 12, color: 'var(--muted)' }}>📎 {fileName}</span>}
+          {fileName && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{fileName}</span>}
         </div>
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10, fontSize: 12.5 }}>
@@ -1190,7 +1195,7 @@ function CategoryModal({ cats, teams = [], onClose, onSaved }) {
   return (
     <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(560px, 96vw)', maxHeight: '90vh', overflow: 'auto' }}>
-        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 2 }}>🏷️ หมวดอะไหล่</div>
+        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 2 }}>หมวดอะไหล่</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 12 }}>รหัสหมวดใช้จัดกลุ่มในคลัง — เพิ่ม/แก้ได้เอง ไม่ต้องแก้โค้ด · ตั้งทีมได้ถ้าหมวดนั้นใช้เฉพาะบางทีม (เช่น LP = Locating Pin ของ JIG)</div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
           <input value={n.key} onChange={e => setN(p => ({ ...p, key: e.target.value }))} placeholder="รหัส (EE)" style={{ ...inp, width: 90 }} />

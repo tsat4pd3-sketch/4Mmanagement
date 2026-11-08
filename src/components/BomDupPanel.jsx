@@ -191,7 +191,7 @@ export default function BomDupPanel({ onOpenSheet }) {
       <div data-page-note="1" style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 10, fontSize: 12, lineHeight: 1.65,
         color: 'var(--text2)', border: '1px solid var(--border)', background: 'var(--bg2)' }}>
         <div style={{ fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>
-          🔁 ของชิ้นเดียวถูกกรอกลูกไว้ 2 ที่ — ใบที่ใช้มัน และใบ BOM ของตัวมันเอง
+          ของชิ้นเดียวถูกกรอกลูกไว้ 2 ที่ — ใบที่ใช้มัน และใบ BOM ของตัวมันเอง
         </div>
         ระบบใช้ <b>ชุดของใบที่กำลังกางอยู่ชนะทั้งชุด</b> (ไม่ได้เอา 2 ชุดมารวมกัน) ⇒
         ตัวที่มีแต่ในใบของพาร์ทเอง <b style={{ color: BAD }}>ไม่ถูกระเบิดเลย</b> ·

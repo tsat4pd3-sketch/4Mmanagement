@@ -86,3 +86,29 @@ export default function InfoMore({
     </div>
   );
 }
+
+/* ── 💬 Why — "สถานะสั้น + วิธีแก้ซ่อนไว้" (2026-11-05 · คำสั่ง user "text ที่เป็น comment ต้องเป็น tooltip ไม่ใช่โชว์ทุกอย่าง รกมาก")
+   บรรทัดสถานะในการ์ดเคยเขียน "⚠ ไลน์ยังไม่ตั้ง cost center — กรอกที่หน้าจัดการไลน์ (ไลน์แม่ ตกทอดถึงลูก)" ซ้ำทุกใบ ⇒ การ์ด 3 ใบ = 15 บรรทัดอธิบาย
+   กติกา: บนจอเหลือ **สถานะ** (ก่อน " — ") · **วิธีแก้/เหตุผล** (หลัง " — ") อยู่ใน title= + กดเปิดได้ (จอสัมผัสไม่มี hover)
+   · ไม่ใช่การพับคำเตือน — สถานะยังเห็นเสมอ (ติด data-warn ให้ textsweep รู้ว่าเป็นของสั้นโดยตั้งใจ)
+   ใช้:  <Why msg="ไลน์ยังไม่ตั้ง cost center — กรอกที่หน้าจัดการไลน์" />   // แยกเองที่ " — " ตัวแรก
+         <Why what="ยังไม่ได้ตั้งเป้าหมาย" how="กด แก้ไข แล้วกรอกช่อง “เป้าหมาย”" tone="warn" /> */
+const WHY_TONE = { warn: 'var(--amber)', bad: 'var(--red)', info: 'var(--blue)', muted: 'var(--muted)' };
+export const splitWhy = (msg) => {
+  const s = String(msg ?? ''); const i = s.indexOf(' — ');
+  return i < 0 ? [s, ''] : [s.slice(0, i), s.slice(i + 3)];
+};
+export function Why({ msg, what, how, tone = 'warn', size = 11, style }) {
+  const [w, h] = msg != null ? splitWhy(msg) : [what, how];
+  const [open, setOpen] = useState(false);
+  const c = WHY_TONE[tone] || WHY_TONE.warn;
+  return (
+    <div data-warn="1" style={{ fontSize: size, color: c, lineHeight: 1.5, ...style }}>
+      <span title={h || undefined} style={{ cursor: h ? 'help' : 'default', borderBottom: h ? '1px dotted currentColor' : 'none' }}
+        onClick={() => h && setOpen(o => !o)}>{w}</span>
+      {h && <button type="button" onClick={() => setOpen(o => !o)} aria-expanded={open} title={h}
+        style={{ marginLeft: 5, padding: 0, border: 'none', background: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: size, lineHeight: 1 }}>{MORE_MARK}</button>}
+      {open && h && <div style={{ color: 'var(--text2)', marginTop: 2 }}>{h}</div>}
+    </div>
+  );
+}

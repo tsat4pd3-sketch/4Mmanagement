@@ -59,7 +59,7 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <div style={box}>
-          <div style={capLabel}>📈 รอบสะสม (shot)</div>
+          <div style={capLabel}>รอบสะสม (shot)</div>
           <div style={capValue}>{nf(ev.cum_cycles)}</div>
           <div style={{ height: 4, borderRadius: 2, background: 'var(--border2)', marginTop: 5, overflow: 'hidden' }}>
             <div style={{ height: '100%', width: `${Math.round(prog * 100)}%`, background: 'var(--accent)' }} />
@@ -73,7 +73,7 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
         </div>
 
         <div style={box}>
-          <div style={capLabel}>🎯 ของเสียเทียบไลน์</div>
+          <div style={capLabel}>ของเสียเทียบไลน์</div>
           <div style={{ ...capValue, color: ev.quality_ok === false ? '#ef4444' : 'var(--text)' }}>
             {ev.ng_ratio == null ? '–' : `${Number(ev.ng_ratio).toFixed(2)}x`}
           </div>
@@ -83,7 +83,7 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
         </div>
 
         <div style={box}>
-          <div style={capLabel}>🔀 ความหลากหลาย</div>
+          <div style={capLabel}>ความหลากหลาย</div>
           <div style={capValue}>{parts} รุ่น</div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
             เปลี่ยนรุ่น {nf(ev.n_changeover)} · เจอเหตุ {nf(ev.n_abnormal)} วัน
@@ -91,9 +91,9 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
         </div>
 
         <div style={box}>
-          <div style={capLabel}>📜 การรับรอง</div>
+          <div style={capLabel}>การรับรอง</div>
           <div style={capValue}>
-            {ev.has_ojt ? '✅' : '—'} OJT {ev.is_trainer ? ' · 👨‍🏫' : ''}
+            {ev.has_ojt ? '✅' : '—'} OJT {ev.is_trainer ? ' · ' : ''}
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
             {ev.ojt_post_score != null ? `คะแนนสอบ ${ev.ojt_post_score}` : 'ไม่มีคะแนนสอบ'}
@@ -103,7 +103,7 @@ export default function SkillEvidencePanel({ ev, cfg, currentScore = null, compa
 
         {!compact && (
           <div style={box}>
-            <div style={capLabel}>🗓️ มาทำงาน</div>
+            <div style={capLabel}>มาทำงาน</div>
             <div style={capValue}>{nf(ev.days_worked)} วัน</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
               ล่าสุด {ev.last_worked_date || '–'}

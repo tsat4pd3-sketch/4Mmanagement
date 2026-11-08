@@ -44,10 +44,10 @@ const btnPri = { background: 'var(--accent)', color: 'var(--accent-ink)', border
 const btnGhost = { background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
 
 const STATUS_META = {
-  draft:     { label: '📝 ร่าง', color: '#9ca3af' },
-  notified:  { label: '📤 แจ้งแล้ว', color: '#4a90e0' },
-  done:      { label: '✅ เสร็จสิ้น', color: '#22c55e' },
-  cancelled: { label: '✖ ยกเลิก', color: '#ef4444' },
+  draft:     { label: 'ร่าง', color: 'var(--muted)' },
+  notified:  { label: 'แจ้งแล้ว', color: '#4a90e0' },
+  done:      { label: 'เสร็จสิ้น', color: 'var(--green)' },
+  cancelled: { label: 'ยกเลิก', color: 'var(--red)' },
 };
 
 function todayStr() {
@@ -211,35 +211,35 @@ export default function PmCoordination() {
         permKey="pm_coord:manage" hint="ฝ่ายผลิตดูแผนที่ถูกนัดและพิมพ์ใบได้ตามปกติ (ตั้งใจให้เห็นทุก role)" />
       <PageHeader title="แผนประสานงาน PM / งานเครื่องจักร" icon="🗓️"
         sub="งาน PM/แก้เครื่องหลายวัน · แจ้ง Production ล่วงหน้า"
-        actions={canManage && <button onClick={() => setEditing({ _new: true, title: '', tasks: [] })} style={btnPri}>➕ สร้างแผนใหม่</button>} />
+        actions={canManage && <button type="button" className="pg-btn" onClick={() => setEditing({ _new: true, title: '', tasks: [] })} style={btnPri}>สร้างแผนใหม่</button>} />
 
       {/* UI-STANDARD 2026-09-24 — ตัวเลือกสถานะ 4 ตัว = Segmented · "ทุกสถานะ" ซ้ายสุด (state 'all' เดิม) */}
       <FilterBar>
         <Segmented value={fStatus} onChange={setFStatus} label="สถานะแผน" options={[
           { value: 'all', label: ALL.status }, { value: 'active', label: 'กำลังดำเนินการ' },
-          { value: 'notified', label: '📤 แจ้งแล้ว' }, { value: 'done', label: '✅ เสร็จ' },
+          { value: 'notified', label: 'แจ้งแล้ว' }, { value: 'done', label: 'เสร็จ' },
         ]} />
         <LineScopeSelect lines={scopeLineList} section={fScope.section} line={fScope.line}
           onChange={(section, line, info) => setFScope({ section, line, names: info?.lines?.length ? info.lines : (section || line ? [line || section] : null) })} />
         <SearchInput value={fQ} onChange={setFQ} fields="ชื่อแผน / เครื่อง / ไลน์ / งาน" />
         <span className="spacer" />
         <span className="filter-count">{shown.length} แผน{noLineHidden ? ` · ซ่อนแผนไม่ระบุไลน์ ${noLineHidden}` : ''}</span>
-        <button type="button" onClick={load} style={{ ...btnGhost, padding: '5px 11px', fontSize: 12 }}>🔄 รีเฟรช</button>
+        <button type="button" onClick={load} style={{ ...btnGhost, padding: '5px 11px', fontSize: 12 }}>รีเฟรช</button>
       </FilterBar>
 
       {loadErr && (
-        <div role="alert" style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, border: '1px solid #ef4444', color: '#ef4444', fontSize: 12.5, fontWeight: 700 }}>
+        <div role="alert" style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--red)', color: 'var(--red)', fontSize: 12.5, fontWeight: 700 }}>
           ⚠️ โหลดข้อมูลไม่ครบ ({loadErr}) — รายการ/ตัวนับด้านล่าง<u>อาจขาด</u> ไม่ได้แปลว่าไม่มีแผน · กด 🔄 รีเฟรช
         </div>
       )}
 
       {upcomingSupport.length > 0 && (
-        <div style={{ marginBottom: 14, padding: '12px 14px', borderRadius: 12, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.4)' }}>
-          <div style={{ fontSize: 13.5, fontWeight: 800, color: '#ef4444', marginBottom: 8 }}>🔔 ช่วง Production Support ที่กำลังจะถึง ({upcomingSupport.length})</div>
+        <div style={{ marginBottom: 14, padding: '12px 14px', borderRadius: 12, background: 'var(--red-dim)', border: '1px solid var(--red-line)' }}>
+          <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--red)', marginBottom: 8 }}>ช่วง Production Support ที่กำลังจะถึง ({upcomingSupport.length})</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
             {upcomingSupport.map(t => (
               <div key={t.id} style={{ display: 'flex', gap: 10, alignItems: 'baseline', fontSize: 12.5, flexWrap: 'wrap' }}>
-                <b style={{ color: '#ef4444', minWidth: 90 }}>{beDate(t.task_date)}</b>
+                <b style={{ color: 'var(--red)', minWidth: 90 }}>{beDate(t.task_date)}</b>
                 {(t.time_from || t.time_to) && <span style={{ color: 'var(--accent2)', fontWeight: 700 }}>{t.time_from || ''}{t.time_to ? '–' + t.time_to : ''} น.</span>}
                 <span style={{ color: 'var(--text)' }}>{t.plan.title}{t.plan.machine_name ? ` · ${t.plan.machine_name}` : ''}{t.plan.line_name ? ` · 🏭 ${t.plan.line_name}` : ''}</span>
                 <span style={{ color: 'var(--muted)' }}>— {t.description}</span>
@@ -361,17 +361,17 @@ function PlanRow({ plan: p, sum, open, onToggle, tasks, canManage, pmPlan, fullN
         className={active && sum.overdue > 0 ? 'rec-row-alert' : undefined}>
         <td style={{ maxWidth: 280 }}>
           <div style={{ fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.title}>{p.title}</div>
-          {p.pm_plan_id && <span style={{ fontSize: 11, fontWeight: 700, color: '#4a90e0' }}>🔗 ผูกแผน PM</span>}
+          {p.pm_plan_id && <span style={{ fontSize: 11, fontWeight: 700, color: '#4a90e0' }}>ผูกแผน PM</span>}
         </td>
         <td style={{ whiteSpace: 'nowrap' }}>{[p.machine_name, p.machine_no].filter(Boolean).join(' · ') || '—'}</td>
         <td style={{ whiteSpace: 'nowrap', color: p.line_name ? 'var(--text2)' : 'var(--muted)' }}>{p.line_name || 'ไม่ระบุไลน์'}</td>
         <td style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>{sum.from ? (sum.from === sum.to ? beDate(sum.from) : `${beDate(sum.from)} – ${beDate(sum.to)}`) : '—'}</td>
         <td style={{ whiteSpace: 'nowrap' }}>
-          {sum.overdue > 0 && active && <div style={{ color: '#ef4444', fontWeight: 700, fontSize: 12 }}>ค้าง {sum.overdue} งาน (เลยวัน)</div>}
-          {nx ? <span style={{ color: nx.is_support ? '#ef4444' : 'var(--accent2)', fontWeight: 700 }}>{nx.is_support ? '⚠️ ' : ''}{beDate(nx.task_date)}</span>
+          {sum.overdue > 0 && active && <div style={{ color: 'var(--red)', fontWeight: 700, fontSize: 12 }}>ค้าง {sum.overdue} งาน (เลยวัน)</div>}
+          {nx ? <span style={{ color: nx.is_support ? 'var(--red)' : 'var(--accent2)', fontWeight: 700 }}>{nx.is_support ? '⚠️ ' : ''}{beDate(nx.task_date)}</span>
             : <span style={{ color: 'var(--muted)' }}>—</span>}
         </td>
-        <td style={{ whiteSpace: 'nowrap', color: sum.total && sum.doneN === sum.total ? '#22c55e' : 'var(--text2)' }}>{sum.doneN}/{sum.total} งาน</td>
+        <td style={{ whiteSpace: 'nowrap', color: sum.total && sum.doneN === sum.total ? 'var(--green)' : 'var(--text2)' }}>{sum.doneN}/{sum.total} งาน</td>
         <td><span style={{ fontSize: 11.5, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: m.color + '22', color: m.color, whiteSpace: 'nowrap' }}>{m.label}</span></td>
         <td style={{ color: 'var(--muted)', width: 24 }}>{open ? '▾' : '▸'}</td>
       </tr>
@@ -382,11 +382,11 @@ function PlanRow({ plan: p, sum, open, onToggle, tasks, canManage, pmPlan, fullN
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
               {tasks.map(t => (
                 <div key={t.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5,
-                  padding: '5px 8px', borderRadius: 8, background: t.is_support ? 'rgba(239,68,68,0.10)' : 'var(--card)',
-                  border: t.is_support ? '1px solid rgba(239,68,68,0.4)' : '1px solid var(--border)' }}>
+                  padding: '5px 8px', borderRadius: 8, background: t.is_support ? 'var(--red-dim)' : 'var(--card)',
+                  border: t.is_support ? '1px solid var(--red-line)' : '1px solid var(--border)' }}>
                   <input type="checkbox" checked={!!t.done} onChange={() => canManage && toggleTask(t)} disabled={!canManage} style={{ width: 'auto', marginTop: 2, cursor: canManage ? 'pointer' : 'default' }} />
                   <div style={{ flex: 1, opacity: t.done ? 0.55 : 1, textDecoration: t.done ? 'line-through' : 'none', whiteSpace: 'normal' }}>
-                    <b style={{ color: t.is_support ? '#ef4444' : 'var(--accent2)' }}>{beDate(t.task_date)}</b>
+                    <b style={{ color: t.is_support ? 'var(--red)' : 'var(--accent2)' }}>{beDate(t.task_date)}</b>
                     {(t.time_from || t.time_to) && <span style={{ color: 'var(--muted)' }}> {t.time_from || ''}{t.time_to ? '–' + t.time_to : ''} น.</span>}
                     {t.team && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · {teamLabelOf(t.team)}</span>}
                     <span style={{ color: 'var(--text)' }}> — {t.is_support ? '⚠️ ' : ''}{t.description}</span>
@@ -395,14 +395,14 @@ function PlanRow({ plan: p, sum, open, onToggle, tasks, canManage, pmPlan, fullN
               ))}
               {!tasks.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีรายการงาน</div>}
             </div>
-            {p.remark && <div style={{ fontSize: 12, color: '#ef4444', margin: '4px 0 8px', padding: '5px 8px', borderRadius: 6, background: 'rgba(239,68,68,0.08)', whiteSpace: 'normal' }}>📌 <b>Remark:</b> {p.remark}</div>}
+            {p.remark && <div style={{ fontSize: 12, color: 'var(--red)', margin: '4px 0 8px', padding: '5px 8px', borderRadius: 6, background: 'var(--red-dim)', whiteSpace: 'normal' }}>📌 <b>Remark:</b> {p.remark}</div>}
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
               <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>สร้างโดย {p.created_by || '—'}</span>
-              <button onClick={() => printPlan(p, tasks)} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5, marginLeft: 'auto' }}>🖨️ พิมพ์</button>
+              <button onClick={() => printPlan(p, tasks)} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5, marginLeft: 'auto' }}>พิมพ์</button>
               {canManage && <>
-                <button onClick={notify} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5 }}>📤 แจ้ง Production</button>
-                <button onClick={onEdit} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5 }}>✏️ แก้ไข</button>
-                {p.status !== 'done' && <button onClick={() => setStatus('done')} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5, color: '#22c55e' }}>✓ เสร็จ</button>}
+                <button onClick={notify} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5 }}>แจ้ง Production</button>
+                <button onClick={onEdit} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5 }}>แก้ไข</button>
+                {p.status !== 'done' && <button onClick={() => setStatus('done')} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5, color: 'var(--green)' }}>เสร็จ</button>}
                 <DeleteButton onClick={del} title="ลบ" />
               </>}
             </div>
@@ -535,7 +535,7 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
 
         {plan._new && pmPlans.length > 0 && (
           <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 10, background: 'rgba(74,144,224,0.10)', border: '1px solid rgba(74,144,224,0.4)' }}>
-            <label style={{ ...lbl, color: '#4a90e0' }}>🔗 สร้างจากแผน PM เดิม (ผูกให้อัตโนมัติ + เติมวันครบกำหนด)</label>
+            <label style={{ ...lbl, color: '#4a90e0' }}>สร้างจากแผน PM เดิม (ผูกให้อัตโนมัติ + เติมวันครบกำหนด)</label>
             <SearchSelect value={String(f.pm_plan_id || '')} placeholder="— ไม่ผูก (สร้างแผนอิสระ) — พิมพ์ค้นหาเครื่อง/ไลน์" inputStyle={inp}
               options={pmPlans.map(p => ({ id: String(p.plan_id), label: [p.machine_name, p.machine_no].filter(Boolean).join(' ') || String(p.plan_id), sub: `${p.line_name || ''}${p.next_due_date ? ` · ครบ ${beDate(p.next_due_date)}` : ''}`, keywords: `${p.machine_no || ''} ${p.line_name || ''}` }))}
               onChange={({ id }) => fromPmPlan(id)} />
@@ -553,7 +553,7 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
               placeholder="ค้นเลขเครื่อง เช่น RB-104, LS-10, CT-02" inputStyle={{ background: 'var(--bg)' }} />
             {f.machine_id && f.machine_name
               ? <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 3 }}>✓ {f.machine_name}{f.line_name ? ` · ${f.line_name}` : ''}</div>
-              : f.machine_no ? <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 3 }}>⚠ ยังไม่ได้เลือกจากทะเบียน — เลือกจากลิสต์เพื่อผูกเครื่อง</div> : null}
+              : f.machine_no ? <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>⚠ ยังไม่ได้เลือกจากทะเบียน — เลือกจากลิสต์เพื่อผูกเครื่อง</div> : null}
           </div>
           <div>
             <label style={lbl}>ไลน์</label>
@@ -565,10 +565,10 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
 
         <div style={{ marginTop: 14, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
           <label style={{ ...lbl, margin: 0 }}>แผนงาน & รายละเอียด (แต่ละวัน)</label>
-          <button onClick={addTask} style={{ ...btnGhost, padding: '4px 10px', fontSize: 11.5 }}>➕ เพิ่มขั้นงาน</button>
+          <button onClick={addTask} style={{ ...btnGhost, padding: '4px 10px', fontSize: 11.5 }}>เพิ่มขั้นงาน</button>
         </div>
         {tasks.map((t, i) => (
-          <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, marginBottom: 8, background: t.is_support ? 'rgba(239,68,68,0.06)' : 'var(--bg2)' }}>
+          <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, marginBottom: 8, background: t.is_support ? 'var(--red-dim)' : 'var(--bg2)' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr auto', gap: 8, alignItems: 'end' }}>
               <div>
                 <label style={lblS}>วันที่</label>
@@ -581,7 +581,7 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
                   {teams.map(tm => <option key={tm.key} value={tm.key}>{tm.label}</option>)}
                 </select>
               </div>
-              <button onClick={() => rmTask(i)} style={{ ...btnGhost, padding: '7px 10px', fontSize: 12, color: '#ef4444' }}>✕</button>
+              <button onClick={() => rmTask(i)} style={{ ...btnGhost, padding: '7px 10px', fontSize: 12, color: 'var(--red)' }}>✕</button>
             </div>
             <div style={{ marginTop: 8 }}>
               <label style={lblS}>รายละเอียด</label>
@@ -594,7 +594,7 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
                 <span style={{ color: 'var(--muted)' }}>–</span>
                 <input type="time" value={t.time_to || ''} onChange={e => setTask(i, 'time_to', e.target.value)} style={{ ...inp, width: 110 }} />
               </div>
-              <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, color: t.is_support ? '#ef4444' : 'var(--text)', cursor: 'pointer' }}>
+              <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, color: t.is_support ? 'var(--red)' : 'var(--text)', cursor: 'pointer' }}>
                 <input type="checkbox" checked={!!t.is_support} onChange={e => setTask(i, 'is_support', e.target.checked)} style={{ width: 'auto' }} />
                 ⚠️ ต้อง Production Support (เน้นในใบแจ้ง)
               </label>
@@ -607,7 +607,7 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
           <button onClick={onClose} style={btnGhost}>ยกเลิก</button>
-          <button onClick={save} disabled={busy} style={btnPri}>{busy ? 'กำลังบันทึก…' : '💾 บันทึก'}</button>
+          <button onClick={save} disabled={busy} style={btnPri}>{busy ? 'กำลังบันทึก…' : 'บันทึก'}</button>
         </div>
       </div>
     </div>
@@ -646,7 +646,7 @@ function printPlan(p, tasks) {
   <div class="hd"><img src="${logoSrc}" alt=""><div><h1>แผนประสานงาน PM / งานเครื่องจักร</h1>
     <div style="font-size:13px;color:#666;">Thai Summit — Maintenance</div></div></div>
   <div style="font-size:17px;font-weight:700;">${p.title || ''}</div>
-  <div class="meta">🔧 เครื่อง: <b>${[p.machine_name, p.machine_no].filter(Boolean).join(' ') || '—'}</b>${p.line_name ? ` &nbsp;·&nbsp; 🏭 ไลน์: <b>${p.line_name}</b>` : ''}</div>
+  <div class="meta">เครื่อง: <b>${[p.machine_name, p.machine_no].filter(Boolean).join(' ') || '—'}</b>${p.line_name ? ` &nbsp;·&nbsp; 🏭 ไลน์: <b>${p.line_name}</b>` : ''}</div>
   <div class="sec">แผนงาน &amp; รายละเอียด</div>
   <ul>${rows || '<li>—</li>'}</ul>
   ${p.remark ? `<div class="remark">Remark : ${p.remark}</div>` : ''}

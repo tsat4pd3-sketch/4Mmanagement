@@ -221,7 +221,7 @@ export default function MonitorBoardGrid({
               {` (จาก ${body.length} ช่วง)`}
             </span>
             <button type="button" onClick={() => setWinStart(homeStart)} disabled={winStart === homeStart}
-              title="กลับมาที่คอลัมน์วันนี้">📍 วันนี้</button>
+              title="กลับมาที่คอลัมน์วันนี้">วันนี้</button>
             <button type="button"
               onClick={() => setWinStart((s) => Math.min(Math.max(0, body.length - (windowSize - 1)), s + (windowSize - 1)))}
               disabled={winStart >= body.length - (windowSize - 1)} aria-label="ช่วงวันที่ถัดไป">→</button>

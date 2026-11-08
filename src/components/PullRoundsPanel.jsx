@@ -131,7 +131,7 @@ export default function PullRoundsPanel({ canEdit, shipToMap, fullName }) {
   return (
     <div style={{ marginTop: 18, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
-        <div style={{ fontSize: 14, fontWeight: 800 }}>🚚 ตารางรอบรับของลูกค้า (milk-run)</div>
+        <div style={{ fontSize: 14, fontWeight: 800 }}>ตารางรอบรับของลูกค้า (milk-run)</div>
         {shipTos.length > 1 && (
           <select value={filterShipTo} onChange={e => setFilterShipTo(e.target.value)} style={{ ...inp, width: 'auto', maxWidth: 220 }}>
             <option value="">{ALL.customer}</option>

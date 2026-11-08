@@ -52,8 +52,8 @@ const LEAVE_DURATION_OPTS = [
   { value: 'hours', label: 'ระบุชั่วโมง' },
 ];
 const LEAVE_PERIOD_OPTS = [
-  { value: 'morning',   label: '🌅 ลาช่วงเช้า', sub: 'มาบ่าย' },
-  { value: 'afternoon', label: '🌇 ลาช่วงบ่าย', sub: 'มาเช้า' },
+  { value: 'morning',   label: 'ลาช่วงเช้า', sub: 'มาบ่าย' },
+  { value: 'afternoon', label: 'ลาช่วงบ่าย', sub: 'มาเช้า' },
 ];
 
 function toLocalDateStr(date) {
@@ -202,7 +202,7 @@ export default function Checkin() {
     return () => clearInterval(t);
   }, [realShiftInfo]);
   const shiftInfo = previewNight
-    ? { ...realShiftInfo, shift: 'night', label: '🌙 กะดึก (Preview)' }
+    ? { ...realShiftInfo, shift: 'night', label: 'กะดึก (Preview)' }
     : realShiftInfo;
 
   /* 📝 ร่างในเครื่อง (มือถือ · 22/10 · audit handheld ข้อ 4) — เช็คชื่อ 20+ คนแล้วบันทึกทีเดียวตอนท้าย
@@ -1302,9 +1302,9 @@ export default function Checkin() {
               && tg(rec.has_extended_ot, 'OT+23', () => toggle(emp.id, 'has_extended_ot'), false, 'var(--red)')}
           </div>
           <div className="ck-more">
-            <div><div className="ck-lbl">🏖️ การลา</div>{cLeave}</div>
+            <div><div className="ck-lbl">การลา</div>{cLeave}</div>
             <div><div className="ck-lbl">หมายเหตุ</div>{cRemark}</div>
-            {needBooking && <div><div className="ck-lbl">🚐 จองรถ OT / งานที่ทำ</div><div className="ck-book">{cBooking}</div></div>}
+            {needBooking && <div><div className="ck-lbl">จองรถ OT / งานที่ทำ</div><div className="ck-book">{cBooking}</div></div>}
           </div>
         </div>
       </Fragment>
@@ -1343,7 +1343,7 @@ export default function Checkin() {
                                 onClick={() => unborrowEmployee(emp)}
                                 title="ยกเลิกยืมตัว — คืนกลับไลน์เดิม"
                                 style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)' }}
-                              >✕ คืน</button>
+                              >คืน</button>
                             )}
                           </div>
                         )}
@@ -1671,7 +1671,7 @@ export default function Checkin() {
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '20px 24px', maxWidth: 520, width: '100%', maxHeight: '86vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-lg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-              <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>🤝 ยืมพนักงานมาช่วยกะนี้</div>
+              <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>ยืมพนักงานมาช่วยกะนี้</div>
               <button onClick={() => setShowBorrowModal(false)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer', padding: 4 }}>✕</button>
             </div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
@@ -1713,7 +1713,7 @@ export default function Checkin() {
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.employee_id_code} · {homeLine}{r.team ? ` · ทีม ${r.team}` : ''}</div>
                     </div>
                     {borrowedHere
-                      ? <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700, whiteSpace: 'nowrap' }}>🤝 ยืมแล้ว → {lines.find(l => l.id === already._helperToLineId)?.name || 'ไลน์ใน scope'}</span>
+                      ? <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700, whiteSpace: 'nowrap' }}>ยืมแล้ว → {lines.find(l => l.id === already._helperToLineId)?.name || 'ไลน์ใน scope'}</span>
                       : inRoster
                         ? <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>อยู่ในรายชื่อแล้ว</span>
                         : (
@@ -2015,7 +2015,7 @@ export default function Checkin() {
       {showOtBookModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
           <div style={{ background: 'var(--card)', borderRadius: 12, padding: 22, width: '100%', maxWidth: 640, maxHeight: '86vh', display: 'flex', flexDirection: 'column', border: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6, color: 'var(--text)' }}>🚐 จองรถ OT</div>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6, color: 'var(--text)' }}>จองรถ OT</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>
               เลือกวันที่/กะ/ไลน์/ทีมได้อิสระ ไม่ต้องรอเช็คชื่อกะนั้น — เหมาะกับกรณีทีมที่ต้องจอง OT ไม่ใช่ทีมที่กำลังเช็คชื่ออยู่ (เช่น จันทร์แรกหลังสลับกะ)
             </div>
@@ -2032,15 +2032,15 @@ export default function Checkin() {
                 <select value={otBookShift}
                   onChange={e => { setOtBookShift(e.target.value); loadOtBookExisting(otBookDate, e.target.value); }}
                   style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }}>
-                  <option value="day">☀️ กะเช้า</option>
-                  <option value="night">🌙 กะดึก</option>
+                  <option value="day">กะเช้า</option>
+                  <option value="night">กะดึก</option>
                 </select>
               </div>
             </div>
 
             {isHolidayDate(otBookDate) && (
               <div style={{ fontSize: 12, color: 'var(--amber)', fontWeight: 700, marginBottom: 10 }}>
-                🔶 วันที่เลือกเป็นวันหยุด — เลือกช่วงเวลา OT ให้พนักงานแต่ละคน (8 ชม. / 10 ชม.)
+                วันที่เลือกเป็นวันหยุด — เลือกช่วงเวลา OT ให้พนักงานแต่ละคน (8 ชม. / 10 ชม.)
               </div>
             )}
 
@@ -2109,7 +2109,7 @@ export default function Checkin() {
               <button onClick={() => setShowOtBookModal(false)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>
               <button onClick={handleSaveOtBookModal} disabled={otBookSaving || !otBookLineId || !canRecord}
                 style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: otBookSaving || !otBookLineId ? 'not-allowed' : 'pointer', opacity: otBookSaving || !otBookLineId ? 0.6 : 1 }}>
-                {otBookSaving ? '⏳ กำลังบันทึก...' : 'บันทึกการจอง'}
+                {otBookSaving ? 'กำลังบันทึก...' : 'บันทึกการจอง'}
               </button>
             </div>
           </div>
@@ -2120,7 +2120,7 @@ export default function Checkin() {
       {showExport && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
           <div style={{ background: 'var(--card)', borderRadius: 12, padding: 22, width: 'min(380px, 94vw)', border: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 14, color: 'var(--text)' }}>📄 ส่งออกฟอร์มกระดาษ (PDF)</div>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 14, color: 'var(--text)' }}>ส่งออกฟอร์มกระดาษ (PDF)</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>
               สร้างฟอร์ม 2 หน้า ตามฟอร์มกระดาษจริงที่ใช้หน้างาน:<br />
               1) ใบรายงานการปฏิบัติงานชดเชย/ทำ OT &nbsp; 2) บันทึกการมาทำงาน
@@ -2149,7 +2149,7 @@ export default function Checkin() {
               <button onClick={() => setShowExport(false)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>
               <button onClick={handleExportForms} disabled={exporting}
                 style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer' }}>
-                {exporting ? '⏳ กำลังสร้าง...' : '⬇ สร้าง PDF'}
+                {exporting ? 'กำลังสร้าง...' : 'สร้าง PDF'}
               </button>
             </div>
           </div>
