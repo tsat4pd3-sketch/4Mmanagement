@@ -237,7 +237,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                         {canEdit ? (<>
                           <button onClick={() => setForm({ ...emptyForm(), cost_center: cc, ...(cur ? Object.fromEntries(RATE_COMPONENTS.map(c => [c.field, cur[c.field]])) : {}) })}
                             title="บัญชีปรับ rate รอบใหม่ → กดปุ่มนี้ (rate เดิมเก็บเป็นประวัติ โปรเจคเก่ายังคิดด้วยตัวเดิม)"
-                            style={{ background: 'none', border: '1px solid var(--accent)', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 800, color: 'var(--accent)', padding: '2px 9px' }}>＋ rate ใหม่</button>
+                            style={{ background: 'none', border: '1px solid var(--accent)', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11, fontWeight: 800, color: 'var(--accent)', padding: '2px 9px' }}>＋ rate ใหม่</button>
                           {cur && <button onClick={() => setForm({ ...emptyForm(), ...cur, id: cur.id })}
                             title="แก้ตัวเลขที่กรอกผิดของแถวนี้ — ไม่ใช่สำหรับ rate รอบใหม่ (ใช้ ＋ rate ใหม่ แทน)"
                             style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, opacity: 0.55, marginLeft: 6 }}>✏️</button>}
@@ -268,7 +268,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
           </table>
         </div>
         {canEdit ? (
-          <button onClick={() => setForm({ ...emptyForm() })} style={{ marginTop: 8, padding: '6px 14px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+          <button onClick={() => setForm({ ...emptyForm() })} style={{ marginTop: 8, padding: '6px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
             ➕ เพิ่ม rate (เลือกรหัสจากผัง/ไลน์)
           </button>
         ) : (
@@ -323,7 +323,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                     {dateLocked ? (
                       <>
                         🔒 วัน Effective ล็อกกันแก้พลาด — <b>ปรับ rate รอบใหม่ให้กด ＋ rate ในตาราง</b> (แถวเดิมเก็บเป็นประวัติ โปรเจคที่เริ่มก่อนหน้ายังคิดด้วย rate เดิม)
-                        <button onClick={unlockDate} style={{ marginLeft: 6, background: 'none', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--accent)', fontSize: 11, fontWeight: 800, cursor: 'pointer', padding: '1px 7px' }}>แก้วันที่</button>
+                        <button onClick={unlockDate} style={{ marginLeft: 6, background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', color: 'var(--accent)', fontSize: 11, fontWeight: 800, cursor: 'pointer', padding: '1px 7px' }}>แก้วันที่</button>
                       </>
                     ) : (
                       <span style={{ color: '#f59e0b', fontWeight: 700 }}>ปลดล็อกวันที่แล้ว — เปลี่ยนวันนี้ = เปลี่ยนย้อนหลังว่า rate นี้ครอบช่วงไหน cost saving ของโปรเจคที่คำนวณด้วย rate ช่วงนี้จะขยับตาม</span>
@@ -347,8 +347,8 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                   <input value={form.note || ''} onChange={e => setForm({ ...form, note: e.target.value })} placeholder="เช่น rate ปี 2026 จากบัญชี" style={{ marginTop: 4 }} />
                 </label>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-                  <button onClick={() => setForm(null)} style={{ padding: '7px 16px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>ยกเลิก</button>
-                  <button onClick={handleSave} disabled={saving} style={{ padding: '7px 18px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 800, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+                  <button onClick={() => setForm(null)} style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>ยกเลิก</button>
+                  <button onClick={handleSave} disabled={saving} style={{ padding: '7px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 800, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
                     {saving ? 'กำลังบันทึก...' : '💾 บันทึก'}
                   </button>
                 </div>

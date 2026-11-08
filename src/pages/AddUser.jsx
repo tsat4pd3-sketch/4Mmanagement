@@ -896,7 +896,7 @@ export default function AddUser() {
         <SearchInput value={q} onChange={setQ} fields="ชื่อ / อีเมล / ตำแหน่ง" />
         {(q || filterRole || filterSection || onlyFixUsers) && (
           <button onClick={() => { setQ(''); setFilterRole(''); setFilterSection(''); setOnlyFixUsers(false); }}
-            style={{ padding: '8px 12px', borderRadius: 8, fontSize: 12, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
+            style={{ padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
             ล้างตัวกรอง
           </button>
         )}
@@ -952,13 +952,13 @@ export default function AddUser() {
                 setTimeout(() => document.getElementById('user-table-anchor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
               }}
               title="ให้ตารางรายชื่อด้านล่างโชว์เฉพาะบัญชีที่ค้างเรื่องนี้ (แก้แล้วจะหายจากตารางเอง)"
-              style={{ width: 'auto', fontSize: 11, padding: '2px 9px', cursor: 'pointer', borderRadius: 999,
+              style={{ width: 'auto', fontSize: 11, padding: '2px 9px', cursor: 'pointer', borderRadius: 'var(--r-md)',
                 border: `1px solid ${tableIssue === g.key ? 'var(--red)' : 'var(--border2)'}`,
                 background: tableIssue === g.key ? 'var(--red-dim)' : 'var(--bg3)', color: 'var(--text2)' }}>
               {tableIssue === g.key ? 'เลิกกรองตาราง' : 'กรองตาราง'}
             </button>
             <button type="button" onClick={() => setOpenWl(o => (o === g.key ? null : g.key))} aria-expanded={openWl === g.key}
-              style={{ width: 'auto', fontSize: 11, padding: '2px 9px', cursor: 'pointer', borderRadius: 999,
+              style={{ width: 'auto', fontSize: 11, padding: '2px 9px', cursor: 'pointer', borderRadius: 'var(--r-md)',
                 border: `1px solid ${openWl === g.key ? 'var(--accent)' : 'var(--border2)'}`,
                 background: openWl === g.key ? 'var(--accent-dim)' : 'var(--bg3)', color: 'var(--text2)' }}>
               {openWl === g.key ? 'ซ่อนรายชื่อ ▴' : 'ดูรายชื่อ ▾'}
@@ -975,7 +975,7 @@ export default function AddUser() {
               <span style={{ flex: 1 }} />
               {issueIdx.fixUsers > 0 && (
                 <button type="button" onClick={() => setOnlyFixUsers(v => !v)} aria-pressed={onlyFixUsers}
-                  style={{ width: 'auto', fontSize: 11.5, padding: '3px 10px', cursor: 'pointer', borderRadius: 6,
+                  style={{ width: 'auto', fontSize: 11.5, padding: '3px 10px', cursor: 'pointer', borderRadius: 'var(--r-md)',
                     border: `1px solid ${onlyFixUsers ? 'var(--red)' : 'var(--border2)'}`,
                     background: onlyFixUsers ? 'var(--red-dim)' : 'var(--bg3)', color: 'var(--text2)' }}>
                   {onlyFixUsers ? 'แสดงทุกบัญชี' : `ตารางเฉพาะ ${issueIdx.fixUsers} บัญชีที่ต้องแก้`}
@@ -1178,7 +1178,7 @@ export default function AddUser() {
                                 onClick={() => linkEmployee(u, e)}
                                 title={`ผูกบัญชีนี้กับ ${e.name} (${e.employee_id_code || 'ไม่มีรหัส'})`}
                                 style={{ width: 'auto', fontSize: 11, padding: '3px 9px', cursor: busy ? 'default' : 'pointer',
-                                  borderRadius: 6, border: `1px solid ${confident ? 'var(--green-line)' : 'var(--border2)'}`,
+                                  borderRadius: 'var(--r-md)', border: `1px solid ${confident ? 'var(--green-line)' : 'var(--border2)'}`,
                                   background: confident ? 'var(--green-dim)' : 'var(--bg2)',
                                   color: confident ? 'var(--green)' : 'var(--text2)', fontWeight: 700 }}>
                                 {e.employee_id_code || '—'} · {e.name}
@@ -1307,7 +1307,7 @@ export default function AddUser() {
             {def && <span style={{ color: 'var(--muted)' }}>วิธีแก้: {def.fix}</span>}
             <span style={{ flex: 1 }} />
             <button type="button" onClick={() => setTableIssue(null)}
-              style={{ width: 'auto', fontSize: 11.5, padding: '3px 10px', cursor: 'pointer', borderRadius: 6,
+              style={{ width: 'auto', fontSize: 11.5, padding: '3px 10px', cursor: 'pointer', borderRadius: 'var(--r-md)',
                 border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }}>แสดงทุกบัญชี</button>
           </div>
         );
@@ -1428,7 +1428,7 @@ export default function AddUser() {
                   <td style={{ textAlign: 'center' }}>
                     <button
                       onClick={() => openEdit(u)}
-                      style={{ padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}
+                      style={{ padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 600, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}
                     >
                       แก้ไข
                     </button>
@@ -1553,7 +1553,7 @@ export default function AddUser() {
                           style={{ flex: 1, width: 'auto', minWidth: 0 }} />
                         <button type="button" onClick={handleResetPassword}
                           disabled={resetPwBusy || resetPw.length < 6}
-                          style={{ padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+                          style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
                             cursor: (resetPwBusy || resetPw.length < 6) ? 'not-allowed' : 'pointer',
                             background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)',
                             opacity: (resetPwBusy || resetPw.length < 6) ? 0.5 : 1 }}>
@@ -1583,7 +1583,7 @@ export default function AddUser() {
                       onClick={() => { setF('accountKind', o.k); if (o.k === 'shared') setF('employeeId', ''); }}
                       style={{
                         flex: '1 1 190px', width: 'auto', textAlign: 'left', cursor: 'pointer', padding: '8px 10px',
-                        borderRadius: 8, fontSize: 12,
+                        borderRadius: 'var(--r-md)', fontSize: 12,
                         border: `1px solid ${form.accountKind === o.k ? 'var(--accent)' : 'var(--border2)'}`,
                         background: form.accountKind === o.k ? 'var(--green-dim)' : 'var(--bg2)',
                         color: form.accountKind === o.k ? 'var(--text)' : 'var(--text2)',
@@ -1658,7 +1658,7 @@ export default function AddUser() {
                     {!form.employeeId && !newEmp && (
                       <button type="button"
                         onClick={() => setNewEmp({ name: (empSearch.trim() || form.fullName || ''), employee_id_code: '', department: '', section: '', staff_kind: STAFF_SUPPORT })}
-                        style={{ marginTop: 8, width: 'auto', padding: '7px 12px', borderRadius: 8, border: '1px dashed var(--accent)',
+                        style={{ marginTop: 8, width: 'auto', padding: '7px 12px', borderRadius: 'var(--r-md)', border: '1px dashed var(--accent)',
                           background: 'transparent', color: 'var(--accent)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                         ＋ ไม่มีชื่อในฐานพนักงาน — เพิ่มคนนี้เข้าฐาน
                       </button>
@@ -1685,7 +1685,7 @@ export default function AddUser() {
                           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                             {STAFF_KINDS.map(k => (
                               <button key={k.key} type="button" onClick={() => setNewEmp(v => ({ ...v, staff_kind: k.key }))}
-                                style={{ flex: '1 1 190px', width: 'auto', textAlign: 'left', cursor: 'pointer', padding: '7px 10px', borderRadius: 8, fontSize: 12,
+                                style={{ flex: '1 1 190px', width: 'auto', textAlign: 'left', cursor: 'pointer', padding: '7px 10px', borderRadius: 'var(--r-md)', fontSize: 12,
                                   border: `1px solid ${newEmp.staff_kind === k.key ? 'var(--accent)' : 'var(--border2)'}`,
                                   background: newEmp.staff_kind === k.key ? 'var(--green-dim)' : 'var(--bg2)',
                                   color: newEmp.staff_kind === k.key ? 'var(--text)' : 'var(--text2)' }}>
@@ -1740,11 +1740,11 @@ export default function AddUser() {
 
                         <div style={{ display: 'flex', gap: 8 }}>
                           <button type="button" onClick={addEmployee} disabled={newEmpSaving}
-                            style={{ width: 'auto', padding: '8px 14px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: newEmpSaving ? 0.6 : 1 }}>
+                            style={{ width: 'auto', padding: '8px 14px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: newEmpSaving ? 0.6 : 1 }}>
                             {newEmpSaving ? 'กำลังบันทึก...' : 'บันทึกเข้าฐานพนักงาน + ผูกกับบัญชีนี้'}
                           </button>
                           <button type="button" onClick={() => setNewEmp(null)}
-                            style={{ width: 'auto', padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)', fontSize: 12, cursor: 'pointer' }}>
+                            style={{ width: 'auto', padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)', fontSize: 12, cursor: 'pointer' }}>
                             ยกเลิก
                           </button>
                         </div>
@@ -1771,7 +1771,7 @@ export default function AddUser() {
                     ))}
                   </select>
                   <button type="button" onClick={() => setNewPos(v => (v ? null : { key: '', label_th: '', level: 'staff' }))}
-                    style={{ whiteSpace: 'nowrap', padding: '0 12px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                    style={{ whiteSpace: 'nowrap', padding: '0 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                     {newPos ? 'ยกเลิก' : '+ เพิ่มตำแหน่งใหม่'}
                   </button>
                 </div>
@@ -1785,7 +1785,7 @@ export default function AddUser() {
                       {POSITION_LEVELS.map(l => <option key={l.key} value={l.key}>{l.label}</option>)}
                     </select>
                     <button type="button" onClick={addPosition} disabled={newPosSaving}
-                      style={{ whiteSpace: 'nowrap', padding: '8px 12px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: newPosSaving ? 0.6 : 1 }}>
+                      style={{ whiteSpace: 'nowrap', padding: '8px 12px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: newPosSaving ? 0.6 : 1 }}>
                       {newPosSaving ? '...' : 'บันทึกตำแหน่ง'}
                     </button>
                   </div>
@@ -2006,7 +2006,7 @@ export default function AddUser() {
                           return (
                             <button key={d} type="button" title={m.desc}
                               onClick={() => setF('scopeDepth', d)}
-                              style={{ padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700,
+                              style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700,
                                 cursor: 'pointer', background: on ? `${tint(col, 'dim')}` : 'var(--bg2)',
                                 border: `1px solid ${on ? col : 'var(--border2)'}`,
                                 color: on ? col : 'var(--text2)' }}>
@@ -2104,7 +2104,7 @@ export default function AddUser() {
                     {ccFromEmp.from ? <> ({ccFromEmp.from}{ccFromEmp.inherited ? ' · ตกทอดจากหน่วยแม่' : ''})</> : null}
                     {!form.respCcs.includes(ccFromEmp.cc) && (
                       <button type="button" onClick={() => toggleCc(ccFromEmp.cc)}
-                        style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                        style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700,
                           cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
                         ＋ ใช้รหัสนี้
                       </button>
@@ -2196,7 +2196,7 @@ export default function AddUser() {
                       ติ๊กรหัสที่ถูกต้องเพิ่ม แล้วถอดรหัสนี้ออก
                       {ccUnknown.map(cc => (
                         <button key={cc} type="button" onClick={() => toggleCc(cc)}
-                          style={{ marginLeft: 6, padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                          style={{ marginLeft: 6, padding: '2px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700,
                             cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
                           ถอด {cc}
                         </button>
@@ -2316,7 +2316,7 @@ export default function AddUser() {
                         ))}
                       </select>
                       <button type="button" disabled={!reassignTo || loading} onClick={() => handleDelete(reassignTo)}
-                        style={{ padding: '8px 12px', background: reassignTo ? 'var(--red-dim)' : 'var(--bg3)', color: reassignTo ? 'var(--red)' : 'var(--muted)', border: '1px solid var(--red-line)', borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: reassignTo && !loading ? 'pointer' : 'default' }}>
+                        style={{ padding: '8px 12px', background: reassignTo ? 'var(--red-dim)' : 'var(--bg3)', color: reassignTo ? 'var(--red)' : 'var(--muted)', border: '1px solid var(--red-line)', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 12, cursor: reassignTo && !loading ? 'pointer' : 'default' }}>
                         🔀 โอนประวัติแล้วลบ
                       </button>
                     </div>
@@ -2328,20 +2328,20 @@ export default function AddUser() {
                 {modalMode === 'edit' && form.role !== 'admin' && (
                   <button type="button" onClick={() => handleDelete()} disabled={loading}
                     title="ลบบัญชีถาวร (ลบตัวเอง/บัญชี admin ไม่ได้)"
-                    style={{ padding: '12px 16px', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: loading ? 'default' : 'pointer' }}>
+                    style={{ padding: '12px 16px', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13, cursor: loading ? 'default' : 'pointer' }}>
                     ลบผู้ใช้
                   </button>
                 )}
                 <button
                   onClick={modalMode === 'create' ? handleCreate : handleUpdate}
                   disabled={loading}
-                  style={{ flex: 2, padding: 12, background: loading ? 'var(--muted)' : 'var(--amber)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 14, cursor: loading ? 'default' : 'pointer' }}
+                  style={{ flex: 2, padding: 12, background: loading ? 'var(--muted)' : 'var(--amber)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 14, cursor: loading ? 'default' : 'pointer' }}
                 >
                   {loading ? 'กำลังบันทึก...' : modalMode === 'create' ? 'สร้าง Account' : 'บันทึก'}
                 </button>
                 <button
                   onClick={() => setShowModal(false)}
-                  style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}
+                  style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', cursor: 'pointer' }}
                 >
                   ยกเลิก
                 </button>

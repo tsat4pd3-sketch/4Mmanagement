@@ -189,7 +189,7 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
               onClick={handleClose}
               disabled={loading}
               style={{
-                flex: 1, padding: '10px 0', borderRadius: 8,
+                flex: 1, padding: '10px 0', borderRadius: 'var(--r-md)',
                 border: '1px solid var(--border2)', background: 'var(--bg3)',
                 color: 'var(--text2)', fontWeight: 600, fontSize: 13,
               }}
@@ -198,7 +198,7 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
               type="submit"
               disabled={loading || !current || next.length < 6 || next !== confirm}
               style={{
-                flex: 2, padding: '10px 0', borderRadius: 8,
+                flex: 2, padding: '10px 0', borderRadius: 'var(--r-md)',
                 border: 'none',
                 background: loading || !current || next.length < 6 || next !== confirm
                   ? 'var(--muted2)' : 'var(--accent)',

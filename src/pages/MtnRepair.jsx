@@ -1610,7 +1610,7 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
                 กดปุ่มข้างล่างนี้ก่อน · ถ้ายังไม่หาย ให้ออกจากระบบแล้วเข้าใหม่
                 <button type="button"
                   onClick={() => onReloadLines?.()}
-                  style={{ marginLeft: 6, fontSize: 11.5, padding: '2px 10px', borderRadius: 6, cursor: 'pointer',
+                  style={{ marginLeft: 6, fontSize: 11.5, padding: '2px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                            background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
                   โหลดทะเบียนไลน์ใหม่
                 </button>
@@ -1665,7 +1665,7 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
             <MachineSelect value={f.machine_no} onChange={onMachinePick} machines={lineMachines} lines={lineFam} kinds={machineKinds} strict={machineStrict} allowFree history={machineHist}
               placeholder={wantDie ? 'ค้นเลขแม่พิมพ์ / สแกน' : 'ค้นเลขเครื่อง / ชื่อ / สแกน'} style={{ flex: 1, minWidth: 0 }} inputStyle={{ background: 'var(--bg)' }} />
             <button type="button" className="tbtn" onClick={() => setScanOpen(true)} title="สแกน QR ที่ติดเครื่อง — เติมไลน์ให้อัตโนมัติ"
-              style={{ flexShrink: 0, padding: '0 12px', height: 36, borderRadius: 8, border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 16, cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }} aria-label="สแกน QR"><Icon name="QrCode" size={17} /></button>
+              style={{ flexShrink: 0, padding: '0 12px', height: 36, borderRadius: 'var(--r-md)', border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 16, cursor: 'pointer', display: 'inline-flex', alignItems: 'center' }} aria-label="สแกน QR"><Icon name="QrCode" size={17} /></button>
           </div>
           {/* 🔗 บอกตรงๆ ว่ากำลังกรองอยู่ + ทางออกคลิกเดียว (ห้ามกรองเงียบ — คนหาเครื่องไม่เจอจะนึกว่าระบบพัง) */}
           {!wantDie && f.line_name && (
@@ -1677,7 +1677,7 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
                   </span>
                   <button type="button" className="tbtn" onClick={() => setAllMachines(v => !v)}
                     title="เครื่องย้ายไลน์ / ลงทะเบียนไว้ผิดไลน์ — กดดูทั้งโรงงานได้เสมอ"
-                    style={{ padding: '1px 9px', borderRadius: 20, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 11, cursor: 'pointer' }}>
+                    style={{ padding: '1px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 11, cursor: 'pointer' }}>
                     {machineStrict ? 'ดูทุกไลน์' : 'กรองตามไลน์'}
                   </button>
                 </>
@@ -1754,7 +1754,7 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
               {probHits.length === 0 && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่พบ — ลองคำอื่น หรือเลือกจากกลุ่มด้านบน</span>}
               {probHits.slice(0, 12).map(p => (
                 <button key={p.id} type="button" onClick={() => { onChar(p.characteristic); setProbQ(''); }}
-                  style={{ padding: '5px 10px', borderRadius: 7, fontSize: 12, cursor: 'pointer', border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)' }}>
+                  style={{ padding: '5px 10px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)' }}>
                   {p.characteristic}<span style={{ color: 'var(--muted)', marginLeft: 5, fontWeight: 400 }}>· {(p.group_name || 'อื่นๆ')}</span>
                 </button>))}
               {probHits.length > 12 && <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }}>…อีก {probHits.length - 12}</span>}
@@ -1789,7 +1789,7 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {PURPOSES.map(pp => { const on = (f.purpose || 'repair') === pp.key; return (
                   <button key={pp.key} type="button" onClick={() => set('purpose', pp.key)} style={{
-                    padding: '6px 14px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                    padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
                     border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
                     background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>{pp.label}</button>
                 ); })}
@@ -3108,7 +3108,7 @@ function TechMultiPick({ value = [], groups, onChange }) {
   const toggle = (n) => onChange(sel.has(n) ? value.filter(x => x !== n) : [...value, n]);
   const chip = (t, other) => (
     <button key={t.id} type="button" onClick={() => toggle(t.name)}
-      style={{ padding: '5px 10px', borderRadius: 999, fontSize: 12, cursor: 'pointer', fontWeight: sel.has(t.name) ? 700 : 500,
+      style={{ padding: '5px 10px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', fontWeight: sel.has(t.name) ? 700 : 500,
         border: `1px solid ${sel.has(t.name) ? 'var(--accent)' : 'var(--border)'}`,
         background: sel.has(t.name) ? 'var(--accent-dim)' : 'var(--bg)', color: 'var(--text)' }}>
       {sel.has(t.name) ? '' : ''}{t.name}{other && t.dept ? ` · ${deptNameOf(t.dept)}` : ''}
@@ -3792,7 +3792,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {CAUSE_CATS.map(c => { const on = f.cause_category === c.key; return (
                   <button key={c.key} type="button" onClick={() => set('cause_category', on ? '' : c.key)} style={{
-                    padding: '6px 14px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                    padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
                     border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
                     background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>{c.label}</button>
                 ); })}
@@ -3961,7 +3961,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
                     {SAT_LEVELS.map(lv => {
                       const on = Number(f.satisfaction?.[d.key]) === lv.v;
                       return <button key={lv.v} type="button" onClick={() => set('satisfaction', { ...f.satisfaction, [d.key]: on ? undefined : lv.v })}
-                        style={{ padding: '5px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                        style={{ padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                           border: `1px solid ${on ? lv.color : 'var(--border)'}`, background: on ? lv.color : 'var(--bg3)', color: on ? 'var(--bg)' : 'var(--text2)' }}>{lv.t}</button>;
                     })}
                   </div>
@@ -4375,7 +4375,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
                     return (
                       <button key={t.key} type="button" disabled={!ok}
                         onClick={() => updRow(table, it.id, { shared_teams: on ? cur.filter(x => x !== teamKeyOf(t.key)) : [...cur, teamKeyOf(t.key)] })}
-                        style={{ padding: '3px 7px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: ok ? 'pointer' : 'not-allowed',
+                        style={{ padding: '3px 7px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: ok ? 'pointer' : 'not-allowed',
                           border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent-dim)' : 'var(--bg3)',
                           color: on ? 'var(--accent)' : 'var(--muted)', opacity: ok ? 1 : 0.6 }}>
                         {t.icon || ''}{(t.dept_name || t.label || '').replace(' MTN', '')}

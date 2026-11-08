@@ -350,7 +350,7 @@ export default function NotificationConfig() {
               placeholder={tokenStatus.is_set ? 'วาง token ใหม่เพื่อเปลี่ยน' : 'วาง token จาก @BotFather'}
               style={{ ...monoStyle, flex: 1, minWidth: 220 }}
             />
-            <button onClick={saveToken} disabled={busy === 'token'} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+            <button type="button" className="pg-btn sm primary" onClick={saveToken} disabled={busy === 'token'}>
               {busy === 'token' ? 'บันทึก...' : 'บันทึก Token'}
             </button>
           </>
@@ -378,7 +378,7 @@ export default function NotificationConfig() {
           style={{ width: 90, textAlign: 'center', fontSize: 14, fontWeight: 700, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }}
         />
         <div style={{ fontSize: 12.5, color: 'var(--text)' }}>นาที</div>
-        <button onClick={saveOpenMin} disabled={busy === 'openmin'} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+        <button type="button" className="pg-btn sm primary" onClick={saveOpenMin} disabled={busy === 'openmin'}>
           {busy === 'openmin' ? 'บันทึก...' : 'บันทึก'}
         </button>
         <InfoMore size={11} style={{ flexBasis: '100%' }} id="nc_dtopen"
@@ -409,9 +409,9 @@ export default function NotificationConfig() {
               {/* 2026-09-07: วนทีมจาก mtn_teams (pmTeamsSync — data-driven) · ค่าที่เก็บ = key เสมอ */}
               {pmTeamsSync().map(t => <option key={t.key} value={t.key}>ทีม {t.icon ? `${t.icon} ` : ''}{deptNameOf(t.key)}</option>)}
             </select>
-            <button onClick={() => saveRoom(room)} disabled={busy === room.id} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>บันทึก</button>
-            <button onClick={() => testRoom(room)} disabled={busy === `test-${room.id}`} style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: 12, cursor: 'pointer' }}>ทดสอบ</button>
-            <button onClick={() => deleteRoom(room)} style={{ background: 'transparent', color: '#e05c4a', border: '1px solid rgba(224,92,74,0.4)', borderRadius: 8, padding: '8px 10px', fontSize: 12, cursor: 'pointer' }}>ลบ</button>
+            <button type="button" className="pg-btn sm primary" onClick={() => saveRoom(room)} disabled={busy === room.id}>บันทึก</button>
+            <button type="button" className="pg-btn sm" onClick={() => testRoom(room)} disabled={busy === `test-${room.id}`}>ทดสอบ</button>
+            <button type="button" className="pg-btn sm danger" onClick={() => deleteRoom(room)}>ลบ</button>
             {!(room.chat_id ?? '').trim() && (
               <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--accent2)' }}>
                 ⚠️ ยังไม่ใส่ chat_id — รายการที่เลือกห้องนี้จะไปเข้า<b>กลุ่มเดิม (fallback)</b> ไม่ใช่ห้องนี้
@@ -423,7 +423,7 @@ export default function NotificationConfig() {
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 26, flexWrap: 'wrap' }}>
         <input value={newRoom.name} onChange={e => setNewRoom(n => ({ ...n, name: e.target.value }))} placeholder="+ ชื่อห้องใหม่" style={{ ...inputStyle, width: 200 }} />
         <input value={newRoom.chat_id} onChange={e => setNewRoom(n => ({ ...n, chat_id: e.target.value }))} placeholder="chat_id (ใส่ทีหลังได้)" style={{ ...monoStyle, flex: 1, minWidth: 170 }} />
-        <button onClick={addRoom} disabled={busy === 'new'} style={{ background: 'var(--accent2)', color: '#071008', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>+ เพิ่มห้อง</button>
+        <button type="button" className="pg-btn sm" onClick={addRoom} disabled={busy === 'new'}>+ เพิ่มห้อง</button>
       </div>
 
       {/* ── Rules ── */}
@@ -527,8 +527,8 @@ export default function NotificationConfig() {
                     {(rule.inapp_roles || []).length > 0 && (
                       <div style={{ marginTop: 8 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                          <button onClick={() => setOpenTarget(openTarget === rule.event_key ? null : rule.event_key)}
-                            style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>
+                          <button type="button" className="pg-btn sm" onClick={() => setOpenTarget(openTarget === rule.event_key ? null : rule.event_key)}
+                           >
                             {openTarget === rule.event_key ? 'ปิดตัวจำกัดผู้รับ' : 'จำกัดผู้รับ (ส่วนงาน / แผนก)'}
                           </button>
                           <span style={{ fontSize: 11, color: (rule.inapp_sections?.length || rule.inapp_depts?.length || rule.inapp_match_section) ? 'var(--accent)' : 'var(--muted)' }}>
@@ -663,8 +663,8 @@ export default function NotificationConfig() {
                   {/* ── message template editor ── */}
                   <div style={{ flexBasis: '100%', borderTop: '1px dashed var(--border)', paddingTop: 8, marginTop: 2 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <button onClick={() => editingTpl === rule.event_key ? setEditingTpl(null) : startEditTpl(rule)}
-                        style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>
+                      <button type="button" className="pg-btn sm" onClick={() => editingTpl === rule.event_key ? setEditingTpl(null) : startEditTpl(rule)}
+                       >
                         {editingTpl === rule.event_key ? 'ปิดตัวแก้ข้อความ' : 'ปรับข้อความ'}
                       </button>
                       <span style={{ fontSize: 11, color: rule.template ? 'var(--accent)' : 'var(--muted)' }}>
@@ -679,8 +679,8 @@ export default function NotificationConfig() {
                         </div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                           {(PLACEHOLDERS[rule.event_key] ?? []).map(ph => (
-                            <button key={ph} onClick={() => insertPh(ph)}
-                              style={{ background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 6, padding: '2px 7px', fontSize: 11, fontFamily: 'monospace', cursor: 'pointer' }}>
+                            <button type="button" className="pg-btn sm" key={ph} onClick={() => insertPh(ph)}
+                             >
                               {`{${ph}}`}
                             </button>
                           ))}
@@ -694,14 +694,14 @@ export default function NotificationConfig() {
                             dangerouslySetInnerHTML={{ __html: renderPreview(tplDraft) || '<span style="color:var(--muted)">— ว่าง (จะใช้ข้อความมาตรฐาน) —</span>' }} />
                         </div>
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          <button onClick={() => saveTpl(rule)}
-                            style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>บันทึกข้อความ</button>
-                          <button onClick={() => setTplDraft(DEFAULT_TEMPLATES[rule.event_key] ?? '')}
-                            style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 12px', fontSize: 12, cursor: 'pointer' }}>โหลดแบบเริ่มต้น</button>
-                          <button onClick={() => resetTpl(rule)}
-                            style={{ background: 'transparent', color: '#e05c4a', border: '1px solid rgba(224,92,74,0.4)', borderRadius: 8, padding: '7px 12px', fontSize: 12, cursor: 'pointer' }}>ใช้ข้อความมาตรฐาน</button>
-                          <button onClick={() => setEditingTpl(null)}
-                            style={{ background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 12px', fontSize: 12, cursor: 'pointer' }}>ยกเลิก</button>
+                          <button type="button" className="pg-btn sm primary" onClick={() => saveTpl(rule)}
+                           >บันทึกข้อความ</button>
+                          <button type="button" className="pg-btn sm" onClick={() => setTplDraft(DEFAULT_TEMPLATES[rule.event_key] ?? '')}
+                           >โหลดแบบเริ่มต้น</button>
+                          <button type="button" className="pg-btn sm danger" onClick={() => resetTpl(rule)}
+                           >ใช้ข้อความมาตรฐาน</button>
+                          <button type="button" className="pg-btn sm" onClick={() => setEditingTpl(null)}
+                           >ยกเลิก</button>
                         </div>
                       </div>
                     )}

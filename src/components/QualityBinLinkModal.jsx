@@ -277,12 +277,12 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
         )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)',
+          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)',
             background: 'none', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>
             {created ? 'ปิด' : 'ยกเลิก'}</button>
           {!created && (
             <button onClick={save} disabled={saving || !picked.length} style={{
-              padding: '8px 20px', borderRadius: 8, border: 'none',
+              padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none',
               background: picked.length ? '#e05252' : 'var(--border2)', color: '#fff',
               fontSize: 13, fontWeight: 700, cursor: saving || !picked.length ? 'default' : 'pointer',
               opacity: saving ? 0.6 : 1 }}>

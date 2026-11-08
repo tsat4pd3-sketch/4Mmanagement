@@ -244,7 +244,7 @@ export default function SkillRadarPanel({ emp, skillDefs, subItemsByskill = {}, 
             </RadarChart>
           </ResponsiveContainer>
           <button onClick={handlePrintIndividual} disabled={printing} style={{
-            width: '100%', marginTop: 6, padding: '9px 14px', borderRadius: 9, fontSize: 12.5, fontWeight: 700,
+            width: '100%', marginTop: 6, padding: '9px 14px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 700,
             cursor: printing ? 'default' : 'pointer', background: `${glowColor}18`, color: glowColor,
             border: `1px solid ${glowColor}55`, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
             opacity: printing ? 0.6 : 1,

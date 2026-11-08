@@ -1281,7 +1281,7 @@ ${issuesHtml}
                           <button key={an.key} disabled={!canRecord} onClick={() => setAnswer(q.id, an.key)}
                             style={{
                               ...(isMobile ? { flex: 1, minHeight: 44 } : null),
-                              minWidth: 40, padding: '6px 8px', borderRadius: 7, fontWeight: 800, fontSize: 13, cursor: canRecord ? 'pointer' : 'default',
+                              minWidth: 40, padding: '6px 8px', borderRadius: 'var(--r-md)', fontWeight: 800, fontSize: 13, cursor: canRecord ? 'pointer' : 'default',
                               border: '1.5px solid ' + (a?.answer === an.key ? an.color : 'var(--border2)'),
                               background: a?.answer === an.key ? an.color : 'var(--bg3)',
                               color: a?.answer === an.key ? '#fff' : 'var(--text2)',

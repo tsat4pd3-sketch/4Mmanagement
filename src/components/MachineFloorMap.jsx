@@ -224,7 +224,7 @@ export default function MachineFloorMap({
         title="แสดง/ซ่อนป้ายชื่อทุกหมุดบนผัง (ชื่อยังดูได้จากการชี้/คลิกหมุด — หมุดที่เลือก/PM เกินกำหนดโชว์ป้ายเสมอ)"
         style={{
           position: 'absolute', top: 10, right: 10, zIndex: 20,
-          padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer',
+          padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 800, cursor: 'pointer',
           background: showPills ? 'var(--accent-dim)' : 'rgba(10,15,11,0.85)',
           color: showPills ? 'var(--accent)' : '#cdd6ce',
           border: `1.5px solid ${showPills ? 'var(--accent)' : 'var(--border2)'}`,

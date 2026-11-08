@@ -196,7 +196,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
             : rows.filter(r => r.kindKnown && (r.kind || 'machine') === c.key).length;
           return (
             <button key={c.key} onClick={() => setKind(c.key)} style={{
-              padding: '5px 12px', borderRadius: 16, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
               border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
               background: on ? 'var(--accent-dim)' : 'var(--bg3)', color: on ? 'var(--accent)' : 'var(--muted)',
             }}>{c.icon} {c.label} ({n})</button>

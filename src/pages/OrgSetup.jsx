@@ -281,13 +281,15 @@ export default function OrgSetup() {
     if (error)        { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + error.message); }
     if (!wrote?.length) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ — ไม่มีสิทธิ์แก้ หรือรายการนี้ถูกลบไปแล้ว'); }
     // ไล่เปลี่ยน "สำเนาชื่อ" ตามคีย์ใหม่ — เขียนไม่ได้ต้องบอกว่าชื่อไม่ตรงกันแล้ว ห้าม toast เขียวทับ
-    const casc = cascade ? await renameOrgRefs(supabase, editNode, cascade.from, cascade.to) : null;
+    const casc = cascade ? await renameOrgRefs(supabase, editNode, cascade.from, cascade.to, nodes) : null;
     setSaving(false);
     if (casc?.failed.length) {
       toast.error(`เปลี่ยนชื่อในผังแล้ว แต่ทะเบียนแก้ตามไม่ได้ (${casc.failed[0]})`
         + ' — ชื่อจะไม่ตรงกันจนแก้ที่หน้าพนักงาน');
     } else if (casc) {
-      toast.success(`แก้ไขสำเร็จ · เปลี่ยนชื่อตามให้ในทะเบียนอื่น ${casc.rows} รายการ`);
+      toast.success(`แก้ไขสำเร็จ · เปลี่ยนชื่อตามให้ในทะเบียนอื่น ${casc.rows} รายการ`
+        // 🔴 คีย์ชนกับโหนดต่างชั้น ⇒ ไม่ไล่เปลี่ยนให้ (อาจเป็นของอีกโหนด) — ต้องบอก ห้ามเงียบ
+        + (casc.skipped?.length ? ` · ไม่ได้เปลี่ยน ${casc.skipped.join(', ')} (ชื่อชนกับหน่วยต่างชั้น — แก้เองที่หน้านั้น)` : ''));
     } else {
       toast.success(editNode ? 'แก้ไขสำเร็จ' : 'เพิ่มสำเร็จ');
     }
@@ -522,7 +524,7 @@ export default function OrgSetup() {
                   <strong style={{ fontSize: 13, color: 'var(--text2)' }}>✍️ ผู้เซ็น/อนุมัติใบค่าฝีมือ — ส่วน {node.name}{key ? ` (${key})` : ''}</strong>
                   {sgEdit && (
                     <button onClick={saveSigners} disabled={sgSaving || !key}
-                      style={{ padding: '7px 18px', background: sgSaving || !key ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: sgSaving || !key ? 'default' : 'pointer' }}>
+                      style={{ padding: '7px 18px', background: sgSaving || !key ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13, cursor: sgSaving || !key ? 'default' : 'pointer' }}>
                       {sgSaving ? 'กำลังบันทึก...' : 'บันทึก'}
                     </button>
                   )}
@@ -674,10 +676,10 @@ export default function OrgSetup() {
                 );
               })()}
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: 11, background: saving ? 'var(--muted)' : 'var(--amber)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: saving ? 'default' : 'pointer' }}>
+                <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: 11, background: saving ? 'var(--muted)' : 'var(--amber)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: saving ? 'default' : 'pointer' }}>
                   {saving ? 'กำลังบันทึก...' : 'บันทึก'}
                 </button>
-                <button onClick={() => setModal(null)} style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
+                <button type="button" className="pg-btn sm" onClick={() => setModal(null)} style={{ flex: 1 }}>
                   ยกเลิก
                 </button>
               </div>

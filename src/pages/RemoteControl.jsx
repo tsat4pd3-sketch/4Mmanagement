@@ -159,7 +159,7 @@ export default function RemoteControl() {
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {pages.map(p => (
                 <button key={p.to} onClick={() => send({ type: 'nav', to: p.to })}
-                  style={{ fontSize: 12, fontWeight: 700, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)', cursor: 'pointer' }}>
+                  style={{ fontSize: 12, fontWeight: 700, padding: '6px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)', cursor: 'pointer' }}>
                   {p.icon} {p.label}
                 </button>
               ))}

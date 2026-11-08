@@ -431,7 +431,7 @@ export default function DailyPM() {
             <SearchInput value={regQ} onChange={setRegQ} fields="ชื่อเครื่อง / เลขเครื่อง / No. / ไลน์" />
             <span className="spacer" />
             <span className="filter-count">แสดง {regView.shownN} จาก {regView.myN} เครื่อง</span>
-            {regFiltered && <button type="button" onClick={clearRegFilters} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>ล้างตัวกรอง</button>}
+            {regFiltered && <button type="button" onClick={clearRegFilters} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>ล้างตัวกรอง</button>}
           </FilterBar>
           {/* 🔴 ซ่อนแล้วต้องบอก — "ไม่มีเครื่อง" ทั้งที่มีแต่อยู่นอกขอบเขต = จอโกหก */}
           {(regView.outScopeN > 0 || regView.droppedNoLine > 0) && (
@@ -445,7 +445,7 @@ export default function DailyPM() {
           {jigs.length > 0 && regView.groups.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>
               ไม่มีเครื่องที่ตรงกับตัวกรอง{regView.outScopeN > 0 ? ` (นอกขอบเขตของคุณ ${regView.outScopeN} เครื่อง)` : ''}
-              {regFiltered && <div><button type="button" onClick={clearRegFilters} style={{ marginTop: 10, background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '5px 12px', fontSize: 12, cursor: 'pointer' }}>ล้างตัวกรอง</button></div>}
+              {regFiltered && <div><button type="button" onClick={clearRegFilters} style={{ marginTop: 10, background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '5px 12px', fontSize: 12, cursor: 'pointer' }}>ล้างตัวกรอง</button></div>}
             </div>
           ) : Object.keys(jigsByLine).length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>

@@ -563,7 +563,7 @@ export default function StoreTimeChart({
               </div>
               <StockNote cov={cov} fmt={fmt} />
               <button onClick={() => goToCard(r)}
-                style={{ marginTop: 10, width: '100%', padding: '7px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', fontFamily: 'var(--font-body)' }}>
+                style={{ marginTop: 10, width: '100%', padding: '7px 10px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', fontFamily: 'var(--font-body)' }}>
                 ↓ ดูของที่ต้องเตรียม
               </button>
             </div>
@@ -580,7 +580,7 @@ export default function StoreTimeChart({
           { k: 'all', label: `ทั้งหมด (${counts.all})` },
         ].map(f => (
           <button key={f.k} onClick={() => setCardFilter(f.k)} style={{
-            padding: '7px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
+            padding: '7px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
             background: cardFilter === f.k ? 'var(--accent)' : 'var(--bg2)',
             color: cardFilter === f.k ? '#08130a' : 'var(--text2)',
             border: `1px solid ${cardFilter === f.k ? 'var(--accent)' : 'var(--border)'}`,
@@ -589,7 +589,7 @@ export default function StoreTimeChart({
         <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>เรียง:</span>
         {[{ k: 'urgent', label: '⚡ ใกล้ดิวก่อน' }, { k: 'time', label: 'ตามเวลาส่ง' }].map(s => (
           <button key={s.k} onClick={() => setSortMode(s.k)} style={{
-            padding: '6px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
+            padding: '6px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
             background: sortMode === s.k ? 'var(--accent)' : 'var(--bg2)',
             color: sortMode === s.k ? '#08130a' : 'var(--text2)',
             border: `1px solid ${sortMode === s.k ? 'var(--accent)' : 'var(--border)'}`,
@@ -634,7 +634,7 @@ export default function StoreTimeChart({
                 </div>
               </div>
               <button onClick={toggleAssume} title="ซ่อนพาร์ทที่ยังไม่มียอด WIP ออกจากไทม์ไลน์ (เหลือเฉพาะพาร์ทที่มีข้อมูลจริง)"
-                style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8,
+                style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)',
                 padding: '5px 10px', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: 'var(--text2)', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
                 ดูเฉพาะที่มียอดจริง
               </button>
@@ -646,7 +646,7 @@ export default function StoreTimeChart({
               <span style={{ flex: 1, minWidth: 240, fontSize: 11.5, color: 'var(--muted)' }}>
                 ❔ <b>{unknownTotal} พาร์ท</b> ยังไม่มียอด WIP ที่ไลน์ → ถูกซ่อนอยู่ ไม่ขึ้นบนไทม์ไลน์
               </span>
-              <button onClick={toggleAssume} style={{ background: 'rgba(245,158,11,0.14)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 8,
+              <button onClick={toggleAssume} style={{ background: 'rgba(245,158,11,0.14)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 'var(--r-md)',
                 padding: '5px 10px', cursor: 'pointer', fontSize: 11, fontWeight: 800, color: '#f59e0b', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
                 คิดเป็น 0 แล้วส่งเต็มจำนวน
               </button>

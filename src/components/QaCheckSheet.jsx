@@ -710,7 +710,7 @@ export default function QaCheckSheet({ canRecord }) {
                 ))}
               </select>
               <button type="button" onClick={() => setScanOpen(true)} title="สแกนบาร์โค้ด MAT บนกล่อง/คัมบัง"
-                style={{ flexShrink: 0, minWidth: 44, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontWeight: 700, cursor: 'pointer' }}>📷</button>
+                style={{ flexShrink: 0, minWidth: 44, padding: '0 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontWeight: 700, cursor: 'pointer' }}>📷</button>
             </div>
           </div>
           <div>

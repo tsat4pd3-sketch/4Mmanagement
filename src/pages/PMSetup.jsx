@@ -185,7 +185,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
       closeup={{ preview: cp._imgPreview, onPick: onCpImage, onClear: () => onChange({ _imgFile: null, _imgPreview: null, image_path: null }) }}
       extra={isVar && (
         <button type="button" onClick={onDuplicate} title="ทำสำเนาจุดนี้เป็นอีกแกน (X↔Y) — copy ชื่อ/tool ให้ กรอกแค่ spec"
-          style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)' }}>
+          style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 600, cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)' }}>
           ⧉ อีกแกน
         </button>
       )}>
@@ -235,7 +235,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
         // เปลี่ยนโหมด = ล้างเฉพาะช่องที่โหมดใหม่ไม่ใช้ (กันค่าค้างแล้วบันทึกเกณฑ์ที่ไม่ได้ตั้งใจ)
         const setMode = m => onChange({ _mmode: m, ...(m === 'gte' ? { usl: '' } : m === 'lte' ? { lsl: '' } : {}) })
         const modeBtn = (m, t) => (
-          <button key={m} onClick={() => setMode(m)} style={{ flex: 1, padding: '5px 0', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+          <button key={m} onClick={() => setMode(m)} style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
             border: `1.5px solid ${mMode === m ? 'var(--green)' : 'var(--border)'}`, background: mMode === m ? 'var(--green-dim)' : 'var(--bg3)', color: mMode === m ? 'var(--green)' : 'var(--muted)' }}>{t}</button>
         )
         return (
@@ -259,7 +259,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
             <span style={{ fontSize: 11, color: 'var(--muted)', marginRight: 4, textTransform: 'uppercase' }}>Axis</span>
             {[null, 'X', 'Y'].map(a => (
               <button key={String(a)} onClick={() => onChange({ axis: a })} style={{
-                padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer',
                 border: `1.5px solid ${cp.axis === a ? 'var(--accent)' : 'var(--border)'}`,
                 background: cp.axis === a ? 'var(--accent-dim)' : 'var(--bg3)',
                 color: cp.axis === a ? 'var(--accent)' : 'var(--muted)',
@@ -1227,7 +1227,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                     const cur = machineOptions.find(x => x.id === machineId)
                     if (cur && k !== 'all' && equipTypeOfMachine(cur) !== k) handleMachineSelect(null)
                   }} style={{
-                    padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
                     border: `1.5px solid ${kindFilter === k ? deptColor + '60' : 'var(--border2)'}`,
                     background: kindFilter === k ? deptColor + '18' : 'var(--bg3)',
                     color: kindFilter === k ? deptColor : 'var(--muted)',
@@ -1267,7 +1267,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {Object.entries(EQUIP_TYPE_LABEL).map(([k, v]) => (
                   <button key={k} onClick={() => setEquipType(k)} style={{
-                    padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
                     border: `1.5px solid ${equipType === k ? deptColor + '60' : 'var(--border2)'}`,
                     background: equipType === k ? deptColor + '18' : 'var(--bg3)',
                     color: equipType === k ? deptColor : 'var(--muted)',
@@ -1283,7 +1283,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
               <div style={{ display: 'flex', gap: 6 }}>
                 {Object.entries(CATEGORY_TYPE_META).map(([k, v]) => (
                   <button key={k} onClick={() => setEquipCategory(k)} style={{
-                    flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    flex: 1, padding: '6px 8px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
                     border: `1.5px solid ${equipCategory === k ? v.color + '60' : 'var(--border2)'}`,
                     background: equipCategory === k ? v.color + '18' : 'var(--bg3)',
                     color: equipCategory === k ? v.color : 'var(--muted)',

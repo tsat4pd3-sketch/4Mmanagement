@@ -484,9 +484,9 @@ export default function ShiftOrganize() {
 
       {/* Week Navigator */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-        <button onClick={prevWeek} style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 16 }}>‹</button>
-        <button onClick={goToday}  style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 12 }}>วันนี้</button>
-        <button onClick={nextWeek} style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 16 }}>›</button>
+        <button type="button" className="pg-btn sm pg-btn-icon" onClick={prevWeek}>‹</button>
+        <button type="button" className="pg-btn sm" onClick={goToday} >วันนี้</button>
+        <button type="button" className="pg-btn sm pg-btn-icon" onClick={nextWeek}>›</button>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border2)' }}>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>สัปดาห์</span>
           <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
@@ -495,10 +495,9 @@ export default function ShiftOrganize() {
         </div>
         {/* เติมกะล่วงหน้าจากรอบสลับที่ตั้งไว้จริง — ระบบเสนอ คนกดยืนยัน (ดู ShiftAutoFillModal) */}
         {canEditDept && (
-          <button onClick={() => setShowAutoFill(true)}
+          <button type="button" className="pg-btn sm" onClick={() => setShowAutoFill(true)}
             title="ต่อรอบสลับกะที่ตั้งไว้แล้วไปข้างหน้า — ไม่ทับสัปดาห์ที่ตั้งไว้ และต้องดู preview ก่อนยืนยัน"
-            style={{ padding: '6px 14px', borderRadius: 7, border: '1px solid var(--blue-line)',
-              background: 'var(--blue-dim)', color: 'var(--blue)', cursor: 'pointer', fontSize: 12, fontWeight: 700 }}>
+           >
             เติมกะล่วงหน้า
           </button>
         )}
@@ -613,7 +612,7 @@ export default function ShiftOrganize() {
                       <button
                         onClick={() => toggleTeam(line.id)}
                         style={{
-                          padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
+                          padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 600,
                           border: '1px solid var(--border2)',
                           background: isPending ? 'var(--amber-dim)' : 'var(--bg3)',
                           color: isPending ? 'var(--amber)' : 'var(--text2)',
@@ -623,8 +622,8 @@ export default function ShiftOrganize() {
                         {team ? 'สลับ' : '+ กำหนด'}
                       </button>
                       {isChild && !following && (
-                        <button onClick={() => resetToParent(line.id)} title="กลับไปใช้กะตามไลน์แม่"
-                          style={{ marginLeft: 6, padding: '6px 10px', borderRadius: 7, fontSize: 12, fontWeight: 600, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>
+                        <button type="button" className="pg-btn sm" onClick={() => resetToParent(line.id)} title="กลับไปใช้กะตามไลน์แม่"
+                          style={{ marginLeft: 6 }}>
                           ตามแม่
                         </button>
                       )}
@@ -720,7 +719,7 @@ export default function ShiftOrganize() {
                           ) : (
                           <button onClick={() => toggleDept(d.name)}
                             style={{
-                              padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
+                              padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 600,
                               border: '1px solid var(--border2)',
                               background: isPending ? 'var(--amber-dim)' : 'var(--bg3)',
                               color: isPending ? 'var(--amber)' : 'var(--text2)', cursor: 'pointer',
@@ -761,9 +760,9 @@ export default function ShiftOrganize() {
           รายการพิเศษรายบุคคล (สัปดาห์นี้)
         </h3>
         {canEdit && (
-          <button
+          <button type="button" className="pg-btn sm"
             onClick={() => { setOvrDate(weekStart); setShowOvrModal(true); }}
-            style={{ padding: '7px 16px', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', borderRadius: 8, fontSize: 13, fontWeight: 600 }}
+           
           >
             เพิ่มรายการ
           </button>
@@ -822,9 +821,9 @@ export default function ShiftOrganize() {
           ⚡ เหตุการณ์ยุบกะ (Shift Merge)
         </h3>
         {canEdit && (
-          <button
+          <button type="button" className="pg-btn sm danger"
             onClick={() => { setMrgStart(weekStart); setMrgEnd(toDateStr(weekDates[6])); setShowMergeModal(true); }}
-            style={{ padding: '7px 16px', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', borderRadius: 8, fontSize: 13, fontWeight: 600 }}
+           
           >
             สร้างเหตุการณ์ยุบกะ
           </button>
@@ -904,7 +903,7 @@ export default function ShiftOrganize() {
                   {['section', 'line'].map(s => (
                     <button key={s} onClick={() => setMrgScope(s)}
                       style={{
-                        flex: 1, padding: '8px 0', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                        flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 600, cursor: 'pointer',
                         border: mrgScope === s ? '2px solid var(--accent)' : '1px solid var(--border2)',
                         background: mrgScope === s ? 'var(--accent-dim)' : 'var(--bg3)',
                         color: mrgScope === s ? 'var(--accent)' : 'var(--text2)',
@@ -947,7 +946,7 @@ export default function ShiftOrganize() {
                   {[['day', '☀️ กะเช้า'], ['night', '🌙 กะดึก']].map(([val, label]) => (
                     <button key={val} onClick={() => setMrgShift(val)}
                       style={{
-                        flex: 1, padding: '10px 0', borderRadius: 7, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                        flex: 1, padding: '10px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
                         border: mrgShift === val ? '2px solid var(--accent)' : '1px solid var(--border2)',
                         background: mrgShift === val ? 'var(--accent-dim)' : 'var(--bg3)',
                         color: mrgShift === val ? 'var(--accent)' : 'var(--text2)',
@@ -973,14 +972,14 @@ export default function ShiftOrganize() {
               )}
 
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                <button
+                <button type="button" className="pg-btn sm primary"
                   onClick={handleAddMergeEvent}
                   disabled={!(mrgScope === 'section' ? mrgSection : mrgLineId) || !mrgStart || !mrgEnd}
-                  style={{ flex: 2, padding: 11, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)', opacity: !(mrgScope === 'section' ? mrgSection : mrgLineId) ? 0.5 : 1 }}>
+                  style={{ flex: 2, opacity: !(mrgScope === 'section' ? mrgSection : mrgLineId) ? 0.5 : 1 }}>
                   ยืนยันยุบกะ
                 </button>
-                <button onClick={() => setShowMergeModal(false)}
-                  style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8 }}>
+                <button type="button" className="pg-btn sm" onClick={() => setShowMergeModal(false)}
+                  style={{ flex: 1 }}>
                   ยกเลิก
                 </button>
               </div>
@@ -1024,12 +1023,12 @@ export default function ShiftOrganize() {
                 <input type="text" placeholder="เช่น ขอเปลี่ยนกะ" value={ovrReason} onChange={e => setOvrReason(e.target.value)} />
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                <button onClick={handleAddOverride} disabled={!ovrEmpId}
-                  style={{ flex: 2, padding: 11, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)' }}>
+                <button type="button" className="pg-btn sm primary" onClick={handleAddOverride} disabled={!ovrEmpId}
+                  style={{ flex: 2 }}>
                   บันทึก
                 </button>
-                <button onClick={() => setShowOvrModal(false)}
-                  style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8 }}>
+                <button type="button" className="pg-btn sm" onClick={() => setShowOvrModal(false)}
+                  style={{ flex: 1 }}>
                   ยกเลิก
                 </button>
               </div>

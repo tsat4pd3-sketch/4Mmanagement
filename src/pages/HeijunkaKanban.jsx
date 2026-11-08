@@ -118,7 +118,7 @@ function LineBoardLink({ line }) {
   return (
     <button onClick={(e) => { e.stopPropagation(); navigate(`/management?line=${encodeURIComponent(line)}&view=heijunka`); }}
       title="เปิดบอร์ด Heijunka ของไลน์นี้ (จอเดียวกับที่ไลน์ผลิตเห็น)"
-      style={{ padding: '2px 9px', borderRadius: 12, cursor: 'pointer', fontSize: 11, fontWeight: 700,
+      style={{ padding: '2px 9px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11, fontWeight: 700,
         background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', flexShrink: 0 }}>
       บอร์ดไลน์
     </button>
@@ -151,7 +151,7 @@ function OnDemandStrip({ wipRequests = [], nowMs, onGo }) {
       {tile('🔔', 'รอหยิบ', n('pending'), oldest ? `รอนานสุด ${oldest.min} นาที · ${oldest.w.mat_no} → ${oldest.w.line_name}` : 'ไม่มีใบรอ', oldest && oldest.min > 60 ? 'var(--red)' : undefined)}
       {tile('🔧', 'กำลังเตรียม', n('preparing'), 'สแกนพาร์ทแล้ว · ตัดสต็อกแล้ว')}
       {tile('📍', 'ส่งแล้ว รอไลน์รับ', n('delivered'), 'ไลน์กดรับใน Daily Report → ใบจบ')}
-      <button onClick={onGo} style={{ alignSelf: 'center', padding: '9px 14px', borderRadius: 8, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+      <button onClick={onGo} style={{ alignSelf: 'center', padding: '9px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
         เปิดตู้งานสโตร์
       </button>
     </div>
@@ -167,7 +167,7 @@ function OnDemandLineBlock({ lineName, lineMap, wipRequests = [], onGoChart, onG
   const tickets = wipRequests.filter(w => groupOf(w.line_name) === lineName);
   const byStatus = tickets.reduce((m, w) => { m[w.status] = (m[w.status] || 0) + 1; return m; }, {});
   const linkBtn = (label, fn) => (
-    <button onClick={fn} style={{ background: 'none', border: '1px solid var(--border2)', borderRadius: 8, padding: '4px 10px', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--accent)', fontFamily: 'var(--font-body)' }}>{label}</button>
+    <button onClick={fn} style={{ background: 'none', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '4px 10px', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: 'var(--accent)', fontFamily: 'var(--font-body)' }}>{label}</button>
   );
   return (
     <div style={{ padding: '10px 14px', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -272,7 +272,7 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
                       )}
                       {canOperate && needAction && (
                         <button onClick={e => { e.stopPropagation(); onConfirm(r, alloc.parts); }} disabled={confirming === r.id}
-                          style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', fontFamily: 'var(--font-body)' }}>
+                          style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', fontFamily: 'var(--font-body)' }}>
                           {confirming === r.id ? 'กำลังบันทึก…' : 'ยืนยันส่งแล้ว'}
                         </button>
                       )}
@@ -652,7 +652,7 @@ function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onRece
                           (⏳ กำลังเตรียม / 🔴 ค้างส่ง) ไม่ใช่ตั้งแต่ ⬜ รอ ก่อน cutoff (QC flow-audit #38) */}
                       {canOperate && !isConf && (status.label === '⏳ กำลังเตรียม' || status.label === '🔴 ค้างส่ง') && (
                         <button onClick={() => onConfirm(r, parts)} disabled={confirming === r.id}
-                          style={{ marginTop: 6, width: '100%', padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', fontFamily: 'var(--font-body)' }}>
+                          style={{ marginTop: 6, width: '100%', padding: '5px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', fontFamily: 'var(--font-body)' }}>
                           {confirming === r.id ? 'กำลังบันทึก…' : 'ยืนยันส่งแล้ว'}
                         </button>
                       )}
@@ -894,7 +894,7 @@ function AccGroup({ title, hint, color, rows, fmt, defaultOpen, cap = 0 }) {
       )}
       {open && hidden > 0 && (
         <button className="tbtn" onClick={() => setAll(true)}
-          style={{ marginTop: 8, padding: '5px 12px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', fontFamily: 'var(--font-body)' }}>
+          style={{ marginTop: 8, padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', fontFamily: 'var(--font-body)' }}>
           ดูอีก {hidden} รายการที่เหลือ
         </button>
       )}
@@ -1432,7 +1432,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
           && (t.key !== 'fg' || rounds.length > 0 || wipAllBy.fg > 0)
           && (t.key !== 'other' || wipAllBy.other > 0)).map(t => (
           <button key={t.key} onClick={() => setStore(t.key)} title={t.desc}
-            style={{ padding: '10px 16px', borderRadius: 10, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
+            style={{ padding: '10px 16px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
               background: store === t.key ? 'var(--accent)' : 'var(--bg2)', color: store === t.key ? 'var(--accent-ink)' : 'var(--text2)',
               border: `1px solid ${store === t.key ? 'var(--accent)' : 'var(--border)'}`, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, minWidth: 150 }}>
             <span>{t.icon} {t.label} {counts[t.key] > 0 && <span style={{ opacity: 0.8 }}>({counts[t.key]})</span>}</span>
@@ -1466,7 +1466,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
           </>);
         })()}
         <button onClick={() => setShowDone(v => !v)} style={{
-          padding: '7px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
+          padding: '7px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
           background: showDone ? 'var(--bg2)' : 'var(--accent)', color: showDone ? 'var(--text2)' : '#08130a',
           border: `1px solid ${showDone ? 'var(--border)' : 'var(--accent)'}`,
         }}>{showDone ? 'ทั้งหมด (รวมที่เสร็จแล้ว)' : 'เฉพาะงานค้าง'}</button>
@@ -3050,7 +3050,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
             }}>
               กำลังดูวันที่ {workDate} (ไม่ใช่วันงานปัจจุบัน)
               <button onClick={() => setWorkDate(liveWorkDate)} style={{
-                padding: '2px 8px', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                padding: '2px 8px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11, fontWeight: 700,
                 fontFamily: 'var(--font-body)', background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text2)',
               }}>⟳ กลับวันนี้</button>
             </div>
@@ -3067,14 +3067,14 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
           options={[{ value: 'all', label: ALL.shift }, { value: 'day', label: SHIFT_LABEL.day }, { value: 'night', label: SHIFT_LABEL.night }]} />
         <span className="sep" />
         <button onClick={() => setMatFilter('')} style={{
-          padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
+          padding: '8px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
           background: matFilter === '' ? 'var(--accent)' : 'var(--bg2)',
           color: matFilter === '' ? '#08130a' : 'var(--text2)',
           border: `1px solid ${matFilter === '' ? 'var(--accent)' : 'var(--border)'}`,
         }}>{ALL.type}</button>
         {MAT_PREFIXES.map(m => (
           <button key={m.prefix} onClick={() => setMatFilter(matFilter === m.prefix ? '' : m.prefix)} style={{
-            padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
+            padding: '8px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
             background: matFilter === m.prefix ? `${tint(m.color, 'dim')}` : 'var(--bg2)',
             color: matFilter === m.prefix ? m.color : 'var(--text2)',
             border: `1px solid ${matFilter === m.prefix ? m.color : 'var(--border)'}`,
@@ -3082,7 +3082,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
         ))}
         <span className="spacer" />
         <button onClick={exportCSV} style={{
-          padding: '8px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700,
+          padding: '8px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700,
           background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)',
         }}>CSV</button>
       </FilterBar>
@@ -3363,9 +3363,9 @@ function ReceiveModal({ round, parts, mode, fmt, saving, onCancel, onSubmit }) {
         )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
-          <button onClick={onCancel} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>ยกเลิก</button>
+          <button onClick={onCancel} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>ยกเลิก</button>
           <button onClick={() => onSubmit(actual)} disabled={saving}
-            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: mode === 'full' ? '#22c55e' : '#f59e0b', color: '#08130a', cursor: 'pointer', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
+            style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: 'none', background: mode === 'full' ? '#22c55e' : '#f59e0b', color: '#08130a', cursor: 'pointer', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
             {saving ? '...' : mode === 'full' ? 'ยืนยันรับครบ' : 'บันทึกรับไม่ครบ'}
           </button>
         </div>

@@ -182,10 +182,8 @@ function SetPairNote({ set, products, role, onDone, prodLines = [] }) {
     <div style={{ marginTop: 4, fontSize: 11, color }}>
       {r.state === 'mismatch' ? '⚠️ ' : 'ℹ️ '}{msg}
       {canPair ? (
-        <button type="button" onClick={setPair} disabled={busy}
-          style={{ marginLeft: 6, fontSize: 11, padding: '1px 8px', borderRadius: 6,
-            cursor: busy ? 'wait' : 'pointer', background: 'var(--bg3)', color: 'var(--text2)',
-            border: `1px solid ${color}` }}>
+        <button type="button" className="pg-btn sm" onClick={setPair} disabled={busy}
+          style={{ marginLeft: 6 }}>
           {busy ? 'กำลังตั้ง…' : r.state === 'mismatch' ? 'ตั้งคู่ใหม่เป็น ' + b : 'ตั้งคู่ให้เลย'}
         </button>
       ) : (
@@ -726,7 +724,7 @@ export default function DieRegistry() {
           </div>
           <button onClick={() => setTodoOnly(v => !v)} style={{
             marginTop: 8, background: todoOnly ? 'var(--amber)' : 'var(--bg2)', color: todoOnly ? '#111' : 'var(--text)',
-            border: '1px solid var(--amber-line)', borderRadius: 8, padding: '5px 12px',
+            border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '5px 12px',
             fontSize: 12, fontWeight: 700, cursor: 'pointer',
           }}>
             {todoOnly ? 'กำลังดูเฉพาะที่ต้องแก้' : 'ดูเฉพาะที่ต้องแก้'}
@@ -740,13 +738,8 @@ export default function DieRegistry() {
           <b>ยังไม่ได้อยู่ชุดไหน ({unlinked.length})</b>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
             {unlinked.map(d => (
-              <button key={d.id} onClick={() => canEdit && openDie(d)} disabled={!canEdit} title={d.machine_name || ''}
-                style={{
-                  background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8,
-                  padding: '4px 10px', fontSize: 11.5, color: 'var(--text)',
-                  cursor: canEdit ? 'pointer' : 'default', maxWidth: 460, overflow: 'hidden',
-                  textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                }}>
+              <button type="button" className="pg-btn sm" key={d.id} onClick={() => canEdit && openDie(d)} disabled={!canEdit} title={d.machine_name || ''}
+                style={{ maxWidth: 460, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {d.ext?.die_no ? <b style={{ fontFamily: 'monospace', marginRight: 6 }}>{d.ext.die_no}</b> : null}{d.machine_no}
               </button>
             ))}
@@ -1060,9 +1053,8 @@ export default function DieRegistry() {
               {/* 🔴 ลง MAT ไว้ 2 ตัว = ปั๊มทีเดียวได้อย่างน้อย 2 ชิ้น — แต่ "เสนอ" เท่านั้น คนกดยืนยันเอง
                   ห้ามเติมให้อัตโนมัติ: บางชุดเป็น 2-out ของทั้งคู่ = 4 ชิ้น/จังหวะ ระบบไม่มีทางรู้ */}
               {suggestPps(editSet) != null && !String(editSet.pieces_per_stroke ?? '').trim() && (
-                <button type="button" onClick={() => setEditSet(f => ({ ...f, pieces_per_stroke: String(suggestPps(f)) }))}
-                  style={{ marginTop: 4, fontSize: 11, padding: '2px 8px', borderRadius: 6, cursor: 'pointer',
-                    background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border)' }}>
+                <button type="button" className="pg-btn sm" onClick={() => setEditSet(f => ({ ...f, pieces_per_stroke: String(suggestPps(f)) }))}
+                  style={{ marginTop: 4 }}>
                   ลง MAT ไว้ {suggestPps(editSet)} ตัว — ใช้ {suggestPps(editSet)} ชิ้น/stroke?
                 </button>
               )}

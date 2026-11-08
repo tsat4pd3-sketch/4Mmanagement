@@ -116,7 +116,7 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
         <span style={{ fontSize: 12, color: rows.length ? 'var(--accent2)' : 'var(--muted)', fontWeight: 700 }}>
           {err ? '' : rows.length ? `${rows.length} ไฟล์` : 'ไม่มีไฟล์ค้าง'}
         </span>
-        <button type="button" onClick={load} style={{ marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 6,
+        <button type="button" onClick={load} style={{ marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-md)',
           background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text2)', cursor: 'pointer' }}>↻</button>
       </div>
       {err && <div style={{ fontSize: 12, color: '#ef4444' }}>⚠ โหลดคิวไฟล์จากเมลไม่ได้: {err}</div>}
@@ -152,12 +152,12 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
               if (newer && !window.confirm(`${r.file_name}: ${newer}\nนำเข้าฉบับเก่าจะแทนที่ข้อมูลที่ใหม่กว่า — ยืนยันเปิด?`)) return;
               open(r);
             }}
-              style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 6, cursor: 'pointer',
+              style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                 background: 'var(--accent)', color: 'var(--accent-ink)', border: '1px solid var(--accent)' }}>
               {busy === r.id ? 'กำลังเปิด…' : '📥 เปิดเพื่อนำเข้า'}
             </button>
             <button type="button" onClick={() => skip(r)}
-              style={{ fontSize: 12, padding: '6px 10px', borderRadius: 6, cursor: 'pointer',
+              style={{ fontSize: 12, padding: '6px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                 background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>ข้าม</button>
           </div>
         );

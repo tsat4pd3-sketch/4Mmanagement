@@ -432,7 +432,7 @@ export default function PEDocs() {
             <button
               onClick={() => setShowCr(v => !v)}
               style={{
-                width: '100%', textAlign: 'left', cursor: 'pointer', padding: '9px 12px', borderRadius: 10,
+                width: '100%', textAlign: 'left', cursor: 'pointer', padding: '9px 12px', borderRadius: 'var(--r-md)',
                 border: `1px solid ${crCount ? 'var(--amber)66' : 'var(--border)'}`,
                 background: crCount ? 'var(--amber-dim)' : 'var(--bg2)',
                 color: 'var(--text)', fontSize: 12.5, fontWeight: 700,

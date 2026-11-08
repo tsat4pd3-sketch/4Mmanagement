@@ -42,8 +42,11 @@ const line = (label, v) => (v ? `${label}: ${v}` : null);
  * @param {string} actor    ชื่อคนที่กำลังกด (ชื่อที่จะไปปรากฏบนใบ)
  * @param {string} as       ช่องนี้เป็นของตำแหน่งไหน เช่น 'หัวหน้าแผนกผู้แจ้ง'
  * @param {string} [effect] ผลที่จะเกิดต่อจากนี้ (ใบเดินไปขั้นไหน / ปิดใบ)
+ * @param {string} [warn]   บรรทัดเตือนท้ายข้อความ — **ส่งมาเฉพาะเมื่อของจริงแก้ได้** (เช่น ผลพิจารณา
+ *   ถังเหลืองที่แก้ย้อนหลังได้จากทะเบียนฝ่ายผลิต) · ไม่ส่ง = ข้อความ one-way ของใบ MO/4M เหมือนเดิม
+ *   🔴 ห้ามส่งคำเตือนที่ไม่จริง — คนอ่านครั้งแรกแล้วพบว่าไม่จริง จะเลิกอ่านทุกกล่องยืนยัน
  */
-export function signConfirmText({ what, orderNo, actor, as, effect, docLabel = 'ใบ' } = {}) {
+export function signConfirmText({ what, orderNo, actor, as, effect, warn, docLabel = 'ใบ' } = {}) {
   return [
     `ยืนยันเซ็น — ${what || 'อนุมัติ'}`,
     '',
@@ -51,7 +54,7 @@ export function signConfirmText({ what, orderNo, actor, as, effect, docLabel = '
     line('เซ็นในนาม', [actor, as && `(${as})`].filter(Boolean).join(' ')),
     effect ? line('ผลที่จะเกิด', effect) : null,
     '',
-    '⚠️ เซ็นแล้วแก้เองไม่ได้ — ต้องให้ผู้ถือสิทธิ์แก้ย้อนหลังมาปลดให้',
+    warn || '⚠️ เซ็นแล้วแก้เองไม่ได้ — ต้องให้ผู้ถือสิทธิ์แก้ย้อนหลังมาปลดให้',
   ].filter(v => v !== null).join('\n');
 }
 

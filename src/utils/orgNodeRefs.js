@@ -47,7 +47,13 @@ export const ORG_KIND_TH = { section: 'ส่วนงาน', department: 'แ�
       ใช้ `table:` ที่นี่ = ด่านเตือนผิดทุกครั้ง · **แก้ชื่อฟิลด์ฝั่งเรา ไม่ใช่ผ่อนด่าน** */
 const KPI = (kindValue) => ({ tbl: 'kpi_definitions', col: 'scope_value', label: 'นิยาม KPI',
   kindCol: 'scope_kind', kindValue });
-const CC = { tbl: 'cost_centers', col: 'section', label: 'รหัสศูนย์ต้นทุน', pk: 'code' };
+const CC = { tbl: 'cost_centers', col: 'section', label: 'รหัสศูนย์ต้นทุน', pk: 'code',
+  mixedKinds: ['section', 'department'] };
+/* 🔴 `mixedKinds` = คอลัมน์นี้เก็บคีย์ได้ **หลายชั้นในช่องเดียว** โดยไม่มีคอลัมน์บอกชั้น
+   (`cost_centers.section` ผูกได้ทั้งส่วนงานและแผนก) ⇒ ถ้ามีโหนด active **ต่างชั้น** ถือคีย์เดียวกัน
+   (แผนก "QA" ใต้ส่วนงาน "QA") ระบบแยกไม่ออกว่าแถวไหนเป็นของใคร
+   ⇒ **ห้ามนับเป็นของโหนดนี้ (บล็อกการลบผิดตัว) และห้ามไล่เปลี่ยนชื่อตาม (เขียนทับของอีกโหนด)**
+   เคสจริง 04/11: ลบแผนก QA (CC 214055654 ที่ไม่มีจริง) ไม่ได้ เพราะ CC 5 แถวของส่วนงาน QA ถูกนับมาบล็อก */
 
 /** คอลัมน์ "สำเนาชื่อ" ที่แต่ละชั้นของผังถูกคัดลอกไปเก็บ (ไม่ใช่ FK — จับคู่ด้วยข้อความ) */
 export const ORG_TEXT_REF = {
@@ -77,6 +83,17 @@ export function otherNodesWithSameValue(node, nodes) {
     && orgRefValues(n).some(v => mine.has(v)));
 }
 
+/** โหนด active **ต่างชั้น** ที่ถือคีย์เดียวกัน ในคอลัมน์ที่เก็บหลายชั้นปนกัน (`mixedKinds`)
+ *  มี = แถวในคอลัมน์นั้นแยกไม่ออกว่าเป็นของใคร ⇒ ไม่นับ/ไม่ไล่เปลี่ยนให้โหนดนี้ */
+export function mixedKeyHolders(node, nodes, kinds) {
+  if (!node || !kinds?.includes(node.kind)) return [];
+  const mine = new Set(orgRefValues(node));
+  if (!mine.size) return [];
+  return (nodes || []).filter(n =>
+    n.id !== node.id && n.kind !== node.kind && kinds.includes(n.kind) && n.is_active !== false
+    && orgRefValues(n).some(v => mine.has(v)));
+}
+
 /** คีย์จับคู่เปลี่ยนไหม — เปลี่ยน = สำเนาชื่อในทะเบียนอื่นชี้ของที่ไม่มีอยู่แล้ว */
 export function orgRefKeyChange(node, nextName, nextCode) {
   const from = orgRefValues(node)[0] || '';
@@ -92,6 +109,7 @@ export async function loadOrgNodeRefs(supabase, node, nodes) {
   const sharedWith = otherNodesWithSameValue(node, nodes);
   const HEAD = { count: 'exact', head: true };
   const t = ORG_TEXT_REF[node.kind] || { employees: [], profiles: [], profileArrays: [], extra: [] };
+  const ambiguous = [];
   const jobs = [
     ['empId',  supabase.from('employees').select('id', HEAD).eq('org_node_id', node.id)],
     ['profId', supabase.from('profiles').select('id', HEAD).eq('org_node_id', node.id)],
@@ -105,13 +123,15 @@ export async function loadOrgNodeRefs(supabase, node, nodes) {
     for (const col of t.profiles)      jobs.push([`prof:${col}`, supabase.from('profiles').select('id', HEAD).in(col, values)]);
     for (const col of t.profileArrays) jobs.push([`prof:${col}`, supabase.from('profiles').select('id', HEAD).overlaps(col, values)]);
     for (const x of t.extra || []) {
+      // 🔴 คีย์ชนกับโหนดต่างชั้นในคอลัมน์ปนชั้น = แยกไม่ออก ⇒ ไม่นับมาบล็อก (บอกไว้ใน `ambiguous`)
+      if (x.mixedKinds && mixedKeyHolders(node, nodes, x.mixedKinds).length) { ambiguous.push(x.label); continue; }
       let q = supabase.from(x.tbl).select(x.pk || 'id', HEAD).in(x.col, values);
       if (x.kindCol) q = q.eq(x.kindCol, x.kindValue);   // 🔴 ไม่กรอง = นับข้ามชั้นกันเอง
       jobs.push([`other:${x.label}`, q]);
     }
   }
   const res = await Promise.all(jobs.map(([, q]) => q));
-  const out = { ...EMPTY, values, sharedWith, partial: false, otherBy: [] };
+  const out = { ...EMPTY, values, sharedWith, partial: false, otherBy: [], ambiguous };
   res.forEach((r, i) => {
     const key = jobs[i][0];
     if (r?.error) { out.partial = true; return; }
@@ -160,6 +180,10 @@ export function orgRefDeleteNote(refs) {
      ทั้งคู่ cascade หายพร้อมโหนด ⇒ ต้องบอกก่อนลบ (20/10) */
   if (refs.flex) l.push(`⚠ คนวิ่งข้ามแผนก/รักษาการที่ผูกไว้กับหน่วยนี้ ${refs.flex} รายการจะถูกลบไปด้วย`
                       + ' (สังกัดจริงและ cost center ของเขาไม่เปลี่ยน)');
+  if (refs.ambiguous?.length) {
+    l.push(`ℹ ${refs.ambiguous.join(', ')} ที่เขียน "${(refs.values || []).join(' / ')}" ไม่ถูกนับเป็นของหน่วยนี้`
+         + ' — ชื่อชนกับหน่วยต่างชั้น (เช่นส่วนงานชื่อเดียวกัน) แยกไม่ออกว่าเป็นของใคร จึงไม่แตะ');
+  }
   if (refs.sharedWith?.length && (refs.textEmp || refs.textProf)) {
     l.push(`ℹ คีย์ "${(refs.values || []).join(' / ')}" ยังมีโหนดอื่นถืออยู่ ${refs.sharedWith.length} ตัว`
          + ' — ทะเบียนที่อ้างชื่อนี้จึงไม่กำพร้า');
@@ -183,9 +207,9 @@ export function orgRefDeactivateNote(refs) {
 /** ไล่เปลี่ยน "สำเนาชื่อ" ตามโหนดที่เพิ่งเปลี่ยนคีย์ — คืนจำนวนแถวที่เขียนได้จริงรายคอลัมน์
  *  🔴 นับแถวจาก `.select('id')` ไม่ใช่ `!error` — RLS ปฏิเสธ UPDATE = สำเร็จ 0 แถว ไม่มี error
  *     (db-write-rules ข้อ 2) */
-export async function renameOrgRefs(supabase, node, from, to) {
+export async function renameOrgRefs(supabase, node, from, to, nodes = []) {
   const t = ORG_TEXT_REF[node.kind] || { employees: [], profiles: [], profileArrays: [], extra: [] };
-  const out = { rows: 0, failed: [] };
+  const out = { rows: 0, failed: [], skipped: [] };
   const run = async (table, col, q, pk = 'id') => {
     const { data, error } = await q.select(pk);
     if (error) out.failed.push(`${table}.${col}: ${error.message}`);
@@ -208,6 +232,8 @@ export async function renameOrgRefs(supabase, node, from, to) {
   }
   // ทะเบียนนอกฝั่งพนักงาน — ลืมไล่ตามที่นี่ = KPI/ตารางกะชี้ชื่อที่ไม่มีอยู่แล้ว (เงียบ)
   for (const x of t.extra || []) {
+    // 🔴 คีย์เดิมมีโหนดต่างชั้นถืออยู่ = แถวพวกนั้นอาจเป็นของอีกโหนด ⇒ ห้ามเขียนทับ (บอกผู้เรียก)
+    if (x.mixedKinds && mixedKeyHolders(node, nodes, x.mixedKinds).length) { out.skipped.push(x.label); continue; }
     let q = supabase.from(x.tbl).update({ [x.col]: to }).eq(x.col, from);
     if (x.kindCol) q = q.eq(x.kindCol, x.kindValue);
     await run(x.tbl, x.col, q, x.pk || 'id');

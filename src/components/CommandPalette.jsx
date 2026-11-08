@@ -131,7 +131,7 @@ export default function CommandPalette({ open, onClose, role }) {
                 onMouseEnter={() => setSel(idx)} onClick={() => go(item)}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
-                  padding: '9px 10px', borderRadius: 8, cursor: 'pointer',
+                  padding: '9px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                   border: '1px solid ' + (on ? 'var(--accent)' : 'transparent'),
                   background: on ? 'var(--accent-dim)' : 'transparent',
                   color: 'var(--text)', fontFamily: 'var(--font-body)',

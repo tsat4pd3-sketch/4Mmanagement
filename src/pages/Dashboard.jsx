@@ -42,6 +42,7 @@ import { useLatestRequest } from '../utils/useLatestRequest';
 import { loadBreakPolicies } from '../utils/oeeMasters';
 import { fetchAllRows } from '../utils/fetchAllRows';
 import SearchInput from '../components/SearchInput';
+import Segmented from '../components/Segmented';
 import TabBar from '../components/TabBar';
 import { urlPick, urlBool, urlParam } from '../utils/urlInit';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
@@ -1024,25 +1025,9 @@ export default function Dashboard({ view = 'timeline' }) {
               {sections.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           )}
-          {/* Shift toggle */}
-          <div style={{ display: 'flex', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 3, gap: 2 }}>
-            {[
-              /* "ทุก…" ซ้ายสุดเสมอ + ป้ายจากทะเบียน (UI-STANDARD §3) — คงสีกะไว้เพราะเป็นบอร์ด TV */
-              { val: 'all',   label: ALL.shift,   active: 'rgba(255,255,255,0.1)', color: 'var(--text2)' },
-              { val: 'day',   label: 'กะเช้า', active: 'var(--amber-dim)', color: 'var(--amber)' },
-              { val: 'night', label: 'กะดึก',  active: 'var(--blue-dim)', color: 'var(--blue)' },
-            ].map(s => (
-              <button key={s.val} onClick={() => setSelectedShift(s.val)}
-                style={{
-                  padding: '5px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600,
-                  background: selectedShift === s.val ? s.active : 'transparent',
-                  color: selectedShift === s.val ? s.color : 'var(--muted)',
-                  transition: 'all 0.15s',
-                }}>
-                {s.label}
-              </button>
-            ))}
-          </div>
+          {/* Shift toggle = <Segmented> มาตรฐาน (06/11 · เดิมวาดเอง มุม 7px) · สีกะอยู่ที่ป้ายใต้ชื่อหน้าแทน */}
+          <Segmented label="กะ" value={selectedShift} onChange={setSelectedShift}
+            options={[{ value: 'all', label: ALL.shift }, { value: 'day', label: 'กะเช้า' }, { value: 'night', label: 'กะดึก' }]} />
           {/* Date picker */}
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8,
@@ -1056,7 +1041,7 @@ export default function Dashboard({ view = 'timeline' }) {
           </div>
           {tvScroll && !isMobile && (
             <button type="button" onClick={() => setScrollMode(false)}
-              style={{ padding: '7px 12px', borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              style={{ padding: '7px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
               กลับเป็นหมุนหน้า
             </button>
           )}
@@ -1084,15 +1069,9 @@ export default function Dashboard({ view = 'timeline' }) {
               {' '}— ตั้งตารางกะแล้วตัวเลขจะขึ้นเอง
             </div>
           </div>
-          <button className="tv-hide" onClick={() => setSelectedShift('all')} style={{
-            padding: '6px 12px', borderRadius: 8, border: '1px solid var(--amber-line)',
-            background: 'transparent', color: 'var(--amber)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-          }}>ดูรวมทุกกะ</button>
+          <button type="button" className="pg-btn sm" onClick={() => setSelectedShift('all')}>ดูรวมทุกกะ</button>
           {canAccessPage('/shift-organize', role) && (
-            <button onClick={() => navigate('/shift-organize')} style={{
-              padding: '6px 12px', borderRadius: 8, border: 'none',
-              background: 'var(--amber)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-            }}>ไปตั้งตารางกะ</button>
+            <button type="button" className="pg-btn sm" onClick={() => navigate('/shift-organize')}>ไปตั้งตารางกะ</button>
           )}
         </div>
       )}
@@ -1353,7 +1332,7 @@ export default function Dashboard({ view = 'timeline' }) {
                               fontSize: 13, fontWeight: 800, color: 'var(--accent)', whiteSpace: 'nowrap',
                               display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer',
                               background: 'var(--accent-dim)', border: '1px solid var(--accent)',
-                              borderRadius: 7, padding: '4px 10px',
+                              borderRadius: 'var(--r-md)', padding: '4px 10px',
                             }}>
                             {isExpanded ? 'ซ่อนไลน์ย่อย' : 'ดูไลน์ย่อย'}
                             <span style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>

@@ -114,7 +114,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
         </span>
         {canEdit && (
           <button onClick={() => setOpen(v => !v)} style={{ marginLeft: 'auto', padding: '5px 12px',
-            borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
             background: open ? 'var(--bg3)' : 'var(--accent)', color: open ? 'var(--text2)' : '#fff',
             border: `1px solid ${open ? 'var(--border2)' : 'var(--accent)'}` }}>
             {open ? 'ยกเลิก' : '➕ เพิ่ม'}
@@ -176,7 +176,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
                 : 'วันสิ้นสุด (ไม่ใส่ก็ได้)'}
             </div>
           </div>
-          <button onClick={add} disabled={busy} style={{ padding: '7px 14px', borderRadius: 7, fontWeight: 700,
+          <button onClick={add} disabled={busy} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontWeight: 700,
             fontSize: 12, cursor: busy ? 'default' : 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
             บันทึก
           </button>
@@ -228,7 +228,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
                           {needsConfirm(r) && (
                             <button type="button" className="tbtn" onClick={() => confirmRow(r)} disabled={busy}
                               title="ยืนยันว่าข้อมูลจากผังองค์กรถูกต้อง"
-                              style={{ height: 30, padding: '0 10px', borderRadius: 6, fontSize: 12.5, fontWeight: 700, cursor: busy ? 'default' : 'pointer',
+                              style={{ height: 30, padding: '0 10px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 700, cursor: busy ? 'default' : 'pointer',
                                 border: '1px solid rgba(34,197,94,0.5)', background: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>✓ ยืนยัน</button>
                           )}
                           <DeleteButton onClick={() => remove(r)} disabled={busy} title="ลบรายการนี้" />

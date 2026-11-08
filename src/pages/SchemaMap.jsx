@@ -16,6 +16,7 @@ import { auditProject, auditText, fmtBytes } from '../utils/schemaAudit';
 import { openFeedback } from '../utils/feedbackPrefill';
 import { UserContext } from '../App';
 import USAGE from 'virtual:schema-usage';
+import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 /* ══ 🗄️ โครงสร้างฐานข้อมูล (Data Map) — /schema ═══════════════════════════════════════
    2026-09-22 · คำขอ user: "ทีมงานเจอบัค อยากเห็นว่า table ชื่ออะไร PK/FK กันแบบไหน
@@ -286,12 +287,8 @@ export default function SchemaMap() {
           {(!isMobile || !sel) && (
             <div style={{ ...card(), display: 'grid', gap: 9, alignContent: 'start' }}>
               <SearchInput value={q} onChange={setQ} fields="ชื่อตาราง (เช่น downtime, employee)" />
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {[{ k: 'all', label: allOf('ฐานข้อมูล') },
-                  ...PKEYS.map(k => ({ k, label: `${PROJ[k].label} (${over[k]?.tables?.length || 0})` }))].map(o => (
-                  <button key={o.k} onClick={() => setSide(o.k)} style={chip(side === o.k)}>{o.label}</button>
-                ))}
-              </div>
+              <TabBar size="sm" value={side} onChange={setSide}
+                tabs={[{ key: 'all', label: allOf('ฐานข้อมูล') }, ...PKEYS.map(k => ({ key: k, label: PROJ[k].label, badge: over[k]?.tables?.length || 0 }))]} />
 
               {loading && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>กำลังโหลด…</div>}
               {!loading && !rows.length && (

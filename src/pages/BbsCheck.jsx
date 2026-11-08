@@ -545,7 +545,7 @@ export default function BbsCheck() {
             const on = brush === m.key;
             return (
               <button key={m.key} onClick={() => setBrush(m.key)} title={m.label} style={{
-                padding: '6px 12px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+                padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
                 border: `1px solid ${on ? m.color : 'var(--border2)'}`,
                 background: on ? m.color : 'var(--bg3)', color: on ? '#fff' : 'var(--text2)',
               }}>
@@ -635,7 +635,7 @@ export default function BbsCheck() {
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                             {(agreements.length ? agreements : [{ seq: 1, text: '(ยังไม่ได้บันทึกข้อตกลง)' }]).map(a => (
                               <button key={a.seq} title={a.text} onClick={() => { setNgPick(null); paint(e, day, 'ng', a.seq); }}
-                                style={{ minWidth: 44, minHeight: 44, borderRadius: 10, fontSize: 15, fontWeight: 800, cursor: 'pointer',
+                                style={{ minWidth: 44, minHeight: 44, borderRadius: 'var(--r-md)', fontSize: 15, fontWeight: 800, cursor: 'pointer',
                                   border: `2px solid ${c?.mark === 'ng' && c.agreement_seq === a.seq ? 'var(--red)' : 'var(--border2)'}`,
                                   background: c?.mark === 'ng' && c.agreement_seq === a.seq ? 'var(--red)' : 'var(--bg3)',
                                   color: c?.mark === 'ng' && c.agreement_seq === a.seq ? '#fff' : 'var(--text)' }}>{a.seq}</button>

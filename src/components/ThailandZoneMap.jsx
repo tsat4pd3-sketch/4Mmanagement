@@ -103,7 +103,7 @@ export default function ThailandZoneMap({ zones, groups = [], onPickZone, onPick
             const on = gFilter === g.key;
             return (
               <button key={g.key || 'all'} onClick={() => setGFilter(g.key)} style={{
-                fontSize: 12.5, fontWeight: 700, padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
+                fontSize: 12.5, fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                 background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
                 border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
               }}>

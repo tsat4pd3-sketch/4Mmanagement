@@ -108,7 +108,7 @@ export default function MoTvBoard({ inScope, isMobile = false }) {
           return (
             <button key={x.key || 'all'} type="button" onClick={() => setGroup(x.key)} disabled={tv}
               style={{
-                fontSize: fz(12.5, 22), fontWeight: 800, padding: tv ? '6px 16px' : '5px 12px', borderRadius: 999,
+                fontSize: fz(12.5, 22), fontWeight: 800, padding: tv ? '6px 16px' : '5px 12px', borderRadius: 'var(--r-md)',
                 cursor: tv ? 'default' : 'pointer', opacity: 1,
                 background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
                 border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
