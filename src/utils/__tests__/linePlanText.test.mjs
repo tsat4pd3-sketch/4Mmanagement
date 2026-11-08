@@ -25,3 +25,9 @@ test('📍 popup บอกพื้นที่ SAP ที่คิดรวม 
   assert.match(nb, /ไม่มีลูกใน BOM .*BENDING LWR BAR 306 × 500/);
   assert.match(nb, /ยังไม่ผูกพื้นที่ SAP/);
 });
+
+test('🔩 popup บอกใบขั้น OP ที่ยังไม่ผูกว่ากินอะไร', () => {
+  const t = planConfirmText([], { title: 'x', opUnset: [{ mat_no: 'BENDING LWR BAR 306', parent: '10105769', parentKids: 12, qty: 500 }] }).text;
+  assert.match(t, /ใบขั้น OP 1 ตัวยังไม่ได้ผูกว่ากินอะไร/);
+  assert.match(t, /BENDING LWR BAR 306 \(แม่ 10105769 ลูก 12 ตัว\) × 500/);
+});

@@ -627,7 +627,15 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
           {plan.noBom.slice(0, 5).map(x => `${x.mat_no} × ${fmtQty(x.qty)}`).join(' · ')} — แจ้ง PE ตั้ง BOM (/products) หรือกด ➕ ขอเบิกเอง
         </div>
       )}
-      {plan && !plan.error && plan.orders > 0 && !planRows.length && !plan.noBom?.length && (
+      {/* 🔩 08/11 — ใบขั้น OP ที่ยังไม่ผูกว่ากินอะไร (แม่มีลูกหลายตัว ระบบไม่เดา) ต้องบอก */}
+      {plan?.opUnset?.length > 0 && (
+        <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--red)', lineHeight: 1.7 }}>
+          ⚠ <b>ใบขั้น OP {plan.opUnset.length} ตัวยังไม่ได้ผูกว่ากินอะไร — ระบบไม่เดา จึงไม่ได้ขอของให้:</b>{' '}
+          {plan.opUnset.slice(0, 5).map(x => `${x.mat_no}${x.parent ? ` (แม่ ${x.parent} ลูก ${x.parentKids} ตัว)` : ''} × ${fmtQty(x.qty)}`).join(' · ')}
+          {' '}— ตั้งที่ /products แท็บ BOM ของขั้นนี้ (PE / หัวหน้างาน)
+        </div>
+      )}
+      {plan && !plan.error && plan.orders > 0 && !planRows.length && !plan.noBom?.length && !plan.opUnset?.length && (
         <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--muted)' }}>ลูกใน BOM ทั้งหมดเป็นของที่พื้นที่นี้ผลิตเอง — ไม่มีอะไรต้องเบิกจากสโตร์</div>
       )}
       {planSend.length > 0 && (

@@ -31,7 +31,7 @@ export function planRowText(r, where = 'หน้าไลน์') {
  *   area = พื้นที่ SAP ที่คิดรวม (แม่-ลูกนับที่เดียว) · noBom = ใบผลิตที่ MAT ไม่มีลูกใน BOM (แตกไม่ได้ — ต้องบอก)
  * @returns {{ text: string, sendCount: number }}
  */
-export function planConfirmText(rows = [], { title = '', focus = [], max = 12, area = null, noBom = [] } = {}) {
+export function planConfirmText(rows = [], { title = '', focus = [], max = 12, area = null, noBom = [], opUnset = [] } = {}) {
   const fs = new Set((focus || []).map(m => String(m).trim()));
   const sorted = [...rows].sort((a, b) => (fs.has(b.mat_no) ? 1 : 0) - (fs.has(a.mat_no) ? 1 : 0));
   const send = rows.filter(r => r.action === 'insert' || r.action === 'raise').length;
@@ -45,5 +45,8 @@ export function planConfirmText(rows = [], { title = '', focus = [], max = 12, a
   const nb = (noBom || []).length
     ? `\n\n⚠️ ใบผลิต ${noBom.length} ตัวไม่มีลูกใน BOM — แตกไม่ได้ จึงไม่ได้ขอของให้: ${noBom.slice(0, 5).map(x => `${x.mat_no} × ${f(x.qty)}`).join(' · ')} (แจ้ง PE ตั้ง BOM ที่ /products)`
     : '';
-  return { text: `${title}\n${scope}${shown.length ? `\n\n${shown.join('\n\n')}` : ''}${more}${nb}${tail}`, sendCount: send };
+  const ou = (opUnset || []).length
+    ? `\n\n⚠️ ใบขั้น OP ${opUnset.length} ตัวยังไม่ได้ผูกว่ากินอะไร (แม่มีลูกหลายตัว ระบบไม่เดา) จึงไม่ได้ขอของให้: ${opUnset.slice(0, 5).map(x => `${x.mat_no}${x.parent ? ` (แม่ ${x.parent} ลูก ${x.parentKids} ตัว)` : ''} × ${f(x.qty)}`).join(' · ')} — ตั้งที่ /products แท็บ BOM ของขั้นนี้`
+    : '';
+  return { text: `${title}\n${scope}${shown.length ? `\n\n${shown.join('\n\n')}` : ''}${more}${nb}${ou}${tail}`, sendCount: send };
 }
