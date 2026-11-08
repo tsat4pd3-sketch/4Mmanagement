@@ -48,7 +48,7 @@
    "วันงาน (08:00",
    "รอบเวลาส่ง",
    "เลขที่ PO",
-   "💾 เพิ่ม order"
+   "=เพิ่ม order"
   ]
  },
  {
@@ -80,7 +80,7 @@
   "marks": [
    "Ship-to Config",
    "ลำดับใน",
-   "ชื่อที่พิมพ์เอง",
+   "ชื่อลูกค้า *",
    "เพิ่ม",
    "ลบ"
   ]
@@ -102,7 +102,7 @@
   "p": "CustomerDemand",
   "q": "tab=shipto",
   "marks": [
-   "(walkback)",
+   "Standard Workflow การส่งงาน",
    "ชุดเฟสของ:",
    "หักที่เฟสนี้",
    "จุดหักจริง",
@@ -113,14 +113,16 @@
  {
   "id": "ls_receipts",
   "p": "LineStock",
-  "q": "tab=receipts",
+  "q": "tab=in&store=receipts",
   "marks": [
+   "รอรับเข้า (ไลน์ปิดใบผลิต)",
    "FG WAREHOUSE",
    "ค้างเกินกำหนด",
    "นับแล้วตรง",
    "ยอดไม่ตรง",
    "รวมที่รับแล้ว 24"
-  ]
+  ],
+  "scrollTop": "รอรับเข้า (ไลน์ปิดใบผลิต)"
  },
  {
   "id": "ls_count",
@@ -177,7 +179,7 @@
   "p": "RackCenter",
   "q": "tab=board",
   "marks": [
-   "Packaging จากการผลิต",
+   "ใบเบิก Packaging จากการผลิต",
    "รอจ่าย",
    "จ่าย Packaging"
   ]
@@ -206,10 +208,27 @@
   "loose": true
  },
  {
+  "id": "rc_menu",
+  "p": "RackCenter",
+  "q": "tab=board",
+  "click": [
+   "=เพิ่มเติม"
+  ],
+  "marks": [
+   "=สแกน",
+   "=เรียกภาชนะ",
+   "=เพิ่มเติม",
+   "ป้าย QR"
+  ]
+ },
+ {
   "id": "rc_qr",
   "p": "RackCenter",
   "q": "tab=board",
-  "click": "ป้าย QR",
+  "click": [
+   "=เพิ่มเติม",
+   "ป้าย QR"
+  ],
   "marks": [
    "ไลน์ (",
    "ชนิดภาชนะ (",
@@ -244,6 +263,21 @@
   "marks": [
    "Packaging",
    "จัดการภาชนะ (Container Types)"
+  ]
+ },
+ {
+  "id": "pm_ctype",
+  "p": "ProductMaster",
+  "q": "tab=packaging",
+  "click": [
+   "จัดการภาชนะ (Container Types)"
+  ],
+  "marks": [
+   "Code *",
+   "ชื่อ *",
+   "ประเภท",
+   "ไทยพลาสติก",
+   "ประเภทภาชนะ"
   ]
  },
  {
