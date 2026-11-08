@@ -1,6 +1,4 @@
-/* 🔴 ต้องมี `.js` — ไฟล์นี้ถูก **node import ตรงๆ** จาก `audit/stdsweep.mjs`
-   (vite เติมนามสกุลให้ แต่ node ESM ไม่เติม ⇒ ERR_MODULE_NOT_FOUND = ด่าน stdsweep ล่มทั้งตัว) */
-import { tr, allLabel } from './i18n.js';
+import { tr, allLabel } from './i18n.js';   // ใส่ .js เพราะ audit/stdsweep.mjs import ไฟล์นี้ตรงด้วย Node (06/11)
 /* ══ 🏷️ ป้ายมาตรฐานของตัวกรอง / dropdown (2026-09-24 · UI-STANDARD.md §3) ═════════════
    เดิม "ทั้งหมด" มี 30+ แบบ: `ทุกไลน์` / `— ทุกไลน์ —` / `ทุกไลน์ (5)` / `ALL SHIFT (ทุกกะ)` /
    `ทุก Team` / `ทุก Section` … (audit 23/09) — คำต่าง = ผู้ใช้สงสัยว่าความหมายต่างไหม (Nielsen #4)

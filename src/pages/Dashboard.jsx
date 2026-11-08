@@ -42,6 +42,7 @@ import { useLatestRequest } from '../utils/useLatestRequest';
 import { loadBreakPolicies } from '../utils/oeeMasters';
 import { fetchAllRows } from '../utils/fetchAllRows';
 import SearchInput from '../components/SearchInput';
+import TabBar from '../components/TabBar';
 import { urlPick, urlBool, urlParam } from '../utils/urlInit';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
@@ -1567,16 +1568,19 @@ export default function Dashboard({ view = 'timeline' }) {
                 color: active ? 'var(--accent-ink)' : 'var(--text2)', fontFamily: 'var(--font-body)',
               });
               return (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
-                  {lineNames.length > 1 && [{ k: '', label: `ทุกไลน์ (${lineNames.length})` }, ...lineNames.map(n => ({ k: n, label: n }))].map(c => (
-                    <button key={c.k || '_all'} onClick={() => setBoardLineSel(c.k)} style={chip(effSel === c.k)}>{c.label}</button>
-                  ))}
-                  {/* width ต้องกำหนดเอง — index.css ตั้ง input width:100% ทั้งแอป */}
-                  <SearchInput value={boardQuery} onChange={setBoardQuery} fields="พาร์ท / MAT / เลขใบ" grow={false}
-                    style={{ width: 210, marginLeft: 'auto' }} inputStyle={{ fontSize: 12.5, background: 'var(--bg2)' }} />
-                  {(effSel || boardQuery) && (
-                    <button onClick={() => { setBoardLineSel(''); setBoardQuery(''); }}
-                      style={{ ...chip(false), color: 'var(--muted)' }}>ล้างตัวกรอง</button>
+                <div style={{ marginBottom: 12 }}>
+                  {/* แถวเลือกไลน์ = แท็บเส้นใต้มาตรฐาน (TabBar · 06/11) — เดิมชิปแคปซูล · ช่องค้นหา + ล้างตัวกรอง อยู่ปลายแถว */}
+                  {lineNames.length > 1 && (
+                    <TabBar size="sm" value={effSel} onChange={setBoardLineSel}
+                      tabs={[{ key: '', label: `ทุกไลน์ (${lineNames.length})` }, ...lineNames.map(n => ({ key: n, label: n }))]}
+                      right={<>
+                        <SearchInput value={boardQuery} onChange={setBoardQuery} fields="พาร์ท / MAT / เลขใบ" grow={false}
+                          style={{ width: 210 }} inputStyle={{ fontSize: 12.5, background: 'var(--bg2)' }} />
+                        {(effSel || boardQuery) && (
+                          <button type="button" onClick={() => { setBoardLineSel(''); setBoardQuery(''); }}
+                            style={{ ...chip(false), color: 'var(--muted)' }}>ล้างตัวกรอง</button>
+                        )}
+                      </>} />
                   )}
                 </div>
               );
