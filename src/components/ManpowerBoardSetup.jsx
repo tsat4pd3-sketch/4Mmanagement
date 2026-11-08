@@ -9,6 +9,7 @@ import { positionLabel } from '../utils/positions';
 import PersonSelect from './PersonSelect';
 import { DeleteButton } from './IconButton';
 import { writeBlockText } from '../utils/writeScope';
+import { useOrgTeams } from '../utils/useOrgSections';
 
 /* ═══════════════════════════════════════════════════════════════════════════════════════
    ⚙️ ตั้งค่า Manpower Control Board ของส่วนงาน (2026-10-06 · คำสั่ง user "ทำส่วนที่ยังไม่ได้ทำต่อ")
@@ -22,11 +23,17 @@ import { writeBlockText } from '../utils/writeScope';
    🔴 RLS ปฏิเสธ UPDATE/DELETE = "สำเร็จ 0 แถว" ⇒ ทุกการเขียน `.select('id')` แล้วนับแถว (กฎเหล็กข้อ 2)
    ═══════════════════════════════════════════════════════════════════════════════════════ */
 
-const TEAMS = ['A', 'B', 'C', ''];          // '' = คอลัมน์ "ไม่ระบุทีม" บนบอร์ด
 const teamText = (t) => (t ? `ทีม ${t}` : 'ไม่ระบุทีม');
 
 export default function ManpowerBoardSetup({ section, nodes, lines, employees, slotPlans, lineTechs, stations = [], stationPlans = [], flexUnits = [], secWrite = { ok: true }, onChanged, onClose }) {
   const [busy, setBusy] = useState(false);
+  /* 👥 คอลัมน์ทีม = ทีมจากผัง (`useOrgTeams` · ผังยังไม่มีทีม = A/B/C) + ทีมที่มีแผนตั้งไว้แล้วแต่ไม่อยู่ในผัง
+     (ห้ามซ่อนค่าที่บันทึกไว้) + '' = คอลัมน์ "ไม่ระบุทีม" · 05/11 audit dropdown — เดิม hardcode A/B/C */
+  const orgTeams = useOrgTeams();
+  const TEAMS = useMemo(() => {
+    const extra = [...new Set((slotPlans || []).map(p => p.team).filter(t => t && !orgTeams.includes(t)))];
+    return [...orgTeams, ...extra, ''];
+  }, [orgTeams, slotPlans]);
   /* 🔐 ชั้น ③ จากหน้าแม่ (`canWriteUnit`) — **เช็คซ้ำต้นทุกฟังก์ชันที่เขียน DB**
      ไม่ใช่แค่ซ่อนปุ่ม: `?sec=` เปิดส่วนงานอื่นตรงได้ และ RLS ฝั่ง Main รู้แค่คีย์สิทธิ์ ไม่รู้ขอบเขต */
   const blocked = () => {
@@ -222,7 +229,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
       <div className="card" onClick={e => e.stopPropagation()}
         style={{ width: 'min(960px, 100%)', maxHeight: '92vh', overflow: 'auto', padding: 18, boxShadow: 'var(--shadow-lg)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <strong style={{ fontSize: 16 }}>⚙️ ตั้งค่าบอร์ด · {section.name}</strong>
+          <strong style={{ fontSize: 16 }}>ตั้งค่าบอร์ด · {section.name}</strong>
           <span style={{ marginLeft: 'auto' }} />
           <button type="button" className="tbtn" onClick={onClose} title="ปิด"
             style={{ height: 30, padding: '0 12px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer' }}>✕ ปิด</button>
@@ -232,7 +239,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
         {!secWrite?.ok && (
           <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 12.5,
             background: 'var(--card)', border: '1px solid var(--amber)', color: 'var(--amber)' }}>
-            🔒 {writeBlockText(secWrite, { what: `การตั้งค่าบอร์ดของ ${section?.name || 'ส่วนงานนี้'}` })} — ดูได้ แต่บันทึกไม่ได้
+            {writeBlockText(secWrite, { what: `การตั้งค่าบอร์ดของ ${section?.name || 'ส่วนงานนี้'}` })} — ดูได้ แต่บันทึกไม่ได้
           </div>
         )}
 
@@ -303,7 +310,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
                         const val = draft[key] ?? (cur != null ? String(cur) : '');
                         return (
                           <label key={st.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg2)', minWidth: 0 }}>
-                            <span style={{ flex: 1, minWidth: 0, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={st.station_name}>📍 {st.station_name}</span>
+                            <span style={{ flex: 1, minWidth: 0, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={st.station_name}>{st.station_name}</span>
                             <input type="number" min={0} max={20} inputMode="numeric" value={val} placeholder="–" disabled={busy}
                               aria-label={`คนต่อกะ จุด ${st.station_name}`}
                               onChange={e => setDraft(x => ({ ...x, [key]: e.target.value }))}
@@ -339,7 +346,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
                         const e = empById.get(r.employee_id);
                         return (
                           <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 4px 2px 10px', border: '1px solid var(--border2)', borderRadius: 999, background: 'var(--bg2)', fontSize: 13 }}>
-                            🔧 {e ? e.name : '(ไม่อยู่ในทะเบียน active)'}
+                            {e ? e.name : '(ไม่อยู่ในทะเบียน active)'}
                             {e?.position && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{positionLabel(e.position)}</span>}
                             <DeleteButton disabled={busy} onClick={() => removeTech(r)} title={`เอา ${e?.name || ''} ออก`} style={{ width: 26, height: 26 }} />
                           </span>
@@ -377,7 +384,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
                         const e = empById.get(r.employee_id);
                         return (
                           <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 4px 2px 10px', border: '1px solid var(--border2)', borderRadius: 999, background: 'var(--bg2)', fontSize: 13 }}>
-                            🏃 {e ? e.name : '(ไม่อยู่ในทะเบียน active)'}
+                            {e ? e.name : '(ไม่อยู่ในทะเบียน active)'}
                             {e?.department && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ต้นสังกัด {e.department}</span>}
                             <DeleteButton disabled={busy} onClick={() => removeFlex(r)} title={`เอา ${e?.name || ''} ออก`} style={{ width: 26, height: 26 }} />
                           </span>
@@ -424,7 +431,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
                       const e = empById.get(r.employee_id);
                       return (
                         <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 4px 2px 10px', border: '1px solid var(--amber)', borderRadius: 999, background: 'var(--bg2)', fontSize: 13 }}>
-                          🎖️ {e ? e.name : '(ไม่อยู่ในทะเบียน active)'}
+                          {e ? e.name : '(ไม่อยู่ในทะเบียน active)'}
                           {e?.department && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ต้นสังกัด {e.department}</span>}
                           <DeleteButton disabled={busy} onClick={() => removeActing(r)} title={`ยกเลิกรักษาการของ ${e?.name || ''}`} style={{ width: 26, height: 26 }} />
                         </span>

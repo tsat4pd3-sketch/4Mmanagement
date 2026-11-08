@@ -1,3 +1,5 @@
+import { toneVar, toneDim, toneLine } from '../utils/statusTone';   // 🎨 token พาเลต 5 สี (UI §6.17)
+import InfoMore from './InfoMore';   // ⓘ คำอธิบายยาวพับไว้ (UI §6.10)
 import { useState, useEffect, useMemo, useCallback, useContext, useRef } from 'react';
 import { urlBool } from '../utils/urlInit';
 import { lineNameCompare } from '../utils/lineHierarchy';
@@ -19,6 +21,7 @@ import { useLiveBoard } from '../utils/useLiveBoard';
 import { LIVE, RATE } from '../utils/refreshRates';
 import { toast } from './Toast';
 import PageHeader from './PageHeader';
+import OverflowMenu from './OverflowMenu';   // ⋯ ปุ่มตายตัว ≤2 (UI §6.35)
 import { OBEYA_TITLE, OBEYA_ICON } from '../utils/obeyaPage';
 import ReadOnlyNote from './ReadOnlyNote';
 import SafetyEventModal from './SafetyEventModal';
@@ -670,7 +673,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       // หัวข้อว่าง/ช่องว่างล้วน = เขียนให้รู้ว่าว่าง ห้ามปล่อยแถวไม่มีชื่อ (UX audit 05/10)
       title: (a.problem || '').trim() || '(ไม่มีหัวข้อ)',
       meta: [a.line_name, a.assignee ? `ผู้รับผิดชอบ ${a.assignee}` : 'ยังไม่ระบุผู้รับผิดชอบ'].filter(Boolean).join(' · '),
-      due: a.due_date || null, color: '#3b82f6', to: a.source === 'obeya' ? '/obeya?tab=sqdcm' : '/morning-meeting',
+      due: a.due_date || null, color: 'var(--blue)', to: a.source === 'obeya' ? '/obeya?tab=sqdcm' : '/morning-meeting',
     }));
     const sf = (data.safety || []).filter(e => e.status === 'open').map((e) => {
       const k = safetyKind(e.kind);
@@ -700,7 +703,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
      ใบนี้จะถูกวาดทับทุกหน้า = ล้นเหมือนเดิม */
   const sheetItems = useMemo(() => [
     ...rows.map((r) => ({ kind: 'kpi', key: r.key, row: r, title: r.name })),
-    { kind: 'todo', key: '__todo', title: '🚨 งานที่ต้องตามแก้' },
+    { kind: 'todo', key: '__todo', title: 'งานที่ต้องตามแก้' },
   ], [rows]);
   /* ⚖️ 15/10 (user: "เกลี่ยหน้าแรกเหลือ 8 การ์ด ที่เหลือไปหน้า 2") — เกินหน้าเดียวเมื่อไหร่ เกลี่ยให้ทุกหน้าใกล้เคียงกัน
      โดยลดคอลัมน์ (แผ่นกว้างขึ้น ไม่เคยเล็กลง) · `balanceGrid` pure มีเทส */
@@ -793,12 +796,12 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     /* 09/10 (user "remark เยอะไป ซ้ำกันทุกการ์ด"): แผ่นที่คาดไม่ได้ **ไม่เขียนบรรทัดนี้** — ไปรวมเป็นชิปเดียวใต้บอร์ด (`warnLines`)
        ว่ามีกี่แผ่นที่ยังไม่มีแผนรายเดือน · บนแผ่นเหลือเฉพาะตอนคำนวณได้จริง */
     if (f.value == null) return null;
-    const verdict = f.status === 'good' ? { t: '✅ คาดถึงเป้า', c: '#22c55e' }
-      : f.status === 'warn' ? { t: '🟡 ถึงแค่ Commitment', c: '#f59e0b' }
-      : f.status === 'bad' ? { t: '❌ คาดไม่ถึงเป้า', c: '#ef4444' } : null;
+    const verdict = f.status === 'good' ? { t: '✅ คาดถึงเป้า', c: 'var(--green)' }
+      : f.status === 'warn' ? { t: '🟡 ถึงแค่ Commitment', c: 'var(--amber)' }
+      : f.status === 'bad' ? { t: '❌ คาดไม่ถึงเป้า', c: 'var(--red)' } : null;
     return (
       <div style={style} title={`ผลจริง ${f.actualMonths} เดือน + แผน ${f.planMonths} เดือน รวมด้วยวิธี "${summaryShort(f.mode)}"${f.approx ? ' (โดยประมาณ — KPI นี้คิดจากยอดดิบทั้งปี แต่แผนไม่มียอดดิบ)' : ''}`}>
-        📈 ปลายปี {f.approx ? '≈ ' : ''}<b style={{ color: 'var(--text2)' }}>{nf(f.value, r.dec)}{r.unit ? ' ' + r.unit : ''}</b>
+        ปลายปี {f.approx ? '≈ ' : ''}<b style={{ color: 'var(--text2)' }}>{nf(f.value, r.dec)}{r.unit ? ' ' + r.unit : ''}</b>
         {' '}({f.planMonths ? `จริง ${f.actualMonths}+แผน ${f.planMonths} ด.` : `จริงครบ ${f.actualMonths} ด.`})
         {verdict ? <> · <b style={{ color: verdict.c }}>{verdict.t}</b></> : (f.hasTarget ? '' : ' · ไม่มีเป้า')}
       </div>
@@ -817,14 +820,14 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   /* ⚠️ เตือนบนแผ่น — เฉพาะเรื่องที่คนต้องลงมือ: ไฟเทา (ไม่มีค่า/ไม่มีเป้า) · ค่าโรงงานยังไม่มีนิยาม · กรอกไว้แต่ถูกค่าระบบทับ */
   const cardWarn = (r, kk) => {
     if (r.st === ST.unknown) return r.note ? <WarnNote k={kk} text={r.note} /> : (r.why || null);   // ไม่มีค่า/ไม่มีเป้า: มีเหตุผลยาว = กล่อง · ไม่มี = ข้อความสั้นตามเดิม
-    if (r.mix?.overlapN) return <WarnNote k={kk} tone="#94a3b8" tvHide text={`✍️ แท่งจางที่ซ้อนอยู่ = ค่ากรอกมือ ${r.mix.overlapN} เดือน (ทีมคิดเอง) · แท่งเต็ม = ค่าระบบ — กดแท่งเพื่อดูทั้ง 2 ค่า`} />;
+    if (r.mix?.overlapN) return <WarnNote k={kk} tone="none" tvHide text={`✍️ ค่ากรอกมือซ้อน ${r.mix.overlapN} เดือน — กดแท่งดูทั้ง 2 ค่า`} title={`แท่งจางที่ซ้อนอยู่ = ค่ากรอกมือ ${r.mix.overlapN} เดือน (ทีมคิดเอง) · แท่งเต็ม = ค่าระบบ — กดแท่งเพื่อดูทั้ง 2 ค่า`} />;
     return null;
   };
   /* popup 🔍 = ที่ของรายละเอียดเต็ม (ไม่จำกัดบรรทัด): คาดปลายปี · เกณฑ์ที่ใช้ตัดสิน · ที่มา/หมายเหตุเต็ม */
   const zoomFoot = (r, kk) => (
     <>
       {forecastLine(r, kk)}
-      {r.why && <div style={{ marginBottom: 3 }}>🎯 {r.why}</div>}
+      {r.why && <div style={{ marginBottom: 3 }}>{r.why}</div>}
       {r.note && <div style={{ color: 'var(--text2)' }}>ℹ️ {r.note}</div>}
     </>
   );
@@ -842,7 +845,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     const tgtL = cv(r.target); const cmtL = cv(r.commit);
     /* 🔢 ตัวเลขบนแท่ง (UI §กราฟ "ตัวเลขบนแท่งต้องมีเสมอ" · user 30/09 "มีตัวเลข above แต่ละแท่งจะดูง่ายขึ้นมั้ย")
        แน่นเกิน = เว้นแท่งเว้นเลข ห้ามลดฟอนต์ (แผ่นในกริดกว้าง ~300px / 13 แท่ง = ช่องละ ~20px) —
-       เดือนที่เลือก + แท่งสรุป โชว์เสมอ · 📝 ต่อท้ายตัวเลข (เดิมเป็นป้ายแยก ซ้อนกันไม่ได้) */
+       เดือนที่เลือก + แท่งสรุป โชว์เสมอ · ต่อท้ายตัวเลข (เดิมเป็นป้ายแยก ซ้อนกันไม่ได้) */
     const slotW = Math.max(0, sheetW - 60) / 13;
     const labelW = (v) => nf(cv(v), decL).length * fs(9.5) * 0.62;
     const dense = r.series.some(p => p.v != null && labelW(p.v) > slotW);
@@ -887,8 +890,8 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
               ? `สรุปปี ${year} (${r.sumKind === 'sum' ? 'รวม' : 'เฉลี่ย'}${r.auto && !r.fromDept ? 'ถ่วงน้ำหนัก' : ''}ทั้งปี)`
               : `${monthLabel(pl?.[0]?.payload?.k || '')} ${year}${pl?.[0]?.payload?.notes?.length ? ` · 📝 ${pl[0].payload.notes.length} หมายเหตุ` : ''} · กดเพื่อดูเดือนนี้ + หมายเหตุ`)} />
           {/* เส้นเป้า (แดง) + เส้น Commitment (เหลือง) — user 30/09: "มาแต่เส้น target เส้น commitment ไม่เห็น" */}
-          {tgtL != null && <ReferenceLine y={tgtL} stroke="#ef4444" strokeDasharray="4 3" label={{ value: 'T', position: 'insideTopRight', fontSize: fs(9), fill: '#ef4444' }} />}
-          {cmtL != null && cmtL !== tgtL && <ReferenceLine y={cmtL} stroke="#f59e0b" strokeDasharray="2 3" label={{ value: 'C', position: 'insideTopRight', fontSize: fs(9), fill: '#f59e0b' }} />}
+          {tgtL != null && <ReferenceLine y={tgtL} stroke="var(--red)" strokeDasharray="4 3" label={{ value: 'T', position: 'insideTopRight', fontSize: fs(9), fill: 'var(--red)' }} />}
+          {cmtL != null && cmtL !== tgtL && <ReferenceLine y={cmtL} stroke="var(--amber)" strokeDasharray="2 3" label={{ value: 'C', position: 'insideTopRight', fontSize: fs(9), fill: 'var(--amber)' }} />}
           {/* fill = สีตัวหนังสือใน tooltip เท่านั้น (Cell ทับสีแท่งจริง) — ไม่ใส่ = Recharts ใช้ #000 (user 30/09 "text ดำ") */}
           <Bar dataKey="v" fill={CELL_BAR_FILL} radius={[2, 2, 0, 0]} onClick={(d) => { const pl = d?.payload ?? d; openMonth(r, pl && pl.vRaw !== undefined ? { ...pl, v: pl.vRaw } : pl); }}>
             <LabelList dataKey="vLabel" position="top" style={{ fontSize: fs(9.5), fontWeight: 700, fill: 'var(--text)' }} />
@@ -906,7 +909,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
               onClick={(d) => { const pl = d?.payload ?? d; openMonth(r, pl && pl.vRaw !== undefined ? { ...pl, v: pl.vRaw } : pl); }} />
           )}
           {/* 📅 เส้นแผนรายเดือน — KPI แบบสะสมเทียบเป้าทั้งปีตั้งแต่ต้นปีจะดู "ตกตลอด" ต้องเทียบแผนของเดือนนั้น (user 30/09) */}
-          {r.hasPlan && <Line type="monotone" dataKey="plan" stroke="#38bdf8" strokeWidth={1.5} strokeDasharray="5 3" dot={{ r: 2, fill: '#38bdf8' }} connectNulls isAnimationActive={false} />}
+          {r.hasPlan && <Line type="monotone" dataKey="plan" stroke="var(--blue)" strokeWidth={1.5} strokeDasharray="5 3" dot={{ r: 2, fill: 'var(--blue)' }} connectNulls isAnimationActive={false} />}
         </ComposedChart>
       </ResponsiveContainer>
       </div>
@@ -979,7 +982,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
         <button onClick={() => shiftMonth(-1)} title="เดือนก่อน" style={navBtn}>◀</button>
         <b style={{ fontSize: 13, minWidth: 92, textAlign: 'center' }} title={live ? 'เดือนปัจจุบัน — ตามวันจริง ข้ามเดือนแล้วเลื่อนเอง' : `ปักดูเดือน ${monthText} อยู่ — กด "สด" เพื่อกลับเดือนปัจจุบัน`}>
-          {monthText}{live && <span style={{ marginLeft: 5, fontSize: 11, fontWeight: 800, color: '#22c55e', verticalAlign: 'middle' }}>● สด</span>}
+          {monthText}{live && <span style={{ marginLeft: 5, fontSize: 11, fontWeight: 800, color: 'var(--green)', verticalAlign: 'middle' }}>● สด</span>}
         </b>
         <button onClick={() => shiftMonth(1)} disabled={live} title={live ? 'อยู่เดือนปัจจุบันแล้ว' : 'เดือนถัดไป'} style={navBtn}>▶</button>
         {!live && <button onClick={() => setParam('date', '')} title="กลับเดือนปัจจุบัน (ตามวันจริง)" style={{ ...navBtn, fontSize: 11.5, padding: '2px 8px', fontWeight: 700 }}>⟲ สด</button>}
@@ -989,7 +992,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       <button onClick={() => setParam('yfocus', yFocus ? '' : '1')} style={pill(yFocus)} aria-pressed={yFocus}
         title={yFocus ? 'กำลังโฟกัสช่วงค่า: แกน Y เริ่มใกล้ค่าต่ำสุด ให้เห็นระยะห่าง Target/Commitment ชัด · กดเพื่อกลับแกนเริ่ม 0'
           : 'โฟกัสช่วงค่า: ตัดที่ว่างใต้กราฟ ยกพื้นแกน Y ขึ้นใกล้ค่าต่ำสุด ให้เห็นระยะห่าง Target/Commitment ชัดขึ้น (แผ่นจะเขียนบอกว่าแกนไม่เริ่ม 0)'}>
-        🎯 {yFocus ? 'โฟกัสช่วงค่า' : 'แกนเริ่ม 0'}
+        {yFocus ? 'โฟกัสช่วงค่า' : 'แกนเริ่ม 0'}
       </button>
     </>
   );
@@ -1004,27 +1007,32 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           filters={controls}
           actions={(
             <>
+              {/* ปุ่มตายตัว ≤2 (UI §6.35 · 04/11): หลัก = บันทึกเหตุการณ์ · รอง = โหมดจอ TV · จัดเรียงแผ่น → ⋯ */}
               {canRecord && (
-                <button onClick={() => setShowSafety({})} style={{ ...pill(false), background: 'var(--accent2)', color: '#1a1206', border: 'none' }}>
-                  ＋ บันทึกเหตุการณ์ความปลอดภัย
+                <button type="button" className="pg-btn primary" onClick={() => setShowSafety({})}>
+                  + บันทึกเหตุการณ์ความปลอดภัย
                 </button>
               )}
-              {canNote && (
-                <button onClick={() => setArrange(a => !a)} style={pill(arrange)} aria-pressed={arrange}
+              {arrange && canNote && (
+                <button type="button" className="pg-btn" onClick={() => setArrange(false)} aria-pressed={arrange}
                   title={arrange ? 'ปิดโหมดจัดเรียง' : 'จัดลำดับแผ่น KPI ของขอบเขตนี้เอง — กด ◀ ▶ บนแผ่น · บันทึกทันที · มีผลกับทุกคนที่ดูขอบเขตนี้'}>
-                  🧩 {arrange ? 'เสร็จสิ้นจัดเรียง' : 'จัดเรียงแผ่น'}
+                  {arrange ? 'เสร็จสิ้นจัดเรียง' : 'จัดเรียงแผ่น'}
                 </button>
               )}
-              <button onClick={() => goBoard(true)} style={pill(false)}>📺 โหมดจอ TV</button>
+              <button type="button" className="pg-btn" onClick={() => goBoard(true)}>โหมดจอ TV</button>
+              <OverflowMenu items={[
+                { key: 'arrange', icon: '⇅', label: 'จัดเรียงแผ่น KPI', onClick: () => setArrange(true), hidden: !canNote || arrange,
+                  title: 'จัดลำดับแผ่น KPI ของขอบเขตนี้เอง (บันทึกต่อขอบเขต)' },
+              ]} />
             </>
           )}
         />
       )}
       {board && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', flexShrink: 0, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
-          <div style={{ fontSize: tv ? 26 : 18, fontWeight: 900 }}>📋 OBEYA · {scope ? org.labelOf(scope.kind, scope.value) : '—'}</div>
+          <div style={{ fontSize: tv ? 26 : 18, fontWeight: 900 }}>OBEYA · {scope ? org.labelOf(scope.kind, scope.value) : '—'}</div>
           {/* 📺 จอประชุม: ตัวเลือกขอบเขต/เดือน/โฟกัส ไม่มีใครกด ⇒ เหลือแค่ "ดูเดือนไหน" ตัวโต */}
-          {tv ? <b style={{ fontSize: 24 }}>{monthText}{live && <span style={{ marginLeft: 8, fontSize: 20, color: '#22c55e' }}>● สด</span>}</b> : controls}
+          {tv ? <b style={{ fontSize: 24 }}>{monthText}{live && <span style={{ marginLeft: 8, fontSize: 20, color: 'var(--green)' }}>● สด</span>}</b> : controls}
           <StatusLamp k={tv ? 2 : 1} w={999} stat={overallLamp} />
           <div style={{ flex: 1 }} />
           <button className="tv-hide" onClick={() => goBoard(false)} style={pill(false)}>ออกจากโหมดจอ</button>
@@ -1092,11 +1100,11 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
                     return (
                       <div key={x.id} title={x.title}
                         onClick={() => (x.kind === 'safety' ? (canRecord && setShowSafety(x.ev)) : goTo(x.to))}
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px', borderRadius: 4, cursor: 'pointer', background: 'var(--bg3)', borderLeft: `3px solid ${late ? '#ef4444' : x.color}` }}>
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px', borderRadius: 4, cursor: 'pointer', background: 'var(--bg3)', borderLeft: `3px solid ${late ? 'var(--red)' : x.color}` }}>
                         <span style={{ fontSize: fs(11) }}>{x.icon}</span>
                         <span style={{ fontSize: fs(11), fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.title}</span>
                         {/* ป้ายท้ายแถวห้ามกินที่ชื่อเรื่องจนหาย (UX audit 05/10: ชื่อไลน์ยาว → หัวข้อกว้าง 0) */}
-                        <span style={{ fontSize: fs(10), color: late ? '#ef4444' : 'var(--muted)', whiteSpace: 'nowrap', maxWidth: '50%', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1 }}>
+                        <span style={{ fontSize: fs(10), color: late ? 'var(--red)' : 'var(--muted)', whiteSpace: 'nowrap', maxWidth: '50%', overflow: 'hidden', textOverflow: 'ellipsis', flexShrink: 1 }}>
                           {x.warn ? `⚠ ${x.warn}` : (x.due ? `ครบ ${x.due}` : x.meta)}
                         </span>
                       </div>
@@ -1115,15 +1123,18 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           user 30/09: "ยังไม่ครบ มาอยู่ข้างล่างดีมั้ย เพื่อไม่ให้สเกลกราฟวิ่งไปวิ่งมา" · เดิมอยู่บนหัว โผล่/หายตามเดือน ⇒ กริดสูงไม่เท่ากัน */}
       <div style={{ minHeight: 26, margin: board ? '2px 8px 4px' : '6px 0 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         {warnLines.map((w, i) => (
-          <span key={i} style={{ fontSize: tv ? 20 : 11.5, fontWeight: 700, padding: tv ? '4px 14px' : '3px 10px', borderRadius: 999, color: err ? '#ef4444' : '#f59e0b', background: `${err ? '#ef4444' : '#f59e0b'}1a`, border: `1px solid ${err ? '#ef4444' : '#f59e0b'}55` }}>⚠ {w}</span>
+          <span key={i} style={{ fontSize: tv ? 20 : 11.5, fontWeight: 700, padding: tv ? '4px 14px' : '3px 10px', borderRadius: 999, color: toneVar(err ? 'bad' : 'warn'), background: toneDim(err ? 'bad' : 'warn'), border: `1px solid ${toneLine(err ? 'bad' : 'warn')}` }}>⚠ {w}</span>
         ))}
       </div>
 
+      {/* คำอธิบายยาว = พับหลัง ⓘ (UI §6.10 · 04/11 user "text อธิบายเยอะๆ ควรเป็น tooltip") — เดิม 3 บรรทัดใต้บอร์ดตลอดเวลา */}
       {!board && (
-        <div className="tv-hide" style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.7 }}>
-          ตัวเลข = สะสมเดือนที่เลือก · ⚡ ระบบคำนวณจากกะที่ปิดแล้ว (OEE ถ่วงเวลารับภาระ · PPM = ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶ ไม่รวมงานทดลอง)
-          · ✍️ ต้องกรอกที่แท็บ ⚙️ ตั้งค่า KPI / กรอกผล · สีแท่ง/ไฟ = เกณฑ์ทางการ ถึง Target = เขียว · ถึงแค่ Commitment = เหลือง · ไม่ถึง = แดง · ไม่มีเป้าหรือไม่มีค่า = เทา (ไม่ใช่ผ่าน)
-          · แท่ง "สรุป" = {`เฉลี่ยถ่วงน้ำหนักทั้งปี (แถว ⚡) / เฉลี่ยเดือนที่กรอก (แถว ✍️)`} · กดแท่งเดือนเพื่อดูเดือนนั้น
+        <div className="tv-hide" style={{ marginTop: 8 }}>
+          <InfoMore id="obeya-kpi-legend" label="ที่มาของตัวเลข · ความหมายสี" size={11}>
+            ตัวเลข = สะสมเดือนที่เลือก · ⚡ ระบบคำนวณจากกะที่ปิดแล้ว (OEE ถ่วงเวลารับภาระ · PPM = ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶ ไม่รวมงานทดลอง)
+            · ✍️ ต้องกรอกที่แท็บ ⚙️ ตั้งค่า KPI / กรอกผล · สีแท่ง/ไฟ = เกณฑ์ทางการ ถึง Target = เขียว · ถึงแค่ Commitment = เหลือง · ไม่ถึง = แดง · ไม่มีเป้าหรือไม่มีค่า = เทา (ไม่ใช่ผ่าน)
+            · แท่ง "สรุป" = {`เฉลี่ยถ่วงน้ำหนักทั้งปี (แถว ⚡) / เฉลี่ยเดือนที่กรอก (แถว ✍️)`} · กดแท่งเดือนเพื่อดูเดือนนั้น
+          </InfoMore>
         </div>
       )}
 

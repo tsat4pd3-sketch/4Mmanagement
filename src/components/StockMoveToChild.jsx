@@ -212,7 +212,7 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
               </tbody>
             </table>
           </div>
-          {!canIssue && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>🔒 ต้องมีสิทธิ์ <b>จ่ายพาร์ทเข้าไลน์</b> (line_stock:issue) ถึงจะย้ายได้</div>}
+          {!canIssue && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>ต้องมีสิทธิ์ <b>จ่ายพาร์ทเข้าไลน์</b> (line_stock:issue) ถึงจะย้ายได้</div>}
         </>
       )}
     </div>

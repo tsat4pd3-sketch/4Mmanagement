@@ -333,6 +333,36 @@ mtn-daily-summary · daily-4m-summary · qa-fme-scan) ซึ่ง **ไม่�
   - `TELEGRAM_BOT_TOKEN` — จาก @BotFather
   - `TELEGRAM_CHAT_ID` — Group Chat ID (เลขติดลบ เช่น `-5279077923`)
 
+### 🗑️ `delete-user` — ลบบัญชีที่มีประวัติผูก ต้อง "บอกว่าติดอะไร" หรือ "โอนประวัติ" ห้ามล้มเงียบ (2026-11-05)
+
+**เกิดจริง 05/11:** admin ลบบัญชีซ้ำ `pubed.tun@pd4` (คนเดียวกับ `pubed@tsat4` ที่สร้างใหม่ 20/10) ไม่ได้ — edge ตอบ 400
+ด้วยข้อความ "Database error deleting user" ที่บอกอะไรไม่ได้ · postgres log:
+`update or delete on table "profiles" violates foreign key constraint "daily_production_logs_checked_by_fkey"`
+— `daily_production_logs.checked_by → profiles(id)` เป็น **NO ACTION** และบัญชีเก่ายังถูกใช้เช็คชื่ออยู่ทุกวัน (21/10–05/11)
+
+**หลัก:** ประวัติ "ใครตรวจ/ใครสร้าง" คือ traceability — **ไม่เปลี่ยน FK เป็น set null/cascade เพื่อให้ลบผ่าน**
+· ลบแล้วติด = บอกให้ชัดว่าติดตารางไหนกี่แถว · บัญชีซ้ำของ **คนเดียวกัน** = โอนประวัติไปบัญชีที่เหลือก่อนลบ
+
+**กลไก (migration `20261105_profile_ref_blockers_main.sql` · apply แล้ว 05/11 · Main):**
+- `fn_profile_ref_blockers(uid)` → `{tbl, col, n}` — FK ไป `profiles`/`auth.users` แบบ NO ACTION/RESTRICT ที่มีแถวอ้างบัญชีนี้
+- `fn_profile_reassign_refs(from, to)` → `{tbl, col, n}` — `update … set col = to where col = from` ทุกคอลัมน์ที่ FK ไม่ cascade
+  (a/r/n) · cascade (`notifications`/`push_subscriptions`/`org_assignments.profile_id` ฯลฯ) ปล่อยให้ลบตามบัญชี
+- ทั้งคู่อ่าน `pg_constraint` สด ⇒ **ตารางใหม่ถูกนับเอง ไม่ต้องเติมลิสต์** · `security definer` · **execute = `service_role` เท่านั้น**
+  (client เรียกตรงไม่ได้ — ผ่าน edge ที่ตรวจ `profiles.role = 'admin'` แล้ว)
+- edge `delete-user` (v9): body `{ user_id }` → ถาม blockers ก่อน · ติด = **409** `{ error, blockers }` ·
+  body `{ user_id, reassign_to }` → โอนก่อนแล้วลบ · ตอบ `{ success, moved }`
+  · โอนล้ม = **ยังไม่ลบ** (ข้อความบอกว่า "ยังไม่ได้ลบ") · `deleteUser` ล้มหลังโอน = ตอบ `moved` ไว้ให้รู้ว่าย้ายไปแล้ว
+- จอ `/add-user` (`handleDelete(moveTo)`): รับ 409 → เปิดแผง "⛔ ลบไม่ได้ — มีประวัติผูก N รายการ" (ป้ายไทย `REF_LABEL` ·
+  ไม่มีป้าย = โชว์ `tbl.col` ดิบ ห้ามซ่อน) + dropdown เลือกบัญชีรับโอน (ตัด role `display`) + ปุ่ม "🔀 โอนประวัติแล้วลบ"
+  (confirm ซ้ำ บอกว่าใช้เฉพาะคนเดียวกัน) · ด่าน `regressionGuards` (`res.status === 409 && Array.isArray(data.blockers)`)
+
+🔴 **ห้ามใช้ `reassign_to` กับบัญชีของคนละคน** — ประวัติจะกลายเป็นชื่ออีกคน กู้ไม่ได้ · คนละคนให้เปลี่ยนรหัส/ลดสิทธิ์แทนการลบ
+🔴 **ห้ามแก้ปัญหานี้ด้วย `on delete set null`** — ใบเช็คชื่อที่ไม่รู้ว่าใครตรวจ = ใบที่ใช้สอบกลับไม่ได้
+
+**เรื่องแถมที่เจอพร้อมกัน:** migration `20261029_auth_last_sign_in_main.sql` (RPC `get_auth_users` คืน `last_sign_in_at`)
+**ไม่เคยถูก apply** ⇒ RPC คืนแถวที่ไม่มีคีย์นั้น ⇒ จอ `?? null` ตีเป็น "ไม่เคยเข้าใช้" **ทุกใบ** (รวมใบที่เพิ่ง login วันนี้)
+— apply แล้ว 05/11 + จอเช็ค `'last_sign_in_at' in row` (คีย์ไม่มา = "อ่านไม่ได้" ไม่ใช่ "ไม่เคยเข้า") · ด่าน `regressionGuards`
+
 ### Functions อื่นๆ ที่ deploy อยู่ (สรุปย่อ — เพิ่มเอกสาร 2026-07-10)
 
 | Function | Project | ทำอะไร |

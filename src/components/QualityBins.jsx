@@ -33,7 +33,7 @@ import { scopedLineNames } from '../utils/sectionScope';
 import { printQualityBin } from '../lib/qualityBinPrint';
 /* กติกาที่ถอดจาก WI-PD3-069 §5.4/§5.6 + WI-PD3-087 — อายุแท็ก + ผลพิจารณา QA
    ⚠️ ห้าม hardcode 5/1 วัน หรือรายชื่อผลพิจารณาซ้ำในหน้านี้ (2026-09-25) */
-import { TAG_MAX_DAYS, QA_DECISIONS, decisionOf, binTagAge, binClosed, overdueBins, SPECIAL_USE_FORM } from '../utils/qualityBin';
+import { TAG_MAX_DAYS, QA_DECISIONS, decisionOf, binTagAge, binClosed, overdueBins, pendingYellow, SPECIAL_USE_FORM } from '../utils/qualityBin';
 import SimpleMasterPanel from './SimpleMasterPanel';
 import { masterDeleteGuard } from '../utils/masterRefs'; // ด่านนับปลายทางก่อนลบทะเบียนที่จับคู่ด้วยข้อความ — 2026-10-18
 /* 📷 รูปหลักฐานของเสีย — ช่องแนบ + ตัวบีบ/อัปโหลด เป็นของกลาง ห้ามเขียนเองในหน้า (2026-10-12) */
@@ -98,6 +98,12 @@ export default function QualityBins() {
      (id ของใบเหลืองที่มีแถวแดงชี้กลับมาผ่าน from_yellow_id) */
   const [redChildOf, setRedChildOf] = useState(() => new Set());
   const [overdueOnly, setOverdueOnly] = useState(false);
+  /* 🟡 คิว "รอพิจารณา" — คิวรีแยก **ไม่ผูกช่วงวันที่** (ของค้างเก่าคือตัวที่ต้องเคลียร์ที่สุด)
+     โหลดไม่ได้ = ต้องเขียนบนจอ ห้ามขึ้น "ไม่มีงานค้าง" (กฎความซื่อสัตย์ของจอ) */
+  const [pendRows, setPendRows] = useState([]);
+  const [pendErr, setPendErr]   = useState('');
+  const [pendAll, setPendAll]   = useState(false);   // กางดูทั้งหมด (default โชว์ 8 แถวแรก)
+  const [deciding, setDeciding] = useState('');      // id ที่กำลังเขียนผล — กันกดรัว
   /* ⏱️ ของค้างเกินอายุแท็ก "ทั้งหมด" ไม่ขึ้นกับช่วงวันที่กรอง (QC 05/10 — เดิมนับจากแถวในช่วงที่เลือก
      ⇒ ของค้างที่ลงถังก่อนช่วง 30 วันหายจากป้ายเตือน ทั้งที่ยังค้างอยู่จริง) · null = โหลดไม่ได้ (ต้องเขียนบนจอ) */
   const [overdueRows, setOverdueRows] = useState([]);
@@ -198,6 +204,24 @@ export default function QualityBins() {
       if (kidsErr) setOverdueErr(e => e || `เช็คใบที่ย้ายลงถังแดงไม่ได้: ${kidsErr}`);
       setRedChildOf(kids);
     } else setRedChildOf(new Set());
+
+    /* 🟡 คิวรอพิจารณา — ยังไม่มีผล QA และยังไม่กลับเข้ากระบวนการ · ไม่กรองช่วงวันที่
+       (ตั้งแท็กอัตโนมัติตั้งแต่ตอนบันทึกงานเสียแล้ว 05/11 ⇒ คิวนี้คือ "งานที่ต้องเคลียร์" ของ QA/หัวหน้า) */
+    if (bin === 'yellow') {
+      let pq = supabaseDR.from('quality_bin_records')
+        .select('id, work_date, line_name, mat_no, part_name, part_no, qty, cause, reported_by, qa_decision, return_date, defect_log_id, found_img, special_use_doc_no, scrap_report_id, bin, is_active, qty_ng')
+        .eq('bin', 'yellow').eq('is_active', true)
+        .is('qa_decision', null).is('return_date', null)
+        .order('work_date', { ascending: true }).limit(300);
+      if (inScope) pq = pq.or(inScope);
+      const { data: pd, error: pe } = await pq;
+      if (stale()) return;
+      if (pe) { setPendErr(pe.message); setPendRows([]); }
+      else {
+        setPendErr((pd || []).length >= 300 ? 'รอพิจารณาเกิน 300 รายการ — แสดง 300 รายการที่เก่าที่สุด' : '');
+        setPendRows(pd || []);
+      }
+    } else { setPendRows([]); setPendErr(''); }
   }, [bin, from, to, scopeNames]);
   useEffect(() => { load(); }, [load]);
 
@@ -383,6 +407,52 @@ export default function QualityBins() {
     load();   // ใบเหลืองใบนี้ต้องเปลี่ยนเป็น "🔴 ย้ายแล้ว" ทันที ไม่งั้นกดซ้ำได้
   };
 
+  /* ═══ 🟡 เคลียร์คิว "รอพิจารณา" (2026-11-05 · คำสั่ง user) ═══════════════════════════
+     *"หน้าสรุปงานที่ค้างเคลียร์จากรอพิจารณา เป็น rework ละดี หรือ rework ไม่ได้เป็นเสีย ยังไม่มี"*
+     2 ทางหลักที่หน้างานใช้จริง + ทาง "ขอใช้" ที่ต้องมีใบ FM-QA-042 (ทำที่ฟอร์มเต็ม ไม่ใช่ปุ่มด่วน)
+     🔴 ทุกปุ่มเขียนผ่าน `checkWriteRows` — RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error"
+     🔴 ห้ามเดาผลให้ — ปุ่มคือ "คนกดตัดสิน" · ระบบตั้งแท็กให้เฉยๆ ไม่เคยตัดสินเอง */
+  const decide = async (r, kind) => {
+    if (!canRecord) { toast.error('บัญชีนี้ไม่มีสิทธิ์บันทึกของเสีย (scrap:record)'); return; }
+    if (deciding) return;
+    const qty = Number(r.qty) || 0;
+    const when = today();
+    /* 🔧 "ซ่อมแล้วดี" = ปิดครบสาย: ตัดสินซ่อม + วันซ่อม + จำนวน OK + วันกลับเข้ากระบวนการ
+       (ลงครึ่งเดียวแล้วใบค้างในถังต่อ ทั้งที่ของกลับไปผลิตแล้ว = ของค้างเทียม) */
+    const patch = kind === 'good'
+      ? { qa_decision: 'good', qa_decision_at: new Date().toISOString(), qa_by: fullName || null, return_date: when }
+      : { qa_decision: 'repair', qa_decision_at: new Date().toISOString(), qa_by: fullName || null,
+          repair_date: when, qty_ok: qty, qty_ng: 0, return_date: when };
+    const label = kind === 'good' ? 'ตรวจแล้วใช้ได้' : 'ซ่อมแล้วดี';
+    if (!window.confirm(`${label} — ${qty} ชิ้น\n${r.part_name || r.mat_no || ''}\n\nของจะถูกปิดออกจากถังเหลือง และบันทึกว่ากลับเข้ากระบวนการวันนี้`)) return;
+    setDeciding(r.id);
+    /* รับผลใส่ตัวแปรก่อนแล้วค่อยส่งให้ `checkWriteRows` — เขียน `await supabase…` ลอยเป็น statement
+       จะถูกด่าน `write-result-discarded` จับ (และของจริงคือล้มแล้วเงียบ) */
+    const res = await supabaseDR.from('quality_bin_records').update(patch).eq('id', r.id).select('id');
+    const ok = checkWriteRows(res, `บันทึกผลพิจารณา "${label}"`,
+      { zeroMsg: 'บันทึกผลไม่สำเร็จ (0 แถว — อาจมีคนแก้ไปก่อน) · รีเฟรชแล้วลองใหม่' });
+    setDeciding('');
+    if (!ok) return;
+    toast.success(`✅ ${label} ${qty} ชิ้น — ปิดออกจากถังเหลืองแล้ว`);
+    load();
+  };
+
+  /** 🔴 เสียแน่ → ตัดสิน scrap แล้วย้ายลงถังแดง (ใช้ตัวเดิม `toRed` ที่ผูก from_yellow_id ให้) */
+  const decideScrap = async (r) => {
+    if (!canRecord) { toast.error('บัญชีนี้ไม่มีสิทธิ์บันทึกของเสีย (scrap:record)'); return; }
+    if (deciding) return;
+    setDeciding(r.id);
+    const res = await supabaseDR.from('quality_bin_records')
+      .update({ qa_decision: 'scrap', qa_decision_at: new Date().toISOString(), qa_by: fullName || null })
+      .eq('id', r.id).select('id');
+    const ok = checkWriteRows(res, 'บันทึกผลพิจารณา "เสียแน่"',
+      { zeroMsg: 'บันทึกผลไม่สำเร็จ (0 แถว — อาจมีคนแก้ไปก่อน) · รีเฟรชแล้วลองใหม่' });
+    setDeciding('');
+    if (!ok) return;
+    /* ส่งแถวที่ "ตัดสินแล้ว" เข้า toRed — ไม่งั้นมันอ่าน qa_decision เก่า (null) แล้วหาจำนวนไม่เจอ */
+    await toRed({ ...r, qa_decision: 'scrap' });
+  };
+
   const doPrint = async () => {
     const ok = await printQualityBin({ bin, records: filtered });
     if (!ok) toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup ของเว็บนี้ก่อน');
@@ -420,17 +490,117 @@ export default function QualityBins() {
         )}
         <span className="spacer" />
         {canRecord && <button onClick={openNew} style={{ padding: '8px 18px', borderRadius: 6, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>+ บันทึกรายการ</button>}
-        <button onClick={doPrint} style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>🖨️ พิมพ์ใบ {B.short}</button>
+        <button onClick={doPrint} style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>พิมพ์ใบ {B.short}</button>
         <button onClick={() => setShowWiReg(v => !v)}
           title="ทะเบียน QRs ↔ WI การซ่อม ตาม WI-PD3-069 §6 — อาการไหนซ่อมตาม WI เล่มไหน"
           style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid var(--border)', background: showWiReg ? 'var(--bg2)' : 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
-          📕 ทะเบียน WI ซ่อม
+          ทะเบียน WI ซ่อม
         </button>
       </TimeRangeBar>
 
+      {/* ═══ 🟡 คิวรอพิจารณา — "เคลียร์ว่ากลับมาดี หรือเสียแน่" (2026-11-05 · คำสั่ง user) ═══════
+          ระบบตั้งแท็กเหลืองให้เองทุกครั้งที่ลงงานเสีย ⇒ ที่นี่คือจุดที่คน **ตัดสิน** และเคลียร์ออก
+          🔴 โหลดไม่ได้ = เขียนบนจอ ห้ามขึ้น "ไม่มีงานค้าง" · 🔴 ซ่อนแถวที่เหลือต้องบอกจำนวน */}
+      {isY && (pendErr || pendRows.length > 0) && (() => {
+        const pend = pendingYellow(pendRows, redChildOf);
+        const pcs = pend.reduce((a, r) => a + (Number(r.qty) || 0), 0);
+        const over = pend.filter(r => binTagAge(r, todayWd)?.over).length;
+        const show = pendAll ? pend : pend.slice(0, 8);
+        return (
+          <div style={{ background: 'var(--card)', border: '1px solid var(--amber-line)', borderRadius: 10,
+            padding: '12px 14px', marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: pend.length ? 10 : 0 }}>
+              <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--amber)' }}>
+                🟡 รอพิจารณา {pend.length} รายการ · {pcs.toLocaleString()} ชิ้น
+              </span>
+              {over > 0 && (
+                <span title={`เลยอายุแท็กเหลือง ${TAG_MAX_DAYS.yellow} วันตาม WI-PD3-087 §5.6`}
+                  style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--red)', background: 'var(--red-dim)',
+                    border: '1px solid var(--red-line)', borderRadius: 20, padding: '2px 9px' }}>
+                  ⏱ เกินอายุแท็ก {over}
+                </span>
+              )}
+              <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+                ของที่ลงงานเสียแล้วยังไม่ตัดสินว่า <b style={{ color: 'var(--text2)' }}>ซ่อมกลับมาดีได้</b> หรือ <b style={{ color: 'var(--text2)' }}>เสียแน่</b>
+              </span>
+            </div>
+            {/* 🔴 โหลดคิวไม่สำเร็จ ห้ามเงียบ */}
+            {pendErr && (
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)', marginBottom: 8 }}>
+                ⚠️ {pendErr}
+              </div>
+            )}
+            {pend.length === 0 && !pendErr && (
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มีของค้างรอพิจารณา ✓</div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {show.map(r => {
+                const age = binTagAge(r, todayWd);
+                const busy = deciding === r.id;
+                return (
+                  <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                    background: 'var(--bg2)', borderRadius: 8, padding: '7px 11px',
+                    borderLeft: `3px solid ${age?.over ? 'var(--red)' : 'var(--amber)'}` }}>
+                    <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5 }}>
+                        <b style={{ color: 'var(--text)' }}>{r.part_no || r.part_name || r.mat_no || '—'}</b>
+                        {r.part_no && r.part_name && <span style={{ color: 'var(--muted)' }}>{r.part_name}</span>}
+                        <span style={{ fontWeight: 800, color: 'var(--amber)' }}>{(Number(r.qty) || 0).toLocaleString()} ชิ้น</span>
+                        <span style={{ fontSize: 11, color: age?.over ? 'var(--red)' : 'var(--muted)', fontWeight: age?.over ? 800 : 400 }}>
+                          {r.work_date}{age ? ` · ค้าง ${age.days} วัน` : ''}
+                        </span>
+                        {r.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {r.line_name}</span>}
+                      </div>
+                      {r.cause && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.cause}</div>}
+                    </div>
+                    {canRecord && (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <button disabled={busy} onClick={() => decide(r, 'good')}
+                          title="ตรวจแล้วใช้ได้ — ติดแท็กเขียวแล้วกลับเข้ากระบวนการ (WI §5.4)"
+                          style={{ fontSize: 11.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 7, padding: '5px 11px',
+                            cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1,
+                            color: 'var(--green)', background: 'var(--green-dim)', border: '1px solid var(--green-line)' }}>
+                          ✅ งานดี
+                        </button>
+                        <button disabled={busy} onClick={() => decide(r, 'repair')}
+                          title="ซ่อมตาม SOP/WI แล้วผลออกมาดี — กลับเข้ากระบวนการ"
+                          style={{ fontSize: 11.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 7, padding: '5px 11px',
+                            cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1,
+                            color: 'var(--blue)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)' }}>
+                          🔧 ซ่อมแล้วดี
+                        </button>
+                        <button disabled={busy} onClick={() => decideScrap(r)}
+                          title="ซ่อมไม่ได้/ไม่คุ้ม — ติดแท็กแดงแล้วย้ายลงถังแดง เพื่อออกใบขออนุมัติทำลาย"
+                          style={{ fontSize: 11.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 7, padding: '5px 11px',
+                            cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1,
+                            color: 'var(--red)', background: 'var(--red-dim)', border: '1px solid var(--red-line)' }}>
+                          🔴 เสียแน่ → ถังแดง
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {pend.length > 8 && (
+              <button onClick={() => setPendAll(v => !v)}
+                style={{ marginTop: 8, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)',
+                  borderRadius: 7, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                {pendAll ? 'ย่อกลับ' : `แสดงอีก ${pend.length - 8} (ทั้งหมด ${pend.length})`}
+              </button>
+            )}
+            {!canRecord && pend.length > 0 && (
+              <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
+                ดูได้อย่างเดียว — ตัดสินผลต้องมีสิทธิ์ <b>scrap:record</b>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 8 }}>
         {loading ? 'กำลังโหลด…' : `${filtered.length} รายการ · รวม ${totalQty.toLocaleString('th-TH')} ชิ้น`}
-        {scopeNames && <span> · 👥 เฉพาะส่วนงานของคุณ ({scopeNames.length} ไลน์)</span>}
+        {scopeNames && <span> · เฉพาะส่วนงานของคุณ ({scopeNames.length} ไลน์)</span>}
         {!loading && overdueCount > 0 && (
           <span style={{ color: '#f97316', fontWeight: 700 }}> · ⏱ เกินอายุแท็ก {overdueCount} รายการ</span>
         )}
@@ -480,7 +650,7 @@ export default function QualityBins() {
                   {r.defect_log_id && (
                     <div style={{ fontSize: 11, color: '#0ea5e9' }}
                       title="สร้างจากบันทึกงานเสียในหน้า Daily Report — ไม่ได้คีย์ใหม่">
-                      📋 จาก Daily Report
+                      จาก Daily Report
                     </div>
                   )}
                   {/* 📷 ภาพย่อในตาราง — ไม่เพิ่มคอลัมน์ (หัวตาราง 2 ถังคนละชุด เพิ่มแล้วต้องแก้ 2 ที่)
@@ -532,7 +702,7 @@ export default function QualityBins() {
                 {!isY && <td style={{ ...td, whiteSpace: 'nowrap' }}>
                   {r.scrap_report_id
                     ? <span style={{ fontSize: 11.5, fontWeight: 700, color: '#22c55e' }}>
-                        🧾 {scrapDocs[r.scrap_report_id]?.doc_no || 'ออกใบแล้ว'}
+                        {scrapDocs[r.scrap_report_id]?.doc_no || 'ออกใบแล้ว'}
                       </span>
                     : <span title="ยังไม่ได้ออกใบรายงานของเสีย — ไปที่หน้า 🗑️ ใบรายงานของเสีย แล้วกด ⤵ ดึงจากถังแดง"
                         style={{ fontSize: 11.5, fontWeight: 700, color: '#f59e0b' }}>
@@ -573,7 +743,7 @@ export default function QualityBins() {
                (ไม่ใช่คอลัมน์อ้างอิง) ⇒ นับแบบ substring · ดู utils/masterRefs.js */
             onBeforeDelete={masterDeleteGuard(supabaseDR, 'repair_wi_registry', r => r?.wi_no)}
             canManage={canManage} stampCol="updated_by_name" stampName={fullName}
-            title="📕 ทะเบียน QRs ↔ WI การซ่อม"
+            title="ทะเบียน QRs ↔ WI การซ่อม"
             help="จาก WI-PD3-069 Rev.02 §6 — อาการที่ซ่อมได้ต้องอ้าง WI เล่มที่กำหนด · หัวหน้ากลุ่มจะเห็นชิปแนะนำ WI ตอนลงวิธีแก้ไขในหน้า Daily Report"
             emptyText="ยังไม่มีรายการ — เพิ่มจากตัว WI-PD3-069 §6"
             offNote="รายการนี้จะไม่ถูกแนะนำในโมดัลลงวิธีแก้ไขอีก (บันทึกเก่าที่อ้าง WI นี้ไว้แล้วไม่กระทบ)"
@@ -626,7 +796,7 @@ export default function QualityBins() {
                   ทำลายไปแล้วยังสืบย้อนได้ว่าเสียยังไง */}
               <div style={{ gridColumn: '1 / -1' }}>
                 <QualityPhotoField
-                  label="📷 รูปตอนพบของเสีย" hint="ไม่บังคับ — แนบไว้ช่วยให้ QA ตัดสินได้โดยไม่ต้องเดินไปดูของ"
+                  label="รูปตอนพบของเสีย" hint="ไม่บังคับ — แนบไว้ช่วยให้ QA ตัดสินได้โดยไม่ต้องเดินไปดูของ"
                   url={form.found_img || null} file={foundFile}
                   onPick={(f) => { setFoundFile(f); if (!f) setForm(fm => ({ ...fm, found_img: '' })); }}
                 />
@@ -692,7 +862,7 @@ export default function QualityBins() {
                 {/* 📷 รูปหลังซ่อม — ปิดลูป "ซ่อมแล้วใช้ได้จริง" คู่กับรายละเอียดการซ่อม (I DO I CHECK) */}
                 <div style={{ gridColumn: '1 / -1' }}>
                   <QualityPhotoField
-                    label="📷 รูปหลังซ่อม" hint="ไม่บังคับ — คู่กับรายละเอียดการซ่อม ใช้ยืนยันว่าซ่อมแล้วใช้ได้จริง"
+                    label="รูปหลังซ่อม" hint="ไม่บังคับ — คู่กับรายละเอียดการซ่อม ใช้ยืนยันว่าซ่อมแล้วใช้ได้จริง"
                     url={form.repair_img || null} file={repairFile}
                     onPick={(f) => { setRepairFile(f); if (!f) setForm(fm => ({ ...fm, repair_img: '' })); }}
                   />

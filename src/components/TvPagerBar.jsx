@@ -32,7 +32,7 @@ export default function TvPagerBar({ pager, intervalSec = 20, onScrollMode }) {
         {pager.paused ? '▶ หมุนต่อ' : `⏸ หมุนทุก ${intervalSec} วิ`}
       </button>
       {onScrollMode && <button type="button" style={{ ...btn, color: 'var(--muted)' }} onClick={onScrollMode}>เลื่อนเอง</button>}
-      {pager.parts > 1 && <span style={{ color: '#f59e0b', fontSize: tv ? 18 : 12 }}>บอร์ดนี้ยาวเกินจอ — ต่อ {pager.part}/{pager.parts}</span>}
+      {pager.parts > 1 && <span style={{ color: 'var(--amber)', fontSize: tv ? 18 : 12 }}>บอร์ดนี้ยาวเกินจอ — ต่อ {pager.part}/{pager.parts}</span>}
     </div>
   );
 }

@@ -1,0 +1,258 @@
+[
+ {
+  "id": "cd_chart",
+  "p": "CustomerDemand",
+  "q": "tab=shipping",
+  "marks": [
+   "Shipping Chart",
+   "◀",
+   "1 เลยเวลา",
+   "ค้างส่งจากวันก่อน",
+   "Shipping Time Chart —",
+   "AAT (GRBNA)"
+  ]
+ },
+ {
+  "id": "cd_cards",
+  "p": "CustomerDemand",
+  "q": "tab=shipping",
+  "marks": [
+   "ต้องทำ (",
+   "ใกล้ดิวก่อน",
+   "หลุดเฟส",
+   "ไม่มีของพร้อมส่ง",
+   "ยืนยันออเดอร์แล้ว",
+   "เตรียมของแล้ว"
+  ],
+  "scrollTop": "ทุกสถานะ"
+ },
+ {
+  "id": "cd_popup",
+  "p": "CustomerDemand",
+  "q": "tab=shipping",
+  "marks": [
+   "เตรียมของแล้ว",
+   "ไปที่การ์ด",
+   "🚫"
+  ],
+  "clickJs": "(()=>{const t=new Date(Date.now()+50*60e3);const p=n=>String(n).padStart(2,'0');const hm=p(t.getHours())+':'+p(t.getMinutes());const hm2=(()=>{const u=new Date(Date.now()+49*60e3);return p(u.getHours())+':'+p(u.getMinutes())})();const el=[...document.querySelectorAll('div')].find(e=>getComputedStyle(e).position==='absolute'&&getComputedStyle(e).cursor==='pointer'&&((e.innerText||'').trim().startsWith(hm)||(e.innerText||'').trim().startsWith(hm2)));if(!el)return false;el.click();return true})()"
+ },
+ {
+  "id": "cd_add",
+  "p": "CustomerDemand",
+  "q": "tab=shipping",
+  "click": "เพิ่ม order ด่วน",
+  "marks": [
+   "MAT No. *",
+   "จำนวน (ชิ้น) *",
+   "วันงาน (08:00",
+   "รอบเวลาส่ง",
+   "เลขที่ PO",
+   "💾 เพิ่ม order"
+  ]
+ },
+ {
+  "id": "cd_esmart",
+  "p": "CustomerDemand",
+  "q": "tab=shipping",
+  "click": "อัพโหลด e-SMART",
+  "marks": [
+   "เลือกไฟล์ e-SMART"
+  ]
+ },
+ {
+  "id": "cd_log",
+  "p": "CustomerDemand",
+  "q": "tab=log",
+  "marks": [
+   "ประวัติ order เข้าระบบ",
+   "ย้อนหลัง",
+   "e-SMART (ลูกค้ายืนยัน)",
+   "คีย์มือ (order ด่วน)",
+   "EDI (แผนจากลูกค้า)"
+  ],
+  "loose": true
+ },
+ {
+  "id": "cd_shipto",
+  "p": "CustomerDemand",
+  "q": "tab=shipto",
+  "marks": [
+   "Ship-to Config",
+   "ลำดับใน",
+   "ชื่อที่พิมพ์เอง",
+   "เพิ่ม",
+   "ลบ"
+  ]
+ },
+ {
+  "id": "cd_rounds",
+  "p": "CustomerDemand",
+  "q": "tab=shipto",
+  "marks": [
+   "ตารางรอบรับของลูกค้า",
+   "เพิ่มรอบ",
+   "รถมารับ",
+   "บันทึก"
+  ],
+  "scrollTop": "ตารางรอบรับของลูกค้า (milk-run)"
+ },
+ {
+  "id": "cd_wf",
+  "p": "CustomerDemand",
+  "q": "tab=shipto",
+  "marks": [
+   "(walkback)",
+   "ชุดเฟสของ:",
+   "หักที่เฟสนี้",
+   "จุดหักจริง",
+   "เพิ่มเฟส"
+  ],
+  "scrollTop": "Standard Workflow การส่งงาน (walkback)"
+ },
+ {
+  "id": "ls_receipts",
+  "p": "LineStock",
+  "q": "tab=receipts",
+  "marks": [
+   "FG WAREHOUSE",
+   "ค้างเกินกำหนด",
+   "นับแล้วตรง",
+   "ยอดไม่ตรง",
+   "รวมที่รับแล้ว 24"
+  ]
+ },
+ {
+  "id": "ls_count",
+  "p": "LineStock",
+  "q": "tab=count",
+  "marks": [
+   "ตรวจนับ/เฟิร์มยอด",
+   "ส่งลูกค้าแล้ว แต่ยังไม่ถูกหัก"
+  ]
+ },
+ {
+  "id": "mon_fg",
+  "p": "Monitoring",
+  "q": "tab=fg",
+  "marks": [
+   "ของจะขาดวันไหน",
+   "บอร์ดแก้มือ"
+  ]
+ },
+ {
+  "id": "sm",
+  "p": "StoreMonitor",
+  "q": "side=outbound",
+  "marks": [
+   "จัดส่ง",
+   "จะขาด (Shortage)",
+   "รอบส่งเลยเวลา"
+  ]
+ },
+ {
+  "id": "ps_upload",
+  "p": "PlannerSales",
+  "q": "tab=upload",
+  "marks": [
+   "อัพโหลด (Sales)",
+   "Order + รอบส่งงาน"
+  ]
+ },
+ {
+  "id": "rc_board",
+  "p": "RackCenter",
+  "q": "tab=board",
+  "marks": [
+   "บอร์ดสถานะ",
+   "เริ่มเตรียม",
+   "จัดส่งแล้ว",
+   "รับแล้ว",
+   "✕",
+   "แสดงที่รับแล้ว"
+  ]
+ },
+ {
+  "id": "rc_pkg",
+  "p": "RackCenter",
+  "q": "tab=board",
+  "marks": [
+   "Packaging จากการผลิต",
+   "รอจ่าย",
+   "จ่าย Packaging"
+  ]
+ },
+ {
+  "id": "rc_req",
+  "p": "RackCenter",
+  "q": "tab=board",
+  "click": "เรียกภาชนะ",
+  "marks": [
+   "ไลน์การผลิต *",
+   "ชนิดภาชนะ *",
+   "จำนวน (ใบ/ใบ) *",
+   "หมายเหตุ"
+  ]
+ },
+ {
+  "id": "rc_scan",
+  "p": "RackCenter",
+  "q": "tab=board",
+  "click": "สแกน",
+  "marks": [
+   "สแกน QR เรียกภาชนะ",
+   "ปืนยิงสแกน"
+  ],
+  "loose": true
+ },
+ {
+  "id": "rc_qr",
+  "p": "RackCenter",
+  "q": "tab=board",
+  "click": "ป้าย QR",
+  "marks": [
+   "ไลน์ (",
+   "ชนิดภาชนะ (",
+   "พิมพ์ป้าย"
+  ]
+ },
+ {
+  "id": "rc_time",
+  "p": "RackCenter",
+  "q": "tab=time",
+  "marks": [
+   "บอร์ดเวลา",
+   "บอร์ดเวลาเรียกภาชนะ",
+   "เริ่มเตรียม"
+  ],
+  "clickTitle": "กล่องพลาสติก A ×10"
+ },
+ {
+  "id": "rc_sla",
+  "p": "RackCenter",
+  "q": "tab=sla",
+  "marks": [
+   "SLA",
+   "ต้องเริ่มเตรียมภายใน",
+   "ต้องส่งถึงไลน์ภายใน"
+  ]
+ },
+ {
+  "id": "pm_pkg",
+  "p": "ProductMaster",
+  "q": "tab=packaging",
+  "marks": [
+   "Packaging",
+   "จัดการภาชนะ (Container Types)"
+  ]
+ },
+ {
+  "id": "h_rack",
+  "p": "HeijunkaKanban",
+  "q": "view=unified&store=rack",
+  "marks": [
+   "ภาชนะ (ดูอย่างเดียว)",
+   "จัดการที่ Rack Center"
+  ]
+ }
+]

@@ -108,7 +108,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
   return (
     <div className="card" style={{ padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontFamily: 'var(--font-display)' }}>👔 ใครคุมหน่วยไหน · ตำแหน่งจริง / รักษาการ</h3>
+        <h3 style={{ margin: 0, fontSize: 15, fontFamily: 'var(--font-display)' }}>ใครคุมหน่วยไหน · ตำแหน่งจริง / รักษาการ</h3>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>
           ตอบ “ใครคุมหน่วยไหน” — คนละเรื่องกับ “สังกัดที่ไหน” · คนเดียวคุมได้หลายหน่วย
         </span>
@@ -127,7 +127,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
       {canSeeOnly && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, padding: '7px 10px',
           background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8 }}>
-          🔒 ดูได้อย่างเดียว — การแต่งตั้งผู้คุมหน่วยงาน (ตามตำแหน่ง/รักษาการ) ต้องมีสิทธิ์ <b>org:manage</b>
+          ดูได้อย่างเดียว — การแต่งตั้งผู้คุมหน่วยงาน (ตามตำแหน่ง/รักษาการ) ต้องมีสิทธิ์ <b>org:manage</b>
           (สิทธิ์ <b>org:manage_own_unit</b> ที่บัญชีนี้มี ใช้แก้โครงผังในหน่วยของตัวเองได้ แต่ยังแต่งตั้งคนไม่ได้)
         </div>
       )}
@@ -137,7 +137,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10, fontSize: 12,
           background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)',
           borderRadius: 9, padding: '8px 11px', alignItems: 'center' }}>
-          <b style={{ color: '#f59e0b' }}>📋 ต้องทบทวน</b>
+          <b style={{ color: '#f59e0b' }}>ต้องทบทวน</b>
           {sum.openEnded.length > 0 && chip('rgba(245,158,11,0.2)', '#f59e0b',
             `🔄 รักษาการไม่มีวันสิ้นสุด ${sum.openEnded.length}`)}
           {sum.expired.length > 0 && chip('rgba(239,68,68,0.2)', '#ef4444',

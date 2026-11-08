@@ -200,14 +200,14 @@ export function projectedFinishMs(positioned = []) {
      1. ไลน์ `flow_mode = 'parallel_machine'` (เครื่อง stand-alone ต่างคนต่างรัน)
         · ใบผูกเครื่องแล้ว (machine_no) → เลนของเครื่องนั้น
         · ยังไม่ผูก → กระจาย round-robin N เลน (N = parallel_stations หรือจำนวนเครื่องในทะเบียน)
-     2. งานคู่ RH/LH (`pair_mat_no`) ที่มี**ทั้งสองพาร์ทอยู่ในไลน์เดียวกัน** = แม่พิมพ์คู่ ปั๊มพร้อมกัน
-        → เลนของตัวเอง เริ่มพร้อมกัน แถบบนจอจึงตรงกัน (2026-07-21)
-     3. นอกนั้น = 1 ไลน์ 1 เลน เรียงต่อคิวกัน
+     2. นอกนั้น = 1 ไลน์ 1 เลน เรียงต่อคิวกัน — **รวมงานคู่ RH/LH ด้วย** (04/11 · คำสั่ง user)
+        งานคู่ = แม่พิมพ์คู่บนแท่นเดียวกัน ⇒ ต้องกินคิวของแท่นนั้น ไม่ใช่เลนแยก
+        (เดิม 2026-07-21 แยกเลนต่อ MAT ⇒ แถบ R/L ตรงกันก็จริง แต่ **งานเดี่ยวที่ตามมาไม่ถูกดันต่อท้ายงานคู่**
+         งานคู่ช้า = จอวาดแท่นทำ 2 อย่างพร้อมกัน + ดีเลย์ไม่ส่งต่อ + "ใครพาลใคร" ไม่ชี้งานคู่)
+        ⇒ จับคู่ R↔L ใน `pairSlots()` แล้ว **ต่อคิวเฉพาะใบนำ** ใบตามได้ตำแหน่งเดียวกับใบนำ (`isPairFollower`)
         (เคยพัง 2026-07-14: คำนวณคิวแยกต่อ "แถวพาร์ท" → พาร์ทที่สองถูกวาดเริ่ม 08:00 ซ้อนพาร์ทแรก
          ทั้งที่ไลน์ไม่ parallel) */
 export function buildLanes(cards = [], { flowByLine = {}, machineCountByLine = {}, pairMatByMat = {} } = {}) {
-  const matsInLine = {};                       // line → Set(mat_no) ที่มีการ์ดจริง
-  cards.forEach(c => { (matsInLine[c.line_name || ''] ||= new Set()).add(c.mat_no); });
   const stationsOf = (line) => {
     const l = flowByLine[line];
     return (l && l.parallel_stations > 0 ? l.parallel_stations : 0) || machineCountByLine[line]?.size || 0;
@@ -221,12 +221,49 @@ export function buildLanes(cards = [], { flowByLine = {}, machineCountByLine = {
       if (c.machine_no) key = `${line}||M:${c.machine_no}`;
       else { const N = stationsOf(line); const i = (rr[line] = (rr[line] ?? -1) + 1); key = N > 0 ? `${line}||P:${i % N}` : `${line}||P:${i}`; }
     } else {
-      const pm = pairMatByMat[c.mat_no];
-      key = (pm && matsInLine[line]?.has(pm)) ? `${line}||${c.mat_no}` : line;
+      key = line;                              // งานคู่อยู่เลนเดียวกับไลน์ — จับคู่ทีหลังใน pairSlots()
     }
     (lanes[key] ||= []).push(c);
   });
   return lanes;
+}
+
+/* 👯 จับคู่ใบ R↔L ในเลนเดียวกัน ⇒ 1 คู่ = 1 ช่องคิว (แท่นปั๊มครั้งเดียวได้ 2 ข้าง)
+   · มี `paired_order_id` = ใช้ตามนั้น · ไม่มี = ไล่ตามลำดับเวลาเปิด (FIFO — ตรงกับที่สแกนผูกคู่)
+   · ใบนำ = ใบที่ยังไม่ปิด (ช่องยังไม่ว่าง) › ปิดทีหลัง › ยาวกว่า · ใบที่ไม่มีคู่ = ใบเดี่ยวตามเดิม
+   คืน { lead: [ใบที่เข้าคิว], followerOf: Map(ใบตาม → ใบนำ) } */
+export function pairSlots(cards = [], pairMatByMat = {}) {
+  const followerOf = new Map();
+  const byMat = {};
+  cards.forEach(c => { (byMat[c.mat_no] ||= []).push(c); });
+  const byId = new Map(cards.filter(c => c.id != null).map(c => [c.id, c]));
+  const used = new Set();
+  const dur = (c) => (c.orderEndMs || 0) - (c.orderStartMs || 0);
+  const pickLead = (a, b) => {
+    if (!a.isDone !== !b.isDone) return a.isDone ? b : a;
+    if (a.isDone && b.isDone) return (Date.parse(b.confirmed_at || 0) || 0) > (Date.parse(a.confirmed_at || 0) || 0) ? b : a;
+    return dur(b) > dur(a) ? b : a;
+  };
+  const link = (a, b) => {
+    const lead = pickLead(a, b), fol = lead === a ? b : a;
+    followerOf.set(fol, lead); used.add(a); used.add(b);
+  };
+  // 1) ผูกไว้จริงใน DB
+  cards.forEach(c => {
+    if (used.has(c) || c.paired_order_id == null) return;
+    const p = byId.get(c.paired_order_id);
+    if (p && p !== c && !used.has(p) && pairMatByMat[c.mat_no] === p.mat_no) link(c, p);
+  });
+  // 2) ที่เหลือ ไล่ FIFO ต่อคู่ MAT
+  const byStart = (x, y) => (x.orderStartMs || 0) - (y.orderStartMs || 0);
+  Object.keys(byMat).forEach(m => {
+    const pm = pairMatByMat[m];
+    if (!pm || !byMat[pm] || !(m < pm)) return;
+    const A = byMat[m].filter(c => !used.has(c)).sort(byStart);
+    const B = byMat[pm].filter(c => !used.has(c)).sort(byStart);
+    for (let i = 0; i < Math.min(A.length, B.length); i++) link(A[i], B[i]);
+  });
+  return { lead: cards.filter(c => !followerOf.has(c)), followerOf };
 }
 
 /* คิวการ์ดทั้งบอร์ดของ 1 กลุ่มไลน์ — แบ่งเลนแล้วต่อคิวในแต่ละเลน คืน Map(คีย์ใบ → ตำแหน่ง)
@@ -239,8 +276,18 @@ export function positionAllCards(cards = [], opts = {}) {
   /* ติด `laneKey`/`laneSeq` ไว้ด้วย — จำเป็นต่อการไล่ "ใครถีบใคร" (`pushChainOf`)
      เพราะการถีบเกิดได้เฉพาะภายในเลนเดียวกัน (1 เลน = 1 เครื่องจริง ทำได้ทีละใบ) */
   Object.entries(buildLanes(cards, { flowByLine, machineCountByLine, pairMatByMat })).forEach(([laneKey, laneCards]) => {
-    computeQueuedPositionsFull(laneCards, queueOpts).forEach((item, laneSeq) =>
-      out.set(orderKeyOf(item.o), { ...item, laneKey, laneSeq }));
+    const { lead, followerOf } = pairSlots(laneCards, pairMatByMat || {});
+    const posOfLead = new Map();
+    computeQueuedPositionsFull(lead, queueOpts).forEach((item, laneSeq) => {
+      const it = { ...item, laneKey, laneSeq };
+      posOfLead.set(item.o, it);
+      out.set(orderKeyOf(item.o), it);
+    });
+    /* ใบตามของงานคู่ = ช่องเดียวกับใบนำ (เวลาเริ่ม/จบ/ดีเลย์เดียวกัน) · ไม่เข้า pushChainOf ซ้ำ */
+    followerOf.forEach((leadCard, fol) => {
+      const lp = posOfLead.get(leadCard);
+      if (lp) out.set(orderKeyOf(fol), { ...lp, o: fol, isPairFollower: true, pairLeadKey: orderKeyOf(leadCard) });
+    });
   });
   return out;
 }
@@ -334,6 +381,7 @@ export function pushChainOf(positioned) {
   /* จัดเป็นเลน แล้วเรียงตามลำดับที่คิวจัดไว้จริง */
   const lanes = new Map();
   items.forEach(it => {
+    if (it.isPairFollower) return;             // งานคู่: ใบตามกินช่องเดียวกับใบนำ ห้ามนับซ้ำเป็นต้นเหตุ/ผู้ถูกพาล
     const k = it.laneKey ?? it.o?.line_name ?? '';
     (lanes.get(k) || lanes.set(k, []).get(k)).push(it);
   });

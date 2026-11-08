@@ -5,31 +5,40 @@
      ไอคอนปฏิทิน/นาฬิกาใน input type=date/time + ลูกศร select + popup ปฏิทิน เป็นของ browser วาดเอง
      ไม่ประกาศ = browser ถือว่าเป็นหน้า light → วาดไอคอนสีดำทับพื้นเขียวเข้ม = มองไม่เห็นทั้งระบบ */
   color-scheme: dark;
-  --bg:       #080f08;
-  --bg2:      #0d1a0e;
-  --bg3:      #132415;
-  --card:     #0f1f10;
-  --border:   #1e3421;
-  --border2:  #2a4530;
+  /* 🎨 2026-11-04 (คำสั่ง user หลังดู mockup "สวยนะสีใหม่"): พื้นธีมมืด = เทากลาง-น้ำเงินจาง ไม่อมเขียว
+     เขียวแบรนด์เหลือเฉพาะ accent/สถานะ — เดิมพื้นเขียวเข้ม + ตัวอักษรเขียวเรือง อ่านเป็น "terminal" ไม่ใช่ enterprise
+     (ที่มา: comment "UX/UI ไม่ professional" · ref IBM Carbon Gray 100 / shadcn neutral) · ค่าเดิมดูใน git ก่อน commit นี้ */
+  --bg:       #0f1115;
+  --bg2:      #151821;
+  --bg3:      #1b1f2a;
+  --card:     #171a23;
+  --border:   #262b38;
+  --border2:  #343b4b;
 
-  --accent:      #3dd65c;
-  --accent-dim:  rgba(61, 214, 92, 0.09);
+  --accent:      #2fbf63;
+  --accent-dim:  rgba(47, 191, 99, 0.12);
   /* แสงเรืองของสี accent — ใช้กับตัวชี้แท็บใน PageHeader (ห้าม color-mix() เพดาน Chromium 94) */
-  --accent-glow: rgba(61, 214, 92, 0.45);
-  --accent-ink:  #08120a;   /* สีตัวหนังสือบนพื้น accent — ธีมสว่าง accent เป็นเขียวเข้ม ต้องกลับเป็นขาว */
-  --accent2:     #f59a3f;
-  --accent2-dim: rgba(245, 154, 63, 0.09);
+  --accent-glow: rgba(47, 191, 99, 0.35);
+  --accent-ink:  #06220c;   /* สีตัวหนังสือบนพื้น accent — ธีมสว่าง accent เป็นเขียวเข้ม ต้องกลับเป็นขาว */
+  --accent2:     #e3a23a;
+  --accent2-dim: rgba(227, 162, 58, 0.10);
 
-  --green:  #3dd65c;
-  --amber:  #f59a3f;
-  --red:    #e05c4a;
-  --blue:   #4d9fff;
-  --purple: #9b8de8;
+  --green:  #2fbf63;
+  --amber:  #e3a23a;
+  --red:    #e2574b;
+  --blue:   #4f8fe8;
+  --purple: #8e86d8;   /* ⛔ เลิกใช้ (04/11 · พาเลต ≤5 สี) — ของเก่าที่ยังอ้างคงไว้ ของใหม่ห้าม · ใช้ --blue แทน */
+  /* 🎨 พาเลตสถานะ 5 สี (UI-CONVENTIONS §6.17 · 04/11): ระดับ -dim = พื้นจาง · -line = เส้นขอบ · ห้ามเขียน rgba/hex ดิบในหน้าอีก */
+  --green-dim: rgba(47, 191, 99, 0.12);  --green-line: rgba(47, 191, 99, 0.40);
+  --amber-dim: rgba(227, 162, 58, 0.12); --amber-line: rgba(227, 162, 58, 0.40);
+  --red-dim:   rgba(226, 87, 75, 0.12);  --red-line:   rgba(226, 87, 75, 0.40);
+  --blue-dim:  rgba(79, 143, 232, 0.12); --blue-line:  rgba(79, 143, 232, 0.40);
+  --scrim: rgba(0, 0, 0, 0.55);   /* พื้นหลังมืดหลัง modal (04/11) */
 
-  --text:   #dff0e1;
-  --text2:  #8aba8e;
-  --muted:  #527855;
-  --muted2: #334e36;
+  --text:   #e6e9ef;
+  --text2:  #a3abb8;
+  --muted:  #6b7483;
+  --muted2: #454c5a;
 
   --pd3:        #4dcc6a;
   --pd3-bg:     rgba(77, 204, 106, 0.08);
@@ -39,7 +48,7 @@
   --pd4-border: rgba(245, 154, 63, 0.22);
 
   --font-body:    'Sarabun', 'Tahoma', sans-serif;
-  --font-display: 'Tahoma', 'Sarabun', sans-serif;
+  --font-display: 'Sarabun', 'Tahoma', sans-serif;   /* 04/11: หัวเรื่องใช้ฟอนต์เดียวกับเนื้อ (เดิม Tahoma = ฟอนต์ระบบ Windows ดูเก่า) */
 
   --sidebar-w:        252px;   /* ความกว้าง "แผงเมนู" (drawer มือถือ + แผงหมวดของ rail) */
   --sidebar-w-tablet: 210px;
@@ -89,12 +98,12 @@
 /* ─── Light Theme — VX White/Green ──────────────────────────────────── */
 [data-theme="light"] {
   color-scheme: light;   /* คู่กับ color-scheme: dark ใน :root — ไอคอน native กลับเป็นสีเข้มบนพื้นขาว */
-  --bg:       #f5f7f5;
+  --bg:       #f5f6f8;
   --bg2:      #ffffff;
-  --bg3:      #eef3ee;
+  --bg3:      #eef0f3;
   --card:     #ffffff;
-  --border:   #d0ddd0;
-  --border2:  #b8ccb8;
+  --border:   #e2e5ea;
+  --border2:  #cfd4dc;
 
   --accent:      #0d3d14;
   --accent-dim:  rgba(13, 61, 20, 0.07);
@@ -107,12 +116,16 @@
   --amber:  #cc7700;
   --red:    #c0392b;
   --blue:   #1a5fa8;
-  --purple: #5b4db8;
+  --purple: #5b4db8;   /* ⛔ เลิกใช้ — ดู :root */
+  --green-dim: rgba(31, 157, 74, 0.10);  --green-line: rgba(31, 157, 74, 0.40);
+  --amber-dim: rgba(199, 121, 28, 0.10); --amber-line: rgba(199, 121, 28, 0.40);
+  --red-dim:   rgba(201, 56, 44, 0.10);  --red-line:   rgba(201, 56, 44, 0.40);
+  --blue-dim:  rgba(37, 99, 201, 0.10);  --blue-line:  rgba(37, 99, 201, 0.40);
 
-  --text:   #0a1f0c;
-  --text2:  #2d4a30;
-  --muted:  #6a8a6d;
-  --muted2: #9ab09c;
+  --text:   #111827;
+  --text2:  #4b5563;
+  --muted:  #8a94a3;
+  --muted2: #b4bcc8;
 
   --pd3:        #1a6d2e;
   --pd3-bg:     rgba(13, 61, 20, 0.06);
@@ -178,7 +191,7 @@ body.esm-tv-shell .filter-bar { display: none !important; }
 /* ─── Splash Screen ──────────────────────────────────────────── */
 #splash {
   position: fixed; inset: 0;
-  background: #080f08;
+  background: var(--bg);   /* 05/11: ตามธีม (เดิม #080f08 เขียวดำ — ไม่เข้ากับพาเลตกลางใหม่ · ธีมสว่างก็ได้พื้นสว่าง) */
   z-index: 9000;
   display: flex;
   flex-direction: column;
@@ -197,7 +210,7 @@ body.esm-tv-shell .filter-bar { display: none !important; }
   font-size: clamp(0.65rem, 2.5vw, 0.85rem);
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: rgba(255,255,255,0.3);
+  color: var(--muted);
   opacity: 0;
   transform: translateY(12px);
   transition: opacity 0.5s ease 0.45s, transform 0.5s ease 0.45s;
@@ -206,7 +219,7 @@ body.esm-tv-shell .filter-bar { display: none !important; }
 
 .splash-bar-wrap {
   width: min(240px, 60vw); height: 2px;
-  background: rgba(255,255,255,0.08);
+  background: var(--border2);
   border-radius: 2px; overflow: hidden; margin-top: 8px;
 }
 .splash-bar-fill {
@@ -687,6 +700,21 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   animation: dtAlarmBlink 0.9s ease-in-out infinite;
   border-color: #ef4444 !important;
 }
+/* ── 🚨 แถบ Andon ลอย (DowntimeSiren · StoreCallSiren) — มือถือต้องอ่านข้อความออก (2026-11-05)
+   เคสจริง (mobilesweep @390px): แถบ "ไลน์เรียกของ" เป็น flex แถวเดียว `nowrap` ที่มีของตายตัว
+   ไอคอน 27 + ชิปเปิดเสียง 99 + ปุ่ม 118 + ปุ่ม 133 = 377px > กล่อง 374px
+   ⇒ กล่องข้อความ (flex:1 · min-width:0) **ถูกบีบเหลือกว้าง 0** = เห็นแต่ไอคอนกับปุ่ม
+     ไม่รู้ว่าไลน์ไหนเรียกอะไร + แถบล้นแล้วปัดไม่ได้ ⇒ Andon ที่อ่านไม่ออก = ไม่มีประโยชน์
+   🔴 แก้ที่ CSS ใต้ media query เท่านั้น — จอคอม/จอ TV ต้องเหมือนเดิมทุกพิกเซล (ด่าน desktopdiff)
+   🔴 ข้อความต้องได้เต็มบรรทัด (`flex: 1 0 100%`) ปุ่มค่อยไหลลงบรรทัดถัดไป
+      **ห้ามแก้ด้วยการย่อฟอนต์/ซ่อนปุ่ม** (ฟอนต์ขั้นต่ำ 11px · ปุ่มรับทราบคือทางปิดเสียงทางเดียว) */
+@media (max-width: 768px) {
+  .andon-bar { flex-wrap: wrap; row-gap: 8px; }
+  /* 🔴 ต้อง `!important` — กล่องข้อความตั้ง `flex: 1` ไว้ที่ inline style (ของจอคอม ห้ามถอด)
+     ซึ่งชนะ CSS เสมอ ⇒ ไม่ใส่ = กฎนี้ไม่มีผล ข้อความยังถูกบีบแคบเหมือนเดิม (พิสูจน์แล้ว 05/11) */
+  .andon-bar .andon-bar-msg { flex: 1 0 100% !important; }
+}
+
 /* ขอบกระพริบเบา สำหรับการ์ดใหญ่ (เช่นการ์ดใบซ่อม MTN รอรับงาน) — glow เล็กกว่า marker มาก */
 @keyframes moCardBlink {
   0%, 100% { box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.35); border-color: rgba(239, 68, 68, 0.55); }
@@ -936,7 +964,7 @@ body.has-mnav { --mnav-h: calc(56px + env(safe-area-inset-bottom, 0px)); padding
   color: var(--text2); font-family: var(--font-body);
 }
 .mnav > button.on { color: var(--accent); box-shadow: inset 0 3px 0 var(--accent); background: var(--accent-dim); }
-.mnav .mnav-ico { font-size: 20px; line-height: 1; }
+.mnav .mnav-ico { font-size: 20px; line-height: 1; display: flex; justify-content: center; }
 .mnav .mnav-lbl { font-size: 11px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 
 /* ─── 🔎 พับแถบกรองบนมือถือ (MobileFilterFold · 2026-10-15) — class เหล่านี้ถูก render เฉพาะมือถือ ─── */
@@ -1155,3 +1183,40 @@ body.has-mnav { --mnav-h: calc(56px + env(safe-area-inset-bottom, 0px)); padding
    `.tv-hide` = ของที่ไม่มีใครกดในห้องประชุม / ตัวหนังสืออธิบายเล็กๆ (ปุ่มเครื่องมือ · คำใบ้ · footnote) ⇒ ซ่อนบนจอ TV
    🔴 ห้ามใช้ซ่อน "คำเตือนข้อมูลไม่ครบ" — ย่อเป็นชิปสั้นแทน (กฎความซื่อสัตย์ของจอ) */
 body.esm-tv-shell .tv-hide { display: none !important; }
+
+/* ─── 🧭 คำสั่งระดับหน้า/การ์ด — ปุ่มตายตัว ≤2 + ⋯ (2026-11-04 · UI-CONVENTIONS §6.35) ─────────────
+   `.pg-btn` = ปุ่มรอง (ขอบ) · `.pg-btn.primary` = ปุ่มหลัก 1 ปุ่มต่อแถว · `.pg-btn.danger` = ทำลาย/ปฏิเสธ
+   สูงเท่ากันทุกปุ่ม (34px) · ไม่มี emoji ในป้าย — ไอคอน (ถ้ามี) เป็น SVG/ตัวอักษรเดียวสีเดียวกับป้าย */
+.pg-btn { height: 34px; padding: 0 14px; border-radius: var(--r-md); border: 1px solid var(--border2);
+  background: var(--card); color: var(--text); font: inherit; font-size: 13px; font-weight: 500;
+  display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.pg-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.pg-btn.danger  { border-color: var(--red); color: var(--red); }
+.pg-btn-icon { padding: 0; justify-content: center; }
+.pg-dot { width: 4px; height: 4px; border-radius: 50%; background: currentColor; display: inline-block; }
+.pg-menu { position: absolute; top: calc(100% + 6px); z-index: 60; min-width: 220px; padding: 6px;
+  background: var(--card); border: 1px solid var(--border2); border-radius: var(--r-lg); box-shadow: var(--shadow-md); }
+.pg-menu-item { width: 100%; display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 0; border-radius: var(--r-sm);
+  background: transparent; color: var(--text); font: inherit; font-size: 13px; text-align: left; }
+.pg-menu-item:hover { background: var(--accent-dim); opacity: 1; }
+.pg-menu-item.danger { color: var(--red); }
+.pg-menu-ico { width: 18px; text-align: center; flex-shrink: 0; opacity: 0.85; }
+.pg-menu-ico { display: inline-flex; align-items: center; justify-content: center; }
+/* ป้ายตัวเลขท้ายแท็บ PageHeader (05/11 · แท็บเส้นใต้) — เหลืองอำพัน = งานค้าง */
+.ph-tab-badge { margin-left: 6px; font-size: 11.5px; font-weight: 700; color: var(--amber); }
+.pg-menu-badge { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--bg3); color: var(--text2); flex-shrink: 0; }
+
+/* การ์ด KPI โครงเดียว (components/KpiTile.jsx) — ชื่อ → ตัวเลข → บรรทัดบริบท · ตัวเลขสีเดียว สีอยู่ที่บรรทัดล่าง */
+.kpi-tile { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-md); padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 2px; text-align: left; font: inherit; color: var(--text); min-width: 0; }
+.kpi-tile-k { color: var(--text2); font-size: 12px; font-weight: 500; }
+.kpi-tile-v { font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.kpi-tile-v small { font-size: 12px; color: var(--muted); font-weight: 500; margin-left: 4px; }
+.kpi-tile-d { font-size: 11.5px; margin-top: auto; padding-top: 4px; }
+
+/* แถบแจ้งบรรทัดเดียว (components/NoticeBar.jsx) — ขอบซ้ายสี ไม่ทาพื้นเต็ม · หนึ่งเรื่องหนึ่งแถบ */
+.notice-bar { display: flex; align-items: center; gap: 10px; padding: 9px 12px; margin-bottom: 14px;
+  background: var(--card); border: 1px solid var(--border); border-left: 3px solid var(--amber); border-radius: var(--r-md);
+  color: var(--text2); font-size: 12.5px; }
+.notice-bar b { color: var(--text); font-weight: 600; }
+.notice-bar-act { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; font-size: 12.5px; font-weight: 600; white-space: nowrap; }

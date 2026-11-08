@@ -122,7 +122,7 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
     <div style={card}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <div style={{ fontSize: 14, fontWeight: 800 }}>🔧 แผนพัฒนาเครื่องมือ ({rows.length})</div>
+          <div style={{ fontSize: 14, fontWeight: 800 }}>แผนพัฒนาเครื่องมือ ({rows.length})</div>
           <select value={filterPart} onChange={e => setFilterPart(e.target.value)} style={{ ...inp, width: 'auto', minWidth: 160 }}>
             <option value="">{ALL.part}</option>{parts.map(p => <option key={p.id} value={p.id}>{p.part_no}</option>)}
           </select>
@@ -156,7 +156,7 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                   {p?.part_no || '—'} · {kind.label} · ผู้ทำ {t.maker_name || '—'} ({t.maker_kind === 'internal' ? 'ภายใน' : 'ภายนอก'}) · {r.done}/{r.total} ขั้น · {r.pct}%{r.delayed ? <span style={{ color: '#ef4444', fontWeight: 800 }}> · ล่าช้า {r.delayed}</span> : null}
-                  {t.die_set_code && <> · 🧱 {die ? <Link to="/equipment?tab=die" style={{ color: '#4d9fff' }}>{t.die_set_code}</Link> : <span style={{ color: '#f59e0b' }} title="ไม่พบใน die_sets">{t.die_set_code} (ไม่พบในทะเบียน)</span>}</>}
+                  {t.die_set_code && <> · {die ? <Link to="/equipment?tab=die" style={{ color: '#4d9fff' }}>{t.die_set_code}</Link> : <span style={{ color: '#f59e0b' }} title="ไม่พบใน die_sets">{t.die_set_code} (ไม่พบในทะเบียน)</span>}</>}
                 </div>
               </div>
               <GanttRow plan={[t.plan_start, t.plan_end]} actual={[t.actual_start, t.actual_end]} range={range} todayPos={todayPos} pct={r.pct} light={r.light} />
@@ -227,7 +227,7 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
 
       {stepModal && (
         <Modal title={stepModal.id ? `ขั้น ${stepModal.name}` : 'เพิ่มขั้นงาน'} onClose={() => setStepModal(null)} width={600}
-          footer={<><button style={ghost} onClick={() => setStepModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveStep}>💾 บันทึก</button></>}>
+          footer={<><button style={ghost} onClick={() => setStepModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveStep}>บันทึก</button></>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label="ชื่อขั้นงาน *" span={2}><input style={inp} value={stepModal.name} onChange={e => setStepModal({ ...stepModal, name: e.target.value })} /></Field>
             <Field label="ลำดับ"><input type="number" style={inp} value={stepModal.seq} onChange={e => setStepModal({ ...stepModal, seq: e.target.value })} /></Field>

@@ -36,8 +36,8 @@ const FIELDS = [
 ];
 
 const KINDS = [
-  { value: 'order', label: '📦 ใบสั่งส่งรายวัน (เทียบเท่า 862)' },
-  { value: 'forecast', label: '📅 แผนล่วงหน้า (เทียบเท่า 830)' },
+  { value: 'order', label: 'ใบสั่งส่งรายวัน (เทียบเท่า 862)' },
+  { value: 'forecast', label: 'แผนล่วงหน้า (เทียบเท่า 830)' },
 ];
 
 const inp = { padding: '5px 8px', borderRadius: 6, fontSize: 12, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', width: '100%' };
@@ -119,7 +119,7 @@ export default function CustomerFileFormats({ canManage, onChanged }) {
   return (
     <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-        <b style={{ fontSize: 13 }}>🧩 ฟอร์แมตไฟล์ความต้องการของลูกค้า</b>
+        <b style={{ fontSize: 13 }}>ฟอร์แมตไฟล์ความต้องการของลูกค้า</b>
         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
           ลูกค้าเจ้าใหม่ที่ส่งไฟล์คนละหน้าตา — เพิ่มที่นี่ ไม่ต้องแก้โปรแกรม
         </span>
@@ -205,7 +205,7 @@ export default function CustomerFileFormats({ canManage, onChanged }) {
       )}
 
       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
-        💡 ชื่อคอลัมน์จากทุกแถวถูกรวมเป็นพจนานุกรมเดียวตอนอ่านไฟล์ — ระบบยังแยก "ใบส่ง" กับ "แผนล่วงหน้า"
+        ชื่อคอลัมน์จากทุกแถวถูกรวมเป็นพจนานุกรมเดียวตอนอ่านไฟล์ — ระบบยังแยก "ใบส่ง" กับ "แผนล่วงหน้า"
         ด้วยสัญญาณในไฟล์เอง (มีคอลัมน์เวลา/ท่ารับ = ใบส่ง · ไม่มีและวันที่ยิงยาวข้ามปี = แผน) แล้วให้คนยืนยันก่อนนำเข้าเสมอ
       </div>
     </div>

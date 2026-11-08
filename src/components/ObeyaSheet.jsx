@@ -4,6 +4,7 @@
    แผ่น (`Sheet`) · ไฟสถานะ (`StatusLamp`) · หมายเหตุเตือน (`WarnNote`) · ช่องว่าง (`EmptyChart`)
    🔴 แก้หน้าตาแผ่นที่นี่ที่เดียว ห้าม copy ไปแก้ในหน้าใดหน้าหนึ่ง (ไม่งั้น 2 แท็บจะค่อยๆ หน้าตาต่างกันอีก)
    กติกาของผัง (คณิต A4 · ฟอนต์ขั้นต่ำ 11px · ไฟไม่กระพริบ · เทาต้องบอกว่าเทาเพราะอะไร) → docs/modules/obeya.md §2 */
+import { toneVar, toneDim, toneLine } from '../utils/statusTone';
 import { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { statusColor } from '../utils/obeyaKpi';
@@ -71,7 +72,10 @@ export const headFitBigScale = (lvl) => (lvl >= 3 ? 0.65 : lvl >= 2 ? 0.8 : 1);
 export function StatusLamp({ k, w, stat, onGo, forceCompact = false }) {
   if (!stat) return null;
   const fs = (n) => Math.max(11, Math.round(n * k));
-  const c = statusColor(stat.status);
+  // 🎨 token พาเลต 5 สี (UI §6.17 · 04/11) — ห้ามต่อ alpha บน var() ⇒ ใช้ระดับ dim/line
+  const c = toneVar(stat.status);
+  const cDim = toneDim(stat.status);
+  const cLine = toneLine(stat.status);
   const red = stat.status === 'bad';
   const go = typeof onGo === 'function' ? onGo : null;
   /* แผ่นแคบมาก → เหลือดวงไฟอย่างเดียว (tooltip ยังบอกเหตุผลครบ + WarnNote ใต้แผ่นก็บอกอยู่แล้ว)
@@ -87,9 +91,9 @@ export function StatusLamp({ k, w, stat, onGo, forceCompact = false }) {
         display: 'flex', alignItems: 'center', gap: Math.max(4, Math.round(5 * k)),
         padding: `${Math.max(2, Math.round(2.5 * k))}px ${Math.max(6, Math.round(8 * k))}px`,
         borderRadius: 999, flexShrink: 0, whiteSpace: 'nowrap',
-        background: 'var(--bg3)', backgroundImage: `linear-gradient(${c}1f, ${c}1f)`,
-        border: `1px solid ${c}${red ? 'cc' : '66'}`,
-        boxShadow: red ? `0 0 9px 1px ${c}66` : 'none',
+        background: 'var(--bg3)', backgroundImage: `linear-gradient(${cDim}, ${cDim})`,
+        border: `1px solid ${red ? c : cLine}`,
+        boxShadow: red ? `0 0 9px 1px ${cLine}` : 'none',
         cursor: go ? 'pointer' : 'default',
       }}>
       <span style={{
@@ -214,7 +218,7 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
           ) : <span />}
           <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
             {delta != null && (
-              <div style={{ fontSize: fs(11.5), fontWeight: 800, color: delta >= 0 ? '#22c55e' : '#ef4444', whiteSpace: 'nowrap' }}>
+              <div style={{ fontSize: fs(11.5), fontWeight: 800, color: delta >= 0 ? 'var(--green)' : 'var(--red)', whiteSpace: 'nowrap' }}>
                 {delta >= 0 ? '▲' : '▼'} {Math.abs(delta)}
               </div>
             )}
@@ -249,13 +253,14 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
 /* หมายเหตุ "ข้อมูลยังไม่พร้อม" — ต้องเห็นชัดบนแผ่น ไม่ใช่ตัวจิ๋วมุมล่าง (กฎความซื่อสัตย์ของจอ) */
 /* 📺 จอประชุม = ชิปบรรทัดเดียว (ตัดท้าย … · ข้อความเต็มอยู่ใน title) — ยังเห็นว่า "มีข้อมูลขาด" แต่ไม่กินที่กราฟ
    `tvHide` = WarnNote ที่เป็นแค่คำอธิบาย (ไม่ใช่ข้อมูลขาด) ⇒ `<Sheet>` ไม่วาดบนจอประชุม */
-export function WarnNote({ k, text, tone = '#f59e0b' }) {
+/* `tone` = คีย์ good|warn|bad|info|none (04/11: เดิมรับ hex แล้วต่อ alpha — ใช้กับ token ไม่ได้) */
+export function WarnNote({ k, text, tone = 'warn', title }) {
   const tv = useTvShell();
   return (
-    <div title={tv ? String(text) : undefined} style={{
-      fontSize: Math.max(11, Math.round(10.5 * k)), lineHeight: 1.3, color: tone, fontWeight: 600,
-      background: 'var(--bg3)', backgroundImage: `linear-gradient(${tone}14, ${tone}14)`,
-      border: `1px solid ${tone}55`, borderRadius: 4, padding: '3px 6px',
+    <div data-warn="1" title={title || (tv ? String(text) : undefined)} style={{
+      fontSize: Math.max(11, Math.round(10.5 * k)), lineHeight: 1.3, color: toneVar(tone), fontWeight: 600,
+      background: 'var(--bg3)', backgroundImage: `linear-gradient(${toneDim(tone)}, ${toneDim(tone)})`,
+      border: `1px solid ${toneLine(tone)}`, borderRadius: 4, padding: '3px 6px',
       ...(tv ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } : null),
     }}>⚠️ {text}</div>
   );
@@ -267,9 +272,9 @@ export const FocusAxisNote = ({ k, loText, fixed = false }) => (
   <div title={fixed
     ? 'กราฟนี้ขยายช่วงค่าถาวรให้เห็นความต่าง (ไม่มีปุ่มปิด) — ความสูงแท่ง/เส้นเทียบสัดส่วนกับ 0 ไม่ได้'
     : 'โหมดโฟกัส: ยกพื้นแกนขึ้นเพื่อขยายช่วงที่ค่ากระจุกอยู่ — ความสูงแท่งเทียบสัดส่วนกันไม่ได้ (กดปุ่ม 🎯 บนแถบกรองเพื่อปิด)'}
-    style={{ position: 'absolute', top: 0, right: 6, zIndex: 1, fontSize: Math.max(11, Math.round(9.5 * k)), fontWeight: 700, color: '#f59e0b',
-      background: 'var(--card)', border: '1px solid #f59e0b55', borderRadius: 4, padding: '0 5px', lineHeight: 1.5 }}>
-    🎯 แกนเริ่ม {loText} ไม่ใช่ 0
+    style={{ position: 'absolute', top: 0, right: 6, zIndex: 1, fontSize: Math.max(11, Math.round(9.5 * k)), fontWeight: 700, color: 'var(--amber)',
+      background: 'var(--card)', border: '1px solid var(--amber)55', borderRadius: 4, padding: '0 5px', lineHeight: 1.5 }}>
+    แกนเริ่ม {loText} ไม่ใช่ 0
   </div>
 );
 

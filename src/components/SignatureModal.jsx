@@ -6,7 +6,15 @@ import { uploadOpts } from '../utils/storageUpload';
 import { acceptImageFile } from '../utils/acceptImageFile';
 import { luma, pickPaperCutoff, clipPaperToWhite, inkRatioOk } from '../utils/signatureImage';
 
-export default function SignatureModal({ open, onClose, currentSignatureUrl, onSaved }) {
+/**
+ * ✍️ วาด/อัปโหลดลายเซ็น — ค่าเริ่มต้น = ลายเซ็นของ "บัญชีที่ login อยู่" (profiles.signature_url)
+ * 🆕 03/11 (ประชุม 02/11 C1): ใช้กับ **ลายเซ็นพนักงาน** ได้ด้วย โดยส่ง
+ *   · `folder`  = โฟลเดอร์ใน bucket `signatures` (พนักงาน = `emp/<employee_id>`) · ไม่ส่ง = `<uid>` เดิม
+ *   · `persist` = async (publicUrl) => ({ ok, message }) เขียน URL ลงแถวปลายทาง (ต้องนับแถวเอง) · ไม่ส่ง = โปรไฟล์ตัวเอง
+ *   · `title`   = หัวโมดัล
+ *   ตัวบีบรูป/ตัดพื้นกระดาษ/กันไฟล์ HEIC ใช้ชุดเดียวกัน (ห้ามก๊อปโมดัลนี้ไปทำใหม่)
+ */
+export default function SignatureModal({ open, onClose, currentSignatureUrl, onSaved, folder = null, persist = null, title = null }) {
   const [tab, setTab] = useState('draw'); // 'draw' | 'upload'
   const [uploadFile, setUploadFile] = useState(null);
   const [uploadPreview, setUploadPreview] = useState(null);
@@ -114,6 +122,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { toast.error('ไม่พบข้อมูลผู้ใช้'); setSaving(false); return; }
+      const dir = folder || user.id;
 
       const ts = Date.now();
       let filePath, fileBlob, contentType;
@@ -121,7 +130,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
       if (tab === 'draw') {
         const canvas = canvasRef.current;
         fileBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-        filePath = `${user.id}/${ts}.png`;
+        filePath = `${dir}/${ts}.png`;
         contentType = 'image/png';
       } else {
         if (!uploadFile) { toast.error('กรุณาเลือกไฟล์'); setSaving(false); return; }
@@ -164,7 +173,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
         } finally {
           URL.revokeObjectURL(objUrl);
         }
-        filePath = `${user.id}/${ts}.png`;
+        filePath = `${dir}/${ts}.png`;
         contentType = 'image/png';
       }
 
@@ -177,7 +186,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
 
       // ⚠️ ห้าม update ตรง — RLS ที่บล็อกจะ "สำเร็จ 0 แถว" โดยไม่มี error แล้วลายเซ็นหายหลัง logout
       // (เคสจริงที่หัวหน้าแผนกแจ้ง 2026-08-17) → เขียนผ่าน helper ที่ตรวจว่าเขียนติดจริง
-      const res = await saveMyProfileMedia('signature_url', publicUrl);
+      const res = persist ? await persist(publicUrl) : await saveMyProfileMedia('signature_url', publicUrl);
       if (!res.ok) { toast.error('บันทึกไม่สำเร็จ: ' + res.message); setSaving(false); return; }
 
       /* 🔴 **ห้ามลบไฟล์ลายเซ็นเดิม** (2026-10-24 · คำสั่ง user — เดิมลบทิ้งเพื่อกันไฟล์กำพร้า)
@@ -219,7 +228,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
           borderBottom: '1px solid var(--border)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
-          <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>✍️ จัดการลายเซ็น</div>
+          <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>{title || '✍️ จัดการลายเซ็น'}</div>
           <button onClick={onClose} style={{
             background: 'none', border: 'none', cursor: 'pointer',
             color: 'var(--muted)', fontSize: 18, lineHeight: 1, padding: '2px 6px',
@@ -244,7 +253,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
           <div style={{ display: 'flex', gap: 0, marginBottom: 14, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}>
             {[
               { key: 'draw', label: '✏️ วาดลายเซ็น' },
-              { key: 'upload', label: '📁 อัปโหลดรูป' },
+              { key: 'upload', label: 'อัปโหลดรูป' },
             ].map(t => (
               <button key={t.key} onClick={() => setTab(t.key)} style={{
                 flex: 1, padding: '9px 0', border: 'none', cursor: 'pointer',
@@ -279,7 +288,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
                 marginTop: 8, padding: '6px 14px', fontSize: 12, borderRadius: 6,
                 background: 'var(--bg3)', border: '1px solid var(--border2)',
                 color: 'var(--text2)', cursor: 'pointer',
-              }}>🗑️ ล้าง</button>
+              }}>ล้าง</button>
             </div>
           )}
 

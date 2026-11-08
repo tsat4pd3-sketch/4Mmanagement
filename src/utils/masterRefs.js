@@ -98,6 +98,28 @@ export const MASTER_REF_SPECS = {
     keysOf: r => uniq([r?.key]),           // 🔴 key เท่านั้น (เหตุผลเดียวกับ die_op_types)
     targets: [['die_sets', 'kind', 'ชุดแม่พิมพ์']],
   },
+  /* 📏 หน่วยนับ (05/11) — ปลายทางเก็บ code · keysOf รวม alias (ค่าเก่าที่ยังไม่ผ่าน normUom ก็นับ) */
+  uom_units: {
+    label: 'หน่วยนับ',
+    keysOf: r => uniq([r?.code, ...(Array.isArray(r?.aliases) ? r.aliases : [])]),
+    targets: [
+      ['parts_master', 'uom', 'ทะเบียนพาร์ท'],
+      ['bom_items', 'uom', 'รายการ BOM'],
+      ['material_request_items', 'unit', 'รายการใบเบิกวัสดุ'],
+    ],
+  },
+  /* 🧪 เหตุผลจองเครื่องทดลอง (05/11) — ปลายทางเก็บ label */
+  trial_reasons: {
+    label: 'เหตุผลจองเครื่องทดลอง',
+    keysOf: r => uniq([r?.label, r?.code]),
+    targets: [['production_plan_lots', 'trial_reason', 'ใบจองเครื่องทดลอง']],
+  },
+  /* 📦 ประเภทภาชนะ (05/11) — ปลายทางเก็บ code */
+  container_categories: {
+    label: 'ประเภทภาชนะ',
+    keysOf: r => uniq([r?.code]),
+    targets: [['container_types', 'category', 'ชนิดภาชนะ']],
+  },
   repair_wi_registry: {
     label: 'WI ซ่อม',
     mode: 'contains',

@@ -37,3 +37,28 @@
 ## 📐 หน้าตา
 
 `/register` ใช้ `<Page width="form">` (960px) **ไม่ใช่ `narrow`** — เหตุผลใน `docs/UI-STANDARD.md` §1
+
+
+## ✍️ ลายเซ็นพนักงาน + "รหัสพนักงาน → ผู้เซ็น" (2026-11-03 · ประชุม 02/11 C1)
+
+เจ้าของกฎ **`src/utils/employeeSignature.js`** (มีเทส) — ใช้กับเอกสาร export ที่รู้ "รหัสพนักงาน" ของผู้ตรวจ
+(สแกน QR บนบัตร = รหัสล้วน ชุดเดียวกับเช็คชื่อ · ผู้รับเหมาไม่มีบัตร/บัญชี = พิมพ์รหัสเอง)
+- `signerFromRows(code, rows)` — จับคู่ **ตรงเป๊ะหลัง `normBadgeCode`** เท่านั้น · สถานะ `ok` / `no_signature` /
+  `not_found` / `ambiguous` (รหัสซ้ำ = ไม่เดา) / `no_code` / `unknown` (อ่านไม่ได้/คอลัมน์ยังไม่เปิด) · ทุกสถานะมี `note` ให้จอเขียน
+- `loadEmployeeSigners(client, { codes, ids })` — 42703/PGRST204 = ถอยไปโหลดแบบไม่มีลายเซ็น + ธง `sigColumnMissing` · error จริง = คืน `error`
+- `signatureOfPerson({ profileSig, employeeSig, stored })` — ลำดับลายเซ็นทั้งระบบ (ห้ามเรียงเองในหน้า)
+
+**ต่อแล้ว (03/11):**
+| เอกสาร | ระบุผู้ตรวจด้วย | พฤติกรรม |
+|---|---|---|
+| BBS `bbs_observation` (`/daily-checker` › BBS) | ช่อง "รหัสพนักงาน (สแกนบัตร/พิมพ์)" — Enter จากเครื่องสแกน = ยืนยัน | ไม่เลือกโปรไฟล์ = ใช้ชื่อ+ลายเซ็นจากฐานพนักงานตามรหัส · resolve สดตอนกดพิมพ์ |
+| PM JIG `pm_jig` FM-JIG-003 (PDF/Excel) | บัญชีที่ตรวจ (`inspector_id`) → `profiles.employee_id` | ไม่มีลายเซ็นโปรไฟล์ = ถอยไปลายเซ็นในฐานพนักงานที่ผูกไว้ |
+
+**ต่อเพิ่ม (05/11):** ช่องกลาง **`<InspectorCodeField>`** (`src/components/InspectorCodeField.jsx` · สแกนบัตร/พิมพ์ · Enter = ยืนยัน · โชว์ชื่อ+เหตุผลใต้ช่อง)
+| เอกสาร | เก็บรหัสที่ | พฤติกรรม |
+|---|---|---|
+| ใบตรวจ AM/PM (`/daily-checker?tab=pm` · export FM-JIG-003) | `inspections.inspector_code` (DR · migration `20261105_inspector_code_am_dr.sql`) | ช่องเหนือหมายเหตุ · คงค่าข้ามเครื่องในแท็บ (`sessionStorage`) · export: มีรหัส = คนตามรหัสเซ็น |
+| ใบตรวจ QA (`QaCheckSheet`) | `qa_inspection_sheets.inspector_code` (Main · migration `20261105_inspector_code_qa_main.sql`) | ช่องในหัวใบ · ใบยังไม่ถูกสร้าง = ถือรหัสไว้ใส่ตอนสร้าง · ใบพิมพ์ `qa_inspection_sheet` (ปุ่ม 🖨️ · `src/lib/qaSheetPrint.js`) ใช้รหัสนี้หาลายเซ็น |
+- 🔴 **ผู้ตรวจบนใบ export = `inspectorForExport()` ที่เดียว** — มีรหัส = คนตามรหัส (เครื่องหน้างานใช้บัญชีกลาง) ·
+  หาลายเซ็นไม่ได้ = **เว้นช่อง + toast เหตุผล ห้ามถอยไปลายเซ็นบัญชีที่ login** (= ลายเซ็นคนอื่น) · ไม่มีรหัส = พฤติกรรมเดิม
+- ยังไม่มีปุ่มให้พนักงาน "เซ็นเอง" ผ่านคีออส (ตอนนี้คนที่แก้พนักงานได้เป็นคนตั้งลายเซ็นให้)

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useContext, useMemo, lazy, Suspense } from
 import { LOGISTIC_GROUPS } from '../utils/logisticSide';
 import { useNavigate } from 'react-router-dom';
 import { navItemsForGroups, isNavGuest, NAV_GROUP_META, NAV_GROUP_ORDER, UserContext } from '../App';
-import { toneOf, toneInk, statusColor } from '../utils/statusTone';
+import { toneOf } from '../utils/statusTone';
 import { topPaths } from '../utils/navRecent';
 import { scopedLineNames, MAINTENANCE_ROLES } from '../utils/sectionScope';
 import { roleLabel } from '../utils/roleMeta';
@@ -14,15 +14,18 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { fetchActiveDowntimes } from '../utils/downtimeAlarm';
 import { toast } from '../components/Toast';
+import KpiTile from '../components/KpiTile';   // การ์ดตัวเลขโครงเดียว (UI §6.35 · 04/11)
 import { uploadMyAvatar } from '../utils/profileSelf';
 import ImageCropModal from '../components/ImageCropModal';
 import SignatureModal from '../components/SignatureModal';
 import ChangePasswordModal from '../components/ChangePasswordModal';
+const NotifyPrefsModal = lazy(() => import('../components/NotifyPrefsModal'));  // 🔕 ตั้งค่าแจ้งเตือนของฉัน
 const FeedbackModal = lazy(() => import('../components/FeedbackModal'));  // 💬 ช่องรับ feedback (ชุดเดียวกับ sidebar)
 import { visibleInterval } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { liveChannel } from '../utils/liveChannel';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
+import Icon from '../components/Icon';   // ✒️ ไอคอนเส้นแทน emoji (UI §6.36)
 
 /* ── DeptHub — landing "Smart Factory / Industry 5.0" (redesign v2 2026-07-13) ──
    คอนเซปต์: Mission Control ของโรงงาน — ไม่ใช่แค่เมนู แต่เป็นแผงควบคุมที่มีชีวิต
@@ -40,21 +43,8 @@ const DEPT_CSS = `
     from { opacity: 0; transform: translateY(28px); }
     to   { opacity: 1; transform: translateY(0); }
   }
-  /* กริด blueprint จางๆ ทั้งหน้า — โทนตาม theme */
-  .hub-root {
-    background-image:
-      radial-gradient(80rem 40rem at 50% -14rem, rgba(61,214,92,0.07), transparent 65%),
-      linear-gradient(rgba(61,214,92,0.032) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(61,214,92,0.032) 1px, transparent 1px);
-    background-size: auto, 44px 44px, 44px 44px;
-  }
-  [data-theme="light"] .hub-root {
-    background-image:
-      radial-gradient(80rem 40rem at 50% -14rem, rgba(13,61,20,0.06), transparent 65%),
-      linear-gradient(rgba(13,61,20,0.045) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(13,61,20,0.045) 1px, transparent 1px);
-    background-size: auto, 44px 44px, 44px 44px;
-  }
+  /* 04/11 (UI §6.35/§6.17): ถอดกริด blueprint + แสงเรือง + มุม HUD + เส้นสีประจำโมดูล — ของตกแต่งทั้งหมด · พาเลต 5 สี */
+  .hub-root { background: var(--bg); }
   .smart-card {
     position: relative;
     border-radius: 12px;
@@ -65,29 +55,8 @@ const DEPT_CSS = `
     overflow: hidden;
     transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
   }
-  /* เส้นสถานะสีประจำโมดูลบนขอบบน */
-  .smart-card .edge {
-    position: absolute; top: 0; left: 0; right: 0; height: 2px;
-    /* 23/09: เดิมไล่เฉดจางหายทางขวา — เป็นการตกแต่งล้วน (สีเดียวกันทั้งเส้นสื่อความหมายเท่ากัน)
-       ใช้เส้นทึบครึ่งการ์ดแทน ⇒ ยังชี้สีประจำโมดูลได้ แต่ไม่ต้องมีเฉด */
-    right: auto; width: 46%;
-    background: var(--mc);
-    opacity: 0.85;
-  }
-  /* มุม bracket แบบ HUD */
-  .smart-card::before, .smart-card::after {
-    content: ''; position: absolute; width: 13px; height: 13px; opacity: 0.55;
-    transition: opacity 0.2s ease;
-  }
-  .smart-card::before { top: 7px; left: 7px; border-top: 1.5px solid var(--mc); border-left: 1.5px solid var(--mc); }
-  .smart-card::after { bottom: 7px; right: 7px; border-bottom: 1.5px solid var(--mc); border-right: 1.5px solid var(--mc); }
   @media (hover: hover) {
-    .smart-card.active:hover {
-      transform: translateY(-5px);
-      border-color: var(--mc);
-      box-shadow: 0 10px 30px -12px var(--mc);
-    }
-    .smart-card.active:hover::before, .smart-card.active:hover::after { opacity: 1; }
+    .smart-card.active:hover { transform: translateY(-3px); border-color: var(--accent); box-shadow: var(--shadow-float); }
   }
   .smart-card.soon { cursor: not-allowed; opacity: 0.5; }
   .dept-chip {
@@ -101,19 +70,6 @@ const DEPT_CSS = `
   @media (hover: hover) {
     .dept-chip:hover { transform: translateY(-1px); filter: brightness(1.35); }
   }
-  .tele-tile {
-    flex: 1 1 150px; min-width: 150px;
-    background: var(--card); border: 1px solid var(--border2); border-radius: 10px;
-    padding: 12px 16px 11px; text-align: left; position: relative; overflow: hidden;
-  }
-  .tele-tile .scan {
-    position: absolute; top: 0; left: 0; right: 0; height: 2px;
-    right: auto; width: 42%; background: var(--tc); opacity: 0.8;
-  }
-  @media (hover: hover) {
-    .tele-tile:hover { transform: translateY(-4px); border-color: var(--tc); }
-  }
-  .tele-tile { transition: transform 0.2s ease, border-color 0.2s ease; }
   /* กริดโมดูล — ใช้พื้นที่แนวนอนเต็มที่ (กฎ user 2026-07-14: ห้ามเหลือขอบข้างว่างเยอะ)
      9 การ์ด (= 9 หมวด sidebar) → ≥1200px จัด 3 คอลัมน์ ลงตัวพอดี 3×3
      จำนวนการ์ดลดลงได้ตามสิทธิ์ของ role (การ์ดที่ไม่มีเมนูให้เข้าเลยถูกซ่อน) → auto-fill รับได้ */
@@ -131,7 +87,7 @@ const DEPT_CSS = `
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
   @media (hover: hover) {
-    .hub-search:hover { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(61,214,92,0.08); }
+    .hub-search:hover { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
   }
   .star-chip {
     display: inline-flex; align-items: center; gap: 7px;
@@ -187,25 +143,25 @@ const DEPT_CSS = `
    ตารางนี้เก็บแค่ "หน้าตา" ของการ์ด (รหัส/สี/ปลายทางเริ่มต้น/คำอธิบาย)
    ส่วน "มีเมนูอะไรบ้าง" ยังมาจาก NAV_ITEMS ผ่าน navItemsForGroups เสมอ */
 const CARD_META = {
-/* 🔴 **สีประจำโมดูล ห้ามเป็นสีสถานะ** (`STATUS_COLOR` ใน `utils/statusTone.js`: เขียว #22c55e ·
-   เหลือง #f59e0b · แดง #ef4444) — 23/09 ก้อน B · มีด่าน `module-identity-not-status-hue`
-   เดิม "ฝ่ายผลิต" เป็น #22c55e และ "Warehouse & Delivery" เป็น #f59e0b **เป๊ะตัวเดียวกับไฟสถานะ**
+/* 🔴 **สีประจำโมดูล ห้ามเป็นสีสถานะ** (`STATUS_COLOR` ใน `utils/statusTone.js`: เขียว var(--green) ·
+   เหลือง var(--amber) · แดง var(--red)) — 23/09 ก้อน B · มีด่าน `module-identity-not-status-hue`
+   เดิม "ฝ่ายผลิต" เป็น var(--green) และ "Warehouse & Delivery" เป็น var(--amber) **เป๊ะตัวเดียวกับไฟสถานะ**
    ที่การ์ด telemetry บนหน้าเดียวกันใช้อยู่ ⇒ จอเดียวกันมีแถบเขียว/เหลือง 2 ความหมายปนกัน
    คนหน้างานอ่านแถบเหลืองเหนือ Warehouse ว่า "คลังมีปัญหา" ทั้งที่มันแปลว่า "นี่คือการ์ดคลัง"
    ⇒ ย้ายไปโทนเย็นที่ไม่มีความหมายสถานะ (teal / indigo) · การ์ดยังแยกกันออกด้วย emoji + code + สีอื่น */
-  'ภาพรวม':                   { code: 'OVW·01', color: '#3dd65c', route: '/obeya?tab=todo', label: 'Overview & Control',    desc: 'งานค้างของส่วนงาน · ผังรวมโรงงาน' },
+  'ภาพรวม':                   { code: 'OVW·01', route: '/obeya?tab=todo', label: 'Overview & Control',    desc: 'งานค้างของส่วนงาน · ผังรวมโรงงาน' },
   // 📺 จอที่ "แขวนทิ้งไว้" — แยกจากภาพรวมเพราะไม่ใช่หน้าที่เปิดมากดทำงาน (nav audit 2026-08-28)
-  'จอแสดงผล':              { code: 'TVB·02', color: '#38bdf8', route: '/tv',           label: 'Wall Displays',           desc: 'ไทม์ไลน์ผลิตทุกไลน์ · Andon Board · OEE รายไลน์' },
-  'ฝ่ายผลิต':                 { code: 'PRD·02', color: '#14b8a6', route: '/daily-report', label: 'Production',              desc: 'เช็คชื่อ-PPE · จัดการไลน์ · Daily Report · Daily Checker · Kaizen' },
-  'วิเคราะห์ & รายงาน':       { code: 'ANL·03', color: '#c084fc', route: '/oee-analytics', label: 'Analytics & Reports',    desc: 'OEE · VSM · สอบกลับ Order · ประวัติผลิต · รายงาน/ใบพิมพ์' },
-  'พนักงาน & ทักษะ':          { code: 'HRM·04', color: '#22d3ee', route: '/operator',     label: 'People & Skills',         desc: 'ฐานข้อมูลพนักงาน · สกิล & Level Up · OJT · ตารางกะ' },
+  'จอแสดงผล':              { code: 'TVB·02', route: '/tv',           label: 'Wall Displays',           desc: 'ไทม์ไลน์ผลิตทุกไลน์ · Andon Board · OEE รายไลน์' },
+  'ฝ่ายผลิต':                 { code: 'PRD·02', route: '/daily-report', label: 'Production',              desc: 'เช็คชื่อ-PPE · จัดการไลน์ · Daily Report · Daily Checker · Kaizen' },
+  'วิเคราะห์ & รายงาน':       { code: 'ANL·03', route: '/oee-analytics', label: 'Analytics & Reports',    desc: 'OEE · VSM · สอบกลับ Order · ประวัติผลิต · รายงาน/ใบพิมพ์' },
+  'พนักงาน & ทักษะ':          { code: 'HRM·04', route: '/operator',     label: 'People & Skills',         desc: 'ฐานข้อมูลพนักงาน · สกิล & Level Up · OJT · ตารางกะ' },
   // Logistic แยก 3 ฝั่งตามแผนกเจ้าของ — ⚠️ Warehouse (FG 1xx · ส่งลูกค้า) ≠ Store (2xx/3xx/5xx · ป้อนไลน์) · ชื่อหมวดจาก LOGISTIC_GROUPS
-  [LOGISTIC_GROUPS.inbound]:  { code: 'STO·06', color: '#38bdf8', route: '/line-stock',      label: 'Planning & Store',      desc: 'แผนงาน + Store (3xx ซื้อนอก · 5xx raw · 2xx ผลิตเอง) — Planner & Sales · สต๊อกในไลน์ · บอร์ดคัมบัง · ขนส่งเข้าไลน์' },
-  [LOGISTIC_GROUPS.outbound]: { code: 'DLV·07', color: '#818cf8', route: '/customer-demand', label: 'Warehouse & Delivery',  desc: 'Warehouse (FG 1xx) · Delivery · Rack Center — จัดส่งลูกค้า · คาดการณ์ของจะขาด · ภาชนะ' },
-  'การตรวจสอบและซ่อมบำรุง':   { code: 'MTN·08', color: '#fb923c', route: '/mtn-repair',   label: 'Inspection & Maintenance', desc: 'แจ้งซ่อม MO · ศูนย์ PM (ตรวจ·แผน·ล่วงหน้า) · ผังเครื่องจักร · พลังงาน' },
-  'คุณภาพ & วิศวกรรม':        { code: 'QUA·09', color: '#4d9fff', route: '/qa',           label: 'Quality & Engineering',   desc: 'ใบตรวจ · SPC · NCR · CAPA/8D · เคลมลูกค้า · CQI-15 · PFMEA/Control Plan' },
-  'ตั้งค่าโปรแกรม,ฐานข้อมูล': { code: 'SET·10', color: '#34d399', route: '/products',     label: 'Master Data & Settings',  desc: 'Product Master · เครื่องจักร · ผัง · ปฏิทิน · สิทธิ์ · แจ้งเตือน' },
-  'ผู้บริหาร & เดโม':         { code: 'EXE·11', color: '#f472b6', route: '/flow-tower',   label: 'Executive & Demo',        desc: 'สายธารความต้องการ · ภาพรวมกลุ่มโรงงาน · ภาพเมื่อข้อมูลเชื่อมกัน' },
+  [LOGISTIC_GROUPS.inbound]:  { code: 'STO·06', route: '/line-stock',      label: 'Planning & Store',      desc: 'แผนงาน + Store (3xx ซื้อนอก · 5xx raw · 2xx ผลิตเอง) — Planner & Sales · สต๊อกในไลน์ · บอร์ดคัมบัง · ขนส่งเข้าไลน์' },
+  [LOGISTIC_GROUPS.outbound]: { code: 'DLV·07', route: '/customer-demand', label: 'Warehouse & Delivery',  desc: 'Warehouse (FG 1xx) · Delivery · Rack Center — จัดส่งลูกค้า · คาดการณ์ของจะขาด · ภาชนะ' },
+  'การตรวจสอบและซ่อมบำรุง':   { code: 'MTN·08', route: '/mtn-repair',   label: 'Inspection & Maintenance', desc: 'แจ้งซ่อม MO · ศูนย์ PM (ตรวจ·แผน·ล่วงหน้า) · ผังเครื่องจักร · พลังงาน' },
+  'คุณภาพ & วิศวกรรม':        { code: 'QUA·09', route: '/qa',           label: 'Quality & Engineering',   desc: 'ใบตรวจ · SPC · NCR · CAPA/8D · เคลมลูกค้า · CQI-15 · PFMEA/Control Plan' },
+  'ตั้งค่าโปรแกรม,ฐานข้อมูล': { code: 'SET·10', route: '/products',     label: 'Master Data & Settings',  desc: 'Product Master · เครื่องจักร · ผัง · ปฏิทิน · สิทธิ์ · แจ้งเตือน' },
+  'ผู้บริหาร & เดโม':         { code: 'EXE·11', route: '/flow-tower',   label: 'Executive & Demo',        desc: 'สายธารความต้องการ · ภาพรวมกลุ่มโรงงาน · ภาพเมื่อข้อมูลเชื่อมกัน' },
 };
 
 const DEPTS = NAV_GROUP_ORDER.map((group, i) => {
@@ -217,7 +173,6 @@ const DEPTS = NAV_GROUP_ORDER.map((group, i) => {
     label: m.label || group,           // ชื่ออังกฤษบนหัวการ์ด (หมวดใหม่ที่ยังไม่ตั้ง = ใช้ชื่อหมวดไปก่อน)
     labelTh: group,                    // ชื่อไทย = ชื่อหมวดใน sidebar เป๊ะ (ห้ามตั้งชื่อใหม่ให้ต่างจากเมนู)
     icon: NAV_GROUP_META[group]?.icon || '📁',
-    color: m.color || '#94a3b8',       // ต้องเป็น hex — ใช้ต่อสตริง `${color}15` ทำพื้นชิป (CSS var ใช้ไม่ได้)
     route: m.route,                    // ไม่ตั้ง = ใช้เมนูตัวแรกของหมวดที่ user เข้าได้ (คำนวณตอน render)
     desc: m.desc || '',
   };
@@ -226,60 +181,6 @@ const DEPTS = NAV_GROUP_ORDER.map((group, i) => {
 const CHIP_CAP = 6;   // ชิปต่อการ์ดสูงสุด — ที่เหลือพับหลังปุ่ม "ดูทั้งหมด" (เดิม 15 ชิปใบเดียวจนอ่านไม่ออก)
 
 // ตัวเลขวิ่งขึ้นสู่ค่าจริง (count-up) — เอฟเฟกต์ตอนโหลด/ค่าเปลี่ยน ไม่ใช่ไฟกระพริบ (Andon §2 ไม่เกี่ยว)
-function useCountUp(target, dur = 700) {
-  const [val, setVal] = useState(0);
-  const prevRef = useRef(0);
-  useEffect(() => {
-    if (target == null) return;
-    const from = prevRef.current, to = target;
-    if (from === to) { setVal(to); return; }
-    const t0 = performance.now();
-    let raf;
-    const step = (t) => {
-      const pr = Math.min(1, (t - t0) / dur);
-      const eased = 1 - Math.pow(1 - pr, 3);
-      setVal(Math.round(from + (to - from) * eased));
-      if (pr < 1) raf = requestAnimationFrame(step);
-      else prevRef.current = to;
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [target, dur]);
-  return target == null ? null : val;
-}
-
-/* ตัวเลขบนแถบ telemetry ต้อง "กดต่อได้" — เห็นว่ามี Downtime ค้าง 3 จุดแล้วต้องไปดูได้ทันที
-   (เดิมเป็นป้ายอ่านอย่างเดียว ผู้ใช้ต้องไปไล่หาหน้าเองว่าดูที่ไหน)
-   ⚠️ ปลายทางต้องผ่าน canAccessPage — role ที่เข้าหน้านั้นไม่ได้ ให้เป็นป้ายเฉยๆ ห้ามพาไปแล้วโดนเด้ง */
-function TeleTile({ t, onGo }) {
-  const { tr } = useLang();
-  const shown = useCountUp(t.val);
-  const body = (
-    <>
-      <div className="scan" />
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-        <span style={{ fontFamily: MONO, fontSize: 'clamp(26px, 3vw, 34px)', fontWeight: 700, lineHeight: 1, color: shown == null ? 'var(--muted2)' : toneInk(t.tone), fontVariantNumeric: 'tabular-nums' }}>
-          {shown == null ? '–' : shown}
-        </span>
-        {/* ตัวหาร: "14 / 20 ไลน์" — เลขลอยๆ ตัดสินไม่ได้ว่ามากหรือน้อย (De-AI tell 05) */}
-        {t.of != null && shown != null && (
-          <span style={{ fontSize: 13, color: 'var(--muted2)', fontFamily: MONO }}>/ {t.of}</span>
-        )}
-        <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'var(--font-body)' }}>{tr(t.unit)}</span>
-      </div>
-      <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: 'var(--text2)', fontFamily: 'var(--font-body)' }}>{tr(t.label)}</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontSize: 11, color: 'var(--muted2)', letterSpacing: '0.14em', fontFamily: MONO }}>{t.sub}</span>
-        {onGo && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>↗</span>}
-      </div>
-    </>
-  );
-  const style = { '--tc': statusColor(t.tone) };
-  return onGo
-    ? <button type="button" className="tele-tile" style={{ ...style, cursor: 'pointer' }} onClick={onGo} title={t.goTitle}>{body}</button>
-    : <div className="tele-tile" style={style}>{body}</div>;
-}
-
 // work date เดียวกับกฎทั้งระบบ: ก่อน 08:00 นับเป็นวันก่อนหน้า (ห้าม toISOString)
 function getWorkDate() {
   const d = new Date();
@@ -302,6 +203,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
   const [sigOpen, setSigOpen] = useState(false);
   const [pwdOpen, setPwdOpen] = useState(false);
   const [fbOpen, setFbOpen] = useState(false);
+  const [notifyOpen, setNotifyOpen] = useState(false);   // 🔕 ตั้งค่าแจ้งเตือนของฉัน
   const fileRef = useRef(null);
 
   const onAvatarCropped = async (file) => {
@@ -323,6 +225,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
       avatar:       () => fileRef.current?.click(),
       signature:    () => setSigOpen(true),
       password:     () => setPwdOpen(true),
+      notifyPrefs:  () => setNotifyOpen(true),
       feedback:     () => setFbOpen(true),
       viewAs:       onOpenViewAs,
       toggleRemote: onToggleRemote,
@@ -439,16 +342,16 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
      ตอนนี้: ตัวที่ไม่มีเป้า = **เทา + โชว์ตัวหาร** ให้คนตัดสินเอง · ตัวที่ 0 = ดี ค่อยมีสี */
   const lineTotal = scopeNames ? scopeNames.length : (prodLines.length || null);
   const TELE = [
-    { key: 'lines',   label: 'ไลน์กำลังผลิต',  sub: 'LINES RUNNING',  val: tele.lines,   unit: 'ไลน์',
+    { key: 'lines',   label: 'ไลน์กำลังผลิต',  val: tele.lines,   unit: 'ไลน์', note: 'เปิดกะอยู่ตอนนี้',
       of: lineTotal, tone: 'none',   // "ควรเดินกี่ไลน์" ขึ้นกับแผนผลิตรายวัน — ระบบไม่มีเป้านี้ ⇒ ห้ามทาสี
       to: '/daily-report', goTitle: 'เปิด Daily Report — ดูกะที่เปิดอยู่' },
-    { key: 'present', label: 'เช็คชื่อวันนี้',   sub: 'ON SHIFT',       val: tele.present, unit: 'คน',
+    { key: 'present', label: 'เช็คชื่อวันนี้',   val: tele.present, unit: 'คน', note: 'มาทำงานวันนี้',
       tone: 'none',                  // ยอดคนที่ "ควรมา" อยู่ที่ตารางกะ ไม่ใช่ที่นี่ ⇒ เทา
       to: '/checkin', goTitle: 'เปิดหน้าเช็คชื่อ & PPE' },
-    { key: 'dt',      label: 'Downtime ค้าง', sub: 'MACHINES DOWN',  val: tele.dt,      unit: 'จุด',
+    { key: 'dt',      label: 'Downtime ค้าง', val: tele.dt,      unit: 'จุด', note: tele.dt > 0 ? 'เครื่องหยุดอยู่ตอนนี้' : 'ไม่มีเครื่องหยุด',
       tone: toneOf({ value: tele.dt, zeroIsGood: true }),          // > 0 = ผลิตหยุดอยู่จริง ⇒ แดง
       to: '/dashboard', goTitle: 'เปิด Dashboard — แผง Andon เครื่องที่หยุดอยู่' },
-    { key: 'fourM',   label: '4M รออนุมัติ',   sub: '4M PENDING',     val: tele.fourM,   unit: 'รายการ',
+    { key: 'fourM',   label: '4M รออนุมัติ',   val: tele.fourM,   unit: 'รายการ', note: tele.fourM > 0 ? 'รออนุมัติอยู่' : 'ไม่มีค้าง',
       // คิวค้าง = ต้องไปจัดการ แต่สายการผลิตยังเดิน ⇒ เหลือง ไม่ใช่แดง (จอที่แดงตลอดคือจอที่คนเลิกมอง)
       tone: toneOf({ value: tele.fourM, zeroIsGood: true, over: 'warn' }),
       to: fourMLink, goTitle: 'เปิดคิวอนุมัติ 4M (ย้อนหลัง 90 วัน)' },
@@ -524,7 +427,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             {userRole && (
               <span style={{ fontSize: 11, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                 {/* จุดเขียว ONLINE นิ่ง+เรืองแสง */}
-                <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#3dd65c', boxShadow: '0 0 4px 1px rgba(61,214,92,0.6)' }} />
+                <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--accent)' }} />
                 {/* ⚠️ position เก็บเป็น key ต้องผ่าน positionLabel() เสมอ ไม่งั้นขึ้น 'operator' ดิบ (กฎ CLAUDE.md) */}
                 {userPosition ? `${positionLabel(userPosition)} · ` : ''}{roleLabel(userRole)}
               </span>
@@ -569,7 +472,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
                   </div>
                   <span style={{
                     fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 4, flexShrink: 0,
-                    background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid rgba(61,214,92,0.3)',
+                    background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid var(--green-line)',
                   }}>{userRole?.toUpperCase() || '—'}</span>
                 </div>
                 {/* รายการเมนู = descriptor ชุดเดียวกับ sidebar (utils/profileMenu.js) — ห้ามเติมปุ่มตรงนี้ */}
@@ -589,7 +492,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
                       justifyContent: it.kind === 'toggle' ? 'space-between' : 'flex-start',
                     }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                      <span style={{ fontSize: 15, flexShrink: 0 }}>{it.icon}</span>
+                      <Icon glyph={it.icon} size={15} />
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.label}</span>
                     </span>
                     {it.kind === 'toggle' && (
@@ -619,7 +522,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             color: 'var(--text)', cursor: 'pointer', fontSize: 16,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            {theme === 'dark' ? '☀️' : '🌙'}
+            {theme === 'dark' ? '️' : '🌙'}
           </button>
         )}
       </div>
@@ -627,18 +530,6 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
       {/* ── Header — แถวนอนเต็มความกว้าง: ชื่อระบบซ้าย · นาฬิกา/กะขวา (จอแคบ wrap) ── */}
       <div className="hub-head" style={{ width: '100%', maxWidth: 'min(97vw, 2400px)', display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: '14px clamp(20px, 3vw, 48px)', marginBottom: 'clamp(18px, 2.5vw, 26px)', animation: 'hub-fade-up 0.55s ease both' }}>
         <div style={{ minWidth: 'min(100%, 420px)' }}>
-        <div className="hub-banner" style={{
-          display: 'inline-flex', alignItems: 'center', gap: 10,
-          background: 'rgba(61,214,92,0.08)', border: '1px solid rgba(61,214,92,0.22)',
-          borderRadius: 6, padding: '5px 14px', marginBottom: 18,
-        }}>
-          {/* จุดเขียวนิ่ง+เรืองแสง — กระพริบสงวนให้สถานะแดง (Andon §2) */}
-          <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#3dd65c', boxShadow: '0 0 7px 1px rgba(61,214,92,0.7)' }} />
-          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.22em', color: '#3dd65c', textTransform: 'uppercase', fontFamily: MONO }}>
-            Industry 5.0 · Smart Factory Platform
-          </span>
-        </div>
-
         <h1 className="hub-title" style={{
           margin: 0, fontSize: 'clamp(24px, 4.2vw, 40px)', fontWeight: 900,
           fontFamily: 'var(--font-display)', color: 'var(--text)', letterSpacing: '-0.02em', lineHeight: 1.15,
@@ -668,11 +559,11 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
           <span className="hub-clock" style={{ fontFamily: MONO, fontSize: 14, fontWeight: 700, color: 'var(--text)', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, padding: '4px 12px', fontVariantNumeric: 'tabular-nums' }}>
             ⏱ {clock}
           </span>
-          <span style={{ fontFamily: 'var(--font-body)', fontSize: 12, fontWeight: 700, color: isDayShift ? '#f59e0b' : '#4d9fff', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, padding: '5px 12px' }}>
+          <span style={{ fontFamily: 'var(--font-body)', fontSize: 12, fontWeight: 700, color: isDayShift ? 'var(--amber)' : 'var(--blue)', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, padding: '5px 12px' }}>
             {tr(isDayShift ? '☀️ กะเช้า 08:00–20:00' : '🌙 กะดึก 20:00–08:00')}
           </span>
           <span className="hub-date" style={{ fontFamily: 'var(--font-body)', fontSize: 12, fontWeight: 600, color: 'var(--text2)', background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 6, padding: '5px 12px' }}>
-            📅 {thaiDate}
+            {thaiDate}
           </span>
         </div>
       </div>
@@ -680,8 +571,8 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
       {/* ── LIVE TELEMETRY ── */}
       <div className="hub-tele" style={{ width: '100%', maxWidth: 'min(97vw, 2400px)', marginBottom: 'clamp(22px, 3vw, 32px)', animation: 'hub-fade-up 0.6s ease 0.08s both' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.2em', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: MONO }}>
-            ● Live Telemetry
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)' }}>
+            {tr('สถานะตอนนี้')}
           </span>
           {/* ขอบเขตของตัวเลข — ห้ามให้เดาเอง (เคยเข้าใจผิดว่าเห็น Andon ของแผนกอื่นเป็นของตัวเอง) */}
           <span style={{
@@ -693,12 +584,16 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             {wholeFactory ? tr('🏭 ทั้งโรงงาน') : `👥 ส่วนงานของฉัน (${(scopeNames || []).length} ไลน์)`}
           </span>
           <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-          <span style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: MONO }}>refresh 60s</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('อัปเดตทุก 60 วินาที')}</span>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {/* การ์ดตัวเลขโครงเดียว (UI §6.35) — ตัวเลขสีเดียว · สถานะอยู่ที่บรรทัดล่าง · กดได้เฉพาะที่มีสิทธิ์เข้าปลายทาง */}
           {TELE.map(t => (
-            <TeleTile key={t.key} t={t}
-              onGo={t.to && canAccessPage(t.to.split('?')[0], userRole) ? () => navigate(t.to) : undefined} />
+            <KpiTile key={t.key} label={tr(t.label)} value={t.val}
+              unit={t.of != null && t.val != null ? `/ ${t.of} ${tr(t.unit)}` : tr(t.unit)}
+              note={t.val == null ? 'ยังโหลดไม่ได้' : tr(t.note)} tone={t.val == null ? undefined : (t.tone === 'none' ? undefined : t.tone)}
+              title={t.goTitle} style={{ flex: '1 1 150px' }}
+              onClick={t.to && canAccessPage(t.to.split('?')[0], userRole) ? () => navigate(t.to) : undefined} />
           ))}
         </div>
       </div>
@@ -708,16 +603,16 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
       {favItems.length > 0 && (
         <div className="hub-fav" style={{ width: '100%', maxWidth: 'min(97vw, 2400px)', marginBottom: 'clamp(18px, 2.4vw, 26px)', animation: 'hub-fade-up 0.6s ease 0.1s both' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.2em', color: 'var(--muted)', textTransform: 'uppercase', fontFamily: MONO }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)' }}>
               ⭐ {tr('ใช้บ่อย')}
             </span>
             <span style={{ flex: 1, height: 1, background: 'var(--border)' }} />
-            <span style={{ fontSize: 11, color: 'var(--muted2)', fontFamily: MONO }}>this device</span>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('เครื่องนี้')}</span>
           </div>
           <div className="hub-fav-list" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {favItems.map(it => (
               <button key={it.to} type="button" className="star-chip" onClick={() => navigate(it.to)} title={it.group}>
-                <span style={{ fontSize: 15 }}>{it.icon}</span>{tr(it.label)}
+                <Icon glyph={it.icon} size={15} />{tr(it.label)}
               </button>
             ))}
           </div>
@@ -735,7 +630,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
           <div
             key={d.key}
             className="smart-card active"
-            style={{ '--mc': d.color, animation: `hub-fade-up 0.55s ease ${0.12 + 0.06 * i}s both` }}
+            style={{ animation: `hub-fade-up 0.55s ease ${0.12 + 0.06 * i}s both` }}
             onClick={() => navigate(route)}
             /* การ์ดทั้งใบเป็นจุดคลิก (ของเดิม) — เป็น div เพราะข้างในมีปุ่มชิป ซ้อน <button> ไม่ได้
                จึงต้องใส่ role/tabIndex/onKeyDown เองให้คีย์บอร์ดเข้าถึงได้ */
@@ -743,23 +638,14 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(route); } }}
             aria-label={`${d.label} — ${tr(d.labelTh)}`}
           >
-            <div className="edge" />
-
-            {/* แถวบน: รหัสโมดูล + จำนวนหน้าที่ user คนนี้เข้าได้จริง */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-              <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', color: d.color, opacity: 0.9 }}>
-                {d.code}
-              </span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontFamily: MONO, fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: 'var(--text2)' }}>
-                {/* ไฟสถานะนิ่ง+เรืองแสง (ไม่กระพริบ — กระพริบสงวนให้ Andon แดง) */}
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#3dd65c', boxShadow: '0 0 5px 1px rgba(61,214,92,0.6)' }} />
-                {d.items.length} {tr('หน้า')}
-              </span>
+            {/* แถวบน: จำนวนหน้าที่ user คนนี้เข้าได้จริง (04/11: ถอดรหัส OVW·01 + ไฟเขียว — ตกแต่ง) */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 12 }}>
+              <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{d.items.length} {tr('หน้า')}</span>
             </div>
 
             {/* ไอคอน + ชื่อ */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-              <span style={{ fontSize: 30, lineHeight: 1 }}>{d.icon}</span>
+              <Icon glyph={d.icon} size={28} strokeWidth={1.5} />
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 'clamp(15px, 2vw, 17px)', fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', letterSpacing: '-0.01em', lineHeight: 1.2 }}>
                   {d.label}
@@ -785,7 +671,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {chips.map(item => {
                 /* 🚪 ชิป "ทางลัด" (หน้าที่บ้านจริงอยู่การ์ดอื่น · `alsoIn`) ต้องหน้าตาต่างจากของการ์ดนี้
-                   — จางลง + `↗ <หมวดบ้าน>` ท้ายชิป · ไม่งั้นการ์ดดูเหมือนเป็นเจ้าของหน้านั้นด้วย
+                   — จางลง + `<หมวดบ้าน>` ท้ายชิป · ไม่งั้นการ์ดดูเหมือนเป็นเจ้าของหน้านั้นด้วย
                    แล้วคำถาม "หน้านี้อยู่หมวดไหน" มี 2 คำตอบ (24/09 · คำสั่ง user — ดู `isNavGuest`) */
                 const guest = isNavGuest(item, d.group);
                 const homeShort = NAV_GROUP_META[item.group]?.short || item.group;
@@ -795,8 +681,8 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
                     onClick={e => openMenu(e, item.to)}
                     style={guest
                       ? { background: 'transparent', color: 'var(--text2)', border: '1px dashed var(--border2)' }
-                      : { background: `${d.color}15`, color: d.color, border: `1px solid ${d.color}30` }}>
-                    <span style={{ fontSize: 12, opacity: guest ? 0.7 : 1 }}>{item.icon}</span>
+                      : { background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
+                    <Icon glyph={item.icon} size={12} style={{ opacity: guest ? 0.7 : 1 }} />
                     {tr(item.label)}
                     {guest && <span style={{ fontSize: 11, color: 'var(--muted)' }}>↗{tr(homeShort)}</span>}
                   </button>
@@ -805,7 +691,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
               {hidden.length > 0 && (
                 <button type="button" className="dept-chip more-chip"
                   onClick={e => { e.stopPropagation(); setExpanded(s => ({ ...s, [d.key]: !open })); }}>
-                  {open ? `▲ ${tr('ย่อ')}` : `▾ ${tr('ดูทั้งหมด')} (${hidden.length})`}
+                  {open ? `${tr('ย่อ')}` : `${tr('ดูทั้งหมด')} (${hidden.length})`}
                 </button>
               )}
             </div>
@@ -830,12 +716,18 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
           <FeedbackModal onClose={() => setFbOpen(false)} />
         </Suspense>
       )}
+      {/* 🔕 ตั้งค่าแจ้งเตือนของฉัน — role จริง (ไม่ใช่ role ที่จำลองมุมมองอยู่) */}
+      {notifyOpen && (
+        <Suspense fallback={null}>
+          <NotifyPrefsModal role={realRole ?? userRole} onClose={() => setNotifyOpen(false)} />
+        </Suspense>
+      )}
 
       {/* ── Footer ── */}
       <div className="hub-foot" style={{
         marginTop: 'clamp(28px, 4vw, 44px)',
-        fontSize: 11, color: 'var(--muted)', letterSpacing: '0.14em', textTransform: 'uppercase',
-        fontFamily: MONO, animation: 'hub-fade-up 0.55s ease 0.55s both', textAlign: 'center',
+        fontSize: 11.5, color: 'var(--muted)',
+        animation: 'hub-fade-up 0.55s ease 0.55s both', textAlign: 'center',
       }}>
         ESM · Smart Factory Platform · Thai Summit Group
       </div>

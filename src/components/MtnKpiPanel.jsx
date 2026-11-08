@@ -8,6 +8,7 @@ import { ALL } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 import { rangeDays } from '../utils/timeRange';
 import { urlParam } from '../utils/urlInit';
+import InfoMore from './InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 /* ══ 📊 KPI ช่าง — MTTA / MTTR / MDT + ความพึงพอใจ + ความน่าเชื่อถือรายอุปกรณ์ ══════════
    ย้ายมาจากแท็บ `?tab=kpi` ของ `/mtn-repair` เมื่อ 2026-09-22 (คำสั่ง user: *"ฟังก์ชันของช่าง
@@ -100,6 +101,7 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
         <LineSelect lines={lineObjs} value={line} onChange={setLine} placeholder={ALL.line} />
       </TimeRangeBar>
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6, lineHeight: 1.7 }}>
+        <InfoMore label="ตัวเลขนี้นับจากอะไร · ต่างจาก OBEYA ยังไง" id="mtnkpi-def">
         📋 <b style={{ color: 'var(--text2)' }}>นับจากใบแจ้งซ่อม (MO) ที่ปิดแล้ว</b> — วัดการตอบสนองของทีมช่าง
         · ส่วน <b style={{ color: 'var(--text2)' }}>MTTR/MTBF รายอุปกรณ์</b> ที่อยู่ล่างสุดของหน้านี้นับจาก
         <b style={{ color: 'var(--text2)' }}> downtime จริงของเครื่อง</b> — คนละฐาน ตัวเลขไม่เท่ากันเป็นเรื่องปกติ
@@ -110,10 +112,11 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
           แต่ใช้<b style={{ color: 'var(--text2)' }}>สูตรทางการ KPI Guideline</b> (ฐาน 730 ชม./เครื่อง/เดือน · ตามเดือนปฏิทิน · ชนิดอุปกรณ์ที่ทีมดูแล)
           — ตัวเลขจึงต่างจากหน้านี้ที่ใช้เวลาเดินเครื่องจริงและช่วงวันที่เลือก ไม่ใช่ข้อมูลคนละชุด
         </div>
+        </InfoMore>
         {/* พาเรโตถูกย้ายไปแท็บ QC7 (แยกตามชนิดสินทรัพย์) — ต้องมีทางไปให้ชัด ไม่ใช่หายเงียบ */}
         {onGoQc7 && (
           <div>
-            🧪 อยากดู <b style={{ color: 'var(--text2)' }}>พาเรโต / ก้างปลา / ฮิสโตแกรม / กราฟควบคุม</b> แยกตามชนิดอุปกรณ์ →{' '}
+            อยากดู <b style={{ color: 'var(--text2)' }}>พาเรโต / ก้างปลา / ฮิสโตแกรม / กราฟควบคุม</b> แยกตามชนิดอุปกรณ์ →{' '}
             <button type="button" onClick={onGoQc7} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--accent)', fontWeight: 800, fontSize: 11.5, cursor: 'pointer', textDecoration: 'underline' }}>
               ไปแท็บ QC 7 Tools
             </button>
@@ -155,7 +158,7 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
         {/* หัวข้อคั่น — ส่วนนี้มีแถบกรองของตัวเอง (ช่วงวัน/ไลน์/ชนิด) คนละชุดกับด้านบน
             ไม่มีหัวข้อคั่น = คนเห็นแถบกรอง 2 ชุดติดกันแล้วงงว่าอันไหนคุมอะไร */}
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>
-          ⚙️ ความน่าเชื่อถือรายอุปกรณ์ — MTTR / MTBF
+          ความน่าเชื่อถือรายอุปกรณ์ — MTTR / MTBF
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
           นับจาก <b style={{ color: 'var(--text2)' }}>downtime จริงของเครื่อง</b> ไม่ใช่ใบแจ้งซ่อม — มีตัวกรองของตัวเองด้านล่าง

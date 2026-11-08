@@ -22,7 +22,7 @@ import {
   cleanItemsForSave, fmtSec, SKIP_REASON_LABEL,
   sectionsOfProfile, canManageDisplay, displayChannelName,
   DISPLAY_PAGE_PARAMS, queryParamsOf, withQueryParams, paramSummary, paramVisible, minSecForPath,
-  TV_SHELL_PARAM,
+  TV_SHELL_PARAM, moRotationItems,
 } from '../utils/displayRotation';
 
 /* ══ 🔁 ตั้งค่าจอวนหน้า — /display-rotation ══════════════════════════════════════════
@@ -251,9 +251,9 @@ export default function DisplayRotation() {
 
   const actions = selId && canEdit ? (
     <>
-      {plans[selId] && <button type="button" onClick={removePlan} style={btnGhost}>🗑 ลบรอบ</button>}
+      {plans[selId] && <button type="button" onClick={removePlan} style={btnGhost}>ลบรอบ</button>}
       <button type="button" onClick={save} disabled={saving || !dirty} style={btnPrimary}>
-        {saving ? 'กำลังบันทึก…' : dirty ? '💾 บันทึก' : '✓ บันทึกแล้ว'}
+        {saving ? 'กำลังบันทึก…' : dirty ? 'บันทึก' : 'บันทึกแล้ว'}
       </button>
     </>
   ) : null;
@@ -274,7 +274,7 @@ export default function DisplayRotation() {
       {/* ── เลือกจอ (การ์ด) ── */}
       <section className="card" style={{ padding: 14, marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-          <div style={{ fontSize: 14, fontWeight: 800 }}>📺 จอที่คุณดูแล ({screens.length})</div>
+          <div style={{ fontSize: 14, fontWeight: 800 }}>จอที่คุณดูแล ({screens.length})</div>
           {hiddenScreens > 0 && (
             <div style={{ fontSize: 12, color: 'var(--muted)' }}>· ซ่อน {hiddenScreens} จอที่อยู่นอกส่วนงานของคุณ</div>
           )}
@@ -301,10 +301,10 @@ export default function DisplayRotation() {
                 }}>
                 <span style={{ fontSize: 14, fontWeight: 800 }}>{a.full_name || emails[a.id] || a.id.slice(0, 8)}</span>
                 <span style={{ fontSize: 12, color: secs.length ? 'var(--text2)' : 'var(--amber)' }}>
-                  📍 {secs.length ? secs.join(', ') : 'ยังไม่ตั้งส่วนงาน (เห็นทั้งโรงงาน)'}
+                  {secs.length ? secs.join(', ') : 'ยังไม่ตั้งส่วนงาน (เห็นทั้งโรงงาน)'}
                 </span>
                 <span style={{ fontSize: 12, color: plan ? (plan.enabled ? 'var(--green)' : 'var(--muted)') : 'var(--muted)' }}>
-                  {plan ? (plan.enabled ? `🔁 วน ${n} หน้า` : '⏸ ปิดการวน') : '— ยังไม่ตั้งรอบ'}
+                  {plan ? (plan.enabled ? `วน ${n} หน้า` : 'ปิดการวน') : '— ยังไม่ตั้งรอบ'}
                 </span>
                 {plan?.note && <span style={{ fontSize: 11, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{plan.note}</span>}
               </button>
@@ -314,7 +314,7 @@ export default function DisplayRotation() {
       </section>
 
       {!selAcc && screens.length > 0 && (
-        <div style={{ ...infoBox, textAlign: 'center', padding: 24, fontSize: 13 }}>👆 เลือกจอด้านบนเพื่อตั้งรอบ</div>
+        <div style={{ ...infoBox, textAlign: 'center', padding: 24, fontSize: 13 }}>เลือกจอด้านบนเพื่อตั้งรอบ</div>
       )}
 
       {selAcc && (
@@ -324,7 +324,7 @@ export default function DisplayRotation() {
             <section className="card" style={{ padding: 16, display: 'grid', gap: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <div style={{ fontSize: 16, fontWeight: 800 }}>{selAcc.full_name}</div>
-                <span style={chipSt}>📍 ส่วนงาน: {tvSections.length ? tvSections.join(', ') : 'ทั้งโรงงาน (ยังไม่ตั้ง)'}</span>
+                <span style={chipSt}>ส่วนงาน: {tvSections.length ? tvSections.join(', ') : 'ทั้งโรงงาน (ยังไม่ตั้ง)'}</span>
                 {emails[selAcc.id] && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{emails[selAcc.id]}</span>}
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: -6 }}>
@@ -392,6 +392,19 @@ export default function DisplayRotation() {
                 <button type="button" onClick={() => { setF('items', [...form.items, { path: '', sec: null }]); setFocusIdx(form.items.length); }}
                   style={{ ...btnGhost, marginTop: 10 }}>+ เพิ่มหน้า</button>
               )}
+              {/* 🧾 ชุดสำเร็จรูป: ใบ MO ตามขั้น 4 หน้า (03/11 · ประชุม 02/11 ข้อ B6 "จอ TV ทีม MTN วนหน้า MO")
+                  แค่เติมลิงก์ `/tv?dept=mo&mo=…&team=…` ต่อท้าย — แก้/ลบทีละรายการได้ตามปกติ */}
+              {canEdit && form.items.length + 4 <= ROT_LIMITS.maxItems && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>เติมชุดใบ MO (รอรับงาน · กำลังซ่อม · รอตรวจรับ · รอปิดใบ):</span>
+                  {[['maintenance', 'MTN'], ['jig_maintenance', 'JIG'], ['die_maintenance', 'DIE'], ['', 'ทุกทีม']].map(([k, t]) => (
+                    <button key={k || 'all'} type="button" style={btnGhost}
+                      onClick={() => { setF('items', [...form.items, ...moRotationItems(k)]); setFocusIdx(form.items.length); }}>
+                      + {t}
+                    </button>
+                  ))}
+                </div>
+              )}
               {plans[selId]?.updated_at && (
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>
                   แก้ล่าสุด {new Date(plans[selId].updated_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}
@@ -405,7 +418,7 @@ export default function DisplayRotation() {
           <div style={{ display: 'grid', gap: 12, minWidth: 0, position: isMobile ? 'static' : 'sticky', top: 12 }}>
             <section className="card" style={{ padding: 14, display: 'grid', gap: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <div style={{ fontSize: 15, fontWeight: 800 }}>🎮 สั่งจอ</div>
+                <div style={{ fontSize: 15, fontWeight: 800 }}>สั่งจอ</div>
                 {online ? (
                   <span style={{ ...chipSt, color: 'var(--green)', borderColor: 'var(--green)' }}>
                     🟢 ออนไลน์ · หน้า {(live.idx ?? 0) + 1}/{live.n}{live.held ? ' · ⏸ หยุดอยู่' : ''}
@@ -421,12 +434,12 @@ export default function DisplayRotation() {
                 </div>
               )}
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'prev' })}>◀ ก่อนหน้า</button>
+                <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'prev' })}>ก่อนหน้า</button>
                 {live?.held
-                  ? <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'resume' })}>▶ วนต่อ</button>
-                  : <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'hold' })}>⏸ หยุดค้าง</button>}
+                  ? <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'resume' })}>วนต่อ</button>
+                  : <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'hold' })}>หยุดค้าง</button>}
                 <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'next' })}>ถัดไป ▶▶</button>
-                <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'reload' })} title="ให้จอโหลดใหม่ — ใช้หลังบันทึกรอบใหม่">🔄 รีโหลดจอ</button>
+                <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'reload' })} title="ให้จอโหลดใหม่ — ใช้หลังบันทึกรอบใหม่">รีโหลดจอ</button>
               </div>
               {savedPlayable.length > 0 && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -445,7 +458,7 @@ export default function DisplayRotation() {
 
             <section className="card" style={{ padding: 14 }}>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                <div style={{ fontSize: 15, fontWeight: 800 }}>👁 ตัวอย่างหน้า {focusItem ? `#${focusIdx + 1}` : ''}</div>
+                <div style={{ fontSize: 15, fontWeight: 800 }}>ตัวอย่างหน้า {focusItem ? `#${focusIdx + 1}` : ''}</div>
                 <div style={{ fontSize: 12, color: 'var(--muted)' }}>กดแถวทางซ้ายเพื่อสลับ</div>
               </div>
               <PagePreview path={focusPath} />
@@ -649,7 +662,7 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
                   <span style={{ display: 'grid', gap: 2 }}>
                     <LineSelect lines={lines} value={params[d.key] || ''} disabled={!canEdit}
                       sections={tvSections} placeholder={ALL.line}
-                      extraGroups={warehouseOpts.length ? [{ label: '🏬 คลัง', options: warehouseOpts.map(n => ({ value: n })) }] : undefined}
+                      extraGroups={warehouseOpts.length ? [{ label: 'คลัง', options: warehouseOpts.map(n => ({ value: n })) }] : undefined}
                       onChange={v => setParam(d.key, v)} />
                     {srcState('storeline') && <span style={{ fontSize: 11, color: 'var(--muted)' }}>คลัง: {srcState('storeline')}</span>}
                   </span>
@@ -687,7 +700,7 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
         </div>
         {minSecForPath(it.path) > secOf(it, defaultSec) && (
           <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-            🔁 วนมุมมองครบรอบใช้ {fmtSec(minSecForPath(it.path))} — จอจะอยู่หน้านี้อย่างน้อยเท่านั้นเอง
+            วนมุมมองครบรอบใช้ {fmtSec(minSecForPath(it.path))} — จอจะอยู่หน้านี้อย่างน้อยเท่านั้นเอง
           </div>
         )}
         {skip && (
@@ -761,7 +774,7 @@ function Field({ label, children }) {
 }
 
 const warnBox = { padding: 12, marginBottom: 12, borderRadius: 10, fontSize: 13, lineHeight: 1.6,
-  border: '1px solid var(--amber)', background: 'var(--card)', backgroundImage: 'linear-gradient(rgba(245,158,11,.10), rgba(245,158,11,.10))', color: 'var(--text)' };
+  border: '1px solid var(--amber)', background: 'var(--card)', backgroundImage: 'linear-gradient(var(--amber-dim), var(--amber-dim))', color: 'var(--text)' };
 const infoBox = { padding: 12, marginBottom: 12, borderRadius: 10, fontSize: 12, lineHeight: 1.7,
   border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)' };
 const chipSt = { padding: '3px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700,

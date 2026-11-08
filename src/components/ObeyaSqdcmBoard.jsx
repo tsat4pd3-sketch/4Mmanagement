@@ -29,6 +29,7 @@ import { ALL } from '../utils/filterLabels';
    ⇒ subscribe realtime แค่ `production_sessions` (เหตุการณ์เดียวที่เปลี่ยนตัวเลขบนจอนี้จริง)
      + `meeting_action_items` (ต้องสดตอนประชุม) · poll กันเหนียวที่ RATE.ANALYTIC
    ⚠️ อย่าเพิ่ม subscribe `prod_orders`/`downtime_logs` — ทุกใบงานที่ปิดในโรงงานจะลากจอโหลดใหม่ทั้งก้อน */
+import { toneVar, toneDim, toneLine } from '../utils/statusTone';   // 🎨 token พาเลต 5 สี (UI §6.17)
 import { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -686,12 +687,12 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             labelFormatter={(l, pl) => (pl?.[0]?.payload?.summary
               ? `สรุปปี ${year} (${pl[0].payload.kind === 'sum' ? 'รวมทั้งปี' : 'เฉลี่ยถ่วงน้ำหนักทั้งปี'})`
               : `${monthLabel(pl?.[0]?.payload?.k || '')} ${year} · กดเพื่อเจาะรายวัน`)} />
-          {k.target != null && !stacked && <ReferenceLine y={k.target} stroke="#ef4444" strokeDasharray="4 3" />}
+          {k.target != null && !stacked && <ReferenceLine y={k.target} stroke="var(--red)" strokeDasharray="4 3" />}
           {stacked ? (
             <>
-              <Bar dataKey="dt" stackId="c" fill="#f59e0b" onClick={onBarClick} cursor="pointer" />
-              <Bar dataKey="ng" stackId="c" fill="#a78bfa" radius={[2, 2, 0, 0]} onClick={onBarClick} cursor="pointer">
-                {data.map((p, i) => <Cell key={i} fill="#a78bfa" fillOpacity={p.summary ? 0.55 : 1} />)}
+              <Bar dataKey="dt" stackId="c" fill="var(--amber)" onClick={onBarClick} cursor="pointer" />
+              <Bar dataKey="ng" stackId="c" fill="var(--blue)" radius={[2, 2, 0, 0]} onClick={onBarClick} cursor="pointer">
+                {data.map((p, i) => <Cell key={i} fill="var(--blue)" fillOpacity={p.summary ? 0.55 : 1} />)}
               </Bar>
             </>
           ) : (
@@ -787,16 +788,11 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           )}
           actions={(
             <>
+              {/* ปุ่มตายตัว ≤2 (UI §6.35 · 04/11): หลัก = ตั้ง Action · รอง = โหมดจอ TV */}
               {canRecord && (
-                <button className="tv-hide" onClick={() => openModal()} style={{
-                  fontSize: 13, fontWeight: 700, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
-                  background: 'var(--accent2)', color: '#1a1206', border: 'none',
-                }}>➕ ตั้ง Action</button>
+                <button type="button" className="pg-btn primary tv-hide" onClick={() => openModal()}>+ ตั้ง Action</button>
               )}
-              <button onClick={() => goBoard(true)} style={{
-                fontSize: 13, fontWeight: 700, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
-                background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
-              }}>📺 โหมดจอ TV</button>
+              <button type="button" className="pg-btn" onClick={() => goBoard(true)}>โหมดจอ TV</button>
             </>
           )}
         />
@@ -824,7 +820,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           display: 'flex', alignItems: 'center', gap: 12, padding: '6px 10px', flexShrink: 0,
           borderBottom: '1px solid var(--border)',
         }}>
-          <div style={{ fontSize: tv ? 26 : 18, fontWeight: 900 }}>🏛️ OBEYA</div>
+          <div style={{ fontSize: tv ? 26 : 18, fontWeight: 900 }}>OBEYA</div>
           <div style={{ fontSize: tv ? 22 : 13, color: tv ? 'var(--text2)' : 'var(--muted)', fontWeight: tv ? 700 : 400 }}>
             {scopeText} · {periodText}{tv ? '' : ` · ${from} → ${to} · ${shiftCount.toLocaleString()} กะ`}
           </div>
@@ -837,7 +833,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
       )}
 
       {loadWarn && (
-        <div style={{ margin: '0 0 8px', fontSize: tv ? 20 : 12, color: '#ef4444', fontWeight: 700 }}>
+        <div style={{ margin: '0 0 8px', fontSize: tv ? 20 : 12, color: 'var(--red)', fontWeight: 700 }}>
           ⚠️ {loadWarn}
         </div>
       )}
@@ -862,7 +858,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           <Sheet k={k} cw={cw} icon={axisSheet('S').icon} title="S ความปลอดภัย"
             sub={`${ytdTag}ใส่ PPE ครบตอนเช็คชื่อ (leading)`} big={kS.value ?? '—'} unit={kS.value != null ? '%' : ''}
             stat={statusWhy(kS.value, kS.target, 'up', '%')}
-            foot={<WarnNote k={k} text={kS.note} tone="#ef4444" />}
+            foot={<WarnNote k={k} text={kS.note} tone="bad" />}
             link="ไปหน้าเช็คชื่อ/PPE" onLink={() => drill('/daily-checker')}>
             {isYear ? (yearBars(kS, { name: 'PPE ครบ' }) || <EmptyChart k={k} text="ยังไม่มีบันทึกเช็คชื่อในปีนี้" />) : kS.series.length ? (
               <ResponsiveContainer width="100%" height="100%">
@@ -871,7 +867,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                   <XAxis dataKey="label" tick={axisTick} interval="preserveStartEnd" />
                   <YAxis tickFormatter={fmtAxis} domain={[0, 100]} tick={axisTick} width="auto" />
                   <Tooltip {...chartTip} formatter={v => [`${v}%`, 'PPE ครบ']} />
-                  <ReferenceLine y={kS.target} stroke="#ef4444" strokeDasharray="4 3" />
+                  <ReferenceLine y={kS.target} stroke="var(--red)" strokeDasharray="4 3" />
                   <Bar dataKey="v" fill={CELL_BAR_FILL} radius={[2, 2, 0, 0]}>
                     {daySeries(kS.series).map((p, i) => (
                       <Cell key={i} fill={statusColor(statusOf(p.v, kS.target, 'up'))} />
@@ -900,7 +896,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                   <XAxis dataKey="label" tick={axisTick} interval="preserveStartEnd" />
                   <YAxis tickFormatter={fmtAxis} domain={qDom} ticks={qFocus?.ticks} allowDataOverflow={!!qFocus} tick={axisTick} width="auto" />
                   <Tooltip {...chartTip} formatter={v => [`${v}%`, 'Q']} />
-                  <ReferenceLine y={kQ.target} stroke="#ef4444" strokeDasharray="4 3" />
+                  <ReferenceLine y={kQ.target} stroke="var(--red)" strokeDasharray="4 3" />
                   <Line type="monotone" dataKey="v" stroke={axisSheet('Q').color} strokeWidth={2} dot={{ r: 2 }} connectNulls />
                 </ComposedChart>
               </ResponsiveContainer>,
@@ -923,7 +919,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                   <XAxis dataKey="label" tick={axisTick} interval="preserveStartEnd" />
                   <YAxis tickFormatter={fmtAxis} tick={axisTick} width="auto" />
                   <Tooltip {...chartTip} formatter={v => [`${v}%`, 'ทำได้ตามแผน']} />
-                  <ReferenceLine y={100} stroke="#ef4444" strokeDasharray="4 3" />
+                  <ReferenceLine y={100} stroke="var(--red)" strokeDasharray="4 3" />
                   <Bar dataKey="v" fill={CELL_BAR_FILL} radius={[2, 2, 0, 0]}>
                     {daySeries(kD.series).map((p, i) => (
                       <Cell key={i} fill={statusColor(statusOf(p.v, 100, 'up'))} />
@@ -951,8 +947,8 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                   <XAxis dataKey="label" tick={axisTick} interval="preserveStartEnd" />
                   <YAxis tick={axisTick} width="auto" tickFormatter={v => (v >= 1000 ? `${Math.round(v / 1000)}k` : v)} />
                   <Tooltip {...chartTip} formatter={(v, n) => [fmtBaht(v), n === 'dt' ? 'เครื่องหยุด' : 'ของเสีย']} />
-                  <Bar dataKey="dt" stackId="c" fill="#f59e0b" />
-                  <Bar dataKey="ng" stackId="c" fill="#a78bfa" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="dt" stackId="c" fill="var(--amber)" />
+                  <Bar dataKey="ng" stackId="c" fill="var(--blue)" radius={[2, 2, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : <EmptyChart k={k} text="ยังไม่มีความสูญเสียที่คิดเป็นเงินได้" />}
@@ -975,7 +971,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                   <XAxis dataKey="label" tick={axisTick} interval="preserveStartEnd" />
                   <YAxis tickFormatter={fmtAxis} domain={[0, 100]} tick={axisTick} width="auto" />
                   <Tooltip {...chartTip} formatter={(v, n) => (n === 'v' ? [`${v}%`, 'มาทำงาน'] : [v, 'คน'])} />
-                  <ReferenceLine y={kM.target} stroke="#ef4444" strokeDasharray="4 3" />
+                  <ReferenceLine y={kM.target} stroke="var(--red)" strokeDasharray="4 3" />
                   <Bar dataKey="v" fill={axisSheet('M').color} radius={[2, 2, 0, 0]} />
                 </ComposedChart>
               </ResponsiveContainer>
@@ -1005,8 +1001,8 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                   <XAxis dataKey="label" tick={axisTick} interval="preserveStartEnd" />
                   <YAxis tickFormatter={fmtAxis} domain={[0, 100]} tick={axisTick} width="auto" />
                   <Tooltip {...chartTip} formatter={v => [`${v}%`, 'OEE']} />
-                  <ReferenceLine y={kOee.target} stroke="#ef4444" strokeDasharray="5 3"
-                    label={{ value: `เป้า ${kOee.target}%`, position: 'insideTopRight', fill: '#ef4444', fontSize: fs(10) }} />
+                  <ReferenceLine y={kOee.target} stroke="var(--red)" strokeDasharray="5 3"
+                    label={{ value: `เป้า ${kOee.target}%`, position: 'insideTopRight', fill: 'var(--red)', fontSize: fs(10) }} />
                   <Bar dataKey="v" fill={CELL_BAR_FILL} radius={[2, 2, 0, 0]}>
                     {daySeries(kOee.series).map((p, i) => (
                       <Cell key={i} fill={statusColor(statusOf(p.v, kOee.target, 'up'))} />
@@ -1037,7 +1033,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                   <YAxis type="category" dataKey="name" tick={{ ...axisTick, fontSize: fs(9.5) }} width={Math.round(cw * 0.42)}
                     tickFormatter={shortTick(Math.max(8, Math.floor((Math.round(cw * 0.42) - 8) / (fs(9.5) * 0.8))))} />
                   <Tooltip {...chartTip} formatter={v => [`${v} นาที`, 'เวลาที่เสีย']} />
-                  <Bar dataKey="min" fill="#fb923c" radius={[0, 3, 3, 0]}>
+                  <Bar dataKey="min" fill="var(--amber)" radius={[0, 3, 3, 0]}>
                     <LabelList dataKey="min" position="right" formatter={v => `${Math.round(v).toLocaleString()} น.`}
                       style={{ fontSize: fs(10), fill: 'var(--text2)', fontWeight: 700 }} />
                   </Bar>
@@ -1057,7 +1053,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 4, padding: '0 6px 2px', minHeight: 0 }}>
               {health.empty ? (
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6 }}>
-                  <WarnNote k={k} tone="#ef4444"
+                  <WarnNote k={k} tone="bad"
                     text="ยังไม่มีใบ action ในช่วงที่ดู — ตามงานไม่ได้ว่าปัญหาที่พบถูกแก้หรือยัง (ตั้ง Action จากปุ่มบนหัวจอ)" />
                   <div className="tv-hide" style={{ fontSize: fs(11), color: 'var(--muted)', lineHeight: 1.4 }}>
                     นี่คือเหตุผลหลักที่ทำหน้านี้ — ไม่ใช่เพื่อโชว์ตัวเลขสวยๆ แต่เพื่อปิดลูป:
@@ -1066,24 +1062,24 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                   {canRecord && (
                     <button className="tv-hide" onClick={() => openModal()} style={{
                       alignSelf: 'flex-start', fontSize: fs(12), fontWeight: 800, padding: '6px 14px',
-                      borderRadius: 999, background: 'var(--accent2)', color: '#1a1206', border: 'none', cursor: 'pointer',
+                      borderRadius: 999, background: 'var(--accent2)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer',
                     }}>➕ ตั้งใบแรก</button>
                   )}
                 </div>
               ) : (
                 <>
                   <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', flexShrink: 0 }}>
-                    {[['เกินกำหนด', health.overdue.length, '#ef4444'], ['ใกล้ครบ', health.dueSoon.length, '#f59e0b'],
-                      ['กำลังทำ', health.open.length, '#38bdf8'], ['ปิดแล้ว', health.done.length, '#22c55e']].map(([l, n, c]) => (
+                    {[['เกินกำหนด', health.overdue.length, 'bad'], ['ใกล้ครบ', health.dueSoon.length, 'warn'],
+                      ['กำลังทำ', health.open.length, 'info'], ['ปิดแล้ว', health.done.length, 'good']].map(([l, n, c]) => (
                       <span key={l} style={{
-                        fontSize: fs(10.5), fontWeight: 700, padding: '2px 8px', borderRadius: 999, color: c,
-                        background: 'var(--bg3)', backgroundImage: `linear-gradient(${c}1f, ${c}1f)`, border: `1px solid ${c}55`,
+                        fontSize: fs(10.5), fontWeight: 700, padding: '2px 8px', borderRadius: 999, color: toneVar(c),
+                        background: 'var(--bg3)', backgroundImage: `linear-gradient(${toneDim(c)}, ${toneDim(c)})`, border: `1px solid ${toneLine(c)}`,
                       }}>{l} {n}</span>
                     ))}
                     {canRecord && (
                       <button className="tv-hide" onClick={() => openModal()} style={{
                         fontSize: fs(10.5), fontWeight: 800, padding: '2px 10px', borderRadius: 999, marginLeft: 'auto',
-                        background: 'var(--accent2)', color: '#1a1206', border: 'none', cursor: 'pointer',
+                        background: 'var(--accent2)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer',
                       }}>➕ ตั้ง Action</button>
                     )}
                   </div>
@@ -1093,7 +1089,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                       return (
                         <div key={a.id} style={{
                           display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px', borderRadius: 4,
-                          background: 'var(--bg3)', borderLeft: `3px solid ${late ? '#ef4444' : '#38bdf8'}`,
+                          background: 'var(--bg3)', borderLeft: `3px solid ${late ? 'var(--red)' : 'var(--blue)'}`,
                         }}>
                           {a.kpi_key && (
                             <span style={{ fontSize: fs(10), fontWeight: 900, color: axisSheet(a.kpi_key)?.color || 'var(--muted)' }}>
@@ -1114,7 +1110,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                             /* เปิดหน้าต่างปิดงาน (ใส่ผล + รูป) แทนการปิดทันที — ปิดเปล่าๆ ไม่มีหลักฐานว่าแก้อะไร */
                             <button className="tv-hide" onClick={() => setClosing({ a, result: a.result_value || '', file: null })} style={{
                               fontSize: fs(10), fontWeight: 700, padding: '1px 7px', borderRadius: 999, cursor: 'pointer',
-                              background: 'var(--bg2)', color: '#22c55e', border: '1px solid #22c55e55',
+                              background: 'var(--bg2)', color: 'var(--green)', border: '1px solid var(--green-line)',
                             }}>ปิด</button>
                           )}
                         </div>
@@ -1153,7 +1149,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                 <textarea value={closing.result} rows={3} onChange={e => setClosing({ ...closing, result: e.target.value })}
                   style={{ marginTop: 3, fontSize: 13.5 }} placeholder="เช่น เปลี่ยนตัวจับชิ้นงานเป็นแบบ quick clamp · เวลาเปลี่ยนรุ่นลดจาก 25 → 14 นาที" />
               </label>
-              <QualityPhotoField label="📷 รูปหลักฐาน (ไม่บังคับ)" url={closing.a.result_img || null} file={closing.file}
+              <QualityPhotoField label="รูปหลักฐาน (ไม่บังคับ)" url={closing.a.result_img || null} file={closing.file}
                 hint="ถ่ายสิ่งที่แก้ไปจริง — เดือนหน้าปัญหาเดิมกลับมาจะได้ย้อนดูได้"
                 onPick={(f) => setClosing({ ...closing, file: f })} />
             </div>
@@ -1164,7 +1160,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               }}>ยกเลิก</button>
               <button onClick={doClose} disabled={closeSaving} style={{
                 fontSize: 13, fontWeight: 800, padding: '7px 18px', borderRadius: 8, cursor: 'pointer',
-                background: '#22c55e', color: '#06240f', border: 'none',
+                background: 'var(--green)', color: 'var(--accent-ink)', border: 'none',
               }}>{closeSaving ? '⏳ กำลังบันทึก...' : '✅ ปิดงาน'}</button>
             </div>
           </div>

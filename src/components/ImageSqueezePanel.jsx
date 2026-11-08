@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { toast } from './Toast';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { recompressLayouts } from '../utils/recompressLayouts';
+import InfoMore from './InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 /* ══ 🗜️ ImageSqueezePanel — แผงบีบรูปที่อัปไว้แล้วทั้งระบบ ═══════════════════════════
    ย้ายมาจาก `/linesetup` (2026-09-22 · คำสั่ง user: "ฟังก์ชันปุ่มบีบอัดรูปน่าจะอยู่ที่ setting")
@@ -95,13 +96,13 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
       <div style={card}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.6, minWidth: 220, flex: 1 }}>
-            <b style={{ color: 'var(--text)', fontSize: 14 }}>🗜️ บีบรูปที่อัปไว้แล้วให้เล็กลง</b><br />
+            <b style={{ color: 'var(--text)', fontSize: 14 }}>บีบรูปที่อัปไว้แล้วให้เล็กลง</b><br />
             แปลงเป็น <b>WebP</b> — <b>ความละเอียดเท่าเดิม ไม่เบลอ</b> แต่ไฟล์เล็กลงราวครึ่งหนึ่ง
             <br />
-            <span style={{ color: 'var(--muted)' }}>
+            <InfoMore label="แผงนี้มีไว้ทำไม" id="squeeze-why" size={12}>
               รูปที่อัปใหม่หลังจากนี้ถูกบีบตั้งแต่ตอนอัปอยู่แล้ว — แผงนี้มีไว้ตามเก็บ “รูปเก่า”
               · กดซ้ำได้เรื่อยๆ ใบที่ทำแล้วถูกข้ามก่อนโหลด (ไม่เสียค่าเน็ตซ้ำ)
-            </span>
+            </InfoMore>
           </div>
           <button
             onClick={handleRun}
@@ -128,7 +129,7 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
       {/* 📋 เหลือให้ทำกี่ใบ แยกตามกลุ่ม — กฎความซื่อสัตย์ของจอ: ยังไม่รู้ ต้องเขียนว่ายังไม่รู้ ห้ามโชว์ 0 */}
       <div style={card}>
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>
-          📋 รูปที่ยังไม่ได้ตรวจ
+          รูปที่ยังไม่ได้ตรวจ
           <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--muted)', marginLeft: 8 }}>
             (นับจากแถวในฐานข้อมูล ไม่ได้โหลดรูป — ไม่มีค่าเน็ต)
           </span>
@@ -173,7 +174,7 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
               </div>
             )}
             <button onClick={() => doScan()} disabled={!!busy} style={{ ...linkBtn, justifySelf: 'start', marginTop: 2 }}>
-              🔄 สำรวจใหม่
+              สำรวจใหม่
             </button>
           </div>
         )}

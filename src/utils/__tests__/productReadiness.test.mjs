@@ -51,3 +51,35 @@ test('CT = 0 ถือว่ายังไม่ได้ตั้ง (ไม�
   const r = productReadiness({ mat_no: '10011234', cycle_time_sec: 0 }, FULL);
   assert.equal(st(r, 'ct'), 'miss');
 });
+
+/* ── 🔴 "ใบของตัวเองว่าง" ≠ "ไม่มี BOM" (user แจ้ง 04/11 · เคส 20059152) ──────────────
+   `bom_items.parent_mat` ให้ใบของตัวแม่กรอกลูกของพาร์ทนี้ไว้ได้ ⇒ พาร์ทมี BOM จริง
+   แต่ `product_id` ของตัวเองไม่มีแถวเลย · นับแค่ใบตัวเอง = ขึ้น "BOM ✗" ทั้งที่แม่สร้างไว้แล้ว
+   (วัดทั้งฐานวันนั้น: 31 พาร์ทโดนแบบนี้)                                               */
+test('🔴 ลูกถูกกรอกไว้ในใบแม่ = มี BOM แล้ว ห้ามขึ้น "ยังขาด"', () => {
+  const part = { mat_no: '20059152' };                       // ใบของตัวเองว่าง
+  const r = productReadiness(part, { bom: 0, bomElsewhere: 2, ct: 1, routing: true, kanban: 1 });
+  const bom = r.steps.find(s => s.key === 'bom');
+  assert.equal(bom.status, 'ok', 'ใบแม่กรอกลูกไว้ให้แล้ว = มี BOM');
+  assert.ok(!r.missingRequired.includes('bom'));
+});
+
+test('🔴 ครบเพราะใบอื่นกรอกไว้ให้ ต้องเขียนบอกบนจอ (hint) ห้ามขึ้นเขียวเฉยๆ', () => {
+  const r = productReadiness({ mat_no: '20059152' }, { bom: 0, bomElsewhere: 2 });
+  const bom = r.steps.find(s => s.key === 'bom');
+  assert.match(bom.hint || '', /ใบอื่น/, 'ต้องบอกว่าลูกอยู่ในใบอื่น');
+  assert.match(bom.hint || '', /2/, 'ต้องบอกจำนวนด้วย');
+});
+
+test('ใบของตัวเองมีของ = ไม่ต้องมี hint (พฤติกรรมเดิมห้ามเปลี่ยน)', () => {
+  const r = productReadiness({ mat_no: '20059152' }, { bom: 3, bomElsewhere: 0 });
+  const bom = r.steps.find(s => s.key === 'bom');
+  assert.equal(bom.status, 'ok');
+  assert.equal(bom.hint, undefined);
+});
+
+test('ไม่มีทั้ง 2 ที่ = ยังขาดจริง (ห้ามกลบเคสที่ขาดจริง)', () => {
+  const r = productReadiness({ mat_no: '20059152' }, { bom: 0, bomElsewhere: 0 });
+  assert.equal(r.steps.find(s => s.key === 'bom').status, 'miss');
+  assert.ok(r.missingRequired.includes('bom'));
+});

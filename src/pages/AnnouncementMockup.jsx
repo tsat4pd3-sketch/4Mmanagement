@@ -26,19 +26,19 @@ import { getWorkDate, addDaysStr } from '../utils/workDate';
    ═══════════════════════════════════════════════════════════════════════════════════════════ */
 
 const TABS = [
-  { key: 'issue', label: '📝 ผู้แจ้ง (Issue)' },
-  { key: 'approve', label: '✅ EVP อนุมัติ (Approve)' },
-  { key: 'board', label: '📢 พนักงาน (Publish)' },
+  { key: 'issue', label: 'ผู้แจ้ง (Issue)' },
+  { key: 'approve', label: 'EVP อนุมัติ (Approve)' },
+  { key: 'board', label: 'พนักงาน (Publish)' },
 ];
 
 const ISSUER = 'ผู้แจ้ง (ตัวอย่าง)';
 const APPROVER = 'EVP (ตัวอย่าง)';
 
 const STATUS = {
-  pending:   { label: 'รอ EVP อนุมัติ', color: '#f59e0b' },
-  scheduled: { label: 'อนุมัติแล้ว · รอถึงวันมีผล', color: '#4d9fff' },
-  published: { label: 'ประกาศแล้ว', color: '#22c55e' },
-  rejected:  { label: 'ตีกลับ', color: '#ef4444' },
+  pending:   { label: 'รอ EVP อนุมัติ', color: 'var(--amber)' },
+  scheduled: { label: 'อนุมัติแล้ว · รอถึงวันมีผล', color: 'var(--blue)' },
+  published: { label: 'ประกาศแล้ว', color: 'var(--green)' },
+  rejected:  { label: 'ตีกลับ', color: 'var(--red)' },
 };
 /* published/scheduled ไม่เก็บเป็นสถานะ — คิดจาก approved + effective date เทียบวันจำลอง
    (เก็บแยก = ต้องมีงานเบื้องหลังมาพลิกสถานะ ไม่มีใครพลิก = ประกาศค้างไม่ขึ้น) */
@@ -94,8 +94,8 @@ function FlowBar({ st, ack }) {
         const done = i < at;
         const bad = st === 'rejected' && i === at;
         const cur = i === at && !bad;
-        const c = bad ? '#ef4444' : done ? '#22c55e' : cur ? 'var(--accent)' : 'var(--muted)';
-        const lineC = i < at ? '#22c55e' : 'var(--border2)';
+        const c = bad ? 'var(--red)' : done ? 'var(--green)' : cur ? 'var(--accent)' : 'var(--muted)';
+        const lineC = i < at ? 'var(--green)' : 'var(--border2)';
         return (
           <div key={label} style={{ position: 'relative', display: 'grid', justifyItems: 'center', alignContent: 'start', gap: 3, textAlign: 'center' }}>
             {i < STEPS.length - 1 && (
@@ -243,7 +243,7 @@ export default function AnnouncementMockup() {
             </div>
           </details>
         )}
-        {a.reject_reason && <div style={{ fontSize: 12, color: '#ef4444' }}>เหตุผลที่ตีกลับ: {a.reject_reason}</div>}
+        {a.reject_reason && <div style={{ fontSize: 12, color: 'var(--red)' }}>เหตุผลที่ตีกลับ: {a.reject_reason}</div>}
         {children}
       </div>
     );
@@ -253,7 +253,7 @@ export default function AnnouncementMockup() {
     const list = inbox(to);
     return (
       <div style={card}>
-        <h3 style={h3}>🔔 {title} ({list.length})</h3>
+        <h3 style={h3}>{title} ({list.length})</h3>
         {list.length ? (
           <div style={{ display: 'grid', gap: 6 }}>
             {list.map(n => (
@@ -272,11 +272,11 @@ export default function AnnouncementMockup() {
       <PageHeader
         title="ประกาศ / ชี้แจงบริษัท"
         icon="📢"
-        sub={<span><b style={{ color: '#f59e0b' }}>🧪 MOCKUP</b> · ข้อมูลจำลองในหน้านี้ ไม่บันทึกลงฐานข้อมูล (รีเฟรช = เริ่มใหม่)</span>}
+        sub={<span><b style={{ color: 'var(--amber)' }}>MOCKUP</b> · ข้อมูลจำลองในหน้านี้ ไม่บันทึกลงฐานข้อมูล (รีเฟรช = เริ่มใหม่)</span>}
         tabs={tabs} tab={tab} onTab={setTab}
         filters={(
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, color: 'var(--muted)' }}>📅 วันที่จำลอง</span>
+            <span style={{ fontSize: 13, color: 'var(--muted)' }}>วันที่จำลอง</span>
             <button type="button" style={btnGhost} onClick={() => setToday(d => addDaysStr(d, -1))}>‹</button>
             <input type="date" value={today} onChange={e => e.target.value && setToday(e.target.value)} />
             <button type="button" style={btnGhost} onClick={() => setToday(d => addDaysStr(d, 1))}>›</button>
@@ -292,12 +292,12 @@ export default function AnnouncementMockup() {
           ระบบจริงต้องมีตารางประกาศ + สิทธิ์ + แจ้งเตือนในแอป (ยังไม่ได้ทำ)
         </InfoMore>
       </div>
-      {failed && <div style={{ ...card, borderColor: '#ef4444', color: '#ef4444', marginBottom: 12 }}>⚠ {failed} — ตัวเลือกผู้รับอาจไม่ครบ</div>}
+      {failed && <div style={{ ...card, borderColor: 'var(--red)', color: 'var(--red)', marginBottom: 12 }}>⚠ {failed} — ตัวเลือกผู้รับอาจไม่ครบ</div>}
 
       {tab === 'issue' && (
         <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', alignItems: 'start' }}>
           <div style={{ ...card, display: 'grid', gap: 10 }}>
-            <h3 style={{ ...h3, margin: 0 }}>📝 ออกประกาศใหม่</h3>
+            <h3 style={{ ...h3, margin: 0 }}>ออกประกาศใหม่</h3>
             <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>หัวข้อ (Topic)
               <input value={form.topic} onChange={e => setForm(f => ({ ...f, topic: e.target.value }))} placeholder="เช่น ประกาศวันหยุด / ชี้แจงกฎความปลอดภัย" />
             </label>
@@ -342,13 +342,13 @@ export default function AnnouncementMockup() {
                 {rejectFor === a.id ? (
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     <input value={reason} onChange={e => setReason(e.target.value)} placeholder="เหตุผลที่ตีกลับ (บังคับ)" style={{ flex: 1, minWidth: 200 }} />
-                    <button type="button" style={{ ...btnGhost, color: '#ef4444' }} onClick={() => reject(a)}>ยืนยันตีกลับ</button>
+                    <button type="button" style={{ ...btnGhost, color: 'var(--red)' }} onClick={() => reject(a)}>ยืนยันตีกลับ</button>
                     <button type="button" style={btnGhost} onClick={() => { setRejectFor(null); setReason(''); }}>ยกเลิก</button>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <button type="button" style={btnPrimary} onClick={() => approve(a)}>✅ อนุมัติ</button>
-                    <button type="button" style={btnGhost} onClick={() => { setRejectFor(a.id); setReason(''); }}>↩ ตีกลับ</button>
+                    <button type="button" style={btnPrimary} onClick={() => approve(a)}>อนุมัติ</button>
+                    <button type="button" style={btnGhost} onClick={() => { setRejectFor(a.id); setReason(''); }}>ตีกลับ</button>
                   </div>
                 )}
               </>) })
@@ -361,7 +361,7 @@ export default function AnnouncementMockup() {
       {tab === 'board' && (
         <div style={{ display: 'grid', gap: 12 }}>
           <div style={{ ...card, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13 }}>👷 ดูในฐานะพนักงานของ</span>
+            <span style={{ fontSize: 13 }}>ดูในฐานะพนักงานของ</span>
             <OrgScopePicker index={index} failed={failed} value={myUnit} onChange={(v) => { setMyUnit(v); setMeId(''); }} costCenter={false} plantLabel="— เลือกหน่วยงานของพนักงาน —" />
             <select value={meId} onChange={e => setMeId(e.target.value)} disabled={!myPeople.length} style={{ width: 240 }}>
               <option value="">{myPeople.length ? '— ฉันคือ (รายชื่อจำลอง) —' : 'หน่วยนี้ไม่มีรายชื่อจำลอง'}</option>
@@ -378,8 +378,8 @@ export default function AnnouncementMockup() {
               annRow({ a, children: (<>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   {at
-                    ? <span style={{ fontSize: 13, fontWeight: 700, color: '#22c55e' }}>✓ {me.name} รับทราบแล้ว ({fmtDate(at)})</span>
-                    : <button type="button" style={btnPrimary} disabled={!me} onClick={() => acknowledge(a)}>✋ รับทราบ</button>}
+                    ? <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--green)' }}>✓ {me.name} รับทราบแล้ว ({fmtDate(at)})</span>
+                    : <button type="button" style={btnPrimary} disabled={!me} onClick={() => acknowledge(a)}>รับทราบ</button>}
                   {!me && <span style={{ fontSize: 12, color: 'var(--muted)' }}>เลือก "ฉันคือ" ก่อนจึงกดรับทราบได้</span>}
                 </div>
               </>) })

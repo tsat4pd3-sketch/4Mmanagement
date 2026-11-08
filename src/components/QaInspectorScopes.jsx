@@ -91,7 +91,7 @@ export default function QaInspectorScopes({ canManage = false }) {
   return (
     <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '12px 14px', boxShadow: 'var(--shadow-sm)' }}>
-        <div style={{ fontWeight: 800, marginBottom: 4 }}>🔬 QC หน้างานคนนี้ตรวจคุณภาพให้หน่วยไหน</div>
+        <div style={{ fontWeight: 800, marginBottom: 4 }}>QC หน้างานคนนี้ตรวจคุณภาพให้หน่วยไหน</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
           QC ที่ไปประจำหน้างาน <b>ยังสังกัดส่วน QA เหมือนเดิม</b> — ตารางนี้บอกแค่ว่ารับตรวจให้หน่วยไหน
           <div style={{ marginTop: 4 }}>
@@ -101,7 +101,7 @@ export default function QaInspectorScopes({ canManage = false }) {
           <div style={{ marginTop: 4 }}>ตั้งที่ชั้นไหนก็ได้ — ตั้ง "ส่วนงาน" = รับตรวจทุกแผนก/กลุ่มที่อยู่ใต้ลงไป</div>
         </div>
         {loadFail && <div style={{ marginTop: 8, fontSize: 12, color: '#f59e0b' }}>⚠️ {loadFail}</div>}
-        {!canManage && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>🔒 ดูได้อย่างเดียว — แก้ได้เฉพาะบัญชีที่มีสิทธิ์จัดการ QA</div>}
+        {!canManage && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>ดูได้อย่างเดียว — แก้ได้เฉพาะบัญชีที่มีสิทธิ์จัดการ QA</div>}
         {/* 🔴 "ยังไม่ได้ตั้ง" ≠ "ไม่รับผิดชอบอะไรเลย" — ต้องเขียนบนจอ (qaScope.js §UNSET) */}
         {unsetCount > 0 && (
           <div style={{ marginTop: 8, fontSize: 12, color: '#f59e0b' }}>
@@ -127,7 +127,7 @@ export default function QaInspectorScopes({ canManage = false }) {
                   const e = empById.get(r.employee_id);
                   return (
                     <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 4px 2px 10px', border: '1px solid var(--border2)', borderRadius: 999, background: 'var(--bg2)', fontSize: 13 }}>
-                      🔬 {e ? e.name : '(ไม่อยู่ในทะเบียน active)'}
+                      {e ? e.name : '(ไม่อยู่ในทะเบียน active)'}
                       {e?.position && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{positionLabel(e.position)}</span>}
                       {canManage && <DeleteButton disabled={busy} onClick={() => remove(r)} title={`เอา ${e?.name || ''} ออกจาก ${u.code || u.name}`} style={{ width: 26, height: 26 }} />}
                     </span>

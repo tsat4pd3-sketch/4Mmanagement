@@ -132,7 +132,7 @@ export default function StorageZonePanel() {
           (ผังคำนวณ เต็ม/ใกล้เต็ม/ต่ำกว่า Min จากสต็อกจริงให้เอง)
         </div>
         <div style={{ flex: 1 }} />
-        <button onClick={() => navigate('/factory-map')} style={btnSec}>🗺️ ไปผังรวมโรงงาน</button>
+        <button onClick={() => navigate('/factory-map')} style={btnSec}>ไปผังรวมโรงงาน</button>
         {canManage && !missing && <button onClick={() => setEdit({})} style={btnPri}>➕ เพิ่มโซน</button>}
       </div>
 
@@ -141,7 +141,7 @@ export default function StorageZonePanel() {
       {/* 🗺️ กรอบเดิมบนผังรวมที่ยังไม่มีทะเบียน — หยิบมาลงทะเบียนเป็นโซนคลังได้เลย (อ้างอิงแผนผังที่วาดไว้แล้ว) */}
       {!loading && !missing && canManage && unclaimedFrames.length > 0 && (
         <div style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '10px 14px', fontSize: 13 }}>
-          🗺️ กรอบบนผังรวมที่<b>ยังไม่มีทะเบียนโซน {unclaimedFrames.length} กรอบ</b> —
+          กรอบบนผังรวมที่<b>ยังไม่มีทะเบียนโซน {unclaimedFrames.length} กรอบ</b> —
           ถ้ากรอบไหนคือพื้นที่คลัง กด ➕ ลงทะเบียนได้เลย (ชื่อตรงกัน = จับคู่กรอบเดิมอัตโนมัติ ไม่ต้องวาดใหม่)
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
             {unclaimedFrames.map(n => (
@@ -328,7 +328,7 @@ function ZoneFormModal({ zone, initialName, parts, stockByMat, onClose, onSaved 
             ))}
             {!mats.length && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่ผูก MAT — โซนจะขึ้นสีเทา "ยังไม่ผูก MAT" บนผัง</span>}
           </div>
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔎 ค้น MAT / ชื่อพาร์ท จากทะเบียน Parts Master แล้วกดเพิ่ม…" />
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้น MAT / ชื่อพาร์ท จากทะเบียน Parts Master แล้วกดเพิ่ม…" />
           {q.trim() !== '' && (
             <div style={{ display: 'grid', gap: 3, maxHeight: 220, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, padding: 6 }}>
               {options.map(p => (

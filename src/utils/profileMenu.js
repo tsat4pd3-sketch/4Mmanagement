@@ -24,6 +24,9 @@ export function buildProfileMenu({ realRole, canRemote = false, remoteCode = nul
   push({ key: 'avatar',    icon: '📷', label: 'เปลี่ยนรูปโปรไฟล์',      onClick: on.avatar });
   push({ key: 'signature', icon: '✍️', label: 'ลายเซ็น',                onClick: on.signature });
   push({ key: 'password',  icon: '🔐', label: 'เปลี่ยนรหัสผ่าน',        onClick: on.password });
+  // 🔕 ตั้งค่าแจ้งเตือนของฉัน (03/11 · ข้อเสนอจากหน้างาน "ขอให้บาง user เด้งเฉพาะ Downtime")
+  //    🔴 ของส่วนตัว ไม่มีคีย์สิทธิ์ — ทุกคนตั้งของตัวเองได้ · "งานที่รอเรา" ล็อกไว้ในทะเบียน
+  push({ key: 'notifyPrefs', icon: '🔕', label: 'ตั้งค่าแจ้งเตือนของฉัน', onClick: on.notifyPrefs });
   push({ key: 'feedback',  icon: '💬', label: 'แจ้งปัญหา / ข้อเสนอแนะ', onClick: on.feedback });
 
   // 🎭 จำลองมุมมอง role — ยึด "role จริง" เสมอ (อยู่ในโหมดจำลองแล้วยังต้องสลับ/ออกได้)

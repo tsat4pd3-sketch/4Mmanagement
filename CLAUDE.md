@@ -95,33 +95,17 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 
 ## 📄 โมดูลที่รายละเอียดอยู่ในไฟล์โมดูลล้วน (ไม่มีกฎข้าม session)
 
-ดัชนีเต็ม `docs/modules/README.md`
+**ดัชนีเต็ม + คำอธิบายรายโมดูล = `docs/modules/README.md`** (ที่นี่เก็บแค่ชื่อไฟล์ให้ grep เจอ)
 เปิดอ่าน **เฉพาะโมดูลที่งานนี้แตะ** · กฎของโมดูลพวกนี้อยู่ในไฟล์ของมัน **ไม่ใช่ที่นี่**
 
-หน้า/route ทั้งระบบ `pages-routes.md` · สายธารความต้องการ `/flow-tower` `demand-flow-tower.md` ·
-คำนวณ Kanban จาก forecast `kanban-auto-calc.md` · ออเดอร์ manual (ไลน์ไม่มีคัมบัง) `daily-report.md` ·
-QR/บาร์โค้ดอุปกรณ์ `qr-equipment-scan.md` · กระบวนการผลิต (process types) `process-types.md` ·
-ไลน์ผสมหลาย process `daily-report-mixed-process.md` · Kaizen `improvements-kaizen.md` ·
-ประชุมแถวเช้า `morning-meeting.md` · ผังรวมโรงงาน `factory-master-map.md` ·
-Adoption Outlook `adoption-outlook.md` · ภาพรวมกลุ่ม TSG (mockup) `group-overview.md` ·
-จอตาม-มือถือคุม `remote-control.md` · แผนประสานงาน PM ข้ามวัน `pm-coordination.md` ·
-Audit log ใครแก้อะไร `traceability-audit-log.md` · ของที่ยกไปโปรเจคหน้าได้ `reusable-pm-checker.md` ·
-ติดตามการส่งงานลูกค้า (Planner/Sales · Delivery · Rundown Stock) `logistic-planner-sales.md` ·
-ใบรายงานของเสีย FM-PD2-002 `/scrap-report` `scrap-report.md` ·
-ใบขอเบิก/คืนสินค้าคงคลัง FM-STO-003 (แท็บใน `/qa`) `store-requisition-form.md` ·
-QA setup → ใบตรวจ (2 หน้า ห้ามปนกัน) `qa-inspection.md` ·
-BBS สังเกตพฤติกรรมความปลอดภัย (แท็บใน `/daily-checker`) `bbs-safety.md` ·
-Dashboard ส่วนงาน `/dept-dashboard?dept=` `dept-dashboard-tv.md` (ดีไซน์ `docs/DASHBOARD-DESIGN.md`) ·
-VSM `/vsm` `vsm.md` ·
-คลังอะไหล่ FM-JIG-009 + Rank `/equipment?tab=spare` `spare-part-master.md` ·
-Fixture shim record `/equipment?tab=jig` `fixture-shim-record.md` ·
-ตั้งค่าผัง/Floorplan `/layout-setup` (display = ดูอย่างเดียว) `floorplan-setup.md` ·
-กำลังคน/เปลี่ยนจุดงาน/Turnover `/workforce-insight` (อ่านอย่างเดียว) `workforce-insight.md` ·
-ประวัติผลิต by Product `/product-history` `product-history.md` ·
-สอบกลับ Order `/order-trace` `order-trace.md` ·
-กล่องรับ feedback หน้างาน (ปุ่มท้าย sidebar) `feedback-inbox.md` ·
-ปุ่มสลับ ไทย/English — ป้ายโครงหลักผ่าน `tr()` (`utils/i18n.js`) ห้ามเขียน `lang==='en'?` ในหน้า `i18n.md` ·
-RFQ/เสนอราคา Marketing (Q-neX เฟส 1 · ต้นน้ำ NPI · ตาราง `mkt_*` Main) `/rfq` `mkt-rfq.md`
+`pages-routes` · `demand-flow-tower` · `kanban-auto-calc` · `daily-report` · `qr-equipment-scan` ·
+`process-types` · `daily-report-mixed-process` · `improvements-kaizen` · `morning-meeting` ·
+`factory-master-map` · `adoption-outlook` · `group-overview` · `remote-control` · `pm-coordination` ·
+`traceability-audit-log` · `reusable-pm-checker` · `logistic-planner-sales` · `scrap-report` ·
+`store-requisition-form` · `qa-inspection` · `bbs-safety` · `dept-dashboard-tv` · `vsm` ·
+`spare-part-master` · `fixture-shim-record` · `floorplan-setup` · `workforce-insight` ·
+`product-history` · `order-trace` · `feedback-inbox` · `mkt-rfq` · `i18n`
+(ดีไซน์ Dashboard → `docs/DASHBOARD-DESIGN.md`)
 
 ---
 ## Organizational Hierarchy · Role System
@@ -138,11 +122,13 @@ RFQ/เสนอราคา Marketing (Q-neX เฟส 1 · ต้นน้ำ 
 > 🔴 **แกนที่ 2 ของชั้น ③ = Cost Center (`src/utils/ccScope.js` · `canWriteScope`)** — ตั้งที่ `/add-user` ช่อง ④
 >   (`profiles.resp_cost_centers` · `UserContext.respCostCenters`) · **ว่าง = ถอยไปใช้ `section` เหมือนเดิม**
 >   🔴 **ลำดับชั้นมาจาก `org_nodes.parent_id` เท่านั้น — เลขรหัสไม่ได้บอกชั้น**
+>   🏢 **ผังรับชั้นบน `company_group→spg→company→plant` แล้ว (04/11) — "ราก/ขึ้นตรง/ตกทอด" ถาม `src/utils/orgLayers.js` เท่านั้น**
+>     (`unitRoots`/`isOrphanDept`/`unitParentId` · ตกทอดหยุดที่ชั้นบน · ห้ามเขียน `!parent_id` ใหม่ · ด่าน `org-upper-layers-ready`)
 >   · ทีมไม่มีรหัส = **ตกทอดจากแม่** · ไล่ขึ้นไม่เจอ = fail-closed · กฎ "CC ของโหนด" **ห้ามเขียนชุดที่ 2**
 >   (`costCenterOfNode()` อยู่ไฟล์นี้ที่เดียว · มีด่าน `cc-scope-layer`)
 >   🔴 **หน่วยแม่ของขอบเขตเรา ≠ "หน่วยอื่น"** (28/10 · คำสั่ง user "ยุบเหลือแกนเดียว · CC ละเอียดกว่า")
 >     ถาม `canWriteUnit(ctx,'<ส่วนงาน>')` ทั้งที่ถือ CC ระดับแผนก = **`partial_unit` (ok)** ไม่ใช่บล็อก
->     — บล็อก = ติ๊ก CC แล้วใช้จอไหนไม่ได้เลย (โดน 15/15 ใบ) · **ความละเอียดอยู่ที่ชั้นรายไลน์/รายแถว**
+>     — บล็อก = ติ๊ก CC แล้วใช้จอไหนไม่ได้เลย · **ความละเอียดอยู่ที่ชั้นรายไลน์/รายแถว**
 >     (แผนกพี่น้องยัง ❌ เหมือนเดิม) ⇒ **จอต้องเช็คซ้ำตอนเขียนจริง ห้ามถือ `partial_unit` เป็นใบผ่าน**
 >   🔑 **จอไม่ต้องรู้เรื่อง 2 แกน** — `canWriteUnit`/`canWriteLine` สลับให้เองเมื่อ ctx มี `respCostCenters`
 >     **+ `scopeIdx`** ⇒ **ctx ของด่านทุกจอต้องส่ง 2 ช่องนี้** (ด่านตรวจรายบรรทัดใน `write-scope-layer`) ·
@@ -172,6 +158,12 @@ RFQ/เสนอราคา Marketing (Q-neX เฟส 1 · ต้นน้ำ 
 
 `pending` → (supervisor) → `pending_qa` ถ้า `requires_qa` ไม่งั้น `approved` → (QA) → `approved`
 · ตีกลับ = `rejected` + `reject_reason` · **ทุกการเปลี่ยนสถานะแจ้ง Telegram Group ทันที**
+
+> ### 🔴 ปุ่ม "อนุมัติ/เซ็นรับ" ต้องถามยืนยันก่อนเขียน DB — **ของกลาง `src/utils/signConfirm.js`**
+> (คำสั่ง user 28/10 "กดพลาดคือพลาดเลย" · ขยายทั้งระบบ 02/11) ใช้แล้วที่ **ใบ MO + คิวอนุมัติ 4M**
+> **ห้ามเขียนข้อความยืนยันเองในหน้า** — ต้องบอกครบ 3 อย่าง: **อนุมัติอะไร · ใบไหน · ในนามใคร**
+> 🔴 **ห้ามถามพร่ำเพรื่อ** — จังหวะที่มีด่านอยู่แล้ว (modal/ต้องแนบรูป/ต้องพิมพ์เหตุผล) **ไม่ต้องถามซ้ำ**
+> · 2 ด่าน `mtn-approve-needs-confirm` · `approve-needs-confirm-4m`
 
 > ### ⚠️ 4M ที่ระบบสร้างเอง ห้ามเข้าคิวอนุมัติเงียบๆ (2026-08-10)
 > **กฎ:** ตัวสร้างอัตโนมัติต้องมีเพดาน/ตัวนับ + กันใบซ้ำ · แยกใบระบบออกจากใบคนให้เห็นในคิว ·
@@ -460,11 +452,11 @@ RFQ/เสนอราคา Marketing (Q-neX เฟส 1 · ต้นน้ำ 
 
 ## 🚀 NPI — พาร์ทใหม่ APQP / PPAP / Drawing Rev / ECI / Tooling Plan (`/npi` · 2026-09-07)
 
-ต้นน้ำของ ESM: ติดตามพาร์ทรุ่นใหม่ตั้งแต่รับงานถึง SOP (คำสั่ง user "ให้ ESM ครอบคลุม E-SPT — ทำส่วนที่ไม่ยุ่งกับ supplier ก่อน") · หมวด คุณภาพ & วิศวกรรม
+ต้นน้ำของ ESM: ติดตามพาร์ทรุ่นใหม่ตั้งแต่รับงานถึง SOP · หมวด คุณภาพ & วิศวกรรม
 · **ตาราง `npi_*` 13 ตัวอยู่ Main project — ห้ามย้ายไป DR** (เฟส 4 จะเปิดให้ supplier ภายนอก login · DR anon-open = supplier เห็นข้อมูลผลิตทั้งโรงงาน)
 · เฟส/รายการเอกสาร = **แม่แบบ data-driven ต่อลูกค้า** (APQP AIAG 5 เฟส + PPAP 18 elements · Toyota SPTT0-4) ห้าม hardcode · พาร์ทถือ snapshot + 🔄 sync เติมที่ขาด
 · ไฟสี/สรุปคำนวณใน `src/utils/npi.js` เท่านั้น · ECI ปิดได้ต่อเมื่อผูกของจริงครบทุกขา (แบบ rev ใหม่ / `pe_change_requests` / ใบ 4M Method / แผน tooling — DB check)
-· migration `20260907_npi_apqp_main.sql` (**apply แล้ว 2026-09-07**) · supplier portal = เฟส 4 ยังไม่ทำ
+· supplier portal = เฟส 4 ยังไม่ทำ
 > 📄 รายละเอียดเต็ม → `docs/modules/npi-apqp.md`
 
 ---
@@ -493,7 +485,6 @@ RFQ/เสนอราคา Marketing (Q-neX เฟส 1 · ต้นน้ำ 
 > **🔴 ต้นไม้ BOM ต้องผ่าน `buildBomIndex()` (`src/utils/bomTree.js`) เท่านั้น · ห้ามเขียน `matOf[b.product_id]` เองอีก**
 > (มีด่าน) — `bom_items.parent_mat` (ใครก็เป็นแม่ได้ ไม่ต้องเป็น `dr_products`)
 > ชนะ `product_id` · `op_no` = ขั้นที่ชิ้นนี้ถูกใส่ตาม PFC · ย้ายชั้นผ่าน `moveBomLine()` (กันวนลูป)
-> migration `20260916_bom_level_parent_mat.sql` (**apply แล้ว**)
 > 🔴 **"ใบนี้ว่าง" ≠ "พาร์ทนี้ไม่มีลูก"** — ลูกอาจถูกกรอกไว้ในใบอื่น
 > ⇒ ก่อนประกาศว่าไม่มีลูก ต้องถาม **`sheetsWithKidsOf()`** ก่อน · กางด้วย `explodeBom(..., { startSheet })`
 > **ห้ามรวมหลายใบเป็นชุดเดียว** (รวม = นับซ้ำ) · มุมมองพาร์ท = อ่านอย่างเดียว ห้ามแก้/สร้างใบให้เอง (มีด่าน)
@@ -501,7 +492,19 @@ RFQ/เสนอราคา Marketing (Q-neX เฟส 1 · ต้นน้ำ 
 > **ไม่ถูกระเบิดเลย** · คู่ที่นิยามไว้ 2 ใบไล่เคลียร์ที่ `/products?tab=bomdup` (กฎ `src/utils/bomDupAudit.js`)
 > — **จอชี้อย่างเดียว ห้ามยุบ/ลบ/แก้ qty ของ `bom_items` ให้เอง** (PE แก้เอง · คำสั่ง user 19/10 · มีด่าน)
 > 🔴 **ตัดสินว่า "ยุบได้" ต้องดูทุกใบที่นิยามพาร์ทนั้น ไม่ใช่ 2 ใบ** (`auditBomSheetGroups()` ไฟล์เดียวกัน)
->   — ใบที่ 3 เขียนคนละค่า = ยุบแล้วยอดเปลี่ยนเงียบ · พาร์ทที่**ไม่มีใบของตัวเอง**ไม่โผล่ในตารางคู่
+>
+> ### 🔻 confirm ใบผลิต = **ตัดลูกที่ติดตัวมัน · ลูกไปตัดหลาน** (หลัก SAP · 5/11 · คำสั่ง user)
+> 🔴 **ผัง BOM สร้างใบเดียว — ลูก/หลานไม่ต้องมีใบ BOM แยก** · "ลูกของ mat นี้" ถาม
+>   **`fn_bom_kid_rows(mat, sheet)`** (ใบที่กางอยู่ → ใบของตัวเอง → ใบอื่นที่นิยามลูกไว้ ใบเดียว ห้ามรวม)
+> 🔴 **รายการที่จะตัดมาจาก `fn_bom_direct_demand(mat)` (DR) ที่เดียว — trigger
+>   `fn_explode_child_demand` ห้ามวน `bom_items` ทั้งใบ** (`parent_mat` ⇒ ทั้งใบ ≠ ลูกตรง · มี 2 ด่าน)
+>   · ลูกไม่พอ = ออกใบให้**ลูกไปผลิตเอง** แล้วใบของลูกค่อยตัดลูกของมันต่อ
+> 🔴 **"ของลม" (`bom_phantom_mats` · `fn_bom_is_phantom()`) = ข้อยกเว้นที่ PE ติ๊กเอง ไม่ใช่ค่าเริ่มต้น**
+>   (ขั้น OP อัตโนมัติ) — ติ๊กแล้วข้ามตัวมันไปตัดลูกที่ชั้นแม่ · **ห้าม seed/เดาให้ใคร**
+> 🔴 **โซ่ขาด (`fn_bom_deduct_gaps()`) = mat ที่อยู่ใน BOM แต่ไม่มีใบไหนตัดเลย — จอ
+>   `/products?tab=phantom` ต้องโชว์ ห้ามซ่อน ห้ามกลบด้วยการติ๊กของลม** (ป้ายจอ `utils/bomPhantom.js`
+>   · อ่าน `ownOrders` ไม่ได้ = `unknown` ห้ามบีบเป็น 0)
+> 🔴 **"ต่อ 1 FG" ฝั่งแผน (`explodeBom`) ≠ สิ่งที่ตัดตอน confirm** — ฝั่งแผนคูณสะสมทุกชั้น · ห้ามสลับ
 > 📄 `docs/modules/bom-levels.md`
 
 ---
@@ -552,6 +555,8 @@ RFQ/เสนอราคา Marketing (Q-neX เฟส 1 · ต้นน้ำ 
 
 - 🔔 **แจ้งเตือนใหม่ทุกตัว = ในแอป (`notification_rules` → `notifications`) ห้ามเพิ่มทาง Telegram** (คำสั่ง user 24/09 · ย้ำ 20/10 "ยังไม่ยกเลิกแต่โฟกัสในแอพ")
   · ผู้รับต้องแคบ (role กว้าง = ไม่มีใครอ่าน · 📄 `docs/modules/notify-inapp-audit.md`) · ตัวส่งนอก edge อ่านกฎเดียวกัน (`scripts/acct-import/run_queue.mjs`)
+- 🔕 **ผู้ใช้ปิดแจ้งเตือนรายเรื่องเองได้** (เมนูโปรไฟล์) — **กรองใน `notify_recipients` ฝั่ง DB ที่เดียว ห้ามกรองในหน้า** (มีด่าน)
+  · คิวงานที่รอคนลงมือ = `notification_rules.can_mute=false` (**ทะเบียน** ตั้งที่ `/notification-config` ห้าม hardcode) · ยิงถึงเจ้าของงานตรง (`extra_user_ids`) ปิดไม่ได้อยู่แล้ว
 - Endpoint: `POST /functions/v1/send-notification`
 > 📄 รายละเอียดเต็ม → `docs/modules/edge-functions.md`
 
@@ -560,9 +565,8 @@ RFQ/เสนอราคา Marketing (Q-neX เฟส 1 · ต้นน้ำ 
 ## Storage & รูปภาพ (กติกาสำคัญ — 2026-07-09)
 
 - อัปโหลดรูปทุกหน้าต้องผ่าน `ImageCropModal` (crop + บีบ JPEG 480px q0.85 อัตโนมัติ)
-- **🔴 ทุก `.upload()` ต้องส่ง options ผ่าน `uploadOpts()` (`src/utils/storageUpload.js` · มีด่าน)** — ไม่ส่ง `cacheControl` = โหลดซ้ำทุกชั่วโมง · path ที่ `upsert` ทับได้ต้องใส่ `mutable: true`
-- **🔴 ทุกช่อง `<input type="file" accept="image/*">` ต้องผ่าน `acceptImageFile()`** (`src/utils/acceptImageFile.js` · มีด่าน) — HEIC จาก iPhone
-  เบราว์เซอร์อื่น decode ไม่ได้ · ที่เข้าหน้าครอปใช้ `<ImageCropModal>` (มีในตัวแล้ว)
+- **🔴 ทุก `.upload()` ต้องส่ง options ผ่าน `uploadOpts()` (`src/utils/storageUpload.js` · มีด่าน)** · path ที่ `upsert` ทับได้ต้องใส่ `mutable: true`
+- **🔴 ทุกช่อง `<input type="file" accept="image/*">` ต้องผ่าน `acceptImageFile()`** (`src/utils/acceptImageFile.js` · มีด่าน — HEIC) · เข้าหน้าครอปใช้ `<ImageCropModal>`
 - **🚫 รูปพนักงานไม่รับ GIF** (`allowGif={false}` · ตัวตรวจชนิดไฟล์ = `src/utils/imageFileKind.js` จุดเดียว ดูนามสกุลด้วย) ·
   **ปฏิเสธไฟล์ต้องขึ้น toast บอกเหตุผล+ทางแก้ ห้ามปิดเงียบ**
 > 📄 เหตุการณ์ egress · ตัวเลข GIF · กับดัก HEIC → `docs/modules/storage-images.md`
@@ -641,10 +645,9 @@ RFQ/เสนอราคา Marketing (Q-neX เฟส 1 · ต้นน้ำ 
 > (อย่าให้มี 2 ชุด — section นี้เป็นเจ้าของเรื่อง **ด่าน build** เท่านั้น)
 > · เอกสารบังคับอ่าน → §File Structure · DB → §Supabase Projects (**2 projects!**) + migration เสมอ
 
-> ### 🕗 **หน้าต่าง deploy — ห้าม deploy ในเวลาทำงาน** (2026-10-26 · เหตุการณ์จริง)
+> ### 🕗 **หน้าต่าง deploy — ห้าม deploy ในเวลาทำงาน** (2026-10-26)
 > **08:00–17:30 deploy ได้เฉพาะของที่ "ไม่แก้แล้วหน้างานทำงานไม่ได้"** · ที่เหลือรอหลังเลิกกะ/ก่อนเข้ากะ
-> 🔴 **deploy = สลับไฟล์ชุดใหม่ ⇒ แท็บที่เปิดค้างพังพร้อมกันทุกเครื่อง** · merge แล้วยังไม่ deploy = รอได้เสมอ
-> 📄 `docs/modules/deploy.md` §หน้าต่าง deploy
+> (deploy = สลับไฟล์ชุดใหม่ ⇒ แท็บที่เปิดค้างพังพร้อมกันทุกเครื่อง) · 📄 `docs/modules/deploy.md`
 
 **build ผ่าน (`npm run build`) ก่อน commit เสมอ** · merge เข้า `main` = **deploy แบบกันถี่** (ห่างรอบก่อน ≥60 น. = ทันที · ไม่งั้นรอเงียบ 30 น. · `.github/workflows/scheduled-deploy.yml` · ด่วนกด Run workflow) · 🔴 **ห้ามเปิด Auto-Deploy ของ Render คืน** (นาที build หมดกลางเดือน · 📄 `docs/modules/deploy.md`)
 📄 **ที่มาของทุกด่าน + เคสจริงที่ทำให้ต้องมี → `docs/modules/build-gates.md`** (อ่านก่อนจะแตะ/ถอดด่านใดๆ)
@@ -728,6 +731,7 @@ RFQ/เสนอราคา Marketing (Q-neX เฟส 1 · ต้นน้ำ 
 - 🔴 **"คนนี้เข้ากะไหน" อ่านจาก `src/utils/shiftAssign.js` เท่านั้น** — `scheduleTeamFor(emp, maps)` (รายคน) ·
   `lineScheduleTeam(lineId, maps)` (รายไลน์) · **ห้ามอ่าน `maps.byLine[id]` ตรงๆ** และ `buildScheduleMaps(rows, **lines**)`
   ต้องส่ง `lines` เสมอ — **ไลน์ลูกตกทอดกะจากไลน์แม่** เหมือนจอตั้งค่า · ไม่ส่ง = ไลน์ลูกที่ยังไม่มีแถว = **คนไม่มีกะเงียบๆ** (2 ด่าน)
+- 🗂️ **หน่วยสนับสนุน (QA · STORE · Die/JIG/Tooling MTN · Maintenance) อยู่ในทะเบียนไลน์แล้ว** (`unit_kind='support'` + ไลน์แม่-ลูก · 05/11) ⇒ ตั้งกะ/เช็คชื่อ/ยืมคน ทางเดียวกับไลน์ · 🔴 **`shift_schedules.dept_name` = แกนเก่า ห้ามเพิ่มชื่อใหม่** (ข้อความลอย ไม่มีทะเบียน ไม่มี FK)
 - **วันหยุด = มา OT ทั้งกะ 4 รูปแบบ** (8/10 ชม. เช้า-ดึก) — ช่วงเวลา/label/default อ่านจาก **`src/utils/otPeriods.js` ที่เดียว ห้าม hardcode ซ้ำในหน้า**
 - 🔴 **"วันหยุด" มี 2 ความหมาย ห้ามเช็ค `!= 'working'` แบบเหมา** — (ก) วันหยุดโรงงาน (kanban/LPA/แผนงาน · `shutdown75` นับเป็นหยุด) (ข) **วันหยุดแบบ OT** ใช้ `isOtHolidayType()`/`isOtHoliday()` ใน `companyCalendar.js` = **ot15/ot2 เท่านั้น**
 > 📄 ตาราง 4 รูปแบบ OT + มาตรา 75 (`shutdown75`) + จุดจองทุกทาง + migration → `docs/modules/shift-ot.md`
@@ -785,7 +789,6 @@ Platform:    Render.com (Static Site)
   - **ข้อยกเว้น (ต้องหยุดถามก่อน merge):** ถ้าเงื่อนไข 2 ไม่ผ่าน/ไม่แน่ใจว่ากระทบส่วนอื่น, หรือเป็นการเปลี่ยน schema/RLS/พฤติกรรมที่ย้อนยาก, หรือเป็น product decision ที่ตีความได้หลายแบบ → หยุดถาม user ก่อน อย่า auto-merge
 - ถ้า development branch ที่กำหนดมา merge เข้า main ไปแล้ว (ไม่มี commit ใหม่ค้าง) ให้ restart จาก main ล่าสุด: `git checkout -B <branch> origin/main` ก่อนทำงานต่อ ห้าม stack งานใหม่บน history ที่ merge ไปแล้ว
 - **ห้ามแก้ RLS policy / schema migration แบบ blanket** (loop เปลี่ยน policy หลายตารางพร้อมกัน) โดยไม่รู้ว่าตารางอยู่ project ไหนและ client ฝั่งไหนอ่าน — ดู §Supabase Projects
-- เปลี่ยน DB schema ทุกครั้ง ให้เขียนเป็น migration file ใน `supabase/migrations/` เพื่อให้ session อื่นเห็นประวัติ ไม่ใช่แก้ตรงผ่าน MCP เฉยๆ
 
 ---
 

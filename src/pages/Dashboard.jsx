@@ -17,7 +17,7 @@ import { canAccessPage } from '../utils/permissions';
 import { buildScheduleMaps, resolveAssignedShift, shiftFromTeam, lineScheduleTeam } from '../utils/shiftAssign';
 import { getLineFamilyNames, sortLineNames } from '../utils/lineHierarchy';
 import useIsMobile from '../utils/useIsMobile';
-import { toneOf, toneInk, statusColor } from '../utils/statusTone';
+import { toneOf, toneInk, statusColor, toneVar, toneDim, toneLine } from '../utils/statusTone';
 import useTvPager from '../utils/useTvPager';
 import TvPagerBar from '../components/TvPagerBar';
 import useTvShell, { tvSizer } from '../utils/useTvShell';
@@ -32,6 +32,8 @@ import { visibleInterval } from '../utils/usePolling';
 import { positionAllCards, delayedCountOf, orderKeyOf, projectedFinishMs, planStatusOf, pushChainOf, dayDelaySummaryOf } from '../utils/heijunkaQueue';
 import { buildBoardCards } from '../utils/boardCards';
 import PlanSlipBar from '../components/PlanSlipBar';   // 📋 แถบ "หลุดแผนไปแค่ไหน" (เวลา+ยอด · 2026-09-30)
+import DowntimeBand from '../components/DowntimeBand';   // ⛔ แถบเครื่องหยุดเต็มความสูงแถว (2026-11-04)
+import { downtimeBandsIn } from '../utils/downtimeBands';
 import DelayBlameBar from '../components/DelayBlameBar';   // 🔗 สรุปดีเลย์ของวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม 2026-09-30)
 import { liveChannel } from '../utils/liveChannel';
 import { ALL } from '../utils/filterLabels';
@@ -40,7 +42,9 @@ import { useLatestRequest } from '../utils/useLatestRequest';
 import { loadBreakPolicies } from '../utils/oeeMasters';
 import { fetchAllRows } from '../utils/fetchAllRows';
 import SearchInput from '../components/SearchInput';
+import TabBar from '../components/TabBar';
 import { urlPick, urlBool, urlParam } from '../utils/urlInit';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* เกณฑ์ "อัตราการมาทำงาน" ของจอนี้ — การ์ดบนสุดกับการ์ดรายไลน์ต้องใช้ชุดเดียวกัน (2026-10-19)
    เดิมการ์ดไลน์ตัดที่ 80% และเอา 4M มาปนสีมาทำงาน ⇒ ไลน์มา 91% ขึ้น "⚠ Risk" · มา 82% ขึ้น "✓ Normal" */
@@ -109,11 +113,11 @@ function ThumbMap({ imageUrl, alt, markers }) {
                 <div style={{ position: 'relative', width: 26, height: 26 }}>
                   <div className="dt-alarm-blink" style={{
                     width: 26, height: 26, borderRadius: '50%',
-                    border: '2px solid #ef4444', boxShadow: '0 0 8px #ef4444',
+                    border: '2px solid var(--red)', boxShadow: '0 0 8px var(--red)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 13, background: 'rgba(0,0,0,0.6)',
                   }}>⚙️</div>
-                  <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 1, background: 'rgba(239,68,68,0.9)', borderRadius: 4, padding: '0px 5px', fontSize: 11, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.label}</div>
+                  <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 1, background: 'var(--red-line)', borderRadius: 4, padding: '0px 5px', fontSize: 11, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.label}</div>
                 </div>
               ) : (
                 <div style={{ position: 'relative' }} title={m.personAlarm?.label || m.names}>
@@ -121,8 +125,8 @@ function ThumbMap({ imageUrl, alt, markers }) {
                     className={m.personAlarm ? (m.personAlarm.kind === 'red' ? 'person-alarm-red' : 'person-alarm-amber') : undefined}
                     style={{
                       width: 26, height: 26, borderRadius: '50%',
-                      border: `2px solid ${m.color}`, boxShadow: `0 0 6px ${m.color}88`,
-                      overflow: 'hidden', background: '#1a1a1a',
+                      border: `2px solid ${m.color}`, boxShadow: `0 0 6px ${tint(m.color, 'line')}`,
+                      overflow: 'hidden', background: 'var(--bg)',
                     }}>
                     {m.img
                       ? <img src={m.img} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -158,15 +162,16 @@ function MiniBar({ value, max, color }) {
 // สเกลระดับสกิล = master กลาง utils/skillLevels.js (ห้ามนิยามซ้ำในหน้า — เคยซ้ำแล้วเสี่ยง drift · แก้ 2026-08-18)
 const getFitLevel = (fit) => fit === null ? null : getLevel(fit);
 
+/* 🎨 token พาเลต 5 สี (UI §6.17 · 05/11): 4M = ฟ้า/เหลือง/ฟ้า/เขียว — Material เดิมม่วง (เลิกใช้) ⇒ แยกด้วยไอคอน */
 const CAT_META = {
-  Man:      { color: '#4d9fff', icon: '👤', bg: 'rgba(77,159,255,0.12)' },
-  Machine:  { color: '#f59e0b', icon: '⚙️', bg: 'rgba(245,158,11,0.12)' },
-  Material: { color: '#a855f7', icon: '📦', bg: 'rgba(168,85,247,0.12)' },
-  Method:   { color: '#22c55e', icon: '📋', bg: 'rgba(34,197,94,0.12)' },
+  Man:      { color: 'var(--blue)',  icon: '👤', bg: 'var(--blue-dim)' },
+  Machine:  { color: 'var(--amber)', icon: '⚙️', bg: 'var(--amber-dim)' },
+  Material: { color: 'var(--blue)',  icon: '📦', bg: 'var(--blue-dim)' },
+  Method:   { color: 'var(--green)', icon: '📋', bg: 'var(--green-dim)' },
 };
 const getCatMeta = (cat = '') => {
   const key = Object.keys(CAT_META).find(k => cat.includes(k));
-  return key ? CAT_META[key] : { color: '#888', icon: '🔔', bg: 'rgba(128,128,128,0.1)' };
+  return key ? CAT_META[key] : { color: 'var(--muted)', icon: '🔔', bg: 'var(--bg3)' };
 };
 
 function getWorkDateStr(date) {
@@ -971,7 +976,7 @@ export default function Dashboard({ view = 'timeline' }) {
     <div className="page-content" style={{ maxWidth: '100%' }}>
       {!isPeople && <DowntimeSiren mode="open_15min" />}
       {prodErr && (
-        <div role="alert" style={{ margin: '0 0 12px', padding: '10px 14px', borderRadius: 10, border: '1px solid #ef444488', background: '#ef444414', color: '#ef4444', fontSize: 14, fontWeight: 700 }}>
+        <div role="alert" style={{ margin: '0 0 12px', padding: '10px 14px', borderRadius: 10, border: '1px solid var(--red)88', background: 'var(--red)14', color: 'var(--red)', fontSize: 14, fontWeight: 700 }}>
           {prodErr}
         </div>
       )}
@@ -987,9 +992,9 @@ export default function Dashboard({ view = 'timeline' }) {
             {selectedShift !== 'all' && (
               <span style={{
                 padding: '3px 10px', borderRadius: 20, fontSize: 13, fontWeight: 700,
-                background: selectedShift === 'day' ? 'rgba(245,158,11,0.15)' : 'rgba(77,159,255,0.15)',
-                color: selectedShift === 'day' ? '#f59e0b' : '#4d9fff',
-                border: `1px solid ${selectedShift === 'day' ? 'rgba(245,158,11,0.3)' : 'rgba(77,159,255,0.3)'}`,
+                background: selectedShift === 'day' ? 'var(--amber-dim)' : 'var(--blue-dim)',
+                color: selectedShift === 'day' ? 'var(--amber)' : 'var(--blue)',
+                border: `1px solid ${selectedShift === 'day' ? 'var(--amber-line)' : 'var(--blue-line)'}`,
               }}>
                 {selectedShift === 'day' ? '☀️ กะเช้า' : '🌙 กะดึก'}
                 {isToday && selectedShift === (shiftInfo.isDay ? 'day' : 'night') && ' · กะปัจจุบัน'}
@@ -1024,8 +1029,8 @@ export default function Dashboard({ view = 'timeline' }) {
             {[
               /* "ทุก…" ซ้ายสุดเสมอ + ป้ายจากทะเบียน (UI-STANDARD §3) — คงสีกะไว้เพราะเป็นบอร์ด TV */
               { val: 'all',   label: ALL.shift,   active: 'rgba(255,255,255,0.1)', color: 'var(--text2)' },
-              { val: 'day',   label: '☀️ กะเช้า', active: 'rgba(245,158,11,0.2)', color: '#f59e0b' },
-              { val: 'night', label: '🌙 กะดึก',  active: 'rgba(77,159,255,0.2)', color: '#4d9fff' },
+              { val: 'day',   label: 'กะเช้า', active: 'var(--amber-dim)', color: 'var(--amber)' },
+              { val: 'night', label: 'กะดึก',  active: 'var(--blue-dim)', color: 'var(--blue)' },
             ].map(s => (
               <button key={s.val} onClick={() => setSelectedShift(s.val)}
                 style={{
@@ -1052,7 +1057,7 @@ export default function Dashboard({ view = 'timeline' }) {
           {tvScroll && !isMobile && (
             <button type="button" onClick={() => setScrollMode(false)}
               style={{ padding: '7px 12px', borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-              📺 กลับเป็นหมุนหน้า
+              กลับเป็นหมุนหน้า
             </button>
           )}
         </motion.div>
@@ -1067,11 +1072,11 @@ export default function Dashboard({ view = 'timeline' }) {
       {selectedShift !== 'all' && noShiftLogs.length > 0 && (
         <div style={{
           marginBottom: 16, padding: '10px 14px', borderRadius: 10,
-          background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)',
+          background: 'var(--amber-dim)', border: '1px solid var(--amber-line)',
           display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10,
         }}>
           <div style={{ flex: '1 1 320px', minWidth: 0 }}>
-            <div style={{ fontSize: T(13, 20), fontWeight: 800, color: '#f59e0b' }}>
+            <div style={{ fontSize: T(13, 20), fontWeight: 800, color: 'var(--amber)' }}>
               ⚠️ เช็คชื่อแล้ว {noShiftLogs.length} คน แต่ยังจัดเข้ากะไม่ได้ — ตัวเลขด้านล่างจึงยังไม่รวมคนกลุ่มนี้
             </div>
             <div className="tv-hide" style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
@@ -1080,14 +1085,14 @@ export default function Dashboard({ view = 'timeline' }) {
             </div>
           </div>
           <button className="tv-hide" onClick={() => setSelectedShift('all')} style={{
-            padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(245,158,11,0.5)',
-            background: 'transparent', color: '#f59e0b', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-          }}>👁 ดูรวมทุกกะ</button>
+            padding: '6px 12px', borderRadius: 8, border: '1px solid var(--amber-line)',
+            background: 'transparent', color: 'var(--amber)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+          }}>ดูรวมทุกกะ</button>
           {canAccessPage('/shift-organize', role) && (
             <button onClick={() => navigate('/shift-organize')} style={{
               padding: '6px 12px', borderRadius: 8, border: 'none',
-              background: '#f59e0b', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-            }}>🗓️ ไปตั้งตารางกะ</button>
+              background: 'var(--amber)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            }}>ไปตั้งตารางกะ</button>
           )}
         </div>
       )}
@@ -1202,10 +1207,10 @@ export default function Dashboard({ view = 'timeline' }) {
       {/* ── Downtime Alarm Banner — เครื่องจักรหยุด กระพริบเตือนทั้งแถบ ── */}
       {dtAlarmList.length > 0 && (
         <motion.div {...stagger(6)} className="dt-alarm-banner"
-          style={{ border: '1px solid rgba(239,68,68,0.45)', borderRadius: 12, padding: isMobile ? '12px 14px' : '14px 18px', marginBottom: 24 }}>
+          style={{ border: '1px solid var(--red-line)', borderRadius: 12, padding: isMobile ? '12px 14px' : '14px 18px', marginBottom: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
             <span className="dt-alarm-icon" style={{ fontSize: T(20, 30) }}>🚨</span>
-            <span style={{ fontSize: T(16, 26), fontWeight: 800, color: '#ef4444', fontFamily: 'var(--font-display)' }}>
+            <span style={{ fontSize: T(16, 26), fontWeight: 800, color: 'var(--red)', fontFamily: 'var(--font-display)' }}>
               เครื่องจักร Downtime {dtAlarmList.length} รายการ
             </span>
           </div>
@@ -1215,13 +1220,13 @@ export default function Dashboard({ view = 'timeline' }) {
               return (
                 <div key={d.id} style={{
                   display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', borderRadius: 8,
-                  background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(239,68,68,0.4)',
+                  background: 'rgba(0,0,0,0.25)', border: '1px solid var(--red-line)',
                 }}>
-                  <span style={{ fontSize: T(14, 22), fontWeight: 800, color: '#fca5a5' }}>⚙️ {d.machine_no || d.line_name}</span>
+                  <span style={{ fontSize: T(14, 22), fontWeight: 800, color: 'var(--red)' }}>{d.machine_no || d.line_name}</span>
                   <span style={{ fontSize: T(13, 20), color: 'var(--text2)' }}>{d.line_name}</span>
-                  <span style={{ fontSize: T(13, 20), fontWeight: 700, color: '#ef4444' }}>{d.dr_downtime_types?.name_th || 'Downtime'}</span>
+                  <span style={{ fontSize: T(13, 20), fontWeight: 700, color: 'var(--red)' }}>{d.dr_downtime_types?.name_th || 'Downtime'}</span>
                   {elapsed != null && (
-                    <span style={{ fontSize: T(13, 20), fontWeight: 800, color: '#fbbf24' }}>⏱ หยุดมาแล้ว {fmtDtElapsed(elapsed)}</span>
+                    <span style={{ fontSize: T(13, 20), fontWeight: 800, color: 'var(--amber)' }}>⏱ หยุดมาแล้ว {fmtDtElapsed(elapsed)}</span>
                   )}
                 </div>
               );
@@ -1303,7 +1308,7 @@ export default function Dashboard({ view = 'timeline' }) {
                             <div style={{ fontSize: T(isWide ? 19 : 17, 26), fontWeight: 700, color: 'var(--text)', lineHeight: 1.25 }}>{line.name}</div>
                           </div>
                           {line.section && (
-                            <div style={{ fontSize: isWide ? 14 : 13, color: '#4d9fff', marginTop: 2, fontWeight: 600 }}>
+                            <div style={{ fontSize: isWide ? 14 : 13, color: 'var(--blue)', marginTop: 2, fontWeight: 600 }}>
                               {line.section}{line._hasChildren && ` · รวม ${line._children.length} ไลน์ย่อย`}
                             </div>
                           )}
@@ -1315,9 +1320,9 @@ export default function Dashboard({ view = 'timeline' }) {
                               title="คลิกดูรายละเอียด 4M ที่แจ้งเตือน"
                               style={{
                                 fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, cursor: 'pointer',
-                                background: cardFMPending ? 'rgba(231,76,60,0.15)' : 'rgba(245,158,11,0.15)',
-                                color: cardFMPending ? '#e74c3c' : '#f59e0b',
-                                border: `1px solid ${cardFMPending ? 'rgba(231,76,60,0.3)' : 'rgba(245,158,11,0.35)'}`,
+                                background: cardFMPending ? 'var(--red-dim)' : 'var(--amber-dim)',
+                                color: cardFMPending ? 'var(--red)' : 'var(--amber)',
+                                border: `1px solid ${cardFMPending ? 'var(--red-line)' : 'var(--amber-line)'}`,
                               }}>
                               {cardFMPending ? '🚨' : '🟡'} {line.lineAlerts}
                             </div>
@@ -1325,8 +1330,8 @@ export default function Dashboard({ view = 'timeline' }) {
                           {cardDT.length > 0 && (
                             <div className="dt-alarm-blink" onClick={() => setAndonLine({ title: line.name, names: cardNames })}
                               title="คลิกดูรายละเอียดเครื่องจักรที่ Downtime"
-                              style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, color: '#fff', border: '1px solid #ef4444', cursor: 'pointer' }}>
-                              ⚙️ DT {cardDT.length}
+                              style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, color: '#fff', border: '1px solid var(--red)', cursor: 'pointer' }}>
+                              DT {cardDT.length}
                             </div>
                           )}
                         </div>
@@ -1384,14 +1389,14 @@ export default function Dashboard({ view = 'timeline' }) {
                         {childCards.map(({ cs, pl }) => {
                           const cHealthy = pl.total > 0 && pl.staffed >= pl.total && cs.lineAlerts === 0;
                           const cWarn    = cs.lineAlerts > 0 || (pl.total > 0 && pl.staffed < pl.total);
-                          const cColor   = cHealthy ? '#22c55e' : cWarn ? '#f59e0b' : '#555';
+                          const cColor   = cHealthy ? 'var(--green)' : cWarn ? 'var(--amber)' : 'var(--muted2)';
                           const csDT     = dtAlarmByLine[cs.name] || [];
                           const csFMPending = fourMLogs.some(f => f.line_name === cs.name && f.status !== 'approved' && f.status !== 'rejected');
                           return (
                             <div key={cs.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, padding: isWide ? '12px 14px' : '10px 12px' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                 <div>
-                                  <span style={{ fontSize: 11, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.12)', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>ไลน์ย่อย</span>
+                                  <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 4, padding: '1px 5px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>ไลน์ย่อย</span>
                                   <div style={{ fontSize: isWide ? 15 : 14, fontWeight: 600, color: 'var(--text)', marginTop: 4 }}>{cs.name}</div>
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
@@ -1401,9 +1406,9 @@ export default function Dashboard({ view = 'timeline' }) {
                                       title="คลิกดูรายละเอียด 4M ที่แจ้งเตือน"
                                       style={{
                                         fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, cursor: 'pointer',
-                                        background: csFMPending ? 'rgba(231,76,60,0.15)' : 'rgba(245,158,11,0.15)',
-                                        color: csFMPending ? '#e74c3c' : '#f59e0b',
-                                        border: `1px solid ${csFMPending ? 'rgba(231,76,60,0.3)' : 'rgba(245,158,11,0.35)'}`,
+                                        background: csFMPending ? 'var(--red-dim)' : 'var(--amber-dim)',
+                                        color: csFMPending ? 'var(--red)' : 'var(--amber)',
+                                        border: `1px solid ${csFMPending ? 'var(--red-line)' : 'var(--amber-line)'}`,
                                       }}>
                                       {csFMPending ? '🚨' : '🟡'} {cs.lineAlerts}
                                     </div>
@@ -1411,8 +1416,8 @@ export default function Dashboard({ view = 'timeline' }) {
                                   {csDT.length > 0 && (
                                     <div className="dt-alarm-blink" onClick={() => setAndonLine({ title: cs.name, names: [cs.name] })}
                                       title="คลิกดูรายละเอียดเครื่องจักรที่ Downtime"
-                                      style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, color: '#fff', border: '1px solid #ef4444', cursor: 'pointer' }}>
-                                      ⚙️ DT {csDT.length}
+                                      style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 6, color: '#fff', border: '1px solid var(--red)', cursor: 'pointer' }}>
+                                      DT {csDT.length}
                                     </div>
                                   )}
                                 </div>
@@ -1516,9 +1521,9 @@ export default function Dashboard({ view = 'timeline' }) {
           <motion.div {...stagger(8)} style={{ marginBottom: 24 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
               <div style={{ fontSize: T(14, 22), fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                📊 Heijunka Board — ไทม์ไลน์การผลิต
-                {isHistorical && <span style={{ marginLeft: 8, fontSize: T(12, 17), padding: '2px 8px', borderRadius: 10, background: 'rgba(168,85,247,0.15)', color: '#a855f7', letterSpacing: 0 }}>📅 ย้อนหลัง {boardDate}</span>}
-                {isFutureDay && <span style={{ marginLeft: 8, fontSize: 12, padding: '2px 8px', borderRadius: 10, background: 'rgba(148,163,184,0.15)', color: 'var(--muted)', letterSpacing: 0 }}>📅 ล่วงหน้า {boardDate}</span>}
+                Heijunka Board — ไทม์ไลน์การผลิต
+                {isHistorical && <span style={{ marginLeft: 8, fontSize: T(12, 17), padding: '2px 8px', borderRadius: 10, background: 'var(--blue-dim)', color: 'var(--blue)', letterSpacing: 0 }}>ย้อนหลัง {boardDate}</span>}
+                {isFutureDay && <span style={{ marginLeft: 8, fontSize: 12, padding: '2px 8px', borderRadius: 10, background: 'var(--bg3)', color: 'var(--muted)', letterSpacing: 0 }}>ล่วงหน้า {boardDate}</span>}
               </div>
               <div className="tv-hide" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 <button onClick={() => shiftDate(-1)} style={dateBtn}>◀</button>
@@ -1533,16 +1538,17 @@ export default function Dashboard({ view = 'timeline' }) {
             </div>
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 12, padding: '6px 10px', background: 'var(--bg2)', borderRadius: 8, border: '1px solid var(--border2)' }}>
               {[
-                { c: '#4d9fff', icon: '▶', label: 'กำลังผลิต' },
-                { c: '#22c55e', icon: '✓', label: 'เสร็จแล้ว' },
-                { c: '#f97316', icon: '✓!', label: 'เสร็จ (ปิดช้ากว่ากำหนด)' },
-                { c: '#ef4444', icon: '!', label: 'ล่าช้า' },
-                { c: '#f59e0b', icon: '↷', label: 'ยกยอดข้ามกะ' },
-                { c: '#6b7280', icon: '⏪', label: 'ยิงย้อนหลัง (backfill)' },
-                { c: '#ef4444', icon: '⛔', label: 'Downtime (แถบบนแถว)' },
+                /* 🎨 พาเลต 5 สี (05/11): "เสร็จช้า" = เขียวเหมือนเสร็จ แยกด้วยไอคอน ✓! (เดิมส้ม — เฉดที่ 6) */
+                { t: 'info', icon: '▶', label: 'กำลังผลิต' },
+                { t: 'good', icon: '✓', label: 'เสร็จแล้ว' },
+                { t: 'good', icon: '✓!', label: 'เสร็จ (ปิดช้ากว่ากำหนด)' },
+                { t: 'bad', icon: '!', label: 'ล่าช้า' },
+                { t: 'warn', icon: '↷', label: 'ยกยอดข้ามกะ' },
+                { t: 'none', icon: '⏪', label: 'ยิงย้อนหลัง (backfill)' },
+                { t: 'bad', icon: '⛔', label: 'Downtime (แถบบนแถว)' },
               ].map(item => (
                 <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ width: T(16, 24), height: T(16, 24), borderRadius: 3, background: `${item.c}28`, border: `1.5px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: T(11, 16), fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
+                  <span style={{ width: T(16, 24), height: T(16, 24), borderRadius: 3, background: toneDim(item.t), border: `1.5px solid ${toneVar(item.t)}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: T(11, 16), fontWeight: 800, color: toneVar(item.t), flexShrink: 0 }}>{item.icon}</span>
                   <span style={{ fontSize: T(12, 18), color: 'var(--muted)', fontWeight: 600 }}>{item.label}</span>
                 </div>
               ))}
@@ -1559,19 +1565,22 @@ export default function Dashboard({ view = 'timeline' }) {
                 padding: '3px 11px', borderRadius: 20, cursor: 'pointer', fontSize: 12, fontWeight: 700,
                 border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
                 background: active ? 'var(--accent)' : 'var(--bg2)',
-                color: active ? '#08130a' : 'var(--text2)', fontFamily: 'var(--font-body)',
+                color: active ? 'var(--accent-ink)' : 'var(--text2)', fontFamily: 'var(--font-body)',
               });
               return (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
-                  {lineNames.length > 1 && [{ k: '', label: `ทุกไลน์ (${lineNames.length})` }, ...lineNames.map(n => ({ k: n, label: n }))].map(c => (
-                    <button key={c.k || '_all'} onClick={() => setBoardLineSel(c.k)} style={chip(effSel === c.k)}>{c.label}</button>
-                  ))}
-                  {/* width ต้องกำหนดเอง — index.css ตั้ง input width:100% ทั้งแอป */}
-                  <SearchInput value={boardQuery} onChange={setBoardQuery} fields="พาร์ท / MAT / เลขใบ" grow={false}
-                    style={{ width: 210, marginLeft: 'auto' }} inputStyle={{ fontSize: 12.5, background: 'var(--bg2)' }} />
-                  {(effSel || boardQuery) && (
-                    <button onClick={() => { setBoardLineSel(''); setBoardQuery(''); }}
-                      style={{ ...chip(false), color: 'var(--muted)' }}>✕ ล้างตัวกรอง</button>
+                <div style={{ marginBottom: 12 }}>
+                  {/* แถวเลือกไลน์ = แท็บเส้นใต้มาตรฐาน (TabBar · 06/11) — เดิมชิปแคปซูล · ช่องค้นหา + ล้างตัวกรอง อยู่ปลายแถว */}
+                  {lineNames.length > 1 && (
+                    <TabBar size="sm" value={effSel} onChange={setBoardLineSel}
+                      tabs={[{ key: '', label: `ทุกไลน์ (${lineNames.length})` }, ...lineNames.map(n => ({ key: n, label: n }))]}
+                      right={<>
+                        <SearchInput value={boardQuery} onChange={setBoardQuery} fields="พาร์ท / MAT / เลขใบ" grow={false}
+                          style={{ width: 210 }} inputStyle={{ fontSize: 12.5, background: 'var(--bg2)' }} />
+                        {(effSel || boardQuery) && (
+                          <button type="button" onClick={() => { setBoardLineSel(''); setBoardQuery(''); }}
+                            style={{ ...chip(false), color: 'var(--muted)' }}>ล้างตัวกรอง</button>
+                        )}
+                      </>} />
                   )}
                 </div>
               );
@@ -1624,9 +1633,9 @@ export default function Dashboard({ view = 'timeline' }) {
                 <div key={lineName} data-tv-item style={{
                   marginBottom: 16,
                   background: 'var(--card)',
-                  border: `1px solid ${totalDelayed > 0 ? 'rgba(239,68,68,0.45)' : hasOpen ? 'rgba(34,197,94,0.35)' : 'var(--border2)'}`,
+                  border: `1px solid ${totalDelayed > 0 ? 'var(--red-line)' : hasOpen ? 'var(--green-line)' : 'var(--border2)'}`,
                   borderRadius: 12, overflow: 'hidden',
-                  boxShadow: totalDelayed > 0 ? '0 0 0 1px rgba(239,68,68,0.12)' : hasOpen ? '0 0 0 1px rgba(34,197,94,0.08)' : 'none',
+                  boxShadow: totalDelayed > 0 ? '0 0 0 1px var(--red-dim)' : hasOpen ? '0 0 0 1px var(--green-dim)' : 'none',
                 }}>
 
                   {/* ── Line header ── */}
@@ -1656,7 +1665,7 @@ export default function Dashboard({ view = 'timeline' }) {
                         const shaky = parts.some(p => p.state !== 'ok');
                         return (
                           <span title={`เวลาที่เดินได้แต่ยังไม่มีคำอธิบาย — หักงานที่ทำได้และ downtime ที่บันทึกแล้วออกหมดแล้ว${shaky ? ' · บางกะข้อมูลยังไม่ครบ ดูรายละเอียดที่การ์ดกะด้านล่าง' : ''}`}
-                            style={{ fontSize: T(12, 18), padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: 'rgba(156,163,175,0.15)', color: 'var(--text2)' }}>
+                            style={{ fontSize: T(12, 18), padding: '2px 8px', borderRadius: 20, fontWeight: 700, background: 'var(--bg3)', color: 'var(--text2)' }}>
                             ⬜ ไม่รู้ {unknown} น. ({Math.round((unknown / cap) * 100)}%){shaky ? ' ⚠️' : ''}
                           </span>
                         );
@@ -1674,8 +1683,8 @@ export default function Dashboard({ view = 'timeline' }) {
                           const anyOpen = list.some(s => s.status === 'open');
                           return (
                             <span key={ln} style={{ fontSize: T(12, 18), padding: '2px 8px', borderRadius: 20, fontWeight: 700,
-                              background: anyOpen ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.12)',
-                              color: anyOpen ? '#22c55e' : '#888' }}>
+                              background: anyOpen ? 'var(--green-dim)' : 'var(--bg3)',
+                              color: anyOpen ? 'var(--green)' : 'var(--muted)' }}>
                               {multi && <span style={{ fontWeight: 800 }}>{ln} · </span>}
                               {list.map(s => `${s.shift === 'day' ? '☀️' : '🌙'}${s.status === 'open' ? '●' : '✓'}`).join(' ')}
                               {anyOpen ? ' Live' : ' ปิดแล้ว'}
@@ -1797,7 +1806,7 @@ export default function Dashboard({ view = 'timeline' }) {
                             <div key={i} style={{
                               flex: 1, minWidth: 0, height: '100%',
                               borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`,
-                              background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent',
+                              background: isNow ? 'var(--blue-dim)' : 'transparent',
                               boxSizing: 'border-box',
                             }} />
                           );
@@ -1818,8 +1827,8 @@ export default function Dashboard({ view = 'timeline' }) {
                                   style={{
                                     position: 'absolute', top: 0, bottom: 0,
                                     left: `${leftPct}%`, width: `${widthPct}%`,
-                                    background: 'repeating-linear-gradient(45deg, rgba(148,163,184,0.18) 0px, rgba(148,163,184,0.18) 4px, transparent 4px, transparent 8px)',
-                                    borderLeft: '1px dashed rgba(148,163,184,0.6)', borderRight: '1px dashed rgba(148,163,184,0.6)',
+                                    background: 'repeating-linear-gradient(45deg, var(--bg3) 0px, var(--bg3) 4px, transparent 4px, transparent 8px)',
+                                    borderLeft: '1px dashed var(--border2)', borderRight: '1px dashed var(--border2)',
                                     zIndex: 0, pointerEvents: 'none',
                                     display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'hidden',
                                   }}>
@@ -1827,32 +1836,26 @@ export default function Dashboard({ view = 'timeline' }) {
                                       + ไปทับใบงานที่คร่อมช่วงพัก) — แถบลายเฉียงยังบอกว่าเป็นช่วงพัก ชี้เมาส์เห็นชื่อ */}
                                   {tlW > 0 && widthPct * tlW / 100 >= 52 && (
                                     <span style={{ fontSize: T(11, 17), fontWeight: 700, color: 'var(--muted)', whiteSpace: 'nowrap', marginBottom: 1 }}>
-                                      🚫{brkName}{band.lineRuleMin !== null ? ' 🏭' : ''}
+                                      {brkName}{band.lineRuleMin !== null ? ' 🏭' : ''}
                                     </span>
                                   )}
                                 </div>
                               );
                             });
                         })()}
-                        {/* ⛔ แถบ downtime — วางชิดขอบบนแถว ไม่บังใบกัมบัง ชี้เมาส์ดูรายละเอียดได้
-                            แสดงเฉพาะ downtime ของ sub-line ที่มีใบงานอยู่ในแถวนี้ — ไม่วาดซ้ำทุกแถวจนเหตุของ
-                            อีกไลน์มาโผล่ปนกัน (แถวที่ไม่มีใบงานเลยให้เห็นทุกรายการไว้ก่อน ดีกว่าหายเงียบ) */}
-                        {(() => {
-                          const rowLines = new Set(cards.map(c => c.line_name).filter(Boolean));
-                          return dtWindows.filter(w => !rowLines.size || !w.line_name || rowLines.has(w.line_name));
-                        })().map((w, di) => {
-                          const l = Math.max(0, (w.s - half.startMs) * pctPerMs);
-                          const rgt = Math.min(100, (w.e - half.startMs) * pctPerMs);
-                          if (rgt <= 0 || l >= 100 || rgt <= l) return null;
-                          return (
-                            <div key={`dt-${di}`} title={dtLabel(w)}
-                              style={{
-                                position: 'absolute', top: 0, height: 5, left: `${l}%`, width: `${Math.max(rgt - l, 0.4)}%`,
-                                background: w.planned ? '#94a3b8' : '#ef4444', opacity: 0.85,
-                                borderRadius: '0 0 3px 3px', zIndex: 3, cursor: 'help',
-                              }} />
-                          );
-                        })}
+                        {/* ⛔ แถบ downtime — **เต็มความสูงแถว อยู่ใต้ใบกัมบัง** (04/11 · feedback หน้างาน)
+                            เดิมเป็นขีดสูง 5px ชิดขอบบน ⇒ บนจอ TV มองไม่เห็น หน้างานอ่านช่องว่างว่า
+                            "โปรแกรมเรียงใบไม่ต่อเนื่อง" ทั้งที่เป็นเวลาที่เครื่องหยุดจริงที่เขาลงใบไว้เอง
+                            (Assy GOR 03/11: 180 นาที/กะ · ตรงกับ %A 82%)
+                            🔴 เรขาคณิต+การกรองไลน์อยู่ `utils/downtimeBands.js` · หน้าตาอยู่ `DowntimeBand`
+                               **ห้ามวาดเองในหน้า** (มีด่าน) */}
+                        {downtimeBandsIn(dtWindows, {
+                          rowLines: new Set(cards.map(c => c.line_name).filter(Boolean)),
+                          halfStartMs: half.startMs, pctPerMs,
+                        }).map((band, di) => (
+                          <DowntimeBand key={`dt-${di}`} band={band} label={dtLabel(band.w)}
+                            pxWidth={tlW > 0 ? band.widthPct * tlW / 100 : 0} fontSize={T(11, 15)} />
+                        ))}
                         {(() => {
                           const positioned = positionedForCards(cards).map(item => pctForHalf(item, half)).filter(Boolean);
                           /* กันใบงานทับกัน — ใบต้องไม่ล้ำขอบซ้ายของใบถัดไปเสมอ (1 ไลน์ผลิตทีละใบ)
@@ -1867,7 +1870,8 @@ export default function Dashboard({ view = 'timeline' }) {
                           }
                           return positioned.map(({ o, leftPct, widthPct, tailLeftPct, tailWidthPct, realEndMs, isDelayed, isLateDone, startMs, occupiedEndMs, planLeftPct, planWidthPct, planStartMs, plannedEndMs, planSlipped }, oi) => {
                           if (leftPct >= 100) return null;
-                          const statusColor = isLateDone ? '#f97316' : o.isDone ? '#22c55e' : isDelayed ? '#ef4444' : o.isCarry ? '#f59e0b' : '#4d9fff';
+                          const statusTone  = o.isDone ? 'good' : isDelayed ? 'bad' : o.isCarry ? 'warn' : 'info';   // เสร็จช้า = เขียว + ป้าย (พาเลต 5 สี)
+                          const statusColor = toneVar(statusTone);
                           const icon = o.isDone ? (isLateDone ? '✓!' : '✓') : isDelayed ? '!' : o.isCarry ? '↷' : o.is_manual ? '✍️' : '▶';
                           const doneQty  = o.isDone ? (o.qty_ok ?? o.qty ?? 0) : (o.qty_actual ?? 0);
                           // fill ต่อเนื่องตามแกนเวลาทั้งใบ — ใบที่คร่อม 2 กะถูกตัดเป็น 2 ท่อน ถ้าคิด % แยกต่อท่อน
@@ -1897,19 +1901,19 @@ export default function Dashboard({ view = 'timeline' }) {
                               style={{
                                 position: 'absolute', top: 4, bottom: 4,
                                 left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 2,
-                                background: `${statusColor}28`,
-                                border: `1.5px solid ${statusColor}${o.isDone && !isLateDone ? 'cc' : (isDelayed || isLateDone) ? 'dd' : '88'}`,
+                                background: toneDim(statusTone),
+                                border: `1.5px solid ${(o.isDone || isDelayed || isLateDone) ? statusColor : toneLine(statusTone)}`,
                                 borderRadius: 4, overflow: 'hidden',
-                                boxShadow: (isDelayed || isLateDone) ? `0 0 6px ${statusColor}44` : 'none',
+                                boxShadow: (isDelayed || isLateDone) ? `0 0 6px ${toneLine(statusTone)}` : 'none',
                                 cursor: 'default', zIndex: 1,
                               }}>
                               {/* ใบ manual: fill เข้มขึ้นตามสัดส่วนยอดสะสม (alpha 0.30→0.75) ครบเป้า = เขียว — เห็นชัดว่าเหลืออีกเท่าไหร่จบ
                                   ใบสแกนปกติ: fill จางแบบเดิม */}
                               <div style={{
                                 position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctBlock}%`,
-                                background: o.is_manual && !o.isDone
-                                  ? `${fillFrac >= 1 ? '#22c55e' : statusColor}${Math.round((0.30 + 0.45 * Math.min(pctBlock, 100) / 100) * 255).toString(16).padStart(2, '0')}`
-                                  : `${statusColor}22`,
+                                /* ความเข้มของ fill ผ่าน opacity (token เป็น var() ต่อ alpha ไม่ได้ · 05/11) — ใบ manual 0.30→0.75 ตามยอดสะสม · ใบสแกน 0.13 */
+                                background: o.is_manual && !o.isDone ? (fillFrac >= 1 ? 'var(--green)' : statusColor) : statusColor,
+                                opacity: o.is_manual && !o.isDone ? (0.30 + 0.45 * Math.min(pctBlock, 100) / 100) : 0.13,
                                 transition: 'width 0.5s ease, background 0.5s ease',
                               }} />
                               {/* ใบแคบเกินกว่าจะพิมพ์ตัวหนังสือได้ครบ = ไม่พิมพ์เลย (ellipsis เหลือ "MANU…"/"300…" อ่านไม่รู้เรื่อง
@@ -1923,7 +1927,7 @@ export default function Dashboard({ view = 'timeline' }) {
                                 <div style={{ fontSize: T(11, 16), color: o.is_manual && !o.isDone && pctBlock >= 45 ? 'rgba(255,255,255,0.85)' : 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                   {/* ใบ manual ที่ยังเปิด: โชว์ยอดสะสม/เป้า (พนักงานอัพเดททุกเบรค) — ใบสแกน/ปิดแล้ว: จำนวนตามเดิม */}
                                   {o.is_manual && !o.isDone ? `${o.qty_actual ?? 0}/${o.qty_target ?? o.qty}` : o.qty}ชิ้น
-                                  {isOverCap && <span style={{ color: '#ef4444', fontWeight: 800 }}> 🔴ล้น+{(overMs / 3600000).toFixed(1)}ชม.</span>}
+                                  {isOverCap && <span style={{ color: 'var(--red)', fontWeight: 800 }}> 🔴ล้น+{(overMs / 3600000).toFixed(1)}ชม.</span>}
                                 </div>
                               </div>
                               )}
@@ -1938,7 +1942,7 @@ export default function Dashboard({ view = 'timeline' }) {
                                   /* 🔴 ใบที่หลุดกรอบ วาดกรอบ **ทับแท่ง** (z=2) ให้เห็นเป็นกล่องชัดๆ ว่า "แผนจบตรงนี้"
                                      แล้วส่วนที่ยื่นพ้นกล่อง = ที่หลุด (ตรงกับภาพร่าง user)
                                      · ใบที่ตรงแผน วาดไว้ข้างหลัง (z=0) จางๆ ไม่งั้นทุกใบมีเส้นประล้อม = จอรก */
-                                  border: `${planSlipped ? 2 : 1}px dashed ${planSlipped ? '#e5e7eb' : 'var(--muted)'}`, borderRadius: 4,
+                                  border: `${planSlipped ? 2 : 1}px dashed ${planSlipped ? 'var(--text)' : 'var(--muted)'}`, borderRadius: 4,
                                   opacity: planSlipped ? 0.95 : 0.35, zIndex: planSlipped ? 2 : 0, pointerEvents: 'none',
                                 }} />
                             )}
@@ -1948,8 +1952,8 @@ export default function Dashboard({ view = 'timeline' }) {
                                 style={{
                                   position: 'absolute', top: 4, bottom: 4,
                                   left: `${tailLeftPct}%`, width: `${tailWidthPct}%`,
-                                  background: 'repeating-linear-gradient(45deg, #ef444433 0px, #ef444433 4px, #ef444412 4px, #ef444412 8px)',
-                                  border: '1.5px dashed #ef4444aa', borderLeft: 'none',
+                                  background: 'repeating-linear-gradient(45deg, var(--red)33 0px, var(--red)33 4px, var(--red)12 4px, var(--red)12 8px)',
+                                  border: '1.5px dashed var(--red)aa', borderLeft: 'none',
                                   borderRadius: '0 4px 4px 0', zIndex: 1, pointerEvents: 'none',
                                 }} />
                             )}
@@ -2027,7 +2031,7 @@ export default function Dashboard({ view = 'timeline' }) {
                           });
                           const grossQty = Object.values(demandByMat).reduce((a, q) => a + q, 0);
                           if (ediQty <= 0 && stockUsed > 0) {
-                            chips.push({ color: 'var(--green)', text: `🌙📡 EDI ส่งพรุ่งนี้ ${grossQty.toLocaleString()} ชิ้น — 📦 stock พร้อมส่งครอบทั้งหมด ไม่ต้องผลิตเพิ่มคืนนี้` });
+                            chips.push({ color: 'var(--green)', text: `🌙📡 EDI ส่งพรุ่งนี้ ${grossQty.toLocaleString()} ชิ้น — stock พร้อมส่งครอบทั้งหมด ไม่ต้องผลิตเพิ่มคืนนี้` });
                           }
                           if (ediQty > 0) {
                             const NIGHT_OT_IN2 = gridStartMs + 12 * 3600000, NIGHT_REG_IN2 = gridStartMs + 14.5 * 3600000;
@@ -2058,7 +2062,7 @@ export default function Dashboard({ view = 'timeline' }) {
                                 if (of2 <= gridEndMs) {
                                   chips.push({ color: 'var(--amber)', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — ⏰ ควรเรียกเข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)} · ถ้าเข้า 22:30 จบ ~${fmtMs(nf)})${tail}` });
                                 } else {
-                                  chips.push({ color: 'var(--red)', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — 🚨 เกินกำลังแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)}) วางแผนล่วงหน้า${tail}` });
+                                  chips.push({ color: 'var(--red)', text: `🌙📡 EDI ต้องผลิตคืนนี้ ${ediQty.toLocaleString()} ชิ้น${stockNote} — เกินกำลังแม้เข้า 20:00 (คาดเสร็จ ~${fmtMs(of2)}) วางแผนล่วงหน้า${tail}` });
                                 }
                               }
                             }
@@ -2084,7 +2088,7 @@ export default function Dashboard({ view = 'timeline' }) {
                           } else if (projEndMs <= DAY_OT_END) {
                             chips.push({ color: 'var(--amber)', text: `${sLabel} คาดเสร็จ ${projLabel} — ⏰ ต้องเปิด OT ~${otMin} นาที (เลิก 17:30 → ผลิตถึง ${projLabel})` });
                           } else {
-                            chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกินกรอบ OT (20:00) ควรวางแผนยกยอด/เพิ่มกำลังผลิต` });
+                            chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — เกินกรอบ OT (20:00) ควรวางแผนยกยอด/เพิ่มกำลังผลิต` });
                           }
                           return;
                         }
@@ -2109,7 +2113,7 @@ export default function Dashboard({ view = 'timeline' }) {
                         if (projEndMs <= FRAME_END) {
                           chips.push({ color: 'var(--green)', text: `${sLabel} คาดเสร็จ ${projLabel} — จบภายในกะ (ก่อน 08:00)` });
                         } else {
-                          chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกิน 08:00 ควรวางแผนยกยอดไปกะถัดไป` });
+                          chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — เกิน 08:00 ควรวางแผนยกยอดไปกะถัดไป` });
                         }
                       });
                       return chips;
@@ -2117,7 +2121,7 @@ export default function Dashboard({ view = 'timeline' }) {
 
                     const plannerStrip = plannerChips.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '6px 10px', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
-                        <span style={{ fontSize: T(11, 17), fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>🧠 PLANNER</span>
+                        <span style={{ fontSize: T(11, 17), fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>PLANNER</span>
                         {plannerChips.map((c, i) => (
                           <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 10, background: 'var(--card)', color: c.color, border: `1px solid ${c.color}` }}>{/* สีจาก token ธีม — เดิม hex สว่าง+พื้นโปร่ง ธีมสว่างมองไม่เห็น (02/10) */}
                             {c.text}
@@ -2136,8 +2140,8 @@ export default function Dashboard({ view = 'timeline' }) {
                             หัวชั่วโมงแสดงเวลาคู่บน-ล่างในคอลัมน์เดียวกัน (โครงเดียวกับบอร์ดหน้าจัดการไลน์) */}
                         <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
                           <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '4px 8px', fontSize: T(11, 17), fontWeight: 700, color: tv ? 'var(--text2)' : 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--bg2)' } : null) }}>
-                            <span>☀️ กะเช้า{isMobile ? '' : ' (แถบบน)'}</span>
-                            <span>🌙 กะดึก{isMobile ? '' : ' (แถบล่าง)'}</span>
+                            <span>กะเช้า{isMobile ? '' : ' (แถบบน)'}</span>
+                            <span>กะดึก{isMobile ? '' : ' (แถบล่าง)'}</span>
                           </div>
                           {/* ป้ายเวลาปัจจุบัน ลอยตรงตำแหน่ง playhead (คอลัมน์ใช้ร่วม 2 กะ — ไอคอนบอกว่าอยู่กะไหน) */}
                           {(() => {
@@ -2160,10 +2164,10 @@ export default function Dashboard({ view = 'timeline' }) {
                               <div key={i} style={{
                                 flex: 1, minWidth: 0, textAlign: 'center', padding: '3px 0', lineHeight: 1.3,
                                 borderRight: '1px solid var(--border)',
-                                background: (isNowAm || isNowPm) ? 'rgba(77,159,255,0.12)' : 'transparent',
+                                background: (isNowAm || isNowPm) ? 'var(--blue-dim)' : 'transparent',
                               }}>
-                                <div style={{ fontSize: T(11, 16), fontWeight: isNowAm ? 800 : 500, color: isNowAm ? '#4d9fff' : 'var(--text2)' }}>{String(h).padStart(2, '0')}:00</div>
-                                <div style={{ fontSize: T(11, 16), fontWeight: isNowPm ? 800 : 400, color: isNowPm ? '#4d9fff' : 'var(--muted)' }}>{String(hPm).padStart(2, '0')}:00</div>
+                                <div style={{ fontSize: T(11, 16), fontWeight: isNowAm ? 800 : 500, color: isNowAm ? 'var(--blue)' : 'var(--text2)' }}>{String(h).padStart(2, '0')}:00</div>
+                                <div style={{ fontSize: T(11, 16), fontWeight: isNowPm ? 800 : 400, color: isNowPm ? 'var(--blue)' : 'var(--muted)' }}>{String(hPm).padStart(2, '0')}:00</div>
                               </div>
                             );
                           })}
@@ -2171,7 +2175,7 @@ export default function Dashboard({ view = 'timeline' }) {
                         {/* แถวที่ถูกกรองซ่อน — บอกจำนวนเสมอ ห้ามหายเงียบ */}
                         {hiddenRowCount > 0 && (
                           <div style={{ padding: '6px 12px', fontSize: 12, color: 'var(--muted)', background: 'var(--bg2)', borderBottom: '1px solid var(--border)' }}>
-                            🔎 ตัวกรอง "{boardQuery.trim()}" — ซ่อน {hiddenRowCount} พาร์ทของไลน์นี้{qRows.length === 0 ? ' (ไม่มีพาร์ทที่ตรง)' : ''}
+                            ตัวกรอง "{boardQuery.trim()}" — ซ่อน {hiddenRowCount} พาร์ทของไลน์นี้{qRows.length === 0 ? ' (ไม่มีพาร์ทที่ตรง)' : ''}
                           </div>
                         )}
                         {/* ✍️ ใบเปิดเอง — ยุบไว้ แต่ **ห้ามซ่อนเงียบ** ต้องบอกจำนวน + กดกางได้เสมอ
@@ -2209,7 +2213,7 @@ export default function Dashboard({ view = 'timeline' }) {
                           });
                           const isOpen    = row.cards.some(c => c.sessionOpen);
                           const pct       = rowDemand > 0 ? Math.min((rowActual / rowDemand) * 100, 100) : 0;
-                          const barColor  = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
+                          const barColor  = pct >= 100 ? 'var(--green)' : pct >= 60 ? 'var(--amber)' : 'var(--red)';
 
                           return (
                             <div key={row.key} style={{ display: 'flex', borderTop: '1px solid var(--border2)', overflow: 'hidden' }}>
@@ -2221,14 +2225,14 @@ export default function Dashboard({ view = 'timeline' }) {
                                     {row.label}
                                     {/* บอร์ดรวมหลาย sub-line — ป้ายบอกว่าแถวนี้ของไลน์ไหน (product เดียวกันคนละไลน์ = คนละแถว) */}
                                     {multiSubLine && row.line && (
-                                      <span style={{ marginLeft: 4, fontSize: T(11, 17), fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.14)', border: '1px solid rgba(77,159,255,0.4)', borderRadius: 5, padding: '0 5px', whiteSpace: 'nowrap' }}>{row.line}</span>
+                                      <span style={{ marginLeft: 4, fontSize: T(11, 17), fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 5, padding: '0 5px', whiteSpace: 'nowrap' }}>{row.line}</span>
                                     )}
                                   </div>
                                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexWrap: 'wrap' }}>
                                     <span style={{ fontSize: T(15, 26), fontWeight: 900, color: barColor, lineHeight: 1 }}>{rowActual}</span>
                                     <span style={{ fontSize: T(11, 18), color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
-                                    {delayed > 0 && <span style={{ fontSize: T(11, 18), color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}ใบ</span>}
-                                    {isOpen && delayed === 0 && <span style={{ fontSize: T(11, 18), color: '#22c55e', fontWeight: 700 }}>● Live</span>}
+                                    {delayed > 0 && <span style={{ fontSize: T(11, 18), color: 'var(--red)', fontWeight: 700 }}>⚠️{delayed}ใบ</span>}
+                                    {isOpen && delayed === 0 && <span style={{ fontSize: T(11, 18), color: 'var(--green)', fontWeight: 700 }}>● Live</span>}
                                   </div>
                                   {/* 📋 แถบหลุดแผนของ "แถวนี้" (พาร์ท/ไลน์นี้) — เวลา + ยอด ในบรรทัดเดียว */}
                                   <div style={{ display: 'flex', gap: 5, minWidth: 0, overflow: 'hidden' }}>
@@ -2238,7 +2242,7 @@ export default function Dashboard({ view = 'timeline' }) {
                                 {!isMobile && <PlanSlipBar st={rowPlan} fmtMs={fmtMs} oneLine compact size={T(11, 16)} />}
                                     {finOver && (
                                       <span title="งานที่เหลือล้นกรอบวันงาน (08:00 ของวันถัดไป) — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต"
-                                        style={{ fontSize: T(11, 17), fontWeight: 800, color: '#ef4444' }}>🔴 ล้นวันงาน</span>
+                                        style={{ fontSize: T(11, 17), fontWeight: 800, color: 'var(--red)' }}>🔴 ล้นวันงาน</span>
                                     )}
                                   </div>
                                 </div>
@@ -2277,8 +2281,8 @@ export default function Dashboard({ view = 'timeline' }) {
                       return (
                         <div key={childName} style={{ flex: '1 1 220px', minWidth: 200, display: 'flex', flexDirection: 'column', gap: 8 }}>
                           {multi && (
-                            <div style={{ fontSize: T(13, 20), fontWeight: 800, color: '#f59e0b', borderBottom: '1px solid var(--border)', paddingBottom: 3 }}>
-                              🏭 {childName}
+                            <div style={{ fontSize: T(13, 20), fontWeight: 800, color: 'var(--amber)', borderBottom: '1px solid var(--border)', paddingBottom: 3 }}>
+                              {childName}
                               {emptyCount > 0 && <span style={{ fontSize: T(11, 17), fontWeight: 600, color: 'var(--muted)' }}> · {emptyCount} กะไม่มีแผน</span>}
                             </div>
                           )}
@@ -2288,9 +2292,9 @@ export default function Dashboard({ view = 'timeline' }) {
                           {active.map(s => {
                       const pct      = s.demand > 0 ? Math.min((s.actual / s.demand) * 100, 100) : 0;
                       const tpct     = s.target > 0 ? Math.min((s.actual / s.target) * 100, 100) : 0;
-                      const barColor = pct >= 100 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
+                      const barColor = pct >= 100 ? 'var(--green)' : pct >= 60 ? 'var(--amber)' : 'var(--red)';
                       const oee      = s.oeeData;
-                      const oeeColor = (!oee || oee.oee == null) ? '#888' : oee.oee >= 0.85 ? '#22c55e' : oee.oee >= 0.65 ? '#f59e0b' : '#ef4444';
+                      const oeeColor = (!oee || oee.oee == null) ? 'var(--muted)' : oee.oee >= 0.85 ? 'var(--green)' : oee.oee >= 0.65 ? 'var(--amber)' : 'var(--red)';
                       const doneCount = s.orders.filter(o => o.status === 'confirmed').length;
 
                       return (
@@ -2305,14 +2309,14 @@ export default function Dashboard({ view = 'timeline' }) {
                                 const prods = [...new Set(s.orders.map(o => nameByMatNo[o.mat_no] || o.mat_no).filter(Boolean))];
                                 if (!prods.length) return null;
                                 return (
-                                  <span title={prods.join(' · ')} style={{ fontSize: T(11, 17), fontWeight: 700, color: '#4d9fff', maxWidth: T(130, 220), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  <span title={prods.join(' · ')} style={{ fontSize: T(11, 17), fontWeight: 700, color: 'var(--blue)', maxWidth: T(130, 220), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                     {prods[0]}{prods.length > 1 ? ` +${prods.length - 1}` : ''}
                                   </span>
                                 );
                               })()}
                             </div>
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                              {s.target > 0 && <span style={{ fontSize: T(12, 18), color: tpct >= 100 ? '#22c55e' : 'var(--muted)' }}>เป้า {tpct.toFixed(0)}%</span>}
+                              {s.target > 0 && <span style={{ fontSize: T(12, 18), color: tpct >= 100 ? 'var(--green)' : 'var(--muted)' }}>เป้า {tpct.toFixed(0)}%</span>}
                               <span style={{ fontSize: T(15, 22), fontWeight: 800, color: barColor }}>{pct.toFixed(0)}%</span>
                               {oee && <span style={{ fontSize: T(15, 22), fontWeight: 800, color: oeeColor }}>OEE {oee.oee != null ? `${(oee.oee * 100).toFixed(0)}%` : 'N/A'}</span>}
                             </div>
@@ -2323,7 +2327,7 @@ export default function Dashboard({ view = 'timeline' }) {
                           {oee && s.status === 'open' && (
                             <div style={{ display: 'flex', gap: 10, marginTop: 5 }}>
                               {[{ l: 'A', v: oee.A, t: 'Availability' }, { l: 'P', v: oee.P, t: 'Performance' }, { l: 'Q', v: oee.Q, t: 'Quality' }].map(k => {
-                                const c = k.v == null ? '#888' : k.v >= 0.85 ? '#22c55e' : k.v >= 0.65 ? '#f59e0b' : '#ef4444';
+                                const c = k.v == null ? 'var(--muted)' : k.v >= 0.85 ? 'var(--green)' : k.v >= 0.65 ? 'var(--amber)' : 'var(--red)';
                                 return (
                                   <span key={k.l} title={k.t} style={{ fontSize: T(12, 18), color: c, fontWeight: 700 }}>
                                     {k.l} {k.v != null ? `${(k.v * 100).toFixed(0)}%` : 'N/A'}
@@ -2357,7 +2361,7 @@ export default function Dashboard({ view = 'timeline' }) {
       {visibleProdStatus.length === 0 && !loading && (
         <div style={{ marginBottom: 24, padding: '18px 20px', borderRadius: 12, border: '1px dashed var(--border2)',
           background: 'var(--card)', color: 'var(--muted)', fontSize: 15, fontWeight: 600 }}>
-          🗓️ ยังไม่มีไลน์ไหนเปิดกะของวันที่ {boardDate}{!passAll ? ' (ในขอบเขต/ส่วนงานที่เลือก)' : ''}
+          ยังไม่มีไลน์ไหนเปิดกะของวันที่ {boardDate}{!passAll ? ' (ในขอบเขต/ส่วนงานที่เลือก)' : ''}
         </div>
       )}
       </>)}
@@ -2371,7 +2375,7 @@ export default function Dashboard({ view = 'timeline' }) {
         <motion.div {...stagger(12)}>
           <div className="card" style={{ padding: 20, height: '100%' }}>
             <div style={{ fontSize: T(15, 24), fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 16 }}>
-              🏭 Line Floor Maps
+              Line Floor Maps
             </div>
             {visibleLayouts.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: T(15, 24) }}>
@@ -2390,7 +2394,7 @@ export default function Dashboard({ view = 'timeline' }) {
                     <div
                       key={layout.line_name}
                       onClick={() => setExpandedLine(layout.line_name)}
-                      style={{ cursor: 'pointer', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border2)', background: '#111' }}
+                      style={{ cursor: 'pointer', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border2)', background: 'var(--bg)' }}
                     >
                       {/* Map thumbnail — marker ยึดกับตัวรูปจริง (contain) ตำแหน่งไม่เพี้ยนตามขนาดการ์ด */}
                       <ThumbMap
@@ -2407,7 +2411,7 @@ export default function Dashboard({ view = 'timeline' }) {
                             return [{
                               id: ws.id,
                               top: ws.pos_top, left: ws.pos_left,
-                              color: fitLv ? fitLv.color : '#aaa',
+                              color: fitLv ? fitLv.color : 'var(--muted)',
                               img: emp.image_url,
                               initial: (emp.name || '?')[0],
                               personAlarm: personAlarmOf(emp),
@@ -2430,10 +2434,10 @@ export default function Dashboard({ view = 'timeline' }) {
                           {layout.line_name}
                         </span>
                         <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
-                          <span title="จำนวนคนที่เข้าประจำจุดงานบนผังนี้ (นับตามหมุด)" style={{ fontSize: T(12, 18), fontWeight: 700, color: 'var(--text2)', background: 'var(--bg2)', padding: '2px 6px', borderRadius: 4 }}>👷 {presentPeople}</span>
+                          <span title="จำนวนคนที่เข้าประจำจุดงานบนผังนี้ (นับตามหมุด)" style={{ fontSize: T(12, 18), fontWeight: 700, color: 'var(--text2)', background: 'var(--bg2)', padding: '2px 6px', borderRadius: 4 }}>{presentPeople}</span>
                           {totalStations > 0 && (
                             <span title="จุดงานที่มีคนเข้าประจำ / จุดงานทั้งหมดของผังนี้"
-                              style={{ fontSize: T(12, 18), fontWeight: 700, color: allStaffed ? '#22c55e' : '#f59e0b', background: allStaffed ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)', padding: '2px 6px', borderRadius: 4 }}>
+                              style={{ fontSize: T(12, 18), fontWeight: 700, color: allStaffed ? 'var(--green)' : 'var(--amber)', background: allStaffed ? 'var(--green-dim)' : 'var(--amber-dim)', padding: '2px 6px', borderRadius: 4 }}>
                               {allStaffed ? '✓' : '⚠'} {staffedStations}/{totalStations} จุด
                             </span>
                           )}
@@ -2468,7 +2472,7 @@ export default function Dashboard({ view = 'timeline' }) {
                       <div style={{
                         padding: '10px 12px', borderRadius: 10,
                         background: meta.bg,
-                        border: `1px solid ${meta.color}22`,
+                        border: `1px solid ${meta.bg}`,
                         display: 'flex', gap: 10, alignItems: 'flex-start',
                       }}>
                         <div style={{ fontSize: T(18, 26), flexShrink: 0, marginTop: 1 }}>{meta.icon}</div>
@@ -2511,18 +2515,18 @@ export default function Dashboard({ view = 'timeline' }) {
         const hasPendingFM = fms.some(f => f.status !== 'approved' && f.status !== 'rejected');
         const level = hasOngoingDT ? 'red' : (hasPendingFM || dts.length > 0) ? 'amber' : 'green';
         const LV = {
-          red:   { color: '#ef4444', icon: '🔴', label: 'ANDON — RED',   desc: 'มีเครื่องจักรหยุดค้างอยู่ — ต้องดำเนินการทันที' },
-          amber: { color: '#f59e0b', icon: '🟡', label: 'ANDON — YELLOW', desc: 'มีรายการรอดำเนินการ / รออนุมัติ' },
-          green: { color: '#22c55e', icon: '🟢', label: 'ANDON — GREEN', desc: 'รายการทั้งหมดอนุมัติแล้ว · สถานะปกติ' },
+          red:   { color: 'var(--red)', tone: 'bad', icon: '🔴', label: 'ANDON — RED',   desc: 'มีเครื่องจักรหยุดค้างอยู่ — ต้องดำเนินการทันที' },
+          amber: { color: 'var(--amber)', tone: 'warn', icon: '🟡', label: 'ANDON — YELLOW', desc: 'มีรายการรอดำเนินการ / รออนุมัติ' },
+          green: { color: 'var(--green)', tone: 'good', icon: '🟢', label: 'ANDON — GREEN', desc: 'รายการทั้งหมดอนุมัติแล้ว · สถานะปกติ' },
         }[level];
         return (
           <div className="overlay" style={{ zIndex: 2000 }} onClick={() => setAndonLine(null)}>
             <div onClick={e => e.stopPropagation()} className={level === 'red' ? 'dt-alarm-banner' : undefined} style={{
               background: 'var(--card)', borderRadius: 16, padding: '20px 24px',
               width: 'min(94vw, 720px)', maxHeight: '90vh', overflowY: 'auto',
-              border: `2px solid ${LV.color}88`,
+              border: `2px solid ${LV.color}`,
               /* 🌑 เงาโมดัลมาจาก token (ธีมมืด = none) · เหลือเฉพาะ glow สีที่เป็น "สัญญาณ" ของระดับ Andon */
-              boxShadow: `var(--shadow-lg), 0 0 30px ${LV.color}40`,
+              boxShadow: `var(--shadow-lg), 0 0 30px ${toneLine(LV.tone)}`,
             }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -2538,8 +2542,8 @@ export default function Dashboard({ view = 'timeline' }) {
               </div>
 
               {/* เครื่องจักร Downtime — กระพริบแดง */}
-              <div style={{ fontSize: 13, fontWeight: 800, color: hasOngoingDT ? '#ef4444' : 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 8px' }}>
-                ⚙️ เครื่องจักรหยุด (Downtime) · {dts.length} รายการ
+              <div style={{ fontSize: 13, fontWeight: 800, color: hasOngoingDT ? 'var(--red)' : 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 8px' }}>
+                เครื่องจักรหยุด (Downtime) · {dts.length} รายการ
               </div>
               {dts.length === 0 ? (
                 <div style={{ fontSize: 13, color: 'var(--muted)', padding: '8px 0 14px' }}>ไม่มีเครื่องจักร Downtime ที่ยังแจ้งเตือน</div>
@@ -2552,16 +2556,16 @@ export default function Dashboard({ view = 'timeline' }) {
                       <div key={d.id} className={ongoing ? 'dt-alarm-blink' : undefined} style={{
                         display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10,
                         padding: '10px 14px', borderRadius: 10,
-                        background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.45)',
+                        background: 'var(--red-dim)', border: '1px solid var(--red-line)',
                       }}>
-                        <span style={{ fontSize: 16, fontWeight: 900, color: '#fca5a5', fontFamily: 'var(--font-display)' }}>⚙️ {d.machine_no || '—'}</span>
-                        <span style={{ fontSize: 14, fontWeight: 800, color: '#ef4444' }}>{d.dr_downtime_types?.name_th || 'Downtime'}</span>
-                        <span style={{ fontSize: 13, color: 'var(--text2)' }}>📍 {d.line_name}</span>
+                        <span style={{ fontSize: 16, fontWeight: 900, color: 'var(--red)', fontFamily: 'var(--font-display)' }}>{d.machine_no || '—'}</span>
+                        <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--red)' }}>{d.dr_downtime_types?.name_th || 'Downtime'}</span>
+                        <span style={{ fontSize: 13, color: 'var(--text2)' }}>{d.line_name}</span>
                         <span style={{ fontSize: 13, color: 'var(--muted)' }}>เริ่ม {fmtTime(d.started_at || d.created_at)}</span>
                         {ongoing
-                          ? (elapsed != null && <span style={{ fontSize: 14, fontWeight: 900, color: '#fbbf24' }}>⏱ ค้างมาแล้ว {elapsed} นาที</span>)
+                          ? (elapsed != null && <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--amber)' }}>⏱ ค้างมาแล้ว {elapsed} นาที</span>)
                           : <span style={{ fontSize: 12, color: 'var(--muted)' }}>ปิดรายการแล้ว (เพิ่งบันทึก)</span>}
-                        {d.detail && <span style={{ fontSize: 13, color: 'var(--text2)', width: '100%' }}>📝 {d.detail}</span>}
+                        {d.detail && <span style={{ fontSize: 13, color: 'var(--text2)', width: '100%' }}>{d.detail}</span>}
                       </div>
                     );
                   })}
@@ -2575,16 +2579,16 @@ export default function Dashboard({ view = 'timeline' }) {
                 return (
                   <div style={{ marginBottom: 16 }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 7px' }}>
-                      🗓️ หยุดตามแผน · {planned.length} รายการ (ไม่นับเป็น Andon)
+                      หยุดตามแผน · {planned.length} รายการ (ไม่นับเป็น Andon)
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                       {planned.map(d => {
                         const el = dtElapsedMin(d, now.getTime());
                         return (
                           <div key={d.id} style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 9, padding: '8px 12px', borderRadius: 9, background: 'var(--bg3)', border: '1px solid var(--border2)' }}>
-                            <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text2)' }}>⚙️ {d.machine_no || '—'}</span>
+                            <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text2)' }}>{d.machine_no || '—'}</span>
                             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--muted)' }}>{d.dr_downtime_types?.name_th || 'หยุดตามแผน'}</span>
-                            <span style={{ fontSize: 12, color: 'var(--muted)' }}>📍 {d.line_name}</span>
+                            <span style={{ fontSize: 12, color: 'var(--muted)' }}>{d.line_name}</span>
                             <span style={{ fontSize: 12, color: 'var(--muted)' }}>เริ่ม {fmtTime(d.started_at || d.created_at)}</span>
                             {el != null && <span style={{ fontSize: 12, color: 'var(--muted)' }}>⏱ {el} นาที</span>}
                           </div>
@@ -2609,20 +2613,20 @@ export default function Dashboard({ view = 'timeline' }) {
                 const types = Object.values(q.byType).sort((a, b) => b.qty - a.qty);
                 return (
                   <div style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: q.ng > 0 ? '#f59e0b' : 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 8px' }}>
-                      🚫 คุณภาพ (Quality) · ของเสียวันนี้ {q.ng.toLocaleString()} ชิ้น
+                    <div style={{ fontSize: 13, fontWeight: 800, color: q.ng > 0 ? 'var(--amber)' : 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 8px' }}>
+                      คุณภาพ (Quality) · ของเสียวันนี้ {q.ng.toLocaleString()} ชิ้น
                     </div>
                     {types.length === 0 ? (
                       <div style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 6 }}>ไม่มีของเสียวันนี้ 👍</div>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         {types.map(t => (
-                          <div key={t.name} style={{ padding: '8px 12px', borderRadius: 9, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.4)' }}>
+                          <div key={t.name} style={{ padding: '8px 12px', borderRadius: 9, background: 'var(--amber-dim)', border: '1px solid var(--amber-line)' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                              <span style={{ fontSize: 13.5, fontWeight: 800, color: '#fbbf24', minWidth: 0, flex: 1 }}>{t.name}</span>
-                              <span style={{ fontSize: 14, fontWeight: 900, color: '#f59e0b', whiteSpace: 'nowrap' }}>{t.qty.toLocaleString()} ชิ้น</span>
+                              <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--amber)', minWidth: 0, flex: 1 }}>{t.name}</span>
+                              <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--amber)', whiteSpace: 'nowrap' }}>{t.qty.toLocaleString()} ชิ้น</span>
                             </div>
-                            {t.notes.length > 0 && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 3 }}>💬 {t.notes.join(' · ')}</div>}
+                            {t.notes.length > 0 && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 3 }}>{t.notes.join(' · ')}</div>}
                           </div>
                         ))}
                       </div>
@@ -2632,8 +2636,8 @@ export default function Dashboard({ view = 'timeline' }) {
               })()}
 
               {/* 4M Alerts */}
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 8px' }}>
-                🚨 4M Changes · {fms.length} รายการ
+              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '4px 0 8px' }}>
+                4M Changes · {fms.length} รายการ
               </div>
               {fms.length === 0 ? (
                 <div style={{ fontSize: 13, color: 'var(--muted)', padding: '8px 0' }}>ไม่มีรายการ 4M ของวันนี้</div>
@@ -2644,15 +2648,15 @@ export default function Dashboard({ view = 'timeline' }) {
                       display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10,
                       padding: '10px 14px', borderRadius: 10,
                       background: 'var(--bg3)', border: '1px solid var(--border2)',
-                      borderLeft: `3px solid ${f.status === 'approved' ? '#22c55e' : f.status === 'rejected' ? '#ef4444' : '#f59e0b'}`,
+                      borderLeft: `3px solid ${f.status === 'approved' ? 'var(--green)' : f.status === 'rejected' ? 'var(--red)' : 'var(--amber)'}`,
                     }}>
                       <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{CAT_ICON[f.category] || '🔧'} {f.category}</span>
-                      <span style={{ fontSize: 13, color: 'var(--text2)' }}>📍 {f.line_name}</span>
+                      <span style={{ fontSize: 13, color: 'var(--text2)' }}>{f.line_name}</span>
                       <span style={{ fontSize: 12, color: 'var(--muted)' }}>{fmtTime(f.created_at)}</span>
                       <span style={{
                         fontSize: 12, fontWeight: 800, padding: '2px 8px', borderRadius: 6,
-                        background: f.status === 'approved' ? 'rgba(34,197,94,0.15)' : f.status === 'rejected' ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)',
-                        color: f.status === 'approved' ? '#22c55e' : f.status === 'rejected' ? '#ef4444' : '#f59e0b',
+                        background: f.status === 'approved' ? 'var(--green-dim)' : f.status === 'rejected' ? 'var(--red-dim)' : 'var(--amber-dim)',
+                        color: f.status === 'approved' ? 'var(--green)' : f.status === 'rejected' ? 'var(--red)' : 'var(--amber)',
                       }}>
                         {f.status === 'approved' ? '✓ อนุมัติแล้ว' : f.status === 'rejected' ? '✕ ปฏิเสธ' : f.status === 'pending_qa' ? '🔍 รอ QA' : f.status === 'pending_doc' ? '📎 รอแนบเอกสาร' : '⏳ รออนุมัติ'}
                       </span>
@@ -2693,7 +2697,7 @@ export default function Dashboard({ view = 'timeline' }) {
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                 <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 18, color: 'var(--text)' }}>
-                  🏭 {expandedLine}
+                  {expandedLine}
                 </div>
                 <button
                   onClick={closeExpandedLine}
@@ -2702,7 +2706,7 @@ export default function Dashboard({ view = 'timeline' }) {
               </div>
               {/* inline-block ให้กรอบหดเท่ารูปจริง — img จำกัดทั้งสองแกน (ไม่ใช้ object-fit
                   เพื่อให้กล่อง img = รูปที่เห็นจริง แล้วพิกัด % ของ marker ตรงเสมอ) */}
-              <div style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', background: '#111', display: 'inline-block', maxWidth: '100%' }}>
+              <div style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', background: 'var(--bg)', display: 'inline-block', maxWidth: '100%' }}>
                 <img
                   ref={mapImgRef}
                   src={layout.image_url}
@@ -2790,7 +2794,7 @@ export default function Dashboard({ view = 'timeline' }) {
                       {pxMarkers.map(({ ws, emp, top, left, ox, oy }) => {
                         const fit = emp.fitScore;
                         const fitLv = getFitLevel(fit);
-                        const color = fitLv ? fitLv.color : '#aaa';
+                        const color = fitLv ? fitLv.color : 'var(--muted)';   // สเกลสกิล = utils/skillLevels.js (ยังเป็น hex ที่นั่น)
                         const shortName = (emp.name || '').split(' ')[0];
                         const pAlarm = personAlarmOf(emp);
                         return (
@@ -2811,8 +2815,8 @@ export default function Dashboard({ view = 'timeline' }) {
                               style={{
                                 width: MK, height: MK, borderRadius: '50%',
                                 border: `${Math.max(2, Math.round(MK * 0.06))}px solid ${color}`,
-                                boxShadow: `0 0 10px ${color}99`,
-                                overflow: 'hidden', background: '#1a1a1a',
+                                boxShadow: `0 0 10px ${color}`,
+                                overflow: 'hidden', background: 'var(--bg)',
                               }}>
                               {emp.image_url
                                 ? <img src={emp.image_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -2829,16 +2833,16 @@ export default function Dashboard({ view = 'timeline' }) {
                               marginTop: -4, position: 'relative', zIndex: 1,
                             }}>{shortName}</div>
                             {fit !== null && (
-                              <div style={{ fontSize: Math.max(11, Math.round(MK * 0.2)), fontWeight: 800, color, background: `${color}25`, padding: '1px 6px', borderRadius: 3, marginTop: -2 }}>{fit}%</div>
+                              <div style={{ fontSize: Math.max(11, Math.round(MK * 0.2)), fontWeight: 800, color, background: fitLv ? fitLv.bg : 'var(--bg3)', padding: '1px 6px', borderRadius: 3, marginTop: -2 }}>{fit}%</div>
                             )}
                             {emp.has_extended_ot && (
-                              <div style={{ fontSize: Math.max(11, Math.round(MK * 0.2)), fontWeight: 800, color: '#ef4444', background: 'rgba(239,68,68,0.2)', padding: '1px 6px', borderRadius: 3, marginTop: -2 }}>OT+23</div>
+                              <div style={{ fontSize: Math.max(11, Math.round(MK * 0.2)), fontWeight: 800, color: 'var(--red)', background: 'var(--red-dim)', padding: '1px 6px', borderRadius: 3, marginTop: -2 }}>OT+23</div>
                             )}
                             {pAlarm && (
                               <div style={{
                                 fontSize: Math.max(11, Math.round(MK * 0.22)), fontWeight: 800, whiteSpace: 'nowrap',
-                                color: pAlarm.kind === 'red' ? '#fca5a5' : '#fde68a',
-                                background: pAlarm.kind === 'red' ? 'rgba(239,68,68,0.3)' : 'rgba(245,158,11,0.3)',
+                                color: pAlarm.kind === 'red' ? 'var(--red)' : 'var(--amber)',
+                                background: pAlarm.kind === 'red' ? 'var(--red-line)' : 'var(--amber-line)',
                                 padding: '1px 6px', borderRadius: 3, marginTop: 2,
                               }}>
                                 {pAlarm.icon} {pAlarm.kind === 'red' ? 'PPE ไม่ครบ' : 'รอ 4M'}
@@ -2873,8 +2877,8 @@ export default function Dashboard({ view = 'timeline' }) {
                               }}>
                               <div className="dt-alarm-blink" style={{
                                 width: MKS, height: MKS, borderRadius: '50%',
-                                border: `${Math.max(2, Math.round(MKS * 0.06))}px solid #ef4444`,
-                                backgroundColor: 'rgba(239,68,68,0.25)',
+                                border: `${Math.max(2, Math.round(MKS * 0.06))}px solid var(--red)`,
+                                backgroundColor: 'var(--red-line)',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                 fontSize: Math.max(13, Math.round(MKS * 0.44)), lineHeight: 1,
                               }}>🚨</div>
@@ -2887,8 +2891,8 @@ export default function Dashboard({ view = 'timeline' }) {
                                 {p.machine_no}
                               </div>
                               <div style={{
-                                background: 'rgba(239,68,68,0.25)', borderRadius: 3, padding: '0 5px',
-                                fontSize: Math.max(11, Math.round(MKS * 0.2)), fontWeight: 700, color: '#fca5a5',
+                                background: 'var(--red-line)', borderRadius: 3, padding: '0 5px',
+                                fontSize: Math.max(11, Math.round(MKS * 0.2)), fontWeight: 700, color: 'var(--red)',
                                 whiteSpace: 'nowrap', maxWidth: subPillMaxW, overflow: 'hidden', textOverflow: 'ellipsis',
                               }}>
                                 {first.dr_downtime_types?.name_th || 'Downtime'}{ongoing && elapsed != null ? ` · ${elapsed} นาที` : ''}
@@ -2911,8 +2915,8 @@ export default function Dashboard({ view = 'timeline' }) {
                     <span style={{ fontSize: 12, color: 'var(--muted)' }}>{lv.label}</span>
                   </div>
                 ))}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5, borderRadius: 6, padding: '3px 8px', background: 'rgba(128,128,128,0.1)' }}>
-                  <div style={{ width: 9, height: 9, borderRadius: '50%', background: '#aaa' }} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, borderRadius: 6, padding: '3px 8px', background: 'var(--bg3)' }}>
+                  <div style={{ width: 9, height: 9, borderRadius: '50%', background: 'var(--muted)' }} />
                   <span style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มีข้อกำหนด</span>
                 </div>
               </div>
@@ -2924,16 +2928,17 @@ export default function Dashboard({ view = 'timeline' }) {
   );
 }
 
-function Pill({ label, color }) {
+function Pill({ label, tone = 'info' }) {
   return (
     <div style={{
       fontSize: 13, fontWeight: 700, padding: '3px 9px', borderRadius: 20,
-      color, background: `${color}18`, border: `1px solid ${color}40`,
+      color: toneVar(tone), background: toneDim(tone), border: `1px solid ${toneLine(tone)}`,
     }}>{label}</div>
   );
 }
 
-function AttendCol({ title, color, items, absent }) {
+function AttendCol({ title, tone = 'info', items, absent }) {
+  const color = toneVar(tone);
   return (
     <div>
       <div style={{ fontSize: 13, fontWeight: 700, color, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
@@ -2949,7 +2954,7 @@ function AttendCol({ title, color, items, absent }) {
           }}>
             <div style={{
               width: 26, height: 26, borderRadius: '50%',
-              background: `${color}20`, border: `1px solid ${color}40`,
+              background: toneDim(tone), border: `1px solid ${toneLine(tone)}`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 12, fontWeight: 800, color, flexShrink: 0,
             }}>

@@ -47,7 +47,7 @@ const warnTxt = { fontSize: 12, color: '#f59e0b', fontWeight: 700 };
 const errTxt = { fontSize: 12, color: '#ef4444', fontWeight: 700 };
 const ZONES = (withDone) => [
   { key: 'late', statuses: ['late'], label: '⏰ เกิน lead time ของร้าน', color: '#ef4444', hint: 'ส่งไปนานเกินกำหนดแล้ว — ตามร้าน' },
-  { key: 'vendor', statuses: ['vendor'], label: '🧪 อยู่ที่ร้านชุบ · รอรับกลับ', color: '#06b6d4', hint: 'งานกลับมา → นับของจริงแล้วกดรับ · ทยอยรับได้' },
+  { key: 'vendor', statuses: ['vendor'], label: 'อยู่ที่ร้านชุบ · รอรับกลับ', color: '#06b6d4', hint: 'งานกลับมา → นับของจริงแล้วกดรับ · ทยอยรับได้' },
   ...(withDone ? [{ key: 'closed', statuses: ['closed'], label: '✅ ปิดแล้ว (ล่าสุด)', color: '#22c55e', hint: '' }] : []),
 ];
 const dmy = (iso) => {
@@ -60,13 +60,16 @@ const daysAgo = (iso, nowMs) => {
 };
 const blankLine = () => ({ key: Math.random().toString(36).slice(2), after: '', before: '', qty: '' });
 
-export default function PlatingBoard({ q = '', showDone = false }) {
+/* readOnly (04/11) — ฝังใน /heijunka (monitor) = ดูอย่างเดียว · ทำรายการที่ /line-stock?tab=out (ส่ง) · ?tab=in (รับกลับ) */
+/* part (05/11 · คำสั่ง user แยกขาออก/ขาเข้า): 'send' = ยอดที่ร้าน + ส่งไปชุบ + ส่งเข้า W/H + ตั้งค่า (ขาออก)
+   · 'receive' = การ์ดรอรับกลับจากร้าน (ขาเข้า) · 'all' = ทั้งหมด (จอดู /heijunka) */
+export default function PlatingBoard({ q = '', showDone = false, readOnly = false, part = 'all' }) {
   const { role, fullName } = useContext(UserContext);
-  const canSend = canSeeded('plating', 'send', role);
-  const canReceive = canSeeded('plating', 'receive', role);
-  const canToWh = canSeeded('plating', 'to_wh', role);
-  const canSetup = canSeeded('plating', 'setup', role);
-  const canWriteoff = canSeeded('plating', 'writeoff', role);
+  const canSend = !readOnly && canSeeded('plating', 'send', role);
+  const canReceive = !readOnly && canSeeded('plating', 'receive', role);
+  const canToWh = !readOnly && canSeeded('plating', 'to_wh', role);
+  const canSetup = !readOnly && canSeeded('plating', 'setup', role);
+  const canWriteoff = !readOnly && canSeeded('plating', 'writeoff', role);
   const imgOf = usePartImages();
   const suppliers = useSuppliers();
 
@@ -138,6 +141,8 @@ export default function PlatingBoard({ q = '', showDone = false }) {
   const by = () => fullName || getActor().name || '';
   const [busy, setBusy] = useState(null);
   const rpc = async (key, fn, args, okMsg) => {
+    // ด่านชั้นเขียนจริง — ไม่พึ่งการซ่อนปุ่ม (monitor = ห้ามขยับยอดเด็ดขาด)
+    if (readOnly) { toast.error('หน้านี้ดูอย่างเดียว — ทำรายการที่ Line Stock › 📤 ขาออก / 📥 ขาเข้า'); return null; }
     setBusy(key);
     const { data, error } = await supabaseDR.rpc(fn, args);
     setBusy(null);
@@ -273,6 +278,7 @@ export default function PlatingBoard({ q = '', showDone = false }) {
         </div>
       )}
 
+      {part !== 'receive' && (<>
       {/* ⏳ ยอดที่ร้าน (มอนิเตอร์) + ปุ่มส่ง */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'stretch' }}>
         {groups.map(g => {
@@ -280,7 +286,7 @@ export default function PlatingBoard({ q = '', showDone = false }) {
           const late = g.items.some(it => it.overdue);
           return (
             <div key={g.vendor} style={{ ...box, flex: '1 1 220px', borderColor: late ? '#ef4444' : 'var(--border)' }}>
-              <div style={{ fontSize: 13, fontWeight: 800 }}>🧪 {g.vendor}</div>
+              <div style={{ fontSize: 13, fontWeight: 800 }}>{g.vendor}</div>
               <div style={{ fontSize: 22, fontWeight: 800, fontFamily: 'var(--font-display)' }}>{fmt(g.open)} <span style={{ fontSize: 12, color: 'var(--muted)' }}>ชิ้นอยู่ที่ร้าน</span></div>
               <div style={muted}>{g.orders} ใบ · {g.items.length} พาร์ท · เก่าสุด {oldest} วัน
                 {g.leadDays == null ? ' · ยังไม่ตั้ง lead time ร้าน (ทะเบียน Supplier)' : ` · lead time ${g.leadDays} วัน`}</div>
@@ -298,7 +304,7 @@ export default function PlatingBoard({ q = '', showDone = false }) {
 
       {sendOpen && (
         <div style={box}>
-          <h3 style={h3}>📤 ส่งงานไปชุบ</h3>
+          <h3 style={h3}>ส่งงานไปชุบ</h3>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 }}>
             <div style={{ flex: '1 1 240px', minWidth: 0 }}>
               <SupplierSelect value={vendor} onChange={({ supplier }) => setVendor(supplier || '')} kinds={['service']} placeholder="ร้านชุบ (ทะเบียน Supplier)…" />
@@ -355,10 +361,12 @@ export default function PlatingBoard({ q = '', showDone = false }) {
           </div>
         </div>
       )}
+      </>)}
 
+      {part !== 'send' && (<>
       {/* 🃏 การ์ดใบส่งชุบ — รอรับกลับ */}
       <div style={muted}>
-        🧪 อยู่ที่ร้านรวม <b>{fmt(totalOpen)} ชิ้น · {orders.length} ใบ</b> · งานกลับมา: นับของจริงก่อน ครบกดรับ · ไม่ครบกรอกยอดที่นับได้ + รายละเอียด
+        อยู่ที่ร้านรวม <b>{fmt(totalOpen)} ชิ้น · {orders.length} ใบ</b> · งานกลับมา: นับของจริงก่อน ครบกดรับ · ไม่ครบกรอกยอดที่นับได้ + รายละเอียด
         (ส่วนที่เหลือค้างร้านต่อ หรือติ๊กปิดใบถ้าไม่กลับแล้ว) · ร้านชุบไม่ยืนยันยอดเอง สโตร์เป็นคนยืนยัน
         {!canReceive && <span style={warnTxt}> · บัญชีนี้ไม่มีสิทธิ์รับคืน (plating:receive) — ดูได้อย่างเดียว</span>}
       </div>
@@ -376,7 +384,7 @@ export default function PlatingBoard({ q = '', showDone = false }) {
           const age = daysAgo(o.sent_at, now.getTime());
           return (
             <PartCard key={o.id} code={o.after_mat} name={o.part_name} img={imgOf(o.after_mat) || imgOf(o.before_mat)} alert={zone === 'late'}
-              status={isOpen ? (zone === 'late' ? { label: '⏰ เกินกำหนด', color: '#ef4444' } : { label: '🧪 ที่ร้าน', color: '#06b6d4' }) : { label: '✅ ปิดแล้ว', color: '#22c55e' }}
+              status={isOpen ? (zone === 'late' ? { label: '⏰ เกินกำหนด', color: '#ef4444' } : { label: 'ที่ร้าน', color: '#06b6d4' }) : { label: '✅ ปิดแล้ว', color: '#22c55e' }}
               metric={{ label: isOpen ? 'ค้างที่ร้าน' : 'รับกลับแล้ว', value: fmt(isOpen ? open : o.qty_received), unit: 'ชิ้น' }}
               aside={{ label: 'ร้าน', value: o.vendor }}
               dim={!isOpen}
@@ -423,11 +431,13 @@ export default function PlatingBoard({ q = '', showDone = false }) {
           );
         }} />
       )}
+      </>)}
 
+      {part !== 'receive' && (<>
       {/* 🏬 หลังชุบในคลัง → W/H */}
       {afterStock.length > 0 && (
         <div style={box}>
-          <h3 style={h3}>🏬 งานหลังชุบในคลัง → ส่งเข้า W/H</h3>
+          <h3 style={h3}>งานหลังชุบในคลัง → ส่งเข้า W/H</h3>
           {!canToWh && <div style={warnTxt}>บัญชีนี้ไม่มีสิทธิ์ส่งเข้า W/H (plating:to_wh) — ดูได้อย่างเดียว</div>}
           <div style={muted}>ระบบแปลงเป็นเบอร์ 1xx ตาม BOM ให้เอง — เฉพาะ FG ที่มีลูกเป็นงานหลังชุบตัวเดียว · FG ที่ต้องประกอบต่อ ส่งไปไลน์ตามใบผลิตปกติ</div>
           <div style={{ ...partCardGrid(), marginTop: 8 }}>
@@ -453,7 +463,7 @@ export default function PlatingBoard({ q = '', showDone = false }) {
                       )}
                       <input type="number" min="0" inputMode="numeric" placeholder="จำนวน" value={whQty[a.after] || ''}
                         onChange={e => setWhQty(m => ({ ...m, [a.after]: e.target.value }))} style={{ ...inp, width: 100 }} aria-label="จำนวนส่งเข้า W/H" />
-                      <button type="button" disabled={busy === `wh|${a.after}` || !a.loc} onClick={() => doToWh(a)} style={storeBtn('primary', { flex: 1 })}>🏬 ส่งเข้า W/H</button>
+                      <button type="button" disabled={busy === `wh|${a.after}` || !a.loc} onClick={() => doToWh(a)} style={storeBtn('primary', { flex: 1 })}>ส่งเข้า W/H</button>
                     </div>
                   ) : null} />
               );
@@ -465,7 +475,7 @@ export default function PlatingBoard({ q = '', showDone = false }) {
       {/* ⚙️ ตั้งค่า / ตัดยอด */}
       <div style={box}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <h3 style={{ ...h3, margin: 0 }}>⚙️ สินค้าหลังชุบ {platList.length} ตัว</h3>
+          <h3 style={{ ...h3, margin: 0 }}>สินค้าหลังชุบ {platList.length} ตัว</h3>
           {unknownBefore.length > 0 && <span style={warnTxt}>{unknownBefore.length} ตัวยังไม่ผูกเลขก่อนชุบใน BOM</span>}
           <button type="button" onClick={() => setSetupOpen(v => !v)} style={{ ...storeBtn('secondary'), marginLeft: 'auto' }}>{setupOpen ? '▾ ซ่อน' : '▸ ดู/ผูก BOM · ตัดยอด'}</button>
         </div>
@@ -493,7 +503,7 @@ export default function PlatingBoard({ q = '', showDone = false }) {
                           </div>
                         )}
                         <button type="button" disabled={!linkPick[r.after] || busy === `link|${r.after}`} onClick={() => doLink(r)}
-                          style={storeBtn('secondary', { minHeight: 34, padding: '4px 10px', fontSize: 12 })}>🌳 ผูก BOM</button>
+                          style={storeBtn('secondary', { minHeight: 34, padding: '4px 10px', fontSize: 12 })}>ผูก BOM</button>
                       </>
                     )}
                   </>
@@ -522,6 +532,7 @@ export default function PlatingBoard({ q = '', showDone = false }) {
           </div>
         )}
       </div>
+      </>)}
     </div>
   );
 }

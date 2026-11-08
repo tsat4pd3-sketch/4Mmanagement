@@ -215,7 +215,7 @@ export default function ParetoAbcChart({
       {/* มูลค่ารวม + ส่วนที่ตีมูลค่าไม่ได้ — ห้ามเงียบ ไม่งั้นยอดเงินดูเหมือนครบทั้งที่ขาด */}
       {hasMoney && (
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6, lineHeight: 1.55 }}>
-          💰 มูลค่ารวม <b style={{ color: '#fbbf24' }}>{fmt(recTotals.baht)} บาท</b>
+          มูลค่ารวม <b style={{ color: '#fbbf24' }}>{fmt(recTotals.baht)} บาท</b>
           {recTotals.unpriced > 0 && (
             <span style={{ color: '#f59e0b' }}> · ⚠ ตีมูลค่าไม่ได้ {recTotals.unpriced} รายการ
               (ไลน์ยังไม่ตั้ง cost center / activity rate — ตั้งที่ ผังองค์กร → 💰 Activity Rate)</span>
@@ -258,7 +258,7 @@ export default function ParetoAbcChart({
         {rows.length > MAX_BARS + 1 && (
           <span style={{ color: 'var(--muted)' }}>สัดส่วน A/B/C ข้างบนนับครบทุกรายการ ไม่ใช่เฉพาะแท่งที่เห็น</span>
         )}
-        {dims.length > 0 && <span style={{ color: 'var(--accent)', fontWeight: 700 }}>🔍 คลิกแท่ง/ชิป = เจาะลึก</span>}
+        {dims.length > 0 && <span style={{ color: 'var(--accent)', fontWeight: 700 }}>คลิกแท่ง/ชิป = เจาะลึก</span>}
       </div>
       {/* เน้นกลุ่ม A — ตัวที่ต้องแก้ก่อน (คลิกเจาะได้) */}
       <div style={{ marginTop: 9, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
@@ -350,7 +350,7 @@ export default function ParetoAbcChart({
           <div onClick={e => e.stopPropagation()} style={{ ...panel, maxWidth: 900 }}>
             <div style={head}>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 12, color: 'var(--muted)' }}>🔍 เจาะลึก · {title}</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>เจาะลึก · {title}</div>
                 <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>{drill}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
                   {fmt(drillTotal)} {unitOf} · {drillRecs.length} ครั้ง · {(drillTotal / total * 100).toFixed(1)}% ของทั้งหมด
@@ -380,7 +380,7 @@ export default function ParetoAbcChart({
                   )}
                   {drillRows[0] && !drillRows[0]._noNote && drillRows[0]._pct >= 15 && (
                     <div style={{ marginTop: 5, color: 'var(--accent)', fontWeight: 700 }}>
-                      💡 “{drillRows[0].name}” กิน {drillRows[0]._pct.toFixed(0)}% ของ “{drill}” — ควรตั้งเป็น<b>ประเภทของตัวเอง</b> (Daily Report → ⚙️ ตั้งค่า → ประเภท Downtime) รอบหน้าจะได้ไม่ตกไปกอง “อื่นๆ” อีก
+                      “{drillRows[0].name}” กิน {drillRows[0]._pct.toFixed(0)}% ของ “{drill}” — ควรตั้งเป็น<b>ประเภทของตัวเอง</b> (Daily Report → ⚙️ ตั้งค่า → ประเภท Downtime) รอบหน้าจะได้ไม่ตกไปกอง “อื่นๆ” อีก
                     </div>
                   )}
                 </div>
@@ -432,7 +432,7 @@ export default function ParetoAbcChart({
                         </span>
                       ) : null)}
                     </div>
-                    {r.note && <div style={{ color: 'var(--muted)', marginTop: 3 }}>💬 {r.note}</div>}
+                    {r.note && <div style={{ color: 'var(--muted)', marginTop: 3 }}>{r.note}</div>}
                   </div>
                 ))}
                 {drillRecs.length > 40 && <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', padding: 6 }}>… และอีก {drillRecs.length - 40} รายการ</div>}

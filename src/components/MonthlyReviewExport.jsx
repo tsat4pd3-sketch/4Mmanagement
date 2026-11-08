@@ -44,8 +44,8 @@ const prevMonthKey = () => {
 };
 
 const MODES = [
-  { key: 'oee', label: '🎯 Focus OEE', desc: 'ภาพรวมข้ามส่วนงาน — Executive summary · เทรนด์ · Top Downtime/Defect · Issue & Action (เด็คแบบเดิม)' },
-  { key: 'full', label: '📚 Full data (เจาะรายไลน์)', desc: 'แบบเด็คที่วิศวกรทำมือ — ต่อไลน์ 4 สไลด์: OEE ทั้งปี+เส้นเป้า · Capacity แยกกะ + Downtime แยกประเภท · ไตรมาส/โดนัท/รายวัน · Problem & Action + เทียบเดือนก่อน · แถม Tag Yellow + Man Power' },
+  { key: 'oee', label: 'Focus OEE', desc: 'ภาพรวมข้ามส่วนงาน — Executive summary · เทรนด์ · Top Downtime/Defect · Issue & Action (เด็คแบบเดิม)' },
+  { key: 'full', label: 'Full data (เจาะรายไลน์)', desc: 'แบบเด็คที่วิศวกรทำมือ — ต่อไลน์ 4 สไลด์: OEE ทั้งปี+เส้นเป้า · Capacity แยกกะ + Downtime แยกประเภท · ไตรมาส/โดนัท/รายวัน · Problem & Action + เทียบเดือนก่อน · แถม Tag Yellow + Man Power' },
 ];
 
 /* checkbox ที่โชว์สถานะ "เลือกบางส่วน" ได้ (indeterminate ตั้งผ่าน DOM เท่านั้น) */
@@ -206,7 +206,7 @@ export default function MonthlyReviewExport({ onClose }) {
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(96vw, 640px)', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <div style={{ fontSize: 16, fontWeight: 900 }}>📽️ Monthly Performance Review (.pptx)</div>
+          <div style={{ fontSize: 16, fontWeight: 900 }}>Monthly Performance Review (.pptx)</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
         </div>
         <div style={{ display: 'grid', gap: 12 }}>

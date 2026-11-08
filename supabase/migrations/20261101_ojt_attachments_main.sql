@@ -30,6 +30,11 @@ alter table ojt_training_files enable row level security;
 drop policy if exists "ojt_files_all" on ojt_training_files;
 create policy "ojt_files_all" on ojt_training_files for all to authenticated using (true) with check (true);
 
+-- 🔴🔴 GRANT ระดับตารางต้องครบทุก cmd ที่ client ใช้ — RLS ผ่านแต่ GRANT ขาด = PostgREST ตอบ 401
+--   (บทเรียน `mtn_order_parts` 22/10–02/11: DELETE ขาด ⇒ เขียนไม่ติด 11 วันโดยไม่มีใครรู้)
+--   ปกติ Supabase แจกให้เองผ่าน default privileges แต่เขียนไว้ชัดๆ = ไม่ต้องเดา
+grant select, insert, update, delete on public.ojt_training_files to authenticated;
+
 -- ── Storage — bucket ไฟล์แนบ OJT · 20MB · รูป + PDF + office (สเปคเดียวกับ npi-files) ──
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('ojt-files', 'ojt-files', true, 20971520,
@@ -51,3 +56,5 @@ create policy ojt_files_delete on storage.objects for delete to authenticated us
 -- select count(*) from ojt_training_files;                                  -- 0 (ตารางใหม่ ยังไม่มีไฟล์)
 -- select id, public, file_size_limit from storage.buckets where id='ojt-files';
 -- select policyname from pg_policies where tablename='objects' and policyname like 'ojt_files%';   -- ต้องได้ 4 แถว
+-- select privilege_type from information_schema.role_table_grants
+--  where table_name='ojt_training_files' and grantee='authenticated';                            -- ต้องมี SELECT/INSERT/UPDATE/DELETE

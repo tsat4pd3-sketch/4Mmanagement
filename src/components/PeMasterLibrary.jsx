@@ -140,7 +140,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
                     <span style={{ fontWeight: 800, fontSize: 12.5 }}>{m.name}</span>
                     <Pill label={KIND_LABEL[m.kind] || m.kind} color="#64748b" small />
                     {!m.confirmed_at && <Pill label="รอยืนยัน" color="#f59e0b" small />}
-                    {pend > 0 && <Pill label={`📬 ${pend}`} color="#a855f7" small />}
+                    {pend > 0 && <Pill label={`${pend}`} color="#a855f7" small />}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>v{m.version} · {n} failure mode · ใช้ใน {u.sets} พาร์ท / {u.ops} OP{m.family_tags?.length ? ` · ${m.family_tags.join(', ')}` : ''}</div>
                 </div>
@@ -156,7 +156,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
               <div style={card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                   <div>
-                    <div style={{ fontSize: 15, fontWeight: 900 }}>📚 {cur.name} <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>v{cur.version} · {cur.key}</span></div>
+                    <div style={{ fontSize: 15, fontWeight: 900 }}>{cur.name} <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>v{cur.version} · {cur.key}</span></div>
                     <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>
                       {KIND_LABEL[cur.kind]}{cur.process_type ? ` · ${cur.process_type}` : ''}{cur.family_tags?.length ? ` · ตระกูล: ${cur.family_tags.join(', ')}` : ''}
                       {cur.confirmed_at ? ` · ยืนยันโดย ${cur.confirmed_by} ${fmtDate(cur.confirmed_at)}` : ' · ⚠️ ยังไม่ยืนยัน'}
@@ -178,7 +178,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
 
               {curPending.length > 0 && (
                 <div style={{ ...card, borderColor: '#a855f766' }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>📬 ข้อเสนออัพเดท master ({curPending.length})</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>ข้อเสนออัพเดท master ({curPending.length})</div>
                   {curPending.map(p => (
                     <div key={p.id} style={{ borderTop: '1px solid var(--border)', padding: '8px 0', display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                       <div style={{ flex: 1, minWidth: 240 }}>
@@ -220,7 +220,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
                       <tr key={it.id} style={{ opacity: it.is_active === false ? 0.5 : 1 }}>
                         <td style={tdSt}>{it.seq}</td>
                         <td style={{ ...tdSt, minWidth: 180 }}><b style={{ color: 'var(--text)' }}>{it.failure_mode}</b>{it.classification && <Pill label={it.classification} color={it.classification === 'CC' ? '#ef4444' : '#f59e0b'} small />}{it.effects && <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'pre-wrap' }}>{it.effects}</div>}</td>
-                        <td style={{ ...tdSt, minWidth: 200, fontSize: 11.5 }}>{it.causes && <div>⚠ {it.causes}</div>}{it.prevention && <div>🛡 {it.prevention}</div>}{it.detection_ctrl && <div>🔍 {it.detection_ctrl}</div>}{it.best_practice && <div style={{ color: '#22c55e' }}>✔ {it.best_practice}</div>}</td>
+                        <td style={{ ...tdSt, minWidth: 200, fontSize: 11.5 }}>{it.causes && <div>⚠ {it.causes}</div>}{it.prevention && <div>{it.prevention}</div>}{it.detection_ctrl && <div>{it.detection_ctrl}</div>}{it.best_practice && <div style={{ color: '#22c55e' }}>✔ {it.best_practice}</div>}</td>
                         <td style={{ ...tdSt, textAlign: 'center', whiteSpace: 'nowrap' }}>{it.severity ?? '—'}·{it.occurrence ?? '—'}·{it.detection ?? '—'}</td>
                         <td style={{ ...tdSt, textAlign: 'right', fontWeight: 800, color: rpnColor(rpnOf(it)) }}>{rpnOf(it) ?? '—'}</td>
                         <td style={tdSt}>v{it.version}</td>
@@ -238,7 +238,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
 
       {mpModal && (
         <Modal title={mpModal.id ? 'แก้กระบวนการมาตรฐาน' : 'เพิ่มกระบวนการมาตรฐาน'} onClose={() => setMpModal(null)} width={560}
-          footer={<><button style={ghost} onClick={() => setMpModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveMp}>💾 บันทึก</button></>}>
+          footer={<><button style={ghost} onClick={() => setMpModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveMp}>บันทึก</button></>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label="ชื่อกระบวนการ *" span={2}><input style={inp} value={mpModal.name} onChange={e => setMpModal({ ...mpModal, name: e.target.value })} placeholder="PROJECTION WELD NUT" /></Field>
             <Field label="ชนิด"><select style={inp} value={mpModal.kind} onChange={e => setMpModal({ ...mpModal, kind: e.target.value })} disabled={!!mpModal.id}>{Object.entries(KIND_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
@@ -251,7 +251,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
       )}
       {itemModal && (
         <Modal title={itemModal.id ? `แก้ master: ${itemModal.failure_mode}` : 'เพิ่ม failure mode มาตรฐาน'} onClose={() => setItemModal(null)} width={760}
-          footer={<><button style={ghost} onClick={() => setItemModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveItem}>💾 บันทึก{itemModal.id ? ` (→ v${(itemModal.version || 1) + 1})` : ''}</button></>}>
+          footer={<><button style={ghost} onClick={() => setItemModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveItem}>บันทึก{itemModal.id ? ` (→ v${(itemModal.version || 1) + 1})` : ''}</button></>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label="ลำดับ"><input type="number" style={inp} value={itemModal.seq} onChange={e => setItemModal({ ...itemModal, seq: e.target.value })} /></Field>
             <Field label="Failure mode *" span={2}><input style={inp} value={itemModal.failure_mode} onChange={e => setItemModal({ ...itemModal, failure_mode: e.target.value })} /></Field>
