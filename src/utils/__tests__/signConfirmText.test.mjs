@@ -38,6 +38,17 @@ test('🔴 ไม่มี window (เทส/SSR) = ไม่ขวางกา�
   assert.equal(confirmSign({ orderNo: 'A' }), true);
 });
 
+test('warn — จังหวะที่ของจริงแก้ได้ ต้องเปลี่ยนบรรทัดเตือนท้ายได้ (คำเตือนที่ไม่จริง = คนเลิกอ่าน)', () => {
+  const def = signConfirmText({ what: 'x', orderNo: 'MO-1', actor: 'ก', as: 'หัวหน้า' });
+  assert.ok(def.includes('เซ็นแล้วแก้เองไม่ได้'), 'ไม่ส่ง warn = ข้อความ one-way เดิมต้องไม่เปลี่ยน');
+  const bin = signConfirmText({ what: 'ผลพิจารณา', orderNo: 'พาร์ท A · 2026-11-08',
+    actor: 'ข', as: 'ผู้พิจารณา', warn: '⚠️ แก้ย้อนหลังได้ที่ทะเบียน' });
+  assert.ok(bin.includes('⚠️ แก้ย้อนหลังได้ที่ทะเบียน'));
+  assert.ok(!bin.includes('เซ็นแล้วแก้เองไม่ได้'), 'ส่ง warn แล้วต้องแทนที่ ไม่ใช่ต่อท้าย');
+  /* 3 อย่างที่ต้องมีเสมอ ไม่ว่าจะส่ง warn หรือไม่ */
+  for (const t of ['ผลพิจารณา', 'พาร์ท A · 2026-11-08', 'ข', 'ผู้พิจารณา']) assert.ok(bin.includes(t), t);
+});
+
 test('ทะเบียน stage ของใบ MO — จ่ายงาน/ลงผลซ่อม ไม่ใช่การอนุมัติ ห้ามถาม', () => {
   for (const st of SIGN_STAGES) assert.equal(needsSignConfirm(st), true, st);
   for (const st of ['assign', 'service', '', null, undefined, 'ไม่มีจริง'])

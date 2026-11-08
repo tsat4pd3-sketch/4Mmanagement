@@ -1819,12 +1819,14 @@ const TABS = [
   { key: 'spc',         icon: '📐', label: 'SPC / Cp-Cpk' },
   { key: 'ncr',         icon: '🚨', label: 'NCR ของเสีย' },
   // เคลมลูกค้า = ของเสียที่หลุดออกไปถึงลูกค้า — วางคู่ NCR เพราะอ่านด้วยกัน (2026-08-17)
-  // ถังเหลือง/แดง = บันทึกหน้ากล่องก่อนถึง NCR/Scrap (ฟอร์มกระดาษเดิม 2 ใบ · 2026-08-19)
+  /* 🟡 ถังเหลือง = **คิวรออนุมัติของแผนก** เท่านั้น (คำสั่ง user 06/11)
+     *"หลักๆอันนี้ต้องอยู่หมวดของผลิตนะ qa จะไปโชว์แค่พวกงานค้างอนุมัติของแผนก เพราะ หลักๆเอกสารอยู่ที่ผลิต"*
+     ⇒ ทะเบียน/ใบเต็มอยู่ `/scrap-report?tab=bins` (หมวดฝ่ายผลิต) · ที่นี่ `mode="queue"` ห้ามเอาทะเบียนกลับมา 
   /* 🔧 ใบซ่อมรอ QA ตรวจหลังซ่อม (2026-10-22 · คำสั่ง user *"QA จะรู้ได้ยังไงว่ามี MO ค้างรอ QA กี่ใบ"*)
      วัด 22/10: มีจริง 92 ใบ เก่าสุด 36 วัน แต่หน้านี้ไม่เคยมีที่ไหนพูดถึงใบซ่อมเลย
      วางถัดจากใบตรวจเพราะเป็น "งานตรวจที่มีคนรออยู่" เหมือนกัน (ใบตรวจ = ตามแผน · อันนี้ = ตามเหตุ) */
   { key: 'morepair',    icon: '🔧', label: 'ใบซ่อมรอตรวจ' },
-  { key: 'bins',        icon: '🗑️', label: 'ถังเหลือง / ถังแดง' },
+  { key: 'bins',        icon: '🟡', label: 'ถังเหลืองรอตัดสิน' },
   { key: 'claims',      icon: '📮', label: 'เคลมลูกค้า' },
   // ใบเบิกชิ้นงานไปทดสอบ (FM-STO-003) — ของที่ทดสอบแล้วถูกดึงเข้าใบรายงานของเสีย (2026-08-24)
   { key: 'matreq',      icon: '📦', label: 'ใบเบิกทดสอบ' },
@@ -1884,7 +1886,8 @@ export default function QualityControl() {
       {tab === 'capa' && <CAPATab canRecord={canRecord} canManage={canManage} prefill={capaPrefill} onPrefillDone={() => setCapaPrefill(null)} lineObjs={lineObjs} partOpts={partOpts} />}
       {/* 🗑️ ชิ้นเดียวกับแท็บถังเหลือง/แดงใน /scrap-report (ฝ่ายผลิต) — ข้อมูลชุดเดียว ไม่ได้ก๊อป
           user 19/10: ผลิตเป็นคนลงบันทึก (ไหลมาจาก Daily Report) · QA เป็นคนพิจารณาผล */}
-      {tab === 'bins' && <QualityBins />}
+      {/* 🏭 บ้านของเอกสาร = ฝ่ายผลิต ⇒ ที่นี่เห็นแค่คิวรอพิจารณา (ด่าน `qa-bins-queue-only`) */}
+      {tab === 'bins' && <QualityBins mode="queue" />}
       {tab === 'matreq' && <MaterialRequests />}
       {tab === 'claims' && <QaClaims lines={lineObjs} scopeNames={viewScope.names} role={role} lineId={lineId} sections={sections} partOpts={partOpts} canRecord={canRecord} canManage={canManage} onOpenCapa={openCapaFromNcr} />}
       {tab === 'instruments' && <InstrumentTab lineObjs={lineObjs} canManage={canManage} />}

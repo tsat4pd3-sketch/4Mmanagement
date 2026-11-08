@@ -713,6 +713,10 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   /* 🔴 ต้อง `!important` — กล่องข้อความตั้ง `flex: 1` ไว้ที่ inline style (ของจอคอม ห้ามถอด)
      ซึ่งชนะ CSS เสมอ ⇒ ไม่ใส่ = กฎนี้ไม่มีผล ข้อความยังถูกบีบแคบเหมือนเดิม (พิสูจน์แล้ว 05/11) */
   .andon-bar .andon-bar-msg { flex: 1 0 100% !important; }
+  /* 📱 ท้ายการ์ด Login — ข้อความแบรนด์ตั้ง `nowrap` ไว้ให้พอดีการ์ด 400px (06/11) แต่จอ 390px
+     การ์ดเหลือเนื้อใน 278px ⇒ ล้นออกนอกจอแบบปัดไม่ได้ (ด่าน mobilesweep 08/11)
+     🔴 inline nowrap ชนะ class ⇒ ต้อง `!important` · จอคอมไม่เปลี่ยนแม้แต่พิกเซลเดียว (อยู่ใน media query) */
+  .login-brand-foot { white-space: normal !important; }
 }
 
 /* ขอบกระพริบเบา สำหรับการ์ดใหญ่ (เช่นการ์ดใบซ่อม MTN รอรับงาน) — glow เล็กกว่า marker มาก */

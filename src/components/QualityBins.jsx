@@ -7,10 +7,17 @@
  *    ปุ่ม "→ ลงถังแดง" จึงสร้างแถวถังแดงที่ผูก `from_yellow_id` กลับมาที่ใบเหลือง
  *    (ห้ามให้คนคีย์ใหม่มือเปล่า — จะสืบไม่ได้ว่าของในถังแดงมาจากใบไหน)
  *
+ * 🏭 **บ้านของเอกสารคือฝ่ายผลิต** (คำสั่ง user 2026-11-06: *"หลักๆอันนี้ต้องอยู่หมวดของผลิตนะ
+ *    qa จะไปโชว์แค่พวกงานค้างอนุมัติของแผนก เพราะ หลักๆเอกสารอยู่ที่ผลิต"*)
+ *    · `/scrap-report?tab=bins` (หมวด ฝ่ายผลิต) = `mode="full"` — ทะเบียน + ใบ + อายุแท็ก + ทะเบียน WI
+ *    · `/qa?tab=bins` = `mode="queue"` — **เฉพาะคิวรอพิจารณา** (งานค้างอนุมัติของแผนก) ไม่มีทะเบียน
+ *    🔴 ห้ามเอาทะเบียน/ปุ่มบันทึกกลับเข้าโหมด queue (= บ้านที่สอง · ด่าน `qa-bins-queue-only`)
+ *
  * สิทธิ์: reuse `scrap:record` / `scrap:manage` — เป็น workflow ของเสียชุดเดียวกับใบ Scrap Report
  * (ไม่เพิ่ม permission key ใหม่ เลี่ยงกับดัก seed enum_range ที่ทำให้ role ใหม่ fail-closed)
  */
 import { useState, useEffect, useCallback, useMemo, useContext, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import ReadOnlyNote from './ReadOnlyNote';
 import TimeRangeBar from './TimeRangeBar';
 import Segmented from './Segmented';
@@ -28,9 +35,12 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
-import { can } from '../utils/permissions';
+import { can, canAccessPage } from '../utils/permissions';
 import { scopedLineNames } from '../utils/sectionScope';
 import { printQualityBin } from '../lib/qualityBinPrint';
+/* ✍️ ยืนยันก่อน "อนุมัติ/เซ็นรับ" — ของกลาง ห้ามเขียนข้อความเองในหน้า (คำสั่ง user 28/10 · ขยาย 02/11)
+   ผลพิจารณาถังเหลืองเขียนชื่อคนกดลงช่อง QA บนใบ = การเซ็น ⇒ ต้องบอก 3 อย่าง: อนุมัติอะไร · ใบไหน · ในนามใคร */
+import { confirmSign } from '../utils/signConfirm';
 /* กติกาที่ถอดจาก WI-PD3-069 §5.4/§5.6 + WI-PD3-087 — อายุแท็ก + ผลพิจารณา QA
    ⚠️ ห้าม hardcode 5/1 วัน หรือรายชื่อผลพิจารณาซ้ำในหน้านี้ (2026-09-25) */
 import { TAG_MAX_DAYS, QA_DECISIONS, decisionOf, binTagAge, binClosed, overdueBins, pendingYellow, SPECIAL_USE_FORM } from '../utils/qualityBin';
@@ -57,6 +67,14 @@ const today = () => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.ge
 const daysAgo = n => { const d = new Date(); if (d.getHours() < 8) d.setDate(d.getDate() - 1); d.setDate(d.getDate() - n); return ymd(d); };
 const numOrNull = v => (v === '' || v == null ? null : (Number.isFinite(+v) ? +v : null));
 
+/* ✍️ คำเตือนท้ายกล่องยืนยันของถังเหลือง — **ของจริงแก้ได้** (ต่างจากลายเซ็นใบ MO ที่ one-way)
+   ⇒ ห้ามใช้ข้อความ default ของ signConfirm ที่บอกว่า "แก้เองไม่ได้" (คำเตือนที่ไม่จริง = คนเลิกอ่าน) */
+const BIN_SIGN_WARN = '⚠️ ชื่อคุณจะไปอยู่ช่อง QA บนใบ — แก้ผลย้อนหลังได้ที่ทะเบียนถังเหลือง (หน้าของเสีย · ฝ่ายผลิต)';
+
+/** ป้ายอ้างอิง "ใบไหน" ในกล่องยืนยัน — ชิ้นงาน + วันที่ลงถัง (ใบถังไม่มีเลขที่เอกสารของตัวเอง) */
+const binDocLabel = (r) => [r?.part_no || r?.mat_no || r?.part_name, r?.work_date, r?.line_name]
+  .map(v => String(v || '').trim()).filter(Boolean).join(' · ') || '(ไม่ทราบใบ)';
+
 const BLANK = {
   work_date: today(), line_name: '', mat_no: '', part_name: '', part_no: '', qty: '',
   cause: '', reported_by: '', qa_by: '',
@@ -76,7 +94,9 @@ const lbl = { fontSize: 11, color: 'var(--muted)', display: 'block', marginBotto
 const th = { padding: '7px 8px', fontSize: 11.5, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' };
 const td = { padding: '6px 8px', fontSize: 12.5, color: 'var(--text)', borderTop: '1px solid var(--border)' };
 
-export default function QualityBins() {
+export default function QualityBins({ mode = 'full' }) {
+  /* 'full' = หน้าฝ่ายผลิต (บ้านของเอกสาร) · 'queue' = /qa เห็นแค่คิวรออนุมัติ */
+  const queueOnly = mode === 'queue';
   const { role, lineId, sections, fullName, scopeIdx } = useContext(UserContext);
   const canRecord = can('scrap', 'record', role);
   const canManage = can('scrap', 'manage', role);
@@ -86,12 +106,14 @@ export default function QualityBins() {
   // 2026-09-07 ชิ้นงานอ่านผ่าน <ProductSelect> (cache Product Master กลาง — เลิก datalist 400 แถวที่ตัดของหายเงียบ)
   const [matLocked, setMatLocked] = useState(false); // mat_no ตรง Product Master → ชื่อ/Part No. ล็อกตามทะเบียน
   /* 📜 ค่าที่เคยบันทึกใน quality_bin_records (DR) — ชิ้นงาน/ชื่อคนที่กรอกมาก่อนทะเบียนจะครบ ยังเลือกซ้ำได้ ห้ามล้าง/บล็อกเงียบ
-     (คำสั่ง user 2026-09-07) · known:false = นอกทะเบียน → ไม่ล็อกชื่อ/Part No. */
-  const binMatHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'mat_no', { upper: true });
-  const reportedHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'reported_by');
-  const qaByHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'qa_by');
-  const repairByHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'repair_by');
-  const disposedByHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'disposed_by');
+     (คำสั่ง user 2026-09-07) · known:false = นอกทะเบียน → ไม่ล็อกชื่อ/Part No.
+     🔴 โหมดคิว (/qa) ไม่มีฟอร์ม ⇒ ปิดทั้ง 5 ตัว (คอลัมน์ละ 3000 แถว = egress ที่ไม่มี picker ไหนใช้) */
+  const histOn = { enabled: !queueOnly };
+  const binMatHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'mat_no', { ...histOn, upper: true });
+  const reportedHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'reported_by', histOn);
+  const qaByHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'qa_by', histOn);
+  const repairByHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'repair_by', histOn);
+  const disposedByHist = useColumnHistory(supabaseDR, 'quality_bin_records', 'disposed_by', histOn);
   const [rows, setRows] = useState([]);
   const [scrapDocs, setScrapDocs] = useState({});   // scrap_report_id → { doc_no, status } (ถังแดง)
   /* ⏱️ ใบเหลืองที่ถูกย้ายลงถังแดงไปแล้ว = ออกจากถังแล้ว ไม่ต้องนับอายุแท็กต่อ
@@ -135,13 +157,61 @@ export default function QualityBins() {
     const rid = ++loadReq.current;
     const stale = () => rid !== loadReq.current;
     setLoading(true);
+    /** ใบเหลืองที่มีลูกเป็นใบแดงแล้ว — ใช้ทั้งตารางของค้าง และคิวรอพิจารณา (คิวรีเดียวกัน ห้ามเขียน 2 ชุด) */
+    const redKidsOf = async (ids) => {
+      const kids = new Set();
+      let err = '';
+      for (let i = 0; i < ids.length; i += 100) {
+        const { data: ch, error: chErr } = await supabaseDR.from('quality_bin_records')
+          .select('from_yellow_id').eq('bin', 'red').eq('is_active', true)
+          .in('from_yellow_id', ids.slice(i, i + 100));
+        if (chErr) { err = chErr.message; break; }
+        (ch || []).forEach(c => c.from_yellow_id && kids.add(c.from_yellow_id));
+      }
+      return { kids, err };
+    };
+    /* 🔴 แท็กที่ไม่ระบุไลน์ต้องเห็นด้วย — `IN` ไม่จับ NULL ⇒ ลงถังแล้วหายจากรายการ (audit 19/10) */
+    const inScope = scopeNames ? `line_name.is.null,line_name.in.(${scopeNames.map(n => `"${String(n).replace(/"/g, '\\"')}"`).join(',')})` : null;
+
+    /* 🟡 คิวรอพิจารณา — ยังไม่มีผล QA และยังไม่กลับเข้ากระบวนการ · ไม่กรองช่วงวันที่
+       (ตั้งแท็กอัตโนมัติตั้งแต่ตอนบันทึกงานเสียแล้ว 05/11 ⇒ คิวนี้คือ "งานที่ต้องเคลียร์" ของ QA/หัวหน้า)
+       🔴 โหลดก่อนทะเบียนเสมอ เพราะโหมดคิว (/qa) ใช้แค่ก้อนนี้ก้อนเดียว */
+    let pendIds = [];
+    if (bin === 'yellow') {
+      let pq = supabaseDR.from('quality_bin_records')
+        .select('id, work_date, line_name, mat_no, part_name, part_no, qty, cause, reported_by, qa_decision, return_date, defect_log_id, found_img, special_use_doc_no, scrap_report_id, bin, is_active, qty_ng')
+        .eq('bin', 'yellow').eq('is_active', true)
+        .is('qa_decision', null).is('return_date', null)
+        .order('work_date', { ascending: true }).limit(300);
+      if (inScope) pq = pq.or(inScope);
+      const { data: pd, error: pe } = await pq;
+      if (stale()) return;
+      if (pe) { setPendErr(pe.message); setPendRows([]); }
+      else {
+        setPendErr((pd || []).length >= 300 ? 'รอพิจารณาเกิน 300 รายการ — แสดง 300 รายการที่เก่าที่สุด' : '');
+        setPendRows(pd || []);
+        pendIds = (pd || []).map(r => r.id);
+      }
+    } else { setPendRows([]); setPendErr(''); }
+
+    /* 🏭 โหมดคิว (/qa) — เอกสารตัวจริงอยู่ฝ่ายผลิต ⇒ **ไม่โหลดทะเบียน/ของค้างตามช่วงวันที่เลย**
+       (`select('*')` ตารางกว้าง × 500 แถว × 2 คิวรี = egress ที่ไม่มีใครดูบนหน้านี้ · กฎเขียน DB ข้อ 11) */
+    if (queueOnly) {
+      setRows([]); setOverdueRows([]); setOverdueErr(''); setScrapDocs({});
+      /* ใบที่ย้ายลงถังแดงไปแล้วต้องหายจากคิว ⇒ เช็คลูกจาก id ของคิวเอง (ไม่มีชุดแถวในช่วงให้ยืม) */
+      const { kids, err } = await redKidsOf(pendIds);
+      if (stale()) return;
+      if (err) setPendErr(e => e || `เช็คใบที่ย้ายลงถังแดงไม่ได้: ${err}`);
+      setRedChildOf(kids);
+      setLoading(false);
+      return;
+    }
+
     let q = supabaseDR.from('quality_bin_records').select('*')
       .eq('bin', bin).eq('is_active', true)
       .gte('work_date', from).lte('work_date', to)
       .order('work_date', { ascending: false }).order('created_at', { ascending: false })
       .limit(500);
-    /* 🔴 แท็กที่ไม่ระบุไลน์ต้องเห็นด้วย — `IN` ไม่จับ NULL ⇒ ลงถังแล้วหายจากรายการ (audit 19/10) */
-    const inScope = scopeNames ? `line_name.is.null,line_name.in.(${scopeNames.map(n => `"${String(n).replace(/"/g, '\\"')}"`).join(',')})` : null;
     if (inScope) q = q.or(inScope);
     /* ⏱️ ของค้างเกินอายุแท็ก — คิวรีแยก ไม่ผูกช่วงวันที่ (ลงถังก่อน "วันนี้ − อายุแท็ก" และยังไม่ปิด)
        กรองฝั่ง server แค่เงื่อนไขปิดที่ชัด (แดง: ยังไม่มีใบ scrap · เหลือง: ยังไม่กลับเข้ากระบวนการ)
@@ -187,42 +257,16 @@ export default function QualityBins() {
        เลือกเฉพาะคอลัมน์ที่ใช้จริง — `select('*')` บนตารางกว้างคือตัวกิน egress (กฎเหล็กข้อ 11)
        ครอบทั้งแถวในช่วง + แถวค้างเกินอายุ (คนละชุดกันได้) */
     const yIds = bin === 'yellow'
-      ? [...new Set([...(data || []), ...(ores.data || [])].map(r => r.id))]
+      ? [...new Set([...(data || []).map(r => r.id), ...(ores.data || []).map(r => r.id), ...pendIds])]
       : [];
     if (yIds.length) {
-      const kids = new Set();
-      let kidsErr = '';
-      for (let i = 0; i < yIds.length; i += 100) {
-        const { data: ch, error: chErr } = await supabaseDR.from('quality_bin_records')
-          .select('from_yellow_id').eq('bin', 'red').eq('is_active', true)
-          .in('from_yellow_id', yIds.slice(i, i + 100));
-        if (chErr) { kidsErr = chErr.message; break; }
-        (ch || []).forEach(c => c.from_yellow_id && kids.add(c.from_yellow_id));
-      }
+      const { kids, err: kidsErr } = await redKidsOf(yIds);
       if (stale()) return;
       /* ไม่รู้ว่าใบไหนย้ายลงแดงแล้ว = ป้ายค้างอาจเกินจริง → เขียนบนจอ ห้ามเงียบ */
       if (kidsErr) setOverdueErr(e => e || `เช็คใบที่ย้ายลงถังแดงไม่ได้: ${kidsErr}`);
       setRedChildOf(kids);
     } else setRedChildOf(new Set());
-
-    /* 🟡 คิวรอพิจารณา — ยังไม่มีผล QA และยังไม่กลับเข้ากระบวนการ · ไม่กรองช่วงวันที่
-       (ตั้งแท็กอัตโนมัติตั้งแต่ตอนบันทึกงานเสียแล้ว 05/11 ⇒ คิวนี้คือ "งานที่ต้องเคลียร์" ของ QA/หัวหน้า) */
-    if (bin === 'yellow') {
-      let pq = supabaseDR.from('quality_bin_records')
-        .select('id, work_date, line_name, mat_no, part_name, part_no, qty, cause, reported_by, qa_decision, return_date, defect_log_id, found_img, special_use_doc_no, scrap_report_id, bin, is_active, qty_ng')
-        .eq('bin', 'yellow').eq('is_active', true)
-        .is('qa_decision', null).is('return_date', null)
-        .order('work_date', { ascending: true }).limit(300);
-      if (inScope) pq = pq.or(inScope);
-      const { data: pd, error: pe } = await pq;
-      if (stale()) return;
-      if (pe) { setPendErr(pe.message); setPendRows([]); }
-      else {
-        setPendErr((pd || []).length >= 300 ? 'รอพิจารณาเกิน 300 รายการ — แสดง 300 รายการที่เก่าที่สุด' : '');
-        setPendRows(pd || []);
-      }
-    } else { setPendRows([]); setPendErr(''); }
-  }, [bin, from, to, scopeNames]);
+  }, [bin, from, to, scopeNames, queueOnly]);
   useEffect(() => { load(); }, [load]);
 
   /* ⏱️ อายุแท็ก/สถานะปิด ของทุกแถว — คิดครั้งเดียว ใช้ทั้งตัวกรอง ป้ายเตือน และตาราง
@@ -382,13 +426,15 @@ export default function QualityBins() {
   };
 
   /** ซ่อมแล้ว NG → ย้ายลงถังแดง (ตามหมายเหตุท้ายฟอร์มเหลือง) */
-  const toRed = async (r) => {
+  /** @param {{skipConfirm?:boolean}} opt — คนกดยืนยันมาแล้วจากคิวรอพิจารณา ⇒ ห้ามถามซ้ำ
+   *  (CLAUDE.md §อนุมัติ: "ห้ามถามพร่ำเพรื่อ" — ถาม 2 กล่องติดกัน คนกดผ่านโดยไม่อ่านทั้งคู่) */
+  const toRed = async (r, { skipConfirm = false } = {}) => {
     if (!canRecord) { toast.error('บัญชีนี้ไม่มีสิทธิ์บันทึกของเสีย (scrap:record)'); return; }
     /* จำนวนที่ย้าย: ซ่อมแล้ว NG มาก่อน · ถ้า QA ชี้ "ทำลาย" ตรงๆ โดยไม่ผ่านการซ่อม ใช้จำนวนทั้งใบ
        (WI §5.4 — ทำลายเป็น 1 ใน 3 ทางที่ QA เลือกได้ ไม่ได้บังคับให้ซ่อมก่อน) */
     const qty = (Number(r.qty_ng) || 0) || (r.qa_decision === 'scrap' ? (Number(r.qty) || 0) : 0);
     if (!qty) { toast.error('ยังไม่ได้กรอกจำนวน NG หลังซ่อม (หรือให้ QA ชี้ผลเป็น 🔴 ทำลาย)'); return; }
-    if (!window.confirm(`ย้าย ${qty} ชิ้นลงถังแดง?\n\n${r.part_name || r.mat_no}\nระบบจะสร้างรายการถังแดงที่ผูกกับใบนี้ให้`)) return;
+    if (!skipConfirm && !window.confirm(`ย้าย ${qty} ชิ้นลงถังแดง?\n\n${r.part_name || r.mat_no}\nระบบจะสร้างรายการถังแดงที่ผูกกับใบนี้ให้`)) return;
     const { error } = await supabaseDR.from('quality_bin_records').insert({
       bin: 'red', work_date: today(), line_name: r.line_name,
       mat_no: r.mat_no, part_name: r.part_name, part_no: r.part_no,
@@ -424,7 +470,13 @@ export default function QualityBins() {
       : { qa_decision: 'repair', qa_decision_at: new Date().toISOString(), qa_by: fullName || null,
           repair_date: when, qty_ok: qty, qty_ng: 0, return_date: when };
     const label = kind === 'good' ? 'ตรวจแล้วใช้ได้' : 'ซ่อมแล้วดี';
-    if (!window.confirm(`${label} — ${qty} ชิ้น\n${r.part_name || r.mat_no || ''}\n\nของจะถูกปิดออกจากถังเหลือง และบันทึกว่ากลับเข้ากระบวนการวันนี้`)) return;
+    if (!confirmSign({
+      what: `ผลพิจารณา "${label}" — ${qty.toLocaleString()} ชิ้น`,
+      docLabel: 'ใบถังเหลือง', orderNo: binDocLabel(r),
+      actor: fullName || '(ไม่รู้ชื่อผู้ใช้)', as: 'ผู้พิจารณา (ช่อง QA บนใบ)',
+      effect: `ปิดออกจากถังเหลือง · บันทึกว่ากลับเข้ากระบวนการวันที่ ${when}`,
+      warn: BIN_SIGN_WARN,
+    })) return;
     setDeciding(r.id);
     /* รับผลใส่ตัวแปรก่อนแล้วค่อยส่งให้ `checkWriteRows` — เขียน `await supabase…` ลอยเป็น statement
        จะถูกด่าน `write-result-discarded` จับ (และของจริงคือล้มแล้วเงียบ) */
@@ -441,6 +493,14 @@ export default function QualityBins() {
   const decideScrap = async (r) => {
     if (!canRecord) { toast.error('บัญชีนี้ไม่มีสิทธิ์บันทึกของเสีย (scrap:record)'); return; }
     if (deciding) return;
+    /* 🔴 "เสียแน่" = ตัดของทิ้งจริง + เปิดสายขออนุมัติทำลาย ⇒ ต้องถามยืนยันเหมือนกัน (เดิมไม่ถามเลย) */
+    if (!confirmSign({
+      what: `ผลพิจารณา "เสียแน่ — ซ่อมไม่ได้" ${(Number(r.qty) || 0).toLocaleString()} ชิ้น`,
+      docLabel: 'ใบถังเหลือง', orderNo: binDocLabel(r),
+      actor: fullName || '(ไม่รู้ชื่อผู้ใช้)', as: 'ผู้พิจารณา (ช่อง QA บนใบ)',
+      effect: 'ติดแท็กแดง → ย้ายลงถังแดง เพื่อออกใบขออนุมัติทำลายตาม DOA',
+      warn: BIN_SIGN_WARN,
+    })) return;
     setDeciding(r.id);
     const res = await supabaseDR.from('quality_bin_records')
       .update({ qa_decision: 'scrap', qa_decision_at: new Date().toISOString(), qa_by: fullName || null })
@@ -450,7 +510,7 @@ export default function QualityBins() {
     setDeciding('');
     if (!ok) return;
     /* ส่งแถวที่ "ตัดสินแล้ว" เข้า toRed — ไม่งั้นมันอ่าน qa_decision เก่า (null) แล้วหาจำนวนไม่เจอ */
-    await toRed({ ...r, qa_decision: 'scrap' });
+    await toRed({ ...r, qa_decision: 'scrap' }, { skipConfirm: true });   // ถามไปแล้วที่ confirmSign ข้างบน
   };
 
   const doPrint = async () => {
@@ -462,46 +522,12 @@ export default function QualityBins() {
   const isY = bin === 'yellow';
   const totalQty = filtered.reduce((a, r) => a + (Number(r.qty) || 0), 0);
 
-  return (
-    <div>
-      <ReadOnlyNote show={!canRecord} role={role} what="บันทึกถังเหลือง/ถังแดง"
-        permKey="scrap:record" />
-      {/* ── แถบควบคุม ── */}
-      {/* UI-STANDARD 2026-09-24: ตัวกรองของหน้าเป็น children ของ TimeRangeBar = แถบเดียว (เดิมแยก 2 ชั้น) */}
-      <TimeRangeBar
-        scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
-        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 14 }}
-      >
-        {/* เลือกถัง = ตัวเลือก 2 ตัวที่เท่ากัน ⇒ Segmented อยู่ในแถบเดียว (เดิมเป็นแถวปุ่มแยกเหนือแถบกรอง) · สีถัง = ความหมาย */}
-        <Segmented label="ถัง" value={bin} onChange={setBin}
-          options={BINS.map(b => ({ value: b.key, label: b.label, color: b.color }))} />
-        <LineSelect lines={lineObjs} value={lineFilter} onChange={setLineFilter} placeholder={ALL.line} />
-        <SearchInput value={search} onChange={setSearch} fields="ชิ้นงาน / สาเหตุ / ผู้แจ้ง" />
-        {/* ⏱️ ของค้างเกินอายุแท็ก — ปุ่มโผล่เฉพาะเมื่อมีของค้างจริง (ปุ่มที่กดแล้วว่างเปล่าเสมอ = คนเลิกกด)
-            ไม่กระพริบ: เป็นงานค้าง ไม่ใช่ alarm (Andon convention) */}
-        {overdueCount > 0 && (
-          <button onClick={() => setOverdueOnly(v => !v)}
-            title={`ของในถังที่เลยอายุแท็กตาม WI-PD3-087 §5.6 (🟡 ${TAG_MAX_DAYS.yellow} วัน · 🔴 ${TAG_MAX_DAYS.red} วัน) และยังไม่ถูกจัดการ`}
-            style={{ padding: '7px 13px', borderRadius: 6, fontSize: 12.5, fontWeight: 800, cursor: 'pointer',
-              border: '1px solid #f97316', whiteSpace: 'nowrap',
-              background: overdueOnly ? '#f97316' : 'transparent', color: overdueOnly ? '#2a1204' : '#f97316' }}>
-            ⏱ เกินอายุแท็ก {overdueCount}
-          </button>
-        )}
-        <span className="spacer" />
-        {canRecord && <button onClick={openNew} style={{ padding: '8px 18px', borderRadius: 6, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>+ บันทึกรายการ</button>}
-        <button onClick={doPrint} style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>พิมพ์ใบ {B.short}</button>
-        <button onClick={() => setShowWiReg(v => !v)}
-          title="ทะเบียน QRs ↔ WI การซ่อม ตาม WI-PD3-069 §6 — อาการไหนซ่อมตาม WI เล่มไหน"
-          style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid var(--border)', background: showWiReg ? 'var(--bg2)' : 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
-          ทะเบียน WI ซ่อม
-        </button>
-      </TimeRangeBar>
-
-      {/* ═══ 🟡 คิวรอพิจารณา — "เคลียร์ว่ากลับมาดี หรือเสียแน่" (2026-11-05 · คำสั่ง user) ═══════
-          ระบบตั้งแท็กเหลืองให้เองทุกครั้งที่ลงงานเสีย ⇒ ที่นี่คือจุดที่คน **ตัดสิน** และเคลียร์ออก
-          🔴 โหลดไม่ได้ = เขียนบนจอ ห้ามขึ้น "ไม่มีงานค้าง" · 🔴 ซ่อนแถวที่เหลือต้องบอกจำนวน */}
-      {isY && (pendErr || pendRows.length > 0) && (() => {
+  /* ═══ 🟡 คิวรอพิจารณา — "เคลียร์ว่ากลับมาดี หรือเสียแน่" (2026-11-05 · คำสั่ง user) ═══════
+     ระบบตั้งแท็กเหลืองให้เองทุกครั้งที่ลงงานเสีย ⇒ ที่นี่คือจุดที่คน **ตัดสิน** และเคลียร์ออก
+     🔴 โหลดไม่ได้ = เขียนบนจอ ห้ามขึ้น "ไม่มีงานค้าง" · 🔴 ซ่อนแถวที่เหลือต้องบอกจำนวน
+     🏭 **หน้านี้ไม่ใช่บ้านของเอกสาร** — ทะเบียน/ใบเต็มอยู่ฝ่ายผลิต `/scrap-report?tab=bins`
+        `/qa` เรียกด้วย `mode="queue"` = เห็นแค่คิวรออนุมัติของแผนก (คำสั่ง user 06/11) */
+  const renderPendQueue = () => {
         const pend = pendingYellow(pendRows, redChildOf);
         const pcs = pend.reduce((a, r) => a + (Number(r.qty) || 0), 0);
         const over = pend.filter(r => binTagAge(r, todayWd)?.over).length;
@@ -531,7 +557,8 @@ export default function QualityBins() {
               </div>
             )}
             {pend.length === 0 && !pendErr && (
-              <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มีของค้างรอพิจารณา ✓</div>
+              /* 🔴 ระหว่างโหลดห้ามเขียนว่า "ไม่มีของค้าง" — คิวว่างเทียมคือจอโกหก */
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>{loading ? 'กำลังโหลด…' : 'ไม่มีของค้างรอพิจารณา ✓'}</div>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               {show.map(r => {
@@ -596,7 +623,69 @@ export default function QualityBins() {
             )}
           </div>
         );
-      })()}
+  };
+
+  /* ═══ 🏭 โหมดคิว (/qa) — "งานค้างอนุมัติของแผนก" เท่านั้น ไม่ใช่ทะเบียนเอกสาร ════════════
+     คำสั่ง user 2026-11-06: *"หลักๆอันนี้ต้องอยู่หมวดของผลิตนะ qa จะไปโชว์แค่พวกงานค้างอนุมัติ
+     ของแผนก เพราะ หลักๆเอกสารอยู่ที่ผลิต"* ⇒ ที่นี่ไม่มีแถบกรอง/ตาราง/ปุ่มบันทึก/ทะเบียน WI
+     🔴 ลิงก์ไปบ้านจริงโชว์เฉพาะคนที่เข้าหน้านั้นได้ — ลิงก์ที่กดแล้วเด้งกลับ = จอโกหก
+     🔴 ขอบเขตของคิวต้องเขียนบนจอ (เห็นเฉพาะส่วนงานตัวเอง ≠ ทั้งโรงงานเคลียร์หมด) */
+  if (queueOnly) return (
+    <div>
+      <ReadOnlyNote show={!canRecord} role={role} what="ตัดสินผลของในถังเหลือง" permKey="scrap:record" />
+      {renderPendQueue()}
+      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 10, lineHeight: 1.8 }}>
+        📄 เอกสารตัวจริง (ใบรายงานของเสีย · ทะเบียนถังเหลือง/ถังแดง · อายุแท็ก · ทะเบียน WI ซ่อม) อยู่ที่<b>ฝ่ายผลิต</b>
+        {canAccessPage('/scrap-report', role)
+          ? <> → <Link to="/scrap-report?tab=bins" style={{ color: 'var(--accent)', fontWeight: 700 }}>ของเสีย: ใบรายงาน · ถังเหลือง/แดง ↗</Link></>
+          : <> — หน้า <b>ของเสีย: ใบรายงาน · ถังเหลือง/แดง</b> (บัญชีนี้ยังไม่มีสิทธิ์เข้าหน้านั้น)</>}
+        <br />
+        {scopeNames
+          ? <>🏷️ คิวนี้เฉพาะส่วนงานของคุณ ({scopeNames.length} ไลน์) — ของไลน์อื่นไม่ถูกนับในตัวเลขข้างบน</>
+          : <>🏷️ คิวนี้ทั้งโรงงาน (บัญชีนี้ไม่ถูกจำกัดส่วนงาน)</>}
+      </div>
+    </div>
+  );
+
+  return (
+    <div>
+      <ReadOnlyNote show={!canRecord} role={role} what="บันทึกถังเหลือง/ถังแดง"
+        permKey="scrap:record" />
+      {/* ── แถบควบคุม ── */}
+      {/* UI-STANDARD 2026-09-24: ตัวกรองของหน้าเป็น children ของ TimeRangeBar = แถบเดียว (เดิมแยก 2 ชั้น) */}
+      <TimeRangeBar
+        scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
+        onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 14 }}
+      >
+        {/* เลือกถัง = ตัวเลือก 2 ตัวที่เท่ากัน ⇒ Segmented อยู่ในแถบเดียว (เดิมเป็นแถวปุ่มแยกเหนือแถบกรอง) · สีถัง = ความหมาย */}
+        <Segmented label="ถัง" value={bin} onChange={setBin}
+          options={BINS.map(b => ({ value: b.key, label: b.label, color: b.color }))} />
+        <LineSelect lines={lineObjs} value={lineFilter} onChange={setLineFilter} placeholder={ALL.line} />
+        <SearchInput value={search} onChange={setSearch} fields="ชิ้นงาน / สาเหตุ / ผู้แจ้ง" />
+        {/* ⏱️ ของค้างเกินอายุแท็ก — ปุ่มโผล่เฉพาะเมื่อมีของค้างจริง (ปุ่มที่กดแล้วว่างเปล่าเสมอ = คนเลิกกด)
+            ไม่กระพริบ: เป็นงานค้าง ไม่ใช่ alarm (Andon convention) */}
+        {overdueCount > 0 && (
+          <button onClick={() => setOverdueOnly(v => !v)}
+            title={`ของในถังที่เลยอายุแท็กตาม WI-PD3-087 §5.6 (🟡 ${TAG_MAX_DAYS.yellow} วัน · 🔴 ${TAG_MAX_DAYS.red} วัน) และยังไม่ถูกจัดการ`}
+            style={{ padding: '7px 13px', borderRadius: 6, fontSize: 12.5, fontWeight: 800, cursor: 'pointer',
+              border: '1px solid #f97316', whiteSpace: 'nowrap',
+              background: overdueOnly ? '#f97316' : 'transparent', color: overdueOnly ? '#2a1204' : '#f97316' }}>
+            ⏱ เกินอายุแท็ก {overdueCount}
+          </button>
+        )}
+        <span className="spacer" />
+        {canRecord && <button onClick={openNew} style={{ padding: '8px 18px', borderRadius: 6, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>+ บันทึกรายการ</button>}
+        <button onClick={doPrint} style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>พิมพ์ใบ {B.short}</button>
+        <button onClick={() => setShowWiReg(v => !v)}
+          title="ทะเบียน QRs ↔ WI การซ่อม ตาม WI-PD3-069 §6 — อาการไหนซ่อมตาม WI เล่มไหน"
+          style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid var(--border)', background: showWiReg ? 'var(--bg2)' : 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+          ทะเบียน WI ซ่อม
+        </button>
+      </TimeRangeBar>
+
+      {/* 🟡 คิวรอพิจารณา — แผงเดียวกันทั้ง 2 หน้า (ของหลักอยู่ฝ่ายผลิต · /qa เห็นแค่คิวนี้)
+          🔴 โหมดคิวโชว์เสมอ: ว่างต้องเขียนว่า "ไม่มีของค้าง" ห้ามซ่อนแผงทิ้ง (กฎความซื่อสัตย์ของจอ) */}
+      {(queueOnly || (isY && (pendErr || pendRows.length > 0))) && renderPendQueue()}
 
       <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 8 }}>
         {loading ? 'กำลังโหลด…' : `${filtered.length} รายการ · รวม ${totalQty.toLocaleString('th-TH')} ชิ้น`}
