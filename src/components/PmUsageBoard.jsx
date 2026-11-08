@@ -226,6 +226,8 @@ export default function PmUsageBoard({ daily = [], lines = [], plans = [], today
                                       {isDie && accum == null && <div style={{ fontSize: 11, color: 'var(--accent2)' }}>ผูก MAT ให้ชุดแม่พิมพ์ที่ <Link to="/equipment?tab=die" style={{ color: 'var(--accent)' }}>ทะเบียนแม่พิมพ์</Link> ก่อน</div>}
                                       {isDie && accum != null && du.noMatSets.length > 0 && <div style={{ fontSize: 11, color: 'var(--accent2)' }}>≥ ยอดนี้ — ชุดที่ใช้ร่วมยังไม่ผูก MAT: {du.noMatSets.join(', ')}</div>}
                                       {isDie && accum != null && shots == null && du.why.length > 0 && <div style={{ fontSize: 11, color: 'var(--accent2)' }}>คิดเป็น shot ไม่ได้: {du.why.join(' · ')}</div>}
+                                      {/* user 08/11: ชิ้น/shot ที่ยังไม่กรอก นับเป็น 1 ไปก่อน — ต้องบอกว่าสมมติ (ไม่ใช่ค่าจริง · ไม่ได้เขียนลงฐาน) */}
+                                      {isDie && shots != null && du.assumed.length > 0 && <div style={{ fontSize: 11, color: 'var(--accent2)' }} title={du.assumed.join(' · ')}>สมมติ 1 ชิ้น/shot ({du.assumed.length} ช่องยังไม่กรอก) — กรอกที่ทะเบียนแม่พิมพ์ให้ตัวเลขถูก</div>}
                                       {isDie && shots != null && du.legacy && <div style={{ fontSize: 11, color: 'var(--muted)' }}>คิดจาก ชิ้น/shot (ยังไม่กรอกชิ้นเข้า-ออกราย OP = ถือว่าไม่มีการตัดแยก)</div>}
                                     </td>
                                     <td style={{ padding: '5px 8px', fontFamily: 'monospace', color: thr ? 'var(--text2)' : 'var(--muted)' }}>{thr ? N(thr) : 'ยังไม่ตั้ง'}</td>

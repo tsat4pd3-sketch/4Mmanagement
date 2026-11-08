@@ -3,7 +3,7 @@
    1. 🔴 ตัวอย่าง user: ไลน์ผลิต A100 B100 — แม่พิมพ์ของ A ต้องได้ 100 ไม่ใช่ 200
    2. ชุดไม่ผูก MAT = null (นับไม่ได้) ห้ามคืน 0 ห้ามถอยไปยอดไลน์
    3. separate LH/RH: OP10/20 (1→1) · OP30 (1→2) ผลิต 2,000 ชิ้น = ทุก OP 1,000 shot
-   4. chain ข้อมูลไม่ครบ = null + บอกเหตุผล (ห้ามเดา ratio = 1)
+   4. ชิ้น/shot ที่ไม่กรอก = นับ 1 ไปก่อน (user 08/11) แต่ต้องคืนใน assumed ให้จอบอก · ไม่รู้เลข OP ยัง null
    5. legacy (ไม่มีใครกรอกชิ้นเข้า) = พฤติกรรมเดิม finished ÷ ชิ้น/shot
    6. common die: แม่พิมพ์ที่ 2 ชุดใช้ร่วม = shot รวมทั้ง 2 ชุด */
 import { test } from 'node:test';
@@ -62,30 +62,33 @@ test('progressive จากม้วน OP แรก (coil) แล้วตั�
   assert.equal(dieUsage('p20', [{ set, members }], rows).shots, 1000);
 });
 
-test('chain ไม่ครบ = null + เหตุผล (ห้ามเดา ratio = 1)', () => {
+test('chain — ช่องที่ไม่กรอก นับเป็น 1 ชิ้น/shot (user 08/11) + บอกว่าสมมติ', () => {
   const set = { set_code: 'S', mat_no: 'LH', mat_no_2: 'RH', pieces_per_stroke: 2 };
   const o10 = die('o10', { pieces_in_per_stroke: 1, pieces_per_stroke: 1 });
-  const o30 = die('o30', {});                       // OP หลังยังไม่กรอก
+  const o30 = die('o30', {});                       // OP หลังยังไม่กรอก ⇒ 1→1
   const members = [mem(o10, 10), mem(o30, 30)];
   const f = opShotFactor(members, 'o10', set);
-  assert.equal(f.factor, null);
-  assert.equal(f.mode, 'chain');
-  assert.match(f.why, /OP30/);
+  assert.equal(f.factor, 1);
+  assert.deepEqual(f.assumed, ['OP30 ชิ้นเข้า', 'OP30 ชิ้นออก']);
   const u = dieUsage('o10', [{ set, members }], rows);
-  assert.equal(u.pieces, 2000);                     // ชิ้นยังรู้
-  assert.equal(u.shots, null);                      // shot ไม่รู้
-  // ลำดับ OP ไม่รู้ = คิดย้อนไม่ได้
+  assert.equal(u.shots, 2000);
+  assert.deepEqual(u.assumed, ['S: OP30 ชิ้นเข้า', 'S: OP30 ชิ้นออก']);
+  // กรอกครบ = ไม่มีช่องสมมติ
+  assert.deepEqual(opShotFactor([mem(o10, 10)], 'o10', set).assumed, []);
+  // 🔴 ไม่รู้เลข OP = คิดย้อนไม่ได้ ยังเป็น null (ไม่ใช่เรื่องชิ้น/shot)
   assert.equal(opShotFactor([mem(o10, 10), mem(o30, null)], 'o10', set).factor, null);
 });
 
-test('legacy (ไม่มีใครกรอกชิ้นเข้า) = พฤติกรรมเดิม ชิ้น ÷ ชิ้น/shot ของชุด', () => {
+test('legacy (ไม่มีใครกรอกชิ้นเข้า) = ชิ้น ÷ ชิ้น/shot ของชุด · ไม่กรอกเลย = นับ 1 + บอกว่าสมมติ', () => {
   const set = { set_code: 'L', mat_no: 'LH', mat_no_2: 'RH', pieces_per_stroke: 2 };
   const members = [mem(die('a'), 10), mem(die('b'), 20)];
   const u = dieUsage('a', [{ set, members }], rows);
   assert.equal(u.shots, 1000);
   assert.equal(u.legacy, true);
-  // ไม่รู้ชิ้น/shot เลย = null (ห้ามเดาเป็น 1)
-  assert.equal(dieUsage('a', [{ set: { ...set, pieces_per_stroke: null }, members }], rows).shots, null);
+  assert.deepEqual(u.assumed, []);
+  const n = dieUsage('a', [{ set: { ...set, pieces_per_stroke: null }, members }], rows);
+  assert.equal(n.shots, 2000);                      // นับ 1 ชิ้น/shot ไปก่อน
+  assert.deepEqual(n.assumed, ['L: OP10 ชิ้น/shot']);
 });
 
 test('common die — ใช้ร่วม 2 ชุด = shot รวม', () => {
