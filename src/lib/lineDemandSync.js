@@ -20,6 +20,7 @@ import { can } from '../utils/permissions';
 import { loadStorageLocations } from '../utils/useStorageLocations';
 import { loadProductionLines } from '../utils/useProductionLines';
 import { areaLinesOf } from '../utils/storageLoc';
+import { opInputsOf, parentKidsAfterOps } from '../utils/opInputs';
 
 const key = (s) => String(s ?? '').trim();
 
@@ -46,7 +47,7 @@ export async function loadArea(lineName) {
  */
 export async function loadOpenOrderDemand(lineNames, products = null) {
   const ls = [...new Set((Array.isArray(lineNames) ? lineNames : [lineNames]).map(key).filter(Boolean))];
-  const out = { need: new Map(), made: new Set(), orders: 0, noBom: [] };
+  const out = { need: new Map(), made: new Set(), orders: 0, noBom: [], opUnset: [] };
   if (!ls.length) return { ...out, error: 'ไม่รู้ไลน์' };
   const [ordRes, prods] = await Promise.all([
     fetchAllPages(() => supabaseDR.from('prod_orders')
@@ -62,24 +63,54 @@ export async function loadOpenOrderDemand(lineNames, products = null) {
     const m = key(o.mat_no); const q = Number(o.qty) || 0;
     if (m && q > 0) qtyByFg.set(m, (qtyByFg.get(m) || 0) + q);
   }
+  /* 🔩 08/11 — ขั้น OP: ของที่กิน = BOM ของขั้นเอง → ยังไม่ผูก+แม่มีลูกตัวเดียว = ลูกตัวนั้น → ไม่งั้น `opUnset` (เตือน ไม่เดา)
+     ใบแม่ = ลูก BOM SAP หักของที่ขั้น OP ของมันกินแล้ว · ลูกที่เป็นแถวขั้น OP = ของที่ทำในพื้นที่ ไม่เบิก (เหมือน trigger ตอนตัด) */
+  const prodOf = new Map((prods || []).filter(p => p?.is_active !== false).map(p => [key(p.mat_no), p]));
+  const isOp = (m) => !!prodOf.get(key(m))?.is_operation;
+  const opsOf = new Map();   // แม่ → [ขั้น OP]
+  (prods || []).forEach(p => {
+    if (p?.is_active === false || !p?.is_operation || !key(p.op_parent_mat)) return;
+    const par = key(p.op_parent_mat);
+    opsOf.set(par, [...(opsOf.get(par) || []), key(p.mat_no)]);
+  });
   const fgs = [...qtyByFg.keys()];
-  const bomRes = await Promise.all(fgs.map(fg => supabaseDR.rpc('fn_bom_direct_demand', { p_fg_mat: fg })));
+  const want = new Set(fgs);
+  fgs.forEach(fg => {
+    if (isOp(fg)) { const par = key(prodOf.get(fg)?.op_parent_mat); if (par) want.add(par); }
+    else (opsOf.get(fg) || []).forEach(op => want.add(op));
+  });
+  const mats = [...want];
+  const bomRes = await Promise.all(mats.map(m => supabaseDR.rpc('fn_bom_direct_demand', { p_fg_mat: m })));
   const bomErr = bomRes.find(r => r.error);
   if (bomErr) return { ...out, made, error: `แตก BOM ไม่ได้ (${bomErr.error.message})` };
+  const kidsOf = new Map(mats.map((m, i) => [m, bomRes[i].data || []]));
   const need = new Map();
   const noBom = [];
-  fgs.forEach((fg, i) => {
-    const kids = bomRes[i].data || [];
-    if (!kids.length) noBom.push({ mat_no: fg, qty: qtyByFg.get(fg) });
+  const opUnset = [];
+  fgs.forEach(fg => {
+    const qty = qtyByFg.get(fg);
+    let kids;
+    if (isOp(fg)) {
+      const par = key(prodOf.get(fg)?.op_parent_mat);
+      const parentKids = par ? (kidsOf.get(par) || []) : [];
+      const r = opInputsOf({ ownKids: kidsOf.get(fg) || [], parentKids });
+      if (r.via === 'unset') { opUnset.push({ mat_no: fg, parent: par || null, parentKids: parentKids.length, qty }); return; }
+      kids = r.kids;
+    } else {
+      const own = kidsOf.get(fg) || [];
+      if (!own.length) { noBom.push({ mat_no: fg, qty }); return; }
+      const eaten = (opsOf.get(fg) || []).map(op => opInputsOf({ ownKids: kidsOf.get(op) || [], parentKids: own }).kids);
+      kids = parentKidsAfterOps(own, eaten);
+    }
     kids.forEach(k => {
-      const m = key(k.mat_no); const q = qtyByFg.get(fg) * (Number(k.qty_per_unit) || 0);
-      if (!m || !(q > 0) || made.has(m)) return;
+      const m = key(k.mat_no); const q = qty * (Number(k.qty_per_unit) || 0);
+      if (!m || !(q > 0) || made.has(m) || isOp(m)) return;
       const cur = need.get(m) || { need: 0, part_name: k.part_name || null };
       cur.need += q; cur.part_name = cur.part_name || k.part_name || null;
       need.set(m, cur);
     });
   });
-  return { need, made, orders: (ordRes.rows || []).length, noBom };
+  return { need, made, orders: (ordRes.rows || []).length, noBom, opUnset };
 }
 
 /**
@@ -115,8 +146,8 @@ export async function confirmAndSyncLineDemand({ lineName, role, extra = [], tit
   const dry = await syncLineOrderDemand({ lineName, role, extra, dryRun: true });
   if (dry.error) return dry;
   /* ไม่มีอะไรต้องคิด: ไม่มีใบผลิต = เงียบได้ · ใบผลิตไม่มี BOM = ต้องบอก (แตกไม่ได้ ไม่ใช่ "ของพอ") */
-  if (!dry.rows.length && !dry.noBom?.length) return dry;
-  const { text, sendCount } = planConfirmText(dry.rows, { title, focus, area: dry.area, noBom: dry.noBom });
+  if (!dry.rows.length && !dry.noBom?.length && !dry.opUnset?.length) return dry;
+  const { text, sendCount } = planConfirmText(dry.rows, { title, focus, area: dry.area, noBom: dry.noBom, opUnset: dry.opUnset });
   if (!sendCount) { alertFn(text); return { ...dry, nothingToSend: true }; }
   if (!confirmFn(text)) return { ...dry, cancelled: true };
   return syncLineOrderDemand({ lineName, role, extra });
@@ -143,7 +174,7 @@ export async function syncLineOrderDemand({ lineName, role, extra = [], dryRun =
   // 1-2) ใบผลิตที่เปิดอยู่ (ทั้งพื้นที่) → แตก BOM ลูกตรง (ชุดเดียวกับตอนตัดสต็อก)
   const od = await loadOpenOrderDemand(areaLines);
   if (od.error) return { ...empty, area, error: od.error };
-  empty.area = area; empty.orders = od.orders; empty.noBom = od.noBom;
+  empty.area = area; empty.orders = od.orders; empty.noBom = od.noBom; empty.opUnset = od.opUnset;
   const made = od.made;
   const need = new Map();   // mat → { need, part_name, fromOrders, direct }
   const add = (mat, q, name, fromOrders, direct = false) => {
@@ -191,7 +222,7 @@ export async function syncLineOrderDemand({ lineName, role, extra = [], dryRun =
       pendPickQty: Number(p?.pick?.request_qty) || 0, pendPickLine: p?.pick?.line_name || null,
       ...planLineRequest({ need: n.need, onHand: onHand.get(m) ?? 0, pendingQty: p?.sum, pkg: pkgOf.get(m), coil: coil.has(m) }), uom: coil.has(m) ? 'KG' : null };
   });
-  const res = { rows, inserted: 0, raised: 0, dup: 0, writeErrors: [], area, orders: od.orders, noBom: od.noBom };
+  const res = { rows, inserted: 0, raised: 0, dup: 0, writeErrors: [], area, orders: od.orders, noBom: od.noBom, opUnset: od.opUnset };
   if (dryRun) return res;
   const who = getActor();
   for (const r of rows) {
@@ -229,5 +260,6 @@ export function syncSummaryText(r) {
   if (noPkg.length) parts.push(`${noPkg.length} พาร์ทยังไม่ตั้ง packing std (${noPkg.slice(0, 3).map(x => x.mat_no).join(', ')}${noPkg.length > 3 ? '…' : ''}) — ไม่ได้แจ้ง`);
   if (r.writeErrors.length) parts.push(`เขียนไม่สำเร็จ ${r.writeErrors.length}: ${r.writeErrors[0]}`);
   if (r.noBom?.length) parts.push(`${r.noBom.length} ใบผลิตไม่มีลูกใน BOM (${r.noBom.slice(0, 3).map(x => x.mat_no).join(', ')}) — แตกไม่ได้ แจ้ง PE ตั้ง BOM`);
+  if (r.opUnset?.length) parts.push(`${r.opUnset.length} ใบขั้น OP ยังไม่ได้ผูกว่ากินอะไร (${r.opUnset.slice(0, 3).map(x => x.mat_no).join(', ')}) — ตั้งที่ /products แท็บ BOM ใบของแม่ → แผง 🔩 ขั้น OP`);
   return parts.join(' · ') || (r.orders === 0 ? 'ไม่มีใบผลิตเปิดอยู่ในพื้นที่นี้' : 'ของในพื้นที่พอ — ไม่ต้องเบิก');
 }
