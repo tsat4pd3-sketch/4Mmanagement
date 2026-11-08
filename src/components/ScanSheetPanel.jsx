@@ -80,7 +80,7 @@ export default function ScanSheetPanel({ lines, canPrint }) {
     const mine = rows.filter(t => typeFitsLine(t, pts));
     const others = rows.filter(t => !typeFitsLine(t, pts));
     const box = (t) => (
-      <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 7, border: '1px solid var(--border)', background: picks.has(String(t.id)) ? 'var(--accent-dim)' : 'var(--bg2)', cursor: 'pointer', fontSize: 13 }}>
+      <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: picks.has(String(t.id)) ? 'var(--accent-dim)' : 'var(--bg2)', cursor: 'pointer', fontSize: 13 }}>
         <input type="checkbox" checked={picks.has(String(t.id))} onChange={() => flip(setPicks)(String(t.id))} />
         <span style={{ minWidth: 0 }}>{t.name_th}{t.category === 'planned' && <span style={{ color: 'var(--muted)', fontSize: 11 }}> · ในแผน</span>}</span>
       </label>

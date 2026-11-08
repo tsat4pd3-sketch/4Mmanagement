@@ -207,7 +207,7 @@ function CellInput({ value, onCommit, disabled }) {
       onChange={e => setV(e.target.value)}
       onBlur={() => onCommit(v.trim())}
       onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
-      style={{ width: 64, padding: '3px 5px', fontSize: 12, textAlign: 'right', borderRadius: 6,
+      style={{ width: 64, padding: '3px 5px', fontSize: 12, textAlign: 'right', borderRadius: 'var(--ctl-r)',
         background: disabled ? 'transparent' : 'var(--bg2)', border: disabled ? '1px solid transparent' : '1px solid var(--border)',
         color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}
     />

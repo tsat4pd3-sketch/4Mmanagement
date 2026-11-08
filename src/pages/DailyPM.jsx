@@ -481,7 +481,7 @@ export default function DailyPM() {
                         const canToggle = canManage && (!noLine || on)
                         return (
                           <label key={j.id} title={`${j.name}${j.machine_no ? ` · ${j.machine_no}` : ''}${j.jig_no ? ` · ${j.jig_no}` : ''}`} style={{
-                            display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 10px', borderRadius: 8, cursor: canToggle ? 'pointer' : 'default',
+                            display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 10px', borderRadius: 'var(--r-md)', cursor: canToggle ? 'pointer' : 'default',
                             border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`, background: on ? 'var(--accent-dim)' : 'var(--bg3)',
                           }}>
                             {/* width/height กันเหนียวซ้ำกับ rule กลาง input[type=checkbox]{width:auto} — global width:100% เคยยืด checkbox จนบีบชื่อหาย */}

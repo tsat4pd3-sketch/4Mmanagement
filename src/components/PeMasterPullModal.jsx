@@ -43,7 +43,7 @@ export default function PeMasterPullModal({ procs, fmea, masters, masterItems, i
             {rows.map(r => {
               const on = !picked || picked.has(r.master_item_id);
               return (
-                <label key={r.master_item_id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 8, background: on ? 'var(--bg2)' : 'transparent', cursor: 'pointer' }}>
+                <label key={r.master_item_id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '6px 8px', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', background: on ? 'var(--bg2)' : 'transparent', cursor: 'pointer' }}>
                   <input type="checkbox" checked={on} onChange={e => setPicked(prev => { const n = new Set(prev || rows.map(x => x.master_item_id)); e.target.checked ? n.add(r.master_item_id) : n.delete(r.master_item_id); return n; })} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>

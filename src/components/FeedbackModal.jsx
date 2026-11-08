@@ -323,7 +323,7 @@ export default function FeedbackModal({ onClose }) {
 
               <textarea value={msg} onChange={e => setMsg(e.target.value)} rows={6} autoFocus
                 placeholder={'เล่าให้ฟังได้เลยครับ เช่น\n• เลเซอร์ลงดาวน์ไทม์ ไม่มีให้เลือกชิ้นงาน\n• ชื่อสินค้า 2 ตัวเหมือนกัน เลือกผิดใบได้\n• อยากให้เพิ่ม...'}
-                style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: 10, color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }} />
+                style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--ctl-r)', padding: 10, color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }} />
 
               {/* 📎 แนบรูปหน้าจอ — วางไว้ "ติดใต้ช่องพิมพ์" ให้เห็นตอนกำลังเล่าปัญหา
                   ไม่ใช่ท้ายฟอร์ม (บทเรียนจากรูปก่อนซ่อมใน /mtn-repair: ช่องอยู่ล่างสุด คนใส่แค่ 25%) */}
@@ -429,7 +429,7 @@ export default function FeedbackModal({ onClose }) {
                           <textarea rows={2} value={noteDraft[r.id] ?? r.admin_note ?? ''}
                             onChange={e => setNoteDraft(d => ({ ...d, [r.id]: e.target.value }))}
                             placeholder="ตอบผู้แจ้ง (เขาจะเห็นในกล่องนี้ + เด้งกระดิ่งให้)"
-                            style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7,
+                            style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--ctl-r)',
                               padding: '6px 8px', color: 'var(--text)', fontSize: 12, fontFamily: 'inherit', resize: 'vertical' }} />
                           <button onClick={() => saveNote(r)} disabled={savingNote === r.id || !(noteDraft[r.id] ?? r.admin_note ?? '').trim()}
                             style={{ marginTop: 4, fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 'var(--r-md)', border: 'none',

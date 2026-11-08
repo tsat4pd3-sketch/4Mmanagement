@@ -4138,7 +4138,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           <input type="number" min={0} inputMode="numeric" value={manualQtyDraft[o.id] ?? ''}
                             placeholder={`${o.qty_actual || 0}`}
                             onChange={e => setManualQtyDraft(d => ({ ...d, [o.id]: e.target.value }))}
-                            style={{ width: 100, padding: '6px 10px', fontSize: 13, fontWeight: 700, borderRadius: 7, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                            style={{ width: 100, padding: '6px 10px', fontSize: 13, fontWeight: 700, borderRadius: 'var(--ctl-r)', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
                           <button onClick={() => handleManualQtyUpdate(o)}
                             style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '6px 14px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
                             อัพเดทยอด
@@ -4630,7 +4630,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 onChange={e => setProblemSheet(v => ({ ...v, title: e.target.value }))}
                 onKeyDown={e => { if (e.key === 'Enter') doPrint(); }}
                 placeholder="เว้นว่างได้ ถ้าจะเขียนมือบนกระดาษ"
-                style={{ width: '100%', marginTop: 6, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                style={{ width: '100%', marginTop: 6, padding: '10px 12px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }} />
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, marginBottom: 14, lineHeight: 1.6 }}>
                 ระบบเสนอจากรายการที่กินเวลา/จำนวนมากสุดของกะนี้ — แก้ทับหรือล้างทิ้งได้ ช่องอื่นในใบดึงจากที่บันทึกไว้แล้วอัตโนมัติ
                 <br />📌 กดแล้วระบบ <b>ออกเลขที่ใบและเก็บเนื้อใบไว้</b> (FM-PD1-019 เก็บ 1 ปี) — พิมพ์ซ้ำใบเดิมได้ที่แท็บ 📋 ประวัติ ไม่ต้องเก็บกระดาษเอง
@@ -4657,7 +4657,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>ระบุสิ่งที่ต้องกลับไปแก้ไข (remark) *</label>
               <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} autoFocus rows={4}
                 placeholder="เช่น ยอด NG ไม่ตรงกับที่บันทึก / ลืมปิด Downtime เครื่อง / เวลาปิดกะผิด — หัวหน้ากลุ่มจะเห็นข้อความนี้"
-                style={{ width: '100%', marginTop: 6, marginBottom: 14, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }} />
+                style={{ width: '100%', marginTop: 6, marginBottom: 14, padding: '10px 12px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }} />
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button onClick={() => { setShowRejectModal(false); setRejectReason(''); }} style={cancelBtnStyle}>ยกเลิก</button>
                 <button onClick={handleRejectClose} disabled={savingReject || !rejectReason.trim()}
@@ -4964,7 +4964,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   <button onClick={() => { setShowApproveReview(false); setRejectReason(''); setShowRejectModal(true); }} style={{ ...cancelBtnStyle, borderColor: 'var(--red)', color: 'var(--red)', fontWeight: 700 }}>ปฏิเสธ</button>
                   <input type="text" value={approveNote} onChange={e => setApproveNote(e.target.value)}
                     placeholder="หมายเหตุผู้อนุมัติ (ไม่บังคับ) — เช่น ข้อสังเกต/สิ่งที่ให้ไปแก้กะหน้า"
-                    style={{ flex: '1 1 260px', fontSize: 12, padding: '8px 10px', borderRadius: 8 }} />
+                    style={{ flex: '1 1 260px', fontSize: 12, padding: '8px 10px', borderRadius: 'var(--ctl-r)' }} />
                   <button onClick={() => { setShowApproveReview(false); handleApproveClose(); }} style={{ ...saveBtnStyle, background: 'var(--green)', fontWeight: 700 }}>ยืนยันอนุมัติ</button>
                 </div>
               </div>
@@ -5594,7 +5594,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   </div>
                   <textarea value={closeNote} onChange={e => setCloseNote(e.target.value)} rows={2}
                     placeholder="เช่น ยอดไม่ถึงเป้าเพราะรอ material ตั้งแต่ 14:00 · เครื่องเสียช่วงบ่าย รอช่าง"
-                    style={{ width: '100%', padding: '8px 10px', fontSize: 12.5, borderRadius: 8, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', resize: 'vertical', fontFamily: 'inherit' }} />
+                    style={{ width: '100%', padding: '8px 10px', fontSize: 12.5, borderRadius: 'var(--ctl-r)', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', resize: 'vertical', fontFamily: 'inherit' }} />
                 </div>
 
                 <div className={isMobile ? 'm-modalfoot' : undefined} style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
@@ -5808,7 +5808,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     onKeyDown={e => { if (e.key === 'Enter') handleManualOpen(); }} />
                 </Field>
                 {/* เปิดย้อนหลัง — กติกา/หน้าตาเดียวกับใบสแกน (ลืมเปิดเป้าตอนต้นกะ เริ่มผลิตไปแล้ว) */}
-                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 12px', background: manualForm.is_backfill ? 'var(--bg3)' : 'var(--bg3)', border: `1px solid ${manualForm.is_backfill ? 'var(--border2)' : 'var(--bg3)'}`, borderRadius: 8 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 12px', background: manualForm.is_backfill ? 'var(--bg3)' : 'var(--bg3)', border: `1px solid ${manualForm.is_backfill ? 'var(--border2)' : 'var(--bg3)'}`, borderRadius: 'var(--r-md)' }}>
                   <input type="checkbox" checked={manualForm.is_backfill}
                     onChange={e => setManualForm(f => ({ ...f, is_backfill: e.target.checked, backfill_time: e.target.checked ? (f.backfill_time || guessBackfillTime()) : '' }))}
                     style={{ width: 16, height: 16, flexShrink: 0 }} />
@@ -6033,7 +6033,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               </div>
 
               {/* Backfill toggle */}
-              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 12px', marginTop: 10, background: openProdForm.is_backfill ? 'var(--bg3)' : 'var(--bg3)', border: `1px solid ${openProdForm.is_backfill ? 'var(--border2)' : 'var(--bg3)'}`, borderRadius: 8 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 12px', marginTop: 10, background: openProdForm.is_backfill ? 'var(--bg3)' : 'var(--bg3)', border: `1px solid ${openProdForm.is_backfill ? 'var(--border2)' : 'var(--bg3)'}`, borderRadius: 'var(--r-md)' }}>
                 <input type="checkbox" checked={openProdForm.is_backfill}
                   onChange={e => setOpenProdForm(f => ({ ...f, is_backfill: e.target.checked, backfill_time: e.target.checked ? (f.backfill_time || guessBackfillTime()) : '' }))}
                   style={{ width: 16, height: 16, cursor: 'pointer' }} />
@@ -7617,7 +7617,7 @@ function HistoryTab({ role }) {
                 onChange={e => setHistSheet(v => ({ ...v, title: e.target.value }))}
                 onKeyDown={e => { if (e.key === 'Enter') doPrint(); }}
                 placeholder="เว้นว่างได้ ถ้าจะเขียนมือบนกระดาษ"
-                style={{ width: '100%', marginTop: 6, padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                style={{ width: '100%', marginTop: 6, padding: '10px 12px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }} />
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, marginBottom: 14, lineHeight: 1.6 }}>
                 ออกใหม่ได้ทุกเมื่อ — ดึงจาก downtime/ของเสียที่บันทึกไว้ของกะนี้ <b>ไม่ต้องเซฟไฟล์เก็บเอง</b>
                 <br />📌 ระบบ <b>ออกเลขที่ใบและเก็บเนื้อใบไว้</b> (FM-PD1-019 เก็บ 1 ปี) — ครั้งต่อไปกดปุ่ม 🧾 เลขที่ใบ เพื่อพิมพ์ใบเดิมซ้ำ
@@ -8346,7 +8346,7 @@ function DefectTypeSetup({ role }) {
               <Field label="สี">
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input type="color" value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))}
-                    style={{ width: 44, height: 36, borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer', background: 'none' }} />
+                    style={{ width: 44, height: 36, borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', cursor: 'pointer', background: 'none' }} />
                   <input value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} placeholder="var(--red)" style={{ ...inputStyle, flex: 1 }} />
                 </div>
               </Field>
@@ -9371,7 +9371,7 @@ function DowntimeTypeSetup({ role }) {
               <Field label="สี">
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input type="color" value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))}
-                    style={{ width: 44, height: 36, borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer', background: 'none' }} />
+                    style={{ width: 44, height: 36, borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', cursor: 'pointer', background: 'none' }} />
                   <input value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} placeholder="var(--red)" style={{ ...inputStyle, flex: 1 }} />
                 </div>
               </Field>

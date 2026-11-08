@@ -215,7 +215,7 @@ export default function MonthlyReviewExport({ onClose }) {
             <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               {MODES.map(m => (
                 <label key={m.key} style={{
-                  display: 'block', cursor: 'pointer', padding: '9px 11px', borderRadius: 10,
+                  display: 'block', cursor: 'pointer', padding: '9px 11px', borderRadius: 'var(--r-md)',
                   border: `1px solid ${mode === m.key ? 'var(--accent)' : 'var(--border)'}`,
                   background: mode === m.key ? 'rgba(0,0,0,0.12)' : 'none',
                 }}>
@@ -289,7 +289,7 @@ export default function MonthlyReviewExport({ onClose }) {
                             )}
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingLeft: g.lines.length > 1 ? 20 : 0, marginTop: 4 }}>
                               {g.lines.map(l => (
-                                <label key={l} style={{ ...rowSt, fontSize: 12, padding: '3px 9px', borderRadius: 7, border: `1px solid ${selLines.has(l) ? 'var(--accent)' : 'var(--border)'}`, color: selLines.has(l) ? 'var(--accent)' : 'var(--muted)' }}>
+                                <label key={l} style={{ ...rowSt, fontSize: 12, padding: '3px 9px', borderRadius: 'var(--r-md)', border: `1px solid ${selLines.has(l) ? 'var(--accent)' : 'var(--border)'}`, color: selLines.has(l) ? 'var(--accent)' : 'var(--muted)' }}>
                                   <input type="checkbox" checked={selLines.has(l)} onChange={() => toggleLines([l])} />
                                   {l}
                                 </label>

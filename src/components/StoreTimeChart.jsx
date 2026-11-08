@@ -881,7 +881,7 @@ export default function StoreTimeChart({
                                     title={picked.sameSloc
                                       ? `ทุกไลน์ในกลุ่มอยู่พื้นที่ SAP ${picked.sloc} เดียวกัน — ระบบเลือกไลน์แรกให้ · เปลี่ยนได้ถ้ารู้ว่าต้องวางหน้าไลน์ไหน`
                                       : 'หลายไลน์ย่อยกินพาร์ทนี้ (คนละพื้นที่ SAP) — เลือกไลน์ที่จะไปวางของ'}
-                                    style={{ width: 'auto', fontSize: 11, padding: '1px 4px', borderRadius: 6, border: `1px solid ${picked.sameSloc ? 'rgba(34,197,94,0.5)' : 'rgba(245,158,11,0.7)'}`, background: 'var(--bg2)', color: picked.sameSloc ? 'var(--accent)' : '#f59e0b' }}>
+                                    style={{ width: 'auto', fontSize: 11, padding: '1px 4px', borderRadius: 'var(--ctl-r)', border: `1px solid ${picked.sameSloc ? 'rgba(34,197,94,0.5)' : 'rgba(245,158,11,0.7)'}`, background: 'var(--bg2)', color: picked.sameSloc ? 'var(--accent)' : '#f59e0b' }}>
                                     {picked.lines.map(ln => { const c = slocOf(ln); return <option key={ln} value={ln}>➜ {c ? `${c} · ` : ''}{ln}</option>; })}
                                   </select>
                                 : <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700, whiteSpace: 'nowrap' }}

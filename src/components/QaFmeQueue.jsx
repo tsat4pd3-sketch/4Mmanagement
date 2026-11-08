@@ -403,7 +403,7 @@ function Num({ label, value, onSave, min = 0, step }) {
       {label}
       <input type="number" min={min} step={step || 1} value={v} onChange={e => setV(e.target.value)}
         onBlur={commit}
-        style={{ width: 90, padding: '5px 8px', borderRadius: 6, fontSize: 12.5 }} />
+        style={{ width: 90, padding: '5px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12.5 }} />
     </label>
   );
 }

@@ -119,7 +119,7 @@ export default function NotifyPrefsModal({ role, onClose }) {
                     const working = busy === r.event_key;
                     return (
                       <label key={r.event_key} title={r.locked ? 'เรื่องนี้เป็นงานที่รอคุณ — ปิดไม่ได้' : undefined}
-                        style={{ display: 'flex', gap: 9, alignItems: 'flex-start', padding: '6px 9px', borderRadius: 8,
+                        style={{ display: 'flex', gap: 9, alignItems: 'flex-start', padding: '6px 9px', borderRadius: 'var(--r-md)',
                           background: 'var(--bg3)', border: '1px solid var(--border)', cursor: r.locked || working ? 'default' : 'pointer', opacity: working ? 0.6 : 1 }}>
                         <input type="checkbox" checked={!r.locked && !off} disabled={r.locked || working}
                           onChange={e => toggle(r.event_key, !e.target.checked)}

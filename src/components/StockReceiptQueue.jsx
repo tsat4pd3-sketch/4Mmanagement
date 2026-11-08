@@ -163,11 +163,11 @@ export default function StockReceiptQueue() {
                       <input type="number" min="0" inputMode="numeric" value={form.qty} autoFocus
                         onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
                         style={{ display: 'block', width: '100%', marginTop: 4, padding: '8px 10px', fontSize: 15, fontWeight: 800,
-                          borderRadius: 'var(--radius)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', boxSizing: 'border-box' }} />
+                          borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', boxSizing: 'border-box' }} />
                     </label>
                     <input placeholder="เหตุผล (บังคับเมื่อยอดไม่ตรง) เช่น ของเสีย 5 / ยังมาไม่ครบ" value={form.reason}
                       onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
-                      style={{ padding: '8px 10px', fontSize: 13, borderRadius: 'var(--radius)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)' }} />
+                      style={{ padding: '8px 10px', fontSize: 13, borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)' }} />
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button type="button" disabled={busy === r.id} style={storeBtn('primary', { flex: 1 })}
                         onClick={async () => { if (await receive(r, form.qty, form.reason.trim())) setDiffFor(null); }}>

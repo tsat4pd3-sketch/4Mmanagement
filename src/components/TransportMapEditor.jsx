@@ -376,7 +376,7 @@ export default function TransportMapEditor() {
           {mode === 'node' && (
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--text2)' }}>
               ชนิดจุด:
-              <select value={addKind} onChange={e => setAddKind(e.target.value)} style={{ width: 150, padding: '5px 8px', borderRadius: 7, fontSize: 12.5, background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+              <select value={addKind} onChange={e => setAddKind(e.target.value)} style={{ width: 150, padding: '5px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12.5, background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)' }}>
                 {NODE_KINDS.map(n => <option key={n.key} value={n.key}>{n.icon} {n.label}</option>)}
               </select>
             </label>

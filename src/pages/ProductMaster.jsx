@@ -3266,7 +3266,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                                 <input type="checkbox" checked={!!sel.use} style={{ accentColor: 'var(--accent)' }}
                                   onChange={e => setSapPn(m => ({ ...m, [key]: { ...m[key], use: e.target.checked } }))} />
                                 <input value={sel.value} onChange={e => setSapPn(m => ({ ...m, [key]: { ...m[key], value: e.target.value, use: true } }))}
-                                  style={{ flex: 1, minWidth: 0, fontFamily: 'monospace', fontSize: 11.5, padding: '2px 6px', borderRadius: 5,
+                                  style={{ flex: 1, minWidth: 0, fontFamily: 'monospace', fontSize: 11.5, padding: '2px 6px', borderRadius: 'var(--ctl-r)',
                                     border: `1px solid ${hit?.conflict ? 'var(--red)' : 'var(--border)'}`, background: 'var(--bg2)', color: 'var(--text)' }} />
                               </label>
                               <div style={{ fontSize: 11, color: hit?.conflict ? 'var(--red)' : hit?.confidence === 'high' ? 'var(--accent)' : 'var(--amber)', marginTop: 2 }}>

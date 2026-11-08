@@ -1362,7 +1362,7 @@ export default function Checkin() {
                         value={rec.leave_type || ''}
                         onChange={e => setLeaveType(emp.id, e.target.value)}
                         style={{
-                          padding: '5px 8px', borderRadius: 6, fontSize: 12,
+                          padding: '5px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12,
                           border: `1px solid ${hasLeave ? 'var(--blue-line)' : 'var(--border2)'}`,
                           background: hasLeave ? 'var(--blue-dim)' : 'var(--bg3)',
                           color: hasLeave ? 'var(--blue)' : 'var(--text2)',
@@ -1381,7 +1381,7 @@ export default function Checkin() {
                           value={rec.remark || ''}
                           onChange={e => setAttendance(prev => ({ ...prev, [emp.id]: { ...prev[emp.id], remark: e.target.value } }))}
                           style={{
-                            padding: '4px 8px', borderRadius: 6, fontSize: 11,
+                            padding: '4px 8px', borderRadius: 'var(--ctl-r)', fontSize: 11,
                             border: '1px solid var(--blue-line)',
                             background: 'var(--blue-dim)', color: 'var(--text)',
                             width: '100%',
@@ -1442,7 +1442,7 @@ export default function Checkin() {
                             value={rec.leave_hours || ''}
                             onChange={e => setField(emp.id, 'leave_hours', e.target.value)}
                             placeholder="จำนวนชั่วโมง"
-                            style={{ padding: '4px 8px', borderRadius: 5, fontSize: 12, width: '100%' }}
+                            style={{ padding: '4px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12, width: '100%' }}
                           />
                           <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>ชม.</span>
                         </div>
@@ -2025,13 +2025,13 @@ export default function Checkin() {
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>วันที่ทำ OT</label>
                 <input type="date" value={otBookDate}
                   onChange={e => { setOtBookDate(e.target.value); loadOtBookExisting(e.target.value, otBookShift); }}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }} />
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }} />
               </div>
               <div>
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>กะ</label>
                 <select value={otBookShift}
                   onChange={e => { setOtBookShift(e.target.value); loadOtBookExisting(otBookDate, e.target.value); }}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }}>
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }}>
                   <option value="day">กะเช้า</option>
                   <option value="night">กะดึก</option>
                 </select>
@@ -2054,7 +2054,7 @@ export default function Checkin() {
               <div>
                 <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>ทีม</label>
                 <select value={otBookTeam} onChange={e => setOtBookTeam(e.target.value)}
-                  style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }}>
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }}>
                   <option value="">{ALL.team}</option>
                   {orgTeams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
                 </select>
@@ -2087,7 +2087,7 @@ export default function Checkin() {
                       {isHolidayDate(otBookDate) && (
                         <select value={otBookPeriods[emp.id] || ''} onChange={e => setOtBookPeriods(prev => ({ ...prev, [emp.id]: e.target.value }))}
                           title="วันหยุด — เลือกช่วงเวลา OT"
-                          style={{ fontSize: 11, padding: '4px 6px', borderRadius: 6, border: '1px solid var(--amber-line)', background: 'var(--bg)', color: 'var(--amber)', fontWeight: 700, width: 150 }}>
+                          style={{ fontSize: 11, padding: '4px 6px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--amber-line)', background: 'var(--bg)', color: 'var(--amber)', fontWeight: 700, width: 150 }}>
                           <option value="">— ช่วงเวลา OT —</option>
                           {holidayPeriodsForShift(otBookShift).map(p => (
                             <option key={p.value} value={p.value}>{p.hours} ชม. · {p.time}</option>
@@ -2095,7 +2095,7 @@ export default function Checkin() {
                         </select>
                       )}
                       <select value={otBookTasks[emp.id] || ''} onChange={e => setOtBookTasks(prev => ({ ...prev, [emp.id]: e.target.value }))}
-                        style={{ fontSize: 11, padding: '4px 6px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)', width: 150 }}>
+                        style={{ fontSize: 11, padding: '4px 6px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)', width: 150 }}>
                         <option value="">— งานที่ทำ —</option>
                         {taskTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                       </select>
@@ -2127,18 +2127,18 @@ export default function Checkin() {
             </div>
             <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>เดือน</label>
             <input type="month" value={exportMonth} onChange={e => setExportMonth(e.target.value)}
-              style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', marginBottom: 12, background: 'var(--bg)', color: 'var(--text)' }} />
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', marginBottom: 12, background: 'var(--bg)', color: 'var(--text)' }} />
 
             <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>ช่วงครึ่งเดือน</label>
             <select value={exportHalf} onChange={e => setExportHalf(e.target.value)}
-              style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', marginBottom: 12, background: 'var(--bg)', color: 'var(--text)' }}>
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', marginBottom: 12, background: 'var(--bg)', color: 'var(--text)' }}>
               <option value="1-15">วันที่ 1-15</option>
               <option value="16-end">วันที่ 16-สิ้นเดือน</option>
             </select>
 
             <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>ส่วนงาน</label>
             <select value={exportSection} onChange={e => setExportSection(e.target.value)}
-              style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', marginBottom: 18, background: 'var(--bg)', color: 'var(--text)' }}>
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', marginBottom: 18, background: 'var(--bg)', color: 'var(--text)' }}>
               {/* จำกัดตัวเลือกตาม scope — "ทุกส่วนงาน" เฉพาะ user ที่ไม่ถูกจำกัดขอบเขต (query ใน handleExportForms กรอง scope ซ้ำอีกชั้นเสมอ) */}
               <option value="">{ALL.section}</option>
               {(scopeSecs.length ? sections.filter(s => inSectionScope(scopeSecs, s)) : sections)

@@ -1238,7 +1238,7 @@ export default function OrderTrace() {
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
                       <select value={claimFm} onChange={e => setClaimFm(e.target.value)}
-                        style={{ flex: '2 1 320px', minWidth: 0, padding: '7px 10px', fontSize: 13, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', borderRadius: 6 }}>
+                        style={{ flex: '2 1 320px', minWidth: 0, padding: '7px 10px', fontSize: 13, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', borderRadius: 'var(--ctl-r)' }}>
                         <option value="">— เลือกอาการที่ลูกค้าแจ้ง (จาก PFMEA {trace.pe.fmea.length} รายการ) —</option>
                         {trace.pe.fmea.slice().sort((a, b) =>
                           ((b.severity || 0) * (b.occurrence || 0) * (b.detection || 0)) - ((a.severity || 0) * (a.occurrence || 0) * (a.detection || 0))
@@ -1252,7 +1252,7 @@ export default function OrderTrace() {
                       </select>
                       <input value={claimNote} onChange={e => setClaimNote(e.target.value)}
                         placeholder="รายละเอียดที่ลูกค้าแจ้ง เช่น ตำแหน่ง M8 ด้านซ้าย"
-                        style={{ flex: '1 1 220px', minWidth: 0, padding: '7px 10px', fontSize: 13, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', borderRadius: 6 }} />
+                        style={{ flex: '1 1 220px', minWidth: 0, padding: '7px 10px', fontSize: 13, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', borderRadius: 'var(--ctl-r)' }} />
                     </div>
 
                     {!claim ? (

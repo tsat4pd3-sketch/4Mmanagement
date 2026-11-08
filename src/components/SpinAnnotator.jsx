@@ -192,7 +192,7 @@ export default function SpinAnnotator({
             </div>
           )
         })}
-        {!readOnlyFrames && onAddFrames && <label title={subject === 'part' ? 'เพิ่มแผ่น Drawing' : 'เพิ่มรูป'} style={{ width: 46, height: 40, borderRadius: 6, border: '2px dashed var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'default' : 'pointer', color: 'var(--muted)', fontSize: 18, flexShrink: 0 }}>
+        {!readOnlyFrames && onAddFrames && <label title={subject === 'part' ? 'เพิ่มแผ่น Drawing' : 'เพิ่มรูป'} style={{ width: 46, height: 40, borderRadius: 'var(--r-md)', border: '2px dashed var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: busy ? 'default' : 'pointer', color: 'var(--muted)', fontSize: 18, flexShrink: 0 }}>
           <input type="file" accept={acceptPdf ? 'image/*,application/pdf' : 'image/*'} multiple hidden disabled={busy} onChange={async e => {
             const picked = [...(e.target.files || [])];
             e.target.value = '';

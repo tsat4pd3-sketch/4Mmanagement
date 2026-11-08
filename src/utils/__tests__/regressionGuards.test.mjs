@@ -438,6 +438,15 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'control-radius-token',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    /* จับ <input|select|textarea …style={{ … borderRadius: <เลข> …}}> — มุมช่องกรอกต้องเป็น token --ctl-r (วัดจริง 08/11: 126 ช่อง/50 ไฟล์ มี 7 ค่าปน) */
+    re: /<(?:input|select|textarea)\b(?:[^>{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*borderRadius:\s*(?:999|\d{1,2})\b(?!%)/g,
+    why: 'รอบ 3 มุมมาตรฐาน (08/11/2026): ช่องกรอก/select/textarea เคยเขียนมุม 3/4/5/6/7/8/10 ปน — ให้ใช้ token เดียวกับแถบกรอง',
+    fix: "borderRadius: 'var(--ctl-r)' (ค่ากลาง 8px · อ่านจาก :root) หรือไม่ต้องเขียนเลย (global input/select/textarea ใช้ --ctl-r อยู่แล้ว · UI-CONVENTIONS §6.36 ข้อ 0)",
+    allow: {},
+  },
+  {
     id: 'tabs-folded-into-dropdown',
     scan: ['src/components/PageHeader.jsx'], ext: ['.jsx'],
     re: /MAX_TABS|aria-label="แท็บเพิ่มเติม"|tabList\.slice\(/g,

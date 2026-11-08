@@ -558,8 +558,8 @@ function OtMasterDataPanel() {
       <div>
         <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>สายรถรับส่ง</div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          <input placeholder="รหัส เช่น A17" value={newRouteCode} onChange={e => setNewRouteCode(e.target.value)} style={{ width: 70, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
-          <input placeholder="ชื่อสาย เช่น มาบยางพร-ปลวกแดง" value={newRouteName} onChange={e => setNewRouteName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
+          <input placeholder="รหัส เช่น A17" value={newRouteCode} onChange={e => setNewRouteCode(e.target.value)} style={{ width: 70, padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
+          <input placeholder="ชื่อสาย เช่น มาบยางพร-ปลวกแดง" value={newRouteName} onChange={e => setNewRouteName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
           <button onClick={addRoute} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
         </div>
         <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -577,7 +577,7 @@ function OtMasterDataPanel() {
       <div>
         <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>งานที่ทำ OT</div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          <input placeholder="ชื่องาน เช่น ผลิตตามแผน" value={newTaskName} onChange={e => setNewTaskName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
+          <input placeholder="ชื่องาน เช่น ผลิตตามแผน" value={newTaskName} onChange={e => setNewTaskName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
           <button onClick={addTask} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
         </div>
         <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -640,7 +640,7 @@ function SimpleNameMaster({ table, title, placeholder, offNote }) {
       ) : (
         <>
           <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-            <input placeholder={placeholder} value={newName} onChange={e => setNewName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
+            <input placeholder={placeholder} value={newName} onChange={e => setNewName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
             <button onClick={add} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
           </div>
           <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -1823,7 +1823,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
             <h3 style={{ margin: '0 0 14px', color: 'var(--red)', fontFamily: 'var(--font-display)' }}>❌ ระบุเหตุผลที่ Reject</h3>
             <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)}
               placeholder="เหตุผลที่ไม่อนุมัติ..." rows={3}
-              style={{ width: '100%', borderRadius: 8, padding: '8px 10px', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
+              style={{ width: '100%', borderRadius: 'var(--ctl-r)', padding: '8px 10px', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
             <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
               <button onClick={handleReject}
                 style={{ flex: 2, padding: 11, background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: 'pointer' }}>
@@ -3136,7 +3136,7 @@ function MultiSkillFormTab() {
               ].map(({ label, val, set, opts, plain }) => (
                 <div key={label}>
                   <span style={lbSt}>{label}</span>
-                  <select value={val} onChange={e => set(e.target.value)} style={{ width: '100%', padding: '6px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)' }}>
+                  <select value={val} onChange={e => set(e.target.value)} style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)' }}>
                     <option value="">—</option>
                     {val && !opts.includes(val) && <option value={val}>{plain ? val : `${val} ⚠ ไม่มีในผัง`}</option>}
                     {opts.map(o => <option key={o} value={o}>{o}</option>)}
@@ -3870,7 +3870,7 @@ function SkillAllowanceTab() {
       <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ประเภทงาน</div>
-          <select value={workType} onChange={e => setWorkType(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <select value={workType} onChange={e => setWorkType(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }}>
             <option value="">— เลือกประเภท —</option>
             {workTypes.map(w => <option key={w} value={w}>{w}</option>)}
           </select>
@@ -3885,12 +3885,12 @@ function SkillAllowanceTab() {
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>สิทธิ์ที่ได้รับ กะ 01 (คน)</div>
           <input value={rightsDay} onChange={e => setRightsDay(e.target.value)} placeholder="-"
-            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 70 }} />
+            style={{ padding: '6px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13, width: 70 }} />
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>สิทธิ์ที่ได้รับ กะ 02 (คน)</div>
           <input value={rightsNight} onChange={e => setRightsNight(e.target.value)} placeholder="-"
-            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 70 }} />
+            style={{ padding: '6px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13, width: 70 }} />
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>บันทึกโดย (หัวหน้างาน)</div>

@@ -1346,7 +1346,7 @@ export default function LineSetup({ embedded = false } = {}) {
                         if (e.key === 'Enter') handleRenameLine(l, editingLineName);
                         if (e.key === 'Escape') setEditingLineId(null);
                       }}
-                      style={{ flex: 1, fontSize: 12, padding: '2px 6px', borderRadius: 5, border: '1px solid var(--accent)', background: 'var(--bg)', color: 'var(--text)', minWidth: 0 }}
+                      style={{ flex: 1, fontSize: 12, padding: '2px 6px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--accent)', background: 'var(--bg)', color: 'var(--text)', minWidth: 0 }}
                     />
                   ) : (
                     <span style={{ fontSize: 13, flex: 1, minWidth: 0, color: selectedLine === l.name ? 'var(--accent)' : 'var(--text)', fontWeight: selectedLine === l.name ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1370,7 +1370,7 @@ export default function LineSetup({ embedded = false } = {}) {
                         value={l.section || ''}
                         onClick={e => e.stopPropagation()}
                         onChange={e => { e.stopPropagation(); handleUpdateSection(l, e.target.value); }}
-                        style={{ fontSize: 11, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0, maxWidth: 68 }}
+                        style={{ fontSize: 11, padding: '1px 3px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0, maxWidth: 68 }}
                       >
                         <option value="">Section</option>
                         {sectionOptsInScope.map(s => <option key={s} value={s}>{s}</option>)}
@@ -1403,7 +1403,7 @@ export default function LineSetup({ embedded = false } = {}) {
                 onKeyDown={e => e.key === 'Enter' && handleAddLine()}
                 style={{ flex: 1, fontSize: 13, padding: '8px 10px' }} />
               <select value={newLineSection} onChange={e => setNewLineSection(e.target.value)}
-                style={{ fontSize: 12, padding: '8px 8px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', flexShrink: 0, width: 'auto' }}>
+                style={{ fontSize: 12, padding: '8px 8px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', flexShrink: 0, width: 'auto' }}>
                 <option value="">Section</option>
                 {sectionOptsInScope.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
@@ -1517,7 +1517,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   </div>
                 )}
                 {/* skill allowance toggle */}
-                <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                   background: formData.skill_allowance ? 'var(--green-dim)' : 'var(--bg3)',
                   border: `1.5px solid ${formData.skill_allowance ? 'var(--green-line)' : 'var(--border2)'}` }}>
                   <input type="checkbox" checked={formData.skill_allowance}
