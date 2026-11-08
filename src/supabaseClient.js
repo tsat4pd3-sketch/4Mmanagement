@@ -55,6 +55,7 @@ export const DR_AUDIT_TABLES = new Set([
   'energy_monthly',
   'machine_automation_levels','machine_operation_modes',
   'die_sets','equipment_die','die_op_types','die_set_kinds','die_storage_areas','storage_zones','storage_locations',
+  'die_set_shared_dies',   // common die — ชุดที่ยืมแม่พิมพ์ของชุดอื่น (05/11 · migration 20261105_die_registry_op_model_dr.sql)
   'part_routings',
   'quality_bin_records',
   'repair_wi_registry',      // ทะเบียน QRs ↔ WI ซ่อม (WI-PD3-069 §6) — doc_control แก้เองได้ ต้องรู้ว่าใครแก้
