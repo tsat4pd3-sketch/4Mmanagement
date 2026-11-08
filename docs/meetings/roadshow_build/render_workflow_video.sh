@@ -14,9 +14,9 @@ cp ../TSAT_ESM_Workflow_Roadshow_2026-11-05.pptx "$OUT/frames/deck.pptx"
 n=$(ls "$OUT"/frames/f-*.png | wc -l); : > "$OUT/seg/list.txt"
 for i in $(seq -w 1 "$n"); do
   d=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$OUT/audio/a$i.wav")
-  T=$(python3 -c "print(round($d+1.4,2))")   # หน่วงหน้า 0.6 วิ + เว้นท้าย 0.8 วิ
+  T=$(python3 -c "print(round($d+2.0,2))")   # หน่วงหน้า 0.8 วิ + เว้นท้าย 1.2 วิ · เสียง 0.9× (SPEED)
   ffmpeg -y -loglevel error -loop 1 -framerate 30 -i "$OUT/frames/f-$i.png" -i "$OUT/audio/a$i.wav" \
-    -filter_complex "[1:a]adelay=600|600,apad,aresample=44100[a];[0:v]scale=1920:1080,format=yuv420p[v]" \
+    -filter_complex "[1:a]adelay=800|800,apad,aresample=44100[a];[0:v]scale=1920:1080,format=yuv420p[v]" \
     -map "[v]" -map "[a]" -t "$T" -c:v libx264 -preset veryfast -tune stillimage -crf 24 -c:a aac -b:a 128k -ac 1 "$OUT/seg/s$i.mp4"
   echo "file '$OUT/seg/s$i.mp4'" >> "$OUT/seg/list.txt"
 done

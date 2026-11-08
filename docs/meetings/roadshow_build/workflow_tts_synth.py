@@ -14,6 +14,6 @@ if bad and '--force' not in sys.argv: sys.exit(1)
 tts=sherpa_onnx.OfflineTts(sherpa_onnx.OfflineTtsConfig(model=sherpa_onnx.OfflineTtsModelConfig(vits=sherpa_onnx.OfflineTtsVitsModelConfig(model=f"{m}/model.onnx", tokens=f"{m}/tokens.txt"), num_threads=4)))
 tot=0
 for i,t in enumerate(n,1):
-    a=tts.generate(t, sid=0, speed=1.0); sf.write(f"{S}/audio/a{i:02d}.wav", a.samples, a.sample_rate)
+    a=tts.generate(t, sid=0, speed=float(os.environ.get('SPEED', '0.9'))); sf.write(f"{S}/audio/a{i:02d}.wav", a.samples, a.sample_rate)
     tot+=len(a.samples)/a.sample_rate
 print('total', round(tot/60,2), 'min')
