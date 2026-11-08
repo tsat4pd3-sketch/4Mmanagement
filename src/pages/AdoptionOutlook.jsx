@@ -10,6 +10,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { RATE_COMPONENTS, fmtBaht } from '../utils/costSaving';
 import { rnd, rint, pick } from '../utils/seededRandom';
 import { groupLean } from '../utils/oee';
+import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 /* ══ 🔮 ภาพเมื่อทุกแผนกใช้ครบ (Full-Adoption Outlook) · 2026-08-13 ═══════════════════════
    ทำอะไร: ตอบผู้บริหารว่า "ถ้าทุกแผนกใช้ระบบเต็มรูปแบบ จะได้อะไร" ด้วย 2 มุม
@@ -845,18 +846,8 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-        {[{ key: 'all', icon: '🔗', label: allOf('มิติ') }, ...DIMENSIONS].map(d => {
-          const on = only === d.key;
-          return (
-            <button key={d.key} onClick={() => setOnly(d.key)} style={{
-              fontSize: 13, fontWeight: 700, padding: '6px 13px', borderRadius: 999, cursor: 'pointer',
-              background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
-              border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
-            }}>{d.icon} {d.label}</button>
-          );
-        })}
-      </div>
+      <TabBar size="sm" value={only} onChange={setOnly}
+        tabs={[{ key: 'all', label: allOf('มิติ') }, ...DIMENSIONS].map(d => ({ key: d.key, label: d.label }))} />
 
       {dims.map(dim => (
         <div key={dim.key} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1074,7 +1065,7 @@ function DeptTab({ c, navigate, isMobile }) {
             return (
               <button key={r.key} onClick={() => navigate(r.to)} style={{
                 textAlign: 'left', cursor: 'pointer', background: 'var(--bg3)',
-                border: `1px solid var(--border2)`, borderLeft: `4px solid ${col}`, borderRadius: 8, padding: '9px 11px', color: 'var(--text)',
+                border: `1px solid var(--border2)`, borderLeft: `4px solid ${col}`, borderRadius: 'var(--r-md)', padding: '9px 11px', color: 'var(--text)',
               }}>
                 <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{r.icon} {r.label}</div>
                 <div style={{ fontSize: 25, fontWeight: 800, color: col, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>
@@ -1096,7 +1087,7 @@ function DeptTab({ c, navigate, isMobile }) {
           <div style={{ display: 'flex', gap: 9, alignItems: 'center', flexWrap: 'wrap', marginBottom: 4 }}>
             <span style={{ fontSize: 15.5, fontWeight: 700 }}>{r.icon} {r.label}</span>
             <button onClick={() => navigate(r.to)} style={{
-              fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 999, cursor: 'pointer',
+              fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
               background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)',
             }}>เปิด Dashboard →</button>
           </div>
@@ -1249,7 +1240,7 @@ function RoiTab({ c, loss, rates, demoOn, day, navigate, isMobile }) {
           ].map((x, i) => (
             <button key={i} onClick={() => navigate(x.to)} style={{
               display: 'flex', gap: 9, alignItems: 'flex-start', textAlign: 'left', cursor: 'pointer', width: '100%',
-              background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '8px 11px', color: 'var(--text)',
+              background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 11px', color: 'var(--text)',
             }}>
               <span style={{ fontSize: 15 }}>{x.icon}</span>
               <span style={{ flex: 1, minWidth: 0 }}>
@@ -1622,7 +1613,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
             <b style={{ color: 'var(--green)' }}>พาร์ทนี้มีชุดเอกสารแล้ว</b> — {peSet.part_no}
             {peSet.part_name ? ` · ${peSet.part_name}` : ''} ({peSet.line_name || '—'})
             <button onClick={() => navigate(peLink)} style={{
-              marginLeft: 8, fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 999,
+              marginLeft: 8, fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--r-md)',
               cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none',
             }}>เปิดดู →</button>
           </div>
@@ -1638,7 +1629,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
               คือตอบไม่ได้ว่า “เคยรู้อยู่แล้วแต่ปล่อย” หรือ “ไม่เคยคิดถึงเลย”
             </div>
             <button onClick={() => navigate('/pe-docs')} style={{
-              marginTop: 8, fontSize: 11.5, fontWeight: 700, padding: '5px 12px', borderRadius: 999,
+              marginTop: 8, fontSize: 11.5, fontWeight: 700, padding: '5px 12px', borderRadius: 'var(--r-md)',
               cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)',
             }}>ไปลงเอกสารพาร์ทนี้</button>
           </div>
@@ -1727,7 +1718,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
             { l: '🔧 ใบแจ้งซ่อม', to: '/mtn-repair' },
           ].map(b => (
             <button key={b.to} onClick={() => navigate(b.to)} style={{
-              fontSize: 12, fontWeight: 700, padding: '7px 12px', borderRadius: 999, cursor: 'pointer',
+              fontSize: 12, fontWeight: 700, padding: '7px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
               background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
             }}>{b.l}</button>
           ))}

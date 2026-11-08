@@ -707,7 +707,7 @@ function LevelProject({ proj, go }) {
               data-eva={p.eva || 'none'} className={`nmb-card${hot ? ' mo-card-alert' : ''}`}
               style={{ ...CARD, textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column',
                 gap: 6, minHeight: 104, gridColumn: hot ? 'span 2' : undefined,
-                padding: '12px 13px 12px 17px', borderRadius: 10,
+                padding: '12px 13px 12px 17px', borderRadius: 'var(--r-md)',
                 /* วัสดุชุดเดียวกับโหมดจอ TV — สีอยู่ที่รางซ้าย ไม่ใช่กรอบสีเต็มใบ */
                 borderColor: p.eva === 'none' || !p.eva ? 'var(--border)' : `${tint(evaMeta(p.eva).color, 'line')}`,
                 '--nmb-color': p.eva === 'none' || !p.eva ? 'var(--border2)' : evaMeta(p.eva).color,
@@ -808,7 +808,7 @@ function LevelPop({ proj, main, go }) {
           {main.panel && (
             <button onClick={() => go({ cust: proj.customer, proj: proj.id, panel: main.panel })}
               style={{ marginTop: 9, background: 'var(--bg3)', border: '1px solid var(--border)',
-                color: 'var(--text)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 12 }}>
+                color: 'var(--text)', borderRadius: 'var(--r-md)', padding: '6px 12px', cursor: 'pointer', fontSize: 12 }}>
               เปิดแผงหลักฐาน →
             </button>
           )}
@@ -1248,7 +1248,7 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
           </div>
           <button onClick={onExit} title="ออกจากโหมดจอ TV" style={{
             background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)',
-            borderRadius: 999, width: '2.2vw', height: '2.2vw', minWidth: 30, minHeight: 30,
+            borderRadius: 'var(--r-md)', width: '2.2vw', height: '2.2vw', minWidth: 30, minHeight: 30,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: 'pointer', fontSize: F.sub, padding: 0,
           }}>✕</button>
@@ -1367,7 +1367,7 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
               </div>
               <button onClick={onClosePanel} style={{
                 marginLeft: 'auto', background: 'var(--bg3)', border: '1px solid var(--border)',
-                color: 'var(--text)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 13,
+                color: 'var(--text)', borderRadius: 'var(--r-md)', padding: '6px 12px', cursor: 'pointer', fontSize: 13,
               }}>ปิด (Esc)</button>
             </div>
             <LevelPanel proj={proj} panel={openPanel} />
@@ -1403,7 +1403,7 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
             <>
               <button onClick={() => setPaused(v => !v)} style={{
                 background: 'none', border: '1px solid var(--border)', color: 'var(--text2)',
-                borderRadius: 6, padding: '0.3vh 0.6vw', cursor: 'pointer', fontSize: F.sub,
+                borderRadius: 'var(--r-md)', padding: '0.3vh 0.6vw', cursor: 'pointer', fontSize: F.sub,
               }}>{paused ? 'เล่นต่อ' : 'หยุดสลับ'}</button>
               {projects.map((pj, i) => (
                 <button key={pj.id} onClick={() => onIndex(i)} title={pj.title} style={{

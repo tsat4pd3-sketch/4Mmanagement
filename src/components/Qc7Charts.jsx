@@ -188,7 +188,7 @@ export function Fishbone({ records, categoryOf, textOf, labelOf, effect = 'à¸›à¸
               style={{
                 textAlign: 'left', cursor: dim ? 'default' : 'pointer', opacity: dim ? 0.45 : 1,
                 background: on ? 'var(--bg3)' : 'var(--bg2)', color: 'var(--text)',
-                border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 10, padding: '8px 10px',
+                border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '8px 10px',
               }}>
               <div style={{ fontSize: 12.5, fontWeight: 800 }}>{b.icon} {b.label}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>

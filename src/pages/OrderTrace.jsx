@@ -1046,17 +1046,17 @@ export default function OrderTrace() {
             onKeyDown={e => { if (e.key === 'Enter') doSearch(); }}
             fields="PROD.NO / MAT / ชื่อชิ้นงาน / Julian" autoFocus />
           <button onClick={() => doSearch()} disabled={searching}
-            style={{ height: 'var(--ctl-h)', padding: '0 18px', flexShrink: 0, borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: 'pointer' }}>
+            style={{ height: 'var(--ctl-h)', padding: '0 18px', flexShrink: 0, borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: 'pointer' }}>
             {searching ? '⏳' : 'ค้นหา'}
           </button>
           <button onClick={() => setScanOpen(true)} title="สแกนคัมบัง / ใบผลิต / ป้ายเครื่องด้วยกล้อง"
-            style={{ height: 'var(--ctl-h)', padding: '0 12px', flexShrink: 0, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontWeight: 700, cursor: 'pointer' }}>
+            style={{ height: 'var(--ctl-h)', padding: '0 12px', flexShrink: 0, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontWeight: 700, cursor: 'pointer' }}>
             📷
           </button>
         </div>
         {sel && <>
           <span className="spacer" />
-          <button onClick={() => { setSel(null); }} style={{ padding: '0 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>ปิด — ดูใบอื่น</button>
+          <button onClick={() => { setSel(null); }} style={{ padding: '0 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>ปิด — ดูใบอื่น</button>
         </>}
       </TimeRangeBar>
 
@@ -1079,7 +1079,7 @@ export default function OrderTrace() {
               <span style={{ color: 'var(--muted)' }}>⚠️ เลขนี้มีแต่วัน (ไม่มี 2 หลักปีต่อท้าย) ระบบเลือกปีล่าสุดที่ผ่านมาแล้วให้ — ไม่ใช่ปีนี้กดเปลี่ยน:</span>
               {jul.candidates.map(c => (
                 <button key={c.year} onClick={() => { setJulYear(c.year); doSearch(undefined, {}); }}
-                  style={{ padding: '3px 10px', borderRadius: 20, fontSize: 11.5, fontWeight: 800, cursor: 'pointer',
+                  style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 800, cursor: 'pointer',
                     border: `1px solid ${c.year === jul.year ? 'var(--amber)' : 'var(--border)'}`,
                     background: c.year === jul.year ? 'var(--amber-dim)' : 'none',
                     color: c.year === jul.year ? 'var(--amber)' : 'var(--text2)' }}>

@@ -392,7 +392,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
               <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
                 {[['six_big_loss', '6 Big Losses (TPM)'], ['waste_type', '8 Wastes (Lean)']].map(([k, lb]) => (
                   <button key={k} onClick={() => setLeanAxis(k)}
-                    style={{ padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    style={{ padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                       border: leanAxis === k ? '1px solid var(--accent)' : '1px solid var(--border)',
                       background: leanAxis === k ? 'var(--accent)' : 'transparent', color: leanAxis === k ? 'var(--accent-ink)' : 'var(--text2)' }}>{lb}</button>
                 ))}

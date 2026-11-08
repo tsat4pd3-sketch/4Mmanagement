@@ -64,7 +64,7 @@ export default function MobilePushPrompt({ userId }) {
         {c.cta && (
           <button onClick={enable} disabled={busy}
             style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--accent-ink)', background: 'var(--accent)',
-                     border: 'none', borderRadius: 7, padding: '5px 12px', cursor: busy ? 'default' : 'pointer' }}>
+                     border: 'none', borderRadius: 'var(--r-md)', padding: '5px 12px', cursor: busy ? 'default' : 'pointer' }}>
             {busy ? 'กำลังเปิด…' : c.cta}
           </button>
         )}

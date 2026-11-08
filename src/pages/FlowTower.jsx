@@ -377,7 +377,7 @@ export default function FlowTower() {
                             ? <span style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }} title="ตั้งขนาดล็อตแล้ว — ยอดค้างเกินเพดานการออกใบต่อรอบ (50 ใบ/การปิดออเดอร์) จะทยอยออกใบเองเมื่อมีการปิดใบผลิตครั้งถัดไป">⏳ รอทยอยออกใบ</span>
                             : canFix && b.suggested_lot > 0 && (
                             <button onClick={() => setLot(b)} disabled={busy === b.mat_no}
-                              style={{ padding: '4px 10px', borderRadius: 7, border: '1px solid var(--green-line)', background: 'var(--green-dim)', color: 'var(--green)', fontWeight: 800, fontSize: 11, cursor: busy ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}>
+                              style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--green-line)', background: 'var(--green-dim)', color: 'var(--green)', fontWeight: 800, fontSize: 11, cursor: busy ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}>
                               {busy === b.mat_no ? '…' : 'ตั้งล็อต'}
                             </button>
                           )}

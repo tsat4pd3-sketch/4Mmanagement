@@ -826,7 +826,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           </div>
           <div style={{ flex: 1 }} />
           <button className="tv-hide" onClick={() => goBoard(false)} style={{
-            fontSize: 12, padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
+            fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
             background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
           }}>ออกจากโหมดจอ</button>
         </div>
@@ -1062,7 +1062,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                   {canRecord && (
                     <button className="tv-hide" onClick={() => openModal()} style={{
                       alignSelf: 'flex-start', fontSize: fs(12), fontWeight: 800, padding: '6px 14px',
-                      borderRadius: 999, background: 'var(--accent2)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer',
+                      borderRadius: 'var(--r-md)', background: 'var(--accent2)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer',
                     }}>➕ ตั้งใบแรก</button>
                   )}
                 </div>
@@ -1078,7 +1078,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                     ))}
                     {canRecord && (
                       <button className="tv-hide" onClick={() => openModal()} style={{
-                        fontSize: fs(10.5), fontWeight: 800, padding: '2px 10px', borderRadius: 999, marginLeft: 'auto',
+                        fontSize: fs(10.5), fontWeight: 800, padding: '2px 10px', borderRadius: 'var(--r-md)', marginLeft: 'auto',
                         background: 'var(--accent2)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer',
                       }}>➕ ตั้ง Action</button>
                     )}
@@ -1109,7 +1109,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                           {canRecord && (
                             /* เปิดหน้าต่างปิดงาน (ใส่ผล + รูป) แทนการปิดทันที — ปิดเปล่าๆ ไม่มีหลักฐานว่าแก้อะไร */
                             <button className="tv-hide" onClick={() => setClosing({ a, result: a.result_value || '', file: null })} style={{
-                              fontSize: fs(10), fontWeight: 700, padding: '1px 7px', borderRadius: 999, cursor: 'pointer',
+                              fontSize: fs(10), fontWeight: 700, padding: '1px 7px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                               background: 'var(--bg2)', color: 'var(--green)', border: '1px solid var(--green-line)',
                             }}>ปิด</button>
                           )}
@@ -1155,11 +1155,11 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
               <button onClick={() => setClosing(null)} disabled={closeSaving} style={{
-                fontSize: 13, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+                fontSize: 13, padding: '7px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                 background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)',
               }}>ยกเลิก</button>
               <button onClick={doClose} disabled={closeSaving} style={{
-                fontSize: 13, fontWeight: 800, padding: '7px 18px', borderRadius: 8, cursor: 'pointer',
+                fontSize: 13, fontWeight: 800, padding: '7px 18px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                 background: 'var(--green)', color: 'var(--accent-ink)', border: 'none',
               }}>{closeSaving ? '⏳ กำลังบันทึก...' : '✅ ปิดงาน'}</button>
             </div>
@@ -1218,11 +1218,11 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
               <button onClick={() => setModal(null)} disabled={saving} style={{
-                fontSize: 13.5, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+                fontSize: 13.5, padding: '7px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                 background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
               }}>ยกเลิก</button>
               <button onClick={saveAction} disabled={saving} style={{
-                fontSize: 13.5, fontWeight: 800, padding: '7px 16px', borderRadius: 8, cursor: 'pointer',
+                fontSize: 13.5, fontWeight: 800, padding: '7px 16px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                 background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none',
               }}>{saving ? 'กำลังบันทึก…' : 'บันทึก'}</button>
             </div>

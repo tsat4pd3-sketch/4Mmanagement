@@ -39,7 +39,7 @@ function TimeInput24({ value = '', onChange, style = {} }) {
           borderRadius: 6, padding: '5px 8px', ...style }} />
       <button type="button" title="ใช้เวลาปัจจุบัน"
         onClick={() => onChange?.({ target: { value: new Date().toTimeString().slice(0,5) } })}
-        style={{ fontSize: 12, fontWeight: 700, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+        style={{ fontSize: 12, fontWeight: 700, padding: '5px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
         ตอนนี้
       </button>
     </div>
@@ -466,7 +466,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
         <button
           onClick={onSubmit}
           disabled={submitting || !form.line_name || !form.event_no}
-          style={{ padding: '12px 0', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 15, cursor: 'pointer', marginTop: 4 }}>
+          style={{ padding: '12px 0', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 15, cursor: 'pointer', marginTop: 4 }}>
           {submitting ? 'กำลังบันทึก...' : 'บันทึก Event & ส่ง Notification'}
         </button>
       </div>
@@ -854,7 +854,7 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
         </select>
         <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} />
         {filterDate && (
-          <button onClick={() => setFilterDate('')} title="ล้างวันที่" style={{ padding: '0 10px', borderRadius: 6, border: 'none', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
+          <button onClick={() => setFilterDate('')} title="ล้างวันที่" style={{ padding: '0 10px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
         )}
         <span className="spacer" />
         <span className="filter-count">{filtered.length} รายการ</span>
@@ -863,13 +863,13 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
             <button
               onClick={() => { exportExcel(filtered).catch(e => toast.error('ทำไฟล์ Excel ไม่สำเร็จ: ' + (e?.message || e))); }}
               title="Export Excel"
-              style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid var(--green)40', background: 'var(--green-dim)', color: 'var(--green)', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--green)40', background: 'var(--green-dim)', color: 'var(--green)', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
               Export Excel
             </button>
             <button
               onClick={() => exportPDF(filtered)}
               title="Export PDF / Print"
-              style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid var(--blue)40', background: 'var(--blue-dim)', color: 'var(--blue)', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--blue)40', background: 'var(--blue-dim)', color: 'var(--blue)', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
               Export PDF
             </button>
           </>
@@ -1197,7 +1197,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {mayDelete && !confirmDelete && (
               <button onClick={() => setConfirmDelete(true)}
-                style={{ background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 7, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                style={{ background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                 ลบ
               </button>
             )}
@@ -1205,11 +1205,11 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ fontSize: 12, color: 'var(--red)', fontWeight: 700 }}>ยืนยันลบ?</span>
                 <button onClick={handleDelete} disabled={deleting}
-                  style={{ background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 7, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.6 : 1 }}>
+                  style={{ background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.6 : 1 }}>
                   {deleting ? '...' : 'ยืนยัน'}
                 </button>
                 <button onClick={() => setConfirmDelete(false)}
-                  style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 7, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
+                  style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
                   ยกเลิก
                 </button>
               </div>
@@ -1287,7 +1287,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                         disabled={approvingRole === appr.role_key || !checklistDone}
                         onClick={() => handleApprove(appr.role_key, 'approved')}
                         title={!checklistDone ? 'ต้องทำ Checklist ให้ครบก่อนอนุมัติ' : ''}
-                        style={{ flex: 1, padding: '6px 0', borderRadius: 6, border: 'none',
+                        style={{ flex: 1, padding: '6px 0', borderRadius: 'var(--r-md)', border: 'none',
                           background: checklistDone ? rm.bg : 'var(--bg3)',
                           color: checklistDone ? rm.color : 'var(--muted)',
                           fontWeight: 700, fontSize: 11,
@@ -1298,7 +1298,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                       <button
                         disabled={approvingRole === appr.role_key}
                         onClick={() => setShowReject(appr.role_key)}
-                        style={{ flex: 1, padding: '6px 0', borderRadius: 6, border: '1px solid var(--border2)', background: 'transparent', color: 'var(--red)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
+                        style={{ flex: 1, padding: '6px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'transparent', color: 'var(--red)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
                         ปฏิเสธ
                       </button>
                     </div>
@@ -1310,11 +1310,11 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                         style={{ fontSize: 12, marginBottom: 6 }} />
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button onClick={() => handleApprove(appr.role_key, 'rejected')}
-                          style={{ flex: 1, padding: '5px 0', borderRadius: 5, border: 'none', background: 'var(--red-dim)', color: 'var(--red)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
+                          style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--red-dim)', color: 'var(--red)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
                           ยืนยันปฏิเสธ
                         </button>
                         <button onClick={() => setShowReject(null)}
-                          style={{ flex: 1, padding: '5px 0', borderRadius: 5, border: '1px solid var(--border2)', background: 'transparent', color: 'var(--muted)', fontSize: 11, cursor: 'pointer' }}>
+                          style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'transparent', color: 'var(--muted)', fontSize: 11, cursor: 'pointer' }}>
                           ยกเลิก
                         </button>
                       </div>
@@ -1363,7 +1363,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                               <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                                 {[['ok','✓','var(--green)'],['ng','✗','var(--red)'],['na','N/A','#aaa']].map(([r,lbl,c]) => (
                                   <button key={r} onClick={() => handleCheckResult(item.check_no, r)}
-                                    style={{ padding: '4px 8px', borderRadius: 5, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                                    style={{ padding: '4px 8px', borderRadius: 'var(--r-md)', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700,
                                       background: result === r ? `${tint(c, 'dim')}` : 'var(--bg3)',
                                       color: result === r ? c : 'var(--muted)',
                                       outline: result === r ? `2px solid ${c}` : 'none' }}>

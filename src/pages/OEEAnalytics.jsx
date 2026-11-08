@@ -195,7 +195,7 @@ const KpiCard = ({ label, value, color, sub, calc, more, primary = false, unit =
           {more && (
             <>
               <button onClick={() => setOpen(o => !o)} style={{
-                marginTop: 5, padding: '2px 7px', borderRadius: 6, cursor: 'pointer',
+                marginTop: 5, padding: '2px 7px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                 border: '1px solid var(--border2)', background: 'var(--bg3)',
                 color: 'var(--muted)', fontSize: 11, fontWeight: 700,
               }}>{open ? 'ย่อ' : `${MORE_MARK} อ่านเพิ่ม`}</button>
@@ -1791,7 +1791,7 @@ export default function OEEAnalytics() {
                       })}
                       {rest.length > 0 && (
                         <button onClick={() => setTdDtShowAll(v => !v)}
-                          style={{ marginTop: 2, padding: '6px 10px', borderRadius: 7, border: '1px dashed var(--border2)', background: 'transparent', color: 'var(--muted)', fontSize: 11.5, cursor: 'pointer', textAlign: 'center' }}>
+                          style={{ marginTop: 2, padding: '6px 10px', borderRadius: 'var(--r-md)', border: '1px dashed var(--border2)', background: 'transparent', color: 'var(--muted)', fontSize: 11.5, cursor: 'pointer', textAlign: 'center' }}>
                           {tdDtShowAll ? 'ย่อเหลือ Top 8' : `อื่นๆ อีก ${rest.length} สาเหตุ · ${restMin.toLocaleString()} นาที (${restPct}%)`}
                         </button>
                       )}
@@ -1862,7 +1862,7 @@ export default function OEEAnalytics() {
                         </div>
                       )}
                     </div>
-                    <button onClick={() => setTdDtDrill(null)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 14, cursor: 'pointer' }}>✕</button>
+                    <button onClick={() => setTdDtDrill(null)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 'var(--r-md)', padding: '2px 9px', fontSize: 14, cursor: 'pointer' }}>✕</button>
                   </div>
                   <div style={{ flex: 1, overflow: 'auto', padding: '4px 14px 14px' }}>
                     {/* 🔁 เกิดซ้ำแค่ไหน — ย้อนหลัง 30 วันของสาเหตุนี้ (ตอบว่าเป็นปัญหาเรื้อรังหรือเหตุการณ์เดียว) */}
@@ -2482,7 +2482,7 @@ function OeeTargetModal({ groups, targets, fullName, onClose, onSaved }) {
               ตั้งเฉพาะ A / P / Q — <strong>เป้า OEE คำนวณจาก A×P×Q ให้อัตโนมัติ</strong> · ระดับส่วน (section) ไม่ต้องตั้ง คำนวณเป็นค่าเฉลี่ยของกรุ๊ป · ช่องว่าง = ใช้ค่ามาตรฐาน (A {TARGET.a} / P {TARGET.p} / Q {TARGET.q} → OEE {TARGET.oee})
             </div>
           </div>
-          <button onClick={onClose} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 14, cursor: 'pointer' }}>✕</button>
+          <button onClick={onClose} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 'var(--r-md)', padding: '2px 9px', fontSize: 14, cursor: 'pointer' }}>✕</button>
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '10px 18px' }}>
@@ -2530,9 +2530,9 @@ function OeeTargetModal({ groups, targets, fullName, onClose, onSaved }) {
         </div>
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '12px 18px', borderTop: '1px solid var(--border)' }}>
-          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
           <button onClick={handleSave} disabled={saving}
-            style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
+            style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
             {saving ? 'กำลังบันทึก...' : 'บันทึก Target'}
           </button>
         </div>

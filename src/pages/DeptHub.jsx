@@ -508,7 +508,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
         </div>
         {/* 🌐 ปุ่มสลับภาษา — คู่กับปุ่มธีม ป้ายบอก "กดแล้วได้ภาษาอะไร" */}
         <button type="button" onClick={toggleLang} title={langToggleTitle(lang)} aria-label={langToggleTitle(lang)} style={{
-          height: 38, minWidth: 44, padding: '0 10px', borderRadius: 10,
+          height: 38, minWidth: 44, padding: '0 10px', borderRadius: 'var(--r-md)',
           background: 'var(--card)', border: '1px solid var(--border)',
           color: 'var(--text)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, letterSpacing: '0.04em',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -517,7 +517,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
         </button>
         {onToggleTheme && (
           <button onClick={onToggleTheme} title={tr('สลับธีม')} style={{
-            width: 38, height: 38, borderRadius: 10,
+            width: 38, height: 38, borderRadius: 'var(--r-md)',
             background: 'var(--card)', border: '1px solid var(--border)',
             color: 'var(--text)', cursor: 'pointer', fontSize: 16,
             display: 'flex', alignItems: 'center', justifyContent: 'center',

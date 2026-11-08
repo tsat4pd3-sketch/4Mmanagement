@@ -175,7 +175,7 @@ export default function ScanModal({
           <video ref={videoRef} playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover', display: camOn ? 'block' : 'none' }} />
           {!camOn && (
             <button onClick={startCam} className="tbtn"
-              style={{ padding: '12px 22px', borderRadius: 10, border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+              style={{ padding: '12px 22px', borderRadius: 'var(--r-md)', border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
               เปิดกล้องสแกน
             </button>
           )}
@@ -184,7 +184,7 @@ export default function ScanModal({
               {/* กรอบเล็ง */}
               <div style={{ position: 'absolute', inset: '18%', border: '3px solid rgba(52,211,153,0.9)', borderRadius: 12, pointerEvents: 'none' }} />
               <button onClick={stopCam} className="tbtn"
-                style={{ position: 'absolute', right: 8, bottom: 8, padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.35)', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 12, cursor: 'pointer' }}>
+                style={{ position: 'absolute', right: 8, bottom: 8, padding: '6px 12px', borderRadius: 'var(--r-md)', border: '1px solid rgba(255,255,255,0.35)', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 12, cursor: 'pointer' }}>
                 ปิดกล้อง
               </button>
             </>
@@ -214,12 +214,12 @@ export default function ScanModal({
             />
             {isMobile && !kbd && (
               <button type="button" className="tbtn" onClick={() => { inputRef.current?.blur(); setKbd(true); setTimeout(() => inputRef.current?.focus(), 30); }}
-                style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', flexShrink: 0 }}>
+                style={{ padding: '9px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', flexShrink: 0 }}>
                 ⌨️ พิมพ์เอง
               </button>
             )}
             <button onClick={submitTyped} className="tbtn"
-              style={{ padding: '9px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13.5, cursor: 'pointer', flexShrink: 0 }}>
+              style={{ padding: '9px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13.5, cursor: 'pointer', flexShrink: 0 }}>
               ตกลง
             </button>
           </div>

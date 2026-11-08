@@ -225,16 +225,16 @@ export default function SafetyEventModal({ init, section, date, lineRows = [], s
         <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
           {editing && (
             <button onClick={remove} disabled={busy}
-              style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', cursor: 'pointer', fontSize: 12.5 }}>
+              style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', cursor: 'pointer', fontSize: 12.5 }}>
               ซ่อนออกจากบอร์ด
             </button>
           )}
           <button onClick={close} disabled={busy}
-            style={{ marginLeft: 'auto', padding: '7px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>
+            style={{ marginLeft: 'auto', padding: '7px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>
             ยกเลิก
           </button>
           <button onClick={save} disabled={busy}
-            style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: busy ? 'wait' : 'pointer', fontSize: 13 }}>
+            style={{ padding: '7px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: busy ? 'wait' : 'pointer', fontSize: 13 }}>
             {busy ? 'กำลังบันทึก...' : '💾 บันทึก'}
           </button>
         </div>

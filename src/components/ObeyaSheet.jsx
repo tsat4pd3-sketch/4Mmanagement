@@ -90,7 +90,7 @@ export function StatusLamp({ k, w, stat, onGo, forceCompact = false }) {
       style={{
         display: 'flex', alignItems: 'center', gap: Math.max(4, Math.round(5 * k)),
         padding: `${Math.max(2, Math.round(2.5 * k))}px ${Math.max(6, Math.round(8 * k))}px`,
-        borderRadius: 999, flexShrink: 0, whiteSpace: 'nowrap',
+        borderRadius: 'var(--r-md)', flexShrink: 0, whiteSpace: 'nowrap',
         background: 'var(--bg3)', backgroundImage: `linear-gradient(${cDim}, ${cDim})`,
         border: `1px solid ${red ? c : cLine}`,
         boxShadow: red ? `0 0 9px 1px ${cLine}` : 'none',
@@ -150,7 +150,7 @@ function SheetZoom({ onClose, children }) {
 const SheetIconBtn = ({ fs, title, onClick, children, className }) => (
   <button type="button" className={className} onClick={onClick} title={title} aria-label={title} style={{
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: fs(11), lineHeight: 1, padding: '3px 6px', borderRadius: 4, flexShrink: 0, cursor: 'pointer',
+    fontSize: fs(11), lineHeight: 1, padding: '3px 6px', borderRadius: 'var(--r-md)', flexShrink: 0, cursor: 'pointer',
     background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)',
   }}>{children}</button>
 );
@@ -232,7 +232,7 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
           {footNode && <div style={{ fontSize: fs(10.5), lineHeight: 1.35, color: 'var(--muted)' }}>{footNode}</div>}
           {link && (
             <button className="tv-hide" onClick={onLink} style={{
-              marginTop: 4, fontSize: fs(10.5), fontWeight: 700, padding: '2px 8px', borderRadius: 999,
+              marginTop: 4, fontSize: fs(10.5), fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-md)',
               background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', cursor: 'pointer',
             }}>{link} ↗</button>
           )}

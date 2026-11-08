@@ -364,14 +364,14 @@ export default function ProductHistory() {
                 {canGroup && (
                   <button onClick={() => setGroupMode(g => !g)}
                     title={`สินค้าที่ใช้เลขลูกค้า ${selMat.p_no} เหมือนกัน — ต่างกันที่ปลายทางส่งลูกค้า`}
-                    style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+                    style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                       background: groupMode ? 'var(--blue)' : 'var(--bg2)', color: groupMode ? '#fff' : 'var(--text)',
                       border: `1px solid ${groupMode ? 'var(--blue)' : 'var(--border2)'}` }}>
                     {groupMode ? `ดูรวมทั้งกลุ่ม (${groupMats.length}) — กดเพื่อดูเฉพาะตัวนี้` : `ดูรวมทั้งกลุ่ม (${groupMats.length} MAT SAP)`}
                   </button>
                 )}
                 <button onClick={() => { setSelMat(null); setPickerOpen(true); setGroupMode(false); }}
-                  style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+                  style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                     background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
                   ปิด — เลือกสินค้าอื่น
                 </button>
@@ -536,7 +536,7 @@ export default function ProductHistory() {
               </table>
               {!showAllDays && dayGroups.length > 45 && (
                 <button onClick={() => setShowAllDays(true)}
-                  style={{ marginTop: 8, fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 8, cursor: 'pointer',
+                  style={{ marginTop: 8, fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                     background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
                   แสดงอีก {(dayGroups.length - 45).toLocaleString()} วัน (ทั้งหมด {dayGroups.length.toLocaleString()} วัน)
                 </button>

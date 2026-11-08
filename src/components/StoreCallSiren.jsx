@@ -190,7 +190,7 @@ export default function StoreCallSiren({ slot = 0 }) {
               </span>
             )}
             <button onClick={() => goPrep(a)} title="ไปหน้าเตรียมงาน — Line Stock › 📤 ขาออก › ตู้ตามเลขพาร์ท (กรองเฉพาะพาร์ทนี้)"
-              style={{ flexShrink: 0, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 8,
+              style={{ flexShrink: 0, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)',
                 padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
               ไปเตรียมงาน
             </button>
@@ -198,7 +198,7 @@ export default function StoreCallSiren({ slot = 0 }) {
               title={canAck ? 'หยุดเสียงเท่านั้น — ใบยังรอหยิบอยู่ในคิวสโตร์เหมือนเดิม'
                             : 'บัญชีนี้ไม่มีสิทธิ์บันทึกรับทราบ (heijunka:operate) — ปิดได้เฉพาะเสียงบนจอนี้ รีโหลดแล้วดังใหม่'}
               style={{ flexShrink: 0, background: canAck ? '#22c55e' : 'var(--bg3)', color: canAck ? '#04140a' : 'var(--text2)',
-                border: canAck ? 'none' : '1px solid var(--border2)', borderRadius: 8,
+                border: canAck ? 'none' : '1px solid var(--border2)', borderRadius: 'var(--r-md)',
                 padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
               {canAck ? 'รับทราบ · หยุดเสียง' : '🔇 ปิดเสียงเฉพาะจอนี้'}
             </button>

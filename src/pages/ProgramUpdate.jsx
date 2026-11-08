@@ -182,7 +182,7 @@ export default function ProgramUpdate() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
               <button type="button" onClick={() => { setOpenDays({}); setAllOpen(a => !(a == null ? (fewItems || false) : a)); }}
                 title="กางทุกวันเพื่ออ่านต่อเนื่อง หรือพับให้เห็นเฉพาะหัววัน"
-                style={{ padding: '3px 10px', borderRadius: 7, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
                          border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }}>
                 {(allOpen == null ? fewItems : allOpen) ? 'พับทุกวัน' : 'กางทุกวัน'}
               </button>
@@ -225,7 +225,7 @@ export default function ProgramUpdate() {
               {open && day.items.length > (dayCap[day.date] || DAY_ROWS) && (
                 <button type="button"
                   onClick={() => setDayCap(m => ({ ...m, [day.date]: day.items.length }))}
-                  style={{ margin: '2px 0 6px', padding: '3px 10px', borderRadius: 7, fontSize: 11.5, fontWeight: 700,
+                  style={{ margin: '2px 0 6px', padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700,
                            cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }}>
                   ดูอีก {(day.items.length - (dayCap[day.date] || DAY_ROWS)).toLocaleString()} รายการของวันนี้
                 </button>
@@ -239,7 +239,7 @@ export default function ProgramUpdate() {
               ยังเหลืออีก <b style={{ color: 'var(--text2)' }}>{view.hidden.toLocaleString()}</b> รายการในช่วงนี้
               {' '}
               <button type="button" onClick={() => setCap(c => c + PAGE_ROWS)}
-                style={{ marginLeft: 6, padding: '4px 12px', borderRadius: 7, fontSize: 12, fontWeight: 700,
+                style={{ marginLeft: 6, padding: '4px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700,
                          cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)' }}>
                 ดูเพิ่ม {Math.min(PAGE_ROWS, view.hidden).toLocaleString()} รายการ
               </button>

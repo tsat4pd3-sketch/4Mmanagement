@@ -642,7 +642,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
         {pastDueReal.length > 0 && (
           <button onClick={() => setDay(pastDueReal.reduce((a, p) => (p.due_date > a ? p.due_date : a), pastDueReal[0].due_date))}
             title="คลิกเพื่อกระโดดไปวันงานล่าสุดที่ยังมีใบค้างส่ง"
-            style={{ padding: '4px 12px', borderRadius: 8, border: '1.5px solid var(--red-line)', background: 'var(--red-dim)', color: 'var(--red)', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0 }}>
+            style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1.5px solid var(--red-line)', background: 'var(--red-dim)', color: 'var(--red)', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0 }}>
             ค้างส่งจากวันก่อน {pastDueReal.length} ใบ — กดดู
           </button>
         )}
@@ -651,14 +651,14 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
              เพราะเป็นทางเข้าของ order เหมือนกัน ต่างกันแค่ "คนคีย์" กับ "ลูกค้ายืนยันมาเป็นไฟล์" */
           <button onClick={() => setShowPull(true)}
             title="ลูกค้าส่งไฟล์ยอดเรียกงานจริง (e-SMART) มาเป็นช่วงเวลา — อัพเข้าระบบเพื่อยืนยัน/แก้ยอดของรอบนั้น · พาร์ทที่ไม่อยู่ในไฟล์ถือว่าตรงกับ 862"
-            style={{ padding: '4px 12px', borderRadius: 8, border: '1px solid var(--blue)', background: 'var(--blue-dim)', color: 'var(--blue)', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0, marginLeft: 'auto' }}>
+            style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--blue)', background: 'var(--blue-dim)', color: 'var(--blue)', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0, marginLeft: 'auto' }}>
             อัพโหลด e-SMART
           </button>
         )}
         {canAdd && (
           <button onClick={() => { setAddForm({ ...emptyAdd, due_date: day >= workDateStr() ? day : workDateStr() }); setShowAdd(true); }}
             title="ลูกค้าสั่งเพิ่มนอกไฟล์ EDI (สั่งด่วน/โทรสั่ง) — คีย์เข้าระบบได้ทันที ไม่ต้องรออัพโหลด 862"
-            style={{ padding: '4px 12px', borderRadius: 8, border: '1px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0 }}>
+            style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0 }}>
             เพิ่ม order ด่วน
           </button>
         )}
@@ -732,7 +732,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                 <button onClick={saveAddOrder} disabled={addSaving}
-                  style={{ flex: 1, padding: '10px 12px', borderRadius: 9, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: addSaving ? 0.6 : 1 }}>
+                  style={{ flex: 1, padding: '10px 12px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: addSaving ? 0.6 : 1 }}>
                   {addSaving ? 'กำลังบันทึก...' : 'เพิ่ม order'}
                 </button>
                 <button onClick={() => setShowAdd(false)} style={btn(false)}>ยกเลิก</button>
@@ -947,26 +947,26 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
                         return (
                           <button onClick={() => { advance(o); setPopup(null); }} disabled={busy === o.id}
                             title={nx.terminal ? 'เฟสท้ายสุดที่ตั้งไว้ = จบงาน (ปิดรอบส่งเลย ไม่มีขั้นถัดไป)' : undefined}
-                            style={{ flex: 1, padding: '7px 8px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: `${tint(nx.color, 'dim')}`, color: nx.color, border: `1px solid ${tint(nx.color, 'line')}`, fontFamily: 'var(--font-body)' }}>
+                            style={{ flex: 1, padding: '7px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, cursor: 'pointer', background: `${tint(nx.color, 'dim')}`, color: nx.color, border: `1px solid ${tint(nx.color, 'line')}`, fontFamily: 'var(--font-body)' }}>
                             {busy === o.id ? '...' : nx.label}
                           </button>
                         );
                       })()}
                       <button onClick={() => goToCard(o)}
-                        style={{ flex: 1, padding: '7px 8px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', fontFamily: 'var(--font-body)' }}>
+                        style={{ flex: 1, padding: '7px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', fontFamily: 'var(--font-body)' }}>
                         ไปที่การ์ด
                       </button>
                       {canAdd && isOpenOrder(o) && (
                         <button className="tbtn" onClick={() => cancelOrder(o)} disabled={busy === o.id}
                           title="ยกเลิกใบนี้ (ลูกค้ายกเลิก / ใบผี) — ต้องระบุเหตุผล · ใบที่หักสต็อกไปแล้วยกเลิกไม่ได้"
-                          style={{ padding: '7px 10px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'rgba(148,163,184,0.12)', color: 'var(--muted)', border: '1px solid rgba(148,163,184,0.35)', fontFamily: 'var(--font-body)' }}>
+                          style={{ padding: '7px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'rgba(148,163,184,0.12)', color: 'var(--muted)', border: '1px solid rgba(148,163,184,0.35)', fontFamily: 'var(--font-body)' }}>
                           🚫
                         </button>
                       )}
                       {canAdd && o.source === 'manual' && o.status === 'pending' && (
                         <button className="tbtn" onClick={() => deleteManualOrder(o)}
                           title="ลบได้เฉพาะใบคีย์มือที่ยังไม่เริ่ม workflow"
-                          style={{ padding: '7px 10px', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', fontFamily: 'var(--font-body)' }}>
+                          style={{ padding: '7px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', fontFamily: 'var(--font-body)' }}>
                           🗑
                         </button>
                       )}
@@ -1235,13 +1235,13 @@ function WorkflowSection({ canEdit }) {
                 <td style={{ ...cell, whiteSpace: 'nowrap' }}>
                   {canEdit && draft[r.id] && (
                     <button className="tbtn" onClick={() => save(r)} disabled={busy === r.id}
-                      style={{ padding: '5px 14px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', marginRight: 6 }}>
+                      style={{ padding: '5px 14px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', marginRight: 6 }}>
                       {busy === r.id ? '...' : 'บันทึก'}
                     </button>
                   )}
                   {canEdit && (
                     <button className="tbtn" onClick={() => remove(r)} disabled={busy === r.id}
-                      style={{ padding: '5px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', fontFamily: 'var(--font-body)' }}>
+                      style={{ padding: '5px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', fontFamily: 'var(--font-body)' }}>
                       ลบ
                     </button>
                   )}
@@ -1359,13 +1359,13 @@ function ShipToTab({ canEdit, onChanged, fullName }) {
                 <td style={{ ...cell, whiteSpace: 'nowrap' }}>
                   {canEdit && draft[r.code] && (
                     <button className="tbtn" onClick={() => save(r.code)} disabled={busy === r.code}
-                      style={{ padding: '5px 14px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', marginRight: 6 }}>
+                      style={{ padding: '5px 14px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', marginRight: 6 }}>
                       {busy === r.code ? '...' : 'บันทึก'}
                     </button>
                   )}
                   {canEdit && (
                     <button className="tbtn" onClick={() => removeCode(r)} disabled={busy === r.code}
-                      style={{ padding: '5px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', fontFamily: 'var(--font-body)' }}>
+                      style={{ padding: '5px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', fontFamily: 'var(--font-body)' }}>
                       ลบ
                     </button>
                   )}

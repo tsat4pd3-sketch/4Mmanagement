@@ -155,7 +155,7 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
           }} title="ใบบันทึกประวัติการซ่อมและการทำ PM MACHINE (FM-MTN-005) — A4 แนวนอน หน้าละ 15 แถว"
             style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: state.loading || state.err || exporting ? 0.6 : 1 }}>
             {exporting ? 'กำลังสร้าง…' : '⬇️ Excel (FM-MTN-005)'}</button>
-          <button onClick={onClose} style={{ background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 14px', fontSize: 13, cursor: 'pointer' }}>✕ ปิด</button>
+          <button onClick={onClose} style={{ background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '7px 14px', fontSize: 13, cursor: 'pointer' }}>✕ ปิด</button>
         </div>
         <div style={{ overflow: 'auto', padding: 14 }}>
           {state.loading && <div style={{ color: 'var(--muted)', fontSize: 13 }}>⏳ กำลังโหลดประวัติ…</div>}
@@ -219,7 +219,7 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
                 {!showAll && sum.rows.length > ROWS_FIRST && (
                   <button onClick={() => setShowAll(true)}
                     style={{ marginTop: 8, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)',
-                      borderRadius: 8, padding: '6px 12px', fontSize: 12.5, cursor: 'pointer' }}>
+                      borderRadius: 'var(--r-md)', padding: '6px 12px', fontSize: 12.5, cursor: 'pointer' }}>
                     ▾ แสดงอีก {sum.rows.length - ROWS_FIRST} ใบ (ทั้งหมด {sum.rows.length} ใบ)
                   </button>
                 )}

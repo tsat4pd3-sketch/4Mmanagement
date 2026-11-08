@@ -1090,10 +1090,8 @@ export default function Improvements() {
                        แต่แผนงาน 0/5 ขั้น (ยังไม่ได้ลงมือ) แล้วปุ่มนี้ไม่โผล่ = ไม่มีทางยืนยันได้เลย
                     (หรือติ๊กเริ่มขั้น D ในแผนงาน ระบบจะเด้งฟอร์มเดียวกันให้) ห้ามซ่อนเงียบ */}
                 {!started && imp.status === 'monitoring' && canManage && (
-                  <button onClick={() => setDoModal({ imp, action: imp.action_taken || '', date: todayStr() })}
-                    style={{ marginTop: 6, padding: '6px 10px', borderRadius: 7, textAlign: 'left', width: '100%',
-                      border: '1px dashed var(--amber-line)', background: 'var(--amber-dim)', color: 'var(--amber)',
-                      fontSize: 11.5, fontWeight: 700, cursor: 'pointer', lineHeight: 1.5 }}>
+                  <button type="button" className="pg-btn sm" onClick={() => setDoModal({ imp, action: imp.action_taken || '', date: todayStr() })}
+                    style={{ marginTop: 6, textAlign: 'left', width: '100%' }}>
                     ยังไม่ได้ลงมือแก้จริง (อยู่ช่วงวิเคราะห์/วางแผน) — เริ่มลงมือเมื่อไหร่กดที่นี่
                     เพื่อยืนยันการแก้ไข + ตั้ง "วันเริ่มแก้" เป็นจุดตัดเทียบก่อน/หลัง แล้วผลจริงจะเริ่มคำนวณ
                   </button>
@@ -1220,7 +1218,7 @@ export default function Improvements() {
                             const on = costComps.includes(c.key);
                             return (
                               <button key={c.key} onClick={() => toggleComp(c.key)} title={`${c.full} — ${on ? 'นับในยอดรวม (กดเพื่อไม่นับ)' : 'ไม่นับในยอดรวม (กดเพื่อนับ)'}`}
-                                style={{ fontSize: 11, fontWeight: 800, padding: '1px 8px', borderRadius: 10, cursor: 'pointer',
+                                style={{ fontSize: 11, fontWeight: 800, padding: '1px 8px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                                   border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
                                   background: on ? 'var(--accent-dim)' : 'transparent',
                                   color: on ? 'var(--accent)' : 'var(--muted)', textDecoration: on ? 'none' : 'line-through' }}>
@@ -1391,8 +1389,8 @@ export default function Improvements() {
                               <input type="date" value={msDraft[imp.id]?.planned_end || ''}
                                 onChange={e => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], planned_end: e.target.value } }))}
                                 style={{ width: 125, padding: '4px 6px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
-                              <button onClick={() => addMilestone(imp.id)}
-                                style={{ padding: '5px 12px', borderRadius: 6, border: 'none', background: 'var(--blue)', color: '#08131f', fontWeight: 800, fontSize: 11, cursor: 'pointer' }}>เพิ่มขั้น</button>
+                              <button type="button" className="pg-btn sm" onClick={() => addMilestone(imp.id)}
+                               >เพิ่มขั้น</button>
                             </div>
                           )}
                           {ms.length === 0 && !canManage && <div style={{ fontSize: 11, color: 'var(--muted)' }}>ยังไม่มีแผนงาน</div>}
@@ -1409,18 +1407,18 @@ export default function Improvements() {
                   {imp.created_by_name && <span style={{ fontSize: 11, color: 'var(--muted)', marginRight: 'auto' }}>โดย {imp.created_by_name}</span>}
                   {canManage && imp.status === 'monitoring' && (
                     <>
-                      <button onClick={() => setCloseModal({ imp, note: '', peImpact: null })} style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--green-line)', background: 'var(--green-dim)', color: 'var(--green)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>ปิดจ๊อบ</button>
-                      <button onClick={() => setStatus(imp, 'cancelled')} style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--muted)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>ยกเลิก</button>
+                      <button type="button" className="pg-btn sm" onClick={() => setCloseModal({ imp, note: '', peImpact: null })}>ปิดจ๊อบ</button>
+                      <button type="button" className="pg-btn sm" onClick={() => setStatus(imp, 'cancelled')}>ยกเลิก</button>
                     </>
                   )}
                   {canManage && imp.status !== 'monitoring' && (
-                    <button onClick={() => setStatus(imp, 'monitoring', imp.result_note)} style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--amber-line)', background: 'var(--amber-dim)', color: 'var(--amber)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>ติดตามต่อ</button>
+                    <button type="button" className="pg-btn sm" onClick={() => setStatus(imp, 'monitoring', imp.result_note)}>ติดตามต่อ</button>
                   )}
                   {/* 📐 คำขอแก้เอกสาร PE — เข้าได้ทุกเมื่อ (ดูสถานะคำขอ/เสนอเพิ่ม) ไม่ใช่ one-shot ตอนปิดจ๊อบ */}
-                  <button onClick={() => setPeModal(imp)} title="เสนอ/ดูคำขอแก้ PFMEA · Control Plan จากโปรเจคนี้" style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>PE</button>
+                  <button type="button" className="pg-btn sm" onClick={() => setPeModal(imp)} title="เสนอ/ดูคำขอแก้ PFMEA · Control Plan จากโปรเจคนี้">PE</button>
                   {/* 📋 ใบ A3 — พิมพ์ได้ทุก role (อ่านอย่างเดียวก็ต้องเอาใบไปประชุมได้) แก้เนื้อหาเฉพาะคนมีสิทธิ์ */}
-                  <button onClick={() => openA3(imp)} title="ออกใบ A3 Report (PDCA / DMAIC) จากข้อมูลจริงของโปรเจคนี้" style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--blue-line)', background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>A3</button>
-                  {canManage && <button onClick={() => openEdit(imp)} style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>แก้ไข</button>}
+                  <button type="button" className="pg-btn sm" onClick={() => openA3(imp)} title="ออกใบ A3 Report (PDCA / DMAIC) จากข้อมูลจริงของโปรเจคนี้">A3</button>
+                  {canManage && <button type="button" className="pg-btn sm" onClick={() => openEdit(imp)}>แก้ไข</button>}
                   {canDel && <DeleteButton onClick={() => handleDelete(imp)} title="ลบ" />}
                 </div>
               </div>
@@ -1635,8 +1633,8 @@ export default function Improvements() {
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-              <button onClick={() => setModal(null)} style={{ padding: '9px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
-              <button disabled={saving} onClick={handleSave} style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+              <button type="button" className="pg-btn sm" onClick={() => setModal(null)}>ยกเลิก</button>
+              <button type="button" className="pg-btn sm primary" disabled={saving} onClick={handleSave} style={{ opacity: saving ? 0.6 : 1 }}>
                 {saving ? 'กำลังบันทึก...' : 'บันทึก'}
               </button>
             </div>
@@ -1662,8 +1660,8 @@ export default function Improvements() {
               <input type="date" value={doModal.date} onChange={e => setDoModal({ ...doModal, date: e.target.value })} style={{ marginTop: 4, width: 150, display: 'block' }} />
             </label>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
-              <button onClick={() => setDoModal(null)} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>ไว้ก่อน</button>
-              <button onClick={saveDoStart} style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: 'var(--amber)', color: '#1b1204', fontWeight: 800, fontSize: 12, cursor: 'pointer' }}>บันทึกเริ่มลงมือ</button>
+              <button type="button" className="pg-btn sm" onClick={() => setDoModal(null)}>ไว้ก่อน</button>
+              <button type="button" className="pg-btn sm" onClick={saveDoStart}>บันทึกเริ่มลงมือ</button>
             </div>
           </div>
         </div>
@@ -1734,7 +1732,7 @@ export default function Improvements() {
                 <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>กรอบการเล่าเรื่อง:</span>
                 {Object.values(A3_FRAMEWORKS).map(f => (
                   <button key={f.key} onClick={() => canManage && setD({ framework: f.key })} disabled={!canManage}
-                    style={{ padding: '4px 12px', borderRadius: 14, fontSize: 12, fontWeight: 800, cursor: canManage ? 'pointer' : 'default',
+                    style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 800, cursor: canManage ? 'pointer' : 'default',
                       border: `1px solid ${fw === f.key ? 'var(--accent)' : 'var(--border)'}`,
                       background: fw === f.key ? 'var(--accent-dim)' : 'var(--bg3)',
                       color: fw === f.key ? 'var(--accent)' : 'var(--muted)' }}>{f.label}</button>
@@ -1772,11 +1770,11 @@ export default function Improvements() {
               </div>
 
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14, flexWrap: 'wrap' }}>
-                <button onClick={() => setA3Modal(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>ปิด</button>
-                <button onClick={printA3} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>พิมพ์อย่างเดียว</button>
+                <button type="button" className="pg-btn sm" onClick={() => setA3Modal(null)}>ปิด</button>
+                <button type="button" className="pg-btn sm" onClick={printA3}>พิมพ์อย่างเดียว</button>
                 {canManage && (
-                  <button onClick={async () => { await saveA3(); await printA3(); }} disabled={a3Modal.saving}
-                    style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 12.5, cursor: a3Modal.saving ? 'default' : 'pointer', opacity: a3Modal.saving ? 0.6 : 1 }}>
+                  <button type="button" className="pg-btn sm primary" onClick={async () => { await saveA3(); await printA3(); }} disabled={a3Modal.saving}
+                    style={{ opacity: a3Modal.saving ? 0.6 : 1 }}>
                     {a3Modal.saving ? 'กำลังบันทึก…' : 'บันทึก & พิมพ์ A3'}
                   </button>
                 )}
@@ -1809,7 +1807,7 @@ export default function Improvements() {
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
-              <button onClick={() => setCloseModal(null)} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>ยกเลิก</button>
+              <button type="button" className="pg-btn sm" onClick={() => setCloseModal(null)}>ยกเลิก</button>
               <button disabled={!closeModal.peImpact}
                 title={closeModal.peImpact ? '' : 'ตอบก่อนว่ากระทบเอกสาร PE ไหม (ขั้น Act ของ PDCA)'}
                 onClick={() => {
@@ -1817,7 +1815,7 @@ export default function Improvements() {
                   if (closeModal.peImpact === 'yes') setPeModal(closeModal.imp);
                   setCloseModal(null);
                 }}
-                style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: closeModal.peImpact ? 'var(--green)' : 'var(--bg3)', color: closeModal.peImpact ? '#08130a' : 'var(--muted)', fontWeight: 800, fontSize: 12, cursor: closeModal.peImpact ? 'pointer' : 'not-allowed' }}>ปิดจ๊อบ</button>
+                style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', background: closeModal.peImpact ? 'var(--green)' : 'var(--bg3)', color: closeModal.peImpact ? '#08130a' : 'var(--muted)', fontWeight: 800, fontSize: 12, cursor: closeModal.peImpact ? 'pointer' : 'not-allowed' }}>ปิดจ๊อบ</button>
             </div>
           </div>
         </div>

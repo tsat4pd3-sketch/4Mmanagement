@@ -256,7 +256,7 @@ export default function Transport() {
             <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)' }}>คนขับ / ผู้ขน</span>
             {canManage && (
               <button onClick={() => setEditCarrier({ name: '', emp_code: '', shift: 'day', vehicles: [], section: '', is_active: true, note: '' })}
-                style={{ padding: '7px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
+                style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
                 เพิ่มคนขับ
               </button>
             )}
@@ -449,7 +449,7 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
               {canManage && stopIds.length >= 3 && (
                 <button onClick={optimizeOrder} disabled={busy === round.id}
                   title="ให้ระบบหาลำดับแวะที่ระยะรวมสั้นสุด (จุดแรกคงเป็นต้นทางเดิม)"
-                  style={{ padding: '3px 9px', borderRadius: 14, cursor: 'pointer', fontSize: 11.5, fontWeight: 700, background: 'var(--accent-dim, var(--green-dim))', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
+                  style={{ padding: '3px 9px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, background: 'var(--accent-dim, var(--green-dim))', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
                   เรียงให้สั้นสุด
                 </button>
               )}
@@ -470,7 +470,7 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                         <button onClick={() => canManage && saveStopAction?.(s.id, isLoad ? 'drop' : 'load')}
                           disabled={!canManage || busy === round.id}
                           title={canManage ? 'คลิกสลับ รับของ ⇄ ส่งของ' : undefined}
-                          style={{ flex: '0 0 auto', padding: '1px 7px', borderRadius: 10, fontSize: 11, fontWeight: 800, cursor: canManage ? 'pointer' : 'default',
+                          style={{ flex: '0 0 auto', padding: '1px 7px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, cursor: canManage ? 'pointer' : 'default',
                             background: isLoad ? 'var(--blue-dim)' : 'var(--green-dim)',
                             color: isLoad ? 'var(--blue)' : 'var(--accent)',
                             border: `1px solid ${isLoad ? 'var(--blue-line)' : 'var(--accent)'}` }}>
@@ -508,7 +508,7 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                       const mine = isOfLine(n);
                       return (
                         <button key={n.id} onClick={() => addStop(n.id)} disabled={busy === round.id}
-                          style={{ padding: '4px 9px', borderRadius: 16, cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
+                          style={{ padding: '4px 9px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
                             background: mine ? 'var(--accent-dim, var(--green-dim))' : 'var(--bg2)',
                             color: mine ? 'var(--accent)' : 'var(--text2)',
                             border: `1px solid ${mine ? 'var(--accent)' : 'var(--border)'}` }}>
@@ -574,10 +574,10 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                   </label>
                 )}
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 2 }}>
-                  <button onClick={() => { if (simFrac >= 1) setSimFrac(0); setSimRun(r => !r); }} style={{ padding: '6px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, fontWeight: 800, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
+                  <button onClick={() => { if (simFrac >= 1) setSimFrac(0); setSimRun(r => !r); }} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12.5, fontWeight: 800, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
                     {simRun ? 'หยุด' : 'จำลองการวิ่ง'}
                   </button>
-                  <button onClick={() => { setSimRun(false); setSimFrac(0); }} style={{ padding: '6px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>↺</button>
+                  <button onClick={() => { setSimRun(false); setSimFrac(0); }} style={{ padding: '6px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12.5, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>↺</button>
                   {simMinNow != null && (
                     <span style={{ fontSize: 12, color: simState.dwellAt ? 'var(--amber)' : 'var(--accent)', fontWeight: 700 }}>
                       ⏱ {fmtMin(simMinNow)}{simState.dwellAt ? ` · ⏸ แวะจุด ${simState.dwellAt}` : ''}
@@ -757,7 +757,7 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
                 const on = f.vehicles.includes(v.code);
                 return (
                   <button key={v.code} onClick={() => toggleVeh(v.code)} style={{
-                    padding: '6px 11px', borderRadius: 20, cursor: 'pointer', fontSize: 12, fontWeight: 700,
+                    padding: '6px 11px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700,
                     background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)',
                     border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
                   }}>{v.icon} {v.name}</button>
@@ -771,8 +771,8 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
           <div><span style={lbl}>หมายเหตุ</span><input value={f.note || ''} onChange={e => setF({ ...f, note: e.target.value })} style={inp} /></div>
         </div>
         <div style={{ display: 'flex', gap: 10, marginTop: 18, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 13, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>ยกเลิก</button>
-          <button onClick={save} disabled={saving} style={{ padding: '8px 18px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 13, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>ยกเลิก</button>
+          <button onClick={save} disabled={saving} style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
         </div>
       </div>
     </div>

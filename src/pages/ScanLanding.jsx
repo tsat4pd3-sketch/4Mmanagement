@@ -465,7 +465,7 @@ export default function ScanLanding() {
             {hit.machine?.machine_no && canAccessPage('/mtn-repair', role) && (
               <button onClick={() => setShowHist(true)} style={{
                 display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '10px 14px', textAlign: 'left',
-                borderRadius: 10, border: '1px solid var(--amber)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer',
+                borderRadius: 'var(--r-md)', border: '1px solid var(--amber)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer',
               }}>
                 <span style={{ fontSize: 22 }}>📜</span>
                 <span><div style={{ fontSize: 15, fontWeight: 800, color: 'var(--amber)' }}>ประวัติซ่อมเครื่องนี้</div>

@@ -92,8 +92,8 @@ export default function KpiMonthNoteModal({ title, icon, monthText, valueText, n
             <textarea value={text} onChange={e => setText(e.target.value)} rows={3} placeholder={noteKindMeta(kind).hint}
               style={{ width: '100%', resize: 'vertical', fontSize: 13.5 }} />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button onClick={onClose} style={{ fontSize: 13, padding: '6px 12px', borderRadius: 8, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>ปิด</button>
-              <button onClick={add} disabled={busy} style={{ fontSize: 13, fontWeight: 700, padding: '6px 14px', borderRadius: 8, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{busy ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+              <button onClick={onClose} style={{ fontSize: 13, padding: '6px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>ปิด</button>
+              <button onClick={add} disabled={busy} style={{ fontSize: 13, fontWeight: 700, padding: '6px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{busy ? 'กำลังบันทึก…' : 'บันทึก'}</button>
             </div>
           </div>
         ) : (

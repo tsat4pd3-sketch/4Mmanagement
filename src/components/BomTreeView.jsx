@@ -118,7 +118,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
           </div>
           {delRows.length > 0 && (
             <button onClick={() => doDelete(delRows)} disabled={busy}
-              style={{ marginTop: 7, fontSize: 11.5, fontWeight: 800, padding: '6px 13px', borderRadius: 7,
+              style={{ marginTop: 7, fontSize: 11.5, fontWeight: 800, padding: '6px 13px', borderRadius: 'var(--r-md)',
                 cursor: busy ? 'wait' : 'pointer', background: 'rgba(239,68,68,0.15)', color: TONE.crit,
                 border: `1px solid ${TONE.crit}`, fontFamily: 'var(--font-body)' }}>
               🧹 ลบแถวชั้น 1 ที่นับซ้ำทั้งหมด ({delRows.length} รายการ)
@@ -237,7 +237,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
                         🔴 นับซ้ำ — ตัวนี้อยู่ชั้นลึกอยู่แล้ว
                         {onDeleteDupes && r.id && (
                           <button onClick={() => doDelete([r])} disabled={busy} title="ลบแถวชั้น 1 นี้ทิ้ง"
-                            style={{ fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 5,
+                            style={{ fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 'var(--r-md)',
                               cursor: busy ? 'wait' : 'pointer', background: 'rgba(239,68,68,0.15)',
                               color: TONE.crit, border: `1px solid ${TONE.crit}`, fontFamily: 'var(--font-body)' }}>
                             🗑 ลบแถวนี้
@@ -270,7 +270,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
 
       {rows.length > shown.length && (
         <button onClick={() => setShowAll(true)}
-          style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, padding: '5px 12px', borderRadius: 7, cursor: 'pointer',
+          style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, padding: '5px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
             background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-body)' }}>
           ▾ แสดงอีก {rows.length - shown.length} รายการ
         </button>

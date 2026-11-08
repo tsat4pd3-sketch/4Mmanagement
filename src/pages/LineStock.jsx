@@ -853,7 +853,7 @@ function StockTab({ role, scope }) {
                 <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
                   {['issue','return','adjust'].map(t => (
                     <button key={t} onClick={() => setForm(f => ({ ...f, type:t }))}
-                      style={{ padding:'6px 14px', borderRadius:8, border:`1px solid ${form.type===t ? TYPE_COLOR[t] : 'var(--border)'}`, cursor:'pointer', fontSize:12, fontWeight:700,
+                      style={{ padding:'6px 14px', borderRadius: 'var(--r-md)', border:`1px solid ${form.type===t ? TYPE_COLOR[t] : 'var(--border)'}`, cursor:'pointer', fontSize:12, fontWeight:700,
                         background: form.type===t ? `${tint(TYPE_COLOR[t], 'dim')}` : 'var(--bg2)',
                         color: form.type===t ? TYPE_COLOR[t] : 'var(--muted)',
                         fontFamily:'var(--font-body)' }}>
@@ -920,7 +920,7 @@ function StockTab({ role, scope }) {
                         <button key={c.mat_no} type="button"
                           onClick={() => setForm(f => ({ ...f, mat_no: c.mat_no, part_name: c.part_name || f.part_name }))}
                           title={c.part_name || ''}
-                          style={{ padding:'5px 10px', borderRadius:8, cursor:'pointer', fontSize:12, fontFamily:'monospace', fontWeight:700,
+                          style={{ padding:'5px 10px', borderRadius: 'var(--r-md)', cursor:'pointer', fontSize:12, fontFamily:'monospace', fontWeight:700,
                             background: sel ? 'var(--blue-dim)' : 'var(--bg2)',
                             color: sel ? 'var(--blue)' : 'var(--text2)',
                             border:`1px solid ${sel ? 'var(--blue)' : 'var(--border)'}` }}>
@@ -958,7 +958,7 @@ function StockTab({ role, scope }) {
                   <div style={{ display:'flex', gap:6 }}>
                     {[{ k:'up', l:'➕ เพิ่มยอด', c:'var(--green)' }, { k:'down', l:'➖ ลดยอด', c:'var(--red)' }].map(d => (
                       <button key={d.k} type="button" onClick={() => setForm(f => ({ ...f, dir:d.k }))}
-                        style={{ flex:1, padding:'7px 10px', borderRadius:8, cursor:'pointer', fontSize:12, fontWeight:800, fontFamily:'var(--font-body)',
+                        style={{ flex:1, padding:'7px 10px', borderRadius: 'var(--r-md)', cursor:'pointer', fontSize:12, fontWeight:800, fontFamily:'var(--font-body)',
                           background: form.dir===d.k ? `${tint(d.c, 'dim')}` : 'var(--bg2)', color: form.dir===d.k ? d.c : 'var(--muted)',
                           border:`1px solid ${form.dir===d.k ? d.c : 'var(--border)'}` }}>{d.l}</button>
                     ))}
@@ -1656,7 +1656,7 @@ function InflowRulesTab({ canEdit }) {
                 <td style={{ padding: '8px 14px', textAlign: 'right' }}>
                   {canEdit && (
                     <button onClick={() => deleteRule(r)}
-                      style={{ padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', fontFamily: 'var(--font-body)' }}>
+                      style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', fontFamily: 'var(--font-body)' }}>
                       ลบ
                     </button>
                   )}

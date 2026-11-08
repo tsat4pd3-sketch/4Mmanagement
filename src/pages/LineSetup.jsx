@@ -1030,7 +1030,7 @@ export default function LineSetup({ embedded = false } = {}) {
             <button key={t.key}
               onClick={() => { setActiveTab(t.key); setTempPos(null); setMachineTempPos(null); setConnectMode(false); setConnectFrom(null); }}
               style={{
-                padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                padding: '8px 16px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
                 border: `1px solid ${activeTab === t.key ? 'var(--accent)' : 'var(--border2)'}`,
                 background: activeTab === t.key ? 'var(--accent-dim)' : 'var(--bg2)',
                 color: activeTab === t.key ? 'var(--accent)' : 'var(--text2)',
@@ -1049,7 +1049,7 @@ export default function LineSetup({ embedded = false } = {}) {
             title={'แสดง/ซ่อนป้ายชื่อทุกจุดบนผัง (เหมือนหน้าแสดงผลจริง)\nหมุดที่กำลังเลือก/แก้ไขโชว์ป้ายเสมอ'}
             style={{
               position: 'relative',
-              padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+              padding: '8px 16px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
               marginLeft: canEdit ? 0 : 'auto',
               border: `1px solid ${showPills ? 'var(--accent)' : 'var(--border2)'}`,
               background: showPills ? 'var(--accent-dim)' : 'var(--bg2)',
@@ -1357,9 +1357,9 @@ export default function LineSetup({ embedded = false } = {}) {
                   {editingLineId === l.id ? (
                     <>
                       <button onClick={e => { e.stopPropagation(); handleRenameLine(l, editingLineName); }}
-                        style={{ background: 'var(--accent)', border: 'none', color: 'var(--accent-ink)', fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', flexShrink: 0, fontWeight: 700 }}>✓</button>
+                        style={{ background: 'var(--accent)', border: 'none', color: 'var(--accent-ink)', fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-md)', cursor: 'pointer', flexShrink: 0, fontWeight: 700 }}>✓</button>
                       <button onClick={e => { e.stopPropagation(); setEditingLineId(null); }}
-                        style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)', fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', flexShrink: 0 }}>✕</button>
+                        style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)', fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-md)', cursor: 'pointer', flexShrink: 0 }}>✕</button>
                     </>
                   ) : canEdit && (
                     <>
@@ -1417,7 +1417,7 @@ export default function LineSetup({ embedded = false } = {}) {
             <div style={{ display: 'flex', gap: 6 }}>
               {UNIT_KINDS.map(k => (
                 <button key={k.key} type="button" onClick={() => setNewUnitKind(k.key)} title={k.desc}
-                  style={{ flex: 1, padding: '7px 8px', fontSize: 12, fontWeight: 700, borderRadius: 8, cursor: 'pointer',
+                  style={{ flex: 1, padding: '7px 8px', fontSize: 12, fontWeight: 700, borderRadius: 'var(--r-md)', cursor: 'pointer',
                     border: `1px solid ${newUnitKind === k.key ? 'var(--accent)' : 'var(--border2)'}`,
                     background: newUnitKind === k.key ? 'var(--accent-dim)' : 'var(--bg3)',
                     color: newUnitKind === k.key ? 'var(--text)' : 'var(--text2)' }}>{k.label}</button>
@@ -1429,8 +1429,8 @@ export default function LineSetup({ embedded = false } = {}) {
                 ใบตรวจรายวัน (AM · LPA · Poka-Yoke) และไม่ถูกนับเป็นไลน์ในตัวหาร
               </div>
             )}
-            <button onClick={handleAddLine} disabled={isAddingLine || !newLineName.trim()}
-              style={{ padding: '8px 12px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13 }}>
+            <button type="button" className="pg-btn sm primary" onClick={handleAddLine} disabled={isAddingLine || !newLineName.trim()}
+             >
               {isAddingLine ? '...' : '+ เพิ่มไลน์'}
             </button>
           </div>
@@ -1540,7 +1540,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   </div>
                 )}
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                  <button onClick={handleSaveStation} style={{ flex: 1, padding: '9px', background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700 }}>
+                  <button type="button" className="pg-btn sm" onClick={handleSaveStation} style={{ flex: 1 }}>
                     {formData.id ? 'บันทึก' : 'เพิ่ม'}
                   </button>
                   <button onClick={() => { setTempPos(null); setFormData({ id: null, name: '', requirements: {}, skill_allowance: false, skill_allowance_type: '' }); }}
@@ -1636,11 +1636,11 @@ export default function LineSetup({ embedded = false } = {}) {
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                    <button onClick={handleSaveMachine} style={{ flex: 1, padding: '9px', background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700 }}>
+                    <button type="button" className="pg-btn sm" onClick={handleSaveMachine} style={{ flex: 1 }}>
                       {machineForm.id ? 'บันทึก' : 'เพิ่ม'}
                     </button>
-                    <button onClick={() => { setMachineTempPos(null); setMachineForm({ id: null, machine_no: '', redundancy_group: '' }); }}
-                      style={{ padding: '9px 14px', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 7 }}>
+                    <button type="button" className="pg-btn sm" onClick={() => { setMachineTempPos(null); setMachineForm({ id: null, machine_no: '', redundancy_group: '' }); }}
+                     >
                       ยกเลิก
                     </button>
                   </div>
@@ -1684,7 +1684,7 @@ export default function LineSetup({ embedded = false } = {}) {
                     onClick={() => { setConnectMode(v => !v); setConnectFrom(null); }}
                     style={{
                       position: 'relative', flexShrink: 0,
-                      padding: '5px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                      padding: '5px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer',
                       border: `1px solid ${connectMode ? 'var(--amber)' : 'var(--border2)'}`,
                       background: connectMode ? 'var(--amber-dim)' : 'var(--bg2)',
                       color: connectMode ? 'var(--amber)' : 'var(--text2)',
@@ -1737,7 +1737,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   style={{ padding: '6px 14px', background: mpSaving || !mpDirty ? 'var(--bg3)' : 'var(--accent)',
                     color: mpSaving || !mpDirty ? 'var(--muted)' : '#fff',
                     border: `1px solid ${mpSaving || !mpDirty ? 'var(--border2)' : 'var(--accent)'}`,
-                    borderRadius: 7, fontWeight: 700, fontSize: 12, cursor: mpDirty && !mpSaving ? 'pointer' : 'default' }}>
+                    borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 12, cursor: mpDirty && !mpSaving ? 'pointer' : 'default' }}>
                   {mpSaving ? 'กำลังบันทึก...' : 'บันทึก'}
                 </button>
               </div>
@@ -1906,7 +1906,7 @@ export default function LineSetup({ embedded = false } = {}) {
                 {UNIT_KINDS.map(k => (
                   <button key={k.key} type="button" disabled={!canEdit} title={k.desc}
                     onClick={() => setUnitKind(k.key)}
-                    style={{ flex: 1, padding: '7px 8px', fontSize: 12, fontWeight: 700, borderRadius: 8,
+                    style={{ flex: 1, padding: '7px 8px', fontSize: 12, fontWeight: 700, borderRadius: 'var(--r-md)',
                       cursor: canEdit ? 'pointer' : 'default',
                       border: `1px solid ${unitKind === k.key ? 'var(--accent)' : 'var(--border2)'}`,
                       background: unitKind === k.key ? 'var(--accent-dim)' : 'var(--bg3)',

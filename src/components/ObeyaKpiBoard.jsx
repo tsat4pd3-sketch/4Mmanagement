@@ -870,7 +870,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           {[['%', false], ['ชม.', true]].map(([lb, on]) => (
             <button key={lb} type="button" onClick={(e) => { e.stopPropagation(); if (hv !== on) toggleHr(r.key); }}
               title="สลับหน่วยที่ดู — ชม. = ชั่วโมงเครื่องหยุด แปลงจาก % ด้วยฐาน 730 ชม. × จำนวนเครื่อง (ตัวเลข KPI ทางการและไฟสถานะยังเป็น %)"
-              style={{ fontSize: fs(10), lineHeight: 1.3, padding: '1px 6px', borderRadius: 6, border: '1px solid var(--border)', cursor: 'pointer', fontWeight: 700,
+              style={{ fontSize: fs(10), lineHeight: 1.3, padding: '1px 6px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', cursor: 'pointer', fontWeight: 700,
                 background: hv === on ? 'var(--accent)' : 'var(--card)', color: hv === on ? 'var(--accent-ink)' : 'var(--muted)' }}>{lb}</button>
           ))}
         </div>

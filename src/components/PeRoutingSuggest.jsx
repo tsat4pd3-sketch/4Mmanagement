@@ -208,9 +208,9 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
         )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
+          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
           <button onClick={confirm} disabled={saving || !included}
-            style={{ padding: '8px 18px', borderRadius: 6, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', opacity: (saving || !included) ? 0.5 : 1 }}>
+            style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', opacity: (saving || !included) ? 0.5 : 1 }}>
             {saving ? '⏳ กำลังบันทึก…' : `✅ ยืนยันบันทึก ${included} ขั้น`}
           </button>
         </div>

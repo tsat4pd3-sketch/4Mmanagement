@@ -244,7 +244,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
         <span className="spacer" />
         {rep && <span className="filter-count">{shown.length} ไลน์ · {shown.reduce((a, r) => a + r.machines.length, 0)} เครื่อง</span>}
         <button type="button" onClick={exportXlsx} disabled={!rep || exporting || !shown.length}
-          style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '5px 12px', fontSize: 12, fontWeight: 700 }}>
+          style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '5px 12px', fontSize: 12, fontWeight: 700 }}>
           {exporting ? '⏳ กำลังส่งออก…' : '📥 Excel'}
         </button>
       </FilterBar>
@@ -428,7 +428,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
                         <span style={{ flex: 1 }} />
                         {rv.ok && (
                           <button type="button" onClick={() => { setRevoking(a); setReason('') }}
-                            style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '4px 10px', fontSize: 12 }}>
+                            style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '4px 10px', fontSize: 12 }}>
                             ↩ เพิกถอน
                           </button>
                         )}
@@ -453,7 +453,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
                       <span style={{ flex: 1 }} />
                       {v.ok ? (
                         <button type="button" onClick={() => { setSigning({ line: r.line_name }); setNote('') }}
-                          style={{ background: 'var(--accent)', border: 'none', color: 'var(--accent-ink)', borderRadius: 8, padding: '5px 12px', fontSize: 12, fontWeight: 700 }}>
+                          style={{ background: 'var(--accent)', border: 'none', color: 'var(--accent-ink)', borderRadius: 'var(--r-md)', padding: '5px 12px', fontSize: 12, fontWeight: 700 }}>
                           ✍️ ลงนามทบทวน
                         </button>
                       ) : (
@@ -499,9 +499,9 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
                 style={{ width: '100%', marginTop: 10, fontSize: 12, boxSizing: 'border-box' }} />
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
                 <button type="button" disabled={busy} onClick={() => setSigning(null)}
-                  style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '6px 14px', fontSize: 12 }}>ยกเลิก</button>
+                  style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '6px 14px', fontSize: 12 }}>ยกเลิก</button>
                 <button type="button" disabled={busy || !row} onClick={doSign}
-                  style={{ background: 'var(--accent)', border: 'none', color: 'var(--accent-ink)', borderRadius: 8, padding: '6px 14px', fontSize: 12, fontWeight: 700 }}>
+                  style={{ background: 'var(--accent)', border: 'none', color: 'var(--accent-ink)', borderRadius: 'var(--r-md)', padding: '6px 14px', fontSize: 12, fontWeight: 700 }}>
                   {busy ? '⏳ กำลังบันทึก…' : '✍️ ยืนยันลงนาม'}
                 </button>
               </div>
@@ -523,9 +523,9 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
               style={{ width: '100%', marginTop: 10, fontSize: 12, boxSizing: 'border-box' }} />
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
               <button type="button" disabled={busy} onClick={() => setRevoking(null)}
-                style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '6px 14px', fontSize: 12 }}>ยกเลิก</button>
+                style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '6px 14px', fontSize: 12 }}>ยกเลิก</button>
               <button type="button" disabled={busy || reason.trim().length < AM_REVOKE_REASON_MIN} onClick={doRevoke}
-                style={{ background: 'var(--red)', border: 'none', color: '#fff', borderRadius: 8, padding: '6px 14px', fontSize: 12, fontWeight: 700 }}>
+                style={{ background: 'var(--red)', border: 'none', color: '#fff', borderRadius: 'var(--r-md)', padding: '6px 14px', fontSize: 12, fontWeight: 700 }}>
                 {busy ? '⏳ กำลังบันทึก…' : 'ยืนยันเพิกถอน'}
               </button>
             </div>

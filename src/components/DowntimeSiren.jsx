@@ -179,7 +179,7 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
               แตะเพื่อเปิดเสียง
             </span>
           )}
-          <button onClick={() => ack(a)} style={{ flexShrink: 0, background: m.color, color: '#fff', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>รับทราบ · หยุดเสียง</button>
+          <button onClick={() => ack(a)} style={{ flexShrink: 0, background: m.color, color: '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>รับทราบ · หยุดเสียง</button>
         </div>
         )
       })}

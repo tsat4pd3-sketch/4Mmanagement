@@ -279,7 +279,7 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
                     {['pending', 'acked'].includes(o.status) && (
                       <button disabled={!o.part_id}
                         onClick={() => { onOpen?.(o); setPopup(null); }}
-                        style={{ marginTop: 8, width: '100%', padding: '6px 0', borderRadius: 7, fontSize: 12,
+                        style={{ marginTop: 8, width: '100%', padding: '6px 0', borderRadius: 'var(--r-md)', fontSize: 12,
                           fontWeight: 700, cursor: o.part_id ? 'pointer' : 'not-allowed',
                           background: 'rgba(34,197,94,0.12)', color: '#22c55e',
                           border: '1px solid var(--border2)', opacity: o.part_id ? 1 : 0.45 }}>

@@ -157,7 +157,7 @@ function TitlePicker({ current, used, onPick, onClose }) {
             const taken = used.includes(v) && v !== current;
             return (
               <button key={v} type="button" disabled={taken} onClick={() => onPick(v)} title={taken ? 'มีแผ่นชื่อนี้อยู่แล้ว' : ''}
-                style={{ padding: '8px 10px', borderRadius: 8, fontSize: 12.5, cursor: taken ? 'not-allowed' : 'pointer', opacity: taken ? 0.4 : 1,
+                style={{ padding: '8px 10px', borderRadius: 'var(--r-md)', fontSize: 12.5, cursor: taken ? 'not-allowed' : 'pointer', opacity: taken ? 0.4 : 1,
                   border: '1px solid var(--border2)', background: v === current ? 'var(--accent-dim)' : 'var(--bg3)', color: 'var(--text)' }}>
                 {v}{taken ? ' ✓' : ''}
               </button>
@@ -168,10 +168,10 @@ function TitlePicker({ current, used, onPick, onClose }) {
           <input value={custom} onChange={e => setCustom(e.target.value)} placeholder="หรือพิมพ์ชื่อเอง เช่น Section C-C" style={{ flex: 1 }}
             onKeyDown={e => { if (e.key === 'Enter' && custom.trim()) onPick(custom.trim()); }} />
           <button type="button" disabled={!custom.trim()} onClick={() => onPick(custom.trim())}
-            style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer' }}>ตกลง</button>
+            style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer' }}>ตกลง</button>
         </div>
         <div style={{ textAlign: 'right', marginTop: 10 }}>
-          <button type="button" onClick={onClose} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ข้าม</button>
+          <button type="button" onClick={onClose} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ข้าม</button>
         </div>
       </div>
     </div>

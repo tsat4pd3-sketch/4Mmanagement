@@ -149,7 +149,7 @@ export default function EventComments({ refKind, refId, contextLabel = 'รา�
             {users.length > 0 && (
               <div style={{ position: 'relative' }}>
                 <button className="tbtn" onClick={() => setPickOpen(o => !o)}
-                  style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', background: 'var(--bg2)', border: '1px dashed var(--border2)', borderRadius: 20, padding: '3px 10px', cursor: 'pointer' }}>
+                  style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', background: 'var(--bg2)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '3px 10px', cursor: 'pointer' }}>
                   แจ้งเตือนถึง... ▾
                 </button>
                 {pickOpen && (
@@ -160,7 +160,7 @@ export default function EventComments({ refKind, refId, contextLabel = 'รา�
                     <div style={{ maxHeight: 180, overflowY: 'auto' }}>
                       {shownUsers.map(u => (
                         <button key={u.id} onClick={() => addMention(u)}
-                          style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: '6px 8px', borderRadius: 6, color: 'var(--text)', fontSize: 12, fontWeight: 600 }}>
+                          style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: '6px 8px', borderRadius: 'var(--r-md)', color: 'var(--text)', fontSize: 12, fontWeight: 600 }}>
                           {u.full_name}
                         </button>
                       ))}
@@ -179,7 +179,7 @@ export default function EventComments({ refKind, refId, contextLabel = 'รา�
               onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) post(); }}
               style={{ flex: 1, fontSize: 13, resize: 'vertical', minHeight: 40, width: 'auto' }} />
             <button className="tbtn" onClick={post} disabled={posting || !body.trim()}
-              style={{ padding: '9px 16px', borderRadius: 8, border: 'none', cursor: posting || !body.trim() ? 'default' : 'pointer', background: body.trim() ? 'var(--accent)' : 'var(--border2)', color: body.trim() ? 'var(--accent-ink)' : 'var(--muted)', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>
+              style={{ padding: '9px 16px', borderRadius: 'var(--r-md)', border: 'none', cursor: posting || !body.trim() ? 'default' : 'pointer', background: body.trim() ? 'var(--accent)' : 'var(--border2)', color: body.trim() ? 'var(--accent-ink)' : 'var(--muted)', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>
               {posting ? '...' : 'ส่ง'}
             </button>
           </div>

@@ -295,7 +295,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
           {blocks.length  > 0 && <span style={chip('rgba(245,158,11,0.14)', '#f59e0b')}>⚠️ ออกใบไม่ได้ {blocks.length}</span>}
         </div>
         <button onClick={load} title="โหลดคิวใหม่"
-          style={{ background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 7, padding: '4px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+          style={{ background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '4px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
           ↻ รีเฟรช
         </button>
       </div>
@@ -336,7 +336,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                     {canOperate && g.pending.length > 0 && (
                       <button onClick={() => takeGroup(g)} disabled={busy === `g:${g.mat}`}
                         title={`เปลี่ยนสถานะ ${g.pending.length} ล็อตเป็น "กำลังผลิต" — ไม่แตะสต็อก`}
-                        style={{ background: 'rgba(14,165,233,0.15)', color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.5)', borderRadius: 7, padding: '5px 13px', fontSize: 11.5, fontWeight: 800, cursor: 'pointer' }}>
+                        style={{ background: 'rgba(14,165,233,0.15)', color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.5)', borderRadius: 'var(--r-md)', padding: '5px 13px', fontSize: 11.5, fontWeight: 800, cursor: 'pointer' }}>
                         {busy === `g:${g.mat}` ? '...' : `▶ รับงาน ${g.pending.length > 1 ? `ทั้งหมด (${g.pending.length})` : ''}`}
                       </button>
                     )}
@@ -367,7 +367,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                     {/* ⚠️ ตัวช่วยตัดสินใจ ไม่ใช่การผูกใบ — เขียนกำกับให้ชัดเสมอ */}
                     <span>· ปั๊มไปแล้ว <b style={{ color: 'var(--text2)' }}>{fmt(madeQty)}</b> / สั่งค้าง {fmt(ordered)} ชิ้น</span>
                     <button onClick={() => setOpenMat(o => ({ ...o, [g.mat]: !o[g.mat] }))}
-                      style={{ marginLeft: 'auto', background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 9px', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      style={{ marginLeft: 'auto', background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '2px 9px', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       {detail ? '▾ ซ่อนรายล็อต' : `▸ รายล็อต (${g.lots.length})`}
                     </button>
                   </div>
@@ -400,7 +400,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                             </span>
                             {canOperate && lot.status === 'pending' && (
                               <button onClick={() => takeLot(lot)} disabled={busy === lot.id}
-                                style={{ background: 'transparent', color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.5)', borderRadius: 6, padding: '1px 8px', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>
+                                style={{ background: 'transparent', color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.5)', borderRadius: 'var(--r-md)', padding: '1px 8px', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>
                                 {busy === lot.id ? '...' : '▶'}
                               </button>
                             )}

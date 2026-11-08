@@ -891,7 +891,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
               </div>
             )}
             {mayDelete && (
-              <button onClick={() => clearSelfSignOjt(kind)} style={{ alignSelf: 'flex-start', padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11 }}>
+              <button onClick={() => clearSelfSignOjt(kind)} style={{ alignSelf: 'flex-start', padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11 }}>
                 ปลดลายเซ็น
               </button>
             )}
@@ -902,7 +902,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
           <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>รอ{S.label} — {deny}</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <button onClick={() => signSelfOjt(kind)} style={{ alignSelf: 'flex-start', padding: '6px 12px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>
+            <button onClick={() => signSelfOjt(kind)} style={{ alignSelf: 'flex-start', padding: '6px 12px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>
               {S.verb} (ในนาม {fullName || 'คุณ'})
             </button>
             {S.gated && posRank == null && (
@@ -989,12 +989,12 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                   <td style={{ textAlign: 'center', fontWeight: 700 }}>{t.ojt_training_attendees?.length ?? 0}</td>
                   <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                     <button onClick={() => handlePrint(t)} disabled={printing === t.id}
-                      style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', marginRight: 6 }}>
+                      style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', marginRight: 6 }}>
                       {printing === t.id ? '...' : 'PDF'}
                     </button>
                     {canRecord && (
                       <button onClick={() => openEdit(t)}
-                        style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', marginRight: 6 }}>✏️</button>
+                        style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', marginRight: 6 }}>✏️</button>
                     )}
                     {canRemoveSheet(t) && (
                       <DeleteButton onClick={() => handleDelete(t)}
@@ -1165,7 +1165,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', margin: '10px 0 6px' }}>
                       <button onClick={() => setSignQueue(mk(rest.length ? rest : editing.attendees.map((a, idx) => ({ idx, a }))))}
                         disabled={signingQueue}
-                        style={{ padding: '8px 16px', borderRadius: 9, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13, cursor: signingQueue ? 'wait' : 'pointer' }}>
+                        style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13, cursor: signingQueue ? 'wait' : 'pointer' }}>
                         {signingQueue ? 'กำลังอัปลายเซ็น…' : `ส่งแท็บเล็ตวนเซ็น (${rest.length || total} คน)`}
                       </button>
                       <span style={{ fontSize: 12, fontWeight: 700, color: signed === total ? 'var(--green)' : 'var(--muted)' }}>
@@ -1201,7 +1201,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                               ? <img src={a.sign_url} alt="" onClick={() => canRecord && setSignTarget({ idx, title: `${a.emp_name} เซ็นใหม่` })}
                                   style={{ height: 26, background: '#fff', borderRadius: 4, padding: 2, cursor: 'pointer' }} title="คลิกเพื่อเซ็นใหม่" />
                               : <button onClick={() => setSignTarget({ idx, title: `${a.emp_name} ลงชื่อ` })}
-                                  style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer', background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)' }}>เซ็น</button>}
+                                  style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)' }}>เซ็น</button>}
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <select value={a.eval_agree === null || a.eval_agree === undefined ? '' : (a.eval_agree ? '1' : '0')}
@@ -1236,9 +1236,9 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
               </div>
 
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-                <button onClick={closeEdit} style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+                <button onClick={closeEdit} style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
                 <button onClick={handleSave} disabled={saving || !canRecord}
-                  style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 13, opacity: saving ? 0.6 : 1 }}>
+                  style={{ padding: '9px 22px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 13, opacity: saving ? 0.6 : 1 }}>
                   {saving ? 'กำลังบันทึก...' : 'บันทึกใบอบรม'}
                 </button>
               </div>

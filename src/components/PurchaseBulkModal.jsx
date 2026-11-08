@@ -188,7 +188,7 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{nextLabel} — รวมยอดทั้งพาร์ท</span>
           <button onClick={onClose} disabled={busy}
-            style={{ marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 7, cursor: busy ? 'not-allowed' : 'pointer',
+            style={{ marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-md)', cursor: busy ? 'not-allowed' : 'pointer',
               background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-body)' }}>✕</button>
         </div>
         <div style={{ fontSize: 12.5, color: 'var(--text2)', marginBottom: 12 }}>
@@ -217,7 +217,7 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
                 style={{ width: 110, padding: '5px 9px', fontSize: 13, borderRadius: 7,
                   background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }} />
               <button onClick={() => setTake('')} disabled={busy}
-                style={{ fontSize: 11.5, fontWeight: 700, padding: '5px 10px', borderRadius: 7, cursor: 'pointer',
+                style={{ fontSize: 11.5, fontWeight: 700, padding: '5px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                   background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-body)' }}>
                 ทั้งหมด ({fmt(slips.length)})
               </button>
@@ -261,10 +261,10 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
 
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button onClick={onClose} disabled={busy}
-              style={{ fontSize: 12.5, fontWeight: 700, padding: '8px 14px', borderRadius: 8, cursor: busy ? 'not-allowed' : 'pointer',
+              style={{ fontSize: 12.5, fontWeight: 700, padding: '8px 14px', borderRadius: 'var(--r-md)', cursor: busy ? 'not-allowed' : 'pointer',
                 background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-body)' }}>ยกเลิก</button>
             <button onClick={run} disabled={busy || !n}
-              style={{ fontSize: 12.5, fontWeight: 800, padding: '8px 16px', borderRadius: 8,
+              style={{ fontSize: 12.5, fontWeight: 800, padding: '8px 16px', borderRadius: 'var(--r-md)',
                 cursor: busy || !n ? 'not-allowed' : 'pointer', opacity: busy || !n ? 0.6 : 1,
                 background: 'var(--accent)', color: 'var(--accent-ink)', border: '1px solid var(--accent)', fontFamily: 'var(--font-body)' }}>
               {busy ? 'กำลังบันทึก…' : `${nextLabel} ${fmt(n)} ใบ`}
