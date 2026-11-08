@@ -68,6 +68,7 @@ import { statusColor } from '../utils/statusTone';   // สีสถานะช
 import { fetchAllRows } from '../utils/fetchAllRows';          // ทะเบียนที่โตได้ ห้าม select() เปล่า (เพดาน 1000 แถว)
 import { fetchAllPages } from '../utils/fetchByIds';            // คิวรีที่ต้องการ shape เอง (bom_items)
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
+import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 // วันที่ local (ห้าม toISOString — UTC เพี้ยนก่อน 07:00 ไทย)
 const localDateStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 
@@ -1043,10 +1044,9 @@ export default function ProductMaster() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', padding: '8px 14px', marginBottom: 12,
             background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10 }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>✅ ความครบข้อมูล ({rs.length} สินค้าที่ใช้งาน)</span>
-            {pill('rgba(61,214,92,0.10)', 'var(--accent)', '✓ ครบ', full, null)}
-            {pill('var(--red-dim)', 'var(--red)', '✗ ยังขาด (บังคับแล้ว)', need, () => setReadyFilter('req'))}
-            {pill('var(--amber-dim)', 'var(--amber)', '… รอ Routing/Packaging', wait, () => setReadyFilter('any'))}
-            {readyFilter && <button type="button" onClick={() => setReadyFilter('')} style={{ ...btnSecondary, fontSize: 11, padding: '3px 10px' }}>ล้างตัวกรอง</button>}
+            <TabBar size="sm" value={readyFilter || ''} onChange={k => setReadyFilter(k)} style={{ flex: 1, minWidth: 260 }}
+              tabs={[{ key: '', label: 'ทั้งหมด' }, { key: 'req', label: 'ยังขาด (บังคับแล้ว)', badge: need }, { key: 'any', label: 'รอ Routing/Packaging', badge: wait }]} />
+            <span style={{ fontSize: 12, color: 'var(--green)', fontWeight: 700 }}>ครบ {full}</span>
             <InfoMore label="ลำดับที่ต้องทำ" size={11.5}>
               ลำดับที่ต้องทำ: 🗂 Parts Master → 📦 BOM → 🔩 Products → 🔀 Routing → 🧳 Packaging → 🎴 Kanban
               {' '}· <b>Routing / 🧳 Packaging ยังไม่บังคับวันนี้</b> (อนาคตบังคับ) · กดชิปบนการ์ดเพื่อไปเติมได้เลย

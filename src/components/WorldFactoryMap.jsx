@@ -10,6 +10,7 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { COUNTRIES, lonX, latY } from './worldGeo';
+import TabBar from './TabBar';   // แถบเลือก = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 /* กรอบเริ่มต้น: ครอบทุกภูมิภาคที่มีโรงงาน (อเมริกา → เอเชีย) + เผื่อบริบท */
 const VIEW0 = (() => {
@@ -152,40 +153,13 @@ export default function WorldFactoryMap({
   return (
     <div>
       {/* แถบควบคุม: กลับทั้งโลก · ชิปประเทศ · ไฮไลต์กลุ่มธุรกิจ */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 8 }}>
-        <button onClick={zoomOut} style={{
-          fontSize: 12.5, fontWeight: 700, padding: '4px 11px', borderRadius: 999, cursor: 'pointer',
-          background: zoomCc ? 'var(--bg3)' : 'var(--accent)', color: zoomCc ? 'var(--text)' : 'var(--accent-ink)',
-          border: `1px solid ${zoomCc ? 'var(--border2)' : 'var(--accent)'}`,
-        }}>🌏 ทั้งโลก</button>
-        {byCc.map(c => (
-          <button key={c.cc} onClick={() => zoomToCountry(c.cc)} style={{
-            fontSize: 12.5, fontWeight: 700, padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
-            background: zoomCc === c.cc ? 'var(--accent)' : 'var(--bg3)',
-            color: zoomCc === c.cc ? '#08120a' : 'var(--text)',
-            border: `1px solid ${zoomCc === c.cc ? 'var(--accent)' : 'var(--border2)'}`,
-          }}>
-            {c.meta.flag} {c.meta.name}
-            <span style={{ marginLeft: 5, opacity: 0.75 }}>{c.list.length}</span>
-          </button>
-        ))}
-      </div>
+      <TabBar size="sm" style={{ marginBottom: 8 }} value={zoomCc ?? ''} onChange={k => (k ? zoomToCountry(k) : zoomOut())}
+        tabs={[{ key: '', label: 'ทั้งโลก' }, ...byCc.map(c => ({ key: c.cc, label: `${c.meta.flag} ${c.meta.name}`, badge: c.list.length }))]} />
       {!!groups.length && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 8 }}>
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>ไฮไลต์กลุ่มธุรกิจ:</span>
-          {[{ key: null, icon: '🏢', short: 'ทุกกลุ่ม' }, ...groups].map(g => {
-            const on = gFilter === g.key;
-            return (
-              <button key={g.key || 'all'} onClick={() => setGFilter(g.key)} style={{
-                fontSize: 12.5, fontWeight: 700, padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
-                background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
-                border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
-              }}>
-                {g.icon} {g.short}
-                {g.key && <span style={{ marginLeft: 5, opacity: 0.75 }}>{comps.filter(c => c.groupMeta?.key === g.key).length}</span>}
-              </button>
-            );
-          })}
+          <TabBar size="sm" style={{ flex: 1, minWidth: 200 }} value={gFilter ?? ''} onChange={k => setGFilter(k || null)}
+            tabs={[{ key: '', label: 'ทุกกลุ่ม' }, ...groups.map(g => ({ key: g.key, label: g.short }))]} />
         </div>
       )}
 

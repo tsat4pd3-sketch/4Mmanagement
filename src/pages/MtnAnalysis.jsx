@@ -24,6 +24,7 @@ import { useSearchParams } from 'react-router-dom';
 import { urlParam } from '../utils/urlInit';
 import { scopeLines as pickerLines } from '../components/LineSelect';   // ตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง" ของช่องเลือกไลน์
 import { Panel, NotEnough, Histogram, ControlChart, ScatterPlot, Fishbone, CheckSheet, Stratify, RunChart } from '../components/Qc7Charts';
+import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 /* ══ 🔍 วิเคราะห์ปัญหา (ซ่อมบำรุง) — QC 7 Tools แยกตามชนิดสินทรัพย์ ══════════  2026-09-22
 
@@ -440,17 +441,7 @@ export default function MtnAnalysis() {
           {/* ── แถบชนิดสินทรัพย์ (แท็บชั้นที่ 2 · `?asset=`) ─────────────────────
                  🔴 ทุกชนิดต้องอยู่ครบเสมอ แม้จำนวนเป็น 0 — กดเข้าไปแล้วเห็นว่า "ช่วงนี้ไม่มีงาน"
                     ต่างจากการซ่อนแท็บทิ้งซึ่งอ่านว่า "ระบบไม่รองรับของชนิดนี้" */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {assetTabs.map(t => (
-              <button key={t.key} type="button" onClick={() => setAsset(t.key)} className="tbtn"
-                style={{
-                  padding: '6px 12px', borderRadius: 20, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
-                  background: asset === t.key ? 'var(--bg3)' : 'transparent',
-                  color: asset === t.key ? 'var(--text)' : 'var(--muted)',
-                  border: `1px solid ${asset === t.key ? 'var(--accent)' : 'var(--border)'}`,
-                }}>{t.label}</button>
-            ))}
-          </div>
+          <TabBar size="sm" value={asset} onChange={setAsset} tabs={assetTabs.map(t => ({ key: t.key, label: t.label }))} />
 
           {/* ── สรุปปัญหา ─────────────────────────────────────────────── */}
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, alignContent: 'start' }}>

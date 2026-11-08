@@ -2632,6 +2632,9 @@ Windows/Android/webOS TV · มีสีของตัวเองชนพา�
 0. **ของกลาง `<TabBar>` (`components/TabBar.jsx` · 06/11)** — แถบแท็บเส้นใต้ตัวเดียวทั้งระบบ · PageHeader ใช้ `<TabBar audit>` ·
    **แถบเลือกมุมมอง/เลือกไลน์ที่วาดในหน้า ต้องใช้ `<TabBar size="sm">` ห้ามวาดแคปซูล/ชิปเอง** (คำสั่ง user 06/11 "tab ยังไม่เหมือนกัน แบบหน้า QA")
    ต้นแบบ: ผังโรงงาน แถวมุมมอง · Dashboard แถวไลน์ Heijunka (`right=` ใส่ช่องค้นหา/ปุ่มปลายแถว) · ตัวเลือก 2–5 แบบสลับโหมด ยังเป็น `<Segmented>`
+   · **06/11 กวาดรอบ 1 (วัดจริง 147 แถว/26 หน้า · มุม 9 แบบ)**: แถวตัวเลือกมุมมอง/กรองหมวดทั้ง 17 หน้าเป็น TabBar/Segmented แล้ว
+     (AdoptionOutlook · MtnAnalysis · MaintenanceLevels · GroupOverview + WorldFactoryMap · TvBoard + Andon ทีม · SchemaMap · FactoryMap แผงขวา · ProductMaster ความครบ · Dashboard กะ)
+     · ปุ่มลิงก์/ปุ่มคำสั่งที่เคยเป็นแคปซูล 999 → ทรง `.pg-btn` (มุม `--r-md`) · **รอบ 2 (ปุ่มคำสั่งในแถวตาราง/การ์ด 92 แถว) ใช้ `.pg-btn.sm`**
 1. **แท็บ PageHeader = แบบ "เส้นใต้"** — ป้ายโปร่ง · ที่เลือก = ตัวหนา `--text` + เส้น accent 2px ใต้ป้าย (ไถลตามแท็บ
    วัดจากปุ่มจริงเหมือนเดิม) · ที่เหลือ `--muted` น้ำหนัก 500 · แถวมีเส้นฐาน `--border` · badge = `.ph-tab-badge` (อำพัน)
    · ที่จับ `data-tabbar` / `data-tab-ind` ของ stdsweep **ยังอยู่ ห้ามถอด** · ห้ามพับแท็บ (กติกาเดิม)

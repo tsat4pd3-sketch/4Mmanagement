@@ -139,10 +139,7 @@ function Links({ items, navigate }) {
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
       {items.map(([to, label, n]) => (
-        <button key={to} onClick={() => navigate(to)} style={{
-          fontSize: 13, fontWeight: 700, padding: '7px 12px', borderRadius: 999, cursor: 'pointer',
-          background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)',
-        }}>
+        <button key={to} type="button" className="pg-btn" onClick={() => navigate(to)} style={{ height: 30, fontSize: 12.5 }}>
           {label}{n ? <span style={{ marginLeft: 6, color: 'var(--amber)' }}>{n}</span> : null}
         </button>
       ))}

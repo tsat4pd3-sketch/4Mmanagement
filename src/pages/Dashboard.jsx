@@ -42,6 +42,7 @@ import { useLatestRequest } from '../utils/useLatestRequest';
 import { loadBreakPolicies } from '../utils/oeeMasters';
 import { fetchAllRows } from '../utils/fetchAllRows';
 import SearchInput from '../components/SearchInput';
+import Segmented from '../components/Segmented';
 import TabBar from '../components/TabBar';
 import { urlPick, urlBool, urlParam } from '../utils/urlInit';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
@@ -1024,25 +1025,9 @@ export default function Dashboard({ view = 'timeline' }) {
               {sections.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           )}
-          {/* Shift toggle */}
-          <div style={{ display: 'flex', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: 3, gap: 2 }}>
-            {[
-              /* "ทุก…" ซ้ายสุดเสมอ + ป้ายจากทะเบียน (UI-STANDARD §3) — คงสีกะไว้เพราะเป็นบอร์ด TV */
-              { val: 'all',   label: ALL.shift,   active: 'rgba(255,255,255,0.1)', color: 'var(--text2)' },
-              { val: 'day',   label: 'กะเช้า', active: 'var(--amber-dim)', color: 'var(--amber)' },
-              { val: 'night', label: 'กะดึก',  active: 'var(--blue-dim)', color: 'var(--blue)' },
-            ].map(s => (
-              <button key={s.val} onClick={() => setSelectedShift(s.val)}
-                style={{
-                  padding: '5px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600,
-                  background: selectedShift === s.val ? s.active : 'transparent',
-                  color: selectedShift === s.val ? s.color : 'var(--muted)',
-                  transition: 'all 0.15s',
-                }}>
-                {s.label}
-              </button>
-            ))}
-          </div>
+          {/* Shift toggle = <Segmented> มาตรฐาน (06/11 · เดิมวาดเอง มุม 7px) · สีกะอยู่ที่ป้ายใต้ชื่อหน้าแทน */}
+          <Segmented label="กะ" value={selectedShift} onChange={setSelectedShift}
+            options={[{ value: 'all', label: ALL.shift }, { value: 'day', label: 'กะเช้า' }, { value: 'night', label: 'กะดึก' }]} />
           {/* Date picker */}
           <div style={{
             display: 'flex', alignItems: 'center', gap: 8,

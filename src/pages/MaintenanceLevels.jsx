@@ -44,6 +44,7 @@ import {
   PRIORITY, TREND_META, THRESH, WINDOW,
 } from '../utils/maintenanceLevels';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
+import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
 const inp = { padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
@@ -303,29 +304,12 @@ export default function MaintenanceLevels() {
         </LevelCard>
       </div>
 
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {KIND_CHIPS.map(c => {
-          const on = kind === c.key;
-          return (
-            <button key={c.key} onClick={() => setKind(c.key)} style={{
-              padding: '5px 12px', borderRadius: 16, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
-              background: on ? 'var(--accent-dim)' : 'var(--bg3)', color: on ? 'var(--accent)' : 'var(--muted)',
-            }}>{c.icon} {c.label}</button>
-          );
-        })}
-        {view === 'todo' && [0, 1, 2, 3].map(p => {
-          const on = prio === p;
-          const c = p ? PRIORITY[p].color : 'var(--accent)';
-          return (
-            <button key={`p${p}`} onClick={() => setPrio(p)} style={{
-              padding: '5px 12px', borderRadius: 16, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              border: `1.5px solid ${on ? c : 'var(--border2)'}`, background: on ? `${tint(p ? c : '#3dd65c', 'dim')}` : 'var(--bg3)',
-              color: on ? c : 'var(--muted)', marginLeft: p === 0 ? 8 : 0,
-            }}>{p ? PRIORITY[p].label : ALL.priority}</button>
-          );
-        })}
-      </div>
+      {/* ชนิดอุปกรณ์ = แท็บเส้นใต้ · ความสำคัญ (todo) = Segmented ปลายแถว (UI §6.36 ข้อ 0 · 06/11) */}
+      <TabBar size="sm" value={kind} onChange={setKind} tabs={KIND_CHIPS.map(c => ({ key: c.key, label: c.label }))}
+        right={view === 'todo' && (
+          <Segmented size="sm" label="ความสำคัญ" value={prio} onChange={setPrio}
+            options={[0, 1, 2, 3].map(p => ({ value: p, label: p ? PRIORITY[p].label : ALL.priority }))} />
+        )} />
 
       {/* ── ตาราง ── */}
       {!shownRows.length ? (

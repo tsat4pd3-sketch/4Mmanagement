@@ -43,6 +43,7 @@ import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 import { ALL } from '../utils/filterLabels';
 // วันงาน — ของกลาง (ตัด 08:00 · 12/10 เลิกก๊อปฟังก์ชันไว้ในไฟล์ตามกฎ CLAUDE.md)
 import { getWorkDate } from '../utils/workDate';
+import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 
 const DEPTS = [
@@ -194,11 +195,7 @@ export default function TvBoard({ onOpenMenu = null }) {
 
       {barOpen && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 12px' }}>
-          {DEPTS.map(x => (
-            <button key={x.key} onClick={() => setParam('dept', x.key)} style={btn(dept === x.key)}>
-              {x.icon} {x.label}
-            </button>
-          ))}
+          <TabBar size="sm" value={dept} onChange={k => setParam('dept', k)} tabs={DEPTS.map(x => ({ key: x.key, label: x.label }))} />
           <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
           {/* ส่วนงาน — ค่าที่ไม่มีในลิสต์ (ส่วนงานถูกเปลี่ยนชื่อ) ต้องยังเลือกเห็นได้ ห้ามหายเงียบ */}
           <select value={secFilter} onChange={e => setParam('sec', e.target.value)}
@@ -250,8 +247,9 @@ export default function TvBoard({ onOpenMenu = null }) {
   );
 }
 
+/* ปุ่มคำสั่งในแถบตั้งค่าจอ = ทรงเดียวกับ .pg-btn (06/11 · เดิมแคปซูล 999) · on = ขอบ+ตัวอักษร accent */
 const btn = (on) => ({
-  fontSize: 12.5, fontWeight: 800, padding: '5px 12px', borderRadius: 999, cursor: 'pointer',
-  background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
+  height: 30, fontSize: 12.5, fontWeight: 600, padding: '0 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
+  background: on ? 'var(--accent-dim)' : 'var(--card)', color: on ? 'var(--accent)' : 'var(--text)',
   border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
 });

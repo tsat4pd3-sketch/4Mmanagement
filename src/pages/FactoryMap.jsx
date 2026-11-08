@@ -2988,13 +2988,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
               innerStyle={{ padding: '14px 16px' }}>
               {/* สลับโหมดแผง */}
               {/* โหมดทบทวน = แผงเป็นสรุปของวันที่เลือกอย่างเดียว (OBEYA/อันดับ เป็นของสด) */}
-              {!isReview && <div className="tv-hide" style={{ display: 'flex', gap: 5, marginBottom: 12 }}>
-                <button onClick={() => setPanelMode('review')} style={{ ...miniTab(panelMode === 'review'), flex: 1, fontSize: 11.5, padding: '5px 4px' }}>สรุปวันนี้</button>
-                <button onClick={() => setPanelMode('obeya')} style={{ ...miniTab(panelMode === 'obeya'), flex: 1, fontSize: 11.5, padding: '5px 4px' }}
-                  title="สถานะรายหัวข้อแบบห้อง OBEYA (SQDCM) จากข้อมูลสดของวันนี้ — กดหัวข้อเพื่อเจาะหาไลน์ที่มีปัญหา">OBEYA (สด)</button>
-                <button onClick={() => setPanelMode('live')} style={{ ...miniTab(panelMode === 'live'), flex: 1, fontSize: 11.5, padding: '5px 4px' }}
-                  title="จัดอันดับไลน์ตามแท็บ metric ที่เลือกด้านบน (พลังงาน / PM / Supply Route ดูได้ที่นี่เท่านั้น)">อันดับ</button>
-              </div>}
+              {!isReview && <TabBar className="tv-hide" size="sm" style={{ marginBottom: 12 }} value={panelMode} onChange={setPanelMode}
+                tabs={[{ key: 'review', label: 'สรุปวันนี้' }, { key: 'obeya', label: 'OBEYA (สด)', title: "สถานะรายหัวข้อแบบห้อง OBEYA (SQDCM) จากข้อมูลสดของวันนี้ — กดหัวข้อเพื่อเจาะหาไลน์ที่มีปัญหา" }, { key: 'live', label: 'อันดับ', title: "จัดอันดับไลน์ตามแท็บ metric ที่เลือกด้านบน (พลังงาน / PM / Supply Route ดูได้ที่นี่เท่านั้น)" }]} />}
 
               {(isReview || panelMode === 'review') ? (
                 <>
