@@ -117,7 +117,7 @@ export default function RemoteControl() {
           <div style={{ display: 'flex', gap: 8 }}>
             <input value={code} onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
               placeholder="รหัส 6 หลัก" inputMode="numeric"
-              style={{ width: 150, fontSize: 22, fontWeight: 900, letterSpacing: 5, textAlign: 'center', padding: '10px 12px', borderRadius: 10 }} />
+              style={{ width: 150, fontSize: 22, fontWeight: 900, letterSpacing: 5, textAlign: 'center', padding: '10px 12px', borderRadius: 'var(--ctl-r)' }} />
             <button onClick={join} style={btn({ background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--accent)', flex: 1 })}>
               เชื่อมต่อ
             </button>

@@ -214,7 +214,7 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
               <span style={{ fontSize: 12.5, color: 'var(--text2)' }}>เลื่อนกี่ใบ</span>
               <input type="number" min={1} max={slips.length} value={take}
                 onChange={e => setTake(e.target.value)} placeholder={String(slips.length)} disabled={busy}
-                style={{ width: 110, padding: '5px 9px', fontSize: 13, borderRadius: 7,
+                style={{ width: 110, padding: '5px 9px', fontSize: 13, borderRadius: 'var(--ctl-r)',
                   background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }} />
               <button onClick={() => setTake('')} disabled={busy}
                 style={{ fontSize: 11.5, fontWeight: 700, padding: '5px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',

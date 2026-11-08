@@ -1017,7 +1017,7 @@ export default function Dashboard({ view = 'timeline' }) {
               onChange={e => changeSection(e.target.value)}
               style={{
                 width: 'auto', maxWidth: 280,   // UI-STANDARD 2026-09-24 — กัน select{width:100%} ของธีมยืดเต็มแถว (เคยยืด 907px)
-                background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10,
+                background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--ctl-r)',
                 padding: '7px 12px', fontSize: 14, fontWeight: 700, color: 'var(--text)',
                 cursor: 'pointer', outline: 'none',
               }}>
@@ -1508,7 +1508,7 @@ export default function Dashboard({ view = 'timeline' }) {
                 <button onClick={() => shiftDate(-1)} style={dateBtn}>◀</button>
                 {/* width ต้องกำหนดเอง — index.css ตั้ง input width:100% ทั้งแอป ถ้าปล่อยไว้ช่องวันที่จะกินเต็มแถวจนปุ่มแตกบรรทัด */}
                 <input type="date" value={boardDate} max={todayStr} onChange={e => e.target.value && setBoardDate(e.target.value)}
-                  style={{ width: 148, padding: '4px 8px', borderRadius: 7, fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
+                  style={{ width: 148, padding: '4px 8px', borderRadius: 'var(--ctl-r)', fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
                 <button onClick={() => shiftDate(1)} disabled={boardDate >= todayStr} style={{ ...dateBtn, opacity: boardDate >= todayStr ? 0.4 : 1, cursor: boardDate >= todayStr ? 'default' : 'pointer' }}>▶</button>
                 {boardDate !== todayStr && (
                   <button onClick={() => setBoardDate(todayStr)} style={{ ...dateBtn, background: 'var(--accent)', color: 'var(--accent-ink)', border: '1px solid var(--accent)' }}>วันนี้</button>

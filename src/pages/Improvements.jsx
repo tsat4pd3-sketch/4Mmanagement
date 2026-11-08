@@ -1370,11 +1370,11 @@ export default function Improvements() {
                               {/* width กัน index.css input{width:100%} ดันแถวแตก (กับดัก CSS ใน CLAUDE.md) */}
                               <input placeholder="ขั้นงานใหม่ เช่น สั่งทำ jig ใหม่" value={msDraft[imp.id]?.title || ''}
                                 onChange={e => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], title: e.target.value } }))}
-                                style={{ width: 170, padding: '5px 8px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                                style={{ width: 170, padding: '5px 8px', fontSize: 11, borderRadius: 'var(--ctl-r)', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
                               {/* เฟส PDCA ของขั้นใหม่ — ไม่เลือก = "–" (ไม่เดาให้) */}
                               <select value={msDraft[imp.id]?.phase || ''} title="เฟส PDCA ของขั้นนี้"
                                 onChange={e => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], phase: e.target.value } }))}
-                                style={{ width: 92, padding: '4px 6px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+                                style={{ width: 92, padding: '4px 6px', fontSize: 11, borderRadius: 'var(--ctl-r)', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
                                 <option value="">เฟส —</option>
                                 {Object.entries(PHASES).map(([k, p]) => <option key={k} value={k}>{p.s} · {p.label.split(' — ')[0]}</option>)}
                               </select>
@@ -1385,10 +1385,10 @@ export default function Improvements() {
                                 onChange={({ name }) => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], assignee: name } }))} />
                               <input type="date" value={msDraft[imp.id]?.planned_start || ''}
                                 onChange={e => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], planned_start: e.target.value } }))}
-                                style={{ width: 125, padding: '4px 6px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                                style={{ width: 125, padding: '4px 6px', fontSize: 11, borderRadius: 'var(--ctl-r)', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
                               <input type="date" value={msDraft[imp.id]?.planned_end || ''}
                                 onChange={e => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], planned_end: e.target.value } }))}
-                                style={{ width: 125, padding: '4px 6px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
+                                style={{ width: 125, padding: '4px 6px', fontSize: 11, borderRadius: 'var(--ctl-r)', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
                               <button type="button" className="pg-btn sm" onClick={() => addMilestone(imp.id)}
                                >เพิ่มขั้น</button>
                             </div>

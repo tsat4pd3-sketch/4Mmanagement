@@ -177,7 +177,7 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
                       <ProductSelect value={pick[part] || ''} onChange={o => setPick(p => ({ ...p, [part]: o?.mat_no || '' }))} />
                     </div>
                     <select value={scope[part] ?? ''} onChange={e => setScope(s => ({ ...s, [part]: e.target.value }))}
-                      style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)' }}>
+                      style={{ fontSize: 12, padding: '5px 8px', borderRadius: 'var(--ctl-r)', background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)' }}>
                       <option value="">ใช้กับทุก ship-to</option>
                       {sts.map(st => <option key={st} value={st}>เฉพาะ {lbl(st)}</option>)}
                     </select>

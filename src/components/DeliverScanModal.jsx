@@ -116,10 +116,10 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
             {sapOn && (
               <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 <input value={sapQty} onChange={e => setSapQty(e.target.value)} inputMode="decimal" placeholder="ยอดค้างตัด"
-                  style={{ width: 130, padding: '7px 10px', borderRadius: 8, fontSize: 13 }} />
+                  style={{ width: 130, padding: '7px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }} />
                 <span style={{ fontSize: 12, color: 'var(--muted)' }}>/ {fmt(sentQty)} ที่ส่ง</span>
                 <input value={sapNote} onChange={e => setSapNote(e.target.value)} placeholder="สาเหตุ เช่น SAP ยอดไม่พอ / ไม่มี BOM ใน SAP"
-                  style={{ flex: 1, minWidth: 180, padding: '7px 10px', borderRadius: 8, fontSize: 13 }} />
+                  style={{ flex: 1, minWidth: 180, padding: '7px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }} />
                 {sap.error && <div style={{ width: '100%', fontSize: 12, color: 'var(--red)', fontWeight: 700 }}>{sap.error}</div>}
                 <div style={{ width: '100%', fontSize: 11.5, color: 'var(--text2)' }}>
                   ใบนี้ยังส่งตามปกติ · ยอดค้างไปขึ้นที่ Line Stock › 🧾 ค้างตัด SAP ให้ตามเคลียร์ (ไม่เปลี่ยนยอดสต็อกในระบบ)
@@ -186,13 +186,13 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
                       <div>
                         <div style={{ fontSize: 12.5, fontWeight: 800, color: '#ef4444' }}>ปลดบล็อก — ระบุเหตุผล (ถูกบันทึกเป็นข้อมูล ไปแก้ต้นเหตุทีหลัง)</div>
                         <select value={reasonKey} onChange={e => setReasonKey(e.target.value)}
-                          style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }}>
+                          style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }}>
                           <option value="">— เลือกเหตุผล —</option>
                           {OVERRIDE_REASONS.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
                         </select>
                         <input value={reasonNote} onChange={e => setReasonNote(e.target.value)}
                           placeholder={reasonKey === 'other' ? 'ระบุเหตุผล (บังคับ)' : 'รายละเอียดเพิ่มเติม (ไม่บังคับ)'}
-                          style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }} />
+                          style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }} />
                         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4 }}>ผู้ปลด: {fullName || '—'}</div>
                         <div style={{ display: 'flex', gap: 8, marginTop: 10, justifyContent: 'flex-end' }}>
                           <button onClick={() => setOverriding(false)} disabled={busy} style={btn('transparent', 'var(--muted)', 'var(--border2)', busy)}>กลับไปสแกน</button>

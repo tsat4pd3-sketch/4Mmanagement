@@ -309,7 +309,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
                         const cur = needOf.get(String(st.id));
                         const val = draft[key] ?? (cur != null ? String(cur) : '');
                         return (
-                          <label key={st.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--bg2)', minWidth: 0 }}>
+                          <label key={st.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', background: 'var(--bg2)', minWidth: 0 }}>
                             <span style={{ flex: 1, minWidth: 0, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={st.station_name}>{st.station_name}</span>
                             <input type="number" min={0} max={20} inputMode="numeric" value={val} placeholder="–" disabled={busy}
                               aria-label={`คนต่อกะ จุด ${st.station_name}`}
