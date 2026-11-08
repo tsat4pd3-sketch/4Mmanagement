@@ -57,6 +57,8 @@ import { resolveShiftTime, checkShiftTime, shiftWindow, windowLabel, fmtOffset, 
 import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
 import Segmented from '../components/Segmented';
+import DieMatLinkButton from '../components/DieMatLinkButton';
+import { dieCandidatesForMats } from '../utils/dieCandidates';
 import { kindOf } from '../utils/equipmentKinds';
 import { resolveMachine, normCode, resolveTypeRow, QR_KINDS } from '../utils/qrCode';
 import { SCAN_EVENT } from '../utils/scanWedge';
@@ -230,6 +232,10 @@ const DT_KIND_OPTS = [
   { value: 'all', label: 'ทั้งหมด' }, { value: 'machine', label: '🏭 เครื่องจักร' },
   { value: 'jig', label: '🧩 จิ๊ก' }, { value: 'die', label: '🔨 แม่พิมพ์' }, { value: 'other', label: 'อื่นๆ' },
 ];
+const DIE_CAND_GROUP = {
+  linked: '▶ แม่พิมพ์ของงานที่ผลิตอยู่ (ทะเบียนยืนยัน)',
+  guess:  '🔎 น่าจะเป็นแม่พิมพ์ของงานที่ผลิตอยู่ — เทียบเลขพาร์ท ระบบเดา ไม่ได้ยืนยัน',
+};
 const DT_KIND_FIELD = { all: 'เครื่องจักร / อุปกรณ์', machine: 'เครื่องจักร', jig: 'จิ๊ก', die: 'แม่พิมพ์', other: 'อุปกรณ์อื่น' };
 const LIST_FIRST = 8;
 
@@ -457,6 +463,27 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
      ค่าเริ่ม 'all' = ไม่บังคับเลือก = พฤติกรรมเดิม · 'other' = ชนิดที่ไม่ใช่ 3 ตัวหลัก (facility ฯลฯ) */
   const [dtKind, setDtKind] = useState('all');
   useEffect(() => { if (showDT) { setDtMachineAll(false); setDtKind('all'); } }, [showDT]);
+  /* 🔨 ทะเบียนชุดแม่พิมพ์ + แม่พิมพ์รายตัว→ชุด — โหลดตอนเปิดฟอร์ม Downtime เท่านั้น (เล็ก: ~92 + ~264 แถว)
+     ใช้ขึ้น "แม่พิมพ์ของงานที่กำลังผลิต" บนสุดของลิสต์ (utils/dieCandidates.js · 08/11)
+     โหลดไม่ได้ = เขียนบนจอ (ลิสต์ยังใช้ได้ตามเดิม แค่ไม่มีกลุ่มบน) ห้ามเงียบ */
+  const [dieReg, setDieReg] = useState({ sets: [], rows: [], err: null, loaded: false });
+  const loadDieReg = useCallback(async () => {
+    const [st, ed] = await Promise.all([
+      supabaseDR.from('die_sets').select('id, set_code, part_no, mat_no, mat_no_2, is_active'),
+      supabaseDR.from('equipment_die').select('die_set_id, machines(machine_no)').not('die_set_id', 'is', null),
+    ]);
+    const err = st.error?.message || ed.error?.message || null;
+    return {
+      sets: st.data || [], err, loaded: true,
+      rows: (ed.data || []).map(r => ({ die_set_id: r.die_set_id, machine_no: r.machines?.machine_no })).filter(r => r.machine_no),
+    };
+  }, []);
+  useEffect(() => {
+    if (!showDT) return undefined;
+    let alive = true;
+    loadDieReg().then(r => { if (alive) setDieReg(r); });
+    return () => { alive = false; };
+  }, [showDT, loadDieReg]);
   const [dtScanOpen, setDtScanOpen] = useState(false);   // สแกน QR เลือกเครื่องในฟอร์ม Downtime
   const [savingDT, setSavingDT] = useState(false);
 
@@ -6367,6 +6394,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
              🔒 19/10 (หน้างานทัก "พิมพ์ LS แล้วขึ้นเครื่องเลเซอร์ของไลน์อื่นทั้งโรงงาน"): **ค่าเริ่ม = เฉพาะครอบครัวไลน์**
                 ทั้งโรงงานยังค้นได้ด้วยปุ่ม "ค้นทั้งโรงงาน" (เครื่องกลาง/utility มีจริง — ห้ามตัดทางนี้ทิ้ง)
                 · ครอบครัวไม่มีเครื่องลงทะเบียนเลย = เปิดทั้งโรงงานให้เอง + เขียนบอกบนจอ (ไม่งั้นเลือกอะไรไม่ได้) */
+          /* 🔨 แม่พิมพ์ของงานที่กำลังผลิตในกะนี้ — ใบงานที่ยังไม่ยกเลิก (ชุดเดียวกับ ▶ ของช่องชิ้นงาน) */
+          const dtRunMats = prodOrders.filter(o => !['cancelled', 'imported'].includes(o.status)).map(o => o.mat_no);
+          const dieCand = dieCandidatesForMats({
+            runMats: dtRunMats, sets: dieReg.sets, dieRows: dieReg.rows,
+            pnoOfMat: (mat) => products.find(p => p.mat_no === mat)?.p_no || null,
+          });
+          const dtPickedDie = machines.find(m => m.machine_no === dtForm.machine_no && m.equipment_kind === 'die');
+          const dtPickedSet = dtPickedDie ? (() => {
+            const row = dieReg.rows.find(r => r.machine_no === dtPickedDie.machine_no);
+            return row ? dieReg.sets.find(st => st.id === row.die_set_id) || null : null;
+          })() : null;
           const machineKeyMap = buildMachineKeyMap(machines);   // ไม่ใช้ useMemo — บล็อกนี้อยู่ใน callback (rules-of-hooks)
           let famCount = 0;   // เครื่อง (รวมแม่พิมพ์) ที่ลงทะเบียนในครอบครัวไลน์นี้ — คิดใน IIFE ข้างล่าง
           const dtMachineOptions = (() => {
@@ -6383,19 +6421,23 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
             };
             famCount = (machines || []).filter(m => m.machine_no && inFam(m)).length;
             const showAll = dtMachineAll || famCount === 0;
+            const candOf = (m) => (m.equipment_kind === 'die' ? dieCand.byMachine.get(m.machine_no) : null);
             const kindHit = (m) => {
               if (dtKind === 'all') return true;
               const k = kindOf(m.equipment_kind);
               return dtKind === 'other' ? !['machine', 'jig', 'die'].includes(k) : k === dtKind;
             };
             return (machines || [])
-              .filter(m => (showAll || inFam(m)) && kindHit(m))
+              .filter(m => (showAll || inFam(m) || candOf(m)) && kindHit(m))
               .map((m, i) => {
-                const r = rank(m);
+                /* แม่พิมพ์ของงานที่ผลิตอยู่ขึ้นบนสุด แยก "ทะเบียนยืนยัน" กับ "ระบบเดา" ห้ามยุบรวม */
+                const c = candOf(m);
+                const r = c ? (c.tier === 'linked' ? -2 : -1) : rank(m);
                 return {
-                  id: m.machine_no, _r: r, _i: i, group: G[r],
+                  id: m.machine_no, _r: r, _i: i,
+                  group: r === -2 ? DIE_CAND_GROUP.linked : r === -1 ? DIE_CAND_GROUP.guess : G[r],
                   label: `${m.machine_no}${m.machine_name ? ` · ${m.machine_name}` : ''}`,
-                  sub: r === 0 ? '' : (m.line_name || 'ไม่ระบุไลน์'),
+                  sub: c ? `ชุด ${c.set.set_code} · งาน ${c.mats.join(', ')}` : (r === 0 ? '' : (m.line_name || 'ไม่ระบุไลน์')),
                   keywords: `${m.machine_name || ''} ${m.line_name || ''} ${m.machine_type || ''}`,
                 };
               })
@@ -6593,6 +6635,27 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           </>
                         )}
                       </div>
+                      {/* 🔨 ความครอบคลุมของกลุ่ม "แม่พิมพ์ของงานที่ผลิตอยู่" — ต้องเขียนบนจอเสมอ (หาไม่ได้ ≠ ไม่มี) */}
+                      {dtKind === 'die' && (
+                        <div style={{ marginTop: 4, fontSize: 11, color: 'var(--muted)' }}>
+                          {dieReg.err ? <span style={{ color: 'var(--amber)' }}>⚠ โหลดทะเบียนชุดแม่พิมพ์ไม่สำเร็จ ({dieReg.err}) — ยังเลือกจากลิสต์ไลน์ได้ แต่ระบบหาแม่พิมพ์ของงานที่ผลิตอยู่ไม่ได้</span>
+                            : !dieReg.loaded ? 'กำลังโหลดทะเบียนชุดแม่พิมพ์…'
+                            : !dieCand.coverage.total ? 'กะนี้ยังไม่มีใบงานเปิด — ยังบอกไม่ได้ว่าแม่พิมพ์ตัวไหนกำลังใช้'
+                            : <>งานที่ผลิตอยู่ {dieCand.coverage.total} MAT · ทะเบียนยืนยัน {dieCand.coverage.linked} · ระบบเดา {dieCand.coverage.guess}
+                                {dieCand.coverage.none.length > 0 && <span style={{ color: 'var(--amber)' }}> · หาแม่พิมพ์ไม่ได้ {dieCand.coverage.none.length} ({dieCand.coverage.none.join(', ')})</span>}</>}
+                        </div>
+                      )}
+                      {/* 🔗 ชุดยังไม่ผูก MAT — ให้คนที่เพิ่งเลือกแม่พิมพ์+ชิ้นงานยืนยันได้ทันที (ระบบไม่ผูกเอง) */}
+                      {dtPickedSet && (
+                        <div style={{ marginTop: 4 }}>
+                          {dtForm.mat_no
+                            ? <DieMatLinkButton set={dtPickedSet} mat={dtForm.mat_no} role={role}
+                                onDone={async () => setDieReg(await loadDieReg())} />
+                            : dieCand.byMachine.get(dtPickedDie.machine_no)?.tier === 'guess' && (
+                              <div style={{ fontSize: 11, color: 'var(--muted)' }}>เลือกชิ้นงานด้านขวา แล้วกดยืนยันได้ว่าชุด {dtPickedSet.set_code} ทำพาร์ทนั้น</div>
+                            )}
+                        </div>
+                      )}
                     </Field>
                     <Field label={`ชิ้นงาน (แยก OEE/Downtime ตามชิ้นงาน) ${dtMachineOptional ? '(ถ้ามี)' : '*'}`}>
                       {!dtMatOptions.length ? (
