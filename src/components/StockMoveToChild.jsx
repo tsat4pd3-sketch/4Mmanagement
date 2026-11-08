@@ -201,7 +201,7 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
                       </td>
                       <td style={td}>
                         <button disabled={!canIssue || busy === r.key} onClick={() => move(r)}
-                          style={{ padding: '5px 12px', borderRadius: 6, border: 'none', fontSize: 12, fontWeight: 700,
+                          style={{ padding: '5px 12px', borderRadius: 'var(--r-md)', border: 'none', fontSize: 12, fontWeight: 700,
                             background: canIssue ? '#f59e0b' : 'var(--muted)', color: '#fff', cursor: canIssue ? 'pointer' : 'not-allowed' }}>
                           {busy === r.key ? '...' : '🔀 ย้าย'}
                         </button>

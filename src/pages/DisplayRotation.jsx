@@ -295,7 +295,7 @@ export default function DisplayRotation() {
             return (
               <button key={a.id} type="button" onClick={() => pick(a.id)} aria-current={on ? 'true' : undefined}
                 style={{
-                  textAlign: 'left', padding: '7px 10px', borderRadius: 10, display: 'grid', gap: 2,
+                  textAlign: 'left', padding: '7px 10px', borderRadius: 'var(--r-md)', display: 'grid', gap: 2,
                   background: on ? 'var(--accent-dim)' : 'var(--bg2)', color: 'var(--text)',
                   border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
                 }}>
@@ -604,7 +604,7 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
                     <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxWidth: 560 }}>
                       {src.map(o => (
                         <button key={o.value} type="button" disabled={!canEdit} onClick={(e) => { e.stopPropagation(); toggle(o.value); }}
-                          style={{ padding: '4px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700,
+                          style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700,
                             background: cur.includes(o.value) ? 'var(--accent-dim)' : 'var(--card)',
                             color: cur.includes(o.value) ? 'var(--accent)' : 'var(--text2)',
                             border: `1px solid ${cur.includes(o.value) ? 'var(--accent)' : 'var(--border2)'}` }}>

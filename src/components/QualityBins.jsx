@@ -584,21 +584,21 @@ export default function QualityBins({ mode = 'full' }) {
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         <button disabled={busy} onClick={() => decide(r, 'good')}
                           title="ตรวจแล้วใช้ได้ — ติดแท็กเขียวแล้วกลับเข้ากระบวนการ (WI §5.4)"
-                          style={{ fontSize: 11.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 7, padding: '5px 11px',
+                          style={{ fontSize: 11.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 'var(--r-md)', padding: '5px 11px',
                             cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1,
                             color: 'var(--green)', background: 'var(--green-dim)', border: '1px solid var(--green-line)' }}>
                           ✅ งานดี
                         </button>
                         <button disabled={busy} onClick={() => decide(r, 'repair')}
                           title="ซ่อมตาม SOP/WI แล้วผลออกมาดี — กลับเข้ากระบวนการ"
-                          style={{ fontSize: 11.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 7, padding: '5px 11px',
+                          style={{ fontSize: 11.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 'var(--r-md)', padding: '5px 11px',
                             cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1,
                             color: 'var(--blue)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)' }}>
                           🔧 ซ่อมแล้วดี
                         </button>
                         <button disabled={busy} onClick={() => decideScrap(r)}
                           title="ซ่อมไม่ได้/ไม่คุ้ม — ติดแท็กแดงแล้วย้ายลงถังแดง เพื่อออกใบขออนุมัติทำลาย"
-                          style={{ fontSize: 11.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 7, padding: '5px 11px',
+                          style={{ fontSize: 11.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 'var(--r-md)', padding: '5px 11px',
                             cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1,
                             color: 'var(--red)', background: 'var(--red-dim)', border: '1px solid var(--red-line)' }}>
                           🔴 เสียแน่ → ถังแดง
@@ -612,7 +612,7 @@ export default function QualityBins({ mode = 'full' }) {
             {pend.length > 8 && (
               <button onClick={() => setPendAll(v => !v)}
                 style={{ marginTop: 8, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)',
-                  borderRadius: 7, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                  borderRadius: 'var(--r-md)', padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                 {pendAll ? 'ย่อกลับ' : `แสดงอีก ${pend.length - 8} (ทั้งหมด ${pend.length})`}
               </button>
             )}
@@ -667,18 +667,18 @@ export default function QualityBins({ mode = 'full' }) {
         {overdueCount > 0 && (
           <button onClick={() => setOverdueOnly(v => !v)}
             title={`ของในถังที่เลยอายุแท็กตาม WI-PD3-087 §5.6 (🟡 ${TAG_MAX_DAYS.yellow} วัน · 🔴 ${TAG_MAX_DAYS.red} วัน) และยังไม่ถูกจัดการ`}
-            style={{ padding: '7px 13px', borderRadius: 6, fontSize: 12.5, fontWeight: 800, cursor: 'pointer',
+            style={{ padding: '7px 13px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 800, cursor: 'pointer',
               border: '1px solid #f97316', whiteSpace: 'nowrap',
               background: overdueOnly ? '#f97316' : 'transparent', color: overdueOnly ? '#2a1204' : '#f97316' }}>
             ⏱ เกินอายุแท็ก {overdueCount}
           </button>
         )}
         <span className="spacer" />
-        {canRecord && <button onClick={openNew} style={{ padding: '8px 18px', borderRadius: 6, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>+ บันทึกรายการ</button>}
-        <button onClick={doPrint} style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>พิมพ์ใบ {B.short}</button>
+        {canRecord && <button onClick={openNew} style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>+ บันทึกรายการ</button>}
+        <button onClick={doPrint} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>พิมพ์ใบ {B.short}</button>
         <button onClick={() => setShowWiReg(v => !v)}
           title="ทะเบียน QRs ↔ WI การซ่อม ตาม WI-PD3-069 §6 — อาการไหนซ่อมตาม WI เล่มไหน"
-          style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid var(--border)', background: showWiReg ? 'var(--bg2)' : 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+          style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: showWiReg ? 'var(--bg2)' : 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
           ทะเบียน WI ซ่อม
         </button>
       </TimeRangeBar>
@@ -909,7 +909,7 @@ export default function QualityBins({ mode = 'full' }) {
                     return (
                       <button key={d.value} type="button" title={d.hint}
                         onClick={() => setForm(f => ({ ...f, qa_decision: on ? '' : d.value }))}
-                        style={{ padding: '6px 12px', borderRadius: 999, fontSize: 12.5, fontWeight: 800, cursor: 'pointer',
+                        style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 800, cursor: 'pointer',
                           border: `1px solid ${on ? d.color : 'var(--border2)'}`,
                           background: on ? `${d.color}22` : 'transparent', color: on ? d.color : 'var(--text2)' }}>
                         {d.label}
@@ -971,8 +971,8 @@ export default function QualityBins({ mode = 'full' }) {
                 <input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} style={inp} /></div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-              <button onClick={() => setEditing(null)} style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-              <button onClick={save} disabled={saving} style={{ padding: '8px 20px', borderRadius: 6, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700, opacity: saving ? 0.6 : 1 }}>
+              <button onClick={() => setEditing(null)} style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+              <button onClick={save} disabled={saving} style={{ padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700, opacity: saving ? 0.6 : 1 }}>
                 {saving ? 'กำลังบันทึก…' : 'บันทึก'}
               </button>
             </div>

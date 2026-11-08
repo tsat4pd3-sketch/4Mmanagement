@@ -418,12 +418,12 @@ export default function MachineDatabase() {
         <SearchInput value={search} onChange={setSearch} fields="หมายเลข/ชื่อเครื่อง" />
         <span className="spacer" />
         {grouped.length > 1 && (
-          <button type="button" className="ctl-btn" onClick={() => {
+          <button type="button" className="pg-btn sm" onClick={() => {
             const allCollapsed = grouped.every(([n]) => collapsedGroups.has(n));
             const next = allCollapsed ? new Set() : new Set(grouped.map(([n]) => n));
             setCollapsedGroups(next);
             try { localStorage.setItem('md_group_collapse', JSON.stringify([...next])); } catch { /* ignore */ }
-          }} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', cursor: 'pointer', fontSize: 12, padding: '0 12px' }}>
+          }}>
             {grouped.every(([n]) => collapsedGroups.has(n)) ? 'กางทั้งหมด' : 'ย่อทั้งหมด'}
           </button>
         )}
@@ -487,8 +487,8 @@ export default function MachineDatabase() {
                 </div>
                 {(canEdit || mayDelete) && (
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                    <button className="tbtn" onClick={() => setHistNo(item.machine_no)} title="ใบแจ้งซ่อมทุกใบของเครื่องนี้" style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>ประวัติซ่อม</button>
-                    {canEdit && <button className="tbtn" onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
+                    <button type="button" className="pg-btn sm" onClick={() => setHistNo(item.machine_no)} title="ใบแจ้งซ่อมทุกใบของเครื่องนี้">ประวัติซ่อม</button>
+                    {canEdit && <button type="button" className="pg-btn sm" onClick={() => openEdit(item)}>แก้ไข</button>}
                     {mayDelete && <button className="tbtn" onClick={() => handleDelete(item)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 15 }}>✕</button>}
                   </div>
                 )}
@@ -516,7 +516,7 @@ export default function MachineDatabase() {
                     const on = kindOf(editing.equipment_kind) === k.key;
                     return <button key={k.key} type="button" title={k.desc}
                       onClick={() => setEditing(f => ({ ...f, equipment_kind: k.key }))}
-                      style={{ flex: '1 1 110px', padding: '7px 6px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+                      style={{ flex: '1 1 110px', padding: '7px 6px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
                         border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>
                       {k.icon} {k.label}</button>;
                   })}
@@ -532,7 +532,7 @@ export default function MachineDatabase() {
                   {EQUIP_CATS.map(c => {
                     const on = (editing.equipment_category || 'production') === c.v;
                     return <button key={c.v} type="button" onClick={() => setEditing(f => ({ ...f, equipment_category: c.v, line_name: '' }))}
-                      style={{ flex: 1, padding: '7px 6px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+                      style={{ flex: 1, padding: '7px 6px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
                         border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>{c.t}</button>;
                   })}
                 </div>
@@ -732,7 +732,7 @@ export default function MachineDatabase() {
                         {scopedLines.filter(l => !parentChildrenMap[l.name]).map(l => {
                           const on = supplyLines.includes(l.name);
                           return <button key={l.id} type="button" onClick={() => setSupplyLines(p => on ? p.filter(x => x !== l.name) : [...p, l.name])}
-                            style={{ padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                            style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                               border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>{on ? ' ' : ''}{l.name}</button>;
                         })}
                       </div>
@@ -891,7 +891,7 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
                 {hasMoCol && <span style={{ fontSize: 11, color: t.mo_item_type ? 'var(--text2)' : 'var(--muted)', marginLeft: 6 }}>{t.mo_item_type ? `→ ใบ MO: ${t.mo_item_type}` : '· ยังไม่ผูกชนิดในใบ MO'}</span>}</span>
               {canEdit && (
                 <>
-                  <button className="tbtn" onClick={() => startEdit(t)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 9px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
+                  <button type="button" className="pg-btn sm" onClick={() => startEdit(t)}>แก้ไข</button>
                   <DeleteButton onClick={() => handleDelete(t)} title="ลบรายการนี้" />
                 </>
               )}
@@ -922,7 +922,7 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
                   {/* สีที่สุ่มมาอาจอยู่นอก swatch ตายตัว — prepend ให้เห็น/เลือกกลับได้เสมอ */}
                   {[...new Set([form.color, ...TYPE_COLORS])].map(c => (
                     <button key={c} type="button" onClick={() => setForm(f => ({ ...f, color: c }))}
-                      style={{ width: 20, height: 20, borderRadius: 5, background: c, border: form.color === c ? '2px solid var(--text)' : '2px solid transparent', cursor: 'pointer' }} />
+                      style={{ width: 20, height: 20, borderRadius: 'var(--r-md)', background: c, border: form.color === c ? '2px solid var(--text)' : '2px solid transparent', cursor: 'pointer' }} />
                   ))}
                 </div>
               </div>

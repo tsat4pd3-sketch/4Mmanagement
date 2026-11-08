@@ -1254,7 +1254,7 @@ export default function Management() {
           title={f.title}
           style={{
             position: 'relative', flexShrink: 0,
-            width: 36, height: 36, borderRadius: 8,
+            width: 36, height: 36, borderRadius: 'var(--r-md)',
             background: f.on ? `${tint(f.color, 'line')}` : 'var(--bg3)',
             border: f.on ? `1px solid ${f.color}` : '1px solid var(--border2)',
             color: f.on ? f.color : 'var(--text2)', fontSize: 16,
@@ -1284,7 +1284,7 @@ export default function Management() {
         title={(showPills ? 'ซ่อน' : 'โชว์') + 'ป้ายชื่อทุกจุดบนผัง (คน/เครื่องจักร)\nป้ายเตือน (เครื่อง Downtime) แสดงเสมอ'}
         style={{
           position: 'relative', flexShrink: 0,
-          width: 36, height: 36, borderRadius: 8,
+          width: 36, height: 36, borderRadius: 'var(--r-md)',
           background: showPills ? 'rgba(148,163,184,0.28)' : 'var(--bg3)',
           border: showPills ? '1px solid var(--muted)' : '1px solid var(--border2)',
           color: showPills ? 'var(--text)' : 'var(--text2)', fontSize: 16,
@@ -1321,7 +1321,7 @@ export default function Management() {
           <button
             onClick={() => setPanelCollapsed(true)}
             title="ย่อแถบไลน์ผลิต"
-            style={{ alignSelf: 'flex-end', marginBottom: 6, flexShrink: 0, width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none' }}>
+            style={{ alignSelf: 'flex-end', marginBottom: 6, flexShrink: 0, width: 32, height: 32, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none' }}>
             ◀
           </button>
         )}
@@ -1337,7 +1337,7 @@ export default function Management() {
             <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 5, lineHeight: 1.5 }}>
               ⚠️ อ่านทะเบียนไลน์ผลิตไม่สำเร็จ — รายการที่เห็นอาจไม่ครบ (ไม่ใช่ว่าไลน์ถูกลบ)
               <button onClick={() => retryLinesRef.current?.()}
-                style={{ marginLeft: 6, fontSize: 11, padding: '1px 8px', borderRadius: 5, cursor: 'pointer',
+                style={{ marginLeft: 6, fontSize: 11, padding: '1px 8px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                          background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
                 ลองใหม่
               </button>
@@ -1380,7 +1380,7 @@ export default function Management() {
                 <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
                   {[['day', '☀️ เช้า'], ['night', '🌙 ดึก']].map(([k, t]) => (
                     <button key={k} onClick={() => setViewShift(k)}
-                      style={{ padding: '3px 10px', borderRadius: 7, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                      style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
                         background: viewShift === k ? 'var(--accent)' : 'var(--bg)',
                         border: `1px solid ${viewShift === k ? 'var(--accent)' : 'var(--border)'}`,
                         color: viewShift === k ? '#08130a' : 'var(--text2)' }}>{t}</button>
@@ -1394,7 +1394,7 @@ export default function Management() {
                 <div style={{ fontSize: 11, color: 'var(--blue)', marginTop: 4, lineHeight: 1.5 }}>
                   โหมดย้อนหลัง — <b>อ่านอย่างเดียว จัดคนไม่ได้</b> · แสดงจุดงานสุดท้ายของกะนั้น
                   <button onClick={() => { setBoardDate(todayWorkDate); setViewShift(getCurrentShift()); }}
-                    style={{ marginLeft: 6, padding: '2px 9px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>
+                    style={{ marginLeft: 6, padding: '2px 9px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>
                     ⟳ กลับมาดูสด
                   </button>
                 </div>
@@ -1499,7 +1499,7 @@ export default function Management() {
             {/* mobile: assign button */}
             {isMobile && can('management', 'assign_special_task', role) && selectedWorker && !specialEmpIds.has(selectedWorker.employee_id) && (
               <button onClick={() => { setSpecialModal(selectedWorker); setSpecialTaskType('5ส'); }}
-                style={{ marginTop: 6, padding: '8px', borderRadius: 8, background: 'var(--amber-dim)', border: '1px dashed var(--amber-line)', color: 'var(--amber)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                style={{ marginTop: 6, padding: '8px', borderRadius: 'var(--r-md)', background: 'var(--amber-dim)', border: '1px dashed var(--amber-line)', color: 'var(--amber)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                 กำหนดงานนอกไลน์ให้ผู้ถูกเลือก
               </button>
             )}
@@ -1521,7 +1521,7 @@ export default function Management() {
             {LINE_4M_CATEGORIES.map(cat => (
               <button key={cat} onClick={() => { setShow4MModal({ lineName: selectedLine }); setLog4MForm({ category: cat, description: '' }); }}
                 style={{
-                  width: '100%', marginBottom: 5, padding: isWide ? '8px 10px' : '6px 8px', fontSize: isWide ? 12 : 11, textAlign: 'left', borderRadius: 6, cursor: 'pointer',
+                  width: '100%', marginBottom: 5, padding: isWide ? '8px 10px' : '6px 8px', fontSize: isWide ? 12 : 11, textAlign: 'left', borderRadius: 'var(--r-md)', cursor: 'pointer',
                   background: cat === 'Machine' ? 'var(--amber-dim)' : cat === 'Material' ? 'var(--green-dim)' : 'var(--blue-dim)',
                   color: cat === 'Machine' ? 'var(--amber)' : cat === 'Material' ? 'var(--green)' : 'var(--blue)',
                   border: `1px solid ${cat === 'Machine' ? 'var(--amber-line)' : cat === 'Material' ? 'var(--green-line)' : 'var(--blue-line)'}`,
@@ -1540,7 +1540,7 @@ export default function Management() {
           <div style={{ paddingTop: 10, marginTop: 10, borderTop: '1px solid var(--border)', flexShrink: 0 }}>
             <button onClick={() => navigate(`/daily-report?line=${encodeURIComponent(selectedLine)}`)}
               title={`บันทึกผลผลิต / Downtime ของ ${selectedLine}`}
-              style={{ width: '100%', padding: isWide ? '8px 10px' : '6px 8px', fontSize: isWide ? 12 : 11, textAlign: 'left', borderRadius: 6, cursor: 'pointer',
+              style={{ width: '100%', padding: isWide ? '8px 10px' : '6px 8px', fontSize: isWide ? 12 : 11, textAlign: 'left', borderRadius: 'var(--r-md)', cursor: 'pointer',
                 background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', fontWeight: 700 }}>
               Daily Report ({selectedLine})
             </button>
@@ -1555,7 +1555,7 @@ export default function Management() {
         {/* ปุ่มขยายแถบไลน์ผลิตกลับ (โผล่เฉพาะตอนย่อ pool — pool กว้าง 0) · สไตล์เดียวกับ ☰/▶ อื่น */}
         {!isMobile && panelCollapsed && (
           <button onClick={() => setPanelCollapsed(false)} title="ขยายแถบไลน์ผลิต"
-            style={{ alignSelf: 'flex-start', marginBottom: 8, width: 36, height: 36, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none', flexShrink: 0, boxShadow: 'var(--shadow-sm)' }}>
+            style={{ alignSelf: 'flex-start', marginBottom: 8, width: 36, height: 36, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none', flexShrink: 0, boxShadow: 'var(--shadow-sm)' }}>
             ▶
           </button>
         )}
@@ -1580,7 +1580,7 @@ export default function Management() {
             const active = mainView === v.k;
             return (
               <button key={v.k} onClick={() => switchView(v.k)}
-                style={{ padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 800, background: active ? 'var(--accent)' : 'var(--bg3)', color: active ? 'var(--accent-ink)' : 'var(--text2)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border2)'}` }}>
+                style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 13, fontWeight: 800, background: active ? 'var(--accent)' : 'var(--bg3)', color: active ? 'var(--accent-ink)' : 'var(--text2)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border2)'}` }}>
                 {v.icon} {v.label}
               </button>
             );
@@ -1867,13 +1867,13 @@ export default function Management() {
                   {isHistorical && <span style={{ marginLeft: 8, fontSize: 11, padding: '2px 9px', borderRadius: 10, background: 'var(--blue-dim)', color: 'var(--blue)' }}>ย้อนหลัง {boardDate}</span>}
                 </span>
                 <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <button onClick={() => shiftBoardDate(-1)} style={{ padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>◀</button>
+                  <button onClick={() => shiftBoardDate(-1)} style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>◀</button>
                   {/* width ต้องกำหนดเอง — index.css ตั้ง input width:100% ทั้งแอป ถ้าปล่อยไว้ช่องวันที่จะกินเต็มแถวจนปุ่มแตกเป็น 3 บรรทัด */}
                   <input type="date" value={boardDate} max={todayWd} onChange={e => e.target.value && setBoardDate(e.target.value)}
                     style={{ width: 140, padding: '3px 8px', borderRadius: 6, fontSize: 12, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
-                  <button onClick={() => shiftBoardDate(1)} disabled={boardDate >= todayWd} style={{ padding: '3px 10px', borderRadius: 6, cursor: boardDate >= todayWd ? 'default' : 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)', opacity: boardDate >= todayWd ? 0.4 : 1 }}>▶</button>
+                  <button onClick={() => shiftBoardDate(1)} disabled={boardDate >= todayWd} style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: boardDate >= todayWd ? 'default' : 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)', opacity: boardDate >= todayWd ? 0.4 : 1 }}>▶</button>
                   {boardDate !== todayWd && (
-                    <button onClick={() => setBoardDate(todayWd)} style={{ padding: '3px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--accent)', border: '1px solid var(--accent)', color: 'var(--accent-ink)' }}>วันนี้</button>
+                    <button onClick={() => setBoardDate(todayWd)} style={{ padding: '3px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--accent)', border: '1px solid var(--accent)', color: 'var(--accent-ink)' }}>วันนี้</button>
                   )}
                   {/* ⚠️ ชิป "ดีเลย์ N ใบ" ถอดออก 30/09 — ซ้ำกับ "ยังค้าง N" ในสรุปวัน (`totalDelayed` ยังคุมสีขอบ) */}
                   {/* 📋 ขนาดของการหลุดแผน (นาที + ชิ้น + คาดจบ) — "กี่ใบ" อย่างเดียวตอบหน้างานไม่ได้ */}
@@ -1908,7 +1908,7 @@ export default function Management() {
                   })()}
                   {isMobile && (
                     <button className="tbtn" onClick={() => setShowLegendMobile(v => !v)} title="สัญลักษณ์สถานะการ์ด"
-                      style={{ padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: showLegendMobile ? 'var(--accent-dim)' : 'var(--bg)', border: `1px solid ${showLegendMobile ? 'var(--accent)' : 'var(--border)'}`, color: showLegendMobile ? 'var(--accent)' : 'var(--text2)' }}>
+                      style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: showLegendMobile ? 'var(--accent-dim)' : 'var(--bg)', border: `1px solid ${showLegendMobile ? 'var(--accent)' : 'var(--border)'}`, color: showLegendMobile ? 'var(--accent)' : 'var(--text2)' }}>
                       ℹ️
                     </button>
                   )}
@@ -2800,13 +2800,13 @@ export default function Management() {
                   await assignWorker(detailSheet.worker.id, 'Pool');
                   setDetailSheet(null);
                 }}
-                style={{ flex: 1, padding: '13px', background: 'rgba(231,76,60,0.12)', color: 'var(--red)', border: '1px solid rgba(231,76,60,0.3)', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+                style={{ flex: 1, padding: '13px', background: 'rgba(231,76,60,0.12)', color: 'var(--red)', border: '1px solid rgba(231,76,60,0.3)', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
               >
                 ส่งกลับ Pool
               </button>
               <button
                 onClick={() => setDetailSheet(null)}
-                style={{ flex: 1, padding: '13px', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+                style={{ flex: 1, padding: '13px', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
               >
                 ปิด
               </button>
@@ -2857,7 +2857,7 @@ export default function Management() {
                         {canAssignManpower && homePositions[workerHere.employee_id] !== String(st.id) && (
                           <button
                             onClick={async () => { await saveHomePosition(workerHere, st.id); }}
-                            style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', cursor: 'pointer', fontWeight: 700 }}
+                            style={{ fontSize: 11, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', cursor: 'pointer', fontWeight: 700 }}
                             title="บันทึกเป็นตำแหน่งประจำ"
                           >บันทึกตำแหน่งประจำ</button>
                         )}
@@ -2866,7 +2866,7 @@ export default function Management() {
                         )}
                         {canAssignManpower && <button
                           onClick={() => { assignWorker(workerHere.id, 'Pool'); setStationModal(null); }}
-                          style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(231,76,60,0.1)', color: 'var(--red)', border: '1px solid rgba(231,76,60,0.3)', cursor: 'pointer', fontWeight: 700 }}
+                          style={{ fontSize: 11, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'rgba(231,76,60,0.1)', color: 'var(--red)', border: '1px solid rgba(231,76,60,0.3)', cursor: 'pointer', fontWeight: 700 }}
                         >Pool</button>}
                       </div>
                     </div>
@@ -2921,7 +2921,7 @@ export default function Management() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
               {specialTaskOptions.map(t => (
                 <button key={t} onClick={() => setSpecialTaskType(t)}
-                  style={{ padding: '10px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, textAlign: 'left', cursor: 'pointer',
+                  style={{ padding: '10px 14px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 600, textAlign: 'left', cursor: 'pointer',
                     background: specialTaskType === t ? 'rgba(245,158,11,0.2)' : 'var(--bg3)',
                     border: specialTaskType === t ? '2px solid #f59e0b' : '1.5px solid var(--border2)',
                     color: specialTaskType === t ? '#f59e0b' : 'var(--text2)' }}>
@@ -2931,11 +2931,11 @@ export default function Management() {
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => assignSpecialTask(specialModal, specialTaskType)}
-                style={{ flex: 2, padding: 12, background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+                style={{ flex: 2, padding: 12, background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
                 ยืนยัน
               </button>
               <button onClick={() => setSpecialModal(null)}
-                style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
+                style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', cursor: 'pointer' }}>
                 ยกเลิก
               </button>
             </div>
@@ -3022,7 +3022,7 @@ export default function Management() {
                 {isSavingDoc ? 'กำลังบันทึก...' : 'ส่งอนุมัติ'}
               </button>
               <button onClick={() => { if (!isSavingDoc) { setPendingDocModal(null); setDocImageFile(null); setDocImagePreview(null); } }}
-                style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+                style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
                 ยกเลิก
               </button>
             </div>
@@ -3150,7 +3150,7 @@ export default function Management() {
                 );
               })()}
               <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-                <button onClick={handleSave4MLog} disabled={isSaving4M} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 15, opacity: isSaving4M ? 0.6 : 1, cursor: isSaving4M ? 'not-allowed' : 'pointer' }}>
+                <button onClick={handleSave4MLog} disabled={isSaving4M} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 15, opacity: isSaving4M ? 0.6 : 1, cursor: isSaving4M ? 'not-allowed' : 'pointer' }}>
                   {isSaving4M ? 'กำลังบันทึก...' : 'บันทึก 4M Log'}
                 </button>
                 <button onClick={() => { if (!isSaving4M) { setShow4MModal(null); setLog4MForm({ category: 'Man', description: '' }); setReqImageFile(null); setReqImagePreview(null); } }}

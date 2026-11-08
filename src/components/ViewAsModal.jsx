@@ -122,7 +122,7 @@ export default function ViewAsModal({ current, onClose, onApply }) {
               {orgSections.map(s => (
                 <button key={s} onClick={() => toggleSection(s)}
                   style={{
-                    padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                     border: sections.includes(s) ? '2px solid var(--accent)' : '1px solid var(--border2)',
                     background: sections.includes(s) ? 'var(--accent-dim)' : 'var(--bg3)',
                     color: sections.includes(s) ? 'var(--accent)' : 'var(--text2)',
@@ -143,7 +143,7 @@ export default function ViewAsModal({ current, onClose, onApply }) {
               {(teamRows || []).map(t => (
                 <button key={t.key} onClick={() => toggleMtnTeam(t.key)}
                   style={{
-                    padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                     border: mtnTeams.includes(t.key) ? '2px solid var(--accent)' : '1px solid var(--border2)',
                     background: mtnTeams.includes(t.key) ? 'var(--accent-dim)' : 'var(--bg3)',
                     color: mtnTeams.includes(t.key) ? 'var(--accent)' : 'var(--text2)',
@@ -155,11 +155,11 @@ export default function ViewAsModal({ current, onClose, onApply }) {
 
         <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
           <button onClick={onClose}
-            style={{ flex: 1, padding: '10px 0', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+            style={{ flex: 1, padding: '10px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
             ยกเลิก
           </button>
           <button onClick={apply}
-            style={{ flex: 1.4, padding: '10px 0', borderRadius: 8, border: 'none', background: '#a855f7', color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>
+            style={{ flex: 1.4, padding: '10px 0', borderRadius: 'var(--r-md)', border: 'none', background: '#a855f7', color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer' }}>
             เริ่มจำลองเป็น {roleLabel(role)}
           </button>
         </div>

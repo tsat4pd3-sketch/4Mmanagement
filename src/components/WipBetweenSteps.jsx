@@ -302,9 +302,9 @@ export default function WipBetweenSteps() {
               placeholder="หมายเหตุ (ถ้ามี)" style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button disabled={saving} onClick={() => setCounting(null)}
-                style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+                style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
               <button disabled={saving} onClick={saveCount}
-                style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
+                style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
                 {saving ? 'กำลังบันทึก…' : '💾 บันทึกยอดนับจริง'}
               </button>
             </div>

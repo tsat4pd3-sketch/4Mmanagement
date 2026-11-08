@@ -477,7 +477,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
             <div ref={detailRef} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{selLabel}{selInfo.name && selInfo.name !== selLabel ? ` · ${selInfo.name}` : ''}</div>
-                <button onClick={() => setSelId(null)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 8px', fontSize: 12, cursor: 'pointer' }}>✕</button>
+                <button onClick={() => setSelId(null)} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 'var(--r-md)', padding: '2px 8px', fontSize: 12, cursor: 'pointer' }}>✕</button>
               </div>
               {selChecklists.length === 0 ? (
                 <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีเช็คลิสต์ PM{dept !== 'all' ? ` ของแผนก ${deptLabelOf(dept)}` : ''} สำหรับรายการนี้</div>
@@ -514,7 +514,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
           <div style={S.side}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>โซน Facility ({areas.length})</span>
-              {editMode && <button onClick={addArea} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 6, padding: '3px 9px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>+ โซน</button>}
+              {editMode && <button onClick={addArea} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', padding: '3px 9px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>+ โซน</button>}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 12 }}>
               {areas.map(a => (

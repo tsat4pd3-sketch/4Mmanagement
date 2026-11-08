@@ -708,7 +708,7 @@ export default function ScrapReport() {
                   <span style={{ color: 'var(--text2)' }}>
                     ไม่มีใบในช่วงนี้ — แต่<b>มีใบอยู่นอกช่วง</b> ล่าสุด <b style={{ color: 'var(--accent)' }}>{outside.latest}</b>{' '}
                     <button onClick={() => { setListFrom(outside.latest); setListTo(getWorkDate()); }}
-                      style={{ marginTop: 6, fontSize: 13, fontWeight: 800, padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
+                      style={{ marginTop: 6, fontSize: 13, fontWeight: 800, padding: '8px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                         background: 'rgba(61,214,92,0.12)', color: 'var(--accent)', border: '1px solid rgba(61,214,92,0.45)', fontFamily: 'var(--font-body)' }}>
                       ขยายช่วงไปถึงวันนั้น
                     </button>
@@ -749,7 +749,7 @@ export default function ScrapReport() {
                   <span style={{ color: 'var(--text2)' }}>
                     ไม่มีใบในช่วงนี้ — แต่<b>มีใบอยู่นอกช่วง</b> ล่าสุด <b style={{ color: 'var(--accent)' }}>{outside.latest}</b>{' '}
                     <button onClick={() => { setListFrom(outside.latest); setListTo(getWorkDate()); }}
-                      style={{ marginLeft: 6, fontSize: 12, fontWeight: 800, padding: '3px 10px', borderRadius: 8, cursor: 'pointer',
+                      style={{ marginLeft: 6, fontSize: 12, fontWeight: 800, padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                         background: 'rgba(61,214,92,0.12)', color: 'var(--accent)', border: '1px solid rgba(61,214,92,0.45)', fontFamily: 'var(--font-body)' }}>
                       ขยายช่วงไปถึงวันนั้น
                     </button>
@@ -994,7 +994,7 @@ export default function ScrapReport() {
             placeholder={sapOptions === null ? 'กำลังโหลด…' : `พิมพ์ค้นหา MAT SAP / Part No / ชื่อ (${sapOptions.length})`} />
           <div style={{ marginTop: 10, maxHeight: 340, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {sapMatches.map((o, i) => (
-              <button key={i} onClick={() => applySap(o)} style={{ textAlign: 'left', padding: '8px 10px', borderRadius: 8, cursor: 'pointer', background: 'var(--card)', border: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button key={i} onClick={() => applySap(o)} style={{ textAlign: 'left', padding: '8px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--card)', border: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, color: o.source === 'sub' ? 'var(--amber)' : 'var(--blue)', background: o.source === 'sub' ? 'var(--amber)1f' : 'var(--blue)1f' }}>{o.source === 'sub' ? 'ย่อย' : 'หลัก'}</span>
                 <div style={{ minWidth: 0 }}>
                   {/* ลำดับ Part No. → ชื่องาน → MAT (UI §6.21) */}
@@ -1022,7 +1022,7 @@ export default function ScrapReport() {
               const mine = r.line_name === editor.report.line_name;
               return (
                 <button key={r.id} onClick={() => applyRequest(r)} style={{
-                  textAlign: 'left', padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                  textAlign: 'left', padding: '8px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                   background: 'var(--card)', border: `1px solid ${mine ? 'var(--blue)' : 'var(--border)'}`,
                 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 700 }}>

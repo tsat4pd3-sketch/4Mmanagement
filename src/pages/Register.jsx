@@ -174,7 +174,7 @@ export default function Register() {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {STAFF_KINDS.map(k => (
                 <button key={k.key} type="button" onClick={() => setStaffKind(k.key)}
-                  style={{ flex: '1 1 190px', width: 'auto', textAlign: 'left', cursor: 'pointer', padding: '7px 10px', borderRadius: 8, fontSize: 12,
+                  style={{ flex: '1 1 190px', width: 'auto', textAlign: 'left', cursor: 'pointer', padding: '7px 10px', borderRadius: 'var(--r-md)', fontSize: 12,
                     border: `1px solid ${staffKind === k.key ? 'var(--accent)' : 'var(--border2)'}`,
                     background: staffKind === k.key ? 'var(--green-dim)' : 'var(--bg2)',
                     color: staffKind === k.key ? 'var(--text)' : 'var(--text2)' }}>
@@ -360,7 +360,7 @@ export default function Register() {
             style={{
               marginTop: 4, padding: '13px',
               background: (isUploading || !canRegister) ? 'var(--muted)' : 'var(--accent)',
-              color: '#fff', border: 'none', borderRadius: 8,
+              color: '#fff', border: 'none', borderRadius: 'var(--r-md)',
               fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15,
             }}
           >

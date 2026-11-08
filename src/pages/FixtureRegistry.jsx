@@ -544,19 +544,16 @@ export default function FixtureRegistry() {
                         permKey="fixture_point:manage" />
           {canManage && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button onClick={() => setEditing({ ...emptyPoint })}
-                      style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8,
-                               padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              <button type="button" className="pg-btn sm primary" onClick={() => setEditing({ ...emptyPoint })}
+                     >
                 เพิ่มจุด
               </button>
-              <button onClick={genTemplate}
-                      style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)',
-                               borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }}>
+              <button type="button" className="pg-btn sm" onClick={genTemplate}
+                     >
                 สร้างจากแม่แบบ
               </button>
-              <button onClick={copyFrom}
-                      style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)',
-                               borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }}>
+              <button type="button" className="pg-btn sm" onClick={copyFrom}
+                     >
                 ⧉ คัดลอกจากฟิกเจอร์อื่น
               </button>
             </div>
@@ -632,7 +629,7 @@ export default function FixtureRegistry() {
                             : <span style={{ color: 'var(--muted)' }}>—</span>; })()}
                           {canManage && frames.length > 0 && (
                             <button onClick={() => setArmPoint(a => a === p.id ? '' : p.id)} title="วางตำแหน่งบนรูป"
-                              style={{ marginLeft: 6, background: armPoint === p.id ? 'var(--accent)' : 'var(--bg2)', color: armPoint === p.id ? 'var(--accent-ink)' : 'var(--text)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 7px', fontSize: 11, cursor: 'pointer' }}>
+                              style={{ marginLeft: 6, background: armPoint === p.id ? 'var(--accent)' : 'var(--bg2)', color: armPoint === p.id ? 'var(--accent-ink)' : 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '2px 7px', fontSize: 11, cursor: 'pointer' }}>
                               {armPoint === p.id ? 'คลิกรูป…' : (pointPin(p, cpById)?.source === 'own' ? 'ย้าย' : 'วาง')}
                             </button>
                           )}
@@ -659,7 +656,7 @@ export default function FixtureRegistry() {
                         <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
                           {canManage && (
                             <>
-                              <button onClick={() => setEditing({
+                              <button type="button" className="pg-btn sm" onClick={() => setEditing({
                                 ...emptyPoint, ...p,
                                 baseline_shim_mm: p.baseline_shim_mm ?? '', baseline_at: p.baseline_at ?? '',
                                 max_shim_mm: p.max_shim_mm ?? '', interval_days: p.interval_days ?? '',
@@ -667,12 +664,9 @@ export default function FixtureRegistry() {
                                 expected_life_cycles: p.expected_life_cycles ?? '',
                                 name: p.name ?? '', note: p.note ?? '',
                               })}
-                                style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6,
-                                         padding: '3px 9px', fontSize: 11.5, cursor: 'pointer', color: 'var(--text)' }}>✏️</button>
-                              <button onClick={() => removePoint(p)}
-                                style={{ marginLeft: 4, background: 'var(--bg2)', border: '1px solid var(--border)',
-                                         borderRadius: 6, padding: '3px 9px', fontSize: 11.5, cursor: 'pointer',
-                                         color: 'var(--text)' }}>🚫</button>
+                               >✏️</button>
+                              <button type="button" className="pg-btn sm" onClick={() => removePoint(p)}
+                                style={{ marginLeft: 4 }}>🚫</button>
                             </>
                           )}
                         </td>
@@ -718,12 +712,10 @@ export default function FixtureRegistry() {
               </Field>
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
-              <button onClick={() => setTpl(null)}
-                      style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)',
-                               borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
-              <button onClick={runTemplate}
-                      style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8,
-                               padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>สร้างจุด</button>
+              <button type="button" className="pg-btn sm" onClick={() => setTpl(null)}
+                     >ยกเลิก</button>
+              <button type="button" className="pg-btn sm primary" onClick={runTemplate}
+                     >สร้างจุด</button>
             </div>
           </div>
         </div>
@@ -791,12 +783,10 @@ export default function FixtureRegistry() {
               • ไม่ตั้งความถี่ทั้ง 2 แกน = ใช้ความถี่ของเช็คลิสต์ PM เหมือนเดิม
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
-              <button onClick={() => setEditing(null)}
-                      style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)',
-                               borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
-              <button onClick={savePoint}
-                      style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8,
-                               padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>บันทึก</button>
+              <button type="button" className="pg-btn sm" onClick={() => setEditing(null)}
+                     >ยกเลิก</button>
+              <button type="button" className="pg-btn sm primary" onClick={savePoint}
+                     >บันทึก</button>
             </div>
           </div>
         </div>

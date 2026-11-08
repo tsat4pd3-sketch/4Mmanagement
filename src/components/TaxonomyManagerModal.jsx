@@ -131,8 +131,8 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
                     {!r.is_active && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>(ปิดใช้งาน)</span>}
                   </div>
                   {canEditRow(r) ? <>
-                    <button onClick={() => openEdit(r)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>แก้ไข</button>
-                    <button onClick={() => remove(r)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, border: '1px solid rgba(224,92,74,0.3)', background: 'rgba(224,92,74,0.1)', color: '#e05c4a', cursor: 'pointer' }}>ลบ</button>
+                    <button onClick={() => openEdit(r)} style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>แก้ไข</button>
+                    <button onClick={() => remove(r)} style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, border: '1px solid rgba(224,92,74,0.3)', background: 'rgba(224,92,74,0.1)', color: '#e05c4a', cursor: 'pointer' }}>ลบ</button>
                   </> : <span title={lockNote(r)} style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>ดูอย่างเดียว</span>}
                 </div>
               ))}
@@ -161,7 +161,7 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
                     <input value={form.icon} onChange={e => setForm(f => ({ ...f, icon: e.target.value }))} style={{ ...inp, width: 60, textAlign: 'center', fontSize: 18 }} />
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {EMOJI_SUGGESTIONS.map(em => (
-                        <button key={em} onClick={() => setForm(f => ({ ...f, icon: em }))} style={{ width: 30, height: 30, borderRadius: 6, border: `1px solid ${form.icon === em ? 'var(--accent)' : 'var(--border)'}`, background: form.icon === em ? 'var(--accent-dim)' : 'var(--bg2)', fontSize: 15, cursor: 'pointer' }}>{em}</button>
+                        <button key={em} onClick={() => setForm(f => ({ ...f, icon: em }))} style={{ width: 30, height: 30, borderRadius: 'var(--r-md)', border: `1px solid ${form.icon === em ? 'var(--accent)' : 'var(--border)'}`, background: form.icon === em ? 'var(--accent-dim)' : 'var(--bg2)', fontSize: 15, cursor: 'pointer' }}>{em}</button>
                       ))}
                     </div>
                   </div>
@@ -183,7 +183,7 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
                     {EQUIP_TYPE_OPTS.map(o => {
                       const on = (form.equip_types || []).includes(o.k)
                       return <button key={o.k} onClick={() => setForm(f => { const cur = f.equip_types || []; return { ...f, equip_types: on ? cur.filter(x => x !== o.k) : [...cur, o.k] } })}
-                        style={{ padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent-dim)' : 'var(--bg2)', color: on ? 'var(--accent)' : 'var(--muted)' }}>{o.l}</button>
+                        style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent-dim)' : 'var(--bg2)', color: on ? 'var(--accent)' : 'var(--muted)' }}>{o.l}</button>
                     })}
                   </div>
                 </div>
@@ -195,8 +195,8 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
                 </label>
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => setEditing(null)} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
-                <button onClick={save} disabled={saving} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>{saving ? 'บันทึก...' : 'บันทึก'}</button>
+                <button onClick={() => setEditing(null)} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
+                <button onClick={save} disabled={saving} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>{saving ? 'บันทึก...' : 'บันทึก'}</button>
               </div>
             </div>
           )}
@@ -204,7 +204,7 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
 
         {!editing && (
           <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)' }}>
-            <button onClick={openNew} style={{ width: '100%', padding: '9px 0', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>+ เพิ่มรายการ</button>
+            <button onClick={openNew} style={{ width: '100%', padding: '9px 0', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>+ เพิ่มรายการ</button>
           </div>
         )}
       </motion.div>

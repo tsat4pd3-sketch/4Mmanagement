@@ -95,7 +95,7 @@ export default function NotifyPrefsModal({ role, onClose }) {
           {state === 'error' && (
             <div role="alert" style={{ fontSize: 12, color: toneVar('bad'), background: toneDim('bad'), border: `1px solid ${toneLine('bad')}`, borderRadius: 8, padding: '8px 10px', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ flex: 1, minWidth: 180 }}>โหลดรายการแจ้งเตือนไม่สำเร็จ ({err}) — ยังตั้งค่าไม่ได้</span>
-              <button onClick={load} style={{ padding: '3px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 12, cursor: 'pointer' }}>โหลดใหม่</button>
+              <button onClick={load} style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 12, cursor: 'pointer' }}>โหลดใหม่</button>
             </div>
           )}
 
@@ -138,7 +138,7 @@ export default function NotifyPrefsModal({ role, onClose }) {
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '11px 16px', borderTop: '1px solid var(--border)' }}>
-          <button onClick={onClose} style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>เสร็จแล้ว</button>
+          <button onClick={onClose} style={{ padding: '7px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>เสร็จแล้ว</button>
         </div>
       </div>
     </div>

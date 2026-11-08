@@ -772,12 +772,12 @@ export default function MorningMeeting() {
                   </td>
                   {canRecord && (
                     <td style={{ padding: '6px 4px' }}>
-                      <button className="tbtn" onClick={() => openActModal({
+                      <button type="button" className="pg-btn sm" onClick={() => openActModal({
                         problem: `${m.o.part_name || m.o.mat_no || m.o.prod_no} หลุดแผน ${m.gap} ชิ้น (${m.actual}/${m.target})`,
                         line_name: m.line, ref_kind: 'order_miss', ref_id: String(m.o.id),
                       })}
                         title="ตั้งเป็น Action Item"
-                        style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--accent)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        style={{ whiteSpace: 'nowrap' }}>
                         Action
                       </button>
                     </td>
@@ -909,8 +909,8 @@ export default function MorningMeeting() {
                       {Object.entries(routineByLine).map(([ln, n]) => `${ln} ×${n}`).join(' · ')}
                     </span>
                   </span>
-                  <button onClick={() => setShowRoutineMoves(v => !v)}
-                    style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  <button type="button" className="pg-btn sm" onClick={() => setShowRoutineMoves(v => !v)}
+                    style={{ marginLeft: 'auto', whiteSpace: 'nowrap' }}>
                     {showRoutineMoves ? 'ซ่อนรายชื่อ' : `ดูรายชื่อ (${routine.length})`}
                   </button>
                 </div>
@@ -946,10 +946,10 @@ export default function MorningMeeting() {
             <span style={{ color: 'var(--red)', flex: '1 1 auto', minWidth: 0, overflowWrap: 'anywhere' }}>{d.dr_downtime_types?.name_th || 'Downtime'}{d.description ? ` — ${d.description}` : ''}</span>
             <span style={{ ...chip('var(--red)'), overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>ยังซ่อมไม่เสร็จ</span>
             {canRecord && (
-              <button className="tbtn" onClick={() => openActModal({
+              <button type="button" className="pg-btn sm" onClick={() => openActModal({
                 problem: `เครื่อง ${d.machine_no || ''} ${d._line}: ${d.dr_downtime_types?.name_th || 'Downtime'} ยังซ่อมไม่เสร็จ`,
                 line_name: d._line, ref_kind: 'downtime', ref_id: String(d.id),
-              })} style={{ marginLeft: 'auto', fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--accent)', cursor: 'pointer', whiteSpace: 'nowrap' }}>Action</button>
+              })} style={{ marginLeft: 'auto', whiteSpace: 'nowrap' }}>Action</button>
             )}
           </div>
         )) : (
@@ -979,7 +979,7 @@ export default function MorningMeeting() {
       <h2 style={h2St}>
         Action Items <span style={chip(openActions.length ? 'var(--amber)' : 'var(--green)')}>{openActions.length} ค้าง</span>
         {canRecord && (
-          <button onClick={() => openActModal()} style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 7, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>
+          <button type="button" className="pg-btn sm" onClick={() => openActModal()} style={{ marginLeft: 'auto' }}>
             เพิ่ม Action
           </button>
         )}
@@ -1006,9 +1006,9 @@ export default function MorningMeeting() {
                   <span style={chip(st.color)}>{st.label}</span>
                   {canRecord && ['open', 'doing'].includes(a.status) && (
                     <>
-                      {a.status === 'open' && <button className="tbtn" onClick={() => setActStatus(a, 'doing')} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--blue)', cursor: 'pointer' }}>เริ่มทำ</button>}
-                      <button className="tbtn" onClick={() => setActStatus(a, 'done')} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--green)', cursor: 'pointer' }}>เสร็จ</button>
-                      <button className="tbtn" onClick={() => setActStatus(a, 'cancelled')} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
+                      {a.status === 'open' && <button type="button" className="pg-btn sm" onClick={() => setActStatus(a, 'doing')}>เริ่มทำ</button>}
+                      <button type="button" className="pg-btn sm" onClick={() => setActStatus(a, 'done')}>เสร็จ</button>
+                      <button type="button" className="pg-btn sm pg-btn-icon" onClick={() => setActStatus(a, 'cancelled')}>✕</button>
                     </>
                   )}
                 </div>

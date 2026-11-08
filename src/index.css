@@ -1196,6 +1196,10 @@ body.esm-tv-shell .tv-hide { display: none !important; }
   display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
 .pg-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .pg-btn.danger  { border-color: var(--red); color: var(--red); }
+/* ปุ่มคำสั่งขนาดเล็กในแถวตาราง/การ์ด/แถบเครื่องมือ (06/11 · UI §6.35) — มุมเดียวกับ .pg-btn · ห้ามเขียน borderRadius เองที่ปุ่ม */
+.pg-btn.sm { height: 28px; padding: 0 10px; font-size: 12px; gap: 5px; }
+.pg-btn.sm.pg-btn-icon { width: 28px; }
+.pg-btn.primary.sm { font-weight: 600; }
 .pg-btn-icon { padding: 0; justify-content: center; }
 .pg-dot { width: 4px; height: 4px; border-radius: 50%; background: currentColor; display: inline-block; }
 .pg-menu { position: absolute; top: calc(100% + 6px); z-index: 60; min-width: 220px; padding: 6px;

@@ -1342,7 +1342,7 @@ export default function Checkin() {
                               <button
                                 onClick={() => unborrowEmployee(emp)}
                                 title="ยกเลิกยืมตัว — คืนกลับไลน์เดิม"
-                                style={{ padding: '2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)' }}
+                                style={{ padding: '2px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)' }}
                               >คืน</button>
                             )}
                           </div>
@@ -1398,7 +1398,7 @@ export default function Checkin() {
                               onClick={() => setLeaveDuration(emp.id, opt.value)}
                               style={{
                                 flex: 1, padding: '3px 0', fontSize: 11, fontWeight: 700,
-                                borderRadius: 5, border: 'none', cursor: 'pointer',
+                                borderRadius: 'var(--r-md)', border: 'none', cursor: 'pointer',
                                 background: rec.leave_duration === opt.value ? 'var(--blue)' : 'var(--bg2)',
                                 color: rec.leave_duration === opt.value ? '#fff' : 'var(--text2)',
                                 transition: 'all 0.15s',
@@ -1420,7 +1420,7 @@ export default function Checkin() {
                               title={opt.sub}
                               style={{
                                 flex: 1, padding: '3px 4px', fontSize: 11, fontWeight: 700,
-                                borderRadius: 5, border: 'none', cursor: 'pointer',
+                                borderRadius: 'var(--r-md)', border: 'none', cursor: 'pointer',
                                 background: rec.leave_period === opt.value ? 'var(--blue)' : 'var(--bg2)',
                                 color: rec.leave_period === opt.value ? '#fff' : 'var(--text2)',
                                 transition: 'all 0.15s', lineHeight: 1.3,
@@ -1720,7 +1720,7 @@ export default function Checkin() {
                           <button
                             onClick={() => borrowEmployee(r)}
                             disabled={!helpersReady}
-                            style={{ padding: '5px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: helpersReady ? 'pointer' : 'not-allowed', background: helpersReady ? 'var(--accent)' : 'var(--muted)', color: '#fff', border: 'none', whiteSpace: 'nowrap' }}
+                            style={{ padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: helpersReady ? 'pointer' : 'not-allowed', background: helpersReady ? 'var(--accent)' : 'var(--muted)', color: '#fff', border: 'none', whiteSpace: 'nowrap' }}
                           >ยืมตัว</button>
                         )}
                   </div>
@@ -1902,7 +1902,7 @@ export default function Checkin() {
 
       {isMobile && canRecord && displayed.length > 0 && (
         <button type="button" onClick={() => setBadgeScanOpen(true)}
-          style={{ width: '100%', minHeight: 52, marginBottom: 12, borderRadius: 12, border: '2px solid var(--accent)', background: 'var(--accent-dim)',
+          style={{ width: '100%', minHeight: 52, marginBottom: 12, borderRadius: 'var(--r-md)', border: '2px solid var(--accent)', background: 'var(--accent-dim)',
             color: 'var(--accent)', fontSize: 16, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
           สแกนบัตรพนักงานเช็คชื่อ
         </button>
@@ -1997,13 +1997,13 @@ export default function Checkin() {
             <div style={{ display: 'flex', gap: 8 }}>
               <button
                 onClick={handleSwitchUser}
-                style={{ flex: 1, padding: '11px 0', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                style={{ flex: 1, padding: '11px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
                   background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
                 ไม่ใช่ฉัน
               </button>
               <button
                 onClick={handleSave}
-                style={{ flex: 2, padding: '11px 0', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: 'pointer',
+                style={{ flex: 2, padding: '11px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 800, cursor: 'pointer',
                   background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
                 ใช่ บันทึกเลย
               </button>
@@ -2106,9 +2106,9 @@ export default function Checkin() {
             </div>
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowOtBookModal(false)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>
+              <button onClick={() => setShowOtBookModal(false)} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>
               <button onClick={handleSaveOtBookModal} disabled={otBookSaving || !otBookLineId || !canRecord}
-                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: otBookSaving || !otBookLineId ? 'not-allowed' : 'pointer', opacity: otBookSaving || !otBookLineId ? 0.6 : 1 }}>
+                style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: otBookSaving || !otBookLineId ? 'not-allowed' : 'pointer', opacity: otBookSaving || !otBookLineId ? 0.6 : 1 }}>
                 {otBookSaving ? 'กำลังบันทึก...' : 'บันทึกการจอง'}
               </button>
             </div>
@@ -2146,9 +2146,9 @@ export default function Checkin() {
             </select>
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowExport(false)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>
+              <button onClick={() => setShowExport(false)} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>
               <button onClick={handleExportForms} disabled={exporting}
-                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer' }}>
+                style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer' }}>
                 {exporting ? 'กำลังสร้าง...' : 'สร้าง PDF'}
               </button>
             </div>

@@ -156,7 +156,7 @@ export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: 
         {canManage && (
           <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); setImporting(true); }}
             title="อัพโหลด monthly report ของบัญชี (.xlsx/.xlsb) แล้วให้ระบบอ่านแถว/เดือนให้ ตรวจก่อนบันทึก"
-            style={{ marginLeft: 10, padding: '4px 12px', borderRadius: 8, border: '1px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 12, fontWeight: 700, verticalAlign: 'middle' }}>
+            style={{ marginLeft: 10, padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 12, fontWeight: 700, verticalAlign: 'middle' }}>
             นำเข้าจาก Excel บัญชี
           </button>
         )}

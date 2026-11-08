@@ -14,7 +14,7 @@ export default function SignedDecimalInput({ value, onChange, style, placeholder
     <span style={{ display: 'inline-flex', alignItems: 'stretch', gap: 4 }}>
       <button type="button" className="tbtn" title="กลับเครื่องหมาย + / −" aria-label="กลับเครื่องหมายบวกลบ"
         onClick={() => onChange(toggleSign(v))}
-        style={{ minWidth: 34, padding: '0 8px', borderRadius: 8, border: '1px solid var(--border2)',
+        style={{ minWidth: 34, padding: '0 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)',
           background: String(v).startsWith('-') ? 'rgba(239,68,68,0.12)' : 'var(--bg2)',
           color: String(v).startsWith('-') ? '#ef4444' : 'var(--text)', fontWeight: 800, fontSize: 15, cursor: 'pointer' }}>±</button>
       <input type="text" inputMode="decimal" autoComplete="off" placeholder={placeholder} value={v}

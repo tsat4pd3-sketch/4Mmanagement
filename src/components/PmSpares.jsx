@@ -43,7 +43,7 @@ function Shell({ title, sub, onClose, children, width = 680 }) {
             <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{title}</div>
             {sub && <div style={{ fontSize: 12.5, color: 'var(--muted)', marginTop: 2 }}>{sub}</div>}
           </div>
-          <button onClick={onClose} aria-label="ปิด" style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
+          <button onClick={onClose} aria-label="ปิด" style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 'var(--r-md)', padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
         </div>
         {children}
       </div>

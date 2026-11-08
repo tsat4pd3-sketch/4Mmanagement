@@ -288,13 +288,13 @@ export default function BomPhantomPanel({ onOpenSheet }) {
                         <span style={{ display: 'inline-flex', gap: 6 }}>
                           {r.verdict === 'seeded' && (
                             <button onClick={() => confirmSeeded(r.mat_no)} disabled={busy === r.mat_no}
-                              style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6,
+                              style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-md)',
                                        border: `1px solid ${OK}`, color: OK, background: 'var(--card)', cursor: 'pointer' }}>
                               ✓ ยืนยัน
                             </button>
                           )}
                           <button onClick={() => setPhantom(r.mat_no, !isPhantom)} disabled={busy === r.mat_no}
-                            style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6,
+                            style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-md)',
                                      border: '1px solid var(--border)', color: 'var(--text)',
                                      background: 'var(--card)', cursor: 'pointer' }}>
                             {isPhantom ? 'ไม่ใช่ของลม' : 'ติ๊กเป็นของลม'}

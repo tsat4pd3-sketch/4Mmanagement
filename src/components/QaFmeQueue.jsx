@@ -238,7 +238,7 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
                 const on = String(cfg.mid_mode ?? 'lot') === m.k;
                 return (
                   <button key={m.k} onClick={() => saveCfg({ mid_mode: m.k })} disabled={busy}
-                    style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 20, cursor: 'pointer',
+                    style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                       border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
                       background: on ? 'var(--accent-dim)' : 'var(--bg2)', color: on ? 'var(--accent)' : 'var(--text2)' }}>
                     {m.label}

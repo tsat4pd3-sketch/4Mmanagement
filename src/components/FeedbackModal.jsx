@@ -282,7 +282,7 @@ export default function FeedbackModal({ onClose }) {
   const box = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' };
   const tabBtn = (k, label) => (
     <button key={k} onClick={() => setTab(k)} style={{
-      fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 8, cursor: 'pointer',
+      fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
       border: `1px solid ${tab === k ? 'var(--accent)' : 'var(--border)'}`,
       background: tab === k ? 'var(--accent-dim)' : 'var(--bg3)', color: tab === k ? 'var(--accent)' : 'var(--text2)',
     }}>{label}</button>
@@ -314,7 +314,7 @@ export default function FeedbackModal({ onClose }) {
               <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
                 {KINDS.map(k => (
                   <button key={k.key} onClick={() => setKind(k.key)} style={{
-                    fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 20, cursor: 'pointer',
+                    fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                     border: `1px solid ${kind === k.key ? k.color : 'var(--border)'}`,
                     background: kind === k.key ? `${k.color}22` : 'var(--bg3)', color: kind === k.key ? k.color : 'var(--text2)',
                   }}>{k.icon} {k.label}</button>
@@ -337,7 +337,7 @@ export default function FeedbackModal({ onClose }) {
                   style={{ display: 'none' }} />
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <button type="button" onClick={() => fileRef.current?.click()} disabled={shots.length >= MAX_SHOTS}
-                    style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 8,
+                    style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 'var(--r-md)',
                       border: '1px dashed var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
                       cursor: shots.length >= MAX_SHOTS ? 'default' : 'pointer', opacity: shots.length >= MAX_SHOTS ? 0.5 : 1 }}>
                     แนบรูปหน้าจอ
@@ -368,7 +368,7 @@ export default function FeedbackModal({ onClose }) {
               </div>
 
               <button onClick={send} disabled={saving || !msg.trim()}
-                style={{ marginTop: 14, width: '100%', padding: '10px 0', borderRadius: 8, border: 'none', cursor: (saving || !msg.trim()) ? 'default' : 'pointer',
+                style={{ marginTop: 14, width: '100%', padding: '10px 0', borderRadius: 'var(--r-md)', border: 'none', cursor: (saving || !msg.trim()) ? 'default' : 'pointer',
                   background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 14, opacity: (saving || !msg.trim()) ? 0.5 : 1 }}>
                 {saving ? (shots.length ? `กำลังอัปรูป ${shots.length} รูป...` : 'กำลังส่ง...') : '📨 ส่งให้ทีมงาน'}
               </button>
@@ -381,10 +381,10 @@ export default function FeedbackModal({ onClose }) {
                   เฉพาะที่ยังไม่ปิด
                 </label>
                 <button onClick={copyForClaude} title="คัดลอกเรื่องที่แสดงอยู่เป็นข้อความ แล้วเอาไปวางในแชท Claude ให้ช่วยดู/แก้"
-                  style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 6, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>
+                  style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>
                   คัดลอกให้ Claude
                 </button>
-                <button onClick={load} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>↻ รีเฟรช</button>
+                <button onClick={load} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>↻ รีเฟรช</button>
               </div>
 
               {loading ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด...</div>
@@ -432,7 +432,7 @@ export default function FeedbackModal({ onClose }) {
                             style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7,
                               padding: '6px 8px', color: 'var(--text)', fontSize: 12, fontFamily: 'inherit', resize: 'vertical' }} />
                           <button onClick={() => saveNote(r)} disabled={savingNote === r.id || !(noteDraft[r.id] ?? r.admin_note ?? '').trim()}
-                            style={{ marginTop: 4, fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 7, border: 'none',
+                            style={{ marginTop: 4, fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 'var(--r-md)', border: 'none',
                               background: 'var(--accent)', color: 'var(--accent-ink)',
                               cursor: savingNote === r.id ? 'default' : 'pointer', opacity: savingNote === r.id ? 0.5 : 1 }}>
                             {savingNote === r.id ? 'กำลังส่ง...' : '📨 ส่งคำตอบให้ผู้แจ้ง'}
@@ -443,7 +443,7 @@ export default function FeedbackModal({ onClose }) {
                         <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
                           {Object.entries(STATUS).map(([key, s]) => (
                             <button key={key} onClick={() => setStatus(r, key)} disabled={r.status === key}
-                              style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, cursor: r.status === key ? 'default' : 'pointer',
+                              style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-md)', cursor: r.status === key ? 'default' : 'pointer',
                                 border: `1px solid ${r.status === key ? s.color : 'var(--border)'}`,
                                 background: r.status === key ? `${s.color}22` : 'transparent', color: r.status === key ? s.color : 'var(--text2)' }}>
                               {s.label}

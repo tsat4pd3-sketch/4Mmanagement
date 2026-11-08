@@ -45,7 +45,7 @@ export default function DieMatLinkButton({ set, mat, role, onDone }) {
   }
   return (
     <button type="button" onClick={link} disabled={busy}
-      style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, cursor: busy ? 'default' : 'pointer',
+      style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-md)', cursor: busy ? 'default' : 'pointer',
         background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--accent)' }}>
       {busy ? 'กำลังผูก…' : `🔗 ยืนยัน: ชุด ${set.set_code} ทำ MAT ${m}`}
     </button>

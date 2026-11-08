@@ -180,7 +180,7 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
           <span style={{ fontSize: 12, fontWeight: 700 }}>เติมไปข้างหน้า</span>
           {WEEK_CHOICES.map(w => (
             <button key={w} onClick={() => setWeeks(w)} style={{
-              padding: '5px 12px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
               border: `1px solid ${weeks === w ? '#4d9fff' : 'var(--border2)'}`,
               background: weeks === w ? 'rgba(77,159,255,0.15)' : 'transparent',
               color: weeks === w ? '#4d9fff' : 'var(--text2)',
@@ -265,12 +265,12 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
         )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
-          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'transparent', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>
+          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'transparent', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>
             ปิด
           </button>
           <button onClick={apply} disabled={saving || loading || !ready.length}
             style={{
-              padding: '8px 16px', borderRadius: 8, border: 'none', background: '#4d9fff', color: '#fff',
+              padding: '8px 16px', borderRadius: 'var(--r-md)', border: 'none', background: '#4d9fff', color: '#fff',
               fontSize: 13, fontWeight: 700, cursor: (saving || !ready.length) ? 'not-allowed' : 'pointer',
               opacity: (saving || loading || !ready.length) ? 0.5 : 1,
             }}>

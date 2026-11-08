@@ -1050,7 +1050,7 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, re
             <ProductSelect strict value={newMat} lines={famNames} extraOptions={bomExtra} history={levelMatHist} placeholder="เพิ่มพาร์ท (เลือกจากทะเบียน)"
               style={{ width: 240 }} inputStyle={{ padding: '5px 26px 5px 10px', fontSize: 12 }}
               onChange={({ mat_no, opt, known }) => { setNewMat(mat_no); setNewMatKnown(!!opt && known !== false); }} />
-            <button onClick={addMat} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 7, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>+ เพิ่ม</button>
+            <button onClick={addMat} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>+ เพิ่ม</button>
           </div>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '10px 18px' }}>
@@ -1093,8 +1093,8 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, re
           {!shown.length && <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>ไม่มีพาร์ทที่ตรงกับคำค้น</div>}
         </div>
         <div style={{ padding: '12px 18px', borderTop: '1px solid var(--border2)', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{ fontSize: 12.5, padding: '7px 16px', borderRadius: 8, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>ยกเลิก</button>
-          <button onClick={save} disabled={saving} style={{ fontSize: 12.5, fontWeight: 800, padding: '7px 18px', borderRadius: 8, cursor: 'pointer', background: 'var(--accent)', border: 'none', color: 'var(--accent-ink)' }}>
+          <button onClick={onClose} style={{ fontSize: 12.5, padding: '7px 16px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>ยกเลิก</button>
+          <button onClick={save} disabled={saving} style={{ fontSize: 12.5, fontWeight: 800, padding: '7px 18px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--accent)', border: 'none', color: 'var(--accent-ink)' }}>
             {saving ? 'กำลังบันทึก…' : 'บันทึก'}
           </button>
         </div>

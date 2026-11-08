@@ -384,7 +384,7 @@ export default function QAInspectionSetup() {
             {shownParts.map(p => (
               <button key={p.id} onClick={() => setSelId(p.id)}
                 style={{
-                  textAlign: 'left', padding: '9px 10px', borderRadius: 8, cursor: 'pointer',
+                  textAlign: 'left', padding: '9px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                   background: p.id === selId ? 'var(--accent-dim)' : 'transparent',
                   border: `1px solid ${p.id === selId ? 'var(--accent)' : 'transparent'}`,
                   opacity: p.is_active ? 1 : 0.5,
@@ -569,7 +569,7 @@ export default function QAInspectionSetup() {
                 {bomMatches.map(o => (
                   <button key={o.key} onClick={() => pickBomOption(o)}
                     style={{
-                      textAlign: 'left', padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                      textAlign: 'left', padding: '8px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                       background: 'var(--card)', border: '1px solid var(--border)',
                       display: 'flex', gap: 8, alignItems: 'center',
                     }}>

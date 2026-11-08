@@ -93,7 +93,7 @@ export default function AuditLogViewer({ client, tables, limit = 300, intro, fmt
         <span className="filter-count">
           {shown.length} รายการ{rows.length >= limit ? ` (แสดง ${limit} ล่าสุด — เก่ากว่านี้ยังมีอีก)` : ''}
         </span>
-        <button onClick={load} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 8, padding: '0 12px', cursor: 'pointer', fontWeight: 700 }}>↻ รีเฟรช</button>
+        <button onClick={load} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 'var(--r-md)', padding: '0 12px', cursor: 'pointer', fontWeight: 700 }}>↻ รีเฟรช</button>
       </FilterBar>
 
       {loading && <div style={{ color: 'var(--muted)', padding: 16, fontSize: 13 }}>กำลังโหลด…</div>}

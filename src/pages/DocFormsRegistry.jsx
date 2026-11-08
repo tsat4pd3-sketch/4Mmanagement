@@ -242,10 +242,10 @@ export default function DocFormsRegistry() {
                   </td>
                   <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                     <button className="tbtn" onClick={() => preview(r)} title="ทดลองพิมพ์ / บันทึกเป็น PDF (ตัวอย่าง มีลายน้ำ)"
-                      style={{ padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', marginRight: 6 }}>ตัวอย่าง</button>
+                      style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', marginRight: 6 }}>ตัวอย่าง</button>
                     {canManage && (
                       <button className="tbtn" onClick={() => openEdit(r)}
-                        style={{ padding: '4px 12px', borderRadius: 6, fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>แก้ไข</button>
+                        style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>แก้ไข</button>
                     )}
                   </td>
                 </tr>
@@ -330,7 +330,7 @@ export default function DocFormsRegistry() {
                   </div>
                   {canManage && (
                     <button onClick={() => openScope(editing, null)}
-                      style={{ padding: '4px 11px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--accent)', border: '1px solid var(--border2)' }}>+ เพิ่มส่วนงาน</button>
+                      style={{ padding: '4px 11px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--accent)', border: '1px solid var(--border2)' }}>+ เพิ่มส่วนงาน</button>
                   )}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', margin: '3px 0 7px', lineHeight: 1.6 }}>
@@ -365,7 +365,7 @@ export default function DocFormsRegistry() {
                   {scopes.map(sc => <option key={sc.id} value={sc.section}>{sc.section}</option>)}
                 </select>
                 <button onClick={() => preview(editing, previewScope)}
-                  style={{ padding: '5px 13px', borderRadius: 7, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid var(--accent)' }}>เปิดตัวอย่าง</button>
+                  style={{ padding: '5px 13px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid var(--accent)' }}>เปิดตัวอย่าง</button>
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>ใบตัวอย่างมีลายน้ำ “ตัวอย่าง” — เซฟ PDF จากหน้าต่างพิมพ์ของเบราว์เซอร์ · บันทึกทะเบียนก่อนถึงจะเห็นค่าล่าสุด</span>
               </div>
 
@@ -405,12 +405,12 @@ export default function DocFormsRegistry() {
                   <input type="text" value={newRev.description} onChange={e => setNewRev(v => ({ ...v, description: e.target.value }))} placeholder="Description" style={{ width: '100%' }} />
                   <PersonSelect value={newRev.responsible} onChange={({ name }) => setNewRev(v => ({ ...v, responsible: name }))} placeholder="Responsible" />
                   <PersonSelect value={newRev.approved_name} onChange={({ name }) => setNewRev(v => ({ ...v, approved_name: name }))} placeholder="Approved" />
-                  <button onClick={addRevision} style={{ padding: '7px 14px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>+ เพิ่ม</button>
+                  <button onClick={addRevision} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>+ เพิ่ม</button>
                 </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-                <button onClick={() => setEditing(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-                <button onClick={save} disabled={saving} style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13, opacity: saving ? 0.6 : 1 }}>
+                <button onClick={() => setEditing(null)} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+                <button onClick={save} disabled={saving} style={{ padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13, opacity: saving ? 0.6 : 1 }}>
                   {saving ? '...' : 'บันทึก'}
                 </button>
               </div>
@@ -469,8 +469,8 @@ export default function DocFormsRegistry() {
               <div><div style={lb}>Legend เฉพาะส่วนงาน (เว้นว่าง = ใช้ของกลาง)</div>
                 <textarea rows={2} value={scopeEdit.legend} onChange={e => setScopeEdit(v => ({ ...v, legend: e.target.value }))} style={{ width: '100%', fontSize: 12.5 }} /></div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                <button onClick={() => setScopeEdit(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-                <button onClick={saveScope} style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>บันทึก</button>
+                <button onClick={() => setScopeEdit(null)} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+                <button onClick={saveScope} style={{ padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>บันทึก</button>
               </div>
             </div>
           </div>

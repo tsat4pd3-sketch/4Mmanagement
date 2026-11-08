@@ -524,7 +524,7 @@ export default function OrgSetup() {
                   <strong style={{ fontSize: 13, color: 'var(--text2)' }}>✍️ ผู้เซ็น/อนุมัติใบค่าฝีมือ — ส่วน {node.name}{key ? ` (${key})` : ''}</strong>
                   {sgEdit && (
                     <button onClick={saveSigners} disabled={sgSaving || !key}
-                      style={{ padding: '7px 18px', background: sgSaving || !key ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: sgSaving || !key ? 'default' : 'pointer' }}>
+                      style={{ padding: '7px 18px', background: sgSaving || !key ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13, cursor: sgSaving || !key ? 'default' : 'pointer' }}>
                       {sgSaving ? 'กำลังบันทึก...' : 'บันทึก'}
                     </button>
                   )}
@@ -676,10 +676,10 @@ export default function OrgSetup() {
                 );
               })()}
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: 11, background: saving ? 'var(--muted)' : 'var(--amber)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: saving ? 'default' : 'pointer' }}>
+                <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: 11, background: saving ? 'var(--muted)' : 'var(--amber)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: saving ? 'default' : 'pointer' }}>
                   {saving ? 'กำลังบันทึก...' : 'บันทึก'}
                 </button>
-                <button onClick={() => setModal(null)} style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
+                <button type="button" className="pg-btn sm" onClick={() => setModal(null)} style={{ flex: 1 }}>
                   ยกเลิก
                 </button>
               </div>

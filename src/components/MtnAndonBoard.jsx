@@ -735,7 +735,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
                     {' · '}🛠️ ใบซ่อมค้าง {zMo.length}{' · '}📅 PM ถึงกำหนด {zPm.length}
                   </div>
                 </div>
-                <button onClick={() => setZoom(null)} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: 'var(--text2)', fontSize: 15 }}>✕</button>
+                <button type="button" className="pg-btn sm pg-btn-icon" onClick={() => setZoom(null)} style={{ width: 32 }}>✕</button>
               </div>
 
               <div style={{ overflowY: 'auto', padding: '14px 18px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>

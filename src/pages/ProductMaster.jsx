@@ -259,7 +259,7 @@ function ReadyChips({ ready, onGo, compact }) {
           : `${st.label}: ยังไม่ได้ลง — ต้องมี`;
         return (
           <button key={st.key} type="button" onClick={go} disabled={!go} title={title}
-            style={{ fontSize: 11, fontWeight: 700, padding: compact ? '1px 6px' : '2px 8px', borderRadius: 10,
+            style={{ fontSize: 11, fontWeight: 700, padding: compact ? '1px 6px' : '2px 8px', borderRadius: 'var(--r-md)',
               background: c.bg, color: c.fg, border: `1px solid ${tint(c.fg, 'dim')}`, cursor: go ? 'pointer' : 'default',
               fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
             {st.icon} {compact ? '' : st.label + ' '}{c.mark}{st.hint ? '*' : ''}
@@ -1014,7 +1014,7 @@ export default function ProductMaster() {
               {opNoBom.map(i => (
                 <button key={i.id} onClick={() => openBomFor(i.mat_no)}
                   title={`ตั้ง component ของ ${i.mat_no}${i.line_name ? ` · ${i.line_name}` : ''}`}
-                  style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 10, cursor: 'pointer',
+                  style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                     background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--amber)' }}>
                   {i.mat_no} →
                 </button>
@@ -1035,7 +1035,7 @@ export default function ProductMaster() {
         const full = rs.length - need - wait;
         const pill = (bg, fg, txt, val, onClick) => (
           <button type="button" onClick={onClick} disabled={!onClick}
-            style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: bg, color: fg,
+            style={{ fontSize: 12, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--r-md)', background: bg, color: fg,
               border: `1px solid ${tint(fg, 'dim')}`, cursor: onClick ? 'pointer' : 'default', fontFamily: 'var(--font-body)' }}>
             {txt} {val}
           </button>
@@ -1132,10 +1132,10 @@ export default function ProductMaster() {
                   </div>
                   {(canEdit || mayDelete) && (
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'flex-start' }}>
-                      {canEdit && active && <button onClick={() => openEC(active)} title="Engineering Change" style={{ background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: 'var(--blue)', fontWeight: 700 }}>EC</button>}
-                      {canEdit && <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
+                      {canEdit && active && <button type="button" className="pg-btn sm" onClick={() => openEC(active)} title="Engineering Change">EC</button>}
+                      {canEdit && <button type="button" className="pg-btn sm" onClick={() => openEdit(item)}>แก้ไข</button>}
                       {/* สินค้าที่ปิดใช้งาน (ไม่ใช่ superseded โดย EC) → ปุ่มเปิดกลับ · สินค้าที่ยัง active → ✕ ปิดใช้งาน */}
-                      {mayDelete && !item.is_active && !item.superseded_by && <button onClick={() => handleReactivate(item.id)} title="เปิดใช้งานสินค้ากลับ" style={{ background: 'var(--green-dim)', border: '1px solid var(--green-line)', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: 'var(--green)', fontWeight: 700 }}>เปิดใช้งาน</button>}
+                      {mayDelete && !item.is_active && !item.superseded_by && <button type="button" className="pg-btn sm" onClick={() => handleReactivate(item.id)} title="เปิดใช้งานสินค้ากลับ">เปิดใช้งาน</button>}
                       {mayDelete && item.is_active && <button className="tbtn" onClick={() => handleDelete(item.id)} title="ปิดใช้งานสินค้า (เก็บประวัติ)" style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>✕</button>}
                     </div>
                   )}
@@ -1181,7 +1181,7 @@ export default function ProductMaster() {
                             </div>
                             {(canEdit || mayDelete) && (
                               <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                                {canEdit && <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
+                                {canEdit && <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
                                 {mayDelete && <button className="tbtn" onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 13 }}>✕</button>}
                               </div>
                             )}
@@ -1189,8 +1189,8 @@ export default function ProductMaster() {
                         );
                       })}
                       {canCreate && (
-                        <button onClick={() => openKanbanEdit(null, active?.id || members[0]?.id || '', item.mat_no || '')}
-                          style={{ alignSelf: 'flex-start', marginTop: 2, background: 'var(--blue-dim)', border: '1px dashed var(--blue-line)', borderRadius: 6, padding: '4px 12px', fontSize: 11, color: 'var(--blue)', cursor: 'pointer', fontWeight: 700 }}>
+                        <button type="button" className="pg-btn sm" onClick={() => openKanbanEdit(null, active?.id || members[0]?.id || '', item.mat_no || '')}
+                          style={{ alignSelf: 'flex-start', marginTop: 2 }}>
                           + เพิ่ม MAT.NO
                         </button>
                       )}
@@ -1265,8 +1265,8 @@ export default function ProductMaster() {
                         <ReadyChips ready={readyOf(v)} onGo={goFixStep(v)} compact />
                         {(canEdit || mayDelete) && (
                           <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', flexShrink: 0 }}>
-                            {canEdit && <button onClick={() => openEC(v)} title="Engineering Change" style={{ background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--blue)', fontWeight: 700 }}>EC</button>}
-                            {canEdit && <button onClick={() => openEdit(v)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
+                            {canEdit && <button type="button" className="pg-btn sm" onClick={() => openEC(v)} title="Engineering Change">EC</button>}
+                            {canEdit && <button type="button" className="pg-btn sm" onClick={() => openEdit(v)}>แก้ไข</button>}
                             {mayDelete && <button className="tbtn" onClick={() => handleDelete(v.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 13 }}>✕</button>}
                           </div>
                         )}
@@ -1299,7 +1299,7 @@ export default function ProductMaster() {
                               </div>
                               {(canEdit || mayDelete) && (
                                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                                  {canEdit && <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 5, padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
+                                  {canEdit && <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
                                   {mayDelete && <button className="tbtn" onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 13 }}>✕</button>}
                                 </div>
                               )}
@@ -1307,8 +1307,8 @@ export default function ProductMaster() {
                           );
                         })}
                         {canCreate && allVariants.filter(v => !stds.some(s => s.product_id === v.id)).map(v => (
-                          <button key={v.id} onClick={() => openKanbanEdit(null, v.id, v.mat_no)}
-                            style={{ alignSelf: 'flex-start', marginTop: 2, background: 'var(--blue-dim)', border: '1px dashed var(--blue-line)', borderRadius: 6, padding: '4px 12px', fontSize: 11, color: 'var(--blue)', cursor: 'pointer', fontWeight: 700 }}>
+                          <button type="button" className="pg-btn sm" key={v.id} onClick={() => openKanbanEdit(null, v.id, v.mat_no)}
+                            style={{ alignSelf: 'flex-start', marginTop: 2 }}>
                             + เพิ่ม MAT.NO ({v.customer || v.mat_no})
                           </button>
                         ))}
@@ -1495,7 +1495,7 @@ export default function ProductMaster() {
                       return (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingTop: 2 }}>
                           <button type="button" onClick={() => { setEditing(null); setEcSource(null); openBomFor(form.mat_no); }}
-                            style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 8, cursor: 'pointer',
+                            style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                               background: n > 0 ? 'var(--bg3)' : 'var(--amber-dim)',
                               border: `1px solid ${n > 0 ? 'var(--border2)' : 'var(--amber-line)'}`,
                               color: n > 0 ? 'var(--text2)' : 'var(--amber)' }}>
@@ -2537,10 +2537,8 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
         <SearchInput value={search} onChange={setSearch} fields="product / mat no. / ลูกค้า" />
         {/* ➕ เปิดใบ BOM ให้พาร์ทในทะเบียนที่ยังไม่มีใบของตัวเอง (step 2 → 3) */}
         {canCreate && (
-          <button onClick={() => setHeadPick(true)} disabled={headBusy}
-            style={{ marginTop: 8, width: '100%', fontSize: 12, fontWeight: 800, padding: '7px 10px', borderRadius: 8,
-              cursor: headBusy ? 'wait' : 'pointer', fontFamily: 'var(--font-body)',
-              background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)' }}>
+          <button type="button" className="pg-btn sm" onClick={() => setHeadPick(true)} disabled={headBusy}
+            style={{ marginTop: 8, width: '100%' }}>
             {headBusy ? 'กำลังเปิดใบ…' : 'เปิดใบ BOM ให้พาร์ทจากทะเบียน'}
           </button>
         )}
@@ -2548,11 +2546,9 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
             ใบปลายทางมาจากเลข Material ในไฟล์อยู่แล้ว ⇒ ไม่ต้องเลือกพาร์ทก่อน
             ไฟล์ที่ SAP คายมาเป็น .xls แต่เนื้อเป็น TSV UTF-16LE (รับ .txt/.tsv/.csv ด้วย) */}
         {canCreate && (
-          <button onClick={() => sapFileRef.current?.click()} disabled={sapBusy}
+          <button type="button" className="pg-btn sm" onClick={() => sapFileRef.current?.click()} disabled={sapBusy}
             title="Display Multilevel BOM (CS12) หรือ BOM & Routing Report ที่ export จาก SAP — ระบบหาใบปลายทางจากเลข Material ในไฟล์เอง"
-            style={{ marginTop: 6, width: '100%', fontSize: 12, fontWeight: 800, padding: '7px 10px', borderRadius: 8,
-              cursor: sapBusy ? 'wait' : 'pointer', fontFamily: 'var(--font-body)',
-              background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)' }}>
+            style={{ marginTop: 6, width: '100%' }}>
             {sapBusy ? 'กำลังอ่าน…' : 'นำเข้า BOM จาก SAP'}
           </button>
         )}
@@ -2677,8 +2673,8 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
               </div>
               {canCreate && (
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button onClick={() => openPicker('')} style={{ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)' }}>+ เพิ่มพาร์ทย่อย</button>
-                  <button onClick={() => { setCopySource(''); setShowCopyBom(true); }} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border)', cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>คัดลอก BOM จาก...</button>
+                  <button type="button" className="pg-btn sm primary" onClick={() => openPicker('')}>+ เพิ่มพาร์ทย่อย</button>
+                  <button type="button" className="pg-btn sm" onClick={() => { setCopySource(''); setShowCopyBom(true); }}>คัดลอก BOM จาก...</button>
 
                 </div>
               )}
@@ -2825,7 +2821,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                         {(canEdit || mayDelete) && (
                           <TD>
                             <div style={{ display: 'flex', gap: 6 }}>
-                              {canEdit && <button className="tbtn" onClick={() => openEdit_(it)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>}
+                              {canEdit && <button type="button" className="pg-btn sm" onClick={() => openEdit_(it)}>✏️</button>}
                               {mayDelete && <DeleteButton onClick={() => handleDelete(it)} title="ลบ" />}
                             </div>
                           </TD>
@@ -3183,8 +3179,8 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
               </div>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
                 <button onClick={() => setSapImp(null)} disabled={sapBusy} style={{ ...btnSecondary, padding: '8px 16px' }}>ยกเลิก</button>
-                <button onClick={applySapImport} disabled={sapBusy || (!diff.add.length && !diff.update.length && !miss.length)}
-                  style={{ padding: '8px 18px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)', opacity: sapBusy ? 0.6 : 1 }}>
+                <button type="button" className="pg-btn sm primary" onClick={applySapImport} disabled={sapBusy || (!diff.add.length && !diff.update.length && !miss.length)}
+                  style={{ opacity: sapBusy ? 0.6 : 1 }}>
                   {sapBusy ? 'กำลังนำเข้า…' : `นำเข้า (เพิ่ม ${diff.add.length} · แก้ ${diff.update.length})`}
                 </button>
               </div>
@@ -3675,7 +3671,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
               {MAT_PREFIXES.map(m => (
                 <button key={m.prefix} onClick={() => setForm(f => ({ ...f, mat_no: f.mat_no.startsWith(m.prefix) ? f.mat_no : m.prefix }))}
-                  style={{ fontSize: 11, padding: '2px 10px', borderRadius: 10, border: `1px solid ${m.color}`, background: form.mat_no.startsWith(m.prefix) ? `${tint(m.color, 'dim')}` : 'transparent', color: m.color, cursor: 'pointer', fontWeight: 700 }}>
+                  style={{ fontSize: 11, padding: '2px 10px', borderRadius: 'var(--r-md)', border: `1px solid ${m.color}`, background: form.mat_no.startsWith(m.prefix) ? `${tint(m.color, 'dim')}` : 'transparent', color: m.color, cursor: 'pointer', fontWeight: 700 }}>
                   {m.prefix}…
                 </button>
               ))}
@@ -3951,7 +3947,7 @@ function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
                           <TD style={{ fontWeight: 800, color: 'var(--accent)' }}>{it.pcs_per_pkg}</TD>
                           <TD style={{ color: 'var(--muted)', fontSize: 12 }}>{it.note || '—'}</TD>
                           {(canEdit || mayDelete) && <TD><div style={{ display: 'flex', gap: 6 }}>
-                            {canEdit && <button className="tbtn" onClick={() => openEditLink(it)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>}
+                            {canEdit && <button type="button" className="pg-btn sm" onClick={() => openEditLink(it)}>✏️</button>}
                             {mayDelete && <DeleteButton onClick={() => delLink(it)} title="ลบ" />}
                           </div></TD>}
                         </tr>
@@ -4032,7 +4028,7 @@ function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
                     <TD>{m.name}</TD><TD style={{ color: 'var(--muted)' }}>{m.category || '—'}</TD>
                     <TD style={{ color: 'var(--muted)' }}>{m.supplier || '—'}</TD>
                     {canEdit && <TD><div style={{ display: 'flex', gap: 6 }}>
-                      <button className="tbtn" onClick={() => { setEditMaster(m); setMasterForm({ code: m.code, name: m.name, category: m.category || '', supplier: m.supplier || '' }); }} style={{ padding: '3px 7px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 11 }}>✏️</button>
+                      <button type="button" className="pg-btn sm" onClick={() => { setEditMaster(m); setMasterForm({ code: m.code, name: m.name, category: m.category || '', supplier: m.supplier || '' }); }}>✏️</button>
                       <DeleteButton onClick={() => delMaster(m)} title="ลบ" />
                     </div></TD>}
                   </tr>
@@ -4194,8 +4190,8 @@ function KanbanStdPanel({ canEdit, fullName }) {
                     </td>
                     {canEdit && (
                       <td style={{ padding: '8px 14px', borderTop: '1px solid var(--border)' }}>
-                        <button onClick={() => openEdit(row)}
-                          style={{ background: 'rgba(124,58,237,0.1)', color: '#7c3aed', padding: '4px 10px', fontSize: 11, border: '1px solid rgba(124,58,237,0.3)', borderRadius: 8, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                        <button type="button" className="pg-btn sm" onClick={() => openEdit(row)}
+                         >
                           แก้ไข
                         </button>
                       </td>

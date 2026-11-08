@@ -73,7 +73,7 @@ export default function DieStatusEditor({ die, canEdit, fullName, ready, onSaved
       )}
       {dirty && (
         <button onClick={save} disabled={saving} style={{
-          background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8,
+          background: '#16a34a', color: '#fff', border: 'none', borderRadius: 'var(--r-md)',
           padding: '7px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', justifySelf: 'start',
           opacity: saving ? 0.6 : 1,
         }}>{saving ? 'กำลังบันทึก…' : '💾 บันทึกสถานะ'}</button>

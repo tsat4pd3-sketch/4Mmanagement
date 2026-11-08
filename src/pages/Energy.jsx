@@ -500,7 +500,7 @@ export default function Energy() {
           <td style={{ ...td, textAlign: 'center' }}>
             <button onClick={() => toggleMeter(p, !meteredSet.has(keyOf(p)))} disabled={!canEdit}
               title={meteredSet.has(keyOf(p)) ? 'มีมิเตอร์ — นับเข้าผลรวมที่วัดได้' : 'ยังไม่มีมิเตอร์ — กดเพื่อย้ายไปกลุ่มที่วัดได้'}
-              style={{ padding: '4px 9px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: canEdit ? 'pointer' : 'default',
+              style={{ padding: '4px 9px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: canEdit ? 'pointer' : 'default',
                 border: '1px solid var(--border2)', background: 'var(--bg3)', color: meteredSet.has(keyOf(p)) ? GOOD : 'var(--muted)' }}>
               {meteredSet.has(keyOf(p)) ? 'มีมิเตอร์' : '+ มีมิเตอร์'}
             </button>
@@ -633,7 +633,7 @@ export default function Energy() {
             <h3 style={{ ...secTitle, display: 'flex', alignItems: 'center', gap: 8 }}>
               จุดที่ยังไม่มีมิเตอร์ ({otherPts.length})
               <button onClick={() => setShowUnmetered(v => !v)}
-                style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
+                style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
                 {showUnmetered ? 'ซ่อน' : 'แสดง'}
               </button>
               <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--muted)' }}>— ทุกไลน์ในกลุ่ม + โซน · กรอกได้ถ้ามีตัวเลข แต่ยังไม่นับเข้าผลรวมที่วัดได้ (กด <b>+ มีมิเตอร์</b> เพื่อย้ายขึ้นไป)</span>
@@ -905,7 +905,7 @@ function EfSetup({ factors, canEdit, cfgMissing, onSaved, month }) {
           <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 240px' }}>ที่มา (บังคับ)<br />
             <input value={ref} onChange={e => setRef(e.target.value)} placeholder="เช่น TGO Emission Factor ฉบับ … 25xx" style={inp} /></label>
           <button onClick={add} disabled={busy}
-            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+            style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
             {busy ? '⏳' : '+ เพิ่มค่า'}
           </button>
         </div>

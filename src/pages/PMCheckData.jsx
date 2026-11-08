@@ -279,7 +279,7 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
       {spin && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', marginTop: compact ? 6 : 8 }}>
           <button onClick={e => { e.stopPropagation(); setPlaying(p => !p) }} title={playing ? 'หยุดหมุน' : 'หมุนอัตโนมัติ'}
-            style={{ background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 999, padding: '3px 11px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+            style={{ background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '3px 11px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
             {playing ? 'หยุด' : 'หมุนเอง'}
           </button>
           <div style={{ display: 'flex', gap: 5 }}>
@@ -387,9 +387,9 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
         <div style={{ display: 'flex', gap: 4 }}>
           {['ok', 'ng'].map(v => (
             <button key={v} onClick={() => pickAttr(v)} style={{
-              padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+              padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer',
               // 📱 มือถือ: ปุ่ม OK/NG = คำตอบหลักของใบตรวจ → ใหญ่พอใส่ถุงมือกด (เดิมสูง ~22px · 22/10) · จอคอมเท่าเดิม
-              ...(isMobile ? { minHeight: 44, minWidth: 58, fontSize: 14, borderRadius: 8 } : null),
+              ...(isMobile ? { minHeight: 44, minWidth: 58, fontSize: 14, borderRadius: 'var(--r-md)' } : null),
               border: `1px solid ${value === v ? (v === 'ok' ? 'var(--accent)' : '#e05c4a') : 'var(--border)'}`,
               background: value === v ? (v === 'ok' ? 'var(--accent)' : '#e05c4a') : 'var(--bg3)',
               color: value === v ? '#fff' : 'var(--muted)',
@@ -514,7 +514,7 @@ function NgRecheckPanel({ result, cp, onSaved, canRecord = false, deptWrite = nu
           </div>
         </div>
       )}
-      <button onClick={submit} disabled={saving || !action.trim()} style={{ padding: '6px 0', borderRadius: 6, fontSize: 12, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer', opacity: saving || !action.trim() ? 0.5 : 1 }}>
+      <button onClick={submit} disabled={saving || !action.trim()} style={{ padding: '6px 0', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer', opacity: saving || !action.trim() ? 0.5 : 1 }}>
         {saving ? 'กำลังบันทึก...' : 'บันทึก Action'}
       </button>
     </div>
@@ -744,22 +744,22 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
           )}
           {canApprove && insp.approval_status === 'pending' && !rejecting && (
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={handleApprove} disabled={approving} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{approving ? 'กำลังอนุมัติ...' : 'อนุมัติ'}</button>
-              <button onClick={() => setRejecting(true)} disabled={approving} style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid #e05c4a', background: 'rgba(224,92,74,0.08)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>ตีกลับ</button>
+              <button onClick={handleApprove} disabled={approving} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{approving ? 'กำลังอนุมัติ...' : 'อนุมัติ'}</button>
+              <button onClick={() => setRejecting(true)} disabled={approving} style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid #e05c4a', background: 'rgba(224,92,74,0.08)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>ตีกลับ</button>
             </div>
           )}
           {rejecting && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={2} placeholder="ระบุเหตุผลที่ตีกลับ..." />
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => { setRejecting(false); setRejectReason('') }} style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', fontSize: 12, cursor: 'pointer' }}>ยกเลิก</button>
-                <button onClick={handleReject} disabled={approving || !rejectReason.trim()} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: '1px solid #e05c4a', background: 'rgba(224,92,74,0.08)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{approving ? 'กำลังบันทึก...' : 'ยืนยันตีกลับ'}</button>
+                <button onClick={() => { setRejecting(false); setRejectReason('') }} style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', fontSize: 12, cursor: 'pointer' }}>ยกเลิก</button>
+                <button onClick={handleReject} disabled={approving || !rejectReason.trim()} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid #e05c4a', background: 'rgba(224,92,74,0.08)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{approving ? 'กำลังบันทึก...' : 'ยืนยันตีกลับ'}</button>
               </div>
             </div>
           )}
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => handleExport('pdf')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: '1px solid rgba(224,92,74,0.4)', background: 'rgba(224,92,74,0.1)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'pdf' ? 'กำลัง export...' : 'PDF'}</button>
-            <button onClick={() => handleExport('excel')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 6, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'excel' ? 'กำลัง export...' : 'Excel'}</button>
+            <button onClick={() => handleExport('pdf')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid rgba(224,92,74,0.4)', background: 'rgba(224,92,74,0.1)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'pdf' ? 'กำลัง export...' : 'PDF'}</button>
+            <button onClick={() => handleExport('excel')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'excel' ? 'กำลัง export...' : 'Excel'}</button>
           </div>
         </div>
       </motion.div>
@@ -1417,7 +1417,7 @@ export default function PMCheckData() {
               เดิมหน้าพิมพ์ป้ายโฆษณาว่า "สแกนเลือกอุปกรณ์ได้ทันทีใน … ตรวจ PM" แต่หน้านี้ไม่มีปุ่มสแกน
               ⚠️ ป้ายเครื่องจักรเข้ารหัสด้วย machines.id — resolveJig เด้งไป "แถวเงา" ใน jigs ให้เอง */}
           <button onClick={() => setScanOpen(true)} title="สแกน QR ที่ติดเครื่อง"
-            style={{ minWidth: 44, minHeight: 44, padding: 0, fontSize: 18, borderRadius: 8,
+            style={{ minWidth: 44, minHeight: 44, padding: 0, fontSize: 18, borderRadius: 'var(--r-md)',
               background: 'var(--bg3)', border: '1px solid var(--border2)', cursor: 'pointer' }}>📷</button>
         </div>
         {!amTab && (
@@ -1550,7 +1550,7 @@ export default function PMCheckData() {
           <>
             <div style={{ ...S.header, ...(isNarrow ? { padding: '10px 12px', flexWrap: 'wrap' } : null) }}>
               {isNarrow && (
-                <button onClick={clearJig} title="กลับไปเลือกอุปกรณ์" style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', borderRadius: 8, padding: '6px 10px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>อุปกรณ์</button>
+                <button onClick={clearJig} title="กลับไปเลือกอุปกรณ์" style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', borderRadius: 'var(--r-md)', padding: '6px 10px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>อุปกรณ์</button>
               )}
               {jigImg && <img loading="lazy" src={jigImg} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'contain', background: 'var(--bg2)', border: '1px solid var(--border)' }} />}
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -1616,7 +1616,7 @@ export default function PMCheckData() {
                     <div style={{ textAlign: 'center', color: 'var(--red)', fontSize: 13, padding: '32px 12px', lineHeight: 1.7 }}>
                       ⚠️ โหลดรายการตรวจไม่สำเร็จ — ยังไม่รู้ว่าเครื่องนี้มีจุดตรวจหรือไม่
                       <div style={{ fontSize: 12, color: 'var(--muted)' }}>{cpLoad.msg}</div>
-                      <button onClick={() => setCpReload(n => n + 1)} style={{ marginTop: 10, padding: '6px 14px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ลองใหม่</button>
+                      <button onClick={() => setCpReload(n => n + 1)} style={{ marginTop: 10, padding: '6px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ลองใหม่</button>
                     </div>
                   ) : checkpoints.length === 0 ? (
                     <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '32px 12px', lineHeight: 1.7 }}>
@@ -1636,7 +1636,7 @@ export default function PMCheckData() {
                               const t = teams.find(x => x.key === d.department)
                               return (
                                 <button key={d.department} onClick={() => setDept(d.department)}
-                                  style={{ padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                                  style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                                     border: `1.5px solid ${t?.color || 'var(--border2)'}`, background: 'var(--card)', color: t?.color || 'var(--text)' }}>
                                   {t?.icon || ''} {t?.label || d.department} · {d.checkpointCount} จุด
                                 </button>)
@@ -1674,7 +1674,7 @@ export default function PMCheckData() {
                           {!showPhoto ? null : allPinned ? (
                             <button onClick={() => { setPinFocus(v => !v); setActiveShimId(null) }}
                               title={pinFocus ? 'สลับเป็นไล่ดูทุกข้อในหน้าเดียว' : 'สลับเป็นแตะหมุดบนรูปแล้วขึ้นเฉพาะข้อนั้น'}
-                              style={{ padding: '4px 12px', borderRadius: 999, cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
+                              style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
                                 border: `1px solid ${pinFocus ? 'var(--accent)' : 'var(--border2)'}`,
                                 background: pinFocus ? 'var(--accent-dim)' : 'var(--bg3)', color: pinFocus ? 'var(--accent)' : 'var(--text2)' }}>
                               {pinFocus ? 'เฉพาะจุดที่แตะ' : 'ทุกข้อ'}
@@ -1718,7 +1718,7 @@ export default function PMCheckData() {
                           <div style={{ fontSize: 11.5, marginTop: 2 }}>ขึ้นทีละข้อ ไม่ต้องเลื่อนหา · อยากเห็นทุกข้อพร้อมกันกดปุ่ม “📍 เฉพาะจุดที่แตะ” เพื่อสลับ</div>
                           {todo.length > 0 && (
                             <button onClick={() => setActiveCpId(todo[0].id)}
-                              style={{ marginTop: 10, padding: '7px 18px', borderRadius: 999, cursor: 'pointer', fontSize: 12.5, fontWeight: 800,
+                              style={{ marginTop: 10, padding: '7px 18px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12.5, fontWeight: 800,
                                 border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)' }}>
                               เริ่มที่ข้อ {checkpoints.indexOf(todo[0]) + 1} — {todo[0].name}
                             </button>
@@ -1890,7 +1890,7 @@ export default function PMCheckData() {
                       }}>
                         {viewerOpen && viewerNode}
                         <button onClick={toggleViewer} style={{
-                          display: 'block', margin: '6px auto 0', padding: '3px 14px', borderRadius: 999, cursor: 'pointer',
+                          display: 'block', margin: '6px auto 0', padding: '3px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                           fontSize: 11, fontWeight: 700, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
                         }}>
                           {/* พับแล้วต้องยังบอกว่าซ่อนอะไรไว้ + กางคืนได้ ห้ามหายเงียบ */}
@@ -1940,7 +1940,7 @@ export default function PMCheckData() {
                         {/* กด "ไว้ก่อน" ตอนบันทึกแล้วต้องกลับมาเปิดได้ — ไม่งั้นข้ามครั้งเดียว = ทางตัน */}
                         {insp.status === 'fail' && !moByInsp[insp.id] && !insp.mo_waived_reason && (can('mtn_repair', 'report', userRole) || isAmTeam(clDeptById[insp.checklist_id] ?? department)) && (
                           <button onClick={e => { e.stopPropagation(); openMoFromHistory(insp) }} style={{
-                            padding: '5px 11px', borderRadius: 8, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                            padding: '5px 11px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
                             border: '1px solid #fb923c', background: 'rgba(251,146,60,0.12)', color: '#fb923c',
                           }}>เปิดใบแจ้งซ่อม</button>
                         )}
@@ -1984,7 +1984,7 @@ export default function PMCheckData() {
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {MTN_TEAMS.map(t => (
                   <button key={t} onClick={() => setMoTeam(t)} style={{
-                    padding: '6px 13px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    padding: '6px 13px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                     border: `1.5px solid ${moTeam === t ? 'var(--accent)' : 'var(--border2)'}`,
                     background: moTeam === t ? 'var(--accent-dim)' : 'var(--bg3)', color: moTeam === t ? 'var(--accent)' : 'var(--muted)',
                   }}>{deptNameOf(t)}</button>
@@ -2008,30 +2008,30 @@ export default function PMCheckData() {
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               {!isAmPrompt && (
                 <button onClick={() => setMoPrompt(null)} disabled={moSaving} style={{
-                  padding: '9px 18px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  padding: '9px 18px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
                   border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
                 }}>ไว้ก่อน</button>
               )}
               {isAmPrompt && !moWaiving && (
                 <button onClick={() => setMoWaiving(true)} disabled={moSaving} style={{
-                  padding: '9px 18px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  padding: '9px 18px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
                   border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
                 }}>ไม่เปิดใบ (ระบุเหตุผล)</button>
               )}
               {isAmPrompt && moWaiving && (<>
                 <button onClick={() => setMoWaiving(false)} disabled={moSaving} style={{
-                  padding: '9px 14px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  padding: '9px 14px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
                   border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)',
                 }}>กลับ</button>
                 <button onClick={waiveMo} disabled={moSaving || !amWaiverReasonValid(moWaiveReason)} style={{
-                  padding: '9px 18px', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  padding: '9px 18px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
                   border: '1px solid var(--amber)', background: 'var(--amber-dim)', color: 'var(--amber)',
                   opacity: moSaving || !amWaiverReasonValid(moWaiveReason) ? 0.5 : 1,
                 }}>บันทึกเหตุผล</button>
               </>)}
               {can('mtn_repair', 'report', userRole) && !moWaiving && (
                 <button onClick={createMoFromInspection} disabled={moSaving} style={{
-                  padding: '9px 20px', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: 'pointer',
+                  padding: '9px 20px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 800, cursor: 'pointer',
                   border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', opacity: moSaving ? 0.6 : 1,
                 }}>{moSaving ? 'กำลังเปิดใบ...' : 'เปิดใบแจ้งซ่อม'}</button>
               )}

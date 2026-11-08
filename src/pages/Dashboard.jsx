@@ -1041,7 +1041,7 @@ export default function Dashboard({ view = 'timeline' }) {
           </div>
           {tvScroll && !isMobile && (
             <button type="button" onClick={() => setScrollMode(false)}
-              style={{ padding: '7px 12px', borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              style={{ padding: '7px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
               กลับเป็นหมุนหน้า
             </button>
           )}
@@ -1069,15 +1069,9 @@ export default function Dashboard({ view = 'timeline' }) {
               {' '}— ตั้งตารางกะแล้วตัวเลขจะขึ้นเอง
             </div>
           </div>
-          <button className="tv-hide" onClick={() => setSelectedShift('all')} style={{
-            padding: '6px 12px', borderRadius: 8, border: '1px solid var(--amber-line)',
-            background: 'transparent', color: 'var(--amber)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-          }}>ดูรวมทุกกะ</button>
+          <button type="button" className="pg-btn sm" onClick={() => setSelectedShift('all')}>ดูรวมทุกกะ</button>
           {canAccessPage('/shift-organize', role) && (
-            <button onClick={() => navigate('/shift-organize')} style={{
-              padding: '6px 12px', borderRadius: 8, border: 'none',
-              background: 'var(--amber)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-            }}>ไปตั้งตารางกะ</button>
+            <button type="button" className="pg-btn sm" onClick={() => navigate('/shift-organize')}>ไปตั้งตารางกะ</button>
           )}
         </div>
       )}
@@ -1338,7 +1332,7 @@ export default function Dashboard({ view = 'timeline' }) {
                               fontSize: 13, fontWeight: 800, color: 'var(--accent)', whiteSpace: 'nowrap',
                               display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer',
                               background: 'var(--accent-dim)', border: '1px solid var(--accent)',
-                              borderRadius: 7, padding: '4px 10px',
+                              borderRadius: 'var(--r-md)', padding: '4px 10px',
                             }}>
                             {isExpanded ? 'ซ่อนไลน์ย่อย' : 'ดูไลน์ย่อย'}
                             <span style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>

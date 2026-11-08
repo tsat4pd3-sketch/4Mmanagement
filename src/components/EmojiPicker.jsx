@@ -28,7 +28,7 @@ export default function EmojiPicker({ value, onChange, style, placeholder }) {
         <input value={value || ''} onChange={e => onChange(e.target.value)} placeholder={placeholder || 'เช่น ⚙️'} maxLength={6}
           style={{ ...style, flex: 1, minWidth: 0 }} />
         <button type="button" onClick={() => setOpen(o => !o)} title="เลือกไอคอน"
-          style={{ flexShrink: 0, width: 42, borderRadius: 8, border: `1px solid ${open ? 'var(--accent)' : 'var(--border2)'}`, background: open ? 'var(--accent-dim)' : 'var(--bg3)', color: 'var(--text)', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>
+          style={{ flexShrink: 0, width: 42, borderRadius: 'var(--r-md)', border: `1px solid ${open ? 'var(--accent)' : 'var(--border2)'}`, background: open ? 'var(--accent-dim)' : 'var(--bg3)', color: 'var(--text)', fontSize: 18, cursor: 'pointer', lineHeight: 1 }}>
           {value || '😀'}
         </button>
       </div>
@@ -53,7 +53,7 @@ export default function EmojiPicker({ value, onChange, style, placeholder }) {
           ))}
           {value && (
             <button type="button" onClick={() => { onChange(''); setOpen(false); }}
-              style={{ width: '100%', marginTop: 4, padding: '6px 0', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>✕ ล้างไอคอน</button>
+              style={{ width: '100%', marginTop: 4, padding: '6px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>✕ ล้างไอคอน</button>
           )}
         </div>
       )}

@@ -87,7 +87,7 @@ export default function TabBar({ tabs, value, onChange, size, audit = false, cla
           return (
             <button key={t.key} type="button" ref={(el) => { btnRefs.current[String(t.key)] = el; }} title={t.title}
               onClick={() => onChange && onChange(t.key)} style={{
-                position: 'relative', zIndex: 0, fontSize: fs, fontWeight: on ? 700 : 500, padding: pad, borderRadius: 0, cursor: 'pointer',
+                position: 'relative', zIndex: 0, fontSize: fs, fontWeight: on ? 700 : 500, padding: pad, borderRadius: 'var(--r-md)', cursor: 'pointer',
                 whiteSpace: 'nowrap', flexShrink: 0, background: 'transparent', border: 'none',
                 color: on ? 'var(--text)' : 'var(--muted)', boxShadow: selfPaint ? 'inset 0 -2px 0 var(--accent)' : 'none',
                 transition: moving ? 'color .18s ease' : 'none',

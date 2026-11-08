@@ -428,6 +428,16 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'button-radius-token',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    /* จับ <button …style={{ … borderRadius: <เลข> …}}> — มุมปุ่มต้องเป็น token (`var(--r-md)` ผ่าน .pg-btn/.pg-btn.sm) ไม่ใช่เลขดิบ
+       (วัดจริง 06/11: แถวปุ่ม 147 แถว 26 หน้า มีมุม 9 แบบ 0/6/7/8/10/16/20/999) · ปุ่มวงกลม '50%' และ className="pg-btn…" ไม่เข้าข่าย */
+    re: /<button\b(?:[^>{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*borderRadius:\s*(?:999|\d{1,2})\b(?!%)/g,
+    why: 'user ทัก 06/11/2026 *"tab หัวตาราง บางหน้าเหลี่ยม บางหน้ารี บางหน้ามุม r ไม่เท่ากันเลย"* — ปุ่มเลือก/คำสั่งแต่ละหน้าเขียนมุมเอง 9 แบบ',
+    fix: 'แถวเลือกมุมมอง → <TabBar> · สลับโหมด 2–5 → <Segmented> · ปุ่มคำสั่ง → className="pg-btn" / "pg-btn sm" (+primary/danger) · ถ้าต้องเขียน style เอง ใช้ borderRadius: \'var(--r-md)\' (UI-CONVENTIONS §6.36 ข้อ 0)',
+    allow: {},
+  },
+  {
     id: 'tabs-folded-into-dropdown',
     scan: ['src/components/PageHeader.jsx'], ext: ['.jsx'],
     re: /MAX_TABS|aria-label="แท็บเพิ่มเติม"|tabList\.slice\(/g,

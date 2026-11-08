@@ -832,7 +832,7 @@ export default function ProductionPlan() {
             aria-pressed={mode === 'slide'}
             title="รูปแบบนำเสนอสำหรับฉายขึ้นจอโรงงาน — เลขชุดเดียวกับกราฟ"
             style={{
-              marginLeft: 'auto', padding: '6px 13px', borderRadius: 8, cursor: 'pointer', fontSize: 12.5, fontWeight: 700,
+              marginLeft: 'auto', padding: '6px 13px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700,
               border: `1px solid ${mode === 'slide' ? 'var(--accent)' : 'var(--border2)'}`,
               background: mode === 'slide' ? 'var(--accent-dim)' : 'var(--bg2)',
               color: mode === 'slide' ? 'var(--accent)' : 'var(--text2)',

@@ -232,7 +232,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
           <strong style={{ fontSize: 16 }}>ตั้งค่าบอร์ด · {section.name}</strong>
           <span style={{ marginLeft: 'auto' }} />
           <button type="button" className="tbtn" onClick={onClose} title="ปิด"
-            style={{ height: 30, padding: '0 12px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer' }}>✕ ปิด</button>
+            style={{ height: 30, padding: '0 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer' }}>✕ ปิด</button>
         </div>
         {/* 🔒 นอกขอบเขตที่แก้ได้ = เขียนบอกตั้งแต่เปิดแผง **ห้ามซ่อนเงียบ** (กฎความซื่อสัตย์ของจอ)
             ยังเปิดดูได้ตามเดิม — แค่บันทึกไม่ได้ (ทุกฟังก์ชันเขียนมีด่าน `blocked()` ซ้ำอีกชั้น) */}
@@ -300,7 +300,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
                       <strong>{l.name}</strong>
                       <span style={{ fontSize: 12, color: 'var(--muted)' }}>{sts.length} จุด · ต้องการรวม {sum} คน/กะ</span>
                       <button type="button" className="tbtn" disabled={busy} onClick={() => fillLine(l)}
-                        style={{ marginLeft: 'auto', height: 30, padding: '0 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 12, cursor: 'pointer' }}>
+                        style={{ marginLeft: 'auto', height: 30, padding: '0 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 12, cursor: 'pointer' }}>
                         ตั้งจุดที่ยังว่าง = 1 คน/กะ</button>
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 210px), 1fr))', gap: 6 }}>

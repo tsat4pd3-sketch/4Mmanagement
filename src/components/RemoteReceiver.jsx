@@ -118,7 +118,7 @@ export default function RemoteReceiver({ code, onStop }) {
           <div style={{ fontSize: 18, fontWeight: 900, letterSpacing: 4, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>{code}</div>
         </div>
         <button onClick={onStop} title="ปิดรับรีโมท"
-          style={{ marginLeft: 4, background: 'none', border: '1px solid var(--border2)', borderRadius: 7, color: 'var(--muted)', fontSize: 12, padding: '4px 8px', cursor: 'pointer' }}>✕</button>
+          style={{ marginLeft: 4, background: 'none', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', color: 'var(--muted)', fontSize: 12, padding: '4px 8px', cursor: 'pointer' }}>✕</button>
       </div>
     </>
   );

@@ -205,12 +205,12 @@ export default function ParetoAbcChart({
               <button key={k} onClick={() => setMeasure(k)}
                 title={k === 'baht' ? 'เรียงตามมูลค่าความสูญเสีย (นาที/60 × activity rate ของไลน์)' : `เรียงตาม${unit}`}
                 style={{ background: measure === k ? 'var(--accent)' : 'transparent', color: measure === k ? 'var(--accent-ink)' : 'var(--text2)',
-                  border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 800, padding: '3px 9px', cursor: 'pointer' }}>{lb}</button>
+                  border: 'none', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, padding: '3px 9px', cursor: 'pointer' }}>{lb}</button>
             ))}
           </div>
         )}
         <button onClick={() => setOpen(true)} title="ขยายดูทุกรายการ"
-          style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 7, color: 'var(--text2)', fontSize: 11.5, fontWeight: 700, padding: '3px 9px', cursor: 'pointer' }}>⤢ ขยาย</button>
+          style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', color: 'var(--text2)', fontSize: 11.5, fontWeight: 700, padding: '3px 9px', cursor: 'pointer' }}>⤢ ขยาย</button>
       </div>
       {/* มูลค่ารวม + ส่วนที่ตีมูลค่าไม่ได้ — ห้ามเงียบ ไม่งั้นยอดเงินดูเหมือนครบทั้งที่ขาด */}
       {hasMoney && (
@@ -278,7 +278,7 @@ export default function ParetoAbcChart({
         ))}
         {groups.A.length > CHIP_MAX && (
           <button type="button" onClick={() => setOpen(true)}
-            style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, cursor: 'pointer', fontWeight: 700,
+            style={{ fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontWeight: 700,
               background: 'var(--bg3)', color: 'var(--text2)', border: `1px dashed ${ABC.A.color}77` }}>
             ⤢ ดูกลุ่ม A ครบ {groups.A.length} รายการ
           </button>
@@ -364,7 +364,7 @@ export default function ParetoAbcChart({
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
                 {dims.map(dm => (
                   <button key={dm.key} onClick={() => setDimKey(dm.key)}
-                    style={{ padding: '5px 11px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    style={{ padding: '5px 11px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                       border: `1px solid ${dimKey === dm.key ? 'var(--accent)' : 'var(--border2)'}`,
                       background: dimKey === dm.key ? 'var(--accent-dim)' : 'var(--bg3)',
                       color: dimKey === dm.key ? 'var(--accent)' : 'var(--text2)' }}>{dm.label}</button>

@@ -942,7 +942,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                     <button key={k} type="button"
                       onClick={() => setEdi(e => ({ ...e, kindForced: k }))}
                       style={{
-                        padding: '4px 10px', borderRadius: 6, fontSize: 12, cursor: 'pointer',
+                        padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer',
                         border: `1px solid ${ediKind === k ? 'var(--blue)' : 'var(--border)'}`,
                         background: ediKind === k ? 'var(--blue-dim)' : 'transparent',
                         color: ediKind === k ? 'var(--blue)' : 'var(--text2)',
@@ -1003,7 +1003,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={doImportEdi} disabled={saving}
-                  style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
+                  style={{ padding: '9px 22px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
                   {saving ? 'กำลังนำเข้า...' : 'ยืนยันนำเข้า EDI'}
                 </button>
                 <button onClick={() => setEdi(null)} style={{ ...btn(false) }}>ยกเลิก</button>
@@ -1045,7 +1045,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                 </table>
               </div>
               <button onClick={doImport} disabled={saving}
-                style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
+                style={{ padding: '10px 24px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
                 {saving ? 'กำลังนำเข้า...' : `นำเข้าข้อมูล ${kind === 'forecast' ? 'Forecast' : 'Orders'}`}
               </button>
             </>
@@ -1064,7 +1064,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                   <span style={{ color: 'var(--muted)' }}> · {b.row_count} แถว · {b.uploaded_by} · {new Date(b.uploaded_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}</span>
                 </div>
                 {canUpload && (
-                  <button onClick={() => deleteBatch(b)} style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', flexShrink: 0, fontFamily: 'var(--font-body)' }}>ลบ</button>
+                  <button onClick={() => deleteBatch(b)} style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', flexShrink: 0, fontFamily: 'var(--font-body)' }}>ลบ</button>
                 )}
               </div>
             ))}
@@ -1852,7 +1852,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                             {suggestByCust[u.mat].map(c => (
                               <button key={c.sap} onClick={() => setMapSel(s => ({ ...s, [u.mat]: c.sap }))}
                                 title="แนะนำจาก base part (revision ต่างกัน)"
-                                style={{ fontSize: 11, padding: '2px 6px', borderRadius: 5, cursor: 'pointer', border: '1px solid var(--green)',
+                                style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', border: '1px solid var(--green)',
                                   background: mapSel[u.mat] === c.sap ? 'var(--green-dim)' : 'transparent', color: 'var(--green)', fontWeight: 700 }}>
                                 {c.sap} · {c.name}
                               </button>

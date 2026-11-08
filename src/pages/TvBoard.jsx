@@ -234,7 +234,7 @@ export default function TvBoard({ onOpenMenu = null }) {
             ? 'ไม่พบทะเบียนไลน์ผลิต — จอนี้แสดงอะไรไม่ได้ (ตั้งไลน์ที่หน้า ตั้งค่าไลน์ผลิต)'
             : `โหลดทะเบียนไลน์ไม่สำเร็จ — กำลังลองใหม่อัตโนมัติทุก 30 วินาที (${linesState})`}</span>
           <button onClick={() => { setLinesState('loading'); setLinesTry(n => n + 1); }}
-            style={{ fontSize: 13, padding: '4px 12px', borderRadius: 8, border: '1px solid var(--red)', background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}>ลองใหม่</button>
+            style={{ fontSize: 13, padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--red)', background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}>ลองใหม่</button>
         </div>
       )}
       {dept !== 'mo' && !d && !err && (linesState === 'loading' || linesState === 'ok') && (

@@ -144,7 +144,7 @@ function CsvBtn({ onClick, style = {} }) {
   if (!can('report', 'export', role)) return null;
   return (
     <button onClick={onClick} style={{
-      padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+      padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
       background: 'var(--green-dim)', color: 'var(--green)',
       border: '1px solid var(--green-line)', display: 'flex', alignItems: 'center', gap: 5,
       ...style,
@@ -421,14 +421,14 @@ table{border-collapse:collapse;width:100%}
           {canManageMaster && (
             <button onClick={() => setShowMaster(v => !v)} style={{
               position: 'relative',
-              padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
               background: showMaster ? 'var(--amber-dim)' : 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)',
             }}>จัดการสายรถ/งาน OT<ToggleDot on={showMaster} /></button>
           )}
           <CsvBtn onClick={handleExportCsv} />
           {canExport && (
             <button onClick={handlePrint} style={{
-              padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
               background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)',
             }}>พิมพ์</button>
           )}
@@ -560,14 +560,14 @@ function OtMasterDataPanel() {
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
           <input placeholder="รหัส เช่น A17" value={newRouteCode} onChange={e => setNewRouteCode(e.target.value)} style={{ width: 70, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
           <input placeholder="ชื่อสาย เช่น มาบยางพร-ปลวกแดง" value={newRouteName} onChange={e => setNewRouteName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
-          <button onClick={addRoute} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
+          <button onClick={addRoute} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
         </div>
         <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {busRoutes.map(r => (
             <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 6, background: r.is_active ? 'transparent' : 'var(--bg2)', opacity: r.is_active ? 1 : 0.5 }}>
               <span style={{ flex: 1 }}>{r.code} {r.name}</span>
-              <button onClick={() => toggleRouteActive(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
-              <button onClick={() => removeRoute(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
+              <button onClick={() => toggleRouteActive(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
+              <button onClick={() => removeRoute(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
             </div>
           ))}
           {!loading && busRoutes.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีสายรถ</div>}
@@ -578,14 +578,14 @@ function OtMasterDataPanel() {
         <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>งานที่ทำ OT</div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
           <input placeholder="ชื่องาน เช่น ผลิตตามแผน" value={newTaskName} onChange={e => setNewTaskName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
-          <button onClick={addTask} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
+          <button onClick={addTask} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
         </div>
         <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {taskTypes.map(t => (
             <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 6, background: t.is_active ? 'transparent' : 'var(--bg2)', opacity: t.is_active ? 1 : 0.5 }}>
               <span style={{ flex: 1 }}>{t.name}</span>
-              <button onClick={() => toggleTaskActive(t)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{t.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
-              <button onClick={() => removeTask(t)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
+              <button onClick={() => toggleTaskActive(t)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{t.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
+              <button onClick={() => removeTask(t)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
             </div>
           ))}
           {!loading && taskTypes.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีงาน</div>}
@@ -641,14 +641,14 @@ function SimpleNameMaster({ table, title, placeholder, offNote }) {
         <>
           <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
             <input placeholder={placeholder} value={newName} onChange={e => setNewName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
-            <button onClick={add} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
+            <button onClick={add} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
           </div>
           <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {rows.map(r => (
               <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 6, background: r.is_active ? 'transparent' : 'var(--bg2)', opacity: r.is_active ? 1 : 0.5 }}>
                 <span style={{ flex: 1 }}>{r.name}</span>
-                <button onClick={() => toggle(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
-                <button onClick={() => remove(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
+                <button onClick={() => toggle(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
+                <button onClick={() => remove(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
               </div>
             ))}
             {rows.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีรายการ</div>}
@@ -812,7 +812,7 @@ table{border-collapse:collapse;width:100%}
         <span className="spacer" />
         <span className="filter-count">รวม {filteredLogs.length} คน</span>
         {canExport && (
-          <button onClick={handlePrintDaily} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5 }}>
+          <button onClick={handlePrintDaily} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5 }}>
             PDF
           </button>
         )}
@@ -996,7 +996,7 @@ table{border-collapse:collapse;width:100%}
         <span className="spacer" />
         <span className="filter-count">มา {logs.filter(l => l.is_present).length} วัน</span>
         {canExport && (
-          <button onClick={handlePrintPerEmp} disabled={logs.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5, opacity: logs.length === 0 ? 0.5 : 1 }}>
+          <button onClick={handlePrintPerEmp} disabled={logs.length === 0} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5, opacity: logs.length === 0 ? 0.5 : 1 }}>
             PDF
           </button>
         )}
@@ -1216,7 +1216,7 @@ table{border-collapse:collapse;width:100%}
         <span className="spacer" />
         <span className="filter-count">{filteredRows.length} รายการ</span>
         {canExport && (
-          <button onClick={handlePrintStation} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
+          <button onClick={handlePrintStation} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
             PDF
           </button>
         )}
@@ -1403,7 +1403,7 @@ table{border-collapse:collapse;width:100%}
         <span className="spacer" />
         <span className="filter-count">{filteredRows.length} คน</span>
         {canExport && (
-          <button onClick={handlePrintRange} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
+          <button onClick={handlePrintRange} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
             PDF
           </button>
         )}
@@ -1826,11 +1826,11 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
               style={{ width: '100%', borderRadius: 8, padding: '8px 10px', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
             <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
               <button onClick={handleReject}
-                style={{ flex: 2, padding: 11, background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>
+                style={{ flex: 2, padding: 11, background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: 'pointer' }}>
                 ยืนยัน Reject
               </button>
               <button onClick={() => { setRejectModal(null); setRejectReason(''); }}
-                style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
+                style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', cursor: 'pointer' }}>
                 ยกเลิก
               </button>
             </div>
@@ -1880,11 +1880,11 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
             )}
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
               <button onClick={handleQaApproveSubmit} disabled={isApprovingSaving}
-                style={{ flex: 2, padding: 11, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: isApprovingSaving ? 'not-allowed' : 'pointer', opacity: isApprovingSaving ? 0.6 : 1 }}>
+                style={{ flex: 2, padding: 11, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: isApprovingSaving ? 'not-allowed' : 'pointer', opacity: isApprovingSaving ? 0.6 : 1 }}>
                 {isApprovingSaving ? 'กำลังบันทึก...' : 'QA Approve'}
               </button>
               <button onClick={() => { setQaApproveModal(null); setQaImageFile(null); setQaImagePreview(null); }} disabled={isApprovingSaving}
-                style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
+                style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', cursor: 'pointer' }}>
                 ยกเลิก
               </button>
             </div>
@@ -1954,7 +1954,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
         {canExport && (
           <button onClick={handleExportChangePointPdf} disabled={cpcExporting}
             title={!line ? 'ใบนี้ออกทีละ 1 ไลน์ — เลือกไลน์ในช่องขอบเขตก่อน' : 'Export ใบบันทึกการเปลี่ยนแปลง (Changing Point Control Record)'}
-            style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
               background: 'var(--amber-dim)', color: '#ca8a04', border: '1px solid var(--amber-line)',
               opacity: cpcExporting ? 0.5 : 1 }}>
             {cpcExporting ? 'กำลังสร้าง...' : 'Export Changing Point'}
@@ -1964,7 +1964,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
         {canManageDoc && (
           <button onClick={() => setShowDocPanel(v => !v)} style={{
             position: 'relative',
-            padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
             background: showDocPanel ? 'var(--amber-dim)' : 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)',
           }}>จัดการเอกสาร<ToggleDot on={showDocPanel} /></button>
         )}
@@ -2004,7 +2004,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {pickable.map(n => (
                     <button key={n} type="button" onClick={() => { setLine(n); setFourMSection(''); setFourMUnit({ name: '', lines: [] }); }}
-                      style={{ padding: '6px 12px', borderRadius: 7, fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
+                      style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
                       {n}
                     </button>
                   ))}
@@ -2049,7 +2049,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '8px 12px', borderRadius: 8,
             background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', fontSize: 12.5, color: 'var(--text)' }}>
             <span>เน้นใบที่เลือกมา — <b>{focusRow.line_name || 'ไม่ระบุไลน์'}</b> · {focusRow.category} · {fmtDate(focusRow.work_date)}</span>
-            <button onClick={() => setFocus('')} style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
+            <button onClick={() => setFocus('')} style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
               ล้างการเน้น
             </button>
           </div>
@@ -2058,10 +2058,10 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
             background: 'var(--red-dim)', border: '1px solid var(--red-line)', fontSize: 12.5, color: 'var(--text)' }}>
             <span>⚠️ ไม่พบใบที่เลือกในรายการนี้ — อาจถูกอนุมัติ/ปฏิเสธไปแล้ว หรืออยู่นอกช่วงวัน/ตัวกรอง หรือนอกขอบเขตส่วนงานของคุณ</span>
             <button onClick={() => { setStatusFilter(''); setCat(''); setLine(''); setFourMSection(''); }}
-              style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)' }}>
+              style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)' }}>
               ล้างตัวกรอง
             </button>
-            <button onClick={() => setFocus('')} style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
+            <button onClick={() => setFocus('')} style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
               ปิด
             </button>
           </div>
@@ -2103,13 +2103,13 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                       <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
                         {l.request_image_url && (
                           <button onClick={() => setImageViewModal({ url: l.request_image_url, title: 'รูปจากผู้แจ้ง' })}
-                            style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', fontWeight: 600 }}>
+                            style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', fontWeight: 600 }}>
                             รูปแจ้ง
                           </button>
                         )}
                         {l.qa_image_url && (
                           <button onClick={() => setImageViewModal({ url: l.qa_image_url, title: 'รูป QA ยืนยัน' })}
-                            style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', fontWeight: 600 }}>
+                            style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', fontWeight: 600 }}>
                             รูป QA
                           </button>
                         )}
@@ -2135,11 +2135,11 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                         userCanAct ? (
                           <div style={{ display: 'flex', gap: 5, justifyContent: 'center' }}>
                             <button onClick={() => handleApprove(l)}
-                              style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)' }}>
+                              style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)' }}>
                               {l.status === 'pending_qa' ? 'QA Approve' : 'SV Approve'}
                             </button>
                             <button onClick={() => { setRejectModal(l.id); setRejectReason(''); }}
-                              style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)' }}>
+                              style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)' }}>
                               Reject
                             </button>
                           </div>
@@ -2294,7 +2294,7 @@ function DocumentControlPanel() {
       </div>
 
       <button onClick={saveDoc} disabled={saving} style={{
-        padding: '7px 16px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+        padding: '7px 16px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
         background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', opacity: saving ? 0.6 : 1, marginBottom: 18,
       }}>{saving ? 'กำลังบันทึก...' : 'บันทึกข้อมูลเอกสาร'}</button>
 
@@ -2324,7 +2324,7 @@ function DocumentControlPanel() {
                 <td style={{ fontSize: 12 }}>{r.responsible || '—'}</td>
                 <td style={{ fontSize: 12 }}>{r.approved_name || '—'}</td>
                 <td>
-                  <button onClick={() => removeRevision(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
+                  <button onClick={() => removeRevision(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
                 </td>
               </tr>
             ))}
@@ -2345,7 +2345,7 @@ function DocumentControlPanel() {
           onChange={({ name }) => setNewRev(v => ({ ...v, responsible: name }))} />
         <PersonSelect value={newRev.approved_name} history={apprHist} placeholder="Approved" inputStyle={{ fontSize: 12, padding: '6px 30px 6px 8px' }}
           onChange={({ name }) => setNewRev(v => ({ ...v, approved_name: name }))} />
-        <button onClick={addRevision} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
+        <button onClick={addRevision} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
       </div>
     </div>
   );
@@ -3096,7 +3096,7 @@ function MultiSkillFormTab() {
         </span>
         <span className="spacer" />
         <button onClick={load} disabled={loading}
-          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
+          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
           {loading ? 'กำลังโหลด...' : 'ดึงข้อมูล'}
         </button>
         {employees.length > 0 && (
@@ -3170,7 +3170,7 @@ function MultiSkillFormTab() {
                     <div style={{ position: 'relative' }}>
                       <img src={sig} alt="sig" style={{ width: '100%', height: 48, objectFit: 'contain', borderRadius: 4, background: '#fff', border: '1px solid var(--border2)' }} />
                       <button onClick={() => { if (sig?.startsWith('blob:')) URL.revokeObjectURL(sig); setSig(null); }}
-                        style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.5)', border: 'none', color: '#fff', borderRadius: 4, fontSize: 11, cursor: 'pointer', padding: '1px 5px' }}>✕</button>
+                        style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.5)', border: 'none', color: '#fff', borderRadius: 'var(--r-md)', fontSize: 11, cursor: 'pointer', padding: '1px 5px' }}>✕</button>
                     </div>
                   ) : (
                     <label style={{ display: 'block', cursor: 'pointer' }}>
@@ -3201,7 +3201,7 @@ function MultiSkillFormTab() {
                 <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 10 }}>{employees.length} คน · {skillDefs.length} ทักษะ</span>
               </div>
               {canExport && (
-                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5 }}>
                   Export PDF
                 </button>
               )}
@@ -3833,7 +3833,7 @@ function SkillAllowanceTab() {
         </select>
         <span className="spacer" />
         <button onClick={load} disabled={loading}
-          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
+          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
           {loading ? 'กำลังโหลด...' : 'ดึงข้อมูล'}
         </button>
         {rows.length > 0 && (
@@ -3908,7 +3908,7 @@ function SkillAllowanceTab() {
                 {headChoices.map(r => (
                   <button key={r.id} type="button" onClick={() => setSignerHead(r.name)}
                     title={`${r.name}${r.team ? ` · ทีม ${r.team}` : ''}${r.shift ? ` · ${r.shift === 'day' ? 'กะเช้า' : 'กะดึก'}` : ' · ยังไม่รู้กะ'}`}
-                    style={{ padding: '3px 9px', borderRadius: 999, fontSize: 11.5, cursor: 'pointer',
+                    style={{ padding: '3px 9px', borderRadius: 'var(--r-md)', fontSize: 11.5, cursor: 'pointer',
                       border: `1px solid ${signerHead === r.name ? 'var(--accent)' : 'var(--border2)'}`,
                       background: signerHead === r.name ? 'var(--accent-dim)' : 'var(--bg3)',
                       color: 'var(--text)', fontWeight: signerHead === r.name ? 700 : 400 }}>
@@ -3971,7 +3971,7 @@ function SkillAllowanceTab() {
                 {rows.length} คน
               </span>
               {canExport && (
-                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5 }}>
                   Export PDF
                 </button>
               )}
@@ -4482,7 +4482,7 @@ function AttendanceFormTab() {
           style={{ width: 110 }}
         />
         <button onClick={load} disabled={loading}
-          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
+          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
           {loading ? 'กำลังโหลด...' : 'ดึงข้อมูล'}
         </button>
         {empRows.length > 0 && (
@@ -4533,7 +4533,7 @@ function AttendanceFormTab() {
                 งวดวันที่ {days[0]}-{days[days.length-1]} {THAI_MONTHS[month]} {year+543} · {empRows.length} คน
               </span>
               {canExport && (
-                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5 }}>
                   Export PDF
                 </button>
               )}

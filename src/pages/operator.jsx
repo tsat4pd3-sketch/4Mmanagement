@@ -1130,7 +1130,7 @@ export default function Operator() {
               return (
                 <button key={key} onClick={() => setFilterGrade(active ? '' : key)}
                   style={{
-                    padding: '4px 11px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                    padding: '4px 11px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer',
                     border: `1px solid ${active ? g.border : 'var(--border2)'}`,
                     background: active ? g.badge : 'var(--bg3)',
                     color: active ? g.text : 'var(--muted)',
@@ -1153,7 +1153,7 @@ export default function Operator() {
               const active = filterStaffKind === t.k;
               return (
                 <button key={t.k} title={t.title} onClick={() => setFilterStaffKind(active ? '' : t.k)}
-                  style={{ padding: '4px 11px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                  style={{ padding: '4px 11px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer',
                     border: `1px solid ${active ? t.color : 'var(--border2)'}`,
                     background: active ? `${tint(t.color, 'dim')}` : 'var(--bg3)',
                     color: active ? t.color : 'var(--muted)', transition: 'all 0.15s' }}>
@@ -1171,7 +1171,7 @@ export default function Operator() {
               const active = filterLabor === t;
               return (
                 <button key={t} onClick={() => setFilterLabor(active ? '' : t)}
-                  style={{ padding: '4px 11px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                  style={{ padding: '4px 11px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer',
                     border: `1px solid ${active ? m.color : 'var(--border2)'}`,
                     background: active ? `${tint(m.color, 'dim')}` : 'var(--bg3)',
                     color: active ? m.color : 'var(--muted)', transition: 'all 0.15s' }}>
@@ -1191,7 +1191,7 @@ export default function Operator() {
             )}
             {(filterSection || filterDept || filterGroup || filterTeam || filterGrade || filterLabor || filterStaffKind || empSearch) && (
               <button onClick={() => { setFilterSection(''); setFilterDept(''); setFilterGroup(''); setFilterTeam(''); setFilterGrade(''); setFilterLabor(''); setFilterStaffKind(''); setEmpSearch(''); }}
-                style={{ fontSize: 11, padding: '5px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>
+                style={{ fontSize: 11, padding: '5px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>
                 ล้าง
               </button>
             )}
@@ -1202,7 +1202,7 @@ export default function Operator() {
             <button onClick={() => setShowInactive(s => !s)}
               style={{
                 position: 'relative',
-                padding: '6px 12px', borderRadius: 7, border: 'none', fontSize: 12, cursor: 'pointer',
+                padding: '6px 12px', borderRadius: 'var(--r-md)', border: 'none', fontSize: 12, cursor: 'pointer',
                 background: showInactive ? 'var(--red-dim)' : 'var(--bg3)',
                 color: showInactive ? 'var(--red)' : 'var(--text2)',
               }}>
@@ -1232,7 +1232,7 @@ export default function Operator() {
               <button onClick={() => setFilterNoPhoto(v => !v)}
                 style={{
                   position: 'relative', marginLeft: 'auto',
-                  padding: '6px 12px', borderRadius: 7, border: '1px solid var(--blue-line)', fontSize: 12, cursor: 'pointer',
+                  padding: '6px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--blue-line)', fontSize: 12, cursor: 'pointer',
                   background: filterNoPhoto ? 'var(--blue-line)' : 'transparent', color: 'var(--blue)', fontWeight: 700,
                 }}>
                 {filterNoPhoto ? 'กำลังดูเฉพาะคนที่ยังไม่มีรูป' : 'ดูเฉพาะคนที่ยังไม่มีรูป'}
@@ -1262,7 +1262,7 @@ export default function Operator() {
               <button onClick={() => setFilterOffOrg(v => !v)}
                 style={{
                   position: 'relative', marginLeft: 'auto',
-                  padding: '6px 12px', borderRadius: 7, border: '1px solid var(--amber-line)', fontSize: 12, cursor: 'pointer',
+                  padding: '6px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--amber-line)', fontSize: 12, cursor: 'pointer',
                   background: filterOffOrg ? 'var(--amber-line)' : 'transparent', color: 'var(--amber)', fontWeight: 700,
                 }}>
                 {filterOffOrg ? 'กำลังดูเฉพาะที่ต้องแก้' : 'ดูเฉพาะที่ต้องแก้'}
@@ -1634,7 +1634,7 @@ export default function Operator() {
                 </div>
               </div>
               <button onClick={handleAddSkill} disabled={isAddingSkill || !newSkill.label.trim()}
-                style={{ padding: '9px 24px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: 'pointer', opacity: (!newSkill.label.trim() || isAddingSkill) ? 0.5 : 1 }}>
+                style={{ padding: '9px 24px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13, cursor: 'pointer', opacity: (!newSkill.label.trim() || isAddingSkill) ? 0.5 : 1 }}>
                 {isAddingSkill ? 'กำลังบันทึก...' : 'เพิ่มสกิล'}
               </button>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>
@@ -1716,11 +1716,11 @@ export default function Operator() {
                   </div>
                   <div style={{ display: 'flex', gap: 10 }}>
                     <button onClick={handleUpdateSkill}
-                      style={{ flex: 2, padding: 11, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>
+                      style={{ flex: 2, padding: 11, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: 'pointer' }}>
                       บันทึก
                     </button>
                     <button onClick={() => setEditingSkill(null)}
-                      style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
+                      style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', cursor: 'pointer' }}>
                       ยกเลิก
                     </button>
                   </div>
@@ -1740,7 +1740,7 @@ export default function Operator() {
             </div>
             {can('skills', 'run_weekly_update', role) && (
               <button onClick={handleRunWeeklyUpdate} disabled={runningWeekly}
-                style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                   background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)',
                   opacity: runningWeekly ? 0.6 : 1 }}>
                 {runningWeekly ? 'กำลังรัน...' : 'Run Weekly Update'}
@@ -1749,20 +1749,20 @@ export default function Operator() {
             {can('skills', 'run_weekly_update', role) && (
               <>
                 <button onClick={runExpRebuild} disabled={!!expBusy} title="คำนวณหลักฐานสะสมใหม่ทั้งก้อนจากข้อมูลจริง"
-                  style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                     background: 'rgba(132,204,18,0.12)', color: '#84cc16', border: '1px solid rgba(132,204,18,0.3)',
                     opacity: expBusy ? 0.6 : 1 }}>
                   {expBusy === 'rebuild' ? 'กำลังคำนวณ...' : 'คำนวณหลักฐานใหม่'}
                 </button>
                 <button onClick={() => runReeval(true)} disabled={!!expBusy} title="ประเมินคำขอค้างทั้งคิวตามเกณฑ์ใหม่ (ดูผลก่อน แล้วค่อยยืนยัน)"
-                  style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                     background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)',
                     opacity: expBusy ? 0.6 : 1 }}>
                   {expBusy === 'reeval' ? 'กำลังประเมิน...' : 'ประเมินคิวใหม่'}
                 </button>
                 <button onClick={toggleExpLive} disabled={!!expBusy}
                   title={expCfg?.is_enabled ? 'กำลังใช้สูตร EXP v2 กับคะแนนจริง' : 'สูตร EXP v2 คำนวณคู่ขนานอยู่ ยังไม่แตะคะแนนจริง'}
-                  style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                     background: expCfg?.is_enabled ? 'rgba(34,197,94,0.12)' : 'var(--bg2)',
                     color: expCfg?.is_enabled ? '#22c55e' : 'var(--muted)',
                     border: `1px solid ${expCfg?.is_enabled ? 'rgba(34,197,94,0.35)' : 'var(--border2)'}` }}>
@@ -1886,13 +1886,13 @@ export default function Operator() {
                     {canApprove && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
                         <button onClick={() => handleApproveLevel(req)} disabled={isReviewing}
-                          style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                          style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                             background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)',
                             opacity: isReviewing ? 0.6 : 1 }}>
                           อนุมัติ
                         </button>
                         <button onClick={() => { setRejectLuModal(req); setRejectLuReason(''); }} disabled={isReviewing}
-                          style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                          style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                             background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}>
                           ไม่อนุมัติ
                         </button>
@@ -1925,11 +1925,11 @@ export default function Operator() {
                   style={{ width: '100%', borderRadius: 8, padding: '8px 10px', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
                 <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
                   <button onClick={handleRejectLevel}
-                    style={{ flex: 2, padding: 10, background: '#ef4444', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>
+                    style={{ flex: 2, padding: 10, background: '#ef4444', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: 'pointer' }}>
                     ยืนยัน
                   </button>
                   <button onClick={() => { setRejectLuModal(null); setRejectLuReason(''); }}
-                    style={{ flex: 1, padding: 10, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
+                    style={{ flex: 1, padding: 10, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', cursor: 'pointer' }}>
                     ยกเลิก
                   </button>
                 </div>
@@ -2409,7 +2409,7 @@ export default function Operator() {
                     : <span style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีลายเซ็น — ใบตรวจจะเว้นช่องให้เซ็นมือ</span>}
                   {canEditEmp(editingEmp) && editingEmp.id && (
                     <button type="button" onClick={() => setEmpSigOpen(true)}
-                      style={{ width: 'auto', padding: '6px 12px', fontSize: 12, borderRadius: 6, cursor: 'pointer',
+                      style={{ width: 'auto', padding: '6px 12px', fontSize: 12, borderRadius: 'var(--r-md)', cursor: 'pointer',
                         background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
                       {editingEmp.signature_url ? 'เปลี่ยนลายเซ็น' : '＋ เพิ่มลายเซ็น'}
                     </button>
@@ -2431,11 +2431,11 @@ export default function Operator() {
 
               <div className="m2c-span" style={{ display: 'flex', gap: 10, marginTop: 8 }}>
                 <button type="submit" disabled={isSaving}
-                  style={{ flex: 2, padding: 12, background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)' }}>
+                  style={{ flex: 2, padding: 12, background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, fontFamily: 'var(--font-display)' }}>
                   {isSaving ? 'กำลังบันทึก...' : 'บันทึกข้อมูล'}
                 </button>
                 <button type="button" onClick={() => setEditingEmp(null)}
-                  style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8 }}>
+                  style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)' }}>
                   ยกเลิก
                 </button>
               </div>
@@ -2586,7 +2586,7 @@ function SkillSubItemsModal({ skill, onClose }) {
                   <input placeholder="อ้างอิง WI (ไม่บังคับ) เช่น WI-PD4-001" value={newWi}
                     onChange={e => setNewWi(e.target.value)} onKeyDown={e => e.key === 'Enter' && addItem()}
                     style={{ flex: 1 }} />
-                  <button onClick={addItem} disabled={saving} style={{ padding: '8px 18px', borderRadius: 7, fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', flexShrink: 0, opacity: saving ? 0.6 : 1 }}>
+                  <button onClick={addItem} disabled={saving} style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', flexShrink: 0, opacity: saving ? 0.6 : 1 }}>
                     {saving ? '...' : 'เพิ่ม'}
                   </button>
                 </div>

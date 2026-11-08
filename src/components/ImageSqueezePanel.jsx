@@ -109,7 +109,7 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
             disabled={!canRun || !!busy || scanning || scan?.total === 0}
             title={!canRun ? 'ต้องมีสิทธิ์จัดการข้อมูลหลัก' : ''}
             style={{
-              padding: '10px 16px', borderRadius: 8, border: 'none', flexShrink: 0,
+              padding: '10px 16px', borderRadius: 'var(--r-md)', border: 'none', flexShrink: 0,
               background: (!canRun || busy || scanning || scan?.total === 0) ? 'var(--bg3)' : 'var(--accent)',
               color: (!canRun || busy || scanning || scan?.total === 0) ? 'var(--text2)' : '#fff',
               fontWeight: 700, fontSize: 13, fontFamily: 'var(--font-body)',

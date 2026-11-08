@@ -2559,7 +2559,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
             title={facZones.warn.length
               ? `โซนที่มีสัญญาณ: ${facZones.warn.map(n => `${n} (${facHealthText(stOf(n))})`).join(' · ')}`
               : `ซ่อน: ${facZones.all.join(', ')}`}
-            style={{ alignSelf: 'center', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', borderRadius: 6, padding: '3px 8px', whiteSpace: 'nowrap',
+            style={{ alignSelf: 'center', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', borderRadius: 'var(--r-md)', padding: '3px 8px', whiteSpace: 'nowrap',
               background: showFac ? 'var(--bg3)' : facZones.warn.length ? 'var(--amber)1a' : 'transparent',
               border: `1px solid ${showFac ? 'var(--border2)' : facZones.warn.length ? 'var(--amber)55' : 'var(--border)'}`,
               color: facZones.warn.length ? 'var(--amber)' : 'var(--muted)' }}>
@@ -2970,7 +2970,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                   {r.points.map((pt, i) => (
                     <div key={i} data-handle onPointerDown={(e) => startDrag(e, r, i)} style={{ position: 'absolute', left: `${pt[0]}%`, top: `${pt[1]}%`, width: 14, height: 14, transform: 'translate(-50%,-50%)', background: 'var(--blue)', border: '2px solid #fff', borderRadius: 3, cursor: 'grab', touchAction: 'none' }} />
                   ))}
-                  <button onClick={(e) => { e.stopPropagation(); deleteRegion(r.id); }} title={`ลบกรอบ ${r.line_name}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%,-140%)', width: 22, height: 22, borderRadius: 6, border: 'none', background: 'var(--red-line)', color: '#fff', fontSize: 13, cursor: 'pointer', lineHeight: 1 }}>✕</button>
+                  <button type="button" className="pg-btn sm pg-btn-icon" onClick={(e) => { e.stopPropagation(); deleteRegion(r.id); }} title={`ลบกรอบ ${r.line_name}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%,-140%)', width: 22 }}>✕</button>
                 </div>
               );
             })}
@@ -3391,7 +3391,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                   <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>{oeeExplain.title}</div>
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>ค่าเฉลี่ยถ่วงน้ำหนัก — ไม่ใช่เอา % มาบวกกันแล้วหาร</div>
                 </div>
-                <button onClick={() => setOeeExplain(null)} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 30, height: 30, cursor: 'pointer', color: 'var(--text2)', fontSize: 15 }}>✕</button>
+                <button type="button" className="pg-btn sm pg-btn-icon" onClick={() => setOeeExplain(null)} style={{ width: 30 }}>✕</button>
               </div>
 
               {/* สูตร */}
@@ -3487,7 +3487,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: 7, flexShrink: 0 }}>
-                  <button onClick={() => setStoryLine(null)} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: 'var(--text2)', fontSize: 15 }}>✕</button>
+                  <button type="button" className="pg-btn sm pg-btn-icon" onClick={() => setStoryLine(null)} style={{ width: 32 }}>✕</button>
                 </div>
               </div>
 
@@ -3854,7 +3854,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                   <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>{reviewDetail}</div>
                   <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>แยกตามไลน์ย่อย · {fmtThaiDate(reviewDate)} (ทั้งวัน)</div>
                 </div>
-                <button onClick={() => setReviewDetail(null)} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 30, height: 30, cursor: 'pointer', color: 'var(--text2)', fontSize: 15 }}>✕</button>
+                <button type="button" className="pg-btn sm pg-btn-icon" onClick={() => setReviewDetail(null)} style={{ width: 30 }}>✕</button>
               </div>
               {/* ยอดรวมทั้งกลุ่ม */}
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, padding: '10px 12px', margin: '10px 0 14px' }}>
@@ -3865,7 +3865,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                   {parent.oeeRows?.length > 1 && (
                     <button onClick={() => setOeeExplain({ title: `OEE เฉลี่ย · ${reviewDetail}`, rows: parent.oeeRows })}
                       title="ทำไมไม่เท่ากับเฉลี่ยเลขธรรมดา?"
-                      style={{ border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--accent)', borderRadius: 20, fontSize: 11, fontWeight: 800, padding: '2px 8px', cursor: 'pointer' }}>ⓘ วิธีคิด</button>
+                      style={{ border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--accent)', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, padding: '2px 8px', cursor: 'pointer' }}>ⓘ วิธีคิด</button>
                   )}
                   <Chip label="DT" val={`${fmtNum(parent.dtMin)}น.`} color={parent.dtMin > 0 ? 'var(--amber)' : 'var(--muted)'} />
                   <Chip label="NG" val={fmtNum(parent.ng)} color={parent.ng > 0 ? 'var(--red)' : 'var(--muted)'} />
@@ -3910,7 +3910,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                 <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>
                   {st.dtActive && <span className="dt-alarm-icon" style={{ color: 'var(--red)' }}>🔴 </span>}{detailLine}
                 </div>
-                <button onClick={() => setDetailLine(null)} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 30, height: 30, cursor: 'pointer', color: 'var(--text2)', fontSize: 15 }}>✕</button>
+                <button type="button" className="pg-btn sm pg-btn-icon" onClick={() => setDetailLine(null)} style={{ width: 30 }}>✕</button>
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>รายละเอียดทุกมุมมอง — วันงานปัจจุบัน{kids.length ? ` · รวมยอดไลน์ลูก ${kids.length} ไลน์` : ''}</div>
 
@@ -4014,9 +4014,9 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                 * ยอด = สต็อกของ MAT ที่ผูกกับโซน จาก ledger คลังกลาง (FG WAREHOUSE / STORE) — ระบบยังไม่บันทึกยอด "รายโซน" จริง (เฟสถัดไป)
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                <button onClick={() => navigate('/line-stock?tab=zones')} style={{ flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>จัดการโซน / ผูก MAT</button>
-                <button onClick={() => navigate('/rundown-stock')} style={{ flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>Rundown Stock</button>
-                <button onClick={() => setStoreZoneModal(null)} style={{ flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>ปิด</button>
+                <button onClick={() => navigate('/line-stock?tab=zones')} style={{ flex: 1, padding: '9px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>จัดการโซน / ผูก MAT</button>
+                <button onClick={() => navigate('/rundown-stock')} style={{ flex: 1, padding: '9px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>Rundown Stock</button>
+                <button onClick={() => setStoreZoneModal(null)} style={{ flex: 1, padding: '9px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 800, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>ปิด</button>
               </div>
             </div>
           </div>
@@ -4044,7 +4044,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                 <div style={{ display: 'flex', gap: 6 }}>
                   {[['fac', '🔧 โซน MTN / Facility'], ['store', '🏬 โซนคลังสินค้า (WMS)']].map(([v, lb]) => (
                     <button key={v} onClick={() => setNewZoneType(v)}
-                      style={{ flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: `1.5px solid ${newZoneType === v ? 'var(--accent)' : 'var(--border2)'}`, background: newZoneType === v ? 'var(--green-dim)' : 'var(--bg3)', color: newZoneType === v ? 'var(--accent)' : 'var(--text2)' }}>
+                      style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: `1.5px solid ${newZoneType === v ? 'var(--accent)' : 'var(--border2)'}`, background: newZoneType === v ? 'var(--green-dim)' : 'var(--bg3)', color: newZoneType === v ? 'var(--accent)' : 'var(--text2)' }}>
                       {lb}
                     </button>
                   ))}
@@ -4066,8 +4066,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
               </div>
             )}
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => { setAssignFor(null); setNewZone(''); }} style={{ flex: 1, padding: '11px 0', borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>ยกเลิก</button>
-              <button onClick={confirmAssign} disabled={!okAssign} style={{ flex: 2, padding: '11px 0', borderRadius: 9, fontSize: 13, fontWeight: 800, cursor: okAssign ? 'pointer' : 'not-allowed', background: okAssign ? 'var(--accent)' : 'var(--muted)', color: '#fff', border: 'none' }}>ตีกรอบ</button>
+              <button onClick={() => { setAssignFor(null); setNewZone(''); }} style={{ flex: 1, padding: '11px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>ยกเลิก</button>
+              <button onClick={confirmAssign} disabled={!okAssign} style={{ flex: 2, padding: '11px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 800, cursor: okAssign ? 'pointer' : 'not-allowed', background: okAssign ? 'var(--accent)' : 'var(--muted)', color: '#fff', border: 'none' }}>ตีกรอบ</button>
             </div>
             </>; })()}
           </div>

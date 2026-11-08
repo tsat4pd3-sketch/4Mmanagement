@@ -219,7 +219,7 @@ export default function FixtureShimPanel({
                   <div style={{ display: 'flex', gap: 6 }}>
                     {[['delta', '+ / − จากเดิม'], ['total', 'พิมพ์ค่ารวม']].map(([k, l]) => (
                       <button key={k} onClick={() => setMode(k)}
-                              style={{ flex: 1, padding: '7px 4px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
+                              style={{ flex: 1, padding: '7px 4px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer',
                                        border: `1px solid ${mode === k ? '#16a34a' : 'var(--border)'}`,
                                        background: mode === k ? 'rgba(34,197,94,0.15)' : 'var(--bg)',
                                        color: 'var(--text)', fontWeight: mode === k ? 700 : 400 }}>{l}</button>
@@ -283,7 +283,7 @@ export default function FixtureShimPanel({
                 <button onClick={save} disabled={saving || preview.after == null}
                         style={{ background: preview.after != null ? '#16a34a' : 'var(--bg2)',
                                  color: preview.after != null ? '#fff' : 'var(--muted)', border: 'none',
-                                 borderRadius: 8, padding: '9px 22px', fontSize: 13, fontWeight: 700,
+                                 borderRadius: 'var(--r-md)', padding: '9px 22px', fontSize: 13, fontWeight: 700,
                                  cursor: saving || preview.after == null ? 'not-allowed' : 'pointer' }}>
                   {saving ? 'กำลังบันทึก…' : '💾 บันทึก'}
                 </button>
@@ -314,7 +314,7 @@ export default function FixtureShimPanel({
               <div style={{ background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.45)',
                             borderRadius: 8, padding: '8px 12px', fontSize: 12.5 }}>
                 ⚠️ โหลดประวัติไม่สำเร็จ: {loadErr} — <b>ไม่ใช่ว่าไม่มีประวัติ</b>
-                <button onClick={load} style={{ marginLeft: 8, padding: '3px 10px', borderRadius: 6, fontSize: 12,
+                <button onClick={load} style={{ marginLeft: 8, padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 12,
                         background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
                   ลองใหม่
                 </button>
@@ -352,7 +352,7 @@ export default function FixtureShimPanel({
                             <span style={{ color: '#22c55e' }}>✓ {ev.approved_by}</span>
                           ) : canApprove ? (
                             <button onClick={() => approve(ev)}
-                                    style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, cursor: 'pointer',
+                                    style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, cursor: 'pointer',
                                              background: '#16a34a', color: '#fff', border: 'none' }}>อนุมัติ</button>
                           ) : (
                             <span style={{ color: '#f59e0b' }}>รออนุมัติ</span>

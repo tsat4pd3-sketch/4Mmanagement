@@ -89,11 +89,11 @@ export default function StockAdjustRequestModal({ req, by, onClose }) {
         )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
           <button type="button" onClick={onClose} disabled={busy}
-            style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>
+            style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>
             ยกเลิก
           </button>
           <button type="button" onClick={submit} disabled={!canSend}
-            style={{ padding: '8px 18px', borderRadius: 8, border: 'none', fontWeight: 800, fontSize: 13,
+            style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', fontWeight: 800, fontSize: 13,
               background: canSend ? 'var(--accent)' : 'var(--bg3)', color: canSend ? 'var(--accent-ink)' : 'var(--muted)',
               cursor: canSend ? 'pointer' : 'default' }}>
             {busy ? 'กำลังส่ง…' : 'ส่งคำขอ (รออนุมัติ)'}

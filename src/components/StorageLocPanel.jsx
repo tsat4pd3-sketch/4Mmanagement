@@ -241,13 +241,13 @@ export default function StorageLocPanel() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {canManage && !missing && !noLineMap && untagged > 0 && (
             <button onClick={backfill} disabled={busy} title={untaggedTip}
-              style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(245,158,11,0.5)', cursor: busy ? 'wait' : 'pointer', background: 'rgba(245,158,11,0.1)', color: '#f59e0b', fontSize: 12.5, fontWeight: 800, fontFamily: 'var(--font-body)' }}>
+              style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid rgba(245,158,11,0.5)', cursor: busy ? 'wait' : 'pointer', background: 'rgba(245,158,11,0.1)', color: '#f59e0b', fontSize: 12.5, fontWeight: 800, fontFamily: 'var(--font-body)' }}>
               {busy ? '…' : `🏷️ แปะรหัสคลังย้อนหลัง (${untagged.toLocaleString()} แถว)`}
             </button>
           )}
           {canManage && !missing && (
             <button onClick={() => setEdit({ code: '', name: '', kind: '', note: '', sort_order: (rows.length + 1) * 10, is_active: true, line_names: [] })}
-              style={{ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)' }}>
+              style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: 'none', cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)' }}>
               + เพิ่มรหัสคลัง
             </button>
           )}
@@ -340,7 +340,7 @@ export default function StorageLocPanel() {
                 {inUse && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', flexShrink: 0 }}>มีคนใช้อยู่</span>}
                 {canManage && (
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                    <button className="tbtn" onClick={() => setEdit({ ...r, line_names: own })} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>
+                    <button className="tbtn" onClick={() => setEdit({ ...r, line_names: own })} style={{ padding: '4px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>
                     {/* ลบได้เฉพาะตอน "นับการใช้งานได้ และไม่มีใครใช้" — นอกนั้นปิดไว้ (fail-closed)
                         ปุ่มยังอยู่ (ไม่ซ่อน) + title บอกเหตุผล ไม่งั้นดูเหมือนฟีเจอร์หาย */}
                     <DeleteButton onClick={() => remove(r)} disabled={countFailed || inUse}
@@ -455,9 +455,9 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
           </label>
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-          <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>ยกเลิก</button>
+          <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>ยกเลิก</button>
           <button onClick={submit} disabled={busy || badFormat}
-            style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: busy || badFormat ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)', opacity: busy || badFormat ? 0.5 : 1 }}>
+            style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: busy || badFormat ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)', opacity: busy || badFormat ? 0.5 : 1 }}>
             {busy ? '...' : '💾 บันทึก'}
           </button>
         </div>

@@ -665,7 +665,7 @@ export default function GroupOverview() {
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
                       {g.companies.map(c => (
                         <button key={c.key} onClick={() => setPickComp(c)} style={{
-                          fontSize: 11.5, fontWeight: 700, padding: '3px 8px', borderRadius: 999, cursor: 'pointer',
+                          fontSize: 11.5, fontWeight: 700, padding: '3px 8px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                           background: c.real ? 'var(--green-dim)' : 'var(--bg3)',
                           border: `1px ${c.real ? 'solid var(--green)' : 'dashed var(--border2)'}`,
                           color: 'var(--text)',
@@ -914,7 +914,7 @@ export default function GroupOverview() {
               disabled={!pickComp.real}
               onClick={() => { if (pickComp.real) { setPickComp(null); navigate('/factory-map'); } }}
               style={{
-                width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 10, marginBottom: 9,
+                width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 'var(--r-md)', marginBottom: 9,
                 background: pickComp.real ? 'var(--bg3)' : 'var(--bg2)',
                 border: `1px solid ${pickComp.real ? 'var(--accent)' : 'var(--border)'}`,
                 color: 'var(--text)', cursor: pickComp.real ? 'pointer' : 'not-allowed', opacity: pickComp.real ? 1 : 0.72,
@@ -932,7 +932,7 @@ export default function GroupOverview() {
               setSel(st => ({ ...st, node: st.axis === 'map' ? pickComp.zone : pickComp.groupMeta.key, comp: pickComp.key }));
               setPickComp(null);
             }} style={{
-              width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 10,
+              width: '100%', textAlign: 'left', padding: '12px 14px', borderRadius: 'var(--r-md)',
               background: 'var(--bg3)', border: '1px solid var(--accent)', color: 'var(--text)', cursor: 'pointer',
             }}>
               <div style={{ fontSize: 14.5, fontWeight: 800 }}>ดูภาพรวมในหน้านี้ ({pickComp.lines.length} ไลน์)</div>

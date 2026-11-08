@@ -91,8 +91,8 @@ export default function ScanSheetPanel({ lines, canPrint }) {
           <b style={{ fontSize: 14 }}>{title}</b>
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>เลือก {picks.size} รายการ</span>
           <span className="spacer" style={{ marginLeft: 'auto' }} />
-          <button type="button" className="tbtn" onClick={() => setPicks(defaultSheetPicks(rows, pts))} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer' }}>↺ ของไลน์นี้</button>
-          <button type="button" className="tbtn" onClick={() => setPicks(new Set())} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer' }}>ล้าง</button>
+          <button type="button" className="tbtn" onClick={() => setPicks(defaultSheetPicks(rows, pts))} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer' }}>↺ ของไลน์นี้</button>
+          <button type="button" className="tbtn" onClick={() => setPicks(new Set())} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer' }}>ล้าง</button>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 6, alignContent: 'start' }}>{mine.map(box)}</div>
         {others.length > 0 && (
@@ -119,7 +119,7 @@ export default function ScanSheetPanel({ lines, canPrint }) {
         <span style={{ marginLeft: 'auto' }} />
         {canPrint && (
           <button type="button" onClick={print} disabled={!line || busy || !!loadErr}
-            style={{ padding: '8px 18px', borderRadius: 8, border: 'none', fontSize: 13.5, fontWeight: 800, cursor: line && !busy ? 'pointer' : 'not-allowed', background: line && !loadErr ? 'var(--accent)' : 'var(--bg3)', color: line && !loadErr ? 'var(--accent-ink)' : 'var(--muted)' }}>
+            style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', fontSize: 13.5, fontWeight: 800, cursor: line && !busy ? 'pointer' : 'not-allowed', background: line && !loadErr ? 'var(--accent)' : 'var(--bg3)', color: line && !loadErr ? 'var(--accent-ink)' : 'var(--muted)' }}>
             {busy ? 'กำลังสร้าง…' : `🖨️ พิมพ์ใบสแกน (${pickDt.size + pickNg.size} ช่อง)`}
           </button>
         )}

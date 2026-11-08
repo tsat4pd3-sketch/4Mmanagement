@@ -37,7 +37,7 @@ export default function LineRegistryAlert() {
         </div>
       </span>
       <button onClick={onReload} disabled={busy} style={{
-        padding: '5px 11px', borderRadius: 7, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+        padding: '5px 11px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
         border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)',
         cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1,
       }}>{busy ? 'กำลังโหลด…' : '🔄 โหลดทะเบียนไลน์ใหม่'}</button>

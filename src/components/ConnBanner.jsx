@@ -39,7 +39,7 @@ export default function ConnBanner() {
         {left > 0 ? `ระบบจะลองใหม่ให้เองใน ${left} วิ` : 'กำลังลองใหม่…'}
       </span>
       <button onClick={connRetryNow} style={{
-        background: '#fff', color: '#7f1d1d', border: 'none', borderRadius: 6,
+        background: '#fff', color: '#7f1d1d', border: 'none', borderRadius: 'var(--r-md)',
         padding: '3px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
       }}>ลองใหม่เดี๋ยวนี้</button>
       <span style={{ opacity: 0.8, fontWeight: 500, fontSize: 11 }}>

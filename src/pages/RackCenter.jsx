@@ -613,7 +613,7 @@ function QrScanModal({ onClose, onResult }) {
       <div style={{ ...card, width: 'min(94vw, 420px)' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>สแกน QR เรียกภาชนะ</span>
-          <button onClick={onClose} style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
+          <button onClick={onClose} style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 'var(--r-md)', padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
         </div>
         {camErr
           ? <div style={{ fontSize: 12.5, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '8px 11px', marginBottom: 10 }}>{camErr}</div>
@@ -642,7 +642,7 @@ function QrLabelModal({ lines, containerTypes, onClose, onPrint }) {
       <div style={{ ...card, width: 'min(94vw, 560px)', maxHeight: '86vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>พิมพ์ป้าย QR เรียกภาชนะ</span>
-          <button onClick={onClose} style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 6, padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
+          <button onClick={onClose} style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 'var(--r-md)', padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
         </div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
           เลือกไลน์ × ชนิดภาชนะ → ได้แผ่น A4 ป้ายละ 1 คู่ (QR = ลิงก์เปิดฟอร์มกรอกให้ครบ) เอาไปแปะจุดวางภาชนะหน้างาน

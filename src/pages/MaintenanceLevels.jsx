@@ -265,7 +265,7 @@ export default function MaintenanceLevels() {
         ]} />
         <SearchInput value={q} onChange={setQ} fields="เลขเครื่อง / ชื่อ / ไลน์" ariaLabel="ค้นหาอุปกรณ์" />
         <span className="spacer" />
-        <button onClick={() => setReloadKey(k => k + 1)} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '0 12px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>รีเฟรช</button>
+        <button onClick={() => setReloadKey(k => k + 1)} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '0 12px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>รีเฟรช</button>
       </FilterBar>
       {/* 🔴 การ์ดสถิติ 3 ใบ = **เนื้อหา** ต้องอยู่ใต้แถบกรอง (UI-STANDARD §2.1 ลำดับตายตัว)
           ย้ายลงมา 20/10 — ตัวเลขในการ์ดก็มาจาก `sum` ที่คิดจากของที่ผ่านตัวกรองแล้ว */}
@@ -331,7 +331,7 @@ export default function MaintenanceLevels() {
                   <td style={{ ...td, color: 'var(--text2)', lineHeight: 1.55, minWidth: 280 }}>{a.why}</td>
                   <td style={{ ...td, whiteSpace: 'nowrap', fontWeight: 700 }}>{a.byYmd === todayStr ? 'วันนี้' : fmtYmd(a.byYmd)}</td>
                   <td style={td}>
-                    <button onClick={() => navigate(a.link)} style={{ background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '5px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    <button onClick={() => navigate(a.link)} style={{ background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '5px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       {a.linkLabel} →
                     </button>
                   </td>

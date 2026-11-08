@@ -139,7 +139,7 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
         {hiddenCount > 0 && (
           <span className="filter-count">ซ่อนอยู่ {hiddenCount} รายการ (ไม่ตรงตัวกรอง)</span>
         )}
-        <button onClick={pickAllShown} style={{ padding: '0 12px', borderRadius: 8, fontSize: 12.5,
+        <button onClick={pickAllShown} style={{ padding: '0 12px', borderRadius: 'var(--r-md)', fontSize: 12.5,
                 background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
           ติ๊ก/เอาออก ทั้งที่แสดง ({shown.length})
         </button>
@@ -190,7 +190,7 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
           </select>
           <button onClick={save} disabled={!picked.size || saving}
                   style={{ background: picked.size ? '#16a34a' : 'var(--bg2)', color: picked.size ? '#fff' : 'var(--muted)',
-                           border: 'none', borderRadius: 8, padding: '8px 18px', fontSize: 13, fontWeight: 700,
+                           border: 'none', borderRadius: 'var(--r-md)', padding: '8px 18px', fontSize: 13, fontWeight: 700,
                            cursor: picked.size && !saving ? 'pointer' : 'not-allowed' }}>
             {saving ? 'กำลังบันทึก…' : `บันทึก ${picked.size} รายการ`}
           </button>
