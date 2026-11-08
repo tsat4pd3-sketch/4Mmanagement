@@ -7832,8 +7832,72 @@ test('🟡 defect-auto-yellow — ลงงานเสียต้องตั�
   const dec = q.match(/const\s+decide\s*=[\s\S]*?\n  \};/);
   if (dec && !/checkWriteRows\(/.test(dec[0]))
     bad.push(`${Q} decide(): ต้องใช้ checkWriteRows — RLS ปฏิเสธ UPDATE เงียบ (กฎเขียน DB ข้อ 2)`);
+  /* ✍️ ตัดสินผล = เขียนชื่อคนกดลงช่อง QA บนใบ = การเซ็น ⇒ ต้องถามผ่านของกลาง (คำสั่ง user 28/10)
+     ห้ามกลับไป window.confirm เขียนข้อความเอง (ต้องบอก 3 อย่าง: อนุมัติอะไร · ใบไหน · ในนามใคร) */
+  for (const [re, fname] of [[/const\s+decide\s*=[\s\S]*?\n  \};/, 'decide()'],
+                             [/const\s+decideScrap\s*=[\s\S]*?\n  \};/, 'decideScrap()']]) {
+    const m = q.match(re);
+    if (!m) { bad.push(`${Q}: หา ${fname} ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้`); continue; }
+    if (!/confirmSign\(/.test(m[0]))
+      bad.push(`${Q} ${fname}: ต้องถามยืนยันผ่าน confirmSign() ก่อนเขียน DB`);
+    if (/window\.confirm\(/.test(m[0]))
+      bad.push(`${Q} ${fname}: ห้ามเขียนข้อความยืนยันเองด้วย window.confirm — ใช้ของกลาง signConfirm.js`);
+  }
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
     + '\n\n   ของจริงอยู่ในถังแต่ระบบไม่รู้ = สืบกลับไม่ได้ว่าของหายไปไหน\n');
+});
+
+test('🏭 qa-bins-queue-only — เอกสารถังเหลือง/แดงอยู่ฝ่ายผลิต · /qa เห็นแค่คิวรออนุมัติ', () => {
+  /* 06/11 (คำสั่ง user): *"หลักๆอันนี้ต้องอยู่หมวดของผลิตนะ qa จะไปโชว์แค่พวกงานค้างอนุมัติของแผนก
+     เพราะ หลักๆเอกสารอยู่ที่ผลิต"*
+     ⇒ บ้าน = `/scrap-report?tab=bins` (NAV หมวด ฝ่ายผลิต) ถือ `mode="full"` (ทะเบียน+ใบ+อายุแท็ก+WI)
+       · `/qa?tab=bins` ถือ `mode="queue"` = เฉพาะคิวรอพิจารณา
+     🔴 เอาทะเบียน/ปุ่มบันทึกกลับเข้าโหมด queue = "บ้านที่สอง" (UI §4.5 alsoIn: ทางลัด ไม่ใช่บ้านที่สอง)
+        แล้วไม่มีใครรู้ว่าใบจริงอยู่หน้าไหน */
+  const bad = [];
+  const QC = 'src/pages/QualityControl.jsx';
+  const qc = stripComments(readFileSync(join(ROOT, QC), 'utf8'));
+  if (!/<QualityBins\s+mode="queue"/.test(qc))
+    bad.push(`${QC}: แท็บ bins ต้องเรียก <QualityBins mode="queue" /> — QA โชว์แค่คิวรออนุมัติของแผนก`);
+  if (/<QualityBins\s*\/>/.test(qc))
+    bad.push(`${QC}: ห้ามเรียก <QualityBins /> เปล่า (= โหมด full = ทะเบียนเอกสารมาอยู่ /qa อีกที่)`);
+
+  const SR = 'src/pages/ScrapReport.jsx';
+  const sr = stripComments(readFileSync(join(ROOT, SR), 'utf8'));
+  if (!/<QualityBins\s+mode="full"/.test(sr))
+    bad.push(`${SR}: หน้าฝ่ายผลิตคือบ้านของเอกสาร ต้องเรียก <QualityBins mode="full" />`);
+
+  /* บ้านต้องอยู่หมวดฝ่ายผลิตจริงในเมนู (ย้ายหมวดแล้วด่านนี้ต้องดัง) */
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  const navLine = app.split('\n').find(l => /to:\s*'\/scrap-report'/.test(l)) || '';
+  if (!/group:\s*'ฝ่ายผลิต'/.test(navLine))
+    bad.push(`src/App.jsx: /scrap-report ต้องอยู่ group 'ฝ่ายผลิต' — เอกสารของเสียเป็นของผลิต (คำสั่ง user 06/11)`);
+
+  const Q = 'src/components/QualityBins.jsx';
+  const q = stripComments(readFileSync(join(ROOT, Q), 'utf8'));
+  if (!/const\s+queueOnly\s*=\s*mode\s*===\s*'queue'/.test(q))
+    bad.push(`${Q}: ต้องมี queueOnly = mode === 'queue' — โหมดมีที่ตัดสินที่เดียว`);
+  const branch = q.match(/if \(queueOnly\) return \(([\s\S]*?)\n  return \(/);
+  if (!branch) bad.push(`${Q}: ต้องมีสาขา \`if (queueOnly) return (…)\` ก่อน return ปกติ`);
+  else {
+    const b = branch[1];
+    if (!/renderPendQueue\(\)/.test(b))
+      bad.push(`${Q} โหมด queue: ต้องวาดคิวผ่าน renderPendQueue() (แผงเดียวกับหน้าผลิต ห้ามวาดชุดที่ 2)`);
+    for (const [re, what] of [[/<TimeRangeBar/, 'แถบกรองช่วงเวลา'], [/<table/, 'ตารางทะเบียน'],
+                              [/openNew/, 'ปุ่มบันทึกรายการ'], [/SimpleMasterPanel/, 'ทะเบียน WI ซ่อม']]) {
+      if (re.test(b)) bad.push(`${Q} โหมด queue: ห้ามมี${what} — เอกสารตัวจริงอยู่หน้าฝ่ายผลิต`);
+    }
+    /* 🔴 ลิงก์ที่กดแล้วเด้งกลับ = จอโกหก ⇒ ต้องเช็คสิทธิ์เข้าหน้าก่อนโชว์ลิงก์ */
+    if (!/canAccessPage\('\/scrap-report'/.test(b))
+      bad.push(`${Q} โหมด queue: ลิงก์ไป /scrap-report ต้องผ่าน canAccessPage() ก่อนโชว์`);
+    if (!/scopeNames/.test(b))
+      bad.push(`${Q} โหมด queue: ต้องเขียนบนจอว่าคิวนี้เห็นขอบเขตไหน (เห็นแค่ส่วนงานตัวเอง ≠ เคลียร์หมด)`);
+  }
+  /* คิวในโหมดนี้ไม่ควรโหลดทะเบียนทิ้ง (egress — ตารางกว้าง select('*') × 500 × 2 คิวรี) */
+  if (!/if \(queueOnly\) \{[\s\S]{0,600}return;/.test(q))
+    bad.push(`${Q} load(): โหมด queue ต้องข้ามคิวรีทะเบียน/ของค้างตามช่วงวันที่ (กฎเขียน DB ข้อ 11)`);
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   เอกสาร 2 บ้าน = คนกรอกคนละที่ แล้วเถียงกันว่าใบจริงอยู่ไหน\n');
 });
 
 test('📊 mat-breakdown-default-collapsed — แท็บ Live ต้องขึ้นภาพรวมก่อน รายชิ้นงานยุบไว้', () => {

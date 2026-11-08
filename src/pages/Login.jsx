@@ -155,7 +155,7 @@ export default function Login() {
         </form>
 
         {/* Brand footer */}
-        <div style={{
+        <div className="login-brand-foot" style={{
           marginTop: 28, textAlign: 'center',
           fontSize: 11, color: 'var(--muted2)',
           fontFamily: 'var(--font-display)',
