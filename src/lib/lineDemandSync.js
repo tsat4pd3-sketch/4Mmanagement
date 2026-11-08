@@ -260,6 +260,6 @@ export function syncSummaryText(r) {
   if (noPkg.length) parts.push(`${noPkg.length} พาร์ทยังไม่ตั้ง packing std (${noPkg.slice(0, 3).map(x => x.mat_no).join(', ')}${noPkg.length > 3 ? '…' : ''}) — ไม่ได้แจ้ง`);
   if (r.writeErrors.length) parts.push(`เขียนไม่สำเร็จ ${r.writeErrors.length}: ${r.writeErrors[0]}`);
   if (r.noBom?.length) parts.push(`${r.noBom.length} ใบผลิตไม่มีลูกใน BOM (${r.noBom.slice(0, 3).map(x => x.mat_no).join(', ')}) — แตกไม่ได้ แจ้ง PE ตั้ง BOM`);
-  if (r.opUnset?.length) parts.push(`${r.opUnset.length} ใบขั้น OP ยังไม่ได้ผูกว่ากินอะไร (${r.opUnset.slice(0, 3).map(x => x.mat_no).join(', ')}) — ตั้งที่ /products แท็บ BOM ของขั้น`);
+  if (r.opUnset?.length) parts.push(`${r.opUnset.length} ใบขั้น OP ยังไม่ได้ผูกว่ากินอะไร (${r.opUnset.slice(0, 3).map(x => x.mat_no).join(', ')}) — ตั้งที่ /products แท็บ BOM ใบของแม่ → แผง 🔩 ขั้น OP`);
   return parts.join(' · ') || (r.orders === 0 ? 'ไม่มีใบผลิตเปิดอยู่ในพื้นที่นี้' : 'ของในพื้นที่พอ — ไม่ต้องเบิก');
 }

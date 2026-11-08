@@ -46,7 +46,7 @@ export function planConfirmText(rows = [], { title = '', focus = [], max = 12, a
     ? `\n\n⚠️ ใบผลิต ${noBom.length} ตัวไม่มีลูกใน BOM — แตกไม่ได้ จึงไม่ได้ขอของให้: ${noBom.slice(0, 5).map(x => `${x.mat_no} × ${f(x.qty)}`).join(' · ')} (แจ้ง PE ตั้ง BOM ที่ /products)`
     : '';
   const ou = (opUnset || []).length
-    ? `\n\n⚠️ ใบขั้น OP ${opUnset.length} ตัวยังไม่ได้ผูกว่ากินอะไร (แม่มีลูกหลายตัว ระบบไม่เดา) จึงไม่ได้ขอของให้: ${opUnset.slice(0, 5).map(x => `${x.mat_no}${x.parent ? ` (แม่ ${x.parent} ลูก ${x.parentKids} ตัว)` : ''} × ${f(x.qty)}`).join(' · ')} — ตั้งที่ /products แท็บ BOM ของขั้นนี้`
+    ? `\n\n⚠️ ใบขั้น OP ${opUnset.length} ตัวยังไม่ได้ผูกว่ากินอะไร (แม่มีลูกหลายตัว ระบบไม่เดา) จึงไม่ได้ขอของให้: ${opUnset.slice(0, 5).map(x => `${x.mat_no}${x.parent ? ` (แม่ ${x.parent} ลูก ${x.parentKids} ตัว)` : ''} × ${f(x.qty)}`).join(' · ')} — ตั้งที่ /products แท็บ BOM ใบของแม่ → แผง 🔩 ขั้น OP`
     : '';
   return { text: `${title}\n${scope}${shown.length ? `\n\n${shown.join('\n\n')}` : ''}${more}${nb}${ou}${tail}`, sendCount: send };
 }

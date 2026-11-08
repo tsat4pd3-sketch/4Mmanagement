@@ -632,7 +632,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
         <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--red)', lineHeight: 1.7 }}>
           ⚠ <b>ใบขั้น OP {plan.opUnset.length} ตัวยังไม่ได้ผูกว่ากินอะไร — ระบบไม่เดา จึงไม่ได้ขอของให้:</b>{' '}
           {plan.opUnset.slice(0, 5).map(x => `${x.mat_no}${x.parent ? ` (แม่ ${x.parent} ลูก ${x.parentKids} ตัว)` : ''} × ${fmtQty(x.qty)}`).join(' · ')}
-          {' '}— ตั้งที่ /products แท็บ BOM ของขั้นนี้ (PE / หัวหน้างาน)
+          {' '}— ตั้งที่ /products แท็บ BOM ใบของแม่ → แผง 🔩 ขั้น OP (PE / supervisor ขึ้นไป)
         </div>
       )}
       {plan && !plan.error && plan.orders > 0 && !planRows.length && !plan.noBom?.length && !plan.opUnset?.length && (
