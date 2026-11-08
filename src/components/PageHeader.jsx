@@ -1,4 +1,4 @@
-import { useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useContext } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { NAV_ITEMS } from '../App';
 import useIsMobile from '../utils/useIsMobile';
@@ -6,6 +6,7 @@ import { HubContext } from './Page';
 import MobileFilterFold, { splitFilterChildren } from './MobileFilterFold';
 import useLang from '../utils/useLang';   // 🌐 ชื่อหน้า/คำอธิบาย/แท็บ/breadcrumb แปลที่จุดวาด (utils/i18n.js)
 import Icon, { stripIcon } from './Icon';   // ✒️ ไอคอนเส้นแทน emoji · แท็บตัด emoji นำหน้า (UI §6.36)
+import TabBar from './TabBar';
 
 /* ══ 🧭 PageHeader — หัวหน้าเพจมาตรฐาน (breadcrumb + ชื่อหน้า + ปุ่ม + แท็บ) ══════════════
    ทุกหน้าควรขึ้นด้วย component นี้ ห้ามวาดหัวเรื่อง/แถบแท็บเอง
@@ -38,9 +39,6 @@ import Icon, { stripIcon } from './Icon';   // ✒️ ไอคอนเส้�
    ลดการค้นพบ) ⇒ ProductMaster 4 แท็บ (ลูกค้า/Supplier/ทบทวน CT/Export) กลายเป็นของที่ไม่มีใครเจอ
    · แท็บโชว์ครบเสมอ — เดสก์ท็อปตัดขึ้นบรรทัดใหม่ (ตัวชี้วัด offsetTop ตามได้) · มือถือเลื่อนแนวนอน
    · แท็บเยอะจนรก = แก้ที่ "ของซ้ำ/ของที่ควรเป็นหน้าแยก" (NAVIGATION-REVIEW §2.3) ไม่ใช่ซ่อน */
-const IND_EASE = 'cubic-bezier(.4,1.2,.45,1)';
-const prefersReduced = () => typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-  && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export default function PageHeader({
   title, icon, sub, actions, tabs, tab, onTab, breadcrumb = true, filters, children,
@@ -54,108 +52,8 @@ export default function PageHeader({
   const tabList = (tabs || []).filter(Boolean);
   const tabLabel = stripIcon(tr(tabList.find(t => t.key === tab)?.label));
 
-  const scrollRef = useRef(null);   // กล่องที่เลื่อนแนวนอน (มือถือ)
-  const rowRef = useRef(null);      // แถวปุ่ม = offsetParent ของปุ่มและของตัวชี้
-  const btnRefs = useRef({});
-  const [ind, setInd] = useState(null);       // {x,y,w,h} ของแท็บที่เลือก — null = ยังวัดไม่ได้
-  const [animOn, setAnimOn] = useState(false); // เปิด transition หลังเฟรมแรก (กันตัวชี้วิ่งจากมุมซ้าย)
-
-  // ป้ายแท็บ/badge เปลี่ยน = ความกว้างเปลี่ยน ⇒ ต้องวัดใหม่ (ResizeObserver ไม่จับการสลับปุ่ม)
-  const sig = tabList.map(t => `${t.key}|${t.label}|${t.badge ?? ''}`).join('~');
-
-  useLayoutEffect(() => {
-    Object.keys(btnRefs.current).forEach((k) => {
-      if (!tabList.some(t => t.key === k)) delete btnRefs.current[k];
-    });
-    if (!tabList.length) { setInd(null); return undefined; }
-
-    const measure = () => {
-      const el = btnRefs.current[tab];
-      if (!el || !rowRef.current) { setInd(null); return; }
-      const next = { x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight };
-      setInd(prev => (prev && prev.x === next.x && prev.y === next.y
-        && prev.w === next.w && prev.h === next.h) ? prev : next);
-    };
-    measure();
-
-    let ro;
-    if (typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(measure);
-      ro.observe(rowRef.current);
-      Object.values(btnRefs.current).forEach(el => el && ro.observe(el));
-    }
-    window.addEventListener('resize', measure);
-    return () => { if (ro) ro.disconnect(); window.removeEventListener('resize', measure); };
-  }, [tab, sig, isMobile]);   // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    const id = requestAnimationFrame(() => setAnimOn(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
-
-  // มือถือ: แท็บที่เลือกอาจอยู่นอกจอ — เลื่อน "เฉพาะกล่องแท็บ" เข้ามา ห้ามใช้ scrollIntoView (เลื่อนทั้งหน้า)
-  useEffect(() => {
-    const sc = scrollRef.current; const el = btnRefs.current[tab];
-    if (!sc || !el || sc.scrollWidth <= sc.clientWidth + 1) return;
-    const want = Math.max(0, Math.min(el.offsetLeft - (sc.clientWidth - el.offsetWidth) / 2,
-      sc.scrollWidth - sc.clientWidth));
-    if (Math.abs(sc.scrollLeft - want) > 2) {
-      sc.scrollTo({ left: want, behavior: animOn && !prefersReduced() ? 'smooth' : 'auto' });
-    }
-  }, [tab, sig, animOn]);
-
-  const moving = animOn && !prefersReduced();
-  const slide = moving
-    ? `transform .28s ${IND_EASE}, width .28s ${IND_EASE}, height .28s ${IND_EASE}`
-    : 'none';
-
-  const renderTabs = () => (
-        <div ref={scrollRef} className="ph-chrome" style={{
-          overflowX: isMobile ? 'auto' : 'visible',
-          paddingTop: 2, paddingBottom: 2,
-        }}>
-          {/* 🔖 `data-tabbar` = ที่จับให้ `audit/stdsweep.mjs` หาแถบแท็บของหน้าเพื่อไล่กดทุกแท็บ
-              **ห้ามถอด** — ถอดเมื่อไหร่ stdsweep จะตรวจได้แค่แท็บแรกของทุกหน้าแบบเงียบๆ
-              (เกิดจริง 24/09: เคยยืมแอตทริบิวต์ `data-ux-ok` ของ uxsweep มาใช้เป็นที่จับ
-               พอ uxsweep เลิกต้องการมันแล้วถอดออก stdsweep ก็ร่วงจากหลายมุมมองเหลือหน้าละ 1
-               โดยไม่มีใครรู้ ⇒ ที่จับของเครื่องมือต้องเป็นของตัวเอง ห้ามยืมของเครื่องมืออื่น) */}
-          <div ref={rowRef} data-tabbar="1" style={{
-            position: 'relative', display: 'flex', gap: 2, borderBottom: '1px solid var(--border)',
-            flexWrap: isMobile ? 'nowrap' : 'wrap',
-            width: isMobile ? 'max-content' : 'auto',
-          }}>
-            {ind && (
-              /* เส้นใต้ที่ "ไถลตาม" แท็บที่เลือก (05/11 เปลี่ยนจากแคปซูลทาสีเต็ม+แสงเรือง → เส้น 2px ใต้ป้าย)
-                 ยังวัดจากปุ่มจริง (กติกา 1–4 ข้างบนคงเดิม) · วางที่ก้นปุ่ม = y + h − 2 ทับเส้นฐานของแถว */
-              <span aria-hidden="true" data-tab-ind="" style={{
-                position: 'absolute', left: 0, top: 0, width: ind.w, height: 2,
-                transform: `translate3d(${ind.x}px, ${ind.y + ind.h - 2}px, 0)`,
-                borderRadius: 2, background: 'var(--accent)',
-                transition: slide, pointerEvents: 'none', zIndex: 1,
-              }} />
-            )}
-
-            {tabList.map(t => {
-              const on = t.key === tab;
-              const selfPaint = on && !ind;   // ยังวัดไม่ได้ = ปุ่มทาสีเอง (กันแท็บที่เลือกวูบหาย)
-              return (
-                <button key={t.key} ref={(el) => { btnRefs.current[t.key] = el; }}
-                  onClick={() => onTab && onTab(t.key)} style={{
-                    position: 'relative', zIndex: 0,
-                    fontSize: 13.5, fontWeight: on ? 700 : 500, padding: '8px 12px', borderRadius: 0, cursor: 'pointer',
-                    whiteSpace: 'nowrap', flexShrink: 0, background: 'transparent', border: 'none',
-                    color: on ? 'var(--text)' : 'var(--muted)',
-                    boxShadow: selfPaint ? 'inset 0 -2px 0 var(--accent)' : 'none',
-                    transition: moving ? 'color .18s ease' : 'none',
-                  }}>
-                  {stripIcon(tr(t.label))}
-                  {t.badge ? <span className="ph-tab-badge">{t.badge}</span> : null}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-  );
+  /* แท็บ = ของกลาง <TabBar audit> (06/11) — หน้าตาเดียวกับแถบในหน้าอื่นที่ใช้ TabBar · `audit` = data-tabbar/data-tab-ind ให้ stdsweep */
+  const renderTabs = () => <TabBar className="ph-chrome" tabs={tabList} value={tab} onChange={onTab} audit />;
 
   /* 📱 มือถือ: แถบกรอง (`filters=`) ที่มีตัวกรอง ≥2 ตัว ⇒ พับเป็นแถบเดียว · ค้นหา/ของหลัง spacer/ปุ่ม hub โชว์เสมอ
      คืน null = ไม่พับ (จอคอม หรือมีตัวกรองตัวเดียว) ⇒ ผู้เรียก render แบบเดิมเป๊ะ (docs/MOBILE-UX-STANDARD.md §2 ข้อ 3) */

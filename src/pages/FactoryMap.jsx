@@ -56,6 +56,7 @@ import { storySectionsFor, mapLensOf } from '../utils/lineLens';
 import { isGifFile, GIF_MAX_BYTES, GIF_TOO_BIG_MSG } from '../utils/imageFileKind';   // ตัวตรวจชนิดไฟล์ + เพดาน GIF = จุดเดียว
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
+import TabBar from '../components/TabBar';
 
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
@@ -2520,17 +2521,15 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
           </div>
         );
       })()}
-      <div className="tv-hide" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-        {Object.entries(METRICS).map(([k, m]) => (
-          <button key={k} onClick={() => setMetric(k)} style={btn(metric === k)}>{m.label}</button>
-        ))}
-        {cycleList.length > 1 && (
-          <button onPointerDown={e => e.stopPropagation()} onClick={() => setCycleOn(v => !v)} title="วนมุมมองอัตโนมัติ (ตั้งจากจอวนหน้า)"
-            style={{ ...btn(cycleOn), position: 'relative' }}>
+      {/* แถวมุมมอง = แท็บเส้นใต้มาตรฐาน (TabBar · 06/11) — เดิมแคปซูลทาสี */}
+      <TabBar className="tv-hide" size="sm" style={{ marginBottom: 8 }} value={metric} onChange={setMetric}
+        tabs={Object.entries(METRICS).map(([k, m]) => ({ key: k, label: m.label }))}
+        right={cycleList.length > 1 && (
+          <button type="button" className="pg-btn" onPointerDown={e => e.stopPropagation()} onClick={() => setCycleOn(v => !v)} title="วนมุมมองอัตโนมัติ (ตั้งจากจอวนหน้า)"
+            style={{ height: 28, fontSize: 12, position: 'relative', color: cycleOn ? 'var(--accent)' : undefined }}>
             {cycleOn ? `วนมุมมอง · ${cycleList.indexOf(metric) + 1}/${cycleList.length}` : 'วนมุมมอง (หยุด)'}<ToggleDot on={cycleOn} />
           </button>
-        )}
-      </div>
+        )} />
       {/* จอคอม/TV = บรรทัดเดียวเสมอ (ชิปยาวหดเป็น … · เต็มอยู่ใน title) ⇒ ความสูงไม่เปลี่ยนตามแท็บ · มือถือ wrap ตามเดิม (index.css .fm-chips) */}
       <div className={isMobile ? undefined : 'fm-chips'} style={{ display: 'flex', gap: 8, flexWrap: isMobile ? 'wrap' : 'nowrap', alignItems: 'center', minHeight: 30, marginBottom: 12, ...(tv ? { zoom: 1.6 } : {}) }}>
         {/* ⚡ พลังงานเป็นข้อมูล "รายเดือน" ไม่ใช่ live เหมือน metric อื่นบนจอนี้ — ต้องประกาศเดือนเสมอ
@@ -2735,7 +2734,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                 return (
                   <polygon key={r.id} data-region points={ptsStr(r.points)}
                     className={meta.blink ? 'region-alarm' : undefined}
-                    fill={meta.blink ? undefined : `${meta.color}${hl ? '55' : '2b'}`} stroke={meta.blink ? undefined : meta.color}
+                    fill={meta.blink ? undefined : tint(meta.color, hl ? 'line' : 'dim')}   /* 06/11: token ต่อ alpha ไม่ได้ (เคยดำทั้งผัง) */ stroke={meta.blink ? undefined : meta.color}
                     strokeWidth={hl ? '3.5' : '1.75'} vectorEffect="non-scaling-stroke" strokeLinejoin="round"
                     style={{ pointerEvents: drawing ? 'none' : 'auto', cursor: editing ? 'move' : 'pointer' }}
                     onClick={(e) => { if (!editing) { e.stopPropagation(); openLine(r.line_name); } }}
