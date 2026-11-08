@@ -835,7 +835,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
                           style={{
                             position: 'absolute', top: 5 + lane * LANE_H, height: LANE_H - 6,
                             left: `${Math.min(left, 97)}%`, width: `${(SPAN_MIN / span) * 100}%`, minWidth: 48,
-                            background: plan ? 'transparent' : `${color}${isSel ? '55' : '22'}`, border: `1.5px ${plan ? 'dashed' : 'solid'} ${color}${isSel ? '' : 'cc'}`, borderRadius: 5, zIndex: 1,
+                            background: plan ? 'transparent' : tint(color, isSel ? 'line' : 'dim'), border: `1.5px ${plan ? 'dashed' : 'solid'} ${isSel ? color : tint(color, 'line')}`, borderRadius: 5, zIndex: 1,
                             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, overflow: 'hidden', cursor: 'pointer', boxSizing: 'border-box',
                             boxShadow: od ? `0 0 5px ${tint(color, 'line')}` : 'none',
                           }}>

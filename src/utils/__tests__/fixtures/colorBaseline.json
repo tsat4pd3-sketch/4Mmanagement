@@ -1,8 +1,8 @@
 {
   "_meta": {
-    "generatedAt": "2026-11-05",
+    "generatedAt": "2026-11-08",
     "files": 197,
-    "total": 2553
+    "total": 2536
   },
   "files": {
     "src/components/AuditLogViewer.jsx": 3,
@@ -62,7 +62,7 @@
     "src/components/MonitoringUpload.jsx": 12,
     "src/components/MonthlyReviewExport.jsx": 2,
     "src/components/MtnKpiPanel.jsx": 9,
-    "src/components/MtnPurchase.jsx": 29,
+    "src/components/MtnPurchase.jsx": 26,
     "src/components/MyQueuePanel.jsx": 3,
     "src/components/NpiDrawingsEci.jsx": 19,
     "src/components/NpiPartPanel.jsx": 19,
@@ -194,7 +194,7 @@
     "src/pages/QrLabels.jsx": 4,
     "src/pages/QualityControl.jsx": 18,
     "src/pages/RackCenter.jsx": 1,
-    "src/pages/Report.jsx": 226,
+    "src/pages/Report.jsx": 212,
     "src/pages/RundownStock.jsx": 1,
     "src/pages/SchemaMap.jsx": 1,
     "src/pages/ScrapReport.jsx": 9,

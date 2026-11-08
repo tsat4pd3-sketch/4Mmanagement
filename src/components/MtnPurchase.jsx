@@ -21,6 +21,8 @@ import { fetchAllRows } from '../utils/fetchAllRows';
 import { fetchByIds } from '../utils/fetchByIds';
 import SearchSelect from './SearchSelect';
 import SupplierSelect from './SupplierSelect';
+import CollapseCard from './CollapseCard';
+import RowFold from './RowFold';
 import { fmtDateTime } from '../utils/dateFormat';
 import {
   PR_STATUS_META, PR_SOURCE_LABEL, prStatusMeta, isPrOpen, REPAIR_PATHS, repairPathMeta,
@@ -465,73 +467,96 @@ export function MtnPrBoard({ parts = [], fullName, canEdit = false, onStockChang
   const hasNoList = openList.filter(p => !isAwaitingPrNo(p));
   const doneList = prs.filter(p => !isPrOpen(p)).slice(0, 50);
 
+  /* ตัวนับบนหัวแผง = ไฟสถานะ ⇒ ใช้โทเคนสถานะกลาง ไม่ใช่ hex ดิบ (ด่าน colorRatchet · statusTone §กฎข้อ 1) */
+  const chipS = (on, c = 'var(--red)') => ({ fontSize: 11.5, fontWeight: 600, color: on ? c : 'var(--muted)' });
+  const h3 = { fontSize: 12, fontWeight: 700, margin: '6px 0 4px' };
+
   return (
     /* data-subpanel = **แผงของตัวเอง** ไม่ใช่ "แถวสรุปเหนือแถบกรอง" — แท็บ 🔩 คลังอะไหล่ วางแผงนี้
        ไว้เหนือแผงทะเบียนอะไหล่ ซึ่งมีแถบกรองของแผงตัวเอง (หน้านี้ไม่มีแถบกรองระดับหน้า)
-       ⇒ ประกาศไว้ให้ `audit/stdsweep.mjs` ไม่ตีเป็นลำดับผิด (UI-STANDARD §2.1) */
-    <div data-subpanel="1" style={{ ...box, marginBottom: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-        <b style={{ fontSize: 13.5 }}>ใบขอซื้ออะไหล่ (PR)</b>
-        <span style={{ fontSize: 11.5, color: needOrder.length ? '#ef4444' : 'var(--muted)' }}>ติด Min ยังไม่เปิด PR {needOrder.length} รายการ</span>
-        <span style={{ fontSize: 11.5, color: noPrMos.length ? '#ef4444' : 'var(--muted)' }}>· ใบ MO รอเปิด PR {noPrMos.length}</span>
-        <span style={{ fontSize: 11.5, color: waitNoList.length ? '#f59e0b' : 'var(--muted)' }}>· รอเลข PR {waitNoList.length}</span>
-        <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>· PR ค้าง {hasNoList.length} ใบ</span>
-        {canEdit && <button onClick={() => setFreeForm(v => !v)} style={{ ...btnGhost, marginLeft: 'auto' }}>{freeForm ? 'ปิดฟอร์ม' : '+ เปิด PR เอง'}</button>}
-      </div>
-      <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, lineHeight: 1.6 }}>
-        ลูปเดียวกับสโตร์ purchase part: <b>ติด Min / ใบ MO ขอซื้อ → แอดมินช่างกรอกเลข PR จาก SAP → สั่งแล้ว (PO) → ของเข้า กดรับ = เข้าสต็อกอัตโนมัติ</b>
-        · จำนวนเสนอ = เติมถึง Max (ไม่ตั้ง Max = 2×Min) หักยอดที่เปิด PR ค้างไว้แล้ว · Min ว่าง/0 = ไม่ตรวจ
-      </div>
-      {err && <div style={{ fontSize: 11, color: '#ef4444', marginBottom: 6 }}>⚠ โหลดใบขอซื้อไม่สำเร็จ: {err} — ตัวนับข้างบนอาจไม่ครบ</div>}
-      {freeForm && canEdit && <NewPrForm parts={parts} glCodes={glCodes} fullName={fullName}
-        defaults={{ source: 'manual' }} onCancel={() => setFreeForm(false)} onDone={() => { setFreeForm(false); reload(); }} />}
+       ⇒ ประกาศไว้ให้ `audit/stdsweep.mjs` ไม่ตีเป็นลำดับผิด (UI-STANDARD §2.1)
 
-      {below.length > 0 && (
-        <div style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>🔴 อะไหล่ที่ติด Min ({below.length})</div>
-          {below.map(({ p, open, need }) => (
-            <div key={p.id}>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, padding: '4px 0', borderBottom: '1px dashed var(--border)' }}>
-                <span style={{ flex: 1, minWidth: 160 }}><b>{p.name}</b>{p.code ? <span style={{ color: 'var(--muted)', fontFamily: 'monospace' }}> · {p.code}</span> : null}</span>
-                <span style={{ color: '#ef4444' }}>คงเหลือ {p.stock_qty ?? 0}</span>
-                <span style={{ color: 'var(--muted)' }}>Min {p.min_qty}{p.max_qty ? ` · Max ${p.max_qty}` : ''}</span>
-                {open > 0 && <span style={{ color: '#0ea5e9' }}>PR ค้าง {open}</span>}
-                {need > 0
-                  ? (canEdit && <button onClick={() => setOpenFor(openFor === p.id ? null : p.id)} style={{ ...btnGhost, color: 'var(--accent)', borderColor: 'var(--accent)' }}>เปิด PR {need} {p.unit || ''}</button>)
-                  : <span style={{ fontSize: 11, color: '#22c55e' }}>✓ PR ค้างครอบแล้ว</span>}
+       🔻 **พับไว้เป็นค่าเริ่มต้น (08/11 · คำสั่ง user จากจอมือถือ)** — แผงนี้มี 5 ลิสต์ซ้อนกัน
+          (อะไหล่ติด Min จริง 58 แถว) ⇒ กางหมดแล้วดัน KPI คลังอะไหล่ตกจอไป 3 หน้าจอ
+       🔴 **ตัวนับ + ⚠ โหลดไม่ครบ ต้องอยู่บนหัวที่เห็นตอนพับ** — พับแล้วเตือนหาย = จอโกหก
+          (ไลน์ที่ของหมดไม่มีใครรู้) · user กางครั้งเดียวแล้ว CollapseCard จำให้ใน localStorage */
+    <div data-subpanel="1">
+      <CollapseCard
+        id="pr-board" storePrefix="mtnpr" defaultOpen={false} style={{ ...box, marginBottom: 14 }}
+        title={(
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <b style={{ fontSize: 13.5 }}>ใบขอซื้ออะไหล่ (PR)</b>
+            <span style={chipS(needOrder.length)}>ติด Min ยังไม่เปิด PR {needOrder.length}</span>
+            <span style={chipS(noPrMos.length)}>· ใบ MO รอเปิด PR {noPrMos.length}</span>
+            <span style={chipS(waitNoList.length, 'var(--amber)')}>· รอเลข PR {waitNoList.length}</span>
+            <span style={chipS(false)}>· PR ค้าง {hasNoList.length} ใบ</span>
+            {err && <span style={chipS(true)}>· ⚠ โหลดไม่ครบ</span>}
+          </span>
+        )}
+      >
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, lineHeight: 1.6 }}>
+          ลูปเดียวกับสโตร์ purchase part: <b>ติด Min / ใบ MO ขอซื้อ → แอดมินช่างกรอกเลข PR จาก SAP → สั่งแล้ว (PO) → ของเข้า กดรับ = เข้าสต็อกอัตโนมัติ</b>
+          · จำนวนเสนอ = เติมถึง Max (ไม่ตั้ง Max = 2×Min) หักยอดที่เปิด PR ค้างไว้แล้ว · Min ว่าง/0 = ไม่ตรวจ
+        </div>
+        {err && <div style={{ fontSize: 11, color: '#ef4444', marginBottom: 6 }}>⚠ โหลดใบขอซื้อไม่สำเร็จ: {err} — ตัวนับข้างบนอาจไม่ครบ</div>}
+        {canEdit && <button onClick={() => setFreeForm(v => !v)} style={{ ...btnGhost, marginBottom: 8 }}>{freeForm ? 'ปิดฟอร์ม' : '+ เปิด PR เอง'}</button>}
+        {freeForm && canEdit && <NewPrForm parts={parts} glCodes={glCodes} fullName={fullName}
+          defaults={{ source: 'manual' }} onCancel={() => setFreeForm(false)} onDone={() => { setFreeForm(false); reload(); }} />}
+
+        {below.length > 0 && (
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>🔴 อะไหล่ที่ติด Min ({below.length})</div>
+            <RowFold rows={below} unit="รายการ">{({ p, open, need }) => (
+              <div key={p.id}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, padding: '4px 0', borderBottom: '1px dashed var(--border)' }}>
+                  <span style={{ flex: 1, minWidth: 160 }}><b>{p.name}</b>{p.code ? <span style={{ color: 'var(--muted)', fontFamily: 'monospace' }}> · {p.code}</span> : null}</span>
+                  <span style={{ color: '#ef4444' }}>คงเหลือ {p.stock_qty ?? 0}</span>
+                  <span style={{ color: 'var(--muted)' }}>Min {p.min_qty}{p.max_qty ? ` · Max ${p.max_qty}` : ''}</span>
+                  {open > 0 && <span style={{ color: '#0ea5e9' }}>PR ค้าง {open}</span>}
+                  {need > 0
+                    ? (canEdit && <button onClick={() => setOpenFor(openFor === p.id ? null : p.id)} style={{ ...btnGhost, color: 'var(--accent)', borderColor: 'var(--accent)' }}>เปิด PR {need} {p.unit || ''}</button>)
+                    : <span style={{ fontSize: 11, color: '#22c55e' }}>✓ PR ค้างครอบแล้ว</span>}
+                </div>
+                {openFor === p.id && <NewPrForm parts={parts} glCodes={glCodes} fullName={fullName}
+                  defaults={{ source: 'spare_min', part_id: p.id, item_name: p.name, qty: need, unit: p.unit, unit_price: p.unit_price, supplier: p.supplier, team: p.team, section: p.section, gl_category: 'spare_part' }}
+                  onCancel={() => setOpenFor(null)} onDone={() => { setOpenFor(null); reload(); }} />}
               </div>
-              {openFor === p.id && <NewPrForm parts={parts} glCodes={glCodes} fullName={fullName}
-                defaults={{ source: 'spare_min', part_id: p.id, item_name: p.name, qty: need, unit: p.unit, unit_price: p.unit_price, supplier: p.supplier, team: p.team, section: p.section, gl_category: 'spare_part' }}
-                onCancel={() => setOpenFor(null)} onDone={() => { setOpenFor(null); reload(); }} />}
-            </div>
-          ))}
-        </div>
-      )}
-      {!below.length && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>✅ ไม่มีอะไหล่ที่ติด Min (เฉพาะรายการที่ตั้ง Min ไว้)</div>}
-
-      <div style={{ fontSize: 12, fontWeight: 700, margin: '6px 0 4px', color: noPrMos.length ? '#ef4444' : undefined }}>ใบ MO ที่ช่างเลือกว่าต้องเปิด PR — ยังไม่มีรายการขอซื้อ ({noPrMos.length})</div>
-      {noPrMos.length ? noPrMos.map(o => (
-        <div key={o.id}>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, padding: '5px 9px', borderRadius: 8, background: 'var(--card)', border: '1px solid var(--border)', borderLeft: '4px solid #ef4444', marginBottom: 6 }}>
-            <a href={`/mtn-repair?mo=${encodeURIComponent(o.id)}`} style={{ color: 'var(--accent)', fontWeight: 800 }} title="เปิดใบ MO">{o.mo_no || 'ใบ MO (ยังไม่มีเลข)'}</a>
-            <span style={{ flex: 1, minWidth: 160 }}>{[o.item_type, o.machine_no, o.line_name].filter(Boolean).join(' · ') || '—'}</span>
-            <span style={{ color: 'var(--muted)' }}>{repairPathMeta(o.repair_path)?.label}</span>
-            <span style={{ color: 'var(--muted)' }}>แจ้ง {fmtDateTime(o.report_at)}</span>
-            {canEdit && <button onClick={() => setPrFor(prFor === o.id ? null : o.id)} style={{ ...btnGhost, color: 'var(--accent)', borderColor: 'var(--accent)' }}>+ กรอกรายการขอซื้อ / เลข PR</button>}
+            )}</RowFold>
           </div>
-          {prFor === o.id && <NewPrForm parts={parts} glCodes={glCodes} fullName={fullName}
-            defaults={{ source: 'mo', order_id: o.id, order: o, team: o.mtn_dept, section: o.dept_section || null, repairPath: o.repair_path }}
-            onCancel={() => setPrFor(null)} onDone={() => { setPrFor(null); reload(); }} />}
-        </div>
-      )) : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>ไม่มีใบ MO ที่รอเปิด PR</div>}
-      <div style={{ fontSize: 12, fontWeight: 700, margin: '6px 0 4px', color: waitNoList.length ? '#f59e0b' : undefined }}>⏳ รอเลข PR จาก SAP ({waitNoList.length}) — แอดมินช่างกรอกเลขผูกกับใบ MO</div>
-      {waitNoList.length ? waitNoList.map(pr => <PrRow key={pr.id} pr={pr} canEdit={canEdit} own={ownOf(pr)} fullName={fullName} onChanged={reload} showSource mo={mos[pr.order_id] || null} />)
-        : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>ไม่มีใบที่รอเลข PR</div>}
-      <div style={{ fontSize: 12, fontWeight: 700, margin: '6px 0 4px' }}>PR ค้าง — รอสั่ง / รอของ ({hasNoList.length})</div>
-      {hasNoList.length ? hasNoList.map(pr => <PrRow key={pr.id} pr={pr} canEdit={canEdit} own={ownOf(pr)} fullName={fullName} onChanged={reload} showSource mo={mos[pr.order_id] || null} />)
-        : <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ไม่มี PR ค้าง</div>}
-      <button onClick={() => setShowDone(v => !v)} style={{ ...btnGhost, marginTop: 6 }}>{showDone ? 'ซ่อน' : 'ดู'} PR ที่จบแล้ว (50 ล่าสุด)</button>
-      {showDone && <div style={{ marginTop: 6 }}>{doneList.map(pr => <PrRow key={pr.id} pr={pr} canEdit={false} fullName={fullName} showSource />)}</div>}
+        )}
+        {!below.length && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>✅ ไม่มีอะไหล่ที่ติด Min (เฉพาะรายการที่ตั้ง Min ไว้)</div>}
+
+        <div style={{ ...h3, color: noPrMos.length ? '#ef4444' : undefined }}>ใบ MO ที่ช่างเลือกว่าต้องเปิด PR — ยังไม่มีรายการขอซื้อ ({noPrMos.length})</div>
+        {noPrMos.length ? <RowFold rows={noPrMos} unit="ใบ">{o => (
+          <div key={o.id}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, padding: '5px 9px', borderRadius: 8, background: 'var(--card)', border: '1px solid var(--border)', borderLeft: '4px solid #ef4444', marginBottom: 6 }}>
+              <a href={`/mtn-repair?mo=${encodeURIComponent(o.id)}`} style={{ color: 'var(--accent)', fontWeight: 800 }} title="เปิดใบ MO">{o.mo_no || 'ใบ MO (ยังไม่มีเลข)'}</a>
+              <span style={{ flex: 1, minWidth: 160 }}>{[o.item_type, o.machine_no, o.line_name].filter(Boolean).join(' · ') || '—'}</span>
+              <span style={{ color: 'var(--muted)' }}>{repairPathMeta(o.repair_path)?.label}</span>
+              <span style={{ color: 'var(--muted)' }}>แจ้ง {fmtDateTime(o.report_at)}</span>
+              {canEdit && <button onClick={() => setPrFor(prFor === o.id ? null : o.id)} style={{ ...btnGhost, color: 'var(--accent)', borderColor: 'var(--accent)' }}>+ กรอกรายการขอซื้อ / เลข PR</button>}
+            </div>
+            {prFor === o.id && <NewPrForm parts={parts} glCodes={glCodes} fullName={fullName}
+              defaults={{ source: 'mo', order_id: o.id, order: o, team: o.mtn_dept, section: o.dept_section || null, repairPath: o.repair_path }}
+              onCancel={() => setPrFor(null)} onDone={() => { setPrFor(null); reload(); }} />}
+          </div>
+        )}</RowFold> : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>ไม่มีใบ MO ที่รอเปิด PR</div>}
+
+        <div style={{ ...h3, color: waitNoList.length ? '#f59e0b' : undefined }}>⏳ รอเลข PR จาก SAP ({waitNoList.length}) — แอดมินช่างกรอกเลขผูกกับใบ MO</div>
+        {waitNoList.length
+          ? <RowFold rows={waitNoList} unit="ใบ">{pr => <PrRow key={pr.id} pr={pr} canEdit={canEdit} own={ownOf(pr)} fullName={fullName} onChanged={reload} showSource mo={mos[pr.order_id] || null} />}</RowFold>
+          : <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 6 }}>ไม่มีใบที่รอเลข PR</div>}
+
+        <div style={h3}>PR ค้าง — รอสั่ง / รอของ ({hasNoList.length})</div>
+        {hasNoList.length
+          ? <RowFold rows={hasNoList} unit="ใบ">{pr => <PrRow key={pr.id} pr={pr} canEdit={canEdit} own={ownOf(pr)} fullName={fullName} onChanged={reload} showSource mo={mos[pr.order_id] || null} />}</RowFold>
+          : <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ไม่มี PR ค้าง</div>}
+
+        <button onClick={() => setShowDone(v => !v)} style={{ ...btnGhost, marginTop: 6 }}>{showDone ? 'ซ่อน' : 'ดู'} PR ที่จบแล้ว (50 ล่าสุด)</button>
+        {showDone && <div style={{ marginTop: 6 }}>
+          <RowFold rows={doneList} unit="ใบ">{pr => <PrRow key={pr.id} pr={pr} canEdit={false} fullName={fullName} showSource />}</RowFold>
+        </div>}
+      </CollapseCard>
     </div>
   );
 }

@@ -27,6 +27,7 @@ import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import SearchSelect from './SearchSelect';
 import FilterBar from './FilterBar';
 import SearchInput from './SearchInput';
+import RowFold from './RowFold';
 import { ALL } from '../utils/filterLabels';
 import MachineSelect from './MachineSelect';
 import SupplierSelect from './SupplierSelect'; // ผู้ขาย = ทะเบียน DR suppliers (ชิ้นส่วน/อะไหล่ขึ้นก่อน) — 2026-09-08
@@ -380,7 +381,11 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
             <th style={{ ...th, width: 190 }}></th>
           </tr></thead>
           <tbody>
-            {filtered.map(p => {
+            {/* 🔻 295 แถว × รูป 1 ใบต่อแถว render แบนทั้งก้อน = มือถือเลื่อนไม่จบ + DOM หนัก (08/11 · คำสั่ง user)
+                ⇒ โชว์ 50 แถวแรก ที่เหลือกด "ดูทั้งหมด" · **ไม่ใช่ paging** — ข้อมูลครบเท่าเดิม
+                🔴 แถบกรอง/ค้นหาอยู่ข้างบนแล้ว ⇒ หาของเจอโดยไม่ต้องกางเสมอ
+                🔴 50 ไม่ใช่ 10 — ทะเบียนคือเหตุผลที่หน้านี้มีอยู่ ตัดเหลือ 10 = ใช้งานไม่ได้ */}
+            <RowFold rows={filtered} max={50} unit="รายการ" colSpan={13}>{p => {
               const st = p._state, rk = p._rank, c = catOf(p.category);
               return (
                 <tr key={p.id}>
@@ -441,7 +446,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
                   </td>
                 </tr>
               );
-            })}
+            }}</RowFold>
             {!filtered.length && !loading && (
               <tr><td colSpan={13} style={{ ...td, textAlign: 'center', color: 'var(--muted)', padding: 24 }}>
                 {parts.length ? 'ไม่พบอะไหล่ตามเงื่อนไขที่กรอง' : 'ยังไม่มีอะไหล่ในคลัง — กด "➕ เพิ่มอะไหล่"'}
