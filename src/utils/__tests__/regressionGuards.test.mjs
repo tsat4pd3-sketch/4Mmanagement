@@ -5219,10 +5219,14 @@ test('🛡️ die-pps-no-guess-one — ชิ้น/จังหวะต้อ�
   if (/pieces_per_stroke[^\n]*\?\?\s*1\b/.test(reg))
     bad.push('src/pages/DieRegistry.jsx (บีบ pieces_per_stroke ว่าง → 1 ตอนเซฟ/ตอนโชว์)');
 
-  /* หน้าไหนจะคิด shot ต้องขอค่าผ่าน ppsOf ห้ามหยิบคอลัมน์ดิบไปหาร */
-  for (const rel of ['src/components/PmUsageBoard.jsx']) {
+  /* หน้าไหนจะคิด shot ต้องขอค่าผ่าน ppsOf ห้ามหยิบคอลัมน์ดิบไปหาร
+     08/11: สูตร shot ของแม่พิมพ์ย้ายไป src/utils/dieUsage.js (คิดย้อนตามสาย) — ตัวนั้นต้องเรียก ppsOf (โหมด legacy) */
+  for (const rel of ['src/utils/dieUsage.js']) {
     const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
     if (!/ppsOf\s*\(/.test(code)) bad.push(rel + ' (ไม่เรียก ppsOf)');
+  }
+  for (const rel of ['src/components/PmUsageBoard.jsx', 'src/utils/dieUsage.js']) {
+    const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
     if (/piecesToShots\s*\([^)]*\.pieces_per_stroke/.test(code))
       bad.push(rel + ' (ส่งคอลัมน์ดิบเข้า piecesToShots — ข้ามการถอยชั้น)');
   }
@@ -5230,6 +5234,23 @@ test('🛡️ die-pps-no-guess-one — ชิ้น/จังหวะต้อ�
     + '   ทำไม: แม่พิมพ์สเปค "ทน 50,000 shot" ถ้าระบบคิด 1 ชิ้น = 1 shot กับงานคู่\n'
     + '         PM จะเด้งตอนครบ 50,000 ชิ้น = 25,000 shot จริง = ช้าไป 2 เท่า แม่พิมพ์พังก่อนถึงคิว\n'
     + '   แก้: ppsOf(die, set) ใน src/utils/pmUsage.js · ไม่รู้ = null จอต้องเขียนบอก ห้ามเดา 1\n');
+});
+
+/* ── 🔨 แม่พิมพ์นับจากพาร์ทของชุด ห้ามกลับไปใช้ยอดไลน์ (2026-11-08 · คำสั่ง user) ───────
+   *"ไลน์ 800 ผลิตงาน a100, b100 เครื่องทำ 200 shot แต่ a ไม่ได้เท่ากับ 200"*
+   เดิมจอยอดผลิตสะสมให้แม่พิมพ์ทุกตัวในไลน์ = ยอดทั้งไลน์ · วัดจริง: เกินยอดพาร์ทจริง ~15 เท่า
+   ⇒ แม่พิมพ์ต้องผ่าน dieUsage() (MAT ของชุด · ทุกไลน์) · ไม่ผูก MAT = null "นับไม่ได้" ห้ามถอยไปยอดไลน์ */
+test('🛡️ die-usage-by-part — แม่พิมพ์นับจาก MAT ของชุด ไม่ใช่ยอดไลน์', () => {
+  const bad = [];
+  const board = stripComments(readFileSync(join(ROOT, 'src/components/PmUsageBoard.jsx'), 'utf8'));
+  if (!/dieUsage\s*\(/.test(board)) bad.push('PmUsageBoard.jsx (ไม่เรียก dieUsage)');
+  if (!/isDie\s*\?\s*du\.pieces\s*:/.test(board)) bad.push('PmUsageBoard.jsx (ยอดของแม่พิมพ์ไม่ได้มาจาก dieUsage)');
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/dieUsage.js'), 'utf8'));
+  if (!/if\s*\(\s*!mats\.length\s*\)\s*return null/.test(util)) bad.push('dieUsage.js (ชุดไม่ผูก MAT ต้องคืน null)');
+  if (/line_name\s*:\s*r\.line_name/.test(util)) bad.push('dieUsage.js (กลับไปนับตามไลน์)');
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: ไลน์ผลิตหลายพาร์ท — แม่พิมพ์ของพาร์ท A ทำงานเฉพาะตอนผลิต A · ยอดไลน์ = PM แม่พิมพ์เด้งเร็วผิด\n'
+    + '   แก้: dieUsage() ใน src/utils/dieUsage.js · RPC pm_usage_daily_by_mat (DR)\n');
 });
 
 /* ── 🔴 คำเตือน "5xx ปนกับ 2xx/3xx" ห้ามกลับมา (2026-10-14 · user แก้ให้เอง) ───────
