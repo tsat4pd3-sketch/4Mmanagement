@@ -330,6 +330,53 @@ function SignField({ signatureUrl, existing, onChange }) {
   );
 }
 
+/* 📝 เปิดใบแจ้งซ่อมจากรายการ Downtime (หน้า /daily-report) — ฟอร์มเดียวกับหน้านี้ (08/11 · คำสั่ง user)
+   โหลดทะเบียนที่ฟอร์มต้องใช้เอง (หน้า Daily Report ไม่มี) · โหลดไม่สำเร็จ = เขียนบนจอ + ลองใหม่ ห้ามเปิดฟอร์มครึ่งๆ
+   ⚠️ ไลน์ในฟอร์ม = เฉพาะครอบครัวไลน์ของกะนี้ (ไม่ขยายขอบเขตเกินกะที่คนนี้ทำงานอยู่) */
+export function MoReportFromDowntime({ downtime, lineName, initial, defaultDept, fullName, onClose, onSaved }) {
+  const [st, setSt] = useState({ loading: true, err: '' });
+  const [m, setM] = useState(null);
+  const load = useCallback(async () => {
+    setSt({ loading: true, err: '' });
+    const [ln, mc, pt, rt, it, mt, od] = await Promise.all([
+      loadLinesRes(),
+      supabaseDR.from('machines').select('id, line_name, machine_no, machine_name, equipment_kind, io_no, machine_type_id').eq('is_active', true).order('sort_order'),
+      supabaseDR.from('mtn_problem_types').select('*').eq('is_active', true).order('sort_order'),
+      supabaseDR.from('mtn_repair_types').select('*').eq('is_active', true).order('sort_order'),
+      supabaseDR.from('mtn_item_types').select('*').eq('is_active', true).order('sort_order'),
+      supabaseDR.from('machine_types').select('*').then(r => r).catch(() => ({ data: [] })),
+      // ใบที่ยังเปิดบนเครื่องเดียวกัน — ให้ฟอร์มเตือน "ใบซ้ำ" ได้เหมือนหน้าแจ้งซ่อม (คัดเฉพาะเครื่องนี้ ไม่โหลดทั้งตาราง)
+      downtime?.machine_no
+        ? supabaseDR.from('mtn_orders').select('id, machine_no, mtn_dept, report_at, status, mo_no, problem_characteristic').eq('machine_no', downtime.machine_no).order('report_at', { ascending: false }).limit(50)
+        : Promise.resolve({ data: [] }),
+    ]);
+    const err = ln?.error?.message || mc.error?.message || pt.error?.message || it.error?.message || '';
+    if (err) { setSt({ loading: false, err }); return; }
+    const all = ln?.data || [];
+    const fam = new Set(getLineFamilyNames(all, lineName || ''));
+    setM({
+      lines: all.filter(l => fam.has(l.name)),
+      machines: mc.data || [], problemTypes: pt.data || [], repairTypes: rt.data || [], itemTypes: it.data || [],
+      machineTypesById: Object.fromEntries((mt?.data || []).map(t => [t.id, t])), orders: od.data || [],
+    });
+    setSt({ loading: false, err: '' });
+  }, [downtime?.machine_no, lineName]);
+  useEffect(() => { load(); }, [load]);
+  if (st.loading || st.err || !m) return (
+    <ModalShell title="เปิดใบแจ้งซ่อมจาก Downtime" onClose={onClose}>
+      {st.err
+        ? <div style={{ color: 'var(--red)', fontSize: 13 }}>⚠️ โหลดทะเบียนของฟอร์มแจ้งซ่อมไม่สำเร็จ ({st.err}) — ยังเปิดใบไม่ได้
+            <div><button type="button" onClick={load} style={{ marginTop: 8, fontSize: 12, padding: '4px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>ลองใหม่</button></div></div>
+        : <div style={{ color: 'var(--muted)', fontSize: 13 }}>กำลังโหลดฟอร์มแจ้งซ่อม…</div>}
+    </ModalShell>
+  );
+  return (
+    <ReportModal {...m} fullName={fullName} defaultDept={defaultDept} onClose={onClose} onSaved={onSaved}
+      title={`เปิดใบแจ้งซ่อมจาก Downtime · ${lineName || ''}`} initial={initial}
+      sourceDowntimeId={downtime?.id || null} requireBefore />
+  );
+}
+
 function ImgField({ label, value, onPick, required }) {
   return (
     <div>
@@ -1244,8 +1291,15 @@ function FormStep({ n, title, visible = true }) {
 }
 
 /* ── Step 1: แจ้งซ่อม ─────────────────────────────────── */
-function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machineTypesById = {}, orders = [], itemTypes, problemTypes, repairTypes = [], mtnDepts = MTN_DEPTS, fullName, defaultDept, onClose, onSaved }) {
-  const [f, setF] = useState({
+/* 📝 `fromDowntime` (08/11 · คำสั่ง user "เปิดใบแจ้งซ่อมจากดาวน์ไทม์ ต้องไม่เด้งเปิดทันที ต้องแนบรูปบังคับ
+     และใส่รายละเอียดให้ชัดเจนมากกว่าดึงแค่ดาวน์ไทม์ไปเปิดใบ") — ใช้ฟอร์มเดียวกับหน้านี้ทุกช่อง
+     · `initial` = ค่าที่เติมจากดาวน์ไทม์ (ไลน์/เครื่อง/เวลาเกิดเหตุ/ทีม/คำที่พนักงานพิมพ์) คนแก้ได้ทุกช่อง
+     · `sourceDowntimeId` ผูกที่มา (กันเปิดซ้ำ + MTTR เขียนเวลากลับ `syncDowntimeTimes`)
+     · `requireBefore` = รูปก่อนซ่อมบังคับ · ไม่ส่ง 3 ตัวนี้ = พฤติกรรมเดิมเป๊ะ */
+function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machineTypesById = {}, orders = [], itemTypes, problemTypes, repairTypes = [], mtnDepts = MTN_DEPTS, fullName, defaultDept, onClose, onSaved,
+  initial = null, sourceDowntimeId = null, requireBefore = false, title = 'แจ้งซ่อมใหม่ (Step 1)' }) {
+  const [f, setF] = useState(() => {
+    const base = {
     mtn_dept: teamKeyOf(defaultDept) || 'maintenance', repair_scope: 'in_line', line_name: '', item_type: '', machine_no: '', dept_section: '', work_area: '',
     cost_center: '', model: '', customer: '', code: '', want_at: '', problem_group: '', problem_characteristic: '', problem_detail: '',
     /* ── ช่องเฉพาะฟอร์มกระดาษของทีม MTN (FM-MTN · 2026-09-15) — ทีมอื่นไม่โชว์ ── */
@@ -1254,6 +1308,13 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
     // 2026-09-08 (feedback admin): ผู้แจ้งเลือก BM/PM ได้ตั้งแต่ขั้น 1 (หัวหน้าช่างยังแก้ได้ที่ขั้น 2 ก่อนออกเลข MO)
     //   + occurred_at = "วันเวลาที่เกิดเหตุจริง" สำหรับแจ้งย้อนหลัง — แยกจาก report_at (เวลากดแจ้ง = นาฬิกา KPI/เลข MO) ไม่ทับกัน
     repair_type: '', occurred_at: '',
+    };
+    if (!initial) return base;
+    /* ไลน์ที่เติมมา → แผนก + cost center ตามกฎเดียวกับ onLine (ไลน์ลูกไม่มี CC = ใช้ของไลน์แม่) */
+    const l = initial.line_name ? lines.find(x => x.name === initial.line_name) : null;
+    let cc = l?.cost_center || '';
+    if (!cc && l?.parent_line_name) cc = lines.find(x => x.name === l.parent_line_name)?.cost_center || '';
+    return { ...base, dept_section: l?.section || '', cost_center: cc, ...initial };
   });
   const [beforeFile, setBeforeFile] = useState(null);
   const beforeUrl = useObjectUrl(beforeFile);
@@ -1526,6 +1587,7 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
     if (!f.item_type) return toast.error('เลือกชนิดอุปกรณ์');
     if (!f.problem_characteristic) return toast.error('เลือกลักษณะปัญหา (เลือกกลุ่มแล้วเลือกหัวข้อย่อยด้วย)');
     if (noteCheck.blocked) return toast.error(noteCheck.message);
+    if (requireBefore && !beforeFile) return toast.error('แนบรูปก่อนซ่อม — ใบที่เปิดจาก Downtime ต้องมีรูปให้ช่างเห็นอาการ');
     const occurredIso = f.occurred_at ? new Date(f.occurred_at).toISOString() : null;
     if (occurredIso && new Date(occurredIso) > new Date()) return toast.error('วันเวลาที่เกิดเหตุเป็นอนาคตไม่ได้');
     setSaving(true);
@@ -1546,7 +1608,8 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
       } : {};
       const { contact_phone, pr_no, io_no, purpose, dept_manager_name, plant_manager_name, ...fRest } = f;  // eslint-disable-line no-unused-vars
       const payload = { ...fRest, ...mtnForm, problem_group: groupForDb(f.problem_group), want_at: f.want_at || null, repair_type: f.repair_type || null, occurred_at: occurredIso, status: 'pending', current_step: 1,
-        report_at: nowIso2, work_date: getWorkDate(), reported_by_name: fullName, reported_by_uid: user?.id || null };
+        report_at: nowIso2, work_date: getWorkDate(), reported_by_name: fullName, reported_by_uid: user?.id || null,
+        ...(sourceDowntimeId ? { source_downtime_id: sourceDowntimeId } : {}) };
       let { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single();
       // ยังไม่ apply migration (problem_group / occurred_at) → ตัดคอลัมน์เสริมแล้วลองใหม่ (แจ้งซ่อมต้องไม่พังเพราะฟีเจอร์เสริม)
       if (error?.code === '42703') {
@@ -1564,7 +1627,7 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
   };
 
   return (
-    <ModalShell title="แจ้งซ่อมใหม่ (Step 1)" onClose={onClose} dirty={dirty}>
+    <ModalShell title={title} onClose={onClose} dirty={dirty}>
       {/* 📝 คอลัมน์เดียว ไล่กรอกลงทีละขั้น · แต่ละมิติเรียง "ใหญ่ → เล็ก" (05/10 · คำสั่ง user — เดิม 2 คอลัมน์ ตาต้องสลับซ้าย-ขวา)
           ① ทีม/ชนิดงาน → ② ที่ไหน (แผนก → ส่วนงาน → ไลน์) → ③ อุปกรณ์ (ชนิด → เลข) → ④ ปัญหา (กลุ่ม → หัวข้อย่อย → รายละเอียด → รูป)
           → ⑤ ช่องฟอร์ม MTN → ⑥ กำหนดการ/ผู้แจ้ง · cascade 2 ทาง แผนก↔ไลน์↔เครื่อง ยังทำงานเหมือนเดิม */}
@@ -1770,7 +1833,8 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
             {noteCheck.message ? `⚠ ${noteCheck.message}` : `✓ รายละเอียดครบพอให้ช่างเตรียมตัว (${noteCheck.len} ตัวอักษร)`}
           </div>
         </Field>
-        <ImgField label="รูปก่อนซ่อม" value={beforeUrl} onPick={pickBefore} />
+        <ImgField label="รูปก่อนซ่อม" required={requireBefore} value={beforeUrl} onPick={pickBefore} />
+        {requireBefore && !beforeFile && <div style={{ fontSize: 11.5, color: 'var(--red)', marginTop: -6 }}>ต้องแนบรูปก่อนซ่อม — ให้ช่างเห็นอาการก่อนเดินมา</div>}
         <Field label="วันเวลาที่เกิดเหตุ (กรอกเฉพาะแจ้งย้อนหลัง)">
           <input type="datetime-local" value={f.occurred_at} onChange={e => set('occurred_at', e.target.value)} max={localDtNow()} style={inp} />
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>ว่าง = เกิดเหตุตอนนี้ · เวลาที่กดแจ้งยังถูกบันทึกแยกไว้ใช้คิด Response time/เลข MO</div>

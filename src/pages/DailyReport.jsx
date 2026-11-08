@@ -12,7 +12,6 @@ import { toast } from '../components/Toast';
 /* 📷 รูปหลักฐานของเสีย — ของกลางเดียวกับถังเหลือง/แดง (ด่าน quality-photo-via-helper · 2026-10-12) */
 import QualityPhotoField from '../components/QualityPhotoField';
 import { uploadQualityPhoto, removeQualityImg } from '../utils/qualityImage';
-import { uploadMoBeforeImg } from '../utils/mtnImage';
 import { buildProblemReport, dtNeedsFix, countPendingFix, PROBLEM_MIN_MINUTES } from '../lib/prodProblemReport';
 /* 📝 ทะเบียนใบรายงานปัญหาการผลิต FM-PD1-019 — ออกใบ = บันทึกก่อนแล้วค่อยพิมพ์ · พิมพ์ซ้ำ = ใบเดิมจาก snapshot
    (2026-09-25 · user: "ใบบันทึกปัญหา ก็ไม่ได้เก็บข้อมูลหรอ เห็นหัวหน้าต้องปริ้นออกมาเก็บเป็นกระดาษทุกวัน") */
@@ -58,6 +57,7 @@ import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
 import Segmented from '../components/Segmented';
 import DieMatLinkButton from '../components/DieMatLinkButton';
+import MoReportFromDowntime from '../components/MoReportFromDowntime';   // ฟอร์มแจ้งซ่อมเต็ม (lazy) — เปิดใบจาก Downtime
 import { dieCandidatesForMats } from '../utils/dieCandidates';
 import { kindOf } from '../utils/equipmentKinds';
 import { resolveMachine, normCode, resolveTypeRow, QR_KINDS } from '../utils/qrCode';
@@ -73,7 +73,6 @@ import FilterBar from '../components/FilterBar';
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
 /* ชื่อกลุ่ม "ยังระบุไม่ได้" ของทะเบียนลักษณะปัญหา — ห้ามเขียนสตริงเองในหน้า */
-import { OTHER_GROUP } from '../utils/unclassified';
 import useTabParam from '../utils/useTabParam';
 import LineSelect, { scopeLines as pickerLines } from '../components/LineSelect';
 import useProductionLines, { loadLinesRes, invalidateProductionLines } from '../utils/useProductionLines';
@@ -98,7 +97,6 @@ import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { fixThaiLayout, hasThai, thaiLayoutNote } from '../utils/kbLayout';
 import { SESSION_VOID, SESSION_STATUSES_LIVE, SESSION_STATUSES_REAL, isVoidSession, voidBadge, voidBlockReason, cleanVoidReason } from '../utils/sessionStatus';
 import MachineSelect from '../components/MachineSelect';
-import { acceptImageFile } from '../utils/acceptImageFile';
 import { loadFamilyQtyTotals, familyQtyChip } from '../utils/familyTotals';
 import { statusColor as toneColor, toneVar, toneDim, toneLine } from '../utils/statusTone';   // 🎨 token พาเลต 5 สี (UI §6.17)   // สีสถานะชุดเดียวทั้งระบบ (ห้ามตั้ง hex เอง · ชื่อ statusColor ชนกับตัวแปรในหน้า)
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
@@ -453,7 +451,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // { d, team, mode } — เลือกทีมช่างก่อน · mode 'mo' = เปิดใบซ่อม · 'call' = เรียกช่างด่วน (2026-09-21)
   //   ใช้ modal ตัวเดียวกันทั้ง 2 ทาง — ทีมปลายทางคือคำถามเดียวกัน ห้ามแตกเป็น 2 จอให้เพี้ยนกัน
   const [moDtPick, setMoDtPick] = useState(null);
-  const [moImg, setMoImg] = useState(null);        // ไฟล์รูปก่อนซ่อม (ตอนเปิดใบจากดาวน์ไทม์)
+  const [moFromDt, setMoFromDt] = useState(null);  // { d, team, initial } — ฟอร์มแจ้งซ่อมเต็มจากรายการ Downtime (08/11)
   const [moSaving, setMoSaving] = useState(false);
   const [dtForm, setDtForm]   = useState({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
   // ช่องเครื่องจักรในฟอร์ม Downtime: ค่าเริ่ม = เฉพาะครอบครัวไลน์ · กดขยายค้นทั้งโรงงานได้ (19/10 · หน้างานทัก "เห็นทุกเครื่องในโรงงาน")
@@ -3120,70 +3118,30 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     loadDT(selSession.id);
   };
 
-  /* พรีวิวรูป — ต้อง revokeObjectURL ตอนเปลี่ยน/ปิด ไม่งั้น blob ค้างในหน่วยความจำทุกครั้งที่เลือกรูป */
-  const [moImgPreview, setMoImgPreview] = useState('');
-  useEffect(() => {
-    if (!moImg) { setMoImgPreview(''); return; }
-    const u = URL.createObjectURL(moImg);
-    setMoImgPreview(u);
-    return () => URL.revokeObjectURL(u);
-  }, [moImg]);
-
-  // เปิดใบแจ้งซ่อม MO จากรายการ Downtime (เชื่อมกับหน้าแจ้งซ่อม MTN) — prefill เครื่อง/ไลน์/อาการ
-  // เปิด picker เลือกทีมช่างก่อน (แจกให้ถูกทีม) — เดา default จากชื่อเครื่อง (JIG/DIE)
+  /* 📝 เปิดใบแจ้งซ่อม MO จากรายการ Downtime — ฟอร์มเดียวกับหน้า "แจ้งซ่อม MTN" (08/11 · คำสั่ง user)
+     *"ต้องไม่เด้งเปิดทันที ต้องป๊อปอัพแนบรูปบังคับ และใส่รายละเอียดให้ชัดเจนมากกว่าดึงแค่ดาวน์ไทม์ไปเปิดใบ"*
+     เดิม: ป๊อปอัพเลือกทีม → insert ทันที (อาการ = ชื่อประเภท DT · รูปไม่บังคับ)
+     ใหม่: `MoReportFromDowntime` (MtnRepair.jsx) เติมไลน์/เครื่อง/เวลาเกิดเหตุ/ทีม/คำที่พิมพ์ไว้ให้
+           แล้วคนต้องเลือกชนิดอุปกรณ์ + กลุ่ม/ลักษณะปัญหาจากทะเบียน + รายละเอียดผ่านตัวตรวจ + **รูปบังคับ**
+     🔴 เช็คใบซ้ำอ่าน error ด้วย — อ่านไม่ได้ = ไม่เปิด (fail-closed) · มีมากกว่า 1 ใบ = ถือว่ามีแล้ว */
   const openMoPicker = async (d) => {
-    const { data: exist } = await supabaseDR.from('mtn_orders').select('id, mo_no').eq('source_downtime_id', d.id).maybeSingle();
-    if (exist) { toast.info(`มีใบแจ้งซ่อมของรายการนี้แล้ว${exist.mo_no ? ` (${exist.mo_no})` : ''}`); return; }
-    setMoImg(null);   // เปิด picker ใหม่ = ล้างรูปเดิม ไม่งั้นรูปของใบก่อนหน้าติดไปกับใบใหม่
-    setMoDtPick({ d, team: teamForMachine(d.machine_no, machines) || teamForItem(d.machine_no), mode: 'mo' });
-  };
-
-  const handleCreateMoFromDt = async (d, team) => {
+    const { data: exist, error } = await supabaseDR.from('mtn_orders').select('id, mo_no').eq('source_downtime_id', d.id).limit(1);
+    if (error) { toast.error('ตรวจใบซ้ำไม่สำเร็จ — ยังไม่เปิดใบ ลองใหม่อีกครั้ง (' + error.message + ')'); return; }
+    if (exist?.length) { toast.info(`มีใบแจ้งซ่อมของรายการนี้แล้ว${exist[0].mo_no ? ` (${exist[0].mo_no})` : ''}`); return; }
+    const p = (n) => String(n).padStart(2, '0');
+    const at = d.started_at ? new Date(d.started_at) : null;
     const dtType = dtTypes.find(t => t.id === d.downtime_type_id);
-    const payload = {
-      status: 'pending', current_step: 1, report_at: new Date().toISOString(), work_date: selSession.work_date,
-      repair_scope: 'in_line', line_name: selSession.line_name, dept_section: selSession.section || null,
-      mtn_dept: teamKeyOf(team) || 'maintenance', machine_no: d.machine_no || null,
-      /* 🔴 อาการ/กลุ่ม = ประเภทดาวน์ไทม์จริง **ห้าม hardcode 'อื่นๆ'** (แก้ 2026-09-23)
-         เดิมเขียน 'อื่นๆ' ทับทั้งที่ประเภทอยู่ในมือแล้ว ⇒ 325 ใบกลายเป็นถังขยะ
-         พาเรโตปัญหาเลยขึ้น "ไม่ระบุกลุ่ม 65% + อื่นๆ 33%" = วิเคราะห์ไม่ได้เลย
-         กลุ่มมาจาก `dr_downtime_types.mo_problem_group` (ทะเบียน user ยืนยันเอง 23/09)
-         ยังไม่จับคู่ = ถังขยะตามจริง — ระบบห้ามเดาแทน · มีด่าน regressionGuards
-         ⚠️ 06/10: กลุ่มที่ไม่จับคู่ใช้ `OTHER_GROUP` ('อื่นๆ / ยังระบุไม่ได้') ให้ตรงกับ
-            ชื่อกลุ่มในทะเบียน `mtn_problem_types` — เดิมเขียน 'อื่นๆ' ลอยๆ ซึ่งเป็นป้าย
-            ถังสังเคราะห์ของจอ ไม่มีอยู่ในทะเบียน ⇒ แท่งพาเรโตแยกจากกลุ่มจริงเงียบๆ */
-      problem_characteristic: dtType?.name_th || 'อื่นๆ',
-      problem_group: dtType?.mo_problem_group || OTHER_GROUP,
-      // ประเภทย้ายไปอยู่ใน problem_characteristic แล้ว — โน้ตเหลือเฉพาะสิ่งที่พนักงานพิมพ์เอง
-      report_note: `[จาก Downtime]${d.description ? ` ${d.description}` : ''}`.trim(),
-      reporter_prod: fullName, reported_by_name: fullName, source_downtime_id: d.id,
-    };
-    setMoSaving(true);
-    const { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single();
-    if (error) { setMoSaving(false); toast.error('เปิดใบซ่อมไม่สำเร็จ: ' + error.message); return; }
-
-    /* รูปอัปโหลด **หลัง** insert เพราะต้องใช้ id ตั้งชื่อไฟล์ (pattern เดียวกับ step1 ของ MtnRepair)
-       ⚠️ อัปโหลดล้ม = ใบยังต้องถูกเปิด ห้าม rollback ใบทิ้ง — แค่บอกว่ารูปไม่ขึ้นแล้วให้ไปแนบซ้ำที่หน้าแจ้งซ่อม
-          (ใบซ่อมสำคัญกว่ารูป · ถ้าโยนทิ้งทั้งใบเพราะรูปไม่ขึ้น หน้างานจะเสียเวลากรอกใหม่หมด) */
-    if (moImg) {
-      try {
-        const url = await uploadMoBeforeImg(moImg, data.id);
-        const up = await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id).select('id');
-        if (up.error || !up.data?.length) throw new Error(up.error?.message || 'บันทึก URL รูปไม่สำเร็จ');
-        data.before_img = url;
-      } catch (e) {
-        toast.error('เปิดใบซ่อมแล้ว แต่แนบรูปไม่สำเร็จ: ' + (e.message || e) + ' — แนบซ้ำได้ที่หน้าแจ้งซ่อม MTN');
-      }
-    }
-    setMoSaving(false);
-    setMoImg(null);
-    fetch('https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-mtn-notification', {
-      // ส่ง "ชื่อทีม" ไปในข้อความแจ้งเตือน (DB เก็บรหัส) — ดูเหตุผลที่ notifyMtn ใน MtnRepair.jsx
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event: 'mtn_reported', mo: { ...data, mtn_dept: deptNameOf(data.mtn_dept) } }),
-    }).catch(() => {});
-    setMoDtPick(null);
-    toast.success(`📝 เปิดใบแจ้งซ่อม MO → แจ้งถึงทีม ${deptNameOf(team) || 'MTN'} แล้ว — ไปดำเนินการต่อที่หน้า “แจ้งซ่อม MTN”`);
+    setMoFromDt({
+      d,
+      team: teamForMachine(d.machine_no, machines) || teamForItem(d.machine_no),
+      initial: {
+        line_name: selSession.line_name, machine_no: d.machine_no || '',
+        // เวลาเริ่มหยุด = เวลาเกิดเหตุจริง (ฟอร์มรับ datetime-local ตามนาฬิกาเครื่อง เหมือน localDtNow ของหน้าแจ้งซ่อม)
+        occurred_at: at && !Number.isNaN(at.getTime()) ? `${at.getFullYear()}-${p(at.getMonth() + 1)}-${p(at.getDate())}T${p(at.getHours())}:${p(at.getMinutes())}` : '',
+        // ห้ามเติมลักษณะปัญหาให้ — คนต้องเลือกจากทะเบียนเอง · ชื่อประเภท DT ใส่เป็นบริบทในรายละเอียดให้แก้ต่อ
+        report_note: [dtType?.name_th ? `[Downtime: ${dtType.name_th}]` : '', d.description || ''].filter(Boolean).join(' '),
+      },
+    });
   };
 
   const totalDT      = dtLogs.reduce((s, d) => s + (d.duration_min || 0), 0);
@@ -4483,6 +4441,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         )}
 
         {/* Open session modal */}
+        {moFromDt && (
+          <MoReportFromDowntime downtime={moFromDt.d} lineName={selSession?.line_name} initial={moFromDt.initial}
+              defaultDept={moFromDt.team} fullName={fullName}
+              onClose={() => setMoFromDt(null)}
+              onSaved={() => { setMoFromDt(null); toast.success('📝 เปิดใบแจ้งซ่อมแล้ว — ไปดำเนินการต่อที่หน้า "แจ้งซ่อม MTN"'); if (selSession?.id) loadDT(selSession.id); }} />
+        )}
         {moDtPick && (() => { const pickTone = moDtPick.mode === 'call' ? 'bad' : 'info'; const pickColor = toneVar(pickTone);
           /* 🔴 ชั้น overlay ห้ามมี onClick ปิด (QC audit 06/10) — modal นี้มีปุ่มเลือกทีมช่าง
              + ช่องถ่ายรูปก่อนซ่อม (`<input type="file" capture>`) ที่หน้างานถ่ายไว้แล้ว
@@ -4510,34 +4474,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   }}>{deptNameOf(t)}</button>
                 ))}
               </div>
-              {/* 📷 รูปก่อนซ่อม — user แจ้ง 22/09: *"เปิด MO จากดาวน์ไทม์ ไม่มีให้แนบรูป เหมือนกับเปิด MO ใหม่ step1"*
-                  ใบที่เปิดจากดาวน์ไทม์เข้าคิวเดียวกับใบที่เปิดจากหน้าแจ้งซ่อม ⇒ ต้องแนบรูปได้เหมือนกัน
-                  ไม่งั้นช่างเปิดใบมาแล้วไม่เห็นอาการ ต้องเดินไปดูเองทุกใบ
-                  ⚠️ บีบ/อัปโหลดผ่าน `utils/mtnImage.js` เท่านั้น (16:9 · webp · bucket เดียวกับ step1) */}
-              {moDtPick.mode !== 'call' && (
-                <div style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>
-                    รูปก่อนซ่อม <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(ไม่บังคับ · ครอบ 16:9 ให้อัตโนมัติ)</span>
-                  </div>
-                  {moImgPreview && <img src={moImgPreview} alt="" style={{ display: 'block', width: '100%', maxHeight: 130, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 6 }} />}
-                  {/* reset value เสมอ — ไม่งั้นเลือก "รูปเดิม" ซ้ำแล้ว change ไม่ยิง (บทเรียนเดียวกับ ImgField ใน MtnRepair) */}
-                  {/* 🔴 ห้ามใส่ `capture` (24/10 · user แจ้ง "เหมือนมีแต่บังคับถ่ายใหม่")
-                      `capture="environment"` บนมือถือ/แท็บเล็ต = **เปิดกล้องตรง ไม่มีตัวเลือกแกลเลอรี/ไฟล์**
-                      ⇒ รูปที่ถ่ายไว้ก่อนหน้า/ภาพหน้าจอ alarm แนบไม่ได้เลย · ถอดออกแล้วถ่ายใหม่ยังกดแท็บเดียว
-                      แค่เพิ่มทางเลือก ไม่เสียอะไร (ด่าน `no-capture-on-image-input` กันใส่กลับ) */}
-                  <input type="file" accept="image/*" style={{ fontSize: 12 }}
-                    onChange={async e => { const p = e.target.files?.[0]; e.target.value = ''; const f = await acceptImageFile(p); if (f) setMoImg(f); }} />
-                  {moImg && (
-                    <button type="button" onClick={() => setMoImg(null)}
-                      style={{ marginLeft: 8, fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--bg2)', color: 'var(--muted)', border: '1px solid var(--border)' }}>เอารูปออก</button>
-                  )}
-                </div>
-              )}
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => setMoDtPick(null)} style={{ flex: 1, padding: '10px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>ยกเลิก</button>
-                <button disabled={moSaving} onClick={() => (moDtPick.mode === 'call'
-                    ? handleCallMtn(moDtPick.d, moDtPick.team)
-                    : handleCreateMoFromDt(moDtPick.d, moDtPick.team))}
+                {/* ป๊อปอัพนี้เหลือทาง "เรียกช่าง" ทางเดียว — เปิดใบซ่อมย้ายไปฟอร์มเต็ม MoReportFromDowntime (08/11) */}
+                <button disabled={moSaving} onClick={() => handleCallMtn(moDtPick.d, moDtPick.team)}
                   style={{ flex: 2, padding: '10px 0', borderRadius: 'var(--r-md)', border: 'none', background: pickColor, color: '#fff', fontSize: 13, fontWeight: 800, cursor: moSaving ? 'wait' : 'pointer', opacity: moSaving ? 0.6 : 1 }}>
                   {moSaving ? 'กำลังเปิดใบ…' : `${moDtPick.mode === 'call' ? 'เรียก' : 'เปิดใบซ่อม →'} ${deptNameOf(moDtPick.team)}`}
                 </button>
