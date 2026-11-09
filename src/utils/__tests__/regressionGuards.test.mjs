@@ -9129,3 +9129,28 @@ test('🛡️ spare-registry-table-not-flat — ทะเบียนอะไ�
   assert.ok(!/<CollapseCard[^>]*>\s*<table/.test(src),
     '\n\n❌ เอาตารางทะเบียนไปพับทั้งก้อนใน CollapseCard — ห้าม (ตารางหลักของหน้า)\n');
 });
+
+test('🛡️ machine-key-stray-mark-base-includes-vowels — ฐานของ "มาร์คลอย" ต้องรวมสระ', () => {
+  const js = readFileSync(join(ROOT, 'src/utils/machineNo.js'), 'utf8');
+
+  /* 🔴 เคสจริง 09/11: รอบแรกเขียนฐานเป็น [^ก-ฮ] (พยัญชนะล้วน)
+     ⇒ ตัดวรรณยุกต์ที่ซ้อนบน "สระ" ทิ้งด้วย: เครื่อง→เครือง · ติดตั้ง→ติดตัง · เบนดิ่ง→เบนดิง
+     จับได้เพราะพรีวิวคอลัมน์ผลลัพธ์ก่อน update · ถ้าไม่พรีวิว = ทำลายชื่อไทยทั้งฐานเงียบๆ */
+  assert.ok(/\[\^\\u0E01-\\u0E4E\]/.test(js),
+    '\n\n❌ ฐานของ STRAY_THAI_MARK ใน machineNo.js ไม่ใช่ [^\\u0E01-\\u0E4E]\n'
+    + '   ⇒ ถ้าแคบลงเหลือพยัญชนะ (\\u0E2E) จะกินวรรณยุกต์ที่ซ้อนบนสระ:\n'
+    + '      เครื่อง→เครือง · ติดตั้ง→ติดตัง · เบนดิ่ง→เบนดิง (ชื่อ/อาการภาษาไทยพังทั้งฐาน)\n'
+    + '   📄 supabase/migrations/20261109b_machine_no_strip_stray_thai_marks_dr.sql\n');
+
+  assert.ok(/stripStrayThaiMarks/.test(js) && /machineKey/.test(js),
+    '\n\n❌ machineNo.js ไม่มี stripStrayThaiMarks แล้ว — machineKey จะไม่ยุบ typo มาร์คลอย\n'
+    + '   ⇒ `ฺBD-08` แตกเป็นคนละแท่งกับ `BD-08` ในพาเรโต/MTBF/KPI ช่าง อีกครั้ง\n');
+
+  /* ตรรกะต้องตรงกับฝั่ง SQL — คนละไฟล์ แก้ข้างเดียว = คีย์ 2 ชุด เถียงกันว่าเชื่อจอไหน */
+  const sql = readFileSync(join(ROOT, 'supabase/migrations/20261109c_machine_key_strip_stray_thai_marks_dr.sql'), 'utf8');
+  for (const part of ['\\u0E01-\\u0E4E', '\\u0E31\\u0E34-\\u0E3A\\u0E47-\\u0E4E']) {
+    assert.ok(js.includes(part) && sql.includes(part),
+      `\n\n❌ ช่วงอักขระ ${part} ไม่ตรงกันระหว่าง machineNo.js กับ machine_key() ฝั่ง SQL\n`
+      + '   ⇒ จอกับ DB จัดกลุ่มเครื่องคนละแบบ = ตัวเลขไม่ตรงกันโดยไม่มีใครรู้\n');
+  }
+});
