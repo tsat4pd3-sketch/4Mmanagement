@@ -15,7 +15,8 @@
 //    เปิด verify_jwt เมื่อไหร่ = ทุกเรื่องที่ผ่านตัวนี้เงียบหมด 401 (ค่า default ของเครื่องมือ deploy คือ true)
 //
 // payload:
-//   { event, lines: string[], title?, section?, line_name?, ref_table?, ref_id?, link?, type?, actor?, vars?, team?, extra_user_ids? }
+//   { event, lines: string[], title?, section?, line_name?, ref_table?, ref_id?, link?, type?, actor?, actor_id?, vars?, team?, extra_user_ids? }
+//   - `actor_id` = uuid ของ "คนที่กดเอง" — ตัดออกจากผู้รับฝั่งทะเบียนเสมอ (ดูบล็อก 🔕 ข้างล่าง)
 //   - `lines`      = เนื้อความ (บรรทัดละรายการ) — ใช้ทั้ง Telegram และ body ในแอป
 //   - `section`    = ส่วนงานของเหตุการณ์ (ใช้กับ inapp_match_section) · ไม่ส่งมาแต่ส่ง line_name = หาให้เอง
 //   - `line_name`  = ไลน์ที่เกิดเหตุ — ส่งต่อเป็น p_line ให้ RPC (ใช้กับ `inapp_match_line`)
@@ -170,9 +171,20 @@ Deno.serve(async (req) => {
         if (res.error) throw res.error;
         ids = res.data ?? [];
       }
-      const users = [...new Set([...owners, ...ids.map((r: unknown) =>
-        typeof r === 'string' ? r : (r as { notify_recipients?: string })?.notify_recipients)])]
-        .filter(Boolean) as string[];
+      /* 🔕 **คนที่กดเอง ไม่ต้องได้ alarm ของตัวเอง** (09/11 · feedback หน้างาน:
+            "เรียกช่างแผนกอื่น แต่ตัวเองก็เห็น alarm")
+         วัดจริงก่อนแก้: ทุกเคสที่คนกดอยู่ส่วนงานเดียวกับไลน์ ได้รับใบของตัวเอง 1 ใบทุกครั้ง
+         (เดิมมีแต่ `actor` = "ชื่อ" ซึ่งใช้พิมพ์ลงข้อความอย่างเดียว ตัดผู้รับไม่ได้)
+
+         🔴 **ตัดเฉพาะฝั่งทะเบียน (`ids`) ห้ามตัด `owners`** — `extra_user_ids` แปลว่า
+            "คนที่ต้องลงมือกับรายการนี้" ซึ่งเป็นการเจาะจงตัวคนไว้แล้ว · ตัดออก = งานที่มอบ
+            ให้ตัวเอง (หรือใบที่ตัวเองเป็นคนเซ็นขั้นถัดไป) หายจากคิวเงียบๆ
+         ⚠️ ไม่ส่ง actor_id มา = ไม่ตัดใคร = พฤติกรรมเดิมเป๊ะ (client เก่ายังใช้ได้) */
+      const actorId = typeof body.actor_id === 'string' && UUID_RE.test(body.actor_id) ? body.actor_id : null;
+      const fromRules = ids.map((r: unknown) =>
+        typeof r === 'string' ? r : (r as { notify_recipients?: string })?.notify_recipients)
+        .filter((uid) => !!uid && uid !== actorId);
+      const users = [...new Set([...owners, ...fromRules])].filter(Boolean) as string[];
       if (users.length) {
         const plain = [title, ...lines, actor ? `โดย ${actor}` : '']
           .filter(Boolean).join(' · ').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 300);
