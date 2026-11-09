@@ -13,7 +13,7 @@
  * ⏳ ระหว่างโหลดห้ามขึ้น (loading) ไม่งั้นแถบกะพริบทุกครั้งที่เปลี่ยนหน้า
  */
 import { useState } from 'react';
-import { useProductionLinesState } from '../utils/useProductionLines';
+import { useProductionLinesState, invalidateProductionLines } from '../utils/useProductionLines';
 import { registryFailText } from '../utils/useMasterRows';
 
 export default function LineRegistryAlert() {
@@ -21,7 +21,14 @@ export default function LineRegistryAlert() {
   const [busy, setBusy] = useState(false);
   if (loading || !failed) return null;
 
-  const onReload = () => { setBusy(true); reload(); setTimeout(() => setBusy(false), 1200); };
+  /* 🔴 ล้างทุกคีย์ที่ถือทะเบียนไลน์ก่อน (`:v3` + ชั้นนอกของ /daily-report) แล้วค่อยสั่งโหลดใหม่
+     — `reload()` ของ useMasterRows ล้างแค่คีย์ของ picker ⇒ หน้าเปิดกะจะยังได้ลิสต์ว่างเดิม */
+  const onReload = () => {
+    setBusy(true);
+    invalidateProductionLines();
+    reload();
+    setTimeout(() => setBusy(false), 1200);
+  };
   return (
     <div role="status" style={{
       margin: '0 16px 10px', padding: '8px 11px', borderRadius: 8, fontSize: 12.5, fontWeight: 700,

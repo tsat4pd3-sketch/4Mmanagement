@@ -8104,8 +8104,17 @@ test('🏭 line-registry-empty-is-not-truth — loadLinesRes ต้องส่�
   assert.match(dr, /!openableLines\.length && \(/, '🔴 ลิสต์ว่างต้องขึ้นเหตุผลบนจอ ห้ามปล่อยช่องเปล่าเงียบ');
   assert.match(dr, /disabled=\{!openForm\.line_name \|\| openingSession \|\| !openableLines\.length\}/,
     '🔴 ไม่มีไลน์ให้เลือก = ปุ่มเปิดกะต้องกดไม่ได้ (กดแล้วเงียบ = คนไม่รู้ว่าติดตรงไหน)');
-  assert.match(dr, /invalidateMaster\('production_lines:dr'\)/,
-    'ปุ่มโหลดใหม่ต้องล้าง cache ชั้นนอกด้วย ไม่งั้นได้ลิสต์ว่างเดิม');
+  /* 🔄 ปุ่มโหลดใหม่ต้องล้าง cache **ชั้นนอก** ของหน้านี้ด้วย ไม่งั้นได้ลิสต์ว่างเดิม
+     🔴 09/11 — เลิกเช็คว่าหน้านี้พิมพ์คีย์เอง (`invalidateMaster('production_lines:dr')`)
+        การพิมพ์คีย์ที่จุดเรียก **คือ**ต้นเหตุที่ทะเบียนค้างที่ `:v2` มา 4 สัปดาห์
+        ⇒ เช็คที่เจตนาแทน: หน้านี้ล้างผ่านของกลาง + ทะเบียนของกลางครอบคีย์ชั้นนอกครบ */
+  assert.match(dr, /invalidateProductionLines\(\);\s*\n\s*load\(\);/,
+    'ปุ่มโหลดใหม่ของหน้าเปิดกะต้องล้างผ่านของกลาง (invalidateProductionLines)');
+  const invSrc = stripComments(readFileSync(join(ROOT, 'src/utils/masterInvalidate.js'), 'utf8'));
+  for (const k of ['production_lines:dr', 'production_lines:flow']) {
+    if (!invSrc.includes(`'${k}'`))
+      assert.fail(`ทะเบียน masterInvalidate ขาดคีย์ชั้นนอก '${k}' — ปุ่มโหลดใหม่จะได้ลิสต์ว่างเดิม`);
+  }
 });
 
 test('🛡️ notify-no-insert-per-recipient — ห้าม insert `notifications` ทีละคนในลูป', () => {
@@ -8911,5 +8920,60 @@ test('🖱️ hover-intent-needs-settle — การ์ดสกิลต้อ
   if (!/armHover\(\)/.test(s)) bad.push('onHoverMove ไม่ติดนาฬิกา');
   const moveWired = (s.match(/onMouseMove=\{!isMobile \? onHoverMove/g) || []).length;
   if (moveWired < 2) bad.push(`การ์ดพนักงานผูก onMouseMove แค่ ${moveWired} จุด (ต้องครบทั้ง pool + จุดงาน)`);
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
+
+/* ═══ 🏭 line-registry-reload-reaches-every-page — 2026-11-09 · feedback user ════════════
+   *"เราจะเจอปัญหาโหลดไลน์ไม่ขึ้นในหลายๆหน้า แต่เราเห็นมีหน้าเปิดกะที่มีไห้โหลดไลน์ใหม่
+     แต่จุดอื่นไม่มี"*
+
+   ต้นเหตุที่เจอ (2 บั๊กซ้อนกัน):
+   ① ทะเบียน `KEYS_BY_TABLE.production_lines` ค้างที่ `production_lines:v2` ทั้งที่คีย์จริงคือ `:v3`
+      (bump 13/10 ตอนเพิ่ม `unit_kind`) ⇒ `/line-setup` เซฟแล้วเรียก `invalidateTable()`
+      = **ล้างคีย์ที่ตายแล้ว** · dropdown ไลน์ของหน้าอื่นค้างของเก่าถึง 4 ชม.
+      ที่ด่านเดิมมองไม่เห็น: `cachedMaster(KEY, …)` เขียนคีย์เป็น**ตัวแปร**
+      (ปิดช่องนี้แล้วใน `masterInvalidate.test.mjs` — เจอเพิ่มอีก 10 คีย์ที่หลุดแบบเดียวกัน)
+   ② `failures` Map ใน masterCache **ไม่มีใครฟังได้** (มีแต่ failSink ตัวเดียวของ toast)
+      ⇒ `<LineRegistryAlert />` ที่ mount ครั้งเดียวเหนือ `<Routes>` ไม่มีอะไรปลุก
+        ทะเบียนล้มหลังเปิดแอป = ช่องเลือกว่างทั้งแอป **แถบเตือน + ปุ่มโหลดใหม่ไม่โผล่** */
+test('🏭 line-registry-reload-reaches-every-page — ธงล้มต้อง subscribe ได้ + ล้างครบทุกคีย์ของไลน์', () => {
+  const bad = [];
+
+  // ① คีย์จริงของ picker ต้องอยู่ในทะเบียน (ถ้า bump คีย์แล้วลืม = invalidateTable ล้างผิดตัว)
+  const upl = stripComments(readFileSync(join(ROOT, 'src/utils/useProductionLines.js'), 'utf8'));
+  const key = /const KEY = '([^']+)'/.exec(upl)?.[1];
+  const inv = stripComments(readFileSync(join(ROOT, 'src/utils/masterInvalidate.js'), 'utf8'));
+  if (!key) bad.push('useProductionLines: หา const KEY ไม่เจอ');
+  else if (!inv.includes(`'${key}'`)) bad.push(`masterInvalidate: ไม่มีคีย์ '${key}' ในทะเบียน — invalidateTable('production_lines') จะล้างผิดตัว`);
+
+  // ล้างทะเบียนไลน์ต้องผ่านของกลาง (ครอบ :dr/:flow ของ /daily-report ด้วย) ห้ามล้างคีย์เดียว
+  if (!/invalidateTable\('production_lines'\)/.test(upl))
+    bad.push('invalidateProductionLines ไม่ได้ล้างผ่าน invalidateTable — ชั้นนอกของ /daily-report จะค้าง');
+
+  // ② ทะเบียนผลล้มต้องแจ้งเตือนได้ และ useMasterRows ต้องฟัง
+  const mc = stripComments(readFileSync(join(ROOT, 'src/utils/masterCache.js'), 'utf8'));
+  if (!/export function onMasterFailChange\(/.test(mc))
+    bad.push('masterCache: ไม่มี onMasterFailChange — ไม่มีใครรู้ว่าทะเบียนล้มหลังเปิดแอป');
+  for (const [what, re] of [
+    ['ตอนล้ม', /failures\.set\([\s\S]{0,200}?notifyFailChange\(/],
+    ['ตอนสำเร็จ', /if \(failures\.delete\(key\)\) notifyFailChange\(key\)/],
+  ]) if (!re.test(mc)) bad.push(`masterCache: ไม่ได้แจ้ง${what} — ธงเปลี่ยนแล้วจอไม่รู้`);
+
+  const umr = stripComments(readFileSync(join(ROOT, 'src/utils/useMasterRows.js'), 'utf8'));
+  if (!/onMasterFailChange\(/.test(umr))
+    bad.push('useMasterRows: ไม่ subscribe onMasterFailChange — แถบเตือนจะตามสถานะไม่ทัน');
+  /* 🔴 ตัวฟังห้ามยิงโหลดใหม่ — ทุกจอที่เปิดอยู่จะยิง DB พร้อมกันทั้งโรงงาน */
+  const sub = umr.slice(umr.indexOf('onMasterFailChange('), umr.indexOf('const reload ='));
+  if (/loader|setNonce/.test(sub))
+    bad.push('useMasterRows: ตัวฟังสถานะล้มไปสั่งโหลดใหม่ — ทุกจอจะยิง DB พร้อมกัน');
+
+  // แถบกลางต้องมีปุ่มโหลดใหม่ และปุ่มต้องล้างทุกคีย์ของไลน์ (ไม่ใช่แค่ reload() ของ picker)
+  const alert = stripComments(readFileSync(join(ROOT, 'src/components/LineRegistryAlert.jsx'), 'utf8'));
+  if (!/invalidateProductionLines\(\)/.test(alert))
+    bad.push('LineRegistryAlert: ปุ่มโหลดใหม่ไม่ล้างทุกคีย์ของไลน์ — หน้าเปิดกะจะยังได้ลิสต์ว่างเดิม');
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  if (!/<LineRegistryAlert \/>/.test(app))
+    bad.push('App.jsx: ถอด <LineRegistryAlert /> ออก — ไม่มีตาข่ายกลางแล้ว');
+
   assert.deepEqual(bad, [], bad.join('\n'));
 });

@@ -97,6 +97,30 @@ export function onMasterLoadFail(fn) { failSink = typeof fn === 'function' ? fn 
       (เคลียร์เมื่อคีย์นั้นโหลดสำเร็จ — ของที่หายไปเองต้องไม่ค้างเป็นคำเตือนถาวร) */
 const failures = new Map();   // key → { at, message, hadFallback }
 
+/* ── 🔔 ทะเบียนนี้ต้อง "บอกต่อ" ได้ (2026-11-09 · หน้างานแจ้ง "โหลดไลน์ไม่ขึ้นหลายหน้า") ──
+   🔴 เดิมมีแต่ `failSink` ตัวเดียว (main.jsx ผูกไว้ยิง toast — ผ่านไปแล้วหาย) และ
+      `useMasterRows` อ่าน `masterLoadState(key)` **แค่ตอน loader ของตัวเองเสร็จ**
+      ⇒ `<LineRegistryAlert />` ที่อยู่เหนือ `<Routes>` ใน App.jsx mount **ครั้งเดียวตอนเปิดแอป**
+        แล้วไม่มีอะไรปลุก ⇒ ทะเบียนล้ม**หลัง**เปิดแอป = dropdown ว่างทั้งแอป **แต่แถบไม่โผล่
+        และไม่มีปุ่มโหลดใหม่** · เหลือทางเดียวคือหน้าที่สร้างปุ่มเองไว้ (/mtn-repair · เปิดกะ)
+   ⇒ ใครก็ subscribe ได้ · ยิงทุกครั้งที่ทะเบียนเปลี่ยน (ล้ม / สำเร็จ / ถูกล้าง)
+   ⚠️ ตัวฟังพังห้ามลาม — ห่อ try/catch รายตัว (ตัวหนึ่งพังต้องไม่ทำให้ตัวอื่นไม่ได้ข่าว) */
+const failListeners = new Set();
+
+/** ฟังความเปลี่ยนแปลงของ "คีย์ไหนโหลดล้ม" — คืนฟังก์ชันเลิกฟัง (ใช้ใน useEffect cleanup) */
+export function onMasterFailChange(fn) {
+  if (typeof fn !== 'function') return () => {};
+  failListeners.add(fn);
+  return () => { failListeners.delete(fn); };
+}
+
+/** แจ้งตัวฟังทุกตัว — `key = null` แปลว่า "เปลี่ยนหลายคีย์" (ล้างทั้งหมด) */
+function notifyFailChange(key) {
+  for (const fn of failListeners) {
+    try { fn(key); } catch (e) { console.warn('[masterCache] ตัวฟังสถานะล้มพัง', e); }
+  }
+}
+
 /** สถานะล้มล่าสุดของคีย์นี้ — `null` = ปกติ (อย่าใช้ตัดสินว่า "มีข้อมูลไหม") */
 export function masterLoadState(key) { return failures.get(key) || null; }
 
@@ -189,7 +213,7 @@ export async function cachedMaster(key, loader, ttl = DEFAULT_TTL) {
       const data = await loader();
       cache.set(key, { at: Date.now(), data });
       lsWrite(key, data);
-      failures.delete(key);   // สำเร็จแล้ว = คำเตือนข้างช่องต้องหายไปด้วย
+      if (failures.delete(key)) notifyFailChange(key);   // สำเร็จแล้ว = คำเตือนข้างช่องต้องหายไปด้วย
       return data;
     } catch (e) {
       /* 🔴 โหลดพลาด — 3 อย่างที่ "ต้อง" ทำ (ดูรอบ 3 ในหัวไฟล์)
@@ -201,6 +225,7 @@ export async function cachedMaster(key, loader, ttl = DEFAULT_TTL) {
       const kept = hit?.data ?? lsAny(key)?.data;
       cache.set(key, { at: 0, data: kept });
       failures.set(key, { at: Date.now(), message: e?.message || 'โหลดไม่สำเร็จ', hadFallback: kept !== undefined });
+      notifyFailChange(key);   // 🔔 แถบกลาง/ช่องเลือกทุกหน้าต้องรู้ทันที ไม่ใช่รอ mount รอบหน้า
       try { failSink?.(key, e, { hadFallback: kept !== undefined }); } catch { /* ตัวแจ้งพังห้ามลาม */ }
       return kept ?? [];
     }
@@ -261,7 +286,9 @@ export async function cachedRows(key, runQuery, ttl = DEFAULT_TTL) {
  *  (ก่อน 28/10 logout ไม่ล้างอะไรเลย ⇒ ต้องบอกให้เปิด incognito ซึ่งหน้างานไม่เข้าใจ) */
 export function clearAllMasterCache() {
   cache.clear();
+  const had = failures.size > 0;
   failures.clear();
+  if (had) notifyFailChange(null);
   try {
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i);
@@ -273,7 +300,9 @@ export function clearAllMasterCache() {
 export function invalidateMaster(key) {
   if (key == null) {
     cache.clear();
+    const had = failures.size > 0;
     failures.clear();
+    if (had) notifyFailChange(null);
     try {
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const k = localStorage.key(i);
@@ -282,7 +311,7 @@ export function invalidateMaster(key) {
     } catch { /* localStorage ปิดอยู่ */ }
   } else {
     cache.delete(key);
-    failures.delete(key);
+    if (failures.delete(key)) notifyFailChange(key);
     try { localStorage.removeItem(lsKey(key)); } catch { /* localStorage ปิดอยู่ */ }
   }
 }

@@ -82,7 +82,7 @@ import { openShiftDefaults, shiftStartTime } from '../utils/workDate';
 import { liveChannel } from '../utils/liveChannel';
 import { LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
-import { cachedMaster, mrows, invalidateMaster } from '../utils/masterCache';
+import { cachedMaster, mrows } from '../utils/masterCache';
 import { loadBreakPolicies, primeBreakRuleIndex, BREAK_POLICY_COLS } from '../utils/oeeMasters';
 import { breakRuleFollowers, ruleDurationOf, BREAK_RULE_MAX } from '../utils/breakLineRules';   // 🏭 ข้อยกเว้นเวลาพักรายไลน์ — กฎอยู่ที่นั่น ห้ามคิดเองในหน้า
 import { invalidateTable } from '../utils/masterInvalidate';
@@ -782,12 +782,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     () => pickerLines(lines, { role, lineId: userLineId, sections: scopeSecs, scopeIdx }),
     [lines, role, userLineId, scopeSecs, scopeIdx]);
 
-  /* 🔄 ทะเบียนไลน์โหลดไม่สำเร็จ ⇒ ต้องมีทางกดใหม่เอง — ล้าง cache ทั้ง 2 ชั้นก่อน ไม่งั้นได้ลิสต์ว่างเดิม
-     (ชั้นใน `production_lines:v3` · ชั้นนอกที่หน้านี้ห่อไว้ `production_lines:dr` / `:flow`) */
+  /* 🔄 ทะเบียนไลน์โหลดไม่สำเร็จ ⇒ ต้องมีทางกดใหม่เอง
+     🔴 09/11 — `invalidateProductionLines()` ล้าง **ทุกคีย์ของไลน์** ให้แล้ว (ชั้นใน `:v3` +
+        ชั้นนอกที่หน้านี้ห่อไว้ `:dr`/`:flow`) ผ่านทะเบียน KEYS_BY_TABLE ที่มีด่านคุม
+        ⇒ เลิกไล่พิมพ์คีย์เองที่นี่ (พิมพ์เอง = เพิ่มคีย์วันหน้าแล้วหน้านี้ตามไม่ทัน) */
   const reloadLineRegistry = useCallback(() => {
     invalidateProductionLines();
-    invalidateMaster('production_lines:dr');
-    invalidateMaster('production_lines:flow');
     load();
   }, [load]);
 
