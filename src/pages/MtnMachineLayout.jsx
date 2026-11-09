@@ -5,6 +5,7 @@ import { compressLayoutImage } from '../utils/layoutImage'
 import { supabaseDR } from '../supabaseClient'
 import { invalidateTable } from '../utils/masterInvalidate'
 import { loadLinesRes } from '../utils/useProductionLines';
+import { lineScope } from '../utils/sectionScope';
 import { UserContext } from '../App'
 import { teamsForUser } from '../utils/mtnTeams'
 import { can } from '../utils/permissions'
@@ -79,12 +80,13 @@ const S = {
 // setupMode=false (default, /mtn-layout) = display-only (facility ดูอย่างเดียว ไม่มีปุ่มแก้)
 // setupMode=true (/layout-setup แท็บ MTN) = ตั้งค่า facility ได้ (เพิ่มโซน/อัปรูป/วางจุด)
 export default function MtnMachineLayout({ setupMode = false }) {
-  const { role, mtnTeams, sections } = useContext(UserContext)
+  const { role, mtnTeams, lineId: userLineId, sections: scopeSecs, scopeIdx } = useContext(UserContext)
   /* 🔊 ขอบเขตเสียง "เรียกช่าง" ของหน้านี้ = ทีมของคนที่เปิดจอ (09/11 · feedback หน้างาน
      "เรียกแผนกอื่น แต่ตัวเองก็เห็น alarm") — เดิมหน้านี้ mount ไซเรนโดยไม่ส่งทีมเลย
      ⇒ ช่าง JIG ที่เปิดหน้านี้ได้ยินเสียงเรียกของทีม DIE/Maintenance ด้วยทุกใบ
-     🔴 ไม่มีทีม = ไม่กรอง (fail-open) — เงียบเพราะข้อมูลไม่ครบ แย่กว่าดังเกิน */
-  const sirenTeams = useMemo(() => teamsForUser(mtnTeams, sections), [mtnTeams, sections])
+     🔴 ไม่มีทีม = ไม่กรอง (fail-open) — เงียบเพราะข้อมูลไม่ครบ แย่กว่าดังเกิน
+     ⚠️ แกนทีม (เสียงของใคร) กับแกนไลน์ `lineNames` (จอนี้ดูไลน์ไหน) **คนละคำถาม ใช้คู่กัน** */
+  const sirenTeams = useMemo(() => teamsForUser(mtnTeams, scopeSecs), [mtnTeams, scopeSecs])
   // แก้ผัง facility (เพิ่ม/ลบโซน อัปโหลดผัง วาง/ย้ายจุด) = งานของทีม MTN เอง → ใช้สิทธิ์ pm:setup
   // (mtn/admin/manager/supervisor) ได้ทั้งบน /mtn-layout และ /layout-setup — facility เป็น domain ของช่าง
   // ไม่ผูกกับ setupMode เพราะ mtn เข้า /layout-setup ไม่ได้ แต่ต้องตั้งค่า facility ของตัวเองได้ (2026-07-22)
@@ -120,6 +122,26 @@ export default function MtnMachineLayout({ setupMode = false }) {
   // production
   const [lines, setLines] = useState([])
   const [selectedLine, setSelectedLine] = useState(null)
+  /* 🔭 ขอบเขตของบัญชี — แท็บ "ผังไลน์ผลิต" (09/11 · user: "ถ้าเป็น user จอของส่วนงานไหนก็ควรจะแสดงแค่แผนกหรือส่วนงานตัวเอง")
+     แกนเดียวกับ FactoryMap — `lineScope()` (sectionScope.js) · `unlimited` (admin/ไม่จำกัด/ทะเบียนยังไม่โหลด)
+     = ลิสต์ทั้งโรงงานเหมือนเดิมเป๊ะ · ตัดแล้วหัวลิสต์เขียนว่าซ่อนกี่ไลน์ · `unsure` เขียนเตือน ห้ามเงียบ
+     · แท็บ Facility (โซนช่าง) = domain ของ MTN ทั้งโรงงาน ⇒ ไม่ตัด */
+  const scopeKey = (scopeSecs || []).join('|')
+  const viewScope = useMemo(() => lineScope({ role, lineId: userLineId, sections: scopeSecs || [], lines, scopeIdx }),
+    [role, userLineId, scopeKey, lines, scopeIdx]) // eslint-disable-line react-hooks/exhaustive-deps
+  const viewLines = useMemo(() => {
+    if (viewScope.unlimited) return lines
+    const ok = new Set(viewScope.names)
+    return lines.filter(l => ok.has(l.name))
+  }, [lines, viewScope])
+  const scopeHidden = viewScope.unlimited ? 0 : lines.length - viewLines.length
+  const scopeLabel = (scopeSecs || []).filter(Boolean).join(' · ') || 'ไลน์ของคุณ'
+  // ไลน์เริ่มต้น = ไลน์แรกในขอบเขต (ไม่จำกัด = แถวแรกของทะเบียน เหมือนเดิม) · เลือกแล้วไม่ทับ
+  useEffect(() => {
+    if (selectedLine || !lines.length) return
+    const first = viewScope.unlimited ? lines[0] : viewLines[0]
+    if (first) setSelectedLine(first.name)
+  }, [lines, viewLines, viewScope, selectedLine])
   const [prodImage, setProdImage] = useState(null)
   const [prodPoints, setProdPoints] = useState([])
   const [machineInfo, setMachineInfo] = useState({})
@@ -170,7 +192,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
 
   useEffect(() => {
     loadLinesRes().then(({ data }) => {
-      setLines(data || []); if (data?.length && !selectedLine) setSelectedLine(data[0].name)
+      setLines(data || [])   // ไลน์เริ่มต้นเลือกที่ effect ขอบเขตข้างบน (ไลน์แรกในขอบเขต)
     })
     reloadAreas()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -397,11 +419,11 @@ export default function MtnMachineLayout({ setupMode = false }) {
 
 
   const orderedLines = useMemo(() => {
-    const parents = lines.filter(l => !l.parent_line_name), children = lines.filter(l => l.parent_line_name), out = []
+    const parents = viewLines.filter(l => !l.parent_line_name), children = viewLines.filter(l => l.parent_line_name), out = []
     parents.forEach(p => { out.push({ ...p }); children.filter(c => c.parent_line_name === p.name).forEach(c => out.push({ ...c, _child: true })) })
     children.filter(c => !parents.find(p => p.name === c.parent_line_name)).forEach(c => out.push({ ...c, _child: true }))
     return out
-  }, [lines])
+  }, [viewLines])
 
   // detail panel target
   const sel = selId ? (view === 'production' ? prodPoints.find(p => p.id === selId) : facPoints.find(p => p.id === selId)) : null
@@ -414,7 +436,8 @@ export default function MtnMachineLayout({ setupMode = false }) {
 
   return (
     <Page width="full" style={S.page}>
-      <DowntimeSiren mode="call_mtn" team={sirenTeams} />
+      <DowntimeSiren mode="call_mtn" team={sirenTeams}
+                     lineNames={view === "facility" || viewScope.unlimited ? null : viewScope.names} />
       {/* หัวเพจ + แท็บมุมมองมาตรฐาน (UI-STANDARD 2026-09-24) — param ยังเป็น ?view= เหมือนเดิม */}
       <PageHeader title="ผังเครื่องจักร (ซ่อมบำรุง)" icon="🗺️"
         sub="ดูสถานะ PM บนผังจริง · กรองตามผู้รับผิดชอบ"
@@ -511,7 +534,19 @@ export default function MtnMachineLayout({ setupMode = false }) {
         {/* right sidebar — production: line tree · facility: zones + equipment */}
         {view === 'production' ? (
           <div style={S.side}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: 10 }}>ไลน์ผลิต ({lines.length})</div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', marginBottom: (scopeHidden > 0 || viewScope.unsure) ? 6 : 10 }}>ไลน์ผลิต ({viewLines.length})</div>
+            {(scopeHidden > 0 || viewScope.unsure) && (
+              <div title={viewScope.unsure ? 'ตัดขอบเขตของบัญชีนี้ไม่ได้ (ทะเบียนไลน์ยังไม่โหลด/ส่วนงานไม่ตรงผัง/หาไลน์ของบัญชีไม่เจอ)' : `ขอบเขตของบัญชีนี้: ${scopeLabel}`}
+                style={{ fontSize: 11, fontWeight: 700, marginBottom: 10, padding: '3px 8px', borderRadius: 'var(--r-md)',
+                  color: viewScope.unsure ? 'var(--amber)' : 'var(--accent)',
+                  background: viewScope.unsure ? 'var(--amber-dim)' : 'var(--accent-dim)',
+                  border: `1px solid ${viewScope.unsure ? 'var(--amber-line)' : 'var(--accent)'}` }}>
+                {viewScope.unsure
+                  ? (viewScope.unlimited ? '⚠ ตัดขอบเขตไม่ได้ — แสดงทั้งโรงงาน'
+                    : `⚠ ขอบเขตไม่ชัด — แสดง ${viewLines.length} ไลน์ · ซ่อน ${scopeHidden}`)
+                  : `🔭 เฉพาะ ${scopeLabel} · ซ่อน ${scopeHidden} ไลน์นอกขอบเขต`}
+              </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               {orderedLines.map(l => <div key={l.id} onClick={() => setSelectedLine(l.name)} style={S.rowBtn(selectedLine === l.name, l._child)}>{l._child ? '└ ' : ''}{l.name}</div>)}
             </div>

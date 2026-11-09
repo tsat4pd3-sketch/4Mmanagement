@@ -691,6 +691,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   to   { transform: rotate(360deg); }
 }
 
+/* ─── ⚡ เส้นจ่ายไฟบนบอร์ดค่าไฟสด (EnergyLiveBoard) — เส้นประวิ่ง · ความเร็วตั้งที่ animation-duration ── */
+@keyframes energyFlow { to { stroke-dashoffset: -28; } }
+.energy-flow { animation: energyFlow 1.2s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .energy-flow { animation: none; } }
+
 /* ─── Downtime alarm — จุดเครื่องจักรกระพริบสีแดงเมื่อมี downtime ค้างอยู่ ── */
 @keyframes dtAlarmBlink {
   0%, 100% { background-color: rgba(239, 68, 68, 0.92); box-shadow: 0 0 4px 1px rgba(239, 68, 68, 0.55); }

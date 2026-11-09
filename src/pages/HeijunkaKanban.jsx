@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef, useContext } from 'r
 import { isCoilUom } from '../utils/coilUom';
 import { urlParam, urlPick, urlBool } from '../utils/urlInit';
 import { lineNameCompare } from '../utils/lineHierarchy';
+import { lineScope } from '../utils/sectionScope';
 import { canWriteUnit, writeBlockText } from '../utils/writeScope';
 import ReadOnlyNote from '../components/ReadOnlyNote';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
@@ -1732,7 +1733,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
   const isOps = mode === 'ops';
   // ทะเบียนเอกสาร — ชื่อไฟล์ CSV อ่านเลขฟอร์มจาก cache นี้ (lazy chunk ต้องโหลดเอง)
   useEffect(() => { loadDocForms(); }, []);
-  const { fullName, role, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
+  const { fullName, role, lineId: myLineId, section: homeSection, sections: mySections, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   const navigate = useNavigate();
   const location = useLocation();
   const storeFocus = location.state?.storeFocus || null;   // 🔍 มาจากปุ่ม "ไปเตรียมงาน" บนแถบไลน์เรียกของ (StoreCallSiren)
@@ -1783,13 +1784,44 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
   const [pullBusy, setPullBusy]       = useState(null);
   const [lineMap,   setLineMap]       = useState({});   // name → { parent_line_name, ... }
   /* ขอบเขตไลน์ — ช่องเดียวมาตรฐานเดียวกับทุกหน้า (QC audit 06/10 · user: "เอาให้เป็นมาตรฐาน")
-     🔴 เป็น **ตัวกรองมุมมอง** ไม่ใช่การจำกัดสิทธิ์ — default = ทั้งหมด
+     🔴 เป็น **ตัวกรองมุมมอง** ไม่ใช่การจำกัดสิทธิ์ — เลือก "ทั้งโรงงาน" เองได้เสมอ
      เหตุ: สโตร์/วางแผนป้อนของให้ทั้งโรงงาน และหน่วยงานสนับสนุนไม่มีไลน์ผลิตสังกัด
-     ⇒ ถ้าบังคับด้วย profiles.sections จะเหลือ 0 แถวทันที (กับดักที่ operator.jsx เตือนไว้) */
+     ⇒ ถ้าบังคับด้วย profiles.sections จะเหลือ 0 แถวทันที (กับดักที่ operator.jsx เตือนไว้)
+     🔭 **ค่าเริ่มต้น** (09/11 · user: "ถ้าเป็น user จอของส่วนงานไหนก็ควรจะแสดงแค่แผนกหรือส่วนงานตัวเอง")
+        บัญชีที่ถูกจำกัด (`lineScope()` ไม่ใช่ `unlimited`) และลิงก์ไม่มี ?sec=/?fline= ⇒ เปิดมาที่
+        **ส่วนงานแรกในขอบเขต** (leader ที่ไม่มีส่วนงานกำกับ = ไลน์ตัวเอง) · ช่องขอบเขตบนจอบอกว่ากำลังดูอะไร
+        · admin/ไม่จำกัด/ทะเบียนยังไม่โหลด = ทั้งโรงงานเหมือนเดิม · ตัดไม่ได้ (`unsure`) = คงทั้งโรงงาน + เขียนเตือน
+        · ตั้งค่าเริ่มต้นครั้งเดียวต่อการเปิดหน้า — เลือกเองแล้ว (รวม "ทั้งโรงงาน") ระบบไม่ทับ */
   const [scopeSec,  setScopeSec]      = useState(() => urlParam('sec') || '');
   const [scopeLine, setScopeLine]     = useState(() => urlParam('fline') || '');
   const [scopeSet,  setScopeSet]      = useState(null);   // null = ไม่กรอง
   const linesArr = useMemo(() => Object.values(lineMap), [lineMap]);   // รูป array สำหรับ helper ลำดับชั้น (slocOfLine ฯลฯ)
+  const myScopeKey = (mySections || []).join('|');
+  const acctScope = useMemo(() => lineScope({ role, lineId: myLineId, sections: mySections || [], lines: linesArr, scopeIdx }),
+    [role, myLineId, myScopeKey, linesArr, scopeIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+  const scopeDefaulted = useRef(!!(urlParam('sec') || urlParam('fline')));   // ลิงก์ระบุขอบเขตมาแล้ว = ไม่ตั้งค่าเริ่มต้นทับ
+  useEffect(() => {
+    if (scopeDefaulted.current || !linesArr.length) return;
+    scopeDefaulted.current = true;
+    if (acctScope.unlimited) return;                     // admin / ไม่จำกัด / ตัดไม่ได้ = ทั้งโรงงานเหมือนเดิม
+    const inScope = new Set(acctScope.names);
+    const secs = (mySections || []).filter(Boolean);
+    if (secs.length) {
+      /* ส่วนงานแรกที่ "มีไลน์ในขอบเขตจริง" — ช่องขอบเขตเลือกได้ทีละส่วนงาน
+         หลายส่วนงาน = เปิดที่ตัวแรก แล้วเลือกตัวอื่น/ทั้งโรงงานเองได้ */
+      for (const sec of secs) {
+        const r = lineScope({ role: 'viewer', sections: [sec], lines: linesArr, scopeIdx });
+        if (r.unlimited) continue;
+        const names = r.names.filter(n => inScope.has(n));
+        if (!names.length) continue;
+        setScopeSec(sec); setScopeLine(''); setScopeSet(new Set(names));
+        return;
+      }
+    }
+    // leader ที่ไม่มีส่วนงานกำกับ (หรือส่วนงานไม่มีไลน์) = ไลน์ตัวเอง (ครอบครัวไลน์ตาม lineScope)
+    const me = linesArr.find(l => String(l.id) === String(myLineId));
+    if (me && inScope.size) { setScopeSec(me.section || ''); setScopeLine(me.name); setScopeSet(inScope); }
+  }, [linesArr, acctScope]); // eslint-disable-line react-hooks/exhaustive-deps
   /* ══ 🔐 "ดูได้ทั้งโรงงาน แต่สั่งงานได้เฉพาะไลน์ของส่วนงานตัวเอง" (15/10 · คำสั่ง user) ══════
      คิวบนจอ **ยังโชว์ทุกไลน์เหมือนเดิม** (สโตร์/วางแผนต้องเห็นภาพรวมทั้งโรงงาน — คอมเมนต์ข้างบน)
      แต่ "ปุ่มเดินสถานะ/ยืนยันส่ง/รับของ" ที่ขยับยอดคงเหลือจริง ต้องเป็นไลน์ของเรา
@@ -3062,6 +3094,13 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
             setScopeSec(sec); setScopeLine(ln);
             setScopeSet(meta?.lines?.length ? new Set(meta.lines) : null);
           }} />
+        {acctScope.unsure && (linesArr.length > 0 || !loading) && (
+          <span title="ตัดขอบเขตของบัญชีนี้ไม่ได้ (ทะเบียนไลน์ยังไม่โหลด/ส่วนงานไม่ตรงผัง) — ค่าเริ่มต้นจึงเป็นทั้งโรงงาน"
+            style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', background: 'var(--amber-dim)',
+              border: '1px solid var(--amber-line)', borderRadius: 999, padding: '4px 10px', whiteSpace: 'nowrap' }}>
+            ⚠ ตัดขอบเขตไม่ได้
+          </span>
+        )}
         <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)} />
         <Segmented value={shiftFilter} onChange={setShiftFilter} label="กะ"
           options={[{ value: 'all', label: ALL.shift }, { value: 'day', label: SHIFT_LABEL.day }, { value: 'night', label: SHIFT_LABEL.night }]} />

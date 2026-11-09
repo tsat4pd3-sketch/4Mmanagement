@@ -340,7 +340,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
   /* 🔴 ถังจาก planDueBucket (lib/pmSchedule.js · audit 08/10) — เดิม `filter(p => p.next_due_date)` ทิ้งแผนที่
      **ไม่เคยตรวจ** และแผน run_day เงียบๆ แล้วการ์ดขึ้น "✅ ไม่มีแผนที่ถึงกำหนด" เขียว · ตอนนี้: ไม่เคยตรวจ = อยู่ในลิสต์
      (ป้าย "ไม่เคยตรวจ") · AM run_day ไม่อยู่ในลิสต์นี้ (ตัดสินที่จอ AM) แต่ต้องนับบอก */
-  const pmBuckets = useMemo(() => {
+  const pmBucketsAll = useMemo(() => {
     const clById = {}; (d.cls || []).forEach(c => { clById[c.id] = c; });
     const jigById = {}; (d.jigs || []).forEach(j => { jigById[j.id] = j; });
     return (d.plans || []).map(p => {
@@ -351,6 +351,11 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
       return { ...p, dept, am: isAmTeam(dept), bucket, name: j?.name || j?.jig_no || j?.machine_no || 'อุปกรณ์ (ไม่พบชื่อ)', line: j?.line_name || '', days: daysTo };
     });
   }, [d, workDate]);
+  /* 🔭 ขอบเขตบัญชีจอ (09/11 · user: จอ TV โชว์เฉพาะส่วนงาน/ไลน์ของบัญชี — หลักเดียวกับใบซ่อม `allMo` ข้างบน)
+     แผน PM ผูกไลน์ผ่านอุปกรณ์ (`jigs.line_name`) · อุปกรณ์ไม่ผูกไลน์ (ของกลาง/ไม่รู้ที่อยู่) = คงไว้ (`inScope('')` = true)
+     · ไม่จำกัดขอบเขต = `inScope` คืน true ทุกแถว ⇒ พฤติกรรมเดิมเป๊ะ · ที่ตัดออกต้องเขียนบนจอ (`pmScopeHidden`) */
+  const pmBuckets = useMemo(() => pmBucketsAll.filter(p => inScope(p.line)), [pmBucketsAll, inScope]);
+  const pmScopeHidden = pmBucketsAll.length - pmBuckets.length;
   const allPm = useMemo(() => pmBuckets
     .filter(p => p.bucket === 'overdue' || p.bucket === 'due_soon' || p.bucket === 'never')
     .sort((a, b) => (a.days ?? 9e9) - (b.days ?? 9e9)), [pmBuckets]);
@@ -375,7 +380,8 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
           แล้วแยกไม่ออกว่าใบไหนของตัวเอง · ใบที่ไม่ระบุทีมยังดังทุกห้องเหมือนเดิม (fail-open) */}
       {/* 🔕 จอสโตร์เงียบเป็นค่าเริ่มต้น (12/10 · user: "จอของแต่ละส่วนงานแสดงเรื่องของส่วนงานนั้น")
           เสียงเรียกช่างไม่ใช่งานสโตร์ · ห้องสโตร์ที่อยากได้ยินตั้ง `?sound=all` ในแถบตั้งค่าจอได้ */}
-      {(!showStore || soundAll) && <DowntimeSiren mode={soundAll ? 'all' : 'call_mtn'} team={team} />}
+      {/* 🔭 ขอบเขตไลน์ของบัญชีจอ (09/11) — `scopeNames` null = ไม่จำกัด = ดังทุกไลน์เหมือนเดิม */}
+      {(!showStore || soundAll) && <DowntimeSiren mode={soundAll ? 'all' : 'call_mtn'} team={team} lineNames={scopeNames} />}
 
       {/* 🔊📦 จอสโตร์ต้องได้ยินเสียงตอนไลน์เรียกของ (24/10 · user: "เหมือนเวลา MTN ได้ยินเสียงเรียกช่าง")
           🔴 ห้อง `?sound=all` จะมี 2 ไซเรนพร้อมกัน ⇒ ส่ง `slot=1` ไม่ให้แถบ/ชิปทับกันสนิท
@@ -647,12 +653,20 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
                 เกินกำหนด {pmOver} · วันนี้ {pmToday}{pmNever ? ` · ไม่เคยตรวจ ${pmNever}` : ''}
               </span>
             </div>
+            {/* กรองตามขอบเขตบัญชีแล้วต้องบอกว่าซ่อนกี่แผน (ห้ามเงียบ) */}
+            {pmScopeHidden > 0 && pmBuckets.length > 0 && (
+              <div style={{ fontSize: 11 * big, color: 'var(--muted)', marginBottom: 6 }}>
+                ไม่แสดงแผน PM ของไลน์นอกขอบเขตจอนี้ {pmScopeHidden} แผน
+              </div>
+            )}
             {!pm.length && (
               <div style={{ fontSize: 11.5 * big, fontWeight: 700, color: allPm.length ? 'var(--muted)' : 'var(--green)' }}>
                 {/* "ไม่มีแผนถึงกำหนด" ≠ "ไม่มีแผนเลย" — ถ้าทั้งระบบไม่มีแผน PM ต้องบอกให้ไปตั้ง ไม่ใช่ขึ้นเขียวว่าปกติดี */}
-                {(d.plans || []).length
-                  ? `✅ ไม่มีแผนที่ถึงกำหนดใน ${PM_SOON_DAYS} วัน (แผนที่ใช้งานอยู่ ${(d.plans || []).length}${pmRunDayN ? ` · AM ตามวันเดิน ${pmRunDayN} ดูจอ AM` : ''}${pmNoCycleN ? ` · ⚠ ไม่ตั้งรอบ ${pmNoCycleN}` : ''})`
-                  : '⚠ ยังไม่มีแผน PM ในระบบ — ตั้งจุดตรวจ/รอบเวลาที่ ⚙️ ตั้งค่าจุดตรวจ'}
+                {pmBuckets.length
+                  ? `✅ ไม่มีแผนที่ถึงกำหนดใน ${PM_SOON_DAYS} วัน (แผนที่ใช้งานอยู่ ${pmBuckets.length}${pmRunDayN ? ` · AM ตามวันเดิน ${pmRunDayN} ดูจอ AM` : ''}${pmNoCycleN ? ` · ⚠ ไม่ตั้งรอบ ${pmNoCycleN}` : ''})`
+                  : (d.plans || []).length
+                    ? `ไม่มีแผน PM ของไลน์ในขอบเขตจอนี้ (แผนของไลน์อื่น ${pmScopeHidden} แผนไม่แสดง)`
+                    : '⚠ ยังไม่มีแผน PM ในระบบ — ตั้งจุดตรวจ/รอบเวลาที่ ⚙️ ตั้งค่าจุดตรวจ'}
               </div>
             )}
             {pm.slice(0, 8).map(p => (
