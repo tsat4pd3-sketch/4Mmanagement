@@ -7896,6 +7896,38 @@ test('🟡 defect-auto-yellow — ลงงานเสียต้องตั�
     + '\n\n   ของจริงอยู่ในถังแต่ระบบไม่รู้ = สืบกลับไม่ได้ว่าของหายไปไหน\n');
 });
 
+test('🟡 bins-in-my-queue — ถังเหลืองรอพิจารณาต้องอยู่ในคิวงาน 2 ชั้น · ห้ามขึ้น badge', () => {
+  /* 09/11: เปิดแท็กอัตโนมัติ 4 วัน ตั้งแท็ก 14 ใบ **ตัดสินแล้ว 0** ⇒ กองไม่มีใครถูกดึงไปเคลียร์
+     🔴 ชั้น `unit` อย่างเดียวไม่พอ — คนตัดสินคือ QA ซึ่งส่วนงานไม่ตรงไลน์ผลิต จะไม่เห็นอะไรเลย */
+  const bad = [];
+  const Q = 'src/utils/myQueue.js';
+  const q = stripComments(readFileSync(join(ROOT, Q), 'utf8'));
+  if (!/need\('bins', src\.bins\)/.test(q))
+    bad.push(`${Q}: ต้องรับ bins ผ่าน need() — ส่งไม่ครบต้องติด partial ห้ามเงียบ`);
+  if (!/key: 'binpend'[\s\S]{0,200}TIER\.FLOOR/.test(q) && !/TIER\.FLOOR[\s\S]{0,200}key: 'binpend'/.test(q))
+    bad.push(`${Q}: ต้องมีบรรทัดสรุปชั้น floor (QA เห็นกองผ่านชั้นนี้ชั้นเดียว)`);
+  if (!/key: 'binpend_unit'[\s\S]{0,200}TIER\.UNIT/.test(q))
+    bad.push(`${Q}: ต้องมีบรรทัดสรุปของหน่วยเราในชั้น unit`);
+  /* 🔴 แตกรายตัว = 14 ใบดันใบซ่อม/4M ของหน่วยงานตกจอ (CAP unit = 6 แถว) */
+  if (/key: `bin:\$\{/.test(q))
+    bad.push(`${Q}: ห้ามแตกถังเหลืองเป็นรายตัวในคิว — สรุปบรรทัดเดียวต่อชั้น`);
+  if (!/binTagAge\(/.test(q))
+    bad.push(`${Q}: อายุแท็กต้องอ่านจาก binTagAge() ห้ามเขียนเลขวันซ้ำ (WI-PD3-087 §5.6)`);
+  if (/TIER\.MINE[\s\S]{0,160}binpend/.test(q))
+    bad.push(`${Q}: ถังเหลืองห้ามเข้าชั้น mine — badge จะเด้งค้างกับคนทั้งโรงงาน`);
+
+  const P = 'src/components/MyQueuePanel.jsx';
+  const p = stripComments(readFileSync(join(ROOT, P), 'utf8'));
+  if (!/from\('quality_bin_records'\)[\s\S]{0,400}qa_decision/.test(p))
+    bad.push(`${P}: ต้องโหลดคิวถังเหลือง (เงื่อนไขเดียวกับ pendingYellow)`);
+  if (/from\('quality_bin_records'\)\s*\n?\s*\.select\('\*'\)/.test(p))
+    bad.push(`${P}: ห้าม select('*') บนตารางถัง (egress · กฎเขียน DB ข้อ 11)`);
+  if (!/secOfLine\.get\(String\(b\.line_name/.test(p))
+    bad.push(`${P}: ต้องเติม section จากทะเบียนไลน์ก่อนส่ง bins (ตารางถังไม่มีคอลัมน์ส่วนงาน)`);
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   ของอยู่ในถังแต่ไม่มีใครถูกดึงไปตัดสิน = กองค้างถาวร\n');
+});
+
 test('🏭 qa-bins-queue-only — เอกสารถังเหลือง/แดงอยู่ฝ่ายผลิต · /qa เห็นแค่คิวรออนุมัติ', () => {
   /* 06/11 (คำสั่ง user): *"หลักๆอันนี้ต้องอยู่หมวดของผลิตนะ qa จะไปโชว์แค่พวกงานค้างอนุมัติของแผนก
      เพราะ หลักๆเอกสารอยู่ที่ผลิต"*
