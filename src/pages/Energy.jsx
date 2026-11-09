@@ -44,6 +44,7 @@ import {
 import { collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import EnergyMqttTopics from '../components/EnergyMqttTopics';
+import EnergyLiveBoard from '../components/EnergyLiveBoard';
 import { shortTick, fmtAxis, alignedYWidth, CELL_BAR_FILL } from '../utils/chartAxis';
 import { useLatestRequest } from '../utils/useLatestRequest';
 /* ⚠️ ยอดชิ้นย่อ "k" เฉพาะเลขใหญ่จริง — หลักพันย่อแล้วได้ "2k 1k 1k" ปัดชนกัน = อ่านค่าไม่ได้ (23/09) */
@@ -63,7 +64,9 @@ const GOOD = '#22c55e', BAD = '#ef4444', NEUTRAL = '#6b7f8c', ACCENT = '#38bdf8'
 export default function Energy() {
   const { role, lineId, sections: scopeSecs, scopeIdx } = useContext(UserContext);
   const canEdit = can('energy', 'record', role);
-  const [tab, setTab] = useTabParam(['input', 'summary', 'setup', 'mqtt'], 'input');
+  const [tab, setTab] = useTabParam(['input', 'summary', 'setup', 'mqtt', 'live'], 'input');
+  /* ⚡ แท็บค่าไฟสด (2026-11-09) — คนละแกนเวลากับแท็บอื่น (นาที vs เดือน) ⇒ ซ่อนแถบเดือน/KPI รายเดือน */
+  const isLive = tab === 'live';
   const [month, setMonth] = useState(() => monthKeyOf());
   const [lines, setLines] = useState([]);
   const [zones, setZones] = useState([]);
@@ -521,11 +524,12 @@ export default function Energy() {
 
   return (
     <Page>
-      <PageHeader title="พลังงานไฟฟ้า" icon="⚡" sub={`${monthLabel(month)} · เฟส 1 กรอกรายเดือน`}
-        tabs={[{ key: 'input', label: 'กรอกรายเดือน' }, { key: 'summary', label: 'สรุป & วิเคราะห์' }, { key: 'setup', label: 'ค่าการปล่อย' },
+      <PageHeader title="พลังงานไฟฟ้า" icon="⚡" sub={isLive ? 'ค่าไฟสดจากมิเตอร์ · อัปเดตทุก 1 นาที' : `${monthLabel(month)} · เฟส 1 กรอกรายเดือน`}
+        tabs={[{ key: 'live', label: 'ค่าไฟสด' }, { key: 'input', label: 'กรอกรายเดือน' }, { key: 'summary', label: 'สรุป & วิเคราะห์' }, { key: 'setup', label: 'ค่าการปล่อย' },
           ...(mqttReady ? [{ key: 'mqtt', label: 'มิเตอร์ / MQTT' }] : [])]}
         tab={tab} onTab={setTab}
       />
+      {isLive ? <EnergyLiveBoard /> : (<>
       {/* แถบเดือน = FilterBar มาตรฐาน (UI-STANDARD 2026-09-24 — เดิมอยู่ในช่องปุ่มหัวเพจ ช่องสูง 31/33 มุม 7) */}
       <FilterBar>
         <span className="filter-label">เดือน</span>
@@ -845,6 +849,7 @@ export default function Energy() {
           /* ⚙️ ค่าการปล่อย (EF) */
           <EfSetup factors={factors} canEdit={canEdit} cfgMissing={cfgMissing} onSaved={load} month={month} />
         )}
+      </>)}
     </Page>
   );
 }
