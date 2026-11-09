@@ -501,3 +501,39 @@ export function liveForNames(names, boardMeters, meterLines) {
     sharedWith: [...shared].sort(),
   }
 }
+
+/** ตู้ → ชุดไลน์ที่ตู้จ่ายให้ จากแถว energy_meter_machines ที่ embed `machines(line_name)` (ใช้ทั้งค่าสดและทบทวนรายวัน) */
+export function meterLinesFrom(rows) {
+  const out = new Map()
+  for (const x of rows || []) {
+    const ln = x?.machines?.line_name
+    if (!ln) continue
+    const k = `${x.scope_kind}|${x.scope_name}`
+    if (!out.has(k)) out.set(k, new Set())
+    out.get(k).add(ln)
+  }
+  return out
+}
+
+/**
+ * 📅 kWh ของ "วันที่เลือก" จากมิเตอร์ ของกรอบบนผัง (FactoryMap โหมดทบทวน · 2026-11-10)
+ * คู่กับ liveForNames — กฎเดียวกัน: ตู้ละครั้ง · ตู้หลายไลน์ห้ามหารแบ่ง (sharedWith)
+ * @param {Map<string,object>} byMeter  key ตู้ → แถว energy_daily ของวันนั้น
+ * @returns {null | { kwh, have, total, meters, sharedWith, resets }}
+ *   null = กรอบนี้ไม่มีตู้ผูก · kwh = null เมื่อไม่มีตู้ไหนมียอดวันนั้น (ห้ามเป็น 0 — มิเตอร์อาจยังไม่เริ่มส่ง)
+ */
+export function dayForNames(names, byMeter, meterLines) {
+  const set = new Set(names || [])
+  const keys = [...(meterLines || new Map()).keys()].filter(k => [...meterLines.get(k)].some(l => set.has(l)))
+  if (!keys.length) return null
+  const rows = keys.map(k => byMeter?.get(k)).filter(r => r && r.kwh != null)
+  const shared = new Set()
+  for (const k of keys) for (const l of meterLines.get(k)) if (!set.has(l)) shared.add(l)
+  return {
+    kwh: rows.length ? rows.reduce((s, r) => s + Number(r.kwh), 0) : null,
+    have: rows.length, total: keys.length,
+    meters: keys.map(k => k.split('|')[1]),
+    sharedWith: [...shared].sort(),
+    resets: rows.reduce((s, r) => s + (r.resets || 0), 0),
+  }
+}
