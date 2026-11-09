@@ -290,7 +290,7 @@ export default function FeedbackModal({ onClose }) {
 
   return (
     <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 14, width: '100%', maxWidth: 620, maxHeight: '86vh', display: 'flex', flexDirection: 'column' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: '100%', maxWidth: 620, maxHeight: '86vh', display: 'flex', flexDirection: 'column' }}>
 
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ fontSize: 15, fontWeight: 800, flex: 1 }}>แจ้งปัญหา / ข้อเสนอแนะ</div>
@@ -304,7 +304,7 @@ export default function FeedbackModal({ onClose }) {
 
         <div style={{ padding: 18, overflowY: 'auto', flex: 1 }}>
           {notReady && (
-            <div style={{ fontSize: 12, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '8px 10px', marginBottom: 12 }}>
+            <div style={{ fontSize: 12, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 'var(--r-md)', padding: '8px 10px', marginBottom: 12 }}>
               ⚠ ยังใช้งานไม่ได้ — ยังไม่ได้ apply migration <code>20260814_user_feedback.sql</code> (แจ้ง admin)
             </div>
           )}
@@ -416,7 +416,7 @@ export default function FeedbackModal({ onClose }) {
                       </div>
                       {/* 💬 คำตอบจากทีมงาน — คนแจ้งต้องเห็น ไม่งั้นแจ้งไปก็เหมือนตกน้ำ */}
                       {r.admin_note && (
-                        <div style={{ marginTop: 7, padding: '7px 9px', borderRadius: 8,
+                        <div style={{ marginTop: 7, padding: '7px 9px', borderRadius: 'var(--r-md)',
                           background: 'var(--accent-dim)', borderLeft: '3px solid var(--accent)' }}>
                           <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--accent)', marginBottom: 3 }}>
                             คำตอบจากทีมงาน{r.handled_by ? ` · ${r.handled_by}` : ''}

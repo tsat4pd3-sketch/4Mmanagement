@@ -176,12 +176,12 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
         </span>
         {late.length > 0 && (
           <span style={{ fontSize: 11.5, fontWeight: 700, color: '#ef4444', background: 'rgba(239,68,68,0.12)',
-            border: '1px solid rgba(239,68,68,0.4)', borderRadius: 6, padding: '2px 8px' }}>
+            border: '1px solid rgba(239,68,68,0.4)', borderRadius: 'var(--r-md)', padding: '2px 8px' }}>
             เกินเวลา {late.length} รายการ
           </span>
         )}
         <span style={{ flex: 1 }} />
-        <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 20, padding: 2 }}>
+        <div style={{ display: 'flex', gap: 4, background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-pill)', padding: 2 }}>
           {[{ k: 'list', t: 'รายการ' }, { k: 'board', t: 'ไทม์ไลน์' }].map(v => (
             <button key={v.k} onClick={() => setViewSaved(v.k)}
               title={v.k === 'board' ? 'เห็นทั้งวันว่าต้องไปตรวจไลน์ไหน กี่โมง' : 'คิวที่ต้องทำตอนนี้'}
@@ -208,7 +208,7 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
       )}
 
       {showCfg && cfg && canManage && (
-        <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: 11, margin: '9px 0' }}>
+        <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: 11, margin: '9px 0' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, marginBottom: 9,
             opacity: !cfg.is_enabled && readiness && !readiness.canEnable ? 0.6 : 1 }}>
             <input type="checkbox" checked={!!cfg.is_enabled}
@@ -299,7 +299,7 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
                 display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap',
                 background: isLate ? 'rgba(239,68,68,0.08)' : 'var(--bg3)',
                 border: `1px solid ${isLate ? 'rgba(239,68,68,0.45)' : 'var(--border2)'}`,
-                borderLeft: `3px solid ${sm.color}`, borderRadius: 8, padding: '7px 10px',
+                borderLeft: `3px solid ${sm.color}`, borderRadius: 'var(--r-md)', padding: '7px 10px',
               }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: sm.color, whiteSpace: 'nowrap' }}>{sm.icon} {sm.label}</span>
                 {/* basis 220: จอแคบข้อความกินทั้งแถว ปุ่ม/เวลาตกบรรทัดใหม่ (เดิม flex:1 ถูกบีบจนคำละบรรทัด การ์ดสูง 500px+ วัดจริง 390px · 2026-09-07) */}
@@ -344,7 +344,7 @@ function ReadinessList({ readiness, enabled, onRecheck }) {
   const [busy, setBusy] = useState(false);
   const recheck = async () => { setBusy(true); try { await onRecheck(); } finally { setBusy(false); } };
   return (
-    <div style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '8px 10px', marginBottom: 9 }}>
+    <div style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 10px', marginBottom: 9 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
         <span style={{ fontSize: 12, fontWeight: 700 }}>
           ความพร้อมก่อนเปิด{readiness ? (readiness.canEnable ? ' — พร้อม' : ' — ยังไม่พร้อม') : ' — กำลังตรวจ…'}
@@ -383,7 +383,7 @@ function Box({ tone, children }) {
   const c = tone === 'warn' ? '245,158,11' : '77,159,255';
   return (
     <div style={{ fontSize: 12.5, background: `rgba(${c},0.1)`, border: `1px solid rgba(${c},0.35)`,
-      borderRadius: 8, padding: '7px 11px', margin: '4px 0' }}>{children}</div>
+      borderRadius: 'var(--r-md)', padding: '7px 11px', margin: '4px 0' }}>{children}</div>
   );
 }
 

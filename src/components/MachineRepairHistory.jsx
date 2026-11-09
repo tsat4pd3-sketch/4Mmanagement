@@ -23,7 +23,7 @@ const fmtBaht = (v) => (v == null ? '—' : `${Number(v).toLocaleString('th-TH',
 
 function Card({ t, v, h }) {
   return (
-    <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', minWidth: 0 }}>
+    <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 10px', minWidth: 0 }}>
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{t}</div>
       <div style={{ fontSize: 17, fontWeight: 800 }}>{v}</div>
       {h && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{h}</div>}

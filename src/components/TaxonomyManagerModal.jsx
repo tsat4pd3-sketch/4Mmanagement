@@ -120,7 +120,7 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {rows.map(r => (
-                <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--card)', opacity: r.is_active ? 1 : 0.5 }}>
+                <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--card)', opacity: r.is_active ? 1 : 0.5 }}>
                   {extraField === 'color' && <span style={{ width: 14, height: 14, borderRadius: '50%', background: r.color, flexShrink: 0 }} />}
                   {extraField === 'icon' && <span style={{ fontSize: 18, flexShrink: 0 }}>{r.icon}</span>}
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -141,7 +141,7 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
           )}
 
           {editing && (
-            <div style={{ marginTop: 14, padding: 14, borderRadius: 10, border: '1px solid var(--accent)', background: 'var(--bg3)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ marginTop: 14, padding: 14, borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--bg3)', display: 'flex', flexDirection: 'column', gap: 10 }}>
               <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)', margin: 0 }}>{editing === 'new' ? 'เพิ่มรายการใหม่' : 'แก้ไขรายการ'}</p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8 }}>
                 <div><label style={lbl}>Code *</label><input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="LP" style={inp} /></div>

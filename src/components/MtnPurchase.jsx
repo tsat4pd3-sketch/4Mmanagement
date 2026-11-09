@@ -175,7 +175,7 @@ function PrRow({ pr, canEdit, fullName, onChanged, showSource, mo = null, own = 
   });
 
   return (
-    <div style={{ padding: '7px 9px', borderRadius: 8, background: 'var(--card)', border: '1px solid var(--border)', borderLeft: `4px solid ${st.color}`, marginBottom: 6 }}>
+    <div style={{ padding: '7px 9px', borderRadius: 'var(--r-md)', background: 'var(--card)', border: '1px solid var(--border)', borderLeft: `4px solid ${st.color}`, marginBottom: 6 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12.5 }}>
         {pr.pr_no
           ? <b style={{ fontFamily: 'monospace', fontSize: 13 }}>PR {pr.pr_no}</b>
@@ -382,7 +382,7 @@ export function MtnPrPanel({ order, parts = [], fullName, canEdit = false, teamK
       </div>
       {!path && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>ยังไม่ระบุเส้นทาง — ช่างเลือกได้ตั้งแต่รับงาน (ใบเก่าไม่ได้เดาให้)</div>}
       {order?.mttr_hold_from && (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 11.5, padding: '6px 9px', borderRadius: 8, marginBottom: 6,
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 11.5, padding: '6px 9px', borderRadius: 'var(--r-md)', marginBottom: 6,
           background: held ? 'rgba(245,158,11,0.10)' : 'var(--bg)', border: `1px solid ${held ? 'rgba(245,158,11,0.45)' : 'var(--border)'}` }}>
           <span style={{ flex: 1, minWidth: 200, lineHeight: 1.6 }}>
             {held ? '⏸️ หยุดนับ MTTR ช่างอยู่' : '⏸️ เคยหยุดนับ MTTR'} — ตั้งแต่ MTN ตัดสิน {fmtDateTime(order.mttr_hold_from)}
@@ -394,7 +394,7 @@ export function MtnPrPanel({ order, parts = [], fullName, canEdit = false, teamK
       )}
       {held && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>อะไหล่ PR ของใบนี้รับครบ = ระบบเริ่มนับต่อให้เอง</div>}
       {meta?.outsource && (
-        <div style={{ fontSize: 11, color: 'var(--text2)', background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.35)', borderRadius: 8, padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 11, color: 'var(--text2)', background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.35)', borderRadius: 'var(--r-md)', padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
           ส่งซ่อมภายนอก: กดปุ่ม <b>“📤 ส่งซ่อมภายนอก”</b> ด้านบนเพื่อเริ่มนับช่วงอยู่กับ supplier —
           <b> MTTR ของช่างหยุดนับช่วงนั้น</b> แต่ <b>downtime / machine breakdown ของเครื่องนับเต็ม</b> · เปิด PR ค่าจ้าง (GL งานบริการ) ที่นี่
         </div>
@@ -529,7 +529,7 @@ export function MtnPrBoard({ parts = [], fullName, canEdit = false, onStockChang
         <div style={{ ...h3, color: noPrMos.length ? '#ef4444' : undefined }}>ใบ MO ที่ช่างเลือกว่าต้องเปิด PR — ยังไม่มีรายการขอซื้อ ({noPrMos.length})</div>
         {noPrMos.length ? <RowFold rows={noPrMos} unit="ใบ">{o => (
           <div key={o.id}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, padding: '5px 9px', borderRadius: 8, background: 'var(--card)', border: '1px solid var(--border)', borderLeft: '4px solid #ef4444', marginBottom: 6 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, padding: '5px 9px', borderRadius: 'var(--r-md)', background: 'var(--card)', border: '1px solid var(--border)', borderLeft: '4px solid #ef4444', marginBottom: 6 }}>
               <a href={`/mtn-repair?mo=${encodeURIComponent(o.id)}`} style={{ color: 'var(--accent)', fontWeight: 800 }} title="เปิดใบ MO">{o.mo_no || 'ใบ MO (ยังไม่มีเลข)'}</a>
               <span style={{ flex: 1, minWidth: 160 }}>{[o.item_type, o.machine_no, o.line_name].filter(Boolean).join(' · ') || '—'}</span>
               <span style={{ color: 'var(--muted)' }}>{repairPathMeta(o.repair_path)?.label}</span>
@@ -610,7 +610,7 @@ export function MtnGlMaster({ canEdit = false, fullName }) {
             <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 4 }}>{c.label} ({list.length})</div>
             {!list.length && <div style={{ fontSize: 11.5, color: '#f59e0b' }}>⚠ ยังไม่มีรหัสในหมวดนี้</div>}
             {list.map(g => (
-              <div key={g.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '5px 8px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 4 }}>
+              <div key={g.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '5px 8px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', marginBottom: 4 }}>
                 <input defaultValue={g.gl_code} disabled={!canEdit} onBlur={e => e.target.value.trim() && e.target.value.trim() !== g.gl_code && upd(g.id, { gl_code: e.target.value.trim() })} style={{ ...inp, width: 140, fontFamily: 'monospace', fontWeight: 700 }} />
                 <input defaultValue={g.name || ''} disabled={!canEdit} onBlur={e => e.target.value !== (g.name || '') && upd(g.id, { name: e.target.value })} style={{ ...inp, flex: 1, minWidth: 160 }} />
                 <button disabled={!canEdit} onClick={() => setDefault(g)} style={{ ...(g.is_default ? btnPri : btnGhost), padding: '5px 10px' }}>{g.is_default ? '★ ตั้งต้น' : '☆ ตั้งเป็นตั้งต้น'}</button>

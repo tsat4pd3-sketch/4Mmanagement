@@ -149,7 +149,7 @@ export default function FactoryMiniMap({ stateOf, onPick, bottomReserve = 28 }) 
        เพราะ wrapper กว้างเท่ารูปเสมอ (ถ้าไปคุมที่ img ตรงๆ รูปจะแคบกว่า wrapper แล้วกรอบเลื่อน) */
     <div ref={wrapRef} style={{ display: 'flex', justifyContent: 'center' }}>
       <div ref={boxRef} style={{
-        position: 'relative', width: '100%', borderRadius: 10, overflow: 'hidden',
+        position: 'relative', width: '100%', borderRadius: 'var(--r-md)', overflow: 'hidden',
         border: '1px solid var(--border)', background: '#0a0a0f',
         maxWidth: ar && availH ? availH * ar : undefined,
         /* กันภาพสูงพรวดก่อน onLoad (ยังไม่รู้ aspect) — ตั้งให้ **ใหญ่กว่าสูตรความกว้าง 10px**
@@ -211,7 +211,7 @@ export default function FactoryMiniMap({ stateOf, onPick, bottomReserve = 28 }) 
             <div style={{
               ...(K !== 1 ? { zoom: K } : {}),
               background: 'linear-gradient(180deg, rgba(8,10,16,0.9), rgba(8,10,16,0.76))', border: `1px solid ${tint(st.color, 'line')}`,
-              borderBottom: `2.5px solid ${st.color}`, borderRadius: 7, padding: '2px 8px 3px', textAlign: 'center',
+              borderBottom: `2.5px solid ${st.color}`, borderRadius: 'var(--r-md)', padding: '2px 8px 3px', textAlign: 'center',
               textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: 'var(--shadow-float)',
             }}>
               <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', letterSpacing: 0.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>{r.line_name}</div>

@@ -171,14 +171,14 @@ export default function PokaYokeCheck() {
       {/* 🔴 "ยังไม่ทดสอบ" กับ "กะนี้ไม่ได้ผลิต" คนละเรื่อง — ไม่บอก คนอ่านจะนับเป็นขาดตรวจทั้งที่ไลน์ไม่ได้เดิน
           (หลักเดียวกับ AM ที่แยก notStarted ออกจาก late มาตั้งแต่ 08/10 · utils/dailyCheckDay.js) */}
       {ran === false && (
-        <div style={{ padding: '9px 13px', borderRadius: 8, marginBottom: 10, fontSize: 12.5,
+        <div style={{ padding: '9px 13px', borderRadius: 'var(--r-md)', marginBottom: 10, fontSize: 12.5,
           background: 'rgba(148,163,184,0.10)', border: '1px solid var(--border)', color: 'var(--muted)' }}>
           ⚪ <b>{selLine}</b> ไม่ได้เปิดกะใน {SHIFT_LABEL[selShift]} วันที่ {selDate} — <b>ยังไม่ต้องทดสอบ</b> ·
           อุปกรณ์ที่ยังว่างอยู่ไม่นับเป็นขาดตรวจ
         </div>
       )}
       {ran == null && runs && (
-        <div style={{ padding: '9px 13px', borderRadius: 8, marginBottom: 10, fontSize: 12.5,
+        <div style={{ padding: '9px 13px', borderRadius: 'var(--r-md)', marginBottom: 10, fontSize: 12.5,
           background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--amber)' }}>
           ❔ อ่านข้อมูลการเปิดกะไม่สำเร็จ — บอกไม่ได้ว่ากะนี้ไลน์นี้เดินหรือไม่ ⇒ ที่ว่างอยู่อาจเป็น "ไม่ได้ผลิต" ไม่ใช่ "ขาดตรวจ"
         </div>
@@ -197,7 +197,7 @@ export default function PokaYokeCheck() {
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>
       ) : activeDevs.length === 0 ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', background: 'var(--card)', border: '1px dashed var(--border2)', borderRadius: 12 }}>
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', background: 'var(--card)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-lg)' }}>
           ยังไม่มีอุปกรณ์ poka-yoke ของไลน์ {selLine} — {canManage ? 'กด "➕ เพิ่มอุปกรณ์"' : 'ให้หัวหน้าลงทะเบียนอุปกรณ์ก่อน'}
         </div>
       ) : (
@@ -205,7 +205,7 @@ export default function PokaYokeCheck() {
           {activeDevs.map(d => {
             const c = checks[d.id]; const res = c?.result;
             return (
-              <div key={d.id} style={{ background: 'var(--card)', border: `1px solid ${res === 'fail' ? 'var(--red)' : res === 'pass' ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 10, padding: '10px 14px' }}>
+              <div key={d.id} style={{ background: 'var(--card)', border: `1px solid ${res === 'fail' ? 'var(--red)' : res === 'pass' ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '10px 14px' }}>
                 <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
                   <div style={{ flex: 1, minWidth: 200 }}>
                     <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{d.code ? `${d.code} · ` : ''}{d.name}</div>
@@ -243,7 +243,7 @@ export default function PokaYokeCheck() {
       {/* modal ทะเบียนอุปกรณ์ */}
       {dEditing && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(96vw, 560px)' }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 560px)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{dEditing.id ? '✏️ แก้ไข' : '➕ เพิ่ม'}อุปกรณ์ Poka-Yoke — {dEditing.line_name}</div>
               <button onClick={() => setDEditing(null)} style={{ background: 'none', border: 'none', fontSize: 20, color: 'var(--muted)', cursor: 'pointer' }}>✕</button>

@@ -45,7 +45,7 @@ export default function QualityPhotoField({
         /* 🔴 ว่างต้องเขียนว่าว่าง ห้ามปล่อยเป็นช่องเปล่าให้เดาเอง */
         <div style={{
           fontSize: 11.5, color: 'var(--muted)', padding: '10px 12px', marginBottom: 6,
-          border: '1px dashed var(--border)', borderRadius: 8, background: 'var(--bg2)',
+          border: '1px dashed var(--border)', borderRadius: 'var(--r-md)', background: 'var(--bg2)',
         }}>ยังไม่มีรูป</div>
       )}
 

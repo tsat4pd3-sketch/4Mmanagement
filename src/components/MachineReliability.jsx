@@ -225,7 +225,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
       </div>
 
       {loadErr && (
-        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red)', borderRadius: 10, padding: '9px 12px', fontSize: 12.5 }}>⚠️ {loadErr}</div>
+        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontSize: 12.5 }}>⚠️ {loadErr}</div>
       )}
 
       {/* ── บอกให้ชัดว่าเลขนี้คืออะไร — ไม่งั้นเอาไปเทียบกับระบบส่วนกลางแล้วเถียงกัน ── */}
@@ -258,7 +258,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
 
       {/* ── คุณภาพข้อมูล: บอกตรงๆ ว่าเทียบทะเบียนได้แค่ไหน ห้ามเงียบ ── */}
       {(summary.unmatched > 0 || summary.noMachineNo > 0 || summary.unknownShifts > 0) && (
-        <div style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.7 }}>
+        <div style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 12.5, lineHeight: 1.7 }}>
           <b>⚠️ ความครบของข้อมูล</b> — เทียบทะเบียนอุปกรณ์ได้ {summary.matched} จาก {summary.equipCount} เลข
           {summary.unmatched > 0 && <div>· <b>{summary.unmatched} เลขไม่อยู่ในทะเบียน</b> (หน้างานพิมพ์ชื่อเล่น เช่น “เลเซอร์08”) — <b>ยังนับ downtime/MTTR ให้</b> แต่บอกชนิดและ MTBF ไม่ได้ · ดูได้ที่ชิป ❔ ไม่อยู่ในทะเบียน</div>}
           {summary.noMachineNo > 0 && <div>· downtime {summary.noMachineNo} ครั้งไม่ได้ระบุเครื่องเลย — ไม่เข้าตารางนี้</div>}
@@ -284,7 +284,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
             { k: 'restartMin', icon: '▶️', label: 'กลับมารัน', color: 'var(--blue)', tip: 'ตั้งแต่ซ่อมเสร็จ จนไลน์เดินต่อ — ตรวจชิ้นแรก/warm-up' },
             { k: 'totalMin', icon: '🛑', label: 'รวม (Downtime)', color: 'var(--text)', tip: 'ผลรวมทั้ง 3 ท่อน = MTTR แบบ Restore ที่ตารางข้างล่างโชว์' },
           ].map(c => (
-            <div key={c.k} title={c.tip} style={{ flex: 1, minWidth: 140, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 12px' }}>
+            <div key={c.k} title={c.tip} style={{ flex: 1, minWidth: 140, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
               <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{c.icon} {c.label}</div>
               <div style={{ fontSize: 19, fontWeight: 800, color: c.color }}>{fmtDur(ph[c.k])}</div>
               {ph.n > 0 && ph.totalMin > 0 && c.k !== 'totalMin' && (
@@ -333,7 +333,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
           ไม่มีอุปกรณ์ที่ตรงกับตัวกรอง — ลองขยายช่วงวันหรือเลือก “ทั้งหมด”
         </div>
       ) : (
-        <div className="table-sticky" style={{ border: '1px solid var(--border)', borderRadius: 10 }}>
+        <div className="table-sticky" style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
             <thead style={{ background: 'var(--bg2)', position: 'sticky', top: 0, zIndex: 1 }}>
               <tr>

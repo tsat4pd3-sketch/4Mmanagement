@@ -107,7 +107,7 @@ export default function ScanSheetPanel({ lines, canPrint }) {
 
   return (
     <div>
-      <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '9px 12px', marginBottom: 12, lineHeight: 1.7 }}>
+      <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '9px 12px', marginBottom: 12, lineHeight: 1.7 }}>
         🗒️ <b>ใบสแกนประจำไลน์ (A4)</b> — ติดข้างไลน์ แล้วหน้างาน <b>ยิงเหตุผลจากแผ่น</b> แทนการไล่หาในลิสต์ยาว
         (Daily Report → บันทึก Downtime / งานเสีย → แตะ 📷 ข้างช่องประเภท หรือกดปุ่มสแกนข้างเครื่อง)
         · ระบบติ๊กประเภทที่เป็นของไลน์นี้ไว้ให้ (ตามกระบวนการของเครื่องในไลน์) · แก้ทะเบียนประเภทเมื่อไหร่ ให้พิมพ์แผ่นใหม่ (ประเภทที่ถูกปิดใช้ ยิงแล้วระบบไม่รับ)

@@ -609,7 +609,7 @@ function Board({ projects, rollByProject, templates, project, tplPhases, parts, 
                 {r.overdue > 0 && <span style={{ color: 'var(--red)', fontWeight: 800 }}>⏰ เลย {r.overdue}</span>}
                 <span style={{ color: left != null && left < 0 ? 'var(--red)' : 'var(--text2)' }}>SOP {pj.sop_date ? fmtDate(pj.sop_date) : '—'}{left != null ? ` (${left >= 0 ? `อีก ${left} วัน` : `เลย ${-left} วัน`})` : ''}</span>
               </div>
-              <div style={{ height: 6, background: 'var(--bg2)', borderRadius: 3, marginTop: 8, overflow: 'hidden' }}>
+              <div style={{ height: 6, background: 'var(--bg2)', borderRadius: 'var(--r-xs)', marginTop: 8, overflow: 'hidden' }}>
                 <div style={{ width: `${r.pct}%`, height: '100%', background: (LIGHT[r.light] || LIGHT.grey).color }} />
               </div>
             </div>

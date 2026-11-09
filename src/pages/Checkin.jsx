@@ -1619,7 +1619,7 @@ export default function Checkin() {
                         >
                           <div style={{
                             fontSize: 11, fontWeight: 700, letterSpacing: '0.05em',
-                            padding: '2px 5px', borderRadius: 4,
+                            padding: '2px 5px', borderRadius: 'var(--r-xs)',
                             background: rec.has_extended_ot ? 'var(--red-dim)' : 'var(--bg2)',
                             color: rec.has_extended_ot ? 'var(--red)' : 'var(--muted)',
                             border: `1px solid ${rec.has_extended_ot ? 'var(--red-line)' : 'var(--border)'}`,
@@ -1669,7 +1669,7 @@ export default function Checkin() {
       {/* 🤝 Modal ยืมพนักงานข้ามไลน์ */}
       {showBorrowModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '20px 24px', maxWidth: 520, width: '100%', maxHeight: '86vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-lg)' }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '20px 24px', maxWidth: 520, width: '100%', maxHeight: '86vh', display: 'flex', flexDirection: 'column', boxShadow: 'var(--shadow-lg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>ยืมพนักงานมาช่วยกะนี้</div>
               <button onClick={() => setShowBorrowModal(false)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer', padding: 4 }}>✕</button>
@@ -1678,7 +1678,7 @@ export default function Checkin() {
               {shiftInfo.label} · {shiftInfo.workDateStr} — คนที่ยืมจะโผล่ในรายชื่อเช็คชื่อและผังจัดกำลังคนของไลน์ปลายทาง เฉพาะกะนี้ (ไม่ย้ายสังกัดถาวร) · หมดกะแล้วหลุดเอง ไม่ต้องกดคืน — กด ✕ คืน เฉพาะเมื่อจะให้ไลน์อื่นยืมต่อในกะเดียวกัน
             </div>
             {!helpersReady && (
-              <div style={{ padding: '8px 12px', borderRadius: 8, marginBottom: 10, background: 'var(--red-dim)', border: '1px solid var(--red-line)', fontSize: 12, color: 'var(--red)', fontWeight: 600 }}>
+              <div style={{ padding: '8px 12px', borderRadius: 'var(--r-md)', marginBottom: 10, background: 'var(--red-dim)', border: '1px solid var(--red-line)', fontSize: 12, color: 'var(--red)', fontWeight: 600 }}>
                 ⚠️ ระบบยืมตัวยังใช้ไม่ได้ — ยังไม่ได้ apply migration <code>20260819_line_helpers_main.sql</code> (แจ้ง admin)
               </div>
             )}
@@ -1690,7 +1690,7 @@ export default function Checkin() {
             </div>
             <SearchInput value={borrowSearch} onChange={setBorrowSearch} autoFocus grow={false}
               fields="ชื่อ / รหัสพนักงาน (อย่างน้อย 2 ตัวอักษร)" style={{ marginBottom: 10 }} />
-            <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg2)', minHeight: 120 }}>
+            <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', background: 'var(--bg2)', minHeight: 120 }}>
               {borrowLoading && <div style={{ padding: 14, fontSize: 13, color: 'var(--muted)' }}>⏳ กำลังค้นหา...</div>}
               {!borrowLoading && borrowSearch.trim().length >= 2 && borrowResults.length === 0 && (
                 <div style={{ padding: 14, fontSize: 13, color: 'var(--muted)' }}>ไม่พบพนักงานที่ตรงกับ "{borrowSearch.trim()}"</div>
@@ -1735,7 +1735,7 @@ export default function Checkin() {
       <PageHeader title="เช็คชื่อ & PPE" icon="📝"
         sub={<span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <span style={{
-            padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 700,
+            padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700,
             background: shiftInfo.shift === 'day' ? 'var(--amber-dim)' : 'var(--blue-dim)',
             color:      shiftInfo.shift === 'day' ? 'var(--amber)'     : 'var(--blue)',
             border: `1px solid ${shiftInfo.shift === 'day' ? 'var(--amber-line)' : 'var(--blue-line)'}`,
@@ -1779,7 +1779,7 @@ export default function Checkin() {
       <div data-page-note="1" style={{
         display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
         background: 'var(--accent-dim)', border: '1px solid var(--accent)',
-        borderRadius: 10, padding: '9px 14px', marginBottom: 14,
+        borderRadius: 'var(--r-md)', padding: '9px 14px', marginBottom: 14,
       }}>
         <Icon glyph="👤" size={20} style={{ color: 'var(--accent)' }} />
         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
@@ -1834,7 +1834,7 @@ export default function Checkin() {
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         {Object.entries(STATUS_META).map(([key, m]) => counts[key] ? (
           <span key={key} style={{
-            fontSize: 12, padding: '3px 10px', borderRadius: 20,
+            fontSize: 12, padding: '3px 10px', borderRadius: 'var(--r-pill)',
             background: m.bg, color: m.color, border: `1px solid ${m.line}`, fontWeight: 600,
           }}>
             {m.label} {counts[key]}
@@ -1889,7 +1889,7 @@ export default function Checkin() {
           <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {noShiftRows.map(([nm, n]) => (
               <span key={nm} style={{
-                padding: '2px 8px', borderRadius: 999, fontSize: 11.5, fontWeight: 700,
+                padding: '2px 8px', borderRadius: 'var(--r-pill)', fontSize: 11.5, fontWeight: 700,
                 background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--red)',
               }}>{nm} · {n} คน</span>
             ))}
@@ -1971,7 +1971,7 @@ export default function Checkin() {
           (ไม่ปิดจากคลิกฉากหลัง ตามกฎ modal ฟอร์ม — ต้องเลือกยืนยัน/สลับผู้ใช้) */}
       {confirmSave && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '22px 24px', width: '100%', maxWidth: 380, textAlign: 'center' }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '22px 24px', width: '100%', maxWidth: 380, textAlign: 'center' }}>
             <div style={{ fontSize: 32, marginBottom: 6 }}>👤</div>
             <div style={{ fontSize: 14, color: 'var(--text2)', marginBottom: 4 }}>บันทึกเช็คชื่อในนาม</div>
             <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>{fullName || 'ไม่ทราบชื่อ'}</div>
@@ -1986,7 +1986,7 @@ export default function Checkin() {
             <div style={{
               textAlign: 'left', fontSize: 11.5, lineHeight: 1.55, color: 'var(--text2)',
               background: 'var(--bg2)', border: '1px solid var(--border)',
-              borderRadius: 9, padding: '9px 11px', marginBottom: 14,
+              borderRadius: 'var(--r-md)', padding: '9px 11px', marginBottom: 14,
             }}>
               <b style={{ color: 'var(--accent2)' }}>ℹ️ เช็คชื่อไม่ใช่การเปิดกะ</b><br />
               ระบบ<b>ไม่เปิดกะให้อัตโนมัติ</b> — <b>เปิดกะ = สำหรับไลน์ที่จะลงข้อมูลการผลิตเท่านั้น</b>
@@ -2014,7 +2014,7 @@ export default function Checkin() {
 
       {showOtBookModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
-          <div style={{ background: 'var(--card)', borderRadius: 12, padding: 22, width: '100%', maxWidth: 640, maxHeight: '86vh', display: 'flex', flexDirection: 'column', border: '1px solid var(--border)' }}>
+          <div style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', padding: 22, width: '100%', maxWidth: 640, maxHeight: '86vh', display: 'flex', flexDirection: 'column', border: '1px solid var(--border)' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6, color: 'var(--text)' }}>จองรถ OT</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>
               เลือกวันที่/กะ/ไลน์/ทีมได้อิสระ ไม่ต้องรอเช็คชื่อกะนั้น — เหมาะกับกรณีทีมที่ต้องจอง OT ไม่ใช่ทีมที่กำลังเช็คชื่ออยู่ (เช่น จันทร์แรกหลังสลับกะ)
@@ -2061,7 +2061,7 @@ export default function Checkin() {
               </div>
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 14 }}>
+            <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', marginBottom: 14 }}>
               {otBookLoading ? (
                 <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
               ) : !otBookLineId ? (
@@ -2119,7 +2119,7 @@ export default function Checkin() {
       {/* Export forms modal */}
       {showExport && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
-          <div style={{ background: 'var(--card)', borderRadius: 12, padding: 22, width: 'min(380px, 94vw)', border: '1px solid var(--border)' }}>
+          <div style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', padding: 22, width: 'min(380px, 94vw)', border: '1px solid var(--border)' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 14, color: 'var(--text)' }}>ส่งออกฟอร์มกระดาษ (PDF)</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>
               สร้างฟอร์ม 2 หน้า ตามฟอร์มกระดาษจริงที่ใช้หน้างาน:<br />

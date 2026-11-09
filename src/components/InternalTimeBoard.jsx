@@ -126,7 +126,7 @@ export default function InternalTimeBoard({ title, hint, groups, nowMin, breaks 
                       left: `${Math.min(Math.max(left, 0), 97)}%`, width: `${(SPAN_MIN / SPAN) * 100}%`, minWidth: 48,
                       background: it.dashed ? `${it.color}0f` : `${it.color}22`,
                       border: `1.5px ${it.dashed ? 'dashed' : 'solid'} ${it.color}${it.dashed ? '99' : 'cc'}`,
-                      borderRadius: 5, zIndex: 1, opacity: it.dashed ? 0.9 : 1,
+                      borderRadius: 'var(--r-xs)', zIndex: 1, opacity: it.dashed ? 0.9 : 1,
                       display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
                       cursor: onItemClick ? 'pointer' : 'default', boxSizing: 'border-box',
                     }}>

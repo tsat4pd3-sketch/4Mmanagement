@@ -17,7 +17,7 @@ export default function PointZoom({ url, label, color = 'var(--accent)', name, d
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', zIndex: 3000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 12, gap: 10 }}>
       <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#fff', maxWidth: '100%' }}>
         {label != null && label !== '' && (
-          <span style={{ minWidth: 26, height: 26, padding: '0 6px', borderRadius: 999, background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>{label}</span>
+          <span style={{ minWidth: 26, height: 26, padding: '0 6px', borderRadius: 'var(--r-pill)', background: color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>{label}</span>
         )}
         <span style={{ fontSize: 15, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
       </div>

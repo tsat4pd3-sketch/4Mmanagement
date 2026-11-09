@@ -407,7 +407,7 @@ table{border-collapse:collapse;width:100%}
         <input type="date" value={date} onChange={e => setDate(e.target.value)} />
         {calReady && (
           <span style={{
-            fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 999, whiteSpace: 'nowrap',
+            fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--r-pill)', whiteSpace: 'nowrap',
             color: isHoliday ? DAY_TYPE_META[dayType].color : 'var(--text2)',
             background: isHoliday ? 'var(--amber-dim)' : 'var(--bg3)',
             border: `1px solid ${isHoliday ? 'var(--amber-line)' : 'var(--border)'}`,
@@ -564,7 +564,7 @@ function OtMasterDataPanel() {
         </div>
         <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {busRoutes.map(r => (
-            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 6, background: r.is_active ? 'transparent' : 'var(--bg2)', opacity: r.is_active ? 1 : 0.5 }}>
+            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 'var(--r-md)', background: r.is_active ? 'transparent' : 'var(--bg2)', opacity: r.is_active ? 1 : 0.5 }}>
               <span style={{ flex: 1 }}>{r.code} {r.name}</span>
               <button onClick={() => toggleRouteActive(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
               <button onClick={() => removeRoute(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
@@ -582,7 +582,7 @@ function OtMasterDataPanel() {
         </div>
         <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {taskTypes.map(t => (
-            <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 6, background: t.is_active ? 'transparent' : 'var(--bg2)', opacity: t.is_active ? 1 : 0.5 }}>
+            <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 'var(--r-md)', background: t.is_active ? 'transparent' : 'var(--bg2)', opacity: t.is_active ? 1 : 0.5 }}>
               <span style={{ flex: 1 }}>{t.name}</span>
               <button onClick={() => toggleTaskActive(t)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{t.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
               <button onClick={() => removeTask(t)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
@@ -645,7 +645,7 @@ function SimpleNameMaster({ table, title, placeholder, offNote }) {
           </div>
           <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {rows.map(r => (
-              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 6, background: r.is_active ? 'transparent' : 'var(--bg2)', opacity: r.is_active ? 1 : 0.5 }}>
+              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 'var(--r-md)', background: r.is_active ? 'transparent' : 'var(--bg2)', opacity: r.is_active ? 1 : 0.5 }}>
                 <span style={{ flex: 1 }}>{r.name}</span>
                 <button onClick={() => toggle(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
                 <button onClick={() => remove(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
@@ -1229,7 +1229,7 @@ table{border-collapse:collapse;width:100%}
       </TimeRangeBar>
 
       {station && (
-        <div style={{ marginBottom: 12, padding: '8px 14px', borderRadius: 8, background: 'var(--accent-dim)', border: '1px solid rgba(61,214,92,0.2)', display: 'inline-flex', gap: 10, alignItems: 'center' }}>
+        <div style={{ marginBottom: 12, padding: '8px 14px', borderRadius: 'var(--r-md)', background: 'var(--accent-dim)', border: '1px solid rgba(61,214,92,0.2)', display: 'inline-flex', gap: 10, alignItems: 'center' }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)' }}>{station.station_name}</span>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>{station.line_name}</span>
         </div>
@@ -1257,7 +1257,7 @@ table{border-collapse:collapse;width:100%}
                   <td style={{ color: 'var(--blue)', fontWeight: 700 }}>{r.employees?.employee_id_code}</td>
                   <td style={{ fontWeight: 600 }}>{r.employees?.name}</td>
                   <td style={{ fontSize: 12 }}>
-                    {r.employees?.team && <span style={{ background: 'var(--blue-dim)', color: 'var(--blue)', borderRadius: 4, padding: '1px 6px', fontSize: 11, fontWeight: 700 }}>Team {r.employees.team}</span>}
+                    {r.employees?.team && <span style={{ background: 'var(--blue-dim)', color: 'var(--blue)', borderRadius: 'var(--r-xs)', padding: '1px 6px', fontSize: 11, fontWeight: 700 }}>Team {r.employees.team}</span>}
                   </td>
                   <td>
                     <StatusBadge ok={r.has_helmet} label="หมวก" />
@@ -1426,8 +1426,8 @@ table{border-collapse:collapse;width:100%}
                   <td><KpiSmall value={r.present} label={`/ ${r.total} วัน`} /></td>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div style={{ flex: 1, height: 6, background: 'var(--bg3)', borderRadius: 3, minWidth: 60 }}>
-                        <div style={{ width: `${r.total ? (r.present / r.total * 100) : 0}%`, height: '100%', background: 'var(--green)', borderRadius: 3, transition: 'width 0.5s' }} />
+                      <div style={{ flex: 1, height: 6, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', minWidth: 60 }}>
+                        <div style={{ width: `${r.total ? (r.present / r.total * 100) : 0}%`, height: '100%', background: 'var(--green)', borderRadius: 'var(--r-xs)', transition: 'width 0.5s' }} />
                       </div>
                       <span style={{ fontSize: 11, color: 'var(--text2)', minWidth: 30 }}>{r.total ? Math.round(r.present / r.total * 100) : 0}%</span>
                     </div>
@@ -1819,7 +1819,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
       {/* Reject modal */}
       {rejectModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px 24px 20px', width: 'min(420px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
+          <div style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', padding: '24px 24px 20px', width: 'min(420px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
             <h3 style={{ margin: '0 0 14px', color: 'var(--red)', fontFamily: 'var(--font-display)' }}>❌ ระบุเหตุผลที่ Reject</h3>
             <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)}
               placeholder="เหตุผลที่ไม่อนุมัติ..." rows={3}
@@ -1841,7 +1841,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
       {/* QA Approve Modal */}
       {qaApproveModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px 24px 20px', width: 'min(460px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
+          <div style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', padding: '24px 24px 20px', width: 'min(460px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
             <h3 style={{ margin: '0 0 4px', color: 'var(--blue)', fontFamily: 'var(--font-display)' }}>QA ยืนยันคุณภาพงาน</h3>
             <p style={{ margin: '0 0 14px', color: 'var(--muted)', fontSize: 13 }}>
               {qaApproveModal.line_name} · {qaApproveModal.category} · {qaApproveModal.description}
@@ -1855,7 +1855,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
               </div>
             )}
             <div style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600, marginBottom: 6 }}>แนบรูปยืนยันคุณภาพ <span style={{ color: 'var(--muted)' }}>(ไม่บังคับ)</span></div>
-            <div style={{ border: `2px dashed ${qaImageFile ? 'var(--blue)' : 'var(--border2)'}`, borderRadius: 8, padding: '10px 12px', background: qaImageFile ? 'var(--blue-dim)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center' }}
+            <div style={{ border: `2px dashed ${qaImageFile ? 'var(--blue)' : 'var(--border2)'}`, borderRadius: 'var(--r-md)', padding: '10px 12px', background: qaImageFile ? 'var(--blue-dim)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center' }}
               onClick={() => document.getElementById('qa-img-input').click()}>
               <input id="qa-img-input" type="file" accept="image/*" style={{ display: 'none' }}
                 onChange={async e => {
@@ -1933,7 +1933,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
           {Object.entries(STATUS_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
         {actionableCount > 0 && (
-          <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)', borderRadius: 6, padding: '3px 8px' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '3px 8px' }}>
             ⏳ รอดำเนินการ {actionableCount} รายการ
           </span>
         )}
@@ -1975,7 +1975,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
         {Object.entries(CAT_META).map(([k, m]) => (
           <div key={k} onClick={() => setCat(c => c === k ? '' : k)} style={{
             background: cat === k ? m.bg : 'var(--card)', border: `1px solid ${cat === k ? m.color : 'var(--border)'}`,
-            borderRadius: 10, padding: '12px 14px', cursor: 'pointer', transition: 'all 0.15s'
+            borderRadius: 'var(--r-md)', padding: '12px 14px', cursor: 'pointer', transition: 'all 0.15s'
           }}>
             <div style={{ fontSize: 20 }}>{m.icon}</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{m.label}</div>
@@ -2017,12 +2017,12 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
         if (!cpcMonth) return <div className="card" style={{ padding: 16, marginBottom: 16 }}>เลือกเดือนของใบก่อน</div>;
         if (!fresh || cpcSheet.loading) return <div className="card" style={{ padding: 16, marginBottom: 16, color: 'var(--muted)' }}>กำลังโหลดใบ Changing Point...</div>;
         if (cpcSheet.error) return (
-          <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 8, fontSize: 12.5, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)' }}>
+          <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 'var(--r-md)', fontSize: 12.5, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)' }}>
             โหลดใบไม่สำเร็จ — {cpcSheet.error}
           </div>
         );
         return (
-          <div style={{ overflowX: 'auto', background: '#fff', borderRadius: 8, padding: 12, marginBottom: 16, border: '1px solid var(--border)' }}>
+          <div style={{ overflowX: 'auto', background: '#fff', borderRadius: 'var(--r-md)', padding: 12, marginBottom: 16, border: '1px solid var(--border)' }}>
             <style>{CPC_CSS}</style>
             <div dangerouslySetInnerHTML={{ __html: cpcSheet.html }} />
           </div>
@@ -2034,7 +2034,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
       {/* 🔴 รู้ขอบเขตแล้วแต่ไม่มีไลน์เลย = คิวรีถูกบีบเป็น 0 แถว — ต้องบอกว่าเป็นเรื่อง "ทะเบียนไลน์"
           ห้ามปล่อยให้ไปโผล่เป็น "ไม่พบใบที่เลือก" (คนละสาเหตุ คนละทางแก้) */}
       {allowedLineNames?.length === 0 && !loading && (
-        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 12.5, color: 'var(--text)',
+        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5, color: 'var(--text)',
           background: 'var(--red-dim)', border: '1px solid var(--red-line)' }}>
           ⚠️ ยังจับคู่ไลน์ในขอบเขตของคุณไม่ได้เลย — รายการจึงว่างทั้งที่อาจมีใบค้างอยู่
           <div style={{ color: 'var(--muted)', marginTop: 2 }}>
@@ -2046,7 +2046,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
       {/* deep-link จากหน้าอื่น (เช่น Dashboard ส่วนงาน) — บอกเสมอว่าเน้นใบไหนอยู่ และถ้าหาไม่เจอห้ามเงียบ */}
       {focus && !loading && allowedLineNames?.length !== 0 && (
         focusRow ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '8px 12px', borderRadius: 8,
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)',
             background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', fontSize: 12.5, color: 'var(--text)' }}>
             <span>เน้นใบที่เลือกมา — <b>{focusRow.line_name || 'ไม่ระบุไลน์'}</b> · {focusRow.category} · {fmtDate(focusRow.work_date)}</span>
             <button onClick={() => setFocus('')} style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
@@ -2054,7 +2054,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
             </button>
           </div>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '8px 12px', borderRadius: 8,
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)',
             background: 'var(--red-dim)', border: '1px solid var(--red-line)', fontSize: 12.5, color: 'var(--text)' }}>
             <span>⚠️ ไม่พบใบที่เลือกในรายการนี้ — อาจถูกอนุมัติ/ปฏิเสธไปแล้ว หรืออยู่นอกช่วงวัน/ตัวกรอง หรือนอกขอบเขตส่วนงานของคุณ</span>
             <button onClick={() => { setStatusFilter(''); setCat(''); setLine(''); setFourMSection(''); }}
@@ -2093,7 +2093,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                   <tr key={l.id} ref={isFocus ? focusRowRef : null} style={isFocus ? { background: 'var(--amber-dim)' } : undefined}>
                     <td style={{ fontWeight: 600, whiteSpace: 'nowrap', fontSize: 12, borderLeft: isFocus ? '3px solid var(--amber)' : undefined }}>{fmtDate(l.work_date)}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.line_name}</td>
-                    <td><span style={{ background: m.bg, color: m.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{m.icon} {l.category}</span></td>
+                    <td><span style={{ background: m.bg, color: m.color, borderRadius: 'var(--r-xs)', padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{m.icon} {l.category}</span></td>
                     <td style={{ fontSize: 13 }}>
                       {l.description}
                       {l.change_subtype && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
@@ -2117,14 +2117,14 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                        <span style={{ background: sm.bg, color: sm.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{sm.label}</span>
+                        <span style={{ background: sm.bg, color: sm.color, borderRadius: 'var(--r-xs)', padding: '2px 8px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{sm.label}</span>
                         {svName && <span style={{ fontSize: 11, color: 'var(--muted)' }}>SV: {svName}</span>}
                         {qaName && <span style={{ fontSize: 11, color: 'var(--muted)' }}>QA: {qaName}</span>}
                         {l.approved_at && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{new Date(l.approved_at).toLocaleDateString('th-TH')}</span>}
                       </div>
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 5,
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 'var(--r-xs)',
                         background: needsQA ? 'var(--red-dim)' : 'var(--green-dim)',
                         color: needsQA ? 'var(--red)' : 'var(--green)' }}>
                         {needsQA ? '🔴 QA' : '🟢 SV'}
@@ -2563,11 +2563,11 @@ ${catHeaderCells}
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         {SKILL_LEVELS.filter(lv => lv.min > 0).map(lv => (
-          <span key={lv.label} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: lv.bg, color: lv.color, border: `1px solid ${tint(lv.color, 'line')}` }}>
+          <span key={lv.label} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-xs)', background: lv.bg, color: lv.color, border: `1px solid ${tint(lv.color, 'line')}` }}>
             {lv.label} ≥{lv.min}
           </span>
         ))}
-        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>— ยังไม่ประเมิน</span>
+        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-xs)', background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>— ยังไม่ประเมิน</span>
       </div>
 
       {loading ? <Loader /> : (() => {
@@ -2600,7 +2600,7 @@ ${catHeaderCells}
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
                       {emp.image_url
                         ? <img loading="lazy" src={emp.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 10, objectFit: 'cover' }} />
-                        : <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16 }}>{(emp.name || '?')[0]}</div>
+                        : <div style={{ width: 40, height: 40, borderRadius: 'var(--r-md)', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16 }}>{(emp.name || '?')[0]}</div>
                       }
                       <div>
                         <div style={{ fontWeight: 700, fontSize: 14 }}>{emp.name}</div>
@@ -2614,7 +2614,7 @@ ${catHeaderCells}
                         const score = skillMap[s.name];
                         const lv = getLevel(score);
                         return (
-                          <span key={s.name} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, background: lv.bg, color: lv.color, border: `1px solid ${tint(lv.color, 'dim')}` }}>
+                          <span key={s.name} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-xs)', background: lv.bg, color: lv.color, border: `1px solid ${tint(lv.color, 'dim')}` }}>
                             {s.label} {score}
                           </span>
                         );
@@ -2682,7 +2682,7 @@ ${catHeaderCells}
                       <td style={{ textAlign: 'center', padding: '8px 6px', position: 'sticky', left: 0, zIndex: 2, background: 'var(--bg)' }}>
                         {emp.image_url
                           ? <img loading="lazy" src={emp.image_url} alt="" style={{ width: 38, height: 38, borderRadius: 10, objectFit: 'cover', border: `2px solid ${tint(avgLv.color, 'line')}`, display: 'block', margin: '0 auto' }} />
-                          : <div style={{ width: 38, height: 38, borderRadius: 10, margin: '0 auto', background: `${tint(avgLv.color, 'dim')}`, border: `2px solid ${tint(avgLv.color, 'line')}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, color: avgLv.color }}>{(emp.name || '?')[0]}</div>
+                          : <div style={{ width: 38, height: 38, borderRadius: 'var(--r-md)', margin: '0 auto', background: `${tint(avgLv.color, 'dim')}`, border: `2px solid ${tint(avgLv.color, 'line')}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, color: avgLv.color }}>{(emp.name || '?')[0]}</div>
                         }
                       </td>
                       <td style={{ position: 'sticky', left: 52, zIndex: 2, background: 'var(--bg)' }}>
@@ -2693,12 +2693,12 @@ ${catHeaderCells}
                           <div title={`ยืมมาจาก ${emp._helperFrom} มาช่วย ${emp._helperTo || 'ไลน์นี้'} เฉพาะกะนี้`}
                             style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 700,
                               color: 'var(--blue)', background: 'var(--blue)18', border: '1px solid var(--blue)44',
-                              borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>
+                              borderRadius: 'var(--r-xs)', padding: '0 5px', whiteSpace: 'nowrap' }}>
                             ยืมจาก {emp._helperFrom}
                           </div>
                         )}
                         {avg !== null && (
-                          <div style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 700, color: avgLv.color, background: avgLv.bg, borderRadius: 4, padding: '1px 5px' }}>
+                          <div style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 700, color: avgLv.color, background: avgLv.bg, borderRadius: 'var(--r-xs)', padding: '1px 5px' }}>
                             avg {avg}
                           </div>
                         )}
@@ -2713,7 +2713,7 @@ ${catHeaderCells}
                         const lv = getLevel(score);
                         return (
                           <td key={s.name} style={{ textAlign: 'center', padding: '6px 4px', borderLeft: si === 0 ? `2px solid ${tint(g.color, 'dim')}` : undefined }}>
-                            <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', background: lv.bg, borderRadius: 4, padding: '3px 4px', minWidth: 36 }}>
+                            <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', background: lv.bg, borderRadius: 'var(--r-xs)', padding: '3px 4px', minWidth: 36 }}>
                               <span style={{ fontSize: 12, fontWeight: 700, color: lv.color }}>{score}</span>
                               <span style={{ fontSize: 11, color: lv.color }}>{lv.label}</span>
                             </div>
@@ -3157,10 +3157,10 @@ function MultiSkillFormTab() {
                 { label: sigLabelsOf('multi_skill', MS_SIG_DEFAULTS)[1], name: checker, setName: setChecker, sig: checkerSig, setSig: setCheckerSig, autoRole: 'supervisor' },
                 { label: sigLabelsOf('multi_skill', MS_SIG_DEFAULTS)[2], name: approver, setName: setApprover, sig: approverSig, setSig: setApproverSig, autoRole: 'manager/admin' },
               ].map(({ label, name, setName, sig, setSig, autoRole }) => (
-                <div key={label} style={{ border: '1px solid var(--border2)', borderRadius: 8, padding: 10, background: 'var(--bg2)' }}>
+                <div key={label} style={{ border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: 10, background: 'var(--bg2)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                     <span style={lbSt}>{label}</span>
-                    <span style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 4, padding: '1px 5px' }}>{autoRole}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 'var(--r-xs)', padding: '1px 5px' }}>{autoRole}</span>
                   </div>
                   {/* 2026-09-07 เลือกจาก profiles (<PersonSelect>) — role ตามช่องขึ้นก่อน · เลือกแล้วลายเซ็นตามมาเอง (พิมพ์เองยังได้แต่ติดป้าย) */}
                   <PersonSelect value={name} roles={autoRole.split('/')} lineIds={filterLine ? [filterLine] : undefined} placeholder="ชื่อ-นามสกุล"
@@ -3174,7 +3174,7 @@ function MultiSkillFormTab() {
                     </div>
                   ) : (
                     <label style={{ display: 'block', cursor: 'pointer' }}>
-                      <div style={{ height: 48, border: '1px dashed var(--border2)', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--muted)' }}>
+                      <div style={{ height: 48, border: '1px dashed var(--border2)', borderRadius: 'var(--r-xs)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--muted)' }}>
                         อัปโหลดลายเซ็น
                       </div>
                       <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async e => {
@@ -3210,7 +3210,7 @@ function MultiSkillFormTab() {
             {/* Legend */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
               {MS_LEVELS.map(lv => (
-                <div key={lv.level} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 8, background: lv.level > 0 ? lv.bg + "33" : 'var(--bg3)', border: `1px solid ${lv.level > 0 ? lv.border : 'var(--border)'}` }}>
+                <div key={lv.level} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 'var(--r-md)', background: lv.level > 0 ? lv.bg + "33" : 'var(--bg3)', border: `1px solid ${lv.level > 0 ? lv.border : 'var(--border)'}` }}>
                   <SkillGauge level={lv.level} size={20} />
                   <span style={{ fontSize: 11, color: lv.level > 0 ? lv.color : 'var(--muted)', fontWeight: lv.level > 0 ? 700 : 400 }}>
                     {lv.pct} · {lv.label}
@@ -3227,7 +3227,7 @@ function MultiSkillFormTab() {
                   return (
                     <div key={emp.id} className="card" style={{ padding: '10px 12px' }}>
                       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
-                        <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16 }}>{(emp.name || '?')[0]}</div>
+                        <div style={{ width: 40, height: 40, borderRadius: 'var(--r-md)', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16 }}>{(emp.name || '?')[0]}</div>
                         <div>
                           <div style={{ fontWeight: 700, fontSize: 14 }}>{emp.name}</div>
                           <div style={{ fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code} · {positionLabel(emp.position)}</div>
@@ -3240,7 +3240,7 @@ function MultiSkillFormTab() {
                           const lv = levels[si];
                           const m = msStyle(lv);
                           return (
-                            <span key={s.name} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, background: m.bg + '55', color: m.color, border: `1px solid ${tint(m.border, 'line')}` }}>
+                            <span key={s.name} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-xs)', background: m.bg + '55', color: m.color, border: `1px solid ${tint(m.border, 'line')}` }}>
                               {s.label} L{lv}
                             </span>
                           );
@@ -3400,7 +3400,7 @@ const Thumb = ({ src }) => {
 
 const StatusBadge = ({ ok, label }) => (
   <span style={{
-    display: 'inline-block', fontSize: 11, borderRadius: 4, padding: '1px 5px', marginRight: 3,
+    display: 'inline-block', fontSize: 11, borderRadius: 'var(--r-xs)', padding: '1px 5px', marginRight: 3,
     background: ok ? 'var(--green-dim)' : 'var(--red-dim)',
     color: ok ? 'var(--green)' : 'var(--red)',
     border: `1px solid ${ok ? 'var(--green-line)' : 'var(--red-line)'}`,
@@ -3967,7 +3967,7 @@ function SkillAllowanceTab() {
               </span>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span style={{ background: 'var(--green-dim)', color: 'var(--green)', borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700 }}>
+              <span style={{ background: 'var(--green-dim)', color: 'var(--green)', borderRadius: 'var(--r-md)', padding: '3px 10px', fontSize: 12, fontWeight: 700 }}>
                 {rows.length} คน
               </span>
               {canExport && (
@@ -4522,7 +4522,7 @@ function AttendanceFormTab() {
       {empRows.length > 0 && (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           {calLoaded && days.every(d => getDayType(dayDateStr(d)) === 'working') && (
-            <div style={{ marginBottom: 8, padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)' }}>
+            <div style={{ marginBottom: 8, padding: '6px 10px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)' }}>
               ⚠️ งวดนี้ไม่มีวันหยุดในปฏิทินบริษัทเลย — ถ้าเดือนนี้มีวันหยุดจริง ให้ตั้งค่าที่ "ปฏิทินบริษัท" ก่อนพิมพ์ ไม่งั้นชั่วโมง OT วันหยุด (8/10 ชม.) จะถูกคิดแบบวันทำงานปกติ (2/5 ชม.)
             </div>
           )}

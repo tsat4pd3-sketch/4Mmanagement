@@ -296,7 +296,7 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
             <Field label="เหตุผลที่ปฏิเสธ" hint="บังคับเมื่อปฏิเสธ"><input style={inp} value={eciModal.reject_reason || ''} onChange={e => setEciModal({ ...eciModal, reject_reason: e.target.value })} /></Field>
           </div>
 
-          <div style={{ marginTop: 12, border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
+          <div style={{ marginTop: 12, border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 10 }}>
             <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 6 }}>ผลกระทบ — ติ๊กแล้วต้องผูก "ของจริง" ก่อนปิดงาน</div>
             <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
               <Leg on={eciModal.affects_drawing} label="แบบ/Drawing rev ใหม่" onToggle={v => setEciModal({ ...eciModal, affects_drawing: v })}>
@@ -339,7 +339,7 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
 
 function Leg({ on, label, onToggle, children }) {
   return (
-    <div style={{ border: `1px solid ${on ? '#f59e0b66' : 'var(--border)'}`, borderRadius: 8, padding: 8, background: on ? 'rgba(245,158,11,0.06)' : 'transparent' }}>
+    <div style={{ border: `1px solid ${on ? '#f59e0b66' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: 8, background: on ? 'rgba(245,158,11,0.06)' : 'transparent' }}>
       <label style={{ fontSize: 12.5, fontWeight: 700, display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
         <input type="checkbox" checked={!!on} onChange={e => onToggle(e.target.checked)} /> {label}
       </label>

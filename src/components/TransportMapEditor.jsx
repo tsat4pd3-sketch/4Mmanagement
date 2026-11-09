@@ -354,7 +354,7 @@ export default function TransportMapEditor() {
 
   if (loading) return <div style={{ padding: 30, color: 'var(--muted)' }}>กำลังโหลดผัง…</div>
   if (!imageUrl) return (
-    <div style={{ padding: 30, borderRadius: 12, border: '1px dashed var(--border2)', background: 'var(--card)', color: 'var(--muted)', maxWidth: 640 }}>
+    <div style={{ padding: 30, borderRadius: 'var(--r-lg)', border: '1px dashed var(--border2)', background: 'var(--card)', color: 'var(--muted)', maxWidth: 640 }}>
       ยังไม่มีรูปผังโรงงาน — อัปโหลดที่แท็บ <b style={{ color: 'var(--text2)' }}>ภาพรวมโรงงาน</b> ก่อน แล้วกลับมาวาดถนนทับผังเดียวกัน
     </div>
   )
@@ -394,12 +394,12 @@ export default function TransportMapEditor() {
         <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ดูอย่างเดียว (ต้องมีสิทธิ์ transport:manage เพื่อแก้)</div>
       )}
       {canEdit && scaleMode && (
-        <div style={{ fontSize: 12, color: '#f0abfc', background: 'rgba(217,70,239,0.1)', border: '1px solid rgba(217,70,239,0.4)', borderRadius: 8, padding: '7px 11px' }}>
+        <div style={{ fontSize: 12, color: '#f0abfc', background: 'rgba(217,70,239,0.1)', border: '1px solid rgba(217,70,239,0.4)', borderRadius: 'var(--r-md)', padding: '7px 11px' }}>
           คลิก 2 จุดบนผังที่รู้ระยะจริง (เช่น ความกว้างช่องจอด/ความยาวไลน์) แล้วกรอกระยะเป็นเมตร — {scalePts.length}/2 จุด
         </div>
       )}
       {canEdit && !scaleMode && (
-        <div style={{ fontSize: 12, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 11px' }}>
+        <div style={{ fontSize: 12, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '7px 11px' }}>
           {mode === 'draw' && (chainLast
             ? '✏️ คลิกจุดถัดไปตามแนวถนน — ทางเลี้ยว/หัวโค้งให้คลิกตรงมุมทุกจุด เส้นจะหักตาม (ไม่ตัดทะลุ) · คลิกใกล้จุดเดิม = บรรจบ/สี่แยก · กด "✓ จบเส้น" หรือ Esc เพื่อขึ้นเส้นใหม่'
             : '✏️ คลิกจุดเริ่มต้นบนแนวถนน แล้วคลิกไล่ไปตามถนน (คลิกทุกมุมที่เลี้ยว) ระบบวางจุด+ต่อเส้นให้อัตโนมัติ')}
@@ -413,7 +413,7 @@ export default function TransportMapEditor() {
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {/* map */}
         <div ref={wrapRef} onClick={onMapClick} onPointerMove={onMapPointerMove} onPointerUp={onMapPointerUp} onPointerCancel={onMapPointerUp}
-          style={{ position: 'relative', flex: '1 1 560px', minWidth: 320, maxWidth: 1100, borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)', touchAction: 'none', cursor: (mode === 'node' || mode === 'draw') ? 'crosshair' : 'default' }}>
+          style={{ position: 'relative', flex: '1 1 560px', minWidth: 320, maxWidth: 1100, borderRadius: 'var(--r-lg)', overflow: 'hidden', border: '1px solid var(--border)', touchAction: 'none', cursor: (mode === 'node' || mode === 'draw') ? 'crosshair' : 'default' }}>
           <img src={imageUrl} alt="ผังถนนโรงงาน" style={{ display: 'block', width: '100%', height: 'auto', pointerEvents: 'none', userSelect: 'none' }} />
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.28)', pointerEvents: 'none' }} />
           {/* edges */}
@@ -478,7 +478,7 @@ export default function TransportMapEditor() {
                 }}>
                 {n.kind !== 'junction' && <span style={{ pointerEvents: 'none' }}>{k.icon}</span>}
                 {n.name && (   /* ป้ายชื่อ: กว้างสุด NODE_PILL_W + … (ชื่อเต็มอยู่ใน title) · จุดใกล้ขอบ = ป้ายชิดขอบจุดฝั่งใน ไม่ตกกรอบผัง (UI §6 pillEdge · 20/10) */
-                  <span style={{ position: 'absolute', top: '105%', left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', maxWidth: NODE_PILL_W, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 11, fontWeight: 700, color: '#fff', background: 'rgba(9,11,18,0.82)', padding: '1px 5px', borderRadius: 4, pointerEvents: 'none', ...pillEdgeStyle(pillEdgeAlign(n.x, { pillW: NODE_PILL_W, mapW })) }}>{n.name}</span>
+                  <span style={{ position: 'absolute', top: '105%', left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap', maxWidth: NODE_PILL_W, overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 11, fontWeight: 700, color: '#fff', background: 'rgba(9,11,18,0.82)', padding: '1px 5px', borderRadius: 'var(--r-xs)', pointerEvents: 'none', ...pillEdgeStyle(pillEdgeAlign(n.x, { pillW: NODE_PILL_W, mapW })) }}>{n.name}</span>
                 )}
               </div>
             )
@@ -487,7 +487,7 @@ export default function TransportMapEditor() {
 
         {/* side editor */}
         <div style={{ flex: '0 0 250px', minWidth: 230, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 12 }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 12 }}>
             <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text2)', marginBottom: 8 }}>สัญลักษณ์</div>
             {NODE_KINDS.map(k => (
               <div key={k.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>
@@ -497,7 +497,7 @@ export default function TransportMapEditor() {
           </div>
 
           {canEdit && selNode && (
-            <div style={{ background: 'var(--card)', border: '1px solid var(--accent)', borderRadius: 10, padding: 12 }}>
+            <div style={{ background: 'var(--card)', border: '1px solid var(--accent)', borderRadius: 'var(--r-md)', padding: 12 }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>✏️ แก้ไขจุด</div>
               <FieldLbl t="ชื่อจุด">
                 <input value={selNode.name || ''} onChange={e => patchNode(selNode.id, { name: e.target.value })} placeholder="เช่น STORE-IN, แยก A" style={inp} />
@@ -521,7 +521,7 @@ export default function TransportMapEditor() {
             </div>
           )}
           {canEdit && selEdge && (
-            <div style={{ background: 'var(--card)', border: '1px solid var(--accent)', borderRadius: 10, padding: 12 }}>
+            <div style={{ background: 'var(--card)', border: '1px solid var(--accent)', borderRadius: 'var(--r-md)', padding: 12 }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>✏️ แก้ไขถนน</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
                 {(nById[selEdge.a_node]?.name || 'จุด')} ↔ {(nById[selEdge.b_node]?.name || 'จุด')}<br />
@@ -546,7 +546,7 @@ export default function TransportMapEditor() {
         const ok = m > 0 && unitDist > 1e-6
         return (
           <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-            <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, width: 'min(94vw, 380px)' }}>
+            <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 20, width: 'min(94vw, 380px)' }}>
               <h3 style={{ margin: '0 0 10px', fontSize: 16, fontWeight: 900, color: 'var(--text)' }}>ตั้งมาตราส่วน</h3>
               <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 10 }}>ระยะ 2 จุดที่เลือก = <b style={{ color: 'var(--text2)' }}>{unitDist.toFixed(2)}</b> หน่วยผัง</div>
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ระยะจริงของ 2 จุดนี้ (เมตร)</span>

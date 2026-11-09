@@ -138,7 +138,7 @@ function Row({ it, onGo }) {
       </span>
       {it.age != null && (
         <span title={`ค้างมา ${it.age} วัน`} style={{
-          flexShrink: 0, fontSize: 11, fontWeight: 700, padding: '1px 6px', borderRadius: 999,
+          flexShrink: 0, fontSize: 11, fontWeight: 700, padding: '1px 6px', borderRadius: 'var(--r-pill)',
           color: old ? '#ef4444' : 'var(--muted)',
           background: old ? '#ef444418' : 'transparent',
         }}>{it.age}ว</span>

@@ -171,9 +171,9 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
                 ความแข็งแกร่ง: {next.length < 6 ? '⚠ อ่อน' : next.length < 10 ? '🟡 พอใช้' : '🟢 แข็งแกร่ง'}
               </div>
-              <div style={{ height: 3, borderRadius: 2, background: 'var(--border2)', overflow: 'hidden' }}>
+              <div style={{ height: 3, borderRadius: 'var(--r-xs)', background: 'var(--border2)', overflow: 'hidden' }}>
                 <div style={{
-                  height: '100%', borderRadius: 2,
+                  height: '100%', borderRadius: 'var(--r-xs)',
                   width: `${Math.min((next.length / 14) * 100, 100)}%`,
                   background: next.length < 6 ? '#ef4444' : next.length < 10 ? '#f59e0b' : 'var(--accent)',
                   transition: 'width 0.3s, background 0.3s',

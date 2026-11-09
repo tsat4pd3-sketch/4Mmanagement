@@ -262,7 +262,7 @@ export default function DocFormsRegistry() {
       {/* modal แก้ไข (มีฟอร์ม — ไม่ปิดจาก backdrop) */}
       {editing && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(96vw, 940px)', maxHeight: '92vh', overflowY: 'auto' }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 940px)', maxHeight: '92vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>✏️ แก้ไขทะเบียน — <span style={{ color: 'var(--accent)' }}>{editing.doc_key}</span></div>
               <button onClick={() => setEditing(null)} style={{ background: 'none', border: 'none', fontSize: 20, color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
@@ -341,7 +341,7 @@ export default function DocFormsRegistry() {
                 ) : (
                   <div style={{ display: 'grid', gap: 5 }}>
                     {scopes.map(sc => (
-                      <div key={sc.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <div key={sc.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '6px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                         <b style={{ fontSize: 12.5, color: 'var(--accent)' }}>{sc.section}</b>
                         <span style={{ fontSize: 11.5, color: 'var(--text2)', flex: 1, minWidth: 160 }}>
                           {(sc.sig_names || []).filter(Boolean).length
@@ -422,7 +422,7 @@ export default function DocFormsRegistry() {
       {/* modal ชุดช่องเซ็นของส่วนงานเดียว (ซ้อนบน modal ทะเบียน) */}
       {scopeEdit && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(96vw, 700px)', maxHeight: '90vh', overflowY: 'auto' }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 700px)', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
               <div style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--text)' }}>✍️ ชุดช่องลายเซ็นของส่วนงาน</div>
               <button onClick={() => setScopeEdit(null)} style={{ background: 'none', border: 'none', fontSize: 20, color: 'var(--muted)', cursor: 'pointer' }}>✕</button>

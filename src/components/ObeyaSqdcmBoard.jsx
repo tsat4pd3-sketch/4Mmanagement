@@ -1072,7 +1072,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                     {[['เกินกำหนด', health.overdue.length, 'bad'], ['ใกล้ครบ', health.dueSoon.length, 'warn'],
                       ['กำลังทำ', health.open.length, 'info'], ['ปิดแล้ว', health.done.length, 'good']].map(([l, n, c]) => (
                       <span key={l} style={{
-                        fontSize: fs(10.5), fontWeight: 700, padding: '2px 8px', borderRadius: 999, color: toneVar(c),
+                        fontSize: fs(10.5), fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-pill)', color: toneVar(c),
                         background: 'var(--bg3)', backgroundImage: `linear-gradient(${toneDim(c)}, ${toneDim(c)})`, border: `1px solid ${toneLine(c)}`,
                       }}>{l} {n}</span>
                     ))}
@@ -1088,7 +1088,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                       const late = health.overdue.includes(a);
                       return (
                         <div key={a.id} style={{
-                          display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px', borderRadius: 4,
+                          display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px', borderRadius: 'var(--r-xs)',
                           background: 'var(--bg3)', borderLeft: `3px solid ${late ? 'var(--red)' : 'var(--blue)'}`,
                         }}>
                           {a.kpi_key && (
@@ -1137,7 +1137,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14,
         }}>
           <div onClick={e => e.stopPropagation()} style={{
-            background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 10,
+            background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)',
             padding: 16, width: 'min(460px, 100%)', maxHeight: '90%', overflowY: 'auto',
           }}>
             <h3 style={{ margin: '0 0 4px', fontSize: 17 }}>✅ ปิดงานติดตาม</h3>
@@ -1174,7 +1174,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14,
         }}>
           <div onClick={e => e.stopPropagation()} style={{
-            background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 10,
+            background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)',
             padding: 16, width: 'min(520px, 100%)', maxHeight: '90%', overflowY: 'auto',
           }}>
             <h3 style={{ margin: '0 0 10px', fontSize: 17 }}>➕ ตั้ง Action Item (OBEYA {today})</h3>

@@ -32,7 +32,7 @@ export function Field({ label, hint, children, span }) {
 
 export function Pill({ label, color = '#94a3b8', title, small }) {
   return (
-    <span title={title} style={{ display: 'inline-block', padding: small ? '0 6px' : '1px 8px', borderRadius: 999,
+    <span title={title} style={{ display: 'inline-block', padding: small ? '0 6px' : '1px 8px', borderRadius: 'var(--r-pill)',
       fontSize: small ? 10.5 : 11.5, fontWeight: 800, color, background: `${color}22`, border: `1px solid ${color}66`, whiteSpace: 'nowrap' }}>
       {label}
     </span>
@@ -79,7 +79,7 @@ export function Modal({ title, onClose, children, width = 640, footer }) {
 export function WarnBar({ children, color = '#ef4444' }) {
   if (!children) return null;
   return (
-    <div style={{ background: `${color}18`, border: `1px solid ${color}66`, color, borderRadius: 8, padding: '8px 12px', fontSize: 12.5, fontWeight: 700, marginBottom: 10 }}>
+    <div style={{ background: `${color}18`, border: `1px solid ${color}66`, color, borderRadius: 'var(--r-md)', padding: '8px 12px', fontSize: 12.5, fontWeight: 700, marginBottom: 10 }}>
       {children}
     </div>
   );

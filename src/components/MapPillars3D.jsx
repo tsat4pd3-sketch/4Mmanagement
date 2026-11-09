@@ -34,7 +34,7 @@ function TopLabel({ it, H, lift, ok, x = 0, y = 0, cam }) {
       )}
       <div style={{ position: 'absolute', left: x, top: y, transform: `translateZ(${H + 6 + lift}px) rotateZ(${-cam.rot}deg) rotateX(${-cam.tilt}deg) translate(-50%, -100%)`,
         transition: cam.transition, pointerEvents: 'auto' }}>
-        <div style={{ background: 'rgba(8,10,16,0.88)', border: `${it.group ? '2px dashed' : '1px solid'} ${it.color}`, borderBottom: `3px ${it.group ? 'dashed' : 'solid'} ${it.color}`, borderRadius: 7, padding: `${Math.round(2 * k)}px ${Math.round(8 * k)}px ${Math.round(3 * k)}px`, textAlign: 'center', whiteSpace: 'nowrap', boxShadow: 'var(--shadow-float)' }}>
+        <div style={{ background: 'rgba(8,10,16,0.88)', border: `${it.group ? '2px dashed' : '1px solid'} ${it.color}`, borderBottom: `3px ${it.group ? 'dashed' : 'solid'} ${it.color}`, borderRadius: 'var(--r-md)', padding: `${Math.round(2 * k)}px ${Math.round(8 * k)}px ${Math.round(3 * k)}px`, textAlign: 'center', whiteSpace: 'nowrap', boxShadow: 'var(--shadow-float)' }}>
           <div style={{ fontSize: Math.round(12 * k), fontWeight: 800, color: '#fff', lineHeight: 1.25 }}>
             {it.blink && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}{it.group ? '▣ ' : ''}{it.name}
             {it.group && it.kids > 0 && <span style={{ fontSize: Math.round(11 * k), fontWeight: 700, color: 'rgba(255,255,255,0.62)', marginLeft: 5 }}>{it.kids} ไลน์</span>}

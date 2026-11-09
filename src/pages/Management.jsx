@@ -1079,7 +1079,7 @@ export default function Management() {
           padding: isMobile ? '10px 8px' : '8px 6px 7px',
           background: isSelected ? 'var(--amber-line)' : 'var(--amber-dim)',
           border: isSelected ? '2px solid var(--amber)' : '1.5px solid var(--amber-line)',
-          borderRadius: 10,
+          borderRadius: 'var(--r-md)',
           cursor: canDrag ? (isMobile ? 'pointer' : 'grab') : 'default',
           display: 'flex', flexDirection: isMobile ? 'row' : 'column', alignItems: 'center',
           gap: isMobile ? 10 : 5, userSelect: 'none', position: 'relative',
@@ -1095,11 +1095,11 @@ export default function Management() {
           <div style={{ fontSize: isMobile ? 13 : 11, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: isMobile ? 'left' : 'center' }}>
             {isMobile ? (worker.employees?.name ?? '?') : (worker.employees?.name?.split(' ')[0] ?? '?')}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, background: 'var(--amber-dim)', borderRadius: 3, padding: isMobile ? '2px 6px' : '1px 6px', marginTop: 2, display: isMobile ? 'inline-block' : 'block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 140 : '100%', whiteSpace: 'nowrap', textAlign: 'center' }}>
+          <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, background: 'var(--amber-dim)', borderRadius: 'var(--r-xs)', padding: isMobile ? '2px 6px' : '1px 6px', marginTop: 2, display: isMobile ? 'inline-block' : 'block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 140 : '100%', whiteSpace: 'nowrap', textAlign: 'center' }}>
             {task?.task_type || 'งานพิเศษ'}
           </div>
           {worker.employees?.section && (
-            <div style={{ fontSize: 11, color: 'var(--blue)', background: 'var(--blue-dim)', borderRadius: 3, padding: isMobile ? '1px 6px' : '1px 6px', marginTop: 2, display: isMobile ? 'inline-block' : 'block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 140 : '100%', whiteSpace: 'nowrap', textAlign: 'center' }}>
+            <div style={{ fontSize: 11, color: 'var(--blue)', background: 'var(--blue-dim)', borderRadius: 'var(--r-xs)', padding: isMobile ? '1px 6px' : '1px 6px', marginTop: 2, display: isMobile ? 'inline-block' : 'block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 140 : '100%', whiteSpace: 'nowrap', textAlign: 'center' }}>
               {worker.employees.section}
             </div>
           )}
@@ -1134,7 +1134,7 @@ export default function Management() {
           background: isSelected ? 'var(--blue-dim)' : 'rgba(8,8,14,0.88)',
           border: isSelected ? '2px solid var(--blue)' : '1.5px solid var(--blue-line)',
           borderLeft: isSelected ? '4px solid var(--blue)' : '4px solid var(--blue-line)',
-          borderRadius: 8,
+          borderRadius: 'var(--r-md)',
           cursor: isMobile ? 'pointer' : 'grab',
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
           boxShadow: isSelected ? '0 0 0 3px var(--blue-line), 0 2px 8px rgba(0,0,0,0.5)' : '0 2px 8px rgba(0,0,0,0.5)',
@@ -1154,14 +1154,14 @@ export default function Management() {
         </div>
         {/* team badge */}
         {worker.employees?.team && (
-          <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', borderRadius: 3, padding: '1px 6px', flexShrink: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', borderRadius: 'var(--r-xs)', padding: '1px 6px', flexShrink: 0 }}>
             Team {worker.employees.team}
           </div>
         )}
         {/* 🤝 ยืมตัวมาจากไลน์อื่นกะนี้ (line_helpers) */}
         {helperMap[worker.employee_id] && (
           <div title={`ยืมตัวจากไลน์ ${allLines.find(l => l.id === worker.employees?.line_id)?.name || 'อื่น'} มาช่วยกะนี้`}
-            style={{ fontSize: 11, fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', borderRadius: 3, padding: '1px 6px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+            style={{ fontSize: 11, fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', borderRadius: 'var(--r-xs)', padding: '1px 6px', flexShrink: 0, whiteSpace: 'nowrap' }}>
             ยืมตัว
           </div>
         )}
@@ -1268,7 +1268,7 @@ export default function Management() {
               position: 'absolute', top: -4, right: -4,
               background: f.color, color: '#fff',
               fontSize: 11, fontWeight: 800,
-              minWidth: 18, height: 18, borderRadius: 9,
+              minWidth: 18, height: 18, borderRadius: 'var(--r-md)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               padding: '0 3px', lineHeight: 1,
             }}>
@@ -1357,7 +1357,7 @@ export default function Management() {
 
         {/* instruction banner on mobile when worker selected */}
         {isMobile && selectedWorker && (
-          <div style={{ marginBottom: 8, padding: '8px 12px', borderRadius: 8, background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', fontSize: 12, fontWeight: 600, color: 'var(--blue)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+          <div style={{ marginBottom: 8, padding: '8px 12px', borderRadius: 'var(--r-md)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', fontSize: 12, fontWeight: 600, color: 'var(--blue)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
             <span>แตะ station ด้านล่างเพื่อจัดตำแหน่ง</span>
             <button onClick={() => setSelectedWorker(null)} style={{ background: 'none', border: 'none', color: 'var(--blue)', fontSize: 18, cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button>
           </div>
@@ -1372,7 +1372,7 @@ export default function Management() {
                ต้อง render เสมอ แม้กะนั้นไม่มีคนสักคน — ไม่งั้นสลับไปกะดึกที่ว่างแล้ว
                จะไม่มีปุ่มให้สลับกลับ (ทางตันที่มองไม่เห็น) */}
           {selectedLine && (
-            <div style={{ marginBottom: 8, padding: '7px 9px', flexShrink: 0, borderRadius: 10,
+            <div style={{ marginBottom: 8, padding: '7px 9px', flexShrink: 0, borderRadius: 'var(--r-md)',
               background: isLiveView ? 'var(--bg3)' : 'var(--blue-dim)',
               border: `1px solid ${isLiveView ? 'var(--border2)' : 'var(--blue-line)'}` }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -1404,7 +1404,7 @@ export default function Management() {
 
           {/* ── กำลังคนทั้งกลุ่มไลน์ (รวมไลน์ย่อย) + รายชื่อคนไลน์ย่อยที่มีผังแยก (2026-08-03) ── */}
           {!isMobile && selectedLine && (familyManpower.total > 0 || familyManpower.hidden.length > 0) && (
-            <div style={{ marginBottom: 8, padding: '8px 10px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, flexShrink: 0 }}>
+            <div style={{ marginBottom: 8, padding: '8px 10px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', flexShrink: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>กำลังคนกลุ่มนี้</span>
                 <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent)' }}>{familyManpower.total} คน</span>
@@ -1420,7 +1420,7 @@ export default function Management() {
                     return (
                       <div key={h.lineName}>
                         <div onClick={() => setOpenSubLine(open ? null : h.lineName)}
-                          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '4px 7px', borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border2)' }}>
+                          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '4px 7px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border2)' }}>
                           <span style={{ minWidth: 0, fontSize: 11.5, fontWeight: 700, color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{open ? '▾' : '▸'} {h.lineName}</span>
                           <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--blue)', flexShrink: 0, marginLeft: 6 }}>{h.workers.length} คน</span>
                         </div>
@@ -1560,7 +1560,7 @@ export default function Management() {
           </button>
         )}
         {autoManAlert && (
-          <div style={{ position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', background: 'var(--blue-line)', color: '#fff', padding: '8px 18px', borderRadius: 10, fontSize: 12, fontWeight: 600, zIndex: 200, boxShadow: 'var(--shadow-float)', whiteSpace: 'nowrap' }}>
+          <div style={{ position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', background: 'var(--blue-line)', color: '#fff', padding: '8px 18px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 600, zIndex: 200, boxShadow: 'var(--shadow-float)', whiteSpace: 'nowrap' }}>
             🆕 Man Change: {autoManAlert.name} — ประจำ {autoManAlert.station} เป็นครั้งแรก
           </div>
         )}
@@ -1858,13 +1858,13 @@ export default function Management() {
               marginBottom: 10,
               background: 'var(--card)',
               border: `1px solid ${totalDelayed > 0 ? 'var(--red-line)' : hasOpen ? 'var(--green-line)' : 'var(--border2)'}`,
-              borderRadius: 10, overflow: 'hidden',
+              borderRadius: 'var(--r-md)', overflow: 'hidden',
             }}>
               {/* Header — ขนาดอ่านได้จากระยะยืนดูจอ ไม่ใช่ตัวจิ๋วทั้งที่พื้นที่แนวนอนเหลือเยอะ */}
               <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, background: 'var(--bg2)' }}>
                 <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>
                   Heijunka — {selectedLine}
-                  {isHistorical && <span style={{ marginLeft: 8, fontSize: 11, padding: '2px 9px', borderRadius: 10, background: 'var(--blue-dim)', color: 'var(--blue)' }}>ย้อนหลัง {boardDate}</span>}
+                  {isHistorical && <span style={{ marginLeft: 8, fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-md)', background: 'var(--blue-dim)', color: 'var(--blue)' }}>ย้อนหลัง {boardDate}</span>}
                 </span>
                 <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap' }}>
                   <button onClick={() => shiftBoardDate(-1)} style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>◀</button>
@@ -1896,7 +1896,7 @@ export default function Management() {
                       const list = [...byChild[ln]].sort((a, b) => (a.shift === b.shift ? 0 : a.shift === 'day' ? -1 : 1));
                       const anyOpen = list.some(sx => sx.status === 'open');
                       return (
-                        <span key={ln} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 20, fontWeight: 700,
+                        <span key={ln} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 'var(--r-pill)', fontWeight: 700,
                           background: anyOpen ? 'var(--green-dim)' : 'rgba(128,128,128,0.12)',
                           color: anyOpen ? 'var(--green)' : '#888' }}>
                           {multi && <span style={{ fontWeight: 800 }}>{ln} · </span>}
@@ -1919,7 +1919,7 @@ export default function Management() {
                 <div style={{ padding: '7px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center', background: 'var(--bg)' }}>
                   <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>Kanban เปิดอยู่:</span>
                   {matNoChips.map(([matNo, count]) => (
-                    <span key={matNo} style={{ fontSize: 11, padding: '2px 9px', borderRadius: 20, fontWeight: 700, background: 'var(--blue-dim)', color: 'var(--blue)', fontFamily: 'monospace' }}>
+                    <span key={matNo} style={{ fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-pill)', fontWeight: 700, background: 'var(--blue-dim)', color: 'var(--blue)', fontFamily: 'monospace' }}>
                       {matNo} · {count} ใบ
                     </span>
                   ))}
@@ -1938,7 +1938,7 @@ export default function Management() {
                   { c: 'var(--red)', icon: '⛔', label: 'Downtime (แถบบนแถว)' },
                 ].map(item => (
                   <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ width: 18, height: 18, borderRadius: 3, background: `${tint(item.c, 'dim')}`, border: `1.2px solid ${tint(item.c, 'line')}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
+                    <span style={{ width: 18, height: 18, borderRadius: 'var(--r-xs)', background: `${tint(item.c, 'dim')}`, border: `1.2px solid ${tint(item.c, 'line')}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
                     <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{item.label}</span>
                   </div>
                 ))}
@@ -1949,7 +1949,7 @@ export default function Management() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, padding: '7px 14px', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
                   <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>PLANNER</span>
                   {plannerChips.map((c, i) => (
-                    <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: '3px 11px', borderRadius: 10, background: 'var(--card)', color: c.color, border: `1px solid ${c.color}` }}>{/* สีจาก token ธีม (--green/--amber/--red) — เดิม hex สว่าง + พื้นโปร่ง 1f ⇒ ธีมสว่างมองไม่เห็น (02/10) */}
+                    <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: '3px 11px', borderRadius: 'var(--r-md)', background: 'var(--card)', color: c.color, border: `1px solid ${c.color}` }}>{/* สีจาก token ธีม (--green/--amber/--red) — เดิม hex สว่าง + พื้นโปร่ง 1f ⇒ ธีมสว่างมองไม่เห็น (02/10) */}
                       {c.text}
                     </span>
                   ))}
@@ -2040,7 +2040,7 @@ export default function Management() {
                                 style={{
                                   position: 'absolute', top: 3, bottom: 3, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 2,
                                   background: `${tint(sc, 'dim')}`, border: `1.5px solid ${sc}${o.isDone && !isLateDone ? 'cc' : (isDelayed || isLateDone) ? 'dd' : '88'}`,
-                                  borderRadius: 4, overflow: 'hidden', cursor: 'default', zIndex: 1,
+                                  borderRadius: 'var(--r-xs)', overflow: 'hidden', cursor: 'default', zIndex: 1,
                                   boxShadow: (isDelayed || isLateDone) ? `0 0 6px ${tint(sc, 'line')}` : 'none',
                                 }}>
                                 {/* ใบ manual: fill เข้มขึ้นตามสัดส่วนยอดสะสม (alpha 0.30→0.75) ครบเป้า = เขียว — ใบสแกนปกติจางแบบเดิม */}
@@ -2069,7 +2069,7 @@ export default function Management() {
                                 <div title={`กรอบแผนของใบนี้: ${fmtMs(planStartMs)}–${fmtMs(plannedEndMs)}${planSlipped ? ` · หลุดกรอบ (เริ่มช้า ${Math.max(0, Math.round((startMs - planStartMs) / 60000))} น. · จบช้า ${Math.max(0, Math.round((Math.max(realEndMs, occupiedEndMs || realEndMs) - plannedEndMs) / 60000))} น.)` : ' · อยู่ในกรอบ'}`}
                                   style={{ position: 'absolute', top: 1, bottom: 1, left: `${planLeftPct}%`, width: `${planWidthPct}%`,
                                     /* ใบที่หลุดกรอบ วาดทับแท่ง (z=2) ให้เห็นกล่อง "แผนจบตรงนี้" · ดู Dashboard.jsx */
-                                    border: `${planSlipped ? 2 : 1}px dashed ${planSlipped ? '#e5e7eb' : 'var(--muted)'}`, borderRadius: 4,
+                                    border: `${planSlipped ? 2 : 1}px dashed ${planSlipped ? '#e5e7eb' : 'var(--muted)'}`, borderRadius: 'var(--r-xs)',
                                     opacity: planSlipped ? 0.95 : 0.35, zIndex: planSlipped ? 2 : 0, pointerEvents: 'none' }} />
                               )}
                               {/* หางเงาแดง — ยังไม่ปิดงานแม้เลยกำหนดแล้ว ครองไลน์อยู่จนถึงตอนนี้ ดันใบถัดไปไปต่อท้าย */}
@@ -2169,7 +2169,7 @@ export default function Management() {
                                 {row.label}
                                 {/* บอร์ดรวมหลาย sub-line — ป้ายบอกว่าแถวนี้ของไลน์ไหน (product เดียวกันคนละไลน์ = คนละแถว) */}
                                 {multiSubLine && row.line && (
-                                  <span style={{ marginLeft: 4, fontSize: 11, fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 5, padding: '0 5px', whiteSpace: 'nowrap' }}>{row.line}</span>
+                                  <span style={{ marginLeft: 4, fontSize: 11, fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 'var(--r-xs)', padding: '0 5px', whiteSpace: 'nowrap' }}>{row.line}</span>
                                 )}
                               </div>
                               <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexWrap: 'wrap' }}>
@@ -2212,12 +2212,12 @@ export default function Management() {
         {(!boardWouldSquish || mainView === 'map') && (<>
         {/* PPE alarm — เช็คชื่อแล้วแต่ PPE ไม่ครบ: ไม่เข้า pool จึงไม่โผล่บนผัง ต้องมีแถบกระพริบเตือนแทน */}
         {ppeAlertsInView.length > 0 && (
-          <div className="dt-alarm-banner" style={{ border: '1px solid var(--red-line)', borderRadius: 10, padding: '8px 12px', marginBottom: 8, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div className="dt-alarm-banner" style={{ border: '1px solid var(--red-line)', borderRadius: 'var(--r-md)', padding: '8px 12px', marginBottom: 8, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, color: 'var(--red)' }}>
               <span className="dt-alarm-icon">⛑</span> PPE ไม่ครบ {ppeAlertsInView.length} คน — ห้ามเข้าไลน์จนกว่าจะครบ
             </span>
             {ppeAlertsInView.map(p => (
-              <span key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px', borderRadius: 6, background: 'rgba(0,0,0,0.25)', border: '1px solid var(--red-line)' }}>
+              <span key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'rgba(0,0,0,0.25)', border: '1px solid var(--red-line)' }}>
                 {p.employees?.image_url
                   ? <img loading="lazy" src={p.employees.image_url} className="person-alarm-red" style={{ width: 22, height: 22, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid var(--red)' }} />
                   : <span className="person-alarm-red" style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid var(--red)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>👤</span>}
@@ -2233,7 +2233,7 @@ export default function Management() {
           width: '100%', flex: 1, minHeight: 0,
           overflow: 'hidden',
           display: 'flex', flexDirection: 'column',
-          backgroundColor: lineLayout ? 'transparent' : 'var(--bg3)', borderRadius: 12,
+          backgroundColor: lineLayout ? 'transparent' : 'var(--bg3)', borderRadius: 'var(--r-lg)',
           border: lineLayout ? 'none' : '1px solid var(--border)',
         }}>
           {lineLayout ? (
@@ -2463,13 +2463,13 @@ export default function Management() {
 
                 {/* fit% badge below the pill */}
                 {workerAtStation && workerFit && (
-                  <div style={{ marginTop: 2, fontSize: FIT_F, fontWeight: 800, color: fitColor(workerFit.score), background: `${tint(fitColor(workerFit.score), 'dim')}`, padding: '0 5px', borderRadius: 3, lineHeight: 1.5 }}>
+                  <div style={{ marginTop: 2, fontSize: FIT_F, fontWeight: 800, color: fitColor(workerFit.score), background: `${tint(fitColor(workerFit.score), 'dim')}`, padding: '0 5px', borderRadius: 'var(--r-xs)', lineHeight: 1.5 }}>
                     {workerFit.score}%
                   </div>
                 )}
                 {/* mobile tap-invite fit preview */}
                 {!workerAtStation && isPulse && touchPreviewFit && (
-                  <div style={{ marginTop: 2, background: fitColor(touchPreviewFit.score), color: '#fff', fontSize: FIT_F, fontWeight: 900, padding: '1px 6px', borderRadius: 4, lineHeight: 1.4 }}>
+                  <div style={{ marginTop: 2, background: fitColor(touchPreviewFit.score), color: '#fff', fontSize: FIT_F, fontWeight: 900, padding: '1px 6px', borderRadius: 'var(--r-xs)', lineHeight: 1.4 }}>
                     {touchPreviewFit.score}
                   </div>
                 )}
@@ -2480,11 +2480,11 @@ export default function Management() {
                 {previewFit && !isMobile && (
                   <div style={{
                     position: 'absolute', top: `calc(100% + ${Math.round(MK * 0.55)}px)`, left: '50%', transform: 'translateX(-50%)',
-                    background: 'rgba(6,6,12,0.97)', border: `1px solid ${activeFc}`, borderRadius: 8, padding: '8px 10px',
+                    background: 'rgba(6,6,12,0.97)', border: `1px solid ${activeFc}`, borderRadius: 'var(--r-md)', padding: '8px 10px',
                     zIndex: 100, minWidth: 116, pointerEvents: 'none', boxShadow: 'var(--shadow-float)',
                   }}>
                     <div style={{ textAlign: 'center', marginBottom: 4 }}>
-                      <span style={{ display: 'inline-block', background: activeFc, color: '#fff', fontSize: 20, fontWeight: 900, padding: '2px 14px', borderRadius: 5 }}>{previewFit.score}</span>
+                      <span style={{ display: 'inline-block', background: activeFc, color: '#fff', fontSize: 20, fontWeight: 900, padding: '2px 14px', borderRadius: 'var(--r-xs)' }}>{previewFit.score}</span>
                     </div>
                     <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', textAlign: 'center', marginBottom: 6 }}>{fitLabel(previewFit.score)}</div>
                     {previewFit.details.map(d => (
@@ -2497,9 +2497,9 @@ export default function Management() {
                             {d.actual}<span style={{ fontWeight: 400, color: 'rgba(255,255,255,0.4)' }}>/{d.required}</span>
                           </span>
                         </div>
-                        <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden', position: 'relative' }}>
+                        <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 'var(--r-xs)', overflow: 'hidden', position: 'relative' }}>
                           <div style={{ position: 'absolute', left: `${d.required}%`, top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,0.3)', zIndex: 2 }} />
-                          <div style={{ width: `${Math.min(d.actual,100)}%`, height: '100%', background: d.pass ? '#22c55e' : '#ef4444', borderRadius: 2 }} />
+                          <div style={{ width: `${Math.min(d.actual,100)}%`, height: '100%', background: d.pass ? '#22c55e' : '#ef4444', borderRadius: 'var(--r-xs)' }} />
                         </div>
                       </div>
                     ))}
@@ -2548,7 +2548,7 @@ export default function Management() {
                           <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2 }}>
                           <div style={{
                             marginTop: 3, background: 'rgba(0,0,0,0.75)',
-                            borderRadius: 4, padding: '1px 6px',
+                            borderRadius: 'var(--r-xs)', padding: '1px 6px',
                             fontSize: SUB_PILL_F, fontWeight: 700,
                             color: alarms ? '#fecaca' : '#fff',
                             whiteSpace: 'nowrap', maxWidth: SUB_PILL_MAXW, overflow: 'hidden', textOverflow: 'ellipsis',
@@ -2557,7 +2557,7 @@ export default function Management() {
                             marginTop: 2, fontSize: SUB_PILL_F, fontWeight: alarms ? 800 : 600,
                             color: alarms ? '#fca5a5' : '#a3a3a3',
                             background: alarms ? 'var(--red-line)' : 'rgba(0,0,0,0.55)',
-                            padding: '0 5px', borderRadius: 3, lineHeight: 1.5,
+                            padding: '0 5px', borderRadius: 'var(--r-xs)', lineHeight: 1.5,
                             whiteSpace: 'nowrap', maxWidth: SUB_PILL_MAXW, overflow: 'hidden', textOverflow: 'ellipsis',
                           }}>
                             {alarms
@@ -2594,7 +2594,7 @@ export default function Management() {
                     { label: 'ประจำสถานี', count: workers.filter(w => w.assigned_line).length },
                     { label: 'งานนอกไลน์', count: specialWorkers.length },
                   ].map(s => (
-                    <div key={s.label} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '14px 18px', textAlign: 'center' }}>
+                    <div key={s.label} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: '14px 18px', textAlign: 'center' }}>
                       <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{s.label}</div>
                       <div style={{ fontSize: 30, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1.1, marginTop: 3 }}>
                         {s.count}<span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text2)', marginLeft: 3 }}>คน</span>
@@ -2611,7 +2611,7 @@ export default function Management() {
                   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>รายชื่อพนักงานวันนี้</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
                     {workers.map(w => (
-                      <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+                      <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
                         {w.employees?.image_url
                           ? <img loading="lazy" src={w.employees.image_url} style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', flexShrink: 0 }} />
                           : <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>👤</div>
@@ -2650,7 +2650,7 @@ export default function Management() {
       {/* ── Radar skill modal (portal → renders at body to escape stacking context) ── */}
       {radarWorker && createPortal(
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)' }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 16, padding: '20px 24px', width: 'min(90vw, 380px)', boxShadow: 'var(--shadow-lg)' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: '20px 24px', width: 'min(90vw, 380px)', boxShadow: 'var(--shadow-lg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               {radarWorker.employees?.image_url
                 ? <img loading="lazy" src={radarWorker.employees.image_url} style={{ width: 52, height: 52, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid var(--border2)', flexShrink: 0 }} />
@@ -2659,8 +2659,8 @@ export default function Management() {
                 <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{radarWorker.employees?.name}</div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{radarWorker.employees?.employee_id_code}</div>
                 <div style={{ display: 'flex', gap: 5, marginTop: 5, flexWrap: 'wrap' }}>
-                  {radarWorker.employees?.team && <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', borderRadius: 4, padding: '1px 6px' }}>Team {radarWorker.employees.team}</span>}
-                  {radarWorker.employees?.section && <span style={{ fontSize: 11, color: 'var(--blue)', background: 'var(--blue-dim)', borderRadius: 4, padding: '1px 6px' }}>{radarWorker.employees.section}</span>}
+                  {radarWorker.employees?.team && <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', borderRadius: 'var(--r-xs)', padding: '1px 6px' }}>Team {radarWorker.employees.team}</span>}
+                  {radarWorker.employees?.section && <span style={{ fontSize: 11, color: 'var(--blue)', background: 'var(--blue-dim)', borderRadius: 'var(--r-xs)', padding: '1px 6px' }}>{radarWorker.employees.section}</span>}
                 </div>
               </div>
               <button onClick={() => setRadarWorker(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', padding: '0 4px', alignSelf: 'flex-start' }}>✕</button>
@@ -2709,7 +2709,7 @@ export default function Management() {
 
       {/* ── Mobile fit popup (after assign) ── */}
       {isMobile && fitPopup && (
-        <div style={{ position: 'fixed', top: 56, left: 16, right: 16, zIndex: 1150, background: 'var(--card)', border: `2px solid ${fitColor(fitPopup.fit.score)}`, borderRadius: 14, padding: '14px 16px', boxShadow: 'var(--shadow-lg)', animation: 'hoverIn 0.25s ease' }}>
+        <div style={{ position: 'fixed', top: 56, left: 16, right: 16, zIndex: 1150, background: 'var(--card)', border: `2px solid ${fitColor(fitPopup.fit.score)}`, borderRadius: 'var(--r-lg)', padding: '14px 16px', boxShadow: 'var(--shadow-lg)', animation: 'hoverIn 0.25s ease' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <img loading="lazy" src={fitPopup.worker.employees?.image_url || ''} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fitColor(fitPopup.fit.score)}`, flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -2730,7 +2730,7 @@ export default function Management() {
           <div style={{ position: 'relative', background: 'var(--card)', borderRadius: '20px 20px 0 0', padding: '20px 20px 36px', boxShadow: 'var(--shadow-lg)', animation: 'slideUp 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
             <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } } @keyframes hoverIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
             {/* Handle */}
-            <div style={{ width: 36, height: 4, background: 'var(--border2)', borderRadius: 3, margin: '0 auto 16px' }} />
+            <div style={{ width: 36, height: 4, background: 'var(--border2)', borderRadius: 'var(--r-xs)', margin: '0 auto 16px' }} />
 
             {/* Worker header */}
             <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 16 }}>
@@ -2743,15 +2743,15 @@ export default function Management() {
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{detailSheet.worker.employees?.employee_id_code}</div>
                 <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
                   {detailSheet.worker.employees?.team && (
-                    <span style={{ fontSize: 11, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.15)', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 5, padding: '2px 8px' }}>Team {detailSheet.worker.employees.team}</span>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.15)', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 'var(--r-xs)', padding: '2px 8px' }}>Team {detailSheet.worker.employees.team}</span>
                   )}
                   {detailSheet.worker.employees?.section && (
-                    <span style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa', background: 'rgba(167,139,250,0.13)', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 5, padding: '2px 8px' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa', background: 'rgba(167,139,250,0.13)', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 'var(--r-xs)', padding: '2px 8px' }}>
                       สังกัด: {detailSheet.worker.employees.section}
                     </span>
                   )}
                   {detailSheet.stationName && (
-                    <span style={{ fontSize: 11, fontWeight: 700, color: fitColor(detailSheet.fit.score), background: `${tint(fitColor(detailSheet.fit.score), 'dim')}`, border: `1px solid ${tint(fitColor(detailSheet.fit.score), 'line')}`, borderRadius: 5, padding: '2px 8px' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: fitColor(detailSheet.fit.score), background: `${tint(fitColor(detailSheet.fit.score), 'dim')}`, border: `1px solid ${tint(fitColor(detailSheet.fit.score), 'line')}`, borderRadius: 'var(--r-xs)', padding: '2px 8px' }}>
                       {detailSheet.stationName} · {detailSheet.fit.score}% {fitLabel(detailSheet.fit.score)}
                     </span>
                   )}
@@ -2782,9 +2782,9 @@ export default function Management() {
                             {fitReq && <span style={{ marginLeft: 4 }}>{fitReq.pass ? '✓' : '✗'}</span>}
                           </span>
                         </div>
-                        <div style={{ height: 6, background: 'var(--border2)', borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
+                        <div style={{ height: 6, background: 'var(--border2)', borderRadius: 'var(--r-xs)', overflow: 'hidden', position: 'relative' }}>
                           {fitReq && <div style={{ position: 'absolute', left: `${fitReq.required}%`, top: 0, bottom: 0, width: 2, background: 'var(--muted)', zIndex: 2 }} />}
-                          <div style={{ width: `${Math.min(score, 100)}%`, height: '100%', background: bar, borderRadius: 4, transition: 'width 0.5s ease' }} />
+                          <div style={{ width: `${Math.min(score, 100)}%`, height: '100%', background: bar, borderRadius: 'var(--r-xs)', transition: 'width 0.5s ease' }} />
                         </div>
                       </div>
                     );
@@ -2828,7 +2828,7 @@ export default function Management() {
             <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)' }} />
             <div style={{ position: 'relative', background: 'var(--card)', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 480, padding: '20px 18px 36px', boxShadow: 'var(--shadow-lg)', maxHeight: '80vh', display: 'flex', flexDirection: 'column', animation: 'slideUp 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
               {/* Handle */}
-              <div style={{ width: 36, height: 4, background: 'var(--border2)', borderRadius: 3, margin: '0 auto 14px' }} />
+              <div style={{ width: 36, height: 4, background: 'var(--border2)', borderRadius: 'var(--r-xs)', margin: '0 auto 14px' }} />
               {/* Title */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                 <div>
@@ -2840,7 +2840,7 @@ export default function Management() {
 
               {/* Current worker */}
               {workerHere && (
-                <div style={{ marginBottom: 12, padding: '10px 12px', background: `${tint(fitColor(fitHere.score), 'dim')}`, border: `1px solid ${tint(fitColor(fitHere.score), 'line')}`, borderRadius: 12 }}>
+                <div style={{ marginBottom: 12, padding: '10px 12px', background: `${tint(fitColor(fitHere.score), 'dim')}`, border: `1px solid ${tint(fitColor(fitHere.score), 'line')}`, borderRadius: 'var(--r-lg)' }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>ประจำอยู่ตอนนี้</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     {workerHere.employees?.image_url
@@ -2852,7 +2852,7 @@ export default function Management() {
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{workerHere.employees?.employee_id_code}</div>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
-                      <div style={{ background: fitColor(fitHere.score), color: '#fff', fontWeight: 900, fontSize: 18, padding: '2px 10px', borderRadius: 6 }}>{fitHere.score}</div>
+                      <div style={{ background: fitColor(fitHere.score), color: '#fff', fontWeight: 900, fontSize: 18, padding: '2px 10px', borderRadius: 'var(--r-md)' }}>{fitHere.score}</div>
                       <div style={{ display: 'flex', gap: 6 }}>
                         {canAssignManpower && homePositions[workerHere.employee_id] !== String(st.id) && (
                           <button
@@ -2862,7 +2862,7 @@ export default function Management() {
                           >บันทึกตำแหน่งประจำ</button>
                         )}
                         {homePositions[workerHere.employee_id] === String(st.id) && (
-                          <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontWeight: 700 }}>ตำแหน่งประจำ</span>
+                          <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontWeight: 700 }}>ตำแหน่งประจำ</span>
                         )}
                         {canAssignManpower && <button
                           onClick={() => { assignWorker(workerHere.id, 'Pool'); setStationModal(null); }}
@@ -2889,7 +2889,7 @@ export default function Management() {
                     <div
                       key={w.id}
                       onClick={() => { assignWorker(w.id, st.id); setStationModal(null); }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, background: `${tint(fc, 'dim')}`, border: `1px solid ${tint(fc, 'dim')}`, cursor: 'pointer', transition: 'background 0.15s' }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 'var(--r-md)', background: `${tint(fc, 'dim')}`, border: `1px solid ${tint(fc, 'dim')}`, cursor: 'pointer', transition: 'background 0.15s' }}
                     >
                       {w.employees?.image_url
                         ? <img loading="lazy" src={w.employees.image_url} style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fc}`, flexShrink: 0 }} />
@@ -2902,7 +2902,7 @@ export default function Management() {
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--muted)' }}>{w.employees?.employee_id_code}{w.employees?.team ? ` · Team ${w.employees.team}` : ''}</div>
                       </div>
-                      <div style={{ background: fc, color: '#fff', fontWeight: 900, fontSize: 16, padding: '3px 10px', borderRadius: 6, flexShrink: 0 }}>{w._fit.score}</div>
+                      <div style={{ background: fc, color: '#fff', fontWeight: 900, fontSize: 16, padding: '3px 10px', borderRadius: 'var(--r-md)', flexShrink: 0 }}>{w._fit.score}</div>
                     </div>
                   );
                 })}
@@ -2946,7 +2946,7 @@ export default function Management() {
       {/* ── Attach-doc modal ── */}
       {pendingDocModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: 'var(--card)', borderRadius: 12, padding: 24, width: '100%', maxWidth: 420, display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', padding: 24, width: '100%', maxWidth: 420, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ fontWeight: 700, fontSize: 16 }}>แนบเอกสาร OJT</div>
             <div style={{ fontSize: 13, color: 'var(--text2)' }}>
               <b>{pendingDocModal.log.category}</b> · {pendingDocModal.log.line_name}<br/>
@@ -2958,7 +2958,7 @@ export default function Management() {
                 รูปหลักฐาน OJT <span style={{ color: 'var(--muted)' }}>(ไม่บังคับ)</span>
               </label>
               <div
-                style={{ border: `2px dashed ${docImageFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 8, padding: '10px 12px', background: docImageFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center' }}
+                style={{ border: `2px dashed ${docImageFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 'var(--r-md)', padding: '10px 12px', background: docImageFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center' }}
                 onClick={() => document.getElementById('doc-img-input').click()}
               >
                 {docImagePreview
@@ -3051,7 +3051,7 @@ export default function Management() {
                 const manCase = getManCase(log4MForm);
                 const meta = MAN_CASE_META[manCase];
                 return (
-                  <div style={{ background: 'var(--blue-dim)', borderRadius: 8, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ background: 'var(--blue-dim)', borderRadius: 'var(--r-md)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 2 }}>ลักษณะการย้ายงาน</div>
                     {/* move type */}
                     <div style={{ display: 'flex', gap: 8 }}>
@@ -3076,7 +3076,7 @@ export default function Management() {
                       มีประวัติเคยทำงานจุดนี้มาก่อน
                     </label>
                     {/* result badge */}
-                    <div style={{ fontSize: 11, padding: '5px 8px', borderRadius: 6, background: meta.bg, color: meta.color, fontWeight: 600 }}>
+                    <div style={{ fontSize: 11, padding: '5px 8px', borderRadius: 'var(--r-md)', background: meta.bg, color: meta.color, fontWeight: 600 }}>
                       {meta.label}
                     </div>
                   </div>
@@ -3084,7 +3084,7 @@ export default function Management() {
               })()}
               {/* Machine/Material/Method: replace vs change */}
               {log4MForm.category !== 'Man' && (
-                <div style={{ background: 'var(--amber-dim)', borderRadius: 8, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ background: 'var(--amber-dim)', borderRadius: 'var(--r-md)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 2 }}>ลักษณะการเปลี่ยนแปลง</div>
                   <div style={{ display: 'flex', gap: 10 }}>
                     {[{ v: 'replace', label: 'Replace', desc: 'สลับ / ทดแทน' }, { v: 'change', label: 'Change', desc: 'เปลี่ยนแปลง' }].map(opt => (
@@ -3097,7 +3097,7 @@ export default function Management() {
                       </label>
                     ))}
                   </div>
-                  <div style={{ fontSize: 11, marginTop: 2, padding: '5px 8px', borderRadius: 6,
+                  <div style={{ fontSize: 11, marginTop: 2, padding: '5px 8px', borderRadius: 'var(--r-md)',
                     background: log4MForm.subtype === 'replace' ? 'var(--green-dim)' : 'var(--red-dim)',
                     color: log4MForm.subtype === 'replace' ? 'var(--green)' : 'var(--red)' }}>
                     {log4MForm.subtype === 'replace'
@@ -3123,7 +3123,7 @@ export default function Management() {
                     <label style={{ ...labelSt, color: 'var(--blue)' }}>
                       {log4MForm.category === 'Man' ? 'รูปหลักฐาน OJT' : 'รูปรายละเอียดการเปลี่ยนแปลง'} <span style={{ color: 'var(--red)' }}>*</span>
                     </label>
-                    <div style={{ border: `2px dashed ${reqImageFile ? 'var(--blue)' : 'var(--border2)'}`, borderRadius: 8, padding: '10px 12px', background: reqImageFile ? 'var(--blue-dim)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center', position: 'relative' }}
+                    <div style={{ border: `2px dashed ${reqImageFile ? 'var(--blue)' : 'var(--border2)'}`, borderRadius: 'var(--r-md)', padding: '10px 12px', background: reqImageFile ? 'var(--blue-dim)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center', position: 'relative' }}
                       onClick={() => document.getElementById('req-img-input').click()}>
                       <input id="req-img-input" type="file" accept="image/*" style={{ display: 'none' }}
                         onChange={async e => {
@@ -3211,7 +3211,7 @@ function WorkerHoverCard({ card, skillDefs }) {
   const hiddenCount = allStatRows.length - statRows.length;
 
   return (
-    <div ref={elRef} style={{ position: 'fixed', top: pos ? pos.top : -9999, left: pos ? pos.left : -9999, width: tooltipW, maxHeight: 'calc(100vh - 16px)', overflowY: 'hidden', zIndex: 3000, pointerEvents: 'none', visibility: pos ? 'visible' : 'hidden', background: 'var(--card)', border: `1px solid ${tint(fc, 'line')}`, borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: 14, animation: pos ? 'hoverIn 0.18s ease' : 'none' }}>
+    <div ref={elRef} style={{ position: 'fixed', top: pos ? pos.top : -9999, left: pos ? pos.left : -9999, width: tooltipW, maxHeight: 'calc(100vh - 16px)', overflowY: 'hidden', zIndex: 3000, pointerEvents: 'none', visibility: pos ? 'visible' : 'hidden', background: 'var(--card)', border: `1px solid ${tint(fc, 'line')}`, borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', padding: 14, animation: pos ? 'hoverIn 0.18s ease' : 'none' }}>
       <style>{`@keyframes hoverIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
 
       {/* Header — portrait photo + name/badges/station stacked in the left column,
@@ -3222,10 +3222,10 @@ function WorkerHoverCard({ card, skillDefs }) {
           <div style={{ position: 'relative' }}>
             {emp?.image_url
               ? <img src={emp.image_url} style={{ width: photoW, height: photoW * 1.35, borderRadius: 10, objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fc}`, boxShadow: `0 0 14px ${tint(fc, 'line')}`, display: 'block' }} />
-              : <div style={{ width: photoW, height: photoW * 1.35, borderRadius: 10, background: 'var(--bg3)', border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 44 }}>👤</div>
+              : <div style={{ width: photoW, height: photoW * 1.35, borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 44 }}>👤</div>
             }
             {fit && (
-              <div style={{ position: 'absolute', top: -16, left: 4, background: fc, color: '#fff', fontSize: 18, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 7, padding: '3px 8px', boxShadow: 'var(--shadow-float)' }}>
+              <div style={{ position: 'absolute', top: -16, left: 4, background: fc, color: '#fff', fontSize: 18, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 'var(--r-md)', padding: '3px 8px', boxShadow: 'var(--shadow-float)' }}>
                 {fit.score}
               </div>
             )}
@@ -3239,8 +3239,8 @@ function WorkerHoverCard({ card, skillDefs }) {
             )}
             {fit && <div style={{ fontSize: 11, fontWeight: 700, color: fc }}>{fitLabel(fit.score)}</div>}
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-              {emp?.team && <span style={{ fontSize: 11, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px' }}>Team {emp.team}</span>}
-              {emp?.section && <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 4, padding: '1px 5px' }}>{emp.section}</span>}
+              {emp?.team && <span style={{ fontSize: 11, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 'var(--r-xs)', padding: '1px 5px' }}>Team {emp.team}</span>}
+              {emp?.section && <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 'var(--r-xs)', padding: '1px 5px' }}>{emp.section}</span>}
             </div>
           </div>
         </div>
@@ -3252,7 +3252,7 @@ function WorkerHoverCard({ card, skillDefs }) {
                 const pass = s.req ? s.req.pass : null;
                 const sc = pass === false ? '#ef4444' : pass === true ? 'var(--accent)' : 'var(--text2)';
                 return (
-                  <div key={s.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg3)', border: `1px solid ${tint(sc, 'dim')}`, borderRadius: 5, padding: '4px 6px' }}>
+                  <div key={s.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg3)', border: `1px solid ${tint(sc, 'dim')}`, borderRadius: 'var(--r-xs)', padding: '4px 6px' }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 4 }}>{s.label}</span>
                     <span style={{ fontSize: 11, fontWeight: 900, color: sc, fontFamily: 'var(--font-display)', flexShrink: 0 }}>
                       {s.score > 0 ? s.score : '—'}{s.req ? <span style={{ fontSize: 11, opacity: 0.6 }}>/{s.req.required}</span> : ''}
@@ -3301,7 +3301,7 @@ function WorkerHoverCard({ card, skillDefs }) {
 function FitPopup({ fitPopup, onClose }) {
   const fc = fitColor(fitPopup.fit.score);
   return (
-    <div style={{ position: 'fixed', bottom: 'calc(24px + var(--mnav-h, 0px))', right: 24, background: 'rgba(10,10,18,0.97)', border: `1px solid ${tint(fc, 'line')}`, borderLeft: `4px solid ${fc}`, borderRadius: 12, padding: '14px 16px', boxShadow: 'var(--shadow-lg)', zIndex: 1000, width: 264, animation: 'fmSlideIn 0.35s cubic-bezier(0.34,1.56,0.64,1)' }}>
+    <div style={{ position: 'fixed', bottom: 'calc(24px + var(--mnav-h, 0px))', right: 24, background: 'rgba(10,10,18,0.97)', border: `1px solid ${tint(fc, 'line')}`, borderLeft: `4px solid ${fc}`, borderRadius: 'var(--r-lg)', padding: '14px 16px', boxShadow: 'var(--shadow-lg)', zIndex: 1000, width: 264, animation: 'fmSlideIn 0.35s cubic-bezier(0.34,1.56,0.64,1)' }}>
       <style>{`@keyframes fmSlideIn { from { opacity:0; transform: translateX(28px) scale(0.94); } to { opacity:1; transform:translateX(0) scale(1); } }`}</style>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
         <img loading="lazy" src={fitPopup.worker.employees?.image_url || ''} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2.5px solid ${fc}`, flexShrink: 0 }} />
@@ -3309,9 +3309,9 @@ function FitPopup({ fitPopup, onClose }) {
           <div style={{ fontWeight: 700, fontSize: 13, color: '#f0f0f4' }}>{fitPopup.worker.employees?.name}</div>
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 1 }}>→ {fitPopup.station.station_name}</div>
         </div>
-        <div style={{ background: fc, color: '#fff', fontWeight: 900, fontSize: 22, padding: '4px 10px', borderRadius: 6, flexShrink: 0 }}>{fitPopup.fit.score}</div>
+        <div style={{ background: fc, color: '#fff', fontWeight: 900, fontSize: 22, padding: '4px 10px', borderRadius: 'var(--r-md)', flexShrink: 0 }}>{fitPopup.fit.score}</div>
       </div>
-      <div style={{ textAlign: 'center', marginBottom: 10, background: `${tint(fc, 'dim')}`, border: `1px solid ${tint(fc, 'line')}`, borderRadius: 5, padding: '3px 0', fontSize: 11, fontWeight: 800, color: fc }}>{fitLabel(fitPopup.fit.score)}</div>
+      <div style={{ textAlign: 'center', marginBottom: 10, background: `${tint(fc, 'dim')}`, border: `1px solid ${tint(fc, 'line')}`, borderRadius: 'var(--r-xs)', padding: '3px 0', fontSize: 11, fontWeight: 800, color: fc }}>{fitLabel(fitPopup.fit.score)}</div>
       {fitPopup.fit.details.map(d => (
         <div key={d.label} style={{ marginBottom: 7 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
@@ -3322,9 +3322,9 @@ function FitPopup({ fitPopup, onClose }) {
               {d.actual}<span style={{ color: 'rgba(255,255,255,0.35)', fontWeight: 400 }}>/{d.required}%</span> {d.pass ? '✓' : '✗'}
             </span>
           </div>
-          <div style={{ height: 5, background: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
+          <div style={{ height: 5, background: 'rgba(255,255,255,0.08)', borderRadius: 'var(--r-xs)', overflow: 'hidden', position: 'relative' }}>
             <div style={{ position: 'absolute', left: `${d.required}%`, top: 0, bottom: 0, width: 1.5, background: 'rgba(255,255,255,0.3)', zIndex: 2 }} />
-            <div style={{ width: `${Math.min(d.actual,100)}%`, height: '100%', background: d.pass ? '#22c55e' : '#ef4444', borderRadius: 3 }} />
+            <div style={{ width: `${Math.min(d.actual,100)}%`, height: '100%', background: d.pass ? '#22c55e' : '#ef4444', borderRadius: 'var(--r-xs)' }} />
           </div>
         </div>
       ))}
@@ -3348,7 +3348,7 @@ function PointDetailCard({ detail, alarms, onClose }) {
     border: `1px solid ${tint(color, 'line')}`, borderRadius: 5, padding: '2px 8px', whiteSpace: 'nowrap',
   });
   const InfoRow = ({ label, value }) => (value == null || value === '') ? null : (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 9px' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '5px 9px' }}>
       <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', flexShrink: 0 }}>{label}</span>
       <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', textAlign: 'right', overflowWrap: 'anywhere' }}>{value}</span>
     </div>
@@ -3370,7 +3370,7 @@ function PointDetailCard({ detail, alarms, onClose }) {
     <div onClick={onClose}
       style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)', padding: 16 }}>
       <div onClick={e => e.stopPropagation()}
-        style={{ background: 'var(--card)', border: `1px solid ${tint(accent, 'line')}`, borderRadius: 16, padding: '16px 18px', width: 'min(92vw, 400px)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', boxShadow: 'var(--shadow-lg)', animation: 'pdIn 0.18s ease' }}>
+        style={{ background: 'var(--card)', border: `1px solid ${tint(accent, 'line')}`, borderRadius: 'var(--r-lg)', padding: '16px 18px', width: 'min(92vw, 400px)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', boxShadow: 'var(--shadow-lg)', animation: 'pdIn 0.18s ease' }}>
         <style>{`@keyframes pdIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
 
         {/* Header */}
@@ -3394,7 +3394,7 @@ function PointDetailCard({ detail, alarms, onClose }) {
 
         {/* Downtime ที่ยังเปิดค้างของเครื่องนี้ */}
         {alarms && (
-          <div className="dt-alarm-blink" style={{ background: 'rgba(239,68,68,0.12)', border: '1.5px solid #ef4444', borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
+          <div className="dt-alarm-blink" style={{ background: 'rgba(239,68,68,0.12)', border: '1.5px solid #ef4444', borderRadius: 'var(--r-md)', padding: '8px 10px', marginBottom: 10 }}>
             <div style={{ fontSize: 12, fontWeight: 900, color: '#ef4444', marginBottom: 4 }}>DOWNTIME</div>
             {alarms.map((d, i) => {
               const ongoing = !d.ended_at && d.duration_min == null;
@@ -3426,7 +3426,7 @@ function PointDetailCard({ detail, alarms, onClose }) {
           <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', padding: '8px 0 2px' }}>กำลังโหลดข้อมูล...</div>
         )}
         {notRegistered && (
-          <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 8, padding: '10px 12px', marginTop: infoRows.length ? 8 : 0 }}>
+          <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '10px 12px', marginTop: infoRows.length ? 8 : 0 }}>
             ยังไม่ลงทะเบียนในฐานข้อมูล
           </div>
         )}

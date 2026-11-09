@@ -533,7 +533,7 @@ export default function QualityBins({ mode = 'full' }) {
         const over = pend.filter(r => binTagAge(r, todayWd)?.over).length;
         const show = pendAll ? pend : pend.slice(0, 8);
         return (
-          <div style={{ background: 'var(--card)', border: '1px solid var(--amber-line)', borderRadius: 10,
+          <div style={{ background: 'var(--card)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)',
             padding: '12px 14px', marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: pend.length ? 10 : 0 }}>
               <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--amber)' }}>
@@ -542,7 +542,7 @@ export default function QualityBins({ mode = 'full' }) {
               {over > 0 && (
                 <span title={`เลยอายุแท็กเหลือง ${TAG_MAX_DAYS.yellow} วันตาม WI-PD3-087 §5.6`}
                   style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--red)', background: 'var(--red-dim)',
-                    border: '1px solid var(--red-line)', borderRadius: 20, padding: '2px 9px' }}>
+                    border: '1px solid var(--red-line)', borderRadius: 'var(--r-pill)', padding: '2px 9px' }}>
                   ⏱ เกินอายุแท็ก {over}
                 </span>
               )}
@@ -566,7 +566,7 @@ export default function QualityBins({ mode = 'full' }) {
                 const busy = deciding === r.id;
                 return (
                   <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-                    background: 'var(--bg2)', borderRadius: 8, padding: '7px 11px',
+                    background: 'var(--bg2)', borderRadius: 'var(--r-md)', padding: '7px 11px',
                     borderLeft: `3px solid ${age?.over ? 'var(--red)' : 'var(--amber)'}` }}>
                     <div style={{ flex: '1 1 260px', minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5 }}>

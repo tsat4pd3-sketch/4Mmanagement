@@ -155,7 +155,7 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
             {groups.map(([g, n]) => (
               <div key={g} style={{
                 display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5,
-                padding: '5px 8px', background: 'var(--bg2)', borderRadius: 6,
+                padding: '5px 8px', background: 'var(--bg2)', borderRadius: 'var(--r-md)',
               }}>
                 <span style={{ color: 'var(--text2)' }}>{g}</span>
                 <b style={{ color: 'var(--text)', flexShrink: 0 }}>{n.toLocaleString()} ใบ</b>

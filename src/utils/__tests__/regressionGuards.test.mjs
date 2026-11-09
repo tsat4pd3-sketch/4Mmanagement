@@ -447,6 +447,15 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'box-radius-token',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    /* จับ <div|span …style={{ … borderRadius: <เลข> …}}> — การ์ด/กล่อง/ชิป ต้องเป็น token (วัดจริง 09/11: 1,658 จุด/225 ไฟล์ มี 14 ค่าปน 2…999) · วงกลม '50%' และสตริงหลายมุม '8px 8px 0 0' ไม่เข้าข่าย */
+    re: /<(?:div|span)\b(?:[^>{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*borderRadius:\s*(?:999|\d{1,2})\b(?!%)/g,
+    why: 'รอบ 4 มุมมาตรฐาน (09/11/2026): การ์ดเคยเป็น 8/10/12/14 ปนในหน้าเดียว ชิปเป็น 4/5/6/20/999 — ผู้ใช้ทักว่ามุมไม่เท่ากัน',
+    fix: "ชิปเล็ก/ป้ายตัวเลข 'var(--r-xs)' (4) · การ์ด/กล่อง/ชิปทั่วไป 'var(--r-md)' (8) · การ์ดใหญ่/แผง/modal 'var(--r-lg)' (12) · แคปซูล/แถบ progress 'var(--r-pill)' (UI-CONVENTIONS §6.36 ข้อ 0)",
+    allow: {},
+  },
+  {
     id: 'tabs-folded-into-dropdown',
     scan: ['src/components/PageHeader.jsx'], ext: ['.jsx'],
     re: /MAX_TABS|aria-label="แท็บเพิ่มเติม"|tabList\.slice\(/g,

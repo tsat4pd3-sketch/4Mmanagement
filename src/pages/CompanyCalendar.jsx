@@ -134,7 +134,7 @@ export default function CompanyCalendar() {
       <div style={{ display: 'flex', gap: 14, marginBottom: 18, flexWrap: 'wrap', alignItems: 'center' }}>
         {DAY_TYPES.map(t => (
           <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
-            <div style={{ width: 12, height: 12, borderRadius: 3, background: DAY_TYPE_META[t].color, flexShrink: 0 }} />
+            <div style={{ width: 12, height: 12, borderRadius: 'var(--r-xs)', background: DAY_TYPE_META[t].color, flexShrink: 0 }} />
             {DAY_TYPE_META[t].label} <strong style={{ color: 'var(--text)' }}>{counts[t]} วัน</strong>
           </div>
         ))}
@@ -215,7 +215,7 @@ export default function CompanyCalendar() {
                       title={isDirty ? `${meta.label} (ยังไม่บันทึก)` : meta.label}
                       style={{
                         position: 'relative',
-                        fontSize: 11, textAlign: 'center', padding: '4px 0', borderRadius: 5,
+                        fontSize: 11, textAlign: 'center', padding: '4px 0', borderRadius: 'var(--r-xs)',
                         background: type === 'working' ? 'transparent' : meta.color + '33',
                         color: type === 'working' ? 'var(--text2)' : meta.color,
                         fontWeight: type === 'working' ? 400 : 700,
@@ -242,7 +242,7 @@ export default function CompanyCalendar() {
         <div style={{
           position: 'sticky', bottom: 16, marginTop: 18,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
-          background: 'var(--bg3)', border: '1px solid var(--accent)', borderRadius: 10,
+          background: 'var(--bg3)', border: '1px solid var(--accent)', borderRadius: 'var(--r-md)',
           padding: '12px 16px', boxShadow: 'var(--shadow-float)',
         }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>

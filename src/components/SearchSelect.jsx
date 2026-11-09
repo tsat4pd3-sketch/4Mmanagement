@@ -239,7 +239,7 @@ export default function SearchSelect({
       )}
 
       {open && (
-        <div style={{ marginTop: 4, background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, overflow: 'hidden' }}>
+        <div style={{ marginTop: 4, background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
           {loadFail && (
             <div style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 800, color: 'var(--red)', background: 'var(--bg3)', borderBottom: '1px solid var(--border)' }}>{loadFail}</div>
           )}
