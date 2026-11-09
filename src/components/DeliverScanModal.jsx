@@ -81,7 +81,7 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
       {/* ไม่ปิดจาก backdrop — โมดัลมีช่องกรอกเหตุผล (UI-CONVENTIONS §5) */}
       <div style={{ position: 'fixed', inset: 0, zIndex: 2300, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
         <div onClick={e => e.stopPropagation()} className="modal-scroll"
-          style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(520px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
+          style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(520px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)' }}>ถึงไลน์แล้ว — สแกนจุดส่งก่อนปิดใบ</h3>
             <button onClick={onClose} className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>✕</button>
@@ -89,7 +89,7 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
 
           {/* ใบที่กำลังทำ — พาร์ท + จำนวน + ปลายทาง ต้องเห็นชัด (กันกดผิดใบในลิสต์) */}
           <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, alignItems: 'start' }}>
-            <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '8px 10px' }}>
+            <div style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>พาร์ท</div>
               {/* ลำดับ ชื่องาน → MAT (UI §6.21 · 2026-09-30) */}
               {request?.part_name
@@ -97,18 +97,18 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
                 : null}
               <div style={{ fontSize: request?.part_name ? 11 : 15, fontWeight: request?.part_name ? 400 : 900, fontFamily: 'monospace', color: request?.part_name ? 'var(--muted)' : 'var(--text)', wordBreak: 'break-all' }}>MAT {request?.mat_no || '—'}</div>
             </div>
-            <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '8px 10px' }}>
+            <div style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>จำนวนที่ขอ</div>
               <div style={{ fontSize: 20, fontWeight: 900, color: 'var(--text)' }}>{fmt(request?.request_qty)}</div>
             </div>
-            <div style={{ background: 'rgba(59,130,246,0.12)', borderRadius: 10, padding: '8px 10px' }}>
+            <div style={{ background: 'rgba(59,130,246,0.12)', borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
               <div style={{ fontSize: 11, color: '#3b82f6' }}>ปลายทาง</div>
               <div style={{ fontSize: 14, fontWeight: 900, color: '#3b82f6' }}>➜ {request?.line_name || '—'}</div>
             </div>
           </div>
 
           {/* 🧾 ตัดจ่ายใน SAP ไม่ได้ — จดยอดค้างตัด (ไม่ขยับสต็อกใน ESM) */}
-          <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: `1px solid ${sapOn ? 'var(--amber)' : 'var(--border)'}`, background: sapOn ? 'var(--amber-dim)' : 'transparent' }}>
+          <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 'var(--r-md)', border: `1px solid ${sapOn ? 'var(--amber)' : 'var(--border)'}`, background: sapOn ? 'var(--amber-dim)' : 'transparent' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 800, color: 'var(--text)', cursor: 'pointer' }}>
               <input type="checkbox" checked={sapOn} onChange={e => { setSapOn(e.target.checked); if (e.target.checked && sapQty === '') setSapQty(String(sentQty || '')); }} style={{ width: 'auto' }} />
               🧾 ตัดจ่ายใน SAP ไม่ได้ — จดยอดค้างตัด
@@ -131,7 +131,7 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
           {noPoint ? (
             /* ไม่รู้ = ห้ามบล็อก — ไลน์ยังไม่ตั้งจุดส่ง ปล่อยผ่านแต่ต้องบอกให้ไปตั้ง */
             <div style={{ marginTop: 14 }}>
-              <div style={{ fontSize: 12.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '9px 12px' }}>
+              <div style={{ fontSize: 12.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 'var(--r-md)', padding: '9px 12px' }}>
                 ⚪ <b>{request?.line_name}</b> ยังไม่ตั้งจุดส่งงาน — ระบบตรวจไม่ได้ว่าวางถูกจุดไหม (ใบจะถูกมาร์ก "ไลน์ยังไม่ตั้งจุดส่ง")<br />
                 <span style={{ color: 'var(--text2)' }}>ให้หัวหน้าไลน์ตั้งที่ ⚙️ ตั้งค่าผังไลน์ → 🎯 จุดส่งงาน แล้วพิมพ์ป้ายที่ 🏷️ พิมพ์ป้าย QR</span>
               </div>
@@ -144,17 +144,17 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
             <div style={{ marginTop: 14 }}>
               <div style={{ fontSize: 12, color: 'var(--text2)' }}>
                 ใบนี้ต้องวางที่: {serving.map(p => (
-                  <span key={p.id} style={{ display: 'inline-block', margin: '2px 4px 0 0', padding: '2px 8px', borderRadius: 10, background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 700, fontSize: 12 }}>{pointLabel(p)}</span>
+                  <span key={p.id} style={{ display: 'inline-block', margin: '2px 4px 0 0', padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 700, fontSize: 12 }}>{pointLabel(p)}</span>
                 ))}
               </div>
 
               {ok && (
-                <div style={{ marginTop: 10, fontSize: 13, color: '#22c55e', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 8, padding: '9px 12px', fontWeight: 700 }}>
+                <div style={{ marginTop: 10, fontSize: 13, color: '#22c55e', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontWeight: 700 }}>
                   {result.message}
                 </div>
               )}
               {blocked && !ok && (
-                <div style={{ marginTop: 10, fontSize: 13, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '9px 12px' }}>
+                <div style={{ marginTop: 10, fontSize: 13, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 'var(--r-md)', padding: '9px 12px' }}>
                   🔴 {result.message}
                 </div>
               )}

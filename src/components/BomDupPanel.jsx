@@ -179,7 +179,7 @@ export default function BomDupPanel({ onOpenSheet }) {
     <>
       {/* 🔴 โหลดไม่ครบต้องเขียนบนจอ — "ลิสต์ว่าง" กับ "คิวรีล่ม" คนละเรื่อง */}
       {loadErr && (
-        <div style={{ marginBottom: 12, padding: '9px 13px', borderRadius: 9, fontSize: 12, fontWeight: 700,
+        <div style={{ marginBottom: 12, padding: '9px 13px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700,
           color: BAD, border: `1px solid ${BAD}55`, background: 'var(--card)',
           backgroundImage: `linear-gradient(${BAD}14, ${BAD}14)` }}>
           ⚠️ {loadErr}
@@ -188,7 +188,7 @@ export default function BomDupPanel({ onOpenSheet }) {
 
       {/* ── ที่มา + สิ่งที่จอนี้ไม่ทำ (คนอ่านครั้งแรกต้องเข้าใจว่าทำไมมีคู่พวกนี้) ──
           คำอธิบายถาวร ไม่ขึ้นกับตัวกรอง ⇒ อยู่เหนือแถบกรองได้ (UI-STANDARD §2.1) */}
-      <div data-page-note="1" style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 10, fontSize: 12, lineHeight: 1.65,
+      <div data-page-note="1" style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 'var(--r-md)', fontSize: 12, lineHeight: 1.65,
         color: 'var(--text2)', border: '1px solid var(--border)', background: 'var(--bg2)' }}>
         <div style={{ fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>
           ของชิ้นเดียวถูกกรอกลูกไว้ 2 ที่ — ใบที่ใช้มัน และใบ BOM ของตัวมันเอง
@@ -221,7 +221,7 @@ export default function BomDupPanel({ onOpenSheet }) {
           { k: '⚠️ มีใบที่ 3 ด้วย', v: counts.thirdSheet, c: counts.thirdSheet ? BAD : OK, sub: 'เทียบ 2 ใบแล้วตัดสินไม่ได้' },
           { k: 'ตรวจแล้ว', v: prog.cleared, c: OK, sub: prog.stale ? `⚠️ ${prog.stale} คู่ต้องตรวจซ้ำ (BOM เปลี่ยน)` : 'ข้อมูลยังเหมือนตอนตรวจ' },
         ].map(s => (
-          <div key={s.k} style={{ padding: '9px 12px', borderRadius: 10, background: 'var(--card)',
+          <div key={s.k} style={{ padding: '9px 12px', borderRadius: 'var(--r-md)', background: 'var(--card)',
             border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{s.k}</div>
             <div style={{ fontSize: 22, fontWeight: 900, color: s.c, lineHeight: 1.2 }}>{s.v}</div>
@@ -233,7 +233,7 @@ export default function BomDupPanel({ onOpenSheet }) {
       {/* 🔴 ว่างต้องเขียนว่าว่างเพราะอะไร ห้ามซ่อนแผงเงียบๆ */}
       {!shown.length ? (
         <div style={{ padding: 20, textAlign: 'center', fontSize: 12.5, color: 'var(--muted)',
-          border: '1px dashed var(--border2)', borderRadius: 10 }}>
+          border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)' }}>
           {!prog.total ? '✅ ไม่มีคู่ที่นิยามไว้ 2 ใบเลย'
             : vFilter === 'open' ? '✅ ตรวจครบทุกคู่แล้ว (กด "ทั้งหมด" เพื่อดูย้อนหลัง)'
             : vFilter === 'hot' ? '✅ ของร้อนเคลียร์หมดแล้ว'
@@ -241,7 +241,7 @@ export default function BomDupPanel({ onOpenSheet }) {
             : 'ไม่มีคู่ที่ตรงคำค้น'}
         </div>
       ) : (
-        <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
+        <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
             <thead>
               <tr style={{ background: 'var(--bg3)' }}>
@@ -393,7 +393,7 @@ export default function BomDupPanel({ onOpenSheet }) {
         {Object.entries(DUP_VERDICTS)
           .sort((a, b) => a[1].rank - b[1].rank)
           .map(([k, m]) => (
-            <div key={k} style={{ padding: '7px 10px', borderRadius: 8, fontSize: 11, lineHeight: 1.55,
+            <div key={k} style={{ padding: '7px 10px', borderRadius: 'var(--r-md)', fontSize: 11, lineHeight: 1.55,
               color: 'var(--text2)', border: '1px solid var(--border)', background: 'var(--card)' }}>
               <span style={chip(statusColor(m.tone))}>{m.label}</span>
               <span style={{ marginLeft: 6, color: 'var(--muted)' }}>({counts[k] ?? 0} คู่)</span>

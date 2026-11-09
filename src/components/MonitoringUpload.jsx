@@ -399,7 +399,7 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
       <div style={{ display: 'grid', gap: 6 }}>
         {rows.map(([t, v, note]) => (
           <div key={t} style={{ display: 'grid', gridTemplateColumns: 'minmax(120px,1fr) minmax(140px,1fr) 2fr',
-                                gap: 8, fontSize: 12, padding: '6px 8px', background: 'var(--bg2)', borderRadius: 6 }}>
+                                gap: 8, fontSize: 12, padding: '6px 8px', background: 'var(--bg2)', borderRadius: 'var(--r-md)' }}>
             <b>{t}</b><span>{v}</span><span style={{ color: 'var(--muted)' }}>{note}</span>
           </div>
         ))}

@@ -94,7 +94,7 @@ export default function PlanTimeline({
               {/* ── ราง ── */}
               <div style={{ position: 'relative', height: ROW_H + 8,
                 background: isNight ? 'rgba(99,102,241,0.07)' : 'var(--bg2)',
-                border: '1px solid var(--border)', borderRadius: 7, overflow: 'hidden' }}>
+                border: '1px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
                 {ticks.map(t => (
                   <div key={t.ms} style={{ position: 'absolute', left: `${t.pct}%`, top: 0, bottom: 0,
                     width: 1, background: 'var(--border)', opacity: 0.6 }} />
@@ -120,7 +120,7 @@ export default function PlanTimeline({
                         <div title={`เปลี่ยนรุ่นก่อนเริ่มใบนี้ ~${fmtMin(b.setupMs / 60000)}`}
                           style={{ position: 'absolute', left: `${setup.leftPct}%`, width: `${setup.widthPct}%`,
                             top: 4, height: ROW_H, background: 'repeating-linear-gradient(45deg, rgba(245,158,11,0.35) 0 5px, transparent 5px 10px)',
-                            border: '1px solid rgba(245,158,11,0.5)', borderRadius: 4, pointerEvents: 'none' }} />
+                            border: '1px solid rgba(245,158,11,0.5)', borderRadius: 'var(--r-xs)', pointerEvents: 'none' }} />
                       )}
                       {/* 🔴 ไม่รู้เวลาเปลี่ยนรุ่น = ขีดประบางๆ ให้เห็นว่ามีช่วงที่ยังตอบไม่ได้ (ไม่ใช่ 0) */}
                       {run && !b.setupKnown && boxIndex > 0 && !run.cutLeft && (

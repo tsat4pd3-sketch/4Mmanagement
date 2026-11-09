@@ -72,7 +72,7 @@ export default function AuditLogViewer({ client, tables, limit = 300, intro, fmt
     <div>
       {/* คำอธิบาย "ทะเบียนนี้เก็บอะไร" — ถาวร ไม่ขึ้นกับตัวกรอง ⇒ ป้าย data-page-note (UI-STANDARD §2.1) */}
       {intro && (
-        <div data-page-note="1" style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 11px' }}>
+        <div data-page-note="1" style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>
           {intro}
         </div>
       )}
@@ -100,7 +100,7 @@ export default function AuditLogViewer({ client, tables, limit = 300, intro, fmt
 
       {/* โหลดไม่ได้ ≠ ไม่มีประวัติ — ต้องแยกให้ขาด */}
       {!!err && (
-        <div style={{ color: '#f59e0b', padding: 12, fontSize: 12.5, background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8 }}>
+        <div style={{ color: '#f59e0b', padding: 12, fontSize: 12.5, background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 'var(--r-md)' }}>
           ⚠️ โหลดประวัติไม่ได้: {err}
           <br />(ถ้าเป็นเพราะตาราง <code>audit_log</code> ไม่มี — ต้อง apply migration <code>20260724_audit_log_main.sql</code> / <code>_dr.sql</code> ก่อน)
         </div>
@@ -116,7 +116,7 @@ export default function AuditLogViewer({ client, tables, limit = 300, intro, fmt
         const act = AUDIT_ACTIONS[r.action] || { t: r.action, c: 'var(--text2)' };
         const fields = (r.changed_fields || []).filter(f => !AUDIT_SKIP_FIELDS.has(f));
         return (
-          <div key={r.id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderLeft: `3px solid ${act.c}`, borderRadius: 8, padding: '9px 11px' }}>
+          <div key={r.id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderLeft: `3px solid ${act.c}`, borderRadius: 'var(--r-md)', padding: '9px 11px' }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap', fontSize: 12.5 }}>
               <b style={{ color: act.c }}>{act.t}</b>
               <span style={{ color: 'var(--muted)' }}>{tableLabel(r.table_name)}</span>

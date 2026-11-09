@@ -276,7 +276,7 @@ export default function FlowTower() {
             ⚠️ ฝ่ายที่หน้านี้อ้างถึงยังไม่มีในผังองค์กร — ตั้งที่ /org-setup แล้วชื่อฝ่ายจะขึ้นเอง
           </span>
         ) : usedDivs.map(dv => (
-          <span key={dv.code} style={{ fontSize: 11, fontWeight: 800, padding: '4px 10px', borderRadius: 20, color: dv.color, background: `${tint(dv.color, 'dim')}`, border: `1px solid ${tint(dv.color, 'line')}` }}>
+          <span key={dv.code} style={{ fontSize: 11, fontWeight: 800, padding: '4px 10px', borderRadius: 'var(--r-pill)', color: dv.color, background: `${tint(dv.color, 'dim')}`, border: `1px solid ${tint(dv.color, 'line')}` }}>
             {dv.icon} {dv.name}
           </span>
         ))}
@@ -417,7 +417,7 @@ export default function FlowTower() {
                   <td style={{ padding: '8px 12px', fontWeight: 800, whiteSpace: 'nowrap' }}>{seg}</td>
                   <td style={{ padding: '8px 12px', color: 'var(--text2)' }}>{mech}</td>
                   <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: ST[st].dot, background: ST[st].bg, padding: '3px 9px', borderRadius: 20 }}>● {ST[st].label}</span>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: ST[st].dot, background: ST[st].bg, padding: '3px 9px', borderRadius: 'var(--r-pill)' }}>● {ST[st].label}</span>
                   </td>
                   <td style={{ padding: '8px 12px', color: 'var(--muted)', fontSize: 11 }}>{ev}</td>
                 </tr>

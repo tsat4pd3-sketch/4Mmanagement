@@ -144,9 +144,9 @@ export default function PartLevelCoveragePanel() {
                   </div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     {done
-                      ? <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 700 }}>✅ ตั้งครบ {g.consume} พาร์ท</span>
-                      : <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, background: 'rgba(239,68,68,0.12)', color: '#ef4444', fontWeight: 700 }}>🔴 ยังไม่ตั้ง {g.unwatched} / {g.consume} พาร์ท</span>}
-                    {g.rowNoMin > 0 && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', fontWeight: 700 }}>🟡 {g.rowNoMin} แถวไม่ใส่ min</span>}
+                      ? <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-md)', background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 700 }}>✅ ตั้งครบ {g.consume} พาร์ท</span>
+                      : <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-md)', background: 'rgba(239,68,68,0.12)', color: '#ef4444', fontWeight: 700 }}>🔴 ยังไม่ตั้ง {g.unwatched} / {g.consume} พาร์ท</span>}
+                    {g.rowNoMin > 0 && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-md)', background: 'rgba(245,158,11,0.12)', color: '#f59e0b', fontWeight: 700 }}>🟡 {g.rowNoMin} แถวไม่ใส่ min</span>}
                     {g.produce > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ผลิตเอง {g.produce}</span>}
                   </div>
                 </div>

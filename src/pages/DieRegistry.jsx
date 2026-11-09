@@ -37,6 +37,7 @@ import { FEED_TYPES, DIE_OWNERS, dieOwnerLabel, membersBySet, dieRegistryAoa } f
 import { loadDocForms } from '../utils/docForms';
 import { xlsxDocName } from '../utils/csvDoc';
 
+import NoticeBar from '../components/NoticeBar';
 /* ═══════════════════════════════════════════════════════════════
    ทะเบียนแม่พิมพ์ & DIE MAINTENANCE — /die-registry
 
@@ -622,10 +623,9 @@ export default function DieRegistry() {
       />
 
       {dataWarn && (
-        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-line)',
-                      borderRadius: 10, padding: '9px 14px', fontSize: 12.5, marginBottom: 12 }}>
-          ⚠️ {dataWarn}
-        </div>
+        <NoticeBar tone="bad" style={{ marginBottom: 12 }}>
+          {dataWarn}
+        </NoticeBar>
       )}
 
       {sharedErr && tab === 'registry' && (
@@ -705,7 +705,7 @@ export default function DieRegistry() {
         ].map(c => (
           <div key={c.t} title={c.hint || undefined} style={{
             background: 'var(--card)', border: `1px solid ${c.warn ? 'var(--amber-line)' : 'var(--border)'}`,
-            borderRadius: 10, padding: '8px 14px', minWidth: 110,
+            borderRadius: 'var(--r-md)', padding: '8px 14px', minWidth: 110,
           }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{c.t}</div>
             <div style={{ fontSize: 19, fontWeight: 800, color: c.warn ? 'var(--amber)' : 'var(--text)' }}>{c.v}</div>
@@ -764,7 +764,7 @@ export default function DieRegistry() {
               const open = expanded.has(s.id);
               return (
                 <div key={s.id} style={{
-                  background: 'var(--card)', borderRadius: 10,
+                  background: 'var(--card)', borderRadius: 'var(--r-md)',
                   border: `1px solid ${s.issues.length ? 'var(--amber-line)' : 'var(--border)'}`,
                   overflow: 'hidden',
                 }}>
@@ -784,7 +784,7 @@ export default function DieRegistry() {
                       </div>
                     </div>
                     <span style={{
-                      fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999,
+                      fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 'var(--r-pill)',
                       background: 'var(--bg3)', color: 'var(--text2)', whiteSpace: 'nowrap',
                     ...(s.kind ? null : { color: 'var(--amber)' }) }}>{s.kind ? dieSetKindLabel(s.kind, setKinds) : 'ยังไม่ระบุรูปแบบ'}</span>
                     <span style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
@@ -1193,7 +1193,7 @@ function Modal({ title, onClose, children }) {
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
     }}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12,
+        background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)',
         padding: 18, width: 'min(720px, 100%)', maxHeight: '90vh', overflowY: 'auto',
       }}>
         <h3 style={{ margin: '0 0 14px', fontSize: 16, fontWeight: 800 }}>{title}</h3>

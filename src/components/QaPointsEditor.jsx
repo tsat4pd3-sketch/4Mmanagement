@@ -150,7 +150,7 @@ function TitlePicker({ current, used, onPick, onClose }) {
   const [custom, setCustom] = useState(current || '');
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 2100, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, width: 'min(460px, 96vw)', padding: 18, boxShadow: 'var(--shadow-lg)' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: 'min(460px, 96vw)', padding: 18, boxShadow: 'var(--shadow-lg)' }}>
         <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10 }}>ตั้งชื่อแผ่น/มุมมอง</div>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 12 }}>
           {STANDARD_VIEWS.map(v => {
@@ -473,7 +473,7 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, writeChe
           listTitle={`จุดตรวจชิ้นงาน (${points.length})`} onAdd={addPoint}
           jump={{ points: points.map(p => ({ _key: p._key, name: p.characteristic, group_name: '' })), labels, onJump: jumpTo, flashKey, onTop: scrollTop }}>
           {points.map(p => (
-            <div key={p._key} ref={cardRef(p._key)} style={{ borderRadius: 8, transition: 'box-shadow .3s',
+            <div key={p._key} ref={cardRef(p._key)} style={{ borderRadius: 'var(--r-md)', transition: 'box-shadow .3s',
               boxShadow: flashKey === p._key ? '0 0 0 2px var(--accent), 0 0 14px var(--accent-glow)' : 'none' }}>
               <QaPointCard p={p} methodHist={methodHist}
                 calcOptions={calcOptionsFor(p._key)} calcIssues={calcIssueList.filter(x => x.key === p._key).map(x => x.msg)}
@@ -485,7 +485,7 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, writeChe
             </div>
           ))}
           {points.length === 0 && (
-            <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13, border: '1px dashed var(--border2)', borderRadius: 8 }}>
+            <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13, border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)' }}>
               ยังไม่มีจุดตรวจ — กด “+ เพิ่มจุดตรวจ” แล้วกด 🔘 วางตำแหน่ง → แตะบนรูป
             </div>
           )}

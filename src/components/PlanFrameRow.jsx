@@ -66,7 +66,7 @@ export default function PlanFrameRow({
           return (
             <div key={b.lot.id} title={tip} style={{
               position: 'absolute', top: 4, bottom: 4, left: `${left}%`, width: `${Math.min(w, 100 - left)}%`,
-              boxSizing: 'border-box', borderRadius: 5, overflow: 'hidden',
+              boxSizing: 'border-box', borderRadius: 'var(--r-xs)', overflow: 'hidden',
               border: `1.5px dashed ${st.c}cc`,
               background: 'var(--card)', backgroundImage: b.noCt
                 ? `repeating-linear-gradient(45deg, ${st.c}26 0 5px, transparent 5px 10px)`

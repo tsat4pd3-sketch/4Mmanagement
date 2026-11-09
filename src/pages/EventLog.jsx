@@ -421,7 +421,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
         </div>
 
         {catMeta && (
-          <div style={{ padding: '10px 14px', borderRadius: 8, background: catMeta.bg, border: `1px solid ${tint(catMeta.color, 'line')}`, display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div style={{ padding: '10px 14px', borderRadius: 'var(--r-md)', background: catMeta.bg, border: `1px solid ${tint(catMeta.color, 'line')}`, display: 'flex', gap: 10, alignItems: 'center' }}>
             <span style={{ fontSize: 20 }}>{catMeta.icon}</span>
             <div>
               <div style={{ fontSize: 12, fontWeight: 700, color: catMeta.color }}>Category {selectedEvent.category} · {catMeta.labelTh}</div>
@@ -493,14 +493,14 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
               return (
                 <div key={rk}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: rm.bg, color: rm.color, border: `1px solid ${tint(rm.color, 'line')}` }}>
+                    <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 'var(--r-pill)', background: rm.bg, color: rm.color, border: `1px solid ${tint(rm.color, 'line')}` }}>
                       {rk} · {rm.label}
                     </span>
                     <span style={{ fontSize: 11, color: 'var(--muted)' }}>{items.length} รายการ</span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {items.map(item => (
-                      <div key={item.check_no} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 10px', borderRadius: 6, background: 'var(--bg3)', borderLeft: `3px solid ${rm.color}` }}>
+                      <div key={item.check_no} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', borderLeft: `3px solid ${rm.color}` }}>
                         <span style={{ fontSize: 11, fontWeight: 800, color: rm.color, minWidth: 20, marginTop: 1 }}>#{item.check_no}</span>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 11, color: 'var(--text)', lineHeight: 1.4 }}>{item.name_th}</div>
@@ -954,7 +954,7 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
                     <td>
                       {cm && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 7px', borderRadius: 20, background: cm.bg, color: cm.color, whiteSpace: 'nowrap' }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 7px', borderRadius: 'var(--r-pill)', background: cm.bg, color: cm.color, whiteSpace: 'nowrap' }}>
                             {cm.icon} Cat {cat}
                           </span>
                           <span style={{ fontSize: 11, color: 'var(--text2)' }}>#{def?.event_no}</span>
@@ -980,7 +980,7 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
                           const rm = ROLE_META[a.role_key] || { color: '#aaa', bg: '' };
                           const icon = a.status === 'approved' ? '✓' : a.status === 'rejected' ? '✗' : '…';
                           return (
-                            <span key={a.role_key} style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 4,
+                            <span key={a.role_key} style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 'var(--r-xs)',
                               background: a.status === 'approved' ? rm.bg : a.status === 'rejected' ? 'var(--red-dim)' : 'var(--bg3)',
                               color: a.status === 'approved' ? rm.color : a.status === 'rejected' ? 'var(--red)' : 'var(--muted)',
                               border: `1px solid ${a.status === 'approved' ? rm.color + '40' : 'transparent'}` }}>
@@ -991,7 +991,7 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
                       </div>
                     </td>
                     <td>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: sm.bg, color: sm.color }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 'var(--r-pill)', background: sm.bg, color: sm.color }}>
                         {sm.label}
                       </span>
                     </td>
@@ -1163,15 +1163,15 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
   return (
     <div className="overlay" style={{ zIndex: 2000, alignItems: 'flex-start', overflowY: 'auto', padding: '24px 16px' }}>
       <div onClick={e => e.stopPropagation()}
-        style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 28,
+        style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 28,
           width: 'min(95vw,860px)', boxShadow: 'var(--shadow-lg)', marginTop: 20, marginBottom: 20 }}>
 
         {/* Modal Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-              {cm && <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: cm.bg, color: cm.color }}>{cm.icon} Category {cat} · {cm.labelTh}</span>}
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: sm.bg, color: sm.color }}>{sm.label}</span>
+              {cm && <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 'var(--r-pill)', background: cm.bg, color: cm.color }}>{cm.icon} Category {cat} · {cm.labelTh}</span>}
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--r-pill)', background: sm.bg, color: sm.color }}>{sm.label}</span>
             </div>
             <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>Event #{def?.event_no} · {def?.name_th}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{log.line_name} · {log.station_number || 'ไม่ระบุ Station'} · {fmtDate(log.work_date)} {log.event_time || ''}</div>
@@ -1182,11 +1182,11 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
               const approvedTime = fmtTime(new Date(approvedAt));
               return (
                 <div style={{ display: 'flex', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, background: 'var(--green-dim)', padding: '3px 10px', borderRadius: 20 }}>
+                  <span style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, background: 'var(--green-dim)', padding: '3px 10px', borderRadius: 'var(--r-pill)' }}>
                     ✓ อนุมัติสำเร็จ {approvedTime} น.
                   </span>
                   {dur && (
-                    <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700, background: 'var(--blue-dim)', padding: '3px 10px', borderRadius: 20 }}>
+                    <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700, background: 'var(--blue-dim)', padding: '3px 10px', borderRadius: 'var(--r-pill)' }}>
                       ⏱ รวมเวลา {dur}
                     </span>
                   )}
@@ -1227,7 +1227,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
             { label: 'Rework',      value: log.qty_rework, color: 'var(--amber)' },
             { label: 'Scrap',       value: log.qty_scrap, color: 'var(--blue)' },
           ].map(q => (
-            <div key={q.label} style={{ background: 'var(--card)', borderRadius: 8, padding: '10px 14px', textAlign: 'center', border: `1px solid ${tint(q.color, 'dim')}` }}>
+            <div key={q.label} style={{ background: 'var(--card)', borderRadius: 'var(--r-md)', padding: '10px 14px', textAlign: 'center', border: `1px solid ${tint(q.color, 'dim')}` }}>
               <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>{q.label}</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: q.color, fontFamily: 'var(--font-display)' }}>{q.value}</div>
             </div>
@@ -1235,7 +1235,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
         </div>
 
         {log.issue_description && (
-          <div style={{ padding: '10px 14px', background: 'var(--card)', borderRadius: 8, marginBottom: 20, borderLeft: '3px solid var(--amber)' }}>
+          <div style={{ padding: '10px 14px', background: 'var(--card)', borderRadius: 'var(--r-md)', marginBottom: 20, borderLeft: '3px solid var(--amber)' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>ISSUE</div>
             <div style={{ fontSize: 13, color: 'var(--text)' }}>{log.issue_description}</div>
           </div>
@@ -1257,10 +1257,10 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                 return comp && comp.result !== 'pending';
               }).length;
               return (
-                <div key={appr.role_key} style={{ background: 'var(--card)', borderRadius: 10, padding: '14px 16px', border: `1px solid ${appr.status === 'approved' ? rm.color + '40' : appr.status === 'rejected' ? 'var(--red)40' : 'var(--border)'}` }}>
+                <div key={appr.role_key} style={{ background: 'var(--card)', borderRadius: 'var(--r-md)', padding: '14px 16px', border: `1px solid ${appr.status === 'approved' ? rm.color + '40' : appr.status === 'rejected' ? 'var(--red)40' : 'var(--border)'}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                     <span style={{ fontSize: 11, fontWeight: 800, color: rm.color }}>{appr.role_key}</span>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-pill)',
                       background: appr.status === 'approved' ? rm.bg : appr.status === 'rejected' ? 'var(--red-dim)' : 'var(--bg3)',
                       color: appr.status === 'approved' ? rm.color : appr.status === 'rejected' ? 'var(--red)' : 'var(--muted)' }}>
                       {appr.status === 'approved' ? '✓ อนุมัติ' : appr.status === 'rejected' ? '✗ ปฏิเสธ' : '⋯ รอ'}
@@ -1341,7 +1341,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                 return (
                   <div key={rk}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                      <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: rm.bg, color: rm.color, border: `1px solid ${tint(rm.color, 'line')}` }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 'var(--r-pill)', background: rm.bg, color: rm.color, border: `1px solid ${tint(rm.color, 'line')}` }}>
                         {rk} · {rm.label}
                       </span>
                     </div>
@@ -1350,7 +1350,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                         const comp = completions.find(c => c.check_no === item.check_no);
                         const result = comp?.result || 'pending';
                         return (
-                          <div key={item.check_no} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8,
+                          <div key={item.check_no} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 'var(--r-md)',
                             background: result === 'ok' ? 'var(--green-dim)' : result === 'ng' ? 'var(--red-dim)' : result === 'na' ? 'rgba(128,128,128,0.06)' : 'var(--card)',
                             border: `1px solid ${result === 'ok' ? 'var(--green)30' : result === 'ng' ? 'var(--red)30' : 'var(--border)'}` }}>
                             <span style={{ fontSize: 11, fontWeight: 800, color: rm.color, minWidth: 22 }}>#{item.check_no}</span>

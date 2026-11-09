@@ -43,7 +43,7 @@ const btnSt = (bg = 'var(--accent)', fg = 'var(--accent-ink)') => ({ padding: '7
 const ghostBtn = { padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' };
 
 const Chip = ({ label, color }) => (
-  <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 800, color, background: `${color}22`, border: `1px solid ${color}66`, whiteSpace: 'nowrap' }}>{label}</span>
+  <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 'var(--r-pill)', fontSize: 11, fontWeight: 800, color, background: `${color}22`, border: `1px solid ${color}66`, whiteSpace: 'nowrap' }}>{label}</span>
 );
 const Field = ({ label, children, span }) => (
   <label style={{ display: 'block', gridColumn: span ? `span ${span}` : undefined }}>
@@ -198,7 +198,7 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
 
   if (missing) {
     return (
-      <div style={{ padding: 22, textAlign: 'center', color: 'var(--muted)', fontSize: 13, border: '1px dashed var(--border2)', borderRadius: 12 }}>
+      <div style={{ padding: 22, textAlign: 'center', color: 'var(--muted)', fontSize: 13, border: '1px dashed var(--border2)', borderRadius: 'var(--r-lg)' }}>
         ยังไม่ได้ติดตั้งทะเบียนเคลมลูกค้า — แจ้ง admin ให้ apply migration <b>20260817_qa_customer_claims</b>
       </div>
     );
@@ -223,7 +223,7 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
           ['🔁 เคลมซ้ำ', sureIds.size, sureIds.size ? '#ef4444' : '#22c55e', maybeIds.size ? `+ อาจซ้ำอีก ${maybeIds.size} ใบ (ใน ${REPEAT_MONTHS} เดือน)` : `พาร์ท+อาการเดิมใน ${REPEAT_MONTHS} เดือน`],
           ['🛠 ผูก 8D แล้ว', scoped.filter((c) => c.capa_id).length, undefined, `จากทั้งหมด ${scoped.length} ใบ`],
         ].map(([label, val, color, sub]) => (
-          <div key={label} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 13px' }}>
+          <div key={label} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '10px 13px' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{label}</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: color || 'var(--text)' }}>{val}</div>
             <div style={{ fontSize: 11, color: 'var(--muted)' }}>{sub}</div>
@@ -232,7 +232,7 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
       </div>
 
       {(sureIds.size > 0 || maybeIds.size > 0) && (
-        <div style={{ padding: '9px 13px', borderRadius: 10, border: `1px solid ${sureIds.size ? '#ef444466' : '#f59e0b66'}`, background: sureIds.size ? 'rgba(239,68,68,0.10)' : 'rgba(245,158,11,0.10)', fontSize: 12.5, lineHeight: 1.6 }}>
+        <div style={{ padding: '9px 13px', borderRadius: 'var(--r-md)', border: `1px solid ${sureIds.size ? '#ef444466' : '#f59e0b66'}`, background: sureIds.size ? 'rgba(239,68,68,0.10)' : 'rgba(245,158,11,0.10)', fontSize: 12.5, lineHeight: 1.6 }}>
           {sureIds.size > 0 && <div style={{ color: '#ef4444' }}>
             🔁 <b>เคลมซ้ำ {sureIds.size} ใบ</b> — พาร์ทเดิม อาการเดิม กลับมาภายใน {REPEAT_MONTHS} เดือน
             <span style={{ color: 'var(--text2)' }}> · มาตรการจาก 8D ครั้งก่อน<b>ยังไม่ได้ผลจริง</b> — ทบทวนของเดิม อย่าเปิด 8D ใบใหม่ด้วยวิธีเดิม (IATF §10.2.3)</span>
@@ -249,7 +249,7 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
         <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '-4px 0 8px' }}>ซ่อน {hiddenN} ใบของไลน์นอกขอบเขตของคุณ</div>
       )}
 
-      <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
+      <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
           <thead style={{ background: 'var(--bg2)' }}>
             <tr>{['เลขเคลม', 'วันที่', 'ลูกค้า', 'พาร์ท', 'อาการ', 'จำนวน', 'กำหนดตอบ', 'สถานะ', 'งานแก้ไข'].map((h) => <th key={h} style={thSt}>{h}</th>)}</tr>
@@ -303,14 +303,14 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
   const ro = !canRecord || detail.status === 'closed' || detail.status === QA_CANCELLED;
   return (
     <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2500, padding: 16 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(980px, 100%)', maxHeight: '92vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(980px, 100%)', maxHeight: '92vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
         <h3 style={{ margin: '0 0 14px', fontSize: 16 }}>{detail.id ? detail.claim_no : 'รับเคลมลูกค้าใหม่'}</h3>
 
         {/* ⚠️ เคลมซ้ำ = 8D ก่อนหน้าไม่ได้ผล — ต้องเห็นก่อนเริ่มสอบสวน ไม่ใช่รู้ทีหลัง */}
         {repeats.length > 0 && (() => {
           const sure = repeats.filter((r) => r._sure);
           return (
-            <div style={{ marginBottom: 14, padding: '10px 13px', borderRadius: 10, border: `1px solid ${sure.length ? '#ef444466' : '#f59e0b66'}`, background: sure.length ? 'rgba(239,68,68,0.10)' : 'rgba(245,158,11,0.10)', fontSize: 12.5, lineHeight: 1.65 }}>
+            <div style={{ marginBottom: 14, padding: '10px 13px', borderRadius: 'var(--r-md)', border: `1px solid ${sure.length ? '#ef444466' : '#f59e0b66'}`, background: sure.length ? 'rgba(239,68,68,0.10)' : 'rgba(245,158,11,0.10)', fontSize: 12.5, lineHeight: 1.65 }}>
               <b style={{ color: sure.length ? '#ef4444' : '#f59e0b' }}>
                 {sure.length ? `🔁 เคลมซ้ำ — พาร์ทนี้เคยถูกเคลมด้วยอาการเดียวกันมาแล้ว ${sure.length} ครั้ง` : `❓ พาร์ทนี้เคยถูกเคลมเรื่องชิ้นส่วนเดียวกัน ${repeats.length} ครั้ง — ตรวจดูว่าอาการเดียวกันไหม`}
               </b>
@@ -374,7 +374,7 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
         </div>
 
         {detail.id && (
-          <div style={{ marginTop: 14, padding: '10px 13px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg2)', fontSize: 12.5, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ marginTop: 14, padding: '10px 13px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', fontSize: 12.5, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <b>งานแก้ไข:</b>
             {detail.capa_id
               ? <><Chip label="มี 8D แล้ว" color="#22c55e" /><button style={ghostBtn} onClick={() => openCapa(detail)}>เปิดใบ 8D →</button></>

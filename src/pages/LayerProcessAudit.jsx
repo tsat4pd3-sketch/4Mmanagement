@@ -36,6 +36,7 @@ import { loadRunDays, ranOn } from '../utils/runDays';
 import { useDraftAutosave, loadDraft, clearDraft } from '../utils/formDraft';   // 📝 ร่างในเครื่อง (มือถือ · 22/10)
 import DraftRestoreBar from '../components/DraftRestoreBar';
 
+import NoticeBar from '../components/NoticeBar';
 /* ══════════════════════════════════════════════════════════════
    📋 Layer Process Audit (LPA) — paperless แทนฟอร์มกระดาษ 2 ใบ:
    1) Layer Process Audit Plan   — แผนตรวจรายเดือน ต่อไลน์+กะ (สถานีรายวัน + ชั้นผู้ตรวจ ○●⊗)
@@ -108,7 +109,7 @@ function SignPadModal({ title, onCancel, onDone }) {
   const done = () => { if (!dirty.current) { toast.error('ยังไม่ได้เซ็น'); return; } cvRef.current.toBlob(b => b && onDone(b), 'image/png'); };
   return (
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(96vw, 620px)' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 620px)' }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 10 }}>✍️ {title}</div>
         <canvas ref={cvRef} width={560} height={180} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up}
           style={{ width: '100%', height: 160, border: '1px dashed var(--border2)', borderRadius: 10, background: '#fff', touchAction: 'none', cursor: 'crosshair', display: 'block' }} />
@@ -1086,10 +1087,9 @@ ${issuesHtml}
 
       {/* 🔒 ไลน์ที่เลือกอยู่นอกส่วนงานเรา — ดูได้ แต่บันทึกไม่ได้ · ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล (UI §6.9) */}
       {!lineWrite.ok && selLine && (
-        <div className="card" style={{ padding: '9px 12px', marginBottom: 10, fontSize: 12, color: 'var(--text2)',
-          background: 'var(--amber-dim)', border: '1px solid var(--amber-line)' }}>
+        <NoticeBar tone="warn" style={{ marginBottom: 10 }}>
           {writeBlockText(lineWrite, { what: `ใบตรวจ/แผน LPA ของไลน์ "${selLine}"` })}
-        </div>
+        </NoticeBar>
       )}
 
       {/* ═════════ แผนตรวจ — มองทีละไตรมาส (3 เดือน) ═════════ */}
@@ -1102,7 +1102,7 @@ ${issuesHtml}
             <button onClick={() => setSelMonth(shiftMonth(qMonths[0], 3))} style={btnGhost}>ไตรมาสถัดไป ▶</button>
           </div>
           {qErr && (
-            <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 12.5,
+            <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5,
               background: 'var(--card)', border: '1px solid var(--red)', color: 'var(--red)' }}>
               ⚠ {qErr} — ช่องที่วางแผนไว้แสดงเป็น <b>?</b> (ยังบอกไม่ได้ว่าตรวจแล้วหรือยัง) <b>อย่าเพิ่งพิมพ์ใบนี้ไปเซ็น</b>
             </div>
@@ -1141,7 +1141,7 @@ ${issuesHtml}
             const nD = daysInMonth(mk);
             const isFocus = mk === selMonth;
             return (
-              <div key={mk} style={{ marginTop: 12, border: isFocus ? '1px solid var(--accent)' : '1px solid var(--border2)', borderRadius: 10, overflow: 'hidden' }}>
+              <div key={mk} style={{ marginTop: 12, border: isFocus ? '1px solid var(--accent)' : '1px solid var(--border2)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
                 <div style={{ padding: '7px 12px', background: isFocus ? 'var(--green-dim)' : 'var(--bg3)', fontWeight: 800, fontSize: 14, color: isFocus ? 'var(--accent)' : 'var(--text)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   {monthLabel(mk)}
                   {isFocus ? <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted)' }}>(เดือนที่เลือก — ใช้พิมพ์/รายงาน)</span>
@@ -1203,7 +1203,7 @@ ${issuesHtml}
         <div className="card" style={{ padding: 16 }}>
           {/* 🔴 โหลดใบเดิมไม่ได้ = บอกตรงๆ + ห้ามให้ฟอร์มเปล่าเดินต่อ (ห้ามเงียบ · กฎความซื่อสัตย์ของจอ) */}
           {draftErr && (
-            <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 12.5,
+            <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5,
               background: 'var(--card)', border: '1px solid var(--red)', color: 'var(--red)' }}>
               ⚠ {draftErr} — <b>ยังบันทึกไม่ได้</b> (ถ้าบันทึกทับตอนนี้ คำตอบที่เคยตรวจไว้จะหาย) · ลองเปลี่ยนวัน/ไลน์แล้วกลับมาใหม่
             </div>
@@ -1320,7 +1320,7 @@ ${issuesHtml}
                       {a.note && <div style={{ fontSize: 11, color: 'var(--muted)' }}>↳ {a.note}</div>}
                     </div>
                     <span style={{
-                      minWidth: 40, textAlign: 'center', padding: '6px 8px', borderRadius: 7, fontWeight: 800, fontSize: 13,
+                      minWidth: 40, textAlign: 'center', padding: '6px 8px', borderRadius: 'var(--r-md)', fontWeight: 800, fontSize: 13,
                       border: '1.5px solid ' + (m?.color || 'var(--border2)'), background: m?.color || 'var(--bg3)', color: m ? '#fff' : 'var(--text2)',
                     }}>{m?.label || a.answer || '-'}</span>
                   </div>
@@ -1425,7 +1425,7 @@ ${issuesHtml}
                   const m = CHECK_DAY_META[k];
                   return (
                     <span key={k} style={{ marginRight: 8 }}>
-                      <span style={{ display: 'inline-block', padding: '0 3px', borderRadius: 4, border: `1px solid ${m.color}`, background: m.tint || undefined, color: m.color, fontWeight: 700 }}>{m.mark}</span>{' '}
+                      <span style={{ display: 'inline-block', padding: '0 3px', borderRadius: 'var(--r-xs)', border: `1px solid ${m.color}`, background: m.tint || undefined, color: m.color, fontWeight: 700 }}>{m.mark}</span>{' '}
                       {m.label}
                     </span>
                   );
@@ -1463,7 +1463,7 @@ ${issuesHtml}
                           style={{ ...cellStyle, fontSize: 11, fontWeight: 700, color: meta.color,
                             padding: '3px 1px', background: meta.tint || undefined }}>
                           {meta.mark && (
-                            <span style={{ display: 'inline-block', padding: '0 3px', borderRadius: 4,
+                            <span style={{ display: 'inline-block', padding: '0 3px', borderRadius: 'var(--r-xs)',
                               border: `1px solid ${meta.color}`, lineHeight: '14px', fontSize: 11 }}>{meta.mark}</span>
                           )}
                         </th>
@@ -1529,7 +1529,7 @@ ${issuesHtml}
               เคสจริง: มีคนกดลบข้อ common 2 ข้อจากมุมมอง "ทุกไลน์" ⇒ หายจากใบตรวจทุกไลน์
               จอเดิมบอกขอบเขตด้วยตัวเล็กสีเทาบรรทัดเดียว คนอ่านผ่าน = นึกว่าลบแค่ของตัวเอง */}
           <div style={{
-            marginBottom: 10, padding: '8px 11px', borderRadius: 8, lineHeight: 1.55, fontSize: 12,
+            marginBottom: 10, padding: '8px 11px', borderRadius: 'var(--r-md)', lineHeight: 1.55, fontSize: 12,
             border: '1px solid ' + (qScope ? 'var(--accent)' : 'var(--amber)'),
             background: qScope ? 'var(--accent-dim)' : 'var(--amber-dim)',
           }}>
@@ -1577,8 +1577,8 @@ ${issuesHtml}
                         <b>{q.seq}.</b> {q.question}
                         {/* ป้ายขอบเขตต้องขึ้น**ทั้ง 2 มุมมอง** — เดิมมุมมอง "ทุกไลน์" ไม่มีป้ายเลย
                             คนกดจึงไม่รู้ว่าแถวที่กำลังลบเป็นของส่วนรวม (เคส 12/10) */}
-                        {isCommon && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 4, padding: '0 5px', marginLeft: 6 }}>ทะเบียนกลาง</span>}
-                        {lineOwn && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-dim)', border: '1px solid var(--accent)', borderRadius: 4, padding: '0 5px', marginLeft: 6 }}>เฉพาะไลน์นี้</span>}
+                        {isCommon && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 'var(--r-xs)', padding: '0 5px', marginLeft: 6 }}>ทะเบียนกลาง</span>}
+                        {lineOwn && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-dim)', border: '1px solid var(--accent)', borderRadius: 'var(--r-xs)', padding: '0 5px', marginLeft: 6 }}>เฉพาะไลน์นี้</span>}
                         {!qScope && q.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · ไลน์ {q.line_name}</span>}
                         {(q.issue_start || q.issue_end) && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · {thDate(q.issue_start)} - {thDate(q.issue_end)}</span>}
                         {hiddenHere && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}> · ไลน์นี้ไม่ใช้ข้อนี้</span>}
@@ -1612,7 +1612,7 @@ ${issuesHtml}
       {/* modal แก้คำถาม (มีฟอร์ม — ไม่ปิดจาก backdrop) */}
       {qEditing && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(96vw, 640px)' }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 640px)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{qEditing.id ? '✏️ แก้ไข' : '➕ เพิ่ม'}คำถาม</div>
               <button onClick={() => setQEditing(null)} style={{ background: 'none', border: 'none', fontSize: 20, color: 'var(--muted)', cursor: 'pointer' }}>✕</button>

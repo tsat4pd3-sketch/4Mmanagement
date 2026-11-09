@@ -100,7 +100,7 @@ export default function CommandPalette({ open, onClose, role }) {
         onClick={e => e.stopPropagation()}
         style={{
           width: 'min(620px, 100%)', maxHeight: '70vh', display: 'flex', flexDirection: 'column',
-          background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12,
+          background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)',
           boxShadow: 'var(--shadow-lg)', overflow: 'hidden',
         }}
       >

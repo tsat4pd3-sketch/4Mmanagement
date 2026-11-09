@@ -804,8 +804,8 @@ export default function MorningMeeting() {
                     <div style={{ fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {t.name} {t.carry && <span style={chip('var(--amber)')}>ข้ามกะ</span>}
                     </div>
-                    <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 3, marginTop: 3, overflow: 'hidden' }}>
-                      <div style={{ width: `${Math.min(100, (t.min / (topDowntime.unplanned[0].min || 1)) * 100)}%`, height: '100%', background: t.color || 'var(--red)', borderRadius: 3 }} />
+                    <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', marginTop: 3, overflow: 'hidden' }}>
+                      <div style={{ width: `${Math.min(100, (t.min / (topDowntime.unplanned[0].min || 1)) * 100)}%`, height: '100%', background: t.color || 'var(--red)', borderRadius: 'var(--r-xs)' }} />
                     </div>
                   </div>
                   <span style={{ fontWeight: 800, color: 'var(--red)', whiteSpace: 'nowrap' }}>{Math.round(t.min)} น.</span>
@@ -891,7 +891,7 @@ export default function MorningMeeting() {
                 /* 🔴 ปัญหาเดียวกับแถว action item (2026-09-16 · วัดจริง @390px): ชิป 2 ใบ + ชื่อไลน์
                    `nowrap` กินไป 316 จาก 328px ⇒ **รายละเอียด 4M ถูกบีบเหลือกว้าง 0 = หายทั้งบรรทัด**
                    บนมือถือให้พับบรรทัดได้ · ชื่อไลน์ยังไม่ตัดกลางคำ แต่ต้องหดแบบ ellipsis */
-                <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '5px 8px', borderRadius: 8, background: 'var(--bg2)', borderLeft: `3px solid ${st.color}`, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
+                <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '5px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', borderLeft: `3px solid ${st.color}`, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
                   <span style={chip(st.color)}>{st.label}</span>
                   <span style={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{m.line_name}</span>
                   <span style={chip('var(--muted)')}>{m.category}{m.change_subtype ? ` · ${m.change_subtype}` : ''}</span>
@@ -900,7 +900,7 @@ export default function MorningMeeting() {
               );
             })}
             {routine.length > 0 && (
-              <div style={{ fontSize: 12, padding: '5px 8px', borderRadius: 8, background: 'var(--bg2)', borderLeft: '3px solid var(--green)' }}>
+              <div style={{ fontSize: 12, padding: '5px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', borderLeft: '3px solid var(--green)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <span style={chip('var(--green)')}>อนุมัติ</span>
                   <span style={{ color: 'var(--text2)' }}>
@@ -939,7 +939,7 @@ export default function MorningMeeting() {
         {openDts.length > 0 ? openDts.map(d => (
           /* 🔴 มือถือ @390px (mobilesweep 2026-09-24): ชื่อไลน์ยาว เช่น "LINE APRON ASSY (HYDROFORM) ชุดที่ 1"
              + ชิป nowrap ดันแถวล้น 328→386px ⇒ มือถือพับบรรทัด · ชิ้น nowrap หดแบบ ellipsis (UI-CONVENTIONS §มือถือ ข้อ 3) */
-          <div key={d.id} className="dt-alarm-blink" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 10px', borderRadius: 8, background: 'var(--red-dim)', border: '1px solid var(--red-line)', flexWrap: isMobile ? 'wrap' : 'nowrap', minWidth: 0 }}>
+          <div key={d.id} className="dt-alarm-blink" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 10px', borderRadius: 'var(--r-md)', background: 'var(--red-dim)', border: '1px solid var(--red-line)', flexWrap: isMobile ? 'wrap' : 'nowrap', minWidth: 0 }}>
             <span style={{ fontSize: 14 }}>🚨</span>
             <b style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{d._line}</b>
             <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{d.machine_no || ''}</span>
@@ -957,7 +957,7 @@ export default function MorningMeeting() {
         )}
         {/* 4M ที่ยังรออนุมัติ (ทุกวัน ไม่เฉพาะเมื่อวาน = ของที่ควรตามในที่ประชุม) — เหลืองนิ่งตาม Andon */}
         {fourM.filter(m => ['pending', 'pending_qa'].includes(m.status)).map(m => (
-          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 10px', borderRadius: 8, background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', flexWrap: isMobile ? 'wrap' : 'nowrap', minWidth: 0 }}>
+          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '6px 10px', borderRadius: 'var(--r-md)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', flexWrap: isMobile ? 'wrap' : 'nowrap', minWidth: 0 }}>
             <span>🟡</span><b style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{m.line_name}</b>
             <span style={{ color: 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: '1 1 auto', minWidth: 0, maxWidth: '100%' }}>4M {m.category}: {m.description}</span>
             {/* ⚠️ guard เหมือนบรรทัด 789 — วันนี้ปลอดภัยเพราะ filter การันตีคีย์ไว้ 2 ตัว
@@ -990,7 +990,7 @@ export default function MorningMeeting() {
             const st = ACT_STATUS[a.status] || ACT_STATUS.open;
             const overdue = ['open', 'doing'].includes(a.status) && a.due_date && a.due_date < getWorkDate();
             return (
-              <div key={a.id} style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: 8, fontSize: 12, padding: '7px 10px', borderRadius: 8, background: 'var(--bg2)', borderLeft: `3px solid ${overdue ? 'var(--red)' : st.color}`, flexDirection: isMobile ? 'column' : 'row' }}>
+              <div key={a.id} style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: 8, fontSize: 12, padding: '7px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', borderLeft: `3px solid ${overdue ? 'var(--red)' : st.color}`, flexDirection: isMobile ? 'column' : 'row' }}>
                 {/* 🔴 มือถือต้อง wrap (2026-09-16 · วัดจริง @390px): ชื่อไลน์ `nowrap` ยาว 198px จาก 328px
                     ทำให้ **ข้อความปัญหาถูกบีบเหลือกว้าง 0 = หายทั้งบรรทัด** — ตัวที่ต้องอ่านที่สุดหายไป
                     ส่วนชื่อไลน์ยังห้าม wrap กลางคำ แต่ต้องหดได้ + ellipsis ไม่ใช่ดันของอื่นตกจอ */}
@@ -1153,7 +1153,7 @@ export default function MorningMeeting() {
           </div>
           {/* 📷 Gesture Mode — mount เฉพาะตอนเปิด (unmount = ดับกล้องทันที) */}
           {gestureOn && (
-            <Suspense fallback={<div style={{ position: 'absolute', right: 16, bottom: 16, zIndex: 30, fontSize: 12, color: 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 10, padding: '8px 12px' }}>⏳ กำลังโหลด Gesture Mode…</div>}>
+            <Suspense fallback={<div style={{ position: 'absolute', right: 16, bottom: 16, zIndex: 30, fontSize: 12, color: 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>⏳ กำลังโหลด Gesture Mode…</div>}>
               <GestureCam onGesture={handleGesture} onError={handleGestureError} />
             </Suspense>
           )}
@@ -1164,7 +1164,7 @@ export default function MorningMeeting() {
       {actModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }} />
-          <div style={{ position: 'relative', zIndex: 10, width: '100%', maxWidth: 460, borderRadius: 12, background: 'var(--bg2)', border: '1px solid var(--border2)', boxShadow: 'var(--shadow-lg)', padding: 18 }}>
+          <div style={{ position: 'relative', zIndex: 10, width: '100%', maxWidth: 460, borderRadius: 'var(--r-lg)', background: 'var(--bg2)', border: '1px solid var(--border2)', boxShadow: 'var(--shadow-lg)', padding: 18 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>➕ Action Item — ประชุม {fmtDate(meetingDate)}</h3>
               <button onClick={() => setActModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>

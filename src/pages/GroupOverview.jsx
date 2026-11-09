@@ -440,10 +440,10 @@ export default function GroupOverview() {
               {it.companies
                 ? <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{it.companies.length} บริษัท</span>
                 : it.real
-                  ? <span style={{ fontSize: 11, color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>จริง</span>
-                  : <span style={{ fontSize: 11, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>จำลอง</span>}
+                  ? <span style={{ fontSize: 11, color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 'var(--r-xs)', padding: '0 5px', whiteSpace: 'nowrap' }}>จริง</span>
+                  : <span style={{ fontSize: 11, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 'var(--r-xs)', padding: '0 5px', whiteSpace: 'nowrap' }}>จำลอง</span>}
             </button>
-            <div style={{ height: 22, background: 'var(--bg3)', borderRadius: 5, overflow: 'hidden', position: 'relative' }}>
+            <div style={{ height: 22, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', overflow: 'hidden', position: 'relative' }}>
               <div style={{ width: `${clamp(it.target / maxT * 100, 2, 100)}%`, height: '100%', background: 'var(--bg2)', position: 'absolute', inset: 0, borderRight: '1px dashed var(--border2)' }} />
               <div style={{ width: `${clamp(it.actual / maxT * 100, 0, 100)}%`, height: '100%', background: pctCol(it.pct), opacity: 0.85, position: 'relative' }} />
               <span style={{ position: 'absolute', left: 8, top: 0, lineHeight: '22px', fontSize: 11, fontWeight: 700, color: 'var(--text)' }}>
@@ -481,7 +481,7 @@ export default function GroupOverview() {
         icon="🏢"
         title={<>
           {ORG.code} — ภาพรวมกลุ่มบริษัท
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 999, padding: '2px 10px' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 'var(--r-pill)', padding: '2px 10px' }}>
             MOCKUP · ตัวอย่างหน้าจอ
           </span>
         </>}
@@ -647,7 +647,7 @@ export default function GroupOverview() {
                         <div style={{ fontSize: 15, fontWeight: 700, color: pctCol(g.pct), fontVariantNumeric: 'tabular-nums' }}>
                           {fmtNum(g.actual)} / {fmtNum(g.target)} <span style={{ fontSize: 12 }}>({g.pct == null ? '—' : g.pct + '%'})</span>
                         </div>
-                        <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden', marginTop: 5 }}>
+                        <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', overflow: 'hidden', marginTop: 5 }}>
                           <div style={{ width: `${clamp(g.pct ?? 0, 0, 100)}%`, height: '100%', background: pctCol(g.pct) }} />
                         </div>
                       </div>
@@ -732,8 +732,8 @@ export default function GroupOverview() {
                         </div>
                       </div>
                       {c.real
-                        ? <span style={{ fontSize: 11, color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 4, padding: '1px 6px' }}>ข้อมูลจริง</span>
-                        : <span style={{ fontSize: 11, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 4, padding: '1px 6px' }}>จำลอง</span>}
+                        ? <span style={{ fontSize: 11, color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 'var(--r-xs)', padding: '1px 6px' }}>ข้อมูลจริง</span>
+                        : <span style={{ fontSize: 11, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 'var(--r-xs)', padding: '1px 6px' }}>จำลอง</span>}
                     </div>
 
                     <div style={{ display: 'flex', gap: 14, alignItems: 'flex-end', margin: '10px 0 8px' }}>
@@ -748,7 +748,7 @@ export default function GroupOverview() {
                         <div style={{ fontSize: 15, fontWeight: 700, color: pctCol(c.pct), fontVariantNumeric: 'tabular-nums' }}>
                           {fmtNum(c.actual)} / {fmtNum(c.target)} <span style={{ fontSize: 12 }}>({c.pct == null ? '—' : c.pct + '%'})</span>
                         </div>
-                        <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden', marginTop: 5 }}>
+                        <div style={{ height: 6, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', overflow: 'hidden', marginTop: 5 }}>
                           <div style={{ width: `${clamp(c.pct ?? 0, 0, 100)}%`, height: '100%', background: pctCol(c.pct) }} />
                         </div>
                       </div>
@@ -785,8 +785,8 @@ export default function GroupOverview() {
                 {compNode.flag} {compNode.code} — รายไลน์ ({compNode.lines.length})
               </div>
               {compNode.real
-                ? <span style={{ fontSize: 11, color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 4, padding: '1px 7px' }}>ข้อมูลจริง</span>
-                : <span style={{ fontSize: 11, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 4, padding: '1px 7px' }}>ตัวเลขจำลอง</span>}
+                ? <span style={{ fontSize: 11, color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 'var(--r-xs)', padding: '1px 7px' }}>ข้อมูลจริง</span>
+                : <span style={{ fontSize: 11, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 'var(--r-xs)', padding: '1px 7px' }}>ตัวเลขจำลอง</span>}
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>{compNode.name} · {compNode.region}</span>
             </div>
             <div style={{ overflowX: 'auto' }}>
@@ -894,8 +894,8 @@ export default function GroupOverview() {
                 </div>
               </div>
               {pickComp.real
-                ? <span style={{ fontSize: 11, color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 4, padding: '2px 7px' }}>ข้อมูลจริง</span>
-                : <span style={{ fontSize: 11, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 4, padding: '2px 7px' }}>จำลอง</span>}
+                ? <span style={{ fontSize: 11, color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 'var(--r-xs)', padding: '2px 7px' }}>ข้อมูลจริง</span>
+                : <span style={{ fontSize: 11, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 'var(--r-xs)', padding: '2px 7px' }}>จำลอง</span>}
               <button className="tbtn" onClick={() => setPickComp(null)} style={{ ...btn, padding: '3px 9px' }}>✕</button>
             </div>
 
@@ -973,7 +973,7 @@ export default function GroupOverview() {
               <li><b>2 Supabase project ปัจจุบัน (Main + DR) ใช้ต่อได้</b> — แยกด้วย <code>company_id</code> ในโครงเดิม ไม่ต้องแตก project ต่อบริษัท (ถ้าบริษัทต่างประเทศต้องเก็บข้อมูลในประเทศตัวเอง ค่อยแยก project แล้วรวมที่ชั้นรายงาน)</li>
               <li><b>จอนี้ (Group Overview)</b> = ชั้นรายงานรวม อ่านอย่างเดียว — ตัวเลขทุกตัวใช้สูตรกลางเดิม (OEE ถ่วงน้ำหนัก, นับงานคู่ RH/LH เป็น 1 stroke) จึงตรงกับที่แต่ละบริษัทเห็นในหน้าตัวเอง</li>
             </ol>
-            <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 6, fontSize: 12.5 }}>
+            <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 'var(--r-md)', fontSize: 12.5 }}>
               <b>ข้อควรระวัง:</b> แต่ละบริษัทต้องกรอกข้อมูลด้วย “นิยามเดียวกัน” (เช่น downtime อะไรนับเป็นในแผน/นอกแผน, เป้ากะมาจากไหน)
               ไม่งั้นตัวเลขเทียบข้ามบริษัทไม่ได้ — ส่วนนี้เป็นงานวางมาตรฐานกลางของกลุ่ม ไม่ใช่งานเขียนโปรแกรม
             </div>
@@ -1004,7 +1004,7 @@ function Kpi({ label, value, sub, color }) {
 
 function Mini({ label, value, color }) {
   return (
-    <div style={{ background: 'var(--bg3)', borderRadius: 6, padding: '5px 7px' }}>
+    <div style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '5px 7px' }}>
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{label}</div>
       <div style={{ fontSize: 13, fontWeight: 700, color: color || 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
     </div>

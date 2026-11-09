@@ -88,7 +88,7 @@ export default function NpiTemplates({ templates, onChanged }) {
               <tbody>{phases.map(p => (
                 <tr key={p.id}>
                   <td style={tdSt}>{p.seq}</td>
-                  <td style={tdSt}><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 3, background: p.color || 'var(--border)', marginRight: 6 }} /><b>{p.label}</b>{p.description && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{p.description}</div>}</td>
+                  <td style={tdSt}><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 'var(--r-xs)', background: p.color || 'var(--border)', marginRight: 6 }} /><b>{p.label}</b>{p.description && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{p.description}</div>}</td>
                   <td style={{ ...tdSt, fontFamily: 'monospace', fontSize: 11 }}>{p.code}</td>
                   <td style={{ ...tdSt, whiteSpace: 'nowrap' }}><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setPhModal({ ...p, color: p.color || '', description: p.description || '' })}>✏️</button> <DeleteButton onClick={() => delPhase(p)} title="ลบ" /></td>
                 </tr>

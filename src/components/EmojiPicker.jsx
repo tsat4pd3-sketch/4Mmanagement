@@ -34,7 +34,7 @@ export default function EmojiPicker({ value, onChange, style, placeholder }) {
       </div>
       {open && (
         <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 4000, width: 'min(90vw, 316px)', maxHeight: 300, overflowY: 'auto',
-          background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--shadow-lg)', padding: 10 }}>
+          background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', padding: 10 }}>
           {EMOJI_GROUPS.map(g => (
             <div key={g.label} style={{ marginBottom: 6 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', margin: '2px 2px 4px' }}>{g.label}</div>

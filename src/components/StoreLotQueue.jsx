@@ -277,7 +277,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
   const totalPcs = lots.reduce((s, l) => s + (Number(l.lot_qty) || 0), 0);
 
   return (
-    <div style={{ background: 'var(--card)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
+    <div style={{ background: 'var(--card)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 'var(--r-md)', padding: '14px 16px', marginBottom: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: open ? 12 : 0 }}>
         <div onClick={() => setOpen(o => !o)}
           style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#c084fc', cursor: 'pointer', userSelect: 'none' }}>
@@ -302,7 +302,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
 
       {open && (<>
         {err && (
-          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 8, padding: '9px 12px', marginBottom: 10, fontSize: 12, lineHeight: 1.6 }}>
+          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 'var(--r-md)', padding: '9px 12px', marginBottom: 10, fontSize: 12, lineHeight: 1.6 }}>
             ⚠️ <b>โหลดคิวไม่สำเร็จ — ตัวเลขด้านล่างอาจไม่ครบ</b>
             <div style={{ color: 'var(--text2)', marginTop: 2, fontFamily: 'monospace', fontSize: 11 }}>{err}</div>
           </div>
@@ -326,7 +326,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                 ? `${g.lots.length} ล็อต × ${fmt(g.sizes[0])} ชิ้น`
                 : `${g.lots.length} ล็อต · ${fmt(g.sizes[0])}-${fmt(g.sizes[g.sizes.length - 1])} ชิ้น/ล็อต`;
               return (
-                <div key={g.mat} style={{ padding: '9px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${st.color}` }}>
+                <div key={g.mat} style={{ padding: '9px 12px', background: 'var(--bg2)', borderRadius: 'var(--r-md)', borderLeft: `3px solid ${st.color}` }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 12.5, fontWeight: 800, fontFamily: 'monospace', color: 'var(--text)' }}>{g.mat}</span>
                     <span style={{ fontSize: 12, color: 'var(--text2)', flex: 1, minWidth: 120 }}>{g.part_name || '—'}</span>
@@ -417,7 +417,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
 
         {/* ความต้องการที่ค้างเพราะยังไม่ตั้งขนาดล็อต — ออกใบสั่งไม่ได้ ห้ามปล่อยเงียบ */}
         {blocks.length > 0 && (
-          <div style={{ marginTop: lots.length ? 12 : 0, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 8, padding: '10px 12px' }}>
+          <div style={{ marginTop: lots.length ? 12 : 0, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
             {/* พับได้ แต่ **หัวข้อบอกปัญหา + จำนวน อยู่ตลอด** — ปัญหานี้ห้ามหายไปจากจอ
                 (ยาว 8 แถว + คำอธิบาย 3 บรรทัด บังคิวงานจริงที่อยู่ข้างบน) */}
             <div onClick={() => setOpenBlocks(o => !o)}

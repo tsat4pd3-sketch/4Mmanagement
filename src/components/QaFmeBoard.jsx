@@ -242,7 +242,7 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
         return (
           <>
             <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 12, boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
+            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
               <div style={{ height: 4, background: isEta ? C.eta : (d.isLate ? C.late : C.pending) }} />
               <div style={{ padding: '10px 14px', fontSize: 12.5, lineHeight: 1.7 }}>
                 {isEta ? (
@@ -305,7 +305,7 @@ const warnBox = {
 function Key({ c, t, dashed }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-      <span style={{ width: 11, height: 11, borderRadius: 3, background: dashed ? 'transparent' : `${c}33`,
+      <span style={{ width: 11, height: 11, borderRadius: 'var(--r-xs)', background: dashed ? 'transparent' : `${c}33`,
         border: `1.5px ${dashed ? 'dashed' : 'solid'} ${c}` }} />
       {t}
     </span>

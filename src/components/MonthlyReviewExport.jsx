@@ -204,7 +204,7 @@ export default function MonthlyReviewExport({ onClose }) {
   const rowSt = { display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 };
   return (
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(96vw, 640px)', maxHeight: '92vh', overflowY: 'auto' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 640px)', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div style={{ fontSize: 16, fontWeight: 900 }}>Monthly Performance Review (.pptx)</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
@@ -263,7 +263,7 @@ export default function MonthlyReviewExport({ onClose }) {
                 const st = stateOf(secLines);
                 const open = openSecs[s.code] ?? false;
                 return (
-                  <div key={s.code} style={{ border: `1px solid ${st !== 'none' ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 10, padding: '8px 10px' }}>
+                  <div key={s.code} style={{ border: `1px solid ${st !== 'none' ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <label style={{ ...rowSt, fontWeight: 800, color: st !== 'none' ? 'var(--accent)' : 'var(--text2)' }}>
                         <TriBox state={st} onChange={() => toggleLines(secLines)} />

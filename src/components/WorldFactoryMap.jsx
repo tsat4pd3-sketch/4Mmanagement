@@ -163,7 +163,7 @@ export default function WorldFactoryMap({
         </div>
       )}
 
-      <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)' }}>
+      <div style={{ position: 'relative', borderRadius: 'var(--r-lg)', overflow: 'hidden', border: '1px solid var(--border)' }}>
         <svg viewBox={vb} preserveAspectRatio="xMidYMid meet"
           style={{ width: '100%', height: 'auto', maxHeight: height, display: 'block', background: '#071322' }}>
           <defs>
@@ -265,7 +265,7 @@ export default function WorldFactoryMap({
             <div style={{
               position: 'absolute', left, top, transform: 'translate(-50%, calc(-100% - 22px))',
               pointerEvents: 'none', zIndex: 5, background: 'var(--card)', border: `1px solid ${col}`,
-              borderRadius: 8, padding: '8px 11px', minWidth: 196, boxShadow: 'var(--shadow-float)',
+              borderRadius: 'var(--r-md)', padding: '8px 11px', minWidth: 196, boxShadow: 'var(--shadow-float)',
             }}>
               <div style={{ fontSize: 14, fontWeight: 800 }}>
                 {hover.kind === 'country' ? `${o.meta.flag} ${o.meta.name}` : `${o.flag} ${o.code}`}
@@ -291,7 +291,7 @@ export default function WorldFactoryMap({
         {/* ป้ายบอกระดับที่กำลังดู */}
         <div style={{
           position: 'absolute', left: 10, top: 10, fontSize: 12, fontWeight: 700,
-          background: 'rgba(5,13,24,0.78)', border: '1px solid var(--border2)', borderRadius: 8, padding: '5px 10px', color: 'var(--text)',
+          background: 'rgba(5,13,24,0.78)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '5px 10px', color: 'var(--text)',
         }}>
           {zoomCc ? `${byCc.find(c => c.cc === zoomCc)?.meta.flag} ${byCc.find(c => c.cc === zoomCc)?.meta.name} · ${plants.length} โรงงาน` : `🌏 ทั้งโลก · ${comps.length} โรงงาน · ${byCc.length} ประเทศ`}
         </div>

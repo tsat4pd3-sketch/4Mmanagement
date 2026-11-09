@@ -71,7 +71,7 @@ const n1 = (v) => (v == null ? '—' : Number(v).toLocaleString('th-TH', { maxim
 function Chip({ color, children, title }) {
   return (
     <span title={title} style={{
-      display: 'inline-block', padding: '2px 9px', borderRadius: 12, fontSize: 11.5, fontWeight: 800,
+      display: 'inline-block', padding: '2px 9px', borderRadius: 'var(--r-lg)', fontSize: 11.5, fontWeight: 800,
       color, border: `1px solid ${tint(color, 'line')}`, background: `${tint(color, 'dim')}`, whiteSpace: 'nowrap',
     }}>{children}</span>
   );
@@ -317,7 +317,7 @@ export default function MaintenanceLevels() {
           {view === 'todo' ? 'ไม่มีคำแนะนำในตัวกรองนี้ ✅' : 'ไม่มีอุปกรณ์ในตัวกรองนี้ (อุปกรณ์ที่ไม่มีแผน PM และไม่เคยเสียใน 90 วัน ไม่ขึ้นรายการ)'}
         </div>
       ) : view === 'todo' ? (
-        <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
+        <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
             <thead><tr style={{ background: 'var(--bg3)' }}>
               {['ความด่วน', 'อุปกรณ์', 'ควรทำ', 'เพราะอะไร (ข้อมูลจริง)', 'ภายใน', ''].map(h => <th key={h} style={th}>{h}</th>)}
@@ -341,7 +341,7 @@ export default function MaintenanceLevels() {
           </table>
         </div>
       ) : (
-        <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
+        <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1080 }}>
             <thead><tr style={{ background: 'var(--bg3)' }}>
               {['อุปกรณ์', '① แผน PM', '② เสีย 30 วัน', 'ต่อ 100 ชม.เดิน', 'แนวโน้ม', 'MTBF', 'คาดเสียครั้งถัดไป', 'เวลาหยุดที่คาด 30 วัน', '≈ มูลค่า', '③ คำแนะนำ'].map(h => <th key={h} style={th}>{h}</th>)}

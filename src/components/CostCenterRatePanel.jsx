@@ -171,7 +171,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
             </span>
           )}
         </div>
-        <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8, maxHeight: 420 }}>
+        <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', maxHeight: 420 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
             <thead style={{ background: 'var(--bg2)' }}>
               <tr>
@@ -319,7 +319,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                   </label>
                 </div>
                 {form.id && (
-                  <div style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 6, padding: '6px 9px', lineHeight: 1.6 }}>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '6px 9px', lineHeight: 1.6 }}>
                     {dateLocked ? (
                       <>
                         🔒 วัน Effective ล็อกกันแก้พลาด — <b>ปรับ rate รอบใหม่ให้กด ＋ rate ในตาราง</b> (แถวเดิมเก็บเป็นประวัติ โปรเจคที่เริ่มก่อนหน้ายังคิดด้วย rate เดิม)

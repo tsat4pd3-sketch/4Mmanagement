@@ -119,7 +119,7 @@ export default function PushCoveragePanel() {
 
           {stat.noDev.length > 0 && (
             <>
-              <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, background: 'var(--bg2)',
+              <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg2)',
                             border: '1px solid var(--border)', fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.6 }}>
                 วิธีให้เขาเปิดเอง: เปิดเว็บ ESM <b>บนมือถือเครื่องนั้น</b> → กดกระดิ่ง 🔔 ที่หัวจอ → กดปุ่ม <b>"เปิด"</b> ในแถบ
                 "📲 เด้งแจ้งเตือนเข้ามือถือ" → กด <b>"ทดสอบส่ง"</b> เพื่อพิสูจน์ว่าเด้งถึงจริง<br />
@@ -136,7 +136,7 @@ export default function PushCoveragePanel() {
                       {list.map(r => (
                         <span key={r.user_id}
                           title={`แจ้งเตือนใน ${DAYS} วัน ${r.n_notif} รายการ (ใบซ่อม ${r.n_mtn}) · ยังไม่มีเครื่องผูกไว้`}
-                          style={{ fontSize: 11, padding: '2px 7px', borderRadius: 999,
+                          style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-pill)',
                                    border: '1px solid var(--border)', background: 'var(--card)', whiteSpace: 'nowrap' }}>
                           {r.full_name || '(ไม่มีชื่อ)'}
                           <b style={{ color: 'var(--muted)', fontWeight: 600 }}> · {r.n_notif}</b>

@@ -106,7 +106,7 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
 
   // ⚠️ โหลดไม่ได้ = บอก ห้ามโชว์ว่างเปล่าเหมือนไม่มีงาน
   if (err) return (
-    <div style={{ padding: '8px 11px', borderRadius: 8, border: '1px solid #ef444466', background: '#ef444414', fontSize: 11.5, color: '#ef4444', marginBottom: 12 }}>
+    <div style={{ padding: '8px 11px', borderRadius: 'var(--r-md)', border: '1px solid #ef444466', background: '#ef444414', fontSize: 11.5, color: '#ef4444', marginBottom: 12 }}>
       🔴 โหลดความคืบหน้าการผลิตไม่ได้ — {err}
     </div>
   );
@@ -123,7 +123,7 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
   const behind = d.lines.filter(l => l.behind).length;
 
   return (
-    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '10px 12px', marginBottom: 12 }}>
       <div onClick={toggle} style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', cursor: 'pointer', marginBottom: open && d.lines.length ? 8 : 0 }}>
         <span style={{ fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-display)' }}>
           {open ? '▾' : '▸'} 🏭 ยอดผลิตวันนี้ เทียบใบสั่งผลิต
@@ -170,7 +170,7 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
                     {fmt(l.made)}<span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>/{fmt(l.target)}</span>
                     <span style={{ fontSize: 11, marginLeft: 5 }}>{l.pct.toFixed(0)}%</span>
                   </div>
-                  <div style={{ height: 4, borderRadius: 3, background: 'var(--bg3)', overflow: 'hidden', margin: '3px 0 2px' }}>
+                  <div style={{ height: 4, borderRadius: 'var(--r-xs)', background: 'var(--bg3)', overflow: 'hidden', margin: '3px 0 2px' }}>
                     <div style={{ width: `${Math.min(100, l.pct)}%`, height: '100%', background: l.color }} />
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>{l.note} · {l.cnt} ใบ{l.open > 0 ? ` (ค้าง ${l.open})` : ''}</div>

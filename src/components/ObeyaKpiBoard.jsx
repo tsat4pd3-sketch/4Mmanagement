@@ -1100,7 +1100,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
                     return (
                       <div key={x.id} title={x.title}
                         onClick={() => (x.kind === 'safety' ? (canRecord && setShowSafety(x.ev)) : goTo(x.to))}
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px', borderRadius: 4, cursor: 'pointer', background: 'var(--bg3)', borderLeft: `3px solid ${late ? 'var(--red)' : x.color}` }}>
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 6px', borderRadius: 'var(--r-xs)', cursor: 'pointer', background: 'var(--bg3)', borderLeft: `3px solid ${late ? 'var(--red)' : x.color}` }}>
                         <span style={{ fontSize: fs(11) }}>{x.icon}</span>
                         <span style={{ fontSize: fs(11), fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.title}</span>
                         {/* ป้ายท้ายแถวห้ามกินที่ชื่อเรื่องจนหาย (UX audit 05/10: ชื่อไลน์ยาว → หัวข้อกว้าง 0) */}
@@ -1123,7 +1123,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           user 30/09: "ยังไม่ครบ มาอยู่ข้างล่างดีมั้ย เพื่อไม่ให้สเกลกราฟวิ่งไปวิ่งมา" · เดิมอยู่บนหัว โผล่/หายตามเดือน ⇒ กริดสูงไม่เท่ากัน */}
       <div style={{ minHeight: 26, margin: board ? '2px 8px 4px' : '6px 0 0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         {warnLines.map((w, i) => (
-          <span key={i} style={{ fontSize: tv ? 20 : 11.5, fontWeight: 700, padding: tv ? '4px 14px' : '3px 10px', borderRadius: 999, color: toneVar(err ? 'bad' : 'warn'), background: toneDim(err ? 'bad' : 'warn'), border: `1px solid ${toneLine(err ? 'bad' : 'warn')}` }}>⚠ {w}</span>
+          <span key={i} style={{ fontSize: tv ? 20 : 11.5, fontWeight: 700, padding: tv ? '4px 14px' : '3px 10px', borderRadius: 'var(--r-pill)', color: toneVar(err ? 'bad' : 'warn'), background: toneDim(err ? 'bad' : 'warn'), border: `1px solid ${toneLine(err ? 'bad' : 'warn')}` }}>⚠ {w}</span>
         ))}
       </div>
 

@@ -249,9 +249,9 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
           const collapsed = open.has(g.phase.phase_code);
           const hidden = g.rows.length - rows.length;
           return (
-            <div key={g.phase.phase_code} style={{ marginBottom: 8, border: '1px solid var(--border)', borderRadius: 8 }}>
+            <div key={g.phase.phase_code} style={{ marginBottom: 8, border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
               <div onClick={() => setOpen(s => { const n = new Set(s); n.has(g.phase.phase_code) ? n.delete(g.phase.phase_code) : n.add(g.phase.phase_code); return n; })}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', cursor: 'pointer', background: 'var(--bg2)', borderRadius: 8 }}>
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', cursor: 'pointer', background: 'var(--bg2)', borderRadius: 'var(--r-md)' }}>
                 <LightDot light={r.light} /><span style={{ fontWeight: 800, fontSize: 12.5 }}>{g.phase.label}</span>
                 <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{r.done}/{r.total} อนุมัติ{r.overdue ? ` · เลย ${r.overdue}` : ''}{hidden > 0 ? ` · ซ่อนตามตัวกรอง ${hidden}` : ''}</span>
                 <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)' }}>{collapsed ? '▼' : '▲'}</span>

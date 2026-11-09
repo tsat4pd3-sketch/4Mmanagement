@@ -27,6 +27,7 @@ import ScanModal from '../components/ScanModal';
 import useTimeRange from '../utils/useTimeRange';
 import { urlBool } from '../utils/urlInit';
 
+import NoticeBar from '../components/NoticeBar';
 /*
   🔎 สอบกลับ Order (Order Traceability) — 2026-07-30
   รู้ prod_no ที่สแกน kanban → เห็นทุกอย่างที่เกิดขึ้นกับใบนั้น + สถานการณ์รอบข้าง ณ เวลานั้น:
@@ -1467,8 +1468,8 @@ export default function OrderTrace() {
                 <CollapseCard id="analysis" storePrefix="ot" title="⏱️ วิเคราะห์การวิ่งของใบ (เวลา · ความเร็ว vs มาตรฐาน)" count={null} defaultOpen>
                   {/* สแกนเป็นชุด → เวลาเปิด-ปิดรายใบไม่ใช่เวลาผลิตจริง ต้องอ่านเป็นระดับกลุ่ม */}
                   {orderAnalysis.batchScan && (
-                    <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', fontSize: 12, color: 'var(--amber)' }}>
-                      ⚠️ <b>ใบนี้ถูกสแกนรวบกับใบอื่น</b>
+                    <NoticeBar tone="warn" style={{ marginBottom: 10 }}>
+                      <b>ใบนี้ถูกสแกนรวบกับใบอื่น</b>
                       {orderAnalysis.openBatchN > 1 && <> — เปิดรวบ {orderAnalysis.openBatchN} ใบ</>}
                       {orderAnalysis.closeBatchN > 1 && <>{orderAnalysis.openBatchN > 1 ? ' · ' : ' — '}ปิดรวบ {orderAnalysis.closeBatchN} ใบ</>}
                       {orderAnalysis.batchNeedSec > 0 && (
@@ -1477,12 +1478,12 @@ export default function OrderTrace() {
                       )}
                       {!orderAnalysis.batchNeedSec && <> (ยังไม่ตั้ง CT และไม่มีข้อมูลกะพอ — ใช้เกณฑ์สำรอง {FALLBACK_BATCH_SEC / 60} นาที)</>}
                       {' '}→ <b>เวลา "เปิด→ปิด" ของใบนี้ไม่ใช่เวลาผลิตจริงของใบเดียว</b> จึงคิด วิ/ชิ้น รายใบไม่ได้ · ใช้ตัวเลข <b>ระดับกลุ่ม</b> ด้านล่างแทน
-                    </div>
+                    </NoticeBar>
                   )}
 
                   {/* ระดับกลุ่ม = คำตอบหลักเมื่อมีใบวิ่งทับ/สแกนเป็นชุด */}
                   {orderAnalysis.groupMode && orderAnalysis.group && (
-                    <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--accent)' }}>
+                    <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: '1px solid var(--accent)' }}>
                       <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent)', marginBottom: 8 }}>
                         ภาพรวมกลุ่มใบที่วิ่งต่อเนื่องช่วงเดียวกัน ({orderAnalysis.group.orders} ใบ
                         {orderAnalysis.group.mats.length > 1 ? ` · ${orderAnalysis.group.mats.length} ชิ้นงาน` : ''}) — ตัวเลขที่เชื่อถือได้
@@ -1549,12 +1550,12 @@ export default function OrderTrace() {
 
                   {/* ระดับความแน่ชัด — ห้ามให้ "ผู้ต้องสงสัย" ดูเหมือนคำตอบ */}
                   {trace.equip.confirmedNo ? (
-                    <div style={{ fontSize: 12, marginBottom: 8, padding: '6px 10px', borderRadius: 6, background: 'var(--green-dim)', border: '1px solid var(--green-line)' }}>
+                    <NoticeBar tone="ok" style={{ marginBottom: 8 }}>
                       ใบนี้ระบุเครื่องไว้ชัดเจน: <b>{trace.equip.confirmedNo}</b> — สอบกลับได้ถึงตัวเครื่อง
-                    </div>
+                    </NoticeBar>
                   ) : !trace.equip.isParallel ? (
                     /* ไลน์ไหลทีละชิ้น = งานผ่านทุกเครื่องตามลำดับ → ทุกตัว "ถูกใช้จริง" ไม่ใช่ผู้ต้องสงสัย */
-                    <div style={{ fontSize: 12, marginBottom: 8, padding: '6px 10px', borderRadius: 6, background: 'var(--green-dim)', border: '1px solid var(--green-line)' }}>
+                    <div style={{ fontSize: 12, marginBottom: 8, padding: '6px 10px', borderRadius: 'var(--r-md)', background: 'var(--green-dim)', border: '1px solid var(--green-line)' }}>
                       ไลน์ <b>{sess.line_name}</b> เป็นแบบ <b>ไหลทีละชิ้น (one-piece flow)</b> — ใบนี้ <b>ผ่านเครื่องทั้ง {trace.equip.machineCount} ตัวตามลำดับ</b> ทุกตัวจึงเกี่ยวข้องกับคุณภาพของงานใบนี้
                       <div style={{ color: 'var(--muted)', marginTop: 3 }}>
                         {trace.equip.hasStepOrder
@@ -1563,7 +1564,7 @@ export default function OrderTrace() {
                       </div>
                     </div>
                   ) : (
-                    <div style={{ fontSize: 12, marginBottom: 8, padding: '6px 10px', borderRadius: 6, background: 'var(--amber-dim)', border: '1px solid var(--amber-line)' }}>
+                    <div style={{ fontSize: 12, marginBottom: 8, padding: '6px 10px', borderRadius: 'var(--r-md)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)' }}>
                       ⚠️ ไลน์นี้เป็น <b>เครื่องขนาน</b> (แต่ละใบวิ่งเครื่องเดียว) และ <b>ใบนี้ไม่ได้บันทึกว่าใช้เครื่องไหน</b> — รายการล่างจึงเป็น <b>ผู้ต้องสงสัย</b> ไม่ใช่ข้อสรุป
                       <div style={{ color: 'var(--muted)', marginTop: 3 }}>
                         อยากสอบถึงตัวเครื่อง: เลือกเครื่องตอนเปิด Order — ใบที่เปิดหลังจากนั้นจะระบุเครื่องให้เอง
@@ -1573,26 +1574,26 @@ export default function OrderTrace() {
 
                   {/* ชี้เป้าก่อน ไม่ใช่กองข้อมูลให้อ่านเอง */}
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10, fontSize: 11.5 }}>
-                    {trace.equip.overdueCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--red-dim)', color: 'var(--red)', fontWeight: 700 }}>🔴 PM เกินกำหนด ณ วันผลิต {trace.equip.overdueCount} รายการ</span>}
-                    {trace.equip.freshFixCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--amber-dim)', color: 'var(--amber)', fontWeight: 700 }}>🟠 เพิ่งซ่อมเสร็จ ≤7 วันก่อนผลิต {trace.equip.freshFixCount} รายการ</span>}
-                    <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--text2)' }}>
+                    {trace.equip.overdueCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 'var(--r-pill)', background: 'var(--red-dim)', color: 'var(--red)', fontWeight: 700 }}>🔴 PM เกินกำหนด ณ วันผลิต {trace.equip.overdueCount} รายการ</span>}
+                    {trace.equip.freshFixCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 'var(--r-pill)', background: 'var(--amber-dim)', color: 'var(--amber)', fontWeight: 700 }}>🟠 เพิ่งซ่อมเสร็จ ≤7 วันก่อนผลิต {trace.equip.freshFixCount} รายการ</span>}
+                    <span style={{ padding: '3px 8px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', color: 'var(--text2)' }}>
                       {trace.equip.isParallel ? 'เครื่องในไลน์' : 'ผ่านเครื่อง'} {trace.equip.machineCount}</span>
-                    <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--text2)' }}>จิ๊ก/แม่พิมพ์ลงทะเบียน {trace.equip.dieCount}</span>
-                    {trace.equip.noPlanCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--muted)' }}>ยังไม่มีแผน PM {trace.equip.noPlanCount}</span>}
+                    <span style={{ padding: '3px 8px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', color: 'var(--text2)' }}>จิ๊ก/แม่พิมพ์ลงทะเบียน {trace.equip.dieCount}</span>
+                    {trace.equip.noPlanCount > 0 && <span style={{ padding: '3px 8px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', color: 'var(--muted)' }}>ยังไม่มีแผน PM {trace.equip.noPlanCount}</span>}
                   </div>
 
                   {/* ไม่มีแผน PM สักตัว = ตอบคำถาม "ขาดบำรุงรักษาไหม" ไม่ได้เลย — ต้องบอกตรงๆ ไม่ใช่โชว์ค่าว่าง */}
                   {trace.equip.rows.length > 0 && trace.equip.noPlanCount === trace.equip.rows.length && (
-                    <div style={{ fontSize: 12, marginBottom: 8, padding: '6px 10px', borderRadius: 6, background: 'var(--red-dim)', border: '1px solid var(--red-line)' }}>
+                    <div style={{ fontSize: 12, marginBottom: 8, padding: '6px 10px', borderRadius: 'var(--r-md)', background: 'var(--red-dim)', border: '1px solid var(--red-line)' }}>
                       🔎 <b>ยังตอบไม่ได้ว่าอุปกรณ์ขาดบำรุงรักษาหรือไม่</b> — อุปกรณ์ทั้ง {trace.equip.rows.length} รายการของไลน์นี้ <b>ยังไม่มีแผน PM สักตัว</b> ระบบจึงไม่มีเกณฑ์ให้เทียบ
                       <div style={{ color: 'var(--muted)', marginTop: 3 }}>ตั้งจุดตรวจ + รอบ PM ที่ PM Setup แล้วใบที่ผลิตหลังจากนั้นจะสอบย้อนได้ว่าตอนผลิตค้าง PM ไหม</div>
                     </div>
                   )}
 
                   {trace.equip.partial && (
-                    <div style={{ fontSize: 11.5, marginBottom: 8, padding: '5px 9px', borderRadius: 6, background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--amber)' }}>
-                      ⚠️ โหลดประวัติได้ไม่ครบทุกรายการ — ช่องที่ขึ้นว่า "ไม่มีประวัติ" อาจเป็นเพราะดูไม่ครบ ไม่ใช่ว่าไม่มีจริง (ดู console หากต้องตรวจสอบ)
-                    </div>
+                    <NoticeBar tone="warn" style={{ marginBottom: 8 }}>
+                      โหลดประวัติได้ไม่ครบทุกรายการ — ช่องที่ขึ้นว่า "ไม่มีประวัติ" อาจเป็นเพราะดูไม่ครบ ไม่ใช่ว่าไม่มีจริง (ดู console หากต้องตรวจสอบ)
+                    </NoticeBar>
                   )}
 
                   {trace.equip.dieCount === 0 && (
@@ -1605,7 +1606,7 @@ export default function OrderTrace() {
                     ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่พบเครื่องจักร/อุปกรณ์ที่ลงทะเบียนกับไลน์นี้</div>
                     : (() => {
                       const Row = ({ r }) => (
-                        <div style={{ padding: '8px 10px', borderRadius: 8, marginBottom: 6,
+                        <div style={{ padding: '8px 10px', borderRadius: 'var(--r-md)', marginBottom: 6,
                           border: `1px solid ${r.confirmed ? 'var(--green-line)' : r.overdue > 0 ? 'var(--red-line)' : 'var(--border)'}`,
                           background: r.confirmed ? 'var(--green-dim)' : 'var(--bg3)' }}>
                           <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
@@ -1673,7 +1674,7 @@ export default function OrderTrace() {
 
               <CollapseCard id="machine" storePrefix="ot" title="Downtime & ใบซ่อม MO ในกะ" count={trace.downtimes.length} defaultOpen={trace.downtimes.length > 0 || trace.machineMos.length > 0}>
                 {sel.machine_no && (
-                  <div style={{ marginBottom: 10, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 8, fontSize: 12.5 }}>
+                  <div style={{ marginBottom: 10, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 'var(--r-md)', fontSize: 12.5 }}>
                     ใบนี้ผลิตที่เครื่อง <b>{sel.machine_no}</b>
                     {trace.machineMos.length
                       ? <span style={{ color: 'var(--amber)' }}> · มีใบซ่อม {trace.machineMos.length} ใบใน 30 วันก่อนเปิดใบ</span>
@@ -1775,7 +1776,7 @@ export default function OrderTrace() {
               {/* ── ใบอื่นในกะ ── */}
               <CollapseCard id="sessorders" storePrefix="ot" title="บริบทกะ (กะก่อนหน้า + ใบอื่นในกะ)" count={trace.sessionOrders.length - 1} defaultOpen={false}>
                 {trace.prevSession && (
-                  <div style={{ marginBottom: 8, padding: '7px 10px', background: 'var(--bg3)', borderRadius: 8, fontSize: 12.5 }}>
+                  <div style={{ marginBottom: 8, padding: '7px 10px', background: 'var(--bg3)', borderRadius: 'var(--r-md)', fontSize: 12.5 }}>
                     ⏮ กะก่อนหน้าของไลน์: {fmtDate(trace.prevSession.work_date)} {trace.prevSession.shift === 'night' ? '🌙' : '☀️'}
                     {trace.prevSession.oee != null
                       ? <span> · OEE <b style={{ color: trace.prevSession.oee >= 70 ? 'var(--green)' : 'var(--amber)' }}>{Number(trace.prevSession.oee).toFixed(1)}%</b> <span style={{ color: 'var(--muted)', fontSize: 11 }}>(A {trace.prevSession.oee_a ?? '—'} / P {trace.prevSession.oee_p ?? '—'} / Q {trace.prevSession.oee_q ?? '—'})</span></span>

@@ -66,7 +66,7 @@ export default function ViewAsModal({ current, onClose, onApply }) {
 
   return (
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 10001, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: 'var(--card)', border: '1.5px solid #a855f7', borderRadius: 14, padding: '20px 24px', maxWidth: 480, width: '100%', maxHeight: '88vh', overflowY: 'auto', boxShadow: 'var(--shadow-lg)' }}>
+      <div style={{ background: 'var(--card)', border: '1.5px solid #a855f7', borderRadius: 'var(--r-lg)', padding: '20px 24px', maxWidth: 480, width: '100%', maxHeight: '88vh', overflowY: 'auto', boxShadow: 'var(--shadow-lg)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
           <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>จำลองมุมมอง role</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer', padding: 4 }}>✕</button>
@@ -74,7 +74,7 @@ export default function ViewAsModal({ current, onClose, onApply }) {
         <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 12 }}>
           ดูระบบเหมือนที่ user role นั้นเห็น (เมนู/ปุ่ม/ขอบเขตข้อมูล) — เฉพาะแท็บนี้ · ออกได้จากป้าย 🎭 ล่างจอ
         </div>
-        <div style={{ padding: '8px 12px', borderRadius: 8, marginBottom: 14, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 11.5, color: 'var(--amber)', lineHeight: 1.55 }}>
+        <div style={{ padding: '8px 12px', borderRadius: 'var(--r-md)', marginBottom: 14, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 11.5, color: 'var(--amber)', lineHeight: 1.55 }}>
           ⚠️ จำลองเฉพาะ "การมองเห็น" ฝั่งจอ — ถ้ากดบันทึก ระบบยังบันทึกด้วยสิทธิ์จริงของบัญชี admin
           (ฝั่งฐานข้อมูลไม่ได้ถูกจำลอง) จึงควรใช้ดูอย่างเดียว
         </div>

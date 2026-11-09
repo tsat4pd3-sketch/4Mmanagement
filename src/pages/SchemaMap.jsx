@@ -300,7 +300,7 @@ export default function SchemaMap() {
               {groups.map(g => {
                 const open = searching || openGroups[g.key];
                 return (
-                  <div key={g.key} style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'clip' }}>
+                  <div key={g.key} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'clip' }}>
                     <button onClick={() => setOpenGroups(s => ({ ...s, [g.key]: !s[g.key] }))}
                       style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
                         background: 'var(--bg3)', border: 'none', color: 'var(--text)', padding: '7px 10px', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>
@@ -714,7 +714,7 @@ function AuditTab({ audits, isMobile, loading, onPick, onCopy }) {
               const id = `${key}:${c.id}`;
               const on = open[id] ?? (c.level === 'bad' || c.level === 'warn');
               return (
-                <div key={c.id} style={{ border: `1px solid ${c.level === 'ok' ? 'var(--border)' : lv.color + '66'}`, borderRadius: 8, overflow: 'clip' }}>
+                <div key={c.id} style={{ border: `1px solid ${c.level === 'ok' ? 'var(--border)' : lv.color + '66'}`, borderRadius: 'var(--r-md)', overflow: 'clip' }}>
                   <button onClick={() => setOpen(o => ({ ...o, [id]: !on }))} style={{
                     width: '100%', textAlign: 'left', display: 'flex', flexWrap: isMobile ? 'wrap' : 'nowrap',
                     alignItems: 'center', gap: 8, background: 'var(--bg2)', border: 'none', color: 'var(--text)',

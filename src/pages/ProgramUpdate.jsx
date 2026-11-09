@@ -134,7 +134,7 @@ export default function ProgramUpdate() {
 
       {err && (
         <div style={{ background: 'var(--card)', border: '1px solid var(--red)66', borderLeft: '4px solid var(--red)',
-                      borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--text2)', lineHeight: 1.6 }}>
+                      borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 13, color: 'var(--text2)', lineHeight: 1.6 }}>
           ❌ <b>โหลดรายการอัพเดทไม่สำเร็จ</b> ({err}) — <b>ไม่ได้หมายความว่าไม่มีอัพเดท</b>
           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
             ไฟล์ <code>changelog.json</code> ถูกสร้างตอน build — ถ้าเพิ่ง deploy ลองรีเฟรชอีกครั้ง
@@ -152,7 +152,7 @@ export default function ProgramUpdate() {
             {KINDS.map(k => (
               <div key={k.key} style={{
                 background: 'var(--card)', border: `1px solid ${tint(k.color, 'line')}`, borderLeft: `4px solid ${k.color}`,
-                borderRadius: 10, padding: '8px 14px', minWidth: 132, boxShadow: 'var(--shadow-sm)',
+                borderRadius: 'var(--r-md)', padding: '8px 14px', minWidth: 132, boxShadow: 'var(--shadow-sm)',
               }}>
                 <div style={{ fontSize: 11.5, color: 'var(--text2)', fontWeight: 700 }}>{k.icon} {k.label}</div>
                 <div style={{ fontSize: 21, fontWeight: 800, color: k.color, lineHeight: 1.25 }}>
@@ -207,7 +207,7 @@ export default function ProgramUpdate() {
                   <div key={c.h} style={{
                     display: 'flex', gap: 9, alignItems: 'flex-start', padding: '5px 10px',
                     borderLeft: `3px solid ${k.color}`, background: 'var(--card)',
-                    border: '1px solid var(--border)', borderLeftWidth: 3, borderRadius: 7, marginBottom: 4,
+                    border: '1px solid var(--border)', borderLeftWidth: 3, borderRadius: 'var(--r-md)', marginBottom: 4,
                   }}>
                     <span style={{ fontSize: 13, flexShrink: 0 }} title={k.label}>{k.icon}</span>
                     {/* 📱 ข้อความ commit มีคำยาวไม่มีช่องว่าง (ชื่อไฟล์/ชื่อฟังก์ชัน) ⇒ ต้องตัดคำได้

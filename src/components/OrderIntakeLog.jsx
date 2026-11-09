@@ -304,7 +304,7 @@ function PullBatchDetail({ batchId }) {
   const td = { padding: '4px 8px', fontSize: 12, borderBottom: '1px solid var(--border)' };
   const tdR = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
   return (
-    <div style={{ overflowX: 'auto', marginTop: 10, border: '1px solid var(--border)', borderRadius: 8 }}>
+    <div style={{ overflowX: 'auto', marginTop: 10, border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
         <thead><tr style={{ background: 'var(--bg2)' }}>
           <th style={th}>เลขพาร์ทลูกค้า</th><th style={th}>MAT</th><th style={th}>เวลาที่ลูกค้าดึง</th>

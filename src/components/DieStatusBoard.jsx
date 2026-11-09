@@ -172,7 +172,7 @@ export default function DieStatusBoard({
         <span className="filter-count">แสดง {rows.length} ตัว</span>
       </FilterBar>
 
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
             <thead>
@@ -206,7 +206,7 @@ export default function DieStatusBoard({
                         </select>
                       ) : (
                         <span style={{
-                          fontSize: 11.5, fontWeight: 700, padding: '2px 9px', borderRadius: 999,
+                          fontSize: 11.5, fontWeight: 700, padding: '2px 9px', borderRadius: 'var(--r-pill)',
                           color: meta.color, background: meta.bg, border: `1px solid ${meta.color}`, whiteSpace: 'nowrap',
                         }}>{meta.icon} {meta.label}</span>
                       )}

@@ -190,7 +190,7 @@ export default function WipBetweenSteps() {
             </div>
             {/* เฟส 2 — ความต้องการ → ต้องผลิต FG เพิ่มเท่าไหร่ (ทดสต็อก FG ให้) */}
             {chainView.parentIsProduced && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: 'var(--bg2)', fontSize: 12.5 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', fontSize: 12.5 }}>
                 <label style={{ fontWeight: 700 }}>ความต้องการ (ชิ้น)</label>
                 <input type="number" min="0" value={demandVal}
                   onChange={e => setDemand(d => ({ ...d, [pm]: e.target.value }))}

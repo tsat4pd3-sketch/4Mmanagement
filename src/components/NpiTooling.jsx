@@ -147,8 +147,8 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
         const kind = TOOL_KIND[t.tool_kind] || TOOL_KIND.other;
         const die = t.die_set_code ? dieSets.find(d => d.set_code === t.die_set_code) : null;
         return (
-          <div key={t.id} style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 8 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1.2fr) minmax(220px, 2fr) auto', gap: 10, alignItems: 'center', padding: '8px 10px', background: 'var(--bg2)', borderRadius: 8 }}>
+          <div key={t.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', marginBottom: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1.2fr) minmax(220px, 2fr) auto', gap: 10, alignItems: 'center', padding: '8px 10px', background: 'var(--bg2)', borderRadius: 'var(--r-md)' }}>
               <div onClick={() => toggle(t.id)} style={{ cursor: 'pointer', minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                   <LightDot light={r.light} /><span>{kind.icon}</span><span style={{ fontWeight: 800, fontSize: 13 }}>{t.tool_name}</span>
@@ -254,11 +254,11 @@ function GanttRow({ plan, actual, range, todayPos, pct, light, thin }) {
   const c = (LIGHT[light] || LIGHT.grey).color;
   const h = thin ? 10 : 16;
   return (
-    <div style={{ position: 'relative', height: h + 6, background: 'var(--bg)', borderRadius: 4, border: '1px solid var(--border)' }}>
-      {pb && <div title={`แผน ${plan[0] || ''} → ${plan[1] || ''}`} style={{ position: 'absolute', top: 3, height: h, left: `${pb.left}%`, width: `${pb.width}%`, background: `${c}44`, borderRadius: 3 }}>
-        {pct > 0 && <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: c, borderRadius: 3, opacity: 0.9 }} />}
+    <div style={{ position: 'relative', height: h + 6, background: 'var(--bg)', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)' }}>
+      {pb && <div title={`แผน ${plan[0] || ''} → ${plan[1] || ''}`} style={{ position: 'absolute', top: 3, height: h, left: `${pb.left}%`, width: `${pb.width}%`, background: `${c}44`, borderRadius: 'var(--r-xs)' }}>
+        {pct > 0 && <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: c, borderRadius: 'var(--r-xs)', opacity: 0.9 }} />}
       </div>}
-      {ab && <div title={`จริง ${actual[0] || ''} → ${actual[1] || 'กำลังทำ'}`} style={{ position: 'absolute', top: 3 + h - 3, height: 3, left: `${ab.left}%`, width: `${ab.width}%`, background: 'var(--text)', borderRadius: 2 }} />}
+      {ab && <div title={`จริง ${actual[0] || ''} → ${actual[1] || 'กำลังทำ'}`} style={{ position: 'absolute', top: 3 + h - 3, height: 3, left: `${ab.left}%`, width: `${ab.width}%`, background: 'var(--text)', borderRadius: 'var(--r-xs)' }} />}
       {todayPos && <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${todayPos.left}%`, width: 2, background: '#ef4444' }} />}
     </div>
   );

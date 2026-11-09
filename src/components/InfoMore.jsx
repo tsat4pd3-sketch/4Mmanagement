@@ -79,7 +79,7 @@ export default function InfoMore({
       </button>
       {open && (
         <div style={{
-          marginTop: 5, padding: '7px 10px', borderRadius: 8,
+          marginTop: 5, padding: '7px 10px', borderRadius: 'var(--r-md)',
           background: box.bg, border: `1px solid ${box.bd}`, color: 'var(--text2)',
         }}>{children}</div>
       )}

@@ -481,7 +481,7 @@ export default function BbsCheck() {
 
       {/* ── ผู้ตรวจสอบ + ขอบเขตที่ระบบเติมได้ ── */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: 12 }}>
-        <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <div>
             <label style={lbl}>ผู้ตรวจสอบ (ลายเซ็น: โปรไฟล์ → ฐานพนักงาน)</label>
             <SearchSelect disabled={!canRecord} value={signers.find(s => s.full_name === sheet?.inspector_name)?.id || ''}
@@ -518,7 +518,7 @@ export default function BbsCheck() {
 
         {/* ⚠️ ขอบเขตของการเติมอัตโนมัติ — ห้ามถอด (กันใบอ้างเกินจริง) */}
         <div style={{
-          background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 8,
+          background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 'var(--r-md)',
           padding: '8px 12px', fontSize: 12, lineHeight: 1.6, maxWidth: 420,
         }}>
           <b>ระบบเติมให้ได้ {autoAgreements.length} ข้อ จากทั้งหมด {agreements.length} ข้อ</b>
@@ -569,7 +569,7 @@ export default function BbsCheck() {
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>
       ) : !emps.length ? (
-        <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border2)', borderRadius: 8 }}>
+        <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)' }}>
           ไม่มีพนักงานในไลน์นี้ — ตรวจที่หน้าฐานข้อมูลพนักงานว่าผูก “ไลน์” ไว้แล้วหรือยัง
         </div>
       ) : isMobile ? (
@@ -604,7 +604,7 @@ export default function BbsCheck() {
                   const c = cells[cellKey(e.id, day)];
                   const picking = ngPick === e.id;
                   return (
-                    <div key={e.id} style={{ border: `1px solid ${c ? (markColor(c) + '66') : 'var(--border)'}`, borderRadius: 12, padding: '10px 12px', background: 'var(--card)' }}>
+                    <div key={e.id} style={{ border: `1px solid ${c ? (markColor(c) + '66') : 'var(--border)'}`, borderRadius: 'var(--r-lg)', padding: '10px 12px', background: 'var(--card)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                         <span style={{ fontSize: 12, color: 'var(--muted)', minWidth: 18 }}>{i + 1}</span>
                         <div style={{ flex: 1, minWidth: 0 }}>
@@ -614,7 +614,7 @@ export default function BbsCheck() {
                             {c?.source === 'ppe' && <span style={{ marginLeft: 6, color: 'var(--green)' }}>เติมจากผลตรวจ PPE</span>}
                           </div>
                         </div>
-                        <span style={{ minWidth: 40, height: 40, borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 900,
+                        <span style={{ minWidth: 40, height: 40, borderRadius: 'var(--r-md)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 900,
                           background: c ? markColor(c) : 'var(--bg3)', color: c ? '#fff' : 'var(--muted)' }}>{c ? markGlyph(c) : '·'}</span>
                       </div>
                       <div style={{ display: 'flex', gap: 6 }}>
@@ -630,7 +630,7 @@ export default function BbsCheck() {
                         })}
                       </div>
                       {picking && (
-                        <div style={{ marginTop: 8, padding: 8, borderRadius: 10, background: 'var(--red-dim)', border: '1px solid var(--red-line)' }}>
+                        <div style={{ marginTop: 8, padding: 8, borderRadius: 'var(--r-md)', background: 'var(--red-dim)', border: '1px solid var(--red-line)' }}>
                           <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 6 }}>ไม่เหมาะสม — ผิดข้อตกลงข้อไหน?</div>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                             {(agreements.length ? agreements : [{ seq: 1, text: '(ยังไม่ได้บันทึกข้อตกลง)' }]).map(a => (
@@ -653,7 +653,7 @@ export default function BbsCheck() {
         })()
       ) : (
         // จอแคบเลื่อนแนวนอน (ตาราง 31 คอลัมน์ — ข้อยกเว้นตาม UI-CONVENTIONS §6)
-        <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+        <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
           <table className="table-sticky" style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: 900 }}>
             <thead>
               <tr>
@@ -804,7 +804,7 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
 
   return (
     <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, width: 'min(760px,96vw)', maxHeight: '88vh', overflow: 'auto', padding: 18 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', width: 'min(760px,96vw)', maxHeight: '88vh', overflow: 'auto', padding: 18 }}>
         <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>ข้อตกลงด้านความปลอดภัยในการปฏิบัติงาน</h3>
         <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
           เลขข้อนี้คือตัวเลขที่พิมพ์ลงช่องในใบเมื่อพบพฤติกรรมไม่เหมาะสม ·
