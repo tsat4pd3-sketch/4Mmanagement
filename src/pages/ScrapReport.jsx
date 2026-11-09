@@ -26,7 +26,7 @@ import StorageLocSelect from '../components/StorageLocSelect';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 ค่าที่เคยบันทึกใน scrap_reports/items — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
 import { slocValid, SLOC_FORMAT_HINT } from '../utils/storageLoc';
-import { inSectionScope } from '../utils/sectionScope';
+import { lineScope } from '../utils/sectionScope';
 import { canDelete } from '../utils/permissions';
 import { usePerms } from '../utils/usePerms';
 import { exportScrapReportExcel } from '../lib/scrapExportExcel';
@@ -114,7 +114,7 @@ const TABS = [
 ];
 
 export default function ScrapReport() {
-  const { fullName, role, lineId, sections } = useContext(UserContext);
+  const { fullName, role, lineId, sections, scopeIdx } = useContext(UserContext);
   const { can } = usePerms();
   const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'scrap');
   const canRecord = can('scrap', 'record');
@@ -133,16 +133,17 @@ export default function ScrapReport() {
   const approverGmHist = useColumnHistory(supabaseDR, 'scrap_reports', 'approver_gm_name');
   const storageHist = useColumnHistory(supabaseDR, 'scrap_reports', 'storage_location', { upper: true });
 
-  // ขอบเขตไลน์ที่เห็นได้: leader → เฉพาะครอบครัวไลน์ตัวเอง · role ที่ถูกจำกัด sections → เฉพาะไลน์ในส่วนงาน
-  // qa/manager/admin (sections ว่าง = ไม่จำกัด) → เห็นทั้งโรงงานเหมือนเดิม · null = ไม่จำกัด
-  const scopedLineNames = useMemo(() => {
-    if (role === 'leader' && lineId) {
-      const myLine = allLines.find(l => String(l.id) === String(lineId));
-      return myLine ? getLineFamilyNames(allLines, myLine.name) : [];
-    }
-    if (sections && sections.length) return allLines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
-    return null;
-  }, [role, lineId, sections, allLines]);
+  /* 🔭 ขอบเขตไลน์ที่เห็นได้ — **ของกลาง `lineScope()` เท่านั้น** (QC audit 09/11)
+     เดิมเขียนสูตรเองในหน้า แล้วให้คำตอบ **แคบกว่า** ที่ `profiles` ตั้งไว้ 2 ทาง
+     (ก) `leader` ได้ครอบครัวไลน์ล้วน — ของจริงคือ **ไลน์ตัวเอง ∪ ส่วนงานที่กำกับไว้** (กฎ 26/10)
+     (ข) ไม่ส่ง `scopeIdx` ⇒ ขอบเขตที่เป็นแผนก/กลุ่ม/ไลน์เดี่ยวตกหมด (เทียบข้อความ `l.section` ตรงตัว)
+     ซ้ำยังทำให้ 2 แท็บในหน้าเดียวกันตอบขอบเขตคนละชุด (แท็บถังใช้ของกลางอยู่แล้ว)
+     🔴 "การบีบขอบเขตเป็นการตั้งค่า ไม่ใช่งานของโค้ด" — ห้ามคืนน้อยกว่าที่ profiles ตั้งไว้ */
+  const scopeRes = useMemo(
+    () => lineScope({ role, lineId, sections, lines: allLines, scopeIdx }),
+    [role, lineId, sections, allLines, scopeIdx]);
+  /* `null` = ไม่จำกัด (คงความหมายเดิมของตัวแปรนี้ทั้งหน้า) · `[]` = ถูกตัดจนไม่เหลือไลน์ */
+  const scopedLineNames = scopeRes.unlimited ? null : scopeRes.names;
   // object array (id/name/parent_line_name) — render dropdown จัดชั้นตามผัง (§5.3 ข้อ 8) · ค่า value ยังเป็น name เหมือนเดิม
   /* 🔴 ลิสต์ของ picker ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัด (QA · Planning&Store · ฝั่งช่าง)
      กรองแล้วเหลือ 0 ⇒ dropdown ว่าง = ออกใบไม่ได้ทั้งหน้า (เคสจริง 26/10 · ด่าน line-picker-never-dead)
@@ -677,6 +678,18 @@ export default function ScrapReport() {
         <span className="spacer" />
         {canRecord && <button style={btnSt()} onClick={openNew}>+ เปิดใบใหม่</button>}
       </FilterBar>
+
+      {/* 🔴 ตัดขอบเขตไม่ชัด = เขียนบนจอ ห้ามปล่อยให้คนเข้าใจว่ารายการที่เห็นคือทั้งหมดของเขา
+          (ของกลาง `lineScope()` บอกเองผ่าน `unsure` + `reason`) */}
+      {scopeRes.unsure && (
+        <div style={{ ...cardSt, padding: '8px 12px', marginBottom: 12, fontSize: 12.5, color: 'var(--amber)',
+          border: '1px solid var(--amber-line)', background: 'var(--amber-dim)' }}>
+          ⚠️ ยังตัดขอบเขตไลน์ไม่ชัด ({scopeRes.reason === 'registry_unloaded' ? 'โหลดทะเบียนไลน์ไม่สำเร็จ'
+            : scopeRes.reason === 'own_line_unknown' ? 'ไม่พบไลน์ที่บัญชีนี้สังกัดในทะเบียน'
+            : 'ส่วนงานของบัญชีนี้ไม่ตรงกับไลน์ไหนในทะเบียน'}) —
+          รายการด้านล่างอาจกว้าง/แคบกว่าขอบเขตจริงของคุณ
+        </div>
+      )}
 
       {/* 📱 มือถือ = การ์ดต่อใบ (MOBILE-UX-STANDARD ชนิด B) — ตาราง 7 คอลัมน์ minWidth 720 บนจอ 360 ซ่อนปุ่ม ✏️ ไว้คอลัมน์สุดท้าย
           ต้องปัดตารางไปขวาถึงจะเจอ (ไม่มีอะไรบอกว่าปัดได้) ⇒ เปิดใบแก้ไม่ได้ในทางปฏิบัติ · 15/10 */}

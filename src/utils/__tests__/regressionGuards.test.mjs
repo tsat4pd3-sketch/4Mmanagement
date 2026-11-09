@@ -7896,6 +7896,54 @@ test('🟡 defect-auto-yellow — ลงงานเสียต้องตั�
     + '\n\n   ของจริงอยู่ในถังแต่ระบบไม่รู้ = สืบกลับไม่ได้ว่าของหายไปไหน\n');
 });
 
+test('🔴 bin-link-unknown-not-zero — เช็คสถานะ "ลงถังแล้วยัง" ไม่ได้ ห้ามตีเป็น "ยังไม่ลงถัง"', () => {
+  /* QC audit 09/11: คิวรี binLinks ล้มแล้ว `setBinLinks({})` ⇒ ชิป "🗑️ ยังไม่ลงถัง N" + ปุ่ม "ลงถัง"
+     ⇒ หน้างานกดสร้างใบถังซ้ำกับแท็บเหลืองที่ระบบตั้งอัตโนมัติไว้แล้ว (05/11)
+     = **คิวรีล่มแล้วจอชวนให้เขียนข้อมูลผิด** หนักกว่าโชว์ 0 เฉยๆ */
+  const bad = [];
+  const F = 'src/pages/DailyReport.jsx';
+  const raw = readFileSync(join(ROOT, F), 'utf8');
+  const src = stripComments(raw);
+  const errBranch = src.match(/if \(binErr\)[^\n]*\n?/);
+  if (!errBranch) bad.push(`${F}: หาสาขา error ของคิวรี binLinks ไม่เจอ — เปลี่ยนโครงแล้วต้องแก้ด่านนี้`);
+  else {
+    if (/setBinLinks\(\{\}\)/.test(errBranch[0]))
+      bad.push(`${F}: binErr ห้าม setBinLinks({}) — ต้องเป็น null (ไม่รู้) ไม่ใช่ "ยังไม่ลงถังทุกแถว"`);
+    if (!/setBinLinks\(null\)/.test(errBranch[0]))
+      bad.push(`${F}: binErr ต้อง setBinLinks(null)`);
+    if (!/setSessLoadErr/.test(errBranch[0]))
+      bad.push(`${F}: binErr ต้องเขียนบนจอผ่าน setSessLoadErr ห้าม console.warn เป็นทางเดียว`);
+  }
+  /* ฝั่งจอต้องรู้จักค่า "ไม่รู้" ทั้ง 2 จุดที่ใช้ binLinks */
+  if (!/if \(!binLinks\) return \(/.test(src))
+    bad.push(`${F}: ชิปนับ "ยังไม่ลงถัง" ต้องมีสาขา !binLinks (เขียนว่าเช็คไม่ได้)`);
+  if (!/const unknown = !binLinks;/.test(src))
+    bad.push(`${F}: ปุ่ม 🗑️ ลงถัง ต้องมีสถานะ unknown — ห้ามเขียนว่า "ลงถัง" ตอนเช็คสถานะไม่ได้`);
+  if (/binLinks\[d\.id\]/.test(src) && !/binLinks\?\.\[d\.id\]/.test(src))
+    bad.push(`${F}: อ่าน binLinks[d.id] ตรงๆ = พังเมื่อเป็น null — ใช้ optional chaining`);
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   "ไม่รู้" กับ "ยังไม่ได้ทำ" คนละเรื่อง — ตีรวมกันแล้วจอสั่งให้คนทำงานซ้ำ\n');
+});
+
+test('🔴 scrap-report-scope-central — หน้าของเสียต้องตัดขอบเขตด้วย lineScope() ของกลาง', () => {
+  /* QC audit 09/11: หน้านี้เขียนสูตร scope เองแล้วได้ผล **แคบกว่า** ที่ profiles ตั้งไว้
+     (leader ได้ครอบครัวไลน์ล้วน · ไม่ส่ง scopeIdx) · แท็บถังในหน้าเดียวกันใช้ของกลาง
+     ⇒ 2 แท็บตอบขอบเขตคนละชุด · กฎ 26/10: "การบีบขอบเขตเป็นการตั้งค่า ไม่ใช่งานของโค้ด" */
+  const bad = [];
+  const F = 'src/pages/ScrapReport.jsx';
+  const src = stripComments(readFileSync(join(ROOT, F), 'utf8'));
+  if (!/lineScope\(\{[\s\S]{0,160}scopeIdx/.test(src))
+    bad.push(`${F}: ต้องเรียก lineScope({ … scopeIdx }) — ไม่ส่ง scopeIdx = แกน Cost Center/ผังตกหมด`);
+  if (/role === 'leader' && lineId/.test(src))
+    bad.push(`${F}: ห้ามเขียนสูตรขอบเขตเองในหน้า (สำเนาที่แคบกว่าของกลาง)`);
+  if (/filter\(l => inSectionScope\(/.test(src))
+    bad.push(`${F}: ห้ามกรองไลน์ด้วย inSectionScope เอง — ของกลางรู้จักขอบเขตที่ไม่ใช่ "ส่วนงาน" ด้วย`);
+  if (!/scopeRes\.unsure/.test(src))
+    bad.push(`${F}: ตัดขอบเขตไม่ชัด (unsure) ต้องเขียนบนจอ ห้ามเงียบ`);
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   คืนน้อยกว่าที่ profiles ตั้งไว้ = คนทำงานไม่ได้ทั้งที่ admin ตั้งสิทธิ์ให้แล้ว\n');
+});
+
 test('🟡 bins-in-my-queue — ถังเหลืองรอพิจารณาต้องอยู่ในคิวงาน 2 ชั้น · ห้ามขึ้น badge', () => {
   /* 09/11: เปิดแท็กอัตโนมัติ 4 วัน ตั้งแท็ก 14 ใบ **ตัดสินแล้ว 0** ⇒ กองไม่มีใครถูกดึงไปเคลียร์
      🔴 ชั้น `unit` อย่างเดียวไม่พอ — คนตัดสินคือ QA ซึ่งส่วนงานไม่ตรงไลน์ผลิต จะไม่เห็นอะไรเลย */

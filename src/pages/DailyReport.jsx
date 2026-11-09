@@ -930,7 +930,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const { data: bins, error: binErr } = await supabaseDR.from('quality_bin_records')
       .select('bin, qty, defect_log_id').in('defect_log_id', ids).eq('is_active', true);
     if (isStaleSess(sessionId)) return;
-    if (binErr) { console.warn('[bin links]', binErr.message); setBinLinks({}); return; }
+    /* 🔴 เช็ค "ลงถังไปแล้วหรือยัง" ไม่ได้ = **ไม่รู้** (`null`) ห้ามตีเป็น `{}` = "ยังไม่ลงถังทุกแถว"
+       (QC audit 09/11) — ตีเป็น 0 ⇒ ชิป "🗑️ ยังไม่ลงถัง N" + ปุ่มในแถวกลับเป็น "ลงถัง"
+       ⇒ หน้างานกดสร้างใบถังซ้ำกับใบที่ระบบตั้งแท็กอัตโนมัติไว้แล้ว (05/11)
+       = คิวรีล่มแล้ว**จอชวนให้เขียนข้อมูลผิด** ไม่ใช่แค่โชว์ 0 */
+    if (binErr) { setSessLoadErr(e => ({ ...e, 'สถานะลงถัง': binErr.message })); setBinLinks(null); return; }
+    setSessLoadErr(e => (e['สถานะลงถัง'] ? { ...e, 'สถานะลงถัง': null } : e));
     const m = {};
     (bins || []).forEach(r => {
       if (!m[r.defect_log_id]) m[r.defect_log_id] = { yellow: 0, red: 0 };
@@ -4210,6 +4215,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       วัดจริง 90 วัน: ของเสีย 252 รายการ ผูกใบถังแค่ 46 (18%) ⇒ อีก 82% ไม่มีใครเห็นว่าค้าง
                       🔴 นับจาก `binLinks` ที่โหลดมาแล้วเท่านั้น (ไม่ยิง DB เพิ่ม) · 0 = ไม่วาดชิป */}
                   {(() => {
+                    /* 🔴 `binLinks === null` = เช็คสถานะไม่ได้ ⇒ ห้ามนับเป็น "ยังไม่ลงถัง" (จะชวนให้ลงซ้ำ) */
+                    if (!binLinks) return (
+                      <span title="เช็คไม่ได้ว่าของเสียแถวไหนมีใบถังแล้ว — ดูข้อความเตือนด้านบนของกะ"
+                        style={{ fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', color: 'var(--muted)',
+                          background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-pill)', padding: '2px 9px' }}>
+                        🗑️ เช็คสถานะถังไม่ได้
+                      </span>
+                    );
                     const pend = defectLogs.filter(d => ((d.qty_ng || 0) > 0 || (d.qty_suspect || 0) > 0)
                       && !(binLinks[d.id] && (binLinks[d.id].yellow > 0 || binLinks[d.id].red > 0)));
                     if (!pend.length) return null;
@@ -4263,21 +4276,28 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           feedback หัวหน้ากลุ่ม 2026-08-19: "ถ้าเป็นงานเสียขอผูกกับเอกสารตัวนี้ รวมถึงงานต้องสงสัยด้วย"
                           ⚠️ ไม่สร้างใบให้อัตโนมัติ — "เอาของลงถัง" เป็นการกระทำจริงหน้างาน ต้องมีคนกดยืนยัน */}
                       {canScan && ((d.qty_ng || 0) > 0 || (d.qty_suspect || 0) > 0) && (() => {
-                        const lk = binLinks[d.id];
-                        const done = !!lk && (lk.yellow > 0 || lk.red > 0);
+                        /* 🔴 `binLinks === null` = เช็คสถานะไม่ได้ — ปุ่มต้องไม่พูดว่า "ยังไม่ลงถัง"
+                           (ใบนี้อาจมีแท็กเหลืองที่ระบบตั้งให้อยู่แล้ว · กดได้ แต่ต้องเตือนก่อน) */
+                        const unknown = !binLinks;
+                        const lk = binLinks?.[d.id];
+                        const done = !unknown && !!lk && (lk.yellow > 0 || lk.red > 0);
+                        const tone = unknown ? 'amber' : done ? 'green' : 'red';
                         return (
                           <button onClick={() => setBinTarget({ defect: d, existing: lk })}
-                            title={done
-                              ? `ลงถังแล้ว${lk.yellow ? ` · 🟡 ${lk.yellow} ชิ้น` : ''}${lk.red ? ` · 🔴 ${lk.red} ชิ้น` : ''} — กดเพื่อลงเพิ่ม`
-                              : 'ส่งเข้าถังเหลือง (ต้องสงสัย) / ถังแดง (เสีย) โดยไม่ต้องคีย์ใบใหม่'}
+                            title={unknown
+                              ? 'เช็คสถานะถังไม่สำเร็จ — แถวนี้อาจมีใบถังอยู่แล้ว ตรวจในหน้าของเสียก่อนลงซ้ำ'
+                              : done
+                                ? `ลงถังแล้ว${lk.yellow ? ` · 🟡 ${lk.yellow} ชิ้น` : ''}${lk.red ? ` · 🔴 ${lk.red} ชิ้น` : ''} — กดเพื่อลงเพิ่ม`
+                                : 'ส่งเข้าถังเหลือง (ต้องสงสัย) / ถังแดง (เสีย) โดยไม่ต้องคีย์ใบใหม่'}
                             style={{ fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', cursor: 'pointer',
                               borderRadius: 'var(--r-md)', padding: '3px 10px',
-                              color: done ? 'var(--green)' : 'var(--red)',
-                              background: done ? 'var(--green-dim)' : 'var(--red-dim)',
-                              border: `1px solid ${done ? 'var(--green-line)' : 'var(--red-line)'}` }}>
-                            {done
-                              ? `ลงถังแล้ว${lk.yellow ? ` 🟡${lk.yellow}` : ''}${lk.red ? ` 🔴${lk.red}` : ''}`
-                              : 'ลงถัง'}
+                              color: `var(--${tone})`,
+                              background: `var(--${tone}-dim)`,
+                              border: `1px solid var(--${tone}-line)` }}>
+                            {unknown ? 'ลงถัง?'
+                              : done
+                                ? `ลงถังแล้ว${lk.yellow ? ` 🟡${lk.yellow}` : ''}${lk.red ? ` 🔴${lk.red}` : ''}`
+                                : 'ลงถัง'}
                           </button>
                         );
                       })()}
