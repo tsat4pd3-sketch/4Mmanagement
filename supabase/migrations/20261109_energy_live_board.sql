@@ -129,11 +129,13 @@ drop trigger if exists trg_energy_live_meters_audit on public.energy_live_meters
 create trigger trg_energy_live_meters_audit after insert or update or delete on public.energy_live_meters
   for each row execute function public.fn_audit();
 
--- ── seed: 3 เครื่องใต้ตู้ MDB-03 (ลิมิต/สเกลตามหน้า Node-RED เดิมของ Die Shop) ──
+-- ── seed: 3 ตู้ย่อยใต้ MDB-03 (ลิมิต/สเกลตามหน้า Node-RED เดิมของ Die Shop) ──
+--    ตู้จ่ายไฟให้อะไร (user 09/11): ROBOT = robot ไลน์ HDF1-2 · CNC = Bending 4 เครื่อง ไลน์ HDF1-2 ·
+--    LASER = LASER-345 + LASER-789 (ทั้งหมดอยู่ใต้ HYDROFORM · PD3) — subtitle แก้ใน DB แล้ว 09/11
 insert into public.energy_live_meters (scope_kind, scope_name, panel, subtitle, limit_kw, limit_a, gauge_max_kw, sort_order) values
-  ('zone', 'DB-ROBOT', 'MDB-03', 'K1 · Robot Line',    55, 125,  90, 1),
-  ('zone', 'DB-CNC',   'MDB-03', 'K2 · CNC Machining', 20,  40,  60, 2),
-  ('zone', 'DB-LASER', 'MDB-03', 'K3 · Laser Cutting', 123, 260, 220, 3)
+  ('zone', 'DB-ROBOT', 'MDB-03', 'K1 · Robot ไลน์ HDF1-2',            55, 125,  90, 1),
+  ('zone', 'DB-CNC',   'MDB-03', 'K2 · Bending 4 เครื่อง ไลน์ HDF1-2', 20,  40,  60, 2),
+  ('zone', 'DB-LASER', 'MDB-03', 'K3 · LASER-345 + LASER-789',        123, 260, 220, 3)
 on conflict (scope_kind, scope_name) do nothing;
 
 -- topic = ชื่อที่ Node-RED ต้องส่งมา "ตรงตัวอักษร" · แก้/เพิ่มได้ที่ /energy แท็บ มิเตอร์ / MQTT
