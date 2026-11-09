@@ -9130,6 +9130,21 @@ test('🛡️ spare-registry-table-not-flat — ทะเบียนอะไ�
     '\n\n❌ เอาตารางทะเบียนไปพับทั้งก้อนใน CollapseCard — ห้าม (ตารางหลักของหน้า)\n');
 });
 
+/* ═══ 📝 เปิดใบซ่อมจาก Downtime = ฟอร์มเต็ม + รูปบังคับ (2026-11-08 · คำสั่ง user) ═══
+   *"เปิดใบแจ้งซ่อมจากดาวน์ไทม์ ต้องไม่เด้งเปิดทันที ต้องป๊อปอัพแนบรูปบังคับ และใส่รายละเอียดให้ชัดเจน"*
+   เดิม DailyReport insert `mtn_orders` เองจากป๊อปอัพเลือกทีม (อาการ = ชื่อประเภท DT · รูปไม่บังคับ)
+   ⇒ ห้ามกลับไป insert เองในหน้า · ต้องผ่าน `MoReportFromDowntime` (ReportModal ตัวเดียวกับหน้าแจ้งซ่อม) */
+test('📝 Daily Report ห้าม insert mtn_orders เอง — เปิดใบจาก Downtime ต้องผ่านฟอร์มเต็ม (requireBefore)', () => {
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.doesNotMatch(dr, /from\(\s*['"]mtn_orders['"]\s*\)\s*\.insert/,
+    '\n\n❌ DailyReport.jsx insert mtn_orders เอง — ใช้ <MoReportFromDowntime> (ฟอร์มเต็ม + รูปบังคับ) แทน\n');
+  const mr = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  assert.match(mr, /export function MoReportFromDowntime[\s\S]*?requireBefore\b/,
+    '\n\n❌ MoReportFromDowntime ต้องส่ง requireBefore ให้ ReportModal (รูปก่อนซ่อมบังคับ)\n');
+  assert.match(mr, /if \(requireBefore && !beforeFile\) return toast\.error/,
+    '\n\n❌ ReportModal ต้องบล็อกการบันทึกเมื่อ requireBefore แต่ไม่มีรูป\n');
+});
+
 test('✍️ signature-no-blank-save — โมดัลลายเซ็นห้ามบันทึกกระดาษเปล่า', () => {
   /* 09/11 เคสจริง: กด "บันทึก" บนกรอบวาดเปล่าได้ ⇒ โปรไฟล์ได้รูปขาวล้วน แล้วทุกใบที่ดึงลายเซ็นสด
      จากโปรไฟล์ (utils/signResolve.js) ขึ้นว่างหมด รวมใบเก่า ("เซ็นไม่ติด ลายเซ็นเก่าก็หาย") */
