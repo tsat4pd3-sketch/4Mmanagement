@@ -212,6 +212,8 @@ export const MQTT_FIELDS = [
   { key: 'kwh_total',  label: 'หน่วยสะสม',        unit: 'kWh',  desc: 'เลขสะสมหน้ามิเตอร์ — ระบบคิดผลต่างเอง' },
   { key: 'kvar',       label: 'กำลังรีแอกทีฟ',     unit: 'kVAr', desc: 'ไว้ดู power factor' },
   { key: 'pf',         label: 'เพาเวอร์แฟกเตอร์',  unit: '',     desc: 'ต่ำ = โดนค่าปรับ' },
+  { key: 'v',          label: 'แรงดัน',            unit: 'V',    desc: 'Die Shop ส่งค่าเฉลี่ย 3 เฟส' },
+  { key: 'a',          label: 'กระแส',             unit: 'A',    desc: 'Die Shop ส่งเฟสที่สูงสุด (เทียบลิมิตเบรกเกอร์)' },
 ]
 export const mqttField = (k) => MQTT_FIELDS.find(f => f.key === k) || { key: k, label: k, unit: '' }
 
@@ -329,4 +331,146 @@ export function outlierVsHistory(qty, history, factor = 3) {
   if (ratio >= factor) return { ratio, median, kind: 'high' };
   if (ratio <= 1 / factor) return { ratio, median, kind: 'low' };
   return null;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ⚡ บอร์ดค่าไฟสด (/energy แท็บ "ค่าไฟสด" · 2026-11-09 · docs/ENERGY_MONITORING_DESIGN.md §15)
+   ข้อมูล: energy_live (ค่าล่าสุด) · energy_daily (ยอดรายวัน — trigger คิดให้) · energy_readings (รายนาที)
+   ตัวส่ง: Node-RED Die Shop ยิงทุก 1 นาที
+   ⚠️ ห้ามคิดสถานะ/ยอดรวมตู้/แจ้งเตือนเองในหน้า — ใช้ buildLiveBoard() ตัวเดียว
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** ไม่มีค่าใหม่เกินกี่นาที = ขาดการติดต่อ (ตัวส่งยิงทุก 1 นาที → เผื่อ 2 รอบหลุด) */
+export const METER_OFFLINE_MIN = 3
+
+/** 'never' = ไม่เคยได้รับค่าเลย (≠ ค่าเป็น 0) · 'offline' = เคยได้แต่ขาดไป · 'online' */
+export function meterStatus(receivedAt, nowMs = Date.now()) {
+  const age = liveAgeMin(receivedAt, nowMs)
+  if (age == null) return 'never'
+  return age > METER_OFFLINE_MIN ? 'offline' : 'online'
+}
+
+const numOrNull = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v))
+
+/**
+ * ประกอบบอร์ดสดทั้งหน้า
+ * @param {object} p
+ * @param {Array} p.meters   energy_live_meters ที่ is_active
+ * @param {Array} p.live     energy_live ทุกแถว
+ * @param {Array} p.daily    energy_daily ของเดือนนี้ (ทุกวันในเดือน)
+ * @param {string} p.today   'YYYY-MM-DD' วันตามปฏิทินไทย (bkkDateStr)
+ * @param {number} p.nowMs
+ * @returns {{ meters:Array, panels:Array, totals:object }}
+ *   ตัวเลขที่ไม่รู้ = null เสมอ (ห้ามเป็น 0 — "ยังไม่ได้รับค่า" ≠ "ไม่ใช้ไฟ")
+ */
+export function buildLiveBoard({ meters = [], live = [], daily = [], today, nowMs = Date.now() } = {}) {
+  const liveBy = new Map()
+  for (const l of live || []) {
+    const k = `${l.scope_kind}|${l.scope_name}`
+    if (!liveBy.has(k)) liveBy.set(k, {})
+    liveBy.get(k)[l.field] = l
+  }
+  const dayBy = new Map()
+  for (const d of daily || []) {
+    const k = `${d.scope_kind}|${d.scope_name}`
+    if (!dayBy.has(k)) dayBy.set(k, [])
+    dayBy.get(k).push(d)
+  }
+
+  const out = [...(meters || [])]
+    .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || String(a.scope_name).localeCompare(String(b.scope_name)))
+    .map(m => {
+      const k = `${m.scope_kind}|${m.scope_name}`
+      const f = liveBy.get(k) || {}
+      const recv = Object.values(f).map(x => x.received_at).filter(Boolean).sort().pop() || null
+      const status = meterStatus(recv, nowMs)
+      const days = dayBy.get(k) || []
+      const td = days.find(d => d.day === today) || null
+      const limitKw = numOrNull(m.limit_kw), limitA = numOrNull(m.limit_a)
+      const kw = numOrNull(f.kw?.value), a = numOrNull(f.a?.value)
+      // ค่าเก่าเกินเกณฑ์ไม่ตัดสินเกินลิมิต — ไม่รู้ว่าตอนนี้เป็นยังไง
+      const overKw = status === 'online' && kw != null && limitKw != null && kw > limitKw
+      const overA = status === 'online' && a != null && limitA != null && a > limitA
+      return {
+        key: k, name: m.scope_name, panel: m.panel || '—', subtitle: m.subtitle || '',
+        limitKw, limitA,
+        gaugeMax: numOrNull(m.gauge_max_kw) ?? (limitKw != null ? limitKw * 1.5 : null),
+        kw, a, v: numOrNull(f.v?.value), kwhTotal: numOrNull(f.kwh_total?.value),
+        receivedAt: recv, ageMin: liveAgeMin(recv, nowMs), status,
+        todayKwh: td ? numOrNull(td.kwh) : null,
+        todayResets: td ? (td.resets || 0) : 0,
+        peakKw: td ? numOrNull(td.peak_kw) : null, peakAt: td?.peak_at || null,
+        monthKwh: days.length ? days.reduce((s, d) => s + (numOrNull(d.kwh) || 0), 0) : null,
+        monthDays: new Set(days.map(d => d.day)).size,
+        overKw, overA,
+      }
+    })
+
+  const sumKnown = (arr) => { const xs = arr.filter(x => x != null); return xs.length ? xs.reduce((s, x) => s + x, 0) : null }
+
+  const panelMap = new Map()
+  for (const m of out) {
+    if (!panelMap.has(m.panel)) panelMap.set(m.panel, [])
+    panelMap.get(m.panel).push(m)
+  }
+  const panels = [...panelMap.entries()].map(([panel, ms]) => {
+    const on = ms.filter(m => m.status === 'online')
+    return {
+      panel, meters: ms, online: on.length, total: ms.length,
+      // ยอดตู้ = ผลรวมเครื่องที่ออนไลน์เท่านั้น · ไม่ครบ = partial (จอต้องเขียนว่ากี่/กี่เครื่อง)
+      kw: sumKnown(on.map(m => m.kw)), partial: on.length < ms.length,
+      todayKwh: sumKnown(ms.map(m => m.todayKwh)),
+    }
+  })
+
+  const allDays = new Set()
+  for (const m of out) for (const d of dayBy.get(m.key) || []) allDays.add(d.day)
+  const monthKwh = sumKnown(out.map(m => m.monthKwh))
+  const online = out.filter(m => m.status === 'online').length
+  const totals = {
+    kw: sumKnown(out.filter(m => m.status === 'online').map(m => m.kw)),
+    todayKwh: sumKnown(out.map(m => m.todayKwh)),
+    monthKwh,
+    monthDays: allDays.size,
+    avgPerDay: monthKwh != null && allDays.size ? monthKwh / allDays.size : null,
+    online, offline: out.filter(m => m.status === 'offline').length,
+    never: out.filter(m => m.status === 'never').length, total: out.length,
+    alerts: out.filter(m => m.overKw || m.overA),
+    resets: out.reduce((s, m) => s + m.todayResets, 0),
+  }
+  return { meters: out, panels, totals }
+}
+
+/**
+ * กราฟเส้นต่อเครื่อง + peak ของตู้ จากแถวรายนาที
+ * @returns {{ byScope: Map<string, Array<{t:number, kw:number}>>, panelPeak: {kw,at,full}|null }}
+ *   panelPeak คิดเฉพาะนาทีที่ "ทุกเครื่องในตู้ส่งค่ามาครบ" — นาทีที่ขาดบางเครื่องจะต่ำกว่าจริง
+ */
+export function liveSeries(readings, meters) {
+  const byScope = new Map()
+  for (const r of readings || []) {
+    const kw = numOrNull(r.kw)
+    const t = Date.parse(r.bucket_at)
+    if (kw == null || !Number.isFinite(t)) continue
+    const k = `${r.scope_kind}|${r.scope_name}`
+    if (!byScope.has(k)) byScope.set(k, [])
+    byScope.get(k).push({ t, kw })
+  }
+  for (const arr of byScope.values()) arr.sort((a, b) => a.t - b.t)
+
+  const keys = (meters || []).map(m => `${m.scope_kind}|${m.scope_name}`)
+  let panelPeak = null
+  if (keys.length) {
+    const perT = new Map()
+    for (const k of keys) for (const p of byScope.get(k) || []) {
+      const cur = perT.get(p.t) || { sum: 0, n: 0 }
+      cur.sum += p.kw; cur.n++
+      perT.set(p.t, cur)
+    }
+    for (const [t, v] of perT) {
+      if (v.n < keys.length) continue
+      if (!panelPeak || v.sum > panelPeak.kw) panelPeak = { kw: v.sum, at: t }
+    }
+  }
+  return { byScope, panelPeak }
 }
