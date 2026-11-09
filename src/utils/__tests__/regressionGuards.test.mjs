@@ -9256,3 +9256,29 @@ test('🔊 siren-call-mtn-needs-team — ไซเรน "เรียกช่�
   assert.ok(/if \(!got\) return true/.test(siren),
     '\n\n❌ ใบที่ไม่ระบุทีมถูกกรองทิ้ง — เงียบเพราะข้อมูลไม่ครบ อันตรายกว่าดังเกิน\n');
 });
+
+test('🔇 notify-rollup-never-for-call-mtn — ห้ามยุบใบ "เรียกช่าง"', () => {
+  /* 🔴 09/11 ตอนลดเสียงรบกวน: ตั้ง inapp_rollup_min ให้ `mtn_approved`/`skill_levelup_request`
+     (คิวงาน — เข้าจอทีเดียวเคลียร์ทั้งชุด) แต่ `downtime_call_mtn` **ห้ามยุบเด็ดขาด**
+     *"เรียกช่างครั้งแรก ทุกใบต้องดัง"* (send-notification/index.ts)
+     ยุบ = เครื่องหยุด 2 ตัวกลายเป็นการ์ดเดียว ⇒ ช่างไปไม่ครบ ⇒ สายหยุดต่อ
+
+     หลักตัดสิน: ยุบได้เมื่อเป็น **คิวงาน** · ห้ามยุบเมื่อเป็น **สัญญาณต่อเหตุการณ์**
+     📄 docs/modules/notify-inapp-audit.md §รอบ 6                                         */
+  const dir = join(ROOT, 'supabase/migrations');
+  const files = readdirSync(dir).filter(f => f.endsWith('.sql'));
+  assert.ok(files.length > 50,
+    `\n\n❌ อ่าน supabase/migrations/ ได้แค่ ${files.length} ไฟล์ — ด่านนี้วัดอะไรไม่ได้แล้ว\n`);
+
+  for (const f of files) {
+    const sql = readFileSync(join(dir, f), 'utf8');
+    if (!/downtime_call_mtn/.test(sql)) continue;
+    /* ตัดคอมเมนต์ /* *\/ ออกก่อน — เอกสารในหัวไฟล์พูดถึงกฎนี้ได้ (ไฟล์นี้เองก็พูด) */
+    const code = sql.replace(/\/\*[\s\S]*?\*\//g, ' ');
+    if (!/downtime_call_mtn/.test(code)) continue;          // พูดถึงแต่ในคอมเมนต์ = ผ่าน
+    assert.ok(!/inapp_rollup_min/.test(code),
+      `\n\n❌ ${f}: ตั้ง inapp_rollup_min ในคำสั่งที่แตะ downtime_call_mtn\n`
+      + '   ⇒ ใบเรียกช่างจะถูกยุบรวมกัน — เครื่องหยุด 2 ตัวเหลือการ์ดเดียว ช่างไปไม่ครบ\n'
+      + '   ถ้าคิวรีนี้ไม่ได้ตั้ง rollup ให้ downtime_call_mtn จริง ให้แยกเป็น 2 คำสั่งคนละ UPDATE\n');
+  }
+});
