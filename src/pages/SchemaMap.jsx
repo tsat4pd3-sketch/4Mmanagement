@@ -319,7 +319,7 @@ export default function SchemaMap() {
                               background: on ? 'var(--bg3)' : 'transparent', color: 'var(--text)',
                               border: 'none', borderLeft: `3px solid ${on ? PROJ[r.proj].color : 'transparent'}`,
                             }}>
-                              <span style={{ flexShrink: 0 }}>{r.proj === 'main' ? '️' : '🏭'}</span>
+                              <span style={{ flexShrink: 0 }}>{r.proj === 'main' ? '🗄️' : '🏭'}</span>
                               <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: on ? 700 : 500 }}>
                                 {r.t}{(r.k === 'v' || r.k === 'm') && <span style={{ color: 'var(--muted)' }}> (วิว)</span>}
                               </span>
@@ -627,7 +627,7 @@ function PagesTab({ q, setQ, isMobile, catalog, ghosts, onPick }) {
                         <button key={`${guess}-${t}`} onClick={() => k && onPick(k, t)} disabled={!k}
                           title={k ? `${PROJ[k].label} · กดเพื่อดูโครงสร้าง` : 'ไม่พบตารางนี้ในฐานข้อมูล'}
                           style={{ ...chip(false), opacity: k ? 1 : 0.55, cursor: k ? 'pointer' : 'default' }}>
-                          {k === 'main' ? '️' : k === 'dr' ? '🏭' : '❔'} {t}
+                          {k === 'main' ? '🗄️' : k === 'dr' ? '🏭' : '❔'} {t}
                         </button>
                       );
                     })}
