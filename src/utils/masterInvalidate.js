@@ -56,7 +56,14 @@ export const KEYS_BY_TABLE = {
   dr_downtime_types: ['dr_downtime_types:active'],
   dr_defect_types:   ['dr_defect_types:active'],
   production_lines: [
-    'production_lines:v2',       // useProductionLines (picker กลาง) · :v2 = รอบที่เพิ่ม 6 คอลัมน์ (25/09)
+    /* 🔴 09/11 — คีย์จริงของ picker กลางคือ `:v3` (bump ตอนเพิ่ม `unit_kind` 13/10) แต่ทะเบียนนี้
+       ค้างอยู่ที่ `:v2` มา 4 สัปดาห์ ⇒ `invalidateTable('production_lines')` **ล้างคีย์ที่ตายแล้ว**
+       เคสจริง: `/line-setup` เซฟทุกปุ่มผ่าน `fetchLines()` ที่เรียก invalidateTable ตัวเดียว
+       ⇒ แก้ชื่อ/ส่วนงาน/ไลน์แม่ แล้ว dropdown ของหน้าอื่นค้างของเก่าถึง 4 ชม. เงียบๆ
+       ที่ด่านไม่จับ: `useProductionLines.js` เขียน `cachedMaster(KEY, …)` เป็น**ตัวแปร**
+       แต่ด่านสแกนเฉพาะสตริงตรงๆ — ปิดช่องนี้แล้วในเทสเดียวกัน (§คีย์ที่ประกาศเป็น const) */
+    'production_lines:v3',       // useProductionLines (picker กลาง) — **คีย์ที่ใช้จริงวันนี้**
+    'production_lines:v2',       // คีย์เก่า (25/09 รอบที่เพิ่ม 6 คอลัมน์) — ล้างของค้างด้วย
     'production_lines',          // คีย์เก่า — ล้างทิ้งด้วย เผื่อเครื่องที่ยังค้าง cache ชุดก่อน
     // 3 คีย์ล่างเลิกใช้แล้ว (25/09 — ย้ายมาใช้ 'production_lines:v2' คีย์เดียวทั้งแอป)
     // **ห้ามลบออกจากทะเบียน** — เครื่องที่ยังไม่ได้รับ build ใหม่ยังมีของค้างใน localStorage
@@ -72,15 +79,26 @@ export const KEYS_BY_TABLE = {
   jigs:                  ['jigs:am'],
   pm_daily_line_targets: ['pm_daily_line_targets:active'],
   checklists:            ['checklists:mtn'],
+  /* 🔴 09/11 — 10 คีย์ด้านล่างหลุดทะเบียนมานานเพราะเขียนเป็น `cachedMaster(KEY, …)` (ตัวแปร)
+     ด่านเดิมสแกนเฉพาะสตริงตรงๆ จึงมองไม่เห็น · ปิดช่องแล้วใน masterInvalidate.test.mjs
+     ⚠️ `people:profiles:v2` / `people:employees:v2` คือตัวที่ **ใช้จริง** — คีย์ไม่มี `:v2`
+        ข้างล่างเป็นของเก่าที่ค้างบนเครื่องหน้างาน (คง 2 ชุดไว้ ล้างทั้งคู่) */
+  container_categories: ['container_categories:master'],
+  die_set_kinds:     ['die_set_kinds:master'],
+  die_op_types:      ['die_op_types:master'],
+  equipment_die:     ['die_set_kinds:die_links_v2'],   // ผังเครื่อง↔ชุดแม่พิมพ์ (useDieSetKinds · DR)
+  trial_reasons:     ['trial_reasons:master'],
+  uom_units:         ['uom_units:master'],
+  part_images:       ['part_images:v1'],                // partImages.js — รูปพาร์ท (dr_products + parts_master)
   storage_locations: ['storage_locations:v2'],
   line_delivery_points: ['line_delivery_points:v1'],   // useDeliveryPoints (01/10)   // :v2 = รอบที่เพิ่ม line_names (bump คีย์ตอนเปลี่ยน shape)
   die_press_lines:   ['die_press_lines:master'],
   suppliers:         ['suppliers:master'],
   cost_centers:      ['cost_centers:master'],
   qa_instruments:    ['qa_instruments:picker'],
-  parts_master:      ['part_registry:main'],
-  profiles:          ['people:profiles'],
-  employees:         ['people:employees'],
+  parts_master:      ['part_registry:main', 'parts_master:matlabel'],   // matlabel = useChildParts (ป้ายชื่อพาร์ทลูก)
+  profiles:          ['people:profiles:v2', 'people:profiles'],         // :v2 = ที่ใช้จริง · ตัวไม่มี :v2 = ของค้าง
+  employees:         ['people:employees:v2', 'people:employees'],
   facility_supply_links: ['facility_supply_links:v2', 'facility_supply_links'],
 };
 

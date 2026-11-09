@@ -18,7 +18,7 @@
    ของที่โหลดล้มแล้วยังมีของเดิมค้างใน cache: `cachedMaster` คืนของเดิมให้ (ไม่ทับด้วย [])
    ⇒ `rows` มีของ + `failed` true + `stale` true = "นี่ของเก่า อาจไม่ใช่ล่าสุด"           */
 import { useCallback, useEffect, useState } from 'react';
-import { masterLoadState, invalidateMaster } from './masterCache.js';
+import { masterLoadState, invalidateMaster, onMasterFailChange } from './masterCache.js';
 
 const EMPTY = [];
 
@@ -64,6 +64,25 @@ export default function useMasterRows(key, loader, { empty = EMPTY, dep = 0, ena
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, nonce, dep, enabled]);
+
+  /* 🔔 ธง "คีย์นี้ล้ม" เปลี่ยนได้จากคนอื่นโหลด (2026-11-09) — ต้องตามให้ทัน **โดยไม่ยิงโหลดใหม่**
+     🔴 เคสที่แก้: `<LineRegistryAlert />` อยู่เหนือ `<Routes>` ⇒ mount ครั้งเดียวตอนเปิดแอป
+        ถ้าทะเบียนไลน์ล้มตอนอยู่หน้าอื่น effect ข้างบนไม่รันอีก ⇒ แถบไม่โผล่ ไม่มีปุ่มโหลดใหม่
+        ทั้งที่ dropdown ไลน์ว่างทั้งแอป (หน้างานแจ้ง 09/11 "โหลดไลน์ไม่ขึ้นหลายๆหน้า")
+     ⚠️ อัพเดทแค่ 3 ช่องของสถานะล้ม — **ห้ามแตะ `rows`** (ของที่โหลดมาแล้วยังใช้ได้)
+        และ **ห้ามเรียก loader** ที่นี่ (ตัวฟังยิงพร้อมกันทุกจอ = ยิง DB ซ้ำทั้งโรงงาน) */
+  useEffect(() => {
+    if (!enabled) return undefined;
+    return onMasterFailChange((k) => {
+      if (k != null && k !== key) return;          // คีย์อื่นล้ม ไม่ใช่เรื่องของช่องนี้
+      const f = masterLoadState(key);
+      setSt(s => (
+        (!!f === s.failed && !!f?.hadFallback === s.stale && (f?.message || '') === s.message)
+          ? s                                      // ไม่เปลี่ยนจริง = ไม่ต้อง re-render
+          : { ...s, failed: !!f, stale: !!f?.hadFallback, message: f?.message || '' }
+      ));
+    });
+  }, [key, enabled]);
 
   const reload = useCallback(() => { invalidateMaster(key); setNonce(n => n + 1); }, [key]);
   return { ...st, reload };
