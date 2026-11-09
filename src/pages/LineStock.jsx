@@ -143,6 +143,11 @@ function StockTab({ role, scope }) {
   const [bomProduct, setBomProduct] = useState(''); // product_id ที่เลือกในฟอร์ม (เพื่อดึง MAT จาก BOM)
 
   const [lineFilter, setLineFilter] = useState('');
+  /* 🔎 09/11 (คำสั่ง user "แยกพื้นที่แบบกางทุกกลุ่มมันรก — ควรมี dropdown เลือกพื้นที่ + ค้นหา MAT / Part No / ชื่อ")
+     areaFilter = key ของกลุ่มพื้นที่ SAP ('' = ทุกพื้นที่) · stockQ = คำค้น */
+  const [areaFilter, setAreaFilter] = useState('');
+  const [stockQ, setStockQ] = useState('');
+  const [partNoMap, setPartNoMap] = useState({});
   // คลังปลายทางที่ไม่ใช่ไลน์ผลิต — derive จากของที่มีจริง + กฎรับเข้าอัตโนมัติ ไม่ hardcode ชื่อคลัง
   const warehouseNames = useMemo(
     () => [...new Set(stock.map(s => s.line_name))].filter(n => n && !lines.some(l => l.name === n)).sort(lineNameCompare),
@@ -200,11 +205,11 @@ function StockTab({ role, scope }) {
         { orderBy: ['line_name', 'mat_no'] }),
       fetchAllPages(() => supabaseDR.from('bom_items').select('product_id, mat_no, part_name').eq('is_active', true),
         { orderBy: 'id' }),
-      fetchAllPages(() => supabaseDR.from('dr_products').select('id, name, mat_no, line_name').eq('is_active', true),
+      fetchAllPages(() => supabaseDR.from('dr_products').select('id, name, mat_no, line_name, p_no').eq('is_active', true),
         { orderBy: ['line_name', 'name', 'id'] }),
       fetchAllPages(() => supabaseDR.from('kanban_standards').select('mat_no, min_qty, max_qty, qty_per_kanban').eq('is_active', true),
         { orderBy: 'id' }),
-      fetchAllPages(() => supabaseDR.from('parts_master').select('mat_no').eq('is_active', true),
+      fetchAllPages(() => supabaseDR.from('parts_master').select('mat_no, part_no').eq('is_active', true),
         { orderBy: 'id' }),
     ]);
     const boms = bomRes.rows, prods = prodRes.rows, ks = ksRes.rows, pm = pmRes.rows;
@@ -236,6 +241,11 @@ function StockTab({ role, scope }) {
     (pm || []).forEach(p => known.add(p.mat_no));
     (boms || []).forEach(b => known.add(b.mat_no));
     setKnownMats(known);
+    // 🔎 Part No. สำหรับช่องค้นหาในแท็บ Stock — parts_master.part_no ก่อน · ถอยไป dr_products.p_no (09/11)
+    const pn = {};
+    (prods || []).forEach(p => { if (p.mat_no && p.p_no) pn[p.mat_no] = String(p.p_no); });
+    (pm || []).forEach(p => { if (p.mat_no && p.part_no) pn[p.mat_no] = String(p.part_no); });
+    setPartNoMap(pn);
   }, []);
 
   // สถานะ stock ตาม min/max จริง (kanban_standards) — ถ้าไม่มี min ตั้งไว้ fallback < 10
@@ -465,6 +475,24 @@ function StockTab({ role, scope }) {
     }));
   }, [groupMode, filteredStock, slocReg.rows, lines, stockByLine, homeSloc.map]);
 
+  /* กลุ่มที่โชว์จริง = เลือกพื้นที่ (โหมดพื้นที่เท่านั้น) → ค้นหา MAT / Part No / ชื่อพาร์ท
+     ⚠️ ตัวเลือกพื้นที่ทำจาก `groups` (ก่อนค้นหา) — ค้นหาแล้วพื้นที่ใน dropdown ต้องไม่หาย */
+  const areaActive = groupMode === 'sloc' && areaFilter && groups.some(g => g.key === areaFilter) ? areaFilter : '';
+  const stockNeedle = stockQ.trim().toLowerCase();
+  const shownGroups = useMemo(() => {
+    let gs = areaActive ? groups.filter(g => g.key === areaActive) : groups;
+    if (stockNeedle) {
+      gs = gs.map(g => ({ ...g, parts: g.parts.filter(p => [p.mat_no, partNoMap[p.mat_no], p.part_name, bomMap[p.mat_no]]
+        .some(v => String(v || '').toLowerCase().includes(stockNeedle))) }))
+        .filter(g => g.parts.length > 0);
+    }
+    return gs;
+  }, [groups, areaActive, stockNeedle, partNoMap, bomMap]);
+  const shownPartCount = shownGroups.reduce((n, g) => n + g.parts.length, 0);
+  const allPartCount = groups.reduce((n, g) => n + g.parts.length, 0);
+  // เลือกพื้นที่/ค้นหาอยู่ = ต้องเห็นผลทันที ⇒ กางกลุ่มเสมอ (ไม่งั้นค้นเจอแต่ถูกพับไว้)
+  const forceOpen = !!(areaActive || stockNeedle);
+
   /* 🔩 มุม SAP (09/11 · คำสั่ง user) — ชิ้นผ่านขั้น OP ในพื้นที่ แปลงกลับเป็นของที่ขั้นกินด้วยสูตรฝั่ง DR (`fn_op_inputs`
      ชุดเดียวกับตัวตัดสต็อก) แล้วบวกกับของดิบ = ยอดที่ SAP เห็น · กฎคำนวณ `utils/sapView.js`
      โหลดเฉพาะเมื่อมีชิ้นผ่านขั้นอยู่ในจอ · อ่านไม่ได้ = เขียนบนจอ (ห้ามโชว์เหมือนไม่มี) */
@@ -512,6 +540,15 @@ function StockTab({ role, scope }) {
           extraGroups={[{ label: 'คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
         />
         <SideFilterChips value={sideFilter} onChange={setSideFilter} counts={sideCounts} unit="รายการ" />
+        {!showTxn && groupMode === 'sloc' && (
+          <select value={areaActive} onChange={e => setAreaFilter(e.target.value)} aria-label="เลือกพื้นที่ SAP">
+            <option value="">{allOf('พื้นที่ SAP')}</option>
+            {groups.map(g => <option key={g.key} value={g.key}>{g.title} ({g.parts.length})</option>)}
+          </select>
+        )}
+        {!showTxn && (
+          <SearchInput value={stockQ} onChange={setStockQ} fields="MAT / Part No. / ชื่อพาร์ท" ariaLabel="ค้นหาพาร์ทในสต็อก" grow={false} />
+        )}
         <span className="spacer" />
         {(pendingMine.length > 0 || canApprove) && (
           <button onClick={() => setShowPending(v => !v)}
@@ -599,6 +636,7 @@ function StockTab({ role, scope }) {
       <StockMoveToChild
         lines={lines} stock={stock} products={products} productBom={productBom}
         canIssue={canIssue} fullName={fullName} workDate={getToday()} onDone={load}
+        slocs={slocReg.failed ? null : (slocReg.rows || null)}
       />
 
       {/* ฝั่งงาน — จอนี้เคยลิสต์ทุกเลข MAT ปนกันทั้งที่คนละแผนกดูแล (feedback หน้างาน 2026-09-03)
@@ -645,20 +683,21 @@ function StockTab({ role, scope }) {
       {/* 🏬 สลับมุมมอง + แถบย่อ/กางทุกกลุ่ม — กลุ่มเยอะ+พาร์ทเยอะ ต้องพับเก็บได้
           มุมมอง "พื้นที่ SAP" = คำขอทีมวางแผน 13/10 (ใบ Monitor Stock แบ่งตาม Store Location) */}
       {!showTxn && (() => {
-        const keys = groups.map(g => g.key);
+        const keys = shownGroups.map(g => g.key);
         const allFolded = keys.length > 0 && keys.every(k => collapsedGroups.has(k));
         return (
           <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10, flexWrap:'wrap' }}>
             <Segmented value={groupMode} onChange={pickGroupBy}
               options={[{ value:'sloc', label: 'ตามพื้นที่ SAP' }, { value:'line', label: 'ตามไลน์' }]} />
-            {keys.length > 1 && (
+            {keys.length > 1 && !forceOpen && (
               <button type="button" onClick={() => persistCollapsed(allFolded ? new Set() : new Set(keys))}
                 style={{ ...inputSt, width:'auto', cursor:'pointer', fontSize:12, padding:'6px 12px' }}>
                 {allFolded ? 'กางทั้งหมด' : 'ย่อทั้งหมด'}
               </button>
             )}
             <span style={{ fontSize:11, color:'var(--muted)' }}>
-              {keys.length} {groupMode === 'sloc' ? 'พื้นที่' : 'ไลน์/คลัง'} · แตะหัวกลุ่มเพื่อย่อ-กาง
+              {keys.length} {groupMode === 'sloc' ? 'พื้นที่' : 'ไลน์/คลัง'}
+              {forceOpen ? ` · แสดง ${shownPartCount.toLocaleString()} จาก ${allPartCount.toLocaleString()} รายการ` : ' · แตะหัวกลุ่มเพื่อย่อ-กาง'}
               {groupMode === 'sloc' && ' · ยอดในพื้นที่เดียวกันรวมข้ามไลน์แล้ว (MIN/MAX เป็นค่าต่อ MAT ระดับพื้นที่)'}
             </span>
             {groupMode === 'sloc' && homeSloc.error && (
@@ -685,18 +724,22 @@ function StockTab({ role, scope }) {
           ให้ทั้งหน้า scroll ตามปกติ + ย่อ/กางกลุ่มแทน — ดู docs/UI-CONVENTIONS.md §6.8 */}
       {!showTxn && (
         <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-          {groups.length === 0 ? (
+          {shownGroups.length === 0 && groups.length > 0 ? (
+            <div style={{ ...card, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
+              ไม่พบพาร์ทที่ตรงกับ “{stockQ.trim()}”{areaActive ? ' ในพื้นที่ที่เลือก' : ''} — มีทั้งหมด {allPartCount.toLocaleString()} รายการที่ถูกกรองออก
+            </div>
+          ) : groups.length === 0 ? (
             <div style={{ ...card, padding:'40px 20px', textAlign:'center', color:'var(--muted)', fontSize:14 }}>
               ยังไม่มีข้อมูล Stock{lineFilter ? ` ในไลน์ ${lineFilter}` : ''} — กด "+ จ่ายพาร์ทเข้าไลน์" เพื่อเริ่ม
             </div>
           ) : (
-            groups.map(g => {
+            shownGroups.map(g => {
               const lowParts = g.parts.filter(p => p.qty <= 0);
               /* 🧾 ใบ Monitor Stock ของทีมวางแผนตัดสินด้วย MIN/MAX — พาร์ทที่ยังไม่ตั้งจะขึ้น "—" ทั้งแถว
                  แล้วสถานะถอยไปใช้เกณฑ์สำรอง (< 10 ชิ้น) ⇒ ต้องเขียนบนจอว่ามีกี่รายการที่ยังตัดสินไม่ได้จริง
                  (กฎความซื่อสัตย์ของจอ: ข้อมูลไม่พอ ต้องบอก ห้ามปล่อยให้ดูเหมือนตั้งครบ) */
               const noLvParts = g.parts.filter(p => ksMap[p.mat_no]?.min == null || ksMap[p.mat_no]?.max == null);
-              const folded  = collapsedGroups.has(g.key);
+              const folded  = !forceOpen && collapsedGroups.has(g.key);
               return (
                 <div key={g.key} style={{ ...card, padding:0, overflow:'hidden' }}>
                   <div onClick={() => toggleGroup(g.key)}

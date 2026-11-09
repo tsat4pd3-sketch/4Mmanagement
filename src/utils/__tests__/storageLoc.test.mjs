@@ -121,3 +121,24 @@ test('📍 areaLinesOf: แม่-ลูกในพื้นที่ SAP เ�
   assert.equal(g.code, 'P410'); assert.deepEqual([...g.lines].sort(), ['Assy GOR', 'GOR', 'Laser GOR']);
   assert.deepEqual(areaLinesOf(slocs, lines, 'X'), { code: null, lines: ['X'] });
 });
+
+import { parentAreaCovers } from '../storageLoc.js';
+test('parentAreaCovers — แม่+ลูกทุกตัวอยู่พื้นที่เดียว = ไม่ใช่ของค้าง · ไม่ผูก/ลูกแยกพื้นที่ = ค้างจริง', () => {
+  const slocs = [
+    { code: 'P411', line_names: ['LINE APRON ASSY', 'Line 60', 'Line 61', 'SUB APRON'] },
+    { code: 'P404', line_names: ['Line D1'] },
+    { code: 'P413', line_names: ['Line D2'] },
+    { code: 'P412', line_names: ['LWR BAR', 'Assy LWR'] },
+  ];
+  const lines = [
+    { name: 'Line 60', parent_line_name: 'LINE APRON ASSY' }, { name: 'Line 61', parent_line_name: 'LINE APRON ASSY' },
+    { name: 'SUB APRON', parent_line_name: 'LINE APRON ASSY' },
+    { name: 'Line D1', parent_line_name: 'ASSY D' }, { name: 'Line D2', parent_line_name: 'ASSY D' },
+    { name: 'Assy LWR', parent_line_name: 'LWR BAR' }, { name: 'Laser LWR', parent_line_name: 'LWR BAR' },
+  ];
+  assert.equal(parentAreaCovers(slocs, lines, 'LINE APRON ASSY'), true);
+  assert.equal(parentAreaCovers(slocs, lines, 'ASSY D'), false);        // แม่ไม่ผูก + ลูกแยก 2 พื้นที่
+  assert.equal(parentAreaCovers(slocs, lines, 'LWR BAR'), false);       // ลูก 1 ตัว (Laser LWR) ไม่อยู่ในพื้นที่เดียวกัน
+  assert.equal(parentAreaCovers(slocs, lines, 'Line 60'), false);       // ไม่มีลูก
+  assert.equal(parentAreaCovers(null, lines, 'LINE APRON ASSY'), false); // ไม่มีทะเบียน = ไม่รู้ = ไม่ซ่อน
+});

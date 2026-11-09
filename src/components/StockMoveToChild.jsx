@@ -19,6 +19,7 @@
 import { useState, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { moveTargets } from '../utils/moveTargets';
+import { parentAreaCovers } from '../utils/storageLoc';
 import MatLabel from './MatLabel';
 import { toast } from './Toast';
 
@@ -33,7 +34,7 @@ const inp = { padding: '5px 8px', borderRadius: 6, border: '1px solid var(--bord
  * @param productBom  { product_id: [{mat_no}] }
  * @param workDate    วันงานปัจจุบัน
  */
-export default function StockMoveToChild({ lines, stock, products, productBom, canIssue, fullName, workDate, onDone }) {
+export default function StockMoveToChild({ lines, stock, products, productBom, canIssue, fullName, workDate, onDone, slocs = null }) {
   const [open, setOpen] = useState(false);
   const [pick, setPick] = useState({});     // mat_no → { to, qty }
   const [busy, setBusy] = useState('');
@@ -73,8 +74,16 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
     return m;
   }, [products]);
 
-  const rows = useMemo(() => (stock || [])
-    .filter(s => childrenOf[s.line_name] && Math.abs(parseFloat(s.qty_on_hand) || 0) > 0)
+  /* 📍 09/11 (คำสั่ง user) — ไลน์แม่ที่อยู่ "พื้นที่ SAP" เดียวกับลูกทุกตัว = ของอยู่ที่เดียวกัน
+     ตัวตัดสต็อกหักข้ามไลน์ในพื้นที่ได้อยู่แล้ว ⇒ ไม่ใช่ของค้าง ไม่ต้องเตือน (กฎ `parentAreaCovers`)
+     เหลือเฉพาะแม่ที่ไม่ได้ผูกพื้นที่ / ลูกแยกหลายพื้นที่ = ค้างจริง · ทะเบียนโหลดไม่ได้ (null) = ไม่ซ่อน */
+  const coveredParents = useMemo(() => new Set(Object.keys(childrenOf).filter(p => parentAreaCovers(slocs, lines, p))),
+    [childrenOf, slocs, lines]);
+  const parentRows = useMemo(() => (stock || [])
+    .filter(s => childrenOf[s.line_name] && Math.abs(parseFloat(s.qty_on_hand) || 0) > 0), [stock, childrenOf]);
+  const coveredCount = parentRows.filter(s => coveredParents.has(s.line_name)).length;
+  const rows = useMemo(() => parentRows
+    .filter(s => !coveredParents.has(s.line_name))
     .map(s => {
       /* 🔴 ปลายทางมาจาก moveTargets — เสนอลำดับ ไม่ตัดตัวเลือกทิ้ง (ดูเหตุผลในไฟล์นั้น)
          เดิมเสนอจาก BOM ได้ตัวเดียวแล้ว "ตัดไลน์ลูกที่เหลือทิ้ง" → เลือกตัวที่ถูกไม่ได้เลย
@@ -87,7 +96,7 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
       return { ...s, key: `${s.line_name}|${s.mat_no}`, qty: parseFloat(s.qty_on_hand) || 0, ...t };
     })
     .sort((a, b) => (b.sure - a.sure) || (b.qty - a.qty)),
-    [stock, childrenOf, suggestFor, typeOf, madeAt, allLeaf]);
+    [parentRows, coveredParents, childrenOf, suggestFor, typeOf, madeAt, allLeaf]);
 
   if (!rows.length) return null;
   const sureCount = rows.filter(r => r.sure).length;
@@ -135,6 +144,7 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
         </span>
         <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>
           ชี้ปลายทางชัดเจน {sureCount} · ต้องเลือกเอง {rows.length - sureCount}
+          {coveredCount > 0 && <> · ไม่นับ {coveredCount} รายการที่อยู่พื้นที่ SAP เดียวกับไลน์ลูก (ระบบหักได้แล้ว)</>}
           {wrongDept > 0 && <b style={{ color: '#ef4444' }}> · 🔴 อยู่ผิดแผนก {wrongDept}</b>}
         </span>
       </div>
@@ -142,8 +152,9 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
       {open && (
         <>
           <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.7, margin: '8px 0 10px' }}>
-            ไลน์แม่ (เช่น <b>LINE APRON ASSY</b>) เป็น<b>ระดับแผนก</b> — งานผลิตจริงเปิดกะที่ไลน์ลูก (Line 60 / Line 61 / SUB APRON)
-            ระบบหักพาร์ทตอนปิดใบผลิตด้วย<b>ชื่อไลน์ที่เปิดกะ</b> จึงหาของที่ฝากไว้ที่ไลน์แม่ไม่เจอ → ยอดมินิสโตร์ไม่เคยลด
+            ระบบหักพาร์ทตอนคอนเฟิร์มจาก<b>ทุกไลน์ในพื้นที่ SAP เดียวกัน</b> — ไลน์แม่ที่อยู่พื้นที่เดียวกับลูก (เช่น LINE APRON ASSY = P411) ไม่ขึ้นที่นี่
+            <br />ที่เหลือในลิสต์นี้ = <b>ไลน์แม่ที่ไม่ได้ผูกพื้นที่ หรือลูกแยกอยู่หลายพื้นที่</b> ระบบหาของที่ฝากไว้ที่ไลน์แม่ไม่เจอ → ยอดไม่ลด
+            (แก้ได้ 2 ทาง: ย้ายของไปไลน์ลูกที่ใช้จริง หรือผูกไลน์แม่เข้าพื้นที่ที่แท็บ 🏬 พื้นที่ SAP)
             <br />ปลายทางเป็นการ <b>เสนอลำดับ ไม่ใช่ข้อสรุป</b> — dropdown แสดง<b>ทุกไลน์ที่เป็นไปได้</b> พร้อมเหตุผลของแต่ละกลุ่ม
             (BOM ชี้ / ไลน์ขึ้นรูป / ไลน์ที่ผลิตพาร์ทนี้) พาร์ทที่ใช้หลายไลน์ต้องเลือก/แบ่งเอง
             <br />⚠️ <b>วัตถุดิบ (5xx) และงาน blank ต้องเข้าไลน์ขึ้นรูปก่อนเสมอ</b> — BOM ในระบบ&ldquo;แบน&rdquo; (5xx ผูกใต้ FG โดยตรง)
