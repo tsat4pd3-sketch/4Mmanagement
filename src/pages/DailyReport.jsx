@@ -12,7 +12,6 @@ import { toast } from '../components/Toast';
 /* 📷 รูปหลักฐานของเสีย — ของกลางเดียวกับถังเหลือง/แดง (ด่าน quality-photo-via-helper · 2026-10-12) */
 import QualityPhotoField from '../components/QualityPhotoField';
 import { uploadQualityPhoto, removeQualityImg } from '../utils/qualityImage';
-import { uploadMoBeforeImg } from '../utils/mtnImage';
 import { buildProblemReport, dtNeedsFix, countPendingFix, PROBLEM_MIN_MINUTES } from '../lib/prodProblemReport';
 /* 📝 ทะเบียนใบรายงานปัญหาการผลิต FM-PD1-019 — ออกใบ = บันทึกก่อนแล้วค่อยพิมพ์ · พิมพ์ซ้ำ = ใบเดิมจาก snapshot
    (2026-09-25 · user: "ใบบันทึกปัญหา ก็ไม่ได้เก็บข้อมูลหรอ เห็นหัวหน้าต้องปริ้นออกมาเก็บเป็นกระดาษทุกวัน") */
@@ -58,7 +57,9 @@ import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
 import Segmented from '../components/Segmented';
 import DieMatLinkButton from '../components/DieMatLinkButton';
+import MoReportFromDowntime from '../components/MoReportFromDowntime';   // ฟอร์มแจ้งซ่อมเต็ม (lazy) — เปิดใบจาก Downtime
 import { dieCandidatesForMats } from '../utils/dieCandidates';
+import { dtMachineTypeIds, machineFitsDtType, machineTypeIdsForDb } from '../utils/dtMachineFilter';
 import { kindOf } from '../utils/equipmentKinds';
 import { resolveMachine, normCode, resolveTypeRow, QR_KINDS } from '../utils/qrCode';
 import { SCAN_EVENT } from '../utils/scanWedge';
@@ -73,7 +74,6 @@ import FilterBar from '../components/FilterBar';
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
 /* ชื่อกลุ่ม "ยังระบุไม่ได้" ของทะเบียนลักษณะปัญหา — ห้ามเขียนสตริงเองในหน้า */
-import { OTHER_GROUP } from '../utils/unclassified';
 import useTabParam from '../utils/useTabParam';
 import LineSelect, { scopeLines as pickerLines } from '../components/LineSelect';
 import useProductionLines, { loadLinesRes, invalidateProductionLines } from '../utils/useProductionLines';
@@ -98,7 +98,6 @@ import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { fixThaiLayout, hasThai, thaiLayoutNote } from '../utils/kbLayout';
 import { SESSION_VOID, SESSION_STATUSES_LIVE, SESSION_STATUSES_REAL, isVoidSession, voidBadge, voidBlockReason, cleanVoidReason } from '../utils/sessionStatus';
 import MachineSelect from '../components/MachineSelect';
-import { acceptImageFile } from '../utils/acceptImageFile';
 import { loadFamilyQtyTotals, familyQtyChip } from '../utils/familyTotals';
 import { statusColor as toneColor, toneVar, toneDim, toneLine } from '../utils/statusTone';   // 🎨 token พาเลต 5 สี (UI §6.17)   // สีสถานะชุดเดียวทั้งระบบ (ห้ามตั้ง hex เอง · ชื่อ statusColor ชนกับตัวแปรในหน้า)
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
@@ -453,7 +452,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // { d, team, mode } — เลือกทีมช่างก่อน · mode 'mo' = เปิดใบซ่อม · 'call' = เรียกช่างด่วน (2026-09-21)
   //   ใช้ modal ตัวเดียวกันทั้ง 2 ทาง — ทีมปลายทางคือคำถามเดียวกัน ห้ามแตกเป็น 2 จอให้เพี้ยนกัน
   const [moDtPick, setMoDtPick] = useState(null);
-  const [moImg, setMoImg] = useState(null);        // ไฟล์รูปก่อนซ่อม (ตอนเปิดใบจากดาวน์ไทม์)
+  const [moFromDt, setMoFromDt] = useState(null);  // { d, team, initial } — ฟอร์มแจ้งซ่อมเต็มจากรายการ Downtime (08/11)
   const [moSaving, setMoSaving] = useState(false);
   const [dtForm, setDtForm]   = useState({ id: null, downtime_type_id: '', mode: 'start_end', start_time: '', end_time: '', duration_min: '', machine_no: '', mat_no: '', description: '' });
   // ช่องเครื่องจักรในฟอร์ม Downtime: ค่าเริ่ม = เฉพาะครอบครัวไลน์ · กดขยายค้นทั้งโรงงานได้ (19/10 · หน้างานทัก "เห็นทุกเครื่องในโรงงาน")
@@ -463,18 +462,23 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
      ค่าเริ่ม 'all' = ไม่บังคับเลือก = พฤติกรรมเดิม · 'other' = ชนิดที่ไม่ใช่ 3 ตัวหลัก (facility ฯลฯ) */
   const [dtKind, setDtKind] = useState('all');
   useEffect(() => { if (showDT) { setDtMachineAll(false); setDtKind('all'); } }, [showDT]);
+  /* 🤖 กรองเครื่องตามประเภท Downtime (09/11 · utils/dtMachineFilter.js) — กด "แสดงทุกเครื่อง" ได้เสมอ
+     เปลี่ยนประเภท DT / เปิดฟอร์มใหม่ = กลับไปกรองตามทะเบียน */
+  const [dtTypeAll, setDtTypeAll] = useState(false);
+  useEffect(() => { setDtTypeAll(false); }, [showDT, dtForm.downtime_type_id]);
   /* 🔨 ทะเบียนชุดแม่พิมพ์ + แม่พิมพ์รายตัว→ชุด — โหลดตอนเปิดฟอร์ม Downtime เท่านั้น (เล็ก: ~92 + ~264 แถว)
      ใช้ขึ้น "แม่พิมพ์ของงานที่กำลังผลิต" บนสุดของลิสต์ (utils/dieCandidates.js · 08/11)
      โหลดไม่ได้ = เขียนบนจอ (ลิสต์ยังใช้ได้ตามเดิม แค่ไม่มีกลุ่มบน) ห้ามเงียบ */
-  const [dieReg, setDieReg] = useState({ sets: [], rows: [], err: null, loaded: false });
+  const [dieReg, setDieReg] = useState({ sets: [], rows: [], err: null, loaded: false, mtypes: [] });
   const loadDieReg = useCallback(async () => {
-    const [st, ed] = await Promise.all([
+    const [st, ed, mt] = await Promise.all([
       supabaseDR.from('die_sets').select('id, set_code, part_no, mat_no, mat_no_2, is_active'),
       supabaseDR.from('equipment_die').select('die_set_id, machines(machine_no)').not('die_set_id', 'is', null),
+      supabaseDR.from('machine_types').select('id, label'),   // ป้ายประเภทเครื่องของตัวกรองตามประเภท DT
     ]);
     const err = st.error?.message || ed.error?.message || null;
     return {
-      sets: st.data || [], err, loaded: true,
+      sets: st.data || [], err, loaded: true, mtypes: mt.data || [],
       rows: (ed.data || []).map(r => ({ die_set_id: r.die_set_id, machine_no: r.machines?.machine_no })).filter(r => r.machine_no),
     };
   }, []);
@@ -3120,70 +3124,30 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     loadDT(selSession.id);
   };
 
-  /* พรีวิวรูป — ต้อง revokeObjectURL ตอนเปลี่ยน/ปิด ไม่งั้น blob ค้างในหน่วยความจำทุกครั้งที่เลือกรูป */
-  const [moImgPreview, setMoImgPreview] = useState('');
-  useEffect(() => {
-    if (!moImg) { setMoImgPreview(''); return; }
-    const u = URL.createObjectURL(moImg);
-    setMoImgPreview(u);
-    return () => URL.revokeObjectURL(u);
-  }, [moImg]);
-
-  // เปิดใบแจ้งซ่อม MO จากรายการ Downtime (เชื่อมกับหน้าแจ้งซ่อม MTN) — prefill เครื่อง/ไลน์/อาการ
-  // เปิด picker เลือกทีมช่างก่อน (แจกให้ถูกทีม) — เดา default จากชื่อเครื่อง (JIG/DIE)
+  /* 📝 เปิดใบแจ้งซ่อม MO จากรายการ Downtime — ฟอร์มเดียวกับหน้า "แจ้งซ่อม MTN" (08/11 · คำสั่ง user)
+     *"ต้องไม่เด้งเปิดทันที ต้องป๊อปอัพแนบรูปบังคับ และใส่รายละเอียดให้ชัดเจนมากกว่าดึงแค่ดาวน์ไทม์ไปเปิดใบ"*
+     เดิม: ป๊อปอัพเลือกทีม → insert ทันที (อาการ = ชื่อประเภท DT · รูปไม่บังคับ)
+     ใหม่: `MoReportFromDowntime` (MtnRepair.jsx) เติมไลน์/เครื่อง/เวลาเกิดเหตุ/ทีม/คำที่พิมพ์ไว้ให้
+           แล้วคนต้องเลือกชนิดอุปกรณ์ + กลุ่ม/ลักษณะปัญหาจากทะเบียน + รายละเอียดผ่านตัวตรวจ + **รูปบังคับ**
+     🔴 เช็คใบซ้ำอ่าน error ด้วย — อ่านไม่ได้ = ไม่เปิด (fail-closed) · มีมากกว่า 1 ใบ = ถือว่ามีแล้ว */
   const openMoPicker = async (d) => {
-    const { data: exist } = await supabaseDR.from('mtn_orders').select('id, mo_no').eq('source_downtime_id', d.id).maybeSingle();
-    if (exist) { toast.info(`มีใบแจ้งซ่อมของรายการนี้แล้ว${exist.mo_no ? ` (${exist.mo_no})` : ''}`); return; }
-    setMoImg(null);   // เปิด picker ใหม่ = ล้างรูปเดิม ไม่งั้นรูปของใบก่อนหน้าติดไปกับใบใหม่
-    setMoDtPick({ d, team: teamForMachine(d.machine_no, machines) || teamForItem(d.machine_no), mode: 'mo' });
-  };
-
-  const handleCreateMoFromDt = async (d, team) => {
+    const { data: exist, error } = await supabaseDR.from('mtn_orders').select('id, mo_no').eq('source_downtime_id', d.id).limit(1);
+    if (error) { toast.error('ตรวจใบซ้ำไม่สำเร็จ — ยังไม่เปิดใบ ลองใหม่อีกครั้ง (' + error.message + ')'); return; }
+    if (exist?.length) { toast.info(`มีใบแจ้งซ่อมของรายการนี้แล้ว${exist[0].mo_no ? ` (${exist[0].mo_no})` : ''}`); return; }
+    const p = (n) => String(n).padStart(2, '0');
+    const at = d.started_at ? new Date(d.started_at) : null;
     const dtType = dtTypes.find(t => t.id === d.downtime_type_id);
-    const payload = {
-      status: 'pending', current_step: 1, report_at: new Date().toISOString(), work_date: selSession.work_date,
-      repair_scope: 'in_line', line_name: selSession.line_name, dept_section: selSession.section || null,
-      mtn_dept: teamKeyOf(team) || 'maintenance', machine_no: d.machine_no || null,
-      /* 🔴 อาการ/กลุ่ม = ประเภทดาวน์ไทม์จริง **ห้าม hardcode 'อื่นๆ'** (แก้ 2026-09-23)
-         เดิมเขียน 'อื่นๆ' ทับทั้งที่ประเภทอยู่ในมือแล้ว ⇒ 325 ใบกลายเป็นถังขยะ
-         พาเรโตปัญหาเลยขึ้น "ไม่ระบุกลุ่ม 65% + อื่นๆ 33%" = วิเคราะห์ไม่ได้เลย
-         กลุ่มมาจาก `dr_downtime_types.mo_problem_group` (ทะเบียน user ยืนยันเอง 23/09)
-         ยังไม่จับคู่ = ถังขยะตามจริง — ระบบห้ามเดาแทน · มีด่าน regressionGuards
-         ⚠️ 06/10: กลุ่มที่ไม่จับคู่ใช้ `OTHER_GROUP` ('อื่นๆ / ยังระบุไม่ได้') ให้ตรงกับ
-            ชื่อกลุ่มในทะเบียน `mtn_problem_types` — เดิมเขียน 'อื่นๆ' ลอยๆ ซึ่งเป็นป้าย
-            ถังสังเคราะห์ของจอ ไม่มีอยู่ในทะเบียน ⇒ แท่งพาเรโตแยกจากกลุ่มจริงเงียบๆ */
-      problem_characteristic: dtType?.name_th || 'อื่นๆ',
-      problem_group: dtType?.mo_problem_group || OTHER_GROUP,
-      // ประเภทย้ายไปอยู่ใน problem_characteristic แล้ว — โน้ตเหลือเฉพาะสิ่งที่พนักงานพิมพ์เอง
-      report_note: `[จาก Downtime]${d.description ? ` ${d.description}` : ''}`.trim(),
-      reporter_prod: fullName, reported_by_name: fullName, source_downtime_id: d.id,
-    };
-    setMoSaving(true);
-    const { data, error } = await supabaseDR.from('mtn_orders').insert(payload).select().single();
-    if (error) { setMoSaving(false); toast.error('เปิดใบซ่อมไม่สำเร็จ: ' + error.message); return; }
-
-    /* รูปอัปโหลด **หลัง** insert เพราะต้องใช้ id ตั้งชื่อไฟล์ (pattern เดียวกับ step1 ของ MtnRepair)
-       ⚠️ อัปโหลดล้ม = ใบยังต้องถูกเปิด ห้าม rollback ใบทิ้ง — แค่บอกว่ารูปไม่ขึ้นแล้วให้ไปแนบซ้ำที่หน้าแจ้งซ่อม
-          (ใบซ่อมสำคัญกว่ารูป · ถ้าโยนทิ้งทั้งใบเพราะรูปไม่ขึ้น หน้างานจะเสียเวลากรอกใหม่หมด) */
-    if (moImg) {
-      try {
-        const url = await uploadMoBeforeImg(moImg, data.id);
-        const up = await supabaseDR.from('mtn_orders').update({ before_img: url }).eq('id', data.id).select('id');
-        if (up.error || !up.data?.length) throw new Error(up.error?.message || 'บันทึก URL รูปไม่สำเร็จ');
-        data.before_img = url;
-      } catch (e) {
-        toast.error('เปิดใบซ่อมแล้ว แต่แนบรูปไม่สำเร็จ: ' + (e.message || e) + ' — แนบซ้ำได้ที่หน้าแจ้งซ่อม MTN');
-      }
-    }
-    setMoSaving(false);
-    setMoImg(null);
-    fetch('https://ewhdfqwfwofivojtsizn.supabase.co/functions/v1/send-mtn-notification', {
-      // ส่ง "ชื่อทีม" ไปในข้อความแจ้งเตือน (DB เก็บรหัส) — ดูเหตุผลที่ notifyMtn ใน MtnRepair.jsx
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ event: 'mtn_reported', mo: { ...data, mtn_dept: deptNameOf(data.mtn_dept) } }),
-    }).catch(() => {});
-    setMoDtPick(null);
-    toast.success(`📝 เปิดใบแจ้งซ่อม MO → แจ้งถึงทีม ${deptNameOf(team) || 'MTN'} แล้ว — ไปดำเนินการต่อที่หน้า “แจ้งซ่อม MTN”`);
+    setMoFromDt({
+      d,
+      team: teamForMachine(d.machine_no, machines) || teamForItem(d.machine_no),
+      initial: {
+        line_name: selSession.line_name, machine_no: d.machine_no || '',
+        // เวลาเริ่มหยุด = เวลาเกิดเหตุจริง (ฟอร์มรับ datetime-local ตามนาฬิกาเครื่อง เหมือน localDtNow ของหน้าแจ้งซ่อม)
+        occurred_at: at && !Number.isNaN(at.getTime()) ? `${at.getFullYear()}-${p(at.getMonth() + 1)}-${p(at.getDate())}T${p(at.getHours())}:${p(at.getMinutes())}` : '',
+        // ห้ามเติมลักษณะปัญหาให้ — คนต้องเลือกจากทะเบียนเอง · ชื่อประเภท DT ใส่เป็นบริบทในรายละเอียดให้แก้ต่อ
+        report_note: [dtType?.name_th ? `[Downtime: ${dtType.name_th}]` : '', d.description || ''].filter(Boolean).join(' '),
+      },
+    });
   };
 
   const totalDT      = dtLogs.reduce((s, d) => s + (d.duration_min || 0), 0);
@@ -4482,6 +4446,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         )}
 
         {/* Open session modal */}
+        {moFromDt && (
+          <MoReportFromDowntime downtime={moFromDt.d} lineName={selSession?.line_name} initial={moFromDt.initial}
+              defaultDept={moFromDt.team} fullName={fullName}
+              onClose={() => setMoFromDt(null)}
+              onSaved={() => { setMoFromDt(null); toast.success('📝 เปิดใบแจ้งซ่อมแล้ว — ไปดำเนินการต่อที่หน้า "แจ้งซ่อม MTN"'); if (selSession?.id) loadDT(selSession.id); }} />
+        )}
         {moDtPick && (() => { const pickTone = moDtPick.mode === 'call' ? 'bad' : 'info'; const pickColor = toneVar(pickTone);
           /* 🔴 ชั้น overlay ห้ามมี onClick ปิด (QC audit 06/10) — modal นี้มีปุ่มเลือกทีมช่าง
              + ช่องถ่ายรูปก่อนซ่อม (`<input type="file" capture>`) ที่หน้างานถ่ายไว้แล้ว
@@ -4509,34 +4479,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   }}>{deptNameOf(t)}</button>
                 ))}
               </div>
-              {/* 📷 รูปก่อนซ่อม — user แจ้ง 22/09: *"เปิด MO จากดาวน์ไทม์ ไม่มีให้แนบรูป เหมือนกับเปิด MO ใหม่ step1"*
-                  ใบที่เปิดจากดาวน์ไทม์เข้าคิวเดียวกับใบที่เปิดจากหน้าแจ้งซ่อม ⇒ ต้องแนบรูปได้เหมือนกัน
-                  ไม่งั้นช่างเปิดใบมาแล้วไม่เห็นอาการ ต้องเดินไปดูเองทุกใบ
-                  ⚠️ บีบ/อัปโหลดผ่าน `utils/mtnImage.js` เท่านั้น (16:9 · webp · bucket เดียวกับ step1) */}
-              {moDtPick.mode !== 'call' && (
-                <div style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 5 }}>
-                    รูปก่อนซ่อม <span style={{ fontWeight: 400, color: 'var(--muted)' }}>(ไม่บังคับ · ครอบ 16:9 ให้อัตโนมัติ)</span>
-                  </div>
-                  {moImgPreview && <img src={moImgPreview} alt="" style={{ display: 'block', width: '100%', maxHeight: 130, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 6 }} />}
-                  {/* reset value เสมอ — ไม่งั้นเลือก "รูปเดิม" ซ้ำแล้ว change ไม่ยิง (บทเรียนเดียวกับ ImgField ใน MtnRepair) */}
-                  {/* 🔴 ห้ามใส่ `capture` (24/10 · user แจ้ง "เหมือนมีแต่บังคับถ่ายใหม่")
-                      `capture="environment"` บนมือถือ/แท็บเล็ต = **เปิดกล้องตรง ไม่มีตัวเลือกแกลเลอรี/ไฟล์**
-                      ⇒ รูปที่ถ่ายไว้ก่อนหน้า/ภาพหน้าจอ alarm แนบไม่ได้เลย · ถอดออกแล้วถ่ายใหม่ยังกดแท็บเดียว
-                      แค่เพิ่มทางเลือก ไม่เสียอะไร (ด่าน `no-capture-on-image-input` กันใส่กลับ) */}
-                  <input type="file" accept="image/*" style={{ fontSize: 12 }}
-                    onChange={async e => { const p = e.target.files?.[0]; e.target.value = ''; const f = await acceptImageFile(p); if (f) setMoImg(f); }} />
-                  {moImg && (
-                    <button type="button" onClick={() => setMoImg(null)}
-                      style={{ marginLeft: 8, fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--bg2)', color: 'var(--muted)', border: '1px solid var(--border)' }}>เอารูปออก</button>
-                  )}
-                </div>
-              )}
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => setMoDtPick(null)} style={{ flex: 1, padding: '10px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>ยกเลิก</button>
-                <button disabled={moSaving} onClick={() => (moDtPick.mode === 'call'
-                    ? handleCallMtn(moDtPick.d, moDtPick.team)
-                    : handleCreateMoFromDt(moDtPick.d, moDtPick.team))}
+                {/* ป๊อปอัพนี้เหลือทาง "เรียกช่าง" ทางเดียว — เปิดใบซ่อมย้ายไปฟอร์มเต็ม MoReportFromDowntime (08/11) */}
+                <button disabled={moSaving} onClick={() => handleCallMtn(moDtPick.d, moDtPick.team)}
                   style={{ flex: 2, padding: '10px 0', borderRadius: 'var(--r-md)', border: 'none', background: pickColor, color: '#fff', fontSize: 13, fontWeight: 800, cursor: moSaving ? 'wait' : 'pointer', opacity: moSaving ? 0.6 : 1 }}>
                   {moSaving ? 'กำลังเปิดใบ…' : `${moDtPick.mode === 'call' ? 'เรียก' : 'เปิดใบซ่อม →'} ${deptNameOf(moDtPick.team)}`}
                 </button>
@@ -6371,15 +6317,16 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
              "ไม่มีชิ้นงานในไลน์นี้" ทั้งที่กำลังผลิตอยู่จริง (หน้างานเลเซอร์แจ้งเข้ามา 2026-08-14)
              → เอา "ใบงานที่เปิดในกะนี้" มาก่อน (ตรงประเด็นสุด — คือของที่วิ่งอยู่จริง)
                แล้วเสริมด้วยสินค้า/คัมบังของ "ครอบครัวไลน์" (กฎเดียวกับ sessionProcessTypesAll) */
+          /* 🔴 09/11 (คำสั่ง user "ต้องขึ้นให้เลือกเฉพาะที่มี order ของไลน์นั้นเปิดอยู่เท่านั้น ไม่ใช่ขึ้นมาทั้งหมด")
+             = ใบงานทุกใบในกะนี้ ยกเว้นยกเลิก/นำเข้า (ใบที่ปิดยอดแล้วยังเลือกได้ — ลง DT ย้อนหลังของพาร์ทที่จบไปแล้ว)
+             ถอดแหล่ง "สินค้าที่ผูกไลน์" + "คัมบังของไลน์" ออก (เดิมขึ้นทั้งไลน์ ⇒ เลือกพาร์ทที่ไม่ได้ผลิตได้)
+             · ค่าที่ใบนี้บันทึกไว้แล้วแต่ไม่อยู่ในใบงาน (แก้ไขใบเก่า) = ยังโชว์ ห้ามหายเงียบ */
           const dtMatOptions = (() => {
-            const fam = new Set(getLineFamilyNames(lines, selSession?.line_name || '').map(n => (n || '').trim().toLowerCase()));
-            const inFam = (ln) => fam.has((ln || '').trim().toLowerCase());
             const seen = new Map();
             const add = (mat, name, src) => { if (mat && !seen.has(mat)) seen.set(mat, { mat_no: mat, name: name || '', src }); };
             prodOrders.filter(o => !['cancelled', 'imported'].includes(o.status))
               .forEach(o => add(o.mat_no, o.part_name || products.find(p => p.mat_no === o.mat_no)?.name, 'order'));
-            products.filter(p => inFam(p.line_name)).forEach(p => add(p.mat_no, p.name, 'line'));
-            kanbanStds.filter(s => inFam(s.dr_products?.line_name)).forEach(s => add(s.mat_no, s.dr_products?.name || s.part_name, 'kanban'));
+            if (dtForm.mat_no && !seen.has(dtForm.mat_no)) add(dtForm.mat_no, products.find(p => p.mat_no === dtForm.mat_no)?.name, 'current');
             return [...seen.values()];
           })();
           /* ตัวเลือก "เครื่องจักร" ของฟอร์ม Downtime — บั๊กเดียวกับ dtMatOptions ข้างบน แต่ตกสำรวจ
@@ -6404,6 +6351,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
             const row = dieReg.rows.find(r => r.machine_no === dtPickedDie.machine_no);
             return row ? dieReg.sets.find(st => st.id === row.die_set_id) || null : null;
           })() : null;
+          const dtSelType = dtTypes.find(t => String(t.id) === String(dtForm.downtime_type_id));
+          const dtTypeIds = dtMachineTypeIds(dtSelType);
+          const dtTypeLabels = dtTypeIds ? [...dtTypeIds].map(id => dieReg.mtypes.find(t => String(t.id) === id)?.label).filter(Boolean) : [];
           const machineKeyMap = buildMachineKeyMap(machines);   // ไม่ใช้ useMemo — บล็อกนี้อยู่ใน callback (rules-of-hooks)
           let famCount = 0;   // เครื่อง (รวมแม่พิมพ์) ที่ลงทะเบียนในครอบครัวไลน์นี้ — คิดใน IIFE ข้างล่าง
           const dtMachineOptions = (() => {
@@ -6421,13 +6371,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
             famCount = (machines || []).filter(m => m.machine_no && inFam(m)).length;
             const showAll = dtMachineAll || famCount === 0;
             const candOf = (m) => (m.equipment_kind === 'die' ? dieCand.byMachine.get(m.machine_no) : null);
+            const typeHit = (m) => dtTypeAll || machineFitsDtType(m, dtTypeIds);
             const kindHit = (m) => {
               if (dtKind === 'all') return true;
               const k = kindOf(m.equipment_kind);
               return dtKind === 'other' ? !['machine', 'jig', 'die'].includes(k) : k === dtKind;
             };
             return (machines || [])
-              .filter(m => (showAll || inFam(m) || candOf(m)) && kindHit(m))
+              .filter(m => (showAll || inFam(m) || candOf(m)) && kindHit(m) && typeHit(m))
               .map((m, i) => {
                 /* แม่พิมพ์ของงานที่ผลิตอยู่ขึ้นบนสุด แยก "ทะเบียนยืนยัน" กับ "ระบบเดา" ห้ามยุบรวม */
                 const c = candOf(m);
@@ -6606,7 +6557,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           options={dtMachineOptions}
                           allowFree
                           placeholder={dtMachineAll || !famCount ? 'ค้นหาเครื่อง — ทั้งโรงงาน' : 'ค้นหาเครื่อง — ในไลน์นี้'}
-                          emptyText={dtKind !== 'all' ? `ไม่มี${DT_KIND_FIELD[dtKind]}ในลิสต์นี้ — กด "ทั้งหมด" ด้านบน หรือ "ค้นทั้งโรงงาน"` : (dtMachineAll || !famCount ? 'ไม่พบเครื่องนี้ในทะเบียน' : 'ไม่พบในไลน์นี้ — กด "ค้นทั้งโรงงาน" ใต้ช่อง')}
+                          emptyText={dtTypeIds && !dtTypeAll ? 'ไม่มีเครื่องประเภทนี้ในลิสต์ — กด "แสดงทุกเครื่อง" ใต้ช่อง' : dtKind !== 'all' ? `ไม่มี${DT_KIND_FIELD[dtKind]}ในลิสต์นี้ — กด "ทั้งหมด" ด้านบน หรือ "ค้นทั้งโรงงาน"` : (dtMachineAll || !famCount ? 'ไม่พบเครื่องนี้ในทะเบียน' : 'ไม่พบในไลน์นี้ — กด "ค้นทั้งโรงงาน" ใต้ช่อง')}
                           freeHint="ไม่ได้อยู่ในทะเบียน — ต่อใบซ่อม/ประวัติเครื่องไม่ได้"
                           inputStyle={inputStyle}
                           /* พิมพ์เองแล้วต่างจากทะเบียนแค่รูปแบบ (LS10 → LS-10) = เก็บเลขตามทะเบียน
@@ -6634,6 +6585,16 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           </>
                         )}
                       </div>
+                      {/* 🤖 กรองตามประเภท Downtime — ต้องเขียนบนจอว่ากรองด้วยอะไร + ทางออก "แสดงทุกเครื่อง" เสมอ */}
+                      {dtTypeIds && (
+                        <div style={{ marginTop: 4, fontSize: 11, color: 'var(--muted)', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                          <span>{dtTypeAll ? 'แสดงทุกเครื่อง' : `เฉพาะเครื่องประเภท ${dtTypeLabels.join(' / ') || '(ประเภทที่ทะเบียนผูกไว้)'} ตามประเภท Downtime`}</span>
+                          <button type="button" onClick={() => setDtTypeAll(v => !v)}
+                            style={{ background: 'none', border: 'none', padding: 0, color: 'var(--accent)', fontSize: 11, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>
+                            {dtTypeAll ? 'กรองตามประเภท Downtime' : 'แสดงทุกเครื่อง'}
+                          </button>
+                        </div>
+                      )}
                       {/* 🔨 ความครอบคลุมของกลุ่ม "แม่พิมพ์ของงานที่ผลิตอยู่" — ต้องเขียนบนจอเสมอ (หาไม่ได้ ≠ ไม่มี) */}
                       {dtKind === 'die' && (
                         <div style={{ marginTop: 4, fontSize: 11, color: 'var(--muted)' }}>
@@ -6660,14 +6621,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       {!dtMatOptions.length ? (
                         /* ว่างจริง = ยังไม่มีใบงานในกะ และไม่มีสินค้าผูกกับไลน์เลย → บอกทางแก้ ห้ามปล่อยเป็นทางตัน */
                         <div style={{ ...inputStyle, color: 'var(--muted)', display: 'flex', alignItems: 'center', fontSize: 12 }}>
-                          — ยังไม่มีชิ้นงานให้เลือก (เปิดใบงาน หรือผูกสินค้ากับไลน์ที่ Product Master) · ข้ามได้
+                          — กะนี้ยังไม่มีใบงาน (เลือกได้เฉพาะชิ้นงานที่มีใบงานในกะ) · ข้ามได้
                         </div>
                       ) : (
                         <select value={dtForm.mat_no} onChange={e => setDtForm(f => ({ ...f, mat_no: e.target.value }))} style={inputStyle}>
                           <option value="">เลือกชิ้นงาน...</option>
                           {dtMatOptions.map(o => (
                             <option key={o.mat_no} value={o.mat_no}>
-                              {o.src === 'order' ? '▶ ' : ''}{o.mat_no}{o.name ? ` · ${o.name}` : ''}
+                              {o.src === 'order' ? '▶ ' : '⚠ '}{o.mat_no}{o.name ? ` · ${o.name}` : ''}{o.src === 'current' ? ' (ไม่มีใบงานในกะนี้)' : ''}
                             </option>
                           ))}
                         </select>
@@ -9224,6 +9185,15 @@ function DowntimeTypeSetup({ role }) {
   const [editing, setEditing] = useState(null);
   const [form, setForm]     = useState({ name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: 'var(--red)', sort_order: 0, is_active: true, six_big_loss: '', waste_type: '' });
   const [saving, setSaving] = useState(false);
+  /* 🤖 ประเภทเครื่องที่ DT นี้เกิดได้ (09/11) — กรองช่องเลือกเครื่องในฟอร์ม Downtime · ไม่ติ๊ก = ทุกเครื่อง */
+  const [mtypes, setMtypes] = useState({ rows: [], err: '' });
+  useEffect(() => {
+    let alive = true;
+    supabaseDR.from('machine_types').select('id, label, sort_order, is_active').order('sort_order').then(({ data, error }) => {
+      if (alive) setMtypes({ rows: data || [], err: error?.message || '' });
+    });
+    return () => { alive = false; };
+  }, []);
 
   const load = useCallback(async () => {
     const { data } = await supabaseDR.from('dr_downtime_types').select('*').order('category').order('sort_order');
@@ -9235,16 +9205,16 @@ function DowntimeTypeSetup({ role }) {
   const openEdit = (item = null) => {
     setEditing(item?.id || 'new');
     setForm(item
-      ? { name_th: item.name_th, name_en: item.name_en || '', category: item.category, process_type: item.process_type || 'welding_assembly', color: item.color, sort_order: item.sort_order, is_active: item.is_active, six_big_loss: item.six_big_loss || '', waste_type: item.waste_type || '' }
+      ? { name_th: item.name_th, name_en: item.name_en || '', category: item.category, process_type: item.process_type || 'welding_assembly', color: item.color, sort_order: item.sort_order, is_active: item.is_active, six_big_loss: item.six_big_loss || '', waste_type: item.waste_type || '', machine_type_ids: item.machine_type_ids || [] }
       // สร้างใหม่ default สีที่ยังไม่ซ้ำกับประเภทที่มี (ผู้ใช้เปลี่ยนทับได้)
-      : { name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: pickUnusedColor(items.map(i => i.color)), sort_order: items.length + 1, is_active: true, six_big_loss: '', waste_type: '' });
+      : { name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: pickUnusedColor(items.map(i => i.color)), sort_order: items.length + 1, is_active: true, six_big_loss: '', waste_type: '', machine_type_ids: [] });
   };
 
   const handleSave = async () => {
     if (!form.name_th) { toast.error('กรอกชื่อประเภท'); return; }
     setSaving(true);
     // ค่าว่าง = ยังไม่จัดหมวด Lean → เก็บเป็น null (ห้ามเก็บ '' — จะกลายเป็นถังใหม่ในหน้าวิเคราะห์)
-    const payload = { ...form, six_big_loss: form.six_big_loss || null, waste_type: form.waste_type || null };
+    const payload = { ...form, six_big_loss: form.six_big_loss || null, waste_type: form.waste_type || null, machine_type_ids: machineTypeIdsForDb(form.machine_type_ids) };
     const { error } = editing === 'new'
       ? await supabaseDR.from('dr_downtime_types').insert(payload)
       : await supabaseDR.from('dr_downtime_types').update(payload).eq('id', editing);
@@ -9366,6 +9336,27 @@ function DowntimeTypeSetup({ role }) {
                   <option value="">— ยังไม่จัดหมวด —</option>
                   {EIGHT_WASTES.map(w => <option key={w.key} value={w.key}>{w.icon} {w.label}</option>)}
                 </select>
+              </Field>
+              <Field label="เกิดกับเครื่องประเภทไหน (กรองช่องเลือกเครื่องตอนลง Downtime · ไม่ติ๊ก = ทุกเครื่อง)">
+                {mtypes.err ? <div style={{ fontSize: 12, color: 'var(--red)' }}>โหลดทะเบียนประเภทเครื่องไม่สำเร็จ ({mtypes.err}) — ค่าที่ติ๊กไว้เดิมจะไม่ถูกแก้</div> : (
+                  <div style={{ maxHeight: 150, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--ctl-r)', padding: '6px 8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 10px' }}>
+                    {mtypes.rows.filter(t => t.is_active !== false || (form.machine_type_ids || []).includes(t.id)).map(t => {
+                      const on = (form.machine_type_ids || []).includes(t.id);
+                      return (
+                        <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text)', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={on} onChange={() => setForm(f => {
+                            const cur = f.machine_type_ids || [];
+                            return { ...f, machine_type_ids: on ? cur.filter(x => x !== t.id) : [...cur, t.id] };
+                          })} />
+                          {t.label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
+                  {(form.machine_type_ids || []).length ? `ติ๊ก ${(form.machine_type_ids || []).length} ประเภท` : 'ไม่ติ๊ก = เกิดได้กับทุกเครื่อง (เช่น Sensor / ระบบลม)'}
+                </div>
               </Field>
               <Field label="สี">
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

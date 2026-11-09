@@ -22,6 +22,10 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
   const canvasRef = useRef(null);
   const drawing = useRef(false);
   const lastPos = useRef({ x: 0, y: 0 });
+  /* 🔴 มีเส้นบนกระดาษจริงหรือยัง (09/11 · เคสจริง) — เดิมกด "บันทึก" บนกระดาษเปล่าได้
+     ⇒ โปรไฟล์ได้รูปขาวล้วน (1.6 KB) แล้วทุกใบที่ดึงลายเซ็นสดจากโปรไฟล์ (`utils/signResolve.js`)
+     กลายเป็นช่องว่างหมด รวมใบเก่า — คนเห็นว่า "เซ็นไม่ติด ลายเซ็นเก่าก็หาย" */
+  const hasInk = useRef(false);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -41,6 +45,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
       const ctx = canvas.getContext('2d');
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+      hasInk.current = false;
     }, 50);
   }, [open, tab]);
 
@@ -63,6 +68,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
   const startDraw = useCallback((e) => {
     e.preventDefault();
     drawing.current = true;
+    hasInk.current = true;
     const canvas = canvasRef.current;
     const pos = getPos(e, canvas);
     lastPos.current = pos;
@@ -101,6 +107,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    hasInk.current = false;
   };
 
   const handleFileChange = async (e) => {
@@ -118,6 +125,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
   };
 
   const handleSave = async () => {
+    if (tab === 'draw' && !hasInk.current) { toast.error('ยังไม่ได้เซ็น — วาดลายเซ็นในกรอบก่อนกดบันทึก'); return; }
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();

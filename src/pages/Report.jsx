@@ -56,6 +56,7 @@ import { acceptImageFile } from '../utils/acceptImageFile';
 import { urlParam, urlPick, urlBool } from '../utils/urlInit';
 import { parseScopeKey } from '../utils/orgScope';
 import NoticeBar from '../components/NoticeBar';
+import SectionScopeSelect from '../components/SectionScopeSelect';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* โลโก้สำหรับฝังในใบพิมพ์ — cache ต่อ "url" ไม่ใช่ตัวเดียวตายตัว (QC audit 08/10)
@@ -273,7 +274,6 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   const canManageMaster = can('ot_master', 'manage', role);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
-  const deptsOf        = useOrgDepts();
 
   const todayStr = getWorkDate();
 
@@ -396,14 +396,9 @@ table{border-collapse:collapse;width:100%}
   return (
     <div>
       <FilterBar style={{ marginBottom: 14 }}>
-        <select value={section} onChange={e => { setSection(e.target.value); setDeptFilter(''); }}>
-          <option value="">{ALL.section}</option>
-          {sections.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)}>
-          <option value="">{ALL.dept}</option>
-          {deptsOf(section).map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
+        {/* 09/11: ส่วนงาน + แผนก 2 ช่องแบน → ต้นไม้ผังช่องเดียว (คำสั่ง user "dropdown ไม่เหมือนดึงจากผังองค์กร") · state เดิม */}
+        <SectionScopeSelect pickDept value={section} dept={deptFilter} only={sections}
+          onChange={(sec, info) => { setSection(sec); setDeptFilter(info.unit || ''); }} />
         <span className="filter-label">วันที่ทำ OT</span>
         <input type="date" value={date} onChange={e => setDate(e.target.value)} />
         {calReady && (
@@ -857,7 +852,6 @@ function PerEmployeeTab() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
-  const deptsOf        = useOrgDepts();
   const [employees, setEmployees] = useState([]);
   const [selected, setSelected] = useState('');
   const [logs, setLogs] = useState([]);
@@ -978,14 +972,8 @@ table{border-collapse:collapse;width:100%}
   return (
     <div>
       <FilterBar style={{ marginBottom: 16 }}>
-        <select value={empSection} onChange={e => { setEmpSection(e.target.value); setEmpDept(''); }}>
-          <option value="">{ALL.section}</option>
-          {empSections.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={empDept} onChange={e => setEmpDept(e.target.value)}>
-          <option value="">{ALL.dept}</option>
-          {deptsOf(empSection).map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
+        <SectionScopeSelect pickDept value={empSection} dept={empDept} only={empSections}
+          onChange={(sec, info) => { setEmpSection(sec); setEmpDept(info.unit || ''); }} />
         <select value={empTeam} onChange={e => setEmpTeam(e.target.value)}>
           <option value="">{ALL.team}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
@@ -1198,10 +1186,7 @@ table{border-collapse:collapse;width:100%}
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 16 }}
       >
-        <select value={stationSection} onChange={e => setStationSection(e.target.value)}>
-          <option value="">{ALL.section}</option>
-          {stationSectionsList.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+        <SectionScopeSelect lines={lines} value={stationSection} onChange={s => setStationSection(s)} only={stationSectionsList} />
         <select value={selectedStation} onChange={e => setSelectedStation(e.target.value)} style={{ minWidth: 200 }}>
           {Object.entries(byLine).map(([line, sts]) => (
             <optgroup key={line} label={line}>

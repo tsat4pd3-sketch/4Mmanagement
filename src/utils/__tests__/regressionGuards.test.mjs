@@ -465,6 +465,17 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'section-select-hand-built',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    /* ช่อง "ทุกส่วนงาน" ที่วาดเป็น <select> ลิสต์แบนเอง — ต้องเป็นต้นไม้ผังองค์กร (SectionScopeSelect/LineScopeSelect/OrgScopePicker) */
+    re: /<option value="">\{ALL\.section\}<\/option>/g,
+    why: 'user ทัก 09/11/2026 *"dropdown ที่ยังเหมือนไม่ดึงจากผังองค์กร ยังเจอหลาย tab ในหลายๆ หน้า"* (ภาพ /manpower-board) — '
+       + 'ลิสต์แบน PD1/PD2/… ไม่มีฝ่าย/ไอคอน/ย่อหน้า ทั้งที่ UI §5.3 ข้อ 9 สั่งให้ทุกช่องขอบเขตเป็นต้นไม้ `<OrgScopePicker>` ตัวเดียว · วัดจริง 12 หน้า/17 ช่อง',
+    fix: 'หน้าที่เก็บ state เป็นสตริงส่วนงาน = `<SectionScopeSelect value onChange only={…} [pickDept dept]>` (`src/components/SectionScopeSelect.jsx`) · '
+       + 'หน้าที่เลือกไลน์ได้ = `<LineScopeSelect>` · กรองได้ทุกมิติ = `<OrgScopePicker>` · ป้าย "ทุกส่วนงาน" ส่งผ่าน `plantLabel`/`allLabel` ไม่ใช่ <option> เอง',
+    allow: {},
+  },
+  {
     id: 'line-scope-split-selects',
     scan: ['src'], ext: ['.jsx'],
     /* ตัวกรองขอบเขตไลน์ที่แตกเป็น "ช่องส่วนงาน + ช่องไลน์" (2 ช่องติดกัน) หรือ map ทะเบียนไลน์เป็น <option> เอง */
@@ -9153,4 +9164,28 @@ test('🛡️ machine-key-stray-mark-base-includes-vowels — ฐานของ
       `\n\n❌ ช่วงอักขระ ${part} ไม่ตรงกันระหว่าง machineNo.js กับ machine_key() ฝั่ง SQL\n`
       + '   ⇒ จอกับ DB จัดกลุ่มเครื่องคนละแบบ = ตัวเลขไม่ตรงกันโดยไม่มีใครรู้\n');
   }
+});
+
+/* ═══ 📝 เปิดใบซ่อมจาก Downtime = ฟอร์มเต็ม + รูปบังคับ (2026-11-08 · คำสั่ง user) ═══
+   *"เปิดใบแจ้งซ่อมจากดาวน์ไทม์ ต้องไม่เด้งเปิดทันที ต้องป๊อปอัพแนบรูปบังคับ และใส่รายละเอียดให้ชัดเจน"*
+   เดิม DailyReport insert `mtn_orders` เองจากป๊อปอัพเลือกทีม (อาการ = ชื่อประเภท DT · รูปไม่บังคับ)
+   ⇒ ห้ามกลับไป insert เองในหน้า · ต้องผ่าน `MoReportFromDowntime` (ReportModal ตัวเดียวกับหน้าแจ้งซ่อม) */
+test('📝 Daily Report ห้าม insert mtn_orders เอง — เปิดใบจาก Downtime ต้องผ่านฟอร์มเต็ม (requireBefore)', () => {
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.doesNotMatch(dr, /from\(\s*['"]mtn_orders['"]\s*\)\s*\.insert/,
+    '\n\n❌ DailyReport.jsx insert mtn_orders เอง — ใช้ <MoReportFromDowntime> (ฟอร์มเต็ม + รูปบังคับ) แทน\n');
+  const mr = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  assert.match(mr, /export function MoReportFromDowntime[\s\S]*?requireBefore\b/,
+    '\n\n❌ MoReportFromDowntime ต้องส่ง requireBefore ให้ ReportModal (รูปก่อนซ่อมบังคับ)\n');
+  assert.match(mr, /if \(requireBefore && !beforeFile\) return toast\.error/,
+    '\n\n❌ ReportModal ต้องบล็อกการบันทึกเมื่อ requireBefore แต่ไม่มีรูป\n');
+});
+
+test('✍️ signature-no-blank-save — โมดัลลายเซ็นห้ามบันทึกกระดาษเปล่า', () => {
+  /* 09/11 เคสจริง: กด "บันทึก" บนกรอบวาดเปล่าได้ ⇒ โปรไฟล์ได้รูปขาวล้วน แล้วทุกใบที่ดึงลายเซ็นสด
+     จากโปรไฟล์ (utils/signResolve.js) ขึ้นว่างหมด รวมใบเก่า ("เซ็นไม่ติด ลายเซ็นเก่าก็หาย") */
+  const s = stripComments(readFileSync(join(ROOT, 'src/components/SignatureModal.jsx'), 'utf8'));
+  const save = s.slice(s.indexOf('const handleSave ='), s.indexOf('setSaving(true)', s.indexOf('const handleSave =')));
+  assert.ok(/tab === 'draw' && !hasInk\.current/.test(save), 'handleSave ต้องเช็ค hasInk ก่อนบันทึกแท็บวาด');
+  assert.ok(/hasInk\.current = true/.test(s), 'startDraw ต้องตั้ง hasInk = true');
 });

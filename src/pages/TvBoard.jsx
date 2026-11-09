@@ -40,9 +40,9 @@ import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
-import { ALL } from '../utils/filterLabels';
 // วันงาน — ของกลาง (ตัด 08:00 · 12/10 เลิกก๊อปฟังก์ชันไว้ในไฟล์ตามกฎ CLAUDE.md)
 import { getWorkDate } from '../utils/workDate';
+import SectionScopeSelect from '../components/SectionScopeSelect';
 import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 
@@ -198,13 +198,8 @@ export default function TvBoard({ onOpenMenu = null }) {
           <TabBar size="sm" value={dept} onChange={k => setParam('dept', k)} tabs={DEPTS.map(x => ({ key: x.key, label: x.label }))} />
           <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
           {/* ส่วนงาน — ค่าที่ไม่มีในลิสต์ (ส่วนงานถูกเปลี่ยนชื่อ) ต้องยังเลือกเห็นได้ ห้ามหายเงียบ */}
-          <select value={secFilter} onChange={e => setParam('sec', e.target.value)}
-            title="ทุกส่วนงานที่บัญชีนี้มีสิทธิ์เห็น"
-            style={{ width: 'auto', maxWidth: 220, height: 'var(--ctl-h)', fontSize: 'var(--ctl-fs)', padding: '0 var(--ctl-pad-x)', borderRadius: 'var(--ctl-r)', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-            <option value="">{ALL.section}</option>
-            {secOpts.map(s => <option key={s} value={s}>{s}</option>)}
-            {secFilter && !secOpts.includes(secFilter) && <option value={secFilter}>⚠ {secFilter} (ไม่มีในทะเบียน)</option>}
-          </select>
+          <SectionScopeSelect lines={lines} value={secFilter} onChange={s => setParam('sec', s)} only={secOpts} width={220}
+            title="ทุกส่วนงานที่บัญชีนี้มีสิทธิ์เห็น" />
           {dept === 'mo' && <>
             <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
             {[{ key: '', icon: '🧾', label: 'ทุกขั้น' }, ...MO_TV_GROUPS].map(x => (

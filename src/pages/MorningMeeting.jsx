@@ -37,10 +37,10 @@ const tintOf = (c, lvl) => {
 
 import FilterBar from '../components/FilterBar';
 import { useLatestRequest } from '../utils/useLatestRequest';
-import { ALL } from '../utils/filterLabels';
 import { SESSION_STATUSES_REAL } from '../utils/sessionStatus';
 import { machineLaneCount } from '../utils/machineAssets';
 import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
+import SectionScopeSelect from '../components/SectionScopeSelect';
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 // Gesture Mode (MediaPipe) — lazy ทั้ง component และโค้ด MediaPipe ข้างใน: โหลดเฉพาะตอนผู้ใช้กด 📷
@@ -1088,10 +1088,7 @@ export default function MorningMeeting() {
         </>} />
       <FilterBar>
         {sectionOpts.length > 1 && (
-          <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
-            <option value="">{ALL.section}</option>
-            {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <SectionScopeSelect lines={scopedLines} value={secFilter} onChange={s => setSecFilter(s)} only={sectionOpts} />
         )}
         <span className="filter-label">วันที่ประชุม</span>
         <input type="date" value={meetingDate} onChange={e => setMeetingDate(e.target.value)} />
