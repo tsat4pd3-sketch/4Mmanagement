@@ -85,6 +85,7 @@ import useColumnHistory from '../utils/useColumnHistory'; // 📜 MAT ที่�
 import CustomerSelect from '../components/CustomerSelect';
 import { notifyEvent } from '../utils/notifyEvent';
 import useStaleSessions, { STALE_SESSION_DAYS, sessionAgeDays, ballSideText } from '../utils/staleSessions';
+import { carryDowntimesTo, prevSessionOfLine, nextOpenSessionOfLine } from '../lib/downtimeCarry';
 import { openShiftDefaults, shiftStartTime } from '../utils/workDate';
 import { liveChannel } from '../utils/liveChannel';
 import { LIVE } from '../utils/refreshRates';
@@ -1125,45 +1126,24 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       toast.error(`รับงานค้างอัตโนมัติไม่สำเร็จ (${e?.message || e}) — เปิดกะแล้ว กดปุ่ม "📥 รับยอดต่อ" เองได้`);
     }
 
-    // ── รับ Downtime ที่ตัดยอดข้ามกะจากกะล่าสุดของไลน์นี้ (เครื่องยังซ่อมไม่เสร็จ) มาเปิดต่ออัตโนมัติ ──
-    // ดูเฉพาะ session ล่าสุด 1 กะ — carry เก่ากว่านั้นถือว่าจบไปแล้ว ไม่ปลุกขึ้นมาใหม่
+    /* ── ดึง Downtime ที่ตัดยอดข้ามกะจากกะล่าสุดของไลน์นี้ (เครื่องยังซ่อมไม่เสร็จ) ──
+       ทางนี้ใช้ได้เฉพาะเมื่อ "ปิดกะเก่าก่อน แล้วค่อยเปิดกะใหม่" — ลำดับกลับกันมีทาง "ดัน"
+       ตอนปิดกะรออยู่อีกทาง (src/lib/downtimeCarry.js) · กันซ้ำด้วย carried_from_id */
     try {
-      const { data: prevSess } = await supabaseDR.from('production_sessions')
-        .select('id').eq('line_name', openForm.line_name).neq('id', data.id)
-        .order('created_at', { ascending: false }).limit(1);
-      if (prevSess?.length) {
-        const { data: carryDts } = await supabaseDR.from('downtime_logs')
-          .select('*, dr_downtime_types(name_th)')
-          .eq('session_id', prevSess[0].id).eq('carry_over', true);
-        if (carryDts?.length) {
-          // ข้ามรายการที่มีตัวต่อเนื่องแล้ว (กันสร้างซ้ำถ้าเปิดกะ→ลบกะ→เปิดใหม่)
-          const { data: conts } = await supabaseDR.from('downtime_logs')
-            .select('carried_from_id').in('carried_from_id', carryDts.map(d => d.id));
-          const done = new Set((conts || []).map(c => c.carried_from_id));
-          const pending = carryDts.filter(d => !done.has(d.id));
-          if (pending.length) {
-            /* 🔴 เวลาเริ่มกะของใบที่ยกข้ามกะ — ต้องผ่าน shiftStartDate() ไม่งั้นกะดึกที่เริ่ม
-               00:00-07:59 จะเขียน timestamp เร็วไป 1 วัน แล้วใบนั้นหลุดนอกกรอบกะของตัวเอง
-               (ตัวนี้ **เขียนลงฐาน** ⇒ เป็นต้นทางของข้อมูลเพี้ยน ไม่ใช่แค่จอ · QC 08/10) */
-            const openHm = (openForm.start_time || '08:00').slice(0, 5);
-            const startISO = new Date(
-              `${shiftStartDate(openForm.work_date, openHm, openForm.shift)}T${openHm}:00`).toISOString();
-            const { error: contErr } = await supabaseDR.from('downtime_logs').insert(pending.map(d => ({
-              session_id:       data.id,
-              downtime_type_id: d.downtime_type_id,
-              machine_no:       d.machine_no,
-              mat_no:           d.mat_no,
-              description:      d.description,
-              started_at:       startISO,
-              carried_from_id:  d.id,
-              reported_by_name: fullName,
-              reported_by_uid:  user?.id,
-            })));
-            if (!contErr) toast.info(`⏩ รับ Downtime ต่อเนื่องจากกะก่อน ${pending.length} รายการ — เครื่องยังซ่อมไม่เสร็จ`);
-          }
-        }
+      const { session: prev, error: pErr } = await prevSessionOfLine(openForm.line_name, data.id);
+      if (pErr) {
+        toast.error(`เช็ค Downtime ต่อเนื่องจากกะก่อนไม่สำเร็จ (${pErr}) — ถ้ากะก่อนตัดยอดข้ามกะไว้ ต้องเพิ่มรายการเองในกะนี้`);
+      } else if (prev) {
+        const { inserted, error: carErr } = await carryDowntimesTo({
+          fromSessionId: prev.id, toSession: data, by: fullName, byUid: user?.id,
+        });
+        if (carErr) toast.error(`รับ Downtime ต่อเนื่องจากกะก่อนไม่สำเร็จ (${carErr}) — ต้องเพิ่มรายการเองในกะนี้`);
+        else if (inserted) toast.info(`⏩ รับ Downtime ต่อเนื่องจากกะก่อน ${inserted} รายการ — เครื่องยังซ่อมไม่เสร็จ`);
       }
-    } catch { /* การรับ DT ต่อเนื่องล้มเหลวต้องไม่ล้มการเปิดกะ */ }
+    } catch (e) {
+      // ล้มแล้วต้องไม่ล้มการเปิดกะ — แต่ห้ามเงียบ (เครื่องหยุดต่อเนื่องจะหายจากกะนี้)
+      toast.error(`รับ Downtime ต่อเนื่องจากกะก่อนไม่สำเร็จ (${e?.message || e}) — ต้องเพิ่มรายการเองในกะนี้`);
+    }
 
     setShowOpen(false);
     setSessions(s => [data, ...s]);
@@ -2915,6 +2895,28 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     } catch (e) { console.warn('[close] note update exception', e); }
 
     // Line Stock ถูกหักโดย DB trigger บน prod_orders (backflush ตอน confirmed) — ดูหมายเหตุด้านบน
+
+    /* ── ⏩ ดัน Downtime ที่เพิ่งตัดยอดข้ามกะ เข้า "กะถัดไปที่เปิดไปแล้ว" ──────────────────
+       ทาง "ดึงตอนเปิดกะ" ครอบคลุมเฉพาะกรณีปิดกะเก่าเสร็จก่อนเปิดกะใหม่ ซึ่งไม่ใช่ลำดับปกติ
+       ของหน้างาน (กะดึกเริ่มเดินก่อนหัวหน้ากะเช้าปิดกะ) — วัดจากฐานจริง 0/1 เคยสำเร็จ
+       ⇒ ต้องดันจากฝั่งนี้ด้วย · กันซ้ำด้วย carried_from_id (เรียกทั้ง 2 ทางก็ไม่เกิดแถวซ้ำ) */
+    if (openDT.some(d => dtCarryDecisions[d.id] === 'carry')) {
+      try {
+        const { session: nextSess, error: nErr } = await nextOpenSessionOfLine(selSession);
+        if (nErr) {
+          toast.error(`เช็คกะถัดไปของไลน์ไม่สำเร็จ (${nErr}) — Downtime ที่ตัดยอดข้ามกะยังไม่ถูกเปิดต่อ ต้องเพิ่มเองในกะถัดไป`);
+        } else if (nextSess) {
+          const { inserted, error: cErr } = await carryDowntimesTo({
+            fromSessionId: selSession.id, toSession: nextSess, by: fullName, byUid: user?.id,
+          });
+          if (cErr) toast.error(`เปิด Downtime ต่อในกะถัดไปไม่สำเร็จ (${cErr}) — ต้องเพิ่มเองในกะนั้น`);
+          else if (inserted) toast.info(`⏩ เปิด Downtime ต่อให้กะถัดไปแล้ว ${inserted} รายการ (กะนั้นเปิดไปก่อนแล้ว)`);
+        }
+        // ไม่มีกะถัดไป = ปกติ — ตอนเปิดกะใหม่ทาง "ดึง" จะรับต่อเอง
+      } catch (e) {
+        toast.error(`เปิด Downtime ต่อในกะถัดไปไม่สำเร็จ (${e?.message || e}) — ต้องเพิ่มเองในกะนั้น`);
+      }
+    }
 
     const oeeLabel = oee != null ? `${(oee * 100).toFixed(1)}%` : 'N/A (ไม่มี Cycle Time)';
     if (isLeaderRequest) {

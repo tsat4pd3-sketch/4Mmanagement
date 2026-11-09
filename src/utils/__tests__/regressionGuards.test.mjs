@@ -9521,3 +9521,34 @@ test('🔒 approve-close-dt-gate — handleApproveClose ต้องบล็อ
   assert.match(body, /if \(openDtNow\.length\) \{[\s\S]*?return;/,
     '\n\n❌ ด่านมีแต่ไม่ return — ต้องบล็อกการอนุมัติจริง ไม่ใช่แค่เตือน\n');
 });
+
+/* ═══ ⏩ Downtime ตัดยอดข้ามกะ ต้องส่งต่อ **2 ทาง** — dt-carry-two-ways (2026-11-09) ═══
+   เดิมมีแต่ทาง "ดึงตอนเปิดกะ" (อ่านธง `carry_over` ของกะก่อน) ⇒ ใช้ได้เฉพาะเมื่อ
+   **ปิดกะเก่าเสร็จก่อนเปิดกะใหม่** ซึ่งไม่ใช่ลำดับปกติของหน้างาน
+   วัดจากฐานจริง: ใช้ฟีเจอร์นี้ 1 เคส (HDF1 24/08) — กะดึกเปิด 21:02 แต่กะเช้าปิด 21:55
+   ⇒ ไม่เกิดแถวต่อเนื่องเลย (0/1) · เครื่องที่ยังซ่อมอยู่หายจากกะดึกทั้งกะ                */
+test('⏩ dt-carry-two-ways — ส่ง Downtime ข้ามกะต้องมีทั้งทางดึง (เปิดกะ) และทางดัน (ปิดกะ)', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+
+  assert.match(src, /prevSessionOfLine\(openForm\.line_name, data\.id\)/,
+    '\n\n❌ ทาง "ดึงตอนเปิดกะ" หาย — กะที่เปิดหลังกะเก่าปิดจะไม่ได้รับ Downtime ต่อเนื่อง\n');
+  assert.match(src, /nextOpenSessionOfLine\(selSession\)/,
+    '\n\n❌ ทาง "ดันตอนปิดกะ" หาย — กะถัดไปที่เปิดไปก่อนแล้ว (ลำดับปกติของโรงงาน)\n'
+    + '   จะไม่ได้รับ Downtime ที่หัวหน้าเลือก "ยังซ่อมอยู่ ตัดยอดข้ามกะ" เลย (วัดจากฐานจริง 0/1 สำเร็จ)\n');
+  assert.ok(src.split('carryDowntimesTo({').length - 1 >= 2,
+    '\n\n❌ ต้องเรียก carryDowntimesTo ทั้ง 2 ทาง (เปิดกะ + ปิดกะ)\n');
+
+  /* ห้ามกลืน error — เดิมทั้งก้อนอยู่ใน `catch {}` + ไม่เช็ค error ของคิวรีไหนเลย
+     ⇒ อ่าน/เขียนพลาด = เปิดกะได้ปกติแต่ Downtime ต่อเนื่องหายเงียบ (ผิดกฎ "ห้ามล้มเหลวเงียบ") */
+  assert.doesNotMatch(src, /\} catch \{ \/\* การรับ DT ต่อเนื่องล้มเหลวต้องไม่ล้มการเปิดกะ \*\/ \}/,
+    '\n\n❌ กลับไปใช้ `catch {}` เปล่าในการรับ DT ต่อเนื่อง — ล้มแล้วต้อง toast บอก ห้ามเงียบ\n');
+
+  const lib = stripComments(readFileSync(join(ROOT, 'src/lib/downtimeCarry.js'), 'utf8'));
+  assert.match(lib, /pendingCarryRows\(carryRows, conts\)/,
+    '\n\n❌ ถอดการกันซ้ำด้วย carried_from_id — เรียก 2 ทางแล้วจะได้แถวซ้ำในกะใหม่\n');
+  assert.match(lib, /shiftWindow\(toSession\)/,
+    '\n\n❌ เวลาเริ่มของแถวต่อเนื่องต้องมาจาก shiftWindow() (ภายในใช้ shiftStartDate)\n'
+    + '   คิดเองจาก work_date = กะดึกที่เริ่ม 00:00-07:59 เขียน timestamp เร็วไป 1 วัน (หลุดกรอบกะ)\n');
+  assert.doesNotMatch(lib, /\bduration_min\b|\bended_at\b|\bcall_mtn\b/,
+    '\n\n❌ แถวต่อเนื่องห้ามก๊อป duration_min/ended_at (ต้องเป็นเปิดค้างจริง) หรือ call_mtn (ใบเก่าปิดไปแล้ว)\n');
+});
