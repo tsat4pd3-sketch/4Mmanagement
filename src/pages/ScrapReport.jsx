@@ -188,7 +188,10 @@ export default function ScrapReport() {
     if (scopedLineNames && scopedLineNames.length === 0) {   // ถูก scope แต่ไม่มีไลน์ → ไม่เคยยิงคิวรี
       setReports([]); setOutside(null); setEmptyWhy('scope0'); return;
     }
-    let q = supabaseDR.from('scrap_reports').select('*')
+    /* 🔴 จอรายการเลือกเฉพาะคอลัมน์ที่ใช้ · ใบเต็มดึงตอนเปิดทีละใบ (egress · กฎเขียน DB ข้อ 11)
+       หัวใบมี ~20 คอลัมน์ รวมชื่อผู้อนุมัติ 5 ช่อง ที่ตารางไม่ได้โชว์เลย */
+    let q = supabaseDR.from('scrap_reports')
+      .select('id, doc_no, report_date, line_name, status, product_categories')
       .gte('report_date', listFrom).lte('report_date', listTo);
     if (scopedLineNames) q = q.in('line_name', scopedLineNames);   // ดัน scope เข้า query
     // ⚠️ supabase-js ไม่ throw — ไม่อ่าน error = คิวรีล่มแล้วจอขึ้นเหมือน "ไม่มีข้อมูล" (กฎเหล็กข้อ 1)
@@ -372,9 +375,21 @@ export default function ScrapReport() {
     });
   };
 
+  /** 🔴 หัวใบเต็ม — ตารางถือแค่ 6 คอลัมน์ (egress) ⇒ ทุกจุดที่ใช้ "เนื้อใบ" (เปิดแก้ · พิมพ์ · Excel)
+   *  ต้องดึงใบเต็มก่อน · อ่านไม่ได้ = คืน `null` แล้วผู้เรียก **หยุด** (พิมพ์ใบที่ช่องลายเซ็นหายไป
+   *  หรือกดบันทึกทับช่องที่ไม่ได้โหลด = เอกสารผิด) */
+  const loadFullReport = async (id) => {
+    const { data, error } = await supabaseDR.from('scrap_reports').select('*').eq('id', id).single();
+    if (error || !data) { toast.error(`อ่านใบไม่สำเร็จ: ${error?.message || 'ไม่พบใบนี้'} — ลองใหม่อีกครั้ง`); return null; }
+    return data;
+  };
+
   const openEdit = async (rep) => {
-    const { data: items } = await supabaseDR.from('scrap_report_items').select('*').eq('report_id', rep.id).order('seq');
-    setEditor({ report: { ...rep, product_categories: rep.product_categories || [] }, items: (items || []).map(it => ({ ...it, _key: it.id })) });
+    const full = await loadFullReport(rep.id);
+    if (!full) return;
+    const { data: items, error: itErr } = await supabaseDR.from('scrap_report_items').select('*').eq('report_id', rep.id).order('seq');
+    if (itErr) { toast.error(`อ่านรายการในใบไม่สำเร็จ: ${itErr.message} — ยังไม่เปิดฟอร์ม (กันบันทึกทับของเดิม)`); return; }
+    setEditor({ report: { ...full, product_categories: full.product_categories || [] }, items: (items || []).map(it => ({ ...it, _key: it.id })) });
   };
 
   /* ดึงยอดของเสียตั้งต้นจาก Daily Report (defect_logs) ของไลน์+วันในใบ */
@@ -641,15 +656,19 @@ export default function ScrapReport() {
   };
 
   const doExport = async (rep) => {
+    const full = await loadFullReport(rep.id);
+    if (!full) return;
     const { data: items } = await supabaseDR.from('scrap_report_items').select('*').eq('report_id', rep.id).order('seq');
     // เลขฟอร์ม/Rev/ช่องลายเซ็น อ่านจาก Document Master กลางใน lib เอง (getDocForm 'scrap_report')
-    await exportScrapReportExcel({ report: rep, items: items || [], defectTypes });
+    await exportScrapReportExcel({ report: full, items: items || [], defectTypes });
   };
 
   // พิมพ์/บันทึก PDF — layout เดียวกับ Excel · เลขฟอร์ม/Rev/โลโก้ จากทะเบียนเอกสาร (เซฟ PDF จาก dialog พิมพ์)
   const doPrint = async (rep) => {
+    const full = await loadFullReport(rep.id);
+    if (!full) return;
     const { data: items } = await supabaseDR.from('scrap_report_items').select('*').eq('report_id', rep.id).order('seq');
-    const ok = await printScrapReport({ report: rep, items: items || [] });
+    const ok = await printScrapReport({ report: full, items: items || [] });
     if (!ok) toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup ของเว็บนี้แล้วลองใหม่');
   };
 

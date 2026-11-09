@@ -222,7 +222,7 @@ export async function syncLineOrderDemand({ lineName, role, extra = [], dryRun =
       pendPickQty: Number(p?.pick?.request_qty) || 0, pendPickLine: p?.pick?.line_name || null,
       ...planLineRequest({ need: n.need, onHand: onHand.get(m) ?? 0, pendingQty: p?.sum, pkg: pkgOf.get(m), coil: coil.has(m) }), uom: coil.has(m) ? 'KG' : null };
   });
-  const res = { rows, inserted: 0, raised: 0, dup: 0, writeErrors: [], area, orders: od.orders, noBom: od.noBom, opUnset: od.opUnset };
+  const res = { rows, inserted: 0, raised: 0, dup: 0, raceSkipped: 0, writeErrors: [], area, orders: od.orders, noBom: od.noBom, opUnset: od.opUnset };
   if (dryRun) return res;
   const who = getActor();
   for (const r of rows) {
@@ -242,6 +242,9 @@ export async function syncLineOrderDemand({ lineName, role, extra = [], dryRun =
         .eq('id', r.pendingId).eq('status', 'pending').eq('request_qty', r.pendPickQty).select('id');
       if (error) res.writeErrors.push(`${r.mat_no}: ${error.message}`);
       else if (data?.length) res.raised++;
+      /* 🔴 CAS ไม่ตรง = 0 แถว ไม่มี error — ใบถูกแก้ยอด/ถูกหยิบไปก่อน ⇒ **รอบนี้ไม่ได้เพิ่มยอดให้**
+         เดิมหายเงียบ คนอ่านสรุปแล้วเข้าใจว่าแจ้งสโตร์ครบ (QC audit 09/11) */
+      else res.raceSkipped++;
     }
   }
   return res;
@@ -258,6 +261,7 @@ export function syncSummaryText(r) {
   if (r.raised) parts.push(`เพิ่มยอดใบเดิม ${r.raised} พาร์ท`);
   if (wait) parts.push(`${wait} พาร์ทยังไม่ครบกล่อง (สะสมรอ)`);
   if (noPkg.length) parts.push(`${noPkg.length} พาร์ทยังไม่ตั้ง packing std (${noPkg.slice(0, 3).map(x => x.mat_no).join(', ')}${noPkg.length > 3 ? '…' : ''}) — ไม่ได้แจ้ง`);
+  if (r.raceSkipped) parts.push(`${r.raceSkipped} พาร์ทไม่ได้เพิ่มยอด (ใบถูกแก้/หยิบไปก่อน) — กดซ้ำอีกครั้ง`);
   if (r.writeErrors.length) parts.push(`เขียนไม่สำเร็จ ${r.writeErrors.length}: ${r.writeErrors[0]}`);
   if (r.noBom?.length) parts.push(`${r.noBom.length} ใบผลิตไม่มีลูกใน BOM (${r.noBom.slice(0, 3).map(x => x.mat_no).join(', ')}) — แตกไม่ได้ แจ้ง PE ตั้ง BOM`);
   if (r.opUnset?.length) parts.push(`${r.opUnset.length} ใบขั้น OP ยังไม่ได้ผูกว่ากินอะไร (${r.opUnset.slice(0, 3).map(x => x.mat_no).join(', ')}) — ตั้งที่ /products แท็บ BOM ใบของแม่ → แผง 🔩 ขั้น OP`);

@@ -7896,6 +7896,32 @@ test('🟡 defect-auto-yellow — ลงงานเสียต้องตั�
     + '\n\n   ของจริงอยู่ในถังแต่ระบบไม่รู้ = สืบกลับไม่ได้ว่าของหายไปไหน\n');
 });
 
+test('🔭 scope-copies-swept — จอที่กวาดแล้ว ห้ามกลับไปเขียนสูตรขอบเขตเองในหน้า', () => {
+  /* QC audit 09/11: สำเนาสูตร `role === 'leader' && lineId` ที่เขียนเองในหน้า ให้คำตอบ
+     **แคบกว่า** ของกลาง (leader ได้ครอบครัวไลน์ล้วน · ไม่รู้จัก `scopeIdx` = แกน Cost Center/ผัง)
+     ⇒ กวาดให้เรียกของกลาง `lineScope()` / `scopedLines()` แล้ว · ไฟล์ชุดนี้ห้ามถอยกลับ
+     ⚠️ ยังมีจออื่นที่ยังไม่กวาด (ดู `permission-scope-audit.md`) — รายชื่อข้างล่างคือที่กวาดแล้วเท่านั้น */
+  const SWEPT = [
+    'src/pages/ScrapReport.jsx', 'src/pages/MtnAnalysis.jsx', 'src/pages/MaintenanceLevels.jsx',
+    'src/pages/MorningMeeting.jsx', 'src/pages/DieRegistry.jsx', 'src/pages/FixtureRegistry.jsx',
+    'src/pages/VSM.jsx', 'src/pages/PmForecast.jsx', 'src/pages/WorkforceInsight.jsx',
+    'src/pages/ShiftOrganize.jsx', 'src/pages/DailyReport.jsx', 'src/components/QualityBins.jsx',
+  ];
+  const bad = [];
+  for (const f of SWEPT) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    if (/role === 'leader' && (lineId|userLineId)/.test(src))
+      bad.push(`${f}: กลับไปเขียนสูตรขอบเขตเองในหน้า — ต้องเรียก lineScope()/scopedLines() ของกลาง`);
+    if (!/lineScope\(|scopedLinesOf\(|scopedLines\(\{/.test(src))
+      bad.push(`${f}: ไม่พบการเรียกของกลางเลย — ขอบเขตต้องมาจาก sectionScope.js`);
+    /* ส่ง `scopeIdx` ด้วยเสมอ ไม่งั้นแกน Cost Center/ผังตกหมด */
+    if (/lineScope\(\{(?![^})]*scopeIdx)/.test(src))
+      bad.push(`${f}: เรียก lineScope() โดยไม่ส่ง scopeIdx`);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   "การบีบขอบเขตเป็นการตั้งค่า ไม่ใช่งานของโค้ด" — คืนน้อยกว่าที่ profiles ตั้ง = คนทำงานไม่ได้\n');
+});
+
 test('🔐 qbin-writes-layer3 — ทุกจุดที่เขียนถังต้องผ่านด่านชั้น ③ + นับแถว + คิวไม่โกหกตอนโหลดไม่ครบ', () => {
   /* QC audit 09/11 (หมวด B·C·D): ฝั่ง DR เป็น anon ⇒ **จอคือด่านเดียว**
      ช่องเลือกไลน์ที่กรอง scope แล้วไม่ใช่ด่าน (`?scope=` เปิดตรงได้) */
@@ -8454,8 +8480,14 @@ test('🔭 leader-scope-no-silent-fallopen — กรองด้วยไลน
     '🔴 ตาข่ายส่วนงานต้องครอบหัวหน้ากลุ่มที่ชี้ไลน์ไม่ได้ด้วย ห้ามเขียน `role !== \'leader\'`');
   assert.doesNotMatch(src, /if \(role !== 'leader' && scopeSecs\.length\)/,
     '🔴 เงื่อนไขเดิมกันหัวหน้ากลุ่มออกจากตาข่าย = ไม่มีด่านสักชั้นเมื่อทะเบียนไลน์ว่าง');
-  assert.match(src, /setScopeUnsure\(role === 'leader' && !!userLineId && !scopedByLine\)/,
-    'ต้องจำไว้ว่ารอบนี้ตัดสินขอบเขตไม่ได้');
+  /* ⚠️ เช็ค "เจตนา" ไม่ใช่สตริงเป๊ะ — 09/11 ย้ายมาใช้ของกลาง `lineScope()` แล้วธง unsure
+     กว้างขึ้น (ครอบเคส "ทะเบียนไลน์โหลดไม่สำเร็จ" ของ role อื่นด้วย) ซึ่งเป็น superset ของเดิม */
+  const su = src.match(/setScopeUnsure\(([^;]*)\);/);
+  assert.ok(su, 'ต้องจำไว้ว่ารอบนี้ตัดสินขอบเขตไม่ได้');
+  assert.match(su[1], /!scopedByLine/,
+    '🔴 ธง unsure ต้องผูกกับ "กรองด้วยไลน์ไม่สำเร็จ" ไม่งั้นแยกจาก "ไม่จำกัด" ไม่ได้');
+  assert.match(su[1], /unsure|role === 'leader' && !!userLineId/,
+    'ต้องครอบเคสหัวหน้ากลุ่มที่ชี้ไลน์ตัวเองไม่ได้ (และ/หรือ unsure จากของกลาง)');
   assert.match(src, /\{scopeUnsure && \(/,
     '🔴 รายการกว้างกว่าที่ควร = ต้องเขียนบนจอ ห้ามให้คนเข้าใจว่าได้สิทธิ์ดูทุกไลน์แล้ว');
 });

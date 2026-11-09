@@ -22,7 +22,7 @@ import { machineAssetsOnly, machineLaneCount, processUnionRows } from '../utils/
 loadProcessTypes(); // master กระบวนการ (data-driven) — dropdown/ป้ายในหน้านี้อ่านผ่าน sync cache
 import tsLogoUrl from '../assets/TS logo.png';
 import { can, canAccessPage, isSharedAccount } from '../utils/permissions';
-import { inSectionScope, scopedLines } from '../utils/sectionScope';
+import { inSectionScope, scopedLines, lineScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { fetchByIds } from '../utils/fetchByIds';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
@@ -737,18 +737,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
        เคสจริง: ทะเบียนไลน์โหลดพลาด (`ln` ว่าง) ⇒ หัวหน้า LWR เห็นกะทุกไลน์ **แต่เปิดกะไลน์ตัวเองไม่ได้**
        (รายการ fail-open · ช่องเลือก fail-closed — สาเหตุเดียวกัน ออกอาการคนละทาง)
        ⇒ กรองด้วยไลน์ไม่ได้ = **ต้องถอยไปกรองด้วยส่วนงาน ห้ามปล่อยผ่าน** */
+    /* 🔭 ขอบเขตมาจากของกลาง `lineScope()` (QC audit 09/11) — เดิมเขียนสูตร leader เองที่นี่
+       (ครอบครัวไลน์ล้วน · ไม่รู้จัก scopeIdx) ⇒ แคบกว่าที่ `profiles` ตั้งไว้
+       🔴 ตาข่ายเดิมยังอยู่: ดันขอบเขตเข้า query ไม่ได้ = **ถอยไปกรองด้วยส่วนงาน ห้ามปล่อยผ่าน** */
+    const scLive = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines: ln || [], scopeIdx });
     let scopedByLine = false;
-    if (role === 'leader' && userLineId) {
-      const myLine = (ln || []).find(l => l.id === userLineId);
-      if (myLine) {
-        const children = pcm[myLine.name];
-        if (children?.length) {
-          sq = sq.in('line_name', [myLine.name, ...children]);
-        } else {
-          sq = sq.eq('line_name', myLine.name);
-        }
-        scopedByLine = true;
-      }
+    if (!scLive.unlimited && scLive.names.length) {
+      sq = sq.in('line_name', scLive.names);
+      scopedByLine = true;
     }
 
     let { data: ss } = await sq;
@@ -761,7 +757,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       });
     }
     /* ชี้ไลน์ตัวเองไม่ได้ = จอกำลังโชว์กว้างกว่าที่ควร — ห้ามเงียบ (กฎความซื่อสัตย์ของจอ) */
-    setScopeUnsure(role === 'leader' && !!userLineId && !scopedByLine);
+    setScopeUnsure((scLive.unsure || (role === 'leader' && !!userLineId)) && !scopedByLine);
 
     /* กะค้าง (open/pending_close ของวันก่อนๆ) โหลดที่หน้าแม่ผ่าน useStaleSessions — ไม่ query ซ้ำที่นี่
        แต่ต้องสั่งรีเฟรชด้วย เพราะ load() ถูกเรียกทุกครั้งที่กะเปลี่ยน (ปิดกะ/อนุมัติ/realtime)
@@ -811,10 +807,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   }, [sessions]);
 
   // ไลน์ที่เปิดกะได้ตาม scope (leader→family · role อื่น→sections · admin/qa→null=ทั้งหมด) — กันเปิดกะไลน์ข้ามส่วนงาน
+  /* 🔭 ของกลาง `lineScope()` (QC audit 09/11) — เดิม leader ได้ครอบครัวไลน์ล้วน
+     ทั้งที่ profiles อาจกำกับส่วนงานเพิ่มไว้ (กฎ 26/10) · `null` = ไม่จำกัด (ความหมายเดิม) */
   const openScopeLineNames = useMemo(() => {
-    if (role === 'leader' && userLineId) return new Set(getLineFamilyNames(lines, Number(userLineId) || userLineId));
-    if (scopeSecs.length) return new Set(scopedLines({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx }).map(l => l.name));
-    return null; // ไม่จำกัด
+    const r = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
+    return r.unlimited ? null : new Set(r.names);
   }, [role, userLineId, scopeSecs, lines, scopeIdx]);
 
   /* 🪧 ลิสต์ของช่องเลือกไลน์ = **ของกลาง `pickerLines()` เท่านั้น** (ด่าน `line-picker-never-dead`)
@@ -2298,10 +2295,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const res = await supabaseDR.from('prod_orders').update(payload).eq('id', plan.partner.id).select('id');
     if (!checkWrite(res, `ลงยอดใบคู่ ${plan.partner.prod_no}`)) return;
     if (!(res.data || []).length) { toast.error(`ลงยอดใบคู่ ${plan.partner.prod_no} ไม่สำเร็จ — สิทธิ์เขียนไม่พอ`); return; }
-    await supabaseDR.from('prod_order_qty_updates')
-      .insert({ order_id: plan.partner.id, qty_accum: plan.to, qty_delta: plan.to - plan.from, is_final: close, logged_by: fullName })
-      .then(() => {}, () => {});
+    await logQtyUpdate({ order_id: plan.partner.id, qty_accum: plan.to, qty_delta: plan.to - plan.from, is_final: close, logged_by: fullName },
+      `ใบคู่ ${plan.partner.prod_no}`);
     toast.success(`ลงยอดใบคู่ ${plan.partner.prod_no} · ${plan.to} ชิ้น ✓`);
+  };
+
+  /** 📜 ประวัติการลงยอด (`prod_order_qty_updates`) = ร่องรอยว่าใครแก้ยอดเมื่อไหร่
+   *  best-effort (ยอดหลักเขียนไปแล้ว) แต่ **ห้ามเงียบ** — หายแล้วไม่มีใครรู้ว่าประวัติไม่ครบ
+   *  (QC audit 09/11 · เดิม `.then(() => {}, () => {})` ทั้ง 3 จุด) */
+  const logQtyUpdate = async (row, label) => {
+    const { error } = await supabaseDR.from('prod_order_qty_updates').insert(row);
+    if (error) toast.error(`ยอดบันทึกแล้ว แต่เก็บประวัติการลงยอด${label ? ` ${label}` : ''} ไม่สำเร็จ: ${error.message}`);
   };
 
   const handleManualQtyUpdate = async (o) => {
@@ -2324,9 +2328,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       .update({ qty_actual: v, qty_updated_at: new Date().toISOString() }).eq('id', o.id).select('id');
     if (!checkWriteRows(qres, `ลงยอดใบ ${o.prod_no || o.mat_no || ''}`.trim(),
       { zeroMsg: 'ลงยอดไม่สำเร็จ (0 แถว — อาจมีคนปิดใบไปก่อน หรือสิทธิ์เขียนไม่พอ) · รีเฟรชแล้วลองใหม่' })) return;
-    // log ประวัติต่อช่วง (best-effort — ประวัติพังไม่ทำให้ยอดหลักพัง)
-    await supabaseDR.from('prod_order_qty_updates')
-      .insert({ order_id: o.id, qty_accum: v, qty_delta: delta, logged_by: fullName }).then(() => {}, () => {});
+    // log ประวัติต่อช่วง (ยอดหลักเขียนไปแล้ว — ประวัติล้มไม่ย้อนยอด แต่ต้องบอกบนจอ)
+    await logQtyUpdate({ order_id: o.id, qty_accum: v, qty_delta: delta, logged_by: fullName }, o.prod_no || o.mat_no);
     toast.success(`อัพเดทยอด ${o.mat_no}: ${v}/${o.qty_target ?? o.qty} ชิ้น (${delta >= 0 ? '+' : ''}${delta} จากครั้งก่อน) ✓`);
     await syncPairQty(o, v);
     setManualQtyDraft(d => ({ ...d, [o.id]: '' }));
@@ -2359,8 +2362,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       return;
     }
     // log แถวปิดใบ — เก็บส่วนต่างช่วงสุดท้ายไว้ในประวัติด้วย
-    await supabaseDR.from('prod_order_qty_updates')
-      .insert({ order_id: o.id, qty_accum: finalQty, qty_delta: finalQty - (o.qty_actual || 0), is_final: true, logged_by: fullName }).then(() => {}, () => {});
+    await logQtyUpdate({ order_id: o.id, qty_accum: finalQty, qty_delta: finalQty - (o.qty_actual || 0), is_final: true, logged_by: fullName },
+      `ปิดใบ ${o.prod_no || o.mat_no}`);
     toast.success(`ปิดใบ ${o.prod_no} · ${finalQty} ชิ้น ✓`);
     await syncPairQty(o, finalQty, { close: true });
     setManualQtyDraft(d => ({ ...d, [o.id]: '' }));
@@ -7094,13 +7097,10 @@ function HistoryTab({ role }) {
     const normSection = (s) => (s || '').trim().toLowerCase();
 
     // ไลน์ที่ role นี้มีสิทธิ์เห็นประวัติ — leader/supervisor เห็นเฉพาะของตัวเอง เหมือน LiveTab
-    let allowedLineNames = null;
-    if (role === 'leader' && userLineId) {
-      const myLine = (ln || []).find(l => l.id === userLineId);
-      allowedLineNames = myLine ? [myLine.name, ...(pcm[myLine.name] || [])] : [];
-    } else if (role !== 'admin' && scopeSecs.length) {
-      allowedLineNames = scopedLines({ role, lineId: userLineId, sections: scopeSecs, lines: ln || [], scopeIdx }).map(l => l.name);
-    }
+    /* 🔭 ของกลาง `lineScope()` (QC audit 09/11) — เดิม leader เห็นประวัติแค่ครอบครัวไลน์ตัวเอง
+       แม้ profiles กำกับส่วนงานเพิ่มไว้ · `null` = ไม่จำกัด */
+    const sc = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines: ln || [], scopeIdx });
+    const allowedLineNames = sc.unlimited ? null : sc.names;
 
     /* ใบโมฆะต้อง **เห็นในลิสต์** (ไม่ใช่หายไปเหมือนถูกลบ) — ติดป้าย 🚫 + ไม่เข้าชุดวิเคราะห์
        (ชุดวิเคราะห์/ส่งออกคือ `fetchData()` ซึ่งกรอง `status = 'closed'` อยู่แล้ว) */
@@ -7718,13 +7718,9 @@ function ExportTab() {
         const normSection = (s) => (s || '').trim().toLowerCase();
         const pcm = {};
         ln.forEach(l => { if (l.parent_line_name) (pcm[l.parent_line_name] ||= []).push(l.name); });
-        let allowed = null;
-        if (role === 'leader' && userLineId) {
-          const myLine = ln.find(l => l.id === userLineId);
-          allowed = myLine ? [myLine.name, ...(pcm[myLine.name] || [])] : [];
-        } else if (role !== 'admin' && scopeSecs.length) {
-          allowed = scopedLines({ role, lineId: userLineId, sections: scopeSecs, lines: ln, scopeIdx }).map(l => l.name);
-        }
+        /* 🔭 ของกลาง `lineScope()` (QC audit 09/11) — เกณฑ์เดียวกับแท็บประวัติ/จอสด */
+        const sc = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines: ln, scopeIdx });
+        const allowed = sc.unlimited ? null : sc.names;
         setAllowedLineNames(allowed);
         setLineNames(allowed ?? ln.map(l => l.name));
       });

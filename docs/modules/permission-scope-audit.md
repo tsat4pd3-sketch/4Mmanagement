@@ -1045,3 +1045,24 @@ line_id: emp.line_id ?? ident.line_id
 - **`ProductMaster.jsx` → `BOMPanel` → `OpStepsPanel`** — แผงลูกเคยรับแค่ `canEdit` แล้ว insert/delete
   `bom_items` โดยไม่เช็คอะไรซ้ำ ⇒ ส่ง `guard` (= `pGuard` ของหน้าแม่ ผูกไลน์ของพาร์ท) ลงไปแล้ว
   ⚠️ **ยังเหลือ legacy:** BOM ของพาร์ทเองใน `BOMPanel` (5 จุดเขียน `bom_items`) ยังไม่มีชั้น ③
+
+### 🧹 09/11 — กวาด "สำเนาสูตรขอบเขตที่เขียนเองในหน้า" ชุดแรก (12 ไฟล์)
+
+สูตรที่ก๊อปไว้ในหน้าให้คำตอบ **แคบกว่า** ของกลาง 2 ทางเสมอ:
+`leader` ได้ครอบครัวไลน์ล้วน (ของจริง = ไลน์ตัวเอง ∪ ส่วนงานที่กำกับ · กฎ 26/10) · ไม่ส่ง `scopeIdx`
+⇒ ขอบเขตที่เป็นแผนก/กลุ่ม/ไลน์เดี่ยว และแกน Cost Center ตกหมด
+
+**กวาดแล้ว (ด่าน `scope-copies-swept`):** `ScrapReport` · `MtnAnalysis` · `MaintenanceLevels` ·
+`MorningMeeting` · `DieRegistry` · `FixtureRegistry` · `VSM` · `PmForecast` · `WorkforceInsight` (2 จุด) ·
+`ShiftOrganize` (4 จุด: พนักงาน · override · ลิสต์ไลน์/ส่วนงาน · merge event) · `DailyReport` (4 จุด) ·
+`QualityBins`
+
+จุดที่พฤติกรรมเปลี่ยน (ตั้งใจ — คืนสิ่งที่ `profiles` ตั้งไว้):
+- `ShiftOrganize` เดิม `scopedLines` ของ leader = **ไลน์ตัวเองไลน์เดียว** (ไม่ถึงครอบครัว) และ override
+  กรอง `line_id` ตรงตัว ⇒ หัวหน้าที่ผูกไลน์แม่มองไม่เห็นคนในไลน์ลูก
+- `WorkforceInsight` ตัวเลือกส่วนงานของ leader เดิมเหลือช่องเดียว แม้ถูกกำกับส่วนงานอื่นไว้
+- คนที่ **ไม่ผูกไลน์** (งานสนับสนุน) ยังตัดด้วยส่วนงานเหมือนเดิมทุกจอ — ไม่ถูกดึงเข้ามาเพิ่ม
+
+**ยังไม่กวาด (~10 ไฟล์ · รอบถัดไป):** `PmCoordination` · `OrderTrace` · `OjtTraining` (2 จุด) ·
+`QrLabels` · `EventLog` · `OEEAnalytics` · `Dashboard` · `ProductHistory` · `MachineDatabase` ·
+`Report` · `DailyPM` (ธง `restricted`)

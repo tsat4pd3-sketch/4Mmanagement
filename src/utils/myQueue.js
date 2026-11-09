@@ -472,7 +472,13 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
   return {
     mine, unit, floor,
     /* 🔴 badge = จำนวน "ใบ" จริง — บรรทัดสรุป (`rollup`) ไม่นับ ไม่งั้นเลขเกินจำนวนงานจริง */
-    counts: { mine: mine.filter(x => !x.rollup).length, unit: unit.length, floor: floor.reduce((n, f) => n + (f.count || 0), 0) },
+    /* 🔴 แถวสรุป (คิวถังเหลือง · คำขอขึ้นขั้นทักษะ) ถือ `count` ของกองไว้ — นับเป็น 1 แถว
+       จะได้ตัวเลขชั้นหน่วยงาน **ต่ำกว่างานจริง** (QC audit 09/11) ⇒ นับด้วย `count` ถ้ามี */
+    counts: {
+      mine: mine.filter(x => !x.rollup).length,
+      unit: unit.reduce((n, u) => n + (Number(u.count) || 1), 0),
+      floor: floor.reduce((n, f) => n + (f.count || 0), 0),
+    },
     missing,
     partial: missing.length > 0,
     /* จำนวนแถวที่ระบุส่วนงานไม่ได้ ⇒ ไม่เข้าคิวของใครเลย — **จอต้องเขียนบอก** (ไม่ใช่ `partial`

@@ -17,7 +17,7 @@ import Segmented from '../components/Segmented';
 import { ALL, SHIFT_OPTIONS } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import { useOrgSections } from '../utils/useOrgSections';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, lineScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { stdCapacityOf } from '../utils/stdManpower';
 import { fetchAllPages } from '../utils/fetchByIds';
@@ -119,22 +119,27 @@ function ChartTip({ active, payload, label, fmt }) {
 /* ══ scope กลาง — leader = ครอบครัวไลน์ตัวเอง (ผ่าน employees.line_id) · role อื่น = ตาม sections
    pattern เดียวกับ Report.jsx StationLogTab/PerEmployeeTab — ห้ามเขียน logic scope ใหม่แยกต่างหาก ══ */
 function useEmployeeScope(lines) {
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
-  const familyLineIds = useMemo(() => {
-    if (!(role === 'leader' && userLineId) || !lines.length) return null;
-    const fam = new Set(getLineFamilyNames(lines, Number(userLineId)));
-    const ids = new Set(lines.filter(l => fam.has(l.name)).map(l => l.id));
-    return ids.size ? ids : new Set([Number(userLineId)]);
-  }, [role, userLineId, lines]);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
+  /* 🔭 ไลน์ที่เห็นได้มาจากของกลาง `lineScope()` (QC audit 09/11) — สูตรที่เคยเขียนที่นี่ให้ leader
+     เห็นแค่ครอบครัวไลน์ตัวเอง = แคบกว่าที่ `profiles` ตั้งไว้ · `null` = ไม่จำกัด */
+  const scopeLineIds = useMemo(() => {
+    if (!lines.length) return null;
+    const r = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
+    if (r.unlimited) return null;
+    const names = new Set(r.names);
+    const ids = new Set(lines.filter(l => names.has(l.name)).map(l => l.id));
+    return ids.size ? ids : null;
+  }, [role, userLineId, scopeSecs, lines, scopeIdx]);
 
   const inScope = useMemo(() => (emp) => {
     if (!emp) return false;
-    if (familyLineIds) return familyLineIds.has(emp.line_id);
+    /* คนที่ผูกไลน์ไว้ = ตัดด้วยไลน์ · คนที่ไม่มีไลน์ (สำนักงาน/สนับสนุน) = ถอยไปตัดด้วยส่วนงาน */
+    if (scopeLineIds && emp.line_id != null) return scopeLineIds.has(emp.line_id);
     if (scopeSecs.length) return inSectionScope(scopeSecs, emp.section);
     return true;
-  }, [familyLineIds, scopeSecs]);
+  }, [scopeLineIds, scopeSecs]);
 
-  const isScoped = !!familyLineIds || scopeSecs.length > 0;
+  const isScoped = !!scopeLineIds || scopeSecs.length > 0;
   return { inScope, isScoped, role, userLineId, scopeSecs };
 }
 
@@ -1017,7 +1022,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
 
 /* ══════════════════════════════ หน้าหลัก ══════════════════════════════ */
 export default function WorkforceInsight() {
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   // ทะเบียนเอกสาร — ชื่อไฟล์ CSV อ่านเลขฟอร์มจาก cache นี้ (lazy chunk ต้องโหลดเอง)
   useEffect(() => { loadDocForms(); }, []);
   const [tab, setTab] = useTabParam(['manpower', 'moves', 'turnover', 'ot'], 'manpower');
@@ -1038,14 +1043,16 @@ export default function WorkforceInsight() {
 
   const { inScope, role: _r, userLineId: _l } = useEmployeeScope(lines);
 
+  /* 🔭 ตัวเลือกส่วนงาน = ส่วนงานของไลน์ที่บัญชีนี้เห็นได้ (ผ่านของกลาง) ∪ ส่วนงานที่ถูกกำกับไว้
+     เดิม leader ได้ส่วนงานของไลน์ตัวเองช่องเดียว แม้ถูกกำกับส่วนงานอื่นไว้ด้วย (QC audit 09/11) */
   const sectionsList = useMemo(() => {
-    if (role === 'leader' && userLineId) {
-      const myLine = lines.find(l => String(l.id) === String(userLineId));
-      return myLine?.section ? [myLine.section] : [];
-    }
     const all = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
-    return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
-  }, [lines, orgSectionList, role, userLineId, scopeSecs]);
+    const r = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
+    if (r.unlimited) return all;
+    const secs = new Set(r.lines.map(l => l.section).filter(Boolean));
+    const keep = all.filter(s => secs.has(s) || (scopeSecs.length && inSectionScope(scopeSecs, s)));
+    return keep.length ? keep : all;     // กรองแล้วไม่เหลือ = ไม่กรอง (ช่องเลือกตายแย่กว่าไม่กรอง)
+  }, [lines, orgSectionList, role, userLineId, scopeSecs, scopeIdx]);
 
   const empById = useMemo(() => Object.fromEntries(employees.map(e => [e.id, e])), [employees]);
 

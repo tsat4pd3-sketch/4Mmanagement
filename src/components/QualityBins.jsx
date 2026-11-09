@@ -79,6 +79,18 @@ const BIN_SIGN_WARN = '⚠️ ชื่อคุณจะไปอยู่ช�
 const binDocLabel = (r) => [r?.part_no || r?.mat_no || r?.part_name, r?.work_date, r?.line_name]
   .map(v => String(v || '').trim()).filter(Boolean).join(' · ') || '(ไม่ทราบใบ)';
 
+/* 🔴 คอลัมน์ที่จอนี้อ่านจริง — `select('*')` บนตารางกว้าง × 500 แถว × 2 คิวรี คือตัวกิน egress
+   (กฎเขียน DB ข้อ 11 · QC audit 09/11) · ชุดนี้ = ทุกคีย์ใน `BLANK` (ฟอร์มแก้ไข) + คีย์ที่ตาราง/ชิปใช้
+   🔴 เพิ่มช่องใหม่ในฟอร์ม/ตาราง = ต้องเติมที่นี่ด้วย ไม่งั้นค่าหายเงียบตอนเปิดแก้ไข */
+const BIN_COLS = [
+  'id', 'bin', 'is_active', 'created_at',
+  'work_date', 'line_name', 'mat_no', 'part_name', 'part_no', 'qty', 'cause', 'reported_by',
+  'qa_by', 'qa_decision', 'qa_decision_at', 'special_use_doc_no',
+  'repair_date', 'repair_detail', 'repair_by', 'qty_ok', 'qty_ng', 'return_date',
+  'disposed_by', 'disposed_position', 'note', 'found_img', 'repair_img',
+  'defect_log_id', 'from_yellow_id', 'scrap_report_id',
+].join(', ');
+
 const BLANK = {
   work_date: today(), line_name: '', mat_no: '', part_name: '', part_no: '', qty: '',
   cause: '', reported_by: '', qa_by: '',
@@ -242,7 +254,7 @@ export default function QualityBins({ mode = 'full' }) {
       return;
     }
 
-    let q = supabaseDR.from('quality_bin_records').select('*')
+    let q = supabaseDR.from('quality_bin_records').select(BIN_COLS)
       .eq('bin', bin).eq('is_active', true)
       .gte('work_date', from).lte('work_date', to)
       .order('work_date', { ascending: false }).order('created_at', { ascending: false })
@@ -251,7 +263,7 @@ export default function QualityBins({ mode = 'full' }) {
     /* ⏱️ ของค้างเกินอายุแท็ก — คิวรีแยก ไม่ผูกช่วงวันที่ (ลงถังก่อน "วันนี้ − อายุแท็ก" และยังไม่ปิด)
        กรองฝั่ง server แค่เงื่อนไขปิดที่ชัด (แดง: ยังไม่มีใบ scrap · เหลือง: ยังไม่กลับเข้ากระบวนการ)
        ที่เหลือ (QA ว่างานดี/ขอใช้มีเลขใบ/ย้ายลงแดงแล้ว) ตัดสินด้วย binClosed() ตัวเดียวกับตาราง */
-    let oq = supabaseDR.from('quality_bin_records').select('*')
+    let oq = supabaseDR.from('quality_bin_records').select(BIN_COLS)
       .eq('bin', bin).eq('is_active', true)
       .lte('work_date', daysAgo((TAG_MAX_DAYS[bin] ?? 0) + 1))
       .order('work_date', { ascending: true })

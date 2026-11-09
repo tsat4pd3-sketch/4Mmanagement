@@ -2400,7 +2400,12 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
   /* ⤵ ย้ายบรรทัดไปเป็นลูกของบรรทัดอื่นในใบเดียวกัน = "เลเวลควบคุม" แบบ SAP (2026-09-16 · คำสั่ง user)
      กฎกันต้นไม้พัง (ย้ายใต้ตัวเอง/ใต้ลูกหลานตัวเอง) อยู่ใน moveBomLine (utils/bomTree · มีเทส)
      ⚠️ RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error ⇒ ต้อง .select('id') แล้วนับแถว (กฎเหล็กข้อ 2) */
+  /* 🔐 ชั้น ③ — BOM ของพาร์ทไหน = ของไลน์นั้น (กฎชั้น ③ ส่งมาจากหน้าแม่ผ่าน prop `guard`)
+     ไม่ส่ง `guard` มา = ไม่บล็อก (พฤติกรรมเดิมของผู้เรียกเก่า) · QC audit 09/11 */
+  const bomGuard = () => (guard ? guard(selProduct?.line_name, `BOM ของ ${selProduct?.mat_no || 'พาร์ทนี้'}`) : true);
+
   const doMoveLine = async (it, toMat) => {
+    if (!bomGuard()) return;
     const ix = buildBomIndex(items, { [selProduct?.id]: selProduct?.mat_no });
     const r = moveBomLine(it, toMat, ix.bomOf);
     if (!r.ok) { toast.error(r.reason); return; }
@@ -2421,6 +2426,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
   };
 
   const handlePickerSave = async () => {
+    if (!bomGuard()) return;
     if (!pickerSel.length) { toast.error('เลือกพาร์ทอย่างน้อย 1 รายการ'); return; }
     const invalid = pickerSel.find(x => !parseFloat(x.qty_per_unit) || parseFloat(x.qty_per_unit) <= 0);
     if (invalid) { toast.error(`QTY ของ ${invalid.part.part_name} ต้องมากกว่า 0`); return; }
@@ -2503,6 +2509,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
   };
 
   const handleEditSave = async () => {
+    if (!bomGuard()) return;
     const qty = parseFloat(form.qty_per_unit);
     if (!qty || qty <= 0) { toast.error('QTY ต้องมากกว่า 0'); return; }
     const itemNo = String(form.item_no).trim() === '' ? null : parseInt(form.item_no, 10);
@@ -2548,6 +2555,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
   };
 
   const handleDelete = async (it) => {
+    if (!bomGuard()) return;
     if (!window.confirm(`ลบ ${it.part_name || ''} · MAT ${it.mat_no} ออกจาก BOM?`)) return;
     const { error } = await supabaseDR.from('bom_items').delete().eq('id', it.id);
     if (error) { toast.error(error.message); return; }
@@ -2565,6 +2573,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
         เป็นการลบแบบ "ทีละหลายแถว" ถ้าพลาดแล้วกู้ไม่ได้ = ความต้องการวัตถุดิบหายเงียบ
      ⚠️ RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error (กฎเหล็กข้อ 2) ⇒ ต้อง .select('id') แล้วนับ */
   const handleDeleteDupes = async (rows) => {
+    if (!bomGuard()) return;
     const ids = [...new Set(rows.map(r => r.id).filter(Boolean))];
     if (!ids.length) return;
     const list = rows.map(r => `• ${r.part_name || ''} — MAT ${r.mat_no} ×${r.qty} ${uomLabel(r.uom) || ''}`).join('\n');
@@ -2583,6 +2592,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
   };
 
   const handleCopyBom = async () => {
+    if (!bomGuard()) return;
     if (!copySource) { toast.error('เลือก product ต้นฉบับก่อน'); return; }
     setCopying(true);
     try {

@@ -153,19 +153,12 @@ export default function FixtureRegistry() {
      (`ReferenceError: Cannot access 'scopedLines' before initialization` — เกิดจริง 25-26/10
       กับทุกบัญชีที่ไม่ใช่ leader และมีขอบเขตส่วนงาน · crashsweep จับไม่ได้เพราะ mock ใช้ `sections: []`)
      ⇒ เรียกของกลางผ่านชื่อ alias เสมอ · มีด่าน `no-shadowed-import-call` */
+  /* 🔭 ของกลาง `scopedLines()` ตัวเดียว (QC audit 09/11) — สูตรที่เคยก๊อปไว้ที่นี่ให้ leader
+     เห็นแค่ครอบครัวไลน์ตัวเอง = แคบกว่าที่ `profiles` ตั้ง (กฎ 26/10: ไลน์ตัวเอง ∪ ส่วนงานที่กำกับ) */
   const scopedLines = useMemo(() => {
-    if (role === 'leader' && userLineId) {
-      const my = lines.find(l => l.id === userLineId);
-      const fam = new Set(my ? getLineFamilyNames(lines, my.name) : []);
-      const out = lines.filter(l => fam.has(l.name));
-      return out.length ? out : lines;
-    }
-    if (scopeSecs?.length) {
-      const out = scopedLinesOf({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
-      return out.length ? out : lines;   // กรองแล้วไม่เหลือ = ไม่กรอง (หน่วยงานสนับสนุนไม่มีไลน์)
-    }
-    return lines;
-  }, [lines, role, userLineId, scopeSecs]);
+    const out = scopedLinesOf({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
+    return out.length ? out : lines;   // กรองแล้วไม่เหลือ = ไม่กรอง (หน่วยงานสนับสนุนไม่มีไลน์)
+  }, [lines, role, userLineId, scopeSecs, scopeIdx]);
   const scopeNames = useMemo(() => new Set(scopedLines.map(l => l.name)), [scopedLines]);
   const scopeOn = scopedLines.length !== lines.length;
   const inScope = useCallback((n) => !scopeOn || scopeNames.has(n), [scopeOn, scopeNames]);
