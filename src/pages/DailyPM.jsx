@@ -15,6 +15,7 @@ import { invalidateTable } from '../utils/masterInvalidate'
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams'
 import { checkWriteRows } from '../utils/dbWrite'
 import LineSelect, { scopeLines as pickerLines } from '../components/LineSelect' // dropdown ไลน์ = <LineSelect> เท่านั้น (single-source audit 2026-09-07)
+import { lineScope } from '../utils/sectionScope' // ขอบเขตไลน์ของบัญชี = ของกลางตัวเดียว (09/11)
 import useTabParam from '../utils/useTabParam'
 import { visibleInterval } from '../utils/usePolling'
 import { RATE, LIVE } from '../utils/refreshRates'
@@ -46,7 +47,7 @@ function AmMoChip({ follow }) {
 /* ⏱️ กะ/เวลาเริ่มกะ + data-flow ทั้งชุด ย้ายไป `src/lib/dailyAmBoard.js` (2026-10-08) — ผังรวมโรงงานใช้ตัวเดียวกัน
    ห้ามเขียน getShiftInfo/คิวรี inspections ซ้ำในหน้า (สองจอจะตอบคนละสี) */
 export default function DailyPM() {
-  const { role, lineId: userLineId, sections: scopeSecs } = useContext(UserContext)
+  const { role, lineId: userLineId, sections: scopeSecs, scopeIdx } = useContext(UserContext)
   const canManage = can('pm', 'setup', role)
 
   // ⚠️ param `sub` ไม่ใช่ `tab` — หน้านี้ถูกฝังในแท็บ AM ของ /daily-checker ซึ่งจอง ?tab= ไปแล้ว
@@ -153,7 +154,9 @@ export default function DailyPM() {
      ① ขอบเขตของผู้ใช้ (leader = ครอบครัวไลน์ · role อื่น = sections · ว่าง = ทั้งโรงงาน) — นอกขอบเขต **ซ่อนแต่บอกจำนวน**
      ② ตัวกรองไลน์ / ลงทะเบียนแล้วหรือยัง / ค้นหา — กติกา `filterPlanRows` (utils/pmPlanFilter.js)
      🔴 กลุ่ม "ยังไม่ระบุไลน์" ไม่นับว่านอกขอบเขต (ตะกร้ารับท้ายลิสต์ — ต้องมีคนเห็นแล้วไปกำหนดไลน์) */
-  const restricted = !!((role === 'leader' && userLineId) || scopeSecs?.length)
+  /* 🔭 "บัญชีนี้ถูกจำกัดขอบเขตไหม" ถามของกลาง (QC audit 09/11 · กวาดรอบ 2) —
+     เดิมเดาจาก role/lineId เอง ⇒ ไม่ตรงกับ `scopedProdLines` ที่ใช้ของกลางอยู่แล้ว */
+  const restricted = !lineScope({ role, lineId: userLineId, sections: scopeSecs || [], lines: prodLines, scopeIdx }).unlimited
   const [regQ, setRegQ] = useState('')
   const [regScope, setRegScope] = useState({ section: '', line: '', names: null })
   const [regState, setRegState] = useState('')   // '' | on | off

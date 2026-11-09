@@ -7902,10 +7902,16 @@ test('🔭 scope-copies-swept — จอที่กวาดแล้ว ห้
      ⇒ กวาดให้เรียกของกลาง `lineScope()` / `scopedLines()` แล้ว · ไฟล์ชุดนี้ห้ามถอยกลับ
      ⚠️ ยังมีจออื่นที่ยังไม่กวาด (ดู `permission-scope-audit.md`) — รายชื่อข้างล่างคือที่กวาดแล้วเท่านั้น */
   const SWEPT = [
+    /* รอบ 1 (09/11) */
     'src/pages/ScrapReport.jsx', 'src/pages/MtnAnalysis.jsx', 'src/pages/MaintenanceLevels.jsx',
     'src/pages/MorningMeeting.jsx', 'src/pages/DieRegistry.jsx', 'src/pages/FixtureRegistry.jsx',
     'src/pages/VSM.jsx', 'src/pages/PmForecast.jsx', 'src/pages/WorkforceInsight.jsx',
     'src/pages/ShiftOrganize.jsx', 'src/pages/DailyReport.jsx', 'src/components/QualityBins.jsx',
+    /* รอบ 2 (09/11) */
+    'src/pages/PmCoordination.jsx', 'src/pages/QrLabels.jsx', 'src/pages/OrderTrace.jsx',
+    'src/pages/ProductHistory.jsx', 'src/pages/Dashboard.jsx', 'src/pages/MachineDatabase.jsx',
+    'src/pages/EventLog.jsx', 'src/pages/OEEAnalytics.jsx', 'src/pages/OjtTraining.jsx',
+    'src/pages/DailyPM.jsx',
   ];
   const bad = [];
   for (const f of SWEPT) {

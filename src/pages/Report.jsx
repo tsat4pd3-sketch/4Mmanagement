@@ -19,7 +19,7 @@ import { can } from '../utils/permissions';
 import { loadCompanyCalendar, getDayType, isOtHolidayType, DAY_TYPE_META } from '../utils/companyCalendar';
 import { otPeriodMeta, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyNames, getLineFamilyIds, lineAncestorIds, sortLineNames } from '../utils/lineHierarchy';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, lineScope } from '../utils/sectionScope';
 import {
   SKILL_LEVELS, getLevel, groupSkillsByCategory,
   MS_LEVELS, scoreToLevel, msStyle, GAUGE_FILL, GAUGE_STROKE, Q_PATHS, skillGaugeSvgStr,
@@ -268,7 +268,7 @@ function ExportNote() {
 }
 
 function OtTransportBookingTab({ autoOpenMaster }) {
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   const canManageMaster = can('ot_master', 'manage', role);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
@@ -323,20 +323,32 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   };
 
   // mandatory scope ก่อน (leader → ไลน์ตัวเอง, role ที่ถูกจำกัด sections → เฉพาะส่วนงานใน scope) แล้วค่อย filter อิสระทับ
+  /* 🔭 ขอบเขตจากของกลาง (QC audit 09/11 · กวาดรอบ 2) — เดิมเทียบ `line_id` ตรงตัว ⇒ หัวหน้าที่
+     ผูกกับไลน์แม่มองไม่เห็นคนในไลน์ลูก และไม่รู้จัก `scopeIdx` · คนที่ไม่ผูกไลน์ยังตัดด้วยส่วนงาน */
+  const empScope = useMemo(() => {
+    const r = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
+    if (r.unlimited) return null;
+    const names = new Set(r.names);
+    return new Set(lines.filter(l => names.has(l.name)).map(l => String(l.id)));
+  }, [role, userLineId, scopeSecs, lines, scopeIdx]);
   const filteredRows = rows
     .filter(r => {
-      if (role === 'leader' && userLineId) return String(r.employees?.line_id) === String(userLineId);
-      if (scopeSecs.length) return inSectionScope(scopeSecs, r.employees?.section);
-      return true;
+      if (!empScope) return true;
+      const lid = r.employees?.line_id;
+      if (lid != null) return empScope.has(String(lid));
+      return scopeSecs.length ? inSectionScope(scopeSecs, r.employees?.section) : false;
     })
     .filter(r => !section    || r.employees?.section    === section)
     .filter(r => !deptFilter || r.employees?.department === deptFilter)
     .filter(r => shiftFilter === 'all' || r.shift === shiftFilter);
 
   const allSections = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
-  const sections = (role === 'leader' && userLineId)
-    ? [...new Set(lines.filter(l => String(l.id) === String(userLineId)).map(l => l.section).filter(Boolean))]
-    : scopeSecs.length ? allSections.filter(s => inSectionScope(scopeSecs, s)) : allSections;
+  /* ส่วนงานที่เลือกได้ = ของไลน์ที่เห็นได้ ∪ ส่วนงานที่ถูกกำกับไว้ (เดิม leader ได้ช่องเดียว) */
+  const sections = !empScope ? allSections : (() => {
+    const secs = new Set(lines.filter(l => empScope.has(String(l.id))).map(l => l.section).filter(Boolean));
+    const keep = allSections.filter(s => secs.has(s) || (scopeSecs.length && inSectionScope(scopeSecs, s)));
+    return keep.length ? keep : allSections;
+  })();
 
   const handleExportCsv = () => {
     downloadCSV(

@@ -1063,6 +1063,13 @@ line_id: emp.line_id ?? ident.line_id
 - `WorkforceInsight` ตัวเลือกส่วนงานของ leader เดิมเหลือช่องเดียว แม้ถูกกำกับส่วนงานอื่นไว้
 - คนที่ **ไม่ผูกไลน์** (งานสนับสนุน) ยังตัดด้วยส่วนงานเหมือนเดิมทุกจอ — ไม่ถูกดึงเข้ามาเพิ่ม
 
-**ยังไม่กวาด (~10 ไฟล์ · รอบถัดไป):** `PmCoordination` · `OrderTrace` · `OjtTraining` (2 จุด) ·
-`QrLabels` · `EventLog` · `OEEAnalytics` · `Dashboard` · `ProductHistory` · `MachineDatabase` ·
-`Report` · `DailyPM` (ธง `restricted`)
+**กวาดรอบ 2 แล้ว (09/11):** `PmCoordination` · `QrLabels` · `OrderTrace` · `ProductHistory` ·
+`Dashboard` · `MachineDatabase` · `EventLog` · `OEEAnalytics` · `OjtTraining` (2 จุด: ส่วนงานที่เห็นได้
++ รายการอบรม) · `DailyPM` (ธง `restricted`) · `Report` (แท็บ OT — 1 จุดจาก 21)
+
+**ยังเหลือ (รอบ 3):**
+- 🔴 **`Report.jsx` อีก 20 จุด** — ไฟล์ใหญ่หลายแท็บ (OT · เช็คชื่อ · สถานี · รายคน · 4M …)
+  แต่ละจุดคนละรูป (กรองแถว · ลิสต์ไลน์ · ลิสต์ส่วนงาน · `q.in('line_id', …)`)
+  ⇒ ควรทำเป็นคอมมิทของตัวเอง + เพิ่ม hook ขอบเขตตัวเดียวในไฟล์ แล้วให้ทุกแท็บเรียกตัวนั้น
+- `Checkin.jsx` (4 จุด) · `ProductionPlan.jsx` · `MtnRepair.jsx` · `Improvements.jsx` ·
+  `components/WipBetweenSteps.jsx` · (`components/LineSelect.jsx` = ของกลาง **ถูกต้องแล้ว ห้ามแตะ**)

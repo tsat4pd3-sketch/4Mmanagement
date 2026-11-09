@@ -12,7 +12,7 @@ import ShiftTimeSplit from '../components/ShiftTimeSplit';
 import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLines as scopedLinesOf } from '../utils/sectionScope';
 import { canAccessPage } from '../utils/permissions';
 import { buildScheduleMaps, resolveAssignedShift, shiftFromTeam, lineScheduleTeam } from '../utils/shiftAssign';
 import { getLineFamilyNames, sortLineNames } from '../utils/lineHierarchy';
@@ -195,7 +195,7 @@ export default function Dashboard({ view = 'timeline' }) {
   const now = useNow();
   // scope ตาม user (คำสั่ง user 2026-07-12: "filter ได้ก็ไม่มีปัญหา ถ้าไม่ใช้ก็เหมือนไม่ filter")
   // — leader เห็นเฉพาะ family ไลน์ตัวเอง · role ที่มี sections เห็นเฉพาะ section ตัวเอง · ที่เหลือเห็นหมดเหมือนเดิม
-  const { role, lineId: userLineId, sections: scopeSecs } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs, scopeIdx } = useContext(UserContext);
   const isMobile = useIsMobile();
   const vw = useWidth();
   const isWide = vw >= 1280;   // desktop / laptop
@@ -705,16 +705,12 @@ export default function Dashboard({ view = 'timeline' }) {
   const [lineSeed] = useState(() => (urlParam('bline') || '').split(',').map(x => x.trim()).filter(Boolean));
   const lineSeedKey = lineSeed.join(',');
   const scopeActive = (role === 'leader' && !!userLineId) || (scopeSecs?.length > 0) || lineSeed.length > 0;
+  /* 🔭 ของกลาง `scopedLines()` (QC audit 09/11 · กวาดรอบ 2) — สูตรเดิมในหน้าแคบกว่าที่ `profiles`
+     ตั้งไว้ (leader ได้ครอบครัวไลน์ล้วน · ไม่รู้จัก `scopeIdx`) · ตาข่าย "ไม่เหลือ = ไม่กรอง" คงไว้ */
   const roleScopedLines = useMemo(() => {
-    if (role === 'leader' && userLineId) {
-      // เทียบ id ด้วย String() — lineId จาก profile อาจเป็นคนละ type กับ production_lines.id (pattern เดียวกับ EventLog)
-      const myLine = lines.find(l => String(l.id) === String(userLineId));
-      const fam = new Set(myLine ? getLineFamilyNames(lines, myLine.name) : []);
-      return fam.size ? lines.filter(l => fam.has(l.name)) : lines;
-    }
-    if (scopeSecs?.length) return lines.filter(l => inSectionScope(scopeSecs, l.section));
-    return lines;
-  }, [lines, role, userLineId, scopeSecs]);
+    const out = scopedLinesOf({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
+    return out.length ? out : lines;
+  }, [lines, role, userLineId, scopeSecs, scopeIdx]);
   // ไลน์จากลิงก์ = แคบลงจากขอบเขตของบัญชี (ห้ามขยายเกิน — จอ PD1 ตั้งไลน์ PD3 = ไม่เห็น)
   const scopedLines = useMemo(() => {
     if (!lineSeed.length) return roleScopedLines;
