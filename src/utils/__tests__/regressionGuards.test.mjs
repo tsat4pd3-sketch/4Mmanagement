@@ -7244,6 +7244,10 @@ test('🪪 employee-identity-single-entry — ทุกจุดที่ insert
     if (!/from\(['"]employees['"]\)\s*\.?\s*\n?\s*\.insert\(/.test(src.replace(/\s+/g, ' ')
       .replace(/from\('employees'\) \.insert\(/g, "from('employees').insert("))) continue;
     if (!/newEmployeeRow\(/.test(src)) bad.push(f.replace(ROOT + '/', ''));
+    /* 🔁 09/11: รหัสซ้ำต้องถูกถามก่อน insert และแปล 23505 เป็นข้อความคน — ห้ามพ่นชื่อ constraint ให้คนอ่าน
+       (PD2 เพิ่ม 3 คนที่มีอยู่แล้วแต่ตัวเองมองไม่เห็น ⇒ ตันที่ "employees_employee_id_code_key") */
+    if (!/findEmployeeByCode\(/.test(src)) bad.push(f.replace(ROOT + '/', '') + ' (ไม่ถาม findEmployeeByCode ก่อน insert)');
+    if (!/isDuplicateEmployeeError\(/.test(src)) bad.push(f.replace(ROOT + '/', '') + ' (ไม่แปล 23505 ด้วย isDuplicateEmployeeError)');
   }
   assert.deepEqual(bad, [], '\n\n❌ ไฟล์ที่ insert employees เองโดยไม่ผ่าน newEmployeeRow(): ' + bad.join(', ') + '\n'
     + '   ทำไม: ชุดฟิลด์จะแยกกันทันทีที่เพิ่มคอลัมน์ใหม่ — ทางที่ลืมเขียนจะตกไปที่ default เงียบๆ\n'
