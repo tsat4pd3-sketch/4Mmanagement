@@ -49,8 +49,10 @@ export function useMatIndex() {
  * @param {number} [size]     ฟอนต์ของเลข MAT (default 12 · ขั้นต่ำจอ TV 11 ตาม UI §4)
  * @param {boolean} [showPartNo] ปิดได้เมื่อที่แคบจริงๆ (default true)
  * @param {object} [style]    style เพิ่มของกล่องนอก
+ * @param {boolean} [oneLine] บรรทัดเดียวเสมอ — ชื่อ/คำบรรยายหดแล้วตัด … · รหัสยังไม่ตัด (default false = พฤติกรรมเดิม)
+ *                            ใช้ในแถวย่อที่สูงต้องคงที่ (ใบผลิตที่ย่อใน Daily Report · 09/11)
  */
-export default function MatLabel({ mat, name, pNo, size = 12, showPartNo = true, style }) {
+export default function MatLabel({ mat, name, pNo, size = 12, showPartNo = true, style, oneLine = false }) {
   const index = useMatIndex();
   const i = matInfo(mat, index, { name, pNo });
   if (!i.mat) return null;
@@ -71,7 +73,7 @@ export default function MatLabel({ mat, name, pNo, size = 12, showPartNo = true,
   const subIsText = lead !== 'pno' && !!sub;                 // คำบรรยาย ไม่ใช่ชื่อสั้นๆ
   const headIsCode = lead === 'pno';                         // หัวเป็นรหัสจริง ⇒ ห้ามตัด
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, flexWrap: 'wrap', minWidth: 0, ...style }}>
+    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5, flexWrap: oneLine ? 'nowrap' : 'wrap', minWidth: 0, ...style }}>
       {head && (
         <span title={headIsCode ? 'Part No. ของลูกค้า' : 'ชื่อชิ้นงาน / สเปควัตถุดิบ'}
           style={{ fontSize: size, fontWeight: 700, color: 'var(--text2)', minWidth: 0,
@@ -81,7 +83,8 @@ export default function MatLabel({ mat, name, pNo, size = 12, showPartNo = true,
       )}
       {sub && (
         <span title={sub} style={{ fontSize: small, color: 'var(--muted)', minWidth: 0,
-          ...(subIsText ? { maxWidth: '24ch', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : null) }}>
+          ...(subIsText ? { maxWidth: '24ch', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : null),
+          ...(oneLine ? { flex: '0 1 auto', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } : null) }}>
           {head ? `· ${sub}` : sub}
         </span>
       )}

@@ -458,6 +458,7 @@ model: inherit
   · QA คัดลอกจุดตรวจข้ามพาร์ท: แถวผ่าน `qaItemCopyRow()` · ไฟล์ต้อง `storage.copy` เข้า `parts/<ปลายทาง>/` — grep insert `image_path`/`drawing_url` ของพาร์ทอื่นตรงๆ = ผิด
 - **F-icon-orphan (2026-11-09)** ไอคอนหายเงียบ: U+FE0F ที่ไม่มี emoji นำหน้า (ซากสคริปต์ตัด emoji) + ปุ่มไอคอนล้วนที่ข้างในเหลือแค่ `<ToggleDot>`/ไม่มีอะไร = กล่องเปล่า
   — grep `['"\s]\uFE0F` · ด่าน `orphan-emoji-variation-selector` · การ์ดใน grid ที่ชื่อ `nowrap` ใช้ `repeat(N, 1fr)` เปล่า = คอลัมน์ถ่างตามชื่อ → ต้อง `minmax(0, 1fr)` (UI §7.1)
+- **F-dr-live-fold (2026-11-09)** `/daily-report` Live desktop: แถวย่อใบผลิตต้องยังโชว์ ⚠ ยอดไม่อัพเดท / ➡ ยกยอดมา / สถานะ (ด่าน `dr-order-fold-keeps-alerts`) · ปุ่ม Prod Orders 4 ตัว = ข้อยกเว้น ≤2 ปุ่มที่ user เลือก ห้ามรายงานเป็นการละเมิด
 
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่

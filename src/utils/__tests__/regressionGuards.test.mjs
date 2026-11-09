@@ -8000,6 +8000,23 @@ test('📊 mat-breakdown-default-collapsed — แท็บ Live ต้องข
     + '\n\n   ไลน์ที่มี 10 MAT.NO = ภาพรวมของกะถูกดันตกจอ · 📄 docs/modules/daily-report.md\n');
 });
 
+test('📏 dr-order-fold-keeps-alerts — แถวย่อใบผลิต (Live desktop) ต้องยังเห็นสัญญาณเตือน', () => {
+  /* 09/11: ใบที่เปิดอยู่ย่อเป็นแถวบรรทัดเดียว (แผงสูง 1,842 → 773px) — ย่อแล้วถ้าตัดป้ายเตือนทิ้ง
+     ใบ manual ที่ไม่มีใครอัพเดทยอดเกิน 2.5 ชม. จะหายเงียบจนปิดกะ (เดิมเห็นจากขอบเหลือง + ⚠ บนการ์ด) */
+  const DR = 'src/pages/DailyReport.jsx';
+  const code = stripComments(readFileSync(join(ROOT, DR), 'utf8'));
+  const i = code.indexOf('if (!isOrderExpanded) return (');
+  const bad = [];
+  if (i < 0) bad.push(`${DR}: หาแถวย่อใบผลิต (if (!isOrderExpanded) return) ไม่เจอ — เปลี่ยนโครงแล้วต้องแก้ด่านนี้`);
+  else {
+    const row = code.slice(i, code.indexOf('\n                  );', i));
+    if (!/manualStale/.test(row)) bad.push(`${DR}: แถวย่อต้องโชว์ ⚠ ยอดไม่อัพเดท (manualStale)`);
+    if (!/isCarried/.test(row)) bad.push(`${DR}: แถวย่อต้องโชว์ ➡ ยกยอดมา (isCarried)`);
+    if (!/statusLabel/.test(row)) bad.push(`${DR}: แถวย่อต้องโชว์สถานะใบ (statusLabel)`);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ') + '\n\n   📄 docs/modules/daily-report.md §แท็บ Live — จัดหน้า desktop\n');
+});
+
 test('🚨 andon-bar-mobile — แถบ Andon ลอยต้องอ่านออก + กดรับทราบได้บนมือถือ', () => {
   /* 05/11 (mobilesweep @390px ที่ /heijunka): แถบ "📦 ไลน์เรียกของ" เป็น flex แถวเดียว nowrap
      ไอคอน 27 + ชิปเปิดเสียง 99 + ปุ่ม 118 + ปุ่ม 133 = 377px > กล่อง 374px
