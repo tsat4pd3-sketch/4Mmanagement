@@ -5,7 +5,7 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
-import { inSectionScope } from '../utils/sectionScope'
+import { inSectionScope, lineScope } from '../utils/sectionScope'
 import { getLineFamilyNames } from '../utils/lineHierarchy'
 import { computePlanForecast } from '../lib/pmPredictive'
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar'
@@ -34,7 +34,7 @@ function todayBangkok() {
 function fmtThai(d) { return d ? d.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: 'short', year: '2-digit' }) : '—' }
 
 export default function PmForecast() {
-  const { role, lineId, sections: scopeSecs } = useContext(UserContext)
+  const { role, lineId, sections: scopeSecs, scopeIdx } = useContext(UserContext)
   const canManage = can('pm', 'setup', role)
   const canCoord = can('pm_coord', 'manage', role)
   const navigate = useNavigate()
@@ -150,15 +150,13 @@ export default function PmForecast() {
         const f = computePlanForecast(plan, { accumUsage, dailyRate: dailyRateVal, todayStr })
         out.push({ plan, line, section: lineArr.find(l => l.name === line)?.section || null, eqName: jig?.name || cl?.name || '-', rateSource, ...f })
       }
-      // scope: leader = family ไลน์ตัวเอง · role อื่นตาม sections
-      let scoped = out
-      if (role === 'leader' && lineId) {
-        const self = lineArr.find(l => l.id === lineId)
-        const fam = self ? new Set(getLineFamilyNames(lineArr, self.name)) : new Set()
-        scoped = out.filter(r => fam.has(r.line))
-      } else if (scopeSecs?.length) {
-        scoped = out.filter(r => !r.section || inSectionScope(scopeSecs, r.section))
-      }
+      /* 🔭 ขอบเขตจากของกลาง `lineScope()` (QC audit 09/11) — สูตรเดิมที่นี่ให้ leader เห็นแค่
+         ครอบครัวไลน์ตัวเอง = แคบกว่าที่ `profiles` ตั้งไว้ · แถวที่ไม่รู้ไลน์ยังไม่ถูกตัด (เหมือนเดิม) */
+      const sc = lineScope({ role, lineId, sections: scopeSecs, lines: lineArr, scopeIdx })
+      const scoped = sc.unlimited ? out : (() => {
+        const names = new Set(sc.names)
+        return out.filter(r => !r.line || names.has(r.line))
+      })()
       scoped.sort((a, b) => (a.daysTo ?? 9999) - (b.daysTo ?? 9999))
       setRows(scoped)
       setNoLineN(noLine)

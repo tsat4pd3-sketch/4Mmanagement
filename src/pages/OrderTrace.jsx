@@ -5,7 +5,7 @@ import { useMergeParams } from '../utils/useTabParam';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, lineScope } from '../utils/sectionScope';
 import { getLineFamilyNames, lineNameCompare } from '../utils/lineHierarchy';
 import { stdGroupOf } from '../utils/stdManpower';
 import CollapseCard from '../components/CollapseCard';
@@ -71,7 +71,7 @@ const chip = (bg, fg) => ({ display: 'inline-block', padding: '2px 10px', border
    — ตอนนี้มีผู้ใช้ 2 ที่ (หน้านี้ + ลูปปิด 8D→PE) ต้องนิยามที่เดียว เพิ่มคำใหม่แก้ที่ util */
 
 export default function OrderTrace() {
-  const { role, lineId, sections } = useContext(UserContext);
+  const { role, lineId, sections, scopeIdx } = useContext(UserContext);
   // 2 ทางเข้าของการสอบกลับ: รู้เลขใบ (order) ↔ รู้แต่อาการ (symptom)
   const [tab, setTab] = useTabParam(['order', 'symptom'], 'order');
   const scopeSecs = sections || [];
@@ -119,14 +119,12 @@ export default function OrderTrace() {
   }, []);
 
   // scope ไลน์ (pattern มาตรฐาน: leader = family ตัวเอง · role อื่น = ตาม sections)
+  /* 🔭 ของกลาง `lineScope()` (QC audit 09/11 · กวาดรอบ 2) — สูตรที่เคยก๊อปไว้ในหน้าให้ leader
+     เห็นแค่ครอบครัวไลน์ตัวเอง = แคบกว่าที่ `profiles` ตั้งไว้ (กฎ 26/10) และไม่รู้จัก `scopeIdx` */
   const scopeLineNames = useMemo(() => {
-    if (role === 'leader' && lineId) {
-      const me = lines.find(l => String(l.id) === String(lineId));
-      return me ? new Set(getLineFamilyNames(lines, me.name).map(n => n.toLowerCase())) : null;
-    }
-    if (scopeSecs.length) return new Set(lines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name.toLowerCase()));
-    return null;
-  }, [role, lineId, lines, scopeSecs]);
+    const r = lineScope({ role, lineId, sections: scopeSecs, lines, scopeIdx });
+    return r.unlimited ? null : new Set(r.names.map(n => String(n).toLowerCase()));
+  }, [role, lineId, lines, scopeSecs, scopeIdx]);
   const inScope = useCallback(ln => !scopeLineNames || scopeLineNames.has((ln || '').toLowerCase()), [scopeLineNames]);
 
   /* สรุปภาพรวมของ "ใบที่ค้นเจอ" — ให้เห็นข้อมูลก่อนคลิกเลือกใบ

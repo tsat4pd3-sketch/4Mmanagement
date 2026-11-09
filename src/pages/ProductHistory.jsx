@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useContext, useCallback, useRef, Fragment } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, lineScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import CollapseCardBase from '../components/CollapseCard';
 import PageHeader from '../components/PageHeader';
@@ -37,7 +37,7 @@ const card = { background: 'var(--card)', border: '1px solid var(--border)', bor
 const CollapseCard = (props) => <CollapseCardBase storePrefix="ph" {...props} />;
 
 export default function ProductHistory() {
-  const { role, lineId, sections } = useContext(UserContext);
+  const { role, lineId, sections, scopeIdx } = useContext(UserContext);
   const scopeSecs = sections || [];
 
   const [products, setProducts] = useState([]);
@@ -73,14 +73,12 @@ export default function ProductHistory() {
   }, []);
 
   // ไลน์ที่อยู่ใน scope ของผู้ใช้ (leader = family ตัวเอง · role อื่น = ตาม sections · ไม่มี scope = ทั้งหมด)
+  /* 🔭 ของกลาง `lineScope()` (QC audit 09/11 · กวาดรอบ 2) — สูตรที่เคยก๊อปไว้ในหน้าให้ leader
+     เห็นแค่ครอบครัวไลน์ตัวเอง = แคบกว่าที่ `profiles` ตั้งไว้ (กฎ 26/10) และไม่รู้จัก `scopeIdx` */
   const scopeLineNames = useMemo(() => {
-    if (role === 'leader' && lineId) {
-      const me = lines.find(l => String(l.id) === String(lineId));
-      return me ? new Set(getLineFamilyNames(lines, me.name).map(n => n.toLowerCase())) : null;
-    }
-    if (scopeSecs.length) return new Set(lines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name.toLowerCase()));
-    return null; // ไม่จำกัด
-  }, [role, lineId, lines, scopeSecs]);
+    const r = lineScope({ role, lineId, sections: scopeSecs, lines, scopeIdx });
+    return r.unlimited ? null : new Set(r.names.map(n => String(n).toLowerCase()));
+  }, [role, lineId, lines, scopeSecs, scopeIdx]);
 
   /* พี่น้องในกลุ่มเดียวกัน = p_no ตรงกัน (normalize ขีด/ช่องว่าง) · ไม่มี p_no = อยู่ตัวเดียว */
   const normPn = (v) => String(v ?? '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();

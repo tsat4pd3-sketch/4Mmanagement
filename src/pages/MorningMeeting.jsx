@@ -144,14 +144,11 @@ export default function MorningMeeting() {
      (`ReferenceError: Cannot access 'scopedLines' before initialization` — เกิดจริง 25-26/10
       กับทุกบัญชีที่ไม่ใช่ leader และมีขอบเขตส่วนงาน · crashsweep จับไม่ได้เพราะ mock ใช้ `sections: []`)
      ⇒ เรียกของกลางผ่านชื่อ alias เสมอ · มีด่าน `no-shadowed-import-call` */
-  const scopedLines = useMemo(() => {
-    if (role === 'leader' && userLineId) {
-      const fam = new Set(getLineFamilyNames(allLines, userLineId));
-      return allLines.filter(l => fam.has(l.name));
-    }
-    if (scopeSecs.length) return scopedLinesOf({ role, lineId: userLineId, sections: scopeSecs, lines: allLines, scopeIdx });
-    return allLines;
-  }, [allLines, role, userLineId, scopeSecs, scopeIdx]);
+  /* 🔭 ของกลาง `scopedLines()` ตัวเดียว (QC audit 09/11) — สูตรที่เคยก๊อปไว้ที่นี่ให้ leader
+     เห็นแค่ครอบครัวไลน์ตัวเอง = แคบกว่าที่ `profiles` ตั้ง (กฎ 26/10: ไลน์ตัวเอง ∪ ส่วนงานที่กำกับ) */
+  const scopedLines = useMemo(
+    () => scopedLinesOf({ role, lineId: userLineId, sections: scopeSecs, lines: allLines, scopeIdx }),
+    [allLines, role, userLineId, scopeSecs, scopeIdx]);
 
   // ส่วนงานในตัวเลือก: ยึดผังองค์กรก่อน (กรองตาม scope) → fallback เดาจาก production_lines เมื่อผังยังว่าง
   const sectionOpts = useMemo(() => {

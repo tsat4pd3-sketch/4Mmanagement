@@ -21,7 +21,7 @@ import LineSelect from '../components/LineSelect';
 import LineScopeSelect from '../components/LineScopeSelect';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { useOrgTeams } from '../utils/useOrgSections';
-import { inSectionScope, scopeAnchorless } from '../utils/sectionScope';
+import { inSectionScope, scopeAnchorless, lineScope } from '../utils/sectionScope';
 import { buildScheduleMaps, resolveAssignedShift, teamsVisibleToLeader } from '../utils/shiftAssign';
 import { roleLabel } from '../utils/roleMeta';
 import { getDocForm, fullCode } from '../utils/docForms';
@@ -323,9 +323,14 @@ export default function Checkin() {
     /* 🔴 ด่านขอบเขต 2 แกน — **แกนไลน์กับแกนส่วนงานต้องเป็นลำดับ ห้ามเป็น else-if** (19/10)
        เดิมเขียน `if (leader) {…} else if (sections)` ⇒ leader ที่บัญชีไม่มี `line_id`
        หลุดทั้งสองด่าน = เห็นพนักงานทั้งโรงงานเงียบๆ (ดู scopeAnchorless ใน sectionScope.js) */
-    const famIdsQ = (role === 'leader' && lineId) ? getLineFamilyIds(lineData || [], Number(lineId)) : null;
-    if (famIdsQ) {
-      empQ = famIdsQ.size ? empQ.in('line_id', [...famIdsQ]) : empQ.eq('line_id', lineId);
+    /* 🔭 แกนไลน์มาจากของกลาง `lineScope()` (QC audit 09/11 · กวาดรอบ 3) — เดิมคิดเองในหน้า
+       ⇒ leader ได้ครอบครัวไลน์ล้วน (ไม่รวมส่วนงานที่กำกับ) และไม่รู้จัก `scopeIdx`
+       🔴 ลำดับ 2 แกนยังเหมือนเดิมเป๊ะ (ไม่มีไลน์ในขอบเขต = ถอยไปแกนส่วนงาน ห้ามเป็น else-if ของ role) */
+    const scQ = lineScope({ role, lineId, sections: scopeSecs, lines: lineData || [], scopeIdx });
+    const famIdsQ = scQ.unlimited ? null
+      : new Set((lineData || []).filter(l => new Set(scQ.names).has(l.name)).map(l => l.id));
+    if (famIdsQ && famIdsQ.size) {
+      empQ = empQ.in('line_id', [...famIdsQ]);
     } else if (scopeSecs.length) {
       /* ทุก role ที่ถูกจำกัดขอบเขต (supervisor เดิม + manager/qa ที่กำหนด sections)
          · รวม leader ที่ยังไม่ผูกไลน์ (เช่นรักษาการหลายหน่วย) — ถอยมาใช้แกนนี้แทน
@@ -392,12 +397,10 @@ export default function Checkin() {
 
     const lineById = Object.fromEntries((lineData || []).map(l => [l.id, l]));
     const inMyScope = (toLineId) => {
-      if (role === 'leader' && lineId) {   // ไม่มีไลน์ = ตกไปใช้แกนส่วนงานข้างล่าง (19/10)
-        const fam = getLineFamilyIds(lineData || [], Number(lineId));
-        return fam.size ? fam.has(toLineId) : toLineId === Number(lineId);
-      }
+      /* 🔭 ของกลางชุดเดียวกับคิวรีหลัก — ไม่มีไลน์ในขอบเขต = ถอยไปแกนส่วนงาน (19/10) */
+      if (famIdsQ && famIdsQ.size) return famIdsQ.has(toLineId);
       if (scopeSecs.length) return inSectionScope(scopeSecs, lineById[toLineId]?.section);
-      return true;
+      return !famIdsQ;        // ไม่จำกัด = true · มีขอบเขตแต่ไม่มีไลน์เลย = false (fail-closed เดิม)
     };
     const helperIn = helperData.filter(h => inMyScope(h.to_line_id));
     const helperByEmp = Object.fromEntries(helperIn.map(h => [h.employee_id, h]));
@@ -990,9 +993,12 @@ export default function Checkin() {
       let empQ = supabase.from('employees').select('id, employee_id_code, name, position, line_id, section, staff_kind').eq('is_active', true).order('employee_id_code');
       // mandatory scope filter ก่อน แล้วค่อยกรองตามส่วนงานที่เลือกใน modal (pattern เดียวกับ fetchData)
       // 🔴 ลำดับเดียวกับ fetchData — ห้าม else-if (leader ไม่มีไลน์ต้องถอยมาใช้ส่วนงาน · 19/10)
-      const famIdsX = (role === 'leader' && lineId) ? getLineFamilyIds(lines, Number(lineId)) : null;
-      if (famIdsX) {   // ทั้งครอบครัวไลน์ (ตัวเอง + แม่ + ลูก) — ห้ามกรอง line_id ตรงตัว
-        empQ = famIdsX.size ? empQ.in('line_id', [...famIdsX]) : empQ.eq('line_id', lineId);
+      /* 🔭 ของกลางชุดเดียวกับ fetchData (กวาดรอบ 3) — ลำดับ 2 แกนเหมือนเดิม */
+      const scX = lineScope({ role, lineId, sections: scopeSecs, lines, scopeIdx });
+      const famIdsX = scX.unlimited ? null
+        : new Set((lines || []).filter(l => new Set(scX.names).has(l.name)).map(l => l.id));
+      if (famIdsX && famIdsX.size) {   // ทั้งครอบครัวไลน์ (ตัวเอง + แม่ + ลูก) — ห้ามกรอง line_id ตรงตัว
+        empQ = empQ.in('line_id', [...famIdsX]);
       } else if (scopeSecs.length) {
         const orX = empScopeOrFilter(viewScope, scopeLineIds(viewScope, lines || []));
         if (orX) empQ = empQ.or(orX);
@@ -1190,9 +1196,12 @@ export default function Checkin() {
   // กรอง dropdown ตาม scope (leader→family · role อื่น→sections · admin/qa→ทั้งหมด) — กันเห็นส่วนงาน/ไลน์ข้าม scope
   const sectionsAll = orgSections.length ? orgSections : sortLike(lines.map(l => l.section), orgSections);
   const sections = scopeSecs.length ? sectionsAll.filter(s => inSectionScope(scopeSecs, s)) : sectionsAll;
-  const famIds = (role === 'leader' && lineId) ? getLineFamilyIds(lines, lineId) : null;
-  const scopedLines = famIds ? lines.filter(l => famIds.has(l.id))
-    : scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines;
+  /* 🔭 ของกลาง (กวาดรอบ 3) — ลิสต์ไลน์ใน dropdown = ขอบเขตเดียวกับข้อมูล */
+  const scopeDrop = lineScope({ role, lineId, sections: scopeSecs, lines, scopeIdx });
+  const scopedLines = scopeDrop.unlimited ? lines
+    : (lines.filter(l => new Set(scopeDrop.names).has(l.name)).length
+      ? lines.filter(l => new Set(scopeDrop.names).has(l.name))
+      : (scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines));
   const linesForSection = selSection ? scopedLines.filter(l => l.section === selSection) : scopedLines;
 
   // เลือกไลน์ = มองแบบเป็นขั้น (hierarchy): ไลน์หลักเห็นรวมพนักงานของไลน์ย่อยทุกไลน์,

@@ -10,7 +10,7 @@ import { invalidateTable } from '../utils/masterInvalidate';
 import { toast } from '../components/Toast';
 import { can, canDelete as canDeleteUtil } from '../utils/permissions';
 import { EQUIPMENT_KINDS, kindOf, kindLabel, kindIcon } from '../utils/equipmentKinds';   // แม่พิมพ์/จิ๊กไม่ใช่เครื่องจักร — กรองแยกกัน
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLines as scopedLinesOf } from '../utils/sectionScope';
 import { getAncestorNames, getLineFamilyNames, lineNameCompare } from '../utils/lineHierarchy';
 import { loadMachineTraits, activeAutomationLevels, activeOperationModes, automationDisplay, operationDisplay } from '../utils/machineTraits';
 import EmojiPicker from '../components/EmojiPicker';
@@ -74,7 +74,7 @@ const TYPE_COLORS  = ['#4d9fff', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#e
    MAIN PAGE
 ═══════════════════════════════════════════════════════════════ */
 export default function MachineDatabase() {
-  const { role, lineId: userLineId, sections: scopeSecs } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs, scopeIdx } = useContext(UserContext);
   const canCreate = can('machines', 'create', role);
   const canEdit   = can('machines', 'edit', role);
   /* 🖥️🔴 ต้องผ่าน `canDelete()` ของกลาง (utils/permissions.js) — เดิมประกาศตัวแปรชื่อ `canDelete`
@@ -181,16 +181,12 @@ export default function MachineDatabase() {
 
   // mandatory scope filter (คำสั่ง user 2026-07-12) — leader = family ไลน์ตัวเอง, มี sections = เฉพาะ section ตัวเอง
   // user ไม่มี scope เห็นหมดเหมือนเดิม · กรองก่อน filter อิสระเสมอ (pattern มาตรฐาน CLAUDE.md)
+  /* 🔭 ของกลาง `scopedLines()` (QC audit 09/11 · กวาดรอบ 2) — สูตรเดิมในหน้าแคบกว่าที่ `profiles`
+     ตั้งไว้ (leader ได้ครอบครัวไลน์ล้วน · ไม่รู้จัก `scopeIdx`) · ตาข่าย "ไม่เหลือ = ไม่กรอง" คงไว้ */
   const scopedLines = useMemo(() => {
-    if (role === 'leader' && userLineId) {
-      // เทียบ id ด้วย String() — lineId จาก profile อาจเป็นคนละ type กับ production_lines.id (pattern เดียวกับ EventLog)
-      const myLine = lines.find(l => String(l.id) === String(userLineId));
-      const fam = new Set(myLine ? getLineFamilyNames(lines, myLine.name) : []);
-      return fam.size ? lines.filter(l => fam.has(l.name)) : lines;
-    }
-    if (scopeSecs?.length) return lines.filter(l => inSectionScope(scopeSecs, l.section));
-    return lines;
-  }, [lines, role, userLineId, scopeSecs]);
+    const out = scopedLinesOf({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
+    return out.length ? out : lines;
+  }, [lines, role, userLineId, scopeSecs, scopeIdx]);
   const scopedLineNames = useMemo(() => new Set(scopedLines.map(l => l.name)), [scopedLines]);
   const scopeActive = scopedLines.length !== lines.length;
 

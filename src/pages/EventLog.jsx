@@ -10,7 +10,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { fmtDate } from '../utils/dateFormat';
 import { can, canDelete as canDeleteUtil } from '../utils/permissions';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, lineScope } from '../utils/sectionScope';
 import { loadDocForms, withDocFoot, docFormSync, fullCode } from '../utils/docForms';
 import { xlsxDocName } from '../utils/csvDoc';
 loadDocForms(); // ทะเบียนเอกสาร — ใบพิมพ์/Excel CQI-15 อ่านเลขฟอร์มผ่าน docFormSync (2026-07-30)
@@ -98,7 +98,7 @@ function getApprovedAt(log) {
 
 /* ─── Main Component ─────────────────────────────────────────── */
 export default function EventLog() {
-  const { role, fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, fullName, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด (กฎข้อ 9) — เหตุผลเต็ม: ด่าน no-unstable-ref-in-db-effect-deps
   const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs]);
   const [tab, setTab] = useTabParam(['list', 'create'], 'list');   // โหมดหน้า (list ⇄ ฟอร์มบันทึก) ผูก ?tab=
@@ -140,15 +140,13 @@ export default function EventLog() {
     const { data: lineData } = await loadLinesRes();
     let scopedNames = null; // null = ไม่จำกัด (admin/qa/manager ที่ไม่ถูก scope)
     let visibleLines = lineData || [];
-    if (role === 'leader' && userLineId) {
-      const myLine = (lineData || []).find(l => String(l.id) === String(userLineId));
-      const fam = myLine ? getLineFamilyNames(lineData || [], myLine.name) : [];
-      const famSet = new Set(fam.map(norm));
-      scopedNames = fam;
-      visibleLines = visibleLines.filter(l => famSet.has(norm(l.name)));
-    } else if (scopeSecs.length) {
-      visibleLines = visibleLines.filter(l => inSectionScope(scopeSecs, l.section));
-      scopedNames = visibleLines.map(l => l.name);
+    /* 🔭 ของกลาง `lineScope()` (QC audit 09/11 · กวาดรอบ 2) — สูตรเดิมในหน้าให้ leader เห็นแค่
+       ครอบครัวไลน์ตัวเอง = แคบกว่าที่ `profiles` ตั้งไว้ (กฎ 26/10) และไม่รู้จัก `scopeIdx` */
+    const sc = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines: lineData || [], scopeIdx });
+    if (!sc.unlimited) {
+      const okSet = new Set(sc.names.map(norm));
+      scopedNames = sc.names;
+      visibleLines = visibleLines.filter(l => okSet.has(norm(l.name)));
     }
     let logQ = supabase.from('cqi15_event_logs')
       .select(`*, cqi15_event_definitions(*), cqi15_event_approvals(*, profiles(full_name)), profiles!cqi15_event_logs_reported_by_fkey(full_name)`)

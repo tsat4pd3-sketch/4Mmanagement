@@ -21,7 +21,7 @@ import { machineAssetsOnly, machineLaneCount, processUnionRows } from '../utils/
 loadProcessTypes(); // master กระบวนการ (data-driven) — dropdown/ป้ายในหน้านี้อ่านผ่าน sync cache
 import tsLogoUrl from '../assets/TS logo.png';
 import { can, canAccessPage, isSharedAccount } from '../utils/permissions';
-import { inSectionScope, scopedLines } from '../utils/sectionScope';
+import { inSectionScope, scopedLines, lineScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { fetchByIds } from '../utils/fetchByIds';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
@@ -313,7 +313,7 @@ export default function DailyReport() {
   /* ⏰ กะค้าง = แท็บของตัวเอง (2026-08-26 · user "live กะนี้ ไม่ควรโชว์กะค้าง — แยกแท็บไล่ปิดให้หัวหน้าแผนก")
      เดิม banner 37 กะกินครึ่งจอบนแท็บ Live จนกะที่กำลังทำงานอยู่ถูกดันลงไปข้างล่าง
      โหลดที่หน้าแม่เพราะ badge ต้องเห็นจากทุกแท็บ (ไม่งั้นสลับไปแท็บอื่นแล้วงานค้างหายไปจากสายตา) */
-  const stale = useStaleSessions({ role, lineId: userLineId, sections: scopeSecs });
+  const stale = useStaleSessions({ role, lineId: userLineId, sections: scopeSecs, scopeIdx });
   const staleOver = stale.rows.filter(o => o.age > STALE_SESSION_DAYS).length;
   // กดกะจากแท็บกะค้าง → สลับไป Live แล้วเลือกกะนั้นให้เลย (ไม่งั้นต้องไปไล่หาในลิสต์ 51 กะเอง)
   const [focusSess, setFocusSess] = useState(null);
@@ -745,18 +745,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
        เคสจริง: ทะเบียนไลน์โหลดพลาด (`ln` ว่าง) ⇒ หัวหน้า LWR เห็นกะทุกไลน์ **แต่เปิดกะไลน์ตัวเองไม่ได้**
        (รายการ fail-open · ช่องเลือก fail-closed — สาเหตุเดียวกัน ออกอาการคนละทาง)
        ⇒ กรองด้วยไลน์ไม่ได้ = **ต้องถอยไปกรองด้วยส่วนงาน ห้ามปล่อยผ่าน** */
+    /* 🔭 ขอบเขตมาจากของกลาง `lineScope()` (QC audit 09/11) — เดิมเขียนสูตร leader เองที่นี่
+       (ครอบครัวไลน์ล้วน · ไม่รู้จัก scopeIdx) ⇒ แคบกว่าที่ `profiles` ตั้งไว้
+       🔴 ตาข่ายเดิมยังอยู่: ดันขอบเขตเข้า query ไม่ได้ = **ถอยไปกรองด้วยส่วนงาน ห้ามปล่อยผ่าน** */
+    const scLive = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines: ln || [], scopeIdx });
     let scopedByLine = false;
-    if (role === 'leader' && userLineId) {
-      const myLine = (ln || []).find(l => l.id === userLineId);
-      if (myLine) {
-        const children = pcm[myLine.name];
-        if (children?.length) {
-          sq = sq.in('line_name', [myLine.name, ...children]);
-        } else {
-          sq = sq.eq('line_name', myLine.name);
-        }
-        scopedByLine = true;
-      }
+    if (!scLive.unlimited && scLive.names.length) {
+      sq = sq.in('line_name', scLive.names);
+      scopedByLine = true;
     }
 
     let { data: ss } = await sq;
@@ -769,7 +765,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       });
     }
     /* ชี้ไลน์ตัวเองไม่ได้ = จอกำลังโชว์กว้างกว่าที่ควร — ห้ามเงียบ (กฎความซื่อสัตย์ของจอ) */
-    setScopeUnsure(role === 'leader' && !!userLineId && !scopedByLine);
+    setScopeUnsure((scLive.unsure || (role === 'leader' && !!userLineId)) && !scopedByLine);
 
     /* กะค้าง (open/pending_close ของวันก่อนๆ) โหลดที่หน้าแม่ผ่าน useStaleSessions — ไม่ query ซ้ำที่นี่
        แต่ต้องสั่งรีเฟรชด้วย เพราะ load() ถูกเรียกทุกครั้งที่กะเปลี่ยน (ปิดกะ/อนุมัติ/realtime)
@@ -819,10 +815,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   }, [sessions]);
 
   // ไลน์ที่เปิดกะได้ตาม scope (leader→family · role อื่น→sections · admin/qa→null=ทั้งหมด) — กันเปิดกะไลน์ข้ามส่วนงาน
+  /* 🔭 ของกลาง `lineScope()` (QC audit 09/11) — เดิม leader ได้ครอบครัวไลน์ล้วน
+     ทั้งที่ profiles อาจกำกับส่วนงานเพิ่มไว้ (กฎ 26/10) · `null` = ไม่จำกัด (ความหมายเดิม) */
   const openScopeLineNames = useMemo(() => {
-    if (role === 'leader' && userLineId) return new Set(getLineFamilyNames(lines, Number(userLineId) || userLineId));
-    if (scopeSecs.length) return new Set(scopedLines({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx }).map(l => l.name));
-    return null; // ไม่จำกัด
+    const r = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
+    return r.unlimited ? null : new Set(r.names);
   }, [role, userLineId, scopeSecs, lines, scopeIdx]);
 
   /* 🪧 ลิสต์ของช่องเลือกไลน์ = **ของกลาง `pickerLines()` เท่านั้น** (ด่าน `line-picker-never-dead`)
@@ -938,7 +935,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const { data: bins, error: binErr } = await supabaseDR.from('quality_bin_records')
       .select('bin, qty, defect_log_id').in('defect_log_id', ids).eq('is_active', true);
     if (isStaleSess(sessionId)) return;
-    if (binErr) { console.warn('[bin links]', binErr.message); setBinLinks({}); return; }
+    /* 🔴 เช็ค "ลงถังไปแล้วหรือยัง" ไม่ได้ = **ไม่รู้** (`null`) ห้ามตีเป็น `{}` = "ยังไม่ลงถังทุกแถว"
+       (QC audit 09/11) — ตีเป็น 0 ⇒ ชิป "🗑️ ยังไม่ลงถัง N" + ปุ่มในแถวกลับเป็น "ลงถัง"
+       ⇒ หน้างานกดสร้างใบถังซ้ำกับใบที่ระบบตั้งแท็กอัตโนมัติไว้แล้ว (05/11)
+       = คิวรีล่มแล้ว**จอชวนให้เขียนข้อมูลผิด** ไม่ใช่แค่โชว์ 0 */
+    if (binErr) { setSessLoadErr(e => ({ ...e, 'สถานะลงถัง': binErr.message })); setBinLinks(null); return; }
+    setSessLoadErr(e => (e['สถานะลงถัง'] ? { ...e, 'สถานะลงถัง': null } : e));
     const m = {};
     (bins || []).forEach(r => {
       if (!m[r.defect_log_id]) m[r.defect_log_id] = { yellow: 0, red: 0 };
@@ -2301,10 +2303,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const res = await supabaseDR.from('prod_orders').update(payload).eq('id', plan.partner.id).select('id');
     if (!checkWrite(res, `ลงยอดใบคู่ ${plan.partner.prod_no}`)) return;
     if (!(res.data || []).length) { toast.error(`ลงยอดใบคู่ ${plan.partner.prod_no} ไม่สำเร็จ — สิทธิ์เขียนไม่พอ`); return; }
-    await supabaseDR.from('prod_order_qty_updates')
-      .insert({ order_id: plan.partner.id, qty_accum: plan.to, qty_delta: plan.to - plan.from, is_final: close, logged_by: fullName })
-      .then(() => {}, () => {});
+    await logQtyUpdate({ order_id: plan.partner.id, qty_accum: plan.to, qty_delta: plan.to - plan.from, is_final: close, logged_by: fullName },
+      `ใบคู่ ${plan.partner.prod_no}`);
     toast.success(`ลงยอดใบคู่ ${plan.partner.prod_no} · ${plan.to} ชิ้น ✓`);
+  };
+
+  /** 📜 ประวัติการลงยอด (`prod_order_qty_updates`) = ร่องรอยว่าใครแก้ยอดเมื่อไหร่
+   *  best-effort (ยอดหลักเขียนไปแล้ว) แต่ **ห้ามเงียบ** — หายแล้วไม่มีใครรู้ว่าประวัติไม่ครบ
+   *  (QC audit 09/11 · เดิม `.then(() => {}, () => {})` ทั้ง 3 จุด) */
+  const logQtyUpdate = async (row, label) => {
+    const { error } = await supabaseDR.from('prod_order_qty_updates').insert(row);
+    if (error) toast.error(`ยอดบันทึกแล้ว แต่เก็บประวัติการลงยอด${label ? ` ${label}` : ''} ไม่สำเร็จ: ${error.message}`);
   };
 
   const handleManualQtyUpdate = async (o) => {
@@ -2321,12 +2330,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       return;
     }
     const delta = v - (o.qty_actual || 0);
-    const { error } = await supabaseDR.from('prod_orders')
-      .update({ qty_actual: v, qty_updated_at: new Date().toISOString() }).eq('id', o.id);
-    if (error) { toast.error(error.message); return; }
-    // log ประวัติต่อช่วง (best-effort — ประวัติพังไม่ทำให้ยอดหลักพัง)
-    await supabaseDR.from('prod_order_qty_updates')
-      .insert({ order_id: o.id, qty_accum: v, qty_delta: delta, logged_by: fullName }).then(() => {}, () => {});
+    /* 🔴 RLS/สิทธิ์ไม่พอ = "สำเร็จ 0 แถว ไม่มี error" ⇒ ต้องนับแถว (กฎเขียน DB ข้อ 2 · QC audit 09/11)
+       เดิมอ่านแค่ error แล้วขึ้น "อัพเดทยอดแล้ว ✓" ทั้งที่ยอดไม่ได้เปลี่ยน (ใบคู่ข้างล่างนับแถวอยู่แล้ว) */
+    const qres = await supabaseDR.from('prod_orders')
+      .update({ qty_actual: v, qty_updated_at: new Date().toISOString() }).eq('id', o.id).select('id');
+    if (!checkWriteRows(qres, `ลงยอดใบ ${o.prod_no || o.mat_no || ''}`.trim(),
+      { zeroMsg: 'ลงยอดไม่สำเร็จ (0 แถว — อาจมีคนปิดใบไปก่อน หรือสิทธิ์เขียนไม่พอ) · รีเฟรชแล้วลองใหม่' })) return;
+    // log ประวัติต่อช่วง (ยอดหลักเขียนไปแล้ว — ประวัติล้มไม่ย้อนยอด แต่ต้องบอกบนจอ)
+    await logQtyUpdate({ order_id: o.id, qty_accum: v, qty_delta: delta, logged_by: fullName }, o.prod_no || o.mat_no);
     toast.success(`อัพเดทยอด ${o.mat_no}: ${v}/${o.qty_target ?? o.qty} ชิ้น (${delta >= 0 ? '+' : ''}${delta} จากครั้งก่อน) ✓`);
     await syncPairQty(o, v);
     setManualQtyDraft(d => ({ ...d, [o.id]: '' }));
@@ -2346,14 +2357,21 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     if (finalQty < 0) { toast.error('ยอดผลิตจริงติดลบไม่ได้'); return; }
     if (!window.confirm(`ปิดใบ ${o.prod_no} (${o.mat_no}) ด้วยยอดผลิตจริง ${finalQty} ชิ้น?\nเป้าที่ตั้งไว้ ${o.qty_target ?? o.qty} ชิ้น`)) return;
     const nowIso = new Date().toISOString();
-    const { error } = await supabaseDR.from('prod_orders').update({
+    /* 🔴 CAS `.eq('status','open')` + นับแถว — 2 เครื่องกดปิดใบเดียวกันพร้อมกัน หรือ RLS ปฏิเสธ
+       = "สำเร็จ 0 แถว ไม่มี error" แล้วจอขึ้น "ปิดใบแล้ว ✓" ทั้งที่ยอดของอีกเครื่องถูกทับ/ไม่ได้เขียน
+       (ท่าเดียวกับปิดใบข้ามไลน์ `doCrossLineClose` · QC audit 09/11) */
+    const cres = await supabaseDR.from('prod_orders').update({
       status: 'confirmed', confirmed_by: fullName, confirmed_at: nowIso,
       qty: finalQty, qty_ok: finalQty, qty_actual: finalQty, qty_updated_at: nowIso,
-    }).eq('id', o.id);
-    if (error) { toast.error(error.message); return; }
+    }).eq('id', o.id).eq('status', 'open').select('id');
+    if (!checkWriteRows(cres, `ปิดใบ ${o.prod_no || o.mat_no || ''}`.trim(),
+      { zeroMsg: 'ปิดใบไม่สำเร็จ (0 แถว — ใบนี้อาจถูกปิดไปแล้วจากเครื่องอื่น) · รีเฟรชแล้วเช็คยอดก่อนทำซ้ำ' })) {
+      loadProdOrders(selSession.id, selSession.line_name);
+      return;
+    }
     // log แถวปิดใบ — เก็บส่วนต่างช่วงสุดท้ายไว้ในประวัติด้วย
-    await supabaseDR.from('prod_order_qty_updates')
-      .insert({ order_id: o.id, qty_accum: finalQty, qty_delta: finalQty - (o.qty_actual || 0), is_final: true, logged_by: fullName }).then(() => {}, () => {});
+    await logQtyUpdate({ order_id: o.id, qty_accum: finalQty, qty_delta: finalQty - (o.qty_actual || 0), is_final: true, logged_by: fullName },
+      `ปิดใบ ${o.prod_no || o.mat_no}`);
     toast.success(`ปิดใบ ${o.prod_no} · ${finalQty} ชิ้น ✓`);
     await syncPairQty(o, finalQty, { close: true });
     setManualQtyDraft(d => ({ ...d, [o.id]: '' }));
@@ -2468,10 +2486,37 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     }
   };
 
+  /* 🗑️ ลบรายการงานเสีย — ต้องจัดการ "ใบถัง" ที่ผูกอยู่ด้วย (QC audit 09/11)
+     FK `quality_bin_records.defect_log_id` เป็น **on delete set null** ⇒ ลบแถวงานเสียเฉยๆ =
+     เหลือ **ใบถังเหลืองกำพร้า** ที่ยัง `qa_decision is null` ค้างในคิว `/qa` + "คิวงานของฉัน" ตลอดไป
+     และชิป "จาก Daily Report" ก็หายไป ⇒ สืบไม่ได้ว่าใบนี้มาจากไหน
+     (ก่อน 05/11 แทบไม่มีใบถังผูกอยู่ ⇒ ไม่เคยออกอาการ · หลังเปิดแท็กอัตโนมัติ = ทุกแถวมีใบ)
+     🔴 อ่านใบถังไม่ได้ = ห้ามลบ (fail-closed) · 🔴 ใบที่ถูกพิจารณา/ออกใบขออนุมัติแล้ว = ห้ามลบเงียบ */
   const handleDeleteDefectLog = async (id) => {
-    if (!window.confirm('ลบรายการงานเสียนี้?')) return;
-    const { error } = await supabaseDR.from('defect_logs').delete().eq('id', id);
-    if (error) { toast.error(error.message); return; }
+    const { data: tied, error: tieErr } = await supabaseDR.from('quality_bin_records')
+      .select('id, bin, qty, qa_decision, return_date, scrap_report_id')
+      .eq('defect_log_id', id).eq('is_active', true);
+    if (tieErr) { toast.error(`เช็คใบถังที่ผูกกับรายการนี้ไม่ได้ (${tieErr.message}) — ยังลบไม่ได้`); return; }
+    const locked = (tied || []).filter(t => t.qa_decision || t.return_date || t.scrap_report_id || t.bin === 'red');
+    if (locked.length) {
+      toast.error(`ลบไม่ได้ — มีใบถัง ${locked.length} ใบที่ถูกพิจารณา/ย้ายลงถังแดง/ออกใบขออนุมัติแล้ว `
+        + 'ให้จัดการใบถังที่หน้าของเสียก่อน');
+      return;
+    }
+    const n = (tied || []).length;
+    if (!window.confirm(`ลบรายการงานเสียนี้?${n ? `\n\nใบถังเหลืองที่ระบบตั้งให้ ${n} ใบ จะถูกปิดไปพร้อมกัน` : ''}`)) return;
+    /* ปิดใบถังก่อนลบแถวต้นทาง — ลบก่อนแล้วปิดใบล้ม = ใบกำพร้าค้างถาวร (กู้ไม่ได้เพราะ FK เป็น null แล้ว) */
+    if (n) {
+      const bres = await supabaseDR.from('quality_bin_records')
+        .update({ is_active: false, note: 'ปิดอัตโนมัติ: รายการงานเสียต้นทางถูกลบ' })
+        .in('id', (tied || []).map(t => t.id)).select('id');
+      if (!checkWriteRows(bres, 'ปิดใบถังที่ผูกกับรายการงานเสีย',
+        { zeroMsg: 'ปิดใบถังไม่สำเร็จ (0 แถว) — ยังไม่ลบรายการงานเสีย เพื่อไม่ให้เหลือใบถังกำพร้า' })) return;
+    }
+    const dres = await supabaseDR.from('defect_logs').delete().eq('id', id).select('id');
+    if (!checkWriteRows(dres, 'ลบรายการงานเสีย',
+      { zeroMsg: 'ลบไม่สำเร็จ (0 แถว — อาจถูกลบไปแล้ว) · รีเฟรชแล้วเช็คอีกครั้ง' })) { loadDefectLogs(selSession.id); return; }
+    toast.success(n ? `ลบรายการงานเสียแล้ว · ปิดใบถัง ${n} ใบ` : 'ลบรายการงานเสียแล้ว');
     loadDefectLogs(selSession.id);
   };
 
@@ -4266,6 +4311,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       วัดจริง 90 วัน: ของเสีย 252 รายการ ผูกใบถังแค่ 46 (18%) ⇒ อีก 82% ไม่มีใครเห็นว่าค้าง
                       🔴 นับจาก `binLinks` ที่โหลดมาแล้วเท่านั้น (ไม่ยิง DB เพิ่ม) · 0 = ไม่วาดชิป */}
                   {(() => {
+                    /* 🔴 `binLinks === null` = เช็คสถานะไม่ได้ ⇒ ห้ามนับเป็น "ยังไม่ลงถัง" (จะชวนให้ลงซ้ำ) */
+                    if (!binLinks) return (
+                      <span title="เช็คไม่ได้ว่าของเสียแถวไหนมีใบถังแล้ว — ดูข้อความเตือนด้านบนของกะ"
+                        style={{ fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', color: 'var(--muted)',
+                          background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-pill)', padding: '2px 9px' }}>
+                        🗑️ เช็คสถานะถังไม่ได้
+                      </span>
+                    );
                     const pend = defectLogs.filter(d => ((d.qty_ng || 0) > 0 || (d.qty_suspect || 0) > 0)
                       && !(binLinks[d.id] && (binLinks[d.id].yellow > 0 || binLinks[d.id].red > 0)));
                     if (!pend.length) return null;
@@ -4319,21 +4372,28 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           feedback หัวหน้ากลุ่ม 2026-08-19: "ถ้าเป็นงานเสียขอผูกกับเอกสารตัวนี้ รวมถึงงานต้องสงสัยด้วย"
                           ⚠️ ไม่สร้างใบให้อัตโนมัติ — "เอาของลงถัง" เป็นการกระทำจริงหน้างาน ต้องมีคนกดยืนยัน */}
                       {canScan && ((d.qty_ng || 0) > 0 || (d.qty_suspect || 0) > 0) && (() => {
-                        const lk = binLinks[d.id];
-                        const done = !!lk && (lk.yellow > 0 || lk.red > 0);
+                        /* 🔴 `binLinks === null` = เช็คสถานะไม่ได้ — ปุ่มต้องไม่พูดว่า "ยังไม่ลงถัง"
+                           (ใบนี้อาจมีแท็กเหลืองที่ระบบตั้งให้อยู่แล้ว · กดได้ แต่ต้องเตือนก่อน) */
+                        const unknown = !binLinks;
+                        const lk = binLinks?.[d.id];
+                        const done = !unknown && !!lk && (lk.yellow > 0 || lk.red > 0);
+                        const tone = unknown ? 'amber' : done ? 'green' : 'red';
                         return (
                           <button onClick={() => setBinTarget({ defect: d, existing: lk })}
-                            title={done
-                              ? `ลงถังแล้ว${lk.yellow ? ` · 🟡 ${lk.yellow} ชิ้น` : ''}${lk.red ? ` · 🔴 ${lk.red} ชิ้น` : ''} — กดเพื่อลงเพิ่ม`
-                              : 'ส่งเข้าถังเหลือง (ต้องสงสัย) / ถังแดง (เสีย) โดยไม่ต้องคีย์ใบใหม่'}
+                            title={unknown
+                              ? 'เช็คสถานะถังไม่สำเร็จ — แถวนี้อาจมีใบถังอยู่แล้ว ตรวจในหน้าของเสียก่อนลงซ้ำ'
+                              : done
+                                ? `ลงถังแล้ว${lk.yellow ? ` · 🟡 ${lk.yellow} ชิ้น` : ''}${lk.red ? ` · 🔴 ${lk.red} ชิ้น` : ''} — กดเพื่อลงเพิ่ม`
+                                : 'ส่งเข้าถังเหลือง (ต้องสงสัย) / ถังแดง (เสีย) โดยไม่ต้องคีย์ใบใหม่'}
                             style={{ fontSize: 11, fontWeight: 800, whiteSpace: 'nowrap', cursor: 'pointer',
                               borderRadius: 'var(--r-md)', padding: '3px 10px',
-                              color: done ? 'var(--green)' : 'var(--red)',
-                              background: done ? 'var(--green-dim)' : 'var(--red-dim)',
-                              border: `1px solid ${done ? 'var(--green-line)' : 'var(--red-line)'}` }}>
-                            {done
-                              ? `ลงถังแล้ว${lk.yellow ? ` 🟡${lk.yellow}` : ''}${lk.red ? ` 🔴${lk.red}` : ''}`
-                              : 'ลงถัง'}
+                              color: `var(--${tone})`,
+                              background: `var(--${tone}-dim)`,
+                              border: `1px solid var(--${tone}-line)` }}>
+                            {unknown ? 'ลงถัง?'
+                              : done
+                                ? `ลงถังแล้ว${lk.yellow ? ` 🟡${lk.yellow}` : ''}${lk.red ? ` 🔴${lk.red}` : ''}`
+                                : 'ลงถัง'}
                           </button>
                         );
                       })()}
@@ -7090,13 +7150,10 @@ function HistoryTab({ role }) {
     const normSection = (s) => (s || '').trim().toLowerCase();
 
     // ไลน์ที่ role นี้มีสิทธิ์เห็นประวัติ — leader/supervisor เห็นเฉพาะของตัวเอง เหมือน LiveTab
-    let allowedLineNames = null;
-    if (role === 'leader' && userLineId) {
-      const myLine = (ln || []).find(l => l.id === userLineId);
-      allowedLineNames = myLine ? [myLine.name, ...(pcm[myLine.name] || [])] : [];
-    } else if (role !== 'admin' && scopeSecs.length) {
-      allowedLineNames = scopedLines({ role, lineId: userLineId, sections: scopeSecs, lines: ln || [], scopeIdx }).map(l => l.name);
-    }
+    /* 🔭 ของกลาง `lineScope()` (QC audit 09/11) — เดิม leader เห็นประวัติแค่ครอบครัวไลน์ตัวเอง
+       แม้ profiles กำกับส่วนงานเพิ่มไว้ · `null` = ไม่จำกัด */
+    const sc = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines: ln || [], scopeIdx });
+    const allowedLineNames = sc.unlimited ? null : sc.names;
 
     /* ใบโมฆะต้อง **เห็นในลิสต์** (ไม่ใช่หายไปเหมือนถูกลบ) — ติดป้าย 🚫 + ไม่เข้าชุดวิเคราะห์
        (ชุดวิเคราะห์/ส่งออกคือ `fetchData()` ซึ่งกรอง `status = 'closed'` อยู่แล้ว) */
@@ -7714,13 +7771,9 @@ function ExportTab() {
         const normSection = (s) => (s || '').trim().toLowerCase();
         const pcm = {};
         ln.forEach(l => { if (l.parent_line_name) (pcm[l.parent_line_name] ||= []).push(l.name); });
-        let allowed = null;
-        if (role === 'leader' && userLineId) {
-          const myLine = ln.find(l => l.id === userLineId);
-          allowed = myLine ? [myLine.name, ...(pcm[myLine.name] || [])] : [];
-        } else if (role !== 'admin' && scopeSecs.length) {
-          allowed = scopedLines({ role, lineId: userLineId, sections: scopeSecs, lines: ln, scopeIdx }).map(l => l.name);
-        }
+        /* 🔭 ของกลาง `lineScope()` (QC audit 09/11) — เกณฑ์เดียวกับแท็บประวัติ/จอสด */
+        const sc = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines: ln, scopeIdx });
+        const allowed = sc.unlimited ? null : sc.names;
         setAllowedLineNames(allowed);
         setLineNames(allowed ?? ln.map(l => l.name));
       });

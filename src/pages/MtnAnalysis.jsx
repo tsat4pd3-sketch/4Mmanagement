@@ -17,7 +17,7 @@ import TimeRangeBar from '../components/TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
 import { rangeDays, addDays, bucketAxis, bucketKey, bucketLabel, bkkHourKey, scaleOf } from '../utils/timeRange';
 import { getWorkDate } from '../utils/workDate';
-import { scopedLines } from '../utils/sectionScope';
+import { scopedLines, lineScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { ASSET_CLASSES, assetClassOf, firstAssetWithData } from '../utils/qc7';
 import { useSearchParams } from 'react-router-dom';
@@ -297,11 +297,13 @@ export default function MtnAnalysis() {
   /* ขอบเขตไลน์ของผู้ใช้ — **เกณฑ์เดียวกับ `/mtn-repair`** (คัดลอกมาโดยตั้งใจให้เหมือนกันเป๊ะ
      ถ้าจะแก้ ต้องแก้ทั้ง 2 ที่พร้อมกัน ไม่งั้น KPI 2 จอตอบคนละเลขให้คนคนเดียวกัน) */
   const lines = useProductionLines();
+  /* 🔭 ขอบเขตไลน์ — **ของกลาง `lineScope()` เท่านั้น** (QC audit 09/11)
+     สูตรที่เคยก๊อปไว้ที่นี่ให้ leader เห็นแค่ครอบครัวไลน์ตัวเอง = แคบกว่าที่ `profiles` ตั้งไว้
+     (กฎ 26/10: ไลน์ตัวเอง ∪ ส่วนงานที่กำกับไว้) และไม่รู้จักแกน Cost Center/ผัง (`scopeIdx`)
+     `null` = ไม่จำกัด (ความหมายเดิมของตัวแปรนี้) */
   const scopeLines = useMemo(() => {
-    if (role === 'admin') return null;
-    if (role === 'leader' && lineId) { const self = lines.find(l => String(l.id) === String(lineId)); return self ? new Set(getLineFamilyNames(lines, self.name)) : new Set(); }
-    if (sections?.length) return new Set(scopedLines({ role, lineId, sections, lines, scopeIdx }).map(l => l.name));
-    return null;
+    const r = lineScope({ role, lineId, sections: sections || [], lines, scopeIdx });
+    return r.unlimited ? null : new Set(r.names);
   }, [lines, role, lineId, sections, scopeIdx]);
   /* 🔴 ช่องเลือกไลน์ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัดเลย (QA · Planning&Store · ฝั่งช่าง)
      กรองด้วย section แล้วเหลือ 0 ⇒ dropdown ว่างเปล่า = แจ้งซ่อม/เลือกไลน์ไม่ได้ทั้งหน้า (เคสจริง 26/10)

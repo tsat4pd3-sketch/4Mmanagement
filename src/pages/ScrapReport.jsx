@@ -26,7 +26,7 @@ import StorageLocSelect from '../components/StorageLocSelect';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 ค่าที่เคยบันทึกใน scrap_reports/items — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
 import { slocValid, SLOC_FORMAT_HINT } from '../utils/storageLoc';
-import { inSectionScope } from '../utils/sectionScope';
+import { lineScope } from '../utils/sectionScope';
 import { canDelete } from '../utils/permissions';
 import { usePerms } from '../utils/usePerms';
 import { exportScrapReportExcel } from '../lib/scrapExportExcel';
@@ -40,6 +40,7 @@ import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import { DeleteButton } from '../components/IconButton';
+import { checkWriteRows } from '../utils/dbWrite';   // RLS ปฏิเสธ UPDATE/DELETE = 0 แถวไม่มี error (กฎเขียน DB ข้อ 2)
 import useIsMobile from '../utils/useIsMobile';
 /* 🗑️ ถังเหลือง/แดง — **ชิ้นเดียวกับที่ /qa ใช้** embed ทั้งดุ้น ไม่แก้ของเดิม (pattern เดียวกับ /equipment)
    user 19/10: *"feature ถังเหลือง/แดง ควรจะอยู่กับผลิตนะ หลักๆ ผลิตจะเป็นคน input data มาจาก daily report
@@ -114,7 +115,7 @@ const TABS = [
 ];
 
 export default function ScrapReport() {
-  const { fullName, role, lineId, sections } = useContext(UserContext);
+  const { fullName, role, lineId, sections, scopeIdx } = useContext(UserContext);
   const { can } = usePerms();
   const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'scrap');
   const canRecord = can('scrap', 'record');
@@ -133,16 +134,17 @@ export default function ScrapReport() {
   const approverGmHist = useColumnHistory(supabaseDR, 'scrap_reports', 'approver_gm_name');
   const storageHist = useColumnHistory(supabaseDR, 'scrap_reports', 'storage_location', { upper: true });
 
-  // ขอบเขตไลน์ที่เห็นได้: leader → เฉพาะครอบครัวไลน์ตัวเอง · role ที่ถูกจำกัด sections → เฉพาะไลน์ในส่วนงาน
-  // qa/manager/admin (sections ว่าง = ไม่จำกัด) → เห็นทั้งโรงงานเหมือนเดิม · null = ไม่จำกัด
-  const scopedLineNames = useMemo(() => {
-    if (role === 'leader' && lineId) {
-      const myLine = allLines.find(l => String(l.id) === String(lineId));
-      return myLine ? getLineFamilyNames(allLines, myLine.name) : [];
-    }
-    if (sections && sections.length) return allLines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
-    return null;
-  }, [role, lineId, sections, allLines]);
+  /* 🔭 ขอบเขตไลน์ที่เห็นได้ — **ของกลาง `lineScope()` เท่านั้น** (QC audit 09/11)
+     เดิมเขียนสูตรเองในหน้า แล้วให้คำตอบ **แคบกว่า** ที่ `profiles` ตั้งไว้ 2 ทาง
+     (ก) `leader` ได้ครอบครัวไลน์ล้วน — ของจริงคือ **ไลน์ตัวเอง ∪ ส่วนงานที่กำกับไว้** (กฎ 26/10)
+     (ข) ไม่ส่ง `scopeIdx` ⇒ ขอบเขตที่เป็นแผนก/กลุ่ม/ไลน์เดี่ยวตกหมด (เทียบข้อความ `l.section` ตรงตัว)
+     ซ้ำยังทำให้ 2 แท็บในหน้าเดียวกันตอบขอบเขตคนละชุด (แท็บถังใช้ของกลางอยู่แล้ว)
+     🔴 "การบีบขอบเขตเป็นการตั้งค่า ไม่ใช่งานของโค้ด" — ห้ามคืนน้อยกว่าที่ profiles ตั้งไว้ */
+  const scopeRes = useMemo(
+    () => lineScope({ role, lineId, sections, lines: allLines, scopeIdx }),
+    [role, lineId, sections, allLines, scopeIdx]);
+  /* `null` = ไม่จำกัด (คงความหมายเดิมของตัวแปรนี้ทั้งหน้า) · `[]` = ถูกตัดจนไม่เหลือไลน์ */
+  const scopedLineNames = scopeRes.unlimited ? null : scopeRes.names;
   // object array (id/name/parent_line_name) — render dropdown จัดชั้นตามผัง (§5.3 ข้อ 8) · ค่า value ยังเป็น name เหมือนเดิม
   /* 🔴 ลิสต์ของ picker ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัด (QA · Planning&Store · ฝั่งช่าง)
      กรองแล้วเหลือ 0 ⇒ dropdown ว่าง = ออกใบไม่ได้ทั้งหน้า (เคสจริง 26/10 · ด่าน line-picker-never-dead)
@@ -178,9 +180,18 @@ export default function ScrapReport() {
      ⇒ บอกด้วยว่านอกช่วงมีกี่ใบ ใบล่าสุดวันไหน + ปุ่มกระโดดไป (กฎความซื่อสัตย์ของจอ) */
   const [listErr, setListErr]   = useState(null);
   const [outside, setOutside]   = useState(null);   // { count, latest } | null
+  /* 🔴 จอว่างมี 3 เหตุ ห้ามยุบเป็นประโยคเดียว (QC audit 09/11):
+     `none` ไม่มีใบจริง · `scope0` บัญชีนี้ไม่มีไลน์ในขอบเขต (ไม่เคยยิงคิวรีเลย) ·
+     `unknown` คิวรีถามว่า "นอกช่วงมีมั้ย" ล่ม ⇒ ตอบไม่ได้ว่าทั้งระบบมีใบหรือไม่ */
+  const [emptyWhy, setEmptyWhy] = useState('none');
   const loadReports = useCallback(async () => {
-    if (scopedLineNames && scopedLineNames.length === 0) { setReports([]); setOutside(null); return; } // ถูก scope แต่ไม่มีไลน์ → ว่าง
-    let q = supabaseDR.from('scrap_reports').select('*')
+    if (scopedLineNames && scopedLineNames.length === 0) {   // ถูก scope แต่ไม่มีไลน์ → ไม่เคยยิงคิวรี
+      setReports([]); setOutside(null); setEmptyWhy('scope0'); return;
+    }
+    /* 🔴 จอรายการเลือกเฉพาะคอลัมน์ที่ใช้ · ใบเต็มดึงตอนเปิดทีละใบ (egress · กฎเขียน DB ข้อ 11)
+       หัวใบมี ~20 คอลัมน์ รวมชื่อผู้อนุมัติ 5 ช่อง ที่ตารางไม่ได้โชว์เลย */
+    let q = supabaseDR.from('scrap_reports')
+      .select('id, doc_no, report_date, line_name, status, product_categories')
       .gte('report_date', listFrom).lte('report_date', listTo);
     if (scopedLineNames) q = q.in('line_name', scopedLineNames);   // ดัน scope เข้า query
     // ⚠️ supabase-js ไม่ throw — ไม่อ่าน error = คิวรีล่มแล้วจอขึ้นเหมือน "ไม่มีข้อมูล" (กฎเหล็กข้อ 1)
@@ -189,12 +200,14 @@ export default function ScrapReport() {
     setListErr(null);
     setReports(data || []);
 
-    if ((data || []).length) { setOutside(null); return; }
+    if ((data || []).length) { setOutside(null); setEmptyWhy('none'); return; }
     // ว่าง → ถามต่อว่า "นอกช่วงมีมั้ย" (คิวรีเล็ก เฉพาะตอนจอว่างเท่านั้น ไม่กินทุกครั้ง)
     let oq = supabaseDR.from('scrap_reports').select('report_date').order('report_date', { ascending: false }).limit(1);
     if (scopedLineNames) oq = oq.in('line_name', scopedLineNames);
     const { data: any1, error: oe } = await oq;
     setOutside(!oe && any1?.length ? { latest: any1[0].report_date } : null);
+    /* คิวรี probe ล่ม = **ไม่รู้** ห้ามอ่านเป็น "ทั้งระบบยังไม่มีใบเลย" */
+    setEmptyWhy(oe ? 'unknown' : 'none');
   }, [listFrom, listTo, scopedLineNames]);
   useEffect(() => { loadReports(); }, [loadReports]);
 
@@ -362,9 +375,21 @@ export default function ScrapReport() {
     });
   };
 
+  /** 🔴 หัวใบเต็ม — ตารางถือแค่ 6 คอลัมน์ (egress) ⇒ ทุกจุดที่ใช้ "เนื้อใบ" (เปิดแก้ · พิมพ์ · Excel)
+   *  ต้องดึงใบเต็มก่อน · อ่านไม่ได้ = คืน `null` แล้วผู้เรียก **หยุด** (พิมพ์ใบที่ช่องลายเซ็นหายไป
+   *  หรือกดบันทึกทับช่องที่ไม่ได้โหลด = เอกสารผิด) */
+  const loadFullReport = async (id) => {
+    const { data, error } = await supabaseDR.from('scrap_reports').select('*').eq('id', id).single();
+    if (error || !data) { toast.error(`อ่านใบไม่สำเร็จ: ${error?.message || 'ไม่พบใบนี้'} — ลองใหม่อีกครั้ง`); return null; }
+    return data;
+  };
+
   const openEdit = async (rep) => {
-    const { data: items } = await supabaseDR.from('scrap_report_items').select('*').eq('report_id', rep.id).order('seq');
-    setEditor({ report: { ...rep, product_categories: rep.product_categories || [] }, items: (items || []).map(it => ({ ...it, _key: it.id })) });
+    const full = await loadFullReport(rep.id);
+    if (!full) return;
+    const { data: items, error: itErr } = await supabaseDR.from('scrap_report_items').select('*').eq('report_id', rep.id).order('seq');
+    if (itErr) { toast.error(`อ่านรายการในใบไม่สำเร็จ: ${itErr.message} — ยังไม่เปิดฟอร์ม (กันบันทึกทับของเดิม)`); return; }
+    setEditor({ report: { ...full, product_categories: full.product_categories || [] }, items: (items || []).map(it => ({ ...it, _key: it.id })) });
   };
 
   /* ดึงยอดของเสียตั้งต้นจาก Daily Report (defect_logs) ของไลน์+วันในใบ */
@@ -542,8 +567,11 @@ export default function ScrapReport() {
     };
     let repId = report.id;
     if (repId) {
-      const { error } = await supabaseDR.from('scrap_reports').update(payload).eq('id', repId);
-      if (error) { toast.error(error.message); return; }
+      /* 🔴 นับแถว — RLS ปฏิเสธ UPDATE = 0 แถวไม่มี error แล้วจอขึ้น "บันทึกใบแล้ว ✓" ทั้งที่หัวใบไม่เปลี่ยน
+         (รายการในใบด้านล่างนับแถวอยู่แล้ว ตัวหัวใบกลับไม่นับ · QC audit 09/11) */
+      if (!checkWriteRows(await supabaseDR.from('scrap_reports').update(payload).eq('id', repId).select('id'),
+        'บันทึกหัวใบรายงานของเสีย',
+        { zeroMsg: 'บันทึกหัวใบไม่สำเร็จ (0 แถว — อาจมีคนลบใบไปก่อน หรือสิทธิ์เขียนไม่พอ)' })) return;
     } else {
       const { data, error } = await supabaseDR.from('scrap_reports').insert({ ...payload, created_by: fullName || null }).select().single();
       if (error) { toast.error(error.message); return; }
@@ -620,21 +648,27 @@ export default function ScrapReport() {
 
   const delReport = async (rep) => {
     if (!window.confirm(`ลบใบ ${rep.doc_no || fmtD(rep.report_date)}?`)) return;
-    const { error } = await supabaseDR.from('scrap_reports').delete().eq('id', rep.id);
-    if (error) { toast.error(error.message); return; }
+    /* 🔴 DELETE ที่ถูก RLS ปฏิเสธ = 0 แถวไม่มี error ⇒ ต้องนับ ไม่งั้นขึ้น "ลบแล้ว" ทั้งที่ใบยังอยู่ */
+    if (!checkWriteRows(await supabaseDR.from('scrap_reports').delete().eq('id', rep.id).select('id'),
+      'ลบใบรายงานของเสีย',
+      { zeroMsg: 'ลบไม่สำเร็จ (0 แถว — อาจถูกลบไปแล้ว หรือสิทธิ์ไม่พอ) · รีเฟรชแล้วเช็คอีกครั้ง' })) { loadReports(); return; }
     toast.success('ลบแล้ว'); loadReports();
   };
 
   const doExport = async (rep) => {
+    const full = await loadFullReport(rep.id);
+    if (!full) return;
     const { data: items } = await supabaseDR.from('scrap_report_items').select('*').eq('report_id', rep.id).order('seq');
     // เลขฟอร์ม/Rev/ช่องลายเซ็น อ่านจาก Document Master กลางใน lib เอง (getDocForm 'scrap_report')
-    await exportScrapReportExcel({ report: rep, items: items || [], defectTypes });
+    await exportScrapReportExcel({ report: full, items: items || [], defectTypes });
   };
 
   // พิมพ์/บันทึก PDF — layout เดียวกับ Excel · เลขฟอร์ม/Rev/โลโก้ จากทะเบียนเอกสาร (เซฟ PDF จาก dialog พิมพ์)
   const doPrint = async (rep) => {
+    const full = await loadFullReport(rep.id);
+    if (!full) return;
     const { data: items } = await supabaseDR.from('scrap_report_items').select('*').eq('report_id', rep.id).order('seq');
-    const ok = await printScrapReport({ report: rep, items: items || [] });
+    const ok = await printScrapReport({ report: full, items: items || [] });
     if (!ok) toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup ของเว็บนี้แล้วลองใหม่');
   };
 
@@ -678,6 +712,18 @@ export default function ScrapReport() {
         {canRecord && <button style={btnSt()} onClick={openNew}>+ เปิดใบใหม่</button>}
       </FilterBar>
 
+      {/* 🔴 ตัดขอบเขตไม่ชัด = เขียนบนจอ ห้ามปล่อยให้คนเข้าใจว่ารายการที่เห็นคือทั้งหมดของเขา
+          (ของกลาง `lineScope()` บอกเองผ่าน `unsure` + `reason`) */}
+      {scopeRes.unsure && (
+        <div style={{ ...cardSt, padding: '8px 12px', marginBottom: 12, fontSize: 12.5, color: 'var(--amber)',
+          border: '1px solid var(--amber-line)', background: 'var(--amber-dim)' }}>
+          ⚠️ ยังตัดขอบเขตไลน์ไม่ชัด ({scopeRes.reason === 'registry_unloaded' ? 'โหลดทะเบียนไลน์ไม่สำเร็จ'
+            : scopeRes.reason === 'own_line_unknown' ? 'ไม่พบไลน์ที่บัญชีนี้สังกัดในทะเบียน'
+            : 'ส่วนงานของบัญชีนี้ไม่ตรงกับไลน์ไหนในทะเบียน'}) —
+          รายการด้านล่างอาจกว้าง/แคบกว่าขอบเขตจริงของคุณ
+        </div>
+      )}
+
       {/* 📱 มือถือ = การ์ดต่อใบ (MOBILE-UX-STANDARD ชนิด B) — ตาราง 7 คอลัมน์ minWidth 720 บนจอ 360 ซ่อนปุ่ม ✏️ ไว้คอลัมน์สุดท้าย
           ต้องปัดตารางไปขวาถึงจะเจอ (ไม่มีอะไรบอกว่าปัดได้) ⇒ เปิดใบแก้ไม่ได้ในทางปฏิบัติ · 15/10 */}
       {isMobile ? (
@@ -713,7 +759,11 @@ export default function ScrapReport() {
                       ขยายช่วงไปถึงวันนั้น
                     </button>
                   </span>
-                ) : <span style={{ color: 'var(--muted)' }}>ไม่มีใบในช่วงนี้ (ทั้งระบบยังไม่มีใบรายงานของเสียเลย)</span>}
+                ) : emptyWhy === 'scope0'
+                    ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>บัญชีนี้ไม่มีไลน์ในขอบเขต — ยังตัดรายการไม่ได้ (ให้ admin ตั้งขอบเขตที่ /add-user)</span>
+                    : emptyWhy === 'unknown'
+                      ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>ไม่มีใบในช่วงนี้ — เช็คไม่ได้ว่านอกช่วงมีใบไหม (คิวรีล่ม) ลองใหม่อีกครั้ง</span>
+                      : <span style={{ color: 'var(--muted)' }}>ไม่มีใบในช่วงนี้ (ทั้งระบบยังไม่มีใบรายงานของเสียเลย)</span>}
             </div>
           )}
         </div>
@@ -754,6 +804,10 @@ export default function ScrapReport() {
                       ขยายช่วงไปถึงวันนั้น
                     </button>
                   </span>
+                ) : emptyWhy === 'scope0' ? (
+                  <span style={{ color: 'var(--amber)', fontWeight: 700 }}>บัญชีนี้ไม่มีไลน์ในขอบเขต — ยังตัดรายการไม่ได้ (ให้ admin ตั้งขอบเขตที่ /add-user)</span>
+                ) : emptyWhy === 'unknown' ? (
+                  <span style={{ color: 'var(--amber)', fontWeight: 700 }}>ไม่มีใบในช่วงนี้ — เช็คไม่ได้ว่านอกช่วงมีใบไหม (คิวรีล่ม) ลองใหม่อีกครั้ง</span>
                 ) : (
                   <span style={{ color: 'var(--muted)' }}>ไม่มีใบในช่วงนี้ (ทั้งระบบยังไม่มีใบรายงานของเสียเลย)</span>
                 )}

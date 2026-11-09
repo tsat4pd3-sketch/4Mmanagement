@@ -168,7 +168,12 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
     setErr(null);
     const stockLines = [lineName, ...upNames];   // ของตัวเอง + ที่อาจค้างข้างบน (แยกกันตอนคำนวณ)
     const [lv, st, rq, dp, sl] = await Promise.all([
-      supabaseDR.from('line_part_levels').select('*').eq('line_name', lineName).eq('is_active', true),
+      /* เลือกเฉพาะคอลัมน์ที่แผงใช้ (12 คอลัมน์ในตาราง · ใช้จริง 5) — กฎเขียน DB ข้อ 11
+         ⚠️ `wip_replenish_requests` ข้างล่างยังเป็น `select('*')` โดยตั้งใจ: แผงอ่านเกือบทุกคอลัมน์
+            (สถานะ/ส่งของ/พัก/stock_txn) ตัดแล้วเสี่ยงหายเงียบมากกว่าที่ประหยัดได้ */
+      supabaseDR.from('line_part_levels')
+        .select('mat_no, min_qty, max_qty, reorder_qty, is_active, line_name')
+        .eq('line_name', lineName).eq('is_active', true),
       supabaseDR.from('line_stock_summary').select('line_name, mat_no, qty_on_hand').in('line_name', stockLines),
       supabase.from('wip_replenish_requests').select('*')
         .eq('line_name', lineName).is('wip_point_id', null).in('status', OPEN_STATUSES)

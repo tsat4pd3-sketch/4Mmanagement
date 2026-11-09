@@ -87,7 +87,7 @@ export default function MaterialRequests() {
     if (!names) return lines;
     const set = new Set(names);
     return lines.filter(l => set.has(l.name));
-  }, [lines, role, lineId, sections]);
+  }, [lines, role, lineId, sections, scopeIdx]);   // 🔴 scopeIdx มาแบบ async — ไม่อยู่ใน deps = ขอบเขตค้างค่าเดิม (QC audit 09/11)
   const scopeNames = useMemo(() => new Set(scopedLines.map(l => l.name)), [scopedLines]);
 
   useEffect(() => {

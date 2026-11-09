@@ -8,7 +8,7 @@ import {
 import { supabase, supabaseDR } from '../supabaseClient';
 import { buildScheduleMaps, lineScheduleTeam } from '../utils/shiftAssign';
 import { UserContext } from '../App';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLines as scopedLinesOf } from '../utils/sectionScope';
 import { dtBucketName, buildDtIndex, dtTrashStats } from '../utils/downtimeCategory';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { can } from '../utils/permissions';
@@ -309,7 +309,7 @@ const STATUS_BADGE = {
 
 // ── Main Component ───────────────────────────────────────────────
 export default function OEEAnalytics() {
-  const { role, lineId: userLineId, sections: scopeSecs = [], fullName } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], fullName, scopeIdx } = useContext(UserContext);
   const isMobile = useIsMobile(); // ≤768px: grid วิเคราะห์ยุบเป็นคอลัมน์เดียว กันกราฟถูกตัด (desktop ไม่เปลี่ยน)
   const [viewTab, setViewTab] = useTabParam(['today', 'trend', 'insight'], 'today');
   // break_policies — ใช้คิดเวลาพักนโยบายสำหรับ OOE/TEEP (ต้องประกาศก่อน tdKpi/kpi ที่เรียกใช้)
@@ -339,7 +339,7 @@ export default function OEEAnalytics() {
 
   // mandatory scope (แบบเดียวกับ DailyReport): leader → ครอบครัวไลน์ตัวเอง ·
   // role ที่ถูกจำกัด sections → เฉพาะไลน์ในส่วนงาน scope — filter อิสระของหน้า apply ทับอีกที
-  const isScoped = (role === 'leader' && !!userLineId) || scopeSecs.length > 0;
+  const isScoped = (role === 'leader' && !!userLineId) || scopeSecs.length > 0;   // ธง "บัญชีนี้ถูกจำกัดไหม" (ไม่ใช่ตัวตัดสินขอบเขต)
 
   // ══════════════════════════ Shared line/org data ══════════════════════════
   const [linesFull, setLinesFull] = useState([]); // [{id,name,section,parent_line_name}] — ถูก scope แล้ว
@@ -360,15 +360,11 @@ export default function OEEAnalytics() {
     // LINE_COLUMNS (id,name,parent_line_name,section,is_active) ครบสำหรับ <LineSelect> + cost_center ที่หน้านี้ใช้คิดต้นทุน (2026-09-07)
     // (ไม่ใช้ useProductionLines() ตรงๆ เพราะ cache กลางไม่มี cost_center — คิวรีเดียวแต่ scope เองเหมือนเดิม)
     loadLinesRes().then(({ data }) => {
+      /* 🔭 ของกลาง `scopedLines()` (QC audit 09/11 · กวาดรอบ 2) — สูตรเดิมในหน้าแคบกว่าที่
+         `profiles` ตั้งไว้ (leader ได้ครอบครัวไลน์ล้วน · ไม่รู้จัก `scopeIdx`) */
       let rows = data || [];
-      if (role === 'leader' && userLineId) {
-        const myLine = rows.find(l => String(l.id) === String(userLineId));
-        const norm = (s) => (s || '').trim().toLowerCase();
-        const famSet = new Set((myLine ? getLineFamilyNames(rows, myLine.name) : []).map(norm));
-        rows = rows.filter(l => famSet.has(norm(l.name)));
-      } else if (scopeSecs.length) {
-        rows = rows.filter(l => inSectionScope(scopeSecs, l.section));
-      }
+      const scoped = scopedLinesOf({ role, lineId: userLineId, sections: scopeSecs, lines: rows, scopeIdx });
+      if (scoped.length !== rows.length) rows = scoped;
       setLinesFull(rows);
       const pcm = {};
       rows.forEach(l => {
