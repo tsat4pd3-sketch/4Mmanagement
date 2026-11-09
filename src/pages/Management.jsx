@@ -8,6 +8,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import DowntimeSiren from '../components/DowntimeSiren';
 import ToggleDot from '../components/ToggleDot';
+import Icon from '../components/Icon';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import { can, canAccessPage } from '../utils/permissions';
@@ -99,6 +100,11 @@ function getPeriodStartDate(period, workDate) {
 }
 
 const STATION_PHOTO_SZ = 36; // fallback circle size for StationWorker when no map-scaled size is passed
+/* คอลัมน์ของ 2 กอง (พร้อมทำงาน · งานนอกไลน์) — 🔴 ต้อง `minmax(0, 1fr)` ห้าม `1fr` เปล่า (09/11 · feedback user "ทำไมบางอันใหญ่บางอันเล็ก")
+   `1fr` = `minmax(auto, 1fr)` ⇒ คอลัมน์ถ่างตามความยาวชื่อที่ยาวที่สุด (วัดจริง 255px แผง: 91px×3 กับ 103px×3 = ล้นขอบขวาโดนตัด)
+   ⇒ 2 กองการ์ดกว้างไม่เท่ากันตามชื่อคน · minmax(0) = ทุกใบกว้างเท่ากัน ชื่อยาวตัด … (การ์ดมี ellipsis อยู่แล้ว)
+   มือถือไม่ใช้ค่านี้ (กองเป็น flex คอลัมน์) */
+const POOL_GRID_COLS = (ultra) => `repeat(${ultra ? 3 : 2}, minmax(0, 1fr))`;
 const POOL_PHOTO_SZ = 44;    // photo size in sidebar pool/special-task cards — independent of map marker size
 
 // skill_definitions has rows that share the same display label under different skill_name keys
@@ -1292,6 +1298,8 @@ export default function Management() {
           cursor: 'pointer', boxShadow: 'var(--shadow-sm)', outline: 'none',
         }}
       >
+        {/* ⚠️ ปุ่มไอคอนล้วน — ห้ามตัด 🏷️ ออก (09/11: กวาด "ตัด emoji บนปุ่ม" e839b388 ลบไปแล้วปุ่มเหลือกล่องเปล่า user ถามว่าคืออะไร) */}
+        🏷️
         <ToggleDot on={showPills} />
       </button>
     </div>
@@ -1455,7 +1463,7 @@ export default function Management() {
             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🔵 พร้อมทำงาน</span>
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>{poolWorkers.length} คน</span>
           </div>
-          <div style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: isUltra ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', flexDirection: 'column', gap: isWide ? 7 : 6, ...(isMobile ? { maxHeight: '28vh' } : { flex: '7 1 0', minHeight: 0, alignContent: 'start' }) }}>
+          <div style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: POOL_GRID_COLS(isUltra), flexDirection: 'column', gap: isWide ? 7 : 6, ...(isMobile ? { maxHeight: '28vh' } : { flex: '7 1 0', minHeight: 0, alignContent: 'start' }) }}>
             {poolWorkers.map(w => <PoolCard key={w.id} worker={w} />)}
             {poolWorkers.length === 0 && (
               <div style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'center', padding: '8px 0', gridColumn: '1/-1' }}>ไม่มีพนักงานใน Pool</div>
@@ -1491,7 +1499,7 @@ export default function Management() {
               const w = workers.find(wk => String(wk.id) === String(logId));
               if (w) { setSpecialModal(w); setSpecialTaskType('5ส'); setDraggingWorker(null); }
             } : undefined}
-            style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: isUltra ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', flexDirection: 'column', gap: isWide ? 7 : 6, ...(isMobile ? { maxHeight: '15vh' } : { flex: '3 1 0', minHeight: 0, alignContent: 'start' }) }}>
+            style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: POOL_GRID_COLS(isUltra), flexDirection: 'column', gap: isWide ? 7 : 6, ...(isMobile ? { maxHeight: '15vh' } : { flex: '3 1 0', minHeight: 0, alignContent: 'start' }) }}>
             {specialWorkers.map(w => <SpecialCard key={w.id} worker={w} />)}
             {specialWorkers.length === 0 && (
               <div style={{ color: 'var(--amber-line)', fontSize: 11, textAlign: 'center', padding: '6px 0', gridColumn: '1/-1' }}>—</div>
@@ -1526,7 +1534,7 @@ export default function Management() {
                   color: cat === 'Machine' ? 'var(--amber)' : cat === 'Material' ? 'var(--green)' : 'var(--blue)',
                   border: `1px solid ${cat === 'Machine' ? 'var(--amber-line)' : cat === 'Material' ? 'var(--green-line)' : 'var(--blue-line)'}`,
                 }}>
-                {cat === 'Machine' ? '️' : cat === 'Material' ? '📦' : '📋'} {cat}
+                <Icon glyph={cat === 'Machine' ? '⚙️' : cat === 'Material' ? '📦' : '📋'} size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />{cat}
               </button>
             ))}
           </div>
@@ -1538,11 +1546,13 @@ export default function Management() {
             ⚠️ เช็คสิทธิ์ก่อน ไม่มีสิทธิ์ = ไม่โชว์ปุ่ม (ห้ามพาไปแล้วโดนเด้ง) */}
         {selectedLine && canAccessPage('/daily-report', role) && (
           <div style={{ paddingTop: 10, marginTop: 10, borderTop: '1px solid var(--border)', flexShrink: 0 }}>
-            <button onClick={() => navigate(`/daily-report?line=${encodeURIComponent(selectedLine)}`)}
-              title={`บันทึกผลผลิต / Downtime ของ ${selectedLine}`}
-              style={{ width: '100%', padding: isWide ? '8px 10px' : '6px 8px', fontSize: isWide ? 12 : 11, textAlign: 'left', borderRadius: 'var(--r-md)', cursor: 'pointer',
-                background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', fontWeight: 700 }}>
-              Daily Report ({selectedLine})
+            {/* ปุ่มคำสั่งมาตรฐาน `.pg-btn` (UI §6.35 · 09/11 feedback user "ปุ่มฝั่งนี้ยังไม่มาตรฐาน" — เดิมกล่องฟ้าวาดเอง)
+                ไอคอนเป็น SVG สีเดียวกับป้าย · ชื่อไลน์ยาวตัด … (เต็มชื่ออยู่ใน title) */}
+            <button type="button" className="pg-btn" onClick={() => navigate(`/daily-report?line=${encodeURIComponent(selectedLine)}`)}
+              title={`Daily Report ของ ${selectedLine} — บันทึกผลผลิต / Downtime`}
+              style={{ width: '100%', cursor: 'pointer' }}>
+              <Icon glyph="📊" size={15} />
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>Daily Report ({selectedLine})</span>
             </button>
           </div>
         )}
