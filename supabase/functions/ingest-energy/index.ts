@@ -1,7 +1,8 @@
 /* 📡 ingest-energy — รับค่ามิเตอร์ที่ MQTT bridge สรุปมาแล้ว → เขียนลง energy_live
    Project: DR · verify_jwt = false (bridge ไม่มี JWT — ใช้ shared secret แทน)
 
-   ⚠️ **ยังไม่ deploy** — ต้อง deploy + ตั้ง secret ก่อนถึงจะมีข้อมูลเข้าระบบ
+   ✅ deploy แล้ว 2026-11-09 (verify_jwt=false) · ⚠️ ต้องตั้ง secret INGEST_SECRET ก่อนถึงจะมีข้อมูลเข้าระบบ
+      (ยังไม่ตั้ง = header ไม่มีทางตรง = ตอบ 401 ทุก request · ปิดประตูไว้ ไม่เขียน DB)
       deploy: supabase functions deploy ingest-energy --no-verify-jwt
       secrets: INGEST_SECRET (ต้องตรงกับฝั่ง bridge) · SUPABASE_URL · SUPABASE_SERVICE_ROLE_KEY
 

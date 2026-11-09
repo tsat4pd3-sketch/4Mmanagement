@@ -129,7 +129,7 @@ export default function EnergyMqttTopics({ points, canEdit }) {
             <b>ตั้ง topic ไว้ล่วงหน้าที่นี่ได้เลย</b> แต่จะยังไม่มีค่าเข้ามาจนกว่าจะมีครบ 2 อย่าง:
             <div style={{ marginTop: 3 }}>① <b>MQTT bridge</b> — โปรแกรมเล็กๆ บนเครื่องในโรงงาน ที่ subscribe broker แล้วส่งเข้าระบบ
               (ตัวอย่างสคริปต์: <code>docs/mqtt-bridge-example.js</code>)</div>
-            <div>② <b>Edge function <code>ingest-energy</code></b> — ยังไม่ deploy</div>
+            <div>② <b>Edge function <code>ingest-energy</code></b> — deploy แล้ว (2026-11-09) · ต้องตั้ง secret <code>INGEST_SECRET</code> ให้ตรงกับฝั่งตัวส่ง (แจ้ง admin)</div>
           </div>
         </div>
       ) : (
