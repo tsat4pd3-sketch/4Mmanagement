@@ -32,6 +32,7 @@ import { ALL } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 import { rangeDays } from '../utils/timeRange';
 import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
+import NoticeBar from './NoticeBar';
 import InfoMore from './InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
@@ -225,7 +226,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
       </div>
 
       {loadErr && (
-        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontSize: 12.5 }}>⚠️ {loadErr}</div>
+        <NoticeBar tone="bad" style={{ marginBottom: 0 }}>{loadErr}</NoticeBar>
       )}
 
       {/* ── บอกให้ชัดว่าเลขนี้คืออะไร — ไม่งั้นเอาไปเทียบกับระบบส่วนกลางแล้วเถียงกัน ── */}

@@ -36,6 +36,7 @@ import { buildBomIndex, explodeBom } from '../utils/bomTree';
 import { explodeDemand, netOffBuffer } from '../utils/demandExplode';
 import { scheduleBackward, makePrevWorkDay } from '../utils/backwardPlan';
 import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
+import NoticeBar from '../components/NoticeBar';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ═══ วางแผนการผลิต (Active Planner) — 🗓️ /production-plan ══════════════════
@@ -681,10 +682,7 @@ export default function ProductionPlan() {
 
       {/* ⚠️ โหลดไม่ครบ = ทั้งกำลังผลิตและความต้องการต่ำกว่าจริง → verdict อาจบอก "กะเช้าพอ" ผิด */}
       {planWarn && (
-        <div style={{
-          margin: '0 0 12px', padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700,
-          background: 'var(--red-dim)', border: '1px solid var(--red-line)', color: 'var(--red)',
-        }}>⚠ {planWarn}</div>
+        <NoticeBar tone="bad" style={{ margin: '0 0 12px' }}>{planWarn}</NoticeBar>
       )}
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
         กำลังผลิตคำนวณจาก <b>median ยอดดีจริงต่อกะ</b> ใน {HISTORY_DAYS} วันล่าสุด (ตัดค่าโดดอัตโนมัติ) · พาร์ทที่ไม่มีประวัติ fallback เป็น cycle time × OEE
@@ -770,9 +768,9 @@ export default function ProductionPlan() {
         </div>
       )}
       {!loading && useBom && demandPcs.bom?.cycles > 0 && (
-        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontSize: 12.5, color: 'var(--red)', fontWeight: 700 }}>
-          ⛔ BOM วนลูป {demandPcs.bom.cycles} จุด — ระบบตัดการไล่ชั้นทิ้งเพื่อไม่ให้ค้าง ⇒ ความต้องการของกิ่งนั้นอาจขาด (ไปแก้ที่ /products แท็บ BOM)
-        </div>
+        <NoticeBar tone="bad" style={{ marginBottom: 0 }}>
+          BOM วนลูป {demandPcs.bom.cycles} จุด — ระบบตัดการไล่ชั้นทิ้งเพื่อไม่ให้ค้าง ⇒ ความต้องการของกิ่งนั้นอาจขาด (ไปแก้ที่ /products แท็บ BOM)
+        </NoticeBar>
       )}
 
       {!loading && demandGaps.noLine > 0 && (

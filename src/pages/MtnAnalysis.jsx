@@ -24,6 +24,7 @@ import { useSearchParams } from 'react-router-dom';
 import { urlParam } from '../utils/urlInit';
 import { scopeLines as pickerLines } from '../components/LineSelect';   // ตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง" ของช่องเลือกไลน์
 import { Panel, NotEnough, Histogram, ControlChart, ScatterPlot, Fishbone, CheckSheet, Stratify, RunChart } from '../components/Qc7Charts';
+import NoticeBar from '../components/NoticeBar';
 import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 /* ══ 🔍 วิเคราะห์ปัญหา (ซ่อมบำรุง) — QC 7 Tools แยกตามชนิดสินทรัพย์ ══════════  2026-09-22
@@ -424,9 +425,9 @@ export default function MtnAnalysis() {
       )}
 
       {err && (
-        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontSize: 12.5, color: 'var(--red)', marginBottom: 12 }}>
+        <NoticeBar tone="bad" style={{ marginBottom: 12 }}>
           โหลดข้อมูลไม่สำเร็จ — {err} · กด ↻ รีเฟรช อีกครั้ง (ยังไม่ได้แสดงตัวเลขใดๆ เพื่อไม่ให้อ่านผิด)
-        </div>
+        </NoticeBar>
       )}
 
       {loading ? (

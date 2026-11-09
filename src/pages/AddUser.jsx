@@ -40,6 +40,7 @@ import { unlinkedTriage, routeHint } from '../utils/identityMatch';
 import { buildUserIssues, issueSummaryText, issueDef, SEV_FIX } from '../utils/userIssues';   // 🩺 ต้องแก้ vs ข้อมูลประกอบ (A6 · 03/11)
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
+import NoticeBar from '../components/NoticeBar';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 /* ทีมช่างซ่อม (profiles.mtn_teams) — เดิมมีหน้าที่เดียวคือ "แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม"
    🔴 ตั้งแต่ 2026-10-04 ช่องนี้ยังเป็นตัวบอก **"อยู่ฝั่งช่าง หรือ ฝั่งผู้แจ้ง"** ของด่านล็อกช่องเซ็น
@@ -878,9 +879,9 @@ export default function AddUser() {
         } />
 
       {message && (
-        <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--green-dim)', border: '1px solid var(--green-line)', borderRadius: 'var(--r-md)', color: 'var(--green)', fontSize: 13 }}>
-          ✅ {message}
-        </div>
+        <NoticeBar tone="ok" style={{ marginBottom: 14 }}>
+          {message}
+        </NoticeBar>
       )}
 
       {/* Toolbar: ขอบเขต → ชุดสิทธิ์ → ค้นหา → ตัวนับ (UI-STANDARD 2026-09-24 · FilterBar คุมขนาดช่องเอง) */}

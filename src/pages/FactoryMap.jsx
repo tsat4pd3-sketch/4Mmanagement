@@ -58,6 +58,7 @@ import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-he
 import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 import TabBar from '../components/TabBar';
 
+import NoticeBar from '../components/NoticeBar';
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
    metric: ยอดผลิต / OEE / Downtime / ของเสีย — เลือกดูได้ · มี side panel จัดอันดับไลน์ (ใช้พื้นที่ข้าง)
@@ -2457,10 +2458,9 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
         sub={<>ทุกไลน์บนผังเดียว — เลือกดูได้หลายมุมมอง · <b>วางเม้าส์ดูสรุป · คลิกเปิดผังไลน์พร้อมพนักงาน</b> · อัปเดตสดอัตโนมัติ · <b>สวิตช์ ⚡ Live / 📅 ทบทวนรายวัน คุมทั้งผัง แผงขวา และรายละเอียดที่คลิก</b> · hover/คลิก = เฉพาะเรื่องของแท็บที่เลือก</>}
         actions={canEdit && <button type="button" className="pg-btn" onClick={() => { setEditing(v => !v); cancelDraw(); }} style={{ ...btn(editing), position: 'relative' }}>{editing ? 'เสร็จ' : 'แก้ผัง'}<ToggleDot on={editing} /></button>} />
       {partial && (
-        <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 700,
-                      background: 'var(--red-dim)', border: '1px solid var(--red-line)', color: '#f87171' }}>
+        <NoticeBar tone="bad" style={{ marginBottom: 10 }}>
           {partial}
-        </div>
+        </NoticeBar>
       )}
 
       {/* ⚡/📅 สวิตช์เดียวคุมทั้งหน้า — ผัง + แผงขวา + กล่องรายละเอียดที่คลิก ใช้ช่วงเวลาเดียวกันเสมอ (2026-10-16) */}

@@ -1678,9 +1678,9 @@ export default function Checkin() {
               {shiftInfo.label} · {shiftInfo.workDateStr} — คนที่ยืมจะโผล่ในรายชื่อเช็คชื่อและผังจัดกำลังคนของไลน์ปลายทาง เฉพาะกะนี้ (ไม่ย้ายสังกัดถาวร) · หมดกะแล้วหลุดเอง ไม่ต้องกดคืน — กด ✕ คืน เฉพาะเมื่อจะให้ไลน์อื่นยืมต่อในกะเดียวกัน
             </div>
             {!helpersReady && (
-              <div style={{ padding: '8px 12px', borderRadius: 'var(--r-md)', marginBottom: 10, background: 'var(--red-dim)', border: '1px solid var(--red-line)', fontSize: 12, color: 'var(--red)', fontWeight: 600 }}>
-                ⚠️ ระบบยืมตัวยังใช้ไม่ได้ — ยังไม่ได้ apply migration <code>20260819_line_helpers_main.sql</code> (แจ้ง admin)
-              </div>
+              <NoticeBar tone="bad" style={{ marginBottom: 10 }}>
+                ระบบยืมตัวยังใช้ไม่ได้ — ยังไม่ได้ apply migration <code>20260819_line_helpers_main.sql</code> (แจ้ง admin)
+              </NoticeBar>
             )}
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', whiteSpace: 'nowrap' }}>มาช่วยไลน์</span>

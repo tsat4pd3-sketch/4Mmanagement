@@ -36,6 +36,7 @@ import { loadRunDays, ranOn } from '../utils/runDays';
 import { useDraftAutosave, loadDraft, clearDraft } from '../utils/formDraft';   // 📝 ร่างในเครื่อง (มือถือ · 22/10)
 import DraftRestoreBar from '../components/DraftRestoreBar';
 
+import NoticeBar from '../components/NoticeBar';
 /* ══════════════════════════════════════════════════════════════
    📋 Layer Process Audit (LPA) — paperless แทนฟอร์มกระดาษ 2 ใบ:
    1) Layer Process Audit Plan   — แผนตรวจรายเดือน ต่อไลน์+กะ (สถานีรายวัน + ชั้นผู้ตรวจ ○●⊗)
@@ -1086,10 +1087,9 @@ ${issuesHtml}
 
       {/* 🔒 ไลน์ที่เลือกอยู่นอกส่วนงานเรา — ดูได้ แต่บันทึกไม่ได้ · ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล (UI §6.9) */}
       {!lineWrite.ok && selLine && (
-        <div className="card" style={{ padding: '9px 12px', marginBottom: 10, fontSize: 12, color: 'var(--text2)',
-          background: 'var(--amber-dim)', border: '1px solid var(--amber-line)' }}>
+        <NoticeBar tone="warn" style={{ marginBottom: 10 }}>
           {writeBlockText(lineWrite, { what: `ใบตรวจ/แผน LPA ของไลน์ "${selLine}"` })}
-        </div>
+        </NoticeBar>
       )}
 
       {/* ═════════ แผนตรวจ — มองทีละไตรมาส (3 เดือน) ═════════ */}

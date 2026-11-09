@@ -3225,11 +3225,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           {/* 🔴 ชี้ไลน์ของตัวเองไม่ได้ = รายการนี้กว้างกว่าที่ควร — ต้องบอก ห้ามให้คนเข้าใจว่า
               "ระบบให้ดูได้ทุกไลน์แล้ว" (เคสจริง 28/10: หัวหน้า LWR เห็นกะทั้งโรงงาน) */}
           {scopeUnsure && (
-            <div style={{ marginBottom: 6, padding: '6px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, lineHeight: 1.5,
-              background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--text)', flexShrink: 0 }}>
-              ⚠️ ระบบยังชี้ไลน์ของคุณไม่ได้ (อ่านทะเบียนไลน์ไม่สำเร็จ) — <b>รายการนี้จึงกว้างกว่าปกติ</b>
+            <NoticeBar tone="warn" style={{ marginBottom: 6 }}>
+              ระบบยังชี้ไลน์ของคุณไม่ได้ (อ่านทะเบียนไลน์ไม่สำเร็จ) — <b>รายการนี้จึงกว้างกว่าปกติ</b>
               {' '}และอาจเปิดกะไม่ได้ · กด 🔄 ที่หัวข้อเพื่อโหลดใหม่
-            </div>
+            </NoticeBar>
           )}
           {(() => {
             const groupNames = [...new Set(freshSessions.map(s => lineMap[s.line_name]?.parent_line_name || s.line_name))];
@@ -6026,9 +6025,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
 
                 {/* Duplicate warning */}
                 {openProdForm.prod_no && prodOrders.find(o => o.prod_no === openProdForm.prod_no) && (
-                  <div style={{ padding: '8px 12px', background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 'var(--r-md)', fontSize: 12, color: 'var(--red)', fontWeight: 600 }}>
-                    ⚠ PROD.NO นี้เปิดไปแล้วในกะนี้
-                  </div>
+                  <NoticeBar tone="bad" style={{ marginBottom: 0 }}>
+                    PROD.NO นี้เปิดไปแล้วในกะนี้
+                  </NoticeBar>
                 )}
               </div>
 
@@ -6148,9 +6147,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         <div style={{ marginTop: 8, color: 'var(--muted)' }}>ค้นทั้งโรงงานแล้ว — ไม่มีใบที่ยังเปิดค้างด้วยเลขนี้</div>
                       )}
                       {(crossFind?.state === 'shift_locked' || crossFind?.state === 'manual_only_owner') && (
-                        <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--amber)', fontWeight: 600, lineHeight: 1.6 }}>
+                        <NoticeBar tone="warn" style={{ marginTop: 8, marginBottom: 0 }}>
                           {crossFind.state === 'manual_only_owner' ? '✍️' : '🔒'} {crossLineCloseText(crossFind.state, crossFind.row)}
-                        </div>
+                        </NoticeBar>
                       )}
                       {(crossFind?.state === 'ready' || crossFind?.state === 'ambiguous') && (
                         <div style={{ marginTop: 8, padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)' }}>
@@ -6160,9 +6159,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           {/* 🔴 สแกนแล้วปิดอัตโนมัติไม่ผ่าน (นอกขอบเขต/ทะเบียนไลน์ยังไม่มา) = ต้องค้างเหตุผลไว้
                               toast หายไปใน 4 วิ แต่คนสแกนยืนมองจออยู่ — เงียบ = เข้าใจว่าปิดแล้ว */}
                           {crossFind.blocked && (
-                            <div style={{ marginBottom: 8, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--red-dim)', border: '1px solid var(--red-line)', color: 'var(--red)', fontWeight: 700, lineHeight: 1.6 }}>
-                              ⛔ ปิดให้อัตโนมัติไม่ได้ — {crossFind.blocked}
-                            </div>
+                            <NoticeBar tone="bad" style={{ marginBottom: 8 }}>
+                              ปิดให้อัตโนมัติไม่ได้ — {crossFind.blocked}
+                            </NoticeBar>
                           )}
                           {crossFind.rows.map(r => (
                             <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '6px 0', borderTop: '1px solid var(--border2)' }}>
@@ -7264,15 +7263,15 @@ function HistoryTab({ role }) {
                   )}
                   {/* หมายเหตุของหัวหน้ากลุ่ม (ผู้ขอปิดกะ) — เขียนตอนส่งขอปิดกะ */}
                   {s.close_request_note && (
-                    <div style={{ fontSize: 12, color: 'var(--blue)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 'var(--r-md)', padding: '8px 12px', whiteSpace: 'pre-wrap' }}>
+                    <NoticeBar tone="info" style={{ marginBottom: 0 }}>
                       หมายเหตุหัวหน้ากลุ่ม ({s.close_requested_by_name || '—'}): <b>{s.close_request_note}</b>
-                    </div>
+                    </NoticeBar>
                   )}
                   {/* หมายเหตุผู้อนุมัติปิดกะ (ถ้ามี — SV กรอกตอนกดอนุมัติ) */}
                   {s.close_approve_note && (
-                    <div style={{ fontSize: 12, color: 'var(--blue)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
+                    <NoticeBar tone="info" style={{ marginBottom: 0 }}>
                       หมายเหตุผู้อนุมัติ ({s.closed_by_name || '—'}): <b>{s.close_approve_note}</b>
-                    </div>
+                    </NoticeBar>
                   )}
                   {/* 🧾 ใบรายงานปัญหาที่ออกไปแล้วของกะนี้ + เตือนเมื่อข้อมูลปัจจุบัน "ไม่ตรงกับใบที่ยื่นไป"
                       🔴 กฎความซื่อสัตย์ของจอ: ใบเลขเดียวกันต้องเป็นเนื้อเดียวกัน — ข้อมูลต้นทางถูกแก้ทีหลัง
@@ -8283,9 +8282,9 @@ function DefectTypeSetup({ role }) {
         {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่มประเภทงานเสีย</button>}
       </div>
 
-      <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 'var(--r-md)', padding: '10px 14px', marginBottom: 16, fontSize: 12, color: 'var(--red)' }}>
-        🔴 ประเภทงานเสียนี้จะใช้เมื่อกด <strong>บันทึกงานเสีย</strong> ในหน้า Live — แยกจาก Downtime เพื่อให้ติดตามคุณภาพได้ละเอียด
-      </div>
+      <NoticeBar tone="bad" style={{ marginBottom: 16 }}>
+        ประเภทงานเสียนี้จะใช้เมื่อกด <strong>บันทึกงานเสีย</strong> ในหน้า Live — แยกจาก Downtime เพื่อให้ติดตามคุณภาพได้ละเอียด
+      </NoticeBar>
 
       {items.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีประเภทงานเสีย</div>}
 
@@ -8447,9 +8446,9 @@ function BreakLineRules({ policy, lines, canEdit, onClose }) {
         </div>
 
         {err && (
-          <div style={{ marginTop: 12, padding: '9px 12px', borderRadius: 'var(--r-md)', background: 'var(--red-dim)', border: '1px solid var(--red-line)', fontSize: 12, color: 'var(--red)' }}>
-            ⚠️ อ่านข้อยกเว้นรายไลน์ไม่สำเร็จ — <strong>ยังบอกไม่ได้ว่ามีไลน์ไหนตั้งไว้บ้าง</strong> ({err})
-          </div>
+          <NoticeBar tone="bad" style={{ marginTop: 12, marginBottom: 0 }}>
+            อ่านข้อยกเว้นรายไลน์ไม่สำเร็จ — <strong>ยังบอกไม่ได้ว่ามีไลน์ไหนตั้งไว้บ้าง</strong> ({err})
+          </NoticeBar>
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 14 }}>
@@ -8618,9 +8617,9 @@ function BreakPolicySetup({ role }) {
         {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่มนโยบาย</button>}
       </div>
 
-      <div style={{ background: 'var(--green-dim)', border: '1px solid var(--green-line)', borderRadius: 'var(--r-md)', padding: '10px 14px', marginBottom: 16, fontSize: 12, color: 'var(--green)' }}>
+      <NoticeBar tone="ok" style={{ marginBottom: 16 }}>
         นโยบายหยุดพักเหล่านี้จะถูก<strong>หักออกจากเวลากะอัตโนมัติ</strong>เมื่อคำนวณ OEE — ช่วยให้ค่า Availability สะท้อนเวลาทำงานจริง ไม่รวมเวลาพักที่วางแผนไว้
-      </div>
+      </NoticeBar>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {items.length === 0 && <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีนโยบาย</div>}

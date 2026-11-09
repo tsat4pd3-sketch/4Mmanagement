@@ -55,6 +55,7 @@ import useTimeRange from '../utils/useTimeRange';
 import { acceptImageFile } from '../utils/acceptImageFile';
 import { urlParam, urlPick, urlBool } from '../utils/urlInit';
 import { parseScopeKey } from '../utils/orgScope';
+import NoticeBar from '../components/NoticeBar';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* โลโก้สำหรับฝังในใบพิมพ์ — cache ต่อ "url" ไม่ใช่ตัวเดียวตายตัว (QC audit 08/10)
@@ -4522,9 +4523,9 @@ function AttendanceFormTab() {
       {empRows.length > 0 && (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           {calLoaded && days.every(d => getDayType(dayDateStr(d)) === 'working') && (
-            <div style={{ marginBottom: 8, padding: '6px 10px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)' }}>
-              ⚠️ งวดนี้ไม่มีวันหยุดในปฏิทินบริษัทเลย — ถ้าเดือนนี้มีวันหยุดจริง ให้ตั้งค่าที่ "ปฏิทินบริษัท" ก่อนพิมพ์ ไม่งั้นชั่วโมง OT วันหยุด (8/10 ชม.) จะถูกคิดแบบวันทำงานปกติ (2/5 ชม.)
-            </div>
+            <NoticeBar tone="warn" style={{ marginBottom: 8 }}>
+              งวดนี้ไม่มีวันหยุดในปฏิทินบริษัทเลย — ถ้าเดือนนี้มีวันหยุดจริง ให้ตั้งค่าที่ "ปฏิทินบริษัท" ก่อนพิมพ์ ไม่งั้นชั่วโมง OT วันหยุด (8/10 ชม.) จะถูกคิดแบบวันทำงานปกติ (2/5 ชม.)
+            </NoticeBar>
           )}
           <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
             <span style={{ fontWeight: 700 }}>ใบบันทึกการมาทำงาน</span>

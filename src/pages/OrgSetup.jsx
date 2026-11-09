@@ -26,6 +26,7 @@ import useTabParam from '../utils/useTabParam';
 import OrgTreeView from '../components/OrgTreeView';   // 🌳 มุมมองผังต้นไม้ (22/10 · คำสั่ง user "อยากมีหน้าวาดผัง")
 import Page from '../components/Page';
 import { IconButton, DeleteButton } from '../components/IconButton';
+import NoticeBar from '../components/NoticeBar';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 /* 🔴 ชั้นไหนมีพาเนล/ปุ่มเพิ่มบนจอ ต้องมีป้ายครบทุกชั้น — ขาดตัวไหน หัวโมดัลขึ้น "เพิ่ม undefined"
    (เกิดจริง 05/10 ตอนเพิ่มชั้นทีมแล้วลืมเติมที่นี่ · มีด่าน regressionGuards) */
@@ -370,9 +371,9 @@ export default function OrgSetup() {
       {/* ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล (UI-CONVENTIONS §6.9) — ต้องรู้ว่าแก้อะไรได้/ไม่ได้ และต้องไปขอใคร */}
       {!isAdmin && (
         canOwn && mySecId ? (
-          <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--green-line)', background: 'var(--green-dim)', fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
+          <NoticeBar tone="ok" style={{ marginBottom: 14 }}>
             คุณแก้ได้เฉพาะ <b>แผนก/กลุ่มใต้ส่วนงาน "{myUnit}"</b> ของตัวเอง — ส่วนงานอื่นและโครงระดับ Section เป็นของผู้ดูแลระบบ
-          </div>
+          </NoticeBar>
         ) : canOwn && !mySecId ? (
           <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--amber-line)', background: 'var(--amber-dim)', fontSize: 12, color: 'var(--amber)', lineHeight: 1.6 }}>
             ⚠️ บัญชีคุณมีสิทธิ์แก้ผังของหน่วยงานตัวเอง แต่ <b>ยังไม่ได้ตั้งว่าสังกัดส่วนงานไหน</b> จึงยังแก้อะไรไม่ได้

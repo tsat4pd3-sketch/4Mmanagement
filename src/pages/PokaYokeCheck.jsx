@@ -18,6 +18,7 @@ import Segmented from '../components/Segmented';
 import { DeleteButton } from '../components/IconButton';
 /* 🔴 "ยังไม่ได้ทดสอบ" ต้องแยกจาก "กะนี้ไม่ได้ผลิต" (13/10 · คำสั่ง user) */
 import { loadRunDays, ranOn } from '../utils/runDays';
+import NoticeBar from '../components/NoticeBar';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 const NO_LINES = [];
 
@@ -178,10 +179,9 @@ export default function PokaYokeCheck() {
         </div>
       )}
       {ran == null && runs && (
-        <div style={{ padding: '9px 13px', borderRadius: 'var(--r-md)', marginBottom: 10, fontSize: 12.5,
-          background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--amber)' }}>
-          ❔ อ่านข้อมูลการเปิดกะไม่สำเร็จ — บอกไม่ได้ว่ากะนี้ไลน์นี้เดินหรือไม่ ⇒ ที่ว่างอยู่อาจเป็น "ไม่ได้ผลิต" ไม่ใช่ "ขาดตรวจ"
-        </div>
+        <NoticeBar tone="warn" style={{ marginBottom: 10 }}>
+          อ่านข้อมูลการเปิดกะไม่สำเร็จ — บอกไม่ได้ว่ากะนี้ไลน์นี้เดินหรือไม่ ⇒ ที่ว่างอยู่อาจเป็น "ไม่ได้ผลิต" ไม่ใช่ "ขาดตรวจ"
+        </NoticeBar>
       )}
 
       {/* สรุป */}

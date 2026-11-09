@@ -65,6 +65,7 @@ import { loadDocForms } from '../utils/docForms';
 import { downloadCsvDoc, csvText } from '../utils/csvDoc';
 import { DeleteButton } from '../components/IconButton';
 import { loadFamilyQtyTotals, familyQtyChip } from '../utils/familyTotals';
+import NoticeBar from '../components/NoticeBar';
 import { statusColor } from '../utils/statusTone';   // สีสถานะชุดเดียวทั้งระบบ (ห้ามตั้ง hex เอง)
 import { fetchAllRows } from '../utils/fetchAllRows';          // ทะเบียนที่โตได้ ห้าม select() เปล่า (เพดาน 1000 แถว)
 import { fetchAllPages } from '../utils/fetchByIds';            // คิวรีที่ต้องการ shape เอง (bom_items)
@@ -3221,11 +3222,11 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
                 </span>
               </div>
               {pkgMissing > 0 && (
-                <div style={{ fontSize: 11.5, color: 'var(--text2)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '8px 10px', marginBottom: 10 }}>
+                <NoticeBar tone="warn" style={{ marginBottom: 10 }}>
                   <b style={{ color: 'var(--amber)' }}>QTY/PKG ยังไม่มีค่า {pkgMissing} แถว</b> — จำนวนต่อกล่อง
                   <b> ไม่มีอยู่ในไฟล์ SAP เลย</b> เป็นข้อมูลของทะเบียนพาร์ท ต้องมีคนกรอก
                   (แถวที่ทะเบียนมีค่าแล้ว ระบบเติมให้เอง) · กรอกได้ที่แท็บ 1️⃣ Parts Master หรือปุ่มดินสอของแต่ละแถว
-                </div>
+                </NoticeBar>
               )}
               {parsed.warnings.length > 0 && (
                 <div style={{ fontSize: 11.5, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '8px 10px', marginBottom: 10 }}>

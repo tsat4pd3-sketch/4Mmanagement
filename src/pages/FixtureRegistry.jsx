@@ -26,6 +26,7 @@ import {
   shimStack, pointDueStatus, toolLifeStatus, n0, pointPin,
 } from '../utils/fixturePoints';
 
+import NoticeBar from '../components/NoticeBar';
 const jigImgUrl = (path) => supabaseDR.storage.from('jig-images').getPublicUrl(path).data.publicUrl;
 
 /* ═══════════════════════════════════════════════════════════════
@@ -452,10 +453,9 @@ export default function FixtureRegistry() {
           ⇒ stdsweep วัดระยะแท็บ→แถบกรองได้ 75px เวลาที่แถบเตือนโผล่ (แก้ 08/10)
           ⚠️ ยังอยู่บนสุดของเนื้อหา — คนต้องเห็นก่อนเชื่อตัวเลขด้านล่าง */}
       {dataWarn && (
-        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-line)',
-                      borderRadius: 'var(--r-md)', padding: '9px 14px', fontSize: 12.5, marginBottom: 12 }}>
-          ⚠️ {dataWarn}
-        </div>
+        <NoticeBar tone="bad" style={{ marginBottom: 12 }}>
+          {dataWarn}
+        </NoticeBar>
       )}
 
       {loading ? (
@@ -679,12 +679,11 @@ export default function FixtureRegistry() {
           )}
 
           {points.some(p => p.baseline_shim_mm == null) && (
-            <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)',
-                          borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 12.5 }}>
-              ⚠️ ยังไม่ได้วัด baseline <b>{points.filter(p => p.baseline_shim_mm == null).length}</b> จุด —
+            <NoticeBar tone="warn" style={{ marginBottom: 0 }}>
+              ยังไม่ได้วัด baseline <b>{points.filter(p => p.baseline_shim_mm == null).length}</b> จุด —
               ถ้าไม่มี baseline ระบบจะตอบได้แค่ “ใส่ชิมไปกี่ครั้ง” แต่ตอบไม่ได้ว่า
               <b> ห่างจากตอนรับมอบเท่าไหร่แล้ว</b> ซึ่งเป็นคำถามที่ลูกค้าถามจริง
-            </div>
+            </NoticeBar>
           )}
         </div>
       )}

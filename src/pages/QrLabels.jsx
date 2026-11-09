@@ -31,6 +31,7 @@ import { loadProductsMaster } from '../utils/useProducts';
 import { loadStorageLocations } from '../utils/useStorageLocations';
 import ScanSheetPanel from '../components/ScanSheetPanel';
 
+import NoticeBar from '../components/NoticeBar';
 /* ชนิดป้าย ⇒ Segmented (UI-STANDARD §3 · เดิมเป็นชิปสีเอง)
    2026-10-06 · คำสั่ง user: แยกแท็บ 🔨 แม่พิมพ์ ออกจาก ⚙️ เครื่องจักร (เดิมแม่พิมพ์ปนอยู่ในแท็บเครื่องจักร
    และแท็บจิ๊กชื่อ "จิ๊ก/แม่พิมพ์" = คนพิมพ์ป้ายแม่พิมพ์ผิดแท็บ) · แท็บจิ๊ก = ทะเบียน PM (`jigs` · ESM:J)
@@ -330,9 +331,9 @@ export default function QrLabels() {
         </div>
       )}
       {kind === 'delivery' && !loading && !visible.length && (
-        <div style={{ fontSize: 12.5, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '9px 12px', marginBottom: 12 }}>
-          ⚠️ ยังไม่มีจุดส่งงานที่เปิดใช้ (ในขอบเขตที่คุณเห็น) — ให้หัวหน้าไลน์ตั้งที่ ⚙️ ตั้งค่าผังไลน์ ก่อน แล้วกลับมาพิมพ์
-        </div>
+        <NoticeBar tone="warn" style={{ marginBottom: 12 }}>
+          ยังไม่มีจุดส่งงานที่เปิดใช้ (ในขอบเขตที่คุณเห็น) — ให้หัวหน้าไลน์ตั้งที่ ⚙️ ตั้งค่าผังไลน์ ก่อน แล้วกลับมาพิมพ์
+        </NoticeBar>
       )}
 
 
@@ -351,19 +352,19 @@ export default function QrLabels() {
         </div>
       )}
       {kind === 'die' && !loading && !visible.length && (
-        <div style={{ fontSize: 12.5, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '9px 12px', marginBottom: 12 }}>
-          ⚠️ ไม่พบแม่พิมพ์{rows.length ? 'ตามตัวกรอง/ขอบเขตไลน์ที่เห็นได้' : 'ในทะเบียน'} — ลงทะเบียนที่ 🧰 ทะเบียนอุปกรณ์ → แท็บ 🔨 แม่พิมพ์ ก่อน แล้วกลับมาพิมพ์ป้ายได้ทันที
-        </div>
+        <NoticeBar tone="warn" style={{ marginBottom: 12 }}>
+          ไม่พบแม่พิมพ์{rows.length ? 'ตามตัวกรอง/ขอบเขตไลน์ที่เห็นได้' : 'ในทะเบียน'} — ลงทะเบียนที่ 🧰 ทะเบียนอุปกรณ์ → แท็บ 🔨 แม่พิมพ์ ก่อน แล้วกลับมาพิมพ์ป้ายได้ทันที
+        </NoticeBar>
       )}
       {kind === 'jig' && !loading && !visible.length && (
-        <div style={{ fontSize: 12.5, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '9px 12px', marginBottom: 12 }}>
-          ⚠️ ยังไม่มีจิ๊ก — ลงทะเบียนที่ 🧰 ทะเบียนอุปกรณ์ → แท็บ JIG (หรือ PM Setup) ก่อน แล้วกลับมาพิมพ์ป้ายได้ทันที
-        </div>
+        <NoticeBar tone="warn" style={{ marginBottom: 12 }}>
+          ยังไม่มีจิ๊ก — ลงทะเบียนที่ 🧰 ทะเบียนอุปกรณ์ → แท็บ JIG (หรือ PM Setup) ก่อน แล้วกลับมาพิมพ์ป้ายได้ทันที
+        </NoticeBar>
       )}
       {missingNo > 0 && kind !== 'delivery' && (
-        <div style={{ fontSize: 12.5, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '8px 12px', marginBottom: 12 }}>
-          ⚠️ {missingNo} รายการยังไม่มีเลขกำกับ — พิมพ์ป้ายได้ (QR ใช้รหัสภายใน) แต่คนอ่านป้ายจะไม่เห็นเลข แนะนำใส่เลขให้ครบก่อน
-        </div>
+        <NoticeBar tone="warn" style={{ marginBottom: 12 }}>
+          {missingNo} รายการยังไม่มีเลขกำกับ — พิมพ์ป้ายได้ (QR ใช้รหัสภายใน) แต่คนอ่านป้ายจะไม่เห็นเลข แนะนำใส่เลขให้ครบก่อน
+        </NoticeBar>
       )}
 
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', overflow: 'hidden' }}>
