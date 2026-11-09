@@ -7,8 +7,18 @@
       secrets: INGEST_SECRET (ต้องตรงกับฝั่ง bridge) · SUPABASE_URL · SUPABASE_SERVICE_ROLE_KEY
 
    สายงาน: MQTT → bridge (สรุป 15 นาที) → ที่นี่ → energy_live / energy_topic_unmapped
+   v2 (2026-11-09): + ประวัติรายนาที energy_readings (trigger สรุปลง energy_daily) + field v/a
+     ตัวส่งจริงตัวแรก = Node-RED Die Shop ยิงทุก 1 นาที
+     ⚠️ ทุก field ของเครื่องเดียวกันต้องมาใน POST เดียวกัน — แถวรายนาทีตัวแรกชนะ (ซ้ำ = ข้าม)
+        แยกส่ง kw กับ kwh คนละ POST ในนาทีเดียวกัน = ตัวหลังหายจากประวัติ (ค่าล่าสุดยังเข้า)
    แบบเต็ม: docs/ENERGY_MONITORING_DESIGN.md §14 · ตัวอย่าง bridge: docs/mqtt-bridge-example.js */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+
+const UNIT: Record<string, string> = { kw: 'kW', kwh_total: 'kWh', v: 'V', a: 'A' };
+/** ค่าที่เก็บเป็นประวัติรายนาที (energy_readings) — ต้องตรงกับคอลัมน์ของตาราง */
+const HIST_FIELDS = ['kw', 'kwh_total', 'v', 'a'];
+/** เก็บประวัติรายนาทีไว้กี่วัน (ยอดระยะยาวอยู่ energy_daily ที่ trigger สรุปไว้แล้ว) */
+const READINGS_KEEP_DAYS = 7;
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -73,7 +83,7 @@ Deno.serve(async (req) => {
       live.push({
         scope_kind: s.scope_kind, scope_name: s.scope_name, field: s.field,
         value: num * Number(s.scale ?? 1),
-        unit: s.field === 'kw' ? 'kW' : s.field === 'kwh_total' ? 'kWh' : null,
+        unit: UNIT[s.field] ?? null,
         read_at: r.at || body.bucket_at || now, received_at: now, topic: s.topic,
       });
     }
@@ -84,9 +94,34 @@ Deno.serve(async (req) => {
     const { error } = await sb.from('energy_live').upsert(live, { onConflict: 'scope_kind,scope_name,field' });
     if (error) return json({ error: error.message }, 500);
   }
+
+  /* 📈 ประวัติรายนาที (บอร์ดค่าไฟสด · 2026-11-09) — 1 แถวต่อเครื่องต่อนาที
+     ⚠️ ซ้ำนาทีเดิม = ข้าม (ignoreDuplicates) ⇒ trigger สรุปรายวันไม่บวกซ้ำเมื่อ Node-RED ยิงซ้ำ */
+  const hist = new Map<string, any>();
+  for (const l of live) {
+    if (!HIST_FIELDS.includes(l.field)) continue;
+    const t = new Date(l.read_at);
+    if (!Number.isFinite(t.getTime())) continue;
+    t.setUTCSeconds(0, 0);
+    const bucket = t.toISOString();
+    const k = `${l.scope_kind}|${l.scope_name}|${bucket}`;
+    if (!hist.has(k)) hist.set(k, { scope_kind: l.scope_kind, scope_name: l.scope_name, bucket_at: bucket, received_at: now });
+    hist.get(k)[l.field] = l.value;
+  }
+  let histSaved = 0;
+  if (hist.size) {
+    const { error } = await sb.from('energy_readings')
+      .upsert([...hist.values()], { onConflict: 'scope_kind,scope_name,bucket_at', ignoreDuplicates: true });
+    // ค่าล่าสุดเข้าแล้ว แต่ประวัติล้ม = ต้องบอกผู้ส่ง ห้ามตอบ ok เงียบๆ
+    if (error) return json({ ok: false, saved: live.length, error: `history: ${error.message}` }, 500);
+    histSaved = hist.size;
+    const cutoff = new Date(Date.now() - READINGS_KEEP_DAYS * 86400000).toISOString();
+    await sb.from('energy_readings').delete().lt('bucket_at', cutoff);   // ล้มไม่เป็นไร รอบหน้าลบใหม่
+  }
+
   if (unknown.length) {
     // เก็บ topic แปลกไว้ให้คนมาผูก (hits ไม่ต้องแม่น — แค่บอกว่าเจอบ่อยไหม)
     await sb.from('energy_topic_unmapped').upsert(unknown, { onConflict: 'topic' });
   }
-  return json({ ok: true, saved: live.length, unmapped: unknown.length });
+  return json({ ok: true, saved: live.length, history: histSaved, unmapped: unknown.length });
 });
