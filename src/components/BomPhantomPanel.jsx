@@ -7,6 +7,8 @@ import { checkWriteRows } from '../utils/dbWrite';
 import FilterBar from './FilterBar';
 import SearchInput from './SearchInput';
 import Segmented from './Segmented';
+import InfoMore from './InfoMore';
+import NoticeBar from './NoticeBar';
 import { matColor, matLabel } from '../utils/matPrefix';
 import { statusColor } from '../utils/statusTone';
 import MatLabel from './MatLabel';
@@ -152,24 +154,32 @@ export default function BomPhantomPanel({ onOpenSheet }) {
 
   return (
     <div>
-      <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 10 }}>
-        🔻 <b style={{ color: 'var(--text)' }}>กฎการตัดสต็อก</b> — คอนเฟิมใบไหน ตัด<b>ลูกที่ติดตัวใบนั้น</b>เท่านั้น ·
-        <b>ลูกมีหน้าที่ไปตัดหลาน</b>เมื่อใบของลูกถูกคอนเฟิม · ผัง BOM สร้าง<b>ใบเดียว</b> ลูก/หลานไม่ต้องมีใบแยก
-        <div style={{ marginTop: 4 }}>
-          🫧 <b style={{ color: 'var(--text)' }}>ของลม (phantom)</b> = <b>ข้อยกเว้น</b> สำหรับชิ้นที่ไม่มีวันเปิดใบผลิตเอง —
-          ติ๊กแล้วระบบจะข้ามตัวมัน ไปตัดลูกของมันที่ชั้นแม่แทน (ขั้น OP เป็นของลมอัตโนมัติ)
-        </div>
-        <div style={{ marginTop: 4 }}>
-          🔴 จอนี้แก้ได้แค่ทะเบียนของลม — <b>ไม่แก้ BOM ให้</b> (PE เป็นเจ้าของข้อมูล)
-        </div>
-      </div>
+      {/* 09/11: ลำดับมาตรฐาน แท็บ → แถบกรอง → เนื้อหา (stdsweep เคยฟ้อง "ของแทรก ~733px") —
+          คำอธิบาย 3 ย่อหน้าพับเป็น ⓘ ท้ายแถบกรอง · การ์ดสรุป/โซ่ขาด อยู่ใต้แถบกรอง (โซ่ขาดยังโชว์เสมอ ห้ามซ่อน) */}
+      <FilterBar style={{ marginBottom: 12 }}>
+        <Segmented label="สถานะ" value={filter} onChange={setFilter} options={[
+          { value: 'all',       label: `ทั้งหมด (${counts.total})` },
+          { value: 'gap',       label: `🔴 โซ่ขาด (${counts.gap})` },
+          { value: 'seeded',    label: `🟡 รอยืนยัน (${counts.seeded})` },
+          { value: 'confirmed', label: `ของลม (${counts.confirmed})` },
+          { value: 'real',      label: `ของจริง (${counts.real})` },
+        ]} />
+        <SearchInput value={search} onChange={setSearch} fields="MAT / ชื่อพาร์ท" />
+        <span className="spacer" />
+        <span className="filter-count">{shown.length} รายการ</span>
+        <InfoMore label="กฎการตัดสต็อก / ของลมคืออะไร" id="bom_phantom_help">
+          <b>กฎการตัดสต็อก</b> — คอนเฟิมใบไหน ตัด<b>ลูกที่ติดตัวใบนั้น</b>เท่านั้น · <b>ลูกมีหน้าที่ไปตัดหลาน</b>เมื่อใบของลูกถูกคอนเฟิม ·
+          ผัง BOM สร้าง<b>ใบเดียว</b> ลูก/หลานไม่ต้องมีใบแยก
+          <div style={{ marginTop: 4 }}><b>ของลม (phantom)</b> = <b>ข้อยกเว้น</b> สำหรับชิ้นที่ไม่มีวันเปิดใบผลิตเอง —
+            ติ๊กแล้วระบบจะข้ามตัวมัน ไปตัดลูกของมันที่ชั้นแม่แทน (ขั้น OP เป็นของลมอัตโนมัติ)</div>
+          <div style={{ marginTop: 4 }}>จอนี้แก้ได้แค่ทะเบียนของลม — <b>ไม่แก้ BOM ให้</b> (PE เป็นเจ้าของข้อมูล)</div>
+        </InfoMore>
+      </FilterBar>
 
       {loadFail && (
-        <div style={{ background: 'var(--card)', border: `1px solid ${BAD}`, borderRadius: 'var(--r-md)',
-                      padding: '8px 12px', marginBottom: 10, fontSize: 12, color: BAD }}>
-          🔴 อ่านข้อมูลไม่สำเร็จ — <b>ตัวเลขข้างล่างเชื่อไม่ได้</b> ({loadFail})
-        </div>
+        <NoticeBar tone="bad" style={{ marginBottom: 10 }}>อ่านข้อมูลไม่สำเร็จ — <b>ตัวเลขข้างล่างเชื่อไม่ได้</b> ({loadFail})</NoticeBar>
       )}
+
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
         <Card n={counts.total} label="ลูกกลางทั้งหมด" />
@@ -211,18 +221,6 @@ export default function BomPhantomPanel({ onOpenSheet }) {
         </div>
       )}
 
-      <FilterBar style={{ marginBottom: 12 }}>
-        <Segmented label="สถานะ" value={filter} onChange={setFilter} options={[
-          { value: 'all',       label: `ทั้งหมด (${counts.total})` },
-          { value: 'gap',       label: `🔴 โซ่ขาด (${counts.gap})` },
-          { value: 'seeded',    label: `🟡 รอยืนยัน (${counts.seeded})` },
-          { value: 'confirmed', label: `ของลม (${counts.confirmed})` },
-          { value: 'real',      label: `ของจริง (${counts.real})` },
-        ]} />
-        <SearchInput value={search} onChange={setSearch} fields="MAT / ชื่อพาร์ท" />
-        <span className="spacer" />
-        <span className="filter-count">{shown.length} รายการ</span>
-      </FilterBar>
 
       {hidden > 0 && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '6px 2px' }}>
