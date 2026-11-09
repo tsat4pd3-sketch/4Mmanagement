@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadProductionLines } from './useProductionLines';
-import { inSectionScope } from './sectionScope';
+import { inSectionScope, lineScope } from './sectionScope';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    กะค้างไม่ปิด — กติกา + ตัวโหลดร่วม (แยกออกจาก DailyReport 2026-08-26)
@@ -37,7 +37,7 @@ export const ballSideText = (s) => s.status === 'pending_close'
  * ⚠️ leader ต้องเห็นทั้งครอบครัวไลน์ (กฎ scope ของ leader) — ไลน์แม่ที่ลูกเปิดกะค้าง ต้องนับด้วย
  * คืน rows เรียงเก่าสุดขึ้นบน พร้อม age/section ปัจจุบันของไลน์
  */
-export async function fetchStaleSessions({ role, lineId, sections = [] }) {
+export async function fetchStaleSessions({ role, lineId, sections = [], scopeIdx = null }) {
   const [{ data: ln, error: lnErr }, { data: rows, error: sErr }] = await Promise.all([
     /* ทะเบียนไลน์ผ่าน cache กลาง (25/09 · งานลด request) — ตัวนี้ถูกเรียกทุกรอบที่ Daily Report
        โหลดใหม่ ⇒ เคยเป็นจุดที่ยิง production_lines ถี่ที่สุดจุดหนึ่งใน 4,041 ครั้ง/วัน
@@ -57,20 +57,26 @@ export async function fetchStaleSessions({ role, lineId, sections = [] }) {
 
   const lm = {};
   (ln || []).forEach(l => { lm[l.name] = l; });
-  const famOf = (name) => {
-    const kids = (ln || []).filter(l => l.parent_line_name === name).map(l => l.name);
-    return new Set([name, ...kids]);
-  };
-
-  let fam = null;
-  if (role === 'leader' && lineId) {
-    const my = (ln || []).find(l => l.id === lineId);
-    if (my) fam = famOf(my.name);
-  }
+  /* 🔭 ขอบเขตจากของกลาง `lineScope()` (QC audit 09/11 · กวาดรอบ 3)
+     เดิมคิดเองที่นี่ ⇒ leader ได้ครอบครัวไลน์ล้วน (ไม่รวมส่วนงานที่กำกับไว้ · กฎ 26/10)
+     และไม่รู้จัก `scopeIdx` (แกน Cost Center/ผัง)
+     🔴 กติกาเดิมที่คงไว้: leader ที่ชี้ไลน์ไม่ได้เลย = fail-closed (ไม่เห็นกะค้างของใคร)
+        · ไม่มี scope เลย = manager/supervisor เห็นทั้งหมด (role อื่นไม่เห็น) */
+  const sc = lineScope({ role, lineId, sections, lines: ln || [], scopeIdx });
+  const okNames = sc.unlimited ? null : new Set(sc.names);
 
   const keep = (o) => {
     if (role === 'admin') return true;
-    if (role === 'leader') return fam ? fam.has(o.line_name) : false;
+    if (okNames) {
+      if (okNames.has(o.line_name)) return true;
+      /* ไลน์ที่ทะเบียนไม่รู้จัก = ถอยไปตัดด้วยส่วนงาน (เหมือนเดิม) */
+      if (sections.length) {
+        const liveSection = lm[o.line_name]?.section;
+        return inSectionScope(sections, liveSection) || inSectionScope(sections, o.section);
+      }
+      return false;
+    }
+    if (role === 'leader') return false;              // ไม่จำกัดแต่ชี้ไลน์ไม่ได้ = fail-closed เดิม
     if (sections.length) {
       const liveSection = lm[o.line_name]?.section;
       return inSectionScope(sections, liveSection) || inSectionScope(sections, o.section);
@@ -91,13 +97,16 @@ export async function fetchStaleSessions({ role, lineId, sections = [] }) {
 }
 
 /** hook สำหรับ badge/แท็บ — โหลดครั้งเดียวตอน mount + มี reload() ให้เรียกหลังปิด/อนุมัติกะ */
-export default function useStaleSessions({ role, lineId, sections }) {
+export default function useStaleSessions({ role, lineId, sections, scopeIdx = null }) {
   const [state, setState] = useState({ rows: [], error: null, loading: true });
   const secKey = (sections || []).join('|');
+  /* 🔴 deps ห้ามมี object (กฎเขียน DB ข้อ 9) ⇒ ใช้ "มีผังไหม" เป็นคีย์ · ผังมาทีหลัง = โหลดซ้ำรอบเดียว */
+  const idxKey = scopeIdx ? 'idx' : '-';
   const reload = useCallback(async () => {
-    const r = await fetchStaleSessions({ role, lineId, sections: secKey ? secKey.split('|') : [] });
+    const r = await fetchStaleSessions({ role, lineId, sections: secKey ? secKey.split('|') : [], scopeIdx });
     setState({ rows: r.rows, error: r.error, loading: false });
-  }, [role, lineId, secKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role, lineId, secKey, idxKey]);
   useEffect(() => { reload(); }, [reload]);
   return { ...state, reload };
 }

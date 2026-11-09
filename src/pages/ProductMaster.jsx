@@ -1601,7 +1601,9 @@ export default function ProductMaster() {
       {partsPickFor && <PartsPickModal parts={pmParts} onPick={handlePartPick} onClose={() => setPartsPickFor(null)} />}
       </>)}
 
-      {mainTab === 'bom'   && <BOMPanel canCreate={canCreate} canEdit={canEdit} mayDelete={mayDelete} fullName={fullName} />}
+      {/* 🔐 ส่งกฎชั้น ③ ของหน้าแม่ลงแผงลูกด้วย — ส่งแค่ canEdit = แผงลูกเขียนข้ามหน่วยงานได้ */}
+      {mainTab === 'bom'   && <BOMPanel canCreate={canCreate} canEdit={canEdit} mayDelete={mayDelete}
+        fullName={fullName} guard={pGuard} />}
       {/* 🔁 คู่ที่ "ของชิ้นเดียวถูกนิยามไว้ 2 ใบ" — กดแล้วเด้งไปเปิดใบนั้นในแท็บ BOM (ใช้ `openBomFor` ตัวเดิม
           ที่ worklist ของ /vsm ใช้อยู่ — ลิสต์ยาว บอกให้ "ไปหาเอง" = คนไม่ไป) */}
       {mainTab === 'bomdup' && <BomDupPanel onOpenSheet={openBomFor} />}
@@ -1782,7 +1784,10 @@ const TD = ({ children, style }) => (
    · ของที่ขั้นกิน = ใบของขั้น → ไม่มี + แม่มีลูกตัวเดียว = ลูกตัวนั้น → ไม่งั้น "ยังไม่ผูก" (`opInputsOf` · utils/opInputs.js)
    · เพิ่ม/ลบได้จากหน้านี้ (สิทธิ์ `products:edit` = PE + supervisor ขึ้นไป) · เลือกได้เฉพาะลูกชั้น 1 ของแม่
      ของที่ขั้นใส่เพิ่มนอก BOM แม่ (delta เช่นนัทของขั้น) → ปุ่มเปิดใบของขั้น */
-function OpStepsPanel({ parent, products, bomIx, parentKids, canEdit, fullName, onChanged, onOpenSheet }) {
+/* 🔐 `guard` = กฎชั้น ③ ของหน้าแม่ที่ผูกไลน์ของพาร์ทไว้แล้ว — **ส่งแค่ `canEdit` ไม่พอ**
+   (แผงลูกจะเขียน `bom_items` ข้ามหน่วยงานได้ · กฎ "หน้าแม่ที่มีกฎแล้วต้องส่งกฎลงแผงลูก")
+   เงื่อนไข render ปุ่มไม่ใช่ด่าน — ต้องเช็คในฟังก์ชันที่เขียน DB จริง (QC audit 09/11) */
+function OpStepsPanel({ parent, products, bomIx, parentKids, canEdit, guard, fullName, onChanged, onOpenSheet }) {
   const up = (m) => String(m ?? '').trim().toUpperCase();
   const ops = useMemo(() => (products || [])
     .filter(p => p._op && p.is_active !== false && up(p._op.parent) === up(parent?.mat_no))
@@ -1800,6 +1805,7 @@ function OpStepsPanel({ parent, products, bomIx, parentKids, canEdit, fullName, 
         uom: k?.uom || null, qty_per_unit: Number(q), is_active: true, created_by: fullName, updated_at: new Date().toISOString() };
     });
     if (!rows.length) { toast.error('เลือกของที่ขั้นนี้กินอย่างน้อย 1 รายการ'); return; }
+    if (!guard?.(`ของที่ขั้น ${op.mat_no} กิน`)) return;
     setBusy(true);
     const res = await supabaseDR.from('bom_items').insert(rows).select('id');
     setBusy(false);
@@ -1809,6 +1815,7 @@ function OpStepsPanel({ parent, products, bomIx, parentKids, canEdit, fullName, 
     onChanged?.();
   };
   const remove = async (op, row) => {
+    if (!guard?.(`ของที่ขั้น ${op.mat_no} กิน`)) return;
     if (!window.confirm(`เอา ${row.mat_no} ออกจาก "ของที่ขั้น ${op.mat_no} กิน"?\n\n(ไม่แตะ BOM ของแม่ ${parent.mat_no})`)) return;
     setBusy(true);
     const res = await supabaseDR.from('bom_items').delete().eq('id', row.id).select('id');
@@ -1885,7 +1892,9 @@ function OpStepsPanel({ parent, products, bomIx, parentKids, canEdit, fullName, 
   );
 }
 
-function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
+/* `guard(lineName, what)` = กฎชั้น ③ จากหน้าแม่ (`pGuard`) — แผงนี้ส่งต่อให้ `OpStepsPanel`
+   (BOM ของพาร์ทเองยังเป็น legacy ที่ไม่มีชั้น ③ · บันทึกไว้ใน permission-scope-audit.md) */
+function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
   /* 📏 ทะเบียนหน่วยนับ — ทุกจุดที่เขียนหน่วยลงฐานผ่าน normUom (EA/pcs → PC · utils/uom.js) */
   const uomState = useUomUnitsState();
   const uomIdx = useMemo(() => buildUomIndex(uomState.rows), [uomState.rows]);
@@ -2395,7 +2404,12 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
   /* ⤵ ย้ายบรรทัดไปเป็นลูกของบรรทัดอื่นในใบเดียวกัน = "เลเวลควบคุม" แบบ SAP (2026-09-16 · คำสั่ง user)
      กฎกันต้นไม้พัง (ย้ายใต้ตัวเอง/ใต้ลูกหลานตัวเอง) อยู่ใน moveBomLine (utils/bomTree · มีเทส)
      ⚠️ RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error ⇒ ต้อง .select('id') แล้วนับแถว (กฎเหล็กข้อ 2) */
+  /* 🔐 ชั้น ③ — BOM ของพาร์ทไหน = ของไลน์นั้น (กฎชั้น ③ ส่งมาจากหน้าแม่ผ่าน prop `guard`)
+     ไม่ส่ง `guard` มา = ไม่บล็อก (พฤติกรรมเดิมของผู้เรียกเก่า) · QC audit 09/11 */
+  const bomGuard = () => (guard ? guard(selProduct?.line_name, `BOM ของ ${selProduct?.mat_no || 'พาร์ทนี้'}`) : true);
+
   const doMoveLine = async (it, toMat) => {
+    if (!bomGuard()) return;
     const ix = buildBomIndex(items, { [selProduct?.id]: selProduct?.mat_no });
     const r = moveBomLine(it, toMat, ix.bomOf);
     if (!r.ok) { toast.error(r.reason); return; }
@@ -2416,6 +2430,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
   };
 
   const handlePickerSave = async () => {
+    if (!bomGuard()) return;
     if (!pickerSel.length) { toast.error('เลือกพาร์ทอย่างน้อย 1 รายการ'); return; }
     const invalid = pickerSel.find(x => !parseFloat(x.qty_per_unit) || parseFloat(x.qty_per_unit) <= 0);
     if (invalid) { toast.error(`QTY ของ ${invalid.part.part_name} ต้องมากกว่า 0`); return; }
@@ -2498,6 +2513,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
   };
 
   const handleEditSave = async () => {
+    if (!bomGuard()) return;
     const qty = parseFloat(form.qty_per_unit);
     if (!qty || qty <= 0) { toast.error('QTY ต้องมากกว่า 0'); return; }
     const itemNo = String(form.item_no).trim() === '' ? null : parseInt(form.item_no, 10);
@@ -2543,6 +2559,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
   };
 
   const handleDelete = async (it) => {
+    if (!bomGuard()) return;
     if (!window.confirm(`ลบ ${it.part_name || ''} · MAT ${it.mat_no} ออกจาก BOM?`)) return;
     const { error } = await supabaseDR.from('bom_items').delete().eq('id', it.id);
     if (error) { toast.error(error.message); return; }
@@ -2560,6 +2577,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
         เป็นการลบแบบ "ทีละหลายแถว" ถ้าพลาดแล้วกู้ไม่ได้ = ความต้องการวัตถุดิบหายเงียบ
      ⚠️ RLS ปฏิเสธ UPDATE = 0 แถว ไม่มี error (กฎเหล็กข้อ 2) ⇒ ต้อง .select('id') แล้วนับ */
   const handleDeleteDupes = async (rows) => {
+    if (!bomGuard()) return;
     const ids = [...new Set(rows.map(r => r.id).filter(Boolean))];
     if (!ids.length) return;
     const list = rows.map(r => `• ${r.part_name || ''} — MAT ${r.mat_no} ×${r.qty} ${uomLabel(r.uom) || ''}`).join('\n');
@@ -2578,6 +2596,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
   };
 
   const handleCopyBom = async () => {
+    if (!bomGuard()) return;
     if (!copySource) { toast.error('เลือก product ต้นฉบับก่อน'); return; }
     setCopying(true);
     try {
@@ -2793,7 +2812,8 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName }) {
             {selProduct?.mat_no && !selProduct._op && (
               <OpStepsPanel parent={selProduct} products={products} bomIx={bomIx}
                 parentKids={items.filter(i => !String(i.parent_mat || '').trim())}
-                canEdit={canEdit} fullName={fullName} onChanged={loadAll} onOpenSheet={openSheetOfMat} />
+                canEdit={canEdit} guard={(what) => (guard ? guard(selProduct?.line_name, what) : true)}
+                fullName={fullName} onChanged={loadAll} onOpenSheet={openSheetOfMat} />
             )}
             {/* 🌳 โครงหลายชั้นแบบ SAP (CS12) — ตารางด้านล่างเป็นชั้น 1 อย่างเดียว
                 ต้องมีตัวกางถึงจะเห็นว่าของตัวไหนถูกนับซ้ำ (BOM ถูกแบนมาจาก SAP) */}

@@ -4,7 +4,7 @@ import { orgValues, sortLike } from '../utils/listOrder';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLines as scopedLinesOf } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { hasNightShift } from '../utils/stdManpower';
 import useIsMobile from '../utils/useIsMobile';
@@ -70,7 +70,7 @@ const PLAN_META = {
 };
 
 export default function ProductionPlan() {
-  const { role, fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, fullName, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   const isMobile = useIsMobile();
   /* 📊 ยุบ 3 แท็บแรกเป็นแท็บเดียว (user 06/10: *"3 tab แรกเราว่าฟุ่มเฟือย มันคือเรื่องเดียวกัน
      คนละมุมมอง ซึ่งโรงงานชอบแบบกราฟ"*) — รายวัน/รายเดือนคือ**คำถามเดียวกันคนละหน่วยเวลา**
@@ -117,14 +117,11 @@ export default function ProductionPlan() {
   const today = getWorkDate();
 
   /* ── scope ── */
-  const scopedLines = useMemo(() => {
-    if (role === 'leader' && userLineId) {
-      const fam = new Set(getLineFamilyNames(allLines, userLineId));
-      return allLines.filter(l => fam.has(l.name));
-    }
-    if (scopeSecs.length) return allLines.filter(l => inSectionScope(scopeSecs, l.section));
-    return allLines;
-  }, [allLines, role, userLineId, scopeSecs]);
+  /* 🔭 ของกลาง `lineScope()` (QC audit 09/11 · กวาดรอบ 3) — สูตรเดิมในหน้าแคบกว่าที่ `profiles`
+     ตั้งไว้ (leader ได้ครอบครัวไลน์ล้วน · ไม่รู้จัก `scopeIdx`) */
+  const scopedLines = useMemo(
+    () => scopedLinesOf({ role, lineId: userLineId, sections: scopeSecs, lines: allLines, scopeIdx }),
+    [allLines, role, userLineId, scopeSecs, scopeIdx]);
   // ส่วนงานในตัวเลือก: ยึดผังองค์กรก่อน (กรองตาม scope) → fallback เดาจาก production_lines เมื่อผังยังว่าง
   const sectionOpts = useMemo(() => {
     const fromLines = [...new Set(scopedLines.map(l => l.section).filter(Boolean))];

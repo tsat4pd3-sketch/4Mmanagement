@@ -8,7 +8,7 @@ import { supabase } from '../supabaseClient';
 import { staffGroupOf, STAFF_KINDS, STAFF_SHOPFLOOR } from '../utils/staffKind';
 import { UserContext } from '../App';
 import { can, canDelete } from '../utils/permissions';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, lineScope } from '../utils/sectionScope';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
 import { loadLinesRes } from '../utils/useProductionLines';
@@ -42,7 +42,7 @@ function toDateStr(d) {
 }
 
 export default function ShiftOrganize() {
-  const { role, lineId: userLineId, sections: scopeSecs = [], section: mySection } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], section: mySection, scopeIdx } = useContext(UserContext);
   const canEdit = can('shift_schedule', 'edit', role);
   // 🏢 แก้ตารางกะ "หน่วยงานสนับสนุน" แยกคีย์ได้ — หัวหน้าทีมช่างตั้งกะแผนกตัวเองได้
   // โดยไม่ได้สิทธิ์แตะกะไลน์ผลิต/override รายคน/ยุบกะ (migration 20260820_shift_schedule_edit_dept)
@@ -124,17 +124,23 @@ export default function ShiftOrganize() {
     // mandatory scope: leader → ทั้งครอบครัวไลน์ตัวเอง (ตัวเอง + แม่ + ลูก — ห้ามกรอง line_id ตรงตัว
     // ไม่งั้นพนักงานที่ผูกกับไลน์ลูกจะหายจากสายตาหัวหน้าที่ผูกกับไลน์แม่) ·
     // role ที่ถูกจำกัด sections → กรองหลัง join ด้วย inSectionScope
-    if (role === 'leader' && userLineId) {
-      const { data: ls } = await loadLinesRes();
-      const fam = getLineFamilyIds(ls || [], Number(userLineId));
-      q = fam.size ? q.in('line_id', [...fam]) : q.eq('line_id', userLineId);
+    /* 🔭 ขอบเขตมาจากของกลาง `lineScope()` (QC audit 09/11) — เดิมเขียนสูตรเองแล้วให้ leader
+       เห็นแค่ครอบครัวไลน์ตัวเอง = แคบกว่าที่ `profiles` ตั้งไว้ (กฎ 26/10) และไม่รู้จัก `scopeIdx`
+       🔴 คนที่ไม่ผูกไลน์ (สนับสนุน) ต้องไม่หาย ⇒ ดึงมาด้วย (`line_id.is.null`) แล้วตัดด้วยส่วนงาน */
+    const { data: ls } = await loadLinesRes();
+    const sc = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines: ls || [], scopeIdx });
+    if (!sc.unlimited) {
+      const names = new Set(sc.names);
+      const ids = (ls || []).filter(l => names.has(l.name)).map(l => l.id).filter(v => v != null);
+      q = ids.length ? q.or(`line_id.in.(${ids.join(',')}),line_id.is.null`) : q.is('line_id', null);
     }
     const { data } = await q.order('name');
     let scoped = data || [];
-    if (!(role === 'leader' && userLineId) && scopeSecs.length) {
-      // ⚠️ fallback ไป employees.section ด้วย — พนักงานซัพพอร์ทไม่มี line_id จึงไม่มี production_lines
-      //    ถ้าดูแค่ section ของไลน์ พวกเขาจะหายจากสายตา user ที่ถูกจำกัด scope ทั้งที่อยู่ส่วนงานเดียวกัน
-      scoped = scoped.filter(e => inSectionScope(scopeSecs, e.production_lines?.section ?? e.section));
+    if (!sc.unlimited) {
+      // ⚠️ fallback ไป employees.section — พนักงานซัพพอร์ทไม่มี line_id จึงไม่มี production_lines
+      //    คนที่มีไลน์ผ่านด่าน `.in()` มาแล้ว · ที่เหลือ (ไลน์ว่าง) ตัดด้วยส่วนงานที่ถูกกำกับไว้
+      scoped = scoped.filter(e => (e.line_id != null)
+        || (scopeSecs.length ? inSectionScope(scopeSecs, e.production_lines?.section ?? e.section) : false));
     }
     setEmployees(scoped);
   };
@@ -166,11 +172,17 @@ export default function ShiftOrganize() {
       .gte('work_date', weekStart)
       .lte('work_date', weekEnd)
       .order('work_date');
-    // mandatory scope: leader → override ของพนักงานไลน์ตัวเอง, role ที่ถูกจำกัด sections → เฉพาะส่วนงานใน scope
+    /* 🔭 ขอบเขตจากของกลาง (QC audit 09/11) — เดิมเทียบ `line_id` ตรงตัว ⇒ หัวหน้าที่ผูกกับไลน์แม่
+       มองไม่เห็น override ของคนในไลน์ลูกเลย (กฎเหล็ก: leader = ทั้งครอบครัวไลน์ ∪ ส่วนงานที่กำกับ) */
+    const { data: ls2 } = await loadLinesRes();
+    const sc2 = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines: ls2 || [], scopeIdx });
+    const okIds = sc2.unlimited ? null
+      : new Set((ls2 || []).filter(l => new Set(sc2.names).has(l.name)).map(l => String(l.id)));
     const scoped = (data || []).filter(o => {
-      if (role === 'leader' && userLineId) return String(o.employees?.line_id) === String(userLineId);
-      if (scopeSecs.length) return inSectionScope(scopeSecs, o.employees?.production_lines?.section);
-      return true;
+      if (!okIds) return true;
+      const lid = o.employees?.line_id;
+      if (lid != null) return okIds.has(String(lid));
+      return scopeSecs.length ? inSectionScope(scopeSecs, o.employees?.production_lines?.section) : false;
     });
     setOverrides(scoped);
   };
@@ -403,9 +415,14 @@ export default function ShiftOrganize() {
 
   // ── mandatory scope (CLAUDE.md "Section/Line/Team Scoping") — leader → ไลน์ตัวเอง, role ที่ถูกจำกัด
   // sections → เฉพาะส่วนงานใน scope · scope ว่าง ([]) = ไม่จำกัด เห็นหมดเหมือนเดิม ──
-  const scopedLines = (role === 'leader' && userLineId)
-    ? lines.filter(l => String(l.id) === String(userLineId))
-    : scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines;
+  /* 🔭 ของกลางตัวเดียวกับ fetchEmployees — เดิม leader เห็น **ไลน์ตัวเองไลน์เดียว** (ไม่ถึงครอบครัว)
+     ซึ่งเป็นต้นเหตุเคส 26/10 ที่หน้างานเปิดกะไม่ได้ (QC audit 09/11) */
+  const scopeRes = useMemo(
+    () => lineScope({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx }),
+    [role, userLineId, scopeSecs, lines, scopeIdx]);
+  const scopedLines = useMemo(
+    () => (scopeRes.unlimited ? lines : lines.filter(l => new Set(scopeRes.names).has(l.name))),
+    [scopeRes, lines]);
 
   /* 🔴 คำเตือน "ไลน์นี้ยังไม่มีกะ" รายไลน์ (2026-10-13 · ต่อจากเคส Line D2/D3)
      เดิมจอเตือนเฉพาะตอน**ทั้งตาราง**ว่าง ⇒ ไลน์เดียวที่เพิ่งสร้าง (หลังเติมตารางล่วงหน้าไปแล้ว)
@@ -424,23 +441,21 @@ export default function ShiftOrganize() {
   const noShiftPeople = noShiftLines.reduce((s, l) => s + l.n, 0);
 
   const allSections = orgSections.length ? orgSections : sortLike(lines.map(l => l.section), orgSections);
-  const scopedSections = (role === 'leader' && userLineId)
-    ? sortLike(scopedLines.map(l => l.section), orgSections)
-    : scopeSecs.length ? allSections.filter(s => inSectionScope(scopeSecs, s)) : allSections;
+  /* ส่วนงานที่เลือกได้ = ส่วนงานของไลน์ที่เห็นได้ ∪ ส่วนงานที่ถูกกำกับไว้ (ไม่ใช่ของไลน์ตัวเองช่องเดียว) */
+  const scopedSections = scopeRes.unlimited ? allSections : (() => {
+    const secs = new Set(scopedLines.map(l => l.section).filter(Boolean));
+    const keep = allSections.filter(s => secs.has(s) || (scopeSecs.length && inSectionScope(scopeSecs, s)));
+    return keep.length ? keep : sortLike(scopedLines.map(l => l.section), orgSections);
+  })();
 
   // merge event อยู่ใน scope เมื่อ: ระบุไลน์ → ไลน์นั้นอยู่ใน scope / ระบุ section → section นั้นอยู่ใน scope
   // (leader เห็น merge ระดับ section ของ section ตัวเองด้วย เพราะกระทบไลน์ตัวเอง)
   const mergeEventInScope = (evt) => {
-    if (role === 'leader' && userLineId) {
-      if (evt.line_id) return String(evt.line_id) === String(userLineId);
-      const myLine = lines.find(l => String(l.id) === String(userLineId));
-      return !!myLine?.section && inSectionScope([myLine.section], evt.section);
-    }
-    if (scopeSecs.length) {
-      if (evt.line_id) return inSectionScope(scopeSecs, lines.find(l => l.id === evt.line_id)?.section);
-      return inSectionScope(scopeSecs, evt.section);
-    }
-    return true;
+    if (scopeRes.unlimited) return true;
+    /* ระบุไลน์ = ไลน์นั้นต้องอยู่ในขอบเขต · ระบุส่วนงาน = ส่วนงานของไลน์ที่เห็นได้ หรือส่วนงานที่กำกับไว้ */
+    if (evt.line_id) return scopedLines.some(l => String(l.id) === String(evt.line_id));
+    const secs = new Set(scopedLines.map(l => l.section).filter(Boolean));
+    return secs.has(evt.section) || (scopeSecs.length ? inSectionScope(scopeSecs, evt.section) : false);
   };
   const visibleMergeEvents = mergeEvents.filter(mergeEventInScope);
 

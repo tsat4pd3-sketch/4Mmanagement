@@ -34,6 +34,22 @@
 5. insert ต้องผ่าน `checkWrite()` (กฎการเขียน DB ข้อ 1) — เดิม `/register` ใช้ `throw` ในก้อน try
    ซึ่งไม่เงียบ แต่ไม่เข้าชุดเดียวกับหน้าอื่น
 
+## 🔁 รหัสซ้ำต้องตอบเป็นคน ไม่ใช่ชื่อ constraint (2026-11-09)
+
+**เกิดจริง 09/11:** หัวหน้า PD2 ลงทะเบียน 3 คน (2103622 เจนนิภา · 2103793 ขันทอง · 2103242 สุทธวีร์) ที่ `/register` ไม่ได้
+toast ขึ้น `duplicate key value violates unique constraint "employees_employee_id_code_key"` — ทั้ง 3 คน**มีอยู่ในฐานแล้ว**
+(สร้างจาก /add-user 21–23/09 · 06/10) แต่เป็นสายสนับสนุน `section` ว่าง/PD1 และ 1 คนถูกปิดใช้งาน
+⇒ `/operator` ของ PD2 กรองตาม scope จึงมองไม่เห็น ⇒ คิดว่ายังไม่มี ⇒ เพิ่ม ⇒ ชนรหัส ⇒ ตัน ("มีอยู่ในฐานแต่มองไม่เห็น" ซ้ำรอบ 23/09)
+
+**กฎ (เจ้าของ `employeeIdentity.js`):**
+- ทุกทางเข้า **ถาม `findEmployeeByCode(client, code)` ก่อน insert** · คืน `{ row, error }` — `error` = อ่านไม่ได้ ⇒ **ไม่เพิ่ม** (fail-closed) ห้ามตีเป็น "ไม่มี"
+  (RLS SELECT ของ `employees` = `true` สำหรับ authenticated ⇒ เห็นข้ามส่วนงานได้ ตรวจ 09/11)
+- เจอแถวเดิม ⇒ ข้อความจาก **`duplicateEmployeeText(row, { code, scopeSecs })`**: ชื่อ · ประเภท · ส่วน/แผนก · ใช้งาน/ปิดอยู่ · แก้ที่ไหน
+  — ปิดใช้งาน → "เปิดกลับที่ /operator" · นอก `scopeSecs` → "ให้ admin ย้ายส่วนงาน" · ในขอบเขต → "แก้ของเดิมที่ /operator"
+- insert แล้วได้ 23505 (สองคนกดพร้อมกัน) ⇒ **`isDuplicateEmployeeError(err)`** แล้วตอบข้อความเดียวกัน **ก่อน** `checkWrite()`
+- `/add-user` เดิมเช็คซ้ำจากลิสต์ `emps` (โหลดเฉพาะ `is_active`) ⇒ คนที่ถูกปิดใช้งานหลุดด่าน — ตอนนี้ถามฐานซ้ำเสมอ
+- ด่าน `employee-identity-single-entry` ตรวจว่าทุกไฟล์ที่ insert `employees` เรียกทั้ง 2 ฟังก์ชัน · เทส `employeeDuplicate.test.mjs`
+
 ## 📐 หน้าตา
 
 `/register` ใช้ `<Page width="form">` (960px) **ไม่ใช่ `narrow`** — เหตุผลใน `docs/UI-STANDARD.md` §1

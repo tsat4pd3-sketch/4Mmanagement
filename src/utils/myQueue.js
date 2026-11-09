@@ -31,6 +31,7 @@ import {
 } from './mtnStepPerm.js';
 import { isMtnFormRow, isApprovalBlocked } from './mtnMoForm.js';
 import { bkkDateStr } from './workDate.js';
+import { binTagAge } from './qualityBin.js';   // อายุแท็กถังเหลือง/แดง (WI-PD3-087 §5.6) — ห้ามเขียนเลขวันซ้ำที่นี่
 
 /** 3 ชั้นของคิว — ชื่อชั้นใช้ร่วมกับจอ ห้ามพิมพ์สตริงเองในหน้า */
 export const TIER = { MINE: 'mine', UNIT: 'unit', FLOOR: 'floor' };
@@ -198,6 +199,8 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
      แล้วแผงยืนยันว่า "ไม่มีงานที่รอคุณอยู่" ทั้งที่ ผจก.ฝ่ายที่แจ้งมี 51 ใบรออนุมัติปิด
      ⚠️ ตัดเงียบแย่กว่าตัวเลขไม่ครบ — badgeCount() คืน 0 ตอน partial อยู่แล้ว (ไม่หลอกว่ามีงานน้อย) */
   if (src?.moTruncated) missing.push('mo_truncated');
+  /* 🔴 คิวถังเหลืองชนเพดานของตัวโหลด = ตัวเลขต่ำกว่าจริง ⇒ จอต้องเขียนบอกว่าไม่ครบ (09/11) */
+  if (src?.binsTruncated) missing.push('bins_truncated');
   /* 🔴 แถวที่ "ชี้ส่วนงานไม่ได้" — ตกจากคิวของทุกคน ⇒ ต้องนับไว้ให้จอเขียนบอก ห้ามหายเงียบ */
   let unattributed = 0;
   const keep = (row) => {
@@ -310,6 +313,57 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
     });
   }
 
+  /* ── 🟡 ถังเหลืองรอพิจารณา — "ซ่อมกลับมาดีได้ หรือเสียแน่" (2026-11-09) ──────────────
+     ที่มา: เปิดแท็กเหลืองอัตโนมัติตอนลงงานเสียไปเมื่อ 05/11 ⇒ **วัดจริง 4 วันแรก: ตั้งแท็ก 14 ใบ
+     ตัดสินแล้ว 0 ใบ** · กองโตวันละ 3-4 ใบ โดยไม่มีใครถูกดึงไปเคลียร์ (จอมี แต่ต้องเปิดหน้าถึงเห็น)
+     🔴 **2 ชั้น ห้ามใช้ชั้นเดียว** — คนตัดสินคือ QA ซึ่ง `sections` ไม่ตรงกับไลน์ผลิต
+        ⇒ มีแต่ชั้น `unit` = QA ไม่เห็นอะไรเลย · มีแต่ `floor` = หน่วยเจ้าของไม่รู้ว่าใบไหนของตัวเอง
+     🔴 ผู้เรียกต้องเติม `section` ของไลน์มาให้ (ตารางถังไม่มีคอลัมน์ส่วนงาน) — ไม่เติม = `unknown`
+        แล้วตกเป็น "ชี้ส่วนงานไม่ได้" ที่จอเขียนบอกอยู่แล้ว ห้ามเดาให้ */
+  const bins = need('bins', src.bins);
+  const todayKey = bkkDateStr(now.getTime());
+  const binAgg = (rows) => {
+    let n = 0; let pcs = 0; let oldest = null; let over = 0;
+    for (const b of rows) {
+      n += 1; pcs += Number(b.qty) || 0;
+      const age = ageDays(b.work_date, now);
+      if (age != null && (oldest == null || age > oldest)) oldest = age;
+      if (binTagAge({ ...b, bin: 'yellow' }, todayKey)?.over) over += 1;
+    }
+    return { n, pcs, oldest, over };
+  };
+  const binDetail = (g, where) => [where,
+    `${g.pcs.toLocaleString()} ชิ้น`,
+    g.oldest != null ? `เก่าสุด ${g.oldest.toLocaleString()} วัน` : null,
+    g.over ? `⏱ เกินอายุแท็ก ${g.over.toLocaleString()}` : null].filter(Boolean).join(' · ');
+
+  /* 🔴 **สรุปบรรทัดเดียวทั้ง 2 ชั้น ห้ามแตกรายตัว** — ชั้น unit มีเพดาน 6 แถว (CAP)
+     14 ใบ (ยอดจริง 09/11) จะดันใบซ่อม/4M ของหน่วยงานตกจอหมด · หลักเดียวกับคำขอขึ้นขั้นทักษะ
+     รายตัวดูที่หน้าถังอยู่แล้ว และแถวในคิวก็ลิงก์ไปหน้าเดียวกันทุกแถว (ไม่มี deep-link รายใบ) */
+  const mineBins = bins.filter(b => keep(b));
+  const gUnit = binAgg(mineBins);
+  if (gUnit.n) {
+    unit.push({
+      key: 'binpend_unit', icon: '🟡', tier: TIER.UNIT, count: gUnit.n,
+      title: `ถังเหลืองรอพิจารณา ${gUnit.n.toLocaleString()} รายการ`,
+      detail: binDetail(gUnit, 'หน่วยงานของคุณ'),
+      age: gUnit.oldest,
+      tag: gUnit.over ? 'เกินอายุแท็กแล้ว' : 'รอตัดสิน ซ่อมได้/เสียแน่',
+      to: '/scrap-report?tab=bins',
+    });
+  }
+  /* บรรทัดของทั้งโรงงาน — กองนี้ไม่มีเจ้าภาพรายใบ (กติกาเดิมของชั้น `floor`)
+     🔴 ห้ามให้ขึ้น badge (badge นับเฉพาะชั้น `mine`) */
+  const gAll = binAgg(bins);
+  if (gAll.n) {
+    floor.push({
+      key: 'binpend', icon: '🟡', tier: TIER.FLOOR, count: gAll.n,
+      title: `ถังเหลืองรอพิจารณา ${gAll.n.toLocaleString()} รายการ`,
+      detail: binDetail(gAll, 'ทั้งโรงงาน · QA/หัวหน้าตัดสิน'),
+      age: null, to: '/scrap-report?tab=bins',
+    });
+  }
+
   // ── งานที่ถูกมอบหมายชื่อเราตรงๆ (ใบติดตามงานแก้ไข) ──────────────────────────
   for (const a of need('actions', src.actions)) {
     const it = {
@@ -418,7 +472,13 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
   return {
     mine, unit, floor,
     /* 🔴 badge = จำนวน "ใบ" จริง — บรรทัดสรุป (`rollup`) ไม่นับ ไม่งั้นเลขเกินจำนวนงานจริง */
-    counts: { mine: mine.filter(x => !x.rollup).length, unit: unit.length, floor: floor.reduce((n, f) => n + (f.count || 0), 0) },
+    /* 🔴 แถวสรุป (คิวถังเหลือง · คำขอขึ้นขั้นทักษะ) ถือ `count` ของกองไว้ — นับเป็น 1 แถว
+       จะได้ตัวเลขชั้นหน่วยงาน **ต่ำกว่างานจริง** (QC audit 09/11) ⇒ นับด้วย `count` ถ้ามี */
+    counts: {
+      mine: mine.filter(x => !x.rollup).length,
+      unit: unit.reduce((n, u) => n + (Number(u.count) || 1), 0),
+      floor: floor.reduce((n, f) => n + (f.count || 0), 0),
+    },
     missing,
     partial: missing.length > 0,
     /* จำนวนแถวที่ระบุส่วนงานไม่ได้ ⇒ ไม่เข้าคิวของใครเลย — **จอต้องเขียนบอก** (ไม่ใช่ `partial`

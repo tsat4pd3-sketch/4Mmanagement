@@ -11,7 +11,7 @@ import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import { fetchByIds } from '../utils/fetchByIds';
 import { SESSION_STATUSES_LIVE } from '../utils/sessionStatus';
-import { scoreDef, defBars, unitOf, decimalsOf, summaryModeOf, summaryShort, fmtBar, valueScopeOf, sharedValueDef, yearForecast, boardSlotOf } from '../utils/kpiSetup';
+import { scoreDef, defBars, unitOf, decimalsOf, summaryModeOf, summaryShort, fmtBar, valueScopeOf, sharedValueDef, yearForecast, boardSlotOf, baseVarOf } from '../utils/kpiSetup';
 import { scopedLineNames } from '../utils/sectionScope';
 import useOrgScope from '../utils/useOrgScope';
 import OrgScopePicker from './OrgScopePicker';
@@ -211,7 +211,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const scopeSet = useMemo(() => {
     const names = scopedLineNames({ role, lineId, sections, lines, scopeIdx });
     return names ? new Set(names) : null;
-  }, [role, lineId, sections, lines]);
+  }, [role, lineId, sections, lines, scopeIdx]);   // 🔴 scopeIdx มาแบบ async — ไม่อยู่ใน deps = ขอบเขตค้างค่าเดิม (QC audit 09/11)
 
   /* ตัวเลือกขอบเขตในสังกัดของ user (ตัดด้วย scope ไลน์ + ส่วนงานสังกัด) */
   const scopeOpts = useMemo(() => filterScopeOptions(org, { scopeSet, sections }), [org, scopeSet, sections]);
@@ -607,6 +607,18 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         const prev = series.slice(0, 12).filter(p => p.k <= monthKey && p.v != null).pop();
         if (prev) { value = prev.v; valueKey = prev.k; stale = true; }
       }
+      /* 🧮 บรรทัดรองของแผ่นที่ "สูตรคำนวณ" ต้องบอกตัวตั้ง/ตัวหารที่ใช้จริง ไม่ใช่เขียน "กรอกมือ" (09/11 · user: "sales/head เหมือนจะผิด")
+         เคสจริง: ยอดขาย/หัว PD1 = 47.951 เพราะกำลังคน PD1 ที่กรอกไว้ 32 คน (ของจริง ~300) — ถ้าแผ่นเขียนแค่ "กรอกมือ" ไม่มีทางเห็นว่าตัวหารผิด */
+      let fxSrc = '';
+      if (fiB?.computed?.length && !r.auto) {
+        const mNo = Number(String(valueKey || monthKey).slice(5, 7)) || monthNo;
+        const useM = fiB.computed.includes(mNo) ? mNo : Math.max(...fiB.computed.filter(x => x <= mNo), 0) || fiB.computed[fiB.computed.length - 1];
+        const ins = fiB.inputs?.[useM] || {};
+        const fmtIn = (v, x) => { const u = baseVarOf(v)?.unit || ''; if (x == null) return '—'; if (u === 'บาท') return Math.abs(x) >= 1e6 ? `${(x / 1e6).toLocaleString('th-TH', { maximumFractionDigits: 1 })} MB` : `${Math.round(x).toLocaleString('th-TH')} บ.`; return `${Number(x).toLocaleString('th-TH', { maximumFractionDigits: 1 })} ${u}`; };
+        const vars = fiB.formula?.vars || Object.keys(ins);
+        const parts = vars.map(v => `${(baseVarOf(v)?.label || v).split(' (')[0].replace(/^[^\wก-๙]+\s*/, '')} ${fmtIn(v, ins[v])}${fiB.inputSrc?.[useM]?.[v] === 'auto' ? ' ≈ทะเบียน' : ''}`);
+        fxSrc = `🧮 ${fiB.label} · ${parts.join(' ÷ ')}${useM !== mNo ? ` (${monthLabel(`${year}-${String(useM).padStart(2, '0')}`)})` : ''}`;
+      }
       /* 🎯 เป้า/Commitment อ่านผ่าน `defBars()` ตัวเดียว (กฎ kpiSetup "ห้ามให้จอไหนแกะเอง") — เดิมอ่าน `target_value` ตรงๆ
          ⇒ นิยามที่พิมพ์เป้าไว้ในช่องข้อความ ("730" · "≤ 0.5%") แต่ไม่กรอกช่องตัวเลข ขึ้น "ไม่มีเป้า" ทั้งที่ ⚙️ ตัดสิน ○△✗ ได้ (user 09/10) */
       const bars = def ? defBars(def) : null;
@@ -655,7 +667,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         hasTarget: !!(def && (target != null || bars?.commit_value != null)),
       };
       return {
-        ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast, curFilled, curChild, curDetail, curMan, hrPerPct, childMix, mix, roll,
+        ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fxSrc, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast, curFilled, curChild, curDetail, curMan, hrPerPct, childMix, mix, roll,
         atLabel: man?.inherited && man.at ? org.labelOf(man.at.kind, man.at.value) : '',
         commit: bars?.commit_value ?? null, hasPlan: Object.keys(planMap).length > 0,
         dec: decimalsOf(def),
@@ -812,6 +824,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const srcLabel = (r) => {
     if (r.roll) return `⬆ รวม ${r.roll.n} หน่วยลูก${r.roll.approx ? ' (≈ เฉลี่ย)' : ''}`;
     if (r.childMix) return `✍️ กรอกมือ · ⬆ เติมจากลูก ${r.childMix.filled} เดือน${r.childMix.approx ? ' (≈)' : ''}`;
+    if (r.fxSrc) return r.fxSrc;   // 🧮 สูตร: บอกตัวตั้ง/ตัวหารจริง (09/11)
     if (r.manual) return `✍️ กรอกมือ${r.atLabel ? ` (ระดับ ${r.atLabel})` : ''}`;
     const m = r.mix;
     if (m && (m.fillN || m.overlapN)) return `⚡ ${m.autoN} เดือน · ✍️ ${m.fillN} เดือน${m.overlapN ? ` · ทับ ${m.overlapN}` : ''}`;

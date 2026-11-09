@@ -54,7 +54,7 @@
     ⇒ จับคู่เป็นแถว 2 คอลัมน์ `className="mgrid"` (มือถือยุบเองเป็นคอลัมน์เดียว) · มีด่าน `audit/stdsweep.mjs`
 - ระยะขอบตามจอมาจาก CSS ที่เดียว: มือถือ 14 · แท็บเล็ต 18/20 · PC 24/28 · 1600+ 28/36 · TV 36/48
 - **Page ซ้อน Page ไม่เพิ่มขอบ** (`.page-content .page-content`) ⇒ หน้าที่ถูกฝังในแท็บของ hub ใช้ `<Page>` ได้ตามปกติ
-- ยกเว้น (บอร์ดจอ TV · มีเหตุผลใน UI-CONVENTIONS §6.8): `Login` · `Dashboard` · `Management` · `LineOeeBoard` · `TvBoard` · `LineSetup` · `DeptHub` (หน้าแรก hero)
+- ยกเว้น (บอร์ดจอ TV · มีเหตุผลใน UI-CONVENTIONS §6.8): `Login` · `Dashboard` · `LineOeeBoard` · `TvBoard` · `LineSetup` · `DeptHub` (หน้าแรก hero)
 
 ## 2. หัวเพจ — `PageHeader` + `<Hub>`
 

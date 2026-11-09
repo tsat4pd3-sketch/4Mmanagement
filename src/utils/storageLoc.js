@@ -126,3 +126,22 @@ export function areaLinesOf(slocs, lines, lineName) {
   const all = [...new Set([ln, ...own, ...linesOfSloc(slocs, lines, hit.code)].filter(Boolean))];
   return { code: hit.code, lines: all };
 }
+
+/* ═══ 🔀 ของค้าง "ไลน์แม่" ที่พื้นที่ SAP ครอบอยู่แล้ว = ไม่ใช่ปัญหา (2026-11-09 · คำสั่ง user) ═══
+   user: *"ถ้าพื้นที่ใช้ร่วมกันก็คือของอยู่ที่พื้นที่นั้น — apron assy ก็ P411 ลูก 60/61/sub apron ก็ P411 ที่เดียวกัน"*
+   ตัวตัดสต็อกตอนคอนเฟิร์ม (`fn_area_take` ฝั่ง DR) หักจาก **ทุกไลน์ในพื้นที่เดียวกัน** อยู่แล้ว
+   ⇒ ไลน์แม่ที่อยู่พื้นที่เดียวกับลูกทุกตัว = ของถูกหักได้ ไม่ต้องย้าย
+   🔴 ต้องตรงกับ SQL `fn_area_lines()` — นับเฉพาะชื่อที่ "ระบุในทะเบียนรหัสคลังเอง" (ไม่ไล่ตกทอดจากแม่)
+      ไม่งั้นจอบอกว่าหักได้ แต่ฝั่ง DB หาไม่เจอ = ของค้างเงียบ
+   · ไลน์แม่ไม่ได้ผูกพื้นที่ / ลูกแยกหลายพื้นที่ (เช่น Assembly Line D: D1=P404 · D2–D6=P413) = **ยังค้างจริง** คืน false */
+export function parentAreaCovers(slocs, lines, parentName) {
+  const p = norm(parentName);
+  if (!p) return false;
+  const kids = (lines || []).filter(l => l && l.is_active !== false && norm(l.parent_line_name) === p).map(l => norm(l.name));
+  if (!kids.length) return false;
+  const active = (slocs || []).filter(s => s && s.is_active !== false && Array.isArray(s.line_names));
+  const home = active.find(s => s.line_names.map(norm).includes(p));
+  if (!home) return false;
+  const names = new Set(home.line_names.map(norm));
+  return kids.every(k => names.has(k));
+}

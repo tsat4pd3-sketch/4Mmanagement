@@ -7,7 +7,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { SESSION_STATUSES_DONE } from '../utils/sessionStatus';
 import { can, canDelete } from '../utils/permissions';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, lineScope } from '../utils/sectionScope';
 import { getLineFamilyIds, getLineFamilyNames } from '../utils/lineHierarchy';
 import LineSelect, { scopeLines as pickerLines } from '../components/LineSelect';
 import PersonSelect from '../components/PersonSelect';
@@ -118,7 +118,7 @@ const EMPTY_FORM = {
 };
 
 export default function Improvements() {
-  const { role, lineId, sections: scopeSecs, fullName } = useContext(UserContext);
+  const { role, lineId, sections: scopeSecs, fullName, scopeIdx } = useContext(UserContext);
   const canManage = can('improvements', 'manage', role);
   const canDel    = canDelete('improvements', 'manage', role);  // สิทธิ์ลบโปรเจค แยกจากจัดการ
   // 📜 ผู้รับผิดชอบ milestone ที่เคยบันทึก (DR improvement_milestones) — คนนอกทะเบียนยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
@@ -351,16 +351,12 @@ export default function Improvements() {
   };
 
   /* ── scope: leader → family ไลน์ตัวเอง · role อื่น → section scope (pattern เดียวกับหน้าอื่น) ── */
+  /* 🔭 ของกลาง `lineScope()` (QC audit 09/11 · กวาดรอบ 3) — สูตรเดิมในหน้าแคบกว่าที่ `profiles`
+     ตั้งไว้ (leader ได้ครอบครัวไลน์ล้วน · ไม่รู้จัก `scopeIdx`) */
   const visibleLineNames = useMemo(() => {
-    if (role === 'leader' && lineId) {
-      const fam = getLineFamilyIds(lines, lineId);
-      return new Set(lines.filter(l => fam.has(l.id)).map(l => l.name));
-    }
-    if (scopeSecs?.length) {
-      return new Set(lines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name));
-    }
-    return null; // ไม่จำกัด
-  }, [lines, role, lineId, scopeSecs]);
+    const r = lineScope({ role, lineId, sections: scopeSecs || [], lines, scopeIdx });
+    return r.unlimited ? null : new Set(r.names);   // null = ไม่จำกัด
+  }, [lines, role, lineId, scopeSecs, scopeIdx]);
 
   const visibleItems = useMemo(() => {
     let list = visibleLineNames ? items.filter(i => visibleLineNames.has(i.line_name)) : items;

@@ -14,6 +14,9 @@
    3. **เลือกเฉพาะคอลัมน์ที่ใช้** — `mtn_orders` มี 116 คอลัมน์ `select('*')` = 1.59 MB/ครั้ง
    4. **ว่างต้องขึ้น "ไม่มีงานค้าง" ห้ามซ่อนแผง** · โหลดไม่ครบต้องเขียนบนจอว่าไม่ครบ
       (ผู้ใช้ต้องแยก "เคลียร์หมดแล้ว" ออกจาก "คิวรีล่ม" ให้ได้)
+   5. **แหล่งใหม่ต้องส่งทุกครั้ง** (ส่ง undefined = partial โดยตั้งใจ) — ปัจจุบัน: ใบ MO ·
+      กะขอปิด · 4M · ใบติดตามงาน · คำขอขึ้นขั้นทักษะ · **🟡 ถังเหลืองรอพิจารณา (09/11)**
+      ตารางถังไม่มีคอลัมน์ส่วนงาน ⇒ ที่นี่เติม `section` จากทะเบียนไลน์ให้ก่อนส่ง
    ═══════════════════════════════════════════════════════════════════════════ */
 import { useCallback, useContext, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -66,7 +69,7 @@ export async function loadMyQueue(me) {
   const ok = (r) => (r.error ? undefined : (r.data || []));
 
   const canLu = !!(me.canLevelUp || me.canLevelUp100);
-  const [moR, sesR, prR, fourR, actR, lines, luR] = await Promise.all([
+  const [moR, sesR, prR, fourR, actR, lines, luR, binR, binRedR] = await Promise.all([
     /* กรองด้วยสถานะที่ยังมีคนต้องทำต่อ — เดิม `.gt('current_step', 1)` ตัดใบ "รอจ่ายงาน" (current_step = 1)
        ทิ้งทั้งหมด และ `.is('approve_at', null)` ตัดใบ MTN ที่อนุมัติแล้วแต่ยังรอปิดใบ (ขั้น 8) */
     supabaseDR.from('mtn_orders').select(MO_COLS)
@@ -86,6 +89,17 @@ export async function loadMyQueue(me) {
       ? supabase.from('skill_level_up_requests').select('id, to_level, requested_at, employees!inner(section, is_active)')
         .eq('status', 'pending').eq('employees.is_active', true).limit(500)
       : Promise.resolve({ data: null, error: null }),
+    /* 🟡 ถังเหลืองรอพิจารณา — เงื่อนไขเดียวกับแผงในหน้าถัง (`pendingYellow`) · เลือกเฉพาะคอลัมน์ที่คิวใช้
+       (ตารางนี้กว้าง — `select('*')` คือตัวกิน egress · กฎเขียน DB ข้อ 11) */
+    supabaseDR.from('quality_bin_records')
+      .select('id, work_date, line_name, mat_no, part_name, part_no, qty, cause')
+      .eq('bin', 'yellow').eq('is_active', true)
+      .is('qa_decision', null).is('return_date', null)
+      .order('work_date', { ascending: true }).limit(200),
+    /* ใบเหลืองที่ย้ายลงถังแดงไปแล้ว = ออกจากคิว (ไม่งั้นเป็น "ของค้างเทียม" ที่ทำให้คนเลิกเชื่อจอ)
+       แถวจริงตอนนี้ 0 — แต่ต้องถามไว้ เพราะทางย้ายมือยังเปิดอยู่ในหน้าถัง */
+    supabaseDR.from('quality_bin_records').select('from_yellow_id')
+      .eq('bin', 'red').eq('is_active', true).not('from_yellow_id', 'is', null).limit(1000),
   ]);
   const levelUps = canLu ? ok(luR)?.map(r => ({ id: r.id, to_level: r.to_level, requested_at: r.requested_at, section: r.employees?.section })) : undefined;
 
@@ -95,6 +109,20 @@ export async function loadMyQueue(me) {
   const fourM = ok(fourR)?.map(f => ({
     ...f, section: secOfLine.get(String(f.line_name || '').trim().toLowerCase()),
   }));
+
+  /* 🟡 ถังเหลือง: เติม `section` จากทะเบียนไลน์ (ตารางถังไม่มีคอลัมน์ส่วนงาน) — ไลน์นอกทะเบียน
+     ปล่อย undefined ให้ buildQueue นับเป็น "ชี้ส่วนงานไม่ได้" แล้วจอเขียนบอก ห้ามเดาให้
+     🔴 ก้อนใดก้อนหนึ่งล่ม = ส่ง undefined ⇒ partial (คิวที่ "ครบไม่จริง" แย่กว่าคิวที่บอกว่าโหลดไม่ครบ) */
+  /* 🔴 ชนเพดาน 1000 = เพดาน PostgREST พอดี ⇒ รายการใบแดงอาจไม่ครบ แล้วใบที่ย้ายลงแดงไปแล้ว
+     กลับมาค้างในคิวของทุกคน (ของค้างเทียม — สิ่งที่ตัวกรองนี้มีไว้กัน) ⇒ ถือเป็น "ไม่รู้" เหมือนคิวรีล่ม */
+  const redRows = binRedR.error ? null : (binRedR.data || []);
+  const movedToRed = (redRows && redRows.length < 1000) ? new Set(redRows.map(r => r.from_yellow_id)) : null;
+  /* 🔴 ชนเพดาน 200 ของคิวเอง = "โหลดไม่ครบ" ไม่ใช่ "มีแค่นี้" ⇒ ติดธงให้จอเขียนบอก (กฎเขียน DB ข้อ 5) */
+  const binsTruncated = Array.isArray(binR.data) && binR.data.length >= 200;
+  const bins = (binR.error || !movedToRed) ? undefined
+    : (binR.data || [])
+      .filter(b => !movedToRed.has(b.id))
+      .map(b => ({ ...b, section: secOfLine.get(String(b.line_name || '').trim().toLowerCase()) }));
 
   const moRows = ok(moR);
   const mo = moRows?.filter(o => !DEAD.includes(String(o.status || '')));
@@ -116,7 +144,7 @@ export async function loadMyQueue(me) {
      🔴 คิวรีล่ม = `mo` เป็น undefined ⇒ **ไม่ส่ง** `moAll` เพื่อให้ `countsCapped` ติดธง
         ห้ามส่ง [] (จะกลายเป็น "ทุกกองมี 0 ใบ" ทั้งที่ไม่รู้ · ลิสต์ว่าง 2 ความหมาย · กฎข้อ 12) */
   return buildQueue({ mo, moAll: mo, moAllCapped: moTruncated, moTruncated,
-    sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps }, me);
+    sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps, bins, binsTruncated }, me);
 }
 
 /* ── UI ชิ้นเล็ก ────────────────────────────────────────────────────────── */

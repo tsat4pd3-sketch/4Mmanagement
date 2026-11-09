@@ -327,7 +327,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
   const userLineSet = useMemo(() => {
     const names = scopedLineNames({ role, lineId, sections, lines, scopeIdx });
     return names ? new Set(names) : null;
-  }, [role, lineId, sections, lines]);
+  }, [role, lineId, sections, lines, scopeIdx]);   // 🔴 scopeIdx มาแบบ async — ไม่อยู่ใน deps = ขอบเขตค้างค่าเดิม (QC audit 09/11)
   const lineOk = useCallback((name) => {
     const sec = secOfLine[name];
     if (!inSectionScope(sections, sec)) return false;           // scope ของ user (ส่วนงาน)
