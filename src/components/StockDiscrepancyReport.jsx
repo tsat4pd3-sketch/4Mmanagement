@@ -256,9 +256,9 @@ export default function StockDiscrepancyReport() {
                 </label>
               )}
               <input value={form.sapDoc} onChange={e => setForm(f => ({ ...f, sapDoc: e.target.value }))} placeholder="เลขเอกสาร SAP ที่ใช้ปรับ (ถ้ามี)"
-                style={{ padding: '8px 10px', borderRadius: 8, fontSize: 13 }} />
+                style={{ padding: '8px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }} />
               <input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="หมายเหตุ / สาเหตุที่ขาด"
-                style={{ padding: '8px 10px', borderRadius: 8, fontSize: 13 }} />
+                style={{ padding: '8px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }} />
               {(() => {
                 const why = form.mode === 'propose'
                   ? proposeBlock(form.d, { side: form.side, sides, outcome: form.outcome })

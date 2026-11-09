@@ -568,7 +568,7 @@ export default function VSM() {
                 <label style={{ fontSize: 11.5, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{label}</label>
                 <textarea rows={rows} value={a3[k] || ''} onChange={e => setA3(v => ({ ...v, [k]: e.target.value }))}
                   placeholder={ph}
-                  style={{ width: '100%', fontSize: 12.5, padding: '7px 10px', borderRadius: 6, resize: 'vertical',
+                  style={{ width: '100%', fontSize: 12.5, padding: '7px 10px', borderRadius: 'var(--ctl-r)', resize: 'vertical',
                     border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
               </div>
             ))}
@@ -593,7 +593,7 @@ export default function VSM() {
                         inputStyle={{ fontSize: 12, padding: '5px 26px 5px 8px', borderRadius: 5, background: 'var(--bg2)' }} />
                     : <input key={f} value={r[f] || ''} placeholder={ph}
                         onChange={e => setA3(v => ({ ...v, plan: v.plan.map((x, j) => j === i ? { ...x, [f]: e.target.value } : x) }))}
-                        style={{ fontSize: 12, padding: '5px 8px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
+                        style={{ fontSize: 12, padding: '5px 8px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
                 ))}
                 <DeleteButton onClick={() => setA3(v => ({ ...v, plan: v.plan.filter((_, j) => j !== i) }))} title="ลบ" />
               </div>
@@ -674,7 +674,7 @@ export default function VSM() {
                       placeholder={val == null ? '—' : String(Math.round(val * 10) / 10)}
                       title={src ? `ค่าที่ระบบคำนวณ: ${val ?? '—'} (จาก ${src})` : 'ระบบไม่มีข้อมูล'}
                       style={{
-                        width: 82, fontSize: 12, padding: '4px 6px', borderRadius: 5, background: 'var(--bg2)', color: 'var(--text)',
+                        width: 82, fontSize: 12, padding: '4px 6px', borderRadius: 'var(--ctl-r)', background: 'var(--bg2)', color: 'var(--text)',
                         border: `1px solid ${val == null && !ov[field] ? 'var(--amber)' : 'var(--border)'}`,
                       }} />
                   </td>
@@ -714,7 +714,7 @@ export default function VSM() {
               </label>
               <input value={overrides.__customer_pattern || ''} onChange={e => setTopOv('__customer_pattern', e.target.value)}
                 placeholder={model.customer.roundsPerDay ? `ระบบเห็น ${model.customer.roundsPerDay} รอบ/วัน` : 'เช่น 1:4:2'}
-                style={{ width: '100%', fontSize: 12.5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
+                style={{ width: '100%', fontSize: 12.5, padding: '6px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
             </div>
             {model.suppliers.map(sp => (
               <div key={sp.matNo}>
@@ -723,7 +723,7 @@ export default function VSM() {
                 </label>
                 <input value={(overrides.__supplier_pattern || {})[sp.matNo] || ''} onChange={e => setSupPattern(sp.matNo, e.target.value)}
                   placeholder="เช่น 7:1:1"
-                  style={{ width: '100%', fontSize: 12.5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
+                  style={{ width: '100%', fontSize: 12.5, padding: '6px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
               </div>
             ))}
             {!model.suppliers.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>BOM ของสินค้านี้ยังไม่มีพาร์ทซื้อนอก</div>}

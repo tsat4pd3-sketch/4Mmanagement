@@ -184,7 +184,7 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ fontSize: 12.5 }}>ตั้งเป็น:</span>
           <select value={kind} onChange={e => setKind(e.target.value)}
-                  style={{ width: 200, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)',
+                  style={{ width: 200, padding: '7px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)',
                            background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }}>
             {EQUIPMENT_KINDS.map(k => <option key={k.key} value={k.key}>{k.icon} {k.label}</option>)}
           </select>

@@ -124,7 +124,7 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>ทีมช่าง:</span>
                 <select value={team} onChange={e => setTeam(e.target.value)} aria-label="กรองตามทีมช่าง"
-                  style={{ height: 26, fontSize: 11.5, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', padding: '0 6px' }}>
+                  style={{ height: 26, fontSize: 11.5, borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', padding: '0 6px' }}>
                   <option value="all">ทุกทีม ({state.orders.length} ใบ)</option>
                   {teamsSeen.map(([k, n]) => (
                     <option key={k || '_none'} value={k}>{k ? (deptNameOf(k) || k) : '— ไม่ระบุทีม —'} ({n} ใบ)</option>

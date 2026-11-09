@@ -150,7 +150,7 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
               {extraField === 'color' && (
                 <div><label style={lbl}>สี</label>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <input type="color" value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} style={{ width: 44, height: 32, borderRadius: 6, border: '1px solid var(--border2)', background: 'none', cursor: 'pointer' }} />
+                    <input type="color" value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} style={{ width: 44, height: 32, borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'none', cursor: 'pointer' }} />
                     <input value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))} style={{ ...inp, flex: 1 }} />
                   </div>
                 </div>

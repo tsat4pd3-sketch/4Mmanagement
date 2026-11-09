@@ -250,14 +250,14 @@ export default function StockCountSheet({ role, scope }) {
           <label style={{ fontSize:12, color:'var(--muted)' }}>
             วันที่นับ{' '}
             <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)}
-              style={{ width:150, padding:'6px 8px', borderRadius:6, border:'1px solid var(--border)', background:'var(--bg2)', color:'var(--text)', fontSize:13 }} />
+              style={{ width:150, padding:'6px 8px', borderRadius: 'var(--ctl-r)', border:'1px solid var(--border)', background:'var(--bg2)', color:'var(--text)', fontSize:13 }} />
           </label>
           <label style={{ fontSize:12, display:'flex', alignItems:'center', gap:6, cursor:'pointer' }}>
             <input type="checkbox" checked={hideZero} onChange={e => setHideZero(e.target.checked)} style={{ width:'auto' }} />
             ซ่อนพาร์ทที่ยอดเป็น 0
           </label>
           <input value={note} onChange={e => setNote(e.target.value)} placeholder="หมายเหตุรอบนับ (ไม่บังคับ)"
-            style={{ width: isMobile ? '100%' : 220, padding:'6px 8px', borderRadius:6, border:'1px solid var(--border)', background:'var(--bg2)', color:'var(--text)', fontSize:13 }} />
+            style={{ width: isMobile ? '100%' : 220, padding:'6px 8px', borderRadius: 'var(--ctl-r)', border:'1px solid var(--border)', background:'var(--bg2)', color:'var(--text)', fontSize:13 }} />
         </div>
 
         {!lineFilter ? (

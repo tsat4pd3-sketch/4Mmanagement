@@ -2637,6 +2637,9 @@ Windows/Android/webOS TV · มีสีของตัวเองชนพา�
      · ปุ่มลิงก์/ปุ่มคำสั่งที่เคยเป็นแคปซูล 999 → ทรง `.pg-btn` (มุม `--r-md`)
    · **รอบ 2 (06/11)**: ปุ่มคำสั่งในแถวตาราง/การ์ด 93 ตัว → `.pg-btn.sm` (28px · `+primary`/`+danger` · ไอคอนล้วน `+pg-btn-icon`) ·
      ปุ่มที่เหลือทั้งระบบ **635 ตัว/151 ไฟล์** มุมเป็น `'var(--r-md)'` ตัวเดียว (เดิม 0/6/7/8/10/16/20/999) · ปุ่มสลับสถานะที่มี style เงื่อนไข (on/off) ยังเขียนสีเอง แต่มุมเป็น token แล้ว
+   · **รอบ 3 (08/11)**: ช่องกรอก `input`/`select`/`textarea` 126 ช่อง/50 ไฟล์ มุมเป็น `'var(--ctl-r)'` (= `--r-md` 8px · token เดียวกับแถบกรอง) ·
+     **global `input, select, textarea` ใน index.css เปลี่ยนจาก `--radius` 4px → `--ctl-r`** ⇒ ช่องที่ไม่เขียน style เองก็ได้ 8px เท่าปุ่ม · `<label>` ที่ทำตัวเป็นปุ่ม → `--r-md`
+   · 🔴 **ด่าน `control-radius-token`** — `<input|select|textarea … borderRadius: <เลข>>` ห้าม
    · 🔴 **ด่าน `button-radius-token`** (regressionGuards): `<button … borderRadius: <เลข>>` ห้าม — ใช้ `.pg-btn`/`.pg-btn.sm`/`TabBar`/`Segmented` หรือ `'var(--r-md)'` เท่านั้น · ชิป "ป้าย" ที่เป็น `<span>` ยังเป็นรีได้
 1. **แท็บ PageHeader = แบบ "เส้นใต้"** — ป้ายโปร่ง · ที่เลือก = ตัวหนา `--text` + เส้น accent 2px ใต้ป้าย (ไถลตามแท็บ
    วัดจากปุ่มจริงเหมือนเดิม) · ที่เหลือ `--muted` น้ำหนัก 500 · แถวมีเส้นฐาน `--border` · badge = `.ph-tab-badge` (อำพัน)

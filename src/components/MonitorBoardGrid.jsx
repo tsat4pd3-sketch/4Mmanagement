@@ -392,7 +392,7 @@ export default function MonitorBoardGrid({
                             }}
                             style={{
                               width: '100%', boxSizing: 'border-box', textAlign: 'right', fontSize: FS,
-                              padding: '3px 5px', border: '2px solid var(--accent)', borderRadius: 3,
+                              padding: '3px 5px', border: '2px solid var(--accent)', borderRadius: 'var(--ctl-r)',
                               background: 'var(--bg)', color: 'var(--text)',
                             }} />
                         ) : (

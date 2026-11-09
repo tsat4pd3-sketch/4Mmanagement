@@ -350,7 +350,7 @@ export default function BomDupPanel({ onOpenSheet }) {
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                           <input value={noteText} onChange={e => setNoteText(e.target.value)}
                             placeholder="หมายเหตุ (ไม่ใส่ก็ได้)" autoFocus
-                            style={{ fontSize: 11.5, padding: '4px 7px', borderRadius: 6,
+                            style={{ fontSize: 11.5, padding: '4px 7px', borderRadius: 'var(--ctl-r)',
                               border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }} />
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                             {DUP_DECISIONS.map(d => (

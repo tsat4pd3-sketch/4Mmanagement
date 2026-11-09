@@ -1213,11 +1213,11 @@ ${issuesHtml}
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
             <div>
               <div style={lb}>วันที่ตรวจ</div>
-              <input type="date" value={auditDate} onChange={e => e.target.value && setAuditDate(e.target.value)} style={{ width: 150, padding: '6px 10px', borderRadius: 7, fontSize: 13 }} />
+              <input type="date" value={auditDate} onChange={e => e.target.value && setAuditDate(e.target.value)} style={{ width: 150, padding: '6px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }} />
             </div>
             <div>
               <div style={lb}>ชั้นผู้ตรวจ (Layer)</div>
-              <select value={auditLayer} onChange={e => setAuditLayer(e.target.value)} style={{ width: 190, padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
+              <select value={auditLayer} onChange={e => setAuditLayer(e.target.value)} style={{ width: 190, padding: '7px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }}>
                 {LAYERS.map(l => <option key={l.key} value={l.key}>{l.label} · {l.freq}</option>)}
               </select>
             </div>
@@ -1290,7 +1290,7 @@ ${issuesHtml}
                       </div>
                       {['N', 'T'].includes(a?.answer) && (
                         <input type="text" value={a?.note || ''} onChange={e => setAnsNote(q.id, e.target.value)} disabled={!canRecord}
-                          placeholder="รายละเอียดปัญหา / เงื่อนไข (บังคับ)" style={{ flex: '1 1 240px', fontSize: 12, padding: '6px 8px', border: '1px solid ' + ansMeta(a.answer).color, borderRadius: 7 }} />
+                          placeholder="รายละเอียดปัญหา / เงื่อนไข (บังคับ)" style={{ flex: '1 1 240px', fontSize: 12, padding: '6px 8px', border: '1px solid ' + ansMeta(a.answer).color, borderRadius: 'var(--ctl-r)' }} />
                       )}
                     </div>
                   );

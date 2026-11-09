@@ -1103,7 +1103,7 @@ function DefectPicker({ types, value, onClose, onSave }) {
       <div style={{ fontWeight: 800, fontSize: 12.5, marginBottom: 6 }}>{title}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         {list.map(t => (
-          <label key={t.code} style={{ fontSize: 12, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', padding: '3px 5px', borderRadius: 6, background: sel.has(t.code) ? 'var(--accent-dim)' : 'transparent' }}>
+          <label key={t.code} style={{ fontSize: 12, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', padding: '3px 5px', borderRadius: 'var(--r-md)', background: sel.has(t.code) ? 'var(--accent-dim)' : 'transparent' }}>
             <input type="checkbox" style={{ width: 'auto' }} checked={sel.has(t.code)} onChange={() => toggle(t.code)} />
             <b style={{ minWidth: 30 }}>{t.code}</b> {t.label}
           </label>

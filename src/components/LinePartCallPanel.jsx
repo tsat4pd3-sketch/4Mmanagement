@@ -627,7 +627,15 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
           {plan.noBom.slice(0, 5).map(x => `${x.mat_no} × ${fmtQty(x.qty)}`).join(' · ')} — แจ้ง PE ตั้ง BOM (/products) หรือกด ➕ ขอเบิกเอง
         </div>
       )}
-      {plan && !plan.error && plan.orders > 0 && !planRows.length && !plan.noBom?.length && (
+      {/* 🔩 08/11 — ใบขั้น OP ที่ยังไม่ผูกว่ากินอะไร (แม่มีลูกหลายตัว ระบบไม่เดา) ต้องบอก */}
+      {plan?.opUnset?.length > 0 && (
+        <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--red)', lineHeight: 1.7 }}>
+          ⚠ <b>ใบขั้น OP {plan.opUnset.length} ตัวยังไม่ได้ผูกว่ากินอะไร — ระบบไม่เดา จึงไม่ได้ขอของให้:</b>{' '}
+          {plan.opUnset.slice(0, 5).map(x => `${x.mat_no}${x.parent ? ` (แม่ ${x.parent} ลูก ${x.parentKids} ตัว)` : ''} × ${fmtQty(x.qty)}`).join(' · ')}
+          {' '}— ตั้งที่ /products แท็บ BOM ใบของแม่ → แผง 🔩 ขั้น OP (PE / supervisor ขึ้นไป)
+        </div>
+      )}
+      {plan && !plan.error && plan.orders > 0 && !planRows.length && !plan.noBom?.length && !plan.opUnset?.length && (
         <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--muted)' }}>ลูกใน BOM ทั้งหมดเป็นของที่พื้นที่นี้ผลิตเอง — ไม่มีอะไรต้องเบิกจากสโตร์</div>
       )}
       {planSend.length > 0 && (
@@ -676,7 +684,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
               }} />
             {/* ⚠️ input ใน flex row ต้องกำหนด width เอง — index.css ตั้ง input{width:100%} จะดันปุ่มแตกแถว */}
             <input value={adhocQty} onChange={e => setAdhocQty(e.target.value)} inputMode="numeric"
-              placeholder="จำนวน (ชิ้น)" style={{ width: 130, padding: '5px 10px', borderRadius: 7, fontSize: 12 }} />
+              placeholder="จำนวน (ชิ้น)" style={{ width: 130, padding: '5px 10px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
             <button disabled={!!busy} onClick={placeAdhoc} style={btn('#22c55e', '#04140a')}>แจ้งสโตร์</button>
             <button onClick={() => { setAdhocOpen(false); setAdhocMat(''); setAdhocName(''); setAdhocQty(''); setAdhocKnown(false); }}
               style={btn('transparent', 'var(--muted)', 'var(--border2)')}>ยกเลิก</button>
@@ -954,7 +962,7 @@ function SuggestRow({ s, canDecide, busy, onPlace, onHold, btn }) {
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
           <input type="number" value={qty} onChange={e => setQty(e.target.value)} placeholder="จำนวน"
             title={s.suggestQty ? `ระบบเสนอ ${s.suggestQty} (เติมให้ถึง max)` : 'ยังไม่ได้ตั้ง max/จำนวนเบิก — กรอกเอง'}
-            style={{ width: 84, padding: '4px 8px', borderRadius: 6, fontSize: 12 }} />
+            style={{ width: 84, padding: '4px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
           <button disabled={busy} onClick={() => onPlace(s, qty)} style={btn('#22c55e', '#04140a')}>เบิก</button>
           <button disabled={busy} onClick={() => onHold(s)} style={btn('transparent', '#f59e0b', 'rgba(245,158,11,0.5)')}>⏸ พักไว้</button>
         </span>
@@ -1043,7 +1051,7 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, re
           <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             {/* ⚠️ input ใน flex row ต้องกำหนด width เอง — index.css ตั้ง input{width:100%} จะดันปุ่มแตกแถว */}
             <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหารหัสพาร์ท"
-              style={{ width: 200, padding: '5px 10px', borderRadius: 7, fontSize: 12 }} />
+              style={{ width: 200, padding: '5px 10px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
             <span style={{ color: 'var(--border2)' }}>|</span>
             {/* 2026-09-07 <ProductSelect> — Product Master (ไลน์นี้ขึ้นก่อน) ∪ พาร์ทลูก BOM ∪ 📜 เคยตั้งไว้ · ไม่รับค่าพิมพ์เอง (known=false = นอกทะเบียน → ถามยืนยัน) */}
             {/* 🔒 strict = เฉพาะพาร์ทของไลน์นี้ (แม่/ลูก) + ลูก BOM ของไลน์นี้ (05/11 · ห้ามถอด) */}
@@ -1082,7 +1090,7 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, re
                     ) : ['min_qty', 'max_qty', 'reorder_qty'].map(k => (
                       <td key={k} style={{ padding: '3px 4px 3px 0' }}>
                         <input type="number" value={r[k]} onChange={e => set(i, k, e.target.value)}
-                          style={{ width: '100%', padding: '3px 7px', borderRadius: 6, fontSize: 12 }} />
+                          style={{ width: '100%', padding: '3px 7px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
                       </td>
                     ))}
                   </tr>

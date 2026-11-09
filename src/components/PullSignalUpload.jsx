@@ -496,7 +496,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
         )}
 
         <label style={{
-          display: 'block', border: '1px dashed var(--border2)', borderRadius: 10, padding: 14,
+          display: 'block', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: 14,
           textAlign: 'center', cursor: 'pointer', background: 'var(--bg2)', marginBottom: 12,
         }}>
           <input type="file" accept=".csv,.xlsx,.xls" style={{ display: 'none' }}

@@ -210,7 +210,7 @@ export default function ScanModal({
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitTyped(); } }}
               placeholder={isMobile && !kbd ? 'กดปุ่มสแกนข้างเครื่องได้เลย' : 'เช่น RB-104 หรือ ESM:M:…'}
               inputMode={isMobile && !kbd ? 'none' : undefined}
-              style={{ flex: 1, minWidth: 0, padding: '9px 11px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: isMobile ? 16 : 14 }}
+              style={{ flex: 1, minWidth: 0, padding: '9px 11px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: isMobile ? 16 : 14 }}
             />
             {isMobile && !kbd && (
               <button type="button" className="tbtn" onClick={() => { inputRef.current?.blur(); setKbd(true); setTimeout(() => inputRef.current?.focus(), 30); }}

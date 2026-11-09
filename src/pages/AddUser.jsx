@@ -2143,7 +2143,7 @@ export default function AddUser() {
                           return (
                             <label key={r.cc} title={r.pathText}
                               style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 7, cursor: 'pointer', userSelect: 'none',
-                                padding: '4px 8px', borderRadius: 6, fontSize: 12,
+                                padding: '4px 8px', borderRadius: 'var(--r-md)', fontSize: 12,
                                 /* เยื้องตามชั้นเพื่อให้อ่านออกว่าใครอยู่ใต้ใคร — เพดาน 3 ชั้นไม่ให้ล้นจอแคบ
                                    (ชั้นลึกกว่านั้นยังบอกที่อยู่เต็มใน tooltip `pathText`) */
                                 marginLeft: Math.min(r.depth, 3) * 12,
@@ -2224,7 +2224,7 @@ export default function AddUser() {
                       return (
                         <label key={t} style={{
                           display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer',
-                          padding: '4px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600, userSelect: 'none',
+                          padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 600, userSelect: 'none',
                           background: checked ? 'var(--amber-dim)' : 'var(--bg2)',
                           border: `1px solid ${checked ? 'var(--amber-line)' : 'var(--border2)'}`,
                           color: checked ? 'var(--accent2)' : 'var(--text2)',
@@ -2253,7 +2253,7 @@ export default function AddUser() {
               {/* แอดมินหน่วยงาน — ชั้น 2 (แก้/ตั้งค่า/อนุมัติ เฉพาะหน่วยงานตัวเอง) ซ้อนบน role เดิม · โผล่ทุก role ยกเว้น admin/display */}
               {DEPT_ADMIN_ELIGIBLE(form.role) && (
                 <div style={{ gridColumn: '1 / -1' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 12px', borderRadius: 8,
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', padding: '10px 12px', borderRadius: 'var(--r-md)',
                     background: form.deptAdmin ? 'var(--amber-dim)' : 'var(--bg3)', border: `1px solid ${form.deptAdmin ? 'var(--amber-line)' : 'var(--border2)'}` }}>
                     <input type="checkbox" checked={!!form.deptAdmin} onChange={e => setF('deptAdmin', e.target.checked)} style={{ margin: 0, width: 'auto' }} />
                     <span style={{ fontSize: 13, fontWeight: 700, color: form.deptAdmin ? 'var(--amber)' : 'var(--text)' }}>เป็นแอดมินหน่วยงาน</span>

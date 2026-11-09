@@ -925,7 +925,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
 
   const scoreSelect = (val, onChange) => (
     <select value={val === null || val === undefined ? '' : val} onChange={e => onChange(e.target.value === '' ? null : Number(e.target.value))}
-      style={{ width: 'auto', padding: '4px 6px', borderRadius: 6, fontSize: 12 }}>
+      style={{ width: 'auto', padding: '4px 6px', borderRadius: 'var(--ctl-r)', fontSize: 12 }}>
       <option value="">—</option>
       {SCORE_LABELS.map((s, i) => <option key={s} value={i}>{s}</option>)}
     </select>
@@ -1139,7 +1139,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                 <div style={{ ...lb, fontSize: 13, color: 'var(--text)' }}>พนักงานผู้เข้าอบรม ({editing.attendees.length} คน)</div>
                 <div style={{ position: 'relative', marginBottom: 8 }}>
                   <input type="text" placeholder="ค้นหาชื่อ/รหัสพนักงาน แล้วคลิกเพื่อเพิ่ม..." value={empSearch} onChange={e => setEmpSearch(e.target.value)}
-                    style={{ width: 'min(100%, 380px)', padding: '7px 10px', borderRadius: 7, fontSize: 13 }} />
+                    style={{ width: 'min(100%, 380px)', padding: '7px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }} />
                   {searchResults.length > 0 && (
                     <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 'min(100%, 380px)', maxHeight: 220, overflowY: 'auto', boxShadow: 'var(--shadow-float)' }}>
                       {searchResults.map(e => (
@@ -1206,7 +1206,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                           <td style={{ textAlign: 'center' }}>
                             <select value={a.eval_agree === null || a.eval_agree === undefined ? '' : (a.eval_agree ? '1' : '0')}
                               onChange={e => setAtt(idx, 'eval_agree', e.target.value === '' ? null : e.target.value === '1')}
-                              style={{ width: 'auto', padding: '4px 6px', borderRadius: 6, fontSize: 12 }}>
+                              style={{ width: 'auto', padding: '4px 6px', borderRadius: 'var(--ctl-r)', fontSize: 12 }}>
                               <option value="">—</option>
                               <option value="1">เห็นด้วย</option>
                               <option value="0">ไม่เห็นด้วย</option>

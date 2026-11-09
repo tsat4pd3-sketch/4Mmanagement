@@ -246,7 +246,7 @@ export default function DemandVsProduction({ products, prodByDay, today }) {
         <div style={{ flex: '0 0 auto' }}>
           <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>มองไปข้างหน้า</div>
           <select value={horizon} onChange={(e) => setHorizon(Number(e.target.value))}
-            style={{ width: 110, padding: '6px 9px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12 }}>
+            style={{ width: 110, padding: '6px 9px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12 }}>
             {[14, 30, 60, 90].map((d) => <option key={d} value={d}>{d} วัน</option>)}
           </select>
         </div>

@@ -375,7 +375,7 @@ export default function NotificationConfig() {
         <input
           type="number" min={1} inputMode="numeric"
           value={openMin} onChange={e => setOpenMin(e.target.value)}
-          style={{ width: 90, textAlign: 'center', fontSize: 14, fontWeight: 700, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }}
+          style={{ width: 90, textAlign: 'center', fontSize: 14, fontWeight: 700, padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }}
         />
         <div style={{ fontSize: 12.5, color: 'var(--text)' }}>นาที</div>
         <button type="button" className="pg-btn sm primary" onClick={saveOpenMin} disabled={busy === 'openmin'}>
@@ -463,7 +463,7 @@ export default function NotificationConfig() {
                         <label key={room.id} title={noChat ? 'ห้องนี้ยังไม่มี chat_id' : ''}
                           style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: rule.is_enabled ? 'pointer' : 'default',
                             background: on ? 'var(--bg2)' : 'transparent', border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
-                            color: on ? 'var(--text)' : 'var(--muted)', borderRadius: 999, padding: '4px 10px', userSelect: 'none' }}>
+                            color: on ? 'var(--text)' : 'var(--muted)', borderRadius: 'var(--r-md)', padding: '4px 10px', userSelect: 'none' }}>
                           <input type="checkbox" checked={on} disabled={!rule.is_enabled} onChange={() => toggleRuleRoom(rule, room.id)} style={{ flexShrink: 0 }} />
                           {room.name}{on && noChat ? ' ⚠️' : ''}
                         </label>
@@ -493,7 +493,7 @@ export default function NotificationConfig() {
                           <label key={r.value}
                             style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer',
                               background: on ? 'var(--bg2)' : 'transparent', border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
-                              color: on ? 'var(--text)' : 'var(--muted)', borderRadius: 999, padding: '3px 9px', userSelect: 'none' }}>
+                              color: on ? 'var(--text)' : 'var(--muted)', borderRadius: 'var(--r-md)', padding: '3px 9px', userSelect: 'none' }}>
                             <input type="checkbox" checked={on} onChange={() => toggleRuleRole(rule, r.value)} style={{ flexShrink: 0 }} />
                             {r.icon ? `${r.icon} ` : ''}{r.label}
                           </label>
@@ -545,7 +545,7 @@ export default function NotificationConfig() {
                                 (และคนกลุ่มนั้นไม่ใช่บัญชีร้าง — login สัปดาห์นี้ แต่ไม่ใช้กระดิ่ง)
                                 ⚠️ วางไว้บนสุดโดยตั้งใจ: ตัวกรองข้างล่างแค่ "เล็ม" ตัวนี้แก้ที่ต้นเหตุ */}
                             <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, cursor: 'pointer',
-                              padding: 8, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--card)' }}>
+                              padding: 8, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--card)' }}>
                               <input type="checkbox" checked={rule.inapp_cast === 'fallback'}
                                 onChange={e => updateRule(rule.event_key, { inapp_cast: e.target.checked ? 'fallback' : 'always' })}
                                 style={{ marginTop: 2, flexShrink: 0 }} />
@@ -569,7 +569,7 @@ export default function NotificationConfig() {
                                 🔴 ตัวกรองจริงอยู่ใน `notify_recipients` ฝั่ง DB — ที่นี่แค่ตั้งธงในทะเบียน
                                 🔴 เรื่องที่ยิงถึง "เจ้าของงานโดยตรง" ปิดไม่ได้อยู่แล้วโดยโครงสร้าง ไม่ต้องติ๊ก */}
                             <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, cursor: 'pointer',
-                              padding: 8, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--card)' }}>
+                              padding: 8, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--card)' }}>
                               <input type="checkbox" checked={rule.can_mute === false}
                                 onChange={e => updateRule(rule.event_key, { can_mute: !e.target.checked })}
                                 style={{ marginTop: 2, flexShrink: 0 }} />
@@ -625,7 +625,7 @@ export default function NotificationConfig() {
                                   return (
                                     <label key={sc} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer',
                                       background: on ? 'var(--bg3)' : 'transparent', border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
-                                      color: on ? 'var(--text)' : 'var(--muted)', borderRadius: 999, padding: '3px 9px', userSelect: 'none' }}>
+                                      color: on ? 'var(--text)' : 'var(--muted)', borderRadius: 'var(--r-md)', padding: '3px 9px', userSelect: 'none' }}>
                                       <input type="checkbox" checked={on} onChange={() => toggleRuleList(rule, 'inapp_sections', sc)} style={{ flexShrink: 0 }} />
                                       {sc}
                                     </label>
@@ -646,7 +646,7 @@ export default function NotificationConfig() {
                                   return (
                                     <label key={dp} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: 'pointer',
                                       background: on ? 'var(--bg3)' : 'transparent', border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
-                                      color: on ? 'var(--text)' : 'var(--muted)', borderRadius: 999, padding: '3px 9px', userSelect: 'none' }}>
+                                      color: on ? 'var(--text)' : 'var(--muted)', borderRadius: 'var(--r-md)', padding: '3px 9px', userSelect: 'none' }}>
                                       <input type="checkbox" checked={on} onChange={() => toggleRuleList(rule, 'inapp_depts', dp)} style={{ flexShrink: 0 }} />
                                       {dp}
                                     </label>
