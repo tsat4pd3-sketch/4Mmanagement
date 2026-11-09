@@ -9552,3 +9552,28 @@ test('⏩ dt-carry-two-ways — ส่ง Downtime ข้ามกะต้อ�
   assert.doesNotMatch(lib, /\bduration_min\b|\bended_at\b|\bcall_mtn\b/,
     '\n\n❌ แถวต่อเนื่องห้ามก๊อป duration_min/ended_at (ต้องเป็นเปิดค้างจริง) หรือ call_mtn (ใบเก่าปิดไปแล้ว)\n');
 });
+
+/* ═══ 📤 ปิดใบข้ามไลน์ "ไม่ต้องยืนยัน" = log ต้องอ่านรู้เรื่อง — cross-close-log-readable ═══
+   03/11 ถอดการกดยืนยันออกตามคำสั่ง user แล้วย้ายความปลอดภัยไปอยู่ที่ร่องรอยย้อนหลัง
+   ⇒ แถว `CROSS_LINE_CLOSE` คือหลักฐานชิ้นเดียว · ใช้จริงแล้ว 25 ครั้ง (05-06/11 · 2,280 ชิ้น)
+   หัวแถวของ AuditLogViewer บอกแค่ prod_no ⇒ ถ้าไม่กางรายละเอียด = มี log แต่ตรวจไม่ได้ */
+test('📤 cross-close-log-readable — จอ audit ต้องกาง "ยอดเข้าไลน์ไหน · ปิดจากจอไลน์ไหน"', () => {
+  const labels = readFileSync(join(ROOT, 'src/utils/auditLabels.js'), 'utf8');
+  assert.match(labels, /CROSS_LINE_CLOSE:\s*\{/,
+    '\n\n❌ ไม่มีป้ายไทยของ action CROSS_LINE_CLOSE — จอจะโชว์ชื่อ action ดิบ\n');
+
+  const v = stripComments(readFileSync(join(ROOT, 'src/components/AuditLogViewer.jsx'), 'utf8'));
+  assert.match(v, /r\.action === 'CROSS_LINE_CLOSE' &&/,
+    '\n\n❌ AuditLogViewer ไม่กางรายละเอียดของการปิดใบข้ามไลน์\n'
+    + '   (กิ่งเดิมกางเฉพาะ action UPDATE ⇒ แถวนี้เหลือแค่ prod_no = ตรวจย้อนหลังไม่ได้)\n');
+  for (const k of ['owner_line', 'closed_from_line', 'qty_ok']) {
+    assert.ok(v.includes(`new_data?.${k}`),
+      `\n\n❌ รายละเอียดปิดใบข้ามไลน์ขาด \`${k}\` — ต้องตอบได้ว่ายอดเข้าไลน์ไหน/ใครปิดจากจอไลน์ไหน/กี่ชิ้น\n`);
+  }
+
+  /* ตัวจุด trigger อยู่ฝั่งจอ — ถอด stamp = trigger ไม่ยิง = log หายเงียบ (ไม่มี error ให้เห็น) */
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.match(dr, /closed_from_line: selSession\?\.line_name/,
+    '\n\n❌ doCrossLineClose ไม่ stamp closed_from_line — trigger trg_prod_order_cross_close_audit\n'
+    + '   จะไม่ยิง ⇒ ปิดใบข้ามไลน์ได้โดยไม่มี log เลย (ซึ่งเป็นด่านเดียวที่เหลือหลังถอดการยืนยัน)\n');
+});

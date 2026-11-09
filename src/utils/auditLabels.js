@@ -9,6 +9,9 @@ export const AUDIT_ACTIONS = {
   INSERT: { t: '➕ เพิ่ม',  c: '#22c55e' },
   UPDATE: { t: '✏️ แก้ไข', c: '#f59e0b' },
   DELETE: { t: '🗑 ลบ',    c: '#ef4444' },
+  /* ปิดใบผลิตข้ามไลน์ (03/11) — ไม่มีการกดยืนยัน ด่านคือ `canWriteLine` + แถวนี้
+     ⇒ ป้ายต้องอ่านออกว่า "นี่คือการเขียนข้ามหน่วยงาน" ไม่ใช่ UPDATE ธรรมดา */
+  CROSS_LINE_CLOSE: { t: '📤 ปิดใบข้ามไลน์', c: '#38bdf8' },
 };
 
 /* ตาราง → ชื่อไทย (รวมทั้ง 2 project · จัดกลุ่มตามโดเมนเพื่อให้หาง่ายเวลาแก้) */
@@ -66,7 +69,7 @@ export const AUDIT_TABLE_LABELS = {
   npi_tooling_step_templates: '🔧 NPI แม่แบบขั้นงาน tooling',
 
   // ── สินค้า & คัมบัง (DR) ──
-  prod_orders:             '🎫 ใบผลิต (แก้หลังปิดกะ)',
+  prod_orders:             '🎫 ใบผลิต (แก้หลังปิดกะ · ปิดข้ามไลน์)',
   dr_products:             '📦 สินค้า (Product Master)',
   parts_master:            '🗂 ทะเบียนพาร์ท',
   kanban_standards:        '🎴 มาตรฐานคัมบัง',
