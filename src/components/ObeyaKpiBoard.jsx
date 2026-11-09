@@ -595,18 +595,6 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
 
       const fiB = man?.def ? fInfoB[(man.sharedDef || man.def).id] : null;
       if (fiB && !r.auto) note = note || formulaNoteText(fiB, monthNo, { labelOf: skLabelB, def: man.def });
-      /* 🧮 บรรทัดรองของแผ่นที่ "สูตรคำนวณ" ต้องบอกตัวตั้ง/ตัวหารที่ใช้จริง ไม่ใช่เขียน "กรอกมือ" (09/11 · user: "sales/head เหมือนจะผิด")
-         เคสจริง: ยอดขาย/หัว PD1 = 47.951 เพราะกำลังคน PD1 ที่กรอกไว้ 32 คน (ของจริง ~300) — ถ้าแผ่นเขียนแค่ "กรอกมือ" ไม่มีทางเห็นว่าตัวหารผิด */
-      let fxSrc = '';
-      if (fiB?.computed?.length && !r.auto) {
-        const mNo = Number(String(cur?.k || monthKey).slice(5, 7)) || monthNo;
-        const useM = fiB.computed.includes(mNo) ? mNo : Math.max(...fiB.computed.filter(x => x <= mNo), 0) || fiB.computed[fiB.computed.length - 1];
-        const ins = fiB.inputs?.[useM] || {};
-        const fmtIn = (v, x) => { const u = baseVarOf(v)?.unit || ''; if (x == null) return '—'; if (u === 'บาท') return Math.abs(x) >= 1e6 ? `${(x / 1e6).toLocaleString('th-TH', { maximumFractionDigits: 1 })} MB` : `${Math.round(x).toLocaleString('th-TH')} บ.`; return `${Number(x).toLocaleString('th-TH', { maximumFractionDigits: 1 })} ${u}`; };
-        const vars = fiB.formula?.vars || Object.keys(ins);
-        const parts = vars.map(v => `${(baseVarOf(v)?.label || v).split(' (')[0].replace(/^[^\wก-๙]+\s*/, '')} ${fmtIn(v, ins[v])}${fiB.inputSrc?.[useM]?.[v] === 'auto' ? ' ≈ทะเบียน' : ''}`);
-        fxSrc = `🧮 ${fiB.label} · ${parts.join(' ÷ ')}${useM !== mNo ? ` (${monthLabel(`${year}-${String(useM).padStart(2, '0')}`)})` : ''}`;
-      }
       if (man?.shared === 'ok' && !r.auto) note = note || (isPlant(scope) ? 'ค่าโรงงาน — ทุกหน่วยที่ถือ KPI นี้ใช้ตัวเลขเดียวกัน' : 'ค่าโรงงาน (ทุกหน่วยใช้ตัวเลขเดียวกัน) · กรอกที่แท็บ ⚙️ ขอบเขต ทั้งโรงงาน');
       else if (man?.shared === 'missing' && !r.auto) note = note || `KPI นี้ใช้ค่าโรงงาน แต่ยังไม่มีนิยามระดับ ทั้งโรงงาน ปี ${year} — สร้างที่แท็บ ⚙️ ขอบเขต ทั้งโรงงาน แล้วกรอกที่นั่น`;
       else if (man?.inherited && !r.auto) note = note || `ค่าระดับ ${org.labelOf(man.at.kind, man.at.value)} (ยังไม่ตั้งแยกที่ขอบเขตนี้)`;
@@ -618,6 +606,18 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       if (value == null) {
         const prev = series.slice(0, 12).filter(p => p.k <= monthKey && p.v != null).pop();
         if (prev) { value = prev.v; valueKey = prev.k; stale = true; }
+      }
+      /* 🧮 บรรทัดรองของแผ่นที่ "สูตรคำนวณ" ต้องบอกตัวตั้ง/ตัวหารที่ใช้จริง ไม่ใช่เขียน "กรอกมือ" (09/11 · user: "sales/head เหมือนจะผิด")
+         เคสจริง: ยอดขาย/หัว PD1 = 47.951 เพราะกำลังคน PD1 ที่กรอกไว้ 32 คน (ของจริง ~300) — ถ้าแผ่นเขียนแค่ "กรอกมือ" ไม่มีทางเห็นว่าตัวหารผิด */
+      let fxSrc = '';
+      if (fiB?.computed?.length && !r.auto) {
+        const mNo = Number(String(valueKey || monthKey).slice(5, 7)) || monthNo;
+        const useM = fiB.computed.includes(mNo) ? mNo : Math.max(...fiB.computed.filter(x => x <= mNo), 0) || fiB.computed[fiB.computed.length - 1];
+        const ins = fiB.inputs?.[useM] || {};
+        const fmtIn = (v, x) => { const u = baseVarOf(v)?.unit || ''; if (x == null) return '—'; if (u === 'บาท') return Math.abs(x) >= 1e6 ? `${(x / 1e6).toLocaleString('th-TH', { maximumFractionDigits: 1 })} MB` : `${Math.round(x).toLocaleString('th-TH')} บ.`; return `${Number(x).toLocaleString('th-TH', { maximumFractionDigits: 1 })} ${u}`; };
+        const vars = fiB.formula?.vars || Object.keys(ins);
+        const parts = vars.map(v => `${(baseVarOf(v)?.label || v).split(' (')[0].replace(/^[^\wก-๙]+\s*/, '')} ${fmtIn(v, ins[v])}${fiB.inputSrc?.[useM]?.[v] === 'auto' ? ' ≈ทะเบียน' : ''}`);
+        fxSrc = `🧮 ${fiB.label} · ${parts.join(' ÷ ')}${useM !== mNo ? ` (${monthLabel(`${year}-${String(useM).padStart(2, '0')}`)})` : ''}`;
       }
       /* 🎯 เป้า/Commitment อ่านผ่าน `defBars()` ตัวเดียว (กฎ kpiSetup "ห้ามให้จอไหนแกะเอง") — เดิมอ่าน `target_value` ตรงๆ
          ⇒ นิยามที่พิมพ์เป้าไว้ในช่องข้อความ ("730" · "≤ 0.5%") แต่ไม่กรอกช่องตัวเลข ขึ้น "ไม่มีเป้า" ทั้งที่ ⚙️ ตัดสิน ○△✗ ได้ (user 09/10) */
