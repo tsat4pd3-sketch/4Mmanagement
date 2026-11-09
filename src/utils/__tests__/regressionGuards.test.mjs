@@ -2772,7 +2772,6 @@ test('🛡️ no-production-sessions-product-id — คอลัมน์ร้�
 const PAGE_EXEMPT = {
   'Login.jsx': 'หน้า login มีแบรนด์ของตัวเอง ไม่ใช่หน้าในเมนู',
   'Dashboard.jsx': 'บอร์ดจอ TV — หัวเรื่องกินแนวตั้ง (UI-CONVENTIONS §6.8)',
-  'Management.jsx': 'บอร์ดจอ TV (§6.8)',
   'LineOeeBoard.jsx': 'บอร์ดจอ TV ประจำไลน์ (§6.8)',
   'TvBoard.jsx': 'จอแขวนห้อง ไม่มี sidebar (§6.8)',
   'LineSetup.jsx': 'เครื่องมือวาดผังที่ถูกฝังในแท็บของ /layout-setup (§6.8)',

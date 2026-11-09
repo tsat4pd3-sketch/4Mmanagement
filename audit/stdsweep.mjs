@@ -23,7 +23,7 @@
 import { chromium } from 'playwright';
 import { ALL } from '../src/utils/filterLabels.js';
 
-const EXEMPT = new Set(['Login', 'Dashboard', 'Management', 'LineOeeBoard', 'TvBoard', 'LineSetup', 'DeptHub']);
+const EXEMPT = new Set(['Login', 'Dashboard', 'LineOeeBoard', 'TvBoard', 'LineSetup', 'DeptHub']);
 const ALL_LABELS = new Set(Object.values(ALL));
 const VIEW = { width: 1600, height: 950 };
 const TZ = { timezoneId: 'Asia/Bangkok' };
