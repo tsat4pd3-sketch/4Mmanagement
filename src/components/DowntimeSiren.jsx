@@ -39,6 +39,8 @@ import useIsMobile from '../utils/useIsMobile';
       ฝ่ายผลิต **ห้ามกรองทีมเด็ดขาด** (กฎเดียวกับ MtnAndonBoard §ตัวกรองทีมห้ามกรองเครื่องหยุด)
    🔴 ใบที่ **ไม่ได้ระบุทีม = ดังทุกห้อง** (fail-open) — เงียบเพราะข้อมูลไม่ครบ คือความเสี่ยงที่
       แย่กว่าดังเกิน · ห้ามเปลี่ยนเป็น fail-closed */
+/* `team` รับได้ทั้ง key เดียว และ **อาร์เรย์ของ key** (09/11) — ช่างที่สังกัดหลายทีมจะได้ยิน
+   เฉพาะทีมของตัวเอง ไม่ใช่ทุกทีม · ว่าง/ไม่รู้จัก = ไม่กรอง (fail-open ตามกฎข้างบน) */
 export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
   /* 📱 มือถือโชว์ทีละใบ (05/11 · เหตุผลเดียวกับ StoreCallSiren) — แถบ Andon ขึ้นบรรทัดใหม่บนจอแคบ
      หลายใบซ้อนกันจะยาวเกินจอ แล้วปุ่ม "รับทราบ" ของใบล่างตกนอกจอ (แถบเป็น position: fixed)
@@ -91,11 +93,15 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
      ⚠️ ต้องกรอง planned เองด้วย — เดิมพึ่งว่า scanner stamp เฉพาะนอกแผน
      ⚠️ คำนวณใหม่ทุกนาทีจากข้อมูลที่โหลดมาแล้ว (ไม่ยิง DB) — ไม่งั้นต้องรอรอบ poll ถัดไปถึงจะดัง */
   /* ใบ "เรียกช่าง" ใบนี้เป็นของห้องนี้ไหม — ไม่เลือกทีม หรือใบไม่ระบุทีม = ใช่เสมอ */
+  /* 🔴 deps เป็น "สตริง" ไม่ใช่อาร์เรย์ — prop ที่เป็น array ใหม่ทุก render จะทำให้ useCallback
+     สร้างใหม่ทุกรอบแล้วลาก useMemo/effect ที่พึ่งมันวนไม่จบ (กฎเหล็ก DB ข้อ 9) */
+  const wantKey = (Array.isArray(team) ? team : [team])
+    .map(teamKeyOf).filter(Boolean).sort().join('|')
   const myCall = useCallback((d) => {
-    const want = teamKeyOf(team); if (!want) return true
-    const got = teamKeyOf(d?.call_mtn_team); if (!got) return true   // ไม่ระบุ = ดังทุกห้อง
-    return got === want
-  }, [team])
+    if (!wantKey) return true                                        // ห้องนี้ไม่กรองทีม
+    const got = teamKeyOf(d?.call_mtn_team); if (!got) return true    // ใบไม่ระบุทีม = ดังทุกห้อง
+    return wantKey.split('|').includes(got)
+  }, [wantKey])
 
   const alerts = useMemo(() => {
     const overThr = (d) => isAlarmingDT(d) && isOverDtThreshold(d, thr ?? DT_OPEN_ALERT_MIN_DEFAULT)

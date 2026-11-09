@@ -9222,3 +9222,37 @@ test('🛡️ pm-notify-via-single-source — แจ้งเตือนผล�
   assert.ok(/event:\s*'pm_inspection_ng'/.test(page),
     '\n\n❌ ไม่ได้ส่ง event key — edge จะตอบ 400 แล้วแจ้งเตือนหายทั้งใบ\n');
 });
+
+test('🔊 siren-call-mtn-needs-team — ไซเรน "เรียกช่าง" ต้องรู้ขอบเขตทีมของจอเสมอ', () => {
+  /* 🔴 feedback หน้างาน 09/11: "เรียกช่างแผนกอื่น แต่ตัวเองก็เห็น alarm"
+     ต้นเหตุ: `/mtn-machine-layout` mount <DowntimeSiren mode="call_mtn" /> **โดยไม่ส่ง team**
+     ⇒ ช่าง JIG ที่เปิดหน้านี้ได้ยินเสียงเรียกของทีม DIE/Maintenance ทุกใบ
+     (ต่างจาก MtnAndonBoard ที่ออกแบบชิปเลือกทีมไว้ตั้งแต่แรก)
+     ⚠️ เสียงมาจาก downtime_logs ตรงๆ **ไม่ใช่** notifications.type — แก้ type ไม่ช่วยอะไร */
+  const files = ['src/pages/MtnMachineLayout.jsx', 'src/components/MtnAndonBoard.jsx',
+                 'src/pages/Dashboard.jsx', 'src/pages/Management.jsx'];
+  let checked = 0;
+  for (const f of files) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    for (const m of src.matchAll(/<DowntimeSiren\b[^/>]*\/?>/g)) {
+      const tag = m[0];
+      if (!/call_mtn|soundAll|'all'/.test(tag)) continue;   // โหมดเครื่องหยุดเฉยๆ ไม่ต้องกรองทีม
+      checked++;
+      assert.ok(/\bteam=/.test(tag),
+        `\n\n❌ ${f}: <DowntimeSiren> โหมดเรียกช่างไม่ได้ส่ง prop \`team\`\n`
+        + '   ⇒ จอนี้จะดังทุกทีม — ช่างทีมอื่นโดนเสียงเรียกที่ไม่ใช่ของตัวเอง\n'
+        + `   แท็กที่เจอ: ${tag}\n`);
+    }
+  }
+  assert.ok(checked >= 2,
+    `\n\n❌ หา <DowntimeSiren> โหมดเรียกช่างเจอแค่ ${checked} จุด (ต้อง ≥ 2)\n`
+    + '   ⇒ ด่านนี้วัดอะไรไม่ได้แล้ว (ย้ายไฟล์/เปลี่ยนชื่อ component?) ต้องแก้ด่าน\n');
+
+  /* ตัวกรองต้องรับได้ทั้ง key เดียวและหลายทีม — ช่างที่สังกัด 2 ทีมต้องไม่ได้ยินทีมที่ 3 */
+  const siren = stripComments(readFileSync(join(ROOT, 'src/components/DowntimeSiren.jsx'), 'utf8'));
+  assert.ok(/Array\.isArray\(team\)/.test(siren),
+    '\n\n❌ DowntimeSiren รับ team เป็น key เดียวเท่านั้น — ช่างหลายทีมจะถูกบีบเหลือทีมเดียวหรือได้ยินหมด\n');
+  /* ใบที่ไม่ระบุทีม = ดังทุกห้อง (fail-open) — ห้ามเปลี่ยนเป็น fail-closed (เงียบ = อันตรายกว่า) */
+  assert.ok(/if \(!got\) return true/.test(siren),
+    '\n\n❌ ใบที่ไม่ระบุทีมถูกกรองทิ้ง — เงียบเพราะข้อมูลไม่ครบ อันตรายกว่าดังเกิน\n');
+});
