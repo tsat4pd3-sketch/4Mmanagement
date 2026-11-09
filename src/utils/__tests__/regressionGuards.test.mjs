@@ -9189,3 +9189,36 @@ test('✍️ signature-no-blank-save — โมดัลลายเซ็นห
   assert.ok(/tab === 'draw' && !hasInk\.current/.test(save), 'handleSave ต้องเช็ค hasInk ก่อนบันทึกแท็บวาด');
   assert.ok(/hasInk\.current = true/.test(s), 'startDraw ต้องตั้ง hasInk = true');
 });
+
+test('🛡️ pm-notify-via-single-source — แจ้งเตือนผลตรวจต้องผ่านของกลาง ห้ามหาผู้รับเอง', () => {
+  /* 🔑 ต้องตัดคอมเมนต์ก่อน — ไฟล์นี้อธิบายเหตุผลไว้ยาว คำว่า `notifyEvent()` / `extra_user_ids`
+     โผล่ในคอมเมนต์ด้วย ⇒ เทียบกับไฟล์ดิบ = ด่านผ่านทั้งที่โค้ดถูกถอดออกแล้ว (เคยพลาดจริงรอบแรก) */
+  const src = stripComments(readFileSync(join(ROOT, 'src/lib/pmNotify.js'), 'utf8'));
+
+  /* 🔴 เคสจริง 09/11: `notifyDepartment()` รับ `department` มาแต่ใช้แค่เลือกคีย์สิทธิ์
+     แล้วดึง profiles ด้วย role ล้วน ⇒ ใบ "ผลตรวจ NG" ยิงถึง 83 คน ข้าม 12 ส่วนงาน
+     และเพราะไม่ผ่าน notify_recipients ⇒ ค่าใน /notification-config ไม่มีผล
+     + ตัวกรอง mute ของผู้ใช้ไม่ทำงาน (กฎ CLAUDE.md §Edge Functions) */
+  assert.ok(/notifyEvent\(/.test(src),
+    '\n\n❌ pmNotify ไม่ได้ยิงผ่าน notifyEvent — ผู้รับจะไม่ผ่าน notify_recipients\n'
+    + '   ⇒ ตั้งค่าใน /notification-config ไม่มีผล · คนที่ปิดแจ้งเตือนเรื่องนี้ยังได้รับ\n');
+
+  assert.ok(!/\.in\(\s*['"]role['"]/.test(src),
+    '\n\n❌ กลับไปดึง profiles ด้วย role ล้วน — นั่นคือบั๊กเดิม (83 คน / 12 ส่วนงาน ต่อ 1 ใบ)\n');
+
+  /* ช่างของทีมส่งผ่านช่อง "เจ้าของงาน" เพราะแกนทีมกับส่วนงานใน RPC เป็น AND
+     (ส่ง p_team = หัวหน้าส่วนงานหลุด · ไม่ส่ง = ช่างหลุด — วัดจริง PD3+jig: 12 vs 14) */
+  assert.ok(/extra_user_ids:\s*owners/.test(src),
+    '\n\n❌ ไม่ได้ส่งช่างของทีมผ่าน extra_user_ids — ช่างจะหลุดจากผู้รับ\n'
+    + '   (ส่วนงานของช่างคือ JIG MTN/Die MTN ไม่ตรงกับส่วนงานของอุปกรณ์ จึงตกตัวกรอง match_section)\n');
+
+  /* edge ตัด extra_user_ids ที่ 20 — ตัดแล้วเงียบ = ช่างบางคนไม่รู้ว่ามีงาน */
+  assert.ok(/ownersCapped/.test(src),
+    '\n\n❌ ไม่ได้บอกว่ารายชื่อช่างถูกตัดที่ 20 คน — ตัดแล้วเงียบ = ช่างไม่รู้ว่ามีใบ NG\n');
+
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/PMCheckData.jsx'), 'utf8'));
+  assert.ok(/ownersCapped/.test(page),
+    '\n\n❌ หน้าจอไม่ได้เตือนเมื่อรายชื่อช่างถูกตัด (จอต้องไม่โกหกว่าส่งครบ)\n');
+  assert.ok(/event:\s*'pm_inspection_ng'/.test(page),
+    '\n\n❌ ไม่ได้ส่ง event key — edge จะตอบ 400 แล้วแจ้งเตือนหายทั้งใบ\n');
+});
