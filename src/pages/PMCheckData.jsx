@@ -27,6 +27,7 @@ import CalloutPin from '../components/CalloutPin'
 import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam } from '../utils/pmTeams'
 import { MTN_TEAMS, deptNameOf, teamKeyOf, teamForEquipmentKind, teamsForUser, canWriteTeam, teamBlockText } from '../utils/mtnTeams'
 import { checkWriteRows } from '../utils/dbWrite';
+import NoticeBar from '../components/NoticeBar';
 import { getWorkDate } from '../utils/workDate'
 import { amShiftInfo, AM_MO_COLS } from '../lib/dailyAmBoard'
 import { DEFAULT_POINT_KINDS, pointDueStatus, pointPin, shimStack, deriveShimAction } from '../utils/fixturePoints'
@@ -1799,9 +1800,9 @@ export default function PMCheckData() {
                               </div>
                             </div>
                             {!canShim && (
-                              <div style={{ fontSize: 11.5, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '6px 10px', marginBottom: 8 }}>
+                              <NoticeBar tone="warn" style={{ marginBottom: 8 }}>
                                 บัญชีนี้ดูค่าชิมได้แต่บันทึกไม่ได้ — ต้องมีสิทธิ์ fixture_shim:record (admin เปิดให้ที่ /permissions)
-                              </div>
+                              </NoticeBar>
                             )}
                             {shimPoints.filter(pt => !focusOn || pt.id === activeShimId).map(pt => {
                               const st = shimStack(pt)

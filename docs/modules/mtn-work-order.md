@@ -587,7 +587,16 @@ select count(*) filter (where status='transferred') as ส่งต่อ,
     ส่วนกระดาษเขียน `MTN.2026/06-59` (ปี/เดือน-running) · เปลี่ยนเมื่อไหร่กระทบเลขอ้างอิงทุกใบที่ออกไปแล้ว — **ต้องให้ user สั่งก่อน**
 
 - **สิทธิ์ (role_permissions):** `page:/mtn-repair`+`mtn_repair:report` = ทุก role · ที่เหลือดูตารางในกฎเหล็กด้านบน · ปุ่ม action แต่ละขั้นเช็คผ่าน `canDoStep()` (ไม่ hardcode role array)
-- **เชื่อมกับ Downtime:** ปุ่ม "📝 เปิดใบซ่อม" ในแถว Downtime (DailyReport) → สร้าง `mtn_orders` prefill (ไลน์/เครื่อง/อาการจาก dt type) `status=pending`, `source_downtime_id` ผูกที่มา (กันเปิดซ้ำ) แล้ว MTN ไปรับงานต่อที่ `/mtn-repair`
+- **เชื่อมกับ Downtime:** ปุ่ม "📝 เปิดใบซ่อม" ในแถว Downtime (DailyReport) → **ฟอร์มแจ้งซ่อมเต็มตัวเดียวกับหน้านี้** (2026-11-08 · คำสั่ง user
+  *"ต้องไม่เด้งเปิดทันที ต้องป๊อปอัพแนบรูปบังคับ และใส่รายละเอียดให้ชัดเจนมากกว่าดึงแค่ดาวน์ไทม์ไปเปิดใบ"*)
+  · `MoReportFromDowntime` (export จาก `MtnRepair.jsx` · โหลด lazy ผ่าน `components/MoReportFromDowntime.jsx`) โหลดทะเบียนเอง แล้ววาด `ReportModal`
+    ด้วย `initial` (ไลน์ · เครื่อง · เวลาเกิดเหตุ = `started_at` · ทีมเดาจากชนิดในทะเบียน · รายละเอียด = `[Downtime: ประเภท]` + คำที่พนักงานพิมพ์)
+    + `sourceDowntimeId` (ผูกที่มา/กันซ้ำ/MTTR) + **`requireBefore` = รูปก่อนซ่อมบังคับ**
+  · คนต้องเลือก **ชนิดอุปกรณ์ + กลุ่ม/ลักษณะปัญหาจากทะเบียน** เอง (ระบบไม่เติมลักษณะปัญหาจากชื่อประเภท DT) · ผ่านตัวตรวจรายละเอียด `moNoteCheck` เหมือนหน้านี้
+  · ไลน์ในฟอร์ม = เฉพาะครอบครัวไลน์ของกะ · ทะเบียนโหลดไม่ได้ = เขียนบนจอ + ปุ่มลองใหม่ (ไม่เปิดฟอร์มครึ่งๆ)
+  · เช็คใบซ้ำ (`source_downtime_id`) อ่าน error — อ่านไม่ได้ = ไม่เปิด (fail-closed)
+  · ป๊อปอัพเลือกทีมเดิมเหลือใช้กับ "📞 เรียกช่าง" อย่างเดียว · 🔴 **ห้าม DailyReport insert `mtn_orders` เองอีก** (ด่าน regressionGuards)
+  · ไม่ส่ง `initial`/`sourceDowntimeId`/`requireBefore` = ฟอร์มหน้าแจ้งซ่อมทำงานเหมือนเดิมเป๊ะ
 - **หลายทีมซ่อม (2026-07-14):** ครอบคลุม **PRODUCTION(Autonomous) / JIG MTN / DIE MTN / MTN** — `mtn_technicians.dept` (ทีมของช่าง, master แยกกลุ่มตามทีม) + `mtn_orders.mtn_dept` ("แจ้งถึงหน่วยงาน" auto จากชนิดอุปกรณ์: JIG→JIG MTN, DIE→DIE MTN, อื่น→MTN แก้ได้) · ฟิลเตอร์รายการตามหน่วยงาน · migration `20260714_mtn_multi_team.sql`
 - **แจกงานให้ถูกทีม 4 ส่วน (2026-07-16 — คำสั่ง user):** ทำ 3 อย่างพร้อมกัน จับคู่ทีมของ user ผ่าน `teamsForUser(mtnTeams, sections)` (util `src/utils/mtnTeams.js`):
   - **ทีมมาจาก `profiles.mtn_teams` ที่ตั้งใน `/add-user` โดยตรง (2026-07-22)** — ช่อง "🔧 ทีมช่างซ่อม" (multi-select JIG MTN/DIE MTN/MTN/PRODUCTION) โผล่เฉพาะ role งานซ่อม (`MTN_TEAM_ROLES` = mtn/engineer/leader/supervisor) · **แยกจาก Section ไม่กระทบ scope ข้อมูลผลิต** · ช่างฝ่ายผลิต first-response เลือก `PRODUCTION` + PD ของตัวเองได้ · เขียน best-effort หลัง create/update (edge `create-user` ยังไม่รู้จัก field นี้) · UserContext expose `mtnTeams` (โหลด best-effort เหมือน avatar_url กัน login พังถ้ายังไม่ apply migration)

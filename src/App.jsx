@@ -419,11 +419,7 @@ function SplashScreen({ onDone }) {
             fontSize: 13, letterSpacing: '2px', textTransform: 'uppercase',
             color: 'var(--text)',
           }}>Thai Summit Group</div>
-          <div style={{
-            fontFamily: 'var(--font-display)', fontSize: 11,
-            letterSpacing: '2px', textTransform: 'uppercase',
-            color: 'var(--muted)',
-          }}>VX Production System</div>
+          {/* 09/11: ถอดป้ายเล็ก "VX Production System" (ชื่อเก่า) — ชื่อโปรแกรมอยู่ที่หัวเรื่องใหญ่บรรทัดถัดไปแล้ว ไม่ซ้ำ 2 บรรทัด */}
         </div>
       </div>
 

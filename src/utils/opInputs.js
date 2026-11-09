@@ -9,11 +9,23 @@
 
 const k = (s) => String(s ?? '').trim();
 
+/** ขั้นนี้เป็น "ขั้นแรกของโซ่" ไหม (09/11) — ขั้นถัดไปในโซ่ (HYDROFORM → LASER-345) รับของจากขั้นก่อนหน้า ไม่กินลูกของแม่
+ * แม่มีขั้นเดียว = ใช่ · หลายขั้น = ต้องมี `op_seq` ครบทุกขั้นแล้วตัวนี้น้อยสุด · ลำดับไม่ครบ = ไม่รู้ = ไม่ใช่ (ห้ามเดา)
+ * @param {{ op_seq?: number|null }} op @param {Array<{ op_seq?: number|null }>} siblings ทุกขั้นของแม่เดียวกัน (รวมตัวเอง) */
+export function isFirstOpInChain(op, siblings = []) {
+  const sib = (siblings || []).length ? siblings : [op];
+  if (sib.length <= 1) return true;
+  if (sib.some(x => x?.op_seq == null) || op?.op_seq == null) return false;
+  return Number(op.op_seq) === Math.min(...sib.map(x => Number(x.op_seq)));
+}
+
 /** ของที่ขั้น OP กิน
- * @param {{ ownKids: Array<{mat_no, qty_per_unit}>, parentKids: Array }} a
- * @returns {{ kids: Array, via: 'op_bom'|'auto_single'|'unset' }} */
-export function opInputsOf({ ownKids = [], parentKids = [] } = {}) {
+ * @param {{ ownKids: Array<{mat_no, qty_per_unit}>, parentKids: Array, firstInChain?: boolean }} a
+ *   firstInChain=false = ขั้นถัดไปในโซ่ ⇒ ไม่ใช้กฎลูกตัวเดียวอัตโนมัติ (ของมาจากขั้นก่อนหน้า)
+ * @returns {{ kids: Array, via: 'op_bom'|'auto_single'|'unset'|'from_prev' }} */
+export function opInputsOf({ ownKids = [], parentKids = [], firstInChain = true } = {}) {
   if ((ownKids || []).length) return { kids: ownKids, via: 'op_bom' };
+  if (!firstInChain) return { kids: [], via: 'from_prev' };
   if ((parentKids || []).length === 1) return { kids: parentKids, via: 'auto_single' };
   return { kids: [], via: 'unset' };
 }

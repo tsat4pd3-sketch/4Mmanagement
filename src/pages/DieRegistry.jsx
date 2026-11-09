@@ -37,6 +37,7 @@ import { FEED_TYPES, DIE_OWNERS, dieOwnerLabel, membersBySet, dieRegistryAoa } f
 import { loadDocForms } from '../utils/docForms';
 import { xlsxDocName } from '../utils/csvDoc';
 
+import NoticeBar from '../components/NoticeBar';
 /* ═══════════════════════════════════════════════════════════════
    ทะเบียนแม่พิมพ์ & DIE MAINTENANCE — /die-registry
 
@@ -619,10 +620,9 @@ export default function DieRegistry() {
       />
 
       {dataWarn && (
-        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-line)',
-                      borderRadius: 'var(--r-md)', padding: '9px 14px', fontSize: 12.5, marginBottom: 12 }}>
-          ⚠️ {dataWarn}
-        </div>
+        <NoticeBar tone="bad" style={{ marginBottom: 12 }}>
+          {dataWarn}
+        </NoticeBar>
       )}
 
       {sharedErr && tab === 'registry' && (

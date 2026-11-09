@@ -16,6 +16,7 @@ import useProductionLines from '../utils/useProductionLines';
 import TimeRangeBar from '../components/TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
 
+import NoticeBar from '../components/NoticeBar';
 // ประวัติผลิตราย Product — ดูย้อนหลังว่าสินค้าตัวหนึ่งผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ (2026-07-24)
 // + ประวัติการแก้ master data ของสินค้านั้น (audit_log — ใครแก้ line_name/CT เมื่อไหร่)
 
@@ -279,12 +280,9 @@ export default function ProductHistory() {
       {/* ⚠️ โหลดไม่ครบ = ทุกตัวเลขในหน้านี้ต่ำกว่าจริง (รวมทั้งแผงเทียบความต้องการลูกค้าที่บอก "ขาด/พอ")
           ห้ามปล่อยให้ดูเหมือนข้อมูลครบ — กฎ "ห้ามล้มเหลวเงียบ" */}
       {loadWarn && (
-        <div style={{
-          marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700,
-          background: 'var(--red-dim)', border: '1px solid var(--red-line)', color: 'var(--red)',
-        }}>
-          ⚠ {loadWarn} — ตัวเลขในหน้านี้ต่ำกว่าความจริง อย่าเพิ่งใช้ตัดสินใจ (ลองแคบช่วงวันที่ลง แล้วโหลดใหม่)
-        </div>
+        <NoticeBar tone="bad" style={{ marginBottom: 12 }}>
+          {loadWarn} — ตัวเลขในหน้านี้ต่ำกว่าความจริง อย่าเพิ่งใช้ตัดสินใจ (ลองแคบช่วงวันที่ลง แล้วโหลดใหม่)
+        </NoticeBar>
       )}
 
       {/* ตัวเลือกสินค้า + ช่วงวันที่ — แถบกรองเดียว (UI-STANDARD 2026-09-24: ไลน์/ค้นหาเป็น children ของ TimeRangeBar

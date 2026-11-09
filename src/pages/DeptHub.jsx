@@ -522,7 +522,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             color: 'var(--text)', cursor: 'pointer', fontSize: 16,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            {theme === 'dark' ? '️' : '🌙'}
+            {theme === 'dark' ? '☀️' : '🌙'}
           </button>
         )}
       </div>

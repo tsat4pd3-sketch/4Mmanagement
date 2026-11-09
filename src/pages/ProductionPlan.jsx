@@ -16,7 +16,6 @@ import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
-import { ALL } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import SimpleMasterPanel from '../components/SimpleMasterPanel';
 import { invalidateTrialReasons } from '../utils/useTrialReasons'; // 🧪 ทะเบียนเหตุผลจองเครื่องทดลอง (05/11)
@@ -36,6 +35,8 @@ import { buildBomIndex, explodeBom } from '../utils/bomTree';
 import { explodeDemand, netOffBuffer } from '../utils/demandExplode';
 import { scheduleBackward, makePrevWorkDay } from '../utils/backwardPlan';
 import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
+import NoticeBar from '../components/NoticeBar';
+import SectionScopeSelect from '../components/SectionScopeSelect';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ═══ วางแผนการผลิต (Active Planner) — 🗓️ /production-plan ══════════════════
@@ -653,10 +654,7 @@ export default function ProductionPlan() {
       {/* UI-STANDARD 2026-09-24 — ตัวกรอง/ตัวเลือกแผนย้ายจาก actions ของหัวเพจมาเป็นแถบกรองเดียว */}
       <FilterBar style={{ marginBottom: 0 }}>
         {sectionOpts.length > 1 && (
-          <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
-            <option value="">{ALL.section}</option>
-            {sectionOpts.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <SectionScopeSelect lines={scopedLines} value={secFilter} onChange={s => setSecFilter(s)} only={sectionOpts} />
         )}
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}
           title="ระเบิด BOM ของพาร์ทที่ลูกค้าสั่ง เพื่อให้ไลน์ที่ทำพาร์ทลูกเห็นงานของตัวเองในแผนด้วย">
@@ -678,10 +676,7 @@ export default function ProductionPlan() {
 
       {/* ⚠️ โหลดไม่ครบ = ทั้งกำลังผลิตและความต้องการต่ำกว่าจริง → verdict อาจบอก "กะเช้าพอ" ผิด */}
       {planWarn && (
-        <div style={{
-          margin: '0 0 12px', padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700,
-          background: 'var(--red-dim)', border: '1px solid var(--red-line)', color: 'var(--red)',
-        }}>⚠ {planWarn}</div>
+        <NoticeBar tone="bad" style={{ margin: '0 0 12px' }}>{planWarn}</NoticeBar>
       )}
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
         กำลังผลิตคำนวณจาก <b>median ยอดดีจริงต่อกะ</b> ใน {HISTORY_DAYS} วันล่าสุด (ตัดค่าโดดอัตโนมัติ) · พาร์ทที่ไม่มีประวัติ fallback เป็น cycle time × OEE
@@ -767,9 +762,9 @@ export default function ProductionPlan() {
         </div>
       )}
       {!loading && useBom && demandPcs.bom?.cycles > 0 && (
-        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontSize: 12.5, color: 'var(--red)', fontWeight: 700 }}>
-          ⛔ BOM วนลูป {demandPcs.bom.cycles} จุด — ระบบตัดการไล่ชั้นทิ้งเพื่อไม่ให้ค้าง ⇒ ความต้องการของกิ่งนั้นอาจขาด (ไปแก้ที่ /products แท็บ BOM)
-        </div>
+        <NoticeBar tone="bad" style={{ marginBottom: 0 }}>
+          BOM วนลูป {demandPcs.bom.cycles} จุด — ระบบตัดการไล่ชั้นทิ้งเพื่อไม่ให้ค้าง ⇒ ความต้องการของกิ่งนั้นอาจขาด (ไปแก้ที่ /products แท็บ BOM)
+        </NoticeBar>
       )}
 
       {!loading && demandGaps.noLine > 0 && (

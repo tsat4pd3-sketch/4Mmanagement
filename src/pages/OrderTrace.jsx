@@ -27,6 +27,7 @@ import ScanModal from '../components/ScanModal';
 import useTimeRange from '../utils/useTimeRange';
 import { urlBool } from '../utils/urlInit';
 
+import NoticeBar from '../components/NoticeBar';
 /*
   🔎 สอบกลับ Order (Order Traceability) — 2026-07-30
   รู้ prod_no ที่สแกน kanban → เห็นทุกอย่างที่เกิดขึ้นกับใบนั้น + สถานการณ์รอบข้าง ณ เวลานั้น:
@@ -1465,8 +1466,8 @@ export default function OrderTrace() {
                 <CollapseCard id="analysis" storePrefix="ot" title="⏱️ วิเคราะห์การวิ่งของใบ (เวลา · ความเร็ว vs มาตรฐาน)" count={null} defaultOpen>
                   {/* สแกนเป็นชุด → เวลาเปิด-ปิดรายใบไม่ใช่เวลาผลิตจริง ต้องอ่านเป็นระดับกลุ่ม */}
                   {orderAnalysis.batchScan && (
-                    <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 'var(--r-md)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', fontSize: 12, color: 'var(--amber)' }}>
-                      ⚠️ <b>ใบนี้ถูกสแกนรวบกับใบอื่น</b>
+                    <NoticeBar tone="warn" style={{ marginBottom: 10 }}>
+                      <b>ใบนี้ถูกสแกนรวบกับใบอื่น</b>
                       {orderAnalysis.openBatchN > 1 && <> — เปิดรวบ {orderAnalysis.openBatchN} ใบ</>}
                       {orderAnalysis.closeBatchN > 1 && <>{orderAnalysis.openBatchN > 1 ? ' · ' : ' — '}ปิดรวบ {orderAnalysis.closeBatchN} ใบ</>}
                       {orderAnalysis.batchNeedSec > 0 && (
@@ -1475,7 +1476,7 @@ export default function OrderTrace() {
                       )}
                       {!orderAnalysis.batchNeedSec && <> (ยังไม่ตั้ง CT และไม่มีข้อมูลกะพอ — ใช้เกณฑ์สำรอง {FALLBACK_BATCH_SEC / 60} นาที)</>}
                       {' '}→ <b>เวลา "เปิด→ปิด" ของใบนี้ไม่ใช่เวลาผลิตจริงของใบเดียว</b> จึงคิด วิ/ชิ้น รายใบไม่ได้ · ใช้ตัวเลข <b>ระดับกลุ่ม</b> ด้านล่างแทน
-                    </div>
+                    </NoticeBar>
                   )}
 
                   {/* ระดับกลุ่ม = คำตอบหลักเมื่อมีใบวิ่งทับ/สแกนเป็นชุด */}
@@ -1547,9 +1548,9 @@ export default function OrderTrace() {
 
                   {/* ระดับความแน่ชัด — ห้ามให้ "ผู้ต้องสงสัย" ดูเหมือนคำตอบ */}
                   {trace.equip.confirmedNo ? (
-                    <div style={{ fontSize: 12, marginBottom: 8, padding: '6px 10px', borderRadius: 'var(--r-md)', background: 'var(--green-dim)', border: '1px solid var(--green-line)' }}>
+                    <NoticeBar tone="ok" style={{ marginBottom: 8 }}>
                       ใบนี้ระบุเครื่องไว้ชัดเจน: <b>{trace.equip.confirmedNo}</b> — สอบกลับได้ถึงตัวเครื่อง
-                    </div>
+                    </NoticeBar>
                   ) : !trace.equip.isParallel ? (
                     /* ไลน์ไหลทีละชิ้น = งานผ่านทุกเครื่องตามลำดับ → ทุกตัว "ถูกใช้จริง" ไม่ใช่ผู้ต้องสงสัย */
                     <div style={{ fontSize: 12, marginBottom: 8, padding: '6px 10px', borderRadius: 'var(--r-md)', background: 'var(--green-dim)', border: '1px solid var(--green-line)' }}>
@@ -1588,9 +1589,9 @@ export default function OrderTrace() {
                   )}
 
                   {trace.equip.partial && (
-                    <div style={{ fontSize: 11.5, marginBottom: 8, padding: '5px 9px', borderRadius: 'var(--r-md)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--amber)' }}>
-                      ⚠️ โหลดประวัติได้ไม่ครบทุกรายการ — ช่องที่ขึ้นว่า "ไม่มีประวัติ" อาจเป็นเพราะดูไม่ครบ ไม่ใช่ว่าไม่มีจริง (ดู console หากต้องตรวจสอบ)
-                    </div>
+                    <NoticeBar tone="warn" style={{ marginBottom: 8 }}>
+                      โหลดประวัติได้ไม่ครบทุกรายการ — ช่องที่ขึ้นว่า "ไม่มีประวัติ" อาจเป็นเพราะดูไม่ครบ ไม่ใช่ว่าไม่มีจริง (ดู console หากต้องตรวจสอบ)
+                    </NoticeBar>
                   )}
 
                   {trace.equip.dieCount === 0 && (

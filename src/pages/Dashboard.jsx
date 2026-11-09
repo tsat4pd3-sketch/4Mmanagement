@@ -45,6 +45,7 @@ import SearchInput from '../components/SearchInput';
 import Segmented from '../components/Segmented';
 import TabBar from '../components/TabBar';
 import { urlPick, urlBool, urlParam } from '../utils/urlInit';
+import SectionScopeSelect from '../components/SectionScopeSelect';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* เกณฑ์ "อัตราการมาทำงาน" ของจอนี้ — การ์ดบนสุดกับการ์ดรายไลน์ต้องใช้ชุดเดียวกัน (2026-10-19)
@@ -1008,18 +1009,8 @@ export default function Dashboard({ view = 'timeline' }) {
         <motion.div {...stagger(1)} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', paddingRight: 52 }}>
           {/* Section filter — สำหรับจอ TV ดูเฉพาะส่วนงานตัวเอง */}
           {sections.length > 1 && (
-            <select
-              value={selectedSection}
-              onChange={e => changeSection(e.target.value)}
-              style={{
-                width: 'auto', maxWidth: 280,   // UI-STANDARD 2026-09-24 — กัน select{width:100%} ของธีมยืดเต็มแถว (เคยยืด 907px)
-                background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--ctl-r)',
-                padding: '7px 12px', fontSize: 14, fontWeight: 700, color: 'var(--text)',
-                cursor: 'pointer', outline: 'none',
-              }}>
-              <option value="all">{ALL.section}</option>
-              {sections.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <SectionScopeSelect lines={scopedLines} value={selectedSection === 'all' ? '' : selectedSection}
+              onChange={s => changeSection(s || 'all')} only={sections} width={280} />
           )}
           {/* Shift toggle = <Segmented> มาตรฐาน (06/11 · เดิมวาดเอง มุม 7px) · สีกะอยู่ที่ป้ายใต้ชื่อหน้าแทน */}
           <Segmented label="กะ" value={selectedShift} onChange={setSelectedShift}

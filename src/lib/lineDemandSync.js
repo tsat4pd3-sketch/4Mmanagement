@@ -20,7 +20,7 @@ import { can } from '../utils/permissions';
 import { loadStorageLocations } from '../utils/useStorageLocations';
 import { loadProductionLines } from '../utils/useProductionLines';
 import { areaLinesOf } from '../utils/storageLoc';
-import { opInputsOf, parentKidsAfterOps } from '../utils/opInputs';
+import { opInputsOf, parentKidsAfterOps, isFirstOpInChain } from '../utils/opInputs';
 
 const key = (s) => String(s ?? '').trim();
 
@@ -93,13 +93,17 @@ export async function loadOpenOrderDemand(lineNames, products = null) {
     if (isOp(fg)) {
       const par = key(prodOf.get(fg)?.op_parent_mat);
       const parentKids = par ? (kidsOf.get(par) || []) : [];
-      const r = opInputsOf({ ownKids: kidsOf.get(fg) || [], parentKids });
+      const sibs = (opsOf.get(par) || []).map(m => prodOf.get(m)).filter(Boolean);
+      const r = opInputsOf({ ownKids: kidsOf.get(fg) || [], parentKids, firstInChain: isFirstOpInChain(prodOf.get(fg), sibs) });
+      if (r.via === 'from_prev') return;   // ขั้นถัดไปในโซ่ — ของมาจากขั้นก่อนหน้าในพื้นที่ ไม่เบิกสโตร์
       if (r.via === 'unset') { opUnset.push({ mat_no: fg, parent: par || null, parentKids: parentKids.length, qty }); return; }
       kids = r.kids;
     } else {
       const own = kidsOf.get(fg) || [];
       if (!own.length) { noBom.push({ mat_no: fg, qty }); return; }
-      const eaten = (opsOf.get(fg) || []).map(op => opInputsOf({ ownKids: kidsOf.get(op) || [], parentKids: own }).kids);
+      const sibs = (opsOf.get(fg) || []).map(m => prodOf.get(m)).filter(Boolean);
+      const eaten = (opsOf.get(fg) || []).map(op => opInputsOf({ ownKids: kidsOf.get(op) || [], parentKids: own,
+        firstInChain: isFirstOpInChain(prodOf.get(op), sibs) }).kids);
       kids = parentKidsAfterOps(own, eaten);
     }
     kids.forEach(k => {

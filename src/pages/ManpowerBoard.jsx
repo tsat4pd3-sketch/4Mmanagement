@@ -48,6 +48,7 @@ import {
   ATTEND_META, FOUR_M, shiftMeta, SHIFT_META,
 } from '../utils/manpowerBoard';
 
+import SectionScopeSelect from '../components/SectionScopeSelect';
 /* ═══════════════════════════════════════════════════════════════════════════════════════
    🧑‍🤝‍🧑 Manpower Control Board — /manpower-board (2026-10-06 · คำสั่ง user)
 
@@ -192,6 +193,7 @@ export default function ManpowerBoard() {
   const secParam = params.get('sec') || '';
   const section = sectionNodes.find(n => orgKey(n) === secParam) || (secParam && sectionNodes.find(n => n.name === secParam)) || sectionNodes[0] || null;
   const deptParam = params.get('dept') || '';
+  const deptNode = useMemo(() => (deptParam ? nodes.find(n => String(n.id) === deptParam) || null : null), [nodes, deptParam]);
   // 📺 โหมดจอ TV (ไม่เลื่อน · แบ่งหน้า) — `?tv=1|0` ชนะ · ไม่ระบุ = บัญชี display (จอแขวน) เปิดให้เอง
   const tvParam = params.get('tv');
   const tv = tvParam != null ? tvParam === '1' : role === 'display';
@@ -210,14 +212,19 @@ export default function ManpowerBoard() {
 
   const filters = (
     <>
-      <select value={section ? orgKey(section) : ''} onChange={e => merge({ sec: e.target.value, dept: null })} aria-label="ส่วนงาน">
-        {!sectionNodes.length && <option value="">— ไม่มีส่วนงานในขอบเขต —</option>}
-        {sectionNodes.map(n => <option key={n.id} value={orgKey(n)}>{n.name}</option>)}
-      </select>
-      <select value={deptParam} onChange={e => merge({ dept: e.target.value || null })} aria-label="แผนก">
-        <option value="">{ALL.dept}</option>
-        {(board?.depts || []).map(d => <option key={d.key} value={d.key}>{d.name}</option>)}
-      </select>
+      {/* 09/11 (คำสั่ง user "dropdown ไม่เหมือนดึงจากผังองค์กร"): ส่วนงาน + แผนก 2 ช่องแบน → ต้นไม้ผังช่องเดียว
+          · หน่วยขึ้นตรงฝ่าย (QA · Tooling MTN) อยู่ในต้นไม้เป็น "แผนก" ⇒ เลือกแล้วเปิดบอร์ดของมันเอง (เหมือนเดิมที่นับเป็น section)
+          · `?sec=`/`?dept=` ใน URL เท่าเดิม (dept = id โหนดแผนก) — ลิงก์เดิมยังใช้ได้ */}
+      <SectionScopeSelect lines={lines} pickDept value={section ? orgKey(section) : ''} dept={deptNode ? orgKey(deptNode) : ''}
+        allLabel={sectionNodes.length ? '— เลือกส่วนงาน —' : '— ไม่มีส่วนงานในขอบเขต —'} width={300}
+        onChange={(sec, info) => {
+          if (info.kind !== 'department') { merge({ sec: sec || null, dept: null }); return; }
+          const cands = nodes.filter(n => n.kind === 'department' && orgKey(n) === info.unit);
+          const orphan = cands.find(n => isOrphanDept(n, nodes));
+          if (orphan) { merge({ sec: orgKey(orphan), dept: null }); return; }   // หน่วยขึ้นตรง = บอร์ดของตัวเอง
+          const under = cands.find(n => { const p = nodes.find(x => String(x.id) === String(n.parent_id)); return p && orgKey(p) === sec; }) || cands[0];
+          merge({ sec: sec || null, dept: under ? String(under.id) : null });
+        }} />
       <span className="spacer" />
       <span style={{ fontSize: 13, color: 'var(--muted)' }}>วันงาน {workDate}</span>
     </>

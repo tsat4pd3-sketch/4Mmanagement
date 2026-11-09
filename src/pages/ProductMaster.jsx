@@ -53,7 +53,7 @@ import { uomLabel, itemNoLabel, nextItemNo, byItemNo, buildBomIndex, moveBomLine
 import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT, STORE_SLOC_KINDS } from '../utils/storageLoc';
 import StorageLocSelect from '../components/StorageLocSelect';   // 🏠 ที่จัดเก็บหลักของพาร์ท (05/11)
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
-import { opInputsOf } from '../utils/opInputs';   // 🔩 ขั้น OP กินอะไร (08/11)
+import { opInputsOf, isFirstOpInChain } from '../utils/opInputs';   // 🔩 ขั้น OP กินอะไร (08/11)
 import { uploadOpts } from '../utils/storageUpload';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
@@ -65,6 +65,7 @@ import { loadDocForms } from '../utils/docForms';
 import { downloadCsvDoc, csvText } from '../utils/csvDoc';
 import { DeleteButton } from '../components/IconButton';
 import { loadFamilyQtyTotals, familyQtyChip } from '../utils/familyTotals';
+import NoticeBar from '../components/NoticeBar';
 import { statusColor } from '../utils/statusTone';   // สีสถานะชุดเดียวทั้งระบบ (ห้ามตั้ง hex เอง)
 import { fetchAllRows } from '../utils/fetchAllRows';          // ทะเบียนที่โตได้ ห้าม select() เปล่า (เพดาน 1000 แถว)
 import { fetchAllPages } from '../utils/fetchByIds';            // คิวรีที่ต้องการ shape เอง (bom_items)
@@ -1830,7 +1831,7 @@ function OpStepsPanel({ parent, products, bomIx, parentKids, canEdit, guard, ful
       </div>
       {ops.map(op => {
         const own = bomIx.bomOf(op.mat_no, op.id);
-        const r = opInputsOf({ ownKids: own, parentKids });
+        const r = opInputsOf({ ownKids: own, parentKids, firstInChain: isFirstOpInChain({ op_seq: op._op.seq }, ops.map(o => ({ op_seq: o._op.seq }))) });
         const ownSet = new Set(own.map(x => up(x.mat_no)));
         const choices = parentKids.filter(k => !ownSet.has(up(k.mat_no)));
         return (
@@ -1855,6 +1856,9 @@ function OpStepsPanel({ parent, products, bomIx, parentKids, canEdit, guard, ful
               {r.via === 'auto_single' && (
                 <div style={{ color: 'var(--text2)' }}>└ {r.kids[0].part_name ? `${r.kids[0].part_name} · ` : ''}<span style={{ fontFamily: 'monospace' }}>MAT {r.kids[0].mat_no}</span> × {fmtQ(r.kids[0].qty_per_unit)}
                   <span style={{ color: 'var(--muted)' }}> — อัตโนมัติ (แม่มีลูกตัวเดียว)</span></div>
+              )}
+              {r.via === 'from_prev' && (
+                <div style={{ color: 'var(--muted)' }}>└ รับชิ้นงานต่อจากขั้นก่อนหน้าในโซ่ (ลำดับน้อยกว่า) — ไม่กินลูกของแม่เพิ่ม · ถ้าขั้นนี้ใส่ของเพิ่ม กด "เปิดใบของขั้น"</div>
               )}
               {r.via === 'unset' && (
                 <div style={{ color: 'var(--red)', fontWeight: 700 }}>⚠ ยังไม่ได้ผูกว่าขั้นนี้กินอะไร — เปิดใบขั้นนี้จะไม่เบิกของให้ (แม่มีลูก {parentKids.length} ตัว ระบบไม่เดา)</div>
@@ -3241,11 +3245,11 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
                 </span>
               </div>
               {pkgMissing > 0 && (
-                <div style={{ fontSize: 11.5, color: 'var(--text2)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '8px 10px', marginBottom: 10 }}>
+                <NoticeBar tone="warn" style={{ marginBottom: 10 }}>
                   <b style={{ color: 'var(--amber)' }}>QTY/PKG ยังไม่มีค่า {pkgMissing} แถว</b> — จำนวนต่อกล่อง
                   <b> ไม่มีอยู่ในไฟล์ SAP เลย</b> เป็นข้อมูลของทะเบียนพาร์ท ต้องมีคนกรอก
                   (แถวที่ทะเบียนมีค่าแล้ว ระบบเติมให้เอง) · กรอกได้ที่แท็บ 1️⃣ Parts Master หรือปุ่มดินสอของแต่ละแถว
-                </div>
+                </NoticeBar>
               )}
               {parsed.warnings.length > 0 && (
                 <div style={{ fontSize: 11.5, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '8px 10px', marginBottom: 10 }}>

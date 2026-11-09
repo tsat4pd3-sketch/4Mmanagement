@@ -34,6 +34,7 @@ import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { fmtAxis } from '../utils/chartAxis';
 import { loadDocForms } from '../utils/docForms';
 import { downloadCsvDoc } from '../utils/csvDoc';
+import NoticeBar from '../components/NoticeBar';
 import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 /* ─── PLANNER & SALES — Forecast Planner + อัพโหลดไฟล์จากลูกค้า ──────────────
@@ -905,11 +906,10 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
           {/* ⚠️ ทะเบียนโหลดไม่ได้ = ยังอ่านไฟล์ Ford ได้ด้วยค่าสำรองในโค้ด แต่ห้ามเงียบ
               (ลูกค้าที่เพิ่มไว้ในทะเบียนจะอ่านไม่ออกจนกว่าจะโหลดได้) */}
           {fmtErr && (
-            <div style={{ padding: '8px 10px', borderRadius: 'var(--r-md)', fontSize: 12, marginBottom: 8,
-              background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--text)' }}>
-              ⚠ อ่านทะเบียนฟอร์แมตไฟล์ (<code>customer_pull_formats</code>) ไม่ได้ — ใช้ชื่อคอลัมน์ค่าสำรองในโค้ด (Ford 830/862) ·
+            <NoticeBar tone="warn" style={{ marginBottom: 8 }}>
+              อ่านทะเบียนฟอร์แมตไฟล์ (<code>customer_pull_formats</code>) ไม่ได้ — ใช้ชื่อคอลัมน์ค่าสำรองในโค้ด (Ford 830/862) ·
               ไฟล์ของลูกค้าที่เพิ่มไว้ในทะเบียนจะยังอ่านไม่ออก
-            </div>
+            </NoticeBar>
           )}
           <DemandMailInbox refreshKey={mailKey} fullName={fullName}
             onOpen={async (files, mailRows) => { mailRowsRef.current = mailRows; await handleFiles(files, kind); }} />

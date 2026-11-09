@@ -25,6 +25,7 @@ import {
   TV_SHELL_PARAM, moRotationItems,
 } from '../utils/displayRotation';
 
+import SectionScopeSelect from '../components/SectionScopeSelect';
 /* ══ 🔁 ตั้งค่าจอวนหน้า — /display-rotation ══════════════════════════════════════════
    2026-10-09 · คำสั่ง user: "แบบมีหน้า config ได้ ว่าจอ user นี้จะเปิดอะไรวนบ้าง"
    2026-10-14 · รอบ 2 (feedback หลังติดทีวี 13 จอ):
@@ -587,10 +588,8 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
                   </select>
                 )}
                 {d.kind === 'section' && (
-                  <select value={params[d.key] || ''} disabled={!canEdit} onChange={e => setParam(d.key, e.target.value)}>
-                    <option value="">{ALL.section}</option>
-                    {secOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                  <SectionScopeSelect index={scopeIndex} failed={scopeFail} value={params[d.key] || ''} disabled={!canEdit}
+                    onChange={s => setParam(d.key, s)} only={secOptions} />
                 )}
                 {d.kind === 'multi' && (() => {
                   const src = (defs.find(x => x.key === d.optionsFrom)?.options) || d.options || [];

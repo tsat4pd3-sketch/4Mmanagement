@@ -465,6 +465,17 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'section-select-hand-built',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    /* ช่อง "ทุกส่วนงาน" ที่วาดเป็น <select> ลิสต์แบนเอง — ต้องเป็นต้นไม้ผังองค์กร (SectionScopeSelect/LineScopeSelect/OrgScopePicker) */
+    re: /<option value="">\{ALL\.section\}<\/option>/g,
+    why: 'user ทัก 09/11/2026 *"dropdown ที่ยังเหมือนไม่ดึงจากผังองค์กร ยังเจอหลาย tab ในหลายๆ หน้า"* (ภาพ /manpower-board) — '
+       + 'ลิสต์แบน PD1/PD2/… ไม่มีฝ่าย/ไอคอน/ย่อหน้า ทั้งที่ UI §5.3 ข้อ 9 สั่งให้ทุกช่องขอบเขตเป็นต้นไม้ `<OrgScopePicker>` ตัวเดียว · วัดจริง 12 หน้า/17 ช่อง',
+    fix: 'หน้าที่เก็บ state เป็นสตริงส่วนงาน = `<SectionScopeSelect value onChange only={…} [pickDept dept]>` (`src/components/SectionScopeSelect.jsx`) · '
+       + 'หน้าที่เลือกไลน์ได้ = `<LineScopeSelect>` · กรองได้ทุกมิติ = `<OrgScopePicker>` · ป้าย "ทุกส่วนงาน" ส่งผ่าน `plantLabel`/`allLabel` ไม่ใช่ <option> เอง',
+    allow: {},
+  },
+  {
     id: 'line-scope-split-selects',
     scan: ['src'], ext: ['.jsx'],
     /* ตัวกรองขอบเขตไลน์ที่แตกเป็น "ช่องส่วนงาน + ช่องไลน์" (2 ช่องติดกัน) หรือ map ทะเบียนไลน์เป็น <option> เอง */
@@ -1028,6 +1039,18 @@ const RULES = [
     why: 'ปุ่มลบที่เป็นอีโมจิ 🗑️ เปล่าตัวเล็ก ไม่มีกรอบ — Windows วาดเป็นถังเส้นบางสีเทา "เล็กจนดูไม่ออก" '
        + 'และใส่ color แดงไม่มีผลกับอีโมจิ (06/10 · /org-setup · เจอ 12 จุด 7 ไฟล์)',
     fix: "ใช้ <DeleteButton onClick=… title=\"ลบ …\" /> จาก src/components/IconButton.jsx (กล่อง 30px + ถังขยะ SVG สีแดง)",
+    allow: {},
+  },
+  {
+    id: 'orphan-emoji-variation-selector',
+    scan: ['src', 'src/pages', 'src/components', 'src/utils', 'src/lib'], ext: ['.jsx', '.js'],
+    /* U+FE0F ที่ไม่มี emoji นำหน้า (อยู่หลังเครื่องหมายคำพูด/ช่องว่าง) = ซากของสคริปต์กวาด "ตัด emoji" ที่ลบตัว emoji
+       แต่ทิ้งตัวเลือกรูปแบบไว้ ⇒ ตรงนั้นวาดเป็น "ว่าง" (09/11 · /management ปุ่ม 4M Machine ไม่มีไอคอนข้างพี่น้อง 📦📋)
+       · คู่กับเคสปุ่มไอคอนล้วนที่ถูกลบจนเหลือกล่องเปล่า (rail ขวา ปุ่ม 🏷️ — user ถาม "คืออะไร")
+       · 1️⃣ (keycap) ไม่โดน เพราะ FE0F ตามหลังตัวเลข ไม่ใช่เครื่องหมายคำพูด */
+    re: /['"`>\s]\uFE0F/g,
+    why: 'emoji ถูกลบเหลือแต่ U+FE0F (มองไม่เห็น) — ไอคอนหายเงียบ ปุ่มไอคอนล้วนกลายเป็นกล่องเปล่า (09/11 · e839b388)',
+    fix: 'ใส่ไอคอนกลับเป็น <Icon glyph="…" /> (ปุ่มมีป้าย · UI §6.35 ข้อ 5) หรือ emoji เต็มตัว (ปุ่มไอคอนล้วน) · ไม่ต้องการไอคอน = ลบ FE0F ทิ้ง',
     allow: {},
   },
   {
@@ -8440,8 +8463,17 @@ test('🏭 line-registry-empty-is-not-truth — loadLinesRes ต้องส่�
   assert.match(dr, /!openableLines\.length && \(/, '🔴 ลิสต์ว่างต้องขึ้นเหตุผลบนจอ ห้ามปล่อยช่องเปล่าเงียบ');
   assert.match(dr, /disabled=\{!openForm\.line_name \|\| openingSession \|\| !openableLines\.length\}/,
     '🔴 ไม่มีไลน์ให้เลือก = ปุ่มเปิดกะต้องกดไม่ได้ (กดแล้วเงียบ = คนไม่รู้ว่าติดตรงไหน)');
-  assert.match(dr, /invalidateMaster\('production_lines:dr'\)/,
-    'ปุ่มโหลดใหม่ต้องล้าง cache ชั้นนอกด้วย ไม่งั้นได้ลิสต์ว่างเดิม');
+  /* 🔄 ปุ่มโหลดใหม่ต้องล้าง cache **ชั้นนอก** ของหน้านี้ด้วย ไม่งั้นได้ลิสต์ว่างเดิม
+     🔴 09/11 — เลิกเช็คว่าหน้านี้พิมพ์คีย์เอง (`invalidateMaster('production_lines:dr')`)
+        การพิมพ์คีย์ที่จุดเรียก **คือ**ต้นเหตุที่ทะเบียนค้างที่ `:v2` มา 4 สัปดาห์
+        ⇒ เช็คที่เจตนาแทน: หน้านี้ล้างผ่านของกลาง + ทะเบียนของกลางครอบคีย์ชั้นนอกครบ */
+  assert.match(dr, /invalidateProductionLines\(\);\s*\n\s*load\(\);/,
+    'ปุ่มโหลดใหม่ของหน้าเปิดกะต้องล้างผ่านของกลาง (invalidateProductionLines)');
+  const invSrc = stripComments(readFileSync(join(ROOT, 'src/utils/masterInvalidate.js'), 'utf8'));
+  for (const k of ['production_lines:dr', 'production_lines:flow']) {
+    if (!invSrc.includes(`'${k}'`))
+      assert.fail(`ทะเบียน masterInvalidate ขาดคีย์ชั้นนอก '${k}' — ปุ่มโหลดใหม่จะได้ลิสต์ว่างเดิม`);
+  }
 });
 
 test('🛡️ notify-no-insert-per-recipient — ห้าม insert `notifications` ทีละคนในลูป', () => {
@@ -9256,6 +9288,61 @@ test('🖱️ hover-intent-needs-settle — การ์ดสกิลต้อ
   assert.deepEqual(bad, [], bad.join('\n'));
 });
 
+/* ═══ 🏭 line-registry-reload-reaches-every-page — 2026-11-09 · feedback user ════════════
+   *"เราจะเจอปัญหาโหลดไลน์ไม่ขึ้นในหลายๆหน้า แต่เราเห็นมีหน้าเปิดกะที่มีไห้โหลดไลน์ใหม่
+     แต่จุดอื่นไม่มี"*
+
+   ต้นเหตุที่เจอ (2 บั๊กซ้อนกัน):
+   ① ทะเบียน `KEYS_BY_TABLE.production_lines` ค้างที่ `production_lines:v2` ทั้งที่คีย์จริงคือ `:v3`
+      (bump 13/10 ตอนเพิ่ม `unit_kind`) ⇒ `/line-setup` เซฟแล้วเรียก `invalidateTable()`
+      = **ล้างคีย์ที่ตายแล้ว** · dropdown ไลน์ของหน้าอื่นค้างของเก่าถึง 4 ชม.
+      ที่ด่านเดิมมองไม่เห็น: `cachedMaster(KEY, …)` เขียนคีย์เป็น**ตัวแปร**
+      (ปิดช่องนี้แล้วใน `masterInvalidate.test.mjs` — เจอเพิ่มอีก 10 คีย์ที่หลุดแบบเดียวกัน)
+   ② `failures` Map ใน masterCache **ไม่มีใครฟังได้** (มีแต่ failSink ตัวเดียวของ toast)
+      ⇒ `<LineRegistryAlert />` ที่ mount ครั้งเดียวเหนือ `<Routes>` ไม่มีอะไรปลุก
+        ทะเบียนล้มหลังเปิดแอป = ช่องเลือกว่างทั้งแอป **แถบเตือน + ปุ่มโหลดใหม่ไม่โผล่** */
+test('🏭 line-registry-reload-reaches-every-page — ธงล้มต้อง subscribe ได้ + ล้างครบทุกคีย์ของไลน์', () => {
+  const bad = [];
+
+  // ① คีย์จริงของ picker ต้องอยู่ในทะเบียน (ถ้า bump คีย์แล้วลืม = invalidateTable ล้างผิดตัว)
+  const upl = stripComments(readFileSync(join(ROOT, 'src/utils/useProductionLines.js'), 'utf8'));
+  const key = /const KEY = '([^']+)'/.exec(upl)?.[1];
+  const inv = stripComments(readFileSync(join(ROOT, 'src/utils/masterInvalidate.js'), 'utf8'));
+  if (!key) bad.push('useProductionLines: หา const KEY ไม่เจอ');
+  else if (!inv.includes(`'${key}'`)) bad.push(`masterInvalidate: ไม่มีคีย์ '${key}' ในทะเบียน — invalidateTable('production_lines') จะล้างผิดตัว`);
+
+  // ล้างทะเบียนไลน์ต้องผ่านของกลาง (ครอบ :dr/:flow ของ /daily-report ด้วย) ห้ามล้างคีย์เดียว
+  if (!/invalidateTable\('production_lines'\)/.test(upl))
+    bad.push('invalidateProductionLines ไม่ได้ล้างผ่าน invalidateTable — ชั้นนอกของ /daily-report จะค้าง');
+
+  // ② ทะเบียนผลล้มต้องแจ้งเตือนได้ และ useMasterRows ต้องฟัง
+  const mc = stripComments(readFileSync(join(ROOT, 'src/utils/masterCache.js'), 'utf8'));
+  if (!/export function onMasterFailChange\(/.test(mc))
+    bad.push('masterCache: ไม่มี onMasterFailChange — ไม่มีใครรู้ว่าทะเบียนล้มหลังเปิดแอป');
+  for (const [what, re] of [
+    ['ตอนล้ม', /failures\.set\([\s\S]{0,200}?notifyFailChange\(/],
+    ['ตอนสำเร็จ', /if \(failures\.delete\(key\)\) notifyFailChange\(key\)/],
+  ]) if (!re.test(mc)) bad.push(`masterCache: ไม่ได้แจ้ง${what} — ธงเปลี่ยนแล้วจอไม่รู้`);
+
+  const umr = stripComments(readFileSync(join(ROOT, 'src/utils/useMasterRows.js'), 'utf8'));
+  if (!/onMasterFailChange\(/.test(umr))
+    bad.push('useMasterRows: ไม่ subscribe onMasterFailChange — แถบเตือนจะตามสถานะไม่ทัน');
+  /* 🔴 ตัวฟังห้ามยิงโหลดใหม่ — ทุกจอที่เปิดอยู่จะยิง DB พร้อมกันทั้งโรงงาน */
+  const sub = umr.slice(umr.indexOf('onMasterFailChange('), umr.indexOf('const reload ='));
+  if (/loader|setNonce/.test(sub))
+    bad.push('useMasterRows: ตัวฟังสถานะล้มไปสั่งโหลดใหม่ — ทุกจอจะยิง DB พร้อมกัน');
+
+  // แถบกลางต้องมีปุ่มโหลดใหม่ และปุ่มต้องล้างทุกคีย์ของไลน์ (ไม่ใช่แค่ reload() ของ picker)
+  const alert = stripComments(readFileSync(join(ROOT, 'src/components/LineRegistryAlert.jsx'), 'utf8'));
+  if (!/invalidateProductionLines\(\)/.test(alert))
+    bad.push('LineRegistryAlert: ปุ่มโหลดใหม่ไม่ล้างทุกคีย์ของไลน์ — หน้าเปิดกะจะยังได้ลิสต์ว่างเดิม');
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  if (!/<LineRegistryAlert \/>/.test(app))
+    bad.push('App.jsx: ถอด <LineRegistryAlert /> ออก — ไม่มีตาข่ายกลางแล้ว');
+
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
+
 test('🛡️ pr-board-folded-but-counts-visible — แผง PR พับไว้ แต่ตัวนับ/คำเตือนต้องเห็นตอนพับ', () => {
   const src = readFileSync(join(ROOT, 'src/components/MtnPurchase.jsx'), 'utf8');
 
@@ -9336,4 +9423,28 @@ test('🛡️ spare-registry-table-not-flat — ทะเบียนอะไ�
 
   assert.ok(!/<CollapseCard[^>]*>\s*<table/.test(src),
     '\n\n❌ เอาตารางทะเบียนไปพับทั้งก้อนใน CollapseCard — ห้าม (ตารางหลักของหน้า)\n');
+});
+
+/* ═══ 📝 เปิดใบซ่อมจาก Downtime = ฟอร์มเต็ม + รูปบังคับ (2026-11-08 · คำสั่ง user) ═══
+   *"เปิดใบแจ้งซ่อมจากดาวน์ไทม์ ต้องไม่เด้งเปิดทันที ต้องป๊อปอัพแนบรูปบังคับ และใส่รายละเอียดให้ชัดเจน"*
+   เดิม DailyReport insert `mtn_orders` เองจากป๊อปอัพเลือกทีม (อาการ = ชื่อประเภท DT · รูปไม่บังคับ)
+   ⇒ ห้ามกลับไป insert เองในหน้า · ต้องผ่าน `MoReportFromDowntime` (ReportModal ตัวเดียวกับหน้าแจ้งซ่อม) */
+test('📝 Daily Report ห้าม insert mtn_orders เอง — เปิดใบจาก Downtime ต้องผ่านฟอร์มเต็ม (requireBefore)', () => {
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.doesNotMatch(dr, /from\(\s*['"]mtn_orders['"]\s*\)\s*\.insert/,
+    '\n\n❌ DailyReport.jsx insert mtn_orders เอง — ใช้ <MoReportFromDowntime> (ฟอร์มเต็ม + รูปบังคับ) แทน\n');
+  const mr = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  assert.match(mr, /export function MoReportFromDowntime[\s\S]*?requireBefore\b/,
+    '\n\n❌ MoReportFromDowntime ต้องส่ง requireBefore ให้ ReportModal (รูปก่อนซ่อมบังคับ)\n');
+  assert.match(mr, /if \(requireBefore && !beforeFile\) return toast\.error/,
+    '\n\n❌ ReportModal ต้องบล็อกการบันทึกเมื่อ requireBefore แต่ไม่มีรูป\n');
+});
+
+test('✍️ signature-no-blank-save — โมดัลลายเซ็นห้ามบันทึกกระดาษเปล่า', () => {
+  /* 09/11 เคสจริง: กด "บันทึก" บนกรอบวาดเปล่าได้ ⇒ โปรไฟล์ได้รูปขาวล้วน แล้วทุกใบที่ดึงลายเซ็นสด
+     จากโปรไฟล์ (utils/signResolve.js) ขึ้นว่างหมด รวมใบเก่า ("เซ็นไม่ติด ลายเซ็นเก่าก็หาย") */
+  const s = stripComments(readFileSync(join(ROOT, 'src/components/SignatureModal.jsx'), 'utf8'));
+  const save = s.slice(s.indexOf('const handleSave ='), s.indexOf('setSaving(true)', s.indexOf('const handleSave =')));
+  assert.ok(/tab === 'draw' && !hasInk\.current/.test(save), 'handleSave ต้องเช็ค hasInk ก่อนบันทึกแท็บวาด');
+  assert.ok(/hasInk\.current = true/.test(s), 'startDraw ต้องตั้ง hasInk = true');
 });
