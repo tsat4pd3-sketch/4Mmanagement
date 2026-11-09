@@ -35,7 +35,7 @@ import MtnAndonBoard from '../components/MtnAndonBoard';
 import MoTvBoard from '../components/MoTvBoard';
 import { MO_TV_GROUPS } from '../utils/moTvBoard';
 import useIsMobile from '../utils/useIsMobile';
-import { scopedLineNames, inSectionScope } from '../utils/sectionScope';
+import { lineScope, inSectionScope } from '../utils/sectionScope';
 import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
@@ -56,7 +56,7 @@ const DEPTS = [
 ];
 
 export default function TvBoard({ onOpenMenu = null }) {
-  const { role, lineId, sections } = useContext(UserContext);
+  const { role, lineId, sections, scopeIdx } = useContext(UserContext);
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [sp, setSp] = useSearchParams();
@@ -109,15 +109,23 @@ export default function TvBoard({ onOpenMenu = null }) {
     else document.documentElement.requestFullscreen?.().catch(() => {});
   };
 
-  /* ── ขอบเขต: scope ของบัญชี (helper กลาง) แล้วค่อยกรองส่วนงานที่จอนี้เลือกทับ ── */
+  /* ── ขอบเขต: scope ของบัญชี (helper กลาง) แล้วค่อยกรองส่วนงานที่จอนี้เลือกทับ ──
+     🔭 09/11 (user: "จอ TV ต้องโชว์เฉพาะส่วนงาน/ไลน์ของบัญชี" แบบ FactoryMap) — เดิมเรียก
+     `scopedLineNames()` **ไม่ส่ง `scopeIdx`** ⇒ ขอบเขตระดับแผนก/กลุ่ม/ไลน์เดี่ยว (ผังองค์กร) ตกหมด
+     แล้วถอยไปเทียบชื่อ `l.section` ตรงตัว · ตอนนี้ใช้ `lineScope()` ตัวเดียวกับ FactoryMap
+     · `unsure` (ตัดขอบเขตไม่ได้) = แสดงตามเดิม **แต่หัวจอเขียนบอก** ห้ามเงียบ */
+  const acctScope = useMemo(() => lineScope({ role, lineId, sections: sections || [], lines, scopeIdx }),
+    [role, lineId, sections, lines, scopeIdx]);
+  // ไลน์ที่จอนี้ใช้จริงตามบัญชี — ชุดว่าง (ตัดไม่ได้) = ทั้งโรงงาน เหมือน scopeSet ข้างล่าง
+  const acctLines = acctScope.unlimited || !acctScope.lines.length ? lines : acctScope.lines;
   const scopeSet = useMemo(() => {
-    const base = scopedLineNames({ role, lineId, sections, lines });
+    const base = acctScope.unlimited ? null : (acctScope.names.length ? acctScope.names : null);
     if (!secFilter) return base ? new Set(base) : null;
     const inSec = lines.filter(l => inSectionScope([secFilter], l.section)).map(l => l.name);
     // ⚠️ ยังไม่โหลดไลน์เสร็จ = อย่าเพิ่งกรอง (คืนทั้งหมด) ไม่งั้นจอว่างตอนเปิดมาแป๊บนึง
     if (!lines.length) return base ? new Set(base) : null;
     return new Set(base ? inSec.filter(n => base.includes(n)) : inSec);
-  }, [role, lineId, sections, lines, secFilter]);
+  }, [acctScope, lines, secFilter]);
   const inScope = useCallback((name) => !scopeSet || !name || scopeSet.has(name), [scopeSet]);
 
   const ctx = useMemo(() => ({
@@ -166,8 +174,11 @@ export default function TvBoard({ onOpenMenu = null }) {
      ดู src/utils/useLiveBoard.js · docs/POLLING-AUDIT-2026-09-15.md */
   useLiveBoard(load, { tables: ['mtn_orders', 'inspections'], topic: 'tv-board', rate: RATE.ANALYTIC, enabled: dept !== 'mo' });
 
-  const secOpts = useMemo(
-    () => sortLike(lines.map(l => l.section), []), [lines]);
+  /* ตัวเลือกส่วนงาน = เฉพาะส่วนงานที่มีไลน์อยู่ในขอบเขตบัญชี (จำกัดอยู่) · ไม่จำกัด = ทุกส่วนงานเหมือนเดิม */
+  const secOpts = useMemo(() => {
+    return sortLike(acctLines.map(l => l.section), []);
+  }, [acctLines]);
+  const scopeHiddenLines = lines.length - acctLines.length;
   const cur = DEPTS.find(x => x.key === dept);
 
   return (
@@ -184,6 +195,8 @@ export default function TvBoard({ onOpenMenu = null }) {
           {cur.sub} · วันงาน {workDate}
           {secFilter ? ` · เฉพาะ ${secFilter}` : ''}
           {scopeSet ? ` · ${scopeSet.size} ไลน์` : ' · ทุกไลน์'}
+          {/* กรองตามขอบเขตบัญชีแล้วต้องบอกว่าซ่อนกี่ไลน์ · ตัดขอบเขตไม่ได้ต้องบอกว่ากำลังโชว์ทั้งโรงงาน */}
+          {scopeHiddenLines > 0 && ` · ไม่แสดงไลน์นอกขอบเขตบัญชี ${scopeHiddenLines} ไลน์`}
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {/* ☰ เมนู (13/10 · feedback user) — เดิมเข้ามาแล้วไปหน้าอื่นไม่ได้ · ไม่ส่ง onOpenMenu (บัญชีจอแขวน) = ไม่วาด */}
@@ -218,6 +231,15 @@ export default function TvBoard({ onOpenMenu = null }) {
         </div>
       )}
 
+      {/* 🔭 ตัดขอบเขตบัญชีไม่ได้ = ต้องเขียนบนจอ (นอก ph-chrome — กรอบจอ TV ซ่อนแถบบน) */}
+      {acctScope.unsure && lines.length > 0 && (
+        <div role="status" style={{ background: 'var(--card)', border: '1px solid var(--amber)', color: 'var(--amber)', borderRadius: 'var(--r-md)', padding: '8px 12px', fontSize: 13, fontWeight: 700 }}>
+          {/* ชุดว่าง = scopeSet เป็น null = ทั้งโรงงาน (พฤติกรรมเดิมของ scopedLineNames) — เขียนตามจริง */}
+          {acctLines !== lines
+            ? '⚠ หาไลน์ของบัญชีนี้ไม่เจอ — แสดงตามส่วนงานของบัญชีแทน'
+            : '⚠ ตัดขอบเขตบัญชีไม่ได้ — กำลังแสดงทั้งโรงงาน'}
+        </div>
+      )}
       {err && (
         <div style={{ background: 'var(--card)', border: '1px solid var(--red)', color: 'var(--red)', borderRadius: 'var(--r-md)', padding: 12, fontSize: 13 }}>
           ⚠ โหลดข้อมูลไม่สำเร็จ — ตัวเลขบนจอยังไม่ใช่ของจริง ({err})
