@@ -69,7 +69,7 @@ export function ToastContainer() {
       {toasts.map(t => (
         <div key={t.id} onClick={() => remove(t.id)} title="คลิกเพื่อปิด" style={{
           display: 'flex', alignItems: 'center', gap: 10,
-          padding: '10px 18px', borderRadius: 10,
+          padding: '10px 18px', borderRadius: 'var(--r-md)',
           background: 'rgba(18,18,28,0.96)', border: `1px solid ${COLORS[t.type]}55`,
           borderLeft: `4px solid ${COLORS[t.type]}`,
           boxShadow: 'var(--shadow-float)',
@@ -81,7 +81,7 @@ export function ToastContainer() {
           <span style={{ flexShrink: 0 }}>{ICONS[t.type]}</span>
           <span>{t.msg}</span>
           {t.n > 1 && (
-            <span style={{ flexShrink: 0, background: COLORS[t.type], color: '#0b0b12', borderRadius: 999, padding: '1px 8px', fontSize: 11, fontWeight: 800 }}>×{t.n}</span>
+            <span style={{ flexShrink: 0, background: COLORS[t.type], color: '#0b0b12', borderRadius: 'var(--r-pill)', padding: '1px 8px', fontSize: 11, fontWeight: 800 }}>×{t.n}</span>
           )}
           <span style={{ marginLeft: 'auto', opacity: 0.5, flexShrink: 0, paddingLeft: 6 }}>✕</span>
         </div>

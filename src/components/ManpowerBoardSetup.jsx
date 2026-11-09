@@ -237,7 +237,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
         {/* 🔒 นอกขอบเขตที่แก้ได้ = เขียนบอกตั้งแต่เปิดแผง **ห้ามซ่อนเงียบ** (กฎความซื่อสัตย์ของจอ)
             ยังเปิดดูได้ตามเดิม — แค่บันทึกไม่ได้ (ทุกฟังก์ชันเขียนมีด่าน `blocked()` ซ้ำอีกชั้น) */}
         {!secWrite?.ok && (
-          <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 12.5,
+          <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5,
             background: 'var(--card)', border: '1px solid var(--amber)', color: 'var(--amber)' }}>
             {writeBlockText(secWrite, { what: `การตั้งค่าบอร์ดของ ${section?.name || 'ส่วนงานนี้'}` })} — ดูได้ แต่บันทึกไม่ได้
           </div>
@@ -345,7 +345,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
                       {rows.map(r => {
                         const e = empById.get(r.employee_id);
                         return (
-                          <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 4px 2px 10px', border: '1px solid var(--border2)', borderRadius: 999, background: 'var(--bg2)', fontSize: 13 }}>
+                          <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 4px 2px 10px', border: '1px solid var(--border2)', borderRadius: 'var(--r-pill)', background: 'var(--bg2)', fontSize: 13 }}>
                             {e ? e.name : '(ไม่อยู่ในทะเบียน active)'}
                             {e?.position && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{positionLabel(e.position)}</span>}
                             <DeleteButton disabled={busy} onClick={() => removeTech(r)} title={`เอา ${e?.name || ''} ออก`} style={{ width: 26, height: 26 }} />
@@ -383,7 +383,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
                       {rows.map(r => {
                         const e = empById.get(r.employee_id);
                         return (
-                          <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 4px 2px 10px', border: '1px solid var(--border2)', borderRadius: 999, background: 'var(--bg2)', fontSize: 13 }}>
+                          <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 4px 2px 10px', border: '1px solid var(--border2)', borderRadius: 'var(--r-pill)', background: 'var(--bg2)', fontSize: 13 }}>
                             {e ? e.name : '(ไม่อยู่ในทะเบียน active)'}
                             {e?.department && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ต้นสังกัด {e.department}</span>}
                             <DeleteButton disabled={busy} onClick={() => removeFlex(r)} title={`เอา ${e?.name || ''} ออก`} style={{ width: 26, height: 26 }} />
@@ -430,7 +430,7 @@ export default function ManpowerBoardSetup({ section, nodes, lines, employees, s
                     {rows.map(r => {
                       const e = empById.get(r.employee_id);
                       return (
-                        <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 4px 2px 10px', border: '1px solid var(--amber)', borderRadius: 999, background: 'var(--bg2)', fontSize: 13 }}>
+                        <span key={r.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 4px 2px 10px', border: '1px solid var(--amber)', borderRadius: 'var(--r-pill)', background: 'var(--bg2)', fontSize: 13 }}>
                           {e ? e.name : '(ไม่อยู่ในทะเบียน active)'}
                           {e?.department && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ต้นสังกัด {e.department}</span>}
                           <DeleteButton disabled={busy} onClick={() => removeActing(r)} title={`ยกเลิกรักษาการของ ${e?.name || ''}`} style={{ width: 26, height: 26 }} />

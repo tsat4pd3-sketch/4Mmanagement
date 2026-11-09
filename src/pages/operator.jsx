@@ -1063,7 +1063,7 @@ export default function Operator() {
         {scopeSecs.length > 0 && (
           <div style={{
             fontSize: 11, color: 'var(--blue)', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4,
-            padding: '4px 8px', borderRadius: 6,
+            padding: '4px 8px', borderRadius: 'var(--r-md)',
             background: 'var(--blue-dim)', border: '1px solid var(--blue-line)',
           }}>
             {scopeSecs.join(', ')}
@@ -1072,7 +1072,7 @@ export default function Operator() {
         {isLeader && myLineName && (
           <div style={{
             fontSize: 11, color: 'var(--green)', display: 'flex', alignItems: 'center', gap: 4, marginLeft: 4,
-            padding: '4px 8px', borderRadius: 6,
+            padding: '4px 8px', borderRadius: 'var(--r-md)',
             background: 'var(--green-dim)', border: '1px solid var(--green-line)',
           }}>
             {myLineName}
@@ -1219,7 +1219,7 @@ export default function Operator() {
           {!showInactive && noPhotoCount > 0 && (
             <div style={{
               display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12,
-              padding: '9px 12px', borderRadius: 8,
+              padding: '9px 12px', borderRadius: 'var(--r-md)',
               background: 'var(--blue-dim)', border: '1px solid var(--blue-line)',
             }}>
               <span style={{ fontSize: 12.5, color: 'var(--blue)', fontWeight: 700 }}>
@@ -1245,7 +1245,7 @@ export default function Operator() {
           {offOrgStat.total > 0 && (
             <div style={{
               display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12,
-              padding: '9px 12px', borderRadius: 8,
+              padding: '9px 12px', borderRadius: 'var(--r-md)',
               background: 'var(--amber-dim)', border: '1px solid var(--amber-line)',
             }}>
               <span style={{ fontSize: 12.5, color: 'var(--amber)', fontWeight: 700 }}>
@@ -1274,7 +1274,7 @@ export default function Operator() {
           {/* Scroll hint chip */}
           {!scrollState.hinted && scrollState.right && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--accent)', background: 'var(--green-dim)', border: '1px solid var(--green-line)', borderRadius: 20, padding: '3px 10px' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--accent)', background: 'var(--green-dim)', border: '1px solid var(--green-line)', borderRadius: 'var(--r-pill)', padding: '3px 10px' }}>
                 ← เลื่อนดูสกิลเพิ่มเติม →
               </div>
             </div>
@@ -1341,7 +1341,7 @@ export default function Operator() {
                     onMouseLeave={e => e.currentTarget.style.background = ''}>
                     <td style={{ position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 1 }}>
                       <div style={{
-                        display: 'inline-flex', padding: 2.5, borderRadius: 12,
+                        display: 'inline-flex', padding: 2.5, borderRadius: 'var(--r-lg)',
                         background: !emp.is_active ? 'var(--border2)' : grade.ring,
                         boxShadow: !emp.is_active ? 'none' : `0 0 10px ${grade.glow}`,
                       }}>
@@ -1361,7 +1361,7 @@ export default function Operator() {
                           <div
                             title="ยังไม่มีรูป — กด ✏️ แก้ไขเพื่ออัปโหลดรูป"
                             style={{
-                              width: 42, height: 42, borderRadius: 9,
+                              width: 42, height: 42, borderRadius: 'var(--r-md)',
                               background: 'var(--bg3)', display: 'flex',
                               alignItems: 'center', justifyContent: 'center', fontSize: 20,
                             }}>
@@ -1377,7 +1377,7 @@ export default function Operator() {
                       <div style={{
                         display: 'inline-block', marginTop: 3,
                         fontSize: 11, fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase',
-                        padding: '1px 7px', borderRadius: 4,
+                        padding: '1px 7px', borderRadius: 'var(--r-xs)',
                         background: grade.badge, color: grade.text, border: `1px solid ${grade.border}`,
                       }}>
                         {grade.label}
@@ -1389,7 +1389,7 @@ export default function Operator() {
                       {emp._isHelper && (
                         <div title={`ยืมมาจาก ${emp._helperFrom} มาช่วย ${emp._helperTo || 'ไลน์นี้'} เฉพาะกะนี้ — ต้นสังกัดยังเป็นที่เดิม`}
                           style={{ display: 'inline-block', marginTop: 2, fontSize: 11, fontWeight: 700,
-                            padding: '0 5px', borderRadius: 4, whiteSpace: 'nowrap',
+                            padding: '0 5px', borderRadius: 'var(--r-xs)', whiteSpace: 'nowrap',
                             background: '#0ea5e918', color: '#0ea5e9', border: '1px solid #0ea5e944' }}>
                           ยืมจาก {emp._helperFrom}
                         </div>
@@ -1398,7 +1398,7 @@ export default function Operator() {
                     <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
                       {emp.section || '—'}
                       {emp.section && (() => { const m = laborMeta(empLabor(emp)); return (
-                        <span title={m.label} style={{ marginLeft: 5, fontSize: 11, padding: '0 4px', borderRadius: 3, background: `${tint(m.color, 'dim')}`, color: m.color, border: `1px solid ${tint(m.color, 'line')}`, fontWeight: 700 }}>{m.icon}</span>
+                        <span title={m.label} style={{ marginLeft: 5, fontSize: 11, padding: '0 4px', borderRadius: 'var(--r-xs)', background: `${tint(m.color, 'dim')}`, color: m.color, border: `1px solid ${tint(m.color, 'line')}`, fontWeight: 700 }}>{m.icon}</span>
                       ); })()}
                     </td>
                     {/* ค่าที่ไม่มีในผังองค์กรทำเป็นสีเหลืองนิ่ง + tooltip บอกเหตุผล (ไม่กระพริบ — ไม่ใช่ alarm) */}
@@ -1431,7 +1431,7 @@ export default function Operator() {
                           {hasRecord ? (
                             <>
                               <div style={{ fontWeight: 700, fontSize: 13, color: lv.color }}>{score}</div>
-                              <div style={{ fontSize: 11, background: lv.bg, color: lv.color, borderRadius: 4, padding: '1px 5px', marginTop: 2, whiteSpace: 'nowrap' }}>
+                              <div style={{ fontSize: 11, background: lv.bg, color: lv.color, borderRadius: 'var(--r-xs)', padding: '1px 5px', marginTop: 2, whiteSpace: 'nowrap' }}>
                                 {lv.label}
                               </div>
                             </>
@@ -1531,25 +1531,25 @@ export default function Operator() {
                           <div style={{ fontWeight: 700, fontSize: 13 }}>{sd.label}</div>
                           <div style={{ display: 'flex', gap: 4, marginTop: 2, flexWrap: 'wrap' }}>
                             {(sd.scope_division || sd.scope_section) && (
-                              <span style={{ fontSize: 11, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>
+                              <span style={{ fontSize: 11, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', borderRadius: 'var(--r-xs)', padding: '0 5px', fontWeight: 600 }}>
                                 {skillScopeLabel(sd)}
                               </span>
                             )}
                             {!sd.scope_division && !sd.scope_section && (
                               /* สกิลกลาง = แก้แล้วกระทบทุกส่วนงาน — ต้องเขียนบนจอ ไม่ใช่ปล่อยให้เดาจากช่องว่าง */
                               <span title="ไม่ได้ผูกส่วนงาน — ใช้กับพนักงานทุกส่วนงาน แก้/ลบแล้วกระทบทั้งโรงงาน"
-                                style={{ fontSize: 11, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>
+                                style={{ fontSize: 11, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', borderRadius: 'var(--r-xs)', padding: '0 5px', fontWeight: 600 }}>
                                 สกิลกลาง (ทุกส่วนงาน)
                               </span>
                             )}
                             {!sdOk && (
                               <span title={writeBlockText(sdWrite(sd.scope_section), { what: 'สกิลนี้', unit: sd.scope_section || '' })}
-                                style={{ fontSize: 11, background: 'rgba(148,163,184,0.15)', color: 'var(--muted)', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>
+                                style={{ fontSize: 11, background: 'rgba(148,163,184,0.15)', color: 'var(--muted)', borderRadius: 'var(--r-xs)', padding: '0 5px', fontWeight: 600 }}>
                                 ดูได้ แก้ไม่ได้
                               </span>
                             )}
                             {sd.allowance_type && (
-                              <span style={{ fontSize: 11, background: 'rgba(34,197,94,0.12)', color: '#22c55e', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>
+                              <span style={{ fontSize: 11, background: 'rgba(34,197,94,0.12)', color: '#22c55e', borderRadius: 'var(--r-xs)', padding: '0 5px', fontWeight: 600 }}>
                                 {sd.allowance_type}
                               </span>
                             )}
@@ -1647,7 +1647,7 @@ export default function Operator() {
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>มาตรฐานระดับสกิล</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {SKILL_LEVELS.slice().reverse().map(lv => (
-                  <div key={lv.min} style={{ display: 'flex', alignItems: 'center', gap: 6, background: lv.bg, borderRadius: 7, padding: '6px 12px' }}>
+                  <div key={lv.min} style={{ display: 'flex', alignItems: 'center', gap: 6, background: lv.bg, borderRadius: 'var(--r-md)', padding: '6px 12px' }}>
                     <span style={{ fontWeight: 800, color: lv.color, fontSize: 15, minWidth: 28 }}>{lv.min}</span>
                     <div>
                       <div style={{ fontSize: 11, color: lv.color, fontWeight: 700 }}>{lv.label}</div>
@@ -1661,7 +1661,7 @@ export default function Operator() {
             {/* Edit skill modal */}
             {editingSkill && (
               <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px', width: 'min(480px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
+                <div style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', padding: '24px', width: 'min(480px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
                   <h3 style={{ margin: '0 0 16px', fontFamily: 'var(--font-display)' }}>✏️ แก้ไขสกิล</h3>
                   <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                     <div style={{ gridColumn: '1/-1' }}>
@@ -1774,7 +1774,7 @@ export default function Operator() {
 
           {/* 🔴 โหมดทดลอง = คะแนนบนจออื่นยังมาจากสูตรเดิม — ต้องเขียนให้ชัด ห้ามให้คนเข้าใจผิด */}
           {expCfg && !expCfg.is_enabled && (
-            <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 7, fontSize: 12,
+            <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12,
                           background: 'var(--bg2)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
               ℹ️ <strong>โหมดทดลอง (shadow)</strong> — สูตร EXP v2 คำนวณหลักฐานให้ดูเทียบได้
               แต่ <strong>คะแนนจริงยังมาจากสูตรเดิม</strong> (+1/วัน · +2/สัปดาห์) · กดปุ่ม ⚪ ด้านบนเพื่อเริ่มใช้จริง
@@ -1784,7 +1784,7 @@ export default function Operator() {
           {/* Level legend */}
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
             {SKILL_LEVELS.map(lv => (
-              <div key={lv.min} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 6, background: lv.bg, fontSize: 11 }}>
+              <div key={lv.min} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 'var(--r-md)', background: lv.bg, fontSize: 11 }}>
                 <span style={{ fontWeight: 800, color: lv.color }}>{lv.min === 100 ? '100' : `${lv.min}–${lv.min === 75 ? 99 : lv.min === 50 ? 74 : lv.min === 25 ? 49 : lv.min === 0 ? 24 : 100}`}</span>
                 <span style={{ color: lv.color, fontWeight: 600 }}>{lv.label}</span>
                 <span style={{ color: 'var(--muted)' }}>— {lv.desc}</span>
@@ -1825,7 +1825,7 @@ export default function Operator() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
                         <span style={{ fontWeight: 700, fontSize: 14 }}>{emp?.name}</span>
                         <span style={{ fontSize: 11, color: 'var(--muted)' }}>{emp?.employee_id_code}</span>
-                        {emp?.section && <span style={{ fontSize: 11, background: 'rgba(77,159,255,0.1)', color: '#4d9fff', borderRadius: 4, padding: '1px 6px' }}>{emp.section}</span>}
+                        {emp?.section && <span style={{ fontSize: 11, background: 'rgba(77,159,255,0.1)', color: '#4d9fff', borderRadius: 'var(--r-xs)', padding: '1px 6px' }}>{emp.section}</span>}
                       </div>
                       <div style={{ fontSize: 13, marginBottom: 4 }}>
                         ทักษะ: <strong style={{ color: 'var(--accent)' }}>{skillDefs.find(s => s.name === req.skill_name)?.label ?? req.skill_name}</strong>
@@ -1851,7 +1851,7 @@ export default function Operator() {
                           <div style={{ fontSize: 11, color: '#a855f7', fontWeight: 600, marginBottom: 4 }}>
                             แนบเอกสารการอบรมเฉพาะทาง <span style={{ color: '#ef4444' }}>*</span>
                           </div>
-                          <div style={{ border: `2px dashed ${luDocFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 7, padding: '8px 12px', cursor: 'pointer', background: luDocFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', textAlign: 'center' }}
+                          <div style={{ border: `2px dashed ${luDocFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 'var(--r-md)', padding: '8px 12px', cursor: 'pointer', background: luDocFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', textAlign: 'center' }}
                             onClick={() => document.getElementById(`doc-${req.id}`).click()}>
                             <input id={`doc-${req.id}`} type="file" accept="image/*,application/pdf" style={{ display: 'none' }}
                               /* 🔴 ขา "ไม่ใช่ PDF" ต้องผ่าน `acceptImageFile()` (HEIC จาก iPhone / MIME ว่างจาก
@@ -1915,7 +1915,7 @@ export default function Operator() {
           {/* Reject modal */}
           {rejectLuModal && (
             <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px', width: 'min(400px,94vw)' }}>
+              <div style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', padding: '24px', width: 'min(400px,94vw)' }}>
                 <h3 style={{ margin: '0 0 4px', color: '#ef4444' }}>❌ ไม่อนุมัติ Level Up</h3>
                 <p style={{ color: 'var(--muted)', fontSize: 13, margin: '0 0 12px' }}>
                   {rejectLuModal.employees?.name} · {rejectLuModal.skill_name} → Lv.{rejectLuModal.to_level}
@@ -2074,7 +2074,7 @@ export default function Operator() {
                 const home = orgAllNodes.find(n => n.id === editingEmp.org_node_id);
                 return (
                   <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', lineHeight: 1.6,
-                    background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 7, padding: '6px 9px' }}>
+                    background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '6px 9px' }}>
                     💰 <b>สังกัดทางบัญชี</b> — หน่วยงาน{' '}
                     <b style={{ color: 'var(--text)' }}>{home?.code || home?.name || '(ยังไม่ผูกหน่วยในผัง)'}</b>
                     {' · '}Cost Center{' '}
@@ -2213,7 +2213,7 @@ export default function Operator() {
 
               </div>
 
-              <div style={{ background: 'var(--bg2)', padding: 14, borderRadius: 10 }}>
+              <div style={{ background: 'var(--bg2)', padding: 14, borderRadius: 'var(--r-md)' }}>
                 <label style={{ ...labelSt, marginBottom: canEditSkills ? 12 : 6, display: 'block' }}>ระดับทักษะ</label>
                 {!canEditSkillsFor(editingEmp) && (
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -2221,7 +2221,7 @@ export default function Operator() {
                   </div>
                 )}
                 {canEditSkillsFor(editingEmp) && !canEditHighSkill && (
-                  <div style={{ fontSize: 11, color: '#f59e0b', background: '#f59e0b15', border: '1px solid #f59e0b40', borderRadius: 6, padding: '6px 9px', marginBottom: 12, lineHeight: 1.5 }}>
+                  <div style={{ fontSize: 11, color: '#f59e0b', background: '#f59e0b15', border: '1px solid #f59e0b40', borderRadius: 'var(--r-md)', padding: '6px 9px', marginBottom: 12, lineHeight: 1.5 }}>
                     ตั้งคะแนนเองได้ถึง <b>{scoreCap}</b> (ระดับ “{getLevel(scoreCap).label}”) — สูงกว่านี้ต้องให้หัวหน้าส่วนขึ้นไปเป็นคนตั้ง
                     <div style={{ color: 'var(--muted)', marginTop: 2 }}>
                       คะแนนที่สะสมเองจากการทำงานจริงยังขึ้นเกิน {scoreCap} ได้ตามปกติ ผ่านด่านอนุมัติอัพระดับ
@@ -2322,7 +2322,7 @@ export default function Operator() {
                              มีคะแนนเกินเพดาน 50 ที่ leader ตั้งได้) — ปุ่มโชว์ว่าทำได้ แต่ระบบไม่ทำ */
                           const rowEditable = canEditSkillsFor(editingEmp) && !lockedAllowance && !lockedHigh;
                           return (
-                            <div key={sd.name} style={{ background: enabled ? 'var(--bg3)' : 'var(--bg2)', borderRadius: 8, padding: '8px 10px', border: `1px solid ${pending ? '#f59e0b55' : enabled ? 'var(--border)' : 'var(--border2)'}`, opacity: enabled ? 1 : 0.6 }}>
+                            <div key={sd.name} style={{ background: enabled ? 'var(--bg3)' : 'var(--bg2)', borderRadius: 'var(--r-md)', padding: '8px 10px', border: `1px solid ${pending ? '#f59e0b55' : enabled ? 'var(--border)' : 'var(--border2)'}`, opacity: enabled ? 1 : 0.6 }}>
                               {/* Toggle: มีทักษะนี้ */}
                               <label
                                 title={lockedAllowance ? 'ใบเซอร์ค่าฝีมือ ต้องระดับหัวหน้าแผนกขึ้นไปเป็นคนติ๊ก' : undefined}
@@ -2338,7 +2338,7 @@ export default function Operator() {
                                   {(sd.scope_division || sd.scope_section) && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · {skillScopeLabel(sd)}</span>}
                                 </span>
                                 {enabled && lv && (
-                                  <span style={{ background: lv.bg, color: lv.color, borderRadius: 4, padding: '1px 5px', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                                  <span style={{ background: lv.bg, color: lv.color, borderRadius: 'var(--r-xs)', padding: '1px 5px', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
                                     {lv.label}
                                   </span>
                                 )}
@@ -2559,7 +2559,7 @@ function SkillSubItemsModal({ skill, onClose }) {
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
               {rows.map((r, i) => (
-                <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg3)', borderRadius: 7, padding: '7px 10px', border: '1px solid var(--border)' }}>
+                <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '7px 10px', border: '1px solid var(--border)' }}>
                   <span style={{ fontSize: 12, color: 'var(--muted)', width: 18, textAlign: 'center' }}>{i + 1}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13 }}>{r.label}</div>

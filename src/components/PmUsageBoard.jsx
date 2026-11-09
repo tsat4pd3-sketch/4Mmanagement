@@ -142,7 +142,7 @@ export default function PmUsageBoard({ daily = [], lines = [], plans = [], today
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* กล่องนี้คือ "ความจริงของตัวเลข" — ห้ามถอดออก (UI-CONVENTIONS §6.9 ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล) */}
-      <div style={{ fontSize: 12, lineHeight: 1.7, color: 'var(--text2)', background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.40)', borderRadius: 10, padding: '9px 12px' }}>
+      <div style={{ fontSize: 12, lineHeight: 1.7, color: 'var(--text2)', background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.40)', borderRadius: 'var(--r-md)', padding: '9px 12px' }}>
         <b style={{ color: 'var(--text)' }}>แม่พิมพ์นับจาก “พาร์ทของชุดแม่พิมพ์”</b> (MAT ที่ผูกในทะเบียนแม่พิมพ์ · ทุกไลน์ที่ผลิต) — ชุดที่ยังไม่ผูก MAT นับไม่ได้
         {dieErr && <div style={{ color: 'var(--red)', fontWeight: 700 }}>⚠️ {dieErr}</div>}
         <div style={{ marginTop: 4 }}>⚠️ <b style={{ color: 'var(--accent2)' }}>เครื่องจักร/จิ๊ก: ยอดที่เห็นเป็น “ยอดของไลน์” ไม่ใช่ยอดที่วัดรายเครื่องจริง</b> —
@@ -160,7 +160,7 @@ export default function PmUsageBoard({ daily = [], lines = [], plans = [], today
       </div>
 
       {!shown.length ? <div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>ยังไม่มียอดผลิตในช่วง 120 วันล่าสุด</div> : (
-        <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
+        <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 780 }}>
             <thead>
               <tr style={{ background: 'var(--bg3)', color: 'var(--muted)', textAlign: 'left' }}>
@@ -234,7 +234,7 @@ export default function PmUsageBoard({ daily = [], lines = [], plans = [], today
                                     <td style={{ padding: '5px 8px' }}>
                                       {!prog.hasThreshold ? <span style={{ color: 'var(--muted)' }}>—</span> : (
                                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                          <span style={{ width: 66, height: 7, borderRadius: 4, background: 'var(--bg3)', overflow: 'hidden', display: 'inline-block' }}>
+                                          <span style={{ width: 66, height: 7, borderRadius: 'var(--r-xs)', background: 'var(--bg3)', overflow: 'hidden', display: 'inline-block' }}>
                                             <span style={{ display: 'block', height: '100%', width: `${Math.min(100, prog.pct)}%`, background: USAGE_LEVELS[prog.level] }} />
                                           </span>
                                           <b style={{ color: USAGE_LEVELS[prog.level] }}>{prog.pct}%</b>

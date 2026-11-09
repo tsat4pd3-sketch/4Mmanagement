@@ -24,7 +24,7 @@ export default function LineRegistryAlert() {
   const onReload = () => { setBusy(true); reload(); setTimeout(() => setBusy(false), 1200); };
   return (
     <div role="status" style={{
-      margin: '0 16px 10px', padding: '8px 11px', borderRadius: 8, fontSize: 12.5, fontWeight: 700,
+      margin: '0 16px 10px', padding: '8px 11px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 700,
       color: stale ? '#f59e0b' : '#ef4444', background: 'var(--card)',
       border: `1px solid ${stale ? 'rgba(245,158,11,0.5)' : 'rgba(239,68,68,0.5)'}`,
       display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',

@@ -190,7 +190,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
               {ps.map(p => (
                 <div key={p.id} onClick={() => setSel(p)}
                   style={{
-                    padding: '6px 8px', cursor: 'pointer', fontSize: 12.5, borderRadius: 5,
+                    padding: '6px 8px', cursor: 'pointer', fontSize: 12.5, borderRadius: 'var(--r-xs)',
                     display: 'flex', justifyContent: 'space-between', gap: 8,
                     background: sel?.id === p.id ? 'var(--accent)' : 'transparent',
                     color: sel?.id === p.id ? '#08130a' : 'var(--text)',
@@ -225,7 +225,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
 
           {loading && <div style={{ color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด…</div>}
           {!loading && !steps.length && (
-            <div style={{ padding: 22, textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--bg2)', borderRadius: 8 }}>
+            <div style={{ padding: 22, textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--bg2)', borderRadius: 'var(--r-md)' }}>
               ยังไม่ได้กำหนดลำดับกระบวนการ<br />
               <span style={{ fontSize: 12 }}>VSM จะใช้ไลน์เดียวจาก Product Master ไปก่อน แล้วขึ้นเตือนว่ายังไม่ลง routing</span>
             </div>

@@ -628,7 +628,7 @@ export default function VSM() {
                 {gaps.map((g, i) => {
                   const st = WARN_STYLE[g.level] || WARN_STYLE.info;
                   return (
-                    <div key={i} style={{ background: st.bg, borderLeft: `3px solid ${st.bd}`, borderRadius: 6, padding: '7px 12px', fontSize: 12.5, color: 'var(--text)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <div key={i} style={{ background: st.bg, borderLeft: `3px solid ${st.bd}`, borderRadius: 'var(--r-md)', padding: '7px 12px', fontSize: 12.5, color: 'var(--text)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                       <span style={{ flex: '1 1 340px' }}>{st.icon} {g.text}</span>
                       <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {g.actions.map((a, j) => a.to ? (
@@ -816,22 +816,22 @@ export default function VSM() {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700,
-                padding: '5px 12px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--text)',
+                padding: '5px 12px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', color: 'var(--text)',
               }}>
                 {/* จุดสถานะ live = นิ่ง+เรืองแสง ห้ามกระพริบ (Andon สงวนกระพริบให้แดง) */}
-                <span style={{ width: 8, height: 8, borderRadius: 99, background: 'var(--green)', boxShadow: '0 0 6px var(--green)' }} />
+                <span style={{ width: 8, height: 8, borderRadius: 'var(--r-pill)', background: 'var(--green)', boxShadow: '0 0 6px var(--green)' }} />
                 REALTIME · อัปเดต {liveData?.at ? new Date(liveData.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
                 <span style={{ color: 'var(--muted)', fontWeight: 400 }}>· วันงาน {liveData?.workDate || getWorkDate()}</span>
               </span>
               {liveData?.partial && (
-                <span style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 999, background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber)' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 'var(--r-pill)', background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber)' }}>
                   ⚠ โหลดข้อมูลสดไม่ครบ — ตัวเลขบางส่วนอาจขาด (จะลองใหม่รอบถัดไป)
                 </span>
               )}
               {chips.map(([k, nn]) => (
                 <span key={k} className={k === 'down' && nn > 0 ? 'dt-alarm-blink' : undefined}
                   style={{
-                    fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 999,
+                    fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 'var(--r-pill)',
                     background: 'var(--bg3)', border: '1px solid var(--border)',
                     // dt-alarm-blink ทาพื้นแดง — ตัวอักษรต้องขาว ไม่งั้นแดงบนแดงอ่านไม่ออก
                     color: k === 'down' && nn > 0 ? '#fff' : nn > 0 ? LIVE_STATUS[k].color : 'var(--muted)',
@@ -840,7 +840,7 @@ export default function VSM() {
                 </span>
               ))}
               {(liveData?.summary?.plannedOpen || 0) > 0 && (
-                <span style={{ fontSize: 12, padding: '5px 12px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
+                <span style={{ fontSize: 12, padding: '5px 12px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
                   หยุดตามแผนค้าง {liveData.summary.plannedOpen} รายการ (ไม่นับเป็น Andon)
                 </span>
               )}
@@ -848,7 +848,7 @@ export default function VSM() {
 
             {/* ── Downtime ค้าง (Andon) — ต้องเห็นก่อนอย่างอื่น ห้ามซ่อน ── */}
             {(liveData?.summary?.alarms || []).length > 0 && (
-              <div style={{ background: 'var(--red-dim)', borderLeft: '3px solid var(--red)', borderRadius: 6, padding: '8px 12px', marginBottom: 12 }}>
+              <div style={{ background: 'var(--red-dim)', borderLeft: '3px solid var(--red)', borderRadius: 'var(--r-md)', padding: '8px 12px', marginBottom: 12 }}>
                 <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--red)', marginBottom: 4 }}>Downtime ค้างในสายธารนี้</div>
                 {liveData.summary.alarms.map((a, i) => (
                   <div key={i} style={{ fontSize: 12.5, color: 'var(--text)', padding: '2px 0' }}>
@@ -865,7 +865,7 @@ export default function VSM() {
               <div style={{ marginBottom: 12, display: 'grid', gap: 6 }}>
                 {liveModel.warnings.map((w, i) => {
                   const st = WARN_STYLE[w.level] || WARN_STYLE.info;
-                  return <div key={i} style={{ background: st.bg, borderLeft: `3px solid ${st.bd}`, borderRadius: 6, padding: '7px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+                  return <div key={i} style={{ background: st.bg, borderLeft: `3px solid ${st.bd}`, borderRadius: 'var(--r-md)', padding: '7px 12px', fontSize: 12.5, color: 'var(--text)' }}>
                     {st.icon} {w.text}
                   </div>;
                 })}
@@ -896,7 +896,7 @@ export default function VSM() {
                         <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · {b.line || '—'}</span>
                       </div>
                       <span className={lv?.status === 'down' ? 'dt-alarm-blink' : undefined}
-                        style={{ fontSize: 11.5, fontWeight: 700, color: lv?.status === 'down' ? '#fff' : meta.color, whiteSpace: 'nowrap', padding: '2px 8px', borderRadius: 999, background: 'var(--bg2)' }}>
+                        style={{ fontSize: 11.5, fontWeight: 700, color: lv?.status === 'down' ? '#fff' : meta.color, whiteSpace: 'nowrap', padding: '2px 8px', borderRadius: 'var(--r-pill)', background: 'var(--bg2)' }}>
                         {meta.label}
                       </span>
                     </div>

@@ -265,7 +265,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
                   return (
                     <tr key={p.key}>
                       <td style={{ ...td, textAlign:'left', fontWeight:700 }}>
-                        <span style={{ display:'inline-block', width:10, height:10, borderRadius:3, background:p.color || 'var(--muted)', marginRight:6 }} />
+                        <span style={{ display:'inline-block', width:10, height:10, borderRadius: 'var(--r-xs)', background:p.color || 'var(--muted)', marginRight:6 }} />
                         {p.label}
                       </td>
                       <td style={td}>
@@ -438,7 +438,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
         {!jph.rows.length ? (
           <div style={{ fontSize:13, color:'var(--muted)' }}>ไม่มีพาร์ทที่มีความต้องการในไลน์นี้</div>
         ) : (
-          <div style={{ overflowX:'auto', overflowY:'auto', maxHeight:'46vh', border:'1px solid var(--border2)', borderRadius:8 }}>
+          <div style={{ overflowX:'auto', overflowY:'auto', maxHeight:'46vh', border:'1px solid var(--border2)', borderRadius: 'var(--r-md)' }}>
             <table style={{ width:'100%', borderCollapse:'collapse', minWidth:940 }}>
               <thead><tr>
                 {[['MAT / ชื่องาน', 'left'], ['ลูกค้า', 'left'], ['ยอด 12 ด. (ชิ้น)', 'right'], ['CT (วิ)', 'right'],

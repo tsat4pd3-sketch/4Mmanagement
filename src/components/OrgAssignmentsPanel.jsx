@@ -101,7 +101,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
   };
 
   const chip = (bg, color, children, key) => (
-    <span key={key} style={{ padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+    <span key={key} style={{ padding: '2px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700,
       background: bg, color, whiteSpace: 'nowrap' }}>{children}</span>
   );
 
@@ -126,7 +126,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
           เดิมโชว์ปุ่มให้ role เหล่านี้ แล้ว RLS ปฏิเสธเงียบ ⇒ กดแล้วขึ้นเขียวแต่ไม่บันทึก */}
       {canSeeOnly && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, padding: '7px 10px',
-          background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8 }}>
+          background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
           ดูได้อย่างเดียว — การแต่งตั้งผู้คุมหน่วยงาน (ตามตำแหน่ง/รักษาการ) ต้องมีสิทธิ์ <b>org:manage</b>
           (สิทธิ์ <b>org:manage_own_unit</b> ที่บัญชีนี้มี ใช้แก้โครงผังในหน่วยของตัวเองได้ แต่ยังแต่งตั้งคนไม่ได้)
         </div>
@@ -136,7 +136,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
       {(sum.openEnded.length + sum.expired.length + sum.expiring.length + sum.unconfirmed.length) > 0 && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10, fontSize: 12,
           background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)',
-          borderRadius: 9, padding: '8px 11px', alignItems: 'center' }}>
+          borderRadius: 'var(--r-md)', padding: '8px 11px', alignItems: 'center' }}>
           <b style={{ color: '#f59e0b' }}>ต้องทบทวน</b>
           {sum.openEnded.length > 0 && chip('rgba(245,158,11,0.2)', '#f59e0b',
             `🔄 รักษาการไม่มีวันสิ้นสุด ${sum.openEnded.length}`)}
@@ -154,7 +154,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
 
       {open && canEdit && (
         <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))',
-          background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 9, padding: 11, marginBottom: 10 }}>
+          background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: 11, marginBottom: 10 }}>
           {/* ⚠️ <SearchSelect> ใช้ `options: [{id,label}]` และคืนค่าเป็น `({id})` — ไม่ใช่ value ดิบ
               (ส่งผิดรูปแล้ว build ยังผ่าน แต่ลิสต์จะว่างและเลือกไม่ติด) */}
           <SearchSelect value={form.profile_id} placeholder="— เลือกคน —"

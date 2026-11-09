@@ -435,7 +435,7 @@ export default function ProdLotPlanner({
         )}
       </FilterBar>
       {ordersErr && (
-        <div style={{ fontSize: 12, color: '#f59e0b', padding: '6px 10px', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 6 }}>
+        <div style={{ fontSize: 12, color: '#f59e0b', padding: '6px 10px', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 'var(--r-md)' }}>
           ⚠️ {ordersErr} — ยอดที่ผลิตจริงของล็อตด้านล่างอาจต่ำกว่าจริง (ไม่ใช่ "ยังไม่เริ่ม")
         </div>
       )}
@@ -566,7 +566,7 @@ export default function ProdLotPlanner({
                     <td style={td}>
                       {isTrialLot(l) ? (
                         <>
-                          <span style={{ background: '#22d3ee22', border: '1px solid #22d3ee', borderRadius: 4,
+                          <span style={{ background: '#22d3ee22', border: '1px solid #22d3ee', borderRadius: 'var(--r-xs)',
                             padding: '1px 5px', fontSize: 11, fontWeight: 800, color: '#22d3ee', marginRight: 5 }}>ทดลอง</span>
                           <b style={{ fontFamily: 'monospace', fontSize: 12 }}>{lotKeyText(l)}</b>
                           {l.trial_part_name && l.trial_part_no && <span style={{ color: 'var(--text2)', fontSize: 11 }}> · {l.trial_part_name}</span>}
@@ -713,7 +713,7 @@ export default function ProdLotPlanner({
         ) : (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {unplanned.slice(0, 24).map(u => (
-              <div key={u.mat} style={{ border: '1px solid var(--border2)', borderRadius: 6, padding: '5px 9px', display: 'flex', alignItems: 'baseline', gap: 7 }}>
+              <div key={u.mat} style={{ border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '5px 9px', display: 'flex', alignItems: 'baseline', gap: 7 }}>
                 <MatLabel mat={u.mat} size={12} />
                 <b style={{ fontSize: 12 }}>{u.qty.toLocaleString()}</b>
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้น</span>
@@ -732,7 +732,7 @@ export default function ProdLotPlanner({
             </summary>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
               {otherParts.map(p => (
-                <div key={p.mat} style={{ border: '1px dashed var(--border2)', borderRadius: 6, padding: '5px 9px', display: 'flex', alignItems: 'baseline', gap: 7 }}>
+                <div key={p.mat} style={{ border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '5px 9px', display: 'flex', alignItems: 'baseline', gap: 7 }}>
                   <MatLabel mat={p.mat} size={12} />
                   {p.isOp && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ต่อ Process</span>}
                   {mayWrite && <button onClick={() => addLot(p.mat, 1)} style={{ fontSize: 11 }}>+ เข้าแผน</button>}

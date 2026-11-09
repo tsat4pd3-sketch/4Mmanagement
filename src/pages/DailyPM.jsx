@@ -256,7 +256,7 @@ export default function DailyPM() {
 
       {tab === 'status' && (
         dashboard.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', border: '1px dashed var(--border2)', borderRadius: 12 }}>
+          <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-lg)' }}>
             ยังไม่มีไลน์ที่ลงทะเบียนเครื่องตรวจ — ไปที่แท็บ “ลงทะเบียนเครื่องตรวจ” ก่อน
           </div>
         ) : (<>
@@ -268,7 +268,7 @@ export default function DailyPM() {
               const meta = DAILY_PM_STATUS_META[k]
               return (
                 <span key={k} className={k === 'red' ? 'dt-alarm-banner' : undefined}
-                  style={{ fontSize: 12, fontWeight: 800, padding: '4px 12px', borderRadius: 20, background: `${tint(meta.color, 'dim')}`, color: meta.color, border: `1px solid ${tint(meta.color, 'line')}` }}>
+                  style={{ fontSize: 12, fontWeight: 800, padding: '4px 12px', borderRadius: 'var(--r-pill)', background: `${tint(meta.color, 'dim')}`, color: meta.color, border: `1px solid ${tint(meta.color, 'line')}` }}>
                   {meta.label}: {n} ไลน์
                 </span>
               )
@@ -289,10 +289,10 @@ export default function DailyPM() {
               return (
                 <div key={row.line_name}
                   className={row.status === 'red' ? 'person-alarm-red' : row.status === 'orange' ? 'person-alarm-amber' : undefined}
-                  style={{ background: 'var(--card)', border: `1px solid ${tint(meta.color, 'line')}`, borderLeft: `4px solid ${meta.color}`, borderRadius: 12, padding: 16 }}>
+                  style={{ background: 'var(--card)', border: `1px solid ${tint(meta.color, 'line')}`, borderLeft: `4px solid ${meta.color}`, borderRadius: 'var(--r-lg)', padding: 16 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                     <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{row.line_name === '—' ? '⚠ ยังไม่ระบุไลน์' : row.line_name}</div>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: `${tint(meta.color, 'dim')}`, color: meta.color, border: `1px solid ${tint(meta.color, 'line')}` }}
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--r-pill)', background: `${tint(meta.color, 'dim')}`, color: meta.color, border: `1px solid ${tint(meta.color, 'line')}` }}
                       title={row.status === 'idle'
                         ? (row.hasSession === true ? 'เปิดกะแล้ว แต่ยังไม่มีใบผลิตเปิด — นาฬิกาตรวจเริ่มนับตอนเปิดใบผลิตใบแรก'
                           : row.hasSession === false ? 'ยังไม่มีการเปิดกะของไลน์นี้ (นับไลน์ลูกด้วยแล้ว) ในกะปัจจุบัน'
@@ -336,7 +336,7 @@ export default function DailyPM() {
                     <div style={{ marginTop: 8 }}>
                       <div style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700 }}>⚠ ผิดปกติ</div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
-                        {row.ng.map(n => <span key={n.jig_id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, background: 'var(--red-dim)', color: 'var(--red)' }}>
+                        {row.ng.map(n => <span key={n.jig_id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'var(--red-dim)', color: 'var(--red)' }}>
                           {n.machine_no ? `${n.machine_no} · ` : ''}{n.name}
                           {n.follow && <AmMoChip follow={n.follow} />}
                         </span>)}
@@ -350,7 +350,7 @@ export default function DailyPM() {
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
                         {row.carry.map(c => (
                           <span key={`${c.jig_id}-${c.mo.id}`} title={c.inspected_at ? `พบผิดปกติเมื่อ ${fmtDate(c.inspected_at)}` : undefined}
-                            style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)' }}>
+                            style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)' }}>
                             {c.machine_no ? `${c.machine_no} · ` : ''}{c.name} · {c.mo.mo_no || '(รอออกเลข)'} · {moStatusLabel(c.mo)}
                             {c.inspected_at && <> · ตั้งแต่ {fmtDate(c.inspected_at)}</>}
                           </span>
@@ -362,7 +362,7 @@ export default function DailyPM() {
                     <div style={{ marginTop: 8 }}>
                       <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>ยังไม่ตรวจ ({row.missing.length})</div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
-                        {row.missing.map(m => <span key={m.jig_id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, background: 'var(--bg3)', color: 'var(--muted)' }}>{m.machine_no ? `${m.machine_no} · ` : ''}{m.name}</span>)}
+                        {row.missing.map(m => <span key={m.jig_id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', color: 'var(--muted)' }}>{m.machine_no ? `${m.machine_no} · ` : ''}{m.name}</span>)}
                       </div>
                     </div>
                   )}
@@ -371,7 +371,7 @@ export default function DailyPM() {
                     <div style={{ marginTop: 8 }}>
                       <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>ไม่เดินกะนี้ — ไม่ต้องตรวจ ({row.notRunning.length})</div>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 3 }}>
-                        {row.notRunning.map(m => <span key={m.jig_id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, border: '1px dashed var(--border2)', color: 'var(--muted)' }}>{m.machine_no ? `${m.machine_no} · ` : ''}{m.name}</span>)}
+                        {row.notRunning.map(m => <span key={m.jig_id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-md)', border: '1px dashed var(--border2)', color: 'var(--muted)' }}>{m.machine_no ? `${m.machine_no} · ` : ''}{m.name}</span>)}
                       </div>
                     </div>
                   )}
@@ -398,7 +398,7 @@ export default function DailyPM() {
         <div>
           {/* คู่มือ 4 ขั้น — ระบบนี้ต่อกัน 3 หน้า มือใหม่หลงง่าย ต้องเห็นภาพรวมก่อน */}
           {/* พับไว้เป็นค่าเริ่มต้น (20/10) — คนใช้ประจำไม่ต้องเลื่อนผ่านทุกครั้ง · จำต่อเครื่อง */}
-          <div data-page-note="1" style={{ marginBottom: 14, padding: guideOpen ? '12px 16px' : '8px 16px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 }}>
+          <div data-page-note="1" style={{ marginBottom: 14, padding: guideOpen ? '12px 16px' : '8px 16px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
             <button type="button" onClick={toggleGuide} aria-expanded={guideOpen}
               style={{ all: 'unset', cursor: 'pointer', fontSize: 12, fontWeight: 800, color: 'var(--text)', display: 'block', width: '100%', marginBottom: guideOpen ? 8 : 0 }}>
               {guideOpen ? '▾' : '▸'} วิธีใช้งาน Autonomous Maintenance (AM) — 4 ขั้น
@@ -463,7 +463,7 @@ export default function DailyPM() {
                 // ห้ามลงทะเบียนจนกว่าจะไปกำหนดไลน์ให้อุปกรณ์ก่อน (กันข้อมูลตายเงียบ)
                 const noLine = !g.name
                 return (
-                  <div key={g.key} style={{ background: 'var(--card)', border: `1px solid ${noLine ? 'var(--amber-line)' : 'var(--border)'}`, borderRadius: 12, padding: 16 }}>
+                  <div key={g.key} style={{ background: 'var(--card)', border: `1px solid ${noLine ? 'var(--amber-line)' : 'var(--border)'}`, borderRadius: 'var(--r-lg)', padding: 16 }}>
                     <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: noLine ? 4 : 10 }}>
                       {noLine ? '⚠ ยังไม่ระบุไลน์' : line} <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}>· ลงทะเบียน {regCount}/{lineJigs.length}</span>
                     </div>

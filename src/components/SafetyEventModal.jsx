@@ -129,7 +129,7 @@ export default function SafetyEventModal({ init, section, date, lineRows = [], s
   return (
     /* ⚠️ ไม่มี onClick ที่ backdrop โดยตั้งใจ — ฟอร์มกรอกข้อมูลห้ามปิดจากการเผลอแตะ */
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, padding: 18, width: 'min(720px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(720px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 8 }}>
           <b style={{ fontSize: 15, color: 'var(--text)' }}>
             {editing ? '✏️ แก้ไขเหตุการณ์ความปลอดภัย' : '🛡️ บันทึกเหตุการณ์ความปลอดภัย'}

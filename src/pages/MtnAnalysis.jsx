@@ -24,6 +24,7 @@ import { useSearchParams } from 'react-router-dom';
 import { urlParam } from '../utils/urlInit';
 import { scopeLines as pickerLines } from '../components/LineSelect';   // ตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง" ของช่องเลือกไลน์
 import { Panel, NotEnough, Histogram, ControlChart, ScatterPlot, Fishbone, CheckSheet, Stratify, RunChart } from '../components/Qc7Charts';
+import NoticeBar from '../components/NoticeBar';
 import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 /* ══ 🔍 วิเคราะห์ปัญหา (ซ่อมบำรุง) — QC 7 Tools แยกตามชนิดสินทรัพย์ ══════════  2026-09-22
@@ -100,7 +101,7 @@ const evKey = (iso, scale) => {
 };
 
 const KPI = ({ label, value, unit, sub, warn }) => (
-  <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 11px', minWidth: 0 }}>
+  <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '9px 11px', minWidth: 0 }}>
     <div style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
     <div style={{ fontSize: 19, fontWeight: 800, color: value == null ? 'var(--muted)' : warn ? 'var(--amber)' : 'var(--text)', lineHeight: 1.25 }}>
       {value == null ? '—' : value}{value != null && unit ? <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}> {unit}</span> : null}
@@ -424,9 +425,9 @@ export default function MtnAnalysis() {
       )}
 
       {err && (
-        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--red)', marginBottom: 12 }}>
+        <NoticeBar tone="bad" style={{ marginBottom: 12 }}>
           โหลดข้อมูลไม่สำเร็จ — {err} · กด ↻ รีเฟรช อีกครั้ง (ยังไม่ได้แสดงตัวเลขใดๆ เพื่อไม่ให้อ่านผิด)
-        </div>
+        </NoticeBar>
       )}
 
       {loading ? (

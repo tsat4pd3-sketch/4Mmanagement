@@ -209,7 +209,7 @@ export default function Transport() {
                     const carrier = asg?.carrier_id ? carrierMap[asg.carrier_id] : null;
                     const opts = carrierOptsFor(r.shift);
                     return (
-                      <div key={r.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 11, background: 'var(--bg2)' }}>
+                      <div key={r.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 11, background: 'var(--bg2)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'center' }}>
                           <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{r.shift === 'night' ? '🌙' : '☀️'} รอบ {r.round_no}</span>
                           <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>{st.label}</span>
@@ -266,7 +266,7 @@ export default function Transport() {
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(min(260px, 100%), 1fr))', gap: 10 }}>
               {carriers.map(c => (
-                <div key={c.id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--bg2)', opacity: c.is_active ? 1 : 0.5 }}>
+                <div key={c.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 12, background: 'var(--bg2)', opacity: c.is_active ? 1 : 0.5 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'center' }}>
                     <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{c.name}</span>
                     {canManage && <button className="tbtn" onClick={() => setEditCarrier(c)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>}
@@ -461,7 +461,7 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                 const seg = i > 0 ? route.segments[i - 1] : null;
                 const broken = seg && !seg.ok;
                 return (
-                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, background: 'var(--bg2)', border: `1px solid ${broken ? 'var(--red)' : 'var(--border)'}`, borderRadius: 8, padding: '5px 8px' }}>
+                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, background: 'var(--bg2)', border: `1px solid ${broken ? 'var(--red)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '5px 8px' }}>
                     <span style={{ width: 20, height: 20, borderRadius: '50%', background: k.color, color: '#08130a', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, flex: '0 0 auto' }}>{i + 1}</span>
                     {(() => {
                       const act = actionOf(s);
@@ -584,7 +584,7 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                     </span>
                   )}
                 </div>
-                <div style={{ height: 5, background: 'var(--bg2)', borderRadius: 3, overflow: 'hidden' }}>
+                <div style={{ height: 5, background: 'var(--bg2)', borderRadius: 'var(--r-xs)', overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${simFrac * 100}%`, background: 'var(--accent)', transition: 'width 0.1s linear' }} />
                 </div>
               </div>
@@ -598,7 +598,7 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
       <div style={{ flex: '1 1 480px', minWidth: 0 }}>
         {imageUrl ? (
           <>
-          <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border)' }}>
+          <div style={{ position: 'relative', borderRadius: 'var(--r-lg)', overflow: 'hidden', border: '1px solid var(--border)' }}>
             <img src={imageUrl} alt="แผนที่เส้นทาง" style={{ display: 'block', width: '100%', height: 'auto' }} />
             <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.35)' }} />
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
@@ -650,10 +650,10 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
           {/* legend ใต้แผนที่ */}
           <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', marginTop: 7, fontSize: 11.5, color: 'var(--muted)' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 22, height: 3.5, borderRadius: 2, background: 'var(--green)', display: 'inline-block' }} /> เส้นทางรอบนี้
+              <span style={{ width: 22, height: 3.5, borderRadius: 'var(--r-xs)', background: 'var(--green)', display: 'inline-block' }} /> เส้นทางรอบนี้
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 22, height: 2, borderRadius: 2, background: 'var(--muted)', opacity: 0.7, display: 'inline-block' }} /> ถนนทั้งโรงงาน (ไม่ได้ใช้รอบนี้)
+              <span style={{ width: 22, height: 2, borderRadius: 'var(--r-xs)', background: 'var(--muted)', opacity: 0.7, display: 'inline-block' }} /> ถนนทั้งโรงงาน (ไม่ได้ใช้รอบนี้)
             </span>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
               <span style={{ width: 13, height: 13, borderRadius: '50%', background: 'var(--blue)', color: '#08130a', fontSize: 11, fontWeight: 900, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>⬆</span> รับของ (load)
@@ -715,14 +715,14 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
   return (
     // ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop (UI-CONVENTIONS §5) · z ≥2000 กันกระดิ่งทับ (§7)
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, width: 'min(94vw, 440px)', maxHeight: '90vh', overflowY: 'auto' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 20, width: 'min(94vw, 440px)', maxHeight: '90vh', overflowY: 'auto' }}>
         <h3 style={{ margin: '0 0 14px', fontSize: 17, fontWeight: 900, color: 'var(--text)' }}>{isNew ? '➕ เพิ่มคนขับ' : '✏️ แก้ไขคนขับ'}</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
           <div style={{ position: 'relative' }}>
             <span style={lbl}>เลือกจากฐานพนักงาน</span>
             <input value={empQ} onChange={e => setEmpQ(e.target.value)} placeholder="ค้นหาชื่อ / รหัสพนักงาน…" style={inp} />
             {empMatches.length > 0 && (
-              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 5, marginTop: 2, maxHeight: 220, overflowY: 'auto', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, boxShadow: 'var(--shadow-float)' }}>
+              <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 5, marginTop: 2, maxHeight: 220, overflowY: 'auto', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', boxShadow: 'var(--shadow-float)' }}>
                 {empMatches.map(e => (
                   <button key={e.id} onClick={() => pickEmp(e)} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 10px', fontSize: 12.5, background: 'none', border: 'none', borderBottom: '1px solid var(--border2)', color: 'var(--text)', cursor: 'pointer' }}>
                     {e.name} {e.employee_id_code ? <span style={{ color: 'var(--muted)' }}>· {e.employee_id_code}</span> : ''}{e.section ? <span style={{ color: 'var(--muted)' }}> · {e.section}</span> : ''}

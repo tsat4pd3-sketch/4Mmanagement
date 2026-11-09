@@ -546,7 +546,7 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
     const shownSec = Math.max(secOf(it, defaultSec), minSecForPath(it.path));
     return (
       <div onClick={onFocus} role="button" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') onFocus(); }}
-        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 10, cursor: 'pointer',
+        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
           border: '1px solid var(--border2)', background: 'var(--bg2)', minWidth: 0 }}>
         <b style={{ width: 22, textAlign: 'center', fontSize: 13 }}>{i + 1}</b>
         <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>{meta ? `${meta.icon} ${meta.label}` : (it.path || '— ยังไม่เลือกหน้า —')}</span>
@@ -567,7 +567,7 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
 
   return (
     <div onClick={onFocus} onFocusCapture={onFocus}
-      style={{ display: 'grid', gridTemplateColumns: '28px minmax(0,1fr)', gap: 8, alignItems: 'start', padding: 10, borderRadius: 10, cursor: 'pointer',
+      style={{ display: 'grid', gridTemplateColumns: '28px minmax(0,1fr)', gap: 8, alignItems: 'start', padding: 10, borderRadius: 'var(--r-md)', cursor: 'pointer',
         border: `1.5px solid ${skip ? 'var(--red)' : focused ? 'var(--accent)' : 'var(--border2)'}`, background: 'var(--bg2)' }}>
       <div style={{ fontWeight: 800, fontSize: 14, paddingTop: 8, textAlign: 'center', color: focused ? 'var(--accent)' : 'var(--text)' }}>{i + 1}</div>
       <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
@@ -741,7 +741,7 @@ function PagePreview({ path }) {
     transform: `scale(${scale})`, transformOrigin: '0 0', pointerEvents: 'none',
     opacity: top ? 0 : 1, visibility: top ? 'hidden' : 'visible' });
   return (
-    <div ref={boxRef} style={{ position: 'relative', width: '100%', height: Math.round(1080 * scale), overflow: 'hidden', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg)' }}>
+    <div ref={boxRef} style={{ position: 'relative', width: '100%', height: Math.round(1080 * scale), overflow: 'hidden', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg)' }}>
       {path ? (
         <>
           {/* key ใน array เดียวกัน = ตอนสลับ React ย้าย iframe ตัวใหม่ขึ้นมาเฉยๆ ไม่สร้างใหม่ (ไม่โหลดซ้ำ) */}
@@ -751,7 +751,7 @@ function PagePreview({ path }) {
               onLoad={p === path ? () => setReady(true) : undefined} style={frameSt(p !== shown)} />
           ))}
           {path !== shown && (
-            <div style={{ position: 'absolute', right: 8, bottom: 8, padding: '3px 10px', borderRadius: 999, fontSize: 11,
+            <div style={{ position: 'absolute', right: 8, bottom: 8, padding: '3px 10px', borderRadius: 'var(--r-pill)', fontSize: 11,
               background: 'var(--card)', border: '1px solid var(--border2)', color: 'var(--muted)' }}>⏳ กำลังโหลดตัวอย่าง…</div>
           )}
         </>

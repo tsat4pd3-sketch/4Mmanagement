@@ -25,7 +25,7 @@ const ghost = { padding: '5px 11px', borderRadius: 7, border: '1px solid var(--b
 const inputSt = { width: '100%', padding: '6px 9px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12 };
 
 function Pill({ label, color, title }) {
-  return <span title={title} style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 999, fontSize: 11, fontWeight: 800, color, background: `${color}22`, border: `1px solid ${color}66`, whiteSpace: 'nowrap' }}>{label}</span>;
+  return <span title={title} style={{ display: 'inline-block', padding: '1px 7px', borderRadius: 'var(--r-pill)', fontSize: 11, fontWeight: 800, color, background: `${color}22`, border: `1px solid ${color}66`, whiteSpace: 'nowrap' }}>{label}</span>;
 }
 
 /** แถวคำขอ 1 รายการ */
@@ -258,7 +258,7 @@ export default function PeChangeRequests({
   const pending = rows.filter((r) => r.status === 'proposed' || r.status === 'accepted').length;
 
   return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+    <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 11px', background: 'var(--bg2)', flexWrap: 'wrap' }}>
         <b style={{ fontSize: 12.5 }}>เอกสารที่ต้องตามแก้</b>
         {pending > 0 && <Pill label={`ค้าง ${pending}`} color="#f59e0b" />}
@@ -297,7 +297,7 @@ export default function PeChangeRequests({
               <div style={{ fontSize: 11.5, color: 'var(--text2)', marginBottom: 6 }}>
                 ระบบเสนอ {sugs.length} รายการ — <b>ติ๊กเฉพาะที่เห็นว่าใช่</b> แล้วส่งให้ทีม PE (ยังไม่มีอะไรถูกแก้)
               </div>
-              <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--card)' }}>
+              <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', background: 'var(--card)' }}>
                 {sugs.map((x) => (
                   <label key={x._k} style={{ display: 'flex', gap: 8, padding: '8px 10px', borderTop: '1px solid var(--border)', cursor: 'pointer', alignItems: 'flex-start' }}>
                     <input type="checkbox" style={{ width: 'auto', marginTop: 3 }} checked={!!picked[x._k]} onChange={(e) => setPicked((p) => ({ ...p, [x._k]: e.target.checked }))} />
@@ -350,7 +350,7 @@ export default function PeChangeRequests({
       {/* ออก revision */}
       {applyFor && (
         <div className="modal-scroll" /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */ /* modal-scroll = เลื่อนถึงปุ่มล่างได้เมื่อจอเตี้ย/คีย์บอร์ดเด้ง (UI-CONVENTIONS §4 · index.css) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: 16 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 16, width: 'min(560px, 100%)' }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 16, width: 'min(560px, 100%)' }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ margin: '0 0 4px', fontSize: 15 }}>✅ ออก revision — {DOC_LABEL[applyFor.cr.doc_type]}</h3>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.6 }}>
               บันทึกนี้จะไปอยู่ในประวัติ revision ของชุดเอกสาร <b>พร้อมที่มา</b> ({applyFor.cr.ref_label || applyFor.cr.ref_kind}) ·

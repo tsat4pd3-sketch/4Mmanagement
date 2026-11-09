@@ -1070,7 +1070,7 @@ export default function LineSetup({ embedded = false } = {}) {
     }}>
       <div style={{
         flex: 1,
-        background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14,
+        background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)',
         position: 'relative', overflow: 'auto',
         display: layoutImage ? 'block' : 'flex',
         alignItems: layoutImage ? undefined : 'center',
@@ -1091,7 +1091,7 @@ export default function LineSetup({ embedded = false } = {}) {
                 <div style={{
                   position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)',
                   background: 'var(--amber-line)', color: '#fff',
-                  padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                  padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 600,
                   zIndex: 20, boxShadow: 'var(--shadow-float)',   // ป้ายเตือนลอยทับรูปผังจริง
                   whiteSpace: 'nowrap', pointerEvents: 'none',
                 }}>
@@ -1102,7 +1102,7 @@ export default function LineSetup({ embedded = false } = {}) {
                 <div style={{
                   position: 'absolute', top: 8, left: 8,
                   background: 'var(--blue-line)', color: '#fff',
-                  padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                  padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700,
                   zIndex: 20, boxShadow: 'var(--shadow-float)', pointerEvents: 'none',
                 }}>
                   ใช้รูปผังจากไลน์หลัก — อัปโหลดรูปใหม่เพื่อแยกเป็นของตัวเอง
@@ -1262,7 +1262,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
       <div style={{
         width: isMobile ? '100%' : 400,
-        background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14,
+        background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)',
         padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', flexShrink: 0
       }}>
         {/* 🏭 แถบ "ไลน์ที่กำลังตั้งค่า" — ตรึงหัวแผงไว้ (05/10)
@@ -1315,7 +1315,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   style={{
                     // 📱 มือถือ: dropdown Section/ไลน์หลักห่อลงบรรทัดใหม่ได้ — เดิมล้นกรอบรายการ 320→348px (mobilesweep 24/09)
                     display: 'flex', alignItems: 'center', gap: 6, flexWrap: isMobile ? 'wrap' : undefined, minWidth: 0,
-                    padding: '7px 10px', borderRadius: 8, cursor: 'pointer',
+                    padding: '7px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                     marginLeft: l._isChild ? 12 : 0,
                     background: selectedLine === l.name ? 'var(--accent-dim)' : l._isChild ? 'var(--bg3)' : 'var(--bg2)',
                     border: `1px solid ${selectedLine === l.name ? 'var(--accent)' : l._isChild ? 'var(--border)' : 'var(--border)'}`,
@@ -1330,7 +1330,7 @@ export default function LineSetup({ embedded = false } = {}) {
                     return (
                       <span onClick={e => { e.stopPropagation(); toggleParent(l.name); }}
                         title={col ? `กางไลน์ย่อย (${nKids})` : 'พับไลน์ย่อย'}
-                        style={{ fontSize: 11, color: 'var(--accent)', flexShrink: 0, cursor: 'pointer', padding: '2px 4px', borderRadius: 4, userSelect: 'none' }}>
+                        style={{ fontSize: 11, color: 'var(--accent)', flexShrink: 0, cursor: 'pointer', padding: '2px 4px', borderRadius: 'var(--r-xs)', userSelect: 'none' }}>
                         {col ? `▶ ${nKids}` : '▼'}
                       </span>
                     );
@@ -1459,7 +1459,7 @@ export default function LineSetup({ embedded = false } = {}) {
               {formData.id ? '📝 แก้ไขจุดงาน' : '📍 เพิ่มจุดงาน'}
             </h4>
             {(tempPos || formData.id) ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg2)', padding: 14, borderRadius: 10 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg2)', padding: 14, borderRadius: 'var(--r-md)' }}>
                 <input placeholder="ชื่อจุด (OP10)" value={formData.name}
                   onChange={e => setFormData({ ...formData, name: e.target.value })} />
                 <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>
@@ -1468,7 +1468,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   )}
                 </label>
                 {skillDefs.length === 0 ? (
-                  <div style={{ fontSize: 11, color: 'var(--muted)', padding: '8px', background: 'var(--bg3)', borderRadius: 6 }}>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', padding: '8px', background: 'var(--bg3)', borderRadius: 'var(--r-md)' }}>
                     ยังไม่มีสกิล — กำหนดสกิลได้ที่หน้า Operator
                   </div>
                 ) : (
@@ -1488,7 +1488,7 @@ export default function LineSetup({ embedded = false } = {}) {
                               return (
                                 <div key={skill.name} style={{
                                   display: 'flex', alignItems: 'center', gap: 6,
-                                  padding: '5px 8px', borderRadius: 6,
+                                  padding: '5px 8px', borderRadius: 'var(--r-md)',
                                   background: checked ? `${tint(catMeta.color, 'dim')}` : 'var(--bg3)',
                                   border: `1px solid ${checked ? catMeta.color + '55' : 'var(--border)'}`,
                                 }}>
@@ -1550,7 +1550,7 @@ export default function LineSetup({ embedded = false } = {}) {
                 </div>
               </div>
             ) : (
-              <div style={{ textAlign: 'center', padding: '16px', border: '2px dashed var(--border)', color: 'var(--muted)', borderRadius: 10, fontSize: 12 }}>
+              <div style={{ textAlign: 'center', padding: '16px', border: '2px dashed var(--border)', color: 'var(--muted)', borderRadius: 'var(--r-md)', fontSize: 12 }}>
                 {canEdit ? <>คลิกบนรูปภาพเพื่อเพิ่มจุดงาน<br />หรือคลิกที่จุดเดิมเพื่อแก้ไข</> : '👁️ โหมดดูอย่างเดียว — ไม่มีสิทธิ์แก้ไข'}
               </div>
             )}
@@ -1568,7 +1568,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   <div onClick={() => canEdit && editStation(st)} style={{ cursor: canEdit ? 'pointer' : 'default', flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 5 }}>
                       {st.station_name}
-                      {st.skill_allowance && <span style={{ fontSize: 11, background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', borderRadius: 4, padding: '1px 5px', fontWeight: 700 }}>ค่าฝีมือ{st.skill_allowance_type ? ` (${st.skill_allowance_type})` : ''}</span>}
+                      {st.skill_allowance && <span style={{ fontSize: 11, background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', borderRadius: 'var(--r-xs)', padding: '1px 5px', fontWeight: 700 }}>ค่าฝีมือ{st.skill_allowance_type ? ` (${st.skill_allowance_type})` : ''}</span>}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                       {reqs.length > 0
@@ -1608,7 +1608,7 @@ export default function LineSetup({ embedded = false } = {}) {
                 {machineForm.id ? '📝 แก้ไขจุดเครื่องจักร' : '⚙️ เพิ่มจุดเครื่องจักร'}
               </h4>
               {(machineTempPos || machineForm.id) ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg2)', padding: 14, borderRadius: 10, marginBottom: 14 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg2)', padding: 14, borderRadius: 'var(--r-md)', marginBottom: 14 }}>
                   {/* ซ่อนเครื่องที่วางบนผังไปแล้ว (ทุกไลน์ในครอบครัว) — เหลือเฉพาะที่ยังไม่วาง + ตัวที่กำลังแก้ */}
                   <SearchSelect value={machineForm.machine_no || ''} placeholder="-- ค้นหาเครื่องจักร (รหัส/ชื่อ) --"
                     options={[
@@ -1646,7 +1646,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   </div>
                 </div>
               ) : (
-                <div style={{ textAlign: 'center', padding: '16px', border: '2px dashed var(--border)', color: 'var(--muted)', borderRadius: 10, fontSize: 12, marginBottom: 14 }}>
+                <div style={{ textAlign: 'center', padding: '16px', border: '2px dashed var(--border)', color: 'var(--muted)', borderRadius: 'var(--r-md)', fontSize: 12, marginBottom: 14 }}>
                   {canEdit ? <>คลิกบนรูปภาพเพื่อเพิ่มจุดเครื่องจักร<br />หรือคลิกที่จุดเดิมเพื่อแก้ไข</> : '👁️ โหมดดูอย่างเดียว — ไม่มีสิทธิ์แก้ไข'}
                 </div>
               )}
@@ -1698,7 +1698,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   เครื่องที่ <b>ไม่เชื่อม</b> ถือว่าทำงานแบบ Parallel — Downtime จะกระทบแค่เครื่องนั้นเครื่องเดียว
                 </Hint>
                 {connectMode && (
-                  <div style={{ fontSize: 11, color: 'var(--amber)', background: 'var(--amber-dim)', padding: '8px 10px', borderRadius: 8, marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, color: 'var(--amber)', background: 'var(--amber-dim)', padding: '8px 10px', borderRadius: 'var(--r-md)', marginBottom: 10 }}>
                     {connectFrom
                       ? `คลิกเครื่องจักรเครื่องที่ 2 บนรูปเพื่อเชื่อมจาก ${machinePoints.find(p => p.id === connectFrom)?.machine_no || ''}`
                       : 'คลิกเครื่องจักรเครื่องแรกบนรูปเพื่อเริ่มเชื่อมสายงาน'}
@@ -1809,7 +1809,7 @@ export default function LineSetup({ embedded = false } = {}) {
                 กฎทั้งหมดอยู่ใน utils/lineHeads.js (จอใบค่าฝีมือใช้ชุดเดียวกัน) */}
             <div style={{ marginBottom: 14 }}>
               <label style={labelSt}>หัวหน้างานของไลน์นี้ <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· ใช้ในใบค่าฝีมือ</span></label>
-              <div style={{ marginTop: 4, padding: '8px 10px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+              <div style={{ marginTop: 4, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border)' }}>
                 {lineHeads.rows.length ? (
                   <>
                     <div style={{ display: 'grid', gap: 4 }}>
@@ -1845,7 +1845,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   "ฐานข้อมูลกับ user ใช้งานจะมั่วไม่ตรงกัน") · ตำแหน่งงานอ่านจากทะเบียนพนักงานเสมอ
                   เพราะ role ของบัญชี = ชุดสิทธิ์ใช้ระบบ ไม่ใช่ตำแหน่งงาน (กฎ CLAUDE.md) */}
               {lineHeads.conflicts.length > 0 && (
-                <div style={{ marginTop: 6, padding: '7px 10px', borderRadius: 8, fontSize: 11.5,
+                <div style={{ marginTop: 6, padding: '7px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5,
                   background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--text)' }}>
                   <div style={{ fontWeight: 700, color: 'var(--amber)', marginBottom: 3 }}>
                     ⚠️ บัญชีผู้ใช้กับทะเบียนพนักงานไม่ตรงกัน {lineHeads.conflicts.length} รายการ
@@ -1958,7 +1958,7 @@ export default function LineSetup({ embedded = false } = {}) {
                 </div>
                 {flowMode === 'parallel_machine' && !(parseInt(parallelStations) > 0) && (
                   // ⚠️ ไลน์เครื่องขนานที่ไม่ตั้ง N = ผังรวมคำนวณกำลังผลิตไม่ได้ ต้องถอยไปสูตรอัตราตามเวลา — ห้ามปล่อยเงียบ
-                  <div style={{ fontSize: 11, lineHeight: 1.45, color: 'var(--amber)', background: 'var(--amber)14', border: '1px solid var(--amber)44', borderRadius: 6, padding: '6px 8px', marginTop: 6 }}>
+                  <div style={{ fontSize: 11, lineHeight: 1.45, color: 'var(--amber)', background: 'var(--amber)14', border: '1px solid var(--amber)44', borderRadius: 'var(--r-md)', padding: '6px 8px', marginTop: 6 }}>
                     ⚠️ ไลน์นี้ตั้งเป็น "เครื่องขนาน" แต่ยังไม่ได้กรอก N — ระบบไม่รู้ว่าเดินกี่เครื่องพร้อมกัน
                     จึงคิด "ควรผลิตได้ตอนนี้" จากสัดส่วนเวลาที่ผ่านไปแทน (หยาบกว่า) และหัก Downtime เต็มเหมือนไลน์เครื่องเดียว
                   </div>
@@ -1999,7 +1999,7 @@ export default function LineSetup({ embedded = false } = {}) {
 
           {/* ผู้เซ็นใบค่าฝีมือ ราย section ย้ายไปตั้งที่ผังองค์กร (OrgSetup) — เป็นข้อมูลราย section ไม่ใช่ราย line */}
           <div style={{ borderTop: '1px solid var(--border)', margin: '14px 0 12px' }} />
-          <div style={{ fontSize: 12, color: 'var(--muted)', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 10, padding: '10px 14px' }}>
+          <div style={{ fontSize: 12, color: 'var(--muted)', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '10px 14px' }}>
             ผู้เซ็น/อนุมัติใบค่าฝีมือ ตั้งที่หน้า <a href="/org-setup" style={{ color: 'var(--accent)', fontWeight: 700 }}>ผังองค์กร</a> แล้ว — เพราะเป็นข้อมูลราย "ส่วนงาน" ใช้ร่วมกันทุกไลน์ในส่วนนั้น
           </div>
 
@@ -2025,7 +2025,7 @@ function Hint({ children, label = 'คำอธิบาย' }) {
       </button>
       {open && (
         <div style={{ fontSize: 11, lineHeight: 1.45, color: 'var(--muted)', background: 'var(--bg2)',
-          border: '1px solid var(--border2)', borderRadius: 6, padding: '6px 8px', marginTop: 5 }}>
+          border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '6px 8px', marginTop: 5 }}>
           {children}
         </div>
       )}

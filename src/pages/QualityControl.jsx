@@ -222,7 +222,7 @@ const tdSt = { padding: '7px 10px', fontSize: 12.5, color: 'var(--text)', border
 function Chip({ label, color }) {
   return (
     <span style={{
-      display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+      display: 'inline-block', padding: '2px 9px', borderRadius: 'var(--r-pill)', fontSize: 11, fontWeight: 700,
       color, background: `${tint(color, 'dim')}`, border: `1px solid ${tint(color, 'line')}`, whiteSpace: 'nowrap',
     }}>{label}</span>
   );
@@ -256,7 +256,7 @@ function Modal({ title, onClose, children, width = 560 }) {
       /* ตั้งใจไม่ปิดเมื่อคลิกพื้นหลัง — กันเผลอกดแล้วข้อมูลในฟอร์มหาย ปิดได้จากปุ่ม ✕/ยกเลิกเท่านั้น */
     >
       <div style={{
-        background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14,
+        background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)',
         width: `min(${width}px, 96vw)`, boxShadow: 'var(--shadow-lg)', maxHeight: '90vh',
         display: 'flex', flexDirection: 'column',
       }}>
@@ -523,7 +523,7 @@ function QualityDashboard() {
       </TimeRangeBar>
 
       {loadErr.length > 0 && (
-        <div role="alert" style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #e05252', color: '#e05252', fontSize: 12.5, fontWeight: 700 }}>
+        <div role="alert" style={{ padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid #e05252', color: '#e05252', fontSize: 12.5, fontWeight: 700 }}>
           ⚠️ ข้อมูลบางส่วนโหลดไม่สำเร็จ — ตัวเลขด้านล่างอาจต่ำกว่าจริง: {loadErr.join(' · ')}
         </div>
       )}
@@ -1578,7 +1578,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
             </div>
           )}
           {!detail.id && (
-            <div style={{ marginTop: 12, padding: '8px 11px', borderRadius: 8, border: '1px dashed var(--border2)', fontSize: 11.5, color: 'var(--muted)' }}>
+            <div style={{ marginTop: 12, padding: '8px 11px', borderRadius: 'var(--r-md)', border: '1px dashed var(--border2)', fontSize: 11.5, color: 'var(--muted)' }}>
               บันทึกก่อน แล้วแผง <b>เอกสารที่ต้องตามแก้</b> (PFMEA / Control Plan) จะขึ้นให้ใช้งาน
             </div>
           )}

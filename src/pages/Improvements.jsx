@@ -1012,7 +1012,7 @@ export default function Improvements() {
         if (!computed && !earlyCnt && !planCnt) return null;
         const col = (v) => (v > 0 ? 'var(--green)' : v < 0 ? 'var(--red)' : 'var(--muted)');
         return (
-          <div style={{ marginTop: 12, padding: '10px 14px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10 }}>
+          <div style={{ marginTop: 12, padding: '10px 14px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>Cost Saving รวม (บาท/เดือน)</span>
               {computed > 0 && <span style={{ fontSize: 16, fontWeight: 800, color: col(grand) }}>{grand > 0 ? '+' : ''}{fmtBaht(grand)}</span>}
@@ -1063,24 +1063,24 @@ export default function Improvements() {
             const started = doStarted(imp);
             const tgt = started ? null : targetSavingOf(imp, r);
             return (
-              <div key={imp.id} style={{ display: 'flex', flexDirection: 'column', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 16, height: '100%' }}>
+              <div key={imp.id} style={{ display: 'flex', flexDirection: 'column', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 16, height: '100%' }}>
                 {/* title + status */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
                   <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', lineHeight: 1.3 }}>{imp.title}</div>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: st.color, background: st.bg, border: `1px solid ${tint(st.color, 'line')}`, borderRadius: 6, padding: '2px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>{st.label}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: st.color, background: st.bg, border: `1px solid ${tint(st.color, 'line')}`, borderRadius: 'var(--r-md)', padding: '2px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>{st.label}</span>
                 </div>
                 {/* problem chips */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
-                  <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--blue-dim)', color: 'var(--blue)', borderRadius: 5, padding: '2px 7px' }}>{imp.line_name}</span>
-                  {imp.machine_no && <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--amber-dim)', color: 'var(--amber)', borderRadius: 5, padding: '2px 7px' }}>{imp.machine_no}</span>}
-                  {imp.mat_no && <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--blue-dim)', color: 'var(--blue)', borderRadius: 5, padding: '2px 7px' }}>{imp.mat_no}</span>}
+                  <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--blue-dim)', color: 'var(--blue)', borderRadius: 'var(--r-xs)', padding: '2px 7px' }}>{imp.line_name}</span>
+                  {imp.machine_no && <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--amber-dim)', color: 'var(--amber)', borderRadius: 'var(--r-xs)', padding: '2px 7px' }}>{imp.machine_no}</span>}
+                  {imp.mat_no && <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--blue-dim)', color: 'var(--blue)', borderRadius: 'var(--r-xs)', padding: '2px 7px' }}>{imp.mat_no}</span>}
                   {(() => {
                     const meta = imp.problem_source === 'defect' ? { bg: 'rgba(236,72,153,0.13)', c: '#ec4899', t: 'ของเสีย' }
                       : imp.problem_source === 'mtn' ? { bg: 'var(--blue-dim)', c: 'var(--blue)', t: 'ใบซ่อม MTN' }
                       : { bg: 'var(--red-dim)', c: 'var(--red)', t: 'Downtime' };
-                    return <span style={{ fontSize: 11, fontWeight: 700, background: meta.bg, color: meta.c, borderRadius: 5, padding: '2px 7px' }}>{meta.t}: {typeName(imp)}</span>;
+                    return <span style={{ fontSize: 11, fontWeight: 700, background: meta.bg, color: meta.c, borderRadius: 'var(--r-xs)', padding: '2px 7px' }}>{meta.t}: {typeName(imp)}</span>;
                   })()}
-                  {(() => { const n = moCountSince(imp); return n > 0 ? <span title="จำนวนใบซ่อม MO ของเครื่อง/ไลน์นี้ ตั้งแต่วันเริ่มแก้" style={{ fontSize: 11, fontWeight: 700, background: 'var(--blue-dim)', color: 'var(--blue)', borderRadius: 5, padding: '2px 7px' }}>ใบ MO {n} ใบ</span> : null; })()}
+                  {(() => { const n = moCountSince(imp); return n > 0 ? <span title="จำนวนใบซ่อม MO ของเครื่อง/ไลน์นี้ ตั้งแต่วันเริ่มแก้" style={{ fontSize: 11, fontWeight: 700, background: 'var(--blue-dim)', color: 'var(--blue)', borderRadius: 'var(--r-xs)', padding: '2px 7px' }}>ใบ MO {n} ใบ</span> : null; })()}
                 </div>
                 {/* description / action */}
                 {imp.description && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 8, lineHeight: 1.45 }}><b style={{ color: 'var(--muted)' }}>ปัญหา:</b> {imp.description}</div>}
@@ -1104,13 +1104,13 @@ export default function Improvements() {
                         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 3 }}>{label}</div>
                         {imp[f]
                           ? <img src={imp[f]} alt={label} loading="lazy" style={{ width: '100%', height: 110, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)', cursor: 'pointer' }} onClick={() => window.open(imp[f], '_blank')} />
-                          : <div style={{ width: '100%', height: 110, borderRadius: 8, border: '1px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--muted)' }}>ยังไม่มีรูป</div>}
+                          : <div style={{ width: '100%', height: 110, borderRadius: 'var(--r-md)', border: '1px dashed var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--muted)' }}>ยังไม่มีรูป</div>}
                       </div>
                     ))}
                   </div>
                 )}
                 {/* ผลลัพธ์จากข้อมูลจริง */}
-                <div style={{ marginTop: 10, padding: 10, background: 'var(--bg3)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                <div style={{ marginTop: 10, padding: 10, background: 'var(--bg3)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                     <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>
                       {started
@@ -1143,8 +1143,8 @@ export default function Improvements() {
                       ].map(([label, perDay, total, count, days, color]) => (
                         <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', width: 46, flexShrink: 0 }}>{label}</span>
-                          <div style={{ flex: 1, height: 16, background: 'var(--bg)', borderRadius: 4, overflow: 'hidden' }}>
-                            <div style={{ width: `${Math.min(100, (perDay / maxPerDay) * 100)}%`, height: '100%', background: color, borderRadius: 4, transition: 'width 0.4s' }} />
+                          <div style={{ flex: 1, height: 16, background: 'var(--bg)', borderRadius: 'var(--r-xs)', overflow: 'hidden' }}>
+                            <div style={{ width: `${Math.min(100, (perDay / maxPerDay) * 100)}%`, height: '100%', background: color, borderRadius: 'var(--r-xs)', transition: 'width 0.4s' }} />
                           </div>
                           <span style={{ fontSize: 11, fontWeight: 800, color, width: 150, flexShrink: 0, textAlign: 'right' }}>
                             {perDay.toFixed(1)} {r.unit}/วัน <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({total.toFixed(0)} / {days}วัน)</span>
@@ -1201,7 +1201,7 @@ export default function Improvements() {
                   const good = !tooEarly && cs.totalPerDay != null && cs.totalPerDay > 0;
                   const bad = !tooEarly && cs.totalPerDay != null && cs.totalPerDay < 0;
                   return (
-                    <div style={{ marginTop: 8, padding: 10, borderRadius: 8, background: good ? 'var(--green-dim)' : 'var(--bg3)', border: `1px solid ${good ? 'var(--green-line)' : tooEarly ? 'var(--amber-line)' : 'var(--border)'}` }}>
+                    <div style={{ marginTop: 8, padding: 10, borderRadius: 'var(--r-md)', background: good ? 'var(--green-dim)' : 'var(--bg3)', border: `1px solid ${good ? 'var(--green-line)' : tooEarly ? 'var(--amber-line)' : 'var(--border)'}` }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>
                           {tooEarly ? '💰 มูลค่าปัญหานี้ (ก่อนแก้)' : '💰 Cost Saving'}{' '}
@@ -1300,7 +1300,7 @@ export default function Improvements() {
                   const pctOf = (d) => Math.max(0, Math.min(100, ((new Date(`${d}T00:00:00`) - new Date(`${gStart}T00:00:00`)) / spanMs) * 100));
                   const stMeta = { todo: { c: '#8b8b96', l: 'รอเริ่ม' }, doing: { c: '#4d9fff', l: 'กำลังทำ' }, done: { c: '#22c55e', l: 'เสร็จ' } };
                   return (
-                    <div style={{ marginTop: 8, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg3)' }}>
+                    <div style={{ marginTop: 8, border: '1px solid var(--border)', borderRadius: 'var(--r-md)', background: 'var(--bg3)' }}>
                       <div onClick={() => setGanttOpen(p => ({ ...p, [imp.id]: !isOpen }))}
                         style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', cursor: 'pointer', userSelect: 'none' }}>
                         <span style={{ fontSize: 11, transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', color: 'var(--muted)' }}>▶</span>
@@ -1311,8 +1311,8 @@ export default function Improvements() {
                           {Object.values(PHASES).map(p => <span key={p.s} style={{ color: p.c }}>{p.s}</span>)}
                         </span>
                         {ms.length > 0 && (
-                          <div style={{ flex: 1, height: 6, background: 'var(--bg)', borderRadius: 3, overflow: 'hidden' }}>
-                            <div style={{ width: `${(doneCnt / ms.length) * 100}%`, height: '100%', background: 'var(--green)', borderRadius: 3, transition: 'width 0.4s' }} />
+                          <div style={{ flex: 1, height: 6, background: 'var(--bg)', borderRadius: 'var(--r-xs)', overflow: 'hidden' }}>
+                            <div style={{ width: `${(doneCnt / ms.length) * 100}%`, height: '100%', background: 'var(--green)', borderRadius: 'var(--r-xs)', transition: 'width 0.4s' }} />
                           </div>
                         )}
                         {nextMs && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--blue)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 160 }}>ถัดไป: {nextMs.title}</span>}
@@ -1339,19 +1339,19 @@ export default function Improvements() {
                                   <span style={{ width: 12, height: 12, borderRadius: '50%', flexShrink: 0, background: m.status === 'done' ? meta.c : 'transparent', border: `2px solid ${overdue ? 'var(--red)' : meta.c}` }} />
                                   {/* ป้ายเฟส PDCA — จากคอลัมน์ phase (null = ขั้นที่ยังไม่ระบุเฟส โชว์ "–" ไม่เดาให้) */}
                                   {PHASES[m.phase]
-                                    ? <span title={PHASES[m.phase].label} style={{ width: 14, height: 14, borderRadius: 3, flexShrink: 0, fontSize: 11, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${tint(PHASES[m.phase].c, 'dim')}`, border: `1px solid ${PHASES[m.phase].c}`, color: PHASES[m.phase].c }}>{PHASES[m.phase].s}</span>
+                                    ? <span title={PHASES[m.phase].label} style={{ width: 14, height: 14, borderRadius: 'var(--r-xs)', flexShrink: 0, fontSize: 11, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${tint(PHASES[m.phase].c, 'dim')}`, border: `1px solid ${PHASES[m.phase].c}`, color: PHASES[m.phase].c }}>{PHASES[m.phase].s}</span>
                                     : <span title="ยังไม่ระบุเฟส PDCA" style={{ width: 14, flexShrink: 0, fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>–</span>}
                                   <span title={`${m.title}${m.assignee ? ` · ${m.assignee}` : ''}${m.phase === 'check' ? '\n🤖 ขั้นนี้ระบบเทียบผลก่อน/หลังจากข้อมูลจริงให้อัตโนมัติ (แผงผลบนการ์ด)' : ''}`} style={{ fontSize: 11, fontWeight: 700, color: overdue ? 'var(--red)' : 'var(--text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: m.status === 'done' ? 'line-through' : 'none', opacity: m.status === 'done' ? 0.65 : 1 }}>{m.phase === 'check' ? ' ' : ''}{m.title}</span>
                                 </button>
                                 {/* แถบ gantt ตามแผน */}
-                                <div style={{ flex: 1, position: 'relative', height: 16, background: 'var(--bg)', borderRadius: 4, overflow: 'hidden' }}>
+                                <div style={{ flex: 1, position: 'relative', height: 16, background: 'var(--bg)', borderRadius: 'var(--r-xs)', overflow: 'hidden' }}>
                                   {/* เส้นวันนี้ — playhead ชมพูตาม convention */}
                                   {/* เส้นวันนี้ใช้ class กลาง .now-line (index.css) — ได้ [data-perf="lite"] override บนจอ TV
                                       ห้ามวาด playhead เองด้วย inline boxShadow (UI-CONVENTIONS §6 · QC audit 2026-08-03) */}
                                   <div className="now-line" style={{ left: `${pctOf(today)}%` }} />
                                   {(m.planned_start || m.planned_end) && (
                                     <div title={`${m.title}\nแผน ${fmtDate(m.planned_start)} – ${fmtDate(m.planned_end)}${m.done_at ? `\nเสร็จจริง ${fmtDate(m.done_at)}` : ''}${m.assignee ? `\nผู้รับผิดชอบ: ${m.assignee}` : ''}`}
-                                      style={{ position: 'absolute', top: 2, bottom: 2, left: `${l}%`, width: `${Math.max(rgt - l, 1.5)}%`, borderRadius: 4, background: `${overdue ? 'var(--red)' : meta.c}${m.status === 'done' ? 'cc' : '77'}`, border: `1px solid ${overdue ? 'var(--red)' : meta.c}` }} />
+                                      style={{ position: 'absolute', top: 2, bottom: 2, left: `${l}%`, width: `${Math.max(rgt - l, 1.5)}%`, borderRadius: 'var(--r-xs)', background: `${overdue ? 'var(--red)' : meta.c}${m.status === 'done' ? 'cc' : '77'}`, border: `1px solid ${overdue ? 'var(--red)' : meta.c}` }} />
                                   )}
                                   {m.done_at && (
                                     <div title={`เสร็จจริง ${fmtDate(m.done_at)}`} style={{ position: 'absolute', top: 1, left: `calc(${pctOf(m.done_at)}% - 4px)`, fontSize: 11, lineHeight: 1, zIndex: 3 }}>✅</div>
@@ -1560,7 +1560,7 @@ export default function Improvements() {
                 </div>
               </div>
               {/* ขวา: Pareto ปัญหา Top — คลิกเลือกเป็นเป้า */}
-              <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, padding: 12, alignSelf: 'start' }}>
+              <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 12, alignSelf: 'start' }}>
                 <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>
                   ปัญหาที่กระทบมากสุด · {modal.problem_source === 'defect' ? 'ของเสีย' : modal.problem_source === 'mtn' ? 'ใบซ่อม MTN' : 'Downtime'} · {modal.line_name || 'เลือกไลน์ก่อน'}
                 </div>
@@ -1607,12 +1607,12 @@ export default function Improvements() {
                           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, fontSize: 11, fontWeight: 700, color: 'var(--text)' }}>
                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {i + 1}. {tn}{row.machine_no ? ` · ⚙️${row.machine_no}` : ''}{row.mat_no ? ` · 📦${row.mat_no}` : ''}
-                              {row.planned && <span style={{ marginLeft: 5, fontSize: 11, fontWeight: 700, color: 'var(--muted)', background: 'rgba(148,163,184,0.15)', borderRadius: 4, padding: '0 5px' }}>ในแผน</span>}
+                              {row.planned && <span style={{ marginLeft: 5, fontSize: 11, fontWeight: 700, color: 'var(--muted)', background: 'rgba(148,163,184,0.15)', borderRadius: 'var(--r-xs)', padding: '0 5px' }}>ในแผน</span>}
                             </span>
                             <span style={{ color: barColor, flexShrink: 0 }}>{modal.problem_source === 'mtn' ? `${row.value} ใบ · ${row.mins} นาที` : `${row.value.toFixed(0)} ${modal.problem_source === 'defect' ? 'ชิ้น' : 'นาที'} · ${row.count} ครั้ง`}</span>
                           </div>
-                          <div style={{ height: 6, background: 'var(--bg2)', borderRadius: 3, marginTop: 3, overflow: 'hidden' }}>
-                            <div style={{ width: `${(row.value / max) * 100}%`, height: '100%', background: barColor, borderRadius: 3 }} />
+                          <div style={{ height: 6, background: 'var(--bg2)', borderRadius: 'var(--r-xs)', marginTop: 3, overflow: 'hidden' }}>
+                            <div style={{ width: `${(row.value / max) * 100}%`, height: '100%', background: barColor, borderRadius: 'var(--r-xs)' }} />
                           </div>
                           {/* note ของพนักงาน — ตัวบอกปัญหาจริงโดยเฉพาะประเภท "อื่นๆ" ที่ชื่อประเภทบอกอะไรไม่ได้ */}
                           {row.topDescs?.length > 0 && (
@@ -1749,7 +1749,7 @@ export default function Improvements() {
               </div>
 
               {/* ใบนี้จะพูดได้แค่ไหน — บอกก่อนพิมพ์ ไม่ใช่ให้ไปเซอร์ไพรส์บนกระดาษ */}
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: MODE_NOTE.c, background: 'var(--bg3)', border: `1px solid ${tint(MODE_NOTE.c, 'line')}`, borderRadius: 8, padding: '7px 10px', marginBottom: 12, lineHeight: 1.55 }}>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: MODE_NOTE.c, background: 'var(--bg3)', border: `1px solid ${tint(MODE_NOTE.c, 'line')}`, borderRadius: 'var(--r-md)', padding: '7px 10px', marginBottom: 12, lineHeight: 1.55 }}>
                 {r ? `สถานะข้อมูลของใบนี้: ${MODE_NOTE.t}` : 'กำลังคำนวณผลก่อน/หลังของโปรเจคนี้ — รอสักครู่ก่อนกดพิมพ์'}
               </div>
 
@@ -1795,7 +1795,7 @@ export default function Improvements() {
             {/* ── soft gate ขั้น Act (2026-08-19): การแก้วิธีการ/จิ๊ก/พารามิเตอร์ = process change ที่ IATF
                 ต้องทบทวน PFMEA/Control Plan — บังคับให้ "ตอบ" ก่อนปิด แต่ไม่บังคับให้แก้เอกสารเสร็จ
                 (หลักเดียวกับด่านปิด D8 — แข็งเกินไปคนจะเลี่ยงด้วยการไม่เปิดโปรเจคเลย ซึ่งแย่กว่า) ── */}
-            <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border)' }}>
+            <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: '1px solid var(--border)' }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>การแก้ไขนี้กระทบเอกสาร PE (PFMEA / Control Plan) ไหม?</div>
               <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
                 {[['yes', 'กระทบ — เสนอคำขอแก้เข้ากล่อง PE'], ['no', 'ไม่กระทบ']].map(([v, l]) => (

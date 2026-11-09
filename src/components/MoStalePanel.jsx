@@ -217,7 +217,7 @@ export default function MoStalePanel({
                       return (
                         <div key={t.key} onClick={act}
                           style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'baseline', fontSize: 11.5,
-                            color: 'var(--text2)', padding: '4px 7px', borderRadius: 6, background: 'var(--bg3)',
+                            color: 'var(--text2)', padding: '4px 7px', borderRadius: 'var(--r-md)', background: 'var(--bg3)',
                             borderLeft: `3px solid ${statusColor(t.tone)}`, cursor: act ? 'pointer' : 'default' }}
                           title={[`ค้างเกิน ${days} วัน ${t.n} ใบ`,
                             t.hard > 0 && `เกิน ${hardDays} วัน ${t.hard} ใบ`,
@@ -245,7 +245,7 @@ export default function MoStalePanel({
               <div key={o.id} onClick={onOpen ? () => onOpen(o) : undefined}
                 style={{
                   display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'baseline', fontSize: 11.5,
-                  color: 'var(--text2)', padding: '3px 6px', borderRadius: 6,
+                  color: 'var(--text2)', padding: '3px 6px', borderRadius: 'var(--r-md)',
                   borderLeft: `3px solid ${statusColor(o._tone)}`, background: 'var(--bg3)',
                   cursor: onOpen ? 'pointer' : 'default',
                 }}>

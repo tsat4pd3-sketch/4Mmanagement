@@ -322,7 +322,7 @@ function SignField({ signatureUrl, existing, onChange }) {
         {existing && mode !== 'draw' && !signatureUrl && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ใช้ลายเซ็นเดิม</span>}
       </div>
       {mode === 'profile'
-        ? <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 6, background: '#fff', display: 'inline-block' }}><img src={signatureUrl} alt="" style={{ height: 60 }} /></div>
+        ? <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 6, background: '#fff', display: 'inline-block' }}><img src={signatureUrl} alt="" style={{ height: 60 }} /></div>
         : <canvas ref={cvRef} width={520} height={140} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up}
             style={{ width: '100%', height: 120, border: '1px solid var(--border)', borderRadius: 8, background: '#fff', touchAction: 'none', cursor: 'crosshair' }} />}
       {!signatureUrl && mode === 'profile' && <div style={{ fontSize: 11, color: 'var(--accent2)' }}>ยังไม่มีลายเซ็นในโปรไฟล์ — ตั้งได้ที่มุมขวาบน (ไอคอนลายเซ็น) แล้วจะใช้ซ้ำได้ทุกใบ</div>}
@@ -414,7 +414,7 @@ function ModalShell({ title, onClose, children, wide, dirty }) {
   const askClose = () => { if (dirty && !confirmDiscard()) return; onClose(); };
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '4vh 2vw' }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: wide ? 'min(96vw, 1200px)' : 'min(96vw, 640px)', maxHeight: '92vh', overflowY: 'auto' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', width: wide ? 'min(96vw, 1200px)' : 'min(96vw, 640px)', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0, background: 'var(--card)', zIndex: 1 }}>
           <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{title}</div>
           <button onClick={askClose} aria-label="ปิด" style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
@@ -1123,7 +1123,7 @@ export default function MtnRepair() {
             🔴 ปุ่มที่โผล่ = ตัวกรองที่ **ปลดตัวเดียวแล้วได้ของคืนจริง** (ตัวเลขคำนวณมา ไม่ใช่เดา) */}
         {emptyWhy && (
           <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--amber-dim)',
-            border: '1px solid var(--amber-line)', borderRadius: 10, padding: '10px 13px', marginBottom: 10, lineHeight: 1.7 }}>
+            border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '10px 13px', marginBottom: 10, lineHeight: 1.7 }}>
             <div style={{ fontWeight: 800, color: 'var(--text)', fontSize: 13 }}>
               ตัวกรองที่เลือกอยู่ตัดใบออกหมด — ไม่ได้แปลว่าไม่มีงาน
             </div>
@@ -1248,7 +1248,7 @@ function MoRow({ o, onOpen }) {
       <td style={{ whiteSpace: 'nowrap' }}>
         {o.status === 'rejected' ? <span style={{ color: 'var(--muted)' }}>—</span> : <>
           <div style={{ fontSize: 11.5, color: 'var(--text2)' }}>{o.current_step}/{last}</div>
-          <div style={{ width: 52, height: 4, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden', marginTop: 2 }}>
+          <div style={{ width: 52, height: 4, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', overflow: 'hidden', marginTop: 2 }}>
             <div style={{ width: `${pct}%`, height: '100%', background: o.status === 'closed' ? 'var(--green)' : 'var(--amber)' }} />
           </div>
         </>}
@@ -1766,7 +1766,7 @@ function ReportModal({ lines, lineLoadErr = '', onReloadLines, machines, machine
             const c = dupLv === 'cross' ? 'var(--red)' : 'var(--amber)';
             return (
               <div style={{
-                marginTop: 6, padding: '7px 9px', borderRadius: 8,
+                marginTop: 6, padding: '7px 9px', borderRadius: 'var(--r-md)',
                 border: `1.5px solid ${c}`, background: 'var(--card)',
                 backgroundImage: `linear-gradient(${c}14, ${c}14)`,   /* ห้าม color-mix() — Chromium 94 บนจอ TV ทิ้งทั้งบรรทัด */
               }}>
@@ -2675,12 +2675,12 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
     const meta = n === 1 ? { title: 'แจ้งซ่อม', who: 'ผู้แจ้ง (ฝ่ายที่พบปัญหา)' } : stepMeta(n, { mtnForm, toolTeam: isToolTeamOrder(o) });
     const mark = done ? '✅' : (skipped || note) ? '⏭' : '⬜';
     return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, marginBottom: 8, background: done ? 'var(--bg2)' : 'transparent', opacity: done || note || skipped ? 1 : 0.55 }}>
+    <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 10, marginBottom: 8, background: done ? 'var(--bg2)' : 'transparent', opacity: done || note || skipped ? 1 : 0.55 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 4 }}>
         <div style={{ fontSize: 12.5, fontWeight: 800, color: done ? 'var(--accent)' : (skipped || note) ? 'var(--amber)' : 'var(--muted)' }}>
           {mark} ขั้น {n}: {meta?.title}
           <span style={{ fontWeight: 600, color: 'var(--muted)', marginLeft: 6, fontSize: 11 }}>· {meta?.who}</span>
-          {skipped && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 20, padding: '1px 8px', whiteSpace: 'nowrap' }}>⏭ {qaAppliesTo(o) ? 'ข้าม (ไม่เกี่ยวกับคุณภาพ)' : 'ไม่ต้องตรวจ (งานปรับปรุง/สร้าง)'}</span>}
+          {skipped && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-pill)', padding: '1px 8px', whiteSpace: 'nowrap' }}>⏭ {qaAppliesTo(o) ? 'ข้าม (ไม่เกี่ยวกับคุณภาพ)' : 'ไม่ต้องตรวจ (งานปรับปรุง/สร้าง)'}</span>}
         </div>
         {done && n >= 2 && canEditStep(n) && <button onClick={() => onStep(n, true)} className="tbtn" style={{ ...btnGhost, padding: '3px 9px', fontSize: 11 }}>แก้ไข</button>}
       </div>
@@ -2699,7 +2699,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
      กล่องรับมอบ · ใบ MTN แสดงคำอธิบาย "ลูปนี้ไม่มี QA" ไว้ท้ายชุดขั้นตอนแทน */
   const qa5 = mtnForm ? 'none' : moQaState(o);
   const qa5Note = qa5 === 'skipped' ? (
-    <div style={{ fontSize: 12, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
+    <div style={{ fontSize: 12, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
       ⏭ <b>ไม่ต้องตรวจ QA — {mtnForm ? 'ใบซ่อมของทีม MTN ไม่มีขั้น QA ในลูป' : qaAppliesTo(o) ? 'งานนี้ไม่เกี่ยวกับคุณภาพ' : `งาน${PURPOSES.find(x => x.key === o.purpose)?.label || ''} ไม่ต้องผ่านการตรวจคุณภาพ`}</b>
       <div style={{ color: 'var(--text2)' }}>
         {/* 4 ที่มาของ "ข้าม" ต้องแยกให้ออก: ฟอร์ม MTN ไม่มี QA เลย · QA กดเอง · ใบเก่าที่ขั้น 4 เลือกไว้ · จุดประสงค์ของงาน */}
@@ -2750,23 +2750,23 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
   return (
     <ModalShell title={`${o.mo_no || '(ยังไม่ออกเลข MO)'} · ${stripIcon(m.label)} · ${deptNameOf(dept)}`} onClose={onClose} wide>
       {affectedLines.length > 0 && (
-        <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--red-dim)', border: '1px solid var(--red-line)', fontSize: 12.5, color: 'var(--red)', fontWeight: 700 }}>
-          ⚠️ อุปกรณ์นี้จ่ายให้ {affectedLines.length} ไลน์ — หยุดซ่อม/ตัดไฟจะกระทบ: <b>{affectedLines.join(', ')}</b>
-        </div>
+        <NoticeBar tone="bad" style={{ marginBottom: 10 }}>
+          อุปกรณ์นี้จ่ายให้ {affectedLines.length} ไลน์ — หยุดซ่อม/ตัดไฟจะกระทบ: <b>{affectedLines.join(', ')}</b>
+        </NoticeBar>
       )}
       {openImps.length > 0 && (
-        <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', fontSize: 12.5, color: 'var(--blue)' }}
+        <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 'var(--r-md)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', fontSize: 12.5, color: 'var(--blue)' }}
           title={openImps.map(i => i.title).join('\n')}>
           มีโปรเจคปรับปรุงกำลังทำ {openImps.length} โปรเจคสำหรับเครื่อง/ไลน์นี้
         </div>
       )}
       {repeatIssue && (
-        <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 8, background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', fontSize: 12.5, color: 'var(--amber)' }}>
-          ⚠️ ติดตามผลได้ว่า "{o.follow_up}" — ควรเปิดโปรเจคปรับปรุงแก้ที่ต้นเหตุ
-        </div>
+        <NoticeBar tone="warn" style={{ marginBottom: 10 }}>
+          ติดตามผลได้ว่า "{o.follow_up}" — ควรเปิดโปรเจคปรับปรุงแก้ที่ต้นเหตุ
+        </NoticeBar>
       )}
       {o.status === 'returned' && (
-        <div style={{ marginBottom: 10, padding: '10px 12px', borderRadius: 8, background: 'var(--amber-dim)', border: '1px solid var(--amber-line)' }}>
+        <div style={{ marginBottom: 10, padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)' }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)' }}>↩️ ใบนี้ถูกตีกลับ — ผิดแผนก</div>
           <div style={{ fontSize: 12.5, color: 'var(--text)', margin: '4px 0' }}>เหตุผล: <b>{o.reject_reason || '-'}</b>{o.returned_from_dept ? ` (ตีกลับจากทีม ${deptNameOf(o.returned_from_dept)})` : ''}</div>
           {can('mtn_repair', 'report', role) ? (
@@ -2780,14 +2780,14 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
         </div>
       )}
       {o.status !== 'returned' && o.bounce_count > 0 && (
-        <div style={{ marginBottom: 10, padding: '6px 10px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)', fontSize: 11.5, color: 'var(--amber)' }}>
+        <div style={{ marginBottom: 10, padding: '6px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border)', fontSize: 11.5, color: 'var(--amber)' }}>
           ↩️ ใบนี้เคยถูกตีกลับ {o.bounce_count} ครั้ง{o.first_report_at ? ` · เปิดครั้งแรก ${fmtDateTime(o.first_report_at)}` : ''} — เวลา KPI นับจากรอบล่าสุด
         </div>
       )}
       {/* 🔎 ใบนี้ถูกส่งต่อ**มา** — ทีมใหม่ต้องเห็นว่าทีมก่อนหน้าเข้าไปดูอะไรมาแล้ว
           อ่านจากใบต้นทางโดยตรง (ใบเดิมไม่ถูกล้าง) ไม่ต้องพึ่ง snapshot — 2026-09-14 รอบ 2 */}
       {handoffIn && (
-        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: 'var(--blue-dim)', border: '1px solid var(--blue-line)' }}>
+        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 'var(--r-md)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)' }}>
           <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--blue)', marginBottom: 3 }}>
             ➡️ ส่งต่อมาจาก {handoffIn.src?.mo_no || o.transferred_from_mo || 'ใบก่อนหน้า'} · ทีม {deptNameOf(handoffIn.from_dept) || '—'}
           </div>
@@ -2804,7 +2804,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
       )}
       {/* ใบนี้ส่งต่อ**ไป** แล้ว — ใบนี้จบที่ทีมนี้ ให้ตามงานต่อที่ใบใหม่ */}
       {handoffOut.length > 0 && (
-        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border)' }}>
           {handoffOut.map(h => (
             <div key={h.id} style={{ fontSize: 11.5, lineHeight: 1.7 }}>
               <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--amber)' }}>➡️ ใบนี้ส่งต่อให้ทีม {deptNameOf(h.to_dept)} แล้ว — จบที่ทีมนี้</div>
@@ -2818,7 +2818,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
           ⚠️ ลายเซ็นนี้อยู่ **นอกลูป 9 ขั้น** — ไม่บล็อกใบ ไม่เพิ่มขั้น แค่เตือนให้ปริ้น
              (คนละเรื่องกับ "รออนุมัติก่อนเริ่มงาน" ของงานปรับปรุง/สร้าง) */}
       {mtnForm && needsPlantMgrByCost(o, dlabor, dparts) && !o.plant_manager_at && (
-        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8,
+        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 'var(--r-md)',
           background: 'var(--amber-dim)', border: '1px solid var(--amber)' }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--amber)' }}>
             ค่าใช้จ่าย {Number(orderCostTotal(o, dlabor, dparts) || 0).toLocaleString()} บาท — เกิน {PLANT_MGR_COST_LIMIT.toLocaleString()} บาท
@@ -2831,7 +2831,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
       )}
       {/* 📤 ส่งซ่อมภายนอก — ของอยู่กับ supplier · ใบยังเปิด ผู้แจ้งเห็นสถานะชัด (2026-09-21) */}
       {o.status === VENDOR_STATUS && (
-        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8,
+        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 'var(--r-md)',
           background: 'var(--blue-dim)', border: '1px solid var(--blue)' }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--blue)' }}>
             ส่งซ่อมภายนอก — อยู่กับ {o.supplier || 'supplier'} มาแล้ว {vendorHoldLabel(o)}
@@ -2856,7 +2856,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
           canEdit={isMoOpen(o) && (canEditStep(2) || canEditStep(3))} onOrderChanged={onReload} />
       )}
       {canSendVendor(o) && canEditStep(3) && (
-        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border)' }}>
           {!showVendor ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', flex: 1, minWidth: 190 }}>
@@ -2895,7 +2895,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
       )}
       {/* ➡️ ปุ่มส่งต่อ — ทีมที่ถือใบอยู่ (ขั้น 2-3) เท่านั้น · เกณฑ์ = canHandoff() + สิทธิ์ขั้น 3 */}
       {canHandoff(o) && canEditStep(3) && (
-        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border)' }}>
           {!showHandoff ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', flex: 1, minWidth: 190 }}>
@@ -2935,7 +2935,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
       {/* ✍️ ลายเซ็นผู้จัดการของใบ MTN — "บล็อกงาน" กับ "รับทราบตามหลัง" ต้องหน้าตาต่างกันชัด
              (งานซ่อมขึ้นกล่องแดงว่ารออนุมัติ = หน้างานจะหยุดรอทั้งที่ไม่ต้องรอ) */}
       {mtnForm && appr && (appr.missing.length > 0 || o.dept_manager_at || o.plant_manager_at) && (
-        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 8, background: appr.blocked ? 'var(--red-dim)' : 'var(--bg2)', border: `1px solid ${appr.blocked ? 'var(--red)' : 'var(--border)'}` }}>
+        <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 'var(--r-md)', background: appr.blocked ? 'var(--red-dim)' : 'var(--bg2)', border: `1px solid ${appr.blocked ? 'var(--red)' : 'var(--border)'}` }}>
           <div style={{ fontSize: 12, fontWeight: 800, color: appr.blocked ? 'var(--red)' : 'var(--text)' }}>
             {appr.blocked
               ? `🔒 งาน${PURPOSES.find(x => x.key === appr.purpose)?.label || ''} — ต้องอนุมัติก่อนช่างเริ่มงาน`
@@ -2970,9 +2970,9 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
       )}
       {/* ผู้เปิดใบตรวจรับ (ขั้น 4) และรับมอบ (ขั้น 6) ของใบตัวเองได้เสมอ — บอกให้รู้ว่าทำไมกดได้ */}
       {isOrderReporter(o, fullName) && o.status !== 'closed' && (
-        <div style={{ marginBottom: 10, padding: '6px 10px', borderRadius: 8, background: 'var(--green-dim)', border: '1px solid var(--green-line)', fontSize: 11.5, color: 'var(--green)' }}>
-          🙋 คุณเป็น<b>ผู้เปิดใบนี้</b> — ตรวจรับงานหลังซ่อม (ขั้น 4) และรับมอบ/ติดตามผล (ขั้น 6) ได้เอง
-        </div>
+        <NoticeBar tone="ok" style={{ marginBottom: 10 }}>
+          คุณเป็น<b>ผู้เปิดใบนี้</b> — ตรวจรับงานหลังซ่อม (ขั้น 4) และรับมอบ/ติดตามผล (ขั้น 6) ได้เอง
+        </NoticeBar>
       )}
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         <div>
@@ -3029,7 +3029,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
               <Row k="ความพึงพอใจเฉลี่ย" v={`${satAvg(o.satisfaction).toFixed(2)}/3 (${Math.round(satAvg(o.satisfaction) / 3 * 100)}%)`} />
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 2 }}>
                 {SAT_DIMS.filter(d => o.satisfaction?.[d.key]).map(d => { const lv = SAT_LEVELS.find(l => l.v === Number(o.satisfaction[d.key])); return (
-                  <span key={d.key} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 6, background: 'var(--bg3)', border: `1px solid ${lv?.color || 'var(--border)'}`, color: 'var(--text2)' }}>{d.label}: <b style={{ color: lv?.color }}>{lv?.t}</b></span>
+                  <span key={d.key} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: `1px solid ${lv?.color || 'var(--border)'}`, color: 'var(--text2)' }}>{d.label}: <b style={{ color: lv?.color }}>{lv?.t}</b></span>
                 ); })}
               </div>
             </div>}
@@ -3061,7 +3061,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
               <Row k="อนุมัติเมื่อ" v={o.approve_at && fmtDateTime(o.approve_at)} /><Row k="ผู้อนุมัติ" v={o.approver_name} /><Img label="ลายเซ็นอนุมัติ" url={sgn(o.approver_uid, o.approve_sign)} />
             </StepBox>
           )}
-          <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, fontSize: 12.5 }}>
+          <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 10, fontSize: 12.5 }}>
             <div style={{ fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>⏱ KPI</div>
             <Row k="เข้าดำเนินการ (Response)" v={fmtMin(resp)} /><Row k="เวลาซ่อม (TTR)" v={venHold > 0 && ttr != null
               ? `${fmtMin(ttr)} (หักหยุด MTTR ${fmtMin(venHold)} · รวมทั้งหมด ${fmtMin(ttrGross)})`
@@ -3072,7 +3072,7 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
       {/* ⚠️ ปุ่มขั้นถัดไปหายเพราะสิทธิ์ = ต้องบอกเหตุผล ห้ามให้เดาเอง (UI-CONVENTIONS §6.9)
              เคสที่เจอจริง: ช่างฝ่ายผลิตเปิดใบได้แต่กดรับงานไม่ได้ แล้วไม่มีอะไรอธิบาย */}
       {next && !canEditStep(next.step) && (
-        <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 8, padding: '9px 12px', marginTop: 12, fontSize: 12.5, lineHeight: 1.7 }}>
+        <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 'var(--r-md)', padding: '9px 12px', marginTop: 12, fontSize: 12.5, lineHeight: 1.7 }}>
           🔒 <b>บัญชีนี้ทำขั้นถัดไปไม่ได้</b> — {next.label}
           <div style={{ color: 'var(--text2)', marginTop: 3 }}>
             {(stepDenyHint(next.step, { teamName: deptNameOf(orderTeam), reporterName: o.reported_by_name || o.reporter_prod, outOfScope: canDoStep(next.step, stepCtx).code === 'out_of_scope', otherTeam: canDoStep(next.step, stepCtx).code === 'other_team',
@@ -3791,19 +3791,19 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
     <ModalShell title={`${o.mo_no || o.item_type || ''} · ${skipQa ? 'ข้าม QA — งานไม่เกี่ยวกับคุณภาพ (ขั้น 5 → 6)' : `${editMode ? 'แก้ไข ' : ''}${stripIcon(stepLabel(step, { mtnForm: isMtnForm, toolTeam: isToolTeam }))}`}`} onClose={onClose} dirty={dirty}>
       <div style={{ display: 'grid', gap: 12 }}>
         {skipQa && (
-          <div style={{ fontSize: 12, color: 'var(--text2)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '8px 10px', lineHeight: 1.6 }}>
-            ⏭ ใบนี้ค้างรอ QA เพราะขั้น 4 ระบุว่า <b>“เกี่ยวกับคุณภาพ”</b> — ถ้างานซ่อมนี้ไม่กระทบคุณภาพชิ้นงานจริง
+          <NoticeBar tone="warn" style={{ marginBottom: 0 }}>
+            ใบนี้ค้างรอ QA เพราะขั้น 4 ระบุว่า <b>“เกี่ยวกับคุณภาพ”</b> — ถ้างานซ่อมนี้ไม่กระทบคุณภาพชิ้นงานจริง
             กดยืนยันเพื่อข้ามการตรวจ QA แล้วไป <b>รับมอบ / ติดตามผล (ขั้น 6)</b> ทันที · ระบบบันทึกชื่อคุณและเหตุผลไว้ในใบ
-          </div>
+          </NoticeBar>
         )}
         {stepMeta(step, { mtnForm: isMtnForm, toolTeam: isToolTeam }) && !skipQa && (
-          <div style={{ fontSize: 11.5, color: 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 10px' }}>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '6px 10px' }}>
             ขั้นนี้เป็นหน้าที่ของ <b style={{ color: 'var(--text2)' }}>{stepMeta(step, { mtnForm: isMtnForm, toolTeam: isToolTeam }).who}</b>
             {stepMeta(step, { mtnForm: isMtnForm, toolTeam: isToolTeam }).byReporter && (o.reported_by_name || o.reporter_prod) ? <> · ใบนี้เปิดโดย <b style={{ color: 'var(--text2)' }}>{o.reported_by_name || o.reporter_prod}</b></> : null}
           </div>
         )}
         {modalStage === 'report' && <>
-          <div style={{ fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 11px', lineHeight: 1.6 }}>
+          <div style={{ fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 11px', lineHeight: 1.6 }}>
             ✏️ <b>แก้ได้เฉพาะ 3 ช่องนี้</b> — รูปปัญหา · รายละเอียดปัญหา · ระบุเพิ่มเติม
             <div style={{ color: 'var(--muted)', marginTop: 2 }}>
               ไลน์ · เครื่อง · ลักษณะปัญหา · ผู้แจ้ง · ทีมช่าง <b style={{ color: 'var(--text2)' }}>ล็อกไว้</b> —
@@ -3817,7 +3817,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
         </>}
         {modalStage === 'assign' && <>
           <Field label={`ประเภทงานซ่อม${o.repair_type && !editMode ? ' (ผู้แจ้งระบุมา — แก้ได้ก่อนออกเลข MO)' : ''}`} required><select value={f.repair_type} onChange={e => set('repair_type', e.target.value)} style={inp}>{teamRepairTypes.map(r => <option key={r.id} value={r.name}>{r.name} ({r.prefix})</option>)}</select></Field>
-          {isReject ? <><div style={{ fontSize: 11.5, color: canBounceBack(o) ? 'var(--amber)' : 'var(--red)', background: canBounceBack(o) ? 'var(--amber-dim)' : 'var(--red-dim)', border: `1px solid ${canBounceBack(o) ? 'var(--amber-line)' : 'var(--red-line)'}`, borderRadius: 8, padding: '7px 10px' }}>{canBounceBack(o) ? '↩️ ตีกลับให้ผู้แจ้ง — ใบจะเด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ · เวลาเริ่มนับใหม่ให้แผนกที่ถูก)' : `⛔ ใบนี้เดินไปถึงขั้น ${o.current_step} แล้ว — ตีกลับไม่ได้ (ผลงาน/ลายเซ็นขั้น 3 เป็นต้นไปจะหายจากใบ) กดบันทึกจะไม่ผ่าน · ถ้าแจ้งผิดแผนกจริง ให้ปิดใบนี้แล้วเปิดใบใหม่ให้ทีมที่ถูก`}</div><Field label="เหตุผลที่ตีกลับ (เช่น ผิดแผนก — ควรแจ้ง JIG MTN)" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></> : <>
+          {isReject ? <><div style={{ fontSize: 11.5, color: canBounceBack(o) ? 'var(--amber)' : 'var(--red)', background: canBounceBack(o) ? 'var(--amber-dim)' : 'var(--red-dim)', border: `1px solid ${canBounceBack(o) ? 'var(--amber-line)' : 'var(--red-line)'}`, borderRadius: 'var(--r-md)', padding: '7px 10px' }}>{canBounceBack(o) ? '↩️ ตีกลับให้ผู้แจ้ง — ใบจะเด้งกลับหาผู้แจ้งพร้อมเหตุผล ให้แก้แผนกแล้วส่งใหม่ (ไม่ทิ้งใบ · เวลาเริ่มนับใหม่ให้แผนกที่ถูก)' : `⛔ ใบนี้เดินไปถึงขั้น ${o.current_step} แล้ว — ตีกลับไม่ได้ (ผลงาน/ลายเซ็นขั้น 3 เป็นต้นไปจะหายจากใบ) กดบันทึกจะไม่ผ่าน · ถ้าแจ้งผิดแผนกจริง ให้ปิดใบนี้แล้วเปิดใบใหม่ให้ทีมที่ถูก`}</div><Field label="เหตุผลที่ตีกลับ (เช่น ผิดแผนก — ควรแจ้ง JIG MTN)" required><textarea value={f.reject_reason} onChange={e => set('reject_reason', e.target.value)} style={{ ...inp, minHeight: 60 }} /></Field></> : <>
             {/* หัวหน้าช่าง = <PersonSelect> (role ซ่อมบำรุง/หัวหน้าขึ้นก่อน) — เก็บชื่อ snapshot เหมือนเดิม · 2026-09-07 */}
             <Field label="ผู้รับเรื่อง / จ่ายงาน (หัวหน้าช่าง)"><PersonSelect value={f.accepted_by} source="both" roles={MTN_HEAD_ROLES} teams={acceptTeams} onChange={res => set('accepted_by', res.name)} inputStyle={{ background: 'var(--bg)' }} /></Field>
             <Field label={`มอบหมายช่างซ่อม — เลือกได้หลายคน${techGroups.teamKey ? ` (ทีม ${deptNameOf(techGroups.teamKey)})` : ''}`} required>
@@ -3825,7 +3825,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
               {/* ⚠️ ไม่มีช่างในทีมของใบเลย = ต้องบอกว่าเพราะอะไรและแก้ที่ไหน ห้ามปล่อยให้ไล่หาเอง
                   เคสที่เจอจริง: ช่างฝ่ายผลิตยังไม่ถูกติ๊ก employees.mtn_team จึงไม่โผล่สักคน */}
               {techGroups.teamKey && techGroups.mine.length === 0 && (
-                <div style={{ fontSize: 11.5, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '7px 10px', marginTop: 6, lineHeight: 1.6 }}>
+                <div style={{ fontSize: 11.5, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '7px 10px', marginTop: 6, lineHeight: 1.6 }}>
                   ⚠️ ยังไม่มีใครถูกตั้งเป็นช่างทีม <b>{deptNameOf(techGroups.teamKey)}</b> เลย
                   <div>ไปตั้งที่ <b>ฐานข้อมูลพนักงาน (/operator)</b> → แก้ไขพนักงาน → ช่อง <b>ทีมช่างซ่อม</b></div>
                   <div style={{ opacity: 0.85 }}>ระหว่างนี้เลือกช่างทีมอื่นไปก่อนได้</div>
@@ -3920,7 +3920,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
                    ("ใบนี้ยังไม่ลงอะไหล่" กับ "โหลดไม่ติด") ปล่อยให้เดาเอง = บันทึกทับของจริงหาย */}
             {partsState === 'loading' && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>กำลังโหลดรายการอะไหล่เดิมของใบนี้…</div>}
             {partsState === 'error' && (
-              <div style={{ fontSize: 12, color: 'var(--red)', background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 8, padding: '6px 9px', marginBottom: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 12, color: 'var(--red)', background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 'var(--r-md)', padding: '6px 9px', marginBottom: 6, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <span>โหลดรายการอะไหล่เดิมไม่สำเร็จ ({partsErr}) — บันทึกไม่ได้จนกว่าจะโหลดติด</span>
                 <button type="button" onClick={loadParts} style={{ ...btnGhost, padding: '2px 8px', fontSize: 12 }}>โหลดใหม่</button>
               </div>
@@ -3929,7 +3929,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
               const master = parts.find(x => x.id === p.part_id);
               const over = master && Number(p.qty) > (Number(master.stock_qty) || 0);
               return (
-                <div key={i} style={{ marginBottom: 6, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: 7 }}>
+                <div key={i} style={{ marginBottom: 6, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 7 }}>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start' }}>
                     <SearchSelect
                       style={{ flex: 1, minWidth: 0 }}
@@ -3977,7 +3977,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
               ตอนนี้ทุกใบจอดรอ QA และ **QA เท่านั้น** ที่ตัดสินว่าเกี่ยว/ไม่เกี่ยวกับคุณภาพ (ขั้น 5) */}
           {/* 🔴 ใบที่ QA ไม่อยู่ในลูป (ฟอร์ม MTN · งานสร้าง/ปรับปรุง) ห้ามบอกว่า "จะถูกส่งให้ QA"
                  — คนเซ็นขั้น 4 จะรอ QA ที่ไม่มีวันมา · ขั้นถัดไปจริงอ่านจาก stepLabel() ห้ามพิมพ์ชื่อขั้นเอง */}
-          <div style={{ fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', lineHeight: 1.55 }}>
+          <div style={{ fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px', lineHeight: 1.55 }}>
             {qaAppliesTo(o) ? <>
               🧪 <b>ใบนี้จะถูกส่งให้ QA ตรวจรับ (ขั้น 5) ทุกใบ</b>
               <div style={{ color: 'var(--muted)', marginTop: 2 }}>
@@ -4069,7 +4069,7 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
                เดิมโมดัลขั้นปิดใบมีแค่ช่องชื่อ+ความคิดเห็น ⇒ คนเซ็นอนุมัติค่าใช้จ่ายโดยไม่เห็นค่าใช้จ่าย
                🔴 โหลดไม่ติดต้องเขียนบนจอ ห้ามโชว์ยอดว่างเฉยๆ (ลิสต์ว่าง 2 ความหมาย) */}
         {CLOSE_STAGES.includes(modalStage) && (
-          <div style={{ fontSize: 12.5, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', lineHeight: 1.6 }}>
+          <div style={{ fontSize: 12.5, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 10px', lineHeight: 1.6 }}>
             <div style={{ fontWeight: 800, marginBottom: 4 }}>ค่าใช้จ่ายของใบนี้</div>
             {partsState === 'loading' && <div style={{ color: 'var(--muted)' }}>กำลังโหลดรายการอะไหล่…</div>}
             {partsState === 'error' && <div style={{ color: 'var(--red)' }}>โหลดรายการอะไหล่ไม่สำเร็จ ({partsErr}) — ยอดอะไหล่ข้างล่างอาจไม่ครบ</div>}
@@ -4208,15 +4208,15 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
         <div key={dep} style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--accent2)', marginBottom: 4 }}>{dep} ({list.length})</div>
           <div style={{ display: 'grid', gap: 6 }}>{list.map(it => it.from_employee ? (
-            <div key={it.id} style={{ ...techRowGrid, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', opacity: 0.9 }}>
+            <div key={it.id} style={{ ...techRowGrid, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 10px', opacity: 0.9 }}>
               <span style={{ fontSize: 13, minWidth: 0 }}>{it.name}{it.emp_code ? <span style={{ color: 'var(--muted)', fontSize: 11 }}> · {it.emp_code}</span> : null}</span>
               <span />
-              <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 4, background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', fontWeight: 700, justifySelf: 'start' }}>จากฐานพนักงาน</span>
+              <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 'var(--r-xs)', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', fontWeight: 700, justifySelf: 'start' }}>จากฐานพนักงาน</span>
               <span />
               <span />
             </div>
           ) : (
-            <div key={it.id} style={{ ...techRowGrid, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+            <div key={it.id} style={{ ...techRowGrid, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
               <input defaultValue={it.name} onBlur={e => e.target.value !== it.name && updRow('mtn_technicians', it.id, { name: e.target.value })} style={{ ...inp, width: '100%', minWidth: 0 }} />
               <select defaultValue={teamKeyOf(it.dept) || 'maintenance'} onChange={e => updRow('mtn_technicians', it.id, { dept: e.target.value })} style={{ ...inp, width: '100%', minWidth: 0 }}><TeamOpts list={mtnDepts} /></select>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>เฉพาะกิจ</span>
@@ -4254,7 +4254,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
       </div>
       <div style={{ display: 'grid', gap: 6 }}>
         {laborRates.map(r => (
-          <div key={r.id} style={{ ...laborRowGrid, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+          <div key={r.id} style={{ ...laborRowGrid, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
             <input defaultValue={r.name} onBlur={e => e.target.value !== r.name && updRow('mtn_labor_rates', r.id, { name: e.target.value })} style={{ ...inp, width: '100%', minWidth: 0 }} />
             <input type="number" defaultValue={r.price} onBlur={e => Number(e.target.value) !== Number(r.price) && updRow('mtn_labor_rates', r.id, { price: Number(e.target.value) || 0 })} style={{ ...inp, width: '100%', minWidth: 0 }} />
             <input defaultValue={r.unit || ''} onBlur={e => e.target.value !== (r.unit || '') && updRow('mtn_labor_rates', r.id, { unit: e.target.value })} style={{ ...inp, width: '100%', minWidth: 0 }} />
@@ -4362,7 +4362,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
           </FilterBar>
         )}
         {teamed && !isBoss && (
-          <div style={{ fontSize: 11.5, color: 'var(--muted)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 10px', marginBottom: 10 }}>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '7px 10px', marginBottom: 10 }}>
             {unscoped
               ? '⚠️ บัญชีนี้ยังไม่ได้ตั้ง "ทีมช่างซ่อม" ที่หน้าจัดการผู้ใช้งาน — ตอนนี้จึงยังแก้ได้ทุกรายการ · ตั้งทีมแล้วระบบจะล็อกให้แก้ได้เฉพาะของทีมตัวเอง'
               : <>🔒 แก้ได้เฉพาะรายการของทีม <b>{myKeys.map(teamNameOf).join(' · ')}</b> — ของทีมอื่นและรายการ 🌐 ใช้ร่วมทุกทีม ดูได้อย่างเดียว (แก้ทีเดียวกระทบทุกทีม ต้องให้หัวหน้าแก้)</>}
@@ -4411,7 +4411,7 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
           const ro = { background: 'var(--bg2)', color: 'var(--text2)', cursor: 'default' };
           return (
           <div key={it.id} title={ok ? undefined : lockNote(it)}
-            style={{ ...rowGrid, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', opacity: ok ? 1 : 0.72 }}>
+            style={{ ...rowGrid, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 10px', opacity: ok ? 1 : 0.72 }}>
             {fields.map(fl => <input key={fl.k} defaultValue={it[fl.k] || ''} readOnly={!ok} onBlur={ok ? async e => {
               const nv = e.target.value, ov = it[fl.k] || '';
               if (nv === ov) return;
@@ -4526,10 +4526,10 @@ function MasterTab({ techs, parts, problemTypes, itemTypes, repairTypes = [], la
         <b>แต่ละทีมใช้คนละรูปแบบ</b> ตามฟอร์มกระดาษของทีมนั้น (ดูเลขถัดไปจริงของแต่ละทีมด้านล่าง)
         · ตั้ง "เลขล่าสุด" เพื่อ<b>ต่อจากระบบเดิม</b> — ใส่เลขที่ออกไปแล้วล่าสุด ใบถัดไปจะนับต่อจากนั้น
       </div>
-      {moErr ? <div style={{ color: 'var(--muted)', padding: 16, background: 'var(--bg2)', borderRadius: 8 }}>⚠️ ยังไม่ได้ apply migration เลข MO ต่อทีม (<code>20260724_mtn_mo_per_team.sql</code>) — apply ก่อนถึงจะตั้งค่าได้</div> :
+      {moErr ? <div style={{ color: 'var(--muted)', padding: 16, background: 'var(--bg2)', borderRadius: 'var(--r-md)' }}>⚠️ ยังไม่ได้ apply migration เลข MO ต่อทีม (<code>20260724_mtn_mo_per_team.sql</code>) — apply ก่อนถึงจะตั้งค่าได้</div> :
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {moRows.map(t => (
-            <div key={t.id} style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+            <div key={t.id} style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
               <div style={{ flex: '1 1 150px', minWidth: 0 }}>
                 <b style={{ fontSize: 13 }}>{t.dept_name}</b>
                 {/* รูปแบบของทีมนี้มาจาก moFormatHint() — ห้ามพิมพ์รูปแบบซ้ำในหน้า */}

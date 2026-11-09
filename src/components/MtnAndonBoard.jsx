@@ -624,7 +624,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {planned.map(r => (
-                  <span key={r.id} style={{ fontSize: 11 * big, color: 'var(--text2)', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 7, padding: '3px 8px' }}>
+                  <span key={r.id} style={{ fontSize: 11 * big, color: 'var(--text2)', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '3px 8px' }}>
                     {r.machine_no || r.production_sessions?.line_name} · {r.dr_downtime_types?.name_th || ''} · {fmtMin(r._min)}
                   </span>
                 ))}
@@ -726,7 +726,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
         const zLive = zDt.filter(r => r._s.k !== 'planned');
         return (
           <div onClick={() => setZoom(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 720, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', width: '100%', maxWidth: 720, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px 12px', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 19, fontWeight: 900, color: 'var(--text)' }}>{zoom}</div>
@@ -744,7 +744,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
                   {!zDt.length ? <div style={{ fontSize: 12.5, color: 'var(--green)', fontWeight: 700 }}>✅ ไม่มีรายการหยุดค้างของไลน์นี้</div> : (
                     <div style={{ display: 'grid', gap: 6 }}>
                       {zDt.map(r => (
-                        <div key={r.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderLeft: `4px solid ${r._s.color}`, borderRadius: 8, padding: '7px 10px' }}>
+                        <div key={r.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderLeft: `4px solid ${r._s.color}`, borderRadius: 'var(--r-md)', padding: '7px 10px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                             <b style={{ fontSize: 13, color: r.machine_no ? 'var(--text)' : 'var(--accent2)' }}>{r.machine_no || '⚠ ไม่ระบุเครื่อง'}</b>
                             <span style={{ fontSize: 12, color: 'var(--text2)' }}>{r.dr_downtime_types?.name_th || 'ไม่ระบุประเภท'}</span>

@@ -459,7 +459,7 @@ export default function RackCenter() {
                 <div style={{ padding: '16px 8px', textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>—</div>
               ) : (
                 (byStatus[col.key] || []).map(r => (
-                  <div key={r.id} style={{ background: 'var(--bg2)', border: `1px solid ${tint(col.color, 'dim')}`, borderRadius: 10, padding: '10px 12px' }}>
+                  <div key={r.id} style={{ background: 'var(--bg2)', border: `1px solid ${tint(col.color, 'dim')}`, borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                       <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--text)' }}>{r.line_name}</div>
                       <span style={{ fontSize: 11, fontWeight: 800, color: col.color }}>×{r.qty}</span>
@@ -502,12 +502,12 @@ export default function RackCenter() {
         return (
           <>
             <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: `1px solid ${tint(col.color, 'line')}`, borderRadius: 12, boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
+            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: `1px solid ${tint(col.color, 'line')}`, borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
               <div style={{ height: 4, background: col.color }} />
               <div style={{ padding: '10px 14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)' }}>{r.line_name}</span>
-                  <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'var(--bg3)', color: col.color }}>{col.label}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', color: col.color }}>{col.label}</span>
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>{r.container_name} <b>×{r.qty}</b></div>
                 {r.note && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{r.note}</div>}
@@ -536,7 +536,7 @@ export default function RackCenter() {
       {/* Request modal */}
       {showForm && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(420px,100%)' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 24, width: 'min(420px,100%)' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 16, fontFamily: 'var(--font-display)' }}>
               เรียกภาชนะ
             </div>
@@ -616,7 +616,7 @@ function QrScanModal({ onClose, onResult }) {
           <button onClick={onClose} style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 'var(--r-md)', padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
         </div>
         {camErr
-          ? <div style={{ fontSize: 12.5, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '8px 11px', marginBottom: 10 }}>{camErr}</div>
+          ? <div style={{ fontSize: 12.5, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '8px 11px', marginBottom: 10 }}>{camErr}</div>
           : <video ref={videoRef} playsInline muted style={{ width: '100%', borderRadius: 10, background: '#000', marginBottom: 10 }} />}
         <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>ปืนยิงสแกน / วางข้อความ QR แล้วกด Enter</div>
         <input autoFocus value={manual} onChange={e => setManual(e.target.value)}

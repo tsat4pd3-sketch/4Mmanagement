@@ -54,7 +54,7 @@ const stickyCol = { position: 'sticky', left: 0, background: 'var(--card)', zInd
 function StateChip({ state }) {
   const m = CHECK_DAY_META[state]
   if (!m?.mark) return null
-  return <span style={{ display: 'inline-block', padding: '0 3px', borderRadius: 4, border: `1px solid ${m.color}`, color: m.color, fontWeight: 700, lineHeight: '14px', fontSize: 11 }}>{m.mark}</span>
+  return <span style={{ display: 'inline-block', padding: '0 3px', borderRadius: 'var(--r-xs)', border: `1px solid ${m.color}`, color: m.color, fontWeight: 700, lineHeight: '14px', fontSize: 11 }}>{m.mark}</span>
 }
 
 export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
@@ -250,7 +250,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
       </FilterBar>
 
       {err && (
-        <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 10, border: '1px solid var(--red-line)', color: 'var(--red)', fontSize: 12, fontWeight: 700 }}>
+        <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--red-line)', color: 'var(--red)', fontSize: 12, fontWeight: 700 }}>
           ⚠ โหลดรายงาน AM ไม่สำเร็จ: {err} — ตารางไม่แสดง (ไม่ได้แปลว่าไม่มีใครตรวจ) · ลองเปลี่ยนเดือนหรือรีเฟรช
         </div>
       )}
@@ -414,7 +414,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
                     const drift = amSignoffDrift(a.snapshot, r)
                     const rv = revokeVerdict(a, 'x'.repeat(AM_REVOKE_REASON_MIN))
                     return (
-                      <div key={r.line_name} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 8 }}>
+                      <div key={r.line_name} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
                         <b style={{ minWidth: 140, fontSize: 12, color: 'var(--text)' }}>{lineLabel}</b>
                         <span style={{ fontSize: 12, color: 'var(--green)', fontWeight: 700 }}>✅ ลงนามแล้ว</span>
                         <span style={{ fontSize: 12, color: 'var(--text2)' }}>
@@ -446,7 +446,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
                   const w = lineWrite(r.line_name)
                   const why = v.code === 'scope' ? writeBlockText(w, { what: 'การลงนามของไลน์นี้', unit: r.line_name }) : amMonthlySignoffText(v, { opensOn: mc.opensOn })
                   return (
-                    <div key={r.line_name} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '6px 10px', border: '1px dashed var(--border)', borderRadius: 8 }}>
+                    <div key={r.line_name} style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', padding: '6px 10px', border: '1px dashed var(--border)', borderRadius: 'var(--r-md)' }}>
                       <b style={{ minWidth: 140, fontSize: 12, color: 'var(--text)' }}>{lineLabel}</b>
                       <span style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่ลงนาม</span>
                       {revNote}
@@ -477,13 +477,13 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
         return (
           <div className="modal-scroll" onClick={() => { if (!busy && !note.trim()) setSigning(null) }}
             style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 10, width: 'min(520px, 100%)', maxHeight: '90vh', overflowY: 'auto', boxShadow: 'var(--shadow-lg)', padding: 16 }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', width: 'min(520px, 100%)', maxHeight: '90vh', overflowY: 'auto', boxShadow: 'var(--shadow-lg)', padding: 16 }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>✍️ ลงนามทบทวน AM รายเดือน</div>
               <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>
                 ไลน์ <b>{signing.line}</b> · เดือน {month} · {shift === 'day' ? 'กะเช้า' : 'กะดึก'}
               </div>
               {row && (
-                <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 8, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 8 }}>
+                <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 8, padding: '8px 10px', background: 'var(--bg3)', borderRadius: 'var(--r-md)' }}>
                   {checkDaysNote(row.sum)}{row.sum.pct != null ? ` · ความครบ ${row.sum.pct}%` : ''} · NG {row.ngN} ครั้ง · {row.machines.length} เครื่อง
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>ตัวเลขชุดนี้จะถูกบันทึกไว้กับลายเซ็น — แก้ใบตรวจย้อนหลังทีหลัง จอจะเตือนว่าต่างจากที่ลงนาม</div>
                 </div>
@@ -513,7 +513,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
       {revoking && (
         <div className="modal-scroll" onClick={() => { if (!busy && !reason.trim()) setRevoking(null) }}
           style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 10, width: 'min(480px, 100%)', maxHeight: '90vh', overflowY: 'auto', boxShadow: 'var(--shadow-lg)', padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', width: 'min(480px, 100%)', maxHeight: '90vh', overflowY: 'auto', boxShadow: 'var(--shadow-lg)', padding: 16 }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>↩ เพิกถอนลายเซ็นทบทวนรายเดือน</div>
             <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>
               ไลน์ <b>{revoking.line_name}</b> · {month} · ลงนามโดย {revoking.signed_by_name || '—'} เมื่อ {fmtWhen(revoking.signed_at)}

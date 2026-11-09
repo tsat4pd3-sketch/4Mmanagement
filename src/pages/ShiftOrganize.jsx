@@ -467,7 +467,7 @@ export default function ShiftOrganize() {
            — ปุ่มไม่โผล่เพราะ role ไม่มี `shift_schedule:edit` แต่หน้าจอไม่ได้บอกเลย
            คนเลยเข้าใจว่าระบบพัง/ทำไม่เสร็จ = ความล้มเหลวแบบเงียบ) */}
       {!canEdit && canEditDept && (
-        <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 8, padding: '10px 12px', marginBottom: 14, fontSize: 12.5, lineHeight: 1.65 }}>
+        <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 'var(--r-md)', padding: '10px 12px', marginBottom: 14, fontSize: 12.5, lineHeight: 1.65 }}>
           🏢 <b>บัญชีนี้แก้ได้เฉพาะตาราง “หน่วยงานสนับสนุน”</b>{myUnit ? <> — เฉพาะหน่วยงาน <b>{mySection}</b></> : ''} (ตารางล่าง) — ตารางกะไลน์ผลิตด้านบนดูได้อย่างเดียว
           <div style={{ color: 'var(--text2)', marginTop: 3 }}>
             {!myUnit && <>ยังไม่ได้ตั้ง “หน่วยงาน” ให้บัญชีนี้ → แก้ได้ทุกหน่วยงานที่เห็น ·
@@ -487,7 +487,7 @@ export default function ShiftOrganize() {
         <button type="button" className="pg-btn sm pg-btn-icon" onClick={prevWeek}>‹</button>
         <button type="button" className="pg-btn sm" onClick={goToday} >วันนี้</button>
         <button type="button" className="pg-btn sm pg-btn-icon" onClick={nextWeek}>›</button>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 8, background: 'var(--bg3)', border: '1px solid var(--border2)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: '1px solid var(--border2)' }}>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>สัปดาห์</span>
           <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>
             จ. {fmtDate(weekDates[0])} — อา. {fmtDate(weekDates[6])}
@@ -517,7 +517,7 @@ export default function ShiftOrganize() {
       {/* 🔴 ไลน์ที่ยังไม่มีกะในสัปดาห์นี้ — ต้องเห็นก่อนเลื่อนหาเอง (ไลน์ที่มีคนขึ้นก่อน) */}
       {noShiftLines.length > 0 && (
         <div style={{
-          padding: '10px 14px', borderRadius: 8, marginBottom: 10,
+          padding: '10px 14px', borderRadius: 'var(--r-md)', marginBottom: 10,
           background: noShiftPeople ? 'var(--red-dim)' : 'var(--amber-dim)',
           border: `1px solid ${noShiftPeople ? 'var(--red-line)' : 'var(--amber-line)'}`,
           fontSize: 12.5, color: noShiftPeople ? 'var(--red)' : 'var(--amber)',
@@ -527,7 +527,7 @@ export default function ShiftOrganize() {
           <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {noShiftLines.map(l => (
               <span key={l.id} style={{
-                padding: '2px 8px', borderRadius: 999, fontSize: 11.5, fontWeight: 700,
+                padding: '2px 8px', borderRadius: 'var(--r-pill)', fontSize: 11.5, fontWeight: 700,
                 background: 'var(--bg3)', border: '1px solid var(--border)',
                 color: l.n ? 'var(--red)' : 'var(--muted)',
               }}>{l.name}{l.n ? ` · ${l.n} คน` : ' · ไม่มีพนักงาน'}</span>
@@ -578,7 +578,7 @@ export default function ShiftOrganize() {
                   <td style={{ textAlign: 'center' }}>
                     {team ? (
                       <span style={{
-                        display: 'inline-block', padding: '5px 20px', borderRadius: 7,
+                        display: 'inline-block', padding: '5px 20px', borderRadius: 'var(--r-md)',
                         fontSize: 14, fontWeight: 800,
                         background: team === 'A' ? 'var(--green-dim)' : 'var(--amber-dim)',
                         color:      team === 'A' ? 'var(--green)'              : 'var(--amber)',
@@ -595,7 +595,7 @@ export default function ShiftOrganize() {
                   <td style={{ textAlign: 'center' }}>
                     {night ? (
                       <span style={{
-                        display: 'inline-block', padding: '5px 20px', borderRadius: 7,
+                        display: 'inline-block', padding: '5px 20px', borderRadius: 'var(--r-md)',
                         fontSize: 14, fontWeight: 800,
                         background: night === 'A' ? 'var(--green-dim)' : 'var(--amber-dim)',
                         color:      night === 'A' ? 'var(--green-line)'  : 'var(--amber-line)',
@@ -692,7 +692,7 @@ export default function ShiftOrganize() {
                       <td style={{ textAlign: 'center' }}>
                         {team ? (
                           <span style={{
-                            display: 'inline-block', padding: '5px 20px', borderRadius: 7, fontSize: 14, fontWeight: 800,
+                            display: 'inline-block', padding: '5px 20px', borderRadius: 'var(--r-md)', fontSize: 14, fontWeight: 800,
                             background: team === 'A' ? 'var(--green-dim)' : 'var(--amber-dim)',
                             color:      team === 'A' ? 'var(--green)'              : 'var(--amber)',
                             border: isPending ? `2px solid ${team === 'A' ? 'var(--green)' : 'var(--amber)'}` : '1px solid transparent',
@@ -702,7 +702,7 @@ export default function ShiftOrganize() {
                       <td style={{ textAlign: 'center' }}>
                         {night ? (
                           <span style={{
-                            display: 'inline-block', padding: '5px 20px', borderRadius: 7, fontSize: 14, fontWeight: 800,
+                            display: 'inline-block', padding: '5px 20px', borderRadius: 'var(--r-md)', fontSize: 14, fontWeight: 800,
                             background: night === 'A' ? 'var(--green-dim)' : 'var(--amber-dim)',
                             color:      night === 'A' ? 'var(--green-line)'  : 'var(--amber-line)',
                             border: '1px solid transparent',
@@ -796,7 +796,7 @@ export default function ShiftOrganize() {
                 <td style={{ fontSize: 13 }}>{o.employees?.name}</td>
                 <td style={{ textAlign: 'center' }}>
                   <span style={{
-                    padding: '3px 10px', borderRadius: 5, fontSize: 12, fontWeight: 700,
+                    padding: '3px 10px', borderRadius: 'var(--r-xs)', fontSize: 12, fontWeight: 700,
                     background: o.shift === 'day' ? 'var(--amber-dim)' : 'var(--blue-dim)',
                     color: o.shift === 'day' ? 'var(--amber)' : 'var(--blue)',
                   }}>
@@ -860,13 +860,13 @@ export default function ShiftOrganize() {
                   <td>
                     <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>{scopeLabel}</span>
                     {cnt !== null && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--muted)' }}>({cnt} คน)</span>}
-                    {isActive && <span style={{ marginLeft: 6, fontSize: 11, padding: '2px 6px', borderRadius: 4, background: 'var(--red-dim)', color: 'var(--red)', fontWeight: 700 }}>กำลังใช้งาน</span>}
+                    {isActive && <span style={{ marginLeft: 6, fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-xs)', background: 'var(--red-dim)', color: 'var(--red)', fontWeight: 700 }}>กำลังใช้งาน</span>}
                   </td>
                   <td style={{ textAlign: 'center', fontSize: 13, whiteSpace: 'nowrap' }}>{evt.start_date}</td>
                   <td style={{ textAlign: 'center', fontSize: 13, whiteSpace: 'nowrap' }}>{evt.end_date}</td>
                   <td style={{ textAlign: 'center' }}>
                     <span style={{
-                      padding: '3px 10px', borderRadius: 5, fontSize: 12, fontWeight: 700,
+                      padding: '3px 10px', borderRadius: 'var(--r-xs)', fontSize: 12, fontWeight: 700,
                       background: evt.target_shift === 'day' ? 'var(--amber-dim)' : 'var(--blue-dim)',
                       color: evt.target_shift === 'day' ? 'var(--amber)' : 'var(--blue)',
                     }}>
@@ -961,7 +961,7 @@ export default function ShiftOrganize() {
 
               {/* Preview */}
               {(mrgScope === 'section' ? mrgSection : mrgLineId) && (
-                <div style={{ padding: '10px 14px', borderRadius: 8, background: 'var(--red-dim)', border: '1px solid var(--red-dim)', fontSize: 12 }}>
+                <div style={{ padding: '10px 14px', borderRadius: 'var(--r-md)', background: 'var(--red-dim)', border: '1px solid var(--red-dim)', fontSize: 12 }}>
                   <strong>ผลกระทบ:</strong>{' '}
                   {mrgScope === 'section'
                     ? `พนักงานทุกคนใน ${mrgSection} (${employees.filter(e => e.production_lines?.section === mrgSection).length} คน)`

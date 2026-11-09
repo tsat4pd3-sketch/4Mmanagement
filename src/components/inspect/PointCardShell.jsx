@@ -21,10 +21,10 @@ export default function PointCardShell({
     if (f) closeup.onPick(f)
   }
   return (
-    <div style={{ background: 'var(--bg3)', border: `1px solid ${isPinning ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 8, padding: 14, opacity: inactive ? 0.55 : 1 }}>
+    <div style={{ background: 'var(--bg3)', border: `1px solid ${isPinning ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: 14, opacity: inactive ? 0.55 : 1 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ minWidth: 20, height: 20, padding: '0 4px', borderRadius: 10, background: 'var(--bg2)', color: 'var(--muted)', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{label}</span>
+          <span style={{ minWidth: 20, height: 20, padding: '0 4px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{label}</span>
           <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>{caption}</span>
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>

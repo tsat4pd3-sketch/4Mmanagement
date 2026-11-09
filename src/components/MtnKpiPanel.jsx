@@ -83,7 +83,7 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
 
   // h = คำแปลของชื่อย่อสากล — ต้องอ่านได้บนจอเลย ห้ามซ่อนใน tooltip อย่างเดียว (จอ TV ไม่มี hover)
   const Card = ({ t, v, c, h }) => (
-    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, flex: 1, minWidth: 170 }}>
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 14, flex: 1, minWidth: 170 }}>
       <div style={{ fontSize: 12, color: 'var(--muted)' }}>{t}</div>
       <div style={{ fontSize: 26, fontWeight: 800, color: c || 'var(--text)', marginTop: 2 }}>{v}</div>
       {h && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.45 }}>{h}</div>}
@@ -134,7 +134,7 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
           c={stat.satOverall == null ? 'var(--muted)' : stat.satOverall >= 2.5 ? '#22c55e' : stat.satOverall >= 2 ? '#f59e0b' : '#ef4444'} />
       </div>
       {stat.satN > 0 && (
-        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14, marginBottom: 16 }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 14, marginBottom: 16 }}>
           <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>ความพึงพอใจบริการซ่อม รายด้าน (KPI หน่วยงานซ่อม)</div>
           {stat.satByDim.map(d => {
             const pct = d.avg != null ? Math.round(d.avg / 3 * 100) : 0;
@@ -142,7 +142,7 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
             return (
               <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
                 <div style={{ width: 200, fontSize: 12.5, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.label}</div>
-                <div style={{ flex: 1, height: 16, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: col }} /></div>
+                <div style={{ flex: 1, height: 16, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: col }} /></div>
                 <div style={{ width: 70, textAlign: 'right', fontSize: 12.5, fontWeight: 700, color: col }}>{d.avg != null ? `${d.avg.toFixed(2)}/3` : '—'}</div>
               </div>
             );

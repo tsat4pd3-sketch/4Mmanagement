@@ -169,14 +169,14 @@ export default function OrgTreeView({ nodes = [], scopeCtx = {}, canEdit = false
       <>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap',
           padding: '5px 8px', marginLeft: depth * 22, borderLeft: depth ? '2px solid var(--border2)' : 'none',
-          background: depth === 0 ? 'var(--bg3)' : 'transparent', borderRadius: 7, marginBottom: 2,
+          background: depth === 0 ? 'var(--bg3)' : 'transparent', borderRadius: 'var(--r-md)', marginBottom: 2,
           opacity: n.is_active === false ? 0.55 : 1 }}>
           <span style={{ fontSize: 13 }}>{meta.icon}</span>
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{n.name}</span>
           {n.code && n.code !== n.name && (
             <span style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace' }}>({n.code})</span>
           )}
-          <span style={{ fontSize: 11, fontWeight: 700, padding: '0 6px', borderRadius: 5,
+          <span style={{ fontSize: 11, fontWeight: 700, padding: '0 6px', borderRadius: 'var(--r-xs)',
             background: `${meta.color}1f`, color: meta.color, border: `1px solid ${meta.color}55` }}>
             {meta.th}{meta.level ? ` · เลเวล ${meta.level}` : ''}
           </span>

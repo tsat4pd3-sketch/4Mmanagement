@@ -118,11 +118,11 @@ export default function EnergyMqttTopics({ points, canEdit }) {
     <div style={{ display: 'grid', gap: 14 }}>
       {/* ⚠️ สถานะระบบ — เรื่องสำคัญที่สุดของหน้านี้ ต้องอยู่บนสุดและอ่านไม่ผิด */}
       {missing ? (
-        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 8, padding: '10px 12px', fontSize: 12.5 }}>
+        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 'var(--r-md)', padding: '10px 12px', fontSize: 12.5 }}>
           ⚠️ <b>ยังไม่ได้ apply migration <code>20260820_energy_mqtt_topics</code></b> — ยังเพิ่ม topic ไม่ได้ (แจ้ง admin)
         </div>
       ) : !bridgeAlive ? (
-        <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, lineHeight: 1.65 }}>
+        <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 'var(--r-md)', padding: '10px 12px', fontSize: 12.5, lineHeight: 1.65 }}>
           📡 <b>ยังไม่มีข้อมูลเข้ามาจากมิเตอร์</b>
           {newestAge != null && <> (ล่าสุดเมื่อ {newestAge} นาทีที่แล้ว — เกิน {LIVE_STALE_MIN} นาที ถือว่าขาดการติดต่อ)</>}
           <div style={{ marginTop: 4, color: 'var(--text2)' }}>
@@ -133,7 +133,7 @@ export default function EnergyMqttTopics({ points, canEdit }) {
           </div>
         </div>
       ) : (
-        <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', borderRadius: 8, padding: '10px 12px', fontSize: 12.5 }}>
+        <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', borderRadius: 'var(--r-md)', padding: '10px 12px', fontSize: 12.5 }}>
           ✅ <b>ระบบกำลังรับข้อมูลอยู่</b> — ค่าล่าสุดเข้ามาเมื่อ {newestAge} นาทีที่แล้ว
         </div>
       )}

@@ -150,7 +150,7 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
   return (
     <div className="overlay" style={{ zIndex: 2200 }} /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */>
       <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14,
+        background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)',
         padding: 20, width: 'min(96vw, 640px)', maxHeight: '90vh', overflowY: 'auto' }}>
 
         <div style={{ fontSize: 15.5, fontWeight: 800, color: 'var(--text)', marginBottom: 3 }}>
@@ -172,7 +172,7 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
           const r = rows[b.key];
           return (
             <div key={b.key} style={{
-              border: `1px solid ${r.on ? b.color : 'var(--border)'}`, borderRadius: 10,
+              border: `1px solid ${r.on ? b.color : 'var(--border)'}`, borderRadius: 'var(--r-md)',
               padding: 12, marginBottom: 10, background: r.on ? 'var(--bg2)' : 'transparent' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
                 <input type="checkbox" checked={r.on} onChange={e => set(b.key, { on: e.target.checked })}
@@ -259,7 +259,7 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
         {/* ✅ สร้างใบแล้ว — บอกว่าไปดู/กรอกต่อที่ไหน แทนการปิดหน้าต่างเงียบ (เดิมคนหาใบของตัวเองไม่เจอ) */}
         {created && (
           <div style={{ border: '1px solid rgba(34,197,94,0.45)', background: 'rgba(34,197,94,0.1)',
-            borderRadius: 10, padding: 14, fontSize: 12.5, color: 'var(--text)', lineHeight: 1.7 }}>
+            borderRadius: 'var(--r-md)', padding: 14, fontSize: 12.5, color: 'var(--text)', lineHeight: 1.7 }}>
             <b style={{ color: '#22c55e', fontSize: 13.5 }}>✅ ลงถังเรียบร้อย</b>
             {created.map(c => (
               <div key={c.key}>{c.icon} {c.name} — {c.qty.toLocaleString('th-TH')} ชิ้น</div>

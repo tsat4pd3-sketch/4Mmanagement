@@ -107,7 +107,7 @@ function Kpi({ label, value, sub, color }) {
 function ChartTip({ active, payload, label, fmt }) {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: 12 }}>
+    <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px', fontSize: 12 }}>
       <div style={{ fontWeight: 700, marginBottom: 4, color: 'var(--text)' }}>{label}</div>
       {payload.map(p => (
         <div key={p.dataKey} style={{ color: p.color }}>{p.name}: {fmt ? fmt(p.value) : p.value?.toLocaleString?.() ?? p.value}</div>
@@ -243,7 +243,7 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
       </TimeRangeBar>
 
       {partial && (
-        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(224,92,74,0.1)', border: '1px solid rgba(224,92,74,0.3)', fontSize: 12, color: 'var(--red)' }}>
+        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', background: 'rgba(224,92,74,0.1)', border: '1px solid rgba(224,92,74,0.3)', fontSize: 12, color: 'var(--red)' }}>
           ⚠ โหลดข้อมูลบางส่วนไม่สำเร็จ — ตัวเลขด้านล่างอาจไม่ครบ
         </div>
       )}
@@ -405,7 +405,7 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
       </TimeRangeBar>
 
       {partial && (
-        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(224,92,74,0.1)', border: '1px solid rgba(224,92,74,0.3)', fontSize: 12, color: 'var(--red)' }}>
+        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', background: 'rgba(224,92,74,0.1)', border: '1px solid rgba(224,92,74,0.3)', fontSize: 12, color: 'var(--red)' }}>
           ⚠ โหลดข้อมูลบางส่วนไม่สำเร็จ — ตัวเลขด้านล่างอาจไม่ครบ
         </div>
       )}
@@ -589,12 +589,12 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
       </FilterBar>
 
       {partial && (
-        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(224,92,74,0.1)', border: '1px solid rgba(224,92,74,0.3)', fontSize: 12, color: 'var(--red)' }}>
+        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', background: 'rgba(224,92,74,0.1)', border: '1px solid rgba(224,92,74,0.3)', fontSize: 12, color: 'var(--red)' }}>
           ⚠ โหลดประวัติการออกงานไม่ครบ — ตัวเลขในแท็บนี้อาจไม่ครบ
         </div>
       )}
 
-      <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 8, background: 'rgba(245,154,63,0.08)', border: '1px solid rgba(245,154,63,0.3)', fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
+      <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 'var(--r-md)', background: 'rgba(245,154,63,0.08)', border: '1px solid rgba(245,154,63,0.3)', fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
         ⚠️ <b>ระบบเริ่มบันทึกวันที่ "ออกงาน" อัตโนมัติตั้งแต่ 2026-08-07</b> — พนักงานที่ inactive ก่อนหน้านั้นจะ<b>ไม่มีวันที่ออกให้ดู</b> (ไม่ใช่ว่าไม่เคยออก)
         {' · '}ในขอบเขตที่เลือกตอนนี้: รู้วันที่ออก <b style={{ color: 'var(--text)' }}>{knownExits.length}</b> คน · ไม่ทราบวันที่ออก <b style={{ color: 'var(--text)' }}>{unknownExits.length}</b> คน
         {anomalousInScope.length > 0 && <><br />⚠️ พบพนักงาน <b style={{ color: 'var(--red)' }}>{anomalousInScope.length}</b> คนที่วันที่เริ่มงานผิดปกติ (เช่น กรอกปี พ.ศ. ลงช่องปี ค.ศ.) — ไม่รวมในกราฟ/อายุงานด้านล่าง ไปแก้ที่หน้า <a href="/operator" style={{ color: 'var(--blue)' }}>ฐานข้อมูลพนักงาน</a></>}
@@ -632,7 +632,7 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
             {bySection.map(s => (
               <div key={s.section} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
                 <span style={{ width: 110, flexShrink: 0 }}>{s.section}</span>
-                <div style={{ flex: 1, background: 'var(--bg3)', borderRadius: 4, height: 14, overflow: 'hidden' }}>
+                <div style={{ flex: 1, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', height: 14, overflow: 'hidden' }}>
                   <div style={{ width: `${(s.n / bySection[0].n) * 100}%`, height: '100%', background: 'var(--red)' }} />
                 </div>
                 <span style={{ fontWeight: 700, minWidth: 20, textAlign: 'right' }}>{s.n}</span>
@@ -673,7 +673,7 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>คนกลุ่มนี้อาจออกก่อน 2026-08-07 (ก่อนระบบเริ่มบันทึก) — แสดงไว้เพื่อไม่ให้ตกหล่น ไม่ใช่ข้อมูลใหม่</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {unknownExits.map(x => (
-              <span key={x.emp.id} style={{ fontSize: 11.5, padding: '3px 8px', borderRadius: 6, background: 'var(--bg3)', color: 'var(--text2)' }}>
+              <span key={x.emp.id} style={{ fontSize: 11.5, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', color: 'var(--text2)' }}>
                 {x.emp.name} <span style={{ color: 'var(--muted)' }}>{x.emp.employee_id_code}</span>
               </span>
             ))}
@@ -885,7 +885,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
               {coverage.missingDays.map(d => (
                 <span key={d.date} title={d.hasBooking ? 'ไม่มีเช็คชื่อ แต่มีใบจอง OT' : 'ไม่มีข้อมูลเลย'}
                   style={{
-                    fontSize: 11, padding: '2px 7px', borderRadius: 6, background: 'var(--bg3)',
+                    fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-md)', background: 'var(--bg3)',
                     color: d.kind.holiday ? 'var(--red)' : 'var(--text2)',
                     border: d.hasBooking ? '1px dashed var(--accent2)' : '1px solid transparent',
                   }}>
@@ -907,7 +907,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
           <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>ยังไม่เกิน แต่กำลังจะเกิน ({willExceed.length} คน)</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {willExceed.slice(0, 30).map(r => (
-              <span key={r.employeeId} style={{ fontSize: 11.5, padding: '3px 8px', borderRadius: 6, background: 'var(--bg3)' }}>
+              <span key={r.employeeId} style={{ fontSize: 11.5, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)' }}>
                 {r.emp?.name} <b style={{ color: 'var(--accent2)' }}>{r.total}→{r.projected}</b>
               </span>
             ))}
@@ -971,7 +971,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
                           {r.days.map(d => (
                             <span key={d.date} title={d.tasks.join(' · ') || 'ไม่ระบุงาน'}
                               style={{
-                                fontSize: 11.5, padding: '3px 8px', borderRadius: 6, background: 'var(--bg3)',
+                                fontSize: 11.5, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)',
                                 color: dayChipColor(d.kind), border: '1px solid var(--border)',
                               }}>
                               {d.date.slice(8)}/{d.date.slice(5, 7)}{!d.viaLog ? ' 📋' : ''}
@@ -998,7 +998,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
               return (
                 <div key={t.name} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
                   <span style={{ minWidth: 190 }}>{t.name}</span>
-                  <div style={{ flex: 1, height: 10, background: 'var(--bg3)', borderRadius: 5, overflow: 'clip' }}>
+                  <div style={{ flex: 1, height: 10, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', overflow: 'clip' }}>
                     <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent)' }} />
                   </div>
                   <span style={{ fontWeight: 700, minWidth: 56, textAlign: 'right' }}>{t.n} วัน-คน</span>

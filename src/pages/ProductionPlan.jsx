@@ -36,6 +36,7 @@ import { buildBomIndex, explodeBom } from '../utils/bomTree';
 import { explodeDemand, netOffBuffer } from '../utils/demandExplode';
 import { scheduleBackward, makePrevWorkDay } from '../utils/backwardPlan';
 import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
+import NoticeBar from '../components/NoticeBar';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ═══ วางแผนการผลิต (Active Planner) — 🗓️ /production-plan ══════════════════
@@ -681,10 +682,7 @@ export default function ProductionPlan() {
 
       {/* ⚠️ โหลดไม่ครบ = ทั้งกำลังผลิตและความต้องการต่ำกว่าจริง → verdict อาจบอก "กะเช้าพอ" ผิด */}
       {planWarn && (
-        <div style={{
-          margin: '0 0 12px', padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700,
-          background: 'var(--red-dim)', border: '1px solid var(--red-line)', color: 'var(--red)',
-        }}>⚠ {planWarn}</div>
+        <NoticeBar tone="bad" style={{ margin: '0 0 12px' }}>{planWarn}</NoticeBar>
       )}
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
         กำลังผลิตคำนวณจาก <b>median ยอดดีจริงต่อกะ</b> ใน {HISTORY_DAYS} วันล่าสุด (ตัดค่าโดดอัตโนมัติ) · พาร์ทที่ไม่มีประวัติ fallback เป็น cycle time × OEE
@@ -735,7 +733,7 @@ export default function ProductionPlan() {
         const mine = late.filter(l => lineOfMat(l.mat_no));      // เฉพาะที่เป็นงานของไลน์ใน scope
         const show = (mine.length ? mine : late).slice(0, 6);
         return (
-          <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+          <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
             🚨 <b style={{ color: 'var(--red)' }}>สายแล้ว {late.length} รายการ</b> — ไล่ย้อนจากวันส่งแล้ว ต้องเริ่มผลิตตั้งแต่ก่อนวันนี้
             <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 11.5, display: 'grid', gap: 2 }}>
               {show.map((l, i) => (
@@ -757,7 +755,7 @@ export default function ProductionPlan() {
 
       {/* 🧹 worklist ให้ PE/Planning — ระบบไม่แก้ข้อมูลให้เอง (กฎของ bomTree.js) */}
       {!loading && useBom && demandPcs.bom?.flatDupes?.length > 0 && (
-        <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+        <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
           🧹 <b>BOM แบนซ้ำ {demandPcs.bom.flatDupes.length} จุด</b> — ชิ้นเดียวกันถูกใส่ไว้ทั้งชั้น 1 และในชั้นลึกของใบเดียวกัน
           <div style={{ marginTop: 3, color: 'var(--muted)', fontSize: 11.5 }}>
             แผนนี้ <b>ต่อโซ่แบบ SAP</b> (นับครั้งเดียว ไม่นับแถวชั้น 1 ที่ซ้ำ) — ตัวเลขจึงถูกแล้ว
@@ -770,13 +768,13 @@ export default function ProductionPlan() {
         </div>
       )}
       {!loading && useBom && demandPcs.bom?.cycles > 0 && (
-        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--red)', fontWeight: 700 }}>
-          ⛔ BOM วนลูป {demandPcs.bom.cycles} จุด — ระบบตัดการไล่ชั้นทิ้งเพื่อไม่ให้ค้าง ⇒ ความต้องการของกิ่งนั้นอาจขาด (ไปแก้ที่ /products แท็บ BOM)
-        </div>
+        <NoticeBar tone="bad" style={{ marginBottom: 0 }}>
+          BOM วนลูป {demandPcs.bom.cycles} จุด — ระบบตัดการไล่ชั้นทิ้งเพื่อไม่ให้ค้าง ⇒ ความต้องการของกิ่งนั้นอาจขาด (ไปแก้ที่ /products แท็บ BOM)
+        </NoticeBar>
       )}
 
       {!loading && demandGaps.noLine > 0 && (
-        <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+        <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
           ⚠️ <b>{demandGaps.noLine} รายการความต้องการยังไม่ถูกนับในแผน</b> — พาร์ท {demandGaps.noLineParts.size} ตัวนี้<b>ยังไม่ได้ผูกไลน์ผลิต</b> (หรือชื่อไลน์ไม่มีในทะเบียนไลน์)
           <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 11.5, wordBreak: 'break-word' }}>
             {[...demandGaps.noLineParts].slice(0, 8).join(' · ')}{demandGaps.noLineParts.size > 8 ? ' …' : ''}
@@ -791,7 +789,7 @@ export default function ProductionPlan() {
       )}
 
       {!loading && (unmapped.orders > 0 || unmapped.fcParts.size > 0) && (
-        <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+        <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontSize: 12.5, color: 'var(--text)' }}>
           ⚠️ <b>ยังจับคู่เลข SAP ไม่ได้ {unmapped.orders} ออเดอร์ · {unmapped.parts.size} พาร์ท{unmapped.fcParts.size > 0 ? ` · forecast ${unmapped.fcParts.size} พาร์ท` : ''}</b> — พาร์ทเหล่านี้**ไม่ถูกนับในแผน** (ยังไม่ได้ตั้ง `p_no`/SAP ใน Product Master ให้ตรงเลขลูกค้า)
           {unmapped.parts.size > 0 && <div style={{ marginTop: 4, color: 'var(--muted)', fontSize: 11.5, wordBreak: 'break-word' }}>ตัวอย่าง: {[...unmapped.parts].slice(0, 8).join(' · ')}{unmapped.parts.size > 8 ? ' …' : ''}</div>}
           <div style={{ marginTop: 3, color: 'var(--muted)', fontSize: 11.5 }}>→ ไปตั้ง p_no ที่หน้า Product Master หรือใช้ปุ่ม 🔗 จับคู่เลข SAP ในหน้า Planner &amp; Sales</div>
@@ -801,7 +799,7 @@ export default function ProductionPlan() {
       {/* 🌑 ไลน์ที่ไม่มีความต้องการในระบบเลย — เดิมถูกกรองทิ้งทั้งไลน์ ⇒ จอว่างอ่านได้ว่า "ไลน์ว่าง"
            ทั้งที่ความจริงคือ "ยังไม่มีทางรับ order ของลูกค้าเจ้านั้นเข้าระบบ" (วัดจริง 22/09: 10 จาก 22 ไลน์) */}
       {!loading && tab === 'plan' && cap === 'day' && mode === 'chart' && silentLines.length > 0 && (
-        <div style={{ background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: 'var(--text2)' }}>
+        <div style={{ background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontSize: 12.5, color: 'var(--text2)' }}>
           🌑 <b>{silentLines.length} ไลน์ยังไม่มีข้อมูลความต้องการ</b> — ไม่ใช่ "ไลน์ว่าง" แต่คือยังไม่มี order/forecast ของพาร์ทในไลน์นี้เข้าระบบ
           <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: '4px 10px', fontSize: 11.5 }}>
             {silentLines.slice(0, 12).map(l => (
@@ -940,7 +938,7 @@ export default function ProductionPlan() {
                     style={{ flexShrink: 0, width: 40, textAlign: 'center' }}>
                     <div style={{ fontSize: 11, color: d.sd75 ? 'var(--blue)' : d.holiday ? 'var(--red)' : 'var(--muted)' }}>{['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'][dd.getDay()]}</div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)' }}>{dd.getDate()}</div>
-                    <div style={{ height: 26, marginTop: 2, borderRadius: 5, background: top ? `${tint(top.color, 'dim')}` : (d.holiday ? 'var(--bg3)' : 'var(--bg2)'), border: `1px solid ${top ? top.color : 'var(--border2)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>
+                    <div style={{ height: 26, marginTop: 2, borderRadius: 'var(--r-xs)', background: top ? `${tint(top.color, 'dim')}` : (d.holiday ? 'var(--bg3)' : 'var(--bg2)'), border: `1px solid ${top ? top.color : 'var(--border2)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}>
                       {top === PLAN_META.holiday_work ? '⚠' : top === PLAN_META.recall75 ? '⚡' : top === PLAN_META.night ? '🌙' : top === PLAN_META.ot ? '⏰' : top === PLAN_META.day ? '☀' : (d.holiday ? '·' : '')}
                     </div>
                   </div>

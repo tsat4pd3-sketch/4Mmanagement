@@ -197,7 +197,7 @@ export default function OrgScopePicker({
           )
           : (
             <span title={ccHint.title}
-              style={{ padding: '3px 8px', fontSize: 11.5, borderRadius: 999, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--muted)' }}>
+              style={{ padding: '3px 8px', fontSize: 11.5, borderRadius: 'var(--r-pill)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--muted)' }}>
               {ccHint.text}
             </span>
           ))}

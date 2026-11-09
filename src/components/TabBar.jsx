@@ -78,7 +78,7 @@ export default function TabBar({ tabs, value, onChange, size, audit = false, cla
           <span aria-hidden="true" {...(audit ? { 'data-tab-ind': '' } : {})} style={{
             position: 'absolute', left: 0, top: 0, width: ind.w, height: 2,
             transform: `translate3d(${ind.x}px, ${ind.y + ind.h - 2}px, 0)`,
-            borderRadius: 2, background: 'var(--accent)', transition: slide, pointerEvents: 'none', zIndex: 1,
+            borderRadius: 'var(--r-xs)', background: 'var(--accent)', transition: slide, pointerEvents: 'none', zIndex: 1,
           }} />
         )}
         {tabList.map(t => {

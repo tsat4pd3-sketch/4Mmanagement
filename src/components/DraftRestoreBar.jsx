@@ -6,7 +6,7 @@ export default function DraftRestoreBar({ draft, what = 'ใบนี้', onRes
   if (!draft) return null;
   return (
     <div role="status" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, padding: '10px 12px', margin: '0 0 12px',
-      borderRadius: 10, border: '1.5px solid #f59e0b', background: 'rgba(245,158,11,0.12)' }}>
+      borderRadius: 'var(--r-md)', border: '1.5px solid #f59e0b', background: 'rgba(245,158,11,0.12)' }}>
       <div style={{ flex: '1 1 180px', minWidth: 0, fontSize: 13, color: 'var(--text)', lineHeight: 1.45 }}>
         📝 <b>มีงานที่กรอกค้างไว้ใน{what}</b> (เก็บไว้ในเครื่องนี้ {draftTimeText(draft.at)} น.) — ยังไม่ได้บันทึกเข้าระบบ
       </div>

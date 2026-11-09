@@ -405,7 +405,7 @@ export default function PMSchedule() {
       {/* 🏃 แผนที่นับรอบจาก "วันเดินเครื่อง" — จอต้องบอกตรงๆ ว่ากันออกจากคิวกี่รายการเพราะอะไร
           (กฎความซื่อสัตย์ของจอ: ห้ามแค่หายไปเฉยๆ ให้คนเข้าใจว่า "ตรวจครบแล้ว") */}
       {!loading && runDayRows.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 16, borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--bg3)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 16, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)' }}>
           <span style={{ fontSize: 13, color: 'var(--text2)', flex: '1 1 320px', lineHeight: 1.6 }}>
             🏃 <b style={{ color: 'var(--text)' }}>{runDayRows.length}</b> รายการนับรอบจาก <b>วันที่เดินเครื่อง</b> —
             วันที่ไลน์ไม่ได้เปิดใบผลิตจะไม่นับและไม่ขึ้นค้าง
@@ -426,7 +426,7 @@ export default function PMSchedule() {
       {/* ⚠️ แผนที่ไม่มีวันครบกำหนด = ระบบเตือนล่วงหน้าไม่ได้ (feedback 2026-09-23 "ตั้งไม่ได้ว่าครั้งถัดไปจะ PM เมื่อไหร่")
           ห้ามซ่อน — บอกจำนวน + ปุ่มตั้งทีเดียวหลายรายการ */}
       {!loading && noDue.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 16, borderRadius: 10, border: '1px solid #f59a3f55', background: '#f59a3f14' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 14px', marginBottom: 16, borderRadius: 'var(--r-md)', border: '1px solid #f59a3f55', background: '#f59a3f14' }}>
           <span style={{ fontSize: 13, color: 'var(--text)', flex: '1 1 260px' }}>
             ⚠️ <b>{noDue.length}</b> รายการยังไม่มีวัน PM ครั้งถัดไป
             <span style={{ color: 'var(--muted)' }}> ({noDue.filter(r => !r.cycle).length} ยังไม่ตั้งรอบ · {noDue.filter(r => r.cycle).length} มีรอบแต่ยังไม่เคยตรวจ) — ระบบเตือนล่วงหน้าไม่ได้</span>
@@ -444,7 +444,7 @@ export default function PMSchedule() {
           <button onClick={() => setScanOpen(true)} title="สแกนป้าย QR ที่เครื่อง → ดูเฉพาะแผนของเครื่องนั้น"
             style={{ ...S.actionBtn(deptColor), fontSize: 13, fontWeight: 800, minHeight: 36 }}>สแกนเครื่อง</button>
           {focusEq && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, padding: '4px 6px 4px 12px', borderRadius: 999, border: '1px solid var(--accent)', background: 'var(--bg3)' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 12.5, padding: '4px 6px 4px 12px', borderRadius: 'var(--r-pill)', border: '1px solid var(--accent)', background: 'var(--bg3)' }}>
               {focusName ? <>เฉพาะ <b>{focusName}</b> ({shownRows.length} แผน)</> : <b style={{ color: '#f59a3f' }}>ไม่พบแผนของอุปกรณ์นี้ในทีมนี้</b>}
               <button onClick={() => setParams({ focus: null })} style={{ fontSize: 12, padding: '2px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--text2)', cursor: 'pointer' }}>ทั้งหมด</button>
             </span>
@@ -539,12 +539,12 @@ export default function PMSchedule() {
                       )}
                       {isUsage && (
                         <div style={{ marginTop: 3, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: reason === 'usage' ? '#4aa3e0' : 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px' }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: reason === 'usage' ? '#4aa3e0' : 'var(--muted)', background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-xs)', padding: '1px 5px' }}>
                             {reason === 'usage' ? '📈 ตามการใช้งาน' : '🗓️ ตามเวลา'}
                           </span>
                           {health != null && (
                             <span title="สุขภาพ (ยิ่งต่ำยิ่งใกล้ครบตามยอดผลิต)" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                              <span style={{ width: 44, height: 5, background: 'var(--bg2)', borderRadius: 3, overflow: 'hidden', display: 'inline-block' }}>
+                              <span style={{ width: 44, height: 5, background: 'var(--bg2)', borderRadius: 'var(--r-xs)', overflow: 'hidden', display: 'inline-block' }}>
                                 <span style={{ display: 'block', height: '100%', width: `${Math.max(0, Math.min(100, health))}%`, background: healthColor }} />
                               </span>
                               <span style={{ fontSize: 11, color: healthColor }}>{Math.round(health)}%</span>
@@ -674,7 +674,7 @@ function CycleModal({ rows, byName, byUid, deptWrite, onClose, onSaved }) {
   const chip = (on) => ({ padding: '6px 12px', borderRadius: 16, fontSize: 12.5, fontWeight: 700, cursor: 'pointer', border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent-dim)' : 'var(--bg3)', color: on ? 'var(--accent)' : 'var(--text2)' })
   return (
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, width: 'min(520px,96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 20, width: 'min(520px,96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>ตั้งรอบ PM / วัน PM ครั้งถัดไป</div>
         <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 14 }}>
           {single
@@ -704,7 +704,7 @@ function CycleModal({ rows, byName, byUid, deptWrite, onClose, onSaved }) {
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.6 }}>{BASIS_HINT[basis]}</div>
 
         {isRunDay && (
-          <div style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--bg3)' }}>
+          <div style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text2)', flexWrap: 'wrap' }}>
               จอดเกิน
               <input type="number" min="1" max="3650" value={maxIdle} onChange={e => setMaxIdle(e.target.value)} style={{ ...inp, width: 80 }} aria-label="เพดานวันจอด (วัน)" />
@@ -735,7 +735,7 @@ function CycleModal({ rows, byName, byUid, deptWrite, onClose, onSaved }) {
         </>)}
 
         {!single && (
-          <div style={{ marginTop: 12, border: '1px solid var(--border)', borderRadius: 10, maxHeight: 220, overflowY: 'auto' }}>
+          <div style={{ marginTop: 12, border: '1px solid var(--border)', borderRadius: 'var(--r-md)', maxHeight: 220, overflowY: 'auto' }}>
             <label style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '7px 10px', fontSize: 12.5, fontWeight: 700, background: 'var(--bg3)', position: 'sticky', top: 0 }}>
               <input type="checkbox" checked={picked.size === rows.length} onChange={e => setPicked(e.target.checked ? new Set(rows.map(r => r.cl.id)) : new Set())} /> เลือกทั้งหมด
             </label>
@@ -805,7 +805,7 @@ function DeferModal({ row, byName, byUid, deptWrite, onClose, onSaved }) {
   const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }
   return (
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 20, width: 'min(440px,96vw)' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 20, width: 'min(440px,96vw)' }}>
         <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>⏭ เลื่อนแผน PM</div>
         <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 14 }}>{eqName}{row.eq?.line_name ? ` · ${row.eq.line_name}` : ''} · ครบกำหนดเดิม {curDue ? new Date(curDue).toLocaleDateString('th-TH') : '—'}</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -913,7 +913,7 @@ function TimelineView({ rows, today, onCheck }) {
                   </div>
                 ) : (
                   <>
-                    <div style={{ position: 'absolute', left: 0, width: `${x}%`, top: '50%', height: 4, transform: 'translateY(-50%)', background: `${tint(meta.color, 'line')}`, borderRadius: 2 }} />
+                    <div style={{ position: 'absolute', left: 0, width: `${x}%`, top: '50%', height: 4, transform: 'translateY(-50%)', background: `${tint(meta.color, 'line')}`, borderRadius: 'var(--r-xs)' }} />
                     <div style={{ position: 'absolute', left: `${x}%`, top: '50%', transform: 'translate(-50%,-50%)', width: 14, height: 14, borderRadius: '50%', background: meta.color, border: '2px solid var(--card)', boxShadow: `0 0 0 1.5px ${meta.color}` }} />
                     <span style={labelLeft
                       ? { position: 'absolute', left: `calc(${x}% + 13px)`, top: '50%', transform: 'translateY(-50%)', fontSize: 11.5, color: 'var(--text2)', whiteSpace: 'nowrap' }
@@ -961,7 +961,7 @@ function CalendarView({ rows, insps = [], today, onCheck }) {
     <div>
       {overdue.length > 0 && (
         <div onClick={() => setDaySel({ label: `เกินกำหนด (${overdue.length} รายการ)`, items: overdue })}
-          style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(224,92,74,0.1)', border: '1px solid #e05c4a55', borderRadius: 10, padding: '8px 14px', marginBottom: 12, cursor: 'pointer' }}>
+          style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(224,92,74,0.1)', border: '1px solid #e05c4a55', borderRadius: 'var(--r-md)', padding: '8px 14px', marginBottom: 12, cursor: 'pointer' }}>
           <span style={{ fontSize: 15 }}>🔴</span>
           <span style={{ fontSize: 12.5, fontWeight: 700, color: '#e05c4a' }}>เกินกำหนดแล้ว {overdue.length} รายการ</span>
           <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>คลิกดูรายการ →</span>
@@ -995,7 +995,7 @@ function CalendarView({ rows, insps = [], today, onCheck }) {
           const clickable = items.length || done.length
           return (
             <div key={i} onClick={() => clickable && setDaySel({ label: fmtDay(date), items, done })}
-              style={{ minHeight: 76, borderRadius: 8, border: `1px solid ${bd}`, borderWidth: missed ? 2 : 1, background: bg, padding: 5, cursor: clickable ? 'pointer' : 'default', display: 'flex', flexDirection: 'column', gap: 3 }}>
+              style={{ minHeight: 76, borderRadius: 'var(--r-md)', border: `1px solid ${bd}`, borderWidth: missed ? 2 : 1, background: bg, padding: 5, cursor: clickable ? 'pointer' : 'default', display: 'flex', flexDirection: 'column', gap: 3 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span style={{ fontSize: 11.5, fontWeight: 700, color: missed ? '#e05c4a' : isToday ? 'var(--accent)' : 'var(--text2)' }}>{date.getDate()}</span>
                 {/* ผลตรวจที่ "ทำจริง" วันนั้น — ✅ ปกติ / ⚠️ พบผิดปกติ / ⏳ ตรวจไม่ครบ */}
@@ -1008,7 +1008,7 @@ function CalendarView({ rows, insps = [], today, onCheck }) {
               </div>
               {items.slice(0, 3).map(r => {
                 const meta = STATUS_META[r.status] ?? STATUS_META.ok
-                return <div key={r.cl.id} title={r.eq.name} style={{ fontSize: 11, color: '#fff', background: meta.color, borderRadius: 4, padding: '0 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.eq.name}</div>
+                return <div key={r.cl.id} title={r.eq.name} style={{ fontSize: 11, color: '#fff', background: meta.color, borderRadius: 'var(--r-xs)', padding: '0 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.eq.name}</div>
               })}
               {items.length > 3 && <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>+{items.length - 3} รายการ</div>}
             </div>
@@ -1025,7 +1025,7 @@ function DayModal({ sel, onClose, onCheck }) {
   return (
     /* DayModal = ดูรายการ PM ของวันนั้นอย่างเดียว ไม่มีช่องกรอก → ปิดจาก backdrop ได้ตามกฎ (UI-CONVENTIONS §5) */
     <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: 'min(94vw, 460px)', maxHeight: '86vh', overflowY: 'auto', padding: 18 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', width: 'min(94vw, 460px)', maxHeight: '86vh', overflowY: 'auto', padding: 18 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{sel.label}</div>
           <button onClick={onClose} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--muted)', borderRadius: 'var(--r-md)', padding: '2px 9px', fontSize: 13, cursor: 'pointer' }}>✕</button>
@@ -1038,7 +1038,7 @@ function DayModal({ sel, onClose, onCheck }) {
           {sel.items.map(r => {
             const meta = STATUS_META[r.status] ?? STATUS_META.ok
             return (
-              <div key={r.cl.id} style={{ display: 'flex', alignItems: 'center', gap: 10, borderLeft: `3px solid ${meta.color}`, background: 'var(--bg3)', borderRadius: 8, padding: '8px 12px' }}>
+              <div key={r.cl.id} style={{ display: 'flex', alignItems: 'center', gap: 10, borderLeft: `3px solid ${meta.color}`, background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{r.eq.name ?? '—'}</div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.eq.line_name ?? '—'} · {r.cycleText} · <span style={{ color: meta.color, fontWeight: 700 }}>{meta.label}</span></div>
@@ -1055,7 +1055,7 @@ function DayModal({ sel, onClose, onCheck }) {
             <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--muted)', margin: '14px 0 6px' }}>✅ ตรวจจริงวันนี้ ({sel.done.length})</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {sel.done.map(x => (
-                <div key={x.id} style={{ display: 'flex', alignItems: 'center', gap: 9, borderLeft: `3px solid ${x.meta.color}`, background: 'var(--bg3)', borderRadius: 8, padding: '7px 12px' }}>
+                <div key={x.id} style={{ display: 'flex', alignItems: 'center', gap: 9, borderLeft: `3px solid ${x.meta.color}`, background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '7px 12px' }}>
                   <span style={{ fontSize: 14 }}>{x.meta.icon}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{x.eqName}</div>
@@ -1072,7 +1072,7 @@ function DayModal({ sel, onClose, onCheck }) {
 
         {/* ⚠️ วันที่เลยมาแล้ว มีแผน แต่ไม่มีผลตรวจเลย = ตกไปจริงๆ ต้องพูดออกมา ห้ามเงียบ */}
         {sel.items.some(r => r.status === 'overdue') && (sel.done?.length ?? 0) === 0 && (
-          <div style={{ marginTop: 12, padding: '9px 12px', borderRadius: 8, background: 'rgba(224,92,74,0.12)', border: '1px solid #e05c4a55', fontSize: 12, color: '#e05c4a', lineHeight: 1.6 }}>
+          <div style={{ marginTop: 12, padding: '9px 12px', borderRadius: 'var(--r-md)', background: 'rgba(224,92,74,0.12)', border: '1px solid #e05c4a55', fontSize: 12, color: '#e05c4a', lineHeight: 1.6 }}>
             🔴 <b>ยังไม่มีผลตรวจของวันนี้</b> — แผนเลยกำหนดมาแล้วและไม่มีใครบันทึกว่าทำ
             <div style={{ color: 'var(--muted)', marginTop: 3 }}>ทำแล้วให้กด “✓ ตรวจ” เพื่อบันทึกผล · ทำไม่ได้ให้เลื่อนแผนพร้อมเหตุผล จะได้ไม่ค้างแดงไปเรื่อยๆ</div>
           </div>
@@ -1113,7 +1113,7 @@ function BucketView({ rows, today, onCheck }) {
         <div key={c.key} style={{ flex: '1 1 240px', minWidth: 240, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 320px)' }}>
           <div style={{ padding: '10px 12px', borderBottom: `2px solid ${c.color}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
             <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>{c.label}</span>
-            <span style={{ fontSize: 12, fontWeight: 800, color: c.color, background: `${tint(c.color, 'dim')}`, borderRadius: 10, padding: '1px 8px' }}>{b[c.key].length}</span>
+            <span style={{ fontSize: 12, fontWeight: 800, color: c.color, background: `${tint(c.color, 'dim')}`, borderRadius: 'var(--r-md)', padding: '1px 8px' }}>{b[c.key].length}</span>
           </div>
           <div style={{ overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
             {b[c.key].length === 0
@@ -1123,7 +1123,7 @@ function BucketView({ rows, today, onCheck }) {
                 const d = r.nextDue ? daysBetween(today, r.nextDue) : null
                 return (
                   <div key={r.cl.id} onClick={() => onCheck(r.cl.equipment_id)}
-                    style={{ borderLeft: `3px solid ${meta.color}`, background: 'var(--bg3)', borderRadius: 8, padding: '8px 10px', cursor: 'pointer' }}>
+                    style={{ borderLeft: `3px solid ${meta.color}`, background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '8px 10px', cursor: 'pointer' }}>
                     <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.eq.name ?? '—'}</div>
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{r.eq.line_name ?? '—'} · {r.runDay ? `🏃 ทุก ${r.cycle || '—'} วันเดิน` : r.cycleText}</div>
                     <div style={{ fontSize: 11, color: r.status === 'idle_skip' ? 'var(--muted)' : meta.color, fontWeight: 700, marginTop: 3 }}>

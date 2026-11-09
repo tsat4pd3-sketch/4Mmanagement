@@ -116,7 +116,7 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
     const r = requirementOf(req);
     if (!r) return <span style={{ fontSize: 11, color: 'var(--muted)' }}>หัวข้อแม่</span>;
     return (
-      <span title={r.hint} style={{ fontSize: 11, fontWeight: 800, color: r.color, border: `1px solid ${r.color}55`, borderRadius: 5, padding: '1px 5px', whiteSpace: 'nowrap' }}>
+      <span title={r.hint} style={{ fontSize: 11, fontWeight: 800, color: r.color, border: `1px solid ${r.color}55`, borderRadius: 'var(--r-xs)', padding: '1px 5px', whiteSpace: 'nowrap' }}>
         {r.label}
       </span>
     );
@@ -125,7 +125,7 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
   return (
     /* ไม่ใช่ฟอร์มที่กรอกค้าง แต่ปิดด้วยปุ่มอย่างเดียวให้เหมือนโมดัลอื่นในหน้านี้ (UI-CONVENTIONS §5) */
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, padding: 18, width: 'min(1000px, 97vw)', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(1000px, 97vw)', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>
           KPI Standard ของกลุ่ม — ปี {year + 543} · {scopeText || 'ทั้งโรงงาน'}
         </div>

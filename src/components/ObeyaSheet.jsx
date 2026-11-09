@@ -184,7 +184,7 @@ export function Sheet({ k, cw = 0, span = 1, icon, title, sub, big, unit, bigNot
          สีบนแผ่นเหลือความหมายเดียว = **สถานะ** (ไฟดวงบนหัว + สีแท่งกราฟ) ไม่ใช่ "สีประจำแกน"
          — แถบสีประจำแกนแย่งความสนใจกับไฟสถานะ ทำให้แผ่นที่ปกติกับแผ่นที่มีปัญหาดูเด่นเท่ากัน */
       background: 'var(--card)', border: '1px solid var(--border)',
-      borderRadius: 6, boxShadow: 'var(--shadow-sm)',   // แผ่น KPI = การ์ดแบนบนกริด ไม่ได้ลอย
+      borderRadius: 'var(--r-md)', boxShadow: 'var(--shadow-sm)',   // แผ่น KPI = การ์ดแบนบนกริด ไม่ได้ลอย
       display: 'flex', flexDirection: 'column', overflow: 'clip', minWidth: 0, minHeight: 0,
     }}>
       <div style={{ padding: `${Math.round(8 * k)}px ${Math.round(10 * k)}px 0`, flexShrink: 0 }}>
@@ -260,7 +260,7 @@ export function WarnNote({ k, text, tone = 'warn', title }) {
     <div data-warn="1" title={title || (tv ? String(text) : undefined)} style={{
       fontSize: Math.max(11, Math.round(10.5 * k)), lineHeight: 1.3, color: toneVar(tone), fontWeight: 600,
       background: 'var(--bg3)', backgroundImage: `linear-gradient(${toneDim(tone)}, ${toneDim(tone)})`,
-      border: `1px solid ${toneLine(tone)}`, borderRadius: 4, padding: '3px 6px',
+      border: `1px solid ${toneLine(tone)}`, borderRadius: 'var(--r-xs)', padding: '3px 6px',
       ...(tv ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } : null),
     }}>⚠️ {text}</div>
   );
@@ -273,7 +273,7 @@ export const FocusAxisNote = ({ k, loText, fixed = false }) => (
     ? 'กราฟนี้ขยายช่วงค่าถาวรให้เห็นความต่าง (ไม่มีปุ่มปิด) — ความสูงแท่ง/เส้นเทียบสัดส่วนกับ 0 ไม่ได้'
     : 'โหมดโฟกัส: ยกพื้นแกนขึ้นเพื่อขยายช่วงที่ค่ากระจุกอยู่ — ความสูงแท่งเทียบสัดส่วนกันไม่ได้ (กดปุ่ม 🎯 บนแถบกรองเพื่อปิด)'}
     style={{ position: 'absolute', top: 0, right: 6, zIndex: 1, fontSize: Math.max(11, Math.round(9.5 * k)), fontWeight: 700, color: 'var(--amber)',
-      background: 'var(--card)', border: '1px solid var(--amber)55', borderRadius: 4, padding: '0 5px', lineHeight: 1.5 }}>
+      background: 'var(--card)', border: '1px solid var(--amber)55', borderRadius: 'var(--r-xs)', padding: '0 5px', lineHeight: 1.5 }}>
     แกนเริ่ม {loText} ไม่ใช่ 0
   </div>
 );

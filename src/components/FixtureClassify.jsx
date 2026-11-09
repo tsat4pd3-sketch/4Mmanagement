@@ -106,7 +106,7 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
   if (!cands.length) {
     return (
       <div style={{ background: 'rgba(34,197,94,0.10)', border: '1px solid rgba(34,197,94,0.45)',
-                    borderRadius: 10, padding: '14px 16px', fontSize: 13 }}>
+                    borderRadius: 'var(--r-md)', padding: '14px 16px', fontSize: 13 }}>
         ✅ ไม่มีเครื่องที่ระบบสงสัยว่าเป็นจิ๊ก/ฟิกเจอร์แล้ว
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>
           ระบบดูจากเลขเครื่อง (JHYD/GPHYD/JIG) · ชื่อ (JIG/GRIPPER/CENTERING/MARKING/POKA-YOKE) และการวางบนผังไลน์
@@ -119,7 +119,7 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       <div style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)',
-                    borderRadius: 10, padding: '12px 14px', fontSize: 12.5, lineHeight: 1.65 }}>
+                    borderRadius: 'var(--r-md)', padding: '12px 14px', fontSize: 12.5, lineHeight: 1.65 }}>
         <b>⚠️ ระบบ “เสนอ” เท่านั้น — คนเป็นคนตัดสิน</b><br />
         ชื่ออย่าง <code>Welding</code> / <code>Tower load</code> / <code>MAGAZINE</code> แยกไม่ออกว่าเป็นจิ๊กหรือเครื่องจักร
         ระบบจึงไม่เปลี่ยนให้เอง · ติ๊กเฉพาะตัวที่ช่างยืนยันว่าเป็นจิ๊ก/ฟิกเจอร์จริง
@@ -145,7 +145,7 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
         </button>
       </FilterBar>
 
-      <div style={{ maxHeight: '52vh', overflow: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
+      <div style={{ maxHeight: '52vh', overflow: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
           <thead style={{ position: 'sticky', top: 0, background: 'var(--bg2)', zIndex: 1 }}>
             <tr style={{ textAlign: 'left' }}>

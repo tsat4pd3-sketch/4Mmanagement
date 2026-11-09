@@ -54,6 +54,8 @@ import usePartImages from '../utils/usePartImages';
 import { useStorageLocationsState } from '../utils/useStorageLocations';
 import { groupStockBySloc, slocGroupTitle } from '../utils/slocStockView';
 import { loadHomeSlocs } from '../utils/homeSloc';   // 🏠 ที่จัดเก็บหลักของพาร์ท (05/11)
+import { sapEquivalent } from '../utils/sapView';   // 🔩 มุม SAP (09/11)
+import { loadProductsMaster } from '../utils/useProducts';
 import { INFLOW_MODES, inflowModeOf, inflowPatchFor, inflowModesFor } from '../utils/stockReceipts';
 import { IconButton, DeleteButton } from '../components/IconButton';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
@@ -463,6 +465,39 @@ function StockTab({ role, scope }) {
     }));
   }, [groupMode, filteredStock, slocReg.rows, lines, stockByLine, homeSloc.map]);
 
+  /* 🔩 มุม SAP (09/11 · คำสั่ง user) — ชิ้นผ่านขั้น OP ในพื้นที่ แปลงกลับเป็นของที่ขั้นกินด้วยสูตรฝั่ง DR (`fn_op_inputs`
+     ชุดเดียวกับตัวตัดสต็อก) แล้วบวกกับของดิบ = ยอดที่ SAP เห็น · กฎคำนวณ `utils/sapView.js`
+     โหลดเฉพาะเมื่อมีชิ้นผ่านขั้นอยู่ในจอ · อ่านไม่ได้ = เขียนบนจอ (ห้ามโชว์เหมือนไม่มี) */
+  const [opMats, setOpMats] = useState(null);   // Set ของ mat ที่เป็นขั้น OP · null = ยังไม่รู้
+  useEffect(() => {
+    let alive = true;
+    loadProductsMaster().then(ps => { if (alive) setOpMats(new Set((ps || []).filter(p => p.is_operation).map(p => String(p.mat_no || '').trim()))); })
+      .catch(() => { if (alive) setOpMats(new Set()); });
+    return () => { alive = false; };
+  }, []);
+  const opInStockKey = useMemo(() => (opMats ? [...new Set(filteredStock.map(r => String(r.mat_no || '').trim()).filter(m => opMats.has(m)))].sort().join('|') : ''),
+    [filteredStock, opMats]);
+  const [opInputs, setOpInputs] = useState({ map: new Map(), error: null });
+  useEffect(() => {
+    if (!opInStockKey) { setOpInputs({ map: new Map(), error: null }); return undefined; }
+    let alive = true;
+    (async () => {
+      const map = new Map(); let queue = opInStockKey.split('|'); let err = null;
+      for (let depth = 0; depth < 5 && queue.length; depth++) {
+        const res = await Promise.all(queue.map(op => supabaseDR.rpc('fn_op_inputs', { p_op: op })));
+        const next = [];
+        res.forEach((r, i) => {
+          if (r.error) { err = r.error.message; return; }
+          map.set(queue[i], r.data || []);
+          (r.data || []).forEach(x => { if (x.is_op_output && !map.has(x.mat_no)) next.push(x.mat_no); });
+        });
+        queue = [...new Set(next)];
+      }
+      if (alive) setOpInputs({ map, error: err });
+    })();
+    return () => { alive = false; };
+  }, [opInStockKey]);
+
   return (
     <>
       <ReadOnlyNote show={!canIssue} role={role} what="จ่าย/รับของเข้าสโตร์"
@@ -535,7 +570,7 @@ function StockTab({ role, scope }) {
                       <MatLabel mat={t.mat_no} name={t.part_name} />
                     </td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)' }}>
-                      <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, fontWeight:700, background:`${tint(TYPE_COLOR[t.type], 'dim')}`, color:TYPE_COLOR[t.type] }}>{TYPE_LABEL[t.type]}</span>
+                      <span style={{ fontSize:11, padding:'2px 8px', borderRadius: 'var(--r-md)', fontWeight:700, background:`${tint(TYPE_COLOR[t.type], 'dim')}`, color:TYPE_COLOR[t.type] }}>{TYPE_LABEL[t.type]}</span>
                     </td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontWeight:800, fontSize:14, textAlign:'right' }}>{parseFloat(t.qty).toLocaleString()}</td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontSize:12, color:'var(--muted)' }}>{t.note || '—'}</td>
@@ -549,7 +584,7 @@ function StockTab({ role, scope }) {
                             style={{ ...btn('var(--bg)', 'var(--red)'), border:'1px solid var(--red)40', padding:'4px 10px', fontSize:11 }}>ปฏิเสธ</button>
                         </div>
                       ) : (
-                        <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, fontWeight:700, background:`${tint(STATUS_COLOR.pending, 'dim')}`, color:STATUS_COLOR.pending }}>{STATUS_LABEL.pending}</span>
+                        <span style={{ fontSize:11, padding:'2px 8px', borderRadius: 'var(--r-md)', fontWeight:700, background:`${tint(STATUS_COLOR.pending, 'dim')}`, color:STATUS_COLOR.pending }}>{STATUS_LABEL.pending}</span>
                       )}
                     </td>
                   </tr>
@@ -675,10 +710,10 @@ function StockTab({ role, scope }) {
                       {groupMode === 'sloc' && g.lineNames.length > 0 && (
                         <span style={{ fontSize:11, color:'var(--muted)' }}>{g.lineNames.join(' · ')}</span>
                       )}
-                      {lowParts.length > 0 && <span style={{ fontSize:11, padding:'2px 9px', borderRadius:10, background:'var(--red-dim)', color:'var(--red)', fontWeight:700 }}>⚠️ {lowParts.length} รายการหมด</span>}
+                      {lowParts.length > 0 && <span style={{ fontSize:11, padding:'2px 9px', borderRadius: 'var(--r-md)', background:'var(--red-dim)', color:'var(--red)', fontWeight:700 }}>⚠️ {lowParts.length} รายการหมด</span>}
                       {noLvParts.length > 0 && (
                         <span title={`ยังไม่ได้ตั้ง MIN/MAX ${noLvParts.length} พาร์ท — แถวนั้นขึ้น "—" และสถานะใช้เกณฑ์สำรอง (เหลือน้อยเมื่อต่ำกว่า 10 ชิ้น) · ตั้งค่าจริงที่ /products → แท็บ 🎴 Kanban Std`}
-                          style={{ fontSize:11, padding:'2px 9px', borderRadius:10, background:'var(--amber-dim)', color:'var(--amber)', fontWeight:700 }}>
+                          style={{ fontSize:11, padding:'2px 9px', borderRadius: 'var(--r-md)', background:'var(--amber-dim)', color:'var(--amber)', fontWeight:700 }}>
                           {noLvParts.length} พาร์ทยังไม่ตั้ง MIN/MAX
                         </span>
                       )}
@@ -732,7 +767,7 @@ function StockTab({ role, scope }) {
                               </td>
                               <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)', textAlign:'right', fontSize:16, fontWeight:900, color: st.color }}>{qty.toLocaleString()}</td>
                               <td style={{ padding:'10px 14px', borderTop:'1px solid var(--border)' }}>
-                                <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, fontWeight:700, background: st.bg, color: st.color }}>
+                                <span style={{ fontSize:11, padding:'2px 8px', borderRadius: 'var(--r-md)', fontWeight:700, background: st.bg, color: st.color }}>
                                   {st.label}
                                 </span>
                               </td>
@@ -758,6 +793,35 @@ function StockTab({ role, scope }) {
                       </tbody>
                     </table>
                   </div>
+                  {/* 🔩 มุม SAP — โชว์เฉพาะพื้นที่ที่มีชิ้นผ่านขั้น OP */}
+                  {!folded && groupMode === 'sloc' && (() => {
+                    const sv = sapEquivalent(g.parts.map(p => ({ mat_no: p.mat_no, qty: p.qty })), opInputs.map);
+                    if (!sv.ops.length) return null;
+                    return (
+                      <div style={{ padding:'10px 16px', borderTop:'1px solid var(--border)', background:'var(--blue-dim)' }}>
+                        <div style={{ fontSize:12.5, fontWeight:800, color:'var(--text)' }}>🔩 มุม SAP
+                          <span style={{ fontWeight:400, fontSize:11.5, color:'var(--muted)' }}> · ชิ้นผ่านขั้น OP ยังไม่ถูกแม่ใช้ ⇒ ใน SAP ยังเป็นของที่ขั้นกิน (SAP ตัดตอนคอนเฟิร์มแม่)</span>
+                        </div>
+                        {opInputs.error && <div style={{ fontSize:11.5, color:'var(--red)', marginTop:4 }}>⚠ อ่านสูตรขั้น OP ไม่ได้ ({opInputs.error}) — ตัวเลขมุม SAP ด้านล่างอาจไม่ครบ</div>}
+                        <div style={{ fontSize:11.5, color:'var(--text2)', marginTop:4 }}>
+                          ชิ้นผ่านขั้นในพื้นที่: {sv.ops.map(o => `${o.mat_no} ${Number(o.qty).toLocaleString()}${o.unmapped ? ' (ขั้นยังไม่ผูกว่ากินอะไร — แปลงไม่ได้)' : ''}`).join(' · ')}
+                        </div>
+                        {sv.rows.length > 0 && (
+                          <table style={{ marginTop:6, borderCollapse:'collapse', fontSize:12 }}>
+                            <thead><tr>{['ของที่ขั้นกิน','ในระบบ (ของดิบ)','+ ชิ้นผ่านขั้น','= SAP เห็น'].map(h => (
+                              <th key={h} style={{ padding:'4px 12px', textAlign: h === 'ของที่ขั้นกิน' ? 'left' : 'right', fontSize:11, color:'var(--muted)', fontWeight:800 }}>{h}</th>))}</tr></thead>
+                            <tbody>{sv.rows.map(r => (
+                              <tr key={r.mat_no}>
+                                <td style={{ padding:'4px 12px' }}><MatLabel mat={r.mat_no} name={bomMap[r.mat_no]} size={12} /></td>
+                                <td style={{ padding:'4px 12px', textAlign:'right' }}>{r.own.toLocaleString()}</td>
+                                <td style={{ padding:'4px 12px', textAlign:'right', color:'var(--blue)' }}>+{r.fromOps.toLocaleString()}</td>
+                                <td style={{ padding:'4px 12px', textAlign:'right', fontWeight:900 }}>{r.sap.toLocaleString()}</td>
+                              </tr>))}</tbody>
+                          </table>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })
@@ -813,9 +877,9 @@ function StockTab({ role, scope }) {
                       <MatLabel mat={t.mat_no} name={t.part_name} />
                     </td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)' }}>
-                      <span style={{ fontSize:11, padding:'2px 8px', borderRadius:10, fontWeight:700, background:`${tint(TYPE_COLOR[t.type], 'dim')}`, color:TYPE_COLOR[t.type] }}>{TYPE_LABEL[t.type]}</span>
+                      <span style={{ fontSize:11, padding:'2px 8px', borderRadius: 'var(--r-md)', fontWeight:700, background:`${tint(TYPE_COLOR[t.type], 'dim')}`, color:TYPE_COLOR[t.type] }}>{TYPE_LABEL[t.type]}</span>
                       {t.status && t.status !== 'approved' && (
-                        <span title={t.reject_reason || ''} style={{ marginLeft:6, fontSize:11, padding:'2px 6px', borderRadius:8, fontWeight:700, background:`${tint(STATUS_COLOR[t.status], 'dim')}`, color:STATUS_COLOR[t.status] }}>{STATUS_LABEL[t.status]}</span>
+                        <span title={t.reject_reason || ''} style={{ marginLeft:6, fontSize:11, padding:'2px 6px', borderRadius: 'var(--r-md)', fontWeight:700, background:`${tint(STATUS_COLOR[t.status], 'dim')}`, color:STATUS_COLOR[t.status] }}>{STATUS_LABEL[t.status]}</span>
                       )}
                     </td>
                     <td style={{ padding:'8px 12px', borderTop:'1px solid var(--border)', fontWeight:800, fontSize:14, color: t.status !== 'approved' ? 'var(--muted)' : t.type === 'consume' ? '#94a3b8' : t.type === 'return' ? '#f59e0b' : '#22c55e', textAlign:'right', opacity: t.status !== 'approved' ? 0.55 : 1 }}>
@@ -841,7 +905,7 @@ function StockTab({ role, scope }) {
       {/* ── Issue / Adjust modal ── */}
       {showForm && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(900px,96vw)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding:24, width:'min(900px,96vw)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:16, fontFamily:'var(--font-display)' }}>
               {TYPE_LABEL[form.type]}
             </div>
@@ -996,7 +1060,7 @@ function StockTab({ role, scope }) {
       {/* ── Reject reason modal ── (ฟอร์มมี input → ไม่ปิดจาก backdrop click ตาม UI-CONVENTIONS §5) */}
       {rejectTx && (
         <div className="modal-scroll" style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:1001, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(420px,100%)' }}>
+          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding:24, width:'min(420px,100%)' }}>
             <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:6, fontFamily:'var(--font-display)' }}>❌ ปฏิเสธคำขอ</div>
             <div style={{ fontSize:12, color:'var(--muted)', marginBottom:14 }}>
               {TYPE_LABEL[rejectTx.type]} · <span style={{ fontFamily:'monospace', color:'var(--blue)' }}>{rejectTx.mat_no}</span> · {rejectTx.line_name} · {parseFloat(rejectTx.qty).toLocaleString()}
@@ -1206,7 +1270,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                     {rndList.map(r => (
                       <tr key={r.id}>
                         <td style={{ padding:'9px 14px', borderTop:'1px solid var(--border)' }}>
-                          <span style={{ fontSize:11, padding:'2px 9px', borderRadius:10, fontWeight:700,
+                          <span style={{ fontSize:11, padding:'2px 9px', borderRadius: 'var(--r-md)', fontWeight:700,
                             background: r.shift==='day' ? 'var(--amber-dim)' : r.shift==='night' ? 'rgba(99,102,241,0.12)' : 'var(--green-dim)',
                             color: r.shift==='day' ? '#ca8a04' : r.shift==='night' ? '#818cf8' : '#22c55e' }}>
                             {SHIFT_LABELS[r.shift] || r.shift}
@@ -1254,7 +1318,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
       {/* Modal */}
       {showModal && (
         <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.6)', zIndex:2000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:14, padding:24, width:'min(760px,96vw)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding:24, width:'min(760px,96vw)', maxHeight:'90vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize:15, fontWeight:800, color:'var(--text)', marginBottom:16, fontFamily:'var(--font-display)' }}>
               ⏰ {editId ? 'แก้ไขรอบจัดส่ง' : 'เพิ่มรอบจัดส่งใหม่'}
             </div>
@@ -1306,7 +1370,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
               </div>
 
               {/* Shipping time chart */}
-              <div style={{ background:'var(--bg2)', borderRadius:8, padding:12, border:'1px solid var(--border)', display:'flex', flexDirection:'column', gap:10 }}>
+              <div style={{ background:'var(--bg2)', borderRadius: 'var(--r-md)', padding:12, border:'1px solid var(--border)', display:'flex', flexDirection:'column', gap:10 }}>
                 <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.05em' }}>⏰ Shipping Time Chart</div>
                 <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
                   <div>
@@ -1480,12 +1544,12 @@ function DeliveryTimeBoardTab() {
         return (
           <>
             <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: `1px solid ${tint(st.color, 'line')}`, borderRadius: 12, boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
+            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: `1px solid ${tint(st.color, 'line')}`, borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
               <div style={{ height: 4, background: st.color }} />
               <div style={{ padding: '10px 14px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)' }}>{r.shift === 'night' ? '🌙' : '☀️'} รอบ {r.round_no}</span>
-                  <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 8, background: 'rgba(0,0,0,0.15)', color: st.color }}>{st.label}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'rgba(0,0,0,0.15)', color: st.color }}>{st.label}</span>
                 </div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', marginTop: 2 }}>{r.line_name}</div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.8 }}>

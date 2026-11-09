@@ -660,7 +660,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
               </div>
             )}
 
-            <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+            <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760, fontVariantNumeric: 'tabular-nums' }}>
                 <thead><tr style={{ background: 'var(--bg2)' }}>
                   <th style={th}>เลขพาร์ทลูกค้า</th>
