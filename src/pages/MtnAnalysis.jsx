@@ -17,7 +17,7 @@ import TimeRangeBar from '../components/TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
 import { rangeDays, addDays, bucketAxis, bucketKey, bucketLabel, bkkHourKey, scaleOf } from '../utils/timeRange';
 import { getWorkDate } from '../utils/workDate';
-import { scopedLines, lineScope } from '../utils/sectionScope';
+import { scopedLines, lineScope, filterRowsByLineScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { ASSET_CLASSES, assetClassOf, firstAssetWithData } from '../utils/qc7';
 import { useSearchParams } from 'react-router-dom';
@@ -265,17 +265,68 @@ export default function MtnAnalysis() {
   }), [events, catIndex]);
   const typedEvents = typed.rows;
 
+  /* ขอบเขตไลน์ของผู้ใช้ — **เกณฑ์เดียวกับ `/mtn-repair`** (คัดลอกมาโดยตั้งใจให้เหมือนกันเป๊ะ
+     ถ้าจะแก้ ต้องแก้ทั้ง 2 ที่พร้อมกัน ไม่งั้น KPI 2 จอตอบคนละเลขให้คนคนเดียวกัน) */
+  const lines = useProductionLines();
+  /* 🔭 ขอบเขตไลน์ — **ของกลาง `lineScope()` เท่านั้น** (QC audit 09/11)
+     สูตรที่เคยก๊อปไว้ที่นี่ให้ leader เห็นแค่ครอบครัวไลน์ตัวเอง = แคบกว่าที่ `profiles` ตั้งไว้
+     (กฎ 26/10: ไลน์ตัวเอง ∪ ส่วนงานที่กำกับไว้) และไม่รู้จักแกน Cost Center/ผัง (`scopeIdx`)
+     `null` = ไม่จำกัด (ความหมายเดิมของตัวแปรนี้) */
+  const scopeRes = useMemo(
+    () => lineScope({ role, lineId, sections: sections || [], lines, scopeIdx }),
+    [lines, role, lineId, sections, scopeIdx]);
+  const scopeLines = useMemo(() => (scopeRes.unlimited ? null : new Set(scopeRes.names)), [scopeRes]);
+  /* 🔴 ตัดขอบเขตไม่ได้จริง (ทะเบียนโหลดแล้วแต่ส่วนงาน/ไลน์ตัวเองไม่ตรงผัง) ⇒ ต้องเขียนบนจอ ห้ามเงียบ */
+  const scopeUnsure = !!(lines?.length && scopeRes.unsure);
+  /* 🔴 ช่องเลือกไลน์ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัดเลย (QA · Planning&Store · ฝั่งช่าง)
+     กรองด้วย section แล้วเหลือ 0 ⇒ dropdown ว่างเปล่า = แจ้งซ่อม/เลือกไลน์ไม่ได้ทั้งหน้า (เคสจริง 26/10)
+     ⇒ ต้องผ่าน `scopeLines()` ของกลางใน `components/LineSelect.jsx` ที่มีตาข่าย
+       **"กรองแล้วไม่เหลืออะไร = ไม่กรอง"** (กติกาเดิมตั้งแต่ 2026-08-24)
+     ⚠️ **คนละแกนกับ `scopeLines` (Set) ข้างบน** ซึ่งเป็นตัวกรองรายการ + ฐานของด่านสิทธิ์ขั้นเซ็น
+        (`reporterScope`) — ตัวนั้นต้อง fail-closed เหมือนเดิม **ห้ามยุบรวมกัน** */
+  const scopedLineObjs = useMemo(
+    () => pickerLines(lines, { role, lineId, sections, scopeIdx }),
+    [lines, role, lineId, sections, scopeIdx]);
+
+  /* 🔭 ขอบเขตบัญชีของแท็บ QC7 (09/11 · user: "จอของส่วนงานไหนก็ควรแสดงแค่ส่วนงานตัวเอง")
+     เดิมแท็บนี้กรองแค่ "แผนกช่าง" — เครื่อง/MO/ดาวน์ไทม์โหลดทั้งโรงงาน ทั้งที่แท็บ KPI ตัดด้วย `scopeLines` แล้ว
+     ⇒ ใช้ `scopeLines` ชุดเดียวกับแผง KPI (ของกลาง `lineScope()`) ผ่าน `filterRowsByLineScope()`
+     · ไลน์ของแถว: MO = `line_name` ของใบ · ดาวน์ไทม์ (ไม่มีไลน์ในแถว) = ไลน์ของเครื่องในทะเบียน
+     · แถวที่ไม่รู้ไลน์/ไลน์นอกทะเบียน = **คงไว้** (ตัดสินไม่ได้ ⇒ ไม่ซ่อน)
+     · `scopeLines = null` (ไม่จำกัด/ตัดขอบเขตไม่ได้) = ชุดเดิมเป๊ะ
+     🔴 ซ่อนไปกี่รายการต้องเขียนบนจอ (`qcScopeHidden`) */
+  const lineByMc = useMemo(() => {
+    const m = {};
+    (machines || []).forEach(mc => {
+      const k = String(mc?.machine_no || '').trim().toUpperCase();
+      if (k && !(k in m)) m[k] = (mc.line_name || '').trim();
+    });
+    return m;
+  }, [machines]);
+  const qcScoped = useMemo(() => {
+    if (!scopeLines) return { rows: typedEvents, hidden: 0 };
+    return filterRowsByLineScope(typedEvents, {
+      scopedNames: [...scopeLines],
+      lineNames: (lines || []).map(l => l.name),
+      nameOf: e => (e.from === 'dt'
+        ? (lineByMc[String(e.raw?.machine_no || '').trim().toUpperCase()] || '')
+        : (e.raw?.line_name || '')),
+    });
+  }, [typedEvents, scopeLines, lines, lineByMc]);
+  const qcScopeHidden = qcScoped.hidden;
+  const lineScopedEvents = qcScoped.rows;
+
   /* ── แผนกช่าง: dropdown เดิม (MO/Downtime) เปลี่ยนเป็นตัวนี้ (user 23/09) ──────
      "ตรงแท็บคือแยกตามอุปกรณ์ใช่มั้ย · dropdown เดิม…เป็นเลือกแผนกช่างดีกว่า"
      ⇒ แท็บ = ชนิดอุปกรณ์ · dropdown = แผนกช่าง · 2 แกนไม่ซ้อนกัน */
   const teamOpts = useMemo(() => {
     const c = {};
-    typedEvents.forEach(e => { c[e.team] = (c[e.team] || 0) + 1; });
+    lineScopedEvents.forEach(e => { c[e.team] = (c[e.team] || 0) + 1; });
     return Object.entries(c).sort((a, b) => b[1] - a[1]);
-  }, [typedEvents]);
+  }, [lineScopedEvents]);
   const scopedEvents = useMemo(
-    () => (team === 'all' ? typedEvents : typedEvents.filter(e => e.team === team)),
-    [typedEvents, team],
+    () => (team === 'all' ? lineScopedEvents : lineScopedEvents.filter(e => e.team === team)),
+    [lineScopedEvents, team],
   );
 
   const byClass = useMemo(() => {
@@ -293,27 +344,6 @@ export default function MtnAnalysis() {
     const pick = firstAssetWithData(byClass, asset);
     if (pick !== asset) setAsset(pick, { replace: true });
   }, [loading, err, byClass, asset, assetInUrl, setAsset]);
-
-  /* ขอบเขตไลน์ของผู้ใช้ — **เกณฑ์เดียวกับ `/mtn-repair`** (คัดลอกมาโดยตั้งใจให้เหมือนกันเป๊ะ
-     ถ้าจะแก้ ต้องแก้ทั้ง 2 ที่พร้อมกัน ไม่งั้น KPI 2 จอตอบคนละเลขให้คนคนเดียวกัน) */
-  const lines = useProductionLines();
-  /* 🔭 ขอบเขตไลน์ — **ของกลาง `lineScope()` เท่านั้น** (QC audit 09/11)
-     สูตรที่เคยก๊อปไว้ที่นี่ให้ leader เห็นแค่ครอบครัวไลน์ตัวเอง = แคบกว่าที่ `profiles` ตั้งไว้
-     (กฎ 26/10: ไลน์ตัวเอง ∪ ส่วนงานที่กำกับไว้) และไม่รู้จักแกน Cost Center/ผัง (`scopeIdx`)
-     `null` = ไม่จำกัด (ความหมายเดิมของตัวแปรนี้) */
-  const scopeLines = useMemo(() => {
-    const r = lineScope({ role, lineId, sections: sections || [], lines, scopeIdx });
-    return r.unlimited ? null : new Set(r.names);
-  }, [lines, role, lineId, sections, scopeIdx]);
-  /* 🔴 ช่องเลือกไลน์ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัดเลย (QA · Planning&Store · ฝั่งช่าง)
-     กรองด้วย section แล้วเหลือ 0 ⇒ dropdown ว่างเปล่า = แจ้งซ่อม/เลือกไลน์ไม่ได้ทั้งหน้า (เคสจริง 26/10)
-     ⇒ ต้องผ่าน `scopeLines()` ของกลางใน `components/LineSelect.jsx` ที่มีตาข่าย
-       **"กรองแล้วไม่เหลืออะไร = ไม่กรอง"** (กติกาเดิมตั้งแต่ 2026-08-24)
-     ⚠️ **คนละแกนกับ `scopeLines` (Set) ข้างบน** ซึ่งเป็นตัวกรองรายการ + ฐานของด่านสิทธิ์ขั้นเซ็น
-        (`reporterScope`) — ตัวนั้นต้อง fail-closed เหมือนเดิม **ห้ามยุบรวมกัน** */
-  const scopedLineObjs = useMemo(
-    () => pickerLines(lines, { role, lineId, sections, scopeIdx }),
-    [lines, role, lineId, sections, scopeIdx]);
 
   const rows = byClass[asset] || [];
   const srcMeta = SOURCES.find(s => s.key === src);
@@ -445,6 +475,20 @@ export default function MtnAnalysis() {
                  🔴 ทุกชนิดต้องอยู่ครบเสมอ แม้จำนวนเป็น 0 — กดเข้าไปแล้วเห็นว่า "ช่วงนี้ไม่มีงาน"
                     ต่างจากการซ่อนแท็บทิ้งซึ่งอ่านว่า "ระบบไม่รองรับของชนิดนี้" */}
           <TabBar size="sm" value={asset} onChange={setAsset} tabs={assetTabs.map(t => ({ key: t.key, label: t.label }))} />
+
+          {/* 🔭 ขอบเขตบัญชี — ซ่อนแถวของไลน์อื่นแล้วต้องบอกบนจอ (CLAUDE.md "กรองแถวออกแล้วต้องเขียนบนจอ") */}
+          {scopeLines && (
+            <NoticeBar tone="info">
+              แสดงเฉพาะไลน์ในขอบเขตของคุณ ({scopeLines.size} ไลน์)
+              {qcScopeHidden ? ` · ซ่อนงานของไลน์อื่น ${fmt(qcScopeHidden)} รายการ` : ''}
+              {' '}· งานที่ไม่รู้ไลน์/ไลน์นอกทะเบียน ยังแสดงอยู่
+            </NoticeBar>
+          )}
+          {scopeUnsure && (
+            <NoticeBar tone="warn">
+              ตัดขอบเขตไลน์ของบัญชีนี้ไม่ได้ (ไลน์/ส่วนงานของบัญชีไม่ตรงทะเบียน) — {scopeLines ? 'แสดงตามส่วนงานที่ตั้งไว้' : 'กำลังแสดงทั้งโรงงาน'}
+            </NoticeBar>
+          )}
 
           {/* ── สรุปปัญหา ─────────────────────────────────────────────── */}
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, alignContent: 'start' }}>

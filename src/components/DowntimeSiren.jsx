@@ -39,7 +39,11 @@ import useIsMobile from '../utils/useIsMobile';
       ฝ่ายผลิต **ห้ามกรองทีมเด็ดขาด** (กฎเดียวกับ MtnAndonBoard §ตัวกรองทีมห้ามกรองเครื่องหยุด)
    🔴 ใบที่ **ไม่ได้ระบุทีม = ดังทุกห้อง** (fail-open) — เงียบเพราะข้อมูลไม่ครบ คือความเสี่ยงที่
       แย่กว่าดังเกิน · ห้ามเปลี่ยนเป็น fail-closed */
-export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
+/* 🔭 `lineNames` = ขอบเขตไลน์ของจอนี้ (09/11 · user: จอ TV/จอแสดงผลโชว์เฉพาะส่วนงาน/ไลน์ของบัญชี)
+   · `null`/ไม่ส่ง = ไม่จำกัด = พฤติกรรมเดิมเป๊ะ · array = ดัง/โชว์เฉพาะเครื่องหยุดของไลน์ในลิสต์
+   · แถวที่ไม่รู้ไลน์ (`production_sessions.line_name` ว่าง) = ดังเสมอ (fail-open เหมือนใบไม่ระบุทีม)
+   · ที่ตัดออกต้องเขียนบนจอว่าไม่ดังกี่เครื่อง (กฎ "กรองแล้วต้องบอกว่าซ่อนกี่รายการ") */
+export default function DowntimeSiren({ mode = 'open_15min', team = null, lineNames = null }) {
   /* 📱 มือถือโชว์ทีละใบ (05/11 · เหตุผลเดียวกับ StoreCallSiren) — แถบ Andon ขึ้นบรรทัดใหม่บนจอแคบ
      หลายใบซ้อนกันจะยาวเกินจอ แล้วปุ่ม "รับทราบ" ของใบล่างตกนอกจอ (แถบเป็น position: fixed)
      🔴 ที่เกินต้องเขียนบนจอว่าเหลืออีกกี่ใบ **ห้ามตัดทิ้งเงียบ** · จอคอม/TV ได้ทุกใบเหมือนเดิม */
@@ -97,14 +101,26 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
     return got === want
   }, [team])
 
-  const alerts = useMemo(() => {
+  // คีย์ string — ผู้เรียกส่ง array ใหม่ทุก render ได้โดยไม่ทำให้ memo ข้างล่างคิดใหม่ (กฎ DB ข้อ 9)
+  const lineKey = Array.isArray(lineNames) ? lineNames.join('\u0001') : null
+  const inLines = useCallback((d) => {
+    if (lineKey === null) return true
+    const ln = d?.production_sessions?.line_name
+    if (!ln) return true                                   // ไม่รู้ไลน์ = ดังเสมอ
+    return lineKey.split('\u0001').includes(ln)
+  }, [lineKey])
+
+  const { alerts, outScope } = useMemo(() => {
     const overThr = (d) => isAlarmingDT(d) && isOverDtThreshold(d, thr ?? DT_OPEN_ALERT_MIN_DEFAULT)
-    if (mode === 'call_mtn') return raw.filter(myCall)
-    if (mode === 'open_15min') return raw.filter(overThr)
+    let all
+    if (mode === 'call_mtn') all = raw.filter(myCall)
+    else if (mode === 'open_15min') all = raw.filter(overThr)
     // 'all' = เรียกช่างที่ยังไม่รับทราบ ∪ เครื่องหยุดเกินเกณฑ์ที่ยังไม่รับทราบ (แถวเดียวนับครั้งเดียว)
     //   ⚠️ ขาซ้ายกรองทีมได้ · ขาขวา (เครื่องหยุดเกินเกณฑ์) ห้ามกรอง — คนละแกนกัน
-    return raw.filter(d => (d.call_mtn && !d.call_mtn_ack_at && myCall(d)) || (overThr(d) && !d.open_ack_at))
-  }, [raw, mode, thr, myCall])
+    else all = raw.filter(d => (d.call_mtn && !d.call_mtn_ack_at && myCall(d)) || (overThr(d) && !d.open_ack_at))
+    const mine = all.filter(inLines)
+    return { alerts: mine, outScope: all.length - mine.length }
+  }, [raw, mode, thr, myCall, inLines])
 
   useEffect(() => {
     fetchAlerts()
@@ -147,7 +163,17 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
         ⚠️ อ่านรายการเครื่องหยุดไม่ได้ — ยังบอกไม่ได้ว่ามีเครื่องหยุดหรือไม่
       </div>
     )
-    if (!muted) return null
+    if (!muted) {
+      if (!outScope) return null
+      /* เครื่องหยุดของไลน์นอกขอบเขตจอนี้ — ไม่ดัง แต่ต้องบอกว่ามี (ห้ามเงียบ) · ชิปเทานิ่ง ไม่ใช่ alarm */
+      return (
+        <div style={{ position: 'fixed', bottom: 'calc(12px + var(--mnav-h, 0px))', right: 12, zIndex: 4000,
+                      background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)',
+                      padding: '7px 11px', fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', boxShadow: 'var(--shadow-sm)' }}>
+          ไม่ดัง {outScope} เครื่องหยุดของไลน์นอกขอบเขตจอนี้
+        </div>
+      )
+    }
     return (
       <div onClick={unlockNow} title="เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ 1 ครั้ง — จอที่เปิดทิ้งไว้ต้องแตะทุกครั้งที่หน้าโหลดใหม่"
         style={{ position: 'fixed', bottom: 'calc(12px + var(--mnav-h, 0px))', right: 12, zIndex: 4000, cursor: 'pointer',
@@ -189,6 +215,12 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
         <div style={{ pointerEvents: 'auto', background: 'var(--card)', border: '1px solid var(--red-line)',
           borderRadius: 'var(--r-md)', padding: '7px 12px', fontSize: 11.5, fontWeight: 800, color: 'var(--red)', textAlign: 'center' }}>
           + อีก {alerts.length - 1} เครื่องที่ยังไม่มีใครรับทราบ — กดรับทราบใบบนก่อน แล้วใบถัดไปจะขึ้นแทน
+        </div>
+      )}
+      {outScope > 0 && (
+        <div style={{ pointerEvents: 'auto', background: 'var(--card)', border: '1px solid var(--border2)',
+          borderRadius: 'var(--r-md)', padding: '6px 12px', fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', textAlign: 'center' }}>
+          ไม่ดัง {outScope} เครื่องหยุดของไลน์นอกขอบเขตจอนี้
         </div>
       )}
     </div>

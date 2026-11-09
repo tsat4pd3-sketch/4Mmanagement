@@ -429,7 +429,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
 
   return (
     <Page width="full" style={S.page}>
-      <DowntimeSiren mode="call_mtn" />
+      <DowntimeSiren mode="call_mtn" lineNames={view === "facility" || viewScope.unlimited ? null : viewScope.names} />
       {/* หัวเพจ + แท็บมุมมองมาตรฐาน (UI-STANDARD 2026-09-24) — param ยังเป็น ?view= เหมือนเดิม */}
       <PageHeader title="ผังเครื่องจักร (ซ่อมบำรุง)" icon="🗺️"
         sub="ดูสถานะ PM บนผังจริง · กรองตามผู้รับผิดชอบ"
