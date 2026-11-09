@@ -1037,3 +1037,11 @@ line_id: emp.line_id ?? ident.line_id
 **ยังเหลือ (งานกวาดก้อนเดียว ไม่ใช่รอบนี้):** สำเนาสูตร `role === 'leader' && lineId` ที่เขียนเองในหน้า
 อีก ~14 ไฟล์ — `MtnAnalysis` · `MorningMeeting` · `DieRegistry` · `FixtureRegistry` · `DailyReport` (4 จุด) ·
 `MaintenanceLevels` · `WorkforceInsight` (2 จุด) · `VSM` · `PmForecast` · `ShiftOrganize` (2 จุด)
+
+### ✅ 09/11 — ปิดช่องชั้น ③ ที่ QC audit ชี้
+- **`QualityBins.jsx`** (ตาราง `quality_bin_records` ฝั่ง DR · anon-open) — เดิมมีแค่ชั้น ② `can('scrap','record')`
+  ⇒ เขียนแถวของไลน์ไหนก็ได้ถ้ารู้ id · ตอนนี้ทุกฟังก์ชันที่เขียน DB ผ่าน `guardLines()`
+  (`canWriteLine` + `unknownTarget:'block'` · แก้ของเดิม = เช็คไลน์เดิม + ไลน์ปลายทาง · ทะเบียนไม่โหลด = บล็อก)
+- **`ProductMaster.jsx` → `BOMPanel` → `OpStepsPanel`** — แผงลูกเคยรับแค่ `canEdit` แล้ว insert/delete
+  `bom_items` โดยไม่เช็คอะไรซ้ำ ⇒ ส่ง `guard` (= `pGuard` ของหน้าแม่ ผูกไลน์ของพาร์ท) ลงไปแล้ว
+  ⚠️ **ยังเหลือ legacy:** BOM ของพาร์ทเองใน `BOMPanel` (5 จุดเขียน `bom_items`) ยังไม่มีชั้น ③

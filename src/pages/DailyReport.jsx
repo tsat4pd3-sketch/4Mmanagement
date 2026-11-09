@@ -2318,9 +2318,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       return;
     }
     const delta = v - (o.qty_actual || 0);
-    const { error } = await supabaseDR.from('prod_orders')
-      .update({ qty_actual: v, qty_updated_at: new Date().toISOString() }).eq('id', o.id);
-    if (error) { toast.error(error.message); return; }
+    /* 🔴 RLS/สิทธิ์ไม่พอ = "สำเร็จ 0 แถว ไม่มี error" ⇒ ต้องนับแถว (กฎเขียน DB ข้อ 2 · QC audit 09/11)
+       เดิมอ่านแค่ error แล้วขึ้น "อัพเดทยอดแล้ว ✓" ทั้งที่ยอดไม่ได้เปลี่ยน (ใบคู่ข้างล่างนับแถวอยู่แล้ว) */
+    const qres = await supabaseDR.from('prod_orders')
+      .update({ qty_actual: v, qty_updated_at: new Date().toISOString() }).eq('id', o.id).select('id');
+    if (!checkWriteRows(qres, `ลงยอดใบ ${o.prod_no || o.mat_no || ''}`.trim(),
+      { zeroMsg: 'ลงยอดไม่สำเร็จ (0 แถว — อาจมีคนปิดใบไปก่อน หรือสิทธิ์เขียนไม่พอ) · รีเฟรชแล้วลองใหม่' })) return;
     // log ประวัติต่อช่วง (best-effort — ประวัติพังไม่ทำให้ยอดหลักพัง)
     await supabaseDR.from('prod_order_qty_updates')
       .insert({ order_id: o.id, qty_accum: v, qty_delta: delta, logged_by: fullName }).then(() => {}, () => {});
@@ -2343,11 +2346,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     if (finalQty < 0) { toast.error('ยอดผลิตจริงติดลบไม่ได้'); return; }
     if (!window.confirm(`ปิดใบ ${o.prod_no} (${o.mat_no}) ด้วยยอดผลิตจริง ${finalQty} ชิ้น?\nเป้าที่ตั้งไว้ ${o.qty_target ?? o.qty} ชิ้น`)) return;
     const nowIso = new Date().toISOString();
-    const { error } = await supabaseDR.from('prod_orders').update({
+    /* 🔴 CAS `.eq('status','open')` + นับแถว — 2 เครื่องกดปิดใบเดียวกันพร้อมกัน หรือ RLS ปฏิเสธ
+       = "สำเร็จ 0 แถว ไม่มี error" แล้วจอขึ้น "ปิดใบแล้ว ✓" ทั้งที่ยอดของอีกเครื่องถูกทับ/ไม่ได้เขียน
+       (ท่าเดียวกับปิดใบข้ามไลน์ `doCrossLineClose` · QC audit 09/11) */
+    const cres = await supabaseDR.from('prod_orders').update({
       status: 'confirmed', confirmed_by: fullName, confirmed_at: nowIso,
       qty: finalQty, qty_ok: finalQty, qty_actual: finalQty, qty_updated_at: nowIso,
-    }).eq('id', o.id);
-    if (error) { toast.error(error.message); return; }
+    }).eq('id', o.id).eq('status', 'open').select('id');
+    if (!checkWriteRows(cres, `ปิดใบ ${o.prod_no || o.mat_no || ''}`.trim(),
+      { zeroMsg: 'ปิดใบไม่สำเร็จ (0 แถว — ใบนี้อาจถูกปิดไปแล้วจากเครื่องอื่น) · รีเฟรชแล้วเช็คยอดก่อนทำซ้ำ' })) {
+      loadProdOrders(selSession.id, selSession.line_name);
+      return;
+    }
     // log แถวปิดใบ — เก็บส่วนต่างช่วงสุดท้ายไว้ในประวัติด้วย
     await supabaseDR.from('prod_order_qty_updates')
       .insert({ order_id: o.id, qty_accum: finalQty, qty_delta: finalQty - (o.qty_actual || 0), is_final: true, logged_by: fullName }).then(() => {}, () => {});
@@ -2465,10 +2475,37 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     }
   };
 
+  /* 🗑️ ลบรายการงานเสีย — ต้องจัดการ "ใบถัง" ที่ผูกอยู่ด้วย (QC audit 09/11)
+     FK `quality_bin_records.defect_log_id` เป็น **on delete set null** ⇒ ลบแถวงานเสียเฉยๆ =
+     เหลือ **ใบถังเหลืองกำพร้า** ที่ยัง `qa_decision is null` ค้างในคิว `/qa` + "คิวงานของฉัน" ตลอดไป
+     และชิป "จาก Daily Report" ก็หายไป ⇒ สืบไม่ได้ว่าใบนี้มาจากไหน
+     (ก่อน 05/11 แทบไม่มีใบถังผูกอยู่ ⇒ ไม่เคยออกอาการ · หลังเปิดแท็กอัตโนมัติ = ทุกแถวมีใบ)
+     🔴 อ่านใบถังไม่ได้ = ห้ามลบ (fail-closed) · 🔴 ใบที่ถูกพิจารณา/ออกใบขออนุมัติแล้ว = ห้ามลบเงียบ */
   const handleDeleteDefectLog = async (id) => {
-    if (!window.confirm('ลบรายการงานเสียนี้?')) return;
-    const { error } = await supabaseDR.from('defect_logs').delete().eq('id', id);
-    if (error) { toast.error(error.message); return; }
+    const { data: tied, error: tieErr } = await supabaseDR.from('quality_bin_records')
+      .select('id, bin, qty, qa_decision, return_date, scrap_report_id')
+      .eq('defect_log_id', id).eq('is_active', true);
+    if (tieErr) { toast.error(`เช็คใบถังที่ผูกกับรายการนี้ไม่ได้ (${tieErr.message}) — ยังลบไม่ได้`); return; }
+    const locked = (tied || []).filter(t => t.qa_decision || t.return_date || t.scrap_report_id || t.bin === 'red');
+    if (locked.length) {
+      toast.error(`ลบไม่ได้ — มีใบถัง ${locked.length} ใบที่ถูกพิจารณา/ย้ายลงถังแดง/ออกใบขออนุมัติแล้ว `
+        + 'ให้จัดการใบถังที่หน้าของเสียก่อน');
+      return;
+    }
+    const n = (tied || []).length;
+    if (!window.confirm(`ลบรายการงานเสียนี้?${n ? `\n\nใบถังเหลืองที่ระบบตั้งให้ ${n} ใบ จะถูกปิดไปพร้อมกัน` : ''}`)) return;
+    /* ปิดใบถังก่อนลบแถวต้นทาง — ลบก่อนแล้วปิดใบล้ม = ใบกำพร้าค้างถาวร (กู้ไม่ได้เพราะ FK เป็น null แล้ว) */
+    if (n) {
+      const bres = await supabaseDR.from('quality_bin_records')
+        .update({ is_active: false, note: 'ปิดอัตโนมัติ: รายการงานเสียต้นทางถูกลบ' })
+        .in('id', (tied || []).map(t => t.id)).select('id');
+      if (!checkWriteRows(bres, 'ปิดใบถังที่ผูกกับรายการงานเสีย',
+        { zeroMsg: 'ปิดใบถังไม่สำเร็จ (0 แถว) — ยังไม่ลบรายการงานเสีย เพื่อไม่ให้เหลือใบถังกำพร้า' })) return;
+    }
+    const dres = await supabaseDR.from('defect_logs').delete().eq('id', id).select('id');
+    if (!checkWriteRows(dres, 'ลบรายการงานเสีย',
+      { zeroMsg: 'ลบไม่สำเร็จ (0 แถว — อาจถูกลบไปแล้ว) · รีเฟรชแล้วเช็คอีกครั้ง' })) { loadDefectLogs(selSession.id); return; }
+    toast.success(n ? `ลบรายการงานเสียแล้ว · ปิดใบถัง ${n} ใบ` : 'ลบรายการงานเสียแล้ว');
     loadDefectLogs(selSession.id);
   };
 

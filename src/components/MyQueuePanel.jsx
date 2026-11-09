@@ -113,7 +113,12 @@ export async function loadMyQueue(me) {
   /* 🟡 ถังเหลือง: เติม `section` จากทะเบียนไลน์ (ตารางถังไม่มีคอลัมน์ส่วนงาน) — ไลน์นอกทะเบียน
      ปล่อย undefined ให้ buildQueue นับเป็น "ชี้ส่วนงานไม่ได้" แล้วจอเขียนบอก ห้ามเดาให้
      🔴 ก้อนใดก้อนหนึ่งล่ม = ส่ง undefined ⇒ partial (คิวที่ "ครบไม่จริง" แย่กว่าคิวที่บอกว่าโหลดไม่ครบ) */
-  const movedToRed = binRedR.error ? null : new Set((binRedR.data || []).map(r => r.from_yellow_id));
+  /* 🔴 ชนเพดาน 1000 = เพดาน PostgREST พอดี ⇒ รายการใบแดงอาจไม่ครบ แล้วใบที่ย้ายลงแดงไปแล้ว
+     กลับมาค้างในคิวของทุกคน (ของค้างเทียม — สิ่งที่ตัวกรองนี้มีไว้กัน) ⇒ ถือเป็น "ไม่รู้" เหมือนคิวรีล่ม */
+  const redRows = binRedR.error ? null : (binRedR.data || []);
+  const movedToRed = (redRows && redRows.length < 1000) ? new Set(redRows.map(r => r.from_yellow_id)) : null;
+  /* 🔴 ชนเพดาน 200 ของคิวเอง = "โหลดไม่ครบ" ไม่ใช่ "มีแค่นี้" ⇒ ติดธงให้จอเขียนบอก (กฎเขียน DB ข้อ 5) */
+  const binsTruncated = Array.isArray(binR.data) && binR.data.length >= 200;
   const bins = (binR.error || !movedToRed) ? undefined
     : (binR.data || [])
       .filter(b => !movedToRed.has(b.id))
@@ -139,7 +144,7 @@ export async function loadMyQueue(me) {
      🔴 คิวรีล่ม = `mo` เป็น undefined ⇒ **ไม่ส่ง** `moAll` เพื่อให้ `countsCapped` ติดธง
         ห้ามส่ง [] (จะกลายเป็น "ทุกกองมี 0 ใบ" ทั้งที่ไม่รู้ · ลิสต์ว่าง 2 ความหมาย · กฎข้อ 12) */
   return buildQueue({ mo, moAll: mo, moAllCapped: moTruncated, moTruncated,
-    sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps, bins }, me);
+    sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps, bins, binsTruncated }, me);
 }
 
 /* ── UI ชิ้นเล็ก ────────────────────────────────────────────────────────── */

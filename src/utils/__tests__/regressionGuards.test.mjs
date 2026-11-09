@@ -7896,6 +7896,96 @@ test('🟡 defect-auto-yellow — ลงงานเสียต้องตั�
     + '\n\n   ของจริงอยู่ในถังแต่ระบบไม่รู้ = สืบกลับไม่ได้ว่าของหายไปไหน\n');
 });
 
+test('🔐 qbin-writes-layer3 — ทุกจุดที่เขียนถังต้องผ่านด่านชั้น ③ + นับแถว + คิวไม่โกหกตอนโหลดไม่ครบ', () => {
+  /* QC audit 09/11 (หมวด B·C·D): ฝั่ง DR เป็น anon ⇒ **จอคือด่านเดียว**
+     ช่องเลือกไลน์ที่กรอง scope แล้วไม่ใช่ด่าน (`?scope=` เปิดตรงได้) */
+  const bad = [];
+  const Q = 'src/components/QualityBins.jsx';
+  const q = stripComments(readFileSync(join(ROOT, Q), 'utf8'));
+  if (!/const guardLines = \(/.test(q))
+    bad.push(`${Q}: ต้องมี guardLines() = canWriteLine + unknownTarget 'block' (ชั้น ③)`);
+  if (!/unknownTarget: 'block'/.test(q))
+    bad.push(`${Q}: ด่านชั้น ③ ต้องใช้ unknownTarget:'block' (ไลน์ที่ผังไม่รู้จัก = ห้ามเขียน)`);
+  for (const fn of ['save', 'toRed', 'decide', 'decideScrap', 'remove']) {
+    const m = q.match(new RegExp(`const\\s+${fn}\\s*=\\s*async[\\s\\S]*?\\n  \\};`));
+    if (!m) { bad.push(`${Q}: หา ${fn}() ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้`); continue; }
+    if (!/guardLines\(/.test(m[0])) bad.push(`${Q} ${fn}(): ต้องเช็ค guardLines ก่อนเขียน DB`);
+  }
+  /* ✍️ ช่อง QA บนใบ = ลายเซ็น — ไม่รู้ชื่อคนกด ห้ามเขียนใบที่ไม่มีชื่อผู้พิจารณา */
+  for (const fn of ['decide', 'decideScrap']) {
+    const m = q.match(new RegExp(`const\\s+${fn}\\s*=\\s*async[\\s\\S]*?\\n  \\};`));
+    if (m && !/guardSigner\(\)/.test(m[0])) bad.push(`${Q} ${fn}(): ต้องเช็ค guardSigner() ก่อนเขียน qa_by`);
+  }
+  const save = q.match(/const\s+save\s*=\s*async[\s\S]*?\n  \};/);
+  if (save && !/checkWriteRows\(/.test(save[0]))
+    bad.push(`${Q} save(): UPDATE ต้องนับแถว (RLS ปฏิเสธ = 0 แถวไม่มี error)`);
+  /* `.in(ids)` ยาว = URL เกินเพดาน proxy แล้วคืนค่าว่างเงียบ */
+  if (/\.in\('id', repIds\)/.test(q))
+    bad.push(`${Q}: repIds ยาวได้ถึง 500 ⇒ ต้องผ่าน fetchByIds (chunk) ห้าม .in() ตรงๆ`);
+  if (!/fetchByIds\(/.test(q))
+    bad.push(`${Q}: ต้องใช้ fetchByIds สำหรับคิวรีที่ส่ง id เป็นชุด`);
+  /* ทะเบียนไลน์โหลดไม่ได้ = ขอบเขตไม่ชัด ห้ามเขียนยืนยันว่า "ทั้งโรงงาน" */
+  if (!/scopeRes\.unsure/.test(q))
+    bad.push(`${Q}: ต้องอ่าน unsure จาก lineScope() มาเขียนบนจอ`);
+
+  const P = 'src/components/MyQueuePanel.jsx';
+  const p = stripComments(readFileSync(join(ROOT, P), 'utf8'));
+  if (!/binsTruncated/.test(p)) bad.push(`${P}: คิวถังชนเพดาน 200 ต้องติดธง binsTruncated`);
+  if (!/redRows\.length < 1000/.test(p))
+    bad.push(`${P}: รายการใบแดงชนเพดาน 1000 = ไม่รู้ ⇒ ต้องถือเป็น partial (ของค้างเทียม)`);
+  const mq = stripComments(readFileSync(join(ROOT, 'src/utils/myQueue.js'), 'utf8'));
+  if (!/binsTruncated[\s\S]{0,80}missing\.push\('bins_truncated'\)/.test(mq))
+    bad.push(`src/utils/myQueue.js: binsTruncated ต้องเข้า missing (จอจะได้เขียนว่าโหลดไม่ครบ)`);
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   ฝั่ง DR ไม่มี RLS จริง — จอปล่อยผ่าน = ใครก็เขียนของหน่วยอื่นได้\n');
+});
+
+test('📝 write-honesty — ปิดใบ/ลบของ ต้อง CAS + นับแถว + ไม่ทิ้งใบถังกำพร้า', () => {
+  /* QC audit 09/11: จุดที่ "ผลลัพธ์สำคัญ" แต่ยังอ่านแค่ error แล้วขึ้น toast สำเร็จ */
+  const bad = [];
+  const D = 'src/pages/DailyReport.jsx';
+  const d = stripComments(readFileSync(join(ROOT, D), 'utf8'));
+  const close = d.match(/const\s+handleManualCloseInner\s*=\s*async[\s\S]*?\n  \};/);
+  if (!close) bad.push(`${D}: หา handleManualCloseInner ไม่เจอ`);
+  else {
+    if (!/\.eq\('status', 'open'\)/.test(close[0]))
+      bad.push(`${D} handleManualCloseInner: ต้อง CAS .eq('status','open') — 2 เครื่องกดพร้อมกันทับกันเงียบ`);
+    if (!/checkWriteRows\(/.test(close[0]))
+      bad.push(`${D} handleManualCloseInner: ต้องนับแถว`);
+  }
+  const qty = d.match(/const\s+handleManualQtyUpdateInner\s*=\s*async[\s\S]*?\n  \};/);
+  if (qty && !/checkWriteRows\(/.test(qty[0]))
+    bad.push(`${D} handleManualQtyUpdateInner: ลงยอดผลิตต้องนับแถว`);
+  const del = d.match(/const\s+handleDeleteDefectLog\s*=\s*async[\s\S]*?\n  \};/);
+  if (!del) bad.push(`${D}: หา handleDeleteDefectLog ไม่เจอ`);
+  else {
+    /* FK เป็น on delete set null ⇒ ลบเฉยๆ = ใบถังกำพร้าค้างคิวตลอดไป */
+    if (!/quality_bin_records/.test(del[0]))
+      bad.push(`${D} handleDeleteDefectLog: ต้องจัดการใบถังที่ผูกอยู่ก่อนลบ (FK = on delete set null)`);
+    if (!/checkWriteRows\(/.test(del[0]))
+      bad.push(`${D} handleDeleteDefectLog: ต้องนับแถวที่ลบจริง`);
+  }
+
+  const S = 'src/pages/ScrapReport.jsx';
+  const sr = stripComments(readFileSync(join(ROOT, S), 'utf8'));
+  if (/from\('scrap_reports'\)\s*\.update\([\s\S]{0,120}\.eq\('id', repId\);/.test(sr))
+    bad.push(`${S}: UPDATE หัวใบต้อง .select('id') + checkWriteRows`);
+  if (/from\('scrap_reports'\)\.delete\(\)\.eq\('id', rep\.id\);/.test(sr))
+    bad.push(`${S}: DELETE ใบต้อง .select('id') + checkWriteRows`);
+  if (!/emptyWhy/.test(sr))
+    bad.push(`${S}: จอว่างต้องแยก "ไม่มีใบ" / "ไม่มีไลน์ในขอบเขต" / "เช็คไม่ได้" ออกจากกัน`);
+
+  const PM = 'src/pages/ProductMaster.jsx';
+  const pm = stripComments(readFileSync(join(ROOT, PM), 'utf8'));
+  if (!/function OpStepsPanel\(\{[^)]*guard/.test(pm))
+    bad.push(`${PM}: OpStepsPanel ต้องรับ prop guard (กฎชั้น ③ จากหน้าแม่) ไม่ใช่แค่ canEdit`);
+  const opSave = pm.match(/function OpStepsPanel[\s\S]*?const remove = async/);
+  if (opSave && !/guard\?\.\(/.test(opSave[0]))
+    bad.push(`${PM} OpStepsPanel.save(): ต้องเรียก guard ก่อน insert bom_items`);
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   "สำเร็จ 0 แถว ไม่มี error" คือหน้าตาปกติของ RLS ปฏิเสธ — ไม่นับแถว = จอโกหกทุกครั้ง\n');
+});
+
 test('🔴 bin-link-unknown-not-zero — เช็คสถานะ "ลงถังแล้วยัง" ไม่ได้ ห้ามตีเป็น "ยังไม่ลงถัง"', () => {
   /* QC audit 09/11: คิวรี binLinks ล้มแล้ว `setBinLinks({})` ⇒ ชิป "🗑️ ยังไม่ลงถัง N" + ปุ่ม "ลงถัง"
      ⇒ หน้างานกดสร้างใบถังซ้ำกับแท็บเหลืองที่ระบบตั้งอัตโนมัติไว้แล้ว (05/11)

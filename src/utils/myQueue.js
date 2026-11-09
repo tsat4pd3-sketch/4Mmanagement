@@ -199,6 +199,8 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
      แล้วแผงยืนยันว่า "ไม่มีงานที่รอคุณอยู่" ทั้งที่ ผจก.ฝ่ายที่แจ้งมี 51 ใบรออนุมัติปิด
      ⚠️ ตัดเงียบแย่กว่าตัวเลขไม่ครบ — badgeCount() คืน 0 ตอน partial อยู่แล้ว (ไม่หลอกว่ามีงานน้อย) */
   if (src?.moTruncated) missing.push('mo_truncated');
+  /* 🔴 คิวถังเหลืองชนเพดานของตัวโหลด = ตัวเลขต่ำกว่าจริง ⇒ จอต้องเขียนบอกว่าไม่ครบ (09/11) */
+  if (src?.binsTruncated) missing.push('bins_truncated');
   /* 🔴 แถวที่ "ชี้ส่วนงานไม่ได้" — ตกจากคิวของทุกคน ⇒ ต้องนับไว้ให้จอเขียนบอก ห้ามหายเงียบ */
   let unattributed = 0;
   const keep = (row) => {

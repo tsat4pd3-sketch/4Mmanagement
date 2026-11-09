@@ -40,6 +40,7 @@ import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import { DeleteButton } from '../components/IconButton';
+import { checkWriteRows } from '../utils/dbWrite';   // RLS ปฏิเสธ UPDATE/DELETE = 0 แถวไม่มี error (กฎเขียน DB ข้อ 2)
 import useIsMobile from '../utils/useIsMobile';
 /* 🗑️ ถังเหลือง/แดง — **ชิ้นเดียวกับที่ /qa ใช้** embed ทั้งดุ้น ไม่แก้ของเดิม (pattern เดียวกับ /equipment)
    user 19/10: *"feature ถังเหลือง/แดง ควรจะอยู่กับผลิตนะ หลักๆ ผลิตจะเป็นคน input data มาจาก daily report
@@ -179,8 +180,14 @@ export default function ScrapReport() {
      ⇒ บอกด้วยว่านอกช่วงมีกี่ใบ ใบล่าสุดวันไหน + ปุ่มกระโดดไป (กฎความซื่อสัตย์ของจอ) */
   const [listErr, setListErr]   = useState(null);
   const [outside, setOutside]   = useState(null);   // { count, latest } | null
+  /* 🔴 จอว่างมี 3 เหตุ ห้ามยุบเป็นประโยคเดียว (QC audit 09/11):
+     `none` ไม่มีใบจริง · `scope0` บัญชีนี้ไม่มีไลน์ในขอบเขต (ไม่เคยยิงคิวรีเลย) ·
+     `unknown` คิวรีถามว่า "นอกช่วงมีมั้ย" ล่ม ⇒ ตอบไม่ได้ว่าทั้งระบบมีใบหรือไม่ */
+  const [emptyWhy, setEmptyWhy] = useState('none');
   const loadReports = useCallback(async () => {
-    if (scopedLineNames && scopedLineNames.length === 0) { setReports([]); setOutside(null); return; } // ถูก scope แต่ไม่มีไลน์ → ว่าง
+    if (scopedLineNames && scopedLineNames.length === 0) {   // ถูก scope แต่ไม่มีไลน์ → ไม่เคยยิงคิวรี
+      setReports([]); setOutside(null); setEmptyWhy('scope0'); return;
+    }
     let q = supabaseDR.from('scrap_reports').select('*')
       .gte('report_date', listFrom).lte('report_date', listTo);
     if (scopedLineNames) q = q.in('line_name', scopedLineNames);   // ดัน scope เข้า query
@@ -190,12 +197,14 @@ export default function ScrapReport() {
     setListErr(null);
     setReports(data || []);
 
-    if ((data || []).length) { setOutside(null); return; }
+    if ((data || []).length) { setOutside(null); setEmptyWhy('none'); return; }
     // ว่าง → ถามต่อว่า "นอกช่วงมีมั้ย" (คิวรีเล็ก เฉพาะตอนจอว่างเท่านั้น ไม่กินทุกครั้ง)
     let oq = supabaseDR.from('scrap_reports').select('report_date').order('report_date', { ascending: false }).limit(1);
     if (scopedLineNames) oq = oq.in('line_name', scopedLineNames);
     const { data: any1, error: oe } = await oq;
     setOutside(!oe && any1?.length ? { latest: any1[0].report_date } : null);
+    /* คิวรี probe ล่ม = **ไม่รู้** ห้ามอ่านเป็น "ทั้งระบบยังไม่มีใบเลย" */
+    setEmptyWhy(oe ? 'unknown' : 'none');
   }, [listFrom, listTo, scopedLineNames]);
   useEffect(() => { loadReports(); }, [loadReports]);
 
@@ -543,8 +552,11 @@ export default function ScrapReport() {
     };
     let repId = report.id;
     if (repId) {
-      const { error } = await supabaseDR.from('scrap_reports').update(payload).eq('id', repId);
-      if (error) { toast.error(error.message); return; }
+      /* 🔴 นับแถว — RLS ปฏิเสธ UPDATE = 0 แถวไม่มี error แล้วจอขึ้น "บันทึกใบแล้ว ✓" ทั้งที่หัวใบไม่เปลี่ยน
+         (รายการในใบด้านล่างนับแถวอยู่แล้ว ตัวหัวใบกลับไม่นับ · QC audit 09/11) */
+      if (!checkWriteRows(await supabaseDR.from('scrap_reports').update(payload).eq('id', repId).select('id'),
+        'บันทึกหัวใบรายงานของเสีย',
+        { zeroMsg: 'บันทึกหัวใบไม่สำเร็จ (0 แถว — อาจมีคนลบใบไปก่อน หรือสิทธิ์เขียนไม่พอ)' })) return;
     } else {
       const { data, error } = await supabaseDR.from('scrap_reports').insert({ ...payload, created_by: fullName || null }).select().single();
       if (error) { toast.error(error.message); return; }
@@ -621,8 +633,10 @@ export default function ScrapReport() {
 
   const delReport = async (rep) => {
     if (!window.confirm(`ลบใบ ${rep.doc_no || fmtD(rep.report_date)}?`)) return;
-    const { error } = await supabaseDR.from('scrap_reports').delete().eq('id', rep.id);
-    if (error) { toast.error(error.message); return; }
+    /* 🔴 DELETE ที่ถูก RLS ปฏิเสธ = 0 แถวไม่มี error ⇒ ต้องนับ ไม่งั้นขึ้น "ลบแล้ว" ทั้งที่ใบยังอยู่ */
+    if (!checkWriteRows(await supabaseDR.from('scrap_reports').delete().eq('id', rep.id).select('id'),
+      'ลบใบรายงานของเสีย',
+      { zeroMsg: 'ลบไม่สำเร็จ (0 แถว — อาจถูกลบไปแล้ว หรือสิทธิ์ไม่พอ) · รีเฟรชแล้วเช็คอีกครั้ง' })) { loadReports(); return; }
     toast.success('ลบแล้ว'); loadReports();
   };
 
@@ -726,7 +740,11 @@ export default function ScrapReport() {
                       ขยายช่วงไปถึงวันนั้น
                     </button>
                   </span>
-                ) : <span style={{ color: 'var(--muted)' }}>ไม่มีใบในช่วงนี้ (ทั้งระบบยังไม่มีใบรายงานของเสียเลย)</span>}
+                ) : emptyWhy === 'scope0'
+                    ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>บัญชีนี้ไม่มีไลน์ในขอบเขต — ยังตัดรายการไม่ได้ (ให้ admin ตั้งขอบเขตที่ /add-user)</span>
+                    : emptyWhy === 'unknown'
+                      ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>ไม่มีใบในช่วงนี้ — เช็คไม่ได้ว่านอกช่วงมีใบไหม (คิวรีล่ม) ลองใหม่อีกครั้ง</span>
+                      : <span style={{ color: 'var(--muted)' }}>ไม่มีใบในช่วงนี้ (ทั้งระบบยังไม่มีใบรายงานของเสียเลย)</span>}
             </div>
           )}
         </div>
@@ -767,6 +785,10 @@ export default function ScrapReport() {
                       ขยายช่วงไปถึงวันนั้น
                     </button>
                   </span>
+                ) : emptyWhy === 'scope0' ? (
+                  <span style={{ color: 'var(--amber)', fontWeight: 700 }}>บัญชีนี้ไม่มีไลน์ในขอบเขต — ยังตัดรายการไม่ได้ (ให้ admin ตั้งขอบเขตที่ /add-user)</span>
+                ) : emptyWhy === 'unknown' ? (
+                  <span style={{ color: 'var(--amber)', fontWeight: 700 }}>ไม่มีใบในช่วงนี้ — เช็คไม่ได้ว่านอกช่วงมีใบไหม (คิวรีล่ม) ลองใหม่อีกครั้ง</span>
                 ) : (
                   <span style={{ color: 'var(--muted)' }}>ไม่มีใบในช่วงนี้ (ทั้งระบบยังไม่มีใบรายงานของเสียเลย)</span>
                 )}

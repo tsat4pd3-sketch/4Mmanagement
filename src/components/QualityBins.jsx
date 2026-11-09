@@ -26,6 +26,7 @@ import { ALL } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 import LineSelect from './LineSelect';
 import { checkWriteRows } from '../utils/dbWrite';
+import { fetchByIds } from '../utils/fetchByIds';   // `.in(ids)` ยาว = URL เกินเพดาน proxy แล้วคืนค่าว่างเงียบ (กฎเขียน DB ข้อ 5)
 import ProductSelect from './ProductSelect';
 import PersonSelect from './PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 ค่าที่เคยบันทึกใน quality_bin_records — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
@@ -36,7 +37,10 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can, canAccessPage } from '../utils/permissions';
-import { scopedLineNames } from '../utils/sectionScope';
+import { lineScope } from '../utils/sectionScope';
+/* 🔐 ชั้นที่ ③ ของสิทธิ์ — "แถวนี้เป็นของหน่วยงานเราไหม" · ฝั่ง DR เป็น anon ⇒ จอคือด่านเดียว
+   🔴 ช่องเลือกไลน์ที่กรอง scope แล้ว **ไม่ใช่ด่าน** (เปิด `?scope=` ตรงได้) — ต้องเช็คซ้ำในฟังก์ชันที่เขียน DB */
+import { canWriteLine, writeBlockText } from '../utils/writeScope';
 import { printQualityBin } from '../lib/qualityBinPrint';
 /* ✍️ ยืนยันก่อน "อนุมัติ/เซ็นรับ" — ของกลาง ห้ามเขียนข้อความเองในหน้า (คำสั่ง user 28/10 · ขยาย 02/11)
    ผลพิจารณาถังเหลืองเขียนชื่อคนกดลงช่อง QA บนใบ = การเซ็น ⇒ ต้องบอก 3 อย่าง: อนุมัติอะไร · ใบไหน · ในนามใคร */
@@ -97,7 +101,7 @@ const td = { padding: '6px 8px', fontSize: 12.5, color: 'var(--text)', borderTop
 export default function QualityBins({ mode = 'full' }) {
   /* 'full' = หน้าฝ่ายผลิต (บ้านของเอกสาร) · 'queue' = /qa เห็นแค่คิวรออนุมัติ */
   const queueOnly = mode === 'queue';
-  const { role, lineId, sections, fullName, scopeIdx } = useContext(UserContext);
+  const { role, lineId, sections, fullName, scopeIdx, section: homeSection, allUnits, respCostCenters } = useContext(UserContext);
   const canRecord = can('scrap', 'record', role);
   const canManage = can('scrap', 'manage', role);
 
@@ -142,16 +146,47 @@ export default function QualityBins({ mode = 'full' }) {
   const [form, setForm] = useState(BLANK);
   const [saving, setSaving] = useState(false);
 
+  /* 🔴 ทะเบียนไลน์โหลดไม่สำเร็จ ≠ "ไม่มีไลน์" — ทิ้ง error ทำให้ `lineScope` คืน unlimited+unsure
+     แล้วท้ายโหมดคิวไปเขียนยืนยันว่า "คิวนี้ทั้งโรงงาน" ซึ่งไม่จริง (QC audit 09/11) */
+  const [linesErr, setLinesErr] = useState('');
   useEffect(() => {
     loadLinesRes()
-      .then(({ data }) => setLines(data || []));
+      .then(({ data, error }) => { setLines(data || []); setLinesErr(error?.message || ''); });
   }, []);
 
-  // scope มาตรฐาน (helper กลาง) — ผลิตเห็นเฉพาะส่วนงานตัวเอง
-  const scopeNames = useMemo(
-    () => scopedLineNames({ role, lineId, sections: sections || [], lines, scopeIdx }),
-    [role, lineId, sections, lines],
+  /* scope มาตรฐาน (helper กลาง) — ผลิตเห็นเฉพาะส่วนงานตัวเอง
+     ใช้ `lineScope()` ตรงๆ เพื่ออ่าน `unsure` มาเขียนบนจอ (`scopedLineNames` กลืนธงนั้นไป)
+     🔴 `scopeIdx` ต้องอยู่ใน deps ด้วย — มาแบบ async จาก UserContext */
+  const scopeRes = useMemo(
+    () => lineScope({ role, lineId, sections: sections || [], lines, scopeIdx }),
+    [role, lineId, sections, lines, scopeIdx],
   );
+  /* ความหมายเดิมของตัวแปรนี้ทั้งไฟล์: `null` = ไม่จำกัด (เหมือน `scopedLineNames` เป๊ะ) */
+  const scopeNames = scopeRes.unlimited ? null : (scopeRes.names.length ? scopeRes.names : null);
+
+  /** 🔐 ด่านชั้น ③ ก่อนเขียนจริง — คืน `true` = เขียนได้ · `false` = บล็อกแล้วขึ้น toast บอกเหตุผล
+   *  🔴 ทะเบียนไลน์ยังไม่โหลด = ตัดสินไม่ได้ ⇒ **บล็อก (fail-closed)** ห้ามปล่อยผ่าน
+   *  🔴 "ย้ายของ" ต้องเช็ค 2 ฝั่ง — ผู้เรียกส่งทั้งไลน์ต้นทางและไลน์ปลายทางมาได้ (กฎ 19/10) */
+  const guardLines = (names, what) => {
+    const list = (Array.isArray(names) ? names : [names]);
+    if (!lines.length) {
+      toast.error('ยังโหลดทะเบียนไลน์ไม่เสร็จ — ยังตัดสินไม่ได้ว่าแถวนี้อยู่ในขอบเขตที่คุณดูแลไหม ลองใหม่อีกครั้ง');
+      return false;
+    }
+    const ctx = { role, section: homeSection, sections: sections || [], allUnits, respCostCenters, scopeIdx };
+    for (const n of list) {
+      const w = canWriteLine(ctx, n, lines, { unknownTarget: 'block' });
+      if (!w.ok) { toast.error(writeBlockText(w, { what, unit: n || '(ไม่ระบุไลน์)' })); return false; }
+    }
+    return true;
+  };
+
+  /** ✍️ ช่อง QA บนใบคือลายเซ็นตาม WI — ไม่รู้ชื่อคนกด = ห้ามเขียนใบที่ "ปิดโดยไม่มีชื่อผู้พิจารณา" */
+  const guardSigner = () => {
+    if (String(fullName || '').trim()) return true;
+    toast.error('บัญชีนี้ยังไม่มีชื่อ-นามสกุลในโปรไฟล์ — ช่องผู้พิจารณา (QA) บนใบต้องมีชื่อ ตั้งชื่อก่อนจึงตัดสินผลได้');
+    return false;
+  };
 
   const load = useCallback(async () => {
     const rid = ++loadReq.current;
@@ -247,8 +282,13 @@ export default function QualityBins({ mode = 'full' }) {
        ล้มเหลว = ปล่อยว่าง ไม่บล็อกตาราง แต่ก็ไม่โกหกว่า "ออกใบแล้ว" */
     const repIds = [...new Set((data || []).map(r => r.scrap_report_id).filter(Boolean))];
     if (repIds.length) {
-      const { data: reps } = await supabaseDR.from('scrap_reports').select('id, doc_no, status').in('id', repIds);
+      /* 🔴 แถวในช่วงมีได้ถึง 500 ⇒ `.in(id, …)` ยาวเกินเพดาน URL ของ proxy แล้ว **คืนค่าว่างเงียบ**
+         ⇒ คอลัมน์ "ใบรายงานของเสีย" ว่างทั้งตารางทั้งที่ออกใบแล้ว (กฎเขียน DB ข้อ 5 · QC audit 09/11) */
+      const { rows: reps, error: repErr } = await fetchByIds(repIds,
+        (part) => supabaseDR.from('scrap_reports').select('id, doc_no, status').in('id', part));
       if (stale()) return;
+      /* อ่านไม่ได้ = ไม่รู้ว่าออกใบแล้วหรือยัง — เขียนบนจอ ห้ามปล่อยให้อ่านเป็น "ยังไม่ออกใบ" */
+      setOverdueErr(e => e || (repErr ? `อ่านเลขที่ใบรายงานของเสียไม่ได้: ${repErr}` : ''));
       setScrapDocs(Object.fromEntries((reps || []).map(r => [r.id, r])));
     } else setScrapDocs({});
 
@@ -380,6 +420,9 @@ export default function QualityBins({ mode = 'full' }) {
       /* ถังแดงไม่มีขั้นซ่อม — เขียน null ไว้เสมอ ไม่ใช่ปล่อยค่าเดิมค้าง (ใบที่ย้ายมาจากเหลืองจะสับสน) */
       repair_img: isY ? repairUrl : null,
     };
+    /* 🔐 ชั้น ③ — "ย้ายของ" ต้องเช็ค 2 ฝั่ง: ไลน์ของแถวเดิม + ไลน์ที่กำลังจะเขียนลงไป (กฎ 19/10) */
+    if (!guardLines([...(editing !== 'new' && editing?.line_name ? [editing.line_name] : []), form.line_name],
+      'รายการในถังเหลือง/ถังแดง')) { setSaving(false); return; }
     /* ── §5.4 ผลพิจารณาของ QA (ถังเหลือง) ──
        ⚠️ null = "ยังไม่พิจารณา" ไม่ใช่ "ไม่มีผล" — ห้ามเขียน '' ลงไปแทน (จะกลายเป็นค่าที่ตัดสินไม่ได้)
        qa_decision_at เขียนเฉพาะตอน "เพิ่งตัดสิน" — แก้ช่องอื่นทีหลังไม่ขยับเวลาตัดสิน */
@@ -391,11 +434,21 @@ export default function QualityBins({ mode = 'full' }) {
       if (dec && dec !== prev) payload.qa_decision_at = new Date().toISOString();
       else if (!dec) payload.qa_decision_at = null;
     }
-    const { error } = editing === 'new'
-      ? await supabaseDR.from('quality_bin_records').insert(payload)
-      : await supabaseDR.from('quality_bin_records').update(payload).eq('id', editing.id);
+    /* 🔴 UPDATE ที่ถูก RLS ปฏิเสธ = "สำเร็จ 0 แถว ไม่มี error" ⇒ ต้องนับแถว ไม่งั้นขึ้น "แก้ไขแล้ว"
+       ทั้งที่ไม่ได้เขียนอะไรเลย (แถวถูก soft-delete/มีคนแก้ไปก่อน) — กฎเขียน DB ข้อ 2 · QC audit 09/11
+       INSERT ไม่ต้องนับ (โดน RLS จะโยน 42501 เอง) */
+    let ok = true;
+    if (editing === 'new') {
+      const res = await supabaseDR.from('quality_bin_records').insert(payload);
+      ok = !res.error;
+      if (res.error) toast.error(res.error.message);
+    } else {
+      const res = await supabaseDR.from('quality_bin_records').update(payload).eq('id', editing.id).select('id');
+      ok = checkWriteRows(res, 'แก้ไขรายการในถัง',
+        { zeroMsg: 'แก้ไขไม่สำเร็จ (0 แถว — อาจมีคนลบ/แก้ไปก่อน หรือไม่มีสิทธิ์) · รีเฟรชแล้วลองใหม่' });
+    }
     setSaving(false);
-    if (error) { toast.error(error.message); return; }
+    if (!ok) return;
     /* 🔴 ลบไฟล์เก่าได้**หลัง**เขียนแถวสำเร็จเท่านั้น — ลบก่อนแล้วเขียนล้ม = แถวยังชี้ URL ที่ไฟล์หายแล้ว
        (กฎเหล็ก db-write ข้อ 2) · ลบล้มปล่อยเงียบได้ ไฟล์กำพร้าไม่ทำให้จอผิด */
     if (editing !== 'new') {
@@ -418,6 +471,7 @@ export default function QualityBins({ mode = 'full' }) {
 
   const remove = async (r) => {
     if (!canManage) { toast.error('ลบรายการของเสียต้องมีสิทธิ์ scrap:manage'); return; }
+    if (!guardLines(r.line_name, 'การลบรายการในถัง')) return;
     if (!window.confirm(`ลบรายการ ${r.part_name || r.mat_no} (${r.qty} ชิ้น) ?`)) return;
     // soft delete — ใบเก่าต้องยังสืบย้อนได้ (บันทึกคุณภาพ ห้ามลบทิ้งจริง)
     // นับแถวที่เขียนจริง (กฎเขียน DB ข้อ 2) — 0 แถวแล้วขึ้น "ลบแล้ว" = จอโกหก แถวยังอยู่
@@ -432,6 +486,7 @@ export default function QualityBins({ mode = 'full' }) {
     if (!canRecord) { toast.error('บัญชีนี้ไม่มีสิทธิ์บันทึกของเสีย (scrap:record)'); return; }
     /* จำนวนที่ย้าย: ซ่อมแล้ว NG มาก่อน · ถ้า QA ชี้ "ทำลาย" ตรงๆ โดยไม่ผ่านการซ่อม ใช้จำนวนทั้งใบ
        (WI §5.4 — ทำลายเป็น 1 ใน 3 ทางที่ QA เลือกได้ ไม่ได้บังคับให้ซ่อมก่อน) */
+    if (!guardLines(r.line_name, 'การย้ายของลงถังแดง')) return;
     const qty = (Number(r.qty_ng) || 0) || (r.qa_decision === 'scrap' ? (Number(r.qty) || 0) : 0);
     if (!qty) { toast.error('ยังไม่ได้กรอกจำนวน NG หลังซ่อม (หรือให้ QA ชี้ผลเป็น 🔴 ทำลาย)'); return; }
     if (!skipConfirm && !window.confirm(`ย้าย ${qty} ชิ้นลงถังแดง?\n\n${r.part_name || r.mat_no}\nระบบจะสร้างรายการถังแดงที่ผูกกับใบนี้ให้`)) return;
@@ -461,6 +516,7 @@ export default function QualityBins({ mode = 'full' }) {
   const decide = async (r, kind) => {
     if (!canRecord) { toast.error('บัญชีนี้ไม่มีสิทธิ์บันทึกของเสีย (scrap:record)'); return; }
     if (deciding) return;
+    if (!guardLines(r.line_name, 'ผลพิจารณาของในถังเหลือง') || !guardSigner()) return;
     const qty = Number(r.qty) || 0;
     const when = today();
     /* 🔧 "ซ่อมแล้วดี" = ปิดครบสาย: ตัดสินซ่อม + วันซ่อม + จำนวน OK + วันกลับเข้ากระบวนการ
@@ -493,6 +549,7 @@ export default function QualityBins({ mode = 'full' }) {
   const decideScrap = async (r) => {
     if (!canRecord) { toast.error('บัญชีนี้ไม่มีสิทธิ์บันทึกของเสีย (scrap:record)'); return; }
     if (deciding) return;
+    if (!guardLines(r.line_name, 'ผลพิจารณาของในถังเหลือง') || !guardSigner()) return;
     /* 🔴 "เสียแน่" = ตัดของทิ้งจริง + เปิดสายขออนุมัติทำลาย ⇒ ต้องถามยืนยันเหมือนกัน (เดิมไม่ถามเลย) */
     if (!confirmSign({
       what: `ผลพิจารณา "เสียแน่ — ซ่อมไม่ได้" ${(Number(r.qty) || 0).toLocaleString()} ชิ้น`,
@@ -640,9 +697,16 @@ export default function QualityBins({ mode = 'full' }) {
           ? <> → <Link to="/scrap-report?tab=bins" style={{ color: 'var(--accent)', fontWeight: 700 }}>ของเสีย: ใบรายงาน · ถังเหลือง/แดง ↗</Link></>
           : <> — หน้า <b>ของเสีย: ใบรายงาน · ถังเหลือง/แดง</b> (บัญชีนี้ยังไม่มีสิทธิ์เข้าหน้านั้น)</>}
         <br />
-        {scopeNames
-          ? <>🏷️ คิวนี้เฉพาะส่วนงานของคุณ ({scopeNames.length} ไลน์) — ของไลน์อื่นไม่ถูกนับในตัวเลขข้างบน</>
-          : <>🏷️ คิวนี้ทั้งโรงงาน (บัญชีนี้ไม่ถูกจำกัดส่วนงาน)</>}
+        {scopeRes.unsure
+          ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>
+              ⚠️ ยังตัดขอบเขตไม่ชัด ({scopeRes.reason === 'registry_unloaded'
+                ? `โหลดทะเบียนไลน์ไม่สำเร็จ${linesErr ? `: ${linesErr}` : ''}`
+                : scopeRes.reason === 'own_line_unknown' ? 'ไม่พบไลน์ที่บัญชีนี้สังกัดในทะเบียน'
+                  : 'ส่วนงานของบัญชีนี้ไม่ตรงกับไลน์ไหนในทะเบียน'}) — ตัวเลขข้างบนอาจไม่ใช่ขอบเขตจริงของคุณ
+            </span>
+          : scopeNames
+            ? <>🏷️ คิวนี้เฉพาะส่วนงานของคุณ ({scopeNames.length} ไลน์) — ของไลน์อื่นไม่ถูกนับในตัวเลขข้างบน</>
+            : <>🏷️ คิวนี้ทั้งโรงงาน (บัญชีนี้ไม่ถูกจำกัดส่วนงาน)</>}
       </div>
     </div>
   );
