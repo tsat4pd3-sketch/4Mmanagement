@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useContext, useRef, useCallback, useMemo, Fragment } from 'react';
 import { sortLineNames } from '../utils/lineHierarchy';
 import { useNavigate, Link } from 'react-router-dom';
 import { toDecodableImage } from '../utils/heicToJpeg';
@@ -2839,19 +2839,22 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                   <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
                     stroke={color} strokeWidth="1.5" strokeDasharray="1.2 3.4" strokeLinecap="round"
                     opacity={0.92} vectorEffect="non-scaling-stroke" />
-                  {/* หมุดปลายฝั่งกรอบ = วงสีสถานะ + ไส้ขาว → ชี้ตำแหน่งได้ชัดโดยไม่ต้องใช้หัวลูกศร
-                      ⚠️ ใช้ line ยาว 0 + linecap round (วงกลมขนาด px คงที่) ห้ามใช้ <circle r="%">
-                         เพราะ viewBox ถูกยืด preserveAspectRatio=none วงกลมจะเบี้ยวเป็นวงรี */}
-                  <line x1={l.x2} y1={l.y2} x2={l.x2} y2={l.y2}
-                    stroke={color} strokeWidth="6" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
-                  <line x1={l.x2} y1={l.y2} x2={l.x2} y2={l.y2}
-                    stroke="#fff" strokeWidth="2.4" strokeLinecap="round" opacity={0.95} vectorEffect="non-scaling-stroke" />
-                  {/* จุดเล็กฝั่งการ์ด — ให้เส้นดู "ต่อ" กับการ์ด ไม่ใช่เส้นลอยมาหยุดกลางอากาศ */}
-                  <line x1={l.x1} y1={l.y1} x2={l.x1} y2={l.y1}
-                    stroke={color} strokeWidth="3" strokeLinecap="round" opacity={0.95} vectorEffect="non-scaling-stroke" />
                 </g>
               ))}
             </svg>
+            {/* หมุดปลายเส้นโยง (ฝั่งกรอบ = วงสีสถานะ+ไส้ขาว · ฝั่งการ์ด = จุดเล็ก) — **div ขนาด px คงที่ ห้ามวาดใน SVG**
+                🔴 10/11 (ภาพ iPad จาก user "จุดกลมใหญ่บังรูปมิด"): เดิมเป็น <line> ยาว 0 + linecap round + non-scaling-stroke
+                   Chrome ยอมไม่ยืด แต่ **Safari (iPad/iPhone) ยืด stroke ของเส้นยาว 0 ตาม viewBox 0–100 ที่ถูกยืดเต็มผัง**
+                   ⇒ หมุด 6 หน่วย = กว้าง ~100px เป็นวงรีทับผัง · พิกัด viewBox = % จึงวางด้วย left/top % ได้ตรงตัว */}
+            {!editing && !is3d && [
+              ...regions.map(r => [labelLayout.region[r.id]?.link, CAT[regCat(stOf(r.line_name))].color, `lkd-r-${r.id}`]),
+              ...autoHulls.map(h => [labelLayout.hull[h.name]?.link, CAT[regCat(stOf(h.name))].color, `lkd-h-${h.name}`]),
+            ].filter(([l]) => l).map(([l, color, key]) => (
+              <Fragment key={key}>
+                <span aria-hidden="true" style={{ position: 'absolute', left: `${l.x2}%`, top: `${l.y2}%`, width: 9, height: 9, transform: 'translate(-50%,-50%)', borderRadius: '50%', background: 'white', border: `2.5px solid ${color}`, boxSizing: 'border-box', pointerEvents: 'none', boxShadow: 'var(--shadow-sm)' }} />
+                <span aria-hidden="true" style={{ position: 'absolute', left: `${l.x1}%`, top: `${l.y1}%`, width: 4, height: 4, transform: 'translate(-50%,-50%)', borderRadius: '50%', background: color, pointerEvents: 'none' }} />
+              </Fragment>
+            ))}
 
             {drawing && draft.map((pt, i) => (
               <div key={`d-${i}`} style={{ position: 'absolute', left: `${pt[0]}%`, top: `${pt[1]}%`, width: i === 0 ? (snapFirst ? 22 : 16) : 11, height: i === 0 ? (snapFirst ? 22 : 16) : 11, transform: 'translate(-50%,-50%)', borderRadius: '50%', background: i === 0 ? (snapFirst ? 'var(--green-line)' : 'var(--blue-line)') : 'var(--blue)', border: `2px solid ${i === 0 ? 'var(--green)' : '#fff'}`, pointerEvents: 'none', transition: 'width .1s,height .1s' }} />
@@ -2999,7 +3002,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                         <span style={{ fontSize: 'clamp(17px,1.5vw,22px)', fontWeight: 900, color: st.live.over ? 'var(--red)' : 'var(--green)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                           {st.live.kw == null ? '—' : st.live.kw.toFixed(1)}
                         </span>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', lineHeight: 1.6 }}>kW · สด</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', lineHeight: 1.6, whiteSpace: 'nowrap' }}>kW · สด</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 11, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}
                         title={`ตู้ ${st.live.meters.join(', ')}${st.live.sharedWith.length ? ` · ใช้ร่วมกับ ${st.live.sharedWith.join(', ')} (แยกรายไลน์ไม่ได้)` : ''}`}>

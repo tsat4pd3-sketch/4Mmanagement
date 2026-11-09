@@ -2433,6 +2433,12 @@ DOM node ที่ถือ focus ถูกถอดทิ้งแล้วส�
   · 🔴 **ส่งผ่านอาร์กิวเมนต์ฟังก์ชันสไตล์ก็นับ** — `btn('var(--accent)', '#08130a')` / ค่า default `(bg = 'var(--accent)', fg = '#fff')`
     หลุดรอบแรก 18 จุด (06/10) เพราะไม่มีคำว่า background:/color: ให้ด่านจับ · ด่านขยายแล้ว · default ที่ bg เปลี่ยนได้ ใช้ `bg === 'var(--accent)' ? 'var(--accent-ink)' : '#fff'`
 
+- **📍 จุด/หมุดบน SVG ที่ยืดด้วย `preserveAspectRatio="none"` = วาดเป็น `<div>`/`<span>` px คงที่ทับ ห้ามวาดใน SVG (2026-11-10)**
+  เทคนิค `<line>` ยาว 0 + `strokeLinecap="round"` + `vectorEffect="non-scaling-stroke"` **Chrome ไม่ยืด แต่ Safari (iPad/iPhone) ยืด**
+  ⇒ หมุด 6 หน่วยบน viewBox 0–100 ที่ถูกยืดเต็มผัง = วงรีกว้าง ~100px ทับผังมิด (ผังโรงงาน · ภาพ iPad จาก user)
+  · viewBox 0–100 ⇒ พิกัด = % ⇒ วาง `position:absolute; left:x%; top:y%; transform:translate(-50%,-50%)` ได้ตรงตัว
+  · ตรวจบน Chromium อย่างเดียว**จับไม่ได้** — ของที่พึ่ง non-scaling-stroke ต้องดูบน Safari จริง
+
 ### 🗑️ ปุ่มลบ/ปุ่มไอคอนในแถว = `<DeleteButton>` / `<IconButton>` (2026-10-06 · feedback user)
 *"รูปถังขยะสำหรับลบก็ดูไม่สมส่วน เล็กจนดูไม่ออก"* (ภาพ `/org-setup` บน Windows)
 - อีโมจิ 🗑️ เปล่าตัวเล็ก ไม่มีกรอบ ⇒ Windows วาดเป็นถังเส้นบางสีเทา กลืนกับพื้นมืด · `color` แดงไม่มีผลกับอีโมจิ
