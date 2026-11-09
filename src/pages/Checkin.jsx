@@ -43,6 +43,7 @@ import ScanModal from '../components/ScanModal';
 import { badgeScanOutcome } from '../utils/badgeCheckin';   // 🪪 สแกน QR บัตรพนักงาน = ติ๊กมางาน (27/10)
 import { SCAN_EVENT } from '../utils/scanWedge';
 
+import SectionScopeSelect from '../components/SectionScopeSelect';
 // fallback เมื่อ master ยังว่าง/ยังไม่ apply migration 20260819 — ตัวจริงอยู่ตาราง leave_types
 // (จัดการที่ /report แผงจองรถ OT · เลิก hardcode ตาม QC audit 2026-08-19)
 const DEFAULT_LEAVE_TYPES = ['ลากิจ', 'ลาป่วย', 'ลาพักร้อน', 'อื่นๆ'];
@@ -2137,13 +2138,9 @@ export default function Checkin() {
             </select>
 
             <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>ส่วนงาน</label>
-            <select value={exportSection} onChange={e => setExportSection(e.target.value)}
-              style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', marginBottom: 18, background: 'var(--bg)', color: 'var(--text)' }}>
-              {/* จำกัดตัวเลือกตาม scope — "ทุกส่วนงาน" เฉพาะ user ที่ไม่ถูกจำกัดขอบเขต (query ใน handleExportForms กรอง scope ซ้ำอีกชั้นเสมอ) */}
-              <option value="">{ALL.section}</option>
-              {(scopeSecs.length ? sections.filter(s => inSectionScope(scopeSecs, s)) : sections)
-                .map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            {/* จำกัดตัวเลือกตาม scope — ต้นไม้ผังองค์กรตัวเดียวกับจออื่น (SectionScopeSelect อ่าน UserContext.sections เอง) */}
+            <SectionScopeSelect lines={lines} value={exportSection} onChange={s => setExportSection(s)} only={sections}
+              width="100%" style={{ marginBottom: 18 }} />
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setShowExport(false)} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>

@@ -9,6 +9,7 @@
 อัพเดท 2026-09-07: ใหม่ §5.1.2 — ช่อง "ชื่อคน/เลขเครื่อง/MAT/ลูกค้า/รหัสคลัง" ต้องใช้ picker กลาง (`PersonSelect`/`MachineSelect`/`ProductSelect`/`CustomerSelect`/`StorageLocSelect`) + `useOrgTeams` — audit ทั้งระบบ `docs/SINGLE-SOURCE-AUDIT-2026-09-07.md`
 อัพเดท 2026-09-24: §5.3 ข้อ 9 รอบ 2 — **ตัวกรองไลน์ห้ามตัดไลน์ลูกทิ้ง** (งานจริงอยู่ที่ไลน์ลูก · `/line-oee` เหลือแต่ไลน์แม่ 9 ตัว) · `lineOptionLabel()` = สูตรเยื้องจุดเดียว · เป้าระดับกรุ๊ปต้องไล่ขึ้นสายบนแล้วบอกบนจอว่ายืมจากไหน · มีด่าน `line-dropdown-hand-built`
 อัพเดท 2026-10-28: §6.23 — การ์ดรอบส่ง `/customer-demand` แปลงเป็น `<PartCard>` แล้ว (รูปชิ้นงาน + MAT 3 ชั้น เหมือนสโตร์)
+อัพเดท 2026-11-09: §5.3 ข้อ 9 — **`<SectionScopeSelect>`** = ตัวแปลงสำหรับหน้าที่กรองแค่ "ส่วนงาน" (state สตริงตัวเดียว · `pickDept` = แผนกด้วย) · กวาด 12 หน้า/17 ช่องที่ยังวาด `<select>` ส่วนงานแบนเอง · ด่าน `section-select-hand-built`
 อัพเดท 2026-10-02: §5.3 ข้อ 9 — ทุกช่องขอบเขตวาดด้วย `<OrgScopePicker>` ตัวเดียว (`<LineScopeSelect>` = ตัวแปลงสำหรับหน้า section/line) · หัวกลุ่ม LineSelect = 📁 · ไลน์เดียว = `<LineSelect>`
 
 อัพเดท 2026-10-01: §5.3 ข้อ 10 ใหม่ — **ลำดับของรายการจากผังองค์กร (ส่วนงาน/แผนก/กลุ่ม/ทีม) = `sort_order` ใน /org-setup → ชื่อธรรมชาติ** (`src/utils/listOrder.js`)
@@ -876,6 +877,10 @@ user ส่งคลิปจอมือถือมา: **เนื้อห�
        · หน้าที่กรองได้ทุกมิติ (OBEYA/KPI) = `<OrgScopePicker>` ตรงๆ
        · หน้าที่เก็บ state `section`/`line` (Report · OEE · เช็คชื่อ) = **`<LineScopeSelect>`** (`src/components/LineScopeSelect.jsx`)
          ตัวแปลงบาง ๆ ครอบ OrgScopePicker `pickable=['section','line_group','line']` — ฝ่าย/แผนก**โชว์เป็นหัวสีเทา ไม่ตัดทิ้ง**
+       · หน้าที่กรองได้แค่ **ส่วนงาน** (state = สตริงตัวเดียว · ManpowerBoard · MorningMeeting · ProductionPlan · Dashboard · TvBoard · WorkforceInsight ·
+         DisplayRotation · Checkin(export) · AddUser · Report แท็บ OT/พนักงาน/สถานี) = **`<SectionScopeSelect>`** (`src/components/SectionScopeSelect.jsx` · 09/11)
+         `value`/`onChange(sec, { kind, unit })` · `only=[…]` จำกัดจากหน้าได้แค่แคบลง · `pickDept dept=` เมื่อหน้ามีช่องแผนกของคนด้วย (2 ช่องแบน → ต้นไม้ช่องเดียว) ·
+         ส่ง `index`/`failed` จาก `useOrgScope(lines)` ของหน้าแม่เมื่อมีหลายแท็บ (โหลดผังครั้งเดียว) · ด่าน `section-select-hand-built`
          (ตัดทิ้ง = ต้นไม้ต่างจาก OBEYA อีก) · `onChange(sec, ln, { kind, root, lines })` (`root` = ไลน์แม่บนสุด · `lines` = ชื่อไลน์ในขอบเขต)
          · **`pickDept`** (02/10 · user: *"ให้เลือกระดับแผนกได้ในหน้า OEE กับรายงาน"*) = แผนกเลือกได้ → `onChange` คืน `{ unit, lines }`
            หน้าต้องกรองด้วย**ชุดไลน์ของแผนก** (`deptLines(index, unit, lines)` หรือ `info.lines`) · แผนกไม่มีไลน์ = จอว่าง **ห้ามตกเป็นทั้งโรงงาน**

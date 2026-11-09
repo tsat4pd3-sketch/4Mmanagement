@@ -41,6 +41,7 @@ import { buildUserIssues, issueSummaryText, issueDef, SEV_FIX } from '../utils/u
 import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
 import NoticeBar from '../components/NoticeBar';
+import SectionScopeSelect from '../components/SectionScopeSelect';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 /* ทีมช่างซ่อม (profiles.mtn_teams) — เดิมมีหน้าที่เดียวคือ "แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม"
    🔴 ตั้งแต่ 2026-10-04 ช่องนี้ยังเป็นตัวบอก **"อยู่ฝั่งช่าง หรือ ฝั่งผู้แจ้ง"** ของด่านล็อกช่องเซ็น
@@ -886,10 +887,7 @@ export default function AddUser() {
 
       {/* Toolbar: ขอบเขต → ชุดสิทธิ์ → ค้นหา → ตัวนับ (UI-STANDARD 2026-09-24 · FilterBar คุมขนาดช่องเอง) */}
       <FilterBar style={{ marginBottom: 12 }}>
-        <select value={filterSection} onChange={e => setFilterSection(e.target.value)}>
-          <option value="">{ALL.section}</option>
-          {sectionOpts.map(sec => <option key={sec} value={sec}>{sec}</option>)}
-        </select>
+        <SectionScopeSelect lines={lines} value={filterSection} onChange={s => setFilterSection(s)} />
         <select value={filterRole} onChange={e => setFilterRole(e.target.value)}>
           <option value="">{ALL.role}</option>
           <RoleOptGroups />

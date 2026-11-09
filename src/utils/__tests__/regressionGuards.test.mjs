@@ -465,6 +465,17 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'section-select-hand-built',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    /* ช่อง "ทุกส่วนงาน" ที่วาดเป็น <select> ลิสต์แบนเอง — ต้องเป็นต้นไม้ผังองค์กร (SectionScopeSelect/LineScopeSelect/OrgScopePicker) */
+    re: /<option value="">\{ALL\.section\}<\/option>/g,
+    why: 'user ทัก 09/11/2026 *"dropdown ที่ยังเหมือนไม่ดึงจากผังองค์กร ยังเจอหลาย tab ในหลายๆ หน้า"* (ภาพ /manpower-board) — '
+       + 'ลิสต์แบน PD1/PD2/… ไม่มีฝ่าย/ไอคอน/ย่อหน้า ทั้งที่ UI §5.3 ข้อ 9 สั่งให้ทุกช่องขอบเขตเป็นต้นไม้ `<OrgScopePicker>` ตัวเดียว · วัดจริง 12 หน้า/17 ช่อง',
+    fix: 'หน้าที่เก็บ state เป็นสตริงส่วนงาน = `<SectionScopeSelect value onChange only={…} [pickDept dept]>` (`src/components/SectionScopeSelect.jsx`) · '
+       + 'หน้าที่เลือกไลน์ได้ = `<LineScopeSelect>` · กรองได้ทุกมิติ = `<OrgScopePicker>` · ป้าย "ทุกส่วนงาน" ส่งผ่าน `plantLabel`/`allLabel` ไม่ใช่ <option> เอง',
+    allow: {},
+  },
+  {
     id: 'line-scope-split-selects',
     scan: ['src'], ext: ['.jsx'],
     /* ตัวกรองขอบเขตไลน์ที่แตกเป็น "ช่องส่วนงาน + ช่องไลน์" (2 ช่องติดกัน) หรือ map ทะเบียนไลน์เป็น <option> เอง */
