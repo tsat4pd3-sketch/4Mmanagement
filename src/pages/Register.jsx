@@ -12,7 +12,7 @@ import {
 } from '../utils/sectionScope';
 /* 🪪 ตัวตนพนักงานใหม่ประกอบที่ utils ที่เดียว — ทางเข้าอีกทางคือโมดัลแก้ผู้ใช้ใน /add-user
    (เดิมหน้านี้ไม่เขียน `staff_kind` เลย ⇒ QA/วิศวกร/ธุรการ ถูกนับเป็นกำลังคนหน้าไลน์เงียบๆ · audit 26/10) */
-import { newEmployeeRow, staffKindHint } from '../utils/employeeIdentity';
+import { newEmployeeRow, staffKindHint, findEmployeeByCode, isDuplicateEmployeeError, duplicateEmployeeText } from '../utils/employeeIdentity';
 import { STAFF_KINDS, STAFF_SHOPFLOOR, SUPPORT_VALUES } from '../utils/staffKind';
 import { checkWrite } from '../utils/dbWrite';
 import { positionOptionsWith } from '../utils/positions';
@@ -106,6 +106,12 @@ export default function Register() {
       const userId = userData?.user?.id;
       if (!userId) { toast.error('กรุณา Login ก่อนเพิ่มพนักงาน'); setIsUploading(false); return; }
 
+      /* 🔁 รหัสซ้ำต้องตอบเป็น "ใคร อยู่ไหน สถานะอะไร แก้ที่ไหน" ก่อนอัปโหลดรูป/ก่อน insert
+         (09/11: PD2 เพิ่ม 3 คนที่มีอยู่แล้วแต่ตัวเองมองไม่เห็น ⇒ เจอแต่ชื่อ constraint · employeeIdentity.js) */
+      const dupe = await findEmployeeByCode(supabase, empCode);
+      if (dupe.error) { toast.error(`ตรวจรหัสซ้ำไม่ได้ — ยังไม่บันทึก: ${dupe.error.message}`); setIsUploading(false); return; }
+      if (dupe.row) { toast.error(duplicateEmployeeText(dupe.row, { code: empCode, scopeSecs })); setIsUploading(false); return; }
+
       let photoUrl = null;
       if (photo) {
         const fileExt = photo.name.split('.').pop();
@@ -122,7 +128,14 @@ export default function Register() {
         staffKind, groupName, team, lineId, busRouteId, startDate,
         imageUrl: photoUrl, createdBy: userId,
       });
-      if (!checkWrite(await supabase.from('employees').insert([row]), 'เพิ่มพนักงานใหม่')) {
+      const ins = await supabase.from('employees').insert([row]);
+      if (isDuplicateEmployeeError(ins.error)) {   // สองคนกดพร้อมกันหลังด่านค้นหาผ่าน — ตอบแบบเดียวกัน
+        const again = await findEmployeeByCode(supabase, empCode);
+        toast.error(duplicateEmployeeText(again.row, { code: empCode, scopeSecs }));
+        setIsUploading(false);
+        return;
+      }
+      if (!checkWrite(ins, 'เพิ่มพนักงานใหม่')) {
         setIsUploading(false);
         return;
       }
