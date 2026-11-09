@@ -11,7 +11,7 @@ import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import { fetchByIds } from '../utils/fetchByIds';
 import { SESSION_STATUSES_LIVE } from '../utils/sessionStatus';
-import { scoreDef, defBars, unitOf, decimalsOf, summaryModeOf, summaryShort, fmtBar, valueScopeOf, sharedValueDef, yearForecast, boardSlotOf } from '../utils/kpiSetup';
+import { scoreDef, defBars, unitOf, decimalsOf, summaryModeOf, summaryShort, fmtBar, valueScopeOf, sharedValueDef, yearForecast, boardSlotOf, baseVarOf } from '../utils/kpiSetup';
 import { scopedLineNames } from '../utils/sectionScope';
 import useOrgScope from '../utils/useOrgScope';
 import OrgScopePicker from './OrgScopePicker';
@@ -595,6 +595,18 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
 
       const fiB = man?.def ? fInfoB[(man.sharedDef || man.def).id] : null;
       if (fiB && !r.auto) note = note || formulaNoteText(fiB, monthNo, { labelOf: skLabelB, def: man.def });
+      /* 🧮 บรรทัดรองของแผ่นที่ "สูตรคำนวณ" ต้องบอกตัวตั้ง/ตัวหารที่ใช้จริง ไม่ใช่เขียน "กรอกมือ" (09/11 · user: "sales/head เหมือนจะผิด")
+         เคสจริง: ยอดขาย/หัว PD1 = 47.951 เพราะกำลังคน PD1 ที่กรอกไว้ 32 คน (ของจริง ~300) — ถ้าแผ่นเขียนแค่ "กรอกมือ" ไม่มีทางเห็นว่าตัวหารผิด */
+      let fxSrc = '';
+      if (fiB?.computed?.length && !r.auto) {
+        const mNo = Number(String(cur?.k || monthKey).slice(5, 7)) || monthNo;
+        const useM = fiB.computed.includes(mNo) ? mNo : Math.max(...fiB.computed.filter(x => x <= mNo), 0) || fiB.computed[fiB.computed.length - 1];
+        const ins = fiB.inputs?.[useM] || {};
+        const fmtIn = (v, x) => { const u = baseVarOf(v)?.unit || ''; if (x == null) return '—'; if (u === 'บาท') return Math.abs(x) >= 1e6 ? `${(x / 1e6).toLocaleString('th-TH', { maximumFractionDigits: 1 })} MB` : `${Math.round(x).toLocaleString('th-TH')} บ.`; return `${Number(x).toLocaleString('th-TH', { maximumFractionDigits: 1 })} ${u}`; };
+        const vars = fiB.formula?.vars || Object.keys(ins);
+        const parts = vars.map(v => `${(baseVarOf(v)?.label || v).split(' (')[0].replace(/^[^\wก-๙]+\s*/, '')} ${fmtIn(v, ins[v])}${fiB.inputSrc?.[useM]?.[v] === 'auto' ? ' ≈ทะเบียน' : ''}`);
+        fxSrc = `🧮 ${fiB.label} · ${parts.join(' ÷ ')}${useM !== mNo ? ` (${monthLabel(`${year}-${String(useM).padStart(2, '0')}`)})` : ''}`;
+      }
       if (man?.shared === 'ok' && !r.auto) note = note || (isPlant(scope) ? 'ค่าโรงงาน — ทุกหน่วยที่ถือ KPI นี้ใช้ตัวเลขเดียวกัน' : 'ค่าโรงงาน (ทุกหน่วยใช้ตัวเลขเดียวกัน) · กรอกที่แท็บ ⚙️ ขอบเขต ทั้งโรงงาน');
       else if (man?.shared === 'missing' && !r.auto) note = note || `KPI นี้ใช้ค่าโรงงาน แต่ยังไม่มีนิยามระดับ ทั้งโรงงาน ปี ${year} — สร้างที่แท็บ ⚙️ ขอบเขต ทั้งโรงงาน แล้วกรอกที่นั่น`;
       else if (man?.inherited && !r.auto) note = note || `ค่าระดับ ${org.labelOf(man.at.kind, man.at.value)} (ยังไม่ตั้งแยกที่ขอบเขตนี้)`;
@@ -655,7 +667,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         hasTarget: !!(def && (target != null || bars?.commit_value != null)),
       };
       return {
-        ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast, curFilled, curChild, curDetail, curMan, hrPerPct, childMix, mix, roll,
+        ...r, def, unit, dir, series, value, valueKey, stale, target, st, why, note, manual, fxSrc, fromDept, months, sumKind, sumApprox, ytd, actualMonths, forecast, curFilled, curChild, curDetail, curMan, hrPerPct, childMix, mix, roll,
         atLabel: man?.inherited && man.at ? org.labelOf(man.at.kind, man.at.value) : '',
         commit: bars?.commit_value ?? null, hasPlan: Object.keys(planMap).length > 0,
         dec: decimalsOf(def),
@@ -812,6 +824,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const srcLabel = (r) => {
     if (r.roll) return `⬆ รวม ${r.roll.n} หน่วยลูก${r.roll.approx ? ' (≈ เฉลี่ย)' : ''}`;
     if (r.childMix) return `✍️ กรอกมือ · ⬆ เติมจากลูก ${r.childMix.filled} เดือน${r.childMix.approx ? ' (≈)' : ''}`;
+    if (r.fxSrc) return r.fxSrc;   // 🧮 สูตร: บอกตัวตั้ง/ตัวหารจริง (09/11)
     if (r.manual) return `✍️ กรอกมือ${r.atLabel ? ` (ระดับ ${r.atLabel})` : ''}`;
     const m = r.mix;
     if (m && (m.fillN || m.overlapN)) return `⚡ ${m.autoN} เดือน · ✍️ ${m.fillN} เดือน${m.overlapN ? ` · ทับ ${m.overlapN}` : ''}`;
