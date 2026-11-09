@@ -184,7 +184,11 @@
 > #### 🤖 ฟอร์ม Downtime: ชิ้นงาน = ใบงานในกะ · เครื่อง = กรองตามประเภท Downtime (2026-11-09 · คำสั่ง user)
 > · **ชิ้นงาน** (`dtMatOptions`) = ใบงานทุกใบในกะนี้ ยกเว้น `cancelled`/`imported` (ใบที่ปิดยอดแล้วยังเลือกได้) —
 >   **ถอดแหล่ง "สินค้าผูกไลน์" + "คัมบังของไลน์" ออกแล้ว** · ค่าที่ใบบันทึกไว้แต่ไม่มีใบงาน (แก้ใบเก่า) โชว์ป้าย ⚠ ห้ามหาย
-> · **เครื่อง** — ทะเบียน `dr_downtime_types.machine_type_ids` (uuid[] · migration `20261109_dr_downtime_types_machine_type_ids_dr.sql` **apply แล้ว**)
+> · **เครื่อง** — ทะเบียน 2 ช่อง **OR กัน**: `dr_downtime_types.machine_type_ids` (uuid[] · ประเภทเครื่อง · `20261109_…machine_type_ids_dr.sql`)
+>   + `equipment_kinds` (text[] · ชนิดอุปกรณ์ machine/die/jig/facility · `20261109b_…equipment_kinds_dr.sql`) — **apply แล้วทั้งคู่**
+>   · แม่พิมพ์ 270/276 ตัวไม่มีประเภทเครื่อง ⇒ ต้องผูกด้วยชนิด
+>   · ค่าที่ตั้งแล้ว (09/11 · คำสั่ง user): Robot (Alarm/Error) → ประเภท Robot ทั้ง 5 · JIG มีปัญหา → Jig fixture + Gripper ·
+>     4 ประเภทแม่พิมพ์ (ชำรุด/แตก · งานติด/ล้าง · เปลี่ยน · ปรับ/Clearance) → ชนิดแม่พิมพ์
 >   ติ๊กที่ แท็บตั้งค่า → ประเภท Downtime · กฎอยู่ `utils/dtMachineFilter.js` · **ว่าง = ทุกเครื่อง (พฤติกรรมเดิม) · ห้ามเดาจากคำในชื่อ**
 >   · จอเขียนว่ากรองด้วยประเภทไหน + ปุ่ม "แสดงทุกเครื่อง" เสมอ (เครื่องที่ยังไม่ระบุประเภทจะไม่เข้ากลุ่มที่กรอง)
 >   · ค่าเริ่มต้นทุกประเภท = ยังไม่ติ๊ก ⇒ **ยังไม่มีผลจนกว่าจะมีคนติ๊ก** (เช่น Robot (Alarm/Error) → Robot-Handling/ArcWelding/Spotwelding/Handling+Stan Gun)

@@ -59,8 +59,8 @@ import Segmented from '../components/Segmented';
 import DieMatLinkButton from '../components/DieMatLinkButton';
 import MoReportFromDowntime from '../components/MoReportFromDowntime';   // ฟอร์มแจ้งซ่อมเต็ม (lazy) — เปิดใบจาก Downtime
 import { dieCandidatesForMats } from '../utils/dieCandidates';
-import { dtMachineTypeIds, machineFitsDtType, machineTypeIdsForDb } from '../utils/dtMachineFilter';
-import { kindOf } from '../utils/equipmentKinds';
+import { dtMachineRule, machineFitsDtType, idsForDb } from '../utils/dtMachineFilter';
+import { kindOf, EQUIPMENT_KINDS, KIND_META } from '../utils/equipmentKinds';
 import { resolveMachine, normCode, resolveTypeRow, QR_KINDS } from '../utils/qrCode';
 import { SCAN_EVENT } from '../utils/scanWedge';
 import { pickUnusedColor } from '../utils/colorPick';
@@ -6505,8 +6505,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
             return row ? dieReg.sets.find(st => st.id === row.die_set_id) || null : null;
           })() : null;
           const dtSelType = dtTypes.find(t => String(t.id) === String(dtForm.downtime_type_id));
-          const dtTypeIds = dtMachineTypeIds(dtSelType);
-          const dtTypeLabels = dtTypeIds ? [...dtTypeIds].map(id => dieReg.mtypes.find(t => String(t.id) === id)?.label).filter(Boolean) : [];
+          const dtTypeIds = dtMachineRule(dtSelType);   // { ids, kinds } | null — ประเภทเครื่อง OR ชนิดอุปกรณ์
+          const dtTypeLabels = dtTypeIds ? [
+            ...[...dtTypeIds.kinds].map(k => KIND_META[k]?.label || k),
+            ...[...dtTypeIds.ids].map(id => dieReg.mtypes.find(t => String(t.id) === id)?.label).filter(Boolean),
+          ] : [];
           const machineKeyMap = buildMachineKeyMap(machines);   // ไม่ใช้ useMemo — บล็อกนี้อยู่ใน callback (rules-of-hooks)
           let famCount = 0;   // เครื่อง (รวมแม่พิมพ์) ที่ลงทะเบียนในครอบครัวไลน์นี้ — คิดใน IIFE ข้างล่าง
           const dtMachineOptions = (() => {
@@ -9351,16 +9354,16 @@ function DowntimeTypeSetup({ role }) {
   const openEdit = (item = null) => {
     setEditing(item?.id || 'new');
     setForm(item
-      ? { name_th: item.name_th, name_en: item.name_en || '', category: item.category, process_type: item.process_type || 'welding_assembly', color: item.color, sort_order: item.sort_order, is_active: item.is_active, six_big_loss: item.six_big_loss || '', waste_type: item.waste_type || '', machine_type_ids: item.machine_type_ids || [] }
+      ? { name_th: item.name_th, name_en: item.name_en || '', category: item.category, process_type: item.process_type || 'welding_assembly', color: item.color, sort_order: item.sort_order, is_active: item.is_active, six_big_loss: item.six_big_loss || '', waste_type: item.waste_type || '', machine_type_ids: item.machine_type_ids || [], equipment_kinds: item.equipment_kinds || [] }
       // สร้างใหม่ default สีที่ยังไม่ซ้ำกับประเภทที่มี (ผู้ใช้เปลี่ยนทับได้)
-      : { name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: pickUnusedColor(items.map(i => i.color)), sort_order: items.length + 1, is_active: true, six_big_loss: '', waste_type: '', machine_type_ids: [] });
+      : { name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: pickUnusedColor(items.map(i => i.color)), sort_order: items.length + 1, is_active: true, six_big_loss: '', waste_type: '', machine_type_ids: [], equipment_kinds: [] });
   };
 
   const handleSave = async () => {
     if (!form.name_th) { toast.error('กรอกชื่อประเภท'); return; }
     setSaving(true);
     // ค่าว่าง = ยังไม่จัดหมวด Lean → เก็บเป็น null (ห้ามเก็บ '' — จะกลายเป็นถังใหม่ในหน้าวิเคราะห์)
-    const payload = { ...form, six_big_loss: form.six_big_loss || null, waste_type: form.waste_type || null, machine_type_ids: machineTypeIdsForDb(form.machine_type_ids) };
+    const payload = { ...form, six_big_loss: form.six_big_loss || null, waste_type: form.waste_type || null, machine_type_ids: idsForDb(form.machine_type_ids), equipment_kinds: idsForDb(form.equipment_kinds) };
     const { error } = editing === 'new'
       ? await supabaseDR.from('dr_downtime_types').insert(payload)
       : await supabaseDR.from('dr_downtime_types').update(payload).eq('id', editing);
@@ -9484,6 +9487,21 @@ function DowntimeTypeSetup({ role }) {
                 </select>
               </Field>
               <Field label="เกิดกับเครื่องประเภทไหน (กรองช่องเลือกเครื่องตอนลง Downtime · ไม่ติ๊ก = ทุกเครื่อง)">
+                {/* ชนิดอุปกรณ์ (แม่พิมพ์/จิ๊ก/…) — OR กับประเภทเครื่องด้านล่าง · แม่พิมพ์ส่วนใหญ่ไม่มีประเภทเครื่อง ต้องติ๊กที่นี่ */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', marginBottom: 6 }}>
+                  {EQUIPMENT_KINDS.map(k => {
+                    const on = (form.equipment_kinds || []).includes(k.key);
+                    return (
+                      <label key={k.key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: 'var(--text)', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={on} onChange={() => setForm(f => {
+                          const cur = f.equipment_kinds || [];
+                          return { ...f, equipment_kinds: on ? cur.filter(x => x !== k.key) : [...cur, k.key] };
+                        })} />
+                        {k.icon} {k.label} (ทั้งชนิด)
+                      </label>
+                    );
+                  })}
+                </div>
                 {mtypes.err ? <div style={{ fontSize: 12, color: 'var(--red)' }}>โหลดทะเบียนประเภทเครื่องไม่สำเร็จ ({mtypes.err}) — ค่าที่ติ๊กไว้เดิมจะไม่ถูกแก้</div> : (
                   <div style={{ maxHeight: 150, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--ctl-r)', padding: '6px 8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 10px' }}>
                     {mtypes.rows.filter(t => t.is_active !== false || (form.machine_type_ids || []).includes(t.id)).map(t => {
@@ -9501,7 +9519,9 @@ function DowntimeTypeSetup({ role }) {
                   </div>
                 )}
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
-                  {(form.machine_type_ids || []).length ? `ติ๊ก ${(form.machine_type_ids || []).length} ประเภท` : 'ไม่ติ๊ก = เกิดได้กับทุกเครื่อง (เช่น Sensor / ระบบลม)'}
+                  {(form.machine_type_ids || []).length + (form.equipment_kinds || []).length
+                    ? `ติ๊ก ${(form.equipment_kinds || []).length} ชนิด + ${(form.machine_type_ids || []).length} ประเภทเครื่อง (เข้าข้อใดข้อหนึ่ง = ขึ้นในลิสต์)`
+                    : 'ไม่ติ๊ก = เกิดได้กับทุกเครื่อง (เช่น Sensor / ระบบลม)'}
                 </div>
               </Field>
               <Field label="สี">
