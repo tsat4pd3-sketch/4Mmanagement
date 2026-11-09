@@ -238,12 +238,15 @@ const METRICS = {
   energy: {
     label: 'พลังงาน', worstFirst: true, desc: true,
     value: s => s.kwh ?? null,
+    /* ⚡ กรอบที่มีมิเตอร์สด (s.live · liveForNames) — ป้ายเล็ก/แผงข้างต้องโชว์ค่าสดด้วย ไม่ใช่แค่การ์ดใหญ่
+       (09/11 · จอมือถือที่ไม่มีที่วางการ์ด ย่อเป็นป้ายเล็กแล้วเห็นแต่ยอดเดือน) · สีกรอบยังตัดสินจากยอดเดือนเหมือนเดิม */
     text: s => {
-      if (s.kwh == null) return 'ยังไม่กรอก';
+      const lv = s.live ? (s.live.kw == null ? 'สด: ขาดการติดต่อ' : `⚡ สด ${s.live.kw.toFixed(1)} kW${s.live.sharedWith.length ? ` (รวม ${s.live.sharedWith.join(', ')})` : ''}`) : '';
+      if (s.kwh == null) return lv || 'ยังไม่กรอก';
       const d = energyDelta(s);
-      return `${fmtKwh(s.kwh)} kWh${d != null ? ` · ${d > 0 ? '+' : ''}${d}%` : ''}`;
+      return `${lv ? `${lv} · เดือนนี้ ` : ''}${fmtKwh(s.kwh)} kWh${d != null ? ` · ${d > 0 ? '+' : ''}${d}%` : ''}`;
     },
-    short: s => (s.kwh == null ? '' : `${fmtKwh(s.kwh)}`),
+    short: s => (s.live?.kw != null ? `⚡${Math.round(s.live.kw)} kW` : s.kwh == null ? '' : `${fmtKwh(s.kwh)}`),
     cat: s => (s.kwh == null ? 'idle' : energyCat(energyDelta(s))),
   },
   productivity: {
