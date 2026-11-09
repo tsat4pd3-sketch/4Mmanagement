@@ -6,6 +6,7 @@ import { compressLayoutImage } from '../utils/layoutImage';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
+import { lineScope } from '../utils/sectionScope';
 import { can } from '../utils/permissions';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
@@ -497,13 +498,13 @@ const supNames = (list, riskOnly) => {
 // setupMode=true (/layout-setup แท็บภาพรวมโรงงาน) = โหมดตั้งค่า อัปโหลดรูป/วาด polygon ได้
 /* `viewParam` = ชื่อคีย์ลิงก์ของมุมมอง 2D/3D — หน้าที่ฝังผังนี้ (เช่น /mtn-layout ที่ใช้ ?view= ของตัวเองอยู่แล้ว) เปลี่ยนชื่อได้ */
 export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
-  const { role } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs, scopeIdx } = useContext(UserContext);
   const canEdit = setupMode && can('factory_map', 'edit', role);
   const navigate = useNavigate();
 
   const [imageUrl, setImageUrl] = useState(null);
   const [mapId, setMapId] = useState(null);
-  const [regions, setRegions] = useState([]);
+  const [allRegions, setRegions] = useState([]);   // ทุกกรอบบนผัง — จอดูกรองตามขอบเขตบัญชีเป็น `regions` ข้างล่าง
   const [layoutLines, setLayoutLines] = useState(() => new Set()); // ไลน์ที่มีผังพื้น (line_layouts) → คลิกเจาะดูผังพร้อมคนแบบ Dashboard
   const [lineStatus, setLineStatus] = useState({});   // production metrics (DR)
   const [partial, setPartial] = useState('');        // โหลดข้อมูลไม่ครบ — ห้ามให้ผังโกหกเงียบ (จอนี้ไม่มีใครเฝ้า)
@@ -520,7 +521,25 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
   const [energyMonth, setEnergyMonth] = useState(null);  // เดือนที่ผังกำลังโชว์ (ไม่ใช่ live — ต้องประกาศบนจอ)
   const [oeeHistRaw, setOeeHistRaw] = useState(null);    // ⚙️ ประวัติ OEE รายกะ 7 วันก่อน (สำหรับ sparkline การ์ด KPI · null = ยังไม่โหลด)
   const [energyEf, setEnergyEf] = useState(null);        // EF ของเดือนนั้น (null = ยังไม่ตั้ง → ไม่โชว์ tCO2e)
-  const [lines, setLines] = useState([]);
+  const [allLines, setLines] = useState([]);
+  /* 🔭 ขอบเขตของบัญชี (09/11 · user: "ถ้าเป็น user จอของส่วนงานไหนก็ควรจะแสดงแค่แผนกหรือส่วนงานตัวเอง")
+     จอดู (ไม่ใช่ setupMode) = เฉพาะไลน์ที่บัญชีนี้เห็นตาม `lineScope()` — แกนเดียวกับทุกจอ (ส่วนงาน/แผนก/ครอบครัวไลน์)
+     ⇒ กรอบ · ตัวนับหัวผัง · แผงขวา · ยอดรวม คิดจากชุดนี้ทั้งหมด (ทุกตัวอ่าน `lines`/`regions`)
+     · กรอบที่ไม่ใช่ไลน์ผลิต (โซนช่าง/คลัง/แม่พิมพ์) คงไว้ · ตั้งค่าผัง (setupMode) เห็นทั้งโรงงานเสมอ
+     · ทะเบียนยังไม่โหลด / ส่วนงานไม่ตรงผัง = ไม่ตัด (`unlimited`) แต่หัวผังเขียนบอก ห้ามเงียบ */
+  const scopeKey = (scopeSecs || []).join('|');
+  const viewScope = useMemo(() => (setupMode ? null
+    : lineScope({ role, lineId: userLineId, sections: scopeSecs || [], lines: allLines, scopeIdx })),
+  [setupMode, role, userLineId, scopeKey, allLines, scopeIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+  const scopeNames = useMemo(() => (viewScope && !viewScope.unlimited ? new Set(viewScope.names) : null), [viewScope]);
+  const lines = useMemo(() => (scopeNames ? allLines.filter(l => scopeNames.has(l.name)) : allLines), [allLines, scopeNames]);
+  const regions = useMemo(() => {
+    if (!scopeNames) return allRegions;
+    const prod = new Set(allLines.map(l => l.name));
+    return allRegions.filter(r => !prod.has(r.line_name) || scopeNames.has(r.line_name));
+  }, [allRegions, allLines, scopeNames]);
+  const scopeHidden = scopeNames ? allLines.length - lines.length : 0;
+  const scopeLabel = scopeNames ? ((scopeSecs || []).join(' · ') || 'ไลน์ของคุณ') : (viewScope?.unsure ? 'ทั้งโรงงาน (ตัดขอบเขตไม่ได้)' : 'ทั้งโรงงาน');
   // เป้า OEE รายกลุ่ม — null = ยังไม่รู้/โหลดไม่ได้ ⇒ สี OEE เป็น "ตัดสินไม่ได้" (ห้ามถอยไป 80/65)
   const [oeeTargets, setOeeTargets] = useState(null);
   useEffect(() => {
@@ -2553,6 +2572,15 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
             ⚠ กรอกค่าไฟไว้แต่ยังไม่ได้ตีกรอบบนผัง {energyNoRegion.length} จุด — ตัวเลขไม่โผล่
           </span>
         )}
+        {/* 🔭 ขอบเขตบัญชี — ผังเหลือเฉพาะส่วนงาน/ไลน์ของบัญชีนี้ ต้องบอกว่าซ่อนไปกี่ไลน์ (กฎ "กรองแล้วต้องเขียนบนจอ") */}
+        {!editing && (scopeHidden > 0 || viewScope?.unsure) && (
+          <span title={viewScope?.unsure ? 'ตัดขอบเขตของบัญชีนี้ไม่ได้ (ทะเบียนไลน์ยังไม่โหลด/ส่วนงานไม่ตรงผัง) — แสดงทั้งโรงงาน' : `ขอบเขตของบัญชีนี้: ${scopeLabel}`}
+            style={{ alignSelf: 'center', fontSize: 11.5, fontWeight: 700, borderRadius: 'var(--r-md)', padding: '3px 8px', whiteSpace: 'nowrap',
+              color: viewScope?.unsure ? 'var(--amber)' : 'var(--accent)', background: viewScope?.unsure ? 'var(--amber)1a' : 'var(--accent-dim)',
+              border: `1px solid ${viewScope?.unsure ? 'var(--amber)55' : 'var(--accent)55'}` }}>
+            {viewScope?.unsure ? '⚠ ตัดขอบเขตไม่ได้ — แสดงทั้งโรงงาน' : `🔭 เฉพาะ ${scopeLabel} · ซ่อน ${scopeHidden} ไลน์นอกขอบเขต`}
+          </span>
+        )}
         {/* 🫥 โซนสนับสนุนถูกซ่อนตาม metric ที่กด — สัญญาณผิดปกติยุบเป็นตัวนับ ⚠ บนชิป (ไม่หายเงียบ) · กดชิปเปิดดูชั่วคราว */}
         {!editing && !!facZones.all.length && (
           <button onClick={() => setShowFac(v => !v)} className={facZones.warn.length ? undefined : 'tv-hide'}
@@ -3124,7 +3152,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                 );
                 return (
                   <>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>สถานะวันนี้ (สด) — ทั้งโรงงาน</div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>สถานะวันนี้ (สด) — {scopeLabel}</div>
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>
                       หัวข้อแบบห้อง OBEYA (SQDCM) · {B.lineCount} ไลน์ · เปิดกะแล้ว {B.openCount} ไลน์<span className="tv-hide"> — กดหัวข้อเพื่อดูว่าไลน์ไหนเป็นต้นเหตุ</span>
                     </div>
