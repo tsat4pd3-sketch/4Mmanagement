@@ -19,8 +19,8 @@ import CollapseCard from '../components/CollapseCard';
 import DeliveryPointPanel from '../components/DeliveryPointPanel';
 import LinePartCallPanel from '../components/LinePartCallPanel';
 import SearchSelect from '../components/SearchSelect';
-import LineSelect from '../components/LineSelect';
-import { UNIT_KINDS, UNIT_PRODUCTION, UNIT_SUPPORT } from '../utils/unitKind';
+import LineSelect, { lineOptions, lineOptionLabel } from '../components/LineSelect';
+import { UNIT_KINDS, UNIT_PRODUCTION, UNIT_SUPPORT, isSupportUnit, splitUnitKinds } from '../utils/unitKind';
 import PersonSelect from '../components/PersonSelect';
 import { lineHeadsOf, headScopeLineIds } from '../utils/lineHeads';
 import { positionLabel } from '../utils/positions';
@@ -71,6 +71,13 @@ export default function LineSetup({ embedded = false } = {}) {
   const canEdit = can('line_setup', 'edit', role);
   const canDel  = canDelete('line_setup', 'edit', role);  // สิทธิ์ลบไลน์/จุดงาน แยกจากแก้ไข (fallback = edit ถ้ายังไม่ seed)
   const [lines, setLines] = useState([]);
+  // 🗂️ หน่วยสนับสนุนเป็นกลุ่มแยกท้าย dropdown "ไลน์ที่กำลังตั้งค่า" (09/11) — ลำดับชั้นแม่→ลูกเดียวกับไลน์ผลิต
+  const supportGroup = useMemo(() => {
+    const { support } = splitUnitKinds(lines);
+    if (!support.length) return [];
+    const opts = lineOptions(support, { includeSupport: true }).map(o => ({ value: o.value, label: lineOptionLabel(o) }));
+    return [{ label: '🗂️ หน่วยสนับสนุน (ไม่โผล่ในจอผลิต)', options: opts }];
+  }, [lines]);
   const [selectedLine, setSelectedLine] = useState('');
   const [newLineName, setNewLineName] = useState('');
   const [newLineSection, setNewLineSection] = useState('');
@@ -1278,12 +1285,15 @@ export default function LineSetup({ embedded = false } = {}) {
               <span style={{ ...labelSt, marginBottom: 0 }}>ไลน์ที่กำลังตั้งค่า</span>
               {mpDirty && <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--amber)', marginLeft: 'auto' }}>● ยังไม่บันทึก</span>}
             </div>
-            <LineSelect lines={lines} value={selectedLine} onChange={selectLine} placeholder="เลือกไลน์…" includeSupport
+            {/* 09/11 (คำสั่ง user "แผนกที่ไม่ใช่ shopfloor ไม่น่าต้องมาขึ้นปน"): หน้านี้ต้องเห็นทุกหน่วย (unitKind.js)
+                แต่ "แยกกลุ่มให้เห็น" — ไลน์ผลิตเป็นลิสต์หลัก · หน่วยสนับสนุนเป็นกลุ่ม 🗂️ แยกท้าย ไม่ปนกัน */}
+            <LineSelect lines={lines} value={selectedLine} onChange={selectLine} placeholder="เลือกไลน์…"
+              extraGroups={supportGroup} extraAt="end"
               style={{ width: '100%', fontSize: 13, fontWeight: 700, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--accent)' }} />
           </div>
         )}
 
-        <CollapseCard id="lineList" storePrefix="ls" title="ไลน์ผลิต" count={lines.length} defaultOpen={!selectedLine}>
+        <CollapseCard id="lineList" storePrefix="ls" title="ทะเบียนไลน์ / หน่วย" count={lines.length} defaultOpen={!selectedLine}>
           {lines.length > 6 && (
             <SearchInput value={lineSearch} onChange={setLineSearch} fields="ไลน์"
               style={{ marginBottom: 8 }} inputStyle={{ fontSize: 12.5, background: 'var(--bg3)' }} />
@@ -1310,7 +1320,15 @@ export default function LineSetup({ embedded = false } = {}) {
               // พับไลน์แม่ = ซ่อนไลน์ย่อยของมัน (ยกเว้นตอนค้นหา — โชว์ผลลัพธ์เสมอ)
               )).filter(l => q || !(l._isChild && collapsedParents.has(l.parent_line_name)));
               if (!shown.length) return <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', padding: '8px 0' }}>ไม่พบไลน์ที่ค้นหา</div>;
-              return shown.map(l => (
+              /* 🗂️ แยก 2 กลุ่มตามชนิดของ "ราก" (ไลน์ลูกตามแม่ไป ไม่ให้แม่-ลูกแยกคนละกลุ่ม) — กฎ unitKind.js: จอที่เห็นทุกหน่วยต้องแยกให้เห็น */
+              const rootOf = (l) => { let cur = l, i = 0; while (cur?.parent_line_name && i++ < 6) { const p = lines.find(x => x.name === cur.parent_line_name); if (!p) break; cur = p; } return cur; };
+              const isSup = (l) => isSupportUnit(rootOf(l));
+              const prodRows = shown.filter(l => !isSup(l)), supRows = shown.filter(isSup);
+              const nProd = lines.filter(l => !isSup(l)).length, nSup = lines.length - nProd;
+              const groupHead = (txt) => (
+                <div key={`h-${txt}`} style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', letterSpacing: '0.4px', textTransform: 'uppercase', padding: '6px 2px 2px' }}>{txt}</div>
+              );
+              const renderRow = (l) => (
                 <div key={l.id}
                   style={{
                     // 📱 มือถือ: dropdown Section/ไลน์หลักห่อลงบรรทัดใหม่ได้ — เดิมล้นกรอบรายการ 320→348px (mobilesweep 24/09)
@@ -1389,7 +1407,11 @@ export default function LineSetup({ embedded = false } = {}) {
                     </>
                   )}
                 </div>
-              ));
+              );
+              return [
+                ...(prodRows.length ? [groupHead(`🏭 ไลน์ผลิต (${nProd})`), ...prodRows.map(renderRow)] : []),
+                ...(supRows.length ? [groupHead(`🗂️ หน่วยสนับสนุน (${nSup}) — ไม่โผล่ในจอผลิต`), ...supRows.map(renderRow)] : []),
+              ];
             })()}
             {lines.length === 0 && (
               <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--muted)', fontSize: 12 }}>ยังไม่มีไลน์ผลิต</div>
