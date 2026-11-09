@@ -7,7 +7,7 @@ import { UserContext } from '../App';
 import { wavg, wLoad, wRun, wProd, buildCtMap, computeLiveOee, isTrialDefect, defectQty, ngByMatFrom, dtMinBySession, QBIN_EMBED } from '../utils/oee';
 import { loadAffectsLanes } from '../utils/affectsLanes';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
-import { isOpenDT, isPlannedDT } from '../utils/downtimeRules';
+import { isOpenDT, isPlannedDT, dtOpenKind, isForgottenDT, DT_OPEN_META } from '../utils/downtimeRules';
 import { dtBucketName, dtTrashStats, buildDtIndex } from '../utils/downtimeCategory';
 import { getLineFamilyNames, getLeafLineNames, getAncestorNames, isLeafLine } from '../utils/lineHierarchy';
 import LineSelect, { lineOptions } from '../components/LineSelect';
@@ -317,9 +317,16 @@ export default function LineOeeBoard() {
     });
     const top6 = (o) => Object.entries(o).map(([name, v]) => ({ name, v })).sort((a, b) => b.v - a.v).slice(0, 6);
 
-    // Alarm history — ล่าสุดก่อน · active (นอกแผน) = กระพริบ
+    /* Alarm history — ล่าสุดก่อน · กระพริบเฉพาะ "เครื่องยังหยุดอยู่จริง" (กะยังเปิด)
+       🔴 แถวที่เปิดค้างใน **กะที่ปิดไปแล้ว** = คนลืมปิดรายการ ห้ามกระพริบ ห้ามเขียนว่า "ยังหยุดอยู่"
+          แต่ห้ามซ่อน — นับไว้บอกบนหัวการ์ด (กฎ dtOpenKind · utils/downtimeRules 09/11) */
+    const sessStatusById = {};
+    sessions.forEach(s => { sessStatusById[s.id] = s.status; });
     const history = [...dts].filter(d2 => kpiSessIds.has(d2.session_id))
-      .sort((a, b) => String(b.started_at || '').localeCompare(String(a.started_at || ''))).slice(0, 8);
+      .sort((a, b) => String(b.started_at || '').localeCompare(String(a.started_at || ''))).slice(0, 8)
+      .map(d2 => ({ ...d2, _sessStatus: sessStatusById[d2.session_id] ?? null }));
+    const forgottenDt = dts.filter(d2 => kpiSessIds.has(d2.session_id)
+      && isForgottenDT(d2, sessStatusById[d2.session_id])).length;
 
     // สถานะปัจจุบัน (footer)
     const openNow = sessions.filter(s => s.status === 'open' && s.work_date === today);
@@ -329,7 +336,7 @@ export default function LineOeeBoard() {
     return {
       trend, overall, A, P, Q, tgt, variance: overall != null ? +(overall - tgt).toFixed(1) : null,
       loadMin, runMin, unplMin, plMin, produced, ngTotal,
-      dtTop6: top6(dtTop), defTop6: top6(defTop), history,
+      dtTop6: top6(dtTop), defTop6: top6(defTop), history, forgottenDt,
       dtTrash: dtTrashStats(dts.filter(d2 => kpiSessIds.has(d2.session_id) && d2.dr_downtime_types?.category !== 'planned'), { index: dtIdx }),
       hasOpen: !!openNow.length, activeDt, liveNow, kpiN: kpiRows.length,
       liveInWindow: kpiRows.some(r => r.live && r.oee != null),
@@ -540,6 +547,12 @@ export default function LineOeeBoard() {
             {barChart(`Defect Top 6 (ชิ้น · ${DAYS_KPI} วัน)`, C.defTop6, 'var(--red)', 'รวมทุกรายการ (🧪 = งานทดลอง ไม่ถูกนับใน %Q)')}
             <div style={{ ...card, flex: 1.2, minWidth: tv ? 0 : 340, ...(tv ? { overflow: 'hidden' } : {}) }}>
               <div style={capSt}>Alarm History (ล่าสุด)</div>
+              {/* ห้ามซ่อน — แถวที่ลืมปิดทำให้ %A ของกะนั้นสูงกว่าจริง ต้องมีคนไปตามปิด */}
+              {C.forgottenDt > 0 && (
+                <div style={{ fontSize: T(11, 20), color: 'var(--amber)', fontWeight: 700, marginTop: 2 }}>
+                  ⚠️ ไม่ได้ปิดรายการ {C.forgottenDt} ใบ (กะปิดไปแล้ว) — %A ของกะนั้นสูงกว่าจริง
+                </div>
+              )}
               {!C.history.length ? <div style={{ fontSize: T(12.5, 24), color: 'var(--muted)', padding: '26px 0', textAlign: 'center' }}>ไม่มีรายการหยุดในช่วงนี้</div> : (
                 <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 4, ...(tv ? { tableLayout: 'fixed' } : {}) }}>
                   {tv && <colgroup><col style={{ width: '22%' }} /><col /><col style={{ width: '16%' }} /><col style={{ width: '11%' }} /><col style={{ width: '20%' }} /></colgroup>}
@@ -548,7 +561,9 @@ export default function LineOeeBoard() {
                   </tr></thead>
                   {/* จอประชุม: 5 แถวล่าสุด ตัวใหญ่ · ตัดคำอธิบายย่อย (คนยืนห่าง 2–3 ม. อ่านไม่ทัน) */}
                   <tbody>{(tv ? C.history.slice(0, 5) : C.history).map(d2 => {
-                    const active = isOpenDT(d2), planned = isPlannedDT(d2);
+                    const kind = dtOpenKind(d2, d2._sessStatus), planned = isPlannedDT(d2);
+                    const active = kind === 'open' || kind === 'unknown';   // เครื่องยังหยุดอยู่จริง (กะยังเปิด)
+                    const meta = DT_OPEN_META[kind];
                     return (
                       <tr key={d2.id} className={active && !planned ? 'dt-alarm-blink' : undefined}>
                         <td style={{ fontSize: T(11.5, 20), color: 'var(--text2)', padding: tdPad, whiteSpace: 'nowrap', ...cellClip }}>
@@ -570,7 +585,13 @@ export default function LineOeeBoard() {
                             ? <b style={{ color: planned ? 'var(--muted)' : 'var(--red)' }}>
                                 {planned ? '🗓️ ตามแผน' : <><span className="dt-alarm-icon">🔴</span> ยังหยุดอยู่</>}
                               </b>
-                            : <span style={{ color: 'var(--green)' }}>{tv ? '✓ กลับมา' : '✓ กลับมาแล้ว'}</span>}
+                            /* 🔴 กะปิดแล้วแต่แถวยังเปิดค้าง = คนลืมปิดรายการ — บอกตรงๆ ห้ามแปลงเป็น
+                               "ยังหยุดอยู่" (กระพริบค้างเป็นเดือน) และห้ามแปลงเป็น "กลับมาแล้ว" (ไม่มีใครไปตามปิด) */
+                            : kind === 'forgotten'
+                              ? <b style={{ color: meta.color }} title={`กะ ${d2._sessStatus === 'closed' ? 'ปิดแล้ว' : d2._sessStatus} แต่รายการนี้ยังไม่ถูกปิด — นาทีที่หยุดไม่ได้ถูกหักใน %A ของกะนั้น`}>
+                                  {meta.icon} {tv ? meta.short : meta.text}
+                                </b>
+                              : <span style={{ color: 'var(--green)' }}>{tv ? '✓ กลับมา' : '✓ กลับมาแล้ว'}</span>}
                           {d2.call_mtn && <span style={{ color: 'var(--amber)' }}> 📞</span>}
                         </td>
                       </tr>

@@ -9464,3 +9464,56 @@ test('✍️ signature-no-blank-save — โมดัลลายเซ็นห
   assert.ok(/tab === 'draw' && !hasInk\.current/.test(save), 'handleSave ต้องเช็ค hasInk ก่อนบันทึกแท็บวาด');
   assert.ok(/hasInk\.current = true/.test(s), 'startDraw ต้องตั้ง hasInk = true');
 });
+
+/* ═══ 🔴 "ยังหยุดอยู่" ต้องมีกะที่ยังเปิดรองรับ — dt-open-needs-session-status (2026-11-09) ═══
+   เคสจริงที่หัวหน้าหน้างานแจ้ง: Robot (Alarm/Error) ไลน์ D4 03/11 · กะถูกอนุมัติปิด 04/11
+   แต่แถว downtime ยังเปิดค้าง ⇒ จอ OEE รายไลน์กระพริบ "🔴 ยังหยุดอยู่" ค้าง 147 ชม.
+   (ทั้งโรงงานมี 6 แถวแบบนี้ เก่าสุด 3,322 ชม.) · และ **ไม่ไหลไปกะใหม่** — ต่อกะหน้าเกิดเฉพาะ
+   `carry_over=true` ที่คนเลือกตอนปิดกะเท่านั้น ⇒ ค้างถาวรจนมีคนไปปิดมือ
+   ⇒ จอที่รู้สถานะกะ ต้องตัดสินผ่าน `dtOpenKind(d, sessionStatus)` ห้ามอ่าน `ended_at` ลอยๆ */
+test('🔴 dt-open-needs-session-status — จอที่โชว์ "ยังหยุดอยู่" ต้องใช้ dtOpenKind', () => {
+  const rules = readFileSync(join(ROOT, 'src/utils/downtimeRules.js'), 'utf8');
+  assert.match(rules, /export function dtOpenKind\(d, sessionStatus\)/,
+    '\n\n❌ ถอด dtOpenKind ออกจาก utils/downtimeRules.js — นิยาม "ลืมปิดรายการ" ต้องอยู่ที่เดียว\n');
+  assert.match(rules, /SESSION_STATUSES_LIVE\.includes\(sessionStatus\)/,
+    '\n\n❌ dtOpenKind ต้องตัดสินจาก SESSION_STATUSES_LIVE (utils/sessionStatus.js) ห้าม hardcode รายสถานะ\n');
+  assert.match(rules, /if \(sessionStatus == null\) return 'unknown'/,
+    '\n\n❌ ไม่รู้สถานะกะต้องคืน \'unknown\' — ห้ามบีบเป็น \'forgotten\' เงียบๆ (จะกลายเป็นซ่อน Andon จริง)\n');
+
+  const board = stripComments(readFileSync(join(ROOT, 'src/pages/LineOeeBoard.jsx'), 'utf8'));
+  assert.match(board, /const kind = dtOpenKind\(d2, d2\._sessStatus\)/,
+    '\n\n❌ Alarm History บน /line-oee กลับไปตัดสิน active จาก isOpenDT ลอยๆ\n'
+    + '   ⇒ แถวที่ลืมปิดในกะที่ปิดไปแล้ว จะกระพริบ "ยังหยุดอยู่" ค้างเป็นเดือน (เคสจริง 09/11)\n');
+  assert.doesNotMatch(board, /const active = isOpenDT\(/,
+    '\n\n❌ /line-oee กลับไปใช้ `const active = isOpenDT(...)` — ต้องผ่าน dtOpenKind + สถานะกะ\n');
+  assert.match(board, /C\.forgottenDt > 0 &&/,
+    '\n\n❌ /line-oee ไม่ได้เขียนบนจอว่า "ไม่ได้ปิดรายการกี่ใบ" — ห้ามซ่อน (%A ของกะนั้นสูงกว่าจริง)\n');
+
+  const vsm = stripComments(readFileSync(join(ROOT, 'src/lib/vsmLive.js'), 'utf8'));
+  assert.match(vsm, /isOpenDT\(d\) && liveIds\.has\(d\.session_id\)/,
+    '\n\n❌ vsmLive กลับไปนับ downtime เปิดค้างทุกกะเป็น Andon — ไลน์ที่ปิดกะแล้วจะแดงค้างทั้งวัน\n');
+  assert.match(vsm, /forgottenDt/,
+    '\n\n❌ vsmLive ต้องคืน forgottenDt ให้จอเขียนบอก (ไม่ใช่ Andon แต่ห้ามซ่อน)\n');
+
+  const dept = stripComments(readFileSync(join(ROOT, 'src/pages/DeptDashboard.jsx'), 'utf8'));
+  assert.doesNotMatch(dept, /const isOpenDT = \(d\) =>/,
+    '\n\n❌ DeptDashboard ก๊อป isOpenDT มาไว้ในหน้า — นิยามอยู่ utils/downtimeRules.js ที่เดียว\n');
+  assert.match(dept, /dtOpenKind\(x, sessStatusById\[x\.session_id\]/,
+    '\n\n❌ การ์ด "เครื่องหยุดค้าง" ต้องแยกแถวที่ลืมปิดออกด้วย dtOpenKind\n');
+});
+
+/* ═══ 🔒 อนุมัติปิดกะ ต้องมีด่าน Downtime เปิดค้าง — approve-close-dt-gate (2026-11-09) ═══
+   รูที่ทำให้เกิดแถวค้าง: ไลน์ "ขอปิดกะ" ตอนยังไม่มี downtime ใบนั้น (ด่านตอนขอปิดจึงผ่าน)
+   → มีคนเพิ่ม downtime ทีหลังขณะใบอยู่ `pending_close` → SV กดอนุมัติ = ปิดทั้งที่แถวยังเปิดค้าง
+   ⇒ `duration_min` null = หัก 0 นาที ⇒ กะนั้น stamp %A = 100% ทั้งที่ Robot Alarm ค้างอยู่ */
+test('🔒 approve-close-dt-gate — handleApproveClose ต้องบล็อกเมื่อมี Downtime เปิดค้าง', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  const i = src.indexOf('const handleApproveClose =');
+  assert.ok(i > 0, 'ไม่พบ handleApproveClose');
+  const body = src.slice(i, src.indexOf('supabase.auth.getUser()', i));
+  assert.match(body, /dtLogs\.filter\(d => d\.duration_min == null && !d\.ended_at\)/,
+    '\n\n❌ handleApproveClose ไม่มีด่าน "Downtime เปิดค้าง" (ด่านตอนขอปิดกะอย่างเดียวไม่พอ —\n'
+    + '   downtime ที่ถูกเพิ่มหลังขอปิดกะจะหลุดเข้าไปปิดพร้อมกะ แล้วค้างถาวร · เคสจริง 09/11 ไลน์ D4)\n');
+  assert.match(body, /if \(openDtNow\.length\) \{[\s\S]*?return;/,
+    '\n\n❌ ด่านมีแต่ไม่ return — ต้องบล็อกการอนุมัติจริง ไม่ใช่แค่เตือน\n');
+});

@@ -2967,6 +2967,19 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // SV approves pending_close → finalize to 'closed'
   const handleApproveClose = async () => {
     if (!selSession || selSession.status !== 'pending_close') return;
+    /* 🔴 ด่านเดียวกับตอน "ขอปิดกะ" ต้องมีที่นี่ด้วย (เจอจริง 09/11 · หัวหน้าหน้างานแจ้ง)
+       ไลน์ขอปิดกะตอนยังไม่มี downtime ใบนั้น → **มีคนมาเพิ่ม downtime ทีหลังตอนใบอยู่ `pending_close`**
+       → SV กดอนุมัติ = ปิดกะทั้งที่แถวยังเปิดค้าง ⇒ นาทีที่หยุดไม่ถูกหักเลย (`duration_min` null = 0 นาที)
+       เคสจริง: ไลน์ D4 03/11 ปิดด้วย %A = 100% ทั้งที่ Robot Alarm ค้างอยู่ · แถวนั้นค้างต่ออีก 147 ชม.
+       และ **ไม่ไหลไปกะใหม่** (ต่อกะหน้าเกิดเฉพาะ `carry_over=true` ตอนปิดกะ) = ค้างถาวรจนมีคนไปปิดมือ
+       ⇒ อนุมัติไม่ได้ · ให้ "ปฏิเสธ" ตีกลับ ไลน์ปิดรายการแล้วขอปิดกะใหม่ (OEE จะถูก stamp ใหม่ทั้งก้อน) */
+    const openDtNow = dtLogs.filter(d => d.duration_min == null && !d.ended_at);
+    if (openDtNow.length) {
+      toast.error(`อนุมัติไม่ได้ — กะนี้มี Downtime เปิดค้าง ${openDtNow.length} รายการ (${
+        openDtNow.map(d => d.dr_downtime_types?.name_th || d.machine_no || 'ไม่ระบุ').slice(0, 3).join(' · ')}${
+        openDtNow.length > 3 ? ' …' : ''}) · นาทีที่หยุดจะไม่ถูกหักใน %A เลย ⇒ กด "ปฏิเสธ" ตีกลับให้ไลน์ปิดรายการแล้วขอปิดกะใหม่`);
+      return;
+    }
     const { data: { user } } = await supabase.auth.getUser();
     const { error } = await supabaseDR.from('production_sessions').update({
       status:         'closed',
@@ -5056,6 +5069,25 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14 }}>
                   ✓ Order ที่ปิดสำเร็จ: {confirmedOrders.length} ใบ ({confirmedOrders.reduce((s,o) => s+o.qty, 0)} ชิ้น)
                 </div>
+
+                {/* 🔴 downtime ที่ถูกเพิ่มหลังไลน์ขอปิดกะ — ด่านจริงอยู่ใน handleApproveClose
+                    ที่นี่คือ "บอกก่อนกด" ไม่ใช่ซ่อนปุ่ม (SV ต้องเห็นว่าทำไมอนุมัติไม่ผ่าน) */}
+                {dtLogs.some(d => d.duration_min == null && !d.ended_at) && (
+                  <div style={{ marginBottom: 14, padding: '10px 14px', background: 'var(--bg2)', borderRadius: 'var(--r-md)', border: '1px solid var(--red-line)' }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--red)' }}>
+                      ⛔ อนุมัติไม่ได้ — มี Downtime เปิดค้าง {dtLogs.filter(d => d.duration_min == null && !d.ended_at).length} รายการ
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
+                      {dtLogs.filter(d => d.duration_min == null && !d.ended_at)
+                        .map(d => `• ${d.dr_downtime_types?.name_th || 'ไม่ระบุประเภท'}${d.machine_no ? ` · ${d.machine_no}` : ''}${d.started_at ? ` · เริ่ม ${fmtTime(new Date(d.started_at))}` : ''}`)
+                        .join('\n').split('\n').map((t, i) => <div key={i}>{t}</div>)}
+                      <div style={{ marginTop: 4, color: 'var(--amber)' }}>
+                        ปิดกะทั้งแบบนี้ = นาทีที่หยุด <b>ไม่ถูกหักใน %A เลย</b> (กะจะโชว์ A สูงกว่าจริง) และแถวนี้จะค้างกระพริบบนจอ OEE รายไลน์ตลอด
+                        — กด "ปฏิเสธ" ตีกลับให้ไลน์ปิดรายการ แล้วขอปิดกะใหม่
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                   <button onClick={() => setShowApproveReview(false)} style={cancelBtnStyle}>ปิด</button>
