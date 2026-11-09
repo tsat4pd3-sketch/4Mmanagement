@@ -18,7 +18,7 @@ import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { activityOf, activityTone, activitySummary, activitySummaryText, ACT_UNKNOWN } from '../utils/accountActivity';
 import LineSelect from '../components/LineSelect';
 import { STAFF_KINDS, STAFF_SHOPFLOOR, STAFF_SUPPORT } from '../utils/staffKind';   // 👥 หน้าไลน์ vs สายสนับสนุน
-import { newEmployeeRow, staffKindHint } from '../utils/employeeIdentity';   // 🪪 ตัวตนพนักงานใหม่ = ชุดเดียวกับ /register
+import { newEmployeeRow, staffKindHint, findEmployeeByCode, isDuplicateEmployeeError, duplicateEmployeeText } from '../utils/employeeIdentity';   // 🪪 ตัวตนพนักงานใหม่ = ชุดเดียวกับ /register
 import { normSearch } from '../components/SearchSelect';   // ตัว normalize คำค้นกลาง (ทนการสะกดไทย)
 import { orphanDepts, deptOptionsFor, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
   scopeIneffective, scopeTooWide } from '../utils/sectionScope';
@@ -359,7 +359,12 @@ export default function AddUser() {
       setMessage(`รหัส ${code} มีอยู่แล้วในฐานพนักงาน — ผูกบัญชีนี้กับ "${dup.name}" ให้แล้ว (ตรวจชื่อให้ตรงก่อนบันทึก)`);
       return;
     }
+    /* 🔁 `emps` โหลดเฉพาะ is_active ⇒ คนที่ถูกปิดใช้งานไม่อยู่ในลิสต์ แต่รหัสยังอยู่ในฐาน (unique) — ถามฐานตรงก่อน insert
+       (09/11 · employeeIdentity.js) · อ่านไม่ได้ = ไม่เพิ่ม (fail-closed) */
     setNewEmpSaving(true);
+    const dupDb = await findEmployeeByCode(supabase, code);
+    if (dupDb.error) { setNewEmpSaving(false); setError(`ตรวจรหัสซ้ำไม่ได้ — ยังไม่เพิ่ม: ${dupDb.error.message}`); return; }
+    if (dupDb.row) { setNewEmpSaving(false); setError(duplicateEmployeeText(dupDb.row, { code })); return; }
     const { data: userData } = await supabase.auth.getUser();
     /* 🪪 ประกอบแถวที่ `utils/employeeIdentity.js` ที่เดียว — ทางเข้าอีกทางคือ /register
        ฟิลด์ที่ฟอร์มสั้นนี้ไม่มีช่อง (วันเริ่มงาน · ทีม · ไลน์ · รถรับส่ง · รูป) = `null`
@@ -377,6 +382,11 @@ export default function AddUser() {
     });
     const res = await supabase.from('employees').insert(row).select('id, employee_id_code, name, team, line_id, section, department, position').single();
     setNewEmpSaving(false);
+    if (isDuplicateEmployeeError(res.error)) {   // สองคนกดพร้อมกันหลังด่านค้นหาผ่าน
+      const again = await findEmployeeByCode(supabase, code);
+      setError(duplicateEmployeeText(again.row, { code }));
+      return;
+    }
     if (!checkWrite(res, 'เพิ่มพนักงานเข้าฐาน')) return;
     const created = res.data;
     setEmps(prev => [...prev, created].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'th')));
