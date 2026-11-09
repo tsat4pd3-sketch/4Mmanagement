@@ -17,6 +17,7 @@ import { can, canAccessPage } from '../utils/permissions';
 import resizeImg from '../utils/resizeImage';
 import { getLineFamilyNames, getLineFamilyIds, getAncestorNames } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
+import Segmented from '../components/Segmented';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { inSectionScope } from '../utils/sectionScope';
 import { fetchActiveDowntimes, dtElapsedMin } from '../utils/downtimeAlarm';
@@ -1316,9 +1317,35 @@ export default function Management() {
   const collapsedGutter = !isMobile && !sidebarOpen ? 52 : 0;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: 'calc(100vh - 14px)', background: 'var(--bg)', overflow: 'hidden' }}>
-    <Page width="full" style={{ paddingBottom: 0, flexShrink: 0 }}>
+    {/* paddingRight 80 (desktop) = ขอบปกติ 28 + 52 กันคอลัมน์ 🔔/ปุ่มกรองด้านขวา (fixed right:14 w36) ไม่ให้แถบกรองลอดใต้
+        (หัวเรื่องของ PageHeader กัน 52 ให้เองอยู่แล้ว แต่แถบกรองไม่ได้กัน) */}
+    <Page width="full" style={{ paddingBottom: 0, flexShrink: 0, paddingRight: isMobile ? undefined : 80 }}>
+      {/* 🔎 แถบกรอง (09/11 · user เลือกจากภาพตัวอย่าง "ไลน์ · กะ · วันที่ · มุมมอง แถวเดียว")
+          เดิมช่องเลือกไลน์ + ปุ่มกะอยู่ในแผงซ้าย และปุ่มสลับมุมมองเป็นแถวแยกเหนือผัง — ย้ายขึ้นมาตามลำดับมาตรฐาน
+          ชื่อหน้า → แถบกรอง → เนื้อหา (UI-STANDARD §2) · ปุ่มมุมมองยังโผล่เฉพาะตอนบอร์ดเบียดผัง (boardWouldSquish) เหมือนเดิม
+          🔴 ปุ่มกะต้องโผล่เสมอเมื่อเลือกไลน์แล้ว แม้กะนั้นไม่มีคน (ไม่งั้นสลับไปกะว่างแล้วไม่มีทางกลับ · 27/08) */}
       <PageHeader title="จัดการไลน์ผลิต" icon="🔄"
-        sub="จัดกำลังคนลงจุดงานบนผังไลน์ · บอร์ด Heijunka · บันทึก 4M ของไลน์ที่เลือก" />
+        sub="จัดกำลังคนลงจุดงานบนผังไลน์ · บอร์ด Heijunka · บันทึก 4M ของไลน์ที่เลือก"
+        filters={<>
+          {/* เลือกได้ทั้งไลน์หลัก (view รวมไลน์ย่อยทั้งหมด) และไลน์ย่อย — รายการใน `lines` ถูก scope ไว้แล้วตอน fetch
+              <LineSelect> = ลำดับชั้น/ปลดระวาง/ค่าไม่รู้จัก · ไม่มี option ว่าง */}
+          <LineSelect lines={lines} value={selectedLine} placeholder={null} onChange={setSelectedLine} />
+          {selectedLine && (
+            <Segmented value={viewShift} onChange={setViewShift} label="กะที่ดู"
+              options={[{ value: 'day', label: 'กะเช้า' }, { value: 'night', label: 'กะดึก' }]} />
+          )}
+          {selectedLine && (
+            <span title="เปลี่ยนวันที่ได้ที่แถบ Heijunka" style={{ fontSize: 12, color: isLiveView ? 'var(--muted)' : 'var(--blue)', fontWeight: isLiveView ? 400 : 700, whiteSpace: 'nowrap' }}>
+              {boardDate}{boardDate === todayWorkDate ? ' (วันนี้)' : ' · ย้อนหลัง'}
+            </span>
+          )}
+          {boardWouldSquish && (
+            <span title="kanban เยอะ — สลับดูทีละมุมเต็มจอ" style={{ display: 'contents' }}>
+              <Segmented value={mainView} onChange={switchView} label="มุมมอง"
+                options={[{ value: 'map', label: 'ผังไลน์ + คน' }, { value: 'heijunka', label: 'Heijunka' }]} />
+            </span>
+          )}
+        </>} />
     </Page>
     <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', flex: 1, minHeight: 0, paddingLeft: collapsedGutter, background: 'var(--bg)', overflow: 'hidden' }}>
       <DowntimeSiren mode="open_15min" />
@@ -1345,12 +1372,7 @@ export default function Management() {
         )}
         {!panelCollapsed && (<>
         <div style={{ marginBottom: 10, flexShrink: 0 }}>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.08em' }}>ไลน์ผลิต</div>
-          {/* เลือกได้ทั้งไลน์หลัก (view รวมไลน์ย่อยทั้งหมด) และไลน์ย่อย (view ไลน์ย่อย+ไลน์หลัก)
-              leader ก็สลับดูภายในครอบครัวไลน์ตัวเองได้ — รายการใน `lines` ถูก scope ไว้แล้วตอน fetch */}
-          {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง/ค่าไม่รู้จัก) — ไม่มี option ว่าง เหมือนเดิม */}
-          <LineSelect lines={lines} value={selectedLine} placeholder={null} onChange={setSelectedLine}
-            style={{ width: '100%', padding: '6px 8px', borderRadius: 6, fontSize: 13, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }} />
+          {/* ช่องเลือกไลน์ย้ายขึ้นแถบกรองใต้หัวเพจแล้ว (09/11) — ที่นี่เหลือคำเตือนอ่านทะเบียนไม่ได้ + หมายเหตุไลน์ย่อย/ไลน์หลัก */}
           {lineLoadErr && (
             <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 5, lineHeight: 1.5 }}>
               ⚠️ อ่านทะเบียนไลน์ผลิตไม่สำเร็จ — รายการที่เห็นอาจไม่ครบ (ไม่ใช่ว่าไลน์ถูกลบ)
@@ -1386,30 +1408,14 @@ export default function Management() {
           onDrop={!isMobile ? (e) => handleDrop(e, 'Pool') : undefined}
           style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 0 }}
         >
-          {/* ── วัน/กะที่กำลังดู (2026-08-27 · feedback "เลือกกะไม่ได้ แสดงแค่กะเช้า") ──
-               ต้อง render เสมอ แม้กะนั้นไม่มีคนสักคน — ไม่งั้นสลับไปกะดึกที่ว่างแล้ว
-               จะไม่มีปุ่มให้สลับกลับ (ทางตันที่มองไม่เห็น) */}
-          {selectedLine && (
+          {/* ── โหมดดูย้อนหลัง (เดิม = กล่อง "กะที่ดู" ที่มีปุ่มกะ) ──
+               09/11: ปุ่มกะ + วันที่ ย้ายขึ้นแถบกรองใต้หัวเพจแล้ว (โผล่เสมอเมื่อเลือกไลน์ — กฎ 27/08 "ห้ามทางตัน" ยังอยู่ที่นั่น)
+               ⇒ กล่องนี้เหลือเฉพาะตอนดูย้อนหลัง: บอกว่าอ่านอย่างเดียว + ปุ่มกลับมาดูสด */}
+          {selectedLine && !isLiveView && (
             <div style={{ marginBottom: 8, padding: '7px 9px', flexShrink: 0, borderRadius: 'var(--r-md)',
-              background: isLiveView ? 'var(--bg3)' : 'var(--blue-dim)',
-              border: `1px solid ${isLiveView ? 'var(--border2)' : 'var(--blue-line)'}` }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text2)', fontFamily: 'var(--font-display)' }}>กะที่ดู</span>
-                <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
-                  {[['day', '☀️ เช้า'], ['night', '🌙 ดึก']].map(([k, t]) => (
-                    <button key={k} onClick={() => setViewShift(k)}
-                      style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
-                        background: viewShift === k ? 'var(--accent)' : 'var(--bg)',
-                        border: `1px solid ${viewShift === k ? 'var(--accent)' : 'var(--border)'}`,
-                        color: viewShift === k ? '#08130a' : 'var(--text2)' }}>{t}</button>
-                  ))}
-                </div>
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
-                {boardDate}{boardDate === todayWorkDate ? ' (วันนี้)' : ''} · เปลี่ยนวันที่ได้ที่แถบ Heijunka ด้านบน
-              </div>
+              background: 'var(--blue-dim)', border: '1px solid var(--blue-line)' }}>
               {!isLiveView && (
-                <div style={{ fontSize: 11, color: 'var(--blue)', marginTop: 4, lineHeight: 1.5 }}>
+                <div style={{ fontSize: 11, color: 'var(--blue)', lineHeight: 1.5 }}>
                   โหมดย้อนหลัง — <b>อ่านอย่างเดียว จัดคนไม่ได้</b> · แสดงจุดงานสุดท้ายของกะนั้น
                   <button onClick={() => { setBoardDate(todayWorkDate); setViewShift(getCurrentShift()); }}
                     style={{ marginLeft: 6, padding: '2px 9px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>
@@ -1592,22 +1598,8 @@ export default function Management() {
         )}
 
 
-        {/* ── ปุ่มสลับมุมมอง — โผล่เฉพาะตอนบอร์ด Heijunka สูงจนจะเบียดผังจนพัง (boardWouldSquish)
+        {/* ── ปุ่มสลับมุมมอง (ผังไลน์ + คน / Heijunka) ย้ายขึ้นแถบกรองใต้หัวเพจแล้ว (09/11) — ยังโผล่เฉพาะตอน boardWouldSquish
             ถ้าบอร์ดเตี้ยพอ → ไม่มีปุ่ม แสดงผัง+บอร์ดพร้อมกันเหมือนเดิม ── */}
-        {boardWouldSquish && (
-        <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
-          {[{ k: 'map', icon: '🗺️', label: 'ผังไลน์ + คน' }, { k: 'heijunka', icon: '📊', label: 'Heijunka' }].map(v => {
-            const active = mainView === v.k;
-            return (
-              <button key={v.k} onClick={() => switchView(v.k)}
-                style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 13, fontWeight: 800, background: active ? 'var(--accent)' : 'var(--bg3)', color: active ? 'var(--accent-ink)' : 'var(--text2)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border2)'}` }}>
-                {v.icon} {v.label}
-              </button>
-            );
-          })}
-          <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>· kanban เยอะ — สลับดูทีละมุมเต็มจอ</span>
-        </div>
-        )}
 
         {/* Heijunka: โชว์เมื่อ (แสดงคู่กัน = ไม่ squish) หรือ (โหมดสลับ + เลือก heijunka)
             · โหมดคู่ → บอร์ดสูงตามเนื้อหา (flexShrink:0) · โหมดสลับ → เต็มพื้นที่ + scroll ในตัว */}
