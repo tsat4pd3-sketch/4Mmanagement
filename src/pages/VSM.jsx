@@ -17,7 +17,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { isFgMat } from '../utils/matPrefix';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, lineScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
 import { groupRoutings } from '../utils/routing';
@@ -72,7 +72,7 @@ const WARN_STYLE = {
 };
 
 export default function VSM() {
-  const { role, lineId, sections, fullName } = useContext(UserContext);
+  const { role, lineId, sections, fullName, scopeIdx } = useContext(UserContext);
   const scopeSecs = sections || [];
   const canManage = can('vsm', 'manage', role);
   const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'doc');
@@ -125,14 +125,12 @@ export default function VSM() {
   }, []);
 
   // scope มาตรฐาน: leader = family ไลน์ตัวเอง · role อื่น = ตาม sections · ไม่มี scope = ทั้งหมด
+  /* 🔭 ของกลาง `lineScope()` (QC audit 09/11) — สูตรเดิมที่นี่แคบกว่าที่ `profiles` ตั้งไว้
+     (leader ได้ครอบครัวไลน์ล้วน · ไม่รู้จัก scopeIdx) · `null` = ไม่จำกัด (ความหมายเดิม) */
   const scopeLineNames = useMemo(() => {
-    if (role === 'leader' && lineId) {
-      const me = lines.find(l => String(l.id) === String(lineId));
-      return me ? new Set(getLineFamilyNames(lines, me.name).map(n => n.toLowerCase())) : null;
-    }
-    if (scopeSecs.length) return new Set(lines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name.toLowerCase()));
-    return null;
-  }, [role, lineId, lines, scopeSecs]);
+    const r = lineScope({ role, lineId, sections: scopeSecs, lines, scopeIdx });
+    return r.unlimited ? null : new Set(r.names.map(n => String(n).toLowerCase()));
+  }, [role, lineId, lines, scopeSecs, scopeIdx]);
 
   /* ตัวเลือก FG — เฉพาะเบอร์ 1 (สินค้าสำเร็จรูป) + กรองตาม scope (กฎ dropdown-scope)
      🔴 ไม่กรองด้วยคำค้นที่นี่อีก (QC 06/10) — เดิมหน้านี้มี **2 ตัวควบคุมทำงานเดียวกัน**:

@@ -15,7 +15,7 @@ import { UserContext } from '../App';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, lineScope } from '../utils/sectionScope';
 import { buildQrPayload, buildQrUrl, qrOriginUsable, mergeJigLabelRows, labelRowKey } from '../utils/qrCode';
 import { withDocFoot, loadDocForms, docFormSync, fullCode } from '../utils/docForms';
 import LineSelect from '../components/LineSelect';
@@ -64,7 +64,7 @@ const SIZES = {
 };
 
 export default function QrLabels() {
-  const { role, sections: scopeSecs = [], lineId } = useContext(UserContext);
+  const { role, sections: scopeSecs = [], lineId, scopeIdx } = useContext(UserContext);
   const canPrint = can('qr_labels', 'print', role);
 
   // machine | die | jig | delivery — `?kind=` มาจากลิงก์ในแผงจุดส่ง (/linesetup) · ค่าที่ไม่รู้จัก = ตกกลับ machine ห้ามจอว่าง
@@ -89,15 +89,13 @@ export default function QrLabels() {
       .then(({ data }) => setLines(data || []));
   }, []);
 
+  /* 🔭 ของกลาง `lineScope()` (QC audit 09/11 · กวาดรอบ 2) — สูตรที่เคยก๊อปไว้ในหน้าให้ leader
+     เห็นแค่ครอบครัวไลน์ตัวเอง = แคบกว่าที่ `profiles` ตั้งไว้ (กฎ 26/10) และไม่รู้จัก `scopeIdx` */
   const scopedLineNames = useMemo(() => {
-    if (!lines.length) return null;                       // ยังไม่โหลด = ยังไม่กรอง
-    if (role === 'leader' && lineId) {
-      const self = lines.find(l => String(l.id) === String(lineId));
-      return self ? new Set(getLineFamilyNames(lines, self.name)) : new Set();
-    }
-    if (scopeSecs.length) return new Set(lines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name));
-    return null;                                          // ไม่จำกัด
-  }, [lines, role, lineId, scopeSecs]);
+    if (!lines.length) return null;                       // ยังไม่โหลด = ยังไม่กรอง (พฤติกรรมเดิม)
+    const r = lineScope({ role, lineId, sections: scopeSecs, lines, scopeIdx });
+    return r.unlimited ? null : new Set(r.names);
+  }, [lines, role, lineId, scopeSecs, scopeIdx]);
 
   /* ── โหลดอุปกรณ์ ── */
   useEffect(() => {

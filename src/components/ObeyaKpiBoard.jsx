@@ -211,7 +211,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
   const scopeSet = useMemo(() => {
     const names = scopedLineNames({ role, lineId, sections, lines, scopeIdx });
     return names ? new Set(names) : null;
-  }, [role, lineId, sections, lines]);
+  }, [role, lineId, sections, lines, scopeIdx]);   // 🔴 scopeIdx มาแบบ async — ไม่อยู่ใน deps = ขอบเขตค้างค่าเดิม (QC audit 09/11)
 
   /* ตัวเลือกขอบเขตในสังกัดของ user (ตัดด้วย scope ไลน์ + ส่วนงานสังกัด) */
   const scopeOpts = useMemo(() => filterScopeOptions(org, { scopeSet, sections }), [org, scopeSet, sections]);

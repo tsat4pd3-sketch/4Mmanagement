@@ -328,14 +328,11 @@ export default function DieRegistry() {
      (`ReferenceError: Cannot access 'scopedLines' before initialization` — เกิดจริง 25-26/10
       กับทุกบัญชีที่ไม่ใช่ leader และมีขอบเขตส่วนงาน · crashsweep จับไม่ได้เพราะ mock ใช้ `sections: []`)
      ⇒ เรียกของกลางผ่านชื่อ alias เสมอ · มีด่าน `no-shadowed-import-call` */
+  /* 🔭 ของกลาง `scopedLines()` ตัวเดียว (QC audit 09/11) — สูตรที่เคยก๊อปไว้ที่นี่ให้ leader
+     เห็นแค่ครอบครัวไลน์ตัวเอง = แคบกว่าที่ `profiles` ตั้ง (กฎ 26/10: ไลน์ตัวเอง ∪ ส่วนงานที่กำกับ) */
   const scopedLines = useMemo(() => {
-    if (role === 'leader' && userLineId) {
-      const myLine = lines.find(l => String(l.id) === String(userLineId));
-      const fam = new Set(myLine ? getLineFamilyNames(lines, myLine.name) : []);
-      return fam.size ? lines.filter(l => fam.has(l.name)) : lines;
-    }
-    if (scopeSecs?.length) return scopedLinesOf({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
-    return lines;
+    const out = scopedLinesOf({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
+    return out.length ? out : lines;        // ตาข่ายเดิม: กรองแล้วไม่เหลือ = ไม่กรอง (หน่วยสนับสนุนไม่มีไลน์)
   }, [lines, role, userLineId, scopeSecs, scopeIdx]);
   const scopedLineNames = useMemo(() => new Set(scopedLines.map(l => l.name)), [scopedLines]);
   const scopeActive = scopedLines.length !== lines.length;

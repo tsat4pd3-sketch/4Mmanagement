@@ -4,7 +4,7 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { UserContext } from '../App';
 import { cachedMaster, mrows } from '../utils/masterCache';
 import { can } from '../utils/permissions';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, lineScope } from '../utils/sectionScope';
 import { canWriteLine, writeBlockText } from '../utils/writeScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 // picker กลาง (single-source audit 2026-09-07) — เครื่อง/ไลน์ อ่านจากทะเบียน ไม่พิมพ์เอง
@@ -61,7 +61,7 @@ const TASK_COLS = 'id, plan_id, task_date, team, description, time_from, time_to
 const teamLabelOf = (key) => (pmTeamsSync().find(t => t.key === key) || {}).label || key || '';
 
 export default function PmCoordination() {
-  const { role, lineId, sections: scopeSecs, fullName } = useContext(UserContext);
+  const { role, lineId, sections: scopeSecs, fullName, scopeIdx } = useContext(UserContext);
   const canManage = can('pm_coord', 'manage', role);
 
   const [lines, setLines] = useState([]);
@@ -81,12 +81,12 @@ export default function PmCoordination() {
 
   useEffect(() => { loadPmTeams().then(setTeams); }, []);
 
+  /* 🔭 ของกลาง `lineScope()` (QC audit 09/11 · กวาดรอบ 2) — สูตรที่เคยก๊อปไว้ในหน้าให้ leader
+     เห็นแค่ครอบครัวไลน์ตัวเอง = แคบกว่าที่ `profiles` ตั้งไว้ (กฎ 26/10) และไม่รู้จัก `scopeIdx` */
   const scopeLines = useMemo(() => {
-    if (role === 'admin') return null;
-    if (role === 'leader' && lineId) { const self = lines.find(l => l.id === lineId); return self ? new Set(getLineFamilyNames(lines, self.name)) : new Set(); }
-    if (scopeSecs?.length) return new Set(lines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name));
-    return null;
-  }, [lines, role, lineId, scopeSecs]);
+    const r = lineScope({ role, lineId, sections: scopeSecs, lines, scopeIdx });
+    return r.unlimited ? null : new Set(r.names);
+  }, [lines, role, lineId, scopeSecs, scopeIdx]);
 
   const load = useCallback(async () => {
     /* 🔴 19-20/10 audit หน้า PM — เดิมไม่อ่าน error เลย (`.catch(() => ({ data: [] }))`) + `.in()` ดิบ

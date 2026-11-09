@@ -32,7 +32,7 @@ import useProductionLines from '../utils/useProductionLines';
 import useTabParam from '../utils/useTabParam';
 import { urlParam, urlPick, urlNum } from '../utils/urlInit';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, lineScope } from '../utils/sectionScope';
 import { getWorkDate } from '../utils/workDate';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { EQUIPMENT_KINDS, KIND_META } from '../utils/equipmentKinds';
@@ -115,7 +115,7 @@ function EquipCell({ it }) {
 }
 
 export default function MaintenanceLevels() {
-  const { role, lineId, sections } = useContext(UserContext);
+  const { role, lineId, sections, scopeIdx } = useContext(UserContext);
   const navigate = useNavigate();
   const lines = useProductionLines();
   const [view, setView] = useTabParam(['todo', 'equip'], 'todo', 'view');
@@ -210,12 +210,14 @@ export default function MaintenanceLevels() {
   }, [raw, lineFamilyOf, lines, todayStr]);
 
   /* ขอบเขตไลน์ — เกณฑ์เดียวกับ /mtn-analysis และ /mtn-repair (ต้องแก้พร้อมกันทั้ง 3 ที่) */
+  /* 🔭 ขอบเขตไลน์ — **ของกลาง `lineScope()` เท่านั้น** (QC audit 09/11)
+     สูตรที่เคยก๊อปไว้ที่นี่ให้ leader เห็นแค่ครอบครัวไลน์ตัวเอง = แคบกว่าที่ `profiles` ตั้งไว้
+     (กฎ 26/10: ไลน์ตัวเอง ∪ ส่วนงานที่กำกับไว้) และไม่รู้จักแกน Cost Center/ผัง (`scopeIdx`)
+     `null` = ไม่จำกัด (ความหมายเดิมของตัวแปรนี้) */
   const scopeLines = useMemo(() => {
-    if (role === 'admin') return null;
-    if (role === 'leader' && lineId) { const self = lines.find(l => String(l.id) === String(lineId)); return self ? new Set(getLineFamilyNames(lines, self.name)) : new Set(); }
-    if (sections?.length) return new Set(lines.filter(l => inSectionScope(sections, l.section)).map(l => l.name));
-    return null;
-  }, [lines, role, lineId, sections]);
+    const r = lineScope({ role, lineId, sections: sections || [], lines, scopeIdx });
+    return r.unlimited ? null : new Set(r.names);
+  }, [lines, role, lineId, sections, scopeIdx]);
   /* 🔴 ช่องเลือกไลน์ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัดเลย (QA · Planning&Store · ฝั่งช่าง)
      กรองด้วย section แล้วเหลือ 0 ⇒ dropdown ว่างเปล่า = แจ้งซ่อม/เลือกไลน์ไม่ได้ทั้งหน้า (เคสจริง 26/10)
      ⇒ ต้องผ่าน `scopeLines()` ของกลางใน `components/LineSelect.jsx` ที่มีตาข่าย

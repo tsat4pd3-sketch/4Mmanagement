@@ -11,7 +11,7 @@ import { confirmSign } from '../utils/signConfirm';
 import { positionRank } from '../utils/positions';
 import { MANAGER_SIGN_MIN_RANK } from '../utils/signRank';
 import { canWriteUnit, writeBlockText } from '../utils/writeScope';
-import { inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, deptOptionsFor, orphanDepts, sectionValueForSave, sectionValueForEdit } from '../utils/sectionScope';
+import { inSectionScope, lineScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL, deptOptionsFor, orphanDepts, sectionValueForSave, sectionValueForEdit } from '../utils/sectionScope';
 import { mergeBorrowedEmployees, currentWorkShift } from '../utils/lineHelpers';
 import { fmtDate, todayLocal } from '../utils/dateFormat';
 import { getLineFamilyIds } from '../utils/lineHierarchy';
@@ -234,10 +234,16 @@ export default function OjtTraining() {
   /* 🔴 `scopeSecs` เป็น array ⇒ ใส่ใน deps ตรงๆ ไม่ได้ (ใบใหม่เนื้อเดิมทุกเรนเดอร์ = คิวรีซ้ำ
      และล้างเพดาน coalesce · กฎเขียน DB ข้อ 9) ⇒ ใช้ `scopeKey` คีย์เนื้อหาที่ประกาศไว้ข้างบนแล้ว
      (เรียงแล้ว — ลำดับส่วนงานไม่มีผลกับการกรอง) */
+  /* 🔭 ส่วนงานที่เห็นได้ = ส่วนงานของไลน์ที่ของกลางบอกว่าเห็นได้ ∪ ส่วนงานที่ถูกกำกับไว้
+     (QC audit 09/11 · กวาดรอบ 2) — เดิม leader ได้ส่วนงานของไลน์ตัวเองช่องเดียว แม้ profiles
+     กำกับส่วนงานอื่นไว้ด้วย · ว่าง = ไม่จำกัด (ความหมายเดิมของตัวแปรนี้) */
   const effSections = useMemo(() => {
-    if (role === 'leader' && userLineId) return leaderLine?.section ? [leaderLine.section] : [];
-    return scopeKey ? scopeKey.split('|') : [];
-  }, [role, userLineId, leaderLine, scopeKey]);
+    const secs = scopeKey ? scopeKey.split('|') : [];
+    const r = lineScope({ role, lineId: userLineId, sections: secs, lines, scopeIdx });
+    if (r.unlimited) return secs;
+    const fromLines = [...new Set(r.lines.map(l => l.section).filter(Boolean))];
+    return [...new Set([...fromLines, ...secs])];
+  }, [role, userLineId, scopeKey, lines, scopeIdx]);
 
   const load = async () => {
     setLoading(true);
@@ -330,13 +336,11 @@ export default function OjtTraining() {
   }, [editDate, employees, lines, scopeLineIds, scopeSecs]);
 
   // mandatory scope ก่อนแสดงรายการ (แบบเดียวกับหน้าอื่น) — leader/scoped เห็นเฉพาะ section ตัวเอง
+  /* ขอบเขตเดียวกับ `effSections` — ใบที่ตัวเองสร้างยังเห็นเสมอ (กติกาเดิมของหน้านี้) */
   const visibleTrainings = useMemo(() => trainings.filter(t => {
-    if (role === 'leader' && userLineId) {
-      return !effSections.length || inSectionScope(effSections, t.section) || t.created_by_name === fullName;
-    }
-    if (scopeSecs.length) return inSectionScope(scopeSecs, t.section);
-    return true;
-  }), [trainings, role, userLineId, effSections, scopeSecs, fullName]);
+    if (!effSections.length) return true;
+    return inSectionScope(effSections, t.section) || t.created_by_name === fullName;
+  }), [trainings, effSections, fullName]);
 
   const emptyDraft = () => ({
     id: crypto.randomUUID(),

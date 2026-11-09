@@ -19,7 +19,7 @@ import { can } from '../utils/permissions';
 import { loadCompanyCalendar, getDayType, isOtHolidayType, DAY_TYPE_META } from '../utils/companyCalendar';
 import { otPeriodMeta, WEEKDAY_OT_TIME } from '../utils/otPeriods';
 import { getLineFamilyNames, getLineFamilyIds, lineAncestorIds, sortLineNames } from '../utils/lineHierarchy';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, lineScope } from '../utils/sectionScope';
 import {
   SKILL_LEVELS, getLevel, groupSkillsByCategory,
   MS_LEVELS, scoreToLevel, msStyle, GAUGE_FILL, GAUGE_STROKE, Q_PATHS, skillGaugeSvgStr,
@@ -73,6 +73,40 @@ function getTsLogoDataUrl(url) {
 }
 /** โลโก้ของฟอร์มนี้ — ทะเบียนชนะ แล้วค่อยถอยไปโลโก้ TS ทางการ */
 const formLogo = (docKey) => getTsLogoDataUrl(docFormSync(docKey, {}).logo_url);
+
+/* ══ 🔭 ขอบเขตของบัญชี — ของกลางตัวเดียวสำหรับทุกแท็บในไฟล์นี้ (QC audit 09/11 · กวาดรอบ 3) ══
+   เดิมแต่ละแท็บเขียนสูตรเอง (21 จุด) แล้วตอบไม่เหมือนกัน และทุกจุดแคบกว่าที่ `profiles` ตั้งไว้:
+   `leader` ได้ครอบครัวไลน์ (บางจุดได้ไลน์เดียว!) โดยไม่รวมส่วนงานที่ถูกกำกับไว้ (กฎ 26/10)
+   และไม่มีจุดไหนส่ง `scopeIdx` ⇒ แกน Cost Center / ขอบเขตระดับแผนก-กลุ่ม ตกหมด
+   🔴 ความหมายที่ทุกแท็บใช้ร่วมกัน:
+     `unlimited` = ไม่จำกัด · `names`/`ids` = Set ของไลน์ที่เห็นได้ (null เมื่อไม่จำกัด)
+     `empOk(emp)` = พนักงานคนนี้อยู่ในขอบเขตไหม (ไม่ผูกไลน์ = ถอยไปตัดด้วยส่วนงาน)
+     `sectionsIn(all)` = ลิสต์ส่วนงานที่เลือกได้ (กรองแล้วไม่เหลือ = ไม่กรอง — ช่องเลือกห้ามตาย) */
+function useScopeOf(lines) {
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
+  return useMemo(() => {
+    const r = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines: lines || [], scopeIdx });
+    const names = r.unlimited ? null : new Set(r.names);
+    const linesIn = r.unlimited ? (lines || []) : (lines || []).filter(l => names.has(l.name));
+    const ids = r.unlimited ? null : new Set(linesIn.map(l => String(l.id)));
+    return {
+      ...r, names, ids, linesIn, scopeSecs,
+      lineIds: ids ? [...ids] : null,
+      empOk: (emp) => {
+        if (!ids) return true;
+        const lid = emp?.line_id;
+        if (lid != null) return ids.has(String(lid));
+        return scopeSecs.length ? inSectionScope(scopeSecs, emp?.section) : false;
+      },
+      sectionsIn: (all) => {
+        if (r.unlimited) return all;
+        const secs = new Set(linesIn.map(l => l.section).filter(Boolean));
+        const keep = (all || []).filter(x => secs.has(x) || (scopeSecs.length && inSectionScope(scopeSecs, x)));
+        return keep.length ? keep : all;
+      },
+    };
+  }, [role, userLineId, scopeSecs, lines, scopeIdx]);
+}
 
 function useWidth() {
   const [w, setW] = useState(() => window.innerWidth);
@@ -270,7 +304,7 @@ function ExportNote() {
 }
 
 function OtTransportBookingTab({ autoOpenMaster }) {
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   const canManageMaster = can('ot_master', 'manage', role);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
@@ -324,20 +358,32 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   };
 
   // mandatory scope ก่อน (leader → ไลน์ตัวเอง, role ที่ถูกจำกัด sections → เฉพาะส่วนงานใน scope) แล้วค่อย filter อิสระทับ
+  /* 🔭 ขอบเขตจากของกลาง (QC audit 09/11 · กวาดรอบ 2) — เดิมเทียบ `line_id` ตรงตัว ⇒ หัวหน้าที่
+     ผูกกับไลน์แม่มองไม่เห็นคนในไลน์ลูก และไม่รู้จัก `scopeIdx` · คนที่ไม่ผูกไลน์ยังตัดด้วยส่วนงาน */
+  const empScope = useMemo(() => {
+    const r = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
+    if (r.unlimited) return null;
+    const names = new Set(r.names);
+    return new Set(lines.filter(l => names.has(l.name)).map(l => String(l.id)));
+  }, [role, userLineId, scopeSecs, lines, scopeIdx]);
   const filteredRows = rows
     .filter(r => {
-      if (role === 'leader' && userLineId) return String(r.employees?.line_id) === String(userLineId);
-      if (scopeSecs.length) return inSectionScope(scopeSecs, r.employees?.section);
-      return true;
+      if (!empScope) return true;
+      const lid = r.employees?.line_id;
+      if (lid != null) return empScope.has(String(lid));
+      return scopeSecs.length ? inSectionScope(scopeSecs, r.employees?.section) : false;
     })
     .filter(r => !section    || r.employees?.section    === section)
     .filter(r => !deptFilter || r.employees?.department === deptFilter)
     .filter(r => shiftFilter === 'all' || r.shift === shiftFilter);
 
   const allSections = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
-  const sections = (role === 'leader' && userLineId)
-    ? [...new Set(lines.filter(l => String(l.id) === String(userLineId)).map(l => l.section).filter(Boolean))]
-    : scopeSecs.length ? allSections.filter(s => inSectionScope(scopeSecs, s)) : allSections;
+  /* ส่วนงานที่เลือกได้ = ของไลน์ที่เห็นได้ ∪ ส่วนงานที่ถูกกำกับไว้ (เดิม leader ได้ช่องเดียว) */
+  const sections = !empScope ? allSections : (() => {
+    const secs = new Set(lines.filter(l => empScope.has(String(l.id))).map(l => l.section).filter(Boolean));
+    const keep = allSections.filter(s => secs.has(s) || (scopeSecs.length && inSectionScope(scopeSecs, s)));
+    return keep.length ? keep : allSections;
+  })();
 
   const handleExportCsv = () => {
     downloadCSV(
@@ -670,6 +716,7 @@ function DailyTab() {
   const [loading, setLoading] = useState(false);
   const [stationMap, setStationMap] = useState({});
   const [lines, setLines] = useState([]);
+  const scope = useScopeOf(lines);            // 🔭 ขอบเขตของบัญชี — ของกลางตัวเดียวทั้งไฟล์
   const [dailySection, setDailySection] = useState(scopeSeed?.section ?? '');
   const [dailyLine, setDailyLine] = useState('');
   const [dailyTeam, setDailyTeam] = useState(urlTeam);
@@ -713,26 +760,17 @@ function DailyTab() {
       return true;
     });
     // mandatory scope: leader → ไลน์ตัวเอง, role ที่ถูกจำกัด sections → เฉพาะส่วนงานใน scope (CLAUDE.md "Section/Line/Team Scoping")
-    const scoped = filtered.filter(l => {
-      if (role === 'leader' && userLineId) return String(l.employees?.line_id) === String(userLineId);
-      if (scopeSecs.length) return inSectionScope(scopeSecs, l.employees?.section);
-      return true;
-    });
+    const scoped = filtered.filter(l => scope.empOk(l.employees));   // 🔭 ของกลาง (hook ด้านบน)
     setLogs(scoped);
     setLoading(false);
   };
 
   // dropdown ไลน์/ส่วนงาน เหลือเฉพาะใน scope เท่านั้น
-  const linesInScope = useMemo(() => {
-    if (role === 'leader' && userLineId) return lines.filter(l => String(l.id) === String(userLineId));
-    if (scopeSecs.length) return lines.filter(l => inSectionScope(scopeSecs, l.section));
-    return lines;
-  }, [lines, role, userLineId, scopeSecs]);
+  const linesInScope = scope.linesIn;
   const dailySections = useMemo(() => {
-    if (role === 'leader' && userLineId) return sortLike(linesInScope.map(l => l.section), orgSectionList);
     const all = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
-    return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
-  }, [lines, linesInScope, orgSectionList, role, userLineId, scopeSecs]);
+    return scope.sectionsIn(all);
+  }, [lines, orgSectionList, scope]);
 
   const filteredLogs = useMemo(() => logs.filter(l => {
     if (dailySection && l.employees?.section !== dailySection) return false;
@@ -849,7 +887,7 @@ table{border-collapse:collapse;width:100%}
 
 function PerEmployeeTab() {
   const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
   const [employees, setEmployees] = useState([]);
@@ -876,12 +914,15 @@ function PerEmployeeTab() {
          ใครเช็คชื่อได้ ต้องเปิดดูเดือนของเขาได้ · กรอง = ช่าง/ธุรการที่เช็คชื่อทุกวัน
          **เปิดดูประวัติตัวเองไม่ได้เลย** (วัด 14/10: Office PD4 6 คน เช็คชื่อ 28/28 วัน) */
       let empQ = supabase.from('employees').select('id, name, employee_id_code, section, department, team, staff_kind').eq('is_active', true);
-      if (role === 'leader' && userLineId) {
-        const { data: ls } = await loadLinesRes();
-        const fam = getLineFamilyIds(ls || [], Number(userLineId));
-        empQ = fam.size ? empQ.in('line_id', [...fam]) : empQ.eq('line_id', userLineId);
-      } else if (scopeSecs.length) {
-        empQ = empQ.in('section', scopeSecs);
+      /* 🔭 ขอบเขตจากของกลาง — ไลน์ที่เห็นได้ ∪ (คนที่ไม่ผูกไลน์ = ตัดด้วยส่วนงาน) */
+      const { data: ls } = await loadLinesRes();
+      const sc = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines: ls || [], scopeIdx });
+      if (!sc.unlimited) {
+        const okNames = new Set(sc.names);
+        const ids = (ls || []).filter(l => okNames.has(l.name)).map(l => l.id).filter(v => v != null);
+        if (ids.length && scopeSecs.length) empQ = empQ.or(`line_id.in.(${ids.join(',')}),section.in.(${scopeSecs.map(x => `"${x}"`).join(',')})`);
+        else if (ids.length) empQ = empQ.in('line_id', ids);
+        else if (scopeSecs.length) empQ = empQ.in('section', scopeSecs);
       }
       const { data } = await empQ.order('name');
       setEmployees(data || []);
@@ -911,11 +952,13 @@ function PerEmployeeTab() {
   };
 
   // dropdown ส่วนงาน เหลือเฉพาะใน scope (leader → เฉพาะส่วนงานของพนักงานในไลน์ตัวเองซึ่งถูก scope แล้ว)
+  /* ลิสต์ส่วนงาน = ส่วนงานของคนที่โหลดมาจริง (ถูก scope ที่ query แล้ว) ∪ ส่วนงานที่กำกับไว้ */
   const empSections = useMemo(() => {
-    if (role === 'leader' && userLineId) return sortLike(employees.map(e => e.section), orgSectionList);
     const all = orgSectionList.length ? orgSectionList : sortLike(employees.map(e => e.section), orgSectionList);
-    return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
-  }, [employees, orgSectionList, role, userLineId, scopeSecs]);
+    const mine = new Set(employees.map(e => e.section).filter(Boolean));
+    const keep = all.filter(x => mine.has(x) || (scopeSecs.length && inSectionScope(scopeSecs, x)));
+    return (scopeSecs.length || mine.size) ? (keep.length ? keep : all) : all;
+  }, [employees, orgSectionList, scopeSecs]);
   const filteredEmployees = useMemo(() => employees.filter(e => {
     if (empSection && e.section    !== empSection) return false;
     if (empDept    && e.department !== empDept)    return false;
@@ -1026,12 +1069,13 @@ table{border-collapse:collapse;width:100%}
 
 function StationLogTab() {
   const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
   const today = getWorkDate();
   const [stations, setStations] = useState([]);
   const [lines, setLines] = useState([]);
+  const scope = useScopeOf(lines);            // 🔭 ขอบเขตของบัญชี — ของกลางตัวเดียวทั้งไฟล์
   const [selectedStation, setSelectedStation] = useState('');
   /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · เดิม default 7 วัน (นับหัวนับท้าย) ⇒ `defaultDays: 7`
      แผงนี้เป็นรายงานรายวัน ไม่ได้แบ่งถังเวลา ⇒ `scales={null}` */
@@ -1060,28 +1104,19 @@ function StationLogTab() {
   // อยู่แล้วก็ตาม (2026-09 · user จับได้จากภาพหน้าจอ "ไม่กรอง hierarchy") — เติมตัวกรองส่วนงานแบบเดียวกับ
   // DailyTab/PerEmployeeTab ในไฟล์นี้ ให้แคบเหลือทีละส่วนงานก่อนไปเลือกสถานี
   const stationSectionsList = useMemo(() => {
-    if (role === 'leader' && userLineId) {
-      const myLine = lines.find(l => String(l.id) === String(userLineId));
-      return myLine?.section ? [myLine.section] : [];
-    }
     const all = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
-    return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
-  }, [lines, orgSectionList, role, userLineId, scopeSecs]);
+    return scope.sectionsIn(all);
+  }, [lines, orgSectionList, scope]);
 
   // mandatory scope: leader → สถานีในไลน์ตัวเอง, role ที่ถูกจำกัด sections → สถานีของไลน์ในส่วนงานที่อยู่ใน scope
   // ระหว่างที่ lines ยังไม่โหลด (แต่ user ถูก scope) คืน [] ไปก่อน — fail-closed ไม่ให้ข้อมูลนอก scope หลุดชั่วคราว
   // แล้วซ้อนตัวกรอง "ส่วนงาน" ที่ user เลือกเองทับอีกชั้น (แคบลงได้อย่างเดียว ไม่มีทางเห็นนอก scope ที่ role อนุญาต)
   const scopedStations = useMemo(() => {
-    const isRoleScoped = (role === 'leader' && userLineId) || scopeSecs.length > 0;
+    /* 🔭 ของกลาง — ไลน์ที่เห็นได้ · ทะเบียนไลน์ยังไม่โหลด (แต่บัญชีถูกจำกัด) = fail-closed เหมือนเดิม */
     let out = stations;
-    if (isRoleScoped) {
+    if (!scope.unlimited) {
       if (!lines.length) return [];
-      if (role === 'leader' && userLineId) {
-        const myLine = lines.find(l => String(l.id) === String(userLineId));
-        out = myLine ? stations.filter(s => s.line_name === myLine.name) : [];
-      } else {
-        out = stations.filter(s => inSectionScope(scopeSecs, secByLineName[s.line_name]));
-      }
+      out = stations.filter(s => scope.names.has(s.line_name));
     }
     if (stationSection) out = out.filter(s => secByLineName[s.line_name] === stationSection);
     return out;
@@ -1268,7 +1303,7 @@ table{border-collapse:collapse;width:100%}
 function RangeTab() {
   const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
   const orgSectionList = useOrgSections();   // ลำดับส่วนงานตามผัง เหมือนแท็บอื่น (2026-10-01)
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const today = getWorkDate();
   /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · เดิม default 7 วัน (นับหัวนับท้าย) ⇒ `defaultDays: 7`
@@ -1278,6 +1313,7 @@ function RangeTab() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [lines, setLines] = useState([]);
+  const scope = useScopeOf(lines);            // 🔭 ขอบเขตของบัญชี — ของกลางตัวเดียวทั้งไฟล์
   /* ?scope= — แผนก: ตั้งชื่อไว้ก่อน แล้ว <LineScopeSelect onUnitLines> เติมชุดไลน์ให้เมื่อผังโหลดเสร็จ (20/10) */
   const [scopeSeed] = useState(urlScopeSeed);
   const [rangeSection, setRangeSection] = useState(scopeSeed?.section ?? '');
@@ -1300,11 +1336,7 @@ function RangeTab() {
       .select('work_date, is_present, employee_id, employees(name, employee_id_code, section, team, line_id)')
       .gte('work_date', from).lte('work_date', to).order('work_date').order('employee_id').order('id'));
     // mandatory scope: leader → ไลน์ตัวเอง, role ที่ถูกจำกัด sections → เฉพาะส่วนงานใน scope
-    const scoped = (data || []).filter(l => {
-      if (role === 'leader' && userLineId) return String(l.employees?.line_id) === String(userLineId);
-      if (scopeSecs.length) return inSectionScope(scopeSecs, l.employees?.section);
-      return true;
-    });
+    const scoped = (data || []).filter(l => scope.empOk(l.employees));   // 🔭 ของกลาง (hook ด้านบน)
     const map = {};
     scoped.forEach(l => {
       const key = l.employee_id;
@@ -1317,11 +1349,7 @@ function RangeTab() {
   };
 
   // dropdown ไลน์/ส่วนงาน เหลือเฉพาะใน scope เท่านั้น
-  const rangeLinesInScope = useMemo(() => {
-    if (role === 'leader' && userLineId) return lines.filter(l => String(l.id) === String(userLineId));
-    if (scopeSecs.length) return lines.filter(l => inSectionScope(scopeSecs, l.section));
-    return lines;
-  }, [lines, role, userLineId, scopeSecs]);
+  const rangeLinesInScope = scope.linesIn;
   const rangeSections = useMemo(() => sortLike(rangeLinesInScope.map(l => l.section), orgSectionList), [rangeLinesInScope, orgSectionList]);
 
   const rangeUnitIds = useMemo(() => new Set(lines.filter(l => rangeUnit.lines.includes(l.name)).map(l => String(l.id))), [lines, rangeUnit]);
@@ -1444,7 +1472,7 @@ const STATUS_META = {
 /* deep-link: focusId = ใบที่ถูกคลิกมาจากหน้าอื่น (เน้นแถว + เลื่อนไปหา) · initStatus/initFrom =
    ตั้งตัวกรองตั้งต้นให้ใบนั้นอยู่ในรายการ (ใบค้างมักเก่ากว่าช่วง 7 วัน default — ไม่ตั้งจะเปิดมาเจอจอว่าง) */
 function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
-  const { role, lineId: userLineId, sections: scopeSecs = [], fullName = '' } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], fullName = '', scopeIdx } = useContext(UserContext);
   const orgSectionList = useOrgSections();
 
   // Determine if the current user can act on this log at its current stage
@@ -1523,17 +1551,12 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   /* คืน `undefined` = **ยังตัดสินขอบเขตไม่ได้** (ทะเบียนไลน์ยังไม่ settle) — คนละความหมายกับ
      `[]` = รู้แล้วว่าไม่มีไลน์ในขอบเขต และ `null` = ไม่จำกัด · ห้ามยุบ 3 ค่านี้เป็นค่าเดียว */
   const allowedLineNames = useMemo(() => {
-    const needsLines = (role === 'leader' && userLineId) || scopeSecs.length > 0;
-    if (needsLines && !linesLoaded) return undefined;
-    if (role === 'leader' && userLineId) {
-      const myLine = lines.find(l => l.id === userLineId);
-      return myLine ? getLineFamilyNames(lines, myLine.name) : [];
-    }
-    if (scopeSecs.length) {
-      return lines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name);
-    }
-    return null;
-  }, [role, scopeSecs, userLineId, lines, linesLoaded]);
+    const needsLines = role !== 'admin' && (!!userLineId || scopeSecs.length > 0);   // แค่ถามว่า "ต้องรอทะเบียนไลน์ไหม" ไม่ใช่ตัวตัดสินขอบเขต
+    if (needsLines && !linesLoaded) return undefined;         // ยังตัดสินไม่ได้ (คงความหมายเดิม 3 ค่า)
+    /* 🔭 ของกลาง `lineScope()` — leader = ไลน์ตัวเอง ∪ ส่วนงานที่กำกับ · รู้จัก scopeIdx */
+    const r = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
+    return r.unlimited ? null : r.names;
+  }, [role, scopeSecs, userLineId, lines, linesLoaded, scopeIdx]);
 
   useEffect(() => {
     loadLinesRes().then(({ data }) => {
@@ -2346,23 +2369,17 @@ function DocumentControlPanel() {
 
 function EmpScopeFilters({ lines, filterSection, setFilterSection, filterLine, setFilterLine, filterTeam, setFilterTeam, filterDept, setFilterDept }) {
   const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   const orgSectionList = useOrgSections();
   const deptsOf        = useOrgDepts();
   // dropdown เหลือเฉพาะใน scope — ข้อมูลจริงถูกบังคับ scope ที่ query ของแต่ละแท็บแล้ว
   // (เดิมโชว์ทุกส่วนงาน/ไลน์ เลือกนอก scope ได้ผลว่างเปล่า ทำให้ผู้ใช้สับสน)
-  const scopedLines = useMemo(() => {
-    if (role === 'leader' && userLineId) {
-      const fam = new Set([...getLineFamilyIds(lines, Number(userLineId) || userLineId)].map(String));
-      return lines.filter(l => fam.has(String(l.id)));
-    }
-    return scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines;
-  }, [lines, role, userLineId, scopeSecs]);
+  const scope = useScopeOf(lines);            // 🔭 ขอบเขตของบัญชี — ของกลางตัวเดียวทั้งไฟล์
+  const scopedLines = scope.linesIn;
   const sections = useMemo(() => {
     const all = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
-    if (role === 'leader' && userLineId) return sortLike(scopedLines.map(l => l.section), orgSectionList);
-    return scopeSecs.length ? all.filter(s => inSectionScope(scopeSecs, s)) : all;
-  }, [lines, orgSectionList, role, userLineId, scopeSecs, scopedLines]);
+    return scope.sectionsIn(all);
+  }, [lines, orgSectionList, scope]);
   return (
     <>
       {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02) — เลือกไลน์ = กรองตามไลน์อย่างเดียวเหมือนเดิม (ส่วนงานว่าง) */}
@@ -2379,7 +2396,7 @@ function EmpScopeFilters({ lines, filterSection, setFilterSection, filterLine, s
 }
 
 function SkillMatrixTab() {
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const vw = useWidth();
   const [skillDefs,      setSkillDefs]      = useState([]);
@@ -2391,6 +2408,7 @@ function SkillMatrixTab() {
   const [filterTeam,     setFilterTeam]     = useState(urlTeam);
   const [filterDept,     setFilterDept]     = useState(scopeSeed?.dept ?? '');
   const [lines,          setLines]          = useState([]);
+  const scope = useScopeOf(lines);            // 🔭 ขอบเขตของบัญชี — ของกลางตัวเดียวทั้งไฟล์
   const [selectedEmp,    setSelectedEmp]    = useState(null);
   const [subItemsByskill, setSubItemsByskill] = useState({});
   /* กันคำตอบเก่าทับจอใหม่ (กฎเหล็กข้อ 4 ใน CLAUDE.md) — load() ยิงทุกครั้งที่เปลี่ยน filter
@@ -2427,8 +2445,9 @@ function SkillMatrixTab() {
     let q = onlyShopfloorStaff(supabase.from('employees').select(baseSelect).eq('is_active', true));
     // leader/supervisor เห็นเฉพาะไลน์/ส่วนงานตัวเองเสมอ ไม่ว่า filter ที่เลือกไว้จะเป็นอะไร —
     // บังคับ scope นี้เพิ่มเติมจาก filter อิสระ กันดูข้ามไลน์/ส่วนงานที่ตัวเองไม่ได้ดูแล
-    if (role === 'leader' && userLineId) q = q.in('line_id', lineFamilyIdsOf(userLineId));
-    else if (scopeSecs.length) q = q.in('section', scopeSecs);
+    /* 🔭 ขอบเขตจากของกลาง (hook ด้านบน) — leader = ไลน์ตัวเอง ∪ ส่วนงานที่กำกับ · รู้จัก scopeIdx */
+    if (scope.lineIds?.length) q = q.in('line_id', scope.lineIds);
+    else if (!scope.unlimited && scopeSecs.length) q = q.in('section', scopeSecs);
     if (filterLine) q = q.in('line_id', lineFamilyIdsOf(filterLine));
     else if (filterSection) q = q.eq('section', filterSection);
     if (filterTeam) q = q.eq('team', filterTeam);
@@ -2442,8 +2461,7 @@ function SkillMatrixTab() {
        ใบประเมินทักษะรายบุคคล F-PRS-P1-119 พิมพ์จากจอนี้ — หัวหน้าไลน์ปลายทางที่เห็นเขาทำงานจริง
        ต้องประเมินเขาได้ ไม่งั้นคนยืมข้ามส่วนงานหายจากจอทั้งที่ยืนอยู่ในไลน์
        scope ที่ใช้ = filter ที่เลือกอยู่ (ถ้ามี) ไม่ใช่ scope ดิบ — เลือกไลน์ตัวเอง = เห็นคนที่มาช่วยไลน์นั้น */
-    const effLineIds = filterLine ? lineFamilyIdsOf(filterLine)
-                     : (role === 'leader' && userLineId) ? lineFamilyIdsOf(userLineId) : null;
+    const effLineIds = filterLine ? lineFamilyIdsOf(filterLine) : (scope.lineIds || null);
     const effSecs    = filterSection ? [filterSection] : scopeSecs;
     let list = await mergeBorrowedEmployees(emps || [], {
       lines, lineIds: effLineIds, scopeSecs: effSecs,
@@ -2896,12 +2914,13 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
 
 function MultiSkillFormTab() {
   const vw = useWidth();
-  const { role, lineId: userLineId, sections: scopeSecs = [], signatureUrl: ctxSigUrl, fullName: ctxFullName } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx, signatureUrl: ctxSigUrl, fullName: ctxFullName } = useContext(UserContext);
   const canExport = can('report', 'export', role);
 
   const [skillDefs,     setSkillDefs]     = useState([]);
   const [employees,     setEmployees]     = useState([]);
   const [lines,         setLines]         = useState([]);
+  const scope = useScopeOf(lines);            // 🔭 ขอบเขตของบัญชี — ของกลางตัวเดียวทั้งไฟล์
   const [loading,       setLoading]       = useState(false);
   const [scopeSeed] = useState(urlScopeSeed);   // ?scope= จากลิงก์ (จอวนหน้า)
   const [filterLine,    setFilterLine]    = useState('');
@@ -2986,8 +3005,9 @@ function MultiSkillFormTab() {
     const sel = 'id, name, employee_id_code, position, section, department, team, start_date, employee_skills(skill_name, score)';
     let q = onlyShopfloorStaff(supabase.from('employees').select(sel).eq('is_active', true));
     // leader/supervisor เห็นเฉพาะไลน์/ส่วนงานตัวเองเสมอ ไม่ว่า filter ที่เลือกไว้จะเป็นอะไร
-    if (role === 'leader' && userLineId) q = q.in('line_id', lineFamilyIdsOf(userLineId));
-    else if (scopeSecs.length) q = q.in('section', scopeSecs);
+    /* 🔭 ขอบเขตจากของกลาง (hook ด้านบน) */
+    if (scope.lineIds?.length) q = q.in('line_id', scope.lineIds);
+    else if (!scope.unlimited && scopeSecs.length) q = q.in('section', scopeSecs);
     if (filterLine) q = q.in('line_id', lineFamilyIdsOf(filterLine));
     else if (filterSection) q = q.eq('section', filterSection);
     if (filterTeam) q = q.eq('team', filterTeam);
@@ -3412,7 +3432,7 @@ const SHIFT_DEFS = [
 
 function SkillAllowanceTab() {
   const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const today = new Date();
   const [year,   setYear]   = useState(today.getFullYear());
@@ -3422,6 +3442,7 @@ function SkillAllowanceTab() {
   const [section, setSection] = useState('');
   const [team,   setTeam]   = useState(urlTeam);
   const [lines,     setLines]     = useState([]);
+  const scope = useScopeOf(lines);            // 🔭 ขอบเขตของบัญชี — ของกลางตัวเดียวทั้งไฟล์
   const [skillDefs, setSkillDefs] = useState([]);
   const [rows,   setRows]   = useState([]); // [{emp, shifts:{day:{},night:{}}}]
   const [loading, setLoading] = useState(false);
@@ -3522,14 +3543,9 @@ function SkillAllowanceTab() {
   };
 
   // mandatory scope: null = ไม่จำกัด · leader → ครอบครัวไลน์ตัวเอง · role ที่ถูกจำกัด sections → ไลน์ในส่วนงานที่อยู่ใน scope
-  const scopedLineNames = useMemo(() => {
-    if (role === 'leader' && userLineId) {
-      const myLine = lines.find(l => String(l.id) === String(userLineId));
-      return myLine ? getLineFamilyNames(lines, myLine.name) : [];
-    }
-    if (scopeSecs.length) return lines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name);
-    return null;
-  }, [role, userLineId, scopeSecs, lines]);
+  const scopedLineNames = useMemo(
+    () => (scope.unlimited ? null : scope.names ? [...scope.names] : null),   // 🔭 ของกลาง (hook ด้านบน)
+    [scope]);
 
   const load = async () => {
     if (!workType) { toast.error('เลือก "ประเภทงาน" ก่อนดึงข้อมูล'); return; } // เดิม query ด้วย '' ได้ผลว่างโดยไม่บอกสาเหตุ
@@ -4025,7 +4041,7 @@ function SkillAllowanceTab() {
    ══════════════════════════════════════════════════════════════ */
 function AttendanceFormTab() {
   const teams = useOrgTeams(); // 2026-09-07 ทีม A/B/C จาก org_nodes (fallback A/B/C)
-  const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const today   = new Date();
   const orgSectionList = useOrgSections();
@@ -4044,6 +4060,7 @@ function AttendanceFormTab() {
      = หัวใบขึ้นเลขหนึ่ง ท้ายใบขึ้นอีกเลข บนกระดาษใบเดียวกัน · ช่องนี้ยังแก้รายใบได้เหมือนเดิม */
   const [formNo,  setFormNo]  = useState(() => docFormSync('attendance_record', { form_code: 'F-HR-001' }).form_code || 'F-HR-001');
   const [lines,   setLines]   = useState([]);
+  const scope = useScopeOf(lines);            // 🔭 ขอบเขตของบัญชี — ของกลางตัวเดียวทั้งไฟล์
   const [empRows, setEmpRows] = useState([]); // [{emp, byDay:{d:{present,ot,leave}}}]
   const [loading, setLoading] = useState(false);
   const [calLoaded, setCalLoaded] = useState(false);
@@ -4113,10 +4130,9 @@ function AttendanceFormTab() {
     let empQ = supabase.from('employees')
       .select('id, name, employee_id_code, section, department, team, line_id, staff_kind');
     // mandatory scope ก่อน (leader → ครอบครัวไลน์ตัวเอง แบบเดียวกับแท็บอื่น, sections → เฉพาะส่วนงานใน scope) แล้วค่อย filter อิสระทับ
-    if (role === 'leader' && userLineId) {
-      const leaderFam = [...getLineFamilyIds(lines, Number(userLineId) || userLineId)];
-      empQ = empQ.in('line_id', leaderFam.length ? leaderFam : [userLineId]);
-    } else if (scopeSecs.length)         empQ = empQ.in('section', scopeSecs);
+    /* 🔭 ขอบเขตจากของกลาง (hook ด้านบน) */
+    if (scope.lineIds?.length)                     empQ = empQ.in('line_id', scope.lineIds);
+    else if (!scope.unlimited && scopeSecs.length) empQ = empQ.in('section', scopeSecs);
     if (line && familyIds.length) empQ = empQ.in('line_id', familyIds);
     if (dept)           empQ = empQ.eq('section', dept);
     if (empDept)        empQ = empQ.eq('department', empDept);
@@ -4422,13 +4438,9 @@ function AttendanceFormTab() {
 
   const days = periodDays();
   // dropdown ไลน์/ส่วนงาน เหลือเฉพาะใน scope เท่านั้น
-  const attLinesInScope = (role === 'leader' && userLineId)
-    ? lines.filter(l => String(l.id) === String(userLineId))
-    : scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines;
+  const attLinesInScope = scope.linesIn;          // 🔭 ของกลาง (hook ด้านบน)
   const attAllSections = orgSectionList.length ? orgSectionList : sortLike(lines.map(l => l.section), orgSectionList);
-  const attSections = (role === 'leader' && userLineId)
-    ? sortLike(attLinesInScope.map(l => l.section), orgSectionList)
-    : scopeSecs.length ? attAllSections.filter(s => inSectionScope(scopeSecs, s)) : attAllSections;
+  const attSections = scope.sectionsIn(attAllSections);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

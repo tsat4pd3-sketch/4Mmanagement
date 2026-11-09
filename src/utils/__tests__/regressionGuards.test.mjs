@@ -7918,6 +7918,220 @@ test('🟡 defect-auto-yellow — ลงงานเสียต้องตั�
     + '\n\n   ของจริงอยู่ในถังแต่ระบบไม่รู้ = สืบกลับไม่ได้ว่าของหายไปไหน\n');
 });
 
+test('🔭 scope-copies-swept — จอที่กวาดแล้ว ห้ามกลับไปเขียนสูตรขอบเขตเองในหน้า', () => {
+  /* QC audit 09/11: สำเนาสูตร `role === 'leader' && lineId` ที่เขียนเองในหน้า ให้คำตอบ
+     **แคบกว่า** ของกลาง (leader ได้ครอบครัวไลน์ล้วน · ไม่รู้จัก `scopeIdx` = แกน Cost Center/ผัง)
+     ⇒ กวาดให้เรียกของกลาง `lineScope()` / `scopedLines()` แล้ว · ไฟล์ชุดนี้ห้ามถอยกลับ
+     ⚠️ ยังมีจออื่นที่ยังไม่กวาด (ดู `permission-scope-audit.md`) — รายชื่อข้างล่างคือที่กวาดแล้วเท่านั้น */
+  const SWEPT = [
+    /* รอบ 1 (09/11) */
+    'src/pages/ScrapReport.jsx', 'src/pages/MtnAnalysis.jsx', 'src/pages/MaintenanceLevels.jsx',
+    'src/pages/MorningMeeting.jsx', 'src/pages/DieRegistry.jsx', 'src/pages/FixtureRegistry.jsx',
+    'src/pages/VSM.jsx', 'src/pages/PmForecast.jsx', 'src/pages/WorkforceInsight.jsx',
+    'src/pages/ShiftOrganize.jsx', 'src/pages/DailyReport.jsx', 'src/components/QualityBins.jsx',
+    /* รอบ 2 (09/11) */
+    'src/pages/PmCoordination.jsx', 'src/pages/QrLabels.jsx', 'src/pages/OrderTrace.jsx',
+    'src/pages/ProductHistory.jsx', 'src/pages/Dashboard.jsx', 'src/pages/MachineDatabase.jsx',
+    'src/pages/EventLog.jsx', 'src/pages/OEEAnalytics.jsx', 'src/pages/OjtTraining.jsx',
+    'src/pages/DailyPM.jsx',
+    /* รอบ 3 (09/11) — ปิดครบทั้งรีโป ยกเว้น `components/LineSelect.jsx` ซึ่ง **เป็นของกลางเอง** */
+    'src/pages/Report.jsx', 'src/pages/Checkin.jsx', 'src/pages/MtnRepair.jsx',
+    'src/pages/Improvements.jsx', 'src/pages/ProductionPlan.jsx', 'src/components/WipBetweenSteps.jsx',
+  ];
+  const bad = [];
+  for (const f of SWEPT) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    if (/role === 'leader' && (lineId|userLineId)/.test(src))
+      bad.push(`${f}: กลับไปเขียนสูตรขอบเขตเองในหน้า — ต้องเรียก lineScope()/scopedLines() ของกลาง`);
+    if (!/lineScope\(|scopedLinesOf\(|scopedLines\(\{/.test(src))
+      bad.push(`${f}: ไม่พบการเรียกของกลางเลย — ขอบเขตต้องมาจาก sectionScope.js`);
+    /* ส่ง `scopeIdx` ด้วยเสมอ ไม่งั้นแกน Cost Center/ผังตกหมด */
+    if (/lineScope\(\{(?![^})]*scopeIdx)/.test(src))
+      bad.push(`${f}: เรียก lineScope() โดยไม่ส่ง scopeIdx`);
+  }
+  /* 🔴 ทั้งรีโปเหลือที่เดียวที่เขียนสูตรนี้ได้ = `components/LineSelect.jsx` (ตัวของกลางเอง)
+     ไฟล์ใหม่ที่ก๊อปสูตรไปใช้ จะถูกจับที่นี่ทันที ไม่ต้องรอ audit รอบหน้า */
+  const ALLOW = new Set(['src/components/LineSelect.jsx', 'src/utils/sectionScope.js']);   // 2 ไฟล์นี้ = ตัวของกลางเอง
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = f.replace(ROOT + '/', '').replace(/^\/+/, '');
+    if (ALLOW.has(rel) || [...ALLOW].some(x => f.endsWith(x))) continue;
+    if (/role === 'leader' && (lineId|userLineId)/.test(stripComments(readFileSync(f, 'utf8'))))
+      bad.push(`${rel}: เขียนสูตรขอบเขตเองในหน้า — ต้องเรียก lineScope()/scopedLines() ของกลาง`);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   "การบีบขอบเขตเป็นการตั้งค่า ไม่ใช่งานของโค้ด" — คืนน้อยกว่าที่ profiles ตั้ง = คนทำงานไม่ได้\n');
+});
+
+test('🔐 qbin-writes-layer3 — ทุกจุดที่เขียนถังต้องผ่านด่านชั้น ③ + นับแถว + คิวไม่โกหกตอนโหลดไม่ครบ', () => {
+  /* QC audit 09/11 (หมวด B·C·D): ฝั่ง DR เป็น anon ⇒ **จอคือด่านเดียว**
+     ช่องเลือกไลน์ที่กรอง scope แล้วไม่ใช่ด่าน (`?scope=` เปิดตรงได้) */
+  const bad = [];
+  const Q = 'src/components/QualityBins.jsx';
+  const q = stripComments(readFileSync(join(ROOT, Q), 'utf8'));
+  if (!/const guardLines = \(/.test(q))
+    bad.push(`${Q}: ต้องมี guardLines() = canWriteLine + unknownTarget 'block' (ชั้น ③)`);
+  if (!/unknownTarget: 'block'/.test(q))
+    bad.push(`${Q}: ด่านชั้น ③ ต้องใช้ unknownTarget:'block' (ไลน์ที่ผังไม่รู้จัก = ห้ามเขียน)`);
+  for (const fn of ['save', 'toRed', 'decide', 'decideScrap', 'remove']) {
+    const m = q.match(new RegExp(`const\\s+${fn}\\s*=\\s*async[\\s\\S]*?\\n  \\};`));
+    if (!m) { bad.push(`${Q}: หา ${fn}() ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้`); continue; }
+    if (!/guardLines\(/.test(m[0])) bad.push(`${Q} ${fn}(): ต้องเช็ค guardLines ก่อนเขียน DB`);
+  }
+  /* ✍️ ช่อง QA บนใบ = ลายเซ็น — ไม่รู้ชื่อคนกด ห้ามเขียนใบที่ไม่มีชื่อผู้พิจารณา */
+  for (const fn of ['decide', 'decideScrap']) {
+    const m = q.match(new RegExp(`const\\s+${fn}\\s*=\\s*async[\\s\\S]*?\\n  \\};`));
+    if (m && !/guardSigner\(\)/.test(m[0])) bad.push(`${Q} ${fn}(): ต้องเช็ค guardSigner() ก่อนเขียน qa_by`);
+  }
+  const save = q.match(/const\s+save\s*=\s*async[\s\S]*?\n  \};/);
+  if (save && !/checkWriteRows\(/.test(save[0]))
+    bad.push(`${Q} save(): UPDATE ต้องนับแถว (RLS ปฏิเสธ = 0 แถวไม่มี error)`);
+  /* `.in(ids)` ยาว = URL เกินเพดาน proxy แล้วคืนค่าว่างเงียบ */
+  if (/\.in\('id', repIds\)/.test(q))
+    bad.push(`${Q}: repIds ยาวได้ถึง 500 ⇒ ต้องผ่าน fetchByIds (chunk) ห้าม .in() ตรงๆ`);
+  if (!/fetchByIds\(/.test(q))
+    bad.push(`${Q}: ต้องใช้ fetchByIds สำหรับคิวรีที่ส่ง id เป็นชุด`);
+  /* ทะเบียนไลน์โหลดไม่ได้ = ขอบเขตไม่ชัด ห้ามเขียนยืนยันว่า "ทั้งโรงงาน" */
+  if (!/scopeRes\.unsure/.test(q))
+    bad.push(`${Q}: ต้องอ่าน unsure จาก lineScope() มาเขียนบนจอ`);
+
+  const P = 'src/components/MyQueuePanel.jsx';
+  const p = stripComments(readFileSync(join(ROOT, P), 'utf8'));
+  if (!/binsTruncated/.test(p)) bad.push(`${P}: คิวถังชนเพดาน 200 ต้องติดธง binsTruncated`);
+  if (!/redRows\.length < 1000/.test(p))
+    bad.push(`${P}: รายการใบแดงชนเพดาน 1000 = ไม่รู้ ⇒ ต้องถือเป็น partial (ของค้างเทียม)`);
+  const mq = stripComments(readFileSync(join(ROOT, 'src/utils/myQueue.js'), 'utf8'));
+  if (!/binsTruncated[\s\S]{0,80}missing\.push\('bins_truncated'\)/.test(mq))
+    bad.push(`src/utils/myQueue.js: binsTruncated ต้องเข้า missing (จอจะได้เขียนว่าโหลดไม่ครบ)`);
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   ฝั่ง DR ไม่มี RLS จริง — จอปล่อยผ่าน = ใครก็เขียนของหน่วยอื่นได้\n');
+});
+
+test('📝 write-honesty — ปิดใบ/ลบของ ต้อง CAS + นับแถว + ไม่ทิ้งใบถังกำพร้า', () => {
+  /* QC audit 09/11: จุดที่ "ผลลัพธ์สำคัญ" แต่ยังอ่านแค่ error แล้วขึ้น toast สำเร็จ */
+  const bad = [];
+  const D = 'src/pages/DailyReport.jsx';
+  const d = stripComments(readFileSync(join(ROOT, D), 'utf8'));
+  const close = d.match(/const\s+handleManualCloseInner\s*=\s*async[\s\S]*?\n  \};/);
+  if (!close) bad.push(`${D}: หา handleManualCloseInner ไม่เจอ`);
+  else {
+    if (!/\.eq\('status', 'open'\)/.test(close[0]))
+      bad.push(`${D} handleManualCloseInner: ต้อง CAS .eq('status','open') — 2 เครื่องกดพร้อมกันทับกันเงียบ`);
+    if (!/checkWriteRows\(/.test(close[0]))
+      bad.push(`${D} handleManualCloseInner: ต้องนับแถว`);
+  }
+  const qty = d.match(/const\s+handleManualQtyUpdateInner\s*=\s*async[\s\S]*?\n  \};/);
+  if (qty && !/checkWriteRows\(/.test(qty[0]))
+    bad.push(`${D} handleManualQtyUpdateInner: ลงยอดผลิตต้องนับแถว`);
+  const del = d.match(/const\s+handleDeleteDefectLog\s*=\s*async[\s\S]*?\n  \};/);
+  if (!del) bad.push(`${D}: หา handleDeleteDefectLog ไม่เจอ`);
+  else {
+    /* FK เป็น on delete set null ⇒ ลบเฉยๆ = ใบถังกำพร้าค้างคิวตลอดไป */
+    if (!/quality_bin_records/.test(del[0]))
+      bad.push(`${D} handleDeleteDefectLog: ต้องจัดการใบถังที่ผูกอยู่ก่อนลบ (FK = on delete set null)`);
+    if (!/checkWriteRows\(/.test(del[0]))
+      bad.push(`${D} handleDeleteDefectLog: ต้องนับแถวที่ลบจริง`);
+  }
+
+  const S = 'src/pages/ScrapReport.jsx';
+  const sr = stripComments(readFileSync(join(ROOT, S), 'utf8'));
+  if (/from\('scrap_reports'\)\s*\.update\([\s\S]{0,120}\.eq\('id', repId\);/.test(sr))
+    bad.push(`${S}: UPDATE หัวใบต้อง .select('id') + checkWriteRows`);
+  if (/from\('scrap_reports'\)\.delete\(\)\.eq\('id', rep\.id\);/.test(sr))
+    bad.push(`${S}: DELETE ใบต้อง .select('id') + checkWriteRows`);
+  if (!/emptyWhy/.test(sr))
+    bad.push(`${S}: จอว่างต้องแยก "ไม่มีใบ" / "ไม่มีไลน์ในขอบเขต" / "เช็คไม่ได้" ออกจากกัน`);
+
+  const PM = 'src/pages/ProductMaster.jsx';
+  const pm = stripComments(readFileSync(join(ROOT, PM), 'utf8'));
+  if (!/function OpStepsPanel\(\{[^)]*guard/.test(pm))
+    bad.push(`${PM}: OpStepsPanel ต้องรับ prop guard (กฎชั้น ③ จากหน้าแม่) ไม่ใช่แค่ canEdit`);
+  const opSave = pm.match(/function OpStepsPanel[\s\S]*?const remove = async/);
+  if (opSave && !/guard\?\.\(/.test(opSave[0]))
+    bad.push(`${PM} OpStepsPanel.save(): ต้องเรียก guard ก่อน insert bom_items`);
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   "สำเร็จ 0 แถว ไม่มี error" คือหน้าตาปกติของ RLS ปฏิเสธ — ไม่นับแถว = จอโกหกทุกครั้ง\n');
+});
+
+test('🔴 bin-link-unknown-not-zero — เช็คสถานะ "ลงถังแล้วยัง" ไม่ได้ ห้ามตีเป็น "ยังไม่ลงถัง"', () => {
+  /* QC audit 09/11: คิวรี binLinks ล้มแล้ว `setBinLinks({})` ⇒ ชิป "🗑️ ยังไม่ลงถัง N" + ปุ่ม "ลงถัง"
+     ⇒ หน้างานกดสร้างใบถังซ้ำกับแท็บเหลืองที่ระบบตั้งอัตโนมัติไว้แล้ว (05/11)
+     = **คิวรีล่มแล้วจอชวนให้เขียนข้อมูลผิด** หนักกว่าโชว์ 0 เฉยๆ */
+  const bad = [];
+  const F = 'src/pages/DailyReport.jsx';
+  const raw = readFileSync(join(ROOT, F), 'utf8');
+  const src = stripComments(raw);
+  const errBranch = src.match(/if \(binErr\)[^\n]*\n?/);
+  if (!errBranch) bad.push(`${F}: หาสาขา error ของคิวรี binLinks ไม่เจอ — เปลี่ยนโครงแล้วต้องแก้ด่านนี้`);
+  else {
+    if (/setBinLinks\(\{\}\)/.test(errBranch[0]))
+      bad.push(`${F}: binErr ห้าม setBinLinks({}) — ต้องเป็น null (ไม่รู้) ไม่ใช่ "ยังไม่ลงถังทุกแถว"`);
+    if (!/setBinLinks\(null\)/.test(errBranch[0]))
+      bad.push(`${F}: binErr ต้อง setBinLinks(null)`);
+    if (!/setSessLoadErr/.test(errBranch[0]))
+      bad.push(`${F}: binErr ต้องเขียนบนจอผ่าน setSessLoadErr ห้าม console.warn เป็นทางเดียว`);
+  }
+  /* ฝั่งจอต้องรู้จักค่า "ไม่รู้" ทั้ง 2 จุดที่ใช้ binLinks */
+  if (!/if \(!binLinks\) return \(/.test(src))
+    bad.push(`${F}: ชิปนับ "ยังไม่ลงถัง" ต้องมีสาขา !binLinks (เขียนว่าเช็คไม่ได้)`);
+  if (!/const unknown = !binLinks;/.test(src))
+    bad.push(`${F}: ปุ่ม 🗑️ ลงถัง ต้องมีสถานะ unknown — ห้ามเขียนว่า "ลงถัง" ตอนเช็คสถานะไม่ได้`);
+  if (/binLinks\[d\.id\]/.test(src) && !/binLinks\?\.\[d\.id\]/.test(src))
+    bad.push(`${F}: อ่าน binLinks[d.id] ตรงๆ = พังเมื่อเป็น null — ใช้ optional chaining`);
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   "ไม่รู้" กับ "ยังไม่ได้ทำ" คนละเรื่อง — ตีรวมกันแล้วจอสั่งให้คนทำงานซ้ำ\n');
+});
+
+test('🔴 scrap-report-scope-central — หน้าของเสียต้องตัดขอบเขตด้วย lineScope() ของกลาง', () => {
+  /* QC audit 09/11: หน้านี้เขียนสูตร scope เองแล้วได้ผล **แคบกว่า** ที่ profiles ตั้งไว้
+     (leader ได้ครอบครัวไลน์ล้วน · ไม่ส่ง scopeIdx) · แท็บถังในหน้าเดียวกันใช้ของกลาง
+     ⇒ 2 แท็บตอบขอบเขตคนละชุด · กฎ 26/10: "การบีบขอบเขตเป็นการตั้งค่า ไม่ใช่งานของโค้ด" */
+  const bad = [];
+  const F = 'src/pages/ScrapReport.jsx';
+  const src = stripComments(readFileSync(join(ROOT, F), 'utf8'));
+  if (!/lineScope\(\{[\s\S]{0,160}scopeIdx/.test(src))
+    bad.push(`${F}: ต้องเรียก lineScope({ … scopeIdx }) — ไม่ส่ง scopeIdx = แกน Cost Center/ผังตกหมด`);
+  if (/role === 'leader' && lineId/.test(src))
+    bad.push(`${F}: ห้ามเขียนสูตรขอบเขตเองในหน้า (สำเนาที่แคบกว่าของกลาง)`);
+  if (/filter\(l => inSectionScope\(/.test(src))
+    bad.push(`${F}: ห้ามกรองไลน์ด้วย inSectionScope เอง — ของกลางรู้จักขอบเขตที่ไม่ใช่ "ส่วนงาน" ด้วย`);
+  if (!/scopeRes\.unsure/.test(src))
+    bad.push(`${F}: ตัดขอบเขตไม่ชัด (unsure) ต้องเขียนบนจอ ห้ามเงียบ`);
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   คืนน้อยกว่าที่ profiles ตั้งไว้ = คนทำงานไม่ได้ทั้งที่ admin ตั้งสิทธิ์ให้แล้ว\n');
+});
+
+test('🟡 bins-in-my-queue — ถังเหลืองรอพิจารณาต้องอยู่ในคิวงาน 2 ชั้น · ห้ามขึ้น badge', () => {
+  /* 09/11: เปิดแท็กอัตโนมัติ 4 วัน ตั้งแท็ก 14 ใบ **ตัดสินแล้ว 0** ⇒ กองไม่มีใครถูกดึงไปเคลียร์
+     🔴 ชั้น `unit` อย่างเดียวไม่พอ — คนตัดสินคือ QA ซึ่งส่วนงานไม่ตรงไลน์ผลิต จะไม่เห็นอะไรเลย */
+  const bad = [];
+  const Q = 'src/utils/myQueue.js';
+  const q = stripComments(readFileSync(join(ROOT, Q), 'utf8'));
+  if (!/need\('bins', src\.bins\)/.test(q))
+    bad.push(`${Q}: ต้องรับ bins ผ่าน need() — ส่งไม่ครบต้องติด partial ห้ามเงียบ`);
+  if (!/key: 'binpend'[\s\S]{0,200}TIER\.FLOOR/.test(q) && !/TIER\.FLOOR[\s\S]{0,200}key: 'binpend'/.test(q))
+    bad.push(`${Q}: ต้องมีบรรทัดสรุปชั้น floor (QA เห็นกองผ่านชั้นนี้ชั้นเดียว)`);
+  if (!/key: 'binpend_unit'[\s\S]{0,200}TIER\.UNIT/.test(q))
+    bad.push(`${Q}: ต้องมีบรรทัดสรุปของหน่วยเราในชั้น unit`);
+  /* 🔴 แตกรายตัว = 14 ใบดันใบซ่อม/4M ของหน่วยงานตกจอ (CAP unit = 6 แถว) */
+  if (/key: `bin:\$\{/.test(q))
+    bad.push(`${Q}: ห้ามแตกถังเหลืองเป็นรายตัวในคิว — สรุปบรรทัดเดียวต่อชั้น`);
+  if (!/binTagAge\(/.test(q))
+    bad.push(`${Q}: อายุแท็กต้องอ่านจาก binTagAge() ห้ามเขียนเลขวันซ้ำ (WI-PD3-087 §5.6)`);
+  if (/TIER\.MINE[\s\S]{0,160}binpend/.test(q))
+    bad.push(`${Q}: ถังเหลืองห้ามเข้าชั้น mine — badge จะเด้งค้างกับคนทั้งโรงงาน`);
+
+  const P = 'src/components/MyQueuePanel.jsx';
+  const p = stripComments(readFileSync(join(ROOT, P), 'utf8'));
+  if (!/from\('quality_bin_records'\)[\s\S]{0,400}qa_decision/.test(p))
+    bad.push(`${P}: ต้องโหลดคิวถังเหลือง (เงื่อนไขเดียวกับ pendingYellow)`);
+  if (/from\('quality_bin_records'\)\s*\n?\s*\.select\('\*'\)/.test(p))
+    bad.push(`${P}: ห้าม select('*') บนตารางถัง (egress · กฎเขียน DB ข้อ 11)`);
+  if (!/secOfLine\.get\(String\(b\.line_name/.test(p))
+    bad.push(`${P}: ต้องเติม section จากทะเบียนไลน์ก่อนส่ง bins (ตารางถังไม่มีคอลัมน์ส่วนงาน)`);
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   ของอยู่ในถังแต่ไม่มีใครถูกดึงไปตัดสิน = กองค้างถาวร\n');
+});
+
 test('🏭 qa-bins-queue-only — เอกสารถังเหลือง/แดงอยู่ฝ่ายผลิต · /qa เห็นแค่คิวรออนุมัติ', () => {
   /* 06/11 (คำสั่ง user): *"หลักๆอันนี้ต้องอยู่หมวดของผลิตนะ qa จะไปโชว์แค่พวกงานค้างอนุมัติของแผนก
      เพราะ หลักๆเอกสารอยู่ที่ผลิต"*
@@ -8332,8 +8546,14 @@ test('🔭 leader-scope-no-silent-fallopen — กรองด้วยไลน
     '🔴 ตาข่ายส่วนงานต้องครอบหัวหน้ากลุ่มที่ชี้ไลน์ไม่ได้ด้วย ห้ามเขียน `role !== \'leader\'`');
   assert.doesNotMatch(src, /if \(role !== 'leader' && scopeSecs\.length\)/,
     '🔴 เงื่อนไขเดิมกันหัวหน้ากลุ่มออกจากตาข่าย = ไม่มีด่านสักชั้นเมื่อทะเบียนไลน์ว่าง');
-  assert.match(src, /setScopeUnsure\(role === 'leader' && !!userLineId && !scopedByLine\)/,
-    'ต้องจำไว้ว่ารอบนี้ตัดสินขอบเขตไม่ได้');
+  /* ⚠️ เช็ค "เจตนา" ไม่ใช่สตริงเป๊ะ — 09/11 ย้ายมาใช้ของกลาง `lineScope()` แล้วธง unsure
+     กว้างขึ้น (ครอบเคส "ทะเบียนไลน์โหลดไม่สำเร็จ" ของ role อื่นด้วย) ซึ่งเป็น superset ของเดิม */
+  const su = src.match(/setScopeUnsure\(([^;]*)\);/);
+  assert.ok(su, 'ต้องจำไว้ว่ารอบนี้ตัดสินขอบเขตไม่ได้');
+  assert.match(su[1], /!scopedByLine/,
+    '🔴 ธง unsure ต้องผูกกับ "กรองด้วยไลน์ไม่สำเร็จ" ไม่งั้นแยกจาก "ไม่จำกัด" ไม่ได้');
+  assert.match(su[1], /unsure|role === 'leader' && !!userLineId/,
+    'ต้องครอบเคสหัวหน้ากลุ่มที่ชี้ไลน์ตัวเองไม่ได้ (และ/หรือ unsure จากของกลาง)');
   assert.match(src, /\{scopeUnsure && \(/,
     '🔴 รายการกว้างกว่าที่ควร = ต้องเขียนบนจอ ห้ามให้คนเข้าใจว่าได้สิทธิ์ดูทุกไลน์แล้ว');
 });

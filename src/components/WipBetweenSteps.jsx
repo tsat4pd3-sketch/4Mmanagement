@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { loadProductionLines } from '../utils/useProductionLines';
+import { lineScope } from '../utils/sectionScope';   // ขอบเขตไลน์ = ของกลางตัวเดียว (09/11)
 import { UserContext } from '../App';
 import { toast } from './Toast';
 import { can } from '../utils/permissions';
@@ -20,7 +21,7 @@ const card = { background: 'var(--card)', border: '1px solid var(--border)', bor
 const chip = (bg, color) => ({ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: bg, color, fontWeight: 700, whiteSpace: 'nowrap' });
 
 export default function WipBetweenSteps() {
-  const { role, fullName, lineId, sections } = useContext(UserContext);
+  const { role, fullName, lineId, sections, scopeIdx } = useContext(UserContext);
   const canAdjust = can('wip', 'adjust', role);
   const [loading, setLoading] = useState(true);
   const [chains, setChains] = useState([]);
@@ -113,17 +114,15 @@ export default function WipBetweenSteps() {
   // scope มาตรฐาน: leader = family ไลน์ตัวเอง · role อื่นตาม sections — สายโผล่ถ้ามี node ใดอยู่ใน scope
   const scopedChains = useMemo(() => {
     const secOf = {}; prodLines.forEach(l => { secOf[l.name] = l.section; });
+    /* 🔭 ของกลาง `lineScope()` (QC audit 09/11 · กวาดรอบ 3) — ตัดสินไม่ได้/ไม่จำกัด = ไม่กรอง */
+    const r = lineScope({ role, lineId, sections: sections || [], lines: prodLines, scopeIdx });
+    const okNames = r.unlimited ? null : new Set(r.names);
     const inScope = (lineName) => {
-      if (!lineName) return true;
-      if (role === 'leader' && lineId) {
-        const fam = getLineFamilyNames(prodLines, prodLines.find(l => l.id === lineId)?.name);
-        return fam.length ? fam.includes(lineName) : true;
-      }
-      if (sections?.length) {
-        const s = (secOf[lineName] || '').trim().toLowerCase();
-        return !s || sections.some(x => (x || '').trim().toLowerCase() === s);
-      }
-      return true;
+      if (!lineName || !okNames) return true;
+      if (okNames.has(lineName)) return true;
+      /* ไลน์ที่ทะเบียนไม่รู้จัก = ถอยไปตัดด้วยส่วนงานเหมือนเดิม (ไม่รู้ส่วนงาน = ไม่ตัด) */
+      const s = (secOf[lineName] || '').trim().toLowerCase();
+      return !s ? true : (sections || []).some(x => (x || '').trim().toLowerCase() === s);
     };
     return chains.filter(c => inScope(c.parentLine) || c.steps.some(s => inScope(s.line)));
   }, [chains, prodLines, role, lineId, sections]);

@@ -1013,3 +1013,71 @@ line_id: emp.line_id ?? ident.line_id
   และ "ทำงานคนละตำแหน่ง" (ไม่ใช่ข้อผิดพลาด) นับเป็นงานค้าง ⇒ แก้ไม่ได้ ค้างตลอดกาล (ย้ายไปข้อมูลประกอบแล้ว · A6)
 - ตอนนี้: แต่ละเรื่องมีปุ่ม **🔎 กรองตาราง** (`tableIssue` ใน `AddUser.jsx`) ⇒ ตารางโชว์เฉพาะบัญชีที่ค้างเรื่องนั้น
   + แถบบอกบนจอว่ากรองอะไร / เหลือกี่บัญชี / วิธีแก้ · แก้แล้วบัญชีหลุดจากตารางเอง · เคลียร์ครบ = "✓ ไม่มีบัญชีค้างเรื่องนี้แล้ว"
+
+---
+
+## 🧹 09/11 — หน้า `/scrap-report` ยังตัดขอบเขตด้วยสูตรที่เขียนเองในหน้า (QC audit)
+
+**เจอจาก:** QC audit รอบ 09/11 (หมวด C+D) — ด่าน `line-scope-two-answers` จับไม่ได้ เพราะเป็น**สำเนาสูตร**
+ที่เขียนในหน้า ไม่ได้ import ของกลางมาแล้วเพี้ยน
+
+สูตรเดิมใน `ScrapReport.jsx` ให้คำตอบ **แคบกว่า** `lineScope()` 2 ทาง:
+1. `leader` ได้ **ครอบครัวไลน์ตัวเองล้วน** — ของจริงตามกฎ 26/10 คือ **ไลน์ตัวเอง ∪ ส่วนงานที่กำกับไว้**
+   (`reason:'own_family+sections'`) ⇒ หัวหน้ากลุ่มที่ถูกกำกับส่วนงานไว้ เห็นใบน้อยกว่าที่ `profiles` ตั้ง
+2. ไม่ส่ง `scopeIdx` ⇒ ขอบเขตที่เป็น **แผนก/กลุ่ม/ไลน์เดี่ยว** ตกหมด (ถอยไปเทียบข้อความ `l.section` ตรงตัว)
+
+ซ้ำร้าย: แท็บ **ถังเหลือง/แดง** ในหน้าเดียวกัน (`?tab=bins`) ใช้ของกลางอยู่แล้ว
+⇒ **2 แท็บในหน้าเดียวตอบขอบเขตคนละชุด**
+
+**แก้แล้ว (09/11):** เรียก `lineScope({ role, lineId, sections, lines, scopeIdx })` · `unlimited` → `null`
+(คงความหมายเดิมของตัวแปรทั้งหน้า) · เพิ่มแถบเตือนบนจอเมื่อ `unsure`
+(โหลดทะเบียนไลน์ไม่สำเร็จ / ไม่พบไลน์ที่สังกัด / ส่วนงานไม่ตรงทะเบียน) — เดิมเงียบสนิท
+· ด่าน `scrap-report-scope-central` ใน `regressionGuards`
+
+**ยังเหลือ (งานกวาดก้อนเดียว ไม่ใช่รอบนี้):** สำเนาสูตร `role === 'leader' && lineId` ที่เขียนเองในหน้า
+อีก ~14 ไฟล์ — `MtnAnalysis` · `MorningMeeting` · `DieRegistry` · `FixtureRegistry` · `DailyReport` (4 จุด) ·
+`MaintenanceLevels` · `WorkforceInsight` (2 จุด) · `VSM` · `PmForecast` · `ShiftOrganize` (2 จุด)
+
+### ✅ 09/11 — ปิดช่องชั้น ③ ที่ QC audit ชี้
+- **`QualityBins.jsx`** (ตาราง `quality_bin_records` ฝั่ง DR · anon-open) — เดิมมีแค่ชั้น ② `can('scrap','record')`
+  ⇒ เขียนแถวของไลน์ไหนก็ได้ถ้ารู้ id · ตอนนี้ทุกฟังก์ชันที่เขียน DB ผ่าน `guardLines()`
+  (`canWriteLine` + `unknownTarget:'block'` · แก้ของเดิม = เช็คไลน์เดิม + ไลน์ปลายทาง · ทะเบียนไม่โหลด = บล็อก)
+- **`ProductMaster.jsx` → `BOMPanel` → `OpStepsPanel`** — แผงลูกเคยรับแค่ `canEdit` แล้ว insert/delete
+  `bom_items` โดยไม่เช็คอะไรซ้ำ ⇒ ส่ง `guard` (= `pGuard` ของหน้าแม่ ผูกไลน์ของพาร์ท) ลงไปแล้ว
+  ⚠️ **ยังเหลือ legacy:** BOM ของพาร์ทเองใน `BOMPanel` (5 จุดเขียน `bom_items`) ยังไม่มีชั้น ③
+
+### 🧹 09/11 — กวาด "สำเนาสูตรขอบเขตที่เขียนเองในหน้า" ชุดแรก (12 ไฟล์)
+
+สูตรที่ก๊อปไว้ในหน้าให้คำตอบ **แคบกว่า** ของกลาง 2 ทางเสมอ:
+`leader` ได้ครอบครัวไลน์ล้วน (ของจริง = ไลน์ตัวเอง ∪ ส่วนงานที่กำกับ · กฎ 26/10) · ไม่ส่ง `scopeIdx`
+⇒ ขอบเขตที่เป็นแผนก/กลุ่ม/ไลน์เดี่ยว และแกน Cost Center ตกหมด
+
+**กวาดแล้ว (ด่าน `scope-copies-swept`):** `ScrapReport` · `MtnAnalysis` · `MaintenanceLevels` ·
+`MorningMeeting` · `DieRegistry` · `FixtureRegistry` · `VSM` · `PmForecast` · `WorkforceInsight` (2 จุด) ·
+`ShiftOrganize` (4 จุด: พนักงาน · override · ลิสต์ไลน์/ส่วนงาน · merge event) · `DailyReport` (4 จุด) ·
+`QualityBins`
+
+จุดที่พฤติกรรมเปลี่ยน (ตั้งใจ — คืนสิ่งที่ `profiles` ตั้งไว้):
+- `ShiftOrganize` เดิม `scopedLines` ของ leader = **ไลน์ตัวเองไลน์เดียว** (ไม่ถึงครอบครัว) และ override
+  กรอง `line_id` ตรงตัว ⇒ หัวหน้าที่ผูกไลน์แม่มองไม่เห็นคนในไลน์ลูก
+- `WorkforceInsight` ตัวเลือกส่วนงานของ leader เดิมเหลือช่องเดียว แม้ถูกกำกับส่วนงานอื่นไว้
+- คนที่ **ไม่ผูกไลน์** (งานสนับสนุน) ยังตัดด้วยส่วนงานเหมือนเดิมทุกจอ — ไม่ถูกดึงเข้ามาเพิ่ม
+
+**กวาดรอบ 2 แล้ว (09/11):** `PmCoordination` · `QrLabels` · `OrderTrace` · `ProductHistory` ·
+`Dashboard` · `MachineDatabase` · `EventLog` · `OEEAnalytics` · `OjtTraining` (2 จุด: ส่วนงานที่เห็นได้
++ รายการอบรม) · `DailyPM` (ธง `restricted`) · `Report` (แท็บ OT — 1 จุดจาก 21)
+
+**กวาดรอบ 3 แล้ว (09/11) — ปิดครบทั้งรีโป:** `Report.jsx` (20 จุดที่เหลือ · เพิ่ม hook `useScopeOf()`
+ตัวเดียวในไฟล์ให้ทุกแท็บเรียก) · `Checkin.jsx` (4 จุด — คิวรีหลัก · คนยืม · ใบ export · dropdown) ·
+`MtnRepair` · `Improvements` · `ProductionPlan` · `WipBetweenSteps` · **`utils/staleSessions.js`**
+(เจอเพิ่มตอนขยายด่านให้สแกนทั้ง `src/`)
+
+🔴 **ด่าน `scope-copies-swept` สแกนทั้ง `src/` แล้ว** — ไฟล์ใหม่ที่ก๊อปสูตร `role === 'leader' && lineId`
+ไปใช้จะถูกจับทันที · ยกเว้น 2 ไฟล์ที่เป็น **ตัวของกลางเอง**: `utils/sectionScope.js` · `components/LineSelect.jsx`
+
+~~**ยังเหลือ (รอบ 3):**~~
+- 🔴 **`Report.jsx` อีก 20 จุด** — ไฟล์ใหญ่หลายแท็บ (OT · เช็คชื่อ · สถานี · รายคน · 4M …)
+  แต่ละจุดคนละรูป (กรองแถว · ลิสต์ไลน์ · ลิสต์ส่วนงาน · `q.in('line_id', …)`)
+  ⇒ ควรทำเป็นคอมมิทของตัวเอง + เพิ่ม hook ขอบเขตตัวเดียวในไฟล์ แล้วให้ทุกแท็บเรียกตัวนั้น
+- `Checkin.jsx` (4 จุด) · `ProductionPlan.jsx` · `MtnRepair.jsx` · `Improvements.jsx` ·
+  `components/WipBetweenSteps.jsx` · (`components/LineSelect.jsx` = ของกลาง **ถูกต้องแล้ว ห้ามแตะ**)
