@@ -8,6 +8,8 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import DowntimeSiren from '../components/DowntimeSiren';
 import ToggleDot from '../components/ToggleDot';
+import Page from '../components/Page';
+import PageHeader from '../components/PageHeader';
 import Icon from '../components/Icon';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
 import { useNavigate } from 'react-router-dom';
@@ -1305,12 +1307,20 @@ export default function Management() {
     </div>
   );
 
-  // desktop: marginTop -14 ล้าง paddingTop ของ main → แถบ pool/ผัง เต็มจอเสมอ ขอบบน-ล่างไม่ตัดกลางอากาศ (เนี๊ยบเท่า sidebar)
-  // · board box จึงเริ่มที่ ~top10 → 🔔 (top10) เสมอขอบบนตู้พอดี
-  // · ตอนพับ sidebar (ไม่มี sidebar ซ้าย) → เว้น gutter ซ้าย 52 ให้ปุ่ม ☰ (fixed left:14) ไม่ลอยทับหัวตู้/pool
+  /* 🧭 หัวเพจมาตรฐาน (09/11 · คำสั่ง user "ทำหัวเพจ management ให้เหมือนหน้าอื่น") — ถอดออกจากข้อยกเว้น "บอร์ดจอ TV" (UI §6.8)
+     โครง: คอลัมน์สูงเต็มจอ = [ <Page full> หัวเพจ ] + [ แถว pool/ผัง เดิม flex:1 ]
+     · หัวเพจอยู่ใน <Page width="full"> ⇒ ตำแหน่งชื่อหน้า/breadcrumb ตรงกับทุกหน้า (ระยะขอบจาก .page-content)
+     · เดิม desktop ใช้ marginTop -14 ล้าง paddingTop ของ main ให้ตู้ชนขอบบน — มีหัวเพจแล้วไม่ต้องล้าง (เหมือนหน้าอื่น)
+       ⇒ สูง calc(100vh - 14px) ทั้ง 2 จอ = ก้นแถวยังชนขอบล่างจอพอดี ไม่มี scroll ซ้อน
+     · ตอนพับ sidebar (ไม่มี sidebar ซ้าย) → เว้น gutter ซ้าย 52 ให้ปุ่ม ☰ (fixed left:14) ไม่ลอยทับ pool (เฉพาะแถวเนื้อหา) */
   const collapsedGutter = !isMobile && !sidebarOpen ? 52 : 0;
   return (
-    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: isMobile ? 'calc(100vh - 14px)' : '100vh', marginTop: isMobile ? 0 : -14, paddingLeft: collapsedGutter, background: 'var(--bg)', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: 'calc(100vh - 14px)', background: 'var(--bg)', overflow: 'hidden' }}>
+    <Page width="full" style={{ paddingBottom: 0, flexShrink: 0 }}>
+      <PageHeader title="จัดการไลน์ผลิต" icon="🔄"
+        sub="จัดกำลังคนลงจุดงานบนผังไลน์ · บอร์ด Heijunka · บันทึก 4M ของไลน์ที่เลือก" />
+    </Page>
+    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', flex: 1, minHeight: 0, paddingLeft: collapsedGutter, background: 'var(--bg)', overflow: 'hidden' }}>
       <DowntimeSiren mode="open_15min" />
 
       {/* ── ปุ่มกรอง (desktop) — คอลัมน์ต่อจาก 🔔 ตรงกันเป๊ะ (right:14 เท่า 🔔, เริ่มใต้ 🔔 ที่ top10+h36+gap8=54)
@@ -3172,6 +3182,7 @@ export default function Management() {
           </div>
         </div>
       )}
+    </div>{/* /แถว pool/ผัง */}
     </div>
   );
 }
