@@ -12,7 +12,7 @@ import ShiftTimeSplit from '../components/ShiftTimeSplit';
 import { markerScale } from '../utils/markerScale';
 import DowntimeSiren from '../components/DowntimeSiren';
 import { buildMan4mPendingMatcher, ppeMissingList } from '../utils/personAlarm';
-import { inSectionScope, scopedLines as scopedLinesOf } from '../utils/sectionScope';
+import { inSectionScope, scopedLines as scopedLinesOf, lineScope } from '../utils/sectionScope';
 import { canAccessPage } from '../utils/permissions';
 import { buildScheduleMaps, resolveAssignedShift, shiftFromTeam, lineScheduleTeam } from '../utils/shiftAssign';
 import { getLineFamilyNames, sortLineNames } from '../utils/lineHierarchy';
@@ -708,10 +708,19 @@ export default function Dashboard({ view = 'timeline' }) {
   const scopeActive = (role === 'leader' && !!userLineId) || (scopeSecs?.length > 0) || lineSeed.length > 0;
   /* 🔭 ของกลาง `scopedLines()` (QC audit 09/11 · กวาดรอบ 2) — สูตรเดิมในหน้าแคบกว่าที่ `profiles`
      ตั้งไว้ (leader ได้ครอบครัวไลน์ล้วน · ไม่รู้จัก `scopeIdx`) · ตาข่าย "ไม่เหลือ = ไม่กรอง" คงไว้ */
-  const roleScopedLines = useMemo(() => {
-    const out = scopedLinesOf({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
-    return out.length ? out : lines;
-  }, [lines, role, userLineId, scopeSecs, scopeIdx]);
+  const roleScopeRaw = useMemo(
+    () => scopedLinesOf({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx }),
+    [lines, role, userLineId, scopeSecs, scopeIdx]);
+  const roleScopedLines = useMemo(() => (roleScopeRaw.length ? roleScopeRaw : lines), [roleScopeRaw, lines]);
+  /* 🔭 ตาข่าย "ไม่เหลือ = ไม่กรอง" ยังคงไว้ (จอว่างทั้งที่ข้อมูลมี = แย่กว่า) **แต่ห้ามเงียบ** (09/11)
+     · `scopeFellBack` = ขอบเขตบัญชีตัดแล้วไม่เหลือไลน์ ⇒ กำลังโชว์ทั้งโรงงาน
+     · `scopeUnsure`   = lineScope บอกว่าตัดขอบเขตไม่ชัด (เช่นหาไลน์ของบัญชีไม่เจอ → ถอยไปใช้ส่วนงาน)
+     ทั้งคู่ต้องขึ้นบนจอ (นอก ph-chrome — กรอบจอ TV ซ่อนหัวเพจ) */
+  const scopeFellBack = lines.length > 0 && role !== 'admin' && !roleScopeRaw.length
+    && ((role === 'leader' && !!userLineId) || (scopeSecs?.length > 0));
+  const scopeUnsure = useMemo(() => lines.length > 0
+    && lineScope({ role, lineId: userLineId, sections: scopeSecs || [], lines, scopeIdx }).unsure,
+  [lines, role, userLineId, scopeSecs, scopeIdx]);
   // ไลน์จากลิงก์ = แคบลงจากขอบเขตของบัญชี (ห้ามขยายเกิน — จอ PD1 ตั้งไลน์ PD3 = ไม่เห็น)
   const scopedLines = useMemo(() => {
     if (!lineSeed.length) return roleScopedLines;
@@ -730,6 +739,12 @@ export default function Dashboard({ view = 'timeline' }) {
     [scopedLines, selectedSection],
   );
   const visibleLineNames = useMemo(() => new Set(visibleLines.map(l => l.name)), [visibleLines]);
+  /* 🔊 ขอบเขตไลน์ของไซเรน (09/11) — จำกัดเฉพาะตอนบัญชี/ลิงก์จำกัดขอบเขตจริง และตัดได้จริง
+     · ไม่จำกัด หรือ ตัดไม่ได้ (ตาข่ายโชว์ทั้งโรงงาน) = `null` = ดังทุกไลน์เหมือนเดิม
+     · ใช้ขอบเขตบัญชี+ลิงก์ (`scopedLines`) ไม่ใช่ dropdown ส่วนงาน (dropdown = ตัวกรองการดูชั่วคราว) */
+  const sirenLineNames = useMemo(
+    () => (scopeActive && !scopeFellBack ? scopedLines.map(l => l.name) : null),
+    [scopeActive, scopeFellBack, scopedLines]);
   const visibleLineIds   = useMemo(() => new Set(visibleLines.map(l => l.id)), [visibleLines]);
 
   const passAll = !scopeActive && selectedSection === 'all'; // ไม่มี scope + ไม่เลือก section = ไม่ต้องกรอง (พฤติกรรมเดิม)
@@ -972,7 +987,14 @@ export default function Dashboard({ view = 'timeline' }) {
 
   return (
     <div className="page-content" style={{ maxWidth: '100%' }}>
-      {!isPeople && <DowntimeSiren mode="open_15min" />}
+      {!isPeople && <DowntimeSiren mode="open_15min" lineNames={sirenLineNames} />}
+      {(scopeFellBack || scopeUnsure) && (
+        <div role="status" style={{ margin: '0 0 12px', padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--amber-line)', background: 'var(--amber-dim)', color: 'var(--amber)', fontSize: 13, fontWeight: 700 }}>
+          {scopeFellBack
+            ? '⚠ ตัดขอบเขตไม่ได้ — แสดงทั้งโรงงาน (ขอบเขตของบัญชีไม่ตรงกับไลน์ในทะเบียน · ตั้งที่หน้าผู้ใช้)'
+            : '⚠ หาไลน์ของบัญชีนี้ไม่เจอ — แสดงตามส่วนงานของบัญชีแทน'}
+        </div>
+      )}
       {prodErr && (
         <div role="alert" style={{ margin: '0 0 12px', padding: '10px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--red)88', background: 'var(--red)14', color: 'var(--red)', fontSize: 14, fontWeight: 700 }}>
           {prodErr}

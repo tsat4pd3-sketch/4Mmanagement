@@ -40,7 +40,7 @@ import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบาย
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 16 };
 
 export default function StoreMonitor() {
-  const { role, lineId, sections: scopeSecs } = useContext(UserContext);
+  const { role, lineId, sections: scopeSecs, scopeIdx } = useContext(UserContext);
   const imgOf = usePartImages();   // 🖼️ รูปชิ้นงาน — การ์ดพาร์ททุกจอต้องมีเหมือนกัน (UI §6.23)
   const [prodLines, setProdLines] = useState([]); // production_lines (id/name/section/parent) — ใช้คิด scope
   const [findings, setFindings] = useState([]);
@@ -98,9 +98,9 @@ export default function StoreMonitor() {
   //   leader ที่ line_id ไม่อยู่ในทะเบียน / sections ที่กรองแล้วไม่เหลือไลน์ → ได้ Set ว่าง = จอว่างทั้งจอ
   //   ทั้งที่กฎกลางบอกว่า "กรองแล้วไม่เหลือ = ไม่จำกัด" (audit รอบ 11 · 2026-09-07)
   const scopeLineNames = useMemo(() => {
-    const names = scopedLineNames({ role, lineId, sections: scopeSecs || [], lines: prodLines });
+    const names = scopedLineNames({ role, lineId, sections: scopeSecs || [], lines: prodLines, scopeIdx });
     return names ? new Set(names) : null;
-  }, [prodLines, role, lineId, scopeSecs]);
+  }, [prodLines, role, lineId, scopeSecs, scopeIdx]);
   // ⚠️ แถวของ "คลังกลาง" (STORE / FG WAREHOUSE — line ที่ไม่ใช่ไลน์ผลิตในทะเบียน) ต้องผ่าน scope เสมอ
   //    เหมือน line ว่าง — ไม่งั้น role ที่ถูกจำกัด sections/leader มองไม่เห็น shortage ของคลังกลางเลย
   //    ทั้งที่เป็นของส่วนกลางที่ทุกคนพึ่ง (QC flow-audit #33)

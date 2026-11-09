@@ -28,7 +28,7 @@ import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
       นับจาก `cols[].ops` (แถวพนักงาน) เท่านั้น · ตำแหน่งสายสนับสนุนทุกตัว (manager/section_head/
       dept_head/engineer/officer/clerk/secretary) ตกแถวหัวผังหมด ไม่มีตัวไหนลงแถวพนักงาน
    🔴 **ห้ามใส่ตัวกรอง staff_kind กลับ** — มีด่าน `staffKindGuard.test.mjs` */
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, lineScope } from '../utils/sectionScope';
 import { orgNodeCompare, orgKey } from '../utils/listOrder';
 import { loadPositions, positionLabel, loadWorkingPositions, applyWorkingPositions } from '../utils/positions';
 import { buildScheduleMaps, shiftFromTeam, scheduleTeamFor } from '../utils/shiftAssign';
@@ -66,7 +66,7 @@ import SectionScopeSelect from '../components/SectionScopeSelect';
 const EMP_COLS = 'id, name, employee_id_code, image_url, position, team, line_id, department, section, org_node_id, staff_kind, start_date';
 
 export default function ManpowerBoard() {
-  const { sections: scopeSecs = [], role, section: homeSection, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
+  const { sections: scopeSecs = [], role, lineId: userLineId, section: homeSection, allUnits, respCostCenters, scopeIdx } = useContext(UserContext);
   const [tab, setTab] = useTabParam(['org', 'layout', 'fourm', 'staffing', 'history'], 'org');
   const [params] = useSearchParams();
   const merge = useMergeParams();
@@ -186,14 +186,29 @@ export default function ManpowerBoard() {
   /* 🏛️ รวม **แผนกขึ้นตรงฝ่าย** (parent_id ว่าง — JIG MTN · QA) เป็นบอร์ดของตัวเองด้วย (20/10)
      เดิมกรองแค่ `kind === 'section'` ⇒ 2 หน่วยนี้ **เปิดบอร์ดไม่ได้เลย** คนในหน่วยไม่เคยขึ้นผัง
      (หลักเดียวกับ ORPHAN_SECTION ใน sectionScope.js — หน่วยจริง มี cost center ของตัวเอง) */
+  /* 🔭 ขอบเขตของบัญชี (09/11 · user "แก้ manpower-board ให้ครบด้วยเลย") — แกนเดียวกับทุกจอ = `lineScope()`
+     · `unlimited` (admin/ไม่จำกัด/ทะเบียนยังไม่โหลด) = พฤติกรรมเดิมเป๊ะ
+     · ส่วนงานที่เลือกได้ = ส่วนงานที่ตั้งไว้ ∪ ส่วนงานของไลน์ในขอบเขต (หัวหน้าไลน์ที่ไม่ได้ตั้งส่วนงาน = ส่วนงานของไลน์ตัวเอง)
+     · แผนก: ถ้าบัญชีไม่ได้ถือทั้งส่วนงาน = เหลือเฉพาะแผนกที่มีไลน์ในขอบเขต · `?dept=` นอกขอบเขต = ไม่สน (ห้ามเปิดแผนกนอกขอบเขตจากลิงก์) */
+  const scopeKey = scopeSecs.join('|');
+  const viewScope = useMemo(() => lineScope({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx }),
+    [role, userLineId, scopeKey, lines, scopeIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+  const scopeNames = useMemo(() => (viewScope.unlimited ? null : new Set(viewScope.names)), [viewScope]);
+  const scopeSecKeys = useMemo(() => {
+    if (!scopeNames) return null;
+    const ks = new Set(scopeSecs);
+    for (const l of lines) if (scopeNames.has(l.name) && l.section) ks.add(l.section);
+    return ks;
+  }, [scopeNames, lines, scopeKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const sectionNodes = useMemo(() => nodes
     .filter(n => n.kind === 'section' || isOrphanDept(n, nodes))   // 🏢 ขึ้นตรง = ไม่มีแม่เป็นหน่วย (orgLayers · 04/11)
-    .filter(n => !scopeSecs.length || inSectionScope(scopeSecs, orgKey(n)) || inSectionScope(scopeSecs, n.name))
-    .sort(orgNodeCompare), [nodes, scopeSecs]);
+    .filter(n => (scopeSecKeys
+      ? (scopeSecKeys.has(orgKey(n)) || scopeSecKeys.has(n.name))
+      : (!scopeSecs.length || inSectionScope(scopeSecs, orgKey(n)) || inSectionScope(scopeSecs, n.name))))
+    .sort(orgNodeCompare), [nodes, scopeSecs, scopeSecKeys]);
   const secParam = params.get('sec') || '';
   const section = sectionNodes.find(n => orgKey(n) === secParam) || (secParam && sectionNodes.find(n => n.name === secParam)) || sectionNodes[0] || null;
-  const deptParam = params.get('dept') || '';
-  const deptNode = useMemo(() => (deptParam ? nodes.find(n => String(n.id) === deptParam) || null : null), [nodes, deptParam]);
+  const rawDeptParam = params.get('dept') || '';
   // 📺 โหมดจอ TV (ไม่เลื่อน · แบ่งหน้า) — `?tv=1|0` ชนะ · ไม่ระบุ = บัญชี display (จอแขวน) เปิดให้เอง
   const tvParam = params.get('tv');
   const tv = tvParam != null ? tvParam === '1' : role === 'display';
@@ -208,14 +223,25 @@ export default function ManpowerBoard() {
   const helpersPos = useMemo(() => applyWorkingPositions(helpers, actingPos), [helpers, actingPos]);
   const board = useMemo(() => buildManpowerBoard({ section, nodes, employees, lines, maps, attendance, slotPlans, lineTechs, helpers: helpersPos, stations, stationPlans, homeByEmp, flexUnits }),
     [section, nodes, employees, lines, maps, attendance, slotPlans, lineTechs, helpersPos, stations, stationPlans, homeByEmp, flexUnits]);
-  const depts = useMemo(() => (board?.depts || []).filter(d => !deptParam || d.key === deptParam), [board, deptParam]);
+  /* ถือ "ทั้งส่วนงาน" ไหม — ไม่จำกัด หรือส่วนงานนี้อยู่ในชุดที่ตั้งไว้ตรงๆ (ไม่ใช่แค่ได้มาจากไลน์ตัวเอง) */
+  const wholeSection = !scopeNames || (!!section && scopeSecs.length > 0
+    && (inSectionScope(scopeSecs, orgKey(section)) || inSectionScope(scopeSecs, section.name)));
+  const allowedDepts = useMemo(() => (board?.depts || []).filter(d => wholeSection
+    || (d.lines || []).some(l => scopeNames?.has(l.name))), [board, wholeSection, scopeNames]);
+  const scopeHiddenDepts = (board?.depts?.length || 0) - allowedDepts.length;
+  // `?dept=` ที่ไม่อยู่ในแผนกที่บัญชีเห็นได้ = ไม่สน · ไม่ถือทั้งส่วนงานและเหลือแผนกเดียว = ล็อกที่แผนกนั้น (แท็บแผน/ประวัติต้องไม่กางทั้งส่วนงาน)
+  const deptParam = rawDeptParam && allowedDepts.some(d => d.key === rawDeptParam) ? rawDeptParam
+    : (!wholeSection && allowedDepts.length === 1 ? allowedDepts[0].key : '');
+  const deptIgnored = !!rawDeptParam && !!board && rawDeptParam !== deptParam;
+  const deptNode = useMemo(() => (deptParam ? nodes.find(n => String(n.id) === deptParam) || null : null), [nodes, deptParam]);
+  const depts = useMemo(() => allowedDepts.filter(d => !deptParam || d.key === deptParam), [allowedDepts, deptParam]);
 
   const filters = (
     <>
       {/* 09/11 (คำสั่ง user "dropdown ไม่เหมือนดึงจากผังองค์กร"): ส่วนงาน + แผนก 2 ช่องแบน → ต้นไม้ผังช่องเดียว
           · หน่วยขึ้นตรงฝ่าย (QA · Tooling MTN) อยู่ในต้นไม้เป็น "แผนก" ⇒ เลือกแล้วเปิดบอร์ดของมันเอง (เหมือนเดิมที่นับเป็น section)
           · `?sec=`/`?dept=` ใน URL เท่าเดิม (dept = id โหนดแผนก) — ลิงก์เดิมยังใช้ได้ */}
-      <SectionScopeSelect lines={lines} pickDept value={section ? orgKey(section) : ''} dept={deptNode ? orgKey(deptNode) : ''}
+      <SectionScopeSelect lines={scopeNames ? viewScope.lines : lines} pickDept value={section ? orgKey(section) : ''} dept={deptNode ? orgKey(deptNode) : ''}
         allLabel={sectionNodes.length ? '— เลือกส่วนงาน —' : '— ไม่มีส่วนงานในขอบเขต —'} width={300}
         onChange={(sec, info) => {
           if (info.kind !== 'department') { merge({ sec: sec || null, dept: null }); return; }
@@ -225,6 +251,15 @@ export default function ManpowerBoard() {
           const under = cands.find(n => { const p = nodes.find(x => String(x.id) === String(n.parent_id)); return p && orgKey(p) === sec; }) || cands[0];
           merge({ sec: sec || null, dept: under ? String(under.id) : null });
         }} />
+      {(scopeHiddenDepts > 0 || deptIgnored || viewScope.unsure) && (
+        <span style={{ fontSize: 12, fontWeight: 700, borderRadius: 'var(--r-md)', padding: '3px 8px', whiteSpace: 'nowrap',
+          color: viewScope.unsure || deptIgnored ? 'var(--amber)' : 'var(--accent)',
+          background: viewScope.unsure || deptIgnored ? 'var(--amber)1a' : 'var(--accent-dim)' }}>
+          {viewScope.unsure ? '⚠ ตัดขอบเขตบัญชีไม่ได้ — แสดงตามที่ตั้งไว้'
+            : deptIgnored ? '⚠ แผนกในลิงก์อยู่นอกขอบเขตของบัญชี — แสดงแผนกที่เห็นได้แทน'
+            : `🔭 เฉพาะแผนกในขอบเขต · ซ่อน ${scopeHiddenDepts} แผนก`}
+        </span>
+      )}
       <span className="spacer" />
       <span style={{ fontSize: 13, color: 'var(--muted)' }}>วันงาน {workDate}</span>
     </>
