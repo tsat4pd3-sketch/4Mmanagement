@@ -1290,7 +1290,17 @@ export default function PMCheckData() {
       }
 
       if (overall === 'fail') {
-        notifyDepartment(department, { title: 'พบผลตรวจไม่ผ่าน (NG)', body: `${selectedJig.name} — ${formatDate(insp.inspected_at)}`, type: 'error', refTable: 'inspections', refId: insp.id }, userId).catch(() => {})
+        /* 🔕 ผู้รับ = ทีมเจ้าของอุปกรณ์ + หัวหน้าส่วนงานนั้น (09/11 · คำสั่ง user)
+           เดิมยิง 83 คนข้าม 12 ส่วนงาน · คนกดเองถูกตัดออกที่ edge แล้ว (actor_id) ไม่ต้องส่ง excludeUserId
+           🔴 ทีมใหญ่เกิน 20 คน = รายชื่อช่างถูกตัด ⇒ ต้องเขียนบนจอ ห้ามเงียบ */
+        notifyDepartment(department, {
+          event: 'pm_inspection_ng',
+          title: 'พบผลตรวจไม่ผ่าน (NG)',
+          body: `${selectedJig.name} — ${formatDate(insp.inspected_at)}`,
+          type: 'error', refTable: 'inspections', refId: insp.id,
+          lineName: selectedJig.line_name || null,
+        }).then(r => { if (r?.ownersCapped) toast.error(`⚠ ทีม ${deptNameOf(department)} มีช่าง ${r.owners} คน — แจ้งเตือนส่งถึงได้ 20 คนแรกเท่านั้น`) })
+          .catch(() => {})
       }
 
       // ⭐ แผน PM "วิ่งตามผลตรวจ" (feedback ทีมงาน 2026-08-17): ตรวจครบทุกจุด (pass/fail) = ทำ PM จริงแล้ว

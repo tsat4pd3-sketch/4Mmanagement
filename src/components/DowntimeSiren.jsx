@@ -39,10 +39,15 @@ import useIsMobile from '../utils/useIsMobile';
       ฝ่ายผลิต **ห้ามกรองทีมเด็ดขาด** (กฎเดียวกับ MtnAndonBoard §ตัวกรองทีมห้ามกรองเครื่องหยุด)
    🔴 ใบที่ **ไม่ได้ระบุทีม = ดังทุกห้อง** (fail-open) — เงียบเพราะข้อมูลไม่ครบ คือความเสี่ยงที่
       แย่กว่าดังเกิน · ห้ามเปลี่ยนเป็น fail-closed */
-/* 🔭 `lineNames` = ขอบเขตไลน์ของจอนี้ (09/11 · user: จอ TV/จอแสดงผลโชว์เฉพาะส่วนงาน/ไลน์ของบัญชี)
-   · `null`/ไม่ส่ง = ไม่จำกัด = พฤติกรรมเดิมเป๊ะ · array = ดัง/โชว์เฉพาะเครื่องหยุดของไลน์ในลิสต์
-   · แถวที่ไม่รู้ไลน์ (`production_sessions.line_name` ว่าง) = ดังเสมอ (fail-open เหมือนใบไม่ระบุทีม)
-   · ที่ตัดออกต้องเขียนบนจอว่าไม่ดังกี่เครื่อง (กฎ "กรองแล้วต้องบอกว่าซ่อนกี่รายการ") */
+/* ตัวกรอง 2 แกน ใช้ร่วมกันได้ (ทั้งคู่ fail-open — เงียบเพราะข้อมูลไม่ครบ แย่กว่าดังเกิน)
+
+   🔊 `team` รับได้ทั้ง key เดียว และ **อาร์เรย์ของ key** (09/11) — ช่างที่สังกัดหลายทีมจะได้ยิน
+      เฉพาะทีมของตัวเอง ไม่ใช่ทุกทีม · ว่าง/ไม่รู้จัก = ไม่กรอง
+
+   🔭 `lineNames` = ขอบเขตไลน์ของจอนี้ (09/11 · user: จอ TV/จอแสดงผลโชว์เฉพาะส่วนงาน/ไลน์ของบัญชี)
+      · `null`/ไม่ส่ง = ไม่จำกัด = พฤติกรรมเดิมเป๊ะ · array = ดัง/โชว์เฉพาะเครื่องหยุดของไลน์ในลิสต์
+      · แถวที่ไม่รู้ไลน์ (`production_sessions.line_name` ว่าง) = ดังเสมอ
+      · ที่ตัดออกต้องเขียนบนจอว่าไม่ดังกี่เครื่อง (กฎ "กรองแล้วต้องบอกว่าซ่อนกี่รายการ") */
 export default function DowntimeSiren({ mode = 'open_15min', team = null, lineNames = null }) {
   /* 📱 มือถือโชว์ทีละใบ (05/11 · เหตุผลเดียวกับ StoreCallSiren) — แถบ Andon ขึ้นบรรทัดใหม่บนจอแคบ
      หลายใบซ้อนกันจะยาวเกินจอ แล้วปุ่ม "รับทราบ" ของใบล่างตกนอกจอ (แถบเป็น position: fixed)
@@ -95,11 +100,15 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null, lineNa
      ⚠️ ต้องกรอง planned เองด้วย — เดิมพึ่งว่า scanner stamp เฉพาะนอกแผน
      ⚠️ คำนวณใหม่ทุกนาทีจากข้อมูลที่โหลดมาแล้ว (ไม่ยิง DB) — ไม่งั้นต้องรอรอบ poll ถัดไปถึงจะดัง */
   /* ใบ "เรียกช่าง" ใบนี้เป็นของห้องนี้ไหม — ไม่เลือกทีม หรือใบไม่ระบุทีม = ใช่เสมอ */
+  /* 🔴 deps เป็น "สตริง" ไม่ใช่อาร์เรย์ — prop ที่เป็น array ใหม่ทุก render จะทำให้ useCallback
+     สร้างใหม่ทุกรอบแล้วลาก useMemo/effect ที่พึ่งมันวนไม่จบ (กฎเหล็ก DB ข้อ 9) */
+  const wantKey = (Array.isArray(team) ? team : [team])
+    .map(teamKeyOf).filter(Boolean).sort().join('|')
   const myCall = useCallback((d) => {
-    const want = teamKeyOf(team); if (!want) return true
-    const got = teamKeyOf(d?.call_mtn_team); if (!got) return true   // ไม่ระบุ = ดังทุกห้อง
-    return got === want
-  }, [team])
+    if (!wantKey) return true                                        // ห้องนี้ไม่กรองทีม
+    const got = teamKeyOf(d?.call_mtn_team); if (!got) return true    // ใบไม่ระบุทีม = ดังทุกห้อง
+    return wantKey.split('|').includes(got)
+  }, [wantKey])
 
   // คีย์ string — ผู้เรียกส่ง array ใหม่ทุก render ได้โดยไม่ทำให้ memo ข้างล่างคิดใหม่ (กฎ DB ข้อ 9)
   const lineKey = Array.isArray(lineNames) ? lineNames.join('\u0001') : null

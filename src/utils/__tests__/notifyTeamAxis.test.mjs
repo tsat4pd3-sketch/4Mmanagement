@@ -140,3 +140,33 @@ test('โหมดยิงตาม role ต้องมาจากทะเ�
   assert.ok(/const owners = /.test(mtn), 'ต้องคิด "เจ้าของงาน" แยกจากชุด role');
   assert.ok(/const owners = /.test(evt), 'ตัวส่งกลางต้องถือ extra_user_ids เป็นเจ้าของงาน');
 });
+
+/* 🔕 คนที่กดเอง ไม่ต้องได้ alarm ของตัวเอง — feedback หน้างาน 2026-11-09
+   "เรื่องเรียกช่าง ที่เรียกแผนกอื่น แต่ตัวเองก็เห็น alarm"
+   วัดก่อนแก้: ทุกเคสที่คนกดอยู่ส่วนงานเดียวกับไลน์ ได้รับใบของตัวเอง 1 ใบทุกครั้ง */
+
+test('🔕 notifyEvent ต้องแนบ actor_id ให้เอง — ห้ามให้ 33 จุดเรียกส่งเอง', () => {
+  const src = readFileSync(new URL('../notifyEvent.js', import.meta.url), 'utf8');
+  assert.ok(/actor_id:\s*actorId/.test(src),
+    '\n❌ notifyEvent ไม่ได้แนบ actor_id ลง body — edge ตัดคนกดออกไม่ได้\n');
+  assert.ok(/auth\.getSession\(\)/.test(src),
+    '\n❌ notifyEvent ไม่ได้อ่านคนที่ล็อกอินเอง — ถ้าย้ายไปให้ผู้เรียกส่ง จะลืมบางจุด (33 จุด/23 ไฟล์)\n');
+  /* อ่าน session ไม่ได้ ต้องไม่ทำให้ทั้งก้อนล้ม — แจ้งเตือนหายเงียบแย่กว่าส่งเกิน */
+  assert.ok(/catch\s*\{\s*actorId = null/.test(src),
+    '\n❌ อ่าน session ล้มแล้วไม่ถอยเป็น null — แจ้งเตือนจะหายทั้งใบ\n');
+});
+
+test('🔕 edge ต้องตัด actor ออกจากผู้รับฝั่งทะเบียน แต่ห้ามตัด extra_user_ids', () => {
+  const src = readFileSync(new URL('../../../supabase/functions/send-event-notification/index.ts', import.meta.url), 'utf8');
+  assert.ok(/body\.actor_id/.test(src), '\n❌ edge ไม่ได้อ่าน actor_id\n');
+  assert.ok(/uid !== actorId/.test(src), '\n❌ edge ไม่ได้ตัด actor ออกจากผู้รับ\n');
+
+  /* 🔴 ต้องตัดเฉพาะฝั่งทะเบียน — `extra_user_ids` = "คนที่ต้องลงมือกับรายการนี้"
+     ตัดออก = งานที่มอบให้ตัวเองหายจากคิวเงียบๆ */
+  const line = src.split('\n').find(l => l.includes('uid !== actorId'));
+  assert.ok(!/owners/.test(line || ''),
+    '\n❌ ตัว filter actor ไปอยู่บนชุดที่รวม owners — ห้ามตัดเจ้าของงานออก\n');
+  const usersLine = src.split('\n').find(l => l.includes('const users = [...new Set('));
+  assert.ok(/\.\.\.owners/.test(usersLine || ''),
+    '\n❌ owners หลุดจากชุดผู้รับ — เจ้าของงานต้องได้รับเสมอ\n');
+});

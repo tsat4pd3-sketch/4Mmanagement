@@ -7,6 +7,7 @@ import { invalidateTable } from '../utils/masterInvalidate'
 import { loadLinesRes } from '../utils/useProductionLines';
 import { lineScope } from '../utils/sectionScope';
 import { UserContext } from '../App'
+import { teamsForUser } from '../utils/mtnTeams'
 import { can } from '../utils/permissions'
 import { STATUS_META, DEPT_LABEL, daysUntilDue } from '../lib/pmSchedule'
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams'
@@ -79,7 +80,13 @@ const S = {
 // setupMode=false (default, /mtn-layout) = display-only (facility ดูอย่างเดียว ไม่มีปุ่มแก้)
 // setupMode=true (/layout-setup แท็บ MTN) = ตั้งค่า facility ได้ (เพิ่มโซน/อัปรูป/วางจุด)
 export default function MtnMachineLayout({ setupMode = false }) {
-  const { role, lineId: userLineId, sections: scopeSecs, scopeIdx } = useContext(UserContext)
+  const { role, mtnTeams, lineId: userLineId, sections: scopeSecs, scopeIdx } = useContext(UserContext)
+  /* 🔊 ขอบเขตเสียง "เรียกช่าง" ของหน้านี้ = ทีมของคนที่เปิดจอ (09/11 · feedback หน้างาน
+     "เรียกแผนกอื่น แต่ตัวเองก็เห็น alarm") — เดิมหน้านี้ mount ไซเรนโดยไม่ส่งทีมเลย
+     ⇒ ช่าง JIG ที่เปิดหน้านี้ได้ยินเสียงเรียกของทีม DIE/Maintenance ด้วยทุกใบ
+     🔴 ไม่มีทีม = ไม่กรอง (fail-open) — เงียบเพราะข้อมูลไม่ครบ แย่กว่าดังเกิน
+     ⚠️ แกนทีม (เสียงของใคร) กับแกนไลน์ `lineNames` (จอนี้ดูไลน์ไหน) **คนละคำถาม ใช้คู่กัน** */
+  const sirenTeams = useMemo(() => teamsForUser(mtnTeams, scopeSecs), [mtnTeams, scopeSecs])
   // แก้ผัง facility (เพิ่ม/ลบโซน อัปโหลดผัง วาง/ย้ายจุด) = งานของทีม MTN เอง → ใช้สิทธิ์ pm:setup
   // (mtn/admin/manager/supervisor) ได้ทั้งบน /mtn-layout และ /layout-setup — facility เป็น domain ของช่าง
   // ไม่ผูกกับ setupMode เพราะ mtn เข้า /layout-setup ไม่ได้ แต่ต้องตั้งค่า facility ของตัวเองได้ (2026-07-22)
@@ -429,7 +436,8 @@ export default function MtnMachineLayout({ setupMode = false }) {
 
   return (
     <Page width="full" style={S.page}>
-      <DowntimeSiren mode="call_mtn" lineNames={view === "facility" || viewScope.unlimited ? null : viewScope.names} />
+      <DowntimeSiren mode="call_mtn" team={sirenTeams}
+                     lineNames={view === "facility" || viewScope.unlimited ? null : viewScope.names} />
       {/* หัวเพจ + แท็บมุมมองมาตรฐาน (UI-STANDARD 2026-09-24) — param ยังเป็น ?view= เหมือนเดิม */}
       <PageHeader title="ผังเครื่องจักร (ซ่อมบำรุง)" icon="🗺️"
         sub="ดูสถานะ PM บนผังจริง · กรองตามผู้รับผิดชอบ"
