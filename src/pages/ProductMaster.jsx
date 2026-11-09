@@ -53,7 +53,7 @@ import { uomLabel, itemNoLabel, nextItemNo, byItemNo, buildBomIndex, moveBomLine
 import { slocLabel, slocValid, slocKindMeta, SLOC_FORMAT_HINT, STORE_SLOC_KINDS } from '../utils/storageLoc';
 import StorageLocSelect from '../components/StorageLocSelect';   // 🏠 ที่จัดเก็บหลักของพาร์ท (05/11)
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
-import { opInputsOf } from '../utils/opInputs';   // 🔩 ขั้น OP กินอะไร (08/11)
+import { opInputsOf, isFirstOpInChain } from '../utils/opInputs';   // 🔩 ขั้น OP กินอะไร (08/11)
 import { uploadOpts } from '../utils/storageUpload';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
@@ -1824,7 +1824,7 @@ function OpStepsPanel({ parent, products, bomIx, parentKids, canEdit, fullName, 
       </div>
       {ops.map(op => {
         const own = bomIx.bomOf(op.mat_no, op.id);
-        const r = opInputsOf({ ownKids: own, parentKids });
+        const r = opInputsOf({ ownKids: own, parentKids, firstInChain: isFirstOpInChain({ op_seq: op._op.seq }, ops.map(o => ({ op_seq: o._op.seq }))) });
         const ownSet = new Set(own.map(x => up(x.mat_no)));
         const choices = parentKids.filter(k => !ownSet.has(up(k.mat_no)));
         return (
@@ -1849,6 +1849,9 @@ function OpStepsPanel({ parent, products, bomIx, parentKids, canEdit, fullName, 
               {r.via === 'auto_single' && (
                 <div style={{ color: 'var(--text2)' }}>└ {r.kids[0].part_name ? `${r.kids[0].part_name} · ` : ''}<span style={{ fontFamily: 'monospace' }}>MAT {r.kids[0].mat_no}</span> × {fmtQ(r.kids[0].qty_per_unit)}
                   <span style={{ color: 'var(--muted)' }}> — อัตโนมัติ (แม่มีลูกตัวเดียว)</span></div>
+              )}
+              {r.via === 'from_prev' && (
+                <div style={{ color: 'var(--muted)' }}>└ รับชิ้นงานต่อจากขั้นก่อนหน้าในโซ่ (ลำดับน้อยกว่า) — ไม่กินลูกของแม่เพิ่ม · ถ้าขั้นนี้ใส่ของเพิ่ม กด "เปิดใบของขั้น"</div>
               )}
               {r.via === 'unset' && (
                 <div style={{ color: 'var(--red)', fontWeight: 700 }}>⚠ ยังไม่ได้ผูกว่าขั้นนี้กินอะไร — เปิดใบขั้นนี้จะไม่เบิกของให้ (แม่มีลูก {parentKids.length} ตัว ระบบไม่เดา)</div>
