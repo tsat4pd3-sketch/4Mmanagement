@@ -1098,6 +1098,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
      สูตรสถานะ/ยอดอยู่ utils/energy.js (buildLiveBoard · liveForNames) — ห้ามคิดเองในหน้า
      โหลดเฉพาะตอนดู metric พลังงาน · payload ~2 KB/รอบ (RATE.METER) · อ่านไม่ได้ = ไม่มีค่าสด ผังรายเดือนเดิมยังขึ้นปกติ */
   const liveReq = useRef(0);
+  const liveOk = useRef({ at: 0, sig: '' });   // รอบล่าสุดที่อ่านสำเร็จ + ลายเซ็นค่า (กันผังกระโดด)
   const loadEnergyLive = useCallback(async () => {
     const id = ++liveReq.current;
     const [m, l, mm] = await Promise.all([
@@ -1107,7 +1108,12 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
       supabaseDR.from('energy_meter_machines').select('scope_kind, scope_name, machines(line_name)'),
     ]);
     if (id !== liveReq.current) return;
-    if (m.error || l.error || mm.error) { setEnergyLive(null); return; }
+    /* 🔴 กันจอกระพริบ: อ่านพลาดครั้งเดียว (เน็ตสะดุด) ห้ามล้างค่าสดทิ้ง — การ์ดจะสลับ สด⇄รายเดือน ทุกนาที
+       เก็บค่าเดิมไว้ · พลาดติดกันเกิน 5 นาทีค่อยล้าง (ค่าเก่าขนาดนั้นไม่ควรขึ้นว่า "สด") */
+    if (m.error || l.error || mm.error) {
+      if (Date.now() - liveOk.current.at > 5 * 60_000) { liveOk.current.sig = ''; setEnergyLive(null); }
+      return;
+    }
     const meterLines = new Map();
     for (const x of mm.data || []) {
       const ln = x.machines?.line_name; if (!ln) continue;
@@ -1117,6 +1123,11 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     }
     const now = Date.now();
     const board = buildLiveBoard({ meters: m.data || [], live: l.data || [], daily: [], today: bkkDateStr(now), nowMs: now });
+    liveOk.current.at = now;
+    // ค่าไม่เปลี่ยน = ไม่ set state (ผังไม่ต้องจัดป้ายใหม่ทุกนาที)
+    const sig = `${[...meterLines].map(([k, v]) => `${k}:${[...v].sort()}`).join('|')}#${board.meters.map(x => `${x.key}:${x.status}:${x.kw?.toFixed(1)}:${x.overKw || x.overA}`).join('|')}`;
+    if (sig === liveOk.current.sig) return;
+    liveOk.current.sig = sig;
     setEnergyLive(meterLines.size ? { meters: board.meters, meterLines } : null);
   }, []);
   usePolling(loadEnergyLive, RATE.METER, { enabled: metric === 'energy' });
