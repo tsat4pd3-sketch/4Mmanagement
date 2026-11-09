@@ -440,7 +440,7 @@ TS Academy ≥75/≥85% · Engagement Survey ≥80/≥85% · Engineering Day ≥
 #### 🌱 Learning & Growth
 | No. | หัวข้อ | ที่มา | Target | Actual |
 |---|---|---|---|---|
-| 1 | **Annual Sales per Head PD.3** | `Accumulate Actual Sales Total / Number of Employees Section` | ≥ **11.50 MB** | 0.83 · 1.92 · 3.11 · 3.47 (**สะสม**) |
+| 1 | **Annual Sales per Head PD.3** | `Accumulate Actual Sales Total / Number of Employees Section` | ≥ **11.50 MB** | 0.83 · 1.92 · 3.11 · 3.47 (**สะสม**) · ⚠️ **ESM ไม่ใช้นิยามนี้** — user 09/11 ตัดสิน: ยอดขาย/หัว = ค่ากลางโรงงาน (÷ คนทั้งโรงงาน) ทุกหน่วยเลขเดียวกัน |
 | 2 | Sale All / Head (All) | Report Monthly FS Sheet 5 : Manpower | ≥ 5.813 MB | (ยังไม่ลง) |
 | 3 | **TS Academy** | **Data from HRM** | Section ≥ **95%** | Plan **ไต่ขึ้น** 13 · 13 · 18 · 26 · 34 · 47 · 55 · 68 · 87 · 97 · 100 · 100 % · Champion **Sirinta** |
 | 4 | **Safety Patrol** | Data from QSM | ≥ 95% | (ยังไม่ลง) |
