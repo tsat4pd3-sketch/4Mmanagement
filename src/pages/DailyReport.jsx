@@ -314,7 +314,7 @@ export default function DailyReport() {
   /* ⏰ กะค้าง = แท็บของตัวเอง (2026-08-26 · user "live กะนี้ ไม่ควรโชว์กะค้าง — แยกแท็บไล่ปิดให้หัวหน้าแผนก")
      เดิม banner 37 กะกินครึ่งจอบนแท็บ Live จนกะที่กำลังทำงานอยู่ถูกดันลงไปข้างล่าง
      โหลดที่หน้าแม่เพราะ badge ต้องเห็นจากทุกแท็บ (ไม่งั้นสลับไปแท็บอื่นแล้วงานค้างหายไปจากสายตา) */
-  const stale = useStaleSessions({ role, lineId: userLineId, sections: scopeSecs });
+  const stale = useStaleSessions({ role, lineId: userLineId, sections: scopeSecs, scopeIdx });
   const staleOver = stale.rows.filter(o => o.age > STALE_SESSION_DAYS).length;
   // กดกะจากแท็บกะค้าง → สลับไป Live แล้วเลือกกะนั้นให้เลย (ไม่งั้นต้องไปไล่หาในลิสต์ 51 กะเอง)
   const [focusSess, setFocusSess] = useState(null);

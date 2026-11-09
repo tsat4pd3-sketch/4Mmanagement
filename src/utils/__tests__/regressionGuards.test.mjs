@@ -7912,6 +7912,9 @@ test('🔭 scope-copies-swept — จอที่กวาดแล้ว ห้
     'src/pages/ProductHistory.jsx', 'src/pages/Dashboard.jsx', 'src/pages/MachineDatabase.jsx',
     'src/pages/EventLog.jsx', 'src/pages/OEEAnalytics.jsx', 'src/pages/OjtTraining.jsx',
     'src/pages/DailyPM.jsx',
+    /* รอบ 3 (09/11) — ปิดครบทั้งรีโป ยกเว้น `components/LineSelect.jsx` ซึ่ง **เป็นของกลางเอง** */
+    'src/pages/Report.jsx', 'src/pages/Checkin.jsx', 'src/pages/MtnRepair.jsx',
+    'src/pages/Improvements.jsx', 'src/pages/ProductionPlan.jsx', 'src/components/WipBetweenSteps.jsx',
   ];
   const bad = [];
   for (const f of SWEPT) {
@@ -7923,6 +7926,15 @@ test('🔭 scope-copies-swept — จอที่กวาดแล้ว ห้
     /* ส่ง `scopeIdx` ด้วยเสมอ ไม่งั้นแกน Cost Center/ผังตกหมด */
     if (/lineScope\(\{(?![^})]*scopeIdx)/.test(src))
       bad.push(`${f}: เรียก lineScope() โดยไม่ส่ง scopeIdx`);
+  }
+  /* 🔴 ทั้งรีโปเหลือที่เดียวที่เขียนสูตรนี้ได้ = `components/LineSelect.jsx` (ตัวของกลางเอง)
+     ไฟล์ใหม่ที่ก๊อปสูตรไปใช้ จะถูกจับที่นี่ทันที ไม่ต้องรอ audit รอบหน้า */
+  const ALLOW = new Set(['src/components/LineSelect.jsx', 'src/utils/sectionScope.js']);   // 2 ไฟล์นี้ = ตัวของกลางเอง
+  for (const f of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    const rel = f.replace(ROOT + '/', '').replace(/^\/+/, '');
+    if (ALLOW.has(rel) || [...ALLOW].some(x => f.endsWith(x))) continue;
+    if (/role === 'leader' && (lineId|userLineId)/.test(stripComments(readFileSync(f, 'utf8'))))
+      bad.push(`${rel}: เขียนสูตรขอบเขตเองในหน้า — ต้องเรียก lineScope()/scopedLines() ของกลาง`);
   }
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
     + '\n\n   "การบีบขอบเขตเป็นการตั้งค่า ไม่ใช่งานของโค้ด" — คืนน้อยกว่าที่ profiles ตั้ง = คนทำงานไม่ได้\n');

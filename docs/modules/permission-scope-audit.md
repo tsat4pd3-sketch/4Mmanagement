@@ -1067,7 +1067,15 @@ line_id: emp.line_id ?? ident.line_id
 `Dashboard` · `MachineDatabase` · `EventLog` · `OEEAnalytics` · `OjtTraining` (2 จุด: ส่วนงานที่เห็นได้
 + รายการอบรม) · `DailyPM` (ธง `restricted`) · `Report` (แท็บ OT — 1 จุดจาก 21)
 
-**ยังเหลือ (รอบ 3):**
+**กวาดรอบ 3 แล้ว (09/11) — ปิดครบทั้งรีโป:** `Report.jsx` (20 จุดที่เหลือ · เพิ่ม hook `useScopeOf()`
+ตัวเดียวในไฟล์ให้ทุกแท็บเรียก) · `Checkin.jsx` (4 จุด — คิวรีหลัก · คนยืม · ใบ export · dropdown) ·
+`MtnRepair` · `Improvements` · `ProductionPlan` · `WipBetweenSteps` · **`utils/staleSessions.js`**
+(เจอเพิ่มตอนขยายด่านให้สแกนทั้ง `src/`)
+
+🔴 **ด่าน `scope-copies-swept` สแกนทั้ง `src/` แล้ว** — ไฟล์ใหม่ที่ก๊อปสูตร `role === 'leader' && lineId`
+ไปใช้จะถูกจับทันที · ยกเว้น 2 ไฟล์ที่เป็น **ตัวของกลางเอง**: `utils/sectionScope.js` · `components/LineSelect.jsx`
+
+~~**ยังเหลือ (รอบ 3):**~~
 - 🔴 **`Report.jsx` อีก 20 จุด** — ไฟล์ใหญ่หลายแท็บ (OT · เช็คชื่อ · สถานี · รายคน · 4M …)
   แต่ละจุดคนละรูป (กรองแถว · ลิสต์ไลน์ · ลิสต์ส่วนงาน · `q.in('line_id', …)`)
   ⇒ ควรทำเป็นคอมมิทของตัวเอง + เพิ่ม hook ขอบเขตตัวเดียวในไฟล์ แล้วให้ทุกแท็บเรียกตัวนั้น
