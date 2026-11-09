@@ -978,5 +978,14 @@ PLC FX5U → Node-RED (server ในโรงงาน) → MySQL db_user03.ener
   จอเปิดค้าง 24 ชม. ≈ 5 MB/วัน ≈ **0.15 GB/เดือนต่อจอ** · `usePolling` หยุดเมื่อแท็บถูกซ่อน
 - **ไม่ใช้ realtime subscribe** (ทุก update × ทุกจอ = กินโควตา message — §14.5)
 
+### 15.3.1 ตู้ → เครื่อง → ผังโรงงาน (09/11 · คำสั่ง user)
+- `energy_meter_machines` (migration `20261109b`) = ตู้ไหนจ่ายเครื่องไหน · **ไลน์มาจาก `machines.line_name`** (ไม่เก็บซ้ำ)
+  seed: DB-CNC = BD-03/04/06/07 · DB-ROBOT = RB ไลน์ HDF1-2 (11 ตัว) · DB-LASER = LS-03/04/05/07/08/09
+  · **robot ในไลน์เลเซอร์ "ใช้ตู้แยก" (user) — ไม่ผูก** · ตัวเครื่อง HDF/Preform = เฟสถัดไป (ยังไม่ดึง)
+- ผังโรงงาน metric พลังงาน: กรอบที่มีตู้สด → การ์ดโชว์ **kW สดเป็นตัวเลขหลัก** + ยอดเดือนแถวล่าง (`liveForNames()`)
+  🔴 **ตู้เดียวจ่ายหลายไลน์ = ห้ามหารแบ่ง** — การ์ด LASER-345 โชว์ค่าเต็มของ DB-LASER + "รวม LASER-789" · แม่ = ตู้ละครั้ง
+- ⚠️ **ชื่อแปลกในทะเบียนเครื่องไลน์ HDF1-2 ไม่ใช่เครื่องซ้ำ** — `(BD-03)-BLM-LH-HDF01` / `(BD-06)-BLM-RH-HDF02` / `REINF ASY … BENDING1/HYDRO1/PREFORM1`
+  ทั้ง 14 ตัวเป็น `equipment_kind='die'` (แม่พิมพ์ · ผูก `equipment_die` และบางตัวมีใบซ่อม MO) **ห้ามลบ** (ตรวจ 09/11)
+
 ### 15.4 ยังไม่ทำ
 - จอแก้ลิมิต/ตู้ (`energy_live_meters`) · log เหตุการณ์ (หน้า Node-RED เดิมมี `energy_event`) · รวม `energy_daily` เข้า `energy_monthly` (`source='meter'`)

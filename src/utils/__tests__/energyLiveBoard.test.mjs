@@ -84,3 +84,31 @@ test('peak ตู้ คิดเฉพาะนาทีที่ทุกเ�
   assert.equal(byScope.get('zone|A').length, 3);
   assert.deepEqual(panelPeak, { kw: 28, at: Date.parse('2026-11-09T09:02:00Z') });
 });
+
+test('ผังโรงงาน: ตู้ที่จ่ายหลายไลน์ → ไม่หารแบ่ง แต่บอกว่ารวมกับไลน์ไหน', async () => {
+  const { liveForNames } = await import('../energy.js');
+  const b = buildLiveBoard({
+    meters: [M('DB-LASER'), M('DB-CNC'), M('DB-ROBOT')],
+    live: [L('DB-LASER', 'kw', 120), L('DB-CNC', 'kw', 10), L('DB-ROBOT', 'kw', 30, 20)],   // ROBOT ค่าเก่า
+    today: '2026-11-09', nowMs: NOW,
+  });
+  const ml = new Map([
+    ['zone|DB-LASER', new Set(['LASER-345', 'LASER-789'])],
+    ['zone|DB-CNC', new Set(['HDF1', 'HDF2'])],
+    ['zone|DB-ROBOT', new Set(['HDF1', 'HDF2'])],
+  ]);
+  const l345 = liveForNames(['LASER-345'], b.meters, ml);
+  assert.equal(l345.kw, 120);                           // ค่าเต็มของตู้ ไม่ใช่ 60
+  assert.deepEqual(l345.sharedWith, ['LASER-789']);
+  assert.equal(l345.over, true);
+  const hdf1 = liveForNames(['HDF1'], b.meters, ml);
+  assert.equal(hdf1.kw, 10);                            // ROBOT ขาดการติดต่อ → ไม่บวก
+  assert.equal(hdf1.online, 1); assert.equal(hdf1.total, 2);
+  const hydro = liveForNames(['HYDROFORM', 'HDF1', 'HDF2', 'LASER-345', 'LASER-789'], b.meters, ml);
+  assert.equal(hydro.kw, 130);                          // แม่ = ตู้ละครั้ง ไม่นับซ้ำ
+  assert.deepEqual(hydro.sharedWith, []);
+  assert.equal(liveForNames(['Line 60'], b.meters, ml), null);
+  // ทุกตู้ของกรอบไม่ออนไลน์ = null ไม่ใช่ 0
+  const b2 = buildLiveBoard({ meters: [M('DB-CNC')], live: [], today: '2026-11-09', nowMs: NOW });
+  assert.equal(liveForNames(['HDF1'], b2.meters, ml).kw, null);
+});

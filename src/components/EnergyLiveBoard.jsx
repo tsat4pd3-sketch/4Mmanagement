@@ -49,6 +49,7 @@ export default function EnergyLiveBoard() {
   const [live, setLive] = useState([]);
   const [daily, setDaily] = useState([]);
   const [readings, setReadings] = useState([]);
+  const [machinesOf, setMachinesOf] = useState({});   // key ตู้ → [{ no, line }] (energy_meter_machines · ไม่มีตาราง = ว่าง)
   const [err, setErr] = useState('');
   const [missing, setMissing] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -73,6 +74,16 @@ export default function EnergyLiveBoard() {
           .select('scope_kind, scope_name, day, kwh, peak_kw, peak_at, resets').gte('day', monthStart),
         fetchReadings(from, newDay),
       ]);
+      // เครื่องใต้ตู้ — best-effort: ตารางยังไม่ apply / อ่านไม่ได้ = การ์ดไม่มีรายชื่อเครื่อง (ตัวเลขยังขึ้นปกติ)
+      const mm = await supabaseDR.from('energy_meter_machines').select('scope_kind, scope_name, machines(machine_no, line_name)');
+      if (id === reqId.current && !mm.error) {
+        const by = {};
+        for (const x of mm.data || []) {
+          if (!x.machines) continue;
+          (by[`${x.scope_kind}|${x.scope_name}`] ||= []).push({ no: x.machines.machine_no, line: x.machines.line_name });
+        }
+        setMachinesOf(by);
+      }
       if (id !== reqId.current) return;   // มีรอบใหม่กว่าแล้ว — ทิ้งผลเก่า
       const e = m.error || l.error || d.error;
       if (e) {
@@ -163,7 +174,7 @@ export default function EnergyLiveBoard() {
         <div>
           <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>เครื่องจักรทั้งหมด</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12, alignContent: 'start' }}>
-            {board.meters.map(m => <MeterCard key={m.key} m={m} pts={series.byScope.get(m.key) || []} />)}
+            {board.meters.map(m => <MeterCard key={m.key} m={m} pts={series.byScope.get(m.key) || []} machines={machinesOf[m.key] || []} />)}
           </div>
         </div>
       )}
@@ -250,7 +261,7 @@ function PanelFlow({ panel }) {
   );
 }
 
-function MeterCard({ m, pts }) {
+function MeterCard({ m, pts, machines }) {
   const sm = statusMeta(m);
   return (
     <div style={{ ...card, borderColor: sm.color === GOOD ? 'var(--border)' : sm.color }}>
@@ -258,6 +269,11 @@ function MeterCard({ m, pts }) {
         <div>
           <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>{m.name}</div>
           <div style={{ fontSize: 12, color: 'var(--muted)' }}>{m.subtitle}</div>
+          {machines.length > 0 && (
+            <div style={{ fontSize: 11.5, color: 'var(--text2)' }} title={machines.map(x => `${x.no} (${x.line})`).join(', ')}>
+              จ่ายให้ {machines.length} เครื่อง: {machines.map(x => x.no).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).join(', ')}
+            </div>
+          )}
           <div style={{ fontSize: 12, color: 'var(--text2)' }}>
             ลิมิต <b style={{ color: GOOD }}>{m.limitKw ?? '—'} kW</b> · <b style={{ color: ACC }}>{m.limitA ?? '—'} A</b>
           </div>
