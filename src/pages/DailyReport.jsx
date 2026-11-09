@@ -59,6 +59,7 @@ import Segmented from '../components/Segmented';
 import DieMatLinkButton from '../components/DieMatLinkButton';
 import MoReportFromDowntime from '../components/MoReportFromDowntime';   // ฟอร์มแจ้งซ่อมเต็ม (lazy) — เปิดใบจาก Downtime
 import { dieCandidatesForMats } from '../utils/dieCandidates';
+import { dtMachineTypeIds, machineFitsDtType, machineTypeIdsForDb } from '../utils/dtMachineFilter';
 import { kindOf } from '../utils/equipmentKinds';
 import { resolveMachine, normCode, resolveTypeRow, QR_KINDS } from '../utils/qrCode';
 import { SCAN_EVENT } from '../utils/scanWedge';
@@ -461,18 +462,23 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
      ค่าเริ่ม 'all' = ไม่บังคับเลือก = พฤติกรรมเดิม · 'other' = ชนิดที่ไม่ใช่ 3 ตัวหลัก (facility ฯลฯ) */
   const [dtKind, setDtKind] = useState('all');
   useEffect(() => { if (showDT) { setDtMachineAll(false); setDtKind('all'); } }, [showDT]);
+  /* 🤖 กรองเครื่องตามประเภท Downtime (09/11 · utils/dtMachineFilter.js) — กด "แสดงทุกเครื่อง" ได้เสมอ
+     เปลี่ยนประเภท DT / เปิดฟอร์มใหม่ = กลับไปกรองตามทะเบียน */
+  const [dtTypeAll, setDtTypeAll] = useState(false);
+  useEffect(() => { setDtTypeAll(false); }, [showDT, dtForm.downtime_type_id]);
   /* 🔨 ทะเบียนชุดแม่พิมพ์ + แม่พิมพ์รายตัว→ชุด — โหลดตอนเปิดฟอร์ม Downtime เท่านั้น (เล็ก: ~92 + ~264 แถว)
      ใช้ขึ้น "แม่พิมพ์ของงานที่กำลังผลิต" บนสุดของลิสต์ (utils/dieCandidates.js · 08/11)
      โหลดไม่ได้ = เขียนบนจอ (ลิสต์ยังใช้ได้ตามเดิม แค่ไม่มีกลุ่มบน) ห้ามเงียบ */
-  const [dieReg, setDieReg] = useState({ sets: [], rows: [], err: null, loaded: false });
+  const [dieReg, setDieReg] = useState({ sets: [], rows: [], err: null, loaded: false, mtypes: [] });
   const loadDieReg = useCallback(async () => {
-    const [st, ed] = await Promise.all([
+    const [st, ed, mt] = await Promise.all([
       supabaseDR.from('die_sets').select('id, set_code, part_no, mat_no, mat_no_2, is_active'),
       supabaseDR.from('equipment_die').select('die_set_id, machines(machine_no)').not('die_set_id', 'is', null),
+      supabaseDR.from('machine_types').select('id, label'),   // ป้ายประเภทเครื่องของตัวกรองตามประเภท DT
     ]);
     const err = st.error?.message || ed.error?.message || null;
     return {
-      sets: st.data || [], err, loaded: true,
+      sets: st.data || [], err, loaded: true, mtypes: mt.data || [],
       rows: (ed.data || []).map(r => ({ die_set_id: r.die_set_id, machine_no: r.machines?.machine_no })).filter(r => r.machine_no),
     };
   }, []);
@@ -6312,15 +6318,16 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
              "ไม่มีชิ้นงานในไลน์นี้" ทั้งที่กำลังผลิตอยู่จริง (หน้างานเลเซอร์แจ้งเข้ามา 2026-08-14)
              → เอา "ใบงานที่เปิดในกะนี้" มาก่อน (ตรงประเด็นสุด — คือของที่วิ่งอยู่จริง)
                แล้วเสริมด้วยสินค้า/คัมบังของ "ครอบครัวไลน์" (กฎเดียวกับ sessionProcessTypesAll) */
+          /* 🔴 09/11 (คำสั่ง user "ต้องขึ้นให้เลือกเฉพาะที่มี order ของไลน์นั้นเปิดอยู่เท่านั้น ไม่ใช่ขึ้นมาทั้งหมด")
+             = ใบงานทุกใบในกะนี้ ยกเว้นยกเลิก/นำเข้า (ใบที่ปิดยอดแล้วยังเลือกได้ — ลง DT ย้อนหลังของพาร์ทที่จบไปแล้ว)
+             ถอดแหล่ง "สินค้าที่ผูกไลน์" + "คัมบังของไลน์" ออก (เดิมขึ้นทั้งไลน์ ⇒ เลือกพาร์ทที่ไม่ได้ผลิตได้)
+             · ค่าที่ใบนี้บันทึกไว้แล้วแต่ไม่อยู่ในใบงาน (แก้ไขใบเก่า) = ยังโชว์ ห้ามหายเงียบ */
           const dtMatOptions = (() => {
-            const fam = new Set(getLineFamilyNames(lines, selSession?.line_name || '').map(n => (n || '').trim().toLowerCase()));
-            const inFam = (ln) => fam.has((ln || '').trim().toLowerCase());
             const seen = new Map();
             const add = (mat, name, src) => { if (mat && !seen.has(mat)) seen.set(mat, { mat_no: mat, name: name || '', src }); };
             prodOrders.filter(o => !['cancelled', 'imported'].includes(o.status))
               .forEach(o => add(o.mat_no, o.part_name || products.find(p => p.mat_no === o.mat_no)?.name, 'order'));
-            products.filter(p => inFam(p.line_name)).forEach(p => add(p.mat_no, p.name, 'line'));
-            kanbanStds.filter(s => inFam(s.dr_products?.line_name)).forEach(s => add(s.mat_no, s.dr_products?.name || s.part_name, 'kanban'));
+            if (dtForm.mat_no && !seen.has(dtForm.mat_no)) add(dtForm.mat_no, products.find(p => p.mat_no === dtForm.mat_no)?.name, 'current');
             return [...seen.values()];
           })();
           /* ตัวเลือก "เครื่องจักร" ของฟอร์ม Downtime — บั๊กเดียวกับ dtMatOptions ข้างบน แต่ตกสำรวจ
@@ -6345,6 +6352,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
             const row = dieReg.rows.find(r => r.machine_no === dtPickedDie.machine_no);
             return row ? dieReg.sets.find(st => st.id === row.die_set_id) || null : null;
           })() : null;
+          const dtSelType = dtTypes.find(t => String(t.id) === String(dtForm.downtime_type_id));
+          const dtTypeIds = dtMachineTypeIds(dtSelType);
+          const dtTypeLabels = dtTypeIds ? [...dtTypeIds].map(id => dieReg.mtypes.find(t => String(t.id) === id)?.label).filter(Boolean) : [];
           const machineKeyMap = buildMachineKeyMap(machines);   // ไม่ใช้ useMemo — บล็อกนี้อยู่ใน callback (rules-of-hooks)
           let famCount = 0;   // เครื่อง (รวมแม่พิมพ์) ที่ลงทะเบียนในครอบครัวไลน์นี้ — คิดใน IIFE ข้างล่าง
           const dtMachineOptions = (() => {
@@ -6362,13 +6372,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
             famCount = (machines || []).filter(m => m.machine_no && inFam(m)).length;
             const showAll = dtMachineAll || famCount === 0;
             const candOf = (m) => (m.equipment_kind === 'die' ? dieCand.byMachine.get(m.machine_no) : null);
+            const typeHit = (m) => dtTypeAll || machineFitsDtType(m, dtTypeIds);
             const kindHit = (m) => {
               if (dtKind === 'all') return true;
               const k = kindOf(m.equipment_kind);
               return dtKind === 'other' ? !['machine', 'jig', 'die'].includes(k) : k === dtKind;
             };
             return (machines || [])
-              .filter(m => (showAll || inFam(m) || candOf(m)) && kindHit(m))
+              .filter(m => (showAll || inFam(m) || candOf(m)) && kindHit(m) && typeHit(m))
               .map((m, i) => {
                 /* แม่พิมพ์ของงานที่ผลิตอยู่ขึ้นบนสุด แยก "ทะเบียนยืนยัน" กับ "ระบบเดา" ห้ามยุบรวม */
                 const c = candOf(m);
@@ -6547,7 +6558,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           options={dtMachineOptions}
                           allowFree
                           placeholder={dtMachineAll || !famCount ? 'ค้นหาเครื่อง — ทั้งโรงงาน' : 'ค้นหาเครื่อง — ในไลน์นี้'}
-                          emptyText={dtKind !== 'all' ? `ไม่มี${DT_KIND_FIELD[dtKind]}ในลิสต์นี้ — กด "ทั้งหมด" ด้านบน หรือ "ค้นทั้งโรงงาน"` : (dtMachineAll || !famCount ? 'ไม่พบเครื่องนี้ในทะเบียน' : 'ไม่พบในไลน์นี้ — กด "ค้นทั้งโรงงาน" ใต้ช่อง')}
+                          emptyText={dtTypeIds && !dtTypeAll ? 'ไม่มีเครื่องประเภทนี้ในลิสต์ — กด "แสดงทุกเครื่อง" ใต้ช่อง' : dtKind !== 'all' ? `ไม่มี${DT_KIND_FIELD[dtKind]}ในลิสต์นี้ — กด "ทั้งหมด" ด้านบน หรือ "ค้นทั้งโรงงาน"` : (dtMachineAll || !famCount ? 'ไม่พบเครื่องนี้ในทะเบียน' : 'ไม่พบในไลน์นี้ — กด "ค้นทั้งโรงงาน" ใต้ช่อง')}
                           freeHint="ไม่ได้อยู่ในทะเบียน — ต่อใบซ่อม/ประวัติเครื่องไม่ได้"
                           inputStyle={inputStyle}
                           /* พิมพ์เองแล้วต่างจากทะเบียนแค่รูปแบบ (LS10 → LS-10) = เก็บเลขตามทะเบียน
@@ -6575,6 +6586,16 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           </>
                         )}
                       </div>
+                      {/* 🤖 กรองตามประเภท Downtime — ต้องเขียนบนจอว่ากรองด้วยอะไร + ทางออก "แสดงทุกเครื่อง" เสมอ */}
+                      {dtTypeIds && (
+                        <div style={{ marginTop: 4, fontSize: 11, color: 'var(--muted)', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                          <span>{dtTypeAll ? 'แสดงทุกเครื่อง' : `เฉพาะเครื่องประเภท ${dtTypeLabels.join(' / ') || '(ประเภทที่ทะเบียนผูกไว้)'} ตามประเภท Downtime`}</span>
+                          <button type="button" onClick={() => setDtTypeAll(v => !v)}
+                            style={{ background: 'none', border: 'none', padding: 0, color: 'var(--accent)', fontSize: 11, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>
+                            {dtTypeAll ? 'กรองตามประเภท Downtime' : 'แสดงทุกเครื่อง'}
+                          </button>
+                        </div>
+                      )}
                       {/* 🔨 ความครอบคลุมของกลุ่ม "แม่พิมพ์ของงานที่ผลิตอยู่" — ต้องเขียนบนจอเสมอ (หาไม่ได้ ≠ ไม่มี) */}
                       {dtKind === 'die' && (
                         <div style={{ marginTop: 4, fontSize: 11, color: 'var(--muted)' }}>
@@ -6601,14 +6622,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       {!dtMatOptions.length ? (
                         /* ว่างจริง = ยังไม่มีใบงานในกะ และไม่มีสินค้าผูกกับไลน์เลย → บอกทางแก้ ห้ามปล่อยเป็นทางตัน */
                         <div style={{ ...inputStyle, color: 'var(--muted)', display: 'flex', alignItems: 'center', fontSize: 12 }}>
-                          — ยังไม่มีชิ้นงานให้เลือก (เปิดใบงาน หรือผูกสินค้ากับไลน์ที่ Product Master) · ข้ามได้
+                          — กะนี้ยังไม่มีใบงาน (เลือกได้เฉพาะชิ้นงานที่มีใบงานในกะ) · ข้ามได้
                         </div>
                       ) : (
                         <select value={dtForm.mat_no} onChange={e => setDtForm(f => ({ ...f, mat_no: e.target.value }))} style={inputStyle}>
                           <option value="">เลือกชิ้นงาน...</option>
                           {dtMatOptions.map(o => (
                             <option key={o.mat_no} value={o.mat_no}>
-                              {o.src === 'order' ? '▶ ' : ''}{o.mat_no}{o.name ? ` · ${o.name}` : ''}
+                              {o.src === 'order' ? '▶ ' : '⚠ '}{o.mat_no}{o.name ? ` · ${o.name}` : ''}{o.src === 'current' ? ' (ไม่มีใบงานในกะนี้)' : ''}
                             </option>
                           ))}
                         </select>
@@ -9165,6 +9186,15 @@ function DowntimeTypeSetup({ role }) {
   const [editing, setEditing] = useState(null);
   const [form, setForm]     = useState({ name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: 'var(--red)', sort_order: 0, is_active: true, six_big_loss: '', waste_type: '' });
   const [saving, setSaving] = useState(false);
+  /* 🤖 ประเภทเครื่องที่ DT นี้เกิดได้ (09/11) — กรองช่องเลือกเครื่องในฟอร์ม Downtime · ไม่ติ๊ก = ทุกเครื่อง */
+  const [mtypes, setMtypes] = useState({ rows: [], err: '' });
+  useEffect(() => {
+    let alive = true;
+    supabaseDR.from('machine_types').select('id, label, sort_order, is_active').order('sort_order').then(({ data, error }) => {
+      if (alive) setMtypes({ rows: data || [], err: error?.message || '' });
+    });
+    return () => { alive = false; };
+  }, []);
 
   const load = useCallback(async () => {
     const { data } = await supabaseDR.from('dr_downtime_types').select('*').order('category').order('sort_order');
@@ -9176,16 +9206,16 @@ function DowntimeTypeSetup({ role }) {
   const openEdit = (item = null) => {
     setEditing(item?.id || 'new');
     setForm(item
-      ? { name_th: item.name_th, name_en: item.name_en || '', category: item.category, process_type: item.process_type || 'welding_assembly', color: item.color, sort_order: item.sort_order, is_active: item.is_active, six_big_loss: item.six_big_loss || '', waste_type: item.waste_type || '' }
+      ? { name_th: item.name_th, name_en: item.name_en || '', category: item.category, process_type: item.process_type || 'welding_assembly', color: item.color, sort_order: item.sort_order, is_active: item.is_active, six_big_loss: item.six_big_loss || '', waste_type: item.waste_type || '', machine_type_ids: item.machine_type_ids || [] }
       // สร้างใหม่ default สีที่ยังไม่ซ้ำกับประเภทที่มี (ผู้ใช้เปลี่ยนทับได้)
-      : { name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: pickUnusedColor(items.map(i => i.color)), sort_order: items.length + 1, is_active: true, six_big_loss: '', waste_type: '' });
+      : { name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: pickUnusedColor(items.map(i => i.color)), sort_order: items.length + 1, is_active: true, six_big_loss: '', waste_type: '', machine_type_ids: [] });
   };
 
   const handleSave = async () => {
     if (!form.name_th) { toast.error('กรอกชื่อประเภท'); return; }
     setSaving(true);
     // ค่าว่าง = ยังไม่จัดหมวด Lean → เก็บเป็น null (ห้ามเก็บ '' — จะกลายเป็นถังใหม่ในหน้าวิเคราะห์)
-    const payload = { ...form, six_big_loss: form.six_big_loss || null, waste_type: form.waste_type || null };
+    const payload = { ...form, six_big_loss: form.six_big_loss || null, waste_type: form.waste_type || null, machine_type_ids: machineTypeIdsForDb(form.machine_type_ids) };
     const { error } = editing === 'new'
       ? await supabaseDR.from('dr_downtime_types').insert(payload)
       : await supabaseDR.from('dr_downtime_types').update(payload).eq('id', editing);
@@ -9307,6 +9337,27 @@ function DowntimeTypeSetup({ role }) {
                   <option value="">— ยังไม่จัดหมวด —</option>
                   {EIGHT_WASTES.map(w => <option key={w.key} value={w.key}>{w.icon} {w.label}</option>)}
                 </select>
+              </Field>
+              <Field label="เกิดกับเครื่องประเภทไหน (กรองช่องเลือกเครื่องตอนลง Downtime · ไม่ติ๊ก = ทุกเครื่อง)">
+                {mtypes.err ? <div style={{ fontSize: 12, color: 'var(--red)' }}>โหลดทะเบียนประเภทเครื่องไม่สำเร็จ ({mtypes.err}) — ค่าที่ติ๊กไว้เดิมจะไม่ถูกแก้</div> : (
+                  <div style={{ maxHeight: 150, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--ctl-r)', padding: '6px 8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 10px' }}>
+                    {mtypes.rows.filter(t => t.is_active !== false || (form.machine_type_ids || []).includes(t.id)).map(t => {
+                      const on = (form.machine_type_ids || []).includes(t.id);
+                      return (
+                        <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text)', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={on} onChange={() => setForm(f => {
+                            const cur = f.machine_type_ids || [];
+                            return { ...f, machine_type_ids: on ? cur.filter(x => x !== t.id) : [...cur, t.id] };
+                          })} />
+                          {t.label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
+                  {(form.machine_type_ids || []).length ? `ติ๊ก ${(form.machine_type_ids || []).length} ประเภท` : 'ไม่ติ๊ก = เกิดได้กับทุกเครื่อง (เช่น Sensor / ระบบลม)'}
+                </div>
               </Field>
               <Field label="สี">
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
