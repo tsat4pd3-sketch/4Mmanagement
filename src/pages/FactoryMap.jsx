@@ -36,7 +36,7 @@ import { loadDailyAm, dailyAmLineStatus, amShiftInfo } from '../lib/dailyAmBoard
 import { DAILY_PM_WINDOW_MIN } from '../lib/pmDailyStatus';
 import { planDueBucket } from '../lib/pmSchedule';
 import { useLiveBoard } from '../utils/useLiveBoard';
-import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e, energyRollup, buildLiveBoard, liveForNames } from '../utils/energy';
+import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e, energyRollup, buildLiveBoard, liveForNames, dayForNames, meterLinesFrom } from '../utils/energy';
 import { bkkDateStr } from '../utils/workDate';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 import { fmtDtElapsed } from '../utils/downtimeRules';
@@ -241,12 +241,13 @@ const METRICS = {
     /* ⚡ กรอบที่มีมิเตอร์สด (s.live · liveForNames) — ป้ายเล็ก/แผงข้างต้องโชว์ค่าสดด้วย ไม่ใช่แค่การ์ดใหญ่
        (09/11 · จอมือถือที่ไม่มีที่วางการ์ด ย่อเป็นป้ายเล็กแล้วเห็นแต่ยอดเดือน) · สีกรอบยังตัดสินจากยอดเดือนเหมือนเดิม */
     text: s => {
+      if (s.day) return `📅 ${fmtKwh(s.day.kwh)} kWh (มิเตอร์ ${s.day.date.slice(8)}/${s.day.date.slice(5, 7)})${s.day.sharedWith.length ? ` รวม ${s.day.sharedWith.join(', ')}` : ''}`;
       const lv = s.live ? (s.live.kw == null ? 'สด: ขาดการติดต่อ' : `⚡ สด ${s.live.kw.toFixed(1)} kW${s.live.sharedWith.length ? ` (รวม ${s.live.sharedWith.join(', ')})` : ''}`) : '';
       if (s.kwh == null) return lv || 'ยังไม่กรอก';
       const d = energyDelta(s);
       return `${lv ? `${lv} · เดือนนี้ ` : ''}${fmtKwh(s.kwh)} kWh${d != null ? ` · ${d > 0 ? '+' : ''}${d}%` : ''}`;
     },
-    short: s => (s.live?.kw != null ? `⚡${Math.round(s.live.kw)} kW` : s.kwh == null ? '' : `${fmtKwh(s.kwh)}`),
+    short: s => (s.day ? `📅${fmtKwh(s.day.kwh)}` : s.live?.kw != null ? `⚡${Math.round(s.live.kw)} kW` : s.kwh == null ? '' : `${fmtKwh(s.kwh)}`),
     cat: s => (s.kwh == null ? 'idle' : energyCat(energyDelta(s))),
   },
   productivity: {
@@ -525,6 +526,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
   const [energyMonth, setEnergyMonth] = useState(null);  // เดือนที่ผังกำลังโชว์ (ไม่ใช่ live — ต้องประกาศบนจอ)
   const [oeeHistRaw, setOeeHistRaw] = useState(null);    // ⚙️ ประวัติ OEE รายกะ 7 วันก่อน (สำหรับ sparkline การ์ด KPI · null = ยังไม่โหลด)
   const [energyEf, setEnergyEf] = useState(null);        // EF ของเดือนนั้น (null = ยังไม่ตั้ง → ไม่โชว์ tCO2e)
+  const [energyDay, setEnergyDay] = useState(null);      // 📅 โหมดทบทวน: kWh ของวันที่เลือกจากมิเตอร์ { date, byMeter, meterLines } · null = ไม่มี/อ่านไม่ได้
   const [energyLive, setEnergyLive] = useState(null);    // ⚡ ค่าไฟสดจากมิเตอร์: { meters (buildLiveBoard), meterLines: Map ตู้→ชุดไลน์ } · null = ไม่มี/อ่านไม่ได้
   const [allLines, setLines] = useState([]);
   /* 🔭 ขอบเขตของบัญชี (09/11 · user: "ถ้าเป็น user จอของส่วนงานไหนก็ควรจะแสดงแค่แผนกหรือส่วนงานตัวเอง")
@@ -1114,13 +1116,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
       if (Date.now() - liveOk.current.at > 5 * 60_000) { liveOk.current.sig = ''; setEnergyLive(null); }
       return;
     }
-    const meterLines = new Map();
-    for (const x of mm.data || []) {
-      const ln = x.machines?.line_name; if (!ln) continue;
-      const k = `${x.scope_kind}|${x.scope_name}`;
-      if (!meterLines.has(k)) meterLines.set(k, new Set());
-      meterLines.get(k).add(ln);
-    }
+    const meterLines = meterLinesFrom(mm.data);
     const now = Date.now();
     const board = buildLiveBoard({ meters: m.data || [], live: l.data || [], daily: [], today: bkkDateStr(now), nowMs: now });
     liveOk.current.at = now;
@@ -1130,7 +1126,25 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     liveOk.current.sig = sig;
     setEnergyLive(meterLines.size ? { meters: board.meters, meterLines } : null);
   }, []);
-  usePolling(loadEnergyLive, RATE.METER, { enabled: metric === 'energy' });
+  // ⚡ ค่าสด = เฉพาะโหมด Live (สวิตช์ Live/ทบทวน คุมทั้งหน้า · 10/11 คำสั่ง user)
+  usePolling(loadEnergyLive, RATE.METER, { enabled: metric === 'energy' && !isReview });
+
+  /* 📅 โหมดทบทวน: kWh ของ "วันที่เลือก" จากมิเตอร์ (energy_daily · trigger สรุปให้) — ไม่ poll (อดีตไม่เปลี่ยน)
+     ⚠️ วันของ energy_daily = ปฏิทินไทยตัด 00:00 (ตรงหน้า Node-RED เดิม) ≠ วันทำงานที่ตัด 08:00 → จอเขียนกำกับ */
+  const dayReq = useRef(0);
+  const loadEnergyDay = useCallback(async () => {
+    const id = ++dayReq.current;
+    const [d, mm] = await Promise.all([
+      supabaseDR.from('energy_daily').select('scope_kind, scope_name, kwh, peak_kw, resets').eq('day', reviewDate),
+      supabaseDR.from('energy_meter_machines').select('scope_kind, scope_name, machines(line_name)'),
+    ]);
+    if (id !== dayReq.current) return;
+    if (d.error || mm.error) { setEnergyDay(null); return; }
+    const byMeter = new Map((d.data || []).map(x => [`${x.scope_kind}|${x.scope_name}`, x]));
+    const meterLines = meterLinesFrom(mm.data);
+    setEnergyDay(meterLines.size ? { date: reviewDate, byMeter, meterLines } : null);
+  }, [reviewDate]);
+  useEffect(() => { if (metric === 'energy' && isReview) loadEnergyDay(); }, [metric, isReview, loadEnergyDay]);
 
   /* ── ⚙️ ประวัติ OEE 7 วันก่อนหน้า — sparkline + Δ บนการ์ด KPI ของ metric OEE (2026-08-25) ──
      โหลด "ครั้งเดียว" ตอนกดแท็บ OEE ครั้งแรก ไม่ poll (ค่า stamp ของกะปิดแล้วไม่เปลี่ยนระหว่างวัน — กฎ egress)
@@ -1893,7 +1907,10 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     // เป้า OEE ของครอบครัวนี้ (กติกาเดียวกับ OBEYA) — METRICS.oee.cat ตัดสีจากตัวนี้ ไม่ใช่ 80/65 ตายตัว
     agg.oeeTarget = oeeTargetForLines(familyNames(name), lines, oeeTargets)?.oee ?? null;
     // ⚡ ค่าไฟสดของกรอบนี้ (ตู้ที่จ่ายให้ไลน์ในครอบครัว · ตู้ละครั้ง ไม่นับซ้ำ) — null = ไม่มีมิเตอร์สด
-    agg.live = energyLive ? liveForNames(familyNames(name), energyLive.meters, energyLive.meterLines) : null;
+    agg.live = !isReview && energyLive ? liveForNames(familyNames(name), energyLive.meters, energyLive.meterLines) : null;
+    // 📅 ทบทวน: kWh ของวันที่เลือกจากมิเตอร์ — ไม่มียอดวันนั้น (kwh null) = ถอยไปโชว์รายเดือนตามเดิม
+    { const dy = isReview && energyDay ? dayForNames(familyNames(name), energyDay.byMeter, energyDay.meterLines) : null;
+      agg.day = dy && dy.kwh != null ? { ...dy, date: energyDay.date } : null; }
     // 🌱 คาร์บอน (C1) — คำนวณจาก kWh × EF ของเดือนที่ผังโชว์ · ไม่มี EF = null (ห้ามเดา)
     agg.kwhCo2 = co2eKg(agg.kwh ?? null, energyEf);
     /* 📅 โหมดทบทวน: เรื่องที่ผูกกับวัน (ยอดผลิต/OEE/DT/ของเสีย/คน) = ยอดทั้งวันของ reviewDate จาก reviewOf()
@@ -2327,7 +2344,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
         //    (ถ้าให้ทุกกรอบเป็นการ์ดใหญ่ ผังจะเต็มไปด้วยการ์ด "ยังไม่กรอก" แล้วชนกันจนซ่อนเพียบ
         //     ภาพอ้างอิงเองก็มีการ์ดแค่ 4 ใบบนผังทั้งโรง)
         //    OEE ใช้การ์ดสไตล์เดียวกับพลังงาน (2026-08-25 · คำสั่ง user "รูปแบบคล้ายๆ เรื่องไฟ")
-        const isKpi = (metric === 'energy' && (st.kwh != null || st.live)) || (metric === 'oee' && st.oee != null);
+        const isKpi = (metric === 'energy' && (st.kwh != null || st.live || st.day)) || (metric === 'oee' && st.oee != null);
         // การ์ด = level แรกของ chain เดียวกับป้ายปกติ — ที่ไม่พอ "สละการ์ด" ย่อเป็นป้าย ไม่ไปทับเพื่อน
         // lvl ที่เก็บถูกปรับกลับเป็น index ของ levels เดิม (renderer แปลง lvl→ข้อความด้วย mapping เดิม)
         const lv = isKpi ? [{ ...levels[0], kpi: true }, ...levels] : levels;
@@ -2337,7 +2354,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
       });
     return out;
     // stOf/regCat/lblText/facHidden อ่านสถานะปัจจุบัน — ใส่ state ที่มันพึ่งพาเป็น deps แทน (ตัวฟังก์ชันสร้างใหม่ทุก render)
-  }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, editing, showFac, lineStatus, manpower, pmStatus, amDaily, supplyStatus, facilitySupply, dieZones, storeZones, lblScale, energyLive]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [regions, autoHulls, childrenOf, wrapW, aspect, metric, editing, showFac, lineStatus, manpower, pmStatus, amDaily, supplyStatus, facilitySupply, dieZones, storeZones, lblScale, energyLive, energyDay, isReview]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── หาจุดที่จะวาง: แม่เหล็กจุดแรก > Shift ตั้งฉาก > ปกติ ── */
   const resolveDrawPoint = (p, shift) => {
@@ -2549,7 +2566,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
       {!editing && isReview && (
         <div className="tv-hide" style={{ marginBottom: 10, padding: '7px 12px', borderRadius: 'var(--r-md)', fontSize: 12, background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--text2)' }}>
           📅 <b style={{ color: 'var(--text)' }}>โหมดทบทวน {fmtThaiDate(reviewDate)}</b> — ยอดผลิต / OEE / Downtime / ของเสีย / คน บนผังเป็นยอดทั้งวันของวันนั้น ·
-          <b> แท็บ PM / AM / พลังงาน / Supply Route ยังเป็นสถานะปัจจุบัน</b> (ไม่มีประวัติย้อนหลังรายวัน)
+          <b> แท็บ PM / AM / Supply Route ยังเป็นสถานะปัจจุบัน</b> (ไม่มีประวัติย้อนหลังรายวัน) ·
+          <b> พลังงาน:</b> กรอบที่มีมิเตอร์ = kWh ของวันนั้น (ตัด 00:00–24:00) · ที่เหลือ = รายเดือนกรอกมือ
         </div>
       )}
 
@@ -2997,7 +3015,22 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                         {st.isFac ? (st.storeZone ? `${zoneKindMeta(st.storeZone.kind).icon} ` : st.die ? '🔨 ' : '🔧 ') : ''}{r.line_name}
                       </div>
                       {/* ⚡ มีมิเตอร์สด = ค่าสดเป็นตัวเลขหลัก (user 09/11) · ยอดเดือนย้ายไปแถวล่าง · แถวเท่าเดิม (KPI_H) */}
-                      {st.live ? (<>
+                      {st.day ? (<>
+                      {/* 📅 โหมดทบทวน + มีมิเตอร์ = kWh ของวันที่เลือก (ตัด 00:00) · แถวเท่าการ์ดเดิม */}
+                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginTop: 1 }}>
+                        <span style={{ fontSize: 'clamp(17px,1.5vw,22px)', fontWeight: 900, color: 'var(--blue)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                          {fmtKwh(st.day.kwh)}
+                        </span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--blue)', lineHeight: 1.6, whiteSpace: 'nowrap' }}>kWh · {st.day.date.slice(8)}/{st.day.date.slice(5, 7)}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 11, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}
+                        title={`มิเตอร์ ${st.day.meters.join(', ')} · วันที่ ${st.day.date} (00:00–24:00)${st.day.sharedWith.length ? ` · ใช้ร่วมกับ ${st.day.sharedWith.join(', ')} (แยกรายไลน์ไม่ได้)` : ''}`}>
+                        {st.day.have < st.day.total && <span style={{ color: 'var(--amber)' }}>{st.day.have}/{st.day.total} ตู้ ·</span>}
+                        {st.day.sharedWith.length > 0 && <span style={{ color: 'var(--amber)' }}>รวม {st.day.sharedWith.join(', ')} ·</span>}
+                        {st.day.resets > 0 && <span style={{ color: 'var(--amber)' }}>มิเตอร์ reset ·</span>}
+                        <span style={{ color: 'var(--muted)' }}>จากมิเตอร์</span>
+                      </div>
+                      </>) : st.live ? (<>
                       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, marginTop: 1 }}>
                         <span style={{ fontSize: 'clamp(17px,1.5vw,22px)', fontWeight: 900, color: st.live.over ? 'var(--red)' : 'var(--green)', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                           {st.live.kw == null ? '—' : st.live.kw.toFixed(1)}

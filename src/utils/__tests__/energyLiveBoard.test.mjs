@@ -112,3 +112,24 @@ test('ผังโรงงาน: ตู้ที่จ่ายหลายไ
   const b2 = buildLiveBoard({ meters: [M('DB-CNC')], live: [], today: '2026-11-09', nowMs: NOW });
   assert.equal(liveForNames(['HDF1'], b2.meters, ml).kw, null);
 });
+
+test('ผังโหมดทบทวน: kWh ของวันจากมิเตอร์ · ตู้ละครั้ง · ไม่มียอด = null', async () => {
+  const { dayForNames, meterLinesFrom } = await import('../energy.js');
+  const ml = meterLinesFrom([
+    { scope_kind: 'zone', scope_name: 'DB-CNC', machines: { line_name: 'HDF1' } },
+    { scope_kind: 'zone', scope_name: 'DB-CNC', machines: { line_name: 'HDF2' } },
+    { scope_kind: 'zone', scope_name: 'DB-ROBOT', machines: { line_name: 'HDF1' } },
+    { scope_kind: 'zone', scope_name: 'DB-ROBOT', machines: { line_name: 'HDF2' } },
+    { scope_kind: 'zone', scope_name: 'DB-LASER', machines: { line_name: 'LASER-345' } },
+    { scope_kind: 'zone', scope_name: 'DB-LASER', machines: null },
+  ]);
+  const by = new Map([['zone|DB-CNC', { kwh: 40 }], ['zone|DB-ROBOT', { kwh: 300, resets: 1 }]]);
+  const hdf1 = dayForNames(['HDF1'], by, ml);
+  assert.equal(hdf1.kwh, 340);
+  assert.deepEqual(hdf1.sharedWith, ['HDF2']);
+  assert.equal(hdf1.resets, 1);
+  const las = dayForNames(['LASER-345'], by, ml);
+  assert.equal(las.kwh, null);                 // ตู้ผูกแล้วแต่ไม่มียอดวันนั้น ≠ 0
+  assert.equal(las.total, 1);
+  assert.equal(dayForNames(['Line 60'], by, ml), null);
+});
