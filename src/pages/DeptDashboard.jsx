@@ -10,6 +10,7 @@ import { loadAffectsLanes } from '../utils/affectsLanes';
 import { loadBreakPolicies, fetchOeeTargets } from '../utils/oeeMasters';
 import { valueInk } from '../utils/statusTone';
 import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
+import { dtOpenKind } from '../utils/downtimeRules';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { loadPairMap } from '../utils/useProducts';
@@ -56,7 +57,7 @@ const pctCol = (p) => p == null ? 'var(--muted)' : p >= 95 ? 'var(--green)' : p 
 const daysSince = (iso) => iso ? Math.floor((Date.now() - new Date(iso)) / 86400000) : null;
 const dtMinOf = (d) => d.duration_min != null ? (Number(d.duration_min) || 0)
   : (d.started_at && d.ended_at ? Math.max(0, (new Date(d.ended_at) - new Date(d.started_at)) / 60000) : 0);
-const isOpenDT = (d) => !d.ended_at && d.duration_min == null;
+/* นิยาม isOpenDT/dtOpenKind อยู่ที่ utils/downtimeRules.js ที่เดียว — ห้ามก๊อปกลับมาที่นี่ */
 /* ลิงก์เข้า "คิวอนุมัติ 4M" ของใบนั้นโดยตรง (ไม่ใช่หน้ารายงานเปล่าๆ) — Report.jsx อ่าน param ชุดนี้:
    status/from = ตั้งตัวกรองให้ใบนั้นอยู่ในรายการ (ใบค้างมักเก่ากว่าช่วง default 7 วัน)
    focus = เน้นแถว + เลื่อนไปหา แล้วกดอนุมัติได้เลย
@@ -266,7 +267,15 @@ function ProductionView({ d, ctx }) {
     return { head, came };
   }, [d, lines, ctx]);
 
-  const openDT = d.dts.filter(isOpenDT);
+  /* 🔴 "เครื่องหยุดค้าง" ต้องมีกะที่ยังเปิดรองรับ — แถวเปิดค้างในกะที่ปิดไปแล้ว (เมื่อวาน/วันนี้)
+     = คนลืมปิดรายการ ไม่ใช่เครื่องหยุดอยู่ (กฎ `dtOpenKind` · utils/downtimeRules 09/11)
+     แยก 2 กอง: กองแรกไปตามเครื่อง · กองหลังไปตามปิดรายการ — ทั้งคู่ยังต้องขึ้นคิว "ต้องทำตอนนี้" */
+  const sessStatusById = useMemo(() => {
+    const m = {}; (d.sess || []).forEach(s => { m[s.id] = s.status; }); return m;
+  }, [d.sess]);
+  const dtKinds = useMemo(() => d.dts.map(x => ({ x, kind: dtOpenKind(x, sessStatusById[x.session_id] ?? null) })), [d.dts, sessStatusById]);
+  const openDT = dtKinds.filter(k => k.kind === 'open' || k.kind === 'unknown').map(k => k.x);
+  const forgottenDT = dtKinds.filter(k => k.kind === 'forgotten').map(k => k.x);
   const pendingClose = today.rows.filter(r => r.status === 'pending_close');
   /* 🔍 AM กะนี้ต่อไลน์ (เฉพาะไลน์ในขอบเขต user) — สี/กรอบ 60 นาที = `dailyAmLineStatus` (lib/pmDailyStatus) ห้ามคิดเอง
      · idle (ยังไม่เริ่มผลิต) ไม่เตือน (กติกาเดียวกับจอ AM/Telegram) · late = เลยกรอบ · wait = ยังอยู่ในกรอบ · red = พบผิดปกติ */
@@ -302,6 +311,7 @@ function ProductionView({ d, ctx }) {
     }] : []),
     ...pendingClose.map(r => ({ icon: '📋', title: `คำขอปิดกะ — ${r.line}`, detail: r.shift === 'night' ? 'กะดึก' : 'กะเช้า', tag: 'รออนุมัติ', tagColor: 'var(--amber)', to: '/daily-report' })),
     ...openDT.map(x => ({ icon: '🔴', title: `${x.dr_downtime_types?.name_th || 'Downtime'} ยังไม่ปิด`, detail: x.machine_no || x.description || '', tag: 'เครื่องหยุด', tagColor: 'var(--red)', to: '/daily-report' })),
+    ...forgottenDT.map(x => ({ icon: '⚠️', title: `${x.dr_downtime_types?.name_th || 'Downtime'} — ไม่ได้ปิดรายการ`, detail: `${x.machine_no || x.description || ''} · กะปิดไปแล้ว นาทีที่หยุดไม่ได้ถูกหักใน %A`.trim(), tag: 'ลืมปิดรายการ', tagColor: 'var(--amber)', to: '/daily-report' })),
     ...amActions,
     ...(d.amErr ? [{ icon: '⚠️', title: 'โหลดสถานะตรวจเครื่อง AM ไม่ได้', detail: 'ยังไม่รู้ว่ากะนี้ตรวจครบไหม — เปิดจอ AM ตรวจสอบ', tag: 'ไม่ทราบ', tagColor: 'var(--amber)', to: '/daily-checker?tab=pm' }] : []),
     ...d.fourM.map(f => ({ icon: '📝', title: `4M ${f.category} — ${f.line_name || '-'}`, detail: (f.description || '').slice(0, 40), age: daysSince(`${f.work_date}T08:00:00`), tag: f.status === 'pending_qa' ? 'รอ QA' : 'รอ SV', tagColor: 'var(--amber)', to: fourMLink(f) })),
@@ -328,7 +338,7 @@ function ProductionView({ d, ctx }) {
         🔴 โหลดใบงาน/Downtime/ของเสียไม่สำเร็จบางส่วน — ตัวเลขด้านล่าง<b>ไม่ครบ</b> (ดูรายละเอียดใน console)
       </div>
     )}
-    <Section title="ต้องทำตอนนี้" sub={`คำขอปิดกะ ${pendingClose.length} · กะค้างวันก่อน ${staleRows.length} · เครื่องหยุดค้าง ${openDT.length} · AM ยังไม่ตรวจ ${d.am ? amLate + amWait : '?'} เครื่อง${amNg ? ` (ผิดปกติ ${amNg})` : ''} · 4M รออนุมัติ ${d.fourM.length}`} tone={actions.length ? 'alert' : null}>
+    <Section title="ต้องทำตอนนี้" sub={`คำขอปิดกะ ${pendingClose.length} · กะค้างวันก่อน ${staleRows.length} · เครื่องหยุดค้าง ${openDT.length}${forgottenDT.length ? ` · ลืมปิดรายการ ${forgottenDT.length}` : ''} · AM ยังไม่ตรวจ ${d.am ? amLate + amWait : '?'} เครื่อง${amNg ? ` (ผิดปกติ ${amNg})` : ''} · 4M รออนุมัติ ${d.fourM.length}`} tone={actions.length ? 'alert' : null}>
       <ActionList items={actions} onPick={(it) => navigate(it.to)} />
     </Section>
 
@@ -393,7 +403,8 @@ async function loadMaintenance(ctx) {
     supabaseDR.from('mtn_orders').select('id, mo_no, status, machine_no, line_name, problem_characteristic, report_at')
       .order('report_at', { ascending: false }).limit(500),
     supabaseDR.from('pm_plans').select('id, checklist_id, plan_type, next_due_date, last_done_at, interval_days, cycle_basis, deferred_to, deferred_at').eq('is_active', true),
-    supabaseDR.from('production_sessions').select('id, line_name, work_date').gte('work_date', d30).lte('work_date', workDate),
+    // `status` = ตัวตัดสินว่าแถว downtime ที่ยังไม่ปิด "เครื่องยังหยุดอยู่" หรือ "ลืมปิดรายการ" (dtOpenKind)
+    supabaseDR.from('production_sessions').select('id, line_name, work_date, status').gte('work_date', d30).lte('work_date', workDate),
     loadPmTeams().catch(() => {}),   // ให้ isAmTeam อ่าน mtn_teams.kind ได้จริง (แยก AM ออกจาก PM ช่าง)
   ]);
   const sIds = (sess30 || []).filter(s => inScope(s.line_name)).map(s => s.id);
@@ -467,7 +478,13 @@ function MaintenanceView({ d, ctx }) {
     return Object.values(byMc).filter(m => m.times >= 2 && !hasMo.has(m.machine)).sort((a, b) => b.min - a.min);
   }, [d]);
 
-  const callMtn = d.dt30.filter(x => x.call_mtn && isOpenDT(x));
+  /* 🔴 "เรียกช่างแล้วยังไม่ปิด" = ต้องยังมีกะเปิดอยู่ — ย้อนหลัง 30 วันมีแถวที่คนลืมปิดปนอยู่
+     (กฎ `dtOpenKind` 09/11) ถ้านับรวม ช่างจะเห็นงานด่วนค้างเป็นเดือนทั้งที่กะปิดไปนานแล้ว */
+  const sess30Status = useMemo(() => {
+    const m = {}; (d.sess30 || []).forEach(s => { m[s.id] = s.status; }); return m;
+  }, [d.sess30]);
+  const callMtn = useMemo(() => d.dt30.filter(x => x.call_mtn
+    && ['open', 'unknown'].includes(dtOpenKind(x, sess30Status[x.session_id] ?? null))), [d.dt30, sess30Status]);
   const byStep = {};
   scopedMo.forEach(o => { byStep[o.status] = (byStep[o.status] || 0) + 1; });
   const unplannedMin = d.dt30.filter(x => x.dr_downtime_types?.category !== 'planned').reduce((a, x) => a + dtMinOf(x), 0);

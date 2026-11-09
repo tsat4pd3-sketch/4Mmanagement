@@ -869,6 +869,13 @@ export default function VSM() {
                   หยุดตามแผนค้าง {liveData.summary.plannedOpen} รายการ (ไม่นับเป็น Andon)
                 </span>
               )}
+              {/* แถวเปิดค้างในกะที่ปิดไปแล้ว = คนลืมปิดรายการ — ไม่ใช่ Andon (กฎ dtOpenKind) แต่ห้ามซ่อน */}
+              {(liveData?.summary?.forgottenDt || 0) > 0 && (
+                <span title="กะปิดไปแล้วแต่รายการ Downtime ยังไม่ถูกปิด — นาทีที่หยุดไม่ได้ถูกหักใน %A ของกะนั้น"
+                  style={{ fontSize: 12, padding: '5px 12px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', color: 'var(--amber)', border: '1px solid var(--border)', fontWeight: 700 }}>
+                  ⚠️ ไม่ได้ปิดรายการ {liveData.summary.forgottenDt} ใบ (กะปิดแล้ว)
+                </span>
+              )}
             </div>
 
             {/* ── Downtime ค้าง (Andon) — ต้องเห็นก่อนอย่างอื่น ห้ามซ่อน ── */}
