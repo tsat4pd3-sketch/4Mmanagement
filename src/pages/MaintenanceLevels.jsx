@@ -225,8 +225,8 @@ export default function MaintenanceLevels() {
      ⚠️ **คนละแกนกับ `scopeLines` (Set) ข้างบน** ซึ่งเป็นตัวกรองรายการ + ฐานของด่านสิทธิ์ขั้นเซ็น
         (`reporterScope`) — ตัวนั้นต้อง fail-closed เหมือนเดิม **ห้ามยุบรวมกัน** */
   const scopedLineObjs = useMemo(
-    () => pickerLines(lines, { role, lineId, sections }),
-    [lines, role, lineId, sections]);
+    () => pickerLines(lines, { role, lineId, sections, scopeIdx }),
+    [lines, role, lineId, sections, scopeIdx]);
   const famOfSel = useMemo(() => (line ? new Set(lineFamilyOf(line)) : null), [line, lineFamilyOf]);
 
   // กรองระดับอุปกรณ์ (ขอบเขต → ไลน์ → ชนิด → คำค้น) — การ์ดหัว 3 ระดับคิดจากชุดนี้

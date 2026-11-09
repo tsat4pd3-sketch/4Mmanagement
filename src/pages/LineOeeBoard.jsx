@@ -58,7 +58,7 @@ const hrs = (min) => (min / 60).toLocaleString(undefined, { maximumFractionDigit
 const nf = (v, d = 0) => (v == null || !Number.isFinite(v) ? '—' : Number(v).toLocaleString(undefined, { maximumFractionDigits: d }));
 
 export default function LineOeeBoard() {
-  const { role, lineId, sections } = useContext(UserContext);
+  const { role, lineId, sections, scopeIdx } = useContext(UserContext);
   /* 📺 โหมดจอประชุม (20/10 · TV 43–50" ยืนดู 2–3 ม.) — ทุกอย่างผูกกับ `tv` · จอคอมเหมือนเดิมเป๊ะ
      ตัวเลขใหญ่ขึ้น · ตัดคำอธิบายเล็ก · เต็มความสูงจอพอดี (ไม่ล้น — ล้น = ตัววนจอย่อ zoom ตัวหนังสือกลับไปเล็ก) */
   const tv = useTvShell();
@@ -117,8 +117,8 @@ export default function LineOeeBoard() {
     return act.filter(l => everLines.has(l.name) || getLeafLineNames(act, l.name).some(n => everLines.has(n)));
   }, [lines, everLines]);
   const options = useMemo(
-    () => lineOptions(boardLines, { role, lineId, sections }).map(o => o.value),
-    [boardLines, role, lineId, sections],
+    () => lineOptions(boardLines, { role, lineId, sections, scopeIdx }).map(o => o.value),
+    [boardLines, role, lineId, sections, scopeIdx],
   );
   // deep-link ?line= — นอก scope/สะกดผิด = ตกไปตัวแรกที่เข้าได้ (pattern เดียวกับ Management)
   const line = useMemo(() => {
@@ -411,7 +411,7 @@ export default function LineOeeBoard() {
         <span style={{ fontSize: 17, fontWeight: 900, color: 'var(--text)' }}>OEE รายไลน์ (Weekly)</span>
         {/* picker กลาง (UI §5.1.2) — ลำดับชั้นแม่→ลูกครบ · width กัน index.css select width:100% */}
         <LineSelect lines={boardLines} value={line} onChange={setLine} placeholder={null}
-          role={role} lineId={lineId} sections={sections}
+          role={role} lineId={lineId} sections={sections} scopeIdx={scopeIdx}
           style={{ width: 250, padding: '6px 10px', fontSize: 14, fontWeight: 700, borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} />
         <span style={{ fontSize: 12, color: 'var(--muted)' }}>หน้าต่าง {DAYS_KPI} วันล่าสุด{C?.liveInWindow ? ' · รวมกะที่กำลังเปิด (สด)' : ''}</span>
         <span style={{ marginLeft: 'auto', fontSize: 20, fontWeight: 900, color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>

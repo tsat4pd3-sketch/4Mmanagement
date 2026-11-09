@@ -14,6 +14,7 @@ import { ALL } from '../utils/filterLabels';
 const SCAN_PARAMS_CLEAR = { line: null, ctype: null, qty: null };
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
+import { lineScope, filterRowsByLineScope } from '../utils/sectionScope';
 import { UserContext } from '../App';
 import LineSelect from '../components/LineSelect';
 import { can } from '../utils/permissions';
@@ -73,8 +74,8 @@ const parseCallQr = (text) => {
 };
 
 export default function RackCenter() {
-  const { fullName, role, lineId, sections } = useContext(UserContext);
-  const scope = useMemo(() => ({ role, lineId, sections }), [role, lineId, sections]);
+  const { fullName, role, lineId, sections, scopeIdx } = useContext(UserContext);
+  const scope = useMemo(() => ({ role, lineId, sections, scopeIdx }), [role, lineId, sections, scopeIdx]);   // scopeIdx = ขยายขอบเขตผ่านผังองค์กร (LineSelect รับแล้ว 09/11)
   const canOperate = can('rack_center', 'operate', role);
 
   const [lines,          setLines]          = useState([]);
@@ -161,9 +162,30 @@ export default function RackCenter() {
     return () => { bump.cancel(); supabaseDR.removeChannel(ch); };
   }, [load]);
 
+  /* 🔭 ขอบเขตของบัญชี (09/11 · user: "ถ้าเป็น user จอของส่วนงานไหนก็ควรจะแสดงแค่แผนกหรือส่วนงานตัวเอง")
+     แกนเดียวกับ FactoryMap — `lineScope()` (sectionScope.js) · `unlimited` (admin/ไม่จำกัด/ทะเบียนยังไม่โหลด)
+     = พฤติกรรมเดิมเป๊ะ · ตัดแล้วต้องเขียนบนจอว่าซ่อนกี่ใบ · แถวไม่ระบุไลน์/ไลน์นอกทะเบียน = คงไว้
+     · `unsure` = เขียนเตือนบนจอ ห้ามเงียบ */
+  const scopeKey = (sections || []).join('|');
+  const viewScope = useMemo(() => lineScope({ role, lineId, sections: sections || [], lines, scopeIdx }),
+    [role, lineId, scopeKey, lines, scopeIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+  const scopedNames = useMemo(() => (viewScope.unlimited ? null : viewScope.names), [viewScope]);
+  const scopedLineList = useMemo(() => {
+    if (!scopedNames) return lines;
+    const ok = new Set(scopedNames);
+    return lines.filter(l => ok.has(l.name));
+  }, [lines, scopedNames]);
+  const allLineNames = useMemo(() => lines.map(l => l.name), [lines]);
+  const reqScoped = useMemo(() => filterRowsByLineScope(requests, { scopedNames, lineNames: allLineNames }),
+    [requests, scopedNames, allLineNames]);
+  const pkgScoped = useMemo(() => filterRowsByLineScope(pkgReqs, { scopedNames, lineNames: allLineNames, nameOf: p => p?.source_line }),
+    [pkgReqs, scopedNames, allLineNames]);
+  const scopeLabel = (sections || []).filter(Boolean).join(' · ') || 'ไลน์ของคุณ';
+
   const filtered = useMemo(() => {
-    return lineFilter ? requests.filter(r => r.line_name === lineFilter) : requests;
-  }, [requests, lineFilter]);
+    const rows = reqScoped.rows;
+    return lineFilter ? rows.filter(r => r.line_name === lineFilter) : rows;
+  }, [reqScoped, lineFilter]);
 
   const byStatus = useMemo(() => {
     const m = { requested: [], preparing: [], delivered: [], received: [] };
@@ -321,20 +343,33 @@ export default function RackCenter() {
         ) : null}
         tabs={VIEW_TABS} tab={view} onTab={setView} />
       <FilterBar>
-        <LineSelect lines={lines} value={lineFilter} onChange={setLineFilter} {...scope}
+        <LineSelect lines={scopedLineList} value={lineFilter} onChange={setLineFilter} {...scope}
           placeholder={ALL.line} />
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)', cursor: 'pointer' }}>
           <input type="checkbox" checked={showDone} onChange={e => setShowDone(e.target.checked)} />
           แสดงที่รับแล้ว
         </label>
       </FilterBar>
+      {(scopedNames || viewScope.unsure) && (reqScoped.hidden + pkgScoped.hidden > 0 || viewScope.unsure) && (
+        <div title={viewScope.unsure ? 'ตัดขอบเขตของบัญชีนี้ไม่ได้ (ทะเบียนไลน์ยังไม่โหลด/ส่วนงานไม่ตรงผัง)' : `ขอบเขตของบัญชีนี้: ${scopeLabel}`}
+          style={{ display: 'inline-block', margin: '0 0 12px', padding: '4px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700,
+            color: viewScope.unsure ? 'var(--amber)' : 'var(--accent)',
+            background: viewScope.unsure ? 'var(--amber-dim)' : 'var(--accent-dim)',
+            border: `1px solid ${viewScope.unsure ? 'var(--amber-line)' : 'var(--accent)'}` }}>
+          {viewScope.unsure
+            ? (scopedNames
+              ? `⚠ ขอบเขตไม่ชัด — แสดงเฉพาะ ${scopeLabel} · ซ่อน ${reqScoped.hidden + pkgScoped.hidden} ใบนอกขอบเขต`
+              : '⚠ ตัดขอบเขตไม่ได้ — แสดงทั้งโรงงาน')
+            : `🔭 เฉพาะ ${scopeLabel} · ซ่อน ${reqScoped.hidden} ใบเรียกภาชนะ${pkgScoped.hidden ? ` + ${pkgScoped.hidden} ใบเบิก packaging` : ''} นอกขอบเขต`}
+        </div>
+      )}
 
       {scanOpen && <QrScanModal onClose={() => setScanOpen(false)} onResult={(text) => applyScan(parseCallQr(text))} />}
       {qrOpen && <QrLabelModal lines={lines} containerTypes={containerTypes} onClose={() => setQrOpen(false)} onPrint={printQrLabels} />}
 
       {/* Packaging withdrawal requests (auto จากการผลิต FG) */}
       {(() => {
-        const pending = pkgReqs.filter(p => p.status !== 'issued');
+        const pending = pkgScoped.rows.filter(p => p.status !== 'issued');
         if (pending.length === 0) return null;
         return (
           <div style={{ ...card, marginBottom: 16, borderColor: 'var(--amber-line)' }}>

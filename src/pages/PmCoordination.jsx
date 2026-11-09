@@ -180,8 +180,8 @@ export default function PmCoordination() {
      กรองแล้วเหลือ 0 ⇒ dropdown ว่าง = ใช้ฟีเจอร์ไม่ได้ทั้งหน้า (เคสจริง 26/10 · ด่าน line-picker-never-dead)
      ⇒ ผ่าน `scopeLines()` ของกลาง (components/LineSelect.jsx) = "กรองแล้วไม่เหลือ = ไม่กรอง" */
   const scopeLineList = useMemo(
-    () => pickerLines(lines, { role, lineId, sections: scopeSecs }),
-    [lines, role, lineId, scopeSecs]);
+    () => pickerLines(lines, { role, lineId, sections: scopeSecs, scopeIdx }),
+    [lines, role, lineId, scopeSecs, scopeIdx]);
 
   // ช่วง Production Support ที่กำลังจะถึง (is_support · วันนี้เป็นต้นไป · แผนที่ยังไม่ done/cancelled) — เตือน Production ล่วงหน้า
   const upcomingSupport = useMemo(() => {
