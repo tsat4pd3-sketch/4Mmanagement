@@ -97,7 +97,7 @@ export const KPI_BASE_VARS = [
   { key: 'oh',             label: 'ค่าโสหุ้ย (Overhead)',                    unit: 'บาท', level: 'unit' },
   { key: 'raw_material',   label: 'ต้นทุนวัตถุดิบ (Raw Material)',           unit: 'บาท', level: 'unit' },
   { key: 'inventory_baht', label: 'มูลค่าสต็อกสิ้นเดือน (ตาม storage location)', unit: 'บาท', level: 'unit' },
-  { key: 'manpower',       label: 'กำลังคนเฉลี่ย (หัว)',                      unit: 'คน',  level: 'unit' },
+  { key: 'manpower',       label: 'กำลังคนทั้งโรงงาน (Total Head count All)', unit: 'คน',  level: 'plant' },   // 09/11 user: ยอดขาย/หัว = ค่ากลาง ⇒ ตัวหาร = คนทั้งโรงงานจากใบ 5.Manpower (เดิม level unit)
   { key: 'cost_100p',      label: '100P + CR (มูลค่าที่ลดได้)',              unit: 'บาท', level: 'unit' },
 ];
 
@@ -126,7 +126,9 @@ export const KPI_FORMULAS = [
   { key: 'inventory_day', label: 'DSI (วัน)',   expr: '(inventory_baht ÷ cogs) × days_in_month',      vars: ['inventory_baht', 'cogs', 'days_in_month'], unit: 'วัน' },
   /* 19/10 ใบจริง "5.Manpower" แถว "Sale All / Head (All)" = **Accumulate Total Sale (ม.ค.→เดือนนี้) ÷ Total Head count (All) ของเดือนนั้น**
      (เม.ย. 706.43 ÷ 392 = 1.802 · พ.ค. 887.45 ÷ 384 = 2.311 · ทั้งปี 2,118.70 ÷ 386 = 5.489 = เป้า) ⇒ ตัวตั้งสะสม YTD ไม่ใช่ยอดเดือนเดียว (`cum`) */
-  { key: 'sale_per_head', label: 'ยอดขาย/หัว (MB)', expr: 'Σ sale_total (ม.ค.→เดือนนี้) ÷ manpower ÷ 1,000,000', vars: ['sale_total', 'manpower'], cum: ['sale_total'], unit: 'MB' },
+  /* 09/11 user: "sales/head ต้องเท่ากันทุกส่วนงาน เป็นค่ากลาง ยอดขายรวม ÷ ยอดคนทั้งโรงงาน จากไฟล์บัญชี" ⇒ `scope:'plant'` = ทุกตัวแปรอ่านจาก ทั้งโรงงาน
+     ไม่ว่านิยามจะอยู่หน่วยไหน (เคส PD1: Σ ยอดขายโรงงาน ÷ กำลังคน PD1 32 คน = 47.951 ทั้งที่ค่ากลาง ~4) · catalog `value_scope='plant'` ให้ทุกหน่วยอ่านแผ่นโรงงาน */
+  { key: 'sale_per_head', label: 'ยอดขาย/หัว (MB)', expr: 'Σ sale_total (ม.ค.→เดือนนี้) ÷ manpower ทั้งโรงงาน ÷ 1,000,000', vars: ['sale_total', 'manpower'], cum: ['sale_total'], unit: 'MB', scope: 'plant' },
 ];
 
 export const formulaOf = (key) => KPI_FORMULAS.find(f => f.key === key) || null;
