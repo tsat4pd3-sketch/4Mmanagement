@@ -474,3 +474,30 @@ export function liveSeries(readings, meters) {
   }
   return { byScope, panelPeak }
 }
+
+/**
+ * ⚡ ค่าไฟสดของ "กรอบบนผังโรงงาน" (FactoryMap metric พลังงาน · 2026-11-09)
+ * กรอบ = ชุดชื่อไลน์ (familyNames — แม่ + ลูก) · ตู้ไหนจ่ายให้ไลน์ไหน = ไลน์ของเครื่องที่ผูกใน energy_meter_machines
+ * 🔴 ตู้ 1 ตู้จ่ายหลายไลน์ได้ (DB-LASER = LASER-345 + LASER-789) — **ห้ามหารแบ่ง** (ไม่มีมิเตอร์รายไลน์ = ไม่รู้สัดส่วน)
+ *    ⇒ คืน `sharedWith` = ไลน์นอกกรอบที่ใช้ตู้เดียวกัน ให้จอเขียน "รวมกับ …"
+ * @param {string[]} names       ชื่อไลน์ในกรอบ
+ * @param {Array} boardMeters    buildLiveBoard().meters
+ * @param {Map<string,Set<string>>} meterLines  key ตู้ ('zone|DB-LASER') → ชุดไลน์ที่ตู้จ่ายให้
+ * @returns {null | { kw, online, total, over, meters:string[], sharedWith:string[] }}
+ *   null = กรอบนี้ไม่มีตู้สด · kw = null เมื่อทุกตู้ไม่ออนไลน์ (ห้ามเป็น 0)
+ */
+export function liveForNames(names, boardMeters, meterLines) {
+  const set = new Set(names || [])
+  const hit = (boardMeters || []).filter(m => [...(meterLines?.get(m.key) || [])].some(l => set.has(l)))
+  if (!hit.length) return null
+  const on = hit.filter(m => m.status === 'online' && m.kw != null)
+  const shared = new Set()
+  for (const m of hit) for (const l of meterLines.get(m.key) || []) if (!set.has(l)) shared.add(l)
+  return {
+    kw: on.length ? on.reduce((s, m) => s + m.kw, 0) : null,
+    online: on.length, total: hit.length,
+    over: hit.some(m => m.overKw || m.overA),
+    meters: hit.map(m => m.name),
+    sharedWith: [...shared].sort(),
+  }
+}
