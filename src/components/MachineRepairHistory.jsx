@@ -23,7 +23,7 @@ const fmtBaht = (v) => (v == null ? '—' : `${Number(v).toLocaleString('th-TH',
 
 function Card({ t, v, h }) {
   return (
-    <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', minWidth: 0 }}>
+    <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 10px', minWidth: 0 }}>
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{t}</div>
       <div style={{ fontSize: 17, fontWeight: 800 }}>{v}</div>
       {h && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{h}</div>}
@@ -124,7 +124,7 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>ทีมช่าง:</span>
                 <select value={team} onChange={e => setTeam(e.target.value)} aria-label="กรองตามทีมช่าง"
-                  style={{ height: 26, fontSize: 11.5, borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', padding: '0 6px' }}>
+                  style={{ height: 26, fontSize: 11.5, borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', padding: '0 6px' }}>
                   <option value="all">ทุกทีม ({state.orders.length} ใบ)</option>
                   {teamsSeen.map(([k, n]) => (
                     <option key={k || '_none'} value={k}>{k ? (deptNameOf(k) || k) : '— ไม่ระบุทีม —'} ({n} ใบ)</option>
@@ -155,7 +155,7 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
           }} title="ใบบันทึกประวัติการซ่อมและการทำ PM MACHINE (FM-MTN-005) — A4 แนวนอน หน้าละ 15 แถว"
             style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: state.loading || state.err || exporting ? 0.6 : 1 }}>
             {exporting ? 'กำลังสร้าง…' : '⬇️ Excel (FM-MTN-005)'}</button>
-          <button onClick={onClose} style={{ background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 14px', fontSize: 13, cursor: 'pointer' }}>✕ ปิด</button>
+          <button onClick={onClose} style={{ background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '7px 14px', fontSize: 13, cursor: 'pointer' }}>✕ ปิด</button>
         </div>
         <div style={{ overflow: 'auto', padding: 14 }}>
           {state.loading && <div style={{ color: 'var(--muted)', fontSize: 13 }}>⏳ กำลังโหลดประวัติ…</div>}
@@ -219,7 +219,7 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
                 {!showAll && sum.rows.length > ROWS_FIRST && (
                   <button onClick={() => setShowAll(true)}
                     style={{ marginTop: 8, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)',
-                      borderRadius: 8, padding: '6px 12px', fontSize: 12.5, cursor: 'pointer' }}>
+                      borderRadius: 'var(--r-md)', padding: '6px 12px', fontSize: 12.5, cursor: 'pointer' }}>
                     ▾ แสดงอีก {sum.rows.length - ROWS_FIRST} ใบ (ทั้งหมด {sum.rows.length} ใบ)
                   </button>
                 )}

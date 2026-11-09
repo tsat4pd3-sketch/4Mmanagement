@@ -118,11 +118,11 @@ export default function EnergyMqttTopics({ points, canEdit }) {
     <div style={{ display: 'grid', gap: 14 }}>
       {/* ⚠️ สถานะระบบ — เรื่องสำคัญที่สุดของหน้านี้ ต้องอยู่บนสุดและอ่านไม่ผิด */}
       {missing ? (
-        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 8, padding: '10px 12px', fontSize: 12.5 }}>
+        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 'var(--r-md)', padding: '10px 12px', fontSize: 12.5 }}>
           ⚠️ <b>ยังไม่ได้ apply migration <code>20260820_energy_mqtt_topics</code></b> — ยังเพิ่ม topic ไม่ได้ (แจ้ง admin)
         </div>
       ) : !bridgeAlive ? (
-        <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '10px 12px', fontSize: 12.5, lineHeight: 1.65 }}>
+        <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 'var(--r-md)', padding: '10px 12px', fontSize: 12.5, lineHeight: 1.65 }}>
           📡 <b>ยังไม่มีข้อมูลเข้ามาจากมิเตอร์</b>
           {newestAge != null && <> (ล่าสุดเมื่อ {newestAge} นาทีที่แล้ว — เกิน {LIVE_STALE_MIN} นาที ถือว่าขาดการติดต่อ)</>}
           <div style={{ marginTop: 4, color: 'var(--text2)' }}>
@@ -133,7 +133,7 @@ export default function EnergyMqttTopics({ points, canEdit }) {
           </div>
         </div>
       ) : (
-        <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', borderRadius: 8, padding: '10px 12px', fontSize: 12.5 }}>
+        <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid #22c55e', borderRadius: 'var(--r-md)', padding: '10px 12px', fontSize: 12.5 }}>
           ✅ <b>ระบบกำลังรับข้อมูลอยู่</b> — ค่าล่าสุดเข้ามาเมื่อ {newestAge} นาทีที่แล้ว
         </div>
       )}
@@ -171,11 +171,11 @@ export default function EnergyMqttTopics({ points, canEdit }) {
             <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 160px' }}>หมายเหตุ<br />
               <input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} style={inp} /></label>
             <button onClick={save} disabled={busy}
-              style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+              style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
               {busy ? '⏳' : editId ? '💾 บันทึก' : '+ เพิ่ม'}
             </button>
             {editId && <button onClick={() => { setEditId(null); setForm(EMPTY); }}
-              style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>}
+              style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>}
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.6 }}>
             <b>payload เป็นตัวเลขล้วน</b> (เช่น <code>26.2</code>) → เว้นช่อง JSON ว่าง ·
@@ -202,7 +202,7 @@ export default function EnergyMqttTopics({ points, canEdit }) {
                   <td style={{ ...td, color: 'var(--muted)' }}>{liveAgeMin(u.last_seen) != null ? `${liveAgeMin(u.last_seen)} นาทีก่อน` : '—'}</td>
                   <td style={{ ...td, textAlign: 'right' }}>
                     {canEdit && <button onClick={() => adoptTopic(u)}
-                      style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--accent)', cursor: 'pointer' }}>+ ผูก</button>}
+                      style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--accent)', cursor: 'pointer' }}>+ ผูก</button>}
                   </td>
                 </tr>
               ))}
@@ -253,10 +253,10 @@ export default function EnergyMqttTopics({ points, canEdit }) {
                     {canEdit && (
                       <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                         <button onClick={() => toggleActive(r)} title={r.is_active ? 'ปิดใช้ชั่วคราว (ไม่ลบ)' : 'เปิดใช้'}
-                          style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 700, marginRight: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: r.is_active ? GOOD : 'var(--muted)', cursor: 'pointer' }}>
+                          style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, marginRight: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: r.is_active ? GOOD : 'var(--muted)', cursor: 'pointer' }}>
                           {r.is_active ? 'ใช้อยู่' : 'ปิด'}
                         </button>
-                        <button onClick={() => editRow(r)} style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, marginRight: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>✏️</button>
+                        <button onClick={() => editRow(r)} style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, marginRight: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>✏️</button>
                         <DeleteButton onClick={() => del(r)} title="ลบ" />
                       </td>
                     )}

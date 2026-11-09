@@ -142,7 +142,7 @@ export default function StoreCallSiren({ slot = 0 }) {
     /* อ่านใบไม่ได้ ต้องขึ้นให้เห็น — "เงียบ" กับ "ไม่มีใบ" หน้าตาเหมือนกันจากข้างนอก */
     if (loadErr) return (
       <div style={fixed({ bottom: chipBottom, right: 12, display: 'flex', alignItems: 'center', gap: 7,
-        background: 'rgba(28,10,10,0.95)', border: '1px solid rgba(239,68,68,0.6)', borderRadius: 10,
+        background: 'rgba(28,10,10,0.95)', border: '1px solid rgba(239,68,68,0.6)', borderRadius: 'var(--r-md)',
         padding: '7px 11px', fontSize: 11.5, fontWeight: 800, color: '#f87171', boxShadow: 'var(--shadow-lg)' })}>
         ⚠️ อ่านใบขอเบิกจากไลน์ไม่ได้ — ยังบอกไม่ได้ว่ามีไลน์เรียกของหรือไม่
       </div>
@@ -152,7 +152,7 @@ export default function StoreCallSiren({ slot = 0 }) {
     return (
       <div onClick={unlockNow} title="เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ 1 ครั้ง — จอที่เปิดทิ้งไว้ต้องแตะทุกครั้งที่หน้าโหลดใหม่"
         style={fixed({ bottom: chipBottom, right: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 7,
-          background: 'rgba(20,16,6,0.94)', border: '1px solid rgba(251,191,36,0.5)', borderRadius: 10,
+          background: 'rgba(20,16,6,0.94)', border: '1px solid rgba(251,191,36,0.5)', borderRadius: 'var(--r-md)',
           padding: '7px 11px', fontSize: 11.5, fontWeight: 800, color: '#fbbf24', boxShadow: 'var(--shadow-lg)' })}>
         เสียงเตือน "ไลน์เรียกของ" ยังไม่พร้อม — แตะที่นี่ 1 ครั้ง
       </div>
@@ -168,7 +168,7 @@ export default function StoreCallSiren({ slot = 0 }) {
           /* 📱 `andon-bar` = ให้แถบขึ้นบรรทัดใหม่ได้บนมือถือ (index.css · media query เท่านั้น)
              ไม่มีคลาสนี้ = ข้อความถูกปุ่มบีบจนเหลือกว้าง 0 บนจอ 390px (มีด่าน) */
           <div key={a.id} className="dt-alarm-blink andon-bar" style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 12,
-            background: 'rgba(8,20,14,0.96)', border: '2px solid #22c55e', borderRadius: 12, padding: '10px 14px', boxShadow: 'var(--shadow-float)' }}>
+            background: 'rgba(8,20,14,0.96)', border: '2px solid #22c55e', borderRadius: 'var(--r-lg)', padding: '10px 14px', boxShadow: 'var(--shadow-float)' }}>
             <span style={{ fontSize: 22 }}>📦</span>
             <div className="andon-bar-msg" style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff' }}>
@@ -190,7 +190,7 @@ export default function StoreCallSiren({ slot = 0 }) {
               </span>
             )}
             <button onClick={() => goPrep(a)} title="ไปหน้าเตรียมงาน — Line Stock › 📤 ขาออก › ตู้ตามเลขพาร์ท (กรองเฉพาะพาร์ทนี้)"
-              style={{ flexShrink: 0, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 8,
+              style={{ flexShrink: 0, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)',
                 padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
               ไปเตรียมงาน
             </button>
@@ -198,7 +198,7 @@ export default function StoreCallSiren({ slot = 0 }) {
               title={canAck ? 'หยุดเสียงเท่านั้น — ใบยังรอหยิบอยู่ในคิวสโตร์เหมือนเดิม'
                             : 'บัญชีนี้ไม่มีสิทธิ์บันทึกรับทราบ (heijunka:operate) — ปิดได้เฉพาะเสียงบนจอนี้ รีโหลดแล้วดังใหม่'}
               style={{ flexShrink: 0, background: canAck ? '#22c55e' : 'var(--bg3)', color: canAck ? '#04140a' : 'var(--text2)',
-                border: canAck ? 'none' : '1px solid var(--border2)', borderRadius: 8,
+                border: canAck ? 'none' : '1px solid var(--border2)', borderRadius: 'var(--r-md)',
                 padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
               {canAck ? 'รับทราบ · หยุดเสียง' : '🔇 ปิดเสียงเฉพาะจอนี้'}
             </button>
@@ -207,7 +207,7 @@ export default function StoreCallSiren({ slot = 0 }) {
       })}
       {alerts.length > maxBars && (
         <div style={{ pointerEvents: 'auto', background: 'rgba(8,20,14,0.96)', border: '1px solid rgba(34,197,94,0.5)',
-          borderRadius: 10, padding: '7px 12px', fontSize: 11.5, fontWeight: 800, color: '#86efac', textAlign: 'center' }}>
+          borderRadius: 'var(--r-md)', padding: '7px 12px', fontSize: 11.5, fontWeight: 800, color: '#86efac', textAlign: 'center' }}>
           + อีก {alerts.length - maxBars} ใบที่ไลน์เรียกแล้วยังไม่มีใครรับทราบ — ทำรายการที่ Line Stock → 📤 ขาออก (ตู้ตามเลขพาร์ท)
         </div>
       )}

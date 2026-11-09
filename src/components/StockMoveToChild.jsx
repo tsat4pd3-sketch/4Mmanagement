@@ -128,7 +128,7 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
   };
 
   return (
-    <div style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 10, padding: 12, marginBottom: 14 }}>
+    <div style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 'var(--r-md)', padding: 12, marginBottom: 14 }}>
       <div onClick={() => setOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
         <span style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>
           {open ? '▼' : '▶'} 🔀 มีสต๊อกค้างอยู่ที่ “ไลน์แม่” {rows.length} พาร์ท — ระบบหักตอนผลิตไม่ได้
@@ -201,7 +201,7 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
                       </td>
                       <td style={td}>
                         <button disabled={!canIssue || busy === r.key} onClick={() => move(r)}
-                          style={{ padding: '5px 12px', borderRadius: 6, border: 'none', fontSize: 12, fontWeight: 700,
+                          style={{ padding: '5px 12px', borderRadius: 'var(--r-md)', border: 'none', fontSize: 12, fontWeight: 700,
                             background: canIssue ? '#f59e0b' : 'var(--muted)', color: '#fff', cursor: canIssue ? 'pointer' : 'not-allowed' }}>
                           {busy === r.key ? '...' : '🔀 ย้าย'}
                         </button>

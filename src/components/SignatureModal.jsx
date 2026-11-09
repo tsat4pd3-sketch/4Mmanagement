@@ -22,6 +22,10 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
   const canvasRef = useRef(null);
   const drawing = useRef(false);
   const lastPos = useRef({ x: 0, y: 0 });
+  /* 🔴 มีเส้นบนกระดาษจริงหรือยัง (09/11 · เคสจริง) — เดิมกด "บันทึก" บนกระดาษเปล่าได้
+     ⇒ โปรไฟล์ได้รูปขาวล้วน (1.6 KB) แล้วทุกใบที่ดึงลายเซ็นสดจากโปรไฟล์ (`utils/signResolve.js`)
+     กลายเป็นช่องว่างหมด รวมใบเก่า — คนเห็นว่า "เซ็นไม่ติด ลายเซ็นเก่าก็หาย" */
+  const hasInk = useRef(false);
 
   // Reset state when modal closes
   useEffect(() => {
@@ -41,6 +45,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
       const ctx = canvas.getContext('2d');
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+      hasInk.current = false;
     }, 50);
   }, [open, tab]);
 
@@ -63,6 +68,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
   const startDraw = useCallback((e) => {
     e.preventDefault();
     drawing.current = true;
+    hasInk.current = true;
     const canvas = canvasRef.current;
     const pos = getPos(e, canvas);
     lastPos.current = pos;
@@ -101,6 +107,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    hasInk.current = false;
   };
 
   const handleFileChange = async (e) => {
@@ -118,6 +125,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
   };
 
   const handleSave = async () => {
+    if (tab === 'draw' && !hasInk.current) { toast.error('ยังไม่ได้เซ็น — วาดลายเซ็นในกรอบก่อนกดบันทึก'); return; }
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -218,7 +226,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
       <div style={{
         width: 'min(480px, 100%)',
         background: 'var(--card)',
-        borderRadius: 16,
+        borderRadius: 'var(--r-lg)',
         boxShadow: 'var(--shadow-lg)',
         overflow: 'hidden',
       }}>
@@ -241,7 +249,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>ลายเซ็นปัจจุบัน</div>
               <div style={{
-                border: '1px solid var(--border)', borderRadius: 8,
+                border: '1px solid var(--border)', borderRadius: 'var(--r-md)',
                 padding: 8, background: 'var(--bg2)', textAlign: 'center',
               }}>
                 <img src={currentSignatureUrl} alt="signature" style={{ maxHeight: 60, maxWidth: '100%', objectFit: 'contain' }} />
@@ -250,7 +258,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
           )}
 
           {/* Tabs */}
-          <div style={{ display: 'flex', gap: 0, marginBottom: 14, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', gap: 0, marginBottom: 14, borderRadius: 'var(--r-md)', overflow: 'hidden', border: '1px solid var(--border)' }}>
             {[
               { key: 'draw', label: '✏️ วาดลายเซ็น' },
               { key: 'upload', label: 'อัปโหลดรูป' },
@@ -269,7 +277,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
           {tab === 'draw' && (
             <div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>วาดลายเซ็นในกรอบด้านล่าง</div>
-              <div style={{ border: '2px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: '#fff', cursor: 'crosshair' }}>
+              <div style={{ border: '2px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'hidden', background: '#fff', cursor: 'crosshair' }}>
                 <canvas
                   ref={canvasRef}
                   width={440}
@@ -285,7 +293,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
                 />
               </div>
               <button onClick={clearCanvas} style={{
-                marginTop: 8, padding: '6px 14px', fontSize: 12, borderRadius: 6,
+                marginTop: 8, padding: '6px 14px', fontSize: 12, borderRadius: 'var(--r-md)',
                 background: 'var(--bg3)', border: '1px solid var(--border2)',
                 color: 'var(--text2)', cursor: 'pointer',
               }}>ล้าง</button>
@@ -299,7 +307,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
               <input type="file" accept="image/*" onChange={handleFileChange} style={{ fontSize: 13 }} />
               {uploadPreview && (
                 <div style={{
-                  marginTop: 12, border: '1px solid var(--border)', borderRadius: 8,
+                  marginTop: 12, border: '1px solid var(--border)', borderRadius: 'var(--r-md)',
                   padding: 10, background: 'var(--bg2)', textAlign: 'center',
                 }}>
                   <img src={uploadPreview} alt="preview" style={{ maxHeight: 120, maxWidth: '100%', objectFit: 'contain' }} />
@@ -312,14 +320,14 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
             <button onClick={handleSave} disabled={saving} style={{
               flex: 2, padding: '10px 0', background: 'var(--accent)', color: 'var(--accent-ink)',
-              border: 'none', borderRadius: 8, fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer',
+              border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer',
               opacity: saving ? 0.7 : 1, fontSize: 13,
             }}>
               {saving ? 'กำลังบันทึก...' : '💾 บันทึกลายเซ็น'}
             </button>
             <button onClick={onClose} style={{
               flex: 1, padding: '10px 0', background: 'var(--bg3)',
-              border: '1px solid var(--border2)', borderRadius: 8,
+              border: '1px solid var(--border2)', borderRadius: 'var(--r-md)',
               color: 'var(--text2)', cursor: 'pointer', fontSize: 13,
             }}>ยกเลิก</button>
           </div>

@@ -25,6 +25,7 @@ import {
   TV_SHELL_PARAM, moRotationItems,
 } from '../utils/displayRotation';
 
+import SectionScopeSelect from '../components/SectionScopeSelect';
 /* ══ 🔁 ตั้งค่าจอวนหน้า — /display-rotation ══════════════════════════════════════════
    2026-10-09 · คำสั่ง user: "แบบมีหน้า config ได้ ว่าจอ user นี้จะเปิดอะไรวนบ้าง"
    2026-10-14 · รอบ 2 (feedback หลังติดทีวี 13 จอ):
@@ -295,7 +296,7 @@ export default function DisplayRotation() {
             return (
               <button key={a.id} type="button" onClick={() => pick(a.id)} aria-current={on ? 'true' : undefined}
                 style={{
-                  textAlign: 'left', padding: '7px 10px', borderRadius: 10, display: 'grid', gap: 2,
+                  textAlign: 'left', padding: '7px 10px', borderRadius: 'var(--r-md)', display: 'grid', gap: 2,
                   background: on ? 'var(--accent-dim)' : 'var(--bg2)', color: 'var(--text)',
                   border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
                 }}>
@@ -546,7 +547,7 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
     const shownSec = Math.max(secOf(it, defaultSec), minSecForPath(it.path));
     return (
       <div onClick={onFocus} role="button" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') onFocus(); }}
-        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 10, cursor: 'pointer',
+        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
           border: '1px solid var(--border2)', background: 'var(--bg2)', minWidth: 0 }}>
         <b style={{ width: 22, textAlign: 'center', fontSize: 13 }}>{i + 1}</b>
         <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>{meta ? `${meta.icon} ${meta.label}` : (it.path || '— ยังไม่เลือกหน้า —')}</span>
@@ -567,7 +568,7 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
 
   return (
     <div onClick={onFocus} onFocusCapture={onFocus}
-      style={{ display: 'grid', gridTemplateColumns: '28px minmax(0,1fr)', gap: 8, alignItems: 'start', padding: 10, borderRadius: 10, cursor: 'pointer',
+      style={{ display: 'grid', gridTemplateColumns: '28px minmax(0,1fr)', gap: 8, alignItems: 'start', padding: 10, borderRadius: 'var(--r-md)', cursor: 'pointer',
         border: `1.5px solid ${skip ? 'var(--red)' : focused ? 'var(--accent)' : 'var(--border2)'}`, background: 'var(--bg2)' }}>
       <div style={{ fontWeight: 800, fontSize: 14, paddingTop: 8, textAlign: 'center', color: focused ? 'var(--accent)' : 'var(--text)' }}>{i + 1}</div>
       <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
@@ -587,10 +588,8 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
                   </select>
                 )}
                 {d.kind === 'section' && (
-                  <select value={params[d.key] || ''} disabled={!canEdit} onChange={e => setParam(d.key, e.target.value)}>
-                    <option value="">{ALL.section}</option>
-                    {secOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                  <SectionScopeSelect index={scopeIndex} failed={scopeFail} value={params[d.key] || ''} disabled={!canEdit}
+                    onChange={s => setParam(d.key, s)} only={secOptions} />
                 )}
                 {d.kind === 'multi' && (() => {
                   const src = (defs.find(x => x.key === d.optionsFrom)?.options) || d.options || [];
@@ -604,7 +603,7 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
                     <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxWidth: 560 }}>
                       {src.map(o => (
                         <button key={o.value} type="button" disabled={!canEdit} onClick={(e) => { e.stopPropagation(); toggle(o.value); }}
-                          style={{ padding: '4px 10px', borderRadius: 999, fontSize: 12, fontWeight: 700,
+                          style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700,
                             background: cur.includes(o.value) ? 'var(--accent-dim)' : 'var(--card)',
                             color: cur.includes(o.value) ? 'var(--accent)' : 'var(--text2)',
                             border: `1px solid ${cur.includes(o.value) ? 'var(--accent)' : 'var(--border2)'}` }}>
@@ -741,7 +740,7 @@ function PagePreview({ path }) {
     transform: `scale(${scale})`, transformOrigin: '0 0', pointerEvents: 'none',
     opacity: top ? 0 : 1, visibility: top ? 'hidden' : 'visible' });
   return (
-    <div ref={boxRef} style={{ position: 'relative', width: '100%', height: Math.round(1080 * scale), overflow: 'hidden', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg)' }}>
+    <div ref={boxRef} style={{ position: 'relative', width: '100%', height: Math.round(1080 * scale), overflow: 'hidden', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg)' }}>
       {path ? (
         <>
           {/* key ใน array เดียวกัน = ตอนสลับ React ย้าย iframe ตัวใหม่ขึ้นมาเฉยๆ ไม่สร้างใหม่ (ไม่โหลดซ้ำ) */}
@@ -751,7 +750,7 @@ function PagePreview({ path }) {
               onLoad={p === path ? () => setReady(true) : undefined} style={frameSt(p !== shown)} />
           ))}
           {path !== shown && (
-            <div style={{ position: 'absolute', right: 8, bottom: 8, padding: '3px 10px', borderRadius: 999, fontSize: 11,
+            <div style={{ position: 'absolute', right: 8, bottom: 8, padding: '3px 10px', borderRadius: 'var(--r-pill)', fontSize: 11,
               background: 'var(--card)', border: '1px solid var(--border2)', color: 'var(--muted)' }}>⏳ กำลังโหลดตัวอย่าง…</div>
           )}
         </>

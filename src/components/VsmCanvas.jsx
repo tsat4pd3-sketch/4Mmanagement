@@ -509,7 +509,7 @@ export function VsmLegend({ palette = PALETTE_DARK, compact = false }) {
       display: 'grid', gridTemplateColumns: `repeat(auto-fill, minmax(${compact ? 150 : 190}px, 1fr))`,
       gap: compact ? '2px 8px' : '4px 12px', alignContent: 'start',
       padding: compact ? '4px 6px' : '10px 12px',
-      background: P.data, border: `1px solid ${P.line}`, borderRadius: 6,
+      background: P.data, border: `1px solid ${P.line}`, borderRadius: 'var(--r-md)',
     }}>
       {SYMBOLS.map(s => (
         <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

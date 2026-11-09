@@ -26,6 +26,7 @@ import useTabParam from '../utils/useTabParam';
 import OrgTreeView from '../components/OrgTreeView';   // 🌳 มุมมองผังต้นไม้ (22/10 · คำสั่ง user "อยากมีหน้าวาดผัง")
 import Page from '../components/Page';
 import { IconButton, DeleteButton } from '../components/IconButton';
+import NoticeBar from '../components/NoticeBar';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 /* 🔴 ชั้นไหนมีพาเนล/ปุ่มเพิ่มบนจอ ต้องมีป้ายครบทุกชั้น — ขาดตัวไหน หัวโมดัลขึ้น "เพิ่ม undefined"
    (เกิดจริง 05/10 ตอนเพิ่มชั้นทีมแล้วลืมเติมที่นี่ · มีด่าน regressionGuards) */
@@ -281,13 +282,15 @@ export default function OrgSetup() {
     if (error)        { setSaving(false); return toast.error('บันทึกไม่สำเร็จ: ' + error.message); }
     if (!wrote?.length) { setSaving(false); return toast.error('บันทึกไม่สำเร็จ — ไม่มีสิทธิ์แก้ หรือรายการนี้ถูกลบไปแล้ว'); }
     // ไล่เปลี่ยน "สำเนาชื่อ" ตามคีย์ใหม่ — เขียนไม่ได้ต้องบอกว่าชื่อไม่ตรงกันแล้ว ห้าม toast เขียวทับ
-    const casc = cascade ? await renameOrgRefs(supabase, editNode, cascade.from, cascade.to) : null;
+    const casc = cascade ? await renameOrgRefs(supabase, editNode, cascade.from, cascade.to, nodes) : null;
     setSaving(false);
     if (casc?.failed.length) {
       toast.error(`เปลี่ยนชื่อในผังแล้ว แต่ทะเบียนแก้ตามไม่ได้ (${casc.failed[0]})`
         + ' — ชื่อจะไม่ตรงกันจนแก้ที่หน้าพนักงาน');
     } else if (casc) {
-      toast.success(`แก้ไขสำเร็จ · เปลี่ยนชื่อตามให้ในทะเบียนอื่น ${casc.rows} รายการ`);
+      toast.success(`แก้ไขสำเร็จ · เปลี่ยนชื่อตามให้ในทะเบียนอื่น ${casc.rows} รายการ`
+        // 🔴 คีย์ชนกับโหนดต่างชั้น ⇒ ไม่ไล่เปลี่ยนให้ (อาจเป็นของอีกโหนด) — ต้องบอก ห้ามเงียบ
+        + (casc.skipped?.length ? ` · ไม่ได้เปลี่ยน ${casc.skipped.join(', ')} (ชื่อชนกับหน่วยต่างชั้น — แก้เองที่หน้านั้น)` : ''));
     } else {
       toast.success(editNode ? 'แก้ไขสำเร็จ' : 'เพิ่มสำเร็จ');
     }
@@ -368,11 +371,11 @@ export default function OrgSetup() {
       {/* ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล (UI-CONVENTIONS §6.9) — ต้องรู้ว่าแก้อะไรได้/ไม่ได้ และต้องไปขอใคร */}
       {!isAdmin && (
         canOwn && mySecId ? (
-          <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 9, border: '1px solid var(--green-line)', background: 'var(--green-dim)', fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
+          <NoticeBar tone="ok" style={{ marginBottom: 14 }}>
             คุณแก้ได้เฉพาะ <b>แผนก/กลุ่มใต้ส่วนงาน "{myUnit}"</b> ของตัวเอง — ส่วนงานอื่นและโครงระดับ Section เป็นของผู้ดูแลระบบ
-          </div>
+          </NoticeBar>
         ) : canOwn && !mySecId ? (
-          <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 9, border: '1px solid var(--amber-line)', background: 'var(--amber-dim)', fontSize: 12, color: 'var(--amber)', lineHeight: 1.6 }}>
+          <div style={{ marginBottom: 14, padding: '9px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--amber-line)', background: 'var(--amber-dim)', fontSize: 12, color: 'var(--amber)', lineHeight: 1.6 }}>
             ⚠️ บัญชีคุณมีสิทธิ์แก้ผังของหน่วยงานตัวเอง แต่ <b>ยังไม่ได้ตั้งว่าสังกัดส่วนงานไหน</b> จึงยังแก้อะไรไม่ได้
             <div style={{ color: 'var(--muted)' }}>ให้ผู้ดูแลระบบตั้งช่อง <b>Section</b> ให้บัญชีนี้ที่ <b>ตั้งค่า → จัดการผู้ใช้งาน</b>{myUnit ? '' : ' (ตอนนี้ว่างอยู่)'}</div>
           </div>
@@ -391,7 +394,7 @@ export default function OrgSetup() {
               จะกลับไปเป็นทางตันเหมือน 05/10 (ลบกลุ่มไม่ได้ แล้วหาไม่เจอว่าลูกอยู่ไหน)
            ใช้ CRUD ชุดเดียวกับแท็บจัดการหน่วยงาน (openCreate/openEdit/handleDelete) ไม่ได้ก๊อปตรรกะใหม่ */
         <>
-          <div style={{ marginBottom: 12, padding: '9px 12px', borderRadius: 9, border: '1px solid var(--border2)',
+          <div style={{ marginBottom: 12, padding: '9px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)',
                         background: 'var(--bg3)', fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
             👥 <b>ทีม A/B/C ใช้สำหรับจัดกะการทำงาน — ไม่ใช่ชั้นในผังองค์กร</b> จึงไม่ปรากฏในมุมมองผังและใบ export
             <div style={{ color: 'var(--muted)' }}>
@@ -522,7 +525,7 @@ export default function OrgSetup() {
                   <strong style={{ fontSize: 13, color: 'var(--text2)' }}>✍️ ผู้เซ็น/อนุมัติใบค่าฝีมือ — ส่วน {node.name}{key ? ` (${key})` : ''}</strong>
                   {sgEdit && (
                     <button onClick={saveSigners} disabled={sgSaving || !key}
-                      style={{ padding: '7px 18px', background: sgSaving || !key ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 7, fontWeight: 700, fontSize: 13, cursor: sgSaving || !key ? 'default' : 'pointer' }}>
+                      style={{ padding: '7px 18px', background: sgSaving || !key ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13, cursor: sgSaving || !key ? 'default' : 'pointer' }}>
                       {sgSaving ? 'กำลังบันทึก...' : 'บันทึก'}
                     </button>
                   )}
@@ -655,7 +658,7 @@ export default function OrgSetup() {
                 const supportUnit = modalParentLabor === 'indirect';
                 if (supportUnit && !formRefLineId) return (
                   <div style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)',
-                                border: '1px solid var(--border2)', borderRadius: 8, padding: '8px 10px' }}>
+                                border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
                     อยู่ใต้หน่วยงาน <b>สายสนับสนุน (Indirect)</b> — ไม่ต้องผูกไลน์ผลิต
                     <div style={{ marginTop: 2 }}>ถ้าหน่วยนี้มีไลน์ผลิตจริง ให้แก้ประเภทที่แผนกแม่เป็น Direct ก่อน</div>
                   </div>
@@ -674,10 +677,10 @@ export default function OrgSetup() {
                 );
               })()}
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: 11, background: saving ? 'var(--muted)' : 'var(--amber)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: saving ? 'default' : 'pointer' }}>
+                <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: 11, background: saving ? 'var(--muted)' : 'var(--amber)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: saving ? 'default' : 'pointer' }}>
                   {saving ? 'กำลังบันทึก...' : 'บันทึก'}
                 </button>
-                <button onClick={() => setModal(null)} style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
+                <button type="button" className="pg-btn sm" onClick={() => setModal(null)} style={{ flex: 1 }}>
                   ยกเลิก
                 </button>
               </div>
@@ -716,7 +719,7 @@ function NodeLabel({ node, meta, children }) {
 
 function CostBadge({ code }) {
   return (
-    <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border2)', whiteSpace: 'nowrap' }}>
+    <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 'var(--r-xs)', background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border2)', whiteSpace: 'nowrap' }}>
       {code}
     </span>
   );
@@ -731,7 +734,7 @@ function DivBadge({ node, nodes }) {
   return (
     <span title={own ? 'ติดป้ายที่ตัวนี้เอง' : 'ตกทอดจากตัวแม่'}
       style={{
-        fontSize: 11, padding: '1px 6px', borderRadius: 999, whiteSpace: 'nowrap',
+        fontSize: 11, padding: '1px 6px', borderRadius: 'var(--r-pill)', whiteSpace: 'nowrap',
         border: `1px solid ${(m?.color || 'var(--border)')}${own ? '' : '55'}`,
         color: m?.color || 'var(--muted)', opacity: own ? 1 : 0.6,
       }}>
@@ -744,7 +747,7 @@ function LaborBadge({ type }) {
   if (!type) return null;
   const m = laborMeta(type);
   return (
-    <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 4, background: `${tint(m.color, 'dim')}`, color: m.color, border: `1px solid ${tint(m.color, 'line')}`, fontWeight: 600, whiteSpace: 'nowrap' }}>
+    <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 'var(--r-xs)', background: `${tint(m.color, 'dim')}`, color: m.color, border: `1px solid ${tint(m.color, 'line')}`, fontWeight: 600, whiteSpace: 'nowrap' }}>
       {m.icon}{m.short}
     </span>
   );

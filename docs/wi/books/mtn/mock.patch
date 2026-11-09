@@ -9,7 +9,7 @@
  const ROW = (i) => ({
    id: `id-${i}`, name: LINE_NAME(i), code: `CODE-${i}`,
    line_name: 'LINE APRON ASSY / HYDROFORM',
-@@ -420,7 +422,7 @@
+@@ -425,7 +427,7 @@
       🔴 ต้องมีทั้ง 2 ฟอร์ม: `mtn_dept` = ทีมที่ใช้ฟอร์ม MTN (8 ขั้น ไม่มี QA) และทีมอื่น (7 ขั้น มี QA)
          เพราะ **เลขขั้นเดียวกันคนละความหมาย** (ขั้น 7 = ปิดใบ ของ JIG/DIE แต่ = ผจก.ช่างอนุมัติ ของ MTN)
          ⇒ ถอดทีมใดทีมหนึ่งออก = สาขา `stageOf` ฝั่งนั้นหลุดด่าน */
@@ -18,10 +18,10 @@
      ...r,
      mo_no: `MO-2610-${String(i).padStart(3, '0')}`,
      status: ['pending', 'assigned', 'repaired', 'checked', 'handover', 'closed'][i % 6],
-@@ -446,6 +448,14 @@
-     reported_by_name: isNullish(r) ? null : (i % 4 === 1 ? null : 'สมชาย ใจดี'),
-     reporter_prod: isNullish(r) ? null : (i % 4 === 1 ? 'ผู้แจ้งฝ่ายผลิต' : null),
-     assigned_to: 'ช่างเอก',
+@@ -455,6 +457,14 @@
+           "กำลังซ่อม แต่ใบไม่มีชื่อช่าง" (`kind: 'no_target'`) ถูกเรนเดอร์จริงในด่าน
+           ถ้าทุกแถวมีชื่อ = เส้นทางนั้นหลุดด่าน แล้วใบที่ชี้เป้าไม่ได้จะหายจากแผงโดยไม่มีใครรู้ */
+     assigned_to: isNullish(r) || i % 7 === 0 ? null : 'ช่างเอก',
 +    /* WI-MTN patch: ให้ทุกขั้นของทั้ง 2 ฟอร์มมีใบโผล่ในรายการ */
 +    ...(i === 5  ? { status: 'repaired', mtn_dept: 'production' } : {}),
 +    ...(i === 9  ? { mtn_dept: 'maintenance' } : {}),
@@ -33,7 +33,7 @@
    }),
    line_layouts: (r, i) => ({ ...r, line_id: `id-${i}`, line_name: LINE_NAME(i), image_url: FACTORY_MAP_IMG }),
    /* คิวรับเข้าคลัง (2026-10-02) — คละ รอรับ/ค้างเกินกำหนด/รับแล้ว(ยอดไม่ตรง) ให้ทุกโซนของ StockReceiptQueue ถูกรัน */
-@@ -457,6 +467,8 @@
+@@ -466,6 +476,8 @@
      qty_received: i % 4 === 0 ? 55 : null, diff_reason: i % 4 === 0 ? 'ของเสีย 5' : null,
      received_by: i % 4 === 0 ? 'สมชาย ใจดี' : null, received_at: i % 4 === 0 ? new Date().toISOString() : null,
    }),
@@ -42,7 +42,7 @@
    child_lot_requests: (r, i) => ({
      ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
      lot_qty: isNullish(r) ? null : 14,
-@@ -976,14 +988,21 @@
+@@ -985,14 +997,21 @@
     ไม่มีแถวนี้ = DisplayRotator ไม่ active ⇒ "พอดีจอ/แบ่งส่วน/รอหน้าย่อย" ไม่เคยถูกรันในฮาร์เนส
     ไม่ใส่ ?rot = พฤติกรรมเดิม (แถวกลาง ROWS → แผนไม่ active) */
  const ROT_PATHS = typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('rot') || '') : ''

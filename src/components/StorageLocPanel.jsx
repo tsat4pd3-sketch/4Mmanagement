@@ -241,13 +241,13 @@ export default function StorageLocPanel() {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {canManage && !missing && !noLineMap && untagged > 0 && (
             <button onClick={backfill} disabled={busy} title={untaggedTip}
-              style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid rgba(245,158,11,0.5)', cursor: busy ? 'wait' : 'pointer', background: 'rgba(245,158,11,0.1)', color: '#f59e0b', fontSize: 12.5, fontWeight: 800, fontFamily: 'var(--font-body)' }}>
+              style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid rgba(245,158,11,0.5)', cursor: busy ? 'wait' : 'pointer', background: 'rgba(245,158,11,0.1)', color: '#f59e0b', fontSize: 12.5, fontWeight: 800, fontFamily: 'var(--font-body)' }}>
               {busy ? '…' : `🏷️ แปะรหัสคลังย้อนหลัง (${untagged.toLocaleString()} แถว)`}
             </button>
           )}
           {canManage && !missing && (
             <button onClick={() => setEdit({ code: '', name: '', kind: '', note: '', sort_order: (rows.length + 1) * 10, is_active: true, line_names: [] })}
-              style={{ padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)' }}>
+              style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: 'none', cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)' }}>
               + เพิ่มรหัสคลัง
             </button>
           )}
@@ -257,12 +257,12 @@ export default function StorageLocPanel() {
       <ReadOnlyNote show={!canManage && !missing} role={role} what="จัดการทะเบียนรหัสคลัง" permKey="storage:manage" />
 
       {missing && (
-        <div style={{ padding: '12px 14px', borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 12.5, color: '#f59e0b', fontWeight: 700 }}>
+        <div style={{ padding: '12px 14px', borderRadius: 'var(--r-md)', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 12.5, color: '#f59e0b', fontWeight: 700 }}>
           ⚠️ ยังไม่ได้ apply migration <code>20260902_storage_locations_master.sql</code> — ทะเบียนยังใช้ไม่ได้ (แจ้ง admin)
         </div>
       )}
       {!missing && noLineMap && (
-        <div style={{ padding: '10px 12px', borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 12, color: '#f59e0b', marginBottom: 10 }}>
+        <div style={{ padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 12, color: '#f59e0b', marginBottom: 10 }}>
           ⚠️ ยังไม่ได้ apply migration <code>{MIG_DR}</code> (DR) — <b>ผูกไลน์กับรหัสคลังยังไม่ได้</b> ใบ/ledger จึงยังไม่มีมุม SAP (แจ้ง admin)
         </div>
       )}
@@ -270,19 +270,19 @@ export default function StorageLocPanel() {
       {/* 🔴 กฎความซื่อสัตย์ของจอ — นับการใช้งานไม่ได้ ต้องเขียนบนจอ ห้ามเงียบ (ไม่งั้นปุ่มลบ
           ที่ถูกบล็อกจะดูเหมือนบั๊ก) · ลบไม่ได้ทุกแถวตราบที่ยังนับไม่ได้ */}
       {!missing && countFailed && (
-        <div style={{ padding: '10px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', fontSize: 12, color: '#ef4444', marginBottom: 10 }}>
+        <div style={{ padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', fontSize: 12, color: '#ef4444', marginBottom: 10 }}>
           <b>⚠ ตรวจไม่ได้ว่ารหัสไหนถูกใช้อยู่</b> — คิวรีนับการใช้งาน (BOM / ledger / จุดส่ง) ไม่สำเร็จ
           ⇒ <b>ปุ่มลบถูกปิดไว้ทั้งหมด</b> กันลบรหัสที่ยังมีคนผูก · กดรีเฟรชหน้าแล้วลองอีกครั้ง
         </div>
       )}
 
       {!missing && orphan.length > 0 && (
-        <div style={{ padding: '10px 12px', borderRadius: 8, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 12, color: '#f59e0b', marginBottom: 10 }}>
+        <div style={{ padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', fontSize: 12, color: '#f59e0b', marginBottom: 10 }}>
           <b>⚠ มีรหัสที่ถูกใช้ใน BOM แต่ยังไม่อยู่ในทะเบียน {orphan.length} รหัส</b> — อาจพิมพ์ผิด หรือเป็นพื้นที่ใหม่ที่ยังไม่ลงทะเบียน
           <div style={{ marginTop: 5, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {orphan.map(c => (
               <span key={c} onClick={canManage ? () => setEdit({ code: c, name: '', kind: slocKindGuess(c) || '', note: '', sort_order: (rows.length + 1) * 10, is_active: true, line_names: [] }) : undefined}
-                style={{ fontFamily: 'monospace', fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: 'rgba(245,158,11,0.16)', cursor: canManage ? 'pointer' : 'default' }}>
+                style={{ fontFamily: 'monospace', fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'rgba(245,158,11,0.16)', cursor: canManage ? 'pointer' : 'default' }}>
                 {c}{canManage ? ' +' : ''}
               </span>
             ))}
@@ -292,7 +292,7 @@ export default function StorageLocPanel() {
 
       {/* worklist: ไลน์ย่อยที่ยังไม่มีมุม SAP — ใบ/ledger ของไลน์พวกนี้จะไม่ถูกแปะรหัส (ห้ามซ่อน · ไม่เดาให้) */}
       {!missing && !noLineMap && !loading && unmappedLeaf.length > 0 && (
-        <div style={{ padding: '10px 12px', borderRadius: 8, background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.3)', fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
+        <div style={{ padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.3)', fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
           <b style={{ color: '#3b82f6' }}>ไลน์ที่ยังไม่ผูกรหัสคลัง {unmappedLeaf.length} ไลน์</b> — ใบขอเติม/ตัดสต็อกของไลน์เหล่านี้จะไม่มีมุม SAP จนกว่าจะผูก (ผูกที่ไลน์แม่ทีเดียวได้)
           <div style={{ marginTop: 4, color: 'var(--muted)', lineHeight: 1.6 }}>{unmappedLeaf.slice(0, 30).join(' · ')}{unmappedLeaf.length > 30 ? ` … (+${unmappedLeaf.length - 30})` : ''}</div>
         </div>
@@ -301,7 +301,7 @@ export default function StorageLocPanel() {
       {loading ? (
         <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
       ) : !missing && rows.length === 0 ? (
-        <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--bg2)', borderRadius: 8, border: '1px dashed var(--border)' }}>
+        <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--bg2)', borderRadius: 'var(--r-md)', border: '1px dashed var(--border)' }}>
           ยังไม่มีรหัสคลังในทะเบียน{canManage && ' — กด "+ เพิ่มรหัสคลัง"'}
         </div>
       ) : !missing && (
@@ -313,9 +313,9 @@ export default function StorageLocPanel() {
             const cover = coverOf(r);
             const inherited = cover.filter(n => !own.includes(n));
             return (
-              <div key={r.code} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 8,
+              <div key={r.code} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 'var(--r-md)',
                 background: 'var(--bg2)', border: '1px solid var(--border)', opacity: r.is_active ? 1 : 0.5 }}>
-                <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 14, padding: '3px 9px', borderRadius: 8, background: `${meta.color}1f`, color: meta.color, flexShrink: 0 }}>
+                <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 14, padding: '3px 9px', borderRadius: 'var(--r-md)', background: `${meta.color}1f`, color: meta.color, flexShrink: 0 }}>
                   {r.code}
                 </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -340,7 +340,7 @@ export default function StorageLocPanel() {
                 {inUse && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', flexShrink: 0 }}>มีคนใช้อยู่</span>}
                 {canManage && (
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                    <button className="tbtn" onClick={() => setEdit({ ...r, line_names: own })} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>
+                    <button className="tbtn" onClick={() => setEdit({ ...r, line_names: own })} style={{ padding: '4px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>✏️</button>
                     {/* ลบได้เฉพาะตอน "นับการใช้งานได้ และไม่มีใครใช้" — นอกนั้นปิดไว้ (fail-closed)
                         ปุ่มยังอยู่ (ไม่ซ่อน) + title บอกเหตุผล ไม่งั้นดูเหมือนฟีเจอร์หาย */}
                     <DeleteButton onClick={() => remove(r)} disabled={countFailed || inUse}
@@ -382,7 +382,7 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
 
   return (
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(480px,100%)', maxHeight: '92vh', overflowY: 'auto' }}>
+      <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 24, width: 'min(480px,100%)', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', marginBottom: 14 }}>
           {isNew ? '➕ เพิ่มรหัสคลัง' : `✏️ แก้ไข ${init.code}`}
         </div>
@@ -427,7 +427,7 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
               <>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                   {f.line_names.map(n => (
-                    <span key={n} style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 12, background: 'rgba(59,130,246,0.12)', color: '#3b82f6', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                    <span key={n} style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 'var(--r-lg)', background: 'rgba(59,130,246,0.12)', color: '#3b82f6', display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                       {n}
                       <button type="button" onClick={() => setF(x => ({ ...x, line_names: x.line_names.filter(y => y !== n) }))} style={{ background: 'none', border: 'none', color: '#3b82f6', cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1 }}>✕</button>
                     </span>
@@ -455,9 +455,9 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
           </label>
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-          <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>ยกเลิก</button>
+          <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>ยกเลิก</button>
           <button onClick={submit} disabled={busy || badFormat}
-            style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: busy || badFormat ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)', opacity: busy || badFormat ? 0.5 : 1 }}>
+            style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: busy || badFormat ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)', opacity: busy || badFormat ? 0.5 : 1 }}>
             {busy ? '...' : '💾 บันทึก'}
           </button>
         </div>

@@ -70,7 +70,7 @@ export default function InfoMore({
       <button type="button" onClick={toggle}
         aria-expanded={open}
         style={{
-          marginLeft: lead ? 6 : 0, padding: '1px 7px', borderRadius: 6, cursor: 'pointer',
+          marginLeft: lead ? 6 : 0, padding: '1px 7px', borderRadius: 'var(--r-md)', cursor: 'pointer',
           border: `1px solid var(--border2)`, background: 'var(--bg3)',
           color: 'var(--muted)', fontSize: Math.max(11, size - 1.5), fontWeight: 700,
           whiteSpace: 'nowrap', verticalAlign: 'middle',
@@ -79,7 +79,7 @@ export default function InfoMore({
       </button>
       {open && (
         <div style={{
-          marginTop: 5, padding: '7px 10px', borderRadius: 8,
+          marginTop: 5, padding: '7px 10px', borderRadius: 'var(--r-md)',
           background: box.bg, border: `1px solid ${box.bd}`, color: 'var(--text2)',
         }}>{children}</div>
       )}

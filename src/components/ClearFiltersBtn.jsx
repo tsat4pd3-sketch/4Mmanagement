@@ -27,7 +27,7 @@ export default function ClearFiltersBtn({ keep, onClear, label = 'ล้าง�
       title={hit.length ? `ล้าง: ${hit.join(' · ')}` : tr(label)}
       style={{
         height: 'var(--ctl-h)', padding: '0 10px', fontSize: 'var(--ctl-fs)',
-        borderRadius: 8, border: '1px solid var(--border)',
+        borderRadius: 'var(--r-md)', border: '1px solid var(--border)',
         background: 'var(--bg2)', color: 'var(--text2)', cursor: 'pointer', whiteSpace: 'nowrap',
       }}
     >🧹 {tr(label)}</button>

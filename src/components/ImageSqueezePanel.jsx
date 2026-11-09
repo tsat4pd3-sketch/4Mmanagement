@@ -109,7 +109,7 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
             disabled={!canRun || !!busy || scanning || scan?.total === 0}
             title={!canRun ? 'ต้องมีสิทธิ์จัดการข้อมูลหลัก' : ''}
             style={{
-              padding: '10px 16px', borderRadius: 8, border: 'none', flexShrink: 0,
+              padding: '10px 16px', borderRadius: 'var(--r-md)', border: 'none', flexShrink: 0,
               background: (!canRun || busy || scanning || scan?.total === 0) ? 'var(--bg3)' : 'var(--accent)',
               color: (!canRun || busy || scanning || scan?.total === 0) ? 'var(--text2)' : '#fff',
               fontWeight: 700, fontSize: 13, fontFamily: 'var(--font-body)',
@@ -155,7 +155,7 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
             {groups.map(([g, n]) => (
               <div key={g} style={{
                 display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 12.5,
-                padding: '5px 8px', background: 'var(--bg2)', borderRadius: 6,
+                padding: '5px 8px', background: 'var(--bg2)', borderRadius: 'var(--r-md)',
               }}>
                 <span style={{ color: 'var(--text2)' }}>{g}</span>
                 <b style={{ color: 'var(--text)', flexShrink: 0 }}>{n.toLocaleString()} ใบ</b>

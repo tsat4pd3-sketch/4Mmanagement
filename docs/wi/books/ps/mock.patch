@@ -1,11 +1,32 @@
 --- a/mock.js
 +++ b/mock.js
-@@ -457,6 +457,8 @@
+@@ -466,6 +466,20 @@
      qty_received: i % 4 === 0 ? 55 : null, diff_reason: i % 4 === 0 ? 'ของเสีย 5' : null,
      received_by: i % 4 === 0 ? 'สมชาย ใจดี' : null, received_at: i % 4 === 0 ? new Date().toISOString() : null,
    }),
-+  wip_replenish_requests: (r, i) => ({ ...r, mat_no: `2005${7000 + i}`, qty: 40, line_name: FAM_LINE,
-+    status: ['pending','preparing','delivered'][i % 3], source: 'line_request' }),
++  /* WI ps: ใบเบิก-ส่งเข้าไลน์ คละสถานะ/ที่มา · แถวคี่ = ไลน์ที่มีจุดส่ง · แถวคู่ = ไลน์ของกะ Daily Report */
++  wip_replenish_requests: (r, i) => ({ ...r, mat_no: `2005${7000 + i}`, request_qty: 40, qty: 40,
++    line_name: i % 2 ? FAM_LINE : LINE_NAME(3),
++    status: ['pending','preparing','delivered'][i % 3], source: ['line_order','line_adhoc','line_request'][i % 3],
++    cancel_reason: null, cancelled_at: null, uom: null,
++    sap_pending_qty: i % 3 === 2 && i % 2 ? 20 : null, sap_pending_note: i % 3 === 2 && i % 2 ? 'SAP ล่ม' : null,
++    sap_cleared_at: null }),
++  stock_discrepancies: (r, i) => ({ ...r, mat_no: `5002${9600 + i}`, sent_qty: 100, received_qty: 80, short_qty: 20,
++    status: ['open','proposed','returned'][i % 3], proposed_outcome: i % 3 ? 'return_store' : null,
++    proposed_side: i % 3 ? 'production' : null, proposed_by: i % 3 ? 'หัวหน้าไลน์' : null }),
++  v_purchase_open_summary: (r, i) => ({ ...r, mat_no: i % 2 ? `3005${4900 + i}` : `5002${7000 + i}`,
++    status: i % 5 === 0 ? 'ordered' : 'pending', slips: i % 4 === 0 ? 2 : 1, total_qty: 500, min_lot: 250, max_lot: 250,
++    first_id: `id-${i}`, dest_count: 1 }),
++  line_delivery_points: (r, i) => ({ ...r, line_names: [FAM_LINE], is_active: true, code: `DP-${i}`, name: `จุดส่ง ${i}` }),
    child_lot_requests: (r, i) => ({
      ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
      lot_qty: isNullish(r) ? null : 14,
+@@ -571,7 +585,7 @@
+      ถ้าไม่มีแถวนี้ harness จะไม่เคยเรนเดอร์สาขานั้นเลย */
+   production_sessions: (r, i) => ({
+     ...r,
+-    line_name: i <= 12 ? LINE_NAME(((i - 1) % 4) + 1) : FAM_LINE,
++    line_name: i <= 12 ? LINE_NAME(((i + 1) % 4) + 1) : FAM_LINE,   // WI ps: กะแรก = ไลน์ลูก (แผงเรียกชิ้นส่วนต้องโผล่)
+     ...(i === 15 ? { status: 'void', void_reason: 'เปิดกะผิดแล้วปิดทิ้ง (mock)',
+                      voided_at: '2026-08-05T09:00:00+07:00', voided_by_name: 'ผู้ทดสอบ',
+                      actual_qty: 0, qty_ok: 0, qty_ng: 0 } : {}),

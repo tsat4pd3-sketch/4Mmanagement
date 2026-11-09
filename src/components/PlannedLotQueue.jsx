@@ -72,7 +72,7 @@ export default function PlannedLotQueue({ session, orders = [] }) {
     const l = r.lot;
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', fontSize: 12,
-        padding: '4px 8px', background: 'var(--bg2)', borderRadius: 6,
+        padding: '4px 8px', background: 'var(--bg2)', borderRadius: 'var(--r-md)',
         borderLeft: `3px solid ${carried && r.state === 'pending' ? '#f59e0b' : STATE_COLOR[r.state]}` }}>
         <b style={{ minWidth: 18, textAlign: 'center', color: 'var(--muted)' }}>{l.seq}</b>
         <MatLabel mat={l.mat_no} name={l.part_name} size={12} />
@@ -94,7 +94,7 @@ export default function PlannedLotQueue({ session, orders = [] }) {
   };
 
   return (
-    <div style={{ marginBottom: 10, padding: '10px 14px', background: 'rgba(77,159,255,0.07)', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 9 }}>
+    <div style={{ marginBottom: 10, padding: '10px 14px', background: 'rgba(77,159,255,0.07)', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 'var(--r-md)' }}>
       <div style={{ fontSize: 12.5, fontWeight: 800, color: '#4d9fff', marginBottom: 2 }}>
         กรอบแผนจากทีมวางแผน
         {m.planPcs > 0 && (

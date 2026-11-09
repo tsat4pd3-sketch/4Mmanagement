@@ -520,7 +520,7 @@ export default function StoreTimeChart({
                             position: 'absolute', top: 5 + lane * LANE_H, height: LANE_H - 6,
                             left: `${Math.min(left, 97)}%`, width: `${(SPAN_MIN / span) * 100}%`, minWidth: 52,
                             background: `${color}${sel ? '55' : '22'}`, border: `1.5px solid ${color}${sel ? '' : 'cc'}`,
-                            borderRadius: 5, zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            borderRadius: 'var(--r-xs)', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
                             gap: 3, overflow: 'hidden', cursor: 'pointer', boxSizing: 'border-box',
                             boxShadow: od ? `0 0 5px ${color}55` : 'none',
                           }}>
@@ -550,7 +550,7 @@ export default function StoreTimeChart({
         return (
           <>
             <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 1400 }} />
-            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1401, background: 'var(--bg3)', border: `1px solid ${st.border}`, borderRadius: 12, boxShadow: 'var(--shadow-float)', padding: 12 }}>
+            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1401, background: 'var(--bg3)', border: `1px solid ${st.border}`, borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-float)', padding: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                 <span style={{ fontSize: 14, fontWeight: 900, color: 'var(--text)' }}>
                   {r.shift === 'night' ? '🌙' : '☀️'} รอบ {r.round_no} · {hhmm(r.delivery_time)}
@@ -563,7 +563,7 @@ export default function StoreTimeChart({
               </div>
               <StockNote cov={cov} fmt={fmt} />
               <button onClick={() => goToCard(r)}
-                style={{ marginTop: 10, width: '100%', padding: '7px 10px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', fontFamily: 'var(--font-body)' }}>
+                style={{ marginTop: 10, width: '100%', padding: '7px 10px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', fontFamily: 'var(--font-body)' }}>
                 ↓ ดูของที่ต้องเตรียม
               </button>
             </div>
@@ -580,7 +580,7 @@ export default function StoreTimeChart({
           { k: 'all', label: `ทั้งหมด (${counts.all})` },
         ].map(f => (
           <button key={f.k} onClick={() => setCardFilter(f.k)} style={{
-            padding: '7px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
+            padding: '7px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
             background: cardFilter === f.k ? 'var(--accent)' : 'var(--bg2)',
             color: cardFilter === f.k ? '#08130a' : 'var(--text2)',
             border: `1px solid ${cardFilter === f.k ? 'var(--accent)' : 'var(--border)'}`,
@@ -589,7 +589,7 @@ export default function StoreTimeChart({
         <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>เรียง:</span>
         {[{ k: 'urgent', label: '⚡ ใกล้ดิวก่อน' }, { k: 'time', label: 'ตามเวลาส่ง' }].map(s => (
           <button key={s.k} onClick={() => setSortMode(s.k)} style={{
-            padding: '6px 12px', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
+            padding: '6px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)',
             background: sortMode === s.k ? 'var(--accent)' : 'var(--bg2)',
             color: sortMode === s.k ? '#08130a' : 'var(--text2)',
             border: `1px solid ${sortMode === s.k ? 'var(--accent)' : 'var(--border)'}`,
@@ -634,7 +634,7 @@ export default function StoreTimeChart({
                 </div>
               </div>
               <button onClick={toggleAssume} title="ซ่อนพาร์ทที่ยังไม่มียอด WIP ออกจากไทม์ไลน์ (เหลือเฉพาะพาร์ทที่มีข้อมูลจริง)"
-                style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8,
+                style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)',
                 padding: '5px 10px', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: 'var(--text2)', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
                 ดูเฉพาะที่มียอดจริง
               </button>
@@ -646,7 +646,7 @@ export default function StoreTimeChart({
               <span style={{ flex: 1, minWidth: 240, fontSize: 11.5, color: 'var(--muted)' }}>
                 ❔ <b>{unknownTotal} พาร์ท</b> ยังไม่มียอด WIP ที่ไลน์ → ถูกซ่อนอยู่ ไม่ขึ้นบนไทม์ไลน์
               </span>
-              <button onClick={toggleAssume} style={{ background: 'rgba(245,158,11,0.14)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 8,
+              <button onClick={toggleAssume} style={{ background: 'rgba(245,158,11,0.14)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 'var(--r-md)',
                 padding: '5px 10px', cursor: 'pointer', fontSize: 11, fontWeight: 800, color: '#f59e0b', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
                 คิดเป็น 0 แล้วส่งเต็มจำนวน
               </button>
@@ -705,7 +705,7 @@ export default function StoreTimeChart({
                             ? `ไลน์เริ่มต้องใช้ของตอน ${clockOf(first)} — ยังไม่รู้ว่ามีอยู่ที่ไลน์เท่าไหร่`
                             : `ของพอถึง ${clockOf(first)}`} style={{
                             position: 'absolute', top: 12, height: 10, left: `${barL}%`, width: `${barR - barL}%`,
-                            background: `${tone}33`, borderLeft: `2px solid ${tone}`, borderRadius: 3, zIndex: 1,
+                            background: `${tone}33`, borderLeft: `2px solid ${tone}`, borderRadius: 'var(--r-xs)', zIndex: 1,
                           }} />
                         )}
                         {/* จุด = พาร์ทแต่ละตัวจะหมดตอนไหน */}
@@ -783,7 +783,7 @@ export default function StoreTimeChart({
               const pickable = q.parts.filter(p => p.netTotal > 0 && ['ok', 'split'].includes(p.store) && !openByKey[selKey(q.line, p.mat_no)]).length;
               const inQueue = q.parts.filter(p => openByKey[selKey(q.line, p.mat_no)]).length;
               return (
-                <div key={q.line} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 12px' }}>
+                <div key={q.line} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '9px 12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
                     <span style={chip('rgba(96,165,250,0.15)', '#60a5fa', { minWidth: 20, textAlign: 'center' })}>{i + 1}</span>
                     <button onClick={() => onOpenLine?.(q.line)} title="เปิดบอร์ดของไลน์นี้"
@@ -849,7 +849,7 @@ export default function StoreTimeChart({
                         const picked = sel[k];
                         return (
                           <div key={p.mat_no} style={{ display: 'flex', gap: 6, alignItems: 'baseline', fontSize: 11.5, flexWrap: 'wrap',
-                            background: picked ? 'rgba(34,197,94,0.10)' : 'transparent', borderRadius: 6, padding: picked ? '2px 4px' : 0 }}>
+                            background: picked ? 'rgba(34,197,94,0.10)' : 'transparent', borderRadius: 'var(--r-md)', padding: picked ? '2px 4px' : 0 }}>
                             {canPick && (
                               existing
                                 ? <span style={{ fontSize: 11, color: '#38bdf8', fontWeight: 700, whiteSpace: 'nowrap' }} title={`มีใบค้างอยู่แล้ว → ${existing.line_name}`}>{existing.status === 'pending' ? 'รอหยิบ' : existing.status === 'preparing' ? 'กำลังจัด' : 'ส่งแล้ว'}</span>
@@ -881,7 +881,7 @@ export default function StoreTimeChart({
                                     title={picked.sameSloc
                                       ? `ทุกไลน์ในกลุ่มอยู่พื้นที่ SAP ${picked.sloc} เดียวกัน — ระบบเลือกไลน์แรกให้ · เปลี่ยนได้ถ้ารู้ว่าต้องวางหน้าไลน์ไหน`
                                       : 'หลายไลน์ย่อยกินพาร์ทนี้ (คนละพื้นที่ SAP) — เลือกไลน์ที่จะไปวางของ'}
-                                    style={{ width: 'auto', fontSize: 11, padding: '1px 4px', borderRadius: 6, border: `1px solid ${picked.sameSloc ? 'rgba(34,197,94,0.5)' : 'rgba(245,158,11,0.7)'}`, background: 'var(--bg2)', color: picked.sameSloc ? 'var(--accent)' : '#f59e0b' }}>
+                                    style={{ width: 'auto', fontSize: 11, padding: '1px 4px', borderRadius: 'var(--ctl-r)', border: `1px solid ${picked.sameSloc ? 'rgba(34,197,94,0.5)' : 'rgba(245,158,11,0.7)'}`, background: 'var(--bg2)', color: picked.sameSloc ? 'var(--accent)' : '#f59e0b' }}>
                                     {picked.lines.map(ln => { const c = slocOf(ln); return <option key={ln} value={ln}>➜ {c ? `${c} · ` : ''}{ln}</option>; })}
                                   </select>
                                 : <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 700, whiteSpace: 'nowrap' }}
@@ -954,7 +954,7 @@ export default function StoreTimeChart({
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 8 }}>
                       {phases.map(p => (
                         <span key={p.key} style={{
-                          fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 7,
+                          fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 'var(--r-md)',
                           background: p.missed ? 'rgba(239,68,68,0.12)' : p.done ? 'rgba(34,197,94,0.1)' : 'var(--bg2)',
                           color: p.missed ? '#ef4444' : p.done ? '#22c55e' : 'var(--muted)',
                           border: `1px solid ${p.missed ? 'rgba(239,68,68,0.35)' : p.done ? 'rgba(34,197,94,0.25)' : 'var(--border)'}`,

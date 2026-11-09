@@ -73,7 +73,7 @@ const ghostBtn = {
 const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 16 };
 const Chip = ({ label, color }) => (
   <span style={{
-    display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+    display: 'inline-block', padding: '2px 8px', borderRadius: 'var(--r-pill)', fontSize: 11, fontWeight: 700,
     background: `${color}22`, color, border: `1px solid ${color}55`, whiteSpace: 'nowrap',
   }}>{label}</span>
 );
@@ -710,7 +710,7 @@ export default function QaCheckSheet({ canRecord }) {
                 ))}
               </select>
               <button type="button" onClick={() => setScanOpen(true)} title="สแกนบาร์โค้ด MAT บนกล่อง/คัมบัง"
-                style={{ flexShrink: 0, minWidth: 44, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontWeight: 700, cursor: 'pointer' }}>📷</button>
+                style={{ flexShrink: 0, minWidth: 44, padding: '0 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontWeight: 700, cursor: 'pointer' }}>📷</button>
             </div>
           </div>
           <div>
@@ -803,7 +803,7 @@ export default function QaCheckSheet({ canRecord }) {
                     </div>
                   ) : activeDwg && (
                     <div ref={boxRef}>
-                      <div style={{ maxHeight: viewH, overflow: 'auto', borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--bg2)' }}>
+                      <div style={{ maxHeight: viewH, overflow: 'auto', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)' }}>
                         <div ref={wrapRef} style={{ position: 'relative', width: 'fit-content', margin: '0 auto' }}>
                           <img src={activeDwg.drawing_url} alt={activeDwg.title}
                             ref={el => { if (el?.complete && el.naturalWidth && !natSize.w) setNatSize({ w: el.naturalWidth, h: el.naturalHeight }); }}
@@ -926,7 +926,7 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
       }}>
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <span style={{
-          minWidth: 34, height: 24, padding: '0 8px', borderRadius: 999, display: 'inline-flex',
+          minWidth: 34, height: 24, padding: '0 8px', borderRadius: 'var(--r-pill)', display: 'inline-flex',
           alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12, color: '#fff',
           background: judged ? color : (item.rank ? RANK[item.rank].color : '#4d9fff'),
         }}>{item.balloon_no}</span>
@@ -1000,7 +1000,7 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
 
       {/* ฟอร์ม NG — บังคับกรอกรายละเอียด */}
       {showNg && !readOnly && (
-        <div style={{ marginTop: 8, padding: 10, borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)' }}
+        <div style={{ marginTop: 8, padding: 10, borderRadius: 'var(--r-md)', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)' }}
           onClick={e => e.stopPropagation()}>
           <div className="mgrid" style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 120px auto' }}>
             <input style={inputSt} placeholder="เสียอย่างไร / เจอที่ไหน (บังคับกรอก)"

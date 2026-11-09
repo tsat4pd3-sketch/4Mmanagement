@@ -64,6 +64,7 @@ import StoreCallSiren from './StoreCallSiren';
 import ProdRoutineCard, { useProdRoutine } from './ProdRoutineCard';
 import { routineMapOf, ROUTINE_MAP_COLOR } from '../utils/prodRoutine';
 import { liveChannel } from '../utils/liveChannel';
+import TabBar from './TabBar';   // แถบเลือกทีม = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
 const EMPTY = Object.freeze({});
@@ -440,12 +441,9 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
             (โชว์ไว้จะกินความสูงจอโดยไม่มีใครกด · ผังคือพระเอกของจอนี้) */}
         {showPm && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-          {MTN_TEAMS.map(t => (
-            <button key={t} onClick={() => setTeam(t)} style={chip(team === t)}>
-              {TEAM_ICON[t] || '🔧'} {deptNameOf(t)}
-            </button>
-          ))}
-          <button onClick={() => setTeam(null)} style={chip(!team)}>ทุกทีม</button>
+          {/* ทีม = แท็บเส้นใต้มาตรฐาน (06/11 · เดิมแคปซูล) · "ทุกทีม" ซ้ายสุด (UI-STANDARD §3) */}
+          <TabBar size="sm" value={team ?? ''} onChange={k => setTeam(k || null)}
+            tabs={[{ key: '', label: 'ทุกทีม' }, ...MTN_TEAMS.map(t => ({ key: t, label: deptNameOf(t) }))]} />
           {myTeams.length === 1 && !sp.get('team') && (
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>· ตั้งต้นตามทีมของบัญชีนี้</span>
           )}
@@ -626,7 +624,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {planned.map(r => (
-                  <span key={r.id} style={{ fontSize: 11 * big, color: 'var(--text2)', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 7, padding: '3px 8px' }}>
+                  <span key={r.id} style={{ fontSize: 11 * big, color: 'var(--text2)', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '3px 8px' }}>
                     {r.machine_no || r.production_sessions?.line_name} · {r.dr_downtime_types?.name_th || ''} · {fmtMin(r._min)}
                   </span>
                 ))}
@@ -728,7 +726,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
         const zLive = zDt.filter(r => r._s.k !== 'planned');
         return (
           <div onClick={() => setZoom(null)} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: '100%', maxWidth: 720, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', width: '100%', maxWidth: 720, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px 12px', borderBottom: '1px solid var(--border)' }}>
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 19, fontWeight: 900, color: 'var(--text)' }}>{zoom}</div>
@@ -737,7 +735,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
                     {' · '}🛠️ ใบซ่อมค้าง {zMo.length}{' · '}📅 PM ถึงกำหนด {zPm.length}
                   </div>
                 </div>
-                <button onClick={() => setZoom(null)} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', color: 'var(--text2)', fontSize: 15 }}>✕</button>
+                <button type="button" className="pg-btn sm pg-btn-icon" onClick={() => setZoom(null)} style={{ width: 32 }}>✕</button>
               </div>
 
               <div style={{ overflowY: 'auto', padding: '14px 18px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -746,7 +744,7 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
                   {!zDt.length ? <div style={{ fontSize: 12.5, color: 'var(--green)', fontWeight: 700 }}>✅ ไม่มีรายการหยุดค้างของไลน์นี้</div> : (
                     <div style={{ display: 'grid', gap: 6 }}>
                       {zDt.map(r => (
-                        <div key={r.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderLeft: `4px solid ${r._s.color}`, borderRadius: 8, padding: '7px 10px' }}>
+                        <div key={r.id} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderLeft: `4px solid ${r._s.color}`, borderRadius: 'var(--r-md)', padding: '7px 10px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                             <b style={{ fontSize: 13, color: r.machine_no ? 'var(--text)' : 'var(--accent2)' }}>{r.machine_no || '⚠ ไม่ระบุเครื่อง'}</b>
                             <span style={{ fontSize: 12, color: 'var(--text2)' }}>{r.dr_downtime_types?.name_th || 'ไม่ระบุประเภท'}</span>
@@ -811,8 +809,9 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
   );
 }
 
+/* ปุ่มลิงก์ท้ายจอ = ทรงเดียวกับ .pg-btn (06/11 · เดิมแคปซูล 999) · on = ปุ่มหลัก */
 const chip = (on) => ({
-  fontSize: 12.5, fontWeight: 800, padding: '5px 12px', borderRadius: 999, cursor: 'pointer',
-  background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
+  height: 30, fontSize: 12.5, fontWeight: 600, padding: '0 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
+  background: on ? 'var(--accent)' : 'var(--card)', color: on ? 'var(--accent-ink)' : 'var(--text)',
   border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
 });

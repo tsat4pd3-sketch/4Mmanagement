@@ -185,7 +185,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
       closeup={{ preview: cp._imgPreview, onPick: onCpImage, onClear: () => onChange({ _imgFile: null, _imgPreview: null, image_path: null }) }}
       extra={isVar && (
         <button type="button" onClick={onDuplicate} title="ทำสำเนาจุดนี้เป็นอีกแกน (X↔Y) — copy ชื่อ/tool ให้ กรอกแค่ spec"
-          style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)' }}>
+          style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 600, cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)' }}>
           ⧉ อีกแกน
         </button>
       )}>
@@ -235,7 +235,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
         // เปลี่ยนโหมด = ล้างเฉพาะช่องที่โหมดใหม่ไม่ใช้ (กันค่าค้างแล้วบันทึกเกณฑ์ที่ไม่ได้ตั้งใจ)
         const setMode = m => onChange({ _mmode: m, ...(m === 'gte' ? { usl: '' } : m === 'lte' ? { lsl: '' } : {}) })
         const modeBtn = (m, t) => (
-          <button key={m} onClick={() => setMode(m)} style={{ flex: 1, padding: '5px 0', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+          <button key={m} onClick={() => setMode(m)} style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
             border: `1.5px solid ${mMode === m ? 'var(--green)' : 'var(--border)'}`, background: mMode === m ? 'var(--green-dim)' : 'var(--bg3)', color: mMode === m ? 'var(--green)' : 'var(--muted)' }}>{t}</button>
         )
         return (
@@ -259,7 +259,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
             <span style={{ fontSize: 11, color: 'var(--muted)', marginRight: 4, textTransform: 'uppercase' }}>Axis</span>
             {[null, 'X', 'Y'].map(a => (
               <button key={String(a)} onClick={() => onChange({ axis: a })} style={{
-                padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer',
                 border: `1.5px solid ${cp.axis === a ? 'var(--accent)' : 'var(--border)'}`,
                 background: cp.axis === a ? 'var(--accent-dim)' : 'var(--bg3)',
                 color: cp.axis === a ? 'var(--accent)' : 'var(--muted)',
@@ -284,9 +284,9 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
       {!isVar && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 2 }}>
           <div style={{ display: 'flex', gap: 8 }}>
-            <span style={{ padding: '3px 10px', borderRadius: 6, background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 11, fontWeight: 700, border: '1px solid var(--accent)' }}>OK</span>
-            <span style={{ padding: '3px 10px', borderRadius: 6, background: 'var(--red-dim)', color: 'var(--red)', fontSize: 11, fontWeight: 700, border: '1px solid var(--red-line)' }}>NG</span>
-            {cp.type === 'note' && <span style={{ padding: '3px 10px', borderRadius: 6, background: 'var(--bg3)', color: 'var(--muted)', fontSize: 11, border: '1px solid var(--border)' }}>+ ข้อความ</span>}
+            <span style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 11, fontWeight: 700, border: '1px solid var(--accent)' }}>OK</span>
+            <span style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', background: 'var(--red-dim)', color: 'var(--red)', fontSize: 11, fontWeight: 700, border: '1px solid var(--red-line)' }}>NG</span>
+            {cp.type === 'note' && <span style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', color: 'var(--muted)', fontSize: 11, border: '1px solid var(--border)' }}>+ ข้อความ</span>}
           </div>
           <div>
             <label style={S.label}>เกณฑ์ตัดสิน (Standard) — ขึ้นบรรทัดใหม่ได้</label>
@@ -986,7 +986,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
   const scopedCategories = (categories ?? []).filter(c => !c.equip_types?.length || c.equip_types.includes(catScopeKey))
   const renderCard = (cp) => (
     <div key={cp._key} ref={cardRef(cp._key)}
-      style={{ borderRadius: 8, transition: 'box-shadow .3s',
+      style={{ borderRadius: 'var(--r-md)', transition: 'box-shadow .3s',
         boxShadow: flashKey === cp._key ? '0 0 0 2px var(--accent), 0 0 14px var(--accent-glow)' : 'none' }}>
       <CheckpointCard cp={cp} label={cpLabels[cp._key]}
         calcOptions={calcOptionsFor(cp._key)} calcIssues={calcIssueList.filter(x => x.key === cp._key).map(x => x.msg)}
@@ -1011,7 +1011,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
               const isCur = d.department === department
               return (
                 <span key={d.department} style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999,
+                  display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 'var(--r-pill)',
                   fontSize: 11.5, fontWeight: isCur ? 800 : 600,
                   background: isCur ? 'var(--accent-dim)' : 'var(--bg3)',
                   border: `1px solid ${isCur ? (t?.color || deptColor) : 'var(--border2)'}`,
@@ -1025,7 +1025,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
               )
             }
             return (
-              <div style={{ padding: '10px 12px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8 }}>
+              <div style={{ padding: '10px 12px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)' }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>
                   รายการตรวจของเครื่องนี้ (แยกตามแผนก)
                 </div>
@@ -1145,7 +1145,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                         {!!notPmYet.length && <> · <b style={{ color: 'var(--accent2)' }}>อีก {notPmYet.length} เครื่องที่ค้นเจอในทะเบียนเครื่องจักร
                           ยังไม่ได้เพิ่มเป็นอุปกรณ์ PM</b> จึงยังคัดลอกไปไม่ได้</>}
                       </div>
-                      <div style={{ maxHeight: 148, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 7, padding: 6,
+                      <div style={{ maxHeight: 148, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 6,
                         display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))', gap: 3, alignContent: 'start' }}>
                         {shown.map(e => {
                           const on = copyTo.includes(e.id)
@@ -1180,7 +1180,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                         const skip = copyReport.filter(r => !r.copied)
                         const why = { target_has_checkpoints: 'มีจุดตรวจอยู่แล้ว', target_has_history: 'มีประวัติผลตรวจแล้ว', same: 'เครื่องต้นทาง', empty: 'ต้นทางไม่มีจุดตรวจ', error: 'ผิดพลาด' }
                         return (
-                          <div style={{ marginTop: 7, fontSize: 11.5, lineHeight: 1.7, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7, padding: '7px 9px' }}>
+                          <div style={{ marginTop: 7, fontSize: 11.5, lineHeight: 1.7, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '7px 9px' }}>
                             <b style={{ color: 'var(--accent)' }}>✅ คัดลอกสำเร็จ {ok.length} เครื่อง</b>
                             {!!ok.length && <span style={{ color: 'var(--muted)' }}> — {ok.map(r => r.label).join(' · ')}</span>}
                             {!!skip.length && <div style={{ color: 'var(--accent2)', marginTop: 3 }}>
@@ -1227,7 +1227,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                     const cur = machineOptions.find(x => x.id === machineId)
                     if (cur && k !== 'all' && equipTypeOfMachine(cur) !== k) handleMachineSelect(null)
                   }} style={{
-                    padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
                     border: `1.5px solid ${kindFilter === k ? deptColor + '60' : 'var(--border2)'}`,
                     background: kindFilter === k ? deptColor + '18' : 'var(--bg3)',
                     color: kindFilter === k ? deptColor : 'var(--muted)',
@@ -1244,7 +1244,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                 placeholder={kindFilter === 'all' ? '— ค้นหา / เลือกอุปกรณ์ (รหัส · ชื่อ · ไลน์) —' : `— ค้นหา / เลือก${EQUIP_TYPE_LABEL[kindFilter] ?? ''} (รหัส · ชื่อ · ไลน์) —`}
                 onChange={({ id }) => { const v = id || null; if (v !== (machineId ?? null)) handleMachineSelect(v) }} />
               {machineId && (
-                <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--bg3)', borderRadius: 6, fontSize: 12, color: 'var(--text2)' }}>
+                <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--bg3)', borderRadius: 'var(--r-md)', fontSize: 12, color: 'var(--text2)' }}>
                   ✅ <strong style={{ color: 'var(--text)' }}>{name}</strong>{lineName && <span style={{ color: 'var(--muted)' }}> · {lineName}</span>}
                   {existingNote?.length > 0 && (
                     <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed var(--border2)', fontSize: 11.5, lineHeight: 1.6, color: 'var(--muted)' }}>
@@ -1267,7 +1267,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {Object.entries(EQUIP_TYPE_LABEL).map(([k, v]) => (
                   <button key={k} onClick={() => setEquipType(k)} style={{
-                    padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
                     border: `1.5px solid ${equipType === k ? deptColor + '60' : 'var(--border2)'}`,
                     background: equipType === k ? deptColor + '18' : 'var(--bg3)',
                     color: equipType === k ? deptColor : 'var(--muted)',
@@ -1283,7 +1283,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
               <div style={{ display: 'flex', gap: 6 }}>
                 {Object.entries(CATEGORY_TYPE_META).map(([k, v]) => (
                   <button key={k} onClick={() => setEquipCategory(k)} style={{
-                    flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                    flex: 1, padding: '6px 8px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 600, cursor: 'pointer',
                     border: `1.5px solid ${equipCategory === k ? v.color + '60' : 'var(--border2)'}`,
                     background: equipCategory === k ? v.color + '18' : 'var(--bg3)',
                     color: equipCategory === k ? v.color : 'var(--muted)',
@@ -1519,7 +1519,7 @@ function EquipmentTable({ groups, canSetup, onEdit, onDelete }) {
                     onClick={canSetup ? () => onEdit(j) : undefined}
                     onKeyDown={canSetup ? e => { if (e.key === 'Enter') onEdit(j) } : undefined}>
                     <td style={{ padding: '4px 8px' }}>
-                      <div style={{ width: 36, height: 36, borderRadius: 6, background: 'var(--bg2)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, opacity: img ? 1 : 0.4 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 'var(--r-md)', background: 'var(--bg2)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, opacity: img ? 1 : 0.4 }}>
                         {img ? <img src={img} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : '🔩'}
                       </div>
                     </td>
@@ -1794,7 +1794,7 @@ export default function PMSetup() {
 
       {/* 🔴 โหลดไม่ครบต้องเขียนบนจอ — ห้ามปล่อยลิสต์ว่างแล้วอ่านว่า "ยังไม่มีอุปกรณ์" */}
       {loadErr && !loading && (
-        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--red)', color: 'var(--red)', fontSize: 12.5 }}>
+        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--red)', color: 'var(--red)', fontSize: 12.5 }}>
           ⚠ โหลดข้อมูลไม่ครบ — ตัวเลข/รายการด้านล่างอาจขาด: {loadErr}
           <button type="button" onClick={fetchData} style={{ ...S.jumpBtn, marginLeft: 8 }}>ลองใหม่</button>
         </div>

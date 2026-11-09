@@ -175,7 +175,7 @@ export default function OrgScopePicker({
 
   const ownerChip = isCc && ccOwner ? (
     <button type="button" onClick={() => emit(ownerKey)} title={`เลิกกรองด้วยรหัส — ดูทั้ง ${index.labelOf(ccOwner.kind, ccOwner.value)}`}
-      style={{ padding: '3px 8px', fontSize: 11.5, borderRadius: 999, cursor: 'pointer', fontWeight: 700, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)' }}>
+      style={{ padding: '3px 8px', fontSize: 11.5, borderRadius: 'var(--r-md)', cursor: 'pointer', fontWeight: 700, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)' }}>
       ↑ ทั้ง {index.labelOf(ccOwner.kind, ccOwner.value)}
     </button>
   ) : null;
@@ -191,13 +191,13 @@ export default function OrgScopePicker({
         {ccHint && (ccHint.code
           ? (
             <button type="button" onClick={() => emit(scopeKey('cost_center', ccHint.code))} title={ccHint.title}
-              style={{ padding: '3px 8px', fontSize: 11.5, borderRadius: 999, cursor: 'pointer', fontWeight: 700, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)' }}>
+              style={{ padding: '3px 8px', fontSize: 11.5, borderRadius: 'var(--r-md)', cursor: 'pointer', fontWeight: 700, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)' }}>
               {ccHint.text}
             </button>
           )
           : (
             <span title={ccHint.title}
-              style={{ padding: '3px 8px', fontSize: 11.5, borderRadius: 999, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--muted)' }}>
+              style={{ padding: '3px 8px', fontSize: 11.5, borderRadius: 'var(--r-pill)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--muted)' }}>
               {ccHint.text}
             </span>
           ))}

@@ -352,7 +352,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
         {/* picker กลาง (UI §5.1.2) — `lines` ถูกกรอง scope มาจากหน้าแม่แล้ว จึงไม่ส่ง role/sections ซ้ำ */}
         {sectionHint && (
           <span title="ขอบเขตที่เจาะมา — เปลี่ยนได้ที่ตัวกรองส่วนงานในแท็บ ⚡ ภาพรวมวันนี้"
-            style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 999, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
+            style={{ fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
             {sectionHint}
           </span>
         )}
@@ -386,13 +386,13 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
         const baht = (min) => (perHr == null ? null : (min / 60) * perHr);
         const fmtB = (v) => Math.round(v).toLocaleString('en-US');
         return (
-          <div style={{ marginBottom: 14, padding: '12px 14px', borderRadius: 10, background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+          <div style={{ marginBottom: 14, padding: '12px 14px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 10 }}>
               <div style={{ fontSize: 13, fontWeight: 800 }}>วิเคราะห์ความสูญเปล่าแบบ Lean</div>
               <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
                 {[['six_big_loss', '6 Big Losses (TPM)'], ['waste_type', '8 Wastes (Lean)']].map(([k, lb]) => (
                   <button key={k} onClick={() => setLeanAxis(k)}
-                    style={{ padding: '5px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    style={{ padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                       border: leanAxis === k ? '1px solid var(--accent)' : '1px solid var(--border)',
                       background: leanAxis === k ? 'var(--accent)' : 'transparent', color: leanAxis === k ? 'var(--accent-ink)' : 'var(--text2)' }}>{lb}</button>
                 ))}
@@ -427,7 +427,7 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
                         {totalMin > 0 ? <span style={{ color: 'var(--muted)' }}> ({Math.round(r.min / totalMin * 100)}%)</span> : null}
                       </span>
                     </div>
-                    <div style={{ height: 7, borderRadius: 4, background: 'var(--bg3)', overflow: 'hidden', margin: '3px 0 2px' }}>
+                    <div style={{ height: 7, borderRadius: 'var(--r-xs)', background: 'var(--bg3)', overflow: 'hidden', margin: '3px 0 2px' }}>
                       <div style={{ width: `${Math.max(1, r.min / maxMin * 100)}%`, height: '100%', background: c }} />
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -456,12 +456,12 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
           {insights.map((it, i) => {
             const sv = SEV[it.sev];
             return (
-              <div key={i} style={{ display: 'flex', gap: 12, padding: '12px 14px', borderRadius: 10, background: sv.bg, border: `1px solid ${sv.c}44`, borderLeft: `4px solid ${sv.c}` }}>
+              <div key={i} style={{ display: 'flex', gap: 12, padding: '12px 14px', borderRadius: 'var(--r-md)', background: sv.bg, border: `1px solid ${sv.c}44`, borderLeft: `4px solid ${sv.c}` }}>
                 <div style={{ fontSize: 22, lineHeight: 1, flexShrink: 0 }}>{it.icon}</div>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{it.title}</span>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: sv.c, background: `${sv.c}18`, borderRadius: 5, padding: '1px 7px' }}>{sv.label}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: sv.c, background: `${sv.c}18`, borderRadius: 'var(--r-xs)', padding: '1px 7px' }}>{sv.label}</span>
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4, lineHeight: 1.55 }}>{it.detail}</div>
                 </div>

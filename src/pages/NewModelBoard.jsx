@@ -54,7 +54,7 @@ function EvaBadge({ eva, label, note, big }) {
   return (
     <div className="nmb-card" data-eva={eva || 'none'}
       style={{ ...CARD, display: 'flex', gap: 12, alignItems: 'flex-start', minWidth: 0,
-        padding: '12px 13px 12px 17px', borderRadius: 10,
+        padding: '12px 13px 12px 17px', borderRadius: 'var(--r-md)',
         borderColor: none ? 'var(--border)' : `${tint(m.color, 'line')}`,
         '--nmb-color': none ? 'var(--border2)' : m.color, '--nmb-rail': big ? '5px' : '4px' }}>
       <div className="nmb-ring" style={{
@@ -192,7 +192,7 @@ function PanelNpiLink({ proj, panel }) {
   const link = npiLinkFor(panel.key, ref.id);
   if (ref.loading || !link) return null;
   return (
-    <div className="nmb-card" data-eva="G" style={{ ...CARD, marginTop: 12, padding: '10px 12px 10px 16px', borderRadius: 10,
+    <div className="nmb-card" data-eva="G" style={{ ...CARD, marginTop: 12, padding: '10px 12px 10px 16px', borderRadius: 'var(--r-md)',
       '--nmb-color': 'var(--accent)', fontSize: 12.5, lineHeight: 1.55 }}>
       🔗 <b>ของจริงของแผงนี้อยู่ใน NPI</b> — {link.what}
       {' · '}<a href={link.href} style={{ color: 'var(--accent)' }}>เปิด {link.label}{ref.code ? ` ของ ${ref.code}` : ''} →</a>
@@ -224,7 +224,7 @@ function NpiLinkCard({ proj, isMobile }) {
   if (error) {
     /* 🔴 โหลดล่ม ต้องเขียนว่าล่ม ห้ามกลืนเป็น "ยังไม่ผูก" */
     return (
-      <div className="nmb-card" data-eva="R" style={{ ...CARD, marginBottom: 12, padding: '12px 13px 12px 17px', borderRadius: 10,
+      <div className="nmb-card" data-eva="R" style={{ ...CARD, marginBottom: 12, padding: '12px 13px 12px 17px', borderRadius: 'var(--r-md)',
         '--nmb-color': 'var(--red)', fontSize: 12.5 }}>
         <b>อ่านข้อมูล NPI ไม่สำเร็จ</b> — ตัวเลขฝั่ง NPI จึงยังไม่แสดง (ไม่ได้แปลว่ารุ่นนี้ยังไม่ผูก)
         <div style={{ color: 'var(--muted)', fontSize: 11.5, marginTop: 3 }}>{error}</div>
@@ -233,7 +233,7 @@ function NpiLinkCard({ proj, isMobile }) {
   }
   if (!sum) {
     return (
-      <div className="nmb-card" data-eva="none" style={{ ...CARD, marginBottom: 12, padding: '12px 13px 12px 17px', borderRadius: 10, fontSize: 12.5, lineHeight: 1.6 }}>
+      <div className="nmb-card" data-eva="none" style={{ ...CARD, marginBottom: 12, padding: '12px 13px 12px 17px', borderRadius: 'var(--r-md)', fontSize: 12.5, lineHeight: 1.6 }}>
         🔗 <b>รุ่นนี้ยังไม่ผูกกับโปรเจค NPI</b> — บอร์ดจึงแสดงได้แค่สิ่งที่ถอดจากบอร์ดกระดาษ
         <div style={{ color: 'var(--text2)', marginTop: 4 }}>
           ผูกที่ <a href="/npi" style={{ color: 'var(--accent)' }}>พาร์ทใหม่ APQP / PPAP</a> → เลือกโปรเจค → <b>✏️ โปรเจค</b> → ช่อง
@@ -247,7 +247,7 @@ function NpiLinkCard({ proj, isMobile }) {
   const st = { display: 'grid', gap: 14, alignContent: 'start',
     gridTemplateColumns: isMobile ? 'repeat(2, minmax(0,1fr))' : 'repeat(auto-fit, minmax(96px, 1fr))' };
   return (
-    <div className="nmb-card" data-eva="G" style={{ ...CARD, marginBottom: 12, padding: '12px 13px 12px 17px', borderRadius: 10,
+    <div className="nmb-card" data-eva="G" style={{ ...CARD, marginBottom: 12, padding: '12px 13px 12px 17px', borderRadius: 'var(--r-md)',
       '--nmb-color': 'var(--accent)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
         <span className="nmb-eyebrow" style={{ fontSize: 11 }}>โปรเจค NPI ของรุ่นนี้</span>
@@ -325,8 +325,8 @@ function MetricBlock({ panel, size = 'page', level = 3, trailing = null }) {
 
       {/* แถบความคืบหน้า — เฉพาะตัวที่มีตัวหารจริง · ใบเอกสาร (count) ไม่มีแถบ เพราะไม่มีความคืบหน้า */}
       {m.pct != null && (
-        <div style={{ height: tv ? 4 : 5, borderRadius: 99, background: 'var(--bg3)', overflow: 'clip' }}>
-          <div style={{ width: `${m.pct}%`, height: '100%', background: color, borderRadius: 99 }} />
+        <div style={{ height: tv ? 4 : 5, borderRadius: 'var(--r-pill)', background: 'var(--bg3)', overflow: 'clip' }}>
+          <div style={{ width: `${m.pct}%`, height: '100%', background: color, borderRadius: 'var(--r-pill)' }} />
         </div>
       )}
 
@@ -443,7 +443,7 @@ function LevelCustomer({ cust, go }) {
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <Dot eva={projectEva(p)} size={16} />
             <span style={{ fontSize: 15, fontWeight: 700 }}>{p.title}</span>
-            {p.focus && <span style={{ fontSize: 11, background: 'var(--bg3)', padding: '1px 7px', borderRadius: 99 }}>⭐ Focus</span>}
+            {p.focus && <span style={{ fontSize: 11, background: 'var(--bg3)', padding: '1px 7px', borderRadius: 'var(--r-pill)' }}>⭐ Focus</span>}
           </div>
           <div style={{ fontSize: 12, color: 'var(--text2)' }}>ด่านปัจจุบัน {p.stage} · สภาพชิ้นงาน {p.partCondition}</div>
           <div style={{ fontSize: 12, color: 'var(--muted)' }}>ส่งชิ้นงาน (PAD) {p.pad} · ปิด SPTT#2 ภายใน {p.targetSptt2}</div>
@@ -684,7 +684,7 @@ function LevelProject({ proj, go }) {
         <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
           {proj.sptt.map(s => (
             <span key={s.name} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11.5,
-              background: 'var(--bg3)', padding: '4px 9px', borderRadius: 99 }}>
+              background: 'var(--bg3)', padding: '4px 9px', borderRadius: 'var(--r-pill)' }}>
               <Dot eva={s.eva} size={10} /><b>{s.name}</b><span style={{ color: 'var(--muted)' }}>{s.plan}</span>
             </span>
           ))}
@@ -707,7 +707,7 @@ function LevelProject({ proj, go }) {
               data-eva={p.eva || 'none'} className={`nmb-card${hot ? ' mo-card-alert' : ''}`}
               style={{ ...CARD, textAlign: 'left', cursor: 'pointer', display: 'flex', flexDirection: 'column',
                 gap: 6, minHeight: 104, gridColumn: hot ? 'span 2' : undefined,
-                padding: '12px 13px 12px 17px', borderRadius: 10,
+                padding: '12px 13px 12px 17px', borderRadius: 'var(--r-md)',
                 /* วัสดุชุดเดียวกับโหมดจอ TV — สีอยู่ที่รางซ้าย ไม่ใช่กรอบสีเต็มใบ */
                 borderColor: p.eva === 'none' || !p.eva ? 'var(--border)' : `${tint(evaMeta(p.eva).color, 'line')}`,
                 '--nmb-color': p.eva === 'none' || !p.eva ? 'var(--border2)' : evaMeta(p.eva).color,
@@ -808,7 +808,7 @@ function LevelPop({ proj, main, go }) {
           {main.panel && (
             <button onClick={() => go({ cust: proj.customer, proj: proj.id, panel: main.panel })}
               style={{ marginTop: 9, background: 'var(--bg3)', border: '1px solid var(--border)',
-                color: 'var(--text)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 12 }}>
+                color: 'var(--text)', borderRadius: 'var(--r-md)', padding: '6px 12px', cursor: 'pointer', fontSize: 12 }}>
               เปิดแผงหลักฐาน →
             </button>
           )}
@@ -1050,7 +1050,7 @@ function PanelNetwork({ p }) {
             <div style={{ width: 88, fontSize: 11.5, color: 'var(--muted)', flex: '0 0 88px' }}>{t.tier}</div>
             {t.nodes.map(n => (
               <span key={n.name} style={{ background: 'var(--bg3)', border: '1px solid var(--border)',
-                borderRadius: 8, padding: '6px 11px', fontSize: 12 }}>
+                borderRadius: 'var(--r-md)', padding: '6px 11px', fontSize: 12 }}>
                 <b>{n.name}</b>{n.note && <span style={{ color: 'var(--muted)' }}> · {n.note}</span>}
               </span>
             ))}
@@ -1082,7 +1082,7 @@ function LevelPanel({ proj, panel }) {
       </div>
       {/* แผ่นสรุปตัวเลขของแผงนี้ — ตอบ "เท่าไหร่ / จากอะไร" ก่อนให้ไล่ดูตารางข้างล่าง */}
       <div className="nmb-card" data-eva={panel.eva || 'none'}
-        style={{ ...CARD, marginBottom: 12, padding: '14px 15px 14px 19px', borderRadius: 10,
+        style={{ ...CARD, marginBottom: 12, padding: '14px 15px 14px 19px', borderRadius: 'var(--r-md)',
           borderColor: panel.eva === 'none' || !panel.eva ? 'var(--border)' : `${tint(evaMeta(panel.eva).color, 'line')}`,
           '--nmb-color': panel.eva === 'none' || !panel.eva ? 'var(--border2)' : evaMeta(panel.eva).color }}>
         <MetricBlock panel={panel} />
@@ -1215,7 +1215,7 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
             ].filter(([, v]) => v).map(([k, v]) => (
               <span key={k} style={{
                 display: 'inline-flex', alignItems: 'baseline', gap: '0.3vw',
-                background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 999,
+                background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-pill)',
                 padding: '0.25vh 0.7vw', fontSize: F.sub, whiteSpace: 'nowrap',
               }}>
                 <span style={{ color: 'var(--muted)' }}>{k}</span>
@@ -1248,7 +1248,7 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
           </div>
           <button onClick={onExit} title="ออกจากโหมดจอ TV" style={{
             background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)',
-            borderRadius: 999, width: '2.2vw', height: '2.2vw', minWidth: 30, minHeight: 30,
+            borderRadius: 'var(--r-md)', width: '2.2vw', height: '2.2vw', minWidth: 30, minHeight: 30,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: 'pointer', fontSize: F.sub, padding: 0,
           }}>✕</button>
@@ -1261,7 +1261,7 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
       {/* เหตุผลที่แดง — บนบอร์ดจริงเป็นกล่องคำอธิบายชี้ที่แถวต้นเหตุ */}
       {proj.evaNote && (
         <div className="nmb-card" data-eva="R" style={{
-          flex: '0 0 auto', borderRadius: 10, padding: '0.8vh 1vw 0.8vh 1.5vw',
+          flex: '0 0 auto', borderRadius: 'var(--r-md)', padding: '0.8vh 1vw 0.8vh 1.5vw',
           '--nmb-color': 'var(--red)', '--nmb-rail': 'clamp(4px, 0.3vw, 8px)',
         }}>
           {/* ป้ายไทย — ห้ามใช้ชั้น .nmb-eyebrow (letter-spacing .16em ดันสระ/วรรณยุกต์ออกจากพยัญชนะ) */}
@@ -1357,7 +1357,7 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
           display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '3vh 3vw',
         }}>
           <div onClick={(e) => e.stopPropagation()} style={{
-            background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12,
+            background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)',
             width: 'min(1500px, 94vw)', maxHeight: '94vh', overflow: 'auto',
             padding: '18px 20px', boxShadow: 'var(--shadow-lg)',
           }}>
@@ -1367,7 +1367,7 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
               </div>
               <button onClick={onClosePanel} style={{
                 marginLeft: 'auto', background: 'var(--bg3)', border: '1px solid var(--border)',
-                color: 'var(--text)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 13,
+                color: 'var(--text)', borderRadius: 'var(--r-md)', padding: '6px 12px', cursor: 'pointer', fontSize: 13,
               }}>ปิด (Esc)</button>
             </div>
             <LevelPanel proj={proj} panel={openPanel} />
@@ -1403,7 +1403,7 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
             <>
               <button onClick={() => setPaused(v => !v)} style={{
                 background: 'none', border: '1px solid var(--border)', color: 'var(--text2)',
-                borderRadius: 6, padding: '0.3vh 0.6vw', cursor: 'pointer', fontSize: F.sub,
+                borderRadius: 'var(--r-md)', padding: '0.3vh 0.6vw', cursor: 'pointer', fontSize: F.sub,
               }}>{paused ? 'เล่นต่อ' : 'หยุดสลับ'}</button>
               {projects.map((pj, i) => (
                 <button key={pj.id} onClick={() => onIndex(i)} title={pj.title} style={{

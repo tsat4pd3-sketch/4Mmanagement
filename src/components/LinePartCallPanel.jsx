@@ -561,12 +561,12 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   /* ⚠️ ไลน์แม่ที่มีลูก = แผนก ไม่ใช่จุดวางของ (กฎหน่วยย่อยที่สุด)
      ตัวเลขระดับนี้ไม่มีความหมาย — บอกให้ไปเปิดที่ไลน์ลูกแทน **ห้ามโชว์ตัวเลขให้เข้าใจผิด** */
   if (!isLeaf) return (
-    <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '12px 16px', marginBottom: 16 }}>
+    <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: '12px 16px', marginBottom: 16 }}>
       <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>เรียกชิ้นส่วนจากสโตร์</div>
       <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.7 }}>
         <b>{lineName}</b> เป็นไลน์แม่ (มีไลน์ย่อย {kidNames.length}) — ของอยู่ที่ <b>ไลน์ย่อย</b>
         <br />เปิดกะที่ไลน์ย่อยเพื่อดู/เบิก: {kidNames.map(n => (
-          <span key={n} style={{ display: 'inline-block', margin: '3px 4px 0 0', padding: '2px 8px', borderRadius: 6, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)', fontSize: 11 }}>{n}</span>
+          <span key={n} style={{ display: 'inline-block', margin: '3px 4px 0 0', padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)', fontSize: 11 }}>{n}</span>
         ))}
       </div>
     </div>
@@ -601,7 +601,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
   const planWait = planRows.filter(x => x.action === 'wait');
   const planNoPkg = planRows.filter(x => x.action === 'no_pkg');
   const orderBlock = (
-    <div style={{ marginBottom: 12, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '9px 12px' }}>
+    <div style={{ marginBottom: 12, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '9px 12px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>ความต้องการจากใบผลิตที่เปิดอยู่</span>
         {plan == null && <span style={{ fontSize: 11, color: 'var(--muted)' }}>กำลังคำนวณ…</span>}
@@ -627,7 +627,15 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
           {plan.noBom.slice(0, 5).map(x => `${x.mat_no} × ${fmtQty(x.qty)}`).join(' · ')} — แจ้ง PE ตั้ง BOM (/products) หรือกด ➕ ขอเบิกเอง
         </div>
       )}
-      {plan && !plan.error && plan.orders > 0 && !planRows.length && !plan.noBom?.length && (
+      {/* 🔩 08/11 — ใบขั้น OP ที่ยังไม่ผูกว่ากินอะไร (แม่มีลูกหลายตัว ระบบไม่เดา) ต้องบอก */}
+      {plan?.opUnset?.length > 0 && (
+        <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--red)', lineHeight: 1.7 }}>
+          ⚠ <b>ใบขั้น OP {plan.opUnset.length} ตัวยังไม่ได้ผูกว่ากินอะไร — ระบบไม่เดา จึงไม่ได้ขอของให้:</b>{' '}
+          {plan.opUnset.slice(0, 5).map(x => `${x.mat_no}${x.parent ? ` (แม่ ${x.parent} ลูก ${x.parentKids} ตัว)` : ''} × ${fmtQty(x.qty)}`).join(' · ')}
+          {' '}— ตั้งที่ /products แท็บ BOM ใบของแม่ → แผง 🔩 ขั้น OP (PE / supervisor ขึ้นไป)
+        </div>
+      )}
+      {plan && !plan.error && plan.orders > 0 && !planRows.length && !plan.noBom?.length && !plan.opUnset?.length && (
         <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--muted)' }}>ลูกใน BOM ทั้งหมดเป็นของที่พื้นที่นี้ผลิตเอง — ไม่มีอะไรต้องเบิกจากสโตร์</div>
       )}
       {planSend.length > 0 && (
@@ -660,7 +668,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
           ➕ ขอเบิกพาร์ทนี้เลย
         </button>
       ) : (
-        <div style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 8, padding: '10px 12px' }}>
+        <div style={{ background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
           <div style={{ fontSize: 11.5, fontWeight: 800, color: '#22c55e', marginBottom: 6 }}>
             ➕ ขอเบิกพาร์ทนี้เลย <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· เลือกพาร์ทที่ไลน์นี้ผลิต = ใส่ยอดที่จะผลิต ระบบแตก BOM เป็นชิ้นส่วนที่ต้องเบิกให้</span>
           </div>
@@ -676,7 +684,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
               }} />
             {/* ⚠️ input ใน flex row ต้องกำหนด width เอง — index.css ตั้ง input{width:100%} จะดันปุ่มแตกแถว */}
             <input value={adhocQty} onChange={e => setAdhocQty(e.target.value)} inputMode="numeric"
-              placeholder="จำนวน (ชิ้น)" style={{ width: 130, padding: '5px 10px', borderRadius: 7, fontSize: 12 }} />
+              placeholder="จำนวน (ชิ้น)" style={{ width: 130, padding: '5px 10px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
             <button disabled={!!busy} onClick={placeAdhoc} style={btn('#22c55e', '#04140a')}>แจ้งสโตร์</button>
             <button onClick={() => { setAdhocOpen(false); setAdhocMat(''); setAdhocName(''); setAdhocQty(''); setAdhocKnown(false); }}
               style={btn('transparent', 'var(--muted)', 'var(--border2)')}>ยกเลิก</button>
@@ -744,7 +752,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
 
       {/* โหลดไม่สำเร็จ = ต้องบอก ห้ามแสดงเป็น "ไม่มีอะไรต้องเบิก" */}
       {err?.msg && (
-        <div style={{ fontSize: 12, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '8px 11px', marginBottom: 10 }}>
+        <div style={{ fontSize: 12, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 'var(--r-md)', padding: '8px 11px', marginBottom: 10 }}>
           ⚠ โหลดข้อมูลไม่สำเร็จ — {err.msg} · ตัวเลขด้านล่างอาจไม่ครบ
         </div>
       )}
@@ -753,12 +761,12 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
           นี่คือเหตุผลที่ระบบไม่เสนอเติมทั้งที่ยอดรวมในระบบดูเหมือนมี */}
       {/* 🙈 05/11 (คำสั่ง user) — ไม่โชว์ "ของค้างที่ไลน์แม่" แล้ว: การเบิกคิดรวมทั้งพื้นที่ SAP (แม่-ลูกนับที่เดียวกัน) */}
       {SHOW_LEVEL_REFILL && stuckUp.length > 0 && (
-        <div style={{ fontSize: 11.5, color: 'var(--text2)', background: 'rgba(245,158,11,0.09)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '8px 11px', marginBottom: 10, lineHeight: 1.7 }}>
+        <div style={{ fontSize: 11.5, color: 'var(--text2)', background: 'rgba(245,158,11,0.09)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 'var(--r-md)', padding: '8px 11px', marginBottom: 10, lineHeight: 1.7 }}>
           <b style={{ color: '#f59e0b' }}>⬆ ของ {stuckUp.length} พาร์ทยังอยู่ที่ไลน์แม่ ไม่ได้อยู่หน้าไลน์นี้</b>
           <br />ระบบนับเฉพาะของที่อยู่ที่ <b>{lineName}</b> จริง (หน่วยย่อยที่สุด) — ของที่ไลน์แม่จึงไม่ถูกนับให้
           <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
             {stuckUp.slice(0, 8).map(s => (
-              <span key={`${s.line_name}|${s.mat_no}`} style={{ padding: '2px 8px', borderRadius: 6, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 11 }}>
+              <span key={`${s.line_name}|${s.mat_no}`} style={{ padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 11 }}>
                 {s.mat_no} · {fmtQty(s.qty)} <span style={{ color: 'var(--muted)' }}>@ {s.line_name}</span>
               </span>
             ))}
@@ -769,7 +777,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
       )}
 
       {whErr && (
-        <div style={{ fontSize: 12, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '8px 11px', marginBottom: 10 }}>
+        <div style={{ fontSize: 12, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 'var(--r-md)', padding: '8px 11px', marginBottom: 10 }}>
           ⚠ โหลดยอดคลัง (FG WAREHOUSE / STORE) ไม่สำเร็จ — {whErr} · พาร์ทที่ไลน์นี้ผลิตเองอาจถูกเทียบกับยอดหน้าไลน์แทน กด ↻ อีกครั้ง
         </div>
       )}
@@ -787,7 +795,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
                 return (
                   <div key={s.mat_no} style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', padding: '7px 10px', marginBottom: 4,
                     background: short ? 'rgba(239,68,68,0.08)' : 'rgba(56,189,248,0.07)',
-                    border: `1px solid ${short ? 'rgba(239,68,68,0.35)' : 'rgba(56,189,248,0.3)'}`, borderRadius: 8 }}>
+                    border: `1px solid ${short ? 'rgba(239,68,68,0.35)' : 'rgba(56,189,248,0.3)'}`, borderRadius: 'var(--r-md)' }}>
                     <MatLabel mat={s.mat_no} size={12.5} />
                     <span style={{ fontSize: 11.5, color: short ? '#ef4444' : 'var(--muted)', fontWeight: short ? 800 : 400 }}>
                       {s.loc} เหลือ {fmtQty(s.have)} / ขั้นต่ำ {fmtQty(s.min)}{short ? ' · หมดแล้ว' : ''}
@@ -842,7 +850,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
           </div>
           {holds.map(r => (
             <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', padding: '7px 10px', marginBottom: 4,
-              background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8 }}>
+              background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 'var(--r-md)' }}>
               <MatLabel mat={r.mat_no} name={r.part_name} size={12.5} />
               <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
                 ขอ {fmtQty(r.request_qty)} {qtyUnit(r.uom)} · พักเมื่อ {hhmm(r.hold_at)}{r.hold_by_name ? ` โดย ${r.hold_by_name}` : ''}
@@ -870,7 +878,7 @@ export default function LinePartCallPanel({ lineName, lines = [], role, fullName
             const wait = agoMin(r.requested_at);
             return (
               <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', padding: '7px 10px', marginBottom: 4,
-                background: 'var(--bg3)', border: '1px solid var(--border2)', borderLeft: `3px solid ${meta.color}`, borderRadius: 8 }}>
+                background: 'var(--bg3)', border: '1px solid var(--border2)', borderLeft: `3px solid ${meta.color}`, borderRadius: 'var(--r-md)' }}>
                 <MatLabel mat={r.mat_no} name={r.part_name} size={12.5} />
                 <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
                   {r.source === 'store_forecast' ? `🏬 สโตร์ส่งตามแผนผลิต ${fmtQty(r.request_qty)} ${qtyUnit(r.uom)} · เปิด ${hhmm(r.requested_at)}` : `ขอ ${fmtQty(r.request_qty)} ${qtyUnit(r.uom)} · แจ้ง ${hhmm(r.requested_at)}${r.source === 'line_adhoc' ? ' · ➕ ขอเอง' : ''}`}
@@ -945,7 +953,7 @@ function SuggestRow({ s, canDecide, busy, onPlace, onHold, btn }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap', padding: '7px 10px', marginBottom: 4,
       background: short ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.07)',
-      border: `1px solid ${short ? 'rgba(239,68,68,0.35)' : 'rgba(245,158,11,0.3)'}`, borderRadius: 8 }}>
+      border: `1px solid ${short ? 'rgba(239,68,68,0.35)' : 'rgba(245,158,11,0.3)'}`, borderRadius: 'var(--r-md)' }}>
       <MatLabel mat={s.mat_no} size={12.5} />
       <span style={{ fontSize: 11.5, color: short ? '#ef4444' : 'var(--muted)', fontWeight: short ? 800 : 400 }}>
         เหลือ {fmtQty(s.have)} / จุดเรียกเติม {fmtQty(s.min)}{short ? ' · หมดแล้ว' : ''}
@@ -954,7 +962,7 @@ function SuggestRow({ s, canDecide, busy, onPlace, onHold, btn }) {
         <span style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
           <input type="number" value={qty} onChange={e => setQty(e.target.value)} placeholder="จำนวน"
             title={s.suggestQty ? `ระบบเสนอ ${s.suggestQty} (เติมให้ถึง max)` : 'ยังไม่ได้ตั้ง max/จำนวนเบิก — กรอกเอง'}
-            style={{ width: 84, padding: '4px 8px', borderRadius: 6, fontSize: 12 }} />
+            style={{ width: 84, padding: '4px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
           <button disabled={busy} onClick={() => onPlace(s, qty)} style={btn('#22c55e', '#04140a')}>เบิก</button>
           <button disabled={busy} onClick={() => onHold(s)} style={btn('transparent', '#f59e0b', 'rgba(245,158,11,0.5)')}>⏸ พักไว้</button>
         </span>
@@ -1031,7 +1039,7 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, re
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       {/* ⚠️ ไม่ปิดจากการคลิกพื้นหลัง — กรอกตัวเลขหลายสิบช่องแล้วเผลอแตะ = หายทั้งหมด (UI-CONVENTIONS §5) */}
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, width: 'min(820px, 96vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: 'min(820px, 96vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border2)' }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>ตั้งจุดเรียกเติม — {lineName}</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
@@ -1043,14 +1051,14 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, re
           <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             {/* ⚠️ input ใน flex row ต้องกำหนด width เอง — index.css ตั้ง input{width:100%} จะดันปุ่มแตกแถว */}
             <input value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหารหัสพาร์ท"
-              style={{ width: 200, padding: '5px 10px', borderRadius: 7, fontSize: 12 }} />
+              style={{ width: 200, padding: '5px 10px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
             <span style={{ color: 'var(--border2)' }}>|</span>
             {/* 2026-09-07 <ProductSelect> — Product Master (ไลน์นี้ขึ้นก่อน) ∪ พาร์ทลูก BOM ∪ 📜 เคยตั้งไว้ · ไม่รับค่าพิมพ์เอง (known=false = นอกทะเบียน → ถามยืนยัน) */}
             {/* 🔒 strict = เฉพาะพาร์ทของไลน์นี้ (แม่/ลูก) + ลูก BOM ของไลน์นี้ (05/11 · ห้ามถอด) */}
             <ProductSelect strict value={newMat} lines={famNames} extraOptions={bomExtra} history={levelMatHist} placeholder="เพิ่มพาร์ท (เลือกจากทะเบียน)"
               style={{ width: 240 }} inputStyle={{ padding: '5px 26px 5px 10px', fontSize: 12 }}
               onChange={({ mat_no, opt, known }) => { setNewMat(mat_no); setNewMatKnown(!!opt && known !== false); }} />
-            <button onClick={addMat} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 7, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>+ เพิ่ม</button>
+            <button onClick={addMat} style={{ fontSize: 12, padding: '5px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>+ เพิ่ม</button>
           </div>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '10px 18px' }}>
@@ -1082,7 +1090,7 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, re
                     ) : ['min_qty', 'max_qty', 'reorder_qty'].map(k => (
                       <td key={k} style={{ padding: '3px 4px 3px 0' }}>
                         <input type="number" value={r[k]} onChange={e => set(i, k, e.target.value)}
-                          style={{ width: '100%', padding: '3px 7px', borderRadius: 6, fontSize: 12 }} />
+                          style={{ width: '100%', padding: '3px 7px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
                       </td>
                     ))}
                   </tr>
@@ -1093,8 +1101,8 @@ function LevelSetupModal({ lineName, lines = [], upMats = [], levels, onHand, re
           {!shown.length && <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 12 }}>ไม่มีพาร์ทที่ตรงกับคำค้น</div>}
         </div>
         <div style={{ padding: '12px 18px', borderTop: '1px solid var(--border2)', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{ fontSize: 12.5, padding: '7px 16px', borderRadius: 8, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>ยกเลิก</button>
-          <button onClick={save} disabled={saving} style={{ fontSize: 12.5, fontWeight: 800, padding: '7px 18px', borderRadius: 8, cursor: 'pointer', background: 'var(--accent)', border: 'none', color: 'var(--accent-ink)' }}>
+          <button onClick={onClose} style={{ fontSize: 12.5, padding: '7px 16px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>ยกเลิก</button>
+          <button onClick={save} disabled={saving} style={{ fontSize: 12.5, fontWeight: 800, padding: '7px 18px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--accent)', border: 'none', color: 'var(--accent-ink)' }}>
             {saving ? 'กำลังบันทึก…' : 'บันทึก'}
           </button>
         </div>

@@ -16,6 +16,7 @@ import useProductionLines from '../utils/useProductionLines';
 import TimeRangeBar from '../components/TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
 
+import NoticeBar from '../components/NoticeBar';
 // ประวัติผลิตราย Product — ดูย้อนหลังว่าสินค้าตัวหนึ่งผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ (2026-07-24)
 // + ประวัติการแก้ master data ของสินค้านั้น (audit_log — ใครแก้ line_name/CT เมื่อไหร่)
 
@@ -281,12 +282,9 @@ export default function ProductHistory() {
       {/* ⚠️ โหลดไม่ครบ = ทุกตัวเลขในหน้านี้ต่ำกว่าจริง (รวมทั้งแผงเทียบความต้องการลูกค้าที่บอก "ขาด/พอ")
           ห้ามปล่อยให้ดูเหมือนข้อมูลครบ — กฎ "ห้ามล้มเหลวเงียบ" */}
       {loadWarn && (
-        <div style={{
-          marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700,
-          background: 'var(--red-dim)', border: '1px solid var(--red-line)', color: 'var(--red)',
-        }}>
-          ⚠ {loadWarn} — ตัวเลขในหน้านี้ต่ำกว่าความจริง อย่าเพิ่งใช้ตัดสินใจ (ลองแคบช่วงวันที่ลง แล้วโหลดใหม่)
-        </div>
+        <NoticeBar tone="bad" style={{ marginBottom: 12 }}>
+          {loadWarn} — ตัวเลขในหน้านี้ต่ำกว่าความจริง อย่าเพิ่งใช้ตัดสินใจ (ลองแคบช่วงวันที่ลง แล้วโหลดใหม่)
+        </NoticeBar>
       )}
 
       {/* ตัวเลือกสินค้า + ช่วงวันที่ — แถบกรองเดียว (UI-STANDARD 2026-09-24: ไลน์/ค้นหาเป็น children ของ TimeRangeBar
@@ -314,7 +312,7 @@ export default function ProductHistory() {
             <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{pickerOpen ? '▲' : '▼'}</span>
           </div>
           {pickerOpen && (
-          <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid var(--border2)', borderRadius: 8, background: 'var(--bg2)' }}>
+          <div style={{ maxHeight: 300, overflowY: 'auto', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', background: 'var(--bg2)' }}>
             {productGroups.map(([line, items]) => (
               <div key={line}>
                 <div style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--bg3)', padding: '5px 12px',
@@ -364,14 +362,14 @@ export default function ProductHistory() {
                 {canGroup && (
                   <button onClick={() => setGroupMode(g => !g)}
                     title={`สินค้าที่ใช้เลขลูกค้า ${selMat.p_no} เหมือนกัน — ต่างกันที่ปลายทางส่งลูกค้า`}
-                    style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+                    style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                       background: groupMode ? 'var(--blue)' : 'var(--bg2)', color: groupMode ? '#fff' : 'var(--text)',
                       border: `1px solid ${groupMode ? 'var(--blue)' : 'var(--border2)'}` }}>
                     {groupMode ? `ดูรวมทั้งกลุ่ม (${groupMats.length}) — กดเพื่อดูเฉพาะตัวนี้` : `ดูรวมทั้งกลุ่ม (${groupMats.length} MAT SAP)`}
                   </button>
                 )}
                 <button onClick={() => { setSelMat(null); setPickerOpen(true); setGroupMode(false); }}
-                  style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
+                  style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                     background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
                   ปิด — เลือกสินค้าอื่น
                 </button>
@@ -391,7 +389,7 @@ export default function ProductHistory() {
                         title={meta?.name || ''}>{r.mat}
                         <span style={{ fontWeight: 400, color: 'var(--muted)' }}> · {meta?.name || '—'}</span>
                       </div>
-                      <div style={{ flex: 1, background: 'var(--bg2)', borderRadius: 6, height: 18, overflow: 'hidden' }}>
+                      <div style={{ flex: 1, background: 'var(--bg2)', borderRadius: 'var(--r-md)', height: 18, overflow: 'hidden' }}>
                         <div style={{ width: `${Math.round(r.produced / Math.max(1, summary.produced) * 100)}%`, background: 'var(--accent)', height: '100%' }} />
                       </div>
                       <div style={{ fontSize: 12, fontWeight: 700, width: 150, textAlign: 'right' }}>
@@ -441,7 +439,7 @@ export default function ProductHistory() {
                 {summary.byLine.map(l => (
                   <div key={l.line} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div style={{ width: 130, fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{l.line}</div>
-                    <div style={{ flex: 1, background: 'var(--bg2)', borderRadius: 6, height: 18, overflow: 'hidden' }}>
+                    <div style={{ flex: 1, background: 'var(--bg2)', borderRadius: 'var(--r-md)', height: 18, overflow: 'hidden' }}>
                       <div style={{ width: `${Math.round(l.produced / Math.max(1, summary.produced) * 100)}%`, background: 'var(--accent)', height: '100%' }} />
                     </div>
                     <div style={{ fontSize: 12, fontWeight: 700, width: 130, textAlign: 'right' }}>{l.produced.toLocaleString()} ชิ้น · {l.orders} ใบ{l.ng > 0 && ` · NG ${l.ng}`}</div>
@@ -536,7 +534,7 @@ export default function ProductHistory() {
               </table>
               {!showAllDays && dayGroups.length > 45 && (
                 <button onClick={() => setShowAllDays(true)}
-                  style={{ marginTop: 8, fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 8, cursor: 'pointer',
+                  style={{ marginTop: 8, fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                     background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
                   แสดงอีก {(dayGroups.length - 45).toLocaleString()} วัน (ทั้งหมด {dayGroups.length.toLocaleString()} วัน)
                 </button>

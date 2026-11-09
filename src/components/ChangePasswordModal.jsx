@@ -171,9 +171,9 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
                 ความแข็งแกร่ง: {next.length < 6 ? '⚠ อ่อน' : next.length < 10 ? '🟡 พอใช้' : '🟢 แข็งแกร่ง'}
               </div>
-              <div style={{ height: 3, borderRadius: 2, background: 'var(--border2)', overflow: 'hidden' }}>
+              <div style={{ height: 3, borderRadius: 'var(--r-xs)', background: 'var(--border2)', overflow: 'hidden' }}>
                 <div style={{
-                  height: '100%', borderRadius: 2,
+                  height: '100%', borderRadius: 'var(--r-xs)',
                   width: `${Math.min((next.length / 14) * 100, 100)}%`,
                   background: next.length < 6 ? '#ef4444' : next.length < 10 ? '#f59e0b' : 'var(--accent)',
                   transition: 'width 0.3s, background 0.3s',
@@ -189,7 +189,7 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
               onClick={handleClose}
               disabled={loading}
               style={{
-                flex: 1, padding: '10px 0', borderRadius: 8,
+                flex: 1, padding: '10px 0', borderRadius: 'var(--r-md)',
                 border: '1px solid var(--border2)', background: 'var(--bg3)',
                 color: 'var(--text2)', fontWeight: 600, fontSize: 13,
               }}
@@ -198,7 +198,7 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
               type="submit"
               disabled={loading || !current || next.length < 6 || next !== confirm}
               style={{
-                flex: 2, padding: '10px 0', borderRadius: 8,
+                flex: 2, padding: '10px 0', borderRadius: 'var(--r-md)',
                 border: 'none',
                 background: loading || !current || next.length < 6 || next !== confirm
                   ? 'var(--muted2)' : 'var(--accent)',

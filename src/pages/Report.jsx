@@ -18,7 +18,7 @@ import { fmtDate, fmtDateTime } from '../utils/dateFormat';
 import { can } from '../utils/permissions';
 import { loadCompanyCalendar, getDayType, isOtHolidayType, DAY_TYPE_META } from '../utils/companyCalendar';
 import { otPeriodMeta, WEEKDAY_OT_TIME } from '../utils/otPeriods';
-import { getLineFamilyNames, getLineFamilyIds, lineAncestorIds } from '../utils/lineHierarchy';
+import { getLineFamilyNames, getLineFamilyIds, lineAncestorIds, sortLineNames } from '../utils/lineHierarchy';
 import { inSectionScope } from '../utils/sectionScope';
 import {
   SKILL_LEVELS, getLevel, groupSkillsByCategory,
@@ -28,7 +28,10 @@ import { tsLogoHtml } from '../lib/individualSkillPrint';   // ใบ Multi-Skil
 import SkillRadarPanel from '../components/SkillRadarPanel';
 import { mergeBorrowedEmployees } from '../utils/lineHelpers';
 import tsLogoUrl from '../assets/TS logo.png';
-import { CHECKLIST_ITEMS, CATEGORY_COLOR, matchChecklistItem } from '../lib/changePointChecklist';
+import { buildChangePointSheet, changePointSheetHtml, changePointPrintDoc, CPC_CSS } from '../lib/changePointSheet';
+import { loadRunDays, ranOn } from '../utils/runDays';
+import { isWorkingDayFrom } from '../utils/workingDay';
+import { fetchByIds } from '../utils/fetchByIds';
 import { positionLabel, loadPositions } from '../utils/positions';   // ตำแหน่งเก็บเป็น key — แสดง/พิมพ์ต้องแปลงเป็นชื่อ
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
@@ -52,6 +55,8 @@ import useTimeRange from '../utils/useTimeRange';
 import { acceptImageFile } from '../utils/acceptImageFile';
 import { urlParam, urlPick, urlBool } from '../utils/urlInit';
 import { parseScopeKey } from '../utils/orgScope';
+import NoticeBar from '../components/NoticeBar';
+import SectionScopeSelect from '../components/SectionScopeSelect';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* โลโก้สำหรับฝังในใบพิมพ์ — cache ต่อ "url" ไม่ใช่ตัวเดียวตายตัว (QC audit 08/10)
@@ -141,7 +146,7 @@ function CsvBtn({ onClick, style = {} }) {
   if (!can('report', 'export', role)) return null;
   return (
     <button onClick={onClick} style={{
-      padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+      padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
       background: 'var(--green-dim)', color: 'var(--green)',
       border: '1px solid var(--green-line)', display: 'flex', alignItems: 'center', gap: 5,
       ...style,
@@ -269,7 +274,6 @@ function OtTransportBookingTab({ autoOpenMaster }) {
   const canManageMaster = can('ot_master', 'manage', role);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
-  const deptsOf        = useOrgDepts();
 
   const todayStr = getWorkDate();
 
@@ -392,19 +396,14 @@ table{border-collapse:collapse;width:100%}
   return (
     <div>
       <FilterBar style={{ marginBottom: 14 }}>
-        <select value={section} onChange={e => { setSection(e.target.value); setDeptFilter(''); }}>
-          <option value="">{ALL.section}</option>
-          {sections.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)}>
-          <option value="">{ALL.dept}</option>
-          {deptsOf(section).map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
+        {/* 09/11: ส่วนงาน + แผนก 2 ช่องแบน → ต้นไม้ผังช่องเดียว (คำสั่ง user "dropdown ไม่เหมือนดึงจากผังองค์กร") · state เดิม */}
+        <SectionScopeSelect pickDept value={section} dept={deptFilter} only={sections}
+          onChange={(sec, info) => { setSection(sec); setDeptFilter(info.unit || ''); }} />
         <span className="filter-label">วันที่ทำ OT</span>
         <input type="date" value={date} onChange={e => setDate(e.target.value)} />
         {calReady && (
           <span style={{
-            fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 999, whiteSpace: 'nowrap',
+            fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--r-pill)', whiteSpace: 'nowrap',
             color: isHoliday ? DAY_TYPE_META[dayType].color : 'var(--text2)',
             background: isHoliday ? 'var(--amber-dim)' : 'var(--bg3)',
             border: `1px solid ${isHoliday ? 'var(--amber-line)' : 'var(--border)'}`,
@@ -418,14 +417,14 @@ table{border-collapse:collapse;width:100%}
           {canManageMaster && (
             <button onClick={() => setShowMaster(v => !v)} style={{
               position: 'relative',
-              padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
               background: showMaster ? 'var(--amber-dim)' : 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)',
             }}>จัดการสายรถ/งาน OT<ToggleDot on={showMaster} /></button>
           )}
           <CsvBtn onClick={handleExportCsv} />
           {canExport && (
             <button onClick={handlePrint} style={{
-              padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
               background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)',
             }}>พิมพ์</button>
           )}
@@ -555,16 +554,16 @@ function OtMasterDataPanel() {
       <div>
         <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>สายรถรับส่ง</div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          <input placeholder="รหัส เช่น A17" value={newRouteCode} onChange={e => setNewRouteCode(e.target.value)} style={{ width: 70, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
-          <input placeholder="ชื่อสาย เช่น มาบยางพร-ปลวกแดง" value={newRouteName} onChange={e => setNewRouteName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
-          <button onClick={addRoute} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
+          <input placeholder="รหัส เช่น A17" value={newRouteCode} onChange={e => setNewRouteCode(e.target.value)} style={{ width: 70, padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
+          <input placeholder="ชื่อสาย เช่น มาบยางพร-ปลวกแดง" value={newRouteName} onChange={e => setNewRouteName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
+          <button onClick={addRoute} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
         </div>
         <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {busRoutes.map(r => (
-            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 6, background: r.is_active ? 'transparent' : 'var(--bg2)', opacity: r.is_active ? 1 : 0.5 }}>
+            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 'var(--r-md)', background: r.is_active ? 'transparent' : 'var(--bg2)', opacity: r.is_active ? 1 : 0.5 }}>
               <span style={{ flex: 1 }}>{r.code} {r.name}</span>
-              <button onClick={() => toggleRouteActive(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
-              <button onClick={() => removeRoute(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
+              <button onClick={() => toggleRouteActive(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
+              <button onClick={() => removeRoute(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
             </div>
           ))}
           {!loading && busRoutes.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีสายรถ</div>}
@@ -574,15 +573,15 @@ function OtMasterDataPanel() {
       <div>
         <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>งานที่ทำ OT</div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          <input placeholder="ชื่องาน เช่น ผลิตตามแผน" value={newTaskName} onChange={e => setNewTaskName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
-          <button onClick={addTask} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
+          <input placeholder="ชื่องาน เช่น ผลิตตามแผน" value={newTaskName} onChange={e => setNewTaskName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
+          <button onClick={addTask} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
         </div>
         <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {taskTypes.map(t => (
-            <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 6, background: t.is_active ? 'transparent' : 'var(--bg2)', opacity: t.is_active ? 1 : 0.5 }}>
+            <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 'var(--r-md)', background: t.is_active ? 'transparent' : 'var(--bg2)', opacity: t.is_active ? 1 : 0.5 }}>
               <span style={{ flex: 1 }}>{t.name}</span>
-              <button onClick={() => toggleTaskActive(t)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{t.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
-              <button onClick={() => removeTask(t)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
+              <button onClick={() => toggleTaskActive(t)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{t.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
+              <button onClick={() => removeTask(t)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
             </div>
           ))}
           {!loading && taskTypes.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีงาน</div>}
@@ -637,15 +636,15 @@ function SimpleNameMaster({ table, title, placeholder, offNote }) {
       ) : (
         <>
           <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-            <input placeholder={placeholder} value={newName} onChange={e => setNewName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 6, fontSize: 12 }} />
-            <button onClick={add} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
+            <input placeholder={placeholder} value={newName} onChange={e => setNewName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
+            <button onClick={add} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
           </div>
           <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {rows.map(r => (
-              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 6, background: r.is_active ? 'transparent' : 'var(--bg2)', opacity: r.is_active ? 1 : 0.5 }}>
+              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 'var(--r-md)', background: r.is_active ? 'transparent' : 'var(--bg2)', opacity: r.is_active ? 1 : 0.5 }}>
                 <span style={{ flex: 1 }}>{r.name}</span>
-                <button onClick={() => toggle(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
-                <button onClick={() => remove(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
+                <button onClick={() => toggle(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
+                <button onClick={() => remove(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
               </div>
             ))}
             {rows.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีรายการ</div>}
@@ -809,7 +808,7 @@ table{border-collapse:collapse;width:100%}
         <span className="spacer" />
         <span className="filter-count">รวม {filteredLogs.length} คน</span>
         {canExport && (
-          <button onClick={handlePrintDaily} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5 }}>
+          <button onClick={handlePrintDaily} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5 }}>
             PDF
           </button>
         )}
@@ -853,7 +852,6 @@ function PerEmployeeTab() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canExport = can('report', 'export', role);
   const orgSectionList = useOrgSections();
-  const deptsOf        = useOrgDepts();
   const [employees, setEmployees] = useState([]);
   const [selected, setSelected] = useState('');
   const [logs, setLogs] = useState([]);
@@ -974,14 +972,8 @@ table{border-collapse:collapse;width:100%}
   return (
     <div>
       <FilterBar style={{ marginBottom: 16 }}>
-        <select value={empSection} onChange={e => { setEmpSection(e.target.value); setEmpDept(''); }}>
-          <option value="">{ALL.section}</option>
-          {empSections.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <select value={empDept} onChange={e => setEmpDept(e.target.value)}>
-          <option value="">{ALL.dept}</option>
-          {deptsOf(empSection).map(d => <option key={d} value={d}>{d}</option>)}
-        </select>
+        <SectionScopeSelect pickDept value={empSection} dept={empDept} only={empSections}
+          onChange={(sec, info) => { setEmpSection(sec); setEmpDept(info.unit || ''); }} />
         <select value={empTeam} onChange={e => setEmpTeam(e.target.value)}>
           <option value="">{ALL.team}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
@@ -993,7 +985,7 @@ table{border-collapse:collapse;width:100%}
         <span className="spacer" />
         <span className="filter-count">มา {logs.filter(l => l.is_present).length} วัน</span>
         {canExport && (
-          <button onClick={handlePrintPerEmp} disabled={logs.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5, opacity: logs.length === 0 ? 0.5 : 1 }}>
+          <button onClick={handlePrintPerEmp} disabled={logs.length === 0} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5, opacity: logs.length === 0 ? 0.5 : 1 }}>
             PDF
           </button>
         )}
@@ -1194,10 +1186,7 @@ table{border-collapse:collapse;width:100%}
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 16 }}
       >
-        <select value={stationSection} onChange={e => setStationSection(e.target.value)}>
-          <option value="">{ALL.section}</option>
-          {stationSectionsList.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+        <SectionScopeSelect lines={lines} value={stationSection} onChange={s => setStationSection(s)} only={stationSectionsList} />
         <select value={selectedStation} onChange={e => setSelectedStation(e.target.value)} style={{ minWidth: 200 }}>
           {Object.entries(byLine).map(([line, sts]) => (
             <optgroup key={line} label={line}>
@@ -1213,7 +1202,7 @@ table{border-collapse:collapse;width:100%}
         <span className="spacer" />
         <span className="filter-count">{filteredRows.length} รายการ</span>
         {canExport && (
-          <button onClick={handlePrintStation} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
+          <button onClick={handlePrintStation} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
             PDF
           </button>
         )}
@@ -1226,7 +1215,7 @@ table{border-collapse:collapse;width:100%}
       </TimeRangeBar>
 
       {station && (
-        <div style={{ marginBottom: 12, padding: '8px 14px', borderRadius: 8, background: 'var(--accent-dim)', border: '1px solid rgba(61,214,92,0.2)', display: 'inline-flex', gap: 10, alignItems: 'center' }}>
+        <div style={{ marginBottom: 12, padding: '8px 14px', borderRadius: 'var(--r-md)', background: 'var(--accent-dim)', border: '1px solid rgba(61,214,92,0.2)', display: 'inline-flex', gap: 10, alignItems: 'center' }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)' }}>{station.station_name}</span>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>{station.line_name}</span>
         </div>
@@ -1254,7 +1243,7 @@ table{border-collapse:collapse;width:100%}
                   <td style={{ color: 'var(--blue)', fontWeight: 700 }}>{r.employees?.employee_id_code}</td>
                   <td style={{ fontWeight: 600 }}>{r.employees?.name}</td>
                   <td style={{ fontSize: 12 }}>
-                    {r.employees?.team && <span style={{ background: 'var(--blue-dim)', color: 'var(--blue)', borderRadius: 4, padding: '1px 6px', fontSize: 11, fontWeight: 700 }}>Team {r.employees.team}</span>}
+                    {r.employees?.team && <span style={{ background: 'var(--blue-dim)', color: 'var(--blue)', borderRadius: 'var(--r-xs)', padding: '1px 6px', fontSize: 11, fontWeight: 700 }}>Team {r.employees.team}</span>}
                   </td>
                   <td>
                     <StatusBadge ok={r.has_helmet} label="หมวก" />
@@ -1400,7 +1389,7 @@ table{border-collapse:collapse;width:100%}
         <span className="spacer" />
         <span className="filter-count">{filteredRows.length} คน</span>
         {canExport && (
-          <button onClick={handlePrintRange} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
+          <button onClick={handlePrintRange} disabled={filteredRows.length === 0} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5, opacity: filteredRows.length === 0 ? 0.5 : 1 }}>
             PDF
           </button>
         )}
@@ -1423,8 +1412,8 @@ table{border-collapse:collapse;width:100%}
                   <td><KpiSmall value={r.present} label={`/ ${r.total} วัน`} /></td>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div style={{ flex: 1, height: 6, background: 'var(--bg3)', borderRadius: 3, minWidth: 60 }}>
-                        <div style={{ width: `${r.total ? (r.present / r.total * 100) : 0}%`, height: '100%', background: 'var(--green)', borderRadius: 3, transition: 'width 0.5s' }} />
+                      <div style={{ flex: 1, height: 6, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', minWidth: 60 }}>
+                        <div style={{ width: `${r.total ? (r.present / r.total * 100) : 0}%`, height: '100%', background: 'var(--green)', borderRadius: 'var(--r-xs)', transition: 'width 0.5s' }} />
                       </div>
                       <span style={{ fontSize: 11, color: 'var(--text2)', minWidth: 30 }}>{r.total ? Math.round(r.present / r.total * 100) : 0}%</span>
                     </div>
@@ -1515,6 +1504,9 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   const [isApprovingSaving, setIsApprovingSaving] = useState(false);
   const [cpcMonth, setCpcMonth] = useState(today.slice(0, 7)); // YYYY-MM สำหรับ Export Changing Point Control
   const [cpcExporting, setCpcExporting] = useState(false);
+  // มุมมองแท็บ 4M: 'table' รายการใบ · 'sheet' ใบ Changing Point บนจอ (ไม่ต้องกด Export) — 2026-11-05
+  const [fourMView, setFourMView] = useState(() => urlPick('view', ['table', 'sheet'], 'table'));
+  const [cpcSheet, setCpcSheet] = useState({ key: '', html: '', loading: false, error: '' });
   const [imageViewModal, setImageViewModal] = useState(null); // { url, title }
   const [showDocPanel, setShowDocPanel] = useState(false);
   const canManageDoc = can('four_m', 'manage_docs', role);
@@ -1695,193 +1687,96 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   };
 
 
-  // ── Export "Changing Point Control Record" — ปฏิทินรายเดือน 11 หัวข้อ Man/Machine/Method/Material ──
+  // ── ใบ "Changing Point Control Record" (FM-PD2-037) — ดูบนจอ + Export ใช้ HTML ชุดเดียว (`lib/changePointSheet.js`) ──
+  /* โหลดข้อมูลของใบ 1 ไลน์ × 1 เดือน → คืน HTML ของใบ (ไม่รวม <html>) หรือโยน error ให้ผู้เรียกบอกบนจอ
+     ใบที่นับ = ทุกสถานะยกเว้น rejected · "-" = ไลน์ไม่ได้เปิดกะ (production_sessions DR) · อ่านกะไม่ได้ = "?" */
+  const loadChangePointSheetHtml = async (lineName, month) => {
+    const [yStr, mStr] = month.split('-');
+    const daysInMonth = new Date(Date.UTC(Number(yStr), Number(mStr), 0)).getUTCDate();
+    const monthStart = `${month}-01`;
+    const monthEnd   = `${month}-${String(daysInMonth).padStart(2, '0')}`;
+    const family = lineFamilyOf(lineName);
+
+    const [logsRes, runs, dfCpc, revisionRows, logoDataUrl, cal] = await Promise.all([
+      supabase.from('four_m_logs')
+        .select('id, work_date, line_name, category, description, status, created_at, created_by, sv_approved_by, approved_by')
+        .in('line_name', family).neq('status', 'rejected')
+        .gte('work_date', monthStart).lte('work_date', monthEnd)
+        .order('work_date').order('created_at').order('id')
+        /* cap-ok: four_m_logs ต่อไลน์ต่อเดือน ≈ หลักร้อย (ทั้งโรงงาน ~1,000/เดือน วัด 05/11) */
+        .limit(5000),
+      loadRunDays({ lineNames: family, from: monthStart, to: monthEnd }),
+      getDocForm('changing_point', {}),
+      getDocFormRevisions('changing_point'),
+      formLogo('changing_point'),
+      loadCompanyCalendar(),   // วันหยุดตามปฏิทินบริษัท = ทาเทา (ไม่ใช่ ส-อา ตายตัว · คำสั่ง user 05/11)
+    ]);
+    if (logsRes.error) throw new Error(`อ่านใบ 4M ไม่สำเร็จ: ${logsRes.error.message}`);
+    const monthLogs = logsRes.data || [];
+
+    const sheet = buildChangePointSheet({
+      month, logs: monthLogs, today,
+      isWorkingDay: (date) => isWorkingDayFrom(cal, date),
+      ranOn: (date, shift) => ranOn(runs, date, shift),   // null = ไม่รู้ ⇒ "?" ห้ามเป็น "-"
+    });
+
+    // ชื่อคน (ผู้เปลี่ยนแปลง / หัวหน้างาน / QA / ผู้ออกเอกสาร) — อ่านไม่ได้ = ช่องว่าง ใบยังออกได้
+    const ids = [...new Set(monthLogs.flatMap(l => [l.created_by, l.sv_approved_by, l.approved_by]).concat(dfCpc.issued_by).filter(Boolean))];
+    const names = {};
+    let issuedSigUrl = null;
+    if (ids.length) {
+      const pr = await fetchByIds(ids, c => supabase.from('profiles').select('id, full_name, signature_url').in('id', c));
+      (pr.rows || []).forEach(p => { names[p.id] = p.full_name || ''; if (p.id === dfCpc.issued_by) issuedSigUrl = p.signature_url; });
+    }
+    const issuedSig = issuedSigUrl ? await urlToDataUrl(issuedSigUrl) : null;
+
+    return changePointSheetHtml(sheet, {
+      line: lineName,
+      section: lines.find(li => li.name === lineName)?.section || '',
+      logoDataUrl,
+      docNo: dfCpc.form_code || '', revision: dfCpc.rev ?? '',
+      effectiveDate: dfCpc.effective_date ? fmtDate(dfCpc.effective_date) : '',
+      legend: dfCpc.legend || '',
+      revisions: revisionRows || [],
+      issuedName: dfCpc.issued_by ? names[dfCpc.issued_by] : '',
+      issuedSig, names, fmtDate,
+    });
+  };
+
+  // ใบบนจอ — โหลดเมื่ออยู่โหมด "ใบ" + มีไลน์ + มีเดือน (guard กันคำตอบเก่ามาทับ)
+  useEffect(() => {
+    if (fourMView !== 'sheet' || !line || !cpcMonth || !linesLoaded) return;
+    let alive = true;
+    setCpcSheet({ key: `${line}|${cpcMonth}`, html: '', loading: true, error: '' });
+    loadChangePointSheetHtml(line, cpcMonth)
+      .then(html => { if (alive) setCpcSheet({ key: `${line}|${cpcMonth}`, html, loading: false, error: '' }); })
+      .catch(e => { if (alive) setCpcSheet({ key: `${line}|${cpcMonth}`, html: '', loading: false, error: e?.message || String(e) }); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fourMView, line, cpcMonth, linesLoaded]);
+
   const handleExportChangePointPdf = async () => {
-    if (!line) { toast.error('เลือกไลน์ก่อน'); return; }
-    if (!cpcMonth) { toast.error('เลือกเดือนก่อน'); return; } // ช่อง month เคลียร์เป็น '' ได้ → parseInt(undefined) = NaN ตารางพัง
+    // 🔴 เดิมปุ่มถูก disable เงียบๆ ตอนยังไม่เลือกไลน์ ⇒ คนกดไม่ไปแล้วไม่รู้ว่าต้องเลือกอะไร (feedback หน้างาน 05/11)
+    if (!line) {
+      toast.error('ใบ Changing Point ออกได้ทีละ 1 ไลน์ — เลือกไลน์ก่อน');
+      setFourMView('sheet');   // พาไปหน้าที่มีปุ่มเลือกไลน์ให้กด
+      return;
+    }
+    if (!cpcMonth) { toast.error('เลือกเดือนก่อน'); return; }
     setCpcExporting(true);
-    const [yStr, mStr] = cpcMonth.split('-');
-    const y = parseInt(yStr), m = parseInt(mStr); // m: 1-12
-    const daysInMonth = new Date(y, m, 0).getDate();
-    const monthStart = `${cpcMonth}-01`;
-    const monthEnd   = `${cpcMonth}-${String(daysInMonth).padStart(2, '0')}`;
-
-    const { data: monthLogs } = await supabase.from('four_m_logs')
-      .select('id, work_date, line_name, category, description, status, created_at, created_by, sv_approved_by, approved_by')
-      .in('line_name', lineFamilyOf(line)).eq('status', 'approved')
-      .gte('work_date', monthStart).lte('work_date', monthEnd)
-      /* cap-ok: four_m_logs ต่อเดือน สูงสุด 433 แถว (วัด 20/10) */
-      .limit(5000);
-
-    // กะถูก derive จากเวลาที่บันทึก (created_at) — ใช้กฎเดียวกับ getCurrentShift(): 08:00-19:59 = กะเช้า
-    // บังคับ timezone เป็น Asia/Bangkok เสมอ ไม่พึ่ง getHours() (ขึ้นกับ timezone ของเครื่อง ผิดได้ถ้าเครื่องตั้งเวลาไม่ตรง)
-    const shiftOf = (l) => {
-      if (!l.created_at) return 'day';
-      const h = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Bangkok', hour: 'numeric', hourCycle: 'h23' }).format(new Date(l.created_at)));
-      return (h >= 8 && h < 20) ? 'day' : 'night';
-    };
-
-    // จัด log แต่ละตัวเข้า checklist item (keyword match) แล้วทำ map: itemId -> { day: { day: [...], night: [...] } }
-    const dayMap = {}; // itemId -> { [day]: { day: [logs], night: [logs] } }
-    for (const l of (monthLogs || [])) {
-      const item = matchChecklistItem(l);
-      if (!item) continue;
-      const day = parseInt(l.work_date.slice(8, 10));
-      const shift = shiftOf(l);
-      (dayMap[item.id] ||= {});
-      (dayMap[item.id][day] ||= { day: [], night: [] });
-      dayMap[item.id][day][shift].push(l);
+    try {
+      const html = cpcSheet.key === `${line}|${cpcMonth}` && cpcSheet.html
+        ? cpcSheet.html
+        : await loadChangePointSheetHtml(line, cpcMonth);
+      const w = window.open('', '_blank');
+      if (!w) { toast.error('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ — อนุญาต pop-up แล้วกดใหม่'); return; }
+      w.document.write(changePointPrintDoc(html));
+      w.document.close();
+    } catch (e) {
+      toast.error(`ออกใบไม่สำเร็จ: ${e?.message || e}`);
+    } finally {
+      setCpcExporting(false);
     }
-
-    // เอกสารควบคุม (เลขฟอร์ม/rev/effective/legend/ผู้ออกเอกสาร) — ทะเบียนกลาง doc_forms (2026-07-30)
-    // ยังไม่ตั้งค่า/ทะเบียนล่ม = fallback ค่าว่าง ไม่ให้ export ล้ม
-    const dfCpc = await getDocForm('changing_point', {});
-    let issuedProfile = null;
-    if (dfCpc.issued_by) {
-      try {
-        const { data } = await supabase.from('profiles').select('full_name, signature_url').eq('id', dfCpc.issued_by).maybeSingle();
-        issuedProfile = data;
-      } catch { /* best-effort */ }
-    }
-    const docCtrl = {
-      doc_no: dfCpc.form_code || null, revision: dfCpc.rev || null,
-      effective_date: dfCpc.effective_date || null, legend: dfCpc.legend || null,
-      issued: issuedProfile,
-    };
-    const issuedSig = docCtrl?.issued?.signature_url ? await urlToDataUrl(docCtrl.issued.signature_url) : null;
-    const logoDataUrl = await formLogo('changing_point');
-
-    // ประวัติการแก้ไขเอกสาร (ตาราง Production Department ด้านบนซ้ายของฟอร์มจริง)
-    const revisionRows = await getDocFormRevisions('changing_point');
-
-    const lineSection = lines.find(li => li.name === line)?.section || '';
-
-    const thaiMonths = ['', 'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
-    const todayDate = parseInt(today.slice(8, 10));
-    const isCurrentMonth = today.slice(0, 7) === cpcMonth;
-    const isFutureMonth = cpcMonth > today.slice(0, 7);
-
-    const dayHeaderCells = Array.from({ length: daysInMonth }, (_, i) => {
-      const d = i + 1;
-      const dow = new Date(y, m - 1, d).getDay();
-      const weekend = dow === 0 || dow === 6;
-      return `<th style="border:1px solid #999;padding:2px;font-size:8px;min-width:15px;${weekend ? 'background:#ddd' : ''}">${d}</th>`;
-    }).join('');
-
-    // แยก Night/Day เป็นแถว (ไม่ใช่คอลัมน์) — แต่ละ checklist item จะมี 2 แถว: N (กะดึก) / D (กะเช้า) ตามฟอร์มจริง
-    const gridRowsHtml = CHECKLIST_ITEMS.flatMap((item, idx) => {
-      const color = CATEGORY_COLOR[item.category];
-      const isFirstOfCat = idx === 0 || CHECKLIST_ITEMS[idx - 1].category !== item.category;
-      const catRowSpan = CHECKLIST_ITEMS.filter(it => it.category === item.category).length * 2;
-      return ['night', 'day'].map((shift, shiftIdx) => {
-        const cells = Array.from({ length: daysInMonth }, (_, i) => {
-          const d = i + 1;
-          const dow = new Date(y, m - 1, d).getDay();
-          const weekend = dow === 0 || dow === 6;
-          const isFuture = isFutureMonth || (isCurrentMonth && d > todayDate);
-          const hit = dayMap[item.id]?.[d]?.[shift]?.length > 0;
-          const mark = isFuture ? '' : (hit ? 'X' : 'O');
-          return `<td style="border:1px solid #999;text-align:center;font-size:9px;font-weight:700;${weekend ? 'background:#eee' : ''};${hit ? 'color:#d11;background:#fde2e2' : 'color:#333'}">${mark}</td>`;
-        }).join('');
-        return `<tr>
-          ${(isFirstOfCat && shiftIdx === 0) ? `<td rowspan="${catRowSpan}" style="border:1px solid #999;background:${color};color:#fff;font-weight:700;text-align:center;font-size:10px;writing-mode:vertical-rl;padding:4px 2px">${item.category}</td>` : ''}
-          ${shiftIdx === 0 ? `<td rowspan="2" style="border:1px solid #999;padding:3px 6px;font-size:9px;white-space:nowrap">${item.label}</td>` : ''}
-          <td style="border:1px solid #999;padding:2px 5px;font-size:9px;font-weight:700;text-align:center;background:#f8f8f8" title="${shift === 'day' ? 'กะเช้า (Day)' : 'กะดึก (Night)'}">${shift === 'day' ? 'D' : 'N'}</td>
-          ${cells}
-        </tr>`;
-      });
-    }).join('');
-
-    // ใช้ปี ค.ศ. (Gregorian) เหมือนกับ fmtDate ที่ใช้ทั่วทั้งระบบ + บังคับ timezone Asia/Bangkok เพื่อไม่ให้วันที่คลาดเคลื่อนตาม timezone เครื่อง
-    const nowParts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Bangkok', year: 'numeric', month: 'numeric', day: 'numeric' }).formatToParts(new Date());
-    const nowMap = Object.fromEntries(nowParts.map(p => [p.type, p.value]));
-    const todayStr = `${nowMap.day} ${thaiMonths[Number(nowMap.month)]} ${nowMap.year}`;
-    const docNo = docCtrl?.doc_no || '-';
-    const revision = docCtrl?.revision || '0';
-    const effectiveDateStr = docCtrl?.effective_date ? fmtDate(docCtrl.effective_date) : '-';
-    const legendText = docCtrl?.legend || 'X = ในกรณีที่เปลี่ยนแปลงในวันนั้น\nO = ไม่ในกรณีที่เปลี่ยนแปลงในวันนั้น';
-
-    const revHistoryRowsHtml = (revisionRows && revisionRows.length ? revisionRows : [{}]).map((r, i) => `<tr>
-      <td style="border:1px solid #000;padding:2px 4px;text-align:center;font-size:8px">${r.seq ?? (i + 1)}</td>
-      <td style="border:1px solid #000;padding:2px 4px;font-size:8px;white-space:nowrap">${r.record_date ? fmtDate(r.record_date) : ''}</td>
-      <td style="border:1px solid #000;padding:2px 4px;text-align:center;font-size:8px">${r.rev || ''}</td>
-      <td style="border:1px solid #000;padding:2px 4px;font-size:8px;white-space:nowrap">${r.issued_date ? fmtDate(r.issued_date) : ''}</td>
-      <td style="border:1px solid #000;padding:2px 4px;font-size:8px">${r.description || ''}</td>
-      <td style="border:1px solid #000;padding:2px 4px;text-align:center;font-size:8px">${r.responsible || ''}</td>
-      <td style="border:1px solid #000;padding:2px 4px;text-align:center;font-size:8px">${r.approved_name || ''}</td>
-    </tr>`).join('');
-
-    const html = `<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"/><title>Changing Point Control Record</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;700&display=swap');
-  body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
-  table{border-collapse:collapse;width:100%}
-  @media print{@page{size:A3 landscape;margin:8mm}body{-webkit-print-color-adjust:exact}}
-</style></head><body style="padding:8mm">
-  <table style="margin-bottom:6px"><tr>
-    <td style="width:55%;vertical-align:top;padding:0 4px 0 0">
-      <div style="font-size:9px;font-weight:700;margin-bottom:2px">${docNo} Rev.${revision}</div>
-      <div style="font-size:8px;line-height:1.4;margin-bottom:4px">${legendText.split('\n').map(l => `<div>${l}</div>`).join('')}</div>
-      <table>
-        <thead><tr style="background:#f3f4f6">
-          <th style="border:1px solid #000;padding:2px;font-size:8px">ลำดับที่</th>
-          <th style="border:1px solid #000;padding:2px;font-size:8px">วันที่บันทึก</th>
-          <th style="border:1px solid #000;padding:2px;font-size:8px">Rev</th>
-          <th style="border:1px solid #000;padding:2px;font-size:8px">Issued date</th>
-          <th style="border:1px solid #000;padding:2px;font-size:8px">Description of Change (New Issued)</th>
-          <th style="border:1px solid #000;padding:2px;font-size:8px">Responsible (PD2)</th>
-          <th style="border:1px solid #000;padding:2px;font-size:8px">Approved</th>
-        </tr></thead>
-        <tbody>${revHistoryRowsHtml}</tbody>
-      </table>
-      <table style="margin-top:4px"><tr>
-        <td style="border:1px solid #000;padding:4px;font-size:8px;width:60%">Effective Date: <b>${effectiveDateStr}</b></td>
-        <td style="border:1px solid #000;padding:4px;font-size:8px;text-align:center">
-          <div>Issued</div>
-          ${issuedSig ? `<img src="${issuedSig}" style="max-height:26px;max-width:60px;object-fit:contain"/>` : '<div style="height:26px"></div>'}
-          <div>${docCtrl?.issued?.full_name || ''}</div>
-        </td>
-      </tr></table>
-    </td>
-    <td style="width:45%;vertical-align:top">
-      <table><tr>
-        <td style="width:90px;border:1px solid #000;padding:4px;text-align:center;vertical-align:middle">
-          ${logoDataUrl ? `<img src="${logoDataUrl}" style="max-width:80px;max-height:50px;object-fit:contain"/>` : ''}
-        </td>
-        <td style="background:#fde047;padding:8px;text-align:center;font-weight:700;font-size:14px;border:1px solid #000">
-          ใบบันทึกการเปลี่ยนแปลง<br/><span style="font-size:11px">Changing Point Control Record</span>
-        </td>
-        <td style="width:170px;border:1px solid #000;padding:4px;font-size:10px">
-          <div>ส่วน (Section): <b>${lineSection}</b></div>
-          <div>แผนก (Department): <b>${lineSection}</b></div>
-          <div>ไลน์ (Line): <b>${line}</b></div>
-        </td>
-        <td style="width:140px;border:1px solid #000;padding:4px;font-size:10px">
-          <div>เดือน: <b>${thaiMonths[m]} ${y}</b></div>
-          <div>พิมพ์วันที่: ${todayStr}</div>
-        </td>
-      </tr></table>
-    </td>
-  </tr></table>
-
-  <table>
-    <thead>
-      <tr style="background:#f3f4f6">
-        <th style="border:1px solid #999"></th>
-        <th style="border:1px solid #999;padding:3px;font-size:9px">Detail (รายละเอียด)</th>
-        <th style="border:1px solid #999;padding:3px;font-size:8px">N/D</th>
-        ${dayHeaderCells}
-      </tr>
-    </thead>
-    <tbody>${gridRowsHtml}</tbody>
-  </table>
-<script>window.onload = () => window.print();</script>
-</body></html>`;
-
-    const w = window.open('', '_blank');
-    w.document.write(html);
-    w.document.close();
-    setCpcExporting(false);
   };
 
   // Filter logs by section: cross-reference line_name to lines array to get section
@@ -1910,18 +1805,18 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
       {/* Reject modal */}
       {rejectModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px 24px 20px', width: 'min(420px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
+          <div style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', padding: '24px 24px 20px', width: 'min(420px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
             <h3 style={{ margin: '0 0 14px', color: 'var(--red)', fontFamily: 'var(--font-display)' }}>❌ ระบุเหตุผลที่ Reject</h3>
             <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)}
               placeholder="เหตุผลที่ไม่อนุมัติ..." rows={3}
-              style={{ width: '100%', borderRadius: 8, padding: '8px 10px', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
+              style={{ width: '100%', borderRadius: 'var(--ctl-r)', padding: '8px 10px', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
             <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
               <button onClick={handleReject}
-                style={{ flex: 2, padding: 11, background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer' }}>
+                style={{ flex: 2, padding: 11, background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: 'pointer' }}>
                 ยืนยัน Reject
               </button>
               <button onClick={() => { setRejectModal(null); setRejectReason(''); }}
-                style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
+                style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', cursor: 'pointer' }}>
                 ยกเลิก
               </button>
             </div>
@@ -1932,7 +1827,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
       {/* QA Approve Modal */}
       {qaApproveModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: 'var(--card)', borderRadius: 14, padding: '24px 24px 20px', width: 'min(460px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
+          <div style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', padding: '24px 24px 20px', width: 'min(460px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
             <h3 style={{ margin: '0 0 4px', color: 'var(--blue)', fontFamily: 'var(--font-display)' }}>QA ยืนยันคุณภาพงาน</h3>
             <p style={{ margin: '0 0 14px', color: 'var(--muted)', fontSize: 13 }}>
               {qaApproveModal.line_name} · {qaApproveModal.category} · {qaApproveModal.description}
@@ -1946,7 +1841,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
               </div>
             )}
             <div style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 600, marginBottom: 6 }}>แนบรูปยืนยันคุณภาพ <span style={{ color: 'var(--muted)' }}>(ไม่บังคับ)</span></div>
-            <div style={{ border: `2px dashed ${qaImageFile ? 'var(--blue)' : 'var(--border2)'}`, borderRadius: 8, padding: '10px 12px', background: qaImageFile ? 'var(--blue-dim)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center' }}
+            <div style={{ border: `2px dashed ${qaImageFile ? 'var(--blue)' : 'var(--border2)'}`, borderRadius: 'var(--r-md)', padding: '10px 12px', background: qaImageFile ? 'var(--blue-dim)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center' }}
               onClick={() => document.getElementById('qa-img-input').click()}>
               <input id="qa-img-input" type="file" accept="image/*" style={{ display: 'none' }}
                 onChange={async e => {
@@ -1971,11 +1866,11 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
             )}
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
               <button onClick={handleQaApproveSubmit} disabled={isApprovingSaving}
-                style={{ flex: 2, padding: 11, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, cursor: isApprovingSaving ? 'not-allowed' : 'pointer', opacity: isApprovingSaving ? 0.6 : 1 }}>
+                style={{ flex: 2, padding: 11, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: isApprovingSaving ? 'not-allowed' : 'pointer', opacity: isApprovingSaving ? 0.6 : 1 }}>
                 {isApprovingSaving ? 'กำลังบันทึก...' : 'QA Approve'}
               </button>
               <button onClick={() => { setQaApproveModal(null); setQaImageFile(null); setQaImagePreview(null); }} disabled={isApprovingSaving}
-                style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
+                style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', cursor: 'pointer' }}>
                 ยกเลิก
               </button>
             </div>
@@ -2024,7 +1919,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
           {Object.entries(STATUS_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
         {actionableCount > 0 && (
-          <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)', borderRadius: 6, padding: '3px 8px' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '3px 8px' }}>
             ⏳ รอดำเนินการ {actionableCount} รายการ
           </span>
         )}
@@ -2036,49 +1931,96 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
           // export ชุดเดียวกับตารางบนจอ (ผ่าน filter ส่วนงาน) — เดิมใช้ logs ดิบ CSV ไม่ตรงจอ
           fourMFilteredLogs.map(l => [l.work_date, DAY_TYPE_META[getDayType(l.work_date)]?.label || '', l.line_name, l.category, l.change_subtype || '', l.description, l.status, l.created_at ? fmtDateTime(l.created_at) : ''])
         )} />
+        <span className="sep" />
+        {/* 📅 สลับ "รายการใบ" ↔ "ใบ Changing Point" (แบบกระดาษ FM-PD2-037) — ดูบนจอได้ ไม่ต้องกด Export (05/11) */}
+        <Segmented value={fourMView} onChange={setFourMView} label="มุมมอง"
+          options={[{ value: 'table', label: 'ตาราง' }, { value: 'sheet', label: 'ใบ Changing Point' }]} />
+        <span className="filter-label">เดือนของใบ</span>
+        <input type="month" value={cpcMonth} onChange={e => setCpcMonth(e.target.value)} />
         {canExport && (
-          <>
-            <span className="sep" />
-            <span className="filter-label">เดือนของใบ Changing Point</span>
-            <input type="month" value={cpcMonth} onChange={e => setCpcMonth(e.target.value)} />
-            <button onClick={handleExportChangePointPdf} disabled={cpcExporting || !line}
-              title={!line ? 'เลือกไลน์ก่อน' : 'Export ใบบันทึกการเปลี่ยนแปลง (Changing Point Control Record)'}
-              style={{ padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                background: 'var(--amber-dim)', color: '#ca8a04', border: '1px solid var(--amber-line)',
-                opacity: (cpcExporting || !line) ? 0.5 : 1 }}>
-              {cpcExporting ? 'กำลังสร้าง...' : 'Export Changing Point'}
-            </button>
-          </>
+          <button onClick={handleExportChangePointPdf} disabled={cpcExporting}
+            title={!line ? 'ใบนี้ออกทีละ 1 ไลน์ — เลือกไลน์ในช่องขอบเขตก่อน' : 'Export ใบบันทึกการเปลี่ยนแปลง (Changing Point Control Record)'}
+            style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              background: 'var(--amber-dim)', color: '#ca8a04', border: '1px solid var(--amber-line)',
+              opacity: cpcExporting ? 0.5 : 1 }}>
+            {cpcExporting ? 'กำลังสร้าง...' : 'Export Changing Point'}
+          </button>
         )}
+        {!line && <span style={{ fontSize: 11, color: '#d97706' }}>ใบ Changing Point ต้องเลือก 1 ไลน์</span>}
         {canManageDoc && (
           <button onClick={() => setShowDocPanel(v => !v)} style={{
             position: 'relative',
-            padding: '6px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+            padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
             background: showDocPanel ? 'var(--amber-dim)' : 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)',
           }}>จัดการเอกสาร<ToggleDot on={showDocPanel} /></button>
         )}
       </TimeRangeBar>
 
-      {/* การ์ดนับตามหมวด 4M (กดเพื่อกรองได้) = เนื้อหา ⇒ อยู่ใต้แถบกรอง (UI-STANDARD §2.1) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10, marginBottom: 16 }}>
+      {/* การ์ดนับตามหมวด 4M (กดเพื่อกรองได้) = เนื้อหา ⇒ อยู่ใต้แถบกรอง (UI-STANDARD §2.1) · โหมดใบ = ซ่อน (นับตามช่วงวันที่ ไม่ใช่เดือนของใบ) */}
+      {fourMView === 'table' && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 10, marginBottom: 16 }}>
         {Object.entries(CAT_META).map(([k, m]) => (
           <div key={k} onClick={() => setCat(c => c === k ? '' : k)} style={{
             background: cat === k ? m.bg : 'var(--card)', border: `1px solid ${cat === k ? m.color : 'var(--border)'}`,
-            borderRadius: 10, padding: '12px 14px', cursor: 'pointer', transition: 'all 0.15s'
+            borderRadius: 'var(--r-md)', padding: '12px 14px', cursor: 'pointer', transition: 'all 0.15s'
           }}>
             <div style={{ fontSize: 20 }}>{m.icon}</div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>{m.label}</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: m.color, fontFamily: 'var(--font-display)' }}>{kpi[k] || 0}</div>
           </div>
         ))}
-      </div>
+      </div>}
 
       {showDocPanel && canManageDoc && <DocumentControlPanel />}
+
+      {fourMView === 'sheet' && (() => {
+        /* 📅 ใบ Changing Point บนจอ — HTML ชุดเดียวกับใบที่ Export (`lib/changePointSheet.js`)
+           ใบนี้ออกทีละ 1 ไลน์ ⇒ ยังไม่เลือกไลน์ = บอกตรงๆ + ให้กดเลือกไลน์ในขอบเขตได้ทันที (เดิมปุ่มเทาเฉยๆ) */
+        if (!line) {
+          const scopeNames = fourMUnit.name ? fourMUnit.lines
+            : (allowedLineNames ? lines.filter(l => allowedLineNames.includes(l.name)) : lines)
+                .filter(l => !fourMSection || l.section === fourMSection).map(l => l.name);
+          const pickable = sortLineNames([...new Set(scopeNames)], lines);
+          return (
+            <div className="card" style={{ padding: 16, marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>เลือก 1 ไลน์เพื่อดูใบ Changing Point</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
+                ใบนี้ออกทีละไลน์ (1 ใบ = 1 ไลน์ × 1 เดือน) — กดชื่อไลน์ด้านล่าง หรือเลือกในช่องขอบเขตบนแถบกรอง
+              </div>
+              {pickable.length ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {pickable.map(n => (
+                    <button key={n} type="button" onClick={() => { setLine(n); setFourMSection(''); setFourMUnit({ name: '', lines: [] }); }}
+                      style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              ) : <div style={{ fontSize: 12, color: 'var(--muted)' }}>ไม่มีไลน์ในขอบเขตที่เลือก</div>}
+            </div>
+          );
+        }
+        const fresh = cpcSheet.key === `${line}|${cpcMonth}`;
+        if (!cpcMonth) return <div className="card" style={{ padding: 16, marginBottom: 16 }}>เลือกเดือนของใบก่อน</div>;
+        if (!fresh || cpcSheet.loading) return <div className="card" style={{ padding: 16, marginBottom: 16, color: 'var(--muted)' }}>กำลังโหลดใบ Changing Point...</div>;
+        if (cpcSheet.error) return (
+          <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 'var(--r-md)', fontSize: 12.5, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)' }}>
+            โหลดใบไม่สำเร็จ — {cpcSheet.error}
+          </div>
+        );
+        return (
+          <div style={{ overflowX: 'auto', background: '#fff', borderRadius: 'var(--r-md)', padding: 12, marginBottom: 16, border: '1px solid var(--border)' }}>
+            <style>{CPC_CSS}</style>
+            <div dangerouslySetInnerHTML={{ __html: cpcSheet.html }} />
+          </div>
+        );
+      })()}
+
+      {fourMView === 'table' && (<>
 
       {/* 🔴 รู้ขอบเขตแล้วแต่ไม่มีไลน์เลย = คิวรีถูกบีบเป็น 0 แถว — ต้องบอกว่าเป็นเรื่อง "ทะเบียนไลน์"
           ห้ามปล่อยให้ไปโผล่เป็น "ไม่พบใบที่เลือก" (คนละสาเหตุ คนละทางแก้) */}
       {allowedLineNames?.length === 0 && !loading && (
-        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 12.5, color: 'var(--text)',
+        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5, color: 'var(--text)',
           background: 'var(--red-dim)', border: '1px solid var(--red-line)' }}>
           ⚠️ ยังจับคู่ไลน์ในขอบเขตของคุณไม่ได้เลย — รายการจึงว่างทั้งที่อาจมีใบค้างอยู่
           <div style={{ color: 'var(--muted)', marginTop: 2 }}>
@@ -2090,22 +2032,22 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
       {/* deep-link จากหน้าอื่น (เช่น Dashboard ส่วนงาน) — บอกเสมอว่าเน้นใบไหนอยู่ และถ้าหาไม่เจอห้ามเงียบ */}
       {focus && !loading && allowedLineNames?.length !== 0 && (
         focusRow ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '8px 12px', borderRadius: 8,
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)',
             background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', fontSize: 12.5, color: 'var(--text)' }}>
             <span>เน้นใบที่เลือกมา — <b>{focusRow.line_name || 'ไม่ระบุไลน์'}</b> · {focusRow.category} · {fmtDate(focusRow.work_date)}</span>
-            <button onClick={() => setFocus('')} style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
+            <button onClick={() => setFocus('')} style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
               ล้างการเน้น
             </button>
           </div>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '8px 12px', borderRadius: 8,
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)',
             background: 'var(--red-dim)', border: '1px solid var(--red-line)', fontSize: 12.5, color: 'var(--text)' }}>
             <span>⚠️ ไม่พบใบที่เลือกในรายการนี้ — อาจถูกอนุมัติ/ปฏิเสธไปแล้ว หรืออยู่นอกช่วงวัน/ตัวกรอง หรือนอกขอบเขตส่วนงานของคุณ</span>
             <button onClick={() => { setStatusFilter(''); setCat(''); setLine(''); setFourMSection(''); }}
-              style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)' }}>
+              style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)' }}>
               ล้างตัวกรอง
             </button>
-            <button onClick={() => setFocus('')} style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
+            <button onClick={() => setFocus('')} style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
               ปิด
             </button>
           </div>
@@ -2137,7 +2079,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                   <tr key={l.id} ref={isFocus ? focusRowRef : null} style={isFocus ? { background: 'var(--amber-dim)' } : undefined}>
                     <td style={{ fontWeight: 600, whiteSpace: 'nowrap', fontSize: 12, borderLeft: isFocus ? '3px solid var(--amber)' : undefined }}>{fmtDate(l.work_date)}</td>
                     <td style={{ fontSize: 12, color: 'var(--text2)' }}>{l.line_name}</td>
-                    <td><span style={{ background: m.bg, color: m.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{m.icon} {l.category}</span></td>
+                    <td><span style={{ background: m.bg, color: m.color, borderRadius: 'var(--r-xs)', padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>{m.icon} {l.category}</span></td>
                     <td style={{ fontSize: 13 }}>
                       {l.description}
                       {l.change_subtype && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
@@ -2147,13 +2089,13 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                       <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
                         {l.request_image_url && (
                           <button onClick={() => setImageViewModal({ url: l.request_image_url, title: 'รูปจากผู้แจ้ง' })}
-                            style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', fontWeight: 600 }}>
+                            style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', fontWeight: 600 }}>
                             รูปแจ้ง
                           </button>
                         )}
                         {l.qa_image_url && (
                           <button onClick={() => setImageViewModal({ url: l.qa_image_url, title: 'รูป QA ยืนยัน' })}
-                            style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, cursor: 'pointer', background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', fontWeight: 600 }}>
+                            style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', fontWeight: 600 }}>
                             รูป QA
                           </button>
                         )}
@@ -2161,14 +2103,14 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                        <span style={{ background: sm.bg, color: sm.color, borderRadius: 5, padding: '2px 8px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{sm.label}</span>
+                        <span style={{ background: sm.bg, color: sm.color, borderRadius: 'var(--r-xs)', padding: '2px 8px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{sm.label}</span>
                         {svName && <span style={{ fontSize: 11, color: 'var(--muted)' }}>SV: {svName}</span>}
                         {qaName && <span style={{ fontSize: 11, color: 'var(--muted)' }}>QA: {qaName}</span>}
                         {l.approved_at && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{new Date(l.approved_at).toLocaleDateString('th-TH')}</span>}
                       </div>
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 5,
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 'var(--r-xs)',
                         background: needsQA ? 'var(--red-dim)' : 'var(--green-dim)',
                         color: needsQA ? 'var(--red)' : 'var(--green)' }}>
                         {needsQA ? '🔴 QA' : '🟢 SV'}
@@ -2179,11 +2121,11 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                         userCanAct ? (
                           <div style={{ display: 'flex', gap: 5, justifyContent: 'center' }}>
                             <button onClick={() => handleApprove(l)}
-                              style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)' }}>
+                              style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)' }}>
                               {l.status === 'pending_qa' ? 'QA Approve' : 'SV Approve'}
                             </button>
                             <button onClick={() => { setRejectModal(l.id); setRejectReason(''); }}
-                              style={{ padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)' }}>
+                              style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)' }}>
                               Reject
                             </button>
                           </div>
@@ -2225,6 +2167,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
           </table>
         </div>
       )}
+      </>)}
     </div>
   );
 }
@@ -2337,7 +2280,7 @@ function DocumentControlPanel() {
       </div>
 
       <button onClick={saveDoc} disabled={saving} style={{
-        padding: '7px 16px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+        padding: '7px 16px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
         background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', opacity: saving ? 0.6 : 1, marginBottom: 18,
       }}>{saving ? 'กำลังบันทึก...' : 'บันทึกข้อมูลเอกสาร'}</button>
 
@@ -2367,7 +2310,7 @@ function DocumentControlPanel() {
                 <td style={{ fontSize: 12 }}>{r.responsible || '—'}</td>
                 <td style={{ fontSize: 12 }}>{r.approved_name || '—'}</td>
                 <td>
-                  <button onClick={() => removeRevision(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
+                  <button onClick={() => removeRevision(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
                 </td>
               </tr>
             ))}
@@ -2388,7 +2331,7 @@ function DocumentControlPanel() {
           onChange={({ name }) => setNewRev(v => ({ ...v, responsible: name }))} />
         <PersonSelect value={newRev.approved_name} history={apprHist} placeholder="Approved" inputStyle={{ fontSize: 12, padding: '6px 30px 6px 8px' }}
           onChange={({ name }) => setNewRev(v => ({ ...v, approved_name: name }))} />
-        <button onClick={addRevision} style={{ padding: '6px 12px', borderRadius: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
+        <button onClick={addRevision} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
       </div>
     </div>
   );
@@ -2606,11 +2549,11 @@ ${catHeaderCells}
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         {SKILL_LEVELS.filter(lv => lv.min > 0).map(lv => (
-          <span key={lv.label} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: lv.bg, color: lv.color, border: `1px solid ${tint(lv.color, 'line')}` }}>
+          <span key={lv.label} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-xs)', background: lv.bg, color: lv.color, border: `1px solid ${tint(lv.color, 'line')}` }}>
             {lv.label} ≥{lv.min}
           </span>
         ))}
-        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 4, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>— ยังไม่ประเมิน</span>
+        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-xs)', background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>— ยังไม่ประเมิน</span>
       </div>
 
       {loading ? <Loader /> : (() => {
@@ -2643,7 +2586,7 @@ ${catHeaderCells}
                     <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
                       {emp.image_url
                         ? <img loading="lazy" src={emp.image_url} alt="" style={{ width: 40, height: 40, borderRadius: 10, objectFit: 'cover' }} />
-                        : <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16 }}>{(emp.name || '?')[0]}</div>
+                        : <div style={{ width: 40, height: 40, borderRadius: 'var(--r-md)', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16 }}>{(emp.name || '?')[0]}</div>
                       }
                       <div>
                         <div style={{ fontWeight: 700, fontSize: 14 }}>{emp.name}</div>
@@ -2657,7 +2600,7 @@ ${catHeaderCells}
                         const score = skillMap[s.name];
                         const lv = getLevel(score);
                         return (
-                          <span key={s.name} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, background: lv.bg, color: lv.color, border: `1px solid ${tint(lv.color, 'dim')}` }}>
+                          <span key={s.name} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-xs)', background: lv.bg, color: lv.color, border: `1px solid ${tint(lv.color, 'dim')}` }}>
                             {s.label} {score}
                           </span>
                         );
@@ -2725,7 +2668,7 @@ ${catHeaderCells}
                       <td style={{ textAlign: 'center', padding: '8px 6px', position: 'sticky', left: 0, zIndex: 2, background: 'var(--bg)' }}>
                         {emp.image_url
                           ? <img loading="lazy" src={emp.image_url} alt="" style={{ width: 38, height: 38, borderRadius: 10, objectFit: 'cover', border: `2px solid ${tint(avgLv.color, 'line')}`, display: 'block', margin: '0 auto' }} />
-                          : <div style={{ width: 38, height: 38, borderRadius: 10, margin: '0 auto', background: `${tint(avgLv.color, 'dim')}`, border: `2px solid ${tint(avgLv.color, 'line')}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, color: avgLv.color }}>{(emp.name || '?')[0]}</div>
+                          : <div style={{ width: 38, height: 38, borderRadius: 'var(--r-md)', margin: '0 auto', background: `${tint(avgLv.color, 'dim')}`, border: `2px solid ${tint(avgLv.color, 'line')}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, color: avgLv.color }}>{(emp.name || '?')[0]}</div>
                         }
                       </td>
                       <td style={{ position: 'sticky', left: 52, zIndex: 2, background: 'var(--bg)' }}>
@@ -2736,12 +2679,12 @@ ${catHeaderCells}
                           <div title={`ยืมมาจาก ${emp._helperFrom} มาช่วย ${emp._helperTo || 'ไลน์นี้'} เฉพาะกะนี้`}
                             style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 700,
                               color: 'var(--blue)', background: 'var(--blue)18', border: '1px solid var(--blue)44',
-                              borderRadius: 4, padding: '0 5px', whiteSpace: 'nowrap' }}>
+                              borderRadius: 'var(--r-xs)', padding: '0 5px', whiteSpace: 'nowrap' }}>
                             ยืมจาก {emp._helperFrom}
                           </div>
                         )}
                         {avg !== null && (
-                          <div style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 700, color: avgLv.color, background: avgLv.bg, borderRadius: 4, padding: '1px 5px' }}>
+                          <div style={{ marginTop: 3, display: 'inline-block', fontSize: 11, fontWeight: 700, color: avgLv.color, background: avgLv.bg, borderRadius: 'var(--r-xs)', padding: '1px 5px' }}>
                             avg {avg}
                           </div>
                         )}
@@ -2756,7 +2699,7 @@ ${catHeaderCells}
                         const lv = getLevel(score);
                         return (
                           <td key={s.name} style={{ textAlign: 'center', padding: '6px 4px', borderLeft: si === 0 ? `2px solid ${tint(g.color, 'dim')}` : undefined }}>
-                            <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', background: lv.bg, borderRadius: 4, padding: '3px 4px', minWidth: 36 }}>
+                            <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', background: lv.bg, borderRadius: 'var(--r-xs)', padding: '3px 4px', minWidth: 36 }}>
                               <span style={{ fontSize: 12, fontWeight: 700, color: lv.color }}>{score}</span>
                               <span style={{ fontSize: 11, color: lv.color }}>{lv.label}</span>
                             </div>
@@ -3139,7 +3082,7 @@ function MultiSkillFormTab() {
         </span>
         <span className="spacer" />
         <button onClick={load} disabled={loading}
-          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
+          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
           {loading ? 'กำลังโหลด...' : 'ดึงข้อมูล'}
         </button>
         {employees.length > 0 && (
@@ -3179,7 +3122,7 @@ function MultiSkillFormTab() {
               ].map(({ label, val, set, opts, plain }) => (
                 <div key={label}>
                   <span style={lbSt}>{label}</span>
-                  <select value={val} onChange={e => set(e.target.value)} style={{ width: '100%', padding: '6px 10px', borderRadius: 7, fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)' }}>
+                  <select value={val} onChange={e => set(e.target.value)} style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)' }}>
                     <option value="">—</option>
                     {val && !opts.includes(val) && <option value={val}>{plain ? val : `${val} ⚠ ไม่มีในผัง`}</option>}
                     {opts.map(o => <option key={o} value={o}>{o}</option>)}
@@ -3200,10 +3143,10 @@ function MultiSkillFormTab() {
                 { label: sigLabelsOf('multi_skill', MS_SIG_DEFAULTS)[1], name: checker, setName: setChecker, sig: checkerSig, setSig: setCheckerSig, autoRole: 'supervisor' },
                 { label: sigLabelsOf('multi_skill', MS_SIG_DEFAULTS)[2], name: approver, setName: setApprover, sig: approverSig, setSig: setApproverSig, autoRole: 'manager/admin' },
               ].map(({ label, name, setName, sig, setSig, autoRole }) => (
-                <div key={label} style={{ border: '1px solid var(--border2)', borderRadius: 8, padding: 10, background: 'var(--bg2)' }}>
+                <div key={label} style={{ border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: 10, background: 'var(--bg2)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                     <span style={lbSt}>{label}</span>
-                    <span style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 4, padding: '1px 5px' }}>{autoRole}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 'var(--r-xs)', padding: '1px 5px' }}>{autoRole}</span>
                   </div>
                   {/* 2026-09-07 เลือกจาก profiles (<PersonSelect>) — role ตามช่องขึ้นก่อน · เลือกแล้วลายเซ็นตามมาเอง (พิมพ์เองยังได้แต่ติดป้าย) */}
                   <PersonSelect value={name} roles={autoRole.split('/')} lineIds={filterLine ? [filterLine] : undefined} placeholder="ชื่อ-นามสกุล"
@@ -3213,11 +3156,11 @@ function MultiSkillFormTab() {
                     <div style={{ position: 'relative' }}>
                       <img src={sig} alt="sig" style={{ width: '100%', height: 48, objectFit: 'contain', borderRadius: 4, background: '#fff', border: '1px solid var(--border2)' }} />
                       <button onClick={() => { if (sig?.startsWith('blob:')) URL.revokeObjectURL(sig); setSig(null); }}
-                        style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.5)', border: 'none', color: '#fff', borderRadius: 4, fontSize: 11, cursor: 'pointer', padding: '1px 5px' }}>✕</button>
+                        style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.5)', border: 'none', color: '#fff', borderRadius: 'var(--r-md)', fontSize: 11, cursor: 'pointer', padding: '1px 5px' }}>✕</button>
                     </div>
                   ) : (
                     <label style={{ display: 'block', cursor: 'pointer' }}>
-                      <div style={{ height: 48, border: '1px dashed var(--border2)', borderRadius: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--muted)' }}>
+                      <div style={{ height: 48, border: '1px dashed var(--border2)', borderRadius: 'var(--r-xs)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--muted)' }}>
                         อัปโหลดลายเซ็น
                       </div>
                       <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async e => {
@@ -3244,7 +3187,7 @@ function MultiSkillFormTab() {
                 <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 10 }}>{employees.length} คน · {skillDefs.length} ทักษะ</span>
               </div>
               {canExport && (
-                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5 }}>
                   Export PDF
                 </button>
               )}
@@ -3253,7 +3196,7 @@ function MultiSkillFormTab() {
             {/* Legend */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
               {MS_LEVELS.map(lv => (
-                <div key={lv.level} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 8, background: lv.level > 0 ? lv.bg + "33" : 'var(--bg3)', border: `1px solid ${lv.level > 0 ? lv.border : 'var(--border)'}` }}>
+                <div key={lv.level} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 'var(--r-md)', background: lv.level > 0 ? lv.bg + "33" : 'var(--bg3)', border: `1px solid ${lv.level > 0 ? lv.border : 'var(--border)'}` }}>
                   <SkillGauge level={lv.level} size={20} />
                   <span style={{ fontSize: 11, color: lv.level > 0 ? lv.color : 'var(--muted)', fontWeight: lv.level > 0 ? 700 : 400 }}>
                     {lv.pct} · {lv.label}
@@ -3270,7 +3213,7 @@ function MultiSkillFormTab() {
                   return (
                     <div key={emp.id} className="card" style={{ padding: '10px 12px' }}>
                       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
-                        <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16 }}>{(emp.name || '?')[0]}</div>
+                        <div style={{ width: 40, height: 40, borderRadius: 'var(--r-md)', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 16 }}>{(emp.name || '?')[0]}</div>
                         <div>
                           <div style={{ fontWeight: 700, fontSize: 14 }}>{emp.name}</div>
                           <div style={{ fontSize: 11, color: 'var(--muted)' }}>{emp.employee_id_code} · {positionLabel(emp.position)}</div>
@@ -3283,7 +3226,7 @@ function MultiSkillFormTab() {
                           const lv = levels[si];
                           const m = msStyle(lv);
                           return (
-                            <span key={s.name} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, background: m.bg + '55', color: m.color, border: `1px solid ${tint(m.border, 'line')}` }}>
+                            <span key={s.name} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-xs)', background: m.bg + '55', color: m.color, border: `1px solid ${tint(m.border, 'line')}` }}>
                               {s.label} L{lv}
                             </span>
                           );
@@ -3443,7 +3386,7 @@ const Thumb = ({ src }) => {
 
 const StatusBadge = ({ ok, label }) => (
   <span style={{
-    display: 'inline-block', fontSize: 11, borderRadius: 4, padding: '1px 5px', marginRight: 3,
+    display: 'inline-block', fontSize: 11, borderRadius: 'var(--r-xs)', padding: '1px 5px', marginRight: 3,
     background: ok ? 'var(--green-dim)' : 'var(--red-dim)',
     color: ok ? 'var(--green)' : 'var(--red)',
     border: `1px solid ${ok ? 'var(--green-line)' : 'var(--red-line)'}`,
@@ -3876,7 +3819,7 @@ function SkillAllowanceTab() {
         </select>
         <span className="spacer" />
         <button onClick={load} disabled={loading}
-          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
+          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
           {loading ? 'กำลังโหลด...' : 'ดึงข้อมูล'}
         </button>
         {rows.length > 0 && (
@@ -3913,7 +3856,7 @@ function SkillAllowanceTab() {
       <div className="card" style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ประเภทงาน</div>
-          <select value={workType} onChange={e => setWorkType(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 7, fontSize: 13 }}>
+          <select value={workType} onChange={e => setWorkType(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }}>
             <option value="">— เลือกประเภท —</option>
             {workTypes.map(w => <option key={w} value={w}>{w}</option>)}
           </select>
@@ -3928,12 +3871,12 @@ function SkillAllowanceTab() {
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>สิทธิ์ที่ได้รับ กะ 01 (คน)</div>
           <input value={rightsDay} onChange={e => setRightsDay(e.target.value)} placeholder="-"
-            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 70 }} />
+            style={{ padding: '6px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13, width: 70 }} />
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>สิทธิ์ที่ได้รับ กะ 02 (คน)</div>
           <input value={rightsNight} onChange={e => setRightsNight(e.target.value)} placeholder="-"
-            style={{ padding: '6px 10px', borderRadius: 7, fontSize: 13, width: 70 }} />
+            style={{ padding: '6px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13, width: 70 }} />
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>บันทึกโดย (หัวหน้างาน)</div>
@@ -3951,7 +3894,7 @@ function SkillAllowanceTab() {
                 {headChoices.map(r => (
                   <button key={r.id} type="button" onClick={() => setSignerHead(r.name)}
                     title={`${r.name}${r.team ? ` · ทีม ${r.team}` : ''}${r.shift ? ` · ${r.shift === 'day' ? 'กะเช้า' : 'กะดึก'}` : ' · ยังไม่รู้กะ'}`}
-                    style={{ padding: '3px 9px', borderRadius: 999, fontSize: 11.5, cursor: 'pointer',
+                    style={{ padding: '3px 9px', borderRadius: 'var(--r-md)', fontSize: 11.5, cursor: 'pointer',
                       border: `1px solid ${signerHead === r.name ? 'var(--accent)' : 'var(--border2)'}`,
                       background: signerHead === r.name ? 'var(--accent-dim)' : 'var(--bg3)',
                       color: 'var(--text)', fontWeight: signerHead === r.name ? 700 : 400 }}>
@@ -4010,11 +3953,11 @@ function SkillAllowanceTab() {
               </span>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span style={{ background: 'var(--green-dim)', color: 'var(--green)', borderRadius: 6, padding: '3px 10px', fontSize: 12, fontWeight: 700 }}>
+              <span style={{ background: 'var(--green-dim)', color: 'var(--green)', borderRadius: 'var(--r-md)', padding: '3px 10px', fontSize: 12, fontWeight: 700 }}>
                 {rows.length} คน
               </span>
               {canExport && (
-                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5 }}>
                   Export PDF
                 </button>
               )}
@@ -4525,7 +4468,7 @@ function AttendanceFormTab() {
           style={{ width: 110 }}
         />
         <button onClick={load} disabled={loading}
-          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
+          style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
           {loading ? 'กำลังโหลด...' : 'ดึงข้อมูล'}
         </button>
         {empRows.length > 0 && (
@@ -4565,9 +4508,9 @@ function AttendanceFormTab() {
       {empRows.length > 0 && (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           {calLoaded && days.every(d => getDayType(dayDateStr(d)) === 'working') && (
-            <div style={{ marginBottom: 8, padding: '6px 10px', borderRadius: 8, fontSize: 12, fontWeight: 700, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber-line)' }}>
-              ⚠️ งวดนี้ไม่มีวันหยุดในปฏิทินบริษัทเลย — ถ้าเดือนนี้มีวันหยุดจริง ให้ตั้งค่าที่ "ปฏิทินบริษัท" ก่อนพิมพ์ ไม่งั้นชั่วโมง OT วันหยุด (8/10 ชม.) จะถูกคิดแบบวันทำงานปกติ (2/5 ชม.)
-            </div>
+            <NoticeBar tone="warn" style={{ marginBottom: 8 }}>
+              งวดนี้ไม่มีวันหยุดในปฏิทินบริษัทเลย — ถ้าเดือนนี้มีวันหยุดจริง ให้ตั้งค่าที่ "ปฏิทินบริษัท" ก่อนพิมพ์ ไม่งั้นชั่วโมง OT วันหยุด (8/10 ชม.) จะถูกคิดแบบวันทำงานปกติ (2/5 ชม.)
+            </NoticeBar>
           )}
           <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
             <span style={{ fontWeight: 700 }}>ใบบันทึกการมาทำงาน</span>
@@ -4576,7 +4519,7 @@ function AttendanceFormTab() {
                 งวดวันที่ {days[0]}-{days[days.length-1]} {THAI_MONTHS[month]} {year+543} · {empRows.length} คน
               </span>
               {canExport && (
-                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <button onClick={handlePrint} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', display: 'flex', alignItems: 'center', gap: 5 }}>
                   Export PDF
                 </button>
               )}

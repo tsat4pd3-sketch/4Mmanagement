@@ -135,7 +135,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
               const n = (masterItems || []).filter(i => i.master_process_id === m.id).length;
               const pend = pending.filter(p => p.master_process_id === m.id).length;
               return (
-                <div key={m.id} onClick={() => setSel(m.id)} style={{ padding: '7px 9px', borderRadius: 8, cursor: 'pointer', border: `1px solid ${sel === m.id ? '#4d9fff' : 'var(--border)'}`, background: sel === m.id ? 'rgba(77,159,255,0.08)' : 'var(--bg2)', opacity: m.is_active ? 1 : 0.55 }}>
+                <div key={m.id} onClick={() => setSel(m.id)} style={{ padding: '7px 9px', borderRadius: 'var(--r-md)', cursor: 'pointer', border: `1px solid ${sel === m.id ? '#4d9fff' : 'var(--border)'}`, background: sel === m.id ? 'rgba(77,159,255,0.08)' : 'var(--bg2)', opacity: m.is_active ? 1 : 0.55 }}>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 800, fontSize: 12.5 }}>{m.name}</span>
                     <Pill label={KIND_LABEL[m.kind] || m.kind} color="#64748b" small />

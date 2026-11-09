@@ -300,7 +300,7 @@ input, select, textarea {
   background: var(--bg3);
   color: var(--text);
   border: 1px solid var(--border2);
-  border-radius: var(--radius);
+  border-radius: var(--ctl-r);
   font-family: var(--font-body);
   font-size: 15px;
   padding: 9px 12px;
@@ -713,6 +713,10 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
   /* 🔴 ต้อง `!important` — กล่องข้อความตั้ง `flex: 1` ไว้ที่ inline style (ของจอคอม ห้ามถอด)
      ซึ่งชนะ CSS เสมอ ⇒ ไม่ใส่ = กฎนี้ไม่มีผล ข้อความยังถูกบีบแคบเหมือนเดิม (พิสูจน์แล้ว 05/11) */
   .andon-bar .andon-bar-msg { flex: 1 0 100% !important; }
+  /* 📱 ท้ายการ์ด Login — ข้อความแบรนด์ตั้ง `nowrap` ไว้ให้พอดีการ์ด 400px (06/11) แต่จอ 390px
+     การ์ดเหลือเนื้อใน 278px ⇒ ล้นออกนอกจอแบบปัดไม่ได้ (ด่าน mobilesweep 08/11)
+     🔴 inline nowrap ชนะ class ⇒ ต้อง `!important` · จอคอมไม่เปลี่ยนแม้แต่พิกเซลเดียว (อยู่ใน media query) */
+  .login-brand-foot { white-space: normal !important; }
 }
 
 /* ขอบกระพริบเบา สำหรับการ์ดใหญ่ (เช่นการ์ดใบซ่อม MTN รอรับงาน) — glow เล็กกว่า marker มาก */
@@ -1192,6 +1196,10 @@ body.esm-tv-shell .tv-hide { display: none !important; }
   display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
 .pg-btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .pg-btn.danger  { border-color: var(--red); color: var(--red); }
+/* ปุ่มคำสั่งขนาดเล็กในแถวตาราง/การ์ด/แถบเครื่องมือ (06/11 · UI §6.35) — มุมเดียวกับ .pg-btn · ห้ามเขียน borderRadius เองที่ปุ่ม */
+.pg-btn.sm { height: 28px; padding: 0 10px; font-size: 12px; gap: 5px; }
+.pg-btn.sm.pg-btn-icon { width: 28px; }
+.pg-btn.primary.sm { font-weight: 600; }
 .pg-btn-icon { padding: 0; justify-content: center; }
 .pg-dot { width: 4px; height: 4px; border-radius: 50%; background: currentColor; display: inline-block; }
 .pg-menu { position: absolute; top: calc(100% + 6px); z-index: 60; min-width: 220px; padding: 6px;

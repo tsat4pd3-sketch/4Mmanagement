@@ -106,7 +106,7 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
   if (!cands.length) {
     return (
       <div style={{ background: 'rgba(34,197,94,0.10)', border: '1px solid rgba(34,197,94,0.45)',
-                    borderRadius: 10, padding: '14px 16px', fontSize: 13 }}>
+                    borderRadius: 'var(--r-md)', padding: '14px 16px', fontSize: 13 }}>
         ✅ ไม่มีเครื่องที่ระบบสงสัยว่าเป็นจิ๊ก/ฟิกเจอร์แล้ว
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>
           ระบบดูจากเลขเครื่อง (JHYD/GPHYD/JIG) · ชื่อ (JIG/GRIPPER/CENTERING/MARKING/POKA-YOKE) และการวางบนผังไลน์
@@ -119,7 +119,7 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       <div style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)',
-                    borderRadius: 10, padding: '12px 14px', fontSize: 12.5, lineHeight: 1.65 }}>
+                    borderRadius: 'var(--r-md)', padding: '12px 14px', fontSize: 12.5, lineHeight: 1.65 }}>
         <b>⚠️ ระบบ “เสนอ” เท่านั้น — คนเป็นคนตัดสิน</b><br />
         ชื่ออย่าง <code>Welding</code> / <code>Tower load</code> / <code>MAGAZINE</code> แยกไม่ออกว่าเป็นจิ๊กหรือเครื่องจักร
         ระบบจึงไม่เปลี่ยนให้เอง · ติ๊กเฉพาะตัวที่ช่างยืนยันว่าเป็นจิ๊ก/ฟิกเจอร์จริง
@@ -139,13 +139,13 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
         {hiddenCount > 0 && (
           <span className="filter-count">ซ่อนอยู่ {hiddenCount} รายการ (ไม่ตรงตัวกรอง)</span>
         )}
-        <button onClick={pickAllShown} style={{ padding: '0 12px', borderRadius: 8, fontSize: 12.5,
+        <button onClick={pickAllShown} style={{ padding: '0 12px', borderRadius: 'var(--r-md)', fontSize: 12.5,
                 background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
           ติ๊ก/เอาออก ทั้งที่แสดง ({shown.length})
         </button>
       </FilterBar>
 
-      <div style={{ maxHeight: '52vh', overflow: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
+      <div style={{ maxHeight: '52vh', overflow: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
           <thead style={{ position: 'sticky', top: 0, background: 'var(--bg2)', zIndex: 1 }}>
             <tr style={{ textAlign: 'left' }}>
@@ -184,13 +184,13 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ fontSize: 12.5 }}>ตั้งเป็น:</span>
           <select value={kind} onChange={e => setKind(e.target.value)}
-                  style={{ width: 200, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)',
+                  style={{ width: 200, padding: '7px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)',
                            background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }}>
             {EQUIPMENT_KINDS.map(k => <option key={k.key} value={k.key}>{k.icon} {k.label}</option>)}
           </select>
           <button onClick={save} disabled={!picked.size || saving}
                   style={{ background: picked.size ? '#16a34a' : 'var(--bg2)', color: picked.size ? '#fff' : 'var(--muted)',
-                           border: 'none', borderRadius: 8, padding: '8px 18px', fontSize: 13, fontWeight: 700,
+                           border: 'none', borderRadius: 'var(--r-md)', padding: '8px 18px', fontSize: 13, fontWeight: 700,
                            cursor: picked.size && !saving ? 'pointer' : 'not-allowed' }}>
             {saving ? 'กำลังบันทึก…' : `บันทึก ${picked.size} รายการ`}
           </button>

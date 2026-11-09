@@ -187,7 +187,7 @@ export default function GestureCam({ onGesture, onError }) {
   return (
     <div style={{
       position: 'absolute', right: 16, bottom: 16, zIndex: 30,
-      borderRadius: 12, overflow: 'hidden', border: '1px solid var(--border2)',
+      borderRadius: 'var(--r-lg)', overflow: 'hidden', border: '1px solid var(--border2)',
       background: '#000', boxShadow: 'var(--shadow-float)', width: 176,
     }}>
       {/* mirror preview ให้เป็นธรรมชาติเหมือนส่องกระจก (การคำนวณใช้พิกัดเฟรมจริง ไม่เกี่ยว preview) */}

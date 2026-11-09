@@ -236,7 +236,7 @@ export default function StockDiscrepancyReport() {
 
       {form && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 2300, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(480px, 96vw)', boxShadow: 'var(--shadow-lg)' }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(480px, 96vw)', boxShadow: 'var(--shadow-lg)' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>
               {form.mode === 'propose' ? '🤝 เสนอผลเคลียร์' : '✔ ยืนยันผลเคลียร์'}
             </div>
@@ -256,9 +256,9 @@ export default function StockDiscrepancyReport() {
                 </label>
               )}
               <input value={form.sapDoc} onChange={e => setForm(f => ({ ...f, sapDoc: e.target.value }))} placeholder="เลขเอกสาร SAP ที่ใช้ปรับ (ถ้ามี)"
-                style={{ padding: '8px 10px', borderRadius: 8, fontSize: 13 }} />
+                style={{ padding: '8px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }} />
               <input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="หมายเหตุ / สาเหตุที่ขาด"
-                style={{ padding: '8px 10px', borderRadius: 8, fontSize: 13 }} />
+                style={{ padding: '8px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }} />
               {(() => {
                 const why = form.mode === 'propose'
                   ? proposeBlock(form.d, { side: form.side, sides, outcome: form.outcome })

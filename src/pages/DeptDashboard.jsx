@@ -119,7 +119,7 @@ function ActionList({ items, empty = '✅ ไม่มีงานค้าง',
       {items.slice(0, max).map((it, i) => (
         <button key={i} onClick={() => onPick && onPick(it)} style={{
           display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', cursor: onPick ? 'pointer' : 'default',
-          background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 10px', color: 'var(--text)',
+          background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '7px 10px', color: 'var(--text)',
         }}>
           <span style={{ fontSize: 15 }}>{it.icon}</span>
           <span style={{ flex: 1, minWidth: 0, fontSize: 13 }}>
@@ -139,10 +139,7 @@ function Links({ items, navigate }) {
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
       {items.map(([to, label, n]) => (
-        <button key={to} onClick={() => navigate(to)} style={{
-          fontSize: 13, fontWeight: 700, padding: '7px 12px', borderRadius: 999, cursor: 'pointer',
-          background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)',
-        }}>
+        <button key={to} type="button" className="pg-btn" onClick={() => navigate(to)} style={{ height: 30, fontSize: 12.5 }}>
           {label}{n ? <span style={{ marginLeft: 6, color: 'var(--amber)' }}>{n}</span> : null}
         </button>
       ))}
@@ -512,7 +509,7 @@ function MaintenanceView({ d, ctx }) {
                 <td style={TDR}>{m.times}</td>
                 <td style={{ ...TDR, color: 'var(--amber)', fontWeight: 700 }}>{fmtNum(m.min)}</td>
                 <td style={{ ...TD, fontSize: 12, color: 'var(--muted)' }}>{Object.entries(m.causes).sort((a, b) => b[1] - a[1])[0]?.[0]}</td>
-                <td style={TD}><button onClick={() => navigate('/mtn-repair')} style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 6, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--accent)', color: 'var(--text)' }}>เปิดใบซ่อม →</button></td>
+                <td style={TD}><button type="button" className="pg-btn sm" onClick={() => navigate('/mtn-repair')}>เปิดใบซ่อม →</button></td>
               </tr>
             ))}
             {!gap.length && <tr><td style={TD} colSpan={6}>✅ ไม่มี — เครื่องที่หยุดซ้ำมีใบซ่อมครบแล้ว</td></tr>}

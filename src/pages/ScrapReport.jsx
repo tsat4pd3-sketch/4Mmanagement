@@ -95,7 +95,7 @@ function Modal({ title, onClose, children, width = 560 }) {
   const isMobile = useIsMobile();
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '4vh 12px', overflowY: 'auto' }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, width: `min(${width}px, 96vw)`, boxShadow: 'var(--shadow-lg)', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: `min(${width}px, 96vw)`, boxShadow: 'var(--shadow-lg)', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontWeight: 800, fontSize: 15 }}>{title}</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
@@ -660,12 +660,13 @@ export default function ScrapReport() {
         permKey="scrap:record" hint="ยังเปิดดูใบเดิม พิมพ์ และ export Excel ได้ตามปกติ" />
       <PageHeader title="ของเสีย — ใบรายงาน & ถังเหลือง/แดง" icon="♻️"
         sub={tab === 'bins'
-          ? 'ชิ้นงานต้องสงสัย (ถังเหลือง) / ชิ้นงานเสีย (ถังแดง) — ผลิตลงบันทึก · QA เป็นคนพิจารณาผล'
+          ? 'ชิ้นงานต้องสงสัย (ถังเหลือง) / ชิ้นงานเสีย (ถังแดง) — เอกสารตัวจริงอยู่ที่นี่ · QA เห็นเฉพาะคิวรอพิจารณาใน /qa'
           : `${scrapFormNo} — ลงยอดของเสียต่อไลน์/วัน · ดึงตั้งต้นจาก Daily Report + เพิ่มพาร์ทย่อย · export ตรงฟอร์ม`}
         tabs={TABS} tab={tab} onTab={setTab} />
 
-      {/* 🗑️ ถังเหลือง/แดง = คอมโพเนนต์เดียวกับที่ /qa ใช้ (ข้อมูลชุดเดียว ไม่ได้ก๊อป) */}
-      {tab === 'bins' ? <QualityBins /> : (<>
+      {/* 🗑️ ถังเหลือง/แดง — **บ้านของเอกสาร อยู่ที่หน้านี้ (ฝ่ายผลิต)** · คำสั่ง user 06/11
+          คอมโพเนนต์เดียวกับที่ /qa ใช้ (ข้อมูลชุดเดียว ไม่ได้ก๊อป) แต่ /qa ส่ง mode="queue" = เห็นแค่คิวรออนุมัติ */}
+      {tab === 'bins' ? <QualityBins mode="full" /> : (<>
 
       {/* UI-STANDARD 2026-09-24: แถบกรองมาตรฐาน (ไม่ใส่ขนาด inline ในช่อง) */}
       <FilterBar style={{ marginBottom: 14 }}>
@@ -687,7 +688,7 @@ export default function ScrapReport() {
               <div key={rep.id} className="sr-card">
                 <div className="sr-head">
                   <b>{rep.doc_no || '—'}</b>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 999, color: sm?.color, background: `${tint(sm?.color, 'dim')}`, border: `1px solid ${tint(sm?.color, 'line')}` }}>{sm?.label || rep.status}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 'var(--r-pill)', color: sm?.color, background: `${tint(sm?.color, 'dim')}`, border: `1px solid ${tint(sm?.color, 'line')}` }}>{sm?.label || rep.status}</span>
                 </div>
                 <div className="sr-line">{rep.line_name || '—'} · {fmtD(rep.report_date)}</div>
                 <div className="sr-sum"><ItemCount reportId={rep.id} /> · ของเสีย <ScrapSum reportId={rep.id} /></div>
@@ -707,7 +708,7 @@ export default function ScrapReport() {
                   <span style={{ color: 'var(--text2)' }}>
                     ไม่มีใบในช่วงนี้ — แต่<b>มีใบอยู่นอกช่วง</b> ล่าสุด <b style={{ color: 'var(--accent)' }}>{outside.latest}</b>{' '}
                     <button onClick={() => { setListFrom(outside.latest); setListTo(getWorkDate()); }}
-                      style={{ marginTop: 6, fontSize: 13, fontWeight: 800, padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
+                      style={{ marginTop: 6, fontSize: 13, fontWeight: 800, padding: '8px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                         background: 'rgba(61,214,92,0.12)', color: 'var(--accent)', border: '1px solid rgba(61,214,92,0.45)', fontFamily: 'var(--font-body)' }}>
                       ขยายช่วงไปถึงวันนั้น
                     </button>
@@ -731,7 +732,7 @@ export default function ScrapReport() {
                 <td style={tdSt}>{rep.line_name || '—'}</td>
                 <td style={tdSt}><ItemCount reportId={rep.id} /></td>
                 <td style={tdSt}><ScrapSum reportId={rep.id} /></td>
-                <td style={tdSt}><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 999, color: STATUS_META[rep.status]?.color, background: `${tint(STATUS_META[rep.status]?.color, 'dim')}`, border: `1px solid ${tint(STATUS_META[rep.status]?.color, 'line')}` }}>{STATUS_META[rep.status]?.label || rep.status}</span></td>
+                <td style={tdSt}><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 'var(--r-pill)', color: STATUS_META[rep.status]?.color, background: `${tint(STATUS_META[rep.status]?.color, 'dim')}`, border: `1px solid ${tint(STATUS_META[rep.status]?.color, 'line')}` }}>{STATUS_META[rep.status]?.label || rep.status}</span></td>
                 <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                   <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px' }} onClick={() => doPrint(rep)}>PDF</button>
                   <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4 }} onClick={() => doExport(rep)}>Excel</button>
@@ -748,7 +749,7 @@ export default function ScrapReport() {
                   <span style={{ color: 'var(--text2)' }}>
                     ไม่มีใบในช่วงนี้ — แต่<b>มีใบอยู่นอกช่วง</b> ล่าสุด <b style={{ color: 'var(--accent)' }}>{outside.latest}</b>{' '}
                     <button onClick={() => { setListFrom(outside.latest); setListTo(getWorkDate()); }}
-                      style={{ marginLeft: 6, fontSize: 12, fontWeight: 800, padding: '3px 10px', borderRadius: 8, cursor: 'pointer',
+                      style={{ marginLeft: 6, fontSize: 12, fontWeight: 800, padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                         background: 'rgba(61,214,92,0.12)', color: 'var(--accent)', border: '1px solid rgba(61,214,92,0.45)', fontFamily: 'var(--font-body)' }}>
                       ขยายช่วงไปถึงวันนั้น
                     </button>
@@ -838,7 +839,7 @@ export default function ScrapReport() {
               pattern เดียวกับแถบ 🔩 worklist ใน /products */}
           {opScan.opRowsCount > 0 && (
             <div style={{
-              marginBottom: 8, padding: '8px 12px', borderRadius: 8, fontSize: 12, lineHeight: 1.65,
+              marginBottom: 8, padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12, lineHeight: 1.65,
               background: opScan.blocked.length ? 'var(--red-dim)' : 'var(--amber-dim)',
               border: `1px solid ${opScan.blocked.length ? 'var(--red-line)' : 'var(--amber-line)'}`,
               color: opScan.blocked.length ? 'var(--red)' : 'var(--amber)',
@@ -857,7 +858,7 @@ export default function ScrapReport() {
 
           {/* 📱 มือถือ: ตาราง 15 คอลัมน์ (กว้าง 1,315px ในกล่อง 306px) → การ์ดต่อรายการด้วย CSS ล้วน (.sr-items · data-l = ป้ายช่อง)
               จอคอม: คลาส/attribute ไม่มีผล — ตารางเดิมเป๊ะ · 15/10 */}
-          <div className="sr-items-box" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+          <div className="sr-items-box" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
             <table className="sr-items" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1050 }}>
               <thead><tr>
                 <th style={thSt}>#</th><th style={thSt}>ที่มา</th><th style={thSt}>PART NO.</th><th style={thSt}>PART NAME</th>
@@ -993,8 +994,8 @@ export default function ScrapReport() {
             placeholder={sapOptions === null ? 'กำลังโหลด…' : `พิมพ์ค้นหา MAT SAP / Part No / ชื่อ (${sapOptions.length})`} />
           <div style={{ marginTop: 10, maxHeight: 340, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {sapMatches.map((o, i) => (
-              <button key={i} onClick={() => applySap(o)} style={{ textAlign: 'left', padding: '8px 10px', borderRadius: 8, cursor: 'pointer', background: 'var(--card)', border: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, color: o.source === 'sub' ? 'var(--amber)' : 'var(--blue)', background: o.source === 'sub' ? 'var(--amber)1f' : 'var(--blue)1f' }}>{o.source === 'sub' ? 'ย่อย' : 'หลัก'}</span>
+              <button key={i} onClick={() => applySap(o)} style={{ textAlign: 'left', padding: '8px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--card)', border: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 'var(--r-pill)', color: o.source === 'sub' ? 'var(--amber)' : 'var(--blue)', background: o.source === 'sub' ? 'var(--amber)1f' : 'var(--blue)1f' }}>{o.source === 'sub' ? 'ย่อย' : 'หลัก'}</span>
                 <div style={{ minWidth: 0 }}>
                   {/* ลำดับ Part No. → ชื่องาน → MAT (UI §6.21) */}
                   <div style={{ fontSize: 12.5, fontWeight: 700 }}>{o.part_no || o.part_name || o.mat_no} <span style={{ fontWeight: 500, color: 'var(--text2)' }}>{o.part_no ? o.part_name : ''}{o.mat_no ? ` · MAT ${o.mat_no}` : ''}</span></div>
@@ -1021,7 +1022,7 @@ export default function ScrapReport() {
               const mine = r.line_name === editor.report.line_name;
               return (
                 <button key={r.id} onClick={() => applyRequest(r)} style={{
-                  textAlign: 'left', padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                  textAlign: 'left', padding: '8px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                   background: 'var(--card)', border: `1px solid ${mine ? 'var(--blue)' : 'var(--border)'}`,
                 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 700 }}>
@@ -1102,7 +1103,7 @@ function DefectPicker({ types, value, onClose, onSave }) {
       <div style={{ fontWeight: 800, fontSize: 12.5, marginBottom: 6 }}>{title}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         {list.map(t => (
-          <label key={t.code} style={{ fontSize: 12, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', padding: '3px 5px', borderRadius: 6, background: sel.has(t.code) ? 'var(--accent-dim)' : 'transparent' }}>
+          <label key={t.code} style={{ fontSize: 12, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', padding: '3px 5px', borderRadius: 'var(--r-md)', background: sel.has(t.code) ? 'var(--accent-dim)' : 'transparent' }}>
             <input type="checkbox" style={{ width: 'auto' }} checked={sel.has(t.code)} onChange={() => toggle(t.code)} />
             <b style={{ minWidth: 30 }}>{t.code}</b> {t.label}
           </label>

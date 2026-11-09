@@ -142,7 +142,7 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
     if (loadErr) return (
       <div style={{ position: 'fixed', bottom: 'calc(12px + var(--mnav-h, 0px))', right: 12, zIndex: 4000,
                     display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(28,10,10,0.95)',
-                    border: '1px solid rgba(239,68,68,0.6)', borderRadius: 10, padding: '7px 11px',
+                    border: '1px solid rgba(239,68,68,0.6)', borderRadius: 'var(--r-md)', padding: '7px 11px',
                     fontSize: 11.5, fontWeight: 800, color: '#f87171', boxShadow: 'var(--shadow-lg)' }}>
         ⚠️ อ่านรายการเครื่องหยุดไม่ได้ — ยังบอกไม่ได้ว่ามีเครื่องหยุดหรือไม่
       </div>
@@ -152,7 +152,7 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
       <div onClick={unlockNow} title="เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ 1 ครั้ง — จอที่เปิดทิ้งไว้ต้องแตะทุกครั้งที่หน้าโหลดใหม่"
         style={{ position: 'fixed', bottom: 'calc(12px + var(--mnav-h, 0px))', right: 12, zIndex: 4000, cursor: 'pointer',
                  display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(20,16,6,0.94)',
-                 border: '1px solid rgba(251,191,36,0.5)', borderRadius: 10, padding: '7px 11px',
+                 border: '1px solid rgba(251,191,36,0.5)', borderRadius: 'var(--r-md)', padding: '7px 11px',
                  fontSize: 11.5, fontWeight: 800, color: '#fbbf24', boxShadow: 'var(--shadow-lg)' }}>
         เสียงเตือนยังไม่พร้อม — แตะที่นี่ 1 ครั้ง
       </div>
@@ -164,7 +164,7 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
         const m = metaOf(a)
         return (
         /* 📱 `andon-bar` — เหตุผลเดียวกับ StoreCallSiren (index.css · มือถือเท่านั้น) */
-        <div key={a.id} className="dt-alarm-blink andon-bar" style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(20,10,10,0.96)', border: `2px solid ${m.color}`, borderRadius: 12, padding: '10px 14px', boxShadow: 'var(--shadow-float)' }}>
+        <div key={a.id} className="dt-alarm-blink andon-bar" style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(20,10,10,0.96)', border: `2px solid ${m.color}`, borderRadius: 'var(--r-lg)', padding: '10px 14px', boxShadow: 'var(--shadow-float)' }}>
           <span style={{ fontSize: 22 }}>{m.icon}</span>
           <div className="andon-bar-msg" style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff' }}>{m.label}</div>
@@ -179,7 +179,7 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
               แตะเพื่อเปิดเสียง
             </span>
           )}
-          <button onClick={() => ack(a)} style={{ flexShrink: 0, background: m.color, color: '#fff', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>รับทราบ · หยุดเสียง</button>
+          <button onClick={() => ack(a)} style={{ flexShrink: 0, background: m.color, color: '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>รับทราบ · หยุดเสียง</button>
         </div>
         )
       })}
@@ -187,7 +187,7 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
         /* 🎨 สีจาก token เท่านั้น (ด่าน colorRatchet · UI §6.17) — ไฟล์นี้ยังมีสีดิบเก่าค้างอยู่
            แต่ของใหม่ห้ามเพิ่ม */
         <div style={{ pointerEvents: 'auto', background: 'var(--card)', border: '1px solid var(--red-line)',
-          borderRadius: 10, padding: '7px 12px', fontSize: 11.5, fontWeight: 800, color: 'var(--red)', textAlign: 'center' }}>
+          borderRadius: 'var(--r-md)', padding: '7px 12px', fontSize: 11.5, fontWeight: 800, color: 'var(--red)', textAlign: 'center' }}>
           + อีก {alerts.length - 1} เครื่องที่ยังไม่มีใครรับทราบ — กดรับทราบใบบนก่อน แล้วใบถัดไปจะขึ้นแทน
         </div>
       )}

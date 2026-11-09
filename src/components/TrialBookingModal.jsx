@@ -94,7 +94,7 @@ export default function TrialBookingModal({ lineName, dies = [], onClose, onAdd 
           </div>
         </div>
         {/* 🔴 ความซื่อสัตย์: บอกตรงๆ ว่าทำไมไม่ให้เลือกจากทะเบียนสินค้า */}
-        <div style={{ fontSize: 11, color: 'var(--text2)', background: 'var(--bg2)', borderRadius: 6, padding: '6px 9px' }}>
+        <div style={{ fontSize: 11, color: 'var(--text2)', background: 'var(--bg2)', borderRadius: 'var(--r-md)', padding: '6px 9px' }}>
           ℹ️ งานใหม่ยังไม่มีเลข MAT (SAP ยังไม่ออก) — ระบบ<b>ไม่สร้างพาร์ทลงทะเบียนสินค้าให้</b>
           เพราะพาร์ทอาจยังไม่เกิดจริง · เก็บ Part No. ไว้บนใบนี้ก่อน พอเลข MAT ออกค่อยผูกเข้าระบบทีหลัง
         </div>

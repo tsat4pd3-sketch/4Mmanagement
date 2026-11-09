@@ -157,7 +157,7 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
   const td = { padding: '5px 8px', fontSize: 12, borderTop: '1px solid var(--border)' };
   const chip = t => (
     <span style={{
-      display: 'inline-block', minWidth: 20, textAlign: 'center', padding: '1px 6px', borderRadius: 5,
+      display: 'inline-block', minWidth: 20, textAlign: 'center', padding: '1px 6px', borderRadius: 'var(--r-xs)',
       fontSize: 11, fontWeight: 800,
       background: t === 'A' ? 'rgba(245,158,11,0.16)' : 'rgba(77,159,255,0.16)',
       color: t === 'A' ? '#f59e0b' : '#4d9fff',
@@ -167,7 +167,7 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
   return (
     <div className="overlay" style={{ zIndex: 2300 }}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--bg3)', border: '2px solid rgba(77,159,255,0.5)', borderRadius: 14,
+        background: 'var(--bg3)', border: '2px solid rgba(77,159,255,0.5)', borderRadius: 'var(--r-lg)',
         padding: 22, width: 'min(96vw,860px)', maxHeight: '92vh', overflowY: 'auto',
       }}>
         <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 4, color: '#4d9fff' }}>เติมตารางกะล่วงหน้า</div>
@@ -180,7 +180,7 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
           <span style={{ fontSize: 12, fontWeight: 700 }}>เติมไปข้างหน้า</span>
           {WEEK_CHOICES.map(w => (
             <button key={w} onClick={() => setWeeks(w)} style={{
-              padding: '5px 12px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
               border: `1px solid ${weeks === w ? '#4d9fff' : 'var(--border2)'}`,
               background: weeks === w ? 'rgba(77,159,255,0.15)' : 'transparent',
               color: weeks === w ? '#4d9fff' : 'var(--text2)',
@@ -191,7 +191,7 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
         {loading && <div style={{ fontSize: 13, color: 'var(--muted)', padding: '16px 0' }}>กำลังอ่านประวัติตารางกะ...</div>}
 
         {err && (
-          <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', fontSize: 12.5, color: '#ef4444' }}>
+          <div style={{ padding: '10px 14px', borderRadius: 'var(--r-md)', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', fontSize: 12.5, color: '#ef4444' }}>
             ⚠️ อ่านประวัติตารางกะไม่ได้ — {err} · ยังเติมกะไม่ได้ ลองใหม่อีกครั้ง
           </div>
         )}
@@ -206,7 +206,7 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
             </div>
 
             {ready.length > 0 && (
-              <div className="table-sticky" style={{ overflowX: 'auto', marginBottom: 14, border: '1px solid var(--border)', borderRadius: 8 }}>
+              <div className="table-sticky" style={{ overflowX: 'auto', marginBottom: 14, border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead><tr style={{ background: 'var(--bg2)' }}>
                     <th style={th}>ไลน์ / หน่วยงาน</th>
@@ -242,7 +242,7 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
 
             {/* ตรวจ pattern ไม่ได้ = ต้องเห็น ห้ามข้ามเงียบ */}
             {blocked.filter(b => !b.done).length > 0 && (
-              <div style={{ padding: '10px 14px', borderRadius: 8, marginBottom: 14, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)' }}>
+              <div style={{ padding: '10px 14px', borderRadius: 'var(--r-md)', marginBottom: 14, background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)' }}>
                 <div style={{ fontSize: 12.5, fontWeight: 800, color: '#f59e0b', marginBottom: 6 }}>
                   ⚠️ ต่อรอบให้ไม่ได้ {blocked.filter(b => !b.done).length} รายการ — ต้องตั้งเองในตาราง
                 </div>
@@ -257,7 +257,7 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
             )}
 
             {ready.length === 0 && blocked.every(b => b.done) && blocked.length > 0 && (
-              <div style={{ padding: '10px 14px', borderRadius: 8, marginBottom: 14, background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.4)', fontSize: 12.5, color: '#22c55e' }}>
+              <div style={{ padding: '10px 14px', borderRadius: 'var(--r-md)', marginBottom: 14, background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.4)', fontSize: 12.5, color: '#22c55e' }}>
                 ✅ ตั้งกะครบทุกสัปดาห์ในช่วงนี้แล้ว ไม่มีอะไรต้องเติม
               </div>
             )}
@@ -265,12 +265,12 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
         )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
-          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)', background: 'transparent', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>
+          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'transparent', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>
             ปิด
           </button>
           <button onClick={apply} disabled={saving || loading || !ready.length}
             style={{
-              padding: '8px 16px', borderRadius: 8, border: 'none', background: '#4d9fff', color: '#fff',
+              padding: '8px 16px', borderRadius: 'var(--r-md)', border: 'none', background: '#4d9fff', color: '#fff',
               fontSize: 13, fontWeight: 700, cursor: (saving || !ready.length) ? 'not-allowed' : 'pointer',
               opacity: (saving || loading || !ready.length) ? 0.5 : 1,
             }}>
@@ -284,7 +284,7 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
 
 function Stat({ label, value, color }) {
   return (
-    <div style={{ padding: '6px 12px', borderRadius: 8, background: 'var(--bg2)', border: '1px solid var(--border)' }}>
+    <div style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border)' }}>
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{label}</div>
       <div style={{ fontSize: 14, fontWeight: 800, color }}>{value}</div>
     </div>

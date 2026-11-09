@@ -70,7 +70,7 @@ export default function KpiMonthNoteModal({ title, icon, monthText, valueText, n
           {notes.map((n) => {
             const m = noteKindMeta(n.kind);
             return (
-              <div key={n.id} style={{ display: 'flex', gap: 8, padding: '8px 10px', borderRadius: 8, background: 'var(--bg3)', borderLeft: `3px solid ${n.kind === 'action' ? '#f59e0b' : n.kind === 'note' ? '#38bdf8' : '#a78bfa'}` }}>
+              <div key={n.id} style={{ display: 'flex', gap: 8, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', borderLeft: `3px solid ${n.kind === 'action' ? '#f59e0b' : n.kind === 'note' ? '#38bdf8' : '#a78bfa'}` }}>
                 <div style={{ fontSize: 16, lineHeight: 1 }} title={m.label}>{m.icon}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13.5, color: 'var(--text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{n.text}</div>
@@ -92,8 +92,8 @@ export default function KpiMonthNoteModal({ title, icon, monthText, valueText, n
             <textarea value={text} onChange={e => setText(e.target.value)} rows={3} placeholder={noteKindMeta(kind).hint}
               style={{ width: '100%', resize: 'vertical', fontSize: 13.5 }} />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button onClick={onClose} style={{ fontSize: 13, padding: '6px 12px', borderRadius: 8, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>ปิด</button>
-              <button onClick={add} disabled={busy} style={{ fontSize: 13, fontWeight: 700, padding: '6px 14px', borderRadius: 8, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{busy ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+              <button onClick={onClose} style={{ fontSize: 13, padding: '6px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>ปิด</button>
+              <button onClick={add} disabled={busy} style={{ fontSize: 13, fontWeight: 700, padding: '6px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{busy ? 'กำลังบันทึก…' : 'บันทึก'}</button>
             </div>
           </div>
         ) : (

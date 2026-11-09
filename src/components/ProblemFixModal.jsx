@@ -125,7 +125,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
   return (
     <div className="overlay" style={{ zIndex: 2200 }} /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */>
       <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14,
+        background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)',
         padding: 20, width: 'min(96vw, 620px)', maxHeight: '90vh', overflowY: 'auto',
       }}>
         <div style={{ fontSize: 15.5, fontWeight: 800, color: 'var(--text)', marginBottom: 3 }}>
@@ -152,7 +152,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
                   onClick={() => setFix(v => (txt(v) ? `${v.replace(/\s+$/, '')} · ` : '') + `ซ่อมตาม ${w.wi_no}`)}
                   title={`${w.code} — ${w.symptom}\n${w.wi_no}${w.why === 'symptom' ? '\n\n(จับคู่จากคำในอาการ — ตรวจว่าตรงเล่มก่อนใช้)' : ''}`}
                   style={{ maxWidth: 280, textAlign: 'left', fontSize: 11.5, lineHeight: 1.35,
-                    padding: '5px 9px', borderRadius: 8, cursor: 'pointer', color: 'var(--text)',
+                    padding: '5px 9px', borderRadius: 'var(--r-md)', cursor: 'pointer', color: 'var(--text)',
                     background: w.why === 'code' ? 'rgba(168,85,247,0.14)' : 'var(--bg2)',
                     border: `1px solid ${w.why === 'code' ? 'rgba(168,85,247,0.45)' : 'var(--border2)'}` }}>
                   <span style={{ display: 'block', fontWeight: 800, fontFamily: 'monospace' }}>{w.wi_no}</span>
@@ -176,7 +176,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
                   title={`${p.fix_action}\n${p.machine_no || ''} ${p.fix_by || ''} ${dmy(p.fix_at)}`}
                   style={{
                     maxWidth: 260, textAlign: 'left', fontSize: 11.5, lineHeight: 1.35,
-                    padding: '5px 9px', borderRadius: 8, cursor: 'pointer',
+                    padding: '5px 9px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                     background: p.machine_no && p.machine_no === row?.machine_no
                       ? 'rgba(34,197,94,0.12)' : 'var(--bg2)',
                     border: `1px solid ${p.machine_no && p.machine_no === row?.machine_no
@@ -220,10 +220,10 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
           <button onClick={onClose} style={{
-            padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)',
+            padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)',
             background: 'none', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
           <button onClick={save} disabled={saving} style={{
-            padding: '8px 20px', borderRadius: 8, border: 'none', background: '#f59e0b',
+            padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none', background: '#f59e0b',
             color: '#fff', fontSize: 13, fontWeight: 700, cursor: saving ? 'default' : 'pointer',
             opacity: saving ? 0.6 : 1 }}>{saving ? 'กำลังบันทึก…' : 'บันทึก'}</button>
         </div>

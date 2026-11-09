@@ -48,6 +48,7 @@ import {
   ATTEND_META, FOUR_M, shiftMeta, SHIFT_META,
 } from '../utils/manpowerBoard';
 
+import SectionScopeSelect from '../components/SectionScopeSelect';
 /* ═══════════════════════════════════════════════════════════════════════════════════════
    🧑‍🤝‍🧑 Manpower Control Board — /manpower-board (2026-10-06 · คำสั่ง user)
 
@@ -192,6 +193,7 @@ export default function ManpowerBoard() {
   const secParam = params.get('sec') || '';
   const section = sectionNodes.find(n => orgKey(n) === secParam) || (secParam && sectionNodes.find(n => n.name === secParam)) || sectionNodes[0] || null;
   const deptParam = params.get('dept') || '';
+  const deptNode = useMemo(() => (deptParam ? nodes.find(n => String(n.id) === deptParam) || null : null), [nodes, deptParam]);
   // 📺 โหมดจอ TV (ไม่เลื่อน · แบ่งหน้า) — `?tv=1|0` ชนะ · ไม่ระบุ = บัญชี display (จอแขวน) เปิดให้เอง
   const tvParam = params.get('tv');
   const tv = tvParam != null ? tvParam === '1' : role === 'display';
@@ -210,14 +212,19 @@ export default function ManpowerBoard() {
 
   const filters = (
     <>
-      <select value={section ? orgKey(section) : ''} onChange={e => merge({ sec: e.target.value, dept: null })} aria-label="ส่วนงาน">
-        {!sectionNodes.length && <option value="">— ไม่มีส่วนงานในขอบเขต —</option>}
-        {sectionNodes.map(n => <option key={n.id} value={orgKey(n)}>{n.name}</option>)}
-      </select>
-      <select value={deptParam} onChange={e => merge({ dept: e.target.value || null })} aria-label="แผนก">
-        <option value="">{ALL.dept}</option>
-        {(board?.depts || []).map(d => <option key={d.key} value={d.key}>{d.name}</option>)}
-      </select>
+      {/* 09/11 (คำสั่ง user "dropdown ไม่เหมือนดึงจากผังองค์กร"): ส่วนงาน + แผนก 2 ช่องแบน → ต้นไม้ผังช่องเดียว
+          · หน่วยขึ้นตรงฝ่าย (QA · Tooling MTN) อยู่ในต้นไม้เป็น "แผนก" ⇒ เลือกแล้วเปิดบอร์ดของมันเอง (เหมือนเดิมที่นับเป็น section)
+          · `?sec=`/`?dept=` ใน URL เท่าเดิม (dept = id โหนดแผนก) — ลิงก์เดิมยังใช้ได้ */}
+      <SectionScopeSelect lines={lines} pickDept value={section ? orgKey(section) : ''} dept={deptNode ? orgKey(deptNode) : ''}
+        allLabel={sectionNodes.length ? '— เลือกส่วนงาน —' : '— ไม่มีส่วนงานในขอบเขต —'} width={300}
+        onChange={(sec, info) => {
+          if (info.kind !== 'department') { merge({ sec: sec || null, dept: null }); return; }
+          const cands = nodes.filter(n => n.kind === 'department' && orgKey(n) === info.unit);
+          const orphan = cands.find(n => isOrphanDept(n, nodes));
+          if (orphan) { merge({ sec: orgKey(orphan), dept: null }); return; }   // หน่วยขึ้นตรง = บอร์ดของตัวเอง
+          const under = cands.find(n => { const p = nodes.find(x => String(x.id) === String(n.parent_id)); return p && orgKey(p) === sec; }) || cands[0];
+          merge({ sec: sec || null, dept: under ? String(under.id) : null });
+        }} />
       <span className="spacer" />
       <span style={{ fontSize: 13, color: 'var(--muted)' }}>วันงาน {workDate}</span>
     </>
@@ -285,13 +292,13 @@ function Counter({ label, value, sub, tone }) {
 
 function RoleTag({ children, nowrap }) {
   return <span style={{ display: 'inline-block', maxWidth: nowrap ? '40%' : '100%', overflowWrap: 'anywhere', flexShrink: 0,
-    ...(nowrap ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } : null), fontSize: 11.5, fontWeight: 800, padding: '2px 8px', borderRadius: 4, background: '#facc15', color: '#1f2937' }}>{children}</span>;
+    ...(nowrap ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } : null), fontSize: 11.5, fontWeight: 800, padding: '2px 8px', borderRadius: 'var(--r-xs)', background: '#facc15', color: '#1f2937' }}>{children}</span>;
 }
 
 function Photo({ p, size = 44 }) {
   const dim = p.attend === 'leave' || p.attend === 'absent';
   return (
-    <div style={{ width: size, height: size * 1.2, borderRadius: 6, overflow: 'hidden', background: 'var(--bg3)', flex: '0 0 auto',
+    <div style={{ width: size, height: size * 1.2, borderRadius: 'var(--r-md)', overflow: 'hidden', background: 'var(--bg3)', flex: '0 0 auto',
       filter: dim ? 'grayscale(1)' : undefined, opacity: dim ? 0.55 : 1 }}>
       {p.image_url
         ? <img src={p.image_url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -351,7 +358,7 @@ function ActingNote({ a }) {
 
 function PersonChip({ p }) {
   return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: 6, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--card)', minWidth: 0, maxWidth: '100%' }}>
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: 6, border: '1px solid var(--border)', borderRadius: 'var(--r-md)', background: 'var(--card)', minWidth: 0, maxWidth: '100%' }}>
       <Photo p={p} size={34} />
       <div style={{ minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
@@ -399,7 +406,7 @@ function SkillCard({ p, skills }) {
   const top = topSkills(skills.byEmp[p.id], 3);
   return (
     <div title={`${p.name}${p.employee_id_code ? ` (${p.employee_id_code})` : ''}`} style={{
-      border: '1px solid var(--border)', borderRadius: 8, padding: 6, background: 'var(--card)',
+      border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 6, background: 'var(--card)',
       display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
       <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
         <Photo p={p} size={36} />
@@ -421,8 +428,8 @@ function SkillCard({ p, skills }) {
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d?.label || s.skill_name}</span>
               <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--muted)' }}>{s.score}</span>
             </div>
-            <div style={{ height: 4, borderRadius: 2, background: 'var(--bg3)' }}>
-              <div style={{ width: `${Math.min(100, s.score || 0)}%`, height: '100%', borderRadius: 2, background: d?.color || 'var(--accent)' }} />
+            <div style={{ height: 4, borderRadius: 'var(--r-xs)', background: 'var(--bg3)' }}>
+              <div style={{ width: `${Math.min(100, s.score || 0)}%`, height: '100%', borderRadius: 'var(--r-xs)', background: d?.color || 'var(--accent)' }} />
             </div>
           </div>
         );
@@ -434,7 +441,7 @@ function SkillCard({ p, skills }) {
 /** ช่องว่าง — รู้จุดงาน (ช่องระดับจุดงาน) = เขียนชื่อจุดด้วย หัวหน้าจะได้รู้ว่าต้องหาคนลงตรงไหน */
 function EmptySlot({ station, h }) {
   return (
-    <div title={station ? `จุด ${station} ยังขาดคนประจำ` : 'ช่องว่าง'} style={{ border: '2px dashed var(--border2)', borderRadius: 8, minHeight: h || 92, height: h,
+    <div title={station ? `จุด ${station} ยังขาดคนประจำ` : 'ช่องว่าง'} style={{ border: '2px dashed var(--border2)', borderRadius: 'var(--r-md)', minHeight: h || 92, height: h,
       display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, padding: 4, overflow: 'hidden',
       color: 'var(--muted)', fontSize: 12, fontWeight: 700, textAlign: 'center' }}>
       ช่องว่าง
@@ -456,7 +463,7 @@ function TeamColumn({ c, skills }) {
   const sm = shiftMeta(c.shift);
   const slots = c.slots || 0;
   return (
-    <div style={{ flex: '1 1 260px', minWidth: 0, maxWidth: '100%', border: '1px solid var(--border)', borderRadius: 8, padding: 8, background: 'var(--bg2)' }}>
+    <div style={{ flex: '1 1 260px', minWidth: 0, maxWidth: '100%', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 8, background: 'var(--bg2)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 6 }}>
         <RoleTag>หัวหน้ากลุ่ม</RoleTag>
         <strong style={{ fontSize: 14 }}>{c.team ? `ทีม ${c.team}` : 'ไม่ระบุทีม'}</strong>
@@ -541,7 +548,7 @@ function OrgTab({ board, depts, skills }) {
           {d.borrowed.length > 0 && (
             <div style={{ marginTop: 8 }}>
               {/* 🤝 ไม่นับรวมในทะเบียน/ช่องว่างของแผนก — มาช่วยเฉพาะวันนี้ ต้นสังกัดยังเป็นที่เดิม (UI §6.13) */}
-              <span style={{ display: 'inline-block', fontSize: 11.5, fontWeight: 800, padding: '2px 8px', borderRadius: 4, background: 'var(--blue)', color: '#fff' }}>
+              <span style={{ display: 'inline-block', fontSize: 11.5, fontWeight: 800, padding: '2px 8px', borderRadius: 'var(--r-xs)', background: 'var(--blue)', color: '#fff' }}>
                 ยืมมาช่วยวันนี้ {d.borrowed.length} คน</span>
               <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>ไม่นับรวมในทะเบียนของแผนก</span>
               <div style={{ ...CARD_GRID, marginTop: 6 }}>
@@ -554,7 +561,7 @@ function OrgTab({ board, depts, skills }) {
               {/* 🏃 คนวิ่งข้ามแผนก — ทะเบียนถาวร (employee_flex_units) คนละตัวกับยืมรายวัน
                   🔴 ไม่นับรวมในทะเบียน/ช่องว่างของแผนกนี้ · บ้านจริงนับเขาอยู่แล้ว (นับ 2 ที่ = กำลังคนปลอม)
                   🔴 cost center ยังอยู่ที่บ้านจริง — เขียนบนจอเสมอ ห้ามให้คนเข้าใจผิดว่าย้ายสังกัด */}
-              <span style={{ display: 'inline-block', fontSize: 11.5, fontWeight: 800, padding: '2px 8px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)' }}>
+              <span style={{ display: 'inline-block', fontSize: 11.5, fontWeight: 800, padding: '2px 8px', borderRadius: 'var(--r-xs)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)' }}>
                 วิ่งข้ามมาช่วยประจำ {d.flex.length} คน</span>
               <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>
                 ไม่นับรวมในทะเบียนของแผนก · cost center ยังอยู่ที่หน่วยต้นสังกัด
@@ -694,7 +701,7 @@ function SkillGapTable({ gaps, defs }) {
               <td style={td}>
                 <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {g.missing.map(m => (
-                    <span key={m.skill_name} style={{ whiteSpace: 'nowrap', fontSize: 12, padding: '1px 8px', borderRadius: 999,
+                    <span key={m.skill_name} style={{ whiteSpace: 'nowrap', fontSize: 12, padding: '1px 8px', borderRadius: 'var(--r-pill)',
                       border: `1px ${m.assessed ? 'solid' : 'dashed'} var(--border2)`, color: m.assessed ? 'var(--text)' : 'var(--muted)' }}>
                       {defs[m.skill_name]?.label || m.skill_name}{' '}
                       {m.assessed ? <b style={{ fontVariantNumeric: 'tabular-nums' }}>{m.actual}/{m.required}</b> : <span>ยังไม่ประเมิน (ต้องการ {m.required})</span>}
@@ -743,7 +750,7 @@ function LayoutMap({ layout, placed, reserve = 12 }) {
                           border: `${ms?.ring || 2}px ${temp ? 'dashed' : 'solid'} ${c}`, opacity: dim ? 0.4 : 1, filter: dim ? 'grayscale(1)' : undefined }}>
                         {emp.image_url ? <img src={emp.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                           : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: c }}>{(emp.name || '?').slice(0, 1)}</div>}
-                        {(temp || away) && <span style={{ position: 'absolute', top: 0, right: 0, fontSize: 11, lineHeight: 1, background: 'rgba(0,0,0,.75)', color: '#fff', borderRadius: 6, padding: '0 2px' }}>{temp ? '✳' : '↗'}</span>}
+                        {(temp || away) && <span style={{ position: 'absolute', top: 0, right: 0, fontSize: 11, lineHeight: 1, background: 'rgba(0,0,0,.75)', color: '#fff', borderRadius: 'var(--r-md)', padding: '0 2px' }}>{temp ? '✳' : '↗'}</span>}
                       </div>
                     );
                   }) : !missing ? (
@@ -755,7 +762,7 @@ function LayoutMap({ layout, placed, reserve = 12 }) {
                       style={{ width: sz, height: sz, borderRadius: '50%', border: `2px dashed ${shiftMeta(sh === 'unknown' ? null : sh).color}`, background: 'rgba(0,0,0,.35)',
                         color: shiftMeta(sh === 'unknown' ? null : sh).color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>{sh === 'unknown' ? '?' : '+'}</div>
                   )))}
-                  <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 2, background: 'rgba(0,0,0,0.78)', color: '#fff', borderRadius: 4,
+                  <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 2, background: 'rgba(0,0,0,0.78)', color: '#fff', borderRadius: 'var(--r-xs)',
                     padding: '0 5px', fontSize: ms?.pillFont || 11, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: ms?.pillMaxW || 96 }}>
                     {station.station_name}
                   </div>
@@ -789,8 +796,8 @@ function FourMCard({ d, logs, tv }) {
           const tone = !d.lines.length ? '#64748b' : bad ? '#ef4444' : '#22c55e';
           return (
             <div key={m.key} style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 8, alignItems: 'stretch' }}>
-              <div style={{ background: m.color, color: m.key === 'machine' ? '#1f2937' : '#fff', fontWeight: 800, fontSize: 14, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 4px' }}>{m.label}</div>
-              <div style={{ border: `2px solid ${tone}`, borderRadius: 6, padding: '6px 10px', minWidth: 0 }}>
+              <div style={{ background: m.color, color: m.key === 'machine' ? '#1f2937' : '#fff', fontWeight: 800, fontSize: 14, borderRadius: 'var(--r-md)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 4px' }}>{m.label}</div>
+              <div style={{ border: `2px solid ${tone}`, borderRadius: 'var(--r-md)', padding: '6px 10px', minWidth: 0 }}>
                 <div style={{ fontWeight: 800, fontSize: 16, color: tone }}>
                   {!d.lines.length ? 'ไม่รู้' : bad ? `ผิดปกติ · ${s.rows.length} ใบ` : 'ปกติ'}
                   {bad && s.pending > 0 && <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', marginLeft: 6 }}>(รออนุมัติ {s.pending})</span>}
@@ -893,7 +900,7 @@ function MiniPerson({ p }) {
 function TvCard({ p, skills }) {
   const top = topSkills(skills.byEmp[p.id], 2);
   return (
-    <div style={{ width: TV_CARD.w, height: TV_CARD.h, overflow: 'hidden', border: '1px solid var(--border)', borderRadius: 8, padding: 6,
+    <div style={{ width: TV_CARD.w, height: TV_CARD.h, overflow: 'hidden', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 6,
       background: 'var(--card)', display: 'flex', flexDirection: 'column', gap: 3 }}>
       <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
         <Photo p={p} size={34} />
@@ -912,8 +919,8 @@ function TvCard({ p, skills }) {
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d?.label || s.skill_name}</span>
               <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--muted)' }}>{s.score}</span>
             </div>
-            <div style={{ height: 4, borderRadius: 2, background: 'var(--bg3)' }}>
-              <div style={{ width: `${Math.min(100, s.score || 0)}%`, height: '100%', borderRadius: 2, background: d?.color || 'var(--accent)' }} />
+            <div style={{ height: 4, borderRadius: 'var(--r-xs)', background: 'var(--bg3)' }}>
+              <div style={{ width: `${Math.min(100, s.score || 0)}%`, height: '100%', borderRadius: 'var(--r-xs)', background: d?.color || 'var(--accent)' }} />
             </div>
           </div>
         );
@@ -980,7 +987,7 @@ function OrgTv({ board, depts, skills }) {
               {pg.cols.map(({ col: c, items, more }) => {
                 const sm = shiftMeta(c.shift);
                 return (
-                  <div key={c.team || '-'} style={{ flex: '1 1 0', minWidth: 0, border: '1px solid var(--border)', borderRadius: 8, padding: 8, background: 'var(--bg2)', overflow: 'hidden' }}>
+                  <div key={c.team || '-'} style={{ flex: '1 1 0', minWidth: 0, border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 8, background: 'var(--bg2)', overflow: 'hidden' }}>
                     <div style={{ height: TV_COLHEAD_H, display: 'flex', flexDirection: 'column', justifyContent: 'center', overflow: 'hidden' }}>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center', whiteSpace: 'nowrap' }}>
                         <strong style={{ fontSize: 15 }}>{c.team ? `ทีม ${c.team}` : 'ไม่ระบุทีม'}</strong>

@@ -40,9 +40,10 @@ import { visibleInterval } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
-import { ALL } from '../utils/filterLabels';
 // วันงาน — ของกลาง (ตัด 08:00 · 12/10 เลิกก๊อปฟังก์ชันไว้ในไฟล์ตามกฎ CLAUDE.md)
 import { getWorkDate } from '../utils/workDate';
+import SectionScopeSelect from '../components/SectionScopeSelect';
+import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 
 const DEPTS = [
@@ -193,21 +194,12 @@ export default function TvBoard({ onOpenMenu = null }) {
       </div>
 
       {barOpen && (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 12px' }}>
-          {DEPTS.map(x => (
-            <button key={x.key} onClick={() => setParam('dept', x.key)} style={btn(dept === x.key)}>
-              {x.icon} {x.label}
-            </button>
-          ))}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '9px 12px' }}>
+          <TabBar size="sm" value={dept} onChange={k => setParam('dept', k)} tabs={DEPTS.map(x => ({ key: x.key, label: x.label }))} />
           <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
           {/* ส่วนงาน — ค่าที่ไม่มีในลิสต์ (ส่วนงานถูกเปลี่ยนชื่อ) ต้องยังเลือกเห็นได้ ห้ามหายเงียบ */}
-          <select value={secFilter} onChange={e => setParam('sec', e.target.value)}
-            title="ทุกส่วนงานที่บัญชีนี้มีสิทธิ์เห็น"
-            style={{ width: 'auto', maxWidth: 220, height: 'var(--ctl-h)', fontSize: 'var(--ctl-fs)', padding: '0 var(--ctl-pad-x)', borderRadius: 'var(--ctl-r)', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-            <option value="">{ALL.section}</option>
-            {secOpts.map(s => <option key={s} value={s}>{s}</option>)}
-            {secFilter && !secOpts.includes(secFilter) && <option value={secFilter}>⚠ {secFilter} (ไม่มีในทะเบียน)</option>}
-          </select>
+          <SectionScopeSelect lines={lines} value={secFilter} onChange={s => setParam('sec', s)} only={secOpts} width={220}
+            title="ทุกส่วนงานที่บัญชีนี้มีสิทธิ์เห็น" />
           {dept === 'mo' && <>
             <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
             {[{ key: '', icon: '🧾', label: 'ทุกขั้น' }, ...MO_TV_GROUPS].map(x => (
@@ -227,17 +219,17 @@ export default function TvBoard({ onOpenMenu = null }) {
       )}
 
       {err && (
-        <div style={{ background: 'var(--card)', border: '1px solid var(--red)', color: 'var(--red)', borderRadius: 10, padding: 12, fontSize: 13 }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--red)', color: 'var(--red)', borderRadius: 'var(--r-md)', padding: 12, fontSize: 13 }}>
           ⚠ โหลดข้อมูลไม่สำเร็จ — ตัวเลขบนจอยังไม่ใช่ของจริง ({err})
         </div>
       )}
       {linesState !== 'loading' && linesState !== 'ok' && (
-        <div role="alert" style={{ background: 'var(--card)', border: '1px solid var(--red)', color: 'var(--red)', borderRadius: 10, padding: 12, fontSize: 14, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div role="alert" style={{ background: 'var(--card)', border: '1px solid var(--red)', color: 'var(--red)', borderRadius: 'var(--r-md)', padding: 12, fontSize: 14, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <span>⚠ {linesState === 'empty'
             ? 'ไม่พบทะเบียนไลน์ผลิต — จอนี้แสดงอะไรไม่ได้ (ตั้งไลน์ที่หน้า ตั้งค่าไลน์ผลิต)'
             : `โหลดทะเบียนไลน์ไม่สำเร็จ — กำลังลองใหม่อัตโนมัติทุก 30 วินาที (${linesState})`}</span>
           <button onClick={() => { setLinesState('loading'); setLinesTry(n => n + 1); }}
-            style={{ fontSize: 13, padding: '4px 12px', borderRadius: 8, border: '1px solid var(--red)', background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}>ลองใหม่</button>
+            style={{ fontSize: 13, padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--red)', background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}>ลองใหม่</button>
         </div>
       )}
       {dept !== 'mo' && !d && !err && (linesState === 'loading' || linesState === 'ok') && (
@@ -250,8 +242,9 @@ export default function TvBoard({ onOpenMenu = null }) {
   );
 }
 
+/* ปุ่มคำสั่งในแถบตั้งค่าจอ = ทรงเดียวกับ .pg-btn (06/11 · เดิมแคปซูล 999) · on = ขอบ+ตัวอักษร accent */
 const btn = (on) => ({
-  fontSize: 12.5, fontWeight: 800, padding: '5px 12px', borderRadius: 999, cursor: 'pointer',
-  background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
+  height: 30, fontSize: 12.5, fontWeight: 600, padding: '0 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
+  background: on ? 'var(--accent-dim)' : 'var(--card)', color: on ? 'var(--accent)' : 'var(--text)',
   border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
 });

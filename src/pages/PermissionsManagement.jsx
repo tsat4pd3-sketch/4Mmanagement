@@ -428,9 +428,9 @@ export default function PermissionsManagement() {
   if (loading) return <Page><div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div></Page>;
   if (loadErr) return (
     <Page>
-      <div style={{ padding: 24, margin: 24, borderRadius: 8, border: '1px solid var(--red-line)', background: 'var(--red-dim)', color: 'var(--red)', fontSize: 14 }}>
+      <div style={{ padding: 24, margin: 24, borderRadius: 'var(--r-md)', border: '1px solid var(--red-line)', background: 'var(--red-dim)', color: 'var(--red)', fontSize: 14 }}>
         ⚠️ โหลดตารางสิทธิ์ไม่ครบ ({loadErr}) — ไม่แสดงตารางเพื่อกันการติ๊กทับค่าจริง ·{' '}
-        <button onClick={load} style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid var(--red)', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontWeight: 700 }}>ลองใหม่</button>
+        <button onClick={load} style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--red)', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontWeight: 700 }}>ลองใหม่</button>
       </div>
     </Page>
   );

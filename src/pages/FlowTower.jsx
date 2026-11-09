@@ -276,7 +276,7 @@ export default function FlowTower() {
             ⚠️ ฝ่ายที่หน้านี้อ้างถึงยังไม่มีในผังองค์กร — ตั้งที่ /org-setup แล้วชื่อฝ่ายจะขึ้นเอง
           </span>
         ) : usedDivs.map(dv => (
-          <span key={dv.code} style={{ fontSize: 11, fontWeight: 800, padding: '4px 10px', borderRadius: 20, color: dv.color, background: `${tint(dv.color, 'dim')}`, border: `1px solid ${tint(dv.color, 'line')}` }}>
+          <span key={dv.code} style={{ fontSize: 11, fontWeight: 800, padding: '4px 10px', borderRadius: 'var(--r-pill)', color: dv.color, background: `${tint(dv.color, 'dim')}`, border: `1px solid ${tint(dv.color, 'line')}` }}>
             {dv.icon} {dv.name}
           </span>
         ))}
@@ -377,7 +377,7 @@ export default function FlowTower() {
                             ? <span style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }} title="ตั้งขนาดล็อตแล้ว — ยอดค้างเกินเพดานการออกใบต่อรอบ (50 ใบ/การปิดออเดอร์) จะทยอยออกใบเองเมื่อมีการปิดใบผลิตครั้งถัดไป">⏳ รอทยอยออกใบ</span>
                             : canFix && b.suggested_lot > 0 && (
                             <button onClick={() => setLot(b)} disabled={busy === b.mat_no}
-                              style={{ padding: '4px 10px', borderRadius: 7, border: '1px solid var(--green-line)', background: 'var(--green-dim)', color: 'var(--green)', fontWeight: 800, fontSize: 11, cursor: busy ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}>
+                              style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--green-line)', background: 'var(--green-dim)', color: 'var(--green)', fontWeight: 800, fontSize: 11, cursor: busy ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}>
                               {busy === b.mat_no ? '…' : 'ตั้งล็อต'}
                             </button>
                           )}
@@ -417,7 +417,7 @@ export default function FlowTower() {
                   <td style={{ padding: '8px 12px', fontWeight: 800, whiteSpace: 'nowrap' }}>{seg}</td>
                   <td style={{ padding: '8px 12px', color: 'var(--text2)' }}>{mech}</td>
                   <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: ST[st].dot, background: ST[st].bg, padding: '3px 9px', borderRadius: 20 }}>● {ST[st].label}</span>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: ST[st].dot, background: ST[st].bg, padding: '3px 9px', borderRadius: 'var(--r-pill)' }}>● {ST[st].label}</span>
                   </td>
                   <td style={{ padding: '8px 12px', color: 'var(--muted)', fontSize: 11 }}>{ev}</td>
                 </tr>

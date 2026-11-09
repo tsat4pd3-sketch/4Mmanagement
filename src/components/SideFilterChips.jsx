@@ -43,7 +43,7 @@ export default function SideFilterChips({ value, onChange, counts = {}, total, u
         return (
           <button key={c.key || 'all'} type="button" onClick={() => onChange(c.key)} title={c.desc}
             style={{
-              padding: '5px 12px', borderRadius: 999, cursor: 'pointer', fontSize: 12, fontWeight: 800,
+              padding: '5px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 800,
               fontFamily: 'var(--font-body)', whiteSpace: 'nowrap',
               background: on ? `${c.color}22` : 'var(--bg2)',
               color: on ? c.color : dim ? 'var(--muted)' : 'var(--text2)',

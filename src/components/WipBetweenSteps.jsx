@@ -190,11 +190,11 @@ export default function WipBetweenSteps() {
             </div>
             {/* เฟส 2 — ความต้องการ → ต้องผลิต FG เพิ่มเท่าไหร่ (ทดสต็อก FG ให้) */}
             {chainView.parentIsProduced && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: 'var(--bg2)', fontSize: 12.5 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', fontSize: 12.5 }}>
                 <label style={{ fontWeight: 700 }}>ความต้องการ (ชิ้น)</label>
                 <input type="number" min="0" value={demandVal}
                   onChange={e => setDemand(d => ({ ...d, [pm]: e.target.value }))}
-                  placeholder="0" style={{ width: 110, padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, fontWeight: 700 }} />
+                  placeholder="0" style={{ width: 110, padding: '5px 8px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, fontWeight: 700 }} />
                 {pendingOrders[pm] > 0 && demand[pm] === undefined && (
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}>← ออเดอร์ค้างส่งของเลขนี้ (แก้ทับได้)</span>
                 )}
@@ -297,14 +297,14 @@ export default function WipBetweenSteps() {
               กรอก<b>จำนวนที่นับได้จริงตอนนี้</b> (ของที่ผ่านขั้นนี้แล้วและยังไม่ถึงปลายทาง) — ระบบจะตั้งต้นจากเลขนี้แล้วนับใบผลิตต่อให้เอง
             </div>
             <input type="number" min="0" autoFocus value={countQty} onChange={e => setCountQty(e.target.value)}
-              placeholder="จำนวนที่นับได้ (ชิ้น)" style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 14 }} />
+              placeholder="จำนวนที่นับได้ (ชิ้น)" style={{ padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 14 }} />
             <input value={countNote} onChange={e => setCountNote(e.target.value)}
-              placeholder="หมายเหตุ (ถ้ามี)" style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
+              placeholder="หมายเหตุ (ถ้ามี)" style={{ padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button disabled={saving} onClick={() => setCounting(null)}
-                style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+                style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
               <button disabled={saving} onClick={saveCount}
-                style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
+                style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
                 {saving ? 'กำลังบันทึก…' : '💾 บันทึกยอดนับจริง'}
               </button>
             </div>

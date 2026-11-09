@@ -146,6 +146,13 @@ model: inherit
   (inline `flex:1` ชนะ CSS) · **ห้ามย่อฟอนต์/ซ่อนปุ่มแทน** · แถบที่ wrap แล้วสูงขึ้น 4 เท่า ⇒
   **มือถือโชว์ทีละใบ + เขียนว่าเหลืออีกกี่ใบ** (ซ้อนกันเกินจอ = ปุ่มรับทราบตกนอกจอ กดไม่ได้)
   · ด่านอัตโนมัติ: `andon-bar-mobile` ใน `regressionGuards` · 📄 UI §6.32
+- **B-HOME1** 🏠 **เอกสาร/ทะเบียนชุดเดียว ต้องมี "บ้าน" หน้าเดียว** (06/11 · คำสั่ง user — ถังเหลือง/แดง
+  *"หลักๆอันนี้ต้องอยู่หมวดของผลิตนะ qa จะไปโชว์แค่พวกงานค้างอนุมัติของแผนก"*) — คอมโพเนนต์เดียวกัน
+  ฝัง 2 หน้าได้ แต่ต้องรับ **prop โหมด** ให้หน้าที่ไม่ใช่บ้านเห็นแค่ *คิวงานที่ต้องลงมือ* (ไม่มีทะเบียน/
+  แถบกรอง/ปุ่มบันทึก/ทะเบียนลูก) + **ลิงก์กลับบ้านจริงที่เช็ค `canAccessPage()` ก่อนโชว์** ·
+  2 หน้าเต็มเหมือนกัน = คนกรอกคนละที่แล้วเถียงว่าใบจริงอยู่ไหน (หลักเดียวกับ `alsoIn` = ทางลัด
+  ไม่ใช่บ้านที่สอง) · โหมดคิวต้อง**ข้ามคิวรีของทะเบียน** ด้วย (egress ที่ไม่มีใครดู)
+  · ต้นแบบ/ด่าน: `qa-bins-queue-only` ใน `regressionGuards` · 📄 `docs/modules/production-problem-report-bins.md`
 
 ### หมวด C — Permissions (data-driven)
 
@@ -449,6 +456,8 @@ model: inherit
   — grep หน้าที่ใช้ `CalloutPin`/วาดโมดัลจุดตรวจเอง นอก `components/inspect/`, `SpinAnnotator`, จอตรวจ (`PMCheckData`/`QaCheckSheet`)
   · ด่าน `inspection-setup-shared` ครอบ PMSetup + QaPointsEditor · 📄 `docs/modules/inspection-point-setup.md`
   · QA คัดลอกจุดตรวจข้ามพาร์ท: แถวผ่าน `qaItemCopyRow()` · ไฟล์ต้อง `storage.copy` เข้า `parts/<ปลายทาง>/` — grep insert `image_path`/`drawing_url` ของพาร์ทอื่นตรงๆ = ผิด
+- **F-icon-orphan (2026-11-09)** ไอคอนหายเงียบ: U+FE0F ที่ไม่มี emoji นำหน้า (ซากสคริปต์ตัด emoji) + ปุ่มไอคอนล้วนที่ข้างในเหลือแค่ `<ToggleDot>`/ไม่มีอะไร = กล่องเปล่า
+  — grep `['"\s]\uFE0F` · ด่าน `orphan-emoji-variation-selector` · การ์ดใน grid ที่ชื่อ `nowrap` ใช้ `repeat(N, 1fr)` เปล่า = คอลัมน์ถ่างตามชื่อ → ต้อง `minmax(0, 1fr)` (UI §7.1)
 
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่

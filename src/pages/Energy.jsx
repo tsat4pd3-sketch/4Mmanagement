@@ -500,7 +500,7 @@ export default function Energy() {
           <td style={{ ...td, textAlign: 'center' }}>
             <button onClick={() => toggleMeter(p, !meteredSet.has(keyOf(p)))} disabled={!canEdit}
               title={meteredSet.has(keyOf(p)) ? 'มีมิเตอร์ — นับเข้าผลรวมที่วัดได้' : 'ยังไม่มีมิเตอร์ — กดเพื่อย้ายไปกลุ่มที่วัดได้'}
-              style={{ padding: '4px 9px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: canEdit ? 'pointer' : 'default',
+              style={{ padding: '4px 9px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: canEdit ? 'pointer' : 'default',
                 border: '1px solid var(--border2)', background: 'var(--bg3)', color: meteredSet.has(keyOf(p)) ? GOOD : 'var(--muted)' }}>
               {meteredSet.has(keyOf(p)) ? 'มีมิเตอร์' : '+ มีมิเตอร์'}
             </button>
@@ -540,10 +540,10 @@ export default function Energy() {
       </NoticeBar>
 
       {cfgMissing && (
-        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red)', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12.5 }}>
-          ⚠️ <b>ยังไม่ได้ apply migration <code>20260819_energy_carbon_c1</code></b> — ยังตั้งชั้นจุดวัด (มีมิเตอร์/ยังไม่มี)
+        <NoticeBar tone="bad" style={{ marginBottom: 12 }}>
+          <b>ยังไม่ได้ apply migration <code>20260819_energy_carbon_c1</code></b> — ยังตั้งชั้นจุดวัด (มีมิเตอร์/ยังไม่มี)
           และคำนวณ CO2e ไม่ได้ · ส่วนการกรอกหน่วยไฟยังใช้ได้ปกติ (แจ้ง admin ให้รัน migration)
-        </div>
+        </NoticeBar>
       )}
 
       {/* ── KPI ── */}
@@ -574,10 +574,10 @@ export default function Energy() {
 
       {/* ⚠️ เตือนเฉพาะ "ผิดจริง" — ผลรวมมากกว่าบิลเป็นไปไม่ได้ · น้อยกว่าบิลคือเรื่องปกติที่ยังไม่ได้ติดมิเตอร์ */}
       {cover.over && (
-        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red)', borderRadius: 8, padding: '8px 12px', marginBottom: 12, fontSize: 12.5 }}>
-          🔴 <b>ผลรวมรายจุด ({fmtKwh(cover.metered)}) มากกว่ายอดบิล ({fmtKwh(cover.bill)})</b> — เป็นไปไม่ได้
+        <NoticeBar tone="bad" style={{ marginBottom: 12 }}>
+          <b>ผลรวมรายจุด ({fmtKwh(cover.metered)}) มากกว่ายอดบิล ({fmtKwh(cover.bill)})</b> — เป็นไปไม่ได้
           ตรวจว่ามีจุดที่นับซ้ำ (มิเตอร์แม่กับมิเตอร์ลูกติ๊กว่ามีมิเตอร์ทั้งคู่) หรือกรอกผิดหลัก
-        </div>
+        </NoticeBar>
       )}
 
       {loading ? <div style={{ color: 'var(--muted)', padding: 20 }}>กำลังโหลด…</div>
@@ -633,7 +633,7 @@ export default function Energy() {
             <h3 style={{ ...secTitle, display: 'flex', alignItems: 'center', gap: 8 }}>
               จุดที่ยังไม่มีมิเตอร์ ({otherPts.length})
               <button onClick={() => setShowUnmetered(v => !v)}
-                style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
+                style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
                 {showUnmetered ? 'ซ่อน' : 'แสดง'}
               </button>
               <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--muted)' }}>— ทุกไลน์ในกลุ่ม + โซน · กรอกได้ถ้ามีตัวเลข แต่ยังไม่นับเข้าผลรวมที่วัดได้ (กด <b>+ มีมิเตอร์</b> เพื่อย้ายขึ้นไป)</span>
@@ -905,7 +905,7 @@ function EfSetup({ factors, canEdit, cfgMissing, onSaved, month }) {
           <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 240px' }}>ที่มา (บังคับ)<br />
             <input value={ref} onChange={e => setRef(e.target.value)} placeholder="เช่น TGO Emission Factor ฉบับ … 25xx" style={inp} /></label>
           <button onClick={add} disabled={busy}
-            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+            style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
             {busy ? '⏳' : '+ เพิ่มค่า'}
           </button>
         </div>

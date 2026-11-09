@@ -26,6 +26,7 @@ import {
   shimStack, pointDueStatus, toolLifeStatus, n0, pointPin,
 } from '../utils/fixturePoints';
 
+import NoticeBar from '../components/NoticeBar';
 const jigImgUrl = (path) => supabaseDR.storage.from('jig-images').getPublicUrl(path).data.publicUrl;
 
 /* ═══════════════════════════════════════════════════════════════
@@ -452,10 +453,9 @@ export default function FixtureRegistry() {
           ⇒ stdsweep วัดระยะแท็บ→แถบกรองได้ 75px เวลาที่แถบเตือนโผล่ (แก้ 08/10)
           ⚠️ ยังอยู่บนสุดของเนื้อหา — คนต้องเห็นก่อนเชื่อตัวเลขด้านล่าง */}
       {dataWarn && (
-        <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-line)',
-                      borderRadius: 10, padding: '9px 14px', fontSize: 12.5, marginBottom: 12 }}>
-          ⚠️ {dataWarn}
-        </div>
+        <NoticeBar tone="bad" style={{ marginBottom: 12 }}>
+          {dataWarn}
+        </NoticeBar>
       )}
 
       {loading ? (
@@ -473,7 +473,7 @@ export default function FixtureRegistry() {
           </div>
           {!statusRows.length ? (
             <div style={{ background: 'var(--green-dim)', border: '1px solid var(--green-line)',
-                          borderRadius: 10, padding: '14px 16px', fontSize: 13 }}>
+                          borderRadius: 'var(--r-md)', padding: '14px 16px', fontSize: 13 }}>
               ✅ ไม่มีจุดที่ต้องดูแลตอนนี้
               {!allPoints.length && (
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>
@@ -482,7 +482,7 @@ export default function FixtureRegistry() {
               )}
             </div>
           ) : (
-            <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'auto' }}>
+            <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                 <thead style={{ background: 'var(--bg2)' }}>
                   <tr style={{ textAlign: 'left' }}>
@@ -544,19 +544,16 @@ export default function FixtureRegistry() {
                         permKey="fixture_point:manage" />
           {canManage && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button onClick={() => setEditing({ ...emptyPoint })}
-                      style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8,
-                               padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              <button type="button" className="pg-btn sm primary" onClick={() => setEditing({ ...emptyPoint })}
+                     >
                 เพิ่มจุด
               </button>
-              <button onClick={genTemplate}
-                      style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)',
-                               borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }}>
+              <button type="button" className="pg-btn sm" onClick={genTemplate}
+                     >
                 สร้างจากแม่แบบ
               </button>
-              <button onClick={copyFrom}
-                      style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)',
-                               borderRadius: 8, padding: '8px 14px', fontSize: 13, cursor: 'pointer' }}>
+              <button type="button" className="pg-btn sm" onClick={copyFrom}
+                     >
                 ⧉ คัดลอกจากฟิกเจอร์อื่น
               </button>
             </div>
@@ -592,7 +589,7 @@ export default function FixtureRegistry() {
                   onRemovePin={canManage ? (key) => { const p = points.find(x => x.id === key); if (p && pointPin(p, cpById)?.source === 'own') removePin(key); else toast.info('หมุดนี้ยืมจากจุดตรวจ PM — แก้ที่ PM Setup'); } : undefined} />
               </div>
             ) : (
-              <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.6 }}>
+              <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 12.5, lineHeight: 1.6 }}>
                 ยังไม่มีรูปเครื่องของ <b>{fx.machine_no}</b> จึงยังปักตำแหน่งจุดบนรูปไม่ได้ —
                 อัปโหลดรูป (หลายมุมได้) ที่ <Link to="/pm?tab=setup" style={{ color: 'var(--accent)', fontWeight: 700 }}>PM Setup → ⚙️ ตั้งค่าจุดตรวจ</Link> แล้วกลับมาปักที่นี่
                 {!shadow && <div style={{ marginTop: 4, color: 'var(--muted)' }}>(เครื่องนี้ยังไม่มีแถวลงทะเบียนอุปกรณ์ PM — สร้างที่ PM Setup ก่อน)</div>}
@@ -606,7 +603,7 @@ export default function FixtureRegistry() {
               {canManage && ' — กด “สร้างจากแม่แบบ” เพื่อเริ่มเร็วที่สุด'}
             </div>
           ) : (
-            <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'auto' }}>
+            <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                 <thead style={{ background: 'var(--bg2)' }}>
                   <tr style={{ textAlign: 'left' }}>
@@ -632,7 +629,7 @@ export default function FixtureRegistry() {
                             : <span style={{ color: 'var(--muted)' }}>—</span>; })()}
                           {canManage && frames.length > 0 && (
                             <button onClick={() => setArmPoint(a => a === p.id ? '' : p.id)} title="วางตำแหน่งบนรูป"
-                              style={{ marginLeft: 6, background: armPoint === p.id ? 'var(--accent)' : 'var(--bg2)', color: armPoint === p.id ? 'var(--accent-ink)' : 'var(--text)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 7px', fontSize: 11, cursor: 'pointer' }}>
+                              style={{ marginLeft: 6, background: armPoint === p.id ? 'var(--accent)' : 'var(--bg2)', color: armPoint === p.id ? 'var(--accent-ink)' : 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '2px 7px', fontSize: 11, cursor: 'pointer' }}>
                               {armPoint === p.id ? 'คลิกรูป…' : (pointPin(p, cpById)?.source === 'own' ? 'ย้าย' : 'วาง')}
                             </button>
                           )}
@@ -659,7 +656,7 @@ export default function FixtureRegistry() {
                         <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
                           {canManage && (
                             <>
-                              <button onClick={() => setEditing({
+                              <button type="button" className="pg-btn sm" onClick={() => setEditing({
                                 ...emptyPoint, ...p,
                                 baseline_shim_mm: p.baseline_shim_mm ?? '', baseline_at: p.baseline_at ?? '',
                                 max_shim_mm: p.max_shim_mm ?? '', interval_days: p.interval_days ?? '',
@@ -667,12 +664,9 @@ export default function FixtureRegistry() {
                                 expected_life_cycles: p.expected_life_cycles ?? '',
                                 name: p.name ?? '', note: p.note ?? '',
                               })}
-                                style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6,
-                                         padding: '3px 9px', fontSize: 11.5, cursor: 'pointer', color: 'var(--text)' }}>✏️</button>
-                              <button onClick={() => removePoint(p)}
-                                style={{ marginLeft: 4, background: 'var(--bg2)', border: '1px solid var(--border)',
-                                         borderRadius: 6, padding: '3px 9px', fontSize: 11.5, cursor: 'pointer',
-                                         color: 'var(--text)' }}>🚫</button>
+                               >✏️</button>
+                              <button type="button" className="pg-btn sm" onClick={() => removePoint(p)}
+                                style={{ marginLeft: 4 }}>🚫</button>
                             </>
                           )}
                         </td>
@@ -685,12 +679,11 @@ export default function FixtureRegistry() {
           )}
 
           {points.some(p => p.baseline_shim_mm == null) && (
-            <div style={{ background: 'var(--amber-dim)', border: '1px solid var(--amber-line)',
-                          borderRadius: 10, padding: '10px 14px', fontSize: 12.5 }}>
-              ⚠️ ยังไม่ได้วัด baseline <b>{points.filter(p => p.baseline_shim_mm == null).length}</b> จุด —
+            <NoticeBar tone="warn" style={{ marginBottom: 0 }}>
+              ยังไม่ได้วัด baseline <b>{points.filter(p => p.baseline_shim_mm == null).length}</b> จุด —
               ถ้าไม่มี baseline ระบบจะตอบได้แค่ “ใส่ชิมไปกี่ครั้ง” แต่ตอบไม่ได้ว่า
               <b> ห่างจากตอนรับมอบเท่าไหร่แล้ว</b> ซึ่งเป็นคำถามที่ลูกค้าถามจริง
-            </div>
+            </NoticeBar>
           )}
         </div>
       )}
@@ -700,7 +693,7 @@ export default function FixtureRegistry() {
       {tpl && (
         <div className="modal-scroll" /* modal-scroll = เลื่อนถึงปุ่มล่างได้เมื่อจอเตี้ย/คีย์บอร์ดเด้ง (UI-CONVENTIONS §4 · index.css) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3100,
                       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12,
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)',
                         padding: 18, width: 'min(420px,100%)' }}>
             <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 12 }}>✨ สร้างจุดจากแม่แบบ · {fx?.machine_no}</div>
             <div style={{ display: 'grid', gap: 10 }}>
@@ -718,12 +711,10 @@ export default function FixtureRegistry() {
               </Field>
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
-              <button onClick={() => setTpl(null)}
-                      style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)',
-                               borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
-              <button onClick={runTemplate}
-                      style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8,
-                               padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>สร้างจุด</button>
+              <button type="button" className="pg-btn sm" onClick={() => setTpl(null)}
+                     >ยกเลิก</button>
+              <button type="button" className="pg-btn sm primary" onClick={runTemplate}
+                     >สร้างจุด</button>
             </div>
           </div>
         </div>
@@ -731,7 +722,7 @@ export default function FixtureRegistry() {
       {editing && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3000,
                       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12,
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)',
                         padding: 18, width: 'min(620px,100%)', maxHeight: '90vh', overflow: 'auto' }}>
             <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 12 }}>
               {editing.id ? `แก้ไขจุด ${editing.point_no}` : 'เพิ่มจุดใหม่'} · {fx?.machine_no}
@@ -791,12 +782,10 @@ export default function FixtureRegistry() {
               • ไม่ตั้งความถี่ทั้ง 2 แกน = ใช้ความถี่ของเช็คลิสต์ PM เหมือนเดิม
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
-              <button onClick={() => setEditing(null)}
-                      style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)',
-                               borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
-              <button onClick={savePoint}
-                      style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8,
-                               padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>บันทึก</button>
+              <button type="button" className="pg-btn sm" onClick={() => setEditing(null)}
+                     >ยกเลิก</button>
+              <button type="button" className="pg-btn sm primary" onClick={savePoint}
+                     >บันทึก</button>
             </div>
           </div>
         </div>

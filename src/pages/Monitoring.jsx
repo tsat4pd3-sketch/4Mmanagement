@@ -657,7 +657,7 @@ export default function Monitoring() {
             <button key={v.k} type="button" onClick={() => setFgView(v.k)}
               aria-current={fgView === v.k ? 'true' : undefined}
               style={{
-                textAlign: 'left', padding: '7px 13px', borderRadius: 9, cursor: 'pointer',
+                textAlign: 'left', padding: '7px 13px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                 border: `1px solid ${fgView === v.k ? 'var(--accent)' : 'var(--border2)'}`,
                 background: fgView === v.k ? 'var(--accent-dim)' : 'var(--bg2)',
                 color: fgView === v.k ? 'var(--accent)' : 'var(--text2)',

@@ -152,7 +152,7 @@ export default function SimpleMasterPanel({
           </div>
 
           {adding && (
-            <div style={{ display: 'grid', gridTemplateColumns: `${keyFrom ? '' : '150px '}repeat(${fields.length}, minmax(120px, 1fr)) auto`, gap: 6, alignItems: 'end', padding: 8, borderRadius: 8, background: 'var(--bg2)', border: '1px dashed var(--border2)', marginBottom: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: `${keyFrom ? '' : '150px '}repeat(${fields.length}, minmax(120px, 1fr)) auto`, gap: 6, alignItems: 'end', padding: 8, borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px dashed var(--border2)', marginBottom: 8 }}>
               {!keyFrom && <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{keyCol}</div><input value={adding[keyCol] || ''} onChange={e => setAdding(a => ({ ...a, [keyCol]: e.target.value }))} style={{ ...inp, fontFamily: 'monospace' }} /></div>}
               {fields.map(f => <div key={f.key}><div style={{ fontSize: 11, color: 'var(--muted)' }}>{f.label}{f.required ? ' *' : ''}</div><FieldInput f={f} value={adding[f.key]} onChange={v => setAdding(a => ({ ...a, [f.key]: v }))} /></div>)}
               <div style={{ display: 'flex', gap: 4 }}>
@@ -162,7 +162,7 @@ export default function SimpleMasterPanel({
             </div>
           )}
 
-          <div style={{ maxHeight, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+          <div style={{ maxHeight, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead><tr style={{ background: 'var(--bg3)' }}>
                 <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: 'var(--muted)' }}>{keyCol}</th>

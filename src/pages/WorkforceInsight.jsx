@@ -14,7 +14,7 @@ import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
-import { ALL, SHIFT_OPTIONS } from '../utils/filterLabels';
+import { SHIFT_OPTIONS } from '../utils/filterLabels';
 import useTabParam from '../utils/useTabParam';
 import { useOrgSections } from '../utils/useOrgSections';
 import { inSectionScope } from '../utils/sectionScope';
@@ -32,6 +32,8 @@ import {
   CartesianGrid, ReferenceLine, Tooltip, Legend, Cell,
 } from 'recharts';
 
+import SectionScopeSelect from '../components/SectionScopeSelect';
+import useOrgScope from '../utils/useOrgScope';
 /* ═══════════════════════════════════════════════════════════════════════════════════════
    📈 กำลังคน & Turnover — /workforce-insight (2026-09-02 · คำขอ user)
 
@@ -107,7 +109,7 @@ function Kpi({ label, value, sub, color }) {
 function ChartTip({ active, payload, label, fmt }) {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: 12 }}>
+    <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px', fontSize: 12 }}>
       <div style={{ fontWeight: 700, marginBottom: 4, color: 'var(--text)' }}>{label}</div>
       {payload.map(p => (
         <div key={p.dataKey} style={{ color: p.color }}>{p.name}: {fmt ? fmt(p.value) : p.value?.toLocaleString?.() ?? p.value}</div>
@@ -139,7 +141,7 @@ function useEmployeeScope(lines) {
 }
 
 /* ══════════════════════════════ 📊 กำลังคนรายวัน ══════════════════════════════ */
-function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSecFilter, inScope }) {
+function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSecFilter, inScope, orgIndex, orgFail }) {
   /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · แท็บในหน้านี้ใช้ `?from=&to=` ร่วมกัน
      ⇒ สลับแท็บแล้วช่วงเวลาไม่หาย ซึ่งเป็นสิ่งที่คนคาดหวังอยู่แล้ว
      หน้านี้ไล่ข้อมูลรายวันตรงๆ ไม่ได้แบ่งถัง ⇒ `scales={null}` (ปุ่มตายแย่กว่าไม่มีปุ่ม) */
@@ -228,10 +230,7 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 16 }}
       >
-        <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
-          <option value="">{ALL.section}</option>
-          {sectionsList.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+        <SectionScopeSelect index={orgIndex} failed={orgFail} value={secFilter} onChange={s => setSecFilter(s)} only={sectionsList} />
         <Segmented value={shift} onChange={setShift} options={SHIFT_SEG} label="กะ" />
         <span className="spacer" />
         <button onClick={() => downloadCSV('csv_manpower_daily', `manpower_${from}_${to}.csv`,
@@ -243,7 +242,7 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
       </TimeRangeBar>
 
       {partial && (
-        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(224,92,74,0.1)', border: '1px solid rgba(224,92,74,0.3)', fontSize: 12, color: 'var(--red)' }}>
+        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', background: 'rgba(224,92,74,0.1)', border: '1px solid rgba(224,92,74,0.3)', fontSize: 12, color: 'var(--red)' }}>
           ⚠ โหลดข้อมูลบางส่วนไม่สำเร็จ — ตัวเลขด้านล่างอาจไม่ครบ
         </div>
       )}
@@ -310,7 +309,7 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
 }
 
 /* ══════════════════════════════ 🔀 เปลี่ยนจุดงานรายวัน ══════════════════════════════ */
-function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
+function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope, orgIndex, orgFail }) {
   /* ⏱️ ช่วงข้อมูล = แถบกลาง (UI §6.16) · แท็บในหน้านี้ใช้ `?from=&to=` ร่วมกัน
      ⇒ สลับแท็บแล้วช่วงเวลาไม่หาย ซึ่งเป็นสิ่งที่คนคาดหวังอยู่แล้ว
      หน้านี้ไล่ข้อมูลรายวันตรงๆ ไม่ได้แบ่งถัง ⇒ `scales={null}` (ปุ่มตายแย่กว่าไม่มีปุ่ม) */
@@ -391,10 +390,7 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
         scale={tr.scale} from={from} to={to} today={tr.today} scales={null}
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 16 }}
       >
-        <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
-          <option value="">{ALL.section}</option>
-          {sectionsList.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+        <SectionScopeSelect index={orgIndex} failed={orgFail} value={secFilter} onChange={s => setSecFilter(s)} only={sectionsList} />
         <span className="spacer" />
         <button onClick={() => downloadCSV('csv_station_moves', `station_moves_${from}_${to}.csv`,
           ['วันที่', 'กะ', 'รหัส', 'ชื่อ', 'ไลน์', 'จุดเดิม', 'จุดใหม่', 'เวลา', 'ผู้มอบหมาย'],
@@ -405,7 +401,7 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
       </TimeRangeBar>
 
       {partial && (
-        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(224,92,74,0.1)', border: '1px solid rgba(224,92,74,0.3)', fontSize: 12, color: 'var(--red)' }}>
+        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', background: 'rgba(224,92,74,0.1)', border: '1px solid rgba(224,92,74,0.3)', fontSize: 12, color: 'var(--red)' }}>
           ⚠ โหลดข้อมูลบางส่วนไม่สำเร็จ — ตัวเลขด้านล่างอาจไม่ครบ
         </div>
       )}
@@ -480,7 +476,7 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
 // (ไม่มีทางที่ปีเกิดจริงในอนาคตจะดูเหมือน "วันเริ่มงานที่ผ่านมาแล้ว" ได้ — กรองด้วย > วันนี้ ปลอดภัย)
 const isValidStartDate = (s, today) => !!s && s <= today;
 
-function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope }) {
+function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope, orgIndex, orgFail }) {
   const [monthsBack, setMonthsBack] = useState(6);
   const [exits, setExits] = useState(null); // null = ยังไม่โหลด
   const [loading, setLoading] = useState(false);
@@ -576,10 +572,7 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
   return (
     <div>
       <FilterBar style={{ marginBottom: 16 }}>
-        <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
-          <option value="">{ALL.section}</option>
-          {sectionsList.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+        <SectionScopeSelect index={orgIndex} failed={orgFail} value={secFilter} onChange={s => setSecFilter(s)} only={sectionsList} />
         <select value={monthsBack} onChange={e => setMonthsBack(Number(e.target.value))}>
           <option value={3}>3 เดือนล่าสุด</option>
           <option value={6}>6 เดือนล่าสุด</option>
@@ -589,12 +582,12 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
       </FilterBar>
 
       {partial && (
-        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, background: 'rgba(224,92,74,0.1)', border: '1px solid rgba(224,92,74,0.3)', fontSize: 12, color: 'var(--red)' }}>
+        <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', background: 'rgba(224,92,74,0.1)', border: '1px solid rgba(224,92,74,0.3)', fontSize: 12, color: 'var(--red)' }}>
           ⚠ โหลดประวัติการออกงานไม่ครบ — ตัวเลขในแท็บนี้อาจไม่ครบ
         </div>
       )}
 
-      <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 8, background: 'rgba(245,154,63,0.08)', border: '1px solid rgba(245,154,63,0.3)', fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
+      <div style={{ marginBottom: 16, padding: '10px 14px', borderRadius: 'var(--r-md)', background: 'rgba(245,154,63,0.08)', border: '1px solid rgba(245,154,63,0.3)', fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
         ⚠️ <b>ระบบเริ่มบันทึกวันที่ "ออกงาน" อัตโนมัติตั้งแต่ 2026-08-07</b> — พนักงานที่ inactive ก่อนหน้านั้นจะ<b>ไม่มีวันที่ออกให้ดู</b> (ไม่ใช่ว่าไม่เคยออก)
         {' · '}ในขอบเขตที่เลือกตอนนี้: รู้วันที่ออก <b style={{ color: 'var(--text)' }}>{knownExits.length}</b> คน · ไม่ทราบวันที่ออก <b style={{ color: 'var(--text)' }}>{unknownExits.length}</b> คน
         {anomalousInScope.length > 0 && <><br />⚠️ พบพนักงาน <b style={{ color: 'var(--red)' }}>{anomalousInScope.length}</b> คนที่วันที่เริ่มงานผิดปกติ (เช่น กรอกปี พ.ศ. ลงช่องปี ค.ศ.) — ไม่รวมในกราฟ/อายุงานด้านล่าง ไปแก้ที่หน้า <a href="/operator" style={{ color: 'var(--blue)' }}>ฐานข้อมูลพนักงาน</a></>}
@@ -632,7 +625,7 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
             {bySection.map(s => (
               <div key={s.section} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
                 <span style={{ width: 110, flexShrink: 0 }}>{s.section}</span>
-                <div style={{ flex: 1, background: 'var(--bg3)', borderRadius: 4, height: 14, overflow: 'hidden' }}>
+                <div style={{ flex: 1, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', height: 14, overflow: 'hidden' }}>
                   <div style={{ width: `${(s.n / bySection[0].n) * 100}%`, height: '100%', background: 'var(--red)' }} />
                 </div>
                 <span style={{ fontWeight: 700, minWidth: 20, textAlign: 'right' }}>{s.n}</span>
@@ -673,7 +666,7 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>คนกลุ่มนี้อาจออกก่อน 2026-08-07 (ก่อนระบบเริ่มบันทึก) — แสดงไว้เพื่อไม่ให้ตกหล่น ไม่ใช่ข้อมูลใหม่</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {unknownExits.map(x => (
-              <span key={x.emp.id} style={{ fontSize: 11.5, padding: '3px 8px', borderRadius: 6, background: 'var(--bg3)', color: 'var(--text2)' }}>
+              <span key={x.emp.id} style={{ fontSize: 11.5, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', color: 'var(--text2)' }}>
                 {x.emp.name} <span style={{ color: 'var(--muted)' }}>{x.emp.employee_id_code}</span>
               </span>
             ))}
@@ -692,7 +685,7 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
    ⚠️ ตัวเลขบนจอนี้มาจาก "เช็คชื่อรายวัน (has_ot)" + "ใบจอง OT" เท่านั้น — ไม่ใช่ระบบเงินเดือน
    วันที่ไม่มีใครเช็คชื่อเลย = ไม่รู้ (ไม่ใช่ 0) → แถบเตือน coverage ต้องอยู่บนจอเสมอ ห้ามถอด
    ═══════════════════════════════════════════════════════════════════════════════════════ */
-function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope }) {
+function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope, orgIndex, orgFail }) {
   const [month, setMonth] = useState(prevMonthKey(monthKey(getWorkDate())));
   const [threshold, setThreshold] = useState(20);
   const [useBookings, setUseBookings] = useState(true);
@@ -826,10 +819,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
   return (
     <div>
       <FilterBar style={{ marginBottom: 14 }}>
-        <select value={secFilter} onChange={e => setSecFilter(e.target.value)}>
-          <option value="">{ALL.section}</option>
-          {sectionsList.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
+        <SectionScopeSelect index={orgIndex} failed={orgFail} value={secFilter} onChange={s => setSecFilter(s)} only={sectionsList} />
         <select value={month} onChange={e => setMonth(e.target.value)}>
           {monthOpts.map(m => <option key={m} value={m}>{monthLabel(m)}{m === monthKey(today) ? ' (เดือนนี้)' : ''}</option>)}
         </select>
@@ -885,7 +875,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
               {coverage.missingDays.map(d => (
                 <span key={d.date} title={d.hasBooking ? 'ไม่มีเช็คชื่อ แต่มีใบจอง OT' : 'ไม่มีข้อมูลเลย'}
                   style={{
-                    fontSize: 11, padding: '2px 7px', borderRadius: 6, background: 'var(--bg3)',
+                    fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-md)', background: 'var(--bg3)',
                     color: d.kind.holiday ? 'var(--red)' : 'var(--text2)',
                     border: d.hasBooking ? '1px dashed var(--accent2)' : '1px solid transparent',
                   }}>
@@ -907,7 +897,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
           <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>ยังไม่เกิน แต่กำลังจะเกิน ({willExceed.length} คน)</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {willExceed.slice(0, 30).map(r => (
-              <span key={r.employeeId} style={{ fontSize: 11.5, padding: '3px 8px', borderRadius: 6, background: 'var(--bg3)' }}>
+              <span key={r.employeeId} style={{ fontSize: 11.5, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)' }}>
                 {r.emp?.name} <b style={{ color: 'var(--accent2)' }}>{r.total}→{r.projected}</b>
               </span>
             ))}
@@ -971,7 +961,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
                           {r.days.map(d => (
                             <span key={d.date} title={d.tasks.join(' · ') || 'ไม่ระบุงาน'}
                               style={{
-                                fontSize: 11.5, padding: '3px 8px', borderRadius: 6, background: 'var(--bg3)',
+                                fontSize: 11.5, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)',
                                 color: dayChipColor(d.kind), border: '1px solid var(--border)',
                               }}>
                               {d.date.slice(8)}/{d.date.slice(5, 7)}{!d.viaLog ? ' 📋' : ''}
@@ -998,7 +988,7 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope 
               return (
                 <div key={t.name} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12 }}>
                   <span style={{ minWidth: 190 }}>{t.name}</span>
-                  <div style={{ flex: 1, height: 10, background: 'var(--bg3)', borderRadius: 5, overflow: 'clip' }}>
+                  <div style={{ flex: 1, height: 10, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', overflow: 'clip' }}>
                     <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent)' }} />
                   </div>
                   <span style={{ fontWeight: 700, minWidth: 56, textAlign: 'right' }}>{t.n} วัน-คน</span>
@@ -1024,6 +1014,7 @@ export default function WorkforceInsight() {
   const [lines, setLines] = useState([]);
   const [employees, setEmployees] = useState([]);
   const orgSectionList = useOrgSections();
+  const { index: orgIndex, failed: orgFail } = useOrgScope(lines);   // ต้นไม้ผังสำหรับช่องส่วนงานทุกแท็บ (โหลดครั้งเดียว)
   const [secFilter, setSecFilter] = useState('');
 
   useEffect(() => {
@@ -1063,19 +1054,19 @@ export default function WorkforceInsight() {
         tab={tab} onTab={setTab}
       />
       {tab === 'manpower' && (
-        <ManpowerTab employees={employees} empById={empById} lines={lines} sectionsList={sectionsList}
+        <ManpowerTab employees={employees} empById={empById} lines={lines} sectionsList={sectionsList} orgIndex={orgIndex} orgFail={orgFail}
           secFilter={secFilter} setSecFilter={setSecFilter} inScope={inScope} />
       )}
       {tab === 'moves' && (
-        <MovesTab empById={empById} sectionsList={sectionsList}
+        <MovesTab empById={empById} sectionsList={sectionsList} orgIndex={orgIndex} orgFail={orgFail}
           secFilter={secFilter} setSecFilter={setSecFilter} inScope={inScope} />
       )}
       {tab === 'turnover' && (
-        <TurnoverTab employees={employees} sectionsList={sectionsList}
+        <TurnoverTab employees={employees} sectionsList={sectionsList} orgIndex={orgIndex} orgFail={orgFail}
           secFilter={secFilter} setSecFilter={setSecFilter} inScope={inScope} />
       )}
       {tab === 'ot' && (
-        <OtMonthlyTab empById={empById} sectionsList={sectionsList}
+        <OtMonthlyTab empById={empById} sectionsList={sectionsList} orgIndex={orgIndex} orgFail={orgFail}
           secFilter={secFilter} setSecFilter={setSecFilter} inScope={inScope} />
       )}
     </Page>

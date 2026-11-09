@@ -70,7 +70,7 @@ export default function NotifyPrefsModal({ role, onClose }) {
        ⚠️ ห้ามใส่ max-height/overflow ที่ตัวกล่อง · ไม่ปิดจากการคลิก backdrop */
     <div className="modal-scroll"
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3200, display: 'flex', padding: '4vh 3vw' }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, width: 'min(96vw, 560px)', boxShadow: 'var(--shadow-lg)' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', width: 'min(96vw, 560px)', boxShadow: 'var(--shadow-lg)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '13px 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>ตั้งค่าแจ้งเตือนของฉัน</div>
           <button onClick={onClose} aria-label="ปิด" style={{ background: 'none', border: 'none', fontSize: 21, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
@@ -93,9 +93,9 @@ export default function NotifyPrefsModal({ role, onClose }) {
 
           {state === 'loading' && <div style={{ fontSize: 12.5, color: 'var(--muted)', padding: 10 }}>กำลังโหลด…</div>}
           {state === 'error' && (
-            <div role="alert" style={{ fontSize: 12, color: toneVar('bad'), background: toneDim('bad'), border: `1px solid ${toneLine('bad')}`, borderRadius: 8, padding: '8px 10px', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div role="alert" style={{ fontSize: 12, color: toneVar('bad'), background: toneDim('bad'), border: `1px solid ${toneLine('bad')}`, borderRadius: 'var(--r-md)', padding: '8px 10px', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ flex: 1, minWidth: 180 }}>โหลดรายการแจ้งเตือนไม่สำเร็จ ({err}) — ยังตั้งค่าไม่ได้</span>
-              <button onClick={load} style={{ padding: '3px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 12, cursor: 'pointer' }}>โหลดใหม่</button>
+              <button onClick={load} style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 12, cursor: 'pointer' }}>โหลดใหม่</button>
             </div>
           )}
 
@@ -119,7 +119,7 @@ export default function NotifyPrefsModal({ role, onClose }) {
                     const working = busy === r.event_key;
                     return (
                       <label key={r.event_key} title={r.locked ? 'เรื่องนี้เป็นงานที่รอคุณ — ปิดไม่ได้' : undefined}
-                        style={{ display: 'flex', gap: 9, alignItems: 'flex-start', padding: '6px 9px', borderRadius: 8,
+                        style={{ display: 'flex', gap: 9, alignItems: 'flex-start', padding: '6px 9px', borderRadius: 'var(--r-md)',
                           background: 'var(--bg3)', border: '1px solid var(--border)', cursor: r.locked || working ? 'default' : 'pointer', opacity: working ? 0.6 : 1 }}>
                         <input type="checkbox" checked={!r.locked && !off} disabled={r.locked || working}
                           onChange={e => toggle(r.event_key, !e.target.checked)}
@@ -138,7 +138,7 @@ export default function NotifyPrefsModal({ role, onClose }) {
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '11px 16px', borderTop: '1px solid var(--border)' }}>
-          <button onClick={onClose} style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>เสร็จแล้ว</button>
+          <button onClick={onClose} style={{ padding: '7px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>เสร็จแล้ว</button>
         </div>
       </div>
     </div>

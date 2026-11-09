@@ -112,7 +112,7 @@ export default function MachineFloorMap({
   if (!imageUrl) {
     return (
       <div style={{ flex: 1, minHeight: 320, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: 'var(--card)', border: '1px dashed var(--border2)', borderRadius: 14, color: 'var(--muted)', textAlign: 'center', padding: 24 }}>
+        background: 'var(--card)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-lg)', color: 'var(--muted)', textAlign: 'center', padding: 24 }}>
         <div>
           <div style={{ fontSize: 34, marginBottom: 10 }}>🗺️</div>
           <div style={{ fontSize: 14, fontWeight: 700 }}>ยังไม่มีรูปผัง</div>
@@ -150,7 +150,7 @@ export default function MachineFloorMap({
 
   return (
     // height prop ต้องปิด flex-grow ด้วย — flex:1 (basis 0%) ใน column จะชนะ height ทำให้ผังสูงตามรูปจนล้นจอ
-    <div ref={wrapRef} style={{ position: 'relative', flex: height ? '0 0 auto' : 1, minHeight: 320, height: height || undefined, background: '#0a0f0b', borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border)' }}>
+    <div ref={wrapRef} style={{ position: 'relative', flex: height ? '0 0 auto' : 1, minHeight: 320, height: height || undefined, background: '#0a0f0b', borderRadius: 'var(--r-lg)', overflow: 'hidden', border: '1px solid var(--border)' }}>
       <img ref={imgRef} src={imageUrl} onLoad={recalc} draggable={false}
         onClick={(e) => { if (editable && armed) { const pct = toPct(e); if (pct) onImageClick?.(pct) } }}
         style={crop
@@ -192,7 +192,7 @@ export default function MachineFloorMap({
                   ? <img src={p.photo} alt="" loading="lazy" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover', display: 'block', pointerEvents: 'none' }} />
                   : <span style={{ fontSize: iconFont, lineHeight: 1 }}>{p.icon || '⚙️'}</span>}
                 {p.badge != null && (
-                  <span style={{ position: 'absolute', bottom: -5, right: -7, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: '#111', border: `1.5px solid ${color}`, color: '#fff', fontSize: 11, fontWeight: 800, lineHeight: '13px', textAlign: 'center', pointerEvents: 'none' }}>{p.badge}</span>
+                  <span style={{ position: 'absolute', bottom: -5, right: -7, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 'var(--r-md)', background: '#111', border: `1.5px solid ${color}`, color: '#fff', fontSize: 11, fontWeight: 800, lineHeight: '13px', textAlign: 'center', pointerEvents: 'none' }}>{p.badge}</span>
                 )}
 
                 {editable && (
@@ -204,11 +204,11 @@ export default function MachineFloorMap({
                 {/* name pill(s) underneath the circle — ซ่อนเมื่อผังแน่น ยกเว้นถูกเลือก/ลาก/จุดที่ caller บังคับ (เช่น PM เกินกำหนด) */}
                 {!p.dim && (pillsOn || sel || d || p.alwaysLabel) && (
                 <div style={{ position: 'absolute', top: 'calc(100% + 3px)', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                  <div style={{ maxWidth: subPillMaxW, background: 'rgba(0,0,0,0.82)', outline: sel ? `2px solid ${color}` : undefined, color: '#fff', fontSize: pillFont, fontWeight: 800, lineHeight: 1.2, padding: '1px 6px', borderRadius: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div style={{ maxWidth: subPillMaxW, background: 'rgba(0,0,0,0.82)', outline: sel ? `2px solid ${color}` : undefined, color: '#fff', fontSize: pillFont, fontWeight: 800, lineHeight: 1.2, padding: '1px 6px', borderRadius: 'var(--r-xs)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {p.label}
                   </div>
                   {p.sub && (
-                    <div style={{ maxWidth: subPillMaxW, background: 'rgba(0,0,0,0.68)', color: '#cdd6ce', fontSize: subFont, fontWeight: 600, lineHeight: 1.2, padding: '0 5px', borderRadius: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ maxWidth: subPillMaxW, background: 'rgba(0,0,0,0.68)', color: '#cdd6ce', fontSize: subFont, fontWeight: 600, lineHeight: 1.2, padding: '0 5px', borderRadius: 'var(--r-xs)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {p.sub}
                     </div>
                   )}
@@ -224,7 +224,7 @@ export default function MachineFloorMap({
         title="แสดง/ซ่อนป้ายชื่อทุกหมุดบนผัง (ชื่อยังดูได้จากการชี้/คลิกหมุด — หมุดที่เลือก/PM เกินกำหนดโชว์ป้ายเสมอ)"
         style={{
           position: 'absolute', top: 10, right: 10, zIndex: 20,
-          padding: '6px 12px', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer',
+          padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 800, cursor: 'pointer',
           background: showPills ? 'var(--accent-dim)' : 'rgba(10,15,11,0.85)',
           color: showPills ? 'var(--accent)' : '#cdd6ce',
           border: `1.5px solid ${showPills ? 'var(--accent)' : 'var(--border2)'}`,

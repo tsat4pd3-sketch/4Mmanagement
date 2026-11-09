@@ -75,7 +75,7 @@ const rpnOf = (it) => (it.severity && it.occurrence && it.detection) ? it.severi
 const rpnNewOf = (it) => (it.new_severity && it.new_occurrence && it.new_detection) ? it.new_severity * it.new_occurrence * it.new_detection : null;
 const rpnColor = (v) => (v == null ? 'var(--muted)' : v >= 100 ? '#ef4444' : v >= 70 ? '#f59e0b' : '#22c55e');
 const classChip = (c) => c ? (
-  <span style={{ fontSize: 11, fontWeight: 800, borderRadius: 5, padding: '1px 6px',
+  <span style={{ fontSize: 11, fontWeight: 800, borderRadius: 'var(--r-xs)', padding: '1px 6px',
     background: c === 'CC' ? 'var(--red-dim)' : 'var(--amber-dim)',
     color: c === 'CC' ? 'var(--red)' : 'var(--amber)' }}>{c}</span>
 ) : null;
@@ -403,7 +403,7 @@ export default function PEDocs() {
       </FilterBar>
 
       {exportNotes && (
-        <div style={{ margin: '0 0 10px', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--amber)55', background: 'var(--amber)14', fontSize: 12, color: 'var(--text2)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+        <div style={{ margin: '0 0 10px', padding: '9px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--amber)55', background: 'var(--amber)14', fontSize: 12, color: 'var(--text2)', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
           <span style={{ fontSize: 14 }}>ℹ️</span>
           <div style={{ flex: 1 }}>
             <b style={{ color: 'var(--text)' }}>ไฟล์ที่ได้ต่างจากต้นฉบับตรงไหนบ้าง</b>
@@ -432,7 +432,7 @@ export default function PEDocs() {
             <button
               onClick={() => setShowCr(v => !v)}
               style={{
-                width: '100%', textAlign: 'left', cursor: 'pointer', padding: '9px 12px', borderRadius: 10,
+                width: '100%', textAlign: 'left', cursor: 'pointer', padding: '9px 12px', borderRadius: 'var(--r-md)',
                 border: `1px solid ${crCount ? 'var(--amber)66' : 'var(--border)'}`,
                 background: crCount ? 'var(--amber-dim)' : 'var(--bg2)',
                 color: 'var(--text)', fontSize: 12.5, fontWeight: 700,
@@ -475,7 +475,7 @@ export default function PEDocs() {
             <div>
               {/* ── 🗺️ ผังกระบวนการที่ระบบวาดจากรายการ OP ── */}
               {procs.length > 0 && (
-                <div style={{ marginBottom: 12, border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+                <div style={{ marginBottom: 12, border: '1px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'var(--bg2)', flexWrap: 'wrap' }}>
                     <button style={{ ...btnSm, border: 'none', background: 'transparent', padding: 0, fontSize: 13 }} onClick={() => setShowChart(v => !v)}>
                       {showChart ? '▼' : '▶'} ผังกระบวนการ ({procs.length} ขั้นงาน)
@@ -521,7 +521,7 @@ export default function PEDocs() {
                   </button>
                 )}
               </div>
-              <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
+              <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
                   <thead style={{ background: 'var(--bg2)' }}>
                     <tr>{['OP', 'ชนิด', 'ชื่อกระบวนการ', 'รูป', 'เครื่อง', 'ไลน์/พื้นที่', 'Child part / Nut', 'CC/SC', 'เชื่อม', 'FMEA', 'CP', ''].map((h, i) => <th key={i} style={thSt}>{h}</th>)}</tr>
@@ -576,10 +576,10 @@ export default function PEDocs() {
                 {fmeaView.map(it => {
                   const p = procById[it.process_id];
                   return (
-                    <div key={it.id} style={{ background: 'var(--card)', border: `1px solid ${(it.rpn || 0) >= 100 ? 'var(--red-line)' : 'var(--border)'}`, borderRadius: 10, padding: 12 }}>
+                    <div key={it.id} style={{ background: 'var(--card)', border: `1px solid ${(it.rpn || 0) >= 100 ? 'var(--red-line)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: 12 }}>
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 11, fontWeight: 800, background: 'var(--blue-dim)', color: 'var(--blue)', borderRadius: 5, padding: '2px 7px' }}>OP {p?.op_no} {p?.name}</span>
-                        {it.item_function && <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--bg3)', color: 'var(--text2)', borderRadius: 5, padding: '2px 7px' }}>{it.item_function}</span>}
+                        <span style={{ fontSize: 11, fontWeight: 800, background: 'var(--blue-dim)', color: 'var(--blue)', borderRadius: 'var(--r-xs)', padding: '2px 7px' }}>OP {p?.op_no} {p?.name}</span>
+                        {it.item_function && <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--bg3)', color: 'var(--text2)', borderRadius: 'var(--r-xs)', padding: '2px 7px' }}>{it.item_function}</span>}
                         {classChip(it.classification)}
                         <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{it.failure_mode}</span>
                         <span style={{ flex: 1 }} />
@@ -594,7 +594,7 @@ export default function PEDocs() {
                           const meta = CMP_META[c.state];
                           const extra = c.state === 'better' ? ` ${c.rpnItem} < ${c.rpnMaster}` : c.state === 'behind' ? ` → v${mItem?.version}` : c.state === 'diverged' ? ` (master ${c.rpnMaster ?? '—'})` : '';
                           return <>
-                            <span title={`${meta.label}${mItem ? ` · master v${mItem.version} RPN ${c.rpnMaster ?? '—'}` : ''}`} style={{ fontSize: 11, fontWeight: 800, color: meta.color, border: `1px solid ${tint(meta.color, 'line')}`, borderRadius: 5, padding: '1px 6px', whiteSpace: 'nowrap' }}>{meta.icon} {meta.label}{extra}</span>
+                            <span title={`${meta.label}${mItem ? ` · master v${mItem.version} RPN ${c.rpnMaster ?? '—'}` : ''}`} style={{ fontSize: 11, fontWeight: 800, color: meta.color, border: `1px solid ${tint(meta.color, 'line')}`, borderRadius: 'var(--r-xs)', padding: '1px 6px', whiteSpace: 'nowrap' }}>{meta.icon} {meta.label}{extra}</span>
                             {pendingSrc.has(it.id) ? <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700 }}>เสนอแล้ว</span>
                               : canEdit && (c.state === 'better' || c.state === 'unlinked') && <button style={btnSm} onClick={() => proposeOne(it)}>{c.state === 'better' ? 'เสนอเข้า master' : 'เสนอเป็นรายการใหม่'}</button>}
                           </>;
@@ -611,7 +611,7 @@ export default function PEDocs() {
                         <div><b style={lbl}>Prevention</b>{multiline(it.prevention)}</div>
                         <div><b style={lbl}>Detection</b>{multiline(it.detection_ctrl)}<div style={{ marginTop: 2 }}>D = <b style={{ color: 'var(--text)' }}>{it.detection ?? '—'}</b></div></div>
                         {(it.recommended_action || it.action_taken) && (
-                          <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: 8 }}>
+                          <div style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: 8 }}>
                             <b style={lbl}>Action</b>{multiline(it.recommended_action)}
                             {it.responsibility && <div style={{ color: 'var(--muted)' }}>{it.responsibility}{it.target_date ? ` · เป้า ${fmtDate(it.target_date)}` : ''}</div>}
                             {it.action_taken && <div style={{ marginTop: 4, color: 'var(--green)' }}>✔ {it.action_taken}</div>}
@@ -634,7 +634,7 @@ export default function PEDocs() {
                   เพิ่มจุดควบคุม
                 </button>
               )}
-              <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
+              <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1100 }}>
                   <thead style={{ background: 'var(--bg2)' }}>
                     <tr>{['OP', 'No.', 'Characteristics (Product / Process)', 'CC/SC', 'ผู้คุม', 'Spec/Tolerance', 'วิธีวัด', 'Sample', 'ความถี่', 'Control method', 'Reaction plan', ''].map((h, i) => <th key={i} style={thSt}>{h}</th>)}</tr>
@@ -686,7 +686,7 @@ export default function PEDocs() {
                   ออก Revision ใหม่
                 </button>
               )}
-              <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 10 }}>
+              <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
                   <thead style={{ background: 'var(--bg2)' }}>
                     <tr>{['เอกสาร', 'Rev', 'วันที่', 'Suffix (Part no.)', 'ECN', 'เนื้อหาการแก้ไข', 'ต้นเหตุ', 'ออก/ตรวจ/รับรอง', ''].map((h, i) => <th key={i} style={thSt}>{h}</th>)}</tr>

@@ -80,7 +80,7 @@ const STAGE = QA_STAGES;
 function Chip({ label, color }) {
   return (
     <span style={{
-      display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+      display: 'inline-block', padding: '2px 9px', borderRadius: 'var(--r-pill)', fontSize: 11, fontWeight: 700,
       color, background: `${tint(color, 'dim')}`, border: `1px solid ${tint(color, 'line')}`, whiteSpace: 'nowrap',
     }}>{label}</span>
   );
@@ -97,7 +97,7 @@ function Modal({ title, onClose, children, width = 560 }) {
       /* ตั้งใจไม่ปิดเมื่อคลิกพื้นหลัง — กันเผลอกดแล้วข้อมูลในฟอร์มหาย ปิดได้จากปุ่ม ✕/ยกเลิกเท่านั้น */
     >
       <div style={{
-        background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14,
+        background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)',
         width: `min(${width}px, 96vw)`, boxShadow: 'var(--shadow-lg)', maxHeight: '90vh',
         display: 'flex', flexDirection: 'column',
       }}>
@@ -384,7 +384,7 @@ export default function QAInspectionSetup() {
             {shownParts.map(p => (
               <button key={p.id} onClick={() => setSelId(p.id)}
                 style={{
-                  textAlign: 'left', padding: '9px 10px', borderRadius: 8, cursor: 'pointer',
+                  textAlign: 'left', padding: '9px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                   background: p.id === selId ? 'var(--accent-dim)' : 'transparent',
                   border: `1px solid ${p.id === selId ? 'var(--accent)' : 'transparent'}`,
                   opacity: p.is_active ? 1 : 0.5,
@@ -461,7 +461,7 @@ export default function QAInspectionSetup() {
                 {canEdit && drawings.length > 0 && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>แตะหมุด = ไปแก้จุดนั้น</div>}
               </div>
               {drawings.length === 0 ? (
-                <div style={{ padding: 46, textAlign: 'center', color: 'var(--muted)', fontSize: 13, border: '2px dashed var(--border2)', borderRadius: 10 }}>
+                <div style={{ padding: 46, textAlign: 'center', color: 'var(--muted)', fontSize: 13, border: '2px dashed var(--border2)', borderRadius: 'var(--r-md)' }}>
                   ยังไม่มี drawing — {canEdit ? 'กด "🎯 ตั้งค่าจุดตรวจ & Drawing" เพื่อเพิ่มแผ่น (รูปภาพหรือ PDF ≤20MB) แล้วปักหมุด' : 'รอ QA อัพโหลด'}
                 </div>
               ) : (() => {
@@ -559,7 +559,7 @@ export default function QAInspectionSetup() {
       {partModal && (
         <Modal title={partModal.id ? `✏️ แก้ไข ${partModal.part_no}` : '➕ เพิ่ม Part'} onClose={() => { setPartModal(null); setBomSearch(''); }}>
           {/* เลือกจากฐานข้อมูล BOM / Product Master → เติมฟอร์มให้ (แก้ทับได้) */}
-          <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: 'var(--bg3)', border: '1px dashed var(--border2)' }}>
+          <div style={{ marginBottom: 14, padding: 12, borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: '1px dashed var(--border2)' }}>
             <Field label="เลือกจากฐานข้อมูล BOM / Product Master">
               <input style={inputSt} value={bomSearch} onChange={e => setBomSearch(e.target.value)}
                 placeholder={bomOptions === null ? 'กำลังโหลดฐานข้อมูล…' : `พิมพ์ค้นหา Part No. / ชื่อพาร์ท / MAT.NO (${bomOptions.length.toLocaleString()} รายการ)`} />
@@ -569,7 +569,7 @@ export default function QAInspectionSetup() {
                 {bomMatches.map(o => (
                   <button key={o.key} onClick={() => pickBomOption(o)}
                     style={{
-                      textAlign: 'left', padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
+                      textAlign: 'left', padding: '8px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                       background: 'var(--card)', border: '1px solid var(--border)',
                       display: 'flex', gap: 8, alignItems: 'center',
                     }}>

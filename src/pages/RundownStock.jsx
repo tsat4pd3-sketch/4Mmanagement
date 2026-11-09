@@ -8,6 +8,7 @@ import { fetchAllPages } from '../utils/fetchByIds';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import { openOnly } from '../utils/shipStatus';
+import NoticeBar from '../components/NoticeBar';
 import { periodHead, periodTone } from '../utils/periodHead';   // 🗓️ หัวคอลัมน์ชุดเดียวกับบอร์ด Monitoring (08/10)
 import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
@@ -158,9 +159,9 @@ export default function RundownStock() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         {loadWarn && (
-          <div data-page-note="1" style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--amber-line)', background: 'var(--amber-dim)', fontSize: 12, color: 'var(--amber)', fontWeight: 700 }}>
-            ⚠ ข้อมูลบางส่วนโหลดไม่ครบ ({loadWarn}) — Balance ที่เห็นอาจสูงกว่าจริง ห้ามใช้ตัดสินใจจนกว่าจะรีเฟรชสำเร็จ
-          </div>
+          <NoticeBar tone="warn" style={{ marginBottom: 0 }}>
+            <b>ข้อมูลบางส่วนโหลดไม่ครบ</b> ({loadWarn}) — Balance ที่เห็นอาจสูงกว่าจริง ห้ามใช้ตัดสินใจจนกว่าจะรีเฟรชสำเร็จ
+          </NoticeBar>
         )}
         {view.length > 0 && (
           <div className="filter-bar" style={{ fontSize: 12 }}>
@@ -186,7 +187,7 @@ export default function RundownStock() {
             { icon: '✅', label: 'stock พอตลอดช่วง', value: view.filter(r => r.tracked && r.firstShort == null).length },
             ...(untracked ? [{ icon: '❔', label: 'ยังเช็ค stock ไม่ได้ (เลขยังไม่จับคู่ MAT SAP)', value: untracked, warn: true }] : []),
           ].map(c => (
-            <div key={c.label} style={{ flex: '1 1 160px', background: 'var(--bg2)', border: `1px solid ${c.warn ? 'var(--red-line)' : 'var(--border)'}`, borderRadius: 8, padding: '8px 12px' }}>
+            <div key={c.label} style={{ flex: '1 1 160px', background: 'var(--bg2)', border: `1px solid ${c.warn ? 'var(--red-line)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{c.icon} {c.label}</div>
               <div style={{ fontSize: 22, fontWeight: 900, color: c.warn && c.value > 0 ? 'var(--red)' : 'var(--text)', fontFamily: 'var(--font-display)' }}>{c.value}</div>
             </div>

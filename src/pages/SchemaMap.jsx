@@ -16,6 +16,7 @@ import { auditProject, auditText, fmtBytes } from '../utils/schemaAudit';
 import { openFeedback } from '../utils/feedbackPrefill';
 import { UserContext } from '../App';
 import USAGE from 'virtual:schema-usage';
+import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 /* ══ 🗄️ โครงสร้างฐานข้อมูล (Data Map) — /schema ═══════════════════════════════════════
    2026-09-22 · คำขอ user: "ทีมงานเจอบัค อยากเห็นว่า table ชื่ออะไร PK/FK กันแบบไหน
@@ -286,12 +287,8 @@ export default function SchemaMap() {
           {(!isMobile || !sel) && (
             <div style={{ ...card(), display: 'grid', gap: 9, alignContent: 'start' }}>
               <SearchInput value={q} onChange={setQ} fields="ชื่อตาราง (เช่น downtime, employee)" />
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {[{ k: 'all', label: allOf('ฐานข้อมูล') },
-                  ...PKEYS.map(k => ({ k, label: `${PROJ[k].label} (${over[k]?.tables?.length || 0})` }))].map(o => (
-                  <button key={o.k} onClick={() => setSide(o.k)} style={chip(side === o.k)}>{o.label}</button>
-                ))}
-              </div>
+              <TabBar size="sm" value={side} onChange={setSide}
+                tabs={[{ key: 'all', label: allOf('ฐานข้อมูล') }, ...PKEYS.map(k => ({ key: k, label: PROJ[k].label, badge: over[k]?.tables?.length || 0 }))]} />
 
               {loading && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>กำลังโหลด…</div>}
               {!loading && !rows.length && (
@@ -303,7 +300,7 @@ export default function SchemaMap() {
               {groups.map(g => {
                 const open = searching || openGroups[g.key];
                 return (
-                  <div key={g.key} style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'clip' }}>
+                  <div key={g.key} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'clip' }}>
                     <button onClick={() => setOpenGroups(s => ({ ...s, [g.key]: !s[g.key] }))}
                       style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
                         background: 'var(--bg3)', border: 'none', color: 'var(--text)', padding: '7px 10px', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>
@@ -322,7 +319,7 @@ export default function SchemaMap() {
                               background: on ? 'var(--bg3)' : 'transparent', color: 'var(--text)',
                               border: 'none', borderLeft: `3px solid ${on ? PROJ[r.proj].color : 'transparent'}`,
                             }}>
-                              <span style={{ flexShrink: 0 }}>{r.proj === 'main' ? '️' : '🏭'}</span>
+                              <span style={{ flexShrink: 0 }}>{r.proj === 'main' ? '🗄️' : '🏭'}</span>
                               <span style={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: on ? 700 : 500 }}>
                                 {r.t}{(r.k === 'v' || r.k === 'm') && <span style={{ color: 'var(--muted)' }}> (วิว)</span>}
                               </span>
@@ -630,7 +627,7 @@ function PagesTab({ q, setQ, isMobile, catalog, ghosts, onPick }) {
                         <button key={`${guess}-${t}`} onClick={() => k && onPick(k, t)} disabled={!k}
                           title={k ? `${PROJ[k].label} · กดเพื่อดูโครงสร้าง` : 'ไม่พบตารางนี้ในฐานข้อมูล'}
                           style={{ ...chip(false), opacity: k ? 1 : 0.55, cursor: k ? 'pointer' : 'default' }}>
-                          {k === 'main' ? '️' : k === 'dr' ? '🏭' : '❔'} {t}
+                          {k === 'main' ? '🗄️' : k === 'dr' ? '🏭' : '❔'} {t}
                         </button>
                       );
                     })}
@@ -717,7 +714,7 @@ function AuditTab({ audits, isMobile, loading, onPick, onCopy }) {
               const id = `${key}:${c.id}`;
               const on = open[id] ?? (c.level === 'bad' || c.level === 'warn');
               return (
-                <div key={c.id} style={{ border: `1px solid ${c.level === 'ok' ? 'var(--border)' : lv.color + '66'}`, borderRadius: 8, overflow: 'clip' }}>
+                <div key={c.id} style={{ border: `1px solid ${c.level === 'ok' ? 'var(--border)' : lv.color + '66'}`, borderRadius: 'var(--r-md)', overflow: 'clip' }}>
                   <button onClick={() => setOpen(o => ({ ...o, [id]: !on }))} style={{
                     width: '100%', textAlign: 'left', display: 'flex', flexWrap: isMobile ? 'wrap' : 'nowrap',
                     alignItems: 'center', gap: 8, background: 'var(--bg2)', border: 'none', color: 'var(--text)',

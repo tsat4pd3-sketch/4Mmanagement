@@ -399,7 +399,7 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
       <div style={{ display: 'grid', gap: 6 }}>
         {rows.map(([t, v, note]) => (
           <div key={t} style={{ display: 'grid', gridTemplateColumns: 'minmax(120px,1fr) minmax(140px,1fr) 2fr',
-                                gap: 8, fontSize: 12, padding: '6px 8px', background: 'var(--bg2)', borderRadius: 6 }}>
+                                gap: 8, fontSize: 12, padding: '6px 8px', background: 'var(--bg2)', borderRadius: 'var(--r-md)' }}>
             <b>{t}</b><span>{v}</span><span style={{ color: 'var(--muted)' }}>{note}</span>
           </div>
         ))}
@@ -501,12 +501,12 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
 
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
         <button onClick={onConfirm} disabled={busy}
-                style={{ padding: '8px 16px', fontSize: 13, fontWeight: 700, borderRadius: 6,
+                style={{ padding: '8px 16px', fontSize: 13, fontWeight: 700, borderRadius: 'var(--r-md)',
                          background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', cursor: busy ? 'wait' : 'pointer' }}>
           {busy ? 'กำลังเขียน…' : '✔ ยืนยันนำเข้า (ลงให้ครบทุกส่วนในครั้งเดียว)'}
         </button>
         <button onClick={onCancel} disabled={busy}
-                style={{ padding: '8px 16px', fontSize: 13, borderRadius: 6, background: 'var(--bg3)',
+                style={{ padding: '8px 16px', fontSize: 13, borderRadius: 'var(--r-md)', background: 'var(--bg3)',
                          color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
           ยกเลิก
         </button>

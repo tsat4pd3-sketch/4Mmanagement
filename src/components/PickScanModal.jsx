@@ -76,14 +76,14 @@ export default function PickScanModal({ request, canOverride = false, fullName, 
       {/* ไม่ปิดจาก backdrop — มีช่องกรอกจำนวน/เหตุผล (UI-CONVENTIONS §5) */}
       <div style={{ position: 'fixed', inset: 0, zIndex: 2300, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
         <div onClick={e => e.stopPropagation()} className="modal-scroll"
-          style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(520px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
+          style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(520px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)' }}>เริ่มเตรียม — สแกนยืนยันของที่หยิบ</h3>
             <button onClick={onClose} className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>✕</button>
           </div>
 
           <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, alignItems: 'start' }}>
-            <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '8px 10px' }}>
+            <div style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>ใบต้องการพาร์ท</div>
               {/* ลำดับ ชื่องาน → MAT (UI §6.21 · 2026-09-30) */}
               {request?.part_name
@@ -91,11 +91,11 @@ export default function PickScanModal({ request, canOverride = false, fullName, 
                 : null}
               <div style={{ fontSize: request?.part_name ? 11 : 15, fontWeight: request?.part_name ? 400 : 900, fontFamily: 'monospace', color: request?.part_name ? 'var(--muted)' : 'var(--text)', wordBreak: 'break-all' }}>MAT {request?.mat_no || '—'}</div>
             </div>
-            <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '8px 10px' }}>
+            <div style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>{isCoilUom(request?.uom) ? 'ต้องใช้ (kg · จ่ายเป็นม้วน)' : 'จำนวนที่ขอ'}</div>
               <div style={{ fontSize: 20, fontWeight: 900, color: 'var(--text)' }}>{fmt(request?.request_qty)}</div>
             </div>
-            <div style={{ background: 'rgba(59,130,246,0.12)', borderRadius: 10, padding: '8px 10px' }}>
+            <div style={{ background: 'rgba(59,130,246,0.12)', borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
               <div style={{ fontSize: 11, color: '#3b82f6' }}>ปลายทาง</div>
               <div style={{ fontSize: 14, fontWeight: 900, color: '#3b82f6' }}>➜ {request?.line_name || '—'}</div>
             </div>
@@ -104,12 +104,12 @@ export default function PickScanModal({ request, canOverride = false, fullName, 
           {/* ① พาร์ท */}
           <div style={{ marginTop: 14, fontSize: 12.5, fontWeight: 800, color: 'var(--text2)' }}>① ยิงบาร์โค้ดพาร์ทที่หยิบมา</div>
           {partOk && (
-            <div style={{ marginTop: 6, fontSize: 13, color: '#22c55e', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 8, padding: '8px 12px', fontWeight: 700 }}>
+            <div style={{ marginTop: 6, fontSize: 13, color: '#22c55e', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 'var(--r-md)', padding: '8px 12px', fontWeight: 700 }}>
               {part.message}{part.loose ? <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}> · บาร์โค้ดมีเลขต่อท้าย — ระบบเทียบเฉพาะส่วนที่เป็น MAT</span> : null}
             </div>
           )}
           {part?.block && (
-            <div style={{ marginTop: 6, fontSize: 13, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '8px 12px' }}>
+            <div style={{ marginTop: 6, fontSize: 13, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
               🔴 {part.message}
             </div>
           )}
@@ -138,7 +138,7 @@ export default function PickScanModal({ request, canOverride = false, fullName, 
             </label>
           )}
 
-          <div style={{ marginTop: 12, fontSize: 11.5, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 8, padding: '7px 10px' }}>
+          <div style={{ marginTop: 12, fontSize: 11.5, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '7px 10px' }}>
             กดยืนยัน = ระบบ<b>ตัดสต็อกให้เลย</b> (คลัง STORE −{fmt(Number(qty) || 0)} · ไลน์ {request?.line_name} +{fmt(Number(qty) || 0)}) ตามขั้น "Scan for SAP update" — ไม่ต้องไปบันทึกจ่ายที่ Line Stock ซ้ำ
           </div>
 

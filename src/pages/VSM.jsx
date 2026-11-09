@@ -568,7 +568,7 @@ export default function VSM() {
                 <label style={{ fontSize: 11.5, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{label}</label>
                 <textarea rows={rows} value={a3[k] || ''} onChange={e => setA3(v => ({ ...v, [k]: e.target.value }))}
                   placeholder={ph}
-                  style={{ width: '100%', fontSize: 12.5, padding: '7px 10px', borderRadius: 6, resize: 'vertical',
+                  style={{ width: '100%', fontSize: 12.5, padding: '7px 10px', borderRadius: 'var(--ctl-r)', resize: 'vertical',
                     border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
               </div>
             ))}
@@ -579,7 +579,7 @@ export default function VSM() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
               <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>⑥ แผนดำเนินการ (ใคร / อะไร / เมื่อไหร่)</label>
               <button onClick={() => setA3(v => ({ ...v, plan: [...(v.plan || []), { what: '', who: '', when: '', status: '' }] }))}
-                style={{ padding: '4px 12px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>
+                style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>
                 + เพิ่มแถว
               </button>
             </div>
@@ -593,7 +593,7 @@ export default function VSM() {
                         inputStyle={{ fontSize: 12, padding: '5px 26px 5px 8px', borderRadius: 5, background: 'var(--bg2)' }} />
                     : <input key={f} value={r[f] || ''} placeholder={ph}
                         onChange={e => setA3(v => ({ ...v, plan: v.plan.map((x, j) => j === i ? { ...x, [f]: e.target.value } : x) }))}
-                        style={{ fontSize: 12, padding: '5px 8px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
+                        style={{ fontSize: 12, padding: '5px 8px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
                 ))}
                 <DeleteButton onClick={() => setA3(v => ({ ...v, plan: v.plan.filter((_, j) => j !== i) }))} title="ลบ" />
               </div>
@@ -628,7 +628,7 @@ export default function VSM() {
                 {gaps.map((g, i) => {
                   const st = WARN_STYLE[g.level] || WARN_STYLE.info;
                   return (
-                    <div key={i} style={{ background: st.bg, borderLeft: `3px solid ${st.bd}`, borderRadius: 6, padding: '7px 12px', fontSize: 12.5, color: 'var(--text)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <div key={i} style={{ background: st.bg, borderLeft: `3px solid ${st.bd}`, borderRadius: 'var(--r-md)', padding: '7px 12px', fontSize: 12.5, color: 'var(--text)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                       <span style={{ flex: '1 1 340px' }}>{st.icon} {g.text}</span>
                       <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {g.actions.map((a, j) => a.to ? (
@@ -674,7 +674,7 @@ export default function VSM() {
                       placeholder={val == null ? '—' : String(Math.round(val * 10) / 10)}
                       title={src ? `ค่าที่ระบบคำนวณ: ${val ?? '—'} (จาก ${src})` : 'ระบบไม่มีข้อมูล'}
                       style={{
-                        width: 82, fontSize: 12, padding: '4px 6px', borderRadius: 5, background: 'var(--bg2)', color: 'var(--text)',
+                        width: 82, fontSize: 12, padding: '4px 6px', borderRadius: 'var(--ctl-r)', background: 'var(--bg2)', color: 'var(--text)',
                         border: `1px solid ${val == null && !ov[field] ? 'var(--amber)' : 'var(--border)'}`,
                       }} />
                   </td>
@@ -714,7 +714,7 @@ export default function VSM() {
               </label>
               <input value={overrides.__customer_pattern || ''} onChange={e => setTopOv('__customer_pattern', e.target.value)}
                 placeholder={model.customer.roundsPerDay ? `ระบบเห็น ${model.customer.roundsPerDay} รอบ/วัน` : 'เช่น 1:4:2'}
-                style={{ width: '100%', fontSize: 12.5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
+                style={{ width: '100%', fontSize: 12.5, padding: '6px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
             </div>
             {model.suppliers.map(sp => (
               <div key={sp.matNo}>
@@ -723,7 +723,7 @@ export default function VSM() {
                 </label>
                 <input value={(overrides.__supplier_pattern || {})[sp.matNo] || ''} onChange={e => setSupPattern(sp.matNo, e.target.value)}
                   placeholder="เช่น 7:1:1"
-                  style={{ width: '100%', fontSize: 12.5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
+                  style={{ width: '100%', fontSize: 12.5, padding: '6px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
               </div>
             ))}
             {!model.suppliers.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>BOM ของสินค้านี้ยังไม่มีพาร์ทซื้อนอก</div>}
@@ -816,22 +816,22 @@ export default function VSM() {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700,
-                padding: '5px 12px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--text)',
+                padding: '5px 12px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', color: 'var(--text)',
               }}>
                 {/* จุดสถานะ live = นิ่ง+เรืองแสง ห้ามกระพริบ (Andon สงวนกระพริบให้แดง) */}
-                <span style={{ width: 8, height: 8, borderRadius: 99, background: 'var(--green)', boxShadow: '0 0 6px var(--green)' }} />
+                <span style={{ width: 8, height: 8, borderRadius: 'var(--r-pill)', background: 'var(--green)', boxShadow: '0 0 6px var(--green)' }} />
                 REALTIME · อัปเดต {liveData?.at ? new Date(liveData.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
                 <span style={{ color: 'var(--muted)', fontWeight: 400 }}>· วันงาน {liveData?.workDate || getWorkDate()}</span>
               </span>
               {liveData?.partial && (
-                <span style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 999, background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber)' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 'var(--r-pill)', background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber)' }}>
                   ⚠ โหลดข้อมูลสดไม่ครบ — ตัวเลขบางส่วนอาจขาด (จะลองใหม่รอบถัดไป)
                 </span>
               )}
               {chips.map(([k, nn]) => (
                 <span key={k} className={k === 'down' && nn > 0 ? 'dt-alarm-blink' : undefined}
                   style={{
-                    fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 999,
+                    fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 'var(--r-pill)',
                     background: 'var(--bg3)', border: '1px solid var(--border)',
                     // dt-alarm-blink ทาพื้นแดง — ตัวอักษรต้องขาว ไม่งั้นแดงบนแดงอ่านไม่ออก
                     color: k === 'down' && nn > 0 ? '#fff' : nn > 0 ? LIVE_STATUS[k].color : 'var(--muted)',
@@ -840,7 +840,7 @@ export default function VSM() {
                 </span>
               ))}
               {(liveData?.summary?.plannedOpen || 0) > 0 && (
-                <span style={{ fontSize: 12, padding: '5px 12px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
+                <span style={{ fontSize: 12, padding: '5px 12px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
                   หยุดตามแผนค้าง {liveData.summary.plannedOpen} รายการ (ไม่นับเป็น Andon)
                 </span>
               )}
@@ -848,7 +848,7 @@ export default function VSM() {
 
             {/* ── Downtime ค้าง (Andon) — ต้องเห็นก่อนอย่างอื่น ห้ามซ่อน ── */}
             {(liveData?.summary?.alarms || []).length > 0 && (
-              <div style={{ background: 'var(--red-dim)', borderLeft: '3px solid var(--red)', borderRadius: 6, padding: '8px 12px', marginBottom: 12 }}>
+              <div style={{ background: 'var(--red-dim)', borderLeft: '3px solid var(--red)', borderRadius: 'var(--r-md)', padding: '8px 12px', marginBottom: 12 }}>
                 <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--red)', marginBottom: 4 }}>Downtime ค้างในสายธารนี้</div>
                 {liveData.summary.alarms.map((a, i) => (
                   <div key={i} style={{ fontSize: 12.5, color: 'var(--text)', padding: '2px 0' }}>
@@ -865,7 +865,7 @@ export default function VSM() {
               <div style={{ marginBottom: 12, display: 'grid', gap: 6 }}>
                 {liveModel.warnings.map((w, i) => {
                   const st = WARN_STYLE[w.level] || WARN_STYLE.info;
-                  return <div key={i} style={{ background: st.bg, borderLeft: `3px solid ${st.bd}`, borderRadius: 6, padding: '7px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+                  return <div key={i} style={{ background: st.bg, borderLeft: `3px solid ${st.bd}`, borderRadius: 'var(--r-md)', padding: '7px 12px', fontSize: 12.5, color: 'var(--text)' }}>
                     {st.icon} {w.text}
                   </div>;
                 })}
@@ -896,7 +896,7 @@ export default function VSM() {
                         <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · {b.line || '—'}</span>
                       </div>
                       <span className={lv?.status === 'down' ? 'dt-alarm-blink' : undefined}
-                        style={{ fontSize: 11.5, fontWeight: 700, color: lv?.status === 'down' ? '#fff' : meta.color, whiteSpace: 'nowrap', padding: '2px 8px', borderRadius: 999, background: 'var(--bg2)' }}>
+                        style={{ fontSize: 11.5, fontWeight: 700, color: lv?.status === 'down' ? '#fff' : meta.color, whiteSpace: 'nowrap', padding: '2px 8px', borderRadius: 'var(--r-pill)', background: 'var(--bg2)' }}>
                         {meta.label}
                       </span>
                     </div>

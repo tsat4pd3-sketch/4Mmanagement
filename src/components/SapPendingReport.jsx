@@ -76,7 +76,7 @@ export default function SapPendingReport() {
           ใบที่สโตร์ส่งถึงไลน์แล้ว แต่ <b>ตัดจ่ายใน SAP ไม่ได้</b> (ติ๊ก 🧾 ในป๊อปอัป "ถึงไลน์แล้ว") — ตัดใน SAP เสร็จแล้วกด "✔ ตัดใน SAP แล้ว" ·
           ยอดสต็อกในระบบนี้ขยับไปตั้งแต่ตอนส่งแล้ว ไม่เปลี่ยนอีก
         </div>
-        <button className="tbtn" onClick={load} style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 12.5 }}>↻ รีเฟรช</button>
+        <button className="tbtn" onClick={load} style={{ padding: '7px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 12.5 }}>↻ รีเฟรช</button>
       </div>
 
       {err && <div style={{ ...card, color: 'var(--red)', fontSize: 13 }}>โหลดไม่สำเร็จ — {err}</div>}
@@ -132,7 +132,7 @@ export default function SapPendingReport() {
                           ? <span style={{ fontSize: 12, color: 'var(--green)' }}>✔ {dt(r.sap_cleared_at)}{r.sap_cleared_by_name ? ` · ${r.sap_cleared_by_name}` : ''}</span>
                           : canClear && (
                             <button disabled={busy === r.id} onClick={() => clear(r)}
-                              style={{ padding: '6px 10px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                              style={{ padding: '6px 10px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                               {busy === r.id ? '…' : '✔ ตัดใน SAP แล้ว'}
                             </button>
                           )}

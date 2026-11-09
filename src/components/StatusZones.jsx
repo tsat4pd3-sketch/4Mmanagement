@@ -24,7 +24,7 @@ export default function StatusZones({ rows, zones, statusOf, renderCard, emptyTe
           }}>
             <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)', whiteSpace: 'nowrap' }}>{z.label}</span>
             <span style={{
-              minWidth: 32, textAlign: 'center', padding: '2px 10px', borderRadius: 999,
+              minWidth: 32, textAlign: 'center', padding: '2px 10px', borderRadius: 'var(--r-pill)',
               background: z.color, color: textOn(z.color), fontSize: 15, fontWeight: 800,
               fontVariantNumeric: 'tabular-nums',
             }}>{z.rows.length}</span>

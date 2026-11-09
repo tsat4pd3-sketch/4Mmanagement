@@ -174,7 +174,7 @@ export default function Register() {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {STAFF_KINDS.map(k => (
                 <button key={k.key} type="button" onClick={() => setStaffKind(k.key)}
-                  style={{ flex: '1 1 190px', width: 'auto', textAlign: 'left', cursor: 'pointer', padding: '7px 10px', borderRadius: 8, fontSize: 12,
+                  style={{ flex: '1 1 190px', width: 'auto', textAlign: 'left', cursor: 'pointer', padding: '7px 10px', borderRadius: 'var(--r-md)', fontSize: 12,
                     border: `1px solid ${staffKind === k.key ? 'var(--accent)' : 'var(--border2)'}`,
                     background: staffKind === k.key ? 'var(--green-dim)' : 'var(--bg2)',
                     color: staffKind === k.key ? 'var(--text)' : 'var(--text2)' }}>
@@ -255,7 +255,7 @@ export default function Register() {
           <div>
             <label style={labelSt}>Group / กลุ่ม (Line)</label>
             {isSupportKind ? (
-              <div style={{ fontSize: 12, color: 'var(--muted)', border: '1px dashed var(--border2)', borderRadius: 8, padding: '8px 10px', lineHeight: 1.5 }}>
+              <div style={{ fontSize: 12, color: 'var(--muted)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 10px', lineHeight: 1.5 }}>
                 สายสนับสนุนไม่ผูกกลุ่ม/ไลน์ผลิต — สังกัดอยู่ที่ <b>ส่วนงาน + แผนก</b> ข้างบนแทน
               </div>
             ) : (() => {
@@ -360,7 +360,7 @@ export default function Register() {
             style={{
               marginTop: 4, padding: '13px',
               background: (isUploading || !canRegister) ? 'var(--muted)' : 'var(--accent)',
-              color: '#fff', border: 'none', borderRadius: 8,
+              color: '#fff', border: 'none', borderRadius: 'var(--r-md)',
               fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15,
             }}
           >

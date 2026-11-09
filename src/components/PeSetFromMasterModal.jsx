@@ -90,7 +90,7 @@ export default function PeSetFromMasterModal({ masters, masterItems, lines, role
             {chosen.map((c, i) => {
               const m = active.find(x => x.id === c.id);
               return (
-                <div key={c.id} style={{ display: 'flex', gap: 6, alignItems: 'center', border: '1px solid var(--border)', borderRadius: 8, padding: '4px 8px' }}>
+                <div key={c.id} style={{ display: 'flex', gap: 6, alignItems: 'center', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '4px 8px' }}>
                   <input style={{ ...inp, width: 64, padding: '3px 6px', fontFamily: 'monospace' }} value={c.op_no} onChange={e => setChosen(cs => cs.map(x => x.id === c.id ? { ...x, op_no: e.target.value } : x))} />
                   <span style={{ flex: 1, fontSize: 12.5, fontWeight: 700 }}>{m?.name}</span>
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}>{count(c.id)} FM</span>

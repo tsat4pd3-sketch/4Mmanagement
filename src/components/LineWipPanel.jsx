@@ -197,7 +197,7 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
       <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.7 }}>
         <b>{lineName}</b> เป็นไลน์แม่ (มีไลน์ย่อย {kidNames.length}) — ของและยอดค้างอยู่ที่ <b>ไลน์ย่อย</b>
         <br />เปิดกะที่ไลน์ย่อยเพื่อดู: {kidNames.map(n => (
-          <span key={n} style={{ display: 'inline-block', margin: '3px 4px 0 0', padding: '2px 8px', borderRadius: 6, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)', fontSize: 11 }}>{n}</span>
+          <span key={n} style={{ display: 'inline-block', margin: '3px 4px 0 0', padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)', fontSize: 11 }}>{n}</span>
         ))}
       </div>
     </div>
@@ -264,7 +264,7 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
               🔀 <b style={{ color: TONE.warn }}>มีของค้างอยู่ที่ไลน์แม่ {stuckUp.length} พาร์ท</b> — ยังไม่ถูกย้ายลงมาที่ไลน์นี้ จึงไม่นับรวมด้านล่าง
               <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                 {stuckUp.slice(0, 8).map(s => (
-                  <span key={s.mat_no} style={{ padding: '2px 8px', borderRadius: 6, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 11 }}>
+                  <span key={s.mat_no} style={{ padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 11 }}>
                     {s.mat_no} · {fmt(s.qty)}
                   </span>
                 ))}

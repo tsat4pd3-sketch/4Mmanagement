@@ -428,12 +428,51 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'button-radius-token',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    /* จับ <button …style={{ … borderRadius: <เลข> …}}> — มุมปุ่มต้องเป็น token (`var(--r-md)` ผ่าน .pg-btn/.pg-btn.sm) ไม่ใช่เลขดิบ
+       (วัดจริง 06/11: แถวปุ่ม 147 แถว 26 หน้า มีมุม 9 แบบ 0/6/7/8/10/16/20/999) · ปุ่มวงกลม '50%' และ className="pg-btn…" ไม่เข้าข่าย */
+    re: /<button\b(?:[^>{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*borderRadius:\s*(?:999|\d{1,2})\b(?!%)/g,
+    why: 'user ทัก 06/11/2026 *"tab หัวตาราง บางหน้าเหลี่ยม บางหน้ารี บางหน้ามุม r ไม่เท่ากันเลย"* — ปุ่มเลือก/คำสั่งแต่ละหน้าเขียนมุมเอง 9 แบบ',
+    fix: 'แถวเลือกมุมมอง → <TabBar> · สลับโหมด 2–5 → <Segmented> · ปุ่มคำสั่ง → className="pg-btn" / "pg-btn sm" (+primary/danger) · ถ้าต้องเขียน style เอง ใช้ borderRadius: \'var(--r-md)\' (UI-CONVENTIONS §6.36 ข้อ 0)',
+    allow: {},
+  },
+  {
+    id: 'control-radius-token',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    /* จับ <input|select|textarea …style={{ … borderRadius: <เลข> …}}> — มุมช่องกรอกต้องเป็น token --ctl-r (วัดจริง 08/11: 126 ช่อง/50 ไฟล์ มี 7 ค่าปน) */
+    re: /<(?:input|select|textarea)\b(?:[^>{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*borderRadius:\s*(?:999|\d{1,2})\b(?!%)/g,
+    why: 'รอบ 3 มุมมาตรฐาน (08/11/2026): ช่องกรอก/select/textarea เคยเขียนมุม 3/4/5/6/7/8/10 ปน — ให้ใช้ token เดียวกับแถบกรอง',
+    fix: "borderRadius: 'var(--ctl-r)' (ค่ากลาง 8px · อ่านจาก :root) หรือไม่ต้องเขียนเลย (global input/select/textarea ใช้ --ctl-r อยู่แล้ว · UI-CONVENTIONS §6.36 ข้อ 0)",
+    allow: {},
+  },
+  {
+    id: 'box-radius-token',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    /* จับ <div|span …style={{ … borderRadius: <เลข> …}}> — การ์ด/กล่อง/ชิป ต้องเป็น token (วัดจริง 09/11: 1,658 จุด/225 ไฟล์ มี 14 ค่าปน 2…999) · วงกลม '50%' และสตริงหลายมุม '8px 8px 0 0' ไม่เข้าข่าย */
+    re: /<(?:div|span)\b(?:[^>{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*borderRadius:\s*(?:999|\d{1,2})\b(?!%)/g,
+    why: 'รอบ 4 มุมมาตรฐาน (09/11/2026): การ์ดเคยเป็น 8/10/12/14 ปนในหน้าเดียว ชิปเป็น 4/5/6/20/999 — ผู้ใช้ทักว่ามุมไม่เท่ากัน',
+    fix: "ชิปเล็ก/ป้ายตัวเลข 'var(--r-xs)' (4) · การ์ด/กล่อง/ชิปทั่วไป 'var(--r-md)' (8) · การ์ดใหญ่/แผง/modal 'var(--r-lg)' (12) · แคปซูล/แถบ progress 'var(--r-pill)' (UI-CONVENTIONS §6.36 ข้อ 0)",
+    allow: {},
+  },
+  {
     id: 'tabs-folded-into-dropdown',
     scan: ['src/components/PageHeader.jsx'], ext: ['.jsx'],
     re: /MAX_TABS|aria-label="แท็บเพิ่มเติม"|tabList\.slice\(/g,
     why: 'แท็บที่ถูกพับเข้า "⋯ เพิ่มเติม" = คนไม่รู้ว่ามี — user ทัก 01/10/2026 *"ถ้าเป็นดรอปดาว จะทำให้ user ไม่รู้ป่าว"* '
        + '(ProductMaster ลูกค้า/Supplier/ทบทวน CT/Export หายจากสายตา · เดิมอ้าง Miller 7±2 ผิดบริบท)',
     fix: 'แท็บโชว์ครบเสมอ (เดสก์ท็อป wrap · มือถือเลื่อนแนวนอน) · แท็บเยอะเกิน = ยุบของซ้ำ/แยกเป็นหน้า (NAVIGATION-REVIEW §2.3) ไม่ใช่ซ่อน',
+    allow: {},
+  },
+  {
+    id: 'section-select-hand-built',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    /* ช่อง "ทุกส่วนงาน" ที่วาดเป็น <select> ลิสต์แบนเอง — ต้องเป็นต้นไม้ผังองค์กร (SectionScopeSelect/LineScopeSelect/OrgScopePicker) */
+    re: /<option value="">\{ALL\.section\}<\/option>/g,
+    why: 'user ทัก 09/11/2026 *"dropdown ที่ยังเหมือนไม่ดึงจากผังองค์กร ยังเจอหลาย tab ในหลายๆ หน้า"* (ภาพ /manpower-board) — '
+       + 'ลิสต์แบน PD1/PD2/… ไม่มีฝ่าย/ไอคอน/ย่อหน้า ทั้งที่ UI §5.3 ข้อ 9 สั่งให้ทุกช่องขอบเขตเป็นต้นไม้ `<OrgScopePicker>` ตัวเดียว · วัดจริง 12 หน้า/17 ช่อง',
+    fix: 'หน้าที่เก็บ state เป็นสตริงส่วนงาน = `<SectionScopeSelect value onChange only={…} [pickDept dept]>` (`src/components/SectionScopeSelect.jsx`) · '
+       + 'หน้าที่เลือกไลน์ได้ = `<LineScopeSelect>` · กรองได้ทุกมิติ = `<OrgScopePicker>` · ป้าย "ทุกส่วนงาน" ส่งผ่าน `plantLabel`/`allLabel` ไม่ใช่ <option> เอง',
     allow: {},
   },
   {
@@ -1000,6 +1039,18 @@ const RULES = [
     why: 'ปุ่มลบที่เป็นอีโมจิ 🗑️ เปล่าตัวเล็ก ไม่มีกรอบ — Windows วาดเป็นถังเส้นบางสีเทา "เล็กจนดูไม่ออก" '
        + 'และใส่ color แดงไม่มีผลกับอีโมจิ (06/10 · /org-setup · เจอ 12 จุด 7 ไฟล์)',
     fix: "ใช้ <DeleteButton onClick=… title=\"ลบ …\" /> จาก src/components/IconButton.jsx (กล่อง 30px + ถังขยะ SVG สีแดง)",
+    allow: {},
+  },
+  {
+    id: 'orphan-emoji-variation-selector',
+    scan: ['src', 'src/pages', 'src/components', 'src/utils', 'src/lib'], ext: ['.jsx', '.js'],
+    /* U+FE0F ที่ไม่มี emoji นำหน้า (อยู่หลังเครื่องหมายคำพูด/ช่องว่าง) = ซากของสคริปต์กวาด "ตัด emoji" ที่ลบตัว emoji
+       แต่ทิ้งตัวเลือกรูปแบบไว้ ⇒ ตรงนั้นวาดเป็น "ว่าง" (09/11 · /management ปุ่ม 4M Machine ไม่มีไอคอนข้างพี่น้อง 📦📋)
+       · คู่กับเคสปุ่มไอคอนล้วนที่ถูกลบจนเหลือกล่องเปล่า (rail ขวา ปุ่ม 🏷️ — user ถาม "คืออะไร")
+       · 1️⃣ (keycap) ไม่โดน เพราะ FE0F ตามหลังตัวเลข ไม่ใช่เครื่องหมายคำพูด */
+    re: /['"`>\s]\uFE0F/g,
+    why: 'emoji ถูกลบเหลือแต่ U+FE0F (มองไม่เห็น) — ไอคอนหายเงียบ ปุ่มไอคอนล้วนกลายเป็นกล่องเปล่า (09/11 · e839b388)',
+    fix: 'ใส่ไอคอนกลับเป็น <Icon glyph="…" /> (ปุ่มมีป้าย · UI §6.35 ข้อ 5) หรือ emoji เต็มตัว (ปุ่มไอคอนล้วน) · ไม่ต้องการไอคอน = ลบ FE0F ทิ้ง',
     allow: {},
   },
   {
@@ -5219,10 +5270,14 @@ test('🛡️ die-pps-no-guess-one — ชิ้น/จังหวะต้อ�
   if (/pieces_per_stroke[^\n]*\?\?\s*1\b/.test(reg))
     bad.push('src/pages/DieRegistry.jsx (บีบ pieces_per_stroke ว่าง → 1 ตอนเซฟ/ตอนโชว์)');
 
-  /* หน้าไหนจะคิด shot ต้องขอค่าผ่าน ppsOf ห้ามหยิบคอลัมน์ดิบไปหาร */
-  for (const rel of ['src/components/PmUsageBoard.jsx']) {
+  /* หน้าไหนจะคิด shot ต้องขอค่าผ่าน ppsOf ห้ามหยิบคอลัมน์ดิบไปหาร
+     08/11: สูตร shot ของแม่พิมพ์ย้ายไป src/utils/dieUsage.js (คิดย้อนตามสาย) — ตัวนั้นต้องเรียก ppsOf (โหมด legacy) */
+  for (const rel of ['src/utils/dieUsage.js']) {
     const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
     if (!/ppsOf\s*\(/.test(code)) bad.push(rel + ' (ไม่เรียก ppsOf)');
+  }
+  for (const rel of ['src/components/PmUsageBoard.jsx', 'src/utils/dieUsage.js']) {
+    const code = stripComments(readFileSync(join(ROOT, rel), 'utf8'));
     if (/piecesToShots\s*\([^)]*\.pieces_per_stroke/.test(code))
       bad.push(rel + ' (ส่งคอลัมน์ดิบเข้า piecesToShots — ข้ามการถอยชั้น)');
   }
@@ -5230,6 +5285,23 @@ test('🛡️ die-pps-no-guess-one — ชิ้น/จังหวะต้อ�
     + '   ทำไม: แม่พิมพ์สเปค "ทน 50,000 shot" ถ้าระบบคิด 1 ชิ้น = 1 shot กับงานคู่\n'
     + '         PM จะเด้งตอนครบ 50,000 ชิ้น = 25,000 shot จริง = ช้าไป 2 เท่า แม่พิมพ์พังก่อนถึงคิว\n'
     + '   แก้: ppsOf(die, set) ใน src/utils/pmUsage.js · ไม่รู้ = null จอต้องเขียนบอก ห้ามเดา 1\n');
+});
+
+/* ── 🔨 แม่พิมพ์นับจากพาร์ทของชุด ห้ามกลับไปใช้ยอดไลน์ (2026-11-08 · คำสั่ง user) ───────
+   *"ไลน์ 800 ผลิตงาน a100, b100 เครื่องทำ 200 shot แต่ a ไม่ได้เท่ากับ 200"*
+   เดิมจอยอดผลิตสะสมให้แม่พิมพ์ทุกตัวในไลน์ = ยอดทั้งไลน์ · วัดจริง: เกินยอดพาร์ทจริง ~15 เท่า
+   ⇒ แม่พิมพ์ต้องผ่าน dieUsage() (MAT ของชุด · ทุกไลน์) · ไม่ผูก MAT = null "นับไม่ได้" ห้ามถอยไปยอดไลน์ */
+test('🛡️ die-usage-by-part — แม่พิมพ์นับจาก MAT ของชุด ไม่ใช่ยอดไลน์', () => {
+  const bad = [];
+  const board = stripComments(readFileSync(join(ROOT, 'src/components/PmUsageBoard.jsx'), 'utf8'));
+  if (!/dieUsage\s*\(/.test(board)) bad.push('PmUsageBoard.jsx (ไม่เรียก dieUsage)');
+  if (!/isDie\s*\?\s*du\.pieces\s*:/.test(board)) bad.push('PmUsageBoard.jsx (ยอดของแม่พิมพ์ไม่ได้มาจาก dieUsage)');
+  const util = stripComments(readFileSync(join(ROOT, 'src/utils/dieUsage.js'), 'utf8'));
+  if (!/if\s*\(\s*!mats\.length\s*\)\s*return null/.test(util)) bad.push('dieUsage.js (ชุดไม่ผูก MAT ต้องคืน null)');
+  if (/line_name\s*:\s*r\.line_name/.test(util)) bad.push('dieUsage.js (กลับไปนับตามไลน์)');
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join(', ') + '\n'
+    + '   ทำไม: ไลน์ผลิตหลายพาร์ท — แม่พิมพ์ของพาร์ท A ทำงานเฉพาะตอนผลิต A · ยอดไลน์ = PM แม่พิมพ์เด้งเร็วผิด\n'
+    + '   แก้: dieUsage() ใน src/utils/dieUsage.js · RPC pm_usage_daily_by_mat (DR)\n');
 });
 
 /* ── 🔴 คำเตือน "5xx ปนกับ 2xx/3xx" ห้ามกลับมา (2026-10-14 · user แก้ให้เอง) ───────
@@ -7786,45 +7858,118 @@ test('📤 cross-line-close-guards — ปิดใบข้ามไลน์�
     + '\n\n   ปิดใบผิดไลน์ = ยอด/OEE ของไลน์ที่ไม่เกี่ยวเปลี่ยน โดยไม่มีใครเห็นบนจอ\n');
 });
 
-test('🗑️ defect-to-bin-chained — บันทึกงานเสียแล้วต้องต่อขั้น "ลงถัง" + งานค้างต้องเห็น', () => {
-  /* 05/11 (คำสั่ง user "ข้อมูลไม่ผูกกับใบถังเหลือง/แดง") — วัดจริง 90 วันฝั่ง DR:
-     ของเสีย 252 รายการ (NG 248 · 965 ชิ้น) **ผูกใบถังแค่ 46 = 18%** · ใบถังเหลืองทั้งระบบ 1 ใบ
-     ปุ่ม `🗑️ ลงถัง` มีทุกแถวและสิทธิ์เดียวกับการบันทึกงานเสีย แต่เป็นขั้นที่ 2 หลังฟอร์มปิด
-     ⇒ ต่อขั้นให้ติดกัน (คนยังต้องกดยืนยัน — **ห้ามสร้างใบถังอัตโนมัติ** ตามกฎเดิมของโมดูล)
-     📄 docs/modules/production-problem-report-bins.md */
+test('🟡 defect-auto-yellow — ลงงานเสียต้องตั้งแท็กเหลือง "รอพิจารณา" ให้เอง + มีจอเคลียร์คิว', () => {
+  /* 05/11 (คำสั่ง user): *"พอลงว่ามีงานเสีย ต้องเด้งเข้าถังเหลืองอัตโนมัติเลย เพื่อพิจารณาว่า
+     กลับมาดีได้หรือเสียแน่ๆ · หน้าสรุปงานที่ค้างเคลียร์จากรอพิจารณา … ยังไม่มี"*
+     🔴 **กฎนี้แทนกฎเดิม** ("ห้ามสร้างใบถังอัตโนมัติ · ต้องมีคนกดยืนยัน" 19/08) — หลักฐานที่ทำให้เปลี่ยน:
+        วัด 90 วัน ของเสีย 252 รายการ ผูกใบถังแค่ 46 = 18% · ถังเหลืองทั้งระบบ 1 ใบ
+     ⚠️ ไม่แตะ %Q: `suspectState()` ดู `qty_suspect` เท่านั้น ⇒ แท็กจากแถว NG ล้วนไม่ขยับตัวเลขกะ */
   const bad = [];
+  const U = 'src/utils/qualityBin.js';
+  const u = stripComments(readFileSync(join(ROOT, U), 'utf8'));
+  if (!/export function yellowRowFromDefect/.test(u))
+    bad.push(`${U}: ต้องมี yellowRowFromDefect() — payload ของแท็กเหลืองมีที่เดียว ห้ามประกอบเองในหน้า`);
+  if (!/export function pendingYellow/.test(u))
+    bad.push(`${U}: ต้องมี pendingYellow() — กฎ "ยังรอพิจารณา" มีที่เดียว`);
+  /* 🔴 ห้ามเดาผลให้ — ไฟล์ payload ต้องไม่ตั้ง qa_decision */
+  const yf = u.match(/export function yellowRowFromDefect[\s\S]*?\n\}/);
+  if (yf && /qa_decision\s*:/.test(yf[0]))
+    bad.push(`${U} yellowRowFromDefect: ห้ามตั้ง qa_decision — ระบบตั้งแท็ก คนตัดสินผล`);
+
   const DR = 'src/pages/DailyReport.jsx';
-  const dr = readFileSync(join(ROOT, DR), 'utf8');
-  const code = stripComments(dr);
-  const fn = code.match(/const\s+handleAddDefectLog\s*=[\s\S]*?\n  \};/);
+  const dr = stripComments(readFileSync(join(ROOT, DR), 'utf8'));
+  const fn = dr.match(/const\s+handleAddDefectLog\s*=[\s\S]*?\n  \};/);
   if (!fn) bad.push(`${DR}: หา handleAddDefectLog ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้`);
   else {
     const body = fn[0];
-    /* ต้องขอแถวที่เพิ่งเขียนกลับมา ไม่งั้นไม่มี id/embed ให้เปิดโมดัลต่อ */
     if (!/\.insert\([\s\S]{0,400}\.select\(/.test(body))
-      bad.push(`${DR} handleAddDefectLog: insert ต้อง .select() แถวกลับมา — ไม่งั้นต่อขั้นลงถังไม่ได้`);
-    if (!/setBinTarget\(\s*\{[^}]*chained:\s*true/.test(body))
-      bad.push(`${DR} handleAddDefectLog: บันทึกงานเสียแล้วต้องเปิดขั้นลงถังต่อ (setBinTarget …chained: true)`);
-    /* 🔴 เฉพาะตอนเพิ่มใหม่ — ตอนแก้ไขห้ามเด้ง (แถวนั้นอาจลงถังไปแล้ว) */
-    if (!/if\s*\(\s*inserted\s*&&/.test(body))
-      bad.push(`${DR} handleAddDefectLog: ต้องเด้งเฉพาะตอน insert (ตรวจ \`inserted\`) ไม่ใช่ตอนแก้ไข`);
+      bad.push(`${DR} handleAddDefectLog: insert ต้อง .select() แถวกลับมา (แท็กเหลืองต้องใช้ id + embed)`);
+    if (!/yellowRowFromDefect\(/.test(body))
+      bad.push(`${DR} handleAddDefectLog: ต้องตั้งแท็กเหลืองผ่าน yellowRowFromDefect() ทุกครั้งที่ลงงานเสีย`);
+    /* 🔴 ตั้งแท็กไม่สำเร็จ = บอกให้ไปกดเอง ห้ามเงียบ (งานเสียถูกบันทึกไปแล้ว) */
+    if (!/binErr[\s\S]{0,200}toast\.error/.test(body))
+      bad.push(`${DR} handleAddDefectLog: ตั้งแท็กเหลืองล้มเหลวต้องขึ้น toast บอกทางแก้ ห้ามล้มเหลวเงียบ`);
   }
-  /* 🔴 ข้ามได้ แต่ของที่ข้ามต้องไม่หายเงียบ — ชิปนับงานค้างบนหัวข้อของเสีย */
-  if (!/ยังไม่ลงถัง \{pend\.length\}/.test(code))
-    bad.push(`${DR}: ต้องมีชิปนับ "🗑️ ยังไม่ลงถัง N" บนหัวข้อบันทึกงานเสีย (ข้ามแล้วห้ามหายเงียบ)`);
+  if (!/ยังไม่ลงถัง \{pend\.length\}/.test(dr))
+    bad.push(`${DR}: ต้องมีชิปนับ "🗑️ ยังไม่ลงถัง N" บนหัวข้อบันทึกงานเสีย`);
 
-  const M = 'src/components/QualityBinLinkModal.jsx';
-  const m = readFileSync(join(ROOT, M), 'utf8');
-  const mcode = stripComments(m);
-  if (!/chained\s*=\s*false/.test(mcode))
-    bad.push(`${M}: ต้องรับ prop \`chained\` (เปิดต่อจากการบันทึกงานเสีย) เพื่อบอกผู้ใช้ว่าเป็นขั้นถัดไป`);
-  if (!/ยังไม่ลงถัง — ไว้ทีหลัง/.test(m))
-    bad.push(`${M}: โหมด chained ต้องมีปุ่มข้ามที่อ่านรู้เรื่อง ("ยังไม่ลงถัง — ไว้ทีหลัง") ห้ามบังคับออกใบ`);
-  /* 🔴 กฎเดิมของโมดูล: ห้ามเขียนใบถังเองโดยไม่มีคนกด — ตัวเขียนต้องอยู่ในโมดัลเท่านั้น */
-  if (/from\('quality_bin_records'\)[\s\S]{0,80}\.insert\(/.test(stripComments(dr)))
-    bad.push(`${DR}: ห้ามเขียน quality_bin_records จากหน้าโดยตรง — "เอาของลงถัง" ต้องมีคนกดยืนยันในโมดัล`);
+  const Q = 'src/components/QualityBins.jsx';
+  const q = stripComments(readFileSync(join(ROOT, Q), 'utf8'));
+  if (!/pendingYellow\(/.test(q))
+    bad.push(`${Q}: ต้องมีคิว "รอพิจารณา" (pendingYellow) — จุดที่คนเคลียร์ว่ากลับมาดีหรือเสียแน่`);
+  for (const [t, why] of [['งานดี', 'ตรวจแล้วใช้ได้'], ['ซ่อมแล้วดี', 'rework แล้วดี'], ['เสียแน่', 'rework ไม่ได้ → ถังแดง']]) {
+    if (!q.includes(t)) bad.push(`${Q}: คิวรอพิจารณาต้องมีปุ่ม "${t}" (${why})`);
+  }
+  /* 🔴 RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" ⇒ ปุ่มตัดสินต้องนับแถว */
+  const dec = q.match(/const\s+decide\s*=[\s\S]*?\n  \};/);
+  if (dec && !/checkWriteRows\(/.test(dec[0]))
+    bad.push(`${Q} decide(): ต้องใช้ checkWriteRows — RLS ปฏิเสธ UPDATE เงียบ (กฎเขียน DB ข้อ 2)`);
+  /* ✍️ ตัดสินผล = เขียนชื่อคนกดลงช่อง QA บนใบ = การเซ็น ⇒ ต้องถามผ่านของกลาง (คำสั่ง user 28/10)
+     ห้ามกลับไป window.confirm เขียนข้อความเอง (ต้องบอก 3 อย่าง: อนุมัติอะไร · ใบไหน · ในนามใคร) */
+  for (const [re, fname] of [[/const\s+decide\s*=[\s\S]*?\n  \};/, 'decide()'],
+                             [/const\s+decideScrap\s*=[\s\S]*?\n  \};/, 'decideScrap()']]) {
+    const m = q.match(re);
+    if (!m) { bad.push(`${Q}: หา ${fname} ไม่เจอ — เปลี่ยนชื่อแล้วต้องแก้ด่านนี้`); continue; }
+    if (!/confirmSign\(/.test(m[0]))
+      bad.push(`${Q} ${fname}: ต้องถามยืนยันผ่าน confirmSign() ก่อนเขียน DB`);
+    if (/window\.confirm\(/.test(m[0]))
+      bad.push(`${Q} ${fname}: ห้ามเขียนข้อความยืนยันเองด้วย window.confirm — ใช้ของกลาง signConfirm.js`);
+  }
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
-    + '\n\n   ของเสียที่ไม่มีใบถัง = ของจริงอยู่ในถังแต่ระบบไม่รู้ สืบกลับไม่ได้\n');
+    + '\n\n   ของจริงอยู่ในถังแต่ระบบไม่รู้ = สืบกลับไม่ได้ว่าของหายไปไหน\n');
+});
+
+test('🏭 qa-bins-queue-only — เอกสารถังเหลือง/แดงอยู่ฝ่ายผลิต · /qa เห็นแค่คิวรออนุมัติ', () => {
+  /* 06/11 (คำสั่ง user): *"หลักๆอันนี้ต้องอยู่หมวดของผลิตนะ qa จะไปโชว์แค่พวกงานค้างอนุมัติของแผนก
+     เพราะ หลักๆเอกสารอยู่ที่ผลิต"*
+     ⇒ บ้าน = `/scrap-report?tab=bins` (NAV หมวด ฝ่ายผลิต) ถือ `mode="full"` (ทะเบียน+ใบ+อายุแท็ก+WI)
+       · `/qa?tab=bins` ถือ `mode="queue"` = เฉพาะคิวรอพิจารณา
+     🔴 เอาทะเบียน/ปุ่มบันทึกกลับเข้าโหมด queue = "บ้านที่สอง" (UI §4.5 alsoIn: ทางลัด ไม่ใช่บ้านที่สอง)
+        แล้วไม่มีใครรู้ว่าใบจริงอยู่หน้าไหน */
+  const bad = [];
+  const QC = 'src/pages/QualityControl.jsx';
+  const qc = stripComments(readFileSync(join(ROOT, QC), 'utf8'));
+  if (!/<QualityBins\s+mode="queue"/.test(qc))
+    bad.push(`${QC}: แท็บ bins ต้องเรียก <QualityBins mode="queue" /> — QA โชว์แค่คิวรออนุมัติของแผนก`);
+  if (/<QualityBins\s*\/>/.test(qc))
+    bad.push(`${QC}: ห้ามเรียก <QualityBins /> เปล่า (= โหมด full = ทะเบียนเอกสารมาอยู่ /qa อีกที่)`);
+
+  const SR = 'src/pages/ScrapReport.jsx';
+  const sr = stripComments(readFileSync(join(ROOT, SR), 'utf8'));
+  if (!/<QualityBins\s+mode="full"/.test(sr))
+    bad.push(`${SR}: หน้าฝ่ายผลิตคือบ้านของเอกสาร ต้องเรียก <QualityBins mode="full" />`);
+
+  /* บ้านต้องอยู่หมวดฝ่ายผลิตจริงในเมนู (ย้ายหมวดแล้วด่านนี้ต้องดัง) */
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  const navLine = app.split('\n').find(l => /to:\s*'\/scrap-report'/.test(l)) || '';
+  if (!/group:\s*'ฝ่ายผลิต'/.test(navLine))
+    bad.push(`src/App.jsx: /scrap-report ต้องอยู่ group 'ฝ่ายผลิต' — เอกสารของเสียเป็นของผลิต (คำสั่ง user 06/11)`);
+
+  const Q = 'src/components/QualityBins.jsx';
+  const q = stripComments(readFileSync(join(ROOT, Q), 'utf8'));
+  if (!/const\s+queueOnly\s*=\s*mode\s*===\s*'queue'/.test(q))
+    bad.push(`${Q}: ต้องมี queueOnly = mode === 'queue' — โหมดมีที่ตัดสินที่เดียว`);
+  const branch = q.match(/if \(queueOnly\) return \(([\s\S]*?)\n  return \(/);
+  if (!branch) bad.push(`${Q}: ต้องมีสาขา \`if (queueOnly) return (…)\` ก่อน return ปกติ`);
+  else {
+    const b = branch[1];
+    if (!/renderPendQueue\(\)/.test(b))
+      bad.push(`${Q} โหมด queue: ต้องวาดคิวผ่าน renderPendQueue() (แผงเดียวกับหน้าผลิต ห้ามวาดชุดที่ 2)`);
+    for (const [re, what] of [[/<TimeRangeBar/, 'แถบกรองช่วงเวลา'], [/<table/, 'ตารางทะเบียน'],
+                              [/openNew/, 'ปุ่มบันทึกรายการ'], [/SimpleMasterPanel/, 'ทะเบียน WI ซ่อม']]) {
+      if (re.test(b)) bad.push(`${Q} โหมด queue: ห้ามมี${what} — เอกสารตัวจริงอยู่หน้าฝ่ายผลิต`);
+    }
+    /* 🔴 ลิงก์ที่กดแล้วเด้งกลับ = จอโกหก ⇒ ต้องเช็คสิทธิ์เข้าหน้าก่อนโชว์ลิงก์ */
+    if (!/canAccessPage\('\/scrap-report'/.test(b))
+      bad.push(`${Q} โหมด queue: ลิงก์ไป /scrap-report ต้องผ่าน canAccessPage() ก่อนโชว์`);
+    if (!/scopeNames/.test(b))
+      bad.push(`${Q} โหมด queue: ต้องเขียนบนจอว่าคิวนี้เห็นขอบเขตไหน (เห็นแค่ส่วนงานตัวเอง ≠ เคลียร์หมด)`);
+  }
+  /* คิวในโหมดนี้ไม่ควรโหลดทะเบียนทิ้ง (egress — ตารางกว้าง select('*') × 500 × 2 คิวรี) */
+  if (!/if \(queueOnly\) \{[\s\S]{0,600}return;/.test(q))
+    bad.push(`${Q} load(): โหมด queue ต้องข้ามคิวรีทะเบียน/ของค้างตามช่วงวันที่ (กฎเขียน DB ข้อ 11)`);
+  assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n  ')
+    + '\n\n   เอกสาร 2 บ้าน = คนกรอกคนละที่ แล้วเถียงกันว่าใบจริงอยู่ไหน\n');
 });
 
 test('📊 mat-breakdown-default-collapsed — แท็บ Live ต้องขึ้นภาพรวมก่อน รายชิ้นงานยุบไว้', () => {
@@ -8976,4 +9121,110 @@ test('🏭 line-registry-reload-reaches-every-page — ธงล้มต้อ�
     bad.push('App.jsx: ถอด <LineRegistryAlert /> ออก — ไม่มีตาข่ายกลางแล้ว');
 
   assert.deepEqual(bad, [], bad.join('\n'));
+});
+
+test('🛡️ pr-board-folded-but-counts-visible — แผง PR พับไว้ แต่ตัวนับ/คำเตือนต้องเห็นตอนพับ', () => {
+  const src = readFileSync(join(ROOT, 'src/components/MtnPurchase.jsx'), 'utf8');
+
+  /* 🔴 คำสั่ง user 08/11 (จากจอมือถือ `/equipment?tab=spare`):
+       *"พวก PR มันควร hide default ถ้าจะเยอะขนาดนี้ · KPI card มันควรอยู่บน
+         พวกรายการเกิน 10 row มันควรมี show/hide และ hide default ไม่ใช่โชว์ทุกอย่าง"*
+     แผงนี้มี 5 ลิสต์ซ้อนกัน (อะไหล่ติด Min จริง 58 แถว) ⇒ กางหมด = KPI คลังอะไหล่ตกจอไป 3 หน้าจอ
+     🔑 แต่ "พับ" ห้ามแปลว่า "เงียบ" — ของหมด/โหลดไม่ครบต้องเห็นจากหัวที่พับอยู่ */
+  const i = src.indexOf('<CollapseCard');
+  assert.ok(i > 0,
+    '\n\n❌ แผง PR ในคลังอะไหล่เลิกใช้ `CollapseCard` แล้ว\n'
+    + '   ⇒ กลับไปกาง 5 ลิสต์ซ้อนกันทั้งแผง = KPI คลังอะไหล่ตกจอ (คำสั่ง user 08/11)\n');
+  /* 🔑 หน้าต่างต้องจบ **ก่อน** children — ไม่งั้น `{err && <div>` ในเนื้อแผงมาตอบข้อล่างให้เอง
+     (ด่านผ่านทั้งที่ย้ายตัวนับลงไปใน children แล้ว = ด่านหลอก) */
+  const bodyStarts = src.indexOf('ลูปเดียวกับสโตร์', i);
+  assert.ok(bodyStarts > i && bodyStarts - i < 2000,
+    '\n\n❌ หาขอบเขต prop ของ <CollapseCard> ไม่เจอ — ด่านนี้วัดอะไรไม่ได้แล้ว ต้องแก้ด่าน\n');
+  const head = src.slice(i, bodyStarts);
+
+  assert.ok(/defaultOpen=\{false\}/.test(head),
+    '\n\n❌ แผง PR ไม่ได้พับเป็นค่าเริ่มต้น (`defaultOpen={false}`)\n'
+    + '   ⇒ user สั่งให้ hide default — แผงเตือนที่ซ้อนลิสต์ย่อยหลายอันห้ามกางทิ้งไว้\n'
+    + '   📄 docs/UI-CONVENTIONS.md §ลิสต์เกิน 10 แถว = พับ\n');
+
+  /* ตัวนับทั้ง 4 + ธงโหลดไม่สำเร็จ ต้องอยู่ใน `title` (ส่วนที่ CollapseCard วาดตอนพับ) */
+  for (const [needle, what] of [
+    ['needOrder.length', 'อะไหล่ติด Min ที่ยังไม่เปิด PR'],
+    ['noPrMos.length', 'ใบ MO ที่รอเปิด PR'],
+    ['waitNoList.length', 'ใบที่รอเลข PR จาก SAP'],
+    ['hasNoList.length', 'PR ค้าง'],
+    ['{err &&', 'ธง "โหลดไม่ครบ" (ต้องผูกกับ err)'],
+    ['โหลดไม่ครบ', 'ข้อความธงโหลดไม่สำเร็จ'],
+  ]) {
+    assert.ok(head.includes(needle),
+      `\n\n❌ หัวแผง PR (ตอนพับ) ไม่ได้โชว์ ${what}\n`
+      + '   ⇒ พับแล้วตัวเลขหาย = จอโกหก (อะไหล่หมด/คิวค้าง ไม่มีใครรู้ว่าต้องกางมาดู)\n'
+      + '   ⇒ ตัวนับต้องอยู่ใน prop `title` ไม่ใช่ใน children ของ CollapseCard\n');
+  }
+
+  /* ทุกลิสต์ย่อยพับแถวด้วยของกลางตัวเดียว ห้ามก๊อป slice เอง */
+  const folds = src.match(/<RowFold\b/g) || [];
+  assert.ok(folds.length >= 4,
+    `\n\n❌ ลิสต์ย่อยในแผง PR ใช้ <RowFold> แค่ ${folds.length} จุด (ต้อง ≥ 4)\n`
+    + '   ⇒ ลิสต์ที่ยาวเกิน 10 แถวกลับไป render แบนทั้งก้อน (อะไหล่ติด Min 58 แถว)\n');
+  assert.ok(!/\.slice\(0,\s*(8|10|12|15|20)\)/.test(src),
+    '\n\n❌ มี `.slice(0, N)` เขียนมือในแผง PR — ตัดแถวเงียบๆ ไม่บอกว่าซ่อนกี่รายการ\n'
+    + '   ⇒ ใช้ <RowFold> (`components/RowFold.jsx`) ซึ่งเขียน "ซ่อนอยู่ N" ให้เสมอ\n');
+});
+
+test('🛡️ row-fold-must-report-hidden — ตัวพับแถวของกลางต้องบอกจำนวนที่ซ่อน', () => {
+  const src = readFileSync(join(ROOT, 'src/components/RowFold.jsx'), 'utf8');
+  /* 🔑 ต้องเจอใน **template literal ที่วาดออกจอ** — เทียบแค่คำว่า "ซ่อนอยู่" ลอยๆ
+     คอมเมนต์หัวไฟล์ตอบให้เองได้ (ด่านผ่านทั้งที่ปุ่มเลิกบอกจำนวนแล้ว) */
+  assert.ok(/`[^`]*ซ่อนอยู่ \$\{hidden\}[^`]*`/.test(src),
+    '\n\n❌ `RowFold` เลิกเขียนว่าซ่อนอยู่กี่แถวบนปุ่ม\n'
+    + '   ⇒ ตัดแถวออกจากจอแล้วเงียบ = จอโกหก (กฎ "กรองแถวออกแล้วต้องเขียนว่าซ่อนกี่รายการ")\n');
+  assert.ok(/hidden\s*=\s*Math\.max\(0,\s*list\.length\s*-\s*max\)/.test(src),
+    '\n\n❌ `RowFold` ไม่ได้นับจำนวนที่ซ่อนจาก (ทั้งหมด − ที่โชว์)\n');
+  assert.ok(/export const ROW_FOLD_MAX\s*=\s*10/.test(src),
+    '\n\n❌ เกณฑ์ `ROW_FOLD_MAX` ไม่ใช่ 10 แล้ว — user กำหนด "เกิน 10 row" (08/11)\n'
+    + '   ⇒ อยากได้เกณฑ์อื่นในบางจอให้ส่ง prop `max` ที่จอนั้น ห้ามขยับค่ากลาง\n');
+});
+
+test('🛡️ spare-registry-table-not-flat — ทะเบียนอะไหล่ 295 แถวห้าม render แบนทั้งก้อน', () => {
+  const src = readFileSync(join(ROOT, 'src/components/SparePartMaster.jsx'), 'utf8');
+
+  /* 🔴 ภาพหน้างาน 08/11 (มือถือ): ทะเบียน 295 รายการ × รูป 1 ใบต่อแถว ไหลยาวทั้งหน้า
+     ⇒ เลื่อนไม่จบ + DOM หนัก · user: "พวกรายการเกิน 10 row มันควรมี show/hide"
+     🔑 แต่ตารางนี้คือเหตุผลที่หน้านี้มีอยู่ ⇒ หางยาว (50) ไม่ใช่ 10 และห้ามพับทั้งก้อน */
+  assert.ok(/<RowFold rows=\{filtered\}[^>]*colSpan=\{13\}/.test(src),
+    '\n\n❌ ตารางทะเบียนอะไหล่กลับไป `filtered.map()` แบนทั้งก้อน (หรือลืม colSpan)\n'
+    + '   ⇒ 295 แถวไหลยาวทั้งหน้าบนมือถือ · ปุ่มเปล่าใน <tbody> = HTML ผิด ปุ่มเด้งออกนอกตาราง\n'
+    + '   📄 docs/UI-CONVENTIONS.md §ลิสต์เกิน 10 แถว = พับ (ข้อ "ตารางหลักของหน้า")\n');
+
+  assert.ok(/<RowFold rows=\{filtered\} max=\{50\}/.test(src),
+    '\n\n❌ ทะเบียนอะไหล่ไม่ได้ใช้หางยาว `max={50}`\n'
+    + '   ⇒ ตัดทะเบียนเหลือ 10 แถว = ทะเบียนใช้งานไม่ได้ (คนละเคสกับลิสต์เตือนที่ซ้อนกัน)\n');
+
+  assert.ok(!/<CollapseCard[^>]*>\s*<table/.test(src),
+    '\n\n❌ เอาตารางทะเบียนไปพับทั้งก้อนใน CollapseCard — ห้าม (ตารางหลักของหน้า)\n');
+});
+
+/* ═══ 📝 เปิดใบซ่อมจาก Downtime = ฟอร์มเต็ม + รูปบังคับ (2026-11-08 · คำสั่ง user) ═══
+   *"เปิดใบแจ้งซ่อมจากดาวน์ไทม์ ต้องไม่เด้งเปิดทันที ต้องป๊อปอัพแนบรูปบังคับ และใส่รายละเอียดให้ชัดเจน"*
+   เดิม DailyReport insert `mtn_orders` เองจากป๊อปอัพเลือกทีม (อาการ = ชื่อประเภท DT · รูปไม่บังคับ)
+   ⇒ ห้ามกลับไป insert เองในหน้า · ต้องผ่าน `MoReportFromDowntime` (ReportModal ตัวเดียวกับหน้าแจ้งซ่อม) */
+test('📝 Daily Report ห้าม insert mtn_orders เอง — เปิดใบจาก Downtime ต้องผ่านฟอร์มเต็ม (requireBefore)', () => {
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.doesNotMatch(dr, /from\(\s*['"]mtn_orders['"]\s*\)\s*\.insert/,
+    '\n\n❌ DailyReport.jsx insert mtn_orders เอง — ใช้ <MoReportFromDowntime> (ฟอร์มเต็ม + รูปบังคับ) แทน\n');
+  const mr = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  assert.match(mr, /export function MoReportFromDowntime[\s\S]*?requireBefore\b/,
+    '\n\n❌ MoReportFromDowntime ต้องส่ง requireBefore ให้ ReportModal (รูปก่อนซ่อมบังคับ)\n');
+  assert.match(mr, /if \(requireBefore && !beforeFile\) return toast\.error/,
+    '\n\n❌ ReportModal ต้องบล็อกการบันทึกเมื่อ requireBefore แต่ไม่มีรูป\n');
+});
+
+test('✍️ signature-no-blank-save — โมดัลลายเซ็นห้ามบันทึกกระดาษเปล่า', () => {
+  /* 09/11 เคสจริง: กด "บันทึก" บนกรอบวาดเปล่าได้ ⇒ โปรไฟล์ได้รูปขาวล้วน แล้วทุกใบที่ดึงลายเซ็นสด
+     จากโปรไฟล์ (utils/signResolve.js) ขึ้นว่างหมด รวมใบเก่า ("เซ็นไม่ติด ลายเซ็นเก่าก็หาย") */
+  const s = stripComments(readFileSync(join(ROOT, 'src/components/SignatureModal.jsx'), 'utf8'));
+  const save = s.slice(s.indexOf('const handleSave ='), s.indexOf('setSaving(true)', s.indexOf('const handleSave =')));
+  assert.ok(/tab === 'draw' && !hasInk\.current/.test(save), 'handleSave ต้องเช็ค hasInk ก่อนบันทึกแท็บวาด');
+  assert.ok(/hasInk\.current = true/.test(s), 'startDraw ต้องตั้ง hasInk = true');
 });

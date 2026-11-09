@@ -39,7 +39,7 @@ export default function ShiftTimeSplit({ split, compact = false }) {
 
   return (
     <div style={{ marginTop: 6 }}>
-      <div style={{ display: 'flex', height: compact ? 7 : 9, borderRadius: 4, overflow: 'hidden', background: 'var(--border2)' }}>
+      <div style={{ display: 'flex', height: compact ? 7 : 9, borderRadius: 'var(--r-xs)', overflow: 'hidden', background: 'var(--border2)' }}>
         {SEGS.map(s => {
           const v = Number(split[s.k]) || 0;
           if (v <= 0) return null;

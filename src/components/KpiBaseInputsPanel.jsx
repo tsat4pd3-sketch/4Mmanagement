@@ -30,7 +30,7 @@ function Cell({ value, auto, disabled, onCommit }) {
   return (
     <input value={v} onChange={e => setV(e.target.value)} onBlur={() => onCommit(v.trim())} onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
       inputMode="decimal" placeholder={autoTxt} title={autoTxt ? 'ค่าอัตโนมัติจากทะเบียนพนักงาน — กรอกทับได้ถ้าตัวเลขจริงต่างจากนี้' : undefined}
-      style={{ width: 92, padding: '3px 5px', fontSize: 12, textAlign: 'right', borderRadius: 6, background: 'var(--bg2)', border: '1px solid var(--border)',
+      style={{ width: 92, padding: '3px 5px', fontSize: 12, textAlign: 'right', borderRadius: 'var(--ctl-r)', background: 'var(--bg2)', border: '1px solid var(--border)',
         color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }} />
   );
 }
@@ -156,7 +156,7 @@ export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: 
         {canManage && (
           <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); setImporting(true); }}
             title="อัพโหลด monthly report ของบัญชี (.xlsx/.xlsb) แล้วให้ระบบอ่านแถว/เดือนให้ ตรวจก่อนบันทึก"
-            style={{ marginLeft: 10, padding: '4px 12px', borderRadius: 8, border: '1px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 12, fontWeight: 700, verticalAlign: 'middle' }}>
+            style={{ marginLeft: 10, padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 12, fontWeight: 700, verticalAlign: 'middle' }}>
             นำเข้าจาก Excel บัญชี
           </button>
         )}

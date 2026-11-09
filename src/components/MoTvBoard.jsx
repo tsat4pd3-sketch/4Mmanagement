@@ -90,7 +90,7 @@ export default function MoTvBoard({ inScope, isMobile = false }) {
       {/* ── กล่องสถานะหัวจอ: ซ้าย "ตอนนี้ดูกองไหน" ตัวใหญ่ · ขวาตัวนับ (UI §6.33 หน้าตาชุดเดียวกับ Andon) ── */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', padding: tv ? '14px 20px' : '10px 14px',
-        borderRadius: 12, background: 'var(--card)', border: `2px solid ${edge}`, boxShadow: 'var(--shadow-sm)',
+        borderRadius: 'var(--r-lg)', background: 'var(--card)', border: `2px solid ${edge}`, boxShadow: 'var(--shadow-sm)',
       }}>
         <div style={{ fontSize: fz(18, 40), fontWeight: 900, color: 'var(--text)', lineHeight: 1.2 }}>{title}</div>
         <div style={{ fontSize: fz(13, 24), color: 'var(--text2)', fontWeight: 700 }}>{teamLabel}</div>
@@ -108,7 +108,7 @@ export default function MoTvBoard({ inScope, isMobile = false }) {
           return (
             <button key={x.key || 'all'} type="button" onClick={() => setGroup(x.key)} disabled={tv}
               style={{
-                fontSize: fz(12.5, 22), fontWeight: 800, padding: tv ? '6px 16px' : '5px 12px', borderRadius: 999,
+                fontSize: fz(12.5, 22), fontWeight: 800, padding: tv ? '6px 16px' : '5px 12px', borderRadius: 'var(--r-md)',
                 cursor: tv ? 'default' : 'pointer', opacity: 1,
                 background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
                 border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
@@ -154,7 +154,7 @@ export default function MoTvBoard({ inScope, isMobile = false }) {
 
 function Warn({ tv, fz, children }) {
   return (
-    <div role="alert" style={{ background: 'var(--card)', border: '1px solid var(--red)', color: 'var(--red)', borderRadius: 10, padding: tv ? '10px 16px' : 10, fontSize: fz(13, 24), fontWeight: 700 }}>
+    <div role="alert" style={{ background: 'var(--card)', border: '1px solid var(--red)', color: 'var(--red)', borderRadius: 'var(--r-md)', padding: tv ? '10px 16px' : 10, fontSize: fz(13, 24), fontWeight: 700 }}>
       {children}
     </div>
   );
@@ -168,7 +168,7 @@ function MoCard({ r, tv, fz, showStage }) {
   return (
     <div data-tv-item style={{
       background: 'var(--card)', border: '1px solid var(--border)', borderLeft: `6px solid ${r.tone === 'none' ? 'var(--border2)' : ink}`,
-      borderRadius: 12, padding: tv ? '14px 18px' : '10px 12px', boxShadow: 'var(--shadow-sm)',
+      borderRadius: 'var(--r-lg)', padding: tv ? '14px 18px' : '10px 12px', boxShadow: 'var(--shadow-sm)',
       display: 'flex', flexDirection: 'column', gap: tv ? 6 : 4, minWidth: 0,
     }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>

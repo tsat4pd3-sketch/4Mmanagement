@@ -100,7 +100,7 @@ export default function CommandPalette({ open, onClose, role }) {
         onClick={e => e.stopPropagation()}
         style={{
           width: 'min(620px, 100%)', maxHeight: '70vh', display: 'flex', flexDirection: 'column',
-          background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12,
+          background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)',
           boxShadow: 'var(--shadow-lg)', overflow: 'hidden',
         }}
       >
@@ -131,7 +131,7 @@ export default function CommandPalette({ open, onClose, role }) {
                 onMouseEnter={() => setSel(idx)} onClick={() => go(item)}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
-                  padding: '9px 10px', borderRadius: 8, cursor: 'pointer',
+                  padding: '9px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                   border: '1px solid ' + (on ? 'var(--accent)' : 'transparent'),
                   background: on ? 'var(--accent-dim)' : 'transparent',
                   color: 'var(--text)', fontFamily: 'var(--font-body)',

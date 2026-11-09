@@ -496,7 +496,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
         )}
 
         <label style={{
-          display: 'block', border: '1px dashed var(--border2)', borderRadius: 10, padding: 14,
+          display: 'block', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: 14,
           textAlign: 'center', cursor: 'pointer', background: 'var(--bg2)', marginBottom: 12,
         }}>
           <input type="file" accept=".csv,.xlsx,.xls" style={{ display: 'none' }}
@@ -603,7 +603,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                 {patOpts.map(o => (
                   <button key={o.key} onClick={() => setPattern(o.key)}
                     style={{
-                      padding: '5px 12px', borderRadius: 999, fontSize: 12, fontWeight: 800, cursor: 'pointer',
+                      padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 800, cursor: 'pointer',
                       border: `1px solid ${pattern === o.key ? 'var(--accent)' : 'var(--border)'}`,
                       background: pattern === o.key ? 'var(--accent)' : 'var(--bg2)',
                       color: pattern === o.key ? '#08130a' : 'var(--text2)',
@@ -660,7 +660,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
               </div>
             )}
 
-            <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+            <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760, fontVariantNumeric: 'tabular-nums' }}>
                 <thead><tr style={{ background: 'var(--bg2)' }}>
                   <th style={th}>เลขพาร์ทลูกค้า</th>
@@ -729,7 +729,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
               <button onClick={() => { reset(); onClose?.(); }} style={{ ...inputSt, cursor: 'pointer', fontWeight: 700 }}>ยกเลิก</button>
               <button onClick={apply} disabled={saving || !canImport || !shipTo || !shipTime || legs.some(l => !l.shipTime || !l.workDate) || blockedByDup || blockedByDate}
                 style={{
-                  padding: '9px 18px', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 800,
+                  padding: '9px 18px', borderRadius: 'var(--r-md)', border: 'none', fontSize: 13, fontWeight: 800,
                   cursor: saving || !willWrite ? 'not-allowed' : 'pointer', fontFamily: 'var(--font-body)',
                   background: willWrite && !blockedByDup ? 'var(--accent)' : 'var(--bg3)',
                   color: willWrite && !blockedByDup ? '#08130a' : 'var(--muted)',

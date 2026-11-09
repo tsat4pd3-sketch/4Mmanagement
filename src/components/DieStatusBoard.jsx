@@ -115,7 +115,7 @@ export default function DieStatusBoard({
   const chip = (label, value, { color = 'var(--text)', border = 'var(--border)', active = false, onClick } = {}) => (
     <button key={label} onClick={onClick} style={{
       background: active ? 'var(--bg3)' : 'var(--card)', border: `1px solid ${active ? 'var(--accent)' : border}`,
-      borderRadius: 10, padding: '7px 12px', minWidth: 96, textAlign: 'left', cursor: onClick ? 'pointer' : 'default',
+      borderRadius: 'var(--r-md)', padding: '7px 12px', minWidth: 96, textAlign: 'left', cursor: onClick ? 'pointer' : 'default',
     }}>
       <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</div>
       <div style={{ fontSize: 18, fontWeight: 800, color }}>{value}</div>
@@ -172,7 +172,7 @@ export default function DieStatusBoard({
         <span className="filter-count">แสดง {rows.length} ตัว</span>
       </FilterBar>
 
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
             <thead>
@@ -206,7 +206,7 @@ export default function DieStatusBoard({
                         </select>
                       ) : (
                         <span style={{
-                          fontSize: 11.5, fontWeight: 700, padding: '2px 9px', borderRadius: 999,
+                          fontSize: 11.5, fontWeight: 700, padding: '2px 9px', borderRadius: 'var(--r-pill)',
                           color: meta.color, background: meta.bg, border: `1px solid ${meta.color}`, whiteSpace: 'nowrap',
                         }}>{meta.icon} {meta.label}</span>
                       )}
@@ -243,7 +243,7 @@ export default function DieStatusBoard({
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                       {placed ? (
                         <button onClick={() => onShowOnMap(d)} title="ดูตำแหน่งบนผังจัดเก็บ"
-                          style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7, padding: '3px 9px', fontSize: 11.5, color: 'var(--text)', cursor: 'pointer' }}>
+                          style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '3px 9px', fontSize: 11.5, color: 'var(--text)', cursor: 'pointer' }}>
                           {areaNameOf(e.area_id) || 'ดูบนผัง'}
                         </button>
                       ) : (

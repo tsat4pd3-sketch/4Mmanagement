@@ -80,7 +80,7 @@ export default function ScanSheetPanel({ lines, canPrint }) {
     const mine = rows.filter(t => typeFitsLine(t, pts));
     const others = rows.filter(t => !typeFitsLine(t, pts));
     const box = (t) => (
-      <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 7, border: '1px solid var(--border)', background: picks.has(String(t.id)) ? 'var(--accent-dim)' : 'var(--bg2)', cursor: 'pointer', fontSize: 13 }}>
+      <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: picks.has(String(t.id)) ? 'var(--accent-dim)' : 'var(--bg2)', cursor: 'pointer', fontSize: 13 }}>
         <input type="checkbox" checked={picks.has(String(t.id))} onChange={() => flip(setPicks)(String(t.id))} />
         <span style={{ minWidth: 0 }}>{t.name_th}{t.category === 'planned' && <span style={{ color: 'var(--muted)', fontSize: 11 }}> · ในแผน</span>}</span>
       </label>
@@ -91,8 +91,8 @@ export default function ScanSheetPanel({ lines, canPrint }) {
           <b style={{ fontSize: 14 }}>{title}</b>
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>เลือก {picks.size} รายการ</span>
           <span className="spacer" style={{ marginLeft: 'auto' }} />
-          <button type="button" className="tbtn" onClick={() => setPicks(defaultSheetPicks(rows, pts))} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer' }}>↺ ของไลน์นี้</button>
-          <button type="button" className="tbtn" onClick={() => setPicks(new Set())} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 7, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer' }}>ล้าง</button>
+          <button type="button" className="tbtn" onClick={() => setPicks(defaultSheetPicks(rows, pts))} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer' }}>↺ ของไลน์นี้</button>
+          <button type="button" className="tbtn" onClick={() => setPicks(new Set())} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer' }}>ล้าง</button>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 6, alignContent: 'start' }}>{mine.map(box)}</div>
         {others.length > 0 && (
@@ -107,7 +107,7 @@ export default function ScanSheetPanel({ lines, canPrint }) {
 
   return (
     <div>
-      <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 8, padding: '9px 12px', marginBottom: 12, lineHeight: 1.7 }}>
+      <div style={{ fontSize: 12.5, color: 'var(--text2)', background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '9px 12px', marginBottom: 12, lineHeight: 1.7 }}>
         🗒️ <b>ใบสแกนประจำไลน์ (A4)</b> — ติดข้างไลน์ แล้วหน้างาน <b>ยิงเหตุผลจากแผ่น</b> แทนการไล่หาในลิสต์ยาว
         (Daily Report → บันทึก Downtime / งานเสีย → แตะ 📷 ข้างช่องประเภท หรือกดปุ่มสแกนข้างเครื่อง)
         · ระบบติ๊กประเภทที่เป็นของไลน์นี้ไว้ให้ (ตามกระบวนการของเครื่องในไลน์) · แก้ทะเบียนประเภทเมื่อไหร่ ให้พิมพ์แผ่นใหม่ (ประเภทที่ถูกปิดใช้ ยิงแล้วระบบไม่รับ)
@@ -119,7 +119,7 @@ export default function ScanSheetPanel({ lines, canPrint }) {
         <span style={{ marginLeft: 'auto' }} />
         {canPrint && (
           <button type="button" onClick={print} disabled={!line || busy || !!loadErr}
-            style={{ padding: '8px 18px', borderRadius: 8, border: 'none', fontSize: 13.5, fontWeight: 800, cursor: line && !busy ? 'pointer' : 'not-allowed', background: line && !loadErr ? 'var(--accent)' : 'var(--bg3)', color: line && !loadErr ? 'var(--accent-ink)' : 'var(--muted)' }}>
+            style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', fontSize: 13.5, fontWeight: 800, cursor: line && !busy ? 'pointer' : 'not-allowed', background: line && !loadErr ? 'var(--accent)' : 'var(--bg3)', color: line && !loadErr ? 'var(--accent-ink)' : 'var(--muted)' }}>
             {busy ? 'กำลังสร้าง…' : `🖨️ พิมพ์ใบสแกน (${pickDt.size + pickNg.size} ช่อง)`}
           </button>
         )}
