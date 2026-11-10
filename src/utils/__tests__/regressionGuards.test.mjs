@@ -6821,7 +6821,9 @@ test('🔁 close-auto-carry — ปิดกะต้องแยก "ยัง�
     bad.push('src/pages/DailyReport.jsx (ไม่ได้เขียนบนจอว่าจะยกให้กี่ใบ — ยกเงียบ = คนไม่รู้ว่าของไปไหน)');
 
   /* ปุ่มปิดกะต้องรอเฉพาะกองที่คนตัดสิน — รอทุกใบ = บังคับกดทีละใบเหมือนเดิม */
-  const btn = (dr.match(/onClick=\{handleCloseSession\}[^\n]*/) || [''])[0];
+  /* 10/11: ปุ่มถูกห่อเป็น `() => handleCloseSession()` (รับ opts `dtConfirmed` จากป๊อปอัพทวน DT)
+     ⇒ รับทั้ง 2 รูป · ที่ด่านนี้สนใจคือ `disabled=` ต้องรอเฉพาะ needDecision */
+  const btn = (dr.match(/onClick=\{(?:\(\) => )?handleCloseSession\(?\)?\}[^\n]*/) || [''])[0];
   if (!/needDecision/.test(btn))
     bad.push('src/pages/DailyReport.jsx (ปุ่มปิดกะยังรอ "ทุกใบที่ open" ไม่ใช่เฉพาะ needDecision)');
 
@@ -9705,6 +9707,94 @@ test('🔇 notify-rollup-never-for-call-mtn — ห้ามยุบใบ "เ
       + '   ⇒ ใบเรียกช่างจะถูกยุบรวมกัน — เครื่องหยุด 2 ตัวเหลือการ์ดเดียว ช่างไปไม่ครบ\n'
       + '   ถ้าคิวรีนี้ไม่ได้ตั้ง rollup ให้ downtime_call_mtn จริง ให้แยกเป็น 2 คำสั่งคนละ UPDATE\n');
   }
+});
+
+/* ═══ 🔴 ปิดกะต้องทวน Downtime เปิดค้างทีละใบ — close-shift-dt-confirm (2026-11-10) ═══
+   คำสั่ง user: *"ก่อนปิดกะต้องเช็คเรื่องไม่ปิดดาวไทม์ ป๊อปอัพให้ยืนยันว่าเครื่องยังเบรกดาวน์อยู่
+   ส่งต่อไปกะถัดไป หรือลืมปิดให้ไปใส่เวลาปิด"*
+   ที่มา: ตัวเลือกเดิมเป็นหัวข้อกลางโมดัลปิดกะที่ยาวมาก ⇒ เลื่อนผ่านแล้วกดปิดกะได้
+   ผลคือแถว downtime "ลืมปิด" ค้างในฐาน 6 ใบ นานถึง 3,322 ชม. (ดู docs/modules/daily-report.md) */
+test('🔴 close-shift-dt-confirm — ปิดกะที่มี Downtime เปิดค้าง ต้องผ่านป๊อปอัพทวนก่อนเขียน DB', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+
+  assert.match(src, /const handleCloseSession = async \(\{ dtConfirmed = false \} = \{\} \) =>|const handleCloseSession = async \(\{ dtConfirmed = false \} = \{\}\) =>/,
+    '\n\n❌ handleCloseSession ไม่รับ dtConfirmed — ป๊อปอัพทวนจะเรียกกลับมาปิดจริงไม่ได้\n');
+  assert.match(src, /if \(openDT\.length > 0 && !dtConfirmed\) \{ setDtCloseConfirm\(openDT\); return; \}/,
+    '\n\n❌ ถอดด่านป๊อปอัพทวน Downtime เปิดค้างออกจาก handleCloseSession\n'
+    + '   ⇒ กลับไปปิดกะได้โดยไม่เห็นว่าใบไหนจะถูกส่งต่อกะถัดไป/ปิดที่เวลาเท่าไหร่\n');
+
+  /* ด่านต้องอยู่ "ก่อน" ตัวเขียนจริง — ย้ายลงไปหลัง setSavingClose = ไม่ได้กันอะไรเลย */
+  const i = src.indexOf('const handleCloseSession =');
+  const gate = src.indexOf('setDtCloseConfirm(openDT)', i);
+  const write = src.indexOf('setSavingClose(true)', i);
+  assert.ok(gate > 0 && write > 0 && gate < write,
+    '\n\n❌ ด่านป๊อปอัพอยู่หลังจุดเริ่มเขียน DB — ต้องอยู่ก่อน setSavingClose(true)\n');
+
+  /* ป๊อปอัพต้องบอกครบ 2 ทางตามคำสั่ง user: ส่งต่อกะถัดไป / ปิดที่เวลา */
+  assert.match(src, /เครื่องยังเบรกดาวน์อยู่/,
+    '\n\n❌ ป๊อปอัพไม่ได้เขียนว่า "เครื่องยังเบรกดาวน์อยู่" (ทางที่ 1 — ส่งต่อกะถัดไป)\n');
+  assert.match(src, /เปิดรายการต่อให้กะถัดไป/,
+    '\n\n❌ ป๊อปอัพต้องบอกว่าใบที่ยังเบรกดาวน์จะถูกเปิดต่อในกะถัดไป\n');
+  assert.match(src, /ปิดรายการที่ \{endStr/,
+    '\n\n❌ ป๊อปอัพไม่ได้บอกเวลาปิดของใบที่ "เครื่องกลับมาแล้ว" (ทางที่ 2)\n');
+});
+
+/* ═══ ⏩ สแกนเปิดใบที่เกินเวลากะ — ห้ามขวางการยิงรัว (2026-11-10 · หน้างานแจ้ง) ═══
+   *"เวลาสแกน order ล้นไปกะถัดไป ต้องกดคอนเฟิร์ม และทำให้ต้องคลิกช่อง prod order ใหม่ทุกใบ"*
+   2 เรื่อง: ① ทาง "เกินเวลากะ" ไม่เคยคืนโฟกัสให้ช่องสแกน (ทางปกติคืนอยู่แล้ว)
+   ⇒ เครื่องสแกนยิงเข้าช่องที่โฟกัสอยู่เท่านั้น = ต้องเอามือคลิกทุกใบ
+   ② ใกล้เลิกกะ **ทุกใบจะเกินความจุหมด** ⇒ โมดัลเด้งทุกใบ ⇒ ต้องเลือกครั้งเดียวแล้วจำได้ทั้งกะ */
+test('⏩ scan-open-overflow-flow — ใบเกินเวลากะต้องคืนโฟกัส + จำคำตอบได้ทั้งกะ', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+
+  assert.match(src, /const refocusScanOpen = \(\) => setTimeout\(\(\) => openProdInputRef\.current\?\.focus\(\)/,
+    '\n\n❌ ไม่มี refocusScanOpen — ทางที่จบการเปิดใบต้องคืนโฟกัสให้ช่อง PROD.NO ทุกทาง\n');
+  const fn = src.slice(src.indexOf('const runOverflowChoice ='), src.indexOf('const handleCloseProdNoChange'));
+  assert.ok(fn.length > 100, 'ไม่พบ runOverflowChoice');
+  assert.ok((fn.match(/refocusScanOpen\(\)/g) || []).length >= 2,
+    '\n\n❌ runOverflowChoice ไม่ได้คืนโฟกัสทุกทางออก (ทั้งสำเร็จและ error)\n'
+    + '   ⇒ หน้างานต้องเอามือคลิกช่อง PROD.NO ใหม่ทุกใบ ยิง Tag รัวไม่ได้ (เคสจริง 10/11)\n');
+
+  /* ทางเดียวกันทั้งปุ่มในโมดัลและโหมดที่จำไว้ — ห้ามแตกเป็น 2 ชุดแล้วลืมคืนโฟกัสฝั่งใดฝั่งหนึ่ง */
+  assert.doesNotMatch(src, /const handleOverflowNextShift|const handleOverflowForce/,
+    '\n\n❌ แตก handler ของใบเกินเวลากะกลับเป็น 2 ตัว — ต้องรวมที่ runOverflowChoice ตัวเดียว\n');
+  assert.match(src, /if \(overflowMode === 'carry'\) \{ await runOverflowChoice\('carry',/,
+    '\n\n❌ ถอดโหมด "จำคำตอบทั้งกะ" — ใกล้เลิกกะโมดัลจะเด้งทุกใบ ยิง Tag ต่อกันไม่ได้\n');
+
+  /* 🔴 จำคำตอบได้ แต่ห้ามเงียบ และห้ามข้ามกะ */
+  assert.match(src, /useEffect\(\(\) => \{ setOverflowMode\(null\); \}, \[selSession\?\.id\]\)/,
+    '\n\n❌ ไม่ได้ล้างโหมดเมื่อเปลี่ยนกะ — ใบของกะใหม่จะถูกตัดสินใจแทนด้วยคำตอบของกะก่อน\n');
+  assert.match(src, /\{overflowMode && \(/,
+    '\n\n❌ เปิดโหมดแล้วไม่มีแถบบนจอ = ใบถูกยกไปกะหน้าเงียบๆ (ห้ามล้มเหลวเงียบ)\n');
+  assert.match(src, /กลับไปถามทุกใบ/,
+    '\n\n❌ ไม่มีปุ่มเลิกโหมด — ติ๊กพลาดแล้วออกไม่ได้จนกว่าจะเปลี่ยนกะ\n');
+  assert.match(src, /โหมดจำคำตอบ/,
+    '\n\n❌ toast ไม่ได้บอกว่าใบนี้ถูกจัดการด้วยโหมดที่จำไว้ (คนยิงรัวต้องรู้ว่าของไปไหน)\n');
+});
+
+/* ═══ ⏱️ "เปิด OT" มีเพดาน — ot-ceiling-auto-carry (2026-11-10 · คำสั่ง user) ═══
+   *"กดเปิดโอที ใบหลังจากนั้นก็ลงไปที่ช่วง OT จนประมาณใบที่ 4 เห็นว่าใช้เกิน OT ไปอีก
+     ใบถัดๆ ไปให้โยนไปกะถัดไปอัตโนมัติเลย"*
+   ⇒ ความจุมี 2 ชั้น: เพดานกะ → เพดาน OT · เกินชั้น 2 = ส่งกะถัดไป ห้ามเปิดต่อ
+   (เปิดต่อ = รับงานที่ไม่มีเวลาทำ แล้วไปโผล่เป็นใบค้างตอนปิดกะอยู่ดี) */
+test('⏱️ ot-ceiling-auto-carry — โหมด OT ต้องมีเพดาน แล้วสลับเป็นส่งกะถัดไปเอง', () => {
+  const cap = readFileSync(join(ROOT, 'src/utils/shiftCapacity.js'), 'utf8');
+  assert.match(cap, /export function otSpanMin\(/,
+    '\n\n❌ ถอด otSpanMin — โควต้า OT ต้องมีเจ้าของกฎใน utils/shiftCapacity.js\n');
+  assert.match(cap, /WEEKDAY_OT_TIME/,
+    '\n\n❌ โควต้า OT ต้องอ่านจากทะเบียนกลาง WEEKDAY_OT_TIME (utils/otPeriods.js) ห้าม hardcode นาที\n');
+  assert.doesNotMatch(stripComments(cap), /\b150\b/,
+    '\n\n❌ hardcode นาที OT ไว้ใน shiftCapacity.js — เปลี่ยนนโยบายแล้วตัวเลขจะไม่ขยับตาม\n');
+
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.match(src, /if \(overflowMode === 'force'\)/,
+    '\n\n❌ โหมด OT กลับไปเปิดใบทุกใบโดยไม่เช็คเพดาน OT\n');
+  assert.match(src, /const otOver = checkOtCapacity\(\{/,
+    '\n\n❌ ไม่ได้เช็คโควต้า OT ด้วย checkOtCapacity ก่อนเปิดใบในโหมด OT\n');
+  assert.match(src, /if \(!otOver\) \{ await runOverflowChoice\('force'[\s\S]{0,80}await runOverflowChoice\('carry'/,
+    '\n\n❌ เกินโควต้า OT แล้วต้องสลับเป็น carry อัตโนมัติ (ไม่ใช่เปิดต่อ/ไม่ใช่เงียบ)\n');
+  assert.match(src, /โควต้า OT เต็มแล้ว/,
+    '\n\n❌ สลับเป็นส่งกะถัดไปแล้วไม่บอก — คนยิงรัวจะนึกว่ายอดยังอยู่กะนี้ (ห้ามล้มเหลวเงียบ)\n');
 });
 
 test('🔀 insp-team-not-jig-only — ใบตรวจต้องแยกด้วยทีม ไม่ใช่ jig_id ล้วน', () => {

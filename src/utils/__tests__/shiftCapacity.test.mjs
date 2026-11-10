@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadByLane, committedMin, checkShiftCapacity, SPENT_STATUSES } from '../shiftCapacity.js';
+import { loadByLane, committedMin, checkShiftCapacity, SPENT_STATUSES, otSpanMin, checkOtCapacity } from '../shiftCapacity.js';
 
 /* CT 60 วินาที = 1 นาที/ชิ้น → อ่านเลขในเทสง่าย */
 const ct60 = () => 60;
@@ -124,4 +124,31 @@ test('loadByLane: totalMin = ผลรวมทุกเลน + ส่วนล
 test('ข้อมูลเพี้ยนต้องไม่โยน error (qty/CT เป็นข้อความ · แถว null)', () => {
   const c = committedMin({ orders: [null, { qty: 'x', mat_no: 'M1', machine_no: 'A' }], ctOf: ct60, flowMode: 'one_piece_flow' });
   assert.equal(c.committedMin, 0);
+});
+
+/* ── โควต้า OT (เพดานชั้นที่ 2) — 2026-11-10 ───────────────────────────────── */
+test('otSpanMin — อ่านจากทะเบียนกลาง · แกะไม่ออก = 0 (ห้ามเดา)', () => {
+  assert.equal(otSpanMin('day'), 150);              // 17:30–20:00
+  assert.equal(otSpanMin('night'), 150);            // 20:00–22:30
+  assert.equal(otSpanMin('ไม่รู้จัก'), 0);
+  assert.equal(otSpanMin('day', { day: 'พัง' }), 0);
+  assert.equal(otSpanMin('day', { day: '22:00–01:00' }), 180);   // ข้ามเที่ยงคืน
+});
+
+test('checkOtCapacity — ยกเพดานเป็น กะ+OT · เกินแล้วต้องคืนค่าให้จอโยนกะถัดไป', () => {
+  const orders = [{ mat_no: 'A', qty: 600, status: 'open' }];     // CT 60 วิ = 600 นาที
+  const ctOf = () => 60;
+  const base = { orders, ctOf, netAvailMin: 690, newQty: 60, newCtSec: 60 }; // ใบใหม่ 60 นาที
+  // 600 + 60 = 660 ≤ 690 ⇒ ยังไม่เกินเพดานกะด้วยซ้ำ
+  assert.equal(checkShiftCapacity(base), null);
+  // ดันให้เกินเพดานกะ แต่ยังอยู่ในโควต้า OT (690 + 150 = 840)
+  const over = { ...base, orders: [{ mat_no: 'A', qty: 700, status: 'open' }] }; // 700 นาที + 60 = 760
+  assert.ok(checkShiftCapacity(over), 'ต้องเกินเพดานกะ');
+  assert.equal(checkOtCapacity({ ...over, shift: 'day' }), null, '760 ≤ 840 ⇒ ยังเปิดใน OT ได้');
+  // เกิน OT ด้วย
+  const overOt = { ...base, orders: [{ mat_no: 'A', qty: 800, status: 'open' }] }; // 800 + 60 = 860 > 840
+  const r = checkOtCapacity({ ...overOt, shift: 'day' });
+  assert.ok(r && r.overMin > 0, 'เกินโควต้า OT ⇒ ต้องคืนรายละเอียดให้จอ');
+  // ไม่รู้ความจุ = ไม่เตือน (กฎ 3)
+  assert.equal(checkOtCapacity({ ...overOt, shift: 'day', netAvailMin: null }), null);
 });
