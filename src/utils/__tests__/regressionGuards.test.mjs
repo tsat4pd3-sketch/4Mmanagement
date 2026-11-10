@@ -8931,6 +8931,17 @@ test('🛡️ am-monthly-signoff-record — เขียน am_monthly_signoffs 
   assert.match(page, /isStale\(sign\.key, curKey\)/, '\n\n❌ AmMonthlyReport ไม่มีด่าน stale (เดือน/กะ) ก่อนลงนาม\n');
 });
 
+test('🛡️ am-onsite-badge-verify — ใบ AM ต้องมีบัตรผู้ตรวจ + ผู้ตรวจตัวจริง = คนตามบัตร (B4 · 10/11)', () => {
+  /* หัวหน้าถือ handheld บันทึกแทน ⇒ inspector_id = หัวหน้า · ถ้าสายอนุมัติอ่านตำแหน่ง/ใบตัวเองจาก inspector_id
+     หัวหน้ารับทราบไม่ได้ (self) และใบเลื่อนไปรอหัวหน้าแผนกทุกใบ · ไม่บังคับบัตร = ไม่รู้ว่าใครตรวจ */
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/PMCheckData.jsx'), 'utf8'));
+  assert.match(page, /const gate = amBadgeGate\(/, '\n\n❌ PMCheckData.handleSave ไม่ผ่าน amBadgeGate — ใบ AM ต้องมีบัตรผู้ตรวจที่ชี้พนักงานได้ 1 คน\n');
+  assert.match(page, /if \(!gate\.ok\) \{ toast\.error\(gate\.text\); return \}/, '\n\n❌ บัตรไม่ผ่านแล้วยังบันทึกต่อ\n');
+  assert.match(page, /onSite = amOnSiteApproval\(/, '\n\n❌ อนุมัติหน้าเครื่องต้องตัดสินผ่าน amOnSiteApproval (utils/amApproval.js)\n');
+  assert.ok(!/inspPosById\[\s*(insp|viewInspection)\.inspector_id\s*\]/.test(page),
+    '\n\n❌ อ่านตำแหน่งผู้ตรวจจาก inspector_id ตรงๆ — ใบที่มีรหัสบัตรต้องใช้ inspectorOf()/amInspectorIdentity (คนตามบัตรชนะบัญชีที่ login)\n');
+});
+
 test('🛡️ am-mo-label-single-source — ป้ายสถานะ MO บนจอ AM ต้องมาจาก moStatusLabel()', () => {
   for (const f of ['src/pages/DailyPM.jsx', 'src/pages/PMCheckData.jsx']) {
     const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
@@ -9784,6 +9795,60 @@ test('🛡️ master-cache-auth-gate — ผลที่โหลดตอนไ
   assert.match(pl, /if \(!data\?\.length\) throw new MasterLoadError/,
     '🔴 ทะเบียนไลน์ว่าง = อ่านไม่ได้ ต้องโยน ห้ามคืน [] ให้ลง cache');
   assert.match(pl, /\{ nonEmpty: true \}/, '🔴 ทะเบียนไลน์ต้องข้ามลิสต์ว่างที่ค้างใน cache (nonEmpty)');
+});
+
+/* ═══ 🪪 badge-scan-saves-now — 2026-11-10 · คำสั่ง user ═══════════════════════════════════
+   *"มันควรจะเช็คมาเลยมั้ยแบบนี้ ตอนนี้ไม่เห็นใช้ได้"* — ยิงบัตร 1 ใบ = ลงฐานทันที 1 แถว
+   3 อย่างที่ห้ามหลุด: ① หน้าเขียนจริงและเช็คจำนวนแถว ② ScanModal ต้อง await (ไม่งั้นขึ้นเขียว
+   ก่อนรู้ผล = จอบอกสำเร็จทั้งที่เขียนล้ม) ③ ตัวนับในหน้าต่างสแกนห้าม hardcode "ยังไม่ได้บันทึก"  */
+test('🪪 badge-scan-saves-now — สแกนบัตรต้องเขียนลงฐานทันที + จอต้องบอกผลจริง', () => {
+  const bad = [];
+  const ck = stripComments(readFileSync(join(ROOT, 'src/pages/Checkin.jsx'), 'utf8'));
+  const fn = ck.slice(ck.indexOf('const onBadgeScan'), ck.indexOf('badgeScanRef.current ='));
+  if (!/const onBadgeScan = async/.test(fn)) bad.push('onBadgeScan ไม่ใช่ async — เขียนฐานไม่ได้');
+  if (!/upsertCheckin\(/.test(fn)) bad.push('onBadgeScan ไม่เขียนลงฐาน (กลับไปติ๊กบนจอเฉยๆ)');
+  if (!/ckLogRow\(/.test(fn)) bad.push('onBadgeScan ประกอบแถวเอง — ต้องใช้ ckLogRow ชุดเดียวกับปุ่มบันทึก');
+  // ❌ เขียนไม่ติดแล้วยังติ๊กบนจอ = จอบอกเช็คแล้วทั้งที่ฐานว่าง
+  const okIdx = fn.indexOf('if (!okRow)'), setIdx = fn.indexOf('setAttendance(');
+  if (okIdx < 0 || setIdx < 0 || okIdx > setIdx) bad.push('ติ๊กบนจอก่อนรู้ผลการเขียน — ต้องเช็คผลก่อน setAttendance');
+
+  const sm = stripComments(readFileSync(join(ROOT, 'src/components/ScanModal.jsx'), 'utf8'));
+  if (!/problem = await res/.test(sm)) bad.push('ScanModal ไม่ await onScan ที่เป็น Promise — ขึ้นเขียวก่อนรู้ผลจริง');
+  if (!/await emit\(/.test(sm)) bad.push('ลูปกล้องไม่ await emit — ยิงใบถัดไปทับระหว่างบันทึกใบแรก');
+
+  const foot = ck.slice(ck.indexOf('<ScanModal title="สแกนบัตรพนักงาน"'), ck.indexOf('<ScanModal title="สแกนบัตรพนักงาน"') + 2200);
+  if (/ยังไม่ได้บันทึก<\/span>/.test(foot)) bad.push('ตัวนับในหน้าต่างสแกนยัง hardcode "ยังไม่ได้บันทึก" (จอโกหก)');
+  if (!/scanSaved\.length/.test(foot)) bad.push('หน้าต่างสแกนไม่บอกว่ารอบนี้บันทึกไปกี่คน');
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
+
+/* ═══ 🪪 scan-landing-checkin — 2026-11-10 · คำสั่ง user ════════════════════════════════════
+   *"ยิงบัตรแล้วขึ้น ✓ เช็คชื่อสำเร็จ พอ ไม่ต้องเปิดหน้าเช็คชื่อ"* ⇒ `/scan` เขียนฐานได้ **ข้อยกเว้นเดียว**
+   ของกฎ "หน้านี้อ่านอย่างเดียว" · 2 อย่างที่ห้ามหลุด:
+   ① สูตรแถวต้องเป็นของกลาง (`lib/checkinSave.js`) — ห้ามหน้าไหนประกอบ/ยิง upsert เอง
+   ② `/scan` ยิงบัตรใครก็ได้ทั้งโรงงาน (ไม่มีรายชื่อมากรองเหมือน `/checkin`) ⇒ **ต้องเช็คขอบเขตชั้น ③ เอง**  */
+test('🪪 scan-landing-checkin — /scan เช็คชื่อได้ แต่ต้องผ่านของกลาง + ด่านขอบเขตชั้น ③', () => {
+  const bad = [];
+  const sl = stripComments(readFileSync(join(ROOT, 'src/pages/ScanLanding.jsx'), 'utf8'));
+  if (!/checkinByBadge\(/.test(sl)) bad.push('ScanLanding ไม่ได้เช็คชื่อผ่าน checkinByBadge (ของกลาง)');
+  if (/from\('daily_production_logs'\)/.test(sl)) bad.push('ScanLanding แตะ daily_production_logs ตรงๆ — ต้องผ่าน lib/checkinSave.js');
+  if (!/canWriteLine\(/.test(sl) || !/canWriteUnit\(/.test(sl))
+    bad.push('ScanLanding ไม่เช็คขอบเขตชั้น ③ — ยิงบัตรคนแผนกอื่นแล้วเช็คชื่อให้ได้');
+  // ด่านต้องอยู่ใน handler ที่เขียนจริง ไม่ใช่แค่ซ่อนปุ่ม (เปิด /scan?c=<รหัส> ตรงได้)
+  const h = sl.slice(sl.indexOf('const doCheckin'), sl.indexOf('const doCheckin') + 1800);
+  if (!/if \(!ckScope\?\.ok\)/.test(h)) bad.push('doCheckin ไม่มีด่านขอบเขตในฟังก์ชันที่เขียนจริง');
+  if (h.indexOf('ckScope?.ok') > h.indexOf('checkinByBadge(')) bad.push('เช็คขอบเขตหลังเขียนไปแล้ว');
+  // ctx ของด่านต้องครบ 2 แกน (write-scope-layer: ไม่ส่ง = ถอยไปใช้ section เงียบๆ)
+  if (!/respCostCenters/.test(sl) || !/scopeIdx/.test(sl)) bad.push('ctx ของด่านไม่ได้ส่ง respCostCenters/scopeIdx');
+
+  const lib = stripComments(readFileSync(join(ROOT, 'src/lib/checkinSave.js'), 'utf8'));
+  if (!/checkWriteRows\(/.test(lib)) bad.push('checkinSave ไม่ได้นับแถว (RLS ปฏิเสธ = 0 แถว ไม่มี error)');
+  if (!/markPresentRecord\(/.test(lib)) bad.push('checkinSave ไม่ได้ใช้ markPresentRecord (กติกาการลา)');
+  // 🔴 อ่านแถวเดิมไม่ได้ = ห้ามเขียน (เขียนทั้งที่ไม่รู้ของเดิม = ทับ PPE/OT/ลา ของคนอื่น)
+  if (!/read_failed/.test(lib)) bad.push('checkinSave ไม่มีทาง read_failed — อ่านของเดิมไม่ได้แล้วยังเขียนทับ');
+  const byBadge = lib.slice(lib.indexOf('export async function checkinByBadge'));
+  if (byBadge.indexOf("kind: 'already'") > byBadge.indexOf('upsertCheckin(')) bad.push('checkinByBadge เขียนก่อนเช็คว่ามางานอยู่แล้ว');
+  assert.deepEqual(bad, [], bad.join('\n'));
 });
 
 test('📋 sheet-quality-is-hint-not-gate — แถบความครบของใบตรวจเป็นตัวบอก ห้ามเป็นด่าน', () => {

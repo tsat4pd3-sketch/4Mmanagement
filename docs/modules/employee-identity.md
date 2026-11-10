@@ -73,8 +73,23 @@ toast ขึ้น `duplicate key value violates unique constraint "employees_em
 **ต่อเพิ่ม (05/11):** ช่องกลาง **`<InspectorCodeField>`** (`src/components/InspectorCodeField.jsx` · สแกนบัตร/พิมพ์ · Enter = ยืนยัน · โชว์ชื่อ+เหตุผลใต้ช่อง)
 | เอกสาร | เก็บรหัสที่ | พฤติกรรม |
 |---|---|---|
-| ใบตรวจ AM/PM (`/daily-checker?tab=pm` · export FM-JIG-003) | `inspections.inspector_code` (DR · migration `20261105_inspector_code_am_dr.sql`) | ช่องเหนือหมายเหตุ · คงค่าข้ามเครื่องในแท็บ (`sessionStorage`) · export: มีรหัส = คนตามรหัสเซ็น |
+| ใบตรวจ AM/PM (`/daily-checker?tab=pm` · export FM-JIG-003) | `inspections.inspector_code` (DR · migration `20261105_inspector_code_am_dr.sql`) | ช่องเหนือหมายเหตุ · ใบ PM ช่าง: คงค่าข้ามเครื่องในแท็บ (`sessionStorage`) · 🪪 **ใบ AM (10/11): บังคับทุกใบ + ล้างเมื่อเปลี่ยนเครื่อง + ผู้ตรวจของสายอนุมัติ = คนตามบัตร** (📄 `am-pm-linkage-audit.md` §8) · export: มีรหัส = คนตามรหัสเซ็น |
 | ใบตรวจ QA (`QaCheckSheet`) | `qa_inspection_sheets.inspector_code` (Main · migration `20261105_inspector_code_qa_main.sql`) | ช่องในหัวใบ · ใบยังไม่ถูกสร้าง = ถือรหัสไว้ใส่ตอนสร้าง · ใบพิมพ์ `qa_inspection_sheet` (ปุ่ม 🖨️ · `src/lib/qaSheetPrint.js`) ใช้รหัสนี้หาลายเซ็น |
 - 🔴 **ผู้ตรวจบนใบ export = `inspectorForExport()` ที่เดียว** — มีรหัส = คนตามรหัส (เครื่องหน้างานใช้บัญชีกลาง) ·
   หาลายเซ็นไม่ได้ = **เว้นช่อง + toast เหตุผล ห้ามถอยไปลายเซ็นบัญชีที่ login** (= ลายเซ็นคนอื่น) · ไม่มีรหัส = พฤติกรรมเดิม
 - ยังไม่มีปุ่มให้พนักงาน "เซ็นเอง" ผ่านคีออส (ตอนนี้คนที่แก้พนักงานได้เป็นคนตั้งลายเซ็นให้)
+
+## 🪪 บัตรพนักงาน = ทางเช็คชื่อ (2026-11-10 · คำสั่ง user)
+
+QR บนบัตร = **รหัสพนักงานล้วน** → `employees.employee_id_code` (กติกาจับคู่ + `findByBadge` อยู่ `src/utils/badgeCheckin.js`)
+ตอนนี้มี **2 ประตู** ที่ยิงบัตรแล้วเช็คชื่อได้ และทั้งคู่เขียน `daily_production_logs` ผ่าน
+**`src/lib/checkinSave.js` ชุดเดียว** (`checkinLogRow` / `upsertCheckin` / `checkinByBadge`) — ห้ามประกอบแถวเอง
+
+| ประตู | ใช้ตอนไหน | "มางานอยู่แล้ว" ตัดสินยังไง |
+|---|---|---|
+| `/checkin` → ปุ่ม 🪪 เปิดกล้องยิงรัว | หัวหน้าเช็คทั้งไลน์ | ดูจาก **state บนจอ** ⇒ **เขียนซ้ำเสมอ** เพราะ "มางาน" อาจเป็นแค่ติ๊กค้างที่ยังไม่เคยลงฐาน |
+| `/scan` → ยิงบัตรใบเดียวแล้วจบ | ใครก็ได้ ยิงบัตรคนเดียว | ดูจาก **แถวในฐาน** ⇒ `already` = **ไม่เขียนซ้ำ** (กันทับ `checked_by` คนแรก) |
+
+🔴 ทั้ง 2 ทาง: เขียนไม่ติด = **ห้ามขึ้น ✓** (จอต้องบอกว่ายังไม่ได้เช็ค ให้ยิงซ้ำ) ·
+merge ของเดิมเสมอ ไม่ทับ PPE/OT/ลา · ลาเต็มวันแล้วมายิงบัตร = มาจริง ⇒ ล้างการลา (ครึ่งวันคงไว้)
+· `/scan` ต้องเช็คขอบเขตชั้น ③ เอง (ไม่มีรายชื่อมากรองให้) — ดู `docs/modules/qr-equipment-scan.md` §เฟส 4
