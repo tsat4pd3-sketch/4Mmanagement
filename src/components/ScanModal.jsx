@@ -35,6 +35,7 @@ export default function ScanModal({
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
   const [okMsg, setOkMsg] = useState('');
+  const [busy, setBusy] = useState(false);   // รอผลจาก onScan ที่เขียน DB (ดูคอมเมนต์ที่ emit)
   /* 📱 handheld (2026-10-20): ช่องรอสแกนไม่เด้งคีย์บอร์ดบนจอ (`inputMode="none"`) — คีย์บอร์ดกินจอ 360×640 ไปครึ่งหนึ่ง
      ทั้งที่เครื่องมีหัวสแกนในตัว · ป้ายเลอะ/สแกนไม่ติด → แตะ "⌨️ พิมพ์เอง" เปิดคีย์บอร์ด · จอคอมไม่เปลี่ยน */
   const isMobile = useIsMobile();
@@ -47,8 +48,11 @@ export default function ScanModal({
   const busyRef = useRef(false);      // กันยิงซ้ำระหว่างกำลังประมวลผลเฟรมเดียวกัน
   const lastHitRef = useRef({ raw: '', at: 0 });
 
-  /* ── ส่งผลลัพธ์ให้หน้าที่เรียก ── */
-  const emit = useCallback((raw) => {
+  /* ── ส่งผลลัพธ์ให้หน้าที่เรียก ──
+     🔴 `onScan` เป็น async ได้ (หน้าที่เขียน DB ทันทีตอนสแกน เช่น เช็คชื่อด้วยบัตร) ⇒ **ต้อง await**
+     ไม่ await = ได้ Promise กลับมา ซึ่งไม่ใช่ string และไม่มี `.ok` ⇒ ขึ้นเขียวทันทีก่อนรู้ผลจริง
+     = ยิงบัตรแล้วจอบอกสำเร็จทั้งที่เขียนล้ม · ระหว่างรอขึ้น "⏳ กำลังบันทึก…" ห้ามปล่อยจอนิ่งเงียบ */
+  const emit = useCallback(async (raw) => {
     const parsed = parseQrPayload(raw);
     if (!parsed) return;
     // กันสแกนซ้ำรัวจากเฟรมติดกัน (กล้องอ่านได้ ~10 ครั้ง/วินาที)
@@ -56,7 +60,12 @@ export default function ScanModal({
     if (parsed.raw === lastHitRef.current.raw && now - lastHitRef.current.at < 1500) return;
     lastHitRef.current = { raw: parsed.raw, at: now };
 
-    const problem = onScan?.(parsed);
+    let problem;
+    try {
+      const res = onScan?.(parsed);
+      if (res && typeof res.then === 'function') { setErr(''); setOk(''); setOkMsg(''); setBusy(true); problem = await res; }
+      else problem = res;
+    } finally { setBusy(false); }
     if (typeof problem === 'string' && problem) {
       setErr(problem); setOk(''); setOkMsg('');
       if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
@@ -114,7 +123,7 @@ export default function ScanModal({
         try {
           if (detector) {
             const found = await detector.detect(video);
-            if (found?.length) emit(found[0].rawValue);
+            if (found?.length) await emit(found[0].rawValue);
           } else if (jsQR) {
             const w = Math.min(video.videoWidth, 640);
             const h = Math.round(video.videoHeight * (w / video.videoWidth));
@@ -122,7 +131,7 @@ export default function ScanModal({
             ctx.drawImage(video, 0, 0, w, h);
             const img = ctx.getImageData(0, 0, w, h);
             const res = jsQR(img.data, w, h, { inversionAttempts: 'dontInvert' });
-            if (res?.data) emit(res.data);
+            if (res?.data) await emit(res.data);
           }
         } catch { /* เฟรมนี้อ่านไม่ออก — เฟรมถัดไปว่ากันใหม่ */ }
         busyRef.current = false;
@@ -225,9 +234,10 @@ export default function ScanModal({
           </div>
         </div>
 
-        {err && <div style={{ marginTop: 10, fontSize: 13, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>✕ {err}</div>}
+        {busy && <div style={{ marginTop: 10, fontSize: 13.5, fontWeight: 700, color: 'var(--amber)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>⏳ กำลังบันทึก…</div>}
+        {!busy && err && <div style={{ marginTop: 10, fontSize: 13, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>✕ {err}</div>}
         {footer}
-        {ok && !err && (okMsg
+        {ok && !err && !busy && (okMsg
           ? <div style={{ marginTop: 10, fontSize: 15, fontWeight: 800, color: '#22c55e', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>{okMsg}</div>
           : <div style={{ marginTop: 10, fontSize: 13, color: '#22c55e' }}>✓ อ่านได้: <span style={{ fontFamily: 'monospace' }}>{ok}</span></div>)}
       </div>

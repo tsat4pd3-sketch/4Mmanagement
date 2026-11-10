@@ -15,6 +15,8 @@
    ✅ ขั้น 3 "ทบทวนรายเดือน" ของหัวหน้าแผนก/ส่วน (2026-11-03) — `amMonthlySignoffVerdict()` ท้ายไฟล์
       ตาราง `am_monthly_signoffs` (Main) · จอ = แท็บ 📅 รายงานรายเดือน (`components/AmMonthlyReport.jsx`) */
 
+import { normBadgeCode } from './badgeCheckin.js'
+
 /** บันไดของ AM (rank ตาม POSITION_LEVELS ใน utils/positions.js) */
 export const AM_APPROVAL_LADDER = [
   { rank: 40, key: 'leader',     label: 'หัวหน้ากลุ่ม',      action: 'รับทราบผลตรวจ (รายวัน)' },
@@ -90,6 +92,60 @@ export function amApprovalAssumptionText(assumed = []) {
 export function amApproveAllowed({ can, isSeeded }) {
   if (isSeeded?.('am', 'approve')) return !!can?.('am', 'approve')
   return !!can?.('pm', 'approve')
+}
+
+/* ═══ 🪪 B4 — หัวหน้าถือ handheld ทวนสอบ "หน้าเครื่อง" (2026-11-10 · user ตัดสิน) ═══════════════════════
+   หน้างานมี handheld เครื่องเดียว ⇒ หัวหน้าเดินไล่ทีละเครื่อง: สแกน QR เครื่อง → **สแกนบัตรผู้ตรวจ** →
+   ไล่ติ๊กเช็คชีทพร้อมพนักงาน → กดบันทึก = ได้ 2 ชื่อในใบเดียว (ผู้ตรวจตามบัตร · ผู้ทวนสอบ = บัญชีที่ login)
+   กติกา (user 10/11):
+     · 🔴 **ใบ AM ต้องมีรหัสบัตรผู้ตรวจทุกใบ = มาตรฐานเดียว** — หัวหน้าตรวจแทนพนักงาน ก็สแกนบัตรตัวเอง
+       รหัสต้องชี้พนักงานได้ **1 คนพอดี** (ไม่พบ/ซ้ำ/อ่านทะเบียนไม่ได้ = บันทึกไม่ได้ — ไม่รู้ว่าใครตรวจ)
+     · ไม่เตือนเรื่อง "คนประจำเครื่อง" — แค่บันทึกว่าใครมาตรวจ (ฐานไม่มีข้อมูลผูกคนกับเครื่องอยู่แล้ว)
+     · 🔴 **ผู้ตรวจ = คนตามบัตร ไม่ใช่บัญชีที่ login** — ตำแหน่ง/ใบตัวเอง ของสายอนุมัติ (B2) ต้องคิดจากคนตามบัตร
+       (ไม่งั้นหัวหน้าที่ถือเครื่องกลายเป็น "คนตรวจ" ⇒ รับทราบไม่ได้ (`self`) + ใบเลื่อนไปรอหัวหน้าแผนก)
+     · กดบันทึก = **หัวหน้ากลุ่มรับทราบรายวันไปพร้อมกัน** เมื่อผ่าน `amApprovalVerdict` + สิทธิ์ `am:approve`
+       ไม่ผ่าน (ข้ามขั้น/ใบตัวเอง/ไม่มีสิทธิ์/บัญชีกลาง/อ่านไม่ได้ว่าใช่ตัวเองไหม) = บันทึกได้ แต่ใบ **รออนุมัติตามเดิม** + จอบอกเหตุผล
+     · นาฬิกา 60 นาที (`dailyAmBoard`) ไม่เปลี่ยน */
+
+/** รหัสบัตรผู้ตรวจของใบ AM ใช้ได้ไหม
+ * @param {{ code?:string, employee?:object|null, hits?:number, loadError?:boolean }} p
+ *   employee = พนักงานที่จับคู่ได้ 1 คน (`findByBadge`) · hits = จำนวนแถวที่รหัสตรง (แยก "ไม่พบ" กับ "ซ้ำ")
+ * @returns {{ ok:boolean, code:'ok'|'no_code'|'unreadable'|'not_found'|'ambiguous', text:string }} */
+export function amBadgeGate({ code = '', employee = null, hits = 0, loadError = false } = {}) {
+  const c = normBadgeCode(code)
+  if (!c) return { ok: false, code: 'no_code', text: 'ใบตรวจ AM ต้องสแกนบัตรผู้ตรวจก่อนบันทึก (หัวหน้าตรวจแทน = สแกนบัตรตัวเอง)' }
+  if (loadError) return { ok: false, code: 'unreadable', text: `อ่านทะเบียนพนักงานไม่ได้ — ยืนยันไม่ได้ว่ารหัส ${c} คือใคร ยังบันทึกไม่ได้ ลองใหม่อีกครั้ง` }
+  if (employee?.id) return { ok: true, code: 'ok', text: '' }
+  if (hits > 1) return { ok: false, code: 'ambiguous', text: `รหัส ${c} ซ้ำกันหลายคนในทะเบียนพนักงาน — ระบบไม่เดา ให้ admin แก้ทะเบียนก่อน` }
+  return { ok: false, code: 'not_found', text: `ไม่พบรหัส ${c} ในทะเบียนพนักงาน — ตรวจรหัสบนบัตร หรือเพิ่มพนักงานในทะเบียนก่อน` }
+}
+
+/** กดบันทึกหน้าเครื่องแล้ว "รับทราบรายวัน" ให้เลยไหม (B4)
+ * @param {{ inspectorRank:number|null, approverRank:number|null, isSelf:boolean|null, canApprove:boolean, isShared?:boolean }} p
+ *   isSelf = บัตรเป็นของบัญชีที่ login ไหม · `null` = อ่านไม่ได้ (ไม่ถือว่าไม่ใช่ตัวเอง)
+ * @returns {{ approve:boolean, code:string, text:string, verdict:object|null }} */
+export function amOnSiteApproval({ inspectorRank = null, approverRank = null, isSelf = null, canApprove = false, isShared = false } = {}) {
+  const wait = (code, why) => ({ approve: false, code, text: `${why} — ใบนี้รออนุมัติตามขั้นปกติ`, verdict: null })
+  if (isShared) return wait('shared', 'บัญชีกลางรับทราบแทนคนไม่ได้ (ลายเซ็นต้องผูกตัวคน)')
+  if (!canApprove) return wait('no_perm', 'บัญชีนี้ไม่มีสิทธิ์รับทราบผลตรวจ AM')
+  if (isSelf == null) return wait('self_unknown', 'อ่านไม่ได้ว่าบัตรที่สแกนเป็นของบัญชีนี้หรือไม่')
+  const verdict = amApprovalVerdict({ inspectorRank, approverRank, isSelf })
+  if (!verdict.ok) return { approve: false, code: verdict.code, text: `${amApprovalText(verdict)} — ใบนี้รออนุมัติตามขั้นปกติ`, verdict }
+  return { approve: true, code: verdict.code, text: '', verdict }
+}
+
+/** ผู้ตรวจ "ตัวจริง" ของใบ — มีรหัสบัตร = คนตามบัตรชนะบัญชีที่ login (B4)
+ * @param {{ inspector_id?:string, inspector_code?:string }} insp
+ * @param {{ empByCode?:Record<string,{id:string,position?:string}>, posByUid?:Record<string,string>, myUid?:string|null, myEmployeeId?:string|null }} ctx
+ *   empByCode คีย์ = `normBadgeCode(code)`
+ * @returns {{ position:string|null, isSelf:boolean, byBadge:boolean }} */
+export function amInspectorIdentity(insp, { empByCode = {}, posByUid = {}, myUid = null, myEmployeeId = null } = {}) {
+  const c = normBadgeCode(insp?.inspector_code)
+  if (c) {
+    const e = empByCode[c] || null
+    return { position: e?.position || null, isSelf: !!(e?.id && myEmployeeId && e.id === myEmployeeId), byBadge: true }
+  }
+  return { position: posByUid[insp?.inspector_id] || null, isSelf: !!(myUid && insp?.inspector_id === myUid), byBadge: false }
 }
 
 /* ═══ ✍️ ขั้น 3 — หัวหน้าแผนก/ส่วน "ทบทวนรายเดือน" (2026-11-03 · user ตัดสิน 03/11) ═══════════════

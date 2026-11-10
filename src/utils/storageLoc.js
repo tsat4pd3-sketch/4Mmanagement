@@ -133,7 +133,9 @@ export function areaLinesOf(slocs, lines, lineName) {
    ⇒ ไลน์แม่ที่อยู่พื้นที่เดียวกับลูกทุกตัว = ของถูกหักได้ ไม่ต้องย้าย
    🔴 ต้องตรงกับ SQL `fn_area_lines()` — นับเฉพาะชื่อที่ "ระบุในทะเบียนรหัสคลังเอง" (ไม่ไล่ตกทอดจากแม่)
       ไม่งั้นจอบอกว่าหักได้ แต่ฝั่ง DB หาไม่เจอ = ของค้างเงียบ
-   · ไลน์แม่ไม่ได้ผูกพื้นที่ / ลูกแยกหลายพื้นที่ (เช่น Assembly Line D: D1=P404 · D2–D6=P413) = **ยังค้างจริง** คืน false */
+   · ครอบ = ไลน์แม่ถูกระบุในรหัสคลังที่มีไลน์ลูกของมัน **อย่างน้อย 1 ตัว** (ลูกตัวนั้นคอนเฟิร์มแล้วหักของที่แม่ได้)
+     ลูกที่อยู่พื้นที่อื่น (เช่น D1=P404 ขณะที่แม่อยู่ P413 — user ตัดสิน 09/11) = ไม่ใช้ของกองนี้ ตามที่ตั้ง
+   · ไลน์แม่ไม่ได้ผูกพื้นที่ / พื้นที่ของแม่ไม่มีลูกเลย = **ยังค้างจริง** คืน false */
 export function parentAreaCovers(slocs, lines, parentName) {
   const p = norm(parentName);
   if (!p) return false;
@@ -143,5 +145,5 @@ export function parentAreaCovers(slocs, lines, parentName) {
   const home = active.find(s => s.line_names.map(norm).includes(p));
   if (!home) return false;
   const names = new Set(home.line_names.map(norm));
-  return kids.every(k => names.has(k));
+  return kids.some(k => names.has(k));
 }

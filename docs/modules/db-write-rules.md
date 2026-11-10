@@ -376,6 +376,27 @@ const delLink = async (it) => { if (!confirm(…)) return; await supabaseDR…; 
    (หน้าล้างผ่านของกลาง + ทะเบียนของกลางครอบคีย์ชั้นนอก) — ด่านที่ล็อกการพิมพ์คีย์ที่จุดเรียก
    คือด่านที่ช่วยให้บั๊ก ① เกิดได้
 
+### 🔐 10/11 — ต้นเหตุจริงของ "ไลน์ dropdown ไม่ขึ้น": ลิสต์ว่างที่โหลด**ตอนไม่ได้ login** ถูกจดลง cache
+**ที่วัดได้ (log ฝั่ง Main 24 ชม.):** `production_lines` จากเว็บ 628 ครั้ง — ได้ครบ 52 แถว 506 ครั้ง ·
+**ได้ 0 แถว 122 ครั้ง ทั้งหมดวิ่งด้วย role `anon` · 28 IP** · สถานะ 200 ทุกครั้ง (RLS SELECT เปิดแค่ `authenticated`
+⇒ anon ไม่ error แต่ได้ลิสต์ว่าง) · ไล่ลำดับคำขอรายเครื่อง: login อยู่ → **ออกจากระบบ/สลับบัญชี** →
+`production_lines` แบบ anon → login คนถัดไปภายใน 2-4 วินาที
+**ลูกโซ่:** `handleLogout` ล้าง cache ก่อน `signOut` → หน้าที่ยัง mount re-render (role/ขอบเขตถูกล้าง) →
+โหลดทะเบียนใหม่ตอนไม่มี token → `cachedMaster` จดลิสต์ว่างเป็น "สำเร็จ" ลง localStorage 4 ชม.
+⇒ **คนถัดไปที่ login เครื่องนั้น dropdown ไลน์ว่าง** · เครื่องกลางที่สลับบัญชีบ่อยโดนทุกรอบ ·
+และคำแนะนำ "ออกแล้วเข้าใหม่" (28/10) กลับเป็นตัวสร้างของพิษซ้ำ
+**แก้ (ชั้นกลาง ไม่ใช่รายหน้า):**
+- `masterCache.js` → **`setMasterAuthUser(uid)`** ตั้งจาก `App.jsx` (getSession · onAuthStateChange ·
+  `handleLogout` ก่อนล้าง cache) + ปุ่มสลับบัญชี `/checkin` · `cachedMaster`/`cachedRows`
+  **ห้ามจดผลที่เริ่มโหลดตอนไม่ได้ login หรือผู้ใช้เปลี่ยนระหว่างโหลด** (คืนให้ผู้เรียกเฉยๆ · ล้มช่วงนั้นไม่จดเป็นผลล้ม/ไม่ toast)
+  · `undefined` = ยังไม่รู้ (ก่อนอ่าน session) = พฤติกรรมเดิม
+- `loadProductionLines()` — **0 แถว = โยน `MasterLoadError`** (ทั้งตารางเปิดให้ทุกคนที่ login อ่าน ⇒ ว่าง = อ่านไม่ได้)
+- `cachedMaster(key, loader, ttl, { nonEmpty: true })` — ข้ามลิสต์ว่างที่ค้างใน cache (ของพิษเครื่องที่โดนไปแล้ว
+  หายทันทีที่ deploy ไม่ต้องรอ 4 ชม.) · ใช้กับ `production_lines:v3` + `:dr` + `:flow`
+**ด่าน:** `master-cache-auth-gate` (`regressionGuards`) + `src/utils/__tests__/masterAuthGate.test.mjs`
+⚠️ ตารางฝั่ง Main ตัวอื่นที่ RLS เป็น `authenticated` ก็ได้ประโยชน์จากประตูนี้ด้วย (anon ในช่วงเดียวกัน: four_m_logs 13 ·
+notifications 12 · doc_forms 9 ฯลฯ — ส่วนใหญ่ไม่ได้ผ่าน cache จึงไม่ค้าง)
+
 ---
 
 ## 🗑️ ด่านนับปลายทางก่อนลบ "ทะเบียนที่จับคู่ด้วยข้อความ" — ปิดครบ 7/7 (2026-10-18)

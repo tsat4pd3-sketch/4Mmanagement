@@ -13,7 +13,7 @@ import { toast } from '../components/Toast'
 import CommitInput from '../components/CommitInput';
 import { DEPT_LABEL, EQUIP_TYPE_LABEL, CYCLE_PRESETS, cycleDaysOf, cycleLabel, freqForCycle, ymdBangkok } from '../lib/pmSchedule'
 import { addDays as addDaysYmd } from '../utils/pmUsage'
-import { loadPmTeams, pmTeamsSync, teamKind, teamKindOf, teamEquipTypeOf, clearPmTeamsCache, isAmTeam } from '../utils/pmTeams'
+import { loadPmTeams, pmTeamsSync, teamKind, teamKindOf, teamEquipTypeOf, clearPmTeamsCache, isAmTeam, teamLabel } from '../utils/pmTeams'
 // picker กลาง (single-source audit 2026-09-07) — ไลน์/เครื่อง/พาร์ท/กระบวนการ อ่านจากทะเบียน ไม่พิมพ์เอง
 import LineSelect from '../components/LineSelect'
 import MachineSelect from '../components/MachineSelect'
@@ -27,6 +27,7 @@ import { findChecklist, getOrCreateChecklist, setChecklistFrequency, listCheckli
 import { fetchCategories, fetchCheckingMethods, categoryColor } from '../lib/pmTaxonomy'
 import TaxonomyManagerModal from '../components/TaxonomyManagerModal'
 import SpinAnnotator from '../components/SpinAnnotator'
+import { sheetCompleteness, cpInFrameFilter, UNPINNED } from '../utils/inspectSheetQuality'
 import ImageCropModal from '../components/ImageCropModal'
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
@@ -352,6 +353,20 @@ function EquipmentModal({ onClose, onSaved, editJig, department, categories, met
   const [frames, setFrames] = useState([])   // [{ _key, id?, image_path?, _file?, _preview, title }]
   const initialImagePathsRef = useRef(new Set()) // path รูปตอนเปิดแก้ไข — ใช้เก็บกวาดไฟล์ที่ถูกถอดตอน save
   const [frameIdx, setFrameIdx] = useState(0)
+  /* 🔎 ดูเฉพาะจุดของมุมไหน — null = ทุกมุม · UNPINNED = จุดที่ยังไม่ปักหมุด (2026-11-10)
+     คำสั่ง user: ไล่ทำทีละมุม (มุมที่ 1 ปักครบ+ใส่รูปขยาย → มุมที่ 2) */
+  const [frameFilter, setFrameFilter] = useState(null)
+  /* 📋 ตัวอย่าง "ใบที่ทำครบตามแพทเทิน" — มาจากข้อมูลจริง **ห้าม hardcode ชื่อเครื่อง**
+     (ใบต้นแบบเปลี่ยนได้ · RPC `fn_inspect_sheet_examples` ฝั่ง DR · migration 20261110)
+     อ่านไม่ได้ = ไม่โชว์บรรทัดนี้เฉยๆ ไม่กระทบการตั้งค่า */
+  const [sheetExample, setSheetExample] = useState(null)
+  useEffect(() => {
+    let alive = true
+    supabaseDR.rpc('fn_inspect_sheet_examples', { p_department: department, p_limit: 1 })
+      .then(({ data, error }) => { if (alive && !error) setSheetExample((data ?? [])[0] ?? null) })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [department])
   const [imgBusy, setImgBusy] = useState(false)
   /* 📌 จอกว้าง = แยก 2 คอลัมน์ "รูปค้างไว้ซ้าย · รายการจุดตรวจเลื่อนขวา" (user 23/09
      "จอที่ต้องใช้รูปอ้างอิงตอนตรวจ ควรตรึงรูปไว้") — จอแคบตรึงรูปไว้บนหัวแทน
@@ -961,6 +976,9 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
 
   // จัดกลุ่มสำหรับ render + label "Item.sub" (เช่น 1.3) ให้การ์ดกับ pin ตรงกัน
   const grouped = groupCheckpoints(checkpoints)
+  /* 📋 ใบนี้ทำครบตามแพทเทินหรือยัง — **ตัวบอก ไม่ใช่ด่าน** ห้ามเอาไปบล็อกการบันทึก
+     (สูตร/ตัวเลขเทียบรายทีม อยู่ใน src/utils/inspectSheetQuality.js) */
+  const comp = sheetCompleteness(checkpoints, frames)
   const cpLabels = {}
   grouped.named.forEach((g, gi) => g.items.forEach((c, j) => { cpLabels[c._key] = `${gi + 1}.${j + 1}` }))
   {
@@ -1470,16 +1488,97 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             )}
             listTitle={`จุดตรวจสอบ (${checkpoints.length})`} onAdd={addCp}
             jump={{ points: grouped.ordered, labels: cpLabels, onJump: jumpToCp, flashKey, onTop: scrollTop }}>
-              {grouped.named.map((g, gi) => (
-                <div key={g.name} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={groupHeaderStyle}>Item {gi + 1} — {g.name} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({g.items.length} จุด)</span></div>
-                  {g.items.map(renderCard)}
+              {/* ══ 📋 แพทเทินการสร้างใบตรวจ (2026-11-10 · คำสั่ง user) ══════════════════
+                  "เริ่มจากรูปมุมที่ 1 → ปักหมุดทุกจุดของมุมนั้น + ใส่รูปขยาย → แล้วค่อยไปมุมที่ 2"
+                  🔴 แถบนี้เป็น **ตัวบอก ไม่ใช่ด่าน** — ใบที่ยังไม่ครบก็ยังบันทึก/ใช้ตรวจได้
+                     (จอตรวจไม่ได้บังคับว่าต้องปักหมุดครบแล้ว · ดู docs/modules/pm-hub-check-setup.md) */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 10px', marginBottom: 2,
+                            borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)' }}>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', fontSize: 11.5, color: 'var(--text2)' }}>
+                  <b style={{ color: comp.done ? 'var(--accent)' : 'var(--text)' }}>
+                    {comp.done ? '✅ ใบนี้ครบตามแพทเทินแล้ว' : '📋 ความครบของใบนี้'}
+                  </b>
+                  <span>มุม <b>{comp.frames}</b></span>
+                  <span>จุดตรวจ <b>{comp.cps}</b></span>
+                  <span>ปักหมุด <b style={{ color: comp.unpinned ? 'var(--amber)' : 'var(--accent)' }}>{comp.pinned}/{comp.cps}</b></span>
+                  <span>รูปขยาย <b style={{ color: comp.noPhoto ? 'var(--amber)' : 'var(--accent)' }}>{comp.withPhoto}/{comp.cps}</b></span>
                 </div>
-              ))}
-              {grouped.named.length > 0 && grouped.ungrouped.length > 0 && (
-                <div style={{ ...groupHeaderStyle, background: 'var(--bg3)', color: 'var(--muted)' }}>ไม่ระบุกลุ่ม</div>
-              )}
-              {grouped.ungrouped.map(renderCard)}
+                {comp.missing.length > 0 && (
+                  <div style={{ fontSize: 11, color: 'var(--amber)' }}>ยังขาด: {comp.missing.join(' · ')}</div>
+                )}
+                {!comp.done && (
+                  <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.7 }}>
+                    แพทเทินที่แนะนำ: ① เพิ่มรูป<b>มุมที่ 1</b> → ② <b>+ เพิ่มจุดตรวจ</b> แล้วกด 🔘 วางตำแหน่ง แตะบนรูป
+                    → ③ แนบ 📷 <b>รูปขยาย</b>ของจุดนั้น → ④ ครบมุมนี้แล้วค่อยไป<b>มุมที่ 2</b>
+                    {sheetExample && (
+                      <> · ตัวอย่างใบที่ทำครบ: <b>{sheetExample.equipment_name}</b>{' '}
+                        ({sheetExample.frames} มุม · {sheetExample.cps} จุด · ปักครบ · รูปขยายครบ
+                        {sheetExample.same_team ? '' : ` · ใบของ${teamLabel(sheetExample.department)}`})
+                      </>
+                    )}
+                  </div>
+                )}
+                {/* ไล่ทีละมุม — กดมุมไหน รูปก็เลื่อนไปมุมนั้นด้วย (ไม่งั้นกรองแล้วรูปไม่ตรง) */}
+                {comp.frames > 0 && (
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>ดูเฉพาะ:</span>
+                    {[{ k: null, t: `ทุกมุม (${comp.cps})` },
+                      ...comp.byFrame.map(f => ({ k: f.key, t: `${f.title} (${f.n})`, idx: f.idx })),
+                      ...(comp.unpinned > 0 ? [{ k: UNPINNED, t: `ยังไม่ปักหมุด (${comp.unpinned})`, warn: true }] : []),
+                    ].map(ch => {
+                      const on = frameFilter === ch.k
+                      return (
+                        <button key={String(ch.k)} type="button"
+                          onClick={() => { setFrameFilter(ch.k); if (ch.idx != null) setFrameIdx(ch.idx) }}
+                          style={{ padding: '2px 9px', borderRadius: 999, cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                            border: `1px solid ${on ? 'var(--accent)' : (ch.warn ? 'var(--amber)' : 'var(--border2)')}`,
+                            background: on ? 'var(--accent)' : 'var(--card)',
+                            color: on ? 'var(--accent-ink)' : (ch.warn ? 'var(--amber)' : 'var(--text2)') }}>
+                          {ch.t}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {grouped.named.map((g, gi) => {
+                /* 🔴 กรองเพื่อ "ดู" เท่านั้น — เลขข้อ (cpLabels) คิดจากลิสต์เต็มไปแล้ว ไม่ขยับตามตัวกรอง */
+                const items = g.items.filter(c => cpInFrameFilter(c, frameFilter, frames))
+                if (!items.length) return null
+                return (
+                  <div key={g.name} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={groupHeaderStyle}>Item {gi + 1} — {g.name} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({items.length}{items.length !== g.items.length ? ` จาก ${g.items.length}` : ''} จุด)</span></div>
+                    {items.map(renderCard)}
+                  </div>
+                )
+              })}
+              {(() => {
+                const un = grouped.ungrouped.filter(c => cpInFrameFilter(c, frameFilter, frames))
+                const anyNamed = grouped.named.some(g => g.items.some(c => cpInFrameFilter(c, frameFilter, frames)))
+                return (
+                  <>
+                    {anyNamed && un.length > 0 && (
+                      <div style={{ ...groupHeaderStyle, background: 'var(--bg3)', color: 'var(--muted)' }}>ไม่ระบุกลุ่ม</div>
+                    )}
+                    {un.map(renderCard)}
+                    {/* กรองแล้วไม่เหลืออะไร ต้องบอก + กดกลับได้ ห้ามปล่อยจอว่างเฉยๆ */}
+                    {frameFilter != null && !anyNamed && un.length === 0 && (
+                      <div style={{ textAlign: 'center', padding: '18px 12px', fontSize: 12, color: 'var(--muted)',
+                                    border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)' }}>
+                        มุมนี้ยังไม่มีจุดตรวจ — กด <b>+ เพิ่มจุดตรวจ</b> แล้วกด 🔘 วางตำแหน่ง เพื่อปักหมุดบนรูปมุมนี้
+                        <div style={{ marginTop: 8 }}>
+                          <button type="button" onClick={() => setFrameFilter(null)}
+                            style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
+                                     border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--text2)' }}>
+                            ดูทุกมุม
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
           </PinWorkspace>
 
           {error && <p style={{ color: 'var(--red)', fontSize: 13 }}>{error}</p>}

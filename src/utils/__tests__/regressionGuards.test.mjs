@@ -8933,6 +8933,17 @@ test('🛡️ am-monthly-signoff-record — เขียน am_monthly_signoffs 
   assert.match(page, /isStale\(sign\.key, curKey\)/, '\n\n❌ AmMonthlyReport ไม่มีด่าน stale (เดือน/กะ) ก่อนลงนาม\n');
 });
 
+test('🛡️ am-onsite-badge-verify — ใบ AM ต้องมีบัตรผู้ตรวจ + ผู้ตรวจตัวจริง = คนตามบัตร (B4 · 10/11)', () => {
+  /* หัวหน้าถือ handheld บันทึกแทน ⇒ inspector_id = หัวหน้า · ถ้าสายอนุมัติอ่านตำแหน่ง/ใบตัวเองจาก inspector_id
+     หัวหน้ารับทราบไม่ได้ (self) และใบเลื่อนไปรอหัวหน้าแผนกทุกใบ · ไม่บังคับบัตร = ไม่รู้ว่าใครตรวจ */
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/PMCheckData.jsx'), 'utf8'));
+  assert.match(page, /const gate = amBadgeGate\(/, '\n\n❌ PMCheckData.handleSave ไม่ผ่าน amBadgeGate — ใบ AM ต้องมีบัตรผู้ตรวจที่ชี้พนักงานได้ 1 คน\n');
+  assert.match(page, /if \(!gate\.ok\) \{ toast\.error\(gate\.text\); return \}/, '\n\n❌ บัตรไม่ผ่านแล้วยังบันทึกต่อ\n');
+  assert.match(page, /onSite = amOnSiteApproval\(/, '\n\n❌ อนุมัติหน้าเครื่องต้องตัดสินผ่าน amOnSiteApproval (utils/amApproval.js)\n');
+  assert.ok(!/inspPosById\[\s*(insp|viewInspection)\.inspector_id\s*\]/.test(page),
+    '\n\n❌ อ่านตำแหน่งผู้ตรวจจาก inspector_id ตรงๆ — ใบที่มีรหัสบัตรต้องใช้ inspectorOf()/amInspectorIdentity (คนตามบัตรชนะบัญชีที่ login)\n');
+});
+
 test('🛡️ am-mo-label-single-source — ป้ายสถานะ MO บนจอ AM ต้องมาจาก moStatusLabel()', () => {
   for (const f of ['src/pages/DailyPM.jsx', 'src/pages/PMCheckData.jsx']) {
     const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
@@ -9784,4 +9795,178 @@ test('⏱️ ot-ceiling-auto-carry — โหมด OT ต้องมีเพ�
     '\n\n❌ เกินโควต้า OT แล้วต้องสลับเป็น carry อัตโนมัติ (ไม่ใช่เปิดต่อ/ไม่ใช่เงียบ)\n');
   assert.match(src, /โควต้า OT เต็มแล้ว/,
     '\n\n❌ สลับเป็นส่งกะถัดไปแล้วไม่บอก — คนยิงรัวจะนึกว่ายอดยังอยู่กะนี้ (ห้ามล้มเหลวเงียบ)\n');
+});
+
+test('🔀 insp-team-not-jig-only — ใบตรวจต้องแยกด้วยทีม ไม่ใช่ jig_id ล้วน', () => {
+  /* 🔴 10/11 คำสั่ง user: "การตรวจ am/pm มาทับกัน ตอนนี้อ้างอิงแค่ id ของอุปกรณ์ มันปนกัน"
+     เครื่องเดียวมี checklist ทั้ง AM และ PM เป็นเรื่องปกติของ TPM — วัดจริง DR 6 เครื่อง / 112 ใบ
+     ดึงใบด้วย `jig_id` ล้วน = ได้ใบของทั้ง 2 ทีมปนกัน และถ้ามี limit ทีมที่ตรวจถี่กว่าจะกินช่อง
+     จนใบของอีกทีมหลุดหาย (PF-H101: AM 22 ใบ · DIE MTN 1 ใบ — ช่างเคยเห็นใบตัวเอง 1 ใน 23)
+     ⇒ ทุกคิวรี inspections ที่กรองด้วย jig_id ต้องมีแกนทีมกำกับในฟังก์ชันเดียวกัน
+     📄 src/utils/pmTeams.js §1 อุปกรณ์ ตรวจได้หลายทีม · docs/modules/am-pm-linkage-audit.md */
+  const TEAM_AXIS = /checklist_id|amClIds|clDept|teamsKnown|isAmTeam|amCls/;
+  /* ยกเว้นโดยเจตนา: เด็คสรุปรายเดือนรายงาน "PM/AM ที่พบผิดปกติ" รวมกันทั้ง 2 ฝั่งโดยตั้งใจ
+     (หัวข้อบนสไลด์เขียน PM/AM) — จะแยกต้องให้ user สั่ง เพราะเปลี่ยนเนื้อรายงานผู้บริหาร */
+  const ALLOW = new Set(['src/lib/monthlyReviewPptx.js']);
+  const files = [];
+  for (const dir of ['src', 'supabase/functions']) walk(join(ROOT, dir), ['.js', '.jsx', '.ts'], files);
+  let checked = 0;
+  for (const f of files) {
+    const rel = relative(ROOT, f);
+    if (ALLOW.has(rel) || /__tests__/.test(rel) || !/\.(js|jsx|ts)$/.test(rel)) continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!/from\(['"]inspections['"]\)/.test(src)) continue;
+    const lines = src.split('\n');
+    lines.forEach((ln, i) => {
+      if (!/\.(eq|in)\(['"]jig_id['"]/.test(ln)) return;
+      /* ใบตรวจหรือเปล่า — ดูย้อนขึ้นไปว่าเป็นคิวรี inspections จริง */
+      const back = lines.slice(Math.max(0, i - 4), i + 1).join('\n');
+      if (!/from\(['"]inspections['"]\)/.test(back)) return;
+      checked++;
+      const win = lines.slice(Math.max(0, i - 25), i + 25).join('\n');
+      assert.ok(TEAM_AXIS.test(win),
+        `\n\n❌ ${rel}:${i + 1} — ดึงใบตรวจด้วย jig_id โดยไม่มีแกนทีมกำกับ\n`
+        + '   ⇒ เครื่องที่มีทั้ง checklist AM และ PM จะได้ใบของทั้ง 2 ทีมปนกัน แยกไม่ออกว่าใบไหนของใคร\n'
+        + '   แก้ยังไง: กรองด้วย checklist_id ของทีมนั้น (ถาม checklists.department ก่อนดึงใบ)\n'
+        + '   หรือใช้ splitInspByTeam() จาก src/utils/pmTeams.js แล้วติดป้าย inspTeamLabel()\n');
+    });
+  }
+  assert.ok(checked >= 1,
+    `\n\n❌ หาคิวรี inspections ที่กรองด้วย jig_id ไม่เจอเลย (${checked}) — ด่านนี้วัดอะไรไม่ได้แล้ว\n`
+    + '   ถ้าย้ายโค้ด/เปลี่ยนชื่อคอลัมน์จริง ต้องแก้ด่าน ไม่ใช่ปล่อยให้ผ่านเงียบ\n');
+});
+
+test('🔢 cp-number-not-tied-to-pin — เลขข้อ/โหมดทีละข้อ ห้ามผูกกับการปักหมุด', () => {
+  /* 🔴 10/11 feedback หน้างาน (user: "ทำไมแพทเทินไม่เหมือนกัน · เห็นปนกันไปหมด")
+     หน้า /pm-check-data เคยผูก 2 อย่างนี้ไว้กับ `x_pos` (พิกัดหมุดบนรูป):
+       ① เลขข้อในแถว `{cp.x_pos != null && <span>{idx+1}</span>}` ⇒ เครื่องที่ยังไม่ปักหมุด
+          (RB-109 ปัก 0/11) ทุกแถวไม่มีเลข ทั้งที่ชิป "ยังไม่ตรวจ" · สูตร "ข้อ N" · ปุ่มข้อก่อน/ถัดไป
+          อ้างเลขนี้หมด ⇒ จับคู่ไม่ได้ว่าแถวไหนคือข้อไหน
+       ② โหมดตรวจทีละข้อ `focusOn = ... && allPinned` ⇒ เครื่องที่ปักไม่ครบตกไปใช้ลิสต์ยาว
+          = คนละหน้าตากับเครื่องข้างๆ ทั้งที่เป็นใบตรวจเหมือนกัน
+     🔑 การปักหมุดจำเป็นแค่กับ "แตะหมุดบนรูปเพื่อเลือกข้อ" — ไม่ใช่กับเลขข้อหรือตัวโหมด */
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/PMCheckData.jsx'), 'utf8'));
+
+  assert.ok(!/x_pos\s*!=\s*null\s*&&\s*<span[^>]*>\{idx \+ 1\}/.test(src),
+    '\n\n❌ เลขข้อในแถวถูกผูกกับ `cp.x_pos` อีกแล้ว — เครื่องที่ยังไม่ปักหมุดจะไม่มีเลขข้อเลย\n'
+    + '   ชิป/สูตร/ปุ่มข้อก่อน-ถัดไป อ้างเลขนี้ทั้งหมด ⇒ คนตรวจจับคู่แถวกับเลขไม่ได้\n');
+
+  const m = src.match(/const focusOn = [^\n]*/);
+  assert.ok(m, '\n\n❌ หา `const focusOn =` ใน PMCheckData.jsx ไม่เจอ — ด่านนี้วัดอะไรไม่ได้แล้ว\n');
+  assert.ok(!/allPinned/.test(m[0]),
+    `\n\n❌ โหมดตรวจทีละข้อกลับไปบังคับว่าต้องปักหมุดครบ: ${m[0].trim()}\n`
+    + '   ⇒ เครื่องที่ปักไม่ครบจะได้หน้าตาคนละแบบกับเครื่องอื่น (user สั่งให้แพทเทินเหมือนกัน 10/11)\n'
+    + '   ใช้ allPinned ได้เฉพาะกับ "แตะหมุดบนรูป" และข้อความอธิบาย ไม่ใช่กับตัวโหมด\n');
+
+  /* รูปของจุดตรวจขึ้นจอใหญ่ได้ แต่ห้ามวาดหมุดทับ (พิกัดหมุดเป็น % ของรูปเครื่อง คนละรูป) */
+  assert.ok(/onCpPhoto/.test(src),
+    '\n\n❌ ไม่มีทางดูรูปของจุดตรวจบนจอใหญ่แล้ว — รูปใหญ่จะค้างที่เฟรมแรกของเครื่องเหมือนเดิม\n');
+  assert.ok(/imgBox && !onCpPhoto/.test(src),
+    '\n\n❌ ชั้นหมุดไม่ได้กันออกตอนโชว์รูปของจุดตรวจ\n'
+    + '   ⇒ หมุดจะถูกวาดทับรูปคนละรูปด้วยพิกัดของรูปเครื่อง = ชี้ผิดจุด (กฎ §5.1 UI-CONVENTIONS)\n');
+});
+
+test('🛡️ master-cache-auth-gate — ผลที่โหลดตอนไม่ได้ login ห้ามลง cache', () => {
+  /* เคสจริง 10/11 (หน้างาน "โหลดไลน์ผลิต dropdown ไม่ขึ้น"): log Main 24 ชม. — `production_lines`
+     อ่านแบบ anon 122 ครั้ง/28 IP ได้ 200 + 0 แถว ⇒ ลิสต์ว่างถูกจด 4 ชม. ⇒ คน login ถัดไป dropdown ว่าง
+     ต้นเหตุ = ออกจากระบบ/สลับบัญชีแล้วหน้าที่ยัง mount โหลดทะเบียนใหม่ตอนไม่มี token
+     📄 src/utils/masterCache.js §ประตู "ตอนนี้ใคร login อยู่" */
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  assert.match(app, /onAuthStateChange\(\(evt, s\) => \{\s*\n\s*setMasterAuthUser\(/,
+    '🔴 onAuthStateChange ต้องบอก masterCache ว่าใคร login อยู่ (ไม่งั้นผลตอน anon ถูก cache)');
+  assert.match(app, /getSession\(\)\.then\(\(\{ data: \{ session \} \}\) => \{\s*\n\s*setMasterAuthUser\(/,
+    '🔴 getSession ตอนเปิดแอปต้องตั้งประตู masterCache');
+  assert.match(app, /setMasterAuthUser\(null\);[^\n]*\n\s*clearAllMasterCache\(\);/,
+    '🔴 handleLogout ต้องปิดประตูก่อนล้าง cache — ไม่งั้นหน้าที่ re-render จดลิสต์ว่างทับ');
+  const ck = stripComments(readFileSync(join(ROOT, 'src/pages/Checkin.jsx'), 'utf8'));
+  assert.match(ck, /setMasterAuthUser\(null\);[^\n]*\n\s*try \{ await supabase\.auth\.signOut/,
+    '🔴 ปุ่มสลับบัญชีหน้าเช็คชื่อต้องปิดประตูก่อน signOut');
+  const pl = stripComments(readFileSync(join(ROOT, 'src/utils/useProductionLines.js'), 'utf8'));
+  assert.match(pl, /if \(!data\?\.length\) throw new MasterLoadError/,
+    '🔴 ทะเบียนไลน์ว่าง = อ่านไม่ได้ ต้องโยน ห้ามคืน [] ให้ลง cache');
+  assert.match(pl, /\{ nonEmpty: true \}/, '🔴 ทะเบียนไลน์ต้องข้ามลิสต์ว่างที่ค้างใน cache (nonEmpty)');
+});
+
+/* ═══ 🪪 badge-scan-saves-now — 2026-11-10 · คำสั่ง user ═══════════════════════════════════
+   *"มันควรจะเช็คมาเลยมั้ยแบบนี้ ตอนนี้ไม่เห็นใช้ได้"* — ยิงบัตร 1 ใบ = ลงฐานทันที 1 แถว
+   3 อย่างที่ห้ามหลุด: ① หน้าเขียนจริงและเช็คจำนวนแถว ② ScanModal ต้อง await (ไม่งั้นขึ้นเขียว
+   ก่อนรู้ผล = จอบอกสำเร็จทั้งที่เขียนล้ม) ③ ตัวนับในหน้าต่างสแกนห้าม hardcode "ยังไม่ได้บันทึก"  */
+test('🪪 badge-scan-saves-now — สแกนบัตรต้องเขียนลงฐานทันที + จอต้องบอกผลจริง', () => {
+  const bad = [];
+  const ck = stripComments(readFileSync(join(ROOT, 'src/pages/Checkin.jsx'), 'utf8'));
+  const fn = ck.slice(ck.indexOf('const onBadgeScan'), ck.indexOf('badgeScanRef.current ='));
+  if (!/const onBadgeScan = async/.test(fn)) bad.push('onBadgeScan ไม่ใช่ async — เขียนฐานไม่ได้');
+  if (!/upsertCheckin\(/.test(fn)) bad.push('onBadgeScan ไม่เขียนลงฐาน (กลับไปติ๊กบนจอเฉยๆ)');
+  if (!/ckLogRow\(/.test(fn)) bad.push('onBadgeScan ประกอบแถวเอง — ต้องใช้ ckLogRow ชุดเดียวกับปุ่มบันทึก');
+  // ❌ เขียนไม่ติดแล้วยังติ๊กบนจอ = จอบอกเช็คแล้วทั้งที่ฐานว่าง
+  const okIdx = fn.indexOf('if (!okRow)'), setIdx = fn.indexOf('setAttendance(');
+  if (okIdx < 0 || setIdx < 0 || okIdx > setIdx) bad.push('ติ๊กบนจอก่อนรู้ผลการเขียน — ต้องเช็คผลก่อน setAttendance');
+
+  const sm = stripComments(readFileSync(join(ROOT, 'src/components/ScanModal.jsx'), 'utf8'));
+  if (!/problem = await res/.test(sm)) bad.push('ScanModal ไม่ await onScan ที่เป็น Promise — ขึ้นเขียวก่อนรู้ผลจริง');
+  if (!/await emit\(/.test(sm)) bad.push('ลูปกล้องไม่ await emit — ยิงใบถัดไปทับระหว่างบันทึกใบแรก');
+
+  const foot = ck.slice(ck.indexOf('<ScanModal title="สแกนบัตรพนักงาน"'), ck.indexOf('<ScanModal title="สแกนบัตรพนักงาน"') + 2200);
+  if (/ยังไม่ได้บันทึก<\/span>/.test(foot)) bad.push('ตัวนับในหน้าต่างสแกนยัง hardcode "ยังไม่ได้บันทึก" (จอโกหก)');
+  if (!/scanSaved\.length/.test(foot)) bad.push('หน้าต่างสแกนไม่บอกว่ารอบนี้บันทึกไปกี่คน');
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
+
+/* ═══ 🪪 scan-landing-checkin — 2026-11-10 · คำสั่ง user ════════════════════════════════════
+   *"ยิงบัตรแล้วขึ้น ✓ เช็คชื่อสำเร็จ พอ ไม่ต้องเปิดหน้าเช็คชื่อ"* ⇒ `/scan` เขียนฐานได้ **ข้อยกเว้นเดียว**
+   ของกฎ "หน้านี้อ่านอย่างเดียว" · 2 อย่างที่ห้ามหลุด:
+   ① สูตรแถวต้องเป็นของกลาง (`lib/checkinSave.js`) — ห้ามหน้าไหนประกอบ/ยิง upsert เอง
+   ② `/scan` ยิงบัตรใครก็ได้ทั้งโรงงาน (ไม่มีรายชื่อมากรองเหมือน `/checkin`) ⇒ **ต้องเช็คขอบเขตชั้น ③ เอง**  */
+test('🪪 scan-landing-checkin — /scan เช็คชื่อได้ แต่ต้องผ่านของกลาง + ด่านขอบเขตชั้น ③', () => {
+  const bad = [];
+  const sl = stripComments(readFileSync(join(ROOT, 'src/pages/ScanLanding.jsx'), 'utf8'));
+  if (!/checkinByBadge\(/.test(sl)) bad.push('ScanLanding ไม่ได้เช็คชื่อผ่าน checkinByBadge (ของกลาง)');
+  if (/from\('daily_production_logs'\)/.test(sl)) bad.push('ScanLanding แตะ daily_production_logs ตรงๆ — ต้องผ่าน lib/checkinSave.js');
+  if (!/canWriteLine\(/.test(sl) || !/canWriteUnit\(/.test(sl))
+    bad.push('ScanLanding ไม่เช็คขอบเขตชั้น ③ — ยิงบัตรคนแผนกอื่นแล้วเช็คชื่อให้ได้');
+  // ด่านต้องอยู่ใน handler ที่เขียนจริง ไม่ใช่แค่ซ่อนปุ่ม (เปิด /scan?c=<รหัส> ตรงได้)
+  const h = sl.slice(sl.indexOf('const doCheckin'), sl.indexOf('const doCheckin') + 1800);
+  if (!/if \(!ckScope\?\.ok\)/.test(h)) bad.push('doCheckin ไม่มีด่านขอบเขตในฟังก์ชันที่เขียนจริง');
+  if (h.indexOf('ckScope?.ok') > h.indexOf('checkinByBadge(')) bad.push('เช็คขอบเขตหลังเขียนไปแล้ว');
+  // ctx ของด่านต้องครบ 2 แกน (write-scope-layer: ไม่ส่ง = ถอยไปใช้ section เงียบๆ)
+  if (!/respCostCenters/.test(sl) || !/scopeIdx/.test(sl)) bad.push('ctx ของด่านไม่ได้ส่ง respCostCenters/scopeIdx');
+
+  const lib = stripComments(readFileSync(join(ROOT, 'src/lib/checkinSave.js'), 'utf8'));
+  if (!/checkWriteRows\(/.test(lib)) bad.push('checkinSave ไม่ได้นับแถว (RLS ปฏิเสธ = 0 แถว ไม่มี error)');
+  if (!/markPresentRecord\(/.test(lib)) bad.push('checkinSave ไม่ได้ใช้ markPresentRecord (กติกาการลา)');
+  // 🔴 อ่านแถวเดิมไม่ได้ = ห้ามเขียน (เขียนทั้งที่ไม่รู้ของเดิม = ทับ PPE/OT/ลา ของคนอื่น)
+  if (!/read_failed/.test(lib)) bad.push('checkinSave ไม่มีทาง read_failed — อ่านของเดิมไม่ได้แล้วยังเขียนทับ');
+  const byBadge = lib.slice(lib.indexOf('export async function checkinByBadge'));
+  if (byBadge.indexOf("kind: 'already'") > byBadge.indexOf('upsertCheckin(')) bad.push('checkinByBadge เขียนก่อนเช็คว่ามางานอยู่แล้ว');
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
+
+test('📋 sheet-quality-is-hint-not-gate — แถบความครบของใบตรวจเป็นตัวบอก ห้ามเป็นด่าน', () => {
+  /* 🔴 10/11 คำสั่ง user เรื่อง "แพทเทินการสร้างใบตรวจ" — จอตั้งค่า PM โชว์ว่าใบนี้ครบหรือยัง
+     (มุม/จุด/ปักหมุด/รูปขยาย) + ชี้ใบตัวอย่างจริง
+     ห้าม 2 อย่าง:
+       ① เอาความครบไปบล็อกการบันทึก — ใบที่ยังปักไม่ครบก็ยังใช้ตรวจได้ (จอตรวจไม่บังคับแล้ว)
+          บล็อก = ตั้งค่าใบใหม่ไม่ได้จนกว่าจะทำครบ = คนเลิกใช้ระบบ
+       ② hardcode ชื่อเครื่องตัวอย่างในโค้ด — ใบต้นแบบเปลี่ยนได้ ต้องมาจาก
+          RPC `fn_inspect_sheet_examples` (DR · migration 20261110)
+     📄 src/utils/inspectSheetQuality.js · docs/modules/inspection-point-setup.md */
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/PMSetup.jsx'), 'utf8'));
+
+  /* ตัวบอก: ต้องมีจริง ไม่งั้นด่านนี้วัดอะไรไม่ได้ */
+  assert.ok(/sheetCompleteness\(/.test(src) && /cpInFrameFilter\(/.test(src),
+    '\n\n❌ จอตั้งค่าไม่ได้ใช้ sheetCompleteness/cpInFrameFilter แล้ว — แถบความครบ/ตัวกรองรายมุมหายไป\n');
+
+  /* ① ความครบห้ามไปอยู่ในเส้นทางบันทึก */
+  const saveFn = src.slice(src.indexOf('const handleSave'), src.indexOf('const handleSave') + 3000);
+  assert.ok(!/\bcomp\.(done|missing|pinned|unpinned|noPhoto)\b/.test(saveFn),
+    '\n\n❌ handleSave อ่านค่าความครบของใบ — กำลังจะกลายเป็นด่านบล็อกการบันทึก\n'
+    + '   ใบที่ยังปักหมุด/ใส่รูปไม่ครบ ต้องบันทึกได้ตามปกติ (เป็นตัวบอก ไม่ใช่ด่าน)\n');
+  assert.ok(!/disabled=\{[^}]*comp\./.test(src),
+    '\n\n❌ มีปุ่มถูก disabled ด้วยค่าความครบของใบ — ห้ามบล็อก ให้บอกว่ายังขาดอะไรพอ\n');
+
+  /* ② ห้าม hardcode ชื่อ/ไอดีเครื่องตัวอย่าง */
+  assert.ok(/fn_inspect_sheet_examples/.test(src),
+    '\n\n❌ ไม่ได้เรียก RPC หาใบตัวอย่างแล้ว — ถ้าจะโชว์ตัวอย่างต้องมาจากข้อมูลจริง\n');
+  assert.ok(!/JHYD\d|HDF-0\d\s*-\s*SCHULER/i.test(src),
+    '\n\n❌ hardcode ชื่อเครื่องตัวอย่างในโค้ด — ใบต้นแบบเปลี่ยนได้ ต้องถาม fn_inspect_sheet_examples\n');
 });
