@@ -36,7 +36,8 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { toast } from '../components/Toast';
-import { can, canAccessPage } from '../utils/permissions';
+import { can, canAccessPage, canSeeded } from '../utils/permissions';
+import { restampSessionQByDefects } from '../lib/restampSessionQ';
 import { lineScope } from '../utils/sectionScope';
 /* 🔐 ชั้นที่ ③ ของสิทธิ์ — "แถวนี้เป็นของหน่วยงานเราไหม" · ฝั่ง DR เป็น anon ⇒ จอคือด่านเดียว
    🔴 ช่องเลือกไลน์ที่กรอง scope แล้ว **ไม่ใช่ด่าน** (เปิด `?scope=` ตรงได้) — ต้องเช็คซ้ำในฟังก์ชันที่เขียน DB */
@@ -116,6 +117,9 @@ export default function QualityBins({ mode = 'full' }) {
   const { role, lineId, sections, fullName, scopeIdx, section: homeSection, allUnits, respCostCenters } = useContext(UserContext);
   const canRecord = can('scrap', 'record', role);
   const canManage = can('scrap', 'manage', role);
+  /* ✍️ ตัดสินผลถังเหลือง = QA เท่านั้น (คำสั่ง user 10/11 · WI-PD3-069 §5.4) — คีย์แยก `qa:bin_decide`
+     เดิมใช้ `scrap:record` ที่หัวหน้าไลน์ถืออยู่ ⇒ ฝ่ายผลิตตัดสินของตัวเองได้ · ยังไม่ seed = ปิด (ยกเว้น admin) */
+  const canDecide = canSeeded('qa', 'bin_decide', role);
 
   const [bin, setBin] = useState('yellow');
   const [lines, setLines] = useState([]);
@@ -457,6 +461,12 @@ export default function QualityBins({ mode = 'full' }) {
        qa_decision_at เขียนเฉพาะตอน "เพิ่งตัดสิน" — แก้ช่องอื่นทีหลังไม่ขยับเวลาตัดสิน */
     if (isY) {
       const dec = form.qa_decision || null;
+      const prevDec = editing === 'new' ? null : (editing.qa_decision || null);
+      if (dec !== prevDec && !canDecide) {
+        setSaving(false);
+        toast.error('ผลการพิจารณาเปลี่ยนได้เฉพาะ QA (สิทธิ์ qa:bin_decide) — คืนช่องผลพิจารณาเป็นค่าเดิมแล้วบันทึกใหม่');
+        return;
+      }
       payload.qa_decision = dec;
       payload.special_use_doc_no = dec === 'use_as_is' ? (form.special_use_doc_no.trim() || null) : null;
       const prev = editing === 'new' ? null : (editing.qa_decision || null);
@@ -486,6 +496,7 @@ export default function QualityBins({ mode = 'full' }) {
       if (editing.found_img && editing.found_img !== foundUrl) removeQualityImg(editing.found_img);
       if (editing.repair_img && editing.repair_img !== payload.repair_img) removeQualityImg(editing.repair_img);
     }
+    if (editing === 'new' && bin === 'red') notifyRed(payload, payload.qty);
     if (editing === 'new') notifyEvent({
       event: 'quality_bin_added', type: bin === 'red' ? 'error' : 'info',
       ref_table: 'quality_bin_records', line_name: payload.line_name || null, actor: fullName,
@@ -501,11 +512,35 @@ export default function QualityBins({ mode = 'full' }) {
     /* 🔴 เลือก "ทำลาย" ในฟอร์มแล้วบันทึก = ต้องย้ายลงถังแดงด้วย (บั๊ก A 10/11)
        เดิมบันทึกแค่ผล ไม่ย้าย ⇒ ใบหลุดคิวรอพิจารณา ไม่มีใบแดง ไม่เข้าสายขออนุมัติทำลาย
        ใช้ `toRed` ตัวเดิม (ถามยืนยันจำนวนก่อนย้าย · กดยกเลิก = ใบยังค้างในคิวพร้อมป้ายบอก ไม่หายเงียบ) */
+    const decChanged = isY && editing !== 'new' && (payload.qa_decision || null) !== (editing.qa_decision || null);
+    if (decChanged || (isY && editing !== 'new' && (payload.return_date || null) !== (editing.return_date || null))) {
+      restampQ([editing.defect_log_id]);
+    }
     if (isY && savedId && payload.qa_decision === 'scrap' && !redChildOf.has(savedId)) {
       await toRed({ ...(editing === 'new' ? {} : editing), ...payload, id: savedId });
     }
     load();   // ยกเลิก/ล้มใน toRed ก็ต้องรีเฟรช ให้เห็นใบที่ค้างพร้อมป้าย
   };
+
+  /* 🔁 ผลพิจารณาเปลี่ยน ⇒ %Q ของกะที่ปิดไปแล้วต้องคิดใหม่ (oee.js §7.1/§7.2 · ค่าที่ stamp ตอนปิดกะเป็นค่าชั่วคราว)
+     ล้ม = บอกบนจอ ห้ามเงียบ (ผลพิจารณาบันทึกไปแล้ว แต่รายงานยังเป็นเลขเก่า) */
+  const restampQ = async (defectIds) => {
+    const res = await restampSessionQByDefects(defectIds);
+    if (!res.ok) toast.error(`บันทึกผลแล้ว แต่คิด %Q ของกะใหม่ไม่สำเร็จ: ${res.reason} — รายงาน %Q ของกะนั้นยังเป็นเลขเดิม แจ้ง admin`);
+    else if (res.changed) toast.info(`อัปเดต %Q ของกะที่ปิดแล้ว ${res.changed} กะ ตามผลพิจารณา`);
+  };
+
+  /* 🔔 ของลงถังแดง = หัวหน้าแผนกต้องรู้ เพื่อทวงหัวหน้าไลน์ออกใบรายงานของเสีย (คำสั่ง user 10/11)
+     ผู้รับตั้งที่ทะเบียน `notification_rules` (qbin_red_needs_scrap) ห้ามฮาร์ดโค้ด · fire-and-forget */
+  const notifyRed = (row, qty) => notifyEvent({
+    event: 'qbin_red_needs_scrap', type: 'error', ref_table: 'quality_bin_records',
+    line_name: row.line_name || null, actor: fullName,
+    lines: [
+      `🏭 ไลน์: ${row.line_name || '—'} · ${row.part_no || row.part_name || row.mat_no || '—'}`,
+      `🔢 ${qty} ชิ้น · แท็กแดงอายุ ${TAG_MAX_DAYS.red} วัน`,
+      '📄 ต้องออกใบรายงานของเสีย (FM-PD2-002) เพื่อขออนุมัติทำลาย',
+    ],
+  });
 
   const remove = async (r) => {
     if (!canManage) { toast.error('ลบรายการของเสียต้องมีสิทธิ์ scrap:manage'); return; }
@@ -543,6 +578,8 @@ export default function QualityBins({ mode = 'full' }) {
     });
     if (error) { toast.error(error.message); return; }
     toast.success('สร้างรายการถังแดงแล้ว — ไปกรอกผู้กำจัดทำลายที่แท็บถังแดง');
+    notifyRed(r, qty);
+    restampQ([r.defect_log_id]);
     load();   // ใบเหลืองใบนี้ต้องเปลี่ยนเป็น "🔴 ย้ายแล้ว" ทันที ไม่งั้นกดซ้ำได้
   };
 
@@ -552,7 +589,7 @@ export default function QualityBins({ mode = 'full' }) {
      🔴 ทุกปุ่มเขียนผ่าน `checkWriteRows` — RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error"
      🔴 ห้ามเดาผลให้ — ปุ่มคือ "คนกดตัดสิน" · ระบบตั้งแท็กให้เฉยๆ ไม่เคยตัดสินเอง */
   const decide = async (r, kind) => {
-    if (!canRecord) { toast.error('บัญชีนี้ไม่มีสิทธิ์บันทึกของเสีย (scrap:record)'); return; }
+    if (!canDecide) { toast.error('ตัดสินผลถังเหลืองได้เฉพาะ QA (สิทธิ์ qa:bin_decide)'); return; }
     if (deciding) return;
     if (!guardLines(r.line_name, 'ผลพิจารณาของในถังเหลือง') || !guardSigner()) return;
     const qty = Number(r.qty) || 0;
@@ -580,12 +617,13 @@ export default function QualityBins({ mode = 'full' }) {
     setDeciding('');
     if (!ok) return;
     toast.success(`✅ ${label} ${qty} ชิ้น — ปิดออกจากถังเหลืองแล้ว`);
+    restampQ([r.defect_log_id]);
     load();
   };
 
   /** 🔴 เสียแน่ → ตัดสิน scrap แล้วย้ายลงถังแดง (ใช้ตัวเดิม `toRed` ที่ผูก from_yellow_id ให้) */
   const decideScrap = async (r) => {
-    if (!canRecord) { toast.error('บัญชีนี้ไม่มีสิทธิ์บันทึกของเสีย (scrap:record)'); return; }
+    if (!canDecide) { toast.error('ตัดสินผลถังเหลืองได้เฉพาะ QA (สิทธิ์ qa:bin_decide)'); return; }
     if (deciding) return;
     if (!guardLines(r.line_name, 'ผลพิจารณาของในถังเหลือง') || !guardSigner()) return;
     /* 🔴 "เสียแน่" = ตัดของทิ้งจริง + เปิดสายขออนุมัติทำลาย ⇒ ต้องถามยืนยันเหมือนกัน (เดิมไม่ถามเลย) */
@@ -680,7 +718,7 @@ export default function QualityBins({ mode = 'full' }) {
                         return why ? <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>⚠️ {why}</div> : null;
                       })()}
                     </div>
-                    {canRecord && (
+                    {canDecide && (
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         <button disabled={busy} onClick={() => decide(r, 'good')}
                           title="ตรวจแล้วใช้ได้ — ติดแท็กเขียวแล้วกลับเข้ากระบวนการ (WI §5.4)"
@@ -716,9 +754,9 @@ export default function QualityBins({ mode = 'full' }) {
                 {pendAll ? 'ย่อกลับ' : `แสดงอีก ${pend.length - 8} (ทั้งหมด ${pend.length})`}
               </button>
             )}
-            {!canRecord && pend.length > 0 && (
+            {!canDecide && pend.length > 0 && (
               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
-                ดูได้อย่างเดียว — ตัดสินผลต้องมีสิทธิ์ <b>scrap:record</b>
+                ดูได้อย่างเดียว — ตัดสินผลได้เฉพาะ <b>QA</b> (สิทธิ์ qa:bin_decide)
               </div>
             )}
           </div>
@@ -732,7 +770,7 @@ export default function QualityBins({ mode = 'full' }) {
      🔴 ขอบเขตของคิวต้องเขียนบนจอ (เห็นเฉพาะส่วนงานตัวเอง ≠ ทั้งโรงงานเคลียร์หมด) */
   if (queueOnly) return (
     <div>
-      <ReadOnlyNote show={!canRecord} role={role} what="ตัดสินผลของในถังเหลือง" permKey="scrap:record" />
+      <ReadOnlyNote show={!canDecide} role={role} what="ตัดสินผลของในถังเหลือง (เฉพาะ QA)" permKey="qa:bin_decide" />
       {renderPendQueue()}
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 10, lineHeight: 1.8 }}>
         📄 เอกสารตัวจริง (ใบรายงานของเสีย · ทะเบียนถังเหลือง/ถังแดง · อายุแท็ก · ทะเบียน WI ซ่อม) อยู่ที่<b>ฝ่ายผลิต</b>
@@ -1020,9 +1058,11 @@ export default function QualityBins({ mode = 'full' }) {
                   {QA_DECISIONS.map(d => {
                     const on = form.qa_decision === d.value;
                     return (
-                      <button key={d.value} type="button" title={d.hint}
+                      <button key={d.value} type="button" title={canDecide ? d.hint : 'ตัดสินผลได้เฉพาะ QA (สิทธิ์ qa:bin_decide)'}
+                        disabled={!canDecide}
                         onClick={() => setForm(f => ({ ...f, qa_decision: on ? '' : d.value }))}
-                        style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 800, cursor: 'pointer',
+                        style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 800,
+                          cursor: canDecide ? 'pointer' : 'not-allowed', opacity: canDecide || on ? 1 : 0.5,
                           border: `1px solid ${on ? d.color : 'var(--border2)'}`,
                           background: on ? `${d.color}22` : 'transparent', color: on ? d.color : 'var(--text2)' }}>
                         {d.label}

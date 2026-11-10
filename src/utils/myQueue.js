@@ -364,6 +364,36 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
     });
   }
 
+  /* ── 🔴 ถังแดงยังไม่ออกใบรายงานของเสีย — หัวหน้าแผนกทวงหัวหน้าไลน์ (2026-11-10 · คำสั่ง user) ──
+     แท็กแดงมีอายุ 1 วัน (WI-PD3-087 §5.6) แต่ไม่มีใครถูกดึงไปออกใบ ⇒ วัด 10/11: ค้าง 74 รายการ · ผูกใบ 0
+     🔴 ชั้น `unit` เท่านั้น (หน่วยเจ้าของไลน์ = คนที่ต้องออกใบ) · สรุปบรรทัดเดียว ห้ามแตกรายตัว (CAP unit)
+     ⚠️ `redBins` ไม่ส่งมา = ไม่ได้โหลด ⇒ ข้ามทั้งก้อน (ไม่ติด partial — ตัวโหลดเก่าที่ไม่รู้จักก้อนนี้ยังใช้ได้)
+        ส่ง null = โหลดล่ม ⇒ partial */
+  if (src.redBins !== undefined) {
+    const reds = need('redBins', src.redBins);
+    if (src?.redBinsTruncated) missing.push('red_bins_truncated');
+    const mineRed = reds.filter(b => keep(b));
+    if (mineRed.length) {
+      let pcs = 0; let oldest = null; let over = 0;
+      for (const b of mineRed) {
+        pcs += Number(b.qty) || 0;
+        const age = ageDays(b.work_date, now);
+        if (age != null && (oldest == null || age > oldest)) oldest = age;
+        if (binTagAge({ ...b, bin: 'red' }, todayKey)?.over) over += 1;
+      }
+      unit.push({
+        key: 'binred_unit', icon: '🔴', tier: TIER.UNIT, count: mineRed.length,
+        title: `ถังแดงยังไม่ออกใบรายงานของเสีย ${mineRed.length.toLocaleString()} รายการ`,
+        detail: ['หน่วยงานของคุณ', `${pcs.toLocaleString()} ชิ้น`,
+          oldest != null ? `เก่าสุด ${oldest.toLocaleString()} วัน` : null,
+          over ? `⏱ เกินอายุแท็ก ${over.toLocaleString()}` : null].filter(Boolean).join(' · '),
+        age: oldest,
+        tag: 'หัวหน้าแผนก: ทวงหัวหน้าไลน์ออกใบขออนุมัติทำลาย',
+        to: '/scrap-report?tab=bins',
+      });
+    }
+  }
+
   // ── งานที่ถูกมอบหมายชื่อเราตรงๆ (ใบติดตามงานแก้ไข) ──────────────────────────
   for (const a of need('actions', src.actions)) {
     const it = {

@@ -70,7 +70,7 @@ export async function loadMyQueue(me) {
   const ok = (r) => (r.error ? undefined : (r.data || []));
 
   const canLu = !!(me.canLevelUp || me.canLevelUp100);
-  const [moR, sesR, prR, fourR, actR, lines, luR, binR, binRedR] = await Promise.all([
+  const [moR, sesR, prR, fourR, actR, lines, luR, binR, binRedR, redPendR] = await Promise.all([
     /* กรองด้วยสถานะที่ยังมีคนต้องทำต่อ — เดิม `.gt('current_step', 1)` ตัดใบ "รอจ่ายงาน" (current_step = 1)
        ทิ้งทั้งหมด และ `.is('approve_at', null)` ตัดใบ MTN ที่อนุมัติแล้วแต่ยังรอปิดใบ (ขั้น 8) */
     supabaseDR.from('mtn_orders').select(MO_COLS)
@@ -102,6 +102,11 @@ export async function loadMyQueue(me) {
        แถวจริงตอนนี้ 0 — แต่ต้องถามไว้ เพราะทางย้ายมือยังเปิดอยู่ในหน้าถัง */
     supabaseDR.from('quality_bin_records').select('from_yellow_id')
       .eq('bin', 'red').eq('is_active', true).not('from_yellow_id', 'is', null).limit(1000),
+    /* 🔴 ถังแดงยังไม่ออกใบ (10/11) — หัวหน้าแผนกต้องเห็นเพื่อทวงหัวหน้าไลน์ · เฉพาะคอลัมน์ที่คิวใช้
+       ⚠️ นับเฉพาะ "ยังไม่ผูกใบ" — ผูกใบร่างแล้วดูที่หน้าถัง (ขึ้นส้ม "ร่าง · ยังไม่ส่งอนุมัติ") */
+    supabaseDR.from('quality_bin_records').select('id, work_date, line_name, qty')
+      .eq('bin', 'red').eq('is_active', true).is('scrap_report_id', null)
+      .order('work_date', { ascending: true }).limit(300),
   ]);
   const levelUps = canLu ? ok(luR)?.map(r => ({ id: r.id, to_level: r.to_level, requested_at: r.requested_at, section: r.employees?.section })) : undefined;
 
@@ -125,6 +130,10 @@ export async function loadMyQueue(me) {
     : pendingYellow(binR.data || [], movedToRed)
       .map(b => ({ ...b, section: secOfLine.get(String(b.line_name || '').trim().toLowerCase()) }));
 
+  const redBins = redPendR.error ? null
+    : (redPendR.data || []).map(b => ({ ...b, section: secOfLine.get(String(b.line_name || '').trim().toLowerCase()) }));
+  const redBinsTruncated = Array.isArray(redPendR.data) && redPendR.data.length >= 300;
+
   const moRows = ok(moR);
   const mo = moRows?.filter(o => !DEAD.includes(String(o.status || '')));
   /* 🔴 ชนเพดาน = โหลดไม่ครบ ไม่ใช่ "ไม่มีงาน" — ต้องติด `partial` ให้จอเขียนบอก
@@ -145,7 +154,7 @@ export async function loadMyQueue(me) {
      🔴 คิวรีล่ม = `mo` เป็น undefined ⇒ **ไม่ส่ง** `moAll` เพื่อให้ `countsCapped` ติดธง
         ห้ามส่ง [] (จะกลายเป็น "ทุกกองมี 0 ใบ" ทั้งที่ไม่รู้ · ลิสต์ว่าง 2 ความหมาย · กฎข้อ 12) */
   return buildQueue({ mo, moAll: mo, moAllCapped: moTruncated, moTruncated,
-    sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps, bins, binsTruncated }, me);
+    sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps, bins, binsTruncated, redBins, redBinsTruncated }, me);
 }
 
 /* ── UI ชิ้นเล็ก ────────────────────────────────────────────────────────── */

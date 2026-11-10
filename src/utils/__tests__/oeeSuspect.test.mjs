@@ -150,3 +150,51 @@ test('QBIN_EMBED ต้องมีทุกคอลัมน์ที่กฎ
     assert.ok(QBIN_EMBED.includes(col), `QBIN_EMBED ขาด ${col}`);
   }
 });
+
+// ── §7.2 NG ที่อยู่ในถังเหลือง (2026-11-10 · คำสั่ง user) ───────────────────────
+// ตัวอย่างของ user: ผลิต(ดี) 399 · ลงเสีย 1 → แท็กเหลืองอัตโนมัติครอบ 1 ชิ้น
+const Y = (o) => ({ id: 'y1', bin: 'yellow', qty: 1, qa_decision: null, return_date: null, ...o });
+test('🔴 §7.2 NG ในถังเหลืองรอพิจารณา = ยังไม่หัก %Q + นับเป็น "รอพิจารณา"', () => {
+  const d = row({ qty_ng: 1, quality_bin_records: [Y()] });
+  assert.equal(defectQty(d), 0);
+  assert.equal(suspectPendingQty(d), 1);
+  assert.equal(defectQtyAll(d), 1);                 // %P/พาเรโต ยังเห็นเหมือนเดิม
+});
+for (const dec of ['good', 'repair', 'use_as_is']) {
+  test(`🔴 §7.2 NG ที่ QA ตัดสิน "${dec}" = ไม่หัก %Q`, () => {
+    const d = row({ qty_ng: 1, quality_bin_records: [Y({ qa_decision: dec })] });
+    assert.equal(defectQty(d), 0);
+    assert.equal(suspectPendingQty(d), 0);
+  });
+}
+test('🔴 §7.2 ทำลาย / ย้ายลงแดง = หัก', () => {
+  assert.equal(defectQty(row({ qty_ng: 1, quality_bin_records: [Y({ qa_decision: 'scrap' })] })), 1);
+  const d = row({ qty_ng: 3, quality_bin_records: [Y({ qty: 3 }), { id: 'r1', bin: 'red', from_yellow_id: 'y1', qty: 3 }] });
+  assert.equal(defectQty(d), 3);
+});
+test('🔴 §7.2 ซ่อม 5 ชิ้น ดี 3 NG 2 → หักแค่ 2 (ทั้งก่อนและหลังย้าย NG ลงแดง)', () => {
+  const y = Y({ qty: 5, qa_decision: 'repair', qty_ng: 2, return_date: '2026-11-10' });
+  assert.equal(defectQty(row({ qty_ng: 5, quality_bin_records: [y] })), 2);
+  assert.equal(defectQty(row({ qty_ng: 5, quality_bin_records: [y, { id: 'r1', bin: 'red', from_yellow_id: 'y1', qty: 2 }] })), 2);
+});
+test('🔴 §7.2 ใบเหลืองไม่ครอบ NG / NG ลงแดงตรง / ไม่ได้ถาม = พฤติกรรมเดิม (NG นับ)', () => {
+  // ใบเหลืองครอบแค่ของสงสัย (โมดัลลงถังแบบเก่า)
+  assert.equal(defectQty(row({ qty_ng: 3, qty_suspect: 2, quality_bin_records: [Y({ qty: 2, qa_decision: 'good' })] })), 3);
+  // NG ลงแดงตรง
+  assert.equal(defectQty(row({ qty_ng: 3, qty_suspect: 5, quality_bin_records: [
+    { id: 'r1', bin: 'red', from_yellow_id: null, qty: 3 }, Y({ qty: 8 })] })), 3);
+  // ยังไม่มีใบถัง (แถวก่อน 05/11)
+  assert.equal(defectQty(asked({ qty_ng: 4 })), 4);
+  assert.equal(defectQty(row({ qty_ng: 4 })), 4);
+});
+test('§7.2 ใบเหลืองซ้ำนับเกิน = ตัดส่วนเกินจาก "รอ" ก่อน ห้ามเกินชิ้นของแถว', () => {
+  const d = row({ qty_ng: 2, quality_bin_records: [Y({ qty: 2, qa_decision: 'scrap' }), Y({ id: 'y2', qty: 2 })] });
+  assert.equal(defectQty(d), 2);
+  assert.equal(suspectPendingQty(d), 0);
+});
+test('§7.2 ตัวอย่าง user: ผลิต 399 + NG 1 → Q = 100% ระหว่างรอ/ซ่อมดี · 399/400 เมื่อทำลาย', () => {
+  const q = (dec) => { const ng = sumDefectQty([row({ qty_ng: 1, quality_bin_records: [Y({ qa_decision: dec })] })]); return 399 / (399 + ng); };
+  assert.equal(q(null), 1);
+  assert.equal(q('repair'), 1);
+  assert.equal(q('scrap'), 399 / 400);
+});
