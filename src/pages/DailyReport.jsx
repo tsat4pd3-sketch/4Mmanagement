@@ -25,7 +25,7 @@ import { inSectionScope, scopedLines, lineScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { fetchByIds } from '../utils/fetchByIds';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
-import { checkShiftCapacity } from '../utils/shiftCapacity';
+import { checkShiftCapacity, checkOtCapacity, otSpanMin } from '../utils/shiftCapacity';
 import { splitCloseOrders, autoCarryPatch, autoCarryText } from '../utils/closeShiftOrders';   // 🔁 ปิดกะ: ใบที่ยังไม่แตะ = ยกเอง (20/10)
 import { debtByPart, debtPcs, debtAgeDays } from '../utils/carryDebt';   // 📥 ของค้าง "ต้องไล่เก็บอีกเท่าไหร่" (20/10)
 import { loadCarryOffers, importCarryOrders } from '../lib/carryDebtOps';   // 📥 โหลด/รับของค้าง — ที่เดียวทั้งระบบ
@@ -1887,8 +1887,21 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     // ── Capacity check ── (สูตรอยู่ใน utils/shiftCapacity.js · ไม่รู้ความจุ/ไม่รู้ CT = ไม่เตือน)
     const cap = checkShiftCapacity({ netAvailMin: calcNetAvailMin(), newQty: qty, newCtSec: ctSec, ...capacityArgs() });
     if (cap) {
+      const info = { prodNo, matNo, qty, std };
       /* เลือกไว้แล้วในกะนี้ = ทำตามนั้นเลย ไม่เด้งโมดัลซ้ำ (แต่ toast บอกทุกใบ ห้ามเงียบ) */
-      if (overflowMode) { await runOverflowChoice(overflowMode, { prodNo, matNo, qty, std }); return; }
+      if (overflowMode === 'carry') { await runOverflowChoice('carry', info); return; }
+      if (overflowMode === 'force') {
+        /* 🔴 "เปิด OT" ไม่ใช่เช็คเปล่า — OT มีเพดานของมัน (คำสั่ง user 10/11)
+           เกินโควต้า OT แล้วยังเปิดต่อ = รับงานที่ไม่มีเวลาทำ แล้วไปโผล่เป็นใบค้างตอนปิดกะอยู่ดี
+           ⇒ เกินเมื่อไหร่ **โยนกะถัดไปให้อัตโนมัติ** แล้วบอกให้ชัดว่าทำไม */
+        const otOver = checkOtCapacity({
+          netAvailMin: calcNetAvailMin(), shift: selSession?.shift,
+          newQty: qty, newCtSec: ctSec, ...capacityArgs(),
+        });
+        if (!otOver) { await runOverflowChoice('force', info); return; }
+        await runOverflowChoice('carry', info, { otFullMin: otOver.overMin });
+        return;
+      }
       setOverflowInfo({ prodNo, matNo, qty, std, ...cap });
       return; // หยุดรอ user เลือก
     }
@@ -1957,7 +1970,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
      🔴 ต้อง **คืนโฟกัสให้ช่องสแกนทุกทาง** — ทางปกติของ `handleScanOpenInner` คืนให้อยู่แล้ว
         แต่ 2 ทางนี้เคยไม่คืน ⇒ หน้างานต้องเอามือคลิกช่อง PROD.NO ใหม่ทุกใบ (แจ้งเข้ามา 10/11)
         เครื่องสแกนยิงเข้าช่องที่โฟกัสอยู่เท่านั้น = ยิงรัวไม่ได้เลยช่วงใกล้เลิกกะ */
-  const runOverflowChoice = async (choice, info) => {
+  const runOverflowChoice = async (choice, info, { otFullMin = null } = {}) => {
     const { prodNo, matNo, qty, std } = info || {};
     if (!prodNo) return;
     const asCarry = choice === 'carry';
@@ -1966,9 +1979,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     setSavingProdOpen(false);
     setOverflowInfo(null);
     if (error) { toast.error(error.message); refocusScanOpen(); return; }
-    toast.info(asCarry
-      ? `บันทึก ${prodNo} เป็นยอดค้างกะถัดไป ✓${overflowMode ? ' (โหมดจำคำตอบ)' : ''}`
-      : `เปิด Order ${prodNo} · ${qty} ชิ้น ✓ (เกินเวลากะ)${overflowMode ? ' (โหมดจำคำตอบ)' : ''}`);
+    /* 🔴 ถูกสลับจาก "เปิด OT" เป็น "ส่งกะถัดไป" เพราะ OT เต็ม = ต้องบอกให้ชัดที่สุด
+       ไม่งั้นคนยิงรัวจะนึกว่ายังเปิดเข้ากะนี้อยู่ แล้วยอดไปโผล่กะหน้าโดยไม่รู้ตัว */
+    if (otFullMin != null) {
+      toast.error(`⏭️ โควต้า OT เต็มแล้ว (เกินอีก ${otFullMin} นาที) — ${prodNo} ถูกส่งเป็น "ยอดค้างกะถัดไป" อัตโนมัติ · ใบถัดไปก็จะส่งต่อเหมือนกันจนกว่าจะมีเวลาว่าง`);
+    } else {
+      toast.info(asCarry
+        ? `บันทึก ${prodNo} เป็นยอดค้างกะถัดไป ✓${overflowMode ? ' (โหมดจำคำตอบ)' : ''}`
+        : `เปิด Order ${prodNo} · ${qty} ชิ้น ✓ (เกินเวลากะ · อยู่ในโควต้า OT)${overflowMode ? ' (โหมดจำคำตอบ)' : ''}`);
+    }
     setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false, backfill_time: '' }));
     setCarriedMat(matNo || null);
     loadProdOrders(selSession.id, selSession.line_name);
@@ -5966,6 +5985,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   เปิดกะนี้ต่อ (OT)
                 </button>
               </div>
+              {/* "เปิด OT" ไม่ใช่เช็คเปล่า — บอกตั้งแต่ตอนเลือกว่ามีเพดาน ไม่ใช่ให้ไปเซอร์ไพรส์ตอนใบที่ 4 */}
+              <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6, marginTop: -4 }}>
+                เลือก <b style={{ color: 'var(--text2)' }}>เปิดกะนี้ต่อ (OT)</b> = เปิดได้อีก
+                {otSpanMin(selSession?.shift) ? <b style={{ color: 'var(--text)' }}> {otSpanMin(selSession?.shift)} นาที</b> : ' ตามโควต้า OT'}
+                {' '}· เต็มแล้วใบถัดไปจะถูก<b style={{ color: 'var(--blue)' }}>ส่งเป็นยอดค้างกะถัดไปให้อัตโนมัติ</b>
+              </div>
               <button onClick={() => { setOverflowInfo(null); refocusScanOpen(); }} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 12 }}>
                 ยกเลิก
               </button>
@@ -6219,7 +6244,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 {overflowMode && (
                   <div style={{ padding: '8px 12px', background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 'var(--r-md)', fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <b style={{ color: 'var(--amber)' }}>⏩ ใบที่เกินเวลากะ:</b>
-                    <span>{overflowMode === 'carry' ? 'ส่งเป็นยอดค้างกะถัดไปอัตโนมัติ' : 'เปิดกะนี้ต่อ (OT) อัตโนมัติ'}</span>
+                    <span>
+                      {overflowMode === 'carry'
+                        ? 'ส่งเป็นยอดค้างกะถัดไปอัตโนมัติ'
+                        : <>เปิดกะนี้ต่อ (OT) อัตโนมัติ — <b style={{ color: 'var(--text)' }}>เต็มโควต้า OT{otSpanMin(selSession?.shift) ? ` (${otSpanMin(selSession?.shift)} นาที)` : ''} เมื่อไหร่ ส่งกะถัดไปให้เอง</b></>}
+                    </span>
                     <button type="button" onClick={() => { setOverflowMode(null); setOverflowRemember(false); refocusScanOpen(); }}
                       style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)', cursor: 'pointer' }}>
                       กลับไปถามทุกใบ

@@ -9747,7 +9747,7 @@ test('⏩ scan-open-overflow-flow — ใบเกินเวลากะต้
   /* ทางเดียวกันทั้งปุ่มในโมดัลและโหมดที่จำไว้ — ห้ามแตกเป็น 2 ชุดแล้วลืมคืนโฟกัสฝั่งใดฝั่งหนึ่ง */
   assert.doesNotMatch(src, /const handleOverflowNextShift|const handleOverflowForce/,
     '\n\n❌ แตก handler ของใบเกินเวลากะกลับเป็น 2 ตัว — ต้องรวมที่ runOverflowChoice ตัวเดียว\n');
-  assert.match(src, /if \(overflowMode\) \{ await runOverflowChoice\(overflowMode,/,
+  assert.match(src, /if \(overflowMode === 'carry'\) \{ await runOverflowChoice\('carry',/,
     '\n\n❌ ถอดโหมด "จำคำตอบทั้งกะ" — ใกล้เลิกกะโมดัลจะเด้งทุกใบ ยิง Tag ต่อกันไม่ได้\n');
 
   /* 🔴 จำคำตอบได้ แต่ห้ามเงียบ และห้ามข้ามกะ */
@@ -9759,4 +9759,29 @@ test('⏩ scan-open-overflow-flow — ใบเกินเวลากะต้
     '\n\n❌ ไม่มีปุ่มเลิกโหมด — ติ๊กพลาดแล้วออกไม่ได้จนกว่าจะเปลี่ยนกะ\n');
   assert.match(src, /โหมดจำคำตอบ/,
     '\n\n❌ toast ไม่ได้บอกว่าใบนี้ถูกจัดการด้วยโหมดที่จำไว้ (คนยิงรัวต้องรู้ว่าของไปไหน)\n');
+});
+
+/* ═══ ⏱️ "เปิด OT" มีเพดาน — ot-ceiling-auto-carry (2026-11-10 · คำสั่ง user) ═══
+   *"กดเปิดโอที ใบหลังจากนั้นก็ลงไปที่ช่วง OT จนประมาณใบที่ 4 เห็นว่าใช้เกิน OT ไปอีก
+     ใบถัดๆ ไปให้โยนไปกะถัดไปอัตโนมัติเลย"*
+   ⇒ ความจุมี 2 ชั้น: เพดานกะ → เพดาน OT · เกินชั้น 2 = ส่งกะถัดไป ห้ามเปิดต่อ
+   (เปิดต่อ = รับงานที่ไม่มีเวลาทำ แล้วไปโผล่เป็นใบค้างตอนปิดกะอยู่ดี) */
+test('⏱️ ot-ceiling-auto-carry — โหมด OT ต้องมีเพดาน แล้วสลับเป็นส่งกะถัดไปเอง', () => {
+  const cap = readFileSync(join(ROOT, 'src/utils/shiftCapacity.js'), 'utf8');
+  assert.match(cap, /export function otSpanMin\(/,
+    '\n\n❌ ถอด otSpanMin — โควต้า OT ต้องมีเจ้าของกฎใน utils/shiftCapacity.js\n');
+  assert.match(cap, /WEEKDAY_OT_TIME/,
+    '\n\n❌ โควต้า OT ต้องอ่านจากทะเบียนกลาง WEEKDAY_OT_TIME (utils/otPeriods.js) ห้าม hardcode นาที\n');
+  assert.doesNotMatch(stripComments(cap), /\b150\b/,
+    '\n\n❌ hardcode นาที OT ไว้ใน shiftCapacity.js — เปลี่ยนนโยบายแล้วตัวเลขจะไม่ขยับตาม\n');
+
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.match(src, /if \(overflowMode === 'force'\)/,
+    '\n\n❌ โหมด OT กลับไปเปิดใบทุกใบโดยไม่เช็คเพดาน OT\n');
+  assert.match(src, /const otOver = checkOtCapacity\(\{/,
+    '\n\n❌ ไม่ได้เช็คโควต้า OT ด้วย checkOtCapacity ก่อนเปิดใบในโหมด OT\n');
+  assert.match(src, /if \(!otOver\) \{ await runOverflowChoice\('force'[\s\S]{0,80}await runOverflowChoice\('carry'/,
+    '\n\n❌ เกินโควต้า OT แล้วต้องสลับเป็น carry อัตโนมัติ (ไม่ใช่เปิดต่อ/ไม่ใช่เงียบ)\n');
+  assert.match(src, /โควต้า OT เต็มแล้ว/,
+    '\n\n❌ สลับเป็นส่งกะถัดไปแล้วไม่บอก — คนยิงรัวจะนึกว่ายอดยังอยู่กะนี้ (ห้ามล้มเหลวเงียบ)\n');
 });
