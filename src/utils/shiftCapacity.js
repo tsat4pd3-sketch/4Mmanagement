@@ -31,6 +31,7 @@
    ═══════════════════════════════════════════════════════════════════════════════════════ */
 import { pairLoadTotal } from './pairTotals.js';
 import { flowModeOf } from './lineTypes.js';
+import { WEEKDAY_OT_TIME } from './otPeriods.js';
 
 const num = (v) => Number(v) || 0;
 const key = (v) => {
@@ -124,4 +125,45 @@ export function checkShiftCapacity({ netAvailMin, newQty, newCtSec, ...rest }) {
     newOrderMin: Math.round(newOrderMin),
     basis: c.basis, lanes: c.lanes, lane: c.lane, unknownCt: c.unknownCt,
   };
+}
+
+
+/* ══ ⏱️ โควต้า OT ต่อท้ายกะ — เพดานชั้นที่ 2 (2026-11-10 · คำสั่ง user) ═══════════════════
+ * หน้างาน: *"พอ 17:00 สแกน 5 ใบ ใบนึงกิน 1 ชม. … กดเปิด OT ใบหลังจากนั้นก็ลงช่วง OT
+ *           จนประมาณใบที่ 4 เห็นว่าเกิน OT ไปอีก ใบถัดๆ ไปให้โยนไปกะถัดไปอัตโนมัติเลย"*
+ *
+ * ⇒ ความจุมี **2 ชั้น**: ① เพดานกะ (`netAvailMin` ที่จอส่งมา) ② เพดาน OT = ① + ช่วง OT ต่อท้ายกะ
+ *   เลือก "เปิดกะนี้ต่อ (OT)" = ยกเพดานขึ้นชั้น ② · เกินชั้น ② เมื่อไหร่ = ส่งกะถัดไป **ห้ามเปิดต่อ**
+ *
+ * 🔴 ช่วง OT อ่านจากทะเบียนกลาง `WEEKDAY_OT_TIME` (utils/otPeriods.js) **ห้าม hardcode 150 ที่นี่**
+ *    — เปลี่ยนนโยบาย OT ที่ไฟล์นั้นที่เดียว ตัวเลขทุกจอต้องขยับตาม
+ * 🔴 แกะเวลาไม่ออก = `0` (ไม่มีโควต้า OT) **ห้ามเดา** — ผลคือถามเหมือนเดิมทุกใบ ซึ่งปลอดภัยกว่าเปิดเกิน
+ */
+const hhmmMin = (t) => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(t ?? '').trim());
+  if (!m) return null;
+  const h = Number(m[1]), mi = Number(m[2]);
+  if (!(h >= 0 && h <= 24 && mi >= 0 && mi < 60)) return null;
+  return h * 60 + mi;
+};
+
+/** นาทีของช่วง OT ต่อท้ายกะนั้น — 0 เมื่อไม่รู้จักกะ/แกะเวลาไม่ออก */
+export function otSpanMin(shift, table = WEEKDAY_OT_TIME) {
+  const span = table?.[shift];
+  if (!span) return 0;
+  const [a, b] = String(span).split(/[–-]/);        // ทะเบียนใช้ en-dash (–) · รับ hyphen ด้วยกันพลาด
+  const s = hhmmMin(a), e = hhmmMin(b);
+  if (s == null || e == null) return 0;
+  const d = e - s;
+  return d > 0 ? d : d + 1440;                      // ข้ามเที่ยงคืน
+}
+
+/**
+ * ยังเปิดใบนี้ในโควต้า OT ได้ไหม (ใช้เฉพาะตอนผู้ใช้เลือก "เปิดกะนี้ต่อ (OT)" ไว้แล้ว)
+ * @returns {null | {...checkShiftCapacity}} null = ยังอยู่ในโควต้า OT · object = เกิน OT แล้ว (ต้องส่งกะถัดไป)
+ */
+export function checkOtCapacity({ netAvailMin, shift, otMin = null, ...rest }) {
+  if (netAvailMin == null) return null;             // กฎ 3 — ไม่รู้ความจุ = ไม่เตือน
+  const extra = otMin != null ? Number(otMin) || 0 : otSpanMin(shift);
+  return checkShiftCapacity({ netAvailMin: Number(netAvailMin) + extra, ...rest });
 }
