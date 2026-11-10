@@ -133,3 +133,22 @@ test('ผังโหมดทบทวน: kWh ของวันจากม�
   assert.equal(las.total, 1);
   assert.equal(dayForNames(['Line 60'], by, ml), null);
 });
+
+test('กราฟจิ๋วบนผัง: เฉลี่ยราย 15 นาที · รวมตู้ · ช่วงที่ตู้ขาดไม่นับ', async () => {
+  const { bucketByMeter, sparkForNames, meterLinesFrom } = await import('../energy.js');
+  const R = (n, t, kw) => ({ scope_kind: 'zone', scope_name: n, bucket_at: t, kw });
+  const b = bucketByMeter([
+    R('A', '2026-11-10T00:00:00Z', 10), R('A', '2026-11-10T00:05:00Z', 20),   // ช่วง 00:00 เฉลี่ย 15
+    R('B', '2026-11-10T00:01:00Z', 5),
+    R('A', '2026-11-10T00:15:00Z', 30),                                       // ช่วง 00:15 B ขาด → ไม่นับ
+    R('A', '2026-11-10T00:30:00Z', 40), R('B', '2026-11-10T00:31:00Z', 6),
+    R('A', '2026-11-10T00:45:00Z', null),
+  ]);
+  const ml = meterLinesFrom([
+    { scope_kind: 'zone', scope_name: 'A', machines: { line_name: 'HDF1' } },
+    { scope_kind: 'zone', scope_name: 'B', machines: { line_name: 'HDF2' } },
+  ]);
+  assert.deepEqual(sparkForNames(['HDF1', 'HDF2'], b, ml), [20, 46]);
+  assert.deepEqual(sparkForNames(['HDF1'], b, ml), [15, 30, 40]);
+  assert.deepEqual(sparkForNames(['Line 60'], b, ml), []);
+});
