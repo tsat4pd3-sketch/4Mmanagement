@@ -1029,12 +1029,14 @@ export const isTrialDefect = (d) =>
 
 /** คอลัมน์ทะเบียนถังที่ต้อง embed มากับ defect_logs ทุกครั้งที่จะเอาไปคิด %Q */
 export const QBIN_EMBED =
-  'quality_bin_records(id, bin, qa_decision, return_date, special_use_doc_no, from_yellow_id, is_active)';
+  'quality_bin_records(id, bin, qa_decision, return_date, special_use_doc_no, from_yellow_id, is_active, qty, qty_ng)';
 
 /** ผลพิจารณาที่ถือว่า "เสียจริง" — ค่าอื่นที่ตัดสินแล้วคือไม่เสีย */
 const QA_SCRAP = 'scrap';
-/** ผลพิจารณาที่ถือว่า "เคลียร์แล้ว ไม่ใช่ของเสีย" */
-const QA_CLEARED = ['good', 'repair', 'use_as_is'];
+/** ผลพิจารณาที่ถือว่า "เคลียร์แล้ว ไม่ใช่ของเสีย" ทันทีที่ตัดสิน
+ *  🔴 `repair` ไม่อยู่ในนี้แล้ว (2026-11-10 · สายใบถังแบบ MO): "ส่งซ่อม" ยังไม่รู้ผล — ซ่อมอาจไม่ผ่าน
+ *     ⇒ เคลียร์เมื่อ QA ตรวจรับ (`return_date`) เท่านั้น ก่อนหน้านั้น = รอ (qualityBin.js `ncStep` ขั้น 3-4) */
+const QA_CLEARED = ['good', 'use_as_is'];
 
 /**
  * สถานะของ "ของสงสัย" ในแถวของเสีย 1 แถว
@@ -1071,12 +1073,69 @@ export function suspectState(d) {
 /** ของสงสัยแถวนี้ต้องรอ QA อยู่ไหม (จอต้องเอาไปเขียนว่า "%Q ยังไม่สรุป") */
 export const isSuspectPending = (d) => suspectState(d) === 'pending';
 
+/* ═══ 7.2) 🔴 NG ที่เข้าถังเหลืองแล้ว = ยังไม่ใช่ของเสีย จนกว่า QA จะตัดสิน (2026-11-10 · คำสั่ง user) ═══
+
+   user: *"ถ้าซ่อมกลับมาเป็นงานดี จะคืน %Q มั้ย … ไม่เกี่ยวกับ FTT นะ"* → ยืนยัน "ลุยเลย":
+     1. NG ที่อยู่ในถังเหลืองรอพิจารณา **ยังไม่หัก %Q** (เหมือนของสงสัย §7.1 — จอเขียนว่ารอกี่ชิ้น)
+     2. QA ตัดสิน งานดี / ซ่อมแล้วดี / ขอใช้ / กลับเข้ากระบวนการ ⇒ **ไม่หัก**
+     3. QA ตัดสิน ทำลาย / ย้ายลงถังแดง / ซ่อมแล้ว NG ⇒ หักเฉพาะชิ้นที่เสียจริง
+   เหตุ: ตั้งแต่ 05/11 ทุกแถวงานเสียถูกตั้งแท็กเหลืองอัตโนมัติ (ทั้ง NG + สงสัย ในใบเดียว)
+         แต่สูตรเดิมนับ NG เป็นของเสียทันที ⇒ ป้ายบอก "รอพิจารณา" ขณะที่ %Q หักไปแล้ว (วัด 10/11: 53 ชิ้น)
+
+   🔴 ใช้เฉพาะแถวที่ "ใบเหลืองครอบ NG" — ผลรวม `qty` ของใบเหลือง ≥ NG + สงสัย **และ** ไม่มีใบแดงตรง
+      (`from_yellow_id` ว่าง = NG ถูกส่งลงแดงตรงจากโมดัลลงถังแบบเก่า) ไม่ครอบ = **พฤติกรรมเดิมเป๊ะ**
+      (NG นับเสมอ + ของสงสัยตาม §7.1) ⇒ แถวก่อน 05/11 / ตั้งแท็กไม่สำเร็จ / ไม่ได้ถาม embed — เลขเท่าเดิม
+   ⚠️ %P ไม่ขยับ (ใช้ `defectQtyAll`) · ชิ้นที่ซ่อมกลับมาดี "ไม่ถูกหัก" แต่ยังไม่ถูกบวกเข้ายอดผลิต */
+const binRows = (d) => {
+  const b = d?.quality_bin_records;
+  if (b === undefined || b === null) return null;
+  return (Array.isArray(b) ? b : [b]).filter(r => r && r.is_active !== false);
+};
+
+/**
+ * แบ่งชิ้นของแถวที่ใบเหลืองครอบ NG → { scrap, cleared, pending } (รวม = NG + สงสัย)
+ * @returns null เมื่อแถวนี้ไม่เข้ากติกา §7.2 (ใช้สูตรเดิม)
+ */
+export function binCoveredSplit(d) {
+  const ng = Number(d?.qty_ng) || 0;
+  const sus = Number(d?.qty_suspect) || 0;
+  if (!(ng > 0)) return null;                          // ไม่มี NG = §7.1 เดิมตอบครบแล้ว
+  const rows = binRows(d);
+  if (!rows) return null;                              // ไม่ได้ถาม = พฤติกรรมเดิม
+  if (rows.some(r => r.bin === 'red' && r.from_yellow_id == null)) return null;   // NG ลงแดงตรง
+  const yellows = rows.filter(r => r.bin === 'yellow');
+  const total = ng + sus;
+  const yQty = yellows.reduce((a, y) => a + (Number(y.qty) || 0), 0);
+  if (!yellows.length || yQty < total) return null;    // ใบเหลืองไม่ครอบ NG
+  let scrap = 0, cleared = 0, pending = 0;
+  for (const y of yellows) {
+    const q = Number(y.qty) || 0;
+    const kids = rows.filter(r => r.bin === 'red' && r.from_yellow_id === y.id);
+    const done = !!y.return_date || QA_CLEARED.includes(y.qa_decision);   // ซ่อม = เคลียร์ตอน QA ตรวจรับ (return_date)
+    if (y.qa_decision === QA_SCRAP || (kids.length && kids.some(k => !(Number(k.qty) > 0)))) {
+      scrap += q;                                      // ทำลายทั้งใบ / ใบแดงไม่รู้จำนวน = เสียทั้งใบ (ปลอดภัยฝั่งลูกค้า)
+      continue;
+    }
+    const red = Math.min(q, kids.reduce((a, k) => a + (Number(k.qty) || 0), 0)
+      || (done && y.qa_decision === 'repair' ? (Number(y.qty_ng) || 0) : 0));
+    scrap += red;
+    if (done) cleared += q - red; else pending += q - red;
+  }
+  /* ใบเหลืองนับเกินชิ้นของแถว (ใบซ้ำ) — ตัดส่วนเกินจาก "รอ" ก่อน แล้ว "ไม่เสีย" ห้ามตัดส่วน "เสีย" ก่อน */
+  let over = scrap + cleared + pending - total;
+  const cut = (v) => { const c = Math.min(v, Math.max(0, over)); over -= c; return v - c; };
+  pending = cut(pending); cleared = cut(cleared); scrap = cut(scrap);
+  return { scrap, cleared, pending };
+}
+
 /**
  * จำนวนของเสียของ 1 แถว — ใช้คิด %Q
  * NG นับเสมอ · ของสงสัยนับเฉพาะที่ QA ตัดสินว่าเสีย (ดู §7.1)
  * ⚠️ ยึด `defect_logs` ไม่ใช่คอลัมน์ rollup ของ session (กฎเดิม)
  */
 export const defectQty = (d) => {
+  const cov = binCoveredSplit(d);          // §7.2 NG ที่อยู่ในถังเหลือง — ตัดสินจากใบถัง
+  if (cov) return cov.scrap;
   const ng = Number(d?.qty_ng) || 0;
   const sus = Number(d?.qty_suspect) || 0;
   if (!sus) return ng;
@@ -1125,9 +1184,13 @@ export function ngByMatFrom(defects = [], orders = []) {
   return { byMat, noMat };
 }
 
-/** จำนวนของสงสัยที่ยังรอ QA ในแถวนี้ (0 เมื่อไม่มี/ตัดสินแล้ว/ตอบไม่ได้) */
-export const suspectPendingQty = (d) =>
-  (suspectState(d) === 'pending' ? (Number(d?.qty_suspect) || 0) : 0);
+/** จำนวนชิ้นที่ยังรอ QA ในแถวนี้ (0 เมื่อไม่มี/ตัดสินแล้ว/ตอบไม่ได้)
+ *  รวม NG ที่อยู่ในถังเหลืองรอพิจารณาด้วย (§7.2) — ชื่อเดิมคงไว้ เพราะทุกจอเรียกตัวนี้เขียน "รอพิจารณา N ชิ้น" */
+export const suspectPendingQty = (d) => {
+  const cov = binCoveredSplit(d);
+  if (cov) return cov.pending;
+  return suspectState(d) === 'pending' ? (Number(d?.qty_suspect) || 0) : 0;
+};
 
 /** รวมจำนวนของเสีย
  *  mode 'line' (ดีฟอลต์) = ไม่รวมงานทดลอง → ใช้คิด %Q / OEE

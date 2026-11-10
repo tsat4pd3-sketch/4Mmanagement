@@ -211,6 +211,10 @@ model: inherit
   (ฉ) เมนูใหม่ในหมวด 'ตั้งค่าโปรแกรม,ฐานข้อมูล' ต้องใส่ field `sub` (ฐานข้อมูลหลัก/ตั้งค่าระบบ)
   · grep: `label:` ใน NAV_ITEMS เทียบกับ `<h1>`/`<h2>` ของหน้านั้น
 
+- **C-AM-B4** (10/11) ใบตรวจ AM: ผู้ตรวจตัวจริง = คนตามบัตร (`inspections.inspector_code`) ไม่ใช่บัญชีที่ login —
+  ตำแหน่ง/ใบตัวเองของสายอนุมัติต้องผ่าน `amInspectorIdentity()` · บันทึกต้องผ่าน `amBadgeGate()` + `amOnSiteApproval()`
+  (`src/utils/amApproval.js`) · grep: `inspPosById[` + `.inspector_id]` ใน PMCheckData = ผิด (ด่าน `am-onsite-badge-verify`)
+
 ### หมวด D — Section/Line/Team Scoping
 - **D1** หน้าที่ query ข้อมูลตาม line/section ต้องกรองด้วย `sections` array จาก UserContext
   (`inSectionScope(...)` / `.in('section', scopeSecs)`) ก่อน apply filter อื่น —

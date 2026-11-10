@@ -25,7 +25,7 @@ import { inSectionScope, scopedLines, lineScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { fetchByIds } from '../utils/fetchByIds';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
-import { checkShiftCapacity } from '../utils/shiftCapacity';
+import { checkShiftCapacity, checkOtCapacity, otSpanMin } from '../utils/shiftCapacity';
 import { splitCloseOrders, autoCarryPatch, autoCarryText } from '../utils/closeShiftOrders';   // 🔁 ปิดกะ: ใบที่ยังไม่แตะ = ยกเอง (20/10)
 import { debtByPart, debtPcs, debtAgeDays } from '../utils/carryDebt';   // 📥 ของค้าง "ต้องไล่เก็บอีกเท่าไหร่" (20/10)
 import { loadCarryOffers, importCarryOrders } from '../lib/carryDebtOps';   // 📥 โหลด/รับของค้าง — ที่เดียวทั้งระบบ
@@ -564,6 +564,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const [savingProdOpen, setSavingProdOpen] = useState(false);
   // Overflow confirmation modal
   const [overflowInfo, setOverflowInfo]   = useState(null); // { prodNo, matNo, qty, std, overMin, remainMin, newOrderMin }
+  /* 🔴 "จำคำตอบไว้ทั้งกะ" ของใบที่เกินเวลากะ (คำสั่ง user 10/11 · หน้างานแจ้ง)
+     ใกล้เลิกกะ **ทุกใบที่สแกนจะเกินความจุหมด** ⇒ เด้งโมดัลให้เลือกทุกใบ = ยิง Tag ต่อกันไม่ได้เลย
+     ⇒ เลือกครั้งเดียวแล้วติ๊ก "ใช้กับใบถัดไป" · `null` = ถามทุกใบเหมือนเดิม
+     🔴 ผูกกับ "กะ" เท่านั้น — เปลี่ยนกะต้องล้างทิ้ง (ยกไปกะอื่น = ตัดสินใจแทนคนผิดใบ)
+     🔴 ห้ามทำเงียบ — เปิดโหมดแล้วต้องมีแถบบนจอ + toast ทุกใบว่าใบนี้ถูกจัดการแบบไหน */
+  const [overflowMode, setOverflowMode]   = useState(null); // null | 'carry' (ส่งกะถัดไป) | 'force' (เปิดกะนี้ต่อ)
+  const [overflowRemember, setOverflowRemember] = useState(false); // ติ๊ก "ใช้คำตอบนี้กับใบถัดไป" ในโมดัล
 
   // ออเดอร์ manual — ไลน์ไม่มี kanban card (SAP ไม่ gen barcode) เช่น HDF1 → LASER CUT 123
   // leader เปิด "เป้า" เอง แล้วพนักงานอัพเดทยอดสะสมทุกช่วงเบรค ปิดใบด้วยยอดจริงไม่ต้องสแกน
@@ -651,6 +658,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // Downtime เปิดค้างตอนปิดกะ: ต่อรายการ dtId → 'close' (เครื่องกลับมาแล้ว กรอกเวลาจบ) | 'carry' (ยังซ่อมอยู่ ตัดยอดข้ามกะ)
   const [dtCarryDecisions, setDtCarryDecisions] = useState({});
   const [dtCloseTimes,     setDtCloseTimes]     = useState({}); // dtId → 'HH:MM' เวลาที่เครื่องกลับมา
+  /* 🔴 ป๊อปอัพยืนยันรายการ Downtime เปิดค้าง ก่อนเขียน DB (คำสั่ง user 10/11)
+     หัวข้อในโมดัลปิดกะเลือกไว้แล้วก็จริง แต่มันอยู่กลางโมดัลยาว เลื่อนผ่านได้ และ
+     "ลืมปิด" คือต้นเหตุของแถวค้าง 6 ใบที่ต้องมาไล่เคลียร์ย้อนหลัง (ดู docs/modules/daily-report.md)
+     ⇒ ต้องทวนต่อรายการว่า "ยังเบรกดาวน์อยู่ ส่งต่อกะถัดไป" หรือ "ปิดที่เวลา HH:MM" ก่อนลงมือจริง */
+  const [dtCloseConfirm,   setDtCloseConfirm]   = useState(null); // null = ไม่เปิด · [] = รายการที่ต้องทวน
   // qty_actual produced this shift for each open order (before carry-over)
   const [carryQtyActual, setCarryQtyActual] = useState({});
   // เวลาหยุดผลิตจริงต่อออเดอร์ (ใช้แทนเวลาปิดกะรวมตอนคำนวณสรุปแยกตามชิ้นงาน เผื่อพาร์ทนี้หยุดไม่ตรงกับเวลาปิดกะ)
@@ -1821,6 +1833,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     return { error, data };
   };
 
+  /* เครื่องสแกนยิงเข้า "ช่องที่โฟกัสอยู่" เท่านั้น ⇒ ทุกทางที่จบการเปิดใบต้องคืนโฟกัสให้ช่อง PROD.NO
+     (80ms ให้ React วาดเสร็จก่อน — ตัวเลขเดียวกับทางปกติใน handleScanOpenInner) */
+  const refocusScanOpen = () => setTimeout(() => openProdInputRef.current?.focus(), 80);
+
+  /* 🔴 โหมด "จำคำตอบ" ผูกกับกะที่เปิดอยู่ — สลับกะ/ปิดกะ ต้องล้างทิ้งเสมอ
+     ไม่ล้าง = ใบของกะใหม่ถูกตัดสินใจแทนด้วยคำตอบของกะก่อน (ยกไปกะอื่นเงียบๆ) */
+  useEffect(() => { setOverflowMode(null); }, [selSession?.id]);
+
   const handleScanOpen = async () => {
     if (prodBusyRef.current) return;
     prodBusyRef.current = true;
@@ -1867,6 +1887,21 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     // ── Capacity check ── (สูตรอยู่ใน utils/shiftCapacity.js · ไม่รู้ความจุ/ไม่รู้ CT = ไม่เตือน)
     const cap = checkShiftCapacity({ netAvailMin: calcNetAvailMin(), newQty: qty, newCtSec: ctSec, ...capacityArgs() });
     if (cap) {
+      const info = { prodNo, matNo, qty, std };
+      /* เลือกไว้แล้วในกะนี้ = ทำตามนั้นเลย ไม่เด้งโมดัลซ้ำ (แต่ toast บอกทุกใบ ห้ามเงียบ) */
+      if (overflowMode === 'carry') { await runOverflowChoice('carry', info); return; }
+      if (overflowMode === 'force') {
+        /* 🔴 "เปิด OT" ไม่ใช่เช็คเปล่า — OT มีเพดานของมัน (คำสั่ง user 10/11)
+           เกินโควต้า OT แล้วยังเปิดต่อ = รับงานที่ไม่มีเวลาทำ แล้วไปโผล่เป็นใบค้างตอนปิดกะอยู่ดี
+           ⇒ เกินเมื่อไหร่ **โยนกะถัดไปให้อัตโนมัติ** แล้วบอกให้ชัดว่าทำไม */
+        const otOver = checkOtCapacity({
+          netAvailMin: calcNetAvailMin(), shift: selSession?.shift,
+          newQty: qty, newCtSec: ctSec, ...capacityArgs(),
+        });
+        if (!otOver) { await runOverflowChoice('force', info); return; }
+        await runOverflowChoice('carry', info, { otFullMin: otOver.overMin });
+        return;
+      }
       setOverflowInfo({ prodNo, matNo, qty, std, ...cap });
       return; // หยุดรอ user เลือก
     }
@@ -1931,34 +1966,32 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     setTimeout(() => openProdInputRef.current?.focus(), 80);
   };
 
-  // ผู้ใช้เลือก "ส่งกะถัดไป" — save เป็น carry_over ทันที
-  const handleOverflowNextShift = async () => {
-    if (!overflowInfo) return;
-    const { prodNo, matNo, qty, std } = overflowInfo;
+  /* ── ใบที่เกินเวลากะ: ลงมือตามคำตอบ (ทางเดียว ใช้ทั้งปุ่มในโมดัลและโหมดที่จำไว้) ──────────
+     🔴 ต้อง **คืนโฟกัสให้ช่องสแกนทุกทาง** — ทางปกติของ `handleScanOpenInner` คืนให้อยู่แล้ว
+        แต่ 2 ทางนี้เคยไม่คืน ⇒ หน้างานต้องเอามือคลิกช่อง PROD.NO ใหม่ทุกใบ (แจ้งเข้ามา 10/11)
+        เครื่องสแกนยิงเข้าช่องที่โฟกัสอยู่เท่านั้น = ยิงรัวไม่ได้เลยช่วงใกล้เลิกกะ */
+  const runOverflowChoice = async (choice, info, { otFullMin = null } = {}) => {
+    const { prodNo, matNo, qty, std } = info || {};
+    if (!prodNo) return;
+    const asCarry = choice === 'carry';
     setSavingProdOpen(true);
-    const { error } = await doInsertProdOrder(prodNo, matNo, qty, std, 'carry_over');
+    const { error } = await doInsertProdOrder(prodNo, matNo, qty, std, asCarry ? 'carry_over' : 'open');
     setSavingProdOpen(false);
     setOverflowInfo(null);
-    if (error) { toast.error(error.message); return; }
-    toast.info(`บันทึก ${prodNo} เป็นยอดค้างกะถัดไป ✓`);
+    if (error) { toast.error(error.message); refocusScanOpen(); return; }
+    /* 🔴 ถูกสลับจาก "เปิด OT" เป็น "ส่งกะถัดไป" เพราะ OT เต็ม = ต้องบอกให้ชัดที่สุด
+       ไม่งั้นคนยิงรัวจะนึกว่ายังเปิดเข้ากะนี้อยู่ แล้วยอดไปโผล่กะหน้าโดยไม่รู้ตัว */
+    if (otFullMin != null) {
+      toast.error(`⏭️ โควต้า OT เต็มแล้ว (เกินอีก ${otFullMin} นาที) — ${prodNo} ถูกส่งเป็น "ยอดค้างกะถัดไป" อัตโนมัติ · ใบถัดไปก็จะส่งต่อเหมือนกันจนกว่าจะมีเวลาว่าง`);
+    } else {
+      toast.info(asCarry
+        ? `บันทึก ${prodNo} เป็นยอดค้างกะถัดไป ✓${overflowMode ? ' (โหมดจำคำตอบ)' : ''}`
+        : `เปิด Order ${prodNo} · ${qty} ชิ้น ✓ (เกินเวลากะ · อยู่ในโควต้า OT)${overflowMode ? ' (โหมดจำคำตอบ)' : ''}`);
+    }
     setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false, backfill_time: '' }));
     setCarriedMat(matNo || null);
     loadProdOrders(selSession.id, selSession.line_name);
-  };
-
-  // ผู้ใช้เลือก "เปิดกะนี้ต่อ" — force open ปกติ
-  const handleOverflowForce = async () => {
-    if (!overflowInfo) return;
-    const { prodNo, matNo, qty, std } = overflowInfo;
-    setSavingProdOpen(true);
-    const { error } = await doInsertProdOrder(prodNo, matNo, qty, std, 'open');
-    setSavingProdOpen(false);
-    setOverflowInfo(null);
-    if (error) { toast.error(error.message); return; }
-    toast.success(`เปิด Order ${prodNo} · ${qty} ชิ้น ✓ (เกินเวลากะ)`);
-    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false, backfill_time: '' }));
-    setCarriedMat(matNo || null);
-    loadProdOrders(selSession.id, selSession.line_name);
+    refocusScanOpen();
   };
 
   // ── Scan CLOSE handler ─────────────────────────────────────────
@@ -2615,7 +2648,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // สั่งผลิต child 200 + เบิก raw 500 + packaging). ไม่หักที่หน้าปิดกะอีกแล้ว เพื่อไม่ให้
   // order ที่ confirmed ถูกหักซ้ำ (order ที่ยกยอดจะถูก backflush เมื่อ confirmed ในกะถัดไป).
 
-  const handleCloseSession = async () => {
+  const handleCloseSession = async ({ dtConfirmed = false } = {}) => {
     if (!selSession) return;
 
     /* 🔴 ด่านสุดท้าย — ข้อมูลกะโหลดไม่ครบ ห้ามปิดกะเด็ดขาด (audit 2026-09-02)
@@ -2661,6 +2694,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       toast.error(`มี Downtime เปิดค้าง ${dtUndecided.length} รายการ — เลือก "เครื่องกลับมาแล้ว" (พร้อมเวลาจบ) หรือ "ยังซ่อมอยู่ ตัดยอดข้ามกะ" ในหัวข้อ Downtime เปิดค้างก่อน`);
       return;
     }
+    /* 🔴 ด่านสุดท้าย — ทวนทีละรายการก่อนเขียน DB (คำสั่ง user 10/11 · "กดพลาดคือพลาดเลย")
+       ตัวเลือกอยู่กลางโมดัลปิดกะที่ยาวมาก ⇒ เลื่อนผ่านแล้วกดปิดกะได้ · ป๊อปอัพนี้บังคับให้เห็น
+       ว่าแต่ละใบจะ "ส่งต่อกะถัดไป" หรือ "ปิดที่เวลาเท่าไหร่ กี่นาที" ก่อนลงมือจริง */
+    if (openDT.length > 0 && !dtConfirmed) { setDtCloseConfirm(openDT); return; }
 
     // เตือนถ้ากะนี้ไม่มีข้อมูลการผลิตเลย — เผื่อพนักงานลืม Scan เปิด Order / บันทึก Downtime ก่อนปิดกะ
     if (prodOrders.length === 0 && dtLogs.length === 0) {
@@ -5104,6 +5141,78 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           );
         })()}
 
+        {/* ══ 🔴 ป๊อปอัพทวน Downtime เปิดค้าง ก่อนปิดกะ (คำสั่ง user 10/11) ═══════════════
+            ที่มา: แถว downtime ที่ "ลืมปิด" 6 ใบค้างในฐานนานถึง 3,322 ชม. ⇒ %A ของกะนั้นสูงกว่าจริง
+            และจอ OEE รายไลน์กระพริบค้าง · ตัวเลือกเดิมอยู่กลางโมดัลปิดกะที่ยาวมาก เลื่อนผ่านได้
+            ⇒ ด่านสุดท้ายต้องทวนทีละใบว่าจะ "ส่งต่อกะถัดไป" หรือ "ปิดที่เวลาเท่าไหร่ กี่นาที" */}
+        {dtCloseConfirm && selSession && (() => {
+          const endStrOf = (d) => (dtCarryDecisions[d.id] === 'carry' ? (closeEndTime || nowTime()) : dtCloseTimes[d.id]);
+          const rows = dtCloseConfirm.map(d => {
+            const carry   = dtCarryDecisions[d.id] === 'carry';
+            const endStr  = endStrOf(d);
+            const startMs = d.started_at ? new Date(d.started_at).getTime() : null;
+            let min = null;
+            if (startMs != null && endStr) {
+              let endMs = new Date(`${selSession.work_date}T${endStr.slice(0, 5)}:00`).getTime();
+              if (endMs < startMs) endMs += 86400000;          // ข้ามเที่ยงคืน (กะดึก) — ตรรกะเดียวกับตอนเขียนจริง
+              min = Math.max(1, Math.round((endMs - startMs) / 60000));
+            }
+            /* ⚠️ กินเวลากะเกินครึ่ง = ชวนให้ทวนซ้ำ — ไม่บล็อก (หยุดยาวจริงก็มี) แต่ต้องสะดุดตา
+               เคสจริงที่ต้องมานั่งไล่ย้อนหลัง คือใบที่ "ลืมปิด" แล้วเวลาจบเพี้ยนไปทั้งกะ */
+            const shiftMin = Number(selSession.shift_min) || 570;
+            return { d, carry, endStr, min, long: min != null && min > shiftMin / 2 };
+          });
+          return (
+            <div className="overlay" style={{ zIndex: 2100 }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid var(--amber)', borderRadius: 'var(--r-lg)', padding: 22, width: 'min(94vw,720px)', maxHeight: '88vh', overflowY: 'auto', boxShadow: 'var(--shadow-lg)' }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--amber)', marginBottom: 2 }}>
+                  ⚠️ ทวน Downtime ที่ยังเปิดค้าง {rows.length} รายการ
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.7 }}>
+                  ปิดกะ <b style={{ color: 'var(--text)' }}>{selSession.line_name} · {selSession.shift === 'night' ? '🌙 กะดึก' : '☀️ กะเช้า'} {fmtDate(selSession.work_date)}</b>
+                  {' '}— ยืนยันว่าแต่ละรายการจะถูกจัดการแบบนี้
+                  <br />รายการที่ไม่ได้ปิด = นาทีที่หยุด <b style={{ color: 'var(--amber)' }}>ไม่ถูกหักใน %A</b> และจะค้างกระพริบบนจอ OEE รายไลน์ตลอด
+                </div>
+
+                {rows.map(({ d, carry, endStr, min, long }) => (
+                  <div key={d.id} style={{ padding: '10px 12px', marginBottom: 8, background: 'var(--bg2)', border: `1px solid ${carry ? 'var(--red-line)' : 'var(--border)'}`, borderRadius: 'var(--r-md)' }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>
+                      {d.machine_no || 'ไม่ระบุเครื่อง'} · {d.dr_downtime_types?.name_th || 'Downtime'}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
+                      เริ่มหยุด {d.started_at ? fmtTime(d.started_at) : '—'}{d.description ? ` — ${d.description}` : ''}
+                    </div>
+                    <div style={{ fontSize: 12, fontWeight: 700, marginTop: 6, color: carry ? 'var(--red)' : 'var(--green)' }}>
+                      {carry
+                        ? <>🔴 เครื่องยังเบรกดาวน์อยู่ — ตัดยอดที่ {endStr || '—'} ({min != null ? `${min} นาที` : 'คิดนาทีไม่ได้'}) แล้ว<u>เปิดรายการต่อให้กะถัดไป</u></>
+                        : <>✓ เครื่องกลับมาแล้ว — ปิดรายการที่ {endStr || '—'} ({min != null ? `${min} นาที` : 'คิดนาทีไม่ได้'})</>}
+                    </div>
+                    {carry && (
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
+                        กะถัดไปของไลน์นี้เปิดแล้ว = เปิดรายการต่อให้ทันที · ยังไม่เปิด = เปิดให้ตอนกดเปิดกะ
+                      </div>
+                    )}
+                    {long && !carry && (
+                      <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, marginTop: 3 }}>
+                        ⚠ กินเวลากะเกินครึ่ง — ถ้าไม่ได้หยุดยาวขนาดนั้นจริง กลับไปแก้เวลาปิดก่อน
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
+                  <button onClick={() => setDtCloseConfirm(null)} style={cancelBtnStyle}>กลับไปแก้</button>
+                  <button
+                    onClick={() => { setDtCloseConfirm(null); handleCloseSession({ dtConfirmed: true }); }}
+                    style={{ ...saveBtnStyle, background: 'var(--amber)', fontWeight: 800 }}>
+                    ยืนยัน — {closeIsRequest ? 'ส่งขอปิดกะ' : 'ปิดกะ'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {showCloseShift && selSession && (() => {
           /* ⚠️ NG ของ OEE preview ต้องมาจาก defect_logs จริง (ไม่รวมงานทดลอง) ให้ตรงกับที่ปิดกะจะ stamp
              เดิมอ่าน state `closeNg` ซึ่งถูกเซ็ตเป็น '0' ที่เดียวและไม่มี input ผูกอยู่เลย
@@ -5150,7 +5259,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 {suspendPendingQty > 0 && (
                   <div style={{ background: 'var(--card)', border: '1px solid var(--amber-line)', borderLeft: '4px solid var(--amber)',
                                 borderRadius: 'var(--r-md)', padding: '8px 12px', marginBottom: 14, fontSize: 12, lineHeight: 1.6, color: 'var(--text2)' }}>
-                    ⏳ กะนี้มีของ<b>ต้องสงสัย {suspendPendingQty.toLocaleString()} ชิ้น</b> ที่ QA ยังไม่พิจารณา —
+                    ⏳ กะนี้มีของ<b>รอพิจารณา (ถังเหลือง) {suspendPendingQty.toLocaleString()} ชิ้น</b> ที่ QA ยังไม่ตัดสิน —
                     <b> %Q ด้านล่างจึงยังไม่ใช่ตัวสรุป</b>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                       ระบบ<b>ยังไม่นับเป็นของเสีย</b> เพราะยังไม่รู้ว่าดีหรือเสีย (นับเลยก็ลงโทษไลน์เกินจริง) ·
@@ -5734,7 +5843,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   {/* 🔁 ปุ่มปิดกะรอเฉพาะ "ใบที่ทำไปบางส่วน" — ใบที่ยังไม่แตะระบบยกให้เอง (closeShiftOrders.js)
                       เดิมรอทุกใบ ⇒ เปิดคัมบังไว้ 20 ใบแล้วทำไม่ทัน = ต้องกด 20 ครั้งก่อนปิดกะได้
                       (นี่คือเหตุผลที่หน้างานเลือก "ทยอยเปิด" จนบอร์ดดูเหมือนไม่มีออเดอร์) */}
-                  <button onClick={handleCloseSession} disabled={savingClose || splitCloseOrders(prodOrders.filter(o => o.status === 'open'), carryQtyActual).needDecision.some(o => !carryOverDecisions[o.id])}
+                  <button onClick={() => handleCloseSession()} disabled={savingClose || splitCloseOrders(prodOrders.filter(o => o.status === 'open'), carryQtyActual).needDecision.some(o => !carryOverDecisions[o.id])}
                     style={{ ...saveBtnStyle, background: 'var(--red)',
                       opacity: (savingClose || prodOrders.filter(o => o.status === 'open').some(o => !carryOverDecisions[o.id])) ? 0.5 : 1 }}>
                     {savingClose ? '...' : closeIsRequest ? 'ส่งขอปิดกะ' : 'ยืนยันปิดกะ'}
@@ -5856,21 +5965,33 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                 ต้องการทำอย่างไรกับ Order นี้?
               </div>
+              {/* 🔴 ใกล้เลิกกะ ทุกใบที่สแกนจะเกินความจุหมด ⇒ ถามทุกใบ = ยิง Tag ต่อกันไม่ได้ (หน้างานแจ้ง 10/11)
+                  ติ๊กแล้วใบถัดไปในกะนี้ทำตามคำตอบเดียวกันเอง · ยังมี toast + แถบบนจอบอกทุกใบ ไม่เงียบ */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={overflowRemember} onChange={e => setOverflowRemember(e.target.checked)} />
+                ใช้คำตอบนี้กับใบที่เกินเวลาถัดไป<b style={{ color: 'var(--text)' }}>ในกะนี้</b> (ไม่ต้องถามซ้ำทุกใบ)
+              </label>
               <div style={{ display: 'flex', gap: 10 }}>
                 <button
-                  onClick={handleOverflowNextShift}
+                  onClick={() => { if (overflowRemember) setOverflowMode('carry'); runOverflowChoice('carry', overflowInfo); }}
                   disabled={savingProdOpen}
                   style={{ flex: 1, padding: '12px 8px', borderRadius: 'var(--r-md)', border: '2px solid var(--blue-line)', background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
                   ส่งเป็นยอดค้างกะถัดไป
                 </button>
                 <button
-                  onClick={handleOverflowForce}
+                  onClick={() => { if (overflowRemember) setOverflowMode('force'); runOverflowChoice('force', overflowInfo); }}
                   disabled={savingProdOpen}
                   style={{ flex: 1, padding: '12px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
                   เปิดกะนี้ต่อ (OT)
                 </button>
               </div>
-              <button onClick={() => setOverflowInfo(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 12 }}>
+              {/* "เปิด OT" ไม่ใช่เช็คเปล่า — บอกตั้งแต่ตอนเลือกว่ามีเพดาน ไม่ใช่ให้ไปเซอร์ไพรส์ตอนใบที่ 4 */}
+              <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6, marginTop: -4 }}>
+                เลือก <b style={{ color: 'var(--text2)' }}>เปิดกะนี้ต่อ (OT)</b> = เปิดได้อีก
+                {otSpanMin(selSession?.shift) ? <b style={{ color: 'var(--text)' }}> {otSpanMin(selSession?.shift)} นาที</b> : ' ตามโควต้า OT'}
+                {' '}· เต็มแล้วใบถัดไปจะถูก<b style={{ color: 'var(--blue)' }}>ส่งเป็นยอดค้างกะถัดไปให้อัตโนมัติ</b>
+              </div>
+              <button onClick={() => { setOverflowInfo(null); refocusScanOpen(); }} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 12 }}>
                 ยกเลิก
               </button>
             </div>
@@ -6118,6 +6239,22 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     </Field>
                   );
                 })()}
+
+                {/* 🔴 โหมด "จำคำตอบ" ต้องเห็นตลอดเวลาที่เปิดอยู่ + กดเลิกได้ — ไม่งั้นใบถูกยกไปกะหน้าเงียบๆ */}
+                {overflowMode && (
+                  <div style={{ padding: '8px 12px', background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 'var(--r-md)', fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <b style={{ color: 'var(--amber)' }}>⏩ ใบที่เกินเวลากะ:</b>
+                    <span>
+                      {overflowMode === 'carry'
+                        ? 'ส่งเป็นยอดค้างกะถัดไปอัตโนมัติ'
+                        : <>เปิดกะนี้ต่อ (OT) อัตโนมัติ — <b style={{ color: 'var(--text)' }}>เต็มโควต้า OT{otSpanMin(selSession?.shift) ? ` (${otSpanMin(selSession?.shift)} นาที)` : ''} เมื่อไหร่ ส่งกะถัดไปให้เอง</b></>}
+                    </span>
+                    <button type="button" onClick={() => { setOverflowMode(null); setOverflowRemember(false); refocusScanOpen(); }}
+                      style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)', cursor: 'pointer' }}>
+                      กลับไปถามทุกใบ
+                    </button>
+                  </div>
+                )}
 
                 {openProdStd && (
                   <div style={{ padding: '8px 12px', background: 'var(--green-dim)', border: '1px solid var(--green-dim)', borderRadius: 'var(--r-md)', fontSize: 12, color: 'var(--muted)' }}>

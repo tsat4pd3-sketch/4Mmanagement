@@ -15,6 +15,7 @@ import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
+import { SESSION_STATUSES_LIVE } from '../utils/sessionStatus';
 import { computeLiveOee, shiftStartDate, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, ngByMatFrom, breakIntervalsIn, overlapMinutesWith, dtMinOutsideBreaks, laneWeightFn, dtMinBySession, orderPlanQty, oeeTargetForLines, QBIN_EMBED } from '../utils/oee';
 import { loadAffectsLanes } from '../utils/affectsLanes';
 import { usePolling } from '../utils/usePolling';
@@ -36,7 +37,8 @@ import { loadDailyAm, dailyAmLineStatus, amShiftInfo } from '../lib/dailyAmBoard
 import { DAILY_PM_WINDOW_MIN } from '../lib/pmDailyStatus';
 import { planDueBucket } from '../lib/pmSchedule';
 import { useLiveBoard } from '../utils/useLiveBoard';
-import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e, energyRollup, buildLiveBoard, liveForNames, dayForNames, meterLinesFrom } from '../utils/energy';
+import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e, energyRollup, buildLiveBoard, liveForNames, dayForNames, meterLinesFrom, bucketByMeter, sparkForNames } from '../utils/energy';
+import { fetchReadingsSince } from '../lib/energyReadings';
 import { bkkDateStr } from '../utils/workDate';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 import { fmtDtElapsed } from '../utils/downtimeRules';
@@ -527,7 +529,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
   const [oeeHistRaw, setOeeHistRaw] = useState(null);    // ⚙️ ประวัติ OEE รายกะ 7 วันก่อน (สำหรับ sparkline การ์ด KPI · null = ยังไม่โหลด)
   const [energyEf, setEnergyEf] = useState(null);        // EF ของเดือนนั้น (null = ยังไม่ตั้ง → ไม่โชว์ tCO2e)
   const [energyDay, setEnergyDay] = useState(null);      // 📅 โหมดทบทวน: kWh ของวันที่เลือกจากมิเตอร์ { date, byMeter, meterLines } · null = ไม่มี/อ่านไม่ได้
-  const [energyLive, setEnergyLive] = useState(null);    // ⚡ ค่าไฟสดจากมิเตอร์: { meters (buildLiveBoard), meterLines: Map ตู้→ชุดไลน์ } · null = ไม่มี/อ่านไม่ได้
+  const [energyLive, setEnergyLive] = useState(null);
+  const [energyReads, setEnergyReads] = useState([]);    // ⚡ แถวรายนาทีของวันนี้ (กราฟจิ๋วบนการ์ด kW สด) · โหลดทั้งวันครั้งแรก แล้วต่อเฉพาะแถวใหม่    // ⚡ ค่าไฟสดจากมิเตอร์: { meters (buildLiveBoard), meterLines: Map ตู้→ชุดไลน์ } · null = ไม่มี/อ่านไม่ได้
   const [allLines, setLines] = useState([]);
   /* 🔴 ทะเบียนไลน์อ่านไม่ได้ (10/11 · user: "ทำไมกรอบหายไป") — ลิสต์ว่าง = ทุกกรอบถูกตีเป็น "โซนสนับสนุน" แล้วซ่อนหมด
      + ยอดรวม 0/0 · เดิมโหลดครั้งเดียวตอนเปิดหน้า ⇒ จอแขวนค้างแบบนั้นจนมีคนรีเฟรช
@@ -578,6 +581,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
   const [obeyaAxis, setObeyaAxis] = useState(null);
   const [reviewDate, setReviewDate] = useState(reviewDefaultDate);
   const [reviewStatus, setReviewStatus] = useState({}); // line_name → full-day aggregate ของ reviewDate
+  const [reviewOpenN, setReviewOpenN] = useState(0);    // กะของ reviewDate ที่ยังไม่ปิด (ไม่มี OEE stamp) — ต้องเขียนบนแถบ ห้ามกลืนเงียบ
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewError, setReviewError] = useState('');     // โหลดสรุปล้ม = เขียนบนจอ ห้ามโชว์ "ไม่มีข้อมูล" แทน (02/10)
   const [reviewDetail, setReviewDetail] = useState(null); // ไลน์แม่ที่คลิกดู breakdown ไลน์ย่อย (โหมด review)
@@ -1029,7 +1033,9 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
            ปิดกะ = ค่า stamp · เปิดกะ = ค่าสดจาก computeLiveOee (⚠️ util คืน key ตัวใหญ่ A/P/Q)
            calcA/totalQty/ngQty = ตัวถ่วง wRun/wProd ตอน rollup (กฎ: P ถ่วง wRun · Q ถ่วง wProd) */
         oeeRows: [...(acc.oeeRows || []), ...(oeeVal != null ? [{
-          oee: oeeVal, shift_min: s.shift_min || 570, plannedMin: plannedDtMinAll,
+          /* กะที่ยังเดิน = ถ่วงด้วยเวลาที่เดินมาแล้ว (10/11 · ชุดเดียวกับ /oee-analytics + /line-oee)
+             570 ทำให้กะที่เพิ่งเปิดหนักเท่ากะเช้าที่ปิดครบ ⇒ OEE ของไลน์ตอนเย็นโดนค่าสดของกะดึกดึงแรงเกินจริง */
+          oee: oeeVal, shift_min: (isLive && lr?.elapsedMin > 0) ? lr.elapsedMin : (s.shift_min || 570), plannedMin: plannedDtMinAll,
           a: s.oee != null ? (s.oee_a != null ? Number(s.oee_a) : null) : (lr?.A ?? null),
           p: s.oee != null ? (s.oee_p != null ? Number(s.oee_p) : null) : (lr?.P ?? null),
           q: s.oee != null ? (s.oee_q != null ? Number(s.oee_q) : null) : (lr?.Q ?? null),
@@ -1114,16 +1120,29 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
      สูตรสถานะ/ยอดอยู่ utils/energy.js (buildLiveBoard · liveForNames) — ห้ามคิดเองในหน้า
      โหลดเฉพาะตอนดู metric พลังงาน · payload ~2 KB/รอบ (RATE.METER) · อ่านไม่ได้ = ไม่มีค่าสด ผังรายเดือนเดิมยังขึ้นปกติ */
   const liveReq = useRef(0);
-  const liveOk = useRef({ at: 0, sig: '' });   // รอบล่าสุดที่อ่านสำเร็จ + ลายเซ็นค่า (กันผังกระโดด)
+  const liveOk = useRef({ at: 0, sig: '' });
+  const liveRd = useRef({ day: null, last: null });   // กราฟจิ๋ว: วันที่โหลดอยู่ + นาทีล่าสุดที่มีแล้ว   // รอบล่าสุดที่อ่านสำเร็จ + ลายเซ็นค่า (กันผังกระโดด)
   const loadEnergyLive = useCallback(async () => {
     const id = ++liveReq.current;
+    /* 📈 กราฟจิ๋ววันนี้ — ครั้งแรก/ข้ามวัน = โหลดตั้งแต่ 00:00 · รอบต่อไป = เฉพาะนาทีที่ใหม่กว่า (~3 แถว/รอบ · กฎ egress)
+       อ่านพลาด = คงกราฟเดิม (ไม่กระทบตัวเลขสด) */
+    const today = bkkDateStr(Date.now());
+    const newDay = liveRd.current.day !== today;
+    const rdFrom = newDay ? `${today}T00:00:00+07:00` : liveRd.current.last;
+    const rdP = fetchReadingsSince(rdFrom, newDay).then(rows => ({ rows }), () => null);
     const [m, l, mm] = await Promise.all([
       supabaseDR.from('energy_live_meters')
         .select('scope_kind, scope_name, panel, subtitle, limit_kw, limit_a, gauge_max_kw, sort_order').eq('is_active', true),
       supabaseDR.from('energy_live').select('scope_kind, scope_name, field, value, received_at'),
       supabaseDR.from('energy_meter_machines').select('scope_kind, scope_name, machines(line_name)'),
     ]);
+    const rd = await rdP;
     if (id !== liveReq.current) return;
+    if (rd) {
+      liveRd.current = { day: today, last: rd.rows.length ? rd.rows[rd.rows.length - 1].bucket_at : (newDay ? rdFrom : liveRd.current.last) };
+      if (newDay) setEnergyReads(rd.rows);
+      else if (rd.rows.length) setEnergyReads(prev => [...prev, ...rd.rows]);
+    }
     /* 🔴 กันจอกระพริบ: อ่านพลาดครั้งเดียว (เน็ตสะดุด) ห้ามล้างค่าสดทิ้ง — การ์ดจะสลับ สด⇄รายเดือน ทุกนาที
        เก็บค่าเดิมไว้ · พลาดติดกันเกิน 5 นาทีค่อยล้าง (ค่าเก่าขนาดนั้นไม่ควรขึ้นว่า "สด") */
     if (m.error || l.error || mm.error) {
@@ -1618,6 +1637,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
       }
       Object.values(out).forEach(o => { o.dtMin = Math.round(o.dtMin); o.oee = o.oeeWLoad > 0 ? Math.round(o.oeeWSum / o.oeeWLoad) : (o.oeeN ? Math.round(o.oeeSum / o.oeeN) : null); });
       if (!live()) return;
+      // ทบทวน "วันนี้" ได้ — กะที่ยังไม่ปิดไม่มี OEE stamp ⇒ OEE ของแผงนับเฉพาะกะที่ปิดแล้ว (ยอดผลิต/DT นับครบ) · บอกบนแถบ
+      setReviewOpenN((sessions || []).filter(s => SESSION_STATUSES_LIVE.includes(s.status) && s.oee == null).length);
       setReviewStatus(out);
     } catch (e) { console.error('[loadReview]', e); if (!live()) return; setReviewStatus({}); setReviewError(e?.message || String(e)); }
     finally { if (live()) setReviewLoading(false); }
@@ -1797,6 +1818,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     return m;
   }, [lines]);
   const familyNames = (name) => [name, ...(childrenOf[name] || [])];
+  const energyBuckets = useMemo(() => bucketByMeter(energyReads), [energyReads]);
   /* ⚡ จุดที่ "นับเข้ายอดรวมได้" — หน้ากรอกเปิดให้ลงรายไลน์ลูกได้แล้ว (2026-09-08 · มิเตอร์ MDB แยก HDF1/HDF2)
      ⇒ ต้องใช้กฎกลาง `energyRollup`: **แม่มีค่า = ใช้ของแม่ · แม่ไม่มีค่า = รวมลูก**
         ถ้าบวกดื้อๆ ทั้งครอบครัวเหมือนเดิม กลุ่มที่ลงทั้งแม่และลูกจะโชว์ไฟเกินจริงเท่าตัว
@@ -1923,6 +1945,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     agg.oeeTarget = oeeTargetForLines(familyNames(name), lines, oeeTargets)?.oee ?? null;
     // ⚡ ค่าไฟสดของกรอบนี้ (ตู้ที่จ่ายให้ไลน์ในครอบครัว · ตู้ละครั้ง ไม่นับซ้ำ) — null = ไม่มีมิเตอร์สด
     agg.live = !isReview && energyLive ? liveForNames(familyNames(name), energyLive.meters, energyLive.meterLines) : null;
+    if (agg.live) agg.live = { ...agg.live, spark: sparkForNames(familyNames(name), energyBuckets, energyLive.meterLines) };
     // 📅 ทบทวน: kWh ของวันที่เลือกจากมิเตอร์ — ไม่มียอดวันนั้น (kwh null) = ถอยไปโชว์รายเดือนตามเดิม
     { const dy = isReview && energyDay ? dayForNames(familyNames(name), energyDay.byMeter, energyDay.meterLines) : null;
       agg.day = dy && dy.kwh != null ? { ...dy, date: energyDay.date } : null; }
@@ -2583,6 +2606,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
           📅 <b style={{ color: 'var(--text)' }}>โหมดทบทวน {fmtThaiDate(reviewDate)}</b> — ยอดผลิต / OEE / Downtime / ของเสีย / คน บนผังเป็นยอดทั้งวันของวันนั้น ·
           <b> แท็บ PM / AM / Supply Route ยังเป็นสถานะปัจจุบัน</b> (ไม่มีประวัติย้อนหลังรายวัน) ·
           <b> พลังงาน:</b> กรอบที่มีมิเตอร์ = kWh ของวันนั้น (ตัด 00:00–24:00) · ที่เหลือ = รายเดือนกรอกมือ
+          {reviewOpenN > 0 && <> · <b style={{ color: 'var(--amber)' }}>⚠ มี {reviewOpenN} กะที่ยังไม่ปิด — OEE ในโหมดนี้นับเฉพาะกะที่ปิดแล้ว (ค่าสดดูที่โหมดสด)</b></>}
         </div>
       )}
 
@@ -3059,6 +3083,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                           {st.live.kw == null ? '—' : st.live.kw.toFixed(1)}
                         </span>
                         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', lineHeight: 1.6, whiteSpace: 'nowrap' }}>kW · สด</span>
+                        {/* กราฟวันนี้ตั้งแต่ 00:00 (เฉลี่ยราย 15 นาที · ผลรวมตู้ของกรอบนี้) */}
+                        <span style={{ marginLeft: 'auto' }} title="kW วันนี้ตั้งแต่ 00:00 · จุดละ 15 นาที"><Spark data={st.live.spark} color={st.live.over ? 'var(--red)' : 'var(--green)'} /></span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 11, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}
                         title={`ตู้ ${st.live.meters.join(', ')}${st.live.sharedWith.length ? ` · ใช้ร่วมกับ ${st.live.sharedWith.join(', ')} (แยกรายไลน์ไม่ได้)` : ''}`}>

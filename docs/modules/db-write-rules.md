@@ -294,6 +294,14 @@ const delLink = async (it) => { if (!confirm(…)) return; await supabaseDR…; 
 > 4 ใน 9 จุดที่สแกนชี้ หายไปเมื่อเปิด `pg_policies` + `pg_index` ดูของจริง — เขียนด่าน/แก้โค้ดจากหน้าตาโค้ดล้วน
 > = เสียเวลาแก้ของที่ไม่พัง และทำให้ toast แดงโผล่ในเคสปกติ (ซึ่งแย่กว่าไม่เช็ค)
 
+### 🔴 "สำเร็จแต่ว่าง" ของตารางที่ RLS = `authenticated` ห้ามจดลง cache (10/11 · ทะเบียนไลน์)
+RLS ตัด anon ⇒ **session ยังไม่พร้อม/หมดอายุ = 200 + 0 แถว ไม่มี error** — loader ที่คืน `[]` ตามปกติ
+จะถูก `cachedMaster` จดลง localStorage 4 ชม. ⇒ ผังโรงงานกรอบหายทั้งผัง ("ซ่อนโซนสนับสนุน 25 โซน" · ยอดรวม 0/0)
+· แก้ที่ต้นทาง: `loadProductionLines()` **throw เมื่อลิสต์ว่าง** (ทะเบียนไลน์ไม่มีทางว่างจริง) ⇒ ไม่เขียน cache ·
+  รอบหน้ายิงใหม่ · ใช้ของดีเดิมถ้ามี · แถบเตือนกลางขึ้น (ด่าน `line-registry-empty-not-cached`)
+· ล้างของที่ค้างในเครื่องแล้วด้วย `CACHE_EPOCH` e2 → e3 (ครั้งเดียว ~640 KB/เครื่อง)
+· ทะเบียนอื่นที่ "ว่างได้จริง" **ห้ามใช้ท่านี้** — ว่างจริงกับว่างเพราะ session แยกกันไม่ออกจาก response
+
 ### 🔴 ทะเบียนของ picker — ลิสต์ว่าง 2 ความหมาย (13 hook)
 
 `useCustomers` `useSuppliers` `useProductionLines` `useStorageLocations` `useDiePressLines` `useChildParts`

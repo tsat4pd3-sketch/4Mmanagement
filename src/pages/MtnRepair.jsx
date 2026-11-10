@@ -30,7 +30,7 @@ import { moFormatHint, moMonthKeyOf, moNoOf, moSeqKeyOf } from '../utils/moNumbe
 /* ⏳ ใบค้างขั้นเดิม — สูตร "ค้างกี่วัน/ขั้นไหน" อยู่ที่นี่ที่เดียว ห้ามนับวันในหน้า (13/10) */
 import { buildMoStaleBoard } from '../utils/mtnStale';
 /* 🏃 แผงไล่งาน — "ใบค้างนี้รอใครลงมือ" (05/11) · กฎการแบ่งฝั่ง/หาเป้าอยู่ util ที่เดียว */
-import { buildMoChaseBoard } from '../utils/moChase';
+import { buildMoChaseBoard, PR_CLOSE_STAGES, moCloseGate, moCloseGateText } from '../utils/moChase';
 import { inSectionScope, lineScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions, teamRowOwner, teamRowLockNote, canWriteTeam, teamBlockText } from '../utils/mtnTeams';
@@ -964,7 +964,10 @@ export default function MtnRepair() {
     now: ordersAt,
     teamOf: (o) => teamKeyOf(o.mtn_dept || deptForItem(o.item_type)) || '',
     teamName: deptNameOf,
-  }), [scopedOrders, ordersAt]);
+    /* 🛒 ใบที่มี PR ค้างอยู่ขั้นปิดใบ = รอลูปจัดซื้อ ไม่ใช่รอ ผจก.ฝ่ายที่แจ้ง (10/11 · คำสั่ง user)
+       `openPrs.byOrder` โหลดมาแล้วในหน้า (ไม่ยิงคิวรีเพิ่ม) · โหลดไม่ได้ = ส่ง null = พฤติกรรมเดิม */
+    prOf: openPrs.error ? null : (o) => openPrs.byOrder[o.id] || [],
+  }), [scopedOrders, ordersAt, openPrs]);
 
   /* 📊 first-response ของช่างฝ่ายผลิต — "เข้าไป action แล้วแก้เองได้กี่ครั้ง / ส่งต่อกี่ครั้ง"
      (คำสั่ง user 2026-09-14: "เก็บเป็นประวัติไว้ว่าเข้าไป action ก่อนแล้วกี่ครั้ง ทำเองได้/ไม่ได้กี่ครั้ง")
@@ -2853,8 +2856,13 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
       {/* 🛒 เส้นทางงานซ่อม + ใบขอซื้อ (PR) หลายใบต่อ MO (14/10 · MTN REQUEST) — ช่างที่ทำขั้น 2-3 ได้เป็นคนเปิด/สั่ง/รับ
           · โชว์ตั้งแต่รับงานแล้ว (ขั้น ≥2) — ใบปิดแล้วยังเห็นประวัติ แต่แก้ไม่ได้ */}
       {(Number(o.current_step) || 1) >= 2 && (
+        /* 🔓 ทำ PR เดิมต่อได้แม้ใบปิดแล้ว · เปิด PR ใบใหม่ต้องใบยังเปิด  (10/11 · feedback หน้างาน)
+           "ใบที่เปิด PR ไว้ ถ้า ผจก.ฝ่ายแจ้งอนุมัติไปแล้ว แก้ไขอะไรไม่ได้เลย"
+           ของสั่งซื้อมาถึงหลังปิดใบเป็นเคสปกติ — ล็อกตามใบ = รับของเข้าสต็อก/ยกเลิก PR ไม่ได้ตลอดกาล
+           (หลักเดียวกับแผง "ส่งซ่อมนอก" ข้างล่างที่ไม่ผูกกับ isMoOpen โดยตั้งใจ) */
         <MtnPrPanel order={o} parts={parts} fullName={fullName} teamKey={teamKeyOf(dept) || null}
-          canEdit={isMoOpen(o) && (canEditStep(2) || canEditStep(3))} onOrderChanged={onReload} />
+          canEdit={canEditStep(2) || canEditStep(3)}
+          canAdd={isMoOpen(o) && (canEditStep(2) || canEditStep(3))} onOrderChanged={onReload} />
       )}
       {/* 🔧 ของที่ถอดออกมาส่งซ่อมนอกเพื่อเอากลับมาเป็นสแปร์ (09/11)
           🔴 `canEdit` **ไม่ผูกกับ `isMoOpen`** — ต่างจากแผง PR ข้างบนโดยตั้งใจ:
@@ -3347,6 +3355,34 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
     return () => { alive = false; };
   }, [needLabor, o.id]);
   useEffect(() => loadLabor(), [loadLabor]);
+
+  /* 🛒 ด่าน "ปิดใบได้ต่อเมื่อลูป PR จบ"  (10/11 · คำสั่ง user *"บล็อกเลย"*)
+     กฎอยู่ `moCloseGate()` ใน utils/moChase.js — ที่นี่แค่โหลดของจริงมาถาม + วาดผล
+     🔴 โหลด **เฉพาะขั้นปิดใบ** (ขั้นอื่นไม่ยิงคิวรีเลย) · `null` = ยังไม่รู้/อ่านไม่ได้ ≠ `[]` ไม่มีใบ
+     🔴 ตอนกดบันทึกจะ **ถามใหม่สดๆ** อีกรอบ (ชั้น 2) — ระหว่างเปิดโมดัลอยู่ อีกเครื่องอาจรับของ
+        หรือเปิด PR ใบใหม่ไปแล้ว ⇒ ตัดสินด้วยค่าที่โหลดตอนเปิด = บล็อกผิด/ปล่อยผิด */
+  const prGateOn = PR_CLOSE_STAGES.includes(stageOf(step, { mtnForm: isMtnForm }));
+  /* 🔴 3 สถานะ ห้ามยุบ: `loading` (ยังไม่รู้ ห้ามพูดว่าอ่านไม่ได้) · `ok` (รู้แล้ว) · `error` (อ่านไม่ได้) */
+  const [prq, setPrq] = useState({ state: prGateOn ? 'loading' : 'off', rows: [] });
+  const fetchOpenPrs = useCallback(async () => {
+    const { data, error } = await supabaseDR.from('mtn_purchase_requests')
+      .select('id, pr_no, status').eq('order_id', o.id);
+    return error ? null : (data || []);
+  }, [o.id]);
+  useEffect(() => {
+    if (!prGateOn) { setPrq({ state: 'off', rows: [] }); return () => {}; }
+    let alive = true;
+    setPrq({ state: 'loading', rows: [] });
+    fetchOpenPrs().then(rows => {
+      if (!alive) return;
+      setPrq(rows ? { state: 'ok', rows } : { state: 'error', rows: [] });
+    });
+    return () => { alive = false; };
+  }, [prGateOn, fetchOpenPrs]);
+  /* `loading` ⇒ ส่ง [] (ยังไม่ต้องเตือนอะไร) · `error` ⇒ ส่ง null ⇒ gate = unknown = ไม่บล็อก + เขียนบนจอ */
+  const prGate = moCloseGate(stageOf(step, { mtnForm: isMtnForm }),
+    prq.state === 'error' ? null : prq.rows);
+
   const addLabor = () => { if (laborState !== 'ok') return; touch(); setLaborRows(r => [...r, { worker_name: '', rate_per_hour: '', hours: 1 }]); };
   const setLabor = (i, k, v) => { touch(); setLaborRows(r => r.map((x, j) => (j === i ? { ...x, [k]: v } : x))); };
   const [saving, setSaving] = useState(false);
@@ -3503,10 +3539,30 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
             effect: 'ใบข้ามขั้น QA ไปขั้นถัดไปทันที',
           })) { setSaving(false); return; }
         } else if (needsSignConfirm(_stage)) {
+          /* 🛒 **ด่าน: ปิดใบได้ต่อเมื่อลูป PR จบ** (10/11 · คำสั่ง user *"บล็อกเลย"*
+             — เดิมเป็นเพียงคำเตือน · คำสั่งเดิม "ผจก.ฝ่ายแจ้งจะอนุมัติได้ก็ต่อเมื่อ loop pr จบ")
+             🔴 **ชั้น 2 — ถามฐานสดตรงนี้ ห้ามตัดสินด้วยค่าที่โหลดตอนเปิดโมดัล** (`prq`)
+                ระหว่างเปิดโมดัลอยู่ อีกเครื่องอาจรับของเข้าสต็อก (ควรปล่อยผ่าน) หรือเปิด PR ใบใหม่
+                (ควรบล็อก) · กฎทั้งหมดอยู่ `moCloseGate()` ห้ามเทียบ status ของ PR เองที่นี่
+             🔴 **ทางออกต้องเปิดอยู่เสมอ** — ใบที่ปิดแล้ว/ยังไม่ปิด แผง PR ก็ยังรับของ/ยกเลิกได้
+                (ด่าน `pr-loop-not-locked-by-mo`) ไม่งั้นด่านนี้กลายเป็นวงจรล็อกตัวเอง
+             🔴 อ่านไม่ได้ = **ไม่บล็อก** แต่เขียนกำกับในกล่องยืนยัน (ไม่รู้ ≠ มีค้าง) */
+          const _gate = PR_CLOSE_STAGES.includes(_stage)
+            ? moCloseGate(_stage, await fetchOpenPrs())
+            : { gate: 'ok' };
+          if (_gate.gate === 'block') {
+            setSaving(false);
+            setPrq({ state: 'ok', rows: _gate.rows });   // ให้แผ่นเตือนบนจอตรงกับเหตุที่บล็อกจริง
+            return toast.error(moCloseGateText(_gate));
+          }
+          const _isClose = _stage === 'close' || _stage === 'cost_mgr_close';
           if (!confirmSign({
             what: `ขั้น ${step}: ${_meta?.title || _stage}`,
             orderNo: o.mo_no || o.id, actor: fullName || '—', as: _meta?.whoShort || _meta?.who || null,
-            effect: _stage === 'close' || _stage === 'cost_mgr_close' ? 'ปิดใบ MO ใบนี้' : null,
+            effect: _isClose ? 'ปิดใบ MO ใบนี้' : null,
+            warn: _gate.gate === 'unknown'
+              ? `${moCloseGateText(_gate)}\n\n⚠️ เซ็นแล้วแก้เองไม่ได้ — ต้องให้ผู้ถือสิทธิ์แก้ย้อนหลังมาปลดให้`
+              : undefined,
           })) { setSaving(false); return; }
         }
       }
@@ -3799,6 +3855,16 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
   return (
     <ModalShell title={`${o.mo_no || o.item_type || ''} · ${skipQa ? 'ข้าม QA — งานไม่เกี่ยวกับคุณภาพ (ขั้น 5 → 6)' : `${editMode ? 'แก้ไข ' : ''}${stripIcon(stepLabel(step, { mtnForm: isMtnForm, toolTeam: isToolTeam }))}`}`} onClose={onClose} dirty={dirty}>
       <div style={{ display: 'grid', gap: 12 }}>
+        {/* 🛒 ด่านลูป PR — เขียนบนจอ **ก่อน**กดเซ็น ไม่ใช่ให้กรอกครบแล้วค่อยเด้ง (10/11 · คำสั่ง user)
+            ทางแก้ต้องอยู่ในข้อความ (ไปทำที่ไหน ใครทำได้) ไม่ใช่บอกแค่ว่าทำไม่ได้ */}
+        {prGate.gate === 'block' && (
+          <NoticeBar tone="bad" style={{ marginBottom: 0, whiteSpace: 'pre-line' }}>
+            {moCloseGateText(prGate)}
+          </NoticeBar>
+        )}
+        {prGate.gate === 'unknown' && (
+          <NoticeBar tone="warn" style={{ marginBottom: 0 }}>{moCloseGateText(prGate)}</NoticeBar>
+        )}
         {skipQa && (
           <NoticeBar tone="warn" style={{ marginBottom: 0 }}>
             ใบนี้ค้างรอ QA เพราะขั้น 4 ระบุว่า <b>“เกี่ยวกับคุณภาพ”</b> — ถ้างานซ่อมนี้ไม่กระทบคุณภาพชิ้นงานจริง
