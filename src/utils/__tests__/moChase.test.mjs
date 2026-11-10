@@ -95,8 +95,10 @@ test('ในแต่ละฝั่ง เรียง "ค้างนาน�
   assert.equal(t[1].n, 2);
 });
 
-test('ทะเบียนฝั่ง — ต้องมี 5 ถังและเรียง "ของเราก่อน" (จอวาดตามลำดับนี้)', () => {
-  assert.deepEqual(CHASE_SIDES.map(s => s.key), ['mtn', 'reporter', 'qa', 'outside', 'unknown']);
+test('ทะเบียนฝั่ง — ต้องมี 6 ถังและเรียง "ของเราก่อน" (จอวาดตามลำดับนี้)', () => {
+  /* 🛒 ถัง `pr` เพิ่ม 10/11 — วางถัดจาก `mtn` เพราะยังเป็นงานที่ฝั่งช่าง/แอดมินช่างไล่ต่อได้
+     (ลงเลข PR / ตามของ) ก่อนจะถึงคิวของฝ่ายที่แจ้ง */
+  assert.deepEqual(CHASE_SIDES.map(s => s.key), ['mtn', 'pr', 'reporter', 'qa', 'outside', 'unknown']);
   assert.ok(CHASE_SIDES.every(s => s.label && s.hint && s.icon), 'ทุกถังต้องมีคำอธิบายว่าทำไมอยู่กองนี้');
 });
 
@@ -120,4 +122,56 @@ test('🔴 ยอดของแถบไล่งานต้องเท่า
   assert.equal(sum, chase.stale, 'ผลรวมทุกกองต้องเท่ายอดค้าง (ไม่มีใบตกหล่น ไม่มีใบนับ 2 รอบ)');
   const sumTargets = chase.sides.reduce((n, s) => n + s.targets.reduce((m, t) => m + t.n, 0), 0);
   assert.equal(sumTargets, chase.stale, 'ผลรวมทุกเป้าก็ต้องเท่ากัน (ใบเดียว = เป้าเดียว)');
+});
+
+/* ══ 🛒 ใบที่มี PR ค้าง — ไล่จัดซื้อ ไม่ใช่ไล่ ผจก.ฝ่ายที่แจ้ง ═══════════  2026-11-10
+   คำสั่ง user: *"ในเคสที่เป็นงานที่มีการออก PR จะต้องยังไม่รอ ผจก.ฝ่ายที่แจ้งอนุมัติ
+   ผจก.ฝ่ายแจ้งจะอนุมัติได้ก็ต่อเมื่อ loop PR จบ"*
+   🔴 ไม่ส่ง `prs` = พฤติกรรมเดิมเป๊ะ (ไม่รู้เรื่อง PR = ไม่เดา) */
+const atClose = (over = {}) => mo({ status: 'handover', handover_at: ago(9), ...over });
+
+test('🛒 มี PR ค้างที่ขั้นปิดใบ = รอลูปจัดซื้อ ไม่ใช่รอ ผจก.', () => {
+  const o = atClose();
+  assert.equal(chaseSideOf(o), 'reporter', 'ไม่ส่ง prs = เหมือนเดิม');
+  assert.equal(chaseSideOf(o, { prs: [{ status: 'requested' }] }), 'pr');
+  assert.equal(chaseSideOf(o, { prs: [{ status: 'ordered', pr_no: 'PR-1' }] }), 'pr');
+});
+
+test('🛒 ลูป PR จบแล้ว (รับของ/ยกเลิก) = กลับไปรอ ผจก.ตามเดิม', () => {
+  const o = atClose();
+  assert.equal(chaseSideOf(o, { prs: [{ status: 'received' }] }), 'reporter');
+  assert.equal(chaseSideOf(o, { prs: [{ status: 'cancelled' }] }), 'reporter');
+  assert.equal(chaseSideOf(o, { prs: [] }), 'reporter', 'ไม่มี PR เลย = เหมือนเดิม');
+  /* ใบเดียวมีหลาย PR — เหลือค้างใบเดียวก็ยังไม่จบลูป */
+  assert.equal(chaseSideOf(o, { prs: [{ status: 'received' }, { status: 'ordered' }] }), 'pr');
+});
+
+test('🔴 PR ค้างแต่ยังไม่ถึงขั้นปิดใบ = ไม่เปลี่ยนฝั่ง (ช่างยังต้องทำงานของตัวเอง)', () => {
+  const prs = [{ status: 'requested' }];
+  assert.equal(chaseSideOf(mo({ status: 'pending' }), { prs }), 'mtn', 'ยังไม่มีช่างรับ = ของช่าง');
+  assert.equal(chaseSideOf(mo({ status: 'repaired', repair_done_at: ago(9) }), { prs }), 'reporter',
+    'รอผู้แจ้งตรวจรับ = ยังเป็นของผู้แจ้ง ไม่ใช่ของจัดซื้อ');
+});
+
+test('🛒 เป้าที่ต้องไปตาม แยก "ยังไม่ลงเลข PR" ออกจาก "รอของ" (คนละคน)', () => {
+  const o = atClose();
+  const noNo = chaseTargetOf(o, { prs: [{ status: 'requested' }] });
+  assert.equal(noNo.kind, 'pr');
+  assert.match(noNo.label, /ยังไม่ได้ลงเลข PR/);
+  const waiting = chaseTargetOf(o, { prs: [{ status: 'ordered', pr_no: 'PR-77' }] });
+  assert.equal(waiting.kind, 'pr');
+  assert.match(waiting.label, /PR-77/, 'มีเลขแล้วต้องบอกเลขให้ไปตามของได้');
+  assert.notEqual(noNo.key, waiting.key, 'คนละกอง ห้ามยุบรวม');
+});
+
+test('🛒 ฝั่ง pr อยู่ในทะเบียนฝั่ง + เข้าแผงจริงผ่าน prOf', () => {
+  assert.ok(CHASE_SIDES.some(s => s.key === 'pr'), 'ไม่มีในทะเบียน = จอวาดหัวข้อไม่ได้');
+  const o = atClose({ id: 'p1' });
+  const board = buildMoChaseBoard([o], { now: NOW, prOf: () => [{ status: 'requested' }] });
+  assert.equal(board.sides.find(s => s.side === 'pr')?.n, 1);
+  assert.equal(board.sides.find(s => s.side === 'reporter'), undefined, 'ต้องไม่ไปโผล่ฝั่งผู้แจ้งด้วย');
+  /* ไม่ส่ง prOf = เหมือนเดิมเป๊ะ */
+  const plain = buildMoChaseBoard([o], { now: NOW });
+  assert.equal(plain.sides.find(s => s.side === 'reporter')?.n, 1);
+  assert.equal(plain.sides.find(s => s.side === 'pr'), undefined);
 });

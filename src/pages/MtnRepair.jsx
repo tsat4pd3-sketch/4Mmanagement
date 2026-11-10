@@ -30,7 +30,7 @@ import { moFormatHint, moMonthKeyOf, moNoOf, moSeqKeyOf } from '../utils/moNumbe
 /* ⏳ ใบค้างขั้นเดิม — สูตร "ค้างกี่วัน/ขั้นไหน" อยู่ที่นี่ที่เดียว ห้ามนับวันในหน้า (13/10) */
 import { buildMoStaleBoard } from '../utils/mtnStale';
 /* 🏃 แผงไล่งาน — "ใบค้างนี้รอใครลงมือ" (05/11) · กฎการแบ่งฝั่ง/หาเป้าอยู่ util ที่เดียว */
-import { buildMoChaseBoard } from '../utils/moChase';
+import { buildMoChaseBoard, openPrRows } from '../utils/moChase';
 import { inSectionScope, lineScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions, teamRowOwner, teamRowLockNote, canWriteTeam, teamBlockText } from '../utils/mtnTeams';
@@ -964,7 +964,10 @@ export default function MtnRepair() {
     now: ordersAt,
     teamOf: (o) => teamKeyOf(o.mtn_dept || deptForItem(o.item_type)) || '',
     teamName: deptNameOf,
-  }), [scopedOrders, ordersAt]);
+    /* 🛒 ใบที่มี PR ค้างอยู่ขั้นปิดใบ = รอลูปจัดซื้อ ไม่ใช่รอ ผจก.ฝ่ายที่แจ้ง (10/11 · คำสั่ง user)
+       `openPrs.byOrder` โหลดมาแล้วในหน้า (ไม่ยิงคิวรีเพิ่ม) · โหลดไม่ได้ = ส่ง null = พฤติกรรมเดิม */
+    prOf: openPrs.error ? null : (o) => openPrs.byOrder[o.id] || [],
+  }), [scopedOrders, ordersAt, openPrs]);
 
   /* 📊 first-response ของช่างฝ่ายผลิต — "เข้าไป action แล้วแก้เองได้กี่ครั้ง / ส่งต่อกี่ครั้ง"
      (คำสั่ง user 2026-09-14: "เก็บเป็นประวัติไว้ว่าเข้าไป action ก่อนแล้วกี่ครั้ง ทำเองได้/ไม่ได้กี่ครั้ง")
@@ -2853,8 +2856,13 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
       {/* 🛒 เส้นทางงานซ่อม + ใบขอซื้อ (PR) หลายใบต่อ MO (14/10 · MTN REQUEST) — ช่างที่ทำขั้น 2-3 ได้เป็นคนเปิด/สั่ง/รับ
           · โชว์ตั้งแต่รับงานแล้ว (ขั้น ≥2) — ใบปิดแล้วยังเห็นประวัติ แต่แก้ไม่ได้ */}
       {(Number(o.current_step) || 1) >= 2 && (
+        /* 🔓 ทำ PR เดิมต่อได้แม้ใบปิดแล้ว · เปิด PR ใบใหม่ต้องใบยังเปิด  (10/11 · feedback หน้างาน)
+           "ใบที่เปิด PR ไว้ ถ้า ผจก.ฝ่ายแจ้งอนุมัติไปแล้ว แก้ไขอะไรไม่ได้เลย"
+           ของสั่งซื้อมาถึงหลังปิดใบเป็นเคสปกติ — ล็อกตามใบ = รับของเข้าสต็อก/ยกเลิก PR ไม่ได้ตลอดกาล
+           (หลักเดียวกับแผง "ส่งซ่อมนอก" ข้างล่างที่ไม่ผูกกับ isMoOpen โดยตั้งใจ) */
         <MtnPrPanel order={o} parts={parts} fullName={fullName} teamKey={teamKeyOf(dept) || null}
-          canEdit={isMoOpen(o) && (canEditStep(2) || canEditStep(3))} onOrderChanged={onReload} />
+          canEdit={canEditStep(2) || canEditStep(3)}
+          canAdd={isMoOpen(o) && (canEditStep(2) || canEditStep(3))} onOrderChanged={onReload} />
       )}
       {/* 🔧 ของที่ถอดออกมาส่งซ่อมนอกเพื่อเอากลับมาเป็นสแปร์ (09/11)
           🔴 `canEdit` **ไม่ผูกกับ `isMoOpen`** — ต่างจากแผง PR ข้างบนโดยตั้งใจ:
@@ -3503,10 +3511,22 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
             effect: 'ใบข้ามขั้น QA ไปขั้นถัดไปทันที',
           })) { setSaving(false); return; }
         } else if (needsSignConfirm(_stage)) {
+          /* 🛒 ปิดใบทั้งที่ใบขอซื้อยังค้าง — ตามลำดับงานต้องให้ลูป PR จบก่อน (10/11 · คำสั่ง user
+             "ผจก.ฝ่ายแจ้งจะอนุมัติได้ก็ต่อเมื่อ loop PR จบ")
+             🔴 **เตือน ไม่บล็อก** — ของมาถึงหลังปิดใบเป็นเคสที่เกิดจริง และแผง PR ทำต่อได้หลังปิดแล้ว
+                (ถ้าบล็อก = ใบที่ PR ถูกทิ้งค้างจะปิดไม่ได้ตลอดกาล) */
+          const _isClose = _stage === 'close' || _stage === 'cost_mgr_close';
+          const _openPr = _isClose ? openPrRows(o._prs || []) : [];
           if (!confirmSign({
             what: `ขั้น ${step}: ${_meta?.title || _stage}`,
             orderNo: o.mo_no || o.id, actor: fullName || '—', as: _meta?.whoShort || _meta?.who || null,
-            effect: _stage === 'close' || _stage === 'cost_mgr_close' ? 'ปิดใบ MO ใบนี้' : null,
+            effect: _isClose ? 'ปิดใบ MO ใบนี้' : null,
+            warn: _openPr.length
+              ? `🛒 ใบนี้ยังมีใบขอซื้อค้าง ${_openPr.length} ใบ (${_openPr.map(x => x.pr_no || 'ยังไม่ลงเลข PR').join(', ')})\n`
+                + 'ตามลำดับงานควรปิดใบหลังลูป PR จบ (รับของ หรือ ยกเลิก)\n'
+                + 'ปิดตอนนี้ก็ได้ — ใบขอซื้อยังทำต่อได้ที่แผง PR หลังใบปิดแล้ว\n\n'
+                + '⚠️ เซ็นแล้วแก้เองไม่ได้ — ต้องให้ผู้ถือสิทธิ์แก้ย้อนหลังมาปลดให้'
+              : undefined,
           })) { setSaving(false); return; }
         }
       }

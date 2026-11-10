@@ -9815,3 +9815,37 @@ test('📋 sheet-quality-is-hint-not-gate — แถบความครบข�
   assert.ok(!/JHYD\d|HDF-0\d\s*-\s*SCHULER/i.test(src),
     '\n\n❌ hardcode ชื่อเครื่องตัวอย่างในโค้ด — ใบต้นแบบเปลี่ยนได้ ต้องถาม fn_inspect_sheet_examples\n');
 });
+
+test('🛒 pr-loop-not-locked-by-mo — ใบปิดแล้วต้องทำ PR ที่ค้างต่อได้ + ไล่งานต้องรู้จัก PR', () => {
+  /* 🔴 10/11 feedback หน้างาน 2 ข้อ ต้นเหตุเดียวกัน (ลูป PR กับลูปขั้นของใบ MO คนละลูป):
+       ① "ใบที่เปิด PR ไว้ ถ้า ผจก.ฝ่ายแจ้งอนุมัติไปแล้ว แก้ไขอะไรไม่ได้เลย"
+          — หน้า MO ส่ง `canEdit={isMoOpen(o) && …}` ให้แผง PR ⇒ ใบปิด = อ่านอย่างเดียว
+            ⇒ กดรับของเข้าสต็อก/ยกเลิก PR ไม่ได้ตลอดกาล (ของมาถึงหลังปิดใบเป็นเคสปกติ)
+          แก้: `canEdit` ไม่ผูก isMoOpen · เปิด PR **ใบใหม่** ยังผูก (`canAdd`)
+          หลักเดียวกับแผง "ส่งซ่อมนอก" ที่เขียนเหตุผลไว้ในไฟล์เดียวกันแล้ว
+       ② "งานที่มีการออก PR จะต้องยังไม่รอ ผจก.ฝ่ายที่แจ้งอนุมัติ — ผจก.อนุมัติได้ก็ต่อเมื่อ loop PR จบ"
+          — แผงไล่งานตัดสินจากทะเบียนขั้นอย่างเดียว ⇒ โยนใบไปกอง "รอฝ่ายที่แจ้ง" = ไล่ผิดคน
+          แก้: ฝั่ง `pr` ใน moChase + หน้า MO ส่ง `prOf`
+     📄 docs/modules/mtn-work-order.md §ลูป PR */
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+
+  /* ① แผง PR: canEdit ห้ามผูก isMoOpen (canAdd ผูกได้ — คนละค่า) */
+  const tag = page.match(/<MtnPrPanel[\s\S]{0,400}?\/>/);
+  assert.ok(tag, '\n\n❌ หา <MtnPrPanel> ในหน้า MO ไม่เจอ — ด่านนี้วัดอะไรไม่ได้แล้ว\n');
+  const canEditProp = tag[0].match(/canEdit=\{([^}]*)\}/);
+  assert.ok(canEditProp, '\n\n❌ <MtnPrPanel> ไม่มี prop canEdit\n');
+  assert.ok(!/isMoOpen/.test(canEditProp[1]),
+    `\n\n❌ แผง PR ถูกล็อกตามสถานะใบ MO อีกแล้ว: canEdit={${canEditProp[1].trim()}}\n`
+    + '   ⇒ ใบปิดแล้ว = ลงเลข PR / รับของเข้าสต็อก / ยกเลิก PR ไม่ได้ตลอดกาล\n'
+    + '   ของสั่งซื้อมาถึงหลังปิดใบเป็นเคสปกติ — ให้ผูก isMoOpen ที่ `canAdd` (เปิด PR ใบใหม่) แทน\n');
+  assert.ok(/canAdd=\{[^}]*isMoOpen/.test(tag[0]),
+    '\n\n❌ เปิด PR ใบใหม่ไม่ได้ผูกกับ isMoOpen — ใบที่ปิดแล้วไม่ควรเปิด PR ใบใหม่ได้\n');
+
+  /* ② แผงไล่งานต้องรู้จัก PR */
+  assert.ok(/buildMoChaseBoard\([\s\S]{0,600}?prOf:/.test(page),
+    '\n\n❌ แผงไล่งานไม่ได้รับข้อมูล PR (prOf) แล้ว\n'
+    + '   ⇒ ใบที่มีใบขอซื้อค้างจะถูกโยนไปกอง "รอฝ่ายที่แจ้ง" ทั้งที่ ผจก.อนุมัติไม่ได้จนกว่าลูป PR จบ\n');
+  const chase = stripComments(readFileSync(join(ROOT, 'src/utils/moChase.js'), 'utf8'));
+  assert.ok(/key: 'pr'/.test(chase),
+    '\n\n❌ ทะเบียนฝั่งไล่งานไม่มีถัง `pr` แล้ว — จอวาดหัวข้อ "รอลูปจัดซื้อ" ไม่ได้\n');
+});
