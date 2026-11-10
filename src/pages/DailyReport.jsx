@@ -5259,7 +5259,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 {suspendPendingQty > 0 && (
                   <div style={{ background: 'var(--card)', border: '1px solid var(--amber-line)', borderLeft: '4px solid var(--amber)',
                                 borderRadius: 'var(--r-md)', padding: '8px 12px', marginBottom: 14, fontSize: 12, lineHeight: 1.6, color: 'var(--text2)' }}>
-                    ⏳ กะนี้มีของ<b>ต้องสงสัย {suspendPendingQty.toLocaleString()} ชิ้น</b> ที่ QA ยังไม่พิจารณา —
+                    ⏳ กะนี้มีของ<b>รอพิจารณา (ถังเหลือง) {suspendPendingQty.toLocaleString()} ชิ้น</b> ที่ QA ยังไม่ตัดสิน —
                     <b> %Q ด้านล่างจึงยังไม่ใช่ตัวสรุป</b>
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>
                       ระบบ<b>ยังไม่นับเป็นของเสีย</b> เพราะยังไม่รู้ว่าดีหรือเสีย (นับเลยก็ลงโทษไลน์เกินจริง) ·
