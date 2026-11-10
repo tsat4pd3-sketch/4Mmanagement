@@ -7,6 +7,8 @@
       secrets: INGEST_SECRET (ต้องตรงกับฝั่ง bridge) · SUPABASE_URL · SUPABASE_SERVICE_ROLE_KEY
 
    สายงาน: MQTT → bridge (สรุป 15 นาที) → ที่นี่ → energy_live / energy_topic_unmapped
+   v4 (2026-11-10): + body.limits — ลิมิตจากโหนด SMART ENERGY HUB (MACHINES[].kwLimit/aLimit) ⇒ energy_live_meters
+     Node-RED = เจ้าของลิมิต · เขียนเฉพาะแถวที่มีอยู่แล้ว + ค่าต่างจริง (ไม่สร้างมิเตอร์ใหม่ · ไม่เขียนทุกนาที)
    v3 (2026-11-10): + body.events (energy_event → energy_events · เก็บ 30 วัน) + body.daily (energy_day → เติม energy_daily วันที่ของเราไม่ครบ)
    v2 (2026-11-09): + ประวัติรายนาที energy_readings (trigger สรุปลง energy_daily) + field v/a
      ตัวส่งจริงตัวแรก = Node-RED Die Shop ยิงทุก 1 นาที
@@ -59,7 +61,8 @@ Deno.serve(async (req) => {
   const readings: any[] = Array.isArray(body?.readings) ? body.readings : [];
   const events: any[] = Array.isArray(body?.events) ? body.events : [];
   const daily: any[] = Array.isArray(body?.daily) ? body.daily : [];
-  if (!readings.length && !events.length && !daily.length) return json({ ok: true, saved: 0 });
+  const limits: any[] = Array.isArray(body?.limits) ? body.limits : [];
+  if (!readings.length && !events.length && !daily.length && !limits.length) return json({ ok: true, saved: 0 });
 
   // ทะเบียน topic → จุดวัด (ตั้งจากหน้า /energy แท็บ 📡)
   const { data: cfg, error: cfgErr } = await sb
@@ -189,5 +192,41 @@ Deno.serve(async (req) => {
     }
   }
 
-  return json({ ok: true, saved: live.length, history: histSaved, unmapped: unknown.length, events: evSaved, daily: daySaved });
+  /* 🎚️ ลิมิตจาก Node-RED (v4) — { name, kw, a } · null = HUB ไม่ตรวจ (ตามความหมายต้นทาง)
+     คีย์ไม่ส่งมา/ไม่ใช่ตัวเลข = ไม่แตะช่องนั้น (ห้ามล้างลิมิตเพราะ payload พัง) */
+  let limUpdated = 0;
+  const limUnknown: string[] = [];
+  if (limits.length) {
+    const want = new Map<string, { kw?: number | null; a?: number | null }>();
+    for (const l of limits) {
+      const name = String(l?.name ?? '').trim();
+      if (!name) continue;
+      const v: { kw?: number | null; a?: number | null } = {};
+      if (l.kw === null) v.kw = null; else if (num(l.kw) != null) v.kw = num(l.kw);
+      if (l.a === null) v.a = null; else if (num(l.a) != null) v.a = num(l.a);
+      if ('kw' in v || 'a' in v) want.set(name, v);
+    }
+    if (want.size) {
+      const { data: have, error: mErr } = await sb.from('energy_live_meters')
+        .select('scope_name, limit_kw, limit_a').eq('scope_kind', 'zone').in('scope_name', [...want.keys()]);
+      if (mErr) return json({ ok: false, error: `limits read: ${mErr.message}` }, 500);
+      const haveBy = new Map((have || []).map((h: any) => [h.scope_name, h]));
+      const same = (x: unknown, y: number | null | undefined) => (x == null ? null : Number(x)) === (y ?? null);
+      for (const [name, v] of want) {
+        const h = haveBy.get(name);
+        if (!h) { limUnknown.push(name); continue; }     // มิเตอร์ที่ยังไม่ได้ลงทะเบียน = บอกกลับ ไม่สร้างเอง
+        const patch: Record<string, unknown> = {};
+        if ('kw' in v && !same(h.limit_kw, v.kw)) patch.limit_kw = v.kw;
+        if ('a' in v && !same(h.limit_a, v.a)) patch.limit_a = v.a;
+        if (!Object.keys(patch).length) continue;
+        patch.updated_at = now;
+        const { error } = await sb.from('energy_live_meters').update(patch).eq('scope_kind', 'zone').eq('scope_name', name);
+        if (error) return json({ ok: false, error: `limits: ${error.message}` }, 500);
+        limUpdated++;
+      }
+    }
+  }
+
+  return json({ ok: true, saved: live.length, history: histSaved, unmapped: unknown.length, events: evSaved, daily: daySaved,
+    limits: { updated: limUpdated, unknown: limUnknown } });
 });

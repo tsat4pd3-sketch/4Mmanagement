@@ -993,8 +993,12 @@ PLC FX5U → Node-RED (server ในโรงงาน) → MySQL db_user03.ener
   ทั้ง 14 ตัวเป็น `equipment_kind='die'` (แม่พิมพ์ · ผูก `equipment_die` และบางตัวมีใบซ่อม MO) **ห้ามลบ** (ตรวจ 09/11)
 
 ### 15.3.2 เหตุการณ์ + ยอดรายวันย้อนหลัง จาก Node-RED (10/11 · คำสั่ง user ข้อ 1–3)
-- **ลิมิต** ตอนนี้แก้มือใน `energy_live_meters` (CNC 50 A · LASER 285 A ตามหน้า Node-RED 10/11) ·
-  ⏸️ ซิงก์อัตโนมัติจาก `energy_setting` (k/v) **รอ user ส่งแถวของตาราง** ถึงจะรู้ชื่อคีย์ — ห้ามเดา
+- **ลิมิต = Node-RED เป็นเจ้าของ** (10/11) — ตั้งที่ `MACHINES[].kwLimit/aLimit` ในโหนด **SMART ENERGY HUB**
+  (`energy_setting` ใน MySQL ว่าง ไม่ใช่ที่เก็บ) · HUB `global.set('ecLimits', …)` → flow ESM แนบ `body.limits`
+  ทุกนาที → `ingest-energy` v4 อัปเดต `energy_live_meters.limit_kw/limit_a` **เฉพาะแถวที่มีแล้ว + ค่าต่างจริง**
+  · `null` = HUB ไม่ตรวจ (ESM ก็ไม่ตัดสิน) · คีย์หาย/ไม่ใช่ตัวเลข = ไม่แตะ · ชื่อที่ยังไม่ลงทะเบียน = ตอบกลับใน `limits.unknown`
+  · 🔴 **ห้ามทำจอแก้ลิมิตฝั่ง ESM** (Node-RED ทับทุกนาที) · `gauge_max_kw` ไม่ซิงก์ (HUB สเกลตาม peak รายวัน)
+  · ลิมิต A ของ HUB = "เฟสใดเฟสหนึ่ง" ตรงกับ field `a` ที่ flow ส่ง (`GREATEST` 3 เฟส)
 - **เหตุการณ์** `energy_events` (migration `20261110_energy_events`) ← MySQL `energy_event` ·
   flow ส่ง "3 นาทีล่าสุด" ทุกนาที · ซ้ำ = ข้ามด้วย `source_id` (flow ไม่ต้องจำว่าส่งถึงไหน) · เก็บ 30 วัน ·
   **Node-RED ตัดสินเกินลิมิตเอง ESM แค่เก็บ+แสดง** (ห้ามคิดเกณฑ์ซ้ำฝั่งเรา) · แผง "เหตุการณ์ล่าสุด" ใน /energy?tab=live
@@ -1006,4 +1010,4 @@ PLC FX5U → Node-RED (server ในโรงงาน) → MySQL db_user03.ener
 - เวลาฝั่ง MySQL = เวลาไทยไม่มีโซน ⇒ edge ต่อ `+07:00` (`bkk()` ใน ingest-energy v4)
 
 ### 15.4 ยังไม่ทำ
-- จอแก้ลิมิต/ตู้ (`energy_live_meters`) · log เหตุการณ์ (หน้า Node-RED เดิมมี `energy_event`) · รวม `energy_daily` เข้า `energy_monthly` (`source='meter'`)
+- จอแก้ตู้ (`energy_live_meters` — ลิมิตไม่ต้อง Node-RED เป็นเจ้าของ) · log เหตุการณ์ (หน้า Node-RED เดิมมี `energy_event`) · รวม `energy_daily` เข้า `energy_monthly` (`source='meter'`)
