@@ -26,7 +26,8 @@ import { inSectionScope, scopeAnchorless, lineScope } from '../utils/sectionScop
 import { buildScheduleMaps, resolveAssignedShift, teamsVisibleToLeader } from '../utils/shiftAssign';
 import { roleLabel } from '../utils/roleMeta';
 import { getDocForm, fullCode } from '../utils/docForms';
-import { checkWrite, checkWriteRows } from '../utils/dbWrite';
+import { checkWrite } from '../utils/dbWrite';
+import { checkinLogRow, upsertCheckin } from '../lib/checkinSave';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
@@ -680,25 +681,10 @@ export default function Checkin() {
     fetchData();
   };
 
-  /* 🧾 แถวที่เขียนลง `daily_production_logs` — **ของกลาง ห้ามประกอบซ้ำที่อื่น**
-     ใช้ทั้งปุ่ม 💾 บันทึก (ทั้งจอ) และการสแกนบัตรที่บันทึกทีละคน ⇒ 2 ทางเขียนฟิลด์ชุดเดียวกันเป๊ะ
-     (แยกชุด = สแกนแล้วได้แถวที่ขาดฟิลด์ กดบันทึกทับทีหลังค่าเด้งกลับ) */
-  const ckLogRow = (emp, rec, userId) => ({
-    employee_id:    emp.id,
-    work_date:      shiftInfo.workDateStr,
-    shift:          emp.assignedShift || shiftInfo.shift,
-    is_present:     rec.is_present,
-    has_helmet:     rec.has_helmet,
-    has_boots:      rec.has_boots,
-    has_gloves:     rec.has_gloves,
-    has_ot:           rec.has_ot,
-    has_extended_ot:  rec.has_extended_ot || false,
-    remark:           rec.remark || null,
-    leave_type:     rec.leave_type     || null,
-    leave_duration: rec.leave_duration || null,
-    leave_period:   rec.leave_period   || null,
-    leave_hours:    rec.leave_hours    ? Number(rec.leave_hours) : null,
-    checked_by:     userId,
+  /* 🧾 แถวที่เขียนลง `daily_production_logs` — สูตรอยู่ `src/lib/checkinSave.js` **ที่เดียว**
+     ใช้ร่วมกับ `/scan` (ยิงบัตรใบเดียวแล้วจบ) ⇒ 2 ประตูเขียนฟิลด์ชุดเดียวกันเป๊ะ */
+  const ckLogRow = (emp, rec, userId) => checkinLogRow({
+    emp, rec, workDateStr: shiftInfo.workDateStr, shift: emp.assignedShift || shiftInfo.shift, userId,
   });
 
   const handleSave = async () => {
@@ -1262,9 +1248,7 @@ export default function Checkin() {
     const rec = r.record || { ...(attendance[r.emp.id] || {}), is_present: true };
     const { data: userData } = await supabase.auth.getUser();
     if (!userData?.user?.id) return 'ยังไม่ได้เข้าระบบ — บันทึกไม่ได้ ให้ Login ก่อนแล้วยิงใหม่';
-    const okRow = checkWriteRows(await supabase.from('daily_production_logs')
-      .upsert(ckLogRow(r.emp, rec, userData.user.id), { onConflict: 'work_date,employee_id' })
-      .select('employee_id'), 'เช็คชื่อด้วยบัตร');
+    const okRow = await upsertCheckin(supabase, ckLogRow(r.emp, rec, userData.user.id));
     // ❌ เขียนไม่ติด = **ห้ามติ๊กบนจอ** (ติ๊กไว้ = จอบอกว่าเช็คแล้วทั้งที่ฐานยังว่าง) · ให้ยิงซ้ำ
     if (!okRow) return `บันทึก ${r.emp.name} ไม่สำเร็จ — ยังไม่ได้เช็คชื่อ (ดูข้อความแดงที่มุมจอ) · ยิงบัตรซ้ำอีกครั้ง`;
 
