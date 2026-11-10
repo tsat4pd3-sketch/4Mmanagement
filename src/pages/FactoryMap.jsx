@@ -15,6 +15,7 @@ import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
+import { SESSION_STATUSES_LIVE } from '../utils/sessionStatus';
 import { computeLiveOee, shiftStartDate, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, ngByMatFrom, breakIntervalsIn, overlapMinutesWith, dtMinOutsideBreaks, laneWeightFn, dtMinBySession, orderPlanQty, oeeTargetForLines, QBIN_EMBED } from '../utils/oee';
 import { loadAffectsLanes } from '../utils/affectsLanes';
 import { usePolling } from '../utils/usePolling';
@@ -578,6 +579,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
   const [obeyaAxis, setObeyaAxis] = useState(null);
   const [reviewDate, setReviewDate] = useState(reviewDefaultDate);
   const [reviewStatus, setReviewStatus] = useState({}); // line_name → full-day aggregate ของ reviewDate
+  const [reviewOpenN, setReviewOpenN] = useState(0);    // กะของ reviewDate ที่ยังไม่ปิด (ไม่มี OEE stamp) — ต้องเขียนบนแถบ ห้ามกลืนเงียบ
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewError, setReviewError] = useState('');     // โหลดสรุปล้ม = เขียนบนจอ ห้ามโชว์ "ไม่มีข้อมูล" แทน (02/10)
   const [reviewDetail, setReviewDetail] = useState(null); // ไลน์แม่ที่คลิกดู breakdown ไลน์ย่อย (โหมด review)
@@ -1029,7 +1031,9 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
            ปิดกะ = ค่า stamp · เปิดกะ = ค่าสดจาก computeLiveOee (⚠️ util คืน key ตัวใหญ่ A/P/Q)
            calcA/totalQty/ngQty = ตัวถ่วง wRun/wProd ตอน rollup (กฎ: P ถ่วง wRun · Q ถ่วง wProd) */
         oeeRows: [...(acc.oeeRows || []), ...(oeeVal != null ? [{
-          oee: oeeVal, shift_min: s.shift_min || 570, plannedMin: plannedDtMinAll,
+          /* กะที่ยังเดิน = ถ่วงด้วยเวลาที่เดินมาแล้ว (10/11 · ชุดเดียวกับ /oee-analytics + /line-oee)
+             570 ทำให้กะที่เพิ่งเปิดหนักเท่ากะเช้าที่ปิดครบ ⇒ OEE ของไลน์ตอนเย็นโดนค่าสดของกะดึกดึงแรงเกินจริง */
+          oee: oeeVal, shift_min: (isLive && lr?.elapsedMin > 0) ? lr.elapsedMin : (s.shift_min || 570), plannedMin: plannedDtMinAll,
           a: s.oee != null ? (s.oee_a != null ? Number(s.oee_a) : null) : (lr?.A ?? null),
           p: s.oee != null ? (s.oee_p != null ? Number(s.oee_p) : null) : (lr?.P ?? null),
           q: s.oee != null ? (s.oee_q != null ? Number(s.oee_q) : null) : (lr?.Q ?? null),
@@ -1618,6 +1622,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
       }
       Object.values(out).forEach(o => { o.dtMin = Math.round(o.dtMin); o.oee = o.oeeWLoad > 0 ? Math.round(o.oeeWSum / o.oeeWLoad) : (o.oeeN ? Math.round(o.oeeSum / o.oeeN) : null); });
       if (!live()) return;
+      // ทบทวน "วันนี้" ได้ — กะที่ยังไม่ปิดไม่มี OEE stamp ⇒ OEE ของแผงนับเฉพาะกะที่ปิดแล้ว (ยอดผลิต/DT นับครบ) · บอกบนแถบ
+      setReviewOpenN((sessions || []).filter(s => SESSION_STATUSES_LIVE.includes(s.status) && s.oee == null).length);
       setReviewStatus(out);
     } catch (e) { console.error('[loadReview]', e); if (!live()) return; setReviewStatus({}); setReviewError(e?.message || String(e)); }
     finally { if (live()) setReviewLoading(false); }
@@ -2583,6 +2589,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
           📅 <b style={{ color: 'var(--text)' }}>โหมดทบทวน {fmtThaiDate(reviewDate)}</b> — ยอดผลิต / OEE / Downtime / ของเสีย / คน บนผังเป็นยอดทั้งวันของวันนั้น ·
           <b> แท็บ PM / AM / Supply Route ยังเป็นสถานะปัจจุบัน</b> (ไม่มีประวัติย้อนหลังรายวัน) ·
           <b> พลังงาน:</b> กรอบที่มีมิเตอร์ = kWh ของวันนั้น (ตัด 00:00–24:00) · ที่เหลือ = รายเดือนกรอกมือ
+          {reviewOpenN > 0 && <> · <b style={{ color: 'var(--amber)' }}>⚠ มี {reviewOpenN} กะที่ยังไม่ปิด — OEE ในโหมดนี้นับเฉพาะกะที่ปิดแล้ว (ค่าสดดูที่โหมดสด)</b></>}
         </div>
       )}
 
