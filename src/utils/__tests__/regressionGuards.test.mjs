@@ -7902,9 +7902,17 @@ test('🟡 defect-auto-yellow — ลงงานเสียต้องตั�
   const q = stripComments(readFileSync(join(ROOT, Q), 'utf8'));
   if (!/pendingYellow\(/.test(q))
     bad.push(`${Q}: ต้องมีคิว "รอพิจารณา" (pendingYellow) — จุดที่คนเคลียร์ว่ากลับมาดีหรือเสียแน่`);
-  for (const [t, why] of [['งานดี', 'ตรวจแล้วใช้ได้'], ['ซ่อมแล้วดี', 'rework แล้วดี'], ['เสียแน่', 'rework ไม่ได้ → ถังแดง']]) {
+  /* 10/11 สายแบบใบ MO: "ซ่อมแล้วดี" คลิกเดียว → แตกเป็น ส่งซ่อม (QA) · ลงผลซ่อม (ผลิต) · ตรวจรับ/ตีกลับ (QA) */
+  for (const [t, why] of [['งานดี', 'ตรวจแล้วใช้ได้'], ['ส่งซ่อม', 'ขั้น 2 → 3'], ['ลงผลซ่อม', 'ขั้น 3 ฝ่ายผลิต'],
+    ['ตรวจรับ', 'ขั้น 4 QA'], ['ตีกลับ', 'ขั้น 4 ไม่ผ่าน → 3'], ['เสียแน่', 'rework ไม่ได้ → ถังแดง']]) {
     if (!q.includes(t)) bad.push(`${Q}: คิวรอพิจารณาต้องมีปุ่ม "${t}" (${why})`);
   }
+  /* 🔴 ส่งซ่อมห้ามปิดใบในคลิกเดียว (ลง return_date/repair_date พร้อมผล) — ไม่มีใครตรวจรับงานซ่อมจริง (10/11) */
+  const decRep = q.match(/const\s+decide\s*=[\s\S]*?\n  \};/);
+  if (decRep && /qa_decision:\s*'repair'[^}]*(return_date|repair_date)/.test(decRep[0]))
+    bad.push(`${Q} decide(): "ส่งซ่อม" ห้ามลง repair_date/return_date — ขั้น 3 ผลิตลงผล · ขั้น 4 QA ตรวจรับ`);
+  if (!/export function ncStep/.test(u))
+    bad.push(`${U}: ต้องมี ncStep() — ขั้นของใบถัง (แบบใบ MO) ตัดสินที่เดียว`);
   /* 🔴 RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" ⇒ ปุ่มตัดสินต้องนับแถว */
   const dec = q.match(/const\s+decide\s*=[\s\S]*?\n  \};/);
   if (dec && !/checkWriteRows\(/.test(dec[0]))

@@ -632,6 +632,17 @@ export default function ScrapReport() {
           toast.error(`ผูกใบถังแดงได้ ${linked?.length || 0}/${binIds.length} รายการ — ที่เหลืออาจไม่มีสิทธิ์แก้ แจ้ง admin`);
       }
     }
+    /* 🔴 รายการถังแดงที่ถูกเอาออกจากใบ ต้องปลดการผูกด้วย (บั๊ก B 10/11)
+       เดิมรายการถูกลบ-เขียนใหม่ทั้งชุด แต่ `quality_bin_records.scrap_report_id` ของถังที่หลุดออกไปยังชี้ใบนี้
+       ⇒ ถังขึ้น "ออกใบแล้ว" + หยุดนับอายุแท็ก ทั้งที่ไม่อยู่ในใบไหนเลย = หลุดสายขออนุมัติทำลาย
+       ทำ **หลัง** รายการบันทึกสำเร็จ (ถ้ารายการล้มก่อนหน้านี้ ฟังก์ชัน return ไปแล้ว ไม่มาถึงตรงนี้) */
+    {
+      const keep = [...new Set(items2.map(it => it.src_bin_id).filter(Boolean))];
+      let uq = supabaseDR.from('quality_bin_records').update({ scrap_report_id: null }).eq('scrap_report_id', repId);
+      if (keep.length) uq = uq.not('id', 'in', `(${keep.join(',')})`);
+      const { error: uErr } = await uq.select('id');
+      if (uErr) toast.error(`บันทึกใบแล้ว แต่ปลดใบถังแดงที่เอาออกจากใบไม่สำเร็จ: ${uErr.message} — ถังพวกนั้นอาจขึ้นว่าออกใบแล้วทั้งที่ไม่อยู่ในใบ แจ้ง admin`);
+    }
     if (report.status === 'submitted') notifyEvent({
       event: 'scrap_report_submitted', type: 'info', ref_table: 'scrap_reports', ref_id: repId,
       line_name: report.line_name || null, section: report.section || null, actor: fullName,
@@ -647,7 +658,18 @@ export default function ScrapReport() {
   };
 
   const delReport = async (rep) => {
+    /* 🔴 ลบได้เฉพาะใบ "ร่าง" (บั๊ก B 10/11) — ใบที่ส่งอนุมัติ/อนุมัติแล้วคือบันทึกตามฟอร์ม FM-PD2-002 (เก็บ 10 ปี)
+       การลบจริงทำให้สืบย้อนไม่ได้ · ใบส่งอนุมัติที่ทำผิด ให้เปลี่ยนกลับเป็นร่างก่อน (คนที่มีสิทธิ์แก้ใบ) */
+    if (rep.status && rep.status !== 'draft') {
+      toast.error(`ใบ ${rep.doc_no || ''} อยู่สถานะ "${rep.status === 'approved' ? 'อนุมัติแล้ว' : 'ส่งอนุมัติ'}" — ลบไม่ได้ (เป็นบันทึกที่ต้องเก็บ) · ถ้าทำผิด ให้เปิดใบเปลี่ยนกลับเป็นร่างก่อน`);
+      return;
+    }
     if (!window.confirm(`ลบใบ ${rep.doc_no || fmtD(rep.report_date)}?`)) return;
+    /* 🔴 ปลดการผูกถังแดงก่อนลบใบ — `scrap_report_id` ไม่มี FK ⇒ ลบใบเฉยๆ = ถังชี้ใบที่ไม่มีอยู่
+       แล้วขึ้น "ออกใบแล้ว" ตลอดกาล · ปลดไม่สำเร็จ = ห้ามลบ (fail-closed) */
+    const { error: unErr } = await supabaseDR.from('quality_bin_records')
+      .update({ scrap_report_id: null }).eq('scrap_report_id', rep.id).select('id');
+    if (unErr) { toast.error(`ปลดใบถังแดงที่ผูกกับใบนี้ไม่สำเร็จ: ${unErr.message} — ยังไม่ได้ลบใบ`); return; }
     /* 🔴 DELETE ที่ถูก RLS ปฏิเสธ = 0 แถวไม่มี error ⇒ ต้องนับ ไม่งั้นขึ้น "ลบแล้ว" ทั้งที่ใบยังอยู่ */
     if (!checkWriteRows(await supabaseDR.from('scrap_reports').delete().eq('id', rep.id).select('id'),
       'ลบใบรายงานของเสีย',

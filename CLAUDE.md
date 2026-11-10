@@ -219,7 +219,7 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 > · 🔴 **%Q ใช้ `defectQty` · พาเรโต/มูลค่า/รายการ + ตัวเศษ %P ใช้ `defectQtyAll` — ห้ามสลับ**
 > · 🔴 **คิวรีที่เอาไปคิด %Q ต้องต่อ `${QBIN_EMBED}` ใน select** ไม่ต่อ = `suspectState()` คืน `unknown`
 >   แล้วถอยไปใช้พฤติกรรมเดิม (ตัวเลขเท่าเดิม ไม่เงียบ) · มีด่าน `oee-suspect-needs-qbin-embed`
->   🔴 กะที่ QA ยังไม่ตัดสิน = **ค่าชั่วคราว** ตัดสินทีหลังว่า `scrap` ต้องคิด %Q กะนั้นใหม่
+>   🔴 กะที่ QA ยังไม่ตัดสิน = **ค่าชั่วคราว** — ตัดสินแล้วคิดใหม่ผ่าน `restampSessionQByDefects()` · **NG ที่ใบเหลืองครอบ = กฎเดียวกัน** (§7.2 `binCoveredSplit`)
 
 > 📄 รายละเอียดเต็ม → `docs/modules/oee.md`
 
