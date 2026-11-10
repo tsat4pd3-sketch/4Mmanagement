@@ -9914,3 +9914,40 @@ test('🛒 pr-loop-not-locked-by-mo — ใบปิดแล้วต้อง�
   assert.ok(/key: 'pr'/.test(chase),
     '\n\n❌ ทะเบียนฝั่งไล่งานไม่มีถัง `pr` แล้ว — จอวาดหัวข้อ "รอลูปจัดซื้อ" ไม่ได้\n');
 });
+
+test('🚦 mo-close-gated-by-pr-loop — ปิดใบ MO ต้องถาม moCloseGate() และห้ามตัดสินเองในหน้า', () => {
+  /* 🔴 10/11 คำสั่ง user *"บล็อกเลย"* (ยกระดับจากคำเตือนที่ส่งไปรอบก่อน):
+       "ผจก.ฝ่ายแจ้งจะอนุมัติได้ก็ต่อเมื่อ loop pr จบ"
+     กับดักที่ด่านนี้กัน 3 ข้อ:
+       ① รอบก่อนเขียนคำเตือนจาก `o._prs` ซึ่ง **StepModal ไม่เคยได้รับ** (ติดมากับ handler ปุ่มพิมพ์
+          ใน DetailDrawer เท่านั้น) ⇒ เงื่อนไขเป็น [] เสมอ = คำเตือนไม่เคยขึ้น (ล้มเหลวเงียบ)
+          ⇒ ด่านนี้บังคับว่าขั้นปิดใบต้อง **โหลดใบขอซื้อของตัวเอง** ไม่ใช่หวังว่าจะมีติดมากับ order
+       ② ตัดสินด้วยค่าที่โหลดตอนเปิดโมดัล = บล็อกผิด/ปล่อยผิด (อีกเครื่องรับของ/เปิด PR ใบใหม่ระหว่างนั้น)
+          ⇒ ตอนกดบันทึกต้องถามฐานสดอีกชั้น
+       ③ อ่านไม่ได้ (null) ห้ามบล็อก — บล็อกตอนคิวรีล่ม = ปิดใบไม่ได้ทั้งโรงงาน (กฎอยู่ใน moCloseGate)
+     📄 docs/modules/mtn-work-order.md §ลูป PR */
+  const chase = stripComments(readFileSync(join(ROOT, 'src/utils/moChase.js'), 'utf8'));
+  assert.ok(/export function moCloseGate\b/.test(chase),
+    '\n\n❌ ไม่มี moCloseGate() ใน utils/moChase.js — ด่าน "ปิดใบได้ต่อเมื่อลูป PR จบ" หายไป\n');
+  assert.ok(/prs == null\)\s*return \{ gate: 'unknown'/.test(chase),
+    '\n\n❌ moCloseGate ไม่ได้กัน "อ่าน PR ไม่ได้ = unknown" แล้ว\n'
+    + '   ⇒ คิวรี PR ล่มแล้วบล็อกการปิดใบทั้งโรงงาน (ไม่รู้ ≠ มีค้าง)\n');
+
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  assert.ok(/moCloseGate\(/.test(page),
+    '\n\n❌ หน้า MO ไม่เรียก moCloseGate() แล้ว — ปิดใบได้ทั้งที่ใบขอซื้อยังค้าง\n');
+  /* ① + ② ด่านตอนกดบันทึกต้องถามฐานสด ไม่ใช่อ่าน prop ที่ติดมากับ order */
+  assert.ok(/moCloseGate\(_stage,\s*await fetchOpenPrs\(\)\)/.test(page),
+    '\n\n❌ ด่านตอนกดเซ็นไม่ได้โหลดใบขอซื้อสดๆ\n'
+    + '   ⇒ ตัดสินด้วยค่าค้างในหน้า = บล็อกผิด (ของมาถึงแล้ว) หรือปล่อยผิด (เพิ่ง PR ใบใหม่)\n');
+  assert.ok(!/moCloseGate\([^)]*_prs/.test(page) && !/openPrRows\(o\._prs/.test(page),
+    '\n\n❌ ด่านกลับไปอ่าน `order._prs` อีกแล้ว — StepModal ไม่เคยได้รับฟิลด์นี้ (ว่างเสมอ = ด่านตาย)\n');
+  /* ห้ามหน้าเขียนเกณฑ์ "ลูป PR จบ" ชุดที่ 2 (= drift)
+     🔴 แคบไว้ที่คำว่า `received` เท่านั้น — `cancelled` ใช้ที่อื่นโดยชอบด้วย 2 ที่
+        (ตัวกรองคิวรีใบขอซื้อ `.neq('status','cancelled')` · การยกเลิก**ใบ MO** เอง) ⇒ ห้ามจับเหมา */
+  assert.ok(!/'received'/.test(page),
+    '\n\n❌ หน้า MO เทียบสถานะ "รับของแล้ว" ของใบขอซื้อเอง\n'
+    + '   ⇒ เกณฑ์ "ลูป PR จบ" กลายเป็น 2 ชุด — แผงไล่งานกับด่านปิดใบจะไม่ตรงกัน\n'
+    + '   ให้ถาม openPrRows() / moCloseGate() ใน utils/moChase.js ที่เดียว\n');
+  /* ทางออกต้องเปิดอยู่: ด่านปิดใบ ห้ามไปล็อกแผง PR (ไม่งั้นวงจรล็อกตัวเอง) — ข้อ ① ของด่านข้างบนคุมอยู่ */
+});

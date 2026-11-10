@@ -56,10 +56,51 @@ export const chaseSideMeta = (key) => SIDE_META[key] || SIDE_META.unknown;
  */
 /* 🛒 ขั้น "ผจก.ฝ่ายที่แจ้งอนุมัติปิดใบ" ของทั้ง 2 ฟอร์ม
       JIG/DIE/PD ขั้น 7 = `close` · ทีม MTN ขั้น 8 = `cost_mgr_close` (ดู mtnStepPerm.js) */
-const CLOSE_STAGES = Object.freeze(['close', 'cost_mgr_close']);
+export const PR_CLOSE_STAGES = Object.freeze(['close', 'cost_mgr_close']);
+const CLOSE_STAGES = PR_CLOSE_STAGES;
 /** ใบขอซื้อที่ "ยังไม่จบลูป" — ยังไม่รับของและยังไม่ยกเลิก */
 export const openPrRows = (prs) => (Array.isArray(prs) ? prs : [])
   .filter(p => p && p.status !== 'received' && p.status !== 'cancelled');
+
+/**
+ * 🚦 **"ขั้นปิดใบนี้เซ็นได้ไหม — ลูป PR จบแล้วหรือยัง"**  (10/11 · คำสั่ง user *"บล็อกเลย"*)
+ * เจ้าของกฎที่เดียว — **ห้ามเทียบ `status` ของ PR หรือชื่อ stage เองในหน้า**
+ * @param {string|null} stage จังหวะงานที่กำลังจะเซ็น (`stageOf(step, { mtnForm })`)
+ * @param {Array|null} prs ใบขอซื้อของใบนี้ · **`null` = อ่านไม่ได้ (คนละความหมายกับ `[]` = ไม่มีใบ)**
+ * @returns {{ gate:'ok'|'block'|'unknown', rows:Array, nos:string[], noNo:number }}
+ *
+ * 🔴 **`prs = null` ⇒ `unknown` = ไม่บล็อก** — กฎเดียวกับด่านฝั่ง/ตำแหน่งของโมดูลนี้
+ *    (*"ไม่รู้ = ไม่บล็อก แต่จอต้องเขียนว่าไม่ได้ตรวจ"*) · บล็อกตอนคิวรีล่ม = ปิดใบไม่ได้ทั้งโรงงาน
+ * 🔴 **ด่านนี้คนละเรื่องกับการแก้ใบขอซื้อ** — ใบปิดแล้วยังต้องรับของ/ยกเลิก PR ได้
+ *    (ด่าน `pr-loop-not-locked-by-mo`) · บล็อก "ปิดใบตอน PR ค้าง" ไม่ใช่ล็อกแผง PR
+ */
+export function moCloseGate(stage, prs) {
+  const none = { rows: [], nos: [], noNo: 0 };
+  if (!PR_CLOSE_STAGES.includes(stage)) return { gate: 'ok', ...none };
+  if (prs == null) return { gate: 'unknown', ...none };
+  const rows = openPrRows(prs);
+  if (!rows.length) return { gate: 'ok', ...none };
+  return {
+    gate: 'block',
+    rows,
+    nos: rows.map(r => String(r?.pr_no || '').trim()).filter(Boolean),
+    noNo: rows.filter(r => !String(r?.pr_no || '').trim()).length,
+  };
+}
+
+/** ข้อความบอกเหตุ + ทางแก้ของด่านข้างบน (จอใช้ชุดเดียวกันทั้ง toast และแผ่นเตือนบนจอ) */
+export function moCloseGateText(g) {
+  if (!g || g.gate === 'ok') return null;
+  if (g.gate === 'unknown')
+    return '⚠ ตรวจใบขอซื้อของใบนี้ไม่สำเร็จ — ระบบไม่ได้ตรวจว่าลูป PR จบหรือยัง (เซ็นได้ตามปกติ)';
+  const what = [
+    g.nos.length ? `เลข PR: ${g.nos.join(', ')}` : null,
+    g.noNo ? `ยังไม่ได้ลงเลข PR ${g.noNo} ใบ` : null,
+  ].filter(Boolean).join(' · ');
+  return `🛒 ปิดใบยังไม่ได้ — ใบขอซื้อยังค้าง ${g.rows.length} ใบ (${what})\n`
+    + 'ต้องให้ลูป PR จบก่อน: รับของเข้าสต็อก หรือ ยกเลิกใบขอซื้อ ที่แผง “ใบขอซื้อ (PR)” ในใบนี้\n'
+    + '(แอดมินช่าง/ช่างผู้รับงานทำได้ — ใบที่ปิดแล้วก็ยังทำต่อได้)';
+}
 
 /**
  * ใบนี้รอ "ฝั่งไหน" ลงมือ — `'mtn' | 'pr' | 'reporter' | 'qa' | 'outside' | 'unknown'`

@@ -1,7 +1,8 @@
 /* 🏃 แผงไล่ MO ค้าง — "ใบนี้รอใครลงมือ" (05/11) · ฝั่งมาจากทะเบียนขั้น ห้ามเดาจากเลขขั้น */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CHASE_SIDES, chaseSideOf, chaseTargetOf, buildMoChaseBoard } from '../moChase.js';
+import { CHASE_SIDES, chaseSideOf, chaseTargetOf, buildMoChaseBoard,
+  PR_CLOSE_STAGES, moCloseGate, moCloseGateText } from '../moChase.js';
 
 const DAY = 86400000;
 const NOW = Date.UTC(2026, 10, 5, 3, 0, 0);       // 05/11/2026 10:00 ไทย — ตรึงไว้ (เทสรอบ +400 วัน)
@@ -174,4 +175,52 @@ test('🛒 ฝั่ง pr อยู่ในทะเบียนฝั่ง +
   const plain = buildMoChaseBoard([o], { now: NOW });
   assert.equal(plain.sides.find(s => s.side === 'reporter')?.n, 1);
   assert.equal(plain.sides.find(s => s.side === 'pr'), undefined);
+});
+
+/* ══ 🚦 ด่าน "ปิดใบได้ต่อเมื่อลูป PR จบ" (10/11 · คำสั่ง user "บล็อกเลย") ══════════ */
+
+test('🚦 PR ค้าง + ขั้นปิดใบ = บล็อก · ลูปจบแล้ว = ผ่าน', () => {
+  for (const stage of PR_CLOSE_STAGES) {
+    assert.equal(moCloseGate(stage, [{ status: 'requested' }]).gate, 'block', stage);
+    assert.equal(moCloseGate(stage, [{ status: 'ordered', pr_no: 'PR-9' }]).gate, 'block', stage);
+    assert.equal(moCloseGate(stage, [{ status: 'received' }]).gate, 'ok', stage);
+    assert.equal(moCloseGate(stage, [{ status: 'cancelled' }]).gate, 'ok', stage);
+    assert.equal(moCloseGate(stage, []).gate, 'ok', `${stage}: ไม่มี PR เลย = ปิดได้`);
+  }
+  /* ใบเดียวหลาย PR — เหลือค้างใบเดียวก็ยังบล็อก */
+  assert.equal(moCloseGate('close', [{ status: 'received' }, { status: 'ordered' }]).gate, 'block');
+});
+
+test('🔴 ขั้นที่ไม่ใช่ขั้นปิดใบ ห้ามถูกบล็อก (ช่างต้องเดินงานของตัวเองได้)', () => {
+  for (const stage of ['assign', 'repair', 'check', 'qa', 'handover', 'mtn_head', 'mtn_approve', null]) {
+    assert.equal(moCloseGate(stage, [{ status: 'requested' }]).gate, 'ok', `stage=${String(stage)}`);
+  }
+  assert.ok(!PR_CLOSE_STAGES.includes('mtn_head'), 'ขั้น ผจก.ช่าง ไม่ใช่ขั้นที่กฎนี้คุม');
+});
+
+test('🔴 อ่าน PR ไม่ได้ (null) = unknown ไม่บล็อก — คนละความหมายกับ [] ที่ว่างจริง', () => {
+  const g = moCloseGate('close', null);
+  assert.equal(g.gate, 'unknown');
+  assert.equal(g.rows.length, 0);
+  assert.notEqual(g.gate, 'block', 'บล็อกตอนคิวรีล่ม = ปิดใบไม่ได้ทั้งโรงงาน');
+  assert.equal(moCloseGate('close', undefined).gate, 'unknown');
+  assert.equal(moCloseGate('close', []).gate, 'ok', 'ว่างจริง = ปิดได้ ไม่ใช่ unknown');
+});
+
+test('ข้อความบอกเหตุ + ทางแก้ (ไม่ใช่บอกแค่ว่าทำไม่ได้)', () => {
+  const t = moCloseGateText(moCloseGate('close', [{ status: 'ordered', pr_no: 'PR-77' }, { status: 'requested' }]));
+  assert.match(t, /PR-77/, 'ต้องบอกเลขให้ไปตามของได้');
+  assert.match(t, /ยังไม่ได้ลงเลข PR 1 ใบ/, 'ใบที่ยังไม่มีเลข = คนละงาน ต้องแยกบอก');
+  assert.match(t, /รับของเข้าสต็อก|ยกเลิก/, 'ต้องมีทางออก');
+  assert.equal(moCloseGateText(moCloseGate('close', [])), null, 'ผ่านแล้วห้ามมีข้อความ');
+  assert.match(moCloseGateText(moCloseGate('close', null)), /ไม่ได้ตรวจ/, 'อ่านไม่ได้ต้องเขียนบนจอ');
+  assert.equal(moCloseGateText(null), null);
+});
+
+test('🔗 ด่านบล็อก กับ แผงไล่งาน ใช้เกณฑ์ชุดเดียวกัน (ห้าม drift)', () => {
+  const o = atClose();
+  const prs = [{ status: 'requested' }];
+  assert.equal(chaseSideOf(o, { prs }), 'pr');
+  assert.equal(moCloseGate('close', prs).gate, 'block',
+    'แผงบอกว่า "รอลูป PR" แต่ด่านปล่อยปิด = 2 จอคนละเรื่อง');
 });

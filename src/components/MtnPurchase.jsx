@@ -418,6 +418,16 @@ export function MtnPrPanel({ order, parts = [], fullName, canEdit = false, canAd
           เพราะของมักมาถึงหลังปิดใบ · แต่<b>เปิด PR ใบใหม่กับใบที่ปิดแล้วไม่ได้</b>
         </div>
       )}
+      {/* 🛒 ใบยังไม่ปิด + PR ค้าง = ใบ MO ปิดไม่ได้จนลูปนี้จบ (10/11 · คำสั่ง user "บล็อกเลย")
+          ช่างต้องรู้ว่าใบค้างเพราะ PR ของตัวเอง ไม่ใช่เพราะ ผจก. ไม่ยอมเซ็น
+          🔴 เขียนบอกเท่านั้น — ด่านจริงอยู่ที่ขั้นปิดใบ (`moCloseGate()` ใน utils/moChase.js) */}
+      {mayAdd && prs.some(isPrOpen) && (
+        <div style={{ fontSize: 11, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border2)',
+                      borderRadius: 'var(--r-md)', padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
+          🛒 <b>ใบ MO นี้ปิดไม่ได้จนกว่าลูปใบขอซื้อจะจบ</b> — รับของเข้าสต็อก หรือ ยกเลิกใบที่ไม่ใช้
+          <div style={{ color: 'var(--muted)' }}>ผจก.ฝ่ายที่แจ้งเซ็นปิดใบไม่ได้ระหว่างนี้ — ใบจะค้างอยู่ที่ขั้นปิดใบ</div>
+        </div>
+      )}
       {prs.map(pr => <PrRow key={pr.id} pr={pr} canEdit={canEdit} fullName={fullName} onChanged={load} />)}
       {prs.length > 1 && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>ใบพิมพ์: มีหลายเลข PR ⇒ ช่อง PR.No. ข้างบนเว้นว่าง และพิมพ์ทุกเลขในช่องรายละเอียด</div>}
       {mayAdd && (adding

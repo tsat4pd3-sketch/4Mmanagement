@@ -30,7 +30,7 @@ import { moFormatHint, moMonthKeyOf, moNoOf, moSeqKeyOf } from '../utils/moNumbe
 /* ⏳ ใบค้างขั้นเดิม — สูตร "ค้างกี่วัน/ขั้นไหน" อยู่ที่นี่ที่เดียว ห้ามนับวันในหน้า (13/10) */
 import { buildMoStaleBoard } from '../utils/mtnStale';
 /* 🏃 แผงไล่งาน — "ใบค้างนี้รอใครลงมือ" (05/11) · กฎการแบ่งฝั่ง/หาเป้าอยู่ util ที่เดียว */
-import { buildMoChaseBoard, openPrRows } from '../utils/moChase';
+import { buildMoChaseBoard, PR_CLOSE_STAGES, moCloseGate, moCloseGateText } from '../utils/moChase';
 import { inSectionScope, lineScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { teamsForUser, teamForSection, teamForItem, sameTeam, filterByTeam, visibleForTeam, seesEverything, teamKeyOf, deptNameOf, teamOptions, teamRowOwner, teamRowLockNote, canWriteTeam, teamBlockText } from '../utils/mtnTeams';
@@ -3355,6 +3355,34 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
     return () => { alive = false; };
   }, [needLabor, o.id]);
   useEffect(() => loadLabor(), [loadLabor]);
+
+  /* 🛒 ด่าน "ปิดใบได้ต่อเมื่อลูป PR จบ"  (10/11 · คำสั่ง user *"บล็อกเลย"*)
+     กฎอยู่ `moCloseGate()` ใน utils/moChase.js — ที่นี่แค่โหลดของจริงมาถาม + วาดผล
+     🔴 โหลด **เฉพาะขั้นปิดใบ** (ขั้นอื่นไม่ยิงคิวรีเลย) · `null` = ยังไม่รู้/อ่านไม่ได้ ≠ `[]` ไม่มีใบ
+     🔴 ตอนกดบันทึกจะ **ถามใหม่สดๆ** อีกรอบ (ชั้น 2) — ระหว่างเปิดโมดัลอยู่ อีกเครื่องอาจรับของ
+        หรือเปิด PR ใบใหม่ไปแล้ว ⇒ ตัดสินด้วยค่าที่โหลดตอนเปิด = บล็อกผิด/ปล่อยผิด */
+  const prGateOn = PR_CLOSE_STAGES.includes(stageOf(step, { mtnForm: isMtnForm }));
+  /* 🔴 3 สถานะ ห้ามยุบ: `loading` (ยังไม่รู้ ห้ามพูดว่าอ่านไม่ได้) · `ok` (รู้แล้ว) · `error` (อ่านไม่ได้) */
+  const [prq, setPrq] = useState({ state: prGateOn ? 'loading' : 'off', rows: [] });
+  const fetchOpenPrs = useCallback(async () => {
+    const { data, error } = await supabaseDR.from('mtn_purchase_requests')
+      .select('id, pr_no, status').eq('order_id', o.id);
+    return error ? null : (data || []);
+  }, [o.id]);
+  useEffect(() => {
+    if (!prGateOn) { setPrq({ state: 'off', rows: [] }); return () => {}; }
+    let alive = true;
+    setPrq({ state: 'loading', rows: [] });
+    fetchOpenPrs().then(rows => {
+      if (!alive) return;
+      setPrq(rows ? { state: 'ok', rows } : { state: 'error', rows: [] });
+    });
+    return () => { alive = false; };
+  }, [prGateOn, fetchOpenPrs]);
+  /* `loading` ⇒ ส่ง [] (ยังไม่ต้องเตือนอะไร) · `error` ⇒ ส่ง null ⇒ gate = unknown = ไม่บล็อก + เขียนบนจอ */
+  const prGate = moCloseGate(stageOf(step, { mtnForm: isMtnForm }),
+    prq.state === 'error' ? null : prq.rows);
+
   const addLabor = () => { if (laborState !== 'ok') return; touch(); setLaborRows(r => [...r, { worker_name: '', rate_per_hour: '', hours: 1 }]); };
   const setLabor = (i, k, v) => { touch(); setLaborRows(r => r.map((x, j) => (j === i ? { ...x, [k]: v } : x))); };
   const [saving, setSaving] = useState(false);
@@ -3511,21 +3539,29 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
             effect: 'ใบข้ามขั้น QA ไปขั้นถัดไปทันที',
           })) { setSaving(false); return; }
         } else if (needsSignConfirm(_stage)) {
-          /* 🛒 ปิดใบทั้งที่ใบขอซื้อยังค้าง — ตามลำดับงานต้องให้ลูป PR จบก่อน (10/11 · คำสั่ง user
-             "ผจก.ฝ่ายแจ้งจะอนุมัติได้ก็ต่อเมื่อ loop PR จบ")
-             🔴 **เตือน ไม่บล็อก** — ของมาถึงหลังปิดใบเป็นเคสที่เกิดจริง และแผง PR ทำต่อได้หลังปิดแล้ว
-                (ถ้าบล็อก = ใบที่ PR ถูกทิ้งค้างจะปิดไม่ได้ตลอดกาล) */
+          /* 🛒 **ด่าน: ปิดใบได้ต่อเมื่อลูป PR จบ** (10/11 · คำสั่ง user *"บล็อกเลย"*
+             — เดิมเป็นเพียงคำเตือน · คำสั่งเดิม "ผจก.ฝ่ายแจ้งจะอนุมัติได้ก็ต่อเมื่อ loop pr จบ")
+             🔴 **ชั้น 2 — ถามฐานสดตรงนี้ ห้ามตัดสินด้วยค่าที่โหลดตอนเปิดโมดัล** (`prq`)
+                ระหว่างเปิดโมดัลอยู่ อีกเครื่องอาจรับของเข้าสต็อก (ควรปล่อยผ่าน) หรือเปิด PR ใบใหม่
+                (ควรบล็อก) · กฎทั้งหมดอยู่ `moCloseGate()` ห้ามเทียบ status ของ PR เองที่นี่
+             🔴 **ทางออกต้องเปิดอยู่เสมอ** — ใบที่ปิดแล้ว/ยังไม่ปิด แผง PR ก็ยังรับของ/ยกเลิกได้
+                (ด่าน `pr-loop-not-locked-by-mo`) ไม่งั้นด่านนี้กลายเป็นวงจรล็อกตัวเอง
+             🔴 อ่านไม่ได้ = **ไม่บล็อก** แต่เขียนกำกับในกล่องยืนยัน (ไม่รู้ ≠ มีค้าง) */
+          const _gate = PR_CLOSE_STAGES.includes(_stage)
+            ? moCloseGate(_stage, await fetchOpenPrs())
+            : { gate: 'ok' };
+          if (_gate.gate === 'block') {
+            setSaving(false);
+            setPrq({ state: 'ok', rows: _gate.rows });   // ให้แผ่นเตือนบนจอตรงกับเหตุที่บล็อกจริง
+            return toast.error(moCloseGateText(_gate));
+          }
           const _isClose = _stage === 'close' || _stage === 'cost_mgr_close';
-          const _openPr = _isClose ? openPrRows(o._prs || []) : [];
           if (!confirmSign({
             what: `ขั้น ${step}: ${_meta?.title || _stage}`,
             orderNo: o.mo_no || o.id, actor: fullName || '—', as: _meta?.whoShort || _meta?.who || null,
             effect: _isClose ? 'ปิดใบ MO ใบนี้' : null,
-            warn: _openPr.length
-              ? `🛒 ใบนี้ยังมีใบขอซื้อค้าง ${_openPr.length} ใบ (${_openPr.map(x => x.pr_no || 'ยังไม่ลงเลข PR').join(', ')})\n`
-                + 'ตามลำดับงานควรปิดใบหลังลูป PR จบ (รับของ หรือ ยกเลิก)\n'
-                + 'ปิดตอนนี้ก็ได้ — ใบขอซื้อยังทำต่อได้ที่แผง PR หลังใบปิดแล้ว\n\n'
-                + '⚠️ เซ็นแล้วแก้เองไม่ได้ — ต้องให้ผู้ถือสิทธิ์แก้ย้อนหลังมาปลดให้'
+            warn: _gate.gate === 'unknown'
+              ? `${moCloseGateText(_gate)}\n\n⚠️ เซ็นแล้วแก้เองไม่ได้ — ต้องให้ผู้ถือสิทธิ์แก้ย้อนหลังมาปลดให้`
               : undefined,
           })) { setSaving(false); return; }
         }
@@ -3819,6 +3855,16 @@ function StepModal({ step, order, editMode, skipQa = false, techs, repairTypes, 
   return (
     <ModalShell title={`${o.mo_no || o.item_type || ''} · ${skipQa ? 'ข้าม QA — งานไม่เกี่ยวกับคุณภาพ (ขั้น 5 → 6)' : `${editMode ? 'แก้ไข ' : ''}${stripIcon(stepLabel(step, { mtnForm: isMtnForm, toolTeam: isToolTeam }))}`}`} onClose={onClose} dirty={dirty}>
       <div style={{ display: 'grid', gap: 12 }}>
+        {/* 🛒 ด่านลูป PR — เขียนบนจอ **ก่อน**กดเซ็น ไม่ใช่ให้กรอกครบแล้วค่อยเด้ง (10/11 · คำสั่ง user)
+            ทางแก้ต้องอยู่ในข้อความ (ไปทำที่ไหน ใครทำได้) ไม่ใช่บอกแค่ว่าทำไม่ได้ */}
+        {prGate.gate === 'block' && (
+          <NoticeBar tone="bad" style={{ marginBottom: 0, whiteSpace: 'pre-line' }}>
+            {moCloseGateText(prGate)}
+          </NoticeBar>
+        )}
+        {prGate.gate === 'unknown' && (
+          <NoticeBar tone="warn" style={{ marginBottom: 0 }}>{moCloseGateText(prGate)}</NoticeBar>
+        )}
         {skipQa && (
           <NoticeBar tone="warn" style={{ marginBottom: 0 }}>
             ใบนี้ค้างรอ QA เพราะขั้น 4 ระบุว่า <b>“เกี่ยวกับคุณภาพ”</b> — ถ้างานซ่อมนี้ไม่กระทบคุณภาพชิ้นงานจริง
