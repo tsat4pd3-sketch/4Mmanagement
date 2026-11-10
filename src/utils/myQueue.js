@@ -31,7 +31,7 @@ import {
 } from './mtnStepPerm.js';
 import { isMtnFormRow, isApprovalBlocked } from './mtnMoForm.js';
 import { bkkDateStr } from './workDate.js';
-import { binTagAge } from './qualityBin.js';   // อายุแท็กถังเหลือง/แดง (WI-PD3-087 §5.6) — ห้ามเขียนเลขวันซ้ำที่นี่
+import { binTagAge, ncStep } from './qualityBin.js';   // อายุแท็กถังเหลือง/แดง (WI-PD3-087 §5.6) — ห้ามเขียนเลขวันซ้ำที่นี่
 
 /** 3 ชั้นของคิว — ชื่อชั้นใช้ร่วมกับจอ ห้ามพิมพ์สตริงเองในหน้า */
 export const TIER = { MINE: 'mine', UNIT: 'unit', FLOOR: 'floor' };
@@ -340,17 +340,37 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
   /* 🔴 **สรุปบรรทัดเดียวทั้ง 2 ชั้น ห้ามแตกรายตัว** — ชั้น unit มีเพดาน 6 แถว (CAP)
      14 ใบ (ยอดจริง 09/11) จะดันใบซ่อม/4M ของหน่วยงานตกจอหมด · หลักเดียวกับคำขอขึ้นขั้นทักษะ
      รายตัวดูที่หน้าถังอยู่แล้ว และแถวในคิวก็ลิงก์ไปหน้าเดียวกันทุกแถว (ไม่มี deep-link รายใบ) */
+  /* 🔢 แยกตามเจ้าของขั้น (แบบใบ MO · 10/11) — `ncStep()` ตัดสินที่เดียว · ผู้เรียกส่งแถวที่ยังไม่ปิดมาแล้ว */
+  const ownerOf = (b) => ncStep({ ...b, bin: 'yellow', is_active: true }).owner;
   const mineBins = bins.filter(b => keep(b));
   const gUnit = binAgg(mineBins);
   if (gUnit.n) {
+    const nProd = mineBins.filter(b => ownerOf(b) === 'prod').length;
+    const nQa = mineBins.filter(b => ownerOf(b) === 'qa').length;
     unit.push({
       key: 'binpend_unit', icon: '🟡', tier: TIER.UNIT, count: gUnit.n,
-      title: `ถังเหลืองรอพิจารณา ${gUnit.n.toLocaleString()} รายการ`,
-      detail: binDetail(gUnit, 'หน่วยงานของคุณ'),
+      title: `ถังเหลืองค้างในสาย ${gUnit.n.toLocaleString()} รายการ`,
+      detail: [binDetail(gUnit, 'หน่วยงานของคุณ'), `รอ QA ${nQa} · รอฝ่ายผลิต (ซ่อม/ย้ายแดง) ${nProd}`].join(' · '),
       age: gUnit.oldest,
-      tag: gUnit.over ? 'เกินอายุแท็กแล้ว' : 'รอตัดสิน ซ่อมได้/เสียแน่',
+      tag: nProd ? 'ฝ่ายผลิต: ลงผลซ่อม / ย้ายลงถังแดง' : (gUnit.over ? 'เกินอายุแท็กแล้ว' : 'รอ QA ตัดสิน/ตรวจรับ'),
       to: '/scrap-report?tab=bins',
     });
+  }
+  /* ✍️ คนที่ตัดสินได้ (QA · `qa:bin_decide`) = งานรอ "ตำแหน่งเรา" ทั้งโรงงาน — เหมือนช่องเซ็นของใบ MO
+     🔴 เข้าชั้น `mine` เฉพาะคนที่ถือสิทธิ์จริง (ส่งมาจากตัวโหลด) — ไม่ใช่ทุกคนในโรงงาน (badge เด้งค้าง) */
+  if (me?.canBinDecide) {
+    const qaRows = bins.filter(b => ownerOf(b) === 'qa');
+    if (qaRows.length) {
+      const g = binAgg(qaRows);
+      const nAccept = qaRows.filter(b => ncStep({ ...b, bin: 'yellow', is_active: true }).step === 4).length;
+      mine.push({
+        key: 'binqa_mine', icon: '🔎', tier: TIER.MINE, count: qaRows.length,
+        title: `ถังเหลืองรอ QA ${qaRows.length.toLocaleString()} รายการ`,
+        detail: [`ตัดสิน ${qaRows.length - nAccept} · ตรวจรับงานซ่อม ${nAccept}`, `${g.pcs.toLocaleString()} ชิ้น`,
+          g.over ? `⏱ เกินอายุแท็ก ${g.over.toLocaleString()}` : null].filter(Boolean).join(' · '),
+        age: g.oldest, tag: 'รอ QA', to: '/qa?tab=bins',
+      });
+    }
   }
   /* บรรทัดของทั้งโรงงาน — กองนี้ไม่มีเจ้าภาพรายใบ (กติกาเดิมของชั้น `floor`)
      🔴 ห้ามให้ขึ้น badge (badge นับเฉพาะชั้น `mine`) */

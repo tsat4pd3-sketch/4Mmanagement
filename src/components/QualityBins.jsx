@@ -48,7 +48,7 @@ import { printQualityBin } from '../lib/qualityBinPrint';
 import { confirmSign } from '../utils/signConfirm';
 /* กติกาที่ถอดจาก WI-PD3-069 §5.4/§5.6 + WI-PD3-087 — อายุแท็ก + ผลพิจารณา QA
    ⚠️ ห้าม hardcode 5/1 วัน หรือรายชื่อผลพิจารณาซ้ำในหน้านี้ (2026-09-25) */
-import { TAG_MAX_DAYS, QA_DECISIONS, decisionOf, binTagAge, binClosed, overdueBins, pendingYellow, yellowStuckReason, SPECIAL_USE_FORM, SCRAP_DRAFT } from '../utils/qualityBin';
+import { TAG_MAX_DAYS, QA_DECISIONS, decisionOf, binTagAge, binClosed, overdueBins, pendingYellow, SPECIAL_USE_FORM, SCRAP_DRAFT, ncStep } from '../utils/qualityBin';
 import SimpleMasterPanel from './SimpleMasterPanel';
 import { masterDeleteGuard } from '../utils/masterRefs'; // ด่านนับปลายทางก่อนลบทะเบียนที่จับคู่ด้วยข้อความ — 2026-10-18
 /* 📷 รูปหลักฐานของเสีย — ช่องแนบ + ตัวบีบ/อัปโหลด เป็นของกลาง ห้ามเขียนเองในหน้า (2026-10-12) */
@@ -88,6 +88,7 @@ const BIN_COLS = [
   'work_date', 'line_name', 'mat_no', 'part_name', 'part_no', 'qty', 'cause', 'reported_by',
   'qa_by', 'qa_decision', 'qa_decision_at', 'special_use_doc_no',
   'repair_date', 'repair_detail', 'repair_by', 'qty_ok', 'qty_ng', 'return_date',
+  'repair_accepted_by', 'repair_accepted_at', 'repair_reject_note', 'repair_reject_count',
   'disposed_by', 'disposed_position', 'note', 'found_img', 'repair_img',
   'defect_log_id', 'from_yellow_id', 'scrap_report_id',
 ].join(', ');
@@ -145,6 +146,7 @@ export default function QualityBins({ mode = 'full' }) {
   const [pendRows, setPendRows] = useState([]);
   const [pendErr, setPendErr]   = useState('');
   const [pendAll, setPendAll]   = useState(false);   // กางดูทั้งหมด (default โชว์ 8 แถวแรก)
+  const [repairing, setRepairing] = useState(null);   // ขั้น 3 ลงผลซ่อม { row, ok, ng, detail }
   const [deciding, setDeciding] = useState('');      // id ที่กำลังเขียนผล — กันกดรัว
   /* ⏱️ ของค้างเกินอายุแท็ก "ทั้งหมด" ไม่ขึ้นกับช่วงวันที่กรอง (QC 05/10 — เดิมนับจากแถวในช่วงที่เลือก
      ⇒ ของค้างที่ลงถังก่อนช่วง 30 วันหายจากป้ายเตือน ทั้งที่ยังค้างอยู่จริง) · null = โหลดไม่ได้ (ต้องเขียนบนจอ) */
@@ -230,7 +232,7 @@ export default function QualityBins({ mode = 'full' }) {
     let pendIds = [];
     if (bin === 'yellow') {
       let pq = supabaseDR.from('quality_bin_records')
-        .select('id, work_date, line_name, mat_no, part_name, part_no, qty, cause, reported_by, qa_decision, return_date, defect_log_id, found_img, special_use_doc_no, scrap_report_id, bin, is_active, qty_ng')
+        .select('id, work_date, line_name, mat_no, part_name, part_no, qty, cause, reported_by, qa_decision, return_date, defect_log_id, found_img, special_use_doc_no, scrap_report_id, bin, is_active, qty_ok, qty_ng, repair_date, repair_by, repair_detail, repair_reject_note, repair_reject_count')
         .eq('bin', 'yellow').eq('is_active', true)
         /* 🔴 ไม่กรองแค่ "ยังไม่มีผล" — ตัดสินแล้วแต่ยังไม่จบ (ซ่อมยังไม่กลับ/ขอใช้ไม่มีเลขใบ/ทำลายยังไม่ย้ายแดง)
            ต้องค้างในคิวด้วย (บั๊ก A 10/11) · ตัด "งานดี" ฝั่ง server เพราะปิดแน่นอน · ที่เหลือตัดสินด้วย pendingYellow() */
@@ -462,6 +464,11 @@ export default function QualityBins({ mode = 'full' }) {
     if (isY) {
       const dec = form.qa_decision || null;
       const prevDec = editing === 'new' ? null : (editing.qa_decision || null);
+      if ((form.return_date || null) !== (editing === 'new' ? null : (editing.return_date || null)) && !canDecide) {
+        setSaving(false);
+        toast.error('วันกลับเข้ากระบวนการ = QA ตรวจรับ (ขั้น 4) เท่านั้น — ไม่ได้บันทึก');
+        return;
+      }
       if (dec !== prevDec && !canDecide) {
         setSaving(false);
         toast.error('ผลการพิจารณาเปลี่ยนได้เฉพาะ QA (สิทธิ์ qa:bin_decide) — คืนช่องผลพิจารณาเป็นค่าเดิมแล้วบันทึกใหม่');
@@ -594,18 +601,20 @@ export default function QualityBins({ mode = 'full' }) {
     if (!guardLines(r.line_name, 'ผลพิจารณาของในถังเหลือง') || !guardSigner()) return;
     const qty = Number(r.qty) || 0;
     const when = today();
-    /* 🔧 "ซ่อมแล้วดี" = ปิดครบสาย: ตัดสินซ่อม + วันซ่อม + จำนวน OK + วันกลับเข้ากระบวนการ
-       (ลงครึ่งเดียวแล้วใบค้างในถังต่อ ทั้งที่ของกลับไปผลิตแล้ว = ของค้างเทียม) */
+    /* 🔢 สายแบบใบ MO (10/11): "งานดี" = จบ · "ส่งซ่อม" = ขั้น 3 ฝ่ายผลิตซ่อม → ขั้น 4 QA ตรวจรับ
+       🔴 ห้ามปิดใบซ่อมในคลิกเดียวอีก (เดิม "ซ่อมแล้วดี" ลงวันซ่อม+OK+กลับเข้ากระบวนการพร้อมกัน =
+          ไม่มีใครตรวจรับงานซ่อมจริง) */
     const patch = kind === 'good'
       ? { qa_decision: 'good', qa_decision_at: new Date().toISOString(), qa_by: fullName || null, return_date: when }
-      : { qa_decision: 'repair', qa_decision_at: new Date().toISOString(), qa_by: fullName || null,
-          repair_date: when, qty_ok: qty, qty_ng: 0, return_date: when };
-    const label = kind === 'good' ? 'ตรวจแล้วใช้ได้' : 'ซ่อมแล้วดี';
+      : { qa_decision: 'repair', qa_decision_at: new Date().toISOString(), qa_by: fullName || null };
+    const label = kind === 'good' ? 'ตรวจแล้วใช้ได้' : 'ส่งซ่อม';
     if (!confirmSign({
       what: `ผลพิจารณา "${label}" — ${qty.toLocaleString()} ชิ้น`,
       docLabel: 'ใบถังเหลือง', orderNo: binDocLabel(r),
       actor: fullName || '(ไม่รู้ชื่อผู้ใช้)', as: 'ผู้พิจารณา (ช่อง QA บนใบ)',
-      effect: `ปิดออกจากถังเหลือง · บันทึกว่ากลับเข้ากระบวนการวันที่ ${when}`,
+      effect: kind === 'good'
+        ? `ปิดออกจากถังเหลือง · บันทึกว่ากลับเข้ากระบวนการวันที่ ${when}`
+        : 'ส่งให้ฝ่ายผลิตซ่อม (ขั้น 3) → ซ่อมเสร็จแล้ว QA ตรวจรับ (ขั้น 4)',
       warn: BIN_SIGN_WARN,
     })) return;
     setDeciding(r.id);
@@ -616,8 +625,92 @@ export default function QualityBins({ mode = 'full' }) {
       { zeroMsg: 'บันทึกผลไม่สำเร็จ (0 แถว — อาจมีคนแก้ไปก่อน) · รีเฟรชแล้วลองใหม่' });
     setDeciding('');
     if (!ok) return;
-    toast.success(`✅ ${label} ${qty} ชิ้น — ปิดออกจากถังเหลืองแล้ว`);
-    restampQ([r.defect_log_id]);
+    if (kind === 'good') {
+      toast.success(`✅ ${label} ${qty} ชิ้น — ปิดออกจากถังเหลืองแล้ว`);
+      restampQ([r.defect_log_id]);
+    } else {
+      toast.success(`🔧 ส่งซ่อม ${qty} ชิ้น — รอฝ่ายผลิตลงผลซ่อม แล้ว QA ตรวจรับ`);
+      notifyStep('qbin_repair_needed', r, [`🔧 QA ให้ซ่อม ${qty} ชิ้น — ลงผลซ่อมที่ถังเหลือง (ขั้น 3)`]);
+    }
+    load();
+  };
+
+  /* 🔔 แจ้งคนของขั้นถัดไป (แบบใบ MO) — ผู้รับตั้งที่ทะเบียน notification_rules ห้ามฮาร์ดโค้ด */
+  const notifyStep = (event, r, extra = []) => notifyEvent({
+    event, type: 'info', ref_table: 'quality_bin_records', ref_id: r.id,
+    line_name: r.line_name || null, actor: fullName,
+    lines: [`🏭 ไลน์: ${r.line_name || '—'} · ${r.part_no || r.part_name || r.mat_no || '—'}`, ...extra],
+  });
+
+  /* ═══ ขั้น 3 — ฝ่ายผลิตลงผลซ่อม ═══ */
+  const saveRepair = async () => {
+    const f = repairing; if (!f) return;
+    const r = f.row;
+    if (!canRecord) { toast.error('ลงผลซ่อมต้องมีสิทธิ์ scrap:record'); return; }
+    if (!guardLines(r.line_name, 'ผลซ่อมของในถังเหลือง') || !guardSigner()) return;
+    const okQ = numOrNull(f.ok) ?? 0; const ngQ = numOrNull(f.ng) ?? 0;
+    const qty = Number(r.qty) || 0;
+    if (okQ < 0 || ngQ < 0) { toast.error('จำนวนติดลบไม่ได้'); return; }
+    if (okQ + ngQ !== qty) { toast.error(`ซ่อมดี + ซ่อมไม่ได้ ต้องรวมเท่ากับจำนวนในใบ (${qty} ชิ้น) — ตอนนี้รวม ${okQ + ngQ}`); return; }
+    if (!String(f.detail || '').trim()) { toast.error('กรอกรายละเอียดการซ่อม (ทำอะไร ตาม WI ไหน)'); return; }
+    setDeciding(r.id);
+    const res = await supabaseDR.from('quality_bin_records').update({
+      repair_date: today(), repair_by: fullName || null, repair_detail: f.detail.trim(),
+      qty_ok: okQ, qty_ng: ngQ, repair_reject_note: null,
+    }).eq('id', r.id).eq('qa_decision', 'repair').select('id');
+    const ok = checkWriteRows(res, 'ลงผลซ่อม', { zeroMsg: 'ลงผลซ่อมไม่สำเร็จ (0 แถว — QA อาจเปลี่ยนผลพิจารณาไปแล้ว) · รีเฟรชแล้วลองใหม่' });
+    setDeciding('');
+    if (!ok) return;
+    setRepairing(null);
+    toast.success(`🔧 ลงผลซ่อมแล้ว (ดี ${okQ} · ไม่ได้ ${ngQ}) — รอ QA ตรวจรับ`);
+    notifyStep('qbin_repair_done', r, [`🔎 ซ่อมเสร็จ ดี ${okQ} · ไม่ได้ ${ngQ} ชิ้น — รอ QA ตรวจรับ (ขั้น 4)`, `📝 ${f.detail.trim()}`]);
+    load();
+  };
+
+  /* ═══ ขั้น 4 — QA ตรวจรับงานซ่อม (ผ่าน = กลับเข้ากระบวนการ · NG ที่เหลือ → ถังแดง) ═══ */
+  const acceptRepair = async (r) => {
+    if (!canDecide) { toast.error('ตรวจรับงานซ่อมได้เฉพาะ QA (สิทธิ์ qa:bin_decide)'); return; }
+    if (deciding) return;
+    if (!guardLines(r.line_name, 'ตรวจรับงานซ่อม') || !guardSigner()) return;
+    const okQ = Number(r.qty_ok) || 0; const ngQ = Number(r.qty_ng) || 0;
+    const when = today();
+    if (!confirmSign({
+      what: `ตรวจรับงานซ่อม — ดี ${okQ.toLocaleString()} ชิ้น${ngQ ? ` · ซ่อมไม่ได้ ${ngQ.toLocaleString()} ชิ้น` : ''}`,
+      docLabel: 'ใบถังเหลือง', orderNo: binDocLabel(r),
+      actor: fullName || '(ไม่รู้ชื่อผู้ใช้)', as: 'QA ผู้ตรวจรับ (ติดแท็กเขียว)',
+      effect: `ของดีกลับเข้ากระบวนการวันที่ ${when}${ngQ ? ` · ${ngQ} ชิ้นที่ซ่อมไม่ได้ย้ายลงถังแดง` : ''}`,
+      warn: BIN_SIGN_WARN,
+    })) return;
+    setDeciding(r.id);
+    const res = await supabaseDR.from('quality_bin_records').update({
+      return_date: when, repair_accepted_by: fullName || null, repair_accepted_at: new Date().toISOString(),
+    }).eq('id', r.id).not('repair_date', 'is', null).select('id');
+    const ok = checkWriteRows(res, 'ตรวจรับงานซ่อม', { zeroMsg: 'ตรวจรับไม่สำเร็จ (0 แถว — ผลซ่อมอาจถูกตีกลับ/แก้ไปแล้ว) · รีเฟรชแล้วลองใหม่' });
+    setDeciding('');
+    if (!ok) return;
+    toast.success(`✅ ตรวจรับแล้ว — ดี ${okQ} ชิ้นกลับเข้ากระบวนการ`);
+    if (ngQ > 0 && !redChildOf.has(r.id)) await toRed({ ...r, return_date: when }, { skipConfirm: true });
+    else restampQ([r.defect_log_id]);
+    load();
+  };
+  const rejectRepair = async (r) => {
+    if (!canDecide) { toast.error('ตีกลับงานซ่อมได้เฉพาะ QA (สิทธิ์ qa:bin_decide)'); return; }
+    if (deciding) return;
+    if (!guardLines(r.line_name, 'ตีกลับงานซ่อม') || !guardSigner()) return;
+    /* ต้องพิมพ์เหตุผล = ด่านอยู่แล้ว ไม่ถามซ้ำ (กฎ "ห้ามถามพร่ำเพรื่อ") */
+    const reason = window.prompt('ตีกลับงานซ่อม — เหตุผล (เช่น ยังมีครีบ / ขนาดไม่ได้):');
+    if (reason == null) return;
+    if (!reason.trim()) { toast.error('ต้องใส่เหตุผลการตีกลับ'); return; }
+    setDeciding(r.id);
+    const res = await supabaseDR.from('quality_bin_records').update({
+      repair_date: null, qty_ok: null, qty_ng: null,
+      repair_reject_note: reason.trim(), repair_reject_count: (Number(r.repair_reject_count) || 0) + 1,
+    }).eq('id', r.id).is('return_date', null).select('id');
+    const ok = checkWriteRows(res, 'ตีกลับงานซ่อม', { zeroMsg: 'ตีกลับไม่สำเร็จ (0 แถว — อาจตรวจรับไปแล้ว) · รีเฟรชแล้วลองใหม่' });
+    setDeciding('');
+    if (!ok) return;
+    toast.success('↩️ ตีกลับให้ฝ่ายผลิตซ่อมใหม่แล้ว');
+    notifyStep('qbin_repair_rejected', r, [`↩️ QA ตีกลับงานซ่อม: ${reason.trim()}`]);
     load();
   };
 
@@ -670,7 +763,7 @@ export default function QualityBins({ mode = 'full' }) {
             padding: '12px 14px', marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: pend.length ? 10 : 0 }}>
               <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--amber)' }}>
-                🟡 รอพิจารณา {pend.length} รายการ · {pcs.toLocaleString()} ชิ้น
+                🟡 ค้างในสายถังเหลือง {pend.length} รายการ · {pcs.toLocaleString()} ชิ้น
               </span>
               {over > 0 && (
                 <span title={`เลยอายุแท็กเหลือง ${TAG_MAX_DAYS.yellow} วันตาม WI-PD3-087 §5.6`}
@@ -712,37 +805,50 @@ export default function QualityBins({ mode = 'full' }) {
                         {r.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {r.line_name}</span>}
                       </div>
                       {r.cause && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.cause}</div>}
-                      {/* 🔴 ตัดสินแล้วแต่ยังไม่จบ — บอกว่าค้างเพราะอะไร (บั๊ก A 10/11 · เดิมหายจากคิวเงียบๆ) */}
+                      {/* 🔢 ขั้นของใบ (แบบใบ MO) + รอใคร — ตัดสินที่ ncStep() ที่เดียว */}
                       {(() => {
-                        const why = yellowStuckReason(r, { hasRedChild: redChildOf.has(r.id) });
-                        return why ? <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>⚠️ {why}</div> : null;
+                        const st = ncStep(r, { hasRedChild: redChildOf.has(r.id) });
+                        const who = st.owner === 'qa' ? 'QA' : st.owner === 'prod' ? 'ฝ่ายผลิต' : '';
+                        const late = st.key === 'repair' && r.repair_reject_note;
+                        return st.step ? (
+                          <div style={{ fontSize: 11, fontWeight: 700, color: late ? 'var(--red)' : 'var(--text2)', marginTop: 2 }}>
+                            ขั้น {st.step}/5 · {st.label}{who ? ` · รอ${who}` : ''}
+                            {r.qty_ok != null && st.step === 4 && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · ซ่อมดี {r.qty_ok} · ไม่ได้ {r.qty_ng ?? 0}{r.repair_detail ? ` · ${r.repair_detail}` : ''}</span>}
+                          </div>
+                        ) : null;
                       })()}
                     </div>
-                    {canDecide && (
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        <button disabled={busy} onClick={() => decide(r, 'good')}
-                          title="ตรวจแล้วใช้ได้ — ติดแท็กเขียวแล้วกลับเข้ากระบวนการ (WI §5.4)"
+                    {(() => {
+                      const st = ncStep(r, { hasRedChild: redChildOf.has(r.id) });
+                      const B = (tone, label, onClick, title) => (
+                        <button key={label} disabled={busy} onClick={onClick} title={title}
                           style={{ fontSize: 11.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 'var(--r-md)', padding: '5px 11px',
                             cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1,
-                            color: 'var(--green)', background: 'var(--green-dim)', border: '1px solid var(--green-line)' }}>
-                          ✅ งานดี
+                            color: `var(--${tone})`, background: `var(--${tone}-dim)`, border: `1px solid var(--${tone}-line)` }}>
+                          {label}
                         </button>
-                        <button disabled={busy} onClick={() => decide(r, 'repair')}
-                          title="ซ่อมตาม SOP/WI แล้วผลออกมาดี — กลับเข้ากระบวนการ"
-                          style={{ fontSize: 11.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 'var(--r-md)', padding: '5px 11px',
-                            cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1,
-                            color: 'var(--blue)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)' }}>
-                          🔧 ซ่อมแล้วดี
-                        </button>
-                        <button disabled={busy} onClick={() => decideScrap(r)}
-                          title="ซ่อมไม่ได้/ไม่คุ้ม — ติดแท็กแดงแล้วย้ายลงถังแดง เพื่อออกใบขออนุมัติทำลาย"
-                          style={{ fontSize: 11.5, fontWeight: 800, whiteSpace: 'nowrap', borderRadius: 'var(--r-md)', padding: '5px 11px',
-                            cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1,
-                            color: 'var(--red)', background: 'var(--red-dim)', border: '1px solid var(--red-line)' }}>
-                          🔴 เสียแน่ → ถังแดง
-                        </button>
-                      </div>
-                    )}
+                      );
+                      let btns = [];
+                      if (st.key === 'qa_decide' && canDecide) btns = [
+                        B('green', '✅ งานดี', () => decide(r, 'good'), 'ตรวจแล้วใช้ได้ — ติดแท็กเขียวแล้วกลับเข้ากระบวนการ (WI §5.4)'),
+                        B('blue', '🔧 ส่งซ่อม', () => decide(r, 'repair'), 'ให้ฝ่ายผลิตซ่อมตาม SOP/WI (ขั้น 3) แล้ว QA ตรวจรับ (ขั้น 4)'),
+                        B('red', '🔴 เสียแน่ → ถังแดง', () => decideScrap(r), 'ซ่อมไม่ได้/ไม่คุ้ม — ติดแท็กแดงแล้วย้ายลงถังแดง เพื่อออกใบขออนุมัติทำลาย'),
+                      ];
+                      else if (st.key === 'use_as_is_doc' && canDecide) btns = [
+                        B('blue', `✏️ กรอกเลขใบ ${SPECIAL_USE_FORM}`, () => openEdit(r), 'ขอใช้ต้องมีเลขใบ FM-QA-042'),
+                      ];
+                      else if (st.key === 'repair' && canRecord) btns = [
+                        B('blue', '🔧 ลงผลซ่อม', () => setRepairing({ row: r, ok: String(r.qty ?? ''), ng: '0', detail: '' }), 'ซ่อมเสร็จแล้ว — ลงจำนวนดี/ไม่ได้ ส่งให้ QA ตรวจรับ'),
+                      ];
+                      else if (st.key === 'repair_accept' && canDecide) btns = [
+                        B('green', '✅ ตรวจรับ', () => acceptRepair(r), 'งานซ่อมผ่าน — ติดแท็กเขียว กลับเข้ากระบวนการ'),
+                        B('amber', '↩️ ตีกลับ', () => rejectRepair(r), 'งานซ่อมไม่ผ่าน — ส่งกลับให้ฝ่ายผลิตซ่อมใหม่'),
+                      ];
+                      else if (st.key === 'to_red' && canRecord) btns = [
+                        B('red', '🔴 ย้ายลงถังแดง', () => toRed(r), 'QA ชี้ทำลาย — ย้ายของลงถังแดงเพื่อออกใบรายงานของเสีย'),
+                      ];
+                      return btns.length ? <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{btns}</div> : null;
+                    })()}
                   </div>
                 );
               })}
@@ -754,9 +860,10 @@ export default function QualityBins({ mode = 'full' }) {
                 {pendAll ? 'ย่อกลับ' : `แสดงอีก ${pend.length - 8} (ทั้งหมด ${pend.length})`}
               </button>
             )}
-            {!canDecide && pend.length > 0 && (
+            {pend.length > 0 && (
               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
-                ดูได้อย่างเดียว — ตัดสินผลได้เฉพาะ <b>QA</b> (สิทธิ์ qa:bin_decide)
+                ขั้น 2 ตัดสิน · ขั้น 4 ตรวจรับ = <b>QA</b> (สิทธิ์ qa:bin_decide{canDecide ? ' ✓' : ' — บัญชีนี้ไม่มี'}) ·
+                ขั้น 3 ลงผลซ่อม · ย้ายลงถังแดง = <b>ฝ่ายผลิต</b> (สิทธิ์ scrap:record{canRecord ? ' ✓' : ' — บัญชีนี้ไม่มี'})
               </div>
             )}
           </div>
@@ -768,8 +875,39 @@ export default function QualityBins({ mode = 'full' }) {
      ของแผนก เพราะ หลักๆเอกสารอยู่ที่ผลิต"* ⇒ ที่นี่ไม่มีแถบกรอง/ตาราง/ปุ่มบันทึก/ทะเบียน WI
      🔴 ลิงก์ไปบ้านจริงโชว์เฉพาะคนที่เข้าหน้านั้นได้ — ลิงก์ที่กดแล้วเด้งกลับ = จอโกหก
      🔴 ขอบเขตของคิวต้องเขียนบนจอ (เห็นเฉพาะส่วนงานตัวเอง ≠ ทั้งโรงงานเคลียร์หมด) */
+  /* 🔧 ขั้น 3 — โมดัลลงผลซ่อม (ฝ่ายผลิต) · ดี + ไม่ได้ ต้องรวมเท่าจำนวนในใบ */
+  const renderRepairModal = () => repairing && (
+    /* ห้ามปิดด้วยคลิกพื้นหลัง — มีช่องกรอก (ด่าน backdrop-close-form-modal) */
+    <div className="overlay"
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 20, width: 'min(96vw, 460px)' }}>
+        <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>🔧 ลงผลซ่อม (ขั้น 3)</h3>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+          {binDocLabel(repairing.row)} · {Number(repairing.row.qty) || 0} ชิ้น — บันทึกแล้วส่งให้ QA ตรวจรับ (ขั้น 4)
+        </div>
+        {repairing.row.repair_reject_note && (
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)', marginBottom: 10 }}>↩️ QA ตีกลับรอบก่อน: {repairing.row.repair_reject_note}</div>
+        )}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignContent: 'start' }}>
+          <div><label style={lbl}>ซ่อมแล้วดี (ชิ้น)</label>
+            <input type="number" min="0" value={repairing.ok} onChange={e => setRepairing(f => ({ ...f, ok: e.target.value }))} style={inp} /></div>
+          <div><label style={lbl}>ซ่อมไม่ได้ (ชิ้น) → ถังแดงตอนตรวจรับ</label>
+            <input type="number" min="0" value={repairing.ng} onChange={e => setRepairing(f => ({ ...f, ng: e.target.value }))} style={inp} /></div>
+          <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>รายละเอียดการซ่อม (ทำอะไร · ตาม WI ไหน) *</label>
+            <input value={repairing.detail} onChange={e => setRepairing(f => ({ ...f, detail: e.target.value }))} style={inp} /></div>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>ผู้ซ่อม: {fullName || '—'} · วันที่ {today()} · แนบรูปหลังซ่อมได้ที่ ✏️ แก้ไขรายการ</div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+          <button onClick={() => setRepairing(null)} style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+          <button disabled={!!deciding} onClick={saveRepair} style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>บันทึกผลซ่อม → ส่ง QA</button>
+        </div>
+      </div>
+    </div>
+  );
+
   if (queueOnly) return (
     <div>
+      {renderRepairModal()}
       <ReadOnlyNote show={!canDecide} role={role} what="ตัดสินผลของในถังเหลือง (เฉพาะ QA)" permKey="qa:bin_decide" />
       {renderPendQueue()}
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 10, lineHeight: 1.8 }}>
@@ -794,6 +932,7 @@ export default function QualityBins({ mode = 'full' }) {
 
   return (
     <div>
+      {renderRepairModal()}
       <ReadOnlyNote show={!canRecord} role={role} what="บันทึกถังเหลือง/ถังแดง"
         permKey="scrap:record" />
       {/* ── แถบควบคุม ── */}
@@ -1100,7 +1239,8 @@ export default function QualityBins({ mode = 'full' }) {
                 <div><label style={lbl}>ผลซ่อม NG (ชิ้น)</label>
                   <input type="number" value={form.qty_ng} onChange={e => setForm(f => ({ ...f, qty_ng: e.target.value }))} style={inp} /></div>
                 <div><label style={lbl}>วันที่นำกลับเข้ากระบวนการ</label>
-                  <input type="date" value={form.return_date} onChange={e => setForm(f => ({ ...f, return_date: e.target.value }))} style={inp} /></div>
+                  <input type="date" value={form.return_date} disabled={!canDecide} title={canDecide ? '' : 'วันกลับเข้ากระบวนการ = QA ตรวจรับ (ขั้น 4) เท่านั้น'}
+                    onChange={e => setForm(f => ({ ...f, return_date: e.target.value }))} style={inp} /></div>
                 {/* 📷 รูปหลังซ่อม — ปิดลูป "ซ่อมแล้วใช้ได้จริง" คู่กับรายละเอียดการซ่อม (I DO I CHECK) */}
                 <div style={{ gridColumn: '1 / -1' }}>
                   <QualityPhotoField

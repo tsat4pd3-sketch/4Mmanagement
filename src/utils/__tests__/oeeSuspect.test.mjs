@@ -48,7 +48,16 @@ test('🔴 QA ตัดสิน "ทำลาย" = เสียจริง �
   assert.equal(suspectPendingQty(d), 0);
 });
 
-for (const dec of ['good', 'repair', 'use_as_is']) {
+test('🔴 ส่งซ่อมแต่ QA ยังไม่ตรวจรับ = ยังรอ (ซ่อมอาจไม่ผ่าน) · ตรวจรับแล้ว = เคลียร์', () => {
+  const d = row({ qty_suspect: 12, quality_bin_records: [{ id: 'y1', bin: 'yellow', qa_decision: 'repair' }] });
+  assert.equal(suspectState(d), 'pending');
+  d.quality_bin_records[0].return_date = '2026-11-10';
+  assert.equal(suspectState(d), 'cleared');
+  const n = row({ qty_ng: 1, quality_bin_records: [{ id: 'y1', bin: 'yellow', qty: 1, qa_decision: 'repair' }] });
+  assert.equal(defectQty(n), 0);
+  assert.equal(suspectPendingQty(n), 1);
+});
+for (const dec of ['good', 'use_as_is']) {
   test(`QA ตัดสิน "${dec}" = ไม่ใช่ของเสีย ⇒ ไม่นับเข้า %Q`, () => {
     const d = row({ qty_suspect: 12, quality_bin_records: [{ id: 'y1', bin: 'yellow', qa_decision: dec }] });
     assert.equal(suspectState(d), 'cleared');
@@ -162,7 +171,7 @@ test('🔴 §7.2 NG ในถังเหลืองรอพิจารณา
 });
 for (const dec of ['good', 'repair', 'use_as_is']) {
   test(`🔴 §7.2 NG ที่ QA ตัดสิน "${dec}" = ไม่หัก %Q`, () => {
-    const d = row({ qty_ng: 1, quality_bin_records: [Y({ qa_decision: dec })] });
+    const d = row({ qty_ng: 1, quality_bin_records: [Y({ qa_decision: dec, ...(dec === 'repair' ? { return_date: '2026-11-10' } : {}) })] });
     assert.equal(defectQty(d), 0);
     assert.equal(suspectPendingQty(d), 0);
   });
@@ -195,6 +204,6 @@ test('§7.2 ใบเหลืองซ้ำนับเกิน = ตัด�
 test('§7.2 ตัวอย่าง user: ผลิต 399 + NG 1 → Q = 100% ระหว่างรอ/ซ่อมดี · 399/400 เมื่อทำลาย', () => {
   const q = (dec) => { const ng = sumDefectQty([row({ qty_ng: 1, quality_bin_records: [Y({ qa_decision: dec })] })]); return 399 / (399 + ng); };
   assert.equal(q(null), 1);
-  assert.equal(q('repair'), 1);
+  assert.equal(q('repair'), 1);   // ส่งซ่อม = ยังรอ → ไม่หัก
   assert.equal(q('scrap'), 399 / 400);
 });

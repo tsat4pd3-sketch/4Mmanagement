@@ -27,7 +27,7 @@ import { loadProductionLines } from '../utils/useProductionLines';
 import { OPEN_MO_STATUSES, actorSideOf } from '../utils/mtnStepPerm';
 import { isAmTeam } from '../utils/pmTeams';
 import { positionRank } from '../utils/positions';
-import { can as canPerm, isActionSeeded } from '../utils/permissions';
+import { can as canPerm, isActionSeeded, canSeeded as canSeededPerm } from '../utils/permissions';
 import { teamKeyOf } from '../utils/mtnTeams';
 import { pendingYellow } from '../utils/qualityBin';
 import {
@@ -93,7 +93,7 @@ export async function loadMyQueue(me) {
     /* 🟡 ถังเหลืองรอพิจารณา — เงื่อนไขเดียวกับแผงในหน้าถัง (`pendingYellow`) · เลือกเฉพาะคอลัมน์ที่คิวใช้
        (ตารางนี้กว้าง — `select('*')` คือตัวกิน egress · กฎเขียน DB ข้อ 11) */
     supabaseDR.from('quality_bin_records')
-      .select('id, bin, is_active, work_date, line_name, mat_no, part_name, part_no, qty, cause, qa_decision, return_date, special_use_doc_no')
+      .select('id, bin, is_active, work_date, line_name, mat_no, part_name, part_no, qty, cause, qa_decision, return_date, special_use_doc_no, repair_date, qty_ng')
       .eq('bin', 'yellow').eq('is_active', true)
       /* 🔴 ตัดสินแล้วแต่ยังไม่จบ = ยังค้าง (บั๊ก A 10/11) — ตัด "งานดี" ฝั่ง server ที่เหลือตัดสินด้วย pendingYellow() */
       .or('qa_decision.is.null,qa_decision.neq.good').is('return_date', null)
@@ -280,6 +280,8 @@ export function useMyQueue(open = false) {
           // ⬆️ คีย์เดียวกับปุ่มอนุมัติใน /operator?tab=levelup
           canLevelUp: canPerm('skills', 'approve_levelup', role),
           canLevelUp100: canPerm('skills', 'approve_levelup_100', role),
+          // 🔎 ถังเหลืองขั้น QA (ตัดสิน/ตรวจรับ) — คีย์เดียวกับปุ่มในหน้าถัง
+          canBinDecide: canSeededPerm('qa', 'bin_decide', role),
         });
       } catch {
         /* supabase-js คืน error ไม่ throw — มาถึงนี่ได้เฉพาะกรณีผิดปกติ ⇒ ถือว่าไม่ครบ ห้ามขึ้นว่าไม่มีงาน */

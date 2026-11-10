@@ -185,14 +185,48 @@ export function yellowStuckReason(row, { hasRedChild = false } = {}) {
   if (!row || row.bin !== 'yellow' || !row.qa_decision) return null;
   if (binClosed(row, { hasRedChild })) return null;
   switch (row.qa_decision) {
-    case 'repair': {
-      const ng = Number(row.qty_ng) || 0;
-      return ng > 0
-        ? `ตัดสินซ่อมแล้ว · ซ่อมแล้ว NG ${ng} ชิ้น ยังไม่ย้ายลงถังแดง`
-        : 'ตัดสินซ่อมแล้ว · ยังไม่ลงวันกลับเข้ากระบวนการ';
-    }
+    case 'repair':
+      return row.repair_date ? 'ซ่อมแล้ว · รอ QA ตรวจรับ' : 'ตัดสินซ่อมแล้ว · รอฝ่ายผลิตซ่อม';
     case 'use_as_is': return `ตัดสินขอใช้แล้ว · ยังไม่มีเลขใบ ${SPECIAL_USE_FORM}`;
     case 'scrap':     return 'ตัดสินทำลายแล้ว · ยังไม่ย้ายลงถังแดง';
     default:          return 'ตัดสินแล้ว · ยังไม่ปิด';
   }
+}
+
+/* ═══ 🔢 ขั้นของใบถัง — เดินแบบใบ MO (2026-11-10 · คำสั่ง user "ให้ทำงานได้เหมือน MO · ทำขั้น 1-5 ก่อน
+ *     ซ่อมแล้ว QA ตรวจรับ") ═══════════════════════════════════════════════════════════════════
+ *
+ *   1 แจ้ง (ระบบตั้งแท็กเหลืองจาก Daily Report)  → 2 QA ตัดสิน
+ *   2 QA ตัดสิน ─ งานดี → จบ · ซ่อม → 3 · ขอใช้ → รอเลขใบ FM-QA-042 · ทำลาย → 5
+ *   3 ฝ่ายผลิตซ่อม (ลงผล OK/NG)                   → 4
+ *   4 QA ตรวจรับ ─ ผ่าน → จบ (NG ที่เหลือ → 5) · ไม่ผ่าน → ตีกลับ 3
+ *   5 ถังแดง → ออกใบรายงานของเสีย (ส่งอนุมัติแล้ว = จบสายนี้ · DOA ทำทีหลัง)
+ *
+ * 🔴 ขั้น **คำนวณจากข้อเท็จจริงในแถว** ไม่มีคอลัมน์ step ให้คนกด (กฎ "ห้ามเพิ่ม closed_at ที่ต้องมีคนกดปิด")
+ *    ⇒ แถวเก่าที่ลงแบบเดิมเข้าขั้นได้เองโดยไม่ต้อง backfill
+ * 🔴 `owner` = ฝั่งที่ต้องลงมือ (`qa` | `prod`) — คิว/แจ้งเตือนอ่านจากตรงนี้ ห้ามตัดสินเองในหน้า
+ * @returns {{ step:number|null, owner:'qa'|'prod'|null, key:string, label:string }}
+ */
+export const NC_STEP_LABEL = {
+  2: 'QA ตัดสิน', 3: 'ฝ่ายผลิตซ่อม', 4: 'QA ตรวจรับงานซ่อม', 5: 'ถังแดง · ออกใบรายงานของเสีย',
+};
+export function ncStep(row, { hasRedChild = false, scrapStatusOf = null } = {}) {
+  const S = (step, owner, key, label) => ({ step, owner, key, label });
+  if (!row) return S(null, null, 'none', '—');
+  if (row.bin === 'red') {
+    if (binClosed(row, { scrapStatusOf })) return S(null, null, 'done', 'ส่งขออนุมัติทำลายแล้ว');
+    return S(5, 'prod', 'red_report', row.scrap_report_id ? 'ใบรายงานของเสียยังเป็นร่าง' : 'รอออกใบรายงานของเสีย');
+  }
+  if (binClosed(row, { hasRedChild })) return S(null, null, 'done', 'จบแล้ว');
+  const dec = row.qa_decision || null;
+  if (!dec) return S(2, 'qa', 'qa_decide', 'รอ QA ตัดสิน');
+  if (dec === 'scrap') return S(5, 'prod', 'to_red', 'QA ชี้ทำลาย · รอย้ายลงถังแดง');
+  if (dec === 'use_as_is') return S(2, 'qa', 'use_as_is_doc', `ขอใช้ · รอเลขใบ ${SPECIAL_USE_FORM}`);
+  if (dec === 'repair') {
+    if (!row.repair_date) {
+      return S(3, 'prod', 'repair', row.repair_reject_note ? `QA ตีกลับ: ${row.repair_reject_note}` : 'รอฝ่ายผลิตซ่อม');
+    }
+    return S(4, 'qa', 'repair_accept', 'ซ่อมแล้ว · รอ QA ตรวจรับ');
+  }
+  return S(2, 'qa', 'qa_decide', 'รอ QA ตัดสิน');
 }

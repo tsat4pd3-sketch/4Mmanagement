@@ -1033,8 +1033,10 @@ export const QBIN_EMBED =
 
 /** ผลพิจารณาที่ถือว่า "เสียจริง" — ค่าอื่นที่ตัดสินแล้วคือไม่เสีย */
 const QA_SCRAP = 'scrap';
-/** ผลพิจารณาที่ถือว่า "เคลียร์แล้ว ไม่ใช่ของเสีย" */
-const QA_CLEARED = ['good', 'repair', 'use_as_is'];
+/** ผลพิจารณาที่ถือว่า "เคลียร์แล้ว ไม่ใช่ของเสีย" ทันทีที่ตัดสิน
+ *  🔴 `repair` ไม่อยู่ในนี้แล้ว (2026-11-10 · สายใบถังแบบ MO): "ส่งซ่อม" ยังไม่รู้ผล — ซ่อมอาจไม่ผ่าน
+ *     ⇒ เคลียร์เมื่อ QA ตรวจรับ (`return_date`) เท่านั้น ก่อนหน้านั้น = รอ (qualityBin.js `ncStep` ขั้น 3-4) */
+const QA_CLEARED = ['good', 'use_as_is'];
 
 /**
  * สถานะของ "ของสงสัย" ในแถวของเสีย 1 แถว
@@ -1109,7 +1111,7 @@ export function binCoveredSplit(d) {
   for (const y of yellows) {
     const q = Number(y.qty) || 0;
     const kids = rows.filter(r => r.bin === 'red' && r.from_yellow_id === y.id);
-    const done = !!y.return_date || QA_CLEARED.includes(y.qa_decision);
+    const done = !!y.return_date || QA_CLEARED.includes(y.qa_decision);   // ซ่อม = เคลียร์ตอน QA ตรวจรับ (return_date)
     if (y.qa_decision === QA_SCRAP || (kids.length && kids.some(k => !(Number(k.qty) > 0)))) {
       scrap += q;                                      // ทำลายทั้งใบ / ใบแดงไม่รู้จำนวน = เสียทั้งใบ (ปลอดภัยฝั่งลูกค้า)
       continue;
