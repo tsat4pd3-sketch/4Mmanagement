@@ -24,7 +24,7 @@ import { fetchCategories, fetchCheckingMethods, categoryColor, indexByCode } fro
 import PointZoom, { PointThumb } from '../components/inspect/PointZoom'
 import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
-import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam } from '../utils/pmTeams'
+import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam, splitInspByTeam, inspTeamLabel } from '../utils/pmTeams'
 import { MTN_TEAMS, deptNameOf, teamKeyOf, teamForEquipmentKind, teamsForUser, canWriteTeam, teamBlockText } from '../utils/mtnTeams'
 import { checkWriteRows } from '../utils/dbWrite';
 import NoticeBar from '../components/NoticeBar';
@@ -808,6 +808,10 @@ export default function PMCheckData() {
   const [moWaiveReason, setMoWaiveReason] = useState('')
   // ✍️ B2 — ใบในประวัติเป็นของทีม AM ไหม (ตาม checklist ของใบ ไม่ใช่แท็บที่เปิด) + ตำแหน่งคนตรวจ (สายอนุมัติ)
   const [clDeptById, setClDeptById] = useState({})
+  /* 🔀 ประวัติของอุปกรณ์ที่ตรวจหลายทีม — ดู src/utils/pmTeams.js §1 อุปกรณ์ ตรวจได้หลายทีม */
+  const [histOther, setHistOther] = useState([])       // ใบของทีมอื่นบนเครื่องเดียวกัน (โหลดเมื่อกดดู)
+  const [histMeta, setHistMeta] = useState(null)       // { otherN, unknownN, otherTeams, teamsKnown }
+  const [showOther, setShowOther] = useState(false)
   const [inspPosById, setInspPosById] = useState({})   // inspector_id → position · ไม่มีคีย์ = ไม่รู้
   // สิทธิ์บันทึกแยกแกน AM (พนักงานหน้างาน) / PM (ช่าง) ตามชนิดงานของทีมที่เปิดอยู่
   //   ห้าม hardcode 'pm' — ทีมไหนเป็น AM อ่านจาก mtn_teams.kind (ดู utils/pmTeams.js)
@@ -989,22 +993,62 @@ export default function PMCheckData() {
   const clearJig = () => setParams({ equip: null })            // กลับไปลิสต์ (จอแคบ)
   const setDept = (d) => setParams({ dept: d, line: null })    // เปลี่ยนแผนก = ล้างตัวกรองไลน์ (พฤติกรรมเดิม)
 
+  /* 📜 ประวัติการตรวจของเครื่องนี้ — **ของทีมที่กำลังดูเท่านั้น**  (แก้ 2026-11-10 · คำสั่ง user)
+
+     🔴 เดิมดึงด้วย `.eq('jig_id', jigId)` ล้วน + `limit(30)` ⇒ เครื่องที่มี checklist ทั้ง AM และ PM
+        (วัดจริง DR 6 เครื่อง / 112 ใบ) ได้ใบของทั้ง 2 ทีม **ปนกันในลิสต์เดียวโดยไม่มีอะไรบอกว่าใบไหนของใคร**
+        และโควตา 30 ใบถูกใช้ร่วมกัน ⇒ ทีมที่ตรวจถี่กว่ากินช่องจนใบของอีกทีมหลุดหาย
+        (PF-H101: AM 22 ใบ · DIE MTN 1 ใบ — ใบช่างมีสิทธิ์ไม่โผล่เลย)
+     🔑 ลำดับสำคัญ: **ถามทีมของ checklist ก่อน แล้วจึงดึงใบ** — รู้ทีหลังแก้โควตาที่ถูกกินไปแล้วไม่ได้
+     🔴 อ่านทีมไม่ได้ = ถอยไปพฤติกรรมเดิม (ดึงด้วย jig_id) + `teamsKnown:false` ให้จอเขียนว่าอาจปนทีม
+        **ห้ามโชว์ลิสต์ว่างเงียบๆ** · ใบที่ชี้ทีมไม่ได้นับเป็น `unknownN` เขียนบนจอ ไม่กลืน   */
   const fetchHistory = async (jigId) => {
-    const { data, error: eH } = await supabaseDR.from('inspections').select('*').eq('jig_id', jigId).order('inspected_at', { ascending: false }).limit(30)
+    setShowOther(false); setHistOther([])
+    /* ① ทีมเจ้าของทุก checklist ของเครื่องนี้ (ไม่ใช่แค่ของใบที่ดึงมา) */
+    const clRes = await supabaseDR.from('checklists').select('id, department').eq('equipment_id', jigId).eq('module', 'mtn')
     if (curJigRef.current !== jigId) return // เปลี่ยนเครื่องไปแล้ว — คำตอบนี้เป็นของเครื่องก่อน
+    const teamsKnown = !clRes.error
+    if (clRes.error) toast.error(`อ่านทีมของใบตรวจไม่สำเร็จ — ประวัติอาจปนทีมอื่น: ${clRes.error.message}`)
+    const clRows = clRes.data ?? []
+    setClDeptById(Object.fromEntries(clRows.map(c => [c.id, c.department])))
+    const mineIds = clRows.filter(c => c.department === department).map(c => c.id)
+    const otherIds = clRows.filter(c => c.department !== department).map(c => c.id)
+
+    /* ② ใบของทีมนี้ (โควตา 30 ใบเป็นของทีมนี้คนเดียว) · อ่านทีมไม่ได้ = ถอยไปดึงทั้งเครื่องแบบเดิม */
+    const base = () => supabaseDR.from('inspections').select('*').order('inspected_at', { ascending: false }).limit(30)
+    let data = [], eH = null
+    if (!teamsKnown) ({ data, error: eH } = await base().eq('jig_id', jigId))
+    else if (mineIds.length) ({ data, error: eH } = await base().in('checklist_id', mineIds))
+    if (curJigRef.current !== jigId) return
     if (eH) toast.error(`โหลดประวัติการตรวจไม่สำเร็จ: ${eH.message}`)
     setInspections(data ?? [])
-    /* ✍️ B2 — ทีมของแต่ละใบ + ตำแหน่งคนตรวจ (Main) · อ่านไม่ได้ = ไม่รู้ ⇒ สายอนุมัติไม่บล็อกแต่เขียนบนจอ */
-    const clIds = [...new Set((data ?? []).map(i => i.checklist_id).filter(Boolean))]
+
+    /* ③ นับใบของทีมอื่น + ใบที่ชี้ทีมไม่ได้ (ไม่ดึงเนื้อถ้าไม่กดดู) — ตัวเลขต้องขึ้นจอ ห้ามเงียบ
+       นับไม่ได้ = `null` ให้จอเขียนว่าไม่รู้ **ห้ามแสดงเป็น 0** (0 = "ไม่มีใบของทีมอื่น" คนละเรื่อง) */
+    if (!teamsKnown) setHistMeta({ otherN: null, unknownN: null, otherTeams: [], teamsKnown: false })
+    else {
+      const headCount = (ids) => (ids.length
+        ? supabaseDR.from('inspections').select('id', { count: 'exact', head: true }).in('checklist_id', ids)
+        : Promise.resolve({ count: 0, error: null }))
+      const [oRes, mRes, allRes] = await Promise.all([
+        headCount(otherIds), headCount(mineIds),
+        supabaseDR.from('inspections').select('id', { count: 'exact', head: true }).eq('jig_id', jigId),
+      ])
+      if (curJigRef.current !== jigId) return
+      const otherN = oRes.error ? null : (oRes.count ?? 0)
+      const mineN = mRes.error ? null : (mRes.count ?? 0)
+      /* ใบของเครื่องนี้ที่ไม่ได้ผูก checklist ของเครื่องนี้เลย = ชี้ทีมไม่ได้ (วัดจริง 10/11 = 0 ใบ) */
+      const unknownN = (allRes.error || otherN === null || mineN === null)
+        ? null : Math.max(0, (allRes.count ?? 0) - otherN - mineN)
+      const oTeams = [...new Set(clRows.filter(c => c.department !== department).map(c => c.department).filter(Boolean))]
+      setHistMeta({ otherN, unknownN, otherTeams: oTeams, otherIds, teamsKnown: true })
+    }
+
+    /* ✍️ B2 — ตำแหน่งคนตรวจ (Main) · อ่านไม่ได้ = ไม่รู้ ⇒ สายอนุมัติไม่บล็อกแต่เขียนบนจอ */
     const uids = [...new Set((data ?? []).map(i => i.inspector_id).filter(Boolean))]
-    const [clRes, pRes] = await Promise.all([
-      clIds.length ? supabaseDR.from('checklists').select('id, department').in('id', clIds) : Promise.resolve({ data: [] }),
-      uids.length ? supabase.from('profiles').select('id, position').in('id', uids) : Promise.resolve({ data: [] }),
-    ])
+    const pRes = uids.length ? await supabase.from('profiles').select('id, position').in('id', uids) : { data: [] }
     if (curJigRef.current !== jigId) return
-    if (clRes.error) toast.error(`อ่านทีมของใบตรวจไม่สำเร็จ: ${clRes.error.message}`)
     if (pRes.error) toast.error(`อ่านตำแหน่งคนตรวจไม่สำเร็จ — ลำดับขั้นอนุมัติ AM จะไม่ถูกตรวจ: ${pRes.error.message}`)
-    setClDeptById(Object.fromEntries((clRes.data ?? []).map(c => [c.id, c.department])))
     setInspPosById(Object.fromEntries((pRes.data ?? []).filter(p => p.position).map(p => [p.id, p.position])))
     /* ผลตรวจ NG ใบไหนเปิดใบซ่อมไปแล้วบ้าง — กันเปิดซ้ำ + ให้กลับมาเปิดทีหลังได้ถ้าตอนนั้นกด "ไว้ก่อน"
        (ไม่งั้นเป็นทางตัน: ข้ามครั้งเดียวแล้วไม่มีทางเปิดจากผลตรวจใบนั้นอีกเลย)
@@ -1017,6 +1061,22 @@ export default function PMCheckData() {
     if (error) { setMoByInsp({}); return }
     const m = {}; (mos ?? []).forEach(o => { m[o.source_inspection_id] = o })
     setMoByInsp(m)
+  }
+
+  /* 👀 กดดูใบของทีมอื่นบนเครื่องเดียวกัน — โหลดตอนกด ไม่ดึงมาเปล่าๆ (egress · กฎเขียน DB ข้อ 11)
+     ปิดแล้วเปิดใหม่ไม่ดึงซ้ำ · ล้างทุกครั้งที่เปลี่ยนเครื่อง (fetchHistory) */
+  const toggleOtherHist = async () => {
+    if (showOther) { setShowOther(false); return }
+    const ids = histMeta?.otherIds ?? []
+    if (!ids.length) { setShowOther(true); return }
+    if (histOther.length) { setShowOther(true); return }
+    const jigId = curJigRef.current
+    const { data, error } = await supabaseDR.from('inspections').select('*')
+      .in('checklist_id', ids).order('inspected_at', { ascending: false }).limit(30)
+    if (curJigRef.current !== jigId) return
+    if (error) { toast.error(`โหลดใบของทีมอื่นไม่สำเร็จ: ${error.message}`); return }
+    setHistOther(data ?? [])
+    setShowOther(true)
   }
 
   /* ทีมช่างตั้งต้นของใบซ่อมที่จะเปิด
@@ -1570,7 +1630,10 @@ export default function PMCheckData() {
               </div>
               <div style={S.tabBar}>
                 <button onClick={() => setTab('record')} style={S.tabBtn(tab === 'record')}>บันทึก</button>
-                <button onClick={() => setTab('history')} style={S.tabBtn(tab === 'history')}>ประวัติ ({inspections.length})</button>
+                <button onClick={() => setTab('history')} style={S.tabBtn(tab === 'history')}>
+                  {/* 🔀 นับ "ของทีมนี้" เท่านั้น · มีของทีมอื่นบนเครื่องเดียวกัน = ติดจุดไว้ให้รู้ (กดเข้าไปอ่านได้) */}
+                  ประวัติ ({inspections.length}{histMeta?.otherN ? '+' : ''})
+                </button>
               </div>
             </div>
 
@@ -1915,16 +1978,56 @@ export default function PMCheckData() {
                 )
               })()}
 
-              {tab === 'history' && (
+              {tab === 'history' && (() => {
+                /* 🔀 เครื่องเดียวตรวจได้หลายทีม — จัดกลุ่มตาม "เจ้าของใบ" ห้ามปนในลิสต์เดียว
+                   (ของกลาง `splitInspByTeam` · เหตุผล+ตัวเลขใน src/utils/pmTeams.js)
+                   ใบของทีมอื่น/ชี้ทีมไม่ได้ ต้อง **เขียนบนจอ** ไม่ใช่กรองทิ้งเงียบ */
+                const grp = splitInspByTeam([...inspections, ...(showOther ? histOther : [])], { clDeptById, team: department })
+                const otherN = histMeta?.otherN
+                return (
                 <div style={{ maxWidth: 680, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {inspections.length === 0 ? (
-                    <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '40px 0' }}>ยังไม่มีประวัติการตรวจ</p>
-                  ) : inspections.map(insp => (
+                  {histMeta && !histMeta.teamsKnown && (
+                    <p style={{ margin: 0, padding: '8px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 600,
+                                border: '1px solid var(--amber)', background: 'var(--bg3)', color: 'var(--amber)' }}>
+                      ⚠️ อ่านทีมเจ้าของใบไม่ได้ — ลิสต์นี้เป็นใบ<b>ทุกทีม</b>ของเครื่องนี้ปนกัน และบอกไม่ได้ว่าใบไหนของใคร
+                    </p>
+                  )}
+                  {histMeta?.teamsKnown && otherN === null && (
+                    <p style={{ margin: 0, fontSize: 11.5, color: 'var(--amber)' }}>
+                      ⚠️ นับใบของทีมอื่นไม่ได้ — อาจมีใบของทีมอื่นบนเครื่องนี้ที่ยังไม่ได้แสดง
+                    </p>
+                  )}
+                  {!!otherN && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11.5, color: 'var(--text2)' }}>
+                      <span>🔀 เครื่องนี้มีใบของทีมอื่นอีก <b>{otherN}</b> ใบ ({(histMeta.otherTeams || []).map(inspTeamLabel).join(' · ')})</span>
+                      <button type="button" onClick={toggleOtherHist} style={{
+                        padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                        border: '1px dashed var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
+                      }}>{showOther ? 'ซ่อนใบของทีมอื่น' : 'ดูใบของทีมอื่นด้วย'}</button>
+                    </div>
+                  )}
+                  {!!histMeta?.unknownN && (
+                    <p style={{ margin: 0, fontSize: 11.5, color: 'var(--amber)' }}>
+                      ⚠️ อีก <b>{histMeta.unknownN}</b> ใบของเครื่องนี้ชี้ทีมเจ้าของไม่ได้ (ใบไม่ผูกจุดตรวจของเครื่องนี้) — ไม่ได้แสดงในลิสต์
+                    </p>
+                  )}
+                  {grp.mine.length === 0 && grp.others.length === 0 && grp.unknown.length === 0 ? (
+                    <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '40px 0' }}>
+                      {otherN ? 'ทีมนี้ยังไม่เคยตรวจเครื่องนี้ — มีแต่ใบของทีมอื่น (กดดูได้ด้านบน)' : 'ยังไม่มีประวัติการตรวจ'}
+                    </p>
+                  ) : [...grp.mine, ...grp.others, ...grp.unknown].map(insp => (
                     <div key={insp.id} onClick={() => setViewInspection(insp)} style={{ padding: '12px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--card)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: 0 }}>{formatDate(insp.inspected_at)}</p>
-                        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                        <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
                           <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-md)', background: insp.status === 'pass' ? 'var(--accent-dim)' : insp.status === 'fail' ? 'rgba(224,92,74,0.12)' : 'var(--bg3)', color: insp.status === 'pass' ? 'var(--accent)' : insp.status === 'fail' ? '#e05c4a' : 'var(--muted)' }}>{insp.status?.toUpperCase()}</span>
+                          {/* 🔀 ใบที่ไม่ใช่ของทีมที่กำลังดู ต้องติดป้ายว่าของใคร — ไม่งั้นปนกันแล้วแยกไม่ออก */}
+                          {(clDeptById[insp.checklist_id] ?? null) !== department && (
+                            <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-md)',
+                                           border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }}>
+                              {inspTeamLabel(clDeptById[insp.checklist_id])}
+                            </span>
+                          )}
                           {insp.approval_status === 'approved' && <span style={{ fontSize: 11, color: 'var(--accent)' }}>✓ อนุมัติแล้ว</span>}
                           {insp.approval_status === 'rejected' && <span style={{ fontSize: 11, color: '#e05c4a' }}>✕ ตีกลับ</span>}
                           {insp.approval_status === 'pending' && (() => {
@@ -1960,7 +2063,8 @@ export default function PMCheckData() {
                     </div>
                   ))}
                 </div>
-              )}
+                )
+              })()}
             </div>
           </>
         )}

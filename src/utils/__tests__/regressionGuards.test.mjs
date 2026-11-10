@@ -9695,3 +9695,42 @@ test('🔇 notify-rollup-never-for-call-mtn — ห้ามยุบใบ "เ
       + '   ถ้าคิวรีนี้ไม่ได้ตั้ง rollup ให้ downtime_call_mtn จริง ให้แยกเป็น 2 คำสั่งคนละ UPDATE\n');
   }
 });
+
+test('🔀 insp-team-not-jig-only — ใบตรวจต้องแยกด้วยทีม ไม่ใช่ jig_id ล้วน', () => {
+  /* 🔴 10/11 คำสั่ง user: "การตรวจ am/pm มาทับกัน ตอนนี้อ้างอิงแค่ id ของอุปกรณ์ มันปนกัน"
+     เครื่องเดียวมี checklist ทั้ง AM และ PM เป็นเรื่องปกติของ TPM — วัดจริง DR 6 เครื่อง / 112 ใบ
+     ดึงใบด้วย `jig_id` ล้วน = ได้ใบของทั้ง 2 ทีมปนกัน และถ้ามี limit ทีมที่ตรวจถี่กว่าจะกินช่อง
+     จนใบของอีกทีมหลุดหาย (PF-H101: AM 22 ใบ · DIE MTN 1 ใบ — ช่างเคยเห็นใบตัวเอง 1 ใน 23)
+     ⇒ ทุกคิวรี inspections ที่กรองด้วย jig_id ต้องมีแกนทีมกำกับในฟังก์ชันเดียวกัน
+     📄 src/utils/pmTeams.js §1 อุปกรณ์ ตรวจได้หลายทีม · docs/modules/am-pm-linkage-audit.md */
+  const TEAM_AXIS = /checklist_id|amClIds|clDept|teamsKnown|isAmTeam|amCls/;
+  /* ยกเว้นโดยเจตนา: เด็คสรุปรายเดือนรายงาน "PM/AM ที่พบผิดปกติ" รวมกันทั้ง 2 ฝั่งโดยตั้งใจ
+     (หัวข้อบนสไลด์เขียน PM/AM) — จะแยกต้องให้ user สั่ง เพราะเปลี่ยนเนื้อรายงานผู้บริหาร */
+  const ALLOW = new Set(['src/lib/monthlyReviewPptx.js']);
+  const files = [];
+  for (const dir of ['src', 'supabase/functions']) walk(join(ROOT, dir), ['.js', '.jsx', '.ts'], files);
+  let checked = 0;
+  for (const f of files) {
+    const rel = relative(ROOT, f);
+    if (ALLOW.has(rel) || /__tests__/.test(rel) || !/\.(js|jsx|ts)$/.test(rel)) continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!/from\(['"]inspections['"]\)/.test(src)) continue;
+    const lines = src.split('\n');
+    lines.forEach((ln, i) => {
+      if (!/\.(eq|in)\(['"]jig_id['"]/.test(ln)) return;
+      /* ใบตรวจหรือเปล่า — ดูย้อนขึ้นไปว่าเป็นคิวรี inspections จริง */
+      const back = lines.slice(Math.max(0, i - 4), i + 1).join('\n');
+      if (!/from\(['"]inspections['"]\)/.test(back)) return;
+      checked++;
+      const win = lines.slice(Math.max(0, i - 25), i + 25).join('\n');
+      assert.ok(TEAM_AXIS.test(win),
+        `\n\n❌ ${rel}:${i + 1} — ดึงใบตรวจด้วย jig_id โดยไม่มีแกนทีมกำกับ\n`
+        + '   ⇒ เครื่องที่มีทั้ง checklist AM และ PM จะได้ใบของทั้ง 2 ทีมปนกัน แยกไม่ออกว่าใบไหนของใคร\n'
+        + '   แก้ยังไง: กรองด้วย checklist_id ของทีมนั้น (ถาม checklists.department ก่อนดึงใบ)\n'
+        + '   หรือใช้ splitInspByTeam() จาก src/utils/pmTeams.js แล้วติดป้าย inspTeamLabel()\n');
+    });
+  }
+  assert.ok(checked >= 1,
+    `\n\n❌ หาคิวรี inspections ที่กรองด้วย jig_id ไม่เจอเลย (${checked}) — ด่านนี้วัดอะไรไม่ได้แล้ว\n`
+    + '   ถ้าย้ายโค้ด/เปลี่ยนชื่อคอลัมน์จริง ต้องแก้ด่าน ไม่ใช่ปล่อยให้ผ่านเงียบ\n');
+});
