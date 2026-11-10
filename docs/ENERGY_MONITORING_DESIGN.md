@@ -1009,5 +1009,13 @@ PLC FX5U → Node-RED (server ในโรงงาน) → MySQL db_user03.ener
   วันที่ Node-RED→ESM หลุดถูกซ่อมเองคืนถัดไป
 - เวลาฝั่ง MySQL = เวลาไทยไม่มีโซน ⇒ edge ต่อ `+07:00` (`bkk()` ใน ingest-energy v4)
 
+### 15.3.3 หน้ารายตู้ `/energy?tab=live&meter=<ชื่อตู้>` (10/11 · คำสั่ง user "คลิกการ์ดเข้าหน้าตู้แบบ Node-RED")
+- คลิกการ์ดตู้/กล่องในผังจ่ายไฟ ⇒ `EnergyMeterDetail` (param `meter` คนละตัวกับ `tab`) · ชื่อใน URL ไม่ตรงทะเบียน = บอกบนจอ + ปุ่มกลับ
+- **ทำจากข้อมูลที่ ESM มีเท่านั้น (user เลือก):** KPI 6 ช่อง (จาก `buildLiveBoard` ของหน้าแม่ — ห้ามคิดซ้ำ) ·
+  กราฟ kW + A 24 ชม. รายนาที (**2 กราฟซ้อนแกน X** ไม่ใช่ 2 แกน Y · UI §6.19) · kWh รายวัน 30 วัน · เหตุการณ์ของตู้ ·
+  สัดส่วนโหลด (`loadShare` — ไม่ออนไลน์ = null ไม่ใช่ 0%) · เครื่องที่ตู้จ่ายแยกตามไลน์
+- จุดกราฟ `meterDetailSeries` — ขาดเกิน `DETAIL_GAP_MIN` (5) นาที = เส้นขาด
+- ❌ **ไม่มี 3 เฟสแยก / รายวินาที** (flow ไม่ได้ส่ง) — จอเขียนบอกให้ดูที่ Node-RED · จะเพิ่มต้องแก้ flow + migration ก่อน
+
 ### 15.4 ยังไม่ทำ
 - จอแก้ตู้ (`energy_live_meters` — ลิมิตไม่ต้อง Node-RED เป็นเจ้าของ) · log เหตุการณ์ (หน้า Node-RED เดิมมี `energy_event`) · รวม `energy_daily` เข้า `energy_monthly` (`source='meter'`)

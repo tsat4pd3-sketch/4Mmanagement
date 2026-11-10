@@ -5,8 +5,10 @@
 
    ⚠️ สูตรสถานะ/ยอดตู้/แจ้งเตือน = buildLiveBoard() + liveSeries() ใน utils/energy.js เท่านั้น
    ⚠️ ไม่รู้ = "—" ห้ามโชว์ 0 · "ไม่เคยได้รับค่า" ≠ "ขาดการติดต่อ" ≠ "ค่าเป็น 0"
-   ⚠️ egress: กราฟเส้นโหลดทั้งวันครั้งเดียว แล้วรอบถัดไปดึงเฉพาะนาทีที่ใหม่กว่า (RATE.METER) */
+   ⚠️ egress: กราฟเส้นโหลดทั้งวันครั้งเดียว แล้วรอบถัดไปดึงเฉพาะนาทีที่ใหม่กว่า (RATE.METER)
+   🔍 คลิกการ์ด/กล่องในผังจ่ายไฟ = หน้ารายตู้ `?meter=<ชื่อตู้>` (EnergyMeterDetail · คนละ param กับ `?tab=`) */
 import { useState, useCallback, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { supabaseDR } from '../supabaseClient';
 import { usePolling } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
@@ -15,6 +17,7 @@ import { buildLiveBoard, liveSeries, METER_OFFLINE_MIN } from '../utils/energy';
 import NoticeBar from './NoticeBar';
 import useIsMobile from '../utils/useIsMobile';
 import { fetchReadingsSince } from '../lib/energyReadings';
+import EnergyMeterDetail from './EnergyMeterDetail';
 
 /* สีผ่าน token เท่านั้น (ด่าน colorRatchet · พาเลต ≤5 สี) */
 const GOOD = 'var(--green)', WARN = 'var(--amber)', BAD = 'var(--red)', IDLE = 'var(--muted)', ACC = 'var(--accent2)', INFO = 'var(--blue)';
@@ -45,6 +48,12 @@ export default function EnergyLiveBoard() {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const cursor = useRef({ day: null, last: null });   // กราฟ: วันที่โหลดอยู่ + นาทีล่าสุดที่มีแล้ว
   const reqId = useRef(0);
+  const [params, setParams] = useSearchParams();
+  const meterParam = params.get('meter') || '';
+  const openMeter = useCallback((name) => {
+    setParams(prev => { const n = new URLSearchParams(prev); if (name) n.set('meter', name); else n.delete('meter'); return n; });
+    try { window.scrollTo({ top: 0 }); } catch { /* ไม่มี window (เทส) */ }
+  }, [setParams]);
 
   const load = useCallback(async () => {
     const id = ++reqId.current;
@@ -129,6 +138,19 @@ export default function EnergyLiveBoard() {
   );
   if (!loaded) return <div style={{ color: 'var(--muted)', padding: 20 }}>กำลังโหลด…</div>;
 
+  /* 🔍 หน้ารายตู้ — ชื่อใน URL ไม่ตรงทะเบียน = บอกตรงๆ + ปุ่มกลับ (ห้ามเด้งกลับเงียบ) */
+  if (meterParam) {
+    const dm = board.meters.find(x => x.name === meterParam);
+    if (!dm) return (
+      <div style={{ display: 'grid', gap: 10 }}>
+        <NoticeBar tone="warn">ไม่พบตู้ <b>{meterParam}</b> ในทะเบียนบอร์ดสด (อาจถูกปิดใช้/เปลี่ยนชื่อ)</NoticeBar>
+        <div><button type="button" className="pg-btn" onClick={() => openMeter(null)}>← กลับบอร์ดรวม</button></div>
+      </div>
+    );
+    return <EnergyMeterDetail key={dm.key} m={dm} machines={machinesOf[dm.key] || []} boardMeters={board.meters}
+      totalTodayKwh={board.totals.todayKwh} onBack={() => openMeter(null)} />;
+  }
+
   const t = board.totals;
   const lastRecv = board.meters.map(m => m.receivedAt).filter(Boolean).sort().pop();
   const allPeak = Object.values(panelPeaks).filter(Boolean);
@@ -172,16 +194,16 @@ export default function EnergyLiveBoard() {
       </div>
 
       {/* ── เส้นทางจ่ายไฟ ── */}
-      {board.panels.map(p => <PanelFlow key={p.panel} panel={p} />)}
+      {board.panels.map(p => <PanelFlow key={p.panel} panel={p} onOpen={openMeter} />)}
 
       {events && <EventsPanel events={events} />}
 
       {/* ── การ์ดรายเครื่อง ── */}
       {board.meters.length > 0 && (
         <div>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>เครื่องจักรทั้งหมด</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>เครื่องจักรทั้งหมด <span style={{ fontSize: 11.5, fontWeight: 500, color: 'var(--muted)' }}>· คลิกการ์ดเพื่อเปิดหน้ารายตู้</span></div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12, alignContent: 'start' }}>
-            {board.meters.map(m => <MeterCard key={m.key} m={m} pts={series.byScope.get(m.key) || []} machines={machinesOf[m.key] || []} />)}
+            {board.meters.map(m => <MeterCard key={m.key} m={m} pts={series.byScope.get(m.key) || []} machines={machinesOf[m.key] || []} onOpen={openMeter} />)}
           </div>
         </div>
       )}
@@ -235,7 +257,7 @@ function Kpi({ color, label, value, unit, sub }) {
 }
 
 /** ตู้ → เส้นประวิ่งไปแต่ละเครื่อง · ความเร็วเส้นแปรตามกำลังไฟ (เทียบสเกลเกจของเครื่องนั้น) */
-function PanelFlow({ panel }) {
+function PanelFlow({ panel, onOpen }) {
   const isMobile = useIsMobile();
   const n = panel.meters.length;
   const rowH = 78, top = 40, H = top + n * rowH;
@@ -252,7 +274,8 @@ function PanelFlow({ panel }) {
           {panel.meters.map(m => {
             const sm = statusMeta(m);
             return (
-              <div key={m.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 13, borderLeft: `3px solid ${sm.color}`, paddingLeft: 8 }}>
+              <div key={m.key} role="button" tabIndex={0} onClick={() => onOpen(m.name)} onKeyDown={(e) => { if (e.key === 'Enter') onOpen(m.name); }}
+                style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 13, borderLeft: `3px solid ${sm.color}`, paddingLeft: 8, cursor: 'pointer' }}>
                 <span style={{ fontWeight: 700, color: 'var(--text)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</span>
                 <span style={{ color: sm.color, whiteSpace: 'nowrap' }}>{fmt(m.kw)} kW · {fmt(m.a)} A</span>
               </div>
@@ -277,7 +300,9 @@ function PanelFlow({ panel }) {
           const ratio = live && m.gaugeMax ? Math.min(1, m.kw / m.gaugeMax) : 0;
           const dur = live ? (2.4 - 1.9 * ratio).toFixed(2) : null;   // 2.4 วิ (เบา) → 0.5 วิ (เต็มสเกล)
           return (
-            <g key={m.key}>
+            <g key={m.key} role="button" tabIndex={0} style={{ cursor: 'pointer' }} onClick={() => onOpen(m.name)}
+              onKeyDown={(e) => { if (e.key === 'Enter') onOpen(m.name); }}>
+              <title>เปิดหน้ารายตู้ {m.name}</title>
               <circle cx={busX} cy={y} r="6" fill={ACC} />
               <line x1={busX} y1={y} x2={boxX} y2={y} stroke="var(--border)" strokeWidth="5" />
               <line x1={busX} y1={y} x2={boxX} y2={y} stroke={live ? ACC : IDLE} strokeWidth="5" strokeDasharray="18 10"
@@ -301,10 +326,12 @@ function PanelFlow({ panel }) {
   );
 }
 
-function MeterCard({ m, pts, machines }) {
+function MeterCard({ m, pts, machines, onOpen }) {
   const sm = statusMeta(m);
   return (
-    <div style={{ ...card, borderColor: sm.color === GOOD ? 'var(--border)' : sm.color }}>
+    <div role="button" tabIndex={0} title={`เปิดหน้ารายตู้ ${m.name}`} onClick={() => onOpen(m.name)}
+      onKeyDown={(e) => { if (e.key === 'Enter') onOpen(m.name); }}
+      style={{ ...card, borderColor: sm.color === GOOD ? 'var(--border)' : sm.color, cursor: 'pointer' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
         <div>
           <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>{m.name}</div>

@@ -582,3 +582,47 @@ export function sparkForNames(names, meterBuckets, meterLines) {
   }
   return out
 }
+
+/* ═══ 🔍 หน้ารายตู้ (/energy?tab=live&meter=<ชื่อตู้> · 2026-11-10 · คำสั่ง user "คลิกการ์ดเข้าหน้าตู้แบบ Node-RED") ═══
+   ข้อมูลที่ ESM มี = สรุปรายนาที (energy_readings เก็บ 7 วัน) — ไม่มี 3 เฟสแยก/รายวินาที (จอต้องบอก ห้ามแต่งค่า) */
+
+/** ช่วงที่ขาดเกินกี่นาทีถึงตัดเส้น (ตัวส่งยิงทุก 1 นาที — ขาด 1-2 รอบยังลากต่อได้) */
+export const DETAIL_GAP_MIN = 5
+
+/**
+ * แถวรายนาทีของตู้เดียว → จุดกราฟ [{ t, kw, a, v }] เรียงเก่า→ใหม่
+ * · ค่าที่อ่านไม่ได้ = null (เส้นขาด · ห้ามเป็น 0)
+ * · ช่วงที่ไม่มีแถวเกิน DETAIL_GAP_MIN นาที ⇒ แทรกจุด null ให้กราฟตัดเส้น (ไม่ลากข้ามช่วงที่มิเตอร์หลุด)
+ */
+export function meterDetailSeries(rows) {
+  const pts = []
+  for (const r of rows || []) {
+    const t = Date.parse(r.bucket_at)
+    if (!Number.isFinite(t)) continue
+    pts.push({ t, kw: numOrNull(r.kw), a: numOrNull(r.a), v: numOrNull(r.v) })
+  }
+  pts.sort((x, y) => x.t - y.t)
+  const out = []
+  for (let i = 0; i < pts.length; i++) {
+    if (i > 0 && pts[i].t - pts[i - 1].t > DETAIL_GAP_MIN * 60000) {
+      out.push({ t: pts[i - 1].t + 60000, kw: null, a: null, v: null })
+    }
+    out.push(pts[i])
+  }
+  return out
+}
+
+/**
+ * สัดส่วนโหลดตอนนี้ = kW ของเครื่อง ÷ kW รวมของเครื่องที่ออนไลน์
+ * 🔴 เครื่องที่ไม่ออนไลน์/ไม่รู้ค่า = pct null (ไม่ใช่ 0%) · ไม่มีใครออนไลน์ = total null
+ * @returns {{ total:number|null, rows:Array<{key,name,kw,pct}> }}
+ */
+export function loadShare(boardMeters) {
+  const on = (boardMeters || []).filter(m => m.status === 'online' && m.kw != null)
+  const total = on.length ? on.reduce((s, m) => s + Math.max(0, m.kw), 0) : null
+  const rows = (boardMeters || []).map(m => {
+    const ok = m.status === 'online' && m.kw != null
+    return { key: m.key, name: m.name, kw: ok ? m.kw : null, pct: ok && total ? (Math.max(0, m.kw) / total) * 100 : null }
+  })
+  return { total, rows }
+}
