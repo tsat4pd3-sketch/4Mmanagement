@@ -9764,3 +9764,24 @@ test('🔢 cp-number-not-tied-to-pin — เลขข้อ/โหมดที�
     '\n\n❌ ชั้นหมุดไม่ได้กันออกตอนโชว์รูปของจุดตรวจ\n'
     + '   ⇒ หมุดจะถูกวาดทับรูปคนละรูปด้วยพิกัดของรูปเครื่อง = ชี้ผิดจุด (กฎ §5.1 UI-CONVENTIONS)\n');
 });
+
+test('🛡️ master-cache-auth-gate — ผลที่โหลดตอนไม่ได้ login ห้ามลง cache', () => {
+  /* เคสจริง 10/11 (หน้างาน "โหลดไลน์ผลิต dropdown ไม่ขึ้น"): log Main 24 ชม. — `production_lines`
+     อ่านแบบ anon 122 ครั้ง/28 IP ได้ 200 + 0 แถว ⇒ ลิสต์ว่างถูกจด 4 ชม. ⇒ คน login ถัดไป dropdown ว่าง
+     ต้นเหตุ = ออกจากระบบ/สลับบัญชีแล้วหน้าที่ยัง mount โหลดทะเบียนใหม่ตอนไม่มี token
+     📄 src/utils/masterCache.js §ประตู "ตอนนี้ใคร login อยู่" */
+  const app = stripComments(readFileSync(join(ROOT, 'src/App.jsx'), 'utf8'));
+  assert.match(app, /onAuthStateChange\(\(evt, s\) => \{\s*\n\s*setMasterAuthUser\(/,
+    '🔴 onAuthStateChange ต้องบอก masterCache ว่าใคร login อยู่ (ไม่งั้นผลตอน anon ถูก cache)');
+  assert.match(app, /getSession\(\)\.then\(\(\{ data: \{ session \} \}\) => \{\s*\n\s*setMasterAuthUser\(/,
+    '🔴 getSession ตอนเปิดแอปต้องตั้งประตู masterCache');
+  assert.match(app, /setMasterAuthUser\(null\);[^\n]*\n\s*clearAllMasterCache\(\);/,
+    '🔴 handleLogout ต้องปิดประตูก่อนล้าง cache — ไม่งั้นหน้าที่ re-render จดลิสต์ว่างทับ');
+  const ck = stripComments(readFileSync(join(ROOT, 'src/pages/Checkin.jsx'), 'utf8'));
+  assert.match(ck, /setMasterAuthUser\(null\);[^\n]*\n\s*try \{ await supabase\.auth\.signOut/,
+    '🔴 ปุ่มสลับบัญชีหน้าเช็คชื่อต้องปิดประตูก่อน signOut');
+  const pl = stripComments(readFileSync(join(ROOT, 'src/utils/useProductionLines.js'), 'utf8'));
+  assert.match(pl, /if \(!data\?\.length\) throw new MasterLoadError/,
+    '🔴 ทะเบียนไลน์ว่าง = อ่านไม่ได้ ต้องโยน ห้ามคืน [] ให้ลง cache');
+  assert.match(pl, /\{ nonEmpty: true \}/, '🔴 ทะเบียนไลน์ต้องข้ามลิสต์ว่างที่ค้างใน cache (nonEmpty)');
+});

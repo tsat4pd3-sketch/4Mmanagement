@@ -34,9 +34,13 @@ export async function loadProductionLines() {
     const { data, error } = await supabase.from('production_lines')
       .select(LINE_COLUMNS).order('name');
     if (error) throw error;
+    /* 🔴 ทะเบียนไลน์ "ว่าง" = อ่านไม่ได้ ไม่ใช่ไม่มีไลน์ (10/11) — RLS เปิดให้ทุกคนที่ login อ่านได้ทั้งตาราง
+       ⇒ 0 แถวเกิดได้ทางเดียวคือคิวรีวิ่งแบบ anon (ออกจากระบบ/token หลุด) ⇒ โยนเป็นผลล้ม
+       ให้แถบกลาง + ปุ่มโหลดใหม่ทำงาน และ**ห้ามลง cache** (เคสจริง: 122 ครั้ง/วัน · ดู masterCache.js) */
+    if (!data?.length) throw new MasterLoadError({ message: 'ทะเบียนไลน์ว่าง — ยังไม่ได้เข้าสู่ระบบหรือ session หลุด' });
     // ยังไม่ apply migration is_active → คอลัมน์ไม่มี = undefined = ถือว่ายังใช้งานอยู่
-    return data || [];
-  });
+    return data;
+  }, undefined, { nonEmpty: true });
 }
 
 /** เรียกหลังแก้ทะเบียนไลน์ (LineSetup) เพื่อให้หน้าอื่นเห็นทันทีไม่ต้องรอ TTL */
