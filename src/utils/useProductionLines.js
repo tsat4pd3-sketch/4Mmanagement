@@ -34,8 +34,14 @@ export async function loadProductionLines() {
     const { data, error } = await supabase.from('production_lines')
       .select(LINE_COLUMNS).order('name');
     if (error) throw error;
+    /* 🔴 ลิสต์ว่าง = ถือว่าโหลดไม่สำเร็จ ห้ามจดเป็นของจริง (10/11 · ผังโรงงานกรอบหายทั้งผัง)
+       ทะเบียนไลน์ไม่มีทางว่างจริง — ว่าง = เกือบทุกครั้งคือ **session ยังไม่พร้อม** (RLS `authenticated`
+       ตอบ 200 + 0 แถว ไม่มี error) ⇒ เดิม cachedMaster จด `[]` ลง localStorage 4 ชม.
+       = ทุกจอที่อ่านไลน์ว่างทั้งเช้า (ผัง: ทุกกรอบกลายเป็นโซนสนับสนุน · dropdown ไลน์ว่าง)
+       throw ⇒ ไม่เขียน cache · รอบหน้ายิงใหม่ · ใช้ของดีเดิมถ้ามี · จอได้ error ไปเขียนบอก (มีด่าน) */
+    if (!data?.length) throw new Error('ทะเบียนไลน์ว่าง — น่าจะยังไม่ได้เข้าสู่ระบบ/เซสชันหมดอายุ');
     // ยังไม่ apply migration is_active → คอลัมน์ไม่มี = undefined = ถือว่ายังใช้งานอยู่
-    return data || [];
+    return data;
   });
 }
 

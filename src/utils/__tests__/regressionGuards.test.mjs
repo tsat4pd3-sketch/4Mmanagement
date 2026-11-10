@@ -9695,3 +9695,16 @@ test('🔇 notify-rollup-never-for-call-mtn — ห้ามยุบใบ "เ
       + '   ถ้าคิวรีนี้ไม่ได้ตั้ง rollup ให้ downtime_call_mtn จริง ให้แยกเป็น 2 คำสั่งคนละ UPDATE\n');
   }
 });
+
+test('🗂️ line-registry-empty-not-cached — ทะเบียนไลน์ว่างห้ามถูกจดเป็นของจริง', () => {
+  /* 🔴 10/11 ผังโรงงานกรอบหายทั้งผัง ("ซ่อนโซนสนับสนุน 25 โซน" + ยอดรวม 0/0)
+     RLS ของ production_lines = `authenticated` ⇒ session ยังไม่พร้อม = 200 + 0 แถว **ไม่มี error**
+     ⇒ เดิม loader คืน `[]` สำเร็จ ⇒ cachedMaster จดลง localStorage 4 ชม. ⇒ ทุกจอเห็นไลน์ว่างทั้งเช้า
+     กฎ: loader ของทะเบียนไลน์ต้อง throw เมื่อได้ลิสต์ว่าง (cachedMaster ไม่เขียน cache ตอน throw) */
+  const code = stripComments(readFileSync(join(ROOT, 'src/utils/useProductionLines.js'), 'utf8'));
+  const m = code.match(/export async function loadProductionLines\(\)\s*\{([\s\S]*?)\n\}/);
+  assert.ok(m, '\n\n❌ หา loadProductionLines() ใน src/utils/useProductionLines.js ไม่เจอ — ด่านนี้วัดอะไรไม่ได้แล้ว\n');
+  assert.ok(/if\s*\(\s*!data\?\.length\s*\)\s*throw/.test(m[1]),
+    '\n\n❌ loadProductionLines() ต้อง `if (!data?.length) throw …` — ลิสต์ว่างจะถูกจดลง cache 4 ชม.' +
+    '\n   (ผังโรงงานกรอบหายทั้งผัง / dropdown ไลน์ว่าง · 10/11)\n');
+});
