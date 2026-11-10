@@ -154,6 +154,7 @@ const PAGE_GROUPS = [
       { key: 'page:/machine-database',  label: 'ฐานข้อมูลเครื่องจักร' },
       { key: 'page:/die-registry',      label: 'ทะเบียนแม่พิมพ์' },
       { key: 'page:/process-setup',     label: 'กระบวนการผลิต (Process Types)' },
+      { key: 'page:/ppe-setup',         label: 'ข้อกำหนด PPE' },
       { key: 'page:/org-setup',         label: 'แผนผังองค์กร' },
       { key: 'page:/layout-setup',      label: 'ตั้งค่าผัง/Floorplan' },
       { key: 'page:/linesetup',         label: '— ตั้งค่าผังไลน์ (ไม่อยู่ในเมนู — ฝังเป็นแท็บใน ตั้งค่าผัง/Floorplan)' },

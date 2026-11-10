@@ -75,6 +75,7 @@
 | ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง (paperless · 2026-08-19 · feedback หน้างาน) | `docs/modules/production-problem-report-bins.md` |
 | 📦 อัพเดทโปรแกรม — `/program-update` (2026-10-01 · คำสั่ง user) | `docs/modules/program-update.md` |
 | 🌐 ปุ่มสลับ ไทย/English — ชั้นภาษาโครงหลัก `tr()` (2026-11-02 · คำสั่ง user) | `docs/modules/i18n.md` |
+| 🦺 ข้อกำหนด PPE รายหน่วยงาน (4 ชั้น) + ผลตรวจรายคน (`/ppe-setup` · 2026-11-10 · คำสั่ง user) | `docs/modules/ppe-requirements.md` |
 | QA Inspection — setup → ใบตรวจ (ปิดช่องว่าง 2026-08-04) | `docs/modules/qa-inspection.md` |
 | ประวัติผล QC Audit (ตรวจ+แก้แล้ว — บันทึกกัน regress) | `docs/modules/qc-audit-history.md` |
 | QR / บาร์โค้ดอุปกรณ์ — สแกนเลือกเครื่อง/จิ๊ก/สินค้า (2026-08-03 · คำสั่ง user) | `docs/modules/qr-equipment-scan.md` |

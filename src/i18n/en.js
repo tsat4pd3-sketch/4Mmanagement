@@ -39,6 +39,8 @@ const EN = {
   'OEE รายไลน์ (จอหน้าไลน์)': 'Line OEE (Line-side Display)',
   'ประชุมแถวเช้า': 'Morning Meeting',
   'เช็คชื่อ & PPE': 'Attendance & PPE',
+  'ข้อกำหนด PPE': 'PPE Requirements',
+  'ข้อกำหนด PPE ของแต่ละหน่วยงาน': 'PPE Requirements by Unit',
   'จัดการไลน์ผลิต': 'Line Management',
   'วางแผนการผลิต': 'Production Planning',
   'ประวัติผลิต (by Product)': 'Production History (by Product)',

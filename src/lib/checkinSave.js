@@ -17,6 +17,7 @@
    ══════════════════════════════════════════════════════════════════════════════════ */
 import { checkWriteRows } from '../utils/dbWrite';
 import { markPresentRecord } from '../utils/badgeCheckin';
+import { legacyPatchOf } from '../utils/ppeRequirements';
 
 /** คอลัมน์ของแถวเช็คชื่อ (ใช้ตอนอ่านแถวเดิมมา merge) */
 export const CHECKIN_COLS = 'id, shift, is_present, has_helmet, has_boots, has_gloves, has_ot, '
@@ -73,4 +74,58 @@ export async function checkinByBadge(sb, { emp, workDateStr, shift, userId }) {
   const rec = markPresentRecord(cur || {});   // ลาเต็มวัน = มาจริง ⇒ ล้างการลา · ลาครึ่งวันคงไว้
   const ok = await upsertCheckin(sb, checkinLogRow({ emp, rec, workDateStr, shift: useShift, userId }));
   return ok ? { kind: 'saved', shift: useShift, row: rec } : { kind: 'failed' };
+}
+
+/* ══ 🦺 PPE หลังเช็คชื่อ ═══════════════════════════════════════════════════════════════════
+   (2026-11-10 · คำสั่ง user *"พอสแกนและกดว่ามาทำงาน ให้ถามต่อว่าใส่ PPE ครบมั้ย"*)
+
+   🔴 ถาม**เฉพาะรายการที่หน่วยนั้นบังคับ** และเริ่มที่ "ยังไม่ติ๊ก" — ห้ามถามว่า "ครบมั้ย? [ครบ]"
+   วัดจริง 12/10–10/11: 3 ช่องเดิมถูกติ๊กครบ 99.6% (ไม่ครบแค่ 17/4,080 แถว) = ตรายางไปแล้ว
+   ถามแบบปุ่มเดียวอีก = ได้ตรายางอันที่ 2 ยิ่งหน้าประตูที่มีคนต่อคิว
+   · **ข้ามได้** — ข้าม = ไม่เขียนแถวผลตรวจเลย ⇒ `ppeStatusOf` คืน `none` ("ยังไม่ได้ตรวจ")
+     ซึ่งคนละเรื่องกับ "ตรวจแล้วขาด" · ห้ามเขียน ok=true ให้ตอนข้าม
+   ════════════════════════════════════════════════════════════════════════════════════════ */
+
+/** โหลดทะเบียน PPE (รายการ + ข้อกำหนด) · อ่านไม่ได้ = คืน `null` ให้จอเขียนบอก ห้ามคืน [] */
+export async function loadPpeRegistry(sb) {
+  const [it, rq] = await Promise.all([
+    sb.from('ppe_items').select('id, code, name_th, icon, legacy_col, sort_order, is_active').order('sort_order'),
+    sb.from('ppe_requirements').select('scope_kind, scope_key, item_id, required'),
+  ]);
+  if (it.error || rq.error) return null;
+  return { items: it.data || [], reqs: rq.data || [] };
+}
+
+/** ผลตรวจ PPE ของคนหนึ่งในวันหนึ่ง · อ่านไม่ได้ = `null` (คนละอย่างกับ "ยังไม่เคยตรวจ" = []) */
+export async function loadPpeChecks(sb, { employeeId, workDateStr }) {
+  const { data, error } = await sb.from('ppe_check_items')
+    .select('item_id, ok').eq('work_date', workDateStr).eq('employee_id', employeeId);
+  return error ? null : (data || []);
+}
+
+/**
+ * บันทึกผลตรวจ PPE ของคนเดียว
+ * @param required  รายการที่หน่วยนั้นบังคับ (จาก `resolvePpe`)
+ * @param okByItemId `{ [item_id]: boolean }` — ติ๊กแล้ว/ไม่ติ๊ก
+ * @returns {{ ok:boolean, legacySynced:boolean }} legacySynced=false = แถวละเอียดบันทึกแล้ว
+ *   แต่คอลัมน์เดิมใน `daily_production_logs` ยังไม่ตรง ⇒ จอต้องบอก ห้ามเงียบ
+ */
+export async function savePpeChecks(sb, { emp, workDateStr, required = [], okByItemId = {}, userId }) {
+  if (!required.length) return { ok: true, legacySynced: true };
+  const rows = required.map(it => ({
+    work_date: workDateStr, employee_id: emp.id, item_id: it.id,
+    ok: !!okByItemId[String(it.id)], checked_by: userId || null, checked_at: new Date().toISOString(),
+  }));
+  const wrote = checkWriteRows(await sb.from('ppe_check_items')
+    .upsert(rows, { onConflict: 'work_date,employee_id,item_id' })
+    .select('item_id'), 'บันทึกผลตรวจ PPE', { min: rows.length });
+  if (!wrote) return { ok: false, legacySynced: false };
+
+  // 🔁 ซิงก์ 3 คอลัมน์เดิม ไม่งั้นจอเช็คชื่อ/ชิป "PPE ไม่ครบ" กับจอนี้เถียงกัน
+  const patch = legacyPatchOf(required, okByItemId);
+  if (!Object.keys(patch).length) return { ok: true, legacySynced: true };
+  const synced = checkWriteRows(await sb.from('daily_production_logs')
+    .update(patch).eq('work_date', workDateStr).eq('employee_id', emp.id)
+    .select('employee_id'), 'ซิงก์ PPE กับใบเช็คชื่อ');
+  return { ok: true, legacySynced: !!synced };
 }
