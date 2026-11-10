@@ -9979,6 +9979,34 @@ test('📋 sheet-quality-is-hint-not-gate — แถบความครบข�
     '\n\n❌ hardcode ชื่อเครื่องตัวอย่างในโค้ด — ใบต้นแบบเปลี่ยนได้ ต้องถาม fn_inspect_sheet_examples\n');
 });
 
+/* ═══ 🦺 ppe-requirements-layers — 2026-11-10 · คำสั่ง user ════════════════════════════════
+   *"บางไลน์ต้องมีผ้ากันเปื้อน ปลอกแขน แว่นตาอีก"* ⇒ PPE เป็นทะเบียน 4 ชั้น ไม่ใช่ 3 คอลัมน์ตายตัว
+   ที่ห้ามหลุด: ① กฎตกทอดอยู่ไฟล์เดียว หน้าห้ามคิดเอง ② ถาม PPE ต้องขึ้นเฉพาะที่หน่วยนั้นบังคับ
+   ③ "ข้าม" ต้องไม่เขียนผลว่าผ่าน ④ ติ๊กที่ชั้นใหม่ต้องซิงก์คอลัมน์เดิม ไม่งั้นจอเก่า/ใหม่เถียงกัน  */
+test('🦺 ppe-requirements-layers — กฎ PPE อยู่ไฟล์เดียว + ข้ามต้องไม่นับว่าผ่าน', () => {
+  const bad = [];
+  for (const f of ['src/pages/ScanLanding.jsx', 'src/pages/PpeSetup.jsx']) {
+    const s = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    if (!/resolvePpe\(/.test(s)) bad.push(`${f} — ไม่ได้ตัดสินข้อกำหนดผ่าน resolvePpe`);
+    // ห้ามไล่ชั้นเอง: หน้าห้ามแตะ scope_kind ตรงๆ เพื่อตัดสินว่าชั้นไหนชนะ (PpeSetup เขียนทะเบียนได้)
+    if (f.includes('ScanLanding') && /scope_kind/.test(s)) bad.push(`${f} — ไล่ชั้นเองในหน้า`);
+  }
+  const sl = stripComments(readFileSync(join(ROOT, 'src/pages/ScanLanding.jsx'), 'utf8'));
+  // "ข้ามไว้ก่อน" ต้องแค่ปิดแผง ห้ามเรียกตัวบันทึก
+  const skip = sl.slice(sl.indexOf("done: 'skipped'") - 200, sl.indexOf("done: 'skipped'") + 120);
+  if (/savePpe|savePpeChecks/.test(skip)) bad.push('ปุ่มข้ามเรียกตัวบันทึก — ข้ามต้องไม่เขียนผลตรวจ');
+  if (!/ppe\.required\.map/.test(sl)) bad.push('จอไม่ได้ขึ้นเฉพาะรายการที่หน่วยนั้นบังคับ');
+
+  const lib = stripComments(readFileSync(join(ROOT, 'src/lib/checkinSave.js'), 'utf8'));
+  if (!/legacyPatchOf\(/.test(lib)) bad.push('savePpeChecks ไม่ซิงก์คอลัมน์เดิม — จอเก่ากับจอใหม่จะเถียงกัน');
+  if (!/legacySynced/.test(lib)) bad.push('ซิงก์คอลัมน์เดิมล้มแล้วไม่บอกใคร');
+
+  const rule = stripComments(readFileSync(join(ROOT, 'src/utils/ppeRequirements.js'), 'utf8'));
+  if (!/lineChainIds\(/.test(rule)) bad.push('ไม่ได้ไล่สายไลน์ผ่าน lineChainIds (แม่→ลูก)');
+  if (!/unknown: true/.test(rule)) bad.push('อ่านทะเบียนไม่ได้แล้วไม่คืน unknown — จะกลายเป็น "ไม่ต้องใส่อะไรเลย"');
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
+
 test('🛒 pr-loop-not-locked-by-mo — ใบปิดแล้วต้องทำ PR ที่ค้างต่อได้ + ไล่งานต้องรู้จัก PR', () => {
   /* 🔴 10/11 feedback หน้างาน 2 ข้อ ต้นเหตุเดียวกัน (ลูป PR กับลูปขั้นของใบ MO คนละลูป):
        ① "ใบที่เปิด PR ไว้ ถ้า ผจก.ฝ่ายแจ้งอนุมัติไปแล้ว แก้ไขอะไรไม่ได้เลย"
