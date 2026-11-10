@@ -564,6 +564,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const [savingProdOpen, setSavingProdOpen] = useState(false);
   // Overflow confirmation modal
   const [overflowInfo, setOverflowInfo]   = useState(null); // { prodNo, matNo, qty, std, overMin, remainMin, newOrderMin }
+  /* 🔴 "จำคำตอบไว้ทั้งกะ" ของใบที่เกินเวลากะ (คำสั่ง user 10/11 · หน้างานแจ้ง)
+     ใกล้เลิกกะ **ทุกใบที่สแกนจะเกินความจุหมด** ⇒ เด้งโมดัลให้เลือกทุกใบ = ยิง Tag ต่อกันไม่ได้เลย
+     ⇒ เลือกครั้งเดียวแล้วติ๊ก "ใช้กับใบถัดไป" · `null` = ถามทุกใบเหมือนเดิม
+     🔴 ผูกกับ "กะ" เท่านั้น — เปลี่ยนกะต้องล้างทิ้ง (ยกไปกะอื่น = ตัดสินใจแทนคนผิดใบ)
+     🔴 ห้ามทำเงียบ — เปิดโหมดแล้วต้องมีแถบบนจอ + toast ทุกใบว่าใบนี้ถูกจัดการแบบไหน */
+  const [overflowMode, setOverflowMode]   = useState(null); // null | 'carry' (ส่งกะถัดไป) | 'force' (เปิดกะนี้ต่อ)
+  const [overflowRemember, setOverflowRemember] = useState(false); // ติ๊ก "ใช้คำตอบนี้กับใบถัดไป" ในโมดัล
 
   // ออเดอร์ manual — ไลน์ไม่มี kanban card (SAP ไม่ gen barcode) เช่น HDF1 → LASER CUT 123
   // leader เปิด "เป้า" เอง แล้วพนักงานอัพเดทยอดสะสมทุกช่วงเบรค ปิดใบด้วยยอดจริงไม่ต้องสแกน
@@ -1826,6 +1833,14 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     return { error, data };
   };
 
+  /* เครื่องสแกนยิงเข้า "ช่องที่โฟกัสอยู่" เท่านั้น ⇒ ทุกทางที่จบการเปิดใบต้องคืนโฟกัสให้ช่อง PROD.NO
+     (80ms ให้ React วาดเสร็จก่อน — ตัวเลขเดียวกับทางปกติใน handleScanOpenInner) */
+  const refocusScanOpen = () => setTimeout(() => openProdInputRef.current?.focus(), 80);
+
+  /* 🔴 โหมด "จำคำตอบ" ผูกกับกะที่เปิดอยู่ — สลับกะ/ปิดกะ ต้องล้างทิ้งเสมอ
+     ไม่ล้าง = ใบของกะใหม่ถูกตัดสินใจแทนด้วยคำตอบของกะก่อน (ยกไปกะอื่นเงียบๆ) */
+  useEffect(() => { setOverflowMode(null); }, [selSession?.id]);
+
   const handleScanOpen = async () => {
     if (prodBusyRef.current) return;
     prodBusyRef.current = true;
@@ -1872,6 +1887,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     // ── Capacity check ── (สูตรอยู่ใน utils/shiftCapacity.js · ไม่รู้ความจุ/ไม่รู้ CT = ไม่เตือน)
     const cap = checkShiftCapacity({ netAvailMin: calcNetAvailMin(), newQty: qty, newCtSec: ctSec, ...capacityArgs() });
     if (cap) {
+      /* เลือกไว้แล้วในกะนี้ = ทำตามนั้นเลย ไม่เด้งโมดัลซ้ำ (แต่ toast บอกทุกใบ ห้ามเงียบ) */
+      if (overflowMode) { await runOverflowChoice(overflowMode, { prodNo, matNo, qty, std }); return; }
       setOverflowInfo({ prodNo, matNo, qty, std, ...cap });
       return; // หยุดรอ user เลือก
     }
@@ -1936,34 +1953,26 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     setTimeout(() => openProdInputRef.current?.focus(), 80);
   };
 
-  // ผู้ใช้เลือก "ส่งกะถัดไป" — save เป็น carry_over ทันที
-  const handleOverflowNextShift = async () => {
-    if (!overflowInfo) return;
-    const { prodNo, matNo, qty, std } = overflowInfo;
+  /* ── ใบที่เกินเวลากะ: ลงมือตามคำตอบ (ทางเดียว ใช้ทั้งปุ่มในโมดัลและโหมดที่จำไว้) ──────────
+     🔴 ต้อง **คืนโฟกัสให้ช่องสแกนทุกทาง** — ทางปกติของ `handleScanOpenInner` คืนให้อยู่แล้ว
+        แต่ 2 ทางนี้เคยไม่คืน ⇒ หน้างานต้องเอามือคลิกช่อง PROD.NO ใหม่ทุกใบ (แจ้งเข้ามา 10/11)
+        เครื่องสแกนยิงเข้าช่องที่โฟกัสอยู่เท่านั้น = ยิงรัวไม่ได้เลยช่วงใกล้เลิกกะ */
+  const runOverflowChoice = async (choice, info) => {
+    const { prodNo, matNo, qty, std } = info || {};
+    if (!prodNo) return;
+    const asCarry = choice === 'carry';
     setSavingProdOpen(true);
-    const { error } = await doInsertProdOrder(prodNo, matNo, qty, std, 'carry_over');
+    const { error } = await doInsertProdOrder(prodNo, matNo, qty, std, asCarry ? 'carry_over' : 'open');
     setSavingProdOpen(false);
     setOverflowInfo(null);
-    if (error) { toast.error(error.message); return; }
-    toast.info(`บันทึก ${prodNo} เป็นยอดค้างกะถัดไป ✓`);
+    if (error) { toast.error(error.message); refocusScanOpen(); return; }
+    toast.info(asCarry
+      ? `บันทึก ${prodNo} เป็นยอดค้างกะถัดไป ✓${overflowMode ? ' (โหมดจำคำตอบ)' : ''}`
+      : `เปิด Order ${prodNo} · ${qty} ชิ้น ✓ (เกินเวลากะ)${overflowMode ? ' (โหมดจำคำตอบ)' : ''}`);
     setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false, backfill_time: '' }));
     setCarriedMat(matNo || null);
     loadProdOrders(selSession.id, selSession.line_name);
-  };
-
-  // ผู้ใช้เลือก "เปิดกะนี้ต่อ" — force open ปกติ
-  const handleOverflowForce = async () => {
-    if (!overflowInfo) return;
-    const { prodNo, matNo, qty, std } = overflowInfo;
-    setSavingProdOpen(true);
-    const { error } = await doInsertProdOrder(prodNo, matNo, qty, std, 'open');
-    setSavingProdOpen(false);
-    setOverflowInfo(null);
-    if (error) { toast.error(error.message); return; }
-    toast.success(`เปิด Order ${prodNo} · ${qty} ชิ้น ✓ (เกินเวลากะ)`);
-    setOpenProdForm(f => ({ prod_no: '', mat_no: f.mat_no, qty: f.qty, is_backfill: false, backfill_time: '' }));
-    setCarriedMat(matNo || null);
-    loadProdOrders(selSession.id, selSession.line_name);
+    refocusScanOpen();
   };
 
   // ── Scan CLOSE handler ─────────────────────────────────────────
@@ -5937,21 +5946,27 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                 ต้องการทำอย่างไรกับ Order นี้?
               </div>
+              {/* 🔴 ใกล้เลิกกะ ทุกใบที่สแกนจะเกินความจุหมด ⇒ ถามทุกใบ = ยิง Tag ต่อกันไม่ได้ (หน้างานแจ้ง 10/11)
+                  ติ๊กแล้วใบถัดไปในกะนี้ทำตามคำตอบเดียวกันเอง · ยังมี toast + แถบบนจอบอกทุกใบ ไม่เงียบ */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={overflowRemember} onChange={e => setOverflowRemember(e.target.checked)} />
+                ใช้คำตอบนี้กับใบที่เกินเวลาถัดไป<b style={{ color: 'var(--text)' }}>ในกะนี้</b> (ไม่ต้องถามซ้ำทุกใบ)
+              </label>
               <div style={{ display: 'flex', gap: 10 }}>
                 <button
-                  onClick={handleOverflowNextShift}
+                  onClick={() => { if (overflowRemember) setOverflowMode('carry'); runOverflowChoice('carry', overflowInfo); }}
                   disabled={savingProdOpen}
                   style={{ flex: 1, padding: '12px 8px', borderRadius: 'var(--r-md)', border: '2px solid var(--blue-line)', background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
                   ส่งเป็นยอดค้างกะถัดไป
                 </button>
                 <button
-                  onClick={handleOverflowForce}
+                  onClick={() => { if (overflowRemember) setOverflowMode('force'); runOverflowChoice('force', overflowInfo); }}
                   disabled={savingProdOpen}
                   style={{ flex: 1, padding: '12px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
                   เปิดกะนี้ต่อ (OT)
                 </button>
               </div>
-              <button onClick={() => setOverflowInfo(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 12 }}>
+              <button onClick={() => { setOverflowInfo(null); refocusScanOpen(); }} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 12 }}>
                 ยกเลิก
               </button>
             </div>
@@ -6199,6 +6214,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     </Field>
                   );
                 })()}
+
+                {/* 🔴 โหมด "จำคำตอบ" ต้องเห็นตลอดเวลาที่เปิดอยู่ + กดเลิกได้ — ไม่งั้นใบถูกยกไปกะหน้าเงียบๆ */}
+                {overflowMode && (
+                  <div style={{ padding: '8px 12px', background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 'var(--r-md)', fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <b style={{ color: 'var(--amber)' }}>⏩ ใบที่เกินเวลากะ:</b>
+                    <span>{overflowMode === 'carry' ? 'ส่งเป็นยอดค้างกะถัดไปอัตโนมัติ' : 'เปิดกะนี้ต่อ (OT) อัตโนมัติ'}</span>
+                    <button type="button" onClick={() => { setOverflowMode(null); setOverflowRemember(false); refocusScanOpen(); }}
+                      style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)', cursor: 'pointer' }}>
+                      กลับไปถามทุกใบ
+                    </button>
+                  </div>
+                )}
 
                 {openProdStd && (
                   <div style={{ padding: '8px 12px', background: 'var(--green-dim)', border: '1px solid var(--green-dim)', borderRadius: 'var(--r-md)', fontSize: 12, color: 'var(--muted)' }}>
