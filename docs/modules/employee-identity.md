@@ -73,7 +73,7 @@ toast ขึ้น `duplicate key value violates unique constraint "employees_em
 **ต่อเพิ่ม (05/11):** ช่องกลาง **`<InspectorCodeField>`** (`src/components/InspectorCodeField.jsx` · สแกนบัตร/พิมพ์ · Enter = ยืนยัน · โชว์ชื่อ+เหตุผลใต้ช่อง)
 | เอกสาร | เก็บรหัสที่ | พฤติกรรม |
 |---|---|---|
-| ใบตรวจ AM/PM (`/daily-checker?tab=pm` · export FM-JIG-003) | `inspections.inspector_code` (DR · migration `20261105_inspector_code_am_dr.sql`) | ช่องเหนือหมายเหตุ · คงค่าข้ามเครื่องในแท็บ (`sessionStorage`) · export: มีรหัส = คนตามรหัสเซ็น |
+| ใบตรวจ AM/PM (`/daily-checker?tab=pm` · export FM-JIG-003) | `inspections.inspector_code` (DR · migration `20261105_inspector_code_am_dr.sql`) | ช่องเหนือหมายเหตุ · ใบ PM ช่าง: คงค่าข้ามเครื่องในแท็บ (`sessionStorage`) · 🪪 **ใบ AM (10/11): บังคับทุกใบ + ล้างเมื่อเปลี่ยนเครื่อง + ผู้ตรวจของสายอนุมัติ = คนตามบัตร** (📄 `am-pm-linkage-audit.md` §8) · export: มีรหัส = คนตามรหัสเซ็น |
 | ใบตรวจ QA (`QaCheckSheet`) | `qa_inspection_sheets.inspector_code` (Main · migration `20261105_inspector_code_qa_main.sql`) | ช่องในหัวใบ · ใบยังไม่ถูกสร้าง = ถือรหัสไว้ใส่ตอนสร้าง · ใบพิมพ์ `qa_inspection_sheet` (ปุ่ม 🖨️ · `src/lib/qaSheetPrint.js`) ใช้รหัสนี้หาลายเซ็น |
 - 🔴 **ผู้ตรวจบนใบ export = `inspectorForExport()` ที่เดียว** — มีรหัส = คนตามรหัส (เครื่องหน้างานใช้บัญชีกลาง) ·
   หาลายเซ็นไม่ได้ = **เว้นช่อง + toast เหตุผล ห้ามถอยไปลายเซ็นบัญชีที่ login** (= ลายเซ็นคนอื่น) · ไม่มีรหัส = พฤติกรรมเดิม
