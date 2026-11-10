@@ -145,6 +145,26 @@ export default function VSM() {
     return true;
   }), [products, scopeLineNames]);
 
+  /* 🔭 ใบ VSM ที่บันทึกไว้ — กรองตามขอบเขตบัญชีด้วยแกนเดียวกับตัวเลือก FG ข้างบน (09/11)
+     ใบผูก `mat_no` ของ FG ⇒ ไลน์ของใบ = `dr_products.line_name` ของ MAT นั้น
+     · MAT มีหลายแถว (หลายลูกค้า/ไลน์) = ซ่อนเฉพาะเมื่อ**ทุก**ไลน์ที่รู้อยู่นอกขอบเขต
+     · หา MAT ในทะเบียนไม่เจอ / ไม่มีไลน์ = ตัดสินไม่ได้ ⇒ คงไว้ · `scopeLineNames = null` = ชุดเดิมเป๊ะ
+     🔴 ซ่อนไปกี่ใบต้องเขียนบนจอ (`savedHidden`) */
+  const savedVisible = useMemo(() => {
+    if (!scopeLineNames) return savedMaps;
+    const linesOfMat = {};
+    products.forEach(p => {
+      if (!p.mat_no || !p.line_name) return;
+      (linesOfMat[p.mat_no] ||= new Set()).add(String(p.line_name).toLowerCase());
+    });
+    return savedMaps.filter(m => {
+      const ls = linesOfMat[m.mat_no];
+      if (!ls || !ls.size) return true;
+      return [...ls].some(n => scopeLineNames.has(n));
+    });
+  }, [savedMaps, products, scopeLineNames]);
+  const savedHidden = savedMaps.length - savedVisible.length;
+
   // ชุด PFC (/pe-docs) ที่ตรงกับ FG นี้ — worklist ใช้ชี้ปุ่ม "เสนอ routing จาก PFC" ให้ตรงชุด
   const peSetForFg = useMemo(() => {
     const fg = products.find(p => p.mat_no === matNo);
@@ -517,14 +537,21 @@ export default function VSM() {
           {model && <button onClick={() => doPrint('a3')} style={btn('var(--amber)')}>A3 Report (Toyota)</button>}
           {model && <button onClick={() => doPrint('sheet')} style={btn('var(--bg3)', { color: 'var(--text)' })}>ใบ VSM</button>}
           {model && <button onClick={() => setShowA3(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>เนื้อหา A3</button>}
-          <button onClick={() => setShowLoad(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>ใบที่บันทึกไว้ ({savedMaps.length})</button>
+          <button onClick={() => setShowLoad(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>ใบที่บันทึกไว้ ({savedVisible.length})</button>
         </div>
       </FilterBar>
 
       {showLoad && (
         <div style={{ ...S.card, marginBottom: 14, maxHeight: 260, overflowY: 'auto' }}>
-          {!savedMaps.length && <div style={{ fontSize: 13, color: 'var(--muted)' }}>ยังไม่มีใบที่บันทึกไว้</div>}
-          {savedMaps.map(m => (
+          {!savedVisible.length && <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+            {savedHidden ? 'ไม่มีใบของไลน์ในขอบเขตของคุณ' : 'ยังไม่มีใบที่บันทึกไว้'}
+          </div>}
+          {savedHidden > 0 && (
+            <div style={{ fontSize: 12, color: 'var(--muted)', padding: '4px 8px' }}>
+              🔭 แสดงเฉพาะใบของไลน์ในขอบเขตของคุณ · ซ่อนใบของไลน์อื่น {savedHidden} ใบ
+            </div>
+          )}
+          {savedVisible.map(m => (
             <div key={m.id} onClick={() => openSaved(m.id)}
               style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '7px 8px', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontSize: 12.5, color: 'var(--text)' }}>
               <span style={{ fontWeight: 700, minWidth: 92 }}>{m.mat_no}</span>
@@ -840,6 +867,13 @@ export default function VSM() {
               {(liveData?.summary?.plannedOpen || 0) > 0 && (
                 <span style={{ fontSize: 12, padding: '5px 12px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
                   หยุดตามแผนค้าง {liveData.summary.plannedOpen} รายการ (ไม่นับเป็น Andon)
+                </span>
+              )}
+              {/* แถวเปิดค้างในกะที่ปิดไปแล้ว = คนลืมปิดรายการ — ไม่ใช่ Andon (กฎ dtOpenKind) แต่ห้ามซ่อน */}
+              {(liveData?.summary?.forgottenDt || 0) > 0 && (
+                <span title="กะปิดไปแล้วแต่รายการ Downtime ยังไม่ถูกปิด — นาทีที่หยุดไม่ได้ถูกหักใน %A ของกะนั้น"
+                  style={{ fontSize: 12, padding: '5px 12px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', color: 'var(--amber)', border: '1px solid var(--border)', fontWeight: 700 }}>
+                  ⚠️ ไม่ได้ปิดรายการ {liveData.summary.forgottenDt} ใบ (กะปิดแล้ว)
                 </span>
               )}
             </div>

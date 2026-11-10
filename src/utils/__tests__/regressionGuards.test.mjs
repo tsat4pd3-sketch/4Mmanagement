@@ -9445,6 +9445,31 @@ test('🛡️ spare-registry-table-not-flat — ทะเบียนอะไ�
     '\n\n❌ เอาตารางทะเบียนไปพับทั้งก้อนใน CollapseCard — ห้าม (ตารางหลักของหน้า)\n');
 });
 
+test('🛡️ machine-key-stray-mark-base-includes-vowels — ฐานของ "มาร์คลอย" ต้องรวมสระ', () => {
+  const js = readFileSync(join(ROOT, 'src/utils/machineNo.js'), 'utf8');
+
+  /* 🔴 เคสจริง 09/11: รอบแรกเขียนฐานเป็น [^ก-ฮ] (พยัญชนะล้วน)
+     ⇒ ตัดวรรณยุกต์ที่ซ้อนบน "สระ" ทิ้งด้วย: เครื่อง→เครือง · ติดตั้ง→ติดตัง · เบนดิ่ง→เบนดิง
+     จับได้เพราะพรีวิวคอลัมน์ผลลัพธ์ก่อน update · ถ้าไม่พรีวิว = ทำลายชื่อไทยทั้งฐานเงียบๆ */
+  assert.ok(/\[\^\\u0E01-\\u0E4E\]/.test(js),
+    '\n\n❌ ฐานของ STRAY_THAI_MARK ใน machineNo.js ไม่ใช่ [^\\u0E01-\\u0E4E]\n'
+    + '   ⇒ ถ้าแคบลงเหลือพยัญชนะ (\\u0E2E) จะกินวรรณยุกต์ที่ซ้อนบนสระ:\n'
+    + '      เครื่อง→เครือง · ติดตั้ง→ติดตัง · เบนดิ่ง→เบนดิง (ชื่อ/อาการภาษาไทยพังทั้งฐาน)\n'
+    + '   📄 supabase/migrations/20261109b_machine_no_strip_stray_thai_marks_dr.sql\n');
+
+  assert.ok(/stripStrayThaiMarks/.test(js) && /machineKey/.test(js),
+    '\n\n❌ machineNo.js ไม่มี stripStrayThaiMarks แล้ว — machineKey จะไม่ยุบ typo มาร์คลอย\n'
+    + '   ⇒ `ฺBD-08` แตกเป็นคนละแท่งกับ `BD-08` ในพาเรโต/MTBF/KPI ช่าง อีกครั้ง\n');
+
+  /* ตรรกะต้องตรงกับฝั่ง SQL — คนละไฟล์ แก้ข้างเดียว = คีย์ 2 ชุด เถียงกันว่าเชื่อจอไหน */
+  const sql = readFileSync(join(ROOT, 'supabase/migrations/20261109c_machine_key_strip_stray_thai_marks_dr.sql'), 'utf8');
+  for (const part of ['\\u0E01-\\u0E4E', '\\u0E31\\u0E34-\\u0E3A\\u0E47-\\u0E4E']) {
+    assert.ok(js.includes(part) && sql.includes(part),
+      `\n\n❌ ช่วงอักขระ ${part} ไม่ตรงกันระหว่าง machineNo.js กับ machine_key() ฝั่ง SQL\n`
+      + '   ⇒ จอกับ DB จัดกลุ่มเครื่องคนละแบบ = ตัวเลขไม่ตรงกันโดยไม่มีใครรู้\n');
+  }
+});
+
 /* ═══ 📝 เปิดใบซ่อมจาก Downtime = ฟอร์มเต็ม + รูปบังคับ (2026-11-08 · คำสั่ง user) ═══
    *"เปิดใบแจ้งซ่อมจากดาวน์ไทม์ ต้องไม่เด้งเปิดทันที ต้องป๊อปอัพแนบรูปบังคับ และใส่รายละเอียดให้ชัดเจน"*
    เดิม DailyReport insert `mtn_orders` เองจากป๊อปอัพเลือกทีม (อาการ = ชื่อประเภท DT · รูปไม่บังคับ)
@@ -9467,4 +9492,206 @@ test('✍️ signature-no-blank-save — โมดัลลายเซ็นห
   const save = s.slice(s.indexOf('const handleSave ='), s.indexOf('setSaving(true)', s.indexOf('const handleSave =')));
   assert.ok(/tab === 'draw' && !hasInk\.current/.test(save), 'handleSave ต้องเช็ค hasInk ก่อนบันทึกแท็บวาด');
   assert.ok(/hasInk\.current = true/.test(s), 'startDraw ต้องตั้ง hasInk = true');
+});
+
+/* ═══ 🔴 "ยังหยุดอยู่" ต้องมีกะที่ยังเปิดรองรับ — dt-open-needs-session-status (2026-11-09) ═══
+   เคสจริงที่หัวหน้าหน้างานแจ้ง: Robot (Alarm/Error) ไลน์ D4 03/11 · กะถูกอนุมัติปิด 04/11
+   แต่แถว downtime ยังเปิดค้าง ⇒ จอ OEE รายไลน์กระพริบ "🔴 ยังหยุดอยู่" ค้าง 147 ชม.
+   (ทั้งโรงงานมี 6 แถวแบบนี้ เก่าสุด 3,322 ชม.) · และ **ไม่ไหลไปกะใหม่** — ต่อกะหน้าเกิดเฉพาะ
+   `carry_over=true` ที่คนเลือกตอนปิดกะเท่านั้น ⇒ ค้างถาวรจนมีคนไปปิดมือ
+   ⇒ จอที่รู้สถานะกะ ต้องตัดสินผ่าน `dtOpenKind(d, sessionStatus)` ห้ามอ่าน `ended_at` ลอยๆ */
+test('🔴 dt-open-needs-session-status — จอที่โชว์ "ยังหยุดอยู่" ต้องใช้ dtOpenKind', () => {
+  const rules = readFileSync(join(ROOT, 'src/utils/downtimeRules.js'), 'utf8');
+  assert.match(rules, /export function dtOpenKind\(d, sessionStatus\)/,
+    '\n\n❌ ถอด dtOpenKind ออกจาก utils/downtimeRules.js — นิยาม "ลืมปิดรายการ" ต้องอยู่ที่เดียว\n');
+  assert.match(rules, /SESSION_STATUSES_LIVE\.includes\(sessionStatus\)/,
+    '\n\n❌ dtOpenKind ต้องตัดสินจาก SESSION_STATUSES_LIVE (utils/sessionStatus.js) ห้าม hardcode รายสถานะ\n');
+  assert.match(rules, /if \(sessionStatus == null\) return 'unknown'/,
+    '\n\n❌ ไม่รู้สถานะกะต้องคืน \'unknown\' — ห้ามบีบเป็น \'forgotten\' เงียบๆ (จะกลายเป็นซ่อน Andon จริง)\n');
+
+  const board = stripComments(readFileSync(join(ROOT, 'src/pages/LineOeeBoard.jsx'), 'utf8'));
+  assert.match(board, /const kind = dtOpenKind\(d2, d2\._sessStatus\)/,
+    '\n\n❌ Alarm History บน /line-oee กลับไปตัดสิน active จาก isOpenDT ลอยๆ\n'
+    + '   ⇒ แถวที่ลืมปิดในกะที่ปิดไปแล้ว จะกระพริบ "ยังหยุดอยู่" ค้างเป็นเดือน (เคสจริง 09/11)\n');
+  assert.doesNotMatch(board, /const active = isOpenDT\(/,
+    '\n\n❌ /line-oee กลับไปใช้ `const active = isOpenDT(...)` — ต้องผ่าน dtOpenKind + สถานะกะ\n');
+  assert.match(board, /C\.forgottenDt > 0 &&/,
+    '\n\n❌ /line-oee ไม่ได้เขียนบนจอว่า "ไม่ได้ปิดรายการกี่ใบ" — ห้ามซ่อน (%A ของกะนั้นสูงกว่าจริง)\n');
+
+  const vsm = stripComments(readFileSync(join(ROOT, 'src/lib/vsmLive.js'), 'utf8'));
+  assert.match(vsm, /isOpenDT\(d\) && liveIds\.has\(d\.session_id\)/,
+    '\n\n❌ vsmLive กลับไปนับ downtime เปิดค้างทุกกะเป็น Andon — ไลน์ที่ปิดกะแล้วจะแดงค้างทั้งวัน\n');
+  assert.match(vsm, /forgottenDt/,
+    '\n\n❌ vsmLive ต้องคืน forgottenDt ให้จอเขียนบอก (ไม่ใช่ Andon แต่ห้ามซ่อน)\n');
+
+  const dept = stripComments(readFileSync(join(ROOT, 'src/pages/DeptDashboard.jsx'), 'utf8'));
+  assert.doesNotMatch(dept, /const isOpenDT = \(d\) =>/,
+    '\n\n❌ DeptDashboard ก๊อป isOpenDT มาไว้ในหน้า — นิยามอยู่ utils/downtimeRules.js ที่เดียว\n');
+  assert.match(dept, /dtOpenKind\(x, sessStatusById\[x\.session_id\]/,
+    '\n\n❌ การ์ด "เครื่องหยุดค้าง" ต้องแยกแถวที่ลืมปิดออกด้วย dtOpenKind\n');
+});
+
+/* ═══ 🔒 อนุมัติปิดกะ ต้องมีด่าน Downtime เปิดค้าง — approve-close-dt-gate (2026-11-09) ═══
+   รูที่ทำให้เกิดแถวค้าง: ไลน์ "ขอปิดกะ" ตอนยังไม่มี downtime ใบนั้น (ด่านตอนขอปิดจึงผ่าน)
+   → มีคนเพิ่ม downtime ทีหลังขณะใบอยู่ `pending_close` → SV กดอนุมัติ = ปิดทั้งที่แถวยังเปิดค้าง
+   ⇒ `duration_min` null = หัก 0 นาที ⇒ กะนั้น stamp %A = 100% ทั้งที่ Robot Alarm ค้างอยู่ */
+test('🔒 approve-close-dt-gate — handleApproveClose ต้องบล็อกเมื่อมี Downtime เปิดค้าง', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  const i = src.indexOf('const handleApproveClose =');
+  assert.ok(i > 0, 'ไม่พบ handleApproveClose');
+  const body = src.slice(i, src.indexOf('supabase.auth.getUser()', i));
+  assert.match(body, /dtLogs\.filter\(d => d\.duration_min == null && !d\.ended_at\)/,
+    '\n\n❌ handleApproveClose ไม่มีด่าน "Downtime เปิดค้าง" (ด่านตอนขอปิดกะอย่างเดียวไม่พอ —\n'
+    + '   downtime ที่ถูกเพิ่มหลังขอปิดกะจะหลุดเข้าไปปิดพร้อมกะ แล้วค้างถาวร · เคสจริง 09/11 ไลน์ D4)\n');
+  assert.match(body, /if \(openDtNow\.length\) \{[\s\S]*?return;/,
+    '\n\n❌ ด่านมีแต่ไม่ return — ต้องบล็อกการอนุมัติจริง ไม่ใช่แค่เตือน\n');
+});
+
+/* ═══ ⏩ Downtime ตัดยอดข้ามกะ ต้องส่งต่อ **2 ทาง** — dt-carry-two-ways (2026-11-09) ═══
+   เดิมมีแต่ทาง "ดึงตอนเปิดกะ" (อ่านธง `carry_over` ของกะก่อน) ⇒ ใช้ได้เฉพาะเมื่อ
+   **ปิดกะเก่าเสร็จก่อนเปิดกะใหม่** ซึ่งไม่ใช่ลำดับปกติของหน้างาน
+   วัดจากฐานจริง: ใช้ฟีเจอร์นี้ 1 เคส (HDF1 24/08) — กะดึกเปิด 21:02 แต่กะเช้าปิด 21:55
+   ⇒ ไม่เกิดแถวต่อเนื่องเลย (0/1) · เครื่องที่ยังซ่อมอยู่หายจากกะดึกทั้งกะ                */
+test('⏩ dt-carry-two-ways — ส่ง Downtime ข้ามกะต้องมีทั้งทางดึง (เปิดกะ) และทางดัน (ปิดกะ)', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+
+  assert.match(src, /prevSessionOfLine\(openForm\.line_name, data\.id\)/,
+    '\n\n❌ ทาง "ดึงตอนเปิดกะ" หาย — กะที่เปิดหลังกะเก่าปิดจะไม่ได้รับ Downtime ต่อเนื่อง\n');
+  assert.match(src, /nextOpenSessionOfLine\(selSession\)/,
+    '\n\n❌ ทาง "ดันตอนปิดกะ" หาย — กะถัดไปที่เปิดไปก่อนแล้ว (ลำดับปกติของโรงงาน)\n'
+    + '   จะไม่ได้รับ Downtime ที่หัวหน้าเลือก "ยังซ่อมอยู่ ตัดยอดข้ามกะ" เลย (วัดจากฐานจริง 0/1 สำเร็จ)\n');
+  assert.ok(src.split('carryDowntimesTo({').length - 1 >= 2,
+    '\n\n❌ ต้องเรียก carryDowntimesTo ทั้ง 2 ทาง (เปิดกะ + ปิดกะ)\n');
+
+  /* ห้ามกลืน error — เดิมทั้งก้อนอยู่ใน `catch {}` + ไม่เช็ค error ของคิวรีไหนเลย
+     ⇒ อ่าน/เขียนพลาด = เปิดกะได้ปกติแต่ Downtime ต่อเนื่องหายเงียบ (ผิดกฎ "ห้ามล้มเหลวเงียบ") */
+  assert.doesNotMatch(src, /\} catch \{ \/\* การรับ DT ต่อเนื่องล้มเหลวต้องไม่ล้มการเปิดกะ \*\/ \}/,
+    '\n\n❌ กลับไปใช้ `catch {}` เปล่าในการรับ DT ต่อเนื่อง — ล้มแล้วต้อง toast บอก ห้ามเงียบ\n');
+
+  const lib = stripComments(readFileSync(join(ROOT, 'src/lib/downtimeCarry.js'), 'utf8'));
+  assert.match(lib, /pendingCarryRows\(carryRows, conts\)/,
+    '\n\n❌ ถอดการกันซ้ำด้วย carried_from_id — เรียก 2 ทางแล้วจะได้แถวซ้ำในกะใหม่\n');
+  assert.match(lib, /shiftWindow\(toSession\)/,
+    '\n\n❌ เวลาเริ่มของแถวต่อเนื่องต้องมาจาก shiftWindow() (ภายในใช้ shiftStartDate)\n'
+    + '   คิดเองจาก work_date = กะดึกที่เริ่ม 00:00-07:59 เขียน timestamp เร็วไป 1 วัน (หลุดกรอบกะ)\n');
+  assert.doesNotMatch(lib, /\bduration_min\b|\bended_at\b|\bcall_mtn\b/,
+    '\n\n❌ แถวต่อเนื่องห้ามก๊อป duration_min/ended_at (ต้องเป็นเปิดค้างจริง) หรือ call_mtn (ใบเก่าปิดไปแล้ว)\n');
+});
+
+/* ═══ 📤 ปิดใบข้ามไลน์ "ไม่ต้องยืนยัน" = log ต้องอ่านรู้เรื่อง — cross-close-log-readable ═══
+   03/11 ถอดการกดยืนยันออกตามคำสั่ง user แล้วย้ายความปลอดภัยไปอยู่ที่ร่องรอยย้อนหลัง
+   ⇒ แถว `CROSS_LINE_CLOSE` คือหลักฐานชิ้นเดียว · ใช้จริงแล้ว 25 ครั้ง (05-06/11 · 2,280 ชิ้น)
+   หัวแถวของ AuditLogViewer บอกแค่ prod_no ⇒ ถ้าไม่กางรายละเอียด = มี log แต่ตรวจไม่ได้ */
+test('📤 cross-close-log-readable — จอ audit ต้องกาง "ยอดเข้าไลน์ไหน · ปิดจากจอไลน์ไหน"', () => {
+  const labels = readFileSync(join(ROOT, 'src/utils/auditLabels.js'), 'utf8');
+  assert.match(labels, /CROSS_LINE_CLOSE:\s*\{/,
+    '\n\n❌ ไม่มีป้ายไทยของ action CROSS_LINE_CLOSE — จอจะโชว์ชื่อ action ดิบ\n');
+
+  const v = stripComments(readFileSync(join(ROOT, 'src/components/AuditLogViewer.jsx'), 'utf8'));
+  assert.match(v, /r\.action === 'CROSS_LINE_CLOSE' &&/,
+    '\n\n❌ AuditLogViewer ไม่กางรายละเอียดของการปิดใบข้ามไลน์\n'
+    + '   (กิ่งเดิมกางเฉพาะ action UPDATE ⇒ แถวนี้เหลือแค่ prod_no = ตรวจย้อนหลังไม่ได้)\n');
+  for (const k of ['owner_line', 'closed_from_line', 'qty_ok']) {
+    assert.ok(v.includes(`new_data?.${k}`),
+      `\n\n❌ รายละเอียดปิดใบข้ามไลน์ขาด \`${k}\` — ต้องตอบได้ว่ายอดเข้าไลน์ไหน/ใครปิดจากจอไลน์ไหน/กี่ชิ้น\n`);
+  }
+
+  /* ตัวจุด trigger อยู่ฝั่งจอ — ถอด stamp = trigger ไม่ยิง = log หายเงียบ (ไม่มี error ให้เห็น) */
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.match(dr, /closed_from_line: selSession\?\.line_name/,
+    '\n\n❌ doCrossLineClose ไม่ stamp closed_from_line — trigger trg_prod_order_cross_close_audit\n'
+    + '   จะไม่ยิง ⇒ ปิดใบข้ามไลน์ได้โดยไม่มี log เลย (ซึ่งเป็นด่านเดียวที่เหลือหลังถอดการยืนยัน)\n');
+});
+
+test('🛡️ pm-notify-via-single-source — แจ้งเตือนผลตรวจต้องผ่านของกลาง ห้ามหาผู้รับเอง', () => {
+  /* 🔑 ต้องตัดคอมเมนต์ก่อน — ไฟล์นี้อธิบายเหตุผลไว้ยาว คำว่า `notifyEvent()` / `extra_user_ids`
+     โผล่ในคอมเมนต์ด้วย ⇒ เทียบกับไฟล์ดิบ = ด่านผ่านทั้งที่โค้ดถูกถอดออกแล้ว (เคยพลาดจริงรอบแรก) */
+  const src = stripComments(readFileSync(join(ROOT, 'src/lib/pmNotify.js'), 'utf8'));
+
+  /* 🔴 เคสจริง 09/11: `notifyDepartment()` รับ `department` มาแต่ใช้แค่เลือกคีย์สิทธิ์
+     แล้วดึง profiles ด้วย role ล้วน ⇒ ใบ "ผลตรวจ NG" ยิงถึง 83 คน ข้าม 12 ส่วนงาน
+     และเพราะไม่ผ่าน notify_recipients ⇒ ค่าใน /notification-config ไม่มีผล
+     + ตัวกรอง mute ของผู้ใช้ไม่ทำงาน (กฎ CLAUDE.md §Edge Functions) */
+  assert.ok(/notifyEvent\(/.test(src),
+    '\n\n❌ pmNotify ไม่ได้ยิงผ่าน notifyEvent — ผู้รับจะไม่ผ่าน notify_recipients\n'
+    + '   ⇒ ตั้งค่าใน /notification-config ไม่มีผล · คนที่ปิดแจ้งเตือนเรื่องนี้ยังได้รับ\n');
+
+  assert.ok(!/\.in\(\s*['"]role['"]/.test(src),
+    '\n\n❌ กลับไปดึง profiles ด้วย role ล้วน — นั่นคือบั๊กเดิม (83 คน / 12 ส่วนงาน ต่อ 1 ใบ)\n');
+
+  /* ช่างของทีมส่งผ่านช่อง "เจ้าของงาน" เพราะแกนทีมกับส่วนงานใน RPC เป็น AND
+     (ส่ง p_team = หัวหน้าส่วนงานหลุด · ไม่ส่ง = ช่างหลุด — วัดจริง PD3+jig: 12 vs 14) */
+  assert.ok(/extra_user_ids:\s*owners/.test(src),
+    '\n\n❌ ไม่ได้ส่งช่างของทีมผ่าน extra_user_ids — ช่างจะหลุดจากผู้รับ\n'
+    + '   (ส่วนงานของช่างคือ JIG MTN/Die MTN ไม่ตรงกับส่วนงานของอุปกรณ์ จึงตกตัวกรอง match_section)\n');
+
+  /* edge ตัด extra_user_ids ที่ 20 — ตัดแล้วเงียบ = ช่างบางคนไม่รู้ว่ามีงาน */
+  assert.ok(/ownersCapped/.test(src),
+    '\n\n❌ ไม่ได้บอกว่ารายชื่อช่างถูกตัดที่ 20 คน — ตัดแล้วเงียบ = ช่างไม่รู้ว่ามีใบ NG\n');
+
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/PMCheckData.jsx'), 'utf8'));
+  assert.ok(/ownersCapped/.test(page),
+    '\n\n❌ หน้าจอไม่ได้เตือนเมื่อรายชื่อช่างถูกตัด (จอต้องไม่โกหกว่าส่งครบ)\n');
+  assert.ok(/event:\s*'pm_inspection_ng'/.test(page),
+    '\n\n❌ ไม่ได้ส่ง event key — edge จะตอบ 400 แล้วแจ้งเตือนหายทั้งใบ\n');
+});
+
+test('🔊 siren-call-mtn-needs-team — ไซเรน "เรียกช่าง" ต้องรู้ขอบเขตทีมของจอเสมอ', () => {
+  /* 🔴 feedback หน้างาน 09/11: "เรียกช่างแผนกอื่น แต่ตัวเองก็เห็น alarm"
+     ต้นเหตุ: `/mtn-machine-layout` mount <DowntimeSiren mode="call_mtn" /> **โดยไม่ส่ง team**
+     ⇒ ช่าง JIG ที่เปิดหน้านี้ได้ยินเสียงเรียกของทีม DIE/Maintenance ทุกใบ
+     (ต่างจาก MtnAndonBoard ที่ออกแบบชิปเลือกทีมไว้ตั้งแต่แรก)
+     ⚠️ เสียงมาจาก downtime_logs ตรงๆ **ไม่ใช่** notifications.type — แก้ type ไม่ช่วยอะไร */
+  const files = ['src/pages/MtnMachineLayout.jsx', 'src/components/MtnAndonBoard.jsx',
+                 'src/pages/Dashboard.jsx', 'src/pages/Management.jsx'];
+  let checked = 0;
+  for (const f of files) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    for (const m of src.matchAll(/<DowntimeSiren\b[^/>]*\/?>/g)) {
+      const tag = m[0];
+      if (!/call_mtn|soundAll|'all'/.test(tag)) continue;   // โหมดเครื่องหยุดเฉยๆ ไม่ต้องกรองทีม
+      checked++;
+      assert.ok(/\bteam=/.test(tag),
+        `\n\n❌ ${f}: <DowntimeSiren> โหมดเรียกช่างไม่ได้ส่ง prop \`team\`\n`
+        + '   ⇒ จอนี้จะดังทุกทีม — ช่างทีมอื่นโดนเสียงเรียกที่ไม่ใช่ของตัวเอง\n'
+        + `   แท็กที่เจอ: ${tag}\n`);
+    }
+  }
+  assert.ok(checked >= 2,
+    `\n\n❌ หา <DowntimeSiren> โหมดเรียกช่างเจอแค่ ${checked} จุด (ต้อง ≥ 2)\n`
+    + '   ⇒ ด่านนี้วัดอะไรไม่ได้แล้ว (ย้ายไฟล์/เปลี่ยนชื่อ component?) ต้องแก้ด่าน\n');
+
+  /* ตัวกรองต้องรับได้ทั้ง key เดียวและหลายทีม — ช่างที่สังกัด 2 ทีมต้องไม่ได้ยินทีมที่ 3 */
+  const siren = stripComments(readFileSync(join(ROOT, 'src/components/DowntimeSiren.jsx'), 'utf8'));
+  assert.ok(/Array\.isArray\(team\)/.test(siren),
+    '\n\n❌ DowntimeSiren รับ team เป็น key เดียวเท่านั้น — ช่างหลายทีมจะถูกบีบเหลือทีมเดียวหรือได้ยินหมด\n');
+  /* ใบที่ไม่ระบุทีม = ดังทุกห้อง (fail-open) — ห้ามเปลี่ยนเป็น fail-closed (เงียบ = อันตรายกว่า) */
+  assert.ok(/if \(!got\) return true/.test(siren),
+    '\n\n❌ ใบที่ไม่ระบุทีมถูกกรองทิ้ง — เงียบเพราะข้อมูลไม่ครบ อันตรายกว่าดังเกิน\n');
+});
+
+test('🔇 notify-rollup-never-for-call-mtn — ห้ามยุบใบ "เรียกช่าง"', () => {
+  /* 🔴 09/11 ตอนลดเสียงรบกวน: ตั้ง inapp_rollup_min ให้ `mtn_approved`/`skill_levelup_request`
+     (คิวงาน — เข้าจอทีเดียวเคลียร์ทั้งชุด) แต่ `downtime_call_mtn` **ห้ามยุบเด็ดขาด**
+     *"เรียกช่างครั้งแรก ทุกใบต้องดัง"* (send-notification/index.ts)
+     ยุบ = เครื่องหยุด 2 ตัวกลายเป็นการ์ดเดียว ⇒ ช่างไปไม่ครบ ⇒ สายหยุดต่อ
+
+     หลักตัดสิน: ยุบได้เมื่อเป็น **คิวงาน** · ห้ามยุบเมื่อเป็น **สัญญาณต่อเหตุการณ์**
+     📄 docs/modules/notify-inapp-audit.md §รอบ 6                                         */
+  const dir = join(ROOT, 'supabase/migrations');
+  const files = readdirSync(dir).filter(f => f.endsWith('.sql'));
+  assert.ok(files.length > 50,
+    `\n\n❌ อ่าน supabase/migrations/ ได้แค่ ${files.length} ไฟล์ — ด่านนี้วัดอะไรไม่ได้แล้ว\n`);
+
+  for (const f of files) {
+    const sql = readFileSync(join(dir, f), 'utf8');
+    if (!/downtime_call_mtn/.test(sql)) continue;
+    /* ตัดคอมเมนต์ /* *\/ ออกก่อน — เอกสารในหัวไฟล์พูดถึงกฎนี้ได้ (ไฟล์นี้เองก็พูด) */
+    const code = sql.replace(/\/\*[\s\S]*?\*\//g, ' ');
+    if (!/downtime_call_mtn/.test(code)) continue;          // พูดถึงแต่ในคอมเมนต์ = ผ่าน
+    assert.ok(!/inapp_rollup_min/.test(code),
+      `\n\n❌ ${f}: ตั้ง inapp_rollup_min ในคำสั่งที่แตะ downtime_call_mtn\n`
+      + '   ⇒ ใบเรียกช่างจะถูกยุบรวมกัน — เครื่องหยุด 2 ตัวเหลือการ์ดเดียว ช่างไปไม่ครบ\n'
+      + '   ถ้าคิวรีนี้ไม่ได้ตั้ง rollup ให้ downtime_call_mtn จริง ให้แยกเป็น 2 คำสั่งคนละ UPDATE\n');
+  }
 });

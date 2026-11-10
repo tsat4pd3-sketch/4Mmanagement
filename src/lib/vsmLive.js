@@ -18,6 +18,7 @@
 // ⚠️ ใส่นามสกุล .js เพราะไฟล์นี้ถูกรันตรงด้วย node:test (Vite ก็รับได้) — ทุกตัวเป็น pure module
 import { computeLiveOee, wavg, wLoad, sumDefectQty, ngByMatFrom, dtMinBySession, orderPlanQty } from '../utils/oee.js';
 import { parallelUnitsOf, isParallelLine } from '../utils/lineTypes.js';
+import { SESSION_STATUSES_LIVE } from '../utils/sessionStatus.js';
 import { isOpenDT, isPlannedDT, dtElapsedMin } from '../utils/downtimeRules.js';
 
 const num = v => (v == null || v === '' ? null : (Number.isFinite(+v) ? +v : null));
@@ -67,12 +68,18 @@ export function buildVsmLive({
     if (lineCache[key]) return lineCache[key];
 
     const ss = sessByLine[key] || [];
-    const openSess = ss.find(s => s.status === 'open' || s.status === 'pending_close') || null;
+    const liveSess = ss.filter(s => SESSION_STATUSES_LIVE.includes(s.status));
+    const openSess = liveSess[0] || null;
     const closed = ss.filter(s => s.status === 'closed');
     const sessionIds = ss.map(s => s.id);
 
     const lineDts = sessionIds.flatMap(id => dtBy[id] || []);
-    const openDts = lineDts.filter(isOpenDT);
+    /* 🔴 Andon ต้องมี "กะที่ยังเปิด" รองรับ — แถวเปิดค้างในกะที่ปิดไปแล้ว = คนลืมปิดรายการ
+       ไม่ใช่เครื่องหยุดอยู่ (กฎ `dtOpenKind` · utils/downtimeRules 09/11)
+       เดิมนับรวม ⇒ ไลน์ที่ปิดกะไปแล้วแต่มีแถวค้าง ขึ้น status 'down' แดงทั้งสายตลอดวัน */
+    const liveIds = new Set(liveSess.map(s => s.id));
+    const openDts = lineDts.filter(d => isOpenDT(d) && liveIds.has(d.session_id));
+    const forgottenDt = lineDts.filter(d => isOpenDT(d) && !liveIds.has(d.session_id)).length;
     // planned เปิดค้าง = แสดงแบบสงบ (นับสต๊อก/ไม่มีแผน) — ห้ามนับเป็น Andon แต่ห้ามซ่อน
     const alarms = openDts.filter(d => !isPlannedDT(d))
       .map(d => ({
@@ -132,6 +139,7 @@ export function buildVsmLive({
       live,                      // ผลจาก computeLiveOee (null = ยังประเมินไม่ได้/ไม่มีกะเปิด)
       closedOee,                 // OEE กะที่ปิดแล้ววันนี้ (stamp · ถ่วงน้ำหนัก)
       alarms, plannedOpen,
+      forgottenDt,               // แถวเปิดค้างในกะที่ปิดแล้ว = ต้องไปตามปิด (ไม่ใช่ Andon แต่ห้ามซ่อน)
     };
     return lineCache[key];
   };
@@ -165,6 +173,7 @@ export function buildVsmLive({
     closed: perLine.filter(([, v]) => v.status === 'closed').length,
     idle: perLine.filter(([, v]) => v.status === 'idle').length,
     plannedOpen: perLine.reduce((a, [, v]) => a + v.plannedOpen.length, 0),
+    forgottenDt: perLine.reduce((a, [, v]) => a + v.forgottenDt, 0),
     alarms: perLine.flatMap(([, v]) => v.alarms.map(a => ({ line: v.name, ...a })))
       .sort((a, b) => (b.openMin || 0) - (a.openMin || 0)),
   };

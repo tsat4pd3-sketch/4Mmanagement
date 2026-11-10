@@ -89,8 +89,13 @@ function useScopeOf(lines) {
     const names = r.unlimited ? null : new Set(r.names);
     const linesIn = r.unlimited ? (lines || []) : (lines || []).filter(l => names.has(l.name));
     const ids = r.unlimited ? null : new Set(linesIn.map(l => String(l.id)));
+    /* 🔴 จำกัดขอบเขตอยู่ แต่ไม่เหลือไลน์ให้ตัด (ไลน์ของบัญชีไม่อยู่ในทะเบียน ฯลฯ) = "ตัดขอบเขตไม่ได้"
+       · ยังมีส่วนงานกำกับ ⇒ ถอยไปตัดด้วยส่วนงาน · ไม่มีเลย ⇒ `blocked` = fail-closed (ไม่มีแถว)
+       ห้ามปล่อยให้คิวรีวิ่งทั้งโรงงาน (09/11) · จอต้องเขียนบอก (`<ScopeUnresolvedNote>`) */
+    const unresolved = !r.unlimited && !(ids && ids.size);
     return {
       ...r, names, ids, linesIn, scopeSecs,
+      unresolved, blocked: unresolved && !scopeSecs.length,
       lineIds: ids ? [...ids] : null,
       empOk: (emp) => {
         if (!ids) return true;
@@ -205,6 +210,27 @@ function fillUnitLines(u, names) {
   if (!u.name) return u;
   const next = names || [];
   return next.length === u.lines.length && next.every((n, i) => n === u.lines[i]) ? u : { ...u, lines: next };
+}
+
+/** 🔭 แจ้งบนจอเมื่อตัดขอบเขตของบัญชีไม่ได้ — ห้ามเงียบ (ทั้งกรณี fail-closed และกรณีถอยไปทั้งโรงงาน) */
+function ScopeUnresolvedNote({ scope, linesLoaded }) {
+  if (!scope || !linesLoaded) return null;
+  if (scope.blocked) return (
+    <NoticeBar tone="warn" style={{ marginBottom: 12 }}>
+      ตัดขอบเขตไลน์ของบัญชีนี้ไม่ได้ (ไลน์ของบัญชีไม่อยู่ในทะเบียน และไม่มีส่วนงานกำกับ) — ไม่แสดงรายชื่อเพื่อไม่ให้เห็นข้ามหน่วยงาน · แจ้งผู้ดูแลระบบให้ตั้งขอบเขตที่ /add-user
+    </NoticeBar>
+  );
+  if (scope.unresolved) return (
+    <NoticeBar tone="warn" style={{ marginBottom: 12 }}>
+      ตัดขอบเขตด้วยไลน์ไม่ได้ (ไลน์ของบัญชีไม่ตรงทะเบียน) — แสดงตามส่วนงานที่ตั้งไว้: {scope.scopeSecs.join(' · ')}
+    </NoticeBar>
+  );
+  if (scope.unsure) return (
+    <NoticeBar tone="warn" style={{ marginBottom: 12 }}>
+      ตัดขอบเขตของบัญชีนี้ไม่ได้ (ส่วนงานที่ตั้งไว้ไม่ตรงผัง) — กำลังแสดงทั้งโรงงาน
+    </NoticeBar>
+  );
+  return null;
 }
 
 function urlScopeSeed() {
@@ -2453,9 +2479,10 @@ function SkillMatrixTab() {
     if (filterTeam) q = q.eq('team', filterTeam);
     if (filterDept) q = q.eq('department', filterDept);
     q = q.order('name');
+    /* 🔴 จำกัดขอบเขตแต่ตัดไม่ได้ (ไม่มีไลน์ ไม่มีส่วนงาน) = fail-closed ห้ามคิวรีทั้งโรงงาน (จอเขียนบอก) */
     const [{ data: defs }, { data: emps }] = await Promise.all([
       supabase.from('skill_definitions').select('*').order('sort_order'),
-      q,
+      scope.blocked ? Promise.resolve({ data: [] }) : q,
     ]);
     /* 🤝 ต่อท้ายด้วยคนที่ "ยืมตัว" มาช่วยไลน์ใน scope กะนี้ (line_helpers · src/utils/lineHelpers.js)
        ใบประเมินทักษะรายบุคคล F-PRS-P1-119 พิมพ์จากจอนี้ — หัวหน้าไลน์ปลายทางที่เห็นเขาทำงานจริง
@@ -2463,7 +2490,7 @@ function SkillMatrixTab() {
        scope ที่ใช้ = filter ที่เลือกอยู่ (ถ้ามี) ไม่ใช่ scope ดิบ — เลือกไลน์ตัวเอง = เห็นคนที่มาช่วยไลน์นั้น */
     const effLineIds = filterLine ? lineFamilyIdsOf(filterLine) : (scope.lineIds || null);
     const effSecs    = filterSection ? [filterSection] : scopeSecs;
-    let list = await mergeBorrowedEmployees(emps || [], {
+    let list = scope.blocked ? [] : await mergeBorrowedEmployees(emps || [], {
       lines, lineIds: effLineIds, scopeSecs: effSecs,
       columns: baseSelect,
     });
@@ -2490,6 +2517,7 @@ function SkillMatrixTab() {
         />
       )}
 
+      <ScopeUnresolvedNote scope={scope} linesLoaded={lines.length > 0} />
       <FilterBar style={{ marginBottom: 16 }}>
         <EmpScopeFilters lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
         <span className="spacer" />
@@ -3013,7 +3041,8 @@ function MultiSkillFormTab() {
     if (filterTeam) q = q.eq('team', filterTeam);
     if (filterDept) q = q.eq('department', filterDept);
     q = q.order('name');
-    const { data } = await q;
+    /* 🔴 จำกัดขอบเขตแต่ตัดไม่ได้ = fail-closed ห้ามคิวรีทั้งโรงงาน (จอเขียนบอก) */
+    const { data } = scope.blocked ? { data: [] } : await q;
     setEmployees(data || []);
     setLoading(false);
   };
@@ -3093,6 +3122,7 @@ function MultiSkillFormTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <ScopeUnresolvedNote scope={scope} linesLoaded={lines.length > 0} />
       {/* Filters (UI-STANDARD 2026-09-24 — แถบกรองมาตรฐาน · gap ของ column แทน marginBottom) */}
       <FilterBar style={{ marginBottom: 0 }}>
         <EmpScopeFilters lines={lines} filterSection={filterSection} setFilterSection={setFilterSection} filterLine={filterLine} setFilterLine={setFilterLine} filterTeam={filterTeam} setFilterTeam={setFilterTeam} filterDept={filterDept} setFilterDept={setFilterDept} />
@@ -4137,7 +4167,8 @@ function AttendanceFormTab() {
     if (dept)           empQ = empQ.eq('section', dept);
     if (empDept)        empQ = empQ.eq('department', empDept);
     if (team)           empQ = empQ.eq('team', team);
-    const { data: filteredEmps } = await empQ;
+    /* 🔴 จำกัดขอบเขตแต่ตัดไม่ได้ = fail-closed ห้ามคิวรีทั้งโรงงาน (จอเขียนบอก) */
+    const { data: filteredEmps } = scope.blocked ? { data: [] } : await empQ;
     if (!filteredEmps?.length) { setEmpRows([]); setLoading(false); return; }
 
     const empMetaById = Object.fromEntries((filteredEmps || []).map(e => [e.id, e]));
@@ -4444,6 +4475,7 @@ function AttendanceFormTab() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <ScopeUnresolvedNote scope={scope} linesLoaded={lines.length > 0} />
       {/* Filters — UI-STANDARD 2026-09-24: ขอบเขต → ช่วงเวลา → ช่องหัวเอกสาร → spacer → ปุ่ม */}
       <FilterBar style={{ marginBottom: 0 }}>
         {/* ขอบเขต = ช่องเดียว ส่วนงาน → กลุ่มไลน์ → ไลน์ (<LineScopeSelect> · 2026-10-02) — เลือกไลน์ = กรองตามไลน์อย่างเดียวเหมือนเดิม (ส่วนงานว่าง) */}

@@ -654,6 +654,40 @@ export default function OEEAnalytics() {
 
   const tdRows = useMemo(() => calcOEE(tdSessionsTeamFiltered, tdDowntimesScoped, tdDefectsScoped, breakPols, flowByLine, affectsLn), [tdSessionsTeamFiltered, tdDowntimesScoped, tdDefectsScoped, breakPols, flowByLine, affectsLn]);
 
+  /* 🟢 ค่าสดของกะที่ยังไม่ปิด (09/11 · user ทัก "OEE สดไม่ขึ้นในหน้านี้")
+     เดิม OEE OVERVIEW + เทรนด์ 10 วัน อ่านแต่ค่าที่ stamp ตอนปิดกะ ⇒ ระหว่างกะเดิน ขึ้น "—" ทั้งแถบ
+     ทั้งที่การ์ด "กะที่กำลังผลิต" ข้างล่างคิดสดได้แล้ว · ใช้ `computeLiveOee` ตัวเดียวกับการ์ดนั้น
+     (ห้ามคิดสูตรเอง) — กะที่ stamp แล้วยังใช้ค่า stamp เสมอ · จอต้องเขียนว่ารวมค่าสดกี่กะ */
+  const liveCalcOf = useCallback((sess) => {
+    if (!sess || sess.status === 'closed') return null;
+    const os = tdOrdersBySession[sess.id] || [];
+    const defs = tdDefects.filter(d => d.session_id === sess.id);
+    return computeLiveOee({
+      session: sess, orders: os, downtimes: tdDowntimes.filter(d => d.session_id === sess.id),
+      ctMap: tdCtMap, ngQty: sumDefectQty(defs, 'line'), workDate: tdDate,
+      ngForP: ngByMatFrom(defs, os), pairMap: tdPairMat, affectsLanes: affectsLn,
+      nowMs: lastUpdate?.getTime?.() || Date.now(),
+      parallelN: parallelUnitsOf(flowByLine[sess.line_name]),
+      parallelCap: flowModeOf(flowByLine[sess.line_name]?.flow_mode) === 'parallel_machine'
+        ? parallelUnitsOf(flowByLine[sess.line_name]) : 1,
+      breakPolicies: breakPols || [],
+      processType: sess.dr_products?.process_type || null,
+    });
+  }, [tdOrdersBySession, tdDowntimes, tdDefects, tdCtMap, tdPairMat, tdDate, lastUpdate, flowByLine, breakPols, affectsLn]);
+  /* แถวสด (รูปเดียวกับแถว calcOEE ให้ wavg/wLoad/wRun/wProd ใช้ได้ตรงๆ) — ฐานน้ำหนัก = เวลาที่เดินมาแล้ว ไม่ใช่ทั้งกะ */
+  const tdLiveRows = useMemo(() => {
+    const out = {};
+    for (const r of tdRows) {
+      if (r.calcOEE != null || r.status === 'closed') continue;
+      const lv = liveCalcOf(r);
+      if (!lv || lv.oee == null) continue;
+      out[r.id] = { ...r, calcA: lv.A, calcP: lv.P, calcQ: lv.Q, calcOEE: lv.oee,
+        shift_min: lv.elapsedMin, plannedMin: lv.plannedDtMin, totalQty: lv.produced, ngQty: lv.ngQty, _live: true };
+    }
+    return out;
+  }, [tdRows, liveCalcOf]);
+  const tdLiveCount = Object.keys(tdLiveRows).length;
+
   const tdKpi = useMemo(() => {
     // งานคู่ RH/LH (pair_mat_no) นับเป็น 1 คู่/stroke — เฉพาะกะที่มีคู่จริงถึงคำนวณจาก prod_orders ที่เหลือใช้ค่า stamped เดิม
     const hasPairIn = os => os.some(o => o.mat_no && tdPairMat[o.mat_no] && os.some(x => x.mat_no === tdPairMat[o.mat_no]));
@@ -683,6 +717,8 @@ export default function OEEAnalytics() {
     };
     // OOE/TEEP ของวันนี้ — ฐาน: OOE = เวลากะทั้งหมด · TEEP = ปฏิทิน 24 ชม. ของไลน์ที่เปิดกะวันนี้
     const tdOee = wavg(tdRows, r => r.calcOEE, wLoad);
+    // A/P/Q/OEE รวม = กะปิดแล้ว (stamp) + กะที่กำลังเดิน (สด) · OOE/TEEP/OEE จริง ยังคิดจากกะปิดเท่านั้น (ต้องรู้เวลาทั้งกะ)
+    const kRows = tdRows.map(r => tdLiveRows[r.id] || r);
     const tdValid = tdRows.filter(r => r.calcOEE != null && (Number(r.shift_min) || 0) > 0);
     let tdNet = 0, tdShift = 0, tdBreak = 0, tdPlanned = 0;
     const tdLineSet = new Set();
@@ -709,8 +745,8 @@ export default function OEEAnalytics() {
         : null;
     }).filter(Boolean);
     return {
-      oee: tdOee, a: wavg(tdRows, r => r.calcA, wLoad),
-      p: wavg(tdRows, r => r.calcP, wRun), q: wavg(tdRows, r => r.calcQ, wProd),
+      oee: wavg(kRows, r => r.calcOEE, wLoad), a: wavg(kRows, r => r.calcA, wLoad),
+      p: wavg(kRows, r => r.calcP, wRun), q: wavg(kRows, r => r.calcQ, wProd),
       strictOee: wavg(strictRows, r => r.oee, r => r.w),
       strictGapPts: wavg(strictRows.filter(r => r.gap != null), r => r.gap, r => r.w),
       ooe:  tdOee != null && tdShift > 0 ? tdR1(tdOee * (tdNet / tdShift)) : null,
@@ -722,11 +758,16 @@ export default function OEEAnalytics() {
       totalDT: tdDowntimesScoped.reduce((s, d) => s + dtLineMin(d, tdLaneBy[d.session_id] || 1, { affectsBy: affectsLn }), 0),
       totalShiftMin: tdSessionsTeamFiltered.reduce((s, r) => s + (r.shift_min || 0), 0),
     };
-  }, [tdRows, tdDowntimesScoped, tdSessionsTeamFiltered, tdOrdersBySession, tdPairMat, breakPols, tdLaneBy, affectsLn]);
+  }, [tdRows, tdLiveRows, tdDowntimesScoped, tdSessionsTeamFiltered, tdOrdersBySession, tdPairMat, breakPols, tdLaneBy, affectsLn]);
 
   const tdHistoryGrouped = useMemo(() => {
     const map = {};
     for (const r of tdHistory) { (map[r.work_date] ||= []).push(r); }
+    // แท่งของวันที่เลือก = กะปิดแล้ว + กะที่กำลังเดิน (ค่าสด) — ไม่งั้นแท่งวันนี้ว่างตลอดจนปิดกะ
+    for (const lv of Object.values(tdLiveRows)) {
+      (map[tdDate] ||= []).push({ oee: lv.calcOEE, oee_a: lv.calcA, oee_p: lv.calcP, oee_q: lv.calcQ,
+        shift_min: lv.shift_min, plannedMin: lv.plannedMin, actual_qty: lv.totalQty, qty_ng: lv.ngQty });
+    }
     const days = [];
     for (let i = 9; i >= 0; i--) {
       const key = dateStrAdd(tdDate, -i);
@@ -740,7 +781,7 @@ export default function OEEAnalytics() {
       });
     }
     return days;
-  }, [tdHistory, tdDate]);
+  }, [tdHistory, tdDate, tdLiveRows]);
 
   /* วันนี้เทียบ "ค่าเฉลี่ย 9 วันก่อนหน้า" — ตอบคำถามที่คนอ่านกราฟ 10 วันแล้วต้องกวาดตาเอาเอง
      ⚠️ ต้องถ่วงน้ำหนักด้วย wavg เหมือนทุกที่ (กฎ CLAUDE.md: ห้าม mean-of-percentages / mean-of-means
@@ -776,30 +817,8 @@ export default function OEEAnalytics() {
   const tdLiveCalc = useMemo(() => {
     if (!tdLiveSession || tdLiveSession.status === 'closed') return null;
     if (tdLiveRowStamped?.calcOEE != null) return null;
-    const os = tdOrdersBySession[tdLiveSession.id] || [];
-    const dl = tdDowntimes.filter(d => d.session_id === tdLiveSession.id);
-    // ⚠️ Q ไม่นับงานทดลอง — ยอดเต็มยังใช้ในพาเรโต/มูลค่าของเสียตามปกติ
-    const ng = sumDefectQty(tdDefects.filter(d => d.session_id === tdLiveSession.id), 'line');
-    return computeLiveOee({
-      session: tdLiveSession, orders: os, downtimes: dl, ctMap: tdCtMap, ngQty: ng, workDate: tdDate,
-      // ⚠️ %P นับ "ทุกชิ้นที่เครื่องทำออกมา" (รวมงานทดลอง/ของสงสัย) — คนละชุดกับ ng ของ %Q ข้างบน
-      ngForP: ngByMatFrom(tdDefects.filter(d => d.session_id === tdLiveSession.id), os),
-      // งานคู่ gang die / RH-LH = 1 shot ได้ 2 ชิ้น — ยุบก่อนคิดเวลามาตรฐานของ %P (pairTotals.js)
-      pairMap: tdPairMat,
-      // 🔀 ของกลางของไลน์ขนาน (คอนเวเยอร์) ต้องไม่ถูกหารเลน — machines.affects_lanes
-      affectsLanes: affectsLn,
-      nowMs: lastUpdate?.getTime?.() || Date.now(),
-      // ไลน์เครื่องขนาน (LASER-345/789 N=3): DT ที่ระบุเครื่องหักแค่ 1/N — สูตรเดียวกับตอนปิดกะ
-      parallelN: parallelUnitsOf(flowByLine[tdLiveSession.line_name]),
-      // เพดานเครื่องขนานสำหรับตัวหาร P (ต้องส่งเหมือน /factory-map ไม่งั้น 2 จอโชว์คนละเลข)
-      parallelCap: flowModeOf(flowByLine[tdLiveSession.line_name]?.flow_mode) === 'parallel_machine'
-        ? parallelUnitsOf(flowByLine[tdLiveSession.line_name]) : 1,
-      /* ⚠️ นโยบายพัก — ขาดไปแล้ว A/P สดของกะที่ยังไม่ปิด จะไม่ตรงกับค่าที่ stamp ตอนปิดกะ
-         (แถวเดียวกันบนจอนี้จะกระโดดตอนกะปิด) · 2026-09-14 */
-      breakPolicies: breakPols || [],
-      processType: tdLiveSession.dr_products?.process_type || null,
-    });
-  }, [tdLiveSession, tdLiveRowStamped, tdOrdersBySession, tdDowntimes, tdDefects, tdCtMap, tdPairMat, tdDate, lastUpdate, flowByLine, breakPols, affectsLn]);
+    return liveCalcOf(tdLiveSession);
+  }, [tdLiveSession, tdLiveRowStamped, liveCalcOf]);
   const isLiveCalc = Boolean(tdLiveCalc);
   const tdLiveRow = useMemo(() => tdLiveCalc
     ? { calcA: tdLiveCalc.A, calcP: tdLiveCalc.P, calcQ: tdLiveCalc.Q, calcOEE: tdLiveCalc.oee }
@@ -1472,6 +1491,11 @@ export default function OEEAnalytics() {
           {/* 1. OEE Overview */}
           <div style={s.section}>
             <div style={s.title}>OEE OVERVIEW — {tdScopeLabel}</div>
+            {tdLiveCount > 0 && (
+              <div style={{ fontSize: 11, color: 'var(--muted)', margin: '-4px 0 8px' }}>
+                🟢 รวมค่าสดของ {tdLiveCount} กะที่ยังไม่ปิด (คิดถึงตอนนี้ · ตัวเลขจริงยืนยันตอนปิดกะ) · OOE / TEEP / OEE จริง ด้านล่างนับเฉพาะกะที่ปิดแล้ว
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', alignItems: 'center' }}>
               <div style={{ position: 'relative', width: 168, height: 168, flexShrink: 0 }}>
                 <GaugeRing value={tdKpi.oee} color={oeeColor(tdKpi.oee ?? 0)} />

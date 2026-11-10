@@ -96,6 +96,7 @@ import { uploadOpts } from '../utils/storageUpload';
 import { acceptImageFile } from '../utils/acceptImageFile';
 import { DeleteButton } from '../components/IconButton';
 import { MtnPrPanel, MtnGlMaster } from '../components/MtnPurchase';
+import MtnOutsourcePanel from '../components/MtnOutsource';
 import MachineRepairHistory from '../components/MachineRepairHistory';
 import { prPlacement, assignedTechsOf, joinTechs, prQueueStateOf, PR_QUEUE_META } from '../utils/mtnPurchase';
 /* ตัวเลือกตัวกรองงาน PR — ลำดับตามขั้นงานจริงที่ทีม MTN เขียนมา (02/11):
@@ -2854,6 +2855,14 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
       {(Number(o.current_step) || 1) >= 2 && (
         <MtnPrPanel order={o} parts={parts} fullName={fullName} teamKey={teamKeyOf(dept) || null}
           canEdit={isMoOpen(o) && (canEditStep(2) || canEditStep(3))} onOrderChanged={onReload} />
+      )}
+      {/* 🔧 ของที่ถอดออกมาส่งซ่อมนอกเพื่อเอากลับมาเป็นสแปร์ (09/11)
+          🔴 `canEdit` **ไม่ผูกกับ `isMoOpen`** — ต่างจากแผง PR ข้างบนโดยตั้งใจ:
+             ของยังอยู่ข้างนอกหลังใบปิดคือ "เคสปกติ" ของฟีเจอร์นี้ (ใส่ของสำรองแล้วเครื่องเดินได้
+             ⇒ ปิดใบเลย) ถ้าล็อกตามใบ = กดรับของเข้าสต็อกไม่ได้ตลอดกาล */}
+      {(Number(o.current_step) || 1) >= 2 && (
+        <MtnOutsourcePanel order={o} parts={parts} fullName={fullName}
+          canEdit={canEditStep(2) || canEditStep(3)} onStockChanged={onReload} />
       )}
       {canSendVendor(o) && canEditStep(3) && (
         <div style={{ marginBottom: 10, padding: '8px 11px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border)' }}>

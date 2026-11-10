@@ -125,6 +125,31 @@ export default function AuditLogViewer({ client, tables, limit = 300, intro, fmt
                 {r.actor || '— (ระบบ/migration)'} · {fmtDT(r.changed_at)}
               </span>
             </div>
+            {/* 📤 ปิดใบข้ามไลน์ (03/11) — ไม่มีการกดยืนยัน ⇒ แถวนี้คือหลักฐานชิ้นเดียว
+                ต้องตอบได้ครบว่า "ยอดเข้าไลน์ไหน กะไหน · ใครกดจากจอของไลน์ไหน"
+                หัวแถวบอกแค่ prod_no (rowLabel) ⇒ ไม่กางรายละเอียด = log มีแต่ตรวจไม่ได้ */}
+            {r.action === 'CROSS_LINE_CLOSE' && (
+              <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7 }}>
+                <div>
+                  <span style={{ color: 'var(--muted)' }}>ยอดเข้า:</span>{' '}
+                  <b>{r.new_data?.owner_line || '(ไม่รู้ไลน์)'}</b>
+                  {r.new_data?.shift ? ` · ${r.new_data.shift === 'night' ? '🌙 กะดึก' : '☀️ กะเช้า'}` : ''}
+                  {r.new_data?.work_date ? ` · ${String(r.new_data.work_date).slice(0, 10)}` : ''}
+                  {r.new_data?.qty_ok != null ? ` · ${r.new_data.qty_ok} ชิ้น` : ''}
+                </div>
+                <div>
+                  <span style={{ color: 'var(--muted)' }}>ปิดจากจอของไลน์:</span>{' '}
+                  <b style={{ color: 'var(--amber)' }}>{r.new_data?.closed_from_line || '(ไม่ระบุ)'}</b>
+                  {/* ลำดับบังคับทั้งระบบ: Part Name → MAT SAP (แถว audit ไม่มี part_no เก็บไว้) */}
+                  {(r.new_data?.part_name || r.new_data?.mat_no) ? (
+                    <span style={{ color: 'var(--muted)' }}>
+                      {r.new_data?.part_name ? ` · ${r.new_data.part_name}` : ''}
+                      {r.new_data?.mat_no ? <> · MAT <span style={{ fontFamily: 'var(--mono, monospace)' }}>{r.new_data.mat_no}</span></> : null}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            )}
             {r.action === 'UPDATE' && !!fields.length && (
               <div style={{ marginTop: 5, display: 'grid', gap: 2 }}>
                 {fields.map(f => (
