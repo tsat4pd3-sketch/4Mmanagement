@@ -9696,6 +9696,75 @@ test('🔇 notify-rollup-never-for-call-mtn — ห้ามยุบใบ "เ
   }
 });
 
+test('🔀 insp-team-not-jig-only — ใบตรวจต้องแยกด้วยทีม ไม่ใช่ jig_id ล้วน', () => {
+  /* 🔴 10/11 คำสั่ง user: "การตรวจ am/pm มาทับกัน ตอนนี้อ้างอิงแค่ id ของอุปกรณ์ มันปนกัน"
+     เครื่องเดียวมี checklist ทั้ง AM และ PM เป็นเรื่องปกติของ TPM — วัดจริง DR 6 เครื่อง / 112 ใบ
+     ดึงใบด้วย `jig_id` ล้วน = ได้ใบของทั้ง 2 ทีมปนกัน และถ้ามี limit ทีมที่ตรวจถี่กว่าจะกินช่อง
+     จนใบของอีกทีมหลุดหาย (PF-H101: AM 22 ใบ · DIE MTN 1 ใบ — ช่างเคยเห็นใบตัวเอง 1 ใน 23)
+     ⇒ ทุกคิวรี inspections ที่กรองด้วย jig_id ต้องมีแกนทีมกำกับในฟังก์ชันเดียวกัน
+     📄 src/utils/pmTeams.js §1 อุปกรณ์ ตรวจได้หลายทีม · docs/modules/am-pm-linkage-audit.md */
+  const TEAM_AXIS = /checklist_id|amClIds|clDept|teamsKnown|isAmTeam|amCls/;
+  /* ยกเว้นโดยเจตนา: เด็คสรุปรายเดือนรายงาน "PM/AM ที่พบผิดปกติ" รวมกันทั้ง 2 ฝั่งโดยตั้งใจ
+     (หัวข้อบนสไลด์เขียน PM/AM) — จะแยกต้องให้ user สั่ง เพราะเปลี่ยนเนื้อรายงานผู้บริหาร */
+  const ALLOW = new Set(['src/lib/monthlyReviewPptx.js']);
+  const files = [];
+  for (const dir of ['src', 'supabase/functions']) walk(join(ROOT, dir), ['.js', '.jsx', '.ts'], files);
+  let checked = 0;
+  for (const f of files) {
+    const rel = relative(ROOT, f);
+    if (ALLOW.has(rel) || /__tests__/.test(rel) || !/\.(js|jsx|ts)$/.test(rel)) continue;
+    const src = stripComments(readFileSync(f, 'utf8'));
+    if (!/from\(['"]inspections['"]\)/.test(src)) continue;
+    const lines = src.split('\n');
+    lines.forEach((ln, i) => {
+      if (!/\.(eq|in)\(['"]jig_id['"]/.test(ln)) return;
+      /* ใบตรวจหรือเปล่า — ดูย้อนขึ้นไปว่าเป็นคิวรี inspections จริง */
+      const back = lines.slice(Math.max(0, i - 4), i + 1).join('\n');
+      if (!/from\(['"]inspections['"]\)/.test(back)) return;
+      checked++;
+      const win = lines.slice(Math.max(0, i - 25), i + 25).join('\n');
+      assert.ok(TEAM_AXIS.test(win),
+        `\n\n❌ ${rel}:${i + 1} — ดึงใบตรวจด้วย jig_id โดยไม่มีแกนทีมกำกับ\n`
+        + '   ⇒ เครื่องที่มีทั้ง checklist AM และ PM จะได้ใบของทั้ง 2 ทีมปนกัน แยกไม่ออกว่าใบไหนของใคร\n'
+        + '   แก้ยังไง: กรองด้วย checklist_id ของทีมนั้น (ถาม checklists.department ก่อนดึงใบ)\n'
+        + '   หรือใช้ splitInspByTeam() จาก src/utils/pmTeams.js แล้วติดป้าย inspTeamLabel()\n');
+    });
+  }
+  assert.ok(checked >= 1,
+    `\n\n❌ หาคิวรี inspections ที่กรองด้วย jig_id ไม่เจอเลย (${checked}) — ด่านนี้วัดอะไรไม่ได้แล้ว\n`
+    + '   ถ้าย้ายโค้ด/เปลี่ยนชื่อคอลัมน์จริง ต้องแก้ด่าน ไม่ใช่ปล่อยให้ผ่านเงียบ\n');
+});
+
+test('🔢 cp-number-not-tied-to-pin — เลขข้อ/โหมดทีละข้อ ห้ามผูกกับการปักหมุด', () => {
+  /* 🔴 10/11 feedback หน้างาน (user: "ทำไมแพทเทินไม่เหมือนกัน · เห็นปนกันไปหมด")
+     หน้า /pm-check-data เคยผูก 2 อย่างนี้ไว้กับ `x_pos` (พิกัดหมุดบนรูป):
+       ① เลขข้อในแถว `{cp.x_pos != null && <span>{idx+1}</span>}` ⇒ เครื่องที่ยังไม่ปักหมุด
+          (RB-109 ปัก 0/11) ทุกแถวไม่มีเลข ทั้งที่ชิป "ยังไม่ตรวจ" · สูตร "ข้อ N" · ปุ่มข้อก่อน/ถัดไป
+          อ้างเลขนี้หมด ⇒ จับคู่ไม่ได้ว่าแถวไหนคือข้อไหน
+       ② โหมดตรวจทีละข้อ `focusOn = ... && allPinned` ⇒ เครื่องที่ปักไม่ครบตกไปใช้ลิสต์ยาว
+          = คนละหน้าตากับเครื่องข้างๆ ทั้งที่เป็นใบตรวจเหมือนกัน
+     🔑 การปักหมุดจำเป็นแค่กับ "แตะหมุดบนรูปเพื่อเลือกข้อ" — ไม่ใช่กับเลขข้อหรือตัวโหมด */
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/PMCheckData.jsx'), 'utf8'));
+
+  assert.ok(!/x_pos\s*!=\s*null\s*&&\s*<span[^>]*>\{idx \+ 1\}/.test(src),
+    '\n\n❌ เลขข้อในแถวถูกผูกกับ `cp.x_pos` อีกแล้ว — เครื่องที่ยังไม่ปักหมุดจะไม่มีเลขข้อเลย\n'
+    + '   ชิป/สูตร/ปุ่มข้อก่อน-ถัดไป อ้างเลขนี้ทั้งหมด ⇒ คนตรวจจับคู่แถวกับเลขไม่ได้\n');
+
+  const m = src.match(/const focusOn = [^\n]*/);
+  assert.ok(m, '\n\n❌ หา `const focusOn =` ใน PMCheckData.jsx ไม่เจอ — ด่านนี้วัดอะไรไม่ได้แล้ว\n');
+  assert.ok(!/allPinned/.test(m[0]),
+    `\n\n❌ โหมดตรวจทีละข้อกลับไปบังคับว่าต้องปักหมุดครบ: ${m[0].trim()}\n`
+    + '   ⇒ เครื่องที่ปักไม่ครบจะได้หน้าตาคนละแบบกับเครื่องอื่น (user สั่งให้แพทเทินเหมือนกัน 10/11)\n'
+    + '   ใช้ allPinned ได้เฉพาะกับ "แตะหมุดบนรูป" และข้อความอธิบาย ไม่ใช่กับตัวโหมด\n');
+
+  /* รูปของจุดตรวจขึ้นจอใหญ่ได้ แต่ห้ามวาดหมุดทับ (พิกัดหมุดเป็น % ของรูปเครื่อง คนละรูป) */
+  assert.ok(/onCpPhoto/.test(src),
+    '\n\n❌ ไม่มีทางดูรูปของจุดตรวจบนจอใหญ่แล้ว — รูปใหญ่จะค้างที่เฟรมแรกของเครื่องเหมือนเดิม\n');
+  assert.ok(/imgBox && !onCpPhoto/.test(src),
+    '\n\n❌ ชั้นหมุดไม่ได้กันออกตอนโชว์รูปของจุดตรวจ\n'
+    + '   ⇒ หมุดจะถูกวาดทับรูปคนละรูปด้วยพิกัดของรูปเครื่อง = ชี้ผิดจุด (กฎ §5.1 UI-CONVENTIONS)\n');
+});
+
 test('🛡️ master-cache-auth-gate — ผลที่โหลดตอนไม่ได้ login ห้ามลง cache', () => {
   /* เคสจริง 10/11 (หน้างาน "โหลดไลน์ผลิต dropdown ไม่ขึ้น"): log Main 24 ชม. — `production_lines`
      อ่านแบบ anon 122 ครั้ง/28 IP ได้ 200 + 0 แถว ⇒ ลิสต์ว่างถูกจด 4 ชม. ⇒ คน login ถัดไป dropdown ว่าง

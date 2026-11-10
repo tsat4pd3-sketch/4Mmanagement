@@ -45,6 +45,46 @@ export function teamEquipTypeOf(key) {
 }
 export function teamKind(key) { return teamKindOf(key) === 'am' ? AM_KIND : PM_KIND }
 
+/* ══ 🔀 1 อุปกรณ์ ตรวจได้หลายทีม — ตัวแยกคือ "checklist ของใบ" ไม่ใช่ `jig_id` ══  2026-11-10
+   คำสั่ง user: *"การตรวจ am/pm มาทับกัน ตอนนี้อ้างอิงแค่ id ของอุปกรณ์ มันปนกัน"*
+
+   🔴 **เครื่องเดียวมีทั้งใบ AM และใบ PM เป็นเรื่องปกติของ TPM** (พนักงานตรวจเองต้นกะ +
+      ช่างทำ PM ตามรอบ บนเครื่องเดียวกัน) — วัดจริง DR 10/11: **6 เครื่อง** มี checklist
+      ทั้ง 2 ฝั่ง (PF-H101/H102/H201 → production + die_maintenance · LS-10/RB-55/RB-96 →
+      production + maintenance) รวม 112 ใบตรวจ
+   ⇒ ใครที่ดึงใบตรวจด้วย `jig_id` ล้วน จะได้ใบของทั้ง 2 ทีมมาปนกันโดยไม่มีอะไรบอกว่าใบไหนของใคร
+      และถ้ามี `limit` ด้วย **ทีมที่ตรวจถี่กว่าจะกินช่องจนใบของอีกทีมหลุดหายทั้งหมด**
+      (RB-55: AM 40 ใบ vs ช่าง 0 ใบ · PF-H101: AM 22 vs ช่าง 1 → limit 30 = ใบช่างหาย)
+
+   🔴 **ใบที่บอกทีมไม่ได้ = `unknown` ห้ามเดาว่าเป็นทีมที่กำลังดู** — เดาแล้วใบของช่าง
+      จะถูกนับเป็นงาน AM (หรือกลับกัน) เงียบๆ ทั้งตัวนับและสายอนุมัติ
+*/
+
+/**
+ * แยกใบตรวจของ "อุปกรณ์ชิ้นเดียว" ออกตามทีมเจ้าของใบ
+ * @param {Array<{id?:string, checklist_id?:string|null}>} rows ใบตรวจ
+ * @param {{ clDeptById?: Record<string,string>, team?: string|null }} opt
+ *   clDeptById = checklist_id → department (ต้องโหลด **ก่อน** ดึงใบ) · team = ทีมที่กำลังดู
+ * @returns {{ mine:Array, others:Array, unknown:Array, otherTeams:string[] }}
+ *   team ว่าง/ไม่ส่ง = ไม่แยก (ทุกใบที่รู้ทีมไปอยู่ `mine` — พฤติกรรมเดิม)
+ */
+export function splitInspByTeam(rows, { clDeptById = {}, team = null } = {}) {
+  const mine = [], others = [], unknown = [], otherSet = new Set()
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const dept = r?.checklist_id ? clDeptById[r.checklist_id] : undefined
+    if (!dept) { unknown.push(r); continue }          // ไม่รู้ทีม — ห้ามโยนเข้า mine
+    if (!team || dept === team) mine.push(r)
+    else { others.push(r); otherSet.add(dept) }
+  }
+  return { mine, others, unknown, otherTeams: [...otherSet] }
+}
+
+/** ป้ายบอกที่มาของใบตรวจใบหนึ่ง เช่น "DIE MTN · PM" — ใช้ตอนโชว์ใบของหลายทีมในลิสต์เดียว */
+export function inspTeamLabel(dept) {
+  if (!dept) return 'ไม่รู้ทีม'
+  return `${teamLabel(dept)} · ${teamKind(dept).short}`
+}
+
 /** สิทธิ์ที่ต้องมีเพื่อ "บันทึกผลตรวจ" ของทีมนี้ — AM กับ PM แยกแกนกัน (migration 20260806_am_pm_permission_axis)
  *  ใช้คู่กับ can(...) เช่น: const [res, act] = recordPermFor(dept); can(res, act, role) */
 export const recordPermFor = (key) => (isAmTeam(key) ? ['am', 'record'] : ['pm', 'record'])

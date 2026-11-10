@@ -24,7 +24,7 @@ import { fetchCategories, fetchCheckingMethods, categoryColor, indexByCode } fro
 import PointZoom, { PointThumb } from '../components/inspect/PointZoom'
 import useImgBox from '../utils/useImgBox'
 import CalloutPin from '../components/CalloutPin'
-import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam } from '../utils/pmTeams'
+import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam, splitInspByTeam, inspTeamLabel } from '../utils/pmTeams'
 import { MTN_TEAMS, deptNameOf, teamKeyOf, teamForEquipmentKind, teamsForUser, canWriteTeam, teamBlockText } from '../utils/mtnTeams'
 import { checkWriteRows } from '../utils/dbWrite';
 import NoticeBar from '../components/NoticeBar';
@@ -190,7 +190,24 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
     const t = setInterval(() => setFrameIdx(i => (i + 1) % frames.length), 650)
     return () => clearInterval(t)
   }, [playing, spin, frames.length])
-  const { imgRef, imgBox, recalc } = useImgBox([cur?.url])
+
+  /* 🔍 รูปของ "จุดตรวจ" ขึ้นจอใหญ่  (2026-11-10 · feedback หน้างาน)
+     เดิมรูปเล็กในช่องรายการเป็นทางเดียวที่จะเห็นรูปของจุดนั้น (ต้องกดเปิด overlay)
+     และรูปใหญ่ **ค้างอยู่ที่เฟรมแรกของเครื่องเสมอ** เมื่อจุดนั้นยังไม่ได้ปักหมุด
+     (เอฟเฟกต์ด้านล่าง return ทิ้งเมื่อ `x_pos == null`) ⇒ เลือกข้อไหนรูปก็ไม่เปลี่ยน
+     🔴 **ห้ามวาดหมุดทับรูปของจุดตรวจ** — พิกัดหมุดเป็น % ของ "รูปเครื่อง" คนละรูปกัน
+        (กฎ §5.1 UI-CONVENTIONS: balloon ต้องผูกกับรูปที่มันถูกวาง `image_id`) */
+  const activeCp = checkpoints.find(c => c.id === activeCpId) || null
+  const cpPhotoUrl = activeCp?.image_path ? getPublicUrl(activeCp.image_path) : null
+  const cpPinned = activeCp?.x_pos != null && activeCp?.y_pos != null
+  const [showCpPhoto, setShowCpPhoto] = useState(false)
+  /* ปักหมุดแล้ว = โชว์รูปเครื่องก่อน (ได้เห็นว่าจุดอยู่ตรงไหน) · ยังไม่ปัก = โชว์รูปของจุดเลย
+     (ไม่งั้นรูปใหญ่ไม่มีอะไรเกี่ยวกับข้อที่กำลังตรวจ) · ไม่มีรูปของจุด = รูปเครื่องเหมือนเดิม */
+  useEffect(() => { setShowCpPhoto(!!cpPhotoUrl && !cpPinned) }, [activeCpId, cpPhotoUrl, cpPinned])
+  const onCpPhoto = !!(showCpPhoto && cpPhotoUrl)
+  const shownUrl = onCpPhoto ? cpPhotoUrl : cur?.url
+
+  const { imgRef, imgBox, recalc } = useImgBox([shownUrl])
   useEffect(() => { frames.forEach(f => { if (f.url) { const im = new Image(); im.src = f.url } }) }, [frames])
 
   const firstId0 = frames[0]?.id
@@ -217,7 +234,7 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
   const frameShimPins = shimPins.filter(sp => (sp.pin.imageId ?? firstId) === cur?.id)
 
   const pointerDown = (e) => {
-    if (!spin) return
+    if (!spin || onCpPhoto) return      // กำลังดูรูปของจุดตรวจ — ลากแล้วหมุนเฟรมที่มองไม่เห็นอยู่ = งง
     setPlaying(false) // ผู้ใช้ลากเอง → หยุด auto-play
     drag.current = { startX: e.clientX, startIdx: frameIdx, moved: false }
     const move = (ev) => {
@@ -242,9 +259,34 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
             เกินครึ่ง (ที่เหลือต้องเป็นของรายการตรวจ) · คำอธิบายเดิมยังอยู่ครบในโหมดปกติ */}
       <div ref={boxRef} onPointerDown={pointerDown}
         style={{ position: 'relative', userSelect: 'none', touchAction: 'none', borderRadius: 'var(--r-md)', overflow: 'hidden', border: '1px solid var(--border)', cursor: spin ? 'grab' : 'default', width: 'fit-content', maxWidth: '100%', margin: '0 auto', background: 'var(--bg2)' }}>
-        <img ref={imgRef} src={cur?.url} alt="" draggable={false} onLoad={recalc} style={{ display: 'block', maxWidth: '100%', maxHeight: `min(${maxH}px, 76vh)`, objectFit: 'contain', background: 'var(--bg2)' }} />
-        {/* layer = กล่องรูปจริง (หัก letterbox) — pin ใช้ % ของ layer นี้ */}
-        {imgBox && (
+        <img ref={imgRef} src={shownUrl} alt="" draggable={false} onLoad={recalc} style={{ display: 'block', maxWidth: '100%', maxHeight: `min(${maxH}px, 76vh)`, objectFit: 'contain', background: 'var(--bg2)' }} />
+        {/* ป้ายบอกว่ากำลังดูรูปอะไรอยู่ + ทางกลับ — ไม่งั้นคนแยกไม่ออกว่ารูปนี้ของเครื่องหรือของจุด */}
+        {onCpPhoto && (
+          <div style={{ position: 'absolute', left: 8, top: 8, display: 'flex', gap: 6, alignItems: 'center', zIndex: 3 }}>
+            <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 9px', borderRadius: 999,
+                           background: 'var(--accent)', color: 'var(--accent-ink)' }}>
+              🔍 รูปของข้อ {(cpIndex[activeCp.id] ?? 0) + 1}
+            </span>
+            {frames.length > 0 && (
+              <button type="button" onPointerDown={e => e.stopPropagation()} onClick={() => setShowCpPhoto(false)}
+                style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, cursor: 'pointer',
+                         border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--text2)' }}>
+                ดูรูปเครื่อง
+              </button>
+            )}
+          </div>
+        )}
+        {!onCpPhoto && cpPhotoUrl && (
+          <button type="button" onPointerDown={e => e.stopPropagation()} onClick={() => setShowCpPhoto(true)}
+            style={{ position: 'absolute', left: 8, top: 8, zIndex: 3, fontSize: 11, fontWeight: 700, padding: '3px 9px',
+                     borderRadius: 999, cursor: 'pointer', border: '1px solid var(--accent)',
+                     background: 'var(--card)', color: 'var(--accent)' }}>
+            🔍 ดูรูปของข้อ {(cpIndex[activeCp.id] ?? 0) + 1}
+          </button>
+        )}
+        {/* layer = กล่องรูปจริง (หัก letterbox) — pin ใช้ % ของ layer นี้
+            🔴 ตอนโชว์รูปของจุดตรวจ ห้ามวาดหมุด (พิกัดเป็นของรูปเครื่อง คนละรูป) */}
+        {imgBox && !onCpPhoto && (
           <div style={{ position: 'absolute', left: imgBox.ox, top: imgBox.oy, width: imgBox.rw, height: imgBox.rh, pointerEvents: 'none' }}>
             {framePins.map(c => {
               const st = cpCheckStatus(c, results[c.id])
@@ -279,17 +321,21 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
           ป้ายพวกนี้กินพื้นที่รูปไปเกือบครึ่ง แล้วบังจุดที่ต้องตรวจพอดี (จุดตรวจอยู่กลางรูปบ่อย) */}
       {spin && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', marginTop: compact ? 6 : 8 }}>
-          <button onClick={e => { e.stopPropagation(); setPlaying(p => !p) }} title={playing ? 'หยุดหมุน' : 'หมุนอัตโนมัติ'}
+          <button onClick={e => { e.stopPropagation(); setShowCpPhoto(false); setPlaying(p => !p) }} title={playing ? 'หยุดหมุน' : 'หมุนอัตโนมัติ'}
             style={{ background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '3px 11px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
             {playing ? 'หยุด' : 'หมุนเอง'}
           </button>
           <div style={{ display: 'flex', gap: 5 }}>
             {frames.map((f, i) => (
-              <button key={f.id} onClick={() => setFrameIdx(i)} title={`เฟรม ${i + 1}`}
+              <button key={f.id} onClick={() => { setShowCpPhoto(false); setFrameIdx(i) }} title={`เฟรม ${i + 1}`}
                 style={{ width: 10, height: 10, borderRadius: '50%', border: 'none', cursor: 'pointer', padding: 0, background: i === frameIdx ? 'var(--accent)' : 'var(--border2)' }} />
             ))}
           </div>
-          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{frameIdx + 1}/{frames.length} · ลากซ้าย-ขวาบนรูปเพื่อหมุน</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+            {onCpPhoto
+              ? 'กำลังดูรูปของข้อที่เลือก — กดจุดด้านบนเพื่อกลับไปรูปเครื่อง'
+              : `${frameIdx + 1}/${frames.length} · ลากซ้าย-ขวาบนรูปเพื่อหมุน`}
+          </span>
         </div>
       )}
       {/* 🔑 คำอธิบายสัญลักษณ์ — หมุดต่างกันที่ "ทรง + สี" ต้องบอกบนจอ ไม่งั้นคนเดาเอาเอง */}
@@ -335,7 +381,11 @@ function VariableRow({ cp, idx, r, onChange, methodIndex, calcText }) {
   return (
     <div style={S.cpRow(status)}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        {cp.x_pos != null && <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
+        {/* 🔢 เลขข้อต้องขึ้นเสมอ (2026-11-10) — เดิมผูกกับ `x_pos` ⇒ เครื่องที่ยังไม่ปักหมุด
+            ทุกแถวไม่มีเลขเลย ทั้งที่ชิป "ยังไม่ตรวจ" ด้านบน · สูตรคำนวณ ("ข้อ N") · ปุ่มข้อก่อน/ถัดไป
+            อ้างเลขนี้ทั้งหมด ⇒ จับคู่ไม่ได้ว่าแถวไหนคือข้อไหน (user: "เห็นปนกันไปหมด")
+            หมุดบนรูปเป็นคนละเรื่อง — ไม่ปักก็ยังเป็นข้อที่ N ของใบอยู่ดี */}
+        <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>
         {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}{cp.axis && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 'var(--r-xs)', padding: '0 4px' }}>{cp.axis}</span>}</p>
         <CpImage cp={cp} />
@@ -381,7 +431,11 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
   return (
     <div style={S.cpRow(null)}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {cp.x_pos != null && <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
+        {/* 🔢 เลขข้อต้องขึ้นเสมอ (2026-11-10) — เดิมผูกกับ `x_pos` ⇒ เครื่องที่ยังไม่ปักหมุด
+            ทุกแถวไม่มีเลขเลย ทั้งที่ชิป "ยังไม่ตรวจ" ด้านบน · สูตรคำนวณ ("ข้อ N") · ปุ่มข้อก่อน/ถัดไป
+            อ้างเลขนี้ทั้งหมด ⇒ จับคู่ไม่ได้ว่าแถวไหนคือข้อไหน (user: "เห็นปนกันไปหมด")
+            หมุดบนรูปเป็นคนละเรื่อง — ไม่ปักก็ยังเป็นข้อที่ N ของใบอยู่ดี */}
+        <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>
         {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}</p>
         <CpImage cp={cp} />
@@ -416,7 +470,11 @@ function MeasureRow({ cp, idx, r, onChange, methodIndex }) {
   return (
     <div style={S.cpRow(status)}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        {cp.x_pos != null && <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>}
+        {/* 🔢 เลขข้อต้องขึ้นเสมอ (2026-11-10) — เดิมผูกกับ `x_pos` ⇒ เครื่องที่ยังไม่ปักหมุด
+            ทุกแถวไม่มีเลขเลย ทั้งที่ชิป "ยังไม่ตรวจ" ด้านบน · สูตรคำนวณ ("ข้อ N") · ปุ่มข้อก่อน/ถัดไป
+            อ้างเลขนี้ทั้งหมด ⇒ จับคู่ไม่ได้ว่าแถวไหนคือข้อไหน (user: "เห็นปนกันไปหมด")
+            หมุดบนรูปเป็นคนละเรื่อง — ไม่ปักก็ยังเป็นข้อที่ N ของใบอยู่ดี */}
+        <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>
         {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}</p>
         <CpImage cp={cp} />
@@ -808,6 +866,10 @@ export default function PMCheckData() {
   const [moWaiveReason, setMoWaiveReason] = useState('')
   // ✍️ B2 — ใบในประวัติเป็นของทีม AM ไหม (ตาม checklist ของใบ ไม่ใช่แท็บที่เปิด) + ตำแหน่งคนตรวจ (สายอนุมัติ)
   const [clDeptById, setClDeptById] = useState({})
+  /* 🔀 ประวัติของอุปกรณ์ที่ตรวจหลายทีม — ดู src/utils/pmTeams.js §1 อุปกรณ์ ตรวจได้หลายทีม */
+  const [histOther, setHistOther] = useState([])       // ใบของทีมอื่นบนเครื่องเดียวกัน (โหลดเมื่อกดดู)
+  const [histMeta, setHistMeta] = useState(null)       // { otherN, unknownN, otherTeams, teamsKnown }
+  const [showOther, setShowOther] = useState(false)
   const [inspPosById, setInspPosById] = useState({})   // inspector_id → position · ไม่มีคีย์ = ไม่รู้
   // สิทธิ์บันทึกแยกแกน AM (พนักงานหน้างาน) / PM (ช่าง) ตามชนิดงานของทีมที่เปิดอยู่
   //   ห้าม hardcode 'pm' — ทีมไหนเป็น AM อ่านจาก mtn_teams.kind (ดู utils/pmTeams.js)
@@ -989,22 +1051,62 @@ export default function PMCheckData() {
   const clearJig = () => setParams({ equip: null })            // กลับไปลิสต์ (จอแคบ)
   const setDept = (d) => setParams({ dept: d, line: null })    // เปลี่ยนแผนก = ล้างตัวกรองไลน์ (พฤติกรรมเดิม)
 
+  /* 📜 ประวัติการตรวจของเครื่องนี้ — **ของทีมที่กำลังดูเท่านั้น**  (แก้ 2026-11-10 · คำสั่ง user)
+
+     🔴 เดิมดึงด้วย `.eq('jig_id', jigId)` ล้วน + `limit(30)` ⇒ เครื่องที่มี checklist ทั้ง AM และ PM
+        (วัดจริง DR 6 เครื่อง / 112 ใบ) ได้ใบของทั้ง 2 ทีม **ปนกันในลิสต์เดียวโดยไม่มีอะไรบอกว่าใบไหนของใคร**
+        และโควตา 30 ใบถูกใช้ร่วมกัน ⇒ ทีมที่ตรวจถี่กว่ากินช่องจนใบของอีกทีมหลุดหาย
+        (PF-H101: AM 22 ใบ · DIE MTN 1 ใบ — ใบช่างมีสิทธิ์ไม่โผล่เลย)
+     🔑 ลำดับสำคัญ: **ถามทีมของ checklist ก่อน แล้วจึงดึงใบ** — รู้ทีหลังแก้โควตาที่ถูกกินไปแล้วไม่ได้
+     🔴 อ่านทีมไม่ได้ = ถอยไปพฤติกรรมเดิม (ดึงด้วย jig_id) + `teamsKnown:false` ให้จอเขียนว่าอาจปนทีม
+        **ห้ามโชว์ลิสต์ว่างเงียบๆ** · ใบที่ชี้ทีมไม่ได้นับเป็น `unknownN` เขียนบนจอ ไม่กลืน   */
   const fetchHistory = async (jigId) => {
-    const { data, error: eH } = await supabaseDR.from('inspections').select('*').eq('jig_id', jigId).order('inspected_at', { ascending: false }).limit(30)
+    setShowOther(false); setHistOther([])
+    /* ① ทีมเจ้าของทุก checklist ของเครื่องนี้ (ไม่ใช่แค่ของใบที่ดึงมา) */
+    const clRes = await supabaseDR.from('checklists').select('id, department').eq('equipment_id', jigId).eq('module', 'mtn')
     if (curJigRef.current !== jigId) return // เปลี่ยนเครื่องไปแล้ว — คำตอบนี้เป็นของเครื่องก่อน
+    const teamsKnown = !clRes.error
+    if (clRes.error) toast.error(`อ่านทีมของใบตรวจไม่สำเร็จ — ประวัติอาจปนทีมอื่น: ${clRes.error.message}`)
+    const clRows = clRes.data ?? []
+    setClDeptById(Object.fromEntries(clRows.map(c => [c.id, c.department])))
+    const mineIds = clRows.filter(c => c.department === department).map(c => c.id)
+    const otherIds = clRows.filter(c => c.department !== department).map(c => c.id)
+
+    /* ② ใบของทีมนี้ (โควตา 30 ใบเป็นของทีมนี้คนเดียว) · อ่านทีมไม่ได้ = ถอยไปดึงทั้งเครื่องแบบเดิม */
+    const base = () => supabaseDR.from('inspections').select('*').order('inspected_at', { ascending: false }).limit(30)
+    let data = [], eH = null
+    if (!teamsKnown) ({ data, error: eH } = await base().eq('jig_id', jigId))
+    else if (mineIds.length) ({ data, error: eH } = await base().in('checklist_id', mineIds))
+    if (curJigRef.current !== jigId) return
     if (eH) toast.error(`โหลดประวัติการตรวจไม่สำเร็จ: ${eH.message}`)
     setInspections(data ?? [])
-    /* ✍️ B2 — ทีมของแต่ละใบ + ตำแหน่งคนตรวจ (Main) · อ่านไม่ได้ = ไม่รู้ ⇒ สายอนุมัติไม่บล็อกแต่เขียนบนจอ */
-    const clIds = [...new Set((data ?? []).map(i => i.checklist_id).filter(Boolean))]
+
+    /* ③ นับใบของทีมอื่น + ใบที่ชี้ทีมไม่ได้ (ไม่ดึงเนื้อถ้าไม่กดดู) — ตัวเลขต้องขึ้นจอ ห้ามเงียบ
+       นับไม่ได้ = `null` ให้จอเขียนว่าไม่รู้ **ห้ามแสดงเป็น 0** (0 = "ไม่มีใบของทีมอื่น" คนละเรื่อง) */
+    if (!teamsKnown) setHistMeta({ otherN: null, unknownN: null, otherTeams: [], teamsKnown: false })
+    else {
+      const headCount = (ids) => (ids.length
+        ? supabaseDR.from('inspections').select('id', { count: 'exact', head: true }).in('checklist_id', ids)
+        : Promise.resolve({ count: 0, error: null }))
+      const [oRes, mRes, allRes] = await Promise.all([
+        headCount(otherIds), headCount(mineIds),
+        supabaseDR.from('inspections').select('id', { count: 'exact', head: true }).eq('jig_id', jigId),
+      ])
+      if (curJigRef.current !== jigId) return
+      const otherN = oRes.error ? null : (oRes.count ?? 0)
+      const mineN = mRes.error ? null : (mRes.count ?? 0)
+      /* ใบของเครื่องนี้ที่ไม่ได้ผูก checklist ของเครื่องนี้เลย = ชี้ทีมไม่ได้ (วัดจริง 10/11 = 0 ใบ) */
+      const unknownN = (allRes.error || otherN === null || mineN === null)
+        ? null : Math.max(0, (allRes.count ?? 0) - otherN - mineN)
+      const oTeams = [...new Set(clRows.filter(c => c.department !== department).map(c => c.department).filter(Boolean))]
+      setHistMeta({ otherN, unknownN, otherTeams: oTeams, otherIds, teamsKnown: true })
+    }
+
+    /* ✍️ B2 — ตำแหน่งคนตรวจ (Main) · อ่านไม่ได้ = ไม่รู้ ⇒ สายอนุมัติไม่บล็อกแต่เขียนบนจอ */
     const uids = [...new Set((data ?? []).map(i => i.inspector_id).filter(Boolean))]
-    const [clRes, pRes] = await Promise.all([
-      clIds.length ? supabaseDR.from('checklists').select('id, department').in('id', clIds) : Promise.resolve({ data: [] }),
-      uids.length ? supabase.from('profiles').select('id, position').in('id', uids) : Promise.resolve({ data: [] }),
-    ])
+    const pRes = uids.length ? await supabase.from('profiles').select('id, position').in('id', uids) : { data: [] }
     if (curJigRef.current !== jigId) return
-    if (clRes.error) toast.error(`อ่านทีมของใบตรวจไม่สำเร็จ: ${clRes.error.message}`)
     if (pRes.error) toast.error(`อ่านตำแหน่งคนตรวจไม่สำเร็จ — ลำดับขั้นอนุมัติ AM จะไม่ถูกตรวจ: ${pRes.error.message}`)
-    setClDeptById(Object.fromEntries((clRes.data ?? []).map(c => [c.id, c.department])))
     setInspPosById(Object.fromEntries((pRes.data ?? []).filter(p => p.position).map(p => [p.id, p.position])))
     /* ผลตรวจ NG ใบไหนเปิดใบซ่อมไปแล้วบ้าง — กันเปิดซ้ำ + ให้กลับมาเปิดทีหลังได้ถ้าตอนนั้นกด "ไว้ก่อน"
        (ไม่งั้นเป็นทางตัน: ข้ามครั้งเดียวแล้วไม่มีทางเปิดจากผลตรวจใบนั้นอีกเลย)
@@ -1017,6 +1119,22 @@ export default function PMCheckData() {
     if (error) { setMoByInsp({}); return }
     const m = {}; (mos ?? []).forEach(o => { m[o.source_inspection_id] = o })
     setMoByInsp(m)
+  }
+
+  /* 👀 กดดูใบของทีมอื่นบนเครื่องเดียวกัน — โหลดตอนกด ไม่ดึงมาเปล่าๆ (egress · กฎเขียน DB ข้อ 11)
+     ปิดแล้วเปิดใหม่ไม่ดึงซ้ำ · ล้างทุกครั้งที่เปลี่ยนเครื่อง (fetchHistory) */
+  const toggleOtherHist = async () => {
+    if (showOther) { setShowOther(false); return }
+    const ids = histMeta?.otherIds ?? []
+    if (!ids.length) { setShowOther(true); return }
+    if (histOther.length) { setShowOther(true); return }
+    const jigId = curJigRef.current
+    const { data, error } = await supabaseDR.from('inspections').select('*')
+      .in('checklist_id', ids).order('inspected_at', { ascending: false }).limit(30)
+    if (curJigRef.current !== jigId) return
+    if (error) { toast.error(`โหลดใบของทีมอื่นไม่สำเร็จ: ${error.message}`); return }
+    setHistOther(data ?? [])
+    setShowOther(true)
   }
 
   /* ทีมช่างตั้งต้นของใบซ่อมที่จะเปิด
@@ -1193,7 +1311,7 @@ export default function PMCheckData() {
   // คลิกหมุดบนรูป → เลื่อนไปแถวเช็คของจุดนั้น (โหมดจิ้มหมุดไม่ต้องเลื่อน — ข้อโผล่ใต้รูปอยู่แล้ว)
   /* 🔴 เทียบ "โหมดจิ้มหมุดเปิดจริง" ไม่ใช่แค่ `pinFocus` (20/10) — pinFocus ค่าเริ่ม = true แม้เครื่องไม่มีรูป/ปักไม่ครบ
      ⇒ เดิมกดชิป/หมุดแล้วไม่เลื่อนไปแถวเลย · เงื่อนไขต้องตรงกับ `focusOn` ในส่วนวาด */
-  const focusOnNow = pinFocus && frames.length > 0 && checkpoints.length > 0 && checkpoints.every(c => c.x_pos != null)
+  const focusOnNow = pinFocus && frames.length > 0 && checkpoints.length > 0   // ต้องตรงกับ `focusOn` ในแท็บบันทึก
   useEffect(() => {
     if (focusOnNow) return
     if (activeCpId && rowRefs.current[activeCpId]) rowRefs.current[activeCpId].scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -1570,7 +1688,10 @@ export default function PMCheckData() {
               </div>
               <div style={S.tabBar}>
                 <button onClick={() => setTab('record')} style={S.tabBtn(tab === 'record')}>บันทึก</button>
-                <button onClick={() => setTab('history')} style={S.tabBtn(tab === 'history')}>ประวัติ ({inspections.length})</button>
+                <button onClick={() => setTab('history')} style={S.tabBtn(tab === 'history')}>
+                  {/* 🔀 นับ "ของทีมนี้" เท่านั้น · มีของทีมอื่นบนเครื่องเดียวกัน = ติดจุดไว้ให้รู้ (กดเข้าไปอ่านได้) */}
+                  ประวัติ ({inspections.length}{histMeta?.otherN ? '+' : ''})
+                </button>
               </div>
             </div>
 
@@ -1598,7 +1719,12 @@ export default function PMCheckData() {
                    ⇒ โหมดนี้เปิดเฉพาะตอนปักครบ · ปักไม่ครบ = โชว์ทุกข้อเหมือนเดิม + บอกเหตุผล */
                 const pinnedCps = checkpoints.filter(c => c.x_pos != null)
                 const allPinned = checkpoints.length > 0 && pinnedCps.length === checkpoints.length
-                const focusOn = showPhoto && pinFocus && allPinned
+                /* 🧩 แพทเทินเดียวกันทุกเครื่อง (2026-11-10 · user: "ทำไมแพทเทินไม่เหมือนกัน")
+                   เดิมโหมด "ทีละข้อ" เปิดได้เฉพาะเครื่องที่ **ปักหมุดครบทุกข้อ** ⇒ เครื่องที่ยังไม่ปัก
+                   (เช่น RB-109 ปัก 0/11) ตกไปใช้ลิสต์ยาวทุกข้อแทน = คนละหน้าตากับเครื่องข้างๆ
+                   🔑 การปักหมุดจำเป็นแค่กับ "การแตะหมุดบนรูปเพื่อเลือกข้อ" — ไม่ใช่กับตัวโหมดทีละข้อ
+                      (เลือกข้อด้วยชิปเลข/ข้อก่อน-ข้อถัดไปได้อยู่แล้ว) ⇒ ปลดออกจากกัน */
+                const focusOn = showPhoto && pinFocus && checkpoints.length > 0
                 const doneN = checkpoints.filter(cpFilled).length
                 const todo = checkpoints.filter(c => !cpFilled(c))
                 /* `done` = กรอกค่าชิมในใบนี้แล้วหรือยัง — ใช้ตัดสินสีหมุด (ยังไม่วัด = วงโปร่ง) */
@@ -1682,19 +1808,22 @@ export default function PMCheckData() {
                             ตรวจแล้ว {doneN}/{checkpoints.length}
                             {todo.length > 0 && <span style={{ color: 'var(--amber)', fontWeight: 700 }}> · เหลือ {todo.length}</span>}
                           </span>
-                          {!showPhoto ? null : allPinned ? (
-                            <button onClick={() => { setPinFocus(v => !v); setActiveShimId(null) }}
-                              title={pinFocus ? 'สลับเป็นไล่ดูทุกข้อในหน้าเดียว' : 'สลับเป็นแตะหมุดบนรูปแล้วขึ้นเฉพาะข้อนั้น'}
-                              style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
-                                border: `1px solid ${pinFocus ? 'var(--accent)' : 'var(--border2)'}`,
-                                background: pinFocus ? 'var(--accent-dim)' : 'var(--bg3)', color: pinFocus ? 'var(--accent)' : 'var(--text2)' }}>
-                              {pinFocus ? 'เฉพาะจุดที่แตะ' : 'ทุกข้อ'}
-                            </button>
-                          ) : (
-                            /* ปักไม่ครบ = ซ่อนข้ออื่นไม่ได้ ต้องบอกว่าทำไมโหมดนี้ใช้ไม่ได้ ห้ามเงียบ */
-                            <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-                              (โหมดแตะหมุดต้องปักจุดบนรูปครบก่อน — ตอนนี้ปักแล้ว {pinnedCps.length}/{checkpoints.length} · ปักที่ PM Setup)
-                            </span>
+                          {!showPhoto ? null : (
+                            <>
+                              <button onClick={() => { setPinFocus(v => !v); setActiveShimId(null) }}
+                                title={pinFocus ? 'สลับเป็นไล่ดูทุกข้อในหน้าเดียว' : (allPinned ? 'สลับเป็นแตะหมุดบนรูปแล้วขึ้นเฉพาะข้อนั้น' : 'สลับเป็นตรวจทีละข้อ')}
+                                style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
+                                  border: `1px solid ${pinFocus ? 'var(--accent)' : 'var(--border2)'}`,
+                                  background: pinFocus ? 'var(--accent-dim)' : 'var(--bg3)', color: pinFocus ? 'var(--accent)' : 'var(--text2)' }}>
+                                {pinFocus ? (allPinned ? 'เฉพาะจุดที่แตะ' : 'ทีละข้อ') : 'ทุกข้อ'}
+                              </button>
+                              {/* ปักไม่ครบ = ยังใช้โหมดทีละข้อได้ แค่แตะหมุดบนรูปเลือกข้อไม่ได้ — บอกตามจริง ห้ามเงียบ */}
+                              {!allPinned && (
+                                <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                                  (ปักหมุดบนรูปแล้ว {pinnedCps.length}/{checkpoints.length} — ปักครบจะแตะหมุดเลือกข้อได้ · ปักที่ PM Setup)
+                                </span>
+                              )}
+                            </>
                           )}
                           {(
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', marginLeft: 'auto' }}>
@@ -1725,8 +1854,10 @@ export default function PMCheckData() {
                       {focusOn && !activeCpId && !activeShimId && (
                         <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '22px 12px', lineHeight: 1.8,
                           border: '1px dashed var(--border2)', borderRadius: 'var(--r-lg)', background: 'var(--bg3)' }}>
-                          แตะหมุดบนรูปเพื่อตรวจจุดนั้น
-                          <div style={{ fontSize: 11.5, marginTop: 2 }}>ขึ้นทีละข้อ ไม่ต้องเลื่อนหา · อยากเห็นทุกข้อพร้อมกันกดปุ่ม “📍 เฉพาะจุดที่แตะ” เพื่อสลับ</div>
+                          {allPinned ? 'แตะหมุดบนรูปเพื่อตรวจจุดนั้น' : 'เลือกข้อที่จะตรวจจากชิปเลขด้านบน'}
+                          <div style={{ fontSize: 11.5, marginTop: 2 }}>
+                            ขึ้นทีละข้อ ไม่ต้องเลื่อนหา · อยากเห็นทุกข้อพร้อมกันกดปุ่ม “{allPinned ? 'เฉพาะจุดที่แตะ' : 'ทีละข้อ'}” เพื่อสลับ
+                          </div>
                           {todo.length > 0 && (
                             <button onClick={() => setActiveCpId(todo[0].id)}
                               style={{ marginTop: 10, padding: '7px 18px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12.5, fontWeight: 800,
@@ -1915,16 +2046,56 @@ export default function PMCheckData() {
                 )
               })()}
 
-              {tab === 'history' && (
+              {tab === 'history' && (() => {
+                /* 🔀 เครื่องเดียวตรวจได้หลายทีม — จัดกลุ่มตาม "เจ้าของใบ" ห้ามปนในลิสต์เดียว
+                   (ของกลาง `splitInspByTeam` · เหตุผล+ตัวเลขใน src/utils/pmTeams.js)
+                   ใบของทีมอื่น/ชี้ทีมไม่ได้ ต้อง **เขียนบนจอ** ไม่ใช่กรองทิ้งเงียบ */
+                const grp = splitInspByTeam([...inspections, ...(showOther ? histOther : [])], { clDeptById, team: department })
+                const otherN = histMeta?.otherN
+                return (
                 <div style={{ maxWidth: 680, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {inspections.length === 0 ? (
-                    <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '40px 0' }}>ยังไม่มีประวัติการตรวจ</p>
-                  ) : inspections.map(insp => (
+                  {histMeta && !histMeta.teamsKnown && (
+                    <p style={{ margin: 0, padding: '8px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 600,
+                                border: '1px solid var(--amber)', background: 'var(--bg3)', color: 'var(--amber)' }}>
+                      ⚠️ อ่านทีมเจ้าของใบไม่ได้ — ลิสต์นี้เป็นใบ<b>ทุกทีม</b>ของเครื่องนี้ปนกัน และบอกไม่ได้ว่าใบไหนของใคร
+                    </p>
+                  )}
+                  {histMeta?.teamsKnown && otherN === null && (
+                    <p style={{ margin: 0, fontSize: 11.5, color: 'var(--amber)' }}>
+                      ⚠️ นับใบของทีมอื่นไม่ได้ — อาจมีใบของทีมอื่นบนเครื่องนี้ที่ยังไม่ได้แสดง
+                    </p>
+                  )}
+                  {!!otherN && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11.5, color: 'var(--text2)' }}>
+                      <span>🔀 เครื่องนี้มีใบของทีมอื่นอีก <b>{otherN}</b> ใบ ({(histMeta.otherTeams || []).map(inspTeamLabel).join(' · ')})</span>
+                      <button type="button" onClick={toggleOtherHist} style={{
+                        padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                        border: '1px dashed var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
+                      }}>{showOther ? 'ซ่อนใบของทีมอื่น' : 'ดูใบของทีมอื่นด้วย'}</button>
+                    </div>
+                  )}
+                  {!!histMeta?.unknownN && (
+                    <p style={{ margin: 0, fontSize: 11.5, color: 'var(--amber)' }}>
+                      ⚠️ อีก <b>{histMeta.unknownN}</b> ใบของเครื่องนี้ชี้ทีมเจ้าของไม่ได้ (ใบไม่ผูกจุดตรวจของเครื่องนี้) — ไม่ได้แสดงในลิสต์
+                    </p>
+                  )}
+                  {grp.mine.length === 0 && grp.others.length === 0 && grp.unknown.length === 0 ? (
+                    <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '40px 0' }}>
+                      {otherN ? 'ทีมนี้ยังไม่เคยตรวจเครื่องนี้ — มีแต่ใบของทีมอื่น (กดดูได้ด้านบน)' : 'ยังไม่มีประวัติการตรวจ'}
+                    </p>
+                  ) : [...grp.mine, ...grp.others, ...grp.unknown].map(insp => (
                     <div key={insp.id} onClick={() => setViewInspection(insp)} style={{ padding: '12px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--card)', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: 0 }}>{formatDate(insp.inspected_at)}</p>
-                        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                        <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
                           <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-md)', background: insp.status === 'pass' ? 'var(--accent-dim)' : insp.status === 'fail' ? 'rgba(224,92,74,0.12)' : 'var(--bg3)', color: insp.status === 'pass' ? 'var(--accent)' : insp.status === 'fail' ? '#e05c4a' : 'var(--muted)' }}>{insp.status?.toUpperCase()}</span>
+                          {/* 🔀 ใบที่ไม่ใช่ของทีมที่กำลังดู ต้องติดป้ายว่าของใคร — ไม่งั้นปนกันแล้วแยกไม่ออก */}
+                          {(clDeptById[insp.checklist_id] ?? null) !== department && (
+                            <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-md)',
+                                           border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }}>
+                              {inspTeamLabel(clDeptById[insp.checklist_id])}
+                            </span>
+                          )}
                           {insp.approval_status === 'approved' && <span style={{ fontSize: 11, color: 'var(--accent)' }}>✓ อนุมัติแล้ว</span>}
                           {insp.approval_status === 'rejected' && <span style={{ fontSize: 11, color: '#e05c4a' }}>✕ ตีกลับ</span>}
                           {insp.approval_status === 'pending' && (() => {
@@ -1960,7 +2131,8 @@ export default function PMCheckData() {
                     </div>
                   ))}
                 </div>
-              )}
+                )
+              })()}
             </div>
           </>
         )}
