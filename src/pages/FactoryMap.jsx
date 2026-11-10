@@ -4,7 +4,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { toDecodableImage } from '../utils/heicToJpeg';
 import { compressLayoutImage } from '../utils/layoutImage';
 import { supabase, supabaseDR } from '../supabaseClient';
-import { loadLinesRes } from '../utils/useProductionLines';
+import { loadLinesRes, invalidateProductionLines } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { lineScope } from '../utils/sectionScope';
 import { can } from '../utils/permissions';
@@ -529,6 +529,10 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
   const [energyDay, setEnergyDay] = useState(null);      // 📅 โหมดทบทวน: kWh ของวันที่เลือกจากมิเตอร์ { date, byMeter, meterLines } · null = ไม่มี/อ่านไม่ได้
   const [energyLive, setEnergyLive] = useState(null);    // ⚡ ค่าไฟสดจากมิเตอร์: { meters (buildLiveBoard), meterLines: Map ตู้→ชุดไลน์ } · null = ไม่มี/อ่านไม่ได้
   const [allLines, setLines] = useState([]);
+  /* 🔴 ทะเบียนไลน์อ่านไม่ได้ (10/11 · user: "ทำไมกรอบหายไป") — ลิสต์ว่าง = ทุกกรอบถูกตีเป็น "โซนสนับสนุน" แล้วซ่อนหมด
+     + ยอดรวม 0/0 · เดิมโหลดครั้งเดียวตอนเปิดหน้า ⇒ จอแขวนค้างแบบนั้นจนมีคนรีเฟรช
+     ⇒ จำว่าอ่านไม่ได้ (`linesErr`) · ลองใหม่เองทุก 20 วิ · ระหว่างนั้นถือทุกกรอบเป็นไลน์ (ไม่ซ่อน) + ชิปเตือนบนจอ */
+  const [linesErr, setLinesErr] = useState('');
   /* 🔭 ขอบเขตของบัญชี (09/11 · user: "ถ้าเป็น user จอของส่วนงานไหนก็ควรจะแสดงแค่แผนกหรือส่วนงานตัวเอง")
      จอดู (ไม่ใช่ setupMode) = เฉพาะไลน์ที่บัญชีนี้เห็นตาม `lineScope()` — แกนเดียวกับทุกจอ (ส่วนงาน/แผนก/ครอบครัวไลน์)
      ⇒ กรอบ · ตัวนับหัวผัง · แผงขวา · ยอดรวม คิดจากชุดนี้ทั้งหมด (ทุกตัวอ่าน `lines`/`regions`)
@@ -724,7 +728,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     setMapId(fm?.id || null);
     setRegions((rg || []).map(r => ({ ...r, points: Array.isArray(r.points) ? r.points : [] })));
       /* 🔴 อ่านทะเบียนไลน์ไม่สำเร็จ = คงลิสต์เดิม ห้ามทับด้วย [] (30/10 · MO แจ้ง "ไม่มีให้เลือกไลน์") */
-    if (!lnRes?.error) setLines(lnRes?.data || []);
+    if (!lnRes?.error) { setLines(lnRes?.data || []); setLinesErr(''); }
+    else setLinesErr(lnRes.error?.message || 'โหลดทะเบียนไลน์ไม่สำเร็จ');
     // โหมดไหลงาน/จำนวนเครื่องขนาน (best-effort — ยังไม่ apply migration 20260723 ก็ข้าม) ใช้หัก DT 1/N ใน OEE สด
     try {
       const { data: fl } = await loadLinesRes();
@@ -766,6 +771,15 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
       .catch(() => { manualLineRef.current = {}; });
   }, []);
   useEffect(() => { loadMap(); }, [loadMap]);
+  // ยังอ่านทะเบียนไลน์ไม่ได้ ⇒ ลองซ้ำทุก 20 วิจนกว่าจะได้ (จอแขวนไม่มีใครกดรีเฟรช)
+  useEffect(() => {
+    if (!linesErr || allLines.length) return undefined;
+    const t = setInterval(async () => {
+      const again = await loadLinesRes();
+      if (!again?.error && again?.data?.length) { setLines(again.data); setLinesErr(''); }
+    }, 20000);
+    return () => clearInterval(t);
+  }, [linesErr, allLines.length]);
 
   /* ── metric รายไลน์ (DR) — refresh 30 วิ · เก็บทุก metric ในรอบเดียว ── */
   const loadStatus = useCallback(async () => {
@@ -1847,7 +1861,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
   const topNames = useMemo(() => sortLineNames(lines.filter(l => !l.parent_line_name).map(l => l.name), lines), [lines]);
   // ชื่อไลน์ผลิตทั้งหมด (แม่+ลูก) — กรอบที่ line_name ไม่ตรงไลน์ผลิตใดเลย = โซน MTN/facility
   const allProdNames = useMemo(() => new Set(lines.map(l => l.name)), [lines]);
-  const isFac = (name) => !allProdNames.has(name);
+  // ทะเบียนไลน์ยังว่าง (อ่านไม่ได้/ยังโหลด) = แยกไม่ออกว่ากรอบไหนเป็นไลน์ ⇒ ถือว่าเป็นไลน์ไว้ก่อน (ห้ามซ่อนทั้งผัง)
+  const isFac = (name) => allLines.length > 0 && !allProdNames.has(name);
   const reviewOf = (name) => {
     const agg = { actual: 0, target: 0, oee: null, oeeWSum: 0, oeeWLoad: 0, oeeSum: 0, oeeN: 0, dtMin: 0, ng: 0, present: 0, headTotal: 0, oeeRows: [] };
     familyNames(name).forEach(n => {
@@ -2635,6 +2650,14 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
           <span title={`ยังไม่ได้ตีกรอบ: ${energyNoRegion.join(', ')}`}
             style={{ alignSelf: 'center', fontSize: 11.5, fontWeight: 700, color: 'var(--amber)', background: 'var(--amber)1a', border: '1px solid var(--amber)55', borderRadius: 'var(--r-md)', padding: '3px 8px', whiteSpace: 'nowrap' }}>
             ⚠ กรอกค่าไฟไว้แต่ยังไม่ได้ตีกรอบบนผัง {energyNoRegion.length} จุด — ตัวเลขไม่โผล่
+          </span>
+        )}
+        {!editing && linesErr && !allLines.length && (
+          <span style={{ alignSelf: 'center', fontSize: 11.5, fontWeight: 700, borderRadius: 'var(--r-md)', padding: '3px 8px', whiteSpace: 'nowrap',
+            color: 'var(--amber)', background: 'var(--amber)1a', border: '1px solid var(--amber)55' }}>
+            ⚠ อ่านทะเบียนไลน์ไม่สำเร็จ — กรอบยังไม่มีสีสถานะ · กำลังลองใหม่ทุก 20 วิ
+            <button type="button" className="tv-hide" onClick={() => { invalidateProductionLines(); loadMap(); }}
+              style={{ marginLeft: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', borderRadius: 'var(--r-md)', padding: '1px 8px', border: '1px solid var(--amber)55', background: 'transparent', color: 'var(--amber)' }}>ลองใหม่</button>
           </span>
         )}
         {/* 🔭 ขอบเขตบัญชี — ผังเหลือเฉพาะส่วนงาน/ไลน์ของบัญชีนี้ ต้องบอกว่าซ่อนไปกี่ไลน์ (กฎ "กรองแล้วต้องเขียนบนจอ") */}
