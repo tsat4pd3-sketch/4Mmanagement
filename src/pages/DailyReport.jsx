@@ -651,6 +651,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // Downtime เปิดค้างตอนปิดกะ: ต่อรายการ dtId → 'close' (เครื่องกลับมาแล้ว กรอกเวลาจบ) | 'carry' (ยังซ่อมอยู่ ตัดยอดข้ามกะ)
   const [dtCarryDecisions, setDtCarryDecisions] = useState({});
   const [dtCloseTimes,     setDtCloseTimes]     = useState({}); // dtId → 'HH:MM' เวลาที่เครื่องกลับมา
+  /* 🔴 ป๊อปอัพยืนยันรายการ Downtime เปิดค้าง ก่อนเขียน DB (คำสั่ง user 10/11)
+     หัวข้อในโมดัลปิดกะเลือกไว้แล้วก็จริง แต่มันอยู่กลางโมดัลยาว เลื่อนผ่านได้ และ
+     "ลืมปิด" คือต้นเหตุของแถวค้าง 6 ใบที่ต้องมาไล่เคลียร์ย้อนหลัง (ดู docs/modules/daily-report.md)
+     ⇒ ต้องทวนต่อรายการว่า "ยังเบรกดาวน์อยู่ ส่งต่อกะถัดไป" หรือ "ปิดที่เวลา HH:MM" ก่อนลงมือจริง */
+  const [dtCloseConfirm,   setDtCloseConfirm]   = useState(null); // null = ไม่เปิด · [] = รายการที่ต้องทวน
   // qty_actual produced this shift for each open order (before carry-over)
   const [carryQtyActual, setCarryQtyActual] = useState({});
   // เวลาหยุดผลิตจริงต่อออเดอร์ (ใช้แทนเวลาปิดกะรวมตอนคำนวณสรุปแยกตามชิ้นงาน เผื่อพาร์ทนี้หยุดไม่ตรงกับเวลาปิดกะ)
@@ -2615,7 +2620,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // สั่งผลิต child 200 + เบิก raw 500 + packaging). ไม่หักที่หน้าปิดกะอีกแล้ว เพื่อไม่ให้
   // order ที่ confirmed ถูกหักซ้ำ (order ที่ยกยอดจะถูก backflush เมื่อ confirmed ในกะถัดไป).
 
-  const handleCloseSession = async () => {
+  const handleCloseSession = async ({ dtConfirmed = false } = {}) => {
     if (!selSession) return;
 
     /* 🔴 ด่านสุดท้าย — ข้อมูลกะโหลดไม่ครบ ห้ามปิดกะเด็ดขาด (audit 2026-09-02)
@@ -2661,6 +2666,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       toast.error(`มี Downtime เปิดค้าง ${dtUndecided.length} รายการ — เลือก "เครื่องกลับมาแล้ว" (พร้อมเวลาจบ) หรือ "ยังซ่อมอยู่ ตัดยอดข้ามกะ" ในหัวข้อ Downtime เปิดค้างก่อน`);
       return;
     }
+    /* 🔴 ด่านสุดท้าย — ทวนทีละรายการก่อนเขียน DB (คำสั่ง user 10/11 · "กดพลาดคือพลาดเลย")
+       ตัวเลือกอยู่กลางโมดัลปิดกะที่ยาวมาก ⇒ เลื่อนผ่านแล้วกดปิดกะได้ · ป๊อปอัพนี้บังคับให้เห็น
+       ว่าแต่ละใบจะ "ส่งต่อกะถัดไป" หรือ "ปิดที่เวลาเท่าไหร่ กี่นาที" ก่อนลงมือจริง */
+    if (openDT.length > 0 && !dtConfirmed) { setDtCloseConfirm(openDT); return; }
 
     // เตือนถ้ากะนี้ไม่มีข้อมูลการผลิตเลย — เผื่อพนักงานลืม Scan เปิด Order / บันทึก Downtime ก่อนปิดกะ
     if (prodOrders.length === 0 && dtLogs.length === 0) {
@@ -5104,6 +5113,78 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           );
         })()}
 
+        {/* ══ 🔴 ป๊อปอัพทวน Downtime เปิดค้าง ก่อนปิดกะ (คำสั่ง user 10/11) ═══════════════
+            ที่มา: แถว downtime ที่ "ลืมปิด" 6 ใบค้างในฐานนานถึง 3,322 ชม. ⇒ %A ของกะนั้นสูงกว่าจริง
+            และจอ OEE รายไลน์กระพริบค้าง · ตัวเลือกเดิมอยู่กลางโมดัลปิดกะที่ยาวมาก เลื่อนผ่านได้
+            ⇒ ด่านสุดท้ายต้องทวนทีละใบว่าจะ "ส่งต่อกะถัดไป" หรือ "ปิดที่เวลาเท่าไหร่ กี่นาที" */}
+        {dtCloseConfirm && selSession && (() => {
+          const endStrOf = (d) => (dtCarryDecisions[d.id] === 'carry' ? (closeEndTime || nowTime()) : dtCloseTimes[d.id]);
+          const rows = dtCloseConfirm.map(d => {
+            const carry   = dtCarryDecisions[d.id] === 'carry';
+            const endStr  = endStrOf(d);
+            const startMs = d.started_at ? new Date(d.started_at).getTime() : null;
+            let min = null;
+            if (startMs != null && endStr) {
+              let endMs = new Date(`${selSession.work_date}T${endStr.slice(0, 5)}:00`).getTime();
+              if (endMs < startMs) endMs += 86400000;          // ข้ามเที่ยงคืน (กะดึก) — ตรรกะเดียวกับตอนเขียนจริง
+              min = Math.max(1, Math.round((endMs - startMs) / 60000));
+            }
+            /* ⚠️ กินเวลากะเกินครึ่ง = ชวนให้ทวนซ้ำ — ไม่บล็อก (หยุดยาวจริงก็มี) แต่ต้องสะดุดตา
+               เคสจริงที่ต้องมานั่งไล่ย้อนหลัง คือใบที่ "ลืมปิด" แล้วเวลาจบเพี้ยนไปทั้งกะ */
+            const shiftMin = Number(selSession.shift_min) || 570;
+            return { d, carry, endStr, min, long: min != null && min > shiftMin / 2 };
+          });
+          return (
+            <div className="overlay" style={{ zIndex: 2100 }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid var(--amber)', borderRadius: 'var(--r-lg)', padding: 22, width: 'min(94vw,720px)', maxHeight: '88vh', overflowY: 'auto', boxShadow: 'var(--shadow-lg)' }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--amber)', marginBottom: 2 }}>
+                  ⚠️ ทวน Downtime ที่ยังเปิดค้าง {rows.length} รายการ
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.7 }}>
+                  ปิดกะ <b style={{ color: 'var(--text)' }}>{selSession.line_name} · {selSession.shift === 'night' ? '🌙 กะดึก' : '☀️ กะเช้า'} {fmtDate(selSession.work_date)}</b>
+                  {' '}— ยืนยันว่าแต่ละรายการจะถูกจัดการแบบนี้
+                  <br />รายการที่ไม่ได้ปิด = นาทีที่หยุด <b style={{ color: 'var(--amber)' }}>ไม่ถูกหักใน %A</b> และจะค้างกระพริบบนจอ OEE รายไลน์ตลอด
+                </div>
+
+                {rows.map(({ d, carry, endStr, min, long }) => (
+                  <div key={d.id} style={{ padding: '10px 12px', marginBottom: 8, background: 'var(--bg2)', border: `1px solid ${carry ? 'var(--red-line)' : 'var(--border)'}`, borderRadius: 'var(--r-md)' }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>
+                      {d.machine_no || 'ไม่ระบุเครื่อง'} · {d.dr_downtime_types?.name_th || 'Downtime'}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>
+                      เริ่มหยุด {d.started_at ? fmtTime(d.started_at) : '—'}{d.description ? ` — ${d.description}` : ''}
+                    </div>
+                    <div style={{ fontSize: 12, fontWeight: 700, marginTop: 6, color: carry ? 'var(--red)' : 'var(--green)' }}>
+                      {carry
+                        ? <>🔴 เครื่องยังเบรกดาวน์อยู่ — ตัดยอดที่ {endStr || '—'} ({min != null ? `${min} นาที` : 'คิดนาทีไม่ได้'}) แล้ว<u>เปิดรายการต่อให้กะถัดไป</u></>
+                        : <>✓ เครื่องกลับมาแล้ว — ปิดรายการที่ {endStr || '—'} ({min != null ? `${min} นาที` : 'คิดนาทีไม่ได้'})</>}
+                    </div>
+                    {carry && (
+                      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
+                        กะถัดไปของไลน์นี้เปิดแล้ว = เปิดรายการต่อให้ทันที · ยังไม่เปิด = เปิดให้ตอนกดเปิดกะ
+                      </div>
+                    )}
+                    {long && !carry && (
+                      <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, marginTop: 3 }}>
+                        ⚠ กินเวลากะเกินครึ่ง — ถ้าไม่ได้หยุดยาวขนาดนั้นจริง กลับไปแก้เวลาปิดก่อน
+                      </div>
+                    )}
+                  </div>
+                ))}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
+                  <button onClick={() => setDtCloseConfirm(null)} style={cancelBtnStyle}>กลับไปแก้</button>
+                  <button
+                    onClick={() => { setDtCloseConfirm(null); handleCloseSession({ dtConfirmed: true }); }}
+                    style={{ ...saveBtnStyle, background: 'var(--amber)', fontWeight: 800 }}>
+                    ยืนยัน — {closeIsRequest ? 'ส่งขอปิดกะ' : 'ปิดกะ'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {showCloseShift && selSession && (() => {
           /* ⚠️ NG ของ OEE preview ต้องมาจาก defect_logs จริง (ไม่รวมงานทดลอง) ให้ตรงกับที่ปิดกะจะ stamp
              เดิมอ่าน state `closeNg` ซึ่งถูกเซ็ตเป็น '0' ที่เดียวและไม่มี input ผูกอยู่เลย
@@ -5734,7 +5815,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   {/* 🔁 ปุ่มปิดกะรอเฉพาะ "ใบที่ทำไปบางส่วน" — ใบที่ยังไม่แตะระบบยกให้เอง (closeShiftOrders.js)
                       เดิมรอทุกใบ ⇒ เปิดคัมบังไว้ 20 ใบแล้วทำไม่ทัน = ต้องกด 20 ครั้งก่อนปิดกะได้
                       (นี่คือเหตุผลที่หน้างานเลือก "ทยอยเปิด" จนบอร์ดดูเหมือนไม่มีออเดอร์) */}
-                  <button onClick={handleCloseSession} disabled={savingClose || splitCloseOrders(prodOrders.filter(o => o.status === 'open'), carryQtyActual).needDecision.some(o => !carryOverDecisions[o.id])}
+                  <button onClick={() => handleCloseSession()} disabled={savingClose || splitCloseOrders(prodOrders.filter(o => o.status === 'open'), carryQtyActual).needDecision.some(o => !carryOverDecisions[o.id])}
                     style={{ ...saveBtnStyle, background: 'var(--red)',
                       opacity: (savingClose || prodOrders.filter(o => o.status === 'open').some(o => !carryOverDecisions[o.id])) ? 0.5 : 1 }}>
                     {savingClose ? '...' : closeIsRequest ? 'ส่งขอปิดกะ' : 'ยืนยันปิดกะ'}

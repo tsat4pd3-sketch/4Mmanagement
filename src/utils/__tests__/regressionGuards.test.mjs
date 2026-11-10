@@ -6821,7 +6821,9 @@ test('🔁 close-auto-carry — ปิดกะต้องแยก "ยัง�
     bad.push('src/pages/DailyReport.jsx (ไม่ได้เขียนบนจอว่าจะยกให้กี่ใบ — ยกเงียบ = คนไม่รู้ว่าของไปไหน)');
 
   /* ปุ่มปิดกะต้องรอเฉพาะกองที่คนตัดสิน — รอทุกใบ = บังคับกดทีละใบเหมือนเดิม */
-  const btn = (dr.match(/onClick=\{handleCloseSession\}[^\n]*/) || [''])[0];
+  /* 10/11: ปุ่มถูกห่อเป็น `() => handleCloseSession()` (รับ opts `dtConfirmed` จากป๊อปอัพทวน DT)
+     ⇒ รับทั้ง 2 รูป · ที่ด่านนี้สนใจคือ `disabled=` ต้องรอเฉพาะ needDecision */
+  const btn = (dr.match(/onClick=\{(?:\(\) => )?handleCloseSession\(?\)?\}[^\n]*/) || [''])[0];
   if (!/needDecision/.test(btn))
     bad.push('src/pages/DailyReport.jsx (ปุ่มปิดกะยังรอ "ทุกใบที่ open" ไม่ใช่เฉพาะ needDecision)');
 
@@ -9694,4 +9696,34 @@ test('🔇 notify-rollup-never-for-call-mtn — ห้ามยุบใบ "เ
       + '   ⇒ ใบเรียกช่างจะถูกยุบรวมกัน — เครื่องหยุด 2 ตัวเหลือการ์ดเดียว ช่างไปไม่ครบ\n'
       + '   ถ้าคิวรีนี้ไม่ได้ตั้ง rollup ให้ downtime_call_mtn จริง ให้แยกเป็น 2 คำสั่งคนละ UPDATE\n');
   }
+});
+
+/* ═══ 🔴 ปิดกะต้องทวน Downtime เปิดค้างทีละใบ — close-shift-dt-confirm (2026-11-10) ═══
+   คำสั่ง user: *"ก่อนปิดกะต้องเช็คเรื่องไม่ปิดดาวไทม์ ป๊อปอัพให้ยืนยันว่าเครื่องยังเบรกดาวน์อยู่
+   ส่งต่อไปกะถัดไป หรือลืมปิดให้ไปใส่เวลาปิด"*
+   ที่มา: ตัวเลือกเดิมเป็นหัวข้อกลางโมดัลปิดกะที่ยาวมาก ⇒ เลื่อนผ่านแล้วกดปิดกะได้
+   ผลคือแถว downtime "ลืมปิด" ค้างในฐาน 6 ใบ นานถึง 3,322 ชม. (ดู docs/modules/daily-report.md) */
+test('🔴 close-shift-dt-confirm — ปิดกะที่มี Downtime เปิดค้าง ต้องผ่านป๊อปอัพทวนก่อนเขียน DB', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+
+  assert.match(src, /const handleCloseSession = async \(\{ dtConfirmed = false \} = \{\} \) =>|const handleCloseSession = async \(\{ dtConfirmed = false \} = \{\}\) =>/,
+    '\n\n❌ handleCloseSession ไม่รับ dtConfirmed — ป๊อปอัพทวนจะเรียกกลับมาปิดจริงไม่ได้\n');
+  assert.match(src, /if \(openDT\.length > 0 && !dtConfirmed\) \{ setDtCloseConfirm\(openDT\); return; \}/,
+    '\n\n❌ ถอดด่านป๊อปอัพทวน Downtime เปิดค้างออกจาก handleCloseSession\n'
+    + '   ⇒ กลับไปปิดกะได้โดยไม่เห็นว่าใบไหนจะถูกส่งต่อกะถัดไป/ปิดที่เวลาเท่าไหร่\n');
+
+  /* ด่านต้องอยู่ "ก่อน" ตัวเขียนจริง — ย้ายลงไปหลัง setSavingClose = ไม่ได้กันอะไรเลย */
+  const i = src.indexOf('const handleCloseSession =');
+  const gate = src.indexOf('setDtCloseConfirm(openDT)', i);
+  const write = src.indexOf('setSavingClose(true)', i);
+  assert.ok(gate > 0 && write > 0 && gate < write,
+    '\n\n❌ ด่านป๊อปอัพอยู่หลังจุดเริ่มเขียน DB — ต้องอยู่ก่อน setSavingClose(true)\n');
+
+  /* ป๊อปอัพต้องบอกครบ 2 ทางตามคำสั่ง user: ส่งต่อกะถัดไป / ปิดที่เวลา */
+  assert.match(src, /เครื่องยังเบรกดาวน์อยู่/,
+    '\n\n❌ ป๊อปอัพไม่ได้เขียนว่า "เครื่องยังเบรกดาวน์อยู่" (ทางที่ 1 — ส่งต่อกะถัดไป)\n');
+  assert.match(src, /เปิดรายการต่อให้กะถัดไป/,
+    '\n\n❌ ป๊อปอัพต้องบอกว่าใบที่ยังเบรกดาวน์จะถูกเปิดต่อในกะถัดไป\n');
+  assert.match(src, /ปิดรายการที่ \{endStr/,
+    '\n\n❌ ป๊อปอัพไม่ได้บอกเวลาปิดของใบที่ "เครื่องกลับมาแล้ว" (ทางที่ 2)\n');
 });
