@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { TAG_MAX_DAYS, QA_DECISIONS, decisionOf, binTagAge, binClosed, overdueBins,
-  yellowRowFromDefect, pendingYellow, binPiecesOf } from '../qualityBin.js';
+  yellowRowFromDefect, pendingYellow, binPiecesOf, yellowStuckReason } from '../qualityBin.js';
 
 test('อายุแท็กตาม WI: เหลือง 5 วัน · แดง 1 วัน', () => {
   assert.equal(TAG_MAX_DAYS.yellow, 5);
@@ -138,4 +138,37 @@ test('🟡 คิวรอพิจารณา = ยังไม่มีผล
   ];
   assert.deepEqual(pendingYellow(rows, new Set(['f'])).map(r => r.id), ['a']);
   assert.deepEqual(pendingYellow([], new Set()), []);
+});
+
+test('🔴 บั๊ก B — ถังแดงผูกใบรายงานของเสียที่ยังเป็น "ร่าง" ยังไม่ปิด', () => {
+  const r = { bin: 'red', scrap_report_id: 'R1' };
+  assert.equal(binClosed(r, { scrapStatusOf: { R1: 'draft' } }), false);
+  assert.equal(binClosed(r, { scrapStatusOf: { R1: 'submitted' } }), true);
+  assert.equal(binClosed(r, { scrapStatusOf: { R1: 'approved' } }), true);
+  // อ่านสถานะใบไม่ได้ = พฤติกรรมเดิม (จอต้องเขียนบอกเอง)
+  assert.equal(binClosed(r, { scrapStatusOf: {} }), true);
+  assert.equal(binClosed(r), true);
+  // overdueBins ส่งต่อสถานะใบ
+  const rows = [{ id: 'a', bin: 'red', work_date: '2026-11-01', scrap_report_id: 'R1' }];
+  assert.equal(overdueBins(rows, '2026-11-10').length, 0);
+  assert.equal(overdueBins(rows, '2026-11-10', new Set(), { R1: 'draft' }).length, 1);
+});
+
+test('🔴 บั๊ก A — ตัดสินแล้วแต่ยังไม่จบ ต้องค้างในคิว พร้อมเหตุผล', () => {
+  const rows = [
+    { id: 'a', bin: 'yellow', is_active: true, qa_decision: 'repair' },                       // ซ่อม ยังไม่กลับ
+    { id: 'b', bin: 'yellow', is_active: true, qa_decision: 'use_as_is' },                    // ขอใช้ ไม่มีเลขใบ
+    { id: 'c', bin: 'yellow', is_active: true, qa_decision: 'scrap' },                        // ทำลาย ยังไม่ย้าย
+    { id: 'd', bin: 'yellow', is_active: true, qa_decision: 'scrap' },                        // ทำลาย ย้ายแล้ว
+    { id: 'e', bin: 'yellow', is_active: true, qa_decision: 'repair', return_date: '2026-11-09' }, // ซ่อมกลับแล้ว
+    { id: 'f', bin: 'yellow', is_active: true, qa_decision: 'use_as_is', special_use_doc_no: 'Q-1' },
+  ];
+  assert.deepEqual(pendingYellow(rows, new Set(['d'])).map(r => r.id), ['a', 'b', 'c']);
+  assert.match(yellowStuckReason(rows[0]), /ยังไม่ลงวันกลับเข้ากระบวนการ/);
+  assert.match(yellowStuckReason({ ...rows[0], qty_ng: 2 }), /NG 2 ชิ้น/);
+  assert.match(yellowStuckReason(rows[1]), /FM-QA-042/);
+  assert.match(yellowStuckReason(rows[2]), /ยังไม่ย้ายลงถังแดง/);
+  assert.equal(yellowStuckReason(rows[3], { hasRedChild: true }), null);
+  assert.equal(yellowStuckReason({ bin: 'yellow' }), null);   // ยังไม่ตัดสิน = ไม่ใช่ "ค้างหลังตัดสิน"
+  assert.equal(yellowStuckReason(rows[4]), null);
 });

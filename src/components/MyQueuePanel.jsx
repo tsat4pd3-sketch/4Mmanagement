@@ -29,6 +29,7 @@ import { isAmTeam } from '../utils/pmTeams';
 import { positionRank } from '../utils/positions';
 import { can as canPerm, isActionSeeded } from '../utils/permissions';
 import { teamKeyOf } from '../utils/mtnTeams';
+import { pendingYellow } from '../utils/qualityBin';
 import {
   TIER, TIER_TITLE, EMPTY_TEXT, OLD_DAYS, buildQueue, badgeCount, capped,
 } from '../utils/myQueue';
@@ -92,9 +93,10 @@ export async function loadMyQueue(me) {
     /* 🟡 ถังเหลืองรอพิจารณา — เงื่อนไขเดียวกับแผงในหน้าถัง (`pendingYellow`) · เลือกเฉพาะคอลัมน์ที่คิวใช้
        (ตารางนี้กว้าง — `select('*')` คือตัวกิน egress · กฎเขียน DB ข้อ 11) */
     supabaseDR.from('quality_bin_records')
-      .select('id, work_date, line_name, mat_no, part_name, part_no, qty, cause')
+      .select('id, bin, is_active, work_date, line_name, mat_no, part_name, part_no, qty, cause, qa_decision, return_date, special_use_doc_no')
       .eq('bin', 'yellow').eq('is_active', true)
-      .is('qa_decision', null).is('return_date', null)
+      /* 🔴 ตัดสินแล้วแต่ยังไม่จบ = ยังค้าง (บั๊ก A 10/11) — ตัด "งานดี" ฝั่ง server ที่เหลือตัดสินด้วย pendingYellow() */
+      .or('qa_decision.is.null,qa_decision.neq.good').is('return_date', null)
       .order('work_date', { ascending: true }).limit(200),
     /* ใบเหลืองที่ย้ายลงถังแดงไปแล้ว = ออกจากคิว (ไม่งั้นเป็น "ของค้างเทียม" ที่ทำให้คนเลิกเชื่อจอ)
        แถวจริงตอนนี้ 0 — แต่ต้องถามไว้ เพราะทางย้ายมือยังเปิดอยู่ในหน้าถัง */
@@ -120,8 +122,7 @@ export async function loadMyQueue(me) {
   /* 🔴 ชนเพดาน 200 ของคิวเอง = "โหลดไม่ครบ" ไม่ใช่ "มีแค่นี้" ⇒ ติดธงให้จอเขียนบอก (กฎเขียน DB ข้อ 5) */
   const binsTruncated = Array.isArray(binR.data) && binR.data.length >= 200;
   const bins = (binR.error || !movedToRed) ? undefined
-    : (binR.data || [])
-      .filter(b => !movedToRed.has(b.id))
+    : pendingYellow(binR.data || [], movedToRed)
       .map(b => ({ ...b, section: secOfLine.get(String(b.line_name || '').trim().toLowerCase()) }));
 
   const moRows = ok(moR);

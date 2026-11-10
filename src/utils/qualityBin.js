@@ -68,11 +68,22 @@ export const SPECIAL_USE_FORM = 'FM-QA-042';
  *
  * เหลือง ปิดเมื่อ: กลับเข้ากระบวนการแล้ว (return_date) · QA ว่างานดี · ขอใช้แล้วมีเลข FM-QA-042
  *                  · ย้ายลงถังแดงไปแล้ว (มีแถวแดงที่ from_yellow_id ชี้มา — ส่งผ่าน hasRedChild)
- * แดง   ปิดเมื่อ: เข้าสายขออนุมัติทำลายแล้ว (มี scrap_report_id)
+ * แดง   ปิดเมื่อ: เข้าสายขออนุมัติทำลายแล้ว = ผูกใบรายงานของเสีย **ที่ส่งอนุมัติแล้ว**
+ *
+ * 🔴 ใบที่ยังเป็น "ร่าง" ยังไม่ใช่การขออนุมัติ (2026-11-10 · บั๊ก B ที่ user สั่งแก้)
+ *    เดิมดูแค่ `scrap_report_id` ⇒ ดึงลงใบร่างปุ๊บ จอขึ้นเขียว "ออกใบแล้ว" + หยุดนับอายุแท็ก
+ *    ทั้งที่ยังไม่มีใครส่งขออนุมัติ ⇒ ผู้เรียกส่ง `scrapStatusOf` (id ใบ → status) มาด้วย
+ *    · ไม่ส่งมา/อ่านสถานะใบไม่ได้ (undefined) = **พฤติกรรมเดิม** (ถือว่าปิด) — จอต้องเขียนบอกเองว่าอ่านไม่ได้
+ *    · `'draft'` = ยังไม่ปิด
  */
-export function binClosed(row, { hasRedChild = false } = {}) {
+export const SCRAP_DRAFT = 'draft';
+export function binClosed(row, { hasRedChild = false, scrapStatusOf = null } = {}) {
   if (!row) return false;
-  if (row.bin === 'red') return !!row.scrap_report_id;
+  if (row.bin === 'red') {
+    if (!row.scrap_report_id) return false;
+    const st = scrapStatusOf ? scrapStatusOf[row.scrap_report_id] : undefined;
+    return st !== SCRAP_DRAFT;
+  }
   if (row.return_date) return true;
   if (row.qa_decision === 'good') return true;
   if (row.qa_decision === 'use_as_is' && String(row.special_use_doc_no || '').trim()) return true;
@@ -84,11 +95,12 @@ export function binClosed(row, { hasRedChild = false } = {}) {
  * @param rows   แถวในถัง (ถังเดียวกัน)
  * @param today  วันทำงานปัจจุบัน 'YYYY-MM-DD'
  * @param redChildOf  Set ของ id ใบเหลืองที่มีแถวแดงชี้กลับมาแล้ว
+ * @param scrapStatusOf  { [scrap_report_id]: status } — ส่งต่อให้ binClosed (ใบร่าง = ยังไม่ปิด)
  */
-export function overdueBins(rows = [], today, redChildOf = new Set()) {
+export function overdueBins(rows = [], today, redChildOf = new Set(), scrapStatusOf = null) {
   const out = [];
   for (const r of rows) {
-    if (binClosed(r, { hasRedChild: redChildOf.has(r.id) })) continue;
+    if (binClosed(r, { hasRedChild: redChildOf.has(r.id), scrapStatusOf })) continue;
     const age = binTagAge(r, today);
     if (age?.over) out.push({ row: r, age });
   }
@@ -152,12 +164,35 @@ export function yellowRowFromDefect(defect, session, { actorName = '', partNo = 
 }
 
 /**
- * ใบเหลืองที่ยัง "รอพิจารณา" — ของที่หน้างานต้องมาเคลียร์ว่า กลับมาดี หรือ เสียแน่
+ * ใบเหลืองที่ยัง "ค้างในคิว" — ของที่หน้างานต้องมาเคลียร์ว่า กลับมาดี หรือ เสียแน่
  * @param rows        แถวถังเหลือง (is_active)
  * @param redChildOf  Set id ใบเหลืองที่ย้ายลงแดงแล้ว
- * 🔴 "รอพิจารณา" = ยังไม่มีผล **และ** ยังไม่ปิดด้วยทางอื่น (กลับเข้ากระบวนการ/ย้ายแดง)
+ * 🔴 ค้างในคิว = **ยังไม่ปิด** (`binClosed` ตัวเดียวกับตาราง) — ไม่ได้ดูแค่ "ยังไม่มีผล"
+ *    (2026-11-10 · บั๊ก A ที่ user สั่งแก้) เดิมกรอง `!qa_decision` ⇒ เลือกผลในฟอร์มแก้ไขเป็น
+ *    ซ่อม (ยังไม่ลงวันกลับเข้ากระบวนการ) / ขอใช้ (ยังไม่มีเลข FM-QA-042) / ทำลาย (ยังไม่ย้ายลงแดง)
+ *    แล้วรายการ **หายจากคิว ทั้งที่ยังไม่จบ** — ไม่อยู่ในคิวไหนเลย · เหตุที่ยังค้าง → `yellowStuckReason()`
  */
 export function pendingYellow(rows = [], redChildOf = new Set()) {
   return (rows || []).filter(r => r && r.bin === 'yellow' && r.is_active !== false
-    && !r.qa_decision && !binClosed(r, { hasRedChild: redChildOf.has(r.id) }));
+    && !binClosed(r, { hasRedChild: redChildOf.has(r.id) }));
+}
+
+/**
+ * ใบเหลืองที่ "ตัดสินแล้วแต่ยังไม่จบ" — ค้างเพราะอะไร (ป้ายในคิว) · null = ยังไม่ตัดสิน/จบแล้ว
+ * ⚠️ pure · ข้อความชี้ทางแก้ ไม่ใช่แค่บอกสถานะ
+ */
+export function yellowStuckReason(row, { hasRedChild = false } = {}) {
+  if (!row || row.bin !== 'yellow' || !row.qa_decision) return null;
+  if (binClosed(row, { hasRedChild })) return null;
+  switch (row.qa_decision) {
+    case 'repair': {
+      const ng = Number(row.qty_ng) || 0;
+      return ng > 0
+        ? `ตัดสินซ่อมแล้ว · ซ่อมแล้ว NG ${ng} ชิ้น ยังไม่ย้ายลงถังแดง`
+        : 'ตัดสินซ่อมแล้ว · ยังไม่ลงวันกลับเข้ากระบวนการ';
+    }
+    case 'use_as_is': return `ตัดสินขอใช้แล้ว · ยังไม่มีเลขใบ ${SPECIAL_USE_FORM}`;
+    case 'scrap':     return 'ตัดสินทำลายแล้ว · ยังไม่ย้ายลงถังแดง';
+    default:          return 'ตัดสินแล้ว · ยังไม่ปิด';
+  }
 }

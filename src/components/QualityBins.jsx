@@ -47,7 +47,7 @@ import { printQualityBin } from '../lib/qualityBinPrint';
 import { confirmSign } from '../utils/signConfirm';
 /* กติกาที่ถอดจาก WI-PD3-069 §5.4/§5.6 + WI-PD3-087 — อายุแท็ก + ผลพิจารณา QA
    ⚠️ ห้าม hardcode 5/1 วัน หรือรายชื่อผลพิจารณาซ้ำในหน้านี้ (2026-09-25) */
-import { TAG_MAX_DAYS, QA_DECISIONS, decisionOf, binTagAge, binClosed, overdueBins, pendingYellow, SPECIAL_USE_FORM } from '../utils/qualityBin';
+import { TAG_MAX_DAYS, QA_DECISIONS, decisionOf, binTagAge, binClosed, overdueBins, pendingYellow, yellowStuckReason, SPECIAL_USE_FORM, SCRAP_DRAFT } from '../utils/qualityBin';
 import SimpleMasterPanel from './SimpleMasterPanel';
 import { masterDeleteGuard } from '../utils/masterRefs'; // ด่านนับปลายทางก่อนลบทะเบียนที่จับคู่ด้วยข้อความ — 2026-10-18
 /* 📷 รูปหลักฐานของเสีย — ช่องแนบ + ตัวบีบ/อัปโหลด เป็นของกลาง ห้ามเขียนเองในหน้า (2026-10-12) */
@@ -228,7 +228,9 @@ export default function QualityBins({ mode = 'full' }) {
       let pq = supabaseDR.from('quality_bin_records')
         .select('id, work_date, line_name, mat_no, part_name, part_no, qty, cause, reported_by, qa_decision, return_date, defect_log_id, found_img, special_use_doc_no, scrap_report_id, bin, is_active, qty_ng')
         .eq('bin', 'yellow').eq('is_active', true)
-        .is('qa_decision', null).is('return_date', null)
+        /* 🔴 ไม่กรองแค่ "ยังไม่มีผล" — ตัดสินแล้วแต่ยังไม่จบ (ซ่อมยังไม่กลับ/ขอใช้ไม่มีเลขใบ/ทำลายยังไม่ย้ายแดง)
+           ต้องค้างในคิวด้วย (บั๊ก A 10/11) · ตัด "งานดี" ฝั่ง server เพราะปิดแน่นอน · ที่เหลือตัดสินด้วย pendingYellow() */
+        .or('qa_decision.is.null,qa_decision.neq.good').is('return_date', null)
         .order('work_date', { ascending: true }).limit(300);
       if (inScope) pq = pq.or(inScope);
       const { data: pd, error: pe } = await pq;
@@ -268,7 +270,18 @@ export default function QualityBins({ mode = 'full' }) {
       .lte('work_date', daysAgo((TAG_MAX_DAYS[bin] ?? 0) + 1))
       .order('work_date', { ascending: true })
       .limit(500);
-    oq = bin === 'red' ? oq.is('scrap_report_id', null) : oq.is('return_date', null);
+    /* 🔴 ถังแดง: ผูกใบที่ยังเป็น "ร่าง" = ยังไม่ได้ขออนุมัติ ⇒ ยังต้องนับอายุแท็ก (บั๊ก B 10/11)
+       ดึง id ใบร่างก่อน (ใบร่างควรมีไม่กี่ใบ — เป็นสถานะชั่วคราว) · อ่านไม่ได้ = ถอยไปเงื่อนไขเดิม + เขียนบนจอ */
+    let draftErr = '';
+    if (bin === 'red') {
+      const { data: drafts, error: dErr } = await supabaseDR.from('scrap_reports')
+        .select('id').eq('status', SCRAP_DRAFT).limit(200);
+      if (stale()) return;
+      const dIds = dErr ? [] : (drafts || []).map(d => d.id);
+      if (dErr) draftErr = `อ่านใบรายงานของเสียที่ยังเป็นร่างไม่ได้: ${dErr.message} — ของที่ผูกใบร่างอาจไม่ขึ้นเป็นของค้าง`;
+      else if ((drafts || []).length >= 200) draftErr = 'ใบรายงานของเสียที่ยังเป็นร่างเกิน 200 ใบ — ของที่ผูกใบร่างบางรายการอาจไม่ขึ้นเป็นของค้าง';
+      oq = dIds.length ? oq.or(`scrap_report_id.is.null,scrap_report_id.in.(${dIds.join(',')})`) : oq.is('scrap_report_id', null);
+    } else oq = oq.is('return_date', null);
     if (inScope) oq = oq.or(inScope);
     const [{ data, error }, ores] = await Promise.all([q, oq]);
     if (stale()) return;
@@ -276,7 +289,7 @@ export default function QualityBins({ mode = 'full' }) {
     if (ores.error) { setOverdueErr(ores.error.message); setOverdueRows([]); }
     else {
       /* เพดาน 500 แถว (กฎเขียน DB ข้อ 5) — ชนเพดาน = ยอดค้างอาจมากกว่านี้ ต้องบอก */
-      setOverdueErr((ores.data || []).length >= 500 ? 'ของค้างเกิน 500 รายการ — แสดงเฉพาะ 500 รายการที่เก่าที่สุด' : '');
+      setOverdueErr((ores.data || []).length >= 500 ? 'ของค้างเกิน 500 รายการ — แสดงเฉพาะ 500 รายการที่เก่าที่สุด' : draftErr);
       setOverdueRows(ores.data || []);
     }
     if (error) {
@@ -292,7 +305,8 @@ export default function QualityBins({ mode = 'full' }) {
        (WI-PD3-069 §5.5 — ของทุกก้อนในถังแดงต้องมี Scrap Report เพื่อขออนุมัติตาม DOA · 2026-09-25)
        โหลดแยกเพราะ quality_bin_records อยู่คนละ schema ที่ join ตรงไม่ได้ผ่าน PostgREST ที่นี่
        ล้มเหลว = ปล่อยว่าง ไม่บล็อกตาราง แต่ก็ไม่โกหกว่า "ออกใบแล้ว" */
-    const repIds = [...new Set((data || []).map(r => r.scrap_report_id).filter(Boolean))];
+    /* ครอบทั้งแถวในช่วง + แถวค้างเกินอายุ — ต้องรู้สถานะใบ (ร่าง/ส่งแล้ว) ถึงจะตัดสินได้ว่าปิดหรือยัง */
+    const repIds = [...new Set([...(data || []), ...(ores.data || [])].map(r => r.scrap_report_id).filter(Boolean))];
     if (repIds.length) {
       /* 🔴 แถวในช่วงมีได้ถึง 500 ⇒ `.in(id, …)` ยาวเกินเพดาน URL ของ proxy แล้ว **คืนค่าว่างเงียบ**
          ⇒ คอลัมน์ "ใบรายงานของเสีย" ว่างทั้งตารางทั้งที่ออกใบแล้ว (กฎเขียน DB ข้อ 5 · QC audit 09/11) */
@@ -324,21 +338,24 @@ export default function QualityBins({ mode = 'full' }) {
   /* ⏱️ อายุแท็ก/สถานะปิด ของทุกแถว — คิดครั้งเดียว ใช้ทั้งตัวกรอง ป้ายเตือน และตาราง
      `todayWd` เป็นพารามิเตอร์ของ binTagAge (ฟังก์ชันไม่อ่านนาฬิกาเอง — กฎเทสระเบิดเวลา) */
   const todayWd = today();
+  /* id ใบรายงานของเสีย → status · ใบร่าง = ของในถังแดงยังไม่ปิด (binClosed) */
+  const scrapStatusOf = useMemo(
+    () => Object.fromEntries(Object.values(scrapDocs).map(d => [d.id, d.status])), [scrapDocs]);
   const ageMap = useMemo(() => {
     const m = {};
     [...rows, ...overdueRows].forEach(r => {
       m[r.id] = {
         age: binTagAge(r, todayWd),
-        closed: binClosed(r, { hasRedChild: redChildOf.has(r.id) }),
+        closed: binClosed(r, { hasRedChild: redChildOf.has(r.id), scrapStatusOf }),
       };
     });
     return m;
-  }, [rows, overdueRows, todayWd, redChildOf]);
+  }, [rows, overdueRows, todayWd, redChildOf, scrapStatusOf]);
 
   /* ของค้างเกินอายุทั้งหมด (ไม่ผูกช่วงวันที่) — ตัวเดียวกับป้ายเตือน/ปุ่ม/ตารางโหมด "เฉพาะของค้าง" */
   const overdueList = useMemo(
-    () => overdueBins(overdueRows, todayWd, redChildOf).map(o => o.row),
-    [overdueRows, todayWd, redChildOf],
+    () => overdueBins(overdueRows, todayWd, redChildOf, scrapStatusOf).map(o => o.row),
+    [overdueRows, todayWd, redChildOf, scrapStatusOf],
   );
   const overdueCount = overdueList.length;
 
@@ -450,10 +467,12 @@ export default function QualityBins({ mode = 'full' }) {
        ทั้งที่ไม่ได้เขียนอะไรเลย (แถวถูก soft-delete/มีคนแก้ไปก่อน) — กฎเขียน DB ข้อ 2 · QC audit 09/11
        INSERT ไม่ต้องนับ (โดน RLS จะโยน 42501 เอง) */
     let ok = true;
+    let savedId = editing === 'new' ? null : editing.id;
     if (editing === 'new') {
-      const res = await supabaseDR.from('quality_bin_records').insert(payload);
+      const res = await supabaseDR.from('quality_bin_records').insert(payload).select('id').single();
       ok = !res.error;
       if (res.error) toast.error(res.error.message);
+      else savedId = res.data?.id || null;
     } else {
       const res = await supabaseDR.from('quality_bin_records').update(payload).eq('id', editing.id).select('id');
       ok = checkWriteRows(res, 'แก้ไขรายการในถัง',
@@ -478,7 +497,14 @@ export default function QualityBins({ mode = 'full' }) {
       ],
     });
     toast.success(editing === 'new' ? 'บันทึกแล้ว' : 'แก้ไขแล้ว');
-    setEditing(null); load();
+    setEditing(null);
+    /* 🔴 เลือก "ทำลาย" ในฟอร์มแล้วบันทึก = ต้องย้ายลงถังแดงด้วย (บั๊ก A 10/11)
+       เดิมบันทึกแค่ผล ไม่ย้าย ⇒ ใบหลุดคิวรอพิจารณา ไม่มีใบแดง ไม่เข้าสายขออนุมัติทำลาย
+       ใช้ `toRed` ตัวเดิม (ถามยืนยันจำนวนก่อนย้าย · กดยกเลิก = ใบยังค้างในคิวพร้อมป้ายบอก ไม่หายเงียบ) */
+    if (isY && savedId && payload.qa_decision === 'scrap' && !redChildOf.has(savedId)) {
+      await toRed({ ...(editing === 'new' ? {} : editing), ...payload, id: savedId });
+    }
+    load();   // ยกเลิก/ล้มใน toRed ก็ต้องรีเฟรช ให้เห็นใบที่ค้างพร้อมป้าย
   };
 
   const remove = async (r) => {
@@ -648,6 +674,11 @@ export default function QualityBins({ mode = 'full' }) {
                         {r.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· {r.line_name}</span>}
                       </div>
                       {r.cause && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.cause}</div>}
+                      {/* 🔴 ตัดสินแล้วแต่ยังไม่จบ — บอกว่าค้างเพราะอะไร (บั๊ก A 10/11 · เดิมหายจากคิวเงียบๆ) */}
+                      {(() => {
+                        const why = yellowStuckReason(r, { hasRedChild: redChildOf.has(r.id) });
+                        return why ? <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>⚠️ {why}</div> : null;
+                      })()}
                     </div>
                     {canRecord && (
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -865,7 +896,13 @@ export default function QualityBins({ mode = 'full' }) {
                 {/* 🔴 สาย DOA: ของในถังแดงต้องมีใบรายงานของเสีย (FM-PD2-002) เพื่อขออนุมัติทำลาย
                     ยังไม่ออกใบ = ส้มเตือน (งานค้าง ไม่ใช่ alarm — ไม่กระพริบ ตาม Andon convention) */}
                 {!isY && <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                  {r.scrap_report_id
+                  {r.scrap_report_id && scrapDocs[r.scrap_report_id]?.status === SCRAP_DRAFT
+                    /* 🔴 ใบร่าง ≠ ขออนุมัติแล้ว — ยังเป็นงานค้าง (บั๊ก B 10/11) */
+                    ? <span title="ผูกใบแล้วแต่ใบยังเป็นร่าง — ยังไม่ได้ส่งขออนุมัติทำลาย"
+                        style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--amber)' }}>
+                        📝 {scrapDocs[r.scrap_report_id]?.doc_no || ''} ร่าง · ยังไม่ส่งอนุมัติ
+                      </span>
+                    : r.scrap_report_id
                     ? <span style={{ fontSize: 11.5, fontWeight: 700, color: '#22c55e' }}>
                         {scrapDocs[r.scrap_report_id]?.doc_no || 'ออกใบแล้ว'}
                       </span>
