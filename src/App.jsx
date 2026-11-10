@@ -23,7 +23,7 @@ import { effectiveSections } from './utils/sectionScope';
 /* 💰 ชั้นสิทธิ์ที่ 3 แกน Cost Center — ดัชนีผังสร้างที่นี่ที่เดียว แล้วส่งผ่าน UserContext
    (จอ 20 จออ่านผ่าน `canWriteUnit`/`canWriteLine` เหมือนเดิม ไม่ต้องรู้ว่ามีแกนที่ 2) */
 import { buildOrgScope } from './utils/orgScope';
-import { clearAllMasterCache } from './utils/masterCache';
+import { clearAllMasterCache, setMasterAuthUser } from './utils/masterCache';
 import { attachCc, buildCcIndex } from './utils/ccScope';
 import { applyAssignments } from './utils/assignmentOverlay'; // 🔄 รักษาการ/รับผิดชอบเพิ่ม ทับขอบเขตจริง (widen-only · 2026-11-02)
 import { getWorkDate } from './utils/workDate';
@@ -1839,6 +1839,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
        เดิม logout ไม่ล้างอะไรเลย ⇒ ของพิษ (เช่นลิสต์ไลน์ว่างที่ถูกจดไว้ 4 ชม.) ยังค้าง
        ⇒ ต้องบอกหน้างานให้ "เปิด incognito" ซึ่งเขาไม่เข้าใจและทำไม่ถูก
        ตอนนี้ **"ออกจากระบบแล้วเข้าใหม่" = ทางแก้จริง** — ประโยคเดียวที่หน้างานทำตามได้ */
+    setMasterAuthUser(null);   // 🔐 ปิดประตูก่อนล้าง — หน้าที่ re-render ระหว่างนี้ห้ามจดลิสต์ว่างลง cache (masterCache.js)
     clearAllMasterCache();
     await supabase.auth.signOut({ scope: 'local' });
     navigate('/login');
@@ -2647,6 +2648,7 @@ export default function App() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
+      setMasterAuthUser(session?.user?.id ?? null);   // 🔐 cache ทะเบียนจดได้เฉพาะตอน login (masterCache.js)
       setSession(session);
       if (session?.user) {
         fetchProfile(session.user);
@@ -2654,6 +2656,7 @@ export default function App() {
       }
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((evt, s) => {
+      setMasterAuthUser(s?.user?.id ?? null);
       setSession(s);
       // stamp เวลา login จริง (เฉพาะตอน SIGNED_IN — refresh/INITIAL_SESSION ไม่ยิง event นี้)
       // ใช้คิดเพดานกะใน useAutoLogout · เก็บใน localStorage แชร์ทุกแท็บ + คงข้ามการรีเฟรช

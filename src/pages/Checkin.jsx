@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext, useMemo, useRef, Fragment } from 'react';
 import { orgValues, sortLike } from '../utils/listOrder';
 import { supabase } from '../supabaseClient';
+import { setMasterAuthUser } from '../utils/masterCache';
 /* 👥 แกนคน 2 แกน (14/10) — "เช็คชื่อไหม" คนละคำถามกับ "นับกำลังคนไลน์ไหม" (กฎ staffKind.js)
    · จอนี้ = **เช็คชื่อ** ⇒ แสดงครบทุกกลุ่ม แล้ว *แยกหัวข้อให้เห็น* ห้ามกรองใครทิ้ง
    · `onlyShopfloorStaff` เหลือใช้ที่เดียว = ช่องยืมคนข้ามไลน์ (ยืมไป "ช่วยไลน์ผลิต") */
@@ -26,6 +27,7 @@ import { buildScheduleMaps, resolveAssignedShift, teamsVisibleToLeader } from '.
 import { roleLabel } from '../utils/roleMeta';
 import { getDocForm, fullCode } from '../utils/docForms';
 import { checkWrite } from '../utils/dbWrite';
+import { checkinLogRow, upsertCheckin } from '../lib/checkinSave';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
@@ -219,18 +221,25 @@ export default function Checkin() {
     return out;
   }, [attendance, baseline]);
   const [ckPending, setCkPending] = useState(null);
+  // "ค้างบันทึกกี่คน" จริงๆ (ติ๊ก/แก้ด้วยมือแล้วยังไม่กด 💾) — ใช้เขียนบนจอ ห้ามเดาเอาจากยอดมางานรวม
+  const ckPendingCount = Object.keys(ckChanges).length;
 
   /* 🪪 เช็คชื่อด้วยบัตรพนักงาน (มือถือ · 27/10 · คำสั่ง user) — QR บนบัตร = รหัสพนักงาน (utils/badgeCheckin.js)
      2 ทาง: 📷 เปิดกล้องสแกนต่อเนื่อง (โมดัลไม่ปิดเอง ยิงทีละคนได้เลย) · กดปุ่มสแกนข้างเครื่องตอนไม่ได้แตะช่องไหน
-     (ScanWedgeGuard ยิง `esm:scan` มา — หน้านี้รับ) · สแกน = ติ๊ก "มางาน" บนจอเท่านั้น ยังต้องกด 💾 บันทึก เหมือนเดิม */
+     (ScanWedgeGuard ยิง `esm:scan` มา — หน้านี้รับ)
+     🔴 **สแกน 1 ใบ = เขียนลงฐานทันที 1 แถว** (10/11 · คำสั่ง user) — ไม่ต้องกด 💾 บันทึกอีก
+     · เขียนไม่ติด = ไม่ติ๊กบนจอ + ขึ้นแดงให้ยิงซ้ำ (ห้ามติ๊กค้างไว้ให้เข้าใจผิดว่าเช็คแล้ว)
+     · เขียนเฉพาะ "คนที่ยิงบัตร" แถวเดียว — ไม่แตะคนอื่นในจอ (ปุ่ม 💾 เขียนทั้ง `displayed` ทับของคนอื่นได้) */
   const [badgeScanOpen, setBadgeScanOpen] = useState(false);
+  const [confirmScan, setConfirmScan] = useState(false);   // ยืนยัน "สแกนในนามใคร" ครั้งเดียวก่อนเปิดกล้อง
+  const [scanSaved, setScanSaved] = useState([]);          // id คนที่บันทึกสำเร็จในรอบสแกนนี้ (ไว้เขียนบนจอ)
   const badgeScanRef = useRef(null);
   useEffect(() => {
     if (!isMobile) return undefined;
-    const onScan = (e) => {
+    const onScan = async (e) => {
       const fn = badgeScanRef.current; if (!fn) return;
       e.preventDefault();   // หน้านี้รับรหัสแล้ว — ScanWedgeGuard ไม่ต้องขึ้น "จอนี้ไม่มีช่องรอรับ"
-      const r = fn(e.detail?.parsed || { raw: e.detail?.raw });
+      const r = await fn(e.detail?.parsed || { raw: e.detail?.raw });   // เขียนลงฐานแล้วค่อยบอกผล
       if (typeof r === 'string') toast.error(r); else if (r?.ok) toast.success(r.ok);
     };
     window.addEventListener(SCAN_EVENT, onScan);
@@ -602,6 +611,7 @@ export default function Checkin() {
 
   const handleSwitchUser = async () => {
     // ออกจากระบบเฉพาะเครื่องนี้ (scope local — ห้าม global ตามกฎ auth) แล้ว App เด้งไปหน้า login
+    setMasterAuthUser(null);   // 🔐 ผลที่โหลดระหว่างสลับบัญชีห้ามลง cache (ต้นเหตุ dropdown ไลน์ว่าง · masterCache.js)
     try { await supabase.auth.signOut({ scope: 'local' }); } catch { /* ปล่อยให้ App จัดการต่อ */ }
   };
 
@@ -671,6 +681,12 @@ export default function Checkin() {
     fetchData();
   };
 
+  /* 🧾 แถวที่เขียนลง `daily_production_logs` — สูตรอยู่ `src/lib/checkinSave.js` **ที่เดียว**
+     ใช้ร่วมกับ `/scan` (ยิงบัตรใบเดียวแล้วจบ) ⇒ 2 ประตูเขียนฟิลด์ชุดเดียวกันเป๊ะ */
+  const ckLogRow = (emp, rec, userId) => checkinLogRow({
+    emp, rec, workDateStr: shiftInfo.workDateStr, shift: emp.assignedShift || shiftInfo.shift, userId,
+  });
+
   const handleSave = async () => {
     setConfirmSave(false);
     setIsSaving(true);
@@ -681,26 +697,7 @@ export default function Checkin() {
     // บันทึกเฉพาะรายชื่อที่แสดงบนจอ (displayed) ไม่ใช่ roster ที่โหลดมาทั้งหมด —
     // ไม่งั้นหัวหน้ากะเช้าเปิดหน้าค้างแล้วกดบันทึกตอนเย็น จะทับเช็คชื่อกะดึก/ส่วนอื่นกลับเป็น "ไม่มา"
     // (สรุปยอด + modal ยืนยัน อ้าง displayed อยู่แล้ว — เขียนให้ตรงกัน)
-    const logs = displayed.map(emp => {
-      const rec = attendance[emp.id] || {};
-      return {
-        employee_id:    emp.id,
-        work_date:      workDateStr,
-        shift:          emp.assignedShift || shiftInfo.shift,
-        is_present:     rec.is_present,
-        has_helmet:     rec.has_helmet,
-        has_boots:      rec.has_boots,
-        has_gloves:     rec.has_gloves,
-        has_ot:           rec.has_ot,
-        has_extended_ot:  rec.has_extended_ot || false,
-        remark:           rec.remark || null,
-        leave_type:     rec.leave_type     || null,
-        leave_duration: rec.leave_duration || null,
-        leave_period:   rec.leave_period   || null,
-        leave_hours:    rec.leave_hours    ? Number(rec.leave_hours) : null,
-        checked_by:     userData.user.id,
-      };
-    });
+    const logs = displayed.map(emp => ckLogRow(emp, attendance[emp.id] || {}, userData.user.id));
 
     const { error } = await supabase
       .from('daily_production_logs')
@@ -1238,15 +1235,29 @@ export default function Checkin() {
   });
 
   // 🪪 ผลการสแกนบัตร 1 ใบ → ติ๊กมางานบนจอ (กติกาอยู่ใน utils/badgeCheckin.js) · คืน string = ข้อความ error ให้ ScanModal/toast
-  const onBadgeScan = (parsed) => {
+  const onBadgeScan = async (parsed) => {
     if (!canRecord) return 'บัญชีนี้ไม่มีสิทธิ์เช็คชื่อ (checkin:record)';
     const raw = parsed?.raw || '';
     const r = badgeScanOutcome({ employees, displayedIds: new Set(displayed.map(e => e.id)), attendance, raw });
     if (r.kind === 'unknown') return `ไม่พบรหัส "${raw}" ในรายชื่อพนักงานที่โหลดมา — ตรวจรหัสบนบัตร หรือพนักงานยังไม่อยู่ในทะเบียน`;
     if (r.kind === 'not_shown') return `${r.emp.name} (${r.emp.employee_id_code}) ไม่อยู่ในรายชื่อที่แสดงตอนนี้ (คนละไลน์/กะ/ตัวกรอง) — เปลี่ยนตัวกรอง หรือกด "ยืมตัว" ถ้ามาช่วยไลน์นี้`;
-    if (r.kind === 'already') return { ok: `✓ ${r.emp.name} — เช็คมางานไว้แล้ว` };
-    setAttendance(prev => ({ ...prev, [r.emp.id]: r.record }));
-    return { ok: `✓ ${r.emp.name} (${r.emp.employee_id_code}) — มางาน` };
+
+    /* 🔴 สแกน = เขียนลงฐาน **ทันทีทีละคน** (10/11 · คำสั่ง user "ควรจะเช็คมาเลย")
+       `already` ก็เขียน — เพราะ "มางานอยู่แล้ว" อาจเป็นแค่ติ๊กค้างบนจอที่ยังไม่เคยบันทึก
+       ข้ามไป = คนยิงบัตรเชื่อว่าเช็คแล้วแต่ฐานยังว่าง (upsert แถวเดิม = ไม่มีผลข้างเคียง) */
+    const rec = r.record || { ...(attendance[r.emp.id] || {}), is_present: true };
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData?.user?.id) return 'ยังไม่ได้เข้าระบบ — บันทึกไม่ได้ ให้ Login ก่อนแล้วยิงใหม่';
+    const okRow = await upsertCheckin(supabase, ckLogRow(r.emp, rec, userData.user.id));
+    // ❌ เขียนไม่ติด = **ห้ามติ๊กบนจอ** (ติ๊กไว้ = จอบอกว่าเช็คแล้วทั้งที่ฐานยังว่าง) · ให้ยิงซ้ำ
+    if (!okRow) return `บันทึก ${r.emp.name} ไม่สำเร็จ — ยังไม่ได้เช็คชื่อ (ดูข้อความแดงที่มุมจอ) · ยิงบัตรซ้ำอีกครั้ง`;
+
+    setAttendance(prev => ({ ...prev, [r.emp.id]: rec }));
+    // ฐานใหม่แล้ว ⇒ ขยับ baseline ด้วย ไม่งั้นตัวนับ "ค้างบันทึก"/ร่างในเครื่อง ยังนับคนนี้ว่าค้าง
+    setBaseline(prev => ({ ...prev, att: { ...prev.att, [r.emp.id]: JSON.parse(JSON.stringify(rec)) },
+      logIds: new Set([...prev.logIds, r.emp.id]) }));
+    setScanSaved(prev => prev.includes(r.emp.id) ? prev : [...prev, r.emp.id]);
+    return { ok: `✓ บันทึกแล้ว — ${r.emp.name} (${r.emp.employee_id_code}) มางาน` };
   };
   badgeScanRef.current = isMobile && displayed.length > 0 ? onBadgeScan : null;
   /* 🔴 เรียงตามกลุ่มคน (หน้างาน → ช่าง → สนับสนุน) เพื่อให้แทรกหัวข้อกลุ่มได้ (14/10)
@@ -1911,18 +1922,50 @@ export default function Checkin() {
       )}
 
       {isMobile && canRecord && displayed.length > 0 && (
-        <button type="button" onClick={() => setBadgeScanOpen(true)}
+        <button type="button" onClick={() => setConfirmScan(true)}
           style={{ width: '100%', minHeight: 52, marginBottom: 12, borderRadius: 'var(--r-md)', border: '2px solid var(--accent)', background: 'var(--accent-dim)',
             color: 'var(--accent)', fontSize: 16, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
           สแกนบัตรพนักงานเช็คชื่อ
         </button>
       )}
+      {/* 🪪 ด่านเดียวก่อนเริ่มยิงบัตร — บอกว่า "ในนามใคร" และว่าทุกใบจะลงระบบทันที
+          (ถามครั้งเดียวตอนเปิด ไม่ถามรายใบ — ยิงบัตรหน้าประตูต้องไหลต่อเนื่อง) */}
+      {confirmScan && (
+        <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: '22px 24px', width: '100%', maxWidth: 380, textAlign: 'center' }}>
+            <div style={{ fontSize: 32, marginBottom: 6 }}>🪪</div>
+            <div style={{ fontSize: 14, color: 'var(--text2)', marginBottom: 4 }}>สแกนบัตรเช็คชื่อในนาม</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>{fullName || 'ไม่ทราบชื่อ'}</div>
+            <div style={{ fontSize: 12.5, color: 'var(--amber)', marginTop: 10, marginBottom: 18, lineHeight: 1.5 }}>
+              ยิงบัตร 1 ใบ = <b>บันทึก “มางาน” ลงระบบทันที</b> ไม่ต้องกด 💾 บันทึกอีก<br />
+              ({shiftInfo.workDateStr} · {shiftInfo.label})
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="button" onClick={() => setConfirmScan(false)}
+                style={{ flex: 1, minHeight: 46, borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>ยกเลิก</button>
+              <button type="button" onClick={() => { setScanSaved([]); setConfirmScan(false); setBadgeScanOpen(true); }}
+                style={{ flex: 1, minHeight: 46, borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 15, fontWeight: 800, cursor: 'pointer' }}>เริ่มสแกน</button>
+            </div>
+          </div>
+        </div>
+      )}
       {badgeScanOpen && (
         <ScanModal title="สแกนบัตรพนักงาน" closeOnHit={false}
-          hint="ส่องกล้องที่ QR บนบัตร หรือกดปุ่มสแกนข้างเครื่อง — สแกนต่อได้ทีละคนจนครบ แล้วปิดหน้าต่างนี้กด 💾 บันทึก"
+          hint={`ส่องกล้องที่ QR บนบัตร หรือกดปุ่มสแกนข้างเครื่อง — ยิงทีละใบได้ต่อเนื่อง · ทุกใบบันทึกลงระบบทันที (ในนาม ${fullName || 'ไม่ทราบชื่อ'})`}
           onScan={onBadgeScan} onClose={() => setBadgeScanOpen(false)}
           footer={<div style={{ marginTop: 12, fontSize: 13, fontWeight: 700, color: 'var(--text2)' }}>
-            มางาน {displayed.filter(e => attendance[e.id]?.is_present).length}/{displayed.length} คน · <span style={{ color: 'var(--amber)' }}>ยังไม่ได้บันทึก</span>
+            {/* 🔴 ตัวเลขต้องตอบ "รอบนี้ยิงไปกี่ใบแล้ว" — ของเดิมโชว์ยอดมางานรวม (รวมที่บันทึกไว้ก่อนหน้า)
+                ยิงเพิ่ม 1 ใบ เลขขยับ 108→109 กลืนไปกับของเดิม = มองไม่ออกว่าใบนี้ติดหรือไม่ติด
+                และต่อท้ายว่า "ยังไม่ได้บันทึก" ตายตัวทั้งที่ตอนนี้บันทึกให้แล้ว = จอโกหก */}
+            <span style={{ color: 'var(--green)' }}>บันทึกแล้วรอบนี้ {scanSaved.length} คน</span>
+            <span style={{ color: 'var(--muted)', fontWeight: 600 }}>
+              {' · '}มางานรวม {displayed.filter(e => attendance[e.id]?.is_present).length}/{displayed.length} คน
+            </span>
+            {ckPendingCount > 0 && (
+              <div style={{ marginTop: 4, fontSize: 12, fontWeight: 600, color: 'var(--amber)' }}>
+                ⚠️ ยังมีที่ติ๊ก/แก้ด้วยมือค้างอยู่ {ckPendingCount} คน — ต้องปิดหน้าต่างนี้แล้วกด 💾 บันทึก (การยิงบัตรบันทึกให้เฉพาะคนที่ยิง)
+              </div>
+            )}
           </div>} />
       )}
       {isMobile ? (

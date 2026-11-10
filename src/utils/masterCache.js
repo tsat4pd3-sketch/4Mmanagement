@@ -124,6 +124,24 @@ function notifyFailChange(key) {
 /** สถานะล้มล่าสุดของคีย์นี้ — `null` = ปกติ (อย่าใช้ตัดสินว่า "มีข้อมูลไหม") */
 export function masterLoadState(key) { return failures.get(key) || null; }
 
+/* ── 🔐 ประตู "ตอนนี้ใคร login อยู่" (2026-11-10 · หน้างานแจ้ง "โหลดไลน์ผลิต dropdown ไม่ขึ้น") ──
+   🔴 ต้นเหตุที่วัดได้จาก log ฝั่ง Main (24 ชม.): `production_lines` ถูกอ่านด้วย role **anon 122 ครั้ง
+      จาก 28 IP** — ทุกครั้งได้ **200 + 0 แถว** (RLS เปิดให้แค่ `authenticated`) แล้วตามด้วย login ภายในไม่กี่วินาที
+      ลูกโซ่: กดออกจากระบบ (สลับบัญชีบนเครื่องกลาง) → `clearAllMasterCache()` → หน้าที่ยัง mount อยู่
+      re-render ตอน role/ขอบเขตถูกล้าง → โหลดทะเบียนใหม่ **ตอนไม่มี token** → ได้ลิสต์ว่าง
+      → `cachedMaster` จดเป็น "สำเร็จ" ลง localStorage 4 ชม. ⇒ **คนถัดไปที่ login เครื่องนั้น dropdown ว่าง**
+      (และ "ออกแล้วเข้าใหม่" ที่เราแนะนำหน้างาน กลับเป็นตัวสร้างปัญหาซ้ำ)
+   ⇒ กติกา: **ผลที่ได้ตอนไม่ได้ login หรือได้มาข้ามการเปลี่ยนผู้ใช้ — ห้ามลง cache** (คืนให้ผู้เรียกเฉยๆ)
+      · `undefined` = ยังไม่รู้ (ก่อน App อ่าน session เสร็จ) = พฤติกรรมเดิม
+      · ตั้งค่าจาก App.jsx ที่เดียว (getSession / onAuthStateChange / handleLogout) */
+let authUid;   // undefined = ยังไม่รู้ · null = ไม่ได้ login · string = uid
+/** App.jsx เรียกทุกครั้งที่สถานะ login เปลี่ยน — `null` = ออกจากระบบแล้ว */
+export function setMasterAuthUser(uid) { authUid = uid === undefined ? undefined : (uid || null); }
+/** ผลที่เริ่มโหลดตอน uid = `startUid` ยังเก็บลง cache ได้ไหม */
+function authOkToStore(startUid) { return authUid !== null && startUid !== null && startUid === authUid; }
+
+const isEmptyList = (d) => Array.isArray(d) && d.length === 0;
+
 const DEFAULT_TTL = MASTER_TTL;
 const cache = new Map();   // key → { at, data, inflight }
 
@@ -196,26 +214,41 @@ function lsWrite(key, data) {
  * @param {Function} loader async () => data   (ต้องคืน "ข้อมูล" ไม่ใช่ response ของ supabase)
  * @param {number}   ttl    อายุ cache (ms)
  */
-export async function cachedMaster(key, loader, ttl = DEFAULT_TTL) {
+/* @param opts.nonEmpty true = ทะเบียนนี้ "ว่างไม่ได้" ⇒ ลิสต์ว่างที่ค้างใน cache (ของพิษจากรอบก่อน)
+ *                      ถือว่าไม่มี cache แล้วยิงใหม่ · ใช้กับทะเบียนไลน์ (loader โยนเองเมื่อว่าง) */
+export async function cachedMaster(key, loader, ttl = DEFAULT_TTL, { nonEmpty = false } = {}) {
   const hit = cache.get(key);
-  if (hit && hit.data !== undefined && Date.now() - hit.at < ttl) return hit.data;
+  const usable = (d) => d !== undefined && !(nonEmpty && isEmptyList(d));
+  if (hit && usable(hit.data) && Date.now() - hit.at < ttl) return hit.data;
   if (hit?.inflight) return hit.inflight;   // หลายจุดเรียกพร้อมกัน = ยิงจริงครั้งเดียว
 
   // memory ยังไม่มี (เพิ่งเปิดแอป) → ลองของที่ค้างใน localStorage ก่อนยิง DB
   const stored = lsRead(key, ttl);
-  if (stored) {
+  if (stored && usable(stored.data)) {
     cache.set(key, { at: stored.at, data: stored.data });
     return stored.data;
   }
 
+  const startUid = authUid;
   const p = (async () => {
     try {
       const data = await loader();
+      /* 🔐 ได้มาตอนไม่ได้ login / ข้ามการเปลี่ยนผู้ใช้ ⇒ คืนให้ผู้เรียก แต่ห้ามจด (ดู "ประตู" ข้างบน) */
+      if (startUid !== undefined && !authOkToStore(startUid)) {
+        if (cache.get(key)?.inflight === p) cache.delete(key);
+        return data;
+      }
       cache.set(key, { at: Date.now(), data });
       lsWrite(key, data);
       if (failures.delete(key)) notifyFailChange(key);   // สำเร็จแล้ว = คำเตือนข้างช่องต้องหายไปด้วย
       return data;
     } catch (e) {
+      /* 🔐 ล้มตอนไม่ได้ login (เช่นหน้าเดิม re-render ระหว่างกดออกจากระบบ) = ไม่ใช่ข่าวของใคร
+         ห้ามจดเป็นผลล้ม ห้ามยิง toast — คนถัดไปที่ login จะโหลดใหม่เองตามปกติ */
+      if (startUid !== undefined && !authOkToStore(startUid)) {
+        if (cache.get(key)?.inflight === p) cache.delete(key);
+        return hit?.data ?? [];
+      }
       /* 🔴 โหลดพลาด — 3 อย่างที่ "ต้อง" ทำ (ดูรอบ 3 ในหัวไฟล์)
          1. **ไม่ lsWrite** → ของดีที่ค้างใน localStorage ไม่ถูกลิสต์ว่างทับ
          2. `at: 0` → รอบหน้ายิงใหม่ทันที ไม่ต้องรอ TTL 4 ชม.
@@ -256,6 +289,7 @@ export async function cachedRows(key, runQuery, ttl = DEFAULT_TTL) {
     return { data: stored.data, error: null };
   }
 
+  const startUid = authUid;
   const p = (async () => {
     let res;
     try {
@@ -270,6 +304,10 @@ export async function cachedRows(key, runQuery, ttl = DEFAULT_TTL) {
     }
     if (err) console.warn('[masterCache] โครงสร้างยังไม่มี —', err.code, err.message, '· ถือว่าว่าง');
     const data = res?.data || [];
+    if (startUid !== undefined && !authOkToStore(startUid)) {   // 🔐 ห้ามจดผลตอนไม่ได้ login
+      if (cache.get(key)?.inflight === p) cache.delete(key);
+      return { data, error: null };
+    }
     cache.set(key, { at: Date.now(), data });
     lsWrite(key, data);
     return { data, error: null };
