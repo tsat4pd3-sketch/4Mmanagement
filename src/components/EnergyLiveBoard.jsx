@@ -14,11 +14,11 @@ import { bkkDateStr } from '../utils/workDate';
 import { buildLiveBoard, liveSeries, METER_OFFLINE_MIN } from '../utils/energy';
 import NoticeBar from './NoticeBar';
 import useIsMobile from '../utils/useIsMobile';
+import { fetchReadingsSince } from '../lib/energyReadings';
 
 /* สีผ่าน token เท่านั้น (ด่าน colorRatchet · พาเลต ≤5 สี) */
 const GOOD = 'var(--green)', WARN = 'var(--amber)', BAD = 'var(--red)', IDLE = 'var(--muted)', ACC = 'var(--accent2)', INFO = 'var(--blue)';
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 14, boxShadow: 'var(--shadow-sm)' };
-const PAGE = 1000;   // เพดาน PostgREST ต่อคิวรี (กฎ DB ข้อ 5)
 
 const fmt = (v, d = 1) => (v == null || !Number.isFinite(Number(v)) ? '—'
   : Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
@@ -29,20 +29,6 @@ const statusMeta = (m) => (
     : m.status === 'offline' ? { label: `ขาดการติดต่อ ${m.ageMin} นาที`, color: WARN }
       : (m.overKw || m.overA) ? { label: 'เกินลิมิต', color: BAD }
         : { label: 'ออนไลน์', color: GOOD });
-
-/** แถวรายนาทีตั้งแต่ `from` — วนทีละ 1000 แถว (วันเต็ม 3 เครื่อง = 4,320 แถว) */
-async function fetchReadings(from, inclusive) {
-  const out = [];
-  for (let off = 0; off < 20 * PAGE; off += PAGE) {
-    const { data, error } = await supabaseDR.from('energy_readings')
-      .select('scope_kind, scope_name, bucket_at, kw')
-      .filter('bucket_at', inclusive ? 'gte' : 'gt', from).order('bucket_at').range(off, off + PAGE - 1);
-    if (error) throw error;
-    out.push(...(data || []));
-    if (!data || data.length < PAGE) break;
-  }
-  return out;
-}
 
 export default function EnergyLiveBoard() {
   const [meters, setMeters] = useState([]);
@@ -72,7 +58,7 @@ export default function EnergyLiveBoard() {
         supabaseDR.from('energy_live').select('scope_kind, scope_name, field, value, received_at'),
         supabaseDR.from('energy_daily')
           .select('scope_kind, scope_name, day, kwh, peak_kw, peak_at, resets').gte('day', monthStart),
-        fetchReadings(from, newDay),
+        fetchReadingsSince(from, newDay),
       ]);
       // เครื่องใต้ตู้ — best-effort: ตารางยังไม่ apply / อ่านไม่ได้ = การ์ดไม่มีรายชื่อเครื่อง (ตัวเลขยังขึ้นปกติ)
       const mm = await supabaseDR.from('energy_meter_machines').select('scope_kind, scope_name, machines(machine_no, line_name)');

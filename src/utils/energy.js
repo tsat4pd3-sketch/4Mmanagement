@@ -537,3 +537,48 @@ export function dayForNames(names, byMeter, meterLines) {
     resets: rows.reduce((s, r) => s + (r.resets || 0), 0),
   }
 }
+
+/** ความละเอียดกราฟจิ๋วบนการ์ดผัง = 15 นาที (หน่วยเดียวกับ demand charge · 1 วันเต็ม = 96 จุด) */
+export const MAP_SPARK_MIN = 15
+
+/** แถวรายนาที → ค่าเฉลี่ย kW ต่อช่วง ต่อตู้ : Map(keyตู้ → Map(เวลาเริ่มช่วง ms → kW เฉลี่ย)) */
+export function bucketByMeter(readings, bucketMin = MAP_SPARK_MIN) {
+  const acc = new Map()
+  const size = bucketMin * 60000
+  for (const r of readings || []) {
+    const kw = numOrNull(r.kw), t = Date.parse(r.bucket_at)
+    if (kw == null || !Number.isFinite(t)) continue
+    const k = `${r.scope_kind}|${r.scope_name}`, b = Math.floor(t / size) * size
+    if (!acc.has(k)) acc.set(k, new Map())
+    const m = acc.get(k), cur = m.get(b) || { s: 0, n: 0 }
+    cur.s += kw; cur.n++
+    m.set(b, cur)
+  }
+  const out = new Map()
+  for (const [k, m] of acc) out.set(k, new Map([...m].map(([b, v]) => [b, v.s / v.n])))
+  return out
+}
+
+/**
+ * กราฟจิ๋ว "วันนี้" ของกรอบบนผัง = ผลรวม kW ของตู้ที่จ่ายให้กรอบนี้ (ตู้ละครั้ง — กฎเดียวกับ liveForNames)
+ * 🔴 นับเฉพาะช่วงที่ **ทุกตู้ของกรอบส่งค่ามาครบ** — ช่วงที่ขาดบางตู้จะดิ่งลงหลอกว่าไฟลด
+ * @returns {number[]} เรียงเก่า→ใหม่ · ว่าง = ไม่วาด (Spark ต้อง ≥ 2 จุด)
+ */
+export function sparkForNames(names, meterBuckets, meterLines) {
+  const set = new Set(names || [])
+  const keys = [...(meterLines || new Map()).keys()].filter(k => [...meterLines.get(k)].some(l => set.has(l)))
+  if (!keys.length) return []
+  const times = new Set()
+  for (const k of keys) for (const t of meterBuckets?.get(k)?.keys() || []) times.add(t)
+  const out = []
+  for (const t of [...times].sort((a, b) => a - b)) {
+    let sum = 0, ok = true
+    for (const k of keys) {
+      const v = meterBuckets.get(k)?.get(t)
+      if (v == null) { ok = false; break }
+      sum += v
+    }
+    if (ok) out.push(sum)
+  }
+  return out
+}

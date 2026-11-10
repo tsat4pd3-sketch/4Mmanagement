@@ -36,7 +36,8 @@ import { loadDailyAm, dailyAmLineStatus, amShiftInfo } from '../lib/dailyAmBoard
 import { DAILY_PM_WINDOW_MIN } from '../lib/pmDailyStatus';
 import { planDueBucket } from '../lib/pmSchedule';
 import { useLiveBoard } from '../utils/useLiveBoard';
-import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e, energyRollup, buildLiveBoard, liveForNames, dayForNames, meterLinesFrom } from '../utils/energy';
+import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e, energyRollup, buildLiveBoard, liveForNames, dayForNames, meterLinesFrom, bucketByMeter, sparkForNames } from '../utils/energy';
+import { fetchReadingsSince } from '../lib/energyReadings';
 import { bkkDateStr } from '../utils/workDate';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 import { fmtDtElapsed } from '../utils/downtimeRules';
@@ -527,7 +528,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
   const [oeeHistRaw, setOeeHistRaw] = useState(null);    // ⚙️ ประวัติ OEE รายกะ 7 วันก่อน (สำหรับ sparkline การ์ด KPI · null = ยังไม่โหลด)
   const [energyEf, setEnergyEf] = useState(null);        // EF ของเดือนนั้น (null = ยังไม่ตั้ง → ไม่โชว์ tCO2e)
   const [energyDay, setEnergyDay] = useState(null);      // 📅 โหมดทบทวน: kWh ของวันที่เลือกจากมิเตอร์ { date, byMeter, meterLines } · null = ไม่มี/อ่านไม่ได้
-  const [energyLive, setEnergyLive] = useState(null);    // ⚡ ค่าไฟสดจากมิเตอร์: { meters (buildLiveBoard), meterLines: Map ตู้→ชุดไลน์ } · null = ไม่มี/อ่านไม่ได้
+  const [energyLive, setEnergyLive] = useState(null);
+  const [energyReads, setEnergyReads] = useState([]);    // ⚡ แถวรายนาทีของวันนี้ (กราฟจิ๋วบนการ์ด kW สด) · โหลดทั้งวันครั้งแรก แล้วต่อเฉพาะแถวใหม่    // ⚡ ค่าไฟสดจากมิเตอร์: { meters (buildLiveBoard), meterLines: Map ตู้→ชุดไลน์ } · null = ไม่มี/อ่านไม่ได้
   const [allLines, setLines] = useState([]);
   /* 🔭 ขอบเขตของบัญชี (09/11 · user: "ถ้าเป็น user จอของส่วนงานไหนก็ควรจะแสดงแค่แผนกหรือส่วนงานตัวเอง")
      จอดู (ไม่ใช่ setupMode) = เฉพาะไลน์ที่บัญชีนี้เห็นตาม `lineScope()` — แกนเดียวกับทุกจอ (ส่วนงาน/แผนก/ครอบครัวไลน์)
@@ -1100,16 +1102,29 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
      สูตรสถานะ/ยอดอยู่ utils/energy.js (buildLiveBoard · liveForNames) — ห้ามคิดเองในหน้า
      โหลดเฉพาะตอนดู metric พลังงาน · payload ~2 KB/รอบ (RATE.METER) · อ่านไม่ได้ = ไม่มีค่าสด ผังรายเดือนเดิมยังขึ้นปกติ */
   const liveReq = useRef(0);
-  const liveOk = useRef({ at: 0, sig: '' });   // รอบล่าสุดที่อ่านสำเร็จ + ลายเซ็นค่า (กันผังกระโดด)
+  const liveOk = useRef({ at: 0, sig: '' });
+  const liveRd = useRef({ day: null, last: null });   // กราฟจิ๋ว: วันที่โหลดอยู่ + นาทีล่าสุดที่มีแล้ว   // รอบล่าสุดที่อ่านสำเร็จ + ลายเซ็นค่า (กันผังกระโดด)
   const loadEnergyLive = useCallback(async () => {
     const id = ++liveReq.current;
+    /* 📈 กราฟจิ๋ววันนี้ — ครั้งแรก/ข้ามวัน = โหลดตั้งแต่ 00:00 · รอบต่อไป = เฉพาะนาทีที่ใหม่กว่า (~3 แถว/รอบ · กฎ egress)
+       อ่านพลาด = คงกราฟเดิม (ไม่กระทบตัวเลขสด) */
+    const today = bkkDateStr(Date.now());
+    const newDay = liveRd.current.day !== today;
+    const rdFrom = newDay ? `${today}T00:00:00+07:00` : liveRd.current.last;
+    const rdP = fetchReadingsSince(rdFrom, newDay).then(rows => ({ rows }), () => null);
     const [m, l, mm] = await Promise.all([
       supabaseDR.from('energy_live_meters')
         .select('scope_kind, scope_name, panel, subtitle, limit_kw, limit_a, gauge_max_kw, sort_order').eq('is_active', true),
       supabaseDR.from('energy_live').select('scope_kind, scope_name, field, value, received_at'),
       supabaseDR.from('energy_meter_machines').select('scope_kind, scope_name, machines(line_name)'),
     ]);
+    const rd = await rdP;
     if (id !== liveReq.current) return;
+    if (rd) {
+      liveRd.current = { day: today, last: rd.rows.length ? rd.rows[rd.rows.length - 1].bucket_at : (newDay ? rdFrom : liveRd.current.last) };
+      if (newDay) setEnergyReads(rd.rows);
+      else if (rd.rows.length) setEnergyReads(prev => [...prev, ...rd.rows]);
+    }
     /* 🔴 กันจอกระพริบ: อ่านพลาดครั้งเดียว (เน็ตสะดุด) ห้ามล้างค่าสดทิ้ง — การ์ดจะสลับ สด⇄รายเดือน ทุกนาที
        เก็บค่าเดิมไว้ · พลาดติดกันเกิน 5 นาทีค่อยล้าง (ค่าเก่าขนาดนั้นไม่ควรขึ้นว่า "สด") */
     if (m.error || l.error || mm.error) {
@@ -1783,6 +1798,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     return m;
   }, [lines]);
   const familyNames = (name) => [name, ...(childrenOf[name] || [])];
+  const energyBuckets = useMemo(() => bucketByMeter(energyReads), [energyReads]);
   /* ⚡ จุดที่ "นับเข้ายอดรวมได้" — หน้ากรอกเปิดให้ลงรายไลน์ลูกได้แล้ว (2026-09-08 · มิเตอร์ MDB แยก HDF1/HDF2)
      ⇒ ต้องใช้กฎกลาง `energyRollup`: **แม่มีค่า = ใช้ของแม่ · แม่ไม่มีค่า = รวมลูก**
         ถ้าบวกดื้อๆ ทั้งครอบครัวเหมือนเดิม กลุ่มที่ลงทั้งแม่และลูกจะโชว์ไฟเกินจริงเท่าตัว
@@ -1908,6 +1924,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     agg.oeeTarget = oeeTargetForLines(familyNames(name), lines, oeeTargets)?.oee ?? null;
     // ⚡ ค่าไฟสดของกรอบนี้ (ตู้ที่จ่ายให้ไลน์ในครอบครัว · ตู้ละครั้ง ไม่นับซ้ำ) — null = ไม่มีมิเตอร์สด
     agg.live = !isReview && energyLive ? liveForNames(familyNames(name), energyLive.meters, energyLive.meterLines) : null;
+    if (agg.live) agg.live = { ...agg.live, spark: sparkForNames(familyNames(name), energyBuckets, energyLive.meterLines) };
     // 📅 ทบทวน: kWh ของวันที่เลือกจากมิเตอร์ — ไม่มียอดวันนั้น (kwh null) = ถอยไปโชว์รายเดือนตามเดิม
     { const dy = isReview && energyDay ? dayForNames(familyNames(name), energyDay.byMeter, energyDay.meterLines) : null;
       agg.day = dy && dy.kwh != null ? { ...dy, date: energyDay.date } : null; }
@@ -3036,6 +3053,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                           {st.live.kw == null ? '—' : st.live.kw.toFixed(1)}
                         </span>
                         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', lineHeight: 1.6, whiteSpace: 'nowrap' }}>kW · สด</span>
+                        {/* กราฟวันนี้ตั้งแต่ 00:00 (เฉลี่ยราย 15 นาที · ผลรวมตู้ของกรอบนี้) */}
+                        <span style={{ marginLeft: 'auto' }} title="kW วันนี้ตั้งแต่ 00:00 · จุดละ 15 นาที"><Spark data={st.live.spark} color={st.live.over ? 'var(--red)' : 'var(--green)'} /></span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 11, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}
                         title={`ตู้ ${st.live.meters.join(', ')}${st.live.sharedWith.length ? ` · ใช้ร่วมกับ ${st.live.sharedWith.join(', ')} (แยกรายไลน์ไม่ได้)` : ''}`}>
