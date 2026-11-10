@@ -18,6 +18,7 @@ import { fetchReadingsSince } from '../lib/energyReadings';
 
 /* สีผ่าน token เท่านั้น (ด่าน colorRatchet · พาเลต ≤5 สี) */
 const GOOD = 'var(--green)', WARN = 'var(--amber)', BAD = 'var(--red)', IDLE = 'var(--muted)', ACC = 'var(--accent2)', INFO = 'var(--blue)';
+const EVENTS_SHOW = 50;
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 14, boxShadow: 'var(--shadow-sm)' };
 
 const fmt = (v, d = 1) => (v == null || !Number.isFinite(Number(v)) ? '—'
@@ -35,6 +36,8 @@ export default function EnergyLiveBoard() {
   const [live, setLive] = useState([]);
   const [daily, setDaily] = useState([]);
   const [readings, setReadings] = useState([]);
+  const [events, setEvents] = useState(null);          // 🔔 เหตุการณ์จาก Node-RED (ใหม่อยู่บน · เก็บ 50 แถว) · null = อ่านไม่ได้/ยังไม่มีตาราง
+  const evLast = useRef(null);                         // ev_time ล่าสุดที่มีแล้ว — รอบ poll ดึงเฉพาะที่ใหม่กว่า (กฎ egress)
   const [machinesOf, setMachinesOf] = useState({});   // key ตู้ → [{ no, line }] (energy_meter_machines · ไม่มีตาราง = ว่าง)
   const [err, setErr] = useState('');
   const [missing, setMissing] = useState(false);
@@ -69,6 +72,22 @@ export default function EnergyLiveBoard() {
           (by[`${x.scope_kind}|${x.scope_name}`] ||= []).push({ no: x.machines.machine_no, line: x.machines.line_name });
         }
         setMachinesOf(by);
+      }
+      /* 🔔 เหตุการณ์ (energy_events) — ครั้งแรก 50 แถวล่าสุด · รอบต่อไปเฉพาะที่ใหม่กว่า · อ่านไม่ได้ = ซ่อนแผง (ตัวเลขยังขึ้น) */
+      const evQ = supabaseDR.from('energy_events')
+        .select('source_id, scope_name, ev_time, level, code, kind, message, duration_s');
+      const ev = evLast.current
+        ? await evQ.gt('ev_time', evLast.current).order('ev_time', { ascending: false }).limit(EVENTS_SHOW)
+        : await evQ.order('ev_time', { ascending: false }).limit(EVENTS_SHOW);
+      if (id === reqId.current) {
+        if (ev.error) setEvents(prev => (prev && prev.length ? prev : null));
+        else {
+          if (ev.data?.length) evLast.current = ev.data[0].ev_time;
+          setEvents(prev => {
+            const seen = new Set((ev.data || []).map(x => x.source_id));
+            return [...(ev.data || []), ...(prev || []).filter(x => !seen.has(x.source_id))].slice(0, EVENTS_SHOW);
+          });
+        }
       }
       if (id !== reqId.current) return;   // มีรอบใหม่กว่าแล้ว — ทิ้งผลเก่า
       const e = m.error || l.error || d.error;
@@ -155,6 +174,8 @@ export default function EnergyLiveBoard() {
       {/* ── เส้นทางจ่ายไฟ ── */}
       {board.panels.map(p => <PanelFlow key={p.panel} panel={p} />)}
 
+      {events && <EventsPanel events={events} />}
+
       {/* ── การ์ดรายเครื่อง ── */}
       {board.meters.length > 0 && (
         <div>
@@ -162,6 +183,39 @@ export default function EnergyLiveBoard() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12, alignContent: 'start' }}>
             {board.meters.map(m => <MeterCard key={m.key} m={m} pts={series.byScope.get(m.key) || []} machines={machinesOf[m.key] || []} />)}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** 🔔 เหตุการณ์ล่าสุดจาก Node-RED — Node-RED เป็นคนตัดสิน (ลิมิต/เกณฑ์อยู่ฝั่งนั้น) ESM แค่แสดง */
+function EventsPanel({ events }) {
+  const lvl = (e) => (e.kind === 'CLEAR' || e.level === 'ok'
+    ? { label: 'ปกติแล้ว', color: GOOD } : { label: 'เตือน', color: e.level === 'alarm' || e.level === 'crit' ? BAD : WARN });
+  return (
+    <div style={{ ...card }}>
+      <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>เหตุการณ์ล่าสุด</div>
+      <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>
+        จากระบบไฟ Node-RED (เกณฑ์/ลิมิตตั้งที่ Node-RED) · {EVENTS_SHOW} รายการล่าสุด · ใหม่อยู่บน · เก็บย้อนหลัง 30 วัน
+      </div>
+      {!events.length ? (
+        <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ยังไม่มีเหตุการณ์ที่ส่งมา</div>
+      ) : (
+        <div style={{ maxHeight: 280, overflowY: 'auto', display: 'grid', gap: 2 }}>
+          {events.map(e => {
+            const L = lvl(e);
+            return (
+              <div key={e.source_id} style={{ display: 'grid', gridTemplateColumns: '64px 92px 76px 1fr', gap: 8, alignItems: 'center', fontSize: 12.5, padding: '5px 6px', borderLeft: `3px solid ${L.color}`, background: 'var(--bg2)', borderRadius: 4 }}>
+                <span style={{ color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}>
+                  {new Date(e.ev_time).toLocaleTimeString('th-TH', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </span>
+                <b style={{ color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.scope_name}</b>
+                <span style={{ color: L.color, fontWeight: 700, fontSize: 11.5 }}>{L.label}</span>
+                <span style={{ color: 'var(--text2)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={e.message}>{e.message}</span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

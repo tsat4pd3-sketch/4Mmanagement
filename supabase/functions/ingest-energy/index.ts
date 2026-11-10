@@ -7,6 +7,7 @@
       secrets: INGEST_SECRET (ต้องตรงกับฝั่ง bridge) · SUPABASE_URL · SUPABASE_SERVICE_ROLE_KEY
 
    สายงาน: MQTT → bridge (สรุป 15 นาที) → ที่นี่ → energy_live / energy_topic_unmapped
+   v3 (2026-11-10): + body.events (energy_event → energy_events · เก็บ 30 วัน) + body.daily (energy_day → เติม energy_daily วันที่ของเราไม่ครบ)
    v2 (2026-11-09): + ประวัติรายนาที energy_readings (trigger สรุปลง energy_daily) + field v/a
      ตัวส่งจริงตัวแรก = Node-RED Die Shop ยิงทุก 1 นาที
      ⚠️ ทุก field ของเครื่องเดียวกันต้องมาใน POST เดียวกัน — แถวรายนาทีตัวแรกชนะ (ซ้ำ = ข้าม)
@@ -19,6 +20,18 @@ const UNIT: Record<string, string> = { kw: 'kW', kwh_total: 'kWh', v: 'V', a: 'A
 const HIST_FIELDS = ['kw', 'kwh_total', 'v', 'a'];
 /** เก็บประวัติรายนาทีไว้กี่วัน (ยอดระยะยาวอยู่ energy_daily ที่ trigger สรุปไว้แล้ว) */
 const READINGS_KEEP_DAYS = 7;
+/** เก็บเหตุการณ์ไว้กี่วัน (ต้นทางเกิดหลายพันแถว/วัน) */
+const EVENTS_KEEP_DAYS = 30;
+const num = (v: unknown): number | null => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+/** เวลาไทยไม่มีโซนจาก MySQL ('YYYY-MM-DD HH:MM:SS') → ISO · มีโซนอยู่แล้ว = ใช้ตามนั้น · อ่านไม่ออก = null */
+function bkk(v: unknown): string | null {
+  if (v == null || v === '') return null;
+  const s = String(v).trim().replace(' ', 'T');
+  const t = Date.parse(/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : `${s}+07:00`);
+  return Number.isFinite(t) ? new Date(t).toISOString() : null;
+}
+/** 'YYYY-MM-DD' วันตามปฏิทินไทย */
+const bkkToday = () => new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10);
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -44,7 +57,9 @@ Deno.serve(async (req) => {
   let body: any;
   try { body = await req.json(); } catch { return json({ error: 'bad json' }, 400); }
   const readings: any[] = Array.isArray(body?.readings) ? body.readings : [];
-  if (!readings.length) return json({ ok: true, saved: 0 });
+  const events: any[] = Array.isArray(body?.events) ? body.events : [];
+  const daily: any[] = Array.isArray(body?.daily) ? body.daily : [];
+  if (!readings.length && !events.length && !daily.length) return json({ ok: true, saved: 0 });
 
   // ทะเบียน topic → จุดวัด (ตั้งจากหน้า /energy แท็บ 📡)
   const { data: cfg, error: cfgErr } = await sb
@@ -123,5 +138,56 @@ Deno.serve(async (req) => {
     // เก็บ topic แปลกไว้ให้คนมาผูก (hits ไม่ต้องแม่น — แค่บอกว่าเจอบ่อยไหม)
     await sb.from('energy_topic_unmapped').upsert(unknown, { onConflict: 'topic' });
   }
-  return json({ ok: true, saved: live.length, history: histSaved, unmapped: unknown.length });
+  /* 🔔 เหตุการณ์จาก Node-RED (energy_event · v3 2026-11-10) — Node-RED ตัดสินเกินลิมิตเอง ESM แค่เก็บ
+     เวลาฝั่ง MySQL = เวลาไทยไม่มีโซน ('YYYY-MM-DD HH:MM:SS') ⇒ ต่อ +07:00 · ซ้ำ (source_id เดิม) = ข้าม */
+  let evSaved = 0;
+  if (events.length) {
+    const rows = events.map((e: any) => ({
+      source_id: Number(e.id), scope_kind: 'zone', scope_name: String(e.machine ?? '').trim(),
+      ev_time: bkk(e.ev_time), level: e.level ?? null, code: e.code ?? null, kind: e.kind ?? null,
+      message: e.message ?? null, value: num(e.value), duration_s: num(e.duration_s), received_at: now,
+    })).filter((x: any) => Number.isFinite(x.source_id) && x.scope_name && x.ev_time);
+    if (rows.length) {
+      const { error } = await sb.from('energy_events').upsert(rows, { onConflict: 'source_id', ignoreDuplicates: true });
+      if (error) return json({ ok: false, saved: live.length, error: `events: ${error.message}` }, 500);
+      evSaved = rows.length;
+      const cutoff = new Date(Date.now() - EVENTS_KEEP_DAYS * 86400000).toISOString();
+      await sb.from('energy_events').delete().lt('ev_time', cutoff);   // ล้มไม่เป็นไร รอบหน้าลบใหม่
+    }
+  }
+
+  /* 📅 ยอดรายวันย้อนหลังจาก Node-RED (energy_day) — เติมวันที่ ESM ยังไม่มี/มีไม่ครบ
+     กติกา: เฉพาะ "วันที่ผ่านไปแล้ว" (วันนี้ trigger ของเราคิดสดอยู่) · ทับเฉพาะเมื่อของเรามีจุดน้อยกว่าต้นทาง
+     kWh = emax − emin (เลขสะสมต้น-ท้ายวัน) · pmax หน่วย W ⇒ ÷1000 */
+  let daySaved = 0;
+  if (daily.length) {
+    const today = bkkToday();
+    const cand = daily.map((d: any) => {
+      const emin = num(d.emin), emax = num(d.emax);
+      return {
+        scope_kind: 'zone', scope_name: String(d.machine ?? '').trim(), day: String(d.day ?? '').slice(0, 10),
+        kwh: emin != null && emax != null && emax >= emin ? emax - emin : null,
+        peak_kw: num(d.pmax) != null ? num(d.pmax)! / 1000 : null, peak_at: bkk(d.pmax_at),
+        last_kwh_total: emax, samples: Math.trunc(num(d.n) ?? 0), resets: 0, updated_at: now,
+      };
+    }).filter((x: any) => x.scope_name && /^\d{4}-\d{2}-\d{2}$/.test(x.day) && x.day < today && x.kwh != null);
+    if (cand.length) {
+      const days = [...new Set(cand.map((c: any) => c.day))];
+      const { data: have, error: hErr } = await sb.from('energy_daily')
+        .select('scope_kind, scope_name, day, samples').in('day', days);
+      if (hErr) return json({ ok: false, error: `daily read: ${hErr.message}` }, 500);
+      const haveBy = new Map((have || []).map((h: any) => [`${h.scope_kind}|${h.scope_name}|${h.day}`, h.samples ?? 0]));
+      const rows = cand.filter((c: any) => {
+        const k = `${c.scope_kind}|${c.scope_name}|${c.day}`;
+        return !haveBy.has(k) || Number(haveBy.get(k)) < c.samples;
+      });
+      if (rows.length) {
+        const { error } = await sb.from('energy_daily').upsert(rows, { onConflict: 'scope_kind,scope_name,day' });
+        if (error) return json({ ok: false, error: `daily: ${error.message}` }, 500);
+      }
+      daySaved = rows.length;
+    }
+  }
+
+  return json({ ok: true, saved: live.length, history: histSaved, unmapped: unknown.length, events: evSaved, daily: daySaved });
 });
