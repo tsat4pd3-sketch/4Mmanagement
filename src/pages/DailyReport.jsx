@@ -690,7 +690,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   const load = useCallback(async () => {
     setLoading(true);
     const [ln, pr, prOff, dt, ks, bp, mc, dft] = await Promise.all([
-      cachedMaster('production_lines:dr', async () => mrows(await loadLinesRes())),
+      cachedMaster('production_lines:dr', async () => mrows(await loadLinesRes()), undefined, { nonEmpty: true }),
       cachedMaster('dr_products:full', async () => mrows(await supabaseDR.from('dr_products').select('*').eq('is_active', true).order('name'))),
       cachedMaster('dr_products:inactive', async () => mrows(await supabaseDR.from('dr_products').select('id, mat_no, name, line_name').eq('is_active', false).order('name'))),
       cachedMaster('dr_downtime_types:active', async () => mrows(await supabaseDR.from('dr_downtime_types').select('*').eq('is_active', true).order('sort_order'))),
@@ -716,7 +716,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     // โหมดการไหลงานต่อไลน์ (flow_mode) best-effort — ไลน์ parallel_machine ให้เลือกเครื่องตอนเปิด Order
     // ⚠️ คิวรี production_lines รอบที่ 2 ของ load() เดียวกัน — cache ด้วย ไม่งั้นยิงซ้ำทุกรอบเช่นกัน
     cachedMaster('production_lines:flow', async () =>
-      mrows(await loadLinesRes())).then((data) => {
+      mrows(await loadLinesRes()), undefined, { nonEmpty: true }).then((data) => {
       if (!data) return;
       const fm = {}; data.forEach(l => { fm[l.name] = { flow_mode: l.flow_mode, parallel_stations: l.parallel_stations }; });
       setLineFlow(fm);

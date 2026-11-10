@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext, useMemo, useRef, Fragment } from 'react';
 import { orgValues, sortLike } from '../utils/listOrder';
 import { supabase } from '../supabaseClient';
+import { setMasterAuthUser } from '../utils/masterCache';
 /* 👥 แกนคน 2 แกน (14/10) — "เช็คชื่อไหม" คนละคำถามกับ "นับกำลังคนไลน์ไหม" (กฎ staffKind.js)
    · จอนี้ = **เช็คชื่อ** ⇒ แสดงครบทุกกลุ่ม แล้ว *แยกหัวข้อให้เห็น* ห้ามกรองใครทิ้ง
    · `onlyShopfloorStaff` เหลือใช้ที่เดียว = ช่องยืมคนข้ามไลน์ (ยืมไป "ช่วยไลน์ผลิต") */
@@ -602,6 +603,7 @@ export default function Checkin() {
 
   const handleSwitchUser = async () => {
     // ออกจากระบบเฉพาะเครื่องนี้ (scope local — ห้าม global ตามกฎ auth) แล้ว App เด้งไปหน้า login
+    setMasterAuthUser(null);   // 🔐 ผลที่โหลดระหว่างสลับบัญชีห้ามลง cache (ต้นเหตุ dropdown ไลน์ว่าง · masterCache.js)
     try { await supabase.auth.signOut({ scope: 'local' }); } catch { /* ปล่อยให้ App จัดการต่อ */ }
   };
 
