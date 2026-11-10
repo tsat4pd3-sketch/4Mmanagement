@@ -9785,3 +9785,33 @@ test('🛡️ master-cache-auth-gate — ผลที่โหลดตอนไ
     '🔴 ทะเบียนไลน์ว่าง = อ่านไม่ได้ ต้องโยน ห้ามคืน [] ให้ลง cache');
   assert.match(pl, /\{ nonEmpty: true \}/, '🔴 ทะเบียนไลน์ต้องข้ามลิสต์ว่างที่ค้างใน cache (nonEmpty)');
 });
+
+test('📋 sheet-quality-is-hint-not-gate — แถบความครบของใบตรวจเป็นตัวบอก ห้ามเป็นด่าน', () => {
+  /* 🔴 10/11 คำสั่ง user เรื่อง "แพทเทินการสร้างใบตรวจ" — จอตั้งค่า PM โชว์ว่าใบนี้ครบหรือยัง
+     (มุม/จุด/ปักหมุด/รูปขยาย) + ชี้ใบตัวอย่างจริง
+     ห้าม 2 อย่าง:
+       ① เอาความครบไปบล็อกการบันทึก — ใบที่ยังปักไม่ครบก็ยังใช้ตรวจได้ (จอตรวจไม่บังคับแล้ว)
+          บล็อก = ตั้งค่าใบใหม่ไม่ได้จนกว่าจะทำครบ = คนเลิกใช้ระบบ
+       ② hardcode ชื่อเครื่องตัวอย่างในโค้ด — ใบต้นแบบเปลี่ยนได้ ต้องมาจาก
+          RPC `fn_inspect_sheet_examples` (DR · migration 20261110)
+     📄 src/utils/inspectSheetQuality.js · docs/modules/inspection-point-setup.md */
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/PMSetup.jsx'), 'utf8'));
+
+  /* ตัวบอก: ต้องมีจริง ไม่งั้นด่านนี้วัดอะไรไม่ได้ */
+  assert.ok(/sheetCompleteness\(/.test(src) && /cpInFrameFilter\(/.test(src),
+    '\n\n❌ จอตั้งค่าไม่ได้ใช้ sheetCompleteness/cpInFrameFilter แล้ว — แถบความครบ/ตัวกรองรายมุมหายไป\n');
+
+  /* ① ความครบห้ามไปอยู่ในเส้นทางบันทึก */
+  const saveFn = src.slice(src.indexOf('const handleSave'), src.indexOf('const handleSave') + 3000);
+  assert.ok(!/\bcomp\.(done|missing|pinned|unpinned|noPhoto)\b/.test(saveFn),
+    '\n\n❌ handleSave อ่านค่าความครบของใบ — กำลังจะกลายเป็นด่านบล็อกการบันทึก\n'
+    + '   ใบที่ยังปักหมุด/ใส่รูปไม่ครบ ต้องบันทึกได้ตามปกติ (เป็นตัวบอก ไม่ใช่ด่าน)\n');
+  assert.ok(!/disabled=\{[^}]*comp\./.test(src),
+    '\n\n❌ มีปุ่มถูก disabled ด้วยค่าความครบของใบ — ห้ามบล็อก ให้บอกว่ายังขาดอะไรพอ\n');
+
+  /* ② ห้าม hardcode ชื่อ/ไอดีเครื่องตัวอย่าง */
+  assert.ok(/fn_inspect_sheet_examples/.test(src),
+    '\n\n❌ ไม่ได้เรียก RPC หาใบตัวอย่างแล้ว — ถ้าจะโชว์ตัวอย่างต้องมาจากข้อมูลจริง\n');
+  assert.ok(!/JHYD\d|HDF-0\d\s*-\s*SCHULER/i.test(src),
+    '\n\n❌ hardcode ชื่อเครื่องตัวอย่างในโค้ด — ใบต้นแบบเปลี่ยนได้ ต้องถาม fn_inspect_sheet_examples\n');
+});
