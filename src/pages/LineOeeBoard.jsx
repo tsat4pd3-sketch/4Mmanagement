@@ -268,7 +268,10 @@ export default function LineOeeBoard() {
         a: aVal,
         p: s.status === 'open' ? (lv?.P ?? null) : (s.oee_p != null ? Number(s.oee_p) : null),
         q: s.status === 'open' ? (lv?.Q ?? null) : (s.oee_q != null ? Number(s.oee_q) : null),
-        shift_min: Number(s.shift_min) || 570, plannedMin: plannedBy[s.id] || 0,
+        /* กะที่ยังเดิน = ถ่วงด้วย "เวลาที่เดินมาแล้ว" ไม่ใช่ทั้งกะ (09/11 · ชุดเดียวกับ /oee-analytics)
+           เดิมใช้ 570 ⇒ กะที่เพิ่งเปิด 1 ชม. ถูกนับน้ำหนักเท่ากะที่ปิดครบ = ค่าเฉลี่ย 7 วันแกว่งตามค่าสดเกินจริง */
+        shift_min: (s.status === 'open' && lv?.elapsedMin > 0) ? lv.elapsedMin : (Number(s.shift_min) || 570),
+        plannedMin: plannedBy[s.id] || 0,
         unplannedMin: unplannedBy[s.id] || 0, produced, ngQty: ngBySess[s.id] || 0,
         calcA: aVal, totalQty: produced,
       };
