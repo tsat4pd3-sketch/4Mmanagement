@@ -15,6 +15,11 @@
    3. **หาไม่เจอต้องบอกว่าทำไม** (ป้ายชนิดไหน · รหัสอะไร) + ให้สแกนใหม่ได้ทันที
       ห้ามเด้งกลับหน้าแรกเงียบๆ — คนยืนอยู่หน้าเครื่อง ถือมือถือ ต้องรู้ว่าต้องทำอะไรต่อ
    4. **อ่านอย่างเดียว ไม่เขียนอะไรลง DB** — เป็นแค่ทางแยก ไม่ใช่หน้าทำงาน
+      🔴 **ข้อยกเว้นเดียว: เช็คชื่อด้วยบัตรพนักงาน** (10/11 · คำสั่ง user *"ยิงบัตรแล้วจบตรงนั้น"*)
+      เพราะการ "พาไปหน้าเช็คชื่อแล้วให้ยิงซ้ำ + กดบันทึกทั้งจอ" คือ 3 ขั้นสำหรับงานที่มีขั้นเดียว
+      · เขียนได้**แถวเดียวของคนที่ยิง** ผ่าน `src/lib/checkinSave.js` เท่านั้น (ห้ามเขียนฐานตรงในหน้านี้)
+      · 🔐 หน้านี้ยิงบัตร**ใครก็ได้ทั้งโรงงาน** (ไม่มีรายชื่อมากรองให้เหมือน `/checkin`)
+        ⇒ **ต้องเช็คขอบเขตชั้น ③ เอง** (`canWriteLine`) — นอกขอบเขต = ไม่เขียน + บอกเหตุผลบนจอ
    5. **ทางเข้ากลาง "สแกนอะไรก็ได้"** (2026-10-19 · คำสั่ง user — QA ตรวจชิ้นงาน · AM · PM · อุปกรณ์)
       ไม่ใช่เครื่อง/จิ๊ก/จุดส่ง ⇒ ลองเป็น **ใบผลิต (`prod_no`)** แล้ว **MAT/พาร์ท** (บาร์โค้ดคัมบัง/กล่อง)
       → ปุ่ม ✅ ตรวจชิ้นงาน QA (`/qa?tab=sheet&part=`) · สอบกลับ · ปุ่ม AM/PM แยกป้ายตาม `isAmTeam`
@@ -41,6 +46,11 @@ import { parseQrPayload, resolveMachine, resolveJig, resolveDeliveryPoint, resol
 import { useProductionLinesState } from '../utils/useProductionLines';
 import { useStorageLocationsState } from '../utils/useStorageLocations';
 import { findByBadge, normBadgeCode } from '../utils/badgeCheckin';
+import { checkinByBadge } from '../lib/checkinSave';
+import { can } from '../utils/permissions';
+import { canWriteLine, canWriteUnit, writeBlockText } from '../utils/writeScope';
+import { getWorkDate, getCurrentShift } from '../utils/workDate';
+import { toast } from '../components/Toast';
 
 const card = {
   background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
@@ -65,7 +75,8 @@ function ActionLink({ to, icon, label, sub, tone = 'var(--accent)' }) {
 }
 
 export default function ScanLanding() {
-  const { role } = useContext(UserContext);
+  const { role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx, fullName }
+    = useContext(UserContext);
   const [sp, setSp] = useSearchParams();
   const navigate = useNavigate();
   const raw = sp.get('c') || sp.get('code') || '';
@@ -218,6 +229,56 @@ export default function ScanLanding() {
     return () => { alive = false; };
   }, [tryEmp, code]);
 
+  const emp = empHit?.emp || null;
+
+  /* ══ 🪪 เช็คชื่อด้วยบัตร — ยิงแล้วจบตรงนี้ (10/11 · คำสั่ง user) ═══════════════════════════
+     *"ยิงบัตรแล้วขึ้น ✓ เช็คชื่อสำเร็จ พอ ไม่ต้องเปิดหน้าเช็คชื่อ"* — เดิมปุ่มนี้แค่ `navigate('/checkin')`
+     แล้วต้องยิงซ้ำ + กดบันทึกทั้งจอ = 3 ขั้นสำหรับงานขั้นเดียว
+
+     🔐 **หน้านี้ยิงบัตรใครก็ได้ทั้งโรงงาน** — `/checkin` มีรายชื่อตามขอบเขตมากรองให้อยู่แล้ว
+     แต่หน้านี้ไม่มี ⇒ ต้องเช็คขอบเขตชั้น ③ เอง ไม่งั้นใครก็เช็คชื่อให้คนแผนกอื่นได้
+     · มีไลน์ = ตัดสินที่ไลน์ (`canWriteLine`) · ไม่มีไลน์ (งานสนับสนุน) = ตัดสินที่ส่วนงานของตัวคน
+     · `unknownTarget:'block'` — ระบุเจ้าของไม่ได้ = ไม่เขียน (fail-closed) แล้วบอกบนจอว่าทำไม */
+  const ckCtx = { role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx };
+  const canCheckin = canAccessPage('/checkin', role) && can('checkin', 'record', role);
+  const empLineName = emp ? (lineById[String(emp.line_id)]?.name || '') : '';
+  const ckScope = !emp ? null
+    : empLineName
+      ? canWriteLine(ckCtx, empLineName, allLines || [], { unknownTarget: 'block' })
+      : canWriteUnit(ckCtx, emp.section, { unknownTarget: 'block' });
+  const [ckResult, setCkResult] = useState(null);   // null | 'busy' | { kind, text }
+  // สแกนใบใหม่ = ล้างผลของใบก่อน (ไม่งั้น ✓ ของคนก่อนค้างอยู่ใต้การ์ดคนใหม่ = อ่านผิดคน)
+  useEffect(() => { setCkResult(null); }, [emp?.id]);
+
+  const doCheckin = async () => {
+    if (!emp || ckResult === 'busy') return;
+    if (emp.is_active === false) { setCkResult({ kind: 'blocked', text: 'พนักงานคนนี้ถูกปิดใช้งาน/พ้นสภาพแล้ว — เช็คชื่อไม่ได้' }); return; }
+    /* 🔴 อ่านทะเบียนไลน์ไม่ได้ = **ยังตัดสินขอบเขตไม่ได้** ⇒ ไม่เขียน (fail-closed)
+       ปล่อยผ่าน = คนนอกขอบเขตถูกเช็คชื่อตอนทะเบียนล่ม · บีบเป็น "ไม่มีสิทธิ์" = จอโกหก */
+    if (emp.line_id && (linesFailed || linesLoading)) {
+      setCkResult({ kind: 'blocked', text: linesFailed
+        ? 'ยังเช็คชื่อไม่ได้ — ระบบอ่านทะเบียนไลน์ไม่สำเร็จ จึงตัดสินไม่ได้ว่าอยู่ในขอบเขตที่คุณรับผิดชอบไหม · โหลดหน้าใหม่อีกครั้ง'
+        : 'กำลังโหลดทะเบียนไลน์ — รอสักครู่แล้วกดใหม่' });
+      return;
+    }
+    if (!ckScope?.ok) {   // 🔴 ด่านจริงอยู่ตรงนี้ ไม่ใช่แค่ซ่อนปุ่ม (เปิด /scan?c=<รหัส> ตรงได้)
+      setCkResult({ kind: 'blocked', text: writeBlockText(ckScope, { what: 'การเช็คชื่อของคนนี้', unit: empLineName || emp.section || '' }) });
+      return;
+    }
+    setCkResult('busy');
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData?.user?.id) { setCkResult({ kind: 'blocked', text: 'ยังไม่ได้เข้าระบบ — บันทึกไม่ได้' }); return; }
+    const workDateStr = getWorkDate();
+    const r = await checkinByBadge(supabase, { emp, workDateStr, shift: getCurrentShift(), userId: userData.user.id });
+    const where = [empLineName || emp.section, r.shift === 'night' ? 'กะดึก' : 'กะเช้า', workDateStr].filter(Boolean).join(' · ');
+    if (r.kind === 'saved')  { toast.success(`✓ เช็คชื่อสำเร็จ — ${emp.name}`); setCkResult({ kind: 'saved', text: where }); return; }
+    if (r.kind === 'already') { setCkResult({ kind: 'already', text: where }); return; }
+    // ❌ ล้ม = ต้องเห็นว่ายังไม่ได้เช็ค ห้ามขึ้น ✓ (read_failed = ไม่รู้ของเดิม จึงไม่เขียนทับ PPE/ลา)
+    setCkResult({ kind: 'failed', text: r.kind === 'read_failed'
+      ? `อ่านข้อมูลเช็คชื่อเดิมไม่สำเร็จ จึงยังไม่บันทึก (กันทับ PPE/การลา ที่กรอกไว้แล้ว) — ลองใหม่อีกครั้ง · ${r.msg || ''}`
+      : 'บันทึกไม่สำเร็จ — ยังไม่ได้เช็คชื่อ (ดูข้อความแดงที่มุมจอ) · ลองใหม่อีกครั้ง' });
+  };
+
   /* ⏱/🔴 ป้ายประเภท — ดึงแถวเดียวตาม id เฉพาะเมื่อเป็นป้ายชนิดนั้น */
   const typeKind = scan?.kind === 'downtime_type' || scan?.kind === 'defect_type' ? scan.kind : null;
   const [typeHit, setTypeHit] = useState(null);   // null = ยังไม่โหลด · { row, err }
@@ -240,7 +301,6 @@ export default function ScanLanding() {
     || (tryEmp && !empHit) || (typeKind && !typeHit);
   const extraFound = !!(lineHit || storageHit || empHit?.emp || typeHit?.row);
   const extraErr = (scan?.kind === 'line' && linesFailed) || (scan?.kind === 'storage' && stoFailed) || empHit?.err || typeHit?.err;
-  const emp = empHit?.emp || null;
 
   return (
     <Page>
@@ -320,7 +380,50 @@ export default function ScanLanding() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {canAccessPage('/operator', role) && <ActionLink to={`/operator?q=${encodeURIComponent(emp.employee_id_code)}`} icon="👤" label="ข้อมูลพนักงาน / ทักษะ" sub="เปิดฐานข้อมูลพนักงานที่คนนี้" />}
-              {canAccessPage('/checkin', role) && <ActionLink to="/checkin" icon="🪪" label="เช็คชื่อด้วยบัตร" sub="หน้าเช็คชื่อ → ปุ่ม 🪪 สแกนบัตรพนักงาน" tone="var(--green)" />}
+
+              {/* 🪪 เช็คชื่อจบที่นี่ — ไม่พาไปหน้าเช็คชื่อแล้วให้ยิงซ้ำ (10/11 · คำสั่ง user)
+                  ปุ่มโผล่ตามสิทธิ์จริง (กฎข้อ 2) · นอกขอบเขต = โชว์ปุ่มแต่กดแล้วบอกเหตุผล
+                  **ไม่ซ่อน** — ซ่อนเฉยๆ คนยืนถือบัตรอยู่จะไม่รู้ว่าทำไมไม่มีปุ่ม */}
+              {canCheckin && ckResult?.kind !== 'saved' && ckResult?.kind !== 'already' && (
+                <button type="button" onClick={doCheckin} disabled={ckResult === 'busy'}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '10px 14px', width: '100%',
+                    borderRadius: 10, border: '1px solid var(--green)', background: 'var(--bg2)',
+                    backgroundImage: 'linear-gradient(var(--green)14, var(--green)14)', color: 'var(--text)',
+                    textAlign: 'left', cursor: ckResult === 'busy' ? 'wait' : 'pointer', opacity: ckResult === 'busy' ? 0.6 : 1,
+                    fontFamily: 'var(--font-body)' }}>
+                  <span style={{ fontSize: 22 }}>🪪</span>
+                  <span style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--green)' }}>
+                      {ckResult === 'busy' ? 'กำลังบันทึก…' : 'เช็คชื่อ “มางาน” เลย'}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                      บันทึกทันทีในนาม {fullName || 'ผู้ใช้นี้'} · {getWorkDate()} · {getCurrentShift() === 'night' ? 'กะดึก' : 'กะเช้า'}
+                    </div>
+                  </span>
+                </button>
+              )}
+              {/* ผลลัพธ์ — ✓ ขึ้นเฉพาะตอนเขียนติดจริง (ล้ม = แดง ห้ามขึ้น ✓ ให้เข้าใจผิดว่าเช็คแล้ว) */}
+              {ckResult && ckResult !== 'busy' && (() => {
+                const tone = ckResult.kind === 'saved' ? 'var(--green)'
+                  : ckResult.kind === 'already' ? 'var(--blue)' : 'var(--red)';
+                const head = ckResult.kind === 'saved' ? `✓ เช็คชื่อสำเร็จ — ${emp.name}`
+                  : ckResult.kind === 'already' ? `✓ ${emp.name} — เช็คมางานไว้แล้ว`
+                  : `✕ ยังไม่ได้เช็คชื่อ — ${emp.name}`;
+                return (
+                  <div style={{ borderRadius: 10, border: `1px solid ${tone}`, background: 'var(--bg2)',
+                    backgroundImage: `linear-gradient(${tone}14, ${tone}14)`, padding: '12px 14px' }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: tone, lineHeight: 1.3 }}>{head}</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--text2)', marginTop: 3, lineHeight: 1.6 }}>{ckResult.text}</div>
+                    {ckResult.kind === 'already' && (
+                      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>ไม่ได้บันทึกซ้ำ — ของเดิม (PPE / OT / การลา) ยังอยู่ครบ</div>
+                    )}
+                  </div>
+                );
+              })()}
+              {canAccessPage('/checkin', role) && (
+                <ActionLink to="/checkin" icon="📋" label="เปิดหน้าเช็คชื่อ (ทั้งไลน์)"
+                  sub="ติ๊ก PPE · การลา · OT · ยิงบัตรรัวทีละหลายคน" tone="var(--muted)" />
+              )}
             </div>
           </>)}
 

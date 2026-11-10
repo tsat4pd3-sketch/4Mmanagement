@@ -315,7 +315,14 @@ function NewPrForm({ parts = [], glCodes = [], defaults = {}, fullName, onDone, 
 }
 
 /* ══ แผงในใบ MO ════════════════════════════════════════════════════════════════════════ */
-export function MtnPrPanel({ order, parts = [], fullName, canEdit = false, teamKey = null, onOrderChanged }) {
+/* 🔓 `canEdit` = ทำ PR **ที่มีอยู่แล้ว** ต่อได้ไหม (ลงเลข PR · สั่งซื้อ · รับของ · ยกเลิก)
+      `canAdd`  = เปิด PR **ใบใหม่** ได้ไหม — ไม่ส่ง = ใช้ค่าเดียวกับ canEdit (พฤติกรรมเดิม)
+   🔴 แยก 2 ค่านี้เพราะ **ของสั่งซื้อมาถึงหลังใบ MO ปิดเป็นเคยปกติ** (10/11 · feedback หน้างาน
+      "ใบที่เปิด PR ไว้ ถ้า ผจก.ฝ่ายแจ้งอนุมัติไปแล้ว แก้ไขอะไรไม่ได้เลย")
+      เดิมหน้า MO ส่ง `canEdit={isMoOpen(o) && …}` ⇒ ใบปิด = แผงอ่านอย่างเดียว ⇒ กดรับของเข้าสต็อก
+      หรือยกเลิก PR ไม่ได้ตลอดกาล · หลักเดียวกับแผง "ส่งซ่อมนอก" ที่ไม่ผูกกับ isMoOpen โดยตั้งใจ */
+export function MtnPrPanel({ order, parts = [], fullName, canEdit = false, canAdd = null, teamKey = null, onOrderChanged }) {
+  const mayAdd = canAdd == null ? canEdit : canAdd
   const [prs, setPrs] = useState([]);
   const [glCodes, setGlCodes] = useState([]);
   const [loadErr, setLoadErr] = useState(null);
@@ -403,9 +410,27 @@ export function MtnPrPanel({ order, parts = [], fullName, canEdit = false, teamK
         <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 6 }}>⚠ เส้นทางนี้ต้องเปิด PR — ยังไม่มีใบ</div>
       )}
       {loadErr && <div style={{ fontSize: 11, color: '#ef4444', marginBottom: 6 }}>⚠ โหลดใบขอซื้อไม่สำเร็จ: {loadErr}</div>}
+      {/* ใบ MO ปิดแล้วแต่ยังทำ PR ต่อได้ — ต้องเขียนบนจอ ไม่งั้นคนไม่กล้ากด (หรือนึกว่าระบบพัง) */}
+      {canEdit && !mayAdd && prs.some(isPrOpen) && (
+        <div style={{ fontSize: 11, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border2)',
+                      borderRadius: 'var(--r-md)', padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
+          ใบ MO นี้ปิดแล้ว — <b>ใบขอซื้อที่ค้างอยู่ยังทำต่อได้ตามปกติ</b> (ลงเลข PR · สั่งซื้อ · รับของเข้าสต็อก · ยกเลิก)
+          เพราะของมักมาถึงหลังปิดใบ · แต่<b>เปิด PR ใบใหม่กับใบที่ปิดแล้วไม่ได้</b>
+        </div>
+      )}
+      {/* 🛒 ใบยังไม่ปิด + PR ค้าง = ใบ MO ปิดไม่ได้จนลูปนี้จบ (10/11 · คำสั่ง user "บล็อกเลย")
+          ช่างต้องรู้ว่าใบค้างเพราะ PR ของตัวเอง ไม่ใช่เพราะ ผจก. ไม่ยอมเซ็น
+          🔴 เขียนบอกเท่านั้น — ด่านจริงอยู่ที่ขั้นปิดใบ (`moCloseGate()` ใน utils/moChase.js) */}
+      {mayAdd && prs.some(isPrOpen) && (
+        <div style={{ fontSize: 11, color: 'var(--text2)', background: 'var(--bg3)', border: '1px solid var(--border2)',
+                      borderRadius: 'var(--r-md)', padding: '6px 9px', marginBottom: 6, lineHeight: 1.6 }}>
+          🛒 <b>ใบ MO นี้ปิดไม่ได้จนกว่าลูปใบขอซื้อจะจบ</b> — รับของเข้าสต็อก หรือ ยกเลิกใบที่ไม่ใช้
+          <div style={{ color: 'var(--muted)' }}>ผจก.ฝ่ายที่แจ้งเซ็นปิดใบไม่ได้ระหว่างนี้ — ใบจะค้างอยู่ที่ขั้นปิดใบ</div>
+        </div>
+      )}
       {prs.map(pr => <PrRow key={pr.id} pr={pr} canEdit={canEdit} fullName={fullName} onChanged={load} />)}
       {prs.length > 1 && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>ใบพิมพ์: มีหลายเลข PR ⇒ ช่อง PR.No. ข้างบนเว้นว่าง และพิมพ์ทุกเลขในช่องรายละเอียด</div>}
-      {canEdit && (adding
+      {mayAdd && (adding
         ? <NewPrForm parts={parts} glCodes={glCodes} fullName={fullName}
             defaults={{ source: 'mo', order_id: orderId, order, team: teamKey, repairPath: path, supplier: path === 'outsource' ? order?.supplier : '' }}
             onCancel={() => setAdding(false)} onDone={() => { setAdding(false); load(); }} />

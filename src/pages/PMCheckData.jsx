@@ -8,7 +8,8 @@ import { UserContext } from '../App'
 import { can, isActionSeeded } from '../utils/permissions'
 import { positionRank } from '../utils/positions'
 // ✍️ B2 (02/11) — สายอนุมัติ AM ตามลำดับชั้น · B3 — ป้าย MO / เหตุผลที่ไม่เปิดใบ
-import { amApprovalVerdict, amApprovalText, amApprovalAssumptionText, amApproveAllowed, amNextApprover } from '../utils/amApproval'
+import { amApprovalVerdict, amApprovalText, amApprovalAssumptionText, amApproveAllowed, amNextApprover, amBadgeGate, amOnSiteApproval, amInspectorIdentity } from '../utils/amApproval'
+import { findByBadge, normBadgeCode } from '../utils/badgeCheckin'   // 🪪 B4 — รหัสบัตร → พนักงาน (ตรงเป๊ะ · ซ้ำ = ไม่เดา)
 import { moStatusLabel } from '../utils/mtnStepPerm'
 import { amWaiverReasonValid, AM_WAIVER_MIN_LEN } from '../lib/pmDailyStatus'
 import { toast } from '../components/Toast'
@@ -582,7 +583,7 @@ function NgRecheckPanel({ result, cp, onSaved, canRecord = false, deptWrite = nu
 
 // ─── History Detail Modal ─────────────────────────────────────────────────────
 function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, userId, userRole, deptWrite, canRecord = false,
-  isAm = false, inspectorPosition = null, myPosition = null }) {
+  isAm = false, inspectorPosition = null, myPosition = null, inspectorIsSelf = null }) {
   const [results, setResults] = useState([])
   const [approving, setApproving] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -616,7 +617,8 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
      ใบ PM ของช่าง = พฤติกรรมเดิม (`pm:approve` + ทีม) */
   const amVerdict = isAm ? amApprovalVerdict({
     inspectorRank: positionRank(inspectorPosition), approverRank: positionRank(myPosition),
-    isSelf: !!userId && insp.inspector_id === userId,
+    // 🪪 B4 — ใบที่มีรหัสบัตร: "ใบตัวเอง" = บัตรเป็นของเรา (หน้าแม่คิดผ่าน amInspectorIdentity) ไม่ใช่บัญชีที่บันทึก
+    isSelf: inspectorIsSelf ?? (!!userId && insp.inspector_id === userId),
   }) : null
   const canApprove = (isAm
     ? amApproveAllowed({ can: (r, a) => can(r, a, userRole), isSeeded: isActionSeeded }) && !!amVerdict?.ok
@@ -845,7 +847,7 @@ export default function PMCheckData() {
            แต่ `can()` ที่นี่ยังอ่าน role จริงจากฐาน ⇒ เห็นปุ่มครบ แล้วสรุปผลทดสอบผิด
      🔴 `userId` ยังต้องเป็น **auth uid จริง** เสมอ (คนตรวจ/คนอนุมัติ/คนสั่ง export ในใบ)
         ห้ามเอา role ที่ถูกสวมไปปนกับตัวตนคนเซ็น */
-  const { role: userRole, fullName, mtnTeams: myMtnTeams, sections: mySections, allUnits, position: myPosition } = useContext(UserContext)
+  const { role: userRole, fullName, mtnTeams: myMtnTeams, sections: mySections, allUnits, position: myPosition, isSharedAccount } = useContext(UserContext)
   /* ══ 🔐 "ทีมที่เปิดอยู่ (?dept=) เป็นทีมของเราไหม" (15/10 · คำสั่ง user) ══════════════════
      เดิมคีย์ที่ใช้ตัดสินมาจาก `?dept=` ตรงๆ ⇒ ช่างทีมหนึ่งสลับ URL ไปอีกทีม แล้วลงผลตรวจ /
      อนุมัติ / **เลื่อนรอบ PM** ของอุปกรณ์ทีมนั้นได้ (audit 15/10 · ระดับ A)
@@ -871,6 +873,9 @@ export default function PMCheckData() {
   const [histMeta, setHistMeta] = useState(null)       // { otherN, unknownN, otherTeams, teamsKnown }
   const [showOther, setShowOther] = useState(false)
   const [inspPosById, setInspPosById] = useState({})   // inspector_id → position · ไม่มีคีย์ = ไม่รู้
+  // 🪪 B4 — ใบที่มีรหัสบัตร: ผู้ตรวจ = คนตามบัตร (normBadgeCode → { id, position }) · พนักงานของบัญชีที่ login (ใบตัวเอง)
+  const [inspEmpByCode, setInspEmpByCode] = useState({})
+  const [myEmployeeId, setMyEmployeeId] = useState(undefined)   // undefined = ยังไม่รู้ · null = บัญชีนี้ไม่ผูกพนักงาน
   // สิทธิ์บันทึกแยกแกน AM (พนักงานหน้างาน) / PM (ช่าง) ตามชนิดงานของทีมที่เปิดอยู่
   //   ห้าม hardcode 'pm' — ทีมไหนเป็น AM อ่านจาก mtn_teams.kind (ดู utils/pmTeams.js)
   const canRecord = useMemo(() => {
@@ -950,6 +955,13 @@ export default function PMCheckData() {
   /* ✍️ รหัสผู้ตรวจจริง — คงค่าข้ามเครื่องในแท็บนี้ (คนเดียวไล่ตรวจหลายเครื่องติดกัน) · ล้างเมื่อปิดแท็บ */
   const [inspectorCode, setInspectorCodeRaw] = useState(() => { try { return sessionStorage.getItem('pm:inspector_code') || '' } catch { return '' } })
   const setInspectorCode = (v) => { setInspectorCodeRaw(v); try { v ? sessionStorage.setItem('pm:inspector_code', v) : sessionStorage.removeItem('pm:inspector_code') } catch { /* ไม่มี storage = จำไม่ได้ ไม่พัง */ } }
+  /* 🪪 B4 (10/11) — ใบ AM: เปลี่ยนเครื่อง = ล้างรหัสบัตร · หัวหน้าเดินไล่ทีละเครื่องทีละคน
+     จำข้ามเครื่อง = ลืมสแกนเครื่องถัดไปแล้วชื่อคนก่อนหน้าติดไปทั้งไลน์ (ชื่อผิดคน) · ใบ PM ช่าง = จำต่อเหมือนเดิม */
+  useEffect(() => {
+    if (isAmTeam(department)) setInspectorCode('')
+  }, [selectedJig?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  /* ผู้ตรวจตัวจริงของใบในประวัติ — มีรหัสบัตร = คนตามบัตร (กฎใน amInspectorIdentity) */
+  const inspectorOf = (insp) => amInspectorIdentity(insp, { empByCode: inspEmpByCode, posByUid: inspPosById, myUid: userId, myEmployeeId: myEmployeeId ?? null })
   const [saving, setSaving] = useState(false)
   /* 📝 ร่างในเครื่อง (มือถือ · 22/10 · audit handheld ข้อ 4) — ผลตรวจบันทึกทีเดียวตอนท้าย และ "เปลี่ยน/สแกนเครื่องอื่น"
      ล้างทุกช่องที่กรอกทันที ⇒ เก็บร่างต่อ เครื่อง|แผนก|คนกรอก แล้วถามกู้คืนเมื่อกลับมาเครื่องเดิม (utils/formDraft.js) */
@@ -974,6 +986,15 @@ export default function PMCheckData() {
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUserId(data?.user?.id ?? null))
   }, [])
+  // 🪪 B4 — บัญชีนี้ผูกพนักงานคนไหน (ตัดสิน "สแกนบัตรตัวเอง = ใบตัวเอง") · อ่านไม่ได้ = undefined (ไม่รู้ ห้ามเดาว่าไม่ใช่)
+  useEffect(() => {
+    if (!userId) return undefined
+    let alive = true
+    supabase.from('profiles').select('employee_id').eq('id', userId).maybeSingle().then(({ data, error }) => {
+      if (alive) setMyEmployeeId(error ? undefined : (data?.employee_id ?? null))
+    })
+    return () => { alive = false }
+  }, [userId])
 
   useEffect(() => {
     // เลือกเฉพาะคอลัมน์ที่จอใช้ (กฎ egress ข้อ 11) · อ่านไม่ได้ต้องบอก ห้ามขึ้น "ยังไม่มีอุปกรณ์"
@@ -1104,10 +1125,20 @@ export default function PMCheckData() {
 
     /* ✍️ B2 — ตำแหน่งคนตรวจ (Main) · อ่านไม่ได้ = ไม่รู้ ⇒ สายอนุมัติไม่บล็อกแต่เขียนบนจอ */
     const uids = [...new Set((data ?? []).map(i => i.inspector_id).filter(Boolean))]
-    const pRes = uids.length ? await supabase.from('profiles').select('id, position').in('id', uids) : { data: [] }
+    // 🪪 B4 — ใบที่มีรหัสบัตร ตำแหน่งผู้ตรวจ = ของคนตามบัตร (ค้นทั้งค่าดิบ + ค่าที่ปรับรูป แล้วตัดสินด้วย findByBadge)
+    const codes = [...new Set((data ?? []).flatMap(i => i.inspector_code ? [i.inspector_code, normBadgeCode(i.inspector_code)] : []))]
+    const [pRes, eRes] = await Promise.all([
+      uids.length ? supabase.from('profiles').select('id, position').in('id', uids) : Promise.resolve({ data: [] }),
+      codes.length ? supabase.from('employees').select('id, employee_id_code, position').in('employee_id_code', codes) : Promise.resolve({ data: [] }),
+    ])
     if (curJigRef.current !== jigId) return
     if (pRes.error) toast.error(`อ่านตำแหน่งคนตรวจไม่สำเร็จ — ลำดับขั้นอนุมัติ AM จะไม่ถูกตรวจ: ${pRes.error.message}`)
     setInspPosById(Object.fromEntries((pRes.data ?? []).filter(p => p.position).map(p => [p.id, p.position])))
+    if (eRes.error) toast.error(`อ่านตำแหน่งผู้ตรวจตามบัตรไม่สำเร็จ — ลำดับขั้นอนุมัติ AM จะไม่ถูกตรวจ: ${eRes.error.message}`)
+    setInspEmpByCode(Object.fromEntries((data ?? []).filter(i => i.inspector_code).map(i => {
+      const e = findByBadge(eRes.data ?? [], i.inspector_code)
+      return [normBadgeCode(i.inspector_code), e ? { id: e.id, position: e.position || null } : null]
+    }).filter(([, v]) => v)))
     /* ผลตรวจ NG ใบไหนเปิดใบซ่อมไปแล้วบ้าง — กันเปิดซ้ำ + ให้กลับมาเปิดทีหลังได้ถ้าตอนนั้นกด "ไว้ก่อน"
        (ไม่งั้นเป็นทางตัน: ข้ามครั้งเดียวแล้วไม่มีทางเปิดจากผลตรวจใบนั้นอีกเลย)
        ⚠️ tolerant กับ 42703 — ยังไม่ apply migration ต้องใช้หน้านี้ได้ตามปกติ */
@@ -1360,9 +1391,34 @@ export default function PMCheckData() {
     setSaving(true)
     try {
       const overall = computeOverall()
+      /* 🪪 B4 (10/11 · user) — ใบ AM: ต้องสแกนบัตรผู้ตรวจทุกใบ (มาตรฐานเดียว) + คนที่บันทึก = ผู้ทวนสอบหน้าเครื่อง
+         ⇒ ผ่านสายอนุมัติ = "หัวหน้ากลุ่มรับทราบรายวัน" ไปพร้อมกันในแถวเดียว · กฎทั้งหมดอยู่ utils/amApproval.js
+         อ่านพนักงาน "ตอนกด" (ไม่ใช่ค่าที่ช่องโชว์ไว้ก่อนหน้า) — ด่านตอนเขียนจริง */
+      let approvalPatch = {}, onSite = null, badgeEmp = null
+      if (isAmTeam(department)) {
+        const raw = inspectorCode.trim()
+        let hits = 0, loadError = false
+        if (normBadgeCode(raw)) {
+          const { data: rows, error: eEmp } = await supabase.from('employees')
+            .select('id, employee_id_code, name, position').in('employee_id_code', [...new Set([raw, normBadgeCode(raw)])])
+          loadError = !!eEmp
+          hits = (rows ?? []).filter(e => normBadgeCode(e.employee_id_code) === normBadgeCode(raw)).length
+          badgeEmp = findByBadge(rows ?? [], raw)
+        }
+        const gate = amBadgeGate({ code: raw, employee: badgeEmp, hits, loadError })
+        if (!gate.ok) { toast.error(gate.text); return }
+        onSite = amOnSiteApproval({
+          inspectorRank: positionRank(badgeEmp.position), approverRank: positionRank(myPosition),
+          isSelf: myEmployeeId === undefined ? null : (!!myEmployeeId && badgeEmp.id === myEmployeeId),
+          canApprove: amApproveAllowed({ can: (r, a) => can(r, a, userRole), isSeeded: isActionSeeded }) && deptWrite?.ok !== false,
+          isShared: !!isSharedAccount,
+        })
+        if (onSite.approve) approvalPatch = { approval_status: 'approved', approved_by: userId, approved_at: new Date().toISOString() }
+      }
       const { data: insp, error: e1 } = await supabaseDR.from('inspections').insert({
         jig_id: selectedJig.id, checklist_id: checklistId, inspector_id: userId, status: overall, notes: notes.trim() || null,
         inspector_code: inspectorCode.trim() || null,
+        ...approvalPatch,
       }).select().single()
       if (e1) throw e1
 
@@ -1461,7 +1517,14 @@ export default function PMCheckData() {
       // อัปเดตป้าย "ตรวจแล้ว/รอตรวจ" ในรายการซ้ายทันที ไม่ต้องรอโหลดใหม่
       if (isAmTeam(department)) setCheckedThisShift(prev => ({ ...prev, [selectedJig.id]: overall }))
 
-      toast.success('บันทึกผลการตรวจสำเร็จ')
+      if (onSite?.approve) {
+        toast.success(`บันทึกแล้ว — ผู้ตรวจ ${badgeEmp?.name || inspectorCode.trim()} · ${fullName || 'คุณ'} ทวนสอบ/รับทราบแล้ว`)
+        const note = amApprovalAssumptionText(onSite.verdict?.assumed)
+        if (note) toast.info(note)
+      } else {
+        toast.success(badgeEmp ? `บันทึกผลการตรวจสำเร็จ — ผู้ตรวจ ${badgeEmp.name}` : 'บันทึกผลการตรวจสำเร็จ')
+        if (onSite) toast.info(onSite.text)
+      }
       if (pmDraftKey) clearDraft(pmDraftKey)
       const init = {}
       checkpoints.forEach(c => { init[c.id] = { v1: '', v2: '', v3: '', attr: '', note: '', mval: '' } })
@@ -1989,7 +2052,7 @@ export default function PMCheckData() {
                           </div>
                         )
                       })()}
-                      <InspectorCodeField value={inspectorCode} onChange={setInspectorCode} style={{ marginTop: 8 }} />
+                      <InspectorCodeField value={inspectorCode} onChange={setInspectorCode} required={isAmTeam(department)} style={{ marginTop: 8 }} />
                       <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="หมายเหตุ (ถ้ามี)..." style={{ marginTop: 8 }} />
                       {/* 🔴 ปุ่มบันทึก "สีต้องตรงกับความจริง" (06/10 · คอมเมนต์ทีม MTN ข้อ 3)
                           *"ถ้ากรอกรายละเอียดไม่ครบทุกจุด ให้ปุ่มบันทึกขึ้นเป็นสีแดงหรือสีเหลืองไว้ก่อนได้มั้ย
@@ -2101,7 +2164,7 @@ export default function PMCheckData() {
                           {insp.approval_status === 'pending' && (() => {
                             // ✍️ B2 — ใบ AM บอกว่ารอใคร (ชั้นถัดไปเหนือคนตรวจ) · ใบช่าง = ป้ายเดิม
                             const am = isAmTeam(clDeptById[insp.checklist_id] ?? department)
-                            const nx = am ? amNextApprover(positionRank(inspPosById[insp.inspector_id])) : null
+                            const nx = am ? amNextApprover(positionRank(inspectorOf(insp).position)) : null
                             return <span style={{ fontSize: 11, color: 'var(--muted)' }}>{nx ? (nx.step ? `รอ${nx.step.label}` : 'รอผู้จัดการรับทราบ') : 'รออนุมัติ'}</span>
                           })()}
                           {/* NG ใบนี้ถูกส่งซ่อมหรือยัง — ตอบคำถาม "ที่เจอเมื่อวาน แก้แล้วรึยัง" ได้จากตรงนี้เลย */}
@@ -2144,7 +2207,7 @@ export default function PMCheckData() {
           <HistoryModal inspection={viewInspection} checkpoints={checkpoints} jig={selectedJig}
             userId={userId} userRole={userRole} deptWrite={deptWrite} canRecord={canRecord}
             isAm={isAmTeam(clDeptById[viewInspection.checklist_id] ?? department)}
-            inspectorPosition={inspPosById[viewInspection.inspector_id] ?? null} myPosition={myPosition}
+            inspectorPosition={inspectorOf(viewInspection).position} inspectorIsSelf={inspectorOf(viewInspection).isSelf} myPosition={myPosition}
             onClose={() => { setViewInspection(null); if (selectedJig) fetchHistory(selectedJig.id) }} />
         )}
       </AnimatePresence>

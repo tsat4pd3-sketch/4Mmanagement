@@ -35,6 +35,8 @@ import { STALE_DAYS, STALE_HARD_DAYS, stageAgeOf, staleTone } from './mtnStale.j
 export const CHASE_SIDES = Object.freeze([
   { key: 'mtn', icon: '🔧', label: 'รอฝั่งช่างเรา',
     hint: 'อยู่ในมือทีมช่าง — ไล่ได้เลย (รับงาน · ลงมือซ่อม · หัวหน้า/ผจก.ช่างเซ็น)' },
+  { key: 'pr', icon: '🛒', label: 'รอลูปจัดซื้อ (PR)',
+    hint: 'ใบนี้มีใบขอซื้อค้างอยู่ — ผจก.ฝ่ายที่แจ้งอนุมัติปิดใบได้ต่อเมื่อลูป PR จบ (รับของ/ยกเลิก) ไปตามจัดซื้อ ไม่ใช่ไปตาม ผจก.' },
   { key: 'reporter', icon: '🏭', label: 'รอฝ่ายที่แจ้ง',
     hint: 'ช่างทำส่วนของตัวเองจบแล้ว — ต้องไปตามอีกฝ่าย เราเลื่อนขั้นให้เองไม่ได้' },
   { key: 'qa', icon: '🧪', label: 'รอ QA',
@@ -52,10 +54,67 @@ export const chaseSideMeta = (key) => SIDE_META[key] || SIDE_META.unknown;
  * 🔴 ฝั่งมาจาก `meta.side` ของทะเบียนขั้น · ขั้น QA ไม่มี `side` (ไม่ใช่ทั้งช่างและผู้แจ้ง) ⇒ แยกถังเอง
  * 🔴 `stage` เป็น null โดยเจตนาสำหรับใบตีกลับ/ส่งซ่อมนอก (กฎข้อ 6 ของ mtnStale) ⇒ `outside` ไม่ใช่ unknown
  */
-export function chaseSideOf(order = {}) {
+/* 🛒 ขั้น "ผจก.ฝ่ายที่แจ้งอนุมัติปิดใบ" ของทั้ง 2 ฟอร์ม
+      JIG/DIE/PD ขั้น 7 = `close` · ทีม MTN ขั้น 8 = `cost_mgr_close` (ดู mtnStepPerm.js) */
+export const PR_CLOSE_STAGES = Object.freeze(['close', 'cost_mgr_close']);
+const CLOSE_STAGES = PR_CLOSE_STAGES;
+/** ใบขอซื้อที่ "ยังไม่จบลูป" — ยังไม่รับของและยังไม่ยกเลิก */
+export const openPrRows = (prs) => (Array.isArray(prs) ? prs : [])
+  .filter(p => p && p.status !== 'received' && p.status !== 'cancelled');
+
+/**
+ * 🚦 **"ขั้นปิดใบนี้เซ็นได้ไหม — ลูป PR จบแล้วหรือยัง"**  (10/11 · คำสั่ง user *"บล็อกเลย"*)
+ * เจ้าของกฎที่เดียว — **ห้ามเทียบ `status` ของ PR หรือชื่อ stage เองในหน้า**
+ * @param {string|null} stage จังหวะงานที่กำลังจะเซ็น (`stageOf(step, { mtnForm })`)
+ * @param {Array|null} prs ใบขอซื้อของใบนี้ · **`null` = อ่านไม่ได้ (คนละความหมายกับ `[]` = ไม่มีใบ)**
+ * @returns {{ gate:'ok'|'block'|'unknown', rows:Array, nos:string[], noNo:number }}
+ *
+ * 🔴 **`prs = null` ⇒ `unknown` = ไม่บล็อก** — กฎเดียวกับด่านฝั่ง/ตำแหน่งของโมดูลนี้
+ *    (*"ไม่รู้ = ไม่บล็อก แต่จอต้องเขียนว่าไม่ได้ตรวจ"*) · บล็อกตอนคิวรีล่ม = ปิดใบไม่ได้ทั้งโรงงาน
+ * 🔴 **ด่านนี้คนละเรื่องกับการแก้ใบขอซื้อ** — ใบปิดแล้วยังต้องรับของ/ยกเลิก PR ได้
+ *    (ด่าน `pr-loop-not-locked-by-mo`) · บล็อก "ปิดใบตอน PR ค้าง" ไม่ใช่ล็อกแผง PR
+ */
+export function moCloseGate(stage, prs) {
+  const none = { rows: [], nos: [], noNo: 0 };
+  if (!PR_CLOSE_STAGES.includes(stage)) return { gate: 'ok', ...none };
+  if (prs == null) return { gate: 'unknown', ...none };
+  const rows = openPrRows(prs);
+  if (!rows.length) return { gate: 'ok', ...none };
+  return {
+    gate: 'block',
+    rows,
+    nos: rows.map(r => String(r?.pr_no || '').trim()).filter(Boolean),
+    noNo: rows.filter(r => !String(r?.pr_no || '').trim()).length,
+  };
+}
+
+/** ข้อความบอกเหตุ + ทางแก้ของด่านข้างบน (จอใช้ชุดเดียวกันทั้ง toast และแผ่นเตือนบนจอ) */
+export function moCloseGateText(g) {
+  if (!g || g.gate === 'ok') return null;
+  if (g.gate === 'unknown')
+    return '⚠ ตรวจใบขอซื้อของใบนี้ไม่สำเร็จ — ระบบไม่ได้ตรวจว่าลูป PR จบหรือยัง (เซ็นได้ตามปกติ)';
+  const what = [
+    g.nos.length ? `เลข PR: ${g.nos.join(', ')}` : null,
+    g.noNo ? `ยังไม่ได้ลงเลข PR ${g.noNo} ใบ` : null,
+  ].filter(Boolean).join(' · ');
+  return `🛒 ปิดใบยังไม่ได้ — ใบขอซื้อยังค้าง ${g.rows.length} ใบ (${what})\n`
+    + 'ต้องให้ลูป PR จบก่อน: รับของเข้าสต็อก หรือ ยกเลิกใบขอซื้อ ที่แผง “ใบขอซื้อ (PR)” ในใบนี้\n'
+    + '(แอดมินช่าง/ช่างผู้รับงานทำได้ — ใบที่ปิดแล้วก็ยังทำต่อได้)';
+}
+
+/**
+ * ใบนี้รอ "ฝั่งไหน" ลงมือ — `'mtn' | 'pr' | 'reporter' | 'qa' | 'outside' | 'unknown'`
+ * 🔴 ฝั่งมาจาก `meta.side` ของทะเบียนขั้น · ขั้น QA ไม่มี `side` ⇒ แยกถังเอง
+ * 🔴 `stage` เป็น null โดยเจตนาสำหรับใบตีกลับ/ส่งซ่อมนอก ⇒ `outside` ไม่ใช่ unknown
+ * 🛒 **มี PR ค้าง + อยู่ขั้นปิดใบ = รอลูปจัดซื้อ ไม่ใช่รอ ผจก.** (10/11 · คำสั่ง user
+ *    "ผจก.ฝ่ายแจ้งจะอนุมัติได้ก็ต่อเมื่อ loop pr จบ") — ไปตาม ผจก. ตอนที่ของยังไม่มา
+ *    คือไล่ผิดคน · ไม่ส่ง `prs` มา = พฤติกรรมเดิมเป๊ะ (ไม่รู้ = ไม่เดา)
+ */
+export function chaseSideOf(order = {}, { prs = null } = {}) {
   if (!isMoOpen(order)) return null;
   const { stage, meta } = moWaitMeta(order);
   if (!stage) return 'outside';
+  if (prs && CLOSE_STAGES.includes(stage) && openPrRows(prs).length) return 'pr';
   if (stage === 'qa') return 'qa';
   if (meta?.side === 'mtn' || meta?.side === 'reporter') return meta.side;
   return 'unknown';
@@ -77,12 +136,24 @@ const reporterUnitOf = (o) => String(o?.line_name || '').trim()
  *   🔴 `text` ใช้ได้เพราะช่องค้นหาของหน้า MO ครอบ `assigned_to` — ถอดออกจากช่องค้นหา = ชิปช่างกดแล้วไม่ได้ผล
  * @param teamName ตัวแปลงคีย์ทีม → ชื่อทีม (ค่าใน DB เป็น key · ห้ามโชว์ key ดิบ)
  */
-export function chaseTargetOf(order = {}, { teamName = (k) => k, teamOf = (o) => String(o?.mtn_dept || '').trim() } = {}) {
-  const side = chaseSideOf(order);
+export function chaseTargetOf(order = {}, { teamName = (k) => k, teamOf = (o) => String(o?.mtn_dept || '').trim(), prs = null } = {}) {
+  const side = chaseSideOf(order, { prs });
   const { stage, meta } = moWaitMeta(order);
   const whoShort = meta?.whoShort || '';
   const team = teamOf(order) || '';
   const teamTxt = team ? (teamName(team) || team) : '(ไม่ระบุทีม)';
+
+  /* 🛒 รอลูปจัดซื้อ — แยก 2 กอง เพราะคนที่ต้องไปตาม **คนละคน**
+       ยังไม่มีเลข PR = รอแอดมินช่างคีย์เข้า SAP · มีเลขแล้ว = รอของจากจัดซื้อ/ผู้ขาย */
+  if (side === 'pr') {
+    const open = openPrRows(prs);
+    const noNo = open.filter(p => !String(p?.pr_no || '').trim()).length;
+    return noNo > 0
+      ? { key: 'pr:no_no', kind: 'pr', whoShort: 'แอดมินช่าง', stage, team,
+          label: `ยังไม่ได้ลงเลข PR (${noNo} ใบขอซื้อ) · ${teamTxt}` }
+      : { key: 'pr:waiting', kind: 'pr', whoShort: 'จัดซื้อ', stage, team,
+          label: `รอของตามใบขอซื้อ ${open.map(p => p.pr_no).filter(Boolean).join(', ')}` };
+  }
 
   if (side === 'mtn') {
     /* ยังไม่มีใครกดรับ = งานของคนจ่ายงาน (หัวหน้าช่างของทีมนั้น) — จับกลุ่มตามทีม */
@@ -140,6 +211,8 @@ export function chaseTargetOf(order = {}, { teamName = (k) => k, teamOf = (o) =>
 export function buildMoChaseBoard(orders, {
   now = Date.now(), days = STALE_DAYS, hardDays = STALE_HARD_DAYS,
   teamOf = (o) => String(o?.mtn_dept || '').trim(), teamName = (k) => k,
+  /* 🛒 ใบขอซื้อของใบ MO นี้ — ไม่ส่ง = พฤติกรรมเดิมเป๊ะ (ไม่มีฝั่ง 'pr') */
+  prOf = null,
 } = {}) {
   const open = (Array.isArray(orders) ? orders : []).filter(o => o && isMoOpen(o));
   const bySide = new Map();
@@ -151,8 +224,9 @@ export function buildMoChaseBoard(orders, {
     if (age.days < days) continue;
     stale += 1;
 
-    const side = chaseSideOf(o) || 'unknown';
-    const target = chaseTargetOf(o, { teamName, teamOf });
+    const prs = prOf ? prOf(o) : null;
+    const side = chaseSideOf(o, { prs }) || 'unknown';
+    const target = chaseTargetOf(o, { teamName, teamOf, prs });
     const hard = age.days >= hardDays;
 
     if (!bySide.has(side)) bySide.set(side, { side, meta: chaseSideMeta(side), n: 0, hard: 0, oldest: null, _t: new Map() });

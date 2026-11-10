@@ -1,7 +1,7 @@
 // ✍️ B2 สายอนุมัติ AM ตามลำดับชั้น (ประชุมหน้างาน 2026-11-02) — ห้ามข้ามไปผู้จัดการ
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { amNextApprover, amApprovalVerdict, amApproveAllowed, amApprovalText, amApprovalAssumptionText } from '../amApproval.js'
+import { amNextApprover, amApprovalVerdict, amApproveAllowed, amApprovalText, amApprovalAssumptionText, amBadgeGate, amOnSiteApproval, amInspectorIdentity } from '../amApproval.js'
 
 const OP = 10, TECH = 20, LEAD = 40, SUP = 50, MGR = 60
 
@@ -47,4 +47,54 @@ test('amApproveAllowed — am:approve เมื่อ seed แล้ว · ย�
   assert.equal(amApproveAllowed({ can: can(['am:approve']), isSeeded: () => true }), true)
   assert.equal(amApproveAllowed({ can: can(['pm:approve']), isSeeded: () => true }), false)
   assert.equal(amApproveAllowed({ can: can(['pm:approve']), isSeeded: () => false }), true)
+})
+
+// ── 🪪 B4 (10/11) — หัวหน้าถือ handheld ทวนสอบหน้าเครื่อง ──────────────────────────
+test('B4 amBadgeGate — ใบ AM ต้องมีบัตรที่ชี้พนักงานได้ 1 คนพอดี', () => {
+  assert.equal(amBadgeGate({ code: '' }).code, 'no_code')
+  assert.equal(amBadgeGate({ code: '  ' }).ok, false)
+  assert.equal(amBadgeGate({ code: '61234', loadError: true }).code, 'unreadable')
+  assert.equal(amBadgeGate({ code: '61234', employee: null, hits: 0 }).code, 'not_found')
+  assert.equal(amBadgeGate({ code: '61234', employee: null, hits: 2 }).code, 'ambiguous')
+  assert.equal(amBadgeGate({ code: '61-234', employee: { id: 'e1' }, hits: 1 }).ok, true)
+})
+
+test('B4 amOnSiteApproval — หัวหน้ากลุ่มบันทึกใบของพนักงาน = รับทราบทันที', () => {
+  const base = { approverRank: LEAD, isSelf: false, canApprove: true }
+  assert.equal(amOnSiteApproval({ ...base, inspectorRank: OP }).approve, true)
+  assert.equal(amOnSiteApproval({ ...base, inspectorRank: TECH }).approve, true)
+  // ไม่รู้ตำแหน่งพนักงาน = ไม่บล็อก (กติกาเดิม) แต่ verdict บอก assumed
+  const unk = amOnSiteApproval({ ...base, inspectorRank: null })
+  assert.equal(unk.approve, true); assert.deepEqual(unk.verdict.assumed, ['inspector'])
+})
+
+test('B4 amOnSiteApproval — กรณีที่ต้องรออนุมัติตามขั้นปกติ', () => {
+  // หัวหน้าแผนกถือเครื่อง = ข้ามขั้น
+  assert.equal(amOnSiteApproval({ inspectorRank: OP, approverRank: SUP, isSelf: false, canApprove: true }).code, 'skip_level')
+  // หัวหน้าตรวจเอง (สแกนบัตรตัวเอง) = ใบตัวเอง
+  const self = amOnSiteApproval({ inspectorRank: LEAD, approverRank: LEAD, isSelf: true, canApprove: true })
+  assert.equal(self.approve, false); assert.equal(self.code, 'self')
+  // ไม่มีสิทธิ์ · บัญชีกลาง · อ่านไม่ได้ว่าใช่ตัวเองไหม
+  assert.equal(amOnSiteApproval({ inspectorRank: OP, approverRank: LEAD, isSelf: false, canApprove: false }).code, 'no_perm')
+  assert.equal(amOnSiteApproval({ inspectorRank: OP, approverRank: LEAD, isSelf: false, canApprove: true, isShared: true }).code, 'shared')
+  assert.equal(amOnSiteApproval({ inspectorRank: OP, approverRank: LEAD, isSelf: null, canApprove: true }).code, 'self_unknown')
+  // ทุกเคสที่ไม่อนุมัติต้องมีข้อความบอกบนจอ
+  for (const c of [{ isShared: true }, { canApprove: false }, { isSelf: null }]) {
+    const r = amOnSiteApproval({ inspectorRank: OP, approverRank: LEAD, isSelf: false, canApprove: true, ...c })
+    assert.ok(r.text.includes('รออนุมัติ'))
+  }
+})
+
+test('B4 amInspectorIdentity — มีรหัสบัตร = คนตามบัตร ไม่ใช่บัญชีที่ login', () => {
+  const ctx = { empByCode: { '61234': { id: 'emp-op', position: 'operator' }, 'L001': { id: 'emp-lead', position: 'line_leader' } },
+    posByUid: { 'u-lead': 'line_leader' }, myUid: 'u-lead', myEmployeeId: 'emp-lead' }
+  // หัวหน้า (u-lead) บันทึกใบของพนักงาน 61234 ⇒ ผู้ตรวจ = operator · ไม่ใช่ใบตัวเอง
+  const a = amInspectorIdentity({ inspector_id: 'u-lead', inspector_code: '61-234' }, ctx)
+  assert.deepEqual(a, { position: 'operator', isSelf: false, byBadge: true })
+  // หัวหน้าสแกนบัตรตัวเอง ⇒ ใบตัวเอง
+  assert.equal(amInspectorIdentity({ inspector_id: 'u-lead', inspector_code: 'l001' }, ctx).isSelf, true)
+  // ใบเก่าไม่มีรหัส = พฤติกรรมเดิม (บัญชีที่ login)
+  assert.deepEqual(amInspectorIdentity({ inspector_id: 'u-lead' }, ctx), { position: 'line_leader', isSelf: true, byBadge: false })
+  // รหัสที่หาไม่เจอ = ไม่รู้ตำแหน่ง · ไม่ถือเป็นใบตัวเอง
+  assert.deepEqual(amInspectorIdentity({ inspector_id: 'u-lead', inspector_code: '99999' }, ctx), { position: null, isSelf: false, byBadge: true })
 })

@@ -6821,7 +6821,9 @@ test('🔁 close-auto-carry — ปิดกะต้องแยก "ยัง�
     bad.push('src/pages/DailyReport.jsx (ไม่ได้เขียนบนจอว่าจะยกให้กี่ใบ — ยกเงียบ = คนไม่รู้ว่าของไปไหน)');
 
   /* ปุ่มปิดกะต้องรอเฉพาะกองที่คนตัดสิน — รอทุกใบ = บังคับกดทีละใบเหมือนเดิม */
-  const btn = (dr.match(/onClick=\{handleCloseSession\}[^\n]*/) || [''])[0];
+  /* 10/11: ปุ่มถูกห่อเป็น `() => handleCloseSession()` (รับ opts `dtConfirmed` จากป๊อปอัพทวน DT)
+     ⇒ รับทั้ง 2 รูป · ที่ด่านนี้สนใจคือ `disabled=` ต้องรอเฉพาะ needDecision */
+  const btn = (dr.match(/onClick=\{(?:\(\) => )?handleCloseSession\(?\)?\}[^\n]*/) || [''])[0];
   if (!/needDecision/.test(btn))
     bad.push('src/pages/DailyReport.jsx (ปุ่มปิดกะยังรอ "ทุกใบที่ open" ไม่ใช่เฉพาะ needDecision)');
 
@@ -8931,6 +8933,17 @@ test('🛡️ am-monthly-signoff-record — เขียน am_monthly_signoffs 
   assert.match(page, /isStale\(sign\.key, curKey\)/, '\n\n❌ AmMonthlyReport ไม่มีด่าน stale (เดือน/กะ) ก่อนลงนาม\n');
 });
 
+test('🛡️ am-onsite-badge-verify — ใบ AM ต้องมีบัตรผู้ตรวจ + ผู้ตรวจตัวจริง = คนตามบัตร (B4 · 10/11)', () => {
+  /* หัวหน้าถือ handheld บันทึกแทน ⇒ inspector_id = หัวหน้า · ถ้าสายอนุมัติอ่านตำแหน่ง/ใบตัวเองจาก inspector_id
+     หัวหน้ารับทราบไม่ได้ (self) และใบเลื่อนไปรอหัวหน้าแผนกทุกใบ · ไม่บังคับบัตร = ไม่รู้ว่าใครตรวจ */
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/PMCheckData.jsx'), 'utf8'));
+  assert.match(page, /const gate = amBadgeGate\(/, '\n\n❌ PMCheckData.handleSave ไม่ผ่าน amBadgeGate — ใบ AM ต้องมีบัตรผู้ตรวจที่ชี้พนักงานได้ 1 คน\n');
+  assert.match(page, /if \(!gate\.ok\) \{ toast\.error\(gate\.text\); return \}/, '\n\n❌ บัตรไม่ผ่านแล้วยังบันทึกต่อ\n');
+  assert.match(page, /onSite = amOnSiteApproval\(/, '\n\n❌ อนุมัติหน้าเครื่องต้องตัดสินผ่าน amOnSiteApproval (utils/amApproval.js)\n');
+  assert.ok(!/inspPosById\[\s*(insp|viewInspection)\.inspector_id\s*\]/.test(page),
+    '\n\n❌ อ่านตำแหน่งผู้ตรวจจาก inspector_id ตรงๆ — ใบที่มีรหัสบัตรต้องใช้ inspectorOf()/amInspectorIdentity (คนตามบัตรชนะบัญชีที่ login)\n');
+});
+
 test('🛡️ am-mo-label-single-source — ป้ายสถานะ MO บนจอ AM ต้องมาจาก moStatusLabel()', () => {
   for (const f of ['src/pages/DailyPM.jsx', 'src/pages/PMCheckData.jsx']) {
     const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
@@ -9696,6 +9709,94 @@ test('🔇 notify-rollup-never-for-call-mtn — ห้ามยุบใบ "เ
   }
 });
 
+/* ═══ 🔴 ปิดกะต้องทวน Downtime เปิดค้างทีละใบ — close-shift-dt-confirm (2026-11-10) ═══
+   คำสั่ง user: *"ก่อนปิดกะต้องเช็คเรื่องไม่ปิดดาวไทม์ ป๊อปอัพให้ยืนยันว่าเครื่องยังเบรกดาวน์อยู่
+   ส่งต่อไปกะถัดไป หรือลืมปิดให้ไปใส่เวลาปิด"*
+   ที่มา: ตัวเลือกเดิมเป็นหัวข้อกลางโมดัลปิดกะที่ยาวมาก ⇒ เลื่อนผ่านแล้วกดปิดกะได้
+   ผลคือแถว downtime "ลืมปิด" ค้างในฐาน 6 ใบ นานถึง 3,322 ชม. (ดู docs/modules/daily-report.md) */
+test('🔴 close-shift-dt-confirm — ปิดกะที่มี Downtime เปิดค้าง ต้องผ่านป๊อปอัพทวนก่อนเขียน DB', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+
+  assert.match(src, /const handleCloseSession = async \(\{ dtConfirmed = false \} = \{\} \) =>|const handleCloseSession = async \(\{ dtConfirmed = false \} = \{\}\) =>/,
+    '\n\n❌ handleCloseSession ไม่รับ dtConfirmed — ป๊อปอัพทวนจะเรียกกลับมาปิดจริงไม่ได้\n');
+  assert.match(src, /if \(openDT\.length > 0 && !dtConfirmed\) \{ setDtCloseConfirm\(openDT\); return; \}/,
+    '\n\n❌ ถอดด่านป๊อปอัพทวน Downtime เปิดค้างออกจาก handleCloseSession\n'
+    + '   ⇒ กลับไปปิดกะได้โดยไม่เห็นว่าใบไหนจะถูกส่งต่อกะถัดไป/ปิดที่เวลาเท่าไหร่\n');
+
+  /* ด่านต้องอยู่ "ก่อน" ตัวเขียนจริง — ย้ายลงไปหลัง setSavingClose = ไม่ได้กันอะไรเลย */
+  const i = src.indexOf('const handleCloseSession =');
+  const gate = src.indexOf('setDtCloseConfirm(openDT)', i);
+  const write = src.indexOf('setSavingClose(true)', i);
+  assert.ok(gate > 0 && write > 0 && gate < write,
+    '\n\n❌ ด่านป๊อปอัพอยู่หลังจุดเริ่มเขียน DB — ต้องอยู่ก่อน setSavingClose(true)\n');
+
+  /* ป๊อปอัพต้องบอกครบ 2 ทางตามคำสั่ง user: ส่งต่อกะถัดไป / ปิดที่เวลา */
+  assert.match(src, /เครื่องยังเบรกดาวน์อยู่/,
+    '\n\n❌ ป๊อปอัพไม่ได้เขียนว่า "เครื่องยังเบรกดาวน์อยู่" (ทางที่ 1 — ส่งต่อกะถัดไป)\n');
+  assert.match(src, /เปิดรายการต่อให้กะถัดไป/,
+    '\n\n❌ ป๊อปอัพต้องบอกว่าใบที่ยังเบรกดาวน์จะถูกเปิดต่อในกะถัดไป\n');
+  assert.match(src, /ปิดรายการที่ \{endStr/,
+    '\n\n❌ ป๊อปอัพไม่ได้บอกเวลาปิดของใบที่ "เครื่องกลับมาแล้ว" (ทางที่ 2)\n');
+});
+
+/* ═══ ⏩ สแกนเปิดใบที่เกินเวลากะ — ห้ามขวางการยิงรัว (2026-11-10 · หน้างานแจ้ง) ═══
+   *"เวลาสแกน order ล้นไปกะถัดไป ต้องกดคอนเฟิร์ม และทำให้ต้องคลิกช่อง prod order ใหม่ทุกใบ"*
+   2 เรื่อง: ① ทาง "เกินเวลากะ" ไม่เคยคืนโฟกัสให้ช่องสแกน (ทางปกติคืนอยู่แล้ว)
+   ⇒ เครื่องสแกนยิงเข้าช่องที่โฟกัสอยู่เท่านั้น = ต้องเอามือคลิกทุกใบ
+   ② ใกล้เลิกกะ **ทุกใบจะเกินความจุหมด** ⇒ โมดัลเด้งทุกใบ ⇒ ต้องเลือกครั้งเดียวแล้วจำได้ทั้งกะ */
+test('⏩ scan-open-overflow-flow — ใบเกินเวลากะต้องคืนโฟกัส + จำคำตอบได้ทั้งกะ', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+
+  assert.match(src, /const refocusScanOpen = \(\) => setTimeout\(\(\) => openProdInputRef\.current\?\.focus\(\)/,
+    '\n\n❌ ไม่มี refocusScanOpen — ทางที่จบการเปิดใบต้องคืนโฟกัสให้ช่อง PROD.NO ทุกทาง\n');
+  const fn = src.slice(src.indexOf('const runOverflowChoice ='), src.indexOf('const handleCloseProdNoChange'));
+  assert.ok(fn.length > 100, 'ไม่พบ runOverflowChoice');
+  assert.ok((fn.match(/refocusScanOpen\(\)/g) || []).length >= 2,
+    '\n\n❌ runOverflowChoice ไม่ได้คืนโฟกัสทุกทางออก (ทั้งสำเร็จและ error)\n'
+    + '   ⇒ หน้างานต้องเอามือคลิกช่อง PROD.NO ใหม่ทุกใบ ยิง Tag รัวไม่ได้ (เคสจริง 10/11)\n');
+
+  /* ทางเดียวกันทั้งปุ่มในโมดัลและโหมดที่จำไว้ — ห้ามแตกเป็น 2 ชุดแล้วลืมคืนโฟกัสฝั่งใดฝั่งหนึ่ง */
+  assert.doesNotMatch(src, /const handleOverflowNextShift|const handleOverflowForce/,
+    '\n\n❌ แตก handler ของใบเกินเวลากะกลับเป็น 2 ตัว — ต้องรวมที่ runOverflowChoice ตัวเดียว\n');
+  assert.match(src, /if \(overflowMode === 'carry'\) \{ await runOverflowChoice\('carry',/,
+    '\n\n❌ ถอดโหมด "จำคำตอบทั้งกะ" — ใกล้เลิกกะโมดัลจะเด้งทุกใบ ยิง Tag ต่อกันไม่ได้\n');
+
+  /* 🔴 จำคำตอบได้ แต่ห้ามเงียบ และห้ามข้ามกะ */
+  assert.match(src, /useEffect\(\(\) => \{ setOverflowMode\(null\); \}, \[selSession\?\.id\]\)/,
+    '\n\n❌ ไม่ได้ล้างโหมดเมื่อเปลี่ยนกะ — ใบของกะใหม่จะถูกตัดสินใจแทนด้วยคำตอบของกะก่อน\n');
+  assert.match(src, /\{overflowMode && \(/,
+    '\n\n❌ เปิดโหมดแล้วไม่มีแถบบนจอ = ใบถูกยกไปกะหน้าเงียบๆ (ห้ามล้มเหลวเงียบ)\n');
+  assert.match(src, /กลับไปถามทุกใบ/,
+    '\n\n❌ ไม่มีปุ่มเลิกโหมด — ติ๊กพลาดแล้วออกไม่ได้จนกว่าจะเปลี่ยนกะ\n');
+  assert.match(src, /โหมดจำคำตอบ/,
+    '\n\n❌ toast ไม่ได้บอกว่าใบนี้ถูกจัดการด้วยโหมดที่จำไว้ (คนยิงรัวต้องรู้ว่าของไปไหน)\n');
+});
+
+/* ═══ ⏱️ "เปิด OT" มีเพดาน — ot-ceiling-auto-carry (2026-11-10 · คำสั่ง user) ═══
+   *"กดเปิดโอที ใบหลังจากนั้นก็ลงไปที่ช่วง OT จนประมาณใบที่ 4 เห็นว่าใช้เกิน OT ไปอีก
+     ใบถัดๆ ไปให้โยนไปกะถัดไปอัตโนมัติเลย"*
+   ⇒ ความจุมี 2 ชั้น: เพดานกะ → เพดาน OT · เกินชั้น 2 = ส่งกะถัดไป ห้ามเปิดต่อ
+   (เปิดต่อ = รับงานที่ไม่มีเวลาทำ แล้วไปโผล่เป็นใบค้างตอนปิดกะอยู่ดี) */
+test('⏱️ ot-ceiling-auto-carry — โหมด OT ต้องมีเพดาน แล้วสลับเป็นส่งกะถัดไปเอง', () => {
+  const cap = readFileSync(join(ROOT, 'src/utils/shiftCapacity.js'), 'utf8');
+  assert.match(cap, /export function otSpanMin\(/,
+    '\n\n❌ ถอด otSpanMin — โควต้า OT ต้องมีเจ้าของกฎใน utils/shiftCapacity.js\n');
+  assert.match(cap, /WEEKDAY_OT_TIME/,
+    '\n\n❌ โควต้า OT ต้องอ่านจากทะเบียนกลาง WEEKDAY_OT_TIME (utils/otPeriods.js) ห้าม hardcode นาที\n');
+  assert.doesNotMatch(stripComments(cap), /\b150\b/,
+    '\n\n❌ hardcode นาที OT ไว้ใน shiftCapacity.js — เปลี่ยนนโยบายแล้วตัวเลขจะไม่ขยับตาม\n');
+
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.match(src, /if \(overflowMode === 'force'\)/,
+    '\n\n❌ โหมด OT กลับไปเปิดใบทุกใบโดยไม่เช็คเพดาน OT\n');
+  assert.match(src, /const otOver = checkOtCapacity\(\{/,
+    '\n\n❌ ไม่ได้เช็คโควต้า OT ด้วย checkOtCapacity ก่อนเปิดใบในโหมด OT\n');
+  assert.match(src, /if \(!otOver\) \{ await runOverflowChoice\('force'[\s\S]{0,80}await runOverflowChoice\('carry'/,
+    '\n\n❌ เกินโควต้า OT แล้วต้องสลับเป็น carry อัตโนมัติ (ไม่ใช่เปิดต่อ/ไม่ใช่เงียบ)\n');
+  assert.match(src, /โควต้า OT เต็มแล้ว/,
+    '\n\n❌ สลับเป็นส่งกะถัดไปแล้วไม่บอก — คนยิงรัวจะนึกว่ายอดยังอยู่กะนี้ (ห้ามล้มเหลวเงียบ)\n');
+});
+
 test('🔀 insp-team-not-jig-only — ใบตรวจต้องแยกด้วยทีม ไม่ใช่ jig_id ล้วน', () => {
   /* 🔴 10/11 คำสั่ง user: "การตรวจ am/pm มาทับกัน ตอนนี้อ้างอิงแค่ id ของอุปกรณ์ มันปนกัน"
      เครื่องเดียวมี checklist ทั้ง AM และ PM เป็นเรื่องปกติของ TPM — วัดจริง DR 6 เครื่อง / 112 ใบ
@@ -9786,6 +9887,60 @@ test('🛡️ master-cache-auth-gate — ผลที่โหลดตอนไ
   assert.match(pl, /\{ nonEmpty: true \}/, '🔴 ทะเบียนไลน์ต้องข้ามลิสต์ว่างที่ค้างใน cache (nonEmpty)');
 });
 
+/* ═══ 🪪 badge-scan-saves-now — 2026-11-10 · คำสั่ง user ═══════════════════════════════════
+   *"มันควรจะเช็คมาเลยมั้ยแบบนี้ ตอนนี้ไม่เห็นใช้ได้"* — ยิงบัตร 1 ใบ = ลงฐานทันที 1 แถว
+   3 อย่างที่ห้ามหลุด: ① หน้าเขียนจริงและเช็คจำนวนแถว ② ScanModal ต้อง await (ไม่งั้นขึ้นเขียว
+   ก่อนรู้ผล = จอบอกสำเร็จทั้งที่เขียนล้ม) ③ ตัวนับในหน้าต่างสแกนห้าม hardcode "ยังไม่ได้บันทึก"  */
+test('🪪 badge-scan-saves-now — สแกนบัตรต้องเขียนลงฐานทันที + จอต้องบอกผลจริง', () => {
+  const bad = [];
+  const ck = stripComments(readFileSync(join(ROOT, 'src/pages/Checkin.jsx'), 'utf8'));
+  const fn = ck.slice(ck.indexOf('const onBadgeScan'), ck.indexOf('badgeScanRef.current ='));
+  if (!/const onBadgeScan = async/.test(fn)) bad.push('onBadgeScan ไม่ใช่ async — เขียนฐานไม่ได้');
+  if (!/upsertCheckin\(/.test(fn)) bad.push('onBadgeScan ไม่เขียนลงฐาน (กลับไปติ๊กบนจอเฉยๆ)');
+  if (!/ckLogRow\(/.test(fn)) bad.push('onBadgeScan ประกอบแถวเอง — ต้องใช้ ckLogRow ชุดเดียวกับปุ่มบันทึก');
+  // ❌ เขียนไม่ติดแล้วยังติ๊กบนจอ = จอบอกเช็คแล้วทั้งที่ฐานว่าง
+  const okIdx = fn.indexOf('if (!okRow)'), setIdx = fn.indexOf('setAttendance(');
+  if (okIdx < 0 || setIdx < 0 || okIdx > setIdx) bad.push('ติ๊กบนจอก่อนรู้ผลการเขียน — ต้องเช็คผลก่อน setAttendance');
+
+  const sm = stripComments(readFileSync(join(ROOT, 'src/components/ScanModal.jsx'), 'utf8'));
+  if (!/problem = await res/.test(sm)) bad.push('ScanModal ไม่ await onScan ที่เป็น Promise — ขึ้นเขียวก่อนรู้ผลจริง');
+  if (!/await emit\(/.test(sm)) bad.push('ลูปกล้องไม่ await emit — ยิงใบถัดไปทับระหว่างบันทึกใบแรก');
+
+  const foot = ck.slice(ck.indexOf('<ScanModal title="สแกนบัตรพนักงาน"'), ck.indexOf('<ScanModal title="สแกนบัตรพนักงาน"') + 2200);
+  if (/ยังไม่ได้บันทึก<\/span>/.test(foot)) bad.push('ตัวนับในหน้าต่างสแกนยัง hardcode "ยังไม่ได้บันทึก" (จอโกหก)');
+  if (!/scanSaved\.length/.test(foot)) bad.push('หน้าต่างสแกนไม่บอกว่ารอบนี้บันทึกไปกี่คน');
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
+
+/* ═══ 🪪 scan-landing-checkin — 2026-11-10 · คำสั่ง user ════════════════════════════════════
+   *"ยิงบัตรแล้วขึ้น ✓ เช็คชื่อสำเร็จ พอ ไม่ต้องเปิดหน้าเช็คชื่อ"* ⇒ `/scan` เขียนฐานได้ **ข้อยกเว้นเดียว**
+   ของกฎ "หน้านี้อ่านอย่างเดียว" · 2 อย่างที่ห้ามหลุด:
+   ① สูตรแถวต้องเป็นของกลาง (`lib/checkinSave.js`) — ห้ามหน้าไหนประกอบ/ยิง upsert เอง
+   ② `/scan` ยิงบัตรใครก็ได้ทั้งโรงงาน (ไม่มีรายชื่อมากรองเหมือน `/checkin`) ⇒ **ต้องเช็คขอบเขตชั้น ③ เอง**  */
+test('🪪 scan-landing-checkin — /scan เช็คชื่อได้ แต่ต้องผ่านของกลาง + ด่านขอบเขตชั้น ③', () => {
+  const bad = [];
+  const sl = stripComments(readFileSync(join(ROOT, 'src/pages/ScanLanding.jsx'), 'utf8'));
+  if (!/checkinByBadge\(/.test(sl)) bad.push('ScanLanding ไม่ได้เช็คชื่อผ่าน checkinByBadge (ของกลาง)');
+  if (/from\('daily_production_logs'\)/.test(sl)) bad.push('ScanLanding แตะ daily_production_logs ตรงๆ — ต้องผ่าน lib/checkinSave.js');
+  if (!/canWriteLine\(/.test(sl) || !/canWriteUnit\(/.test(sl))
+    bad.push('ScanLanding ไม่เช็คขอบเขตชั้น ③ — ยิงบัตรคนแผนกอื่นแล้วเช็คชื่อให้ได้');
+  // ด่านต้องอยู่ใน handler ที่เขียนจริง ไม่ใช่แค่ซ่อนปุ่ม (เปิด /scan?c=<รหัส> ตรงได้)
+  const h = sl.slice(sl.indexOf('const doCheckin'), sl.indexOf('const doCheckin') + 1800);
+  if (!/if \(!ckScope\?\.ok\)/.test(h)) bad.push('doCheckin ไม่มีด่านขอบเขตในฟังก์ชันที่เขียนจริง');
+  if (h.indexOf('ckScope?.ok') > h.indexOf('checkinByBadge(')) bad.push('เช็คขอบเขตหลังเขียนไปแล้ว');
+  // ctx ของด่านต้องครบ 2 แกน (write-scope-layer: ไม่ส่ง = ถอยไปใช้ section เงียบๆ)
+  if (!/respCostCenters/.test(sl) || !/scopeIdx/.test(sl)) bad.push('ctx ของด่านไม่ได้ส่ง respCostCenters/scopeIdx');
+
+  const lib = stripComments(readFileSync(join(ROOT, 'src/lib/checkinSave.js'), 'utf8'));
+  if (!/checkWriteRows\(/.test(lib)) bad.push('checkinSave ไม่ได้นับแถว (RLS ปฏิเสธ = 0 แถว ไม่มี error)');
+  if (!/markPresentRecord\(/.test(lib)) bad.push('checkinSave ไม่ได้ใช้ markPresentRecord (กติกาการลา)');
+  // 🔴 อ่านแถวเดิมไม่ได้ = ห้ามเขียน (เขียนทั้งที่ไม่รู้ของเดิม = ทับ PPE/OT/ลา ของคนอื่น)
+  if (!/read_failed/.test(lib)) bad.push('checkinSave ไม่มีทาง read_failed — อ่านของเดิมไม่ได้แล้วยังเขียนทับ');
+  const byBadge = lib.slice(lib.indexOf('export async function checkinByBadge'));
+  if (byBadge.indexOf("kind: 'already'") > byBadge.indexOf('upsertCheckin(')) bad.push('checkinByBadge เขียนก่อนเช็คว่ามางานอยู่แล้ว');
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
+
 test('📋 sheet-quality-is-hint-not-gate — แถบความครบของใบตรวจเป็นตัวบอก ห้ามเป็นด่าน', () => {
   /* 🔴 10/11 คำสั่ง user เรื่อง "แพทเทินการสร้างใบตรวจ" — จอตั้งค่า PM โชว์ว่าใบนี้ครบหรือยัง
      (มุม/จุด/ปักหมุด/รูปขยาย) + ชี้ใบตัวอย่างจริง
@@ -9814,4 +9969,75 @@ test('📋 sheet-quality-is-hint-not-gate — แถบความครบข�
     '\n\n❌ ไม่ได้เรียก RPC หาใบตัวอย่างแล้ว — ถ้าจะโชว์ตัวอย่างต้องมาจากข้อมูลจริง\n');
   assert.ok(!/JHYD\d|HDF-0\d\s*-\s*SCHULER/i.test(src),
     '\n\n❌ hardcode ชื่อเครื่องตัวอย่างในโค้ด — ใบต้นแบบเปลี่ยนได้ ต้องถาม fn_inspect_sheet_examples\n');
+});
+
+test('🛒 pr-loop-not-locked-by-mo — ใบปิดแล้วต้องทำ PR ที่ค้างต่อได้ + ไล่งานต้องรู้จัก PR', () => {
+  /* 🔴 10/11 feedback หน้างาน 2 ข้อ ต้นเหตุเดียวกัน (ลูป PR กับลูปขั้นของใบ MO คนละลูป):
+       ① "ใบที่เปิด PR ไว้ ถ้า ผจก.ฝ่ายแจ้งอนุมัติไปแล้ว แก้ไขอะไรไม่ได้เลย"
+          — หน้า MO ส่ง `canEdit={isMoOpen(o) && …}` ให้แผง PR ⇒ ใบปิด = อ่านอย่างเดียว
+            ⇒ กดรับของเข้าสต็อก/ยกเลิก PR ไม่ได้ตลอดกาล (ของมาถึงหลังปิดใบเป็นเคสปกติ)
+          แก้: `canEdit` ไม่ผูก isMoOpen · เปิด PR **ใบใหม่** ยังผูก (`canAdd`)
+          หลักเดียวกับแผง "ส่งซ่อมนอก" ที่เขียนเหตุผลไว้ในไฟล์เดียวกันแล้ว
+       ② "งานที่มีการออก PR จะต้องยังไม่รอ ผจก.ฝ่ายที่แจ้งอนุมัติ — ผจก.อนุมัติได้ก็ต่อเมื่อ loop PR จบ"
+          — แผงไล่งานตัดสินจากทะเบียนขั้นอย่างเดียว ⇒ โยนใบไปกอง "รอฝ่ายที่แจ้ง" = ไล่ผิดคน
+          แก้: ฝั่ง `pr` ใน moChase + หน้า MO ส่ง `prOf`
+     📄 docs/modules/mtn-work-order.md §ลูป PR */
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+
+  /* ① แผง PR: canEdit ห้ามผูก isMoOpen (canAdd ผูกได้ — คนละค่า) */
+  const tag = page.match(/<MtnPrPanel[\s\S]{0,400}?\/>/);
+  assert.ok(tag, '\n\n❌ หา <MtnPrPanel> ในหน้า MO ไม่เจอ — ด่านนี้วัดอะไรไม่ได้แล้ว\n');
+  const canEditProp = tag[0].match(/canEdit=\{([^}]*)\}/);
+  assert.ok(canEditProp, '\n\n❌ <MtnPrPanel> ไม่มี prop canEdit\n');
+  assert.ok(!/isMoOpen/.test(canEditProp[1]),
+    `\n\n❌ แผง PR ถูกล็อกตามสถานะใบ MO อีกแล้ว: canEdit={${canEditProp[1].trim()}}\n`
+    + '   ⇒ ใบปิดแล้ว = ลงเลข PR / รับของเข้าสต็อก / ยกเลิก PR ไม่ได้ตลอดกาล\n'
+    + '   ของสั่งซื้อมาถึงหลังปิดใบเป็นเคสปกติ — ให้ผูก isMoOpen ที่ `canAdd` (เปิด PR ใบใหม่) แทน\n');
+  assert.ok(/canAdd=\{[^}]*isMoOpen/.test(tag[0]),
+    '\n\n❌ เปิด PR ใบใหม่ไม่ได้ผูกกับ isMoOpen — ใบที่ปิดแล้วไม่ควรเปิด PR ใบใหม่ได้\n');
+
+  /* ② แผงไล่งานต้องรู้จัก PR */
+  assert.ok(/buildMoChaseBoard\([\s\S]{0,600}?prOf:/.test(page),
+    '\n\n❌ แผงไล่งานไม่ได้รับข้อมูล PR (prOf) แล้ว\n'
+    + '   ⇒ ใบที่มีใบขอซื้อค้างจะถูกโยนไปกอง "รอฝ่ายที่แจ้ง" ทั้งที่ ผจก.อนุมัติไม่ได้จนกว่าลูป PR จบ\n');
+  const chase = stripComments(readFileSync(join(ROOT, 'src/utils/moChase.js'), 'utf8'));
+  assert.ok(/key: 'pr'/.test(chase),
+    '\n\n❌ ทะเบียนฝั่งไล่งานไม่มีถัง `pr` แล้ว — จอวาดหัวข้อ "รอลูปจัดซื้อ" ไม่ได้\n');
+});
+
+test('🚦 mo-close-gated-by-pr-loop — ปิดใบ MO ต้องถาม moCloseGate() และห้ามตัดสินเองในหน้า', () => {
+  /* 🔴 10/11 คำสั่ง user *"บล็อกเลย"* (ยกระดับจากคำเตือนที่ส่งไปรอบก่อน):
+       "ผจก.ฝ่ายแจ้งจะอนุมัติได้ก็ต่อเมื่อ loop pr จบ"
+     กับดักที่ด่านนี้กัน 3 ข้อ:
+       ① รอบก่อนเขียนคำเตือนจาก `o._prs` ซึ่ง **StepModal ไม่เคยได้รับ** (ติดมากับ handler ปุ่มพิมพ์
+          ใน DetailDrawer เท่านั้น) ⇒ เงื่อนไขเป็น [] เสมอ = คำเตือนไม่เคยขึ้น (ล้มเหลวเงียบ)
+          ⇒ ด่านนี้บังคับว่าขั้นปิดใบต้อง **โหลดใบขอซื้อของตัวเอง** ไม่ใช่หวังว่าจะมีติดมากับ order
+       ② ตัดสินด้วยค่าที่โหลดตอนเปิดโมดัล = บล็อกผิด/ปล่อยผิด (อีกเครื่องรับของ/เปิด PR ใบใหม่ระหว่างนั้น)
+          ⇒ ตอนกดบันทึกต้องถามฐานสดอีกชั้น
+       ③ อ่านไม่ได้ (null) ห้ามบล็อก — บล็อกตอนคิวรีล่ม = ปิดใบไม่ได้ทั้งโรงงาน (กฎอยู่ใน moCloseGate)
+     📄 docs/modules/mtn-work-order.md §ลูป PR */
+  const chase = stripComments(readFileSync(join(ROOT, 'src/utils/moChase.js'), 'utf8'));
+  assert.ok(/export function moCloseGate\b/.test(chase),
+    '\n\n❌ ไม่มี moCloseGate() ใน utils/moChase.js — ด่าน "ปิดใบได้ต่อเมื่อลูป PR จบ" หายไป\n');
+  assert.ok(/prs == null\)\s*return \{ gate: 'unknown'/.test(chase),
+    '\n\n❌ moCloseGate ไม่ได้กัน "อ่าน PR ไม่ได้ = unknown" แล้ว\n'
+    + '   ⇒ คิวรี PR ล่มแล้วบล็อกการปิดใบทั้งโรงงาน (ไม่รู้ ≠ มีค้าง)\n');
+
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  assert.ok(/moCloseGate\(/.test(page),
+    '\n\n❌ หน้า MO ไม่เรียก moCloseGate() แล้ว — ปิดใบได้ทั้งที่ใบขอซื้อยังค้าง\n');
+  /* ① + ② ด่านตอนกดบันทึกต้องถามฐานสด ไม่ใช่อ่าน prop ที่ติดมากับ order */
+  assert.ok(/moCloseGate\(_stage,\s*await fetchOpenPrs\(\)\)/.test(page),
+    '\n\n❌ ด่านตอนกดเซ็นไม่ได้โหลดใบขอซื้อสดๆ\n'
+    + '   ⇒ ตัดสินด้วยค่าค้างในหน้า = บล็อกผิด (ของมาถึงแล้ว) หรือปล่อยผิด (เพิ่ง PR ใบใหม่)\n');
+  assert.ok(!/moCloseGate\([^)]*_prs/.test(page) && !/openPrRows\(o\._prs/.test(page),
+    '\n\n❌ ด่านกลับไปอ่าน `order._prs` อีกแล้ว — StepModal ไม่เคยได้รับฟิลด์นี้ (ว่างเสมอ = ด่านตาย)\n');
+  /* ห้ามหน้าเขียนเกณฑ์ "ลูป PR จบ" ชุดที่ 2 (= drift)
+     🔴 แคบไว้ที่คำว่า `received` เท่านั้น — `cancelled` ใช้ที่อื่นโดยชอบด้วย 2 ที่
+        (ตัวกรองคิวรีใบขอซื้อ `.neq('status','cancelled')` · การยกเลิก**ใบ MO** เอง) ⇒ ห้ามจับเหมา */
+  assert.ok(!/'received'/.test(page),
+    '\n\n❌ หน้า MO เทียบสถานะ "รับของแล้ว" ของใบขอซื้อเอง\n'
+    + '   ⇒ เกณฑ์ "ลูป PR จบ" กลายเป็น 2 ชุด — แผงไล่งานกับด่านปิดใบจะไม่ตรงกัน\n'
+    + '   ให้ถาม openPrRows() / moCloseGate() ใน utils/moChase.js ที่เดียว\n');
+  /* ทางออกต้องเปิดอยู่: ด่านปิดใบ ห้ามไปล็อกแผง PR (ไม่งั้นวงจรล็อกตัวเอง) — ข้อ ① ของด่านข้างบนคุมอยู่ */
 });
