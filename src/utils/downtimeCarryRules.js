@@ -24,3 +24,24 @@ export function carryPayload({ rows = [], toSessionId, startISO, by = null, byUi
     reported_by_uid:  byUid,
   }));
 }
+
+/* ── "ใบ downtime หลังใส่คำตัดสินของฟอร์มปิดกะ" — ยังไม่เขียน DB ─────────────────────────
+   🔴 ของกลางเพราะมี **2 ที่ต้องได้เลขเดียวกัน**: OEE preview บนจอปิดกะ กับ **ด่าน poka-yoke
+      ก่อนส่งขอปิดกะ** (`utils/closeChecks.js`) — ถ้าคนละสูตร จอจะเตือนแต่ด่านไม่จับ (หรือกลับกัน)
+   · `carry` = ตัดยอดที่เวลาปิดกะ แล้วเปิดใบต่อให้กะถัดไป · `close` = ปิดที่เวลาที่กรอก
+   · ยังไม่ตัดสิน = คืนแถวเดิม (duration_min ยัง null ⇒ สูตรไม่นับ = เท่าพฤติกรรมเดิม)   */
+export function decidedDtLogs({ dtLogs = [], decisions = {}, closeTimes = {}, carryEndTime = null, workDate = null }) {
+  const open = (dtLogs || []).filter(d => d?.duration_min == null);
+  if (!open.length || !workDate) return dtLogs || [];
+  return (dtLogs || []).map(d => {
+    if (d.duration_min != null || !d.started_at) return d;
+    const decision = decisions[d.id];
+    const endStr = decision === 'carry' ? carryEndTime : (decision === 'close' ? closeTimes[d.id] : null);
+    if (!endStr) return d;
+    const startMs = new Date(d.started_at).getTime();
+    let endMs = new Date(`${workDate}T${String(endStr).slice(0, 5)}:00`).getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return d;
+    if (endMs < startMs) endMs += 86400000;        // ข้ามเที่ยงคืน (กะดึก)
+    return { ...d, ended_at: new Date(endMs).toISOString(), duration_min: Math.max(1, Math.round((endMs - startMs) / 60000)) };
+  });
+}

@@ -52,7 +52,9 @@ import LinePartCallPanel from '../components/LinePartCallPanel';
 import ProcessTypeSetup from '../components/ProcessTypeSetup';
 import { affectsLanesMap, computeSessionOee, sessionProducedQty, strictOee, strictGap, STRICT_WARN_SHARE_PCT, policyBreakOverlapMin, breakIntervalsIn, breakBandsIn, breakBandName, breakBandTitle, dtMinOutsideBreaks, overlapMinutesWith, buildCtMap, ctForMat, groupSameProductKeys, shiftFrameOf, shiftStartDate, clampWinToShift, unionIv, dtMinOutsideWork, SIX_BIG_LOSSES, EIGHT_WASTES, sumDefectQty, isTrialDefect, splitDefectQty, QBIN_EMBED, sumSuspectPending, orderCloseMs, matRawWindow } from '../utils/oee';
 import { planMatTimeWrites, MAT_TIME_SKIP_OPEN } from '../utils/matTimeEdit';
-import { resolveShiftTime, checkShiftTime, shiftWindow, windowLabel, fmtOffset, MAX_SHIFT_MIN, checkCloseTime } from '../utils/shiftWindow';
+import { resolveShiftTime, checkShiftTime, shiftWindow, windowLabel, fmtOffset, MAX_SHIFT_MIN, checkCloseTime, dtCoverMin } from '../utils/shiftWindow';
+/* 🛡️ poka-yoke หน้าปิดกะ — กฎทั้งหมดอยู่ใน utils/closeChecks.js ห้ามเขียนเงื่อนไขเองในหน้า */
+import { checkQtyFit, qtyFitMessage, buildCloseChecks, confirmChecks } from '../utils/closeChecks';
 import ScanModal from '../components/ScanModal';
 import SearchSelect from '../components/SearchSelect';
 import Segmented from '../components/Segmented';
@@ -86,6 +88,7 @@ import CustomerSelect from '../components/CustomerSelect';
 import { notifyEvent } from '../utils/notifyEvent';
 import useStaleSessions, { STALE_SESSION_DAYS, sessionAgeDays, ballSideText } from '../utils/staleSessions';
 import { carryDowntimesTo, prevSessionOfLine, nextOpenSessionOfLine } from '../lib/downtimeCarry';
+import { decidedDtLogs } from '../utils/downtimeCarryRules';
 import { openShiftDefaults, shiftStartTime } from '../utils/workDate';
 import { liveChannel } from '../utils/liveChannel';
 import { LIVE } from '../utils/refreshRates';
@@ -663,6 +666,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
      "ลืมปิด" คือต้นเหตุของแถวค้าง 6 ใบที่ต้องมาไล่เคลียร์ย้อนหลัง (ดู docs/modules/daily-report.md)
      ⇒ ต้องทวนต่อรายการว่า "ยังเบรกดาวน์อยู่ ส่งต่อกะถัดไป" หรือ "ปิดที่เวลา HH:MM" ก่อนลงมือจริง */
   const [dtCloseConfirm,   setDtCloseConfirm]   = useState(null); // null = ไม่เปิด · [] = รายการที่ต้องทวน
+  /* 🛡️ ด่านรีเช็คก่อนส่งขอปิดกะ — null = ไม่เปิด · [] = รายการที่ต้องติ๊กยืนยัน (utils/closeChecks.js) */
+  const [closeRecheck,     setCloseRecheck]     = useState(null);
+  const [recheckTicks,     setRecheckTicks]     = useState({});
   // qty_actual produced this shift for each open order (before carry-over)
   const [carryQtyActual, setCarryQtyActual] = useState({});
   // เวลาหยุดผลิตจริงต่อออเดอร์ (ใช้แทนเวลาปิดกะรวมตอนคำนวณสรุปแยกตามชิ้นงาน เผื่อพาร์ทนี้หยุดไม่ตรงกับเวลาปิดกะ)
@@ -2345,6 +2351,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       toast.error(`ใบนี้มี ${o.qty} ชิ้น กรอกเกินไม่ได้ — ถ้าทำครบแล้วให้สแกนปิดใบ`);
       return;
     }
+    if (!qtyFitPass(o, v)) return;        // 🛡️ poka-yoke — ยอดเกินเวลาที่เครื่องมี (ไม่บล็อก แต่ต้องยืนยัน)
     const delta = v - (o.qty_actual || 0);
     /* 🔴 RLS/สิทธิ์ไม่พอ = "สำเร็จ 0 แถว ไม่มี error" ⇒ ต้องนับแถว (กฎเขียน DB ข้อ 2 · QC audit 09/11)
        เดิมอ่านแค่ error แล้วขึ้น "อัพเดทยอดแล้ว ✓" ทั้งที่ยอดไม่ได้เปลี่ยน (ใบคู่ข้างล่างนับแถวอยู่แล้ว) */
@@ -2371,6 +2378,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     const draft = parseInt(manualQtyDraft[o.id]);
     const finalQty = !isNaN(draft) ? draft : (o.qty_actual || 0);
     if (finalQty < 0) { toast.error('ยอดผลิตจริงติดลบไม่ได้'); return; }
+    if (!qtyFitPass(o, finalQty)) return;   // 🛡️ poka-yoke — ตรวจก่อนถามยืนยันปิดใบ
     if (!window.confirm(`ปิดใบ ${o.prod_no} (${o.mat_no}) ด้วยยอดผลิตจริง ${finalQty} ชิ้น?\nเป้าที่ตั้งไว้ ${o.qty_target ?? o.qty} ชิ้น`)) return;
     const nowIso = new Date().toISOString();
     /* 🔴 CAS `.eq('status','open')` + นับแถว — 2 เครื่องกดปิดใบเดียวกันพร้อมกัน หรือ RLS ปฏิเสธ
@@ -2651,7 +2659,43 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
   // สั่งผลิต child 200 + เบิก raw 500 + packaging). ไม่หักที่หน้าปิดกะอีกแล้ว เพื่อไม่ให้
   // order ที่ confirmed ถูกหักซ้ำ (order ที่ยกยอดจะถูก backflush เมื่อ confirmed ในกะถัดไป).
 
-  const handleCloseSession = async ({ dtConfirmed = false } = {}) => {
+  /* 🛡️ "ใบ downtime หลังใส่คำตัดสินบนฟอร์มปิดกะ" — ของกลาง `decidedDtLogs` (ห้ามคิดซ้ำในหน้า)
+     ใช้ 2 ที่: OEE preview บนจอปิดกะ + ด่านรีเช็คก่อนส่งขอปิดกะ ⇒ ต้องได้เลขเดียวกันเสมอ */
+  const previewDecidedDt = () => decidedDtLogs({
+    dtLogs, decisions: dtCarryDecisions, closeTimes: dtCloseTimes,
+    carryEndTime: closeEndTime, workDate: selSession?.work_date || null,
+  });
+
+  /* 🛡️ ด่าน ① ตอนลงยอด — "ยอดเท่านี้ ทำทันในเวลาที่มีไหม" (กฎอยู่ `utils/closeChecks.js`)
+     เคสจริงที่ต้องมานั่งไล่ย้อนหลัง: บันทึก 800 ชิ้นที่ CT 50 วิ (= 667 นาที) บนเครื่องที่เดินจริง 70 นาที
+     🔴 **งานคู่ RH/LH ข้ามด่านนี้** — ตอนนี้แยก "ชิ้น" กับ "shot" ไม่ออก (ปั๊มทีเดียวได้ 2 ชิ้น)
+        ⇒ เตือนผิดแน่ · ด่านก่อนปิดกะคิดให้ถูกอยู่แล้ว (`computeSessionOee` ยุบคู่ให้)
+     🔴 **เตือนแล้วให้คนตัดสิน ห้ามบล็อก ห้ามแก้ยอดให้เอง** (กฎเดียวกับด่านเวลา) */
+  const qtyFitWarn = (o, qty) => {
+    if (!o?.opened_at || !selSession) return null;
+    if (products.find(p => p.mat_no === o.mat_no)?.pair_mat_no) return null;   // งานคู่ = ไม่รู้ ⇒ ไม่เตือน
+    const ctSec = ctForMatNo(o.mat_no);
+    const openedMs = new Date(o.opened_at).getTime();
+    if (!Number.isFinite(openedMs)) return null;
+    const endMs = o.confirmed_at ? new Date(o.confirmed_at).getTime() : Date.now();
+    const fit = checkQtyFit({
+      qty, ctSec,
+      winMin: (endMs - openedMs) / 60000,
+      // เลนของไลน์นี้ — อ่านค่าเดียวกับที่ด่านความจุกะใช้ (ห้ามนับเลนเองที่นี่)
+      parallelN: capacityArgs().parallelUnits,
+      dtMin: dtCoverMin(previewDecidedDt(), openedMs, endMs),
+    });
+    return fit ? qtyFitMessage(fit, { matNo: o.mat_no, qty, ctSec }) : null;
+  };
+  /** คืน false = คนกดยกเลิก (ยังไม่บันทึก) */
+  const qtyFitPass = (o, qty) => {
+    const msg = qtyFitWarn(o, qty);
+    if (!msg) return true;
+    return window.confirm(`⚠️ ยอดนี้ดูเป็นไปไม่ได้เมื่อเทียบกับเวลาที่เครื่องมี\n\n${msg}\n\n`
+      + 'กด OK = ยืนยันว่าตรวจแล้วและยอดนี้ถูกต้อง · กด Cancel = กลับไปแก้');
+  };
+
+  const handleCloseSession = async ({ dtConfirmed = false, recheckDone = false } = {}) => {
     if (!selSession) return;
 
     /* 🔴 ด่านสุดท้าย — ข้อมูลกะโหลดไม่ครบ ห้ามปิดกะเด็ดขาด (audit 2026-09-02)
@@ -2701,6 +2745,23 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
        ตัวเลือกอยู่กลางโมดัลปิดกะที่ยาวมาก ⇒ เลื่อนผ่านแล้วกดปิดกะได้ · ป๊อปอัพนี้บังคับให้เห็น
        ว่าแต่ละใบจะ "ส่งต่อกะถัดไป" หรือ "ปิดที่เวลาเท่าไหร่ กี่นาที" ก่อนลงมือจริง */
     if (openDT.length > 0 && !dtConfirmed) { setDtCloseConfirm(openDT); return; }
+
+    /* 🛡️ ด่าน ② รีเช็คก่อนส่งขอปิดกะ (2026-11-11 · คำสั่ง user "จับตอนนั้นเลย ดีกว่ามาย้อนหลัง")
+       กฎทุกข้ออยู่ `utils/closeChecks.js` — ที่นี่แค่ประกอบ input แล้วเปิดแผงให้ติ๊ก
+       🔴 ใช้ `previewDecidedDt()` ตัวเดียวกับ OEE preview บนจอ ⇒ "ที่เห็น" = "ที่ด่านจับ"
+       🔴 ติ๊กทีละข้อ (บังคับให้อ่าน) · ข้อ `info` ไม่ต้องติ๊ก · ไม่มีข้อ `confirm` = ผ่านเงียบ
+       🔴 เรื่องที่ "เป็นไปได้จริง" ห้ามบล็อก — หน้างานต้องเดินต่อได้ (ติ๊กแล้วไปต่อ) */
+    if (!recheckDone) {
+      const pre = computeOEE(sumDefectQty(defectLogs, 'line'), closeEndTime, closeStartTime, previewDecidedDt());
+      const checks = buildCloseChecks({
+        oee: pre,
+        session: selSession,
+        dtRowCount: dtLogs.length,
+        endTimeWarn: closeEndTime ? checkCloseTime(closeEndTime, selSession, Date.now(), { downtimes: previewDecidedDt() }) : null,
+        suspectPending: sumSuspectPending(defectLogs),
+      });
+      if (confirmChecks(checks).length) { setRecheckTicks({}); setCloseRecheck(checks); return; }
+    }
 
     // เตือนถ้ากะนี้ไม่มีข้อมูลการผลิตเลย — เผื่อพนักงานลืม Scan เปิด Order / บันทึก Downtime ก่อนปิดกะ
     if (prodOrders.length === 0 && dtLogs.length === 0) {
@@ -5221,6 +5282,79 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           );
         })()}
 
+        {/* 🛡️ ด่านรีเช็คก่อนส่งขอปิดกะ — กฎ/ข้อความทุกข้อมาจาก `utils/closeChecks.js`
+            ทำไมต้องติ๊กทีละข้อ: ปุ่ม "ยืนยัน" ปุ่มเดียวคนกดผ่านโดยไม่อ่าน (คำสั่ง user 11/11
+            "แจ้งให้พนักงานที่ลงตรวจสอบตอนนั้นเลย จะช่วยได้เยอะกว่ามาย้อนหลังหลายๆวัน") */}
+        {closeRecheck && selSession && (() => {
+          const must = confirmChecks(closeRecheck);
+          const infos = closeRecheck.filter(c => c.level === 'info');
+          const allTicked = must.every(c => recheckTicks[c.key]);
+          return (
+            <div className="overlay" style={{ zIndex: 2100 }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '2px solid var(--amber)', borderRadius: 'var(--r-lg)', padding: 22, width: 'min(94vw,760px)', maxHeight: '88vh', overflowY: 'auto', boxShadow: 'var(--shadow-lg)' }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--amber)', marginBottom: 2 }}>
+                  🛡️ รีเช็คก่อน{closeIsRequest ? 'ส่งขอปิดกะ' : 'ปิดกะ'} — {must.length} เรื่อง
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.7 }}>
+                  <b style={{ color: 'var(--text)' }}>{selSession.line_name} · {selSession.shift === 'night' ? '🌙 กะดึก' : '☀️ กะเช้า'} {fmtDate(selSession.work_date)}</b>
+                  {' '}— ข้อมูลพวกนี้<b style={{ color: 'var(--amber)' }}>ขัดกันเอง</b> ปิดกะแล้วตัวเลขจะถูกบันทึกถาวร
+                  <br />แก้ตอนนี้ใช้เวลาไม่กี่นาที · ไปแก้ย้อนหลังอีกหลายวันจะไม่มีใครจำได้ว่าวันนี้เกิดอะไร
+                </div>
+
+                {must.map(c => (
+                  <label key={c.key} style={{ display: 'block', padding: '10px 12px', marginBottom: 8, background: 'var(--bg2)', border: `1px solid ${recheckTicks[c.key] ? 'var(--green-line)' : 'var(--amber)'}`, borderRadius: 'var(--r-md)', cursor: 'pointer' }}>
+                    <div style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
+                      <input
+                        type="checkbox"
+                        checked={!!recheckTicks[c.key]}
+                        onChange={e => setRecheckTicks(t => ({ ...t, [c.key]: e.target.checked }))}
+                        style={{ marginTop: 2, width: 17, height: 17, flex: '0 0 auto', cursor: 'pointer' }} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text)' }}>⚠ {c.title}</div>
+                        {c.detail && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{c.detail}</div>}
+                        {c.hint && (
+                          <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4, lineHeight: 1.6 }}>
+                            <b>ต้องไปตรวจ:</b> {c.hint}
+                          </div>
+                        )}
+                        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, fontStyle: 'italic' }}>
+                          ติ๊ก = ตรวจแล้ว ยืนยันว่าข้อมูลถูกต้องตามนี้
+                        </div>
+                      </div>
+                    </div>
+                  </label>
+                ))}
+
+                {infos.length > 0 && (
+                  <div style={{ padding: '9px 12px', marginTop: 4, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>ℹ️ บอกให้รู้ (ไม่ต้องติ๊ก)</div>
+                    {infos.map(c => (
+                      <div key={c.key} style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
+                        · {c.title}{c.hint ? ` — ${c.hint}` : ''}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {!allTicked && (
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                      ติ๊กครบทุกข้อก่อน ({must.filter(c => recheckTicks[c.key]).length}/{must.length})
+                    </span>
+                  )}
+                  <button onClick={() => setCloseRecheck(null)} style={cancelBtnStyle}>กลับไปแก้</button>
+                  <button
+                    disabled={!allTicked}
+                    onClick={() => { setCloseRecheck(null); handleCloseSession({ dtConfirmed: true, recheckDone: true }); }}
+                    style={{ ...saveBtnStyle, background: allTicked ? 'var(--amber)' : 'var(--bg2)', fontWeight: 800, opacity: allTicked ? 1 : 0.55, cursor: allTicked ? 'pointer' : 'not-allowed' }}>
+                    ตรวจแล้ว — {closeIsRequest ? 'ส่งขอปิดกะ' : 'ปิดกะ'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {showCloseShift && selSession && (() => {
           /* ⚠️ NG ของ OEE preview ต้องมาจาก defect_logs จริง (ไม่รวมงานทดลอง) ให้ตรงกับที่ปิดกะจะ stamp
              เดิมอ่าน state `closeNg` ซึ่งถูกเซ็ตเป็น '0' ที่เดียวและไม่มี input ผูกอยู่เลย
@@ -5230,16 +5364,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
           const suspendPendingQty = sumSuspectPending(defectLogs);
           // Downtime เปิดค้าง: ถ้าตัดสินใจแล้ว ให้ OEE preview คิดนาทีตามการตัดสินใจทันที (ยังไม่เขียน DB จนกดปิดกะ)
           const modalOpenDT = dtLogs.filter(d => d.duration_min == null);
-          const previewDtLogs = !modalOpenDT.length ? dtLogs : dtLogs.map(d => {
-            if (d.duration_min != null || !d.started_at) return d;
-            const decision = dtCarryDecisions[d.id];
-            const endStr = decision === 'carry' ? closeEndTime : (decision === 'close' ? dtCloseTimes[d.id] : null);
-            if (!endStr) return d;
-            const startMs = new Date(d.started_at).getTime();
-            let endMs = new Date(`${selSession.work_date}T${endStr.slice(0, 5)}:00`).getTime();
-            if (endMs < startMs) endMs += 86400000;
-            return { ...d, ended_at: new Date(endMs).toISOString(), duration_min: Math.max(1, Math.round((endMs - startMs) / 60000)) };
-          });
+          /* 🔴 สูตรเดียวกับที่ด่าน poka-yoke ก่อนปิดกะใช้ (`decidedDtLogs`) — ห้ามเขียนซ้ำในหน้า
+             คนละสูตร = จอเตือนแต่ด่านไม่จับ */
+          const previewDtLogs = previewDecidedDt();
           const { A, P, Q, oee, shiftMin, netAvail, runMin, policyBreakMin, totalProduced, knownQty, unknownQty, pOver, pRawPct, dtOverstateMin, loggedDtMin,
             loggedPlannedDT: prevPlannedDT, loggedUnplannedDT: prevUnplannedDT, dtBreakOverlapMin: prevDtBrkOv } = computeOEE(ng, closeEndTime, closeStartTime, previewDtLogs);
           const oeeTone  = oee == null ? 'none' : oee >= 0.85 ? 'good' : oee >= 0.65 ? 'warn' : 'bad';
