@@ -219,8 +219,11 @@ export const NAV_ITEMS = [
   { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           group: LOGISTIC_GROUPS.inbound },
 
   /* 📉 บอร์ด Monitoring = ไฟล์ Excel ที่ทีมวางแผนทำมือทุกวัน ยกเข้าระบบ (01/10 · คำสั่ง user)
-     บ้านจริง = แผนงาน (ทีมวางแผนเป็นเจ้าของตัวเลข) · `alsoIn` = ทางลัดให้ฝ่ายผลิตที่ต้องดูของจะขาด */
-  { to: '/monitoring',      icon: '📉', label: 'Monitoring แผน-สต๊อก',    group: LOGISTIC_GROUPS.inbound, alsoIn: 'ฝ่ายผลิต' },
+     บ้านจริง = แผนงาน (ทีมวางแผนเป็นเจ้าของตัวเลข)
+     🔴 **ถอด `alsoIn: 'ฝ่ายผลิต'` ออกแล้ว** (11/11 · คำสั่ง user "พยายามไม่ให้มี shortcut แบบนี้")
+     — ฝ่ายผลิตเข้าหน้านี้ได้แต่**ดูอย่างเดียว** (ช่อง IN ที่ระบบมีตัวเลขแล้ว = ล็อก) ไม่ใช่งานประจำวันของเขา
+     ⇒ ทางลัดกินที่ในเมนูฝ่ายผลิตโดยไม่มีใครต้องลงมือ · **อย่าเอากลับโดยไม่ถาม user** */
+  { to: '/monitoring',      icon: '📉', label: 'Monitoring แผน-สต๊อก',    group: LOGISTIC_GROUPS.inbound },
   { to: '/customer-demand', icon: '🚚', label: 'จัดส่งลูกค้า',             group: LOGISTIC_GROUPS.outbound },
   { to: '/rack-center',    icon: '🗃️', label: 'ภาชนะ & Packaging',       group: LOGISTIC_GROUPS.outbound },
 
@@ -282,7 +285,10 @@ export const NAV_ITEMS = [
   { to: '/process-setup', icon: '🏭', label: 'กระบวนการผลิต', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
   { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
   { to: '/layout-setup', icon: '🗺️', label: 'ตั้งค่าผัง/Floorplan', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
-  { to: '/ppe-setup',    icon: '🦺', label: 'ข้อกำหนด PPE',       group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก', alsoIn: 'ฝ่ายผลิต' },
+  /* 🦺 ทะเบียนที่ตั้งครั้งเดียว — **ไม่ใส่ `alsoIn`** (11/11 · คำสั่ง user "พยายามไม่ให้มี shortcut แบบนี้")
+     เคยใส่ทางลัดในหมวดฝ่ายผลิตไว้ 10/11 แล้วถอดออก: `ppe:manage` ให้แค่ admin/manager ⇒ supervisor
+     กดเข้าไปก็แก้ไม่ได้ · leader ไม่มีสิทธิ์เปิดหน้าเลย = ทางลัดพาคนไปหน้าที่กดอะไรไม่ได้ */
+  { to: '/ppe-setup',    icon: '🦺', label: 'ข้อกำหนด PPE',       group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
   // /linesetup ย้ายมาฝังในแท็บ "ผลิต (ผังไลน์)" ของ /layout-setup แล้ว — คง route ไว้สำหรับลิงก์เก่า (deep-link) ไม่โชว์ใน sidebar
   { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
 

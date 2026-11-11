@@ -10192,6 +10192,26 @@ test('📐 factory-map-polygon-save-gate — ลากกรอบบนผั�
     '\n\n❌ ลากจุดมุมไม่ผ่าน dragVertex() แล้ว — โหมดคงมุมฉากหาย\n');
 });
 
+/* ═══ 🚪 alsoIn-allowlist — 2026-11-11 · คำสั่ง user ("พยายามไม่ให้มี shortcut แบบนี้") ═══════
+   `alsoIn` = เมนูเดียวโผล่ 2 หมวด (หมวดที่ 2 วาดจางๆ + `↗`) — user ขอให้มีให้น้อยที่สุด
+   รีวิว 11/11: มี 4 ตัว → เหลือ **2 ตัวที่มีเหตุผลว่า "2 ฝ่ายลงมือจริงทั้งคู่"**
+     · /production-plan  — ผลิตตัดสินเปิดกะ/OT + planner เทียบยอดลูกค้า (คำสั่ง user เดิม: บ้าน=ฝ่ายผลิต)
+     · /store-monitor    — หน้าเดียวจับทั้งขาเข้า (min-max) และขาออก (ใบสั่งซื้อค้าง)
+   ถอดออก: /ppe-setup (ทางลัดพาไปหน้าที่ supervisor กดไม่ได้) · /monitoring (ฝ่ายผลิตดูอย่างเดียว)
+   🔴 เพิ่มตัวใหม่ = ต้องถาม user ก่อน แล้วค่อยเติมในลิสต์นี้ — **ห้ามเติมเพื่อให้ build ผ่าน** */
+test('🚪 alsoIn-allowlist — ทางลัดข้ามหมวดต้องมีเท่าที่ user เคาะไว้', () => {
+  const src = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  const block = src.slice(src.indexOf('const NAV_ITEMS'), src.indexOf('NAV_GROUP_ORDER'));
+  const found = block.split('\n')
+    .filter(l => /^\s*\{\s*to:\s*'\//.test(l) && /\balsoIn:/.test(l))
+    .map(l => (l.match(/to:\s*'([^']+)'/) || [])[1])
+    .sort();
+  assert.deepEqual(found, ['/production-plan', '/store-monitor'],
+    '\n\n❌ ชุดเมนูที่มีทางลัดข้ามหมวด (`alsoIn`) เปลี่ยนไปจากที่ user เคาะไว้ 11/11\n'
+    + `   เจอ: ${found.join(' · ') || '(ไม่มี)'}\n`
+    + '   เพิ่มทางลัดใหม่ = ต้องถาม user ก่อน · ถอดออก = อัปเดตลิสต์ในด่านนี้พร้อมเหตุผล\n');
+});
+
 /* ═══ 🪪 ใบตรวจทุกใบ (AM + PM) ต้องผ่านด่านบัตรผู้ตรวจ (2026-11-11 · คำสั่ง user) ═══
    เดิมด่าน `amBadgeGate` อยู่ใน `if (isAmTeam(department))` ⇒ ใบ PM ของช่างบันทึกได้โดยไม่มีบัตร */
 test('🪪 PMCheckData: ด่านบัตรผู้ตรวจต้องไม่อยู่ใต้เงื่อนไข isAmTeam (ใช้ทุกใบ)', () => {
@@ -10201,6 +10221,50 @@ test('🪪 PMCheckData: ด่านบัตรผู้ตรวจต้อ�
   assert.match(src, /amBadgeGate\(\{[^}]*kind:/, '\n\n❌ amBadgeGate ต้องส่ง kind (AM/PM) ให้ข้อความถูกใบ\n')
   assert.match(src, /<InspectorCodeField[^>]*required(\s|\/|>)/, '\n\n❌ ช่องรหัสผู้ตรวจต้อง required ทุกใบ\n')
 })
+
+/* ═══ 🛡️ row-cap-dated-select — SELECT ที่มีตัวกรอง "ช่วงวันที่" ต้องแบ่งหน้า (2026-11-11) ═══
+   ต่อยอดจาก `limit-over-postgrest-cap` ซึ่งจับได้แค่ `.limit(N > 1000)` — **ช่องโหว่จริงอยู่ที่
+   "ไม่ใส่ limit เลย"** ซึ่งเงียบกว่า เพราะดูเหมือนตั้งใจดึงทั้งหมด
+   audit 11/11/26 (สแกน 1,463 SELECT · ไม่แบ่งหน้า 836) เจอชนเพดานจริง 6 จุด เช่น
+     · ShiftAutoFillModal — `shift_schedules` หน้าต่าง 546 วัน = **11,458 แถว ได้มา 1,000 (หาย 91%)**
+       แล้วเอาไปตัดสินว่าจะ "ทับ" แถวที่คนตั้งมือไว้หรือไม่
+     · กะปิดแล้ว 30 วัน = 968 แถว (เหลือที่ 32) ⇒ ปุ่มย้อนหลัง 60/90/120/"ปีนี้" ชนทันที
+   กติกา: คิวรีบน **ตารางรายแถวที่โตตามเวลา** ที่มี `.gte('<คอลัมน์วันที่>')` ต้องผ่าน
+          `fetchAllPages` / `fetchByIds` / `fetchAllRows` / `.range(` / `openPlusHistory`
+          หรือมีหลักฐาน `cap-ok` ที่วัดมาจริงใน 3 บรรทัดเหนือขึ้นไป                                */
+test('🛡️ row-cap-dated-select — คิวรีช่วงวันที่บนตารางรายแถว ต้องแบ่งหน้า', () => {
+  /* ตารางที่ "โตตามเวลา" จริง — ทะเบียน master ไม่เข้าข่าย (โตช้า มีด่าน fetchAllRows ของตัวเอง) */
+  const GROWING = ['production_sessions', 'prod_orders', 'downtime_logs', 'defect_logs',
+    'daily_production_logs', 'shift_schedules', 'four_m_logs', 'mtn_orders', 'audit_log'];
+  const PAGED = /fetchAllPages|fetchByIds|fetchAllRows|openPlusHistory|\.range\(|pageAll|fetchAll\(/;
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    if (file.includes('__tests__')) continue;
+    const raw = readFileSync(file, 'utf8');
+    const rawLines = raw.split('\n');
+    const src = stripComments(raw);
+    const lines = src.split('\n');
+    lines.forEach((ln, i) => {
+      const m = ln.match(/\.from\(\s*['"]([a-z_]+)['"]\s*\)/);
+      if (!m || !GROWING.includes(m[1])) return;
+      /* ดูทั้งก้อนคิวรี — ตัวแบ่งหน้ามัก **ห่อไว้ข้างบน** (`fetchAllPages(() => supabase.from(…))`)
+         ⇒ ต้องมองขึ้นไปด้วย ไม่ใช่แค่ chain ที่ต่อท้าย */
+      const block = lines.slice(Math.max(0, i - 4), i + 20).join('\n');
+      if (!/\.select\(/.test(block)) return;              // insert/update/delete ไม่เกี่ยว
+      if (!/\.gte\(\s*['"][a-z_]*(date|_at)['"]/.test(block)) return;  // ไม่มีตัวกรองช่วงวันที่ = ไม่ใช่เคสนี้
+      if (PAGED.test(block)) return;                       // แบ่งหน้าแล้ว
+      if (/\.(limit|maybeSingle|single)\(/.test(block)) return;  // จำกัดเองแล้ว → ด่าน limit-over-cap ดูแลต่อ
+      const near = rawLines.slice(Math.max(0, i - 3), i + 1).join('\n');
+      if (/cap-ok/.test(near)) return;                     // มีหลักฐานวัดมาแล้ว
+      bad.push(`${file.slice(ROOT.length)}:${i + 1} (${m[1]})`);
+    });
+  }
+  assert.deepEqual(bad, [], '\n\n❌ คิวรีช่วงวันที่ที่ยังไม่แบ่งหน้า:\n   ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: PostgREST คืนสูงสุด 1,000 แถว และ "ถูกตัด" ไม่ใช่ error ⇒ จอได้ข้อมูลไม่ครบเงียบสนิท\n'
+    + '         เรียงวันขึ้น = ตัดท้าย (เดือนล่าสุดหาย) · เรียงลง = ตัดหัว (ของเก่าหาย) — แย่ทั้งคู่\n'
+    + '   แก้: ผ่าน fetchAllPages (คิวรีเดี่ยว) / fetchByIds (มี id list) / fetchAllRows (ทะเบียน)\n'
+    + '        หรือถ้าวัดแล้วไม่มีทางถึง 1,000 ให้เขียน `cap-ok: <ตาราง> วัด <วันที่> = <N> แถว` เหนือบรรทัดนั้น\n');
+});
 
 /* ═══ ✍️ ใบ PM ขั้น 2 หัวหน้าผู้ตรวจยืนยัน ต้องผ่าน pmConfirmVerdict (2026-11-11 · คำสั่ง user) ═══
    เดิมใบ PM กดอนุมัติได้ทุกคนที่ถือ pm:approve รวมถึงใบที่ตัวเองตรวจ */

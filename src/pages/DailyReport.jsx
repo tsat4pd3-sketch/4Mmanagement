@@ -23,7 +23,7 @@ import tsLogoUrl from '../assets/TS logo.png';
 import { can, canAccessPage, isSharedAccount } from '../utils/permissions';
 import { inSectionScope, scopedLines, lineScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { fetchByIds } from '../utils/fetchByIds';
+import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { checkShiftCapacity, checkOtCapacity, otSpanMin } from '../utils/shiftCapacity';
 import { splitCloseOrders, autoCarryPatch, autoCarryText } from '../utils/closeShiftOrders';   // 🔁 ปิดกะ: ใบที่ยังไม่แตะ = ยกเอง (20/10)
@@ -7957,22 +7957,28 @@ function ExportTab() {
   // ── fetch all raw data ──────────────────────────────────────────
   const fetchData = async () => {
     setLoading(true);
-    let q = supabaseDR.from('production_sessions')
-      .select(`*, dr_products(name, cycle_time_sec, target_per_shift),
-               prod_orders(*),
-               downtime_logs(*, dr_downtime_types(name_th, category)),
-               defect_logs(*, dr_defect_types(name_th))`)
-      .eq('status', 'closed')
-      .gte('work_date', filter.date_from)
-      .lte('work_date', filter.date_to)
-      .order('work_date', { ascending: true })
-      .order('shift', { ascending: true });
-    if (filter.line_name) q = q.eq('line_name', filter.line_name);
-    if (allowedLineNames) q = q.in('line_name', allowedLineNames.length ? allowedLineNames : ['__none__']);
-    const { data, error } = await q;
+    /* 🔴 เพดาน 1,000 แถว — ช่องวันที่ของแท็บนี้พิมพ์เองได้อิสระ · กะปิดแล้ว 1 เดือน = 968 แถว
+       (วัดจริง 11/11/26) ⇒ เลือก 2 เดือนขึ้นไป = ตัดเงียบ และเรียง work_date ขึ้น ⇒ **วันท้ายช่วงหาย**
+       ของที่ออกจากแท็บนี้คือ Excel/CSV ที่เอาไปใช้งานจริง ⇒ ยอดขาดโดยไม่มีอะไรบอก = รับไม่ได้ */
+    const run = () => {
+      let q = supabaseDR.from('production_sessions')
+        .select(`*, dr_products(name, cycle_time_sec, target_per_shift),
+                 prod_orders(*),
+                 downtime_logs(*, dr_downtime_types(name_th, category)),
+                 defect_logs(*, dr_defect_types(name_th))`)
+        .eq('status', 'closed')
+        .gte('work_date', filter.date_from)
+        .lte('work_date', filter.date_to);
+      if (filter.line_name) q = q.eq('line_name', filter.line_name);
+      if (allowedLineNames) q = q.in('line_name', allowedLineNames.length ? allowedLineNames : ['__none__']);
+      return q;
+    };
+    const { rows, error, truncated } = await fetchAllPages(run, { orderBy: ['work_date', 'shift', 'id'] });
     setLoading(false);
-    if (error) { toast.error(error.message); return null; }
-    return data || [];
+    if (error) { toast.error(error); return null; }
+    // ชนเพดานหน้า = ข้อมูลไม่ครบ **ห้ามปล่อยให้ export ออกไปเงียบๆ**
+    if (truncated) { toast.error('ช่วงวันที่กว้างเกินกว่าจะโหลดครบ — ย่อช่วงลงก่อน export (ตัวเลขจะขาด)'); return null; }
+    return rows;
   };
 
   // ── build datasets ─────────────────────────────────────────────

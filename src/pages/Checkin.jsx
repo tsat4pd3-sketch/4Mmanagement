@@ -370,9 +370,11 @@ export default function Checkin() {
       { data: extraBookingData },
     ] = await Promise.all([
       empQ,
+      /* cap-ok: daily_production_logs วัน*เดียว* — วัด 11/11/26 สูงสุด 279 แถว/วัน (ทั้งโรงงาน) */
       supabase.from('daily_production_logs')
         .select('employee_id, is_present, has_helmet, has_boots, has_gloves, has_ot, has_extended_ot, remark, leave_type, leave_duration, leave_period, leave_hours')
         .eq('work_date', workDateStr),
+      /* cap-ok: shift_schedules วัน*เดียว* — วัด 11/11/26 สูงสุด 45 แถว/วัน */
       supabase.from('shift_schedules').select('*').eq('work_date', workDateStr),
       supabase.from('shift_overrides').select('*').eq('work_date', workDateStr),
       supabase.from('org_nodes').select('code, name, sort_order').eq('kind', 'section').eq('is_active', true),

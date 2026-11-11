@@ -18,6 +18,7 @@
  */
 import { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
 import { supabase } from '../supabaseClient';
+import { fetchAllPages } from '../utils/fetchByIds';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
 import { toast } from '../components/Toast';
@@ -335,13 +336,20 @@ export default function BbsCheck() {
 
       const from = `${month}-01`;
       const to = `${month}-${String(days).padStart(2, '0')}`;
-      let q = supabase.from('daily_production_logs')
+      /* 🔴 เพดาน 1,000 แถว — ไลน์ใหญ่ 36 คน × 31 วัน ≈ 1,116 แถว (วัดจริง 11/11/26:
+         daily_production_logs สูงสุด 279 แถว/วัน · 4,338/เดือน) ⇒ ชนได้จริง
+         ผล PPE ที่ขาดไป = ช่องว่างบนตาราง ซึ่งหน้านี้อ่านว่า "ไม่ได้ตรวจ" = กล่าวหาหน้างานผิด */
+      const empIds = emps.map(e => e.id);
+      let q = () => supabase.from('daily_production_logs')
         .select('employee_id, work_date, is_present, has_helmet, has_boots, has_gloves')
         .gte('work_date', from).lte('work_date', to)
-        .in('employee_id', emps.map(e => e.id));
+        .in('employee_id', empIds);
       /* ไม่กรองกะ — BBS ไม่แยกกะแล้ว (ดูหัวบล็อกไฟล์) เอาผลตรวจ PPE ของทั้งวัน */
-      const { data: logs, error } = await q;
-      if (error) { toast.error(`อ่านผลตรวจ PPE ไม่สำเร็จ: ${error.message}`); return; }
+      const lp = await fetchAllPages(q, { orderBy: ['work_date', 'employee_id'] });
+      if (lp.error) { toast.error(`อ่านผลตรวจ PPE ไม่สำเร็จ: ${lp.error}`); return; }
+      // โหลดไม่ครบ = ช่องที่ขาดจะถูกอ่านว่า "ไม่ได้ตรวจ" ⇒ ห้ามเติมต่อเงียบๆ
+      if (lp.truncated) { toast.error('ผลตรวจ PPE เดือนนี้เยอะเกินกว่าจะโหลดครบ — ยังเติมอัตโนมัติไม่ได้'); return; }
+      const logs = lp.rows;
 
       const rows = []; let skipManual = 0;
       (logs || []).forEach(l => {
