@@ -10,7 +10,7 @@
 >
 > | | สถานะ |
 > |---|---|
-> | UI ทะเบียน topic (`/energy` แท็บ 📡) | ✅ เขียนแล้ว — แท็บโผล่เองเพราะ migration apply แล้ว |
+> | UI ทะเบียน topic | ✅ ย้ายไป `/integrations` (หน้าต้นทาง) 11/11 — แท็บ 📡 ใน `/energy` ถอดแล้ว |
 > | migration `20260820_energy_mqtt_topics` | ✅ **apply แล้ว 2026-11-09** (DR · ตรวจ GRANT anon/authenticated ครบ) |
 > | edge function `ingest-energy` | ✅ **deploy แล้ว 2026-11-09** (v1 · `verify_jwt=false`) · ⚠️ **secret `INGEST_SECRET` ต้องให้ user ตั้งเองในหน้า Supabase** — ยังไม่ตั้ง = ตอบ 401 ทุก request (ปิดประตูไว้ ไม่เขียน DB) |
 > | ตัวส่ง (flow Node-RED) | 🟡 ทดสอบทางผ่านแล้ว (401→200) · flow ส่งค่าจริงจาก `energy_sec` ให้ user ไปติดตั้ง — §15 |
@@ -1019,7 +1019,7 @@ PLC FX5U → Node-RED (server ในโรงงาน) → MySQL db_user03.ener
 
 ### 15.3.4 ย้ายการตั้งค่าต้นทางไปศูนย์เชื่อมต่อ `/integrations` (11/11 · คำสั่ง user)
 - ต้นทาง Die Shop = แถว `dieshop` (legacy · ยังใช้ `INGEST_SECRET` กลาง) · สุขภาพการส่ง/รหัสลับ/ดาวน์โหลด flow อยู่ที่นั่น
-- แท็บ "มิเตอร์ / MQTT" ของหน้านี้ยังอยู่ (ชี้ไปหน้าใหม่) · 📄 `docs/modules/integration-hub.md`
+- แท็บ "มิเตอร์ / MQTT" **ถอดออกจาก `/energy` แล้ว (11/11)** — ผูก topic ที่ `/integrations` ที่เดียว · `?tab=mqtt` เก่าส่งต่อไปหน้าใหม่ · 📄 `docs/modules/integration-hub.md`
 
 ### 15.4 ยังไม่ทำ
 - จอแก้ตู้ (`energy_live_meters` — ลิมิตไม่ต้อง Node-RED เป็นเจ้าของ) · log เหตุการณ์ (หน้า Node-RED เดิมมี `energy_event`) · รวม `energy_daily` เข้า `energy_monthly` (`source='meter'`)

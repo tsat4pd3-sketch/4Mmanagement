@@ -3,20 +3,26 @@
 > 2026-11-11 · คำสั่ง user: *"อัพเกรดหน้าการเชื่อมต่อ mqtt ย้ายไปในหมวด setting และใช้ได้กับทุกข้อมูลที่เชื่อมต่อกับ node-red ได้"*
 > รูปตัวอย่างที่ user OK (artifact) = 3 จอ: ① รายการต้นทาง ② หน้าต้นทาง ③ เพิ่มการเชื่อมต่อ 4 ขั้น
 > **เฟส 1 (ทำแล้ว):** ทะเบียนต้นทาง + รหัสลับต่อต้นทาง + จอ ①② + gen flow + ย้ายค่าไฟ Die Shop เข้ามาเป็นตัวแรก
-> **ยังไม่ทำ:** จอ ③ แบบ wizard เต็ม (ตอนนี้เป็น modal เพิ่มต้นทาง + ปุ่มดาวน์โหลด flow) · ชนิด `machine_state` / `piece_count` (OEE Line D3 — รอเฟสถัดไป)
+> **เฟส 2 (11/11 · "เริ่ม OEE Line D3"):** ชนิด `machine_state` / `piece_count` ใช้งานได้ + แผง "ข้อมูลจากเครื่อง" (ดู §OEE Line D3)
+> **ยังไม่ทำ:** จอ ③ แบบ wizard เต็ม (ตอนนี้เป็น modal เพิ่มต้นทาง + ปุ่มดาวน์โหลด flow)
 
 ## สายข้อมูล
 
 ```
 Node-RED (ต้นทาง) ──POST /functions/v1/ingest-energy──▶ ESM (DR)
    header x-source-key = รหัสของต้นทาง   (หรือ x-ingest-secret = secret กลาง สำหรับต้นทาง legacy)
-   body { readings | events | daily | limits }  ← ชนิดข้อมูลตาม src/utils/integrationKinds.js
+   body { readings | events | daily | limits | states | pieces }  ← ชนิดข้อมูลตาม src/utils/integrationKinds.js
           │
-          ├─ เขียนตารางของโมดูลนั้น (energy_live / energy_readings / energy_events / energy_daily / energy_live_meters)
+          ├─ เขียนตารางของโมดูลนั้น (energy_live / energy_readings / energy_events / energy_daily / energy_live_meters
+          │                          / machine_state_events / machine_counters)
           └─ fn_integration_tick() → integration_sources.last_* + integration_hourly (นับรายชั่วโมง เก็บ 30 วัน)
 ```
 
 ## กฎ (ห้ามหลุด)
+
+0. **ที่เดียว** — ผูก topic ค่าไฟ / ต้นทาง / รหัสลับ ทำที่ `/integrations` เท่านั้น · แท็บ "มิเตอร์ / MQTT" ใน `/energy` **ถอดแล้ว 11/11**
+   (user: *"ย้ายละก็ให้มันมีที่เดียว"*) · `/energy?tab=mqtt` เก่า = ส่งต่อมาที่นี่ · **ห้ามเอาแท็บกลับไปที่ /energy**
+   ⇒ คนที่ต้องผูก topic ต้องได้สิทธิ์ `page:/integrations` (ผูกได้ = `energy:record` · จัดการต้นทาง = `integration:manage`)
 
 1. **ต้นทางส่ง "ข้อเท็จจริง" · ESM เป็นเจ้าของสูตร** — ทะเบียนชนิดข้อมูลไม่มี "เลข OEE ของต้นทาง" โดยตั้งใจ
    (`docs/SCADA_REALTIME_DESIGN.md` §1 · มีเทสกัน)
@@ -43,8 +49,13 @@ Node-RED (ต้นทาง) ──POST /functions/v1/ingest-energy──▶ ES
 |---|---|
 | `supabase/migrations/20261111_integration_hub_dr.sql` (DR · **apply แล้ว 11/11**) | `integration_sources` · `integration_hourly` · `fn_integration_tick` · seed `dieshop` (legacy) |
 | `supabase/migrations/20261111b_integration_hub_perm_main.sql` (Main · **apply แล้ว 11/11**) | `permission_catalog` `integration:manage` (sort 919 · ค่าเริ่มต้น admin) |
-| `supabase/functions/ingest-energy` (**v6 deploy 11/11**) | `identify()` ระบุต้นทาง · พัก 423 · `tick` ทุกครั้ง |
-| `supabase/functions/integration-admin` (**v1 deploy 11/11** · verify_jwt=true) | create / rotate / update / pause / resume / legacy_off |
+| `supabase/functions/ingest-energy` (**v7 deploy 11/11**) | `identify()` ระบุต้นทาง · พัก 423 · `tick` ทุกครั้ง · `states`/`pieces` |
+| `supabase/functions/integration-admin` (**v2 deploy 11/11** · verify_jwt=true) | create / rotate / update / pause / resume / legacy_off / map_tag / map_reason |
+| `supabase/migrations/20261111c_machine_facts_dr.sql` (DR · **apply แล้ว**) | `machine_tag_map` · `machine_state_events` · `machine_counters` |
+| `supabase/migrations/20261111d_machine_reason_map_dr.sql` (DR · **apply แล้ว**) | `machine_reason_map` (เหตุผลต้นทาง → `dr_downtime_types`) |
+| `supabase/migrations/20261111e_machine_counter_hourly_dr.sql` (DR · **apply แล้ว**) | rpc `fn_machine_counter_hourly` (รวมรายชั่วโมง · ไม่คิด KPI) |
+| `src/utils/machineFacts.js` | จัดถังกะ ESM · `compareWithSessions` · รายการจับคู่ + ข้อเสนอ (ตรงเป๊ะเท่านั้น) |
+| `src/components/MachineFactsPanel.jsx` | แผงในหน้าต้นทาง: ① ผูกเครื่อง ② จับคู่เหตุผล ③ เทียบ Daily Report |
 | `src/utils/integrationKinds.js` | ทะเบียนชนิด · `sourceStatus()` · `healthBars()` |
 | `src/utils/nodeRedFlow.js` | `buildNodeRedFlow()` — แม่แบบ = flow ที่รันจริงที่ Die Shop (schema TSS Smart Energy) |
 | `src/pages/Integrations.jsx` | จอ `?tab=sources|kinds` · หน้าต้นทาง `?src=<code>` |
@@ -56,6 +67,30 @@ Node-RED (ต้นทาง) ──POST /functions/v1/ingest-energy──▶ ES
 - `ingest-energy`: `x-source-key` ผิด → 401 · Die Shop (secret กลาง) ยังเข้าปกติ + นับลง `integration_hourly`
 
 ## งานค้าง
-- แท็บ "มิเตอร์ / MQTT" ใน `/energy` ยังอยู่ (ชี้มาหน้านี้) — ถอดได้เมื่อแจกสิทธิ์ `page:/integrations` ให้คนที่ผูก topic แล้ว
 - `EnergyMqttTopics` ยังโชว์ topic ของทุกต้นทางรวมกัน (มีต้นทางค่าไฟตัวเดียวตอนนี้) — แยกตามต้นทางเมื่อมีตัวที่ 2
-- OEE Line D3 (Node-RED PD2 · `db_user02` · JTSRA03-03/04): ชนิด `machine_state`/`piece_count` + ปลายทางรับ + จอเทียบกับ Daily Report
+- OEE Line D3 ขั้นถัดไป (รอ user สั่ง): ใช้ข้อมูลจากเครื่องช่วยเติม downtime (ตอนนี้แค่เทียบ)
+- เหตุผลของสถานะ COMM_LOSS ยังไม่รู้ว่าต้นทางใช้ master ไหน — ถาม user ก่อนเปิดให้จับคู่ (IDLE = UnplanMaster · user ยืนยัน 11/11)
+
+## 🏭 OEE Line D3 — ข้อมูลจากเครื่อง เฟสเดินคู่ (11/11)
+
+ต้นทาง = Node-RED PD2 (MySQL `db_user02`) · เครื่อง JTSRA03-03 / JTSRA03-04 = **Line D3 - STAMPED** (user ยืนยัน)
+
+**กฎ:**
+1. **ส่งข้อเท็จจริงเท่านั้น** — ช่วงหยุด (`oee_stop`) + ชิ้นต่อนาที (`oee_piece`) · **ไม่รับ `oee_shift` / เลข OEE ของต้นทาง** (มีเทสใน `integrationHub.test.mjs`)
+2. **เฟสเดินคู่: ห้ามเอาเข้าสูตร OEE · ห้ามเขียน `downtime_logs`** — จอแค่วางข้างที่คนลง
+3. **เวลา:** SQL ใน flow ใช้ `DATE_FORMAT` เป็นสตริงไทย (ไม่ปล่อย Date ของ mysql node) → edge `bkk()` ต่อ +07:00
+4. **ชิ้นที่อ่านยอดไม่ออก = ทิ้ง ห้ามบีบเป็น 0** · นาทีที่ไม่มีแถว = "ไม่รู้" ไม่ใช่ 0 · ส่งซ้ำ = ทับ (ต้นทางส่งยอดเต็มนาที)
+5. **เก็บรหัสเครื่องของต้นทาง (`machine_tag`) ผูกกับ `machines.id` ตอนอ่าน** — แก้การผูกแล้วข้อมูลย้อนหลังตามเอง
+6. **เหตุผล:** `PLANNED_STOP`/`NO_PLAN` → OnplanMaster · `FAULT`/`IDLE` → UnplanMaster (user ยืนยัน 11/11) ·
+   รหัสเลขเดียวกันคนละ master ⇒ คีย์ = `(reason_kind, reason_code)` · `COMM_LOSS` = ไม่รู้ ⇒ ไม่ส่งชื่อ ไม่ให้จับคู่ (`reasonKindOf()`)
+7. **จับคู่ = คนกดเท่านั้น** (edge `map_tag`/`map_reason` · สิทธิ์ `integration:manage`) — ระบบเสนอเฉพาะตัวตรงเป๊ะ
+   (เครื่อง: `machineKey` ตรงตัวเดียว · เหตุผล: ชื่อตรงตัวเดียว) · `downtime_type_id = null` = "ตรวจแล้ว ไม่มีตัวตรง"
+8. **ไม่รวมชิ้นข้ามเครื่องเป็นยอดไลน์** (ไม่รู้ว่าเครื่องต่อกันเป็นสายหรือขนาน) — ตารางเทียบโชว์รายเครื่อง
+9. **กะ = กรอบ ESM** (เช้า 08–20 · ดึก 20–08 · วันทำงานตัด 08:00) คิดจาก UTC+7 ตรงๆ ไม่พึ่ง TZ เครื่อง · ช่วงหยุดคร่อมกะถูกตัดตามเวลาจริง
+10. **ชิ้นดึงผ่าน rpc รายชั่วโมง** (รายนาที 7 วัน ≈ 20,000 แถว = ชนเพดาน 1000 + egress) · RPC แค่ SUM ไม่คิดอัตรา
+
+**ตรวจแล้ว (11/11):** POST ทดสอบด้วยต้นทางชั่วคราว (ลบแล้ว) → `states 2 · pieces 1` (แถว qty ว่างถูกทิ้ง) · เวลา 19:50 ไทย → 12:50Z ·
+นับลง `integration_hourly` · Die Shop ยังเข้าปกติหลัง deploy v7 · anon insert `machine_reason_map` = false
+
+**ขั้นที่ user ต้องทำ:** สร้างต้นทาง (เช่น `pd2-oee` ชนิด สถานะเครื่อง + นับชิ้น) ที่ `/integrations` → เก็บรหัส →
+ตั้ง env `ESM_SOURCE_KEY` ใน Node-RED PD2 → import flow → เลือก DB `db_user02` ในโหนด mysql 2 ตัว → Deploy → กลับมาผูกเครื่อง/จับคู่เหตุผล

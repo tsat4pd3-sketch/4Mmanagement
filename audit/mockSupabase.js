@@ -657,6 +657,28 @@ const TABLE_ROWS = {
      · กรอบ: 2 ไลน์ผลิต (แม่ 1 + ลูก 1) + 1 โซนสนับสนุนที่ไม่ใช่ไลน์ผลิต (isFac = true)
        ⇒ ได้ทั้งสาขา "ไลน์" และ "โซน facility" ที่คิดสถานะคนละชุด */
 
+  /* 🏭 ศูนย์เชื่อมต่อ · ข้อมูลจากเครื่อง (2026-11-11 · ห้ามถอด) — เดิม `kinds` ไม่มีในแถว ⇒ แผง
+     MachineFactsPanel (/integrations?src=) ไม่เคยถูกวาดใน harness · ต้องมีทั้ง tag ที่ผูกแล้ว/ยังไม่ผูก
+     + สถานะทั้งที่จับคู่ได้ (fault/no_plan) และจับคู่ไม่ได้ (idle) + เวลาที่อ่านไม่ออก (isNullish) */
+  integration_sources: (r, i) => ({
+    ...r, kinds: i % 2 ? ['energy_readings', 'energy_events'] : ['machine_state', 'piece_count'],
+    legacy_secret: false, key_hint: i % 3 ? 'ab12' : null,
+  }),
+  machine_tag_map: (r, i) => ({ ...r, tag: `JTSRA03-0${(i % 4) + 1}`, machine_id: i % 3 ? `id-${i}` : null }),
+  machine_state_events: (r, i) => ({
+    ...r, machine_tag: `JTSRA03-0${(i % 5) + 1}`,
+    started_at: isNullish(r) ? null : new Date(Date.now() - (i + 1) * 3600000).toISOString(),
+    ended_at: isNullish(r) ? null : new Date(Date.now() - (i + 1) * 3600000 + 300000).toISOString(),
+    duration_sec: 300, state: ['fault', 'idle', 'planned_stop', 'no_plan', 'comm_loss', 'weird'][i % 6],
+    reason_code: i % 4, reason_text: i % 2 ? `เหตุผล ${i % 4}` : null, is_minor: i % 2 === 0,
+  }),
+  fn_machine_counter_hourly: (r, i) => ({
+    ...r, machine_tag: `JTSRA03-0${(i % 5) + 1}`,
+    hour_at: isNullish(r) ? null : new Date(Date.now() - (i + 1) * 3600000).toISOString(),
+    qty: 40 + i, ng: i % 2, minutes: 60,
+  }),
+  machine_reason_map: (r, i) => ({ ...r, reason_kind: i % 2 ? 'onplan' : 'unplan', reason_code: i % 4, downtime_type_id: i % 3 ? `id-${i}` : null }),
+
   v_demand_flow_blocks: (r, i) => ({
     ...r, maker_line: FAM_LINE, pending_qty: isNullish(r) ? null : 500 + i,
     block_reason: i % 2 ? 'no_lot_size' : 'backlog_capped', suggested_lot: isNullish(r) ? null : 200,

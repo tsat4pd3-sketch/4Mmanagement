@@ -14,7 +14,7 @@ import PersonSelect from '../components/PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { normCode } from '../utils/qrCode';
-import { fetchByIds } from '../utils/fetchByIds';
+import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import { fetchAllRows } from '../utils/fetchAllRows';
 import { fmtDate } from '../utils/dateFormat';
 import { RATE_COMPONENTS, lineCostCenter, rateFor, rateIsFallback, ratePerHour, fmtBaht, defectUnitCost } from '../utils/costSaving';
@@ -397,11 +397,18 @@ export default function Improvements() {
     // ⚠️ ตัดกะที่ยัง `open` — กะเพิ่งเปิด 1 ชม. ถูกนับเป็น "วันผลิตเต็มวัน" ในตัวหาร
     //    ขณะที่ตัวตั้ง (ของเสีย/DT) มีแค่ชั่วโมงเดียว → อัตราต่อวันต่ำเกินจริง = ผลดูดีเกิน
     //    (pending_close = กะจบแล้วรออนุมัติ ข้อมูลครบ → นับได้) (QC audit 2026-08-20 · T2-7)
-    const { data: sessions, error: sessErr } = await supabaseDR.from('production_sessions')
-      .select('id, work_date').eq('line_name', imp.line_name)
-      /* 🔴 ระบุสถานะรายตัว ห้าม `.neq('status','open')` — ใบโมฆะจะถูกนับเป็นวันผลิต (08/10 · มีด่าน) */
-      .in('status', SESSION_STATUSES_DONE)
-      .gte('work_date', from).lte('work_date', to);
+    /* 🔴 เพดาน 1,000 แถว — ไลน์เดียวแต่ช่วงวัดผลยาวได้เป็นปี (2 กะ/วัน ≈ 730 แถว/ปี · ไลน์ที่มี
+       กะย่อยมากกว่านั้นชนได้) ⇒ แบ่งหน้าไว้ · ขาดแล้ว "วันผลิตหลังปรับปรุง" น้อยกว่าจริง = ผลไคเซ็นเพี้ยน */
+    const sessPage = await fetchAllPages(
+      () => supabaseDR.from('production_sessions')
+        .select('id, work_date').eq('line_name', imp.line_name)
+        /* 🔴 ระบุสถานะรายตัว ห้าม `.neq('status','open')` — ใบโมฆะจะถูกนับเป็นวันผลิต (08/10 · มีด่าน) */
+        .in('status', SESSION_STATUSES_DONE)
+        .gte('work_date', from).lte('work_date', to),
+      { orderBy: ['work_date', 'id'] },
+    );
+    const sessions = sessPage.rows;
+    const sessErr = sessPage.error ? { message: sessPage.error } : null;
     /* ⚠️ คิวรีล้ม ≠ ไม่มีข้อมูล — จอต้องเขียนต่างกัน (QC 05/10 · กฎความซื่อสัตย์ของจอ) */
     if (sessErr) return { noData: true, error: `โหลดกะผลิตไม่สำเร็จ: ${sessErr.message}` };
     if (!sessions?.length) return { noData: true };

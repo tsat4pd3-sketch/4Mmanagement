@@ -39,11 +39,29 @@ test('flow: ไม่มีรหัสลับในไฟล์ · legacy ใ
   assert.equal(envVarName({ legacy_secret: true, key_hint: 'x1y2' }), 'ESM_SOURCE_KEY');   // ออกรหัสแล้ว = ใช้รหัสของตัวเอง
 });
 
-test('flow: ชนิด planned/ไม่รู้จัก ไม่สร้างโหนด แต่คืนเหตุผลให้จอบอก', () => {
-  const r = buildNodeRedFlow({ source: { code: 'pd2' }, kinds: ['machine_state', 'xyz'], ingestUrl: URL });
+test('flow: ชนิดไม่รู้จัก ไม่สร้างโหนด แต่คืนเหตุผลให้จอบอก', () => {
+  const r = buildNodeRedFlow({ source: { code: 'pd2' }, kinds: ['xyz'], ingestUrl: URL });
   assert.equal(r.nodes.length, 0);
-  assert.deepEqual(r.skipped.map(s => s.key), ['machine_state', 'xyz']);
+  assert.deepEqual(r.skipped.map(s => s.key), ['xyz']);
   assert.match(kindLabel('xyz'), /ไม่รู้จัก/);
+});
+
+test('flow PD2: ช่วงหยุด + นับชิ้น ส่งข้อเท็จจริงอย่างเดียว · เวลาเป็นสตริงไทย · เหตุผลแยก master ตามสถานะ', () => {
+  const r = buildNodeRedFlow({ source: { code: 'pd2-oee', key_hint: 'ab12' }, kinds: ['machine_state', 'piece_count'], ingestUrl: URL });
+  assert.deepEqual(r.built, ['machine_state', 'piece_count']);
+  assert.deepEqual(r.skipped, []);
+  const ids = new Set(r.nodes.map(n => n.id));
+  for (const n of r.nodes) for (const out of n.wires || []) for (const t of out) assert.ok(ids.has(t), `${n.id} → ${t}`);
+  const all = r.nodes.map(n => n.func || '').join('\n');
+  assert.doesNotMatch(all, /oee_shift|availability|performance|\boee\b\s*[,=]/i);   // ไม่ส่งเลข OEE ของต้นทาง
+  assert.match(all, /FROM oee_stop/);
+  assert.match(all, /FROM oee_piece/);
+  assert.match(all, /IN \('PLANNED_STOP', 'NO_PLAN'\) THEN o\.Description/);
+  assert.match(all, /IN \('FAULT', 'IDLE'\) THEN u\.Description/);
+  assert.match(all, /DATE_FORMAT\(s\.start_ts/);                                 // ไม่ปล่อย Date ของ mysql node (โซนเพี้ยน)
+  assert.match(all, /msg\.payload = \{ states: rows \}/);
+  assert.match(all, /msg\.payload = \{ pieces: rows \}/);
+  assert.match(all, /env\.get\('ESM_SOURCE_KEY'\)/);
 });
 
 test('code แปลกถูกกรองก่อนเข้าไฟล์ (กัน inject ผ่านชื่อ)', () => {

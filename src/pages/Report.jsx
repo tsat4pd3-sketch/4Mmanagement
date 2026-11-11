@@ -31,7 +31,7 @@ import tsLogoUrl from '../assets/TS logo.png';
 import { buildChangePointSheet, changePointSheetHtml, changePointPrintDoc, CPC_CSS } from '../lib/changePointSheet';
 import { loadRunDays, ranOn } from '../utils/runDays';
 import { isWorkingDayFrom } from '../utils/workingDay';
-import { fetchByIds } from '../utils/fetchByIds';
+import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import { positionLabel, loadPositions } from '../utils/positions';   // ตำแหน่งเก็บเป็น key — แสดง/พิมพ์ต้องแปลงเป็นชื่อ
 import PageHeader from '../components/PageHeader';
 import useTabParam from '../utils/useTabParam';
@@ -968,6 +968,7 @@ function PerEmployeeTab() {
     // PostgreSQL cast date ไม่ผ่าน → query ตอบ 400 → หน้าโชว์ "ไม่มีข้อมูล" เงียบๆ ทั้งเดือน)
     const [yy, mm] = month.split('-').map(Number);
     const to = `${month}-${String(new Date(yy, mm, 0).getDate()).padStart(2, '0')}`;
+    /* cap-ok: พนักงาน *1 คน* × 1 เดือน = 30 แถว (วัด 11/11/26) — ไม่มีทางถึง 1,000 */
     const { data, error } = await supabase.from('daily_production_logs')
       .select('work_date, is_present, has_helmet, has_boots, has_gloves, assigned_line')
       .eq('employee_id', selected).gte('work_date', from).lte('work_date', to)
@@ -4182,9 +4183,12 @@ function AttendanceFormTab() {
     for (let i = 0; i < empIds.length; i += BATCH) {
       const ids = empIds.slice(i, i + BATCH);
       const [{ data: batchLogs }, { data: batchBookings }] = await Promise.all([
-        supabase.from('daily_production_logs')
+        /* 🔴 เพดาน 1,000 แถว — batch 50 คน × 1 เดือน ≈ 1,500 แถว (วัดจริง 11/11/26:
+           daily_production_logs 4,338 แถว/เดือน) ⇒ ชนได้ · ขาดแล้ว "วันลา/OT" หายจากสรุป */
+        fetchAllPages(() => supabase.from('daily_production_logs')
           .select('work_date, employee_id, is_present, has_ot, has_extended_ot, shift, leave_type, leave_duration, leave_period, leave_hours')
           .gte('work_date', startDate).lte('work_date', endDate).in('employee_id', ids),
+          { orderBy: ['work_date', 'employee_id'] }).then(r => ({ data: r.rows, error: r.error })),
         supabase.from('ot_night_bookings')
           .select('work_date, employee_id, shift, ot_period')
           .gte('work_date', startDate).lte('work_date', endDate).in('employee_id', ids)
