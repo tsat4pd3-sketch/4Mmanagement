@@ -10275,3 +10275,28 @@ test('✍️ PMCheckData: ใบ PM อนุมัติต้องผ่า�
   assert.match(src, /can\('pm', 'approve', userRole\) && !!amVerdict\?\.ok/,
     '\n\n❌ ปุ่มยืนยันใบ PM ต้องเช็ค verdict ด้วย ไม่ใช่แค่ pm:approve\n')
 })
+
+/* ═══ 📸 ปิดกะต้องตรึง CT + นโยบายพัก แล้วสูตรต้องอ่าน snapshot ก่อนทะเบียนสด (11/11 · คำสั่ง user)
+   เคสจริง 10/11: restamp 5 กะเก่า ไม่มีกะไหนได้ค่าเดิม เพราะ `break_policies` ถูกแก้ 20/10 + 05/11
+   ⇒ ออดิทเทียบ "เลขที่เก็บ" กับ "เลขที่คำนวณได้" ไม่ตรง · ถอดด่านนี้ = ปัญหากลับมาทั้งระบบ */
+test('📸 computeSessionOee: snapshot (CT + พัก) ต้องชนะทะเบียนสด และปิดกะต้อง stamp กลับ', () => {
+  const oee = stripComments(readFileSync(join(ROOT, 'src/utils/oee.js'), 'utf8'))
+  assert.match(oee, /const ctSnap = readCtSnapshot\(session\)/,
+    '\n\n❌ computeSessionOee ต้องอ่าน ct_snapshot ของกะก่อน (readCtSnapshot)\n')
+  assert.match(oee, /const brkSnap = readBreakSnapshot\(session\)/,
+    '\n\n❌ computeSessionOee ต้องอ่าน break_snapshot ของกะก่อน (readBreakSnapshot)\n')
+  assert.match(oee, /snap > 0 \? snap : ctForMat\(matNo/,
+    '\n\n❌ CT ต้องเอา snapshot ก่อน แล้วค่อยถอยไปทะเบียน (ctForMat)\n')
+  // brkIvIn = ประตูเดียวของช่วงพักในสูตรปิดกะ — ต้องกินชุดที่ผ่าน snapshot แล้วทั้ง 3 ตัว
+  const brk = oee.match(/const brkIvIn = \(a, b\) => breakIntervalsIn\(\{[\s\S]*?\}\);/)
+  assert.ok(brk, '\n\n❌ หา brkIvIn ใน computeSessionOee ไม่เจอ\n')
+  for (const k of ['policies: brkPolicies', 'processType: brkProcessType', 'lineRules: brkLineRules']) {
+    assert.ok(brk[0].includes(k),
+      `\n\n❌ brkIvIn ต้องใช้ ${k} (ไม่ใช่ prop สดจากหน้า) ไม่งั้นกะที่มี snapshot ยังคิดจากทะเบียนวันนี้\n`)
+  }
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'))
+  assert.ok((dr.match(/break_snapshot:\s*brkSnap/g) || []).length >= 2,
+    '\n\n❌ payload ปิดกะทั้ง 2 ทาง (pending_close + closed) ต้อง stamp break_snapshot\n')
+  assert.match(dr, /breakSnapshot \? \{ break_snapshot: breakSnapshot \} : \{\}/,
+    '\n\n❌ ปุ่ม "คำนวณ OEE ใหม่" ต้อง stamp break_snapshot ที่ใช้คิดรอบนั้นด้วย\n')
+})

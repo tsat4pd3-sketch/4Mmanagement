@@ -1225,7 +1225,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       if (skippedOpen.length) toast.error(`ยังมีใบผลิตเปิดค้าง — ไม่ได้แก้เวลาของ ${skippedOpen.join(', ')} (ปิด/ยกยอดใบที่ค้างก่อน)`);
       // คำนวณ OEE ใหม่ด้วยเวลาที่แก้
       // NG เข้าสูตร Q ต้องไม่รวมงานทดลอง (เหมือน handleCloseSession)
-      const { A, P, Q, oee, shiftMin, totalProduced, ctUsed } = computeOEE(sumDefectQty(defectLogs, 'line'), closeEndTime, closeStartTime);
+      const { A, P, Q, oee, shiftMin, totalProduced, ctUsed, breakSnapshot } = computeOEE(sumDefectQty(defectLogs, 'line'), closeEndTime, closeStartTime);
       const startChanged = closeStartTime && closeStartTime !== selSession.start_time;
       const endChanged   = closeEndTime   && closeEndTime   !== selSession.end_time;
       // กะไม่มีผลผลิต → A/Q ไม่มีความหมาย (กันเลข 100/0 รั่วเข้าค่าเฉลี่ย %A/%Q — ดูหมายเหตุใน handleCloseSession)
@@ -1246,6 +1246,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         ng_qty: reNg, qty_ng: reNg, qty_suspect: reSuspect, qty_repair: reRepair,
         // CT ที่ใช้คิด %P รอบนี้ — ต้อง re-stamp ด้วย เพราะ %P ถูกคำนวณใหม่ทั้งก้อน (เฟส 0 Adaptive CT)
         ...(Object.keys(ctUsed || {}).length ? { ct_snapshot: ctUsed } : {}),
+        /* 📸 นโยบายพักที่ใช้คิดรอบนี้ — ไม่ตรึงไว้ = ปีหน้ากดปุ่มนี้ได้เลขไม่เท่าเดิม (oee.js §snapshot)
+           กะที่มี snapshot แล้ว `computeSessionOee` คืนตัวเดิมกลับมา ⇒ บรรทัดนี้เขียนค่าเท่าเดิม */
+        ...(breakSnapshot ? { break_snapshot: breakSnapshot } : {}),
         oee_a: (noProduction || A == null) ? null : parseFloat((A * 100).toFixed(2)),
         oee_p: P != null ? parseFloat((P * 100).toFixed(2)) : null,
         oee_q: (noProduction || Q == null) ? null : parseFloat((Q * 100).toFixed(2)),
@@ -2854,7 +2857,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
        ไม่เคยมีผลกับค่าที่ stamp เลย ขณะที่จอสด (FactoryMap/Dashboard) กรองถูก = Q คนละตัวระหว่าง 2 จอ
        ส่วน qty_ng/qty_suspect ที่เขียนลง production_sessions ยังเป็น "ผลรวมดิบ" ตามเดิม
        (เป็นยอดรายงานของเสียทั้งหมด ไม่ใช่ตัวคิด Q — ห้ามกรอง ตามกฎ oee.js §7) */
-    const { A, P, Q, oee, shiftMin, ctUsed } = computeOEE(sumDefectQty(defectLogs, 'line'), closeEndTime, closeStartTime, updatedDtLogs);
+    const { A, P, Q, oee, shiftMin, ctUsed, breakSnapshot } = computeOEE(sumDefectQty(defectLogs, 'line'), closeEndTime, closeStartTime, updatedDtLogs);
     // กะที่ไม่มีผลผลิตเลย (เปิดผิด/นับสต๊อก) — A/Q ไม่มีความหมายกับ OEE (P/OEE เป็น null อยู่แล้ว)
     // ต้อง stamp oee_a/oee_q เป็น null ด้วย ไม่งั้นเลข 100/0 รั่วเข้าค่าเฉลี่ย %A/%Q ในกราฟเทรนด์
     // (สอดคล้อง cleanup migration 20260715_oee_null_noproduction_cleanup.sql — กันไม่ให้ค้างตั้งแต่ปิดกะ)
@@ -2867,6 +2870,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
     /* CT ที่ใช้คิด %P ของกะนี้ — เก็บไว้ให้คำนวณย้อนหลังซ้ำได้แม้ CT ใน master ถูกแก้ทีหลัง
        (เฟส 0 Adaptive CT · null เมื่อไม่มี MAT ไหนมี CT เลย ไม่เขียนออบเจกต์ว่างให้รก) */
     const ctSnap = Object.keys(ctUsed || {}).length ? ctUsed : null;
+    /* 📸 นโยบายพัก + กฎพักรายไลน์ + process_type ที่ใช้คิด %A/%P รอบนี้ (oee.js §snapshot · 11/11)
+       ⇒ ออดิทกดคำนวณใหม่ปีหน้าได้เลขเดิม · `null` = ทะเบียนพักยังไม่โหลด (ปิดกะถูกบล็อกอยู่แล้ว) */
+    const brkSnap = breakSnapshot || null;
     // Leader → request close (pending_close), SV+ → close directly
     const isLeaderRequest = closeIsRequest;   // ดู closeIsRequest — ตัดสินด้วยสิทธิ์ ไม่ใช่ role
     const payload = isLeaderRequest ? {
@@ -2884,6 +2890,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       qty_repair:              totalQtyRepair,
       shift_min:               shiftMin,
       ct_snapshot:             ctSnap,
+      break_snapshot:          brkSnap,
       oee_a:                   oeeA,
       oee_p:                   oeeP,
       oee_q:                   oeeQ,
@@ -2903,6 +2910,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
       qty_repair:      totalQtyRepair,
       shift_min:       shiftMin,
       ct_snapshot:     ctSnap,
+      break_snapshot:  brkSnap,
       oee_a:           oeeA,
       oee_p:           oeeP,
       oee_q:           oeeQ,
@@ -5867,6 +5875,16 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <div style={{ fontSize: 11, color: 'var(--amber)', marginBottom: 16 }}>
                   ⚠ เวลาที่แก้ไม่เกี่ยวกับเวลาสแกนกัมบัง — ใช้เฉพาะคำนวณ %A, %P, OEE เท่านั้น
                 </div>
+                {/* 📸 กฎความซื่อสัตย์ของจอ — กะเก่าไม่มี snapshot ของ CT/เวลาพัก ⇒ คำนวณใหม่อาจไม่ตรง
+                    กับที่ stamp ไว้ (ทะเบียนถูกแก้ภายหลังได้) · ห้ามปล่อยให้คนกดแล้วเพิ่งรู้ทีหลัง
+                    เจ้าของกฎ: `src/utils/oee.js` §snapshot · 📄 daily-report.md §snapshot */}
+                {!selSession.break_snapshot && (
+                  <div style={{ fontSize: 11, color: 'var(--amber)', marginBottom: 16, lineHeight: 1.5 }}>
+                    📸 กะนี้ยังไม่มี snapshot ของ CT/เวลาพัก (ปิดก่อน 11/11) — ถ้าทะเบียน CT หรือนโยบายพัก
+                    ถูกแก้หลังกะปิด <b>ค่าที่คำนวณใหม่จะไม่ตรงกับที่บันทึกไว้</b> ·
+                    กดบันทึกแล้วระบบจะตรึง snapshot ของรอบนี้ให้ (ครั้งถัดไปได้ค่าเดิมเสมอ)
+                  </div>
+                )}
 
                 {/* เวลาเริ่ม-จบกะ */}
                 <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20 }}>
