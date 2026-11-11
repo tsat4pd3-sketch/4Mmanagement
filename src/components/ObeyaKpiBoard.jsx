@@ -629,10 +629,16 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       if (value == null) {
         why = r.auto && !fromDept ? (note || 'ยังไม่มีข้อมูลเดือนนี้') : roll ? 'หน่วยลูกยังไม่กรอกค่าเดือนนี้' : (man || fromDept ? 'ยังไม่กรอกค่าเดือนนี้' : 'ยังไม่ได้ตั้ง KPI ตัวนี้ — ตั้งที่แท็บ ⚙️');
       } else if (def && (target != null || bars?.commit_value != null)) {
-        const sc = scoreDef(value, def);
+        /* 📅 score_by_plan (11/11): เทียบแผนสะสมของเดือนที่โชว์ — แผนของแถวนี้ ไม่มี = แผนของแผ่นโรงงานที่แชร์ค่า (ยอดขาย/หัว) */
+        const planEarly = planByKpi[def?.id] || (man?.sharedDef ? planByKpi[man.sharedDef.id] : null) || {};
+        const mSel = Number(String(valueKey || monthKey).slice(5, 7)) || monthNo;
+        const sc = scoreDef(value, def, { plan: def?.score_by_plan ? planEarly[mSel] ?? null : null });
         st = sc.status === 'good' ? ST.good : sc.status === 'warn' ? ST.warn : sc.status === 'bad' ? ST.bad : ST.unknown;
         const cb = sc.bars.commit_value != null ? ` · Commit ${fmtBar(sc.bars.commit_compare, sc.bars.commit_value, unit)}` : '';
-        why = `เทียบ Target ${fmtBar(sc.bars.target_compare, sc.bars.target_value, unit)}${cb}`;
+        why = sc.bars.byPlan
+          ? `เทียบแผนสะสม ${monthLabel(`${year}-${String(mSel).padStart(2, '0')}`)} ${fmtBar(sc.bars.target_compare, sc.bars.target_value, unit)}${cb} (เป้าทั้งปี ${fmtBar(sc.bars.target_compare, sc.bars.annualTarget, unit)})`
+          : def?.score_by_plan ? `เดือนนี้ยังไม่มีแผนสะสม — เทียบเป้าทั้งปี ${fmtBar(sc.bars.target_compare, sc.bars.target_value, unit)}${cb}`
+          : `เทียบ Target ${fmtBar(sc.bars.target_compare, sc.bars.target_value, unit)}${cb}`;
       } else {
         why = r.auto && !fromDept ? 'ยังไม่ตั้งเป้า — ตั้งที่แท็บ ⚙️ ปุ่ม 🎯 ท้ายแถว' : 'ยังไม่ตั้งเป้า — ตั้งที่แท็บ ⚙️ ตอนแก้นิยาม KPI';
       }
@@ -655,7 +661,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       });
       const fcScore = fc.value != null && def && (target != null || def.commit_value != null || def.commitment) ? scoreDef(fc.value, def) : null;
       /* เส้นแผนรายเดือน + เครื่องหมายโน้ต ติดไปกับจุดกราฟ (สเกลเดียวกับผลจริง — ห้ามแกน Y 2 ข้าง) */
-      const planMap = planByKpi[planDef?.id] || {};
+      const planMap = planByKpi[planDef?.id] || (man?.sharedDef ? planByKpi[man.sharedDef.id] : null) || {};   // แผ่นที่แชร์ค่าโรงงานใช้แผนของแผ่นโรงงาน
       const notesOfRow = notesBy[r.key] || {};
       series = series.map((p, i) => (i < 12
         ? { ...p, plan: planMap[i + 1] ?? null, notes: notesOfRow[i + 1] || [], noteMark: (notesOfRow[i + 1] || []).length ? '📝' : '' }
