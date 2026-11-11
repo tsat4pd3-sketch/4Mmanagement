@@ -343,6 +343,17 @@ const TABLE_ROWS = {
      ไม่เคยถูกรันใน harness เลย · เลือกแถว 5 เพราะเป็นไลน์เดี่ยว (ไม่อยู่ใน PARENT_OF
      และไม่ถูกอ้างโดย sessions/workstations ที่ผูก LINE_NAME(1..3)) */
   production_lines: (r, i) => ({ ...r, unit_kind: i === 5 ? 'support' : 'production' }),
+  /* 🔗 โซ่ส่งต่อ MO (11/11) — แผง "ส่งต่อแล้วปลายทางไม่มีใครทำ" ต้องถูกรันทั้ง 3 สาขา
+     ของจริงมี 3 รูปทรง: ลิงก์ว่าง (ใบลูกถูกลบ) · ใบลูกถูกยกเลิก · ใบลูกยังทำงาน (ต้องไม่โผล่)
+     ⚠️ แถว NULLISH ยังว่างตามกติกา = สาขา "ไม่มีวันเวลาให้นับ" (ต้องขึ้น "ไม่มีวันเวลาให้นับ" ไม่ใช่ 0 วัน) */
+  mtn_order_handoffs: (r, i) => isNullish(r) ? r : ({
+    ...r,
+    from_order_id: `id-${i}`,
+    to_order_id: i % 3 === 0 ? null : `id-${i}`,   // 1 ใน 3 = ใบลูกถูกลบ (ลิงก์ว่าง)
+    to_dept: ['jig_maintenance', 'maintenance', 'die_maintenance'][i % 3],
+    reason: `ทีมแรกติดตรงนี้ ${i}`,
+    handed_by: `หัวหน้าทดสอบ ${i}`,
+  }),
 
   org_nodes: (r, i) => ({
     ...r,
