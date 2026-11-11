@@ -190,7 +190,6 @@ export const NAV_ITEMS = [
   { to: '/line-oee', icon: '📟', label: 'OEE รายไลน์ (จอหน้าไลน์)', group: 'จอแสดงผล' },
   { to: '/morning-meeting', icon: '🌅', label: 'ประชุมแถวเช้า',   group: 'ฝ่ายผลิต' },
   { to: '/checkin',     icon: '📝', label: 'เช็คชื่อ & PPE',     group: 'ฝ่ายผลิต' },
-  { to: '/ppe-setup',   icon: '🦺', label: 'ข้อกำหนด PPE',      group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', alsoIn: 'ฝ่ายผลิต' },
   { to: '/management',  icon: '🔄', label: 'จัดการไลน์ผลิต',     group: 'ฝ่ายผลิต' },
   // 🧑‍🤝‍🧑 แทนบอร์ดกระดาษหน้าไลน์ (ผังคน + ผัง LAYOUT + ป้าย 4M) — อ่านอย่างเดียว (2026-10-06)
   { to: '/manpower-board', icon: '🧑‍🤝‍🧑', label: 'Manpower Control Board', group: 'ฝ่ายผลิต' },
@@ -283,6 +282,7 @@ export const NAV_ITEMS = [
   { to: '/process-setup', icon: '🏭', label: 'กระบวนการผลิต', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
   { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
   { to: '/layout-setup', icon: '🗺️', label: 'ตั้งค่าผัง/Floorplan', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
+  { to: '/ppe-setup',    icon: '🦺', label: 'ข้อกำหนด PPE',       group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก', alsoIn: 'ฝ่ายผลิต' },
   // /linesetup ย้ายมาฝังในแท็บ "ผลิต (ผังไลน์)" ของ /layout-setup แล้ว — คง route ไว้สำหรับลิงก์เก่า (deep-link) ไม่โชว์ใน sidebar
   { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
 
