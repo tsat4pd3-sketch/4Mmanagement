@@ -33,6 +33,8 @@ const supabaseDrUrl  = import.meta.env.VITE_SUPABASE_DR_URL  || 'https://eyhclzk
 const supabaseDrKey  = import.meta.env.VITE_SUPABASE_DR_KEY  || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV5aGNsemtpZml0YmhibGpnb2F2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4ODExMDQsImV4cCI6MjA5MjQ1NzEwNH0.fHTA70fQ8yAvQuwAeM9HQ_UQjMdR3FUkxu_klvXs-h4'
 
 export const supabaseDR = createClient(supabaseDrUrl, supabaseDrKey, { global: { fetch: guardedFetch } })
+/** URL ฐานของ DR — ใช้ประกอบ URL ของ edge ที่ "เครื่องภายนอก" ยิงเข้ามา (ศูนย์เชื่อมต่อ gen flow Node-RED) */
+export const DR_BASE_URL = supabaseDrUrl
 
 // ═══ DR actor stamping (traceability) — 2026-07-24 · เพิ่ม uid 2026-09-16 ═══════════════════
 // DR เป็น anon เสมอ → ฐานข้อมูลไม่รู้ว่าใครแก้ · trigger fn_audit อ่าน updated_by_name/_uid เป็น actor

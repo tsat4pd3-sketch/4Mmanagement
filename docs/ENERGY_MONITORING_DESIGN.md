@@ -1017,5 +1017,9 @@ PLC FX5U → Node-RED (server ในโรงงาน) → MySQL db_user03.ener
 - จุดกราฟ `meterDetailSeries` — ขาดเกิน `DETAIL_GAP_MIN` (5) นาที = เส้นขาด
 - ❌ **ไม่มี 3 เฟสแยก / รายวินาที** (flow ไม่ได้ส่ง) — จอเขียนบอกให้ดูที่ Node-RED · จะเพิ่มต้องแก้ flow + migration ก่อน
 
+### 15.3.4 ย้ายการตั้งค่าต้นทางไปศูนย์เชื่อมต่อ `/integrations` (11/11 · คำสั่ง user)
+- ต้นทาง Die Shop = แถว `dieshop` (legacy · ยังใช้ `INGEST_SECRET` กลาง) · สุขภาพการส่ง/รหัสลับ/ดาวน์โหลด flow อยู่ที่นั่น
+- แท็บ "มิเตอร์ / MQTT" ของหน้านี้ยังอยู่ (ชี้ไปหน้าใหม่) · 📄 `docs/modules/integration-hub.md`
+
 ### 15.4 ยังไม่ทำ
 - จอแก้ตู้ (`energy_live_meters` — ลิมิตไม่ต้อง Node-RED เป็นเจ้าของ) · log เหตุการณ์ (หน้า Node-RED เดิมมี `energy_event`) · รวม `energy_daily` เข้า `energy_monthly` (`source='meter'`)

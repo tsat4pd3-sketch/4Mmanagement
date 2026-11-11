@@ -104,7 +104,7 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 `traceability-audit-log` · `reusable-pm-checker` · `logistic-planner-sales` · `scrap-report` ·
 `store-requisition-form` · `qa-inspection` · `bbs-safety` · `dept-dashboard-tv` · `vsm` ·
 `spare-part-master` · `fixture-shim-record` · `floorplan-setup` · `workforce-insight` ·
-`product-history` · `order-trace` · `feedback-inbox` · `mkt-rfq` · `i18n` · `ppe-requirements`
+`product-history` · `order-trace` · `feedback-inbox` · `mkt-rfq` · `i18n` · `ppe-requirements` · `integration-hub`
 (ดีไซน์ Dashboard → `docs/DASHBOARD-DESIGN.md`)
 
 ---
