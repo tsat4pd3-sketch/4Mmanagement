@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { urlPick } from '../utils/urlInit';
 import { supabase, supabaseDR } from '../supabaseClient';
-import { fetchByIds } from '../utils/fetchByIds';
+import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import LineSelect from './LineSelect';
 import { ALL } from '../utils/filterLabels';
 import { wavg, wLoad, buildCtMap, groupLean, dtMinBySession, SIX_BIG_LOSSES, EIGHT_WASTES } from '../utils/oee';
@@ -73,10 +73,24 @@ export default function OeeInsightPanel({ lines, ccRates = [], initLine = '', se
       const lineNames = selLine ? [selLine] : lines.map(l => l.name);
       if (!lineNames.length) { setInsights([]); setLoading(false); return; }
 
-      const { data: sessions } = await supabaseDR.from('production_sessions')
-        .select('id, line_name, work_date, shift, shift_min, start_time, target_qty, actual_qty, qty_ok, qty_ng, qty_suspect, oee, oee_a, oee_p, oee_q, status')
-        .in('line_name', lineNames).gte('work_date', from).lte('work_date', to)
-        .in('status', ['closed', 'pending_close']);
+      /* 🔴 2 บั๊กซ้อนกัน (audit เพดาน 1,000 แถว · 11/11/26):
+         ① ไม่แบ่งหน้า — กะปิดแล้ว 30 วัน = 968 แถว · 60 วัน = 1,406 ⇒ ชนเพดานทันทีที่กดย้อนหลัง
+         ② `const { data } = await …` **กลืน error ทั้งก้อน** (ผิดกฎเขียน DB ข้อ 1) และไม่มี `.order()`
+            ⇒ ไม่รู้ด้วยซ้ำว่า 1,000 แถวที่ได้เป็นของวันไหน
+         แผงนี้สรุป "ไม่มี DT เรื้อรัง / ไม่มีของเสียกระจุก" — ข้อมูลขาดแล้วบอกว่าไม่มีปัญหา = อันตรายสุด */
+      const sp = await fetchAllPages(
+        () => supabaseDR.from('production_sessions')
+          .select('id, line_name, work_date, shift, shift_min, start_time, target_qty, actual_qty, qty_ok, qty_ng, qty_suspect, oee, oee_a, oee_p, oee_q, status')
+          .in('line_name', lineNames).gte('work_date', from).lte('work_date', to)
+          .in('status', ['closed', 'pending_close']),
+        { orderBy: ['work_date', 'id'] },
+      );
+      if (sp.error || sp.truncated) {
+        setInsights([]);
+        setMeta({ from, to, nSess: sp.rows.length, loadErr: sp.error || 'กะเยอะเกินกว่าจะโหลดครบ — ย่อช่วงวันที่' });
+        setLoading(false); return;
+      }
+      const sessions = sp.rows;
       const sess = (sessions || []).filter(s => s.oee != null);
       if (sess.length < 3) { setInsights([]); setMeta({ from, to, nSess: sess.length }); setLoading(false); return; }
       const ids = sess.map(s => s.id);

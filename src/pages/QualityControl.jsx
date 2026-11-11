@@ -18,7 +18,7 @@ import {
   CartesianGrid, Tooltip, ReferenceLine, Cell, LabelList,
 } from 'recharts';
 import { supabase, supabaseDR } from '../supabaseClient';
-import { fetchByIds } from '../utils/fetchByIds';
+import { fetchByIds, fetchAllPages } from '../utils/fetchByIds';
 import { toast } from '../components/Toast';
 import { UserContext } from '../App';
 import { usePerms } from '../utils/usePerms';
@@ -356,11 +356,19 @@ function QualityDashboard() {
     (async () => {
       setLoading(true);
       if (scopedLineNames && scopedLineNames.length === 0) { setSessions([]); setOrders([]); setDefects([]); setLoadErr([]); setLoading(false); return; }
-      let ssQ = supabaseDR.from('production_sessions')
-        .select('id, work_date, line_name, shift, actual_qty, qty_ok, qty_ng, oee_q')
-        .eq('status', 'closed').gte('work_date', from).lte('work_date', to);
-      if (scopedLineNames) ssQ = ssQ.in('line_name', scopedLineNames);
-      const { data: ss, error: ssErr } = await ssQ.order('work_date');
+      /* 🔴 เพดาน 1,000 แถว — กะปิดแล้ว 30 วัน = 968 แถว (วัดจริง 11/11/26) เหลือที่แค่ 32
+         60 วัน = 1,406 · ปีนี้ = 2,514 ⇒ กดปุ่มย้อนหลัง/"ปีนี้" แล้วเดือนล่าสุดหายทันที
+         (เรียง work_date ขึ้น ⇒ ตัดท้าย = ตัดเดือนที่คนเปิดดูพอดี) ⇒ ต้องแบ่งหน้า */
+      const ssRun = () => {
+        let q = supabaseDR.from('production_sessions')
+          .select('id, work_date, line_name, shift, actual_qty, qty_ok, qty_ng, oee_q')
+          .eq('status', 'closed').gte('work_date', from).lte('work_date', to);
+        if (scopedLineNames) q = q.in('line_name', scopedLineNames);
+        return q;
+      };
+      const ssPage = await fetchAllPages(ssRun, { orderBy: ['work_date', 'id'] });
+      const ss = ssPage.rows;
+      const ssErr = ssPage.error ? { message: ssPage.error } : (ssPage.truncated ? { message: 'กะเยอะเกินกว่าจะโหลดครบ — ย่อช่วงวันที่' } : null);
       const ids = (ss || []).map(s => s.id);
       // ⚠️ ห้าม .in('session_id', ids) ตรงๆ — 30 วันหลายไลน์ = หลายร้อยกะ → URL ยาวเกิน คิวรีล้มเหลว
       //    แล้ว FTT/PPM จะโชว์ "ไม่มีของเสีย" ทั้งที่มี (บั๊กชนิดเดียวกับ OEE Analytics 2026-08-20)

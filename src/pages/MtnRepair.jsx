@@ -59,6 +59,8 @@ import TimeRangeBar from '../components/TimeRangeBar';
 import Segmented from '../components/Segmented';
 import SearchInput from '../components/SearchInput';
 import useTimeRange from '../utils/useTimeRange';
+import fetchAllRows from '../utils/fetchAllRows';
+import { fetchAllPages } from '../utils/fetchByIds';
 import useIsMobile from '../utils/useIsMobile';
 /* วันทำงาน/กะ ของ "เวลาที่แจ้ง" — ของกลาง ห้ามเขียนกฎ 08:00/20:00 เองในหน้า */
 import { shiftOfTime, workDateOfTime } from '../utils/workDate';
@@ -396,18 +398,7 @@ function ImgField({ label, value, onPick, required }) {
 function confirmDiscard() {
   return window.confirm('ปิดหน้าต่างนี้? ข้อมูลที่กรอกไว้ยังไม่ได้บันทึก — จะหายทั้งหมด');
 }
-/** ดึงทุกแถว (แบ่งหน้าทีละ 1000) — ตารางที่โตเกินเพดานของ PostgREST ต้องผ่านตัวนี้เสมอ
- *  order ต้องคงที่ (ใส่ .order('id') ปิดท้าย) ไม่งั้นแถวหลุด/ซ้ำระหว่างหน้า */
-async function fetchAllRows(client, table, cols, shape = q => q) {
-  const PAGE = 1000, out = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await shape(client.from(table).select(cols)).range(from, from + PAGE - 1);
-    if (error) return { data: out, error };
-    out.push(...(data || []));
-    if (!data || data.length < PAGE) break;
-  }
-  return { data: out, error: null };
-}
+/* fetchAllRows เคยเป็นสำเนาในหน้านี้ — ย้ายไปของกลาง `src/utils/fetchAllRows.js` แล้ว (ห้ามก๊อปกลับ) */
 
 /** 🔢 จำนวนหลักของเลข I/O ตามเลขจริง — ช่องกรอกและช่องบนใบพิมพ์ต้องใช้ตัวเดียวกัน
  *  (30/10 I/O 12 หลัก · 03/11 PR SAP 10 หลัก) เจ้าของค่า = `utils/mtnMoForm.js` */
@@ -676,12 +667,25 @@ const HANDOFF_CAP = 2000;
   const loadOrders = useCallback(async () => {
     // ⚠️ คอลัมน์ย่อเท่านั้น — ดูเหตุผล (egress) ที่ MO_LIST_COLS ด้านบน ห้ามเปลี่ยนกลับเป็น '*'
     const [{ data, error }, openRes, prRes] = await Promise.all([
-      supabaseDR.from('mtn_orders').select(MO_LIST_COLS).order('report_at', { ascending: false }).limit(ORDER_CAP),
+      /* 🔴 เพดาน 1,000 แถว (audit 11/11 · หน้างานแจ้ง "list MO โดนจำกัด 1000 บรรทัด")
+         วัดจริง: `mtn_orders` ทั้งตาราง **1,857 ใบ** ⇒ หน้าต่าง "1,000 ใบล่าสุด" ทำให้ **857 ใบเก่ามองไม่เห็นเลย**
+         และตัวกรองช่วงวันที่ของหน้านี้ (`tr.from/tr.to`) เดิม **กรองฝั่งจอเท่านั้น** (`inRange`)
+         ⇒ ย่อ/ขยายกรอบวันที่เท่าไหร่ก็ได้ของชุดเดิม 1,000 ใบ — ปุ่ม "ดูทั้งหมดตั้งแต่ …" จึงไม่เคยได้ผล
+         ⇒ ดันช่วงวันที่ลงไปในคิวรี + แบ่งหน้าให้ครบ (ของกลาง `fetchAllPages`) */
+      fetchAllPages(
+        () => supabaseDR.from('mtn_orders').select(MO_LIST_COLS)
+          .gte('report_at', `${tr.from}T00:00:00`).lte('report_at', `${tr.to}T23:59:59`),
+        { orderBy: ['report_at', 'id'], maxPages: 20 },
+      ).then(r => ({ data: r.rows, error: r.error ? { message: r.error } : (r.truncated ? { message: 'ใบในช่วงนี้เยอะเกินกว่าจะโหลดครบ — ย่อช่วงวันที่' } : null) })),
       /* ใบที่ยังไม่ปิด — ทุกใบ ไม่จำกัดวัน (ชุดที่กระดิ่ง/คิวชี้มา ต้องอยู่ในนี้เสมอ)
          ชุดสถานะอ่านจาก `MO_DONE_STATUSES` ที่เดียว ห้ามพิมพ์รายชื่อสถานะซ้ำที่นี่ */
-      supabaseDR.from('mtn_orders').select(MO_LIST_COLS)
-        .not('status', 'in', `(${MO_DONE_STATUSES.join(',')})`)
-        .order('report_at', { ascending: false }).limit(OPEN_CAP),
+      /* ⚠️ `.limit(2000)` เดิม **ไม่มีผล** — PostgREST clamp ที่ 1,000 เสมอ (audit 11/11)
+         ใบเปิดค้างจริงวันนี้ 219 ใบ ยังห่างเพดาน แต่ต้องแบ่งหน้าไว้ ไม่ใช่พึ่งเลขที่ระบบไม่รับ */
+      fetchAllPages(
+        () => supabaseDR.from('mtn_orders').select(MO_LIST_COLS)
+          .not('status', 'in', `(${MO_DONE_STATUSES.join(',')})`),
+        { orderBy: ['report_at', 'id'], maxPages: 20 },
+      ).then(r => ({ data: r.rows, error: r.error ? { message: r.error } : null, truncated: r.truncated })),
       // 🛒 ใบขอซื้อที่ยังไม่ยกเลิก (ตัวกรองงาน PR · ตารางเล็ก 4 คอลัมน์) — ล้ม = ตัวกรองบอกบนจอ ไม่กลืน
       /* cap-ok: mtn_purchase_requests ทั้งตาราง 1 แถว (วัด 20/10) — โตเกิน 1000 เมื่อไหร่ต้องเปลี่ยนเป็น fetchAllRows */
       supabaseDR.from('mtn_purchase_requests').select('order_id, pr_no, status').neq('status', 'cancelled').not('order_id', 'is', null).limit(5000),
@@ -692,7 +696,7 @@ const HANDOFF_CAP = 2000;
     if (error) { setOrdersErr(error.message); return; }   // คงรายการเดิมไว้ ดีกว่าล้างเป็น "ไม่มีรายการ"
     /* 🔴 ชุด "ใบยังไม่ปิด" ล้ม = **ใบค้างหายเงียบ** ⇒ ต้องเขียนบนจอ ห้ามกลืน (ห้ามล้มเหลวเงียบ) */
     setOpenLoadErr(openRes.error?.message || '');
-    setOpenCapped((openRes.data || []).length >= OPEN_CAP);
+    setOpenCapped(!!openRes.truncated);
     setOrdersErr('');
     /* รวม 2 ชุด ตัดซ้ำด้วย id — คงลำดับใหม่→เก่าเหมือนเดิม */
     const seen = new Set();
@@ -701,7 +705,7 @@ const HANDOFF_CAP = 2000;
     merged.sort((a, b) => String(b.report_at || '').localeCompare(String(a.report_at || '')));
     setOrders(merged);
     setOrdersAt(Date.now());
-  }, []);
+  }, [tr.from, tr.to]);
 
   /* 🔗 โซ่ส่งต่อที่ขาด — "ส่งต่อแล้วแต่ปลายทางไม่มีใครทำ" (11/11 · คำสั่ง user)
      ใบแม่จบที่ `transferred` (สถานะจบ) ⇒ ไม่อยู่ในชุด "ใบยังไม่ปิด" ⇒ **แผงไล่งานมองไม่เห็น**
