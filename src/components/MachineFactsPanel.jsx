@@ -184,7 +184,7 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
         </div>
         {reasons.unmappable > 0 && (
           <NoticeBar tone="warn" style={{ marginBottom: 8 }}>
-            {reasons.unmappable.toLocaleString()} ช่วงเป็นสถานะ ว่าง/ขาดการสื่อสาร/อื่นๆ — ยังไม่รู้ว่าต้นทางใช้ master เหตุผลชุดไหน จึงยังไม่ให้จับคู่
+            {reasons.unmappable.toLocaleString()} ช่วงเป็นสถานะ ขาดการสื่อสาร/อื่นๆ — ยังไม่รู้ว่าต้นทางใช้ master เหตุผลชุดไหน จึงยังไม่ให้จับคู่
           </NoticeBar>
         )}
         {!reasons.rows.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ยังไม่เห็นเหตุผลหยุดจากต้นทางนี้</div> : (

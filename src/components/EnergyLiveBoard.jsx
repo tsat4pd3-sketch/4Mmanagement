@@ -163,7 +163,7 @@ export default function EnergyLiveBoard() {
       )}
       {board.meters.length > 0 && t.never === t.total && (
         <NoticeBar tone="warn">
-          <b>ยังไม่เคยได้รับค่าจากมิเตอร์เลย</b> — ตัวส่ง (Node-RED) ต้อง POST ชื่อ topic ให้ตรงกับแท็บ "มิเตอร์ / MQTT"
+          <b>ยังไม่เคยได้รับค่าจากมิเตอร์เลย</b> — ตัวส่ง (Node-RED) ต้อง POST ชื่อ topic ให้ตรงกับที่ผูกไว้ใน ตั้งค่า › การเชื่อมต่อ Node-RED / เครื่องจักร (/integrations)
           เช่น <code>dieshop/DB-ROBOT/kw</code> · ช่องทั้งหมดจึงขึ้น "—" (ไม่ใช่ 0)
         </NoticeBar>
       )}

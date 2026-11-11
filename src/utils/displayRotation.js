@@ -424,7 +424,7 @@ export const DISPLAY_PAGE_PARAMS = Object.freeze({
     { key: 'state', label: 'สถานะ', kind: 'select', showIf: { tab: ['', 'doc'] }, options: [opt('current', 'Current state'), opt('future', '🎯 Future state')] },
   ],
   '/energy': [
-    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('summary', '📊 สรุป & วิเคราะห์'), opt('mqtt', '📡 มิเตอร์ / MQTT'), opt('setup', '⚙️ ตั้งค่า')] },
+    { key: 'tab', label: 'แท็บ', kind: 'select', options: [opt('summary', '📊 สรุป & วิเคราะห์'), opt('setup', '⚙️ ตั้งค่า')] },
     { key: 'unmet', label: 'แสดงจุดที่ยังไม่ได้แยกมิเตอร์', kind: 'bool', showIf: { tab: ['', 'input'] } },
   ],
   '/report': [
