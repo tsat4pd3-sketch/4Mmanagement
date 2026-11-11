@@ -11,7 +11,7 @@ import { loadAffectsLanes } from '../utils/affectsLanes';
 import { defectUnitCost } from '../utils/costSaving';
 import { fetchByIds } from '../utils/fetchByIds';
 import useOrgScope from '../utils/useOrgScope';
-import { mtnAutoSeries, autoKpiOfName, toRowUnit, HOURS_PER_MONTH, autoUnitMismatch } from '../utils/kpiAuto';
+import { mtnAutoSeries, mtnGapSeries, autoKpiOfName, toRowUnit, HOURS_PER_MONTH, autoUnitMismatch } from '../utils/kpiAuto';
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import OrgScopePicker from './OrgScopePicker';
 import FilterBar from './FilterBar';
@@ -323,6 +323,10 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   }, [mtnTeam?.key, year]); // eslint-disable-line react-hooks/exhaustive-deps
   const autoSeries = useMemo(() => (mtnTeam && mtnRoll && mtnRoll.year === year && mtnRoll.data
     ? mtnAutoSeries(mtnRoll.data, year, mtnTeam) : null), [mtnTeam, mtnRoll, year]);
+  /* 🕳️ ชั่วโมงเครื่องหยุดที่ชี้ไม่ได้ว่าเป็นของทีมไหน — **รวมทั้งโรงงาน ไม่ใช่ของทีมนี้**
+     (11/11 · คำสั่ง user "ต้องไม่มีค่าไหนหายไป แต่ต้องเคาะว่าจะไปอยู่ตรงไหน")
+     ไม่เอาไปบวกใน KPI ทีมไหน — เดาเจ้าของไม่ได้ ⇒ เขียนบนจอให้คนไปปิดที่ต้นทางแทน */
+  const mtnGap = useMemo(() => (mtnRoll?.data ? mtnGapSeries(mtnRoll.data, year) : null), [mtnRoll, year]);
   /* เติมค่าที่ระบบคำนวณลงเดือนที่ยังว่าง — เขียนผ่าน kpi_manual_entries เหมือนคนกรอก (สอบกลับได้ · ค่าทับมือไม่ได้) */
   const isPlantScope = isPlant(scope);   // primitive สำหรับ deps (กฎ DB ข้อ 9)
   const load = useCallback(async () => {
@@ -1206,6 +1210,39 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
               </span>
             )}
           </div>
+          {/* 🕳️ "ไม่มีค่าไหนหายไป" (11/11 · คำสั่ง user) — ชั่วโมงเครื่องหยุดที่ระบบชี้ไม่ได้ว่าเป็นอุปกรณ์ชนิดไหน
+              จึงไม่เข้า KPI ทีมใดเลย · 🔴 **ยอดรวมทั้งโรงงาน ไม่ใช่ของทีมที่เปิดดูอยู่** และห้ามเอาไปบวกให้ทีมไหน
+              แยก 2 เหตุเพราะคนละทางแก้ · `known:false` = RPC รุ่นเก่ายังไม่ส่งมา ⇒ เขียนว่า "ยังไม่รู้" ห้ามโชว์ 0 */}
+          {mtnTeam && mtnGap && (mtnGap.known ? mtnGap.totalHr > 0 : true) && (
+            <details style={{ margin: '2px 0 10px', fontSize: 11.5, color: 'var(--text2)', background: 'var(--bg3)',
+                              border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '6px 9px' }}>
+              <summary style={{ cursor: 'pointer', color: 'var(--amber)' }}>
+                {!mtnGap.known
+                  ? '🕳️ ชั่วโมงที่ชี้เจ้าของไม่ได้ — ยังไม่รู้ (ฐานข้อมูลยังไม่ได้อัปเดตตัวรวมยอด)'
+                  : `🕳️ ชั่วโมงเครื่องหยุดที่ยังชี้ไม่ได้ว่าเป็นของทีมไหน ปี ${year}: ${mtnGap.totalHr.toLocaleString('th-TH', { maximumFractionDigits: 1 })} ชม. — ยังไม่เข้า KPI ของทีมใดเลย (ยอดรวมทั้งโรงงาน)`}
+              </summary>
+              {mtnGap.known && (
+                <div style={{ marginTop: 6, lineHeight: 1.7 }}>
+                  <div>
+                    • <b>ไม่ได้กรอกเลขเครื่อง</b>ตอนลง downtime —{' '}
+                    {mtnGap.months.reduce((a, m) => a + m.noNo.hr, 0).toLocaleString('th-TH', { maximumFractionDigits: 1 })} ชม.
+                    {' '}· แก้ที่คนกรอก/ช่องกรอกหน้า Daily Report
+                  </div>
+                  <div>
+                    • <b>กรอกแล้วแต่ไม่มีในทะเบียนเครื่อง</b> —{' '}
+                    {mtnGap.months.reduce((a, m) => a + m.notMaster.hr, 0).toLocaleString('th-TH', { maximumFractionDigits: 1 })} ชม.
+                    {' '}· แก้ที่ <b>/machines</b> (เพิ่มเครื่อง + ใส่ชนิดอุปกรณ์)
+                  </div>
+                  {mtnGap.top.length > 0 && (
+                    <div style={{ marginTop: 4, color: 'var(--muted)' }}>
+                      ตัวที่ยังไม่มีในทะเบียน (มากสุด):{' '}
+                      {mtnGap.top.slice(0, 8).map(t => `${t.machineNo} ${t.hr.toLocaleString('th-TH', { maximumFractionDigits: 1 })} ชม.`).join(' · ')}
+                    </div>
+                  )}
+                </div>
+              )}
+            </details>
+          )}
           {/* 🗄️ นิยามที่ปิดใช้งานอยู่ในขอบเขตนี้ — ต้องเห็นและเปิดคืนได้จากจอ (07/10 · feedback หน้างาน "เผลอปิดหัวข้อ KPI ไป add ใหม่ไม่ได้")
               ปิดแล้วแถวยังครองคีย์ unique ⇒ เพิ่มซ้ำไม่ได้ · ไม่มีแผงนี้ = ทางออกเดียวคือไปแก้ในฐานข้อมูล */}
           {closedDefs.length > 0 && (
@@ -1435,6 +1472,27 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                             <td style={{ ...tdSt, fontSize: 11 }} colSpan={2}>
                               {(() => { const s2 = summaryOf(autoVals, d2); return s2.value == null ? '—' : `${fmtKpi(s2.value, d2)} (${summaryShort(s2.effMode)})`; })()}
                             </td>
+                            {canManage && <td style={tdSt} />}
+                          </tr>
+                        )}
+                        {/* 🔎 MTBF ตัวที่ 2 — ÷ จำนวนครั้งที่เสีย (11/11 · คำสั่ง user)
+                            🔴 **ไม่ใช่ค่าทางการ** สูตรทางการ (÷จำนวนเครื่อง) ให้ ~730 ทุกเดือน
+                               แยกเดือนดี/แย่ไม่ออก ⇒ โชว์คู่กันไว้ให้เห็นว่าเดือนไหนแย่จริง
+                               ห้ามเอาไปแทนที่แถวบน (บอร์ด/ใบส่งกลุ่มยังใช้ของทางการ) */}
+                        {ak && ak.key === 'mtbf' && autoSeries && (
+                          <tr style={{ background: 'var(--bg2)', opacity: 0.85 }}>
+                            <td style={{ ...tdSt, textAlign: 'left', whiteSpace: 'normal', fontSize: 11, color: 'var(--muted)' }}
+                              title={'MTBF ตามความหมายเดิมของคำ = เวลาที่เดินได้ ÷ จำนวนครั้งที่เสีย\nสูตรทางการหารด้วยจำนวนเครื่อง จึงได้ ~730 ทุกเดือนไม่ว่าจะเสียมากหรือน้อย'}>
+                              🔎 เทียบให้ดู (ไม่ใช่ค่าทางการ) · [(730 × เครื่อง) − ชม.เสีย] ÷ <b>จำนวนครั้งที่เสีย</b>
+                              <div style={{ fontSize: 11 }}>แถวบนคือค่าที่ส่งกลุ่ม — แถวนี้ไว้ดูว่าเดือนไหนแย่จริง</div>
+                            </td>
+                            {autoSeries.months.map((m, i) => (
+                              <td key={i} style={{ ...tdSt, fontSize: 11.5, color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}
+                                title={m.hasData ? `เสีย ${m.events} ครั้ง · ${m.breakdown_hr.toFixed(1)} ชม.` : 'เดือนนี้ยังไม่มีข้อมูลในระบบ'}>
+                                {m.mtbf_bf == null ? '·' : toRowUnit(m.mtbf_bf, 'mtbf', defUnit(d2)).toLocaleString('th-TH', { maximumFractionDigits: 1 })}
+                              </td>
+                            ))}
+                            <td style={{ ...tdSt, fontSize: 11 }} colSpan={2}>—</td>
                             {canManage && <td style={tdSt} />}
                           </tr>
                         )}

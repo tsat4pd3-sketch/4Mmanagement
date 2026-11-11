@@ -80,11 +80,59 @@ export function mtnAutoSeries(roll, year, team) {
       // เดือนที่มีข้อมูล downtime แต่ชนิดนี้ไม่เสียเลย = 0% / MTBF เต็ม 730 (ถูกต้อง ไม่ใช่ "ไม่มีข้อมูล")
       mbd: hasDt && avail > 0 ? (bdHr / avail) * 100 : null,
       mtbf: hasDt && machines > 0 ? (avail - bdHr) / machines : null,
+      /* 🔎 MTBF "ระหว่างครั้งที่เสียจริง" — ตัวหาร = **จำนวนครั้งที่เสีย** ไม่ใช่จำนวนเครื่อง
+         🔴 **ไม่ใช่ค่าทางการ ห้ามเอาไปส่งกลุ่ม** (ของทางการคือ `mtbf` ด้านบนตามเอกสารหน้า 10)
+         มีไว้เพราะสูตรทางการหารด้วยจำนวนเครื่อง ⇒ ได้ ~730 ทุกเดือน แยกเดือนดี/แย่ไม่ออก
+         วัดจริง machine: ก.ย. 728.9 / ต.ค. 726.9 / พ.ย. 729.0 (ขยับ 0.3% ทั้งที่ ต.ค. เสีย 2 เท่า)
+         ตัวนี้ให้ ก.ย. 211.2 · ต.ค. 108.2 · พ.ย. 252.8 = เห็นว่าเดือนไหนแย่จริง
+         📄 docs/OBEYA-KPI-SOURCES.md §15.2 (ใบเป้าทางการเองก็ใช้คนละสูตรกันระหว่างทีม) */
+      mtbf_bf: hasDt && events > 0 ? div(avail - bdHr, events) : null,
       mttr: hasDt ? (events > 0 ? div(bdHr, events) : null) : null,
     };
     out.push(r);
   }
   return { months: out, machines };
+}
+
+/* ══ 🕳️ "ชั่วโมงที่ยังชี้เจ้าของไม่ได้" ══════════════════════════  2026-11-11
+   คำสั่ง user: *"single source truth ต้องไม่มีค่าไหนหายไป แต่ต้องเคาะว่าจะไปอยู่ตรงไหน"*
+
+   🔴 **แยกเป็นฟังก์ชันของมันเอง ไม่ยัดเข้า `mtnAutoSeries(team)` โดยเจตนา** —
+      ชั่วโมงกลุ่มนี้คือชั่วโมงที่ "ไม่รู้ว่าเป็นอุปกรณ์ชนิดไหน" ⇒ **ชี้ทีมไม่ได้**
+      ถ้าคืนปนไปกับค่าของทีม จอจะเผลอบวกเข้า KPI ทีมใดทีมหนึ่ง = เดาเจ้าของ (ผิดกฎ)
+      ⇒ เป็นยอด **รวมทั้งโรงงาน** จอต้องเขียนกำกับแบบนั้นเสมอ
+
+   แยก 2 เหตุเพราะ **คนละทางแก้** (ยุบรวม = ไล่แก้ผิดที่):
+     `no_machine_no` ไม่ได้กรอกเลขเครื่องตอนลง downtime → แก้ที่ช่องกรอก/คนกรอก
+     `not_in_master` กรอกแล้วแต่ไม่มีในทะเบียน         → แก้ที่ทะเบียนเครื่อง `/machines`
+   วัดจริง ต.ค. 2026: ไม่กรอก 192 ครั้ง/111.9 ชม. · ไม่มีในทะเบียน 106 ครั้ง/24.6 ชม.
+   (ตัวที่ขาดเกือบทั้งหมดเป็นจิ๊ก — JIG-005 · JIG-004#A · JIG LUBE BENDING · CONVEYOR)
+
+   🔴 RPC รุ่นก่อน 11/11 ไม่มี `dt_gap` ⇒ คืน `known:false` **ห้ามคืน 0**
+      (0 = "ไม่มีชั่วโมงตกหล่น" คนละเรื่องกับ "ยังไม่รู้") */
+export function mtnGapSeries(roll, year) {
+  const rows = Array.isArray(roll?.dt_gap) ? roll.dt_gap : null;
+  if (!rows) return { known: false, months: [], top: [], totalHr: 0 };
+  const months = [];
+  for (let i = 1; i <= 12; i++) {
+    const k = `${year}-${String(i).padStart(2, '0')}`;
+    const mine = rows.filter(x => x?.m === k);
+    const pick = (reason) => {
+      const r = mine.filter(x => x?.reason === reason);
+      return { events: r.reduce((s, x) => s + num(x.events), 0),
+               hr: r.reduce((s, x) => s + num(x.mins), 0) / 60 };
+    };
+    const noNo = pick('no_machine_no');
+    const notMaster = pick('not_in_master');
+    months.push({ k, noNo, notMaster, hr: noNo.hr + notMaster.hr, any: mine.length > 0 });
+  }
+  return {
+    known: true,
+    months,
+    top: (Array.isArray(roll?.dt_gap_top) ? roll.dt_gap_top : [])
+      .map(x => ({ machineNo: x?.machine_no || '', events: num(x?.events), hr: num(x?.mins) / 60 })),
+    totalHr: months.reduce((s, x) => s + x.hr, 0),
+  };
 }
 
 /** หน่วยที่ "สูตรทางการ" บังคับ — ตรวจว่าหน่วยที่คนตั้งในนิยาม/ทะเบียนขัดกับสูตรไหม (2026-10-13)

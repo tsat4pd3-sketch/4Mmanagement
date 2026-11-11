@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mtnAutoSeries, autoKpiOfName, toRowUnit, HOURS_PER_MONTH, autoUnitMismatch, autoDetailText } from '../kpiAuto.js';
+import { mtnAutoSeries, mtnGapSeries, autoKpiOfName, toRowUnit, HOURS_PER_MONTH, autoUnitMismatch, autoDetailText } from '../kpiAuto.js';
 
 const roll = {
   machines: [{ kind: 'die', n: 266 }, { kind: 'jig', n: 172 }, { kind: 'machine', n: 216 }, { kind: 'facility', n: 38 }],
@@ -109,4 +109,75 @@ test('MO Closed on target นับเฉพาะ BM — จอบอกว่�
   // RPC รุ่นเก่า (ไม่มี closed_all) = ไม่รู้ ห้ามเดา
   const old = mtnAutoSeries({ mo: [{ m: '2026-09', team: 'x', closed: 2, on_target: 1, no_target: 0 }] }, 2026, { key: 'x' }).months[8];
   assert.equal(old.closed_all, null);
+});
+
+/* ══ 🔎 MTBF ตัวที่ 2 + ชั่วโมงที่ชี้เจ้าของไม่ได้ (11/11 · คำสั่ง user
+      "single source truth ต้องไม่มีค่าไหนหายไป แต่ต้องเคาะว่าจะไปอยู่ตรงไหน") ══ */
+
+test('🔎 MTBF 2 ตัวคนละนิยาม — ทางการ ÷ เครื่อง · อีกตัว ÷ ครั้งที่เสีย', () => {
+  const { months } = mtnAutoSeries(roll, 2026, JIG);
+  const sep = months.find(m => m.k === '2026-09');
+  const avail = HOURS_PER_MONTH * 172;            // 125,560 ชม.
+  const bdHr = 5025 / 60;                          // 83.75 ชม.
+  assert.ok(Math.abs(sep.mtbf - (avail - bdHr) / 172) < 1e-9, 'ของทางการต้องไม่เปลี่ยน');
+  assert.ok(Math.abs(sep.mtbf_bf - (avail - bdHr) / 421) < 1e-9);
+  /* 🔴 ประเด็นทั้งหมดของตัวที่ 2: ของทางการเกาะ 730 จนแยกเดือนดี/แย่ไม่ออก */
+  assert.ok(sep.mtbf > 729 && sep.mtbf < 730, `ทางการเกาะ 730 (ได้ ${sep.mtbf})`);
+  assert.ok(sep.mtbf_bf < 400, `÷ครั้งที่เสีย ต้องเล็กกว่ามาก (ได้ ${sep.mtbf_bf})`);
+  /* เดือนที่เสีย 2 เท่า ตัวทางการแทบไม่ขยับ แต่ตัวที่ 2 ต้องลดลงชัด */
+  const aug = months.find(m => m.k === '2026-08');
+  assert.ok(Math.abs(aug.mtbf - sep.mtbf) < 1, 'ทางการต่างกันไม่ถึง 1 ชม. ระหว่าง 2 เดือน');
+  assert.ok(Math.abs(aug.mtbf_bf - sep.mtbf_bf) > 10, 'ตัวที่ 2 ต้องแยกเดือนออกจากกันได้');
+});
+
+test('🔴 เสีย 0 ครั้ง = MTBF ÷ครั้ง คำนวณไม่ได้ (null) ห้ามเป็น 0 หรือ Infinity', () => {
+  const r = { ...roll, dt: [{ m: '2026-09', kind: 'jig', events: 0, breakdown_min: 0 }] };
+  const sep = mtnAutoSeries(r, 2026, JIG).months.find(m => m.k === '2026-09');
+  assert.equal(sep.mtbf_bf, null);
+  assert.ok(Number.isFinite(sep.mtbf), 'ตัวทางการยังคำนวณได้ (= 730 เต็ม)');
+  /* เดือนที่ไม่มีข้อมูล downtime เลย = null ทั้งคู่ */
+  const jan = mtnAutoSeries(roll, 2026, JIG).months.find(m => m.k === '2026-01');
+  assert.equal(jan.mtbf, null); assert.equal(jan.mtbf_bf, null);
+});
+
+test('🕳️ ชั่วโมงที่ชี้เจ้าของไม่ได้ — แยก 2 เหตุ (คนละทางแก้)', () => {
+  const r = { ...roll,
+    dt_gap: [
+      { m: '2026-09', reason: 'no_machine_no', events: 281, mins: 6330 },
+      { m: '2026-09', reason: 'not_in_master', events: 105, mins: 1456 },
+      { m: '2026-10', reason: 'no_machine_no', events: 192, mins: 6716 },
+    ],
+    dt_gap_top: [{ machine_no: 'JIG-005', events: 65, mins: 540 }],
+  };
+  const g = mtnGapSeries(r, 2026);
+  assert.equal(g.known, true);
+  const sep = g.months.find(m => m.k === '2026-09');
+  assert.equal(sep.noNo.events, 281);
+  assert.ok(Math.abs(sep.noNo.hr - 105.5) < 0.01);
+  assert.ok(Math.abs(sep.notMaster.hr - 1456 / 60) < 0.01);
+  assert.ok(Math.abs(sep.hr - (6330 + 1456) / 60) < 0.01, 'ยอดเดือน = 2 เหตุรวมกัน');
+  const oct = g.months.find(m => m.k === '2026-10');
+  assert.equal(oct.notMaster.events, 0, 'เหตุที่ไม่มีในเดือนนั้น = 0 ไม่ใช่หาย');
+  assert.equal(g.top[0].machineNo, 'JIG-005');
+  assert.ok(Math.abs(g.top[0].hr - 9) < 0.01);
+  assert.ok(Math.abs(g.totalHr - (6330 + 1456 + 6716) / 60) < 0.01);
+});
+
+test('🔴 RPC รุ่นเก่าไม่มี dt_gap = "ยังไม่รู้" (known:false) ห้ามคืน 0 ว่าไม่มีตกหล่น', () => {
+  const g = mtnGapSeries(roll, 2026);
+  assert.equal(g.known, false);
+  assert.deepEqual(g.months, []);
+  assert.equal(g.totalHr, 0, 'ยอดเป็น 0 ได้ แต่ known:false คือตัวบอกจอว่าห้ามเชื่อ');
+  for (const bad of [null, undefined, {}, 'x']) {
+    assert.equal(mtnGapSeries(bad, 2026).known, false);
+  }
+});
+
+test('🔴 ชั่วโมงชี้เจ้าของไม่ได้ ห้ามปนเข้าค่าของทีมใดทีมหนึ่ง', () => {
+  const r = { ...roll, dt_gap: [{ m: '2026-09', reason: 'no_machine_no', events: 281, mins: 6330 }] };
+  const withGap = mtnAutoSeries(r, 2026, JIG).months.find(m => m.k === '2026-09');
+  const noGap = mtnAutoSeries(roll, 2026, JIG).months.find(m => m.k === '2026-09');
+  assert.equal(withGap.breakdown_hr, noGap.breakdown_hr, 'ค่าของทีมต้องไม่ขยับเพราะ dt_gap');
+  assert.equal(withGap.mbd, noGap.mbd);
+  assert.equal(withGap.mtbf, noGap.mtbf);
 });
