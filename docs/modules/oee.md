@@ -1761,6 +1761,12 @@ const oee = (A != null && P != null && Q != null) ? A * P * Q : null;
 · migration `20260917c_ct_history_snapshot_dr.sql` (**apply แล้ว**) · กะเก่าก่อน 17/09 = `ct_snapshot` null
 · ออกแบบเฟสถัดไป → `docs/ADAPTIVE-CT-DESIGN.md` (📌 ยังไม่เลือกทาง รอ user ตัดสิน)
 
+> ### ✅ ต่อยอด 2026-11-11 — **สูตรอ่าน snapshot กลับได้แล้ว + ตรึงเวลาพักด้วย**
+> เฟส 0 เก็บ `ct_snapshot` ไว้ **แต่ `computeSessionOee` ไม่เคยอ่านมัน** (อ่าน CT สดเสมอ)
+> ⇒ ตรึงไว้แต่คำนวณย้อนก็ยังไม่ตรง · 11/11 เพิ่ม `readCtSnapshot()` + `break_snapshot`
+> (นโยบายพัก + กฎพักรายไลน์ + `process_type`) ⇒ **snapshot ชนะทะเบียนสด · ไม่มี = ถอยไปทะเบียนสดเป๊ะ**
+> 📄 กติกาเต็ม 8 ข้อ + จุดที่ stamp → **`docs/modules/daily-report.md` §snapshot CT + เวลาพัก**
+
 ---
 
 ## 🔩 "%P ทะลุ 100" สาเหตุที่ 3 — งานคู่นับ CT ซ้ำ 2 เท่า (2026-09-18 · แก้แล้ว)
