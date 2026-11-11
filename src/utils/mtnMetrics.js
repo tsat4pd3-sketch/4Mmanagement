@@ -92,6 +92,22 @@ export function resolveEquip(rawNo, index) {
   if (hit) return { machine: hit, via: 'exact', key };
   const p = index.prefix?.get(key);
   if (p) return { machine: p, via: 'prefix', key };
+  /* ── ตัด `/` ที่ **ฝั่งข้อความที่หน้างานกรอก** ด้วย ─────────────────  2026-11-11
+     2 ชั้นบนตัด `/` เฉพาะฝั่ง*ทะเบียน* (ทะเบียน `SP-78/NF56` · หน้างานพิมพ์ `SP-78`)
+     แต่ของจริงกลับทางก็มี: **ทะเบียน `SP-72` · หน้างานลง downtime เป็น `SP-72/NF85`**
+     ⇒ เดิมหล่นเป็น "ไม่อยู่ในทะเบียน" ทั้งที่เป็นเครื่องเดียวกัน
+     วัดจริง (ก.ย.–10 พ.ย. · กรอง downtime ตามแผนออก) ชนิด machine:
+       ก.ย. +37.1 ชม. (+12.7%) · ต.ค. +14.3 ชม. (+1.8%) ที่เคยตกไปอยู่ถัง unknown
+     🔴 ต้องตรงกับ `kpi_mtn_rollup` ฝั่ง SQL (migration 20261111_…_machine_key_dr.sql)
+        — กฎ CLAUDE.md §machine_no: "ตรรกะต้องตรงกัน" แก้ที่ไหนต้องแก้คู่กัน
+     🔴 ยังเป็น `via:'prefix'` เหมือนเดิม (จอติดป้ายว่า "จับคู่แบบหลวม") ห้ามรายงานเป็น exact */
+  const base = baseEquipKey(rawNo);
+  if (base && base !== key) {
+    const h2 = index.exact?.get(base);
+    if (h2) return { machine: h2, via: 'prefix', key };
+    const p2 = index.prefix?.get(base);
+    if (p2) return { machine: p2, via: 'prefix', key };
+  }
   return { machine: null, via: null, key };
 }
 
