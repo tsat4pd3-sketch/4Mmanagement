@@ -109,3 +109,20 @@ test('amBadgeGate kind=PM — ไม่มีบัตร = บล็อก ข�
   assert.equal(amBadgeGate({ code: 'E001', employee: { id: 'x' }, kind: 'PM' }).ok, true)
   assert.equal(amBadgeGate({ code: 'E001', hits: 2, kind: 'PM' }).code, 'ambiguous')
 })
+
+// ── ✍️ 11/11 — ใบ PM ขั้น 2 หัวหน้าผู้ตรวจยืนยัน (เกณฑ์ระดับเดียวกับหัวหน้าแผนกช่างของใบ MO) ──────────
+import { pmConfirmVerdict, pmConfirmText, PM_HEAD_MIN_RANK } from '../amApproval.js'
+test('pmConfirmVerdict — ระดับ ≥30 · ไม่ต่ำกว่าคนตรวจ · ไม่ใช่ใบตัวเอง · ไม่รู้ตำแหน่ง = ไม่บล็อก', () => {
+  assert.equal(PM_HEAD_MIN_RANK, 30)
+  // JIG จริง: ช่างเทคนิค(20) ตรวจ → หัวหน้าแผนก(50) / วิศวกร(30) ยืนยันได้ (บันไดแบบ AM จะบล็อก = skip_level)
+  assert.equal(pmConfirmVerdict({ inspectorRank: 20, approverRank: 50 }).ok, true)
+  assert.equal(pmConfirmVerdict({ inspectorRank: 20, approverRank: 30 }).ok, true)
+  assert.equal(pmConfirmVerdict({ inspectorRank: 20, approverRank: 20 }).code, 'rank_too_low')
+  assert.equal(pmConfirmVerdict({ inspectorRank: 50, approverRank: 30 }).code, 'below_inspector')
+  assert.equal(pmConfirmVerdict({ inspectorRank: 30, approverRank: 30 }).ok, true)
+  assert.equal(pmConfirmVerdict({ inspectorRank: 20, approverRank: 50, isSelf: true }).code, 'self')
+  const unk = pmConfirmVerdict({ inspectorRank: null, approverRank: null })
+  assert.equal(unk.ok, true); assert.deepEqual(unk.assumed, ['inspector', 'approver'])
+  assert.match(pmConfirmText(pmConfirmVerdict({ approverRank: 10 })), /หัวหน้าผู้ตรวจ/)
+  assert.equal(pmConfirmVerdict({ inspectorRank: 20, approverRank: 50, isShared: true }).code, 'shared')
+})

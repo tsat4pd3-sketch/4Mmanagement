@@ -226,3 +226,44 @@ export function amMonthlySignoffText(v, { opensOn = '' } = {}) {
     default: return ''
   }
 }
+
+/* ═══ ✍️ ใบ PM ของช่าง — ขั้น 2 "หัวหน้าผู้ตรวจ ตรวจสอบและยืนยัน" (ทีละใบ · 2026-11-11 · คำสั่ง user) ═══
+   สาย PM: ① ผู้ตรวจ (สแกนบัตร) → ② **หัวหน้าผู้ตรวจยืนยัน (ทีละใบ · ไฟล์นี้)** →
+           ③ ผจก.ส่วนของผู้ตรวจ อนุมัติ (รายเดือน) → ④ ผจก.ส่วนที่ถูกตรวจ รับทราบ (รายเดือน) — ③④ ยังไม่ทำ (รอบ 2)
+   user 11/11: *"มันมีระดับรึป่าว เหมือนใบ MO ยังมีช่าง มี หัวหน้าช่าง มี ผจก ช่าง"*
+   ⇒ ใช้เกณฑ์ระดับชุดเดียวกับ "หัวหน้าแผนกช่าง" ของใบ MO ทีม JIG/DIE (`mtnStepPerm` TOOL_FORM_STEPS ขั้น 4 · minRank 30)
+     — โรงงานนี้วิศวกรอยู่ระดับเดียวกับหัวหน้าแผนก · ทีม DIE ไม่มี dept_head เลย (ล็อก 50 = ไม่มีใครกดได้)
+   กติกา (ไม่ใช่บันไดตายตัวแบบ AM เพราะทีมช่างไม่มีชั้นหัวหน้ากลุ่ม 40 — ล็อกแบบ AM = ใบ JIG ค้างทุกใบ · วัดบัญชีจริง 11/11):
+     · คนกดต้องระดับ ≥ 30 (วิศวกร/หัวหน้าแผนกขึ้นไป) · **ไม่ต่ำกว่าคนตรวจ** · **ไม่ใช่ใบที่ตัวเองตรวจ**
+     · ทีม = ด่าน `canWriteTeam` เดิมของหน้า (ทีมช่างเดียวกับใบ) · สิทธิ์ ② = `pm:approve` เดิม
+     · 🔴 ไม่รู้ตำแหน่ง (`null`) = ไม่บล็อก แต่จอต้องเขียนบอก (กติกาเดียวกับทั้งระบบ) */
+export const PM_HEAD_MIN_RANK = 30
+export const PM_HEAD_STEP = { rank: PM_HEAD_MIN_RANK, key: 'pm_head', label: 'หัวหน้าผู้ตรวจ', action: 'ตรวจสอบและยืนยัน' }
+
+/** @param {{ inspectorRank:number|null, approverRank:number|null, isSelf?:boolean }} p
+ *  @returns {{ ok:boolean, code:string, need:object, assumed:string[] }}  code: ok · self · rank_too_low · below_inspector */
+export function pmConfirmVerdict({ inspectorRank = null, approverRank = null, isSelf = false, isShared = false } = {}) {
+  const need = PM_HEAD_STEP
+  const assumed = []
+  // บัญชีกลางยืนยันแทนคนไม่ได้ — ลายเซ็นต้องผูกตัวคน (กติกาเดียวกับ amOnSiteApproval)
+  if (isShared) return { ok: false, code: 'shared', need, assumed }
+  if (inspectorRank == null) assumed.push('inspector')
+  if (approverRank == null) assumed.push('approver')
+  if (isSelf) return { ok: false, code: 'self', need, assumed }
+  if (approverRank == null) return { ok: true, code: 'ok', need, assumed }
+  if (approverRank < PM_HEAD_MIN_RANK) return { ok: false, code: 'rank_too_low', need, assumed }
+  if (inspectorRank != null && approverRank < inspectorRank) return { ok: false, code: 'below_inspector', need, assumed }
+  return { ok: true, code: 'ok', need, assumed }
+}
+
+/** ข้อความบนจอของ `pmConfirmVerdict` */
+export function pmConfirmText(v) {
+  if (!v) return ''
+  switch (v.code) {
+    case 'shared': return 'บัญชีกลางยืนยันผลตรวจแทนคนไม่ได้ — ให้หัวหน้าผู้ตรวจ login ด้วยบัญชีของตัวเอง'
+    case 'self': return 'ยืนยันใบที่ตัวเองตรวจไม่ได้ — รอหัวหน้าผู้ตรวจ (วิศวกร/หัวหน้าแผนกขึ้นไปในทีมเดียวกัน)'
+    case 'rank_too_low': return 'ขั้นนี้ต้องเป็นหัวหน้าผู้ตรวจ — ระดับวิศวกร/หัวหน้าแผนกขึ้นไปในทีมช่างเดียวกัน'
+    case 'below_inspector': return 'ตำแหน่งต่ำกว่าคนตรวจ — ยืนยันใบนี้ไม่ได้'
+    default: return 'ขั้นนี้: หัวหน้าผู้ตรวจ ตรวจสอบและยืนยัน'
+  }
+}

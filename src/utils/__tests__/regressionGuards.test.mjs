@@ -10201,3 +10201,13 @@ test('🪪 PMCheckData: ด่านบัตรผู้ตรวจต้อ�
   assert.match(src, /amBadgeGate\(\{[^}]*kind:/, '\n\n❌ amBadgeGate ต้องส่ง kind (AM/PM) ให้ข้อความถูกใบ\n')
   assert.match(src, /<InspectorCodeField[^>]*required(\s|\/|>)/, '\n\n❌ ช่องรหัสผู้ตรวจต้อง required ทุกใบ\n')
 })
+
+/* ═══ ✍️ ใบ PM ขั้น 2 หัวหน้าผู้ตรวจยืนยัน ต้องผ่าน pmConfirmVerdict (2026-11-11 · คำสั่ง user) ═══
+   เดิมใบ PM กดอนุมัติได้ทุกคนที่ถือ pm:approve รวมถึงใบที่ตัวเองตรวจ */
+test('✍️ PMCheckData: ใบ PM อนุมัติต้องผ่าน pmConfirmVerdict (ระดับ + ไม่ใช่ใบตัวเอง)', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/PMCheckData.jsx'), 'utf8'))
+  assert.match(src, /isAm \? amApprovalVerdict\(verdictArgs\) : pmConfirmVerdict\(\{ \.\.\.verdictArgs, isShared \}\)/,
+    '\n\n❌ ใบ PM ต้องคิด verdict ด้วย pmConfirmVerdict\n')
+  assert.match(src, /can\('pm', 'approve', userRole\) && !!amVerdict\?\.ok/,
+    '\n\n❌ ปุ่มยืนยันใบ PM ต้องเช็ค verdict ด้วย ไม่ใช่แค่ pm:approve\n')
+})
