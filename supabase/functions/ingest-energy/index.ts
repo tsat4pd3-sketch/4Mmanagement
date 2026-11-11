@@ -7,6 +7,11 @@
       secrets: INGEST_SECRET (ต้องตรงกับฝั่ง bridge) · SUPABASE_URL · SUPABASE_SERVICE_ROLE_KEY
 
    สายงาน: MQTT → bridge (สรุป 15 นาที) → ที่นี่ → energy_live / energy_topic_unmapped
+   v5 (2026-11-11): ศูนย์เชื่อมต่อ — รู้ว่า "ใครส่ง" (integration_sources · 📄 docs/modules/integration-hub.md)
+     · header `x-source-key` = รหัสลับของต้นทางนั้น (เทียบ sha256 กับ key_hash)
+     · header `x-ingest-secret` = secret กลางเดิม ⇒ ผูกกับต้นทาง legacy (`x-source` = code · ไม่ส่ง = 'dieshop')
+       ⇒ Node-RED ตัวเดิมไม่ต้องแก้อะไร
+     · ต้นทางถูกพัก = 423 ไม่เขียน · ทุกครั้งนับลง integration_hourly ผ่าน fn_integration_tick (นับล้ม = ไม่ทำให้การรับล้ม)
    v4 (2026-11-10): + body.limits — ลิมิตจากโหนด SMART ENERGY HUB (MACHINES[].kwLimit/aLimit) ⇒ energy_live_meters
      Node-RED = เจ้าของลิมิต · เขียนเฉพาะแถวที่มีอยู่แล้ว + ค่าต่างจริง (ไม่สร้างมิเตอร์ใหม่ · ไม่เขียนทุกนาที)
    v3 (2026-11-10): + body.events (energy_event → energy_events · เก็บ 30 วัน) + body.daily (energy_day → เติม energy_daily วันที่ของเราไม่ครบ)
@@ -50,12 +55,52 @@ function pick(obj: unknown, jsonPath: string | null): unknown {
   return cur;
 }
 
+async function sha256Hex(s: string): Promise<string> {
+  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+  return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** ระบุต้นทางจาก header — null = ไม่ผ่าน (401) · { id: null } = secret กลางถูกแต่ยังไม่มีแถว legacy (รับแบบเดิม ไม่นับ) */
+async function identify(sb: any, req: Request): Promise<{ id: string | null; paused: boolean } | null> {
+  const key = (req.headers.get('x-source-key') || '').trim();
+  if (key) {
+    const { data } = await sb.from('integration_sources').select('id, is_paused')
+      .eq('key_hash', await sha256Hex(key)).maybeSingle();
+    return data ? { id: data.id, paused: !!data.is_paused } : null;
+  }
+  const secret = Deno.env.get('INGEST_SECRET');
+  if (!secret || req.headers.get('x-ingest-secret') !== secret) return null;
+  const code = (req.headers.get('x-source') || 'dieshop').trim();
+  const { data } = await sb.from('integration_sources').select('id, is_paused')
+    .eq('code', code).eq('legacy_secret', true).maybeSingle();
+  return data ? { id: data.id, paused: !!data.is_paused } : { id: null, paused: false };
+}
+
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405);
-  if (req.headers.get('x-ingest-secret') !== Deno.env.get('INGEST_SECRET'))
-    return json({ error: 'unauthorized' }, 401);
-
   const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+  const src = await identify(sb, req);
+  if (!src) return json({ error: 'unauthorized' }, 401);
+  const tick = async (ok: boolean, saved: number, error: string | null, result: unknown) => {
+    if (!src.id) return;
+    const { error: e } = await sb.rpc('fn_integration_tick',
+      { p_source: src.id, p_ok: ok, p_saved: saved, p_error: error, p_result: result });
+    if (e) console.error('[ingest-energy] tick', e.message);   // นับไม่ได้ ≠ รับไม่ได้ — ห้ามทำให้การรับล้ม
+  };
+  if (src.paused) { await tick(false, 0, 'ต้นทางถูกพักการรับ', null); return json({ error: 'source paused' }, 423); }
+
+  let res: Response;
+  try { res = await handle(sb, req); } catch (e) { res = json({ ok: false, error: String((e as Error)?.message || e) }, 500); }
+  let out: any = null;
+  try { out = await res.clone().json(); } catch { /* ไม่ใช่ json */ }
+  const saved = ['saved', 'history', 'events', 'daily'].reduce((s, k) => s + (Number(out?.[k]) || 0), 0)
+    + (Number(out?.limits?.updated) || 0);
+  await tick(res.status < 300, saved, out?.error ?? (res.status < 300 ? null : `HTTP ${res.status}`),
+    out ? { status: res.status, ...out } : { status: res.status });
+  return res;
+});
+
+async function handle(sb: any, req: Request): Promise<Response> {
   let body: any;
   try { body = await req.json(); } catch { return json({ error: 'bad json' }, 400); }
   const readings: any[] = Array.isArray(body?.readings) ? body.readings : [];
@@ -229,4 +274,4 @@ Deno.serve(async (req) => {
 
   return json({ ok: true, saved: live.length, history: histSaved, unmapped: unknown.length, events: evSaved, daily: daySaved,
     limits: { updated: limUpdated, unknown: limUnknown } });
-});
+}

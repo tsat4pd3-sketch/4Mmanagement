@@ -1198,4 +1198,6 @@ export const supabase = {
   functions: { invoke: () => Promise.resolve({ data: null, error: null }) },
 }
 export const supabaseDR = supabase
+/* ตรงกับ supabaseClient.js (ศูนย์เชื่อมต่อ /integrations ใช้ประกอบ URL ของ edge ใน flow Node-RED · 11/11) */
+export const DR_BASE_URL = 'https://mock-dr.supabase.co'
 export const setDrActorName = () => {}
