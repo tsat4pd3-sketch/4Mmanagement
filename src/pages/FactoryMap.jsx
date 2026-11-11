@@ -47,6 +47,7 @@ import { statusColor, statusLabel } from '../utils/obeyaKpi';
 import { LIVE_AXES, catToStatus, rollupAxis, boardOverall, ppeStatus, NOT_LIVE_NOTE, SAFETY_PROXY_NOTE } from '../utils/obeyaLive';
 import { liveChannel } from '../utils/liveChannel';
 import { checkWriteRows } from '../utils/dbWrite';
+import { dragVertex, dragEdge, isAxisAligned, checkPolygonEdit, straightenPolygon, JUMP_CONFIRM_PCT, AXIS_TOL_DEG } from '../utils/polygonEdit';
 import { uploadOpts } from '../utils/storageUpload';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -2419,11 +2420,14 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     if (dragRef.current) {
       const p = pctFromEvent(e.clientX, e.clientY);
       const d = dragRef.current, dx = p.x - d.px, dy = p.y - d.py;
-      setRegions(prev => prev.map(r => {
-        if (r.id !== d.id) return r;
-        const pts = d.base.map((pt, i) => (d.vi === -1 || d.vi === i) ? [Math.min(100, Math.max(0, round(pt[0] + dx))), Math.min(100, Math.max(0, round(pt[1] + dy)))] : pt);
-        return { ...r, points: pts };
-      }));
+      /* 📐 ลากมุม: กรอบที่ทุกขอบตั้ง/นอนอยู่แล้ว ⇒ คงมุมฉาก (จุดข้างเคียงเลื่อนตาม) · Alt ค้าง = อิสระ
+         ลากกลางขอบ = ดันทั้งด้าน · ลากกลางรูป (vi -1) = ย้ายทั้งกรอบ (เหมือนเดิม) — กติกาอยู่ utils/polygonEdit.js */
+      const nextPts = d.ei != null
+        ? dragEdge(d.base, d.ei, dx, dy, { aspect: aspect || 1 })
+        : d.vi === -1
+          ? d.base.map(pt => [Math.min(100, Math.max(0, round(pt[0] + dx))), Math.min(100, Math.max(0, round(pt[1] + dy)))])
+          : dragVertex(d.base, d.vi, dx, dy, { ortho: d.ortho && !e.altKey, aspect: aspect || 1 });
+      setRegions(prev => prev.map(r => (r.id !== d.id ? r : { ...r, points: nextPts })));
     }
   };
   const finishDraw = () => {
@@ -2489,12 +2493,13 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
   }); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const startDrag = (e, region, vi) => {
+  const startDrag = (e, region, vi, ei = null) => {
     if (!editing || drawing) return;
     e.stopPropagation();
     wrapRef.current?.setPointerCapture?.(e.pointerId);
     const p = pctFromEvent(e.clientX, e.clientY);
-    dragRef.current = { id: region.id, vi, px: p.x, py: p.y, base: region.points.map(pt => [...pt]), snap: regionSnap() };
+    const base = region.points.map(pt => [...pt]);
+    dragRef.current = { id: region.id, vi, ei, px: p.x, py: p.y, base, ortho: isAxisAligned(base, aspect || 1), snap: regionSnap() };
   };
   const endDrag = async () => {
     if (!dragRef.current) return;
@@ -2502,8 +2507,34 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     const r = regions.find(x => x.id === d.id);
     if (!r) return;
     if (JSON.stringify(r.points) === JSON.stringify(d.base)) return;   // คลิกเฉยๆ ไม่ได้ลาก — ไม่บันทึก/ไม่เข้า history
+    /* 🛡️ ด่านกันพลาดก่อนบันทึก (11/11 · เคส Laser GOR จุดมุมหลุดขึ้นไป ~46% ของผังแล้วบันทึกเงียบ)
+       เส้นตัดกันเอง = ห้ามบันทึก · ขยับเกิน JUMP_CONFIRM_PCT = ถามก่อน · ไม่ผ่าน = เด้งกลับรูปเดิม */
+    const revert = () => setRegions(prev => prev.map(x => (x.id === d.id ? { ...x, points: d.base } : x)));
+    const chk = checkPolygonEdit(d.base, r.points);
+    if (chk.verdict === 'block') { revert(); toast.error(`กรอบ "${r.line_name}" เส้นตัดกันเอง — ไม่บันทึก คืนรูปเดิมแล้ว`); return; }
+    if (chk.verdict === 'confirm' && !window.confirm(`กรอบ "${r.line_name}" จุดขยับไป ${chk.shift}% ของผัง (เกิน ${JUMP_CONFIRM_PCT}%)\nตั้งใจย้ายไกลขนาดนี้ใช่ไหม?\n\nกด "ยกเลิก" = คืนรูปเดิม`)) { revert(); return; }
     if (d.snap) hist.pushSnapshot(d.snap);
     checkWriteRows(await supabase.from('factory_line_regions').update({ points: r.points }).eq('id', d.id).select('id'), 'บันทึกจุด polygon');
+  };
+  /* 📐 จัดให้ตรงทั้งผัง — ขอบที่เกือบตั้ง/นอน ดีดเข้าแกน (กติกา straightenPolygon) · ถามก่อน · Undo ได้ทั้งชุด */
+  const straightenAll = async () => {
+    const plan = regions.map(r => ({ r, s: straightenPolygon(r.points, aspect || 1) }));
+    const todo = plan.filter(x => x.s.changed);
+    const skewed = plan.filter(x => x.s.skewed > 0).length;
+    const blocked = plan.filter(x => x.s.blocked).length;
+    const note = [skewed ? `${skewed} กรอบมีขอบเฉียงเกิน ${AXIS_TOL_DEG}° — ขอบนั้นไม่แตะ` : '', blocked ? `${blocked} กรอบจัดแล้วเส้นจะตัดกัน — ข้าม` : ''].filter(Boolean).join('\n');
+    if (!todo.length) { toast.info(`ทุกกรอบตรงแนวอยู่แล้ว${note ? ` · ${note.replace(/\n/g, ' · ')}` : ''}`); return; }
+    if (!window.confirm(`จัดให้ตรง ${todo.length} กรอบ (จากทั้งหมด ${regions.length})${note ? `\n${note}` : ''}\n\nกด Undo ย้อนได้`)) return;
+    hist.pushHistory();
+    const byId = new Map(todo.map(x => [x.r.id, x.s.points]));
+    setRegions(prev => prev.map(x => (byId.has(x.id) ? { ...x, points: byId.get(x.id) } : x)));
+    let fail = 0;
+    for (const x of todo) {
+      const ok = checkWriteRows(await supabase.from('factory_line_regions').update({ points: x.s.points }).eq('id', x.r.id).select('id'), `จัดให้ตรง ${x.r.line_name}`);
+      if (!ok) fail++;
+    }
+    if (fail) toast.error(`จัดให้ตรงไม่สำเร็จ ${fail} จาก ${todo.length} กรอบ — โหลดหน้าใหม่เพื่อดูค่าจริง`);
+    else toast.success(`จัดให้ตรงแล้ว ${todo.length} กรอบ`);
   };
   const deleteRegion = async (id) => {
     const rg = regions.find(r => r.id === id);
@@ -2782,6 +2813,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
           {imageUrl && !drawing && <button onClick={() => { setDrawing(true); setDraft([]); }} style={btn(false)}>วาดกรอบใหม่ (ไลน์ / 🏬 โซนคลัง / 🔧 facility)</button>}
           {!drawing && <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={undoBtnStyle(hist.canUndo && !hist.busy)} title="ย้อนกลับ (Ctrl+Z)">Undo</button>}
           {!drawing && <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title="ทำซ้ำ (Ctrl+Y)">Redo</button>}
+          {!drawing && regions.length > 0 && <button onClick={straightenAll} disabled={hist.busy} style={btn(false)} title={`ขอบที่เอียงไม่เกิน ${AXIS_TOL_DEG}° ดีดเข้าแนวตั้ง/นอน · ขอบเฉียงจริงไม่แตะ · Undo ได้`}>📐 จัดให้ตรง</button>}
+          {!drawing && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ลากมุม = คงมุมฉาก (กด <b>Alt</b> ค้าง = อิสระ) · ลากวงกลมกลางขอบ = ดันทั้งด้าน</span>}
           {drawing && (
             <>
               <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>คลิกทีละจุดล้อมพื้นที่ (L/U ได้) · กด <b>Shift</b> = เส้นตั้งฉาก · เข้าใกล้จุดแรก = ดูดปิดรูป</span>
@@ -3147,6 +3180,11 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                   {r.points.map((pt, i) => (
                     <div key={i} data-handle onPointerDown={(e) => startDrag(e, r, i)} style={{ position: 'absolute', left: `${pt[0]}%`, top: `${pt[1]}%`, width: 14, height: 14, transform: 'translate(-50%,-50%)', background: 'var(--blue)', border: '2px solid #fff', borderRadius: 'var(--r-xs)', cursor: 'grab', touchAction: 'none' }} />
                   ))}
+                  {/* จุดจับกลางขอบ = ดันทั้งด้านเข้า-ออก (วงกลมเล็ก แยกจากจุดมุมสี่เหลี่ยม) */}
+                  {r.points.map((pt, i) => {
+                    const q = r.points[(i + 1) % r.points.length];
+                    return <div key={`e${i}`} data-handle title="ลากเพื่อดันทั้งด้าน" onPointerDown={(e) => startDrag(e, r, null, i)} style={{ position: 'absolute', left: `${(pt[0] + q[0]) / 2}%`, top: `${(pt[1] + q[1]) / 2}%`, width: 10, height: 10, transform: 'translate(-50%,-50%)', background: '#fff', border: '2px solid var(--blue)', borderRadius: '50%', cursor: 'move', touchAction: 'none' }} />;
+                  })}
                   <button type="button" className="pg-btn sm pg-btn-icon" onClick={(e) => { e.stopPropagation(); deleteRegion(r.id); }} title={`ลบกรอบ ${r.line_name}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%,-140%)', width: 22 }}>✕</button>
                 </div>
               );

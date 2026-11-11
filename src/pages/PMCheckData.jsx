@@ -5,6 +5,7 @@ import { useMergeParams } from '../utils/useTabParam'
 import { motion, AnimatePresence } from 'framer-motion'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { UserContext } from '../App'
+import { lineScope } from '../utils/sectionScope'   // 🔒 แท็บ AM เห็นเฉพาะไลน์ของตัวเอง (11/11)
 import { can, isActionSeeded } from '../utils/permissions'
 import { positionRank } from '../utils/positions'
 // ✍️ B2 (02/11) — สายอนุมัติ AM ตามลำดับชั้น · B3 — ป้าย MO / เหตุผลที่ไม่เปิดใบ
@@ -847,7 +848,7 @@ export default function PMCheckData() {
            แต่ `can()` ที่นี่ยังอ่าน role จริงจากฐาน ⇒ เห็นปุ่มครบ แล้วสรุปผลทดสอบผิด
      🔴 `userId` ยังต้องเป็น **auth uid จริง** เสมอ (คนตรวจ/คนอนุมัติ/คนสั่ง export ในใบ)
         ห้ามเอา role ที่ถูกสวมไปปนกับตัวตนคนเซ็น */
-  const { role: userRole, fullName, mtnTeams: myMtnTeams, sections: mySections, allUnits, position: myPosition, isSharedAccount } = useContext(UserContext)
+  const { role: userRole, fullName, mtnTeams: myMtnTeams, sections: mySections, allUnits, position: myPosition, isSharedAccount, lineId: myLineId, scopeIdx } = useContext(UserContext)
   /* ══ 🔐 "ทีมที่เปิดอยู่ (?dept=) เป็นทีมของเราไหม" (15/10 · คำสั่ง user) ══════════════════
      เดิมคีย์ที่ใช้ตัดสินมาจาก `?dept=` ตรงๆ ⇒ ช่างทีมหนึ่งสลับ URL ไปอีกทีม แล้วลงผลตรวจ /
      อนุมัติ / **เลื่อนรอบ PM** ของอุปกรณ์ทีมนั้นได้ (audit 15/10 · ระดับ A)
@@ -946,6 +947,14 @@ export default function PMCheckData() {
     return (lineRows || []).filter(l => l?.name && !seen.has(l.name) && seen.add(l.name))
   }, [lineRows])
   const [jigScope, setJigScope] = useState({ section: '', line: '', names: null })
+  /* 🔒 แท็บ AM (ผลิตตรวจเอง) = เห็นเฉพาะไลน์ของตัวเอง (11/11 · คำสั่ง user "ล็อกเห็นเฉพาะไลน์ตัวเอง")
+     เดิมลิสต์ทุกไลน์ที่ลงทะเบียน AM ทั้งโรงงาน ⇒ พนักงานเห็นเครื่องข้ามไลน์ปนกัน
+     แกนเดียวของ "บัญชีนี้เห็นไลน์ไหน" = `lineScope()` (utils/sectionScope.js) ห้ามคิดเองในหน้า
+     · unlimited (admin / ขอบเขตไม่จำกัด) = เห็นทั้งโรงงานเหมือนเดิม · unsure = เขียนบนจอ
+     · แท็บช่าง (PM) ไม่ล็อก — ช่างซ่อมข้ามไลน์เป็นงานปกติ (แกนสิทธิ์ช่าง = ทีม) */
+  const amScope = useMemo(() => lineScope({ role: userRole, lineId: myLineId, sections: mySections, lines: scopeLines, scopeIdx }),
+    [userRole, myLineId, mySections, scopeLines, scopeIdx])
+  const amScopeSet = useMemo(() => (amScope.unlimited ? null : new Set(amScope.names)), [amScope])
   const [chipsAll, setChipsAll] = useState(false)   // ชิปข้อที่ยังไม่ตรวจ: เกิน CHIP_CAP พับไว้ กดขยายได้
   const [scanOpen, setScanOpen] = useState(false)   // 📷 สแกนป้ายเครื่อง → เลือกอุปกรณ์
   const [rawResults, setResults] = useState({})   // ที่คนกรอก
@@ -1395,7 +1404,10 @@ export default function PMCheckData() {
          ⇒ ผ่านสายอนุมัติ = "หัวหน้ากลุ่มรับทราบรายวัน" ไปพร้อมกันในแถวเดียว · กฎทั้งหมดอยู่ utils/amApproval.js
          อ่านพนักงาน "ตอนกด" (ไม่ใช่ค่าที่ช่องโชว์ไว้ก่อนหน้า) — ด่านตอนเขียนจริง */
       let approvalPatch = {}, onSite = null, badgeEmp = null
-      if (isAmTeam(department)) {
+      /* 🪪 11/11 (คำสั่ง user "ใบ PM ของช่าง บังคับสแกนบัตรก่อน") — ด่านบัตรใช้กับ **ทุกใบ** ทั้ง AM และ PM
+         กฎตัดสินบัตรตัวเดียวกัน (`amBadgeGate`) · ส่วน "บันทึกหน้าเครื่อง = รับทราบรายวัน" ยังเป็นของใบ AM เท่านั้น
+         (ใบ PM อนุมัติขั้นเดียวเหมือนเดิม — ไม่แตะ) */
+      {
         const raw = inspectorCode.trim()
         let hits = 0, loadError = false
         if (normBadgeCode(raw)) {
@@ -1405,8 +1417,10 @@ export default function PMCheckData() {
           hits = (rows ?? []).filter(e => normBadgeCode(e.employee_id_code) === normBadgeCode(raw)).length
           badgeEmp = findByBadge(rows ?? [], raw)
         }
-        const gate = amBadgeGate({ code: raw, employee: badgeEmp, hits, loadError })
+        const gate = amBadgeGate({ code: raw, employee: badgeEmp, hits, loadError, kind: isAmTeam(department) ? 'AM' : 'PM' })
         if (!gate.ok) { toast.error(gate.text); return }
+      }
+      if (isAmTeam(department)) {
         onSite = amOnSiteApproval({
           inspectorRank: positionRank(badgeEmp.position), approverRank: positionRank(myPosition),
           isSelf: myEmployeeId === undefined ? null : (!!myEmployeeId && badgeEmp.id === myEmployeeId),
@@ -1638,14 +1652,23 @@ export default function PMCheckData() {
             if (dailyLineByJig == null) return <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20 }}>กำลังโหลด...</p>
             const lineParam = searchParams.get('line')
             const byLine = {}
+            const hiddenLines = new Set()   // ไลน์ที่ลงทะเบียน AM แต่อยู่นอกขอบเขตของบัญชีนี้ — ต้องเขียนบนจอว่าซ่อนกี่ไลน์
             jigs.forEach(j => {
               const lns = dailyLineByJig[j.id]
               if (!lns || !matchJig(j)) return
               lns.forEach(ln => {
+                if (amScopeSet && !amScopeSet.has(ln)) { hiddenLines.add(ln); return }
                 if (lineParam && ln !== lineParam) return
                 ;(byLine[ln] ||= []).push(j)
               })
             })
+            const scopeNote = (amScopeSet || amScope.unsure) && (
+              <div style={{ padding: '0 4px 6px', fontSize: 11, color: amScope.unsure ? 'var(--amber)' : 'var(--muted)', lineHeight: 1.5 }}>
+                {amScope.unsure
+                  ? '⚠ ตัดขอบเขตไลน์ของบัญชีนี้ไม่ได้ (ไลน์/ส่วนงานในโปรไฟล์ไม่ตรงทะเบียน) — ตรวจโปรไฟล์ที่ /add-user'
+                  : `เฉพาะไลน์ในขอบเขตของคุณ${hiddenLines.size ? ` · ซ่อนอีก ${hiddenLines.size} ไลน์` : ''}`}
+              </div>
+            )
             const lineNames = Object.keys(byLine).sort(lineNameCompare)
             // ⚠️ ช่องว่างที่เคยทำให้ 2 หน้าไม่ตรงกัน: PM Setup ลิสต์เครื่องที่ "มีรายการตรวจ AM" (มี checklist
             //    department=production) แต่หน้านี้ลิสต์เฉพาะเครื่องที่ "ลงทะเบียน AM" (pm_daily_line_targets)
@@ -1667,13 +1690,16 @@ export default function PMCheckData() {
               </div>
             )
             if (!lineNames.length) return (<>
+              {scopeNote}
               <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>
-                {lineParam ? `ไลน์ ${lineParam} ยังไม่ได้ลงทะเบียนเครื่องตรวจ` : 'ยังไม่มีเครื่องที่ลงทะเบียน AM'}<br />
+                {lineParam ? `ไลน์ ${lineParam} ยังไม่ได้ลงทะเบียนเครื่องตรวจ${amScopeSet && !amScopeSet.has(lineParam) ? ' (หรืออยู่นอกขอบเขตของคุณ)' : ''}`
+                  : hiddenLines.size ? 'ไลน์ในขอบเขตของคุณยังไม่มีเครื่องที่ลงทะเบียน AM' : 'ยังไม่มีเครื่องที่ลงทะเบียน AM'}<br />
                 <Link to="/daily-checker?tab=pm" style={{ color: 'var(--accent)', fontWeight: 700 }}>ไปลงทะเบียนที่แท็บ AM →</Link>
               </p>
               {pendingBlock}
             </>)
             return (<>
+              {scopeNote}
               {lineParam && (
                 <div style={{ fontSize: 11, color: 'var(--muted)', padding: '0 4px 6px' }}>
                   กรองเฉพาะไลน์ {lineParam} · <span onClick={() => setParams({ line: null })} style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>ดูทุกไลน์</span>
@@ -2052,7 +2078,7 @@ export default function PMCheckData() {
                           </div>
                         )
                       })()}
-                      <InspectorCodeField value={inspectorCode} onChange={setInspectorCode} required={isAmTeam(department)} style={{ marginTop: 8 }} />
+                      <InspectorCodeField value={inspectorCode} onChange={setInspectorCode} required style={{ marginTop: 8 }} />
                       <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="หมายเหตุ (ถ้ามี)..." style={{ marginTop: 8 }} />
                       {/* 🔴 ปุ่มบันทึก "สีต้องตรงกับความจริง" (06/10 · คอมเมนต์ทีม MTN ข้อ 3)
                           *"ถ้ากรอกรายละเอียดไม่ครบทุกจุด ให้ปุ่มบันทึกขึ้นเป็นสีแดงหรือสีเหลืองไว้ก่อนได้มั้ย

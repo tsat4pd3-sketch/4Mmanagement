@@ -98,3 +98,14 @@ test('B4 amInspectorIdentity — มีรหัสบัตร = คนตา�
   // รหัสที่หาไม่เจอ = ไม่รู้ตำแหน่ง · ไม่ถือเป็นใบตัวเอง
   assert.deepEqual(amInspectorIdentity({ inspector_id: 'u-lead', inspector_code: '99999' }, ctx), { position: null, isSelf: false, byBadge: true })
 })
+
+// ── 🪪 11/11 — ใบ PM ของช่างใช้ด่านบัตรตัวเดียวกัน (คำสั่ง user) ───────────────────────────
+test('amBadgeGate kind=PM — ไม่มีบัตร = บล็อก ข้อความเป็นของใบ PM · ไม่ส่ง kind = ข้อความ AM เดิม', () => {
+  const pm = amBadgeGate({ code: '', kind: 'PM' })
+  assert.equal(pm.ok, false)
+  assert.equal(pm.code, 'no_code')
+  assert.match(pm.text, /ใบตรวจ PM/)
+  assert.match(amBadgeGate({ code: '' }).text, /ใบตรวจ AM/)
+  assert.equal(amBadgeGate({ code: 'E001', employee: { id: 'x' }, kind: 'PM' }).ok, true)
+  assert.equal(amBadgeGate({ code: 'E001', hits: 2, kind: 'PM' }).code, 'ambiguous')
+})
