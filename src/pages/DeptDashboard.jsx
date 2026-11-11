@@ -397,16 +397,23 @@ function ProductionView({ d, ctx }) {
 async function loadMaintenance(ctx) {
   const { workDate, inScope } = ctx;
   const d30 = dayAdd(workDate, -29);
-  const [{ data: mo, error: eMo }, { data: plans, error: ePlans }, { data: sess30, error: eSess30 }] = await Promise.all([
+  const [{ data: mo, error: eMo }, { data: plans, error: ePlans }, sessPage] = await Promise.all([
     /* ⚠️ คอลัมน์ย่อเท่านั้น — `mtn_orders` มี 116 คอลัมน์ · `select('*')&limit=500` ≈ 800 KB/รอบ
        จอนี้แขวนไว้ทั้งวันหลายเครื่อง (งานลด egress 2026-09-17 · ดู MO_LIST_COLS ใน MtnRepair.jsx) */
     supabaseDR.from('mtn_orders').select('id, mo_no, status, machine_no, line_name, problem_characteristic, report_at')
       .order('report_at', { ascending: false }).limit(500),
     supabaseDR.from('pm_plans').select('id, checklist_id, plan_type, next_due_date, last_done_at, interval_days, cycle_basis, deferred_to, deferred_at').eq('is_active', true),
     // `status` = ตัวตัดสินว่าแถว downtime ที่ยังไม่ปิด "เครื่องยังหยุดอยู่" หรือ "ลืมปิดรายการ" (dtOpenKind)
-    supabaseDR.from('production_sessions').select('id, line_name, work_date, status').gte('work_date', d30).lte('work_date', workDate),
+    /* 🔴 เพดาน 1,000 แถว — ทุกสถานะ ทุกไลน์ 30 วัน วัดจริง 11/11/26 = **989 แถว เหลือที่ 11**
+       (ไม่กรองไลน์ในคิวรี เพราะกรองขอบเขตใน JS ทีหลัง ⇒ ยิ่งต้องได้ครบ) */
+    fetchAllPages(() => supabaseDR.from('production_sessions')
+      .select('id, line_name, work_date, status').gte('work_date', d30).lte('work_date', workDate),
+      { orderBy: ['work_date', 'id'] }),
     loadPmTeams().catch(() => {}),   // ให้ isAmTeam อ่าน mtn_teams.kind ได้จริง (แยก AM ออกจาก PM ช่าง)
   ]);
+  // fetchAllPages คืน { rows, error, truncated } — ชนเพดานหน้า = โหลดไม่ครบ ต้องเข้า loadErr ด้วย
+  const sess30 = sessPage.rows;
+  const eSess30 = sessPage.error || (sessPage.truncated ? 'กะ 30 วันเยอะเกินกว่าจะโหลดครบ' : null);
   const sIds = (sess30 || []).filter(s => inScope(s.line_name)).map(s => s.id);
   /* ⚠️ 30 วัน ≈ 270 กะ — `.in()` ตรงๆ URL ยาวเกินจน proxy ตัด แล้วคืนค่าว่าง "เงียบ"
      (จอช่างจะขึ้น DT 0 นาที / เครื่องหยุดซ้ำ 0 เครื่อง ทั้งที่มีของจริง) → ผ่าน fetchByIds เสมอ */

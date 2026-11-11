@@ -622,6 +622,7 @@ export async function buildMonthlyReviewData({ monthKey, sections, trendMonths =
   const todayStr = (() => { const dd = new Date(); return `${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, '0')}-${String(dd.getDate()).padStart(2, '0')}`; })();
   let moOpenAll = [], actAll = [], fourMAll = [], impsAll = [];
   try { // ใบซ่อม MO ที่ยังค้าง ณ ตอนสร้างรายงาน (คิวงาน MTN ที่ผู้แจ้ง/ช่างลงไว้)
+    /* cap-ok: เฉพาะใบที่ยังไม่ปิด — วัด 11/11/26 ทั้งโรงงาน 219 ใบ (ทั้งตาราง 1,857) */
     const { data } = await supabaseDR.from('mtn_orders')
       .select('id, mo_no, machine_no, line_name, status, report_at, created_at')
       .in('line_name', matchNames)
