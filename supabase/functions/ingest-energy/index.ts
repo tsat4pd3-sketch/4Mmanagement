@@ -7,6 +7,8 @@
       secrets: INGEST_SECRET (ต้องตรงกับฝั่ง bridge) · SUPABASE_URL · SUPABASE_SERVICE_ROLE_KEY
 
    สายงาน: MQTT → bridge (สรุป 15 นาที) → ที่นี่ → energy_live / energy_topic_unmapped
+   v6 (2026-11-11): + body.states (ช่วงหยุดของเครื่อง → machine_state_events) + body.pieces (ชิ้นต่อนาที → machine_counters)
+     ข้อมูลจากเครื่อง "เฟสเดินคู่" — ยังไม่เข้าสูตร OEE · ต้องระบุต้นทางได้ (source id) ไม่งั้นข้าม · เก็บ 90 วัน
    v5 (2026-11-11): ศูนย์เชื่อมต่อ — รู้ว่า "ใครส่ง" (integration_sources · 📄 docs/modules/integration-hub.md)
      · header `x-source-key` = รหัสลับของต้นทางนั้น (เทียบ sha256 กับ key_hash)
      · header `x-ingest-secret` = secret กลางเดิม ⇒ ผูกกับต้นทาง legacy (`x-source` = code · ไม่ส่ง = 'dieshop')
@@ -90,24 +92,70 @@ Deno.serve(async (req) => {
   if (src.paused) { await tick(false, 0, 'ต้นทางถูกพักการรับ', null); return json({ error: 'source paused' }, 423); }
 
   let res: Response;
-  try { res = await handle(sb, req); } catch (e) { res = json({ ok: false, error: String((e as Error)?.message || e) }, 500); }
+  try { res = await handle(sb, req, src.id); } catch (e) { res = json({ ok: false, error: String((e as Error)?.message || e) }, 500); }
   let out: any = null;
   try { out = await res.clone().json(); } catch { /* ไม่ใช่ json */ }
-  const saved = ['saved', 'history', 'events', 'daily'].reduce((s, k) => s + (Number(out?.[k]) || 0), 0)
+  const saved = ['saved', 'history', 'events', 'daily', 'states', 'pieces'].reduce((s, k) => s + (Number(out?.[k]) || 0), 0)
     + (Number(out?.limits?.updated) || 0);
   await tick(res.status < 300, saved, out?.error ?? (res.status < 300 ? null : `HTTP ${res.status}`),
     out ? { status: res.status, ...out } : { status: res.status });
   return res;
 });
 
-async function handle(sb: any, req: Request): Promise<Response> {
+/** สถานะดิบของต้นทาง → ชุดค่าของ ESM (ไม่รู้จัก = 'other' เก็บค่าดิบไว้ใน source_state ไม่ทิ้ง) */
+const STATE_MAP: Record<string, string> = { FAULT: 'fault', IDLE: 'idle', PLANNED_STOP: 'planned_stop', NO_PLAN: 'no_plan', COMM_LOSS: 'comm_loss' };
+const FACTS_KEEP_DAYS = 90;
+
+async function handle(sb: any, req: Request, sourceId: string | null): Promise<Response> {
   let body: any;
   try { body = await req.json(); } catch { return json({ error: 'bad json' }, 400); }
   const readings: any[] = Array.isArray(body?.readings) ? body.readings : [];
   const events: any[] = Array.isArray(body?.events) ? body.events : [];
   const daily: any[] = Array.isArray(body?.daily) ? body.daily : [];
   const limits: any[] = Array.isArray(body?.limits) ? body.limits : [];
-  if (!readings.length && !events.length && !daily.length && !limits.length) return json({ ok: true, saved: 0 });
+  const states: any[] = Array.isArray(body?.states) ? body.states : [];
+  const pieces: any[] = Array.isArray(body?.pieces) ? body.pieces : [];
+  if (!readings.length && !events.length && !daily.length && !limits.length && !states.length && !pieces.length) return json({ ok: true, saved: 0 });
+
+  /* 🏭 ข้อมูลจากเครื่อง (v6) — ต้องรู้ต้นทาง (ผูก tag ↔ เครื่องต่อต้นทาง) · เวลาต้นทาง = เวลาไทยไม่มีโซน ⇒ bkk() */
+  let stSaved = 0, pcSaved = 0;
+  if ((states.length || pieces.length) && !sourceId) {
+    return json({ ok: false, error: 'states/pieces ต้องส่งจากต้นทางที่ลงทะเบียน (x-source-key หรือ x-source)' }, 400);
+  }
+  if (states.length) {
+    const rows = states.map((x: any) => {
+      const raw = String(x.state ?? '').trim().toUpperCase();
+      return {
+        source_id: sourceId, machine_tag: String(x.machine ?? '').trim(), started_at: bkk(x.start), ended_at: bkk(x.end),
+        duration_sec: num(x.duration_sec), state: STATE_MAP[raw] || 'other', source_state: raw || null,
+        reason_code: num(x.reason_code), reason_text: x.reason_text ? String(x.reason_text).slice(0, 200) : null,
+        is_minor: !!Number(x.is_minor), received_at: new Date().toISOString(),
+      };
+    }).filter((r: any) => r.machine_tag && r.started_at);
+    if (rows.length) {
+      const { error } = await sb.from('machine_state_events').upsert(rows, { onConflict: 'source_id,machine_tag,started_at' });
+      if (error) return json({ ok: false, error: `states: ${error.message}` }, 500);
+      stSaved = rows.length;
+      await sb.from('machine_state_events').delete().lt('started_at', new Date(Date.now() - FACTS_KEEP_DAYS * 86400000).toISOString());
+    }
+  }
+  if (pieces.length) {
+    const rows = pieces.map((x: any) => ({
+      source_id: sourceId, machine_tag: String(x.machine ?? '').trim(), counted_at: bkk(x.minute),
+      delta: Math.max(0, Math.trunc(num(x.qty) ?? -1)), ng_delta: Math.max(0, Math.trunc(num(x.ng) ?? 0)),
+      received_at: new Date().toISOString(),
+    })).filter((r: any) => r.machine_tag && r.counted_at && num(pieces.find((p: any) => String(p.machine ?? '').trim() === r.machine_tag)?.qty) != null);
+    if (rows.length) {
+      // ทับยอดของนาทีเดิม — ต้นทางส่งยอด "ทั้งนาที" (หน้าต่างเริ่มที่ต้นนาที) ⇒ ค่าใหม่ครบกว่าเสมอ
+      const { error } = await sb.from('machine_counters').upsert(rows, { onConflict: 'source_id,machine_tag,counted_at' });
+      if (error) return json({ ok: false, error: `pieces: ${error.message}` }, 500);
+      pcSaved = rows.length;
+      await sb.from('machine_counters').delete().lt('counted_at', new Date(Date.now() - FACTS_KEEP_DAYS * 86400000).toISOString());
+    }
+  }
+  if (!readings.length && !events.length && !daily.length && !limits.length) {
+    return json({ ok: true, saved: 0, states: stSaved, pieces: pcSaved });
+  }
 
   // ทะเบียน topic → จุดวัด (ตั้งจากหน้า /energy แท็บ 📡)
   const { data: cfg, error: cfgErr } = await sb
@@ -273,5 +321,5 @@ async function handle(sb: any, req: Request): Promise<Response> {
   }
 
   return json({ ok: true, saved: live.length, history: histSaved, unmapped: unknown.length, events: evSaved, daily: daySaved,
-    limits: { updated: limUpdated, unknown: limUnknown } });
+    limits: { updated: limUpdated, unknown: limUnknown }, states: stSaved, pieces: pcSaved });
 }
