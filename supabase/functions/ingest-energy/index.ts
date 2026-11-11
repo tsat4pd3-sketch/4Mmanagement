@@ -140,11 +140,12 @@ async function handle(sb: any, req: Request, sourceId: string | null): Promise<R
     }
   }
   if (pieces.length) {
-    const rows = pieces.map((x: any) => ({
+    // แถวที่ไม่มียอด (qty อ่านไม่ออก) = ทิ้ง ห้ามบีบเป็น 0 (0 = "เครื่องไม่ได้ทำชิ้น" ซึ่งเป็นข้อเท็จจริงคนละเรื่อง)
+    const rows = pieces.filter((x: any) => num(x?.qty) != null).map((x: any) => ({
       source_id: sourceId, machine_tag: String(x.machine ?? '').trim(), counted_at: bkk(x.minute),
-      delta: Math.max(0, Math.trunc(num(x.qty) ?? -1)), ng_delta: Math.max(0, Math.trunc(num(x.ng) ?? 0)),
+      delta: Math.max(0, Math.trunc(num(x.qty) as number)), ng_delta: Math.max(0, Math.trunc(num(x.ng) ?? 0)),
       received_at: new Date().toISOString(),
-    })).filter((r: any) => r.machine_tag && r.counted_at && num(pieces.find((p: any) => String(p.machine ?? '').trim() === r.machine_tag)?.qty) != null);
+    })).filter((r: any) => r.machine_tag && r.counted_at);
     if (rows.length) {
       // ทับยอดของนาทีเดิม — ต้นทางส่งยอด "ทั้งนาที" (หน้าต่างเริ่มที่ต้นนาที) ⇒ ค่าใหม่ครบกว่าเสมอ
       const { error } = await sb.from('machine_counters').upsert(rows, { onConflict: 'source_id,machine_tag,counted_at' });

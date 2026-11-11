@@ -20,12 +20,12 @@ export const INTEGRATION_KINDS = [
   { key: 'energy_limits', label: 'ลิมิตตู้ไฟ', icon: '🎚️', status: 'live', module: 'energy',
     body: 'limits', dest: 'energy_live_meters', home: '/energy?tab=live',
     help: 'ต้นทางเป็นเจ้าของลิมิต · ESM ตามเองเมื่อค่าเปลี่ยน' },
-  { key: 'machine_state', label: 'สถานะเครื่อง (เดิน/หยุด)', icon: '🏭', status: 'planned', module: 'oee',
-    body: 'states', dest: '— (ยังไม่มีปลายทาง)', home: null,
-    help: 'ช่วงเวลาเดิน/หยุด + เหตุผลที่กดหน้าเครื่อง — ESM คิด %A เอง' },
-  { key: 'piece_count', label: 'นับชิ้น', icon: '🔢', status: 'planned', module: 'oee',
-    body: 'pieces', dest: '— (ยังไม่มีปลายทาง)', home: null,
-    help: 'จำนวนชิ้นต่อนาทีจากเครื่อง — เทียบกับยอดที่คนลง' },
+  { key: 'machine_state', label: 'สถานะเครื่อง (ช่วงหยุด)', icon: '🏭', status: 'live', module: 'oee',
+    body: 'states', dest: 'machine_state_events', home: null,
+    help: 'ช่วงหยุด + เหตุผลที่กดหน้าเครื่อง · เฟสเดินคู่: เทียบกับที่คนลง ยังไม่เข้าสูตร OEE · เก็บ 90 วัน' },
+  { key: 'piece_count', label: 'นับชิ้น', icon: '🔢', status: 'live', module: 'oee',
+    body: 'pieces', dest: 'machine_counters', home: null,
+    help: 'ชิ้นต่อนาทีจากเครื่อง (+NG ที่กดหน้าเครื่อง) — เทียบกับยอดที่คนลง · ยังไม่เข้าสูตร OEE · เก็บ 90 วัน' },
 ];
 
 export const kindOf = (key) => INTEGRATION_KINDS.find(k => k.key === key) || null;
