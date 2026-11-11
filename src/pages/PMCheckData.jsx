@@ -9,7 +9,7 @@ import { lineScope } from '../utils/sectionScope'   // 🔒 แท็บ AM เ�
 import { can, isActionSeeded } from '../utils/permissions'
 import { positionRank } from '../utils/positions'
 // ✍️ B2 (02/11) — สายอนุมัติ AM ตามลำดับชั้น · B3 — ป้าย MO / เหตุผลที่ไม่เปิดใบ
-import { amApprovalVerdict, amApprovalText, amApprovalAssumptionText, amApproveAllowed, amNextApprover, amBadgeGate, amOnSiteApproval, amInspectorIdentity } from '../utils/amApproval'
+import { amApprovalVerdict, amApprovalText, amApprovalAssumptionText, amApproveAllowed, amNextApprover, amBadgeGate, amOnSiteApproval, amInspectorIdentity, pmConfirmVerdict, pmConfirmText, PM_HEAD_STEP } from '../utils/amApproval'
 import { findByBadge, normBadgeCode } from '../utils/badgeCheckin'   // 🪪 B4 — รหัสบัตร → พนักงาน (ตรงเป๊ะ · ซ้ำ = ไม่เดา)
 import { moStatusLabel } from '../utils/mtnStepPerm'
 import { amWaiverReasonValid, AM_WAIVER_MIN_LEN } from '../lib/pmDailyStatus'
@@ -584,7 +584,7 @@ function NgRecheckPanel({ result, cp, onSaved, canRecord = false, deptWrite = nu
 
 // ─── History Detail Modal ─────────────────────────────────────────────────────
 function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, userId, userRole, deptWrite, canRecord = false,
-  isAm = false, inspectorPosition = null, myPosition = null, inspectorIsSelf = null }) {
+  isAm = false, inspectorPosition = null, myPosition = null, inspectorIsSelf = null, isShared = false }) {
   const [results, setResults] = useState([])
   const [approving, setApproving] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -616,18 +616,23 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
   /* 🔐 อนุมัติ/ตีกลับผลตรวจ = ตัดสินงานของทีมนั้น ⇒ ต้องเป็นทีมของเรา (ส่งมาจากหน้าแม่) */
   /* ✍️ B2 (02/11) — ใบ AM: ผู้อนุมัติ = ชั้นถัดไปเหนือคนตรวจเท่านั้น (ห้ามข้ามไปผู้จัดการ) · กฎอยู่ `utils/amApproval.js`
      ใบ PM ของช่าง = พฤติกรรมเดิม (`pm:approve` + ทีม) */
-  const amVerdict = isAm ? amApprovalVerdict({
+  /* ✍️ 11/11 — ใบ PM ของช่าง: ขั้น 2 "หัวหน้าผู้ตรวจ ตรวจสอบและยืนยัน" (`pmConfirmVerdict` · utils/amApproval.js)
+     ใช้ตัวแปร `amVerdict` ชุดเดียวกัน (ด่านซ้ำตอนเขียนจริงใน handleApprove/handleReject ทำงานทั้ง 2 สาย)
+     `amApprovalText`/`amApprovalAssumptionText` ของใบ PM ใช้ `pmConfirmText` แทน (ดู verdictText) */
+  const verdictArgs = {
     inspectorRank: positionRank(inspectorPosition), approverRank: positionRank(myPosition),
     // 🪪 B4 — ใบที่มีรหัสบัตร: "ใบตัวเอง" = บัตรเป็นของเรา (หน้าแม่คิดผ่าน amInspectorIdentity) ไม่ใช่บัญชีที่บันทึก
     isSelf: inspectorIsSelf ?? (!!userId && insp.inspector_id === userId),
-  }) : null
+  }
+  const amVerdict = isAm ? amApprovalVerdict(verdictArgs) : pmConfirmVerdict({ ...verdictArgs, isShared })
+  const verdictText = (v) => (isAm ? amApprovalText(v) : pmConfirmText(v))
   const canApprove = (isAm
     ? amApproveAllowed({ can: (r, a) => can(r, a, userRole), isSeeded: isActionSeeded }) && !!amVerdict?.ok
-    : can('pm', 'approve', userRole)) && (deptWrite?.ok !== false)
+    : can('pm', 'approve', userRole) && !!amVerdict?.ok) && (deptWrite?.ok !== false)
 
   const handleApprove = async () => {
     if (deptWrite && !deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')); return }
-    if (amVerdict && !amVerdict.ok) { toast.info(amApprovalText(amVerdict)); return }   // ด่านซ้ำตอนเขียนจริง (ปุ่มซ่อนอย่างเดียวไม่พอ)
+    if (amVerdict && !amVerdict.ok) { toast.info(verdictText(amVerdict)); return }   // ด่านซ้ำตอนเขียนจริง (ปุ่มซ่อนอย่างเดียวไม่พอ)
     setApproving(true)
     const { data, error } = await supabaseDR.from('inspections').update({
       approval_status: 'approved', approved_by: userId, approved_at: new Date().toISOString(), reject_reason: null,
@@ -645,7 +650,7 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
   const handleReject = async () => {
     if (!rejectReason.trim()) return
     if (deptWrite && !deptWrite.ok) { toast.info(teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')); return }
-    if (amVerdict && !amVerdict.ok) { toast.info(amApprovalText(amVerdict)); return }
+    if (amVerdict && !amVerdict.ok) { toast.info(verdictText(amVerdict)); return }
     setApproving(true)
     const { data, error } = await supabaseDR.from('inspections').update({
       approval_status: 'rejected', approved_by: userId, approved_at: new Date().toISOString(), reject_reason: rejectReason.trim(),
@@ -797,16 +802,16 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
 
         <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {/* ✍️ B2 — ใบ AM ต้องบอกว่ารอใคร + ทำไมคุณกดไม่ได้ (ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล) */}
-          {isAm && insp.approval_status === 'pending' && amVerdict && (
+          {insp.approval_status === 'pending' && amVerdict && (
             <div style={{ fontSize: 12, color: amVerdict.ok ? 'var(--text2)' : 'var(--amber)', lineHeight: 1.6 }}>
               {amVerdict.need ? <>รอ <b>{amVerdict.need.label}</b> {amVerdict.need.action}</> : 'รอผู้จัดการรับทราบ'}
-              {!amVerdict.ok && <div>{amApprovalText(amVerdict)}</div>}
+              {!amVerdict.ok && <div>{verdictText(amVerdict)}</div>}
               {amApprovalAssumptionText(amVerdict.assumed) && <div style={{ color: 'var(--amber)' }}>{amApprovalAssumptionText(amVerdict.assumed)}</div>}
             </div>
           )}
           {canApprove && insp.approval_status === 'pending' && !rejecting && (
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={handleApprove} disabled={approving} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{approving ? 'กำลังอนุมัติ...' : 'อนุมัติ'}</button>
+              <button onClick={handleApprove} disabled={approving} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{approving ? 'กำลังบันทึก...' : (isAm ? 'อนุมัติ' : 'ยืนยันผลตรวจ')}</button>
               <button onClick={() => setRejecting(true)} disabled={approving} style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid #e05c4a', background: 'rgba(224,92,74,0.08)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>ตีกลับ</button>
             </div>
           )}
@@ -2185,13 +2190,14 @@ export default function PMCheckData() {
                               {inspTeamLabel(clDeptById[insp.checklist_id])}
                             </span>
                           )}
-                          {insp.approval_status === 'approved' && <span style={{ fontSize: 11, color: 'var(--accent)' }}>✓ อนุมัติแล้ว</span>}
+                          {insp.approval_status === 'approved' && <span style={{ fontSize: 11, color: 'var(--accent)' }}>{isAmTeam(clDeptById[insp.checklist_id] ?? department) ? '✓ อนุมัติแล้ว' : '✓ หัวหน้ายืนยันแล้ว'}</span>}
                           {insp.approval_status === 'rejected' && <span style={{ fontSize: 11, color: '#e05c4a' }}>✕ ตีกลับ</span>}
                           {insp.approval_status === 'pending' && (() => {
                             // ✍️ B2 — ใบ AM บอกว่ารอใคร (ชั้นถัดไปเหนือคนตรวจ) · ใบช่าง = ป้ายเดิม
                             const am = isAmTeam(clDeptById[insp.checklist_id] ?? department)
                             const nx = am ? amNextApprover(positionRank(inspectorOf(insp).position)) : null
-                            return <span style={{ fontSize: 11, color: 'var(--muted)' }}>{nx ? (nx.step ? `รอ${nx.step.label}` : 'รอผู้จัดการรับทราบ') : 'รออนุมัติ'}</span>
+                            // ใบช่าง (PM) = รอหัวหน้าผู้ตรวจยืนยัน (ขั้น 2 · 11/11)
+                            return <span style={{ fontSize: 11, color: 'var(--muted)' }}>{nx ? (nx.step ? `รอ${nx.step.label}` : 'รอผู้จัดการรับทราบ') : `รอ${PM_HEAD_STEP.label}ยืนยัน`}</span>
                           })()}
                           {/* NG ใบนี้ถูกส่งซ่อมหรือยัง — ตอบคำถาม "ที่เจอเมื่อวาน แก้แล้วรึยัง" ได้จากตรงนี้เลย */}
                           {moByInsp[insp.id] && (
@@ -2234,6 +2240,7 @@ export default function PMCheckData() {
             userId={userId} userRole={userRole} deptWrite={deptWrite} canRecord={canRecord}
             isAm={isAmTeam(clDeptById[viewInspection.checklist_id] ?? department)}
             inspectorPosition={inspectorOf(viewInspection).position} inspectorIsSelf={inspectorOf(viewInspection).isSelf} myPosition={myPosition}
+            isShared={!!isSharedAccount}
             onClose={() => { setViewInspection(null); if (selectedJig) fetchHistory(selectedJig.id) }} />
         )}
       </AnimatePresence>
