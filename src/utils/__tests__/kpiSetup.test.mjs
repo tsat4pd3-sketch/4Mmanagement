@@ -2,7 +2,7 @@
    ที่มาทุกเคส → docs/OBEYA-KPI-SOURCES.md §8.3 (คู่มือ KPI Online) · §12.2 (สูตรในเซลล์) */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
+import { planBarsOf,
   scoreKpi, totalPoints, summarizeMonths, evalFormula, parseBar, fmtBar,
   providerReaches, scopeLabel, inferCompare, scoreDef, defBars, KPI_SCOPE_LEVELS, KPI_PROVIDERS, KPI_BASE_VARS, KPI_FORMULAS,
   KPI_STD_UNITS, KPI_REQUIREMENTS, KPI_TOTAL_WEIGHT, stdUnitOf, stdUnitLabel,
@@ -617,4 +617,18 @@ test('plantDefPayloadFrom: โคลนเป้า/หน่วย/ทะเบ
   const f = plantDefPayloadFrom({ ...u, provider: 'formula', provider_config: { formula: 'rm_pct' } }, { year: 2027, note: 'x' });
   assert.equal(f.year, 2027); assert.deepEqual(f.provider_config, { formula: 'rm_pct' }); assert.equal(f.scope_text, 'x');
   assert.equal(plantDefPayloadFrom(null), null);
+});
+
+test('📅 score_by_plan: เดือนที่มีแผนสะสม เทียบแผนเดือนนั้น (commit = แผน × commit/target) · ไม่มีแผน/ไม่ติ๊ก = เทียบเป้าทั้งปีเหมือนเดิม', () => {
+  const def = { score_by_plan: true, direction: 'up', target_value: 5.654, commit_value: 5.489 };
+  const sep = scoreDef(4.17, def, { plan: 3.92 });     // ชีทบัญชี ก.ย.: Plan สะสม 3.920 · Actual 4.17 ⇒ เขียว (เดิมแดงเพราะเทียบ 5.654)
+  assert.equal(sep.status, 'good'); assert.equal(sep.bars.byPlan, true); assert.equal(sep.bars.annualTarget, 5.654);
+  assert.ok(Math.abs(sep.bars.commit_value - 3.92 * 5.489 / 5.654) < 1e-9);
+  const noPlan = scoreDef(4.17, def, { plan: null });
+  assert.equal(noPlan.status, 'bad'); assert.equal(noPlan.bars.byPlan, false);
+  const off = scoreDef(4.17, { ...def, score_by_plan: false }, { plan: 3.92 });
+  assert.equal(off.status, 'bad', 'ไม่ติ๊ก = แผนไม่มีผล');
+  const warn = scoreDef(3.85, def, { plan: 3.92 });
+  assert.equal(warn.status, 'warn', 'ต่ำกว่าแผนแต่ถึง commit ของเดือน (3.806)');
+  assert.equal(planBarsOf({ score_by_plan: true, direction: 'up', target_value: 10 }, 4).commit_value, null, 'ไม่มี commit ปี = ไม่มีขั้น 0.5');
 });

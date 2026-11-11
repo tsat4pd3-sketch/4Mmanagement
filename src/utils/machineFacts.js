@@ -36,11 +36,11 @@ export function factShiftOf(v) {
   return { workDate, shift, startMs, endMs: startMs + 12 * H };
 }
 
-/** สถานะหยุด → ใช้ master เหตุผลชุดไหน (user ยืนยัน 11/11)
- *  หยุดตามแผน/ไม่มีแผน = OnplanMaster · FAULT = UnplanMaster · อื่นๆ = ยังไม่รู้ ⇒ null (ห้ามเดา) */
+/** สถานะหยุด → ใช้ master เหตุผลชุดไหน (user ยืนยัน 11/11 · IDLE ยืนยันเพิ่มรอบ 2)
+ *  หยุดตามแผน/ไม่มีแผน = OnplanMaster · FAULT/IDLE = UnplanMaster · COMM_LOSS/อื่นๆ = ยังไม่รู้ ⇒ null (ห้ามเดา) */
 export function reasonKindOf(state) {
   if (state === 'planned_stop' || state === 'no_plan') return 'onplan';
-  if (state === 'fault') return 'unplan';
+  if (state === 'fault' || state === 'idle') return 'unplan';
   return null;
 }
 
@@ -149,7 +149,7 @@ export function stopTotals(stopSec = {}) {
 /**
  * เหตุผลหยุดที่เห็นจากต้นทาง (สำหรับจอจับคู่) — 1 แถวต่อ (master, รหัส)
  * @returns `{ kind, code, text, count, sec, map|null }` · map = แถว machine_reason_map ที่ยืนยันแล้ว
- *   สถานะที่ยังไม่รู้ master (IDLE/COMM_LOSS) ไม่อยู่ในลิสต์นี้ — คืนจำนวนแยกใน `unmappable`
+ *   สถานะที่ยังไม่รู้ master (COMM_LOSS/อื่นๆ) ไม่อยู่ในลิสต์นี้ — คืนจำนวนแยกใน `unmappable`
  */
 export function reasonRows(states = [], reasonMap = []) {
   const mapped = new Map((reasonMap || []).map(r => [`${r.reason_kind}|${r.reason_code}`, r]));
