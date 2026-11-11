@@ -291,6 +291,7 @@ CRIT = [
     ("ภาระดูแลระบบ / ทรัพยากร IT", "สูง", "ต่ำ", "ปานกลาง"),
     ("ความต่อเนื่องเมื่อคนสำคัญลาออก (key-person risk)", "", "", ""),
     ("ความพร้อม Infra (On-prem / Cloud / Hybrid)", "", "", ""),
+    ("KPI/Dashboard คำนวณจาก raw data อัตโนมัติ (ไม่ใช่คนกรอกยอดสรุป)", "", "", ""),
 ]
 opt_names = [o[1] for o in OPTS]
 hdr_row(wd, 4, ["เกณฑ์", "น้ำหนัก %"] + opt_names + ["ค่าตั้งต้นในบันทึกเชิญ: In-house", "Outsource", "Hybrid"])
