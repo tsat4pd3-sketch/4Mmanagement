@@ -1404,7 +1404,10 @@ export default function PMCheckData() {
          ⇒ ผ่านสายอนุมัติ = "หัวหน้ากลุ่มรับทราบรายวัน" ไปพร้อมกันในแถวเดียว · กฎทั้งหมดอยู่ utils/amApproval.js
          อ่านพนักงาน "ตอนกด" (ไม่ใช่ค่าที่ช่องโชว์ไว้ก่อนหน้า) — ด่านตอนเขียนจริง */
       let approvalPatch = {}, onSite = null, badgeEmp = null
-      if (isAmTeam(department)) {
+      /* 🪪 11/11 (คำสั่ง user "ใบ PM ของช่าง บังคับสแกนบัตรก่อน") — ด่านบัตรใช้กับ **ทุกใบ** ทั้ง AM และ PM
+         กฎตัดสินบัตรตัวเดียวกัน (`amBadgeGate`) · ส่วน "บันทึกหน้าเครื่อง = รับทราบรายวัน" ยังเป็นของใบ AM เท่านั้น
+         (ใบ PM อนุมัติขั้นเดียวเหมือนเดิม — ไม่แตะ) */
+      {
         const raw = inspectorCode.trim()
         let hits = 0, loadError = false
         if (normBadgeCode(raw)) {
@@ -1414,8 +1417,10 @@ export default function PMCheckData() {
           hits = (rows ?? []).filter(e => normBadgeCode(e.employee_id_code) === normBadgeCode(raw)).length
           badgeEmp = findByBadge(rows ?? [], raw)
         }
-        const gate = amBadgeGate({ code: raw, employee: badgeEmp, hits, loadError })
+        const gate = amBadgeGate({ code: raw, employee: badgeEmp, hits, loadError, kind: isAmTeam(department) ? 'AM' : 'PM' })
         if (!gate.ok) { toast.error(gate.text); return }
+      }
+      if (isAmTeam(department)) {
         onSite = amOnSiteApproval({
           inspectorRank: positionRank(badgeEmp.position), approverRank: positionRank(myPosition),
           isSelf: myEmployeeId === undefined ? null : (!!myEmployeeId && badgeEmp.id === myEmployeeId),
@@ -2073,7 +2078,7 @@ export default function PMCheckData() {
                           </div>
                         )
                       })()}
-                      <InspectorCodeField value={inspectorCode} onChange={setInspectorCode} required={isAmTeam(department)} style={{ marginTop: 8 }} />
+                      <InspectorCodeField value={inspectorCode} onChange={setInspectorCode} required style={{ marginTop: 8 }} />
                       <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="หมายเหตุ (ถ้ามี)..." style={{ marginTop: 8 }} />
                       {/* 🔴 ปุ่มบันทึก "สีต้องตรงกับความจริง" (06/10 · คอมเมนต์ทีม MTN ข้อ 3)
                           *"ถ้ากรอกรายละเอียดไม่ครบทุกจุด ให้ปุ่มบันทึกขึ้นเป็นสีแดงหรือสีเหลืองไว้ก่อนได้มั้ย

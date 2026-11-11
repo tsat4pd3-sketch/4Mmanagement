@@ -111,9 +111,13 @@ export function amApproveAllowed({ can, isSeeded }) {
  * @param {{ code?:string, employee?:object|null, hits?:number, loadError?:boolean }} p
  *   employee = พนักงานที่จับคู่ได้ 1 คน (`findByBadge`) · hits = จำนวนแถวที่รหัสตรง (แยก "ไม่พบ" กับ "ซ้ำ")
  * @returns {{ ok:boolean, code:'ok'|'no_code'|'unreadable'|'not_found'|'ambiguous', text:string }} */
-export function amBadgeGate({ code = '', employee = null, hits = 0, loadError = false } = {}) {
+/* `kind` = ป้ายใบในข้อความ (11/11 · ใบ PM ของช่างใช้ด่านเดียวกัน — คำสั่ง user "บังคับสแกนบัตรก่อน")
+   ไม่ส่ง = 'AM' = ข้อความเดิมเป๊ะ */
+export function amBadgeGate({ code = '', employee = null, hits = 0, loadError = false, kind = 'AM' } = {}) {
   const c = normBadgeCode(code)
-  if (!c) return { ok: false, code: 'no_code', text: 'ใบตรวจ AM ต้องสแกนบัตรผู้ตรวจก่อนบันทึก (หัวหน้าตรวจแทน = สแกนบัตรตัวเอง)' }
+  if (!c) return { ok: false, code: 'no_code', text: kind === 'AM'
+    ? 'ใบตรวจ AM ต้องสแกนบัตรผู้ตรวจก่อนบันทึก (หัวหน้าตรวจแทน = สแกนบัตรตัวเอง)'
+    : `ใบตรวจ ${kind} ต้องสแกนบัตรผู้ตรวจก่อนบันทึก (สแกนบัตรของช่างที่ตรวจจริง)` }
   if (loadError) return { ok: false, code: 'unreadable', text: `อ่านทะเบียนพนักงานไม่ได้ — ยืนยันไม่ได้ว่ารหัส ${c} คือใคร ยังบันทึกไม่ได้ ลองใหม่อีกครั้ง` }
   if (employee?.id) return { ok: true, code: 'ok', text: '' }
   if (hits > 1) return { ok: false, code: 'ambiguous', text: `รหัส ${c} ซ้ำกันหลายคนในทะเบียนพนักงาน — ระบบไม่เดา ให้ admin แก้ทะเบียนก่อน` }

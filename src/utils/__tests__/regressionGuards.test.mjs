@@ -10104,3 +10104,13 @@ test('📐 factory-map-polygon-save-gate — ลากกรอบบนผั�
   assert.ok(/dragVertex\(/.test(code),
     '\n\n❌ ลากจุดมุมไม่ผ่าน dragVertex() แล้ว — โหมดคงมุมฉากหาย\n');
 });
+
+/* ═══ 🪪 ใบตรวจทุกใบ (AM + PM) ต้องผ่านด่านบัตรผู้ตรวจ (2026-11-11 · คำสั่ง user) ═══
+   เดิมด่าน `amBadgeGate` อยู่ใน `if (isAmTeam(department))` ⇒ ใบ PM ของช่างบันทึกได้โดยไม่มีบัตร */
+test('🪪 PMCheckData: ด่านบัตรผู้ตรวจต้องไม่อยู่ใต้เงื่อนไข isAmTeam (ใช้ทุกใบ)', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/PMCheckData.jsx'), 'utf8'))
+  assert.doesNotMatch(src, /if\s*\(\s*isAmTeam\(department\)\s*\)\s*\{\s*const raw = inspectorCode/,
+    '\n\n❌ ด่านบัตรผู้ตรวจกลับไปอยู่ใต้ isAmTeam — ใบ PM จะบันทึกได้โดยไม่สแกนบัตร\n')
+  assert.match(src, /amBadgeGate\(\{[^}]*kind:/, '\n\n❌ amBadgeGate ต้องส่ง kind (AM/PM) ให้ข้อความถูกใบ\n')
+  assert.match(src, /<InspectorCodeField[^>]*required(\s|\/|>)/, '\n\n❌ ช่องรหัสผู้ตรวจต้อง required ทุกใบ\n')
+})
