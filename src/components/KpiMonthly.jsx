@@ -1482,14 +1482,14 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                         {ak && ak.key === 'mtbf' && autoSeries && (
                           <tr style={{ background: 'var(--bg2)', opacity: 0.85 }}>
                             <td style={{ ...tdSt, textAlign: 'left', whiteSpace: 'normal', fontSize: 11, color: 'var(--muted)' }}
-                              title={'MTBF ตามความหมายเดิมของคำ = เวลาที่เดินได้ ÷ จำนวนครั้งที่เสีย\nสูตรทางการหารด้วยจำนวนเครื่อง จึงได้ ~730 ทุกเดือนไม่ว่าจะเสียมากหรือน้อย'}>
-                              🔎 เทียบให้ดู (ไม่ใช่ค่าทางการ) · [(730 × เครื่อง) − ชม.เสีย] ÷ <b>จำนวนครั้งที่เสีย</b>
-                              <div style={{ fontSize: 11 }}>แถวบนคือค่าที่ส่งกลุ่ม — แถวนี้ไว้ดูว่าเดือนไหนแย่จริง</div>
+                              title={'เวลาที่เดินได้ ÷ จำนวนครั้งที่เสีย = เดินได้นานแค่ไหนถึงจะเสียอีกครั้ง\nสูตรทางการหารด้วยจำนวนเครื่อง จึงได้ ~730 ทุกเดือนไม่ว่าจะเสียมากหรือน้อย'}>
+                              ⏱️ <b>ชม.เดินต่อการเสีย 1 ครั้ง</b> · [(730 × เครื่อง) − ชม.เสีย] ÷ <b>จำนวนครั้งที่เสีย</b>
+                              <div style={{ fontSize: 11 }}>ไม่ใช่ค่าทางการ — ไว้ดูว่าเดือนไหนแย่จริง (แถวบนคือค่าที่ส่งกลุ่ม)</div>
                             </td>
                             {autoSeries.months.map((m, i) => (
                               <td key={i} style={{ ...tdSt, fontSize: 11.5, color: 'var(--muted)', fontVariantNumeric: 'tabular-nums' }}
                                 title={m.hasData ? `เสีย ${m.events} ครั้ง · ${m.breakdown_hr.toFixed(1)} ชม.` : 'เดือนนี้ยังไม่มีข้อมูลในระบบ'}>
-                                {m.mtbf_bf == null ? '·' : toRowUnit(m.mtbf_bf, 'mtbf', defUnit(d2)).toLocaleString('th-TH', { maximumFractionDigits: 1 })}
+                                {m.hr_per_fail == null ? '·' : toRowUnit(m.hr_per_fail, 'mtbf', defUnit(d2)).toLocaleString('th-TH', { maximumFractionDigits: 1 })}
                               </td>
                             ))}
                             <td style={{ ...tdSt, fontSize: 11 }} colSpan={2}>—</td>

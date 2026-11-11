@@ -114,30 +114,30 @@ test('MO Closed on target นับเฉพาะ BM — จอบอกว่�
 /* ══ 🔎 MTBF ตัวที่ 2 + ชั่วโมงที่ชี้เจ้าของไม่ได้ (11/11 · คำสั่ง user
       "single source truth ต้องไม่มีค่าไหนหายไป แต่ต้องเคาะว่าจะไปอยู่ตรงไหน") ══ */
 
-test('🔎 MTBF 2 ตัวคนละนิยาม — ทางการ ÷ เครื่อง · อีกตัว ÷ ครั้งที่เสีย', () => {
+test('⏱️ 2 มุมมอง — MTBF ทางการ ÷ เครื่อง · ชม.เดินต่อการเสีย 1 ครั้ง ÷ ครั้งที่เสีย', () => {
   const { months } = mtnAutoSeries(roll, 2026, JIG);
   const sep = months.find(m => m.k === '2026-09');
   const avail = HOURS_PER_MONTH * 172;            // 125,560 ชม.
   const bdHr = 5025 / 60;                          // 83.75 ชม.
   assert.ok(Math.abs(sep.mtbf - (avail - bdHr) / 172) < 1e-9, 'ของทางการต้องไม่เปลี่ยน');
-  assert.ok(Math.abs(sep.mtbf_bf - (avail - bdHr) / 421) < 1e-9);
+  assert.ok(Math.abs(sep.hr_per_fail - (avail - bdHr) / 421) < 1e-9);
   /* 🔴 ประเด็นทั้งหมดของตัวที่ 2: ของทางการเกาะ 730 จนแยกเดือนดี/แย่ไม่ออก */
   assert.ok(sep.mtbf > 729 && sep.mtbf < 730, `ทางการเกาะ 730 (ได้ ${sep.mtbf})`);
-  assert.ok(sep.mtbf_bf < 400, `÷ครั้งที่เสีย ต้องเล็กกว่ามาก (ได้ ${sep.mtbf_bf})`);
+  assert.ok(sep.hr_per_fail < 400, `÷ครั้งที่เสีย ต้องเล็กกว่ามาก (ได้ ${sep.hr_per_fail})`);
   /* เดือนที่เสีย 2 เท่า ตัวทางการแทบไม่ขยับ แต่ตัวที่ 2 ต้องลดลงชัด */
   const aug = months.find(m => m.k === '2026-08');
   assert.ok(Math.abs(aug.mtbf - sep.mtbf) < 1, 'ทางการต่างกันไม่ถึง 1 ชม. ระหว่าง 2 เดือน');
-  assert.ok(Math.abs(aug.mtbf_bf - sep.mtbf_bf) > 10, 'ตัวที่ 2 ต้องแยกเดือนออกจากกันได้');
+  assert.ok(Math.abs(aug.hr_per_fail - sep.hr_per_fail) > 10, 'ตัวที่ 2 ต้องแยกเดือนออกจากกันได้');
 });
 
-test('🔴 เสีย 0 ครั้ง = MTBF ÷ครั้ง คำนวณไม่ได้ (null) ห้ามเป็น 0 หรือ Infinity', () => {
+test('🔴 เสีย 0 ครั้ง = ชม.เดินต่อการเสีย คำนวณไม่ได้ (null) ห้ามเป็น 0 หรือ Infinity', () => {
   const r = { ...roll, dt: [{ m: '2026-09', kind: 'jig', events: 0, breakdown_min: 0 }] };
   const sep = mtnAutoSeries(r, 2026, JIG).months.find(m => m.k === '2026-09');
-  assert.equal(sep.mtbf_bf, null);
+  assert.equal(sep.hr_per_fail, null);
   assert.ok(Number.isFinite(sep.mtbf), 'ตัวทางการยังคำนวณได้ (= 730 เต็ม)');
   /* เดือนที่ไม่มีข้อมูล downtime เลย = null ทั้งคู่ */
   const jan = mtnAutoSeries(roll, 2026, JIG).months.find(m => m.k === '2026-01');
-  assert.equal(jan.mtbf, null); assert.equal(jan.mtbf_bf, null);
+  assert.equal(jan.mtbf, null); assert.equal(jan.hr_per_fail, null);
 });
 
 test('🕳️ ชั่วโมงที่ชี้เจ้าของไม่ได้ — แยก 2 เหตุ (คนละทางแก้)', () => {
