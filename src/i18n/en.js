@@ -83,6 +83,7 @@ const EN = {
   'จัดการผู้ใช้งาน': 'User Management',
   'ตั้งค่าจอวนหน้า': 'Display Rotation',
   'ตั้งค่าการแจ้งเตือน': 'Notification Settings',
+  'การเชื่อมต่อ Node-RED / เครื่องจักร': 'Node-RED / Machine Connections',
   'ทะเบียนเอกสาร & ฟอร์ม': 'Document & Form Registry',
   'พิมพ์ป้าย QR': 'Print QR Labels',
   'ประวัติการแก้ไขข้อมูล': 'Audit Log',

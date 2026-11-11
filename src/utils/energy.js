@@ -626,3 +626,24 @@ export function loadShare(boardMeters) {
   })
   return { total, rows }
 }
+
+/* ═══ 📍 จุดที่ผูก topic ได้ (ใช้ร่วม /energy + ศูนย์เชื่อมต่อ /integrations · 2026-11-11) ═══
+   ⚠️ ที่เดียวที่ประกอบรายการ "ไลน์ตามลำดับชั้น + โซน facility" — ห้ามประกอบเองในหน้า */
+import { toHierarchicalOptions as hierOptions } from './lineHierarchy.js'
+
+/** โซน = พื้นที่ facility (pm_facility_areas) + ไลน์ของเครื่องประเภท facility · ไม่ซ้ำ เรียงชื่อ */
+export function energyZonesFrom(areas, facilityMachines) {
+  const zs = new Set([...(areas || []).map(a => a?.name), ...(facilityMachines || []).map(m => m?.line_name)].filter(Boolean))
+  return [...zs].sort()
+}
+
+/** ไลน์ (แม่ + ลูก เรียงเป็นขั้น) + โซน → ตัวเลือกของช่อง "ผูกกับ" */
+export function energyPointOptions(lines, zones) {
+  return [
+    ...hierOptions(lines || []).map(({ line, depth }) => ({
+      kind: 'line', name: line.name, section: line.section, depth,
+      parentName: line.parent_line_name || null,
+    })),
+    ...(zones || []).map(z => ({ kind: 'zone', name: z, section: null, depth: 0, parentName: null })),
+  ]
+}

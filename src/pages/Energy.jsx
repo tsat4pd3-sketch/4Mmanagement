@@ -21,12 +21,13 @@ import {
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
+import { Link } from 'react-router-dom';
 import { toast } from '../components/Toast';
 import { checkWriteRows } from '../utils/dbWrite';
 import { can } from '../utils/permissions';
 import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { scopeLines as pickerLines } from '../components/LineSelect';   // ตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง"
-import { getLineFamilyNames, toHierarchicalOptions, visibleDepths } from '../utils/lineHierarchy';
+import { getLineFamilyNames, visibleDepths } from '../utils/lineHierarchy';
 import PageHeader from '../components/PageHeader';
 import InfoMore from '../components/InfoMore';
 import NoticeBar from '../components/NoticeBar';
@@ -39,7 +40,7 @@ import {
   bahtPerUnit, RATE_SANE_MIN, RATE_SANE_MAX, sumRows,
   efFor, co2eKg, fmtTco2e, monthRange, changeContribution, meteredCoverage,
   secOf, co2ePerPiece, PIECE_BASIS_LABEL,
-  energyRollup, pctOf, outlierVsHistory,
+  energyRollup, pctOf, outlierVsHistory, energyPointOptions, energyZonesFrom,
 } from '../utils/energy';
 import { collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
@@ -99,13 +100,7 @@ export default function Energy() {
         บังคับกรอกที่ไลน์แม่ = ทีมต้องบวกมือ (Laser 2 ไลน์ + HDF-01 + HDF-02) แล้วยัดลงช่องเดียว
         → ทิ้งความละเอียดที่มิเตอร์ให้มาฟรีๆ + ตอบไม่ได้ว่าไลน์ไหนกินไฟ (ผิดกฎ "เก็บค่าที่อ่านได้")
      การนับซ้ำคุมที่ `energyRollup` (แม่มีค่า = ใช้ของแม่) **ไม่ใช่ที่การห้ามกรอก** */
-  const points = useMemo(() => ([
-    ...toHierarchicalOptions(scopedLines).map(({ line, depth }) => ({
-      kind: 'line', name: line.name, section: line.section, depth,
-      parentName: line.parent_line_name || null,
-    })),
-    ...zones.map(z => ({ kind: 'zone', name: z, section: null, depth: 0, parentName: null })),
-  ]), [scopedLines, zones]);
+  const points = useMemo(() => energyPointOptions(scopedLines, zones), [scopedLines, zones]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -119,8 +114,7 @@ export default function Energy() {
     ]);
     /* 🔴 อ่านทะเบียนไลน์ไม่สำเร็จ = คงลิสต์เดิม ห้ามทับด้วย [] (30/10) */
     if (!lnRes?.error) setLines(lnRes?.data || []);
-    const zs = new Set([...(areas || []).map(a => a.name), ...(facMc || []).map(m => m.line_name)].filter(Boolean));
-    setZones([...zs].sort());
+    setZones(energyZonesFrom(areas, facMc));
     setHist(h || []);
 
     // ⚠️ ตาราง C1 อาจยังไม่ apply — โหลดแยก best-effort ห้ามให้ทั้งหน้าพัง
@@ -840,7 +834,14 @@ export default function Energy() {
         ) : tab === 'mqtt' ? (
           /* 📡 ทะเบียน MQTT topic — ให้ทีมช่างเพิ่มเองได้ (ยังไม่มี bridge → หน้าบอกไว้ชัด)
              deep-link มาตอนยังไม่ apply migration = บอกตรงๆ ห้ามเด้งไปแท็บอื่นเงียบๆ */
-          mqttReady ? <EnergyMqttTopics points={points} canEdit={canEdit} />
+          /* 🔌 ศูนย์เชื่อมต่อ (11/11) = บ้านใหม่ของการตั้งค่าต้นทาง · แท็บนี้คงไว้ให้คนที่มีแค่สิทธิ์หน้าพลังงาน */
+          mqttReady ? <div style={{ display: 'grid', gap: 10 }}>
+            <div style={{ ...card, fontSize: 12.5, color: 'var(--text2)' }}>
+              🔌 ต้นทาง (Node-RED) · รหัสลับ · สุขภาพการส่ง · ดาวน์โหลด flow — จัดการที่
+              {' '}<Link to="/integrations">ตั้งค่า › การเชื่อมต่อ Node-RED / เครื่องจักร</Link>
+            </div>
+            <EnergyMqttTopics points={points} canEdit={canEdit} />
+          </div>
             : <div style={{ ...card, fontSize: 12.5, color: 'var(--text2)' }}>
                 📡 <b>ส่วนรับค่าจากมิเตอร์ (MQTT) ยังไม่เปิดใช้</b> — ต้อง apply migration
                 <code> 20260820_energy_mqtt_topics</code> ก่อน แล้วแท็บจะโผล่เอง (แจ้ง admin)

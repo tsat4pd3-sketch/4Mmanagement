@@ -24,6 +24,12 @@
 | `ppe_requirements` | `scope_kind` ∈ `plant·section·line·station` + `scope_key` + `item_id` + **`required` bool** |
 | `ppe_check_items` | ผลตรวจ: `(work_date, employee_id, item_id, ok, checked_by)` — แถวละชิ้น ไม่ใช่ jsonb |
 
+🔴 **ชั้น `station` — ทะเบียน `workstations` ผูกไลน์ 2 ทาง** (`line_id` 30/133 แถว · `line_name` ข้อความ 103/133)
+⇒ ถามคีย์เดียว = จุดงานหายไป 3 ใน 4 เงียบๆ (ไลน์ที่มีจุดงาน 32 ชื่อ แต่มี `line_id` แค่ 8)
+· ยิง 2 คิวรีแยกแล้วยุบซ้ำด้วย `id` — **ห้ามใช้ `.or()`** เพราะชื่อไลน์บางตัวมีวงเล็บ (`LINE D ( 110&300 Ton )`)
+ทำ syntax พัง · ชื่อคอลัมน์คือ **`station_name`** ไม่ใช่ `name` (ด่าน `workstations-dual-line-key`)
+· ไลน์ที่ยังไม่มีจุดงาน = **เขียนบนจอว่าให้ไปตั้งที่ `/layout-setup` หรือตั้งที่ชั้นไลน์แทน** ห้ามปล่อย dropdown ว่างเฉยๆ
+
 **คีย์ของ `scope_key`:** `plant`→`'*'` · `section`→ชื่อส่วนงาน · `line`→**`production_lines.id`** (ไม่ใช่ชื่อ —
 ชื่อเปลี่ยนได้) · `station`→`workstations.id`
 
