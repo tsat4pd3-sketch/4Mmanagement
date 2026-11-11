@@ -9725,7 +9725,8 @@ test('🔇 notify-rollup-never-for-call-mtn — ห้ามยุบใบ "เ
 test('🔴 close-shift-dt-confirm — ปิดกะที่มี Downtime เปิดค้าง ต้องผ่านป๊อปอัพทวนก่อนเขียน DB', () => {
   const src = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
 
-  assert.match(src, /const handleCloseSession = async \(\{ dtConfirmed = false \} = \{\} \) =>|const handleCloseSession = async \(\{ dtConfirmed = false \} = \{\}\) =>/,
+  // รับพารามิเตอร์เพิ่มได้ (เช่น `recheckDone` ของด่าน poka-yoke 11/11) แต่ `dtConfirmed` ต้องยังอยู่
+  assert.match(src, /const handleCloseSession = async \(\{ dtConfirmed = false[^)]*\} = \{\}\s*\) =>/,
     '\n\n❌ handleCloseSession ไม่รับ dtConfirmed — ป๊อปอัพทวนจะเรียกกลับมาปิดจริงไม่ได้\n');
   assert.match(src, /if \(openDT\.length > 0 && !dtConfirmed\) \{ setDtCloseConfirm\(openDT\); return; \}/,
     '\n\n❌ ถอดด่านป๊อปอัพทวน Downtime เปิดค้างออกจาก handleCloseSession\n'
@@ -10299,4 +10300,26 @@ test('📸 computeSessionOee: snapshot (CT + พัก) ต้องชนะท
     '\n\n❌ payload ปิดกะทั้ง 2 ทาง (pending_close + closed) ต้อง stamp break_snapshot\n')
   assert.match(dr, /breakSnapshot \? \{ break_snapshot: breakSnapshot \} : \{\}/,
     '\n\n❌ ปุ่ม "คำนวณ OEE ใหม่" ต้อง stamp break_snapshot ที่ใช้คิดรอบนั้นด้วย\n')
+})
+
+/* ═══ 🛡️ poka-yoke หน้าปิดกะ ห้ามถอด (2026-11-11 · คำสั่ง user) ═════════════════════════
+   "ทำ poka-yoke เวลาลงข้อมูลหรือก่อนส่งขอปิดกะ เพื่อรีเช็คและแจ้งให้พนักงานที่ลงตรวจสอบตอนนั้นเลย
+    จะช่วยได้เยอะกว่ามาย้อนหลังหลายๆวัน" — ด่าน 2 จังหวะ: ตอนลงยอด + ก่อนส่งขอปิดกะ */
+test('🛡️ DailyReport: ด่าน poka-yoke ตอนลงยอด + ก่อนปิดกะ ต้องยังอยู่', () => {
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'))
+  // ① ทุกทางที่คนพิมพ์ยอดเอง ต้องผ่าน qtyFitPass ก่อนเขียน DB
+  assert.ok((dr.match(/if \(!qtyFitPass\(o, (?:v|finalQty)\)\) return;/g) || []).length >= 2,
+    '\n\n❌ ทั้งทาง "ลงยอดสะสม" และ "ปิดใบด้วยยอดจริง" ต้องเรียก qtyFitPass() ก่อนบันทึก\n')
+  assert.match(dr, /checkQtyFit\(\{/, '\n\n❌ ด่านยอดต้องคิดด้วย checkQtyFit จาก utils/closeChecks.js\n')
+  // ② ด่านรีเช็คก่อนปิดกะ — ต้องกั้นก่อนเขียน DB และต้องติ๊กครบจึงไปต่อได้
+  assert.match(dr, /if \(confirmChecks\(checks\)\.length\) \{ setRecheckTicks\(\{\}\); setCloseRecheck\(checks\); return; \}/,
+    '\n\n❌ handleCloseSession ต้องหยุดรอการติ๊กเมื่อมีข้อ confirm (ห้ามปล่อยผ่าน)\n')
+  assert.match(dr, /const allTicked = must\.every\(c => recheckTicks\[c\.key\]\)/,
+    '\n\n❌ ปุ่มยืนยันต้องปลดล็อกเมื่อติ๊กครบทุกข้อ (ปุ่มเดียวรวบ = คนกดผ่านไม่อ่าน)\n')
+  assert.match(dr, /disabled=\{!allTicked\}/, '\n\n❌ ปุ่ม "ตรวจแล้ว" ต้อง disabled จนติ๊กครบ\n')
+  // 🔴 ตัวเลขที่ด่านจับ ต้องเป็นตัวเดียวกับที่จอโชว์ — ใบ downtime หลังคำตัดสินมีสูตรเดียว
+  assert.ok((dr.match(/previewDecidedDt\(\)/g) || []).length >= 3,
+    '\n\n❌ OEE preview บนจอ + ด่านรีเช็ค ต้องใช้ previewDecidedDt() ตัวเดียวกัน (ห้ามคิดนาที DT ซ้ำในหน้า)\n')
+  assert.match(stripComments(readFileSync(join(ROOT, 'src/utils/downtimeCarryRules.js'), 'utf8')),
+    /export function decidedDtLogs\(/, '\n\n❌ decidedDtLogs ต้องอยู่ใน utils (pure) ไม่ใช่ในหน้า\n')
 })
