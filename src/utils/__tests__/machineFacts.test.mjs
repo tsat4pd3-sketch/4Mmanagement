@@ -14,11 +14,11 @@ test('กะ ESM จากเวลาไทย: 07:59 = ดึกของเ�
   assert.equal(factShiftOf('ไม่ใช่เวลา'), null);
 });
 
-test('master เหตุผล: ตามแผน/ไม่มีแผน = onplan · FAULT = unplan · IDLE/COMM_LOSS = ไม่รู้ (null)', () => {
+test('master เหตุผล: ตามแผน/ไม่มีแผน = onplan · FAULT/IDLE = unplan · COMM_LOSS = ไม่รู้ (null)', () => {
   assert.equal(reasonKindOf('planned_stop'), 'onplan');
   assert.equal(reasonKindOf('no_plan'), 'onplan');
   assert.equal(reasonKindOf('fault'), 'unplan');
-  assert.equal(reasonKindOf('idle'), null);
+  assert.equal(reasonKindOf('idle'), 'unplan');
   assert.equal(reasonKindOf('comm_loss'), null);
 });
 
@@ -59,16 +59,17 @@ test('สถานะที่ไม่รู้จัก → other (ไม่�
   assert.equal(rows[0].minorSec, 30);
 });
 
-test('เหตุผล: แยกตาม master (รหัสเดียวกันคนละ master = คนละแถว) · IDLE นับเป็น unmappable · ที่จับคู่ไว้แต่ไม่เห็นยังโชว์', () => {
+test('เหตุผล: แยกตาม master (รหัสเดียวกันคนละ master = คนละแถว) · IDLE เข้า unplan · COMM_LOSS นับเป็น unmappable · ที่จับคู่ไว้แต่ไม่เห็นยังโชว์', () => {
   const { rows, unmappable } = reasonRows([
     { state: 'planned_stop', reason_code: 3, reason_text: 'ประชุม', duration_sec: 60 },
     { state: 'fault', reason_code: 3, reason_text: 'Robot alarm', duration_sec: 120 },
     { state: 'fault', reason_code: 3, duration_sec: 30 },
-    { state: 'idle', reason_code: 0 },
+    { state: 'idle', reason_code: 3, duration_sec: 10 },
+    { state: 'comm_loss', reason_code: 0 },
   ], [{ reason_kind: 'unplan', reason_code: 9, reason_text: 'JIG', downtime_type_id: 't1' }]);
   assert.equal(unmappable, 1);
-  assert.deepEqual(rows.map(r => `${r.kind}:${r.code}:${r.count}`), ['onplan:3:1', 'unplan:3:2', 'unplan:9:0']);
-  assert.equal(rows[1].sec, 150);
+  assert.deepEqual(rows.map(r => `${r.kind}:${r.code}:${r.count}`), ['onplan:3:1', 'unplan:3:3', 'unplan:9:0']);
+  assert.equal(rows[1].sec, 160);
   assert.equal(rows[1].text, 'Robot alarm');
   assert.equal(rows[2].map.downtime_type_id, 't1');
 });
