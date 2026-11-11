@@ -69,6 +69,8 @@ export function liveOeeByLine({
       ctPartial: !!(lv && !lv.noCt && lv.qtyNoCt > 0),
       pOver: !!lv?.pOver,
       openCount: ss.length,
+      // ฐานน้ำหนักของแถวสด (จอที่เอาไปเฉลี่ยรวมกับกะที่ปิดแล้ว) = เวลาที่เดินมาแล้ว ไม่ใช่ทั้งกะ
+      elapsedMin: lv?.elapsedMin ?? null, plannedDtMin: lv?.plannedDtMin ?? 0,
     };
   });
 }
