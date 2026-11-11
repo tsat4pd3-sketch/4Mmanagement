@@ -10090,3 +10090,52 @@ test('🗂️ line-registry-empty-not-cached — ทะเบียนไลน�
     '\n\n❌ loadProductionLines() ต้อง `if (!data?.length) throw …` — ลิสต์ว่างจะถูกจดลง cache 4 ชม.' +
     '\n   (ผังโรงงานกรอบหายทั้งผัง / dropdown ไลน์ว่าง · 10/11)\n');
 });
+
+/* ═══ 🔗 handoff-child-must-not-vanish — 2026-11-11 · ไล่จากรอบตรวจรายวัน ════════════
+   โมเดลส่งต่อ MO = 1 ปัญหา หลายใบผูกกันเป็นสาย · ใบต้นทางจบที่ `transferred`
+   (อยู่ใน `MO_DONE_STATUSES` = **สถานะจบ**) แล้วเปิดใบใหม่ของทีมปลายทาง
+
+   🔴 รูที่เจอ (วัด 11/11 · DR): ใบแม่ 31 ใบที่ transferred เกิน 7 วัน — 4 ใบ **ปลายทางหายไป**
+      ต้นเหตุ: FK `mtn_order_handoffs.to_order_id` เป็น `on delete set null`
+      + ใบลูกยังไม่ออกเลข MO ⇒ `moRemoveMode()` เดิมตอบ "ลบได้"
+      ⇒ ลบใบลูก = ลิงก์ถูกล้างเงียบๆ · ใบแม่ยังจบ ⇒ **ปัญหาหลุดจากคิวทุกคน ไม่มีจอไหนบอก**
+      พิสูจน์จาก audit_log: ถูก DELETE จริง 3/4 ใบ (ทีม JIG ลบตอนยัง pending)
+   แก้ 3 ชั้น — ด่านนี้ล็อกทั้งสามไว้ */
+test('🔗 handoff-child-must-not-vanish — ลบใบปลายทางไม่ได้ + โซ่ขาดต้องโผล่บนจอ', () => {
+  const bad = [];
+
+  // ① ชั้นกฎ: moRemoveMode ต้องดู transferred_from_mo ก่อนตอบ "ลบได้"
+  const perm = stripComments(readFileSync(join(ROOT, 'src/utils/mtnStepPerm.js'), 'utf8'));
+  const fn = perm.slice(perm.indexOf('export function moRemoveMode'), perm.indexOf('export const MO_LABEL_WAIT_APPROVAL'));
+  if (!/transferred_from_mo/.test(fn))
+    bad.push('moRemoveMode ไม่ได้เช็ค transferred_from_mo — ใบที่ถูกส่งต่อมาจะถูกลบทิ้งได้อีก');
+  const iFrom = fn.indexOf('transferred_from_mo');
+  const iDel = fn.indexOf('MO_REMOVE_DELETE', fn.indexOf('if (!hasNo)'));
+  if (iFrom < 0 || iDel < 0 || iFrom > iDel)
+    bad.push('ด่าน transferred_from_mo ต้องอยู่ "ก่อน" สาขา !hasNo ที่ปล่อยให้ลบ');
+
+  // ② ชั้น DB: migration ตั้ง FK เป็น restrict (ของจริงที่ client ข้ามไม่ได้)
+  const mig = readFileSync(join(ROOT, 'supabase/migrations/20261111_mtn_handoff_child_no_delete_dr.sql'), 'utf8');
+  if (!/to_order_id\)\s*references\s+public\.mtn_orders\(id\)\s+on delete restrict/.test(mig))
+    bad.push('migration ไม่ได้ตั้ง to_order_id เป็น on delete restrict');
+
+  // ③ ชั้นจอ: หน้า MO ต้องโหลดโซ่ส่งต่อ + ส่งเข้าแผง · แผงต้องวาดบล็อกนี้
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  if (!/from\('mtn_order_handoffs'\)/.test(page))
+    bad.push('MtnRepair ไม่ได้อ่าน mtn_order_handoffs — โซ่ขาดจะไม่โผล่ที่ไหนเลย');
+  if (!/buildHandoffGapBoard\(/.test(page))
+    bad.push('MtnRepair ไม่ได้ใช้ buildHandoffGapBoard — ห้ามตัดสินโซ่ขาดเองในหน้า');
+  if (!/gaps=\{/.test(page)) bad.push('MtnRepair ไม่ได้ส่ง gaps เข้า MoStalePanel');
+  /* `.in()` ยาวบน id ชุดใหญ่ = URL เกินเพดาน proxy → คืนว่างเงียบ (กฎเหล็กข้อ 5) */
+  if (!/fetchByIds\(/.test(page)) bad.push('MtnRepair โหลดใบแม่/ใบลูกของโซ่ส่งต่อไม่ผ่าน fetchByIds');
+  /* แปล error FK ให้คนอ่านรู้เรื่อง — พ่น PG ดิบ = หน้างานไม่รู้ว่าต้องกดยกเลิกแทน */
+  if (!/23503/.test(page)) bad.push('MtnRepair ไม่ได้แปล error 23503 (FK restrict) ตอนลบใบ');
+
+  const panel = stripComments(readFileSync(join(ROOT, 'src/components/MoStalePanel.jsx'), 'utf8'));
+  if (!/handoffGapMeta\(/.test(panel))
+    bad.push('MoStalePanel ไม่ได้อ่านทะเบียนชนิดโซ่ขาด (handoffGapMeta) — ห้ามแต่งป้าย/สีเองในหน้า');
+  if (!/gapsErr/.test(panel))
+    bad.push('MoStalePanel ไม่ได้เขียนบนจอตอนอ่านโซ่ส่งต่อไม่สำเร็จ (จะโชว์ 0 ทั้งที่ไม่รู้)');
+
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
