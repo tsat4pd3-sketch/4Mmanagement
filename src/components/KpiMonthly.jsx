@@ -110,9 +110,9 @@ async function pageAll(buildQuery, onProg) {
 /* 🔴 สีจุด/แท่งในกราฟ = เกณฑ์ทางการ `scoreDef` เท่านั้น (audit 05/10 — เดิม `missTarget` 2 สีไม่รู้จัก Commitment
    ⇒ เดือนที่ตารางให้ △ เหลือง กราฟข้างๆ กลับแดง = จอเดียวกันตอบคนละสถานะ) · ไม่มีเป้า = สีกลาง */
 const defOfTarget = (target, dir) => (target == null || !dir ? null : { target_compare: dir === 'down' ? '<=' : '>=', target_value: target, direction: dir });
-const levelColor = (v, def) => {
+const levelColor = (v, def, plan = null) => {
   if (v == null || !def || (def.target_value == null && def.commit_value == null && !def.commitment)) return 'var(--accent)';
-  const st = scoreDef(v, def).status;
+  const st = scoreDef(v, def, { plan }).status;
   return st === 'good' || st === 'warn' || st === 'bad' ? statusColor(st) : 'var(--accent)';   // ชุดสีกลาง utils/statusTone
 };
 function MiniChart({ vals, kind, target, dir, curIdx, plan, def = null }) {
@@ -128,7 +128,7 @@ function MiniChart({ vals, kind, target, dir, curIdx, plan, def = null }) {
   const hi = Math.max(...nums, ...pnums, target ?? -Infinity, isBar ? 1 : -Infinity);
   const span = hi - lo || 1;
   const y = v => H - PAD - ((v - lo) / span) * (H - PAD * 2);
-  const colorOf = (v) => levelColor(v, sdef);
+  const colorOf = (v, i = null) => levelColor(v, sdef, i != null && plan ? plan[i] ?? null : null);   // 📅 score_by_plan: สีจุดเทียบแผนของเดือนนั้น
   const pts = vals.map((v, i) => (v == null ? null : { x: i * step + step / 2, y: y(v), v, i })).filter(Boolean);
   return (
     <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }} aria-hidden>
@@ -140,11 +140,11 @@ function MiniChart({ vals, kind, target, dir, curIdx, plan, def = null }) {
       {isBar
         ? pts.map(p => (
           <rect key={p.i} x={p.i * step + 2} y={p.y} width={step - 4} height={Math.max(1.5, H - PAD - p.y)} rx="1.5"
-            fill={colorOf(p.v)} fillOpacity={p.i === curIdx ? 0.35 : 0.9}
-            stroke={p.i === curIdx ? colorOf(p.v) : 'none'} strokeDasharray={p.i === curIdx ? '2 2' : undefined} strokeWidth="1" />))
+            fill={colorOf(p.v, p.i)} fillOpacity={p.i === curIdx ? 0.35 : 0.9}
+            stroke={p.i === curIdx ? colorOf(p.v, p.i) : 'none'} strokeDasharray={p.i === curIdx ? '2 2' : undefined} strokeWidth="1" />))
         : (<>
           <polyline points={pts.map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="var(--accent)" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round" opacity="0.75" />
-          {pts.map(p => <circle key={p.i} cx={p.x} cy={p.y} r={p.i === curIdx ? 2.6 : 2} fill={p.i === curIdx ? 'transparent' : colorOf(p.v)} stroke={colorOf(p.v)} strokeWidth={p.i === curIdx ? 1.2 : 0} />)}
+          {pts.map(p => <circle key={p.i} cx={p.x} cy={p.y} r={p.i === curIdx ? 2.6 : 2} fill={p.i === curIdx ? 'transparent' : colorOf(p.v, p.i)} stroke={colorOf(p.v, p.i)} strokeWidth={p.i === curIdx ? 1.2 : 0} />)}
         </>)}
     </svg>
   );
@@ -551,7 +551,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
     </b>
   ));
 
-  const manualLv = (def, v) => (v == null ? null : scoreDef(v, def).level);
+  const manualLv = (def, v, plan = null) => (v == null ? null : scoreDef(v, def, { plan }).level);
   /* 🔴 สรุปทั้งปีต้องใช้ "วิธีรวม" ของ KPI ตัวนั้น ไม่ใช่เฉลี่ยตายตัว (24/09)
      เดิมเฉลี่ยทุกแถว ⇒ Scrap ที่ต้องรวมทั้งปีโชว์ 271.4 แทน 1,628 (เทียบเด็ค H1 FY2026)
      วิธีรวมอยู่ที่ `kpi_catalog.summary_mode` — ของตัวตน KPI ห้าม override รายแถว */
@@ -644,6 +644,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   }, [allDefs, isInherited]);
   /* นิยามที่ "ถือค่า" ของแถว — KPI แบบ plant = นิยามโรงงาน (อาจเป็นตัวเดียวกับแถวเมื่อดูขอบเขต ทั้งโรงงาน) · แบบ own = ตัวเอง */
   const valueDefOf = useCallback(d => (valueScopeOf(d) === 'plant' ? sharedValueDef(allDefs, d) : d), [allDefs]);
+  /* 📅 แผนของแถว — แถวที่แชร์ค่าโรงงาน (ยอดขาย/หัว) ไม่มีแผนเอง ใช้แผนของแผ่นโรงงาน · ใช้กับ score_by_plan เท่านั้น (11/11) */
+  const plansOf = (def) => (plans[def?.id] || (valueDefOf(def)?.id && valueDefOf(def).id !== def?.id ? plans[valueDefOf(def).id] : null) || {});
+  const lastFilledMonth = (vals) => vals.reduce((last, v, i) => (v != null ? i + 1 : last), 0);
   /* 🏭 KPI ค่าโรงงาน "ต้องมี" นิยามระดับโรงงาน (19/10 · Customer Satisfaction ถูกตั้งเป็นค่าโรงงาน 30/09 โดยไม่มีนิยาม plant
      ⇒ ทุกหน่วยขึ้นว่าง + ค่าที่ PD4 กรอกไว้ 8 เดือนหายจากจอ 3 สัปดาห์) — รายการที่ยังขาด + ตัวสร้างจากนิยามของหน่วย (ไม่ก๊อปค่า) */
   const missingPlant = useMemo(() => missingPlantValueDefs(allDefs || [], entries), [allDefs, entries]);
@@ -812,7 +815,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
           scope: d2.scope_text || d2.kpi_catalog?.scope_text || '',
           commitment: d2.commitment || '', target: d2.target || '',
           monthVals, summary: avg,
-          ynVals: monthVals.map(v => manualLv(d2, v)), ynTotal: manualLv(d2, avg),
+          ynVals: monthVals.map((v, i) => manualLv(d2, v, plansOf(d2)[i + 1] ?? null)), ynTotal: manualLv(d2, avg, plansOf(d2)[lastFilledMonth(monthVals)] ?? null),
           weight: d2.weight, actionPlan: d2.action_plan || '', actionOwner: d2.action_owner || '',
           sectionTag: defScopeTag(d2),
         };
@@ -870,6 +873,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
       commitment: form.commitment || null, target: form.target || null,
       target_value: form.target_value === '' || form.target_value == null ? null : Number(form.target_value),
       direction: form.direction || null, weight: form.weight === '' || form.weight == null ? null : Number(form.weight),
+      score_by_plan: !!form.score_by_plan,
       action_plan: form.action_plan || null, action_owner: form.action_owner || null,
       /* 🧮 ที่มาของตัวเลข (15/10): formula = ค่ารายเดือนคำนวณจากตัวเลขฐาน · provider_config.formula = คีย์ใน KPI_FORMULAS */
       provider: form.provider === 'formula' ? 'formula' : 'manual',
@@ -1270,7 +1274,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                     ...defs.filter(d2 => d2.category === c.key).map(d2 => {
                       const sum = manualSum(d2);
                       const avg = sum.value;
-                      const ynT = manualLv(d2, avg);
+                      const ynT = manualLv(d2, avg, plansOf(d2)[lastFilledMonth(valuesOf(d2))] ?? null);   // 📅 สรุปเทียบแผนสะสมของเดือนล่าสุดที่มีค่า
                       const ak = autoSeries ? autoKpiOfName(defName(d2)) : null;
                       const autoVals = ak ? autoSeries.months.map(m => toRowUnit(m[ak.key], ak.key, defUnit(d2))) : null;
                       /* 🏭 KPI แบบ "ค่าโรงงาน": ช่องกรอกอ่าน/เขียนที่นิยามโรงงาน · ดูจากขอบเขตหน่วยงาน = อ่านอย่างเดียว + ปุ่มไปกรอกที่ ทั้งโรงงาน */
@@ -1325,7 +1329,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                           </td>
                           {Array.from({ length: 12 }, (_, i) => {
                             const v = rowVals[i];
-                            const yn = manualLv(d2, v);
+                            const yn = manualLv(d2, v, plansOf(d2)[i + 1] ?? null);
                             const cv = v == null ? childRoll?.entries?.[i + 1] : undefined;   // ⬆ เดือนที่ระดับนี้ว่าง แต่ลูกมี = บอร์ดใช้ค่านี้
                             return (
                               <td key={i} style={{ ...tdSt, padding: '3px 4px' }} title={sharedRO ? 'ค่าโรงงาน — กรอกที่ขอบเขต ทั้งโรงงาน' : (plantKpi && !vDef ? 'ยังไม่มีนิยามระดับโรงงาน' : undefined)}>
@@ -1360,7 +1364,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                             onClick={() => openDefChart(d2)}>
                             <MiniChart vals={rowVals} kind="line" def={d2}
                               target={d2.target_value != null ? Number(d2.target_value) : null} dir={d2.direction || null} curIdx={curMonthIdx}
-                              plan={monthsOf(plans, d2.id)} />
+                              plan={monthsOf({ [d2.id]: plansOf(d2) }, d2.id)} />
                           </td>
                           {canManage && (
                             <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
@@ -1590,6 +1594,11 @@ function AutoTargetModal({ row, def, year, scopeText, deep, onClose, onSave }) {
             <div style={lbl}>Commitment (ข้อความบนใบ Appraisal เช่น "≤ 1.452%")</div>
             <input style={inp} value={f.commitment} onChange={e => set('commitment', e.target.value)} />
           </div>
+          <label style={{ gridColumn: '1 / -1', display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12, cursor: 'pointer' }}
+            title="KPI สะสม (ยอดขาย/หัว · TS Academy) เทียบเป้าทั้งปีตั้งแต่กลางปี = แดงทุกเดือน — ติ๊กแล้วแต่ละเดือนเทียบกับ 'แผนรายเดือน' ของเดือนนั้น (แถวแผนรายเดือนในตาราง / นำเข้าจากชีทบัญชี) · เดือนที่ไม่มีแผน = เทียบเป้าทั้งปีตามเดิม">
+            <input type="checkbox" checked={!!f.score_by_plan} onChange={e => set('score_by_plan', e.target.checked)} style={{ marginTop: 2 }} />
+            <span>📅 <b>ตัดสิน ○△✗ รายเดือนด้วยแผนสะสมของเดือนนั้น</b> (KPI สะสม) — Commitment ของเดือน = แผน × (Commit ปี ÷ Target ปี)</span>
+          </label>
           <div>
             <div style={lbl}>Target (ข้อความ)</div>
             <input style={inp} value={f.target_text} onChange={e => set('target_text', e.target.value)} />
@@ -1798,6 +1807,7 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
     target: init.target || '',
     target_value: init.target_value ?? '',
     direction: init.direction || '',
+    score_by_plan: !!init.score_by_plan,   // 📅 ตัดสินรายเดือนด้วยแผนสะสม (KPI สะสม · 11/11)
     weight: init.weight ?? '',
     action_plan: init.action_plan || '',
     action_owner: init.action_owner || '',
