@@ -30,6 +30,7 @@ export const AUDIT_TABLE_LABELS = {
   station_slot_plans:      '📍 คนต่อกะของจุดงาน (Manpower Board)',
   // ── ผังองค์กร & ไลน์ (Main) ──
   org_nodes:               '🏢 ผังองค์กร',
+  factory_line_regions:    '🗺️ กรอบไลน์บนผังรวมโรงงาน',
   production_lines:        '🏭 ไลน์ผลิต',
   workstations:            '📍 จุดงาน',
   cost_center_rates:       '💰 Activity Rate',
@@ -146,6 +147,7 @@ export const AUDIT_FIELD_LABELS = {
   rfq_no: 'เลข RFQ', customer_target_price: 'ราคาเป้าหมายลูกค้า', annual_volume: 'volume/ปี', volume_source: 'ที่มา volume',
   crd_no: 'เลขที่ CRD', crd_sent_at: 'วันส่ง CRD', npi_project_id: 'โปรเจค NPI', outcome: 'ผล (ได้งาน/ไม่ได้)', loss_reason: 'เหตุผลที่ไม่ได้งาน',
   unit_price: 'ราคาชิ้น', tooling_price: 'ราคาแม่พิมพ์', annual_sales: 'ยอดขาย/ปี', production_order_no: 'เลขใบแจ้งจัดทำ',
+  points: 'จุดมุมกรอบ (% ของผัง)',
   name: 'ชื่อ', name_th: 'ชื่อ (ไทย)', label: 'ป้าย', code: 'รหัส', note: 'หมายเหตุ',
   is_active: 'สถานะใช้งาน', sort_order: 'ลำดับ', category: 'หมวด',
   characteristic: 'ลักษณะปัญหา', detail: 'รายละเอียด', group_name: 'กลุ่ม',
@@ -197,5 +199,5 @@ export const rowLabel = (r) => {
   return d.name || d.name_th || d.full_name || d.emp_name || d.prod_no || d.machine_no || d.mat_no || d.characteristic
       || d.label || d.code || d.permission_key || d.cost_center
       || d.ncr_no || d.capa_no || d.claim_no || d.part_no || d.title
-      || (d.piece_no != null ? `ชิ้นที่ ${d.piece_no}` : null) || '(ไม่ระบุชื่อ)';
+      || (d.piece_no != null ? `ชิ้นที่ ${d.piece_no}` : null) || d.line_name || '(ไม่ระบุชื่อ)';
 };
