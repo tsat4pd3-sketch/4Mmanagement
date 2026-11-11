@@ -10090,3 +10090,42 @@ test('🗂️ line-registry-empty-not-cached — ทะเบียนไลน�
     '\n\n❌ loadProductionLines() ต้อง `if (!data?.length) throw …` — ลิสต์ว่างจะถูกจดลง cache 4 ชม.' +
     '\n   (ผังโรงงานกรอบหายทั้งผัง / dropdown ไลน์ว่าง · 10/11)\n');
 });
+
+/* ═══ 🧭 workstations-dual-line-key — 2026-11-11 · feedback user ("จุดงานไม่โหลดหรอ") ═════════
+   ทะเบียน `workstations` ผูกไลน์ **2 ทาง**: `line_id` (30/133 แถว) และ `line_name` ข้อความ (103/133)
+   ⇒ ถามด้วย `line_id` ทางเดียว = จุดงานหายไป 3 ใน 4 **เงียบๆ** (ไลน์ที่มีจุดงาน 32 ชื่อ แต่มี id แค่ 8)
+   + ชื่อคอลัมน์คือ `station_name` ไม่ใช่ `name` — เลือกผิดชื่อ = คิวรี error แล้วถ้ากลืน error
+     จะเหลือลิสต์ว่างที่อ่านเหมือน "ไลน์นี้ไม่มีจุดงาน" (จอโกหก · ลิสต์ว่าง 2 ความหมาย)                */
+test('🧭 workstations-dual-line-key — /ppe-setup ต้องถามจุดงานทั้ง 2 คีย์ + ไม่กลืน error', () => {
+  const bad = [];
+  const s = stripComments(readFileSync(join(ROOT, 'src/pages/PpeSetup.jsx'), 'utf8'));
+  if (!/\.eq\('line_id'/.test(s) || !/\.eq\('line_name'/.test(s))
+    bad.push('ถามจุดงานคีย์เดียว — ต้องรวมทั้ง line_id และ line_name');
+  if (/select\('id, name'\)/.test(s) || /\bst\.name\b/.test(s))
+    bad.push("ใช้คอลัมน์ `name` — ทะเบียนนี้ชื่อ `station_name`");
+  if (!/setStFail\(/.test(s)) bad.push('อ่านทะเบียนจุดงานล้มแล้วไม่บอกใคร (ลิสต์ว่าง = จอโกหก)');
+  // ว่างจริง กับ อ่านไม่ได้ ต้องเขียนบนจอคนละข้อความ
+  if (!/ยังไม่ได้ตั้งจุดงาน/.test(s)) bad.push('ไลน์ที่ยังไม่มีจุดงาน ไม่ได้บอกว่าต้องไปตั้งที่ไหน');
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
+
+/* ═══ 🧭 nav-item-needs-sub — 2026-11-11 · feedback user ═══════════════════════════════════
+   หมวดเมนูที่มีหัวข้อย่อย (`sub`) — รายการที่ไม่ใส่ `sub` จะลอยอยู่เหนือหัวข้อย่อยทั้งหมด
+   ดูเหมือนหลุดกลุ่ม (เจอจริงกับ "ข้อกำหนด PPE" ตอนเพิ่มใหม่ 10/11)                              */
+test('🧭 nav-item-needs-sub — หมวดที่มีหัวข้อย่อยแล้ว ห้ามมีรายการไม่มี sub', () => {
+  const src = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  const block = src.slice(src.indexOf('const NAV_ITEMS'), src.indexOf('NAV_GROUP_ORDER'));
+  const rows = block.split('\n').filter(l => /^\s*\{\s*to:\s*'\//.test(l));
+  const groupsWithSub = new Set();
+  for (const l of rows) {
+    const g = l.match(/group:\s*'([^']+)'/);
+    if (g && /\bsub:\s*'/.test(l)) groupsWithSub.add(g[1]);
+  }
+  const bad = [];
+  for (const l of rows) {
+    const g = l.match(/group:\s*'([^']+)'/);
+    if (!g || !groupsWithSub.has(g[1]) || /\bsub:\s*'/.test(l)) continue;
+    bad.push(`${(l.match(/to:\s*'([^']+)'/) || [])[1]} — อยู่หมวด "${g[1]}" ที่มีหัวข้อย่อย แต่ไม่ได้ใส่ sub`);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ รายการเมนูจะลอยเหนือหัวข้อย่อย ดูเหมือนหลุดกลุ่ม:\n   ' + bad.join('\n   ') + '\n');
+});
