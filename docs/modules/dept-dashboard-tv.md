@@ -292,3 +292,13 @@
   `TvBoard` ปิด loader/realtime ของ Andon เมื่อ `dept=mo` (ไม่ยิงซ้ำ)
 - TV: ตัวใหญ่ด้วย `tvSizer` (เนื้อ 22–28px · ตัวนับ 60px) · การ์ดติด `data-tv-item` + `useTvPager`/`<TvPagerBar>` (ยาวเกินจอ = แบ่งหน้าหมุน
   + `data-tv-subpage` ⇒ จอวนรอครบทุกหน้าย่อย) · บรรทัด "ซ่อนกี่ใบ" อยู่**เหนือ**กล่องแบ่งหน้า (ใต้กล่อง = ตกจอ)
+
+## 🟢 OEE สดรายไลน์ในจอ Andon ฝ่ายผลิต (`/tv?dept=production` · 2026-11-11 · คำสั่ง user)
+
+แถบ `<LiveOeeStrip>` (`src/components/LiveOeeStrip.jsx`) อยู่เหนือแถบยอดผลิต — **เฉพาะ `cards === 'production'`**
+· ตัวคำนวณ `src/lib/liveLineOee.js` (`liveOeeByLine` → `computeLiveOee` ตัวเดียวกับ `/factory-map` · `/line-oee` · `/oee-analytics`) **ห้ามคิดสูตรเองในจอ**
+· นับเฉพาะกะ `status='open'` ของวันงาน (ขอปิดแล้ว = จบแล้ว) · ไลน์เปิดค้างหลายกะ = กะล่าสุด + ป้าย "เปิดค้าง N กะ"
+· สี = `statusOf(oee, oeeTargetForLines(...))` เป้ากลุ่มชุดเดียวกับ OBEYA/ผังรวม · โหลดเป้าไม่ได้ = เทา + บอก
+· ประเมินไม่ได้ = เหตุผล (กะเพิ่งเปิด/ยังไม่ปิดใบแรก/ยังไม่ตั้ง CT) **ห้าม 0%** · เรียง: ต่ำกว่าเป้ามากก่อน · ประเมินไม่ได้ท้ายสุด
+· โหลดเบา: คิวรีเฉพาะกะที่เปิด + ทะเบียน CT/พัก/คู่จาก cache กลาง · realtime ผ่าน `useLiveBoard`
+· กดไลน์ = `/line-oee?line=` ของไลน์นั้น
