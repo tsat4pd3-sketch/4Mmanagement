@@ -72,14 +72,34 @@ export default function PpeSetup() {
   };
   useEffect(() => { load(); }, []);
 
-  // จุดงานโหลดเฉพาะตอนเลือกชั้น "จุดงาน" และรู้ไลน์แล้ว (กฎ egress)
+  const lineById = useMemo(() => Object.fromEntries((lines || []).map(l => [String(l.id), l])), [lines]);
+
+  /* จุดงานโหลดเฉพาะตอนเลือกชั้น "จุดงาน" และรู้ไลน์แล้ว (กฎ egress)
+     🔴 ทะเบียน `workstations` ผูกไลน์ **2 ทาง**: `line_id` (30/133 แถว) และ `line_name` ข้อความ (103/133)
+        ⇒ ถามทางเดียว = จุดงานหายไป 3 ใน 4 เงียบๆ · ต้องรวมทั้ง 2 ทางแล้วยุบซ้ำด้วย id
+        (ยิง 2 คิวรีแยก ไม่ใช้ `.or()` — ชื่อไลน์บางตัวมีวงเล็บ เช่น `LINE D ( 110&300 Ton )`
+         ซึ่งทำ syntax ของ `.or()` พัง)
+     🔴 ชื่อคอลัมน์คือ `station_name` ไม่ใช่ `name` · อ่านไม่ได้ = **เขียนบนจอ ห้ามโชว์ลิสต์ว่างเฉยๆ**
+        (ลิสต์ว่าง 2 ความหมาย: ไลน์นี้ยังไม่ตั้งจุดงาน vs คิวรีล้ม) */
+  const [stFail, setStFail] = useState('');
   useEffect(() => {
-    if (kind !== 'station' || !lineKey) { setStations([]); return undefined; }
+    if (kind !== 'station' || !lineKey) { setStations([]); setStFail(''); return undefined; }
     let alive = true;
-    supabase.from('workstations').select('id, name').eq('line_id', Number(lineKey)).order('name')
-      .then(({ data, error }) => { if (alive) setStations(error ? [] : (data || [])); });
+    setStFail('');
+    const lnName = lineById[String(lineKey)]?.name || '';
+    const cols = 'id, station_name, line_id, line_name';
+    Promise.all([
+      supabase.from('workstations').select(cols).eq('line_id', Number(lineKey)),
+      lnName ? supabase.from('workstations').select(cols).eq('line_name', lnName) : Promise.resolve({ data: [], error: null }),
+    ]).then(([a, b]) => {
+      if (!alive) return;
+      if (a.error || b.error) { setStations([]); setStFail(a.error?.message || b.error?.message); return; }
+      const byId = new Map();
+      for (const r of [...(a.data || []), ...(b.data || [])]) byId.set(String(r.id), r);
+      setStations([...byId.values()].sort((x, y) => String(x.station_name || '').localeCompare(String(y.station_name || ''), 'th')));
+    });
     return () => { alive = false; };
-  }, [kind, lineKey]);
+  }, [kind, lineKey, lineById]);
 
   /* 🗂️ ลิสต์ส่วนงานมาจากผังองค์กร (เรียงตาม sort_order) ห้ามเดาจาก production_lines.section
      แล้วกรองด้วยขอบเขตที่ผู้ใช้เห็นได้ (`sections` ว่าง = เห็นทั้งโรงงาน) */
@@ -87,7 +107,6 @@ export default function PpeSetup() {
   const sectionNames = useMemo(
     () => orgSections.filter(s2 => !scopeSecs.length || inSectionScope(scopeSecs, s2)),
     [orgSections, scopeSecs]);
-  const lineById = useMemo(() => Object.fromEntries((lines || []).map(l => [String(l.id), l])), [lines]);
 
   /* หน่วยที่กำลังตั้งค่าอยู่ + "ชั้นบนของมัน" (ไว้คำนวณค่าที่ตกทอดลงมา) */
   const scopeKey = kind === 'plant' ? '*' : kind === 'section' ? secKey : kind === 'line' ? lineKey : stKey;
@@ -141,7 +160,7 @@ export default function PpeSetup() {
   const scopeName = kind === 'plant' ? 'ทั้งโรงงาน'
     : kind === 'section' ? (secKey || '—')
     : kind === 'line' ? (lineById[String(lineKey)]?.name || '—')
-    : (stations.find(s => String(s.id) === String(stKey))?.name || '—');
+    : (stations.find(st => String(st.id) === String(stKey))?.station_name || '—');
 
   const loading = items === null && !loadErr;
 
@@ -165,9 +184,14 @@ export default function PpeSetup() {
                 role={role} lineId={lineId} sections={scopeSecs} scopeIdx={scopeIdx} />
             )}
             {kind === 'station' && (
-              <select value={stKey} onChange={e => setStKey(e.target.value)} disabled={!lineKey}>
-                <option value="">{lineKey ? '— เลือกจุดงาน —' : 'เลือกไลน์ก่อน'}</option>
-                {stations.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              <select value={stKey} onChange={e => setStKey(e.target.value)} disabled={!lineKey || !stations.length}>
+                <option value="">
+                  {!lineKey ? 'เลือกไลน์ก่อน'
+                    : stFail ? '⚠ อ่านทะเบียนจุดงานไม่ได้'
+                    : !stations.length ? 'ไลน์นี้ยังไม่มีจุดงาน'
+                    : '— เลือกจุดงาน —'}
+                </option>
+                {stations.map(st => <option key={st.id} value={st.id}>{st.station_name || '(ไม่มีชื่อ)'}</option>)}
               </select>
             )}
           </FilterBar>
@@ -185,7 +209,21 @@ export default function PpeSetup() {
       )}
       {loading && <div style={{ ...card, color: 'var(--muted)' }}>กำลังโหลด…</div>}
 
-      {!loading && !loadErr && kind !== 'plant' && !scopeKey && (
+      {kind === 'station' && !!lineKey && stFail && (
+        <NoticeBar tone="bad">
+          <b>อ่านทะเบียนจุดงานไม่สำเร็จ</b> — ช่องเลือกจุดงานที่ว่างอยู่<b>ไม่ได้แปลว่าไลน์นี้ไม่มีจุดงาน</b>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>{stFail} · โหลดหน้าใหม่อีกครั้ง</div>
+        </NoticeBar>
+      )}
+      {kind === 'station' && !!lineKey && !stFail && !stations.length && (
+        <NoticeBar tone="warn">
+          ไลน์ <b>{lineById[String(lineKey)]?.name || lineKey}</b> ยังไม่ได้ตั้งจุดงานไว้ จึงตั้งข้อกำหนดรายจุดงานไม่ได้
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
+            ตั้งจุดงานที่หน้า <b>ตั้งค่าผัง/Floorplan</b> → แท็บผังไลน์ · หรือตั้งข้อกำหนดที่ชั้น <b>ไลน์</b> แทน (ตกทอดถึงทุกจุดงานในไลน์)
+          </div>
+        </NoticeBar>
+      )}
+      {!loading && !loadErr && kind !== 'plant' && !scopeKey && !(kind === 'station' && lineKey) && (
         <div style={{ ...card, color: 'var(--muted)' }}>
           เลือก{PPE_SCOPE_LABEL[kind]}ที่ต้องการตั้งค่าก่อน — ระหว่างนี้ยังไม่แสดงรายการ เพราะแต่ละหน่วยตกทอดคนละชุด
         </div>

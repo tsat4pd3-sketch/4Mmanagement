@@ -15,7 +15,7 @@ import {
   ClipboardList, Ruler, BookOpen, Scroll, FilePenLine, Gauge, Megaphone, Package, Tv, Repeat, RefreshCw, Search,
   Lock, KeyRound, Bell, Link, Wrench, Bolt, Sparkles, Archive, Database, CalendarDays, Anvil, Map, Rocket, Truck,
   Siren, Hammer, UsersRound, Compass, Toolbox, Gamepad2, Camera, FolderOpen, Shield, ShieldCheck, PenLine, Globe,
-  Drama, MessageSquare, BellOff, LogOut, Folder, Menu, QrCode, ClipboardCheck, Star, UserRound,
+  Drama, MessageSquare, BellOff, LogOut, Folder, Menu, QrCode, ClipboardCheck, Star, UserRound, Plug,
 } from 'lucide-react';
 
 export const ICON_MAP = {
@@ -24,7 +24,7 @@ export const ICON_MAP = {
   '👷': HardHat, '💡': Lightbulb, '💼': Briefcase, '📄': FileText, '📅': Calendar, '📈': TrendingUp, '📉': TrendingDown,
   '📊': ChartColumn, '📋': ClipboardList, '📐': Ruler, '📖': BookOpen, '📜': Scroll, '📝': FilePenLine, '📟': Gauge,
   '📢': Megaphone, '📦': Package, '📺': Tv, '🔁': Repeat, '🔄': RefreshCw, '🔍': Search, '🔎': Search, '🔐': Lock,
-  '🔑': KeyRound, '🔔': Bell, '🔗': Link, '🔧': Wrench, '🔩': Bolt, '🔮': Sparkles, '🗃️': Archive, '🗄️': Database,
+  '🔑': KeyRound, '🔔': Bell, '🔌': Plug, '🔗': Link, '🔧': Wrench, '🔩': Bolt, '🔮': Sparkles, '🗃️': Archive, '🗄️': Database,
   '🗓': CalendarDays, '🗓️': CalendarDays, '🗜️': Anvil, '🗺️': Map, '🚀': Rocket, '🚚': Truck, '🚨': Siren, '🛠️': Hammer,
   '🔨': Hammer, '🧑‍🤝‍🧑': UsersRound, '🧭': Compass, '🧰': Toolbox, '🎮': Gamepad2, '📷': Camera, '📸': Camera,
   '🗂️': FolderOpen, '🛡️': Shield, '🦺': ShieldCheck, '✍️': PenLine, '🌐': Globe, '🎭': Drama, '💬': MessageSquare,

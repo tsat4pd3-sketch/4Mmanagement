@@ -88,6 +88,8 @@ import { notifyEvent } from '../utils/notifyEvent';
 import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 ค่าที่เคยบันทึกใน mtn_orders — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import { loadLinesRes, LINE_COLUMNS, invalidateProductionLines } from '../utils/useProductionLines';
+import { fetchByIds } from '../utils/fetchByIds';
+import { buildHandoffGapBoard } from '../utils/moHandoffGaps';   // 🔗 โซ่ส่งต่อที่ขาด (11/11)
 import { liveChannel } from '../utils/liveChannel';
 import { LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
@@ -652,6 +654,8 @@ export default function MtnRepair() {
   /* โหลดใบล้ม / ชนเพดาน 1000 ใบ ต้องเขียนบนจอ (QC 05/10) — เดิม error ถูกกลืนแล้วขึ้น "ไม่มีรายการ"
      และใบเก่ากว่า 1000 ใบล่าสุดหายเงียบ (ตัวนับ "ตัวกรองวันที่ซ่อน" ก็นับไม่เห็น) */
   const ORDER_CAP = 1000;
+/* 🔗 เพดานแถวโซ่ส่งต่อ — ตารางเล็ก (35 แถวใน 2 เดือน · วัด 11/11) แต่ชนเพดานต้องบอกบนจอ */
+const HANDOFF_CAP = 2000;
   /* 🔴🔴 **ใบที่ยังไม่ปิด ต้องโหลดมาครบเสมอ ห้ามพึ่งหน้าต่าง "1000 ใบล่าสุด"** (05/11 · หน้างานแจ้ง
        *"ทำไมบอกมีงาน กดเข้าไปไม่เจออะไรเลย"*)
      เดิมโหลดชุดเดียว = `order(report_at desc).limit(1000)` · วัดจริง 05/11: ทั้งตาราง 1,616 ใบ
@@ -699,6 +703,39 @@ export default function MtnRepair() {
     setOrdersAt(Date.now());
   }, []);
 
+  /* 🔗 โซ่ส่งต่อที่ขาด — "ส่งต่อแล้วแต่ปลายทางไม่มีใครทำ" (11/11 · คำสั่ง user)
+     ใบแม่จบที่ `transferred` (สถานะจบ) ⇒ ไม่อยู่ในชุด "ใบยังไม่ปิด" ⇒ **แผงไล่งานมองไม่เห็น**
+     ⇒ ต้องอ่าน `mtn_order_handoffs` ตรงๆ แล้วถามว่าปลายทางยังทำงานอยู่ไหม
+     · ตารางเล็ก (35 แถวใน 2 เดือน · วัด 11/11) ⇒ โหลดทั้งตารางได้ แต่ใส่เพดานกันโตเงียบ
+     · 🔴 โหลดล้ม/ชนเพดาน = เขียนบนจอ ห้ามโชว์ 0 (กฎความซื่อสัตย์ของจอ)
+     · กฎตัดสินอยู่ `utils/moHandoffGaps.js` ที่เดียว ห้ามเทียบสถานะเองที่นี่ */
+  const [handoffs, setHandoffs] = useState({ rows: [], parentBy: {}, childBy: {}, loadedIds: null, error: '', capped: false });
+  const loadHandoffs = useCallback(async () => {
+    const { data, error } = await supabaseDR.from('mtn_order_handoffs')
+      .select('id, from_order_id, to_order_id, from_dept, to_dept, reason, handed_by, handed_at')
+      .order('handed_at', { ascending: false }).limit(HANDOFF_CAP);
+    if (error) { setHandoffs(h => ({ ...h, error: error.message })); return; }
+    const rows = data || [];
+    const parentIds = [...new Set(rows.map(r => r.from_order_id).filter(Boolean))];
+    const childIds  = [...new Set(rows.map(r => r.to_order_id).filter(Boolean))];
+    /* `.in()` ยาว = URL เกินเพดาน proxy → คืนว่างเงียบ ⇒ ผ่าน fetchByIds (กฎเหล็กข้อ 5) */
+    const [pRes, cRes] = await Promise.all([
+      fetchByIds(parentIds, part => supabaseDR.from('mtn_orders')
+        .select('id, mo_no, line_name, machine_no, problem_characteristic, report_note').in('id', part)),
+      fetchByIds(childIds, part => supabaseDR.from('mtn_orders')
+        .select('id, mo_no, status, reject_reason').in('id', part)),
+    ]);
+    const idx = (res) => Object.fromEntries((res?.rows || []).map(r => [r.id, r]));
+    setHandoffs({
+      rows, parentBy: idx(pRes), childBy: idx(cRes),
+      /* 🔴 ชุด id ที่ "ถามแล้ว" — ใบลูกที่ถามแล้วไม่มีแถว = ถูกลบจริง · ถามไม่สำเร็จ = unknown
+         (ไม่มีชุดนี้ กฎจะตอบ unknown ทุกตัว ซึ่งถูกแล้วแต่ช่วยอะไรไม่ได้) */
+      loadedIds: (cRes?.error || cRes?.truncated) ? null : new Set(childIds),
+      error: [pRes?.error, cRes?.error].filter(Boolean).join(' · '),
+      capped: rows.length >= HANDOFF_CAP,
+    });
+  }, []);
+
   /* ใบเต็ม 116 คอลัมน์ — โหลดเฉพาะใบที่เปิดดูจริง (ไม่ใช่ทั้งพันใบทุกรอบ) */
   const fetchFullOrder = useCallback(async (id) => {
     const { data, error } = await supabaseDR.from('mtn_orders').select('*').eq('id', id).maybeSingle();
@@ -718,16 +755,16 @@ export default function MtnRepair() {
   const detailIdRef = useRef(null);
   useEffect(() => { detailIdRef.current = detail?.id || null; }, [detail]);
   const reloadAll = useCallback(async () => {
-    await loadOrders();
+    await Promise.all([loadOrders(), loadHandoffs()]);   // 🔗 โซ่ส่งต่อรีเฟรชคู่กัน (ตารางเล็ก)
     const id = detailIdRef.current;
     if (!id) return;
     const full = await fetchFullOrder(id);
     if (full) setDetail(cur => (cur && cur.id === full.id ? full : cur));
-  }, [loadOrders, fetchFullOrder]);
+  }, [loadOrders, loadHandoffs, fetchFullOrder]);
 
   useEffect(() => {
     loadPmTeams().then(ts => { setMtnDepts(ts.map(t => t.key)); setMtnTeamRows(ts); }); // ทีมช่างจากตาราง mtn_teams (fallback DEFAULT_TEAMS)
-    (async () => { setLoading(true); await loadMasters(); await loadOrders(); setLoading(false); })();
+    (async () => { setLoading(true); await loadMasters(); await Promise.all([loadOrders(), loadHandoffs()]); setLoading(false); })();
     /* 🔴 2026-09-15 — เดิมผูก loadOrders เข้า handler ตรงๆ **ไม่มีเพดานเลย**
        loadOrders = `select('*').limit(1000)` ทั้งตาราง ⇒ ทุกครั้งที่ช่างคนไหนก็ตามขยับใบ
        ทุกเครื่องที่เปิดหน้านี้ดึงใบซ่อมทั้งพันใบใหม่ · ดู src/utils/liveRefresh.js */
@@ -969,6 +1006,15 @@ export default function MtnRepair() {
     prOf: openPrs.error ? null : (o) => openPrs.byOrder[o.id] || [],
   }), [scopedOrders, ordersAt, openPrs]);
 
+  /* 🔗 "ส่งต่อแล้วแต่ปลายทางไม่มีใครทำ" (11/11 · คำสั่ง user) — ใบแม่จบที่ `transferred`
+     จึงไม่อยู่ในชุดใบเปิดค้าง ⇒ แผงไล่งานปกติมองไม่เห็น · กฎตัดสินอยู่ `utils/moHandoffGaps.js`
+     🔴 ไม่กรองตามขอบเขตทีม: ใบพวกนี้ **ไม่มีใครรับผิดชอบอยู่เลย** ซ่อนตามทีม = หายต่อ
+        (ของเก่าที่ลิงก์ขาดแล้ว อ่านทีมปลายทางได้จากแถว handoff ซึ่งโชว์อยู่ในแถวแล้ว) */
+  const handoffGaps = useMemo(() => buildHandoffGapBoard(handoffs.rows, {
+    parentBy: handoffs.parentBy, childBy: handoffs.childBy, loadedIds: handoffs.loadedIds,
+    teamName: deptNameOf, now: ordersAt,
+  }), [handoffs, ordersAt]);
+
   /* 📊 first-response ของช่างฝ่ายผลิต — "เข้าไป action แล้วแก้เองได้กี่ครั้ง / ส่งต่อกี่ครั้ง"
      (คำสั่ง user 2026-09-14: "เก็บเป็นประวัติไว้ว่าเข้าไป action ก่อนแล้วกี่ครั้ง ทำเองได้/ไม่ได้กี่ครั้ง")
      นับเฉพาะใบที่**ลงมือจริงแล้ว** (มี repair_done_at = ผ่านขั้น 3) — ใบที่ยังไม่มีใครแตะไม่ใช่ first-response
@@ -1121,6 +1167,9 @@ export default function MtnRepair() {
           chase={chaseBoard}
           onLine={(line) => { setFStatus('open'); setFLine(line); }}
           onText={(q) => { setFStatus('open'); setFText(q); }}
+          /* 🔗 โซ่ส่งต่อที่ขาด — ใบแม่จบแล้วแต่ปลายทางไม่มีใครทำ (กดแถว = เปิดใบแม่ที่ยังมีเนื้อปัญหา) */
+          gaps={handoffGaps} gapsErr={handoffs.error} gapsCapped={handoffs.capped}
+          onOpenId={(id) => openDetail({ id })}
         />
         {/* 🕳️ กรองแล้วไม่เหลือใบเลย — ต้องบอกว่า "ตัวไหนตัดทิ้ง" + "ปลดแล้วได้คืนกี่ใบ"  (26/10 · คำถาม user)
             กฎความซื่อสัตย์ของจอ: "ไม่มีรายการ" เฉยๆ อ่านได้ว่า "ไม่มีงานค้าง" ทั้งที่มีงานค้างอยู่
@@ -2644,7 +2693,15 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
       if (!confirm(`ลบใบแจ้งซ่อมนี้?\n\n${removal.why}`)) return;
       /* 🔴 นับแถวที่ลบได้ก่อน ค่อยลบรูปใน storage — เช็คแค่ `error` แล้วลบรูปไปก่อน
          = RLS ปฏิเสธเงียบ (0 แถว ไม่มี error) แถวยังอยู่แต่รูปหายถาวร (กฎเหล็กข้อ 2) */
-      const rows = await checkWriteRows(await supabaseDR.from('mtn_orders').delete().eq('id', o.id).select('id'), 'ลบใบแจ้งซ่อม');
+      /* 🔗 ด่านชั้น DB: FK `mtn_order_handoffs.to_order_id` เป็น `on delete restrict` (11/11)
+         ⇒ ใบที่เป็นปลายทางของการส่งต่อ ลบไม่ได้แม้จะมาถึงบรรทัดนี้ (เช่นแถวเก่าที่ยังไม่มี
+         `transferred_from_mo`) · 23503 = foreign_key_violation ⇒ แปลเป็นภาษาคน ห้ามพ่น PG ดิบ */
+      const delRes = await supabaseDR.from('mtn_orders').delete().eq('id', o.id).select('id');
+      if (delRes.error?.code === '23503' || /mtn_order_handoffs/.test(delRes.error?.message || '')) {
+        toast.error('ลบไม่ได้ — ใบนี้เป็นปลายทางของการส่งต่อจากทีมอื่น (ลบแล้วปัญหาจะหายจากระบบ) · ให้ยกเลิกพร้อมเหตุผลแทน');
+        return;
+      }
+      const rows = await checkWriteRows(delRes, 'ลบใบแจ้งซ่อม');
       if (!rows) return;
       [o.before_img, o.after_img, o.qa_img, o.checker_sign, o.qa_sign, o.ho_sign, o.approve_sign]
         .forEach(u => u && removeMtnImg(u));
@@ -2654,7 +2711,9 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
     if (removal.mode !== MO_REMOVE_CANCEL) return toast.error(removal.why);
     /* ยกเลิก = ต้องมีเหตุผลเสมอ — ไม่งั้นเดือนหน้ามีคนถามว่า "เลข M5 หายไปไหน" แล้วตอบไม่ได้
        🔴 ไม่ลบรูป/ไม่ลบค่าแรง-อะไหล่ — ใบยังอยู่ให้สอบกลับ */
-    const why = (prompt(`ยกเลิกใบ ${o.mo_no}?\n\n${removal.why}\n\nเหตุผล (บังคับ):`) || '').trim();
+    /* 🔗 ใบที่ถูกส่งต่อมายังไม่ออกเลข MO (ออกตอนทีมปลายทางกดรับงาน) ⇒ ห้ามขึ้น "ยกเลิกใบ undefined" */
+    const label = String(o.mo_no || '').trim() || '(ยังไม่ออกเลข MO)';
+    const why = (prompt(`ยกเลิกใบ ${label}?\n\n${removal.why}\n\nเหตุผล (บังคับ):`) || '').trim();
     if (!why) return;
     const rows = await checkWriteRows(await supabaseDR.from('mtn_orders').update({
       status: 'cancelled',

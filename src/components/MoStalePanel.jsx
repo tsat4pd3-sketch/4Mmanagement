@@ -26,6 +26,8 @@ import { statusColor, toneInk } from '../utils/statusTone';
 import { staleTone } from '../utils/mtnStale';
 /* 🏃 "ใบนี้รอใครลงมือ" — กฎการแบ่งฝั่ง/หาเป้าอยู่ util ที่เดียว (05/11 · ห้ามตัดสินฝั่งในไฟล์นี้) */
 import { chaseSideMeta } from '../utils/moChase';
+/* 🔗 โซ่ส่งต่อที่ขาด — กฎตัดสินอยู่ util ที่เดียว (11/11 · ห้ามเทียบสถานะใบลูกในไฟล์นี้) */
+import { handoffGapMeta } from '../utils/moHandoffGaps';
 
 const FIRST_ROWS = 8;   // โชว์ก่อน 8 ใบ ที่เหลือพับ + บอกจำนวนที่พับ (§5.5 "ห้ามตัดข้อมูลเงียบ")
 
@@ -64,6 +66,9 @@ export default function MoStalePanel({
   /* 🏃 แผงไล่งาน (05/11 · คำสั่ง user "ทำแผงไล่ MO ค้างให้หัวหน้าช่าง") — `chase` = ผลจาก
      `buildMoChaseBoard()` · `null` = หน้าแม่ยังไม่ส่งมา (แผงเดิมทำงานเหมือนเดิมเป๊ะ) */
   chase = null, onText, onLine,
+  /* 🔗 โซ่ส่งต่อที่ขาด (11/11 · คำสั่ง user) — ผลจาก `buildHandoffGapBoard()`
+     `null` = หน้าแม่ยังไม่ส่งมา (แผงเดิมทำงานเหมือนเดิมเป๊ะ) · `onOpenId(id)` = เปิดใบแม่ */
+  gaps = null, gapsErr = '', gapsCapped = false, onOpenId,
 }) {
   const [side, setSide] = useState('');   // ฝั่งที่กางอยู่ ('' = ยังไม่เลือก)
   const [all, setAll] = useState(false);
@@ -278,6 +283,78 @@ export default function MoStalePanel({
             )}
           </div>
         </>
+      )}
+
+      {/* ── 🔗 ส่งต่อแล้วแต่ปลายทางไม่มีใครทำ ───────────────────────────────────────
+          🔴 ใบแม่จบที่ `transferred` (สถานะจบ) ⇒ **ไม่อยู่ในกองใบค้างข้างบน** ถ้าไม่มีแผงนี้
+             ปัญหาที่ส่งต่อไปแล้วปลายทางถูกลบ/ยกเลิก จะไม่โผล่ที่ไหนในระบบเลย
+          · แยกบล็อกจากกองค้าง เพราะคนละชุดข้อมูลและคนละการแก้ (ต้องเปิดใบใหม่ให้ ไม่ใช่ไปตามขั้น)
+          · โหลดล้ม/ชนเพดาน = เขียนบนจอ ห้ามโชว์ 0 (กฎความซื่อสัตย์ของจอ) */}
+      {gapsErr ? (
+        <div role="alert" style={{ marginTop: 10, fontSize: 12, fontWeight: 700,
+          color: statusColor('bad'), background: 'var(--card)',
+          border: `1px solid ${statusColor('bad')}55`, borderRadius: 'var(--r-md)', padding: '7px 10px' }}>
+          ⚠️ อ่านโซ่การส่งต่อไม่สำเร็จ — ยังไม่รู้ว่ามีใบที่ส่งต่อแล้วปลายทางหายไปหรือเปล่า
+          <div style={{ fontWeight: 400, color: 'var(--text2)', marginTop: 2 }}>{gapsErr}</div>
+        </div>
+      ) : gaps && gaps.total > 0 && (
+        <div style={{ marginTop: 10, borderTop: '1px dashed var(--border2)', paddingTop: 9 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 6 }}>
+            🔗 ส่งต่อแล้วแต่ปลายทางไม่มีใครทำ · <b style={{ color: statusColor('bad') }}>{gaps.total} ใบ</b>
+            <div style={{ fontSize: 11.5, fontWeight: 400, color: 'var(--text2)', marginTop: 2 }}>
+              ใบต้นทางปิดไปแล้ว (ส่งต่อ = จบที่ทีมนั้น) — ใบพวกนี้<b>ไม่อยู่ในกองค้างข้างบน</b> และไม่อยู่ในคิวของใคร
+            </div>
+          </div>
+          {gapsCapped && (
+            <div style={{ fontSize: 11.5, color: statusColor('warn'), fontWeight: 700, marginBottom: 5 }}>
+              ⚠️ โซ่ส่งต่อชนเพดานที่โหลด — อาจมีมากกว่าที่เห็น
+            </div>
+          )}
+          <div style={{ display: 'grid', gap: 6, alignContent: 'start' }}>
+            {gaps.groups.map(g => (
+              <div key={g.key}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: statusColor(g.tone) }}>
+                  {g.icon} {g.label} · {g.n} ใบ
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--text2)', marginBottom: 4 }}>{g.hint}</div>
+                <div style={{ display: 'grid', gap: 4, alignContent: 'start' }}>
+                  {g.rows.map(r => {
+                    const meta = handoffGapMeta(r.kind);
+                    const body = (
+                      <>
+                        <b>{r.moNo || '(ใบต้นทางไม่มีเลข)'}</b>
+                        {r.lineName ? ` · ${r.lineName}` : ''}{r.machineNo ? ` · ${r.machineNo}` : ''}
+                        {r.toDeptLabel ? <> · ส่งให้ <b>{r.toDeptLabel}</b></> : null}
+                        {' · '}
+                        {r.days == null
+                          ? <span style={{ color: statusColor('warn') }}>ไม่มีวันเวลาให้นับ</span>
+                          : <span style={{ color: statusColor(meta.tone) }}>{r.days} วันแล้ว</span>}
+                        {r.problem ? <div style={{ color: 'var(--text2)', fontWeight: 400 }}>ปัญหา: {r.problem}</div> : null}
+                        {r.reason ? <div style={{ color: 'var(--text2)', fontWeight: 400 }}>เหตุที่ส่งต่อ: {r.reason}</div> : null}
+                        {r.childStatusLabel ? (
+                          <div style={{ color: 'var(--text2)', fontWeight: 400 }}>
+                            ใบปลายทาง: {r.childStatusLabel}{r.childReason ? ` — ${r.childReason}` : ''}
+                          </div>
+                        ) : null}
+                      </>
+                    );
+                    const sty = {
+                      textAlign: 'left', fontSize: 11.5, lineHeight: 1.5, padding: '5px 9px',
+                      background: 'var(--bg2)', color: 'var(--text)',
+                      border: `1px solid ${statusColor(meta.tone)}55`, borderRadius: 'var(--r-md)',
+                    };
+                    return (r.fromOrderId && onOpenId) ? (
+                      <button key={r.id} type="button" onClick={() => onOpenId(r.fromOrderId)}
+                        title="เปิดใบต้นทาง — เนื้อปัญหาอยู่ในใบนี้" style={{ ...sty, cursor: 'pointer' }}>
+                        {body}
+                      </button>
+                    ) : <div key={r.id} style={sty}>{body}</div>;
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </CollapseCard>
   );
