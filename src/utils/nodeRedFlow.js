@@ -5,6 +5,8 @@
    ⚠️ แม่แบบ energy_* เขียนสำหรับ Node-RED ระบบ "TSS Smart Energy" (ตาราง MySQL energy_sec /
       energy_event / energy_day + global ecLimits จากโหนด SMART ENERGY HUB) — ต้นทางที่ schema ต่าง
       ต้องแก้ SQL ในโหนด function เอง (flow เขียนบอกไว้ในโหนด comment)
+   ⚠️ แม่แบบ machine_state / piece_count เขียนสำหรับ Node-RED OEE ของ PD2 (db_user02: oee_stop · oee_piece ·
+      OnplanMaster · UnplanMaster) — ส่ง "ข้อเท็จจริง" อย่างเดียว ไม่ส่งเลข OEE ที่ต้นทางคิด
    🔴 ห้ามใส่รหัสลับลงไฟล์ — โหนดอ่านจาก env ของ Node-RED (`ESM_SOURCE_KEY` หรือ `INGEST_SECRET` ของต้นทาง legacy)
    🔴 ชนิด 'planned' (ยังไม่มีปลายทางรับใน ESM) ไม่สร้างโหนด แต่คืนรายชื่อใน `skipped` ให้จอเขียนบอก */
 import { kindOf } from './integrationKinds.js';
@@ -166,10 +168,66 @@ return msg;` },
       'ผลส่งยอดรายวัน');
   }
 
+  if (want.has('machine_state')) {
+    built.push('machine_state');
+    // เหตุผล: หยุดตามแผน (PLANNED_STOP/NO_PLAN) อ่านจาก OnplanMaster · FAULT อ่านจาก UnplanMaster (ยืนยันโดย user 11/11)
+    //         สถานะอื่น (IDLE/COMM_LOSS) ยังไม่รู้ว่าใช้ master ไหน ⇒ ส่งรหัสดิบ ไม่ส่งชื่อ (ห้ามเดา)
+    block('s', 'ESM: ช่วงหยุดของเครื่องทุก 1 นาที (oee_stop · ส่ง 5 นาทีล่าสุด · ซ้ำ = ทับ)', { name: 'ทุก 1 นาที', repeat: '60', once: true, onceDelay: '15' },
+      { name: 'SQL ช่วงหยุด 5 นาที', code:
+`msg.topic = \`
+SELECT s.machine_id AS machine,
+       DATE_FORMAT(s.start_ts, '%Y-%m-%d %H:%i:%s') AS start,
+       DATE_FORMAT(s.end_ts, '%Y-%m-%d %H:%i:%s') AS end,
+       s.duration_sec, s.state, s.reason_code, s.is_minor,
+       CASE WHEN s.state IN ('PLANNED_STOP', 'NO_PLAN') THEN o.Description
+            WHEN s.state = 'FAULT' THEN u.Description
+            ELSE NULL END AS reason_text
+FROM oee_stop s
+LEFT JOIN OnplanMaster o ON o.OnplanCode = s.reason_code
+LEFT JOIN UnplanMaster u ON u.UnplanCode = s.reason_code
+WHERE s.end_ts >= NOW() - INTERVAL 5 MINUTE
+ORDER BY s.start_ts
+LIMIT 2000\`;
+return msg;` },
+      'oee_stop (เลือก DB db_user02)',
+      { name: '→ states', code:
+`const rows = Array.isArray(msg.payload) ? msg.payload : [];
+if (!rows.length) return null;   // ไม่มีช่วงหยุดที่จบใน 5 นาที = ไม่ส่ง
+${hdr}
+msg.payload = { states: rows };
+return msg;` },
+      'ผลส่งช่วงหยุด');
+  }
+
+  if (want.has('piece_count')) {
+    built.push('piece_count');
+    block('p', 'ESM: ชิ้นต่อนาทีทุก 1 นาที (oee_piece · ส่ง 5 นาทีล่าสุด · นาทีเดิม = ทับด้วยยอดที่ครบกว่า)', { name: 'ทุก 1 นาที', repeat: '60', once: true, onceDelay: '25' },
+      { name: 'SQL ชิ้นรายนาที', code:
+`// หน้าต่างเริ่มที่ "ต้นนาที" เสมอ ⇒ ทุกนาทีที่ส่งเป็นยอดเต็มนาที (นาทีปัจจุบันจะถูกส่งทับอีกรอบตอนครบ)
+msg.topic = \`
+SELECT machine_id AS machine,
+       DATE_FORMAT(piece_ts, '%Y-%m-%d %H:%i:00') AS minute,
+       SUM(qty) AS qty,
+       SUM(ng_qty) AS ng
+FROM oee_piece
+WHERE piece_ts >= DATE_FORMAT(NOW() - INTERVAL 5 MINUTE, '%Y-%m-%d %H:%i:00')
+GROUP BY machine_id, DATE_FORMAT(piece_ts, '%Y-%m-%d %H:%i:00')
+ORDER BY minute\`;
+return msg;` },
+      'oee_piece (เลือก DB db_user02)',
+      { name: '→ pieces', code:
+`const rows = Array.isArray(msg.payload) ? msg.payload : [];
+if (!rows.length) return null;   // ไม่มีชิ้นใน 5 นาที = ไม่ส่ง (ESM เห็นเป็น "ไม่มีข้อมูลนาทีนั้น" ไม่ใช่ 0)
+${hdr}
+msg.payload = { pieces: rows };
+return msg;` },
+      'ผลส่งนับชิ้น');
+  }
+
   if (nodes.length) {
     nodes.unshift({ id: `${P}hd`, type: 'comment', x: 300, y: 10, wires: [],
       name: `ESM ← ${source?.name || code} (สร้างจากศูนย์เชื่อมต่อ)`,
-      info: `ต้นทาง: ${code}\nตั้ง env ของ Node-RED ชื่อ ${envVarName(source)} ก่อน Deploy\nโหนด mysql: เปิดแล้วเลือก DB ของเครื่องนี้\nแม่แบบเขียนสำหรับ schema TSS Smart Energy (energy_sec/energy_event/energy_day) — schema อื่นแก้ SQL ในโหนด function` });
+      info: `ต้นทาง: ${code}\nตั้ง env ของ Node-RED ชื่อ ${envVarName(source)} ก่อน Deploy\nโหนด mysql: เปิดแล้วเลือก DB ของเครื่องนี้\nแม่แบบค่าไฟ = schema TSS Smart Energy (energy_sec/energy_event/energy_day) · แม่แบบเครื่องจักร = Node-RED OEE PD2 (oee_stop/oee_piece) — schema อื่นแก้ SQL ในโหนด function` });
   }
   return { nodes, built, skipped };
 }
