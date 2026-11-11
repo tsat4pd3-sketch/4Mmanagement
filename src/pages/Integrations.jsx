@@ -13,6 +13,7 @@ import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
 import NoticeBar from '../components/NoticeBar';
 import EnergyMqttTopics from '../components/EnergyMqttTopics';
+import MachineFactsPanel from '../components/MachineFactsPanel';
 import { toast } from '../components/Toast';
 import { supabase, supabaseDR, DR_BASE_URL } from '../supabaseClient';
 import useTabParam from '../utils/useTabParam';
@@ -183,6 +184,7 @@ function SourceDetail({ src, hours, nowMs, canManage, canMap, onBack, onChanged,
   const [busy, setBusy] = useState('');
   const [points, setPoints] = useState(null);
   const hasEnergy = (src.kinds || []).includes('energy_readings');
+  const hasMachine = (src.kinds || []).some(k => k === 'machine_state' || k === 'piece_count');
   const st = sourceStatus(src, nowMs);
   const m = STATUS[st];
   const bars = useMemo(() => healthBars(hours, nowMs), [hours, nowMs]);
@@ -315,10 +317,13 @@ function SourceDetail({ src, hours, nowMs, canManage, canMap, onBack, onChanged,
             })}
           </div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>
-            ไฟล์ flow ตั้ง env ของ Node-RED ชื่อ <code>{envVarName(src)}</code> · แม่แบบเขียนสำหรับ schema TSS Smart Energy
+            ไฟล์ flow ตั้ง env ของ Node-RED ชื่อ <code>{envVarName(src)}</code>
+            {hasEnergy && ' · แม่แบบค่าไฟ = schema TSS Smart Energy'}{hasMachine && ' · แม่แบบเครื่องจักร = Node-RED OEE PD2 (oee_stop / oee_piece)'}
           </div>
         </div>
       </div>
+
+      {hasMachine && <MachineFactsPanel src={src} canManage={canManage} callAdmin={callAdmin} />}
 
       {hasEnergy && (
         <div style={{ ...card, minWidth: 0 }}>
