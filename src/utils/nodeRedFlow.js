@@ -170,8 +170,8 @@ return msg;` },
 
   if (want.has('machine_state')) {
     built.push('machine_state');
-    // เหตุผล: หยุดตามแผน (PLANNED_STOP/NO_PLAN) อ่านจาก OnplanMaster · FAULT อ่านจาก UnplanMaster (ยืนยันโดย user 11/11)
-    //         สถานะอื่น (IDLE/COMM_LOSS) ยังไม่รู้ว่าใช้ master ไหน ⇒ ส่งรหัสดิบ ไม่ส่งชื่อ (ห้ามเดา)
+    // เหตุผล: หยุดตามแผน (PLANNED_STOP/NO_PLAN) อ่านจาก OnplanMaster · FAULT/IDLE อ่านจาก UnplanMaster (ยืนยันโดย user 11/11)
+    //         สถานะอื่น (COMM_LOSS) ยังไม่รู้ว่าใช้ master ไหน ⇒ ส่งรหัสดิบ ไม่ส่งชื่อ (ห้ามเดา)
     block('s', 'ESM: ช่วงหยุดของเครื่องทุก 1 นาที (oee_stop · ส่ง 5 นาทีล่าสุด · ซ้ำ = ทับ)', { name: 'ทุก 1 นาที', repeat: '60', once: true, onceDelay: '15' },
       { name: 'SQL ช่วงหยุด 5 นาที', code:
 `msg.topic = \`
@@ -180,7 +180,7 @@ SELECT s.machine_id AS machine,
        DATE_FORMAT(s.end_ts, '%Y-%m-%d %H:%i:%s') AS end,
        s.duration_sec, s.state, s.reason_code, s.is_minor,
        CASE WHEN s.state IN ('PLANNED_STOP', 'NO_PLAN') THEN o.Description
-            WHEN s.state = 'FAULT' THEN u.Description
+            WHEN s.state IN ('FAULT', 'IDLE') THEN u.Description
             ELSE NULL END AS reason_text
 FROM oee_stop s
 LEFT JOIN OnplanMaster o ON o.OnplanCode = s.reason_code

@@ -66,7 +66,7 @@ Node-RED (ต้นทาง) ──POST /functions/v1/ingest-energy──▶ ES
 - แท็บ "มิเตอร์ / MQTT" ใน `/energy` ยังอยู่ (ชี้มาหน้านี้) — ถอดได้เมื่อแจกสิทธิ์ `page:/integrations` ให้คนที่ผูก topic แล้ว
 - `EnergyMqttTopics` ยังโชว์ topic ของทุกต้นทางรวมกัน (มีต้นทางค่าไฟตัวเดียวตอนนี้) — แยกตามต้นทางเมื่อมีตัวที่ 2
 - OEE Line D3 ขั้นถัดไป (รอ user สั่ง): ใช้ข้อมูลจากเครื่องช่วยเติม downtime (ตอนนี้แค่เทียบ)
-- เหตุผลของสถานะ IDLE / COMM_LOSS ยังไม่รู้ว่าต้นทางใช้ master ไหน — ถาม user ก่อนเปิดให้จับคู่
+- เหตุผลของสถานะ COMM_LOSS ยังไม่รู้ว่าต้นทางใช้ master ไหน — ถาม user ก่อนเปิดให้จับคู่ (IDLE = UnplanMaster · user ยืนยัน 11/11)
 
 ## 🏭 OEE Line D3 — ข้อมูลจากเครื่อง เฟสเดินคู่ (11/11)
 
@@ -78,8 +78,8 @@ Node-RED (ต้นทาง) ──POST /functions/v1/ingest-energy──▶ ES
 3. **เวลา:** SQL ใน flow ใช้ `DATE_FORMAT` เป็นสตริงไทย (ไม่ปล่อย Date ของ mysql node) → edge `bkk()` ต่อ +07:00
 4. **ชิ้นที่อ่านยอดไม่ออก = ทิ้ง ห้ามบีบเป็น 0** · นาทีที่ไม่มีแถว = "ไม่รู้" ไม่ใช่ 0 · ส่งซ้ำ = ทับ (ต้นทางส่งยอดเต็มนาที)
 5. **เก็บรหัสเครื่องของต้นทาง (`machine_tag`) ผูกกับ `machines.id` ตอนอ่าน** — แก้การผูกแล้วข้อมูลย้อนหลังตามเอง
-6. **เหตุผล:** `PLANNED_STOP`/`NO_PLAN` → OnplanMaster · `FAULT` → UnplanMaster (user ยืนยัน 11/11) ·
-   รหัสเลขเดียวกันคนละ master ⇒ คีย์ = `(reason_kind, reason_code)` · `IDLE`/`COMM_LOSS` = ไม่รู้ ⇒ ไม่ส่งชื่อ ไม่ให้จับคู่ (`reasonKindOf()`)
+6. **เหตุผล:** `PLANNED_STOP`/`NO_PLAN` → OnplanMaster · `FAULT`/`IDLE` → UnplanMaster (user ยืนยัน 11/11) ·
+   รหัสเลขเดียวกันคนละ master ⇒ คีย์ = `(reason_kind, reason_code)` · `COMM_LOSS` = ไม่รู้ ⇒ ไม่ส่งชื่อ ไม่ให้จับคู่ (`reasonKindOf()`)
 7. **จับคู่ = คนกดเท่านั้น** (edge `map_tag`/`map_reason` · สิทธิ์ `integration:manage`) — ระบบเสนอเฉพาะตัวตรงเป๊ะ
    (เครื่อง: `machineKey` ตรงตัวเดียว · เหตุผล: ชื่อตรงตัวเดียว) · `downtime_type_id = null` = "ตรวจแล้ว ไม่มีตัวตรง"
 8. **ไม่รวมชิ้นข้ามเครื่องเป็นยอดไลน์** (ไม่รู้ว่าเครื่องต่อกันเป็นสายหรือขนาน) — ตารางเทียบโชว์รายเครื่อง
