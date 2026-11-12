@@ -250,3 +250,9 @@ Workflow/Branch/Deploy · OBEYA · machine_no · TimeRangeBar · มาตรฐ
 
 **ตรวจว่าไม่มีความรู้หาย:** คีย์ใน backtick ที่หลุดจาก CLAUDE.md **120 ตัว · ไม่เจอใน `docs/modules/` = 0**
 (สคริปต์เทียบ `git show HEAD:CLAUDE.md` กับไฟล์ใหม่) · หัวข้อ `##` 44 → 44
+
+## รอบ 4 ต่อ (2026-11-12) — ลดเพดานกันโตกลับ (คำสั่ง user)
+
+`scripts/check-claude-md-size.mjs`: **เพดาน 120 → 110 KB (build ล่ม) · เตือน 110 → 105 KB**
+จำลองกับสำเนาก่อนแก้: 99.6 KB ผ่าน · 106 KB ผ่าน+เตือน · 110.5 KB build ล่ม
+🔴 ห้ามขยายเพดานกลับเพื่อให้ build ผ่าน — ให้รีดเนื้อหา (กฎเดิม)

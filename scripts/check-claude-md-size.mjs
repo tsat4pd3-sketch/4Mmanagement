@@ -15,13 +15,13 @@ import { statSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOT = new URL('..', import.meta.url).pathname;
-const LIMIT_KB = 120;
-const WARN_KB = 110;        // เตือนล่วงหน้า — เหลือที่ให้กฎใหม่ ~10 KB ก่อนชนเพดาน
+const LIMIT_KB = 110;       // 2026-11-12 (คำสั่ง user) ลดจาก 120 หลังรีดรอบ 4 เหลือ 99.6 KB — กันโตกลับ
+const WARN_KB = 105;        // เตือนล่วงหน้า — เหลือที่ให้กฎใหม่ ~5 KB ก่อนชนเพดาน
 const SECTION_KB = 9;       // เพดานต่อหัวข้อ `##`
 // ทำไม 9: วัด 05/10 — 42 จาก 74 หัวข้อเป็น pointer สั้น (<0.7 KB) · หัวข้อใหญ่สุด 8.1 KB (หัวข้อกฎการทำงาน
 // ซึ่งโดยธรรมชาติเก็บกฎมากที่สุด) · อันดับ 2-5 = 8.0 / 7.6 / 7.5 / 6.4 KB ⇒ 9 KB ให้ที่หายใจ ~1 KB
 // แล้วกัดทันทีถ้าหัวข้อโมดูลเริ่มพอก · 🔴 **เพดานนี้ห้ามขยายเพื่อให้ build ผ่าน** — ให้รีดเนื้อหาแทน
-// (เพดานรวม 120 KB ยังเป็น backstop)
+// (เพดานรวม LIMIT_KB ยังเป็น backstop)
 const SKIP = new Set(['node_modules', '.git', 'dist', 'build', '.claude']);
 const fail = [];
 
