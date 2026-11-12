@@ -15,6 +15,7 @@ import { parallelUnitsOf, flowModeOf } from '../utils/lineTypes';
 import { toast } from '../components/Toast';
 import ToggleDot from '../components/ToggleDot';
 import useUndoHistory, { undoBtnStyle } from '../utils/useUndoHistory';
+import { SESSION_STATUSES_LIVE } from '../utils/sessionStatus';
 import { computeLiveOee, shiftStartDate, wavg, wLoad, wRun, wProd, buildCtMap, isTrialDefect, defectQty, ngByMatFrom, breakIntervalsIn, overlapMinutesWith, dtMinOutsideBreaks, laneWeightFn, dtMinBySession, orderPlanQty, oeeTargetForLines, QBIN_EMBED } from '../utils/oee';
 import { loadAffectsLanes } from '../utils/affectsLanes';
 import { usePolling } from '../utils/usePolling';
@@ -36,7 +37,8 @@ import { loadDailyAm, dailyAmLineStatus, amShiftInfo } from '../lib/dailyAmBoard
 import { DAILY_PM_WINDOW_MIN } from '../lib/pmDailyStatus';
 import { planDueBucket } from '../lib/pmSchedule';
 import { useLiveBoard } from '../utils/useLiveBoard';
-import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e, energyRollup, buildLiveBoard, liveForNames, dayForNames, meterLinesFrom } from '../utils/energy';
+import { monthKeyOf, shiftMonth, monthLabel, monthRange, fmtKwh, fmtBaht, deltaPct, energyCat, efFor, co2eKg, fmtTco2e, energyRollup, buildLiveBoard, liveForNames, dayForNames, meterLinesFrom, bucketByMeter, sparkForNames } from '../utils/energy';
+import { fetchReadingsSince } from '../lib/energyReadings';
 import { bkkDateStr } from '../utils/workDate';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 import { fmtDtElapsed } from '../utils/downtimeRules';
@@ -45,6 +47,7 @@ import { statusColor, statusLabel } from '../utils/obeyaKpi';
 import { LIVE_AXES, catToStatus, rollupAxis, boardOverall, ppeStatus, NOT_LIVE_NOTE, SAFETY_PROXY_NOTE } from '../utils/obeyaLive';
 import { liveChannel } from '../utils/liveChannel';
 import { checkWriteRows } from '../utils/dbWrite';
+import { dragVertex, dragEdge, isAxisAligned, checkPolygonEdit, straightenPolygon, JUMP_CONFIRM_PCT, AXIS_TOL_DEG } from '../utils/polygonEdit';
 import { uploadOpts } from '../utils/storageUpload';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -527,7 +530,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
   const [oeeHistRaw, setOeeHistRaw] = useState(null);    // ⚙️ ประวัติ OEE รายกะ 7 วันก่อน (สำหรับ sparkline การ์ด KPI · null = ยังไม่โหลด)
   const [energyEf, setEnergyEf] = useState(null);        // EF ของเดือนนั้น (null = ยังไม่ตั้ง → ไม่โชว์ tCO2e)
   const [energyDay, setEnergyDay] = useState(null);      // 📅 โหมดทบทวน: kWh ของวันที่เลือกจากมิเตอร์ { date, byMeter, meterLines } · null = ไม่มี/อ่านไม่ได้
-  const [energyLive, setEnergyLive] = useState(null);    // ⚡ ค่าไฟสดจากมิเตอร์: { meters (buildLiveBoard), meterLines: Map ตู้→ชุดไลน์ } · null = ไม่มี/อ่านไม่ได้
+  const [energyLive, setEnergyLive] = useState(null);
+  const [energyReads, setEnergyReads] = useState([]);    // ⚡ แถวรายนาทีของวันนี้ (กราฟจิ๋วบนการ์ด kW สด) · โหลดทั้งวันครั้งแรก แล้วต่อเฉพาะแถวใหม่    // ⚡ ค่าไฟสดจากมิเตอร์: { meters (buildLiveBoard), meterLines: Map ตู้→ชุดไลน์ } · null = ไม่มี/อ่านไม่ได้
   const [allLines, setLines] = useState([]);
   /* 🔴 ทะเบียนไลน์อ่านไม่ได้ (10/11 · user: "ทำไมกรอบหายไป") — ลิสต์ว่าง = ทุกกรอบถูกตีเป็น "โซนสนับสนุน" แล้วซ่อนหมด
      + ยอดรวม 0/0 · เดิมโหลดครั้งเดียวตอนเปิดหน้า ⇒ จอแขวนค้างแบบนั้นจนมีคนรีเฟรช
@@ -578,6 +582,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
   const [obeyaAxis, setObeyaAxis] = useState(null);
   const [reviewDate, setReviewDate] = useState(reviewDefaultDate);
   const [reviewStatus, setReviewStatus] = useState({}); // line_name → full-day aggregate ของ reviewDate
+  const [reviewOpenN, setReviewOpenN] = useState(0);    // กะของ reviewDate ที่ยังไม่ปิด (ไม่มี OEE stamp) — ต้องเขียนบนแถบ ห้ามกลืนเงียบ
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewError, setReviewError] = useState('');     // โหลดสรุปล้ม = เขียนบนจอ ห้ามโชว์ "ไม่มีข้อมูล" แทน (02/10)
   const [reviewDetail, setReviewDetail] = useState(null); // ไลน์แม่ที่คลิกดู breakdown ไลน์ย่อย (โหมด review)
@@ -1029,7 +1034,9 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
            ปิดกะ = ค่า stamp · เปิดกะ = ค่าสดจาก computeLiveOee (⚠️ util คืน key ตัวใหญ่ A/P/Q)
            calcA/totalQty/ngQty = ตัวถ่วง wRun/wProd ตอน rollup (กฎ: P ถ่วง wRun · Q ถ่วง wProd) */
         oeeRows: [...(acc.oeeRows || []), ...(oeeVal != null ? [{
-          oee: oeeVal, shift_min: s.shift_min || 570, plannedMin: plannedDtMinAll,
+          /* กะที่ยังเดิน = ถ่วงด้วยเวลาที่เดินมาแล้ว (10/11 · ชุดเดียวกับ /oee-analytics + /line-oee)
+             570 ทำให้กะที่เพิ่งเปิดหนักเท่ากะเช้าที่ปิดครบ ⇒ OEE ของไลน์ตอนเย็นโดนค่าสดของกะดึกดึงแรงเกินจริง */
+          oee: oeeVal, shift_min: (isLive && lr?.elapsedMin > 0) ? lr.elapsedMin : (s.shift_min || 570), plannedMin: plannedDtMinAll,
           a: s.oee != null ? (s.oee_a != null ? Number(s.oee_a) : null) : (lr?.A ?? null),
           p: s.oee != null ? (s.oee_p != null ? Number(s.oee_p) : null) : (lr?.P ?? null),
           q: s.oee != null ? (s.oee_q != null ? Number(s.oee_q) : null) : (lr?.Q ?? null),
@@ -1114,16 +1121,29 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
      สูตรสถานะ/ยอดอยู่ utils/energy.js (buildLiveBoard · liveForNames) — ห้ามคิดเองในหน้า
      โหลดเฉพาะตอนดู metric พลังงาน · payload ~2 KB/รอบ (RATE.METER) · อ่านไม่ได้ = ไม่มีค่าสด ผังรายเดือนเดิมยังขึ้นปกติ */
   const liveReq = useRef(0);
-  const liveOk = useRef({ at: 0, sig: '' });   // รอบล่าสุดที่อ่านสำเร็จ + ลายเซ็นค่า (กันผังกระโดด)
+  const liveOk = useRef({ at: 0, sig: '' });
+  const liveRd = useRef({ day: null, last: null });   // กราฟจิ๋ว: วันที่โหลดอยู่ + นาทีล่าสุดที่มีแล้ว   // รอบล่าสุดที่อ่านสำเร็จ + ลายเซ็นค่า (กันผังกระโดด)
   const loadEnergyLive = useCallback(async () => {
     const id = ++liveReq.current;
+    /* 📈 กราฟจิ๋ววันนี้ — ครั้งแรก/ข้ามวัน = โหลดตั้งแต่ 00:00 · รอบต่อไป = เฉพาะนาทีที่ใหม่กว่า (~3 แถว/รอบ · กฎ egress)
+       อ่านพลาด = คงกราฟเดิม (ไม่กระทบตัวเลขสด) */
+    const today = bkkDateStr(Date.now());
+    const newDay = liveRd.current.day !== today;
+    const rdFrom = newDay ? `${today}T00:00:00+07:00` : liveRd.current.last;
+    const rdP = fetchReadingsSince(rdFrom, newDay).then(rows => ({ rows }), () => null);
     const [m, l, mm] = await Promise.all([
       supabaseDR.from('energy_live_meters')
         .select('scope_kind, scope_name, panel, subtitle, limit_kw, limit_a, gauge_max_kw, sort_order').eq('is_active', true),
       supabaseDR.from('energy_live').select('scope_kind, scope_name, field, value, received_at'),
       supabaseDR.from('energy_meter_machines').select('scope_kind, scope_name, machines(line_name)'),
     ]);
+    const rd = await rdP;
     if (id !== liveReq.current) return;
+    if (rd) {
+      liveRd.current = { day: today, last: rd.rows.length ? rd.rows[rd.rows.length - 1].bucket_at : (newDay ? rdFrom : liveRd.current.last) };
+      if (newDay) setEnergyReads(rd.rows);
+      else if (rd.rows.length) setEnergyReads(prev => [...prev, ...rd.rows]);
+    }
     /* 🔴 กันจอกระพริบ: อ่านพลาดครั้งเดียว (เน็ตสะดุด) ห้ามล้างค่าสดทิ้ง — การ์ดจะสลับ สด⇄รายเดือน ทุกนาที
        เก็บค่าเดิมไว้ · พลาดติดกันเกิน 5 นาทีค่อยล้าง (ค่าเก่าขนาดนั้นไม่ควรขึ้นว่า "สด") */
     if (m.error || l.error || mm.error) {
@@ -1618,6 +1638,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
       }
       Object.values(out).forEach(o => { o.dtMin = Math.round(o.dtMin); o.oee = o.oeeWLoad > 0 ? Math.round(o.oeeWSum / o.oeeWLoad) : (o.oeeN ? Math.round(o.oeeSum / o.oeeN) : null); });
       if (!live()) return;
+      // ทบทวน "วันนี้" ได้ — กะที่ยังไม่ปิดไม่มี OEE stamp ⇒ OEE ของแผงนับเฉพาะกะที่ปิดแล้ว (ยอดผลิต/DT นับครบ) · บอกบนแถบ
+      setReviewOpenN((sessions || []).filter(s => SESSION_STATUSES_LIVE.includes(s.status) && s.oee == null).length);
       setReviewStatus(out);
     } catch (e) { console.error('[loadReview]', e); if (!live()) return; setReviewStatus({}); setReviewError(e?.message || String(e)); }
     finally { if (live()) setReviewLoading(false); }
@@ -1797,6 +1819,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     return m;
   }, [lines]);
   const familyNames = (name) => [name, ...(childrenOf[name] || [])];
+  const energyBuckets = useMemo(() => bucketByMeter(energyReads), [energyReads]);
   /* ⚡ จุดที่ "นับเข้ายอดรวมได้" — หน้ากรอกเปิดให้ลงรายไลน์ลูกได้แล้ว (2026-09-08 · มิเตอร์ MDB แยก HDF1/HDF2)
      ⇒ ต้องใช้กฎกลาง `energyRollup`: **แม่มีค่า = ใช้ของแม่ · แม่ไม่มีค่า = รวมลูก**
         ถ้าบวกดื้อๆ ทั้งครอบครัวเหมือนเดิม กลุ่มที่ลงทั้งแม่และลูกจะโชว์ไฟเกินจริงเท่าตัว
@@ -1923,6 +1946,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     agg.oeeTarget = oeeTargetForLines(familyNames(name), lines, oeeTargets)?.oee ?? null;
     // ⚡ ค่าไฟสดของกรอบนี้ (ตู้ที่จ่ายให้ไลน์ในครอบครัว · ตู้ละครั้ง ไม่นับซ้ำ) — null = ไม่มีมิเตอร์สด
     agg.live = !isReview && energyLive ? liveForNames(familyNames(name), energyLive.meters, energyLive.meterLines) : null;
+    if (agg.live) agg.live = { ...agg.live, spark: sparkForNames(familyNames(name), energyBuckets, energyLive.meterLines) };
     // 📅 ทบทวน: kWh ของวันที่เลือกจากมิเตอร์ — ไม่มียอดวันนั้น (kwh null) = ถอยไปโชว์รายเดือนตามเดิม
     { const dy = isReview && energyDay ? dayForNames(familyNames(name), energyDay.byMeter, energyDay.meterLines) : null;
       agg.day = dy && dy.kwh != null ? { ...dy, date: energyDay.date } : null; }
@@ -2396,11 +2420,14 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     if (dragRef.current) {
       const p = pctFromEvent(e.clientX, e.clientY);
       const d = dragRef.current, dx = p.x - d.px, dy = p.y - d.py;
-      setRegions(prev => prev.map(r => {
-        if (r.id !== d.id) return r;
-        const pts = d.base.map((pt, i) => (d.vi === -1 || d.vi === i) ? [Math.min(100, Math.max(0, round(pt[0] + dx))), Math.min(100, Math.max(0, round(pt[1] + dy)))] : pt);
-        return { ...r, points: pts };
-      }));
+      /* 📐 ลากมุม: กรอบที่ทุกขอบตั้ง/นอนอยู่แล้ว ⇒ คงมุมฉาก (จุดข้างเคียงเลื่อนตาม) · Alt ค้าง = อิสระ
+         ลากกลางขอบ = ดันทั้งด้าน · ลากกลางรูป (vi -1) = ย้ายทั้งกรอบ (เหมือนเดิม) — กติกาอยู่ utils/polygonEdit.js */
+      const nextPts = d.ei != null
+        ? dragEdge(d.base, d.ei, dx, dy, { aspect: aspect || 1 })
+        : d.vi === -1
+          ? d.base.map(pt => [Math.min(100, Math.max(0, round(pt[0] + dx))), Math.min(100, Math.max(0, round(pt[1] + dy)))])
+          : dragVertex(d.base, d.vi, dx, dy, { ortho: d.ortho && !e.altKey, aspect: aspect || 1 });
+      setRegions(prev => prev.map(r => (r.id !== d.id ? r : { ...r, points: nextPts })));
     }
   };
   const finishDraw = () => {
@@ -2466,12 +2493,13 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); };
   }); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const startDrag = (e, region, vi) => {
+  const startDrag = (e, region, vi, ei = null) => {
     if (!editing || drawing) return;
     e.stopPropagation();
     wrapRef.current?.setPointerCapture?.(e.pointerId);
     const p = pctFromEvent(e.clientX, e.clientY);
-    dragRef.current = { id: region.id, vi, px: p.x, py: p.y, base: region.points.map(pt => [...pt]), snap: regionSnap() };
+    const base = region.points.map(pt => [...pt]);
+    dragRef.current = { id: region.id, vi, ei, px: p.x, py: p.y, base, ortho: isAxisAligned(base, aspect || 1), snap: regionSnap() };
   };
   const endDrag = async () => {
     if (!dragRef.current) return;
@@ -2479,8 +2507,34 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
     const r = regions.find(x => x.id === d.id);
     if (!r) return;
     if (JSON.stringify(r.points) === JSON.stringify(d.base)) return;   // คลิกเฉยๆ ไม่ได้ลาก — ไม่บันทึก/ไม่เข้า history
+    /* 🛡️ ด่านกันพลาดก่อนบันทึก (11/11 · เคส Laser GOR จุดมุมหลุดขึ้นไป ~46% ของผังแล้วบันทึกเงียบ)
+       เส้นตัดกันเอง = ห้ามบันทึก · ขยับเกิน JUMP_CONFIRM_PCT = ถามก่อน · ไม่ผ่าน = เด้งกลับรูปเดิม */
+    const revert = () => setRegions(prev => prev.map(x => (x.id === d.id ? { ...x, points: d.base } : x)));
+    const chk = checkPolygonEdit(d.base, r.points);
+    if (chk.verdict === 'block') { revert(); toast.error(`กรอบ "${r.line_name}" เส้นตัดกันเอง — ไม่บันทึก คืนรูปเดิมแล้ว`); return; }
+    if (chk.verdict === 'confirm' && !window.confirm(`กรอบ "${r.line_name}" จุดขยับไป ${chk.shift}% ของผัง (เกิน ${JUMP_CONFIRM_PCT}%)\nตั้งใจย้ายไกลขนาดนี้ใช่ไหม?\n\nกด "ยกเลิก" = คืนรูปเดิม`)) { revert(); return; }
     if (d.snap) hist.pushSnapshot(d.snap);
     checkWriteRows(await supabase.from('factory_line_regions').update({ points: r.points }).eq('id', d.id).select('id'), 'บันทึกจุด polygon');
+  };
+  /* 📐 จัดให้ตรงทั้งผัง — ขอบที่เกือบตั้ง/นอน ดีดเข้าแกน (กติกา straightenPolygon) · ถามก่อน · Undo ได้ทั้งชุด */
+  const straightenAll = async () => {
+    const plan = regions.map(r => ({ r, s: straightenPolygon(r.points, aspect || 1) }));
+    const todo = plan.filter(x => x.s.changed);
+    const skewed = plan.filter(x => x.s.skewed > 0).length;
+    const blocked = plan.filter(x => x.s.blocked).length;
+    const note = [skewed ? `${skewed} กรอบมีขอบเฉียงเกิน ${AXIS_TOL_DEG}° — ขอบนั้นไม่แตะ` : '', blocked ? `${blocked} กรอบจัดแล้วเส้นจะตัดกัน — ข้าม` : ''].filter(Boolean).join('\n');
+    if (!todo.length) { toast.info(`ทุกกรอบตรงแนวอยู่แล้ว${note ? ` · ${note.replace(/\n/g, ' · ')}` : ''}`); return; }
+    if (!window.confirm(`จัดให้ตรง ${todo.length} กรอบ (จากทั้งหมด ${regions.length})${note ? `\n${note}` : ''}\n\nกด Undo ย้อนได้`)) return;
+    hist.pushHistory();
+    const byId = new Map(todo.map(x => [x.r.id, x.s.points]));
+    setRegions(prev => prev.map(x => (byId.has(x.id) ? { ...x, points: byId.get(x.id) } : x)));
+    let fail = 0;
+    for (const x of todo) {
+      const ok = checkWriteRows(await supabase.from('factory_line_regions').update({ points: x.s.points }).eq('id', x.r.id).select('id'), `จัดให้ตรง ${x.r.line_name}`);
+      if (!ok) fail++;
+    }
+    if (fail) toast.error(`จัดให้ตรงไม่สำเร็จ ${fail} จาก ${todo.length} กรอบ — โหลดหน้าใหม่เพื่อดูค่าจริง`);
+    else toast.success(`จัดให้ตรงแล้ว ${todo.length} กรอบ`);
   };
   const deleteRegion = async (id) => {
     const rg = regions.find(r => r.id === id);
@@ -2583,6 +2637,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
           📅 <b style={{ color: 'var(--text)' }}>โหมดทบทวน {fmtThaiDate(reviewDate)}</b> — ยอดผลิต / OEE / Downtime / ของเสีย / คน บนผังเป็นยอดทั้งวันของวันนั้น ·
           <b> แท็บ PM / AM / Supply Route ยังเป็นสถานะปัจจุบัน</b> (ไม่มีประวัติย้อนหลังรายวัน) ·
           <b> พลังงาน:</b> กรอบที่มีมิเตอร์ = kWh ของวันนั้น (ตัด 00:00–24:00) · ที่เหลือ = รายเดือนกรอกมือ
+          {reviewOpenN > 0 && <> · <b style={{ color: 'var(--amber)' }}>⚠ มี {reviewOpenN} กะที่ยังไม่ปิด — OEE ในโหมดนี้นับเฉพาะกะที่ปิดแล้ว (ค่าสดดูที่โหมดสด)</b></>}
         </div>
       )}
 
@@ -2758,6 +2813,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
           {imageUrl && !drawing && <button onClick={() => { setDrawing(true); setDraft([]); }} style={btn(false)}>วาดกรอบใหม่ (ไลน์ / 🏬 โซนคลัง / 🔧 facility)</button>}
           {!drawing && <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={undoBtnStyle(hist.canUndo && !hist.busy)} title="ย้อนกลับ (Ctrl+Z)">Undo</button>}
           {!drawing && <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title="ทำซ้ำ (Ctrl+Y)">Redo</button>}
+          {!drawing && regions.length > 0 && <button onClick={straightenAll} disabled={hist.busy} style={btn(false)} title={`ขอบที่เอียงไม่เกิน ${AXIS_TOL_DEG}° ดีดเข้าแนวตั้ง/นอน · ขอบเฉียงจริงไม่แตะ · Undo ได้`}>📐 จัดให้ตรง</button>}
+          {!drawing && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ลากมุม = คงมุมฉาก (กด <b>Alt</b> ค้าง = อิสระ) · ลากวงกลมกลางขอบ = ดันทั้งด้าน</span>}
           {drawing && (
             <>
               <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>คลิกทีละจุดล้อมพื้นที่ (L/U ได้) · กด <b>Shift</b> = เส้นตั้งฉาก · เข้าใกล้จุดแรก = ดูดปิดรูป</span>
@@ -3059,6 +3116,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                           {st.live.kw == null ? '—' : st.live.kw.toFixed(1)}
                         </span>
                         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', lineHeight: 1.6, whiteSpace: 'nowrap' }}>kW · สด</span>
+                        {/* กราฟวันนี้ตั้งแต่ 00:00 (เฉลี่ยราย 15 นาที · ผลรวมตู้ของกรอบนี้) */}
+                        <span style={{ marginLeft: 'auto' }} title="kW วันนี้ตั้งแต่ 00:00 · จุดละ 15 นาที"><Spark data={st.live.spark} color={st.live.over ? 'var(--red)' : 'var(--green)'} /></span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 11, fontWeight: 700, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden' }}
                         title={`ตู้ ${st.live.meters.join(', ')}${st.live.sharedWith.length ? ` · ใช้ร่วมกับ ${st.live.sharedWith.join(', ')} (แยกรายไลน์ไม่ได้)` : ''}`}>
@@ -3121,6 +3180,11 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                   {r.points.map((pt, i) => (
                     <div key={i} data-handle onPointerDown={(e) => startDrag(e, r, i)} style={{ position: 'absolute', left: `${pt[0]}%`, top: `${pt[1]}%`, width: 14, height: 14, transform: 'translate(-50%,-50%)', background: 'var(--blue)', border: '2px solid #fff', borderRadius: 'var(--r-xs)', cursor: 'grab', touchAction: 'none' }} />
                   ))}
+                  {/* จุดจับกลางขอบ = ดันทั้งด้านเข้า-ออก (วงกลมเล็ก แยกจากจุดมุมสี่เหลี่ยม) */}
+                  {r.points.map((pt, i) => {
+                    const q = r.points[(i + 1) % r.points.length];
+                    return <div key={`e${i}`} data-handle title="ลากเพื่อดันทั้งด้าน" onPointerDown={(e) => startDrag(e, r, null, i)} style={{ position: 'absolute', left: `${(pt[0] + q[0]) / 2}%`, top: `${(pt[1] + q[1]) / 2}%`, width: 10, height: 10, transform: 'translate(-50%,-50%)', background: '#fff', border: '2px solid var(--blue)', borderRadius: '50%', cursor: 'move', touchAction: 'none' }} />;
+                  })}
                   <button type="button" className="pg-btn sm pg-btn-icon" onClick={(e) => { e.stopPropagation(); deleteRegion(r.id); }} title={`ลบกรอบ ${r.line_name}`} style={{ position: 'absolute', left: `${cx}%`, top: `${cy}%`, transform: 'translate(-50%,-140%)', width: 22 }}>✕</button>
                 </div>
               );

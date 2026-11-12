@@ -27,8 +27,9 @@ import { loadProductionLines } from '../utils/useProductionLines';
 import { OPEN_MO_STATUSES, actorSideOf } from '../utils/mtnStepPerm';
 import { isAmTeam } from '../utils/pmTeams';
 import { positionRank } from '../utils/positions';
-import { can as canPerm, isActionSeeded } from '../utils/permissions';
+import { can as canPerm, isActionSeeded, canSeeded as canSeededPerm } from '../utils/permissions';
 import { teamKeyOf } from '../utils/mtnTeams';
+import { pendingYellow } from '../utils/qualityBin';
 import {
   TIER, TIER_TITLE, EMPTY_TEXT, OLD_DAYS, buildQueue, badgeCount, capped,
 } from '../utils/myQueue';
@@ -69,7 +70,7 @@ export async function loadMyQueue(me) {
   const ok = (r) => (r.error ? undefined : (r.data || []));
 
   const canLu = !!(me.canLevelUp || me.canLevelUp100);
-  const [moR, sesR, prR, fourR, actR, lines, luR, binR, binRedR] = await Promise.all([
+  const [moR, sesR, prR, fourR, actR, lines, luR, binR, binRedR, redPendR] = await Promise.all([
     /* กรองด้วยสถานะที่ยังมีคนต้องทำต่อ — เดิม `.gt('current_step', 1)` ตัดใบ "รอจ่ายงาน" (current_step = 1)
        ทิ้งทั้งหมด และ `.is('approve_at', null)` ตัดใบ MTN ที่อนุมัติแล้วแต่ยังรอปิดใบ (ขั้น 8) */
     supabaseDR.from('mtn_orders').select(MO_COLS)
@@ -92,14 +93,20 @@ export async function loadMyQueue(me) {
     /* 🟡 ถังเหลืองรอพิจารณา — เงื่อนไขเดียวกับแผงในหน้าถัง (`pendingYellow`) · เลือกเฉพาะคอลัมน์ที่คิวใช้
        (ตารางนี้กว้าง — `select('*')` คือตัวกิน egress · กฎเขียน DB ข้อ 11) */
     supabaseDR.from('quality_bin_records')
-      .select('id, work_date, line_name, mat_no, part_name, part_no, qty, cause')
+      .select('id, bin, is_active, work_date, line_name, mat_no, part_name, part_no, qty, cause, qa_decision, return_date, special_use_doc_no, repair_date, qty_ng')
       .eq('bin', 'yellow').eq('is_active', true)
-      .is('qa_decision', null).is('return_date', null)
+      /* 🔴 ตัดสินแล้วแต่ยังไม่จบ = ยังค้าง (บั๊ก A 10/11) — ตัด "งานดี" ฝั่ง server ที่เหลือตัดสินด้วย pendingYellow() */
+      .or('qa_decision.is.null,qa_decision.neq.good').is('return_date', null)
       .order('work_date', { ascending: true }).limit(200),
     /* ใบเหลืองที่ย้ายลงถังแดงไปแล้ว = ออกจากคิว (ไม่งั้นเป็น "ของค้างเทียม" ที่ทำให้คนเลิกเชื่อจอ)
        แถวจริงตอนนี้ 0 — แต่ต้องถามไว้ เพราะทางย้ายมือยังเปิดอยู่ในหน้าถัง */
     supabaseDR.from('quality_bin_records').select('from_yellow_id')
       .eq('bin', 'red').eq('is_active', true).not('from_yellow_id', 'is', null).limit(1000),
+    /* 🔴 ถังแดงยังไม่ออกใบ (10/11) — หัวหน้าแผนกต้องเห็นเพื่อทวงหัวหน้าไลน์ · เฉพาะคอลัมน์ที่คิวใช้
+       ⚠️ นับเฉพาะ "ยังไม่ผูกใบ" — ผูกใบร่างแล้วดูที่หน้าถัง (ขึ้นส้ม "ร่าง · ยังไม่ส่งอนุมัติ") */
+    supabaseDR.from('quality_bin_records').select('id, work_date, line_name, qty')
+      .eq('bin', 'red').eq('is_active', true).is('scrap_report_id', null)
+      .order('work_date', { ascending: true }).limit(300),
   ]);
   const levelUps = canLu ? ok(luR)?.map(r => ({ id: r.id, to_level: r.to_level, requested_at: r.requested_at, section: r.employees?.section })) : undefined;
 
@@ -120,9 +127,12 @@ export async function loadMyQueue(me) {
   /* 🔴 ชนเพดาน 200 ของคิวเอง = "โหลดไม่ครบ" ไม่ใช่ "มีแค่นี้" ⇒ ติดธงให้จอเขียนบอก (กฎเขียน DB ข้อ 5) */
   const binsTruncated = Array.isArray(binR.data) && binR.data.length >= 200;
   const bins = (binR.error || !movedToRed) ? undefined
-    : (binR.data || [])
-      .filter(b => !movedToRed.has(b.id))
+    : pendingYellow(binR.data || [], movedToRed)
       .map(b => ({ ...b, section: secOfLine.get(String(b.line_name || '').trim().toLowerCase()) }));
+
+  const redBins = redPendR.error ? null
+    : (redPendR.data || []).map(b => ({ ...b, section: secOfLine.get(String(b.line_name || '').trim().toLowerCase()) }));
+  const redBinsTruncated = Array.isArray(redPendR.data) && redPendR.data.length >= 300;
 
   const moRows = ok(moR);
   const mo = moRows?.filter(o => !DEAD.includes(String(o.status || '')));
@@ -144,7 +154,7 @@ export async function loadMyQueue(me) {
      🔴 คิวรีล่ม = `mo` เป็น undefined ⇒ **ไม่ส่ง** `moAll` เพื่อให้ `countsCapped` ติดธง
         ห้ามส่ง [] (จะกลายเป็น "ทุกกองมี 0 ใบ" ทั้งที่ไม่รู้ · ลิสต์ว่าง 2 ความหมาย · กฎข้อ 12) */
   return buildQueue({ mo, moAll: mo, moAllCapped: moTruncated, moTruncated,
-    sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps, bins, binsTruncated }, me);
+    sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps, bins, binsTruncated, redBins, redBinsTruncated }, me);
 }
 
 /* ── UI ชิ้นเล็ก ────────────────────────────────────────────────────────── */
@@ -270,6 +280,8 @@ export function useMyQueue(open = false) {
           // ⬆️ คีย์เดียวกับปุ่มอนุมัติใน /operator?tab=levelup
           canLevelUp: canPerm('skills', 'approve_levelup', role),
           canLevelUp100: canPerm('skills', 'approve_levelup_100', role),
+          // 🔎 ถังเหลืองขั้น QA (ตัดสิน/ตรวจรับ) — คีย์เดียวกับปุ่มในหน้าถัง
+          canBinDecide: canSeededPerm('qa', 'bin_decide', role),
         });
       } catch {
         /* supabase-js คืน error ไม่ throw — มาถึงนี่ได้เฉพาะกรณีผิดปกติ ⇒ ถือว่าไม่ครบ ห้ามขึ้นว่าไม่มีงาน */

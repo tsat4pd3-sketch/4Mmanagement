@@ -562,9 +562,24 @@ export function defBars(def = {}) {
   };
 }
 
-/** ให้คะแนนแถว KPI จาก "แถวในฐาน" โดยตรง — คืน `status` ('good'/'warn'/'bad'/'unknown') ให้จอใช้ทำไฟด้วย */
-export function scoreDef(value, def = {}) {
+/* 📅 ตัดสินรายเดือนด้วย "แผนสะสมของเดือนนั้น" (11/11 · คำสั่ง user เลือกแบบ ข: Plan รายเดือนจากชีทบัญชี)
+   KPI สะสม (ยอดขาย/หัว) เทียบกับเป้าทั้งปีตั้งแต่กลางปี = แดงทุกเดือนจนถึง ธ.ค. ทั้งที่บัญชีตัดสินเทียบ Plan สะสมของเดือนนั้น
+   · เปิดต่อแถวด้วย `kpi_definitions.score_by_plan` · แผนอยู่ `kpi_month_plans` (ตารางเดิม) · เดือนที่ไม่มีแผน = ถอยไปเทียบเป้าทั้งปีตามเดิม
+   · Commitment ของเดือน = แผน × (commit ปี ÷ target ปี) เมื่อมีทั้งคู่ — ไม่มี = ไม่มีขั้น 0.5 เดือนนั้น
+   🔴 จอห้ามคิดเอง — ส่ง `{ plan }` เข้า scoreDef แล้วอ่าน `bars.byPlan` ไปเขียนบนจอว่าเทียบกับแผนเดือนไหน */
+export function planBarsOf(def = {}, plan = null) {
   const bars = defBars(def);
+  const pv = plan == null || plan === '' || Number.isNaN(Number(plan)) ? null : Number(plan);
+  if (!def?.score_by_plan || pv == null) return { ...bars, byPlan: false };
+  const t = bars.target_value, c = bars.commit_value;
+  const ratio = t != null && c != null && Number(t) !== 0 ? Number(c) / Number(t) : null;
+  return { ...bars, target_value: pv, commit_value: ratio != null ? pv * ratio : null, commit_compare: ratio != null ? bars.commit_compare || bars.target_compare : null, byPlan: true, annualTarget: t };
+}
+
+/** ให้คะแนนแถว KPI จาก "แถวในฐาน" โดยตรง — คืน `status` ('good'/'warn'/'bad'/'unknown') ให้จอใช้ทำไฟด้วย
+ *  opts.plan = แผนสะสมของเดือนที่ตัดสิน (ใช้เมื่อ def.score_by_plan) */
+export function scoreDef(value, def = {}, { plan = null } = {}) {
+  const bars = planBarsOf(def, plan);
   const s = scoreKpi(value, bars);
   return {
     ...s, bars,

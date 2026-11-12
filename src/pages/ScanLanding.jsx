@@ -46,7 +46,8 @@ import { parseQrPayload, resolveMachine, resolveJig, resolveDeliveryPoint, resol
 import { useProductionLinesState } from '../utils/useProductionLines';
 import { useStorageLocationsState } from '../utils/useStorageLocations';
 import { findByBadge, normBadgeCode } from '../utils/badgeCheckin';
-import { checkinByBadge } from '../lib/checkinSave';
+import { checkinByBadge, loadPpeRegistry, loadPpeChecks, savePpeChecks } from '../lib/checkinSave';
+import { resolvePpe, ppeStatusOf } from '../utils/ppeRequirements';
 import { can } from '../utils/permissions';
 import { canWriteLine, canWriteUnit, writeBlockText } from '../utils/writeScope';
 import { getWorkDate, getCurrentShift } from '../utils/workDate';
@@ -248,7 +249,38 @@ export default function ScanLanding() {
       : canWriteUnit(ckCtx, emp.section, { unknownTarget: 'block' });
   const [ckResult, setCkResult] = useState(null);   // null | 'busy' | { kind, text }
   // สแกนใบใหม่ = ล้างผลของใบก่อน (ไม่งั้น ✓ ของคนก่อนค้างอยู่ใต้การ์ดคนใหม่ = อ่านผิดคน)
-  useEffect(() => { setCkResult(null); }, [emp?.id]);
+  useEffect(() => { setCkResult(null); setPpe(null); }, [emp?.id]);
+
+  /* 🦺 ขั้นถาม PPE หลังเช็คชื่อติด (10/11 · คำสั่ง user) — ขึ้น**เฉพาะรายการที่หน่วยนี้บังคับ**
+     เริ่มที่ "ยังไม่ติ๊ก" และ **ข้ามได้** (คิวหน้าประตูต้องไหล) · ข้าม = ไม่เขียนแถวผลตรวจเลย
+     ⇒ ค้างเป็น "ยังไม่ได้ตรวจ" ให้หัวหน้าไปติ๊กที่หน้าเช็คชื่อ **ห้ามเขียน ok=true ให้ตอนข้าม** */
+  const [ppe, setPpe] = useState(null);      // null = ยังไม่ถึงขั้นนี้ · { required, okBy, unknown, saving, done }
+  const openPpeStep = async (workDateStr) => {
+    const reg = await loadPpeRegistry(supabase);
+    if (!reg) { setPpe({ required: [], okBy: {}, unknown: true, workDateStr }); return; }
+    const r = resolvePpe({ items: reg.items, reqs: reg.reqs, section: emp.section,
+      lineId: emp.line_id, lines: allLines || [] });
+    if (!r.required.length) { setPpe(null); return; }   // หน่วยนี้ไม่บังคับอะไร = ไม่ต้องถาม
+    // ติ๊กไว้แล้วบางส่วน (เช่นหัวหน้าติ๊กจากหน้าเช็คชื่อ) = ขึ้นค่าเดิมมาให้ ไม่ใช่รีเซ็ตเป็นศูนย์
+    const prev = await loadPpeChecks(supabase, { employeeId: emp.id, workDateStr });
+    const st = ppeStatusOf(r.required, prev);
+    const okBy = {};
+    for (const id of st.okIds) okBy[id] = true;
+    setPpe({ required: r.required, okBy, unknown: false, workDateStr, saving: false });
+  };
+
+  const savePpe = async () => {
+    if (!ppe || ppe.saving) return;
+    setPpe(p => ({ ...p, saving: true }));
+    const { data: u } = await supabase.auth.getUser();
+    const r = await savePpeChecks(supabase, { emp, workDateStr: ppe.workDateStr,
+      required: ppe.required, okByItemId: ppe.okBy, userId: u?.user?.id });
+    if (!r.ok) { setPpe(p => ({ ...p, saving: false })); return; }   // toast แดงขึ้นให้แล้ว
+    if (!r.legacySynced) toast.error('บันทึกผลตรวจ PPE แล้ว แต่ซิงก์กับใบเช็คชื่อไม่สำเร็จ — ตรวจซ้ำที่หน้าเช็คชื่อ');
+    const miss = ppe.required.filter(i => !ppe.okBy[String(i.id)]);
+    toast.success(miss.length ? `บันทึกแล้ว — ขาด ${miss.length} ชิ้น` : '✓ PPE ครบ');
+    setPpe(p => ({ ...p, saving: false, done: miss.length ? 'missing' : 'ok', missN: miss.length }));
+  };
 
   const doCheckin = async () => {
     if (!emp || ckResult === 'busy') return;
@@ -271,8 +303,8 @@ export default function ScanLanding() {
     const workDateStr = getWorkDate();
     const r = await checkinByBadge(supabase, { emp, workDateStr, shift: getCurrentShift(), userId: userData.user.id });
     const where = [empLineName || emp.section, r.shift === 'night' ? 'กะดึก' : 'กะเช้า', workDateStr].filter(Boolean).join(' · ');
-    if (r.kind === 'saved')  { toast.success(`✓ เช็คชื่อสำเร็จ — ${emp.name}`); setCkResult({ kind: 'saved', text: where }); return; }
-    if (r.kind === 'already') { setCkResult({ kind: 'already', text: where }); return; }
+    if (r.kind === 'saved')  { toast.success(`✓ เช็คชื่อสำเร็จ — ${emp.name}`); setCkResult({ kind: 'saved', text: where }); openPpeStep(workDateStr); return; }
+    if (r.kind === 'already') { setCkResult({ kind: 'already', text: where }); openPpeStep(workDateStr); return; }
     // ❌ ล้ม = ต้องเห็นว่ายังไม่ได้เช็ค ห้ามขึ้น ✓ (read_failed = ไม่รู้ของเดิม จึงไม่เขียนทับ PPE/ลา)
     setCkResult({ kind: 'failed', text: r.kind === 'read_failed'
       ? `อ่านข้อมูลเช็คชื่อเดิมไม่สำเร็จ จึงยังไม่บันทึก (กันทับ PPE/การลา ที่กรอกไว้แล้ว) — ลองใหม่อีกครั้ง · ${r.msg || ''}`
@@ -420,6 +452,61 @@ export default function ScanLanding() {
                   </div>
                 );
               })()}
+              {/* 🦺 ขั้นถาม PPE — ขึ้นเฉพาะรายการที่หน่วยนี้บังคับ · เริ่มที่ยังไม่ติ๊ก · ข้ามได้ */}
+              {ppe && !ppe.done && (
+                <div style={{ borderRadius: 10, border: '1px solid var(--amber)', background: 'var(--bg2)',
+                  backgroundImage: 'linear-gradient(var(--amber)14, var(--amber)14)', padding: '12px 14px' }}>
+                  {ppe.unknown ? (
+                    /* 🔴 อ่านทะเบียนไม่ได้ ≠ "ไม่ต้องใส่อะไร" — เขียนบนจอ ห้ามข้ามเงียบ */
+                    <div style={{ fontSize: 13, color: 'var(--red)', lineHeight: 1.6 }}>
+                      <b>อ่านทะเบียน PPE ไม่สำเร็จ</b> — เช็คชื่อบันทึกแล้ว แต่ยังถาม PPE ไม่ได้
+                      <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 3 }}>ไปติ๊กที่หน้าเช็คชื่อแทน</div>
+                    </div>
+                  ) : (<>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--amber)' }}>
+                      🦺 ไลน์นี้บังคับ {ppe.required.length} ชิ้น — ติ๊กเฉพาะที่ใส่จริง
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '10px 0' }}>
+                      {ppe.required.map(it => {
+                        const on = !!ppe.okBy[String(it.id)];
+                        return (
+                          <button key={it.id} type="button"
+                            onClick={() => setPpe(p => ({ ...p, okBy: { ...p.okBy, [String(it.id)]: !on } }))}
+                            aria-pressed={on}
+                            style={{ minHeight: 44, padding: '8px 14px', borderRadius: 999, cursor: 'pointer',
+                              /* ติ๊กแล้ว = พื้น accent + ตัวอักษร accent-ink (กฎสีตัวหนังสือบนพื้น accent · UI §7.1)
+                                 ห้ามใส่ hex ดิบที่นี่ — ธีมสว่าง/มืดกลับสีตัวอักษรคนละทาง */
+                              border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+                              background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text2)',
+                              fontSize: 14, fontWeight: 800, fontFamily: 'var(--font-body)' }}>
+                            {on ? '✓ ' : ''}{it.name_th}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button type="button" onClick={savePpe} disabled={ppe.saving}
+                        style={{ flex: 2, minHeight: 46, borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)',
+                          color: 'var(--accent-ink)', fontSize: 15, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                        {ppe.saving ? 'บันทึก…' : 'บันทึกผลตรวจ PPE'}
+                      </button>
+                      {/* ข้าม = ไม่เขียนอะไรเลย ⇒ ค้างเป็น "ยังไม่ได้ตรวจ" ให้หัวหน้าไปติ๊กต่อ */}
+                      <button type="button" onClick={() => setPpe(p => ({ ...p, done: 'skipped' }))} disabled={ppe.saving}
+                        style={{ flex: 1, minHeight: 46, borderRadius: 'var(--r-md)', border: '1px solid var(--border)',
+                          background: 'var(--bg3)', color: 'var(--text2)', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                        ข้ามไว้ก่อน
+                      </button>
+                    </div>
+                  </>)}
+                </div>
+              )}
+              {ppe?.done && (
+                <div style={{ fontSize: 13, color: ppe.done === 'ok' ? 'var(--green)' : 'var(--muted)', lineHeight: 1.6 }}>
+                  {ppe.done === 'ok' ? '🦺 PPE ครบตามที่ไลน์นี้บังคับ'
+                    : ppe.done === 'missing' ? `🦺 บันทึกแล้ว — ขาด ${ppe.missN} ชิ้น (หัวหน้าเห็นที่หน้าเช็คชื่อ)`
+                    : '🦺 ยังไม่ได้ตรวจ PPE — ค้างไว้ให้หัวหน้าติ๊กที่หน้าเช็คชื่อ'}
+                </div>
+              )}
               {canAccessPage('/checkin', role) && (
                 <ActionLink to="/checkin" icon="📋" label="เปิดหน้าเช็คชื่อ (ทั้งไลน์)"
                   sub="ติ๊ก PPE · การลา · OT · ยิงบัตรรัวทีละหลายคน" tone="var(--muted)" />

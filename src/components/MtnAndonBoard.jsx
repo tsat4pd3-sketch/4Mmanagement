@@ -59,6 +59,7 @@ import TvFitBox from './TvFitBox';
 import useTvShell from '../utils/useTvShell';
 import FactoryMiniMap from './FactoryMiniMap';
 import ProdProgressStrip from './ProdProgressStrip';
+import LiveOeeStrip from './LiveOeeStrip';
 import StoreWaitCards, { useStoreTv } from './StoreWaitCards';
 import StoreCallSiren from './StoreCallSiren';
 import ProdRoutineCard, { useProdRoutine } from './ProdRoutineCard';
@@ -184,8 +185,27 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
         .is('duration_min', null).is('ended_at', null),
       supabaseDR.from('production_sessions').select('line_name, status').eq('work_date', workDate),
     ]);
-    if (dtRes.error) { setDtErr(dtRes.error.message); return; }
-    setDtErr(null);
+    /* 🔴 ต้องอ่าน error **ทั้งสองคิวรี** — เดิมตรวจแค่ `dtRes` ⇒ คิวรีกะล้มเมื่อไหร่
+       `sessRes.data` เป็น undefined → `|| []` → `openLines = []` = **เทาทุกไลน์เงียบๆ**
+       ทั้งที่ไลน์เปิดอยู่จริง (บั๊กที่หน้างานแจ้ง 12/11 · ผิดกฎ "ห้ามล้มเหลวเงียบ")
+       ⚠️ และ **ห้าม `return` ก่อนเซ็ต openLines** — ของเดิมพอ dtRes ล้มจะข้ามการอัปเดต
+          สถานะไลน์ไปด้วย ทั้งที่คนละคิวรีกัน */
+    const errs = [dtRes.error?.message, sessRes.error?.message].filter(Boolean);
+    setDtErr(errs.length ? errs.join(' · ') : null);
+    if (sessRes.error) {
+      /* อ่านกะไม่ได้ = **ไม่รู้** ว่าไลน์ไหนเปิด — คงค่าเดิมไว้ ดีกว่าทำให้เทาทั้งจอ
+         (จอขึ้นข้อความเตือนจาก dtErr แล้ว) */
+      if (!dtRes.error) setDts((dtRes.data || []).filter(x =>
+        ['open', 'pending_close'].includes(x.production_sessions?.status) && inScope(x.production_sessions?.line_name)));
+      return;
+    }
+    if (dtRes.error) {
+      /* ฝั่ง downtime ล้มอย่างเดียว — สถานะไลน์ยังอัปเดตได้ตามปกติ */
+      setOpenLines([...new Set((sessRes.data || [])
+        .filter(s => ['open', 'pending_close'].includes(s.status) && inScope(s.line_name))
+        .map(s => s.line_name))]);
+      return;
+    }
     // เอาเฉพาะของกะที่ยังเปิดจริง + อยู่ในขอบเขตที่ผู้ใช้ดูแล
     setDts((dtRes.data || []).filter(x =>
       ['open', 'pending_close'].includes(x.production_sessions?.status) && inScope(x.production_sessions?.line_name)));
@@ -507,6 +527,11 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
           ยอดผลิตเทียบใบสั่งผลิตคือเรื่องของผลิต · จอช่าง/สโตร์มีเรื่องของตัวเองอยู่แล้ว (เครื่องหยุด·PM / ไลน์เรียกของ)
           ⚠️ เดิม 14/09 กางให้ทุกชิปทีมช่าง — ถอดออกตามหลัก "จอแต่ละส่วนงานแสดงเรื่องของส่วนงานนั้น"
           ยังพับเองได้ และค่าที่พับไว้ชนะเสมอ (localStorage ต่อเครื่อง) */}
+      {/* 🟢 OEE สดรายไลน์ (11/11 · คำสั่ง user) — สูตรกลางตัวเดียวกับผังรวม/Line OEE · กดไลน์ = เปิด /line-oee ของไลน์นั้น */}
+      {cards === 'production' && (
+        <LiveOeeStrip workDate={workDate} scopeNames={scopeNames}
+          onOpenLine={(ln) => navigate(`/line-oee?line=${encodeURIComponent(ln)}`)} />
+      )}
       {cards === 'production' && (
         <ProdProgressStrip workDate={workDate} scopeNames={scopeNames}
           defaultOpen

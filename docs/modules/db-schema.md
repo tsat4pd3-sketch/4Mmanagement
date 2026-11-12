@@ -54,12 +54,19 @@
 | `shift_overrides` | Override กะรายบุคคล |
 | `shift_merge_events` | Merge กะทั้ง section/line |
 
-### PPE
+### PPE  (🔁 สร้างใหม่ 2026-11-10 — ของเดิมถูกเก็บเข้ากรุ/หายไปตั้งแต่ 14/10)
 | Table | คำอธิบาย |
 |-------|---------|
-| `ppe_items` | รายการ PPE (10 รายการ) |
-| `ppe_requirements` | PPE ที่แต่ละไลน์ต้องการ (25 รายการ) |
-| `ppe_checks` | บันทึกการตรวจ PPE |
+| `ppe_items` | ทะเบียนรายการ PPE (11 รายการ) · `legacy_col` = ผูกกับคอลัมน์เดิมใน `daily_production_logs` |
+| `ppe_requirements` | ข้อกำหนดรายหน่วย **4 ชั้น** `plant→section→line→station` (ชั้นล่างชนะ) |
+| `ppe_check_items` | ผลตรวจรายคน-รายวัน-รายชิ้น (ไม่ใช่ `ppe_checks` เดิมที่ไม่เหลือแล้ว) |
+
+🔴 **ห้ามอ่าน/เขียน 3 คอลัมน์ `has_helmet`/`has_boots`/`has_gloves` ตรงๆ เป็นแหล่งความจริงอีก** —
+ยังอยู่เพื่อความเข้ากันได้กับจอ/รายงานเดิม และถูกซิงก์ให้จาก `ppe_check_items`
+· กฎทั้งหมด → **`docs/modules/ppe-requirements.md`** · ตัวตัดสิน `src/utils/ppeRequirements.js`
+
+> ⚠️ ก่อน 10/11 ตารางนี้เขียนว่า `ppe_items`/`ppe_requirements`/`ppe_checks` มีอยู่และมีข้อมูล —
+> **ไม่จริง**: `ppe_items` ถูกย้ายไป `archive.ppe_items_unused_20261014` เมื่อ 14/10 ส่วนอีก 2 ตัวไม่เหลือในฐานเลย
 
 ### 4M & Notifications
 | Table | คำอธิบาย | Fields สำคัญ |

@@ -21,12 +21,13 @@ import {
 import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
+import { Navigate, useSearchParams } from 'react-router-dom';
 import { toast } from '../components/Toast';
 import { checkWriteRows } from '../utils/dbWrite';
 import { can } from '../utils/permissions';
 import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { scopeLines as pickerLines } from '../components/LineSelect';   // ตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง"
-import { getLineFamilyNames, toHierarchicalOptions, visibleDepths } from '../utils/lineHierarchy';
+import { getLineFamilyNames, visibleDepths } from '../utils/lineHierarchy';
 import PageHeader from '../components/PageHeader';
 import InfoMore from '../components/InfoMore';
 import NoticeBar from '../components/NoticeBar';
@@ -39,11 +40,10 @@ import {
   bahtPerUnit, RATE_SANE_MIN, RATE_SANE_MAX, sumRows,
   efFor, co2eKg, fmtTco2e, monthRange, changeContribution, meteredCoverage,
   secOf, co2ePerPiece, PIECE_BASIS_LABEL,
-  energyRollup, pctOf, outlierVsHistory,
+  energyRollup, pctOf, outlierVsHistory, energyPointOptions, energyZonesFrom,
 } from '../utils/energy';
 import { collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
-import EnergyMqttTopics from '../components/EnergyMqttTopics';
 import EnergyLiveBoard from '../components/EnergyLiveBoard';
 import { shortTick, fmtAxis, alignedYWidth, CELL_BAR_FILL } from '../utils/chartAxis';
 import { useLatestRequest } from '../utils/useLatestRequest';
@@ -64,7 +64,11 @@ const GOOD = '#22c55e', BAD = '#ef4444', NEUTRAL = '#6b7f8c', ACCENT = '#38bdf8'
 export default function Energy() {
   const { role, lineId, sections: scopeSecs, scopeIdx } = useContext(UserContext);
   const canEdit = can('energy', 'record', role);
-  const [tab, setTab] = useTabParam(['input', 'summary', 'setup', 'mqtt', 'live'], 'input');
+  const [tab, setTab] = useTabParam(['input', 'summary', 'setup', 'live'], 'input');
+  /* 🔌 แท็บ "มิเตอร์ / MQTT" ย้ายไปอยู่ /integrations ที่เดียวแล้ว (11/11 · user "ย้ายละก็ให้มันมีที่เดียว")
+     ลิงก์/บุ๊กมาร์กเก่า ?tab=mqtt = ส่งต่อไปบ้านใหม่ ห้ามตกไปแท็บอื่นเงียบๆ */
+  const [sp] = useSearchParams();
+  const movedToHub = sp.get('tab') === 'mqtt';
   /* ⚡ แท็บค่าไฟสด (2026-11-09) — คนละแกนเวลากับแท็บอื่น (นาที vs เดือน) ⇒ ซ่อนแถบเดือน/KPI รายเดือน */
   const isLive = tab === 'live';
   const [month, setMonth] = useState(() => monthKeyOf());
@@ -79,10 +83,6 @@ export default function Energy() {
   const [showUnmetered, setShowUnmetered] = useState(() => urlBool('unmet', false));   // ?unmet= (จอวนหน้า)
   const [prod, setProd] = useState(null);   // month → ชิ้นที่ผลิตได้ทั้งโรงงาน (null = ยังไม่โหลด)
   const [prodErr, setProdErr] = useState('');
-  /* 📡 MQTT ยัง "พักไว้" (user 2026-08-20: "คิดต่อไว้เฉยๆ ยังไม่ต้องทำ")
-     → ซ่อนแท็บจนกว่าจะ apply migration · โชว์แท็บที่กดแล้วเจอแถบแดง = รบกวนคนใช้งานเปล่าๆ
-     วันที่ apply เมื่อไหร่ แท็บโผล่เอง ไม่ต้องแก้โค้ด */
-  const [mqttReady, setMqttReady] = useState(false);
 
   /* ── scope มาตรฐาน: leader = family ไลน์ตัวเอง · role อื่น = ตาม sections ── */
   /* 🔴 ชื่อ const ห้ามชนกับฟังก์ชันที่ import มา แล้วเรียกตัวนั้นข้างใน = **TDZ จอขาวทั้งหน้า**
@@ -99,13 +99,7 @@ export default function Energy() {
         บังคับกรอกที่ไลน์แม่ = ทีมต้องบวกมือ (Laser 2 ไลน์ + HDF-01 + HDF-02) แล้วยัดลงช่องเดียว
         → ทิ้งความละเอียดที่มิเตอร์ให้มาฟรีๆ + ตอบไม่ได้ว่าไลน์ไหนกินไฟ (ผิดกฎ "เก็บค่าที่อ่านได้")
      การนับซ้ำคุมที่ `energyRollup` (แม่มีค่า = ใช้ของแม่) **ไม่ใช่ที่การห้ามกรอก** */
-  const points = useMemo(() => ([
-    ...toHierarchicalOptions(scopedLines).map(({ line, depth }) => ({
-      kind: 'line', name: line.name, section: line.section, depth,
-      parentName: line.parent_line_name || null,
-    })),
-    ...zones.map(z => ({ kind: 'zone', name: z, section: null, depth: 0, parentName: null })),
-  ]), [scopedLines, zones]);
+  const points = useMemo(() => energyPointOptions(scopedLines, zones), [scopedLines, zones]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -119,8 +113,7 @@ export default function Energy() {
     ]);
     /* 🔴 อ่านทะเบียนไลน์ไม่สำเร็จ = คงลิสต์เดิม ห้ามทับด้วย [] (30/10) */
     if (!lnRes?.error) setLines(lnRes?.data || []);
-    const zs = new Set([...(areas || []).map(a => a.name), ...(facMc || []).map(m => m.line_name)].filter(Boolean));
-    setZones([...zs].sort());
+    setZones(energyZonesFrom(areas, facMc));
     setHist(h || []);
 
     // ⚠️ ตาราง C1 อาจยังไม่ apply — โหลดแยก best-effort ห้ามให้ทั้งหน้าพัง
@@ -131,8 +124,6 @@ export default function Energy() {
     setCfgMissing(!!pcErr);
     setPointCfg(pc || []);
     setFactors(ef || []);
-    const { error: mqErr } = await supabaseDR.from('energy_meter_topics').select('id', { count: 'exact', head: true });
-    setMqttReady(!mqErr);
 
     // "utility นี้จ่ายให้ไลน์ไหน" — ของจริงอยู่ facility_supply_links (ห้ามเก็บซ้ำที่อื่น)
     const { data: sl } = await supabaseDR.from('facility_supply_links').select('machine_id, line_name');
@@ -522,11 +513,11 @@ export default function Energy() {
     </tr></thead>
   );
 
+  if (movedToHub) return <Navigate to="/integrations" replace />;
   return (
     <Page>
       <PageHeader title="พลังงานไฟฟ้า" icon="⚡" sub={isLive ? 'ค่าไฟสดจากมิเตอร์ · อัปเดตทุก 1 นาที' : `${monthLabel(month)} · เฟส 1 กรอกรายเดือน`}
-        tabs={[{ key: 'live', label: 'ค่าไฟสด' }, { key: 'input', label: 'กรอกรายเดือน' }, { key: 'summary', label: 'สรุป & วิเคราะห์' }, { key: 'setup', label: 'ค่าการปล่อย' },
-          ...(mqttReady ? [{ key: 'mqtt', label: 'มิเตอร์ / MQTT' }] : [])]}
+        tabs={[{ key: 'live', label: 'ค่าไฟสด' }, { key: 'input', label: 'กรอกรายเดือน' }, { key: 'summary', label: 'สรุป & วิเคราะห์' }, { key: 'setup', label: 'ค่าการปล่อย' }]}
         tab={tab} onTab={setTab}
       />
       {isLive ? <EnergyLiveBoard /> : (<>
@@ -837,14 +828,6 @@ export default function Energy() {
               </div>
             </div>
           </>
-        ) : tab === 'mqtt' ? (
-          /* 📡 ทะเบียน MQTT topic — ให้ทีมช่างเพิ่มเองได้ (ยังไม่มี bridge → หน้าบอกไว้ชัด)
-             deep-link มาตอนยังไม่ apply migration = บอกตรงๆ ห้ามเด้งไปแท็บอื่นเงียบๆ */
-          mqttReady ? <EnergyMqttTopics points={points} canEdit={canEdit} />
-            : <div style={{ ...card, fontSize: 12.5, color: 'var(--text2)' }}>
-                📡 <b>ส่วนรับค่าจากมิเตอร์ (MQTT) ยังไม่เปิดใช้</b> — ต้อง apply migration
-                <code> 20260820_energy_mqtt_topics</code> ก่อน แล้วแท็บจะโผล่เอง (แจ้ง admin)
-              </div>
         ) : (
           /* ⚙️ ค่าการปล่อย (EF) */
           <EfSetup factors={factors} canEdit={canEdit} cfgMissing={cfgMissing} onSaved={load} month={month} />

@@ -15,6 +15,7 @@ import { coalesce, makeIdleGate } from '../utils/liveRefresh';
 import { loadDivisions, divisionsSync, divisionMeta } from '../utils/orgDivisions';
 import { liveChannel } from '../utils/liveChannel';
 import { openOnly } from '../utils/shipStatus';
+import { useWorkDate } from '../utils/useWorkDate';   // 📅 บอร์ดเปิดค้างข้ามวัน (12/11)
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
@@ -69,7 +70,9 @@ export default function FlowTower() {
   const [busy, setBusy] = useState('');
   const [divs, setDivs] = useState([]);   // เก็บไว้ trigger re-render หลัง cache ฝ่ายโหลดเสร็จ
   const canFix = can('products', 'edit', role);
-  const workDate = getWorkDate();
+  /* 📅 บอร์ดนี้ถูกเปิดค้างทั้งวันเหมือนกัน — ต้องอัปเดตวันงานเองตอนข้าม 08:00
+     (บั๊กเดียวกับจอแขวนทีมซัพพอต 12/11 · ดู utils/useWorkDate.js) */
+  const workDate = useWorkDate();
 
   const load = useCallback(async () => {
     try {

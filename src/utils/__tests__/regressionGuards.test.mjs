@@ -7902,9 +7902,17 @@ test('🟡 defect-auto-yellow — ลงงานเสียต้องตั�
   const q = stripComments(readFileSync(join(ROOT, Q), 'utf8'));
   if (!/pendingYellow\(/.test(q))
     bad.push(`${Q}: ต้องมีคิว "รอพิจารณา" (pendingYellow) — จุดที่คนเคลียร์ว่ากลับมาดีหรือเสียแน่`);
-  for (const [t, why] of [['งานดี', 'ตรวจแล้วใช้ได้'], ['ซ่อมแล้วดี', 'rework แล้วดี'], ['เสียแน่', 'rework ไม่ได้ → ถังแดง']]) {
+  /* 10/11 สายแบบใบ MO: "ซ่อมแล้วดี" คลิกเดียว → แตกเป็น ส่งซ่อม (QA) · ลงผลซ่อม (ผลิต) · ตรวจรับ/ตีกลับ (QA) */
+  for (const [t, why] of [['งานดี', 'ตรวจแล้วใช้ได้'], ['ส่งซ่อม', 'ขั้น 2 → 3'], ['ลงผลซ่อม', 'ขั้น 3 ฝ่ายผลิต'],
+    ['ตรวจรับ', 'ขั้น 4 QA'], ['ตีกลับ', 'ขั้น 4 ไม่ผ่าน → 3'], ['เสียแน่', 'rework ไม่ได้ → ถังแดง']]) {
     if (!q.includes(t)) bad.push(`${Q}: คิวรอพิจารณาต้องมีปุ่ม "${t}" (${why})`);
   }
+  /* 🔴 ส่งซ่อมห้ามปิดใบในคลิกเดียว (ลง return_date/repair_date พร้อมผล) — ไม่มีใครตรวจรับงานซ่อมจริง (10/11) */
+  const decRep = q.match(/const\s+decide\s*=[\s\S]*?\n  \};/);
+  if (decRep && /qa_decision:\s*'repair'[^}]*(return_date|repair_date)/.test(decRep[0]))
+    bad.push(`${Q} decide(): "ส่งซ่อม" ห้ามลง repair_date/return_date — ขั้น 3 ผลิตลงผล · ขั้น 4 QA ตรวจรับ`);
+  if (!/export function ncStep/.test(u))
+    bad.push(`${U}: ต้องมี ncStep() — ขั้นของใบถัง (แบบใบ MO) ตัดสินที่เดียว`);
   /* 🔴 RLS ปฏิเสธ UPDATE = "สำเร็จ 0 แถว ไม่มี error" ⇒ ปุ่มตัดสินต้องนับแถว */
   const dec = q.match(/const\s+decide\s*=[\s\S]*?\n  \};/);
   if (dec && !/checkWriteRows\(/.test(dec[0]))
@@ -9717,7 +9725,8 @@ test('🔇 notify-rollup-never-for-call-mtn — ห้ามยุบใบ "เ
 test('🔴 close-shift-dt-confirm — ปิดกะที่มี Downtime เปิดค้าง ต้องผ่านป๊อปอัพทวนก่อนเขียน DB', () => {
   const src = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
 
-  assert.match(src, /const handleCloseSession = async \(\{ dtConfirmed = false \} = \{\} \) =>|const handleCloseSession = async \(\{ dtConfirmed = false \} = \{\}\) =>/,
+  // รับพารามิเตอร์เพิ่มได้ (เช่น `recheckDone` ของด่าน poka-yoke 11/11) แต่ `dtConfirmed` ต้องยังอยู่
+  assert.match(src, /const handleCloseSession = async \(\{ dtConfirmed = false[^)]*\} = \{\}\s*\) =>/,
     '\n\n❌ handleCloseSession ไม่รับ dtConfirmed — ป๊อปอัพทวนจะเรียกกลับมาปิดจริงไม่ได้\n');
   assert.match(src, /if \(openDT\.length > 0 && !dtConfirmed\) \{ setDtCloseConfirm\(openDT\); return; \}/,
     '\n\n❌ ถอดด่านป๊อปอัพทวน Downtime เปิดค้างออกจาก handleCloseSession\n'
@@ -9971,6 +9980,34 @@ test('📋 sheet-quality-is-hint-not-gate — แถบความครบข�
     '\n\n❌ hardcode ชื่อเครื่องตัวอย่างในโค้ด — ใบต้นแบบเปลี่ยนได้ ต้องถาม fn_inspect_sheet_examples\n');
 });
 
+/* ═══ 🦺 ppe-requirements-layers — 2026-11-10 · คำสั่ง user ════════════════════════════════
+   *"บางไลน์ต้องมีผ้ากันเปื้อน ปลอกแขน แว่นตาอีก"* ⇒ PPE เป็นทะเบียน 4 ชั้น ไม่ใช่ 3 คอลัมน์ตายตัว
+   ที่ห้ามหลุด: ① กฎตกทอดอยู่ไฟล์เดียว หน้าห้ามคิดเอง ② ถาม PPE ต้องขึ้นเฉพาะที่หน่วยนั้นบังคับ
+   ③ "ข้าม" ต้องไม่เขียนผลว่าผ่าน ④ ติ๊กที่ชั้นใหม่ต้องซิงก์คอลัมน์เดิม ไม่งั้นจอเก่า/ใหม่เถียงกัน  */
+test('🦺 ppe-requirements-layers — กฎ PPE อยู่ไฟล์เดียว + ข้ามต้องไม่นับว่าผ่าน', () => {
+  const bad = [];
+  for (const f of ['src/pages/ScanLanding.jsx', 'src/pages/PpeSetup.jsx']) {
+    const s = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    if (!/resolvePpe\(/.test(s)) bad.push(`${f} — ไม่ได้ตัดสินข้อกำหนดผ่าน resolvePpe`);
+    // ห้ามไล่ชั้นเอง: หน้าห้ามแตะ scope_kind ตรงๆ เพื่อตัดสินว่าชั้นไหนชนะ (PpeSetup เขียนทะเบียนได้)
+    if (f.includes('ScanLanding') && /scope_kind/.test(s)) bad.push(`${f} — ไล่ชั้นเองในหน้า`);
+  }
+  const sl = stripComments(readFileSync(join(ROOT, 'src/pages/ScanLanding.jsx'), 'utf8'));
+  // "ข้ามไว้ก่อน" ต้องแค่ปิดแผง ห้ามเรียกตัวบันทึก
+  const skip = sl.slice(sl.indexOf("done: 'skipped'") - 200, sl.indexOf("done: 'skipped'") + 120);
+  if (/savePpe|savePpeChecks/.test(skip)) bad.push('ปุ่มข้ามเรียกตัวบันทึก — ข้ามต้องไม่เขียนผลตรวจ');
+  if (!/ppe\.required\.map/.test(sl)) bad.push('จอไม่ได้ขึ้นเฉพาะรายการที่หน่วยนั้นบังคับ');
+
+  const lib = stripComments(readFileSync(join(ROOT, 'src/lib/checkinSave.js'), 'utf8'));
+  if (!/legacyPatchOf\(/.test(lib)) bad.push('savePpeChecks ไม่ซิงก์คอลัมน์เดิม — จอเก่ากับจอใหม่จะเถียงกัน');
+  if (!/legacySynced/.test(lib)) bad.push('ซิงก์คอลัมน์เดิมล้มแล้วไม่บอกใคร');
+
+  const rule = stripComments(readFileSync(join(ROOT, 'src/utils/ppeRequirements.js'), 'utf8'));
+  if (!/lineChainIds\(/.test(rule)) bad.push('ไม่ได้ไล่สายไลน์ผ่าน lineChainIds (แม่→ลูก)');
+  if (!/unknown: true/.test(rule)) bad.push('อ่านทะเบียนไม่ได้แล้วไม่คืน unknown — จะกลายเป็น "ไม่ต้องใส่อะไรเลย"');
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
+
 test('🛒 pr-loop-not-locked-by-mo — ใบปิดแล้วต้องทำ PR ที่ค้างต่อได้ + ไล่งานต้องรู้จัก PR', () => {
   /* 🔴 10/11 feedback หน้างาน 2 ข้อ ต้นเหตุเดียวกัน (ลูป PR กับลูปขั้นของใบ MO คนละลูป):
        ① "ใบที่เปิด PR ไว้ ถ้า ผจก.ฝ่ายแจ้งอนุมัติไปแล้ว แก้ไขอะไรไม่ได้เลย"
@@ -10041,3 +10078,287 @@ test('🚦 mo-close-gated-by-pr-loop — ปิดใบ MO ต้องถา�
     + '   ให้ถาม openPrRows() / moCloseGate() ใน utils/moChase.js ที่เดียว\n');
   /* ทางออกต้องเปิดอยู่: ด่านปิดใบ ห้ามไปล็อกแผง PR (ไม่งั้นวงจรล็อกตัวเอง) — ข้อ ① ของด่านข้างบนคุมอยู่ */
 });
+
+test('📅 board-workdate-must-refresh — จอที่เปิดค้างทั้งวัน ต้องอัปเดตวันงานเองตอนข้าม 08:00', () => {
+  /* 🔴 บั๊กจริงที่หน้างานแจ้ง 12/11 (ทีม MTN + DIE MTN · สังเกตมา 3-4 วัน):
+       "โหมดจอแขวนของทีมซัพพอต ถ้าเปิดทิ้งไว้ ไม่ดึงข้อมูลขึ้นมา จะไม่เห็น Status เลยว่า
+        ไลน์ไหนเปิดหรือปิด เป็นสีเทาหมด กด refresh ก็ไม่หาย ต้องออก browser แล้วเข้าใหม่"
+     ต้นเหตุ: `const workDate = getWorkDate()` เขียนในตัว component ⇒ คิดใหม่เฉพาะตอน
+       re-render · จอแขวนที่ไม่มีใครแตะ ไม่มีอะไรสั่ง re-render ⇒ ข้าม 08:00 แล้วยังถาม
+       `production_sessions` ด้วยวันงานเมื่อวาน (กะปิดหมดแล้ว) = "ไม่มีไลน์เปิด" เทาทั้งจอ
+     ⇒ จอกลุ่มนี้ต้องใช้ `useWorkDate()` เท่านั้น (utils/useWorkDate.js) */
+  for (const f of ['src/pages/TvBoard.jsx', 'src/pages/DeptDashboard.jsx', 'src/pages/FlowTower.jsx']) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    assert.ok(/useWorkDate\(\)/.test(src),
+      `\n\n❌ ${f} ไม่ได้ใช้ useWorkDate() แล้ว — จอเปิดค้างจะค้างวันงานเก่าข้ามวัน\n`);
+    assert.ok(!/const\s+\w+\s*=\s*getWorkDate\(\)\s*;/.test(src),
+      `\n\n❌ ${f} กลับไปจับวันงานตอน render ด้วย getWorkDate() อีกแล้ว\n`
+      + '   จอแขวนไม่มีอะไรสั่ง re-render ⇒ ข้าม 08:00 แล้วสถานะไลน์เทาทั้งจอ\n'
+      + '   ให้ใช้ useWorkDate() (คืนค่าเดิมเป๊ะเมื่อวันยังไม่เปลี่ยน = ไม่ re-render ฟรี)\n');
+  }
+  /* hook ต้องไม่ re-render ฟรีๆ — ไม่งั้นจอ TV เสีย egress จากนาฬิกา (กฎ egress ข้อ 11) */
+  const hook = stripComments(readFileSync(join(ROOT, 'src/utils/useWorkDate.js'), 'utf8'));
+  assert.ok(/setWd\(prev =>/.test(hook),
+    '\n\n❌ useWorkDate ต้องเซ็ตด้วยฟังก์ชันที่คืน `prev` เมื่อค่าเท่าเดิม (React bail out)\n'
+    + '   ไม่งั้นจอ TV re-render ทุกนาทีและยิงโหลดใหม่ = egress เพิ่มฟรี\n');
+  assert.ok(/visibilitychange/.test(hook),
+    '\n\n❌ useWorkDate ไม่ได้เช็คตอนจอกลับมา (visibilitychange) — เบราว์เซอร์ทีวีพักหน้าจอแล้วจะช้าไป 1 รอบ\n');
+});
+
+test('🚦 andon-must-read-both-query-errors — คิวรีกะล้ม ห้ามกลายเป็น "ไม่มีไลน์เปิด" เงียบๆ', () => {
+  /* 🔴 บั๊กเดียวกับข้างบน อีกเส้นทางหนึ่ง (12/11):
+       เดิม `if (dtRes.error) { ...; return; }` แล้ว **ไม่เคยอ่าน `sessRes.error` เลย**
+       ⇒ คิวรี production_sessions ล้ม → data = undefined → `|| []` → openLines = []
+         = เทาทุกไลน์ โดยจอไม่ขึ้นอะไรบอก (ผิดกฎ "ห้ามล้มเหลวเงียบ" + กฎ DB ข้อ 1) */
+  const src = stripComments(readFileSync(join(ROOT, 'src/components/MtnAndonBoard.jsx'), 'utf8'));
+  assert.ok(/sessRes\.error/.test(src),
+    '\n\n❌ MtnAndonBoard ไม่ได้อ่าน error ของคิวรีกะ (`sessRes.error`)\n'
+    + '   ล้มเมื่อไหร่ = openLines ว่าง = เทาทุกไลน์เงียบๆ ทั้งที่ไลน์เปิดอยู่จริง\n');
+  /* และต้องไม่ปล่อยให้ `|| []` เป็นทางเดียวที่รองรับความล้มเหลว */
+  assert.ok(/setDtErr\(errs\.length/.test(src),
+    '\n\n❌ MtnAndonBoard ไม่ได้เอา error ขึ้นจอรวมทั้ง 2 คิวรีแล้ว — จอต้องเขียนบอก ห้ามเงียบ\n');
+});
+test('🗂️ line-registry-empty-not-cached — ทะเบียนไลน์ว่างห้ามถูกจดเป็นของจริง', () => {
+  /* 🔴 10/11 ผังโรงงานกรอบหายทั้งผัง ("ซ่อนโซนสนับสนุน 25 โซน" + ยอดรวม 0/0)
+     RLS ของ production_lines = `authenticated` ⇒ session ยังไม่พร้อม = 200 + 0 แถว **ไม่มี error**
+     ⇒ เดิม loader คืน `[]` สำเร็จ ⇒ cachedMaster จดลง localStorage 4 ชม. ⇒ ทุกจอเห็นไลน์ว่างทั้งเช้า
+     กฎ: loader ของทะเบียนไลน์ต้อง throw เมื่อได้ลิสต์ว่าง (cachedMaster ไม่เขียน cache ตอน throw) */
+  const code = stripComments(readFileSync(join(ROOT, 'src/utils/useProductionLines.js'), 'utf8'));
+  const m = code.match(/export async function loadProductionLines\(\)\s*\{([\s\S]*?)\n\}/);
+  assert.ok(m, '\n\n❌ หา loadProductionLines() ใน src/utils/useProductionLines.js ไม่เจอ — ด่านนี้วัดอะไรไม่ได้แล้ว\n');
+  assert.ok(/if\s*\(\s*!data\?\.length\s*\)\s*throw/.test(m[1]),
+    '\n\n❌ loadProductionLines() ต้อง `if (!data?.length) throw …` — ลิสต์ว่างจะถูกจดลง cache 4 ชม.' +
+    '\n   (ผังโรงงานกรอบหายทั้งผัง / dropdown ไลน์ว่าง · 10/11)\n');
+});
+
+/* ═══ 🔗 handoff-child-must-not-vanish — 2026-11-11 · ไล่จากรอบตรวจรายวัน ════════════
+   โมเดลส่งต่อ MO = 1 ปัญหา หลายใบผูกกันเป็นสาย · ใบต้นทางจบที่ `transferred`
+   (อยู่ใน `MO_DONE_STATUSES` = **สถานะจบ**) แล้วเปิดใบใหม่ของทีมปลายทาง
+
+   🔴 รูที่เจอ (วัด 11/11 · DR): ใบแม่ 31 ใบที่ transferred เกิน 7 วัน — 4 ใบ **ปลายทางหายไป**
+      ต้นเหตุ: FK `mtn_order_handoffs.to_order_id` เป็น `on delete set null`
+      + ใบลูกยังไม่ออกเลข MO ⇒ `moRemoveMode()` เดิมตอบ "ลบได้"
+      ⇒ ลบใบลูก = ลิงก์ถูกล้างเงียบๆ · ใบแม่ยังจบ ⇒ **ปัญหาหลุดจากคิวทุกคน ไม่มีจอไหนบอก**
+      พิสูจน์จาก audit_log: ถูก DELETE จริง 3/4 ใบ (ทีม JIG ลบตอนยัง pending)
+   แก้ 3 ชั้น — ด่านนี้ล็อกทั้งสามไว้ */
+test('🔗 handoff-child-must-not-vanish — ลบใบปลายทางไม่ได้ + โซ่ขาดต้องโผล่บนจอ', () => {
+  const bad = [];
+
+  // ① ชั้นกฎ: moRemoveMode ต้องดู transferred_from_mo ก่อนตอบ "ลบได้"
+  const perm = stripComments(readFileSync(join(ROOT, 'src/utils/mtnStepPerm.js'), 'utf8'));
+  const fn = perm.slice(perm.indexOf('export function moRemoveMode'), perm.indexOf('export const MO_LABEL_WAIT_APPROVAL'));
+  if (!/transferred_from_mo/.test(fn))
+    bad.push('moRemoveMode ไม่ได้เช็ค transferred_from_mo — ใบที่ถูกส่งต่อมาจะถูกลบทิ้งได้อีก');
+  const iFrom = fn.indexOf('transferred_from_mo');
+  const iDel = fn.indexOf('MO_REMOVE_DELETE', fn.indexOf('if (!hasNo)'));
+  if (iFrom < 0 || iDel < 0 || iFrom > iDel)
+    bad.push('ด่าน transferred_from_mo ต้องอยู่ "ก่อน" สาขา !hasNo ที่ปล่อยให้ลบ');
+
+  // ② ชั้น DB: migration ตั้ง FK เป็น restrict (ของจริงที่ client ข้ามไม่ได้)
+  const mig = readFileSync(join(ROOT, 'supabase/migrations/20261111_mtn_handoff_child_no_delete_dr.sql'), 'utf8');
+  if (!/to_order_id\)\s*references\s+public\.mtn_orders\(id\)\s+on delete restrict/.test(mig))
+    bad.push('migration ไม่ได้ตั้ง to_order_id เป็น on delete restrict');
+
+  // ③ ชั้นจอ: หน้า MO ต้องโหลดโซ่ส่งต่อ + ส่งเข้าแผง · แผงต้องวาดบล็อกนี้
+  const page = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  if (!/from\('mtn_order_handoffs'\)/.test(page))
+    bad.push('MtnRepair ไม่ได้อ่าน mtn_order_handoffs — โซ่ขาดจะไม่โผล่ที่ไหนเลย');
+  if (!/buildHandoffGapBoard\(/.test(page))
+    bad.push('MtnRepair ไม่ได้ใช้ buildHandoffGapBoard — ห้ามตัดสินโซ่ขาดเองในหน้า');
+  if (!/gaps=\{/.test(page)) bad.push('MtnRepair ไม่ได้ส่ง gaps เข้า MoStalePanel');
+  /* `.in()` ยาวบน id ชุดใหญ่ = URL เกินเพดาน proxy → คืนว่างเงียบ (กฎเหล็กข้อ 5) */
+  if (!/fetchByIds\(/.test(page)) bad.push('MtnRepair โหลดใบแม่/ใบลูกของโซ่ส่งต่อไม่ผ่าน fetchByIds');
+  /* แปล error FK ให้คนอ่านรู้เรื่อง — พ่น PG ดิบ = หน้างานไม่รู้ว่าต้องกดยกเลิกแทน */
+  if (!/23503/.test(page)) bad.push('MtnRepair ไม่ได้แปล error 23503 (FK restrict) ตอนลบใบ');
+
+  const panel = stripComments(readFileSync(join(ROOT, 'src/components/MoStalePanel.jsx'), 'utf8'));
+  if (!/handoffGapMeta\(/.test(panel))
+    bad.push('MoStalePanel ไม่ได้อ่านทะเบียนชนิดโซ่ขาด (handoffGapMeta) — ห้ามแต่งป้าย/สีเองในหน้า');
+  if (!/gapsErr/.test(panel))
+    bad.push('MoStalePanel ไม่ได้เขียนบนจอตอนอ่านโซ่ส่งต่อไม่สำเร็จ (จะโชว์ 0 ทั้งที่ไม่รู้)');
+
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
+/* ═══ 🧭 workstations-dual-line-key — 2026-11-11 · feedback user ("จุดงานไม่โหลดหรอ") ═════════
+   ทะเบียน `workstations` ผูกไลน์ **2 ทาง**: `line_id` (30/133 แถว) และ `line_name` ข้อความ (103/133)
+   ⇒ ถามด้วย `line_id` ทางเดียว = จุดงานหายไป 3 ใน 4 **เงียบๆ** (ไลน์ที่มีจุดงาน 32 ชื่อ แต่มี id แค่ 8)
+   + ชื่อคอลัมน์คือ `station_name` ไม่ใช่ `name` — เลือกผิดชื่อ = คิวรี error แล้วถ้ากลืน error
+     จะเหลือลิสต์ว่างที่อ่านเหมือน "ไลน์นี้ไม่มีจุดงาน" (จอโกหก · ลิสต์ว่าง 2 ความหมาย)                */
+test('🧭 workstations-dual-line-key — /ppe-setup ต้องถามจุดงานทั้ง 2 คีย์ + ไม่กลืน error', () => {
+  const bad = [];
+  const s = stripComments(readFileSync(join(ROOT, 'src/pages/PpeSetup.jsx'), 'utf8'));
+  if (!/\.eq\('line_id'/.test(s) || !/\.eq\('line_name'/.test(s))
+    bad.push('ถามจุดงานคีย์เดียว — ต้องรวมทั้ง line_id และ line_name');
+  if (/select\('id, name'\)/.test(s) || /\bst\.name\b/.test(s))
+    bad.push("ใช้คอลัมน์ `name` — ทะเบียนนี้ชื่อ `station_name`");
+  if (!/setStFail\(/.test(s)) bad.push('อ่านทะเบียนจุดงานล้มแล้วไม่บอกใคร (ลิสต์ว่าง = จอโกหก)');
+  // ว่างจริง กับ อ่านไม่ได้ ต้องเขียนบนจอคนละข้อความ
+  if (!/ยังไม่ได้ตั้งจุดงาน/.test(s)) bad.push('ไลน์ที่ยังไม่มีจุดงาน ไม่ได้บอกว่าต้องไปตั้งที่ไหน');
+  assert.deepEqual(bad, [], bad.join('\n'));
+});
+
+/* ═══ 🧭 nav-item-needs-sub — 2026-11-11 · feedback user ═══════════════════════════════════
+   หมวดเมนูที่มีหัวข้อย่อย (`sub`) — รายการที่ไม่ใส่ `sub` จะลอยอยู่เหนือหัวข้อย่อยทั้งหมด
+   ดูเหมือนหลุดกลุ่ม (เจอจริงกับ "ข้อกำหนด PPE" ตอนเพิ่มใหม่ 10/11)                              */
+test('🧭 nav-item-needs-sub — หมวดที่มีหัวข้อย่อยแล้ว ห้ามมีรายการไม่มี sub', () => {
+  const src = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  const block = src.slice(src.indexOf('const NAV_ITEMS'), src.indexOf('NAV_GROUP_ORDER'));
+  const rows = block.split('\n').filter(l => /^\s*\{\s*to:\s*'\//.test(l));
+  const groupsWithSub = new Set();
+  for (const l of rows) {
+    const g = l.match(/group:\s*'([^']+)'/);
+    if (g && /\bsub:\s*'/.test(l)) groupsWithSub.add(g[1]);
+  }
+  const bad = [];
+  for (const l of rows) {
+    const g = l.match(/group:\s*'([^']+)'/);
+    if (!g || !groupsWithSub.has(g[1]) || /\bsub:\s*'/.test(l)) continue;
+    bad.push(`${(l.match(/to:\s*'([^']+)'/) || [])[1]} — อยู่หมวด "${g[1]}" ที่มีหัวข้อย่อย แต่ไม่ได้ใส่ sub`);
+  }
+  assert.deepEqual(bad, [], '\n\n❌ รายการเมนูจะลอยเหนือหัวข้อย่อย ดูเหมือนหลุดกลุ่ม:\n   ' + bad.join('\n   ') + '\n');
+});
+
+test('📐 factory-map-polygon-save-gate — ลากกรอบบนผังต้องผ่านด่านก่อนบันทึก', () => {
+  /* 🔴 11/11 กรอบ Laser GOR จุดมุมหลุดขึ้นไป ~46% ของผังแล้วบันทึกลง DB เงียบๆ (ปล่อยเมาส์ = บันทึก)
+     กฎ: endDrag ต้องถาม checkPolygonEdit() (utils/polygonEdit.js) ก่อน update · ลากมุมผ่าน dragVertex() */
+  const code = stripComments(readFileSync(join(ROOT, 'src/pages/FactoryMap.jsx'), 'utf8'));
+  const m = code.match(/const endDrag = async \(\) => \{([\s\S]*?)\n  \};/);
+  assert.ok(m, '\n\n❌ หา endDrag ใน FactoryMap.jsx ไม่เจอ — ด่านนี้วัดอะไรไม่ได้แล้ว\n');
+  const iChk = m[1].indexOf('checkPolygonEdit(');
+  const iUpd = m[1].indexOf(".from('factory_line_regions').update(");
+  assert.ok(iChk >= 0 && iUpd > iChk,
+    '\n\n❌ endDrag บันทึกกรอบโดยไม่ผ่าน checkPolygonEdit() ก่อน — จุดหลุดไกล/เส้นตัดกันจะถูกบันทึกเงียบ (เคส Laser GOR 11/11)\n');
+  assert.ok(/dragVertex\(/.test(code),
+    '\n\n❌ ลากจุดมุมไม่ผ่าน dragVertex() แล้ว — โหมดคงมุมฉากหาย\n');
+});
+
+/* ═══ 🚪 alsoIn-allowlist — 2026-11-11 · คำสั่ง user ("พยายามไม่ให้มี shortcut แบบนี้") ═══════
+   `alsoIn` = เมนูเดียวโผล่ 2 หมวด (หมวดที่ 2 วาดจางๆ + `↗`) — user ขอให้มีให้น้อยที่สุด
+   รีวิว 11/11: มี 4 ตัว → เหลือ **2 ตัวที่มีเหตุผลว่า "2 ฝ่ายลงมือจริงทั้งคู่"**
+     · /production-plan  — ผลิตตัดสินเปิดกะ/OT + planner เทียบยอดลูกค้า (คำสั่ง user เดิม: บ้าน=ฝ่ายผลิต)
+     · /store-monitor    — หน้าเดียวจับทั้งขาเข้า (min-max) และขาออก (ใบสั่งซื้อค้าง)
+   ถอดออก: /ppe-setup (ทางลัดพาไปหน้าที่ supervisor กดไม่ได้) · /monitoring (ฝ่ายผลิตดูอย่างเดียว)
+   🔴 เพิ่มตัวใหม่ = ต้องถาม user ก่อน แล้วค่อยเติมในลิสต์นี้ — **ห้ามเติมเพื่อให้ build ผ่าน** */
+test('🚪 alsoIn-allowlist — ทางลัดข้ามหมวดต้องมีเท่าที่ user เคาะไว้', () => {
+  const src = readFileSync(join(ROOT, 'src/App.jsx'), 'utf8');
+  const block = src.slice(src.indexOf('const NAV_ITEMS'), src.indexOf('NAV_GROUP_ORDER'));
+  const found = block.split('\n')
+    .filter(l => /^\s*\{\s*to:\s*'\//.test(l) && /\balsoIn:/.test(l))
+    .map(l => (l.match(/to:\s*'([^']+)'/) || [])[1])
+    .sort();
+  assert.deepEqual(found, ['/production-plan', '/store-monitor'],
+    '\n\n❌ ชุดเมนูที่มีทางลัดข้ามหมวด (`alsoIn`) เปลี่ยนไปจากที่ user เคาะไว้ 11/11\n'
+    + `   เจอ: ${found.join(' · ') || '(ไม่มี)'}\n`
+    + '   เพิ่มทางลัดใหม่ = ต้องถาม user ก่อน · ถอดออก = อัปเดตลิสต์ในด่านนี้พร้อมเหตุผล\n');
+});
+
+/* ═══ 🪪 ใบตรวจทุกใบ (AM + PM) ต้องผ่านด่านบัตรผู้ตรวจ (2026-11-11 · คำสั่ง user) ═══
+   เดิมด่าน `amBadgeGate` อยู่ใน `if (isAmTeam(department))` ⇒ ใบ PM ของช่างบันทึกได้โดยไม่มีบัตร */
+test('🪪 PMCheckData: ด่านบัตรผู้ตรวจต้องไม่อยู่ใต้เงื่อนไข isAmTeam (ใช้ทุกใบ)', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/PMCheckData.jsx'), 'utf8'))
+  assert.doesNotMatch(src, /if\s*\(\s*isAmTeam\(department\)\s*\)\s*\{\s*const raw = inspectorCode/,
+    '\n\n❌ ด่านบัตรผู้ตรวจกลับไปอยู่ใต้ isAmTeam — ใบ PM จะบันทึกได้โดยไม่สแกนบัตร\n')
+  assert.match(src, /amBadgeGate\(\{[^}]*kind:/, '\n\n❌ amBadgeGate ต้องส่ง kind (AM/PM) ให้ข้อความถูกใบ\n')
+  assert.match(src, /<InspectorCodeField[^>]*required(\s|\/|>)/, '\n\n❌ ช่องรหัสผู้ตรวจต้อง required ทุกใบ\n')
+})
+
+/* ═══ 🛡️ row-cap-dated-select — SELECT ที่มีตัวกรอง "ช่วงวันที่" ต้องแบ่งหน้า (2026-11-11) ═══
+   ต่อยอดจาก `limit-over-postgrest-cap` ซึ่งจับได้แค่ `.limit(N > 1000)` — **ช่องโหว่จริงอยู่ที่
+   "ไม่ใส่ limit เลย"** ซึ่งเงียบกว่า เพราะดูเหมือนตั้งใจดึงทั้งหมด
+   audit 11/11/26 (สแกน 1,463 SELECT · ไม่แบ่งหน้า 836) เจอชนเพดานจริง 6 จุด เช่น
+     · ShiftAutoFillModal — `shift_schedules` หน้าต่าง 546 วัน = **11,458 แถว ได้มา 1,000 (หาย 91%)**
+       แล้วเอาไปตัดสินว่าจะ "ทับ" แถวที่คนตั้งมือไว้หรือไม่
+     · กะปิดแล้ว 30 วัน = 968 แถว (เหลือที่ 32) ⇒ ปุ่มย้อนหลัง 60/90/120/"ปีนี้" ชนทันที
+   กติกา: คิวรีบน **ตารางรายแถวที่โตตามเวลา** ที่มี `.gte('<คอลัมน์วันที่>')` ต้องผ่าน
+          `fetchAllPages` / `fetchByIds` / `fetchAllRows` / `.range(` / `openPlusHistory`
+          หรือมีหลักฐาน `cap-ok` ที่วัดมาจริงใน 3 บรรทัดเหนือขึ้นไป                                */
+test('🛡️ row-cap-dated-select — คิวรีช่วงวันที่บนตารางรายแถว ต้องแบ่งหน้า', () => {
+  /* ตารางที่ "โตตามเวลา" จริง — ทะเบียน master ไม่เข้าข่าย (โตช้า มีด่าน fetchAllRows ของตัวเอง) */
+  const GROWING = ['production_sessions', 'prod_orders', 'downtime_logs', 'defect_logs',
+    'daily_production_logs', 'shift_schedules', 'four_m_logs', 'mtn_orders', 'audit_log'];
+  const PAGED = /fetchAllPages|fetchByIds|fetchAllRows|openPlusHistory|\.range\(|pageAll|fetchAll\(/;
+  const bad = [];
+  for (const file of walk(join(ROOT, 'src'), ['.js', '.jsx'])) {
+    if (file.includes('__tests__')) continue;
+    const raw = readFileSync(file, 'utf8');
+    const rawLines = raw.split('\n');
+    const src = stripComments(raw);
+    const lines = src.split('\n');
+    lines.forEach((ln, i) => {
+      const m = ln.match(/\.from\(\s*['"]([a-z_]+)['"]\s*\)/);
+      if (!m || !GROWING.includes(m[1])) return;
+      /* ดูทั้งก้อนคิวรี — ตัวแบ่งหน้ามัก **ห่อไว้ข้างบน** (`fetchAllPages(() => supabase.from(…))`)
+         ⇒ ต้องมองขึ้นไปด้วย ไม่ใช่แค่ chain ที่ต่อท้าย */
+      const block = lines.slice(Math.max(0, i - 4), i + 20).join('\n');
+      if (!/\.select\(/.test(block)) return;              // insert/update/delete ไม่เกี่ยว
+      if (!/\.gte\(\s*['"][a-z_]*(date|_at)['"]/.test(block)) return;  // ไม่มีตัวกรองช่วงวันที่ = ไม่ใช่เคสนี้
+      if (PAGED.test(block)) return;                       // แบ่งหน้าแล้ว
+      if (/\.(limit|maybeSingle|single)\(/.test(block)) return;  // จำกัดเองแล้ว → ด่าน limit-over-cap ดูแลต่อ
+      const near = rawLines.slice(Math.max(0, i - 3), i + 1).join('\n');
+      if (/cap-ok/.test(near)) return;                     // มีหลักฐานวัดมาแล้ว
+      bad.push(`${file.slice(ROOT.length)}:${i + 1} (${m[1]})`);
+    });
+  }
+  assert.deepEqual(bad, [], '\n\n❌ คิวรีช่วงวันที่ที่ยังไม่แบ่งหน้า:\n   ' + bad.join('\n   ') + '\n'
+    + '   ทำไม: PostgREST คืนสูงสุด 1,000 แถว และ "ถูกตัด" ไม่ใช่ error ⇒ จอได้ข้อมูลไม่ครบเงียบสนิท\n'
+    + '         เรียงวันขึ้น = ตัดท้าย (เดือนล่าสุดหาย) · เรียงลง = ตัดหัว (ของเก่าหาย) — แย่ทั้งคู่\n'
+    + '   แก้: ผ่าน fetchAllPages (คิวรีเดี่ยว) / fetchByIds (มี id list) / fetchAllRows (ทะเบียน)\n'
+    + '        หรือถ้าวัดแล้วไม่มีทางถึง 1,000 ให้เขียน `cap-ok: <ตาราง> วัด <วันที่> = <N> แถว` เหนือบรรทัดนั้น\n');
+});
+
+/* ═══ ✍️ ใบ PM ขั้น 2 หัวหน้าผู้ตรวจยืนยัน ต้องผ่าน pmConfirmVerdict (2026-11-11 · คำสั่ง user) ═══
+   เดิมใบ PM กดอนุมัติได้ทุกคนที่ถือ pm:approve รวมถึงใบที่ตัวเองตรวจ */
+test('✍️ PMCheckData: ใบ PM อนุมัติต้องผ่าน pmConfirmVerdict (ระดับ + ไม่ใช่ใบตัวเอง)', () => {
+  const src = stripComments(readFileSync(join(ROOT, 'src/pages/PMCheckData.jsx'), 'utf8'))
+  assert.match(src, /isAm \? amApprovalVerdict\(verdictArgs\) : pmConfirmVerdict\(\{ \.\.\.verdictArgs, isShared \}\)/,
+    '\n\n❌ ใบ PM ต้องคิด verdict ด้วย pmConfirmVerdict\n')
+  assert.match(src, /can\('pm', 'approve', userRole\) && !!amVerdict\?\.ok/,
+    '\n\n❌ ปุ่มยืนยันใบ PM ต้องเช็ค verdict ด้วย ไม่ใช่แค่ pm:approve\n')
+})
+
+/* ═══ 📸 ปิดกะต้องตรึง CT + นโยบายพัก แล้วสูตรต้องอ่าน snapshot ก่อนทะเบียนสด (11/11 · คำสั่ง user)
+   เคสจริง 10/11: restamp 5 กะเก่า ไม่มีกะไหนได้ค่าเดิม เพราะ `break_policies` ถูกแก้ 20/10 + 05/11
+   ⇒ ออดิทเทียบ "เลขที่เก็บ" กับ "เลขที่คำนวณได้" ไม่ตรง · ถอดด่านนี้ = ปัญหากลับมาทั้งระบบ */
+test('📸 computeSessionOee: snapshot (CT + พัก) ต้องชนะทะเบียนสด และปิดกะต้อง stamp กลับ', () => {
+  const oee = stripComments(readFileSync(join(ROOT, 'src/utils/oee.js'), 'utf8'))
+  assert.match(oee, /const ctSnap = readCtSnapshot\(session\)/,
+    '\n\n❌ computeSessionOee ต้องอ่าน ct_snapshot ของกะก่อน (readCtSnapshot)\n')
+  assert.match(oee, /const brkSnap = readBreakSnapshot\(session\)/,
+    '\n\n❌ computeSessionOee ต้องอ่าน break_snapshot ของกะก่อน (readBreakSnapshot)\n')
+  assert.match(oee, /snap > 0 \? snap : ctForMat\(matNo/,
+    '\n\n❌ CT ต้องเอา snapshot ก่อน แล้วค่อยถอยไปทะเบียน (ctForMat)\n')
+  // brkIvIn = ประตูเดียวของช่วงพักในสูตรปิดกะ — ต้องกินชุดที่ผ่าน snapshot แล้วทั้ง 3 ตัว
+  const brk = oee.match(/const brkIvIn = \(a, b\) => breakIntervalsIn\(\{[\s\S]*?\}\);/)
+  assert.ok(brk, '\n\n❌ หา brkIvIn ใน computeSessionOee ไม่เจอ\n')
+  for (const k of ['policies: brkPolicies', 'processType: brkProcessType', 'lineRules: brkLineRules']) {
+    assert.ok(brk[0].includes(k),
+      `\n\n❌ brkIvIn ต้องใช้ ${k} (ไม่ใช่ prop สดจากหน้า) ไม่งั้นกะที่มี snapshot ยังคิดจากทะเบียนวันนี้\n`)
+  }
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'))
+  assert.ok((dr.match(/break_snapshot:\s*brkSnap/g) || []).length >= 2,
+    '\n\n❌ payload ปิดกะทั้ง 2 ทาง (pending_close + closed) ต้อง stamp break_snapshot\n')
+  assert.match(dr, /breakSnapshot \? \{ break_snapshot: breakSnapshot \} : \{\}/,
+    '\n\n❌ ปุ่ม "คำนวณ OEE ใหม่" ต้อง stamp break_snapshot ที่ใช้คิดรอบนั้นด้วย\n')
+})
+
+/* ═══ 🛡️ poka-yoke หน้าปิดกะ ห้ามถอด (2026-11-11 · คำสั่ง user) ═════════════════════════
+   "ทำ poka-yoke เวลาลงข้อมูลหรือก่อนส่งขอปิดกะ เพื่อรีเช็คและแจ้งให้พนักงานที่ลงตรวจสอบตอนนั้นเลย
+    จะช่วยได้เยอะกว่ามาย้อนหลังหลายๆวัน" — ด่าน 2 จังหวะ: ตอนลงยอด + ก่อนส่งขอปิดกะ */
+test('🛡️ DailyReport: ด่าน poka-yoke ตอนลงยอด + ก่อนปิดกะ ต้องยังอยู่', () => {
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'))
+  // ① ทุกทางที่คนพิมพ์ยอดเอง ต้องผ่าน qtyFitPass ก่อนเขียน DB
+  assert.ok((dr.match(/if \(!qtyFitPass\(o, (?:v|finalQty)\)\) return;/g) || []).length >= 2,
+    '\n\n❌ ทั้งทาง "ลงยอดสะสม" และ "ปิดใบด้วยยอดจริง" ต้องเรียก qtyFitPass() ก่อนบันทึก\n')
+  assert.match(dr, /checkQtyFit\(\{/, '\n\n❌ ด่านยอดต้องคิดด้วย checkQtyFit จาก utils/closeChecks.js\n')
+  // ② ด่านรีเช็คก่อนปิดกะ — ต้องกั้นก่อนเขียน DB และต้องติ๊กครบจึงไปต่อได้
+  assert.match(dr, /if \(confirmChecks\(checks\)\.length\) \{ setRecheckTicks\(\{\}\); setCloseRecheck\(checks\); return; \}/,
+    '\n\n❌ handleCloseSession ต้องหยุดรอการติ๊กเมื่อมีข้อ confirm (ห้ามปล่อยผ่าน)\n')
+  assert.match(dr, /const allTicked = must\.every\(c => recheckTicks\[c\.key\]\)/,
+    '\n\n❌ ปุ่มยืนยันต้องปลดล็อกเมื่อติ๊กครบทุกข้อ (ปุ่มเดียวรวบ = คนกดผ่านไม่อ่าน)\n')
+  assert.match(dr, /disabled=\{!allTicked\}/, '\n\n❌ ปุ่ม "ตรวจแล้ว" ต้อง disabled จนติ๊กครบ\n')
+  // 🔴 ตัวเลขที่ด่านจับ ต้องเป็นตัวเดียวกับที่จอโชว์ — ใบ downtime หลังคำตัดสินมีสูตรเดียว
+  assert.ok((dr.match(/previewDecidedDt\(\)/g) || []).length >= 3,
+    '\n\n❌ OEE preview บนจอ + ด่านรีเช็ค ต้องใช้ previewDecidedDt() ตัวเดียวกัน (ห้ามคิดนาที DT ซ้ำในหน้า)\n')
+  assert.match(stripComments(readFileSync(join(ROOT, 'src/utils/downtimeCarryRules.js'), 'utf8')),
+    /export function decidedDtLogs\(/, '\n\n❌ decidedDtLogs ต้องอยู่ใน utils (pure) ไม่ใช่ในหน้า\n')
+})

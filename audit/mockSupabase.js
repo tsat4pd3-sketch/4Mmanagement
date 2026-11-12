@@ -260,6 +260,30 @@ const TABLE_ROWS = {
   /* 🔨 ผังจัดเก็บแม่พิมพ์ — ชื่อต้องไม่ชนชื่อไลน์ (2026-10-16 · ห้ามถอด)
      เดิมได้ `name` = LINE_NAME(i) เหมือนไลน์ผลิต ⇒ FactoryMap `openLine()` เข้าใจว่าทุกกรอบเป็นโซนแม่พิมพ์
      แล้ว navigate ทิ้ง ⇒ **กล่องรายละเอียดไลน์ (story modal) ไม่เคยถูกเรนเดอร์ใน harness เลย** */
+  /* 🦺 ทะเบียน PPE (2026-11-10 · ห้ามถอด) — เดิม `ppe_items`/`ppe_requirements` ได้ ROWS ทั่วไป
+     ที่ไม่มี `scope_kind`/`name_th` เลย ⇒ `resolvePpe` กรองทิ้งหมด ⇒ **ทุกจอที่ใช้ PPE เดินแต่
+     สาขา "ไม่บังคับอะไรเลย"**: แผงถาม PPE ใน /scan ไม่เคยถูกวาด · /ppe-setup ขึ้นรายการชื่อ undefined
+     และตัวนับ "ต้องใส่ N ชิ้น" เป็น 0 เสมอ
+     รูปทรงที่ตั้งไว้ = ของจริงหลัง migration: 3 ชิ้นผูกคอลัมน์เดิม + ชิ้นที่ไม่มีคอลัมน์เดิม (ผ้ากันเปื้อน/
+     ปลอกแขน/แว่นตา — เหตุผลที่ทำระบบนี้ขึ้นมา) · ต้องมีทั้ง "บังคับ" และ "ยกเว้น" (required=false)
+     ไม่งั้นสาขายกเว้นรายไลน์ไม่เคยถูกรัน */
+  ppe_items: (r, i) => ({
+    ...r,
+    id: i,
+    code:       ['safety_helmet', 'safety_shoes', 'safety_gloves', 'safety_glasses', 'apron', 'arm_sleeve'][i % 6],
+    name_th:    ['หมวกนิรภัย', 'รองเท้านิรภัย', 'ถุงมือนิรภัย', 'แว่นตานิรภัย', 'ผ้ากันเปื้อน', 'ปลอกแขน'][i % 6],
+    legacy_col: ['has_helmet', 'has_boots', 'has_gloves', null, null, null][i % 6],
+    sort_order: i * 10,
+    is_active:  true,
+  }),
+  ppe_requirements: (r, i) => ({
+    ...r,
+    // แถว 1-3 = ค่าพื้นฐานทั้งโรงงาน (ของจริง seed ไว้) · 4-5 = ไลน์เพิ่มของตัวเอง · 6 = ไลน์ยกเว้น
+    scope_kind: i <= 3 ? 'plant' : i === 6 ? 'line' : 'line',
+    scope_key:  i <= 3 ? '*' : String(((i - 3) % 3) + 1),
+    item_id:    i <= 3 ? i : ((i % 6) + 1),
+    required:   i !== 6,
+  }),
   die_storage_areas: (r, i) => ({ ...r, name: `คลังแม่พิมพ์ทดสอบ ${i}` }),
   /* 🏬 โซนคลังสินค้า — เหตุผลเดียวกัน (ชื่อชนไลน์ = คลิกไลน์แล้วเปิด popup คลังแทน) · แถว 1 ตรงกับกรอบ rg-4 ให้การ์ดคลังยังถูกวาด */
   storage_zones: (r, i) => ({ ...r, name: i === 1 ? 'คลังสินค้า FG ทดสอบ' : `คลังสินค้าทดสอบ ${i}` }),
@@ -319,6 +343,17 @@ const TABLE_ROWS = {
      ไม่เคยถูกรันใน harness เลย · เลือกแถว 5 เพราะเป็นไลน์เดี่ยว (ไม่อยู่ใน PARENT_OF
      และไม่ถูกอ้างโดย sessions/workstations ที่ผูก LINE_NAME(1..3)) */
   production_lines: (r, i) => ({ ...r, unit_kind: i === 5 ? 'support' : 'production' }),
+  /* 🔗 โซ่ส่งต่อ MO (11/11) — แผง "ส่งต่อแล้วปลายทางไม่มีใครทำ" ต้องถูกรันทั้ง 3 สาขา
+     ของจริงมี 3 รูปทรง: ลิงก์ว่าง (ใบลูกถูกลบ) · ใบลูกถูกยกเลิก · ใบลูกยังทำงาน (ต้องไม่โผล่)
+     ⚠️ แถว NULLISH ยังว่างตามกติกา = สาขา "ไม่มีวันเวลาให้นับ" (ต้องขึ้น "ไม่มีวันเวลาให้นับ" ไม่ใช่ 0 วัน) */
+  mtn_order_handoffs: (r, i) => isNullish(r) ? r : ({
+    ...r,
+    from_order_id: `id-${i}`,
+    to_order_id: i % 3 === 0 ? null : `id-${i}`,   // 1 ใน 3 = ใบลูกถูกลบ (ลิงก์ว่าง)
+    to_dept: ['jig_maintenance', 'maintenance', 'die_maintenance'][i % 3],
+    reason: `ทีมแรกติดตรงนี้ ${i}`,
+    handed_by: `หัวหน้าทดสอบ ${i}`,
+  }),
 
   org_nodes: (r, i) => ({
     ...r,
@@ -621,6 +656,28 @@ const TABLE_ROWS = {
      · รูป = data URI (ออฟไลน์ ไม่ต้องต่อเน็ต) ขนาด 1600×900 ให้ aspect ใกล้ผังจริง
      · กรอบ: 2 ไลน์ผลิต (แม่ 1 + ลูก 1) + 1 โซนสนับสนุนที่ไม่ใช่ไลน์ผลิต (isFac = true)
        ⇒ ได้ทั้งสาขา "ไลน์" และ "โซน facility" ที่คิดสถานะคนละชุด */
+
+  /* 🏭 ศูนย์เชื่อมต่อ · ข้อมูลจากเครื่อง (2026-11-11 · ห้ามถอด) — เดิม `kinds` ไม่มีในแถว ⇒ แผง
+     MachineFactsPanel (/integrations?src=) ไม่เคยถูกวาดใน harness · ต้องมีทั้ง tag ที่ผูกแล้ว/ยังไม่ผูก
+     + สถานะทั้งที่จับคู่ได้ (fault/no_plan) และจับคู่ไม่ได้ (idle) + เวลาที่อ่านไม่ออก (isNullish) */
+  integration_sources: (r, i) => ({
+    ...r, kinds: i % 2 ? ['energy_readings', 'energy_events'] : ['machine_state', 'piece_count'],
+    legacy_secret: false, key_hint: i % 3 ? 'ab12' : null,
+  }),
+  machine_tag_map: (r, i) => ({ ...r, tag: `JTSRA03-0${(i % 4) + 1}`, machine_id: i % 3 ? `id-${i}` : null }),
+  machine_state_events: (r, i) => ({
+    ...r, machine_tag: `JTSRA03-0${(i % 5) + 1}`,
+    started_at: isNullish(r) ? null : new Date(Date.now() - (i + 1) * 3600000).toISOString(),
+    ended_at: isNullish(r) ? null : new Date(Date.now() - (i + 1) * 3600000 + 300000).toISOString(),
+    duration_sec: 300, state: ['fault', 'idle', 'planned_stop', 'no_plan', 'comm_loss', 'weird'][i % 6],
+    reason_code: i % 4, reason_text: i % 2 ? `เหตุผล ${i % 4}` : null, is_minor: i % 2 === 0,
+  }),
+  fn_machine_counter_hourly: (r, i) => ({
+    ...r, machine_tag: `JTSRA03-0${(i % 5) + 1}`,
+    hour_at: isNullish(r) ? null : new Date(Date.now() - (i + 1) * 3600000).toISOString(),
+    qty: 40 + i, ng: i % 2, minutes: 60,
+  }),
+  machine_reason_map: (r, i) => ({ ...r, reason_kind: i % 2 ? 'onplan' : 'unplan', reason_code: i % 4, downtime_type_id: i % 3 ? `id-${i}` : null }),
 
   v_demand_flow_blocks: (r, i) => ({
     ...r, maker_line: FAM_LINE, pending_qty: isNullish(r) ? null : 500 + i,
@@ -1174,4 +1231,6 @@ export const supabase = {
   functions: { invoke: () => Promise.resolve({ data: null, error: null }) },
 }
 export const supabaseDR = supabase
+/* ตรงกับ supabaseClient.js (ศูนย์เชื่อมต่อ /integrations ใช้ประกอบ URL ของ edge ใน flow Node-RED · 11/11) */
+export const DR_BASE_URL = 'https://mock-dr.supabase.co'
 export const setDrActorName = () => {}

@@ -80,6 +80,7 @@ const StoreMonitor   = lazy(() => import('./pages/StoreMonitor'));
 const Transport      = lazy(() => import('./pages/Transport'));
 const Report       = lazy(() => import('./pages/Report'));
 const WorkforceInsight = lazy(() => import('./pages/WorkforceInsight'));
+const PpeSetup = lazy(() => import('./pages/PpeSetup'));
 const ManpowerBoard = lazy(() => import('./pages/ManpowerBoard'));
 const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 const EventLog      = lazy(() => import('./pages/EventLog'));
@@ -133,6 +134,7 @@ const NewModelBoard = lazy(() => import('./pages/NewModelBoard'));
 const Rfq = lazy(() => import('./pages/Rfq'));
 const ScrapReport = lazy(() => import('./pages/ScrapReport'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
+const Integrations = lazy(() => import('./pages/Integrations'));
 const MtnRepair = lazy(() => import('./pages/MtnRepair'));
 const FactoryMap = lazy(() => import('./pages/FactoryMap'));
 const LineOeeBoard = lazy(() => import('./pages/LineOeeBoard'));
@@ -217,8 +219,11 @@ export const NAV_ITEMS = [
   { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           group: LOGISTIC_GROUPS.inbound },
 
   /* 📉 บอร์ด Monitoring = ไฟล์ Excel ที่ทีมวางแผนทำมือทุกวัน ยกเข้าระบบ (01/10 · คำสั่ง user)
-     บ้านจริง = แผนงาน (ทีมวางแผนเป็นเจ้าของตัวเลข) · `alsoIn` = ทางลัดให้ฝ่ายผลิตที่ต้องดูของจะขาด */
-  { to: '/monitoring',      icon: '📉', label: 'Monitoring แผน-สต๊อก',    group: LOGISTIC_GROUPS.inbound, alsoIn: 'ฝ่ายผลิต' },
+     บ้านจริง = แผนงาน (ทีมวางแผนเป็นเจ้าของตัวเลข)
+     🔴 **ถอด `alsoIn: 'ฝ่ายผลิต'` ออกแล้ว** (11/11 · คำสั่ง user "พยายามไม่ให้มี shortcut แบบนี้")
+     — ฝ่ายผลิตเข้าหน้านี้ได้แต่**ดูอย่างเดียว** (ช่อง IN ที่ระบบมีตัวเลขแล้ว = ล็อก) ไม่ใช่งานประจำวันของเขา
+     ⇒ ทางลัดกินที่ในเมนูฝ่ายผลิตโดยไม่มีใครต้องลงมือ · **อย่าเอากลับโดยไม่ถาม user** */
+  { to: '/monitoring',      icon: '📉', label: 'Monitoring แผน-สต๊อก',    group: LOGISTIC_GROUPS.inbound },
   { to: '/customer-demand', icon: '🚚', label: 'จัดส่งลูกค้า',             group: LOGISTIC_GROUPS.outbound },
   { to: '/rack-center',    icon: '🗃️', label: 'ภาชนะ & Packaging',       group: LOGISTIC_GROUPS.outbound },
 
@@ -280,6 +285,10 @@ export const NAV_ITEMS = [
   { to: '/process-setup', icon: '🏭', label: 'กระบวนการผลิต', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
   { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
   { to: '/layout-setup', icon: '🗺️', label: 'ตั้งค่าผัง/Floorplan', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
+  /* 🦺 ทะเบียนที่ตั้งครั้งเดียว — **ไม่ใส่ `alsoIn`** (11/11 · คำสั่ง user "พยายามไม่ให้มี shortcut แบบนี้")
+     เคยใส่ทางลัดในหมวดฝ่ายผลิตไว้ 10/11 แล้วถอดออก: `ppe:manage` ให้แค่ admin/manager ⇒ supervisor
+     กดเข้าไปก็แก้ไม่ได้ · leader ไม่มีสิทธิ์เปิดหน้าเลย = ทางลัดพาคนไปหน้าที่กดอะไรไม่ได้ */
+  { to: '/ppe-setup',    icon: '🦺', label: 'ข้อกำหนด PPE',       group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
   // /linesetup ย้ายมาฝังในแท็บ "ผลิต (ผังไลน์)" ของ /layout-setup แล้ว — คง route ไว้สำหรับลิงก์เก่า (deep-link) ไม่โชว์ใน sidebar
   { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
 
@@ -289,6 +298,8 @@ export const NAV_ITEMS = [
   // 📺 ตั้งว่าบัญชีจอไหนเปิดหน้าอะไรวนบ้าง (2026-10-09) · ตัววนอยู่ที่ components/DisplayRotator.jsx
   { to: '/display-rotation', icon: '🔁', label: 'ตั้งค่าจอวนหน้า', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
   { to: '/notification-config', icon: '🔔', label: 'ตั้งค่าการแจ้งเตือน', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
+  // 🔌 ศูนย์เชื่อมต่อ Node-RED / เครื่องจักร (2026-11-11) · 📄 docs/modules/integration-hub.md
+  { to: '/integrations', icon: '🔌', label: 'การเชื่อมต่อ Node-RED / เครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
   { to: '/doc-forms',   icon: '📄', label: 'ทะเบียนเอกสาร & ฟอร์ม', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
   { to: '/qr-labels', icon: '🏷️', label: 'พิมพ์ป้าย QR', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
   { to: '/audit-log',   icon: '📜', label: 'ประวัติการแก้ไขข้อมูล', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
@@ -2180,6 +2191,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/manpower-board" element={
                 <RoleRoute path="/manpower-board" userRole={role}><ManpowerBoard /></RoleRoute>
               } />
+              <Route path="/ppe-setup" element={
+                <RoleRoute path="/ppe-setup" userRole={role}><PpeSetup /></RoleRoute>
+              } />
               <Route path="/workforce-insight" element={
                 <RoleRoute path="/workforce-insight" userRole={role}><WorkforceInsight /></RoleRoute>
               } />
@@ -2237,6 +2251,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/notification-config" element={
                 <RoleRoute path="/notification-config" userRole={role}><NotificationConfig /></RoleRoute>
+              } />
+              <Route path="/integrations" element={
+                <RoleRoute path="/integrations" userRole={role}><Integrations /></RoleRoute>
               } />
               <Route path="/daily-report"  element={
                 <RoleRoute path="/daily-report" userRole={role}><DailyReport /></RoleRoute>
