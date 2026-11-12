@@ -15,7 +15,8 @@ import { useState, useEffect, useCallback, useContext } from 'react';
 import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
 import { UserContext } from '../App';
-import { suggestChanges, matchDocSet, LEG_META, CR_STATUS, DOC_LABEL } from '../utils/peLink';
+import { suggestChanges, matchDocSet, LEG_META, CR_STATUS, DOC_LABEL, crFlow } from '../utils/peLink';
+import StepFlow from './StepFlow';
 import { todayLocal as localToday } from '../utils/dateFormat';
 import { notifyEvent } from '../utils/notifyEvent';
 import { fetchByIds } from '../utils/fetchByIds';
@@ -46,6 +47,8 @@ function CrRow({ cr, canDecide, onDecide, onApply }) {
             </span>
           )}
           {cr.ref_label && <span style={{ fontSize: 11, color: 'var(--muted)' }}>จาก {cr.ref_label}</span>}
+          {/* 🪜 ถึงขั้นไหน — กฎ crFlow() (utils/peLink.js) · UI §6.30 */}
+          {(() => { const f = crFlow(cr); return <StepFlow compact steps={f.steps} unknown={!f.known} />; })()}
         </div>
         {cr.match_note && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 3 }}>{cr.match_note}</div>}
         <div style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'pre-wrap', lineHeight: 1.55 }}>{cr.proposal}</div>

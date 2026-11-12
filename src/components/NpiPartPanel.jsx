@@ -9,8 +9,9 @@ import { notifyEvent } from '../utils/notifyEvent';
 import { fmtDate } from '../utils/dateFormat';
 import {
   DELIV_STATUS, PHASE_STATUS, PPAP_STATUS, DOC_KIND, OWNER_ROLE, REF_KIND,
-  deliverableLight, phaseRollup, partRollup, buildPartRows, groupByPhase,
+  deliverableLight, phaseRollup, partRollup, buildPartRows, groupByPhase, ppapFlow,
 } from '../utils/npi';
+import StepFlow from './StepFlow';
 import { inp, card, btn, ghost, thSt, tdSt, Field, Pill, LightDot, MetaSelect, Modal, FilePick, uploadNpiFile, removeNpiFile, fileName } from './NpiUi';
 import { printPpapChecklist } from '../lib/npiPpapPrint';
 import PersonSelect from './PersonSelect';
@@ -359,6 +360,8 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
       {ppapModal && (
         <Modal title={`สถานะ PPAP / PSW — ${part.part_no}`} onClose={() => setPpapModal(null)} width={560}
           footer={<><button style={ghost} onClick={() => setPpapModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={savePpap}>บันทึก</button></>}>
+          {/* 🪜 ถึงขั้นไหน — กฎ ppapFlow() (utils/npi.js) · UI §6.30 · วาดตามสถานะที่เลือกอยู่ */}
+          {(() => { const f = ppapFlow(ppapModal.ppap_status); return <div style={{ marginBottom: 12 }}><StepFlow steps={f.steps} waiting={f.waiting} unknown={!f.known} /></div>; })()}
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label="สถานะ PPAP" hint={canApprove ? '' : 'ผลจากลูกค้าต้องมี npi:approve'}><MetaSelect value={ppapModal.ppap_status} onChange={v => setPpapModal({ ...ppapModal, ppap_status: v, psw_submitted_at: v === 'submitted' && !ppapModal.psw_submitted_at ? today : ppapModal.psw_submitted_at, psw_approved_at: v === 'approved' && !ppapModal.psw_approved_at ? today : ppapModal.psw_approved_at })} meta={PPAP_STATUS} /></Field>
             <Field label="PPAP level"><select style={inp} value={ppapModal.ppap_level} onChange={e => setPpapModal({ ...ppapModal, ppap_level: e.target.value })}>{[1, 2, 3, 4, 5].map(l => <option key={l} value={l}>Level {l}</option>)}</select></Field>

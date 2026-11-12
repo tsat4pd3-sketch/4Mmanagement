@@ -56,6 +56,8 @@ import { acceptImageFile } from '../utils/acceptImageFile';
 import { urlParam, urlPick, urlBool } from '../utils/urlInit';
 import { parseScopeKey } from '../utils/orgScope';
 import NoticeBar from '../components/NoticeBar';
+import StepFlow from '../components/StepFlow';
+import { fourMFlow } from '../utils/fourMFlow';
 import SectionScopeSelect from '../components/SectionScopeSelect';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
@@ -2154,6 +2156,8 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                         <span style={{ background: sm.bg, color: sm.color, borderRadius: 'var(--r-xs)', padding: '2px 8px', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap' }}>{sm.label}</span>
+                        {/* 🪜 ถึงขั้นไหน — กฎ fourMFlow() (utils/fourMFlow.js) · แบบย่อในแถวตาราง (UI §6.30) */}
+                        {(() => { const f = fourMFlow(l); return <StepFlow compact steps={f.steps} unknown={!f.known} />; })()}
                         {svName && <span style={{ fontSize: 11, color: 'var(--muted)' }}>SV: {svName}</span>}
                         {qaName && <span style={{ fontSize: 11, color: 'var(--muted)' }}>QA: {qaName}</span>}
                         {l.approved_at && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{new Date(l.approved_at).toLocaleDateString('th-TH')}</span>}

@@ -30,7 +30,9 @@ import LineScopeSelect from '../components/LineScopeSelect';
 import { scopeLines as pickerLines } from '../components/LineSelect';   // ตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง"
 import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import { planTaskSummary } from '../utils/pmCoordSummary';
-import useIsMobile from '../utils/useIsMobile';   // 🔴 เพดาน 1000 แถว + URL ยาว (กฎเหล็ก DB ข้อ 5)
+import useIsMobile from '../utils/useIsMobile';
+import StepFlow from '../components/StepFlow';
+import { pmCoordinationFlow } from '../utils/stepFlow';   // 🔴 เพดาน 1000 แถว + URL ยาว (กฎเหล็ก DB ข้อ 5)
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 /* ── แผนประสานงาน PM ข้ามวัน (MTN แจ้ง Production) — 2026-07-23 ──────────────
@@ -379,6 +381,8 @@ function PlanRow({ plan: p, sum, open, onToggle, tasks, canManage, pmPlan, fullN
         <tr style={{ cursor: 'default' }}>
           <td colSpan={8} style={{ background: 'var(--bg2)', padding: '10px 14px' }} onClick={e => e.stopPropagation()}>
            <div style={detailBox}>
+            {/* 🪜 ถึงขั้นไหน — กฎ pmCoordinationFlow() (utils/stepFlow.js) · UI §6.30 */}
+            {(() => { const f = pmCoordinationFlow(p); return <div style={{ marginBottom: 10 }}><StepFlow steps={f.steps} waiting={f.waiting} unknown={!f.known} /></div>; })()}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 8 }}>
               {tasks.map(t => (
                 <div key={t.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5,

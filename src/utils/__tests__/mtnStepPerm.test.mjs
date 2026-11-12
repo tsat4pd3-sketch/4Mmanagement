@@ -730,3 +730,26 @@ test('🔧 ป้ายปุ่ม/เหตุผลตอนกดไม่�
   assert.match(hint, /หัวหน้าแผนกช่าง/);
   assert.match(hint, /ฝั่งซ่อมบำรุง/, 'ต้องบอกว่าเป็นช่องของฝั่งช่าง ไม่ใช่ของฝ่ายที่แจ้ง');
 });
+
+test('moFlow — แถบขั้นตอนใบ MO: ข้าม QA = skipped ไม่ใช่ done · ใบ MTN 8 ขั้นแยกด้วยเวลาเซ็น · ตีกลับหยุดที่ขั้นถัดไป · สถานะแปลก = known:false', async () => {
+  const { moFlow } = await import('../mtnStepPerm.js');
+  const st = (f) => f.steps.map(s => s.state + (s.tone ? '/' + s.tone : ''));
+  const p = moFlow({ status: 'pending', current_step: 1 });
+  assert.deepEqual(st(p), ['done', 'current', 'todo', 'todo', 'todo', 'todo', 'todo']);
+  assert.match(p.waiting, /หัวหน้าช่าง/);
+  // ข้าม QA (ไม่เกี่ยวกับคุณภาพ) → ขั้น 5 ⏭ · ขั้น 6 current
+  assert.deepEqual(st(moFlow({ status: 'checked', current_step: 4, qa_skipped_at: 'x', mtn_dept: 'die' })), ['done', 'done', 'done', 'done', 'skipped', 'current', 'todo']);
+  // รอ QA จริง
+  assert.equal(moFlow({ status: 'checked', current_step: 4, mtn_dept: 'die' }).steps[4].state, 'current');
+  // ใบ MTN (8 ขั้น · ไม่มี QA) ช่วง handover แยก 6/7/8 ด้วยเวลาเซ็น
+  const h = moFlow({ status: 'handover', current_step: 7, mtn_dept: 'mtn', mtn_head_at: null, approve_at: null });
+  assert.equal(h.steps.length, 8); assert.equal(h.steps[5].state, 'current');
+  assert.equal(moFlow({ status: 'handover', current_step: 7, mtn_dept: 'mtn', mtn_head_at: 'x', approve_at: null }).steps[6].state, 'current');
+  // ปิดแล้ว = ครบ · ตีกลับ = ขั้นถัดไปเป็นสีแดง ไม่เขียวยาว
+  assert.ok(moFlow({ status: 'closed', current_step: 7, mtn_dept: 'die', qa_at: 'x' }).steps.every(s => s.state === 'done'));
+  const r = moFlow({ status: 'rejected', current_step: 1 });
+  assert.equal(r.steps[1].tone, 'bad'); assert.equal(r.closed, true); assert.equal(r.waiting, null);
+  // ส่งซ่อมภายนอก = ใบยังเปิด รอ supplier
+  assert.match(moFlow({ status: 'waiting_vendor', current_step: 3 }).waiting, /supplier/);
+  assert.equal(moFlow({ status: 'weird' }).known, false);
+});

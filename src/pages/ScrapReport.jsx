@@ -33,6 +33,8 @@ import { exportScrapReportExcel } from '../lib/scrapExportExcel';
 import { printScrapReport } from '../lib/scrapPrint';
 import { docFormSync, loadDocForms, fullCode } from '../utils/docForms';
 import { PULLABLE, statusMeta, effQty, KIND_LABEL } from '../utils/materialRequest';
+import { scrapReportFlow } from '../utils/stepFlow';
+import StepFlow from '../components/StepFlow';
 import { explodeScrapRow, scanScrapItems, opInfoOf } from '../utils/scrapExplode';
 import { buildBomIndex } from '../utils/bomTree';
 import { notifyEvent } from '../utils/notifyEvent';
@@ -842,6 +844,8 @@ export default function ScrapReport() {
 
       {editor && (
         <Modal title={editor.report.id ? `✏️ แก้ใบ ${editor.report.doc_no || ''}` : '➕ เปิดใบรายงานของเสียใหม่'} onClose={closeEditor} width={1180}>
+          {/* 🪜 ถึงขั้นไหน — กฎ scrapReportFlow() (utils/stepFlow.js) · UI §6.30 */}
+          {editor.report.id && (() => { const f = scrapReportFlow(editor.report); return <div style={{ marginBottom: 12 }}><StepFlow steps={f.steps} waiting={f.waiting} unknown={!f.known} /></div>; })()}
           {/* หัวใบ */}
           <div className="sr-hgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 12 }}>
             <Field label="วันที่"><input type="date" style={inputSt} value={editor.report.report_date} onChange={e => setRep({ report_date: e.target.value })} /></Field>

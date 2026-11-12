@@ -27,8 +27,9 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { useOrgSections } from '../utils/useOrgSections';
 import { scopedLineNames } from '../utils/sectionScope';
 import {
-  movesFor, moveNeeds, moveLabel, KIND_LABEL, statusMeta, nextReqNo, maxReqSeq, reqNoPrefix, isPullable,
+  movesFor, moveNeeds, moveLabel, KIND_LABEL, statusMeta, nextReqNo, maxReqSeq, reqNoPrefix, isPullable, matReqFlow,
 } from '../utils/materialRequest';
+import StepFlow from './StepFlow';
 import { printMaterialRequest } from '../lib/materialRequestPrint';
 import { notifyEvent } from '../utils/notifyEvent';
 import SearchSelect from './SearchSelect';
@@ -449,6 +450,8 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
   return (
     <Modal title={`${req.id ? 'แก้ไข' : 'ออก'}ใบขอ${KIND_LABEL[req.kind]}สินค้าคงคลัง (FM-STO-003)`} onClose={onClose} width={1020}>
       <ReadOnlyNote show={ro} role={role} compact what="แก้ใบเบิก" permKey="scrap:record" />
+      {/* 🪜 ถึงขั้นไหน — กฎ matReqFlow() (utils/materialRequest.js) · UI §6.30 */}
+      {req.id && (() => { const f = matReqFlow(req); return <div style={{ marginBottom: 12 }}><StepFlow steps={f.steps} waiting={f.waiting} unknown={!f.known} /></div>; })()}
 
       {/* mgrid = กติกากลางของ grid ในโมดัล (UI-CONVENTIONS §4) — มือถือยุบเป็นคอลัมน์เดียว */}
       <div className="mgrid" style={grid3}>

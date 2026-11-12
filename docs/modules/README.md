@@ -10,6 +10,7 @@
 
 | โมดูล | ไฟล์ |
 |---|---|
+| 🪜 แถบขั้นตอน StepFlow (ใบไหนใส่แล้ว/ไม่ใส่ + กฎ) | `step-flow.md` |
 | Adoption Outlook — 🔮 ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร (`/adoption-outlook` · 2026-08-13) | `docs/modules/adoption-outlook.md` |
 | 🔗 Audit AM↔PM ทั้งโปรเจค — 2 ระบบ AM ไม่ sync · null due = "ปกติ" · ลำดับแก้ 3 รอบ (2026-10-08 · ยังไม่แก้) | `docs/modules/am-pm-linkage-audit.md` |
 | 🦺 BBS — สังเกตพฤติกรรมความปลอดภัย (Behavior-Based Safety · paperless · 2026-08-21) | `docs/modules/bbs-safety.md` |
