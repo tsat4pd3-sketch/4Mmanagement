@@ -48,7 +48,8 @@ import { printQualityBin } from '../lib/qualityBinPrint';
 import { confirmSign } from '../utils/signConfirm';
 /* กติกาที่ถอดจาก WI-PD3-069 §5.4/§5.6 + WI-PD3-087 — อายุแท็ก + ผลพิจารณา QA
    ⚠️ ห้าม hardcode 5/1 วัน หรือรายชื่อผลพิจารณาซ้ำในหน้านี้ (2026-09-25) */
-import { TAG_MAX_DAYS, QA_DECISIONS, decisionOf, binTagAge, binClosed, overdueBins, pendingYellow, SPECIAL_USE_FORM, SCRAP_DRAFT, ncStep } from '../utils/qualityBin';
+import { TAG_MAX_DAYS, QA_DECISIONS, decisionOf, binTagAge, binClosed, overdueBins, pendingYellow, SPECIAL_USE_FORM, SCRAP_DRAFT, ncStep, ncFlow } from '../utils/qualityBin';
+import StepFlow from './StepFlow';
 import SimpleMasterPanel from './SimpleMasterPanel';
 import { masterDeleteGuard } from '../utils/masterRefs'; // ด่านนับปลายทางก่อนลบทะเบียนที่จับคู่ด้วยข้อความ — 2026-10-18
 /* 📷 รูปหลักฐานของเสีย — ช่องแนบ + ตัวบีบ/อัปโหลด เป็นของกลาง ห้ามเขียนเองในหน้า (2026-10-12) */
@@ -810,12 +811,14 @@ export default function QualityBins({ mode = 'full' }) {
                         const st = ncStep(r, { hasRedChild: redChildOf.has(r.id) });
                         const who = st.owner === 'qa' ? 'QA' : st.owner === 'prod' ? 'ฝ่ายผลิต' : '';
                         const late = st.key === 'repair' && r.repair_reject_note;
-                        return st.step ? (
+                        const flow = ncFlow(r, { hasRedChild: redChildOf.has(r.id) });   // 🪜 UI §6.30 — กฎที่ ncFlow() ที่เดียว
+                        return st.step ? (<>
+                          <StepFlow compact steps={flow.steps} unknown={!flow.known} style={{ marginTop: 3 }} />
                           <div style={{ fontSize: 11, fontWeight: 700, color: late ? 'var(--red)' : 'var(--text2)', marginTop: 2 }}>
                             ขั้น {st.step}/5 · {st.label}{who ? ` · รอ${who}` : ''}
                             {r.qty_ok != null && st.step === 4 && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · ซ่อมดี {r.qty_ok} · ไม่ได้ {r.qty_ng ?? 0}{r.repair_detail ? ` · ${r.repair_detail}` : ''}</span>}
                           </div>
-                        ) : null;
+                        </>) : null;
                       })()}
                     </div>
                     {(() => {

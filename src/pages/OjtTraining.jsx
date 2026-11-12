@@ -27,6 +27,8 @@ import FilePick from '../components/FilePick';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import { DeleteButton } from '../components/IconButton';
+import StepFlow from '../components/StepFlow';
+import { ojtFlow } from '../utils/stepFlow';
 
 /* ══════════════════════════════════════════════════════════════
    📖 OJT Training — ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING)
@@ -1023,6 +1025,8 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
               <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{editing.isNew ? 'สร้าง' : 'แก้ไข'}ใบอบรมสอนงาน OJT</div>
               <button onClick={closeEdit} style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
             </div>
+            {/* 🪜 ถึงขั้นไหน — กฎ ojtFlow() (utils/stepFlow.js · ตัดสินจากช่องเซ็นจริง) · UI §6.30 */}
+            {!editing.isNew && (() => { const f = ojtFlow(editing); return <div style={{ padding: '10px 18px 0' }}><StepFlow steps={f.steps} waiting={f.waiting} unknown={!f.known} /></div>; })()}
             <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
 
               {/* แถวข้อมูลหลัก */}

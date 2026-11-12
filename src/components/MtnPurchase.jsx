@@ -27,8 +27,9 @@ import { fmtDateTime } from '../utils/dateFormat';
 import {
   PR_STATUS_META, PR_SOURCE_LABEL, prStatusMeta, isPrOpen, REPAIR_PATHS, repairPathMeta,
   GL_CATEGORIES, glCategoryLabel, glCategoryForPr, defaultGlFor, isBelowMin, suggestReorderQty, openPrQtyByPart,
-  normalizePrNo, isAwaitingPrNo, mosNeedingPr, NEEDS_PR_PATHS,
+  normalizePrNo, isAwaitingPrNo, mosNeedingPr, NEEDS_PR_PATHS, prFlow,
 } from '../utils/mtnPurchase';
+import StepFlow from './StepFlow';
 import { isMoOpen, MO_DONE_STATUSES } from '../utils/mtnStepPerm';
 import { isMttrHeld, mttrHoldMin } from '../utils/mtnVendor';
 import { notifyEvent } from '../utils/notifyEvent';
@@ -197,6 +198,8 @@ function PrRow({ pr, canEdit, fullName, onChanged, showSource, mo = null, own = 
         {!pr.part_id && pr.status !== 'cancelled' ? ' · ไม่ผูกอะไหล่ในทะเบียน (รับแล้วไม่เข้าสต็อก)' : ''}
         {pr.note ? ` · ${pr.note}` : ''}
       </div>
+      {/* 🪜 ถึงขั้นไหน — กฎ prFlow() (utils/mtnPurchase.js) · UI §6.30 */}
+      {(() => { const f = prFlow(pr); return <StepFlow compact steps={f.steps} waiting={f.waiting} unknown={!f.known} style={{ marginTop: 4 }} />; })()}
       {/* 🔒 ไม่ใช่ของทีมเรา = เขียนบอกเหตุผล **ห้ามซ่อนปุ่มเงียบ** (กฎความซื่อสัตย์ของจอ) */}
       {canEdit && isPrOpen(pr) && !own.ok && (
         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5 }}>{teamRowLockNote(pr, own.code)}</div>

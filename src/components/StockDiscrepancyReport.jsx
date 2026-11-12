@@ -15,8 +15,9 @@ import { getWorkDate } from '../utils/workDate';
 import { fetchAllRows } from '../utils/fetchAllRows';
 import { downloadCsvDoc, csvCell } from '../utils/csvDoc';
 import {
-  SUSPENSE_LOC, SIDE_LABEL, OUTCOME_LABEL, STATUS_LABEL, sidesOf, proposeBlock, confirmBlock, resolveLedgerRows, monthlySummary,
+  SUSPENSE_LOC, SIDE_LABEL, OUTCOME_LABEL, STATUS_LABEL, sidesOf, proposeBlock, confirmBlock, resolveLedgerRows, monthlySummary, discrepancyFlow,
 } from '../utils/stockDiscrepancy';
+import StepFlow from './StepFlow';
 import { toast } from './Toast';
 import MatLabel from './MatLabel';
 import SearchInput from './SearchInput';
@@ -206,7 +207,10 @@ export default function StockDiscrepancyReport() {
                         <td style={{ ...td, textAlign: 'right' }}>{fmt(r.sent_qty)}</td>
                         <td style={{ ...td, textAlign: 'right' }}>{fmt(r.received_qty)}</td>
                         <td style={{ ...td, textAlign: 'right', fontWeight: 900, color: 'var(--amber)' }}>{fmt(r.short_qty)}</td>
-                        <td style={td}>{STATUS_LABEL[r.status] || r.status}</td>
+                        <td style={td}>{STATUS_LABEL[r.status] || r.status}
+                          {/* 🪜 ถึงขั้นไหน — กฎ discrepancyFlow() (utils/stockDiscrepancy.js) · UI §6.30 */}
+                          {(() => { const f = discrepancyFlow(r); return <StepFlow compact steps={f.steps} unknown={!f.known} />; })()}
+                        </td>
                         <td style={{ ...td, fontSize: 12, color: 'var(--text2)' }}>
                           {r.status === 'proposed' && <div>เสนอ {OUTCOME_LABEL[r.proposed_outcome]} · {r.proposed_by || '—'} ({SIDE_LABEL[r.proposed_side]}) {dt(r.proposed_at)}</div>}
                           {(r.status === 'returned' || r.status === 'written_off') && <div>ยืนยัน {r.confirmed_by || '—'} ({SIDE_LABEL[r.confirmed_side] || ''}) {dt(r.resolved_at)} · เสนอ {r.proposed_by || '—'}</div>}

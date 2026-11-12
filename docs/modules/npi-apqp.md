@@ -129,3 +129,6 @@ single-source audit สร้าง DR `suppliers` (code · name · kind · cont
 เป็น**ทะเบียนชื่อฝั่งโรงงาน** — ช่อง "ผู้ทำ (maker)" ใน tooling plan เลือกผ่าน `<SupplierSelect kinds={['tooling','internal']}>`
 (`maker_name` ยังเก็บ text · พิมพ์เองได้พร้อมป้าย) · **ไม่ใช่ supplier portal เฟส 4** — เฟส 4 ยังต้องมี `supplier_id` + role/RLS ฝั่ง Main ตาม §8
 ถึงตอนนั้นให้ portal อ้าง `suppliers.code` นี้ ไม่ต้องสร้างทะเบียนซ้อน
+
+## 🪜 แถบ "ถึงขั้นไหน" (2026-11-12)
+ECI + PPAP — แถบ ✓→○ ในโมดัล (`eciFlow/ppapFlow` ใน `utils/npi.js`) · เฟส APQP ใช้การ์ดเฟสเดิม ไม่ใส่แถบ · กติกา + ทะเบียนทุกใบ → `docs/modules/step-flow.md` · UI §6.30

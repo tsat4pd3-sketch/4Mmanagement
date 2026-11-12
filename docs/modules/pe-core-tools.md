@@ -122,3 +122,6 @@
 - **รับข้อเสนอ master (`PeMasterLibrary` accept) = claim ก่อน** (`status='proposed'` → `accepted` + `.select('id')` ต้องได้ 1 แถว) แล้วค่อยเขียน master · เขียน master ล้ม = คืนข้อเสนอเป็น `proposed` · ขึ้น version กระบวนการล้ม = บอกบนจอ
 - `PeChangeRequests` ออก revision: ส่ง `ref_kind` ตรงตัว (check รับ `capa` แล้ว — เดิมแปลง capa→ncr ⇒ ref_id ของ CAPA ถูกอ่านเป็น NCR)
 - `PeSetFromMasterModal` rollback ลบชุดครึ่งเดียว: นับแถว — ลบไม่ได้ต้องบอกว่าชุดค้าง
+
+## 🪜 แถบ "ถึงขั้นไหน" (2026-11-12)
+คำขอแก้เอกสาร PE — แถบย่อใน CrRow (`crFlow()` `utils/peLink.js`) · กติกา + ทะเบียนทุกใบ → `docs/modules/step-flow.md` · UI §6.30

@@ -9,7 +9,8 @@ import { toast } from './Toast';
 import { npiBlockForPart } from '../utils/npiScope';
 import { notifyEvent } from '../utils/notifyEvent';
 import { fmtDate } from '../utils/dateFormat';
-import { ECI_STATUS, ECI_LEGS, eciMissingLinks, nextEciCode } from '../utils/npi';
+import { ECI_STATUS, ECI_LEGS, eciMissingLinks, nextEciCode, eciFlow } from '../utils/npi';
+import StepFlow from './StepFlow';
 import { inp, card, btn, ghost, thSt, tdSt, Field, Pill, MetaSelect, Modal, FilePick, uploadNpiFile, removeNpiFile, fileName, WarnBar } from './NpiUi';
 import PersonSelect from './PersonSelect';
 import useColumnHistory from '../utils/useColumnHistory';
@@ -281,6 +282,8 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
             )}
             <button style={btn()} disabled={saving} onClick={() => saveEci()}>{saving ? 'กำลังบันทึก…' : '💾 บันทึก'}</button>
           </>}>
+          {/* 🪜 ถึงขั้นไหน — กฎ eciFlow() (utils/npi.js) · UI §6.30 · วาดตามสถานะที่เลือกอยู่ (เห็นผลก่อนบันทึก) */}
+          {eciModal.id && (() => { const f = eciFlow(eciModal); return <div style={{ marginBottom: 12 }}><StepFlow steps={f.steps} waiting={f.waiting} unknown={!f.known} /></div>; })()}
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label="เลข ECI/ECN *" hint="ของลูกค้า หรือเลขภายใน"><input style={inp} value={eciModal.eci_no} onChange={e => setEciModal({ ...eciModal, eci_no: e.target.value })} /></Field>
             <Field label="พาร์ท"><select style={inp} value={eciModal.part_id} onChange={e => setEciModal({ ...eciModal, part_id: e.target.value, drawing_revision_id: '', tooling_plan_id: '' })}><option value="">ทั้งโปรเจค</option>{parts.map(p => <option key={p.id} value={p.id}>{p.part_no}</option>)}</select></Field>

@@ -101,6 +101,8 @@ import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 /* ⌨️ เครื่องสแกนส่งคีย์เหมือนคนพิมพ์ ⇒ แป้นค้างภาษาไทย = เปิดใบขยะได้จริง (เคสจริง 20/10) */
 import { fixThaiLayout, hasThai, thaiLayoutNote } from '../utils/kbLayout';
 import { SESSION_VOID, SESSION_STATUSES_LIVE, SESSION_STATUSES_REAL, isVoidSession, voidBadge, voidBlockReason, cleanVoidReason } from '../utils/sessionStatus';
+import { shiftCloseFlow } from '../utils/stepFlow';
+import StepFlow from '../components/StepFlow';
 import MachineSelect from '../components/MachineSelect';
 import { loadFamilyQtyTotals, familyQtyChip } from '../utils/familyTotals';
 import { statusColor as toneColor, toneVar, toneDim, toneLine } from '../utils/statusTone';   // 🎨 token พาเลต 5 สี (UI §6.17)   // สีสถานะชุดเดียวทั้งระบบ (ห้ามตั้ง hex เอง · ชื่อ statusColor ชนกับตัวแปรในหน้า)
@@ -3457,6 +3459,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 'var(--r-md)', whiteSpace: 'nowrap', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)' }}>✏️ ต้องแก้</span>
                       )}
                     </div>
+                    {/* 🪜 เปิดกะ → ขอปิดกะ → ปิดแล้ว — กฎ shiftCloseFlow() (utils/stepFlow.js) · UI §6.30 */}
+                    {(() => { const f = shiftCloseFlow(s); return <StepFlow compact steps={f.steps} unknown={!f.known} style={{ margin: '3px 0 2px' }} />; })()}
                     <div style={{ fontSize: 11, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
                       <span>{s.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(s.work_date)}</span>
                       {/* ชิปอายุกะค้าง — เหลืองนิ่ง ≥3 วัน · แดงนิ่งเกิน STALE_SESSION_DAYS (งานค้าง ไม่ใช่ alarm ห้ามกระพริบ) */}
