@@ -21,6 +21,8 @@
 
 ## 2. ไฟล์
 
+· `src/components/StepFlow.jsx` — แถบขั้นตอน ✓→⑦ (ของกลาง · UI §6.30) · กฎขั้นของ RFQ = `rfqFlow()` ใน `mktRfq.js`
+
 | ไฟล์ | หน้าที่ |
 |---|---|
 | `src/pages/Rfq.jsx` | หน้า 2 แท็บ `?tab=list\|report` + `?rfq=<id>` (ใบงาน) · โมดัล RFQ / พาร์ท / CRD→NPI / ผล |
@@ -64,6 +66,13 @@ RLS: select = authenticated · insert/update/delete = `has_perm('rfq:edit')` (`m
 7. **สี = `statusColor(tone)`** จาก `statusTone.js` — `RFQ_STATUS[].tone` เป็นคีย์ good/warn/bad/none ไม่ใช่ hex (มีเทส + ด่าน `status-palette-single-source`)
 8. **ห้ามเงียบ** — ทะเบียนโหลดไม่ได้ = `WarnBar` · ตัวกรองซ่อน N รายการเขียนบนจอ · `?rfq=` ที่หาไม่เจอ = เขียนบอก · ไม่มีสิทธิ์ = `ReadOnlyNote`
 9. **รายการ RFQ = ตาราง `.rec-list`** (UI §6.25 — โตตามการใช้งาน) · แถว "ด่วน" ที่ยังไม่ปิด = `rec-row-alert`
+10. **คนในโมดูลนี้ = บัญชี role การตลาด** (`MKT_PEOPLE_ROLES` · 12/11 feedback Marketing "ข้อมูลคนที่ขึ้นยังเป็นคนในบริษัทเรา") —
+    Marketing ไม่อยู่ใน `employees`/`org_nodes` ของโรงงาน ⇒ ช่อง "ผู้รับผิดชอบ" ใช้ `<PersonSelect roles={MKT_PEOPLE_ROLES} strict>`
+    · ใต้ช่องเขียนว่าลิสต์มีกี่คน + ตั้งที่ `/add-user` (UI §6.26) · ชื่อนอกลิสต์ยังพิมพ์เองได้ (ติดป้าย) · **ห้ามถอด strict กลับไปโชว์ทั้งโรงงาน**
+    · บัญชี marketing ที่ `full_name` ว่าง = ไม่ขึ้นในลิสต์ + ใบที่สร้างไม่มีชื่อผู้ทำ ⇒ หน้า `/rfq` เตือน `WarnBar` ให้ไปตั้งชื่อ
+    · ⚠️ ยังไม่ทำ: ทีม Marketing ที่ไม่มีบัญชี login (ถ้ามี) จะไม่อยู่ในลิสต์ — ถ้า Marketing อยากได้ "ทะเบียนทีม" แยกจากบัญชี ต้องเพิ่มผังหน่วยงาน Marketing ใน `/org-setup` ก่อน (รอ user ตัดสิน)
+11. **แถบขั้นตอน ✓→⑦ บนใบ** (`<StepFlow>` · 12/11 user "เราชอบการแสดงแบบนี้") — ขั้น/ข้อความ "⏳ รอ: ใคร — ทำอะไร" มาจาก **`rfqFlow(status, { award })`** ที่เดียว
+    · ขั้นก่อนสถานะปัจจุบันนับผ่านแล้ว (ขั้น 3-6 เฟส 1 ทำนอกระบบ) · ได้งานแต่ยังไม่ออกใบแจ้งจัดทำ = ยังรอ MKT · สถานะที่ไม่รู้จัก = `known:false` จอเขียนบอก ห้ามเดา
 
 ## 6. ยังไม่ทำ (เฟส 2-4 — ดู DESIGN §8 · ห้ามเริ่มจนกว่า user สั่ง)
 
