@@ -308,3 +308,23 @@ React จึง unmount กล่องเดิมทิ้งทุกคร�
 
 ### 🔗 2026-11-02 — AM รายเครื่อง / NG ต้องมี MO / สายอนุมัติ AM
 บอร์ด AM ตัดสิน "เครื่องไหนต้องตรวจ" จาก `prod_orders.machine_no` ของกะ · ผลตรวจ AM ที่ NG ต้องมี MO หรือเหตุผล + ป้าย "แจ้งซ่อมแล้ว ยังไม่แก้ไข" จนปิด · อนุมัติใบ AM ไล่ขั้นตามตำแหน่ง — รายละเอียด 📄 `am-pm-linkage-audit.md` §5
+
+---
+
+## 📦 ฉบับเต็มเดิมจาก CLAUDE.md — PM Predictive & Planner Sync — เห็นวัน PM ล่วงหน้า + buffer (2026-07-16)
+
+> ย้ายมา 2026-11-12 (รีด CLAUDE.md รอบ 4 · `docs/modules/claude-md-slim.md`) — ยกมาทั้งดุ้น ไม่แก้คำ ·
+> CLAUDE.md เหลือเฉพาะกฎข้าม session + pointer มาที่นี่
+
+
+> 📄 รายละเอียดเต็ม → `docs/modules/pm-predictive-planner-sync.md`
+
+> ### 🔴 AM ↔ PM — กฎข้าม session (2026-10-09 · audit `docs/modules/am-pm-linkage-audit.md`)
+> · **ทีม AM = `isAmTeam(department)` (`utils/pmTeams.js`) ห้าม hardcode `'production'`** (มีด่าน) · ฝั่ง edge อ่าน `mtn_teams.kind`
+> · **`next_due_date` ว่าง ≠ ปกติ** — ตัวนับ PM ทุกจอผ่าน `planDueBucket()` (`lib/pmSchedule.js`) · ถัง `never`/`no_cycle` ต้องเขียนบนจอ
+>   · แผน `run_day` ไม่มีวันปฏิทิน: `resolvePlanDue` คืน `status:'run_day'` **ห้ามถอยไป last_done+interval** · ตัดสินจริงที่จอ AM/PMSchedule
+> · **"กะนี้ AM ตรวจแล้วหรือยัง" มีที่เดียว = `lib/dailyAmBoard.js`** (ทะเบียน `pm_daily_line_targets` + inspections + opened_at) · ห้ามคิวรี inspections เอง (มีด่าน)
+>   · 🔴 **"ไลน์ไหนเดินอยู่" ต้องนับไลน์แม่-ลูก** ผ่าน `openFamilyLines()` (`lib/pmDailyStatus.js`) **ห้ามเทียบชื่อตรงตัว** (มีด่าน)
+>     — ไลน์แม่หลายตัวไม่เคยเปิดกะในชื่อตัวเอง ⇒ ชุดนี้เป็นประตูของงานตรวจ (`utils/prodRoutine.js`) = **งานตรวจหายเงียบ**
+> · **ทะเบียนรายวัน ⇒ แผน AM = run_day อัตโนมัติชั้น DB** (`pm_am_plan_follow_registry`) —
+>   **ห้ามเขียน `next_due_date` ลงแผน run_day** จากจอใด · เอาออกจากทะเบียน = `is_active=false` ห้าม delete · AM ไม่นับในชั้น Preventive ของช่าง

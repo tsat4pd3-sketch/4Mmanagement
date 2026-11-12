@@ -125,3 +125,15 @@
 
 ## 🪜 แถบ "ถึงขั้นไหน" (2026-11-12)
 คำขอแก้เอกสาร PE — แถบย่อใน CrRow (`crFlow()` `utils/peLink.js`) · กติกา + ทะเบียนทุกใบ → `docs/modules/step-flow.md` · UI §6.30
+
+---
+
+## 📦 ฉบับเต็มเดิมจาก CLAUDE.md — PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13)
+
+> ย้ายมา 2026-11-12 (รีด CLAUDE.md รอบ 4 · `docs/modules/claude-md-slim.md`) — ยกมาทั้งดุ้น ไม่แก้คำ ·
+> CLAUDE.md เหลือเฉพาะกฎข้าม session + pointer มาที่นี่
+
+
+หน้า `/pe-docs` (`PEDocs.jsx`, หมวด คุณภาพ & วิศวกรรม)
+· **📚 คลัง PFMEA กลาง (2026-09-15):** พาร์ทถือ*สำเนา* ของ master (ไม่ใช่ pointer) · ไหลกลับ = **ระบบเสนอ คนตัดสิน** (`pe_master_proposals` · ห้าม auto-update master) · RPN คำนวณใน `src/utils/peMaster.js` เท่านั้น · migration `20260915_pe_fmea_master_main.sql` (**apply แล้ว**)
+> 📄 รายละเอียดเต็ม → `docs/modules/pe-core-tools.md`

@@ -2009,3 +2009,21 @@ Alarm History บน `/line-oee` เอาค่านี้ไปวาดส�
 
 ## 🪜 แถบ "ถึงขั้นไหน" (2026-11-12)
 ขอปิดกะ (open → pending_close → closed · void) — แถบย่อในการ์ดกะ sidebar (`shiftCloseFlow()` `utils/stepFlow.js`) · กติกา + ทะเบียนทุกใบ → `docs/modules/step-flow.md` · UI §6.30
+
+---
+
+## 📦 ฉบับเต็มเดิมจาก CLAUDE.md — ⏱️ ความจุกะ + ⌨️ คีย์บอร์ดของ picker (2026-10-02 · feedback หน้างาน)
+
+> ย้ายมา 2026-11-12 (รีด CLAUDE.md รอบ 4 · `docs/modules/claude-md-slim.md`) — ยกมาทั้งดุ้น ไม่แก้คำ ·
+> CLAUDE.md เหลือเฉพาะกฎข้าม session + pointer มาที่นี่
+
+
+🔴 **ความจุกะคิดผ่าน `src/utils/shiftCapacity.js` เท่านั้น — ห้ามบวก `qty×CT` สะสมเองในหน้า** (มีด่าน)
+`one_piece_flow` = บวกทั้งกะ · **`parallel_machine` = ภาระของ "เลนที่ใบใหม่จะไปลง" ไม่ใช่ผลรวมทั้งไลน์**
+· ยุบคู่ RH/LH ด้วย `pairLoadTotal` (ชิ้น ≠ shot) · 🔴 **ไม่รู้ความจุ/ไม่รู้ CT = ไม่เตือน** · ใบที่คิดไม่ได้คืน `unknownCt` ให้จอเขียนบอก
+· `confirmed` **ยังนับเป็นภาระ** — ตัดเฉพาะ `cancelled`/`imported`/`carry_over`
+
+🔴 **picker: "เปิดลิสต์เฉยๆ ต้องไม่มีแถวติดอาวุธ"** — `initialActiveRow()` (`utils/pickerKeys.js` · มีด่าน)
+**เครื่องสแกนส่ง Enter ตามท้ายรหัสเสมอ**
+· ไม่มีคำค้น = `NO_ROW` · มีคำค้น = แถวแรก · **ช่องสแกนที่บล็อก ต้องคาเคอร์เซอร์ไว้ที่เดิม**
+📄 ตัวเลข + ลูกโซ่เต็ม → `docs/modules/daily-report.md`
