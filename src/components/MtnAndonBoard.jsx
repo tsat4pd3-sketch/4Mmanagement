@@ -59,6 +59,7 @@ import TvFitBox from './TvFitBox';
 import useTvShell from '../utils/useTvShell';
 import FactoryMiniMap from './FactoryMiniMap';
 import ProdProgressStrip from './ProdProgressStrip';
+import LiveOeeStrip from './LiveOeeStrip';
 import StoreWaitCards, { useStoreTv } from './StoreWaitCards';
 import StoreCallSiren from './StoreCallSiren';
 import ProdRoutineCard, { useProdRoutine } from './ProdRoutineCard';
@@ -526,6 +527,11 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
           ยอดผลิตเทียบใบสั่งผลิตคือเรื่องของผลิต · จอช่าง/สโตร์มีเรื่องของตัวเองอยู่แล้ว (เครื่องหยุด·PM / ไลน์เรียกของ)
           ⚠️ เดิม 14/09 กางให้ทุกชิปทีมช่าง — ถอดออกตามหลัก "จอแต่ละส่วนงานแสดงเรื่องของส่วนงานนั้น"
           ยังพับเองได้ และค่าที่พับไว้ชนะเสมอ (localStorage ต่อเครื่อง) */}
+      {/* 🟢 OEE สดรายไลน์ (11/11 · คำสั่ง user) — สูตรกลางตัวเดียวกับผังรวม/Line OEE · กดไลน์ = เปิด /line-oee ของไลน์นั้น */}
+      {cards === 'production' && (
+        <LiveOeeStrip workDate={workDate} scopeNames={scopeNames}
+          onOpenLine={(ln) => navigate(`/line-oee?line=${encodeURIComponent(ln)}`)} />
+      )}
       {cards === 'production' && (
         <ProdProgressStrip workDate={workDate} scopeNames={scopeNames}
           defaultOpen

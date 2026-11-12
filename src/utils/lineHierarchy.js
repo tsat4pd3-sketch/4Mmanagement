@@ -56,15 +56,24 @@ export const getLineFamilyNames = (allLines, ref) => getLineFamily(allLines, ref
 /** id ของ "สายบน" (ancestors) เท่านั้น — ไม่รวมตัวเอง ไม่รวมลูก
     (ต่างจาก getLineFamilyIds ที่รวมทั้งขึ้นและลง — ใช้ตัวนั้นตัดสินทิศทางไม่ได้) */
 export function lineAncestorIds(allLines, lineId) {
-  const out = new Set();
-  if (!allLines?.length || lineId == null) return out;
+  const chain = lineChainIds(allLines, lineId);
+  return new Set(chain.slice(0, -1));   // ตัดตัวเองออก
+}
+
+/** 🔗 สายของไลน์ **เรียงจากแม่สุด → ตัวเอง** (รวมตัวเอง) — ใช้ตอนที่ "ชั้นล่างทับชั้นบน"
+    ⇒ ลำดับสำคัญ จึงคืน array ไม่ใช่ Set (`lineAncestorIds` คืน Set เพราะใช้แค่ถามว่าอยู่ในสายไหม)
+    ไลน์ไม่อยู่ในทะเบียน / วนลูป = คืนเท่าที่ไล่ได้ ห้ามโยน */
+export function lineChainIds(allLines, lineId) {
+  if (!allLines?.length || lineId == null) return [];
   let cur = allLines.find(l => String(l.id) === String(lineId));
-  const seen = new Set(cur ? [cur.name] : []);
+  if (!cur) return [];
+  const out = [cur.id];
+  const seen = new Set([cur.name]);
   while (cur?.parent_line_name && !seen.has(cur.parent_line_name)) {
     const parent = allLines.find(l => l.name === cur.parent_line_name);
     if (!parent) break;
     seen.add(parent.name);
-    out.add(parent.id);
+    out.unshift(parent.id);
     cur = parent;
   }
   return out;

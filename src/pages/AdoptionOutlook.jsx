@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { fetchAllPages } from '../utils/fetchByIds';
 import { loadProductionLines } from '../utils/useProductionLines';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -571,8 +572,15 @@ async function loadAll() {
   const ents = { lines: eLines, machines: eMachines, products: eProducts, customers: eCustomers, dtTypes: eDt, defTypes: eDef };
 
   /* ── loss ที่วัดได้จริงในหน้าต่าง 30 วัน (ใช้คิดเงินในแท็บ ROI) ── */
-  const { data: winSess } = await supabaseDR.from('production_sessions')
-    .select('id, work_date').gte('work_date', from).lte('work_date', today);
+  /* 🔴 เพดาน 1,000 แถว — ทุกสถานะ ทุกไลน์ 30 วัน วัดจริง 11/11/26 = **989 แถว เหลือที่ 11**
+     `ids` ชุดนี้เป็นตัวตั้งของ loss/ROI (บาท/เดือน) ⇒ ชนเมื่อไหร่ตัวเลขเงินต่ำกว่าจริงแบบเงียบ
+     (เดิมยัง `const { data } = await …` กลืน error ด้วย — ผิดกฎเขียน DB ข้อ 1) */
+  const winPage = await fetchAllPages(
+    () => supabaseDR.from('production_sessions').select('id, work_date').gte('work_date', from).lte('work_date', today),
+    { orderBy: ['work_date', 'id'] },
+  );
+  const winSess = winPage.rows;
+  const sessLoadErr = winPage.error || (winPage.truncated ? 'กะในหน้าต่าง 30 วันเยอะเกินกว่าจะโหลดครบ' : null);
   const ids = (winSess || []).map(s => s.id);
 
   const [dts, defs, rates] = await Promise.all([

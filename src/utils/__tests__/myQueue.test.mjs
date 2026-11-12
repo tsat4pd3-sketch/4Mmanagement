@@ -611,3 +611,22 @@ test('🔴 ถังเหลืองห้ามขึ้น badge (badge = �
   const q = buildQueue(binSrc([binRow(), binRow({ id: 'b9' })]), { uid: 'me', sections: [] }, BIN_NOW);
   assert.equal(badgeCount(q), 0, 'คิวหน่วยงาน/โรงงานห้ามทำให้เลขบนไอคอนเด้ง');
 });
+
+test('🔴 ถังแดงยังไม่ออกใบ → ชั้น unit บรรทัดเดียว (หัวหน้าแผนกทวง) · ไม่ส่งก้อน = ข้าม · null = partial', async () => {
+  const { buildQueue: bq } = await import('../myQueue.js');
+  const now = new Date('2026-11-10T03:00:00Z');
+  const me = { sections: ['PD3'] };
+  const reds = [
+    { id: 'a', work_date: '2026-11-05', qty: 3, section: 'PD3' },
+    { id: 'b', work_date: '2026-11-09', qty: 2, section: 'PD3' },
+    { id: 'c', work_date: '2026-11-09', qty: 9, section: 'PD1' },
+  ];
+  const q = bq({ redBins: reds }, me, now);
+  const row = q.unit.find(x => x.key === 'binred_unit');
+  assert.ok(row);
+  assert.equal(row.count, 2);
+  assert.match(row.detail, /5 ชิ้น/);
+  assert.equal(q.mine.some(x => x.key === 'binred_unit'), false);
+  assert.equal(bq({}, me, now).missing.includes('redBins'), false);
+  assert.ok(bq({ redBins: null }, me, now).missing.includes('redBins'));
+});

@@ -1,3 +1,4 @@
+import { fetchAllPages } from '../utils/fetchByIds';
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
@@ -32,14 +33,22 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
     let alive = true;
     (async () => {
       setLoading(true); setErr('');
-      const { data, error } = await supabase.from('shift_schedules')
-        .select('work_date, line_id, dept_name, day_team, is_manual')
-        .gte('work_date', addDays(weekStart, -7 * HISTORY_WEEKS))
-        .lte('work_date', addDays(weekStart, 7 * 52))
-        .order('work_date');
+      /* 🔴 เพดาน 1,000 แถวของ PostgREST — หน้าต่างนี้ยาว 546 วัน (ย้อน HISTORY_WEEKS + ล่วงหน้า 52 สัปดาห์)
+         วัดจริง 11/11/26: **11,458 แถว** ⇒ คิวรีเปล่าได้มา 1,000 = **หาย 91%**
+         และ `.order('work_date')` เรียงขึ้น ⇒ 1,000 แถวที่ได้คือ "เก่าสุด" ⇒ ประวัติล่าสุด + ตารางอนาคตหายหมด
+         ผลที่ตามมาไม่ใช่แค่หมุนทีมผิด — **แถว `is_manual` ที่คนตั้งมือไว้มองไม่เห็น ⇒ ถูกเขียนทับ**
+         ⇒ ต้องผ่าน `fetchAllPages` (ของกลาง · utils/fetchByIds.js) เสมอ */
+      const { rows: data, error, truncated } = await fetchAllPages(
+        () => supabase.from('shift_schedules').select('work_date, line_id, dept_name, day_team, is_manual')
+          .gte('work_date', addDays(weekStart, -7 * HISTORY_WEEKS))
+          .lte('work_date', addDays(weekStart, 7 * 52)),
+        { orderBy: ['work_date', 'line_id'] },   // range ต้องมีลำดับคงที่ ไม่งั้นแถวหลุด/ซ้ำระหว่างหน้า
+      );
       if (!alive) return;
       // โหลดไม่ได้ = บอกตรงๆ ห้ามโชว์เป็น "ไม่มีประวัติ" (คนละเรื่องกัน)
-      if (error) { setErr(error.message); setLoading(false); return; }
+      if (error) { setErr(error); setLoading(false); return; }
+      // ชนเพดานหน้า = ประวัติไม่ครบ ⇒ ห้ามเอาไปทับตารางที่คนตั้งไว้ (กฎ "ห้ามล้มเหลวเงียบ")
+      if (truncated) { setErr('ประวัติกะเยอะเกินกว่าจะโหลดครบ — ยังเติมอัตโนมัติไม่ได้ (เสี่ยงทับแถวที่ตั้งมือไว้)'); setLoading(false); return; }
       const byLine = new Map(), byDept = new Map(), manual = new Map();
       (data || []).forEach(r => {
         const key = r.dept_name ? `d:${r.dept_name}` : (r.line_id != null ? `l:${r.line_id}` : null);

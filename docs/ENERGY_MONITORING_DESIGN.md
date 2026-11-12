@@ -10,7 +10,7 @@
 >
 > | | สถานะ |
 > |---|---|
-> | UI ทะเบียน topic (`/energy` แท็บ 📡) | ✅ เขียนแล้ว — แท็บโผล่เองเพราะ migration apply แล้ว |
+> | UI ทะเบียน topic | ✅ ย้ายไป `/integrations` (หน้าต้นทาง) 11/11 — แท็บ 📡 ใน `/energy` ถอดแล้ว |
 > | migration `20260820_energy_mqtt_topics` | ✅ **apply แล้ว 2026-11-09** (DR · ตรวจ GRANT anon/authenticated ครบ) |
 > | edge function `ingest-energy` | ✅ **deploy แล้ว 2026-11-09** (v1 · `verify_jwt=false`) · ⚠️ **secret `INGEST_SECRET` ต้องให้ user ตั้งเองในหน้า Supabase** — ยังไม่ตั้ง = ตอบ 401 ทุก request (ปิดประตูไว้ ไม่เขียน DB) |
 > | ตัวส่ง (flow Node-RED) | 🟡 ทดสอบทางผ่านแล้ว (401→200) · flow ส่งค่าจริงจาก `energy_sec` ให้ user ไปติดตั้ง — §15 |
@@ -987,9 +987,39 @@ PLC FX5U → Node-RED (server ในโรงงาน) → MySQL db_user03.ener
   · 🔁 **ตามสวิตช์ Live/ทบทวนของหน้า (10/11 · คำสั่ง user)** — Live = kW สด (poll เฉพาะ Live) ·
     ทบทวน = **kWh ของวันที่เลือกจากมิเตอร์** (`energy_daily` · `dayForNames()`) · วันนั้นไม่มียอด/กรอบไม่มีมิเตอร์ = รายเดือนกรอกมือตามเดิม
     ⚠️ วันของ `energy_daily` ตัด 00:00 (ปฏิทิน) ≠ วันทำงานตัด 08:00 — การ์ด/แถบทบทวนเขียนกำกับ
+  · 📈 การ์ด kW สดมีกราฟจิ๋ววันนี้ (`bucketByMeter` + `sparkForNames` · เฉลี่ยราย 15 นาที · นับเฉพาะช่วงที่ทุกตู้ของกรอบส่งครบ) · ตัวอ่านแถวกลาง `src/lib/energyReadings.js` (โหลดทั้งวันครั้งแรก แล้วต่อเฉพาะแถวใหม่)
   🔴 **ตู้เดียวจ่ายหลายไลน์ = ห้ามหารแบ่ง** — การ์ด LASER-345 โชว์ค่าเต็มของ DB-LASER + "รวม LASER-789" · แม่ = ตู้ละครั้ง
 - ⚠️ **ชื่อแปลกในทะเบียนเครื่องไลน์ HDF1-2 ไม่ใช่เครื่องซ้ำ** — `(BD-03)-BLM-LH-HDF01` / `(BD-06)-BLM-RH-HDF02` / `REINF ASY … BENDING1/HYDRO1/PREFORM1`
   ทั้ง 14 ตัวเป็น `equipment_kind='die'` (แม่พิมพ์ · ผูก `equipment_die` และบางตัวมีใบซ่อม MO) **ห้ามลบ** (ตรวจ 09/11)
 
+### 15.3.2 เหตุการณ์ + ยอดรายวันย้อนหลัง จาก Node-RED (10/11 · คำสั่ง user ข้อ 1–3)
+- **ลิมิต = Node-RED เป็นเจ้าของ** (10/11) — ตั้งที่ `MACHINES[].kwLimit/aLimit` ในโหนด **SMART ENERGY HUB**
+  (`energy_setting` ใน MySQL ว่าง ไม่ใช่ที่เก็บ) · HUB `global.set('ecLimits', …)` → flow ESM แนบ `body.limits`
+  ทุกนาที → `ingest-energy` v4 อัปเดต `energy_live_meters.limit_kw/limit_a` **เฉพาะแถวที่มีแล้ว + ค่าต่างจริง**
+  · `null` = HUB ไม่ตรวจ (ESM ก็ไม่ตัดสิน) · คีย์หาย/ไม่ใช่ตัวเลข = ไม่แตะ · ชื่อที่ยังไม่ลงทะเบียน = ตอบกลับใน `limits.unknown`
+  · 🔴 **ห้ามทำจอแก้ลิมิตฝั่ง ESM** (Node-RED ทับทุกนาที) · `gauge_max_kw` ไม่ซิงก์ (HUB สเกลตาม peak รายวัน)
+  · ลิมิต A ของ HUB = "เฟสใดเฟสหนึ่ง" ตรงกับ field `a` ที่ flow ส่ง (`GREATEST` 3 เฟส)
+- **เหตุการณ์** `energy_events` (migration `20261110_energy_events`) ← MySQL `energy_event` ·
+  flow ส่ง "3 นาทีล่าสุด" ทุกนาที · ซ้ำ = ข้ามด้วย `source_id` (flow ไม่ต้องจำว่าส่งถึงไหน) · เก็บ 30 วัน ·
+  **Node-RED ตัดสินเกินลิมิตเอง ESM แค่เก็บ+แสดง** (ห้ามคิดเกณฑ์ซ้ำฝั่งเรา) · แผง "เหตุการณ์ล่าสุด" ใน /energy?tab=live
+  (ครั้งแรก 50 แถว · รอบต่อไปดึงเฉพาะที่ใหม่กว่า)
+  ⚠️ ยังไม่ต่อเข้าแจ้งเตือนในแอป — LASER แกว่งรอบลิมิตหลายสิบครั้ง/ชม. ส่งทุกครั้ง = สแปม
+- **ยอดรายวันย้อนหลัง** ← MySQL `energy_day` (`emax − emin` · `pmax` W÷1000) ส่งทุกวัน 00:20 + กดเอง ·
+  edge เติม `energy_daily` **เฉพาะวันที่ผ่านไปแล้ว และทับเฉพาะเมื่อของเรามีจุดน้อยกว่าต้นทาง** ⇒ วันนี้ trigger คิดสดตามเดิม ·
+  วันที่ Node-RED→ESM หลุดถูกซ่อมเองคืนถัดไป
+- เวลาฝั่ง MySQL = เวลาไทยไม่มีโซน ⇒ edge ต่อ `+07:00` (`bkk()` ใน ingest-energy v4)
+
+### 15.3.3 หน้ารายตู้ `/energy?tab=live&meter=<ชื่อตู้>` (10/11 · คำสั่ง user "คลิกการ์ดเข้าหน้าตู้แบบ Node-RED")
+- คลิกการ์ดตู้/กล่องในผังจ่ายไฟ ⇒ `EnergyMeterDetail` (param `meter` คนละตัวกับ `tab`) · ชื่อใน URL ไม่ตรงทะเบียน = บอกบนจอ + ปุ่มกลับ
+- **ทำจากข้อมูลที่ ESM มีเท่านั้น (user เลือก):** KPI 6 ช่อง (จาก `buildLiveBoard` ของหน้าแม่ — ห้ามคิดซ้ำ) ·
+  กราฟ kW + A 24 ชม. รายนาที (**2 กราฟซ้อนแกน X** ไม่ใช่ 2 แกน Y · UI §6.19) · kWh รายวัน 30 วัน · เหตุการณ์ของตู้ ·
+  สัดส่วนโหลด (`loadShare` — ไม่ออนไลน์ = null ไม่ใช่ 0%) · เครื่องที่ตู้จ่ายแยกตามไลน์
+- จุดกราฟ `meterDetailSeries` — ขาดเกิน `DETAIL_GAP_MIN` (5) นาที = เส้นขาด
+- ❌ **ไม่มี 3 เฟสแยก / รายวินาที** (flow ไม่ได้ส่ง) — จอเขียนบอกให้ดูที่ Node-RED · จะเพิ่มต้องแก้ flow + migration ก่อน
+
+### 15.3.4 ย้ายการตั้งค่าต้นทางไปศูนย์เชื่อมต่อ `/integrations` (11/11 · คำสั่ง user)
+- ต้นทาง Die Shop = แถว `dieshop` (legacy · ยังใช้ `INGEST_SECRET` กลาง) · สุขภาพการส่ง/รหัสลับ/ดาวน์โหลด flow อยู่ที่นั่น
+- แท็บ "มิเตอร์ / MQTT" **ถอดออกจาก `/energy` แล้ว (11/11)** — ผูก topic ที่ `/integrations` ที่เดียว · `?tab=mqtt` เก่าส่งต่อไปหน้าใหม่ · 📄 `docs/modules/integration-hub.md`
+
 ### 15.4 ยังไม่ทำ
-- จอแก้ลิมิต/ตู้ (`energy_live_meters`) · log เหตุการณ์ (หน้า Node-RED เดิมมี `energy_event`) · รวม `energy_daily` เข้า `energy_monthly` (`source='meter'`)
+- จอแก้ตู้ (`energy_live_meters` — ลิมิตไม่ต้อง Node-RED เป็นเจ้าของ) · log เหตุการณ์ (หน้า Node-RED เดิมมี `energy_event`) · รวม `energy_daily` เข้า `energy_monthly` (`source='meter'`)

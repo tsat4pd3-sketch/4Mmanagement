@@ -5,9 +5,10 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { OBEYA_TITLE, OBEYA_ICON } from '../utils/obeyaPage';
-import { wavg, orderPlanQty, dtMinBySession, oeeTargetForLines } from '../utils/oee';
+import { wavg, orderPlanQty, dtMinBySession, oeeTargetForLines, buildCtMap, QBIN_EMBED } from '../utils/oee';
+import { liveOeeByLine } from '../lib/liveLineOee';
 import { loadAffectsLanes } from '../utils/affectsLanes';
-import { loadBreakPolicies, fetchOeeTargets } from '../utils/oeeMasters';
+import { loadBreakPolicies, fetchOeeTargets, loadCtProducts, loadCtKanban } from '../utils/oeeMasters';
 import { valueInk } from '../utils/statusTone';
 import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
 import { dtOpenKind } from '../utils/downtimeRules';
@@ -159,7 +160,7 @@ async function loadProduction(ctx) {
   const d7 = dayAdd(workDate, -6);
   const [{ data: sess2, error: eS2 }, { data: sess7, error: eS7 }, fourM, logsRes, empRes, { data: staleRaw, error: eStale }] = await Promise.all([
     // start_time = กรอบกะ ⇒ dtMinBySession ตัด downtime ที่ทับพักก่อนคิดน้ำหนัก wLoad (05/10)
-    supabaseDR.from('production_sessions').select('id, line_name, shift, status, oee, shift_min, work_date, start_time').in('work_date', [prevDate, workDate]),
+    supabaseDR.from('production_sessions').select('id, line_name, shift, status, oee, shift_min, work_date, start_time, created_at').in('work_date', [prevDate, workDate]),
     supabaseDR.from('production_sessions').select('id, line_name, work_date, shift').gte('work_date', d7).lte('work_date', workDate),
     /* ⚠️ `four_m_logs` **ไม่มีคอลัมน์ `created_by_name`** (มีแต่ `created_by`) — เคยใส่ไว้แล้ว
        คิวรีล้มทั้งก้อน ⇒ การ์ด "4M รออนุมัติ" ขึ้น 0 ทั้งที่ค้างจริง 16 ใบ (วัดจากฐาน 22/09)
@@ -178,9 +179,10 @@ async function loadProduction(ctx) {
   /* ⚠️ ids7 = 7 วัน ≈ 200 กะ → `.in()` ตรงๆ URL ยาวเกิน + แถวลูกทะลุ 1000 ได้
      → ผ่าน fetchByIds ทุกคิวรีที่ยิงด้วย id list (QC audit 2026-08-20 · T3-14) */
   const [ordRes, dtRes, defRes, { data: prods }, dt7Res] = await Promise.all([
-    fetchByIds(ids, c => supabaseDR.from('prod_orders').select('id, session_id, status, qty, qty_ok, qty_actual, qty_target, mat_no').in('session_id', c)),
+    fetchByIds(ids, c => supabaseDR.from('prod_orders').select('id, session_id, status, qty, qty_ok, qty_actual, qty_target, mat_no, opened_at').in('session_id', c)),
     fetchByIds(ids, c => supabaseDR.from('downtime_logs').select('id, session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name_th, category)').in('session_id', c)),
-    fetchByIds(ids, c => supabaseDR.from('defect_logs').select('id, session_id, qty_ng, qty_suspect').in('session_id', c)),
+    /* prod_orders(mat_no)/is_trial/excl_from_q/QBIN_EMBED = ให้ OEE สดของกะที่ยังเปิดคิด %P/%Q ตามกฎเดียวกับจออื่น (11/11) */
+    fetchByIds(ids, c => supabaseDR.from('defect_logs').select(`id, session_id, qty_ng, qty_suspect, is_trial, prod_orders(mat_no), dr_defect_types(excl_from_q), ${QBIN_EMBED}`).in('session_id', c)),
     loadPairMap().then(data => ({ data })),   // cache ทะเบียนสินค้ากลาง (25/09)
     fetchByIds(ids7, c => supabaseDR.from('downtime_logs').select('id, session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name_th, category)').in('session_id', c)),
     loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวสุดท้ายไม่เข้า destructure แค่ให้ cache พร้อม
@@ -188,18 +190,23 @@ async function loadProduction(ctx) {
   // นโยบายพัก + เป้า OEE — ล้ม = ติดธง loadErr (ห้ามถือว่า "ไม่มีพัก" แล้วหักซ้ำ / ห้ามเดาเป้า 80/65)
   /* 🔍 AM รายวัน (ผลิตตรวจเครื่องเองต้นกะ) — แหล่งเดียว `lib/dailyAmBoard.js` (กฎ AM↔PM 09/10 · ห้ามคิวรี inspections เอง)
      user 12/10: "ฝ่ายผลิตก็ต้องโชว์เครื่องจักรที่ไม่ตรวจด้วย" · โหลดล้ม = ธง amErr เขียนบนจอ (ไม่ใช่ "ตรวจครบ") */
-  const [breaks, tg, am] = await Promise.all([loadBreakPolicies().catch(() => null), fetchOeeTargets(),
-    loadDailyAm({ lines: ctx.lines }).catch(e => ({ ok: false, error: e }))]);
+  const [breaks, tg, am, ctProds, ctKan] = await Promise.all([loadBreakPolicies().catch(() => null), fetchOeeTargets(),
+    loadDailyAm({ lines: ctx.lines }).catch(e => ({ ok: false, error: e })),
+    // CT ของ OEE สด (cache กลางร่วมกับผังรวม/Line OEE) — ล้ม = null ⇒ ติดธง loadErr ห้ามถือว่า "ไม่มี CT"
+    loadCtProducts().catch(() => null), loadCtKanban().catch(() => null)]);
   /* ⚠️ loadErr ต้องครอบคิวรี "ชั้นแม่" ด้วย (audit 2026-09-02)
      เดิมนับแค่ 4 ตัวลูก ⇒ sess2 พลาด → KPI เป็น — ทั้งแถบ และการ์ด "กะที่ยังไม่ปิด" ขึ้น **เขียว
      "ปิดครบแล้ว"** · staleRaw พลาด → "กะค้างวันก่อน 0" (คิว escalation 7 วันหายไป)
      · fourM พลาด → "4M รออนุมัติ 0" — ทั้งหมดโดยไม่มีแถบเตือนสักอัน */
   return { sess, sess7: sess7 || [], orders: ordRes.rows, dts: dtRes.rows, defs: defRes.rows, pairs: prods, dt7: dt7Res.rows,
     breaks: breaks || [], oeeTargets: tg.byGroup, am: am?.ok ? am : null, amErr: !am?.ok,
+    ctMap: buildCtMap({ kanbanStds: ctKan || [], products: ctProds || [] }),
+    procByMat: Object.fromEntries((ctProds || []).map(p => [p.mat_no, p.process_type])),
     /* 🔀 "เครื่องไหนหยุดแล้วครอบกี่เลน" — ใช้ใน useMemo (sync) ⇒ ต้องโหลดมากับก้อนข้อมูล */
     affects: await loadAffectsLanes(),
     loadErr: !!(ordRes.error || dtRes.error || defRes.error || dt7Res.error
-      || eS2 || eS7 || eStale || fourM.error || logsRes.error || empRes.error || breaks == null || tg.error),
+      || eS2 || eS7 || eStale || fourM.error || logsRes.error || empRes.error || breaks == null || tg.error
+      || ctProds == null || ctKan == null),
     stale: (staleRaw || []).filter(s => inScope(s.line_name)),
     fourM: (fourM.data || []).filter(f => !f.line_name || inScope(f.line_name)), logs: logsRes.data || [], emps: empRes.data || [] };
 }
@@ -211,6 +218,19 @@ function ProductionView({ d, ctx }) {
   const { workDate, prevDate, lines, navigate, isMobile, inScope } = ctx;
   /* d.pairs = map { mat: คู่ } จาก cache กลาง · **null = ยังไม่รู้ ⇒ ไม่ยุบงานคู่** ห้ามแทนด้วย {} */
   const pairOf = useMemo(() => (x) => d.pairs?.[x] || null, [d.pairs]);
+
+  /* 🟢 OEE สดของกะที่ยังเปิด (11/11 · user "Dashboard ส่วนงานขึ้นค่าสดไหม") — ตัวคำนวณกลางชุดเดียวกับ
+     จอ Andon/ผังรวม/Line OEE (`lib/liveLineOee.js` → computeLiveOee) · กะปิดแล้วยังใช้ค่า stamp เสมอ
+     น้ำหนักของแถวสด = เวลาที่เดินมาแล้ว (ไม่ใช่ทั้งกะ) */
+  const liveBySess = useMemo(() => {
+    const m = {};
+    liveOeeByLine({
+      sessions: d.sess.filter(s => s.work_date === workDate), orders: d.orders, downtimes: d.dts, defects: d.defs,
+      ctMap: d.ctMap || {}, lines, breakPolicies: d.breaks || [], pairMap: d.pairs ?? null,
+      affectsBy: d.affects || {}, procByMat: d.procByMat || {},
+    }).forEach(r => { if (r.oee != null) m[r.sessionId] = r; });
+    return m;
+  }, [d, workDate, lines]);
 
   const per = useMemo(() => {
     const bySess = {}; d.orders.forEach(o => (bySess[o.session_id] ||= []).push(o));
@@ -240,10 +260,13 @@ function ProductionView({ d, ctx }) {
       L.planned += planned;
       L.ng += ngBy[s.id] || 0;
       if (s.status !== 'closed') L.open++;
-      o.rows.push({ line: s.line_name, shift: s.shift, oee: s.oee == null ? null : +s.oee, shift_min: s.shift_min || 570, plannedMin: planned, status: s.status });
+      const lv = s.oee == null ? liveBySess[s.id] : null;
+      o.rows.push(lv
+        ? { line: s.line_name, shift: s.shift, oee: lv.oee, shift_min: lv.elapsedMin || 0, plannedMin: lv.plannedDtMin || 0, status: s.status, live: true }
+        : { line: s.line_name, shift: s.shift, oee: s.oee == null ? null : +s.oee, shift_min: s.shift_min || 570, plannedMin: planned, status: s.status });
     });
     return out;
-  }, [d, workDate, pairOf]);
+  }, [d, workDate, pairOf, liveBySess]);
 
   const today = per.today || { lines: {}, rows: [] };
   const prev = per.prev || { lines: {}, rows: [] };
@@ -255,6 +278,7 @@ function ProductionView({ d, ctx }) {
   const tgt = sum(today, l => l.target), act = sum(today, l => l.actual);
   const pct = tgt > 0 ? +(act / tgt * 100).toFixed(1) : null;
   const openSess = today.rows.filter(r => r.status !== 'closed').length;
+  const liveN = today.rows.filter(r => r.live).length;
 
   // กำลังคนวันนี้ (พนักงานผูกไลน์แม่ → เทียบเฉพาะไลน์ใน scope)
   const manpower = useMemo(() => {
@@ -317,7 +341,8 @@ function ProductionView({ d, ctx }) {
 
   const lineRows = Object.values(today.lines).map(l => {
     const rs = today.rows.filter(r => r.line === l.line && r.oee != null);
-    return { ...l, pct: l.target > 0 ? +(l.actual / l.target * 100).toFixed(1) : null, oee: wavg(rs, r => r.oee, r => Math.max(0, r.shift_min - r.plannedMin)) };
+    const v = wavg(rs, r => r.oee, r => Math.max(0, r.shift_min - r.plannedMin));
+    return { ...l, pct: l.target > 0 ? +(l.actual / l.target * 100).toFixed(1) : null, oee: v == null ? null : +v.toFixed(1), oeeLive: rs.some(r => r.live) };
   }).sort((a, b) => (a.pct ?? 999) - (b.pct ?? 999));
 
   const dtRecords = useMemo(() => {
@@ -347,9 +372,9 @@ function ProductionView({ d, ctx }) {
         value={d.amErr ? '—' : amTotal ? `${amChecked}/${amTotal}` : '0'} unit={d.amErr || !amTotal ? '' : 'เครื่อง'}
         color={d.amErr ? undefined : amNg || amLate ? 'var(--red)' : amWait ? 'var(--amber)' : amTotal && amChecked === amTotal ? 'var(--green)' : undefined}
         sub={d.amErr ? 'โหลดสถานะ AM ไม่ได้' : !amTotal ? 'ไลน์ในขอบเขตยังไม่ลงทะเบียนเครื่อง AM' : `เลยเวลา ${amLate} · รอตรวจ ${amWait} · ยังไม่เริ่มผลิต ${amNotStarted}${amNg ? ` · ผิดปกติ ${amNg}` : ''}`} />
-      <Kpi label="OEE (กะที่ปิดแล้ว)" value={oeeToday == null ? '—' : oeeToday} unit={oeeToday == null ? '' : '%'} color={oeeCol(oeeToday, today.rows.map(r => r.line))}
+      <Kpi label={liveN ? 'OEE วันนี้ (รวมค่าสด)' : 'OEE วันนี้'} value={oeeToday == null ? '—' : +oeeToday.toFixed(1)} unit={oeeToday == null ? '' : '%'} color={oeeCol(oeeToday, today.rows.map(r => r.line))}
         delta={oeeToday != null && oeePrev != null ? +(oeeToday - oeePrev).toFixed(1) : null}
-        sub={oeePrev == null ? 'ไม่มีข้อมูลเมื่อวานให้เทียบ' : `เมื่อวาน ${oeePrev}%`} />
+        sub={`${liveN ? `รวมค่าสด ${liveN} กะที่ยังเดิน (ยืนยันตอนปิดกะ) · ` : ''}${oeePrev == null ? 'ไม่มีข้อมูลเมื่อวานให้เทียบ' : `เมื่อวาน ${oeePrev}%`}`} />
       <Kpi label="Downtime นอกแผน" value={fmtNum(sum(today, l => l.dt))} unit="นาที" color={sum(today, l => l.dt) > 0 ? 'var(--amber)' : undefined}
         sub={`เมื่อวาน ${fmtNum(sum(prev, l => l.dt))} นาที`} />
       <Kpi label="ของเสียวันนี้" value={fmtNum(sum(today, l => l.ng))} unit="ชิ้น" color={sum(today, l => l.ng) > 0 ? 'var(--red)' : undefined}
@@ -370,7 +395,7 @@ function ProductionView({ d, ctx }) {
                 <td style={{ ...TD, fontWeight: 700 }}>{l.line}{l.open ? <span style={{ fontSize: 11, color: 'var(--amber)' }}> · ยังไม่ปิดกะ</span> : null}</td>
                 <td style={TDR}>{fmtNum(l.target)}</td><td style={TDR}>{fmtNum(l.actual)}</td>
                 <td style={{ ...TDR, color: pctCol(l.pct), fontWeight: 700 }}>{l.pct == null ? '—' : l.pct + '%'}</td>
-                <td style={{ ...TDR, color: oeeCol(l.oee, [l.line]), fontWeight: 700 }}>{l.oee == null ? '—' : l.oee}</td>
+                <td style={{ ...TDR, color: oeeCol(l.oee, [l.line]), fontWeight: 700 }} title={l.oeeLive ? 'รวมค่าสดของกะที่ยังเดิน — ตัวเลขจริงยืนยันตอนปิดกะ' : undefined}>{l.oee == null ? '—' : l.oee}{l.oeeLive ? <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}> สด</span> : null}</td>
                 <td style={{ ...TDR, color: l.dt > 0 ? 'var(--amber)' : 'var(--muted)' }}>{fmtNum(l.dt)}</td>
                 <td style={{ ...TDR, color: l.ng > 0 ? 'var(--red)' : 'var(--muted)' }}>{fmtNum(l.ng)}</td>
               </tr>
@@ -395,16 +420,23 @@ function ProductionView({ d, ctx }) {
 async function loadMaintenance(ctx) {
   const { workDate, inScope } = ctx;
   const d30 = dayAdd(workDate, -29);
-  const [{ data: mo, error: eMo }, { data: plans, error: ePlans }, { data: sess30, error: eSess30 }] = await Promise.all([
+  const [{ data: mo, error: eMo }, { data: plans, error: ePlans }, sessPage] = await Promise.all([
     /* ⚠️ คอลัมน์ย่อเท่านั้น — `mtn_orders` มี 116 คอลัมน์ · `select('*')&limit=500` ≈ 800 KB/รอบ
        จอนี้แขวนไว้ทั้งวันหลายเครื่อง (งานลด egress 2026-09-17 · ดู MO_LIST_COLS ใน MtnRepair.jsx) */
     supabaseDR.from('mtn_orders').select('id, mo_no, status, machine_no, line_name, problem_characteristic, report_at')
       .order('report_at', { ascending: false }).limit(500),
     supabaseDR.from('pm_plans').select('id, checklist_id, plan_type, next_due_date, last_done_at, interval_days, cycle_basis, deferred_to, deferred_at').eq('is_active', true),
     // `status` = ตัวตัดสินว่าแถว downtime ที่ยังไม่ปิด "เครื่องยังหยุดอยู่" หรือ "ลืมปิดรายการ" (dtOpenKind)
-    supabaseDR.from('production_sessions').select('id, line_name, work_date, status').gte('work_date', d30).lte('work_date', workDate),
+    /* 🔴 เพดาน 1,000 แถว — ทุกสถานะ ทุกไลน์ 30 วัน วัดจริง 11/11/26 = **989 แถว เหลือที่ 11**
+       (ไม่กรองไลน์ในคิวรี เพราะกรองขอบเขตใน JS ทีหลัง ⇒ ยิ่งต้องได้ครบ) */
+    fetchAllPages(() => supabaseDR.from('production_sessions')
+      .select('id, line_name, work_date, status').gte('work_date', d30).lte('work_date', workDate),
+      { orderBy: ['work_date', 'id'] }),
     loadPmTeams().catch(() => {}),   // ให้ isAmTeam อ่าน mtn_teams.kind ได้จริง (แยก AM ออกจาก PM ช่าง)
   ]);
+  // fetchAllPages คืน { rows, error, truncated } — ชนเพดานหน้า = โหลดไม่ครบ ต้องเข้า loadErr ด้วย
+  const sess30 = sessPage.rows;
+  const eSess30 = sessPage.error || (sessPage.truncated ? 'กะ 30 วันเยอะเกินกว่าจะโหลดครบ' : null);
   const sIds = (sess30 || []).filter(s => inScope(s.line_name)).map(s => s.id);
   /* ⚠️ 30 วัน ≈ 270 กะ — `.in()` ตรงๆ URL ยาวเกินจน proxy ตัด แล้วคืนค่าว่าง "เงียบ"
      (จอช่างจะขึ้น DT 0 นาที / เครื่องหยุดซ้ำ 0 เครื่อง ทั้งที่มีของจริง) → ผ่าน fetchByIds เสมอ */

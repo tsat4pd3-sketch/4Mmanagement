@@ -567,6 +567,23 @@ test('orderReporterText: มีฟิลด์เดียว/ไม่มีเ
 
 /* ── 🗑️→🚫 moRemoveMode — ลบได้เฉพาะใบที่ยังไม่มีเลข (2026-10-14 · คำสั่ง user) ────── */
 import { moRemoveMode, OPEN_MO_STATUSES } from '../mtnStepPerm.js';
+test('🔗 moRemoveMode: ใบปลายทางของการส่งต่อ ลบไม่ได้แม้ยังไม่ออกเลข (11/11)', () => {
+  /* เคสจริง: ใบลูกที่ทีมปลายทางยังไม่กดรับ **ยังไม่มีเลข MO** ⇒ เกณฑ์เดิมให้ "ลบได้"
+     ลบแล้ว FK `on delete set null` ล้างลิงก์ ⇒ ใบแม่ยัง transferred (จบ) = ปัญหาหายจากระบบ
+     วัด 11/11: โดนไปแล้ว 4 ใบ (ทีม JIG ลบตอน pending 3 ใบ ยืนยันจาก audit_log) */
+  const child = { status: 'pending', mo_no: null, transferred_from_mo: 'PRO-BM-220926-0461' };
+  const r = moRemoveMode(child);
+  assert.equal(r.mode, 'cancel', 'ใบที่ถูกส่งต่อมา ต้องยกเลิก ไม่ใช่ลบ');
+  assert.match(r.why, /ส่งต่อ/, 'ต้องบอกเหตุผลบนจอว่าทำไมลบไม่ได้');
+  assert.match(r.why, /PRO-BM-220926-0461/, 'ต้องบอกว่ามาจากใบไหน');
+  // ใบธรรมดาที่ยังไม่ออกเลข = ลบได้เหมือนเดิมเป๊ะ (ห้ามเหวี่ยงไปบล็อกทั้งหมด)
+  assert.equal(moRemoveMode({ status: 'pending', mo_no: null }).mode, 'delete');
+  assert.equal(moRemoveMode({ status: 'pending', mo_no: null, transferred_from_mo: '' }).mode, 'delete');
+  assert.equal(moRemoveMode({ status: 'pending', mo_no: null, transferred_from_mo: '   ' }).mode, 'delete');
+  // ใบที่ส่งต่อมาแล้วออกเลขแล้ว ก็ยังเป็น cancel ตามเกณฑ์เดิม
+  assert.equal(moRemoveMode({ status: 'repaired', mo_no: 'JIG-1', transferred_from_mo: 'PRO-9' }).mode, 'cancel');
+});
+
 test('🔴 moRemoveMode: ใบที่ออกเลขแล้ว ลบไม่ได้ — ยกเลิกเท่านั้น', () => {
   // เคสจริงที่ทำให้ต้องมีกฎนี้: ใบสถานะ repaired ถูก delete ไป ⇒ ค่าแรง/อะไหล่หายถาวร
   const r = moRemoveMode({ status: 'repaired', mo_no: 'MTN.2026/10-5' });

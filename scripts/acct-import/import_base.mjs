@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { detectMonthColumns, detectVarRows, extractValues, limitMonths, monthFromFileName, lastClosedMonth, sheetKind, rollingMonths } from '../../src/utils/kpiBaseImport.js';
+import { detectMonthColumns, detectVarRows, extractValues, limitMonths, monthFromFileName, lastClosedMonth, sheetKind, rollingMonths, extractPlanSeries, PLAN_ROWS } from '../../src/utils/kpiBaseImport.js';
 import { KPI_BASE_VARS } from '../../src/utils/kpiSetup.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -68,6 +68,16 @@ export function collectPlantValues(book, { maxMonth = null, includeInventory = t
       found[k] = months; src[k] = name;
     }
   }
+  /* 📅 แผนรายเดือน (Plan สะสม) ของ KPI ที่มีแถวในชีท — ทั้ง 12 เดือน (แผนทั้งปี ไม่ตัดตาม upTo) */
+  const plans = {};
+  for (const name of order) {
+    const g = book.grids[name];
+    for (const [key, re] of Object.entries(PLAN_ROWS)) {
+      if (plans[key]) continue;
+      const ps = extractPlanSeries(g, { labelRe: re });
+      if (ps && Object.keys(ps.months).length) { plans[key] = ps.months; src[`plan:${key}`] = name; }
+    }
+  }
   const upTo = maxMonth ?? closed ?? 0;
   const out = {};
   for (const [k, months] of Object.entries(found)) {
@@ -79,7 +89,7 @@ export function collectPlantValues(book, { maxMonth = null, includeInventory = t
     }
     if (Object.keys(keep).length) out[k] = keep;
   }
-  return { values: out, src, upTo, closed, notes };
+  return { plans, values: out, src, upTo, closed, notes };
 }
 
 const label = (k) => KPI_BASE_VARS.find(v => v.key === k)?.label || k;
@@ -97,7 +107,7 @@ export function yearFromFileName(name = '') {
 export async function importBook(book, { fileName = '', year = null, month = null, write = false, sb = null, includeInventory = true, log = console.log } = {}) {
   const y = Number(year || yearFromFileName(fileName) || new Date().getFullYear());
   const fm = month != null ? Number(month) : monthFromFileName(fileName);
-  const { values, src, upTo, closed, notes } = collectPlantValues(book, { maxMonth: fm, includeInventory });
+  const { values, src, upTo, closed, notes, plans = {} } = collectPlantValues(book, { maxMonth: fm, includeInventory });
   const lines = [];
   const say = (t) => { lines.push(t); log(t); };
   say(`ไฟล์: ${fileName} · ปี ${y} · ถึงเดือน ${upTo || '-'} (${month != null ? 'กำหนดเอง' : fm ? 'จากชื่อไฟล์' : `จากเดือนสุดท้ายที่มียอด = ${closed}`})`);
@@ -123,6 +133,7 @@ export async function importBook(book, { fileName = '', year = null, month = nul
   for (const p of plan) say(`${p.state.padEnd(8)} ${label(p.k).padEnd(44)} ด.${String(p.m).padStart(2)}  ไฟล์ ${fmt(p.v).padStart(18)}  ฐาน ${fmt(p.ex).padStart(18)}   [${p.sheet}]`);
   const todo = plan.filter(p => p.state !== 'เท่าเดิม');
   say(`รวม ${plan.length} ค่า · ใหม่ ${plan.filter(p => p.state === 'ใหม่').length} · เปลี่ยน ${plan.filter(p => p.state === 'เปลี่ยน').length} · เท่าเดิม ${plan.length - todo.length}`);
+  for (const [fk, months] of Object.entries(plans)) say(`📅 แผนรายเดือน ${fk} (${src[`plan:${fk}`] || ''}): ${Object.entries(months).map(([m, v]) => `${m}:${v}`).join(' ')}`);
   if (!write) { say('dry-run — ไม่เขียน'); return { year: y, upTo, plan, written: 0, failed: 0, notes, lines }; }
   if (!sb) throw new Error('write ต้องมี client ฝั่ง MAIN (SUPABASE_URL + SUPABASE_SERVICE_KEY)');
   let written = 0, failed = 0;
@@ -134,7 +145,18 @@ export async function importBook(book, { fileName = '', year = null, month = nul
     if (r.error || !r.data?.length) { failed++; say(`✗ ${p.k} ด.${p.m}: ${r.error?.message || 'ไม่มีแถวถูกเขียน'}`); } else written++;
   }
   say(`เขียนแล้ว ${written} · ล้ม ${failed}`);
-  return { year: y, upTo, plan, written, failed, notes, lines };
+  /* 📅 แผนสะสมรายเดือน → kpi_month_plans ของแผ่นระดับโรงงานที่ใช้สูตรนั้น (upsert คีย์ (kpi_id, month) = unique คอลัมน์ล้วน) */
+  let planWritten = 0;
+  for (const [fk, months] of Object.entries(plans)) {
+    const { data: defs, error: dErr } = await sb.from('kpi_definitions').select('id').eq('year', y).eq('is_active', true).eq('scope_kind', 'plant').eq('provider', 'formula').contains('provider_config', { formula: fk });
+    if (dErr) { say(`✗ หาแผ่นโรงงานของสูตร ${fk} ไม่ได้: ${dErr.message}`); failed++; continue; }
+    if (!defs?.length) { say(`⚠ ไม่มีแผ่นระดับโรงงานที่ใช้สูตร ${fk} ปี ${y} — ข้ามแผนรายเดือน`); continue; }
+    const rows = Object.entries(months).map(([m, v]) => ({ kpi_id: defs[0].id, month: Number(m), plan_value: v, note: `acct-import ${fileName} (${src[`plan:${fk}`] || ''})` }));
+    const r = await sb.from('kpi_month_plans').upsert(rows, { onConflict: 'kpi_id,month' }).select('kpi_id');
+    if (r.error || !r.data?.length) { failed++; say(`✗ แผนรายเดือน ${fk}: ${r.error?.message || 'ไม่มีแถวถูกเขียน'}`); }
+    else { planWritten += r.data.length; say(`📅 แผนรายเดือน ${fk}: ${r.data.length} เดือน → แผ่นโรงงาน`); }
+  }
+  return { year: y, upTo, plan, written, failed, notes, lines, planWritten };
 }
 
 export async function mainClient() {

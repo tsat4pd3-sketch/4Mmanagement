@@ -537,3 +537,113 @@ export function dayForNames(names, byMeter, meterLines) {
     resets: rows.reduce((s, r) => s + (r.resets || 0), 0),
   }
 }
+
+/** ความละเอียดกราฟจิ๋วบนการ์ดผัง = 15 นาที (หน่วยเดียวกับ demand charge · 1 วันเต็ม = 96 จุด) */
+export const MAP_SPARK_MIN = 15
+
+/** แถวรายนาที → ค่าเฉลี่ย kW ต่อช่วง ต่อตู้ : Map(keyตู้ → Map(เวลาเริ่มช่วง ms → kW เฉลี่ย)) */
+export function bucketByMeter(readings, bucketMin = MAP_SPARK_MIN) {
+  const acc = new Map()
+  const size = bucketMin * 60000
+  for (const r of readings || []) {
+    const kw = numOrNull(r.kw), t = Date.parse(r.bucket_at)
+    if (kw == null || !Number.isFinite(t)) continue
+    const k = `${r.scope_kind}|${r.scope_name}`, b = Math.floor(t / size) * size
+    if (!acc.has(k)) acc.set(k, new Map())
+    const m = acc.get(k), cur = m.get(b) || { s: 0, n: 0 }
+    cur.s += kw; cur.n++
+    m.set(b, cur)
+  }
+  const out = new Map()
+  for (const [k, m] of acc) out.set(k, new Map([...m].map(([b, v]) => [b, v.s / v.n])))
+  return out
+}
+
+/**
+ * กราฟจิ๋ว "วันนี้" ของกรอบบนผัง = ผลรวม kW ของตู้ที่จ่ายให้กรอบนี้ (ตู้ละครั้ง — กฎเดียวกับ liveForNames)
+ * 🔴 นับเฉพาะช่วงที่ **ทุกตู้ของกรอบส่งค่ามาครบ** — ช่วงที่ขาดบางตู้จะดิ่งลงหลอกว่าไฟลด
+ * @returns {number[]} เรียงเก่า→ใหม่ · ว่าง = ไม่วาด (Spark ต้อง ≥ 2 จุด)
+ */
+export function sparkForNames(names, meterBuckets, meterLines) {
+  const set = new Set(names || [])
+  const keys = [...(meterLines || new Map()).keys()].filter(k => [...meterLines.get(k)].some(l => set.has(l)))
+  if (!keys.length) return []
+  const times = new Set()
+  for (const k of keys) for (const t of meterBuckets?.get(k)?.keys() || []) times.add(t)
+  const out = []
+  for (const t of [...times].sort((a, b) => a - b)) {
+    let sum = 0, ok = true
+    for (const k of keys) {
+      const v = meterBuckets.get(k)?.get(t)
+      if (v == null) { ok = false; break }
+      sum += v
+    }
+    if (ok) out.push(sum)
+  }
+  return out
+}
+
+/* ═══ 🔍 หน้ารายตู้ (/energy?tab=live&meter=<ชื่อตู้> · 2026-11-10 · คำสั่ง user "คลิกการ์ดเข้าหน้าตู้แบบ Node-RED") ═══
+   ข้อมูลที่ ESM มี = สรุปรายนาที (energy_readings เก็บ 7 วัน) — ไม่มี 3 เฟสแยก/รายวินาที (จอต้องบอก ห้ามแต่งค่า) */
+
+/** ช่วงที่ขาดเกินกี่นาทีถึงตัดเส้น (ตัวส่งยิงทุก 1 นาที — ขาด 1-2 รอบยังลากต่อได้) */
+export const DETAIL_GAP_MIN = 5
+
+/**
+ * แถวรายนาทีของตู้เดียว → จุดกราฟ [{ t, kw, a, v }] เรียงเก่า→ใหม่
+ * · ค่าที่อ่านไม่ได้ = null (เส้นขาด · ห้ามเป็น 0)
+ * · ช่วงที่ไม่มีแถวเกิน DETAIL_GAP_MIN นาที ⇒ แทรกจุด null ให้กราฟตัดเส้น (ไม่ลากข้ามช่วงที่มิเตอร์หลุด)
+ */
+export function meterDetailSeries(rows) {
+  const pts = []
+  for (const r of rows || []) {
+    const t = Date.parse(r.bucket_at)
+    if (!Number.isFinite(t)) continue
+    pts.push({ t, kw: numOrNull(r.kw), a: numOrNull(r.a), v: numOrNull(r.v) })
+  }
+  pts.sort((x, y) => x.t - y.t)
+  const out = []
+  for (let i = 0; i < pts.length; i++) {
+    if (i > 0 && pts[i].t - pts[i - 1].t > DETAIL_GAP_MIN * 60000) {
+      out.push({ t: pts[i - 1].t + 60000, kw: null, a: null, v: null })
+    }
+    out.push(pts[i])
+  }
+  return out
+}
+
+/**
+ * สัดส่วนโหลดตอนนี้ = kW ของเครื่อง ÷ kW รวมของเครื่องที่ออนไลน์
+ * 🔴 เครื่องที่ไม่ออนไลน์/ไม่รู้ค่า = pct null (ไม่ใช่ 0%) · ไม่มีใครออนไลน์ = total null
+ * @returns {{ total:number|null, rows:Array<{key,name,kw,pct}> }}
+ */
+export function loadShare(boardMeters) {
+  const on = (boardMeters || []).filter(m => m.status === 'online' && m.kw != null)
+  const total = on.length ? on.reduce((s, m) => s + Math.max(0, m.kw), 0) : null
+  const rows = (boardMeters || []).map(m => {
+    const ok = m.status === 'online' && m.kw != null
+    return { key: m.key, name: m.name, kw: ok ? m.kw : null, pct: ok && total ? (Math.max(0, m.kw) / total) * 100 : null }
+  })
+  return { total, rows }
+}
+
+/* ═══ 📍 จุดที่ผูก topic ได้ (ใช้ร่วม /energy + ศูนย์เชื่อมต่อ /integrations · 2026-11-11) ═══
+   ⚠️ ที่เดียวที่ประกอบรายการ "ไลน์ตามลำดับชั้น + โซน facility" — ห้ามประกอบเองในหน้า */
+import { toHierarchicalOptions as hierOptions } from './lineHierarchy.js'
+
+/** โซน = พื้นที่ facility (pm_facility_areas) + ไลน์ของเครื่องประเภท facility · ไม่ซ้ำ เรียงชื่อ */
+export function energyZonesFrom(areas, facilityMachines) {
+  const zs = new Set([...(areas || []).map(a => a?.name), ...(facilityMachines || []).map(m => m?.line_name)].filter(Boolean))
+  return [...zs].sort()
+}
+
+/** ไลน์ (แม่ + ลูก เรียงเป็นขั้น) + โซน → ตัวเลือกของช่อง "ผูกกับ" */
+export function energyPointOptions(lines, zones) {
+  return [
+    ...hierOptions(lines || []).map(({ line, depth }) => ({
+      kind: 'line', name: line.name, section: line.section, depth,
+      parentName: line.parent_line_name || null,
+    })),
+    ...(zones || []).map(z => ({ kind: 'zone', name: z, section: null, depth: 0, parentName: null })),
+  ]
+}

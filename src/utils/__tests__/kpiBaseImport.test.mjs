@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { monthOfHeader, detectMonthColumns, detectVarRows, parseNum, extractValues, rowLabels } from '../kpiBaseImport.js';
+import { extractPlanSeries, PLAN_ROWS, monthOfHeader, detectMonthColumns, detectVarRows, parseNum, extractValues, rowLabels } from '../kpiBaseImport.js';
 
 const grid = [
   ['TSAT Monthly Report FY2026', null, null],
@@ -236,4 +236,19 @@ test('monthFromFileName: ชื่อไฟล์รายงานบัญช�
   const vg = detectVarRows(GL, { sheetName: '4. PL by GL V5' });
   assert.equal(vg.inventory_baht, undefined, '"Inventory Damage Expense" ไม่ใช่มูลค่าสต็อก');
   assert.equal(bestSheet({ '1.Sale.': [['Sale From Product'], ['Period', '2025', '2026'], ['Jan', 1, 2]], '3.PL Summary': PLR, '4. PL by GL V5': GL, '5.Manpower': MP }), '3.PL Summary');
+});
+
+test('📅 extractPlanSeries: หยิบคอลัมน์ Plan ของแถว "Sale All / Head (All)" ต่อเดือน (ไม่ใช่ Actual/Rolling) · ไม่มีหัวย่อย Plan = null', () => {
+  const hdr = ['Description', '', 'Jan', '', '', 'Feb', '', '', 'Mar', '', ''];
+  const sub = ['', '', 'Plan', 'Rolling', 'Actual', 'Plan', 'Rolling', 'Actual', 'Plan', 'Rolling', 'Actual'];
+  const g = [['TSAT P4'], hdr, sub,
+    ['Total Head count (All)', '', 393, 393, 382, 392, 392, '', 392, 392, ''],
+    ['Sale All / Head (All)', '', 0.444, 0.444, 0.434, 0.894, 0.871, '', 1.404, 1.381, ''],
+    ['Sale production / Head (All)', '', 0.400, 0.400, 0.359, 0.805, 0.754, '', 1.267, 1.216, '']];
+  const r = extractPlanSeries(g, { labelRe: PLAN_ROWS.sale_per_head });
+  assert.ok(r); assert.equal(r.how, 'plan'); assert.equal(r.row, 4);
+  assert.deepEqual(r.months, { 1: 0.444, 2: 0.894, 3: 1.404 }, 'Plan ไม่ใช่ Actual 0.434');
+  assert.equal(extractPlanSeries(g, { labelRe: /ไม่มีแถวนี้/ }), null);
+  const noPlan = [['x'], hdr, ['', '', 'Rolling', 'Actual', '', 'Rolling', 'Actual', '', 'Rolling', 'Actual', ''], ['Sale All / Head (All)', '', 1, 2, '', 3, 4, '', 5, 6, '']];
+  assert.equal(extractPlanSeries(noPlan, { labelRe: PLAN_ROWS.sale_per_head }), null, 'ไม่มี Plan = null ห้ามเดา Rolling');
 });

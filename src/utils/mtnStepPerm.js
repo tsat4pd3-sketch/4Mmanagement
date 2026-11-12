@@ -773,6 +773,18 @@ export function moRemoveMode(order = {}) {
   if (MO_DONE_STATUSES.includes(st)) {
     return { mode: MO_REMOVE_BLOCKED, why: `ใบนี้จบไปแล้ว (${MO_STATUS_LABEL[st] || st}) — ไม่ต้องยกเลิกซ้ำ` };
   }
+  /* 🔗 ใบที่เป็น "ปลายทางของการส่งต่อ" — ลบทิ้งไม่ได้แม้ยังไม่ออกเลข (2026-11-11 · คำสั่ง user)
+     ใบแม่จบที่ `transferred` ซึ่งเป็น **สถานะจบ** ⇒ ลบใบลูก = ปัญหาหลุดจากคิวของทุกคน
+     และ FK `mtn_order_handoffs.to_order_id` เป็น `on delete set null` ⇒ **ลิงก์ถูกล้างเงียบๆ**
+     วัดจริง 11/11: 4 ใบโดนแบบนี้ (3 ใบพิสูจน์จาก audit_log ว่าถูก DELETE ตอนยัง `pending`)
+     ของที่ค้างอยู่จริง: Reed ชำรุด Line 61 (22/09) · น้ำมันรั่ว HDF (24/09) · บูท Swing (24/10)
+     ⇒ ให้ยกเลิกพร้อมเหตุผลแทน — ใบยังอยู่ โซ่ไม่ขาด และแผงไล่งานเห็นว่าปลายทางไม่ทำ
+     🔴 ด่านจริงอยู่ชั้น DB ด้วย (FK `on delete restrict` · migration 20261111) — ชั้นนี้ไว้บอกเหตุผล */
+  const fromMo = String(order?.transferred_from_mo || '').trim();
+  if (fromMo) {
+    return { mode: MO_REMOVE_CANCEL,
+      why: `ใบนี้เป็นปลายทางของการส่งต่อจาก ${fromMo} — ลบทิ้งไม่ได้ (ใบต้นทางปิดไปแล้ว ลบใบนี้ = ปัญหาหายจากระบบ) · ยกเลิกพร้อมเหตุผลได้` };
+  }
   if (!hasNo) {
     return { mode: MO_REMOVE_DELETE, why: 'ยังไม่ออกเลข MO — ลบทิ้งได้ (ไม่มีเลขและประวัติให้เสีย)' };
   }
