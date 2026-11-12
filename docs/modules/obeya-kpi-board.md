@@ -1316,3 +1316,11 @@ user: *"sales/head ต้องเท่ากันทุกส่วนงา�
 - **ที่มาของแผน:** seed 11/11 จากชีท 5.Manpower แถว Plan "Sale All / Head (All)" 2026 (0.444 · 0.894 · 1.404 · 1.825 · 2.334 · 2.933 · 3.448 · 3.920 · 4.422 · 4.820 · 5.211 · 5.489) ลงแผ่นโรงงาน `4fca09cc`
   · ปีหน้า/ไฟล์ใหม่: `extractPlanSeries(grid, { labelRe: PLAN_ROWS.sale_per_head })` (`utils/kpiBaseImport.js`) หยิบคอลัมน์ **Plan** (ไม่ใช่ Actual/Rolling · ไม่มีหัว Plan = null ห้ามเดา) · CLI/Actions `importBook()` เขียน `kpi_month_plans` ของแผ่นโรงงานที่ใช้สูตรนั้นให้เอง · ปุ่ม 📥 บนเว็บ**ยังไม่**นำเข้าแผน (กรอกที่แถวแผนรายเดือน)
 - 🔴 ห้ามเอาแผนไปเปลี่ยน "ค่า" — แผนเปลี่ยนแค่เกณฑ์ตัดสิน · เส้น T (เป้าปี) บนกราฟยังอยู่ · เส้นแผนรายเดือน (เทาประ) มีอยู่แล้ว
+
+## 🔧 บอร์ด Die MTN = แถว 💰 2140559101 (แผนก Die MTN ใต้ Tooling MTN) · ชุด KPI ตามทะเบียน "Die Maintenance" (2026-11-12 · คำสั่ง user ก่อนนายดูงาน 26/11)
+- นิยาม 12 แถว `scope_kind='department' · scope_value='Die MTN' · section='Tooling MTN'` · `std_unit='Die Maintenance'` + `std_item_id` ผูกทะเบียนครบ (6 fixed + 6 choice · ข้าม "Activity" ที่เป็นหัวข้อแม่)
+  · fixed ผูก catalog เดิม: DL+OH (`dloh_pct`) · Customer Satisfaction (Q&D) → catalog "Customer Satisfaction" (`value_scope=plant` อ่านแผ่นโรงงาน) · Safety · Annual Sale Per Head (`sale_per_head` · `score_by_plan=true` · อ่านแผ่นโรงงาน) · TS Academy · QCC · Engineering Day
+  · เป้า/น้ำหนักใส่ให้เฉพาะตัวที่เป็นค่ากลางทั้งโรงงานอยู่แล้ว (Cust Sat 100/≥95 · Safety 0 · Sale/Head 5.654/5.489 · TS Academy 90/≥80 · QCC 30) · **DL+OH กับ 6 choice ยังไม่มีเป้า/น้ำหนัก = เทา "ไม่มีเป้า" จนกว่า Die MTN ใส่จากใบ KPI Online** (ห้ามลอกเป้าของ Tooling MTN — คนละหน่วย)
+  · DL+OH ของแถวนี้ต้องมี `kpi_base_inputs` ที่ scope `department:Die MTN` (dl · oh รายเดือน) ไม่งั้นบอร์ดเขียน "ขาดตัวแปร" (ถูกแล้ว ห้ามโชว์ 0)
+- ชุดเดิม 9 แถวที่ `section:Tooling MTN` (MTBF/MTTR/Breakdown/MO Closed ฯลฯ) **คงไว้** — เป็นบอร์ดของแถว 💰 2140459100 คนละแถว
+- ลบโหนดผัง "DIE Maintenance" (department ราก · code `DIE MTN` · CC 2140561100 · `is_active=false` อยู่แล้ว · 0 คน 0 ลูก 0 อ้างอิง) ออกจาก `org_nodes` 12/11 — ตัวซ้ำของ Die MTN · แถว `cost_centers` 2140561100 ("DIE MTN" · ไม่มี section) ยังอยู่ ⇒ ช่อง CC จะเห็นรหัสนี้เป็นรหัสไม่มีเจ้าของ (รอ user ตัดสินว่าจะปิด `is_active` ไหม)
