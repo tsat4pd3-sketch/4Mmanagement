@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """เด็คนำเสนอ EVP: แนวทางระบบ Automation & Paperless (ECM) — Build vs Buy (ธีม TSG R01 · ไทย · 2026-11-11)
-Run:  python3 build_ecm_evp.py  →  ../TSAT_ECM_EVP_BuildVsBuy_2026-11-11.pptx
+Run:  python3 build_ecm_evp.py  (ต้องมี build_ecm_team.py ข้างกัน)  →  ../TSAT_ECM_EVP_BuildVsBuy_2026-11-11.pptx
 ที่มาตัวเลข SFM: ../ECM-PMO_SFM-Facts_2026-11-11.md (ทุกตัวมีวันที่วัด) · ราคา vendor = ยังไม่มี (ห้ามเดา)
 """
 import os
@@ -252,6 +252,12 @@ for i, (h, d) in enumerate([("ฝ่าย IT", "Infra · Security · Integratio
     T.text(s, x, 4.95, 3.95, 0.95, [[(h, {"sz": 14, "b": True, "c": GREEN_D})], [(d, {"sz": 11, "c": GREY})]], align=C, anchor=MID, sa=0)
 banner(s, "PMO เป็นผู้พัฒนา SFM ⇒ PMO เตรียมข้อมูล แต่ไม่ให้คะแนน · IA ทบทวนข้อมูลเปรียบเทียบก่อนเข้า EVP", ORANGE, 6.1)
 notes(s, "โครงสร้างตามที่บันทึกเชิญเสนอ เพิ่ม 2 อย่าง คือ Steering Committee และคณะกรรมการประเมินแยกจาก PMO เหตุผลคือผู้ทำหน้าที่ PMO เป็นผู้พัฒนาระบบ SFM ซึ่งเป็นหนึ่งในทางเลือก ถ้าให้คะแนนเองจะมีผลประโยชน์ทับซ้อน จึงเสนอให้ PMO ทำหน้าที่เตรียมข้อมูลอย่างเดียว")
+
+# ── 11b ทีมงานโครงการ (ผังเดียวกับไฟล์แยก — build_ecm_team.py) ──
+import build_ecm_team as TEAM
+s = content(TEAM.TITLE, TEAM.SUB)
+TEAM.draw_team(s)
+notes(s, TEAM.NOTES)
 
 # ── 12 RACI ──
 s = content("RACI — ใครทำอะไร", "R ลงมือ · A รับผิดชอบสุดท้าย · C ให้ความเห็น · I รับทราบ · ฉบับเต็มในเอกสาร Charter")

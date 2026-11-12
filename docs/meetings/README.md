@@ -18,6 +18,7 @@
 | `TSAT_ECM_EVP_BuildVsBuy_2026-11-11.pptx` | ประชุม EVP เรื่อง ECM (ยังไม่กำหนดวัน) | **โครงการ Automation & Paperless (ECM) · Build vs Buy** · 14 สไลด์ไทย **TSG R01** — สิ่งที่ขอให้ตัดสิน · ขอบเขตทับซ้อน ECM/SFM/OT/OM · ข้อเท็จจริง SFM · 4 ทางเลือก · Decision Matrix (ค่าตั้งต้นจากบันทึกเชิญ) · TCO · Infra · Integration · คน · Governance + RACI · Roadmap · ขออนุมัติ 4 ข้อ · **ไม่มีราคา vendor (รอใบเสนอราคา)** · สร้างจาก `roadshow_build/build_ecm_evp.py` | ต.ค.–11/11/2026 |
 | `TSAT_ECM_TCO_5Y_Template_2026-11-11.xlsx` | ใช้คู่กับเด็คด้านบน | แม่แบบ TCO 5 ปี (Opt1–5: In-house · ต่อยอด SFM · Bendix · OutSystems · VR) + Decision Matrix ถ่วงน้ำหนัก · ช่องเหลือง = กรอก · นับช่องว่างแล้วขึ้น "ห้ามเทียบ" · Opt2 ใส่แค่ INET + เครื่องมือ AI (มีที่มา) · สร้างจาก `roadshow_build/build_ecm_tco.py` | 11/11/2026 |
 | `ECM-PMO_SFM-Facts_2026-11-11.md` · `ECM-PMO_Project-Charter-RACI_2026-11-11.md` | ใช้คู่กับเด็คด้านบน | ข้อเท็จจริง SFM (ทุกตัวเลขมีที่มา + ประกาศผลประโยชน์ทับซ้อน) · ร่าง Charter + RACI เต็ม | 11/11/2026 |
+| `TSAT_ECM_Project_Team_2026-11-12.pptx` | ใช้ภายในทีม + อยู่ในเด็ค EVP หน้า 12 | ผังทีมงานโครงการ ECM (ร่าง) 1 หน้า **TSG R01** — PMO กำกับ ทีม IT · ทีม OT · ตัวแทนหน่วยงาน 7 หน่วย (Qnex · IEC · MTN · HR · F&A · QSM · ผลิต) · ชื่อคนทุกช่อง [รอระบุ] · สร้างจาก `roadshow_build/build_ecm_team.py` (เด็ค EVP เรียกฟังก์ชันเดียวกัน) | 12/11/2026 |
 
 ## ตัวเลขหลักที่นำเสนอ 25/09 (เก็บไว้เทียบรอบหน้า)
 
