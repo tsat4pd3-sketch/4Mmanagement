@@ -45,15 +45,15 @@ const FixtureRegistry = lazy(() => import('./FixtureRegistry'));
 /* เรียงตาม "ของที่เปิดดูบ่อย" — ช่างค้นอะไหล่/เครื่องทุกวัน ส่วนผังคลังนานๆ ครั้ง
    (หลักเดียวกับ PmHub: ความถี่ที่ใช้จริง ไม่ใช่ลำดับตามตัวอักษร) */
 const TABS = [
-  { key: 'machine', label: '🏭 เครื่องจักร', page: '/machine-database',
+  { key: 'machine', label: 'เครื่องจักร', page: '/machine-database',
     hint: 'ทะเบียนเครื่อง + ชนิดอุปกรณ์ (equipment_kind) ที่เป็นตัวแยกกลุ่มให้ทุกจอในระบบ' },
-  { key: 'die',     label: '🔨 แม่พิมพ์ (DIE)', page: '/die-registry',
+  { key: 'die',     label: 'แม่พิมพ์ (DIE)', page: '/die-registry',
     hint: 'ทะเบียน + ผังจัดเก็บ + สถานะแม่พิมพ์' },
-  { key: 'jig',     label: '📐 JIG / Fixture', page: '/fixture',
+  { key: 'jig',     label: 'JIG / Fixture', page: '/fixture',
     hint: 'ทะเบียนจุดชิม + บันทึกชิม + สถานะ + จัดชนิดอุปกรณ์' },
-  { key: 'spare',   label: '🔩 คลังอะไหล่', page: '/mtn-repair',
+  { key: 'spare',   label: 'คลังอะไหล่', page: '/mtn-repair',
     hint: 'ค้นอะไหล่/ชั้นวาง · ยอดคงเหลือ · Rank A/B/C' },
-  { key: 'rack',    label: '🗺️ ผังคลังอะไหล่', page: '/mtn-repair',
+  { key: 'rack',    label: 'ผังคลังอะไหล่', page: '/mtn-repair',
     hint: 'วางช่องอะไหล่บนรูปชั้นวางจริง — กดช่องแล้วรู้ว่ามีอะไรอยู่' },
 ];
 
@@ -107,8 +107,8 @@ export default function EquipmentHub() {
           tabs={available.map(t => ({ key: t.key, label: t.label }))} tab={active} onTab={setActive} />
         {/* ไม่มีสิทธิ์สักแท็บ = ต้องบอกว่าทำไม ห้ามปล่อยจอว่าง (UI-CONVENTIONS §6.9) */}
         {!available.length && (
-          <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 13, border: '1px dashed var(--border2)', borderRadius: 10 }}>
-            🔒 บัญชีนี้ยังไม่มีสิทธิ์เข้าทะเบียนอุปกรณ์ตัวไหนเลย — ให้ admin เปิดสิทธิ์หน้า
+          <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 13, border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)' }}>
+            บัญชีนี้ยังไม่มีสิทธิ์เข้าทะเบียนอุปกรณ์ตัวไหนเลย — ให้ admin เปิดสิทธิ์หน้า
             <b style={{ color: 'var(--text2)' }}> ฐานข้อมูลเครื่องจักร / ทะเบียนแม่พิมพ์ / Fixture / แจ้งซ่อม MTN </b>
             ที่ <b style={{ color: 'var(--text2)' }}>/permissions</b>
           </div>

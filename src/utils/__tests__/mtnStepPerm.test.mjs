@@ -567,6 +567,23 @@ test('orderReporterText: มีฟิลด์เดียว/ไม่มีเ
 
 /* ── 🗑️→🚫 moRemoveMode — ลบได้เฉพาะใบที่ยังไม่มีเลข (2026-10-14 · คำสั่ง user) ────── */
 import { moRemoveMode, OPEN_MO_STATUSES } from '../mtnStepPerm.js';
+test('🔗 moRemoveMode: ใบปลายทางของการส่งต่อ ลบไม่ได้แม้ยังไม่ออกเลข (11/11)', () => {
+  /* เคสจริง: ใบลูกที่ทีมปลายทางยังไม่กดรับ **ยังไม่มีเลข MO** ⇒ เกณฑ์เดิมให้ "ลบได้"
+     ลบแล้ว FK `on delete set null` ล้างลิงก์ ⇒ ใบแม่ยัง transferred (จบ) = ปัญหาหายจากระบบ
+     วัด 11/11: โดนไปแล้ว 4 ใบ (ทีม JIG ลบตอน pending 3 ใบ ยืนยันจาก audit_log) */
+  const child = { status: 'pending', mo_no: null, transferred_from_mo: 'PRO-BM-220926-0461' };
+  const r = moRemoveMode(child);
+  assert.equal(r.mode, 'cancel', 'ใบที่ถูกส่งต่อมา ต้องยกเลิก ไม่ใช่ลบ');
+  assert.match(r.why, /ส่งต่อ/, 'ต้องบอกเหตุผลบนจอว่าทำไมลบไม่ได้');
+  assert.match(r.why, /PRO-BM-220926-0461/, 'ต้องบอกว่ามาจากใบไหน');
+  // ใบธรรมดาที่ยังไม่ออกเลข = ลบได้เหมือนเดิมเป๊ะ (ห้ามเหวี่ยงไปบล็อกทั้งหมด)
+  assert.equal(moRemoveMode({ status: 'pending', mo_no: null }).mode, 'delete');
+  assert.equal(moRemoveMode({ status: 'pending', mo_no: null, transferred_from_mo: '' }).mode, 'delete');
+  assert.equal(moRemoveMode({ status: 'pending', mo_no: null, transferred_from_mo: '   ' }).mode, 'delete');
+  // ใบที่ส่งต่อมาแล้วออกเลขแล้ว ก็ยังเป็น cancel ตามเกณฑ์เดิม
+  assert.equal(moRemoveMode({ status: 'repaired', mo_no: 'JIG-1', transferred_from_mo: 'PRO-9' }).mode, 'cancel');
+});
+
 test('🔴 moRemoveMode: ใบที่ออกเลขแล้ว ลบไม่ได้ — ยกเลิกเท่านั้น', () => {
   // เคสจริงที่ทำให้ต้องมีกฎนี้: ใบสถานะ repaired ถูก delete ไป ⇒ ค่าแรง/อะไหล่หายถาวร
   const r = moRemoveMode({ status: 'repaired', mo_no: 'MTN.2026/10-5' });
@@ -712,4 +729,27 @@ test('🔧 ป้ายปุ่ม/เหตุผลตอนกดไม่�
   const hint = stepDenyHint(4, { toolTeam: true, wrongSide: true }).join(' ');
   assert.match(hint, /หัวหน้าแผนกช่าง/);
   assert.match(hint, /ฝั่งซ่อมบำรุง/, 'ต้องบอกว่าเป็นช่องของฝั่งช่าง ไม่ใช่ของฝ่ายที่แจ้ง');
+});
+
+test('moFlow — แถบขั้นตอนใบ MO: ข้าม QA = skipped ไม่ใช่ done · ใบ MTN 8 ขั้นแยกด้วยเวลาเซ็น · ตีกลับหยุดที่ขั้นถัดไป · สถานะแปลก = known:false', async () => {
+  const { moFlow } = await import('../mtnStepPerm.js');
+  const st = (f) => f.steps.map(s => s.state + (s.tone ? '/' + s.tone : ''));
+  const p = moFlow({ status: 'pending', current_step: 1 });
+  assert.deepEqual(st(p), ['done', 'current', 'todo', 'todo', 'todo', 'todo', 'todo']);
+  assert.match(p.waiting, /หัวหน้าช่าง/);
+  // ข้าม QA (ไม่เกี่ยวกับคุณภาพ) → ขั้น 5 ⏭ · ขั้น 6 current
+  assert.deepEqual(st(moFlow({ status: 'checked', current_step: 4, qa_skipped_at: 'x', mtn_dept: 'die' })), ['done', 'done', 'done', 'done', 'skipped', 'current', 'todo']);
+  // รอ QA จริง
+  assert.equal(moFlow({ status: 'checked', current_step: 4, mtn_dept: 'die' }).steps[4].state, 'current');
+  // ใบ MTN (8 ขั้น · ไม่มี QA) ช่วง handover แยก 6/7/8 ด้วยเวลาเซ็น
+  const h = moFlow({ status: 'handover', current_step: 7, mtn_dept: 'mtn', mtn_head_at: null, approve_at: null });
+  assert.equal(h.steps.length, 8); assert.equal(h.steps[5].state, 'current');
+  assert.equal(moFlow({ status: 'handover', current_step: 7, mtn_dept: 'mtn', mtn_head_at: 'x', approve_at: null }).steps[6].state, 'current');
+  // ปิดแล้ว = ครบ · ตีกลับ = ขั้นถัดไปเป็นสีแดง ไม่เขียวยาว
+  assert.ok(moFlow({ status: 'closed', current_step: 7, mtn_dept: 'die', qa_at: 'x' }).steps.every(s => s.state === 'done'));
+  const r = moFlow({ status: 'rejected', current_step: 1 });
+  assert.equal(r.steps[1].tone, 'bad'); assert.equal(r.closed, true); assert.equal(r.waiting, null);
+  // ส่งซ่อมภายนอก = ใบยังเปิด รอ supplier
+  assert.match(moFlow({ status: 'waiting_vendor', current_step: 3 }).waiting, /supplier/);
+  assert.equal(moFlow({ status: 'weird' }).known, false);
 });

@@ -46,7 +46,7 @@ const chip = (bg, color) => ({
 
 const LOT_META = {
   pending:   { label: '🆕 รอผลิต',    color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', border: 'rgba(245,158,11,0.35)' },
-  producing: { label: '🔧 กำลังผลิต', color: '#0ea5e9', bg: 'rgba(14,165,233,0.12)', border: 'rgba(14,165,233,0.35)' },
+  producing: { label: 'กำลังผลิต', color: '#0ea5e9', bg: 'rgba(14,165,233,0.12)', border: 'rgba(14,165,233,0.35)' },
 };
 
 export default function StoreLotQueue({ lineName, lines = [], role }) {
@@ -277,7 +277,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
   const totalPcs = lots.reduce((s, l) => s + (Number(l.lot_qty) || 0), 0);
 
   return (
-    <div style={{ background: 'var(--card)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 10, padding: '14px 16px', marginBottom: 16 }}>
+    <div style={{ background: 'var(--card)', border: '1px solid rgba(168,85,247,0.35)', borderRadius: 'var(--r-md)', padding: '14px 16px', marginBottom: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: open ? 12 : 0 }}>
         <div onClick={() => setOpen(o => !o)}
           style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 700, color: '#c084fc', cursor: 'pointer', userSelect: 'none' }}>
@@ -288,21 +288,21 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
             พับแล้วยังตอบได้ว่า "มีงานรออยู่ไหม · ติดวัตถุดิบไหม" โดยไม่ต้องกด */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginRight: 'auto' }}>
           {head.pending   > 0 && <span style={chip(LOT_META.pending.bg,   LOT_META.pending.color)}>🆕 รอผลิต {head.pending}</span>}
-          {head.producing > 0 && <span style={chip(LOT_META.producing.bg, LOT_META.producing.color)}>🔧 กำลังผลิต {head.producing}</span>}
-          {head.upLines.length > 0 && <span style={chip('rgba(14,165,233,0.14)', '#0ea5e9')} title={`ของที่ต้องใช้ บางตัวมาจากไลน์: ${head.upLines.join(' · ')}`}>🏭 ต่อจากไลน์อื่น {head.upLines.length}</span>}
+          {head.producing > 0 && <span style={chip(LOT_META.producing.bg, LOT_META.producing.color)}>กำลังผลิต {head.producing}</span>}
+          {head.upLines.length > 0 && <span style={chip('rgba(14,165,233,0.14)', '#0ea5e9')} title={`ของที่ต้องใช้ บางตัวมาจากไลน์: ${head.upLines.join(' · ')}`}>ต่อจากไลน์อื่น {head.upLines.length}</span>}
           {head.noRoute.length > 0 && <span style={chip('rgba(245,158,11,0.14)', '#f59e0b')} title={`เบอร์ 2 = ผลิตภายใน แต่ยังไม่มีแถวใน Product Master:\n${head.noRoute.join(' · ')}\n\nระบบจึงไม่รู้ว่าไลน์ไหนทำ → ใบสั่งผลิตของพาร์ทพวกนี้ถูกสร้างโดยไม่มีไลน์ปลายทาง (ใบกำพร้า ไม่โผล่บนจอไลน์ไหนเลย)`}>❓ routing ยังไม่ตั้ง {head.noRoute.length}</span>}
           {head.self.length > 0 && <span style={chip('rgba(239,68,68,0.14)', '#ef4444')} title={`ของพวกนี้ไลน์นี้เป็นคนผลิตเอง — ไม่ควรมีใบเบิกจากสโตร์:\n${head.self.join(' · ')}`}>⚠️ ของที่ไลน์ทำเอง {head.self.length}</span>}
           {blocks.length  > 0 && <span style={chip('rgba(245,158,11,0.14)', '#f59e0b')}>⚠️ ออกใบไม่ได้ {blocks.length}</span>}
         </div>
         <button onClick={load} title="โหลดคิวใหม่"
-          style={{ background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 7, padding: '4px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+          style={{ background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '4px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
           ↻ รีเฟรช
         </button>
       </div>
 
       {open && (<>
         {err && (
-          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 8, padding: '9px 12px', marginBottom: 10, fontSize: 12, lineHeight: 1.6 }}>
+          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 'var(--r-md)', padding: '9px 12px', marginBottom: 10, fontSize: 12, lineHeight: 1.6 }}>
             ⚠️ <b>โหลดคิวไม่สำเร็จ — ตัวเลขด้านล่างอาจไม่ครบ</b>
             <div style={{ color: 'var(--text2)', marginTop: 2, fontFamily: 'monospace', fontSize: 11 }}>{err}</div>
           </div>
@@ -326,17 +326,17 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                 ? `${g.lots.length} ล็อต × ${fmt(g.sizes[0])} ชิ้น`
                 : `${g.lots.length} ล็อต · ${fmt(g.sizes[0])}-${fmt(g.sizes[g.sizes.length - 1])} ชิ้น/ล็อต`;
               return (
-                <div key={g.mat} style={{ padding: '9px 12px', background: 'var(--bg2)', borderRadius: 8, borderLeft: `3px solid ${st.color}` }}>
+                <div key={g.mat} style={{ padding: '9px 12px', background: 'var(--bg2)', borderRadius: 'var(--r-md)', borderLeft: `3px solid ${st.color}` }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 12.5, fontWeight: 800, fontFamily: 'monospace', color: 'var(--text)' }}>{g.mat}</span>
                     <span style={{ fontSize: 12, color: 'var(--text2)', flex: 1, minWidth: 120 }}>{g.part_name || '—'}</span>
                     <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>{fmt(g.qty)} <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}>ชิ้นรวม</span></span>
                     {g.pending.length > 0 && <span style={chip(LOT_META.pending.bg,   LOT_META.pending.color)}>🆕 รอผลิต {g.pending.length}</span>}
-                    {g.producing     > 0 && <span style={chip(LOT_META.producing.bg, LOT_META.producing.color)}>🔧 กำลังผลิต {g.producing}</span>}
+                    {g.producing     > 0 && <span style={chip(LOT_META.producing.bg, LOT_META.producing.color)}>กำลังผลิต {g.producing}</span>}
                     {canOperate && g.pending.length > 0 && (
                       <button onClick={() => takeGroup(g)} disabled={busy === `g:${g.mat}`}
                         title={`เปลี่ยนสถานะ ${g.pending.length} ล็อตเป็น "กำลังผลิต" — ไม่แตะสต็อก`}
-                        style={{ background: 'rgba(14,165,233,0.15)', color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.5)', borderRadius: 7, padding: '5px 13px', fontSize: 11.5, fontWeight: 800, cursor: 'pointer' }}>
+                        style={{ background: 'rgba(14,165,233,0.15)', color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.5)', borderRadius: 'var(--r-md)', padding: '5px 13px', fontSize: 11.5, fontWeight: 800, cursor: 'pointer' }}>
                         {busy === `g:${g.mat}` ? '...' : `▶ รับงาน ${g.pending.length > 1 ? `ทั้งหมด (${g.pending.length})` : ''}`}
                       </button>
                     )}
@@ -352,13 +352,13 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                         มันไม่ได้วัดว่าของมาหรือยัง — มันวัดว่ามีคนกดปุ่มบนบอร์ดสโตร์หรือยัง
                         ⇒ เลิกโชว์เป็นสัญญาณเตือน · โชว์ "ของที่ต้องใช้มาจากไหน" แทน (ตอบว่ารอ**ใคร**) */}
                     {g.mats === 0 ? (
-                      <span>· 🪨 ไม่มีใบเบิกวัตถุดิบผูกไว้</span>
+                      <span>· ไม่มีใบเบิกวัตถุดิบผูกไว้</span>
                     ) : (
                       <span title={`ใบเบิกที่ผูกกับล็อตชุดนี้ ${g.rawAll} ใบ · ปิดในระบบแล้ว ${g.rawAll - g.rawWait} ใบ
 (สถานะใบเบิกเปลี่ยนเป็น "จ่ายแล้ว" เมื่อสโตร์กด "จ่ายวัตถุดิบ" หรือกดปิดล็อตที่บอร์ดสโตร์ — ไม่ใช่ตัววัดว่าของถึงไลน์จริง)`}>
-                        · 🪨 ใช้ของ {g.mats} รายการ
-                        {g.upMats > 0 && <b style={{ color: '#0ea5e9' }}> · 🏭 ต่อจาก {g.upLines.join(', ')} ({g.upMats})</b>}
-                        {g.buy.length > 0 && <span> · 🛒 ของซื้อ {g.buy.length}</span>}
+                        · ใช้ของ {g.mats} รายการ
+                        {g.upMats > 0 && <b style={{ color: '#0ea5e9' }}> · ต่อจาก {g.upLines.join(', ')} ({g.upMats})</b>}
+                        {g.buy.length > 0 && <span> · ของซื้อ {g.buy.length}</span>}
                         {g.noRoute.length > 0 && <b style={{ color: '#f59e0b' }}> · ❓ routing ยังไม่ตั้ง {g.noRoute.length}</b>}
                         {g.self.length > 0 && <b style={{ color: '#ef4444' }}> · ⚠️ ไลน์นี้ทำเอง {g.self.length}</b>}
                       </span>
@@ -367,7 +367,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                     {/* ⚠️ ตัวช่วยตัดสินใจ ไม่ใช่การผูกใบ — เขียนกำกับให้ชัดเสมอ */}
                     <span>· ปั๊มไปแล้ว <b style={{ color: 'var(--text2)' }}>{fmt(madeQty)}</b> / สั่งค้าง {fmt(ordered)} ชิ้น</span>
                     <button onClick={() => setOpenMat(o => ({ ...o, [g.mat]: !o[g.mat] }))}
-                      style={{ marginLeft: 'auto', background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 6, padding: '2px 9px', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                      style={{ marginLeft: 'auto', background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '2px 9px', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       {detail ? '▾ ซ่อนรายล็อต' : `▸ รายล็อต (${g.lots.length})`}
                     </button>
                   </div>
@@ -400,7 +400,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
                             </span>
                             {canOperate && lot.status === 'pending' && (
                               <button onClick={() => takeLot(lot)} disabled={busy === lot.id}
-                                style={{ background: 'transparent', color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.5)', borderRadius: 6, padding: '1px 8px', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>
+                                style={{ background: 'transparent', color: '#0ea5e9', border: '1px solid rgba(14,165,233,0.5)', borderRadius: 'var(--r-md)', padding: '1px 8px', fontSize: 11, fontWeight: 800, cursor: 'pointer' }}>
                                 {busy === lot.id ? '...' : '▶'}
                               </button>
                             )}
@@ -417,7 +417,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
 
         {/* ความต้องการที่ค้างเพราะยังไม่ตั้งขนาดล็อต — ออกใบสั่งไม่ได้ ห้ามปล่อยเงียบ */}
         {blocks.length > 0 && (
-          <div style={{ marginTop: lots.length ? 12 : 0, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 8, padding: '10px 12px' }}>
+          <div style={{ marginTop: lots.length ? 12 : 0, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
             {/* พับได้ แต่ **หัวข้อบอกปัญหา + จำนวน อยู่ตลอด** — ปัญหานี้ห้ามหายไปจากจอ
                 (ยาว 8 แถว + คำอธิบาย 3 บรรทัด บังคิวงานจริงที่อยู่ข้างบน) */}
             <div onClick={() => setOpenBlocks(o => !o)}

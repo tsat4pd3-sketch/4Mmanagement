@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { naturalCompare } from '../utils/listOrder';
 import { pushCoverageFailText } from '../utils/pushPrompt';
+import InfoMore from './InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 const DAYS = 7;
 const card = {
@@ -72,7 +73,7 @@ export default function PushCoveragePanel() {
   return (
     <div style={card}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-        <span style={{ fontSize: 14, fontWeight: 800 }}>📲 เครื่องที่รับแจ้งเตือนเข้ามือถือ</span>
+        <span style={{ fontSize: 14, fontWeight: 800 }}>เครื่องที่รับแจ้งเตือนเข้ามือถือ</span>
         <button onClick={load} disabled={busy}
           style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent)', background: 'none',
                    border: 'none', cursor: busy ? 'default' : 'pointer', padding: 0, textDecoration: 'underline' }}>
@@ -108,17 +109,17 @@ export default function PushCoveragePanel() {
                     {stat.noDevMtn > 0 && <> (ในนั้นได้แจ้งเตือนใบซ่อม {stat.noDevMtn} คน)</>}
                   </>
                 )}
-                <div style={{ color: 'var(--muted)', fontSize: 11.5, marginTop: 3 }}>
+                <InfoMore label="ตัวเลขนี้นับจากอะไร" id="push-cov-def" size={11.5} style={{ marginTop: 3 }}>
                   นับจาก <b>คนที่ได้รับแจ้งเตือนในแอปจริงใน {DAYS} วันล่าสุด</b> ไม่ใช่พนักงานทั้งหมด ·
                   คนที่ไม่มีเครื่องยัง<b>เห็นกระดิ่งในแอปครบ</b> แต่มือถือไม่เด้ง
-                </div>
+                </InfoMore>
               </>
             )}
           </div>
 
           {stat.noDev.length > 0 && (
             <>
-              <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 8, background: 'var(--bg2)',
+              <div style={{ marginTop: 10, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg2)',
                             border: '1px solid var(--border)', fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.6 }}>
                 วิธีให้เขาเปิดเอง: เปิดเว็บ ESM <b>บนมือถือเครื่องนั้น</b> → กดกระดิ่ง 🔔 ที่หัวจอ → กดปุ่ม <b>"เปิด"</b> ในแถบ
                 "📲 เด้งแจ้งเตือนเข้ามือถือ" → กด <b>"ทดสอบส่ง"</b> เพื่อพิสูจน์ว่าเด้งถึงจริง<br />
@@ -135,7 +136,7 @@ export default function PushCoveragePanel() {
                       {list.map(r => (
                         <span key={r.user_id}
                           title={`แจ้งเตือนใน ${DAYS} วัน ${r.n_notif} รายการ (ใบซ่อม ${r.n_mtn}) · ยังไม่มีเครื่องผูกไว้`}
-                          style={{ fontSize: 11, padding: '2px 7px', borderRadius: 999,
+                          style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-pill)',
                                    border: '1px solid var(--border)', background: 'var(--card)', whiteSpace: 'nowrap' }}>
                           {r.full_name || '(ไม่มีชื่อ)'}
                           <b style={{ color: 'var(--muted)', fontWeight: 600 }}> · {r.n_notif}</b>

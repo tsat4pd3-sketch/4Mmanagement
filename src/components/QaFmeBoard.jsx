@@ -209,7 +209,7 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
   return (
     <>
       <InternalTimeBoard
-        title="🗓️ วันนี้ต้องไปตรวจไลน์ไหน กี่โมง"
+        title="วันนี้ต้องไปตรวจไลน์ไหน กี่โมง"
         hint="บล็อกทึบ = งานตรวจจริง · เส้นประ = คาดการณ์จาก CT (ยังไม่ใช่งานตรวจ)"
         groups={groups} nowMin={nowMin} breaks={breaks}
         onItemClick={(d, x, y) => setPopup({ d, x, y })}
@@ -242,14 +242,14 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
         return (
           <>
             <div onClick={() => setPopup(null)} style={{ position: 'fixed', inset: 0, zIndex: 998 }} />
-            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 12, boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
+            <div style={{ position: 'fixed', left, top, width: W, zIndex: 1300, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-float)', overflow: 'hidden' }}>
               <div style={{ height: 4, background: isEta ? C.eta : (d.isLate ? C.late : C.pending) }} />
               <div style={{ padding: '10px 14px', fontSize: 12.5, lineHeight: 1.7 }}>
                 {isEta ? (
                   <>
                     <b style={{ fontSize: 13 }}>{d.r.lineName} · {d.r.matNo}</b>
                     <div style={{ color: C.eta, fontWeight: 700, marginTop: 2 }}>
-                      🔮 คาดการณ์ — ยังไม่ใช่งานตรวจจริง
+                      คาดการณ์ — ยังไม่ใช่งานตรวจจริง
                     </div>
                     <div>น่าจะผลิตครบ ~<b>{hhmm(d.etaMin)}</b></div>
                     <div style={{ color: 'var(--muted)' }}>
@@ -279,7 +279,7 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
                     {['pending', 'acked'].includes(o.status) && (
                       <button disabled={!o.part_id}
                         onClick={() => { onOpen?.(o); setPopup(null); }}
-                        style={{ marginTop: 8, width: '100%', padding: '6px 0', borderRadius: 7, fontSize: 12,
+                        style={{ marginTop: 8, width: '100%', padding: '6px 0', borderRadius: 'var(--r-md)', fontSize: 12,
                           fontWeight: 700, cursor: o.part_id ? 'pointer' : 'not-allowed',
                           background: 'rgba(34,197,94,0.12)', color: '#22c55e',
                           border: '1px solid var(--border2)', opacity: o.part_id ? 1 : 0.45 }}>
@@ -305,7 +305,7 @@ const warnBox = {
 function Key({ c, t, dashed }) {
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-      <span style={{ width: 11, height: 11, borderRadius: 3, background: dashed ? 'transparent' : `${c}33`,
+      <span style={{ width: 11, height: 11, borderRadius: 'var(--r-xs)', background: dashed ? 'transparent' : `${c}33`,
         border: `1.5px ${dashed ? 'dashed' : 'solid'} ${c}` }} />
       {t}
     </span>

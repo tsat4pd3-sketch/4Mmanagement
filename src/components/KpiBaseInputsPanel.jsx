@@ -1,11 +1,12 @@
 /* ══ 💰 แผงกรอก "ตัวเลขฐาน" จากบัญชี/SAP — เดือนละครั้ง ระบบคำนวณ KPI การเงินให้ (2026-10-15 · คำสั่ง user) ════════
    user: "ควรให้คนคนนึงคอยกรอกค่าที่ใช้ร่วมกันทั้งโรงงาน · DL ของแต่ละส่วนงานก็ไปกรอกยอดเงินอย่างเดียว ระบบเอาไปหารกับยอดขายให้"
    · 2 ชั้น: 🏭 ค่ากลางทั้งโรงงาน (ยอดขาย · COGS · ตัวหารวัน) แก้ได้เฉพาะตอนดูขอบเขต ทั้งโรงงาน — คนกลางคนเดียว (ต้องมี kpi:manage + ใบผ่าน
-     scope:all_units ตามกฎสิทธิ์ 3 ชั้น) · 🏢 ยอดเงินของหน่วย (DL · OH · วัตถุดิบ …) แก้ที่ขอบเขตของหน่วยนั้น
+     scope:all_units ตามกฎสิทธิ์ 3 ชั้น) · ยอดเงินของหน่วย (DL · OH · วัตถุดิบ …) แก้ที่ขอบเขตของหน่วยนั้น
    · ตาราง `kpi_base_inputs` unique index มี `coalesce(scope_value,'')` = expression ⇒ **ห้าม upsert** (42P10 · กฎ DB ข้อ 3) → หาแถวเดิมจาก
      ดัชนีแล้ว update ตาม id ไม่มีค่อย insert · ทุกการเขียนนับแถว (RLS ปฏิเสธ = 0 แถวเงียบ · กฎ DB ข้อ 2)
    · สูตร/ตัวแปรอยู่ `utils/kpiSetup.js` + `utils/kpiFormula.js` — แผงนี้ไม่คำนวณอะไรเอง */
 import { useState, useEffect, useContext } from 'react';
+import InfoMore from './InfoMore';   // ⓘ คำอธิบายยาวพับไว้ (UI §6.10)
 import { UserContext } from '../App';
 import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
@@ -29,7 +30,7 @@ function Cell({ value, auto, disabled, onCommit }) {
   return (
     <input value={v} onChange={e => setV(e.target.value)} onBlur={() => onCommit(v.trim())} onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
       inputMode="decimal" placeholder={autoTxt} title={autoTxt ? 'ค่าอัตโนมัติจากทะเบียนพนักงาน — กรอกทับได้ถ้าตัวเลขจริงต่างจากนี้' : undefined}
-      style={{ width: 92, padding: '3px 5px', fontSize: 12, textAlign: 'right', borderRadius: 6, background: 'var(--bg2)', border: '1px solid var(--border)',
+      style={{ width: 92, padding: '3px 5px', fontSize: 12, textAlign: 'right', borderRadius: 'var(--ctl-r)', background: 'var(--bg2)', border: '1px solid var(--border)',
         color: 'var(--text)', fontVariantNumeric: 'tabular-nums' }} />
   );
 }
@@ -147,7 +148,7 @@ export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: 
   return (
     <details open={defaultOpen} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '10px 16px' }}>
       <summary style={{ cursor: 'pointer', fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>
-        💰 ตัวเลขฐานจากบัญชี/SAP (กรอกเดือนละครั้ง) — ระบบคำนวณ %DL+OH · %RM · DSI · ยอดขาย/หัว ให้เอง
+        ตัวเลขฐานจากบัญชี/SAP (กรอกเดือนละครั้ง) — ระบบคำนวณ %DL+OH · %RM · DSI · ยอดขาย/หัว ให้เอง
         <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 500, color: 'var(--muted)' }}>
           ขอบเขต: {label} · {rows.length} ค่าในปี {year + 543}
         </span>
@@ -155,17 +156,17 @@ export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: 
         {canManage && (
           <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); setImporting(true); }}
             title="อัพโหลด monthly report ของบัญชี (.xlsx/.xlsb) แล้วให้ระบบอ่านแถว/เดือนให้ ตรวจก่อนบันทึก"
-            style={{ marginLeft: 10, padding: '4px 12px', borderRadius: 8, border: '1px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 12, fontWeight: 700, verticalAlign: 'middle' }}>
-            📥 นำเข้าจาก Excel บัญชี
+            style={{ marginLeft: 10, padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 12, fontWeight: 700, verticalAlign: 'middle' }}>
+            นำเข้าจาก Excel บัญชี
           </button>
         )}
       </summary>
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap', marginTop: 6 }}>
-        <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6, flex: 1, minWidth: 280 }}>
+        <InfoMore id="kpi-base-howto" size={11.5} label="ตัวเลขฐานใช้ยังไง" style={{ flex: 1, minWidth: 280 }}>
           KPI ที่ตั้ง "ที่มาของตัวเลข = 🧮 คำนวณจากตัวเลขฐาน" (ปุ่ม ✏️ ของแถว) จะไม่ต้องกรอก % เอง — ระบบเอายอดเงินของหน่วย ÷ ยอดขายกลางของโรงงานให้ทุกเดือน ·
           ช่องว่าง = ยังไม่มีตัวเลข (ไม่ใช่ 0) · เดือนที่ขาดตัวแปรใดตัวแปรหนึ่ง แถว KPI จะเขียนบอกว่าขาดอะไร ·
           <b>≈ จาง = กำลังคนจากทะเบียนพนักงาน</b> (ยังไม่มีใครกรอก · ทะเบียนอาจไม่ครบ กรอกทับได้)
-        </div>
+        </InfoMore>
       </div>
       {importing && (
         <KpiBaseImportModal year={year} unitLabel={label} unitSk={mySk} base={base} canPlant={plant && canManage} canUnit={canManage}

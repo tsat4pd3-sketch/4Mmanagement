@@ -21,7 +21,7 @@
  *   doc_key = 'mtn_mo_monthly_export' (seed migration 20261006_doc_form_mtn_mo_monthly_main.sql)
  *   ห้าม hardcode เลขฟอร์ม/Rev ในไฟล์นี้ — อ่านผ่าน getDocForm + fallback เสมอ
  */
-import { assignedTechsOf, joinTechs, prNumbersOf, repairPathMeta } from '../utils/mtnPurchase';
+import { moExportCells, moExportHeaders, moExportWidths } from '../utils/mtnMoExportCols';   // 🔴 คอลัมน์ชีท 1 ชุดเดียว
 import { getDocForm, fullCode } from '../utils/docForms';
 import { isVague, isPlannedWork, PLANNED_GROUP } from '../utils/unclassified';
 import { qaRelatedView } from '../utils/mtnStepPerm';   // 🔴 "เกี่ยวคุณภาพ" ตอบจากที่นี่ที่เดียว
@@ -42,7 +42,7 @@ function put(ws, ref, value, opt = {}) {
   if (opt.border !== false) c.border = allBorder;
 }
 const mergeSafe = (ws, r) => { try { ws.mergeCells(r); } catch { /* merged already */ } };
-const colRef = (i) => {           // 0 → A · 25 → Z · 26 → AA (ชีทแรกมี 19 คอลัมน์ เผื่อโตไว้)
+const colRef = (i) => {           // 0 → A · 25 → Z · 26 → AA (ชีทแรกมี 25 คอลัมน์ เผื่อโตไว้)
   let s = '', n = i;
   do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1; } while (n >= 0);
   return s;
@@ -96,6 +96,10 @@ export async function exportMoExcel({
   commentsBy = {}, commentsError = null,
   /* 🛒 ใบขอซื้อ (14/10) — map id ใบ → [{pr_no,status}] · ใบที่ยกเลิกไม่นับ (กฎ prNumbersOf) */
   prsBy = {}, prsError = null,
+  /* 🧑‍🔧 ช่างที่ซ่อมจริง (04/11 · feedback MTN ข้อ 2) — map id ใบ → {main,secondary,names}
+     โหลดจาก `loadRepairTechsFor()` ตอนกดปุ่มเท่านั้น (ไม่อยู่ใน MO_LIST_COLS — เหตุผลในไฟล์นั้น)
+     🔴 **คนละคอลัมน์กับ "ช่างที่มอบหมาย"** — มอบหมายไว้ ≠ ลงมือจริง ห้ามยุบรวม */
+  techsBy = {}, techsError = null,
 }) {
   const df = await getDocForm('mtn_mo_monthly_export', { title: 'สรุปใบแจ้งซ่อม MO รายเดือน' });
   const ExcelJS = (await import('exceljs')).default;   // lazy — ก้อน ~960KB ใช้ร่วมกับ export ตัวอื่น
@@ -144,14 +148,10 @@ export async function exportMoExcel({
     pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
     views: [{ state: 'frozen', ySplit: 4 }],   // หัวตารางค้างไว้ — ไฟล์ยาวหลายร้อยบรรทัด
   });
-  /* 🔴 ลำดับคอลัมน์ = ลำดับเดียวกับใบพิมพ์: ของผู้แจ้งก่อน **แล้วคอมเมนต์ต่อท้าย**
-     (คอมเมนต์ทีม MTN ข้อ 1 · 07/10 — "ต่อจากที่ผู้แจ้งแจ้งมา") ห้ามสลับขึ้นไปก่อน */
-  const H1 = ['วันที่', 'เลข MO', 'สถานะ', 'ค้าง/จบ', 'ทีมช่าง', 'ไลน์', 'เลขเครื่อง', 'ชนิดอุปกรณ์',
-    'ประเภทงานซ่อม', 'กลุ่มปัญหา', 'อาการ (หัวข้อย่อย)', 'รายละเอียดที่คนแจ้งพิมพ์',
-    'คอมเมนต์เพิ่มเติม (ใครพูด · เมื่อไหร่)', 'จำนวนคอมเมนต์',
-    'เวลาแจ้ง', 'เวลารับงาน', 'เวลาซ่อมเสร็จ', 'ตอบสนอง (นาที)', 'เวลาซ่อม (นาที)',
-    'เกี่ยวคุณภาพ', 'ชี้เป้าได้?', 'ช่างที่มอบหมาย', 'เส้นทางงานซ่อม', 'เลข PR'];
-  const C = (label) => colRef(H1.indexOf(label));   // คอลัมน์อ้างด้วย "ชื่อหัว" — เพิ่มคอลัมน์แล้วไม่ต้องไล่ขยับตัวอักษร
+  /* 🔴 คอลัมน์ทั้งชีท (หัว · ความกว้าง · ค่า · สไตล์) มาจากทะเบียนชุดเดียว `MO_EXPORT_COLS`
+     (src/utils/mtnMoExportCols.js · มีเทส) — 03/11 ข้อ A8 "IO ขึ้นขาด PR ขึ้นเกิน": เดิมไม่มีคอลัมน์ I/O
+     และหัว/ความกว้าง/ค่าเขียนแยก 3 ที่ ⇒ **ห้ามกลับไปเขียน put() รายคอลัมน์ที่นี่** */
+  const H1 = moExportHeaders();
   mergeSafe(ws1, `A1:${colRef(H1.length - 1)}1`);
   put(ws1, 'A1', `${df.title || 'สรุปใบแจ้งซ่อม MO รายเดือน'} · ช่วง ${from} → ${to} · ${total} ใบ`,
     { bold: true, size: 13, align: 'center', border: false });
@@ -161,46 +161,12 @@ export async function exportMoExcel({
     mergeSafe(ws1, `A3:${colRef(H1.length - 1)}3`);
     put(ws1, 'A3', `ตัวกรองที่เปิดอยู่ตอน export: ${filterNote}`, { size: 9, align: 'center', border: false, color: 'FF808080' });
   }
-  head(ws1, 4, H1, [11, 21, 17, 9, 15, 16, 13, 16, 15, 22, 26, 34, 42, 10, 16, 16, 16, 13, 13, 11, 10, 22, 22, 26]);
+  head(ws1, 4, H1, moExportWidths());
 
+  const cellCtx = { statusLabel, teamName, cmtOf, commentText: moCommentText, commentsError, prsBy, prsError, techsBy, techsError };
   enriched.forEach((r, i) => {
     const n = 5 + i;
-    const o = r.o;
-    put(ws1, `${C('วันที่')}${n}`, r.date || DASH, { align: 'center', size: 9.5 });
-    put(ws1, `${C('เลข MO')}${n}`, o.mo_no || DASH, { size: 9.5 });
-    put(ws1, `${C('สถานะ')}${n}`, statusLabel(o) || o.status || DASH, { size: 9.5 });
-    put(ws1, `${C('ค้าง/จบ')}${n}`, r.open ? 'ค้าง' : 'จบแล้ว', { align: 'center', size: 9.5, color: r.open ? 'FFC00000' : undefined });
-    put(ws1, `${C('ทีมช่าง')}${n}`, teamName(o.mtn_dept) || DASH, { size: 9.5 });
-    put(ws1, `${C('ไลน์')}${n}`, o.line_name || DASH, { size: 9.5 });
-    put(ws1, `${C('เลขเครื่อง')}${n}`, o.machine_no || DASH, { size: 9.5 });
-    put(ws1, `${C('ชนิดอุปกรณ์')}${n}`, o.item_type || DASH, { size: 9.5 });
-    put(ws1, `${C('ประเภทงานซ่อม')}${n}`, o.repair_type || DASH, { size: 9.5 });
-    put(ws1, `${C('กลุ่มปัญหา')}${n}`, r.group || DASH, { size: 9.5, fill: r.group ? undefined : 'FFFFF2CC' });
-    put(ws1, `${C('อาการ (หัวข้อย่อย)')}${n}`, r.chara || DASH, { size: 9.5 });
-    put(ws1, `${C('รายละเอียดที่คนแจ้งพิมพ์')}${n}`, o.report_note || '', { size: 9, wrap: true });
-    /* 💬 คอมเมนต์ต่อท้ายของผู้แจ้ง — ใบที่ไม่มีคอมเมนต์เว้นว่าง (ไม่ใช่ขีด: ขีด = "ไม่รู้"
-       แต่กรณีนี้รู้แน่ว่า "ยังไม่มีใครคอมเมนต์") · โหลดคอมเมนต์ล้ม = เขียนกำกับไว้ทุกแถว */
-    put(ws1, `${C('คอมเมนต์เพิ่มเติม (ใครพูด · เมื่อไหร่)')}${n}`,
-      commentsError ? '⚠ โหลดคอมเมนต์ไม่สำเร็จ' : moCommentText(cmtOf(o)), { size: 9, wrap: true });
-    put(ws1, `${C('จำนวนคอมเมนต์')}${n}`,
-      commentsError ? DASH : (cmtOf(o).length || ''), { align: 'center', size: 9.5 });
-    put(ws1, `${C('เวลาแจ้ง')}${n}`, o.report_at ? new Date(o.report_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) : DASH, { size: 9 });
-    put(ws1, `${C('เวลารับงาน')}${n}`, o.accept_at ? new Date(o.accept_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) : DASH, { size: 9 });
-    put(ws1, `${C('เวลาซ่อมเสร็จ')}${n}`, o.repair_done_at ? new Date(o.repair_done_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }) : DASH, { size: 9 });
-    // 🔴 ยังไม่รับงาน/ยังไม่ปิด = ขีด ห้าม 0 (ไม่งั้น pivot หาค่าเฉลี่ยได้เลขที่ต่ำกว่าจริง)
-    put(ws1, `${C('ตอบสนอง (นาที)')}${n}`, r.respMin == null ? DASH : r.respMin, { align: 'center', size: 9.5 });
-    put(ws1, `${C('เวลาซ่อม (นาที)')}${n}`, r.fixMin == null ? DASH : r.fixMin, { align: 'center', size: 9.5 });
-    /* 🔴 ห้ามอ่าน `quality_related` ดิบ — เก็บเป็น **ข้อความ** ⇒ `? 'ใช่' : ''` ตอบ "ใช่" ให้ใบที่ QA
-       ตัดสินว่า *ไม่* เกี่ยวกับคุณภาพด้วย (วัด 21/10: 411 ใบจาก 1050) · ใบที่ QA ไม่อยู่ในลูปเลย
-       (ฟอร์ม MTN · งานสร้าง/ปรับปรุง) = ขีด ไม่ใช่ว่าง — "ไม่มีคำถามนี้" ≠ "ยังไม่ตอบ" */
-    put(ws1, `${C('เกี่ยวคุณภาพ')}${n}`,
-      { yes: 'ใช่', no: 'ไม่', n_a: DASH, unknown: '' }[qaRelatedView(o)], { align: 'center', size: 9.5 });
-    put(ws1, `${C('ชี้เป้าได้?')}${n}`, r.planned ? 'ตามแผน' : r.vague ? 'ไม่ได้' : 'ได้', {
-      align: 'center', size: 9.5, fill: r.vague ? 'FFFFF2CC' : undefined,
-    });
-    put(ws1, `${C('ช่างที่มอบหมาย')}${n}`, joinTechs(assignedTechsOf(o)) || DASH, { size: 9, wrap: true });
-    put(ws1, `${C('เส้นทางงานซ่อม')}${n}`, repairPathMeta(o.repair_path)?.label || DASH, { size: 9 });
-    put(ws1, `${C('เลข PR')}${n}`, prsError ? '⚠ โหลดเลข PR ไม่สำเร็จ' : (prNumbersOf(o, prsBy[o.id] || []).join(', ') || ''), { size: 9, wrap: true });
+    moExportCells(r, cellCtx).forEach((cell, ci) => put(ws1, `${colRef(ci)}${n}`, cell.value, cell.opt));
   });
   if (!total) {
     mergeSafe(ws1, `A5:${colRef(H1.length - 1)}5`);

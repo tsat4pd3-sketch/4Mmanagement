@@ -278,7 +278,7 @@ export default function MonitoringUpload({ canUpload, canBoard = true, fullName,
   const body = (
     <div style={{ display: 'grid', gap: 14 }}>
       <div style={card}>
-        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>📗 ไฟล์ Monitoring ของแพลนนิ่ง</div>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>ไฟล์ Monitoring ของแพลนนิ่ง</div>
         <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
           ไฟล์ <b>1.Monitoring-&lt;เดือน&gt;.xlsx</b> — ลูกค้าที่ไม่ได้ส่ง EDI (TSPK · TSESA · TSLA · TSRA · GWM · Argen)<br />
           ระบบจะอ่าน: <b>ตารางบอร์ดของทุกชีท</b> · <b>FC รายเดือน</b> · <b>MIN/MAX</b> ·
@@ -399,7 +399,7 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
       <div style={{ display: 'grid', gap: 6 }}>
         {rows.map(([t, v, note]) => (
           <div key={t} style={{ display: 'grid', gridTemplateColumns: 'minmax(120px,1fr) minmax(140px,1fr) 2fr',
-                                gap: 8, fontSize: 12, padding: '6px 8px', background: 'var(--bg2)', borderRadius: 6 }}>
+                                gap: 8, fontSize: 12, padding: '6px 8px', background: 'var(--bg2)', borderRadius: 'var(--r-md)' }}>
             <b>{t}</b><span>{v}</span><span style={{ color: 'var(--muted)' }}>{note}</span>
           </div>
         ))}
@@ -422,7 +422,7 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
       )}
       {!!rec.stockNegative?.length && (
         <div style={warnBox('#7f1d1d22', '#ef4444')}>
-          <b style={{ fontSize: 12, color: '#ef4444' }}>🚫 ยอดคงเหลือติดลบ {rec.stockNegative.length} พาร์ท — ไม่เอาไปตั้งยอดสต็อก</b>
+          <b style={{ fontSize: 12, color: '#ef4444' }}>ยอดคงเหลือติดลบ {rec.stockNegative.length} พาร์ท — ไม่เอาไปตั้งยอดสต็อก</b>
           <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>
             ในไฟล์นี้ยอดติดลบแปลว่า <b>ความต้องการที่ยังไม่ได้ผลิต</b> ไม่ใช่ของติดลบในคลัง —
             เขียนทับสต็อกจริงไม่ได้ · ตัวอย่าง: {rec.stockNegative.slice(0, 5).map(s => `${s.mat_no} (${fmt(s.qty)})`).join(' · ')}
@@ -431,7 +431,7 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
       )}
       {!!rec.orderDupes && (
         <div style={warnBox('#78350f22', '#f59e0b')}>
-          <b style={{ fontSize: 12 }}>🔁 บล็อกซ้ำในไฟล์ {rec.orderDupes} แถว — ยุบให้แล้ว</b>
+          <b style={{ fontSize: 12 }}>บล็อกซ้ำในไฟล์ {rec.orderDupes} แถว — ยุบให้แล้ว</b>
           <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>
             พาร์ทเดียวถูกเขียนไว้หลายบล็อกในชีทเดียวกัน · ถ้าไม่ยุบ ความต้องการจะกลายเป็น 2 เท่า
           </div>
@@ -441,7 +441,7 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
       {!!(rec.forecastDupes || rec.levelDupes) && (
         <div style={warnBox('#78350f22', '#f59e0b')}>
           <b style={{ fontSize: 12 }}>
-            🔁 พาร์ทซ้ำ — Forecast {rec.forecastDupes} แถว · MIN/MAX {rec.levelDupes} แถว — ยุบให้แล้ว (เอาค่ามากสุด ไม่บวกกัน)
+            พาร์ทซ้ำ — Forecast {rec.forecastDupes} แถว · MIN/MAX {rec.levelDupes} แถว — ยุบให้แล้ว (เอาค่ามากสุด ไม่บวกกัน)
           </b>
           <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 4 }}>
             พาร์ทเดียวเขียนหลายบรรทัด (เช่น 300T MAT 20059152 คว่ำครีบ/หงายครีบ — FC เดือนเป็นของพาร์ทเดียวกัน)
@@ -459,17 +459,17 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
           ห้ามยุบกลับเป็นตารางเดียวที่นับรวม "N พาร์ทไม่ตรง" */}
       {(!!kbDiff.lot.length || !!kbDiff.pack.length || !!kbDiff.noStd.length) && (
         <div style={warnBox('#1e3a8a22', '#60a5fa')}>
-          <b style={{ fontSize: 12 }}>📋 เทียบกับทะเบียน kanban — <u>ระบบไม่แก้ให้</u></b>
+          <b style={{ fontSize: 12 }}>เทียบกับทะเบียน kanban — <u>ระบบไม่แก้ให้</u></b>
           <div style={{ fontSize: 12, color: 'var(--text2)', margin: '4px 0 8px' }}>
             ทะเบียน kanban ใช้ร่วมกับบัตรคานบัง · OEE · Heijunka · ป้าย QR — เขียนทับอัตโนมัติกระทบกว้างเกินไป
             ให้ไปแก้เองที่ <b>/products → 🎴 Kanban Std</b> ถ้ายืนยันว่าค่าในไฟล์ถูกกว่า
           </div>
           <KbDiffTable
-            title={`📦 LOT size ไม่ตรง ${kbDiff.lot.length} พาร์ท`}
+            title={`LOT size ไม่ตรง ${kbDiff.lot.length} พาร์ท`}
             why="ขนาดล็อตผลิต — คุมว่าสะสมครบเท่าไหร่ถึงออกใบสั่งผลิต + เข้าสูตรจำนวนบัตร"
             rows={kbDiff.lot} />
           <KbDiffTable
-            title={`🗳️ Packing ไม่ตรง ${kbDiff.pack.length} พาร์ท`}
+            title={`Packing ไม่ตรง ${kbDiff.pack.length} พาร์ท`}
             why="จำนวนชิ้นต่อกล่อง/ต่อบัตร — คุมการบรรจุและการส่ง ไม่เกี่ยวกับจังหวะเปิดใบผลิต"
             rows={kbDiff.pack} />
           {!!kbDiff.noStd.length && (
@@ -485,7 +485,7 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
       {/* 🗂️ ส่วนตารางบอร์ด — รายชีท + ชีทที่ยกไม่ได้ (ตัววาดเดียวกับที่ `MonitorImport` เคยใช้) */}
       {canBoard && !!boardMade.length && (
         <div style={{ ...warnBox('var(--bg2)', 'var(--border)') }}>
-          <b style={{ fontSize: 12 }}>🗂️ ตารางบอร์ด — {boardMade.length} บอร์ด · {fmt(boardParts)} พาร์ท</b>
+          <b style={{ fontSize: 12 }}>ตารางบอร์ด — {boardMade.length} บอร์ด · {fmt(boardParts)} พาร์ท</b>
           <div style={{ fontSize: 11, color: 'var(--muted)', margin: '3px 0 7px' }}>
             คือตารางที่เห็นในหน้า <b>Monitoring แผน-สต๊อก</b> · นำเข้าซ้ำ = อัพเดทบอร์ดเดิม ไม่สร้างซ้ำ
           </div>
@@ -501,12 +501,12 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
 
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
         <button onClick={onConfirm} disabled={busy}
-                style={{ padding: '8px 16px', fontSize: 13, fontWeight: 700, borderRadius: 6,
+                style={{ padding: '8px 16px', fontSize: 13, fontWeight: 700, borderRadius: 'var(--r-md)',
                          background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', cursor: busy ? 'wait' : 'pointer' }}>
           {busy ? 'กำลังเขียน…' : '✔ ยืนยันนำเข้า (ลงให้ครบทุกส่วนในครั้งเดียว)'}
         </button>
         <button onClick={onCancel} disabled={busy}
-                style={{ padding: '8px 16px', fontSize: 13, borderRadius: 6, background: 'var(--bg3)',
+                style={{ padding: '8px 16px', fontSize: 13, borderRadius: 'var(--r-md)', background: 'var(--bg3)',
                          color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
           ยกเลิก
         </button>

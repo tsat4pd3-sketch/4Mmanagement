@@ -49,8 +49,8 @@ const KINDS = [
 ];
 const STATUS = {
   new:     { label: '🆕 ใหม่',      color: '#ef4444' },
-  seen:    { label: '👀 รับทราบ',   color: '#f59e0b' },
-  doing:   { label: '🔧 กำลังแก้',  color: '#3b82f6' },
+  seen:    { label: 'รับทราบ',   color: '#f59e0b' },
+  doing:   { label: 'กำลังแก้',  color: '#3b82f6' },
   done:    { label: '✅ แก้แล้ว',   color: '#22c55e' },
   wontfix: { label: '⏸ ยังไม่ทำ',  color: 'var(--muted)' },
 };
@@ -164,7 +164,7 @@ export default function FeedbackModal({ onClose }) {
     if (row.user_id && row.user_id !== user?.id) {
       supabase.from('notifications').insert({
         user_id: row.user_id, type: 'info',
-        title: '💬 ทีมงานตอบเรื่องที่คุณแจ้งแล้ว',
+        title: 'ทีมงานตอบเรื่องที่คุณแจ้งแล้ว',
         body: text.slice(0, 160),
       }).then(({ error }) => { if (error) console.warn('feedback reply notify:', error.message); });
     }
@@ -282,7 +282,7 @@ export default function FeedbackModal({ onClose }) {
   const box = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' };
   const tabBtn = (k, label) => (
     <button key={k} onClick={() => setTab(k)} style={{
-      fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 8, cursor: 'pointer',
+      fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
       border: `1px solid ${tab === k ? 'var(--accent)' : 'var(--border)'}`,
       background: tab === k ? 'var(--accent-dim)' : 'var(--bg3)', color: tab === k ? 'var(--accent)' : 'var(--text2)',
     }}>{label}</button>
@@ -290,10 +290,10 @@ export default function FeedbackModal({ onClose }) {
 
   return (
     <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 14, width: '100%', maxWidth: 620, maxHeight: '86vh', display: 'flex', flexDirection: 'column' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: '100%', maxWidth: 620, maxHeight: '86vh', display: 'flex', flexDirection: 'column' }}>
 
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ fontSize: 15, fontWeight: 800, flex: 1 }}>💬 แจ้งปัญหา / ข้อเสนอแนะ</div>
+          <div style={{ fontSize: 15, fontWeight: 800, flex: 1 }}>แจ้งปัญหา / ข้อเสนอแนะ</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
 
@@ -304,7 +304,7 @@ export default function FeedbackModal({ onClose }) {
 
         <div style={{ padding: 18, overflowY: 'auto', flex: 1 }}>
           {notReady && (
-            <div style={{ fontSize: 12, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '8px 10px', marginBottom: 12 }}>
+            <div style={{ fontSize: 12, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 'var(--r-md)', padding: '8px 10px', marginBottom: 12 }}>
               ⚠ ยังใช้งานไม่ได้ — ยังไม่ได้ apply migration <code>20260814_user_feedback.sql</code> (แจ้ง admin)
             </div>
           )}
@@ -314,7 +314,7 @@ export default function FeedbackModal({ onClose }) {
               <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
                 {KINDS.map(k => (
                   <button key={k.key} onClick={() => setKind(k.key)} style={{
-                    fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 20, cursor: 'pointer',
+                    fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                     border: `1px solid ${kind === k.key ? k.color : 'var(--border)'}`,
                     background: kind === k.key ? `${k.color}22` : 'var(--bg3)', color: kind === k.key ? k.color : 'var(--text2)',
                   }}>{k.icon} {k.label}</button>
@@ -323,7 +323,7 @@ export default function FeedbackModal({ onClose }) {
 
               <textarea value={msg} onChange={e => setMsg(e.target.value)} rows={6} autoFocus
                 placeholder={'เล่าให้ฟังได้เลยครับ เช่น\n• เลเซอร์ลงดาวน์ไทม์ ไม่มีให้เลือกชิ้นงาน\n• ชื่อสินค้า 2 ตัวเหมือนกัน เลือกผิดใบได้\n• อยากให้เพิ่ม...'}
-                style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: 10, color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }} />
+                style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--ctl-r)', padding: 10, color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', resize: 'vertical' }} />
 
               {/* 📎 แนบรูปหน้าจอ — วางไว้ "ติดใต้ช่องพิมพ์" ให้เห็นตอนกำลังเล่าปัญหา
                   ไม่ใช่ท้ายฟอร์ม (บทเรียนจากรูปก่อนซ่อมใน /mtn-repair: ช่องอยู่ล่างสุด คนใส่แค่ 25%) */}
@@ -337,10 +337,10 @@ export default function FeedbackModal({ onClose }) {
                   style={{ display: 'none' }} />
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <button type="button" onClick={() => fileRef.current?.click()} disabled={shots.length >= MAX_SHOTS}
-                    style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 8,
+                    style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 'var(--r-md)',
                       border: '1px dashed var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
                       cursor: shots.length >= MAX_SHOTS ? 'default' : 'pointer', opacity: shots.length >= MAX_SHOTS ? 0.5 : 1 }}>
-                    📎 แนบรูปหน้าจอ
+                    แนบรูปหน้าจอ
                   </button>
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                     {shots.length ? `${shots.length}/${MAX_SHOTS} รูป` : `วงกรอบ/ชี้จุดมาจากมือถือได้เลย (สูงสุด ${MAX_SHOTS} รูป)`}
@@ -368,7 +368,7 @@ export default function FeedbackModal({ onClose }) {
               </div>
 
               <button onClick={send} disabled={saving || !msg.trim()}
-                style={{ marginTop: 14, width: '100%', padding: '10px 0', borderRadius: 8, border: 'none', cursor: (saving || !msg.trim()) ? 'default' : 'pointer',
+                style={{ marginTop: 14, width: '100%', padding: '10px 0', borderRadius: 'var(--r-md)', border: 'none', cursor: (saving || !msg.trim()) ? 'default' : 'pointer',
                   background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 14, opacity: (saving || !msg.trim()) ? 0.5 : 1 }}>
                 {saving ? (shots.length ? `กำลังอัปรูป ${shots.length} รูป...` : 'กำลังส่ง...') : '📨 ส่งให้ทีมงาน'}
               </button>
@@ -381,10 +381,10 @@ export default function FeedbackModal({ onClose }) {
                   เฉพาะที่ยังไม่ปิด
                 </label>
                 <button onClick={copyForClaude} title="คัดลอกเรื่องที่แสดงอยู่เป็นข้อความ แล้วเอาไปวางในแชท Claude ให้ช่วยดู/แก้"
-                  style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 6, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>
-                  📋 คัดลอกให้ Claude
+                  style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>
+                  คัดลอกให้ Claude
                 </button>
-                <button onClick={load} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>↻ รีเฟรช</button>
+                <button onClick={load} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>↻ รีเฟรช</button>
               </div>
 
               {loading ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด...</div>
@@ -416,10 +416,10 @@ export default function FeedbackModal({ onClose }) {
                       </div>
                       {/* 💬 คำตอบจากทีมงาน — คนแจ้งต้องเห็น ไม่งั้นแจ้งไปก็เหมือนตกน้ำ */}
                       {r.admin_note && (
-                        <div style={{ marginTop: 7, padding: '7px 9px', borderRadius: 8,
+                        <div style={{ marginTop: 7, padding: '7px 9px', borderRadius: 'var(--r-md)',
                           background: 'var(--accent-dim)', borderLeft: '3px solid var(--accent)' }}>
                           <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--accent)', marginBottom: 3 }}>
-                            💬 คำตอบจากทีมงาน{r.handled_by ? ` · ${r.handled_by}` : ''}
+                            คำตอบจากทีมงาน{r.handled_by ? ` · ${r.handled_by}` : ''}
                           </div>
                           <div style={{ fontSize: 12.5, color: 'var(--text)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{r.admin_note}</div>
                         </div>
@@ -429,10 +429,10 @@ export default function FeedbackModal({ onClose }) {
                           <textarea rows={2} value={noteDraft[r.id] ?? r.admin_note ?? ''}
                             onChange={e => setNoteDraft(d => ({ ...d, [r.id]: e.target.value }))}
                             placeholder="ตอบผู้แจ้ง (เขาจะเห็นในกล่องนี้ + เด้งกระดิ่งให้)"
-                            style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7,
+                            style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--ctl-r)',
                               padding: '6px 8px', color: 'var(--text)', fontSize: 12, fontFamily: 'inherit', resize: 'vertical' }} />
                           <button onClick={() => saveNote(r)} disabled={savingNote === r.id || !(noteDraft[r.id] ?? r.admin_note ?? '').trim()}
-                            style={{ marginTop: 4, fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 7, border: 'none',
+                            style={{ marginTop: 4, fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 'var(--r-md)', border: 'none',
                               background: 'var(--accent)', color: 'var(--accent-ink)',
                               cursor: savingNote === r.id ? 'default' : 'pointer', opacity: savingNote === r.id ? 0.5 : 1 }}>
                             {savingNote === r.id ? 'กำลังส่ง...' : '📨 ส่งคำตอบให้ผู้แจ้ง'}
@@ -443,7 +443,7 @@ export default function FeedbackModal({ onClose }) {
                         <div style={{ display: 'flex', gap: 4, marginTop: 6, flexWrap: 'wrap' }}>
                           {Object.entries(STATUS).map(([key, s]) => (
                             <button key={key} onClick={() => setStatus(r, key)} disabled={r.status === key}
-                              style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, cursor: r.status === key ? 'default' : 'pointer',
+                              style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-md)', cursor: r.status === key ? 'default' : 'pointer',
                                 border: `1px solid ${r.status === key ? s.color : 'var(--border)'}`,
                                 background: r.status === key ? `${s.color}22` : 'transparent', color: r.status === key ? s.color : 'var(--text2)' }}>
                               {s.label}

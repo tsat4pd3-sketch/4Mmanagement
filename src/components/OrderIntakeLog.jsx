@@ -4,7 +4,7 @@
  * ที่มา (user 2026-09-09): *"สิ่งที่อัพโหลดไป ให้มี log และ tab เข้าไปดูด้วยสิ รวมถึงงาน add order"*
  *
  * ตอบคำถามเดียว: **"ยอดนี้มาจากไหน ใครทำ เมื่อไหร่"** → รวม 3 ทางเข้าในไทม์ไลน์เดียว
- * (📄 EDI 862/830 · 📥 e-SMART ที่ลูกค้ายืนยัน · ➕ คีย์มือ order ด่วน)
+ * (📄 EDI 862/830 · e-SMART ที่ลูกค้ายืนยัน · ➕ คีย์มือ order ด่วน)
  *
  * ⚠️ อ่านอย่างเดียว ไม่มีปุ่มเขียนข้อมูล → ไม่ต้อง seed permission key ใหม่ (ใช้ page:/customer-demand เดิม)
  * ⚠️ การรวม/กรอง/สรุป อยู่ `src/utils/orderIntakeLog.js` (pure · เทส 12 เคส) — ห้ามคำนวณซ้ำในไฟล์นี้
@@ -255,13 +255,13 @@ function IntakeCard({ e, custLabel, open, onToggle }) {
         {e.detail && <span style={{ fontSize: 12, color: 'var(--text2)' }}>{e.detail}</span>}
         {e.kind === 'esmart' && (
           <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-            📄 {fmt(e.stats.rows)} แถว{e.stats.fresh !== e.stats.rows && ` (ใหม่ ${fmt(e.stats.fresh)})`}
+            {fmt(e.stats.rows)} แถว{e.stats.fresh !== e.stats.rows && ` (ใหม่ ${fmt(e.stats.fresh)})`}
             {' · '}✏️ อัพเดท <b style={{ color: '#22c55e' }}>{fmt(e.stats.updated)}</b>
             {' · '}➕ สร้าง <b style={{ color: '#0ea5e9' }}>{fmt(e.stats.created)}</b>
-            {e.stats.skipped > 0 && <> · <span style={{ color: '#f59e0b' }}>🔒 ไม่แตะ {fmt(e.stats.skipped)}</span></>}
+            {e.stats.skipped > 0 && <> · <span style={{ color: '#f59e0b' }}>ไม่แตะ {fmt(e.stats.skipped)}</span></>}
           </span>
         )}
-        {e.kind === 'edi' && <span style={{ fontSize: 12, color: 'var(--text2)' }}>📄 {fmt(e.stats.rows)} แถว</span>}
+        {e.kind === 'edi' && <span style={{ fontSize: 12, color: 'var(--text2)' }}>{fmt(e.stats.rows)} แถว</span>}
         {e.kind === 'manual' && (
           <span style={{ fontSize: 12, color: 'var(--text2)' }}>
             <b style={{ color: 'var(--text)' }}>{fmt(e.stats.qty)}</b> ชิ้น · สถานะ {e.ref?.status || '—'}
@@ -304,7 +304,7 @@ function PullBatchDetail({ batchId }) {
   const td = { padding: '4px 8px', fontSize: 12, borderBottom: '1px solid var(--border)' };
   const tdR = { ...td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' };
   return (
-    <div style={{ overflowX: 'auto', marginTop: 10, border: '1px solid var(--border)', borderRadius: 8 }}>
+    <div style={{ overflowX: 'auto', marginTop: 10, border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
         <thead><tr style={{ background: 'var(--bg2)' }}>
           <th style={th}>เลขพาร์ทลูกค้า</th><th style={th}>MAT</th><th style={th}>เวลาที่ลูกค้าดึง</th>

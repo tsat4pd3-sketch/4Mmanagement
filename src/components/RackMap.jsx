@@ -308,7 +308,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
           {!racks.length && <option value="">— ยังไม่มีผังชั้นวาง —</option>}
           {racks.map(r => <option key={r.id} value={r.id}>{r.section ? `[${sectionKeyOf(r.section)}] ` : ''}{r.name}</option>)}
         </select>
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="🔍 หาของ — พิมพ์ชื่อ/รหัส/MAT แล้วดูว่าอยู่ช่องไหน"
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="หาของ — พิมพ์ชื่อ/รหัส/MAT แล้วดูว่าอยู่ช่องไหน"
           style={{ ...inp, width: 340, flex: '1 1 240px' }} />
         {canEdit && <>
           <button onClick={() => { setEdit(v => !v); setSelCell(null); }} style={{ ...(edit ? btnPri : btnGhost), padding: '8px 14px', fontSize: 12.5 }}>
@@ -320,7 +320,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
       </div>
 
       {!!q && (
-        <div style={{ background: 'var(--bg3)', border: '1px solid var(--accent)', borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 12.5 }}>
+        <div style={{ background: 'var(--bg3)', border: '1px solid var(--accent)', borderRadius: 'var(--r-md)', padding: '8px 12px', marginBottom: 10, fontSize: 12.5 }}>
           {searchHits.length
             ? <>พบ <b>{searchHits.length}</b> รายการ · {searchHits.slice(0, 8).map(p => (
               <span key={p.id} style={{ marginRight: 10 }}>
@@ -331,7 +331,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
       )}
 
       {edit && (
-        <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 12.5 }}>
+        <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 'var(--r-md)', padding: '8px 12px', marginBottom: 10, fontSize: 12.5 }}>
           ✏️ <b>โหมดแก้ผัง</b> — ลากบน<b>พื้นที่ว่าง</b>เพื่อสร้างช่องใหม่ · ลาก<b>ตัวช่อง</b>เพื่อย้าย · ลาก<b>มุมขวาล่าง</b>เพื่อปรับขนาด · กดช่องแล้วเปลี่ยนรหัส/ลบได้ที่แผงขวา
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
             <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={undoBtnStyle(hist.canUndo && !hist.busy)} title="Ctrl+Z">↩️ Undo</button>
@@ -342,7 +342,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
       )}
 
       {!racks.length ? (
-        <div style={{ background: 'var(--card)', border: '1px dashed var(--border)', borderRadius: 10, padding: 40, textAlign: 'center', color: 'var(--muted)' }}>
+        <div style={{ background: 'var(--card)', border: '1px dashed var(--border)', borderRadius: 'var(--r-md)', padding: 40, textAlign: 'center', color: 'var(--muted)' }}>
           <div style={{ fontSize: 34, marginBottom: 8 }}>🗺️</div>
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>ยังไม่มีผังชั้นวาง</div>
           <div style={{ fontSize: 12.5, lineHeight: 1.8 }}>
@@ -354,12 +354,12 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 320px', gap: 12, alignItems: 'start' }} className="mgrid">
           {/* ── ผัง ── */}
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 10 }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 10 }}>
             {!rack?.image_url ? (
-              <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border)', borderRadius: 8 }}>
+              <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border)', borderRadius: 'var(--r-md)' }}>
                 <div style={{ fontSize: 13, marginBottom: 10 }}>ยังไม่มีรูปชั้นวาง — อัปโหลดรูปด้านหน้าของชั้น</div>
                 {canEdit && <label style={{ ...btnPri, display: 'inline-block', cursor: 'pointer' }}>
-                  📷 อัปโหลดรูป<input type="file" accept="image/*" onChange={uploadImg} style={{ display: 'none' }} />
+                  อัปโหลดรูป<input type="file" accept="image/*" onChange={uploadImg} style={{ display: 'none' }} />
                 </label>}
               </div>
             ) : (
@@ -367,7 +367,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
                 style={{ position: 'relative', width: '100%', userSelect: 'none', touchAction: edit ? 'none' : 'auto', cursor: edit ? 'crosshair' : 'default' }}>
                 <img src={rack.image_url} alt={rack.name} style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 6 }} draggable={false} />
                 {/* scrim ให้ช่องเด่นขึ้น (เหมือน FactoryMap) */}
-                <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.22)', borderRadius: 6, pointerEvents: 'none' }} />
+                <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.22)', borderRadius: 'var(--r-md)', pointerEvents: 'none' }} />
 
                 {cells.map(c0 => {
                   const c = (live && live.id === c0.id) ? { ...c0, ...live } : c0;   // พรีวิวระหว่างลาก
@@ -386,7 +386,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
                         background: isHit ? 'rgba(250,204,21,0.4)' : st.bg,
                         opacity: dim ? 0.28 : 1,
                         boxShadow: isHit ? '0 0 0 3px rgba(250,204,21,0.35)' : sel ? '0 0 0 3px rgba(61,214,92,0.3)' : 'none',
-                        borderRadius: 4, cursor: edit ? 'move' : 'pointer', display: 'grid', placeItems: 'center', overflow: 'visible',
+                        borderRadius: 'var(--r-xs)', cursor: edit ? 'move' : 'pointer', display: 'grid', placeItems: 'center', overflow: 'visible',
                         transition: live?.id === c.id ? 'none' : 'opacity .15s',
                       }}>
                       <div style={{ fontSize: 11, fontWeight: 800, color: '#fff', textShadow: '0 1px 3px rgba(0,0,0,0.9)', textAlign: 'center', lineHeight: 1.25, padding: 2, overflow: 'hidden' }}>
@@ -398,7 +398,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
                         <div data-handle="1" title="ลากเพื่อปรับขนาด"
                           style={{
                             position: 'absolute', right: -5, bottom: -5, width: 12, height: 12,
-                            background: 'var(--accent)', border: '2px solid #fff', borderRadius: 3,
+                            background: 'var(--accent)', border: '2px solid #fff', borderRadius: 'var(--r-xs)',
                             cursor: 'nwse-resize', boxShadow: 'var(--shadow-float)',
                           }} />
                       )}
@@ -407,7 +407,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
                 })}
 
                 {draft && (
-                  <div style={{ position: 'absolute', left: `${draft.x}%`, top: `${draft.y}%`, width: `${draft.w}%`, height: `${draft.h}%`, border: '2px dashed var(--accent)', background: 'rgba(61,214,92,0.2)', borderRadius: 4, pointerEvents: 'none' }} />
+                  <div style={{ position: 'absolute', left: `${draft.x}%`, top: `${draft.y}%`, width: `${draft.w}%`, height: `${draft.h}%`, border: '2px dashed var(--accent)', background: 'rgba(61,214,92,0.2)', borderRadius: 'var(--r-xs)', pointerEvents: 'none' }} />
                 )}
               </div>
             )}
@@ -415,7 +415,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
             {/* legend */}
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8, fontSize: 11.5, color: 'var(--muted)' }}>
               {[['#22c55e', 'ปกติ'], ['#f59e0b', 'ต่ำกว่าขั้นต่ำ'], ['#ef4444', 'มีของหมด'], ['#6b7280', 'ว่าง'], ['#facc15', 'ผลการค้นหา']].map(([c, t]) => (
-                <span key={t}><span style={{ display: 'inline-block', width: 10, height: 10, background: c, borderRadius: 2, marginRight: 4 }} />{t}</span>
+                <span key={t}><span style={{ display: 'inline-block', width: 10, height: 10, background: c, borderRadius: 'var(--r-xs)', marginRight: 4 }} />{t}</span>
               ))}
               <span style={{ marginLeft: 'auto' }}>{cells.length} ช่อง</span>
             </div>
@@ -424,15 +424,15 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
           {/* ── แผงขวา ── */}
           <div style={{ display: 'grid', gap: 10 }}>
             {selCell ? (
-              <div style={{ background: 'var(--card)', border: '1px solid var(--accent)', borderRadius: 10, padding: 12 }}>
+              <div style={{ background: 'var(--card)', border: '1px solid var(--accent)', borderRadius: 'var(--r-md)', padding: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <div style={{ fontSize: 15, fontWeight: 800 }}>📍 {selCell.shelf_code}</div>
+                  <div style={{ fontSize: 15, fontWeight: 800 }}>{selCell.shelf_code}</div>
                   <button onClick={() => setSelCell(null)} className="tbtn" style={{ ...btnGhost, marginLeft: 'auto', padding: '3px 8px', fontSize: 12 }}>✕</button>
                 </div>
                 {edit && (
                   <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
                     <button onClick={() => renameCell(selCell)} style={{ ...btnGhost, padding: '5px 10px', fontSize: 12 }}>✏️ เปลี่ยนรหัส</button>
-                    <button onClick={() => delCell(selCell)} style={{ ...btnGhost, padding: '5px 10px', fontSize: 12, color: '#ef4444' }}>🗑 ลบช่อง</button>
+                    <button onClick={() => delCell(selCell)} style={{ ...btnGhost, padding: '5px 10px', fontSize: 12, color: '#ef4444' }}>ลบช่อง</button>
                   </div>
                 )}
                 {(() => {
@@ -445,10 +445,10 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
                       const st = stockState(p);
                       const rk = computeSpareRank(p, usage[p.id] || []);
                       return (
-                        <div key={p.id} style={{ background: 'var(--bg3)', border: `1px solid ${st.color}`, borderRadius: 8, padding: '7px 9px' }}>
+                        <div key={p.id} style={{ background: 'var(--bg3)', border: `1px solid ${st.color}`, borderRadius: 'var(--r-md)', padding: '7px 9px' }}>
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                             <span style={{ fontSize: 12.5, fontWeight: 700, flex: 1 }}>{p.name}</span>
-                            {rk.rank && <span style={{ fontSize: 11, fontWeight: 800, color: RANK_META[rk.rank].color, border: `1px solid ${RANK_META[rk.rank].color}`, borderRadius: 4, padding: '0 5px' }}>{rk.rank}</span>}
+                            {rk.rank && <span style={{ fontSize: 11, fontWeight: 800, color: RANK_META[rk.rank].color, border: `1px solid ${RANK_META[rk.rank].color}`, borderRadius: 'var(--r-xs)', padding: '0 5px' }}>{rk.rank}</span>}
                           </div>
                           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                             {p.code ? `${p.code} · ` : ''}{p.mat_no || ''}
@@ -463,14 +463,14 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
                 })()}
               </div>
             ) : (
-              <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 12, fontSize: 12.5, color: 'var(--muted)' }}>
+              <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 12, fontSize: 12.5, color: 'var(--muted)' }}>
                 แตะช่องบนผังเพื่อดูว่ามีอะไหล่อะไรอยู่ · หรือพิมพ์ชื่อของในช่องค้นหาด้านบน แล้วช่องที่มีของจะไฮไลต์สีเหลือง
               </div>
             )}
 
             {/* ของที่ยังไม่มีตำแหน่งบนผัง — ห้ามปล่อยหายเงียบ */}
             {(!!unplaced.withShelf.length || !!unplaced.noShelf.length) && (
-              <div style={{ background: 'var(--card)', border: '1px solid #f59e0b', borderRadius: 10, padding: 12 }}>
+              <div style={{ background: 'var(--card)', border: '1px solid #f59e0b', borderRadius: 'var(--r-md)', padding: 12 }}>
                 <div style={{ fontSize: 12.5, fontWeight: 800, color: '#f59e0b', marginBottom: 6 }}>⚠️ ยังหาบนผังไม่เจอ</div>
                 {!!unplaced.noShelf.length && (
                   <div style={{ fontSize: 12, marginBottom: 6 }}>
@@ -482,7 +482,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
                     <b>{unplaced.withShelf.length}</b> รายการ <span style={{ color: 'var(--muted)' }}>มีรหัสชั้นวางแต่ยังไม่ได้ตีช่องบนผังไหนเลย:</span>
                     <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {[...new Set(unplaced.withShelf.map(p => p.shelf))].slice(0, 12).map(s => (
-                        <span key={s} style={{ fontSize: 11, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 6px' }}>{s}</span>
+                        <span key={s} style={{ fontSize: 11, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-xs)', padding: '1px 6px' }}>{s}</span>
                       ))}
                     </div>
                   </div>
@@ -543,7 +543,7 @@ function GridModal({ rackId, existing, onClose, onDone, onBeforeSave }) {
   const nf = (k, v, o = area, set = setArea) => set({ ...o, [k]: Number(v) || 0 });
   return (
     <div className="modal-scroll" /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */ /* modal-scroll = เลื่อนถึงปุ่มล่างได้เมื่อจอเตี้ย/คีย์บอร์ดเด้ง (UI-CONVENTIONS §4 · index.css) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(560px, 96vw)', maxHeight: '90vh', overflow: 'auto' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(560px, 96vw)', maxHeight: '90vh', overflow: 'auto' }}>
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 2 }}>⊞ สร้างตารางช่องอัตโนมัติ</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 14 }}>ชั้นวางส่วนใหญ่เป็นตาราง — กำหนดจำนวนแถว/คอลัมน์แล้วปรับตำแหน่งทีหลังได้</div>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
@@ -558,15 +558,15 @@ function GridModal({ rackId, existing, onClose, onDone, onBeforeSave }) {
           ))}
           <div><label style={lbl}>ระยะห่าง</label><input type="number" min="0" max="10" step="0.5" value={gap} onChange={e => setGap(Number(e.target.value) || 0)} style={inp} /></div>
         </div>
-        <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: 10, marginBottom: 12 }}>
+        <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 10, marginBottom: 12 }}>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>
             จะสร้าง <b style={{ color: 'var(--text)' }}>{preview.length}</b> ช่อง — ตัวอย่างรหัส: <b style={{ color: 'var(--accent)' }}>{preview[0]?.shelf_code}</b> … <b style={{ color: 'var(--accent)' }}>{preview[preview.length - 1]?.shelf_code}</b>
             {!!dup && <span style={{ color: '#f59e0b' }}> · ข้าม {dup} ช่องที่รหัสซ้ำของเดิม</span>}
           </div>
           {/* พรีวิวสัดส่วนจริง */}
-          <div style={{ position: 'relative', width: '100%', paddingTop: '56%', background: 'var(--bg)', borderRadius: 6, overflow: 'hidden' }}>
+          <div style={{ position: 'relative', width: '100%', paddingTop: '56%', background: 'var(--bg)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
             {preview.map(p => (
-              <div key={p.shelf_code} style={{ position: 'absolute', left: `${p.x}%`, top: `${p.y}%`, width: `${p.w}%`, height: `${p.h}%`, border: '1px solid var(--accent)', background: 'rgba(61,214,92,0.15)', borderRadius: 2 }} />
+              <div key={p.shelf_code} style={{ position: 'absolute', left: `${p.x}%`, top: `${p.y}%`, width: `${p.w}%`, height: `${p.h}%`, border: '1px solid var(--accent)', background: 'rgba(61,214,92,0.15)', borderRadius: 'var(--r-xs)' }} />
             ))}
           </div>
         </div>
@@ -613,7 +613,7 @@ function RackFormModal({ mode, rack, teams, myTeams, secOpts = [], defSection = 
 
   return (
     <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(440px, 96vw)' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(440px, 96vw)' }}>
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 14 }}>{mode === 'new' ? '➕ สร้างผังชั้นวาง' : '⚙️ แก้ไขผังชั้นวาง'}</div>
         <div style={{ display: 'grid', gap: 10 }}>
           <div><label style={lbl}>ชื่อผัง <span style={{ color: '#ef4444' }}>*</span></label>
@@ -634,7 +634,7 @@ function RackFormModal({ mode, rack, teams, myTeams, secOpts = [], defSection = 
           <div><label style={lbl}>หมายเหตุ</label><input value={note} onChange={e => setNote(e.target.value)} style={inp} /></div>
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-          {mode === 'edit' && <button onClick={del} style={{ ...btnGhost, color: '#ef4444', marginRight: 'auto' }}>🗑 ลบผัง</button>}
+          {mode === 'edit' && <button onClick={del} style={{ ...btnGhost, color: '#ef4444', marginRight: 'auto' }}>ลบผัง</button>}
           <button onClick={onClose} style={btnGhost}>ยกเลิก</button>
           <button onClick={save} disabled={saving} style={{ ...btnPri, opacity: saving ? 0.5 : 1 }}>บันทึก</button>
         </div>

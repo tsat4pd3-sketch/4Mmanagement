@@ -99,7 +99,7 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
         <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
           {dir === 'down' ? '➡️' : '⬅️'} {other}
         </span>
-        {l.buffer_label && <span style={{ fontSize: 11, color: 'var(--muted)' }}>📦 {l.buffer_label}</span>}
+        {l.buffer_label && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{l.buffer_label}</span>}
         {l.buffer_qty != null
           ? <span style={{ fontSize: 11, color: 'var(--text2)' }}>buffer {Number(l.buffer_qty).toLocaleString()} ชิ้น</span>
           : <span style={{ fontSize: 11, color: '#f59e0b' }}>⚠ ยังไม่ระบุ buffer</span>}
@@ -158,7 +158,7 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
               )}
 
               {canEdit && form && (
-                <div style={{ marginTop: 12, padding: 10, background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 8, display: 'grid', gap: 8 }}>
+                <div style={{ marginTop: 12, padding: 10, background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', display: 'grid', gap: 8 }}>
                   <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)' }}>
                     {form.dir === 'down' ? `${lineName} ➡️ ป้อนให้` : `⬅️ รับของจาก … ➡️ ${lineName}`}
                   </div>
@@ -178,7 +178,7 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
                   </div>
                   {(childrenOf[form.other] || []).length > 0 && (
                     /* เตือน ไม่บล็อก — แต่ต้องบอกผลที่ตามมา + เสนอไลน์ย่อยให้กดได้เลย (ห้ามเป็นทางตัน) */
-                    <div style={{ fontSize: 11, color: '#f59e0b', lineHeight: 1.7, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 7, padding: '7px 9px' }}>
+                    <div style={{ fontSize: 11, color: '#f59e0b', lineHeight: 1.7, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 'var(--r-md)', padding: '7px 9px' }}>
                       <b>⚠ {form.other} เป็นระดับแผนก ไม่ใช่ไลน์ผลิต</b> — งานจริงเกิดที่ไลน์ย่อย
                       และไลน์แม่ไม่มีสินค้า/CT ของตัวเอง ⇒ ระบบจะประเมิน <b>“กันได้กี่นาที”</b> ให้เส้นนี้ไม่ได้เลย
                       <div style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>

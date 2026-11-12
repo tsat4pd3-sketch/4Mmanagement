@@ -1,4 +1,4 @@
-/* ═══ DieLayout — 🗺️ ผังจัดเก็บแม่พิมพ์ (แท็บใน /die-registry) — 2026-08-19 ══════════════
+/* ═══ DieLayout — ผังจัดเก็บแม่พิมพ์ (แท็บใน /die-registry) — 2026-08-19 ══════════════
    digital twin ของคลัง/พื้นที่วางแม่พิมพ์: รูปจริง 1 รูปต่อผัง + หมุดตำแหน่งแม่พิมพ์รายตัว
    (พิกัดเป็น % ของรูป 0-100 — pattern เดียวกับ RackMap/FactoryMap · เก็บที่
     equipment_die.area_id/pos_x/pos_y ตัวตนแม่พิมพ์ยังอยู่ machines)
@@ -315,12 +315,12 @@ export default function DieLayout({
         <SearchInput value={q} onChange={setQ} fields="เลขแม่พิมพ์ / ชื่อพาร์ท / สถานะ" />
         {onScanDie && (
           <button onClick={() => setScanOpen(true)} style={btnGhost} title="สแกนป้าย QR ที่ติดแม่พิมพ์ แล้วเด้งไปหมุดของตัวนั้น">
-            📷 สแกนป้ายแม่พิมพ์
+            สแกนป้ายแม่พิมพ์
           </button>
         )}
         <span className="spacer" />
         <button onClick={() => setShowLabels(v => !v)} style={{ ...btnGhost, padding: '0 11px' }} title="โชว์/ซ่อนป้ายชื่อหมุด">
-          🏷️ {showLabels ? 'ซ่อนป้าย' : 'โชว์ป้าย'}
+          {showLabels ? 'ซ่อนป้าย' : 'โชว์ป้าย'}
         </button>
         {canEdit && <>
           <button onClick={() => { setEdit(v => !v); setPlacingId(null); }} style={{ ...(edit ? btnPri : btnGhost) }}>
@@ -331,21 +331,21 @@ export default function DieLayout({
         </>}
         {onFactoryMap && (
           <button onClick={() => navigate('/factory-map')} style={btnGhost} title="โซนนี้ถูกตีกรอบบนผังรวมโรงงานแล้ว — คลิกกรอบบนผังรวมเด้งกลับมาที่นี่ได้">
-            🏭 ดูบนผังรวมโรงงาน
+            ดูบนผังรวมโรงงาน
           </button>
         )}
       </FilterBar>
       {/* บอกสถานะ link กับผังรวม — ห้ามเงียบ: ตีกรอบแล้วโซนบนผังรวมจะโชว์สถานะแม่พิมพ์ + คลิกเด้งมาหน้านี้ */}
       {area && mapZoneNames && !onFactoryMap && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
-          🔗 ผังนี้ยังไม่ถูกตีกรอบบนผังรวมโรงงาน — ไปที่ <b>ผังรวมโรงงาน → โหมดแก้ผัง</b> แล้วตีกรอบเลือกโซน
+          ผังนี้ยังไม่ถูกตีกรอบบนผังรวมโรงงาน — ไปที่ <b>ผังรวมโรงงาน → โหมดแก้ผัง</b> แล้วตีกรอบเลือกโซน
           "🔨 <b>{area.name}</b>" (โซนบนผังรวมจะโชว์จำนวน/ใบซ่อมค้างของแม่พิมพ์ และคลิกเด้งเข้าผังนี้)
         </div>
       )}
 
       {/* ผลค้นหา */}
       {!!hits && (
-        <div style={{ background: 'var(--bg3)', border: '1px solid var(--accent)', borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 12.5 }}>
+        <div style={{ background: 'var(--bg3)', border: '1px solid var(--accent)', borderRadius: 'var(--r-md)', padding: '8px 12px', marginBottom: 10, fontSize: 12.5 }}>
           {hits.length ? <>
             พบ <b>{hits.length}</b> ตัว ·{' '}
             {hits.slice(0, 6).map(d => {
@@ -365,7 +365,7 @@ export default function DieLayout({
       )}
 
       {edit && (
-        <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 12.5 }}>
+        <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 'var(--r-md)', padding: '8px 12px', marginBottom: 10, fontSize: 12.5 }}>
           ✏️ <b>โหมดแก้ผัง</b> — {placingDie
             ? <>คลิกตำแหน่งบนรูปเพื่อวาง <b style={{ color: 'var(--accent)' }}>{placingDie.machine_no}</b> <button onClick={() => setPlacingId(null)} style={{ ...btnGhost, padding: '2px 8px', fontSize: 11.5, marginLeft: 6 }}>ยกเลิก</button></>
             : <>เลือกแม่พิมพ์จากลิสต์ "ยังไม่ได้วางบนผัง" แล้วกด 📍 วาง · ลากหมุดเพื่อย้ายตำแหน่ง</>}
@@ -377,7 +377,7 @@ export default function DieLayout({
       )}
 
       {!areas.length ? (
-        <div style={{ background: 'var(--card)', border: '1px dashed var(--border)', borderRadius: 10, padding: 40, textAlign: 'center', color: 'var(--muted)' }}>
+        <div style={{ background: 'var(--card)', border: '1px dashed var(--border)', borderRadius: 'var(--r-md)', padding: 40, textAlign: 'center', color: 'var(--muted)' }}>
           <div style={{ fontSize: 34, marginBottom: 8 }}>🗺️</div>
           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>ยังไม่มีผังจัดเก็บแม่พิมพ์</div>
           <div style={{ fontSize: 12.5, lineHeight: 1.8 }}>
@@ -389,12 +389,12 @@ export default function DieLayout({
       ) : (
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 330px', gap: 12, alignItems: 'start' }}>
           {/* ── ผัง ── */}
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 10 }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 10 }}>
             {!area?.image_url ? (
-              <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border)', borderRadius: 8 }}>
+              <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border)', borderRadius: 'var(--r-md)' }}>
                 <div style={{ fontSize: 13, marginBottom: 10 }}>ยังไม่มีรูปผัง — อัปโหลดรูปคลัง/พื้นที่วางแม่พิมพ์</div>
                 {canEdit && <label style={{ ...btnPri, display: 'inline-block', cursor: 'pointer' }}>
-                  📷 อัปโหลดรูป<input type="file" accept="image/*" onChange={uploadImg} style={{ display: 'none' }} />
+                  อัปโหลดรูป<input type="file" accept="image/*" onChange={uploadImg} style={{ display: 'none' }} />
                 </label>}
               </div>
             ) : (
@@ -405,7 +405,7 @@ export default function DieLayout({
                   cursor: edit ? (placingId ? 'crosshair' : 'default') : 'default',
                 }}>
                 <img src={area.image_url} alt={area.name} style={{ width: '100%', height: 'auto', display: 'block', borderRadius: 6 }} draggable={false} />
-                <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.22)', borderRadius: 6, pointerEvents: 'none' }} />
+                <div style={{ position: 'absolute', inset: 0, background: 'rgba(6,8,14,0.22)', borderRadius: 'var(--r-md)', pointerEvents: 'none' }} />
 
                 {placedHere.map(d => {
                   const pos = (live && live.id === d.id) ? live : { x: +d.ext.pos_x, y: +d.ext.pos_y };
@@ -440,7 +440,7 @@ export default function DieLayout({
                           position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
                           marginTop: 2, fontSize: mk.subPillFont, fontWeight: 700, color: '#fff',
                           background: 'rgba(9,11,18,0.82)', border: `1px solid ${isHit ? '#facc15' : st.color}`,
-                          borderRadius: 6, padding: '1px 6px', maxWidth: mk.subPillMaxW,
+                          borderRadius: 'var(--r-md)', padding: '1px 6px', maxWidth: mk.subPillMaxW,
                           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                         }}>{d.machine_no}</div>
                       )}
@@ -460,7 +460,7 @@ export default function DieLayout({
             {area?.image_url && canEdit && edit && (
               <div style={{ marginTop: 8 }}>
                 <label style={{ ...btnGhost, display: 'inline-block', cursor: 'pointer', fontSize: 12 }}>
-                  📷 เปลี่ยนรูปผัง<input type="file" accept="image/*" onChange={uploadImg} style={{ display: 'none' }} />
+                  เปลี่ยนรูปผัง<input type="file" accept="image/*" onChange={uploadImg} style={{ display: 'none' }} />
                 </label>
               </div>
             )}
@@ -469,9 +469,9 @@ export default function DieLayout({
           {/* ── แผงขวา ── */}
           <div style={{ display: 'grid', gap: 10 }}>
             {selDie ? (
-              <div ref={panelRef} style={{ background: 'var(--card)', border: '1px solid var(--accent)', borderRadius: 10, padding: 12 }}>
+              <div ref={panelRef} style={{ background: 'var(--card)', border: '1px solid var(--accent)', borderRadius: 'var(--r-md)', padding: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 800, wordBreak: 'break-word', flex: 1 }}>🔨 {selDie.machine_no}</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 800, wordBreak: 'break-word', flex: 1 }}>{selDie.machine_no}</div>
                   <button onClick={() => setSelId(null)} style={{ ...btnGhost, padding: '3px 8px', fontSize: 12 }}>✕</button>
                 </div>
                 {(() => {
@@ -496,8 +496,8 @@ export default function DieLayout({
 
                       {/* ใบซ่อมค้าง — derive จากระบบ MO จริง */}
                       {mos.length > 0 && (
-                        <div style={{ border: '1px solid #ef4444', background: 'rgba(239,68,68,0.1)', borderRadius: 8, padding: '7px 9px' }}>
-                          <div style={{ fontSize: 12, fontWeight: 800, color: '#ef4444', marginBottom: 3 }}>🔧 ใบซ่อม MO ค้าง {mos.length} ใบ</div>
+                        <div style={{ border: '1px solid #ef4444', background: 'rgba(239,68,68,0.1)', borderRadius: 'var(--r-md)', padding: '7px 9px' }}>
+                          <div style={{ fontSize: 12, fontWeight: 800, color: '#ef4444', marginBottom: 3 }}>ใบซ่อม MO ค้าง {mos.length} ใบ</div>
                           {mos.map(o => (
                             <div key={o.id} style={{ fontSize: 11.5, lineHeight: 1.7 }}>
                               <b>{o.mo_no || '(ยังไม่ออกเลข MO)'}</b> · {moStatusLabel(o)}
@@ -515,12 +515,12 @@ export default function DieLayout({
                       </div>
 
                       <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                        📍 {placed ? <>อยู่ผัง <b style={{ color: 'var(--text)' }}>{areaNameOf(e.area_id)}</b></> : 'ยังไม่ได้วางบนผัง'}
+                        {placed ? <>อยู่ผัง <b style={{ color: 'var(--text)' }}>{areaNameOf(e.area_id)}</b></> : 'ยังไม่ได้วางบนผัง'}
                       </div>
                       {canEdit && edit && (
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           <button onClick={() => setPlacingId(selDie.id)} style={{ ...btnGhost, padding: '5px 10px', fontSize: 12 }}>
-                            📍 {placed ? 'วางตำแหน่งใหม่' : 'วางบนผังนี้'}
+                            {placed ? 'วางตำแหน่งใหม่' : 'วางบนผังนี้'}
                           </button>
                           {placed && (
                             <button onClick={() => removeFromMap(selDie)} style={{ ...btnGhost, padding: '5px 10px', fontSize: 12, color: '#ef4444' }}>
@@ -534,14 +534,14 @@ export default function DieLayout({
                 })()}
               </div>
             ) : (
-              <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 12, fontSize: 12.5, color: 'var(--muted)' }}>
+              <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 12, fontSize: 12.5, color: 'var(--muted)' }}>
                 แตะหมุดบนผังเพื่อดูรายละเอียด/เปลี่ยนสถานะแม่พิมพ์ · หรือพิมพ์เลขแม่พิมพ์ในช่องค้นหา แล้วหมุดที่ตรงจะไฮไลต์สีเหลือง
               </div>
             )}
 
             {/* worklist — แม่พิมพ์ที่ยังไม่ได้วางบนผังไหนเลย ห้ามซ่อน */}
             {unplaced.length > 0 && (
-              <div style={{ background: 'var(--card)', border: '1px solid #f59e0b', borderRadius: 10, padding: 12 }}>
+              <div style={{ background: 'var(--card)', border: '1px solid #f59e0b', borderRadius: 'var(--r-md)', padding: 12 }}>
                 <div style={{ fontSize: 12.5, fontWeight: 800, color: '#f59e0b', marginBottom: 6 }}>
                   ⚠️ ยังไม่ได้วางบนผัง {unplaced.length} ตัว
                 </div>
@@ -553,7 +553,7 @@ export default function DieLayout({
                     .filter(d => !hitIds || hitIds.has(d.id))
                     .slice(0, 60)
                     .map(d => (
-                      <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 7, padding: '4px 8px' }}>
+                      <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '4px 8px' }}>
                         <span onClick={() => setSelId(d.id)} title={d.machine_no}
                           style={{ flex: 1, fontSize: 11.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}>
                           {d.machine_no}
@@ -561,7 +561,7 @@ export default function DieLayout({
                         {canEdit && edit && (
                           <button onClick={() => { setSelId(d.id); setPlacingId(d.id); }}
                             style={{ ...btnGhost, padding: '2px 8px', fontSize: 11, borderColor: placingId === d.id ? 'var(--accent)' : 'var(--border)' }}>
-                            📍 วาง
+                            วาง
                           </button>
                         )}
                       </div>
@@ -577,7 +577,7 @@ export default function DieLayout({
       )}
 
       {scanOpen && (
-        <ScanModal title="📷 สแกนป้ายแม่พิมพ์" hint="ส่องป้าย QR ที่ติดแม่พิมพ์ หรือพิมพ์/ยิงเลขแม่พิมพ์"
+        <ScanModal title="สแกนป้ายแม่พิมพ์" hint="ส่องป้าย QR ที่ติดแม่พิมพ์ หรือพิมพ์/ยิงเลขแม่พิมพ์"
           onScan={(parsed) => onScanDie(parsed)}   // คืนข้อความ = โชว์ในโมดัลให้สแกนใหม่ · undefined = เจอ ปิดเอง
           onClose={() => setScanOpen(false)} />
       )}
@@ -644,7 +644,7 @@ function AreaFormModal({ mode, area, onClose, onSaved }) {
   const lbl = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 };
   return (
     <div className="modal-scroll" /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */ /* modal-scroll = เลื่อนถึงปุ่มล่างได้เมื่อจอเตี้ย/คีย์บอร์ดเด้ง (UI-CONVENTIONS §4 · index.css) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 18, width: 'min(440px, 96vw)' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(440px, 96vw)' }}>
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 14 }}>{mode === 'new' ? '➕ สร้างผังจัดเก็บแม่พิมพ์' : '⚙️ แก้ไขผังจัดเก็บ'}</div>
         <div style={{ display: 'grid', gap: 10 }}>
           <div><label style={lbl}>ชื่อผัง <span style={{ color: '#ef4444' }}>*</span></label>
@@ -652,7 +652,7 @@ function AreaFormModal({ mode, area, onClose, onSaved }) {
           <div><label style={lbl}>หมายเหตุ</label><input value={note} onChange={e => setNote(e.target.value)} style={inp} /></div>
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-          {mode === 'edit' && <button onClick={del} style={{ ...btnGhost, color: '#ef4444', marginRight: 'auto' }}>🗑 ลบผัง</button>}
+          {mode === 'edit' && <button onClick={del} style={{ ...btnGhost, color: '#ef4444', marginRight: 'auto' }}>ลบผัง</button>}
           <button onClick={onClose} style={btnGhost}>ยกเลิก</button>
           <button onClick={save} disabled={saving} style={{ ...btnPri, opacity: saving ? 0.5 : 1 }}>บันทึก</button>
         </div>

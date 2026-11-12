@@ -44,8 +44,8 @@ const prevMonthKey = () => {
 };
 
 const MODES = [
-  { key: 'oee', label: '🎯 Focus OEE', desc: 'ภาพรวมข้ามส่วนงาน — Executive summary · เทรนด์ · Top Downtime/Defect · Issue & Action (เด็คแบบเดิม)' },
-  { key: 'full', label: '📚 Full data (เจาะรายไลน์)', desc: 'แบบเด็คที่วิศวกรทำมือ — ต่อไลน์ 4 สไลด์: OEE ทั้งปี+เส้นเป้า · Capacity แยกกะ + Downtime แยกประเภท · ไตรมาส/โดนัท/รายวัน · Problem & Action + เทียบเดือนก่อน · แถม Tag Yellow + Man Power' },
+  { key: 'oee', label: 'Focus OEE', desc: 'ภาพรวมข้ามส่วนงาน — Executive summary · เทรนด์ · Top Downtime/Defect · Issue & Action (เด็คแบบเดิม)' },
+  { key: 'full', label: 'Full data (เจาะรายไลน์)', desc: 'แบบเด็คที่วิศวกรทำมือ — ต่อไลน์ 4 สไลด์: OEE ทั้งปี+เส้นเป้า · Capacity แยกกะ + Downtime แยกประเภท · ไตรมาส/โดนัท/รายวัน · Problem & Action + เทียบเดือนก่อน · แถม Tag Yellow + Man Power' },
 ];
 
 /* checkbox ที่โชว์สถานะ "เลือกบางส่วน" ได้ (indeterminate ตั้งผ่าน DOM เท่านั้น) */
@@ -204,9 +204,9 @@ export default function MonthlyReviewExport({ onClose }) {
   const rowSt = { display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 };
   return (
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(96vw, 640px)', maxHeight: '92vh', overflowY: 'auto' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 640px)', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <div style={{ fontSize: 16, fontWeight: 900 }}>📽️ Monthly Performance Review (.pptx)</div>
+          <div style={{ fontSize: 16, fontWeight: 900 }}>Monthly Performance Review (.pptx)</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
         </div>
         <div style={{ display: 'grid', gap: 12 }}>
@@ -215,7 +215,7 @@ export default function MonthlyReviewExport({ onClose }) {
             <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               {MODES.map(m => (
                 <label key={m.key} style={{
-                  display: 'block', cursor: 'pointer', padding: '9px 11px', borderRadius: 10,
+                  display: 'block', cursor: 'pointer', padding: '9px 11px', borderRadius: 'var(--r-md)',
                   border: `1px solid ${mode === m.key ? 'var(--accent)' : 'var(--border)'}`,
                   background: mode === m.key ? 'rgba(0,0,0,0.12)' : 'none',
                 }}>
@@ -263,7 +263,7 @@ export default function MonthlyReviewExport({ onClose }) {
                 const st = stateOf(secLines);
                 const open = openSecs[s.code] ?? false;
                 return (
-                  <div key={s.code} style={{ border: `1px solid ${st !== 'none' ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 10, padding: '8px 10px' }}>
+                  <div key={s.code} style={{ border: `1px solid ${st !== 'none' ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <label style={{ ...rowSt, fontWeight: 800, color: st !== 'none' ? 'var(--accent)' : 'var(--text2)' }}>
                         <TriBox state={st} onChange={() => toggleLines(secLines)} />
@@ -289,7 +289,7 @@ export default function MonthlyReviewExport({ onClose }) {
                             )}
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingLeft: g.lines.length > 1 ? 20 : 0, marginTop: 4 }}>
                               {g.lines.map(l => (
-                                <label key={l} style={{ ...rowSt, fontSize: 12, padding: '3px 9px', borderRadius: 7, border: `1px solid ${selLines.has(l) ? 'var(--accent)' : 'var(--border)'}`, color: selLines.has(l) ? 'var(--accent)' : 'var(--muted)' }}>
+                                <label key={l} style={{ ...rowSt, fontSize: 12, padding: '3px 9px', borderRadius: 'var(--r-md)', border: `1px solid ${selLines.has(l) ? 'var(--accent)' : 'var(--border)'}`, color: selLines.has(l) ? 'var(--accent)' : 'var(--muted)' }}>
                                   <input type="checkbox" checked={selLines.has(l)} onChange={() => toggleLines([l])} />
                                   {l}
                                 </label>
@@ -320,8 +320,8 @@ export default function MonthlyReviewExport({ onClose }) {
             Focus เดือนถัดไป · ไฟล์เปิดแก้/เติม story ต่อใน PowerPoint ได้ก่อนขึ้นประชุม
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <button onClick={onClose} disabled={busy} style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--border)', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>ยกเลิก</button>
-            <button onClick={handleGenerate} disabled={busy} style={{ padding: '9px 22px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.7 : 1 }}>
+            <button onClick={onClose} disabled={busy} style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>ยกเลิก</button>
+            <button onClick={handleGenerate} disabled={busy} style={{ padding: '9px 22px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.7 : 1 }}>
               {busy ? '⏳ กำลังสร้าง…' : '📽️ สร้างไฟล์ .pptx'}
             </button>
           </div>

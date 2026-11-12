@@ -129,7 +129,7 @@ export default function SafetyEventModal({ init, section, date, lineRows = [], s
   return (
     /* ⚠️ ไม่มี onClick ที่ backdrop โดยตั้งใจ — ฟอร์มกรอกข้อมูลห้ามปิดจากการเผลอแตะ */
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, padding: 18, width: 'min(720px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(720px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12, gap: 8 }}>
           <b style={{ fontSize: 15, color: 'var(--text)' }}>
             {editing ? '✏️ แก้ไขเหตุการณ์ความปลอดภัย' : '🛡️ บันทึกเหตุการณ์ความปลอดภัย'}
@@ -225,16 +225,16 @@ export default function SafetyEventModal({ init, section, date, lineRows = [], s
         <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
           {editing && (
             <button onClick={remove} disabled={busy}
-              style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', cursor: 'pointer', fontSize: 12.5 }}>
-              🗑 ซ่อนออกจากบอร์ด
+              style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', cursor: 'pointer', fontSize: 12.5 }}>
+              ซ่อนออกจากบอร์ด
             </button>
           )}
           <button onClick={close} disabled={busy}
-            style={{ marginLeft: 'auto', padding: '7px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>
+            style={{ marginLeft: 'auto', padding: '7px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>
             ยกเลิก
           </button>
           <button onClick={save} disabled={busy}
-            style={{ padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: busy ? 'wait' : 'pointer', fontSize: 13 }}>
+            style={{ padding: '7px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: busy ? 'wait' : 'pointer', fontSize: 13 }}>
             {busy ? 'กำลังบันทึก...' : '💾 บันทึก'}
           </button>
         </div>

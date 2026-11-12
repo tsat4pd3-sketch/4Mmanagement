@@ -16,7 +16,7 @@ export default function TvPagerBar({ pager, intervalSec = 20, onScrollMode }) {
   return (
     <div {...{ [SUBPAGE_ATTR]: `${pager.page + 1}/${pager.pageCount}` }} style={{
       position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: 'calc(12px + var(--mnav-h, 0px))', zIndex: 900,
-      display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 12,
+      display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 'var(--r-lg)',
       background: 'var(--card)', border: '1px solid var(--border2)', boxShadow: 'var(--shadow-float)',
       fontSize: fz, fontWeight: 700, color: 'var(--text2)',
     }}>
@@ -32,7 +32,7 @@ export default function TvPagerBar({ pager, intervalSec = 20, onScrollMode }) {
         {pager.paused ? '▶ หมุนต่อ' : `⏸ หมุนทุก ${intervalSec} วิ`}
       </button>
       {onScrollMode && <button type="button" style={{ ...btn, color: 'var(--muted)' }} onClick={onScrollMode}>เลื่อนเอง</button>}
-      {pager.parts > 1 && <span style={{ color: '#f59e0b', fontSize: tv ? 18 : 12 }}>บอร์ดนี้ยาวเกินจอ — ต่อ {pager.part}/{pager.parts}</span>}
+      {pager.parts > 1 && <span style={{ color: 'var(--amber)', fontSize: tv ? 18 : 12 }}>บอร์ดนี้ยาวเกินจอ — ต่อ {pager.part}/{pager.parts}</span>}
     </div>
   );
 }

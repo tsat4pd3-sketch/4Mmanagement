@@ -14,6 +14,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import ScanModal from './ScanModal';
 import { resolveDeliveryPoint } from '../utils/qrCode';
+import { sapPendingFields } from '../utils/sapPending';
 import { pointsForRequest, pointLabel, checkDeliveryPoint, buildDeliverPayload, validateDeliverPayload, overrideReasonOk, OVERRIDE_REASONS } from '../utils/replenishGate';
 
 const fmt = (v) => (v == null ? '—' : Number(v).toLocaleString());
@@ -29,6 +30,14 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
   const [overriding, setOverriding] = useState(false);
   const [reasonKey, setReasonKey]   = useState('');
   const [reasonNote, setReasonNote] = useState('');
+  /* 🧾 04/11 (คำสั่ง user) — "กรณีตัดจ่ายใน SAP ไม่ได้ ใส่ยอดว่าค้างตัดเท่าไหร่ + มีรีพอร์ทสรุปยอดค้าง"
+     ไม่แตะยอดสต็อกใน ESM · จดลงใบ (`sap_pending_*`) ให้ไปตามเคลียร์ที่ Line Stock › 🧾 ค้างตัด SAP
+     กติกา = `sapPendingFields()` (utils/sapPending.js) */
+  const sentQty = Number(request?.picked_qty) > 0 ? Number(request.picked_qty) : Number(request?.request_qty) || 0;
+  const [sapOn, setSapOn]     = useState(false);
+  const [sapQty, setSapQty]   = useState('');
+  const [sapNote, setSapNote] = useState('');
+  const sap = sapPendingFields({ on: sapOn, qty: sapQty, note: sapNote, max: sentQty, by: fullName });
 
   // ตรงไลน์ก่อน · ไม่มี = จุดในพื้นที่ SAP เดียวกัน (ต้องเป็นตัวเดียวกับที่ checkDeliveryPoint ใช้)
   const serving = useMemo(() => pointsForRequest(points, request), [points, request]);
@@ -48,19 +57,19 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
   }, [points, request, onLogEvent]);
 
   const confirmScanned = () => {
-    if (!result || result.status !== 'ok') return;
+    if (!result || result.status !== 'ok' || sap.error) return;
     const payload = buildDeliverPayload({ gate: 'scanned', point: result.point });
     const bad = validateDeliverPayload(payload);
     if (bad) { setResult({ ...result, status: 'unknown', block: true, message: bad }); return; }
-    onConfirm?.(payload, null);
+    onConfirm?.({ ...payload, ...sap.fields }, null);
   };
-  const confirmNoPoint = () => onConfirm?.(buildDeliverPayload({ gate: 'no_point' }), null);
+  const confirmNoPoint = () => { if (!sap.error) onConfirm?.({ ...buildDeliverPayload({ gate: 'no_point' }), ...sap.fields }, null); };
   const confirmOverride = () => {
-    if (!canOverride || !overrideReasonOk(reasonKey, reasonNote)) return;
+    if (!canOverride || !overrideReasonOk(reasonKey, reasonNote) || sap.error) return;
     const payload = buildDeliverPayload({ gate: 'override', point: result?.point || null, reasonKey, reasonNote, overrideBy: fullName });
     const bad = validateDeliverPayload(payload);
     if (bad) return;
-    onConfirm?.(payload, { outcome: 'override', status_code: result?.status || null, scanned_raw: result?.actual || null,
+    onConfirm?.({ ...payload, ...sap.fields }, { outcome: 'override', status_code: result?.status || null, scanned_raw: result?.actual || null,
       expected: serving.map(pointLabel).join(' / '), actual: result?.actual || null, reason: payload.delivered_override_reason });
   };
 
@@ -72,15 +81,15 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
       {/* ไม่ปิดจาก backdrop — โมดัลมีช่องกรอกเหตุผล (UI-CONVENTIONS §5) */}
       <div style={{ position: 'fixed', inset: 0, zIndex: 2300, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
         <div onClick={e => e.stopPropagation()} className="modal-scroll"
-          style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(520px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
+          style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(520px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)' }}>📍 ถึงไลน์แล้ว — สแกนจุดส่งก่อนปิดใบ</h3>
+            <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)' }}>ถึงไลน์แล้ว — สแกนจุดส่งก่อนปิดใบ</h3>
             <button onClick={onClose} className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>✕</button>
           </div>
 
           {/* ใบที่กำลังทำ — พาร์ท + จำนวน + ปลายทาง ต้องเห็นชัด (กันกดผิดใบในลิสต์) */}
           <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, alignItems: 'start' }}>
-            <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '8px 10px' }}>
+            <div style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>พาร์ท</div>
               {/* ลำดับ ชื่องาน → MAT (UI §6.21 · 2026-09-30) */}
               {request?.part_name
@@ -88,20 +97,41 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
                 : null}
               <div style={{ fontSize: request?.part_name ? 11 : 15, fontWeight: request?.part_name ? 400 : 900, fontFamily: 'monospace', color: request?.part_name ? 'var(--muted)' : 'var(--text)', wordBreak: 'break-all' }}>MAT {request?.mat_no || '—'}</div>
             </div>
-            <div style={{ background: 'var(--bg3)', borderRadius: 10, padding: '8px 10px' }}>
+            <div style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>จำนวนที่ขอ</div>
               <div style={{ fontSize: 20, fontWeight: 900, color: 'var(--text)' }}>{fmt(request?.request_qty)}</div>
             </div>
-            <div style={{ background: 'rgba(59,130,246,0.12)', borderRadius: 10, padding: '8px 10px' }}>
+            <div style={{ background: 'rgba(59,130,246,0.12)', borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
               <div style={{ fontSize: 11, color: '#3b82f6' }}>ปลายทาง</div>
               <div style={{ fontSize: 14, fontWeight: 900, color: '#3b82f6' }}>➜ {request?.line_name || '—'}</div>
             </div>
           </div>
 
+          {/* 🧾 ตัดจ่ายใน SAP ไม่ได้ — จดยอดค้างตัด (ไม่ขยับสต็อกใน ESM) */}
+          <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 'var(--r-md)', border: `1px solid ${sapOn ? 'var(--amber)' : 'var(--border)'}`, background: sapOn ? 'var(--amber-dim)' : 'transparent' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 800, color: 'var(--text)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={sapOn} onChange={e => { setSapOn(e.target.checked); if (e.target.checked && sapQty === '') setSapQty(String(sentQty || '')); }} style={{ width: 'auto' }} />
+              🧾 ตัดจ่ายใน SAP ไม่ได้ — จดยอดค้างตัด
+            </label>
+            {sapOn && (
+              <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <input value={sapQty} onChange={e => setSapQty(e.target.value)} inputMode="decimal" placeholder="ยอดค้างตัด"
+                  style={{ width: 130, padding: '7px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }} />
+                <span style={{ fontSize: 12, color: 'var(--muted)' }}>/ {fmt(sentQty)} ที่ส่ง</span>
+                <input value={sapNote} onChange={e => setSapNote(e.target.value)} placeholder="สาเหตุ เช่น SAP ยอดไม่พอ / ไม่มี BOM ใน SAP"
+                  style={{ flex: 1, minWidth: 180, padding: '7px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }} />
+                {sap.error && <div style={{ width: '100%', fontSize: 12, color: 'var(--red)', fontWeight: 700 }}>{sap.error}</div>}
+                <div style={{ width: '100%', fontSize: 11.5, color: 'var(--text2)' }}>
+                  ใบนี้ยังส่งตามปกติ · ยอดค้างไปขึ้นที่ Line Stock › 🧾 ค้างตัด SAP ให้ตามเคลียร์ (ไม่เปลี่ยนยอดสต็อกในระบบ)
+                </div>
+              </div>
+            )}
+          </div>
+
           {noPoint ? (
             /* ไม่รู้ = ห้ามบล็อก — ไลน์ยังไม่ตั้งจุดส่ง ปล่อยผ่านแต่ต้องบอกให้ไปตั้ง */
             <div style={{ marginTop: 14 }}>
-              <div style={{ fontSize: 12.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: '9px 12px' }}>
+              <div style={{ fontSize: 12.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 'var(--r-md)', padding: '9px 12px' }}>
                 ⚪ <b>{request?.line_name}</b> ยังไม่ตั้งจุดส่งงาน — ระบบตรวจไม่ได้ว่าวางถูกจุดไหม (ใบจะถูกมาร์ก "ไลน์ยังไม่ตั้งจุดส่ง")<br />
                 <span style={{ color: 'var(--text2)' }}>ให้หัวหน้าไลน์ตั้งที่ ⚙️ ตั้งค่าผังไลน์ → 🎯 จุดส่งงาน แล้วพิมพ์ป้ายที่ 🏷️ พิมพ์ป้าย QR</span>
               </div>
@@ -114,17 +144,17 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
             <div style={{ marginTop: 14 }}>
               <div style={{ fontSize: 12, color: 'var(--text2)' }}>
                 ใบนี้ต้องวางที่: {serving.map(p => (
-                  <span key={p.id} style={{ display: 'inline-block', margin: '2px 4px 0 0', padding: '2px 8px', borderRadius: 10, background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 700, fontSize: 12 }}>{pointLabel(p)}</span>
+                  <span key={p.id} style={{ display: 'inline-block', margin: '2px 4px 0 0', padding: '2px 8px', borderRadius: 'var(--r-md)', background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 700, fontSize: 12 }}>{pointLabel(p)}</span>
                 ))}
               </div>
 
               {ok && (
-                <div style={{ marginTop: 10, fontSize: 13, color: '#22c55e', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 8, padding: '9px 12px', fontWeight: 700 }}>
+                <div style={{ marginTop: 10, fontSize: 13, color: '#22c55e', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontWeight: 700 }}>
                   {result.message}
                 </div>
               )}
               {blocked && !ok && (
-                <div style={{ marginTop: 10, fontSize: 13, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '9px 12px' }}>
+                <div style={{ marginTop: 10, fontSize: 13, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 'var(--r-md)', padding: '9px 12px' }}>
                   🔴 {result.message}
                 </div>
               )}
@@ -132,7 +162,7 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
               {!overriding && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                   <button onClick={() => setScanOpen(true)} disabled={busy} style={btn('var(--accent)', 'var(--accent-ink)', 'transparent', busy)}>
-                    📷 {ok ? 'สแกนใหม่' : 'สแกน QR จุดส่ง'}
+                    {ok ? 'สแกนใหม่' : 'สแกน QR จุดส่ง'}
                   </button>
                   <div style={{ flex: 1 }} />
                   <button onClick={onClose} disabled={busy} style={btn('transparent', 'var(--muted)', 'var(--border2)', busy)}>ยกเลิก</button>
@@ -150,19 +180,19 @@ export default function DeliverScanModal({ request, points = [], canOverride = f
                     !overriding ? (
                       <button onClick={() => setOverriding(true)} disabled={busy}
                         style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
-                        🔓 สแกนไม่ได้ / ป้ายหาย → ปลดบล็อกโดยหัวหน้า (บันทึกชื่อ+เหตุผล)
+                        สแกนไม่ได้ / ป้ายหาย → ปลดบล็อกโดยหัวหน้า (บันทึกชื่อ+เหตุผล)
                       </button>
                     ) : (
                       <div>
-                        <div style={{ fontSize: 12.5, fontWeight: 800, color: '#ef4444' }}>🔓 ปลดบล็อก — ระบุเหตุผล (ถูกบันทึกเป็นข้อมูล ไปแก้ต้นเหตุทีหลัง)</div>
+                        <div style={{ fontSize: 12.5, fontWeight: 800, color: '#ef4444' }}>ปลดบล็อก — ระบุเหตุผล (ถูกบันทึกเป็นข้อมูล ไปแก้ต้นเหตุทีหลัง)</div>
                         <select value={reasonKey} onChange={e => setReasonKey(e.target.value)}
-                          style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }}>
+                          style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }}>
                           <option value="">— เลือกเหตุผล —</option>
                           {OVERRIDE_REASONS.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
                         </select>
                         <input value={reasonNote} onChange={e => setReasonNote(e.target.value)}
                           placeholder={reasonKey === 'other' ? 'ระบุเหตุผล (บังคับ)' : 'รายละเอียดเพิ่มเติม (ไม่บังคับ)'}
-                          style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }} />
+                          style={{ width: '100%', marginTop: 6, padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13 }} />
                         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4 }}>ผู้ปลด: {fullName || '—'}</div>
                         <div style={{ display: 'flex', gap: 8, marginTop: 10, justifyContent: 'flex-end' }}>
                           <button onClick={() => setOverriding(false)} disabled={busy} style={btn('transparent', 'var(--muted)', 'var(--border2)', busy)}>กลับไปสแกน</button>

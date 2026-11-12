@@ -225,3 +225,27 @@ migration `20261014_display_rotation_scope_main.sql` (**apply แล้ว 14/10
 - harness: `?rot=/path[,/path]` = แผนจอวน (mock `display_rotations` · 20 วิ/หน้า) · ใช้คู่ `?tvshell=1&role=admin` · main ใน harness ไม่เลื่อนเองเมื่อ tvshell (เหมือน App)
 - ผังรวม: หัวจอ TV เป็นกล่องสถานะแบบ Andon (นับไลน์ตามสี `regCat`) · แผงขวา `TvFitBox maxScale 2`
 - Andon (`MtnAndonBoard`): คอลัมน์ขวา TvFitBox (เดิม maxHeight + scroll ในกรอบ = การ์ดท้ายไม่มีใครเห็น)
+
+## 🧾 จอห้องช่างวนใบ MO ตามขั้น (2026-11-03 · ประชุม 02/11 ข้อ B6)
+*"จอ TV ทีม MTN วนหน้า MO อัตโนมัติ — รอรับงาน / กำลังซ่อม / รอตรวจ"*
+- **ไม่ใช่หน้าใหม่ · ไม่มี schema/สิทธิ์ใหม่** — มุมมองที่ 4 ของ `/tv`: `/tv?dept=mo&mo=<กอง>&team=<ทีม>`
+  (บัญชี `display` มี `page:/tv` อยู่แล้ว · **ไม่มี** `page:/mtn-repair` — วัด 03/11 · และ `/mtn-repair` เป็นจอทำงาน หนักเกินทีวี)
+- กอง `mo=` = `approve` 🔒 รอ ผจก.อนุมัติก่อนเริ่มงาน · `accept` 📣 รอช่างรับงาน · `repair` 🛠 กำลังซ่อม ·
+  `check` ☑️ รอตรวจรับ/QA · `close` ✅ รอรับมอบ/อนุมัติปิดใบ · `other` 📤 ตีกลับ/ส่งซ่อมภายนอก · ว่าง = ทุกขั้น
+  — ทะเบียน `PAGE_PARAMS['/tv']` (คีย์ `mo` + `team` showIf `dept=mo`) ตรงกับ `MO_TV_GROUPS` (`utils/moTvBoard.js` · มีเทสเทียบ 2 ชุด)
+- **ชุดสำเร็จรูป** ในหน้าตั้งค่า: แถว "🧾 เติมชุดใบ MO" ปุ่ม MTN/JIG/DIE/ทุกทีม = เติม 4 รายการ (`accept·repair·check·close`)
+  ต่อท้ายรอบ (`moRotationItems()`) — เป็นแค่ตัวช่วยพิมพ์ลิงก์ แก้/ลบ/เพิ่ม `approve` ทีละรายการได้ปกติ
+- **ขั้นตอนตั้งจอ (admin):** `/display-rotation` → เลือกบัญชีจอห้องช่าง → กด **+ MTN** ในแถว "🧾 เติมชุดใบ MO"
+  → (ถ้าต้องการ) ตั้งวินาทีต่อหน้า / เพิ่มหน้าอื่นคั่น เช่น `/tv?dept=maintenance` → **บันทึก** → จอเปลี่ยนตามรอบถัดไป (หรือกด 🔄 สั่งจอรีโหลด)
+- รายละเอียดบอร์ด → `docs/modules/dept-dashboard-tv.md` §🧾 `/tv?dept=mo`
+
+## 🔭 09/11 — จอ TV ทุกหน้าเห็นเฉพาะขอบเขตของบัญชี (user: "ทำแบบเดียวกันกับจอทีวีหน้าอื่นด้วย")
+ไล่ทั้ง 19 หน้าในทะเบียนจอวน แล้วใช้ **`lineScope()`** (`utils/sectionScope.js`) แกนเดียวกับผังรวมโรงงาน ·
+admin/ไม่จำกัด = เหมือนเดิมเป๊ะ · ตัดได้ = จอเขียน "ซ่อน N …" · ตัดไม่ได้ (`unsure`) = ป้ายเตือนสีเหลือง (อยู่นอก `ph-chrome` ให้เห็นบนกรอบ TV)
+· **แก้รอบนี้:** `/rack-center` (ใบเรียกภาชนะ/เบิก packaging) · `/heijunka` (**ค่าเริ่มต้น**ของตัวกรอง = ส่วนงานของบัญชี — ยังเลือก "ทั้งโรงงาน" เองได้ เพราะสโตร์ป้อนทั้งโรงงาน) ·
+  `/mtn-layout` แท็บไลน์ผลิต (แท็บ facility = โดเมนช่าง ทั้งโรงงานเหมือนเดิม) · `/tv` (การ์ดแผน PM · ช่องเลือกส่วนงาน · ส่ง `scopeIdx`) ·
+  `<DowntimeSiren lineNames>` prop ใหม่ (null = เดิม · ใช้ที่ Dashboard/MtnAndonBoard/mtn-layout) · Dashboard เตือนเมื่อตัดขอบเขตไม่ได้ ·
+  `/mtn-analysis` แท็บ QC7 (downtime ใช้ไลน์ของเครื่อง) · `/vsm` ใบที่บันทึกไว้ · Report แท็บทักษะ/ใบลงเวลา **fail-closed** เมื่อขอบเขตจำกัดแต่หาไลน์/ส่วนงานไม่ได้ ·
+  ส่ง `scopeIdx` ที่ Obeya/StoreMonitor/LineOee/MaintenanceLevels/PmCoordination (+ `LineSelect`/`lineOptions` รับ `scopeIdx`)
+· **ทั้งโรงงานโดยตั้งใจ (ไม่แตะ):** ชั้นบิลไฟทั้งโรงงานของ `/energy` · แท็บ facility ของ `/mtn-layout` · แถวคลังกลางของ `/store-monitor` ·
+  `/pm` แท็บ check/plan (งานทีมช่าง) · `/nm-board` (โครงการลูกค้า ไม่มีแกนไลน์)

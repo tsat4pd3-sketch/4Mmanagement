@@ -28,14 +28,14 @@ const JUDGE = {
   na: { label: 'ข้าม', color: '#6b7280' },
 };
 export const DISPOSITION = {
-  rework: { label: '🔧 Rework (ซ่อมได้)', color: '#f59e0b' },
+  rework: { label: 'Rework (ซ่อมได้)', color: '#f59e0b' },
   scrap:  { label: '🔴 Scrap (ลงถังแดง)', color: '#ef4444' },
   hold:   { label: '⏸ Hold (กักไว้รอตัดสิน)', color: '#a78bfa' },
 };
 const FOUR_M = ['Man', 'Machine', 'Material', 'Method'];
 
 const Chip = ({ label, color }) => (
-  <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+  <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 'var(--r-pill)', fontSize: 11, fontWeight: 700,
     background: `${color}22`, color, border: `1px solid ${color}55`, whiteSpace: 'nowrap' }}>{label}</span>
 );
 // ห้ามผสม `border` (shorthand) กับ `borderColor` ใน style เดียวกัน — React เตือนทุก rerender → ประกอบ border จาก borderColor ที่ส่งมาแทน
@@ -140,7 +140,7 @@ export default function QaPieceStepper({
   const failedInRound = roundPieces.filter(p => p.result === 'fail');
 
   return (
-    <div style={{ background: 'var(--card)', border: `1px solid ${tone}66`, borderRadius: 12, padding: 14, marginBottom: 12 }}>
+    <div style={{ background: 'var(--card)', border: `1px solid ${tone}66`, borderRadius: 'var(--r-lg)', padding: 14, marginBottom: 12 }}>
       {/* ป้ายสถานะจากตัวเดินกฎ */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
         <span style={{ fontWeight: 800, fontSize: 14 }}>
@@ -156,7 +156,7 @@ export default function QaPieceStepper({
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10, fontSize: 11.5 }}>
           {[...(pieces || [])].sort((a, b) => a.piece_no - b.piece_no).map(p => (
             <span key={p.id || p.piece_no} title={p.failed_items?.length ? `ตก: ${p.failed_items.map(f => `#${f.balloon_no} ${f.characteristic}`).join(' · ')}${p.remark ? `\n${p.remark}` : ''}` : 'ผ่านทุกจุด'}
-              style={{ padding: '3px 9px', borderRadius: 999, fontWeight: 700,
+              style={{ padding: '3px 9px', borderRadius: 'var(--r-pill)', fontWeight: 700,
                 background: p.result === 'pass' ? 'rgba(34,197,94,0.14)' : 'rgba(239,68,68,0.14)',
                 color: p.result === 'pass' ? '#22c55e' : '#ef4444', border: `1px solid ${p.result === 'pass' ? '#22c55e55' : '#ef444455'}` }}>
               ชิ้น {p.piece_no} {p.result === 'pass' ? '✓' : `✕${p.disposition ? ` · ${DISPOSITION[p.disposition]?.label?.split(' ')[1] || p.disposition}` : ''}`}
@@ -165,9 +165,9 @@ export default function QaPieceStepper({
           ))}
           {(actions || []).map(a => (
             <span key={a.id || a.round_no} title={String(a.action_text || '')}
-              style={{ padding: '3px 9px', borderRadius: 999, fontWeight: 700, background: 'rgba(245,158,11,0.14)', color: '#f59e0b', border: '1px solid #f59e0b55' }}>
-              🛠 action รอบ {a.round_no}: {String(a.action_text || '—').slice(0, 40)}{String(a.action_text || '').length > 40 ? '…' : ''} — {a.action_by || '—'}
-              {a.four_m_log_id ? ' · 📋 4M' : ''}
+              style={{ padding: '3px 9px', borderRadius: 'var(--r-pill)', fontWeight: 700, background: 'rgba(245,158,11,0.14)', color: '#f59e0b', border: '1px solid #f59e0b55' }}>
+              action รอบ {a.round_no}: {String(a.action_text || '—').slice(0, 40)}{String(a.action_text || '').length > 40 ? '…' : ''} — {a.action_by || '—'}
+              {a.four_m_log_id ? ' · 4M' : ''}
             </span>
           ))}
         </div>
@@ -175,7 +175,7 @@ export default function QaPieceStepper({
 
       {/* ── รอ action ── */}
       {state === 'await_action' && (
-        <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 10, padding: 12 }}>
+        <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 'var(--r-md)', padding: 12 }}>
           <div style={{ fontSize: 12.5, marginBottom: 8, lineHeight: 1.6 }}>
             ชิ้นที่ตกในรอบนี้: {failedInRound.map(p => `ชิ้น ${p.piece_no} (${(p.failed_items || []).map(f => `#${f.balloon_no}`).join(', ') || '—'})`).join(' · ') || '—'}
             <br />ฝ่ายผลิตบันทึกว่าแก้ไขอะไร แล้ว QA กลับมาตรวจต่อ ต้องผ่านติดกัน {SEQ_RULE.PASSES_TO_ACCEPT} ชิ้นถึงยอมรับ (ตกอีกชิ้นเดียว = alarm ซ้ำ)
@@ -199,7 +199,7 @@ export default function QaPieceStepper({
                 )}
               </label>
               <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <button disabled={busy} onClick={submitAction} style={btn('#f59e0b', '#fff')}>🛠 บันทึก action แล้วให้ QA ตรวจต่อ</button>
+                <button disabled={busy} onClick={submitAction} style={btn('#f59e0b', '#fff')}>บันทึก action แล้วให้ QA ตรวจต่อ</button>
                 <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
                   ใบ 4M เปิดเมื่อ action เป็นการเปลี่ยน คน/เครื่อง/วัตถุดิบ/วิธี — เข้าคิวอนุมัติหัวหน้า → QA ตามปกติ · rework ชิ้นเดียวไม่ต้องเปิด
                 </span>
@@ -224,8 +224,8 @@ export default function QaPieceStepper({
               const color = j ? JUDGE[j].color : 'var(--border2)';
               return (
                 <div key={i.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '7px 10px',
-                  borderRadius: 8, background: 'var(--bg3)', borderLeft: `4px solid ${color}` }}>
-                  <span style={{ minWidth: 34, height: 22, padding: '0 8px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  borderRadius: 'var(--r-md)', background: 'var(--bg3)', borderLeft: `4px solid ${color}` }}>
+                  <span style={{ minWidth: 34, height: 22, padding: '0 8px', borderRadius: 'var(--r-pill)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                     fontWeight: 800, fontSize: 12, color: '#fff', background: j ? JUDGE[j].color : '#4d9fff' }}>{i.balloon_no}</span>
                   {/* 🔍 รูปโคลสอัพของจุด (ตั้งที่ /qa-setup) — แตะซูม · แบบเดียวกับใบตรวจ PM */}
                   {i.image_path && <PointThumb url={qaFileUrl(i.image_path)} height={40} label={i.balloon_no}
@@ -236,7 +236,7 @@ export default function QaPieceStepper({
                   </div>
                   {i.item_type === 'variable' && calcOf(i) && (
                     <span title="จุดคำนวณ — ระบบคิดจากจุดที่วัดของชิ้นนี้" style={{ ...inputSt, width: 'auto', minWidth: isMobile ? 110 : 96, padding: '6px 8px', display: 'inline-flex', gap: 6, alignItems: 'baseline', whiteSpace: 'nowrap', borderStyle: 'dashed' }}>
-                      <span style={{ fontSize: 11, color: '#4d9fff', fontWeight: 700 }}>🧮 {calcFormula(calcOf(i), id => labelById[id])} =</span>
+                      <span style={{ fontSize: 11, color: '#4d9fff', fontWeight: 700 }}>{calcFormula(calcOf(i), id => labelById[id])} =</span>
                       <b>{d.value !== '' && d.value != null ? d.value : '…'}</b>
                     </span>
                   )}
@@ -294,7 +294,7 @@ export default function QaPieceStepper({
       {/* ── modal disposition ของชิ้นที่ตก — ฟอร์ม: ไม่ปิดจาก backdrop (UI-CONVENTIONS §5) ── */}
       {dispo && (
         <div className="modal-scroll" /* modal-scroll = เลื่อนถึงปุ่มล่างได้เมื่อจอเตี้ย/คีย์บอร์ดเด้ง (UI-CONVENTIONS §4 · index.css) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid rgba(239,68,68,0.5)', borderRadius: 12, padding: 16, width: 'min(560px, 100%)' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid rgba(239,68,68,0.5)', borderRadius: 'var(--r-lg)', padding: 16, width: 'min(560px, 100%)' }}>
             <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 6 }}>✕ ชิ้นที่ {seq?.nextPiece} ตก {dispo.payload.failedItems.length} จุด — จะทำอะไรกับชิ้นนี้</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.6 }}>
               {dispo.payload.failedItems.map(f => `#${f.balloon_no} ${f.characteristic}${f.value != null && f.value !== '' ? ` = ${f.value}` : ''} (${f.spec_text})${f.note ? ` — ${f.note}` : ''}`).join(' · ')}

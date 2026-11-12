@@ -10,6 +10,7 @@
 
 | โมดูล | ไฟล์ |
 |---|---|
+| 🪜 แถบขั้นตอน StepFlow (ใบไหนใส่แล้ว/ไม่ใส่ + กฎ) | `step-flow.md` |
 | Adoption Outlook — 🔮 ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร (`/adoption-outlook` · 2026-08-13) | `docs/modules/adoption-outlook.md` |
 | 🔗 Audit AM↔PM ทั้งโปรเจค — 2 ระบบ AM ไม่ sync · null due = "ปกติ" · ลำดับแก้ 3 รอบ (2026-10-08 · ยังไม่แก้) | `docs/modules/am-pm-linkage-audit.md` |
 | 🦺 BBS — สังเกตพฤติกรรมความปลอดภัย (Behavior-Based Safety · paperless · 2026-08-21) | `docs/modules/bbs-safety.md` |
@@ -74,6 +75,9 @@
 | Production Plan — วางแผนการผลิต (Active Planner, 2026-07-15) | `docs/modules/production-plan.md` |
 | ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง (paperless · 2026-08-19 · feedback หน้างาน) | `docs/modules/production-problem-report-bins.md` |
 | 📦 อัพเดทโปรแกรม — `/program-update` (2026-10-01 · คำสั่ง user) | `docs/modules/program-update.md` |
+| 🌐 ปุ่มสลับ ไทย/English — ชั้นภาษาโครงหลัก `tr()` (2026-11-02 · คำสั่ง user) | `docs/modules/i18n.md` |
+| 🦺 ข้อกำหนด PPE รายหน่วยงาน (4 ชั้น) + ผลตรวจรายคน (`/ppe-setup` · 2026-11-10 · คำสั่ง user) | `docs/modules/ppe-requirements.md` |
+| 🔌 ศูนย์เชื่อมต่อ Node-RED / เครื่องจักร — ต้นทาง · รหัสลับต่อต้นทาง · สุขภาพการส่ง · gen flow (`/integrations` · 2026-11-11) | `docs/modules/integration-hub.md` |
 | QA Inspection — setup → ใบตรวจ (ปิดช่องว่าง 2026-08-04) | `docs/modules/qa-inspection.md` |
 | ประวัติผล QC Audit (ตรวจ+แก้แล้ว — บันทึกกัน regress) | `docs/modules/qc-audit-history.md` |
 | QR / บาร์โค้ดอุปกรณ์ — สแกนเลือกเครื่อง/จิ๊ก/สินค้า (2026-08-03 · คำสั่ง user) | `docs/modules/qr-equipment-scan.md` |

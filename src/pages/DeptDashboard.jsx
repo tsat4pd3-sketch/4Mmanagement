@@ -5,11 +5,13 @@ import { supabase, supabaseDR } from '../supabaseClient';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { UserContext } from '../App';
 import { OBEYA_TITLE, OBEYA_ICON } from '../utils/obeyaPage';
-import { wavg, orderPlanQty, dtMinBySession, oeeTargetForLines } from '../utils/oee';
+import { wavg, orderPlanQty, dtMinBySession, oeeTargetForLines, buildCtMap, QBIN_EMBED } from '../utils/oee';
+import { liveOeeByLine } from '../lib/liveLineOee';
 import { loadAffectsLanes } from '../utils/affectsLanes';
-import { loadBreakPolicies, fetchOeeTargets } from '../utils/oeeMasters';
+import { loadBreakPolicies, fetchOeeTargets, loadCtProducts, loadCtKanban } from '../utils/oeeMasters';
 import { valueInk } from '../utils/statusTone';
 import { dtBucketName, buildDtIndex } from '../utils/downtimeCategory';
+import { dtOpenKind } from '../utils/downtimeRules';
 import { pairAwareTotal, collapseOps } from '../utils/pairTotals';
 import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import { loadPairMap } from '../utils/useProducts';
@@ -24,6 +26,7 @@ import ParetoAbcChart from '../components/ParetoAbcChart';
 import PageHeader from '../components/PageHeader';
 import Segmented from '../components/Segmented';
 import Page from '../components/Page';
+import { useWorkDate } from '../utils/useWorkDate';   // 📅 จอเปิดค้างข้ามวัน (12/11)
 /* 🚨 จอเฝ้าระวัง (MtnAndonBoard) ย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28)
    หน้านี้ = "คิวงานที่กดไปทำ" · `/tv` = "จอแขวน" — mount บอร์ดเดียวกัน 2 ที่คือทางเข้าซ้ำ */
 
@@ -42,21 +45,18 @@ import Page from '../components/Page';
    ═════════════════════════════════════════════════════════════════════════════════════════ */
 
 /* ── helper กลาง ─────────────────────────────────────────────────────────────────────── */
-function getWorkDate() {
-  const d = new Date();
-  if (d.getHours() < 8) d.setDate(d.getDate() - 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+/* 📅 วันงานมาจาก `useWorkDate()` (hook กลาง) — เดิมไฟล์นี้ก๊อปนิยาม `getWorkDate` ไว้เอง
+   แล้วเรียกในตัว component ⇒ จอที่เปิดค้างไม่อัปเดตวันงานข้ามวัน (บั๊กหน้างาน 12/11) */
 /* บวกวันบน 'YYYY-MM-DD' แบบ local — ห้าม toISOString (UTC เพี้ยน 1 วันช่วง 00:00-07:00 ไทย) */
 const dayAdd = (s, n) => { const d = new Date(`${s}T00:00:00`); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const fmtNum = (n) => (n == null ? '—' : Math.round(n).toLocaleString('en-US'));
 const fmtDate = (s) => { try { return new Date(`${s}T00:00:00`).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' }); } catch { return s; } };
 /* สี OEE เทียบเป้ากลุ่มจริง (oeeTargetForLines + statusOf/valueInk) — คิดใน ProductionView · 05/10 เดิม 80/65 ตายตัว */
-const pctCol = (p) => p == null ? 'var(--muted)' : p >= 95 ? '#22c55e' : p >= 80 ? '#f59e0b' : '#ef4444';
+const pctCol = (p) => p == null ? 'var(--muted)' : p >= 95 ? 'var(--green)' : p >= 80 ? 'var(--amber)' : 'var(--red)';
 const daysSince = (iso) => iso ? Math.floor((Date.now() - new Date(iso)) / 86400000) : null;
 const dtMinOf = (d) => d.duration_min != null ? (Number(d.duration_min) || 0)
   : (d.started_at && d.ended_at ? Math.max(0, (new Date(d.ended_at) - new Date(d.started_at)) / 60000) : 0);
-const isOpenDT = (d) => !d.ended_at && d.duration_min == null;
+/* นิยาม isOpenDT/dtOpenKind อยู่ที่ utils/downtimeRules.js ที่เดียว — ห้ามก๊อปกลับมาที่นี่ */
 /* ลิงก์เข้า "คิวอนุมัติ 4M" ของใบนั้นโดยตรง (ไม่ใช่หน้ารายงานเปล่าๆ) — Report.jsx อ่าน param ชุดนี้:
    status/from = ตั้งตัวกรองให้ใบนั้นอยู่ในรายการ (ใบค้างมักเก่ากว่าช่วง default 7 วัน)
    focus = เน้นแถว + เลื่อนไปหา แล้วกดอนุมัติได้เลย
@@ -81,7 +81,7 @@ const tvBtn = (on) => ({
 });
 
 function Section({ title, sub, children, tone }) {
-  const bd = tone === 'alert' ? '#ef4444' : tone === 'warn' ? '#f59e0b' : 'var(--border)';
+  const bd = tone === 'alert' ? 'var(--red)' : tone === 'warn' ? 'var(--amber)' : 'var(--border)';
   return (
     <div style={{ ...cardSt, borderLeft: `4px solid ${bd}` }}>
       <div style={{ fontSize: 15, fontWeight: 700, marginBottom: sub ? 2 : 9 }}>{title}</div>
@@ -101,7 +101,7 @@ function Kpi({ label, value, unit, sub, color, delta }) {
       <div style={{ fontSize: 26, fontWeight: 800, lineHeight: 1.15, color: color || 'var(--text)', fontVariantNumeric: 'tabular-nums' }}>
         {value}{unit && <span style={{ fontSize: 14, fontWeight: 700 }}> {unit}</span>}
         {delta != null && (
-          <span style={{ fontSize: 12.5, marginLeft: 7, color: delta > 0 ? '#22c55e' : delta < 0 ? '#ef4444' : 'var(--muted)' }}>
+          <span style={{ fontSize: 12.5, marginLeft: 7, color: delta > 0 ? 'var(--green)' : delta < 0 ? 'var(--red)' : 'var(--muted)' }}>
             {delta > 0 ? '▲' : delta < 0 ? '▼' : '='} {Math.abs(delta).toFixed(1)}
           </span>
         )}
@@ -113,20 +113,20 @@ function Kpi({ label, value, unit, sub, color, delta }) {
 
 /* คิวงานค้าง — ว่างต้องขึ้น "ไม่มีงานค้าง" เสมอ ห้ามซ่อนแผง (ผู้ใช้ต้องรู้ว่าเช็คแล้ว) */
 function ActionList({ items, empty = '✅ ไม่มีงานค้าง', onPick, max = 8 }) {
-  if (!items.length) return <div style={{ fontSize: 13, color: '#22c55e' }}>{empty}</div>;
+  if (!items.length) return <div style={{ fontSize: 13, color: 'var(--green)' }}>{empty}</div>;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       {items.slice(0, max).map((it, i) => (
         <button key={i} onClick={() => onPick && onPick(it)} style={{
           display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left', cursor: onPick ? 'pointer' : 'default',
-          background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 10px', color: 'var(--text)',
+          background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '7px 10px', color: 'var(--text)',
         }}>
           <span style={{ fontSize: 15 }}>{it.icon}</span>
           <span style={{ flex: 1, minWidth: 0, fontSize: 13 }}>
             <b>{it.title}</b>
             {it.detail && <span style={{ color: 'var(--muted)' }}> · {it.detail}</span>}
           </span>
-          {it.age != null && <span style={{ fontSize: 11.5, color: it.age >= 3 ? '#ef4444' : 'var(--muted)', whiteSpace: 'nowrap' }}>{it.age} วัน</span>}
+          {it.age != null && <span style={{ fontSize: 11.5, color: it.age >= 3 ? 'var(--red)' : 'var(--muted)', whiteSpace: 'nowrap' }}>{it.age} วัน</span>}
           {it.tag && <span style={{ fontSize: 11, fontWeight: 700, color: it.tagColor || 'var(--muted)', whiteSpace: 'nowrap' }}>{it.tag}</span>}
         </button>
       ))}
@@ -139,11 +139,8 @@ function Links({ items, navigate }) {
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
       {items.map(([to, label, n]) => (
-        <button key={to} onClick={() => navigate(to)} style={{
-          fontSize: 13, fontWeight: 700, padding: '7px 12px', borderRadius: 999, cursor: 'pointer',
-          background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)',
-        }}>
-          {label}{n ? <span style={{ marginLeft: 6, color: '#f59e0b' }}>{n}</span> : null}
+        <button key={to} type="button" className="pg-btn" onClick={() => navigate(to)} style={{ height: 30, fontSize: 12.5 }}>
+          {label}{n ? <span style={{ marginLeft: 6, color: 'var(--amber)' }}>{n}</span> : null}
         </button>
       ))}
     </div>
@@ -163,7 +160,7 @@ async function loadProduction(ctx) {
   const d7 = dayAdd(workDate, -6);
   const [{ data: sess2, error: eS2 }, { data: sess7, error: eS7 }, fourM, logsRes, empRes, { data: staleRaw, error: eStale }] = await Promise.all([
     // start_time = กรอบกะ ⇒ dtMinBySession ตัด downtime ที่ทับพักก่อนคิดน้ำหนัก wLoad (05/10)
-    supabaseDR.from('production_sessions').select('id, line_name, shift, status, oee, shift_min, work_date, start_time').in('work_date', [prevDate, workDate]),
+    supabaseDR.from('production_sessions').select('id, line_name, shift, status, oee, shift_min, work_date, start_time, created_at').in('work_date', [prevDate, workDate]),
     supabaseDR.from('production_sessions').select('id, line_name, work_date, shift').gte('work_date', d7).lte('work_date', workDate),
     /* ⚠️ `four_m_logs` **ไม่มีคอลัมน์ `created_by_name`** (มีแต่ `created_by`) — เคยใส่ไว้แล้ว
        คิวรีล้มทั้งก้อน ⇒ การ์ด "4M รออนุมัติ" ขึ้น 0 ทั้งที่ค้างจริง 16 ใบ (วัดจากฐาน 22/09)
@@ -182,9 +179,10 @@ async function loadProduction(ctx) {
   /* ⚠️ ids7 = 7 วัน ≈ 200 กะ → `.in()` ตรงๆ URL ยาวเกิน + แถวลูกทะลุ 1000 ได้
      → ผ่าน fetchByIds ทุกคิวรีที่ยิงด้วย id list (QC audit 2026-08-20 · T3-14) */
   const [ordRes, dtRes, defRes, { data: prods }, dt7Res] = await Promise.all([
-    fetchByIds(ids, c => supabaseDR.from('prod_orders').select('id, session_id, status, qty, qty_ok, qty_actual, qty_target, mat_no').in('session_id', c)),
+    fetchByIds(ids, c => supabaseDR.from('prod_orders').select('id, session_id, status, qty, qty_ok, qty_actual, qty_target, mat_no, opened_at').in('session_id', c)),
     fetchByIds(ids, c => supabaseDR.from('downtime_logs').select('id, session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name_th, category)').in('session_id', c)),
-    fetchByIds(ids, c => supabaseDR.from('defect_logs').select('id, session_id, qty_ng, qty_suspect').in('session_id', c)),
+    /* prod_orders(mat_no)/is_trial/excl_from_q/QBIN_EMBED = ให้ OEE สดของกะที่ยังเปิดคิด %P/%Q ตามกฎเดียวกับจออื่น (11/11) */
+    fetchByIds(ids, c => supabaseDR.from('defect_logs').select(`id, session_id, qty_ng, qty_suspect, is_trial, prod_orders(mat_no), dr_defect_types(excl_from_q), ${QBIN_EMBED}`).in('session_id', c)),
     loadPairMap().then(data => ({ data })),   // cache ทะเบียนสินค้ากลาง (25/09)
     fetchByIds(ids7, c => supabaseDR.from('downtime_logs').select('id, session_id, duration_min, started_at, ended_at, machine_no, description, dr_downtime_types(name_th, category)').in('session_id', c)),
     loadOpInfo(), // map รายการขั้นตอน (OP งานขับนัท) — ตัวสุดท้ายไม่เข้า destructure แค่ให้ cache พร้อม
@@ -192,18 +190,23 @@ async function loadProduction(ctx) {
   // นโยบายพัก + เป้า OEE — ล้ม = ติดธง loadErr (ห้ามถือว่า "ไม่มีพัก" แล้วหักซ้ำ / ห้ามเดาเป้า 80/65)
   /* 🔍 AM รายวัน (ผลิตตรวจเครื่องเองต้นกะ) — แหล่งเดียว `lib/dailyAmBoard.js` (กฎ AM↔PM 09/10 · ห้ามคิวรี inspections เอง)
      user 12/10: "ฝ่ายผลิตก็ต้องโชว์เครื่องจักรที่ไม่ตรวจด้วย" · โหลดล้ม = ธง amErr เขียนบนจอ (ไม่ใช่ "ตรวจครบ") */
-  const [breaks, tg, am] = await Promise.all([loadBreakPolicies().catch(() => null), fetchOeeTargets(),
-    loadDailyAm({ lines: ctx.lines }).catch(e => ({ ok: false, error: e }))]);
+  const [breaks, tg, am, ctProds, ctKan] = await Promise.all([loadBreakPolicies().catch(() => null), fetchOeeTargets(),
+    loadDailyAm({ lines: ctx.lines }).catch(e => ({ ok: false, error: e })),
+    // CT ของ OEE สด (cache กลางร่วมกับผังรวม/Line OEE) — ล้ม = null ⇒ ติดธง loadErr ห้ามถือว่า "ไม่มี CT"
+    loadCtProducts().catch(() => null), loadCtKanban().catch(() => null)]);
   /* ⚠️ loadErr ต้องครอบคิวรี "ชั้นแม่" ด้วย (audit 2026-09-02)
      เดิมนับแค่ 4 ตัวลูก ⇒ sess2 พลาด → KPI เป็น — ทั้งแถบ และการ์ด "กะที่ยังไม่ปิด" ขึ้น **เขียว
      "ปิดครบแล้ว"** · staleRaw พลาด → "กะค้างวันก่อน 0" (คิว escalation 7 วันหายไป)
      · fourM พลาด → "4M รออนุมัติ 0" — ทั้งหมดโดยไม่มีแถบเตือนสักอัน */
   return { sess, sess7: sess7 || [], orders: ordRes.rows, dts: dtRes.rows, defs: defRes.rows, pairs: prods, dt7: dt7Res.rows,
     breaks: breaks || [], oeeTargets: tg.byGroup, am: am?.ok ? am : null, amErr: !am?.ok,
+    ctMap: buildCtMap({ kanbanStds: ctKan || [], products: ctProds || [] }),
+    procByMat: Object.fromEntries((ctProds || []).map(p => [p.mat_no, p.process_type])),
     /* 🔀 "เครื่องไหนหยุดแล้วครอบกี่เลน" — ใช้ใน useMemo (sync) ⇒ ต้องโหลดมากับก้อนข้อมูล */
     affects: await loadAffectsLanes(),
     loadErr: !!(ordRes.error || dtRes.error || defRes.error || dt7Res.error
-      || eS2 || eS7 || eStale || fourM.error || logsRes.error || empRes.error || breaks == null || tg.error),
+      || eS2 || eS7 || eStale || fourM.error || logsRes.error || empRes.error || breaks == null || tg.error
+      || ctProds == null || ctKan == null),
     stale: (staleRaw || []).filter(s => inScope(s.line_name)),
     fourM: (fourM.data || []).filter(f => !f.line_name || inScope(f.line_name)), logs: logsRes.data || [], emps: empRes.data || [] };
 }
@@ -215,6 +218,19 @@ function ProductionView({ d, ctx }) {
   const { workDate, prevDate, lines, navigate, isMobile, inScope } = ctx;
   /* d.pairs = map { mat: คู่ } จาก cache กลาง · **null = ยังไม่รู้ ⇒ ไม่ยุบงานคู่** ห้ามแทนด้วย {} */
   const pairOf = useMemo(() => (x) => d.pairs?.[x] || null, [d.pairs]);
+
+  /* 🟢 OEE สดของกะที่ยังเปิด (11/11 · user "Dashboard ส่วนงานขึ้นค่าสดไหม") — ตัวคำนวณกลางชุดเดียวกับ
+     จอ Andon/ผังรวม/Line OEE (`lib/liveLineOee.js` → computeLiveOee) · กะปิดแล้วยังใช้ค่า stamp เสมอ
+     น้ำหนักของแถวสด = เวลาที่เดินมาแล้ว (ไม่ใช่ทั้งกะ) */
+  const liveBySess = useMemo(() => {
+    const m = {};
+    liveOeeByLine({
+      sessions: d.sess.filter(s => s.work_date === workDate), orders: d.orders, downtimes: d.dts, defects: d.defs,
+      ctMap: d.ctMap || {}, lines, breakPolicies: d.breaks || [], pairMap: d.pairs ?? null,
+      affectsBy: d.affects || {}, procByMat: d.procByMat || {},
+    }).forEach(r => { if (r.oee != null) m[r.sessionId] = r; });
+    return m;
+  }, [d, workDate, lines]);
 
   const per = useMemo(() => {
     const bySess = {}; d.orders.forEach(o => (bySess[o.session_id] ||= []).push(o));
@@ -244,10 +260,13 @@ function ProductionView({ d, ctx }) {
       L.planned += planned;
       L.ng += ngBy[s.id] || 0;
       if (s.status !== 'closed') L.open++;
-      o.rows.push({ line: s.line_name, shift: s.shift, oee: s.oee == null ? null : +s.oee, shift_min: s.shift_min || 570, plannedMin: planned, status: s.status });
+      const lv = s.oee == null ? liveBySess[s.id] : null;
+      o.rows.push(lv
+        ? { line: s.line_name, shift: s.shift, oee: lv.oee, shift_min: lv.elapsedMin || 0, plannedMin: lv.plannedDtMin || 0, status: s.status, live: true }
+        : { line: s.line_name, shift: s.shift, oee: s.oee == null ? null : +s.oee, shift_min: s.shift_min || 570, plannedMin: planned, status: s.status });
     });
     return out;
-  }, [d, workDate, pairOf]);
+  }, [d, workDate, pairOf, liveBySess]);
 
   const today = per.today || { lines: {}, rows: [] };
   const prev = per.prev || { lines: {}, rows: [] };
@@ -259,6 +278,7 @@ function ProductionView({ d, ctx }) {
   const tgt = sum(today, l => l.target), act = sum(today, l => l.actual);
   const pct = tgt > 0 ? +(act / tgt * 100).toFixed(1) : null;
   const openSess = today.rows.filter(r => r.status !== 'closed').length;
+  const liveN = today.rows.filter(r => r.live).length;
 
   // กำลังคนวันนี้ (พนักงานผูกไลน์แม่ → เทียบเฉพาะไลน์ใน scope)
   const manpower = useMemo(() => {
@@ -269,7 +289,15 @@ function ProductionView({ d, ctx }) {
     return { head, came };
   }, [d, lines, ctx]);
 
-  const openDT = d.dts.filter(isOpenDT);
+  /* 🔴 "เครื่องหยุดค้าง" ต้องมีกะที่ยังเปิดรองรับ — แถวเปิดค้างในกะที่ปิดไปแล้ว (เมื่อวาน/วันนี้)
+     = คนลืมปิดรายการ ไม่ใช่เครื่องหยุดอยู่ (กฎ `dtOpenKind` · utils/downtimeRules 09/11)
+     แยก 2 กอง: กองแรกไปตามเครื่อง · กองหลังไปตามปิดรายการ — ทั้งคู่ยังต้องขึ้นคิว "ต้องทำตอนนี้" */
+  const sessStatusById = useMemo(() => {
+    const m = {}; (d.sess || []).forEach(s => { m[s.id] = s.status; }); return m;
+  }, [d.sess]);
+  const dtKinds = useMemo(() => d.dts.map(x => ({ x, kind: dtOpenKind(x, sessStatusById[x.session_id] ?? null) })), [d.dts, sessStatusById]);
+  const openDT = dtKinds.filter(k => k.kind === 'open' || k.kind === 'unknown').map(k => k.x);
+  const forgottenDT = dtKinds.filter(k => k.kind === 'forgotten').map(k => k.x);
   const pendingClose = today.rows.filter(r => r.status === 'pending_close');
   /* 🔍 AM กะนี้ต่อไลน์ (เฉพาะไลน์ในขอบเขต user) — สี/กรอบ 60 นาที = `dailyAmLineStatus` (lib/pmDailyStatus) ห้ามคิดเอง
      · idle (ยังไม่เริ่มผลิต) ไม่เตือน (กติกาเดียวกับจอ AM/Telegram) · late = เลยกรอบ · wait = ยังอยู่ในกรอบ · red = พบผิดปกติ */
@@ -287,9 +315,9 @@ function ProductionView({ d, ctx }) {
   const amActions = amLines.flatMap((l) => {
     const names = (arr) => arr.slice(0, 3).map(t => t.machine_no || t.name).join(', ') + (arr.length > 3 ? ` +${arr.length - 3}` : '');
     const out = [];
-    if (l.ngN) out.push({ icon: '🔴', title: `AM พบผิดปกติ ${l.ngN} เครื่อง — ${l.line}`, detail: names(l.ng), tag: 'ผิดปกติ', tagColor: '#ef4444', to: '/daily-checker?tab=pm' });
-    if (l.late) out.push({ icon: '🔍', title: `AM ยังไม่ตรวจ ${l.late} เครื่อง — ${l.line}`, detail: `เลยกรอบ 60 นาทีหลังเริ่มผลิต · ${names(l.missing)}`, tag: 'เลยเวลา', tagColor: '#ef4444', to: '/daily-checker?tab=pm' });
-    else if (l.wait) out.push({ icon: '🔍', title: `AM รอตรวจ ${l.wait} เครื่อง — ${l.line}`, detail: `ยังอยู่ในกรอบ 60 นาที · ${names(l.missing)}`, tag: 'รอตรวจ', tagColor: '#f59e0b', to: '/daily-checker?tab=pm' });
+    if (l.ngN) out.push({ icon: '🔴', title: `AM พบผิดปกติ ${l.ngN} เครื่อง — ${l.line}`, detail: names(l.ng), tag: 'ผิดปกติ', tagColor: 'var(--red)', to: '/daily-checker?tab=pm' });
+    if (l.late) out.push({ icon: '🔍', title: `AM ยังไม่ตรวจ ${l.late} เครื่อง — ${l.line}`, detail: `เลยกรอบ 60 นาทีหลังเริ่มผลิต · ${names(l.missing)}`, tag: 'เลยเวลา', tagColor: 'var(--red)', to: '/daily-checker?tab=pm' });
+    else if (l.wait) out.push({ icon: '🔍', title: `AM รอตรวจ ${l.wait} เครื่อง — ${l.line}`, detail: `ยังอยู่ในกรอบ 60 นาที · ${names(l.missing)}`, tag: 'รอตรวจ', tagColor: 'var(--amber)', to: '/daily-checker?tab=pm' });
     return out;
   });
   /* กะค้างจากวันก่อน — ยุบเป็นแถวเดียว ไม่แตกรายกะ (57 กะจะกลบคิวงานจริง — บทเรียน 4M [Auto]
@@ -301,18 +329,20 @@ function ProductionView({ d, ctx }) {
       icon: '⏰', title: `กะค้างยังไม่ปิด/ไม่อนุมัติ ${staleRows.length} กะ`,
       detail: `${staleOver7.length ? `เกินเป้า 7 วัน ${staleOver7.length} กะ · เก่าสุด ${Math.max(...staleRows.map(s => s.age))} วัน — ` : ''}OEE ของกะพวกนี้ยังไม่เข้ารายงานเดือน`,
       tag: staleOver7.length ? `เกิน 7 วัน (${staleOver7.length})` : 'ค้างจากวันก่อน',
-      tagColor: staleOver7.length ? '#ef4444' : '#f59e0b', to: '/daily-report',
+      tagColor: staleOver7.length ? 'var(--red)' : 'var(--amber)', to: '/daily-report',
     }] : []),
-    ...pendingClose.map(r => ({ icon: '📋', title: `คำขอปิดกะ — ${r.line}`, detail: r.shift === 'night' ? 'กะดึก' : 'กะเช้า', tag: 'รออนุมัติ', tagColor: '#f59e0b', to: '/daily-report' })),
-    ...openDT.map(x => ({ icon: '🔴', title: `${x.dr_downtime_types?.name_th || 'Downtime'} ยังไม่ปิด`, detail: x.machine_no || x.description || '', tag: 'เครื่องหยุด', tagColor: '#ef4444', to: '/daily-report' })),
+    ...pendingClose.map(r => ({ icon: '📋', title: `คำขอปิดกะ — ${r.line}`, detail: r.shift === 'night' ? 'กะดึก' : 'กะเช้า', tag: 'รออนุมัติ', tagColor: 'var(--amber)', to: '/daily-report' })),
+    ...openDT.map(x => ({ icon: '🔴', title: `${x.dr_downtime_types?.name_th || 'Downtime'} ยังไม่ปิด`, detail: x.machine_no || x.description || '', tag: 'เครื่องหยุด', tagColor: 'var(--red)', to: '/daily-report' })),
+    ...forgottenDT.map(x => ({ icon: '⚠️', title: `${x.dr_downtime_types?.name_th || 'Downtime'} — ไม่ได้ปิดรายการ`, detail: `${x.machine_no || x.description || ''} · กะปิดไปแล้ว นาทีที่หยุดไม่ได้ถูกหักใน %A`.trim(), tag: 'ลืมปิดรายการ', tagColor: 'var(--amber)', to: '/daily-report' })),
     ...amActions,
-    ...(d.amErr ? [{ icon: '⚠️', title: 'โหลดสถานะตรวจเครื่อง AM ไม่ได้', detail: 'ยังไม่รู้ว่ากะนี้ตรวจครบไหม — เปิดจอ AM ตรวจสอบ', tag: 'ไม่ทราบ', tagColor: '#f59e0b', to: '/daily-checker?tab=pm' }] : []),
-    ...d.fourM.map(f => ({ icon: '📝', title: `4M ${f.category} — ${f.line_name || '-'}`, detail: (f.description || '').slice(0, 40), age: daysSince(`${f.work_date}T08:00:00`), tag: f.status === 'pending_qa' ? 'รอ QA' : 'รอ SV', tagColor: '#f59e0b', to: fourMLink(f) })),
+    ...(d.amErr ? [{ icon: '⚠️', title: 'โหลดสถานะตรวจเครื่อง AM ไม่ได้', detail: 'ยังไม่รู้ว่ากะนี้ตรวจครบไหม — เปิดจอ AM ตรวจสอบ', tag: 'ไม่ทราบ', tagColor: 'var(--amber)', to: '/daily-checker?tab=pm' }] : []),
+    ...d.fourM.map(f => ({ icon: '📝', title: `4M ${f.category} — ${f.line_name || '-'}`, detail: (f.description || '').slice(0, 40), age: daysSince(`${f.work_date}T08:00:00`), tag: f.status === 'pending_qa' ? 'รอ QA' : 'รอ SV', tagColor: 'var(--amber)', to: fourMLink(f) })),
   ];
 
   const lineRows = Object.values(today.lines).map(l => {
     const rs = today.rows.filter(r => r.line === l.line && r.oee != null);
-    return { ...l, pct: l.target > 0 ? +(l.actual / l.target * 100).toFixed(1) : null, oee: wavg(rs, r => r.oee, r => Math.max(0, r.shift_min - r.plannedMin)) };
+    const v = wavg(rs, r => r.oee, r => Math.max(0, r.shift_min - r.plannedMin));
+    return { ...l, pct: l.target > 0 ? +(l.actual / l.target * 100).toFixed(1) : null, oee: v == null ? null : +v.toFixed(1), oeeLive: rs.some(r => r.live) };
   }).sort((a, b) => (a.pct ?? 999) - (b.pct ?? 999));
 
   const dtRecords = useMemo(() => {
@@ -327,47 +357,47 @@ function ProductionView({ d, ctx }) {
   return (<>
     {/* "0" กับ "โหลดไม่ได้" ต้องแยกออกจากกัน (กติกาเดียวกับ QaView) */}
     {d.loadErr && (
-      <div style={{ ...cardSt, borderColor: '#ef444488', background: '#ef444414', color: '#ef4444', fontSize: 12, fontWeight: 700, padding: '10px 13px' }}>
+      <div style={{ ...cardSt, borderColor: 'var(--red)88', background: 'var(--red)14', color: 'var(--red)', fontSize: 12, fontWeight: 700, padding: '10px 13px' }}>
         🔴 โหลดใบงาน/Downtime/ของเสียไม่สำเร็จบางส่วน — ตัวเลขด้านล่าง<b>ไม่ครบ</b> (ดูรายละเอียดใน console)
       </div>
     )}
-    <Section title="🚨 ต้องทำตอนนี้" sub={`คำขอปิดกะ ${pendingClose.length} · กะค้างวันก่อน ${staleRows.length} · เครื่องหยุดค้าง ${openDT.length} · AM ยังไม่ตรวจ ${d.am ? amLate + amWait : '?'} เครื่อง${amNg ? ` (ผิดปกติ ${amNg})` : ''} · 4M รออนุมัติ ${d.fourM.length}`} tone={actions.length ? 'alert' : null}>
+    <Section title="ต้องทำตอนนี้" sub={`คำขอปิดกะ ${pendingClose.length} · กะค้างวันก่อน ${staleRows.length} · เครื่องหยุดค้าง ${openDT.length}${forgottenDT.length ? ` · ลืมปิดรายการ ${forgottenDT.length}` : ''} · AM ยังไม่ตรวจ ${d.am ? amLate + amWait : '?'} เครื่อง${amNg ? ` (ผิดปกติ ${amNg})` : ''} · 4M รออนุมัติ ${d.fourM.length}`} tone={actions.length ? 'alert' : null}>
       <ActionList items={actions} onPick={(it) => navigate(it.to)} />
     </Section>
 
     <div style={KPI_GRID(isMobile)}>
-      <Kpi label="📦 ผลิตวันนี้ / เป้า" value={fmtNum(act)} color={pctCol(pct)} sub={`เป้า ${fmtNum(tgt)} · ${pct == null ? '—' : pct + '%'}`} />
+      <Kpi label="ผลิตวันนี้ / เป้า" value={fmtNum(act)} color={pctCol(pct)} sub={`เป้า ${fmtNum(tgt)} · ${pct == null ? '—' : pct + '%'}`} />
       {/* 🔍 AM กะนี้ — ไม่มีทะเบียน ≠ ตรวจครบ · โหลดไม่ได้ = — (กฎความซื่อสัตย์ของจอ) */}
-      <Kpi label={`🔍 AM ตรวจเครื่องแล้ว (${d.am?.shift?.label || 'กะนี้'})`}
+      <Kpi label={`AM ตรวจเครื่องแล้ว (${d.am?.shift?.label || 'กะนี้'})`}
         value={d.amErr ? '—' : amTotal ? `${amChecked}/${amTotal}` : '0'} unit={d.amErr || !amTotal ? '' : 'เครื่อง'}
-        color={d.amErr ? undefined : amNg || amLate ? '#ef4444' : amWait ? '#f59e0b' : amTotal && amChecked === amTotal ? '#22c55e' : undefined}
+        color={d.amErr ? undefined : amNg || amLate ? 'var(--red)' : amWait ? 'var(--amber)' : amTotal && amChecked === amTotal ? 'var(--green)' : undefined}
         sub={d.amErr ? 'โหลดสถานะ AM ไม่ได้' : !amTotal ? 'ไลน์ในขอบเขตยังไม่ลงทะเบียนเครื่อง AM' : `เลยเวลา ${amLate} · รอตรวจ ${amWait} · ยังไม่เริ่มผลิต ${amNotStarted}${amNg ? ` · ผิดปกติ ${amNg}` : ''}`} />
-      <Kpi label="⚙️ OEE (กะที่ปิดแล้ว)" value={oeeToday == null ? '—' : oeeToday} unit={oeeToday == null ? '' : '%'} color={oeeCol(oeeToday, today.rows.map(r => r.line))}
+      <Kpi label={liveN ? 'OEE วันนี้ (รวมค่าสด)' : 'OEE วันนี้'} value={oeeToday == null ? '—' : +oeeToday.toFixed(1)} unit={oeeToday == null ? '' : '%'} color={oeeCol(oeeToday, today.rows.map(r => r.line))}
         delta={oeeToday != null && oeePrev != null ? +(oeeToday - oeePrev).toFixed(1) : null}
-        sub={oeePrev == null ? 'ไม่มีข้อมูลเมื่อวานให้เทียบ' : `เมื่อวาน ${oeePrev}%`} />
-      <Kpi label="🔧 Downtime นอกแผน" value={fmtNum(sum(today, l => l.dt))} unit="นาที" color={sum(today, l => l.dt) > 0 ? '#f59e0b' : undefined}
+        sub={`${liveN ? `รวมค่าสด ${liveN} กะที่ยังเดิน (ยืนยันตอนปิดกะ) · ` : ''}${oeePrev == null ? 'ไม่มีข้อมูลเมื่อวานให้เทียบ' : `เมื่อวาน ${oeePrev}%`}`} />
+      <Kpi label="Downtime นอกแผน" value={fmtNum(sum(today, l => l.dt))} unit="นาที" color={sum(today, l => l.dt) > 0 ? 'var(--amber)' : undefined}
         sub={`เมื่อวาน ${fmtNum(sum(prev, l => l.dt))} นาที`} />
-      <Kpi label="🚫 ของเสียวันนี้" value={fmtNum(sum(today, l => l.ng))} unit="ชิ้น" color={sum(today, l => l.ng) > 0 ? '#ef4444' : undefined}
+      <Kpi label="ของเสียวันนี้" value={fmtNum(sum(today, l => l.ng))} unit="ชิ้น" color={sum(today, l => l.ng) > 0 ? 'var(--red)' : undefined}
         sub={`เมื่อวาน ${fmtNum(sum(prev, l => l.ng))} ชิ้น`} />
-      <Kpi label="👷 คนเข้างาน" value={`${fmtNum(manpower.came)}/${fmtNum(manpower.head)}`}
+      <Kpi label="คนเข้างาน" value={`${fmtNum(manpower.came)}/${fmtNum(manpower.head)}`}
         sub={manpower.head ? `${Math.round(manpower.came / manpower.head * 100)}% ของกำลังคน` : '—'} />
-      <Kpi label="🕐 กะที่ยังไม่ปิด" value={openSess} unit="กะ" color={openSess ? '#f59e0b' : '#22c55e'}
+      <Kpi label="กะที่ยังไม่ปิด" value={openSess} unit="กะ" color={openSess ? 'var(--amber)' : 'var(--green)'}
         sub={openSess ? 'ตัวเลขด้านบนยังไม่ครบทั้งวัน' : 'ปิดครบแล้ว'} />
     </div>
 
-    <Section title="📈 ไลน์ที่ต้องเข้าไปช่วยก่อน" sub={`เรียงจาก % ทำได้น้อยสุด · วันงาน ${fmtDate(workDate)}`}>
+    <Section title="ไลน์ที่ต้องเข้าไปช่วยก่อน" sub={`เรียงจาก % ทำได้น้อยสุด · วันงาน ${fmtDate(workDate)}`}>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ ...tableSt, minWidth: 620 }}>
           <thead><tr><th style={TH}>ไลน์</th><th style={THR}>เป้า</th><th style={THR}>ผลิตได้</th><th style={THR}>%</th><th style={THR}>OEE</th><th style={THR}>DT (น.)</th><th style={THR}>NG</th></tr></thead>
           <tbody>
             {lineRows.map(l => (
               <tr key={l.line}>
-                <td style={{ ...TD, fontWeight: 700 }}>{l.line}{l.open ? <span style={{ fontSize: 11, color: '#f59e0b' }}> · ยังไม่ปิดกะ</span> : null}</td>
+                <td style={{ ...TD, fontWeight: 700 }}>{l.line}{l.open ? <span style={{ fontSize: 11, color: 'var(--amber)' }}> · ยังไม่ปิดกะ</span> : null}</td>
                 <td style={TDR}>{fmtNum(l.target)}</td><td style={TDR}>{fmtNum(l.actual)}</td>
                 <td style={{ ...TDR, color: pctCol(l.pct), fontWeight: 700 }}>{l.pct == null ? '—' : l.pct + '%'}</td>
-                <td style={{ ...TDR, color: oeeCol(l.oee, [l.line]), fontWeight: 700 }}>{l.oee == null ? '—' : l.oee}</td>
-                <td style={{ ...TDR, color: l.dt > 0 ? '#f59e0b' : 'var(--muted)' }}>{fmtNum(l.dt)}</td>
-                <td style={{ ...TDR, color: l.ng > 0 ? '#ef4444' : 'var(--muted)' }}>{fmtNum(l.ng)}</td>
+                <td style={{ ...TDR, color: oeeCol(l.oee, [l.line]), fontWeight: 700 }} title={l.oeeLive ? 'รวมค่าสดของกะที่ยังเดิน — ตัวเลขจริงยืนยันตอนปิดกะ' : undefined}>{l.oee == null ? '—' : l.oee}{l.oeeLive ? <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}> สด</span> : null}</td>
+                <td style={{ ...TDR, color: l.dt > 0 ? 'var(--amber)' : 'var(--muted)' }}>{fmtNum(l.dt)}</td>
+                <td style={{ ...TDR, color: l.ng > 0 ? 'var(--red)' : 'var(--muted)' }}>{fmtNum(l.ng)}</td>
               </tr>
             ))}
             {!lineRows.length && <tr><td style={TD} colSpan={7}>ยังไม่มีกะที่เปิดในวันนี้</td></tr>}
@@ -376,11 +406,11 @@ function ProductionView({ d, ctx }) {
       </div>
     </Section>
 
-    <ParetoAbcChart title="🔧 Downtime นอกแผน 7 วัน (ABC)" records={dtRecords} unit="นาที"
-      dims={[{ key: 'machine', label: '⚙️ เครื่องจักร' }, { key: 'line', label: '🏭 ไลน์' }, { key: 'shift', label: '🕐 กะ' }, { key: 'date', label: '📅 วัน' }, { key: 'note', label: '💬 หมายเหตุ', cluster: true }]}
+    <ParetoAbcChart title="Downtime นอกแผน 7 วัน (ABC)" records={dtRecords} unit="นาที"
+      dims={[{ key: 'machine', label: 'เครื่องจักร' }, { key: 'line', label: 'ไลน์' }, { key: 'shift', label: 'กะ' }, { key: 'date', label: 'วัน' }, { key: 'note', label: 'หมายเหตุ', cluster: true }]}
       sectionStyle={cardSt} emptyText="ไม่มี downtime นอกแผนใน 7 วัน" />
 
-    <Section title="🔗 ทางลัด">
+    <Section title="ทางลัด">
       <Links navigate={navigate} items={[['/daily-report', '📊 Daily Report'], ['/factory-map', '🗺️ ผังรวมโรงงาน'], ['/oee-analytics', '📈 OEE'], ['/morning-meeting', '🌅 ประชุมเช้า'], ['/management', '🔄 จัดการไลน์']]} />
     </Section>
   </>);
@@ -390,15 +420,23 @@ function ProductionView({ d, ctx }) {
 async function loadMaintenance(ctx) {
   const { workDate, inScope } = ctx;
   const d30 = dayAdd(workDate, -29);
-  const [{ data: mo, error: eMo }, { data: plans, error: ePlans }, { data: sess30, error: eSess30 }] = await Promise.all([
+  const [{ data: mo, error: eMo }, { data: plans, error: ePlans }, sessPage] = await Promise.all([
     /* ⚠️ คอลัมน์ย่อเท่านั้น — `mtn_orders` มี 116 คอลัมน์ · `select('*')&limit=500` ≈ 800 KB/รอบ
        จอนี้แขวนไว้ทั้งวันหลายเครื่อง (งานลด egress 2026-09-17 · ดู MO_LIST_COLS ใน MtnRepair.jsx) */
     supabaseDR.from('mtn_orders').select('id, mo_no, status, machine_no, line_name, problem_characteristic, report_at')
       .order('report_at', { ascending: false }).limit(500),
     supabaseDR.from('pm_plans').select('id, checklist_id, plan_type, next_due_date, last_done_at, interval_days, cycle_basis, deferred_to, deferred_at').eq('is_active', true),
-    supabaseDR.from('production_sessions').select('id, line_name, work_date').gte('work_date', d30).lte('work_date', workDate),
+    // `status` = ตัวตัดสินว่าแถว downtime ที่ยังไม่ปิด "เครื่องยังหยุดอยู่" หรือ "ลืมปิดรายการ" (dtOpenKind)
+    /* 🔴 เพดาน 1,000 แถว — ทุกสถานะ ทุกไลน์ 30 วัน วัดจริง 11/11/26 = **989 แถว เหลือที่ 11**
+       (ไม่กรองไลน์ในคิวรี เพราะกรองขอบเขตใน JS ทีหลัง ⇒ ยิ่งต้องได้ครบ) */
+    fetchAllPages(() => supabaseDR.from('production_sessions')
+      .select('id, line_name, work_date, status').gte('work_date', d30).lte('work_date', workDate),
+      { orderBy: ['work_date', 'id'] }),
     loadPmTeams().catch(() => {}),   // ให้ isAmTeam อ่าน mtn_teams.kind ได้จริง (แยก AM ออกจาก PM ช่าง)
   ]);
+  // fetchAllPages คืน { rows, error, truncated } — ชนเพดานหน้า = โหลดไม่ครบ ต้องเข้า loadErr ด้วย
+  const sess30 = sessPage.rows;
+  const eSess30 = sessPage.error || (sessPage.truncated ? 'กะ 30 วันเยอะเกินกว่าจะโหลดครบ' : null);
   const sIds = (sess30 || []).filter(s => inScope(s.line_name)).map(s => s.id);
   /* ⚠️ 30 วัน ≈ 270 กะ — `.in()` ตรงๆ URL ยาวเกินจน proxy ตัด แล้วคืนค่าว่าง "เงียบ"
      (จอช่างจะขึ้น DT 0 นาที / เครื่องหยุดซ้ำ 0 เครื่อง ทั้งที่มีของจริง) → ผ่าน fetchByIds เสมอ */
@@ -470,33 +508,39 @@ function MaintenanceView({ d, ctx }) {
     return Object.values(byMc).filter(m => m.times >= 2 && !hasMo.has(m.machine)).sort((a, b) => b.min - a.min);
   }, [d]);
 
-  const callMtn = d.dt30.filter(x => x.call_mtn && isOpenDT(x));
+  /* 🔴 "เรียกช่างแล้วยังไม่ปิด" = ต้องยังมีกะเปิดอยู่ — ย้อนหลัง 30 วันมีแถวที่คนลืมปิดปนอยู่
+     (กฎ `dtOpenKind` 09/11) ถ้านับรวม ช่างจะเห็นงานด่วนค้างเป็นเดือนทั้งที่กะปิดไปนานแล้ว */
+  const sess30Status = useMemo(() => {
+    const m = {}; (d.sess30 || []).forEach(s => { m[s.id] = s.status; }); return m;
+  }, [d.sess30]);
+  const callMtn = useMemo(() => d.dt30.filter(x => x.call_mtn
+    && ['open', 'unknown'].includes(dtOpenKind(x, sess30Status[x.session_id] ?? null))), [d.dt30, sess30Status]);
   const byStep = {};
   scopedMo.forEach(o => { byStep[o.status] = (byStep[o.status] || 0) + 1; });
   const unplannedMin = d.dt30.filter(x => x.dr_downtime_types?.category !== 'planned').reduce((a, x) => a + dtMinOf(x), 0);
 
   const actions = [
-    ...callMtn.map(x => ({ icon: '📞', title: `เรียกช่างแล้วยังไม่ปิด — ${x.machine_no || 'ไม่ระบุเครื่อง'}`, detail: x.dr_downtime_types?.name_th || x.description || '', tag: 'ด่วน', tagColor: '#ef4444', to: '/mtn-repair' })),
-    ...stale.map(o => ({ icon: '🛠️', title: `${o.mo_no || 'ใบซ่อม'} — ${o.machine_no || o.line_name || ''}`, detail: o.problem_characteristic || '', age: daysSince(o.report_at), tag: o.status, tagColor: '#f59e0b', to: '/mtn-repair' })),
-    ...overdue.slice(0, 6).map(p => ({ icon: '📅', title: `PM เกินกำหนด — ${p.name}`, detail: `${p.line} · ครบกำหนด ${fmtDate(p.next_due_date)}`, tag: `เกิน ${Math.abs(p.days)} วัน`, tagColor: '#ef4444', to: '/pm?tab=plan' })),
+    ...callMtn.map(x => ({ icon: '📞', title: `เรียกช่างแล้วยังไม่ปิด — ${x.machine_no || 'ไม่ระบุเครื่อง'}`, detail: x.dr_downtime_types?.name_th || x.description || '', tag: 'ด่วน', tagColor: 'var(--red)', to: '/mtn-repair' })),
+    ...stale.map(o => ({ icon: '🛠️', title: `${o.mo_no || 'ใบซ่อม'} — ${o.machine_no || o.line_name || ''}`, detail: o.problem_characteristic || '', age: daysSince(o.report_at), tag: o.status, tagColor: 'var(--amber)', to: '/mtn-repair' })),
+    ...overdue.slice(0, 6).map(p => ({ icon: '📅', title: `PM เกินกำหนด — ${p.name}`, detail: `${p.line} · ครบกำหนด ${fmtDate(p.next_due_date)}`, tag: `เกิน ${Math.abs(p.days)} วัน`, tagColor: 'var(--red)', to: '/pm?tab=plan' })),
     // แผนที่ไม่เคยตรวจ = ยังไม่มีวันครบกำหนดให้เลย — ยุบเป็นบรรทัดเดียว (หลักร้อยรายการ) แต่ห้ามหาย
-    ...(pmNever.length ? [{ icon: '📅', title: `แผน PM ที่ไม่เคยตรวจเลย ${pmNever.length} แผน`, detail: [...new Set(pmNever.map(p => p.line).filter(Boolean))].slice(0, 6).join(' · '), tag: 'ไม่เคยตรวจ', tagColor: '#f59e0b', to: '/pm?tab=plan' }] : []),
+    ...(pmNever.length ? [{ icon: '📅', title: `แผน PM ที่ไม่เคยตรวจเลย ${pmNever.length} แผน`, detail: [...new Set(pmNever.map(p => p.line).filter(Boolean))].slice(0, 6).join(' · '), tag: 'ไม่เคยตรวจ', tagColor: 'var(--amber)', to: '/pm?tab=plan' }] : []),
   ];
 
   return (<>
-    <Section title="🚨 ต้องทำตอนนี้" sub={`เรียกช่างค้าง ${callMtn.length} · ใบซ่อมค้างเกิน 3 วัน ${stale.length} · PM เกินกำหนด ${overdue.length}`} tone={actions.length ? 'alert' : null}>
+    <Section title="ต้องทำตอนนี้" sub={`เรียกช่างค้าง ${callMtn.length} · ใบซ่อมค้างเกิน 3 วัน ${stale.length} · PM เกินกำหนด ${overdue.length}`} tone={actions.length ? 'alert' : null}>
       <ActionList items={actions} onPick={(it) => navigate(it.to)} />
     </Section>
 
     <div style={KPI_GRID(isMobile)}>
-      <Kpi label="🛠️ ใบซ่อมเปิดอยู่" value={scopedMo.length} unit="ใบ" color={scopedMo.length ? '#f59e0b' : '#22c55e'}
+      <Kpi label="ใบซ่อมเปิดอยู่" value={scopedMo.length} unit="ใบ" color={scopedMo.length ? 'var(--amber)' : 'var(--green)'}
         sub={Object.entries(byStep).map(([k, v]) => `${k} ${v}`).join(' · ') || 'ไม่มีใบค้าง'} />
-      <Kpi label="⏳ ค้างเกิน 3 วัน" value={stale.length} unit="ใบ" color={stale.length ? '#ef4444' : '#22c55e'} sub="นับจากวันที่แจ้ง" />
-      <Kpi label="📅 PM เกินกำหนด" value={overdue.length} unit="แผน" color={overdue.length ? '#ef4444' : (pmNever.length || pmNoCycle.length) ? '#f59e0b' : '#22c55e'}
+      <Kpi label="⏳ ค้างเกิน 3 วัน" value={stale.length} unit="ใบ" color={stale.length ? 'var(--red)' : 'var(--green)'} sub="นับจากวันที่แจ้ง" />
+      <Kpi label="PM เกินกำหนด" value={overdue.length} unit="แผน" color={overdue.length ? 'var(--red)' : (pmNever.length || pmNoCycle.length) ? 'var(--amber)' : 'var(--green)'}
         sub={`ใกล้ครบใน 14 วัน ${dueSoon.length}${pmNever.length ? ` · ไม่เคยตรวจ ${pmNever.length}` : ''}${pmNoCycle.length ? ` · ไม่ตั้งรอบ ${pmNoCycle.length}` : ''}`} />
-      <Kpi label="🔻 DT เครื่องเสีย 30 วัน" value={fmtNum(unplannedMin)} unit="นาที" sub="downtime นอกแผนทุกสาเหตุ" />
-      <Kpi label="⚠️ เครื่องหยุดซ้ำ ไม่มีใบซ่อม" value={gap.length} unit="เครื่อง" color={gap.length ? '#ef4444' : '#22c55e'} sub="หยุด ≥2 ครั้งใน 30 วัน" />
-      <Kpi label="📋 แผน PM ช่างที่ใช้งาน" value={pmRows.length} unit="แผน" sub={`มีวันครบกำหนด ${pmWithDue.length}${amPlans.length ? ` · AM ผลิตตรวจเอง ${amPlans.length} แผน (ดูจอ AM)` : ''}${pmNoLine ? ` · ไม่ระบุไลน์ ${pmNoLine} แผน (แสดงรวมทุกขอบเขต)` : ''}`} />
+      <Kpi label="DT เครื่องเสีย 30 วัน" value={fmtNum(unplannedMin)} unit="นาที" sub="downtime นอกแผนทุกสาเหตุ" />
+      <Kpi label="⚠️ เครื่องหยุดซ้ำ ไม่มีใบซ่อม" value={gap.length} unit="เครื่อง" color={gap.length ? 'var(--red)' : 'var(--green)'} sub="หยุด ≥2 ครั้งใน 30 วัน" />
+      <Kpi label="แผน PM ช่างที่ใช้งาน" value={pmRows.length} unit="แผน" sub={`มีวันครบกำหนด ${pmWithDue.length}${amPlans.length ? ` · AM ผลิตตรวจเอง ${amPlans.length} แผน (ดูจอ AM)` : ''}${pmNoLine ? ` · ไม่ระบุไลน์ ${pmNoLine} แผน (แสดงรวมทุกขอบเขต)` : ''}`} />
     </div>
 
     <Section title="⚠️ เครื่องที่หยุดซ้ำ แต่ยังไม่มีใบแจ้งซ่อม" tone="warn"
@@ -510,9 +554,9 @@ function MaintenanceView({ d, ctx }) {
                 <td style={{ ...TD, fontWeight: 700 }}>{m.machine}</td>
                 <td style={TD}>{m.line || '-'}</td>
                 <td style={TDR}>{m.times}</td>
-                <td style={{ ...TDR, color: '#f59e0b', fontWeight: 700 }}>{fmtNum(m.min)}</td>
+                <td style={{ ...TDR, color: 'var(--amber)', fontWeight: 700 }}>{fmtNum(m.min)}</td>
                 <td style={{ ...TD, fontSize: 12, color: 'var(--muted)' }}>{Object.entries(m.causes).sort((a, b) => b[1] - a[1])[0]?.[0]}</td>
-                <td style={TD}><button onClick={() => navigate('/mtn-repair')} style={{ fontSize: 12, fontWeight: 700, padding: '3px 9px', borderRadius: 6, cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--accent)', color: 'var(--text)' }}>เปิดใบซ่อม →</button></td>
+                <td style={TD}><button type="button" className="pg-btn sm" onClick={() => navigate('/mtn-repair')}>เปิดใบซ่อม →</button></td>
               </tr>
             ))}
             {!gap.length && <tr><td style={TD} colSpan={6}>✅ ไม่มี — เครื่องที่หยุดซ้ำมีใบซ่อมครบแล้ว</td></tr>}
@@ -521,7 +565,7 @@ function MaintenanceView({ d, ctx }) {
       </div>
     </Section>
 
-    <Section title="📅 PM ที่ใกล้ครบกำหนด (14 วันข้างหน้า)">
+    <Section title="PM ที่ใกล้ครบกำหนด (14 วันข้างหน้า)">
       <div style={{ overflowX: 'auto' }}>
         <table style={{ ...tableSt, minWidth: 520 }}>
           <thead><tr><th style={TH}>อุปกรณ์</th><th style={TH}>ไลน์</th><th style={TH}>ครบกำหนด</th><th style={THR}>เหลือ (วัน)</th></tr></thead>
@@ -531,7 +575,7 @@ function MaintenanceView({ d, ctx }) {
                 <td style={{ ...TD, fontWeight: 700 }}>{p.name}</td>
                 <td style={TD}>{p.line || '-'}</td>
                 <td style={TD}>{fmtDate(p.next_due_date)}</td>
-                <td style={{ ...TDR, color: p.days < 0 ? '#ef4444' : p.days <= 7 ? '#f59e0b' : 'var(--muted)', fontWeight: 700 }}>
+                <td style={{ ...TDR, color: p.days < 0 ? 'var(--red)' : p.days <= 7 ? 'var(--amber)' : 'var(--muted)', fontWeight: 700 }}>
                   {p.days < 0 ? `เกิน ${Math.abs(p.days)}` : p.days}
                 </td>
               </tr>
@@ -542,7 +586,7 @@ function MaintenanceView({ d, ctx }) {
       </div>
     </Section>
 
-    <Section title="🔗 ทางลัด">
+    <Section title="ทางลัด">
       <Links navigate={navigate} items={[['/tv?dept=maintenance', '📺 Andon Board (จอแขวน)', callMtn.length || null], ['/mtn-repair', '🛠️ แจ้งซ่อม MO', scopedMo.length], ['/pm?tab=plan', '📅 แผน PM', overdue.length], ['/pm?tab=forecast', '🔧 PM ล่วงหน้า'], ['/daily-checker', '✅ Daily Checker'], ['/mtn-layout', '🗺️ ผังเครื่องจักร']]} />
     </Section>
   </>);
@@ -610,36 +654,36 @@ function StoreView({ d, ctx }) {
   const ordTotal = d.ord.length;
 
   const actions = [
-    ...lateRounds.map(r => ({ icon: '⏰', title: `รอบส่งเลยเวลา — ${r.line_name}`, detail: `รอบ ${r.round_no} · ${r.delivery_time}`, tag: 'ยังไม่ยืนยัน', tagColor: '#ef4444', to: '/heijunka' })),
-    ...partial.map(x => ({ icon: '📦', title: `รับไม่ครบ — ${x.line_name}`, detail: `รอบ ${x.round_no}`, tag: x.received_status, tagColor: '#f59e0b', to: '/line-stock' })),
+    ...lateRounds.map(r => ({ icon: '⏰', title: `รอบส่งเลยเวลา — ${r.line_name}`, detail: `รอบ ${r.round_no} · ${r.delivery_time}`, tag: 'ยังไม่ยืนยัน', tagColor: 'var(--red)', to: '/heijunka' })),
+    ...partial.map(x => ({ icon: '📦', title: `รับไม่ครบ — ${x.line_name}`, detail: `รอบ ${x.round_no}`, tag: x.received_status, tagColor: 'var(--amber)', to: '/line-stock' })),
     ...prLate.map(p => ({ icon: '🧾', title: `สั่งซื้อค้าง — ${p.part_name || p.mat_no}`,
       detail: `${p.slips} ใบ · รวม ${(p.total_qty || 0).toLocaleString()} ชิ้น · ${p.supplier_count > 1 ? `${p.supplier_count} ผู้ขาย` : (p.supplier || '')} → ${p.dest_count > 1 ? `${p.dest_count} ปลายทาง` : (p.dest_line || '')}`,
-      age: daysSince(`${p.first_work_date}T08:00:00`), tag: p.status, tagColor: '#f59e0b', to: '/heijunka' })),
-    ...under.slice(0, 5).map(r => ({ icon: '🟥', title: `ต่ำกว่า Min — ${r.name}`, detail: `คงเหลือ ${fmtNum(r.qty)} · Min ${fmtNum(r.min)}`, tag: `ขาด ${fmtNum(r.short)}`, tagColor: '#ef4444', to: '/store-monitor' })),
+      age: daysSince(`${p.first_work_date}T08:00:00`), tag: p.status, tagColor: 'var(--amber)', to: '/heijunka' })),
+    ...under.slice(0, 5).map(r => ({ icon: '🟥', title: `ต่ำกว่า Min — ${r.name}`, detail: `คงเหลือ ${fmtNum(r.qty)} · Min ${fmtNum(r.min)}`, tag: `ขาด ${fmtNum(r.short)}`, tagColor: 'var(--red)', to: '/store-monitor' })),
   ];
 
   return (<>
     {/* "0" กับ "โหลดไม่ได้" ต้องแยกออกจากกัน — จอสโตร์ขึ้นเขียวทั้งที่ของขาดคือกรณีที่แย่ที่สุด */}
     {d.loadErr && (
-      <div style={{ ...cardSt, borderColor: '#ef444488', background: '#ef444414', color: '#ef4444', fontSize: 12, fontWeight: 700, padding: '10px 13px' }}>
+      <div style={{ ...cardSt, borderColor: 'var(--red)88', background: 'var(--red)14', color: 'var(--red)', fontSize: 12, fontWeight: 700, padding: '10px 13px' }}>
         🔴 โหลดข้อมูลสต็อก/รอบส่ง/ใบสั่งซื้อไม่สำเร็จบางส่วน — ตัวเลขด้านล่าง<b>ไม่ครบ</b> อย่าเพิ่งสรุปว่า "ไม่มีงานค้าง"
       </div>
     )}
-    <Section title="🚨 ต้องทำตอนนี้" sub={`รอบส่งเลยเวลา ${lateRounds.length} · รับไม่ครบ ${partial.length} · สั่งซื้อค้าง ${prLate.length} พาร์ท · ต่ำกว่า Min ${under.length}`} tone={actions.length ? 'alert' : null}>
+    <Section title="ต้องทำตอนนี้" sub={`รอบส่งเลยเวลา ${lateRounds.length} · รับไม่ครบ ${partial.length} · สั่งซื้อค้าง ${prLate.length} พาร์ท · ต่ำกว่า Min ${under.length}`} tone={actions.length ? 'alert' : null}>
       <ActionList items={actions} onPick={(it) => navigate(it.to)} />
     </Section>
 
     <div style={KPI_GRID(isMobile)}>
-      <Kpi label="🟥 ต่ำกว่า Min" value={under.length} unit="พาร์ท" color={under.length ? '#ef4444' : '#22c55e'} sub="เทียบ kanban_standards" />
-      <Kpi label="🟧 เกิน Max" value={over.length} unit="พาร์ท" color={over.length ? '#f59e0b' : '#22c55e'} sub="สต๊อกค้างเกินจำเป็น" />
-      <Kpi label="🚚 รอบส่งวันนี้" value={`${d.rounds.length - lateRounds.length}/${d.rounds.length}`} color={lateRounds.length ? '#f59e0b' : '#22c55e'} sub={`เลยเวลายังไม่ยืนยัน ${lateRounds.length}`} />
-      <Kpi label="📤 ออเดอร์ลูกค้าวันนี้" value={`${shipped}/${ordTotal}`} color={ordTotal && shipped < ordTotal ? '#f59e0b' : '#22c55e'} sub="ส่งแล้ว / ทั้งหมด" />
+      <Kpi label="🟥 ต่ำกว่า Min" value={under.length} unit="พาร์ท" color={under.length ? 'var(--red)' : 'var(--green)'} sub="เทียบ kanban_standards" />
+      <Kpi label="🟧 เกิน Max" value={over.length} unit="พาร์ท" color={over.length ? 'var(--amber)' : 'var(--green)'} sub="สต๊อกค้างเกินจำเป็น" />
+      <Kpi label="รอบส่งวันนี้" value={`${d.rounds.length - lateRounds.length}/${d.rounds.length}`} color={lateRounds.length ? 'var(--amber)' : 'var(--green)'} sub={`เลยเวลายังไม่ยืนยัน ${lateRounds.length}`} />
+      <Kpi label="ออเดอร์ลูกค้าวันนี้" value={`${shipped}/${ordTotal}`} color={ordTotal && shipped < ordTotal ? 'var(--amber)' : 'var(--green)'} sub="ส่งแล้ว / ทั้งหมด" />
       {/* นับ "พาร์ทที่ต้องสั่ง" ไม่ใช่จำนวนใบ — จำนวนใบไม่ใช่ปริมาณงานจริง (กฎบอร์ดสโตร์) */}
-      <Kpi label="🧾 พาร์ทที่ต้องสั่งซื้อ" value={d.pr.length} unit="พาร์ท" color={prLate.length ? '#ef4444' : undefined} sub={`เลยกำหนด ${prLate.length} · รวม ${prSlips.toLocaleString()} ใบ`} />
-      <Kpi label="🔩 พาร์ทที่มีสต๊อก" value={matRows.length} unit="รายการ" sub={`ตั้ง Min/Max แล้ว ${matRows.filter(r => r.min > 0 || r.max > 0).length}`} />
+      <Kpi label="พาร์ทที่ต้องสั่งซื้อ" value={d.pr.length} unit="พาร์ท" color={prLate.length ? 'var(--red)' : undefined} sub={`เลยกำหนด ${prLate.length} · รวม ${prSlips.toLocaleString()} ใบ`} />
+      <Kpi label="พาร์ทที่มีสต๊อก" value={matRows.length} unit="รายการ" sub={`ตั้ง Min/Max แล้ว ${matRows.filter(r => r.min > 0 || r.max > 0).length}`} />
     </div>
 
-    <Section title="📈 พาร์ทที่ต้องเติมก่อน" sub="เรียงจากขาดมากสุดเทียบ Min">
+    <Section title="พาร์ทที่ต้องเติมก่อน" sub="เรียงจากขาดมากสุดเทียบ Min">
       <div style={{ overflowX: 'auto' }}>
         <table style={{ ...tableSt, minWidth: 600 }}>
           <thead><tr><th style={TH}>MAT</th><th style={TH}>ชื่อ</th><th style={THR}>คงเหลือ</th><th style={THR}>Min</th><th style={THR}>ขาด</th></tr></thead>
@@ -649,7 +693,7 @@ function StoreView({ d, ctx }) {
                 <td style={{ ...TD, fontWeight: 700 }}>{r.mat_no}</td>
                 <td style={{ ...TD, fontSize: 12 }}>{r.name}</td>
                 <td style={TDR}>{fmtNum(r.qty)}</td><td style={TDR}>{fmtNum(r.min)}</td>
-                <td style={{ ...TDR, color: '#ef4444', fontWeight: 700 }}>-{fmtNum(r.short)}</td>
+                <td style={{ ...TDR, color: 'var(--red)', fontWeight: 700 }}>-{fmtNum(r.short)}</td>
               </tr>
             ))}
             {!under.length && <tr><td style={TD} colSpan={5}>✅ ไม่มีพาร์ทต่ำกว่า Min</td></tr>}
@@ -658,7 +702,7 @@ function StoreView({ d, ctx }) {
       </div>
     </Section>
 
-    <Section title="🔗 ทางลัด">
+    <Section title="ทางลัด">
       <Links navigate={navigate} items={[['/line-stock', '📦 Store'], ['/store-monitor', '🚨 เฝ้าระวังสต๊อก', under.length], ['/heijunka', '🎴 Kanban'], ['/customer-demand', '🚚 Delivery'], ['/rundown-stock', '📉 Rundown']]} />
     </Section>
   </>);
@@ -766,71 +810,71 @@ function QaView({ d, ctx }) {
   })).filter(r => r.value > 0);
 
   const actions = [
-    ...d.fourM.map(f => ({ icon: '📝', title: `4M รออนุมัติ QA — ${f.line_name || '-'}`, detail: (f.description || '').slice(0, 40), age: daysSince(`${f.work_date}T08:00:00`), tag: f.category, tagColor: '#f59e0b', to: fourMLink(f) })),
-    ...noLog.map(l => ({ icon: '❔', title: `${l} — ยังไม่มีบันทึกของเสียวันนี้`, detail: 'ของดี 100% จริง หรือยังไม่ได้ลงบันทึก?', tag: 'ตรวจสอบ', tagColor: '#f59e0b', to: '/daily-report' })),
+    ...d.fourM.map(f => ({ icon: '📝', title: `4M รออนุมัติ QA — ${f.line_name || '-'}`, detail: (f.description || '').slice(0, 40), age: daysSince(`${f.work_date}T08:00:00`), tag: f.category, tagColor: 'var(--amber)', to: fourMLink(f) })),
+    ...noLog.map(l => ({ icon: '❔', title: `${l} — ยังไม่มีบันทึกของเสียวันนี้`, detail: 'ของดี 100% จริง หรือยังไม่ได้ลงบันทึก?', tag: 'ตรวจสอบ', tagColor: 'var(--amber)', to: '/daily-report' })),
     /* เคลมลูกค้าขึ้นก่อนเสมอ — ลูกค้ารออยู่ */
     ...claimLate.slice(0, 5).map(c => ({ icon: '⏰', title: `เลยกำหนดตอบลูกค้า — ${c.claim_no} (${c.customer})`,
       detail: (c.defect_desc || '').slice(0, 45), age: daysSince(`${c.due_reply_date}T08:00:00`),
-      tag: 'ด่วน', tagColor: '#ef4444', to: '/qa?tab=claims' })),
+      tag: 'ด่วน', tagColor: 'var(--red)', to: '/qa?tab=claims' })),
     ...claimNo8D.slice(0, 5).map(c => ({ icon: '📮', title: `${c.claim_no} ยังไม่ได้เปิด 8D`,
       detail: `${c.customer} · ${(c.defect_desc || '').slice(0, 40)}`, age: daysSince(`${c.claim_date}T08:00:00`),
-      tag: 'ต้องมี 8D', tagColor: '#f59e0b', to: '/qa?tab=claims' })),
+      tag: 'ต้องมี 8D', tagColor: 'var(--amber)', to: '/qa?tab=claims' })),
     /* ปิดไปแล้วแต่ของเสียไม่ลด — แรงกว่าเรื่องเอกสาร เพราะปัญหายังเกิดอยู่จริง */
     ...capaBadEff.slice(0, 5).map(c => ({ icon: '📉', title: `${c.capa_no} ปิดแล้ว แต่ของเสีย${c.eff_verdict === 'worse' ? 'เพิ่มขึ้น' : 'ยังไม่ลด'}`,
       detail: `${(c.title || '').slice(0, 40)} — ต้องกลับไปทบทวน D4 สาเหตุราก`, age: c.closed_at ? daysSince(c.closed_at) : null,
-      tag: 'ไม่ได้ผล', tagColor: '#ef4444', to: '/qa?tab=capa' })),
+      tag: 'ไม่ได้ผล', tagColor: 'var(--red)', to: '/qa?tab=capa' })),
     ...capaDueVerify.slice(0, 5).map(c => ({ icon: '⏱️', title: `${c.capa_no} ครบกำหนดวัดผลแล้ว — ยังไม่สรุป`,
       detail: `มาตรการมีผล ${c.d6_effective_from} · ครบ ${c.eff_window_days || 30} วันแล้ว`, age: daysSince(`${c.d6_effective_from}T08:00:00`),
-      tag: 'รอสรุปผล', tagColor: '#f59e0b', to: '/qa?tab=capa' })),
+      tag: 'รอสรุปผล', tagColor: 'var(--amber)', to: '/qa?tab=capa' })),
     ...capaNoPe.slice(0, 5).map(c => ({ icon: '🔗', title: `${c.capa_no} ปิดแล้ว แต่ยังไม่ทบทวน PFMEA/Control Plan`,
       detail: (c.title || '').slice(0, 45), age: c.closed_at ? daysSince(c.closed_at) : null,
-      tag: 'IATF 10.2.4', tagColor: '#ef4444', to: '/qa?tab=capa' })),
+      tag: 'IATF 10.2.4', tagColor: 'var(--red)', to: '/qa?tab=capa' })),
     ...(d.crOpen ? [{ icon: '📥', title: `คำขอแก้เอกสาร PE ค้าง ${d.crOpen} รายการ`,
-      detail: 'ทีม PE ยังไม่ได้พิจารณา/ออก revision', tag: 'รอ PE', tagColor: '#f59e0b', to: '/pe-docs' }] : []),
-    ...lpaIssues.slice(0, 5).map(x => ({ icon: '📋', title: `LPA พบปัญหา — ${x.line_name}`, detail: `${(x.question_text || '').slice(0, 45)}${x.note ? ' · ' + x.note.slice(0, 25) : ''}`, age: daysSince(`${x.audit_date}T08:00:00`), tag: x.answer === 'N' ? 'ไม่ผ่าน' : 'เฝ้าระวัง', tagColor: x.answer === 'N' ? '#ef4444' : '#f59e0b', to: '/daily-checker?tab=lpa' })),
+      detail: 'ทีม PE ยังไม่ได้พิจารณา/ออก revision', tag: 'รอ PE', tagColor: 'var(--amber)', to: '/pe-docs' }] : []),
+    ...lpaIssues.slice(0, 5).map(x => ({ icon: '📋', title: `LPA พบปัญหา — ${x.line_name}`, detail: `${(x.question_text || '').slice(0, 45)}${x.note ? ' · ' + x.note.slice(0, 25) : ''}`, age: daysSince(`${x.audit_date}T08:00:00`), tag: x.answer === 'N' ? 'ไม่ผ่าน' : 'เฝ้าระวัง', tagColor: x.answer === 'N' ? 'var(--red)' : 'var(--amber)', to: '/daily-checker?tab=lpa' })),
   ];
 
   return (<>
     {/* "0 ของเสีย" กับ "โหลดไม่ได้" ต้องแยกออกจากกัน — ไม่งั้นจอที่พังอยู่ดูเหมือนจอที่ทุกอย่างปกติ */}
     {d.loadErr && (
-      <div style={{ ...cardSt, borderColor: '#ef444488', background: '#ef444414', color: '#ef4444', fontSize: 12, fontWeight: 700, padding: '10px 13px' }}>
+      <div style={{ ...cardSt, borderColor: 'var(--red)88', background: 'var(--red)14', color: 'var(--red)', fontSize: 12, fontWeight: 700, padding: '10px 13px' }}>
         🔴 โหลดข้อมูลของเสีย/ใบผลิตไม่สำเร็จ — ตัวเลขของเสีย · PPM · พาเรโต ด้านล่าง<b>ไม่ครบ</b> (ดูรายละเอียดใน console)
       </div>
     )}
-    <Section title="🚨 ต้องทำตอนนี้" sub={`4M รออนุมัติ QA ${d.fourM.length} · ไลน์ที่ยังไม่บันทึกของเสียวันนี้ ${noLog.length} · LPA พบปัญหา 30 วัน ${lpaIssues.length}`} tone={actions.length ? 'alert' : null}>
+    <Section title="ต้องทำตอนนี้" sub={`4M รออนุมัติ QA ${d.fourM.length} · ไลน์ที่ยังไม่บันทึกของเสียวันนี้ ${noLog.length} · LPA พบปัญหา 30 วัน ${lpaIssues.length}`} tone={actions.length ? 'alert' : null}>
       <ActionList items={actions} onPick={(it) => navigate(it.to)} />
     </Section>
 
     <div style={KPI_GRID(isMobile)}>
-      <Kpi label="🚫 ของเสีย 7 วัน" value={fmtNum(ng7)} unit="ชิ้น" color={ng7 ? '#ef4444' : '#22c55e'} sub={`ผลิตดี ${fmtNum(ok7)} ชิ้น`} />
-      <Kpi label="📉 PPM (7 วัน)" value={ppm == null ? '—' : fmtNum(ppm)} color={ppm == null ? undefined : ppm > 5000 ? '#ef4444' : ppm > 1000 ? '#f59e0b' : '#22c55e'}
+      <Kpi label="ของเสีย 7 วัน" value={fmtNum(ng7)} unit="ชิ้น" color={ng7 ? 'var(--red)' : 'var(--green)'} sub={`ผลิตดี ${fmtNum(ok7)} ชิ้น`} />
+      <Kpi label="PPM (7 วัน)" value={ppm == null ? '—' : fmtNum(ppm)} color={ppm == null ? undefined : ppm > 5000 ? 'var(--red)' : ppm > 1000 ? 'var(--amber)' : 'var(--green)'}
         sub="เสีย ÷ ยอดที่ผลิตทั้งหมด (ดี+เสีย) × 1,000,000" />
       <Kpi label="✍️ ไลน์ที่บันทึกของเสียวันนี้" value={`${ranLines.length - noLog.length}/${ranLines.length}`}
-        color={noLog.length ? '#f59e0b' : '#22c55e'} sub="ไลน์ที่เดินกะวันนี้" />
-      <Kpi label="📝 4M รออนุมัติ QA" value={d.fourM.length} unit="ใบ" color={d.fourM.length ? '#f59e0b' : '#22c55e'} sub="ค้างที่ QA" />
-      <Kpi label="📋 LPA พบปัญหา" value={lpaIssues.length} unit="ข้อ" color={lpaIssues.length ? '#f59e0b' : '#22c55e'} sub="ตอบ N/T ใน 30 วัน" />
-      <Kpi label="🧾 การตรวจ LPA" value={d.lpa.length} unit="ครั้ง" sub="30 วันล่าสุด" />
-      <Kpi label="📮 เคลมลูกค้าที่ยังไม่ปิด" value={claimOpen.length} unit="ใบ"
-        color={claimLate.length ? '#ef4444' : claimOpen.length ? '#f59e0b' : '#22c55e'}
+        color={noLog.length ? 'var(--amber)' : 'var(--green)'} sub="ไลน์ที่เดินกะวันนี้" />
+      <Kpi label="4M รออนุมัติ QA" value={d.fourM.length} unit="ใบ" color={d.fourM.length ? 'var(--amber)' : 'var(--green)'} sub="ค้างที่ QA" />
+      <Kpi label="LPA พบปัญหา" value={lpaIssues.length} unit="ข้อ" color={lpaIssues.length ? 'var(--amber)' : 'var(--green)'} sub="ตอบ N/T ใน 30 วัน" />
+      <Kpi label="การตรวจ LPA" value={d.lpa.length} unit="ครั้ง" sub="30 วันล่าสุด" />
+      <Kpi label="เคลมลูกค้าที่ยังไม่ปิด" value={claimOpen.length} unit="ใบ"
+        color={claimLate.length ? 'var(--red)' : claimOpen.length ? 'var(--amber)' : 'var(--green)'}
         sub={claimLate.length ? `เลยกำหนดตอบ ${claimLate.length} ใบ` : (claimNo8D.length ? `ยังไม่เปิด 8D ${claimNo8D.length} ใบ` : 'ไม่มีค้าง')} />
-      <Kpi label="🔗 8D ปิดแล้ว เอกสารตามครบ" value={peRate == null ? '—' : `${peRate}%`}
-        color={peRate == null ? undefined : peRate >= 90 ? '#22c55e' : peRate >= 50 ? '#f59e0b' : '#ef4444'}
+      <Kpi label="8D ปิดแล้ว เอกสารตามครบ" value={peRate == null ? '—' : `${peRate}%`}
+        color={peRate == null ? undefined : peRate >= 90 ? 'var(--green)' : peRate >= 50 ? 'var(--amber)' : 'var(--red)'}
         sub={capaClosed.length ? `${peDone}/${capaClosed.length} ใบ · IATF §10.2.4` : 'ยังไม่มี 8D ที่ปิด'} />
-      <Kpi label="🛠 8D ค้างดำเนินการ" value={capaOpen.length} unit="ใบ" color={capaOpen.length ? '#f59e0b' : '#22c55e'}
+      <Kpi label="8D ค้างดำเนินการ" value={capaOpen.length} unit="ใบ" color={capaOpen.length ? 'var(--amber)' : 'var(--green)'}
         sub={d.crOpen ? `คำขอแก้เอกสารค้าง ${d.crOpen}` : 'ไม่มีคำขอแก้เอกสารค้าง'} />
       {/* วัดจาก defect_logs จริง ไม่ใช่ข้อความที่คนพิมพ์ — ใบที่ยังวัดไม่ได้ ไม่ถูกนับเป็นทั้งได้ผล/ไม่ได้ผล */}
-      <Kpi label="📉 8D ที่ของเสียลดจริง" value={effRate == null ? '—' : `${effRate}%`}
-        color={effRate == null ? undefined : effRate >= 80 ? '#22c55e' : effRate >= 50 ? '#f59e0b' : '#ef4444'}
+      <Kpi label="8D ที่ของเสียลดจริง" value={effRate == null ? '—' : `${effRate}%`}
+        color={effRate == null ? undefined : effRate >= 80 ? 'var(--green)' : effRate >= 50 ? 'var(--amber)' : 'var(--red)'}
         sub={capaMeasured.length
           ? `วัดได้ ${capaMeasured.length} ใบ${capaBadEff.length ? ` · ยังไม่ลด ${capaBadEff.length}` : ''}`
           : 'ยังไม่มีใบที่วัดผลได้ — ต้องกรอกวันที่มาตรการมีผล'} />
     </div>
 
-    <ParetoAbcChart title="🚫 ของเสีย 7 วัน แยกตามประเภท (ABC)" records={defRecords} unit="ชิ้น"
-      dims={[{ key: 'line', label: '🏭 ไลน์' }, { key: 'product', label: '📦 ชิ้นงาน' }, { key: 'shift', label: '🕐 กะ' }, { key: 'date', label: '📅 วัน' }, { key: 'note', label: '💬 หมายเหตุ', cluster: true }]}
+    <ParetoAbcChart title="ของเสีย 7 วัน แยกตามประเภท (ABC)" records={defRecords} unit="ชิ้น"
+      dims={[{ key: 'line', label: 'ไลน์' }, { key: 'product', label: 'ชิ้นงาน' }, { key: 'shift', label: 'กะ' }, { key: 'date', label: 'วัน' }, { key: 'note', label: 'หมายเหตุ', cluster: true }]}
       sectionStyle={cardSt} emptyText="ไม่มีบันทึกของเสียใน 7 วัน — ตรวจสอบว่าลงบันทึกครบหรือยัง" />
 
-    <Section title="🔗 ทางลัด">
+    <Section title="ทางลัด">
       <Links navigate={navigate} items={[['/qa', '🔍 Quality Control'],
         // คิวอนุมัติ 4M ทั้งก้อน — from = ใบเก่าสุด (d.fourM เรียงวันจากเก่าไปใหม่) ให้เห็นครบทุกใบที่ค้าง
         [`${FOURM_TAB}&status=pending_qa${d.fourM.length ? `&from=${d.fourM[0].work_date}` : ''}`, '📝 4M รออนุมัติ', d.fourM.length],
@@ -883,7 +927,7 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
-  const workDate = getWorkDate();
+  const workDate = useWorkDate();
 
   /* ลิงก์เก่า `?view=kpi` → `/obeya?tab=table` (17/09 ย้ายตาราง KPI รายเดือนไปอยู่กับบอร์ด KPI)
      **redirect ไม่ใช่ลบทิ้ง** — คนที่บุ๊กมาร์กแท็บนี้ไว้ต้องยังเข้าถึงงานเดิมได้ (กฎเดียวกับ ?view=andon)
@@ -945,7 +989,7 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
         <PageHeader
           title={embedded ? OBEYA_TITLE : 'Dashboard ส่วนงาน'} icon={embedded ? OBEYA_ICON : '📊'}
           sub={<>วันงาน {fmtDate(workDate)} · {scopeText} · อ่านอย่างเดียว (กดที่รายการเพื่อไปหน้าที่ทำงานจริง)</>}
-          actions={<button onClick={load} style={tvBtn(false)}>🔄 รีเฟรช</button>}
+          actions={<button type="button" className="pg-btn" onClick={load}>รีเฟรช</button>}
           /* 📑 KPI รายเดือน ย้ายไป `/obeya?tab=table` แล้ว (17/09 · user ทักว่าซ้ำกับบอร์ด KPI ของ Obeya)
              เหตุผล: หน้านี้ตัดด้วย `?dept=` = หน้าที่/ฝ่าย · แต่ตาราง KPI ตัดด้วยส่วนงาน × กลุ่มไลน์ × ปี
              = แกนของ Obeya ⇒ มันไม่เคยใช้แกนของหน้านี้เลย (คอมเมนต์เดิมด้านล่างก็เขียนไว้เอง)
@@ -961,12 +1005,12 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
             {/* 📺 จอเฝ้าระวังย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28) — ปุ่มนี้คงทางเข้าเดิมไว้ (ห้ามตัดทางออกของใคร) */}
             <button className="ctl-btn" onClick={() => navigate(`/tv?dept=${dept === 'store' ? 'store' : dept === 'production' ? 'production' : 'maintenance'}`)}
               title="เปิด Andon Board สำหรับแขวนทีวี (ผัง + เครื่องหยุด + เสียงเตือน)"
-              style={tvBtn(false)}>📺 Andon Board (จอแขวน)</button>
+              style={tvBtn(false)}>Andon Board (จอแขวน)</button>
           </>) : undefined}
         />
 
       {view === 'now' && loading && <div style={{ ...cardSt, textAlign: 'center', color: 'var(--muted)', fontSize: 14 }}>กำลังโหลดข้อมูล...</div>}
-      {view === 'now' && err && <div style={{ ...cardSt, borderColor: '#ef4444', color: '#ef4444', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ: {err}</div>}
+      {view === 'now' && err && <div style={{ ...cardSt, borderColor: 'var(--red)', color: 'var(--red)', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ: {err}</div>}
       {/* render เฉพาะเมื่อข้อมูลที่ถืออยู่เป็นของส่วนงานที่กำลังดู */}
       {view === 'now' && !loading && !err && data?.dept === dept && <cfg.View d={data.d} ctx={ctx} />}
       {view === 'now' && !loading && !err && data && data.dept !== dept &&

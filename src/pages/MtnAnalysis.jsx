@@ -17,13 +17,15 @@ import TimeRangeBar from '../components/TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
 import { rangeDays, addDays, bucketAxis, bucketKey, bucketLabel, bkkHourKey, scaleOf } from '../utils/timeRange';
 import { getWorkDate } from '../utils/workDate';
-import { scopedLines } from '../utils/sectionScope';
+import { scopedLines, lineScope, filterRowsByLineScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { ASSET_CLASSES, assetClassOf, firstAssetWithData } from '../utils/qc7';
 import { useSearchParams } from 'react-router-dom';
 import { urlParam } from '../utils/urlInit';
 import { scopeLines as pickerLines } from '../components/LineSelect';   // ตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง" ของช่องเลือกไลน์
 import { Panel, NotEnough, Histogram, ControlChart, ScatterPlot, Fishbone, CheckSheet, Stratify, RunChart } from '../components/Qc7Charts';
+import NoticeBar from '../components/NoticeBar';
+import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 /* ══ 🔍 วิเคราะห์ปัญหา (ซ่อมบำรุง) — QC 7 Tools แยกตามชนิดสินทรัพย์ ══════════  2026-09-22
 
@@ -76,7 +78,7 @@ const SOURCES = [
      ⇒ เดิมลากงานที่ไม่เกี่ยวกับช่างมา 96.8% — พาเรโตของจอซ่อมบำรุงเลยไม่ใช่ปัญหาของช่าง
      ชุดข้อมูล = ใบ MO ทั้งหมด **+** ดาวน์ไทม์ที่เรียกช่างแล้วแต่ยังไม่ได้เปิดใบ (เหลือ 19 ครั้ง)
      ⇒ ไม่นับซ้ำ เพราะดาวน์ไทม์ที่เปิดใบแล้วถูกนับผ่านใบ MO อยู่แล้ว (`source_downtime_id`) */
-  { key: 'mo', label: '🛠️ ใบซ่อม MO', unit: 'ใบ', note: 'งานที่เปิดใบแจ้งซ่อมจริง — มีสาเหตุ/วิธีแก้/ค่าใช้จ่าย' },
+  { key: 'mo', label: 'ใบซ่อม MO', unit: 'ใบ', note: 'งานที่เปิดใบแจ้งซ่อมจริง — มีสาเหตุ/วิธีแก้/ค่าใช้จ่าย' },
 ];
 
 const fmt = (n, d = 0) => (n == null ? '—' : Number(n).toLocaleString('en-US', { maximumFractionDigits: d }));
@@ -99,9 +101,9 @@ const evKey = (iso, scale) => {
 };
 
 const KPI = ({ label, value, unit, sub, warn }) => (
-  <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 11px', minWidth: 0 }}>
+  <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '9px 11px', minWidth: 0 }}>
     <div style={{ fontSize: 11.5, color: 'var(--muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
-    <div style={{ fontSize: 19, fontWeight: 800, color: value == null ? 'var(--muted)' : warn ? '#f59e0b' : 'var(--text)', lineHeight: 1.25 }}>
+    <div style={{ fontSize: 19, fontWeight: 800, color: value == null ? 'var(--muted)' : warn ? 'var(--amber)' : 'var(--text)', lineHeight: 1.25 }}>
       {value == null ? '—' : value}{value != null && unit ? <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)' }}> {unit}</span> : null}
     </div>
     {/* ค่า null = "ยังวัดไม่ได้" ต้องเขียนบอก ไม่ใช่โชว์ 0 ให้คนอ่านว่าดีเยี่ยม */}
@@ -110,8 +112,8 @@ const KPI = ({ label, value, unit, sub, warn }) => (
 );
 
 const MAIN_TABS = [
-  { key: 'kpi', label: '📊 KPI ช่าง' },
-  { key: 'qc7', label: '🧪 QC 7 Tools (แยกชนิดอุปกรณ์)' },
+  { key: 'kpi', label: 'KPI ช่าง' },
+  { key: 'qc7', label: 'QC 7 Tools (แยกชนิดอุปกรณ์)' },
 ];
 
 export default function MtnAnalysis() {
@@ -263,17 +265,68 @@ export default function MtnAnalysis() {
   }), [events, catIndex]);
   const typedEvents = typed.rows;
 
+  /* ขอบเขตไลน์ของผู้ใช้ — **เกณฑ์เดียวกับ `/mtn-repair`** (คัดลอกมาโดยตั้งใจให้เหมือนกันเป๊ะ
+     ถ้าจะแก้ ต้องแก้ทั้ง 2 ที่พร้อมกัน ไม่งั้น KPI 2 จอตอบคนละเลขให้คนคนเดียวกัน) */
+  const lines = useProductionLines();
+  /* 🔭 ขอบเขตไลน์ — **ของกลาง `lineScope()` เท่านั้น** (QC audit 09/11)
+     สูตรที่เคยก๊อปไว้ที่นี่ให้ leader เห็นแค่ครอบครัวไลน์ตัวเอง = แคบกว่าที่ `profiles` ตั้งไว้
+     (กฎ 26/10: ไลน์ตัวเอง ∪ ส่วนงานที่กำกับไว้) และไม่รู้จักแกน Cost Center/ผัง (`scopeIdx`)
+     `null` = ไม่จำกัด (ความหมายเดิมของตัวแปรนี้) */
+  const scopeRes = useMemo(
+    () => lineScope({ role, lineId, sections: sections || [], lines, scopeIdx }),
+    [lines, role, lineId, sections, scopeIdx]);
+  const scopeLines = useMemo(() => (scopeRes.unlimited ? null : new Set(scopeRes.names)), [scopeRes]);
+  /* 🔴 ตัดขอบเขตไม่ได้จริง (ทะเบียนโหลดแล้วแต่ส่วนงาน/ไลน์ตัวเองไม่ตรงผัง) ⇒ ต้องเขียนบนจอ ห้ามเงียบ */
+  const scopeUnsure = !!(lines?.length && scopeRes.unsure);
+  /* 🔴 ช่องเลือกไลน์ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัดเลย (QA · Planning&Store · ฝั่งช่าง)
+     กรองด้วย section แล้วเหลือ 0 ⇒ dropdown ว่างเปล่า = แจ้งซ่อม/เลือกไลน์ไม่ได้ทั้งหน้า (เคสจริง 26/10)
+     ⇒ ต้องผ่าน `scopeLines()` ของกลางใน `components/LineSelect.jsx` ที่มีตาข่าย
+       **"กรองแล้วไม่เหลืออะไร = ไม่กรอง"** (กติกาเดิมตั้งแต่ 2026-08-24)
+     ⚠️ **คนละแกนกับ `scopeLines` (Set) ข้างบน** ซึ่งเป็นตัวกรองรายการ + ฐานของด่านสิทธิ์ขั้นเซ็น
+        (`reporterScope`) — ตัวนั้นต้อง fail-closed เหมือนเดิม **ห้ามยุบรวมกัน** */
+  const scopedLineObjs = useMemo(
+    () => pickerLines(lines, { role, lineId, sections, scopeIdx }),
+    [lines, role, lineId, sections, scopeIdx]);
+
+  /* 🔭 ขอบเขตบัญชีของแท็บ QC7 (09/11 · user: "จอของส่วนงานไหนก็ควรแสดงแค่ส่วนงานตัวเอง")
+     เดิมแท็บนี้กรองแค่ "แผนกช่าง" — เครื่อง/MO/ดาวน์ไทม์โหลดทั้งโรงงาน ทั้งที่แท็บ KPI ตัดด้วย `scopeLines` แล้ว
+     ⇒ ใช้ `scopeLines` ชุดเดียวกับแผง KPI (ของกลาง `lineScope()`) ผ่าน `filterRowsByLineScope()`
+     · ไลน์ของแถว: MO = `line_name` ของใบ · ดาวน์ไทม์ (ไม่มีไลน์ในแถว) = ไลน์ของเครื่องในทะเบียน
+     · แถวที่ไม่รู้ไลน์/ไลน์นอกทะเบียน = **คงไว้** (ตัดสินไม่ได้ ⇒ ไม่ซ่อน)
+     · `scopeLines = null` (ไม่จำกัด/ตัดขอบเขตไม่ได้) = ชุดเดิมเป๊ะ
+     🔴 ซ่อนไปกี่รายการต้องเขียนบนจอ (`qcScopeHidden`) */
+  const lineByMc = useMemo(() => {
+    const m = {};
+    (machines || []).forEach(mc => {
+      const k = String(mc?.machine_no || '').trim().toUpperCase();
+      if (k && !(k in m)) m[k] = (mc.line_name || '').trim();
+    });
+    return m;
+  }, [machines]);
+  const qcScoped = useMemo(() => {
+    if (!scopeLines) return { rows: typedEvents, hidden: 0 };
+    return filterRowsByLineScope(typedEvents, {
+      scopedNames: [...scopeLines],
+      lineNames: (lines || []).map(l => l.name),
+      nameOf: e => (e.from === 'dt'
+        ? (lineByMc[String(e.raw?.machine_no || '').trim().toUpperCase()] || '')
+        : (e.raw?.line_name || '')),
+    });
+  }, [typedEvents, scopeLines, lines, lineByMc]);
+  const qcScopeHidden = qcScoped.hidden;
+  const lineScopedEvents = qcScoped.rows;
+
   /* ── แผนกช่าง: dropdown เดิม (MO/Downtime) เปลี่ยนเป็นตัวนี้ (user 23/09) ──────
      "ตรงแท็บคือแยกตามอุปกรณ์ใช่มั้ย · dropdown เดิม…เป็นเลือกแผนกช่างดีกว่า"
      ⇒ แท็บ = ชนิดอุปกรณ์ · dropdown = แผนกช่าง · 2 แกนไม่ซ้อนกัน */
   const teamOpts = useMemo(() => {
     const c = {};
-    typedEvents.forEach(e => { c[e.team] = (c[e.team] || 0) + 1; });
+    lineScopedEvents.forEach(e => { c[e.team] = (c[e.team] || 0) + 1; });
     return Object.entries(c).sort((a, b) => b[1] - a[1]);
-  }, [typedEvents]);
+  }, [lineScopedEvents]);
   const scopedEvents = useMemo(
-    () => (team === 'all' ? typedEvents : typedEvents.filter(e => e.team === team)),
-    [typedEvents, team],
+    () => (team === 'all' ? lineScopedEvents : lineScopedEvents.filter(e => e.team === team)),
+    [lineScopedEvents, team],
   );
 
   const byClass = useMemo(() => {
@@ -291,25 +344,6 @@ export default function MtnAnalysis() {
     const pick = firstAssetWithData(byClass, asset);
     if (pick !== asset) setAsset(pick, { replace: true });
   }, [loading, err, byClass, asset, assetInUrl, setAsset]);
-
-  /* ขอบเขตไลน์ของผู้ใช้ — **เกณฑ์เดียวกับ `/mtn-repair`** (คัดลอกมาโดยตั้งใจให้เหมือนกันเป๊ะ
-     ถ้าจะแก้ ต้องแก้ทั้ง 2 ที่พร้อมกัน ไม่งั้น KPI 2 จอตอบคนละเลขให้คนคนเดียวกัน) */
-  const lines = useProductionLines();
-  const scopeLines = useMemo(() => {
-    if (role === 'admin') return null;
-    if (role === 'leader' && lineId) { const self = lines.find(l => String(l.id) === String(lineId)); return self ? new Set(getLineFamilyNames(lines, self.name)) : new Set(); }
-    if (sections?.length) return new Set(scopedLines({ role, lineId, sections, lines, scopeIdx }).map(l => l.name));
-    return null;
-  }, [lines, role, lineId, sections, scopeIdx]);
-  /* 🔴 ช่องเลือกไลน์ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัดเลย (QA · Planning&Store · ฝั่งช่าง)
-     กรองด้วย section แล้วเหลือ 0 ⇒ dropdown ว่างเปล่า = แจ้งซ่อม/เลือกไลน์ไม่ได้ทั้งหน้า (เคสจริง 26/10)
-     ⇒ ต้องผ่าน `scopeLines()` ของกลางใน `components/LineSelect.jsx` ที่มีตาข่าย
-       **"กรองแล้วไม่เหลืออะไร = ไม่กรอง"** (กติกาเดิมตั้งแต่ 2026-08-24)
-     ⚠️ **คนละแกนกับ `scopeLines` (Set) ข้างบน** ซึ่งเป็นตัวกรองรายการ + ฐานของด่านสิทธิ์ขั้นเซ็น
-        (`reporterScope`) — ตัวนั้นต้อง fail-closed เหมือนเดิม **ห้ามยุบรวมกัน** */
-  const scopedLineObjs = useMemo(
-    () => pickerLines(lines, { role, lineId, sections, scopeIdx }),
-    [lines, role, lineId, sections, scopeIdx]);
 
   const rows = byClass[asset] || [];
   const srcMeta = SOURCES.find(s => s.key === src);
@@ -369,12 +403,12 @@ export default function MtnAnalysis() {
   /* มิติเจาะลึกของ ParetoAbcChart = **ชื่อคีย์ในแถวดิบ** (component อ่าน `r[dim.key]` เอง)
      ⚠️ ห้ามใส่ฟังก์ชัน `of` — มันไม่ถูกเรียก แล้วจะได้ช่องว่างเงียบๆ */
   const PARETO_DIMS = useMemo(() => ([
-    { key: 'sub', label: '🛑 อาการย่อย' },
-    { key: 'machine', label: '⚙️ อุปกรณ์' },
-    { key: 'line', label: '🏭 ไลน์' },
-    { key: 'team', label: '👷 ทีมช่าง' },
-    { key: 'note', label: '💬 อาการที่แจ้ง (จับกลุ่มคำ)', cluster: true },
-    { key: 'why', label: '🔎 ที่มาของหมวด' },
+    { key: 'sub', label: 'อาการย่อย' },
+    { key: 'machine', label: 'อุปกรณ์' },
+    { key: 'line', label: 'ไลน์' },
+    { key: 'team', label: 'ทีมช่าง' },
+    { key: 'note', label: 'อาการที่แจ้ง (จับกลุ่มคำ)', cluster: true },
+    { key: 'why', label: 'ที่มาของหมวด' },
   ]), []);
 
   const assetTabs = ASSET_CLASSES.map(a => ({
@@ -394,8 +428,8 @@ export default function MtnAnalysis() {
           /* ตัวกรองแหล่งข้อมูล/ช่วงเวลา เป็นของแท็บ QC7 เท่านั้น (อยู่ใน TimeRangeBar ข้างล่าง) — แผง KPI มีตัวกรองของตัวเอง
              โชว์ทั้งคู่พร้อมกัน = คนกดแล้วไม่เห็นอะไรเปลี่ยน แล้วคิดว่าจอค้าง */
           tab === 'qc7' ? null : (
-            <button onClick={load} disabled={loading} style={{ padding: '6px 12px', borderRadius: 8, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', fontSize: 12.5, cursor: loading ? 'default' : 'pointer' }}>
-              {loading ? 'กำลังโหลด…' : '↻ รีเฟรช'}
+            <button type="button" className="pg-btn" onClick={load} disabled={loading} style={{ cursor: loading ? 'default' : 'pointer' }}>
+              {loading ? 'กำลังโหลด…' : 'รีเฟรช'}
             </button>
           )
         }
@@ -423,9 +457,9 @@ export default function MtnAnalysis() {
       )}
 
       {err && (
-        <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid #ef4444', borderRadius: 8, padding: '9px 12px', fontSize: 12.5, color: '#ef4444', marginBottom: 12 }}>
+        <NoticeBar tone="bad" style={{ marginBottom: 12 }}>
           โหลดข้อมูลไม่สำเร็จ — {err} · กด ↻ รีเฟรช อีกครั้ง (ยังไม่ได้แสดงตัวเลขใดๆ เพื่อไม่ให้อ่านผิด)
-        </div>
+        </NoticeBar>
       )}
 
       {loading ? (
@@ -440,17 +474,21 @@ export default function MtnAnalysis() {
           {/* ── แถบชนิดสินทรัพย์ (แท็บชั้นที่ 2 · `?asset=`) ─────────────────────
                  🔴 ทุกชนิดต้องอยู่ครบเสมอ แม้จำนวนเป็น 0 — กดเข้าไปแล้วเห็นว่า "ช่วงนี้ไม่มีงาน"
                     ต่างจากการซ่อนแท็บทิ้งซึ่งอ่านว่า "ระบบไม่รองรับของชนิดนี้" */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {assetTabs.map(t => (
-              <button key={t.key} type="button" onClick={() => setAsset(t.key)} className="tbtn"
-                style={{
-                  padding: '6px 12px', borderRadius: 20, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
-                  background: asset === t.key ? 'var(--bg3)' : 'transparent',
-                  color: asset === t.key ? 'var(--text)' : 'var(--muted)',
-                  border: `1px solid ${asset === t.key ? 'var(--accent)' : 'var(--border)'}`,
-                }}>{t.label}</button>
-            ))}
-          </div>
+          <TabBar size="sm" value={asset} onChange={setAsset} tabs={assetTabs.map(t => ({ key: t.key, label: t.label }))} />
+
+          {/* 🔭 ขอบเขตบัญชี — ซ่อนแถวของไลน์อื่นแล้วต้องบอกบนจอ (CLAUDE.md "กรองแถวออกแล้วต้องเขียนบนจอ") */}
+          {scopeLines && (
+            <NoticeBar tone="info">
+              แสดงเฉพาะไลน์ในขอบเขตของคุณ ({scopeLines.size} ไลน์)
+              {qcScopeHidden ? ` · ซ่อนงานของไลน์อื่น ${fmt(qcScopeHidden)} รายการ` : ''}
+              {' '}· งานที่ไม่รู้ไลน์/ไลน์นอกทะเบียน ยังแสดงอยู่
+            </NoticeBar>
+          )}
+          {scopeUnsure && (
+            <NoticeBar tone="warn">
+              ตัดขอบเขตไลน์ของบัญชีนี้ไม่ได้ (ไลน์/ส่วนงานของบัญชีไม่ตรงทะเบียน) — {scopeLines ? 'แสดงตามส่วนงานที่ตั้งไว้' : 'กำลังแสดงทั้งโรงงาน'}
+            </NoticeBar>
+          )}
 
           {/* ── สรุปปัญหา ─────────────────────────────────────────────── */}
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8, alignContent: 'start' }}>
@@ -480,16 +518,16 @@ export default function MtnAnalysis() {
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 12, marginBottom: 8 }}>
                   {paretoSplit.planned.length > 0 && (
                     <span style={{ color: 'var(--muted)' }}>
-                      🗓️ กัน <b style={{ color: 'var(--text2)' }}>{paretoSplit.planned.length} ใบ</b> ที่เป็น “งานตามแผน (PM)” ออกจากพาเรโตปัญหาแล้ว
+                      กัน <b style={{ color: 'var(--text2)' }}>{paretoSplit.planned.length} ใบ</b> ที่เป็น “งานตามแผน (PM)” ออกจากพาเรโตปัญหาแล้ว
                     </span>
                   )}
                   {typed.filled > 0 && (
                     <span style={{ color: 'var(--muted)' }} title="พจนานุกรมมาจากทะเบียนอาการของโรงงาน + ใบที่ช่างจัดกลุ่มไว้แล้ว — เจาะดูคำที่ใช้เดาได้ที่มิติ 🔎">
-                      🔎 เดาหมวดให้ <b style={{ color: 'var(--text2)' }}>{typed.filled} ใบ</b> จากคำที่พนักงานพิมพ์ (เดิมเป็น “อื่นๆ”) — เจาะดูที่มาได้ในมิติ 🔎
+                      เดาหมวดให้ <b style={{ color: 'var(--text2)' }}>{typed.filled} ใบ</b> จากคำที่พนักงานพิมพ์ (เดิมเป็น “อื่นๆ”) — เจาะดูที่มาได้ในมิติ 🔎
                     </span>
                   )}
                   {paretoNote && (
-                    <span style={{ color: paretoNote.level === 'warn' ? '#f59e0b' : 'var(--muted)', fontWeight: paretoNote.level === 'warn' ? 700 : 400 }}>
+                    <span style={{ color: paretoNote.level === 'warn' ? 'var(--amber)' : 'var(--muted)', fontWeight: paretoNote.level === 'warn' ? 700 : 400 }}>
                       ⚠️ {paretoNote.text}
                     </span>
                   )}
@@ -560,7 +598,7 @@ export default function MtnAnalysis() {
           )}
 
           <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.8 }}>
-            📌 แหล่งข้อมูล: {src === 'mo' ? 'ใบแจ้งซ่อม (MO)' : 'บันทึกเครื่องหยุดจาก Daily Report'} ·
+            แหล่งข้อมูล: {src === 'mo' ? 'ใบแจ้งซ่อม (MO)' : 'บันทึกเครื่องหยุดจาก Daily Report'} ·
             ชนิดสินทรัพย์ตัดสินจาก "ชนิดอุปกรณ์" ในทะเบียนเครื่องจักร ไม่ใช่ทีมช่างที่รับงาน ·
             หน้านี้อ่านอย่างเดียว ไม่แก้ข้อมูล และไม่ดึงซ้ำอัตโนมัติ (กด ↻ เมื่อต้องการข้อมูลล่าสุด)
           </div>

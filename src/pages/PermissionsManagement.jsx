@@ -17,6 +17,7 @@ import { POSITION_LEVELS } from '../utils/positions';
 import { SCOPE_DEPTH_META, SCOPE_DEPTHS } from '../utils/scopeDepth';
 import useTabParam from '../utils/useTabParam';
 import { NAV_GROUP_ORDER } from '../App';
+import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 // ชื่อ/สีชุดสิทธิ์อ่านจาก src/utils/roleMeta.js ที่เดียว (ห้ามนิยามซ้ำในหน้า)
 // PERMISSION_COLUMN_ROLES = base roles + คอลัมน์ 🛡️ แอดมินหน่วยงาน (bucket ของ flag is_dept_admin)
@@ -153,6 +154,7 @@ const PAGE_GROUPS = [
       { key: 'page:/machine-database',  label: 'ฐานข้อมูลเครื่องจักร' },
       { key: 'page:/die-registry',      label: 'ทะเบียนแม่พิมพ์' },
       { key: 'page:/process-setup',     label: 'กระบวนการผลิต (Process Types)' },
+      { key: 'page:/ppe-setup',         label: 'ข้อกำหนด PPE' },
       { key: 'page:/org-setup',         label: 'แผนผังองค์กร' },
       { key: 'page:/layout-setup',      label: 'ตั้งค่าผัง/Floorplan' },
       { key: 'page:/linesetup',         label: '— ตั้งค่าผังไลน์ (ไม่อยู่ในเมนู — ฝังเป็นแท็บใน ตั้งค่าผัง/Floorplan)' },
@@ -161,6 +163,7 @@ const PAGE_GROUPS = [
       { key: 'page:/permissions',       label: 'จัดการสิทธิ์ (หน้านี้)' },
       { key: 'page:/add-user',          label: 'จัดการผู้ใช้งาน' },
       { key: 'page:/notification-config', label: 'ตั้งค่าการแจ้งเตือน' },
+      { key: 'page:/integrations',     label: 'การเชื่อมต่อ Node-RED / เครื่องจักร (ต้นทาง · สุขภาพการส่ง · gen flow)' },
       { key: 'page:/display-rotation', label: 'ตั้งค่าจอวนหน้า — บัญชีจอไหนเปิดหน้าอะไรวนบ้าง' },
       { key: 'page:/doc-forms',         label: 'ทะเบียนเอกสาร & ฟอร์ม' },
       { key: 'page:/qr-labels',         label: 'พิมพ์ป้าย QR อุปกรณ์' },
@@ -427,9 +430,9 @@ export default function PermissionsManagement() {
   if (loading) return <Page><div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div></Page>;
   if (loadErr) return (
     <Page>
-      <div style={{ padding: 24, margin: 24, borderRadius: 8, border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.08)', color: '#ef4444', fontSize: 14 }}>
+      <div style={{ padding: 24, margin: 24, borderRadius: 'var(--r-md)', border: '1px solid var(--red-line)', background: 'var(--red-dim)', color: 'var(--red)', fontSize: 14 }}>
         ⚠️ โหลดตารางสิทธิ์ไม่ครบ ({loadErr}) — ไม่แสดงตารางเพื่อกันการติ๊กทับค่าจริง ·{' '}
-        <button onClick={load} style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #ef4444', background: 'transparent', color: '#ef4444', cursor: 'pointer', fontWeight: 700 }}>ลองใหม่</button>
+        <button onClick={load} style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--red)', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontWeight: 700 }}>ลองใหม่</button>
       </div>
     </Page>
   );
@@ -444,9 +447,9 @@ export default function PermissionsManagement() {
         title="จัดการสิทธิ์" icon="🔐"
         sub="กำหนดว่าแต่ละ role เข้าหน้าไหนได้ (แท็บแรก) และทำอะไรในหน้านั้นได้บ้าง เช่น สร้าง/แก้/ลบ/อนุมัติ (แท็บสอง)"
         tabs={[
-          { key: 'matrix', label: '🔭 ภาพรวม (ใครทำอะไรได้)' },
-          { key: 'pages', label: '📄 การเข้าถึงหน้า' },
-          { key: 'actions', label: '🛠️ สิทธิ์การทำงาน (สร้าง/แก้/ลบ/อนุมัติ)' },
+          { key: 'matrix', label: 'ภาพรวม (ใครทำอะไรได้)' },
+          { key: 'pages', label: 'การเข้าถึงหน้า' },
+          { key: 'actions', label: 'สิทธิ์การทำงาน (สร้าง/แก้/ลบ/อนุมัติ)' },
         ]}
         tab={tab} onTab={setTab}
       />
@@ -459,7 +462,7 @@ export default function PermissionsManagement() {
         ⚠️ <strong>Admin เข้าถึงได้ทุกอย่างเสมอ</strong> (ล็อกไว้ กันกรณีตั้งค่าผิดจนตัวเองเข้าไม่ได้) —
         การเปลี่ยนแปลงมีผลกับทุกเครื่องที่เปิดระบบอยู่ทันที (sync อัตโนมัติ)
         <div style={{ marginTop: 6 }}>
-          🛡️ <strong style={{ color: '#eab308' }}>แอดมินหน่วยงาน</strong> = คอลัมน์พิเศษ (ไม่ใช่ role ที่เลือกให้ user) — เป็น "สิทธิ์เพิ่ม" ของคนที่ติ๊ก
+          🛡️ <strong style={{ color: 'var(--amber)' }}>แอดมินหน่วยงาน</strong> = คอลัมน์พิเศษ (ไม่ใช่ role ที่เลือกให้ user) — เป็น "สิทธิ์เพิ่ม" ของคนที่ติ๊ก
           <strong> "เป็นแอดมินหน่วยงาน"</strong> ในหน้าจัดการผู้ใช้ · คนนั้นได้ <strong>role เดิม + action ที่ติ๊กในคอลัมน์นี้</strong>
           เฉพาะในหน้าที่ role เดิมเข้าถึงได้ (จำกัด scope หน่วยงานตัวเองตามปกติ ไม่ใช่ admin ระบบ) · แนะนำตั้งเฉพาะแท็บ "สิทธิ์การทำงาน"
         </div>
@@ -468,13 +471,14 @@ export default function PermissionsManagement() {
       {tab === 'matrix' && (<>
         {/* ── 3 แกนที่ตัดสินว่า "คนคนหนึ่งทำอะไรได้" — เขียนไว้บนจอ เพราะคนเข้าใจผิดซ้ำว่า role = ตำแหน่ง ── */}
         <div data-page-note="1" style={{ ...s.section, padding: 0, overflow: 'hidden' }}>
+          <InfoMore label="3 แกนที่ตัดสินว่าคนคนหนึ่งทำอะไรได้ (role · ขอบเขต · ตำแหน่ง)" id="perm-3axis" size={11.5} style={{ padding: '9px 14px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 1, background: 'var(--border)' }}>
             {[
               { ic: '🔐', t: 'ชุดสิทธิ์ (role)', c: 'var(--accent)',
                 d: <>ตัวเดียวที่<b>ให้/ไม่ให้</b>ปุ่มกับหน้า — คือตารางข้างล่างนี้ · ตั้งที่แท็บ 📄 / 🛠️</> },
-              { ic: '🌳', t: 'ขอบเขต (ระดับการมองเห็น)', c: '#4d9fff',
+              { ic: '🌳', t: 'ขอบเขต (ระดับการมองเห็น)', c: 'var(--blue)',
                 d: <>หุบว่า<b>เห็นข้อมูลของใคร</b> — ไม่เพิ่ม/ลดปุ่ม · {SCOPE_DEPTHS.map(d => SCOPE_DEPTH_META[d].short).join(' → ')} · ตั้งรายคนที่ 🔑 จัดการผู้ใช้</> },
-              { ic: '🪪', t: 'ตำแหน่ง / ระดับ', c: '#eab308',
+              { ic: '🪪', t: 'ตำแหน่ง / ระดับ', c: 'var(--amber)',
                 d: <><b>ไม่ให้สิทธิ์</b> ใช้เป็นคำแนะนำ+ค่าตั้งต้นเท่านั้น — <b>ยกเว้นช่องเซ็นในใบ MO</b> (ขั้นผู้ตรวจสอบ/รับรอง/ผจก.) ที่ล็อกด้วยระดับจริง</> },
             ].map(x => (
               <div key={x.t} style={{ background: 'var(--card)', padding: '12px 14px' }}>
@@ -483,18 +487,19 @@ export default function PermissionsManagement() {
               </div>
             ))}
           </div>
-          <div style={{ padding: '9px 14px', fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6, borderTop: '1px solid var(--border)' }}>
+          </InfoMore>
+          <InfoMore label="ระดับที่ล็อกช่องเซ็น MO" size={11.5} style={{ padding: '9px 14px', borderTop: '1px solid var(--border)' }}>
             🪪 <b>ระดับที่ล็อกช่องเซ็น MO:</b>{' '}
             {POSITION_LEVELS.filter(l => l.rank >= 40).map(l => `${l.label} (${l.rank})`).join(' · ')}
             {' '}— ช่องส่งมอบต้อง ≥40 · ผู้ตรวจสอบ/หัวหน้าช่าง ≥50 · อนุมัติ/ปิดค่าใช้จ่าย ≥60
-          </div>
+          </InfoMore>
         </div>
 
         <FilterBar>
           <Segmented value={kind} onChange={setKind} label="ชนิดสิทธิ์" size="sm" options={[
             { value: 'all', label: 'ทั้งหมด' },
-            { value: 'page', label: '📄 เข้าหน้า' },
-            { value: 'action', label: '🛠️ การทำงาน' },
+            { value: 'page', label: 'เข้าหน้า' },
+            { value: 'action', label: 'การทำงาน' },
           ]} />
           <SearchInput value={q} onChange={setQ} fields="ชื่อฟังก์ชัน / คีย์สิทธิ์" />
           <label className="tbtn" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
@@ -514,9 +519,9 @@ export default function PermissionsManagement() {
         <div style={{ ...s.section, padding: '10px 14px', fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7 }}>
           <b>วิธีอ่านช่อง:</b> <b style={{ color: 'var(--accent)' }}>✓</b> = ทำได้ ·
           <span style={{ color: 'var(--muted)' }}> · </span> = ปิดไว้ ·
-          <b style={{ color: '#eab308' }}> – </b> = <b>ยังไม่เคยตั้งค่าในทะเบียน</b> (ไม่ใช่ "ปิดไว้ตั้งใจ" — ระบบถือว่าไม่ได้สิทธิ์ แต่ถ้าเป็นฟังก์ชันที่ควรได้ ต้องไปติ๊กให้ชัด)
+          <b style={{ color: 'var(--amber)' }}> – </b> = <b>ยังไม่เคยตั้งค่าในทะเบียน</b> (ไม่ใช่ "ปิดไว้ตั้งใจ" — ระบบถือว่าไม่ได้สิทธิ์ แต่ถ้าเป็นฟังก์ชันที่ควรได้ ต้องไปติ๊กให้ชัด)
           {matrixStat.unseeded > 0 && (
-            <div style={{ marginTop: 4, color: '#eab308' }}>
+            <div style={{ marginTop: 4, color: 'var(--amber)' }}>
               ⚠️ ช่องที่ยังไม่เคยตั้งค่า <b>{matrixStat.unseeded.toLocaleString()}</b> ช่อง จากที่แสดงอยู่
             </div>
           )}
@@ -568,7 +573,7 @@ export default function PermissionsManagement() {
                           const dead = r.bucket && it.type === 'page';
                           const txt = dead ? '✕' : raw === true ? '✓' : raw === false ? '·' : '–';
                           const col = dead ? 'var(--border2)'
-                            : raw === true ? 'var(--accent)' : raw === false ? 'var(--muted)' : '#eab308';
+                            : raw === true ? 'var(--accent)' : raw === false ? 'var(--muted)' : 'var(--amber)';
                           return (
                             <td key={r.value} title={dead ? 'เปิดหน้าให้ธงเสริมไม่ได้ (ระบบบล็อกในโค้ด)'
                               : raw === true ? 'ทำได้' : raw === false ? 'ปิดไว้' : 'ยังไม่เคยตั้งค่าในทะเบียน'}
@@ -589,8 +594,8 @@ export default function PermissionsManagement() {
 
       {tab === 'pages' && (
         <>
-          <div style={{ ...s.section, fontSize: 12, lineHeight: 1.6, borderColor: 'rgba(234,179,8,0.4)', background: 'rgba(234,179,8,0.06)' }}>
-            🛡️ <strong style={{ color: '#eab308' }}>แอดมินหน่วยงาน "เปิดหน้า" ให้ไม่ได้</strong> — คอลัมน์นั้นจึงไม่มีในแท็บนี้ (ระบบบล็อกไว้ในโค้ด ติ๊กไปก็ไม่มีผล)
+          <div style={{ ...s.section, fontSize: 12, lineHeight: 1.6, borderColor: 'var(--amber-line)', background: 'var(--amber-dim)' }}>
+            🛡️ <strong style={{ color: 'var(--amber)' }}>แอดมินหน่วยงาน "เปิดหน้า" ให้ไม่ได้</strong> — คอลัมน์นั้นจึงไม่มีในแท็บนี้ (ระบบบล็อกไว้ในโค้ด ติ๊กไปก็ไม่มีผล)
             <div style={{ marginTop: 4 }}>
               ต้องการให้ใครเข้าหน้าไหนได้ ให้ติ๊กที่ <strong>role เดิมของเขา</strong> ในตารางนี้ ·
               แล้วค่อยไปเพิ่มอำนาจ แก้/อนุมัติ ให้เขาที่แท็บ <strong>"สิทธิ์การทำงาน"</strong> คอลัมน์แอดมินหน่วยงาน

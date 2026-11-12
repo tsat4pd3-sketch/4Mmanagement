@@ -7,6 +7,7 @@ import EmojiPicker from './EmojiPicker';
 import { pickUnusedColor } from '../utils/colorPick';
 import { DeleteButton } from './IconButton';
 import { loadProcessTypeRefs, processTypeBlockMessage } from '../utils/processTypeRefs';
+import InfoMore from './InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 /* ── ProcessTypeSetup — ตัวจัดการ master กระบวนการผลิต (process_types, DR) ─────────────
    component เดียว ใช้ได้หลายจุด (Daily Report ⚙️ + หน้า /process-setup ในหมวดตั้งค่าฯ)
@@ -80,13 +81,13 @@ export default function ProcessTypeSetup({ role }) {
         <div style={{ fontSize: 13, color: 'var(--muted)' }}>{items.length} กระบวนการ</div>
         {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่มกระบวนการ</button>}
       </div>
-      <div style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.3)', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#a78bfa' }}>
-        🏭 กระบวนการที่ตั้งไว้ที่นี่ถูกใช้ร่วมกันทั้งระบบ: tag เครื่องจักร (ตั้งค่าผังไลน์) · สินค้า (Product Master) ·
+      <InfoMore label="กระบวนการที่ตั้งไว้ที่นี่ใช้ที่ไหนบ้าง" id="pts-usage" size={12} style={{ marginBottom: 16 }}>
+        กระบวนการที่ตั้งไว้ที่นี่ถูกใช้ร่วมกันทั้งระบบ: tag เครื่องจักร (ตั้งค่าผังไลน์) · สินค้า (Product Master) ·
         ประเภท Downtime/งานเสีย/นโยบายพัก — ไลน์เห็นประเภทตามกระบวนการของเครื่อง/สินค้าที่มีจริงในไลน์
-      </div>
+      </InfoMore>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {items.map(it => (
-          <div key={it.key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 9, opacity: it.is_active !== false ? 1 : 0.45 }}>
+          <div key={it.key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', opacity: it.is_active !== false ? 1 : 0.45 }}>
             <span style={{ fontSize: 20 }}>{it.icon || '🏭'}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <span style={{ fontSize: 14, fontWeight: 700, color: it.color || 'var(--text)' }}>{it.label}</span>
@@ -105,7 +106,7 @@ export default function ProcessTypeSetup({ role }) {
 
       {editing && form && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(96vw, 560px)' }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 560px)' }}>
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 12 }}>{editing === 'new' ? '➕ เพิ่มกระบวนการ' : `✏️ แก้ไข ${form.label}`}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10 }}>

@@ -103,7 +103,7 @@ export default function ThailandZoneMap({ zones, groups = [], onPickZone, onPick
             const on = gFilter === g.key;
             return (
               <button key={g.key || 'all'} onClick={() => setGFilter(g.key)} style={{
-                fontSize: 12.5, fontWeight: 700, padding: '4px 10px', borderRadius: 999, cursor: 'pointer',
+                fontSize: 12.5, fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                 background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
                 border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
               }}>
@@ -197,7 +197,7 @@ export default function ThailandZoneMap({ zones, groups = [], onPickZone, onPick
           <div style={{
             position: 'absolute', left: `${px(hover.lon) / 1000 * 100}%`, top: `${py(hover.lat) / H * 100}%`,
             transform: 'translate(-50%, calc(-100% - 26px))', pointerEvents: 'none', zIndex: 5,
-            background: 'var(--card)', border: `1px solid ${statusColor(hover.status)}`, borderRadius: 8,
+            background: 'var(--card)', border: `1px solid ${statusColor(hover.status)}`, borderRadius: 'var(--r-md)',
             padding: '8px 11px', minWidth: 190, boxShadow: 'var(--shadow-float)',
           }}>
             <div style={{ fontSize: 14, fontWeight: 800 }}>{hover.flag} {hover.code}</div>

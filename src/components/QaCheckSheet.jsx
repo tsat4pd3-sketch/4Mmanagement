@@ -30,6 +30,10 @@ import QaFmeQueue from './QaFmeQueue';
 import { QA_STAGES, FME_SHEET_STAGE } from '../utils/qaStages';
 import { notifyEvent } from '../utils/notifyEvent';
 import { checkWrite, checkWriteRows } from '../utils/dbWrite';
+import InspectorCodeField from './InspectorCodeField';   // ✍️ รหัสผู้ตรวจจริง (C1 · 05/11)
+import { printQaSheet } from '../lib/qaSheetPrint';         // 🖨️ ใบพิมพ์ QA (05/11)
+import { resolveEmployeeSigner, inspectorForExport, loadEmployeeSigners, signatureOfPerson } from '../utils/employeeSignature';
+import { stageLabel } from '../utils/qaStages';
 import { specLabel, judgeVariable } from '../utils/qaSpec';
 import { evalSequence } from '../utils/qaSequential';
 import { can } from '../utils/permissions';
@@ -69,7 +73,7 @@ const ghostBtn = {
 const cardSt = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 16 };
 const Chip = ({ label, color }) => (
   <span style={{
-    display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700,
+    display: 'inline-block', padding: '2px 8px', borderRadius: 'var(--r-pill)', fontSize: 11, fontWeight: 700,
     background: `${color}22`, color, border: `1px solid ${color}55`, whiteSpace: 'nowrap',
   }}>{label}</span>
 );
@@ -105,6 +109,10 @@ export default function QaCheckSheet({ canRecord }) {
   const fmeKeyRef = useRef(null);                 // คีย์ (พาร์ท|วัน|กะ) ที่คิวตั้งไว้
 
   const [sheet, setSheet] = useState(null);          // แถว qa_inspection_sheets ของคีย์ปัจจุบัน
+  /* ✍️ รหัสผู้ตรวจจริง (C1 · 05/11) — ใบถูกสร้างตอนบันทึกครั้งแรก ⇒ ถือรหัสไว้ก่อนแล้วใส่ตอน insert
+     · คงค่าข้ามใบในแท็บนี้ (QA คนเดียวตรวจหลายรอบ/หลายพาร์ทติดกัน) */
+  const [pendingCode, setPendingCodeRaw] = useState(() => { try { return sessionStorage.getItem('qa:inspector_code') || ''; } catch { return ''; } });
+  const setPendingCode = (v) => { setPendingCodeRaw(v); try { v ? sessionStorage.setItem('qa:inspector_code', v) : sessionStorage.removeItem('qa:inspector_code'); } catch { /* ไม่มี storage = จำไม่ได้ ไม่พัง */ } };
   const [results, setResults] = useState([]);        // ผลของใบนั้น
   const [pieces, setPieces] = useState([]);          // ผลต่อชิ้น (ตรวจทีละชิ้น · 2026-09-07)
   const [actions, setActions] = useState([]);        // action ที่ปิด alarm แต่ละรอบ
@@ -307,6 +315,7 @@ export default function QaCheckSheet({ canRecord }) {
       line_name: part.line_name || null,
       work_date: workDate, shift, round_no: roundNo, stage: sheetStage,
       inspector_name: fullName || null, created_by: fullName || null,
+      inspector_code: pendingCode.trim() || null,
     }).select().single();
     if (error) {
       // ใบถูกสร้างพร้อมกันจากอีกเครื่อง → ดึงของจริงมาใช้ต่อ (unique key กันซ้ำให้แล้ว)
@@ -603,6 +612,39 @@ export default function QaCheckSheet({ canRecord }) {
 
   const readOnly = !canRecord || sheet?.status === 'done';
 
+  /* 🖨️ พิมพ์ใบตรวจ (doc_key qa_inspection_sheet) — ผู้ตรวจ: รหัสที่บันทึกไว้ชนะบัญชี (inspectorForExport)
+     ไม่มีรหัส = บัญชีที่สร้างใบ (inspector_uid) → ลายเซ็นโปรไฟล์ → ลายเซ็นในฐานพนักงานที่ผูกไว้ · อ่านไม่ได้ = บอก */
+  const [printing, setPrinting] = useState(false);
+  const handlePrint = async () => {
+    const sh = matchesKey(sheet) ? sheet : null;
+    if (!sh) { toast.error('ยังไม่มีใบตรวจของรอบนี้ — บันทึกผลอย่างน้อย 1 จุดก่อนพิมพ์'); return; }
+    setPrinting(true);
+    try {
+      let accountName = sh.inspector_name || null, accountSig = null;
+      if (!sh.inspector_code && sh.inspector_uid) {
+        const { data: prof, error } = await supabase.from('profiles').select('full_name, signature_url, employee_id').eq('id', sh.inspector_uid).maybeSingle();
+        if (error) toast.error(`โหลดลายเซ็นผู้ตรวจไม่สำเร็จ — ใบจะเว้นช่องลายเซ็น (${error.message})`);
+        let empSig = null;
+        if (prof && !prof.signature_url && prof.employee_id) {
+          const er = await loadEmployeeSigners(supabase, { ids: [prof.employee_id] });
+          if (er.error) toast.error(`โหลดลายเซ็นจากฐานพนักงานไม่สำเร็จ (${er.error})`);
+          empSig = er.rows?.[0]?.signature_url || null;
+        }
+        accountName = prof?.full_name || accountName;
+        accountSig = signatureOfPerson({ profileSig: prof?.signature_url, employeeSig: empSig });
+      }
+      const signer = sh.inspector_code ? await resolveEmployeeSigner(supabase, sh.inspector_code) : null;
+      const who = inspectorForExport({ code: sh.inspector_code, signer, accountName, accountSig });
+      if (who.note) toast.info(`ผู้ตรวจรหัส ${sh.inspector_code}: ${who.note}`);
+      else if (!who.signatureUrl) toast.info('ผู้ตรวจยังไม่มีลายเซ็นในระบบ — ใบจะเว้นช่องให้เซ็นมือ');
+      const ok = await printQaSheet({ sheet: sh, items, results, pieces, actions,
+        inspector: { ...who, code: sh.inspector_code || '' }, stageLabel: sh.stage ? stageLabel(sh.stage) : '' });
+      if (!ok) toast.error('เปิดหน้าต่างพิมพ์ไม่ได้ — อนุญาต pop-up ของเว็บนี้ก่อน');
+    } catch (e) {
+      toast.error(`พิมพ์ใบตรวจไม่สำเร็จ: ${e?.message || e}`);
+    } finally { setPrinting(false); }
+  };
+
   /* ── UI ─────────────────────────────────────────────────────────────── */
   return (
     <div>
@@ -668,7 +710,7 @@ export default function QaCheckSheet({ canRecord }) {
                 ))}
               </select>
               <button type="button" onClick={() => setScanOpen(true)} title="สแกนบาร์โค้ด MAT บนกล่อง/คัมบัง"
-                style={{ flexShrink: 0, minWidth: 44, padding: '0 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontWeight: 700, cursor: 'pointer' }}>📷</button>
+                style={{ flexShrink: 0, minWidth: 44, padding: '0 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontWeight: 700, cursor: 'pointer' }}>📷</button>
             </div>
           </div>
           <div>
@@ -689,9 +731,17 @@ export default function QaCheckSheet({ canRecord }) {
               onChange={e => setRoundNo(Math.min(20, Math.max(1, parseInt(e.target.value, 10) || 1)))} />
           </div>
           <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-            ผู้ตรวจ: <b style={{ color: 'var(--text2)' }}>{sheet?.inspector_name || fullName || '—'}</b>
+            ผู้ตรวจ (บัญชี): <b style={{ color: 'var(--text2)' }}>{sheet?.inspector_name || fullName || '—'}</b>
             {part?.line_name && <div>ไลน์: <b style={{ color: 'var(--text2)' }}>{part.line_name}</b></div>}
           </div>
+          <InspectorCodeField disabled={!canRecord} value={matchesKey(sheet) ? (sheet.inspector_code || '') : pendingCode}
+            onChange={async (v) => {
+              setPendingCode(v);
+              const sh = matchesKey(sheet) ? sheet : null;
+              if (!sh) return;                                   // ยังไม่มีใบ = ใส่ตอนสร้างใบ
+              if (checkWriteRows(await supabase.from('qa_inspection_sheets').update({ inspector_code: v || null }).eq('id', sh.id).select('id'), 'รหัสผู้ตรวจ'))
+                setSheet(cur => (cur && cur.id === sh.id ? { ...cur, inspector_code: v || null } : cur));
+            }} />
         </div>
 
         {/* สรุปสถานะใบ */}
@@ -712,6 +762,11 @@ export default function QaCheckSheet({ canRecord }) {
               <span style={{ flex: 1 }} />
               {/* ใบปิดเองเมื่อตัวเดินกฎบอก "ยอมรับ" — ไม่มีปุ่มปิดใบ/ผ่านทั้งหมด (ตรวจทีละชิ้น 2026-09-07) */}
               <Chip label={`ชิ้นที่ตรวจแล้ว ${pieces.length}`} color="#6b7280" />
+              <button type="button" className="tbtn" disabled={printing || !matchesKey(sheet)} onClick={handlePrint}
+                title={matchesKey(sheet) ? 'พิมพ์/บันทึก PDF ใบตรวจรอบนี้' : 'ยังไม่มีใบตรวจของรอบนี้'}
+                style={{ padding: '5px 12px', fontSize: 12, fontWeight: 700 }}>
+                {printing ? 'กำลังเตรียม…' : '🖨️ พิมพ์ใบตรวจ'}
+              </button>
             </>
           )}
         </div>
@@ -723,7 +778,7 @@ export default function QaCheckSheet({ canRecord }) {
           {drawings.length > 0 && (
             <div style={{ ...cardSt, position: isMobile ? 'static' : 'sticky', top: 10 }}>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-                <div style={{ fontWeight: 800, fontSize: 13 }}>🖼 แบบ + จุดตรวจ</div>
+                <div style={{ fontWeight: 800, fontSize: 13 }}>แบบ + จุดตรวจ</div>
                 <span style={{ flex: 1 }} />
                 <button style={ghostBtn} onClick={() => setShowDrawing(s => !s)}>
                   {showDrawing ? '▾ ซ่อนแบบ' : '▸ แสดงแบบ'}
@@ -748,7 +803,7 @@ export default function QaCheckSheet({ canRecord }) {
                     </div>
                   ) : activeDwg && (
                     <div ref={boxRef}>
-                      <div style={{ maxHeight: viewH, overflow: 'auto', borderRadius: 10, border: '1px solid var(--border2)', background: 'var(--bg2)' }}>
+                      <div style={{ maxHeight: viewH, overflow: 'auto', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)' }}>
                         <div ref={wrapRef} style={{ position: 'relative', width: 'fit-content', margin: '0 auto' }}>
                           <img src={activeDwg.drawing_url} alt={activeDwg.title}
                             ref={el => { if (el?.complete && el.naturalWidth && !natSize.w) setNatSize({ w: el.naturalWidth, h: el.naturalHeight }); }}
@@ -798,7 +853,7 @@ export default function QaCheckSheet({ canRecord }) {
           {/* สรุปต่อจุด (อ่านอย่างเดียว — ค่าทุกชิ้นที่วัดแล้ว · เปิด NCR จากจุดที่ตกได้ที่นี่) */}
           <div style={{ ...cardSt, padding: 0 }}>
             <div style={{ padding: '12px 16px', fontWeight: 800, fontSize: 13.5, borderBottom: '1px solid var(--border)' }}>
-              📋 สรุปต่อจุด ({items.length})
+              สรุปต่อจุด ({items.length})
               {loading && <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 12 }}> · กำลังโหลด…</span>}
               <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 12 }}>
                 {' '}· {readOnly && canRecord ? 'ใบปิดแล้ว' : !canRecord ? 'ไม่มีสิทธิ์บันทึก — ดูอย่างเดียว' : 'บันทึกที่แผงตรวจทีละชิ้นด้านบน'}
@@ -823,7 +878,7 @@ export default function QaCheckSheet({ canRecord }) {
       {/* ประวัติใบตรวจของพาร์ทนี้ */}
       {recent.length > 0 && (
         <div style={{ ...cardSt, marginTop: 12 }}>
-          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>🗂 ใบตรวจล่าสุดของพาร์ทนี้</div>
+          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>ใบตรวจล่าสุดของพาร์ทนี้</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {recent.map(s => {
               const cur = s.id === sheet?.id;
@@ -871,7 +926,7 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
       }}>
       <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <span style={{
-          minWidth: 34, height: 24, padding: '0 8px', borderRadius: 999, display: 'inline-flex',
+          minWidth: 34, height: 24, padding: '0 8px', borderRadius: 'var(--r-pill)', display: 'inline-flex',
           alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12, color: '#fff',
           background: judged ? color : (item.rank ? RANK[item.rank].color : '#4d9fff'),
         }}>{item.balloon_no}</span>
@@ -889,7 +944,7 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
             <Chip label={item.item_type === 'variable' ? 'Variable' : 'Attribute'} color={item.item_type === 'variable' ? '#4d9fff' : '#a78bfa'} />
             {item.rank && <Chip label={`Rank ${item.rank}`} color={RANK[item.rank].color} />}
             {item.stage && <Chip label={STAGE[item.stage]?.label || item.stage} color={STAGE[item.stage]?.color || '#6b7280'} />}
-            {res?.ncr_id && <Chip label="🚨 เปิด NCR แล้ว" color="#ef4444" />}
+            {res?.ncr_id && <Chip label="เปิด NCR แล้ว" color="#ef4444" />}
           </div>
         </div>
 
@@ -945,7 +1000,7 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
 
       {/* ฟอร์ม NG — บังคับกรอกรายละเอียด */}
       {showNg && !readOnly && (
-        <div style={{ marginTop: 8, padding: 10, borderRadius: 8, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)' }}
+        <div style={{ marginTop: 8, padding: 10, borderRadius: 'var(--r-md)', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)' }}
           onClick={e => e.stopPropagation()}>
           <div className="mgrid" style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 120px auto' }}>
             <input style={inputSt} placeholder="เสียอย่างไร / เจอที่ไหน (บังคับกรอก)"
@@ -967,13 +1022,13 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
           <Chip label={JUDGE[judged].label} color={JUDGE[judged].color} />
           {res.values_json?.length > 0 && <span>ค่าที่วัด: {res.values_json.join(', ')}</span>}
           {judged === 'ng' && res.qty_ng > 0 && <span>· NG {res.qty_ng} ชิ้น</span>}
-          {res.note && <span>· 💬 {res.note}</span>}
+          {res.note && <span>· {res.note}</span>}
           {res.recorded_by && <span>· โดย {res.recorded_by}</span>}
           {/* เปิด NCR ได้แม้ใบปิดแล้ว — NCR เป็นงานตามหลัง ไม่ใช่การแก้ผลตรวจ */}
           {judged === 'ng' && !res.ncr_id && canRecord && (
             <button onClick={e => { e.stopPropagation(); onOpenNcr(res); }} disabled={busy}
               style={{ ...ghostBtn, padding: '4px 10px', borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
-              🚨 เปิด NCR
+              เปิด NCR
             </button>
           )}
         </div>

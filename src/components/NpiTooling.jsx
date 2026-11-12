@@ -122,7 +122,7 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
     <div style={card}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <div style={{ fontSize: 14, fontWeight: 800 }}>🔧 แผนพัฒนาเครื่องมือ ({rows.length})</div>
+          <div style={{ fontSize: 14, fontWeight: 800 }}>แผนพัฒนาเครื่องมือ ({rows.length})</div>
           <select value={filterPart} onChange={e => setFilterPart(e.target.value)} style={{ ...inp, width: 'auto', minWidth: 160 }}>
             <option value="">{ALL.part}</option>{parts.map(p => <option key={p.id} value={p.id}>{p.part_no}</option>)}
           </select>
@@ -147,8 +147,8 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
         const kind = TOOL_KIND[t.tool_kind] || TOOL_KIND.other;
         const die = t.die_set_code ? dieSets.find(d => d.set_code === t.die_set_code) : null;
         return (
-          <div key={t.id} style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: 8 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1.2fr) minmax(220px, 2fr) auto', gap: 10, alignItems: 'center', padding: '8px 10px', background: 'var(--bg2)', borderRadius: 8 }}>
+          <div key={t.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', marginBottom: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1.2fr) minmax(220px, 2fr) auto', gap: 10, alignItems: 'center', padding: '8px 10px', background: 'var(--bg2)', borderRadius: 'var(--r-md)' }}>
               <div onClick={() => toggle(t.id)} style={{ cursor: 'pointer', minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                   <LightDot light={r.light} /><span>{kind.icon}</span><span style={{ fontWeight: 800, fontSize: 13 }}>{t.tool_name}</span>
@@ -156,7 +156,7 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                   {p?.part_no || '—'} · {kind.label} · ผู้ทำ {t.maker_name || '—'} ({t.maker_kind === 'internal' ? 'ภายใน' : 'ภายนอก'}) · {r.done}/{r.total} ขั้น · {r.pct}%{r.delayed ? <span style={{ color: '#ef4444', fontWeight: 800 }}> · ล่าช้า {r.delayed}</span> : null}
-                  {t.die_set_code && <> · 🧱 {die ? <Link to="/equipment?tab=die" style={{ color: '#4d9fff' }}>{t.die_set_code}</Link> : <span style={{ color: '#f59e0b' }} title="ไม่พบใน die_sets">{t.die_set_code} (ไม่พบในทะเบียน)</span>}</>}
+                  {t.die_set_code && <> · {die ? <Link to="/equipment?tab=die" style={{ color: '#4d9fff' }}>{t.die_set_code}</Link> : <span style={{ color: '#f59e0b' }} title="ไม่พบใน die_sets">{t.die_set_code} (ไม่พบในทะเบียน)</span>}</>}
                 </div>
               </div>
               <GanttRow plan={[t.plan_start, t.plan_end]} actual={[t.actual_start, t.actual_end]} range={range} todayPos={todayPos} pct={r.pct} light={r.light} />
@@ -227,7 +227,7 @@ export default function NpiTooling({ parts, tooling, steps, stepTemplates, dieSe
 
       {stepModal && (
         <Modal title={stepModal.id ? `ขั้น ${stepModal.name}` : 'เพิ่มขั้นงาน'} onClose={() => setStepModal(null)} width={600}
-          footer={<><button style={ghost} onClick={() => setStepModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveStep}>💾 บันทึก</button></>}>
+          footer={<><button style={ghost} onClick={() => setStepModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveStep}>บันทึก</button></>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label="ชื่อขั้นงาน *" span={2}><input style={inp} value={stepModal.name} onChange={e => setStepModal({ ...stepModal, name: e.target.value })} /></Field>
             <Field label="ลำดับ"><input type="number" style={inp} value={stepModal.seq} onChange={e => setStepModal({ ...stepModal, seq: e.target.value })} /></Field>
@@ -254,11 +254,11 @@ function GanttRow({ plan, actual, range, todayPos, pct, light, thin }) {
   const c = (LIGHT[light] || LIGHT.grey).color;
   const h = thin ? 10 : 16;
   return (
-    <div style={{ position: 'relative', height: h + 6, background: 'var(--bg)', borderRadius: 4, border: '1px solid var(--border)' }}>
-      {pb && <div title={`แผน ${plan[0] || ''} → ${plan[1] || ''}`} style={{ position: 'absolute', top: 3, height: h, left: `${pb.left}%`, width: `${pb.width}%`, background: `${c}44`, borderRadius: 3 }}>
-        {pct > 0 && <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: c, borderRadius: 3, opacity: 0.9 }} />}
+    <div style={{ position: 'relative', height: h + 6, background: 'var(--bg)', borderRadius: 'var(--r-xs)', border: '1px solid var(--border)' }}>
+      {pb && <div title={`แผน ${plan[0] || ''} → ${plan[1] || ''}`} style={{ position: 'absolute', top: 3, height: h, left: `${pb.left}%`, width: `${pb.width}%`, background: `${c}44`, borderRadius: 'var(--r-xs)' }}>
+        {pct > 0 && <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: c, borderRadius: 'var(--r-xs)', opacity: 0.9 }} />}
       </div>}
-      {ab && <div title={`จริง ${actual[0] || ''} → ${actual[1] || 'กำลังทำ'}`} style={{ position: 'absolute', top: 3 + h - 3, height: 3, left: `${ab.left}%`, width: `${ab.width}%`, background: 'var(--text)', borderRadius: 2 }} />}
+      {ab && <div title={`จริง ${actual[0] || ''} → ${actual[1] || 'กำลังทำ'}`} style={{ position: 'absolute', top: 3 + h - 3, height: 3, left: `${ab.left}%`, width: `${ab.width}%`, background: 'var(--text)', borderRadius: 'var(--r-xs)' }} />}
       {todayPos && <div style={{ position: 'absolute', top: 0, bottom: 0, left: `${todayPos.left}%`, width: 2, background: '#ef4444' }} />}
     </div>
   );

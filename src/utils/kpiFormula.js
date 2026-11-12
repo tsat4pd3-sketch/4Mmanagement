@@ -53,7 +53,7 @@ export function formulaMonths({ def, scope, base }) {
   const key = formulaOfDef(def);
   const f = key ? formulaOf(key) : null;
   if (!f || !base) return null;
-  const varScopes = Object.fromEntries(f.vars.map(v => [v, baseScopeForVar(v, scope)]));
+  const varScopes = Object.fromEntries(f.vars.map(v => [v, f.scope === 'plant' ? PLANT_BASE_KEY : baseScopeForVar(v, scope)]));   // สูตรค่ากลาง (ยอดขาย/หัว) อ่านทุกตัวแปรจาก ทั้งโรงงาน
   const months = {}, inputs = {}, missing = {}, inputSrc = {};
   const cum = new Set(f.cum || []);
   const srcOf = (v, mm) => (base.src ? base.src(varScopes[v], v, mm) : (base.get(varScopes[v], v, mm) != null ? 'manual' : null));

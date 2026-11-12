@@ -233,7 +233,7 @@ export default function ParetoChart({
 
 const Key = ({ c, t }) => (
   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-    <span style={{ width: 11, height: 11, background: c, borderRadius: 2, display: 'inline-block' }} />{t}
+    <span style={{ width: 11, height: 11, background: c, borderRadius: 'var(--r-xs)', display: 'inline-block' }} />{t}
   </span>
 );
 

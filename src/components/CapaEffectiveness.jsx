@@ -45,8 +45,8 @@ function Bars({ m }) {
       {rows.map(([label, perDay, total, days, color]) => (
         <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
           <span style={{ width: 54, fontSize: 11.5, fontWeight: 700, color: 'var(--text2)' }}>{label}</span>
-          <div style={{ flex: 1, height: 15, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden' }}>
-            <div style={{ width: `${Math.min(100, (perDay / max) * 100)}%`, height: '100%', background: color, borderRadius: 4, transition: 'width .4s' }} />
+          <div style={{ flex: 1, height: 15, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', overflow: 'hidden' }}>
+            <div style={{ width: `${Math.min(100, (perDay / max) * 100)}%`, height: '100%', background: color, borderRadius: 'var(--r-xs)', transition: 'width .4s' }} />
           </div>
           <span style={{ width: 170, textAlign: 'right', fontSize: 11.5, fontWeight: 800, color: 'var(--text)' }}>
             {perDay.toFixed(1)} ชิ้น/วัน{' '}
@@ -220,12 +220,12 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
   const typeLabel = capa.eff_defect_type_label || types.find((t) => t.id === capa.eff_defect_type_id)?.name_th || '';
 
   return (
-    <div style={{ marginTop: 14, border: '1px solid var(--border)', borderRadius: 10, background: 'var(--bg2)' }}>
+    <div style={{ marginTop: 14, border: '1px solid var(--border)', borderRadius: 'var(--r-md)', background: 'var(--bg2)' }}>
       <div style={{ padding: '9px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12.5, fontWeight: 800 }}>📉 ประสิทธิผลจากข้อมูลจริง</span>
+        <span style={{ fontSize: 12.5, fontWeight: 800 }}>ประสิทธิผลจากข้อมูลจริง</span>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>ของเสียต่อวันผลิต ก่อน/หลังมาตรการมีผล</span>
         {V && !loading && (
-          <span style={{ marginLeft: 'auto', padding: '2px 9px', borderRadius: 999, fontSize: 11, fontWeight: 800, color: V.color, background: `${V.color}22`, border: `1px solid ${V.color}66` }}>
+          <span style={{ marginLeft: 'auto', padding: '2px 9px', borderRadius: 'var(--r-pill)', fontSize: 11, fontWeight: 800, color: V.color, background: `${V.color}22`, border: `1px solid ${V.color}66` }}>
             {V.short}
           </span>
         )}
@@ -288,7 +288,7 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
         {m && judged && (
           <>
             <Bars m={m} />
-            <div style={{ padding: '8px 11px', borderRadius: 8, background: `${V.color}14`, border: `1px solid ${V.color}55`, fontSize: 12, color: V.color, fontWeight: 700, lineHeight: 1.6 }}>
+            <div style={{ padding: '8px 11px', borderRadius: 'var(--r-md)', background: `${V.color}14`, border: `1px solid ${V.color}55`, fontSize: 12, color: V.color, fontWeight: 700, lineHeight: 1.6 }}>
               {V.label}{judged.reason ? ` — ${judged.reason}` : ''}
               {judged.verdict === 'worse' || judged.verdict === 'not_effective' ? (
                 <div style={{ fontWeight: 600, marginTop: 3 }}>

@@ -123,9 +123,36 @@ model: inherit
   `DailyReport.jsx` + `src/utils/crossLineClose.js`) — ① คีย์ที่ใช้ค้นไม่ unique เชิงโครงสร้าง
   ⇒ เจอหลายแถวต้องให้คนเลือก **ห้ามเดา** · ② แถวที่อยู่ในกะ/ใบที่ **stamp สรุปไปแล้ว** ห้ามแก้ย้อนหลัง
   (เช็คซ้ำตอนกดจริง ไม่ใช่แค่ตอนค้น) · ③ `canWriteLine/canWriteUnit` + `unknownTarget: 'block'`
-  — **ฝั่ง DR เป็น `anon` ไม่มีด่าน DB เลย จอคือด่านเดียว** · ④ ปุ่มข้ามหน่วยห้าม auto-confirm
-  จาก Enter ของเครื่องสแกน
+  — **ฝั่ง DR เป็น `anon` ไม่มีด่าน DB เลย จอคือด่านเดียว** · ④ **ถอดการกดยืนยันได้เฉพาะเมื่อมี
+  "ร่องรอยย้อนหลัง" แทน** (03/11 คำสั่ง user: ยอดงานในขอบเขตตัวเองไม่ต้องคอนเฟิร์ม แต่ต้องมี log)
+  ⇒ ตัวเขียนต้อง stamp คอลัมน์ที่ trigger audit ใช้เป็นเงื่อนไข (`prod_orders.closed_from_line`)
+  **ไม่ stamp = ปิดข้ามหน่วยได้ฟรีไม่มีร่องรอย** · ตัวที่ถอยแถวกลับต้องล้างคอลัมน์นั้นด้วย
+  · ⑤ **ทางที่ทำงานเองจากเครื่องสแกน ต้องมีด่าน stale** (`crossReqRef`) — สแกนเลขใหม่ทับระหว่าง
+  รอผลเก่า = ผลเก่าย้อนมาเขียนแถวที่คนไม่ได้สแกน · และบล็อกแล้ว **ต้องค้างเหตุผลบนจอ ไม่ใช่ toast เดียว**
   · ด่านอัตโนมัติ: `cross-line-close-guards` ใน `regressionGuards`
+
+- **B-GAPWHY** ⛔ **ช่องว่างบนบอร์ดที่มีแกนเวลา ต้องตอบได้ว่าว่างเพราะอะไร** (04/11 · feedback หน้างาน
+  — ช่องว่างบน Heijunka ถูกเข้าใจว่า "โปรแกรมเรียงใบไม่ต่อเนื่อง" ทั้งที่เป็น downtime 180 น./กะ
+  ที่หน้างานลงใบไว้เอง) — เหตุของช่วงว่าง (พัก/เครื่องหยุด) ต้องวาดลงในช่วงนั้น **ด้วยความเด่นที่เห็น
+  จากระยะยืนดูบอร์ด** (จอหน้างานไม่มีเมาส์ · ขีดสูง 4-5px ไม่นับ) · **ห้ามขยับ/ยืดใบงานให้แถวดูเต็ม**
+  (เติมของที่หายไป ไม่ใช่ย้ายของที่มีอยู่) · แถบเหตุอยู่ใต้ใบงาน `zIndex:0` ป้ายชิดขอบล่าง ·
+  เจ้าของกฎ `utils/downtimeBands.js` + `components/DowntimeBand.jsx` **ห้ามวาดเองในหน้า**
+  · ด่านอัตโนมัติ: `downtime-band-central` ใน `regressionGuards` · 📄 UI §6.31
+
+- **B-ANDON** 🚨 **แถบ Andon ลอย (`position: fixed`) ต้องอ่านออกและกดรับทราบได้บนมือถือ** (05/11)
+  — flex แถวเดียว `nowrap` ที่มีปุ่ม/ชิปความกว้างตายตัวหลายตัว จะ**บีบกล่องข้อความเหลือกว้าง 0**
+  บนจอ 390px (วัดจริง: ของตายตัว 377px > กล่อง 374px) · แก้ด้วย class กลาง `andon-bar` +
+  `andon-bar-msg` ใน `src/index.css` ใต้ `@media (max-width:768px)` **ต้องมี `!important`**
+  (inline `flex:1` ชนะ CSS) · **ห้ามย่อฟอนต์/ซ่อนปุ่มแทน** · แถบที่ wrap แล้วสูงขึ้น 4 เท่า ⇒
+  **มือถือโชว์ทีละใบ + เขียนว่าเหลืออีกกี่ใบ** (ซ้อนกันเกินจอ = ปุ่มรับทราบตกนอกจอ กดไม่ได้)
+  · ด่านอัตโนมัติ: `andon-bar-mobile` ใน `regressionGuards` · 📄 UI §6.32
+- **B-HOME1** 🏠 **เอกสาร/ทะเบียนชุดเดียว ต้องมี "บ้าน" หน้าเดียว** (06/11 · คำสั่ง user — ถังเหลือง/แดง
+  *"หลักๆอันนี้ต้องอยู่หมวดของผลิตนะ qa จะไปโชว์แค่พวกงานค้างอนุมัติของแผนก"*) — คอมโพเนนต์เดียวกัน
+  ฝัง 2 หน้าได้ แต่ต้องรับ **prop โหมด** ให้หน้าที่ไม่ใช่บ้านเห็นแค่ *คิวงานที่ต้องลงมือ* (ไม่มีทะเบียน/
+  แถบกรอง/ปุ่มบันทึก/ทะเบียนลูก) + **ลิงก์กลับบ้านจริงที่เช็ค `canAccessPage()` ก่อนโชว์** ·
+  2 หน้าเต็มเหมือนกัน = คนกรอกคนละที่แล้วเถียงว่าใบจริงอยู่ไหน (หลักเดียวกับ `alsoIn` = ทางลัด
+  ไม่ใช่บ้านที่สอง) · โหมดคิวต้อง**ข้ามคิวรีของทะเบียน** ด้วย (egress ที่ไม่มีใครดู)
+  · ต้นแบบ/ด่าน: `qa-bins-queue-only` ใน `regressionGuards` · 📄 `docs/modules/production-problem-report-bins.md`
 
 ### หมวด C — Permissions (data-driven)
 
@@ -183,6 +210,10 @@ model: inherit
   (จ) แท็บคนละเรื่องห้ามตั้งชื่อชนกันข้ามหน้า (เคยเกิด: 'WIP ระหว่างขั้น' vs 'WIP Point') ·
   (ฉ) เมนูใหม่ในหมวด 'ตั้งค่าโปรแกรม,ฐานข้อมูล' ต้องใส่ field `sub` (ฐานข้อมูลหลัก/ตั้งค่าระบบ)
   · grep: `label:` ใน NAV_ITEMS เทียบกับ `<h1>`/`<h2>` ของหน้านั้น
+
+- **C-AM-B4** (10/11) ใบตรวจ AM: ผู้ตรวจตัวจริง = คนตามบัตร (`inspections.inspector_code`) ไม่ใช่บัญชีที่ login —
+  ตำแหน่ง/ใบตัวเองของสายอนุมัติต้องผ่าน `amInspectorIdentity()` · บันทึกต้องผ่าน `amBadgeGate()` + `amOnSiteApproval()`
+  (`src/utils/amApproval.js`) · grep: `inspPosById[` + `.inspector_id]` ใน PMCheckData = ผิด (ด่าน `am-onsite-badge-verify`)
 
 ### หมวด D — Section/Line/Team Scoping
 - **D1** หน้าที่ query ข้อมูลตาม line/section ต้องกรองด้วย `sections` array จาก UserContext
@@ -261,6 +292,11 @@ model: inherit
   "โหลดไม่สำเร็จ" ห้ามขึ้น "ยังไม่มีรายการตรวจ" · PMSchedule/PmForecast ห้าม `.in()` ดิบ + ต้องอ่าน error (แถบแดง)
 
 ### หมวด F — UI Conventions (docs/UI-CONVENTIONS.md)
+- **[F-TXT]** คำอธิบาย > 1 บรรทัด (≈120 ตัวอักษร) ต้องอยู่หลัง `<InfoMore>` (+`title=` ได้) ไม่วางนิ่งบนจอ · ตรวจ `node audit/textsweep.mjs` ต้อง 0 ก้อนในหน้าที่แตะ · ความผิดปกติ/ข้อมูลไม่ครบห้ามพับ (ใช้ NoticeBar/WarnNote) · 📄 `UI-CONVENTIONS.md` §6.10
+- **[F-ICN]** แท็บ PageHeader = เส้นใต้ (ห้ามวาดแท็บเอง) · จุดวาดกลาง (เมนู/Home/OverflowMenu/หัวเพจ) ต้องวาดไอคอนผ่าน `<Icon glyph>` ไม่ใช่ `{it.icon}` ดิบ · emoji ใหม่ในทะเบียนเมนู/`icon=` ต้องอยู่ใน `ICON_MAP` (ด่าน `iconMap.test.mjs`) · 📄 `UI-CONVENTIONS.md` §6.36
+- **[F-PAL]** พาเลต 5 สี + เทา: หน้า/คอมโพเนนต์ใหม่ห้ามมี hex/rgba ดิบ (ใช้ `var(--green|--amber|--red|--blue)` + `-dim`/`-line` หรือ `toneVar/toneDim/toneLine`) · ห้าม `--purple` · ห้าม `${…}20` ต่อ alpha บน token · ด่าน ratchet `colorRatchet.test.mjs` (ไฟล์เดิมลดได้อย่างเดียว) · grep: `#[0-9a-f]{6}` `rgba(` ในไฟล์ที่แตะ · 📄 `UI-CONVENTIONS.md` §6.17
+- **[F-ACT]** คำสั่งระดับหน้า/การ์ด: ปุ่มตายตัว ≤2 (`.pg-btn` / `.pg-btn.primary`) ที่เหลือ `<OverflowMenu>` · แถบแจ้ง = `<NoticeBar>` แถบเดียว · การ์ดตัวเลข = `<KpiTile>` (ตัวเลขสีเดียว) · ป้ายปุ่มไม่มี emoji · grep: `actions={` แล้วนับ `<button` · `rgba(239,68,68` ในแถบเตือนใหม่ · 📄 `UI-CONVENTIONS.md` §6.35
+- **[F-I18N]** ป้ายโครงหลัก (เมนู/หมวด/ชื่อหน้า/แท็บ/ป้ายกรอง) แปลผ่าน `tr()` จาก `utils/useLang` เท่านั้น · 🔴 ห้าม `lang === 'en' ?` / `getLang() === 'en' ?` กระจายในหน้า (grep: `=== 'en' ?`) · ห้ามแก้ค่าไทยใน `NAV_ITEMS`/ชื่อหมวด (เป็นคีย์) · เมนู/หน้าใหม่ต้องมีคำใน `src/i18n/en.js` (ด่าน `i18n.test.mjs`) · 📄 `UI-CONVENTIONS.md` §6.34
 - **[F-TVFIT]** จอบอร์ด fit-to-viewport (ผัง A4 / grid ที่ต้องเต็มจอไม่เลื่อน — ต้นแบบ `/obeya`, UI-CONVENTIONS §6.14 · 2026-09-15):
   🔴 กล่องที่ถูก `ResizeObserver` วัด **ห้ามมี `padding`** (`clientHeight` รวม padding ⇒ แถวล่างถูก `overflow:clip` ตัดหายเงียบ) ·
   🔴 โหมดเต็มจอต้องเป็น `position:fixed; inset:0` **ห้าม `height:100vh`** (หน้าอยู่ใน `<main>` ที่มี sidebar+padding ⇒ ล้นจอ) ·
@@ -424,6 +460,9 @@ model: inherit
   — grep หน้าที่ใช้ `CalloutPin`/วาดโมดัลจุดตรวจเอง นอก `components/inspect/`, `SpinAnnotator`, จอตรวจ (`PMCheckData`/`QaCheckSheet`)
   · ด่าน `inspection-setup-shared` ครอบ PMSetup + QaPointsEditor · 📄 `docs/modules/inspection-point-setup.md`
   · QA คัดลอกจุดตรวจข้ามพาร์ท: แถวผ่าน `qaItemCopyRow()` · ไฟล์ต้อง `storage.copy` เข้า `parts/<ปลายทาง>/` — grep insert `image_path`/`drawing_url` ของพาร์ทอื่นตรงๆ = ผิด
+- **F-icon-orphan (2026-11-09)** ไอคอนหายเงียบ: U+FE0F ที่ไม่มี emoji นำหน้า (ซากสคริปต์ตัด emoji) + ปุ่มไอคอนล้วนที่ข้างในเหลือแค่ `<ToggleDot>`/ไม่มีอะไร = กล่องเปล่า
+  — grep `['"\s]\uFE0F` · ด่าน `orphan-emoji-variation-selector` · การ์ดใน grid ที่ชื่อ `nowrap` ใช้ `repeat(N, 1fr)` เปล่า = คอลัมน์ถ่างตามชื่อ → ต้อง `minmax(0, 1fr)` (UI §7.1)
+- **F-dr-live-fold (2026-11-09)** `/daily-report` Live desktop: แถวย่อใบผลิตต้องยังโชว์ ⚠ ยอดไม่อัพเดท / ➡ ยกยอดมา / สถานะ (ด่าน `dr-order-fold-keeps-alerts`) · ปุ่ม Prod Orders 4 ตัว = ข้อยกเว้น ≤2 ปุ่มที่ user เลือก ห้ามรายงานเป็นการละเมิด
 
 ### หมวด G — Workflow & เอกสาร
 - **G1** pattern ใหม่ที่ใช้หลายหน้า ต้องมีบันทึกใน docs/UI-CONVENTIONS.md · schema/workflow ใหม่

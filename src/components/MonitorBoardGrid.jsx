@@ -221,7 +221,7 @@ export default function MonitorBoardGrid({
               {` (จาก ${body.length} ช่วง)`}
             </span>
             <button type="button" onClick={() => setWinStart(homeStart)} disabled={winStart === homeStart}
-              title="กลับมาที่คอลัมน์วันนี้">📍 วันนี้</button>
+              title="กลับมาที่คอลัมน์วันนี้">วันนี้</button>
             <button type="button"
               onClick={() => setWinStart((s) => Math.min(Math.max(0, body.length - (windowSize - 1)), s + (windowSize - 1)))}
               disabled={winStart >= body.length - (windowSize - 1)} aria-label="ช่วงวันที่ถัดไป">→</button>
@@ -342,7 +342,7 @@ export default function MonitorBoardGrid({
                       <span title="ระบบคำนวณจากแถวอื่น — พิมพ์ทับไม่ได้"
                         style={{
                           marginLeft: 6, fontSize: FS - 1.5, fontWeight: 800, padding: '0 5px',
-                          borderRadius: 4, border: '1px solid var(--border2)',
+                          borderRadius: 'var(--r-xs)', border: '1px solid var(--border2)',
                           background: 'var(--bg2)', color: 'var(--muted)', whiteSpace: 'nowrap',
                         }}>ƒ สูตร</span>
                     ) : null}
@@ -392,7 +392,7 @@ export default function MonitorBoardGrid({
                             }}
                             style={{
                               width: '100%', boxSizing: 'border-box', textAlign: 'right', fontSize: FS,
-                              padding: '3px 5px', border: '2px solid var(--accent)', borderRadius: 3,
+                              padding: '3px 5px', border: '2px solid var(--accent)', borderRadius: 'var(--ctl-r)',
                               background: 'var(--bg)', color: 'var(--text)',
                             }} />
                         ) : (

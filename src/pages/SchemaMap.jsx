@@ -16,6 +16,7 @@ import { auditProject, auditText, fmtBytes } from '../utils/schemaAudit';
 import { openFeedback } from '../utils/feedbackPrefill';
 import { UserContext } from '../App';
 import USAGE from 'virtual:schema-usage';
+import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 /* ══ 🗄️ โครงสร้างฐานข้อมูล (Data Map) — /schema ═══════════════════════════════════════
    2026-09-22 · คำขอ user: "ทีมงานเจอบัค อยากเห็นว่า table ชื่ออะไร PK/FK กันแบบไหน
@@ -39,13 +40,13 @@ import USAGE from 'virtual:schema-usage';
 
 const PROJ = {
   main: {
-    key: 'main', label: '🗄️ ระบบหลัก', short: 'Main', screen: 'MAIN',
-    id: 'ewhdfqwfwofivojtsizn', client: supabase, color: '#22c55e',
+    key: 'main', label: 'ระบบหลัก', short: 'Main', screen: 'MAIN',
+    id: 'ewhdfqwfwofivojtsizn', client: supabase, color: 'var(--green)',
     desc: 'ผู้ใช้/สิทธิ์ · พนักงาน & ทักษะ · ไลน์/องค์กร · 4M · QA · PE · NPI · KPI · ทะเบียนเอกสาร',
   },
   dr: {
-    key: 'dr', label: '🏭 ข้อมูลผลิต', short: 'DR', screen: 'Product DB',
-    id: 'eyhclzkifitbhbljgoav', client: supabaseDR, color: '#38bdf8',
+    key: 'dr', label: 'ข้อมูลผลิต', short: 'DR', screen: 'Product DB',
+    id: 'eyhclzkifitbhbljgoav', client: supabaseDR, color: 'var(--blue)',
     desc: 'ใบผลิต/กะ · Downtime & ของเสีย · เครื่องจักร/แม่พิมพ์/จิ๊ก · สินค้า & BOM · สโตร์ · งานซ่อม',
   },
 };
@@ -246,11 +247,11 @@ export default function SchemaMap() {
         title="โครงสร้างฐานข้อมูล" icon="🗄️"
         sub={loading ? 'กำลังอ่านโครงสร้างจากฐานข้อมูล…'
           : `${total} ตาราง/วิว · ${totalFk} เส้นความสัมพันธ์ (FK) · ${USAGE.pages?.length || 0} หน้าในระบบ`}
-        actions={<button onClick={reload} style={btn()}>🔄 อ่านใหม่</button>}
+        actions={<button type="button" className="pg-btn" onClick={reload}>อ่านใหม่</button>}
         tabs={[
-          { key: 'tables', label: '📋 ตาราง / คีย์ / ความสัมพันธ์' },
-          { key: 'pages', label: '🧭 หน้าไหนใช้ตารางไหน' },
-          { key: 'audit', label: '🩺 ตรวจสุขภาพโครงสร้าง', badge: auditBadge || undefined },
+          { key: 'tables', label: 'ตาราง / คีย์ / ความสัมพันธ์' },
+          { key: 'pages', label: 'หน้าไหนใช้ตารางไหน' },
+          { key: 'audit', label: 'ตรวจสุขภาพโครงสร้าง', badge: auditBadge || undefined },
         ]}
         tab={tab} onTab={setTab}
       />
@@ -266,13 +267,13 @@ export default function SchemaMap() {
             <br />• ตัวเลขแถว = <b>ค่าประมาณจากสถิติของฐาน</b> (ไม่ได้นับจริงทุกครั้ง) ใช้ดูขนาดคร่าวๆ เท่านั้น
             <br />• “หน้าไหนใช้ตารางไหน” มาจาก<b>การสแกนซอร์สตอน build</b> — จับเฉพาะที่โค้ดเขียนชื่อตารางตรงๆ
             ถ้าหน้าไหนเรียกผ่านฟังก์ชันกลางที่ส่งชื่อตารางเป็นตัวแปร จะไม่ขึ้นในลิสต์นี้
-            <br />• ข้อมูลโครงสร้าง cache ไว้ 12 ชม. — เพิ่ง apply migration ให้กด <b>🔄 อ่านใหม่</b>
+            <br />• ข้อมูลโครงสร้าง cache ไว้ 12 ชม. — เพิ่ง apply migration ให้กด <b>อ่านใหม่</b>
           </div>
         </InfoMore>
       </div>
 
       {!!failed.length && (
-        <div style={{ ...card(), marginBottom: 12, borderColor: 'rgba(239,68,68,0.5)', background: 'rgba(239,68,68,0.08)', fontSize: 12.5, lineHeight: 1.6 }}>
+        <div style={{ ...card(), marginBottom: 12, borderColor: 'var(--red-line)', background: 'var(--red-dim)', fontSize: 12.5, lineHeight: 1.6 }}>
           ⚠️ <b>อ่านโครงสร้างของ {failed.map(k => PROJ[k].label).join(' และ ')} ไม่ได้</b> —
           ส่วนใหญ่แปลว่ายังไม่ได้ apply migration <code>20260922_schema_catalog_rpc_{failed[0]}.sql</code>
           (ฟังก์ชัน <code>esm_schema_overview()</code>) หรือสิทธิ์ execute ยังไม่ถูก grant ·
@@ -286,12 +287,8 @@ export default function SchemaMap() {
           {(!isMobile || !sel) && (
             <div style={{ ...card(), display: 'grid', gap: 9, alignContent: 'start' }}>
               <SearchInput value={q} onChange={setQ} fields="ชื่อตาราง (เช่น downtime, employee)" />
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {[{ k: 'all', label: allOf('ฐานข้อมูล') },
-                  ...PKEYS.map(k => ({ k, label: `${PROJ[k].label} (${over[k]?.tables?.length || 0})` }))].map(o => (
-                  <button key={o.k} onClick={() => setSide(o.k)} style={chip(side === o.k)}>{o.label}</button>
-                ))}
-              </div>
+              <TabBar size="sm" value={side} onChange={setSide}
+                tabs={[{ key: 'all', label: allOf('ฐานข้อมูล') }, ...PKEYS.map(k => ({ key: k, label: PROJ[k].label, badge: over[k]?.tables?.length || 0 }))]} />
 
               {loading && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>กำลังโหลด…</div>}
               {!loading && !rows.length && (
@@ -303,7 +300,7 @@ export default function SchemaMap() {
               {groups.map(g => {
                 const open = searching || openGroups[g.key];
                 return (
-                  <div key={g.key} style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'clip' }}>
+                  <div key={g.key} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'clip' }}>
                     <button onClick={() => setOpenGroups(s => ({ ...s, [g.key]: !s[g.key] }))}
                       style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
                         background: 'var(--bg3)', border: 'none', color: 'var(--text)', padding: '7px 10px', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}>
@@ -345,7 +342,7 @@ export default function SchemaMap() {
             <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
               {!sel && (
                 <div style={{ ...card(), fontSize: 13, color: 'var(--muted)', lineHeight: 1.7 }}>
-                  👈 เลือกตารางทางซ้ายเพื่อดู <b>คอลัมน์ · คีย์หลัก (PK) · ความสัมพันธ์ (FK) · RLS · trigger</b>
+                  เลือกตารางทางซ้ายเพื่อดู <b>คอลัมน์ · คีย์หลัก (PK) · ความสัมพันธ์ (FK) · RLS · trigger</b>
                   <div style={{ marginTop: 8 }}>
                     {PKEYS.map(k => (
                       <div key={k} style={{ marginTop: 6 }}>
@@ -405,7 +402,7 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
       <div style={{ ...card(), display: 'grid', gap: 10 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ minWidth: 0 }}>
-            {isMobile && <button onClick={onBack} style={{ ...btn(), marginBottom: 6 }}>← กลับไปลิสต์ตาราง</button>}
+            {isMobile && <button onClick={onBack} style={{ ...btn(), marginBottom: 6 }}>กลับไปลิสต์ตาราง</button>}
             <div style={{ fontSize: isMobile ? 17 : 20, fontWeight: 800, wordBreak: 'break-all' }}>
               {sel.proj === 'main' ? '🗄️' : '🏭'} {sel.table}
             </div>
@@ -414,13 +411,13 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <button onClick={() => onCopy(summary(), 'คัดลอกข้อมูลตารางแล้ว — วางในแชท/ใบแจ้งได้เลย')} style={btn()}>📋 คัดลอกข้อมูลตาราง</button>
-            <button onClick={() => onCopy(url, 'คัดลอกลิงก์แล้ว')} style={btn()}>🔗 คัดลอกลิงก์</button>
+            <button onClick={() => onCopy(summary(), 'คัดลอกข้อมูลตารางแล้ว — วางในแชท/ใบแจ้งได้เลย')} style={btn()}>คัดลอกข้อมูลตาราง</button>
+            <button onClick={() => onCopy(url, 'คัดลอกลิงก์แล้ว')} style={btn()}>คัดลอกลิงก์</button>
             <button onClick={() => openFeedback(bugReportText({
               table: sel.table, projectLabel: `${P.label} (${P.screen})`, projectId: P.id,
               detail: d, pages, url,
-            }) + (userName ? `ผู้แจ้ง: ${userName}\n` : ''))} style={{ ...btn(), background: 'rgba(239,68,68,0.15)', borderColor: 'rgba(239,68,68,0.5)' }}>
-              🐛 แจ้งบัคเรื่องตารางนี้
+            }) + (userName ? `ผู้แจ้ง: ${userName}\n` : ''))} style={{ ...btn(), background: 'var(--red-dim)', borderColor: 'var(--red-line)' }}>
+              แจ้งบัคเรื่องตารางนี้
             </button>
           </div>
         </div>
@@ -439,18 +436,18 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
               <span style={tag()}>{(d.columns || []).length} คอลัมน์</span>
               <span style={tag()}>{fmtRows(d.rows)} แถว (ประมาณ)</span>
               {size ? <span style={tag()}>{fmtBytes(size)}</span> : null}
-              <span style={tag(d.rls ? '#22c55e' : '#f59e0b')}>{d.rls ? 'RLS เปิด' : 'RLS ปิด'}</span>
+              <span style={tag(d.rls ? 'var(--green)' : 'var(--amber)')}>{d.rls ? 'RLS เปิด' : 'RLS ปิด'}</span>
               {!!(d.triggers || []).length && <span style={tag()}>{d.triggers.length} trigger</span>}
             </div>
-            {d.note && <div style={{ fontSize: 12.5, color: 'var(--text2)' }}>📝 {d.note}</div>}
+            {d.note && <div style={{ fontSize: 12.5, color: 'var(--text2)' }}>{d.note}</div>}
 
             {/* คีย์ + ความสัมพันธ์ — ส่วนที่ user ขอมาตรงๆ */}
             <div style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', alignItems: 'start' }}>
               <div style={sub()}>
-                <div style={subTitle()}>🔑 คีย์หลัก (PK) — ใช้ระบุ “แถวไหน”</div>
+                <div style={subTitle()}>คีย์หลัก (PK) — ใช้ระบุ “แถวไหน”</div>
                 {(d.pk || []).length
-                  ? <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>{d.pk.map(c => <span key={c} style={tag('#eab308')}>{c}</span>)}</div>
-                  : <div style={{ fontSize: 12, color: '#f59e0b' }}>— ไม่มี PK (แจ้งบัคแล้วบอกคีย์อื่นที่ใช้ระบุแถวแทน)</div>}
+                  ? <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>{d.pk.map(c => <span key={c} style={tag('var(--amber)')}>{c}</span>)}</div>
+                  : <div style={{ fontSize: 12, color: 'var(--amber)' }}>— ไม่มี PK (แจ้งบัคแล้วบอกคีย์อื่นที่ใช้ระบุแถวแทน)</div>}
                 {!!(d.uniques || []).length && (
                   <div style={{ marginTop: 7 }}>
                     <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ห้ามซ้ำ (unique):</div>
@@ -460,7 +457,7 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
               </div>
 
               <div style={sub()}>
-                <div style={subTitle()}>🔗 ความสัมพันธ์ (FK)</div>
+                <div style={subTitle()}>ความสัมพันธ์ (FK)</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 3 }}>ตารางนี้ชี้ออกไปหา:</div>
                 {(d.fks || []).length ? d.fks.map(f => (
                   <div key={f.name} style={{ fontSize: 12, marginBottom: 3 }}>
@@ -485,7 +482,7 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
 
             {/* หน้าไหนใช้ตารางนี้ */}
             <div style={sub()}>
-              <div style={subTitle()}>📄 หน้าที่ใช้ตารางนี้ (จากซอร์สตอน build)</div>
+              <div style={subTitle()}>หน้าที่ใช้ตารางนี้ (จากซอร์สตอน build)</div>
               {pages.length ? (
                 <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                   {pages.map(p => <button key={p} onClick={() => onGoPage(p)} style={chip(false)}>{pageLabel(p)}</button>)}
@@ -503,7 +500,7 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
 
       {detail && (
         <div style={{ ...card(), overflowX: 'auto' }}>
-          <div style={{ ...subTitle(), marginBottom: 6 }}>📑 คอลัมน์ทั้งหมด ({(d.columns || []).length})</div>
+          <div style={{ ...subTitle(), marginBottom: 6 }}>คอลัมน์ทั้งหมด ({(d.columns || []).length})</div>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 560, fontVariantNumeric: 'tabular-nums' }}>
             <thead>
               <tr>
@@ -524,10 +521,10 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
                         <div style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'normal' }}>ค่าที่รับ: {c.enum.join(' · ')}</div>
                       )}
                     </td>
-                    <td style={{ padding: '5px 7px', color: c.nn ? '#f59e0b' : 'var(--muted)', whiteSpace: 'nowrap' }}>{c.nn ? 'ต้องมีค่า' : 'ว่างได้'}</td>
+                    <td style={{ padding: '5px 7px', color: c.nn ? 'var(--amber)' : 'var(--muted)', whiteSpace: 'nowrap' }}>{c.nn ? 'ต้องมีค่า' : 'ว่างได้'}</td>
                     <td style={{ padding: '5px 7px', whiteSpace: 'nowrap' }}>
-                      {pkSet.has(c.name) && <span style={tag('#eab308')}>PK</span>}
-                      {fk && <span style={{ ...tag('#38bdf8'), marginLeft: 3 }}>→ {fk.rt}</span>}
+                      {pkSet.has(c.name) && <span style={tag('var(--amber)')}>PK</span>}
+                      {fk && <span style={{ ...tag('var(--blue)'), marginLeft: 3 }}>→ {fk.rt}</span>}
                     </td>
                     <td style={{ padding: '5px 7px', color: 'var(--muted)', wordBreak: 'break-word' }}>
                       {c.def ? <code style={{ fontSize: 11 }}>{c.def}</code> : ''}
@@ -543,12 +540,12 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
 
       {detail && (
         <div style={{ ...card(), fontSize: 12, lineHeight: 1.7 }}>
-          <InfoMore id="schema_tech" lead={<span style={subTitle()}>🔧 รายละเอียดเชิงเทคนิค (index · RLS policy · trigger)</span>}>
+          <InfoMore id="schema_tech" lead={<span style={subTitle()}>รายละเอียดเชิงเทคนิค (index · RLS policy · trigger)</span>}>
             <div style={{ marginTop: 6 }}>
               <div style={{ color: 'var(--muted)' }}>RLS policy ({(d.policies || []).length}) — ใครทำอะไรกับตารางนี้ได้:</div>
               {(d.policies || []).length ? d.policies.map(p => (
                 <div key={p.name}>· <b>{p.cmd}</b> — {(p.roles || []).join(', ')} <span style={{ color: 'var(--muted)' }}>({p.name})</span></div>
-              )) : <div style={{ color: d.rls ? '#f59e0b' : 'var(--muted)' }}>
+              )) : <div style={{ color: d.rls ? 'var(--amber)' : 'var(--muted)' }}>
                 {d.rls ? '— เปิด RLS แต่ไม่มี policy เลย = อ่าน/เขียนไม่ได้ทั้งตาราง' : '— ไม่มี (RLS ปิดอยู่)'}
               </div>}
 
@@ -596,7 +593,7 @@ function PagesTab({ q, setQ, isMobile, catalog, ghosts, onPick }) {
         <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
           แสดง {pages.length} หน้า จากทั้งหมด {(USAGE.pages || []).length} ·
           สแกนซอร์สเมื่อ {new Date(USAGE.builtAt).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', dateStyle: 'short', timeStyle: 'short' })} (ตอน build)
-          {!!ghosts.size && <> · <span style={{ color: '#f59e0b' }}>พบชื่อตารางในโค้ด {ghosts.size} ตัวที่ไม่มีอยู่จริงในฐานข้อมูล (ดูท้ายหน้า)</span></>}
+          {!!ghosts.size && <> · <span style={{ color: 'var(--amber)' }}>พบชื่อตารางในโค้ด {ghosts.size} ตัวที่ไม่มีอยู่จริงในฐานข้อมูล (ดูท้ายหน้า)</span></>}
         </div>
       </div>
 
@@ -648,8 +645,8 @@ function PagesTab({ q, setQ, isMobile, catalog, ghosts, onPick }) {
       })}
 
       {!!ghosts.size && (
-        <div style={{ ...card(), fontSize: 12, lineHeight: 1.7, borderColor: 'rgba(245,158,11,0.45)' }}>
-          <b style={{ color: '#f59e0b' }}>⚠️ ชื่อตารางที่โค้ดเรียกใช้ แต่ไม่มีอยู่จริงในฐานข้อมูลทั้ง 2 ฝั่ง</b>
+        <div style={{ ...card(), fontSize: 12, lineHeight: 1.7, borderColor: 'var(--amber-line)' }}>
+          <b style={{ color: 'var(--amber)' }}>⚠️ ชื่อตารางที่โค้ดเรียกใช้ แต่ไม่มีอยู่จริงในฐานข้อมูลทั้ง 2 ฝั่ง</b>
           <div style={{ color: 'var(--muted)' }}>
             (ตารางถูกลบ/เปลี่ยนชื่อไปแล้ว หรือชื่อในโค้ดพิมพ์ผิด — จุดพวกนี้จะพังเงียบตอนรันจริง ควรแจ้งให้ไปตรวจ)
           </div>
@@ -667,10 +664,10 @@ function PagesTab({ q, setQ, isMobile, catalog, ghosts, onPick }) {
    🔴 กฎของจอนี้: ทุกข้อต้องบอก **"ทำไมถึงเป็นปัญหา" + "แก้ยังไง"** เสมอ
       ลิสต์ชื่อตารางเฉยๆ ไม่ช่วยใครตัดสินใจ และจะกลายเป็นจอที่ทุกคนเมินภายใน 2 สัปดาห์   */
 const LV = {
-  bad:  { icon: '🔴', color: '#ef4444', label: 'ต้องแก้' },
-  warn: { icon: '🟡', color: '#f59e0b', label: 'ควรดู' },
-  info: { icon: '🔵', color: '#38bdf8', label: 'แจ้งเพื่อทราบ' },
-  ok:   { icon: '✅', color: '#22c55e', label: 'ผ่าน' },
+  bad:  { icon: '🔴', color: 'var(--red)', label: 'ต้องแก้' },
+  warn: { icon: '🟡', color: 'var(--amber)', label: 'ควรดู' },
+  info: { icon: '🔵', color: 'var(--blue)', label: 'แจ้งเพื่อทราบ' },
+  ok:   { icon: '✅', color: 'var(--green)', label: 'ผ่าน' },
 };
 
 function AuditTab({ audits, isMobile, loading, onPick, onCopy }) {
@@ -708,7 +705,7 @@ function AuditTab({ audits, isMobile, loading, onPick, onCopy }) {
                 {P.label} <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)' }}>· {result.total} ตาราง/วิว</span>
               </div>
               <button onClick={() => onCopy(auditText(result, `${P.label} (${P.screen})`), 'คัดลอกผลตรวจแล้ว')} style={btn()}>
-                📋 คัดลอกผลตรวจ
+                คัดลอกผลตรวจ
               </button>
             </div>
 
@@ -717,7 +714,7 @@ function AuditTab({ audits, isMobile, loading, onPick, onCopy }) {
               const id = `${key}:${c.id}`;
               const on = open[id] ?? (c.level === 'bad' || c.level === 'warn');
               return (
-                <div key={c.id} style={{ border: `1px solid ${c.level === 'ok' ? 'var(--border)' : lv.color + '66'}`, borderRadius: 8, overflow: 'clip' }}>
+                <div key={c.id} style={{ border: `1px solid ${c.level === 'ok' ? 'var(--border)' : lv.color + '66'}`, borderRadius: 'var(--r-md)', overflow: 'clip' }}>
                   <button onClick={() => setOpen(o => ({ ...o, [id]: !on }))} style={{
                     width: '100%', textAlign: 'left', display: 'flex', flexWrap: isMobile ? 'wrap' : 'nowrap',
                     alignItems: 'center', gap: 8, background: 'var(--bg2)', border: 'none', color: 'var(--text)',

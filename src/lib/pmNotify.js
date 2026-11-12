@@ -1,35 +1,28 @@
 import { supabase } from '../supabaseClient'
 
-// ผู้รับแจ้งเตือนงาน PM = "role ที่มีสิทธิ์ทำงาน PM จริง" — อ่านจาก role_permissions (data-driven)
-// ไม่ hardcode รายชื่อ role อีกต่อไป: เพิ่ม role ใหม่ / เพิ่มทีมช่างใน mtn_teams แล้วได้รับแจ้งเตือนเอง
-// (เคย drift 2 รอบ: เพิ่ม role `mtn` 2026-07-13 แล้วลืม · role engineer/planner_store ไม่เคยอยู่ในแมพเลย
-//  · ทีมใหม่ใน mtn_teams จะตกไป fallback แล้วเงียบ — QC audit 2026-08-03)
-//   production → ผู้บันทึกผลตรวจ (pm:record) · qa → qa:record · ทีมช่าง (maintenance/jig/die) → pm:record เช่นกัน
-const DEPARTMENT_PERMISSION = {
-  production:      'pm:record',
-  maintenance:     'pm:record',
-  jig_maintenance: 'pm:record',
-  die_maintenance: 'pm:record',
-  qa:              'qa:record',
-}
-// fallback ใช้เมื่ออ่าน role_permissions ไม่ได้ (ตารางล่ม/สิทธิ์) — อย่างน้อยหัวหน้ายังได้รับ
-const FALLBACK_ROLES = ['admin', 'manager']
+/* ══ 🔔 แจ้งเตือนของงานตรวจอุปกรณ์ (PM/AM) ══════════════════════════════ แก้ 2026-11-09
 
-// คืนรายชื่อ role ที่ได้สิทธิ์ตาม permission key (allowed = true) · admin ได้เสมอ
-async function rolesWithPermission(permissionKey) {
-  try {
-    const { data, error } = await supabase
-      .from('role_permissions')
-      .select('role')
-      .eq('permission_key', permissionKey)
-      .eq('allowed', true)
-    if (error) throw error
-    const roles = [...new Set([...(data ?? []).map(r => r.role), 'admin'])]
-    return roles.length > 1 ? roles : FALLBACK_ROLES
-  } catch {
-    return FALLBACK_ROLES
-  }
-}
+   🔴 **เลิกหาผู้รับเองในไฟล์นี้แล้ว** — ของเดิม `notifyDepartment()` รับ `department` เข้ามา
+      แต่เอาไปใช้แค่เลือก "คีย์สิทธิ์" แล้วดึง profiles ด้วย `role` ล้วน **ไม่มีเงื่อนไข
+      ส่วนงาน/ทีม/ไลน์เลย** ⇒ ใบ "ผลตรวจ NG" 1 ใบ ยิงถึง **83 คน ข้าม 12 ส่วนงาน**
+      (วัด 30 วัน: 1,617 แถว / 9 เหตุการณ์ / อ่าน 4%) · ซ้ำร้าย 4 ใน 5 ทีมแม็ปคีย์เดียวกัน
+      (`pm:record`) ⇒ `department` ไม่ได้แยกผู้รับเลยแม้แต่น้อย
+   🔴 และเพราะไม่ผ่าน `notify_recipients` ⇒ **ค่าที่ตั้งใน /notification-config ไม่มีผล
+      และตัวกรอง "ปิดแจ้งเตือนรายเรื่อง" ของผู้ใช้ก็ไม่ทำงาน** (กฎ CLAUDE.md §Edge Functions)
+
+   ✅ ตอนนี้ยิงผ่าน `notifyEvent()` → edge กลาง → `notify_recipients` เหมือนทั้งระบบ
+      ผู้รับ = **ทีมเจ้าของอุปกรณ์ + หัวหน้าส่วนงานนั้น** (คำสั่ง user 09/11)
+      · **หัวหน้าส่วนงาน** มาจากทะเบียน (`inapp_match_section`)
+      · **ช่างของทีม** ส่งผ่าน `extra_user_ids` (ช่อง "เจ้าของงานของรายการนี้")
+        🔑 ทำไมต้องแยก 2 ช่อง: ใน `notify_recipients` แกน "ทีม" กับ "ส่วนงาน" เป็น **AND**
+           ส่ง `p_team` ไป = หัวหน้าส่วนงาน (ที่ `mtn_teams` เป็น production) ถูกตัดทิ้ง
+           ไม่ส่ง = ช่างถูกตัดทิ้ง (ส่วนงานช่างคือ JIG MTN/Die MTN ไม่ใช่ PD3)
+           ⇒ วัดจริง PD3+jig: ส่ง p_team = 12 คน (หัวหน้าหายเหลือ 2) · ไม่ส่ง = 14 คน (ช่างหาย)
+      · 🔴 **`extra_user_ids` ฝั่ง edge ตัดที่ 20 คน** — ทีมที่ใหญ่กว่านั้นจะขาด ⇒ เขียนบนจอเตือน
+      · อ่านรายชื่อช่างไม่ได้ = ไม่ส่งช่อง extra ไป (ทะเบียนยังยิงหัวหน้าให้) **ไม่เงียบทั้งใบ**
+   ⚠️ `createNotification()` ข้างล่างยิงหา "คนเดียวที่ระบุตัว" (ผู้ตรวจ) — ถูกต้องอยู่แล้ว ไม่ต้องแก้
+   📄 docs/modules/notify-inapp-audit.md §รอบ 5                                              */
+import notifyEvent from '../utils/notifyEvent'
 
 export async function createNotification(userId, { title, body, type = 'info', refTable, refId }) {
   const { error } = await supabase.from('notifications').insert({
@@ -43,27 +36,30 @@ export async function createNotification(userId, { title, body, type = 'info', r
   if (error) throw error
 }
 
-// Notify everyone whose role can act on a checklist department, except the
-// actor who triggered it.
-export async function notifyDepartment(department, { title, body, type = 'info', refTable, refId }, excludeUserId) {
-  const roles = await rolesWithPermission(DEPARTMENT_PERMISSION[department] ?? 'pm:record')
-  const { data: profiles, error } = await supabase
-    .from('profiles')
-    .select('id, role')
-    .in('role', roles)
-  if (error) throw error
+/**
+ * แจ้งผลตรวจอุปกรณ์ — ทีมเจ้าของอุปกรณ์ + หัวหน้าส่วนงานของอุปกรณ์นั้น
+ * @param {string} department ทีมช่างเจ้าของอุปกรณ์ (mtn_teams.key)
+ * @param {{event:string,title:string,body?:string,type?:string,refTable?:string,refId?:string,lineName?:string}} p
+ * @returns {Promise<{ownersCapped:boolean, owners:number}>} ให้หน้าจอเตือนได้เมื่อรายชื่อช่างถูกตัด
+ */
+export async function notifyDepartment(department, { event, title, body, type = 'info', refTable, refId, lineName }) {
+  if (!event) throw new Error('notifyDepartment: ต้องระบุ event (คีย์ใน notification_rules)')
+  /* ช่างของทีมนี้ = "เจ้าของงาน" ของใบตรวจ — อ่านไม่ได้ก็ยังยิงหัวหน้าตามทะเบียนต่อ (ห้ามเงียบทั้งใบ) */
+  let owners = []
+  try {
+    const { data, error } = await supabase.from('profiles').select('id').contains('mtn_teams', [department])
+    if (error) throw error
+    owners = (data ?? []).map(r => r.id)
+  } catch { owners = [] }
 
-  const recipients = (profiles ?? []).filter(p => p.id !== excludeUserId)
-  if (recipients.length === 0) return
-
-  const rows = recipients.map(p => ({
-    user_id: p.id,
+  notifyEvent({
+    event,
     title,
-    body,
+    lines: [body].filter(Boolean),
     type,
-    ref_table: refTable ?? null,
-    ref_id: refId ?? null,
-  }))
-  const { error: insertErr } = await supabase.from('notifications').insert(rows)
-  if (insertErr) throw insertErr
+    line_name: lineName || undefined,
+    ref_table: refTable, ref_id: refId,
+    extra_user_ids: owners.slice(0, 20),
+  })
+  return { owners: owners.length, ownersCapped: owners.length > 20 }
 }

@@ -12,6 +12,7 @@ import { checkWriteRows } from '../utils/dbWrite';
 import useSiren, { SIREN_PATTERN_ALARM } from '../utils/useSiren';
 /* ทีมที่ถูกเรียกเก็บเป็น key — แปลงเป็นชื่อผ่านของกลางเท่านั้น (utils/mtnTeams.js) */
 import { teamKeyOf, deptNameOf } from '../utils/mtnTeams'
+import useIsMobile from '../utils/useIsMobile';
 
 /* เสียง+แถบเตือน downtime บนเว็บ — แยกตามหน้า (คำสั่ง user 2026-07-14):
      mode='call_mtn'   → ดังหน้า Maintenance (มีคนกดปุ่ม "เรียกช่าง")
@@ -38,7 +39,20 @@ import { teamKeyOf, deptNameOf } from '../utils/mtnTeams'
       ฝ่ายผลิต **ห้ามกรองทีมเด็ดขาด** (กฎเดียวกับ MtnAndonBoard §ตัวกรองทีมห้ามกรองเครื่องหยุด)
    🔴 ใบที่ **ไม่ได้ระบุทีม = ดังทุกห้อง** (fail-open) — เงียบเพราะข้อมูลไม่ครบ คือความเสี่ยงที่
       แย่กว่าดังเกิน · ห้ามเปลี่ยนเป็น fail-closed */
-export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
+/* ตัวกรอง 2 แกน ใช้ร่วมกันได้ (ทั้งคู่ fail-open — เงียบเพราะข้อมูลไม่ครบ แย่กว่าดังเกิน)
+
+   🔊 `team` รับได้ทั้ง key เดียว และ **อาร์เรย์ของ key** (09/11) — ช่างที่สังกัดหลายทีมจะได้ยิน
+      เฉพาะทีมของตัวเอง ไม่ใช่ทุกทีม · ว่าง/ไม่รู้จัก = ไม่กรอง
+
+   🔭 `lineNames` = ขอบเขตไลน์ของจอนี้ (09/11 · user: จอ TV/จอแสดงผลโชว์เฉพาะส่วนงาน/ไลน์ของบัญชี)
+      · `null`/ไม่ส่ง = ไม่จำกัด = พฤติกรรมเดิมเป๊ะ · array = ดัง/โชว์เฉพาะเครื่องหยุดของไลน์ในลิสต์
+      · แถวที่ไม่รู้ไลน์ (`production_sessions.line_name` ว่าง) = ดังเสมอ
+      · ที่ตัดออกต้องเขียนบนจอว่าไม่ดังกี่เครื่อง (กฎ "กรองแล้วต้องบอกว่าซ่อนกี่รายการ") */
+export default function DowntimeSiren({ mode = 'open_15min', team = null, lineNames = null }) {
+  /* 📱 มือถือโชว์ทีละใบ (05/11 · เหตุผลเดียวกับ StoreCallSiren) — แถบ Andon ขึ้นบรรทัดใหม่บนจอแคบ
+     หลายใบซ้อนกันจะยาวเกินจอ แล้วปุ่ม "รับทราบ" ของใบล่างตกนอกจอ (แถบเป็น position: fixed)
+     🔴 ที่เกินต้องเขียนบนจอว่าเหลืออีกกี่ใบ **ห้ามตัดทิ้งเงียบ** · จอคอม/TV ได้ทุกใบเหมือนเดิม */
+  const isMobile = useIsMobile();
   const [raw, setRaw] = useState([])       // แถวดิบที่ยังไม่รับทราบ (กะเปิดอยู่)
   const [thr, setThr] = useState(null)     // เกณฑ์นาที (dt_alert_config)
   const [loadErr, setLoadErr] = useState(false) // อ่านรายการเครื่องหยุดไม่ได้ — ห้ามเงียบ (จอ TV ไม่มีใครเฝ้า)
@@ -48,8 +62,8 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
      "เรียกช่างแล้วยังไม่รับทราบ" ชนะเสมอ (ด่วนกว่า + ปุ่มรับทราบต้องไปลงช่องที่ถูก) */
   const kindOf = (d) => (d.call_mtn && !d.call_mtn_ack_at ? 'call' : 'open')
   const META = {
-    call: { ackField: 'call_mtn_ack_at', label: '📞 เรียกช่าง MTN เข้าหน้างาน', color: '#e05c4a', icon: '🔧' },  // ป้ายจริงเติมชื่อทีมใน metaOf
-    open: { ackField: 'open_ack_at',     label: '🚨 เครื่องหยุดเกินกำหนด',      color: '#f59a3f', icon: '🚨' },
+    call: { ackField: 'call_mtn_ack_at', label: 'เรียกช่าง MTN เข้าหน้างาน', color: '#e05c4a', icon: '🔧' },  // ป้ายจริงเติมชื่อทีมใน metaOf
+    open: { ackField: 'open_ack_at',     label: 'เครื่องหยุดเกินกำหนด',      color: '#f59a3f', icon: '🚨' },
   }
   /* 🔴 แถบเตือน "เรียกช่าง" ต้องบอกทีมที่ถูกเรียก (06/10 · ทีม MTN: "จะรู้ได้ยังไงว่าเค้าเรียกเรา")
      ไม่ระบุทีม = เขียนตรงๆ ว่าไม่ระบุ ห้ามเดาให้ */
@@ -86,20 +100,36 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
      ⚠️ ต้องกรอง planned เองด้วย — เดิมพึ่งว่า scanner stamp เฉพาะนอกแผน
      ⚠️ คำนวณใหม่ทุกนาทีจากข้อมูลที่โหลดมาแล้ว (ไม่ยิง DB) — ไม่งั้นต้องรอรอบ poll ถัดไปถึงจะดัง */
   /* ใบ "เรียกช่าง" ใบนี้เป็นของห้องนี้ไหม — ไม่เลือกทีม หรือใบไม่ระบุทีม = ใช่เสมอ */
+  /* 🔴 deps เป็น "สตริง" ไม่ใช่อาร์เรย์ — prop ที่เป็น array ใหม่ทุก render จะทำให้ useCallback
+     สร้างใหม่ทุกรอบแล้วลาก useMemo/effect ที่พึ่งมันวนไม่จบ (กฎเหล็ก DB ข้อ 9) */
+  const wantKey = (Array.isArray(team) ? team : [team])
+    .map(teamKeyOf).filter(Boolean).sort().join('|')
   const myCall = useCallback((d) => {
-    const want = teamKeyOf(team); if (!want) return true
-    const got = teamKeyOf(d?.call_mtn_team); if (!got) return true   // ไม่ระบุ = ดังทุกห้อง
-    return got === want
-  }, [team])
+    if (!wantKey) return true                                        // ห้องนี้ไม่กรองทีม
+    const got = teamKeyOf(d?.call_mtn_team); if (!got) return true    // ใบไม่ระบุทีม = ดังทุกห้อง
+    return wantKey.split('|').includes(got)
+  }, [wantKey])
 
-  const alerts = useMemo(() => {
+  // คีย์ string — ผู้เรียกส่ง array ใหม่ทุก render ได้โดยไม่ทำให้ memo ข้างล่างคิดใหม่ (กฎ DB ข้อ 9)
+  const lineKey = Array.isArray(lineNames) ? lineNames.join('\u0001') : null
+  const inLines = useCallback((d) => {
+    if (lineKey === null) return true
+    const ln = d?.production_sessions?.line_name
+    if (!ln) return true                                   // ไม่รู้ไลน์ = ดังเสมอ
+    return lineKey.split('\u0001').includes(ln)
+  }, [lineKey])
+
+  const { alerts, outScope } = useMemo(() => {
     const overThr = (d) => isAlarmingDT(d) && isOverDtThreshold(d, thr ?? DT_OPEN_ALERT_MIN_DEFAULT)
-    if (mode === 'call_mtn') return raw.filter(myCall)
-    if (mode === 'open_15min') return raw.filter(overThr)
+    let all
+    if (mode === 'call_mtn') all = raw.filter(myCall)
+    else if (mode === 'open_15min') all = raw.filter(overThr)
     // 'all' = เรียกช่างที่ยังไม่รับทราบ ∪ เครื่องหยุดเกินเกณฑ์ที่ยังไม่รับทราบ (แถวเดียวนับครั้งเดียว)
     //   ⚠️ ขาซ้ายกรองทีมได้ · ขาขวา (เครื่องหยุดเกินเกณฑ์) ห้ามกรอง — คนละแกนกัน
-    return raw.filter(d => (d.call_mtn && !d.call_mtn_ack_at && myCall(d)) || (overThr(d) && !d.open_ack_at))
-  }, [raw, mode, thr, myCall])
+    else all = raw.filter(d => (d.call_mtn && !d.call_mtn_ack_at && myCall(d)) || (overThr(d) && !d.open_ack_at))
+    const mine = all.filter(inLines)
+    return { alerts: mine, outScope: all.length - mine.length }
+  }, [raw, mode, thr, myCall, inLines])
 
   useEffect(() => {
     fetchAlerts()
@@ -137,30 +167,41 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
     if (loadErr) return (
       <div style={{ position: 'fixed', bottom: 'calc(12px + var(--mnav-h, 0px))', right: 12, zIndex: 4000,
                     display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(28,10,10,0.95)',
-                    border: '1px solid rgba(239,68,68,0.6)', borderRadius: 10, padding: '7px 11px',
+                    border: '1px solid rgba(239,68,68,0.6)', borderRadius: 'var(--r-md)', padding: '7px 11px',
                     fontSize: 11.5, fontWeight: 800, color: '#f87171', boxShadow: 'var(--shadow-lg)' }}>
         ⚠️ อ่านรายการเครื่องหยุดไม่ได้ — ยังบอกไม่ได้ว่ามีเครื่องหยุดหรือไม่
       </div>
     )
-    if (!muted) return null
+    if (!muted) {
+      if (!outScope) return null
+      /* เครื่องหยุดของไลน์นอกขอบเขตจอนี้ — ไม่ดัง แต่ต้องบอกว่ามี (ห้ามเงียบ) · ชิปเทานิ่ง ไม่ใช่ alarm */
+      return (
+        <div style={{ position: 'fixed', bottom: 'calc(12px + var(--mnav-h, 0px))', right: 12, zIndex: 4000,
+                      background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)',
+                      padding: '7px 11px', fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', boxShadow: 'var(--shadow-sm)' }}>
+          ไม่ดัง {outScope} เครื่องหยุดของไลน์นอกขอบเขตจอนี้
+        </div>
+      )
+    }
     return (
       <div onClick={unlockNow} title="เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ 1 ครั้ง — จอที่เปิดทิ้งไว้ต้องแตะทุกครั้งที่หน้าโหลดใหม่"
         style={{ position: 'fixed', bottom: 'calc(12px + var(--mnav-h, 0px))', right: 12, zIndex: 4000, cursor: 'pointer',
                  display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(20,16,6,0.94)',
-                 border: '1px solid rgba(251,191,36,0.5)', borderRadius: 10, padding: '7px 11px',
+                 border: '1px solid rgba(251,191,36,0.5)', borderRadius: 'var(--r-md)', padding: '7px 11px',
                  fontSize: 11.5, fontWeight: 800, color: '#fbbf24', boxShadow: 'var(--shadow-lg)' }}>
-        🔇 เสียงเตือนยังไม่พร้อม — แตะที่นี่ 1 ครั้ง
+        เสียงเตือนยังไม่พร้อม — แตะที่นี่ 1 ครั้ง
       </div>
     )
   }
   return (
     <div style={{ position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 4000, width: 'min(96vw, 620px)', display: 'flex', flexDirection: 'column', gap: 8, pointerEvents: 'none' }}>
-      {alerts.map(a => {
+      {(isMobile ? alerts.slice(0, 1) : alerts).map(a => {
         const m = metaOf(a)
         return (
-        <div key={a.id} className="dt-alarm-blink" style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(20,10,10,0.96)', border: `2px solid ${m.color}`, borderRadius: 12, padding: '10px 14px', boxShadow: 'var(--shadow-float)' }}>
+        /* 📱 `andon-bar` — เหตุผลเดียวกับ StoreCallSiren (index.css · มือถือเท่านั้น) */
+        <div key={a.id} className="dt-alarm-blink andon-bar" style={{ pointerEvents: 'auto', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(20,10,10,0.96)', border: `2px solid ${m.color}`, borderRadius: 'var(--r-lg)', padding: '10px 14px', boxShadow: 'var(--shadow-float)' }}>
           <span style={{ fontSize: 22 }}>{m.icon}</span>
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="andon-bar-msg" style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13.5, fontWeight: 800, color: '#fff' }}>{m.label}</div>
             <div style={{ fontSize: 12, color: '#f0c9c2' }}>
               <b>{a.production_sessions?.line_name || '—'}</b> · {a.machine_no || 'ไม่ระบุเครื่อง'} · {a.dr_downtime_types?.name_th || 'Downtime'}
@@ -170,13 +211,27 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null }) {
           {muted && (
             <span onClick={unlockNow}
               title="เบราว์เซอร์บล็อกเสียงจนกว่าจะมีคนแตะจอ" style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: '#fbbf24', cursor: 'pointer' }}>
-              🔇 แตะเพื่อเปิดเสียง
+              แตะเพื่อเปิดเสียง
             </span>
           )}
-          <button onClick={() => ack(a)} style={{ flexShrink: 0, background: m.color, color: '#fff', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>รับทราบ · หยุดเสียง</button>
+          <button onClick={() => ack(a)} style={{ flexShrink: 0, background: m.color, color: '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>รับทราบ · หยุดเสียง</button>
         </div>
         )
       })}
+      {isMobile && alerts.length > 1 && (
+        /* 🎨 สีจาก token เท่านั้น (ด่าน colorRatchet · UI §6.17) — ไฟล์นี้ยังมีสีดิบเก่าค้างอยู่
+           แต่ของใหม่ห้ามเพิ่ม */
+        <div style={{ pointerEvents: 'auto', background: 'var(--card)', border: '1px solid var(--red-line)',
+          borderRadius: 'var(--r-md)', padding: '7px 12px', fontSize: 11.5, fontWeight: 800, color: 'var(--red)', textAlign: 'center' }}>
+          + อีก {alerts.length - 1} เครื่องที่ยังไม่มีใครรับทราบ — กดรับทราบใบบนก่อน แล้วใบถัดไปจะขึ้นแทน
+        </div>
+      )}
+      {outScope > 0 && (
+        <div style={{ pointerEvents: 'auto', background: 'var(--card)', border: '1px solid var(--border2)',
+          borderRadius: 'var(--r-md)', padding: '6px 12px', fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', textAlign: 'center' }}>
+          ไม่ดัง {outScope} เครื่องหยุดของไลน์นอกขอบเขตจอนี้
+        </div>
+      )}
     </div>
   )
 }

@@ -222,7 +222,7 @@ export default function ImageCropModal({
 
   return (
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 20, width: 'min(380px,100%)' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 20, width: 'min(380px,100%)' }}>
         <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginBottom: 12 }}>{title}</div>
         <div
           onPointerDown={useFull ? undefined : onPointerDown}
@@ -262,8 +262,8 @@ export default function ImageCropModal({
             <Segmented size="sm" label="โหมดรูป" value={useFull ? 'full' : 'crop'}
               onChange={v => setUseFull(v === 'full')}
               options={[
-                { value: 'full', label: '🖼️ ใช้ทั้งรูป' },
-                { value: 'crop', label: '🔍 ครอบ/ซูม' },
+                { value: 'full', label: 'ใช้ทั้งรูป' },
+                { value: 'crop', label: 'ครอบ/ซูม' },
               ]} />
           </div>
         )}
@@ -284,9 +284,9 @@ export default function ImageCropModal({
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
           {/* type="button" จำเป็น — modal นี้ถูก render อยู่ใน <form> ของหน้า Register/Operator
               ถ้าไม่ระบุ ปุ่มจะเป็น submit โดย default ทำให้ฟอร์มถูกบันทึกทันทีก่อนรูปถูกแนบ (รูปหายเงียบๆ) */}
-          <button type="button" onClick={onCancel} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+          <button type="button" onClick={onCancel} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
           <button type="button" onClick={handleConfirm} disabled={!srcFile || converting}
-            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: (!srcFile || converting) ? 'default' : 'pointer', fontSize: 13, opacity: (!srcFile || converting) ? 0.5 : 1 }}>
+            style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: (!srcFile || converting) ? 'default' : 'pointer', fontSize: 13, opacity: (!srcFile || converting) ? 0.5 : 1 }}>
             {converting ? 'กำลังแปลง…' : '✓ ใช้รูปนี้'}
           </button>
         </div>

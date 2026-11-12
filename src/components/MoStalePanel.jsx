@@ -5,6 +5,12 @@
            ค้างที่ขั้นไหน/ทีมไหน · เก่าสุดกี่วัน** แล้วกดเข้าไปจัดการได้ทันที
    ใครใช้: ทีมช่าง + หัวหน้า/ผจก. ที่ต้องเซ็นขั้นท้าย (คนที่ต้องกดอยู่ในหน้านี้อยู่แล้ว)
 
+   🏃 **แถบ "ไล่งาน" (05/11 · คำสั่ง user)** — ตอบคำถามถัดไปของหัวหน้าช่าง: **ใบกองนี้รอ *ใคร***
+      วัดจริง 05/11: ใบค้าง ≥7 วัน 77 ใบ — **~47% รอฝ่ายที่แจ้ง** (ตรวจรับงาน/รับมอบ/ปิดใบ)
+      ซึ่งหัวหน้าช่าง**เลื่อนขั้นให้เองไม่ได้** ต้องโทรตาม · แผงเดิมบอกแค่ชื่อขั้น คนต้องรู้เองว่า
+      ขั้นไหนของฝั่งใคร ⇒ กองที่ "ไล่ได้เลย" กับ "ต้องไปตามคนอื่น" ปนกันอยู่ในเลขเดียว
+      🔴 กฎการแบ่งฝั่ง/หาเป้า อยู่ `src/utils/moChase.js` — **ห้ามเทียบ `side`/เลขขั้นในไฟล์นี้**
+
    ─── ข้อจำกัด / ของที่ห้ามทำ ─────────────────────────────────────────────────
    · สูตร "ค้างกี่วัน / ค้างขั้นไหน" อยู่ `src/utils/mtnStale.js` ทั้งหมด —
      **ห้ามคำนวณวันหรือเทียบเลขขั้นในไฟล์นี้** (เลขขั้นคนละความหมาย 2 ฟอร์ม · ด่าน mo-step-branch-via-stage)
@@ -18,6 +24,10 @@ import { useState } from 'react';
 import CollapseCard from './CollapseCard';
 import { statusColor, toneInk } from '../utils/statusTone';
 import { staleTone } from '../utils/mtnStale';
+/* 🏃 "ใบนี้รอใครลงมือ" — กฎการแบ่งฝั่ง/หาเป้าอยู่ util ที่เดียว (05/11 · ห้ามตัดสินฝั่งในไฟล์นี้) */
+import { chaseSideMeta } from '../utils/moChase';
+/* 🔗 โซ่ส่งต่อที่ขาด — กฎตัดสินอยู่ util ที่เดียว (11/11 · ห้ามเทียบสถานะใบลูกในไฟล์นี้) */
+import { handoffGapMeta } from '../utils/moHandoffGaps';
 
 const FIRST_ROWS = 8;   // โชว์ก่อน 8 ใบ ที่เหลือพับ + บอกจำนวนที่พับ (§5.5 "ห้ามตัดข้อมูลเงียบ")
 
@@ -53,7 +63,14 @@ function Chip({ tone, label, sub, onClick, title }) {
 export default function MoStalePanel({
   board, loadErr = '', partial = false, onStage, onTeam, teamName = (k) => k,
   statusLabel = () => '', onOpen,
+  /* 🏃 แผงไล่งาน (05/11 · คำสั่ง user "ทำแผงไล่ MO ค้างให้หัวหน้าช่าง") — `chase` = ผลจาก
+     `buildMoChaseBoard()` · `null` = หน้าแม่ยังไม่ส่งมา (แผงเดิมทำงานเหมือนเดิมเป๊ะ) */
+  chase = null, onText, onLine,
+  /* 🔗 โซ่ส่งต่อที่ขาด (11/11 · คำสั่ง user) — ผลจาก `buildHandoffGapBoard()`
+     `null` = หน้าแม่ยังไม่ส่งมา (แผงเดิมทำงานเหมือนเดิมเป๊ะ) · `onOpenId(id)` = เปิดใบแม่ */
+  gaps = null, gapsErr = '', gapsCapped = false, onOpenId,
 }) {
+  const [side, setSide] = useState('');   // ฝั่งที่กางอยู่ ('' = ยังไม่เลือก)
   const [all, setAll] = useState(false);
   if (!board) return null;    // ยังโหลดไม่เสร็จ — หน้าแม่โชว์ "กำลังโหลด…" อยู่แล้ว
 
@@ -158,13 +175,82 @@ export default function MoStalePanel({
             ))}
           </div>
 
+          {/* ══ 🏃 ไล่งาน: ใบกองนี้รอ "ใคร" ลงมือ (05/11 · คำสั่ง user) ══════════════════
+              🔴 ฝั่ง/เป้า มาจาก `utils/moChase.js` — ห้ามเทียบ side หรือเลขขั้นที่นี่
+              🔴 กดแล้วตั้ง**ตัวกรองของแถบด้านบน** (ไลน์ / ทีม / ขั้น / คำค้น) ไม่สร้างตัวกรองชุดที่ 2
+              🔴 ถังที่ชี้เป้าไม่ได้ (ไม่มีชื่อช่าง/ไม่มีไลน์/ไม่รู้ฝั่ง) ต้องโชว์ — ซ่อน = งานหายจากคนไล่ */}
+          {chase && chase.sides.length > 0 && (
+            <div style={{ marginBottom: 9, paddingTop: 7, borderTop: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 5 }}>
+                <span style={lbl}>รอใครลงมือ:</span>
+                {chase.sides.map(s2 => (
+                  <Chip key={s2.side} tone={s2.tone}
+                    label={`${s2.meta.icon} ${s2.meta.label}`}
+                    sub={`${s2.n} ใบ`}
+                    onClick={() => setSide(side === s2.side ? '' : s2.side)}
+                    title={[s2.meta.hint,
+                      s2.hard > 0 && `เกิน ${hardDays} วัน ${s2.hard} ใบ`,
+                      s2.oldest != null && `เก่าสุด ${s2.oldest} วัน`,
+                      side === s2.side ? 'กดอีกครั้งเพื่อย่อ' : 'กดเพื่อดูว่าต้องไปตามใคร',
+                    ].filter(Boolean).join(' · ')} />
+                ))}
+              </div>
+              {/* ❓ ใบที่นับวันไม่ได้ ไม่ได้อยู่ในแถบนี้เลย — ต้องเขียนบอก ไม่ใช่ปล่อยให้ยอดไม่ตรงกันเงียบๆ */}
+              {chase.unknownAge > 0 && (
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 5 }}>
+                  ❓ อีก <b>{chase.unknownAge} ใบ</b> ไม่มีวันเวลาให้นับ จึงยังไม่รู้ว่ารอใครนานแค่ไหน (ไม่อยู่ในแถบนี้)
+                </div>
+              )}
+              {!side ? (
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                  กดกองด้านบนเพื่อดูรายชื่อ “ต้องไปตามใคร” — เรียงใบที่ดองนานสุดขึ้นก่อน
+                </div>
+              ) : (() => {
+                const sel = chase.sides.find(x => x.side === side);
+                if (!sel) return null;
+                return (<>
+                  <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 4, lineHeight: 1.5 }}>
+                    {sel.meta.icon} <b>{sel.meta.label}</b> — {sel.meta.hint}
+                  </div>
+                  <div style={{ display: 'grid', gap: 3, alignContent: 'start' }}>
+                    {sel.targets.map(t => {
+                      /* กดได้เมื่อมีตัวกรองที่ "ปลายทางตรงกับเป้า" จริงๆ — ไม่มี = ไม่ทำปุ่มหลอก */
+                      const act = t.line && onLine ? () => onLine(t.line)
+                        : t.text && onText ? () => onText(t.text)
+                          : t.stage && onStage ? () => onStage(t.stage)
+                            : undefined;
+                      return (
+                        <div key={t.key} onClick={act}
+                          style={{ display: 'flex', flexWrap: 'wrap', gap: 7, alignItems: 'baseline', fontSize: 11.5,
+                            color: 'var(--text2)', padding: '4px 7px', borderRadius: 'var(--r-md)', background: 'var(--bg3)',
+                            borderLeft: `3px solid ${statusColor(t.tone)}`, cursor: act ? 'pointer' : 'default' }}
+                          title={[`ค้างเกิน ${days} วัน ${t.n} ใบ`,
+                            t.hard > 0 && `เกิน ${hardDays} วัน ${t.hard} ใบ`,
+                            t.oldest != null && `เก่าสุด ${t.oldest} วัน`,
+                            act ? 'กดเพื่อกรองลิสต์ด้านล่างเฉพาะกองนี้' : 'ชี้เป้าไม่ได้ — กรองอัตโนมัติไม่ได้ ต้องเปิดดูทีละใบ',
+                          ].filter(Boolean).join(' · ')}>
+                          <b style={{ color: toneInk(t.tone), minWidth: 62 }}>{t.oldest} วัน</b>
+                          <b style={{ color: 'var(--text)' }}>{t.label}</b>
+                          {t.whoShort && t.kind !== 'role' && <span style={{ color: 'var(--muted)' }}>· ต้องกดโดย {t.whoShort}</span>}
+                          <span>· {t.n} ใบ</span>
+                          {t.hard > 0 && <span style={{ color: statusColor('bad'), fontWeight: 700 }}>· เกิน {hardDays} วัน {t.hard} ใบ</span>}
+                          {t.kind === 'no_target' && <span style={{ color: 'var(--muted)' }}>· ⓘ ใบไม่มีข้อมูลให้ชี้ตัวคน</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>);
+              })()}
+            </div>
+          )}
+
           {/* ── ใบที่ค้างนานสุดขึ้นก่อน ── */}
           <div style={{ display: 'grid', gap: 3, alignContent: 'start' }}>
             {rowsShown.map(o => (
               <div key={o.id} onClick={onOpen ? () => onOpen(o) : undefined}
                 style={{
                   display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'baseline', fontSize: 11.5,
-                  color: 'var(--text2)', padding: '3px 6px', borderRadius: 6,
+                  color: 'var(--text2)', padding: '3px 6px', borderRadius: 'var(--r-md)',
                   borderLeft: `3px solid ${statusColor(o._tone)}`, background: 'var(--bg3)',
                   cursor: onOpen ? 'pointer' : 'default',
                 }}>
@@ -197,6 +283,78 @@ export default function MoStalePanel({
             )}
           </div>
         </>
+      )}
+
+      {/* ── 🔗 ส่งต่อแล้วแต่ปลายทางไม่มีใครทำ ───────────────────────────────────────
+          🔴 ใบแม่จบที่ `transferred` (สถานะจบ) ⇒ **ไม่อยู่ในกองใบค้างข้างบน** ถ้าไม่มีแผงนี้
+             ปัญหาที่ส่งต่อไปแล้วปลายทางถูกลบ/ยกเลิก จะไม่โผล่ที่ไหนในระบบเลย
+          · แยกบล็อกจากกองค้าง เพราะคนละชุดข้อมูลและคนละการแก้ (ต้องเปิดใบใหม่ให้ ไม่ใช่ไปตามขั้น)
+          · โหลดล้ม/ชนเพดาน = เขียนบนจอ ห้ามโชว์ 0 (กฎความซื่อสัตย์ของจอ) */}
+      {gapsErr ? (
+        <div role="alert" style={{ marginTop: 10, fontSize: 12, fontWeight: 700,
+          color: statusColor('bad'), background: 'var(--card)',
+          border: `1px solid ${statusColor('bad')}55`, borderRadius: 'var(--r-md)', padding: '7px 10px' }}>
+          ⚠️ อ่านโซ่การส่งต่อไม่สำเร็จ — ยังไม่รู้ว่ามีใบที่ส่งต่อแล้วปลายทางหายไปหรือเปล่า
+          <div style={{ fontWeight: 400, color: 'var(--text2)', marginTop: 2 }}>{gapsErr}</div>
+        </div>
+      ) : gaps && gaps.total > 0 && (
+        <div style={{ marginTop: 10, borderTop: '1px dashed var(--border2)', paddingTop: 9 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 6 }}>
+            🔗 ส่งต่อแล้วแต่ปลายทางไม่มีใครทำ · <b style={{ color: statusColor('bad') }}>{gaps.total} ใบ</b>
+            <div style={{ fontSize: 11.5, fontWeight: 400, color: 'var(--text2)', marginTop: 2 }}>
+              ใบต้นทางปิดไปแล้ว (ส่งต่อ = จบที่ทีมนั้น) — ใบพวกนี้<b>ไม่อยู่ในกองค้างข้างบน</b> และไม่อยู่ในคิวของใคร
+            </div>
+          </div>
+          {gapsCapped && (
+            <div style={{ fontSize: 11.5, color: statusColor('warn'), fontWeight: 700, marginBottom: 5 }}>
+              ⚠️ โซ่ส่งต่อชนเพดานที่โหลด — อาจมีมากกว่าที่เห็น
+            </div>
+          )}
+          <div style={{ display: 'grid', gap: 6, alignContent: 'start' }}>
+            {gaps.groups.map(g => (
+              <div key={g.key}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: statusColor(g.tone) }}>
+                  {g.icon} {g.label} · {g.n} ใบ
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--text2)', marginBottom: 4 }}>{g.hint}</div>
+                <div style={{ display: 'grid', gap: 4, alignContent: 'start' }}>
+                  {g.rows.map(r => {
+                    const meta = handoffGapMeta(r.kind);
+                    const body = (
+                      <>
+                        <b>{r.moNo || '(ใบต้นทางไม่มีเลข)'}</b>
+                        {r.lineName ? ` · ${r.lineName}` : ''}{r.machineNo ? ` · ${r.machineNo}` : ''}
+                        {r.toDeptLabel ? <> · ส่งให้ <b>{r.toDeptLabel}</b></> : null}
+                        {' · '}
+                        {r.days == null
+                          ? <span style={{ color: statusColor('warn') }}>ไม่มีวันเวลาให้นับ</span>
+                          : <span style={{ color: statusColor(meta.tone) }}>{r.days} วันแล้ว</span>}
+                        {r.problem ? <div style={{ color: 'var(--text2)', fontWeight: 400 }}>ปัญหา: {r.problem}</div> : null}
+                        {r.reason ? <div style={{ color: 'var(--text2)', fontWeight: 400 }}>เหตุที่ส่งต่อ: {r.reason}</div> : null}
+                        {r.childStatusLabel ? (
+                          <div style={{ color: 'var(--text2)', fontWeight: 400 }}>
+                            ใบปลายทาง: {r.childStatusLabel}{r.childReason ? ` — ${r.childReason}` : ''}
+                          </div>
+                        ) : null}
+                      </>
+                    );
+                    const sty = {
+                      textAlign: 'left', fontSize: 11.5, lineHeight: 1.5, padding: '5px 9px',
+                      background: 'var(--bg2)', color: 'var(--text)',
+                      border: `1px solid ${statusColor(meta.tone)}55`, borderRadius: 'var(--r-md)',
+                    };
+                    return (r.fromOrderId && onOpenId) ? (
+                      <button key={r.id} type="button" onClick={() => onOpenId(r.fromOrderId)}
+                        title="เปิดใบต้นทาง — เนื้อปัญหาอยู่ในใบนี้" style={{ ...sty, cursor: 'pointer' }}>
+                        {body}
+                      </button>
+                    ) : <div key={r.id} style={sty}>{body}</div>;
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </CollapseCard>
   );

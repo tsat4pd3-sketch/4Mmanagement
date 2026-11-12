@@ -36,6 +36,7 @@ import { loadRunDays, ranOn } from '../utils/runDays';
 import { useDraftAutosave, loadDraft, clearDraft } from '../utils/formDraft';   // 📝 ร่างในเครื่อง (มือถือ · 22/10)
 import DraftRestoreBar from '../components/DraftRestoreBar';
 
+import NoticeBar from '../components/NoticeBar';
 /* ══════════════════════════════════════════════════════════════
    📋 Layer Process Audit (LPA) — paperless แทนฟอร์มกระดาษ 2 ใบ:
    1) Layer Process Audit Plan   — แผนตรวจรายเดือน ต่อไลน์+กะ (สถานีรายวัน + ชั้นผู้ตรวจ ○●⊗)
@@ -58,10 +59,10 @@ const CATEGORIES = [
   { key: 'special', label: 'เฝ้าระวังปัญหา', full: 'Internal & Customer Problem (ปัญหาภายในและลูกค้า)' },
 ];
 const ANSWERS = [
-  { key: 'Y', label: 'Y', color: '#22c55e', desc: 'ปฏิบัติตรงตามมาตรฐาน (YES)' },
-  { key: 'N', label: 'N', color: '#ef4444', desc: 'ปฏิบัติไม่ตรงตามมาตรฐาน (NO)' },
-  { key: 'T', label: 'T', color: '#f59e0b', desc: 'ยอมรับให้ปฏิบัติต่อได้แบบมีเงื่อนไข (Temporary Accept)' },
-  { key: 'NA', label: 'N/A', color: '#94a3b8', desc: 'ไม่เกี่ยวข้อง' },
+  { key: 'Y', label: 'Y', color: 'var(--green)', desc: 'ปฏิบัติตรงตามมาตรฐาน (YES)' },
+  { key: 'N', label: 'N', color: 'var(--red)', desc: 'ปฏิบัติไม่ตรงตามมาตรฐาน (NO)' },
+  { key: 'T', label: 'T', color: 'var(--amber)', desc: 'ยอมรับให้ปฏิบัติต่อได้แบบมีเงื่อนไข (Temporary Accept)' },
+  { key: 'NA', label: 'N/A', color: 'var(--muted)', desc: 'ไม่เกี่ยวข้อง' },
 ];
 const ansMeta = (k) => ANSWERS.find(a => a.key === k);
 
@@ -108,14 +109,14 @@ function SignPadModal({ title, onCancel, onDone }) {
   const done = () => { if (!dirty.current) { toast.error('ยังไม่ได้เซ็น'); return; } cvRef.current.toBlob(b => b && onDone(b), 'image/png'); };
   return (
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(96vw, 620px)' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 620px)' }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 10 }}>✍️ {title}</div>
         <canvas ref={cvRef} width={560} height={180} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up}
           style={{ width: '100%', height: 160, border: '1px dashed var(--border2)', borderRadius: 10, background: '#fff', touchAction: 'none', cursor: 'crosshair', display: 'block' }} />
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-          <button onClick={clear} style={btnGray}>🗑️ ล้าง</button>
+          <button onClick={clear} style={btnGray}>ล้าง</button>
           <button onClick={onCancel} style={btnGray}>ยกเลิก</button>
-          <button onClick={done} style={btnAccent}>✔ ใช้ลายเซ็นนี้</button>
+          <button onClick={done} style={btnAccent}>ใช้ลายเซ็นนี้</button>
         </div>
       </div>
     </div>
@@ -463,8 +464,8 @@ export default function LayerProcessAudit() {
     const dstr = dateOf(selMonth, day);
     const planned = planDays[day]?.[planKey];
     const done = auditFor(dstr, layerKey);
-    if (done) return { sym: '●', color: '#22c55e', title: `ตรวจแล้ว · ${done.auditor_name || ''}` };
-    if (planned && dstr < getWorkDate()) return { sym: '⊗', color: '#ef4444', title: 'เลยกำหนด — ยังไม่ตรวจ' };
+    if (done) return { sym: '●', color: 'var(--green)', title: `ตรวจแล้ว · ${done.auditor_name || ''}` };
+    if (planned && dstr < getWorkDate()) return { sym: '⊗', color: 'var(--red)', title: 'เลยกำหนด — ยังไม่ตรวจ' };
     if (planned) return { sym: '○', color: 'var(--text2)', title: 'วางแผนตรวจ' };
     return null;
   };
@@ -518,10 +519,10 @@ export default function LayerProcessAudit() {
   const qStatus = (mk, day, layerKey, planKey) => {
     const dstr = dateOf(mk, day);
     const planned = qData[mk]?.days?.[day]?.[planKey];
-    if (qAuditFor(dstr, layerKey)) return { sym: '●', color: '#22c55e', title: 'ตรวจแล้ว' };
+    if (qAuditFor(dstr, layerKey)) return { sym: '●', color: 'var(--green)', title: 'ตรวจแล้ว' };
     /* 🔴 อ่านผลตรวจไม่ได้ = "ไม่รู้" ห้ามขึ้น ⊗ (เลยกำหนด) — จอ/ใบพิมพ์จะกล่าวหาคนจากคิวรีที่ล่ม */
     if (qErr && planned) return { sym: '?', color: 'var(--amber)', title: 'อ่านผลตรวจไม่ได้ — ยังบอกไม่ได้ว่าตรวจแล้วหรือยัง' };
-    if (planned && dstr < getWorkDate()) return { sym: '⊗', color: '#ef4444', title: 'เลยกำหนด — ยังไม่ตรวจ' };
+    if (planned && dstr < getWorkDate()) return { sym: '⊗', color: 'var(--red)', title: 'เลยกำหนด — ยังไม่ตรวจ' };
     if (planned) return { sym: '○', color: 'var(--text2)', title: 'วางแผนตรวจ' };
     return null;
   };
@@ -1075,10 +1076,10 @@ ${issuesHtml}
       <PageHeader title="Layer Process Audit (LPA)" icon="📋"
         sub={`แผนตรวจ + บันทึกผล + รายงาน ${lpaFormNo} — Leader ทุกวัน · Supervisor รายสัปดาห์ · Manager รายเดือน · GM รายไตรมาส`}
         tabs={[
-          { key: 'audit', label: '✅ บันทึกผลตรวจ' },
-          { key: 'plan', label: '📅 แผนตรวจ' },
-          { key: 'report', label: '📊 รายงาน' },
-          canManage && { key: 'questions', label: '⚙️ คำถาม' },
+          { key: 'audit', label: 'บันทึกผลตรวจ' },
+          { key: 'plan', label: 'แผนตรวจ' },
+          { key: 'report', label: 'รายงาน' },
+          canManage && { key: 'questions', label: 'คำถาม' },
         ]}
         tab={tab} onTab={setTab} />
 
@@ -1086,10 +1087,9 @@ ${issuesHtml}
 
       {/* 🔒 ไลน์ที่เลือกอยู่นอกส่วนงานเรา — ดูได้ แต่บันทึกไม่ได้ · ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล (UI §6.9) */}
       {!lineWrite.ok && selLine && (
-        <div className="card" style={{ padding: '9px 12px', marginBottom: 10, fontSize: 12, color: 'var(--text2)',
-          background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.35)' }}>
-          🔒 {writeBlockText(lineWrite, { what: `ใบตรวจ/แผน LPA ของไลน์ "${selLine}"` })}
-        </div>
+        <NoticeBar tone="warn" style={{ marginBottom: 10 }}>
+          {writeBlockText(lineWrite, { what: `ใบตรวจ/แผน LPA ของไลน์ "${selLine}"` })}
+        </NoticeBar>
       )}
 
       {/* ═════════ แผนตรวจ — มองทีละไตรมาส (3 เดือน) ═════════ */}
@@ -1097,13 +1097,13 @@ ${issuesHtml}
         <div className="card" style={{ padding: 16 }}>
           {/* หัวไตรมาส + ปุ่มเลื่อนไตรมาส */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-            <button onClick={() => setSelMonth(shiftMonth(qMonths[0], -3))} style={btnGhost}>◀ ไตรมาสก่อน</button>
+            <button onClick={() => setSelMonth(shiftMonth(qMonths[0], -3))} style={btnGhost}>ไตรมาสก่อน</button>
             <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)' }}>ไตรมาส Q{quarterOf(selMonth)} · {monthLabel(qMonths[0])} – {monthLabel(qMonths[2])}</div>
             <button onClick={() => setSelMonth(shiftMonth(qMonths[0], 3))} style={btnGhost}>ไตรมาสถัดไป ▶</button>
           </div>
           {qErr && (
-            <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 12.5,
-              background: 'var(--card)', border: '1px solid #ef4444', color: '#ef4444' }}>
+            <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5,
+              background: 'var(--card)', border: '1px solid var(--red)', color: 'var(--red)' }}>
               ⚠ {qErr} — ช่องที่วางแผนไว้แสดงเป็น <b>?</b> (ยังบอกไม่ได้ว่าตรวจแล้วหรือยัง) <b>อย่าเพิ่งพิมพ์ใบนี้ไปเซ็น</b>
             </div>
           )}
@@ -1124,16 +1124,16 @@ ${issuesHtml}
             </div>
             {canManage && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button onClick={fillStationsFromWorkstations} style={btnTeal} title="ดึงรายชื่อจุดงานทั้งหมดในไลน์นี้ (รวมไลน์ย่อย) มาเป็นสถานีตรวจตั้งต้น — LPA ตรวจกระบวนการที่จุดงาน ไม่ใช่ทุกเครื่องจักร">📍 ดึงจุดงานในไลน์</button>
-                <button onClick={autoFillQuarter} style={btnAmber} title="กระจายจุดงานให้ครบทุกจุดภายในแต่ละเดือน (Leader ทุกวัน · SV ต้นสัปดาห์ · MGR รายเดือน · GM รายไตรมาส)">⚡ เติมแผนทั้งไตรมาส</button>
-                <button onClick={saveQuarter} disabled={savingPlan} style={btnAccent}>{savingPlan ? '⏳...' : '💾 บันทึกแผนไตรมาส'}</button>
-                <button onClick={printPlan} disabled={printing} style={btnBlue} title={`พิมพ์ใบแผนของเดือน ${monthLabel(selMonth)} (บันทึกก่อนพิมพ์)`}>🖨️ พิมพ์ ({monthLabel(selMonth)})</button>
+                <button onClick={fillStationsFromWorkstations} style={btnTeal} title="ดึงรายชื่อจุดงานทั้งหมดในไลน์นี้ (รวมไลน์ย่อย) มาเป็นสถานีตรวจตั้งต้น — LPA ตรวจกระบวนการที่จุดงาน ไม่ใช่ทุกเครื่องจักร">ดึงจุดงานในไลน์</button>
+                <button onClick={autoFillQuarter} style={btnAmber} title="กระจายจุดงานให้ครบทุกจุดภายในแต่ละเดือน (Leader ทุกวัน · SV ต้นสัปดาห์ · MGR รายเดือน · GM รายไตรมาส)">เติมแผนทั้งไตรมาส</button>
+                <button onClick={saveQuarter} disabled={savingPlan} style={btnAccent}>{savingPlan ? '...' : 'บันทึกแผนไตรมาส'}</button>
+                <button onClick={printPlan} disabled={printing} style={btnBlue} title={`พิมพ์ใบแผนของเดือน ${monthLabel(selMonth)} (บันทึกก่อนพิมพ์)`}>พิมพ์ ({monthLabel(selMonth)})</button>
               </div>
             )}
-            {!canManage && <button onClick={printPlan} disabled={printing} style={btnBlue}>🖨️ พิมพ์ ({monthLabel(selMonth)})</button>}
+            {!canManage && <button onClick={printPlan} disabled={printing} style={btnBlue}>พิมพ์ ({monthLabel(selMonth)})</button>}
           </div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
-            <span style={{ color: 'var(--text2)' }}>○ วางแผน</span> · <span style={{ color: '#22c55e' }}>● ตรวจแล้ว</span> · <span style={{ color: '#ef4444' }}>⊗ เลยกำหนดยังไม่ตรวจ</span> · แถวเขียว = วันหยุด · หลายสถานี/วัน = คั่นด้วย ,
+            <span style={{ color: 'var(--text2)' }}>○ วางแผน</span> · <span style={{ color: 'var(--green)' }}>● ตรวจแล้ว</span> · <span style={{ color: 'var(--red)' }}>⊗ เลยกำหนดยังไม่ตรวจ</span> · แถวเขียว = วันหยุด · หลายสถานี/วัน = คั่นด้วย ,
           </div>
 
           {/* 3 เดือนของไตรมาส */}
@@ -1141,9 +1141,9 @@ ${issuesHtml}
             const nD = daysInMonth(mk);
             const isFocus = mk === selMonth;
             return (
-              <div key={mk} style={{ marginTop: 12, border: isFocus ? '1px solid var(--accent)' : '1px solid var(--border2)', borderRadius: 10, overflow: 'hidden' }}>
-                <div style={{ padding: '7px 12px', background: isFocus ? 'rgba(34,197,94,0.12)' : 'var(--bg3)', fontWeight: 800, fontSize: 14, color: isFocus ? 'var(--accent)' : 'var(--text)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  📅 {monthLabel(mk)}
+              <div key={mk} style={{ marginTop: 12, border: isFocus ? '1px solid var(--accent)' : '1px solid var(--border2)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
+                <div style={{ padding: '7px 12px', background: isFocus ? 'var(--green-dim)' : 'var(--bg3)', fontWeight: 800, fontSize: 14, color: isFocus ? 'var(--accent)' : 'var(--text)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  {monthLabel(mk)}
                   {isFocus ? <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted)' }}>(เดือนที่เลือก — ใช้พิมพ์/รายงาน)</span>
                     : <button onClick={() => setSelMonth(mk)} style={{ ...btnGhost, padding: '2px 8px', fontSize: 11 }}>เลือกเดือนนี้</button>}
                 </div>
@@ -1203,8 +1203,8 @@ ${issuesHtml}
         <div className="card" style={{ padding: 16 }}>
           {/* 🔴 โหลดใบเดิมไม่ได้ = บอกตรงๆ + ห้ามให้ฟอร์มเปล่าเดินต่อ (ห้ามเงียบ · กฎความซื่อสัตย์ของจอ) */}
           {draftErr && (
-            <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 12.5,
-              background: 'var(--card)', border: '1px solid #ef4444', color: '#ef4444' }}>
+            <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5,
+              background: 'var(--card)', border: '1px solid var(--red)', color: 'var(--red)' }}>
               ⚠ {draftErr} — <b>ยังบันทึกไม่ได้</b> (ถ้าบันทึกทับตอนนี้ คำตอบที่เคยตรวจไว้จะหาย) · ลองเปลี่ยนวัน/ไลน์แล้วกลับมาใหม่
             </div>
           )}
@@ -1213,11 +1213,11 @@ ${issuesHtml}
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
             <div>
               <div style={lb}>วันที่ตรวจ</div>
-              <input type="date" value={auditDate} onChange={e => e.target.value && setAuditDate(e.target.value)} style={{ width: 150, padding: '6px 10px', borderRadius: 7, fontSize: 13 }} />
+              <input type="date" value={auditDate} onChange={e => e.target.value && setAuditDate(e.target.value)} style={{ width: 150, padding: '6px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }} />
             </div>
             <div>
               <div style={lb}>ชั้นผู้ตรวจ (Layer)</div>
-              <select value={auditLayer} onChange={e => setAuditLayer(e.target.value)} style={{ width: 190, padding: '7px 10px', borderRadius: 7, fontSize: 13 }}>
+              <select value={auditLayer} onChange={e => setAuditLayer(e.target.value)} style={{ width: 190, padding: '7px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }}>
                 {LAYERS.map(l => <option key={l.key} value={l.key}>{l.label} · {l.freq}</option>)}
               </select>
             </div>
@@ -1239,21 +1239,21 @@ ${issuesHtml}
                 {draft?.auditor_sig_url
                   ? <img src={draft.auditor_sig_url} alt="" style={{ height: 30, background: '#fff', borderRadius: 4, padding: 2 }} />
                   : <span style={{ fontSize: 11, color: 'var(--muted)' }}>ยังไม่มี</span>}
-                {canRecord && <button onClick={() => setShowSignPad(true)} style={{ ...btnGray, padding: '5px 10px', fontSize: 12 }}>✍️ เซ็นใหม่</button>}
+                {canRecord && <button onClick={() => setShowSignPad(true)} style={{ ...btnGray, padding: '5px 10px', fontSize: 12 }}>เซ็นใหม่</button>}
               </div>
             </div>
           </div>
 
           {draft?.id && (
-            <div style={{ fontSize: 12, color: '#22c55e', marginBottom: 8, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 12, color: 'var(--green)', marginBottom: 8, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
               ✅ วันนี้บันทึกผลตรวจชั้นนี้ไว้แล้ว — แก้ไขแล้วกดบันทึกทับได้
-              {mayDelete && <button onClick={deleteAudit} style={{ ...btnGray, color: '#ef4444', border: '1px solid rgba(239,68,68,0.4)', fontSize: 12, padding: '4px 10px' }}>🗑 ลบผลตรวจนี้</button>}
+              {mayDelete && <button onClick={deleteAudit} style={{ ...btnGray, color: 'var(--red)', border: '1px solid var(--red-line)', fontSize: 12, padding: '4px 10px' }}>ลบผลตรวจนี้</button>}
             </div>
           )}
 
           {canRecord && (
             <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-              <button onClick={setAllY} style={btnGray}>✔ ข้อที่ยังไม่ตอบ = Y ทั้งหมด</button>
+              <button onClick={setAllY} style={btnGray}>ข้อที่ยังไม่ตอบ = Y ทั้งหมด</button>
               <div style={{ fontSize: 12, color: 'var(--muted)', alignSelf: 'center' }}>
                 ตอบแล้ว {auditQuestions.filter(q => draft?.answers[q.id]?.answer).length}/{auditQuestions.length} ข้อ · N/T ต้องกรอกรายละเอียดปัญหา
               </div>
@@ -1265,7 +1265,7 @@ ${issuesHtml}
             if (!catQs.length) return null;
             return (
               <div key={cat.key} style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: cat.key === 'special' ? '#ef4444' : 'var(--text)', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>{cat.full}</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: cat.key === 'special' ? 'var(--red)' : 'var(--text)', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>{cat.full}</div>
                 {catQs.map(q => {
                   const a = draft?.answers[q.id];
                   return (
@@ -1281,7 +1281,7 @@ ${issuesHtml}
                           <button key={an.key} disabled={!canRecord} onClick={() => setAnswer(q.id, an.key)}
                             style={{
                               ...(isMobile ? { flex: 1, minHeight: 44 } : null),
-                              minWidth: 40, padding: '6px 8px', borderRadius: 7, fontWeight: 800, fontSize: 13, cursor: canRecord ? 'pointer' : 'default',
+                              minWidth: 40, padding: '6px 8px', borderRadius: 'var(--r-md)', fontWeight: 800, fontSize: 13, cursor: canRecord ? 'pointer' : 'default',
                               border: '1.5px solid ' + (a?.answer === an.key ? an.color : 'var(--border2)'),
                               background: a?.answer === an.key ? an.color : 'var(--bg3)',
                               color: a?.answer === an.key ? '#fff' : 'var(--text2)',
@@ -1290,7 +1290,7 @@ ${issuesHtml}
                       </div>
                       {['N', 'T'].includes(a?.answer) && (
                         <input type="text" value={a?.note || ''} onChange={e => setAnsNote(q.id, e.target.value)} disabled={!canRecord}
-                          placeholder="รายละเอียดปัญหา / เงื่อนไข (บังคับ)" style={{ flex: '1 1 240px', fontSize: 12, padding: '6px 8px', border: '1px solid ' + ansMeta(a.answer).color, borderRadius: 7 }} />
+                          placeholder="รายละเอียดปัญหา / เงื่อนไข (บังคับ)" style={{ flex: '1 1 240px', fontSize: 12, padding: '6px 8px', border: '1px solid ' + ansMeta(a.answer).color, borderRadius: 'var(--ctl-r)' }} />
                       )}
                     </div>
                   );
@@ -1305,8 +1305,8 @@ ${issuesHtml}
               อ่านอย่างเดียว: ข้อถูกถอดไปแล้ว แก้คำตอบไม่ได้ แต่ข้อความ/คำตอบเดิมยังอยู่ครบ */}
           {removedAnswers.length > 0 && (
             <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
-                📦 ข้อที่ถอดออกจากเช็คลิสต์แล้ว — เก็บไว้จากตอนตรวจ ({removedAnswers.length} ข้อ)
+              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)', padding: '6px 0', borderBottom: '1px solid var(--border)' }}>
+                ข้อที่ถอดออกจากเช็คลิสต์แล้ว — เก็บไว้จากตอนตรวจ ({removedAnswers.length} ข้อ)
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', padding: '4px 0' }}>
                 ข้อเหล่านี้ถูกลบ/ปิดใช้งาน/ซ่อนของไลน์นี้ไปหลังวันที่ตรวจ — แสดงไว้ให้ใบตรวจอ่านครบตามที่ตรวจจริง (แก้ไม่ได้)
@@ -1320,7 +1320,7 @@ ${issuesHtml}
                       {a.note && <div style={{ fontSize: 11, color: 'var(--muted)' }}>↳ {a.note}</div>}
                     </div>
                     <span style={{
-                      minWidth: 40, textAlign: 'center', padding: '6px 8px', borderRadius: 7, fontWeight: 800, fontSize: 13,
+                      minWidth: 40, textAlign: 'center', padding: '6px 8px', borderRadius: 'var(--r-md)', fontWeight: 800, fontSize: 13,
                       border: '1.5px solid ' + (m?.color || 'var(--border2)'), background: m?.color || 'var(--bg3)', color: m ? '#fff' : 'var(--text2)',
                     }}>{m?.label || a.answer || '-'}</span>
                   </div>
@@ -1332,7 +1332,7 @@ ${issuesHtml}
           {canRecord && !isMobile && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
               <button onClick={saveAudit} disabled={savingAudit} style={{ ...btnAccent, padding: '10px 26px' }}>
-                {savingAudit ? '⏳ กำลังบันทึก...' : '💾 บันทึกผลตรวจ'}
+                {savingAudit ? 'กำลังบันทึก...' : 'บันทึกผลตรวจ'}
               </button>
             </div>
           )}
@@ -1340,7 +1340,7 @@ ${issuesHtml}
           {canRecord && isMobile && (
             <div className="m-savebar">
               <span className="m-savebar-sum">ตอบแล้ว {auditQuestions.filter(q => draft?.answers[q.id]?.answer).length}/{auditQuestions.length} ข้อ</span>
-              <button type="button" onClick={saveAudit} disabled={savingAudit}>{savingAudit ? '⏳ กำลังบันทึก...' : '💾 บันทึกผลตรวจ'}</button>
+              <button type="button" onClick={saveAudit} disabled={savingAudit}>{savingAudit ? 'กำลังบันทึก...' : 'บันทึกผลตรวจ'}</button>
             </div>
           )}
           {!canRecord && <div style={{ fontSize: 12, color: 'var(--muted)' }}>คุณมีสิทธิ์ดูอย่างเดียว (บันทึกผลได้เฉพาะ role ที่มีสิทธิ์ lpa:record)</div>}
@@ -1389,13 +1389,13 @@ ${issuesHtml}
               <div style={{ fontSize: 13, color: 'var(--text2)' }}>
                 ตรวจแล้วเดือนนี้: <b style={{ color: 'var(--text)' }}>{monthAudits.length}</b> ครั้ง
                 (Leader {monthAudits.filter(a => a.layer === 'leader').length} · SV {monthAudits.filter(a => a.layer === 'supervisor').length} · MGR {monthAudits.filter(a => a.layer === 'manager').length} · GM {monthAudits.filter(a => a.layer === 'gm').length})
-                {issues.length > 0 && <span style={{ color: '#ef4444', fontWeight: 700 }}> · พบปัญหา N/T {issues.length} รายการ</span>}
+                {issues.length > 0 && <span style={{ color: 'var(--red)', fontWeight: 700 }}> · พบปัญหา N/T {issues.length} รายการ</span>}
                 {/* 🔴 "ตรวจแล้ว N ครั้ง" ลอยๆ ตอบไม่ได้ว่าขาดกี่วัน — ต้องมีตัวหาร (ดู utils/dailyCheckDay.js) */}
                 <div style={{ marginTop: 3, fontSize: 12, color: sum.missed ? 'var(--red)' : 'var(--muted)' }}>
                   {checkDaysNote(sum)}{sum.pct != null && <> · ความครบ <b>{sum.pct}%</b></>}
                 </div>
                 {monthErr && (
-                  <div style={{ marginTop: 3, fontSize: 11.5, color: '#ef4444', fontWeight: 700 }}>
+                  <div style={{ marginTop: 3, fontSize: 11.5, color: 'var(--red)', fontWeight: 700 }}>
                     ⚠ {monthErr} — ตารางเดือนนี้แสดงเป็น "ไม่รู้" ทั้งเดือน (ไม่ได้แปลว่าขาดตรวจ)
                   </div>
                 )}
@@ -1406,7 +1406,7 @@ ${issuesHtml}
                   </div>
                 )}
               </div>
-              <button onClick={printReport} disabled={printing} style={btnBlue}>{printing ? '...' : `🖨️ พิมพ์รายงาน ${lpaFormCode}`}</button>
+              <button onClick={printReport} disabled={printing} style={btnBlue}>{printing ? '...' : `พิมพ์รายงาน ${lpaFormCode}`}</button>
             </div>
             {/* 🔴 คำอธิบายสัญลักษณ์ 2 ชุด แยกให้เห็นว่าเป็นคนละชั้นข้อมูล (คำสั่ง user 13/10)
                 — "คำตอบ" = ไปตรวจแล้วเจออะไร · "สถานะวัน" = วันนั้นต้องตรวจไหม/มีใครไปตรวจไหม */}
@@ -1425,7 +1425,7 @@ ${issuesHtml}
                   const m = CHECK_DAY_META[k];
                   return (
                     <span key={k} style={{ marginRight: 8 }}>
-                      <span style={{ display: 'inline-block', padding: '0 3px', borderRadius: 4, border: `1px solid ${m.color}`, background: m.tint || undefined, color: m.color, fontWeight: 700 }}>{m.mark}</span>{' '}
+                      <span style={{ display: 'inline-block', padding: '0 3px', borderRadius: 'var(--r-xs)', border: `1px solid ${m.color}`, background: m.tint || undefined, color: m.color, fontWeight: 700 }}>{m.mark}</span>{' '}
                       {m.label}
                     </span>
                   );
@@ -1440,9 +1440,9 @@ ${issuesHtml}
                     <th style={{ ...cellStyle, minWidth: 40 }}>ข้อ</th>
                     <th style={{ ...cellStyle, minWidth: 260, textAlign: 'left', position: 'sticky', left: 0, background: 'var(--card)', zIndex: 2 }}>Audit Checklist / Question</th>
                     {daysArr.map(d => <th key={d} style={{ ...cellStyle, background: isHoliday(dateOf(selMonth, d)) ? 'rgba(46,125,50,0.25)' : undefined }}>{d}</th>)}
-                    {[1, 2, 3, 4].map(w => <th key={w} style={{ ...cellStyle, background: 'rgba(34,197,94,0.15)' }}>W{w}</th>)}
+                    {[1, 2, 3, 4].map(w => <th key={w} style={{ ...cellStyle, background: 'var(--green-dim)' }}>W{w}</th>)}
                     <th style={{ ...cellStyle, background: 'rgba(148,163,184,0.15)' }}>M</th>
-                    <th style={{ ...cellStyle, background: 'rgba(245,158,11,0.15)' }}>Q</th>
+                    <th style={{ ...cellStyle, background: 'var(--amber-dim)' }}>Q</th>
                   </tr>
                   {/* 🔴 แถว "สถานะวัน" — ตอบให้ได้ว่าช่องว่างข้างล่างแปลว่าอะไร
                       (ขาด = ต้องตรวจแต่ไม่ได้ตรวจ · NP = ไม่ได้เปิดกะ/ไม่ได้ผลิต · ? = ไม่รู้ว่าผลิตไหม
@@ -1463,7 +1463,7 @@ ${issuesHtml}
                           style={{ ...cellStyle, fontSize: 11, fontWeight: 700, color: meta.color,
                             padding: '3px 1px', background: meta.tint || undefined }}>
                           {meta.mark && (
-                            <span style={{ display: 'inline-block', padding: '0 3px', borderRadius: 4,
+                            <span style={{ display: 'inline-block', padding: '0 3px', borderRadius: 'var(--r-xs)',
                               border: `1px solid ${meta.color}`, lineHeight: '14px', fontSize: 11 }}>{meta.mark}</span>
                           )}
                         </th>
@@ -1478,7 +1478,7 @@ ${issuesHtml}
                     const catQs = qs.filter(q => q.category === cat.key);
                     if (!catQs.length) return null;
                     return [
-                      <tr key={cat.key + '_h'}><td colSpan={2 + nDays + 6} style={{ ...cellStyle, textAlign: 'left', fontWeight: 800, fontSize: 12, color: cat.key === 'special' ? '#ef4444' : 'var(--text)', background: 'var(--bg3)' }}>{cat.full}</td></tr>,
+                      <tr key={cat.key + '_h'}><td colSpan={2 + nDays + 6} style={{ ...cellStyle, textAlign: 'left', fontWeight: 800, fontSize: 12, color: cat.key === 'special' ? 'var(--red)' : 'var(--text)', background: 'var(--bg3)' }}>{cat.full}</td></tr>,
                       ...catQs.map(q => (
                         <tr key={q.id}>
                           <td style={cellStyle}>{q.seq}</td>
@@ -1486,9 +1486,9 @@ ${issuesHtml}
                           {daysArr.map((d, di) => isHoliday(dateOf(selMonth, d))
                             ? <td key={d} style={{ ...cellStyle, background: 'rgba(46,125,50,0.25)' }}></td>
                             : ansTd(leaderAud[d], q.id, { background: CHECK_DAY_META[dayStates[di]].tint || undefined }, d))}
-                          {svAud.map((a, i) => ansTd(a, q.id, { background: 'rgba(34,197,94,0.1)' }, 'w' + i))}
+                          {svAud.map((a, i) => ansTd(a, q.id, { background: 'var(--green-dim)' }, 'w' + i))}
                           {ansTd(mgrAud, q.id, { background: 'rgba(148,163,184,0.1)' })}
-                          {ansTd(gmAud, q.id, { background: 'rgba(245,158,11,0.1)' })}
+                          {ansTd(gmAud, q.id, { background: 'var(--amber-dim)' })}
                         </tr>
                       )),
                     ];
@@ -1498,7 +1498,7 @@ ${issuesHtml}
             </div>
             {issues.length > 0 && (
               <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: '#ef4444', marginBottom: 6 }}>🚩 บันทึกปัญหาที่พบ (N / T)</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--red)', marginBottom: 6 }}>บันทึกปัญหาที่พบ (N / T)</div>
                 {issues.map((i, idx) => (
                   <div key={idx} style={{ fontSize: 12, color: 'var(--text2)', padding: '4px 0', borderBottom: '1px dashed var(--border)' }}>
                     <b style={{ color: ansMeta(i.ans).color }}>[{i.ans}]</b> {thDate(i.date)} · {i.q} — <b style={{ color: 'var(--text)' }}>{i.note || '-'}</b>
@@ -1519,25 +1519,25 @@ ${issuesHtml}
             <div>
               <div style={lb}>จัดการคำถามของ</div>
               <LineSelect lines={visibleLines} value={qScope} onChange={(v) => { setQScopePicked(true); setQScope(v); }} style={{ minWidth: 220 }}
-                placeholder="🌐 ทะเบียนกลาง (ใช้ร่วมทุกไลน์)" />
+                placeholder="ทะเบียนกลาง (ใช้ร่วมทุกไลน์)" />
             </div>
             <button
               onClick={() => setQEditing({ category: 'safety', seq: (Math.max(0, ...questions.map(q => q.seq)) + 1), question: '', line_name: qScope || '', issue_start: '', issue_end: '', is_active: true })}
-              style={btnAccent}>➕ เพิ่มคำถาม{qScope ? ` (เฉพาะไลน์ ${qScope})` : ' (เข้าทะเบียนกลาง — ทุกไลน์เห็น)'}</button>
+              style={btnAccent}>เพิ่มคำถาม{qScope ? ` (เฉพาะไลน์ ${qScope})` : ' (เข้าทะเบียนกลาง — ทุกไลน์เห็น)'}</button>
           </div>
           {/* 🔴 ป้าย "ตอนนี้คุณกำลังแก้ของใคร" — ห้ามถอด (2026-10-12 · feedback user)
               เคสจริง: มีคนกดลบข้อ common 2 ข้อจากมุมมอง "ทุกไลน์" ⇒ หายจากใบตรวจทุกไลน์
               จอเดิมบอกขอบเขตด้วยตัวเล็กสีเทาบรรทัดเดียว คนอ่านผ่าน = นึกว่าลบแค่ของตัวเอง */}
           <div style={{
-            marginBottom: 10, padding: '8px 11px', borderRadius: 8, lineHeight: 1.55, fontSize: 12,
-            border: '1px solid ' + (qScope ? 'var(--accent)' : '#f59e0b'),
-            background: qScope ? 'var(--accent-dim)' : 'rgba(245,158,11,0.12)',
+            marginBottom: 10, padding: '8px 11px', borderRadius: 'var(--r-md)', lineHeight: 1.55, fontSize: 12,
+            border: '1px solid ' + (qScope ? 'var(--accent)' : 'var(--amber)'),
+            background: qScope ? 'var(--accent-dim)' : 'var(--amber-dim)',
           }}>
             {qScope ? (
               <>
-                <b style={{ fontSize: 13, color: 'var(--accent)' }}>🏭 กำลังแก้หัวข้อตรวจของไลน์ "{qScope}"</b>
+                <b style={{ fontSize: 13, color: 'var(--accent)' }}>กำลังแก้หัวข้อตรวจของไลน์ "{qScope}"</b>
                 <div style={{ color: 'var(--text2)', marginTop: 2 }}>
-                  ข้อที่ติดป้าย <b>🌐 ทะเบียนกลาง</b> = ของส่วนรวม แก้เนื้อหา/ลบที่นี่ไม่ได้ —
+                  ข้อที่ติดป้าย <b>ทะเบียนกลาง</b> = ของส่วนรวม แก้เนื้อหา/ลบที่นี่ไม่ได้ —
                   ไม่อยากใช้ข้อไหนที่ไลน์นี้ กด <b>ไม่ใช้ที่ไลน์นี้</b> (ไลน์อื่นไม่กระทบ) ·
                   ข้อที่ติดป้าย <b>เฉพาะไลน์นี้</b> เป็นของไลน์คุณเอง เพิ่ม/แก้/ลบได้เต็มที่
                 </div>
@@ -1551,7 +1551,7 @@ ${issuesHtml}
               </>
             ) : (
               <>
-                <b style={{ fontSize: 13, color: '#f59e0b' }}>🌐 กำลังแก้ “ทะเบียนกลาง” — ทุกไลน์ใช้ร่วมกัน</b>
+                <b style={{ fontSize: 13, color: 'var(--amber)' }}>กำลังแก้ “ทะเบียนกลาง” — ทุกไลน์ใช้ร่วมกัน</b>
                 <div style={{ color: 'var(--text2)', marginTop: 2 }}>
                   แก้/ลบที่นี่ <b>กระทบใบตรวจของทุกไลน์พร้อมกัน</b> ·
                   ถ้าจะเพิ่ม/เอาออกเฉพาะแผนกตัวเอง ให้เลือกไลน์จากช่อง “จัดการคำถามของ” ด้านบนก่อน ·
@@ -1566,7 +1566,7 @@ ${issuesHtml}
             if (!catQs.length) return null;
             return (
               <div key={cat.key} style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: cat.key === 'special' ? '#ef4444' : 'var(--text)', padding: '5px 0', borderBottom: '1px solid var(--border)' }}>{cat.full}</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: cat.key === 'special' ? 'var(--red)' : 'var(--text)', padding: '5px 0', borderBottom: '1px solid var(--border)' }}>{cat.full}</div>
                 {catQs.map(q => {
                   const isCommon = !q.line_name;
                   const hiddenHere = qScope && isCommon && (q.hidden_for_lines || []).includes(qScope);
@@ -1577,20 +1577,20 @@ ${issuesHtml}
                         <b>{q.seq}.</b> {q.question}
                         {/* ป้ายขอบเขตต้องขึ้น**ทั้ง 2 มุมมอง** — เดิมมุมมอง "ทุกไลน์" ไม่มีป้ายเลย
                             คนกดจึงไม่รู้ว่าแถวที่กำลังลบเป็นของส่วนรวม (เคส 12/10) */}
-                        {isCommon && <span style={{ fontSize: 11, fontWeight: 700, color: '#f59e0b', background: 'rgba(245,158,11,0.12)', border: '1px solid #f59e0b', borderRadius: 4, padding: '0 5px', marginLeft: 6 }}>🌐 ทะเบียนกลาง</span>}
-                        {lineOwn && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-dim)', border: '1px solid var(--accent)', borderRadius: 4, padding: '0 5px', marginLeft: 6 }}>เฉพาะไลน์นี้</span>}
+                        {isCommon && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 'var(--r-xs)', padding: '0 5px', marginLeft: 6 }}>ทะเบียนกลาง</span>}
+                        {lineOwn && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-dim)', border: '1px solid var(--accent)', borderRadius: 'var(--r-xs)', padding: '0 5px', marginLeft: 6 }}>เฉพาะไลน์นี้</span>}
                         {!qScope && q.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · ไลน์ {q.line_name}</span>}
                         {(q.issue_start || q.issue_end) && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · {thDate(q.issue_start)} - {thDate(q.issue_end)}</span>}
-                        {hiddenHere && <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444' }}> · 🚫 ไลน์นี้ไม่ใช้ข้อนี้</span>}
-                        {!q.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}> · ปิดใช้งาน</span>}
+                        {hiddenHere && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}> · ไลน์นี้ไม่ใช้ข้อนี้</span>}
+                        {!q.is_active && <span style={{ fontSize: 11, color: 'var(--red)' }}> · ปิดใช้งาน</span>}
                       </div>
                       {qScope && isCommon ? (
                         // ข้อ common ในมุมมองรายไลน์ → ซ่อน/แสดงเฉพาะไลน์นี้ (แก้เนื้อหาไปทำที่ "ทุกไลน์")
                         /* ป้ายปุ่มต้องบอก "ผลที่จะเกิด" ไม่ใช่ศัพท์ซ่อน/แสดง — คนอ่านแล้วนึกว่าซ่อนจากทุกคน */
                         <button className="tbtn" onClick={() => toggleHideForLine(q, qScope)}
                           title={hiddenHere ? `เอาข้อนี้กลับมาใช้ที่ไลน์ ${qScope}` : `เลิกใช้ข้อนี้เฉพาะไลน์ ${qScope} (ไลน์อื่นและทะเบียนกลางไม่กระทบ)`}
-                          style={{ ...btnGray, color: hiddenHere ? 'var(--accent)' : '#ef4444', padding: '4px 10px', fontSize: 12, whiteSpace: 'nowrap' }}>
-                          {hiddenHere ? '✓ ใช้ที่ไลน์นี้' : '🚫 ไม่ใช้ที่ไลน์นี้'}
+                          style={{ ...btnGray, color: hiddenHere ? 'var(--accent)' : 'var(--red)', padding: '4px 10px', fontSize: 12, whiteSpace: 'nowrap' }}>
+                          {hiddenHere ? 'ใช้ที่ไลน์นี้' : 'ไม่ใช้ที่ไลน์นี้'}
                         </button>
                       ) : (
                         // ข้อ common (มุมมองทุกไลน์) หรือข้อเฉพาะไลน์ → แก้/ปิด/ลบเต็มที่
@@ -1612,7 +1612,7 @@ ${issuesHtml}
       {/* modal แก้คำถาม (มีฟอร์ม — ไม่ปิดจาก backdrop) */}
       {qEditing && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
-          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: 18, width: 'min(96vw, 640px)' }}>
+          <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 640px)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{qEditing.id ? '✏️ แก้ไข' : '➕ เพิ่ม'}คำถาม</div>
               <button onClick={() => setQEditing(null)} style={{ background: 'none', border: 'none', fontSize: 20, color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
@@ -1641,7 +1641,7 @@ ${issuesHtml}
               )}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
                 <button onClick={() => setQEditing(null)} style={btnGray}>ยกเลิก</button>
-                <button onClick={saveQuestion} style={btnAccent}>💾 บันทึก</button>
+                <button onClick={saveQuestion} style={btnAccent}>บันทึก</button>
               </div>
             </div>
           </div>
@@ -1656,7 +1656,7 @@ ${issuesHtml}
 const lb = { fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 };
 const btnGray = { padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 };
 const btnAccent = { padding: '7px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13 };
-const btnAmber = { padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.12)', color: '#f59e0b', fontWeight: 700, cursor: 'pointer', fontSize: 13 };
-const btnBlue = { padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(77,159,255,0.35)', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 };
+const btnAmber = { padding: '7px 14px', borderRadius: 8, border: '1px solid var(--amber-line)', background: 'var(--amber-dim)', color: 'var(--amber)', fontWeight: 700, cursor: 'pointer', fontSize: 13 };
+const btnBlue = { padding: '7px 14px', borderRadius: 8, border: '1px solid var(--blue-line)', background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700, cursor: 'pointer', fontSize: 13 };
 const btnTeal = { padding: '7px 14px', borderRadius: 8, border: '1px solid rgba(45,212,191,0.4)', background: 'rgba(45,212,191,0.12)', color: '#2dd4bf', fontWeight: 700, cursor: 'pointer', fontSize: 13 };
 const btnGhost = { padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontWeight: 700, cursor: 'pointer', fontSize: 12 };

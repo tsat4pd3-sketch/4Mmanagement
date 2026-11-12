@@ -8,12 +8,16 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import DowntimeSiren from '../components/DowntimeSiren';
 import ToggleDot from '../components/ToggleDot';
+import Page from '../components/Page';
+import PageHeader from '../components/PageHeader';
+import Icon from '../components/Icon';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import { can, canAccessPage } from '../utils/permissions';
 import resizeImg from '../utils/resizeImage';
 import { getLineFamilyNames, getLineFamilyIds, getAncestorNames } from '../utils/lineHierarchy';
 import LineSelect from '../components/LineSelect';
+import Segmented from '../components/Segmented';
 import { loadLinesRes } from '../utils/useProductionLines';
 import { inSectionScope } from '../utils/sectionScope';
 import { fetchActiveDowntimes, dtElapsedMin } from '../utils/downtimeAlarm';
@@ -30,11 +34,14 @@ import PlanFrameBar from '../components/PlanFrameBar';
 import PlanFrameRow from '../components/PlanFrameRow';
 import { buildBoardCards } from '../utils/boardCards';
 import PlanSlipBar from '../components/PlanSlipBar';   // 📋 แถบ "หลุดแผนไปแค่ไหน" (เวลา+ยอด · 2026-09-30)
+import DowntimeBand from '../components/DowntimeBand';   // ⛔ แถบเครื่องหยุดเต็มความสูงแถว (2026-11-04)
+import { downtimeBandsIn } from '../utils/downtimeBands';
 import DelayBlameBar from '../components/DelayBlameBar';   // 🔗 สรุปดีเลย์ของวัน + ต้นเหตุ/ผู้ถูกพาล (ทีมปั๊ม 2026-09-30)
 import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import { acceptImageFile } from '../utils/acceptImageFile';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 // บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
 // ⚠️ ก๊อปเดิมที่นี่ **ไม่มี img.onerror** → ไฟล์ที่เบราว์เซอร์ decode ไม่ได้ (.heic จากกล้องมือถือ /
@@ -96,6 +103,11 @@ function getPeriodStartDate(period, workDate) {
 }
 
 const STATION_PHOTO_SZ = 36; // fallback circle size for StationWorker when no map-scaled size is passed
+/* คอลัมน์ของ 2 กอง (พร้อมทำงาน · งานนอกไลน์) — 🔴 ต้อง `minmax(0, 1fr)` ห้าม `1fr` เปล่า (09/11 · feedback user "ทำไมบางอันใหญ่บางอันเล็ก")
+   `1fr` = `minmax(auto, 1fr)` ⇒ คอลัมน์ถ่างตามความยาวชื่อที่ยาวที่สุด (วัดจริง 255px แผง: 91px×3 กับ 103px×3 = ล้นขอบขวาโดนตัด)
+   ⇒ 2 กองการ์ดกว้างไม่เท่ากันตามชื่อคน · minmax(0) = ทุกใบกว้างเท่ากัน ชื่อยาวตัด … (การ์ดมี ellipsis อยู่แล้ว)
+   มือถือไม่ใช้ค่านี้ (กองเป็น flex คอลัมน์) */
+const POOL_GRID_COLS = (ultra) => `repeat(${ultra ? 3 : 2}, minmax(0, 1fr))`;
 const POOL_PHOTO_SZ = 44;    // photo size in sidebar pool/special-task cards — independent of map marker size
 
 // skill_definitions has rows that share the same display label under different skill_name keys
@@ -126,11 +138,11 @@ const DEFAULT_SPECIAL_TASKS = ['5ส', 'คัดงาน', 'แก้ไขป
 
 // Aligned with SKILL_LEVELS scale used across Dashboard / Operator / Report
 const fitColor = (score) => {
-  if (score >= 100) return '#a855f7';
-  if (score >= 75)  return '#22c55e';
+  if (score >= 100) return 'var(--blue)';
+  if (score >= 75)  return 'var(--green)';
   if (score >= 50)  return '#84cc16';
-  if (score >= 25)  return '#f59e0b';
-  return '#ef4444';
+  if (score >= 25)  return 'var(--amber)';
+  return 'var(--red)';
 };
 const fitLabel = (score) => {
   if (score >= 100) return 'ผู้เชี่ยวชาญ';
@@ -150,9 +162,9 @@ const getManCase = ({ moveType, skillOk, hasHistory }) => {
   return 3;
 };
 const MAN_CASE_META = {
-  1: { label: '✅ เก็บ log อัตโนมัติ ไม่ต้องอนุมัติ', color: '#22c55e', bg: 'rgba(34,197,94,0.1)', needsImage: false, requiresQa: false, autoApprove: true },
-  2: { label: '🟡 ต้องแนบรูป OJT + SV อนุมัติ',      color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', needsImage: true,  requiresQa: false, autoApprove: false },
-  3: { label: '🔴 ต้องแนบรูป OJT + SV + QA อนุมัติ', color: '#ef4444', bg: 'rgba(239,68,68,0.1)',  needsImage: true,  requiresQa: true,  autoApprove: false },
+  1: { label: 'เก็บ log อัตโนมัติ ไม่ต้องอนุมัติ', color: 'var(--green)', bg: 'var(--green-dim)', needsImage: false, requiresQa: false, autoApprove: true },
+  2: { label: 'ต้องแนบรูป OJT + SV อนุมัติ',      color: 'var(--amber)', bg: 'var(--amber-dim)', needsImage: true,  requiresQa: false, autoApprove: false },
+  3: { label: 'ต้องแนบรูป OJT + SV + QA อนุมัติ', color: 'var(--red)', bg: 'var(--red-dim)',  needsImage: true,  requiresQa: true,  autoApprove: false },
 };
 
 export default function Management() {
@@ -608,7 +620,7 @@ export default function Management() {
     const details = reqs.map(req => {
       const actual = Number(skillMap[req.skill_name] ?? 0);
       const def = skillDefs.find(d => d.name === req.skill_name);
-      return { label: def?.label || req.skill_name, color: def?.color || '#4d9fff', required: req.min_score, actual, pass: actual >= req.min_score };
+      return { label: def?.label || req.skill_name, color: def?.color || 'var(--blue)', required: req.min_score, actual, pass: actual >= req.min_score };
     });
     const passed = details.filter(d => d.pass).length;
     return { score: Math.round((passed / details.length) * 100), details };
@@ -796,21 +808,52 @@ export default function Management() {
 
   /* ── Hover (desktop เมาส์จริงเท่านั้น) ──
      จอทัช/iPad จอกว้างจะยิง mouseenter ตอนแตะแต่ไม่มี mouseleave → การ์ดสกิลค้าง
-     จึงเปิด hover card เฉพาะอุปกรณ์ที่ hover ได้จริง (แตะใช้ radar modal ที่มีปุ่มปิดแทน) */
+     จึงเปิด hover card เฉพาะอุปกรณ์ที่ hover ได้จริง (แตะใช้ radar modal ที่มีปุ่มปิดแทน)
+
+     🔴 **หน่วงเวลาเฉยๆ ไม่พอ — ต้องรอให้เมาส์ "ขยับแล้วหยุดนิ่ง" บนการ์ดจริง** (05/11 · feedback user)
+     ของเดิมตั้ง `setTimeout` ตอน `mouseenter` แล้วจบ ⇒ พังได้ 2 ทาง:
+       ① ลากเมาส์ผ่านช้าๆ / การ์ดกว้าง — อยู่บนการ์ดครบ 500ms ทั้งที่ไม่ได้ตั้งใจดู
+       ② 🎯 **เลือกไลน์จาก dropdown แล้วการ์ดเด้งเอง** (user จับได้) — รายชื่อ re-render
+          แล้วมีการ์ดมาโผล่ **ใต้เมาส์ที่วางนิ่งอยู่แล้ว** ⇒ Chromium ยิง `mouseenter` ให้
+          ทั้งที่ผู้ใช้ไม่ได้ขยับเมาส์เลยสักพิกเซล ⇒ นับเวลาแล้วเด้งขึ้นมาเกะกะ
+
+     กติกาใหม่: **`mouseenter` ไม่ติดนาฬิกา** — ติดเมื่อมี `mousemove` บนการ์ดเท่านั้น
+       · ขยับอยู่เรื่อยๆ (ลากผ่าน) = รีเซ็ตนาฬิกาทุกครั้ง ⇒ ไม่มีวันเด้ง
+       · ขยับแล้วหยุด = เด้งหลังนิ่งครบ `HOVER_SETTLE_MS`
+       · การ์ดโผล่ใต้เมาส์ที่ไม่ขยับ = **ไม่มี mousemove เลย ⇒ ไม่เด้ง** (ปิดเคส ②)
+     ⚠️ `HOVER_JITTER_PX` กันมือสั่น/trackpad — ขยับไม่ถึงเกณฑ์ถือว่ายังนิ่ง ไม่รีเซ็ตนาฬิกา
+     · อยากดูทันทีไม่ต้องรอ = **คลิก** (เปิด radar modal ที่มีปุ่มปิด — ใช้ได้ทั้งเมาส์และจอทัช) */
   const canHover = typeof window !== 'undefined' && window.matchMedia?.('(hover: hover)').matches;
+  const HOVER_SETTLE_MS = 450;
+  const HOVER_JITTER_PX = 6;
+  const hoverPend = useRef(null);   // การ์ดที่ "รอเด้ง" (null = ไม่ได้อยู่บนการ์ดไหน)
+  const hoverPos  = useRef({ x: 0, y: 0 });
+
+  const armHover = () => {
+    clearTimeout(hoverTimer.current);
+    hoverTimer.current = setTimeout(() => {
+      if (hoverPend.current) setHoverCard(hoverPend.current);
+    }, HOVER_SETTLE_MS);
+  };
   const onHoverEnter = (e, worker, fit = null, stationName = null) => {
     if (isMobile || !canHover) return;
-    clearTimeout(hoverTimer.current);
-    const rect = e.currentTarget.getBoundingClientRect();
-    // hover-intent 500ms — ต้องวางเม้าส์ค้างจริงถึงเด้ง (กันเผลอลากผ่าน marker แล้วการ์ดโผล่รบกวน)
-    hoverTimer.current = setTimeout(() => setHoverCard({ worker, fit, rect, stationName }), 500);
+    clearTimeout(hoverTimer.current);            // 🔴 เข้าเฉยๆ ยังไม่ติดนาฬิกา (ดูเคส ② ข้างบน)
+    hoverPend.current = { worker, fit, rect: e.currentTarget.getBoundingClientRect(), stationName };
+    hoverPos.current = { x: e.clientX, y: e.clientY };
   };
-  const onHoverLeave = () => { clearTimeout(hoverTimer.current); setHoverCard(null); };
+  const onHoverMove = (e) => {
+    if (isMobile || !canHover || !hoverPend.current) return;
+    const d = Math.abs(e.clientX - hoverPos.current.x) + Math.abs(e.clientY - hoverPos.current.y);
+    if (d < HOVER_JITTER_PX) return;             // สั่นเล็กน้อย = ยังถือว่านิ่ง
+    hoverPos.current = { x: e.clientX, y: e.clientY };
+    armHover();                                  // ขยับ = เริ่มนับใหม่ ⇒ ลากผ่านไม่มีวันเด้ง
+  };
+  const onHoverLeave = () => { hoverPend.current = null; clearTimeout(hoverTimer.current); setHoverCard(null); };
 
   // กันการ์ดค้างทุกกรณี: แตะ/scroll ที่ไหนก็ได้ = ปิด + auto-hide 8 วินาที
   useEffect(() => {
     if (!hoverCard) return;
-    const clear = () => { clearTimeout(hoverTimer.current); setHoverCard(null); };
+    const clear = () => { hoverPend.current = null; clearTimeout(hoverTimer.current); setHoverCard(null); };
     window.addEventListener('touchstart', clear, { passive: true });
     window.addEventListener('scroll', clear, true);
     const t = setTimeout(clear, 8000);
@@ -853,6 +896,7 @@ export default function Management() {
   /* ── Touch tap on pool card ── */
   const handlePoolTap = (worker) => {
     if (!isMobile) {
+      hoverPend.current = null;
       clearTimeout(hoverTimer.current);
       setHoverCard(null);
       setRadarWorker(worker);
@@ -1042,9 +1086,9 @@ export default function Management() {
         style={{
           width: '100%',
           padding: isMobile ? '10px 8px' : '8px 6px 7px',
-          background: isSelected ? 'rgba(245,158,11,0.25)' : 'rgba(245,158,11,0.1)',
-          border: isSelected ? '2px solid #f59e0b' : '1.5px solid rgba(245,158,11,0.4)',
-          borderRadius: 10,
+          background: isSelected ? 'var(--amber-line)' : 'var(--amber-dim)',
+          border: isSelected ? '2px solid var(--amber)' : '1.5px solid var(--amber-line)',
+          borderRadius: 'var(--r-md)',
           cursor: canDrag ? (isMobile ? 'pointer' : 'grab') : 'default',
           display: 'flex', flexDirection: isMobile ? 'row' : 'column', alignItems: 'center',
           gap: isMobile ? 10 : 5, userSelect: 'none', position: 'relative',
@@ -1052,27 +1096,27 @@ export default function Management() {
         }}
       >
         {worker.employees?.image_url
-          ? <img src={worker.employees.image_url} style={{ width: isMobile ? 44 : POOL_PHOTO_SZ, height: isMobile ? 44 : POOL_PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid rgba(245,158,11,0.7)', flexShrink: 0 }} />
-          : <div style={{ width: isMobile ? 44 : POOL_PHOTO_SZ, height: isMobile ? 44 : POOL_PHOTO_SZ, borderRadius: '50%', background: 'rgba(245,158,11,0.15)', border: '2px solid rgba(245,158,11,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
+          ? <img src={worker.employees.image_url} style={{ width: isMobile ? 44 : POOL_PHOTO_SZ, height: isMobile ? 44 : POOL_PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid var(--amber-line)', flexShrink: 0 }} />
+          : <div style={{ width: isMobile ? 44 : POOL_PHOTO_SZ, height: isMobile ? 44 : POOL_PHOTO_SZ, borderRadius: '50%', background: 'var(--amber-dim)', border: '2px solid var(--amber-line)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
         }
         {/* 📱 overflow hidden + เว้นขวาให้ปุ่ม ✕ — มือถือ 390px ชื่อยาวดันการ์ดล้น 366→369px (mobilesweep 24/09) */}
         <div style={{ flex: isMobile ? 1 : undefined, minWidth: 0, overflow: 'hidden', paddingRight: isMobile ? 22 : undefined, width: isMobile ? undefined : '100%' }}>
           <div style={{ fontSize: isMobile ? 13 : 11, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: isMobile ? 'left' : 'center' }}>
             {isMobile ? (worker.employees?.name ?? '?') : (worker.employees?.name?.split(' ')[0] ?? '?')}
           </div>
-          <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, background: 'rgba(245,158,11,0.15)', borderRadius: 3, padding: isMobile ? '2px 6px' : '1px 6px', marginTop: 2, display: isMobile ? 'inline-block' : 'block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 140 : '100%', whiteSpace: 'nowrap', textAlign: 'center' }}>
+          <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, background: 'var(--amber-dim)', borderRadius: 'var(--r-xs)', padding: isMobile ? '2px 6px' : '1px 6px', marginTop: 2, display: isMobile ? 'inline-block' : 'block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 140 : '100%', whiteSpace: 'nowrap', textAlign: 'center' }}>
             {task?.task_type || 'งานพิเศษ'}
           </div>
           {worker.employees?.section && (
-            <div style={{ fontSize: 11, color: '#a78bfa', background: 'rgba(167,139,250,0.12)', borderRadius: 3, padding: isMobile ? '1px 6px' : '1px 6px', marginTop: 2, display: isMobile ? 'inline-block' : 'block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 140 : '100%', whiteSpace: 'nowrap', textAlign: 'center' }}>
-              📍 {worker.employees.section}
+            <div style={{ fontSize: 11, color: 'var(--blue)', background: 'var(--blue-dim)', borderRadius: 'var(--r-xs)', padding: isMobile ? '1px 6px' : '1px 6px', marginTop: 2, display: isMobile ? 'inline-block' : 'block', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? 140 : '100%', whiteSpace: 'nowrap', textAlign: 'center' }}>
+              {worker.employees.section}
             </div>
           )}
         </div>
         {/* remove button — leader+ */}
         {can('management', 'assign_special_task', role) && (
           <button onClick={(e) => { e.stopPropagation(); removeSpecialTask(worker); }}
-            style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: '50%', background: 'rgba(239,68,68,0.85)', border: 'none', color: '#fff', fontSize: 11, lineHeight: '22px', textAlign: 'center', cursor: 'pointer', padding: 0 }}>
+            style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: '50%', background: 'var(--red-line)', border: 'none', color: '#fff', fontSize: 11, lineHeight: '22px', textAlign: 'center', cursor: 'pointer', padding: 0 }}>
             ✕
           </button>
         )}
@@ -1089,19 +1133,20 @@ export default function Management() {
         onDragStart={!isMobile && isLiveView ? (e) => handleDragStart(e, worker) : undefined}
         onDragEnd={!isMobile ? handleDragEnd : undefined}
         onMouseEnter={!isMobile ? (e) => onHoverEnter(e, worker) : undefined}
+        onMouseMove={!isMobile ? onHoverMove : undefined}
         onMouseLeave={!isMobile ? onHoverLeave : undefined}
         onClick={() => isLiveView && handlePoolTap(worker)}
         style={{
           position: 'relative',
           width: '100%',
           padding: '8px 6px 6px',
-          background: isSelected ? 'rgba(77,159,255,0.22)' : 'rgba(8,8,14,0.88)',
-          border: isSelected ? '2px solid #4d9fff' : '1.5px solid rgba(77,159,255,0.45)',
-          borderLeft: isSelected ? '4px solid #4d9fff' : '4px solid rgba(77,159,255,0.55)',
-          borderRadius: 8,
+          background: isSelected ? 'var(--blue-dim)' : 'rgba(8,8,14,0.88)',
+          border: isSelected ? '2px solid var(--blue)' : '1.5px solid var(--blue-line)',
+          borderLeft: isSelected ? '4px solid var(--blue)' : '4px solid var(--blue-line)',
+          borderRadius: 'var(--r-md)',
           cursor: isMobile ? 'pointer' : 'grab',
           display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-          boxShadow: isSelected ? '0 0 0 3px rgba(77,159,255,0.3), 0 2px 8px rgba(0,0,0,0.5)' : '0 2px 8px rgba(0,0,0,0.5)',
+          boxShadow: isSelected ? '0 0 0 3px var(--blue-line), 0 2px 8px rgba(0,0,0,0.5)' : '0 2px 8px rgba(0,0,0,0.5)',
           userSelect: 'none',
           transition: 'all 0.15s',
           transform: isSelected ? 'scale(1.04)' : 'scale(1)',
@@ -1109,31 +1154,31 @@ export default function Management() {
       >
         {/* photo */}
         {worker.employees?.image_url
-          ? <img src={worker.employees.image_url} style={{ width: POOL_PHOTO_SZ, height: POOL_PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `3px solid ${isSelected ? '#4d9fff' : 'rgba(77,159,255,0.7)'}`, boxShadow: isSelected ? '0 0 10px rgba(77,159,255,0.5)' : 'none', flexShrink: 0, display: 'block' }} />
-          : <div style={{ width: POOL_PHOTO_SZ, height: POOL_PHOTO_SZ, borderRadius: '50%', background: 'rgba(77,159,255,0.15)', border: '3px solid rgba(77,159,255,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>👤</div>
+          ? <img src={worker.employees.image_url} style={{ width: POOL_PHOTO_SZ, height: POOL_PHOTO_SZ, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `3px solid ${isSelected ? 'var(--blue)' : 'var(--blue-line)'}`, boxShadow: isSelected ? '0 0 10px var(--blue-line)' : 'none', flexShrink: 0, display: 'block' }} />
+          : <div style={{ width: POOL_PHOTO_SZ, height: POOL_PHOTO_SZ, borderRadius: '50%', background: 'var(--blue-dim)', border: '3px solid var(--blue-line)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>👤</div>
         }
         {/* header: name */}
-        <div style={{ width: '100%', fontSize: 11, fontWeight: 700, color: isSelected ? '#4d9fff' : '#c8c8d0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center', flexShrink: 0 }}>
+        <div style={{ width: '100%', fontSize: 11, fontWeight: 700, color: isSelected ? 'var(--blue)' : '#c8c8d0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textAlign: 'center', flexShrink: 0 }}>
           {worker.employees?.name?.split(' ')[0] ?? '?'}
         </div>
         {/* team badge */}
         {worker.employees?.team && (
-          <div style={{ fontSize: 11, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.18)', borderRadius: 3, padding: '1px 6px', flexShrink: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', borderRadius: 'var(--r-xs)', padding: '1px 6px', flexShrink: 0 }}>
             Team {worker.employees.team}
           </div>
         )}
         {/* 🤝 ยืมตัวมาจากไลน์อื่นกะนี้ (line_helpers) */}
         {helperMap[worker.employee_id] && (
           <div title={`ยืมตัวจากไลน์ ${allLines.find(l => l.id === worker.employees?.line_id)?.name || 'อื่น'} มาช่วยกะนี้`}
-            style={{ fontSize: 11, fontWeight: 800, color: '#06b6d4', background: 'rgba(6,182,212,0.15)', borderRadius: 3, padding: '1px 6px', flexShrink: 0, whiteSpace: 'nowrap' }}>
-            🤝 ยืมตัว
+            style={{ fontSize: 11, fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', borderRadius: 'var(--r-xs)', padding: '1px 6px', flexShrink: 0, whiteSpace: 'nowrap' }}>
+            ยืมตัว
           </div>
         )}
         {/* assign to special task */}
         {can('management', 'assign_special_task', role) && (
           <button onClick={(e) => { e.stopPropagation(); setSpecialModal(worker); setSpecialTaskType('5ส'); }}
             title="กำหนดงานนอกไลน์"
-            style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: '50%', background: 'rgba(245,158,11,0.9)', border: '1px solid rgba(0,0,0,0.3)', color: '#fff', fontSize: 11, lineHeight: '22px', textAlign: 'center', cursor: 'pointer', padding: 0 }}>
+            style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: '50%', background: 'var(--amber-line)', border: '1px solid rgba(0,0,0,0.3)', color: '#fff', fontSize: 11, lineHeight: '22px', textAlign: 'center', cursor: 'pointer', padding: 0 }}>
             🏷
           </button>
         )}
@@ -1153,14 +1198,15 @@ export default function Management() {
         onDragStart={!isMobile && isLiveView ? (e) => handleDragStart(e, worker) : undefined}
         onDragEnd={!isMobile ? handleDragEnd : undefined}
         onMouseEnter={!isMobile ? (e) => onHoverEnter(e, worker, fit, stationName) : undefined}
+        onMouseMove={!isMobile ? onHoverMove : undefined}
         onMouseLeave={!isMobile ? onHoverLeave : undefined}
         style={{ position: 'relative', width: size, height: size, cursor: isMobile ? 'pointer' : (isLiveView ? 'grab' : 'default'), userSelect: 'none' }}
         title={pend4m ? `⏳ รออนุมัติ 4M — ${pend4m.description}` : undefined}
       >
         {/* photo only — score & name live in the hover popup card + the fit badge below the pill */}
         {worker.employees?.image_url
-          ? <img src={worker.employees.image_url} className={pend4m ? 'person-alarm-amber' : undefined} style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', pointerEvents: 'none', border: `${ring}px solid ${fc}`, boxShadow: `0 0 8px ${fc}88`, display: 'block', background: '#1a1a1a' }} />
-          : <div className={pend4m ? 'person-alarm-amber' : undefined} style={{ width: size, height: size, borderRadius: '50%', background: `${fc}22`, border: `${ring}px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.max(14, Math.round(size * 0.4)), fontWeight: 800, color: fc }}>{(worker.employees?.name || '?')[0]}</div>
+          ? <img src={worker.employees.image_url} className={pend4m ? 'person-alarm-amber' : undefined} style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', pointerEvents: 'none', border: `${ring}px solid ${fc}`, boxShadow: `0 0 8px ${tint(fc, 'line')}`, display: 'block', background: '#1a1a1a' }} />
+          : <div className={pend4m ? 'person-alarm-amber' : undefined} style={{ width: size, height: size, borderRadius: '50%', background: `${tint(fc, 'dim')}`, border: `${ring}px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.max(14, Math.round(size * 0.4)), fontWeight: 800, color: fc }}>{(worker.employees?.name || '?')[0]}</div>
         }
         {pend4m && <span style={{ position: 'absolute', bottom: -3, left: '50%', transform: 'translateX(-50%)', fontSize: Math.max(11, Math.round(size * 0.22)), lineHeight: 1, zIndex: 3 }}>⏳</span>}
       </div>
@@ -1198,11 +1244,11 @@ export default function Management() {
   const vacantStationCount = dynamicStations.filter(st => !workers.some(w => String(w.assigned_line) === String(st.id))).length;
 
   const STATUS_FILTERS = [
-    { key: 'man',     on: filterMan,     toggle: () => setFilterMan(v => !v),     label: 'MAN',     icon: '👤', color: '#4d9fff', count: vacantStationCount, title: 'แสดง/ซ่อนจุดงาน (คน) บนผัง — ตัวเลข = จุดที่ยังไม่มีคนประจำ' },
+    { key: 'man',     on: filterMan,     toggle: () => setFilterMan(v => !v),     label: 'MAN',     icon: '👤', color: 'var(--blue)', count: vacantStationCount, title: 'แสดง/ซ่อนจุดงาน (คน) บนผัง — ตัวเลข = จุดที่ยังไม่มีคนประจำ' },
     // Machine กับ Jig/Fixture โชว์ทีละชั้น — เปิดชั้นหนึ่ง = ปิดอีกชั้น (robot ติดจิ๊กปลายแขน วาดพร้อมกันหมุดทับกันจนอ่านไม่ออก)
-    { key: 'machine', on: filterMachine, toggle: () => { setFilterMachine(v => !v); setFilterJig(false); }, label: 'MACHINE', icon: '⚙️', color: '#f59e0b', count: 0,
+    { key: 'machine', on: filterMachine, toggle: () => { setFilterMachine(v => !v); setFilterJig(false); }, label: 'MACHINE', icon: '⚙️', color: 'var(--amber)', count: 0,
       title: `ชั้นเครื่องจักร (ทีม MTN) — ${mcSplit.machine.length} จุด${mcSplit.unknown.length ? `\n⚠️ ${mcSplit.unknown.length} จุดไม่อยู่ในทะเบียนเครื่อง/ไม่ระบุชนิด → วาดในชั้นนี้ (กรอบประ)` : ''}${kindErr ? `\n⚠️ โหลดชนิดอุปกรณ์ไม่ได้ (${kindErr}) — แยกชั้นไม่ได้` : ''}\nเปิดชั้นนี้ = ปิดชั้น Jig/Fixture` },
-    { key: 'jig',     on: filterJig,     toggle: () => { setFilterJig(v => !v); setFilterMachine(false); },     label: 'JIG',     icon: '🗜️', color: '#a78bfa', count: 0,
+    { key: 'jig',     on: filterJig,     toggle: () => { setFilterJig(v => !v); setFilterMachine(false); },     label: 'JIG',     icon: '🗜️', color: 'var(--blue)', count: 0,
       title: `ชั้น Jig/Fixture (ทีม JIG MTN) — ${mcSplit.jig.length} จุด\nตัดสินจาก "ชนิดอุปกรณ์" ในทะเบียน (/equipment?tab=jig)\nเปิดชั้นนี้ = ปิดชั้นเครื่องจักร` },
   ];
 
@@ -1217,8 +1263,8 @@ export default function Management() {
           title={f.title}
           style={{
             position: 'relative', flexShrink: 0,
-            width: 36, height: 36, borderRadius: 8,
-            background: f.on ? `${f.color}38` : 'var(--bg3)',
+            width: 36, height: 36, borderRadius: 'var(--r-md)',
+            background: f.on ? `${tint(f.color, 'line')}` : 'var(--bg3)',
             border: f.on ? `1px solid ${f.color}` : '1px solid var(--border2)',
             color: f.on ? f.color : 'var(--text2)', fontSize: 16,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1231,7 +1277,7 @@ export default function Management() {
               position: 'absolute', top: -4, right: -4,
               background: f.color, color: '#fff',
               fontSize: 11, fontWeight: 800,
-              minWidth: 18, height: 18, borderRadius: 9,
+              minWidth: 18, height: 18, borderRadius: 'var(--r-md)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               padding: '0 3px', lineHeight: 1,
             }}>
@@ -1247,26 +1293,61 @@ export default function Management() {
         title={(showPills ? 'ซ่อน' : 'โชว์') + 'ป้ายชื่อทุกจุดบนผัง (คน/เครื่องจักร)\nป้ายเตือน (เครื่อง Downtime) แสดงเสมอ'}
         style={{
           position: 'relative', flexShrink: 0,
-          width: 36, height: 36, borderRadius: 8,
+          width: 36, height: 36, borderRadius: 'var(--r-md)',
           background: showPills ? 'rgba(148,163,184,0.28)' : 'var(--bg3)',
-          border: showPills ? '1px solid #94a3b8' : '1px solid var(--border2)',
+          border: showPills ? '1px solid var(--muted)' : '1px solid var(--border2)',
           color: showPills ? 'var(--text)' : 'var(--text2)', fontSize: 16,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           cursor: 'pointer', boxShadow: 'var(--shadow-sm)', outline: 'none',
         }}
       >
+        {/* ⚠️ ปุ่มไอคอนล้วน — ห้ามตัด 🏷️ ออก (09/11: กวาด "ตัด emoji บนปุ่ม" e839b388 ลบไปแล้วปุ่มเหลือกล่องเปล่า user ถามว่าคืออะไร) */}
         🏷️
         <ToggleDot on={showPills} />
       </button>
     </div>
   );
 
-  // desktop: marginTop -14 ล้าง paddingTop ของ main → แถบ pool/ผัง เต็มจอเสมอ ขอบบน-ล่างไม่ตัดกลางอากาศ (เนี๊ยบเท่า sidebar)
-  // · board box จึงเริ่มที่ ~top10 → 🔔 (top10) เสมอขอบบนตู้พอดี
-  // · ตอนพับ sidebar (ไม่มี sidebar ซ้าย) → เว้น gutter ซ้าย 52 ให้ปุ่ม ☰ (fixed left:14) ไม่ลอยทับหัวตู้/pool
+  /* 🧭 หัวเพจมาตรฐาน (09/11 · คำสั่ง user "ทำหัวเพจ management ให้เหมือนหน้าอื่น") — ถอดออกจากข้อยกเว้น "บอร์ดจอ TV" (UI §6.8)
+     โครง: คอลัมน์สูงเต็มจอ = [ <Page full> หัวเพจ ] + [ แถว pool/ผัง เดิม flex:1 ]
+     · หัวเพจอยู่ใน <Page width="full"> ⇒ ตำแหน่งชื่อหน้า/breadcrumb ตรงกับทุกหน้า (ระยะขอบจาก .page-content)
+     · เดิม desktop ใช้ marginTop -14 ล้าง paddingTop ของ main ให้ตู้ชนขอบบน — มีหัวเพจแล้วไม่ต้องล้าง (เหมือนหน้าอื่น)
+       ⇒ สูง calc(100vh - 14px) ทั้ง 2 จอ = ก้นแถวยังชนขอบล่างจอพอดี ไม่มี scroll ซ้อน
+     · ตอนพับ sidebar (ไม่มี sidebar ซ้าย) → เว้น gutter ซ้าย 52 ให้ปุ่ม ☰ (fixed left:14) ไม่ลอยทับ pool (เฉพาะแถวเนื้อหา) */
   const collapsedGutter = !isMobile && !sidebarOpen ? 52 : 0;
   return (
-    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', height: isMobile ? 'calc(100vh - 14px)' : '100vh', marginTop: isMobile ? 0 : -14, paddingLeft: collapsedGutter, background: 'var(--bg)', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: 'calc(100vh - 14px)', background: 'var(--bg)', overflow: 'hidden' }}>
+    {/* paddingRight 80 (desktop) = ขอบปกติ 28 + 52 กันคอลัมน์ 🔔/ปุ่มกรองด้านขวา (fixed right:14 w36) ไม่ให้แถบกรองลอดใต้
+        (หัวเรื่องของ PageHeader กัน 52 ให้เองอยู่แล้ว แต่แถบกรองไม่ได้กัน) */}
+    <Page width="full" style={{ paddingBottom: 0, flexShrink: 0, paddingRight: isMobile ? undefined : 80 }}>
+      {/* 🔎 แถบกรอง (09/11 · user เลือกจากภาพตัวอย่าง "ไลน์ · กะ · วันที่ · มุมมอง แถวเดียว")
+          เดิมช่องเลือกไลน์ + ปุ่มกะอยู่ในแผงซ้าย และปุ่มสลับมุมมองเป็นแถวแยกเหนือผัง — ย้ายขึ้นมาตามลำดับมาตรฐาน
+          ชื่อหน้า → แถบกรอง → เนื้อหา (UI-STANDARD §2) · ปุ่มมุมมองยังโผล่เฉพาะตอนบอร์ดเบียดผัง (boardWouldSquish) เหมือนเดิม
+          🔴 ปุ่มกะต้องโผล่เสมอเมื่อเลือกไลน์แล้ว แม้กะนั้นไม่มีคน (ไม่งั้นสลับไปกะว่างแล้วไม่มีทางกลับ · 27/08) */}
+      <PageHeader title="จัดการไลน์ผลิต" icon="🔄"
+        sub="จัดกำลังคนลงจุดงานบนผังไลน์ · บอร์ด Heijunka · บันทึก 4M ของไลน์ที่เลือก"
+        filters={<>
+          {/* เลือกได้ทั้งไลน์หลัก (view รวมไลน์ย่อยทั้งหมด) และไลน์ย่อย — รายการใน `lines` ถูก scope ไว้แล้วตอน fetch
+              <LineSelect> = ลำดับชั้น/ปลดระวาง/ค่าไม่รู้จัก · ไม่มี option ว่าง */}
+          <LineSelect lines={lines} value={selectedLine} placeholder={null} onChange={setSelectedLine} />
+          {selectedLine && (
+            <Segmented value={viewShift} onChange={setViewShift} label="กะที่ดู"
+              options={[{ value: 'day', label: 'กะเช้า' }, { value: 'night', label: 'กะดึก' }]} />
+          )}
+          {selectedLine && (
+            <span title="เปลี่ยนวันที่ได้ที่แถบ Heijunka" style={{ fontSize: 12, color: isLiveView ? 'var(--muted)' : 'var(--blue)', fontWeight: isLiveView ? 400 : 700, whiteSpace: 'nowrap' }}>
+              {boardDate}{boardDate === todayWorkDate ? ' (วันนี้)' : ' · ย้อนหลัง'}
+            </span>
+          )}
+          {boardWouldSquish && (
+            <span title="kanban เยอะ — สลับดูทีละมุมเต็มจอ" style={{ display: 'contents' }}>
+              <Segmented value={mainView} onChange={switchView} label="มุมมอง"
+                options={[{ value: 'map', label: 'ผังไลน์ + คน' }, { value: 'heijunka', label: 'Heijunka' }]} />
+            </span>
+          )}
+        </>} />
+    </Page>
+    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', width: '100%', flex: 1, minHeight: 0, paddingLeft: collapsedGutter, background: 'var(--bg)', overflow: 'hidden' }}>
       <DowntimeSiren mode="open_15min" />
 
       {/* ── ปุ่มกรอง (desktop) — คอลัมน์ต่อจาก 🔔 ตรงกันเป๊ะ (right:14 เท่า 🔔, เริ่มใต้ 🔔 ที่ top10+h36+gap8=54)
@@ -1285,23 +1366,18 @@ export default function Management() {
           <button
             onClick={() => setPanelCollapsed(true)}
             title="ย่อแถบไลน์ผลิต"
-            style={{ alignSelf: 'flex-end', marginBottom: 6, flexShrink: 0, width: 32, height: 32, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none' }}>
+            style={{ alignSelf: 'flex-end', marginBottom: 6, flexShrink: 0, width: 32, height: 32, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none' }}>
             ◀
           </button>
         )}
         {!panelCollapsed && (<>
         <div style={{ marginBottom: 10, flexShrink: 0 }}>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.08em' }}>ไลน์ผลิต</div>
-          {/* เลือกได้ทั้งไลน์หลัก (view รวมไลน์ย่อยทั้งหมด) และไลน์ย่อย (view ไลน์ย่อย+ไลน์หลัก)
-              leader ก็สลับดูภายในครอบครัวไลน์ตัวเองได้ — รายการใน `lines` ถูก scope ไว้แล้วตอน fetch */}
-          {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง/ค่าไม่รู้จัก) — ไม่มี option ว่าง เหมือนเดิม */}
-          <LineSelect lines={lines} value={selectedLine} placeholder={null} onChange={setSelectedLine}
-            style={{ width: '100%', padding: '6px 8px', borderRadius: 6, fontSize: 13, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }} />
+          {/* ช่องเลือกไลน์ย้ายขึ้นแถบกรองใต้หัวเพจแล้ว (09/11) — ที่นี่เหลือคำเตือนอ่านทะเบียนไม่ได้ + หมายเหตุไลน์ย่อย/ไลน์หลัก */}
           {lineLoadErr && (
             <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 5, lineHeight: 1.5 }}>
               ⚠️ อ่านทะเบียนไลน์ผลิตไม่สำเร็จ — รายการที่เห็นอาจไม่ครบ (ไม่ใช่ว่าไลน์ถูกลบ)
               <button onClick={() => retryLinesRef.current?.()}
-                style={{ marginLeft: 6, fontSize: 11, padding: '1px 8px', borderRadius: 5, cursor: 'pointer',
+                style={{ marginLeft: 6, fontSize: 11, padding: '1px 8px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                          background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
                 ลองใหม่
               </button>
@@ -1309,21 +1385,21 @@ export default function Management() {
           )}
           {mergedChildNames.length > 0 && (
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-              🔗 รวมไลน์ย่อย: {mergedChildNames.join(', ')}
+              รวมไลน์ย่อย: {mergedChildNames.join(', ')}
             </div>
           )}
           {mergedParentNames.length > 0 && (
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-              🔗 รวมจุดของไลน์หลัก: {mergedParentNames.join(', ')}
+              รวมจุดของไลน์หลัก: {mergedParentNames.join(', ')}
             </div>
           )}
         </div>
 
         {/* instruction banner on mobile when worker selected */}
         {isMobile && selectedWorker && (
-          <div style={{ marginBottom: 8, padding: '8px 12px', borderRadius: 8, background: 'rgba(77,159,255,0.15)', border: '1px solid rgba(77,159,255,0.4)', fontSize: 12, fontWeight: 600, color: '#4d9fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-            <span>👆 แตะ station ด้านล่างเพื่อจัดตำแหน่ง</span>
-            <button onClick={() => setSelectedWorker(null)} style={{ background: 'none', border: 'none', color: '#4d9fff', fontSize: 18, cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button>
+          <div style={{ marginBottom: 8, padding: '8px 12px', borderRadius: 'var(--r-md)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', fontSize: 12, fontWeight: 600, color: 'var(--blue)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+            <span>แตะ station ด้านล่างเพื่อจัดตำแหน่ง</span>
+            <button onClick={() => setSelectedWorker(null)} style={{ background: 'none', border: 'none', color: 'var(--blue)', fontSize: 18, cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button>
           </div>
         )}
 
@@ -1332,33 +1408,17 @@ export default function Management() {
           onDrop={!isMobile ? (e) => handleDrop(e, 'Pool') : undefined}
           style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: 0 }}
         >
-          {/* ── วัน/กะที่กำลังดู (2026-08-27 · feedback "เลือกกะไม่ได้ แสดงแค่กะเช้า") ──
-               ต้อง render เสมอ แม้กะนั้นไม่มีคนสักคน — ไม่งั้นสลับไปกะดึกที่ว่างแล้ว
-               จะไม่มีปุ่มให้สลับกลับ (ทางตันที่มองไม่เห็น) */}
-          {selectedLine && (
-            <div style={{ marginBottom: 8, padding: '7px 9px', flexShrink: 0, borderRadius: 10,
-              background: isLiveView ? 'var(--bg3)' : 'rgba(168,85,247,0.12)',
-              border: `1px solid ${isLiveView ? 'var(--border2)' : 'rgba(168,85,247,0.5)'}` }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text2)', fontFamily: 'var(--font-display)' }}>กะที่ดู</span>
-                <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
-                  {[['day', '☀️ เช้า'], ['night', '🌙 ดึก']].map(([k, t]) => (
-                    <button key={k} onClick={() => setViewShift(k)}
-                      style={{ padding: '3px 10px', borderRadius: 7, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
-                        background: viewShift === k ? 'var(--accent)' : 'var(--bg)',
-                        border: `1px solid ${viewShift === k ? 'var(--accent)' : 'var(--border)'}`,
-                        color: viewShift === k ? '#08130a' : 'var(--text2)' }}>{t}</button>
-                  ))}
-                </div>
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
-                📅 {boardDate}{boardDate === todayWorkDate ? ' (วันนี้)' : ''} · เปลี่ยนวันที่ได้ที่แถบ Heijunka ด้านบน
-              </div>
+          {/* ── โหมดดูย้อนหลัง (เดิม = กล่อง "กะที่ดู" ที่มีปุ่มกะ) ──
+               09/11: ปุ่มกะ + วันที่ ย้ายขึ้นแถบกรองใต้หัวเพจแล้ว (โผล่เสมอเมื่อเลือกไลน์ — กฎ 27/08 "ห้ามทางตัน" ยังอยู่ที่นั่น)
+               ⇒ กล่องนี้เหลือเฉพาะตอนดูย้อนหลัง: บอกว่าอ่านอย่างเดียว + ปุ่มกลับมาดูสด */}
+          {selectedLine && !isLiveView && (
+            <div style={{ marginBottom: 8, padding: '7px 9px', flexShrink: 0, borderRadius: 'var(--r-md)',
+              background: 'var(--blue-dim)', border: '1px solid var(--blue-line)' }}>
               {!isLiveView && (
-                <div style={{ fontSize: 11, color: '#a855f7', marginTop: 4, lineHeight: 1.5 }}>
-                  👁 โหมดย้อนหลัง — <b>อ่านอย่างเดียว จัดคนไม่ได้</b> · แสดงจุดงานสุดท้ายของกะนั้น
+                <div style={{ fontSize: 11, color: 'var(--blue)', lineHeight: 1.5 }}>
+                  โหมดย้อนหลัง — <b>อ่านอย่างเดียว จัดคนไม่ได้</b> · แสดงจุดงานสุดท้ายของกะนั้น
                   <button onClick={() => { setBoardDate(todayWorkDate); setViewShift(getCurrentShift()); }}
-                    style={{ marginLeft: 6, padding: '2px 9px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>
+                    style={{ marginLeft: 6, padding: '2px 9px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>
                     ⟳ กลับมาดูสด
                   </button>
                 </div>
@@ -1368,9 +1428,9 @@ export default function Management() {
 
           {/* ── กำลังคนทั้งกลุ่มไลน์ (รวมไลน์ย่อย) + รายชื่อคนไลน์ย่อยที่มีผังแยก (2026-08-03) ── */}
           {!isMobile && selectedLine && (familyManpower.total > 0 || familyManpower.hidden.length > 0) && (
-            <div style={{ marginBottom: 8, padding: '8px 10px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 10, flexShrink: 0 }}>
+            <div style={{ marginBottom: 8, padding: '8px 10px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', flexShrink: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>👷 กำลังคนกลุ่มนี้</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>กำลังคนกลุ่มนี้</span>
                 <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent)' }}>{familyManpower.total} คน</span>
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
@@ -1384,9 +1444,9 @@ export default function Management() {
                     return (
                       <div key={h.lineName}>
                         <div onClick={() => setOpenSubLine(open ? null : h.lineName)}
-                          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '4px 7px', borderRadius: 7, background: 'var(--bg2)', border: '1px solid var(--border2)' }}>
+                          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '4px 7px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border2)' }}>
                           <span style={{ minWidth: 0, fontSize: 11.5, fontWeight: 700, color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{open ? '▾' : '▸'} {h.lineName}</span>
-                          <span style={{ fontSize: 11.5, fontWeight: 800, color: '#4d9fff', flexShrink: 0, marginLeft: 6 }}>{h.workers.length} คน</span>
+                          <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--blue)', flexShrink: 0, marginLeft: 6 }}>{h.workers.length} คน</span>
                         </div>
                         {open && (
                           <div style={{ padding: '4px 6px 2px 12px', display: 'grid', gap: 3 }}>
@@ -1411,7 +1471,7 @@ export default function Management() {
           {/* มือถือ + pool ว่างทั้งสองส่วน: ยุบเหลือแถบเดียว คืนพื้นที่ให้ผังคน (desktop เหมือนเดิม) */}
           {isMobile && poolWorkers.length === 0 && specialWorkers.length === 0 ? (
             <div style={{ fontSize: 11, color: 'var(--muted)', padding: '2px 0', display: 'flex', gap: 10, alignItems: 'center' }}>
-              <span>🔵 พร้อมทำงาน 0</span><span style={{ color: 'rgba(245,158,11,0.7)' }}>🟡 งานนอกไลน์ 0</span><span>— ไม่มีพนักงานใน Pool</span>
+              <span>🔵 พร้อมทำงาน 0</span><span style={{ color: 'var(--amber-line)' }}>🟡 งานนอกไลน์ 0</span><span>— ไม่มีพนักงานใน Pool</span>
             </div>
           ) : (<>
           {/* Normal pool — 70% */}
@@ -1419,7 +1479,7 @@ export default function Management() {
             <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🔵 พร้อมทำงาน</span>
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>{poolWorkers.length} คน</span>
           </div>
-          <div style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: isUltra ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', flexDirection: 'column', gap: isWide ? 7 : 6, ...(isMobile ? { maxHeight: '28vh' } : { flex: '7 1 0', minHeight: 0, alignContent: 'start' }) }}>
+          <div style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: POOL_GRID_COLS(isUltra), flexDirection: 'column', gap: isWide ? 7 : 6, ...(isMobile ? { maxHeight: '28vh' } : { flex: '7 1 0', minHeight: 0, alignContent: 'start' }) }}>
             {poolWorkers.map(w => <PoolCard key={w.id} worker={w} />)}
             {poolWorkers.length === 0 && (
               <div style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'center', padding: '8px 0', gridColumn: '1/-1' }}>ไม่มีพนักงานใน Pool</div>
@@ -1436,10 +1496,10 @@ export default function Management() {
               const w = workers.find(wk => String(wk.id) === String(logId));
               if (w) { setSpecialModal(w); setSpecialTaskType('5ส'); setDraggingWorker(null); }
             } : undefined}
-            style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed rgba(245,158,11,0.4)', flexShrink: 0 }}
+            style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--amber-line)', flexShrink: 0 }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>🟡 งานนอกไลน์</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', fontFamily: 'var(--font-display)' }}>🟡 งานนอกไลน์</span>
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>{specialWorkers.length} คน</span>
             </div>
             {can('management', 'assign_manpower', role) && isLiveView && specialWorkers.length > 0 && (
@@ -1455,16 +1515,16 @@ export default function Management() {
               const w = workers.find(wk => String(wk.id) === String(logId));
               if (w) { setSpecialModal(w); setSpecialTaskType('5ส'); setDraggingWorker(null); }
             } : undefined}
-            style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: isUltra ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)', flexDirection: 'column', gap: isWide ? 7 : 6, ...(isMobile ? { maxHeight: '15vh' } : { flex: '3 1 0', minHeight: 0, alignContent: 'start' }) }}>
+            style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: POOL_GRID_COLS(isUltra), flexDirection: 'column', gap: isWide ? 7 : 6, ...(isMobile ? { maxHeight: '15vh' } : { flex: '3 1 0', minHeight: 0, alignContent: 'start' }) }}>
             {specialWorkers.map(w => <SpecialCard key={w.id} worker={w} />)}
             {specialWorkers.length === 0 && (
-              <div style={{ color: 'rgba(245,158,11,0.5)', fontSize: 11, textAlign: 'center', padding: '6px 0', gridColumn: '1/-1' }}>—</div>
+              <div style={{ color: 'var(--amber-line)', fontSize: 11, textAlign: 'center', padding: '6px 0', gridColumn: '1/-1' }}>—</div>
             )}
             {/* mobile: assign button */}
             {isMobile && can('management', 'assign_special_task', role) && selectedWorker && !specialEmpIds.has(selectedWorker.employee_id) && (
               <button onClick={() => { setSpecialModal(selectedWorker); setSpecialTaskType('5ส'); }}
-                style={{ marginTop: 6, padding: '8px', borderRadius: 8, background: 'rgba(245,158,11,0.15)', border: '1px dashed rgba(245,158,11,0.5)', color: '#f59e0b', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                🏷 กำหนดงานนอกไลน์ให้ผู้ถูกเลือก
+                style={{ marginTop: 6, padding: '8px', borderRadius: 'var(--r-md)', background: 'var(--amber-dim)', border: '1px dashed var(--amber-line)', color: 'var(--amber)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                กำหนดงานนอกไลน์ให้ผู้ถูกเลือก
               </button>
             )}
           </div>
@@ -1478,19 +1538,19 @@ export default function Management() {
             {/* 4M เป็นการบันทึก "สิ่งที่เกิดตอนนี้" — ยังกดได้ในโหมดย้อนหลัง แต่ต้องบอกว่าจะลงวันไหน
                 ไม่งั้นบันทึกแล้วไม่โผล่ในลิสต์ที่กำลังดู แล้วเข้าใจว่าบันทึกไม่ติด (ห้ามเงียบ) */}
             {!isLiveView && (
-              <div style={{ fontSize: 11, color: '#a855f7', marginBottom: 6, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 11, color: 'var(--blue)', marginBottom: 6, lineHeight: 1.5 }}>
                 ⚠️ กำลังดูย้อนหลัง — บันทึกใหม่จะลงวันที่ <b>วันนี้</b> ไม่โผล่ในรายการของ {boardDate}
               </div>
             )}
             {LINE_4M_CATEGORIES.map(cat => (
               <button key={cat} onClick={() => { setShow4MModal({ lineName: selectedLine }); setLog4MForm({ category: cat, description: '' }); }}
                 style={{
-                  width: '100%', marginBottom: 5, padding: isWide ? '8px 10px' : '6px 8px', fontSize: isWide ? 12 : 11, textAlign: 'left', borderRadius: 6, cursor: 'pointer',
-                  background: cat === 'Machine' ? 'rgba(245,158,11,0.12)' : cat === 'Material' ? 'rgba(34,197,94,0.12)' : 'rgba(139,92,246,0.12)',
-                  color: cat === 'Machine' ? 'var(--amber)' : cat === 'Material' ? 'var(--green)' : '#c084fc',
-                  border: `1px solid ${cat === 'Machine' ? 'rgba(245,158,11,0.3)' : cat === 'Material' ? 'rgba(34,197,94,0.3)' : 'rgba(139,92,246,0.3)'}`,
+                  width: '100%', marginBottom: 5, padding: isWide ? '8px 10px' : '6px 8px', fontSize: isWide ? 12 : 11, textAlign: 'left', borderRadius: 'var(--r-md)', cursor: 'pointer',
+                  background: cat === 'Machine' ? 'var(--amber-dim)' : cat === 'Material' ? 'var(--green-dim)' : 'var(--blue-dim)',
+                  color: cat === 'Machine' ? 'var(--amber)' : cat === 'Material' ? 'var(--green)' : 'var(--blue)',
+                  border: `1px solid ${cat === 'Machine' ? 'var(--amber-line)' : cat === 'Material' ? 'var(--green-line)' : 'var(--blue-line)'}`,
                 }}>
-                {cat === 'Machine' ? '⚙️' : cat === 'Material' ? '📦' : '📋'} {cat}
+                <Icon glyph={cat === 'Machine' ? '⚙️' : cat === 'Material' ? '📦' : '📋'} size={14} style={{ verticalAlign: '-2px', marginRight: 6 }} />{cat}
               </button>
             ))}
           </div>
@@ -1502,11 +1562,13 @@ export default function Management() {
             ⚠️ เช็คสิทธิ์ก่อน ไม่มีสิทธิ์ = ไม่โชว์ปุ่ม (ห้ามพาไปแล้วโดนเด้ง) */}
         {selectedLine && canAccessPage('/daily-report', role) && (
           <div style={{ paddingTop: 10, marginTop: 10, borderTop: '1px solid var(--border)', flexShrink: 0 }}>
-            <button onClick={() => navigate(`/daily-report?line=${encodeURIComponent(selectedLine)}`)}
-              title={`บันทึกผลผลิต / Downtime ของ ${selectedLine}`}
-              style={{ width: '100%', padding: isWide ? '8px 10px' : '6px 8px', fontSize: isWide ? 12 : 11, textAlign: 'left', borderRadius: 6, cursor: 'pointer',
-                background: 'rgba(14,165,233,0.12)', color: '#38bdf8', border: '1px solid rgba(14,165,233,0.3)', fontWeight: 700 }}>
-              📊 Daily Report ({selectedLine})
+            {/* ปุ่มคำสั่งมาตรฐาน `.pg-btn` (UI §6.35 · 09/11 feedback user "ปุ่มฝั่งนี้ยังไม่มาตรฐาน" — เดิมกล่องฟ้าวาดเอง)
+                ไอคอนเป็น SVG สีเดียวกับป้าย · ชื่อไลน์ยาวตัด … (เต็มชื่ออยู่ใน title) */}
+            <button type="button" className="pg-btn" onClick={() => navigate(`/daily-report?line=${encodeURIComponent(selectedLine)}`)}
+              title={`Daily Report ของ ${selectedLine} — บันทึกผลผลิต / Downtime`}
+              style={{ width: '100%', cursor: 'pointer' }}>
+              <Icon glyph="📊" size={15} />
+              <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>Daily Report ({selectedLine})</span>
             </button>
           </div>
         )}
@@ -1519,12 +1581,12 @@ export default function Management() {
         {/* ปุ่มขยายแถบไลน์ผลิตกลับ (โผล่เฉพาะตอนย่อ pool — pool กว้าง 0) · สไตล์เดียวกับ ☰/▶ อื่น */}
         {!isMobile && panelCollapsed && (
           <button onClick={() => setPanelCollapsed(false)} title="ขยายแถบไลน์ผลิต"
-            style={{ alignSelf: 'flex-start', marginBottom: 8, width: 36, height: 36, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none', flexShrink: 0, boxShadow: 'var(--shadow-sm)' }}>
+            style={{ alignSelf: 'flex-start', marginBottom: 8, width: 36, height: 36, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none', flexShrink: 0, boxShadow: 'var(--shadow-sm)' }}>
             ▶
           </button>
         )}
         {autoManAlert && (
-          <div style={{ position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', background: 'rgba(77,159,255,0.95)', color: '#fff', padding: '8px 18px', borderRadius: 10, fontSize: 12, fontWeight: 600, zIndex: 200, boxShadow: 'var(--shadow-float)', whiteSpace: 'nowrap' }}>
+          <div style={{ position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', background: 'var(--blue-line)', color: '#fff', padding: '8px 18px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 600, zIndex: 200, boxShadow: 'var(--shadow-float)', whiteSpace: 'nowrap' }}>
             🆕 Man Change: {autoManAlert.name} — ประจำ {autoManAlert.station} เป็นครั้งแรก
           </div>
         )}
@@ -1536,22 +1598,8 @@ export default function Management() {
         )}
 
 
-        {/* ── ปุ่มสลับมุมมอง — โผล่เฉพาะตอนบอร์ด Heijunka สูงจนจะเบียดผังจนพัง (boardWouldSquish)
+        {/* ── ปุ่มสลับมุมมอง (ผังไลน์ + คน / Heijunka) ย้ายขึ้นแถบกรองใต้หัวเพจแล้ว (09/11) — ยังโผล่เฉพาะตอน boardWouldSquish
             ถ้าบอร์ดเตี้ยพอ → ไม่มีปุ่ม แสดงผัง+บอร์ดพร้อมกันเหมือนเดิม ── */}
-        {boardWouldSquish && (
-        <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
-          {[{ k: 'map', icon: '🗺️', label: 'ผังไลน์ + คน' }, { k: 'heijunka', icon: '📊', label: 'Heijunka' }].map(v => {
-            const active = mainView === v.k;
-            return (
-              <button key={v.k} onClick={() => switchView(v.k)}
-                style={{ padding: '6px 14px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 800, background: active ? 'var(--accent)' : 'var(--bg3)', color: active ? 'var(--accent-ink)' : 'var(--text2)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border2)'}` }}>
-                {v.icon} {v.label}
-              </button>
-            );
-          })}
-          <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>· 🎴 kanban เยอะ — สลับดูทีละมุมเต็มจอ</span>
-        </div>
-        )}
 
         {/* Heijunka: โชว์เมื่อ (แสดงคู่กัน = ไม่ squish) หรือ (โหมดสลับ + เลือก heijunka)
             · โหมดคู่ → บอร์ดสูงตามเนื้อหา (flexShrink:0) · โหมดสลับ → เต็มพื้นที่ + scroll ในตัว */}
@@ -1782,7 +1830,7 @@ export default function Management() {
                 } else if (projEndMs <= DAY_OT_END) {
                   chips.push({ color: 'var(--amber)', text: `${sLabel} คาดเสร็จ ${projLabel} — ⏰ ต้องเปิด OT ~${otMin} นาที (เลิก 17:30 → ผลิตถึง ${projLabel})` });
                 } else {
-                  chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกินกรอบ OT (20:00) ควรวางแผนยกยอด/เพิ่มกำลังผลิต` });
+                  chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — เกินกรอบ OT (20:00) ควรวางแผนยกยอด/เพิ่มกำลังผลิต` });
                 }
                 return;
               }
@@ -1805,7 +1853,7 @@ export default function Management() {
               if (projEndMs <= FRAME_END) {
                 chips.push({ color: 'var(--green)', text: `${sLabel} คาดเสร็จ ${projLabel} — จบภายในกะ (ก่อน 08:00)` });
               } else {
-                chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — 🚨 เกิน 08:00 ควรวางแผนยกยอดไปกะถัดไป` });
+                chips.push({ color: 'var(--red)', text: `${sLabel} คาดเสร็จ ${projLabel} — เกิน 08:00 ควรวางแผนยกยอดไปกะถัดไป` });
               }
             });
             return chips;
@@ -1821,23 +1869,23 @@ export default function Management() {
             <div style={{
               marginBottom: 10,
               background: 'var(--card)',
-              border: `1px solid ${totalDelayed > 0 ? 'rgba(239,68,68,0.45)' : hasOpen ? 'rgba(34,197,94,0.35)' : 'var(--border2)'}`,
-              borderRadius: 10, overflow: 'hidden',
+              border: `1px solid ${totalDelayed > 0 ? 'var(--red-line)' : hasOpen ? 'var(--green-line)' : 'var(--border2)'}`,
+              borderRadius: 'var(--r-md)', overflow: 'hidden',
             }}>
               {/* Header — ขนาดอ่านได้จากระยะยืนดูจอ ไม่ใช่ตัวจิ๋วทั้งที่พื้นที่แนวนอนเหลือเยอะ */}
               <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, background: 'var(--bg2)' }}>
                 <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>
-                  📊 Heijunka — {selectedLine}
-                  {isHistorical && <span style={{ marginLeft: 8, fontSize: 11, padding: '2px 9px', borderRadius: 10, background: 'rgba(168,85,247,0.15)', color: '#a855f7' }}>📅 ย้อนหลัง {boardDate}</span>}
+                  Heijunka — {selectedLine}
+                  {isHistorical && <span style={{ marginLeft: 8, fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-md)', background: 'var(--blue-dim)', color: 'var(--blue)' }}>ย้อนหลัง {boardDate}</span>}
                 </span>
                 <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <button onClick={() => shiftBoardDate(-1)} style={{ padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>◀</button>
+                  <button onClick={() => shiftBoardDate(-1)} style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>◀</button>
                   {/* width ต้องกำหนดเอง — index.css ตั้ง input width:100% ทั้งแอป ถ้าปล่อยไว้ช่องวันที่จะกินเต็มแถวจนปุ่มแตกเป็น 3 บรรทัด */}
                   <input type="date" value={boardDate} max={todayWd} onChange={e => e.target.value && setBoardDate(e.target.value)}
-                    style={{ width: 140, padding: '3px 8px', borderRadius: 6, fontSize: 12, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
-                  <button onClick={() => shiftBoardDate(1)} disabled={boardDate >= todayWd} style={{ padding: '3px 10px', borderRadius: 6, cursor: boardDate >= todayWd ? 'default' : 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)', opacity: boardDate >= todayWd ? 0.4 : 1 }}>▶</button>
+                    style={{ width: 140, padding: '3px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
+                  <button onClick={() => shiftBoardDate(1)} disabled={boardDate >= todayWd} style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: boardDate >= todayWd ? 'default' : 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)', opacity: boardDate >= todayWd ? 0.4 : 1 }}>▶</button>
                   {boardDate !== todayWd && (
-                    <button onClick={() => setBoardDate(todayWd)} style={{ padding: '3px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--accent)', border: '1px solid var(--accent)', color: 'var(--accent-ink)' }}>วันนี้</button>
+                    <button onClick={() => setBoardDate(todayWd)} style={{ padding: '3px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--accent)', border: '1px solid var(--accent)', color: 'var(--accent-ink)' }}>วันนี้</button>
                   )}
                   {/* ⚠️ ชิป "ดีเลย์ N ใบ" ถอดออก 30/09 — ซ้ำกับ "ยังค้าง N" ในสรุปวัน (`totalDelayed` ยังคุมสีขอบ) */}
                   {/* 📋 ขนาดของการหลุดแผน (นาที + ชิ้น + คาดจบ) — "กี่ใบ" อย่างเดียวตอบหน้างานไม่ได้ */}
@@ -1860,9 +1908,9 @@ export default function Management() {
                       const list = [...byChild[ln]].sort((a, b) => (a.shift === b.shift ? 0 : a.shift === 'day' ? -1 : 1));
                       const anyOpen = list.some(sx => sx.status === 'open');
                       return (
-                        <span key={ln} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 20, fontWeight: 700,
-                          background: anyOpen ? 'rgba(34,197,94,0.15)' : 'rgba(128,128,128,0.12)',
-                          color: anyOpen ? '#22c55e' : '#888' }}>
+                        <span key={ln} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 'var(--r-pill)', fontWeight: 700,
+                          background: anyOpen ? 'var(--green-dim)' : 'rgba(128,128,128,0.12)',
+                          color: anyOpen ? 'var(--green)' : '#888' }}>
                           {multi && <span style={{ fontWeight: 800 }}>{ln} · </span>}
                           {list.map(sx => `${sx.shift === 'day' ? '☀️' : '🌙'}${sx.status === 'open' ? '●' : '✓'}`).join(' ')}
                           {anyOpen ? ' Live' : ' ปิด'}
@@ -1872,7 +1920,7 @@ export default function Management() {
                   })()}
                   {isMobile && (
                     <button className="tbtn" onClick={() => setShowLegendMobile(v => !v)} title="สัญลักษณ์สถานะการ์ด"
-                      style={{ padding: '3px 10px', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 700, background: showLegendMobile ? 'var(--accent-dim)' : 'var(--bg)', border: `1px solid ${showLegendMobile ? 'var(--accent)' : 'var(--border)'}`, color: showLegendMobile ? 'var(--accent)' : 'var(--text2)' }}>
+                      style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: showLegendMobile ? 'var(--accent-dim)' : 'var(--bg)', border: `1px solid ${showLegendMobile ? 'var(--accent)' : 'var(--border)'}`, color: showLegendMobile ? 'var(--accent)' : 'var(--text2)' }}>
                       ℹ️
                     </button>
                   )}
@@ -1881,9 +1929,9 @@ export default function Management() {
               {/* Kanban ที่เปิดอยู่ ต่อ MAT.NO */}
               {matNoChips.length > 0 && (
                 <div style={{ padding: '7px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center', background: 'var(--bg)' }}>
-                  <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>🎴 Kanban เปิดอยู่:</span>
+                  <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>Kanban เปิดอยู่:</span>
                   {matNoChips.map(([matNo, count]) => (
-                    <span key={matNo} style={{ fontSize: 11, padding: '2px 9px', borderRadius: 20, fontWeight: 700, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', fontFamily: 'monospace' }}>
+                    <span key={matNo} style={{ fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-pill)', fontWeight: 700, background: 'var(--blue-dim)', color: 'var(--blue)', fontFamily: 'monospace' }}>
                       {matNo} · {count} ใบ
                     </span>
                   ))}
@@ -1893,16 +1941,16 @@ export default function Management() {
               {(!isMobile || showLegendMobile) && (
               <div style={{ padding: '6px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', gap: 14, flexWrap: 'wrap', background: 'var(--bg)' }}>
                 {[
-                  { c: '#4d9fff', icon: '▶', label: 'กำลังผลิต' },
-                  { c: '#22c55e', icon: '✓', label: 'เสร็จแล้ว' },
-                  { c: '#f97316', icon: '✓!', label: 'เสร็จ (ช้ากว่ากำหนด)' },
-                  { c: '#ef4444', icon: '!', label: 'ล่าช้า' },
-                  { c: '#f59e0b', icon: '↷', label: 'ยกยอดข้ามกะ' },
+                  { c: 'var(--blue)', icon: '▶', label: 'กำลังผลิต' },
+                  { c: 'var(--green)', icon: '✓', label: 'เสร็จแล้ว' },
+                  { c: 'var(--amber)', icon: '✓!', label: 'เสร็จ (ช้ากว่ากำหนด)' },
+                  { c: 'var(--red)', icon: '!', label: 'ล่าช้า' },
+                  { c: 'var(--amber)', icon: '↷', label: 'ยกยอดข้ามกะ' },
                   { c: '#6b7280', icon: '⏪', label: 'ยิงย้อนหลัง' },
-                  { c: '#ef4444', icon: '⛔', label: 'Downtime (แถบบนแถว)' },
+                  { c: 'var(--red)', icon: '⛔', label: 'Downtime (แถบบนแถว)' },
                 ].map(item => (
                   <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <span style={{ width: 18, height: 18, borderRadius: 3, background: `${item.c}28`, border: `1.2px solid ${item.c}cc`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
+                    <span style={{ width: 18, height: 18, borderRadius: 'var(--r-xs)', background: `${tint(item.c, 'dim')}`, border: `1.2px solid ${tint(item.c, 'line')}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
                     <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{item.label}</span>
                   </div>
                 ))}
@@ -1911,9 +1959,9 @@ export default function Management() {
               {/* 🧠 Smart planner — คาดการณ์เวลาเสร็จ / คำแนะนำ OT */}
               {plannerChips.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, padding: '7px 14px', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)' }}>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>🧠 PLANNER</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)', alignSelf: 'center' }}>PLANNER</span>
                   {plannerChips.map((c, i) => (
-                    <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: '3px 11px', borderRadius: 10, background: 'var(--card)', color: c.color, border: `1px solid ${c.color}` }}>{/* สีจาก token ธีม (--green/--amber/--red) — เดิม hex สว่าง + พื้นโปร่ง 1f ⇒ ธีมสว่างมองไม่เห็น (02/10) */}
+                    <span key={i} style={{ fontSize: 12, fontWeight: 700, padding: '3px 11px', borderRadius: 'var(--r-md)', background: 'var(--card)', color: c.color, border: `1px solid ${c.color}` }}>{/* สีจาก token ธีม (--green/--amber/--red) — เดิม hex สว่าง + พื้นโปร่ง 1f ⇒ ธีมสว่างมองไม่เห็น (02/10) */}
                       {c.text}
                     </span>
                   ))}
@@ -1930,7 +1978,7 @@ export default function Management() {
                             const slotMs = half.startMs + i * 3600000;
                             const isNow = nowMs >= slotMs && nowMs < slotMs + 3600000;
                             const isShiftBound = h === 8 || h === 20;
-                            return <div key={i} style={{ flex: 1, minWidth: 0, height: '100%', borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`, background: isNow ? 'rgba(77,159,255,0.06)' : 'transparent' }} />;
+                            return <div key={i} style={{ flex: 1, minWidth: 0, height: '100%', borderRight: `1px solid ${isShiftBound ? 'var(--border2)' : 'var(--border)'}`, background: isNow ? 'var(--blue-dim)' : 'transparent' }} />;
                           })}
                           {(() => {
                             /* 🏭 แถบพัก "ของไลน์แถวนี้" (break_line_rules · 20/10) · ชื่อพักมาจาก band.policies
@@ -1954,24 +2002,15 @@ export default function Management() {
                                 );
                               });
                           })()}
-                          {/* ⛔ แถบ downtime — ชิดขอบบนแถว ชี้เมาส์ดูรายละเอียด
-                              เฉพาะของ sub-line ที่มีใบงานในแถวนี้ ไม่วาดของพาร์ทอื่นปน (แถวไม่มีใบงานให้เห็นครบ) */}
-                          {(() => {
-                            const rowLines = new Set(row.cards.map(c => c.line_name).filter(Boolean));
-                            return dtWindows.filter(w => !rowLines.size || !w.line_name || rowLines.has(w.line_name));
-                          })().map((w, di) => {
-                            const l = Math.max(0, (w.s - half.startMs) * pctPerMs);
-                            const rgt = Math.min(100, (w.e - half.startMs) * pctPerMs);
-                            if (rgt <= 0 || l >= 100 || rgt <= l) return null;
-                            return (
-                              <div key={`dt-${di}`} title={dtLabel(w)}
-                                style={{
-                                  position: 'absolute', top: 0, height: 4, left: `${l}%`, width: `${Math.max(rgt - l, 0.4)}%`,
-                                  background: w.planned ? '#94a3b8' : '#ef4444', opacity: 0.85,
-                                  borderRadius: '0 0 3px 3px', zIndex: 3, cursor: 'help',
-                                }} />
-                            );
-                          })}
+                          {/* ⛔ แถบ downtime — เต็มความสูงแถว ใต้ใบกัมบัง (04/11 · เหตุผลเต็มใน utils/downtimeBands.js)
+                              🔴 ต้องเหมือนจอ Dashboard เป๊ะ ⇒ ผ่าน `downtimeBandsIn` + `<DowntimeBand>` ห้ามวาดเอง (มีด่าน) */}
+                          {downtimeBandsIn(dtWindows, {
+                            rowLines: new Set(row.cards.map(c => c.line_name).filter(Boolean)),
+                            halfStartMs: half.startMs, pctPerMs,
+                          }).map((band, di) => (
+                            <DowntimeBand key={`dt-${di}`} band={band} label={dtLabel(band.w)}
+                              pxWidth={tlW > 0 ? band.widthPct * tlW / 100 : 0} />
+                          ))}
                           {(() => {
                             const positioned = positionedForCards(row.cards).map(item => pctForHalf(item, half)).filter(Boolean);
                             /* กันใบงานทับกัน — ใบต้องไม่ล้ำขอบซ้ายของใบถัดไป (1 ไลน์ผลิตทีละใบ)
@@ -2012,16 +2051,16 @@ export default function Management() {
                                 title={`${o.prod_no || ''} ${o.mat_no || ''} — ${o.qty}ชิ้น${o.is_backfill ? ' ⏪ยิงย้อนหลัง' : isLateDone ? ` ✓เสร็จ (ช้ากว่ากำหนด${Math.round((new Date(o.confirmed_at).getTime()-realEndMs)/60000)}นาที)` : isDelayed ? ` ⚠️ช้า${Math.round((nowMs - realEndMs) / 60000)}นาที ยังไม่ปิด — ใบถัดไปถูกดันไปต่อท้าย` : o.isDone ? ' ✓เสร็จ' : ` →${fmtMs(realEndMs)}`}${isOverCap ? ` 🔴 เป้าล้นกรอบวันงาน +${(overMs / 3600000).toFixed(1)} ชม. — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต` : ''}${blameText}${causeText}`}
                                 style={{
                                   position: 'absolute', top: 3, bottom: 3, left: `${leftPct}%`, width: `${widthPct}%`, minWidth: 2,
-                                  background: `${sc}28`, border: `1.5px solid ${sc}${o.isDone && !isLateDone ? 'cc' : (isDelayed || isLateDone) ? 'dd' : '88'}`,
-                                  borderRadius: 4, overflow: 'hidden', cursor: 'default', zIndex: 1,
-                                  boxShadow: (isDelayed || isLateDone) ? `0 0 6px ${sc}44` : 'none',
+                                  background: `${tint(sc, 'dim')}`, border: `1.5px solid ${sc}${o.isDone && !isLateDone ? 'cc' : (isDelayed || isLateDone) ? 'dd' : '88'}`,
+                                  borderRadius: 'var(--r-xs)', overflow: 'hidden', cursor: 'default', zIndex: 1,
+                                  boxShadow: (isDelayed || isLateDone) ? `0 0 6px ${tint(sc, 'line')}` : 'none',
                                 }}>
                                 {/* ใบ manual: fill เข้มขึ้นตามสัดส่วนยอดสะสม (alpha 0.30→0.75) ครบเป้า = เขียว — ใบสแกนปกติจางแบบเดิม */}
                                 <div style={{
                                   position: 'absolute', top: 0, left: 0, bottom: 0, width: `${pctBlock}%`,
                                   background: o.is_manual && !o.isDone
-                                    ? `${fillFrac >= 1 ? '#22c55e' : sc}${Math.round((0.30 + 0.45 * Math.min(pctBlock, 100) / 100) * 255).toString(16).padStart(2, '0')}`
-                                    : `${sc}22`,
+                                    ? `${fillFrac >= 1 ? 'var(--green)' : sc}${Math.round((0.30 + 0.45 * Math.min(pctBlock, 100) / 100) * 255).toString(16).padStart(2, '0')}`
+                                    : `${tint(sc, 'dim')}`,
                                   transition: 'width 0.5s ease, background 0.5s ease',
                                 }} />
                                 {/* ใบแคบเกินกว่าจะพิมพ์ตัวหนังสือครบ = ไม่พิมพ์เลย (เหลือเศษอักษร "MANU…" กองทับกันอ่านไม่รู้เรื่อง)
@@ -2033,7 +2072,7 @@ export default function Management() {
                                     {icon} {o.prod_no || (oi + 1)}
                                   </div>
                                   {/* ใบ manual ที่ยังเปิด: ยอดสะสม/เป้า — ใบสแกน/ปิดแล้ว: จำนวนตามเดิม */}
-                                  <div style={{ fontSize: 11, color: o.is_manual && !o.isDone && pctBlock >= 45 ? 'rgba(255,255,255,0.85)' : 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.is_manual && !o.isDone ? `${o.qty_actual ?? 0}/${o.qty_target ?? o.qty}` : o.qty}ชิ้น{isOverCap && <span style={{ color: '#ef4444', fontWeight: 800 }}> 🔴ล้น+{(overMs / 3600000).toFixed(1)}ชม.</span>}</div>
+                                  <div style={{ fontSize: 11, color: o.is_manual && !o.isDone && pctBlock >= 45 ? 'rgba(255,255,255,0.85)' : 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.is_manual && !o.isDone ? `${o.qty_actual ?? 0}/${o.qty_target ?? o.qty}` : o.qty}ชิ้น{isOverCap && <span style={{ color: 'var(--red)', fontWeight: 800 }}> 🔴ล้น+{(overMs / 3600000).toFixed(1)}ชม.</span>}</div>
                                 </div>
                                 )}
                               </div>
@@ -2042,7 +2081,7 @@ export default function Management() {
                                 <div title={`กรอบแผนของใบนี้: ${fmtMs(planStartMs)}–${fmtMs(plannedEndMs)}${planSlipped ? ` · หลุดกรอบ (เริ่มช้า ${Math.max(0, Math.round((startMs - planStartMs) / 60000))} น. · จบช้า ${Math.max(0, Math.round((Math.max(realEndMs, occupiedEndMs || realEndMs) - plannedEndMs) / 60000))} น.)` : ' · อยู่ในกรอบ'}`}
                                   style={{ position: 'absolute', top: 1, bottom: 1, left: `${planLeftPct}%`, width: `${planWidthPct}%`,
                                     /* ใบที่หลุดกรอบ วาดทับแท่ง (z=2) ให้เห็นกล่อง "แผนจบตรงนี้" · ดู Dashboard.jsx */
-                                    border: `${planSlipped ? 2 : 1}px dashed ${planSlipped ? '#e5e7eb' : 'var(--muted)'}`, borderRadius: 4,
+                                    border: `${planSlipped ? 2 : 1}px dashed ${planSlipped ? '#e5e7eb' : 'var(--muted)'}`, borderRadius: 'var(--r-xs)',
                                     opacity: planSlipped ? 0.95 : 0.35, zIndex: planSlipped ? 2 : 0, pointerEvents: 'none' }} />
                               )}
                               {/* หางเงาแดง — ยังไม่ปิดงานแม้เลยกำหนดแล้ว ครองไลน์อยู่จนถึงตอนนี้ ดันใบถัดไปไปต่อท้าย */}
@@ -2051,8 +2090,8 @@ export default function Management() {
                                   style={{
                                     position: 'absolute', top: 3, bottom: 3,
                                     left: `${tailLeftPct}%`, width: `${tailWidthPct}%`,
-                                    background: 'repeating-linear-gradient(45deg, #ef444433 0px, #ef444433 4px, #ef444412 4px, #ef444412 8px)',
-                                    border: '1.5px dashed #ef4444aa', borderLeft: 'none',
+                                    background: 'repeating-linear-gradient(45deg, var(--red)33 0px, var(--red)33 4px, var(--red)12 4px, var(--red)12 8px)',
+                                    border: '1.5px dashed var(--red)aa', borderLeft: 'none',
                                     borderRadius: '0 4px 4px 0', zIndex: 1, pointerEvents: 'none',
                                   }} />
                               )}
@@ -2075,8 +2114,8 @@ export default function Management() {
                     {/* Hour header — เวลาคู่: บรรทัดบน ☀️ 08–19 / บรรทัดล่าง 🌙 20–07 คอลัมน์เดียวกัน */}
                     <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
                       <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '3px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 3, background: 'var(--bg2)' } : null) }}>
-                        <span>☀️ กะเช้า{isMobile ? '' : ' (แถบบน)'}</span>
-                        <span>🌙 กะดึก{isMobile ? '' : ' (แถบล่าง)'}</span>
+                        <span>กะเช้า{isMobile ? '' : ' (แถบบน)'}</span>
+                        <span>กะดึก{isMobile ? '' : ' (แถบล่าง)'}</span>
                       </div>
                       {/* ป้ายเวลาปัจจุบัน ลอยตรงตำแหน่ง playhead (คอลัมน์ใช้ร่วม 2 กะ — ไอคอนบอกว่าอยู่กะไหน) */}
                       {(() => {
@@ -2099,10 +2138,10 @@ export default function Management() {
                           <div key={i} style={{
                             flex: 1, minWidth: 0, textAlign: 'center', padding: '3px 0', lineHeight: 1.3,
                             borderRight: '1px solid var(--border)',
-                            background: (isNowAm || isNowPm) ? 'rgba(77,159,255,0.12)' : 'transparent',
+                            background: (isNowAm || isNowPm) ? 'var(--blue-dim)' : 'transparent',
                           }}>
-                            <div style={{ fontSize: 11, fontWeight: isNowAm ? 800 : 500, color: isNowAm ? '#4d9fff' : 'var(--text2)' }}>{String(h).padStart(2, '0')}:00</div>
-                            <div style={{ fontSize: 11, fontWeight: isNowPm ? 800 : 400, color: isNowPm ? '#4d9fff' : 'var(--muted)' }}>{String(hPm).padStart(2, '0')}:00</div>
+                            <div style={{ fontSize: 11, fontWeight: isNowAm ? 800 : 500, color: isNowAm ? 'var(--blue)' : 'var(--text2)' }}>{String(h).padStart(2, '0')}:00</div>
+                            <div style={{ fontSize: 11, fontWeight: isNowPm ? 800 : 400, color: isNowPm ? 'var(--blue)' : 'var(--muted)' }}>{String(hPm).padStart(2, '0')}:00</div>
                           </div>
                         );
                       })}
@@ -2142,14 +2181,14 @@ export default function Management() {
                                 {row.label}
                                 {/* บอร์ดรวมหลาย sub-line — ป้ายบอกว่าแถวนี้ของไลน์ไหน (product เดียวกันคนละไลน์ = คนละแถว) */}
                                 {multiSubLine && row.line && (
-                                  <span style={{ marginLeft: 4, fontSize: 11, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.14)', border: '1px solid rgba(77,159,255,0.4)', borderRadius: 5, padding: '0 5px', whiteSpace: 'nowrap' }}>{row.line}</span>
+                                  <span style={{ marginLeft: 4, fontSize: 11, fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 'var(--r-xs)', padding: '0 5px', whiteSpace: 'nowrap' }}>{row.line}</span>
                                 )}
                               </div>
                               <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: 14, fontWeight: 900, color: barColor, lineHeight: 1 }}>{rowActual}</span>
                                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
-                                {delayed > 0 && <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>⚠️{delayed}</span>}
-                                {isOpen && delayed === 0 && <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>● Live</span>}
+                                {delayed > 0 && <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>⚠️{delayed}</span>}
+                                {isOpen && delayed === 0 && <span style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>● Live</span>}
                               </div>
                               {/* 📋 แถบหลุดแผนของแถวนี้ — เวลา + ยอด บรรทัดเดียว (ห้ามตัดบรรทัด ความสูงแถวถูกล็อก) */}
                               <div style={{ display: 'flex', gap: 5, minWidth: 0, overflow: 'hidden' }}>
@@ -2159,7 +2198,7 @@ export default function Management() {
                                 {!isMobile && <PlanSlipBar st={rowPlan} fmtMs={fmtMs} oneLine compact />}
                                 {finOver && (
                                   <span title="งานที่เหลือล้นกรอบวันงาน (08:00 ของวันถัดไป) — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต"
-                                    style={{ fontSize: 11, fontWeight: 800, color: '#ef4444' }}>🔴 ล้นวันงาน</span>
+                                    style={{ fontSize: 11, fontWeight: 800, color: 'var(--red)' }}>🔴 ล้นวันงาน</span>
                                 )}
                               </div>
                             </div>
@@ -2185,15 +2224,15 @@ export default function Management() {
         {(!boardWouldSquish || mainView === 'map') && (<>
         {/* PPE alarm — เช็คชื่อแล้วแต่ PPE ไม่ครบ: ไม่เข้า pool จึงไม่โผล่บนผัง ต้องมีแถบกระพริบเตือนแทน */}
         {ppeAlertsInView.length > 0 && (
-          <div className="dt-alarm-banner" style={{ border: '1px solid rgba(239,68,68,0.45)', borderRadius: 10, padding: '8px 12px', marginBottom: 8, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, color: '#ef4444' }}>
+          <div className="dt-alarm-banner" style={{ border: '1px solid var(--red-line)', borderRadius: 'var(--r-md)', padding: '8px 12px', marginBottom: 8, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, color: 'var(--red)' }}>
               <span className="dt-alarm-icon">⛑</span> PPE ไม่ครบ {ppeAlertsInView.length} คน — ห้ามเข้าไลน์จนกว่าจะครบ
             </span>
             {ppeAlertsInView.map(p => (
-              <span key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px', borderRadius: 6, background: 'rgba(0,0,0,0.25)', border: '1px solid rgba(239,68,68,0.4)' }}>
+              <span key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'rgba(0,0,0,0.25)', border: '1px solid var(--red-line)' }}>
                 {p.employees?.image_url
-                  ? <img loading="lazy" src={p.employees.image_url} className="person-alarm-red" style={{ width: 22, height: 22, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid #ef4444' }} />
-                  : <span className="person-alarm-red" style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid #ef4444', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>👤</span>}
+                  ? <img loading="lazy" src={p.employees.image_url} className="person-alarm-red" style={{ width: 22, height: 22, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid var(--red)' }} />
+                  : <span className="person-alarm-red" style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid var(--red)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>👤</span>}
                 <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)' }}>{p.employees?.name?.split(' ')[0] || '?'}</span>
                 <span style={{ fontSize: 11, color: '#fca5a5' }}>ขาด: {ppeMissingList(p).join(', ')}</span>
               </span>
@@ -2206,7 +2245,7 @@ export default function Management() {
           width: '100%', flex: 1, minHeight: 0,
           overflow: 'hidden',
           display: 'flex', flexDirection: 'column',
-          backgroundColor: lineLayout ? 'transparent' : 'var(--bg3)', borderRadius: 12,
+          backgroundColor: lineLayout ? 'transparent' : 'var(--bg3)', borderRadius: 'var(--r-lg)',
           border: lineLayout ? 'none' : '1px solid var(--border)',
         }}>
           {lineLayout ? (
@@ -2359,7 +2398,7 @@ export default function Management() {
                       <div style={{
                         width: MK, height: MK, borderRadius: '50%',
                         border: `${Math.max(2, RING - 1)}px dashed ${isOver ? (activeFc || '#4d9fff') : 'var(--border2)'}`,
-                        backgroundColor: isOver || isPulse ? `${activeFc || '#4d9fff'}1a` : 'rgba(8,8,14,0.7)',
+                        backgroundColor: isOver || isPulse ? `${tint(activeFc || '#4d9fff', 'dim')}` : 'rgba(8,8,14,0.7)',
                         animation: isPulse ? 'pulse-ring 1.4s ease-in-out infinite' : 'none',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         color: isOver ? activeFc : 'rgba(255,255,255,0.55)',
@@ -2427,7 +2466,7 @@ export default function Management() {
                 {/* station-name pill below the circle */}
                 <div title={st.station_name} style={{
                   marginTop: 3, background: 'rgba(0,0,0,0.75)',
-                  border: `1px solid ${activeFc ? `${activeFc}88` : 'transparent'}`,
+                  border: `1px solid ${activeFc ? `${tint(activeFc, 'line')}` : 'transparent'}`,
                   borderRadius: 4, padding: '1px 6px',
                   fontSize: PILL_F, fontWeight: 700, color: '#fff',
                   whiteSpace: 'nowrap', maxWidth: PILL_MAXW,
@@ -2436,13 +2475,13 @@ export default function Management() {
 
                 {/* fit% badge below the pill */}
                 {workerAtStation && workerFit && (
-                  <div style={{ marginTop: 2, fontSize: FIT_F, fontWeight: 800, color: fitColor(workerFit.score), background: `${fitColor(workerFit.score)}25`, padding: '0 5px', borderRadius: 3, lineHeight: 1.5 }}>
+                  <div style={{ marginTop: 2, fontSize: FIT_F, fontWeight: 800, color: fitColor(workerFit.score), background: `${tint(fitColor(workerFit.score), 'dim')}`, padding: '0 5px', borderRadius: 'var(--r-xs)', lineHeight: 1.5 }}>
                     {workerFit.score}%
                   </div>
                 )}
                 {/* mobile tap-invite fit preview */}
                 {!workerAtStation && isPulse && touchPreviewFit && (
-                  <div style={{ marginTop: 2, background: fitColor(touchPreviewFit.score), color: '#fff', fontSize: FIT_F, fontWeight: 900, padding: '1px 6px', borderRadius: 4, lineHeight: 1.4 }}>
+                  <div style={{ marginTop: 2, background: fitColor(touchPreviewFit.score), color: '#fff', fontSize: FIT_F, fontWeight: 900, padding: '1px 6px', borderRadius: 'var(--r-xs)', lineHeight: 1.4 }}>
                     {touchPreviewFit.score}
                   </div>
                 )}
@@ -2453,11 +2492,11 @@ export default function Management() {
                 {previewFit && !isMobile && (
                   <div style={{
                     position: 'absolute', top: `calc(100% + ${Math.round(MK * 0.55)}px)`, left: '50%', transform: 'translateX(-50%)',
-                    background: 'rgba(6,6,12,0.97)', border: `1px solid ${activeFc}`, borderRadius: 8, padding: '8px 10px',
+                    background: 'rgba(6,6,12,0.97)', border: `1px solid ${activeFc}`, borderRadius: 'var(--r-md)', padding: '8px 10px',
                     zIndex: 100, minWidth: 116, pointerEvents: 'none', boxShadow: 'var(--shadow-float)',
                   }}>
                     <div style={{ textAlign: 'center', marginBottom: 4 }}>
-                      <span style={{ display: 'inline-block', background: activeFc, color: '#fff', fontSize: 20, fontWeight: 900, padding: '2px 14px', borderRadius: 5 }}>{previewFit.score}</span>
+                      <span style={{ display: 'inline-block', background: activeFc, color: '#fff', fontSize: 20, fontWeight: 900, padding: '2px 14px', borderRadius: 'var(--r-xs)' }}>{previewFit.score}</span>
                     </div>
                     <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', textAlign: 'center', marginBottom: 6 }}>{fitLabel(previewFit.score)}</div>
                     {previewFit.details.map(d => (
@@ -2470,9 +2509,9 @@ export default function Management() {
                             {d.actual}<span style={{ fontWeight: 400, color: 'rgba(255,255,255,0.4)' }}>/{d.required}</span>
                           </span>
                         </div>
-                        <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden', position: 'relative' }}>
+                        <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 'var(--r-xs)', overflow: 'hidden', position: 'relative' }}>
                           <div style={{ position: 'absolute', left: `${d.required}%`, top: 0, bottom: 0, width: 1, background: 'rgba(255,255,255,0.3)', zIndex: 2 }} />
-                          <div style={{ width: `${Math.min(d.actual,100)}%`, height: '100%', background: d.pass ? '#22c55e' : '#ef4444', borderRadius: 2 }} />
+                          <div style={{ width: `${Math.min(d.actual,100)}%`, height: '100%', background: d.pass ? '#22c55e' : '#ef4444', borderRadius: 'var(--r-xs)' }} />
                         </div>
                       </div>
                     ))}
@@ -2511,8 +2550,8 @@ export default function Management() {
                           <div className={alarms ? 'dt-alarm-blink' : undefined}
                             style={{
                               width: MKS, height: MKS, borderRadius: '50%',
-                              border: `${SUB_RING}px ${kindUnknown && !alarms ? 'dashed' : 'solid'} ${alarms ? '#ef4444' : ringC}`,
-                              backgroundColor: alarms ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.78)',
+                              border: `${SUB_RING}px ${kindUnknown && !alarms ? 'dashed' : 'solid'} ${alarms ? 'var(--red)' : ringC}`,
+                              backgroundColor: alarms ? 'var(--red-line)' : 'rgba(0,0,0,0.78)',
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
                               fontSize: Math.max(13, Math.round(MKS * 0.44)), lineHeight: 1,
                             }}>{alarms ? '🚨' : isJig ? '🗜️' : '⚙️'}</div>
@@ -2521,7 +2560,7 @@ export default function Management() {
                           <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2 }}>
                           <div style={{
                             marginTop: 3, background: 'rgba(0,0,0,0.75)',
-                            borderRadius: 4, padding: '1px 6px',
+                            borderRadius: 'var(--r-xs)', padding: '1px 6px',
                             fontSize: SUB_PILL_F, fontWeight: 700,
                             color: alarms ? '#fecaca' : '#fff',
                             whiteSpace: 'nowrap', maxWidth: SUB_PILL_MAXW, overflow: 'hidden', textOverflow: 'ellipsis',
@@ -2529,8 +2568,8 @@ export default function Management() {
                           <div style={{
                             marginTop: 2, fontSize: SUB_PILL_F, fontWeight: alarms ? 800 : 600,
                             color: alarms ? '#fca5a5' : '#a3a3a3',
-                            background: alarms ? 'rgba(239,68,68,0.25)' : 'rgba(0,0,0,0.55)',
-                            padding: '0 5px', borderRadius: 3, lineHeight: 1.5,
+                            background: alarms ? 'var(--red-line)' : 'rgba(0,0,0,0.55)',
+                            padding: '0 5px', borderRadius: 'var(--r-xs)', lineHeight: 1.5,
                             whiteSpace: 'nowrap', maxWidth: SUB_PILL_MAXW, overflow: 'hidden', textOverflow: 'ellipsis',
                           }}>
                             {alarms
@@ -2567,7 +2606,7 @@ export default function Management() {
                     { label: 'ประจำสถานี', count: workers.filter(w => w.assigned_line).length },
                     { label: 'งานนอกไลน์', count: specialWorkers.length },
                   ].map(s => (
-                    <div key={s.label} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, padding: '14px 18px', textAlign: 'center' }}>
+                    <div key={s.label} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: '14px 18px', textAlign: 'center' }}>
                       <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{s.label}</div>
                       <div style={{ fontSize: 30, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1.1, marginTop: 3 }}>
                         {s.count}<span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text2)', marginLeft: 3 }}>คน</span>
@@ -2584,7 +2623,7 @@ export default function Management() {
                   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>รายชื่อพนักงานวันนี้</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
                     {workers.map(w => (
-                      <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+                      <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
                         {w.employees?.image_url
                           ? <img loading="lazy" src={w.employees.image_url} style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', flexShrink: 0 }} />
                           : <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--bg3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>👤</div>
@@ -2623,7 +2662,7 @@ export default function Management() {
       {/* ── Radar skill modal (portal → renders at body to escape stacking context) ── */}
       {radarWorker && createPortal(
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)' }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 16, padding: '20px 24px', width: 'min(90vw, 380px)', boxShadow: 'var(--shadow-lg)' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: '20px 24px', width: 'min(90vw, 380px)', boxShadow: 'var(--shadow-lg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
               {radarWorker.employees?.image_url
                 ? <img loading="lazy" src={radarWorker.employees.image_url} style={{ width: 52, height: 52, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid var(--border2)', flexShrink: 0 }} />
@@ -2632,8 +2671,8 @@ export default function Management() {
                 <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{radarWorker.employees?.name}</div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{radarWorker.employees?.employee_id_code}</div>
                 <div style={{ display: 'flex', gap: 5, marginTop: 5, flexWrap: 'wrap' }}>
-                  {radarWorker.employees?.team && <span style={{ fontSize: 11, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.15)', borderRadius: 4, padding: '1px 6px' }}>Team {radarWorker.employees.team}</span>}
-                  {radarWorker.employees?.section && <span style={{ fontSize: 11, color: '#a78bfa', background: 'rgba(167,139,250,0.12)', borderRadius: 4, padding: '1px 6px' }}>📍 {radarWorker.employees.section}</span>}
+                  {radarWorker.employees?.team && <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', borderRadius: 'var(--r-xs)', padding: '1px 6px' }}>Team {radarWorker.employees.team}</span>}
+                  {radarWorker.employees?.section && <span style={{ fontSize: 11, color: 'var(--blue)', background: 'var(--blue-dim)', borderRadius: 'var(--r-xs)', padding: '1px 6px' }}>{radarWorker.employees.section}</span>}
                 </div>
               </div>
               <button onClick={() => setRadarWorker(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', padding: '0 4px', alignSelf: 'flex-start' }}>✕</button>
@@ -2682,7 +2721,7 @@ export default function Management() {
 
       {/* ── Mobile fit popup (after assign) ── */}
       {isMobile && fitPopup && (
-        <div style={{ position: 'fixed', top: 56, left: 16, right: 16, zIndex: 1150, background: 'var(--card)', border: `2px solid ${fitColor(fitPopup.fit.score)}`, borderRadius: 14, padding: '14px 16px', boxShadow: 'var(--shadow-lg)', animation: 'hoverIn 0.25s ease' }}>
+        <div style={{ position: 'fixed', top: 56, left: 16, right: 16, zIndex: 1150, background: 'var(--card)', border: `2px solid ${fitColor(fitPopup.fit.score)}`, borderRadius: 'var(--r-lg)', padding: '14px 16px', boxShadow: 'var(--shadow-lg)', animation: 'hoverIn 0.25s ease' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <img loading="lazy" src={fitPopup.worker.employees?.image_url || ''} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fitColor(fitPopup.fit.score)}`, flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -2703,7 +2742,7 @@ export default function Management() {
           <div style={{ position: 'relative', background: 'var(--card)', borderRadius: '20px 20px 0 0', padding: '20px 20px 36px', boxShadow: 'var(--shadow-lg)', animation: 'slideUp 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
             <style>{`@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } } @keyframes hoverIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
             {/* Handle */}
-            <div style={{ width: 36, height: 4, background: 'var(--border2)', borderRadius: 3, margin: '0 auto 16px' }} />
+            <div style={{ width: 36, height: 4, background: 'var(--border2)', borderRadius: 'var(--r-xs)', margin: '0 auto 16px' }} />
 
             {/* Worker header */}
             <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginBottom: 16 }}>
@@ -2716,15 +2755,15 @@ export default function Management() {
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>{detailSheet.worker.employees?.employee_id_code}</div>
                 <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
                   {detailSheet.worker.employees?.team && (
-                    <span style={{ fontSize: 11, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.15)', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 5, padding: '2px 8px' }}>Team {detailSheet.worker.employees.team}</span>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: '#4d9fff', background: 'rgba(77,159,255,0.15)', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 'var(--r-xs)', padding: '2px 8px' }}>Team {detailSheet.worker.employees.team}</span>
                   )}
                   {detailSheet.worker.employees?.section && (
-                    <span style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa', background: 'rgba(167,139,250,0.13)', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 5, padding: '2px 8px' }}>
-                      📍 สังกัด: {detailSheet.worker.employees.section}
+                    <span style={{ fontSize: 11, fontWeight: 700, color: '#a78bfa', background: 'rgba(167,139,250,0.13)', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 'var(--r-xs)', padding: '2px 8px' }}>
+                      สังกัด: {detailSheet.worker.employees.section}
                     </span>
                   )}
                   {detailSheet.stationName && (
-                    <span style={{ fontSize: 11, fontWeight: 700, color: fitColor(detailSheet.fit.score), background: `${fitColor(detailSheet.fit.score)}15`, border: `1px solid ${fitColor(detailSheet.fit.score)}40`, borderRadius: 5, padding: '2px 8px' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: fitColor(detailSheet.fit.score), background: `${tint(fitColor(detailSheet.fit.score), 'dim')}`, border: `1px solid ${tint(fitColor(detailSheet.fit.score), 'line')}`, borderRadius: 'var(--r-xs)', padding: '2px 8px' }}>
                       {detailSheet.stationName} · {detailSheet.fit.score}% {fitLabel(detailSheet.fit.score)}
                     </span>
                   )}
@@ -2755,9 +2794,9 @@ export default function Management() {
                             {fitReq && <span style={{ marginLeft: 4 }}>{fitReq.pass ? '✓' : '✗'}</span>}
                           </span>
                         </div>
-                        <div style={{ height: 6, background: 'var(--border2)', borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
+                        <div style={{ height: 6, background: 'var(--border2)', borderRadius: 'var(--r-xs)', overflow: 'hidden', position: 'relative' }}>
                           {fitReq && <div style={{ position: 'absolute', left: `${fitReq.required}%`, top: 0, bottom: 0, width: 2, background: 'var(--muted)', zIndex: 2 }} />}
-                          <div style={{ width: `${Math.min(score, 100)}%`, height: '100%', background: bar, borderRadius: 4, transition: 'width 0.5s ease' }} />
+                          <div style={{ width: `${Math.min(score, 100)}%`, height: '100%', background: bar, borderRadius: 'var(--r-xs)', transition: 'width 0.5s ease' }} />
                         </div>
                       </div>
                     );
@@ -2773,13 +2812,13 @@ export default function Management() {
                   await assignWorker(detailSheet.worker.id, 'Pool');
                   setDetailSheet(null);
                 }}
-                style={{ flex: 1, padding: '13px', background: 'rgba(231,76,60,0.12)', color: 'var(--red)', border: '1px solid rgba(231,76,60,0.3)', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+                style={{ flex: 1, padding: '13px', background: 'rgba(231,76,60,0.12)', color: 'var(--red)', border: '1px solid rgba(231,76,60,0.3)', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
               >
-                ↩ ส่งกลับ Pool
+                ส่งกลับ Pool
               </button>
               <button
                 onClick={() => setDetailSheet(null)}
-                style={{ flex: 1, padding: '13px', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 10, fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+                style={{ flex: 1, padding: '13px', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
               >
                 ปิด
               </button>
@@ -2801,7 +2840,7 @@ export default function Management() {
             <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)' }} />
             <div style={{ position: 'relative', background: 'var(--card)', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 480, padding: '20px 18px 36px', boxShadow: 'var(--shadow-lg)', maxHeight: '80vh', display: 'flex', flexDirection: 'column', animation: 'slideUp 0.28s cubic-bezier(0.34,1.56,0.64,1)' }}>
               {/* Handle */}
-              <div style={{ width: 36, height: 4, background: 'var(--border2)', borderRadius: 3, margin: '0 auto 14px' }} />
+              <div style={{ width: 36, height: 4, background: 'var(--border2)', borderRadius: 'var(--r-xs)', margin: '0 auto 14px' }} />
               {/* Title */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                 <div>
@@ -2813,7 +2852,7 @@ export default function Management() {
 
               {/* Current worker */}
               {workerHere && (
-                <div style={{ marginBottom: 12, padding: '10px 12px', background: `${fitColor(fitHere.score)}12`, border: `1px solid ${fitColor(fitHere.score)}40`, borderRadius: 12 }}>
+                <div style={{ marginBottom: 12, padding: '10px 12px', background: `${tint(fitColor(fitHere.score), 'dim')}`, border: `1px solid ${tint(fitColor(fitHere.score), 'line')}`, borderRadius: 'var(--r-lg)' }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>ประจำอยู่ตอนนี้</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     {workerHere.employees?.image_url
@@ -2825,22 +2864,22 @@ export default function Management() {
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{workerHere.employees?.employee_id_code}</div>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
-                      <div style={{ background: fitColor(fitHere.score), color: '#fff', fontWeight: 900, fontSize: 18, padding: '2px 10px', borderRadius: 6 }}>{fitHere.score}</div>
+                      <div style={{ background: fitColor(fitHere.score), color: '#fff', fontWeight: 900, fontSize: 18, padding: '2px 10px', borderRadius: 'var(--r-md)' }}>{fitHere.score}</div>
                       <div style={{ display: 'flex', gap: 6 }}>
                         {canAssignManpower && homePositions[workerHere.employee_id] !== String(st.id) && (
                           <button
                             onClick={async () => { await saveHomePosition(workerHere, st.id); }}
-                            style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', cursor: 'pointer', fontWeight: 700 }}
+                            style={{ fontSize: 11, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', cursor: 'pointer', fontWeight: 700 }}
                             title="บันทึกเป็นตำแหน่งประจำ"
-                          >📌 บันทึกตำแหน่งประจำ</button>
+                          >บันทึกตำแหน่งประจำ</button>
                         )}
                         {homePositions[workerHere.employee_id] === String(st.id) && (
-                          <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontWeight: 700 }}>🏠 ตำแหน่งประจำ</span>
+                          <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontWeight: 700 }}>ตำแหน่งประจำ</span>
                         )}
                         {canAssignManpower && <button
                           onClick={() => { assignWorker(workerHere.id, 'Pool'); setStationModal(null); }}
-                          style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(231,76,60,0.1)', color: 'var(--red)', border: '1px solid rgba(231,76,60,0.3)', cursor: 'pointer', fontWeight: 700 }}
-                        >↩ Pool</button>}
+                          style={{ fontSize: 11, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'rgba(231,76,60,0.1)', color: 'var(--red)', border: '1px solid rgba(231,76,60,0.3)', cursor: 'pointer', fontWeight: 700 }}
+                        >Pool</button>}
                       </div>
                     </div>
                   </div>
@@ -2862,11 +2901,11 @@ export default function Management() {
                     <div
                       key={w.id}
                       onClick={() => { assignWorker(w.id, st.id); setStationModal(null); }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, background: `${fc}0d`, border: `1px solid ${fc}30`, cursor: 'pointer', transition: 'background 0.15s' }}
+                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 'var(--r-md)', background: `${tint(fc, 'dim')}`, border: `1px solid ${tint(fc, 'dim')}`, cursor: 'pointer', transition: 'background 0.15s' }}
                     >
                       {w.employees?.image_url
                         ? <img loading="lazy" src={w.employees.image_url} style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fc}`, flexShrink: 0 }} />
-                        : <div style={{ width: 40, height: 40, borderRadius: '50%', background: `${fc}18`, border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
+                        : <div style={{ width: 40, height: 40, borderRadius: '50%', background: `${tint(fc, 'dim')}`, border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>👤</div>
                       }
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -2875,7 +2914,7 @@ export default function Management() {
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--muted)' }}>{w.employees?.employee_id_code}{w.employees?.team ? ` · Team ${w.employees.team}` : ''}</div>
                       </div>
-                      <div style={{ background: fc, color: '#fff', fontWeight: 900, fontSize: 16, padding: '3px 10px', borderRadius: 6, flexShrink: 0 }}>{w._fit.score}</div>
+                      <div style={{ background: fc, color: '#fff', fontWeight: 900, fontSize: 16, padding: '3px 10px', borderRadius: 'var(--r-md)', flexShrink: 0 }}>{w._fit.score}</div>
                     </div>
                   );
                 })}
@@ -2889,26 +2928,26 @@ export default function Management() {
       {specialModal && (
         <div className="overlay">
           <div className="modal" style={{ width: 'min(360px, 94vw)' }}>
-            <h3 style={{ marginTop: 0, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>🏷 กำหนดงานนอกไลน์</h3>
+            <h3 style={{ marginTop: 0, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>กำหนดงานนอกไลน์</h3>
             <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -10 }}>{specialModal.employees?.name}</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
               {specialTaskOptions.map(t => (
                 <button key={t} onClick={() => setSpecialTaskType(t)}
-                  style={{ padding: '10px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, textAlign: 'left', cursor: 'pointer',
+                  style={{ padding: '10px 14px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 600, textAlign: 'left', cursor: 'pointer',
                     background: specialTaskType === t ? 'rgba(245,158,11,0.2)' : 'var(--bg3)',
                     border: specialTaskType === t ? '2px solid #f59e0b' : '1.5px solid var(--border2)',
                     color: specialTaskType === t ? '#f59e0b' : 'var(--text2)' }}>
-                  {specialTaskType === t ? '✓ ' : ''}{t}
+                  {specialTaskType === t ? ' ' : ''}{t}
                 </button>
               ))}
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => assignSpecialTask(specialModal, specialTaskType)}
-                style={{ flex: 2, padding: 12, background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+                style={{ flex: 2, padding: 12, background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
                 ยืนยัน
               </button>
               <button onClick={() => setSpecialModal(null)}
-                style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: 'pointer' }}>
+                style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', cursor: 'pointer' }}>
                 ยกเลิก
               </button>
             </div>
@@ -2919,8 +2958,8 @@ export default function Management() {
       {/* ── Attach-doc modal ── */}
       {pendingDocModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: 'var(--card)', borderRadius: 12, padding: 24, width: '100%', maxWidth: 420, display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{ fontWeight: 700, fontSize: 16 }}>📎 แนบเอกสาร OJT</div>
+          <div style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', padding: 24, width: '100%', maxWidth: 420, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>แนบเอกสาร OJT</div>
             <div style={{ fontSize: 13, color: 'var(--text2)' }}>
               <b>{pendingDocModal.log.category}</b> · {pendingDocModal.log.line_name}<br/>
               {pendingDocModal.log.description}
@@ -2931,12 +2970,12 @@ export default function Management() {
                 รูปหลักฐาน OJT <span style={{ color: 'var(--muted)' }}>(ไม่บังคับ)</span>
               </label>
               <div
-                style={{ border: `2px dashed ${docImageFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 8, padding: '10px 12px', background: docImageFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center' }}
+                style={{ border: `2px dashed ${docImageFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 'var(--r-md)', padding: '10px 12px', background: docImageFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center' }}
                 onClick={() => document.getElementById('doc-img-input').click()}
               >
                 {docImagePreview
                   ? <img src={docImagePreview} alt="" style={{ maxHeight: 140, borderRadius: 6, objectFit: 'contain' }} />
-                  : <span style={{ color: 'var(--muted)', fontSize: 13 }}>📸 แตะเพื่อเลือกรูป</span>
+                  : <span style={{ color: 'var(--muted)', fontSize: 13 }}>แตะเพื่อเลือกรูป</span>
                 }
               </div>
               <input id="doc-img-input" type="file" accept="image/*" style={{ display: 'none' }}
@@ -2995,7 +3034,7 @@ export default function Management() {
                 {isSavingDoc ? 'กำลังบันทึก...' : 'ส่งอนุมัติ'}
               </button>
               <button onClick={() => { if (!isSavingDoc) { setPendingDocModal(null); setDocImageFile(null); setDocImagePreview(null); } }}
-                style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+                style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
                 ยกเลิก
               </button>
             </div>
@@ -3007,7 +3046,7 @@ export default function Management() {
       {show4MModal && (
         <div className="overlay">
           <div className="modal" style={{ width: 'min(420px, 94vw)' }}>
-            <h3 style={{ marginTop: 0, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>🚨 บันทึก 4M Change</h3>
+            <h3 style={{ marginTop: 0, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>บันทึก 4M Change</h3>
             <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -10 }}>ไลน์: {show4MModal.lineName}</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
@@ -3024,14 +3063,14 @@ export default function Management() {
                 const manCase = getManCase(log4MForm);
                 const meta = MAN_CASE_META[manCase];
                 return (
-                  <div style={{ background: 'rgba(77,159,255,0.06)', borderRadius: 8, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ background: 'var(--blue-dim)', borderRadius: 'var(--r-md)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 2 }}>ลักษณะการย้ายงาน</div>
                     {/* move type */}
                     <div style={{ display: 'flex', gap: 8 }}>
-                      {[{ v: 'same', label: '🏭 ไลน์เดิม', desc: 'ย้ายในไลน์/ส่วนงานเดียวกัน' }, { v: 'cross', label: '🔀 ข้ามไลน์', desc: 'ย้ายข้ามไลน์ / ข้ามส่วนงาน' }].map(opt => (
-                        <label key={opt.v} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '7px 6px', borderRadius: 7, cursor: 'pointer',
-                          border: `2px solid ${log4MForm.moveType === opt.v ? '#4d9fff' : 'var(--border2)'}`,
-                          background: log4MForm.moveType === opt.v ? 'rgba(77,159,255,0.1)' : 'transparent' }}>
+                      {[{ v: 'same', label: 'ไลน์เดิม', desc: 'ย้ายในไลน์/ส่วนงานเดียวกัน' }, { v: 'cross', label: 'ข้ามไลน์', desc: 'ย้ายข้ามไลน์ / ข้ามส่วนงาน' }].map(opt => (
+                        <label key={opt.v} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '7px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer',
+                          border: `2px solid ${log4MForm.moveType === opt.v ? 'var(--blue)' : 'var(--border2)'}`,
+                          background: log4MForm.moveType === opt.v ? 'var(--blue-dim)' : 'transparent' }}>
                           <input type="radio" name="moveType" value={opt.v} checked={log4MForm.moveType === opt.v}
                             onChange={() => setLog4MForm({ ...log4MForm, moveType: opt.v })} style={{ display: 'none' }} />
                           <span style={{ fontSize: 13, fontWeight: 700 }}>{opt.label}</span>
@@ -3049,7 +3088,7 @@ export default function Management() {
                       มีประวัติเคยทำงานจุดนี้มาก่อน
                     </label>
                     {/* result badge */}
-                    <div style={{ fontSize: 11, padding: '5px 8px', borderRadius: 6, background: meta.bg, color: meta.color, fontWeight: 600 }}>
+                    <div style={{ fontSize: 11, padding: '5px 8px', borderRadius: 'var(--r-md)', background: meta.bg, color: meta.color, fontWeight: 600 }}>
                       {meta.label}
                     </div>
                   </div>
@@ -3057,22 +3096,22 @@ export default function Management() {
               })()}
               {/* Machine/Material/Method: replace vs change */}
               {log4MForm.category !== 'Man' && (
-                <div style={{ background: 'rgba(245,158,11,0.07)', borderRadius: 8, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ background: 'var(--amber-dim)', borderRadius: 'var(--r-md)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 2 }}>ลักษณะการเปลี่ยนแปลง</div>
                   <div style={{ display: 'flex', gap: 10 }}>
-                    {[{ v: 'replace', label: '🔄 Replace', desc: 'สลับ / ทดแทน' }, { v: 'change', label: '⚠️ Change', desc: 'เปลี่ยนแปลง' }].map(opt => (
-                      <label key={opt.v} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '8px 6px', borderRadius: 7, cursor: 'pointer',
-                        border: `2px solid ${log4MForm.subtype === opt.v ? (opt.v === 'replace' ? '#22c55e' : '#ef4444') : 'var(--border2)'}`,
-                        background: log4MForm.subtype === opt.v ? (opt.v === 'replace' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.08)') : 'transparent' }}>
+                    {[{ v: 'replace', label: 'Replace', desc: 'สลับ / ทดแทน' }, { v: 'change', label: 'Change', desc: 'เปลี่ยนแปลง' }].map(opt => (
+                      <label key={opt.v} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '8px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer',
+                        border: `2px solid ${log4MForm.subtype === opt.v ? (opt.v === 'replace' ? 'var(--green)' : 'var(--red)') : 'var(--border2)'}`,
+                        background: log4MForm.subtype === opt.v ? (opt.v === 'replace' ? 'var(--green-dim)' : 'var(--red-dim)') : 'transparent' }}>
                         <input type="radio" name="subtype" value={opt.v} checked={log4MForm.subtype === opt.v} onChange={() => setLog4MForm({ ...log4MForm, subtype: opt.v })} style={{ display: 'none' }} />
                         <span style={{ fontSize: 14, fontWeight: 700 }}>{opt.label}</span>
                         <span style={{ fontSize: 11, color: 'var(--muted)' }}>{opt.desc}</span>
                       </label>
                     ))}
                   </div>
-                  <div style={{ fontSize: 11, marginTop: 2, padding: '5px 8px', borderRadius: 6,
-                    background: log4MForm.subtype === 'replace' ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.1)',
-                    color: log4MForm.subtype === 'replace' ? '#22c55e' : '#ef4444' }}>
+                  <div style={{ fontSize: 11, marginTop: 2, padding: '5px 8px', borderRadius: 'var(--r-md)',
+                    background: log4MForm.subtype === 'replace' ? 'var(--green-dim)' : 'var(--red-dim)',
+                    color: log4MForm.subtype === 'replace' ? 'var(--green)' : 'var(--red)' }}>
                     {log4MForm.subtype === 'replace'
                       ? '✅ ระดับ: ไม่รุนแรง — หัวหน้างานอนุมัติได้'
                       : '🔴 ระดับ: รุนแรง — ต้องผ่าน QA'}
@@ -3093,10 +3132,10 @@ export default function Management() {
                 if (!needsImage) return null;
                 return (
                   <div>
-                    <label style={{ ...labelSt, color: '#a855f7' }}>
-                      📎 {log4MForm.category === 'Man' ? 'รูปหลักฐาน OJT' : 'รูปรายละเอียดการเปลี่ยนแปลง'} <span style={{ color: '#ef4444' }}>*</span>
+                    <label style={{ ...labelSt, color: 'var(--blue)' }}>
+                      {log4MForm.category === 'Man' ? 'รูปหลักฐาน OJT' : 'รูปรายละเอียดการเปลี่ยนแปลง'} <span style={{ color: 'var(--red)' }}>*</span>
                     </label>
-                    <div style={{ border: `2px dashed ${reqImageFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 8, padding: '10px 12px', background: reqImageFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center', position: 'relative' }}
+                    <div style={{ border: `2px dashed ${reqImageFile ? 'var(--blue)' : 'var(--border2)'}`, borderRadius: 'var(--r-md)', padding: '10px 12px', background: reqImageFile ? 'var(--blue-dim)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center', position: 'relative' }}
                       onClick={() => document.getElementById('req-img-input').click()}>
                       <input id="req-img-input" type="file" accept="image/*" style={{ display: 'none' }}
                         onChange={async e => {
@@ -3111,19 +3150,19 @@ export default function Management() {
                         }} />
                       {reqImagePreview
                         ? <img src={reqImagePreview} style={{ maxHeight: 140, maxWidth: '100%', borderRadius: 6, objectFit: 'contain' }} />
-                        : <div style={{ color: 'var(--muted)', fontSize: 13 }}>📷 แตะเพื่อเลือกรูป (JPG/PNG/WebP)</div>}
+                        : <div style={{ color: 'var(--muted)', fontSize: 13 }}>แตะเพื่อเลือกรูป (JPG/PNG/WebP)</div>}
                     </div>
                     {reqImageFile && (
                       <button type="button" onClick={() => { setReqImageFile(null); setReqImagePreview(null); }}
-                        style={{ marginTop: 4, fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                        ✕ ลบรูป
+                        style={{ marginTop: 4, fontSize: 11, color: 'var(--red)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                        ลบรูป
                       </button>
                     )}
                   </div>
                 );
               })()}
               <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
-                <button onClick={handleSave4MLog} disabled={isSaving4M} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 15, opacity: isSaving4M ? 0.6 : 1, cursor: isSaving4M ? 'not-allowed' : 'pointer' }}>
+                <button onClick={handleSave4MLog} disabled={isSaving4M} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 15, opacity: isSaving4M ? 0.6 : 1, cursor: isSaving4M ? 'not-allowed' : 'pointer' }}>
                   {isSaving4M ? 'กำลังบันทึก...' : 'บันทึก 4M Log'}
                 </button>
                 <button onClick={() => { if (!isSaving4M) { setShow4MModal(null); setLog4MForm({ category: 'Man', description: '' }); setReqImageFile(null); setReqImagePreview(null); } }}
@@ -3135,6 +3174,7 @@ export default function Management() {
           </div>
         </div>
       )}
+    </div>{/* /แถว pool/ผัง */}
     </div>
   );
 }
@@ -3184,7 +3224,7 @@ function WorkerHoverCard({ card, skillDefs }) {
   const hiddenCount = allStatRows.length - statRows.length;
 
   return (
-    <div ref={elRef} style={{ position: 'fixed', top: pos ? pos.top : -9999, left: pos ? pos.left : -9999, width: tooltipW, maxHeight: 'calc(100vh - 16px)', overflowY: 'hidden', zIndex: 3000, pointerEvents: 'none', visibility: pos ? 'visible' : 'hidden', background: 'var(--card)', border: `1px solid ${fc}55`, borderRadius: 14, boxShadow: 'var(--shadow-lg)', padding: 14, animation: pos ? 'hoverIn 0.18s ease' : 'none' }}>
+    <div ref={elRef} style={{ position: 'fixed', top: pos ? pos.top : -9999, left: pos ? pos.left : -9999, width: tooltipW, maxHeight: 'calc(100vh - 16px)', overflowY: 'hidden', zIndex: 3000, pointerEvents: 'none', visibility: pos ? 'visible' : 'hidden', background: 'var(--card)', border: `1px solid ${tint(fc, 'line')}`, borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', padding: 14, animation: pos ? 'hoverIn 0.18s ease' : 'none' }}>
       <style>{`@keyframes hoverIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
 
       {/* Header — portrait photo + name/badges/station stacked in the left column,
@@ -3194,11 +3234,11 @@ function WorkerHoverCard({ card, skillDefs }) {
         <div style={{ flexShrink: 0, width: photoW }}>
           <div style={{ position: 'relative' }}>
             {emp?.image_url
-              ? <img src={emp.image_url} style={{ width: photoW, height: photoW * 1.35, borderRadius: 10, objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fc}`, boxShadow: `0 0 14px ${fc}55`, display: 'block' }} />
-              : <div style={{ width: photoW, height: photoW * 1.35, borderRadius: 10, background: 'var(--bg3)', border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 44 }}>👤</div>
+              ? <img src={emp.image_url} style={{ width: photoW, height: photoW * 1.35, borderRadius: 10, objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fc}`, boxShadow: `0 0 14px ${tint(fc, 'line')}`, display: 'block' }} />
+              : <div style={{ width: photoW, height: photoW * 1.35, borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: `2px solid ${fc}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 44 }}>👤</div>
             }
             {fit && (
-              <div style={{ position: 'absolute', top: -16, left: 4, background: fc, color: '#fff', fontSize: 18, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 7, padding: '3px 8px', boxShadow: 'var(--shadow-float)' }}>
+              <div style={{ position: 'absolute', top: -16, left: 4, background: fc, color: '#fff', fontSize: 18, fontWeight: 900, fontFamily: 'var(--font-display)', lineHeight: 1, borderRadius: 'var(--r-md)', padding: '3px 8px', boxShadow: 'var(--shadow-float)' }}>
                 {fit.score}
               </div>
             )}
@@ -3212,8 +3252,8 @@ function WorkerHoverCard({ card, skillDefs }) {
             )}
             {fit && <div style={{ fontSize: 11, fontWeight: 700, color: fc }}>{fitLabel(fit.score)}</div>}
             <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-              {emp?.team && <span style={{ fontSize: 11, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 4, padding: '1px 5px' }}>Team {emp.team}</span>}
-              {emp?.section && <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 4, padding: '1px 5px' }}>📍 {emp.section}</span>}
+              {emp?.team && <span style={{ fontSize: 11, fontWeight: 800, background: 'rgba(77,159,255,0.15)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', borderRadius: 'var(--r-xs)', padding: '1px 5px' }}>Team {emp.team}</span>}
+              {emp?.section && <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(167,139,250,0.13)', color: '#a78bfa', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 'var(--r-xs)', padding: '1px 5px' }}>{emp.section}</span>}
             </div>
           </div>
         </div>
@@ -3225,7 +3265,7 @@ function WorkerHoverCard({ card, skillDefs }) {
                 const pass = s.req ? s.req.pass : null;
                 const sc = pass === false ? '#ef4444' : pass === true ? 'var(--accent)' : 'var(--text2)';
                 return (
-                  <div key={s.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg3)', border: `1px solid ${sc}33`, borderRadius: 5, padding: '4px 6px' }}>
+                  <div key={s.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg3)', border: `1px solid ${tint(sc, 'dim')}`, borderRadius: 'var(--r-xs)', padding: '4px 6px' }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 4 }}>{s.label}</span>
                     <span style={{ fontSize: 11, fontWeight: 900, color: sc, fontFamily: 'var(--font-display)', flexShrink: 0 }}>
                       {s.score > 0 ? s.score : '—'}{s.req ? <span style={{ fontSize: 11, opacity: 0.6 }}>/{s.req.required}</span> : ''}
@@ -3274,7 +3314,7 @@ function WorkerHoverCard({ card, skillDefs }) {
 function FitPopup({ fitPopup, onClose }) {
   const fc = fitColor(fitPopup.fit.score);
   return (
-    <div style={{ position: 'fixed', bottom: 'calc(24px + var(--mnav-h, 0px))', right: 24, background: 'rgba(10,10,18,0.97)', border: `1px solid ${fc}66`, borderLeft: `4px solid ${fc}`, borderRadius: 12, padding: '14px 16px', boxShadow: 'var(--shadow-lg)', zIndex: 1000, width: 264, animation: 'fmSlideIn 0.35s cubic-bezier(0.34,1.56,0.64,1)' }}>
+    <div style={{ position: 'fixed', bottom: 'calc(24px + var(--mnav-h, 0px))', right: 24, background: 'rgba(10,10,18,0.97)', border: `1px solid ${tint(fc, 'line')}`, borderLeft: `4px solid ${fc}`, borderRadius: 'var(--r-lg)', padding: '14px 16px', boxShadow: 'var(--shadow-lg)', zIndex: 1000, width: 264, animation: 'fmSlideIn 0.35s cubic-bezier(0.34,1.56,0.64,1)' }}>
       <style>{`@keyframes fmSlideIn { from { opacity:0; transform: translateX(28px) scale(0.94); } to { opacity:1; transform:translateX(0) scale(1); } }`}</style>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
         <img loading="lazy" src={fitPopup.worker.employees?.image_url || ''} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2.5px solid ${fc}`, flexShrink: 0 }} />
@@ -3282,9 +3322,9 @@ function FitPopup({ fitPopup, onClose }) {
           <div style={{ fontWeight: 700, fontSize: 13, color: '#f0f0f4' }}>{fitPopup.worker.employees?.name}</div>
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 1 }}>→ {fitPopup.station.station_name}</div>
         </div>
-        <div style={{ background: fc, color: '#fff', fontWeight: 900, fontSize: 22, padding: '4px 10px', borderRadius: 6, flexShrink: 0 }}>{fitPopup.fit.score}</div>
+        <div style={{ background: fc, color: '#fff', fontWeight: 900, fontSize: 22, padding: '4px 10px', borderRadius: 'var(--r-md)', flexShrink: 0 }}>{fitPopup.fit.score}</div>
       </div>
-      <div style={{ textAlign: 'center', marginBottom: 10, background: `${fc}20`, border: `1px solid ${fc}55`, borderRadius: 5, padding: '3px 0', fontSize: 11, fontWeight: 800, color: fc }}>{fitLabel(fitPopup.fit.score)}</div>
+      <div style={{ textAlign: 'center', marginBottom: 10, background: `${tint(fc, 'dim')}`, border: `1px solid ${tint(fc, 'line')}`, borderRadius: 'var(--r-xs)', padding: '3px 0', fontSize: 11, fontWeight: 800, color: fc }}>{fitLabel(fitPopup.fit.score)}</div>
       {fitPopup.fit.details.map(d => (
         <div key={d.label} style={{ marginBottom: 7 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
@@ -3295,9 +3335,9 @@ function FitPopup({ fitPopup, onClose }) {
               {d.actual}<span style={{ color: 'rgba(255,255,255,0.35)', fontWeight: 400 }}>/{d.required}%</span> {d.pass ? '✓' : '✗'}
             </span>
           </div>
-          <div style={{ height: 5, background: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
+          <div style={{ height: 5, background: 'rgba(255,255,255,0.08)', borderRadius: 'var(--r-xs)', overflow: 'hidden', position: 'relative' }}>
             <div style={{ position: 'absolute', left: `${d.required}%`, top: 0, bottom: 0, width: 1.5, background: 'rgba(255,255,255,0.3)', zIndex: 2 }} />
-            <div style={{ width: `${Math.min(d.actual,100)}%`, height: '100%', background: d.pass ? '#22c55e' : '#ef4444', borderRadius: 3 }} />
+            <div style={{ width: `${Math.min(d.actual,100)}%`, height: '100%', background: d.pass ? '#22c55e' : '#ef4444', borderRadius: 'var(--r-xs)' }} />
           </div>
         </div>
       ))}
@@ -3317,11 +3357,11 @@ function PointDetailCard({ detail, alarms, onClose }) {
   const imgUrl = jig?.image_path ? supabaseDR.storage.from('jig-images').getPublicUrl(jig.image_path).data.publicUrl : null;
 
   const chipSt = (color) => ({
-    fontSize: 11, fontWeight: 700, color, background: `${color}18`,
-    border: `1px solid ${color}45`, borderRadius: 5, padding: '2px 8px', whiteSpace: 'nowrap',
+    fontSize: 11, fontWeight: 700, color, background: `${tint(color, 'dim')}`,
+    border: `1px solid ${tint(color, 'line')}`, borderRadius: 5, padding: '2px 8px', whiteSpace: 'nowrap',
   });
   const InfoRow = ({ label, value }) => (value == null || value === '') ? null : (
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 9px' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '5px 9px' }}>
       <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', flexShrink: 0 }}>{label}</span>
       <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', textAlign: 'right', overflowWrap: 'anywhere' }}>{value}</span>
     </div>
@@ -3343,7 +3383,7 @@ function PointDetailCard({ detail, alarms, onClose }) {
     <div onClick={onClose}
       style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(4px)', padding: 16 }}>
       <div onClick={e => e.stopPropagation()}
-        style={{ background: 'var(--card)', border: `1px solid ${accent}55`, borderRadius: 16, padding: '16px 18px', width: 'min(92vw, 400px)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', boxShadow: 'var(--shadow-lg)', animation: 'pdIn 0.18s ease' }}>
+        style={{ background: 'var(--card)', border: `1px solid ${tint(accent, 'line')}`, borderRadius: 'var(--r-lg)', padding: '16px 18px', width: 'min(92vw, 400px)', maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', boxShadow: 'var(--shadow-lg)', animation: 'pdIn 0.18s ease' }}>
         <style>{`@keyframes pdIn { from { opacity:0; transform:scale(0.93) translateY(4px); } to { opacity:1; transform:scale(1) translateY(0); } }`}</style>
 
         {/* Header */}
@@ -3358,7 +3398,7 @@ function PointDetailCard({ detail, alarms, onClose }) {
             )}
             <div style={{ display: 'flex', gap: 5, marginTop: 6, flexWrap: 'wrap' }}>
               {mtype && <span style={chipSt(mtype.color || '#4d9fff')}>{mtype.icon ? `${mtype.icon} ` : ''}{mtype.label}</span>}
-              {machine?.line_name && <span style={chipSt('#a78bfa')}>📍 {machine.line_name}</span>}
+              {machine?.line_name && <span style={chipSt('#a78bfa')}>{machine.line_name}</span>}
               {machine?.process_type && <span style={chipSt('#4d9fff')}>{machine.process_type}</span>}
             </div>
           </div>
@@ -3367,8 +3407,8 @@ function PointDetailCard({ detail, alarms, onClose }) {
 
         {/* Downtime ที่ยังเปิดค้างของเครื่องนี้ */}
         {alarms && (
-          <div className="dt-alarm-blink" style={{ background: 'rgba(239,68,68,0.12)', border: '1.5px solid #ef4444', borderRadius: 8, padding: '8px 10px', marginBottom: 10 }}>
-            <div style={{ fontSize: 12, fontWeight: 900, color: '#ef4444', marginBottom: 4 }}>🚨 DOWNTIME</div>
+          <div className="dt-alarm-blink" style={{ background: 'rgba(239,68,68,0.12)', border: '1.5px solid #ef4444', borderRadius: 'var(--r-md)', padding: '8px 10px', marginBottom: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 900, color: '#ef4444', marginBottom: 4 }}>DOWNTIME</div>
             {alarms.map((d, i) => {
               const ongoing = !d.ended_at && d.duration_min == null;
               const elapsed = dtElapsedMin(d);
@@ -3399,7 +3439,7 @@ function PointDetailCard({ detail, alarms, onClose }) {
           <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', padding: '8px 0 2px' }}>กำลังโหลดข้อมูล...</div>
         )}
         {notRegistered && (
-          <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 8, padding: '10px 12px', marginTop: infoRows.length ? 8 : 0 }}>
+          <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '10px 12px', marginTop: infoRows.length ? 8 : 0 }}>
             ยังไม่ลงทะเบียนในฐานข้อมูล
           </div>
         )}

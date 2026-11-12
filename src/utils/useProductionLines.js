@@ -9,7 +9,8 @@
 
    คู่กับ <LineSelect> (src/components/LineSelect.jsx) ซึ่งรับ array นี้ไปวาด dropdown */
 import { supabase } from '../supabaseClient';
-import { cachedMaster, invalidateMaster, masterLoadState, MasterLoadError } from './masterCache';
+import { cachedMaster, masterLoadState, MasterLoadError } from './masterCache';
+import { invalidateTable } from './masterInvalidate.js';
 import useMasterRows from './useMasterRows.js';
 
 /* 🔴 ชุดคอลัมน์นี้เป็น **superset ของทุกหน้าที่ใช้** ตั้งใจให้ทุกจอแชร์ cache ก้อนเดียว (2026-09-25)
@@ -33,9 +34,13 @@ export async function loadProductionLines() {
     const { data, error } = await supabase.from('production_lines')
       .select(LINE_COLUMNS).order('name');
     if (error) throw error;
+    /* 🔴 ทะเบียนไลน์ "ว่าง" = อ่านไม่ได้ ไม่ใช่ไม่มีไลน์ (10/11) — RLS เปิดให้ทุกคนที่ login อ่านได้ทั้งตาราง
+       ⇒ 0 แถวเกิดได้ทางเดียวคือคิวรีวิ่งแบบ anon (ออกจากระบบ/token หลุด) ⇒ โยนเป็นผลล้ม
+       ให้แถบกลาง + ปุ่มโหลดใหม่ทำงาน และ**ห้ามลง cache** (เคสจริง: 122 ครั้ง/วัน · ดู masterCache.js) */
+    if (!data?.length) throw new MasterLoadError({ message: 'ทะเบียนไลน์ว่าง — ยังไม่ได้เข้าสู่ระบบหรือ session หลุด' });
     // ยังไม่ apply migration is_active → คอลัมน์ไม่มี = undefined = ถือว่ายังใช้งานอยู่
-    return data || [];
-  });
+    return data;
+  }, undefined, { nonEmpty: true });
 }
 
 /** เรียกหลังแก้ทะเบียนไลน์ (LineSetup) เพื่อให้หน้าอื่นเห็นทันทีไม่ต้องรอ TTL */
@@ -58,7 +63,13 @@ export const loadLinesRes = async () => {
   return { data, error: fail ? new MasterLoadError(fail) : null };
 };
 
-export const invalidateProductionLines = () => invalidateMaster(KEY);
+/* 🔴 ล้าง **ทุกคีย์ที่ถือทะเบียนไลน์** ไม่ใช่แค่คีย์ของ picker (2026-11-09)
+   `/daily-report` ห่อ cache ชั้นนอกไว้อีก 2 ชั้น (`production_lines:dr` / `:flow`) ⇒ ล้างแต่ `:v3`
+   = หน้าเปิดกะยังได้ลิสต์ว่างเดิม (นี่คือเหตุผลที่หน้านั้นต้องเขียนปุ่มล้าง 3 คีย์ของตัวเอง)
+   ⇒ ยกมาที่นี่ที่เดียว ผ่านทะเบียน `KEYS_BY_TABLE.production_lines` (ของกลาง · มีด่านคุม)
+   ⚠️ ชุดคีย์อยู่ที่ `masterInvalidate.js` **ห้ามไล่พิมพ์คีย์เองที่จุดเรียก** — เพิ่มคีย์ใหม่วันหน้า
+      จุดเรียกจะตามไม่ทัน (บทเรียน `:v2` ที่ค้างในทะเบียนมา 4 สัปดาห์) */
+export const invalidateProductionLines = () => invalidateTable('production_lines');
 
 /** สถานะโหลดทะเบียน — `{ rows, failed, stale, message, loading, reload }`
  *  🔴 ช่องเลือกที่ต้องบอกว่า "ลิสต์ว่างเพราะไม่มีของ หรือเพราะโหลดไม่สำเร็จ" ใช้ตัวนี้

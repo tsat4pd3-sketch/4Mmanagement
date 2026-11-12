@@ -22,6 +22,7 @@ import SearchInput from '../components/SearchInput';
 import useTimeRange from '../utils/useTimeRange';
 import { useMergeParams } from '../utils/useTabParam';
 import { KINDS, USER_KINDS, kindOf, buildFeed, countByKind, limitFeed } from '../utils/changelog';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* เพดานรายการที่วาดต่อรอบ — ช่วงกว้างมาก (ทั้งประวัติ = 1,157 รายการ) ทำจอ TV/มือถือหน่วง
    🔴 ตัดแล้วต้องเขียนบนจอว่า "แสดงกี่จากกี่" + ปุ่มดูเพิ่ม **ห้ามตัดเงียบ** */
@@ -132,8 +133,8 @@ export default function ProgramUpdate() {
       />
 
       {err && (
-        <div style={{ background: 'var(--card)', border: '1px solid #ef444466', borderLeft: '4px solid #ef4444',
-                      borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--text2)', lineHeight: 1.6 }}>
+        <div style={{ background: 'var(--card)', border: '1px solid var(--red)66', borderLeft: '4px solid var(--red)',
+                      borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 13, color: 'var(--text2)', lineHeight: 1.6 }}>
           ❌ <b>โหลดรายการอัพเดทไม่สำเร็จ</b> ({err}) — <b>ไม่ได้หมายความว่าไม่มีอัพเดท</b>
           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
             ไฟล์ <code>changelog.json</code> ถูกสร้างตอน build — ถ้าเพิ่ง deploy ลองรีเฟรชอีกครั้ง
@@ -150,8 +151,8 @@ export default function ProgramUpdate() {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 12, alignContent: 'start' }}>
             {KINDS.map(k => (
               <div key={k.key} style={{
-                background: 'var(--card)', border: `1px solid ${k.color}44`, borderLeft: `4px solid ${k.color}`,
-                borderRadius: 10, padding: '8px 14px', minWidth: 132, boxShadow: 'var(--shadow-sm)',
+                background: 'var(--card)', border: `1px solid ${tint(k.color, 'line')}`, borderLeft: `4px solid ${k.color}`,
+                borderRadius: 'var(--r-md)', padding: '8px 14px', minWidth: 132, boxShadow: 'var(--shadow-sm)',
               }}>
                 <div style={{ fontSize: 11.5, color: 'var(--text2)', fontWeight: 700 }}>{k.icon} {k.label}</div>
                 <div style={{ fontSize: 21, fontWeight: 800, color: k.color, lineHeight: 1.25 }}>
@@ -181,9 +182,9 @@ export default function ProgramUpdate() {
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
               <button type="button" onClick={() => { setOpenDays({}); setAllOpen(a => !(a == null ? (fewItems || false) : a)); }}
                 title="กางทุกวันเพื่ออ่านต่อเนื่อง หรือพับให้เห็นเฉพาะหัววัน"
-                style={{ padding: '3px 10px', borderRadius: 7, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
+                style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
                          border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }}>
-                {(allOpen == null ? fewItems : allOpen) ? '▴ พับทุกวัน' : '▾ กางทุกวัน'}
+                {(allOpen == null ? fewItems : allOpen) ? 'พับทุกวัน' : 'กางทุกวัน'}
               </button>
             </div>
           )}
@@ -206,7 +207,7 @@ export default function ProgramUpdate() {
                   <div key={c.h} style={{
                     display: 'flex', gap: 9, alignItems: 'flex-start', padding: '5px 10px',
                     borderLeft: `3px solid ${k.color}`, background: 'var(--card)',
-                    border: '1px solid var(--border)', borderLeftWidth: 3, borderRadius: 7, marginBottom: 4,
+                    border: '1px solid var(--border)', borderLeftWidth: 3, borderRadius: 'var(--r-md)', marginBottom: 4,
                   }}>
                     <span style={{ fontSize: 13, flexShrink: 0 }} title={k.label}>{k.icon}</span>
                     {/* 📱 ข้อความ commit มีคำยาวไม่มีช่องว่าง (ชื่อไฟล์/ชื่อฟังก์ชัน) ⇒ ต้องตัดคำได้
@@ -224,9 +225,9 @@ export default function ProgramUpdate() {
               {open && day.items.length > (dayCap[day.date] || DAY_ROWS) && (
                 <button type="button"
                   onClick={() => setDayCap(m => ({ ...m, [day.date]: day.items.length }))}
-                  style={{ margin: '2px 0 6px', padding: '3px 10px', borderRadius: 7, fontSize: 11.5, fontWeight: 700,
+                  style={{ margin: '2px 0 6px', padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700,
                            cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }}>
-                  ▾ ดูอีก {(day.items.length - (dayCap[day.date] || DAY_ROWS)).toLocaleString()} รายการของวันนี้
+                  ดูอีก {(day.items.length - (dayCap[day.date] || DAY_ROWS)).toLocaleString()} รายการของวันนี้
                 </button>
               )}
             </div>);
@@ -238,7 +239,7 @@ export default function ProgramUpdate() {
               ยังเหลืออีก <b style={{ color: 'var(--text2)' }}>{view.hidden.toLocaleString()}</b> รายการในช่วงนี้
               {' '}
               <button type="button" onClick={() => setCap(c => c + PAGE_ROWS)}
-                style={{ marginLeft: 6, padding: '4px 12px', borderRadius: 7, fontSize: 12, fontWeight: 700,
+                style={{ marginLeft: 6, padding: '4px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700,
                          cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)' }}>
                 ดูเพิ่ม {Math.min(PAGE_ROWS, view.hidden).toLocaleString()} รายการ
               </button>

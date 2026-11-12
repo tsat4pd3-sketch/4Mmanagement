@@ -26,7 +26,7 @@ const inp = { marginTop: 4, padding: '7px 9px', fontSize: 12, borderRadius: 7, b
 const FILES = [
   { key: 'fmea', label: '⚠️ PFMEA', hint: 'ชีทละ OP · ได้ทั้ง failure mode และประวัติแก้ไข' },
   { key: 'cp', label: '✅ Control Plan (CNP)', hint: 'ใช้สร้างรายการ OP + ชื่อขั้นงาน + เครื่องจักร' },
-  { key: 'pfc', label: '🗺️ Process Flow (PFC)', hint: 'ใช้เฉพาะประวัติการแก้ไข (ไม่บังคับ)' },
+  { key: 'pfc', label: 'Process Flow (PFC)', hint: 'ใช้เฉพาะประวัติการแก้ไข (ไม่บังคับ)' },
 ];
 
 /** อ่าน 1 ไฟล์ → { sheets, revs, unreadable } (xlsx เป็น lazy chunk — ห้าม import แบบ static) */
@@ -187,7 +187,7 @@ export default function PeExcelImportModal({ sets = [], currentSetId = '', onClo
   return (
     <div className="overlay"><div className="modal" style={{ width: 'min(920px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>📥 นำเข้าจากไฟล์ Excel</h3>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>นำเข้าจากไฟล์ Excel</h3>
         <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
       </div>
 
@@ -198,7 +198,7 @@ export default function PeExcelImportModal({ sets = [], currentSetId = '', onClo
         </div>
         <div style={{ display: 'grid', gap: 10 }}>
           {FILES.map((f) => (
-            <div key={f.key} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: 10, background: 'var(--bg2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+            <div key={f.key} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: 10, background: 'var(--bg2)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
               <div style={{ minWidth: 190 }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>{f.label}</div>
                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>{f.hint}</div>
@@ -217,7 +217,7 @@ export default function PeExcelImportModal({ sets = [], currentSetId = '', onClo
       {step === 'preview' && plan && (<>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
           {[['ขั้นงาน (OP)', plan.ops.length], ['PFMEA', plan.fmea.length], ['Control Plan', plan.cp.length], ['ประวัติแก้ไข', plan.revisions.length]].map(([k, v]) => (
-            <div key={k} style={{ flex: '1 1 150px', padding: 10, background: 'var(--bg2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+            <div key={k} style={{ flex: '1 1 150px', padding: 10, background: 'var(--bg2)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>{k}</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: v ? 'var(--accent)' : 'var(--muted)' }}>{v}</div>
             </div>
@@ -225,7 +225,7 @@ export default function PeExcelImportModal({ sets = [], currentSetId = '', onClo
         </div>
 
         {errs.map((w, i) => (
-          <div key={i} style={{ padding: 10, marginBottom: 8, borderRadius: 8, background: 'rgba(220,60,60,.12)', border: '1px solid rgba(220,60,60,.5)', fontSize: 12 }}>
+          <div key={i} style={{ padding: 10, marginBottom: 8, borderRadius: 'var(--r-md)', background: 'rgba(220,60,60,.12)', border: '1px solid rgba(220,60,60,.5)', fontSize: 12 }}>
             <b style={{ color: '#ff8a8a' }}>⛔ {w.text}</b>
             {w.rows && <div style={{ marginTop: 6, fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace', maxHeight: 110, overflowY: 'auto' }}>
               {w.rows.map((r, j) => <div key={j}>ชีท {r.sheet}{r.op ? ` · OP ${r.op}` : ''}{r.text ? ` · ${r.text}` : ''}</div>)}
@@ -233,7 +233,7 @@ export default function PeExcelImportModal({ sets = [], currentSetId = '', onClo
           </div>
         ))}
         {warns.map((w, i) => (
-          <div key={i} style={{ padding: 10, marginBottom: 8, borderRadius: 8, background: 'rgba(240,170,60,.12)', border: '1px solid rgba(240,170,60,.45)', fontSize: 12, color: 'var(--text2)' }}>
+          <div key={i} style={{ padding: 10, marginBottom: 8, borderRadius: 'var(--r-md)', background: 'rgba(240,170,60,.12)', border: '1px solid rgba(240,170,60,.45)', fontSize: 12, color: 'var(--text2)' }}>
             ⚠️ {w.text}
             {w.rows && <div style={{ marginTop: 6, fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace' }}>{w.rows.map((r, j) => <div key={j}>{r.sheet}</div>)}</div>}
           </div>
@@ -246,7 +246,7 @@ export default function PeExcelImportModal({ sets = [], currentSetId = '', onClo
             ถ้าไฟล์เป็นฟอร์มคนละแบบ ให้ส่งไฟล์ให้ผู้ดูแลระบบเพิ่มรูปแบบใหม่ให้
           </div>
         ) : (<>
-          <div style={{ maxHeight: 230, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 12 }}>
+          <div style={{ maxHeight: 230, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', marginBottom: 12 }}>
             <table className="table-sticky" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
               <thead><tr style={{ background: 'var(--bg3)' }}>
                 {['OP', 'ชื่อขั้นงาน', 'ชนิด', 'PFMEA', 'CP', 'child part / เครื่อง'].map((h) => (
@@ -268,7 +268,7 @@ export default function PeExcelImportModal({ sets = [], currentSetId = '', onClo
             </table>
           </div>
 
-          <div style={{ padding: 10, background: 'var(--bg2)', borderRadius: 8, border: '1px solid var(--border)' }}>
+          <div style={{ padding: 10, background: 'var(--bg2)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', gap: 14, marginBottom: 8, fontSize: 12.5 }}>
               <label style={{ display: 'flex', gap: 5, alignItems: 'center', cursor: 'pointer' }}>
                 <input type="radio" checked={mode === 'new'} onChange={() => setMode('new')} /> สร้างชุดเอกสารใหม่

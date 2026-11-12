@@ -57,12 +57,12 @@ import { DeleteButton } from '../components/IconButton';
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const TABS_BASE = [
-  { key: 'board',    label: '📊 บอร์ด' },
-  { key: 'parts',    label: '📦 พาร์ท & PPAP' },
-  { key: 'drawings', label: '📐 แบบ & ECI' },
-  { key: 'tooling',  label: '🔧 Tooling' },
-  { key: 'tasks',    label: '✅ งาน' },
-  { key: 'templates', label: '⚙️ แม่แบบ' },
+  { key: 'board',    label: 'บอร์ด' },
+  { key: 'parts',    label: 'พาร์ท & PPAP' },
+  { key: 'drawings', label: 'แบบ & ECI' },
+  { key: 'tooling',  label: 'Tooling' },
+  { key: 'tasks',    label: 'งาน' },
+  { key: 'templates', label: 'แม่แบบ' },
 ];
 const ALL_KEYS = TABS_BASE.map(t => t.key);
 
@@ -350,10 +350,10 @@ export default function NPI() {
               (ปุ่มที่กดไปแล้วไม่ตรงรุ่น แย่กว่าไม่มีปุ่ม · ยังไม่ผูก = ไปติ๊กที่ ✏️ โปรเจค) */}
           {nmBoardHref && (
             <a href={nmBoardHref} style={{ ...ghost, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
-              title="เปิดบอร์ด New Model (IEC) ของรุ่นนี้">🧭 บอร์ด New Model</a>
+              title="เปิดบอร์ด New Model (IEC) ของรุ่นนี้">บอร์ด New Model</a>
           )}
-          {project && canEdit && <button style={ghost} onClick={() => setProjModal({ ...emptyProject, ...project })}>✏️ โปรเจค</button>}
-          {canEdit && <button style={btn()} onClick={() => setProjModal({ ...emptyProject, project_code: nextProjectCode(projects.map(p => p.project_code), today), template_id: templates[0]?.id || '' })}>+ โปรเจค</button>}
+          {project && canEdit && <button type="button" className="pg-btn" onClick={() => setProjModal({ ...emptyProject, ...project })}>โปรเจค</button>}
+          {canEdit && <button type="button" className="pg-btn" onClick={() => setProjModal({ ...emptyProject, project_code: nextProjectCode(projects.map(p => p.project_code), today), template_id: templates[0]?.id || '' })}>+ โปรเจค</button>}
         </>}
         tabs={tabs} tab={tab} onTab={setTab} />
 
@@ -423,9 +423,9 @@ export default function NPI() {
       {projModal && (
         <Modal title={projModal.id ? 'แก้ไขโปรเจครุ่นใหม่' : 'สร้างโปรเจครุ่นใหม่'} onClose={() => setProjModal(null)} width={680}
           footer={<>
-            {projModal.id && <button style={{ ...ghost, color: '#ef4444', marginRight: 'auto' }} onClick={() => { setProjModal(null); delProject(projModal); }}>🗑 ลบโปรเจค</button>}
+            {projModal.id && <button style={{ ...ghost, color: 'var(--red)', marginRight: 'auto' }} onClick={() => { setProjModal(null); delProject(projModal); }}>ลบโปรเจค</button>}
             <button style={ghost} onClick={() => setProjModal(null)}>ยกเลิก</button>
-            <button style={btn()} disabled={saving} onClick={saveProject}>{saving ? 'กำลังบันทึก…' : '💾 บันทึก'}</button>
+            <button style={btn()} disabled={saving} onClick={saveProject}>{saving ? 'กำลังบันทึก…' : 'บันทึก'}</button>
           </>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label="รหัสโปรเจค" hint="เว้นว่าง = ระบบตั้งให้"><input style={inp} value={projModal.project_code} onChange={e => setProjModal({ ...projModal, project_code: e.target.value })} placeholder="NPI-2026-001" /></Field>
@@ -447,7 +447,7 @@ export default function NPI() {
             {/* 🔗 ผูกกับบอร์ด New Model (/nm-board) — 2026-10-06 · คำสั่ง user "2 หน้านี้ต้อง link กัน"
                 🔴 ระบบ **เรียง** ตัวที่น่าจะใช่ขึ้นก่อนเท่านั้น ห้ามเลือกให้เอง — ผูกผิดรุ่น = บอร์ดโชว์ตัวเลขของรุ่นอื่น
                    ซึ่งแย่กว่าไม่โชว์เลย (กฎความซื่อสัตย์ของจอ) */}
-            <Field label="🧭 รุ่นบนบอร์ด New Model" span={2}
+            <Field label="รุ่นบนบอร์ด New Model" span={2}
               hint="ผูกแล้วบอร์ด /nm-board จะดึงตัวเลขจริงจากโปรเจคนี้ไปแสดง และกดข้ามไปมาได้ · เว้นว่าง = ยังไม่ผูก">
               <select style={inp} value={projModal.nm_board_id || ''}
                 onChange={e => setProjModal({ ...projModal, nm_board_id: e.target.value })}>
@@ -466,7 +466,7 @@ export default function NPI() {
         <Modal title={partModal.id ? `แก้ไขพาร์ท ${partModal.part_no}` : 'เพิ่มพาร์ทในโปรเจค'} onClose={() => setPartModal(null)} width={720}
           footer={<>
             <button style={ghost} onClick={() => setPartModal(null)}>ยกเลิก</button>
-            <button style={btn()} disabled={saving} onClick={savePart}>{saving ? 'กำลังบันทึก…' : '💾 บันทึก'}</button>
+            <button style={btn()} disabled={saving} onClick={savePart}>{saving ? 'กำลังบันทึก…' : 'บันทึก'}</button>
           </>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label="ชุด PFC/FMEA/CP ที่มีอยู่" hint="เลือกแล้วเติมข้อมูลพาร์ทให้ · ไม่มี = สร้างจากคลัง PFMEA ได้เลย" span={2}>
@@ -475,7 +475,7 @@ export default function NPI() {
                 <option value="">— ยังไม่มีชุดเอกสาร PE (สร้างที่ /pe-docs แล้วค่อยผูก) —</option>
                 {peSets.map(s => <option key={s.id} value={s.id}>{s.part_no} · {s.part_name || '—'} · {s.model || ''} {s.line_name ? `· ${s.line_name}` : ''}</option>)}
               </select>
-                <button style={{ ...ghost, whiteSpace: 'nowrap' }} onClick={() => setFromMasterOpen(true)} title={peMasters.length ? 'เลือกกระบวนการมาตรฐานตามลำดับผลิต → ได้ OP + PFMEA ร่างทันที' : 'คลัง PFMEA ยังว่าง (ยังไม่ apply migration 20260915_pe_fmea_master)'}>📚 สร้างจาก master</button>
+                <button style={{ ...ghost, whiteSpace: 'nowrap' }} onClick={() => setFromMasterOpen(true)} title={peMasters.length ? 'เลือกกระบวนการมาตรฐานตามลำดับผลิต → ได้ OP + PFMEA ร่างทันที' : 'คลัง PFMEA ยังว่าง (ยังไม่ apply migration 20260915_pe_fmea_master)'}>สร้างจาก master</button>
               </div>
             </Field>
             <Field label="Part No. (ลูกค้า) *"><input style={inp} value={partModal.part_no} onChange={e => setPartModal({ ...partModal, part_no: e.target.value })} placeholder="MB3B-16E060-CH" /></Field>
@@ -529,7 +529,7 @@ function PartsTable({ parts, rollByPart, partId, onPick, canEdit, onAdd, onEdit,
   return (
     <div style={{ ...card, marginBottom: 14 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-        <div style={{ fontSize: 14, fontWeight: 800 }}>📦 พาร์ทในโปรเจค ({parts.length})</div>
+        <div style={{ fontSize: 14, fontWeight: 800 }}>พาร์ทในโปรเจค ({parts.length})</div>
         {canEdit && <button style={btn()} onClick={onAdd}>+ พาร์ท</button>}
       </div>
       {!parts.length ? <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>ยังไม่มีพาร์ท — กด + พาร์ท (เลือกจากชุด PFC/FMEA/CP ที่มีอยู่ได้เลย เช่น 060/061)</div> : (
@@ -544,16 +544,16 @@ function PartsTable({ parts, rollByPart, partId, onPick, canEdit, onAdd, onEdit,
                 const r = rollByPart[p.id] || {};
                 const on = p.id === partId;
                 return (
-                  <tr key={p.id} onClick={() => onPick(p.id)} style={{ cursor: 'pointer', background: on ? 'rgba(77,159,255,0.10)' : undefined }}>
+                  <tr key={p.id} onClick={() => onPick(p.id)} style={{ cursor: 'pointer', background: on ? 'var(--blue-dim)' : undefined }}>
                     <td style={tdSt}><LightDot light={r.light} /></td>
                     <td style={{ ...tdSt, fontFamily: 'monospace', fontWeight: 800, color: 'var(--text)' }}>{p.part_no}</td>
                     <td style={tdSt}>{p.part_name || <span style={{ color: 'var(--muted)' }}>—</span>}</td>
-                    <td style={tdSt}>{p.line_name || <span style={{ color: '#f59e0b', fontWeight: 700 }} title="ยังไม่กำหนดไลน์">—</span>}</td>
-                    <td style={tdSt}>{r.current ? <Pill label={r.current.label} color="#4d9fff" /> : <span style={{ color: '#f59e0b' }}>ไม่มีเฟส</span>}</td>
-                    <td style={{ ...tdSt, textAlign: 'right', whiteSpace: 'nowrap' }}>{r.done ?? 0}/{r.total ?? 0} <span style={{ color: 'var(--muted)' }}>({r.pct ?? 0}%)</span>{r.overdue ? <span style={{ color: '#ef4444', fontWeight: 800 }}> · เลย {r.overdue}</span> : null}</td>
+                    <td style={tdSt}>{p.line_name || <span style={{ color: 'var(--amber)', fontWeight: 700 }} title="ยังไม่กำหนดไลน์">—</span>}</td>
+                    <td style={tdSt}>{r.current ? <Pill label={r.current.label} color="var(--blue)" /> : <span style={{ color: 'var(--amber)' }}>ไม่มีเฟส</span>}</td>
+                    <td style={{ ...tdSt, textAlign: 'right', whiteSpace: 'nowrap' }}>{r.done ?? 0}/{r.total ?? 0} <span style={{ color: 'var(--muted)' }}>({r.pct ?? 0}%)</span>{r.overdue ? <span style={{ color: 'var(--red)', fontWeight: 800 }}> · เลย {r.overdue}</span> : null}</td>
                     <td style={tdSt}><Pill label={`${PPAP_STATUS[p.ppap_status]?.label || p.ppap_status} ${r.ppap ? `${r.ppap.done}/${r.ppap.total}` : ''}`} color={PPAP_STATUS[p.ppap_status]?.color} /></td>
                     <td style={tdSt} onClick={e => e.stopPropagation()}>
-                      {p.pe_set_id ? <Link to={`/pe-docs?set=${p.pe_set_id}`} style={{ color: '#4d9fff', fontSize: 12 }}>📐 {peSets.find(s => s.id === p.pe_set_id)?.part_no || 'เปิด'}</Link> : <span style={{ color: '#f59e0b', fontSize: 11.5 }} title="ยังไม่ผูกชุด PFC/FMEA/CP">ยังไม่ผูก</span>}
+                      {p.pe_set_id ? <Link to={`/pe-docs?set=${p.pe_set_id}`} style={{ color: 'var(--blue)', fontSize: 12 }}>📐 {peSets.find(s => s.id === p.pe_set_id)?.part_no || 'เปิด'}</Link> : <span style={{ color: 'var(--amber)', fontSize: 11.5 }} title="ยังไม่ผูกชุด PFC/FMEA/CP">ยังไม่ผูก</span>}
                     </td>
                     <td style={tdSt}><Pill label={PART_STATUS[p.status]?.label || p.status} color={PART_STATUS[p.status]?.color} /></td>
                     <td style={{ ...tdSt, whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
@@ -597,19 +597,19 @@ function Board({ projects, rollByProject, templates, project, tplPhases, parts, 
           const left = pj.sop_date ? daysBetween(today, pj.sop_date) : null;
           const on = project?.id === pj.id;
           return (
-            <div key={pj.id} onClick={() => onPickProject(pj.id)} style={{ ...card, cursor: 'pointer', borderColor: on ? '#4d9fff' : 'var(--border)', borderLeft: `5px solid ${(LIGHT[r.light] || LIGHT.grey).color}` }}>
+            <div key={pj.id} onClick={() => onPickProject(pj.id)} style={{ ...card, cursor: 'pointer', borderColor: on ? 'var(--blue)' : 'var(--border)', borderLeft: `5px solid ${(LIGHT[r.light] || LIGHT.grey).color}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'center' }}>
                 <div style={{ fontWeight: 900, fontSize: 14 }}>{pj.name}</div>
                 <Pill label={PROJECT_STATUS[pj.status]?.label} color={PROJECT_STATUS[pj.status]?.color} />
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>{pj.project_code} · {pj.customer || '—'} · {tpl?.label || '—'}</div>
               <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 12.5, flexWrap: 'wrap' }}>
-                <span>📦 {r.parts} พาร์ท</span>
-                <span>📄 {r.done}/{r.total} ({r.pct}%)</span>
-                {r.overdue > 0 && <span style={{ color: '#ef4444', fontWeight: 800 }}>⏰ เลย {r.overdue}</span>}
-                <span style={{ color: left != null && left < 0 ? '#ef4444' : 'var(--text2)' }}>🏁 SOP {pj.sop_date ? fmtDate(pj.sop_date) : '—'}{left != null ? ` (${left >= 0 ? `อีก ${left} วัน` : `เลย ${-left} วัน`})` : ''}</span>
+                <span>{r.parts} พาร์ท</span>
+                <span>{r.done}/{r.total} ({r.pct}%)</span>
+                {r.overdue > 0 && <span style={{ color: 'var(--red)', fontWeight: 800 }}>⏰ เลย {r.overdue}</span>}
+                <span style={{ color: left != null && left < 0 ? 'var(--red)' : 'var(--text2)' }}>SOP {pj.sop_date ? fmtDate(pj.sop_date) : '—'}{left != null ? ` (${left >= 0 ? `อีก ${left} วัน` : `เลย ${-left} วัน`})` : ''}</span>
               </div>
-              <div style={{ height: 6, background: 'var(--bg2)', borderRadius: 3, marginTop: 8, overflow: 'hidden' }}>
+              <div style={{ height: 6, background: 'var(--bg2)', borderRadius: 'var(--r-xs)', marginTop: 8, overflow: 'hidden' }}>
                 <div style={{ width: `${r.pct}%`, height: '100%', background: (LIGHT[r.light] || LIGHT.grey).color }} />
               </div>
             </div>
@@ -621,18 +621,18 @@ function Board({ projects, rollByProject, templates, project, tplPhases, parts, 
         <>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
             {kpi('พาร์ท', parts.length)}
-            {kpi('เอกสารอนุมัติ', `${pr.done}/${pr.total}`, pr.pct >= 100 && pr.total ? '#22c55e' : undefined)}
-            {kpi('เลยกำหนด', pr.overdue, pr.overdue ? '#ef4444' : '#22c55e')}
+            {kpi('เอกสารอนุมัติ', `${pr.done}/${pr.total}`, pr.pct >= 100 && pr.total ? 'var(--green)' : undefined)}
+            {kpi('เลยกำหนด', pr.overdue, pr.overdue ? 'var(--red)' : 'var(--green)')}
             {kpi('PPAP อนุมัติ', `${ppapApproved}/${parts.length}`)}
-            {kpi('ECI เปิดอยู่', openEci, openEci ? '#f59e0b' : undefined)}
-            {kpi('Tooling ล่าช้า', `${toolDelayed}/${tooling.length}`, toolDelayed ? '#ef4444' : undefined)}
+            {kpi('ECI เปิดอยู่', openEci, openEci ? 'var(--amber)' : undefined)}
+            {kpi('Tooling ล่าช้า', `${toolDelayed}/${tooling.length}`, toolDelayed ? 'var(--red)' : undefined)}
             {kpi('โปรเจค active ทั้งระบบ', active.length)}
           </div>
 
           <div style={{ ...card }}>
-            <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>🗂️ พาร์ท × เฟส — {project.name}</div>
+            <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>พาร์ท × เฟส — {project.name}</div>
             {!parts.length ? <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>ยังไม่มีพาร์ท — เพิ่มที่แท็บ 📦 พาร์ท & PPAP</div>
-              : !tplPhases.length ? <div style={{ color: '#f59e0b', fontSize: 12.5, fontWeight: 700 }}>แม่แบบของโปรเจคนี้ยังไม่มีเฟส — ตั้งที่แท็บ ⚙️ แม่แบบ</div> : (
+              : !tplPhases.length ? <div style={{ color: 'var(--amber)', fontSize: 12.5, fontWeight: 700 }}>แม่แบบของโปรเจคนี้ยังไม่มีเฟส — ตั้งที่แท็บ ⚙️ แม่แบบ</div> : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead><tr>
@@ -662,9 +662,9 @@ function Board({ projects, rollByProject, templates, project, tplPhases, parts, 
                                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
                                     <LightDot light={pr2?.light || 'grey'} size={18} />
                                     <span style={{ fontSize: 11, color: 'var(--muted)' }}>{pr2?.done ?? 0}/{pr2?.total ?? 0}</span>
-                                    {phRow.plan_end && <span style={{ fontSize: 11, color: phRow.status !== 'completed' && phRow.plan_end < today ? '#ef4444' : 'var(--muted)' }}>{fmtDate(phRow.plan_end)}</span>}
+                                    {phRow.plan_end && <span style={{ fontSize: 11, color: phRow.status !== 'completed' && phRow.plan_end < today ? 'var(--red)' : 'var(--muted)' }}>{fmtDate(phRow.plan_end)}</span>}
                                   </div>
-                                ) : <span style={{ color: '#f59e0b', fontSize: 11 }}>—</span>}
+                                ) : <span style={{ color: 'var(--amber)', fontSize: 11 }}>—</span>}
                               </td>
                             );
                           })}

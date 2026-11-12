@@ -31,6 +31,7 @@ import {
 } from './mtnStepPerm.js';
 import { isMtnFormRow, isApprovalBlocked } from './mtnMoForm.js';
 import { bkkDateStr } from './workDate.js';
+import { binTagAge, ncStep } from './qualityBin.js';   // อายุแท็กถังเหลือง/แดง (WI-PD3-087 §5.6) — ห้ามเขียนเลขวันซ้ำที่นี่
 
 /** 3 ชั้นของคิว — ชื่อชั้นใช้ร่วมกับจอ ห้ามพิมพ์สตริงเองในหน้า */
 export const TIER = { MINE: 'mine', UNIT: 'unit', FLOOR: 'floor' };
@@ -198,6 +199,8 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
      แล้วแผงยืนยันว่า "ไม่มีงานที่รอคุณอยู่" ทั้งที่ ผจก.ฝ่ายที่แจ้งมี 51 ใบรออนุมัติปิด
      ⚠️ ตัดเงียบแย่กว่าตัวเลขไม่ครบ — badgeCount() คืน 0 ตอน partial อยู่แล้ว (ไม่หลอกว่ามีงานน้อย) */
   if (src?.moTruncated) missing.push('mo_truncated');
+  /* 🔴 คิวถังเหลืองชนเพดานของตัวโหลด = ตัวเลขต่ำกว่าจริง ⇒ จอต้องเขียนบอกว่าไม่ครบ (09/11) */
+  if (src?.binsTruncated) missing.push('bins_truncated');
   /* 🔴 แถวที่ "ชี้ส่วนงานไม่ได้" — ตกจากคิวของทุกคน ⇒ ต้องนับไว้ให้จอเขียนบอก ห้ามหายเงียบ */
   let unattributed = 0;
   const keep = (row) => {
@@ -310,6 +313,107 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
     });
   }
 
+  /* ── 🟡 ถังเหลืองรอพิจารณา — "ซ่อมกลับมาดีได้ หรือเสียแน่" (2026-11-09) ──────────────
+     ที่มา: เปิดแท็กเหลืองอัตโนมัติตอนลงงานเสียไปเมื่อ 05/11 ⇒ **วัดจริง 4 วันแรก: ตั้งแท็ก 14 ใบ
+     ตัดสินแล้ว 0 ใบ** · กองโตวันละ 3-4 ใบ โดยไม่มีใครถูกดึงไปเคลียร์ (จอมี แต่ต้องเปิดหน้าถึงเห็น)
+     🔴 **2 ชั้น ห้ามใช้ชั้นเดียว** — คนตัดสินคือ QA ซึ่ง `sections` ไม่ตรงกับไลน์ผลิต
+        ⇒ มีแต่ชั้น `unit` = QA ไม่เห็นอะไรเลย · มีแต่ `floor` = หน่วยเจ้าของไม่รู้ว่าใบไหนของตัวเอง
+     🔴 ผู้เรียกต้องเติม `section` ของไลน์มาให้ (ตารางถังไม่มีคอลัมน์ส่วนงาน) — ไม่เติม = `unknown`
+        แล้วตกเป็น "ชี้ส่วนงานไม่ได้" ที่จอเขียนบอกอยู่แล้ว ห้ามเดาให้ */
+  const bins = need('bins', src.bins);
+  const todayKey = bkkDateStr(now.getTime());
+  const binAgg = (rows) => {
+    let n = 0; let pcs = 0; let oldest = null; let over = 0;
+    for (const b of rows) {
+      n += 1; pcs += Number(b.qty) || 0;
+      const age = ageDays(b.work_date, now);
+      if (age != null && (oldest == null || age > oldest)) oldest = age;
+      if (binTagAge({ ...b, bin: 'yellow' }, todayKey)?.over) over += 1;
+    }
+    return { n, pcs, oldest, over };
+  };
+  const binDetail = (g, where) => [where,
+    `${g.pcs.toLocaleString()} ชิ้น`,
+    g.oldest != null ? `เก่าสุด ${g.oldest.toLocaleString()} วัน` : null,
+    g.over ? `⏱ เกินอายุแท็ก ${g.over.toLocaleString()}` : null].filter(Boolean).join(' · ');
+
+  /* 🔴 **สรุปบรรทัดเดียวทั้ง 2 ชั้น ห้ามแตกรายตัว** — ชั้น unit มีเพดาน 6 แถว (CAP)
+     14 ใบ (ยอดจริง 09/11) จะดันใบซ่อม/4M ของหน่วยงานตกจอหมด · หลักเดียวกับคำขอขึ้นขั้นทักษะ
+     รายตัวดูที่หน้าถังอยู่แล้ว และแถวในคิวก็ลิงก์ไปหน้าเดียวกันทุกแถว (ไม่มี deep-link รายใบ) */
+  /* 🔢 แยกตามเจ้าของขั้น (แบบใบ MO · 10/11) — `ncStep()` ตัดสินที่เดียว · ผู้เรียกส่งแถวที่ยังไม่ปิดมาแล้ว */
+  const ownerOf = (b) => ncStep({ ...b, bin: 'yellow', is_active: true }).owner;
+  const mineBins = bins.filter(b => keep(b));
+  const gUnit = binAgg(mineBins);
+  if (gUnit.n) {
+    const nProd = mineBins.filter(b => ownerOf(b) === 'prod').length;
+    const nQa = mineBins.filter(b => ownerOf(b) === 'qa').length;
+    unit.push({
+      key: 'binpend_unit', icon: '🟡', tier: TIER.UNIT, count: gUnit.n,
+      title: `ถังเหลืองค้างในสาย ${gUnit.n.toLocaleString()} รายการ`,
+      detail: [binDetail(gUnit, 'หน่วยงานของคุณ'), `รอ QA ${nQa} · รอฝ่ายผลิต (ซ่อม/ย้ายแดง) ${nProd}`].join(' · '),
+      age: gUnit.oldest,
+      tag: nProd ? 'ฝ่ายผลิต: ลงผลซ่อม / ย้ายลงถังแดง' : (gUnit.over ? 'เกินอายุแท็กแล้ว' : 'รอ QA ตัดสิน/ตรวจรับ'),
+      to: '/scrap-report?tab=bins',
+    });
+  }
+  /* ✍️ คนที่ตัดสินได้ (QA · `qa:bin_decide`) = งานรอ "ตำแหน่งเรา" ทั้งโรงงาน — เหมือนช่องเซ็นของใบ MO
+     🔴 เข้าชั้น `mine` เฉพาะคนที่ถือสิทธิ์จริง (ส่งมาจากตัวโหลด) — ไม่ใช่ทุกคนในโรงงาน (badge เด้งค้าง) */
+  if (me?.canBinDecide) {
+    const qaRows = bins.filter(b => ownerOf(b) === 'qa');
+    if (qaRows.length) {
+      const g = binAgg(qaRows);
+      const nAccept = qaRows.filter(b => ncStep({ ...b, bin: 'yellow', is_active: true }).step === 4).length;
+      mine.push({
+        key: 'binqa_mine', icon: '🔎', tier: TIER.MINE, count: qaRows.length,
+        title: `ถังเหลืองรอ QA ${qaRows.length.toLocaleString()} รายการ`,
+        detail: [`ตัดสิน ${qaRows.length - nAccept} · ตรวจรับงานซ่อม ${nAccept}`, `${g.pcs.toLocaleString()} ชิ้น`,
+          g.over ? `⏱ เกินอายุแท็ก ${g.over.toLocaleString()}` : null].filter(Boolean).join(' · '),
+        age: g.oldest, tag: 'รอ QA', to: '/qa?tab=bins',
+      });
+    }
+  }
+  /* บรรทัดของทั้งโรงงาน — กองนี้ไม่มีเจ้าภาพรายใบ (กติกาเดิมของชั้น `floor`)
+     🔴 ห้ามให้ขึ้น badge (badge นับเฉพาะชั้น `mine`) */
+  const gAll = binAgg(bins);
+  if (gAll.n) {
+    floor.push({
+      key: 'binpend', icon: '🟡', tier: TIER.FLOOR, count: gAll.n,
+      title: `ถังเหลืองรอพิจารณา ${gAll.n.toLocaleString()} รายการ`,
+      detail: binDetail(gAll, 'ทั้งโรงงาน · QA/หัวหน้าตัดสิน'),
+      age: null, to: '/scrap-report?tab=bins',
+    });
+  }
+
+  /* ── 🔴 ถังแดงยังไม่ออกใบรายงานของเสีย — หัวหน้าแผนกทวงหัวหน้าไลน์ (2026-11-10 · คำสั่ง user) ──
+     แท็กแดงมีอายุ 1 วัน (WI-PD3-087 §5.6) แต่ไม่มีใครถูกดึงไปออกใบ ⇒ วัด 10/11: ค้าง 74 รายการ · ผูกใบ 0
+     🔴 ชั้น `unit` เท่านั้น (หน่วยเจ้าของไลน์ = คนที่ต้องออกใบ) · สรุปบรรทัดเดียว ห้ามแตกรายตัว (CAP unit)
+     ⚠️ `redBins` ไม่ส่งมา = ไม่ได้โหลด ⇒ ข้ามทั้งก้อน (ไม่ติด partial — ตัวโหลดเก่าที่ไม่รู้จักก้อนนี้ยังใช้ได้)
+        ส่ง null = โหลดล่ม ⇒ partial */
+  if (src.redBins !== undefined) {
+    const reds = need('redBins', src.redBins);
+    if (src?.redBinsTruncated) missing.push('red_bins_truncated');
+    const mineRed = reds.filter(b => keep(b));
+    if (mineRed.length) {
+      let pcs = 0; let oldest = null; let over = 0;
+      for (const b of mineRed) {
+        pcs += Number(b.qty) || 0;
+        const age = ageDays(b.work_date, now);
+        if (age != null && (oldest == null || age > oldest)) oldest = age;
+        if (binTagAge({ ...b, bin: 'red' }, todayKey)?.over) over += 1;
+      }
+      unit.push({
+        key: 'binred_unit', icon: '🔴', tier: TIER.UNIT, count: mineRed.length,
+        title: `ถังแดงยังไม่ออกใบรายงานของเสีย ${mineRed.length.toLocaleString()} รายการ`,
+        detail: ['หน่วยงานของคุณ', `${pcs.toLocaleString()} ชิ้น`,
+          oldest != null ? `เก่าสุด ${oldest.toLocaleString()} วัน` : null,
+          over ? `⏱ เกินอายุแท็ก ${over.toLocaleString()}` : null].filter(Boolean).join(' · '),
+        age: oldest,
+        tag: 'หัวหน้าแผนก: ทวงหัวหน้าไลน์ออกใบขออนุมัติทำลาย',
+        to: '/scrap-report?tab=bins',
+      });
+    }
+  }
+
   // ── งานที่ถูกมอบหมายชื่อเราตรงๆ (ใบติดตามงานแก้ไข) ──────────────────────────
   for (const a of need('actions', src.actions)) {
     const it = {
@@ -418,7 +522,13 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
   return {
     mine, unit, floor,
     /* 🔴 badge = จำนวน "ใบ" จริง — บรรทัดสรุป (`rollup`) ไม่นับ ไม่งั้นเลขเกินจำนวนงานจริง */
-    counts: { mine: mine.filter(x => !x.rollup).length, unit: unit.length, floor: floor.reduce((n, f) => n + (f.count || 0), 0) },
+    /* 🔴 แถวสรุป (คิวถังเหลือง · คำขอขึ้นขั้นทักษะ) ถือ `count` ของกองไว้ — นับเป็น 1 แถว
+       จะได้ตัวเลขชั้นหน่วยงาน **ต่ำกว่างานจริง** (QC audit 09/11) ⇒ นับด้วย `count` ถ้ามี */
+    counts: {
+      mine: mine.filter(x => !x.rollup).length,
+      unit: unit.reduce((n, u) => n + (Number(u.count) || 1), 0),
+      floor: floor.reduce((n, f) => n + (f.count || 0), 0),
+    },
     missing,
     partial: missing.length > 0,
     /* จำนวนแถวที่ระบุส่วนงานไม่ได้ ⇒ ไม่เข้าคิวของใครเลย — **จอต้องเขียนบอก** (ไม่ใช่ `partial`

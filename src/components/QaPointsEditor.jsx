@@ -82,7 +82,7 @@ function QaPointCard({ p, onChange, onDelete, isPinning, onPinToggle, onUnpin, h
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-        <button type="button" onClick={() => onChange({ item_type: 'variable' })} style={S.typeBtn(isVar, '#4d9fff')}>📏 Variable (ค่าตัวเลข)</button>
+        <button type="button" onClick={() => onChange({ item_type: 'variable' })} style={S.typeBtn(isVar, '#4d9fff')}>Variable (ค่าตัวเลข)</button>
         <button type="button" onClick={() => onChange({ item_type: 'attribute', calc: null })} style={S.typeBtn(!isVar, '#9b8de8')}>✅ Attribute (OK/NG)</button>
       </div>
 
@@ -150,14 +150,14 @@ function TitlePicker({ current, used, onPick, onClose }) {
   const [custom, setCustom] = useState(current || '');
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 2100, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 12, width: 'min(460px, 96vw)', padding: 18, boxShadow: 'var(--shadow-lg)' }}>
-        <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10 }}>🖼 ตั้งชื่อแผ่น/มุมมอง</div>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: 'min(460px, 96vw)', padding: 18, boxShadow: 'var(--shadow-lg)' }}>
+        <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 10 }}>ตั้งชื่อแผ่น/มุมมอง</div>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 12 }}>
           {STANDARD_VIEWS.map(v => {
             const taken = used.includes(v) && v !== current;
             return (
               <button key={v} type="button" disabled={taken} onClick={() => onPick(v)} title={taken ? 'มีแผ่นชื่อนี้อยู่แล้ว' : ''}
-                style={{ padding: '8px 10px', borderRadius: 8, fontSize: 12.5, cursor: taken ? 'not-allowed' : 'pointer', opacity: taken ? 0.4 : 1,
+                style={{ padding: '8px 10px', borderRadius: 'var(--r-md)', fontSize: 12.5, cursor: taken ? 'not-allowed' : 'pointer', opacity: taken ? 0.4 : 1,
                   border: '1px solid var(--border2)', background: v === current ? 'var(--accent-dim)' : 'var(--bg3)', color: 'var(--text)' }}>
                 {v}{taken ? ' ✓' : ''}
               </button>
@@ -168,10 +168,10 @@ function TitlePicker({ current, used, onPick, onClose }) {
           <input value={custom} onChange={e => setCustom(e.target.value)} placeholder="หรือพิมพ์ชื่อเอง เช่น Section C-C" style={{ flex: 1 }}
             onKeyDown={e => { if (e.key === 'Enter' && custom.trim()) onPick(custom.trim()); }} />
           <button type="button" disabled={!custom.trim()} onClick={() => onPick(custom.trim())}
-            style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer' }}>ตกลง</button>
+            style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer' }}>ตกลง</button>
         </div>
         <div style={{ textAlign: 'right', marginTop: 10 }}>
-          <button type="button" onClick={onClose} style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ข้าม</button>
+          <button type="button" onClick={onClose} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ข้าม</button>
         </div>
       </div>
     </div>
@@ -473,7 +473,7 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, writeChe
           listTitle={`จุดตรวจชิ้นงาน (${points.length})`} onAdd={addPoint}
           jump={{ points: points.map(p => ({ _key: p._key, name: p.characteristic, group_name: '' })), labels, onJump: jumpTo, flashKey, onTop: scrollTop }}>
           {points.map(p => (
-            <div key={p._key} ref={cardRef(p._key)} style={{ borderRadius: 8, transition: 'box-shadow .3s',
+            <div key={p._key} ref={cardRef(p._key)} style={{ borderRadius: 'var(--r-md)', transition: 'box-shadow .3s',
               boxShadow: flashKey === p._key ? '0 0 0 2px var(--accent), 0 0 14px var(--accent-glow)' : 'none' }}>
               <QaPointCard p={p} methodHist={methodHist}
                 calcOptions={calcOptionsFor(p._key)} calcIssues={calcIssueList.filter(x => x.key === p._key).map(x => x.msg)}
@@ -485,7 +485,7 @@ export default function QaPointsEditor({ part, focusItemId, methodHist, writeChe
             </div>
           ))}
           {points.length === 0 && (
-            <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13, border: '1px dashed var(--border2)', borderRadius: 8 }}>
+            <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13, border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)' }}>
               ยังไม่มีจุดตรวจ — กด “+ เพิ่มจุดตรวจ” แล้วกด 🔘 วางตำแหน่ง → แตะบนรูป
             </div>
           )}

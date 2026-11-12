@@ -31,6 +31,15 @@ const ptsStr = (pts) => (pts || []).map(p => `${p[0]},${p[1]}`).join(' ');
 // สี "ไม่ได้เปิดกะ" = CAT.idle ของ /factory-map (ห้ามใช้สีอื่น — จอเดียวกันต้องอ่านสีเหมือนกัน)
 const DIM = { color: '#6b7280', blink: false, label: null };
 
+/* 🎨 สีสถานะจาก Andon เป็น token `var(--green)` ฯลฯ แล้ว (05/11 · พาเลต 5 สี) — ต่อ alpha แบบ `${c}55` กับ var() ไม่ได้
+   (SVG fill ค่าผิด = **ดำ** เจอจริง 05/11) ⇒ แปลงเป็นระดับ -dim/-line ของ token · ค่า hex เดิม (เช่น ROUTINE_MAP_COLOR) ยังต่อ alpha ได้ */
+const tint = (c, lvl) => {
+  const m = /^var\(--(green|amber|red|blue)\)$/.exec(c || '');
+  if (m) return `var(--${m[1]}-${lvl === 'line' ? 'line' : 'dim'})`;
+  if (/^var\(/.test(c || '')) return lvl === 'line' ? 'var(--border2)' : 'var(--bg3)';
+  return `${c}${lvl === 'line' ? '66' : '2b'}`;
+};
+
 export default function FactoryMiniMap({ stateOf, onPick, bottomReserve = 28 }) {
   const K = useTvShell() ? TV_LBL_K : 1;
   const [map, setMap] = useState(null);      // { image_url }
@@ -140,7 +149,7 @@ export default function FactoryMiniMap({ stateOf, onPick, bottomReserve = 28 }) 
        เพราะ wrapper กว้างเท่ารูปเสมอ (ถ้าไปคุมที่ img ตรงๆ รูปจะแคบกว่า wrapper แล้วกรอบเลื่อน) */
     <div ref={wrapRef} style={{ display: 'flex', justifyContent: 'center' }}>
       <div ref={boxRef} style={{
-        position: 'relative', width: '100%', borderRadius: 10, overflow: 'hidden',
+        position: 'relative', width: '100%', borderRadius: 'var(--r-md)', overflow: 'hidden',
         border: '1px solid var(--border)', background: '#0a0a0f',
         maxWidth: ar && availH ? availH * ar : undefined,
         /* กันภาพสูงพรวดก่อน onLoad (ยังไม่รู้ aspect) — ตั้งให้ **ใหญ่กว่าสูตรความกว้าง 10px**
@@ -162,7 +171,7 @@ export default function FactoryMiniMap({ stateOf, onPick, bottomReserve = 28 }) 
                 className={st.blink ? 'region-alarm' : undefined}
                 /* ค่าเดียวกับ /factory-map เป๊ะ: ปกติ = fill 2b / stroke 1.75 · ไลน์ที่มีปัญหาใช้ค่า
                    "ไฮไลต์" ของผังรวม (55 / 3.5) — ต่างกันได้แค่ "เน้น" ห้ามต่างกันที่สเกล/สี */
-                fill={st.blink ? undefined : `${st.color}${st.label ? '55' : '2b'}`}
+                fill={st.blink ? undefined : tint(st.color, st.label ? 'line' : 'dim')}
                 stroke={st.blink ? undefined : st.color}
                 strokeWidth={st.label ? '3.5' : '1.75'} vectorEffect="non-scaling-stroke" strokeLinejoin="round"
                 style={{ pointerEvents: onPick ? 'auto' : 'none', cursor: onPick ? 'pointer' : 'default' }}
@@ -201,8 +210,8 @@ export default function FactoryMiniMap({ stateOf, onPick, bottomReserve = 28 }) 
             {/* การ์ดแบบเดียวกับป้ายนอกกรอบของ /factory-map (พื้นเข้มไล่เฉด · ขอบบาง + ขอบล่างหนาสีสถานะ · ชื่อบน/สถานะล่าง) */}
             <div style={{
               ...(K !== 1 ? { zoom: K } : {}),
-              background: 'linear-gradient(180deg, rgba(8,10,16,0.9), rgba(8,10,16,0.76))', border: `1px solid ${st.color}66`,
-              borderBottom: `2.5px solid ${st.color}`, borderRadius: 7, padding: '2px 8px 3px', textAlign: 'center',
+              background: 'linear-gradient(180deg, rgba(8,10,16,0.9), rgba(8,10,16,0.76))', border: `1px solid ${tint(st.color, 'line')}`,
+              borderBottom: `2.5px solid ${st.color}`, borderRadius: 'var(--r-md)', padding: '2px 8px 3px', textAlign: 'center',
               textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: 'var(--shadow-float)',
             }}>
               <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', letterSpacing: 0.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>{r.line_name}</div>

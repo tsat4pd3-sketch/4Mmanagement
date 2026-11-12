@@ -1,0 +1,59 @@
+--- a/mock.js
++++ b/mock.js
+@@ -466,6 +466,8 @@
+     qty_received: i % 4 === 0 ? 55 : null, diff_reason: i % 4 === 0 ? 'ของเสีย 5' : null,
+     received_by: i % 4 === 0 ? 'สมชาย ใจดี' : null, received_at: i % 4 === 0 ? new Date().toISOString() : null,
+   }),
++  wip_replenish_requests: (r, i) => ({ ...r, mat_no: `2005${7000 + i}`, qty: 40, line_name: FAM_LINE,
++    status: ['pending','preparing','delivered'][i % 3], source: 'line_request' }),
+   child_lot_requests: (r, i) => ({
+     ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
+     lot_qty: isNullish(r) ? null : 14,
+@@ -985,6 +987,47 @@
+    ไม่มีแถวนี้ = DisplayRotator ไม่ active ⇒ "พอดีจอ/แบ่งส่วน/รอหน้าย่อย" ไม่เคยถูกรันในฮาร์เนส
+    ไม่ใส่ ?rot = พฤติกรรมเดิม (แถวกลาง ROWS → แผนไม่ active) */
+ const ROT_PATHS = typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('rot') || '') : ''
++/* ===== WI-QA mock patch (เฉพาะ <DIR>/mock.js — ทำให้ภาพคู่มือดูเหมือนข้อมูลจริง) ===== */
++const _QL = ['LINE APRON ASSY / HYDROFORM', 'HDF1', 'HDF2'];
++const _ST = (arr, i) => arr[(i - 1) % arr.length];
++Object.assign(TABLE_ROWS, {
++  four_m_logs: (r, i) => ({ ...r, work_date: MOCK_DAY(-(i % 5)), category: _ST(['Man', 'Machine', 'Material', 'Method'], i), change_subtype: 'unplanned',
++    description: _ST(['เปลี่ยนพนักงานประจำจุด ST-3 (คนใหม่ผ่าน OJT)', 'เปลี่ยน Tip เชื่อม Robot #2', 'เปลี่ยน Lot วัตถุดิบ Coil', 'ปรับ Parameter เชื่อมตาม WI ใหม่'], i),
++    requires_qa: i % 3 !== 0, status: _ST(['pending_qa', 'pending', 'pending_qa', 'approved', 'rejected'], i), request_image_url: null, qa_image_url: null }),
++  qa_ncr: (r, i) => ({ ...r, ncr_no: `NCR-2611-${String(i).padStart(3, '0')}`, report_date: _recentDay(i), part_no: 'MB3B 16E060 CH',
++    part_name: 'PANEL ASSY-COWL SIDE INNER RH', defect_desc: _ST(['รูไม่ตรงตำแหน่ง', 'เชื่อมไม่ติด', 'งานยุบ', 'ครีบเกิน'], i),
++    qty_found: 20 + i, qty_ng: 2 + (i % 5), source: _ST(['inprocess', 'final', 'incoming', 'customer'], i), severity: _ST(['minor', 'major', 'critical'], i),
++    status: _ST(['open', 'containment', 'disposition', 'open'], i), containment: null, root_cause: null, disposition: null, created_by: 'QA ทดสอบ' }),
++  qa_capa: (r, i) => ({ ...r, capa_no: `CAPA-2611-${String(i).padStart(3, '0')}`, title: `8D: ${_ST(['รูไม่ตรงตำแหน่ง', 'เชื่อมไม่ติด', 'งานยุบ'], i)} (${r.p_no})`,
++    owner_name: 'วิศวกร QA', due_date: i % 4 === 0 ? _recentDay(3) : '2026-12-15', status: _ST(['open', 'in_progress', 'verify'], i), part_no: 'MB3B 16E060 CH', eff_verdict: null }),
++  qa_customer_claims: (r, i) => ({ ...r, claim_no: `CL-2611-${String(i).padStart(3, '0')}`, claim_date: _recentDay(i * 2), customer: 'FORD', customer_ref: `FD-${4400 + i}`,
++    part_no: 'MB3B 16E060 CH', part_name: 'PANEL ASSY-COWL SIDE INNER RH', defect_desc: _ST(['รอยบุบที่ขอบ', 'Nut หลุด', 'สนิมที่รอยเชื่อม'], i), category: 'quality',
++    severity: _ST(['minor', 'major', 'critical'], i), qty_claim: 5 + i, qty_returned: i, due_reply_date: '2026-11-20', status: _ST(['open', 'investigating', 'replied'], i), capa_id: null, replied_at: null }),
++  material_requests: (r, i) => ({ ...r, line_name: null, doc_no: `MR-2611-${String(i).padStart(3, '0')}`, req_date: MOCK_DAY(-(i % 20)), kind: i % 4 === 0 ? 'return' : 'withdraw',
++    move_code: '311', requester_name: 'QA ทดสอบ', requester_dept: 'QUALITY', detail: 'เบิกชิ้นงานทดสอบแบบทำลาย (Peel test)',
++    status: _ST(['draft', 'submitted', 'approved', 'issued'], i) }),
++  qa_instruments: (r, i) => ({ ...r, code: `VC-${String(i).padStart(3, '0')}`, name: _ST(['Vernier Caliper 150mm', 'Height Gauge 300mm', 'Pin Gauge Set', 'Torque Wrench'], i),
++    inst_type: 'Vernier', status: 'active', last_calibrated: i % 5 === 0 ? '2025-08-01' : (i % 3 === 0 ? '2025-11-20' : '2026-06-01'), cal_freq_months: 12, line_name: 'HDF1' }),
++  cqi15_event_logs: (r, i) => ({ ...r, event_no: (i % 6) + 1, station_number: `ST-${i}`, weld_cell_operator: `นายสมชาย ${i}`, event_time: '09:30',
++    issue_description: _ST(['เปลี่ยน Tip', 'Robot Alarm', 'ไฟดับ'], i), overall_status: _ST(['pending', 'in_progress', 'approved', 'in_progress'], i),
++    cqi15_event_definitions: { event_no: (i % 6) + 1, category: _ST(['A', 'B', 'C'], i), name_th: _ST(['เปลี่ยน Tip/Cap', 'ซ่อม/ปรับ Fixture', 'ไฟดับ/ลมดับ'], i), name_en: 'Event' },
++    cqi15_event_approvals: [{ role_key: 'O', status: 'approved' }, { role_key: 'QT', status: 'pending' }] }),
++});
++Object.assign(TABLE_FIXED, {
++  qa_fme_obligations: ROWS.slice(0, 2).map((r, k) => ({ ...r, stage: k ? 'middle' : 'first', due_at: '2026-11-03T10:00:00+07:00', part_id: 'id-1', status: 'pending', seq: 1 })),
++  qa_inspection_pieces: (typeof location !== 'undefined' && /[?&]wi=alarm/.test(location.search)) ? [1, 2].map(n => ({ id: `pc-${n}`, sheet_id: 'id-1', round_no: 1, piece_no: n, result: 'fail',
++    failed_items: [{ balloon_no: '3', characteristic: 'ระยะรู A', spec_text: '5 (4 – 6) mm', value: '6.4', note: 'รูเลื่อน' }], disposition: n === 1 ? 'rework' : 'hold', remark: 'กักไว้รอตัดสิน' })) : [],
++  qa_inspection_actions: [],
++  pe_change_requests: [],
++  cqi15_event_definitions: [1, 2, 3, 4, 5, 6].map(n => ({ id: `ed-${n}`, event_no: n, category: ['A', 'B', 'C'][(n - 1) % 3],
++    name_th: ['เปลี่ยน Tip/Cap', 'ซ่อม/ปรับ Fixture', 'ไฟดับ/ลมดับ', 'เปลี่ยนรุ่น (Changeover)', 'ปรับ Parameter เชื่อม', 'ชนกัน (Robot crash)'][n - 1], name_en: 'Event' })),
++  cqi15_check_items: [1, 2, 3, 4].map(n => ({ check_no: n, name_th: ['ตรวจ Teardown ชิ้นแรก', 'ตรวจ Parameter ตาม WI', 'ตรวจตำแหน่ง Tip', 'Visual ชิ้นงานหลัง event'][n - 1] })),
++  cqi15_event_check_matrix: [1, 2, 3, 4, 5, 6].flatMap(e => [{ event_no: e, check_no: 1, responsible: 'QT', is_critical: true },
++    { event_no: e, check_no: 2, responsible: 'ME', is_critical: false }, { event_no: e, check_no: 4, responsible: 'O*', is_critical: false }]),
++  cqi15_event_approvals: [{ role_key: 'O', status: 'approved' }, { role_key: 'QT', status: 'pending' }, { role_key: 'ME', status: 'pending' }],
++  cqi15_check_completions: [{ check_no: 1, result: 'pending' }, { check_no: 2, result: 'ok' }, { check_no: 4, result: 'ok' }],
++});
++
+ const rowsFor = (table) => {
+   if (table === 'display_rotations' && ROT_PATHS) {
+     return [{ enabled: true, items: ROT_PATHS.split(',').map(path => ({ path, sec: 20 })), default_sec: 20, pause_sec: 120, reload_min: 0 }]

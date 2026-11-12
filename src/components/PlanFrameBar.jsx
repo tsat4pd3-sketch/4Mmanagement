@@ -38,7 +38,7 @@ export default function PlanFrameBar({ rec, lots = null, size = 12, compact = fa
 
   const chip = (color, text, title) => (
     <span title={title} style={{
-      fontSize: size, fontWeight: 700, padding: '2px 9px', borderRadius: 20,
+      fontSize: size, fontWeight: 700, padding: '2px 9px', borderRadius: 'var(--r-pill)',
       background: 'var(--card)', backgroundImage: `linear-gradient(${color}1f, ${color}1f)`,
       border: `1px solid ${color}66`, color, whiteSpace: 'nowrap',
     }}>{text}</span>
@@ -49,9 +49,9 @@ export default function PlanFrameBar({ rec, lots = null, size = 12, compact = fa
     return (
       <span style={{
         fontSize: size, color: 'var(--muted)', display: 'inline-flex', alignItems: 'center', gap: 6,
-        padding: '2px 10px', borderRadius: 20, border: `1px dashed ${C.frame}66`,
+        padding: '2px 10px', borderRadius: 'var(--r-pill)', border: `1px dashed ${C.frame}66`,
       }}>
-        <b style={{ color: C.frame }}>🧾 ยังไม่มีกรอบแผนของวันนี้</b>
+        <b style={{ color: C.frame }}>ยังไม่มีกรอบแผนของวันนี้</b>
         {!compact && <span>— บอร์ดนี้เห็นเฉพาะใบที่สแกนเข้าระบบ (ว่าง ≠ ไม่มีงาน)</span>}
       </span>
     );

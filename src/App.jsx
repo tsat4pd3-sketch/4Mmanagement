@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef, useMemo, lazy, Suspense, useCallback } from 'react';
 import { fmtDateTime } from './utils/dateFormat';
-import tsLogo from './assets/TS logo.png';
+import tsLogo from './assets/TS logo transparent.png';   // splash: พื้นโปร่งใส (06/11)
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { supabase } from './supabaseClient';
 import { setActor } from './utils/actorStamp';
@@ -13,6 +13,7 @@ import Login from './pages/Login';
 import SignatureModal from './components/SignatureModal';
 import ChangePasswordModal from './components/ChangePasswordModal';
 const FeedbackModal = lazy(() => import('./components/FeedbackModal'));
+const NotifyPrefsModal = lazy(() => import('./components/NotifyPrefsModal'));  // 🔕 ตั้งค่าแจ้งเตือนของฉัน
 import { loadPermissions, canAccessPage, setDeptAdmin, setSharedAccount, can } from './utils/permissions';
 /* 🏷️ รุ่นของเว็บ (full / nm) — สลับตอน build ด้วย alias ใน vite.nm.config.js · 📄 src/appEdition.js */
 import { EDITION_LABEL, EDITION_HOME } from './appEdition';
@@ -22,7 +23,7 @@ import { effectiveSections } from './utils/sectionScope';
 /* 💰 ชั้นสิทธิ์ที่ 3 แกน Cost Center — ดัชนีผังสร้างที่นี่ที่เดียว แล้วส่งผ่าน UserContext
    (จอ 20 จออ่านผ่าน `canWriteUnit`/`canWriteLine` เหมือนเดิม ไม่ต้องรู้ว่ามีแกนที่ 2) */
 import { buildOrgScope } from './utils/orgScope';
-import { clearAllMasterCache } from './utils/masterCache';
+import { clearAllMasterCache, setMasterAuthUser } from './utils/masterCache';
 import { attachCc, buildCcIndex } from './utils/ccScope';
 import { applyAssignments } from './utils/assignmentOverlay'; // 🔄 รักษาการ/รับผิดชอบเพิ่ม ทับขอบเขตจริง (widen-only · 2026-11-02)
 import { getWorkDate } from './utils/workDate';
@@ -45,10 +46,13 @@ import { purgeOldDrafts } from './utils/formDraft';   // 📝 ล้างร่
 import { pushSupported, getPushState, subscribePush, unsubscribePush, onPushResubscribeRequest, handlePushResubscribe } from './utils/webpush';
 import { loadPositions, positionLabel } from './utils/positions';   // ตำแหน่งเก็บเป็น key — แสดงต้องแปลงเป็นชื่อ
 import { roleLabel } from './utils/roleMeta';                       // ป้ายชื่อ role (โหมดจำลองมุมมอง 🎭)
-import { buildProfileMenu } from './utils/profileMenu';             // รายการเมนูโปรไฟล์ — จุดเดียว ใช้ร่วมกับหน้า Home
+import { buildProfileMenu } from './utils/profileMenu';
+import useLang, { langToggleLabel, langToggleTitle } from './utils/useLang';   // 🌐 สลับ ไทย/English — ป้ายโครงหลักผ่าน tr() (utils/i18n.js)             // รายการเมนูโปรไฟล์ — จุดเดียว ใช้ร่วมกับหน้า Home
 import { uploadMyAvatar } from './utils/profileSelf';               // อัปโหลดรูปโปรไฟล์ (ใช้ร่วมกับหน้า Home)
 import { liveChannel } from './utils/liveChannel';
 import { coalesce } from './utils/liveRefresh';
+import usePermFreshness from './utils/usePermFreshness';   // 🔐 แก้สิทธิ์/ขอบเขตแล้วเครื่องที่เปิดค้างต้องเห็นผล (A5 · 03/11)
+import { profileScopeKey } from './utils/permFreshness';
 import { LIVE } from './utils/refreshRates';
 import { checkWrite } from './utils/dbWrite';
 import { notifTargetPath } from './utils/notifLink';   // ปลายทางของแจ้งเตือน (link ก่อน แล้วค่อย ref_table) — จุดเดียว
@@ -76,6 +80,7 @@ const StoreMonitor   = lazy(() => import('./pages/StoreMonitor'));
 const Transport      = lazy(() => import('./pages/Transport'));
 const Report       = lazy(() => import('./pages/Report'));
 const WorkforceInsight = lazy(() => import('./pages/WorkforceInsight'));
+const PpeSetup = lazy(() => import('./pages/PpeSetup'));
 const ManpowerBoard = lazy(() => import('./pages/ManpowerBoard'));
 const ShiftOrganize = lazy(() => import('./pages/ShiftOrganize'));
 const EventLog      = lazy(() => import('./pages/EventLog'));
@@ -95,6 +100,7 @@ const AdoptionOutlook = lazy(() => import('./pages/AdoptionOutlook'));
 const ProgramUpdate = lazy(() => import('./pages/ProgramUpdate'));
 /* 🧭 ไม่ lazy โดยตั้งใจ — หน้านี้ต้องทำงานตอนบันเดิลเก่า/โหลด chunk ไม่ได้ (ดูหัวไฟล์) */
 import NotFound from './pages/NotFound';
+import Icon from './components/Icon';   // ✒️ emoji ในทะเบียนเมนู → ไอคอนเส้นที่จุดวาด (UI §6.36)
 const HeijunkaKanban = lazy(() => import('./pages/HeijunkaKanban'));
 const ProductMaster  = lazy(() => import('./pages/ProductMaster'));
 const LineStock      = lazy(() => import('./pages/LineStock'));
@@ -128,6 +134,7 @@ const NewModelBoard = lazy(() => import('./pages/NewModelBoard'));
 const Rfq = lazy(() => import('./pages/Rfq'));
 const ScrapReport = lazy(() => import('./pages/ScrapReport'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
+const Integrations = lazy(() => import('./pages/Integrations'));
 const MtnRepair = lazy(() => import('./pages/MtnRepair'));
 const FactoryMap = lazy(() => import('./pages/FactoryMap'));
 const LineOeeBoard = lazy(() => import('./pages/LineOeeBoard'));
@@ -212,8 +219,11 @@ export const NAV_ITEMS = [
   { to: '/planner-sales',   icon: '📈', label: 'Planner & Sales',           group: LOGISTIC_GROUPS.inbound },
 
   /* 📉 บอร์ด Monitoring = ไฟล์ Excel ที่ทีมวางแผนทำมือทุกวัน ยกเข้าระบบ (01/10 · คำสั่ง user)
-     บ้านจริง = แผนงาน (ทีมวางแผนเป็นเจ้าของตัวเลข) · `alsoIn` = ทางลัดให้ฝ่ายผลิตที่ต้องดูของจะขาด */
-  { to: '/monitoring',      icon: '📉', label: 'Monitoring แผน-สต๊อก',    group: LOGISTIC_GROUPS.inbound, alsoIn: 'ฝ่ายผลิต' },
+     บ้านจริง = แผนงาน (ทีมวางแผนเป็นเจ้าของตัวเลข)
+     🔴 **ถอด `alsoIn: 'ฝ่ายผลิต'` ออกแล้ว** (11/11 · คำสั่ง user "พยายามไม่ให้มี shortcut แบบนี้")
+     — ฝ่ายผลิตเข้าหน้านี้ได้แต่**ดูอย่างเดียว** (ช่อง IN ที่ระบบมีตัวเลขแล้ว = ล็อก) ไม่ใช่งานประจำวันของเขา
+     ⇒ ทางลัดกินที่ในเมนูฝ่ายผลิตโดยไม่มีใครต้องลงมือ · **อย่าเอากลับโดยไม่ถาม user** */
+  { to: '/monitoring',      icon: '📉', label: 'Monitoring แผน-สต๊อก',    group: LOGISTIC_GROUPS.inbound },
   { to: '/customer-demand', icon: '🚚', label: 'จัดส่งลูกค้า',             group: LOGISTIC_GROUPS.outbound },
   { to: '/rack-center',    icon: '🗃️', label: 'ภาชนะ & Packaging',       group: LOGISTIC_GROUPS.outbound },
 
@@ -275,6 +285,10 @@ export const NAV_ITEMS = [
   { to: '/process-setup', icon: '🏭', label: 'กระบวนการผลิต', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
   { to: '/org-setup',  icon: '🏢', label: 'แผนผังองค์กร',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
   { to: '/layout-setup', icon: '🗺️', label: 'ตั้งค่าผัง/Floorplan', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
+  /* 🦺 ทะเบียนที่ตั้งครั้งเดียว — **ไม่ใส่ `alsoIn`** (11/11 · คำสั่ง user "พยายามไม่ให้มี shortcut แบบนี้")
+     เคยใส่ทางลัดในหมวดฝ่ายผลิตไว้ 10/11 แล้วถอดออก: `ppe:manage` ให้แค่ admin/manager ⇒ supervisor
+     กดเข้าไปก็แก้ไม่ได้ · leader ไม่มีสิทธิ์เปิดหน้าเลย = ทางลัดพาคนไปหน้าที่กดอะไรไม่ได้ */
+  { to: '/ppe-setup',    icon: '🦺', label: 'ข้อกำหนด PPE',       group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
   // /linesetup ย้ายมาฝังในแท็บ "ผลิต (ผังไลน์)" ของ /layout-setup แล้ว — คง route ไว้สำหรับลิงก์เก่า (deep-link) ไม่โชว์ใน sidebar
   { to: '/company-calendar', icon: '📅', label: 'ปฏิทินบริษัท',    group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ฐานข้อมูลหลัก' },
 
@@ -284,6 +298,8 @@ export const NAV_ITEMS = [
   // 📺 ตั้งว่าบัญชีจอไหนเปิดหน้าอะไรวนบ้าง (2026-10-09) · ตัววนอยู่ที่ components/DisplayRotator.jsx
   { to: '/display-rotation', icon: '🔁', label: 'ตั้งค่าจอวนหน้า', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
   { to: '/notification-config', icon: '🔔', label: 'ตั้งค่าการแจ้งเตือน', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
+  // 🔌 ศูนย์เชื่อมต่อ Node-RED / เครื่องจักร (2026-11-11) · 📄 docs/modules/integration-hub.md
+  { to: '/integrations', icon: '🔌', label: 'การเชื่อมต่อ Node-RED / เครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
   { to: '/doc-forms',   icon: '📄', label: 'ทะเบียนเอกสาร & ฟอร์ม', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
   { to: '/qr-labels', icon: '🏷️', label: 'พิมพ์ป้าย QR', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
   { to: '/audit-log',   icon: '📜', label: 'ประวัติการแก้ไขข้อมูล', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
@@ -407,18 +423,14 @@ function SplashScreen({ onDone }) {
         transition: 'opacity 0.6s ease, transform 0.6s ease',
         display: 'flex', alignItems: 'center', gap: 14, marginBottom: 8,
       }}>
-        <img src={tsLogo} alt="Thai Summit Group" width={52} height={52} style={{ borderRadius: 5 }} />
+        <img src={tsLogo} alt="Thai Summit Group" width={52} height={52} />
         <div style={{ textAlign: 'left' }}>
           <div style={{
             fontFamily: 'var(--font-display)', fontWeight: 700,
             fontSize: 13, letterSpacing: '2px', textTransform: 'uppercase',
-            color: 'rgba(255,255,255,0.9)',
+            color: 'var(--text)',
           }}>Thai Summit Group</div>
-          <div style={{
-            fontFamily: 'var(--font-display)', fontSize: 11,
-            letterSpacing: '2px', textTransform: 'uppercase',
-            color: 'rgba(255,255,255,0.35)',
-          }}>VX Production System</div>
+          {/* 09/11: ถอดป้ายเล็ก "VX Production System" (ชื่อเก่า) — ชื่อโปรแกรมอยู่ที่หัวเรื่องใหญ่บรรทัดถัดไปแล้ว ไม่ซ้ำ 2 บรรทัด */}
         </div>
       </div>
 
@@ -428,7 +440,7 @@ function SplashScreen({ onDone }) {
         transition: 'opacity 0.5s ease 0.15s, transform 0.5s ease 0.15s',
         fontFamily: 'var(--font-display)', fontWeight: 700,
         fontSize: 'clamp(1.2rem,3.5vw,2.4rem)', letterSpacing: '0.5px',
-        color: 'var(--accent)', lineHeight: 1,
+        color: 'var(--text)', lineHeight: 1,   /* 05/11: ชื่อโปรแกรมสีตัวหนังสือปกติ — เขียวเหลือเฉพาะแถบโหลด (พาเลต §6.17) */
       }}>
         ENTERPRISE SHOPFLOOR MANAGEMENT
       </div>
@@ -451,6 +463,7 @@ function SplashScreen({ onDone }) {
 /* ─── Sidebar ──────────────────────────────────────────────── */
 // export ไว้ให้ audit harness (audit/main.jsx ?p=__sidebar) mount ตรงๆ เพื่อวัด layout — แอปจริงใช้ผ่าน ProtectedLayout เท่านั้น
 export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userRole, userLineId, userEmail, userFullName, userSignatureUrl, userPosition, userAvatarUrl, remoteCode, onToggleRemote, onOpenPalette, pinned, onTogglePin, realRole, onOpenViewAs, onAvatarSaved }) {
+  const { lang, toggleLang, tr } = useLang();   // 🌐 ป้ายเมนู/หมวดแปลที่จุดวาด — ข้อมูล NAV_ITEMS ยังเป็นไทย (คีย์)
   // 🔄 ผลการทับขอบเขตด้วย org_assignments — มาจาก UserContext (ProtectedLayout) ไม่เพิ่ม prop
   const { assignOverlay } = useContext(UserContext);
   const location = useLocation();
@@ -466,6 +479,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
   }, []);
   const [sigUrl,        setSigUrl]        = useState(userSignatureUrl);
   const [pwdModalOpen,  setPwdModalOpen]  = useState(false);
+  const [notifyOpen,    setNotifyOpen]    = useState(false);   // 🔕 ตั้งค่าแจ้งเตือนของฉัน
   // 📷 เปลี่ยนรูปโปรไฟล์ — เดิมมีเฉพาะหน้า Home (DeptHub) sidebar ไม่มี (drift · แก้ 2026-08-21)
   const avatarRef = useRef(null);
   const [avatarFile, setAvatarFile] = useState(null);   // ไฟล์ที่เลือก → ส่งเข้า ImageCropModal
@@ -606,11 +620,13 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
      (DeptHub) — เดิมเขียนแยกกัน 2 ชุดแล้ว drift (หน้า Home ไม่มี 💬/🎭/รีโมท · sidebar ไม่มี 📷)
      ที่นี่รับผิดชอบแค่ "หน้าตา" ของแถวเมนู · JSX ชุดนี้ใช้ทั้ง drawer มือถือ + แผง '__me' desktop */
   const profileItems = buildProfileMenu({
-    realRole, canRemote: canAccessPage('/remote', userRole), remoteCode, theme,
+    realRole, canRemote: canAccessPage('/remote', userRole), remoteCode, theme, lang,
     on: {
+      toggleLang,
       avatar:       () => avatarRef.current?.click(),
       signature:    () => setSigModalOpen(true),
       password:     () => setPwdModalOpen(true),
+      notifyPrefs:  () => setNotifyOpen(true),
       feedback:     () => setFbOpen(true),
       viewAs:       onOpenViewAs,
       toggleRemote: onToggleRemote,
@@ -626,7 +642,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
         return (
           <Link key={it.key} to={it.to} onClick={closeNav} className="nav-link"
             style={{ color: location.pathname === it.to ? 'var(--accent)' : (it.color || 'var(--text2)') }}>
-            <span style={{ fontSize: 15, flexShrink: 0 }}>{it.icon}</span>
+            <Icon glyph={it.icon} size={15} />
             <span style={{ whiteSpace: 'nowrap' }}>{it.label}</span>
           </Link>
         );
@@ -636,7 +652,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
           <button key={it.key} onClick={it.onClick} className="nav-link"
             style={{ ...style, justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 15, flexShrink: 0 }}>{it.icon}</span>
+              <Icon glyph={it.icon} size={15} />
               <span style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>{it.label}</span>
             </div>
             <div style={{
@@ -656,7 +672,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
       return (
         <button key={it.key} onClick={() => { it.onClick?.(); if (it.key !== 'logout') closeNav?.(); }}
           className="nav-link" style={style}>
-          <span style={{ fontSize: 15, flexShrink: 0 }}>{it.icon}</span>
+          <Icon glyph={it.icon} size={15} />
           <span style={{ whiteSpace: 'nowrap' }}>{it.label}</span>
         </button>
       );
@@ -699,6 +715,13 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
       onClose={() => setPwdModalOpen(false)}
       userEmail={userEmail}
     />
+    {/* 🔕 ตั้งค่าแจ้งเตือนของฉัน — ส่ง **role จริง** ไม่ใช่ role ที่จำลองมุมมองอยู่
+        (กระดิ่งของจริงยิงตาม `profiles.role` · โชว์สวิตช์ตาม role ปลอม = สวิตช์หลอก) */}
+    {notifyOpen && (
+      <Suspense fallback={null}>
+        <NotifyPrefsModal role={realRole ?? userRole} onClose={() => setNotifyOpen(false)} />
+      </Suspense>
+    )}
   </>);
 
   /* แถวเมนู 1 แถว — **ตัวเดียวใช้ทั้งแผงลอยและ drawer** ห้ามก๊อปแยก (เคยแยกแล้วหน้าตาเพี้ยนกัน)
@@ -711,7 +734,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
       <Link
         to={item.to} className="nav-link"
         aria-current={cur ? 'page' : undefined}
-        title={guest ? `${item.label} — ทางลัด · เมนูนี้อยู่หมวด "${item.group}"` : item.label}
+        title={guest ? `${tr(item.label)} — ทางลัด · เมนูนี้อยู่หมวด "${tr(item.group)}"` : tr(item.label)}
         style={{
           ...(cur
             ? (guest
@@ -726,13 +749,13 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
         }}
         onClick={onClick}
       >
-        <span style={{ fontSize: 17, flexShrink: 0, opacity: guest ? 0.7 : 1 }}>{item.icon}</span>
-        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
+        <Icon glyph={item.icon} size={17} style={{ opacity: guest ? 0.7 : 1 }} />
+        <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tr(item.label)}</span>
         {/* ป้าย "บ้านจริง" — บีบ gap/ฟอนต์ให้แคบที่สุดเท่าที่ยังอ่านออก เพราะเมนูชื่อยาวจะโดนเบียดจนตัดคำ
             (`title` มีชื่อเต็ม + บอกหมวดบ้านเสมอ จึงไม่มีข้อมูลหาย) */}
         {guest && (
           <span style={{ marginLeft: 'auto', paddingLeft: 2, flexShrink: 0, fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-            ↗{homeShort}
+            ↗{tr(homeShort)}
           </span>
         )}
       </Link>
@@ -744,9 +767,9 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
      เลือกเมนูแล้วปิดเอง · 📌 ปักหมุด = ค้างแผงไว้และดันเนื้อหา (opt-in เท่านั้น) */
   if (!isMobile) {
     const panelOpen = !!panel;
-    const panelMeta = panel === '__star' ? { icon: '⭐', title: 'ใช้บ่อย' }
-      : panel === '__me' ? { icon: '👤', title: 'โปรไฟล์ & อุปกรณ์' }
-      : { icon: NAV_GROUP_META[panel]?.icon || '📁', title: panel };
+    const panelMeta = panel === '__star' ? { icon: '⭐', title: tr('ใช้บ่อย') }
+      : panel === '__me' ? { icon: '👤', title: tr('โปรไฟล์ & อุปกรณ์') }
+      : { icon: NAV_GROUP_META[panel]?.icon || '📁', title: tr(panel) };
     const panelItems = panel && panel !== '__star' && panel !== '__me'
       ? (groupedItems.find(g => g.group === panel)?.items || [])
       : null;
@@ -784,7 +807,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
             borderRadius: '0 3px 3px 0', background: 'var(--accent)',
           }} />
         )}
-        <span style={{ fontSize: 18, lineHeight: 1.15 }}>{icon}</span>
+        <Icon glyph={icon} size={19} />
         {/* 11px = ฟอนต์ขั้นต่ำตาม UI-CONVENTIONS — ชื่อย่อจาก NAV_GROUP_META ถูกเลือกให้พอดี 56px */}
         <span style={{ fontSize: 11, lineHeight: 1.2, maxWidth: 56, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
       </button>
@@ -820,8 +843,8 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
               {groupedItems.map(({ group, items }) => railBtn({
                 key: group,
                 icon: NAV_GROUP_META[group]?.icon || '📁',
-                label: NAV_GROUP_META[group]?.short || group,
-                title: group,
+                label: tr(NAV_GROUP_META[group]?.short || group),
+                title: tr(group),
                 onClick: () => setPanel(p => (p === group && !pinned) ? null : group),
                 isOpenPanel: panel === group,
                 isCurrent: items.some(i => isHomeHere(i, group)),
@@ -830,7 +853,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
 
             <div style={{ width: 40, borderTop: '1px solid var(--border)', margin: '2px 0', flexShrink: 0 }} />
             {railBtn({
-              key: '__star', icon: '⭐', label: 'ใช้บ่อย', title: 'หน้าที่ใช้บ่อย (เครื่องนี้)',
+              key: '__star', icon: '⭐', label: tr('ใช้บ่อย'), title: tr('หน้าที่ใช้บ่อย (เครื่องนี้)'),
               onClick: () => setPanel(p => (p === '__star' && !pinned) ? null : '__star'),
               isOpenPanel: panel === '__star', isCurrent: false,
             })}
@@ -884,7 +907,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
             boxShadow: pinned ? 'none' : '18px 0 40px rgba(0,0,0,0.45)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 2px 10px', borderBottom: '1px solid var(--border)', marginBottom: 8, flexShrink: 0 }}>
-              <span style={{ fontSize: 17, flexShrink: 0 }}>{panelMeta.icon}</span>
+              <Icon glyph={panelMeta.icon} size={17} />
               <span style={{ fontSize: 13.5, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{panelMeta.title}</span>
               {onTogglePin && <button onClick={onTogglePin} title={pinned ? 'เลิกปักหมุด — แผงจะปิดเองหลังเลือกเมนู' : 'ปักหมุดแผงค้างไว้ (เนื้อหาหลักจะแคบลง)'} style={{
                 width: 26, height: 26, borderRadius: 6, flexShrink: 0, cursor: 'pointer', outline: 'none',
@@ -912,7 +935,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                       fontSize: 11, fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.04em',
                       padding: '9px 9px 3px', marginTop: i === 0 ? 0 : 5,
                       borderTop: i === 0 ? 'none' : '1px solid var(--border)',
-                    }}>{item.sub}</div>
+                    }}>{tr(item.sub)}</div>
                   )}
                   {navRow(item, panel, () => { if (!pinned) setPanel(null); })}
                 </div>
@@ -933,7 +956,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                       : {}}
                     onClick={() => { if (!pinned) setPanel(null); }}
                   >
-                    <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
+                    <Icon glyph={item.icon} size={17} />
                     <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
                     <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', flexShrink: 0, maxWidth: '38%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.group}</span>
                   </Link>
@@ -999,7 +1022,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
           <input
             value={navQ} onChange={e => setNavQ(e.target.value)}
             onKeyDown={e => { if (e.key === 'Escape') setNavQ(''); }}
-            placeholder="🔎 ค้นหาเมนู…  (Ctrl+K)"
+            placeholder={`🔎 ${tr('ค้นหาเมนู…  (Ctrl+K)')}`}
             style={{
               width: '100%', padding: '7px 26px 7px 10px', fontSize: 12.5, borderRadius: 8,
               background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)',
@@ -1030,7 +1053,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                   : {}}
                 onClick={() => { setNavQ(''); if (isMobile) onClose(); }}
               >
-                <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
+                <Icon glyph={item.icon} size={17} />
                 <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
                 <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--muted)', flexShrink: 0, maxWidth: '42%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.group}</span>
               </Link>
@@ -1049,7 +1072,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                     : {}}
                   onClick={onClose}
                 >
-                  <span style={{ fontSize: 17, flexShrink: 0 }}>{item.icon}</span>
+                  <Icon glyph={item.icon} size={17} />
                   <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</span>
                 </Link>
               ))}
@@ -1077,8 +1100,8 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                       fontFamily: 'var(--font-display)',
                     }}
                   >
-                    <span style={{ fontSize: 15, flexShrink: 0 }}>{NAV_GROUP_META[group]?.icon || '📁'}</span>
-                    <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{group}</span>
+                    <Icon glyph={NAV_GROUP_META[group]?.icon || '📁'} size={15} />
+                    <span style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tr(group)}</span>
                     <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 600, color: 'var(--muted)', flexShrink: 0 }}>{items.length}</span>
                     <span style={{ fontSize: 12, opacity: 0.6, transform: open ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s', flexShrink: 0 }}>▾</span>
                   </button>
@@ -1090,7 +1113,7 @@ export function Sidebar({ isOpen, onClose, onLogout, theme, onToggleTheme, userR
                           fontSize: 11, fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.04em',
                           padding: '9px 9px 3px', marginTop: i === 0 ? 0 : 5,
                           borderTop: i === 0 ? 'none' : '1px solid var(--border)',
-                        }}>{item.sub}</div>
+                        }}>{tr(item.sub)}</div>
                       )}
                       {navRow(item, group, onClose)}
                     </div>
@@ -1827,6 +1850,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
        เดิม logout ไม่ล้างอะไรเลย ⇒ ของพิษ (เช่นลิสต์ไลน์ว่างที่ถูกจดไว้ 4 ชม.) ยังค้าง
        ⇒ ต้องบอกหน้างานให้ "เปิด incognito" ซึ่งเขาไม่เข้าใจและทำไม่ถูก
        ตอนนี้ **"ออกจากระบบแล้วเข้าใหม่" = ทางแก้จริง** — ประโยคเดียวที่หน้างานทำตามได้ */
+    setMasterAuthUser(null);   // 🔐 ปิดประตูก่อนล้าง — หน้าที่ re-render ระหว่างนี้ห้ามจดลิสต์ว่างลง cache (masterCache.js)
     clearAllMasterCache();
     await supabase.auth.signOut({ scope: 'local' });
     navigate('/login');
@@ -2167,6 +2191,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/manpower-board" element={
                 <RoleRoute path="/manpower-board" userRole={role}><ManpowerBoard /></RoleRoute>
               } />
+              <Route path="/ppe-setup" element={
+                <RoleRoute path="/ppe-setup" userRole={role}><PpeSetup /></RoleRoute>
+              } />
               <Route path="/workforce-insight" element={
                 <RoleRoute path="/workforce-insight" userRole={role}><WorkforceInsight /></RoleRoute>
               } />
@@ -2224,6 +2251,9 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/notification-config" element={
                 <RoleRoute path="/notification-config" userRole={role}><NotificationConfig /></RoleRoute>
+              } />
+              <Route path="/integrations" element={
+                <RoleRoute path="/integrations" userRole={role}><Integrations /></RoleRoute>
               } />
               <Route path="/daily-report"  element={
                 <RoleRoute path="/daily-report" userRole={role}><DailyReport /></RoleRoute>
@@ -2401,12 +2431,15 @@ export default function App() {
   const [userAccountKind,  setUserAccountKind]  = useState(null);  // 'person' | 'shared' (บัญชีกลาง = จอ TV/ประจำเครื่อง · ลบไม่ได้)
   const [showSplash,   setShowSplash]   = useState(() => !skipSplash());   // จอวนรีโหลดตามรอบ / กรอบตัวอย่าง = ไม่ขึ้น splash
   const [theme, setTheme] = useState(() => localStorage.getItem('4m-theme') || 'dark');
+  const { lang } = useLang();   // 🌐 สลับภาษา = mount <Router> ใหม่ (key) — ป้ายที่ useMemo ไว้จะได้สลับพร้อมกันทั้งแอป
   // ต้อง resolve ทั้ง profile (role จริง) และ permissions ก่อนค่อย render route tree —
   // ป้องกัน fail-open: ห้าม fallback เป็น 'admin' ระหว่างรอโหลด (เคยเป็นช่องโหว่)
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [permsLoaded,   setPermsLoaded]   = useState(false);
   // bump เมื่อ role_permissions เปลี่ยน (realtime) เพื่อให้ sidebar/route ที่อ่าน cache แบบ sync re-render
   const [permsVersion,  setPermsVersion]  = useState(0);
+  // ลายเซ็น "ขอบเขต/ตัวตนที่มีผลกับสิทธิ์" ของโหลดโปรไฟล์ล่าสุด — ใช้ตัดสินว่าจะบอกผู้ใช้ไหมเมื่อแอดมินแก้บัญชี (usePermFreshness)
+  const scopeKeyRef = useRef(null);
 
   /* ── 🎭 โหมดจำลองมุมมอง role (admin เท่านั้น · 2026-08-19) ──────────────────────
      admin สลับดูระบบเป็น role อื่นเพื่อตรวจว่า "user เห็นเมนู/ปุ่ม/ข้อมูลอะไรบ้าง"
@@ -2622,11 +2655,17 @@ export default function App() {
           = ไม่บล็อก (พฤติกรรมเดิม) · ฝั่ง DB ของ Main มีด่าน has_perm ซ้อนอีกชั้น */
     setUserAccountKind(data?.account_kind ?? null);
     setSharedAccount(data?.account_kind === 'shared');
+    scopeKeyRef.current = profileScopeKey({
+      role: data?.role, lineId: ident.line_id, team: ident.team, section: ident.section,
+      sections: finalSections, respCcs: ccList, isDeptAdmin: data?.is_dept_admin === true,
+      mtnTeams: data?.mtn_teams, accountKind: data?.account_kind, scopeDepth: data?.scope_depth,
+    });
     setProfileLoaded(true);
   };
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
+      setMasterAuthUser(session?.user?.id ?? null);   // 🔐 cache ทะเบียนจดได้เฉพาะตอน login (masterCache.js)
       setSession(session);
       if (session?.user) {
         fetchProfile(session.user);
@@ -2634,6 +2673,7 @@ export default function App() {
       }
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((evt, s) => {
+      setMasterAuthUser(s?.user?.id ?? null);
       setSession(s);
       // stamp เวลา login จริง (เฉพาะตอน SIGNED_IN — refresh/INITIAL_SESSION ไม่ยิง event นี้)
       // ใช้คิดเพดานกะใน useAutoLogout · เก็บใน localStorage แชร์ทุกแท็บ + คงข้ามการรีเฟรช
@@ -2652,6 +2692,29 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
+  /* 🔐 แก้สิทธิ์/ขอบเขตแล้วเครื่องที่เปิดค้างไม่เห็นผล (ประชุมหน้างาน 02/11 ข้อ A5 · 03/11)
+     · โปรไฟล์ตัวเอง (role/ขอบเขต/CC/แอดมินหน่วยงาน/ทีมช่าง/มอบหมาย) เดิมโหลดแค่ตอน auth event
+       ⇒ แอดมินแก้ที่ /add-user แล้วแท็บที่เปิดค้างถือค่าเดิม · `profiles` ไม่อยู่ใน realtime (และไม่ควรเข้า)
+     · realtime ของ role_permissions ไม่ replay event ที่พลาดตอน socket หลุด (แท็บเล็ตพักจอ)
+     ⇒ probe ลายเซ็นเล็กๆ ตอนกลับมาที่แท็บ + กันเหนียวเป็นรอบ — เปลี่ยนแล้วค่อยโหลดชุดเต็ม
+     📄 src/utils/permFreshness.js · docs/modules/role-system.md §สิทธิ์มีผลกับเครื่องที่เปิดค้าง */
+  const { rebasePerms } = usePermFreshness(session?.user?.id ?? null, {
+    onPerms: async () => {
+      await loadPermissions(true);
+      setPermsVersion(v => v + 1);
+    },
+    onProfile: async () => {
+      if (!session?.user) return;
+      const before = scopeKeyRef.current;
+      await fetchProfile(session.user);
+      setPermsVersion(v => v + 1);
+      // updated_at ขยับจากการแก้ของตัวเองได้ (รูป/ลายเซ็น) — บอกผู้ใช้เฉพาะตอนสิทธิ์/ขอบเขตเปลี่ยนจริง
+      if (before != null && scopeKeyRef.current != null && before !== scopeKeyRef.current) {
+        toast.info('ผู้ดูแลปรับสิทธิ์/ขอบเขตของบัญชีคุณแล้ว — อัปเดตเมนูให้แล้ว (หน้าที่เปิดค้างอยู่ กดรีเฟรชเพื่อโหลดข้อมูลตามขอบเขตใหม่)');
+      }
+    },
+  });
+
   // admin แก้สิทธิ์ที่หน้า จัดการสิทธิ์ → ทุกเครื่องที่เปิดอยู่รีเฟรช cache + re-render ทันที
   useEffect(() => {
     if (!session?.user) return;
@@ -2659,12 +2722,14 @@ export default function App() {
     // coalesce = ยุบเป็นรอบเดียวต่อเพดาน (กฎเขียน DB ข้อ 7 · QC 05/10)
     const bump = coalesce(async () => {
       await loadPermissions(true);
+      rebasePerms();   // probe รอบหน้าจด baseline ใหม่ ไม่โหลดตารางสิทธิ์ซ้ำ
       setPermsVersion(v => v + 1);
     }, LIVE.PAGE);
     const ch = liveChannel(supabase, 'role-permissions-sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permissions' }, () => bump())
       .subscribe();
     return () => { bump.cancel(); supabase.removeChannel(ch); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- rebasePerms คงที่ (useCallback [])
   }, [session?.user?.id]);
 
   return (
@@ -2684,7 +2749,7 @@ export default function App() {
           กำลังโหลด...
         </div>
       ) : (
-        <Router>
+        <Router key={lang}>
           <Routes>
             <Route path="/login" element={session ? <Navigate to="/" replace /> : <Login />} />
             <Route path="/*"     element={

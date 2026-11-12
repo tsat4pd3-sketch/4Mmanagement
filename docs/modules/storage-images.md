@@ -459,6 +459,11 @@
    ไม่กี่ร้อย KB — **ถูกกว่าบันทึกเสียมาก**
 3. 🔴 **ช่องเซ็นในใบพิมพ์ห้ามส่ง `null` หรือค่าดิบ** — ต้องห่อ `sgn(uid, stored)`
    (เคยส่ง `null` แบบ hardcode 2 ช่อง: **ผู้ออก M/O** และ **ผู้รับ MO** ⇒ ว่างทุกใบตลอดมา)
+4. 🔴 **โมดัลลายเซ็นห้ามบันทึกกระดาษเปล่า** (09/11 · ด่าน `signature-no-blank-save`) — `SignatureModal`
+   แท็บวาดต้องมีเส้นจริง (`hasInk`) ก่อนกดบันทึก · เพราะข้อ 1 ดึงสด ⇒ โปรไฟล์ที่เป็นรูปขาว
+   **ลบลายเซ็นของทุกใบที่คนนั้นเคยเซ็นทันที รวมใบเก่า และทับลายที่วาดสดต่อใบ**
+   (เคสจริง: โปรไฟล์ 1.6 KB บันทึก 30/10 ⇒ หัวหน้าแจ้ง "เซ็นไม่ติด ลายเซ็นเก่าก็หาย" ·
+   วัด 09/11 โปรไฟล์ที่ไฟล์ < 3 KB มี 3/58 ราย — ลายเซ็นจริงเล็กสุด 3.9 KB · ต้องให้เจ้าตัวเซ็นใหม่เอง)
 
 ### ทำไมดึงสดถึงถูกกว่าเก็บ URL
 หลักฐานของเอกสารคือ **ใครเซ็น (`*_uid`/ชื่อ) + เซ็นเมื่อไหร่ (`*_at`)** ซึ่งเก็บถาวรไม่เปลี่ยน ·
@@ -468,3 +473,12 @@
 ### uid ที่ใช้ได้ (วัด 24/10)
 `reported_by_uid` 1,079 · `accepted_by_uid` 1,033 · `tech_main_uid` 933 · `checker_uid` 864 ·
 `approver_uid` 448 · `ho_checker_uid` 447 · `qa_checker_uid` 270 · `dept_manager_uid` 9 · `cost_mgr_uid` 4
+
+### ✍️ ลายเซ็นของ "พนักงาน" (ไม่ใช่บัญชี) — 2026-11-03 · ประชุม 02/11 C1
+- คอลัมน์ `employees.signature_url` (Main · migration `20261103_employee_signature_main.sql` — **ยังไม่ apply ณ 03/11**)
+- ไฟล์: bucket `signatures` path **`emp/<employee_id>/<ts>.png`** · policy เขียน = `has_perm('employees:edit'|'employees:edit_all_sections')`
+  (policy เดิม "Users can manage own signature" เช็คโฟลเดอร์ = uid จึงไม่ชนกัน)
+- ตั้งที่ `/operator` › แก้ไขพนักงาน › ✍️ ลายเซ็น — ใช้ `SignatureModal` ตัวเดียวกัน (prop `folder` + `persist` + `title`)
+  🔴 โมดัลต้อง render **นอก `<form>`** (ปุ่มในโมดัลไม่มี type = submit ฟอร์มพนักงาน)
+- ลำดับที่ใบพิมพ์ใช้ = **โปรไฟล์ → ฐานพนักงาน → ค่าที่ใบเก็บไว้ → `null`** ผ่าน `signatureOfPerson()` (`utils/employeeSignature.js`) ที่เดียว
+- ยังไม่ apply = แถว `select('*')` ไม่มีคีย์ `signature_url` ⇒ จอเขียนบอก · ใบพิมพ์เว้นช่อง + toast บอกเหตุผล (ไม่เงียบ)

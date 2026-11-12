@@ -235,7 +235,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
       {/* ── ⚙️ ทะเบียนรูปแบบกะ (แก้ได้เอง ไม่ต้องแก้โค้ด) ───────────────── */}
       {showReg && (
         <div style={card}>
-          <div style={{ fontSize:14, fontWeight:800, marginBottom:4 }}>⚙️ ทะเบียนรูปแบบกะ — เพดานกำลังผลิต</div>
+          <div style={{ fontSize:14, fontWeight:800, marginBottom:4 }}>ทะเบียนรูปแบบกะ — เพดานกำลังผลิต</div>
           <div style={{ fontSize:11, color:'var(--muted)', lineHeight:1.65, marginBottom:10 }}>
             ค่าเริ่มต้นถอดจากสไลด์ <b>Capacity_TSATP.4_update_June_26</b> — ทุกไลน์ในสไลด์ใช้ <b>2 shift = วันทำงาน × 15.5 ชม.</b> ⇒ 1 กะ = 7.75 ชม. (465 นาที)
             <br />
@@ -265,7 +265,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
                   return (
                     <tr key={p.key}>
                       <td style={{ ...td, textAlign:'left', fontWeight:700 }}>
-                        <span style={{ display:'inline-block', width:10, height:10, borderRadius:3, background:p.color || 'var(--muted)', marginRight:6 }} />
+                        <span style={{ display:'inline-block', width:10, height:10, borderRadius: 'var(--r-xs)', background:p.color || 'var(--muted)', marginRight:6 }} />
                         {p.label}
                       </td>
                       <td style={td}>
@@ -302,7 +302,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
 
       {/* ── กราฟ: แท่งภาระงาน + เส้นเพดานแต่ละรูปแบบกะ (หน่วยเดียวกันหมด = ชม.) ── */}
       <div style={card}>
-        <div style={{ fontSize:14, fontWeight:800 }}>📊 ภาระงาน vs เพดานกำลังผลิต — {activeLine?.name}</div>
+        <div style={{ fontSize:14, fontWeight:800 }}>ภาระงาน vs เพดานกำลังผลิต — {activeLine?.name}</div>
         <div style={{ fontSize:11, color:'var(--muted)', marginBottom:8 }}>
           หน่วย = ชั่วโมง · <b>ActWorkload</b> = เวลามาตรฐานที่ต้องใช้ (จำนวนชิ้น × CT) ·
           <b> RworkOEE</b> = เวลาจริงที่ต้องใช้เมื่อคิด OEE ({usedOee ? `${(usedOee * 100).toFixed(1)}%` : '—'}) ·
@@ -337,7 +337,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
 
       {/* ── ตาราง 12 เดือน — ศัพท์ตรงกับสไลด์ ────────────────────────────── */}
       <div style={card}>
-        <div style={{ fontSize:14, fontWeight:800, marginBottom:8 }}>📅 12 เดือนข้างหน้า</div>
+        <div style={{ fontSize:14, fontWeight:800, marginBottom:8 }}>12 เดือนข้างหน้า</div>
         <div style={{ overflowX:'auto' }}>
           <table style={{ width:'100%', borderCollapse:'collapse', minWidth:860 }}>
             <thead><tr>
@@ -383,7 +383,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
                   </td>
                   <td style={{ ...td, textAlign:'left' }}>
                     {!r.workloadHr ? <span style={{ color:'var(--muted)' }}>—</span>
-                      : !r.fitPattern ? <span style={{ color:'#ef4444', fontWeight:800 }}>🚨 เกินทุกรูปแบบ — ต้องเพิ่มไลน์/คน</span>
+                      : !r.fitPattern ? <span style={{ color:'#ef4444', fontWeight:800 }}>เกินทุกรูปแบบ — ต้องเพิ่มไลน์/คน</span>
                       : <span style={{ color:r.fitPattern.color, fontWeight:800 }}>{r.fitPattern.label}</span>}
                   </td>
                 </tr>
@@ -438,7 +438,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
         {!jph.rows.length ? (
           <div style={{ fontSize:13, color:'var(--muted)' }}>ไม่มีพาร์ทที่มีความต้องการในไลน์นี้</div>
         ) : (
-          <div style={{ overflowX:'auto', overflowY:'auto', maxHeight:'46vh', border:'1px solid var(--border2)', borderRadius:8 }}>
+          <div style={{ overflowX:'auto', overflowY:'auto', maxHeight:'46vh', border:'1px solid var(--border2)', borderRadius: 'var(--r-md)' }}>
             <table style={{ width:'100%', borderCollapse:'collapse', minWidth:940 }}>
               <thead><tr>
                 {[['MAT / ชื่องาน', 'left'], ['ลูกค้า', 'left'], ['ยอด 12 ด. (ชิ้น)', 'right'], ['CT (วิ)', 'right'],

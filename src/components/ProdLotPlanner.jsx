@@ -106,7 +106,7 @@ function DieMatLinkNote({ lot, dies, role, mayWrite, onDone }) {
   );
   return (
     <button type="button" onClick={link} disabled={busy}
-      style={{ marginTop: 2, fontSize: 11, padding: '1px 6px', borderRadius: 6, cursor: busy ? 'default' : 'pointer',
+      style={{ marginTop: 2, fontSize: 11, padding: '1px 6px', borderRadius: 'var(--r-md)', cursor: busy ? 'default' : 'pointer',
         background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--accent)' }}>
       {busy ? 'กำลังผูก…' : `🔗 ผูก MAT นี้กับ ${set.set_code}`}
     </button>
@@ -397,7 +397,7 @@ export default function ProdLotPlanner({
         <input type="date" value={date} onChange={e => setDate(e.target.value)} />
         {/* 🔗 ไม่ใช่ "ดูกะไหน" อีกต่อไป — คิวไหลข้ามกะเอง ช่องนี้แค่บอกว่า**เริ่มวาง**ที่กะไหน */}
         <Segmented value={shift} onChange={setShift} label="เริ่มที่" options={[
-          { value: 'day', label: '☀️ กะเช้า' }, { value: 'night', label: '🌙 กะดึก' },
+          { value: 'day', label: 'กะเช้า' }, { value: 'night', label: 'กะดึก' },
         ]} />
         <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}
           title="คิวจะไหลต่อไปได้กี่กะ — ไม่พอก็ยืดเพิ่ม (งานที่ล้นเลยขอบเขตจะขึ้นเตือน ไม่ถูกยัดลงกะสุดท้าย)">
@@ -421,11 +421,11 @@ export default function ProdLotPlanner({
           <>
             <button onClick={() => setTrialOpen(true)}
               title="งาน new model ที่ขอเครื่องมาทดลอง — จองเวลาเครื่องให้เห็นบนไทม์ไลน์ (พาร์ทยังไม่ต้องมีในระบบ)">
-              🧪 จองเครื่องทดลอง
+              จองเครื่องทดลอง
             </button>
             <button onClick={() => { setLots(suggestSequence(lots, dieOf)); setDirty(true); }}
               title="เรียงตามความสูงแม่พิมพ์ให้เสียเวลาเปลี่ยนรุ่นน้อยสุด — เป็นข้อเสนอ แก้ทับได้">
-              💡 เสนอลำดับ
+              เสนอลำดับ
             </button>
             <button onClick={save} disabled={saving || !dirty}
               style={{ background: dirty ? 'var(--accent)' : undefined, color: dirty ? 'var(--accent-ink)' : undefined, fontWeight: 800 }}>
@@ -435,7 +435,7 @@ export default function ProdLotPlanner({
         )}
       </FilterBar>
       {ordersErr && (
-        <div style={{ fontSize: 12, color: '#f59e0b', padding: '6px 10px', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 6 }}>
+        <div style={{ fontSize: 12, color: '#f59e0b', padding: '6px 10px', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 'var(--r-md)' }}>
           ⚠️ {ordersErr} — ยอดที่ผลิตจริงของล็อตด้านล่างอาจต่ำกว่าจริง (ไม่ใช่ "ยังไม่เริ่ม")
         </div>
       )}
@@ -454,18 +454,18 @@ export default function ProdLotPlanner({
         <span style={{ fontSize: 12.5, color: 'var(--text2)' }}>⏱️ เวลาผลิต <b>{fmtMin(summary.runMin)}</b></span>
         <span style={{ fontSize: 12.5, color: 'var(--text2)' }}
           title={summary.setupNoDie ? 'ยังไม่ได้ระบุแม่พิมพ์ในล็อตไหนเลย — ประเมินเวลาเปลี่ยนรุ่นไม่ได้ (ไม่ใช่ "ไม่ต้องเปลี่ยน")' : ''}>
-          🔧 เปลี่ยนรุ่น <b>{summary.setupMin == null ? '—' : fmtMin(summary.setupMin)}</b>
+          เปลี่ยนรุ่น <b>{summary.setupMin == null ? '—' : fmtMin(summary.setupMin)}</b>
           <span style={{ color: 'var(--muted)' }}> ({summary.setupNoDie ? 'ยังไม่ระบุแม่พิมพ์' : `${summary.changeCount} ครั้ง`})</span>
         </span>
         <span style={{ fontSize: 13, fontWeight: 800, color: overflowCount > 0 ? '#ef4444' : 'var(--text)' }}>
-          🏁 คาดจบ <b>{hz.finishMs == null ? '—' : fmtDayTime(hz.finishMs)}</b>
+          คาดจบ <b>{hz.finishMs == null ? '—' : fmtDayTime(hz.finishMs)}</b>
           {hz.shiftsUsed != null && <span style={{ fontWeight: 600, color: 'var(--text2)' }}> · กิน {hz.shiftsUsed} กะ
             {hz.lastSegment && ` (ยาวถึง ${SHIFT_LABEL[hz.lastSegment.shift]} ${hz.lastSegment.workDate.slice(8)}/${hz.lastSegment.workDate.slice(5, 7)})`}</span>}
         </span>
         {summary.trialCount > 0 && (
           <span style={{ fontSize: 12.5, color: '#22d3ee', fontWeight: 700 }}
             title="งาน new model ที่จองเครื่องมาทดลอง — กินเวลาเครื่องจริง แต่ไม่ใช่ยอดส่งลูกค้า">
-            🧪 ทดลอง {summary.trialCount} ใบ · {fmtMin(summary.trialMin)}
+            ทดลอง {summary.trialCount} ใบ · {fmtMin(summary.trialMin)}
           </span>
         )}
         {netMin && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>เวลาทำงานสุทธิ {netMin} นาที/กะ</span>}
@@ -515,7 +515,7 @@ export default function ProdLotPlanner({
       {rec.rows.length > 0 && frame.startMs && (
         <div style={card}>
           <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>
-            🧲 ไทม์ไลน์ — 1 บรรทัด = 1 กะ <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>
+            ไทม์ไลน์ — 1 บรรทัด = 1 กะ <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>
               (ความยาวกล่อง = เวลาที่ต้องใช้จริง · งานล้นกะไหลลงบรรทัดถัดไปเอง · ลากเพื่อสลับลำดับ)</span>
           </div>
           <PlanTimeline
@@ -537,7 +537,7 @@ export default function ProdLotPlanner({
       {/* ── ตารางแผน ── */}
       <div style={{ ...card, overflowX: 'auto' }}>
         <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>
-          📋 คิวงาน <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>
+          คิวงาน <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>
             (คอลัมน์ "ลงกะ" = กะที่ระบบคำนวณว่างานใบนี้ตกไปอยู่ — บันทึกแล้วหน้างานกะนั้นจะเห็น)</span>
         </div>
         {loading ? <div style={{ color: 'var(--muted)', fontSize: 12.5, padding: 12 }}>กำลังโหลด…</div>
@@ -566,8 +566,8 @@ export default function ProdLotPlanner({
                     <td style={td}>
                       {isTrialLot(l) ? (
                         <>
-                          <span style={{ background: '#22d3ee22', border: '1px solid #22d3ee', borderRadius: 4,
-                            padding: '1px 5px', fontSize: 11, fontWeight: 800, color: '#22d3ee', marginRight: 5 }}>🧪 ทดลอง</span>
+                          <span style={{ background: '#22d3ee22', border: '1px solid #22d3ee', borderRadius: 'var(--r-xs)',
+                            padding: '1px 5px', fontSize: 11, fontWeight: 800, color: '#22d3ee', marginRight: 5 }}>ทดลอง</span>
                           <b style={{ fontFamily: 'monospace', fontSize: 12 }}>{lotKeyText(l)}</b>
                           {l.trial_part_name && l.trial_part_no && <span style={{ color: 'var(--text2)', fontSize: 11 }}> · {l.trial_part_name}</span>}
                           <div style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -605,7 +605,7 @@ export default function ProdLotPlanner({
                     {/* 🔗 กะที่งานใบนี้ตกไปอยู่ — "—" = ยังตอบไม่ได้ **ไม่ใช่กะแรก** */}
                     <td style={td}>{(() => {
                       const at = landingOf[l.id];
-                      if (!at || at.overflow) return <span style={{ color: '#ef4444' }} title="งานล้นเลยขอบเขตที่วางแผนไว้ — ยังไม่มีที่ลง">🚨 ล้นขอบเขต</span>;
+                      if (!at || at.overflow) return <span style={{ color: '#ef4444' }} title="งานล้นเลยขอบเขตที่วางแผนไว้ — ยังไม่มีที่ลง">ล้นขอบเขต</span>;
                       if (!at.sure) return <span style={{ color: '#f59e0b' }} title="เวลาเชื่อไม่ได้ (ไม่มี CT หรือมีล็อตที่ไม่มี CT อยู่ก่อนหน้า) — บันทึกแล้วจะคงกะเดิมไว้">⚠ ยังจัดไม่ได้</span>;
                       const same = at.workDate === l.work_date && at.shift === l.shift;
                       return (
@@ -651,7 +651,7 @@ export default function ProdLotPlanner({
                     <td style={td}>
                       {l.status === 'cancelled' ? <span style={{ color: '#ef4444' }}>✕ ยกเลิก</span>
                         /* 🧪 ไม่มีพาร์ทให้จับคู่ยอดจริง ⇒ บอกตรงๆ ว่า "จองเครื่องไว้" ห้ามขึ้น "รอคิว" ค้างตลอดกาล */
-                        : r.state === 'trial' ? <span style={{ color: '#22d3ee' }}>🧪 จองเครื่องไว้</span>
+                        : r.state === 'trial' ? <span style={{ color: '#22d3ee' }}>จองเครื่องไว้</span>
                         : r.state === 'done' ? <span style={{ color: 'var(--accent)' }}>✓ ครบตามกรอบ</span>
                         : r.state === 'partial' ? <span style={{ color: '#4d9fff' }}>▶ กำลังทำ</span>
                         : <span style={{ color: 'var(--muted)' }}>ยังไม่เริ่ม</span>}
@@ -706,14 +706,14 @@ export default function ProdLotPlanner({
       {/* ── ความต้องการที่ยังไม่ได้วางแผน ── */}
       <div style={card}>
         <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>
-          📥 ความต้องการของไลน์นี้ที่ยังไม่ได้วางแผน <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>(ค้างส่ง + ถึงกำหนดภายใน {lastDate})</span>
+          ความต้องการของไลน์นี้ที่ยังไม่ได้วางแผน <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>(ค้างส่ง + ถึงกำหนดภายใน {lastDate})</span>
         </div>
         {unplanned.length === 0 ? (
           <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>— วางแผนครบทุกพาร์ทที่มีความต้องการแล้ว —</div>
         ) : (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {unplanned.slice(0, 24).map(u => (
-              <div key={u.mat} style={{ border: '1px solid var(--border2)', borderRadius: 6, padding: '5px 9px', display: 'flex', alignItems: 'baseline', gap: 7 }}>
+              <div key={u.mat} style={{ border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '5px 9px', display: 'flex', alignItems: 'baseline', gap: 7 }}>
                 <MatLabel mat={u.mat} size={12} />
                 <b style={{ fontSize: 12 }}>{u.qty.toLocaleString()}</b>
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้น</span>
@@ -728,13 +728,13 @@ export default function ProdLotPlanner({
         {otherParts.length > 0 && (
           <details style={{ marginTop: 10 }}>
             <summary style={{ fontSize: 12, color: 'var(--muted)', cursor: 'pointer' }}>
-              📋 พาร์ทอื่นที่ไลน์นี้ผลิต ({otherParts.length}) — ยังไม่มีความต้องการในช่วงนี้ แต่เลือกเข้าแผนเองได้
+              พาร์ทอื่นที่ไลน์นี้ผลิต ({otherParts.length}) — ยังไม่มีความต้องการในช่วงนี้ แต่เลือกเข้าแผนเองได้
             </summary>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
               {otherParts.map(p => (
-                <div key={p.mat} style={{ border: '1px dashed var(--border2)', borderRadius: 6, padding: '5px 9px', display: 'flex', alignItems: 'baseline', gap: 7 }}>
+                <div key={p.mat} style={{ border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '5px 9px', display: 'flex', alignItems: 'baseline', gap: 7 }}>
                   <MatLabel mat={p.mat} size={12} />
-                  {p.isOp && <span style={{ fontSize: 11, color: 'var(--muted)' }}>🔧 ต่อ Process</span>}
+                  {p.isOp && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ต่อ Process</span>}
                   {mayWrite && <button onClick={() => addLot(p.mat, 1)} style={{ fontSize: 11 }}>+ เข้าแผน</button>}
                 </div>
               ))}

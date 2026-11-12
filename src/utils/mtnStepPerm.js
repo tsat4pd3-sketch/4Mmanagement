@@ -30,6 +30,7 @@
 import {
   isMtnFormRow, isToolTeamRow, mtnApprovalState, qaAppliesTo, isApprovalBlocked, approvalKindPending,
 } from './mtnMoForm.js';
+import { MANAGER_SIGN_MIN_RANK } from './signRank.js';
 
 /** ขั้นที่ 1 ไม่อยู่ในตารางนี้ — เป็นการ "เปิดใบ" คุมด้วย mtn_repair:report ตรงๆ */
 export const MTN_STEPS = {
@@ -193,6 +194,49 @@ export function nextStepOf(order = {}) {
     case 'handover':  return mtnForm ? (mtnCloseStage(order) ?? 6) : 7;
     default:          return null;
   }
+}
+
+/* ── แถบ "ตอนนี้ถึงขั้นไหน" ✓—✓—⑦ ของใบ MO (<StepFlow> · UI §6.30 · 2026-11-12) ─────────────
+   🔴 ตัดสินจากของกลางที่มีอยู่แล้วเท่านั้น: `nextStepOf` (ขั้นถัดไป · รวม mtnCloseStage ของใบ MTN)
+      + `moQaState` (ขั้น 5 ตรวจแล้ว/ข้าม/รอ — ข้ามต้องเป็น ⏭ ห้ามวาด ✓ เขียว) + `stepMeta` (ชื่อขั้น/ใครทำ)
+   · สถานะจบที่ไม่ใช่ปิดงาน (rejected/returned/transferred/cancelled) = ใบหยุดที่ขั้นถัดไป → state 'done'
+     + tone ของสถานะ + label เป็นชื่อสถานะ (ใบที่ถูกตีกลับต้องเห็นว่าตกตรงไหน ไม่ใช่เขียวยาว)
+   · `waiting_vendor` = ใบยังเปิดอยู่ แต่ไม่มีขั้นในลูปที่รอ ⇒ ขั้นซ่อม (3) current + waiting = รอ supplier
+   · สถานะที่ตารางไม่รู้จัก = known:false (จอเขียนบอก ห้ามเดา) */
+const MO_STOP_TONE = { rejected: 'bad', returned: 'bad', transferred: 'none', cancelled: 'none' };
+export function moFlow(order = {}) {
+  const status = String(order?.status || '').trim();
+  const known = !!MO_STATUS_LABEL[status];
+  const mtnForm = isMtnFormRow(order);
+  const toolTeam = isToolTeamRow(order);
+  const last = lastStep({ mtnForm });
+  const closed = status === 'closed';
+  const stop = MO_STOP_TONE[status] ? status : null;
+  const vendor = status === 'waiting_vendor';
+  const next = closed || stop || !known ? null : (vendor ? 3 : nextStepOf(order));
+  const doneUpTo = closed ? last : stop ? Math.max(1, Number(order?.current_step) || 1) : (next ? next - 1 : 0);
+  const qa = mtnForm ? 'none' : moQaState(order);
+  const steps = [];
+  for (let n = 1; n <= last; n++) {
+    const meta = n === 1 ? { title: 'แจ้งซ่อม', whoShort: 'ผู้แจ้ง', stage: 'report' } : stepMeta(n, { mtnForm, toolTeam });
+    const st = { n, label: meta?.title || `ขั้น ${n}`, who: meta?.whoShort || null };
+    if (!known) st.state = 'todo';
+    else if (n <= doneUpTo) st.state = 'done';
+    else if (stop && n === doneUpTo + 1) { st.state = 'done'; st.tone = MO_STOP_TONE[stop]; st.label = MO_STATUS_LABEL[stop].replace(/^\S+\s/, ''); }
+    else if (next && n === next) st.state = 'current';
+    else st.state = 'todo';
+    // ขั้น QA (ฟอร์ม JIG/DIE/PD เท่านั้น) — ข้าม ≠ ทำแล้ว · ยังเดินไม่ถึง = todo ตามปกติ
+    if (!mtnForm && meta?.stage === 'qa' && !stop) {
+      if (qa === 'skipped') st.state = 'skipped';
+      else if (qa === 'done') st.state = 'done';
+      else if (closed) st.state = 'done';
+    }
+    steps.push(st);
+  }
+  let waiting = null;
+  if (vendor) waiting = 'ผู้รับจ้างภายนอก (supplier) — ส่งของกลับ แล้วช่างอัพเดทผลซ่อม';
+  else if (next) { const m = next === 1 ? { whoShort: 'ผู้แจ้ง', title: 'แจ้งซ่อม' } : stepMeta(next, { mtnForm, toolTeam }); waiting = m ? `${m.whoShort} — ${m.title}` : null; }
+  return { steps, waiting, closed: closed || !!stop, known };
 }
 
 /** meta ของขั้น — `mtnForm` = ใบนี้ใช้ฟอร์ม FM-MTN-006 (ผู้เรียกคำนวณจากทีมช่างมาให้) */
@@ -580,7 +624,7 @@ export const QA_SKIP_REASON_STEP4 = 'ขั้น 4 ระบุว่าไม�
  *        ส่วนงาน**ผู้แจ้ง** (ฝั่งผลิต) ไม่ใช่ทีมช่าง ⇒ ไม่กระทบด่านนี้
  *  🔴 **ไม่รู้ตำแหน่ง (`posRank == null`) = ไม่บล็อก** — กฎเดียวกับขั้น 6/7/8 (ไม่รู้ ≠ ไม่ใช่)
  *     แต่จอต้องเขียนว่า "ไม่ได้ตรวจตำแหน่ง" (ดู `stepAssumptions`) */
-export const APPROVAL_MIN_RANK = 50;
+export const APPROVAL_MIN_RANK = MANAGER_SIGN_MIN_RANK;
 
 export function canSignMtnApproval(kind, opts = {}) {
   const { order = {}, fullName = '', can = () => false, posRank = null, inReporterScope = null } = opts;
@@ -771,6 +815,18 @@ export function moRemoveMode(order = {}) {
   }
   if (MO_DONE_STATUSES.includes(st)) {
     return { mode: MO_REMOVE_BLOCKED, why: `ใบนี้จบไปแล้ว (${MO_STATUS_LABEL[st] || st}) — ไม่ต้องยกเลิกซ้ำ` };
+  }
+  /* 🔗 ใบที่เป็น "ปลายทางของการส่งต่อ" — ลบทิ้งไม่ได้แม้ยังไม่ออกเลข (2026-11-11 · คำสั่ง user)
+     ใบแม่จบที่ `transferred` ซึ่งเป็น **สถานะจบ** ⇒ ลบใบลูก = ปัญหาหลุดจากคิวของทุกคน
+     และ FK `mtn_order_handoffs.to_order_id` เป็น `on delete set null` ⇒ **ลิงก์ถูกล้างเงียบๆ**
+     วัดจริง 11/11: 4 ใบโดนแบบนี้ (3 ใบพิสูจน์จาก audit_log ว่าถูก DELETE ตอนยัง `pending`)
+     ของที่ค้างอยู่จริง: Reed ชำรุด Line 61 (22/09) · น้ำมันรั่ว HDF (24/09) · บูท Swing (24/10)
+     ⇒ ให้ยกเลิกพร้อมเหตุผลแทน — ใบยังอยู่ โซ่ไม่ขาด และแผงไล่งานเห็นว่าปลายทางไม่ทำ
+     🔴 ด่านจริงอยู่ชั้น DB ด้วย (FK `on delete restrict` · migration 20261111) — ชั้นนี้ไว้บอกเหตุผล */
+  const fromMo = String(order?.transferred_from_mo || '').trim();
+  if (fromMo) {
+    return { mode: MO_REMOVE_CANCEL,
+      why: `ใบนี้เป็นปลายทางของการส่งต่อจาก ${fromMo} — ลบทิ้งไม่ได้ (ใบต้นทางปิดไปแล้ว ลบใบนี้ = ปัญหาหายจากระบบ) · ยกเลิกพร้อมเหตุผลได้` };
   }
   if (!hasNo) {
     return { mode: MO_REMOVE_DELETE, why: 'ยังไม่ออกเลข MO — ลบทิ้งได้ (ไม่มีเลขและประวัติให้เสีย)' };

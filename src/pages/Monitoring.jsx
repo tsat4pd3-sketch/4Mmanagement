@@ -434,7 +434,7 @@ export default function Monitoring() {
       ? `⚠️ อ่านกฎรับเข้าคลัง/ยอดคลังไม่ครบ (${refErr.message || refErr}) ⇒ คอลัมน์วันนี้ยังไม่ได้ยึดยอดจริง และไม่มีของออกจากระบบ — BALANCE เป็นค่าจากสูตรล้วน`
       : [
         `คอลัมน์วันนี้ = ยอดคงเหลือจริงในคลัง (${locs.join(' · ') || '–'}) · IN = คลังกดรับแล้ว · ของออก = ใช้/คืนจากคลังนั้น`,
-        rcpRows.length ? `⏳ ผลิตคอนเฟิร์มแล้วรอคลังกดรับ ${rcpRows.length} ใบ · ${rcpQty.toLocaleString()} ชิ้น (ยังไม่นับใน IN — รับที่ /line-stock?tab=receipts)` : '',
+        rcpRows.length ? `⏳ ผลิตคอนเฟิร์มแล้วรอคลังกดรับ ${rcpRows.length} ใบ · ${rcpQty.toLocaleString()} ชิ้น (ยังไม่นับใน IN — รับที่ /line-stock?tab=in&store=receipts)` : '',
         loadErr(rcpR) ? '⚠️ อ่านใบรอรับเข้าไม่ได้ — ไม่รู้ว่ามีของค้างรับเท่าไหร่' : '',
         noRow ? `⚠️ ${noRow} พาร์ทไม่มีแถวในคลังอ้างอิง ⇒ ยังเช็คยอดจริงไม่ได้ (เดินสูตรจากยอดยกมา) — ตั้งยอดที่ /line-stock?tab=count` : '',
       ].filter(Boolean).join(' · '));
@@ -478,7 +478,7 @@ export default function Monitoring() {
     [partMat, sysLock, periods, board?.period_kind],
   );
   const lockNote = sysLock.size
-    ? ` · 🔒 IN ล็อก ${sysLock.size} พาร์ท (ระบบมีตัวเลขแล้ว — ตั้งแต่วันแรกที่มีถึงวันนี้ · ยอดไม่ตรงกดช่องเพื่อขอปรับยอดคลัง)`
+    ? ` · IN ล็อก ${sysLock.size} พาร์ท (ระบบมีตัวเลขแล้ว — ตั้งแต่วันแรกที่มีถึงวันนี้ · ยอดไม่ตรงกดช่องเพื่อขอปรับยอดคลัง)`
     : '';
   /* กดช่อง IN ที่ล็อก ⇒ เปิดใบ "ขอปรับยอดคลัง" (ไม่ใช่พิมพ์ทับ) */
   const onLockedCell = useCallback(({ partId }) => {
@@ -592,16 +592,16 @@ export default function Monitoring() {
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {/* 📦 บอร์ด FG ไม่ได้มาจากไฟล์ Excel — ปุ่มจึงแยกจาก "นำเข้าจากไฟล์" ตั้งแต่หัวเพจ
                 (ปุ่มเดียวกันแล้วเดาจากแท็บ = คนกดผิดแล้วงงว่าทำไมไม่ขอไฟล์) */}
-            <button type="button" onClick={() => setShowFgSync(true)}
+            <button type="button" className="pg-btn" onClick={() => setShowFgSync(true)}
               title="สร้าง/อัพเดทบอร์ด FG ต่อลูกค้า จากออเดอร์ EDI 862/830 ที่นำเข้าไว้แล้ว"
               style={{ fontSize: 13, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
                 background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-              📦 สร้างบอร์ด FG จากออเดอร์
+              สร้างบอร์ด FG จากออเดอร์
             </button>
-            <button type="button" onClick={() => setShowImport(true)}
+            <button type="button" className="pg-btn" onClick={() => setShowImport(true)}
               style={{ fontSize: 13, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
                 background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
-              📗 นำเข้าจากไฟล์ Excel
+              นำเข้าจากไฟล์ Excel
             </button>
           </div>
         ) : null}
@@ -651,13 +651,13 @@ export default function Monitoring() {
         /* data-subtab = แถวนี้ทำหน้าที่ "แท็บย่อย" ⇒ ลำดับ แท็บ → แท็บย่อย → แถบกรอง (UI-STANDARD §2.1) */
         <div data-subtab="1" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
           {[
-            { k: 'rundown', t: '📉 ของจะขาดวันไหน', s: 'อัตโนมัติล้วน · เรียงตัวที่จะขาดก่อน · ครอบ FG ทุกตัวที่มีออเดอร์' },
+            { k: 'rundown', t: 'ของจะขาดวันไหน', s: 'อัตโนมัติล้วน · เรียงตัวที่จะขาดก่อน · ครอบ FG ทุกตัวที่มีออเดอร์' },
             { k: 'board', t: '✏️ บอร์ดแก้มือ (ต่อลูกค้า)', s: 'พิมพ์ทับยอดได้ · เห็นผลิตเข้า/ขั้นต่ำในตารางเดียว' },
           ].map(v => (
             <button key={v.k} type="button" onClick={() => setFgView(v.k)}
               aria-current={fgView === v.k ? 'true' : undefined}
               style={{
-                textAlign: 'left', padding: '7px 13px', borderRadius: 9, cursor: 'pointer',
+                textAlign: 'left', padding: '7px 13px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                 border: `1px solid ${fgView === v.k ? 'var(--accent)' : 'var(--border2)'}`,
                 background: fgView === v.k ? 'var(--accent-dim)' : 'var(--bg2)',
                 color: fgView === v.k ? 'var(--accent)' : 'var(--text2)',
@@ -678,7 +678,7 @@ export default function Monitoring() {
         <div style={{ ...card, fontSize: FS + 1, lineHeight: 1.9 }}>
           ยังไม่มีบอร์ดในหมวดนี้ ({BOARD_TABS.find(t => t.key === tab)?.sheets})
           {canEdit
-            ? <> — กด <b>📗 นำเข้าจากไฟล์ Excel</b> แล้วเลือกไฟล์ <code>1.Monitoring-&lt;เดือน&gt;.xlsx</code> ระบบจะสร้างบอร์ดให้ตามชีทในไฟล์</>
+            ? <> — กด <b>นำเข้าจากไฟล์ Excel</b> แล้วเลือกไฟล์ <code>1.Monitoring-&lt;เดือน&gt;.xlsx</code> ระบบจะสร้างบอร์ดให้ตามชีทในไฟล์</>
             : ' — ต้องมีสิทธิ์จัดการบอร์ดจึงจะนำเข้าได้'}
         </div>
       ) : loading && !parts.length ? (
@@ -687,8 +687,8 @@ export default function Monitoring() {
         {/* 🔐 มีสิทธิ์จัดการบอร์ด แต่บอร์ดนี้เป็นของส่วนงานอื่น — เขียนบอก ห้ามให้ช่องเทาเฉยๆ */}
         {canEditPerm && !boardWrite.ok && (
           <div style={{ ...card, padding: '8px 10px', marginBottom: 8, fontSize: FS,
-            borderLeft: '4px solid #eab308' }}>
-            🔒 {writeBlockText(boardWrite, { what: `บอร์ด "${board?.name || ''}"` })}
+            borderLeft: '4px solid var(--amber)' }}>
+            {writeBlockText(boardWrite, { what: `บอร์ด "${board?.name || ''}"` })}
           </div>
         )}
         <MonitorBoardGrid

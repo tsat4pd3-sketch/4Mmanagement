@@ -21,6 +21,7 @@
        แต่ downtime/machine breakdown **นับเต็ม** (กฎเหล็กเดิม ห้ามสลับ)
      · ไฟล์นี้ pure (ไม่ import supabase) ⇒ เทสเรียกตรงได้
    ═══════════════════════════════════════════════════════════════════════════════════════ */
+import { linearFlow } from './stepFlow.js';
 
 /** สถานะใบขอซื้อ — สีตาม Andon (เหลือง = รอ · ฟ้า = กำลังมา · เขียว = จบ · เทา = ยกเลิก) */
 export const PR_STATUS_META = {
@@ -127,33 +128,55 @@ export function mosNeedingPr(orders = [], prs = [], isOpen = () => true) {
 export const NEEDS_PR_PATHS = () => REPAIR_PATHS.filter(p => p.needsPr).map(p => p.key);
 
 /** สถานะ "งาน PR" ของใบ MO 1 ใบ — ตัวกรองหน้ารายการ MO (20/10 · user "หาลิสต์ MO ที่รอกรอกเลข PR ไม่เจอ")
- *  · 'need'  = MTN ตัดสินว่าต้องเปิด PR แต่ยังไม่มีรายการขอซื้อ
- *  · 'no_no' = มีรายการขอซื้อที่ยังเปิดอยู่แต่ **ยังไม่มีเลข PR จาก SAP**
- *  · 'open'  = มีเลขแล้ว รอสั่ง/รอของ
+ *
+ *  **3 ขั้นตามที่ทีม MTN ใช้จริง** (02/11 · ทีมแจ้ง *"จริงๆควรมีแค่ 3 Filter"* — ห้ามเพิ่มเป็น 4)
+ *  · 'need'  = ① ต้องเปิด PR แต่ยังไม่มีรายการขอซื้อ
+ *  · 'no_no' = ② **ขั้นเปิด PR** — มีรายการแล้ว แต่ **ยังไม่ได้สั่งซื้อ (ไม่มีเลข PO)**
+ *              ครอบทั้ง "ยังไม่มีเลข PR" และ "มีเลข PR แล้ว รอ PO" — งานของแอดมินช่างทั้งคู่
+ *  · 'open'  = ③ **สั่งแล้ว (มีเลข PO) รอของเข้า**
  *  · null    = ไม่มีงาน PR ค้าง
- *  ลำดับความสำคัญ need > no_no > open (ใบเดียวตอบค่าเดียว) · `prs` = รายการของใบนี้ (ทุกสถานะ) */
+ *  ลำดับความสำคัญ need > no_no > open (ใบเดียวตอบค่าเดียว) · `prs` = รายการของใบนี้ (ทุกสถานะ)
+ *
+ *  🔴 **ขั้น ② จบที่เลข PO ไม่ใช่เลข PR** (2026-11-04 · หน้างานแจ้ง)
+ *     *"พอกรอกเลข PR มันเด้งข้ามไปหัวข้อ 3 เลยครับ มันไม่เข้า Filter ตัวที่ 2 ·
+ *     มันต้องอยู่ในช่องที่ 2 ก่อน พอใส่เลข PO แล้วถึงเด้งลงไปช่องที่ 3 ครับ"*
+ *     เดิมเงื่อนไขของ ② คือ "ยังไม่มีเลข PR" ⇒ กรอกเลข PR ปุ๊บใบเด้งไปขั้น ③ ทันที
+ *     ทั้งที่ยังไม่ได้สั่งซื้อ (วัด 04/11: 2 ใบ `requested` มีเลข PR แล้วแต่ไม่มี PO นั่งอยู่ขั้น ③)
+ *     🔑 **เลข PR = "ขอซื้อแล้ว" · เลข PO = "สั่งแล้ว" — คนละขั้น ห้ามยุบ**
+ *  🔴 ตัดสินจาก **เลข PO** ไม่ใช่ `status` อย่างเดียว — `ordered` ที่เลข PO ยังว่าง ยังไม่ใช่ "สั่งแล้ว"
+ *     (เลข PO มาจาก SAP ทีหลัง เหมือน `pr_no`) */
 export function prQueueStateOf(order, prs = []) {
   const live = (prs || []).filter(p => p && p.status !== 'cancelled');
   if (repairPathMeta(order?.repair_path)?.needsPr && !live.length) return 'need';
   const open = live.filter(isPrOpen);
-  if (open.some(p => !normalizePrNo(p.pr_no))) return 'no_no';
+  if (open.some(p => !normalizePrNo(p.po_no))) return 'no_no';
   if (open.length) return 'open';
   return null;
 }
 /* ป้าย 3 ขั้นของงาน PR — ถ้อยคำตามที่ทีม MTN ใช้จริง (02/11)
    ② เปิด PR = แอดมินช่างส่งเมลขอค่าใช้จ่าย กรอก IO/GL แล้ว **ได้เลข PR จาก SAP ทันที**
-      ⇒ ไม่ใช่ "รอ" เป็นขั้นที่มีคนต้องลงมือ · ป้ายเดิม "รอเลข PR (SAP)" ทำให้เข้าใจว่าต้องนั่งรอระบบ */
+      ⇒ ไม่ใช่ "รอ" เป็นขั้นที่มีคนต้องลงมือ · ป้ายเดิม "รอเลข PR (SAP)" ทำให้เข้าใจว่าต้องนั่งรอระบบ
+      🔑 เลข PR มาทันที = เหตุผลที่ขั้นนี้ต้องจบที่ **เลข PO** ไม่ใช่เลข PR (04/11) ไม่งั้นขั้นนี้ว่างตลอด
+   ③ ป้ายเดิม "PR รอสั่ง/รอของ" = ยัด 2 ขั้นรวมกัน ⇒ แก้เป็น "สั่งแล้ว" ให้ตรงกับเงื่อนไขจริง (04/11) */
 export const PR_QUEUE_META = {
   need:  { label: '🛒 รอเปิด PR', color: '#ef4444' },
-  no_no: { label: '📝 เปิด PR (กรอกเลข PR)', color: '#f59e0b' },
-  open:  { label: '🚚 PR รอสั่ง/รอของ', color: '#0ea5e9' },
+  no_no: { label: '📝 เปิด PR (กรอกเลข PR → รอสั่ง)', color: '#f59e0b' },
+  open:  { label: '🚚 สั่งแล้ว (มี PO) · รอของเข้า', color: '#0ea5e9' },
 };
 
 /* ── เลข PR บนใบ MO (ใบพิมพ์ FM-MTN-006) ─────────────────────────────────────────── */
 /** รวมเลข PR ของใบ — ใบขอซื้อที่ผูกใบนี้ (ไม่นับที่ยกเลิก) + ช่อง `pr_no` ที่กรอกมือเดิม · ตัดซ้ำ คงลำดับ */
 export function prNumbersOf(order, prs = []) {
+  /* 🔴 ตัดซ้ำด้วยรูปที่ `normalizePrNo` ทำให้ (03/11 · ข้อ A8 "PR ขึ้นเกิน") — ช่อง `pr_no` ในใบกรอกมือ
+     ไม่ผ่านตัวทำความสะอาด ("1210 104217" / ตัวเล็ก) ขณะที่ใบขอซื้อผ่านแล้ว ⇒ เลขเดียวกันเคยขึ้น 2 ครั้ง
+     แสดงค่าตัวแรกที่เจอ (ช่องในใบมาก่อน) */
   const list = [];
-  const add = (v) => { const s = String(v || '').trim(); if (s && !list.includes(s)) list.push(s); };
+  const seen = new Set();
+  const add = (v) => {
+    const s = String(v || '').trim();
+    const k = normalizePrNo(s);
+    if (s && k && !seen.has(k)) { seen.add(k); list.push(s); }
+  };
   add(order?.pr_no);
   for (const p of prs || []) if (p && p.status !== 'cancelled' && (!order?.id || p.order_id === order.id)) add(p.pr_no);
   return list;
@@ -178,3 +201,15 @@ export function assignedTechsOf(order) {
 }
 /** ข้อความรวมสำหรับ `assigned_to` (ผู้อ่านเดิม: ใบพิมพ์/Excel/edge แจ้งเตือน) */
 export const joinTechs = (names = []) => (names || []).map(s => String(s || '').trim()).filter(Boolean).join(', ');
+
+/* แถบ "ถึงขั้นไหน" ใบขอซื้อ (<StepFlow compact> ในใบ MO · UI §6.30 · 12/11) */
+export const prFlow = (pr) => linearFlow({
+  status: pr?.status, row: pr,
+  steps: [
+    { label: 'ขอซื้อ', who: 'ช่าง / จัดซื้อ', action: isAwaitingPrNo(pr) ? 'กรอกเลข PR (SAP) แล้วสั่งซื้อ' : 'สั่งซื้อ' },
+    { label: 'สั่งแล้ว', who: 'ผู้ขาย', action: 'ส่งของ — ช่างรับของเข้า' },
+    { label: 'รับของแล้ว' },
+  ],
+  at: { requested: 0, ordered: 1, received: 3 },
+  exits: { cancelled: { tone: 'none', label: 'ยกเลิก', at: (row) => (row?.ordered_at ? 1 : 0) } },
+});

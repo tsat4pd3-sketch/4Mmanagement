@@ -54,12 +54,19 @@
 | `shift_overrides` | Override กะรายบุคคล |
 | `shift_merge_events` | Merge กะทั้ง section/line |
 
-### PPE
+### PPE  (🔁 สร้างใหม่ 2026-11-10 — ของเดิมถูกเก็บเข้ากรุ/หายไปตั้งแต่ 14/10)
 | Table | คำอธิบาย |
 |-------|---------|
-| `ppe_items` | รายการ PPE (10 รายการ) |
-| `ppe_requirements` | PPE ที่แต่ละไลน์ต้องการ (25 รายการ) |
-| `ppe_checks` | บันทึกการตรวจ PPE |
+| `ppe_items` | ทะเบียนรายการ PPE (11 รายการ) · `legacy_col` = ผูกกับคอลัมน์เดิมใน `daily_production_logs` |
+| `ppe_requirements` | ข้อกำหนดรายหน่วย **4 ชั้น** `plant→section→line→station` (ชั้นล่างชนะ) |
+| `ppe_check_items` | ผลตรวจรายคน-รายวัน-รายชิ้น (ไม่ใช่ `ppe_checks` เดิมที่ไม่เหลือแล้ว) |
+
+🔴 **ห้ามอ่าน/เขียน 3 คอลัมน์ `has_helmet`/`has_boots`/`has_gloves` ตรงๆ เป็นแหล่งความจริงอีก** —
+ยังอยู่เพื่อความเข้ากันได้กับจอ/รายงานเดิม และถูกซิงก์ให้จาก `ppe_check_items`
+· กฎทั้งหมด → **`docs/modules/ppe-requirements.md`** · ตัวตัดสิน `src/utils/ppeRequirements.js`
+
+> ⚠️ ก่อน 10/11 ตารางนี้เขียนว่า `ppe_items`/`ppe_requirements`/`ppe_checks` มีอยู่และมีข้อมูล —
+> **ไม่จริง**: `ppe_items` ถูกย้ายไป `archive.ppe_items_unused_20261014` เมื่อ 14/10 ส่วนอีก 2 ตัวไม่เหลือในฐานเลย
 
 ### 4M & Notifications
 | Table | คำอธิบาย | Fields สำคัญ |
@@ -135,6 +142,20 @@ migration ไม่ได้ผิดอะไร ⇒ ที่มาของ�
 migration `20261013_production_lines_unit_kind_main.sql` (**apply แล้ว 13/10** · Main project)
 แถวที่ติดธงตอน apply (user เลือกเอง): `Office PD4` (7 คน) · `Coating` (0) · `Rework - PD1` (5 คน)
 — `test` / `test child` / `test child 2` **ไม่ได้ติดธง** (user ไม่ได้เลือก)
+
+⚠️ **ตรวจฐานจริง 05/11: แถวที่เป็น `support` มีแค่ `Coating` + `Finishing - PD1`**
+— `Office PD4` ยัง `production` อยู่ (เคสต้นเรื่องของคอลัมน์นี้เอง!) และ `Rework - PD1` ไม่มีในทะเบียนแล้ว
+(เปลี่ยนชื่อเป็น `Finishing - PD1`) ⇒ ย่อหน้าข้างบนเป็นสิ่งที่ *ตั้งใจ* ตอน 13/10 ไม่ใช่สิ่งที่ค้างอยู่จริง
+· แก้ `Office PD4` = หายจากจอผลิต/ตัวหาร ⇒ **ต้องให้ user ยืนยันก่อน ห้ามเปลี่ยนเอง**
+
+### 📈 รอบ 2 (05/11) — หน่วยงานสนับสนุนย้ายเข้าทะเบียนไลน์ทั้งก้อน
+เพิ่ม **14 แถว `support`** (id 75-88): QA (+ลูก 5) · STORE · Tooling MTN (+Die MTN) · JIG MTN ·
+Maintenance (+Mechanic/Preventive/Electric) — ผังและ `cost_center` ลอกจาก `org_nodes` เป๊ะ ·
+ย้ายพนักงาน 85 คนเข้ามา (`line_id` เดิม NULL ทั้งหมด)
+🟢 พิสูจน์แล้วว่า "กะที่ระบบตอบ" ไม่เปลี่ยนเลย 289/289 คน · ไลน์ผลิตยังเป็น 36 แถว (active 33)
+📄 รายละเอียด + ตาราง + วิธีย้อนกลับ → `docs/modules/shift-ot.md` §ยุบแกนหน่วยงาน
+🔴 **หน่วยงานใหม่ตั้งแต่นี้ไป = แถวใน `production_lines` (`unit_kind='support'`) เท่านั้น
+   ห้ามเพิ่มชื่อใหม่ในแกน `shift_schedules.dept_name`** (ข้อความลอย ไม่มีทะเบียน ไม่มี FK)
 
 ### กฎ
 🔴 **ตัดสินผ่าน `src/utils/unitKind.js` เท่านั้น** — `isProductionUnit()` / `isSupportUnit()` /

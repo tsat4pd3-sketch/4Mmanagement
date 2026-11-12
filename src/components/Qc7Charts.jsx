@@ -25,7 +25,7 @@ export function NotEnough({ reason, hint }) {
   return (
     <div style={{
       fontSize: 12, color: 'var(--muted)', background: 'var(--bg2)', border: '1px dashed var(--border2)',
-      borderRadius: 8, padding: '14px 12px', textAlign: 'center', lineHeight: 1.7,
+      borderRadius: 'var(--r-md)', padding: '14px 12px', textAlign: 'center', lineHeight: 1.7,
     }}>
       📭 <b style={{ color: 'var(--text2)' }}>ยังวิเคราะห์ไม่ได้</b>
       <div>{reason}</div>
@@ -122,7 +122,7 @@ export function ControlChart({ points, unit = 'นาที', minN = 8 }) {
         {c.inControl
           ? <span style={{ color: '#22c55e', fontWeight: 700 }}>✅ อยู่ในการควบคุม — ความผันแปรที่เห็นเป็นระดับปกติของงานนี้ (อย่าไล่แก้ทีละจุด ให้แก้ทั้งระบบถ้าอยากให้ดีขึ้น)</span>
           : <div style={{ color: '#ef4444', fontWeight: 700 }}>
-              🚨 พบสัญญาณผิดปกติ {c.signals.length} จุด — จุดพวกนี้มี “สาเหตุเฉพาะ” ให้ไปตามหา
+              พบสัญญาณผิดปกติ {c.signals.length} จุด — จุดพวกนี้มี “สาเหตุเฉพาะ” ให้ไปตามหา
               <ul style={{ margin: '4px 0 0 18px', padding: 0, fontWeight: 600, color: 'var(--text2)' }}>
                 {c.signals.slice(0, 5).map((s, i) => <li key={i}>{s.text}</li>)}
               </ul>
@@ -142,7 +142,7 @@ export function ScatterPlot({ records, xOf, yOf, labelOf, xLabel, yLabel, minN =
   const py = (v) => (s.yMax === s.yMin ? 50 : 96 - ((v - s.yMin) / (s.yMax - s.yMin)) * 92);
   return (
     <>
-      <div style={{ height: 190, border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg2)', marginTop: 4 }}>
+      <div style={{ height: 190, border: '1px solid var(--border)', borderRadius: 'var(--r-md)', background: 'var(--bg2)', marginTop: 4 }}>
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ width: '100%', height: '100%' }}>
           {s.points.map((p, i) => (
             <circle key={i} cx={px(p.x)} cy={py(p.y)} r="2" fill="#3b82f6" fillOpacity="0.75" vectorEffect="non-scaling-stroke">
@@ -174,7 +174,7 @@ export function Fishbone({ records, categoryOf, textOf, labelOf, effect = 'ป�
     <>
       {/* ⚠️ ผังนี้ส่วนใหญ่ "เดา" แกนมาจากข้อความ — ต้องบอกสัดส่วนไว้บนจอเสมอ ห้ามทำเป็นว่ารู้แน่ */}
       {fb.guessRate != null && fb.guessRate > 0 && (
-        <div style={{ fontSize: 11.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 8, padding: '6px 9px', marginBottom: 8, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 11.5, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 'var(--r-md)', padding: '6px 9px', marginBottom: 8, lineHeight: 1.6 }}>
           ⚠️ <b>{Math.round(fb.guessRate * 100)}% ของรายการ ระบบเดาแกนให้จากข้อความ</b> (ไม่ได้มีคนเลือกหมวดสาเหตุไว้)
           <div style={{ color: 'var(--text2)' }}>ให้ช่างเลือก “สาเหตุเกิดจาก” ตอนบันทึกขั้นลงมือซ่อม แล้วผังนี้จะแม่นขึ้นเอง</div>
         </div>
@@ -188,11 +188,11 @@ export function Fishbone({ records, categoryOf, textOf, labelOf, effect = 'ป�
               style={{
                 textAlign: 'left', cursor: dim ? 'default' : 'pointer', opacity: dim ? 0.45 : 1,
                 background: on ? 'var(--bg3)' : 'var(--bg2)', color: 'var(--text)',
-                border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 10, padding: '8px 10px',
+                border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '8px 10px',
               }}>
               <div style={{ fontSize: 12.5, fontWeight: 800 }}>{b.icon} {b.label}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
-                <div style={{ flex: 1, height: 8, background: 'var(--bg3)', borderRadius: 4, overflow: 'hidden' }}>
+                <div style={{ flex: 1, height: 8, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', overflow: 'hidden' }}>
                   <div style={{ width: `${(b.count / max) * 100}%`, height: '100%', background: b.key === 'unknown' ? '#6b7280' : 'var(--accent)' }} />
                 </div>
                 <b style={{ fontSize: 12.5 }}>{b.count}</b>
@@ -206,7 +206,7 @@ export function Fishbone({ records, categoryOf, textOf, labelOf, effect = 'ป�
         ปลายก้าง = <b style={{ color: 'var(--text2)' }}>{effect}</b> · รวม {fb.n} รายการ · กดที่แกนเพื่อดูรายการในแกนนั้น
       </div>
       {cur && cur.items.length > 0 && (
-        <div style={{ marginTop: 8, border: '1px solid var(--border)', borderRadius: 8, maxHeight: 220, overflow: 'auto' }}>
+        <div style={{ marginTop: 8, border: '1px solid var(--border)', borderRadius: 'var(--r-md)', maxHeight: 220, overflow: 'auto' }}>
           {cur.items.slice(0, 60).map((it, i) => (
             <div key={i} style={{ display: 'flex', gap: 8, padding: '5px 9px', borderTop: i ? '1px solid var(--border)' : 'none', fontSize: 11.5 }}>
               <span style={{ color: 'var(--muted)', minWidth: 96, flexShrink: 0 }}>{it.label || '—'}</span>
@@ -283,7 +283,7 @@ export function Stratify({ records, keyOf, valOf, unit = 'ครั้ง', top 
         <div key={g.name} onClick={onPick ? () => onPick(g) : undefined}
           style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0', cursor: onPick ? 'pointer' : 'default' }}>
           <span style={{ fontSize: 11.5, color: 'var(--text2)', minWidth: 130, maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={g.name}>{g.name}</span>
-          <div style={{ flex: 1, height: 12, background: 'var(--bg3)', borderRadius: 3, overflow: 'hidden', minWidth: 40 }}>
+          <div style={{ flex: 1, height: 12, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', overflow: 'hidden', minWidth: 40 }}>
             <div style={{ width: `${(g.value / max) * 100}%`, height: '100%', background: 'var(--accent)' }} />
           </div>
           <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text)', minWidth: 62, textAlign: 'right' }}>{fmt(g.value, 1)} {unit}</span>

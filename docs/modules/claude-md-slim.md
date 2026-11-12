@@ -228,3 +228,25 @@ grep ยืนยันทุกคีย์ที่หลุดจาก CLAUD
 ## เหลืออะไรให้รีดต่อ
 `กฎการทำงานทุก session` 8.3 KB (เก็บกฎข้าม session มากที่สุดโดยธรรมชาติ — **ที่ที่กฎใหม่จะมาลง**) ·
 `OEE` 8.0 KB (**5 กฎเหล็กนี้ข้ามโมดูลจริง ห้ามย้าย**) · `Patterns` 6.7 · `Workflow Discipline` 6.0
+
+---
+
+# รอบ 4 (2026-11-12) — รีดลึก 119.2 → 99.6 KB (คำสั่ง user · ลด token ที่ทุก session ต้องอ่าน)
+
+**หลัก:** หัวข้อที่เป็นของ "โมดูลเดียว" ย้ายเนื้อเต็มไปไฟล์โมดูล **แบบ verbatim** (หัวข้อ
+`## 📦 ฉบับเต็มเดิมจาก CLAUDE.md — <ชื่อหัวข้อ>` ท้ายไฟล์) · CLAUDE.md เหลือ **หัวข้อ `##` เดิมครบ 44 หัวข้อ**
+(โค้ด/คอมเมนต์ที่อ้าง "CLAUDE.md §…" ยังหาเจอ) + กฎข้าม session 1-3 บรรทัด + 📄 pointer
+
+| หัวข้อที่รีด | ฉบับเต็มอยู่ที่ |
+|---|---|
+| LPA · ใบรายงานปัญหา/ถังเหลือง-แดง · Production Plan · MTN MO | `lpa-audit` · `production-problem-report-bins` · `production-plan` · `mtn-work-order` |
+| "อื่นๆ/ไม่ระบุ" · KPI ช่าง + QC7 | `mtn-problem-analysis` |
+| เลิกจุด WIP · ความจุกะ + picker | `demand-flow-tower` · `daily-report` |
+| PM Predictive + AM↔PM · BOM · Skills EXP · DIE · NPI · PE Core | `pm-predictive-planner-sync` · `bom-levels` · `employee-skills-exp` · `die-maintenance` · `npi-apqp` · `pe-core-tools` |
+| คิวงานของฉัน · Monitoring · Manpower · อัพเดทโปรแกรม | `my-queue` · `monitoring-boards` · `manpower-board` · `program-update` |
+
+**ไม่แตะ (ข้ามโมดูลจริง):** OEE · Org/Role · Supabase · DB Schema · กฎเขียน DB · Date/Time · Shift · Design System ·
+Workflow/Branch/Deploy · OBEYA · machine_no · TimeRangeBar · มาตรฐานหน้าตา · Pareto · edition · 4M · Storage · Edge Functions
+
+**ตรวจว่าไม่มีความรู้หาย:** คีย์ใน backtick ที่หลุดจาก CLAUDE.md **120 ตัว · ไม่เจอใน `docs/modules/` = 0**
+(สคริปต์เทียบ `git show HEAD:CLAUDE.md` กับไฟล์ใหม่) · หัวข้อ `##` 44 → 44

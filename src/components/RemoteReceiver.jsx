@@ -108,7 +108,7 @@ export default function RemoteReceiver({ code, onStop }) {
         position: 'fixed', left: 14, bottom: 'calc(14px + var(--mnav-h, 0px))', zIndex: 9999,
         display: 'flex', alignItems: 'center', gap: 10,
         background: 'var(--bg2)', border: `1px solid ${connected ? 'var(--accent)' : 'var(--border2)'}`,
-        borderRadius: 12, padding: '8px 14px', boxShadow: 'var(--shadow-float)',
+        borderRadius: 'var(--r-lg)', padding: '8px 14px', boxShadow: 'var(--shadow-float)',
       }}>
         <span style={{ fontSize: 13 }}>📺</span>
         <div>
@@ -118,7 +118,7 @@ export default function RemoteReceiver({ code, onStop }) {
           <div style={{ fontSize: 18, fontWeight: 900, letterSpacing: 4, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>{code}</div>
         </div>
         <button onClick={onStop} title="ปิดรับรีโมท"
-          style={{ marginLeft: 4, background: 'none', border: '1px solid var(--border2)', borderRadius: 7, color: 'var(--muted)', fontSize: 12, padding: '4px 8px', cursor: 'pointer' }}>✕</button>
+          style={{ marginLeft: 4, background: 'none', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', color: 'var(--muted)', fontSize: 12, padding: '4px 8px', cursor: 'pointer' }}>✕</button>
       </div>
     </>
   );

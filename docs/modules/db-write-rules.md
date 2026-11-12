@@ -294,6 +294,14 @@ const delLink = async (it) => { if (!confirm(…)) return; await supabaseDR…; 
 > 4 ใน 9 จุดที่สแกนชี้ หายไปเมื่อเปิด `pg_policies` + `pg_index` ดูของจริง — เขียนด่าน/แก้โค้ดจากหน้าตาโค้ดล้วน
 > = เสียเวลาแก้ของที่ไม่พัง และทำให้ toast แดงโผล่ในเคสปกติ (ซึ่งแย่กว่าไม่เช็ค)
 
+### 🔴 "สำเร็จแต่ว่าง" ของตารางที่ RLS = `authenticated` ห้ามจดลง cache (10/11 · ทะเบียนไลน์)
+RLS ตัด anon ⇒ **session ยังไม่พร้อม/หมดอายุ = 200 + 0 แถว ไม่มี error** — loader ที่คืน `[]` ตามปกติ
+จะถูก `cachedMaster` จดลง localStorage 4 ชม. ⇒ ผังโรงงานกรอบหายทั้งผัง ("ซ่อนโซนสนับสนุน 25 โซน" · ยอดรวม 0/0)
+· แก้ที่ต้นทาง: `loadProductionLines()` **throw เมื่อลิสต์ว่าง** (ทะเบียนไลน์ไม่มีทางว่างจริง) ⇒ ไม่เขียน cache ·
+  รอบหน้ายิงใหม่ · ใช้ของดีเดิมถ้ามี · แถบเตือนกลางขึ้น (ด่าน `line-registry-empty-not-cached`)
+· ล้างของที่ค้างในเครื่องแล้วด้วย `CACHE_EPOCH` e2 → e3 (ครั้งเดียว ~640 KB/เครื่อง)
+· ทะเบียนอื่นที่ "ว่างได้จริง" **ห้ามใช้ท่านี้** — ว่างจริงกับว่างเพราะ session แยกกันไม่ออกจาก response
+
 ### 🔴 ทะเบียนของ picker — ลิสต์ว่าง 2 ความหมาย (13 hook)
 
 `useCustomers` `useSuppliers` `useProductionLines` `useStorageLocations` `useDiePressLines` `useChildParts`
@@ -326,6 +334,76 @@ const delLink = async (it) => { if (!confirm(…)) return; await supabaseDR…; 
 ⚠️ **ตั้งใจไม่ทำทั้งรีโป** — นอก `src/utils` มีอีก 9 จุด (`loadPmTeams` 5 หน้า · `loadProfilesPeople`
 · `loadProcessTypes` · `loadCompanyCalendar`) ที่ยังไม่ได้แก้ ⇒ ทำทั้งรีโปต้องใส่ `allow` 9 รายการ
 = ด่านที่มีข้อยกเว้นเยอะจนคนอยากปิด · **งานค้าง: ไล่ 9 จุดนั้นแล้วขยายด่านเป็น `src`**
+
+### 🔔 รอบ 2 (2026-11-09 · feedback user) — "ธงล้ม" ต้องบอกต่อได้ + ทะเบียนคีย์ล้าสมัยเงียบ
+
+> *"เราจะเจอปัญหาโหลดไลน์ไม่ขึ้นในหลายๆหน้า แต่เราเห็นมีหน้าเปิดกะที่มีไห้โหลดไลน์ใหม่ แต่จุดอื่นไม่มี"*
+
+ไล่แล้วเจอ **2 บั๊กซ้อนกัน** (ของกลางที่ตั้งไว้รอบแรกถูกแล้ว แต่ไปไม่ถึงจอ):
+
+**① ทะเบียน `KEYS_BY_TABLE` ชี้คีย์ที่ตายแล้ว — ด่านมองไม่เห็นเพราะคีย์เป็น "ตัวแปร"**
+`useProductionLines.js` bump คีย์ `production_lines:v2` → **`:v3`** ตอนเพิ่ม `unit_kind` (13/10)
+แต่ `masterInvalidate.js` ยังขึ้นทะเบียน `:v2` ⇒ **`invalidateTable('production_lines')` ล้างคีย์ที่ตายแล้ว**
+· เคสจริง: `/line-setup` เซฟทุกปุ่มผ่าน `fetchLines()` ที่เรียก `invalidateTable()` ตัวเดียว
+  ⇒ แก้ชื่อ/ส่วนงาน/ไลน์แม่/สร้างไลน์ใหม่ แล้ว **dropdown ของหน้าอื่นค้างของเก่าถึง 4 ชม.**
+  (รอดแค่ 2 ปุ่มปลดระวาง/คืนสถานะ ที่เรียก `invalidateProductionLines()` แยกอีกตัว)
+🔴 **ที่ด่านเดิมจับไม่ได้:** `masterInvalidate.test.mjs` สแกน `cached(Master|Rows)\('<สตริง>'` ⇒ ไฟล์ที่
+  เขียน `cachedMaster(KEY, …)` **หลุดด่านทั้งไฟล์** · ปิดช่องแล้ว (เทสใหม่ไล่ `const <ident> = '<คีย์>'`
+  ของไฟล์ที่ส่งตัวแปร) ⇒ **เจอเพิ่มอีก 10 คีย์ที่หลุดแบบเดียวกัน** ลงทะเบียนครบแล้วทั้งหมด:
+
+| คีย์ที่หลุด | ตารางเจ้าของ | ผลถ้าไม่ลงทะเบียน |
+|---|---|---|
+| `people:profiles:v2` · `people:employees:v2` | profiles · employees | **ตัวที่ใช้จริง** (ทะเบียนมีแต่ตัวไม่มี `:v2`) ⇒ แก้พนักงานแล้ว picker คนค้าง 4 ชม. |
+| `parts_master:matlabel` | parts_master | ป้ายชื่อพาร์ทลูกค้าง |
+| `container_categories:master` · `trial_reasons:master` · `uom_units:master` | ชื่อเดียวกัน | ทะเบียนใหม่ที่ยังไม่เคยลงเลย |
+| `die_set_kinds:master` · `die_op_types:master` · `die_set_kinds:die_links_v2` | die_set_kinds · die_op_types · **equipment_die** | ผังเครื่อง↔ชุดแม่พิมพ์ค้าง |
+| `part_images:v1` | part_images | รูปพาร์ทค้าง |
+
+**② `failures` Map ไม่มีใคร subscribe ได้ ⇒ แถบกลางตาบอด**
+`<LineRegistryAlert />` (ตาข่ายกลาง 30/10) อยู่ใน `<main>` ของ `App.jsx` **เหนือ `<Routes>`** = ทุกหน้าควรเห็น
+แต่มัน **mount ครั้งเดียวตอนเปิดแอป** (ไม่มี `key` ⇒ ไม่ remount ตอนเปลี่ยนหน้า) และ
+`useMasterRows` อ่าน `masterLoadState(key)` **แค่ตอน loader ของตัวเองเสร็จ** (deps คงที่หมด)
+· ทะเบียนผลล้มเดิมมีทางออกทางเดียว = `failSink` ตัวเดียวที่ `main.jsx` ผูกไว้ยิง toast (ผ่านไปแล้วหาย)
+⇒ **ทะเบียนล้มหลังเปิดแอป = ช่องเลือกไลน์ว่างทั้งแอป แต่แถบไม่โผล่และไม่มีปุ่มโหลดใหม่**
+⇒ เหลือทางเดียวคือหน้าที่สร้างปุ่มของตัวเองไว้ — **`/mtn-repair`** (`lineLoadErr`/`onReloadLines`) และ
+  **หน้าเปิดกะ `/daily-report`** (`reloadLineRegistry`) ตรงกับที่ user สังเกต
+
+**ของใหม่:**
+- `masterCache.js` → **`onMasterFailChange(fn)`** (คืนฟังก์ชันเลิกฟัง) · ยิงทุกครั้งที่ทะเบียนเปลี่ยน
+  (ล้ม · สำเร็จ · ถูกล้าง · `key = null` = เปลี่ยนหลายคีย์) · ตัวฟังพังห้ามลาม (try/catch รายตัว)
+- `useMasterRows` subscribe คีย์ของตัวเอง → อัพเดทแค่ `failed`/`stale`/`message`
+  🔴 **ห้ามแตะ `rows` และห้ามเรียก loader ในตัวฟัง** — ทุกจอที่เปิดอยู่จะยิง DB พร้อมกันทั้งโรงงาน
+- `invalidateProductionLines()` = `invalidateTable('production_lines')` ⇒ ล้าง **ทุกคีย์ของไลน์**
+  (`:v3` + ชั้นนอกของหน้าเปิดกะ `:dr`/`:flow`) ⇒ ปุ่มในแถบกลางใช้แทนปุ่มรายหน้าได้จริง
+  · `/daily-report` เลิกไล่พิมพ์คีย์เอง (พิมพ์คีย์ที่จุดเรียก = ต้นเหตุของบั๊ก ① ซ้ำรอบที่ 2)
+
+**ด่านใหม่:** `line-registry-reload-reaches-every-page` (`regressionGuards`) + เทสพฤติกรรม
+`src/utils/__tests__/masterFailSubscribe.test.mjs` (ยิงตอนล้ม · ยิงตอนหาย · เลิกฟังแล้วเงียบ ·
+ตัวฟังพังไม่ลาม · ทะเบียนไลน์ครอบ 3 คีย์)
+🔴 ด่านเดิมที่เช็คว่า `/daily-report` พิมพ์ `invalidateMaster('production_lines:dr')` เอง **ถูกเปลี่ยนให้เช็คเจตนา**
+   (หน้าล้างผ่านของกลาง + ทะเบียนของกลางครอบคีย์ชั้นนอก) — ด่านที่ล็อกการพิมพ์คีย์ที่จุดเรียก
+   คือด่านที่ช่วยให้บั๊ก ① เกิดได้
+
+### 🔐 10/11 — ต้นเหตุจริงของ "ไลน์ dropdown ไม่ขึ้น": ลิสต์ว่างที่โหลด**ตอนไม่ได้ login** ถูกจดลง cache
+**ที่วัดได้ (log ฝั่ง Main 24 ชม.):** `production_lines` จากเว็บ 628 ครั้ง — ได้ครบ 52 แถว 506 ครั้ง ·
+**ได้ 0 แถว 122 ครั้ง ทั้งหมดวิ่งด้วย role `anon` · 28 IP** · สถานะ 200 ทุกครั้ง (RLS SELECT เปิดแค่ `authenticated`
+⇒ anon ไม่ error แต่ได้ลิสต์ว่าง) · ไล่ลำดับคำขอรายเครื่อง: login อยู่ → **ออกจากระบบ/สลับบัญชี** →
+`production_lines` แบบ anon → login คนถัดไปภายใน 2-4 วินาที
+**ลูกโซ่:** `handleLogout` ล้าง cache ก่อน `signOut` → หน้าที่ยัง mount re-render (role/ขอบเขตถูกล้าง) →
+โหลดทะเบียนใหม่ตอนไม่มี token → `cachedMaster` จดลิสต์ว่างเป็น "สำเร็จ" ลง localStorage 4 ชม.
+⇒ **คนถัดไปที่ login เครื่องนั้น dropdown ไลน์ว่าง** · เครื่องกลางที่สลับบัญชีบ่อยโดนทุกรอบ ·
+และคำแนะนำ "ออกแล้วเข้าใหม่" (28/10) กลับเป็นตัวสร้างของพิษซ้ำ
+**แก้ (ชั้นกลาง ไม่ใช่รายหน้า):**
+- `masterCache.js` → **`setMasterAuthUser(uid)`** ตั้งจาก `App.jsx` (getSession · onAuthStateChange ·
+  `handleLogout` ก่อนล้าง cache) + ปุ่มสลับบัญชี `/checkin` · `cachedMaster`/`cachedRows`
+  **ห้ามจดผลที่เริ่มโหลดตอนไม่ได้ login หรือผู้ใช้เปลี่ยนระหว่างโหลด** (คืนให้ผู้เรียกเฉยๆ · ล้มช่วงนั้นไม่จดเป็นผลล้ม/ไม่ toast)
+  · `undefined` = ยังไม่รู้ (ก่อนอ่าน session) = พฤติกรรมเดิม
+- `loadProductionLines()` — **0 แถว = โยน `MasterLoadError`** (ทั้งตารางเปิดให้ทุกคนที่ login อ่าน ⇒ ว่าง = อ่านไม่ได้)
+- `cachedMaster(key, loader, ttl, { nonEmpty: true })` — ข้ามลิสต์ว่างที่ค้างใน cache (ของพิษเครื่องที่โดนไปแล้ว
+  หายทันทีที่ deploy ไม่ต้องรอ 4 ชม.) · ใช้กับ `production_lines:v3` + `:dr` + `:flow`
+**ด่าน:** `master-cache-auth-gate` (`regressionGuards`) + `src/utils/__tests__/masterAuthGate.test.mjs`
+⚠️ ตารางฝั่ง Main ตัวอื่นที่ RLS เป็น `authenticated` ก็ได้ประโยชน์จากประตูนี้ด้วย (anon ในช่วงเดียวกัน: four_m_logs 13 ·
+notifications 12 · doc_forms 9 ฯลฯ — ส่วนใหญ่ไม่ได้ผ่าน cache จึงไม่ค้าง)
 
 ---
 
@@ -481,3 +559,45 @@ having not bool_or(g.grantee='anon' and g.privilege_type='DELETE');
 แต่ผลของมันคุมแค่ "จะ insert ต่อไหม" **ไม่ได้คุมลูปตัดสต็อกที่อยู่ข้างล่าง** ⇒ ของออกจากคลังโดยไม่มีใบรองรับ
 ทุกครั้งที่ write มี "ผลข้างเคียงในโลกจริง" (ตัดสต็อก · ลบไฟล์ · ยิงแจ้งเตือน · เปลี่ยนสถานะ)
 ให้ถามว่า **ถ้า write ล้ม ผลข้างเคียงนั้นยังเกิดอยู่ไหม**
+
+---
+
+## 🔢 เพดาน 1,000 แถว — audit เต็มระบบ (2026-11-11 · หน้างานแจ้ง "ดูข้อมูลย้อนหลังมากไม่ได้")
+
+> ด่าน: `row-cap-dated-select` (ใหม่) + `limit-over-postgrest-cap` (เดิม) · ของกลาง `utils/fetchByIds.js` · `utils/fetchAllRows.js`
+
+### 2 เรื่องที่ทำให้ปัญหาซ่อนอยู่นาน
+1. **`.limit(N)` ที่ N > 1000 ไม่มีผลเลย** — PostgREST clamp ที่ 1,000 เสมอ (พบ 26 จุดเขียน 2000/5000/10000)
+2. **ด่านเดิมจับแค่ `.limit(N>1000)`** — ช่องโหว่จริงคือ **"ไม่ใส่ limit เลย"** ซึ่งดูเหมือนตั้งใจดึงทั้งหมด
+   สแกน 11/11: SELECT 1,463 จุด · **ไม่แบ่งหน้า 836** · ชนเพดานจริง (วัดจาก DB) **6 จุด**
+
+### ตัวเลขฐานที่วัดมา 11/11/26 — ใช้ตัดสินว่า "ชน" หรือ "กลัวไปเอง"
+| ตาราง | total | 30 วัน | 60 | 90 | ปีนี้ | หมายเหตุ |
+|---|---|---|---|---|---|---|
+| `production_sessions` (closed) | 2,514 | **968** | **1,406** | **1,964** | **2,514** | 30 วันเหลือที่แค่ 32 แถว |
+| `daily_production_logs` | 20,119 | 5,388 | – | 11,797 | 20,119 | สูงสุด **279/วัน · 4,338/เดือน** |
+| `shift_schedules` | 11,466 | 8,911 | – | 10,567 | 11,466 | สูงสุด 45/วัน |
+| `prod_orders` | 32,449 | 13,701 | – | 25,234 | 32,449 | |
+| `mtn_orders` | 1,857 | – | – | – | – | ใบที่ยังไม่ปิด 219 |
+
+🔴 **ปุ่มย้อนหลัง 30/60/90/120 + "ปีนี้" ของ `<TimeRangeBar>` = ตัวจุดชนวน** — กดแล้วเกินเพดานทันที
+
+### ที่แก้ไปแล้ว (แบ่งหน้าผ่าน `fetchAllPages`)
+`ShiftAutoFillModal` (546 วัน · **11,458 แถว ได้มา 1,000 = หาย 91%** และเอาไปตัดสินว่าจะ**ทับแถว
+`is_manual` ที่คนตั้งมือ**หรือไม่) · `QualityControl` · `OeeInsightPanel` (กลืน error + ไม่มี `.order()`) ·
+`DailyReport` แท็บ export (`*` + 3 embed — ไฟล์ Excel ที่ใช้งานจริง) · `AdoptionOutlook` (989/1000) ·
+`DeptDashboard` (989/1000) · `MtnRepair` · `BbsCheck` · `Report` (OT batch) · `Improvements`
+
+### 🔑 `/mtn-repair` — ตัวกรองวันที่ต้องอยู่ในคิวรี ไม่ใช่กรองฝั่งจอ
+เดิมโหลด "1,000 ใบล่าสุด" แล้วกรอง `tr.from/tr.to` **ด้วย `inRange` ฝั่งจอ** ⇒ `mtn_orders` 1,857 ใบ
+= **857 ใบเก่ามองไม่เห็นเลย** และปุ่ม "ดูทั้งหมดตั้งแต่ …" **ไม่เคยได้ผล** (แถวไม่เคยถูกขอมา)
+⇒ ดัน `gte/lte report_at` ลงคิวรี + `fetchAllPages` + ใส่ `tr.from/tr.to` ใน deps ของ `loadOrders`
+
+### กติกาจากนี้ (ด่าน `row-cap-dated-select` บังคับ)
+SELECT บน `production_sessions` · `prod_orders` · `downtime_logs` · `defect_logs` ·
+`daily_production_logs` · `shift_schedules` · `four_m_logs` · `mtn_orders` · `audit_log`
+ที่มี `.gte('<คอลัมน์วันที่>')` **ต้อง**ผ่าน `fetchAllPages`/`fetchByIds`/`fetchAllRows`/`.range(`
+**หรือ** มีหลักฐาน `cap-ok: <ตาราง> วัด <วันที่> = <N> แถว` ใน 3 บรรทัดเหนือขึ้นไป
+🔴 **`cap-ok` ต้องวัดจริง ห้ามเป็นตรายาง** — วัดไม่ได้/วัดแล้วเกิน = ไปแบ่งหน้า
+🔴 **ถูกตัดแถวไม่ใช่ error** ⇒ `if (error)` จับไม่ได้ · เรียงวันขึ้น = ตัดท้าย (เดือนล่าสุดหาย) ·
+   เรียงลง = ตัดหัว (ของเก่าหาย) — **แย่ทั้งคู่** ⇒ `truncated` ต้องเขียนบนจอเสมอ

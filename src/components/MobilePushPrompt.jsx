@@ -54,7 +54,7 @@ export default function MobilePushPrompt({ userId }) {
   const accent = c.tone === 'warn' ? 'var(--accent2)' : 'var(--accent)';
   return (
     <div style={{
-      margin: '0 12px 10px', padding: '8px 10px', borderRadius: 10,
+      margin: '0 12px 10px', padding: '8px 10px', borderRadius: 'var(--r-md)',
       border: `1px solid ${accent}`, background: 'var(--bg2)',
       fontSize: 11.5, lineHeight: 1.55, color: 'var(--text)',
       display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
@@ -64,7 +64,7 @@ export default function MobilePushPrompt({ userId }) {
         {c.cta && (
           <button onClick={enable} disabled={busy}
             style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--accent-ink)', background: 'var(--accent)',
-                     border: 'none', borderRadius: 7, padding: '5px 12px', cursor: busy ? 'default' : 'pointer' }}>
+                     border: 'none', borderRadius: 'var(--r-md)', padding: '5px 12px', cursor: busy ? 'default' : 'pointer' }}>
             {busy ? 'กำลังเปิด…' : c.cta}
           </button>
         )}

@@ -26,13 +26,15 @@ import StorageLocSelect from '../components/StorageLocSelect';
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 ค่าที่เคยบันทึกใน scrap_reports/items — ทะเบียนไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 import { useOrgSections, useOrgDepts } from '../utils/useOrgSections';
 import { slocValid, SLOC_FORMAT_HINT } from '../utils/storageLoc';
-import { inSectionScope } from '../utils/sectionScope';
+import { lineScope } from '../utils/sectionScope';
 import { canDelete } from '../utils/permissions';
 import { usePerms } from '../utils/usePerms';
 import { exportScrapReportExcel } from '../lib/scrapExportExcel';
 import { printScrapReport } from '../lib/scrapPrint';
 import { docFormSync, loadDocForms, fullCode } from '../utils/docForms';
 import { PULLABLE, statusMeta, effQty, KIND_LABEL } from '../utils/materialRequest';
+import { scrapReportFlow } from '../utils/stepFlow';
+import StepFlow from '../components/StepFlow';
 import { explodeScrapRow, scanScrapItems, opInfoOf } from '../utils/scrapExplode';
 import { buildBomIndex } from '../utils/bomTree';
 import { notifyEvent } from '../utils/notifyEvent';
@@ -40,6 +42,7 @@ import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import { DeleteButton } from '../components/IconButton';
+import { checkWriteRows } from '../utils/dbWrite';   // RLS ปฏิเสธ UPDATE/DELETE = 0 แถวไม่มี error (กฎเขียน DB ข้อ 2)
 import useIsMobile from '../utils/useIsMobile';
 /* 🗑️ ถังเหลือง/แดง — **ชิ้นเดียวกับที่ /qa ใช้** embed ทั้งดุ้น ไม่แก้ของเดิม (pattern เดียวกับ /equipment)
    user 19/10: *"feature ถังเหลือง/แดง ควรจะอยู่กับผลิตนะ หลักๆ ผลิตจะเป็นคน input data มาจาก daily report
@@ -48,6 +51,7 @@ import useIsMobile from '../utils/useIsMobile';
    ⚠️ แท็บที่ /qa ยังอยู่เหมือนเดิม (QA = คนพิจารณา) — ข้อมูลชุดเดียวกัน ไม่ได้ก๊อป */
 import QualityBins from '../components/QualityBins';
 import useTabParam from '../utils/useTabParam';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ── date helpers (ห้าม toISOString หา work date — ดู CLAUDE.md) ── */
 function localDateStr(d = new Date()) {
@@ -94,7 +98,7 @@ function Modal({ title, onClose, children, width = 560 }) {
   const isMobile = useIsMobile();
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '4vh 12px', overflowY: 'auto' }}>
-      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 14, width: `min(${width}px, 96vw)`, boxShadow: 'var(--shadow-lg)', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: `min(${width}px, 96vw)`, boxShadow: 'var(--shadow-lg)', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontWeight: 800, fontSize: 15 }}>{title}</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
@@ -105,15 +109,15 @@ function Modal({ title, onClose, children, width = 560 }) {
   );
 }
 
-/* 📋 ใบรายงานของเสีย (งานเอกสารรายวัน) · 🗑️ ถังเหลือง/แดง (บันทึกหน้ากล่องก่อนถึง NCR/Scrap)
+/* 📋 ใบรายงานของเสีย (งานเอกสารรายวัน) · ถังเหลือง/แดง (บันทึกหน้ากล่องก่อนถึง NCR/Scrap)
    = ของเสียชุดเดียวกัน คนละขั้นของเรื่อง ⇒ อยู่หน้าเดียวกันแต่คนละแท็บ (UI §6.8) */
 const TABS = [
-  { key: 'scrap', label: '♻️ ใบรายงานของเสีย' },
-  { key: 'bins',  label: '🗑️ ถังเหลือง / ถังแดง' },
+  { key: 'scrap', label: 'ใบรายงานของเสีย' },
+  { key: 'bins',  label: 'ถังเหลือง / ถังแดง' },
 ];
 
 export default function ScrapReport() {
-  const { fullName, role, lineId, sections } = useContext(UserContext);
+  const { fullName, role, lineId, sections, scopeIdx } = useContext(UserContext);
   const { can } = usePerms();
   const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'scrap');
   const canRecord = can('scrap', 'record');
@@ -132,16 +136,17 @@ export default function ScrapReport() {
   const approverGmHist = useColumnHistory(supabaseDR, 'scrap_reports', 'approver_gm_name');
   const storageHist = useColumnHistory(supabaseDR, 'scrap_reports', 'storage_location', { upper: true });
 
-  // ขอบเขตไลน์ที่เห็นได้: leader → เฉพาะครอบครัวไลน์ตัวเอง · role ที่ถูกจำกัด sections → เฉพาะไลน์ในส่วนงาน
-  // qa/manager/admin (sections ว่าง = ไม่จำกัด) → เห็นทั้งโรงงานเหมือนเดิม · null = ไม่จำกัด
-  const scopedLineNames = useMemo(() => {
-    if (role === 'leader' && lineId) {
-      const myLine = allLines.find(l => String(l.id) === String(lineId));
-      return myLine ? getLineFamilyNames(allLines, myLine.name) : [];
-    }
-    if (sections && sections.length) return allLines.filter(l => inSectionScope(sections, l.section)).map(l => l.name);
-    return null;
-  }, [role, lineId, sections, allLines]);
+  /* 🔭 ขอบเขตไลน์ที่เห็นได้ — **ของกลาง `lineScope()` เท่านั้น** (QC audit 09/11)
+     เดิมเขียนสูตรเองในหน้า แล้วให้คำตอบ **แคบกว่า** ที่ `profiles` ตั้งไว้ 2 ทาง
+     (ก) `leader` ได้ครอบครัวไลน์ล้วน — ของจริงคือ **ไลน์ตัวเอง ∪ ส่วนงานที่กำกับไว้** (กฎ 26/10)
+     (ข) ไม่ส่ง `scopeIdx` ⇒ ขอบเขตที่เป็นแผนก/กลุ่ม/ไลน์เดี่ยวตกหมด (เทียบข้อความ `l.section` ตรงตัว)
+     ซ้ำยังทำให้ 2 แท็บในหน้าเดียวกันตอบขอบเขตคนละชุด (แท็บถังใช้ของกลางอยู่แล้ว)
+     🔴 "การบีบขอบเขตเป็นการตั้งค่า ไม่ใช่งานของโค้ด" — ห้ามคืนน้อยกว่าที่ profiles ตั้งไว้ */
+  const scopeRes = useMemo(
+    () => lineScope({ role, lineId, sections, lines: allLines, scopeIdx }),
+    [role, lineId, sections, allLines, scopeIdx]);
+  /* `null` = ไม่จำกัด (คงความหมายเดิมของตัวแปรนี้ทั้งหน้า) · `[]` = ถูกตัดจนไม่เหลือไลน์ */
+  const scopedLineNames = scopeRes.unlimited ? null : scopeRes.names;
   // object array (id/name/parent_line_name) — render dropdown จัดชั้นตามผัง (§5.3 ข้อ 8) · ค่า value ยังเป็น name เหมือนเดิม
   /* 🔴 ลิสต์ของ picker ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัด (QA · Planning&Store · ฝั่งช่าง)
      กรองแล้วเหลือ 0 ⇒ dropdown ว่าง = ออกใบไม่ได้ทั้งหน้า (เคสจริง 26/10 · ด่าน line-picker-never-dead)
@@ -177,9 +182,18 @@ export default function ScrapReport() {
      ⇒ บอกด้วยว่านอกช่วงมีกี่ใบ ใบล่าสุดวันไหน + ปุ่มกระโดดไป (กฎความซื่อสัตย์ของจอ) */
   const [listErr, setListErr]   = useState(null);
   const [outside, setOutside]   = useState(null);   // { count, latest } | null
+  /* 🔴 จอว่างมี 3 เหตุ ห้ามยุบเป็นประโยคเดียว (QC audit 09/11):
+     `none` ไม่มีใบจริง · `scope0` บัญชีนี้ไม่มีไลน์ในขอบเขต (ไม่เคยยิงคิวรีเลย) ·
+     `unknown` คิวรีถามว่า "นอกช่วงมีมั้ย" ล่ม ⇒ ตอบไม่ได้ว่าทั้งระบบมีใบหรือไม่ */
+  const [emptyWhy, setEmptyWhy] = useState('none');
   const loadReports = useCallback(async () => {
-    if (scopedLineNames && scopedLineNames.length === 0) { setReports([]); setOutside(null); return; } // ถูก scope แต่ไม่มีไลน์ → ว่าง
-    let q = supabaseDR.from('scrap_reports').select('*')
+    if (scopedLineNames && scopedLineNames.length === 0) {   // ถูก scope แต่ไม่มีไลน์ → ไม่เคยยิงคิวรี
+      setReports([]); setOutside(null); setEmptyWhy('scope0'); return;
+    }
+    /* 🔴 จอรายการเลือกเฉพาะคอลัมน์ที่ใช้ · ใบเต็มดึงตอนเปิดทีละใบ (egress · กฎเขียน DB ข้อ 11)
+       หัวใบมี ~20 คอลัมน์ รวมชื่อผู้อนุมัติ 5 ช่อง ที่ตารางไม่ได้โชว์เลย */
+    let q = supabaseDR.from('scrap_reports')
+      .select('id, doc_no, report_date, line_name, status, product_categories')
       .gte('report_date', listFrom).lte('report_date', listTo);
     if (scopedLineNames) q = q.in('line_name', scopedLineNames);   // ดัน scope เข้า query
     // ⚠️ supabase-js ไม่ throw — ไม่อ่าน error = คิวรีล่มแล้วจอขึ้นเหมือน "ไม่มีข้อมูล" (กฎเหล็กข้อ 1)
@@ -188,12 +202,14 @@ export default function ScrapReport() {
     setListErr(null);
     setReports(data || []);
 
-    if ((data || []).length) { setOutside(null); return; }
+    if ((data || []).length) { setOutside(null); setEmptyWhy('none'); return; }
     // ว่าง → ถามต่อว่า "นอกช่วงมีมั้ย" (คิวรีเล็ก เฉพาะตอนจอว่างเท่านั้น ไม่กินทุกครั้ง)
     let oq = supabaseDR.from('scrap_reports').select('report_date').order('report_date', { ascending: false }).limit(1);
     if (scopedLineNames) oq = oq.in('line_name', scopedLineNames);
     const { data: any1, error: oe } = await oq;
     setOutside(!oe && any1?.length ? { latest: any1[0].report_date } : null);
+    /* คิวรี probe ล่ม = **ไม่รู้** ห้ามอ่านเป็น "ทั้งระบบยังไม่มีใบเลย" */
+    setEmptyWhy(oe ? 'unknown' : 'none');
   }, [listFrom, listTo, scopedLineNames]);
   useEffect(() => { loadReports(); }, [loadReports]);
 
@@ -361,9 +377,21 @@ export default function ScrapReport() {
     });
   };
 
+  /** 🔴 หัวใบเต็ม — ตารางถือแค่ 6 คอลัมน์ (egress) ⇒ ทุกจุดที่ใช้ "เนื้อใบ" (เปิดแก้ · พิมพ์ · Excel)
+   *  ต้องดึงใบเต็มก่อน · อ่านไม่ได้ = คืน `null` แล้วผู้เรียก **หยุด** (พิมพ์ใบที่ช่องลายเซ็นหายไป
+   *  หรือกดบันทึกทับช่องที่ไม่ได้โหลด = เอกสารผิด) */
+  const loadFullReport = async (id) => {
+    const { data, error } = await supabaseDR.from('scrap_reports').select('*').eq('id', id).single();
+    if (error || !data) { toast.error(`อ่านใบไม่สำเร็จ: ${error?.message || 'ไม่พบใบนี้'} — ลองใหม่อีกครั้ง`); return null; }
+    return data;
+  };
+
   const openEdit = async (rep) => {
-    const { data: items } = await supabaseDR.from('scrap_report_items').select('*').eq('report_id', rep.id).order('seq');
-    setEditor({ report: { ...rep, product_categories: rep.product_categories || [] }, items: (items || []).map(it => ({ ...it, _key: it.id })) });
+    const full = await loadFullReport(rep.id);
+    if (!full) return;
+    const { data: items, error: itErr } = await supabaseDR.from('scrap_report_items').select('*').eq('report_id', rep.id).order('seq');
+    if (itErr) { toast.error(`อ่านรายการในใบไม่สำเร็จ: ${itErr.message} — ยังไม่เปิดฟอร์ม (กันบันทึกทับของเดิม)`); return; }
+    setEditor({ report: { ...full, product_categories: full.product_categories || [] }, items: (items || []).map(it => ({ ...it, _key: it.id })) });
   };
 
   /* ดึงยอดของเสียตั้งต้นจาก Daily Report (defect_logs) ของไลน์+วันในใบ */
@@ -541,8 +569,11 @@ export default function ScrapReport() {
     };
     let repId = report.id;
     if (repId) {
-      const { error } = await supabaseDR.from('scrap_reports').update(payload).eq('id', repId);
-      if (error) { toast.error(error.message); return; }
+      /* 🔴 นับแถว — RLS ปฏิเสธ UPDATE = 0 แถวไม่มี error แล้วจอขึ้น "บันทึกใบแล้ว ✓" ทั้งที่หัวใบไม่เปลี่ยน
+         (รายการในใบด้านล่างนับแถวอยู่แล้ว ตัวหัวใบกลับไม่นับ · QC audit 09/11) */
+      if (!checkWriteRows(await supabaseDR.from('scrap_reports').update(payload).eq('id', repId).select('id'),
+        'บันทึกหัวใบรายงานของเสีย',
+        { zeroMsg: 'บันทึกหัวใบไม่สำเร็จ (0 แถว — อาจมีคนลบใบไปก่อน หรือสิทธิ์เขียนไม่พอ)' })) return;
     } else {
       const { data, error } = await supabaseDR.from('scrap_reports').insert({ ...payload, created_by: fullName || null }).select().single();
       if (error) { toast.error(error.message); return; }
@@ -603,6 +634,17 @@ export default function ScrapReport() {
           toast.error(`ผูกใบถังแดงได้ ${linked?.length || 0}/${binIds.length} รายการ — ที่เหลืออาจไม่มีสิทธิ์แก้ แจ้ง admin`);
       }
     }
+    /* 🔴 รายการถังแดงที่ถูกเอาออกจากใบ ต้องปลดการผูกด้วย (บั๊ก B 10/11)
+       เดิมรายการถูกลบ-เขียนใหม่ทั้งชุด แต่ `quality_bin_records.scrap_report_id` ของถังที่หลุดออกไปยังชี้ใบนี้
+       ⇒ ถังขึ้น "ออกใบแล้ว" + หยุดนับอายุแท็ก ทั้งที่ไม่อยู่ในใบไหนเลย = หลุดสายขออนุมัติทำลาย
+       ทำ **หลัง** รายการบันทึกสำเร็จ (ถ้ารายการล้มก่อนหน้านี้ ฟังก์ชัน return ไปแล้ว ไม่มาถึงตรงนี้) */
+    {
+      const keep = [...new Set(items2.map(it => it.src_bin_id).filter(Boolean))];
+      let uq = supabaseDR.from('quality_bin_records').update({ scrap_report_id: null }).eq('scrap_report_id', repId);
+      if (keep.length) uq = uq.not('id', 'in', `(${keep.join(',')})`);
+      const { error: uErr } = await uq.select('id');
+      if (uErr) toast.error(`บันทึกใบแล้ว แต่ปลดใบถังแดงที่เอาออกจากใบไม่สำเร็จ: ${uErr.message} — ถังพวกนั้นอาจขึ้นว่าออกใบแล้วทั้งที่ไม่อยู่ในใบ แจ้ง admin`);
+    }
     if (report.status === 'submitted') notifyEvent({
       event: 'scrap_report_submitted', type: 'info', ref_table: 'scrap_reports', ref_id: repId,
       line_name: report.line_name || null, section: report.section || null, actor: fullName,
@@ -618,22 +660,39 @@ export default function ScrapReport() {
   };
 
   const delReport = async (rep) => {
+    /* 🔴 ลบได้เฉพาะใบ "ร่าง" (บั๊ก B 10/11) — ใบที่ส่งอนุมัติ/อนุมัติแล้วคือบันทึกตามฟอร์ม FM-PD2-002 (เก็บ 10 ปี)
+       การลบจริงทำให้สืบย้อนไม่ได้ · ใบส่งอนุมัติที่ทำผิด ให้เปลี่ยนกลับเป็นร่างก่อน (คนที่มีสิทธิ์แก้ใบ) */
+    if (rep.status && rep.status !== 'draft') {
+      toast.error(`ใบ ${rep.doc_no || ''} อยู่สถานะ "${rep.status === 'approved' ? 'อนุมัติแล้ว' : 'ส่งอนุมัติ'}" — ลบไม่ได้ (เป็นบันทึกที่ต้องเก็บ) · ถ้าทำผิด ให้เปิดใบเปลี่ยนกลับเป็นร่างก่อน`);
+      return;
+    }
     if (!window.confirm(`ลบใบ ${rep.doc_no || fmtD(rep.report_date)}?`)) return;
-    const { error } = await supabaseDR.from('scrap_reports').delete().eq('id', rep.id);
-    if (error) { toast.error(error.message); return; }
+    /* 🔴 ปลดการผูกถังแดงก่อนลบใบ — `scrap_report_id` ไม่มี FK ⇒ ลบใบเฉยๆ = ถังชี้ใบที่ไม่มีอยู่
+       แล้วขึ้น "ออกใบแล้ว" ตลอดกาล · ปลดไม่สำเร็จ = ห้ามลบ (fail-closed) */
+    const { error: unErr } = await supabaseDR.from('quality_bin_records')
+      .update({ scrap_report_id: null }).eq('scrap_report_id', rep.id).select('id');
+    if (unErr) { toast.error(`ปลดใบถังแดงที่ผูกกับใบนี้ไม่สำเร็จ: ${unErr.message} — ยังไม่ได้ลบใบ`); return; }
+    /* 🔴 DELETE ที่ถูก RLS ปฏิเสธ = 0 แถวไม่มี error ⇒ ต้องนับ ไม่งั้นขึ้น "ลบแล้ว" ทั้งที่ใบยังอยู่ */
+    if (!checkWriteRows(await supabaseDR.from('scrap_reports').delete().eq('id', rep.id).select('id'),
+      'ลบใบรายงานของเสีย',
+      { zeroMsg: 'ลบไม่สำเร็จ (0 แถว — อาจถูกลบไปแล้ว หรือสิทธิ์ไม่พอ) · รีเฟรชแล้วเช็คอีกครั้ง' })) { loadReports(); return; }
     toast.success('ลบแล้ว'); loadReports();
   };
 
   const doExport = async (rep) => {
+    const full = await loadFullReport(rep.id);
+    if (!full) return;
     const { data: items } = await supabaseDR.from('scrap_report_items').select('*').eq('report_id', rep.id).order('seq');
     // เลขฟอร์ม/Rev/ช่องลายเซ็น อ่านจาก Document Master กลางใน lib เอง (getDocForm 'scrap_report')
-    await exportScrapReportExcel({ report: rep, items: items || [], defectTypes });
+    await exportScrapReportExcel({ report: full, items: items || [], defectTypes });
   };
 
   // พิมพ์/บันทึก PDF — layout เดียวกับ Excel · เลขฟอร์ม/Rev/โลโก้ จากทะเบียนเอกสาร (เซฟ PDF จาก dialog พิมพ์)
   const doPrint = async (rep) => {
+    const full = await loadFullReport(rep.id);
+    if (!full) return;
     const { data: items } = await supabaseDR.from('scrap_report_items').select('*').eq('report_id', rep.id).order('seq');
-    const ok = await printScrapReport({ report: rep, items: items || [] });
+    const ok = await printScrapReport({ report: full, items: items || [] });
     if (!ok) toast.error('เบราว์เซอร์บล็อก popup — อนุญาต popup ของเว็บนี้แล้วลองใหม่');
   };
 
@@ -659,12 +718,13 @@ export default function ScrapReport() {
         permKey="scrap:record" hint="ยังเปิดดูใบเดิม พิมพ์ และ export Excel ได้ตามปกติ" />
       <PageHeader title="ของเสีย — ใบรายงาน & ถังเหลือง/แดง" icon="♻️"
         sub={tab === 'bins'
-          ? 'ชิ้นงานต้องสงสัย (ถังเหลือง) / ชิ้นงานเสีย (ถังแดง) — ผลิตลงบันทึก · QA เป็นคนพิจารณาผล'
+          ? 'ชิ้นงานต้องสงสัย (ถังเหลือง) / ชิ้นงานเสีย (ถังแดง) — เอกสารตัวจริงอยู่ที่นี่ · QA เห็นเฉพาะคิวรอพิจารณาใน /qa'
           : `${scrapFormNo} — ลงยอดของเสียต่อไลน์/วัน · ดึงตั้งต้นจาก Daily Report + เพิ่มพาร์ทย่อย · export ตรงฟอร์ม`}
         tabs={TABS} tab={tab} onTab={setTab} />
 
-      {/* 🗑️ ถังเหลือง/แดง = คอมโพเนนต์เดียวกับที่ /qa ใช้ (ข้อมูลชุดเดียว ไม่ได้ก๊อป) */}
-      {tab === 'bins' ? <QualityBins /> : (<>
+      {/* 🗑️ ถังเหลือง/แดง — **บ้านของเอกสาร อยู่ที่หน้านี้ (ฝ่ายผลิต)** · คำสั่ง user 06/11
+          คอมโพเนนต์เดียวกับที่ /qa ใช้ (ข้อมูลชุดเดียว ไม่ได้ก๊อป) แต่ /qa ส่ง mode="queue" = เห็นแค่คิวรออนุมัติ */}
+      {tab === 'bins' ? <QualityBins mode="full" /> : (<>
 
       {/* UI-STANDARD 2026-09-24: แถบกรองมาตรฐาน (ไม่ใส่ขนาด inline ในช่อง) */}
       <FilterBar style={{ marginBottom: 14 }}>
@@ -676,6 +736,18 @@ export default function ScrapReport() {
         {canRecord && <button style={btnSt()} onClick={openNew}>+ เปิดใบใหม่</button>}
       </FilterBar>
 
+      {/* 🔴 ตัดขอบเขตไม่ชัด = เขียนบนจอ ห้ามปล่อยให้คนเข้าใจว่ารายการที่เห็นคือทั้งหมดของเขา
+          (ของกลาง `lineScope()` บอกเองผ่าน `unsure` + `reason`) */}
+      {scopeRes.unsure && (
+        <div style={{ ...cardSt, padding: '8px 12px', marginBottom: 12, fontSize: 12.5, color: 'var(--amber)',
+          border: '1px solid var(--amber-line)', background: 'var(--amber-dim)' }}>
+          ⚠️ ยังตัดขอบเขตไลน์ไม่ชัด ({scopeRes.reason === 'registry_unloaded' ? 'โหลดทะเบียนไลน์ไม่สำเร็จ'
+            : scopeRes.reason === 'own_line_unknown' ? 'ไม่พบไลน์ที่บัญชีนี้สังกัดในทะเบียน'
+            : 'ส่วนงานของบัญชีนี้ไม่ตรงกับไลน์ไหนในทะเบียน'}) —
+          รายการด้านล่างอาจกว้าง/แคบกว่าขอบเขตจริงของคุณ
+        </div>
+      )}
+
       {/* 📱 มือถือ = การ์ดต่อใบ (MOBILE-UX-STANDARD ชนิด B) — ตาราง 7 คอลัมน์ minWidth 720 บนจอ 360 ซ่อนปุ่ม ✏️ ไว้คอลัมน์สุดท้าย
           ต้องปัดตารางไปขวาถึงจะเจอ (ไม่มีอะไรบอกว่าปัดได้) ⇒ เปิดใบแก้ไม่ได้ในทางปฏิบัติ · 15/10 */}
       {isMobile ? (
@@ -686,14 +758,14 @@ export default function ScrapReport() {
               <div key={rep.id} className="sr-card">
                 <div className="sr-head">
                   <b>{rep.doc_no || '—'}</b>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 999, color: sm?.color, background: `${sm?.color}1f`, border: `1px solid ${sm?.color}55` }}>{sm?.label || rep.status}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 'var(--r-pill)', color: sm?.color, background: `${tint(sm?.color, 'dim')}`, border: `1px solid ${tint(sm?.color, 'line')}` }}>{sm?.label || rep.status}</span>
                 </div>
                 <div className="sr-line">{rep.line_name || '—'} · {fmtD(rep.report_date)}</div>
                 <div className="sr-sum"><ItemCount reportId={rep.id} /> · ของเสีย <ScrapSum reportId={rep.id} /></div>
                 <div className="sr-acts">
-                  {canRecord && <button className="sr-main" onClick={() => openEdit(rep)}>✏️ เปิด/แก้ใบ</button>}
-                  <button onClick={() => doPrint(rep)}>🖨️ PDF</button>
-                  <button onClick={() => doExport(rep)}>⬇ Excel</button>
+                  {canRecord && <button className="sr-main" onClick={() => openEdit(rep)}>เปิด/แก้ใบ</button>}
+                  <button onClick={() => doPrint(rep)}>PDF</button>
+                  <button onClick={() => doExport(rep)}>Excel</button>
                   {canDel && <DeleteButton onClick={() => delReport(rep)} title="ลบ" />}
                 </div>
               </div>
@@ -701,17 +773,21 @@ export default function ScrapReport() {
           })}
           {reports.length === 0 && (
             <div style={{ ...cardSt, fontSize: 13 }}>
-              {listErr ? <span style={{ color: '#ef4444', fontWeight: 700 }}>⚠️ โหลดรายการไม่สำเร็จ: {listErr} — ไม่ใช่ "ไม่มีใบ" ให้ลองใหม่อีกครั้ง</span>
+              {listErr ? <span style={{ color: 'var(--red)', fontWeight: 700 }}>⚠️ โหลดรายการไม่สำเร็จ: {listErr} — ไม่ใช่ "ไม่มีใบ" ให้ลองใหม่อีกครั้ง</span>
                 : outside ? (
                   <span style={{ color: 'var(--text2)' }}>
                     ไม่มีใบในช่วงนี้ — แต่<b>มีใบอยู่นอกช่วง</b> ล่าสุด <b style={{ color: 'var(--accent)' }}>{outside.latest}</b>{' '}
                     <button onClick={() => { setListFrom(outside.latest); setListTo(getWorkDate()); }}
-                      style={{ marginTop: 6, fontSize: 13, fontWeight: 800, padding: '8px 12px', borderRadius: 8, cursor: 'pointer',
+                      style={{ marginTop: 6, fontSize: 13, fontWeight: 800, padding: '8px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                         background: 'rgba(61,214,92,0.12)', color: 'var(--accent)', border: '1px solid rgba(61,214,92,0.45)', fontFamily: 'var(--font-body)' }}>
                       ขยายช่วงไปถึงวันนั้น
                     </button>
                   </span>
-                ) : <span style={{ color: 'var(--muted)' }}>ไม่มีใบในช่วงนี้ (ทั้งระบบยังไม่มีใบรายงานของเสียเลย)</span>}
+                ) : emptyWhy === 'scope0'
+                    ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>บัญชีนี้ไม่มีไลน์ในขอบเขต — ยังตัดรายการไม่ได้ (ให้ admin ตั้งขอบเขตที่ /add-user)</span>
+                    : emptyWhy === 'unknown'
+                      ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>ไม่มีใบในช่วงนี้ — เช็คไม่ได้ว่านอกช่วงมีใบไหม (คิวรีล่ม) ลองใหม่อีกครั้ง</span>
+                      : <span style={{ color: 'var(--muted)' }}>ไม่มีใบในช่วงนี้ (ทั้งระบบยังไม่มีใบรายงานของเสียเลย)</span>}
             </div>
           )}
         </div>
@@ -730,10 +806,10 @@ export default function ScrapReport() {
                 <td style={tdSt}>{rep.line_name || '—'}</td>
                 <td style={tdSt}><ItemCount reportId={rep.id} /></td>
                 <td style={tdSt}><ScrapSum reportId={rep.id} /></td>
-                <td style={tdSt}><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 999, color: STATUS_META[rep.status]?.color, background: `${STATUS_META[rep.status]?.color}1f`, border: `1px solid ${STATUS_META[rep.status]?.color}55` }}>{STATUS_META[rep.status]?.label || rep.status}</span></td>
+                <td style={tdSt}><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 'var(--r-pill)', color: STATUS_META[rep.status]?.color, background: `${tint(STATUS_META[rep.status]?.color, 'dim')}`, border: `1px solid ${tint(STATUS_META[rep.status]?.color, 'line')}` }}>{STATUS_META[rep.status]?.label || rep.status}</span></td>
                 <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
-                  <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px' }} onClick={() => doPrint(rep)}>🖨️ PDF</button>
-                  <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4 }} onClick={() => doExport(rep)}>⬇ Excel</button>
+                  <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px' }} onClick={() => doPrint(rep)}>PDF</button>
+                  <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4 }} onClick={() => doExport(rep)}>Excel</button>
                   {canRecord && <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4 }} onClick={() => openEdit(rep)}>✏️</button>}
                   {canDel && <DeleteButton style={{ marginLeft: 4 }} onClick={() => delReport(rep)} title="ลบ" />}
                 </td>
@@ -742,16 +818,20 @@ export default function ScrapReport() {
             {reports.length === 0 && (
               <tr><td style={tdSt} colSpan={7}>
                 {listErr ? (
-                  <span style={{ color: '#ef4444', fontWeight: 700 }}>⚠️ โหลดรายการไม่สำเร็จ: {listErr} — ไม่ใช่ "ไม่มีใบ" ให้ลองใหม่อีกครั้ง</span>
+                  <span style={{ color: 'var(--red)', fontWeight: 700 }}>⚠️ โหลดรายการไม่สำเร็จ: {listErr} — ไม่ใช่ "ไม่มีใบ" ให้ลองใหม่อีกครั้ง</span>
                 ) : outside ? (
                   <span style={{ color: 'var(--text2)' }}>
                     ไม่มีใบในช่วงนี้ — แต่<b>มีใบอยู่นอกช่วง</b> ล่าสุด <b style={{ color: 'var(--accent)' }}>{outside.latest}</b>{' '}
                     <button onClick={() => { setListFrom(outside.latest); setListTo(getWorkDate()); }}
-                      style={{ marginLeft: 6, fontSize: 12, fontWeight: 800, padding: '3px 10px', borderRadius: 8, cursor: 'pointer',
+                      style={{ marginLeft: 6, fontSize: 12, fontWeight: 800, padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                         background: 'rgba(61,214,92,0.12)', color: 'var(--accent)', border: '1px solid rgba(61,214,92,0.45)', fontFamily: 'var(--font-body)' }}>
                       ขยายช่วงไปถึงวันนั้น
                     </button>
                   </span>
+                ) : emptyWhy === 'scope0' ? (
+                  <span style={{ color: 'var(--amber)', fontWeight: 700 }}>บัญชีนี้ไม่มีไลน์ในขอบเขต — ยังตัดรายการไม่ได้ (ให้ admin ตั้งขอบเขตที่ /add-user)</span>
+                ) : emptyWhy === 'unknown' ? (
+                  <span style={{ color: 'var(--amber)', fontWeight: 700 }}>ไม่มีใบในช่วงนี้ — เช็คไม่ได้ว่านอกช่วงมีใบไหม (คิวรีล่ม) ลองใหม่อีกครั้ง</span>
                 ) : (
                   <span style={{ color: 'var(--muted)' }}>ไม่มีใบในช่วงนี้ (ทั้งระบบยังไม่มีใบรายงานของเสียเลย)</span>
                 )}
@@ -764,6 +844,8 @@ export default function ScrapReport() {
 
       {editor && (
         <Modal title={editor.report.id ? `✏️ แก้ใบ ${editor.report.doc_no || ''}` : '➕ เปิดใบรายงานของเสียใหม่'} onClose={closeEditor} width={1180}>
+          {/* 🪜 ถึงขั้นไหน — กฎ scrapReportFlow() (utils/stepFlow.js) · UI §6.30 */}
+          {editor.report.id && (() => { const f = scrapReportFlow(editor.report); return <div style={{ marginBottom: 12 }}><StepFlow steps={f.steps} waiting={f.waiting} unknown={!f.known} /></div>; })()}
           {/* หัวใบ */}
           <div className="sr-hgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 12 }}>
             <Field label="วันที่"><input type="date" style={inputSt} value={editor.report.report_date} onChange={e => setRep({ report_date: e.target.value })} /></Field>
@@ -820,16 +902,16 @@ export default function ScrapReport() {
               title="ดึงรายการตามแท็กแดง (ถังแดง) ของไลน์+วันนี้ ที่ยังไม่เคยออกใบ — ทางที่ WI-PD3-069 §5.5 กำหนด">
               ⤵ ดึงจากถังแดง
             </button>
-            <button style={btnSt('#4d9fff')} onClick={pullFromDefectLogs}>⤵ ดึงจาก Daily Report</button>
+            <button style={btnSt('var(--blue)')} onClick={pullFromDefectLogs}>⤵ ดึงจาก Daily Report</button>
             {/* ทางที่ 2: ของที่ QA เบิกไปทดสอบแบบทำลาย (ใบ FM-STO-003) — 2026-08-24 */}
-            <button style={btnSt('#a855f7')} onClick={openReqPicker}>⤵ ดึงจากใบเบิก QA</button>
+            <button style={btnSt('var(--blue)')} onClick={openReqPicker}>⤵ ดึงจากใบเบิก QA</button>
             {opScan.opRowsCount > 0 && (
-              <button style={btnSt('#f97316')} onClick={() => explodeOpItems(editor.items)}
+              <button style={btnSt('var(--amber)')} onClick={() => explodeOpItems(editor.items)}
                 title="แทนแถวของขั้นตอนด้วยวัตถุดิบ/พาร์ทที่ใส่เข้าไปจนถึงขั้นนั้น — เลขที่สโตร์ตัด SAP ได้จริง">
-                🧩 ระเบิดขั้นตอน ({opScan.opRowsCount})
+                ระเบิดขั้นตอน ({opScan.opRowsCount})
               </button>
             )}
-            <button style={ghostBtn} onClick={() => { setSapPicker({ addSource: true }); setSapSearch(''); }}>🔍 เพิ่มจาก SAP/BOM</button>
+            <button style={ghostBtn} onClick={() => { setSapPicker({ addSource: true }); setSapSearch(''); }}>เพิ่มจาก SAP/BOM</button>
             <button style={ghostBtn} onClick={() => addItem('sub')}>+ พาร์ทย่อย (กรอกเอง)</button>
           </div>
 
@@ -837,14 +919,14 @@ export default function ScrapReport() {
               pattern เดียวกับแถบ 🔩 worklist ใน /products */}
           {opScan.opRowsCount > 0 && (
             <div style={{
-              marginBottom: 8, padding: '8px 12px', borderRadius: 8, fontSize: 12, lineHeight: 1.65,
-              background: opScan.blocked.length ? 'rgba(239,68,68,0.10)' : 'rgba(249,115,22,0.10)',
-              border: `1px solid ${opScan.blocked.length ? 'rgba(239,68,68,0.45)' : 'rgba(249,115,22,0.45)'}`,
-              color: opScan.blocked.length ? '#ef4444' : '#f97316',
+              marginBottom: 8, padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12, lineHeight: 1.65,
+              background: opScan.blocked.length ? 'var(--red-dim)' : 'var(--amber-dim)',
+              border: `1px solid ${opScan.blocked.length ? 'var(--red-line)' : 'var(--amber-line)'}`,
+              color: opScan.blocked.length ? 'var(--red)' : 'var(--amber)',
             }}>
-              <b>🔩 {opScan.opRowsCount} รายการเป็น "ขั้นตอน (OP)" ไม่ใช่เลข SAP</b> — ชิ้นงานยังไม่สมบูรณ์
+              <b>{opScan.opRowsCount} รายการเป็น "ขั้นตอน (OP)" ไม่ใช่เลข SAP</b> — ชิ้นงานยังไม่สมบูรณ์
               จึงตัดตัวมันเองไม่ได้ ต้องตัดวัตถุดิบ/พาร์ทที่ใส่เข้าไปจนถึงขั้นนั้นแทน
-              {opScan.ready.length > 0 && <> · กด <b>🧩 ระเบิดขั้นตอน</b> เพื่อแปลงให้อัตโนมัติ</>}
+              {opScan.ready.length > 0 && <> · กด <b>ระเบิดขั้นตอน</b> เพื่อแปลงให้อัตโนมัติ</>}
               {opScan.blocked.length > 0 && (
                 <div style={{ marginTop: 4 }}>
                   ⛔ ยังไม่ได้ผูกสูตรว่าขั้นนี้กินอะไร: <b>{[...new Set(opScan.blocked.map(b => b.item.mat_no))].join(' · ')}</b>
@@ -856,7 +938,7 @@ export default function ScrapReport() {
 
           {/* 📱 มือถือ: ตาราง 15 คอลัมน์ (กว้าง 1,315px ในกล่อง 306px) → การ์ดต่อรายการด้วย CSS ล้วน (.sr-items · data-l = ป้ายช่อง)
               จอคอม: คลาส/attribute ไม่มีผล — ตารางเดิมเป๊ะ · 15/10 */}
-          <div className="sr-items-box" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+          <div className="sr-items-box" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
             <table className="sr-items" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1050 }}>
               <thead><tr>
                 <th style={thSt}>#</th><th style={thSt}>ที่มา</th><th style={thSt}>PART NO.</th><th style={thSt}>PART NAME</th>
@@ -868,12 +950,12 @@ export default function ScrapReport() {
                 {editor.items.map((it, i) => (
                   <tr key={it._key}>
                     <td style={tdSt} data-l="#" className="sr-c sr-no">{i + 1}
-                      {it.src_defect_from_logs && <span title="ดึงจาก Daily Report" style={{ marginLeft: 3, fontSize: 11, color: '#4d9fff' }}>⤵</span>}
-                      {it.src_request_item_id && <span title="ดึงจากใบเบิก QA (ทดสอบแบบทำลาย)" style={{ marginLeft: 3, fontSize: 11, color: '#a855f7' }}>📦</span>}
+                      {it.src_defect_from_logs && <span title="ดึงจาก Daily Report" style={{ marginLeft: 3, fontSize: 11, color: 'var(--blue)' }}>⤵</span>}
+                      {it.src_request_item_id && <span title="ดึงจากใบเบิก QA (ทดสอบแบบทำลาย)" style={{ marginLeft: 3, fontSize: 11, color: 'var(--blue)' }}>📦</span>}
                       {it.src_bin_id && <span title="ดึงจากถังแดง (แท็กแดง) — WI-PD3-069 §5.5" style={{ marginLeft: 3, fontSize: 11, color: '#e05252' }}>🔴</span>}
-                      {opInfoOf(it.mat_no, explodeCtx.opMap) && <span title="ขั้นตอน (OP) — เลขนี้ไม่มีใน SAP ตัดสต๊อกไม่ได้ ต้องระเบิดเป็นวัตถุดิบก่อน" style={{ marginLeft: 3, fontSize: 11, color: '#ef4444' }}>🔩</span>}
-                      {it.src_op_mat && <span title={`ระเบิดมาจากขั้น ${it.src_op_mat}`} style={{ marginLeft: 3, fontSize: 11, color: '#f97316' }}>🧩</span>}</td>
-                    <td style={tdSt} data-l="ที่มา" className="sr-c sr-src"><span style={{ fontSize: 11, fontWeight: 700, color: it.source === 'sub' ? '#f59e0b' : '#4d9fff' }}>{it.source === 'sub' ? 'ย่อย' : 'หลัก'}</span></td>
+                      {opInfoOf(it.mat_no, explodeCtx.opMap) && <span title="ขั้นตอน (OP) — เลขนี้ไม่มีใน SAP ตัดสต๊อกไม่ได้ ต้องระเบิดเป็นวัตถุดิบก่อน" style={{ marginLeft: 3, fontSize: 11, color: 'var(--red)' }}>🔩</span>}
+                      {it.src_op_mat && <span title={`ระเบิดมาจากขั้น ${it.src_op_mat}`} style={{ marginLeft: 3, fontSize: 11, color: 'var(--amber)' }}>🧩</span>}</td>
+                    <td style={tdSt} data-l="ที่มา" className="sr-c sr-src"><span style={{ fontSize: 11, fontWeight: 700, color: it.source === 'sub' ? 'var(--amber)' : 'var(--blue)' }}>{it.source === 'sub' ? 'ย่อย' : 'หลัก'}</span></td>
                     {/* 2026-09-07 MAT SAP = <ProductSelect> (Product Master ∪ BOM/parts_master) · ตรงทะเบียน → part_no/part_name ล็อกตามทะเบียน
                         allowFree เพราะบางพาร์ทใน master กรอกเลขเครื่องแทนเลขพาร์ท (badMaster) — ยังต้องพิมพ์เองได้พร้อมป้าย */}
                     {(() => {
@@ -891,7 +973,7 @@ export default function ScrapReport() {
                               onChange={r => pickSapForItem(it._key, r)} />
                             <button style={{ ...ghostBtn, padding: '4px 6px' }} title="เลือกจาก SAP/BOM" onClick={() => { setSapPicker({ itemKey: it._key }); setSapSearch(''); }}>🔍</button>
                             {opInfoOf(it.mat_no, explodeCtx.opMap) && (
-                              <button style={{ ...ghostBtn, padding: '4px 6px', borderColor: 'rgba(249,115,22,0.6)', color: '#f97316' }}
+                              <button style={{ ...ghostBtn, padding: '4px 6px', borderColor: 'var(--amber-line)', color: 'var(--amber)' }}
                                 title="ระเบิดขั้นนี้เป็นวัตถุดิบ/พาร์ทที่ใส่เข้าไป (เลขที่ตัด SAP ได้)"
                                 onClick={() => explodeOpItems(editor.items, it._key)}>🧩</button>
                             )}
@@ -939,7 +1021,7 @@ export default function ScrapReport() {
                             alt="รูปของเสีย" loading="lazy" title={it._imgFile ? 'ยังไม่ได้อัปโหลด — จะอัปตอนกดบันทึกใบ' : 'กดเพื่อเปลี่ยน/ดูรูป'}
                             onClick={() => setPhotoItem(it._key)}
                             style={{ height: 30, width: 40, objectFit: 'cover', borderRadius: 4, cursor: 'pointer',
-                              border: `1px solid ${it._imgFile ? '#f59e0b' : 'var(--border)'}` }} />
+                              border: `1px solid ${it._imgFile ? 'var(--amber)' : 'var(--border)'}` }} />
                         </div>
                       ) : (
                         <button style={{ ...ghostBtn, padding: '4px 7px', opacity: 0.7 }} title="แนบรูปของเสีย (ไม่บังคับ)"
@@ -980,25 +1062,25 @@ export default function ScrapReport() {
 
           <div className={isMobile ? 'sr-foot m-stickfoot' : 'sr-foot'} style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
             <button style={ghostBtn} onClick={closeEditor}>ยกเลิก</button>
-            {canRecord && <button style={btnSt()} onClick={saveReport}>💾 บันทึกใบ</button>}
+            {canRecord && <button style={btnSt()} onClick={saveReport}>บันทึกใบ</button>}
           </div>
         </Modal>
       )}
 
       {/* SAP / BOM picker */}
       {sapPicker && (
-        <Modal title="🔍 เลือกจาก SAP / BOM" onClose={() => { setSapPicker(null); setSapSearch(''); }} width={520}>
+        <Modal title="เลือกจาก SAP / BOM" onClose={() => { setSapPicker(null); setSapSearch(''); }} width={520}>
           <input autoFocus style={inputSt} value={sapSearch} onChange={e => setSapSearch(e.target.value)}
             placeholder={sapOptions === null ? 'กำลังโหลด…' : `พิมพ์ค้นหา MAT SAP / Part No / ชื่อ (${sapOptions.length})`} />
           <div style={{ marginTop: 10, maxHeight: 340, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {sapMatches.map((o, i) => (
-              <button key={i} onClick={() => applySap(o)} style={{ textAlign: 'left', padding: '8px 10px', borderRadius: 8, cursor: 'pointer', background: 'var(--card)', border: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 999, color: o.source === 'sub' ? '#f59e0b' : '#4d9fff', background: o.source === 'sub' ? '#f59e0b1f' : '#4d9fff1f' }}>{o.source === 'sub' ? 'ย่อย' : 'หลัก'}</span>
+              <button key={i} onClick={() => applySap(o)} style={{ textAlign: 'left', padding: '8px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--card)', border: '1px solid var(--border)', display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 'var(--r-pill)', color: o.source === 'sub' ? 'var(--amber)' : 'var(--blue)', background: o.source === 'sub' ? 'var(--amber)1f' : 'var(--blue)1f' }}>{o.source === 'sub' ? 'ย่อย' : 'หลัก'}</span>
                 <div style={{ minWidth: 0 }}>
                   {/* ลำดับ Part No. → ชื่องาน → MAT (UI §6.21) */}
                   <div style={{ fontSize: 12.5, fontWeight: 700 }}>{o.part_no || o.part_name || o.mat_no} <span style={{ fontWeight: 500, color: 'var(--text2)' }}>{o.part_no ? o.part_name : ''}{o.mat_no ? ` · MAT ${o.mat_no}` : ''}</span></div>
                   {o.line_name && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{o.line_name}</div>}
-                  {o.badMaster && <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>⚠ Master กรอกเลขพาร์ทเป็นหมายเลขเครื่อง "{o.badMaster}" — ต้องกรอก PART NO. เอง</div>}
+                  {o.badMaster && <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>⚠ Master กรอกเลขพาร์ทเป็นหมายเลขเครื่อง "{o.badMaster}" — ต้องกรอก PART NO. เอง</div>}
                 </div>
               </button>
             ))}
@@ -1009,7 +1091,7 @@ export default function ScrapReport() {
 
       {/* ใบเบิก QA — เลือกใบที่จะดึงของเข้าใบรายงานของเสีย (2026-08-24) */}
       {reqPicker && (
-        <Modal title="📦 เลือกใบเบิกทดสอบ (FM-STO-003)" onClose={() => setReqPicker(null)} width={640}>
+        <Modal title="เลือกใบเบิกทดสอบ (FM-STO-003)" onClose={() => setReqPicker(null)} width={640}>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8, lineHeight: 1.6 }}>
             แสดงเฉพาะใบที่<b>อนุมัติแล้ว</b>ขึ้นไป · ใบของไลน์ “{editor.report.line_name || '—'}” ขึ้นก่อน<br />
             จำนวนที่ดึงใช้ <b>จำนวนที่จ่ายจริง</b> ก่อน ไม่มีค่อยใช้จำนวนที่ขอเบิก · รายการที่ดึงไปแล้วจะไม่ซ้ำ
@@ -1020,13 +1102,13 @@ export default function ScrapReport() {
               const mine = r.line_name === editor.report.line_name;
               return (
                 <button key={r.id} onClick={() => applyRequest(r)} style={{
-                  textAlign: 'left', padding: '8px 10px', borderRadius: 8, cursor: 'pointer',
-                  background: 'var(--card)', border: `1px solid ${mine ? '#a855f7' : 'var(--border)'}`,
+                  textAlign: 'left', padding: '8px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
+                  background: 'var(--card)', border: `1px solid ${mine ? 'var(--blue)' : 'var(--border)'}`,
                 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 700 }}>
                     {r.doc_no || '(ไม่มีเลขที่)'}
                     <span style={{ color: st.color, fontWeight: 700, marginLeft: 8, fontSize: 11.5 }}>{st.label}</span>
-                    {mine && <span style={{ color: '#a855f7', marginLeft: 6, fontSize: 11 }}>· ไลน์นี้</span>}
+                    {mine && <span style={{ color: 'var(--blue)', marginLeft: 6, fontSize: 11 }}>· ไลน์นี้</span>}
                   </div>
                   <div style={{ fontSize: 11.5, color: 'var(--text2)' }}>
                     {r.request_date} · {KIND_LABEL[r.kind] || r.kind} · {r.requester_dept || '—'}
@@ -1056,7 +1138,7 @@ export default function ScrapReport() {
         if (!it) return null;
         const fromBin = !!it.src_bin_id;
         return (
-          <Modal title={`📷 รูปของเสีย — ${it.part_name || it.mat_no || 'รายการที่เลือก'}`} onClose={() => setPhotoItem(null)} width={460}>
+          <Modal title={`รูปของเสีย — ${it.part_name || it.mat_no || 'รายการที่เลือก'}`} onClose={() => setPhotoItem(null)} width={460}>
             <div style={{ padding: 16 }}>
               {fromBin && (
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 10 }}>
@@ -1101,7 +1183,7 @@ function DefectPicker({ types, value, onClose, onSave }) {
       <div style={{ fontWeight: 800, fontSize: 12.5, marginBottom: 6 }}>{title}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         {list.map(t => (
-          <label key={t.code} style={{ fontSize: 12, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', padding: '3px 5px', borderRadius: 6, background: sel.has(t.code) ? 'var(--accent-dim)' : 'transparent' }}>
+          <label key={t.code} style={{ fontSize: 12, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', padding: '3px 5px', borderRadius: 'var(--r-md)', background: sel.has(t.code) ? 'var(--accent-dim)' : 'transparent' }}>
             <input type="checkbox" style={{ width: 'auto' }} checked={sel.has(t.code)} onChange={() => toggle(t.code)} />
             <b style={{ minWidth: 30 }}>{t.code}</b> {t.label}
           </label>
@@ -1135,5 +1217,5 @@ function ItemCount({ reportId }) {
 function ScrapSum({ reportId }) {
   const [s, setS] = useState(null);
   useEffect(() => { supabaseDR.from('scrap_report_items').select('qty').eq('report_id', reportId).then(({ data }) => setS((data || []).reduce((a, x) => a + (Number(x.qty) || 0), 0))); }, [reportId]);
-  return <span style={{ fontWeight: 700, color: s ? '#ef4444' : undefined }}>{s == null ? '…' : s.toLocaleString()}</span>;
+  return <span style={{ fontWeight: 700, color: s ? 'var(--red)' : undefined }}>{s == null ? '…' : s.toLocaleString()}</span>;
 }

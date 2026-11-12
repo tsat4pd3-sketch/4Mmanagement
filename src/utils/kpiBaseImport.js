@@ -280,6 +280,49 @@ export function extractValues(grid, { varRows = {}, monthCols = {}, multiplier =
   return out;
 }
 
+/* 📅 แผนรายเดือนจากชีทบัญชี (11/11 · user เลือกแบบ ข) — แถว "Sale All / Head (All)" ของ 5.Manpower มี Plan|Rolling|Actual ต่อเดือน
+   ตัวนำเข้าหลัก (`detectMonthColumns`) จงใจหยิบ ACTUAL → ตัวนี้หยิบ **Plan** ของแถวที่ป้ายตรง regex แทน
+   · คืน { row, months: {m: value}, how: 'plan'|null } · ไม่เจอแถว/ไม่มีหัวย่อย Plan = null (ห้ามเดา Rolling/Actual แทน) · ค่า 0/ว่าง = ข้าม */
+export const PLAN_ROWS = {
+  sale_per_head: /sale\s*all\s*\/\s*head/i,   // แผนสะสม MB/Head — ตรงกับ KPI_FORMULAS.sale_per_head (Total Sales)
+};
+const SUB_PLAN = /^plan/;
+export function extractPlanSeries(grid, { labelRe, monthRow = null } = {}) {
+  if (!Array.isArray(grid) || !labelRe) return null;
+  const mc = detectMonthColumns(grid, monthRow != null ? { row: monthRow } : {});
+  if (!mc || !Object.keys(mc.cols).length) return null;
+  const hdr = grid[mc.row] || [];
+  /* คอลัมน์หัวเดือนดิบ (ก่อน resolveSubHeaders ย้ายไป ACTUAL) — ไล่แถวหัวเดือนเอง */
+  const rawCols = Object.entries(monthRowCandidates([hdr])[0]?.cols || {}).map(([c, m]) => [Number(c), m]).sort((a, b) => a[0] - b[0]);
+  if (!rawCols.length) return null;
+  const gaps = rawCols.slice(1).map((e, i) => e[0] - rawCols[i][0]).filter(g => g > 0).sort((a, b) => a - b);
+  const span = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 1;
+  let ri = null;
+  for (let r = mc.row + 1; r < grid.length; r++) {
+    const row = grid[r]; if (!Array.isArray(row)) continue;
+    const lab = row.slice(0, 6).map(x => String(x ?? '').trim()).find(x => x && labelRe.test(x));
+    if (lab) { ri = r; break; }
+  }
+  if (ri == null) return null;
+  const months = {};
+  let how = null;
+  rawCols.forEach(([c, m], i) => {
+    const end = i + 1 < rawCols.length ? rawCols[i + 1][0] : c + span;
+    let planCol = null;
+    for (let dr = 1; dr <= 3 && planCol == null; dr++) {
+      const r = grid[mc.row + dr]; if (!Array.isArray(r)) break;
+      for (let k = c; k < end; k++) { if (SUB_PLAN.test(norm(r[k]))) { planCol = k; break; } }
+    }
+    if (planCol == null) return;
+    how = 'plan';
+    const n = parseNum(grid[ri][planCol]);
+    if (n == null || n === 0) return;
+    months[m] = n;
+  });
+  if (!how) return null;
+  return { row: ri, months, how };
+}
+
 export const IMPORT_MULTIPLIERS = [
   { value: 1, label: 'บาท (×1)' }, { value: 1000, label: 'พันบาท (×1,000)' }, { value: 1_000_000, label: 'ล้านบาท (×1,000,000)' },
 ];

@@ -108,7 +108,7 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>🗺️ {isPeople ? 'ผังจุดงาน' : 'ผังเครื่องจักร'} · {LENS_LABEL[lens]}</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{isPeople ? 'ผังจุดงาน' : 'ผังเครื่องจักร'} · {LENS_LABEL[lens]}</span>
         {pick && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ผังของ {pick}</span>}
       </div>
       {state.choices?.length > 0 && (
@@ -158,8 +158,8 @@ export function MachineDetailCard({ m, lens, onClose }) {
   if (!m) return null;
   if (m._station) return <StationDetailCard m={m} onClose={onClose} />;
   return (
-          <div style={{ background: 'var(--bg3)', border: `1px solid ${m.color}66`, borderLeft: `4px solid ${m.color}`, borderRadius: 9, padding: '8px 10px', fontSize: 12 }}>
-            <div style={{ fontWeight: 800, color: 'var(--text)', display: 'flex', gap: 8, alignItems: 'flex-start' }}><span style={{ flex: 1, minWidth: 0 }}>⚙️ {m._no}{m._name ? ` · ${m._name}` : ''} — <span style={{ color: m.color }}>{m.sub}</span></span>{onClose && <button onClick={onClose} title="ปิด" style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>✕</button>}</div>
+          <div style={{ background: 'var(--bg3)', border: `1px solid ${m.color}66`, borderLeft: `4px solid ${m.color}`, borderRadius: 'var(--r-md)', padding: '8px 10px', fontSize: 12 }}>
+            <div style={{ fontWeight: 800, color: 'var(--text)', display: 'flex', gap: 8, alignItems: 'flex-start' }}><span style={{ flex: 1, minWidth: 0 }}>{m._no}{m._name ? ` · ${m._name}` : ''} — <span style={{ color: m.color }}>{m.sub}</span></span>{onClose && <button onClick={onClose} title="ปิด" style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>✕</button>}</div>
             {(lens === 'pm' || lens === 'am' || lens === 'health') && (() => {
               const cls = (m._cls || []).filter(c => (lens === 'am' ? c.am : !c.am));
               if (!cls.length) return <div style={{ color: 'var(--muted)', marginTop: 3 }}>ไม่มีแผน{lens === 'am' ? ' AM' : ' PM'} ของเครื่องนี้</div>;
@@ -187,9 +187,9 @@ function StationDetailCard({ m, onClose }) {
   const shTxt = (v) => v === 'day' ? '☀️' : v === 'night' ? '🌙' : '';
   const attTxt = (p) => p.is_present === true ? 'มา' : p.is_present === false ? 'ขาด' : 'ยังไม่เช็คชื่อ';
   return (
-    <div style={{ background: 'var(--bg3)', border: `1px solid ${m.color}66`, borderLeft: `4px solid ${m.color}`, borderRadius: 9, padding: '8px 10px', fontSize: 12, display: 'grid', gap: 6 }}>
+    <div style={{ background: 'var(--bg3)', border: `1px solid ${m.color}66`, borderLeft: `4px solid ${m.color}`, borderRadius: 'var(--r-md)', padding: '8px 10px', fontSize: 12, display: 'grid', gap: 6 }}>
       <div style={{ fontWeight: 800, color: 'var(--text)', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-        <span style={{ flex: 1, minWidth: 0 }}>📍 {st.station_name}{st.line_name ? ` · ${st.line_name}` : ''} — <span style={{ color: m.color }}>{m._sub}</span></span>
+        <span style={{ flex: 1, minWidth: 0 }}>{st.station_name}{st.line_name ? ` · ${st.line_name}` : ''} — <span style={{ color: m.color }}>{m._sub}</span></span>
         {onClose && <button onClick={onClose} title="ปิด" style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>✕</button>}
       </div>
       <div style={{ color: 'var(--muted)' }}>

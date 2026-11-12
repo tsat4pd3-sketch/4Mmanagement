@@ -1,6 +1,7 @@
 import { useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import { supabaseDR } from '../supabaseClient';
 import { loadProductionLines } from '../utils/useProductionLines';
+import { lineScope } from '../utils/sectionScope';   // ขอบเขตไลน์ = ของกลางตัวเดียว (09/11)
 import { UserContext } from '../App';
 import { toast } from './Toast';
 import { can } from '../utils/permissions';
@@ -20,7 +21,7 @@ const card = { background: 'var(--card)', border: '1px solid var(--border)', bor
 const chip = (bg, color) => ({ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: bg, color, fontWeight: 700, whiteSpace: 'nowrap' });
 
 export default function WipBetweenSteps() {
-  const { role, fullName, lineId, sections } = useContext(UserContext);
+  const { role, fullName, lineId, sections, scopeIdx } = useContext(UserContext);
   const canAdjust = can('wip', 'adjust', role);
   const [loading, setLoading] = useState(true);
   const [chains, setChains] = useState([]);
@@ -113,17 +114,15 @@ export default function WipBetweenSteps() {
   // scope มาตรฐาน: leader = family ไลน์ตัวเอง · role อื่นตาม sections — สายโผล่ถ้ามี node ใดอยู่ใน scope
   const scopedChains = useMemo(() => {
     const secOf = {}; prodLines.forEach(l => { secOf[l.name] = l.section; });
+    /* 🔭 ของกลาง `lineScope()` (QC audit 09/11 · กวาดรอบ 3) — ตัดสินไม่ได้/ไม่จำกัด = ไม่กรอง */
+    const r = lineScope({ role, lineId, sections: sections || [], lines: prodLines, scopeIdx });
+    const okNames = r.unlimited ? null : new Set(r.names);
     const inScope = (lineName) => {
-      if (!lineName) return true;
-      if (role === 'leader' && lineId) {
-        const fam = getLineFamilyNames(prodLines, prodLines.find(l => l.id === lineId)?.name);
-        return fam.length ? fam.includes(lineName) : true;
-      }
-      if (sections?.length) {
-        const s = (secOf[lineName] || '').trim().toLowerCase();
-        return !s || sections.some(x => (x || '').trim().toLowerCase() === s);
-      }
-      return true;
+      if (!lineName || !okNames) return true;
+      if (okNames.has(lineName)) return true;
+      /* ไลน์ที่ทะเบียนไม่รู้จัก = ถอยไปตัดด้วยส่วนงานเหมือนเดิม (ไม่รู้ส่วนงาน = ไม่ตัด) */
+      const s = (secOf[lineName] || '').trim().toLowerCase();
+      return !s ? true : (sections || []).some(x => (x || '').trim().toLowerCase() === s);
     };
     return chains.filter(c => inScope(c.parentLine) || c.steps.some(s => inScope(s.line)));
   }, [chains, prodLines, role, lineId, sections]);
@@ -153,10 +152,10 @@ export default function WipBetweenSteps() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ ...card, background: 'rgba(14,165,233,0.06)', borderColor: 'rgba(14,165,233,0.3)', fontSize: 12.5, lineHeight: 1.7 }}>
-        <b style={{ color: '#0ea5e9' }}>📦 ยอดค้างระหว่างขั้น (คำนวณอัตโนมัติจากใบผลิต — ไม่ต้องคีย์รับ-จ่าย)</b><br />
+        <b style={{ color: '#0ea5e9' }}>ยอดค้างระหว่างขั้น (คำนวณอัตโนมัติจากใบผลิต — ไม่ต้องคีย์รับ-จ่าย)</b><br />
         ค้าง = ยอดสะสมที่ผ่านขั้นนั้น − ยอดปลายทางที่ประกอบ/ผลิตแล้ว (ทุกชิ้น 1:1 กับปลายทาง) ·
         เป็นบัญชี<b>ภายในแผนก</b>ไว้ดูจังหวะงาน ไม่เกี่ยว SAP/สต็อกทางการ ·
-        ของเสียระหว่างทางทำตัวเลขคลาดได้ → กด <b>📋 นับจริง</b> เพื่อตั้งต้นใหม่เป็นระยะ
+        ของเสียระหว่างทางทำตัวเลขคลาดได้ → กด <b>นับจริง</b> เพื่อตั้งต้นใหม่เป็นระยะ
         {baselineTableMissing && (
           <div style={{ marginTop: 6, color: '#f59e0b', fontWeight: 700 }}>
             ⚠ ยังไม่ได้ apply migration <code>20260818_wip_adjustments_dr</code> (DR) — ตัวเลขคิดจากใบผลิตทั้งหมดตั้งแต่เริ่มระบบ และปุ่มนับจริงยังบันทึกไม่ได้
@@ -180,21 +179,21 @@ export default function WipBetweenSteps() {
         return (
           <div key={pm} style={card}>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-              <b style={{ fontSize: 14 }}>🎯 {pm}</b>
+              <b style={{ fontSize: 14 }}>{pm}</b>
               <span style={{ color: 'var(--text2)', fontSize: 12.5 }}>{chainView.parentName || ''}</span>
               {/* ชื่อไลน์ยาวได้ ⇒ ยอมตัดบรรทัด ไม่งั้นชิป nowrap ล้นขอบจอ handheld 360px (15/10) */}
-              {chainView.parentLine && <span style={{ ...chip('rgba(61,214,92,0.1)', 'var(--accent)'), whiteSpace: 'normal', maxWidth: '100%' }}>🏭 {chainView.parentLine}</span>}
+              {chainView.parentLine && <span style={{ ...chip('rgba(61,214,92,0.1)', 'var(--accent)'), whiteSpace: 'normal', maxWidth: '100%' }}>{chainView.parentLine}</span>}
               {chainView.parentIsProduced
                 ? <span style={chip('rgba(61,214,92,0.1)', 'var(--accent)')}>ปลายทางผลิตสะสม {parentCum.toLocaleString()}</span>
                 : <span style={chip('rgba(107,114,128,0.1)', 'var(--muted)')} title="parent เป็นพาร์ทซื้อนอก/ยังไม่มีใบผลิต — แสดงเฉพาะยอดสะสมของขั้น">ปลายทางไม่มีใบผลิต</span>}
             </div>
             {/* เฟส 2 — ความต้องการ → ต้องผลิต FG เพิ่มเท่าไหร่ (ทดสต็อก FG ให้) */}
             {chainView.parentIsProduced && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10, padding: '8px 10px', borderRadius: 8, background: 'var(--bg2)', fontSize: 12.5 }}>
-                <label style={{ fontWeight: 700 }}>📥 ความต้องการ (ชิ้น)</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', fontSize: 12.5 }}>
+                <label style={{ fontWeight: 700 }}>ความต้องการ (ชิ้น)</label>
                 <input type="number" min="0" value={demandVal}
                   onChange={e => setDemand(d => ({ ...d, [pm]: e.target.value }))}
-                  placeholder="0" style={{ width: 110, padding: '5px 8px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, fontWeight: 700 }} />
+                  placeholder="0" style={{ width: 110, padding: '5px 8px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, fontWeight: 700 }} />
                 {pendingOrders[pm] > 0 && demand[pm] === undefined && (
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}>← ออเดอร์ค้างส่งของเลขนี้ (แก้ทับได้)</span>
                 )}
@@ -292,19 +291,19 @@ export default function WipBetweenSteps() {
         <div className="modal-scroll" /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div onClick={e => e.stopPropagation()} style={{ ...card, width: 'min(92vw, 420px)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <b>📋 นับจริง — {counting.label}</b>
+            <b>นับจริง — {counting.label}</b>
             <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
               กรอก<b>จำนวนที่นับได้จริงตอนนี้</b> (ของที่ผ่านขั้นนี้แล้วและยังไม่ถึงปลายทาง) — ระบบจะตั้งต้นจากเลขนี้แล้วนับใบผลิตต่อให้เอง
             </div>
             <input type="number" min="0" autoFocus value={countQty} onChange={e => setCountQty(e.target.value)}
-              placeholder="จำนวนที่นับได้ (ชิ้น)" style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 14 }} />
+              placeholder="จำนวนที่นับได้ (ชิ้น)" style={{ padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 14 }} />
             <input value={countNote} onChange={e => setCountNote(e.target.value)}
-              placeholder="หมายเหตุ (ถ้ามี)" style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
+              placeholder="หมายเหตุ (ถ้ามี)" style={{ padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button disabled={saving} onClick={() => setCounting(null)}
-                style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+                style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
               <button disabled={saving} onClick={saveCount}
-                style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
+                style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
                 {saving ? 'กำลังบันทึก…' : '💾 บันทึกยอดนับจริง'}
               </button>
             </div>

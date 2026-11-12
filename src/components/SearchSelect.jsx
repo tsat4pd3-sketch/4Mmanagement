@@ -213,7 +213,7 @@ export default function SearchSelect({
             {inputBox}
           </div>
           <button type="button" onClick={() => setScanOpen(true)} title={`สแกน${scan === true ? '' : scan}`} aria-label={`สแกน${scan === true ? '' : scan}`}
-            style={{ flexShrink: 0, minWidth: 48, borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 18, cursor: 'pointer' }}>
+            style={{ flexShrink: 0, minWidth: 48, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 18, cursor: 'pointer' }}>
             📷
           </button>
         </div>
@@ -239,7 +239,7 @@ export default function SearchSelect({
       )}
 
       {open && (
-        <div style={{ marginTop: 4, background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 8, overflow: 'hidden' }}>
+        <div style={{ marginTop: 4, background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
           {loadFail && (
             <div style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 800, color: 'var(--red)', background: 'var(--bg3)', borderBottom: '1px solid var(--border)' }}>{loadFail}</div>
           )}

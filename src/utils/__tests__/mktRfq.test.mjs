@@ -83,3 +83,25 @@ test('snapshot ใบแจ้งจัดทำ — พิมพ์ซ้ำต
   assert.deepEqual(drift, ['ลูกค้า', 'ราคาชิ้น']);   // รายการพาร์ทแม่ยังเท่าเดิม (ตัดแค่ชิ้นย่อย) ⇒ ไม่ขึ้น
   assert.deepEqual(snapshotDrift(null, { rfq, parts, award }), []);
 });
+
+test('rfqFlow — แถบขั้นตอน: ก่อนปัจจุบัน = done · ปัจจุบัน = current · ปิดแล้วขั้น 9 ใส่ผล+tone · สถานะแปลก = known:false', async () => {
+  const { rfqFlow, RFQ_FLOW_STEPS, MKT_PEOPLE_ROLES } = await import('../mktRfq.js');
+  assert.equal(RFQ_FLOW_STEPS.length, 9);
+  const q = rfqFlow('quoted');
+  assert.deepEqual(q.steps.map(s => s.state), ['done', 'done', 'done', 'done', 'done', 'done', 'current', 'todo', 'todo']);
+  assert.match(q.waiting, /ลูกค้า/); assert.equal(q.closed, false); assert.equal(q.known, true);
+  const r = rfqFlow('received');
+  assert.equal(r.steps[0].state, 'current'); assert.equal(r.steps[1].state, 'todo'); assert.match(r.waiting, /CRD/);
+  // ได้งานแต่ยังไม่ออกใบแจ้งจัดทำ = ยังมีคนต้องทำต่อ · ออกแล้ว = ไม่รอใคร
+  const a = rfqFlow('awarded', { award: { production_order_no: null } });
+  assert.equal(a.closed, true); assert.equal(a.steps[8].state, 'done'); assert.equal(a.steps[8].tone, 'good'); assert.match(a.steps[8].label, /ได้งาน/);
+  assert.match(a.waiting, /ใบแจ้งจัดทำ/);
+  assert.equal(rfqFlow('awarded', { award: { production_order_no: 'MKT/001/11/2026' } }).waiting, null);
+  const l = rfqFlow('lost');
+  assert.equal(l.steps[8].tone, 'bad'); assert.equal(l.waiting, null);
+  assert.ok(l.steps.slice(0, 8).every(s => s.state === 'done'));
+  // สถานะที่ไม่รู้จัก = ห้ามเดา
+  const u = rfqFlow('open');
+  assert.equal(u.known, false); assert.equal(u.waiting, null); assert.ok(u.steps.every(s => s.state === 'todo'));
+  assert.deepEqual(MKT_PEOPLE_ROLES, ['marketing']);
+});

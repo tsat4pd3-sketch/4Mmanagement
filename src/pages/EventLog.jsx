@@ -10,7 +10,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { fmtDate } from '../utils/dateFormat';
 import { can, canDelete as canDeleteUtil } from '../utils/permissions';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, lineScope } from '../utils/sectionScope';
 import { loadDocForms, withDocFoot, docFormSync, fullCode } from '../utils/docForms';
 import { xlsxDocName } from '../utils/csvDoc';
 loadDocForms(); // ทะเบียนเอกสาร — ใบพิมพ์/Excel CQI-15 อ่านเลขฟอร์มผ่าน docFormSync (2026-07-30)
@@ -26,6 +26,7 @@ import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ─── TimeInput24 — native time picker (spinner arrows + clock UI) ─── */
 function TimeInput24({ value = '', onChange, style = {} }) {
@@ -35,11 +36,11 @@ function TimeInput24({ value = '', onChange, style = {} }) {
         onChange={e => onChange?.({ target: { value: e.target.value } })}
         style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14, flex: '1 1 auto', minWidth: 0,
           background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)',
-          borderRadius: 6, padding: '5px 8px', ...style }} />
+          borderRadius: 'var(--ctl-r)', padding: '5px 8px', ...style }} />
       <button type="button" title="ใช้เวลาปัจจุบัน"
         onClick={() => onChange?.({ target: { value: new Date().toTimeString().slice(0,5) } })}
-        style={{ fontSize: 12, fontWeight: 700, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-        🕐 ตอนนี้
+        style={{ fontSize: 12, fontWeight: 700, padding: '5px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+        ตอนนี้
       </button>
     </div>
   );
@@ -47,23 +48,23 @@ function TimeInput24({ value = '', onChange, style = {} }) {
 
 /* ─── Constants ──────────────────────────────────────────────── */
 const CAT_META = {
-  A: { label: 'Normal Process',      labelTh: 'กระบวนการปกติ',            color: '#22c55e', bg: 'rgba(34,197,94,0.12)',   icon: '🔄' },
-  B: { label: 'Intentional Stop',    labelTh: 'หยุดโดยตัดสินใจก่อน',    color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', icon: '🔧' },
-  C: { label: 'Unplanned / Accident',labelTh: 'อุบัติเหตุ / ไม่ได้วางแผน', color: '#ef4444', bg: 'rgba(239,68,68,0.12)',  icon: '🚨' },
+  A: { label: 'Normal Process',      labelTh: 'กระบวนการปกติ',            color: 'var(--green)', bg: 'var(--green-dim)',   icon: '🔄' },
+  B: { label: 'Intentional Stop',    labelTh: 'หยุดโดยตัดสินใจก่อน',    color: 'var(--amber)', bg: 'var(--amber-dim)', icon: '🔧' },
+  C: { label: 'Unplanned / Accident',labelTh: 'อุบัติเหตุ / ไม่ได้วางแผน', color: 'var(--red)', bg: 'var(--red-dim)',  icon: '🚨' },
 };
 
 const STATUS_META = {
   pending:     { label: 'รอดำเนินการ', color: '#aaa',     bg: 'rgba(128,128,128,0.12)' },
-  in_progress: { label: 'กำลังดำเนินการ', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)' },
-  approved:    { label: 'อนุมัติแล้ว',   color: '#22c55e', bg: 'rgba(34,197,94,0.12)'  },
-  rejected:    { label: 'ปฏิเสธ',        color: '#ef4444', bg: 'rgba(239,68,68,0.12)'  },
+  in_progress: { label: 'กำลังดำเนินการ', color: 'var(--amber)', bg: 'var(--amber-dim)' },
+  approved:    { label: 'อนุมัติแล้ว',   color: 'var(--green)', bg: 'var(--green-dim)'  },
+  rejected:    { label: 'ปฏิเสธ',        color: 'var(--red)', bg: 'var(--red-dim)'  },
 };
 
 const ROLE_META = {
-  O:   { label: 'Operator / Production', color: '#4d9fff', bg: 'rgba(77,159,255,0.12)'  },
-  QT:  { label: 'Quality Technician',    color: '#a855f7', bg: 'rgba(168,85,247,0.12)'  },
-  JME: { label: 'JIG Maintenance',       color: '#f97316', bg: 'rgba(249,115,22,0.12)'  },
-  ME:  { label: 'Manufacturing Eng.',    color: '#22c55e', bg: 'rgba(34,197,94,0.12)'   },
+  O:   { label: 'Operator / Production', color: 'var(--blue)', bg: 'var(--blue-dim)'  },
+  QT:  { label: 'Quality Technician',    color: 'var(--blue)', bg: 'var(--blue-dim)'  },
+  JME: { label: 'JIG Maintenance',       color: 'var(--amber)', bg: 'var(--amber-dim)'  },
+  ME:  { label: 'Manufacturing Eng.',    color: 'var(--green)', bg: 'var(--green-dim)'   },
 };
 
 function toLocalDateStr(d = new Date()) {
@@ -97,7 +98,7 @@ function getApprovedAt(log) {
 
 /* ─── Main Component ─────────────────────────────────────────── */
 export default function EventLog() {
-  const { role, fullName, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
+  const { role, fullName, lineId: userLineId, sections: scopeSecs = [], scopeIdx } = useContext(UserContext);
   // คีย์เนื้อหาแทน array ใน deps ของตัวโหลด (กฎข้อ 9) — เหตุผลเต็ม: ด่าน no-unstable-ref-in-db-effect-deps
   const scopeKey = useMemo(() => [...scopeSecs].sort().join('|'), [scopeSecs]);
   const [tab, setTab] = useTabParam(['list', 'create'], 'list');   // โหมดหน้า (list ⇄ ฟอร์มบันทึก) ผูก ?tab=
@@ -139,15 +140,13 @@ export default function EventLog() {
     const { data: lineData } = await loadLinesRes();
     let scopedNames = null; // null = ไม่จำกัด (admin/qa/manager ที่ไม่ถูก scope)
     let visibleLines = lineData || [];
-    if (role === 'leader' && userLineId) {
-      const myLine = (lineData || []).find(l => String(l.id) === String(userLineId));
-      const fam = myLine ? getLineFamilyNames(lineData || [], myLine.name) : [];
-      const famSet = new Set(fam.map(norm));
-      scopedNames = fam;
-      visibleLines = visibleLines.filter(l => famSet.has(norm(l.name)));
-    } else if (scopeSecs.length) {
-      visibleLines = visibleLines.filter(l => inSectionScope(scopeSecs, l.section));
-      scopedNames = visibleLines.map(l => l.name);
+    /* 🔭 ของกลาง `lineScope()` (QC audit 09/11 · กวาดรอบ 2) — สูตรเดิมในหน้าให้ leader เห็นแค่
+       ครอบครัวไลน์ตัวเอง = แคบกว่าที่ `profiles` ตั้งไว้ (กฎ 26/10) และไม่รู้จัก `scopeIdx` */
+    const sc = lineScope({ role, lineId: userLineId, sections: scopeSecs, lines: lineData || [], scopeIdx });
+    if (!sc.unlimited) {
+      const okSet = new Set(sc.names.map(norm));
+      scopedNames = sc.names;
+      visibleLines = visibleLines.filter(l => okSet.has(norm(l.name)));
     }
     let logQ = supabase.from('cqi15_event_logs')
       .select(`*, cqi15_event_definitions(*), cqi15_event_approvals(*, profiles(full_name)), profiles!cqi15_event_logs_reported_by_fkey(full_name)`)
@@ -297,10 +296,10 @@ export default function EventLog() {
         title="CQI-15 Event Log" icon="⚡"
         sub="งานเชื่อม · บันทึกเหตุการณ์ตาม Welding Event Matrix"
         actions={canCreate && (
-          <button
+          <button type="button" className="pg-btn"
             onClick={() => setTab(tab === 'create' ? 'list' : 'create')}
-            style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === 'create' ? 'var(--bg3)' : '#16a34a', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
-            {tab === 'create' ? '← กลับรายการ' : '+ บันทึก Event ใหม่'}
+            style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === 'create' ? 'var(--bg3)' : 'var(--accent)', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
+            {tab === 'create' ? 'กลับรายการ' : '+ บันทึก Event ใหม่'}
           </button>
         )}
       />
@@ -368,7 +367,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
     <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
       {/* Left: Form fields */}
       <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>📋 ข้อมูล Event</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>ข้อมูล Event</div>
 
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div>
@@ -420,7 +419,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
         </div>
 
         {catMeta && (
-          <div style={{ padding: '10px 14px', borderRadius: 8, background: catMeta.bg, border: `1px solid ${catMeta.color}40`, display: 'flex', gap: 10, alignItems: 'center' }}>
+          <div style={{ padding: '10px 14px', borderRadius: 'var(--r-md)', background: catMeta.bg, border: `1px solid ${tint(catMeta.color, 'line')}`, display: 'flex', gap: 10, alignItems: 'center' }}>
             <span style={{ fontSize: 20 }}>{catMeta.icon}</span>
             <div>
               <div style={{ fontSize: 12, fontWeight: 700, color: catMeta.color }}>Category {selectedEvent.category} · {catMeta.labelTh}</div>
@@ -441,11 +440,11 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, fontWeight: 700 }}>จำนวนชิ้นงาน</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(64px, 1fr))', gap: 8 }}>
             {[
-              { k: 'qty_total',  label: 'ทั้งหมด', color: '#4d9fff' },
-              { k: 'qty_ok',     label: 'OK',       color: '#22c55e' },
-              { k: 'qty_ng',     label: 'NG',        color: '#ef4444' },
-              { k: 'qty_rework', label: 'Rework',   color: '#f59e0b' },
-              { k: 'qty_scrap',  label: 'Scrap',    color: '#a855f7' },
+              { k: 'qty_total',  label: 'ทั้งหมด', color: 'var(--blue)' },
+              { k: 'qty_ok',     label: 'OK',       color: 'var(--green)' },
+              { k: 'qty_ng',     label: 'NG',        color: 'var(--red)' },
+              { k: 'qty_rework', label: 'Rework',   color: 'var(--amber)' },
+              { k: 'qty_scrap',  label: 'Scrap',    color: 'var(--blue)' },
             ].map(q => (
               <div key={q.k} style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: q.color, marginBottom: 4 }}>{q.label}</div>
@@ -465,15 +464,15 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
         <button
           onClick={onSubmit}
           disabled={submitting || !form.line_name || !form.event_no}
-          style={{ padding: '12px 0', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 800, fontSize: 15, cursor: 'pointer', marginTop: 4 }}>
-          {submitting ? 'กำลังบันทึก...' : '✓ บันทึก Event & ส่ง Notification'}
+          style={{ padding: '12px 0', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 15, cursor: 'pointer', marginTop: 4 }}>
+          {submitting ? 'กำลังบันทึก...' : 'บันทึก Event & ส่ง Notification'}
         </button>
       </div>
 
       {/* Right: Checklist preview */}
       <div className="card">
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 16 }}>
-          📋 Checklist ตาม Matrix
+          Checklist ตาม Matrix
           {selectedEvent && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400, marginLeft: 8 }}>Event #{selectedEvent.event_no} · {eventChecks.length} รายการ</span>}
         </div>
 
@@ -492,19 +491,19 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
               return (
                 <div key={rk}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: rm.bg, color: rm.color, border: `1px solid ${rm.color}40` }}>
+                    <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 'var(--r-pill)', background: rm.bg, color: rm.color, border: `1px solid ${tint(rm.color, 'line')}` }}>
                       {rk} · {rm.label}
                     </span>
                     <span style={{ fontSize: 11, color: 'var(--muted)' }}>{items.length} รายการ</span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {items.map(item => (
-                      <div key={item.check_no} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 10px', borderRadius: 6, background: 'var(--bg3)', borderLeft: `3px solid ${rm.color}` }}>
+                      <div key={item.check_no} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', borderLeft: `3px solid ${rm.color}` }}>
                         <span style={{ fontSize: 11, fontWeight: 800, color: rm.color, minWidth: 20, marginTop: 1 }}>#{item.check_no}</span>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 11, color: 'var(--text)', lineHeight: 1.4 }}>{item.name_th}</div>
                           {item.is_critical && (
-                            <span style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>⚠ ต้องตรวจสอบชิ้นงานหลัง event</span>
+                            <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>⚠ ต้องตรวจสอบชิ้นงานหลัง event</span>
                           )}
                         </div>
                       </div>
@@ -853,7 +852,7 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
         </select>
         <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} />
         {filterDate && (
-          <button onClick={() => setFilterDate('')} title="ล้างวันที่" style={{ padding: '0 10px', borderRadius: 6, border: 'none', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
+          <button onClick={() => setFilterDate('')} title="ล้างวันที่" style={{ padding: '0 10px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
         )}
         <span className="spacer" />
         <span className="filter-count">{filtered.length} รายการ</span>
@@ -862,14 +861,14 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
             <button
               onClick={() => { exportExcel(filtered).catch(e => toast.error('ทำไฟล์ Excel ไม่สำเร็จ: ' + (e?.message || e))); }}
               title="Export Excel"
-              style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #22c55e40', background: 'rgba(34,197,94,0.1)', color: '#22c55e', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-              📥 Export Excel
+              style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--green)40', background: 'var(--green-dim)', color: 'var(--green)', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              Export Excel
             </button>
             <button
               onClick={() => exportPDF(filtered)}
               title="Export PDF / Print"
-              style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid #4d9fff40', background: 'rgba(77,159,255,0.1)', color: '#4d9fff', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-              🖨️ Export PDF
+              style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--blue)40', background: 'var(--blue-dim)', color: 'var(--blue)', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              Export PDF
             </button>
           </>
         )}
@@ -944,7 +943,7 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
                         const approvedAt = getApprovedAt(log);
                         const dur = calcDuration(log.work_date, log.event_time, approvedAt);
                         return dur ? (
-                          <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, marginTop: 2 }}>⏱ {dur}</div>
+                          <div style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, marginTop: 2 }}>⏱ {dur}</div>
                         ) : null;
                       })()}
                     </td>
@@ -953,7 +952,7 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
                     <td>
                       {cm && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 7px', borderRadius: 20, background: cm.bg, color: cm.color, whiteSpace: 'nowrap' }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, padding: '2px 7px', borderRadius: 'var(--r-pill)', background: cm.bg, color: cm.color, whiteSpace: 'nowrap' }}>
                             {cm.icon} Cat {cat}
                           </span>
                           <span style={{ fontSize: 11, color: 'var(--text2)' }}>#{def?.event_no}</span>
@@ -968,9 +967,9 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ fontSize: 12 }}>
-                        <span style={{ color: '#22c55e', fontWeight: 700 }}>{log.qty_ok}</span>
+                        <span style={{ color: 'var(--green)', fontWeight: 700 }}>{log.qty_ok}</span>
                         <span style={{ color: 'var(--muted)' }}> / </span>
-                        <span style={{ color: '#ef4444', fontWeight: 700 }}>{log.qty_ng}</span>
+                        <span style={{ color: 'var(--red)', fontWeight: 700 }}>{log.qty_ng}</span>
                       </div>
                     </td>
                     <td>
@@ -979,9 +978,9 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
                           const rm = ROLE_META[a.role_key] || { color: '#aaa', bg: '' };
                           const icon = a.status === 'approved' ? '✓' : a.status === 'rejected' ? '✗' : '…';
                           return (
-                            <span key={a.role_key} style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 4,
-                              background: a.status === 'approved' ? rm.bg : a.status === 'rejected' ? 'rgba(239,68,68,0.12)' : 'var(--bg3)',
-                              color: a.status === 'approved' ? rm.color : a.status === 'rejected' ? '#ef4444' : 'var(--muted)',
+                            <span key={a.role_key} style={{ fontSize: 11, fontWeight: 800, padding: '2px 6px', borderRadius: 'var(--r-xs)',
+                              background: a.status === 'approved' ? rm.bg : a.status === 'rejected' ? 'var(--red-dim)' : 'var(--bg3)',
+                              color: a.status === 'approved' ? rm.color : a.status === 'rejected' ? 'var(--red)' : 'var(--muted)',
                               border: `1px solid ${a.status === 'approved' ? rm.color + '40' : 'transparent'}` }}>
                               {icon} {a.role_key}
                             </span>
@@ -990,7 +989,7 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
                       </div>
                     </td>
                     <td>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: sm.bg, color: sm.color }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 'var(--r-pill)', background: sm.bg, color: sm.color }}>
                         {sm.label}
                       </span>
                     </td>
@@ -1162,15 +1161,15 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
   return (
     <div className="overlay" style={{ zIndex: 2000, alignItems: 'flex-start', overflowY: 'auto', padding: '24px 16px' }}>
       <div onClick={e => e.stopPropagation()}
-        style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 28,
+        style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 28,
           width: 'min(95vw,860px)', boxShadow: 'var(--shadow-lg)', marginTop: 20, marginBottom: 20 }}>
 
         {/* Modal Header */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-              {cm && <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: cm.bg, color: cm.color }}>{cm.icon} Category {cat} · {cm.labelTh}</span>}
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, background: sm.bg, color: sm.color }}>{sm.label}</span>
+              {cm && <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 'var(--r-pill)', background: cm.bg, color: cm.color }}>{cm.icon} Category {cat} · {cm.labelTh}</span>}
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--r-pill)', background: sm.bg, color: sm.color }}>{sm.label}</span>
             </div>
             <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>Event #{def?.event_no} · {def?.name_th}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{log.line_name} · {log.station_number || 'ไม่ระบุ Station'} · {fmtDate(log.work_date)} {log.event_time || ''}</div>
@@ -1181,11 +1180,11 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
               const approvedTime = fmtTime(new Date(approvedAt));
               return (
                 <div style={{ display: 'flex', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
-                  <span style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, background: 'rgba(34,197,94,0.12)', padding: '3px 10px', borderRadius: 20 }}>
+                  <span style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, background: 'var(--green-dim)', padding: '3px 10px', borderRadius: 'var(--r-pill)' }}>
                     ✓ อนุมัติสำเร็จ {approvedTime} น.
                   </span>
                   {dur && (
-                    <span style={{ fontSize: 11, color: '#4d9fff', fontWeight: 700, background: 'rgba(77,159,255,0.12)', padding: '3px 10px', borderRadius: 20 }}>
+                    <span style={{ fontSize: 11, color: 'var(--blue)', fontWeight: 700, background: 'var(--blue-dim)', padding: '3px 10px', borderRadius: 'var(--r-pill)' }}>
                       ⏱ รวมเวลา {dur}
                     </span>
                   )}
@@ -1196,19 +1195,19 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {mayDelete && !confirmDelete && (
               <button onClick={() => setConfirmDelete(true)}
-                style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                🗑 ลบ
+                style={{ background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                ลบ
               </button>
             )}
             {mayDelete && confirmDelete && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 12, color: '#ef4444', fontWeight: 700 }}>ยืนยันลบ?</span>
+                <span style={{ fontSize: 12, color: 'var(--red)', fontWeight: 700 }}>ยืนยันลบ?</span>
                 <button onClick={handleDelete} disabled={deleting}
-                  style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: 7, padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.6 : 1 }}>
+                  style={{ background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.6 : 1 }}>
                   {deleting ? '...' : 'ยืนยัน'}
                 </button>
                 <button onClick={() => setConfirmDelete(false)}
-                  style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 7, padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
+                  style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
                   ยกเลิก
                 </button>
               </div>
@@ -1220,13 +1219,13 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
         {/* Info row */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 10, marginBottom: 20 }}>
           {[
-            { label: 'Qty ทั้งหมด', value: log.qty_total, color: '#4d9fff' },
-            { label: 'OK',          value: log.qty_ok,    color: '#22c55e' },
-            { label: 'NG',          value: log.qty_ng,    color: '#ef4444' },
-            { label: 'Rework',      value: log.qty_rework, color: '#f59e0b' },
-            { label: 'Scrap',       value: log.qty_scrap, color: '#a855f7' },
+            { label: 'Qty ทั้งหมด', value: log.qty_total, color: 'var(--blue)' },
+            { label: 'OK',          value: log.qty_ok,    color: 'var(--green)' },
+            { label: 'NG',          value: log.qty_ng,    color: 'var(--red)' },
+            { label: 'Rework',      value: log.qty_rework, color: 'var(--amber)' },
+            { label: 'Scrap',       value: log.qty_scrap, color: 'var(--blue)' },
           ].map(q => (
-            <div key={q.label} style={{ background: 'var(--card)', borderRadius: 8, padding: '10px 14px', textAlign: 'center', border: `1px solid ${q.color}30` }}>
+            <div key={q.label} style={{ background: 'var(--card)', borderRadius: 'var(--r-md)', padding: '10px 14px', textAlign: 'center', border: `1px solid ${tint(q.color, 'dim')}` }}>
               <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>{q.label}</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: q.color, fontFamily: 'var(--font-display)' }}>{q.value}</div>
             </div>
@@ -1234,7 +1233,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
         </div>
 
         {log.issue_description && (
-          <div style={{ padding: '10px 14px', background: 'var(--card)', borderRadius: 8, marginBottom: 20, borderLeft: '3px solid var(--amber)' }}>
+          <div style={{ padding: '10px 14px', background: 'var(--card)', borderRadius: 'var(--r-md)', marginBottom: 20, borderLeft: '3px solid var(--amber)' }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>ISSUE</div>
             <div style={{ fontSize: 13, color: 'var(--text)' }}>{log.issue_description}</div>
           </div>
@@ -1256,12 +1255,12 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                 return comp && comp.result !== 'pending';
               }).length;
               return (
-                <div key={appr.role_key} style={{ background: 'var(--card)', borderRadius: 10, padding: '14px 16px', border: `1px solid ${appr.status === 'approved' ? rm.color + '40' : appr.status === 'rejected' ? '#ef444440' : 'var(--border)'}` }}>
+                <div key={appr.role_key} style={{ background: 'var(--card)', borderRadius: 'var(--r-md)', padding: '14px 16px', border: `1px solid ${appr.status === 'approved' ? rm.color + '40' : appr.status === 'rejected' ? 'var(--red)40' : 'var(--border)'}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                     <span style={{ fontSize: 11, fontWeight: 800, color: rm.color }}>{appr.role_key}</span>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
-                      background: appr.status === 'approved' ? rm.bg : appr.status === 'rejected' ? 'rgba(239,68,68,0.12)' : 'var(--bg3)',
-                      color: appr.status === 'approved' ? rm.color : appr.status === 'rejected' ? '#ef4444' : 'var(--muted)' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-pill)',
+                      background: appr.status === 'approved' ? rm.bg : appr.status === 'rejected' ? 'var(--red-dim)' : 'var(--bg3)',
+                      color: appr.status === 'approved' ? rm.color : appr.status === 'rejected' ? 'var(--red)' : 'var(--muted)' }}>
                       {appr.status === 'approved' ? '✓ อนุมัติ' : appr.status === 'rejected' ? '✗ ปฏิเสธ' : '⋯ รอ'}
                     </span>
                   </div>
@@ -1270,11 +1269,11 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                     <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 6 }}>โดย: {appr.profiles.full_name}</div>
                   )}
                   {appr.notes && (
-                    <div style={{ fontSize: 11, color: '#ef4444', marginBottom: 6, fontStyle: 'italic' }}>หมายเหตุ: {appr.notes}</div>
+                    <div style={{ fontSize: 11, color: 'var(--red)', marginBottom: 6, fontStyle: 'italic' }}>หมายเหตุ: {appr.notes}</div>
                   )}
                   {/* Checklist progress for this role */}
                   {canApprove && checklistItems.length > 0 && (
-                    <div style={{ fontSize: 11, marginBottom: 8, color: checklistDone ? '#22c55e' : '#f59e0b', fontWeight: 600 }}>
+                    <div style={{ fontSize: 11, marginBottom: 8, color: checklistDone ? 'var(--green)' : 'var(--amber)', fontWeight: 600 }}>
                       {checklistDone
                         ? `✓ Checklist ครบ (${doneCount}/${checklistItems.length})`
                         : `⚠ ต้องทำ Checklist ก่อน (${doneCount}/${checklistItems.length} เสร็จ)`}
@@ -1286,19 +1285,19 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                         disabled={approvingRole === appr.role_key || !checklistDone}
                         onClick={() => handleApprove(appr.role_key, 'approved')}
                         title={!checklistDone ? 'ต้องทำ Checklist ให้ครบก่อนอนุมัติ' : ''}
-                        style={{ flex: 1, padding: '6px 0', borderRadius: 6, border: 'none',
+                        style={{ flex: 1, padding: '6px 0', borderRadius: 'var(--r-md)', border: 'none',
                           background: checklistDone ? rm.bg : 'var(--bg3)',
                           color: checklistDone ? rm.color : 'var(--muted)',
                           fontWeight: 700, fontSize: 11,
                           cursor: checklistDone ? 'pointer' : 'not-allowed',
                           opacity: checklistDone ? 1 : 0.5 }}>
-                        ✓ อนุมัติ
+                        อนุมัติ
                       </button>
                       <button
                         disabled={approvingRole === appr.role_key}
                         onClick={() => setShowReject(appr.role_key)}
-                        style={{ flex: 1, padding: '6px 0', borderRadius: 6, border: '1px solid var(--border2)', background: 'transparent', color: '#ef4444', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
-                        ✗ ปฏิเสธ
+                        style={{ flex: 1, padding: '6px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'transparent', color: 'var(--red)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
+                        ปฏิเสธ
                       </button>
                     </div>
                   )}
@@ -1309,11 +1308,11 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                         style={{ fontSize: 12, marginBottom: 6 }} />
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button onClick={() => handleApprove(appr.role_key, 'rejected')}
-                          style={{ flex: 1, padding: '5px 0', borderRadius: 5, border: 'none', background: 'rgba(239,68,68,0.15)', color: '#ef4444', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
+                          style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--red-dim)', color: 'var(--red)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
                           ยืนยันปฏิเสธ
                         </button>
                         <button onClick={() => setShowReject(null)}
-                          style={{ flex: 1, padding: '5px 0', borderRadius: 5, border: '1px solid var(--border2)', background: 'transparent', color: 'var(--muted)', fontSize: 11, cursor: 'pointer' }}>
+                          style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'transparent', color: 'var(--muted)', fontSize: 11, cursor: 'pointer' }}>
                           ยกเลิก
                         </button>
                       </div>
@@ -1328,7 +1327,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
         {/* Checklist */}
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 12 }}>
-            📋 Checklist ({completions.filter(c => c.result !== 'pending').length}/{eventChecks.length} รายการเสร็จ)
+            Checklist ({completions.filter(c => c.result !== 'pending').length}/{eventChecks.length} รายการเสร็จ)
           </div>
           {loadingChecks ? (
             <div style={{ color: 'var(--muted)', fontSize: 12 }}>กำลังโหลด...</div>
@@ -1340,7 +1339,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                 return (
                   <div key={rk}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                      <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 20, background: rm.bg, color: rm.color, border: `1px solid ${rm.color}40` }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 'var(--r-pill)', background: rm.bg, color: rm.color, border: `1px solid ${tint(rm.color, 'line')}` }}>
                         {rk} · {rm.label}
                       </span>
                     </div>
@@ -1349,21 +1348,21 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                         const comp = completions.find(c => c.check_no === item.check_no);
                         const result = comp?.result || 'pending';
                         return (
-                          <div key={item.check_no} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8,
-                            background: result === 'ok' ? 'rgba(34,197,94,0.08)' : result === 'ng' ? 'rgba(239,68,68,0.08)' : result === 'na' ? 'rgba(128,128,128,0.06)' : 'var(--card)',
-                            border: `1px solid ${result === 'ok' ? '#22c55e30' : result === 'ng' ? '#ef444430' : 'var(--border)'}` }}>
+                          <div key={item.check_no} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 'var(--r-md)',
+                            background: result === 'ok' ? 'var(--green-dim)' : result === 'ng' ? 'var(--red-dim)' : result === 'na' ? 'rgba(128,128,128,0.06)' : 'var(--card)',
+                            border: `1px solid ${result === 'ok' ? 'var(--green)30' : result === 'ng' ? 'var(--red)30' : 'var(--border)'}` }}>
                             <span style={{ fontSize: 11, fontWeight: 800, color: rm.color, minWidth: 22 }}>#{item.check_no}</span>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 12, color: 'var(--text)', lineHeight: 1.4 }}>{item.name_th}</div>
-                              {item.is_critical && <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>⚠ ตรวจสอบชิ้นงานหลัง event</div>}
+                              {item.is_critical && <div style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>⚠ ตรวจสอบชิ้นงานหลัง event</div>}
                               {comp?.profiles?.full_name && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>โดย: {comp.profiles.full_name}</div>}
                             </div>
                             {canCheck ? (
                               <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                                {[['ok','✓','#22c55e'],['ng','✗','#ef4444'],['na','N/A','#aaa']].map(([r,lbl,c]) => (
+                                {[['ok','✓','var(--green)'],['ng','✗','var(--red)'],['na','N/A','#aaa']].map(([r,lbl,c]) => (
                                   <button key={r} onClick={() => handleCheckResult(item.check_no, r)}
-                                    style={{ padding: '4px 8px', borderRadius: 5, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700,
-                                      background: result === r ? `${c}22` : 'var(--bg3)',
+                                    style={{ padding: '4px 8px', borderRadius: 'var(--r-md)', border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                                      background: result === r ? `${tint(c, 'dim')}` : 'var(--bg3)',
                                       color: result === r ? c : 'var(--muted)',
                                       outline: result === r ? `2px solid ${c}` : 'none' }}>
                                     {lbl}
@@ -1371,7 +1370,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                                 ))}
                               </div>
                             ) : (
-                              <span style={{ fontSize: 11, fontWeight: 700, color: result === 'ok' ? '#22c55e' : result === 'ng' ? '#ef4444' : 'var(--muted)', flexShrink: 0 }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: result === 'ok' ? 'var(--green)' : result === 'ng' ? 'var(--red)' : 'var(--muted)', flexShrink: 0 }}>
                                 {result === 'ok' ? '✓' : result === 'ng' ? '✗' : result === 'na' ? 'N/A' : '—'}
                               </span>
                             )}

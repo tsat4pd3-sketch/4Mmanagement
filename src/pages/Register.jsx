@@ -12,7 +12,7 @@ import {
 } from '../utils/sectionScope';
 /* 🪪 ตัวตนพนักงานใหม่ประกอบที่ utils ที่เดียว — ทางเข้าอีกทางคือโมดัลแก้ผู้ใช้ใน /add-user
    (เดิมหน้านี้ไม่เขียน `staff_kind` เลย ⇒ QA/วิศวกร/ธุรการ ถูกนับเป็นกำลังคนหน้าไลน์เงียบๆ · audit 26/10) */
-import { newEmployeeRow, staffKindHint } from '../utils/employeeIdentity';
+import { newEmployeeRow, staffKindHint, findEmployeeByCode, isDuplicateEmployeeError, duplicateEmployeeText } from '../utils/employeeIdentity';
 import { STAFF_KINDS, STAFF_SHOPFLOOR, SUPPORT_VALUES } from '../utils/staffKind';
 import { checkWrite } from '../utils/dbWrite';
 import { positionOptionsWith } from '../utils/positions';
@@ -106,6 +106,12 @@ export default function Register() {
       const userId = userData?.user?.id;
       if (!userId) { toast.error('กรุณา Login ก่อนเพิ่มพนักงาน'); setIsUploading(false); return; }
 
+      /* 🔁 รหัสซ้ำต้องตอบเป็น "ใคร อยู่ไหน สถานะอะไร แก้ที่ไหน" ก่อนอัปโหลดรูป/ก่อน insert
+         (09/11: PD2 เพิ่ม 3 คนที่มีอยู่แล้วแต่ตัวเองมองไม่เห็น ⇒ เจอแต่ชื่อ constraint · employeeIdentity.js) */
+      const dupe = await findEmployeeByCode(supabase, empCode);
+      if (dupe.error) { toast.error(`ตรวจรหัสซ้ำไม่ได้ — ยังไม่บันทึก: ${dupe.error.message}`); setIsUploading(false); return; }
+      if (dupe.row) { toast.error(duplicateEmployeeText(dupe.row, { code: empCode, scopeSecs })); setIsUploading(false); return; }
+
       let photoUrl = null;
       if (photo) {
         const fileExt = photo.name.split('.').pop();
@@ -122,7 +128,14 @@ export default function Register() {
         staffKind, groupName, team, lineId, busRouteId, startDate,
         imageUrl: photoUrl, createdBy: userId,
       });
-      if (!checkWrite(await supabase.from('employees').insert([row]), 'เพิ่มพนักงานใหม่')) {
+      const ins = await supabase.from('employees').insert([row]);
+      if (isDuplicateEmployeeError(ins.error)) {   // สองคนกดพร้อมกันหลังด่านค้นหาผ่าน — ตอบแบบเดียวกัน
+        const again = await findEmployeeByCode(supabase, empCode);
+        toast.error(duplicateEmployeeText(again.row, { code: empCode, scopeSecs }));
+        setIsUploading(false);
+        return;
+      }
+      if (!checkWrite(ins, 'เพิ่มพนักงานใหม่')) {
         setIsUploading(false);
         return;
       }
@@ -174,9 +187,9 @@ export default function Register() {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {STAFF_KINDS.map(k => (
                 <button key={k.key} type="button" onClick={() => setStaffKind(k.key)}
-                  style={{ flex: '1 1 190px', width: 'auto', textAlign: 'left', cursor: 'pointer', padding: '7px 10px', borderRadius: 8, fontSize: 12,
+                  style={{ flex: '1 1 190px', width: 'auto', textAlign: 'left', cursor: 'pointer', padding: '7px 10px', borderRadius: 'var(--r-md)', fontSize: 12,
                     border: `1px solid ${staffKind === k.key ? 'var(--accent)' : 'var(--border2)'}`,
-                    background: staffKind === k.key ? 'rgba(34,197,94,0.10)' : 'var(--bg2)',
+                    background: staffKind === k.key ? 'var(--green-dim)' : 'var(--bg2)',
                     color: staffKind === k.key ? 'var(--text)' : 'var(--text2)' }}>
                   <div style={{ fontWeight: 700 }}>{k.label}</div>
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>{k.desc}</div>
@@ -230,7 +243,7 @@ export default function Register() {
                   (เคสจริง 2026-08-24: `Planning&Store` มี 0 แผนก · ผังมีแผนกแค่ใต้ PD1-4 + 4 แผนกขึ้นตรงฝ่าย)
                   เดิมปล่อยว่างเงียบ → คนกรอกนึกว่าระบบพัง ต้องบอกว่าติดตรงไหนและไปแก้ที่ไหน */}
               {!isOrphanSec && section && deptOpts.length === 0 && (
-                <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.5 }}>
+                <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4, lineHeight: 1.5 }}>
                   ⚠️ ส่วนงาน <b>{section}</b> ยังไม่มีแผนกในผังองค์กร — เลือกแผนกไม่ได้จนกว่าจะเพิ่มก่อน
                   <div style={{ color: 'var(--muted)' }}>เพิ่มที่ <b>ตั้งค่า → ผังองค์กร (/org-setup)</b></div>
                 </div>
@@ -255,7 +268,7 @@ export default function Register() {
           <div>
             <label style={labelSt}>Group / กลุ่ม (Line)</label>
             {isSupportKind ? (
-              <div style={{ fontSize: 12, color: 'var(--muted)', border: '1px dashed var(--border2)', borderRadius: 8, padding: '8px 10px', lineHeight: 1.5 }}>
+              <div style={{ fontSize: 12, color: 'var(--muted)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 10px', lineHeight: 1.5 }}>
                 สายสนับสนุนไม่ผูกกลุ่ม/ไลน์ผลิต — สังกัดอยู่ที่ <b>ส่วนงาน + แผนก</b> ข้างบนแทน
               </div>
             ) : (() => {
@@ -287,10 +300,10 @@ export default function Register() {
                     ))}
                   </select>
                   {curNode && !curNode.ref_line_id && (
-                    <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.45 }}>
+                    <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4, lineHeight: 1.45 }}>
                       ⚠️ กลุ่ม <b>{curNode.name}</b> ยังไม่ได้ผูกกับไลน์ผลิตจริง — บันทึกได้ แต่พนักงานคนนี้
                       <b> จะไม่ขึ้นในหน้าเช็คชื่อ</b> · ผูกไลน์ให้กลุ่มนี้ที่{' '}
-                      <Link to="/org-setup" style={{ color: '#f59e0b', fontWeight: 700 }}>ผังองค์กร</Link> ก่อน
+                      <Link to="/org-setup" style={{ color: 'var(--amber)', fontWeight: 700 }}>ผังองค์กร</Link> ก่อน
                     </div>
                   )}
                   {!curNode && noRef.length > 0 && (
@@ -318,7 +331,7 @@ export default function Register() {
                     const { pinned, groups } = groupLineOptions(lineOptions(lineOpts, { current: groupName }));
                     const opt = o => <option key={o.value} value={o.value}>{lineOptionLabel(o)}</option>;
                     return [...pinned.map(opt), ...groups.map(g => g.label
-                      ? <optgroup key={g.label} label={`📁 ${g.label}`}>{g.options.map(opt)}</optgroup>
+                      ? <optgroup key={g.label} label={`${g.label}`}>{g.options.map(opt)}</optgroup>
                       : g.options.map(opt))];
                   })()}
                 </select>
@@ -327,7 +340,7 @@ export default function Register() {
           </div>
 
           <div>
-            <label style={labelSt}>🚐 สายรถรับส่ง (สำหรับจองรถ OT)</label>
+            <label style={labelSt}>สายรถรับส่ง (สำหรับจองรถ OT)</label>
             <select value={busRouteId} onChange={e => setBusRouteId(e.target.value)}>
               <option value="">— ไม่ระบุ —</option>
               {busRoutes.map(r => <option key={r.id} value={r.id}>{r.code} {r.name}</option>)}
@@ -360,11 +373,11 @@ export default function Register() {
             style={{
               marginTop: 4, padding: '13px',
               background: (isUploading || !canRegister) ? 'var(--muted)' : 'var(--accent)',
-              color: '#fff', border: 'none', borderRadius: 8,
+              color: '#fff', border: 'none', borderRadius: 'var(--r-md)',
               fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15,
             }}
           >
-            {isUploading ? 'กำลังบันทึก...' : canRegister ? 'บันทึกข้อมูลพนักงาน' : '🔒 ไม่มีสิทธิ์ลงทะเบียนพนักงาน'}
+            {isUploading ? 'กำลังบันทึก...' : canRegister ? 'บันทึกข้อมูลพนักงาน' : 'ไม่มีสิทธิ์ลงทะเบียนพนักงาน'}
           </button>
         </form>
       </div>

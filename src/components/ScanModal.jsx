@@ -35,6 +35,7 @@ export default function ScanModal({
   const [err, setErr] = useState('');
   const [ok, setOk] = useState('');
   const [okMsg, setOkMsg] = useState('');
+  const [busy, setBusy] = useState(false);   // รอผลจาก onScan ที่เขียน DB (ดูคอมเมนต์ที่ emit)
   /* 📱 handheld (2026-10-20): ช่องรอสแกนไม่เด้งคีย์บอร์ดบนจอ (`inputMode="none"`) — คีย์บอร์ดกินจอ 360×640 ไปครึ่งหนึ่ง
      ทั้งที่เครื่องมีหัวสแกนในตัว · ป้ายเลอะ/สแกนไม่ติด → แตะ "⌨️ พิมพ์เอง" เปิดคีย์บอร์ด · จอคอมไม่เปลี่ยน */
   const isMobile = useIsMobile();
@@ -47,8 +48,11 @@ export default function ScanModal({
   const busyRef = useRef(false);      // กันยิงซ้ำระหว่างกำลังประมวลผลเฟรมเดียวกัน
   const lastHitRef = useRef({ raw: '', at: 0 });
 
-  /* ── ส่งผลลัพธ์ให้หน้าที่เรียก ── */
-  const emit = useCallback((raw) => {
+  /* ── ส่งผลลัพธ์ให้หน้าที่เรียก ──
+     🔴 `onScan` เป็น async ได้ (หน้าที่เขียน DB ทันทีตอนสแกน เช่น เช็คชื่อด้วยบัตร) ⇒ **ต้อง await**
+     ไม่ await = ได้ Promise กลับมา ซึ่งไม่ใช่ string และไม่มี `.ok` ⇒ ขึ้นเขียวทันทีก่อนรู้ผลจริง
+     = ยิงบัตรแล้วจอบอกสำเร็จทั้งที่เขียนล้ม · ระหว่างรอขึ้น "⏳ กำลังบันทึก…" ห้ามปล่อยจอนิ่งเงียบ */
+  const emit = useCallback(async (raw) => {
     const parsed = parseQrPayload(raw);
     if (!parsed) return;
     // กันสแกนซ้ำรัวจากเฟรมติดกัน (กล้องอ่านได้ ~10 ครั้ง/วินาที)
@@ -56,7 +60,12 @@ export default function ScanModal({
     if (parsed.raw === lastHitRef.current.raw && now - lastHitRef.current.at < 1500) return;
     lastHitRef.current = { raw: parsed.raw, at: now };
 
-    const problem = onScan?.(parsed);
+    let problem;
+    try {
+      const res = onScan?.(parsed);
+      if (res && typeof res.then === 'function') { setErr(''); setOk(''); setOkMsg(''); setBusy(true); problem = await res; }
+      else problem = res;
+    } finally { setBusy(false); }
     if (typeof problem === 'string' && problem) {
       setErr(problem); setOk(''); setOkMsg('');
       if (navigator.vibrate) navigator.vibrate([80, 60, 80]);
@@ -114,7 +123,7 @@ export default function ScanModal({
         try {
           if (detector) {
             const found = await detector.detect(video);
-            if (found?.length) emit(found[0].rawValue);
+            if (found?.length) await emit(found[0].rawValue);
           } else if (jsQR) {
             const w = Math.min(video.videoWidth, 640);
             const h = Math.round(video.videoHeight * (w / video.videoWidth));
@@ -122,7 +131,7 @@ export default function ScanModal({
             ctx.drawImage(video, 0, 0, w, h);
             const img = ctx.getImageData(0, 0, w, h);
             const res = jsQR(img.data, w, h, { inversionAttempts: 'dontInvert' });
-            if (res?.data) emit(res.data);
+            if (res?.data) await emit(res.data);
           }
         } catch { /* เฟรมนี้อ่านไม่ออก — เฟรมถัดไปว่ากันใหม่ */ }
         busyRef.current = false;
@@ -165,26 +174,26 @@ export default function ScanModal({
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2400, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={box}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-          <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)' }}>📷 {title}</h3>
+          <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)' }}>{title}</h3>
           <button onClick={onClose} className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>✕</button>
         </div>
         <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 12 }}>{hint}</div>
 
         {/* กล้อง */}
-        <div style={{ position: 'relative', background: '#000', borderRadius: 10, overflow: 'hidden', aspectRatio: '4 / 3', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'relative', background: '#000', borderRadius: 'var(--r-md)', overflow: 'hidden', aspectRatio: '4 / 3', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <video ref={videoRef} playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover', display: camOn ? 'block' : 'none' }} />
           {!camOn && (
             <button onClick={startCam} className="tbtn"
-              style={{ padding: '12px 22px', borderRadius: 10, border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-              📷 เปิดกล้องสแกน
+              style={{ padding: '12px 22px', borderRadius: 'var(--r-md)', border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+              เปิดกล้องสแกน
             </button>
           )}
           {camOn && (
             <>
               {/* กรอบเล็ง */}
-              <div style={{ position: 'absolute', inset: '18%', border: '3px solid rgba(52,211,153,0.9)', borderRadius: 12, pointerEvents: 'none' }} />
+              <div style={{ position: 'absolute', inset: '18%', border: '3px solid rgba(52,211,153,0.9)', borderRadius: 'var(--r-lg)', pointerEvents: 'none' }} />
               <button onClick={stopCam} className="tbtn"
-                style={{ position: 'absolute', right: 8, bottom: 8, padding: '6px 12px', borderRadius: 8, border: '1px solid rgba(255,255,255,0.35)', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 12, cursor: 'pointer' }}>
+                style={{ position: 'absolute', right: 8, bottom: 8, padding: '6px 12px', borderRadius: 'var(--r-md)', border: '1px solid rgba(255,255,255,0.35)', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 12, cursor: 'pointer' }}>
                 ปิดกล้อง
               </button>
             </>
@@ -195,7 +204,7 @@ export default function ScanModal({
         {/* เครื่องยิง / พิมพ์เอง */}
         <div style={{ marginTop: 14 }}>
           <label style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>
-            🔫 ยิงด้วยเครื่องสแกน หรือพิมพ์รหัสเอง
+            ยิงด้วยเครื่องสแกน หรือพิมพ์รหัสเอง
           </label>
           <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
             <input
@@ -210,25 +219,26 @@ export default function ScanModal({
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitTyped(); } }}
               placeholder={isMobile && !kbd ? 'กดปุ่มสแกนข้างเครื่องได้เลย' : 'เช่น RB-104 หรือ ESM:M:…'}
               inputMode={isMobile && !kbd ? 'none' : undefined}
-              style={{ flex: 1, minWidth: 0, padding: '9px 11px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: isMobile ? 16 : 14 }}
+              style={{ flex: 1, minWidth: 0, padding: '9px 11px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: isMobile ? 16 : 14 }}
             />
             {isMobile && !kbd && (
               <button type="button" className="tbtn" onClick={() => { inputRef.current?.blur(); setKbd(true); setTimeout(() => inputRef.current?.focus(), 30); }}
-                style={{ padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', flexShrink: 0 }}>
+                style={{ padding: '9px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', flexShrink: 0 }}>
                 ⌨️ พิมพ์เอง
               </button>
             )}
             <button onClick={submitTyped} className="tbtn"
-              style={{ padding: '9px 16px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13.5, cursor: 'pointer', flexShrink: 0 }}>
+              style={{ padding: '9px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13.5, cursor: 'pointer', flexShrink: 0 }}>
               ตกลง
             </button>
           </div>
         </div>
 
-        {err && <div style={{ marginTop: 10, fontSize: 13, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 8, padding: '8px 11px' }}>✕ {err}</div>}
+        {busy && <div style={{ marginTop: 10, fontSize: 13.5, fontWeight: 700, color: 'var(--amber)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>⏳ กำลังบันทึก…</div>}
+        {!busy && err && <div style={{ marginTop: 10, fontSize: 13, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>✕ {err}</div>}
         {footer}
-        {ok && !err && (okMsg
-          ? <div style={{ marginTop: 10, fontSize: 15, fontWeight: 800, color: '#22c55e', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 8, padding: '8px 11px' }}>{okMsg}</div>
+        {ok && !err && !busy && (okMsg
+          ? <div style={{ marginTop: 10, fontSize: 15, fontWeight: 800, color: '#22c55e', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>{okMsg}</div>
           : <div style={{ marginTop: 10, fontSize: 13, color: '#22c55e' }}>✓ อ่านได้: <span style={{ fontFamily: 'monospace' }}>{ok}</span></div>)}
       </div>
     </div>

@@ -32,7 +32,7 @@ export default function ReadOnlyNote({ show = true, role, what, permKey, hint, c
     /* `data-ro-note` = ป้ายให้ตัวตรวจลำดับ (`audit/stdsweep.mjs`) รู้ว่าแถบนี้คือข้อยกเว้นที่
        อนุญาตให้คั่นระหว่างหัวเพจ/แท็บ กับแถบกรองได้ (UI-STANDARD §2.1) — ห้ามถอด */
     <div data-ro-note="1" style={{
-      background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 8,
+      background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 'var(--r-md)',
       padding: compact ? '7px 10px' : '10px 12px', marginBottom: compact ? 10 : 14,
       fontSize: compact ? 12 : 12.5, lineHeight: 1.65, ...style,
     }}>

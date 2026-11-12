@@ -175,7 +175,7 @@ export default function ParetoAbcChart({
 
 
   const strip = (
-    <div style={{ display: 'flex', height: 7, borderRadius: 4, overflow: 'hidden', background: 'var(--bg3)', marginBottom: 8 }}>
+    <div style={{ display: 'flex', height: 7, borderRadius: 'var(--r-xs)', overflow: 'hidden', background: 'var(--bg3)', marginBottom: 8 }}>
       {['A', 'B', 'C'].map(k => {
         const sum = groups[k].reduce((s, d) => s + d._val, 0);
         return sum > 0 ? <div key={k} style={{ width: `${sum / total * 100}%`, background: ABC[k].color, opacity: OPA[k] }}
@@ -200,22 +200,22 @@ export default function ParetoAbcChart({
         {/* 💰 สลับแกนจัดอันดับ นาที ↔ บาท — "5 นาทีของไลน์แพง อาจสำคัญกว่า 30 นาทีของไลน์ถูก"
             เปลี่ยนทั้งลำดับและการแบ่งกลุ่ม ABC (ไม่ใช่แค่โชว์ตัวเลขเพิ่ม) */}
         {hasMoney && (
-          <div style={{ flexShrink: 0, display: 'flex', gap: 4, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 7, padding: 2 }}>
+          <div style={{ flexShrink: 0, display: 'flex', gap: 4, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: 2 }}>
             {[['value', unit], ['baht', '฿ บาท']].map(([k, lb]) => (
               <button key={k} onClick={() => setMeasure(k)}
                 title={k === 'baht' ? 'เรียงตามมูลค่าความสูญเสีย (นาที/60 × activity rate ของไลน์)' : `เรียงตาม${unit}`}
                 style={{ background: measure === k ? 'var(--accent)' : 'transparent', color: measure === k ? 'var(--accent-ink)' : 'var(--text2)',
-                  border: 'none', borderRadius: 5, fontSize: 11, fontWeight: 800, padding: '3px 9px', cursor: 'pointer' }}>{lb}</button>
+                  border: 'none', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, padding: '3px 9px', cursor: 'pointer' }}>{lb}</button>
             ))}
           </div>
         )}
         <button onClick={() => setOpen(true)} title="ขยายดูทุกรายการ"
-          style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 7, color: 'var(--text2)', fontSize: 11.5, fontWeight: 700, padding: '3px 9px', cursor: 'pointer' }}>⤢ ขยาย</button>
+          style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', color: 'var(--text2)', fontSize: 11.5, fontWeight: 700, padding: '3px 9px', cursor: 'pointer' }}>⤢ ขยาย</button>
       </div>
       {/* มูลค่ารวม + ส่วนที่ตีมูลค่าไม่ได้ — ห้ามเงียบ ไม่งั้นยอดเงินดูเหมือนครบทั้งที่ขาด */}
       {hasMoney && (
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6, lineHeight: 1.55 }}>
-          💰 มูลค่ารวม <b style={{ color: '#fbbf24' }}>{fmt(recTotals.baht)} บาท</b>
+          มูลค่ารวม <b style={{ color: '#fbbf24' }}>{fmt(recTotals.baht)} บาท</b>
           {recTotals.unpriced > 0 && (
             <span style={{ color: '#f59e0b' }}> · ⚠ ตีมูลค่าไม่ได้ {recTotals.unpriced} รายการ
               (ไลน์ยังไม่ตั้ง cost center / activity rate — ตั้งที่ ผังองค์กร → 💰 Activity Rate)</span>
@@ -226,7 +226,7 @@ export default function ParetoAbcChart({
       {strip}
       {/* 🔴 ข้อมูลกำกวมเกินครึ่ง = กราฟนี้ยังชี้เป้าไม่ได้ — บอกตรงๆ ดีกว่าให้คนเชื่อผลผิด */}
       {vague.pct >= 40 && (
-        <div style={{ background: '#ef444414', border: '1px solid #ef444455', borderRadius: 8,
+        <div style={{ background: '#ef444414', border: '1px solid #ef444455', borderRadius: 'var(--r-md)',
           padding: '7px 10px', marginBottom: 8, fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.6 }}>
           <b style={{ color: '#ef4444' }}>⚠ {vague.pct.toFixed(0)}% ของข้อมูลยังไม่บอกสาเหตุ</b>
           {' '}({vague.names.join(' · ')} รวม {fmt(vague.vagueVal)} จาก {fmt(vague.total)} {unitOf})
@@ -238,7 +238,7 @@ export default function ParetoAbcChart({
       {vagueA.map((d, i) => (
         <div key={i} onClick={() => openDrill(d.name, noteDim.key)}
           style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', cursor: 'pointer', marginBottom: 8,
-            background: '#f59e0b14', border: '1px solid #f59e0b55', borderRadius: 8, padding: '6px 10px', fontSize: 11.5, color: 'var(--text2)' }}>
+            background: '#f59e0b14', border: '1px solid #f59e0b55', borderRadius: 'var(--r-md)', padding: '6px 10px', fontSize: 11.5, color: 'var(--text2)' }}>
           <b style={{ color: '#f59e0b' }}>“{d.name}” = {d._pct.toFixed(0)}% แต่ยังไม่บอกสาเหตุ</b>
           <span>— กดดูหมายเหตุที่พนักงานเขียนจริง แยกเป็นกลุ่มสาเหตุให้แล้ว</span>
           <span style={{ marginLeft: 'auto', color: 'var(--accent)', fontWeight: 800, whiteSpace: 'nowrap' }}>{noteDim.label} →</span>
@@ -248,7 +248,7 @@ export default function ParetoAbcChart({
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
         {['A', 'B', 'C'].map(k => groups[k].length > 0 && (
           <span key={k} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ width: 9, height: 9, borderRadius: 2, background: ABC[k].color, opacity: OPA[k] }} />
+            <span style={{ width: 9, height: 9, borderRadius: 'var(--r-xs)', background: ABC[k].color, opacity: OPA[k] }} />
             {k} · {groups[k].length} รายการ ({(groups[k].reduce((s, d) => s + d._val, 0) / total * 100).toFixed(0)}%)
           </span>
         ))}
@@ -258,7 +258,7 @@ export default function ParetoAbcChart({
         {rows.length > MAX_BARS + 1 && (
           <span style={{ color: 'var(--muted)' }}>สัดส่วน A/B/C ข้างบนนับครบทุกรายการ ไม่ใช่เฉพาะแท่งที่เห็น</span>
         )}
-        {dims.length > 0 && <span style={{ color: 'var(--accent)', fontWeight: 700 }}>🔍 คลิกแท่ง/ชิป = เจาะลึก</span>}
+        {dims.length > 0 && <span style={{ color: 'var(--accent)', fontWeight: 700 }}>คลิกแท่ง/ชิป = เจาะลึก</span>}
       </div>
       {/* เน้นกลุ่ม A — ตัวที่ต้องแก้ก่อน (คลิกเจาะได้) */}
       <div style={{ marginTop: 9, display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
@@ -272,13 +272,13 @@ export default function ParetoAbcChart({
         </span>
         {groups.A.slice(0, CHIP_MAX).map((d, i) => (
           <span key={i} onClick={() => dims.length && openDrill(d.name)}
-            style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: `${ABC.A.color}1e`, border: `1px solid ${ABC.A.color}55`, color: ABC.A.color, fontWeight: 700, cursor: dims.length ? 'pointer' : 'default' }}>
+            style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-md)', background: `${ABC.A.color}1e`, border: `1px solid ${ABC.A.color}55`, color: ABC.A.color, fontWeight: 700, cursor: dims.length ? 'pointer' : 'default' }}>
             {d.name}: {fmt(d._val)} {unitOf} ({d._pct.toFixed(0)}%)
           </span>
         ))}
         {groups.A.length > CHIP_MAX && (
           <button type="button" onClick={() => setOpen(true)}
-            style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, cursor: 'pointer', fontWeight: 700,
+            style={{ fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontWeight: 700,
               background: 'var(--bg3)', color: 'var(--text2)', border: `1px dashed ${ABC.A.color}77` }}>
             ⤢ ดูกลุ่ม A ครบ {groups.A.length} รายการ
           </button>
@@ -350,7 +350,7 @@ export default function ParetoAbcChart({
           <div onClick={e => e.stopPropagation()} style={{ ...panel, maxWidth: 900 }}>
             <div style={head}>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 12, color: 'var(--muted)' }}>🔍 เจาะลึก · {title}</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>เจาะลึก · {title}</div>
                 <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>{drill}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
                   {fmt(drillTotal)} {unitOf} · {drillRecs.length} ครั้ง · {(drillTotal / total * 100).toFixed(1)}% ของทั้งหมด
@@ -364,7 +364,7 @@ export default function ParetoAbcChart({
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
                 {dims.map(dm => (
                   <button key={dm.key} onClick={() => setDimKey(dm.key)}
-                    style={{ padding: '5px 11px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    style={{ padding: '5px 11px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                       border: `1px solid ${dimKey === dm.key ? 'var(--accent)' : 'var(--border2)'}`,
                       background: dimKey === dm.key ? 'var(--accent-dim)' : 'var(--bg3)',
                       color: dimKey === dm.key ? 'var(--accent)' : 'var(--text2)' }}>{dm.label}</button>
@@ -373,14 +373,14 @@ export default function ParetoAbcChart({
 
               {/* มิติหมายเหตุ: อธิบายว่าจับกลุ่มมายังไง + ชวนยกระดับกลุ่มใหญ่เป็นประเภทจริง */}
               {drillCluster && (
-                <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '8px 11px', marginBottom: 10, fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.65 }}>
+                <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 11px', marginBottom: 10, fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.65 }}>
                   จับกลุ่มจาก<b> ข้อความที่พนักงานพิมพ์เอง </b>โดยเทียบความคล้ายของตัวอักษร (พิมพ์ต่างกันเล็กน้อย/มีเว้นวรรค/ใส่เวลา = กลุ่มเดียวกัน)
                   {drillCluster.missing.count > 0 && (
                     <> · <span style={{ color: '#f59e0b', fontWeight: 700 }}>ยังไม่กรอกหมายเหตุ {drillCluster.missing.count} ครั้ง ({fmt(drillCluster.missing.value)} {unit})</span></>
                   )}
                   {drillRows[0] && !drillRows[0]._noNote && drillRows[0]._pct >= 15 && (
                     <div style={{ marginTop: 5, color: 'var(--accent)', fontWeight: 700 }}>
-                      💡 “{drillRows[0].name}” กิน {drillRows[0]._pct.toFixed(0)}% ของ “{drill}” — ควรตั้งเป็น<b>ประเภทของตัวเอง</b> (Daily Report → ⚙️ ตั้งค่า → ประเภท Downtime) รอบหน้าจะได้ไม่ตกไปกอง “อื่นๆ” อีก
+                      “{drillRows[0].name}” กิน {drillRows[0]._pct.toFixed(0)}% ของ “{drill}” — ควรตั้งเป็น<b>ประเภทของตัวเอง</b> (Daily Report → ⚙️ ตั้งค่า → ประเภท Downtime) รอบหน้าจะได้ไม่ตกไปกอง “อื่นๆ” อีก
                     </div>
                   )}
                 </div>
@@ -392,7 +392,7 @@ export default function ParetoAbcChart({
               ) : (
                 <div style={{ display: 'grid', gap: 5 }}>
                   {drillRows.map((d, i) => (
-                    <div key={i} style={{ background: 'var(--bg3)', border: `1px solid ${d._noNote ? '#f59e0b55' : 'var(--border2)'}`, borderRadius: 8, padding: '7px 10px' }}>
+                    <div key={i} style={{ background: 'var(--bg3)', border: `1px solid ${d._noNote ? '#f59e0b55' : 'var(--border2)'}`, borderRadius: 'var(--r-md)', padding: '7px 10px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span style={clsChip(d._cls)}>{d._cls}</span>
                         <span style={{ minWidth: 0, flex: 1, fontSize: 12.5, fontWeight: 700, color: d._noNote ? '#f59e0b' : 'var(--text)',
@@ -409,7 +409,7 @@ export default function ParetoAbcChart({
                           รวม {d.variants} แบบที่เขียนต่างกัน{d.samples?.length ? ` · เช่น "${d.samples.join('" · "')}"` : ''}
                         </div>
                       )}
-                      <div style={{ height: 5, borderRadius: 3, background: 'var(--bg)', marginTop: 5, overflow: 'hidden' }}>
+                      <div style={{ height: 5, borderRadius: 'var(--r-xs)', background: 'var(--bg)', marginTop: 5, overflow: 'hidden' }}>
                         <div style={{ height: '100%', width: `${d._pct}%`, background: ABC[d._cls].color, opacity: OPA[d._cls] }} />
                       </div>
                     </div>
@@ -423,7 +423,7 @@ export default function ParetoAbcChart({
               </div>
               <div style={{ display: 'grid', gap: 4 }}>
                 {[...drillRecs].sort((a, b) => (b.value || 0) - (a.value || 0)).slice(0, 40).map((r, i) => (
-                  <div key={i} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 7, padding: '6px 9px', fontSize: 11.5 }}>
+                  <div key={i} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '6px 9px', fontSize: 11.5 }}>
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                       <b style={{ color: ABC.A.color, whiteSpace: 'nowrap' }}>{fmt(r.value)} {unit}{r.baht != null && <span style={{ color: '#fbbf24', marginLeft: 5 }}>· {fmt(r.baht)} บาท</span>}</b>
                       {dims.filter(dm => !dm.cluster).map(dm => r[dm.key] ? (
@@ -432,7 +432,7 @@ export default function ParetoAbcChart({
                         </span>
                       ) : null)}
                     </div>
-                    {r.note && <div style={{ color: 'var(--muted)', marginTop: 3 }}>💬 {r.note}</div>}
+                    {r.note && <div style={{ color: 'var(--muted)', marginTop: 3 }}>{r.note}</div>}
                   </div>
                 ))}
                 {drillRecs.length > 40 && <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', padding: 6 }}>… และอีก {drillRecs.length - 40} รายการ</div>}

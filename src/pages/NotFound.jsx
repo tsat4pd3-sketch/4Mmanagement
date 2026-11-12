@@ -30,7 +30,7 @@ export default function NotFound() {
       />
 
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderLeft: '4px solid var(--accent2)',
-                    borderRadius: 10, padding: '12px 16px', fontSize: 13, lineHeight: 1.8, color: 'var(--text2)' }}>
+                    borderRadius: 'var(--r-md)', padding: '12px 16px', fontSize: 13, lineHeight: 1.8, color: 'var(--text2)' }}>
         <b>สาเหตุที่เจอบ่อย — ไล่ตามลำดับ</b>
         <div>1. <b>ระบบเพิ่งอัพเดท</b> แล้วแท็บนี้ยังถือรุ่นเก่าอยู่ ⇒ กด <b>โหลดใหม่</b> ด้านล่าง</div>
         <div>2. ลิงก์เก่า/บุ๊กมาร์กของหน้าที่ถูกย้ายหรือยุบเป็นแท็บของหน้าอื่น</div>
@@ -42,7 +42,7 @@ export default function NotFound() {
 
       <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
         <button type="button" style={{ ...btn, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}
-          onClick={() => window.location.reload()}>🔄 โหลดใหม่</button>
+          onClick={() => window.location.reload()}>โหลดใหม่</button>
         <Link to="/" style={btn}>🏠 กลับหน้าหลัก</Link>
       </div>
     </Page>

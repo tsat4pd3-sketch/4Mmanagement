@@ -15,9 +15,14 @@
    3. **หาไม่เจอต้องบอกว่าทำไม** (ป้ายชนิดไหน · รหัสอะไร) + ให้สแกนใหม่ได้ทันที
       ห้ามเด้งกลับหน้าแรกเงียบๆ — คนยืนอยู่หน้าเครื่อง ถือมือถือ ต้องรู้ว่าต้องทำอะไรต่อ
    4. **อ่านอย่างเดียว ไม่เขียนอะไรลง DB** — เป็นแค่ทางแยก ไม่ใช่หน้าทำงาน
+      🔴 **ข้อยกเว้นเดียว: เช็คชื่อด้วยบัตรพนักงาน** (10/11 · คำสั่ง user *"ยิงบัตรแล้วจบตรงนั้น"*)
+      เพราะการ "พาไปหน้าเช็คชื่อแล้วให้ยิงซ้ำ + กดบันทึกทั้งจอ" คือ 3 ขั้นสำหรับงานที่มีขั้นเดียว
+      · เขียนได้**แถวเดียวของคนที่ยิง** ผ่าน `src/lib/checkinSave.js` เท่านั้น (ห้ามเขียนฐานตรงในหน้านี้)
+      · 🔐 หน้านี้ยิงบัตร**ใครก็ได้ทั้งโรงงาน** (ไม่มีรายชื่อมากรองให้เหมือน `/checkin`)
+        ⇒ **ต้องเช็คขอบเขตชั้น ③ เอง** (`canWriteLine`) — นอกขอบเขต = ไม่เขียน + บอกเหตุผลบนจอ
    5. **ทางเข้ากลาง "สแกนอะไรก็ได้"** (2026-10-19 · คำสั่ง user — QA ตรวจชิ้นงาน · AM · PM · อุปกรณ์)
       ไม่ใช่เครื่อง/จิ๊ก/จุดส่ง ⇒ ลองเป็น **ใบผลิต (`prod_no`)** แล้ว **MAT/พาร์ท** (บาร์โค้ดคัมบัง/กล่อง)
-      → ปุ่ม ✅ ตรวจชิ้นงาน QA (`/qa?tab=sheet&part=`) · 🔎 สอบกลับ · ปุ่ม AM/PM แยกป้ายตาม `isAmTeam`
+      → ปุ่ม ✅ ตรวจชิ้นงาน QA (`/qa?tab=sheet&part=`) · สอบกลับ · ปุ่ม AM/PM แยกป้ายตาม `isAmTeam`
       · ตัวแปลง/ตัดสินอยู่ `qrCode.js` ที่เดียว (`resolveProduct`/`findQaPartByScan`) ห้ามเทียบเองในหน้านี้
    6. **เฟส 3 "สแกนอะไรก็เปิดหน้าของสิ่งนั้น"** (2026-10-28 · คำสั่ง user)
       ป้ายไลน์ (ESM:L / ชื่อไลน์เปล่า) → หน้าของไลน์นั้น · บัตรพนักงาน (รหัสล้วน) → การ์ดคน ·
@@ -41,6 +46,12 @@ import { parseQrPayload, resolveMachine, resolveJig, resolveDeliveryPoint, resol
 import { useProductionLinesState } from '../utils/useProductionLines';
 import { useStorageLocationsState } from '../utils/useStorageLocations';
 import { findByBadge, normBadgeCode } from '../utils/badgeCheckin';
+import { checkinByBadge, loadPpeRegistry, loadPpeChecks, savePpeChecks } from '../lib/checkinSave';
+import { resolvePpe, ppeStatusOf } from '../utils/ppeRequirements';
+import { can } from '../utils/permissions';
+import { canWriteLine, canWriteUnit, writeBlockText } from '../utils/writeScope';
+import { getWorkDate, getCurrentShift } from '../utils/workDate';
+import { toast } from '../components/Toast';
 
 const card = {
   background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
@@ -65,7 +76,8 @@ function ActionLink({ to, icon, label, sub, tone = 'var(--accent)' }) {
 }
 
 export default function ScanLanding() {
-  const { role } = useContext(UserContext);
+  const { role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx, fullName }
+    = useContext(UserContext);
   const [sp, setSp] = useSearchParams();
   const navigate = useNavigate();
   const raw = sp.get('c') || sp.get('code') || '';
@@ -218,6 +230,87 @@ export default function ScanLanding() {
     return () => { alive = false; };
   }, [tryEmp, code]);
 
+  const emp = empHit?.emp || null;
+
+  /* ══ 🪪 เช็คชื่อด้วยบัตร — ยิงแล้วจบตรงนี้ (10/11 · คำสั่ง user) ═══════════════════════════
+     *"ยิงบัตรแล้วขึ้น ✓ เช็คชื่อสำเร็จ พอ ไม่ต้องเปิดหน้าเช็คชื่อ"* — เดิมปุ่มนี้แค่ `navigate('/checkin')`
+     แล้วต้องยิงซ้ำ + กดบันทึกทั้งจอ = 3 ขั้นสำหรับงานขั้นเดียว
+
+     🔐 **หน้านี้ยิงบัตรใครก็ได้ทั้งโรงงาน** — `/checkin` มีรายชื่อตามขอบเขตมากรองให้อยู่แล้ว
+     แต่หน้านี้ไม่มี ⇒ ต้องเช็คขอบเขตชั้น ③ เอง ไม่งั้นใครก็เช็คชื่อให้คนแผนกอื่นได้
+     · มีไลน์ = ตัดสินที่ไลน์ (`canWriteLine`) · ไม่มีไลน์ (งานสนับสนุน) = ตัดสินที่ส่วนงานของตัวคน
+     · `unknownTarget:'block'` — ระบุเจ้าของไม่ได้ = ไม่เขียน (fail-closed) แล้วบอกบนจอว่าทำไม */
+  const ckCtx = { role, section: homeSection, sections: scopeSecs, allUnits, respCostCenters, scopeIdx };
+  const canCheckin = canAccessPage('/checkin', role) && can('checkin', 'record', role);
+  const empLineName = emp ? (lineById[String(emp.line_id)]?.name || '') : '';
+  const ckScope = !emp ? null
+    : empLineName
+      ? canWriteLine(ckCtx, empLineName, allLines || [], { unknownTarget: 'block' })
+      : canWriteUnit(ckCtx, emp.section, { unknownTarget: 'block' });
+  const [ckResult, setCkResult] = useState(null);   // null | 'busy' | { kind, text }
+  // สแกนใบใหม่ = ล้างผลของใบก่อน (ไม่งั้น ✓ ของคนก่อนค้างอยู่ใต้การ์ดคนใหม่ = อ่านผิดคน)
+  useEffect(() => { setCkResult(null); setPpe(null); }, [emp?.id]);
+
+  /* 🦺 ขั้นถาม PPE หลังเช็คชื่อติด (10/11 · คำสั่ง user) — ขึ้น**เฉพาะรายการที่หน่วยนี้บังคับ**
+     เริ่มที่ "ยังไม่ติ๊ก" และ **ข้ามได้** (คิวหน้าประตูต้องไหล) · ข้าม = ไม่เขียนแถวผลตรวจเลย
+     ⇒ ค้างเป็น "ยังไม่ได้ตรวจ" ให้หัวหน้าไปติ๊กที่หน้าเช็คชื่อ **ห้ามเขียน ok=true ให้ตอนข้าม** */
+  const [ppe, setPpe] = useState(null);      // null = ยังไม่ถึงขั้นนี้ · { required, okBy, unknown, saving, done }
+  const openPpeStep = async (workDateStr) => {
+    const reg = await loadPpeRegistry(supabase);
+    if (!reg) { setPpe({ required: [], okBy: {}, unknown: true, workDateStr }); return; }
+    const r = resolvePpe({ items: reg.items, reqs: reg.reqs, section: emp.section,
+      lineId: emp.line_id, lines: allLines || [] });
+    if (!r.required.length) { setPpe(null); return; }   // หน่วยนี้ไม่บังคับอะไร = ไม่ต้องถาม
+    // ติ๊กไว้แล้วบางส่วน (เช่นหัวหน้าติ๊กจากหน้าเช็คชื่อ) = ขึ้นค่าเดิมมาให้ ไม่ใช่รีเซ็ตเป็นศูนย์
+    const prev = await loadPpeChecks(supabase, { employeeId: emp.id, workDateStr });
+    const st = ppeStatusOf(r.required, prev);
+    const okBy = {};
+    for (const id of st.okIds) okBy[id] = true;
+    setPpe({ required: r.required, okBy, unknown: false, workDateStr, saving: false });
+  };
+
+  const savePpe = async () => {
+    if (!ppe || ppe.saving) return;
+    setPpe(p => ({ ...p, saving: true }));
+    const { data: u } = await supabase.auth.getUser();
+    const r = await savePpeChecks(supabase, { emp, workDateStr: ppe.workDateStr,
+      required: ppe.required, okByItemId: ppe.okBy, userId: u?.user?.id });
+    if (!r.ok) { setPpe(p => ({ ...p, saving: false })); return; }   // toast แดงขึ้นให้แล้ว
+    if (!r.legacySynced) toast.error('บันทึกผลตรวจ PPE แล้ว แต่ซิงก์กับใบเช็คชื่อไม่สำเร็จ — ตรวจซ้ำที่หน้าเช็คชื่อ');
+    const miss = ppe.required.filter(i => !ppe.okBy[String(i.id)]);
+    toast.success(miss.length ? `บันทึกแล้ว — ขาด ${miss.length} ชิ้น` : '✓ PPE ครบ');
+    setPpe(p => ({ ...p, saving: false, done: miss.length ? 'missing' : 'ok', missN: miss.length }));
+  };
+
+  const doCheckin = async () => {
+    if (!emp || ckResult === 'busy') return;
+    if (emp.is_active === false) { setCkResult({ kind: 'blocked', text: 'พนักงานคนนี้ถูกปิดใช้งาน/พ้นสภาพแล้ว — เช็คชื่อไม่ได้' }); return; }
+    /* 🔴 อ่านทะเบียนไลน์ไม่ได้ = **ยังตัดสินขอบเขตไม่ได้** ⇒ ไม่เขียน (fail-closed)
+       ปล่อยผ่าน = คนนอกขอบเขตถูกเช็คชื่อตอนทะเบียนล่ม · บีบเป็น "ไม่มีสิทธิ์" = จอโกหก */
+    if (emp.line_id && (linesFailed || linesLoading)) {
+      setCkResult({ kind: 'blocked', text: linesFailed
+        ? 'ยังเช็คชื่อไม่ได้ — ระบบอ่านทะเบียนไลน์ไม่สำเร็จ จึงตัดสินไม่ได้ว่าอยู่ในขอบเขตที่คุณรับผิดชอบไหม · โหลดหน้าใหม่อีกครั้ง'
+        : 'กำลังโหลดทะเบียนไลน์ — รอสักครู่แล้วกดใหม่' });
+      return;
+    }
+    if (!ckScope?.ok) {   // 🔴 ด่านจริงอยู่ตรงนี้ ไม่ใช่แค่ซ่อนปุ่ม (เปิด /scan?c=<รหัส> ตรงได้)
+      setCkResult({ kind: 'blocked', text: writeBlockText(ckScope, { what: 'การเช็คชื่อของคนนี้', unit: empLineName || emp.section || '' }) });
+      return;
+    }
+    setCkResult('busy');
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData?.user?.id) { setCkResult({ kind: 'blocked', text: 'ยังไม่ได้เข้าระบบ — บันทึกไม่ได้' }); return; }
+    const workDateStr = getWorkDate();
+    const r = await checkinByBadge(supabase, { emp, workDateStr, shift: getCurrentShift(), userId: userData.user.id });
+    const where = [empLineName || emp.section, r.shift === 'night' ? 'กะดึก' : 'กะเช้า', workDateStr].filter(Boolean).join(' · ');
+    if (r.kind === 'saved')  { toast.success(`✓ เช็คชื่อสำเร็จ — ${emp.name}`); setCkResult({ kind: 'saved', text: where }); openPpeStep(workDateStr); return; }
+    if (r.kind === 'already') { setCkResult({ kind: 'already', text: where }); openPpeStep(workDateStr); return; }
+    // ❌ ล้ม = ต้องเห็นว่ายังไม่ได้เช็ค ห้ามขึ้น ✓ (read_failed = ไม่รู้ของเดิม จึงไม่เขียนทับ PPE/ลา)
+    setCkResult({ kind: 'failed', text: r.kind === 'read_failed'
+      ? `อ่านข้อมูลเช็คชื่อเดิมไม่สำเร็จ จึงยังไม่บันทึก (กันทับ PPE/การลา ที่กรอกไว้แล้ว) — ลองใหม่อีกครั้ง · ${r.msg || ''}`
+      : 'บันทึกไม่สำเร็จ — ยังไม่ได้เช็คชื่อ (ดูข้อความแดงที่มุมจอ) · ลองใหม่อีกครั้ง' });
+  };
+
   /* ⏱/🔴 ป้ายประเภท — ดึงแถวเดียวตาม id เฉพาะเมื่อเป็นป้ายชนิดนั้น */
   const typeKind = scan?.kind === 'downtime_type' || scan?.kind === 'defect_type' ? scan.kind : null;
   const [typeHit, setTypeHit] = useState(null);   // null = ยังไม่โหลด · { row, err }
@@ -240,7 +333,6 @@ export default function ScanLanding() {
     || (tryEmp && !empHit) || (typeKind && !typeHit);
   const extraFound = !!(lineHit || storageHit || empHit?.emp || typeHit?.row);
   const extraErr = (scan?.kind === 'line' && linesFailed) || (scan?.kind === 'storage' && stoFailed) || empHit?.err || typeHit?.err;
-  const emp = empHit?.emp || null;
 
   return (
     <Page>
@@ -255,7 +347,7 @@ export default function ScanLanding() {
             ส่อง QR ที่ติดเครื่องด้วยกล้องมือถือ หรือกดสแกนจากในแอป
           </p>
           <button onClick={() => setRescan(true)} style={{ minHeight: 44, padding: '0 20px', fontSize: 14, fontWeight: 800 }}>
-            📷 สแกนเลย
+            สแกนเลย
           </button>
         </div>
       )}
@@ -265,11 +357,11 @@ export default function ScanLanding() {
       {raw && !loading && pointHit && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={card}>
-            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>🎯 จุดส่งงาน</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>จุดส่งงาน</div>
             <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1.2 }}>{pointHit.name || pointHit.code || '—'}</div>
             <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
               {[pointHit.code && `รหัส ${pointHit.code}`, (pointHit.line_names || []).join(', ')].filter(Boolean).join(' · ')}
-              {pointHit.is_active === false && <b style={{ color: 'var(--red, #ef4444)' }}> · ปิดใช้งานแล้ว</b>}
+              {pointHit.is_active === false && <b style={{ color: 'var(--red, var(--red))' }}> · ปิดใช้งานแล้ว</b>}
             </div>
             <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '10px 0 0', lineHeight: 1.7 }}>
               ป้ายนี้ใช้ยืนยันตอน <b>สโตร์ส่งของถึงไลน์</b> — สแกนจากปุ่ม 📍 ในใบเติม WIP (หน้า Heijunka) ไม่ใช่ป้ายเครื่องจักร
@@ -280,7 +372,7 @@ export default function ScanLanding() {
           )}
           <button onClick={() => setRescan(true)}
             style={{ minHeight: 44, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 13 }}>
-            📷 สแกนป้ายอื่น
+            สแกนป้ายอื่น
           </button>
         </div>
       )}
@@ -291,19 +383,19 @@ export default function ScanLanding() {
             const q = encodeURIComponent(lineHit.name);
             return (<>
               <div style={card}>
-                <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>🏭 ไลน์ผลิต</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>ไลน์ผลิต</div>
                 <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1.2 }}>{lineHit.name}</div>
                 <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
                   {[lineHit.section && `ส่วนงาน ${lineHit.section}`, lineHit.parent_line_name && `ใต้ ${lineHit.parent_line_name}`].filter(Boolean).join(' · ')}
-                  {lineHit.is_active === false && <b style={{ color: 'var(--red, #ef4444)' }}> · ปิดใช้งานแล้ว</b>}
+                  {lineHit.is_active === false && <b style={{ color: 'var(--red, var(--red))' }}> · ปิดใช้งานแล้ว</b>}
                 </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {canAccessPage('/daily-report', role) && <ActionLink to={`/daily-report?line=${q}`} icon="📋" label="Daily Report ของไลน์นี้" sub="เปิดกะ · สแกนใบผลิต · ลง Downtime / งานเสีย" />}
-                {canAccessPage('/line-oee', role) && <ActionLink to={`/line-oee?line=${q}`} icon="📈" label="OEE สดของไลน์" sub="A × P × Q ของกะนี้" tone="#22c55e" />}
-                {canAccessPage('/management', role) && <ActionLink to={`/management?line=${q}`} icon="🗓️" label="แผน / สถานะงานของไลน์" sub="ใบผลิตที่กำลังเดิน + คิวถัดไป" tone="#60a5fa" />}
-                {canAccessPage('/people-board', role) && <ActionLink to={`/people-board?line=${q}`} icon="🧑‍🤝‍🧑" label="คนในไลน์ / จุดงาน" sub="ใครอยู่จุดไหน กะนี้" tone="#a78bfa" />}
-                {canAccessPage('/pm-check', role) && <ActionLink to={`/pm?tab=check&line=${q}`} icon="✅" label="ตรวจ AM / PM ของไลน์" sub="ใบตรวจของอุปกรณ์ในไลน์นี้" tone="#f59e0b" />}
+                {canAccessPage('/line-oee', role) && <ActionLink to={`/line-oee?line=${q}`} icon="📈" label="OEE สดของไลน์" sub="A × P × Q ของกะนี้" tone="var(--green)" />}
+                {canAccessPage('/management', role) && <ActionLink to={`/management?line=${q}`} icon="🗓️" label="แผน / สถานะงานของไลน์" sub="ใบผลิตที่กำลังเดิน + คิวถัดไป" tone="var(--blue)" />}
+                {canAccessPage('/people-board', role) && <ActionLink to={`/people-board?line=${q}`} icon="🧑‍🤝‍🧑" label="คนในไลน์ / จุดงาน" sub="ใครอยู่จุดไหน กะนี้" tone="var(--blue)" />}
+                {canAccessPage('/pm-check', role) && <ActionLink to={`/pm?tab=check&line=${q}`} icon="✅" label="ตรวจ AM / PM ของไลน์" sub="ใบตรวจของอุปกรณ์ในไลน์นี้" tone="var(--amber)" />}
                 {canAccessPage('/qr-labels', role) && <ActionLink to={`/qr-labels?kind=sheet&line=${q}`} icon="🗒️" label="พิมพ์ใบสแกนประจำไลน์ (A4)" sub="QR ประเภท Downtime / งานเสียของไลน์นี้" tone="var(--muted)" />}
               </div>
             </>);
@@ -311,26 +403,124 @@ export default function ScanLanding() {
 
           {emp && (<>
             <div style={card}>
-              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>🪪 พนักงาน</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>พนักงาน</div>
               <div style={{ fontSize: 24, fontWeight: 900, lineHeight: 1.2 }}>{emp.name || '—'}</div>
               <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
                 {[`รหัส ${emp.employee_id_code}`, emp.position, lineById[String(emp.line_id)]?.name, emp.section].filter(Boolean).join(' · ')}
-                {emp.is_active === false && <b style={{ color: 'var(--red, #ef4444)' }}> · พ้นสภาพ / ปิดใช้งาน</b>}
+                {emp.is_active === false && <b style={{ color: 'var(--red, var(--red))' }}> · พ้นสภาพ / ปิดใช้งาน</b>}
               </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {canAccessPage('/operator', role) && <ActionLink to={`/operator?q=${encodeURIComponent(emp.employee_id_code)}`} icon="👤" label="ข้อมูลพนักงาน / ทักษะ" sub="เปิดฐานข้อมูลพนักงานที่คนนี้" />}
-              {canAccessPage('/checkin', role) && <ActionLink to="/checkin" icon="🪪" label="เช็คชื่อด้วยบัตร" sub="หน้าเช็คชื่อ → ปุ่ม 🪪 สแกนบัตรพนักงาน" tone="#22c55e" />}
+
+              {/* 🪪 เช็คชื่อจบที่นี่ — ไม่พาไปหน้าเช็คชื่อแล้วให้ยิงซ้ำ (10/11 · คำสั่ง user)
+                  ปุ่มโผล่ตามสิทธิ์จริง (กฎข้อ 2) · นอกขอบเขต = โชว์ปุ่มแต่กดแล้วบอกเหตุผล
+                  **ไม่ซ่อน** — ซ่อนเฉยๆ คนยืนถือบัตรอยู่จะไม่รู้ว่าทำไมไม่มีปุ่ม */}
+              {canCheckin && ckResult?.kind !== 'saved' && ckResult?.kind !== 'already' && (
+                <button type="button" onClick={doCheckin} disabled={ckResult === 'busy'}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '10px 14px', width: '100%',
+                    borderRadius: 10, border: '1px solid var(--green)', background: 'var(--bg2)',
+                    backgroundImage: 'linear-gradient(var(--green)14, var(--green)14)', color: 'var(--text)',
+                    textAlign: 'left', cursor: ckResult === 'busy' ? 'wait' : 'pointer', opacity: ckResult === 'busy' ? 0.6 : 1,
+                    fontFamily: 'var(--font-body)' }}>
+                  <span style={{ fontSize: 22 }}>🪪</span>
+                  <span style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--green)' }}>
+                      {ckResult === 'busy' ? 'กำลังบันทึก…' : 'เช็คชื่อ “มางาน” เลย'}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                      บันทึกทันทีในนาม {fullName || 'ผู้ใช้นี้'} · {getWorkDate()} · {getCurrentShift() === 'night' ? 'กะดึก' : 'กะเช้า'}
+                    </div>
+                  </span>
+                </button>
+              )}
+              {/* ผลลัพธ์ — ✓ ขึ้นเฉพาะตอนเขียนติดจริง (ล้ม = แดง ห้ามขึ้น ✓ ให้เข้าใจผิดว่าเช็คแล้ว) */}
+              {ckResult && ckResult !== 'busy' && (() => {
+                const tone = ckResult.kind === 'saved' ? 'var(--green)'
+                  : ckResult.kind === 'already' ? 'var(--blue)' : 'var(--red)';
+                const head = ckResult.kind === 'saved' ? `✓ เช็คชื่อสำเร็จ — ${emp.name}`
+                  : ckResult.kind === 'already' ? `✓ ${emp.name} — เช็คมางานไว้แล้ว`
+                  : `✕ ยังไม่ได้เช็คชื่อ — ${emp.name}`;
+                return (
+                  <div style={{ borderRadius: 10, border: `1px solid ${tone}`, background: 'var(--bg2)',
+                    backgroundImage: `linear-gradient(${tone}14, ${tone}14)`, padding: '12px 14px' }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, color: tone, lineHeight: 1.3 }}>{head}</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--text2)', marginTop: 3, lineHeight: 1.6 }}>{ckResult.text}</div>
+                    {ckResult.kind === 'already' && (
+                      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>ไม่ได้บันทึกซ้ำ — ของเดิม (PPE / OT / การลา) ยังอยู่ครบ</div>
+                    )}
+                  </div>
+                );
+              })()}
+              {/* 🦺 ขั้นถาม PPE — ขึ้นเฉพาะรายการที่หน่วยนี้บังคับ · เริ่มที่ยังไม่ติ๊ก · ข้ามได้ */}
+              {ppe && !ppe.done && (
+                <div style={{ borderRadius: 10, border: '1px solid var(--amber)', background: 'var(--bg2)',
+                  backgroundImage: 'linear-gradient(var(--amber)14, var(--amber)14)', padding: '12px 14px' }}>
+                  {ppe.unknown ? (
+                    /* 🔴 อ่านทะเบียนไม่ได้ ≠ "ไม่ต้องใส่อะไร" — เขียนบนจอ ห้ามข้ามเงียบ */
+                    <div style={{ fontSize: 13, color: 'var(--red)', lineHeight: 1.6 }}>
+                      <b>อ่านทะเบียน PPE ไม่สำเร็จ</b> — เช็คชื่อบันทึกแล้ว แต่ยังถาม PPE ไม่ได้
+                      <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 3 }}>ไปติ๊กที่หน้าเช็คชื่อแทน</div>
+                    </div>
+                  ) : (<>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--amber)' }}>
+                      🦺 ไลน์นี้บังคับ {ppe.required.length} ชิ้น — ติ๊กเฉพาะที่ใส่จริง
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '10px 0' }}>
+                      {ppe.required.map(it => {
+                        const on = !!ppe.okBy[String(it.id)];
+                        return (
+                          <button key={it.id} type="button"
+                            onClick={() => setPpe(p => ({ ...p, okBy: { ...p.okBy, [String(it.id)]: !on } }))}
+                            aria-pressed={on}
+                            style={{ minHeight: 44, padding: '8px 14px', borderRadius: 999, cursor: 'pointer',
+                              /* ติ๊กแล้ว = พื้น accent + ตัวอักษร accent-ink (กฎสีตัวหนังสือบนพื้น accent · UI §7.1)
+                                 ห้ามใส่ hex ดิบที่นี่ — ธีมสว่าง/มืดกลับสีตัวอักษรคนละทาง */
+                              border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+                              background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text2)',
+                              fontSize: 14, fontWeight: 800, fontFamily: 'var(--font-body)' }}>
+                            {on ? '✓ ' : ''}{it.name_th}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button type="button" onClick={savePpe} disabled={ppe.saving}
+                        style={{ flex: 2, minHeight: 46, borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)',
+                          color: 'var(--accent-ink)', fontSize: 15, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                        {ppe.saving ? 'บันทึก…' : 'บันทึกผลตรวจ PPE'}
+                      </button>
+                      {/* ข้าม = ไม่เขียนอะไรเลย ⇒ ค้างเป็น "ยังไม่ได้ตรวจ" ให้หัวหน้าไปติ๊กต่อ */}
+                      <button type="button" onClick={() => setPpe(p => ({ ...p, done: 'skipped' }))} disabled={ppe.saving}
+                        style={{ flex: 1, minHeight: 46, borderRadius: 'var(--r-md)', border: '1px solid var(--border)',
+                          background: 'var(--bg3)', color: 'var(--text2)', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
+                        ข้ามไว้ก่อน
+                      </button>
+                    </div>
+                  </>)}
+                </div>
+              )}
+              {ppe?.done && (
+                <div style={{ fontSize: 13, color: ppe.done === 'ok' ? 'var(--green)' : 'var(--muted)', lineHeight: 1.6 }}>
+                  {ppe.done === 'ok' ? '🦺 PPE ครบตามที่ไลน์นี้บังคับ'
+                    : ppe.done === 'missing' ? `🦺 บันทึกแล้ว — ขาด ${ppe.missN} ชิ้น (หัวหน้าเห็นที่หน้าเช็คชื่อ)`
+                    : '🦺 ยังไม่ได้ตรวจ PPE — ค้างไว้ให้หัวหน้าติ๊กที่หน้าเช็คชื่อ'}
+                </div>
+              )}
+              {canAccessPage('/checkin', role) && (
+                <ActionLink to="/checkin" icon="📋" label="เปิดหน้าเช็คชื่อ (ทั้งไลน์)"
+                  sub="ติ๊ก PPE · การลา · OT · ยิงบัตรรัวทีละหลายคน" tone="var(--muted)" />
+              )}
             </div>
           </>)}
 
           {storageHit && (
             <div style={card}>
-              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>🏬 ที่เก็บ / รหัสคลัง</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>ที่เก็บ / รหัสคลัง</div>
               <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1.2 }}>{storageHit.code}</div>
               <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
                 {[storageHit.name, storageHit.kind, (storageHit.line_names || []).join(', ')].filter(Boolean).join(' · ')}
-                {storageHit.is_active === false && <b style={{ color: 'var(--red, #ef4444)' }}> · ปิดใช้งานแล้ว</b>}
+                {storageHit.is_active === false && <b style={{ color: 'var(--red, var(--red))' }}> · ปิดใช้งานแล้ว</b>}
               </div>
               <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '10px 0 0', lineHeight: 1.7 }}>
                 ป้ายนี้ใช้ <b>ยิงในช่องรหัสคลัง</b> (ช่องที่มีปุ่ม 📷) แทนการเลือกจากรายการ
@@ -347,7 +537,7 @@ export default function ScanLanding() {
                 <div style={{ fontSize: 24, fontWeight: 900, lineHeight: 1.2 }}>{t.name_th || '—'}</div>
                 <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
                   {[isDt && (t.category === 'planned' ? 'ในแผน' : 'นอกแผน'), t.process_type && `กระบวนการ ${t.process_type}`].filter(Boolean).join(' · ')}
-                  {t.is_active === false && <b style={{ color: 'var(--red, #ef4444)' }}> · ปิดใช้งานแล้ว — ยิงลงใบไม่ได้ พิมพ์แผ่นใหม่</b>}
+                  {t.is_active === false && <b style={{ color: 'var(--red, var(--red))' }}> · ปิดใช้งานแล้ว — ยิงลงใบไม่ได้ พิมพ์แผ่นใหม่</b>}
                 </div>
                 <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '10px 0 0', lineHeight: 1.7 }}>
                   ป้ายนี้มาจาก <b>ใบสแกนประจำไลน์</b> — ใช้ยิงตอนบันทึก {isDt ? 'Downtime' : 'งานเสีย'} ใน Daily Report (ปุ่ม 📷 ข้างช่องประเภท หรือกดปุ่มสแกนข้างเครื่องตอนฟอร์มเปิดอยู่)
@@ -360,7 +550,7 @@ export default function ScanLanding() {
           {!prodFound && (
             <button onClick={() => setRescan(true)}
               style={{ minHeight: 44, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 13 }}>
-              📷 สแกนป้ายอื่น
+              สแกนป้ายอื่น
             </button>
           )}
         </div>
@@ -389,26 +579,26 @@ export default function ScanLanding() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {canAccessPage('/qa', role) && (qaPart
                 ? <ActionLink to={`/qa?tab=sheet&part=${encodeURIComponent(qaPart.mat_no || qaPart.part_no)}`} icon="✅"
-                    label="ตรวจชิ้นงาน (ใบตรวจ QA)" sub={`เปิดใบตรวจของ ${qaPart.part_no || qaPart.mat_no} — วันงาน/กะปัจจุบัน`} tone="#22c55e" />
+                    label="ตรวจชิ้นงาน (ใบตรวจ QA)" sub={`เปิดใบตรวจของ ${qaPart.part_no || qaPart.mat_no} — วันงาน/กะปัจจุบัน`} tone="var(--green)" />
                 : <ActionLink to="/qa-setup" icon="📐" label="ยังไม่มีมาตรฐานการตรวจของพาร์ทนี้"
                     sub="ตั้งจุดตรวจที่ มาตรฐานการตรวจ & Drawing ก่อน จึงจะเปิดใบตรวจได้" tone="var(--muted)" />)}
               {canAccessPage('/order-trace', role) && (order
-                ? <ActionLink to={`/order-trace?prod=${encodeURIComponent(order.prod_no)}`} icon="🔎" label="สอบกลับใบผลิตนี้" sub="ทุกเหตุการณ์ของใบ — คน/เครื่อง/ของเสีย/4M" tone="#60a5fa" />
-                : <ActionLink to={`/order-trace?q=${encodeURIComponent(mat)}`} icon="🔎" label="ดูใบผลิตของพาร์ทนี้" sub="ค้นใบผลิตในช่วงวันล่าสุด" tone="#60a5fa" />)}
+                ? <ActionLink to={`/order-trace?prod=${encodeURIComponent(order.prod_no)}`} icon="🔎" label="สอบกลับใบผลิตนี้" sub="ทุกเหตุการณ์ของใบ — คน/เครื่อง/ของเสีย/4M" tone="var(--blue)" />
+                : <ActionLink to={`/order-trace?q=${encodeURIComponent(mat)}`} icon="🔎" label="ดูใบผลิตของพาร์ทนี้" sub="ค้นใบผลิตในช่วงวันล่าสุด" tone="var(--blue)" />)}
             </div>
             {prodHit.err.length > 0 && (
-              <div style={{ fontSize: 12, color: 'var(--red, #ef4444)' }}>⚠️ โหลด{prodHit.err.join(' · ')}ไม่สำเร็จ — ปุ่มบางอันอาจหายไปเพราะอ่านไม่ได้ ไม่ใช่เพราะไม่มี</div>
+              <div style={{ fontSize: 12, color: 'var(--red, var(--red))' }}>⚠️ โหลด{prodHit.err.join(' · ')}ไม่สำเร็จ — ปุ่มบางอันอาจหายไปเพราะอ่านไม่ได้ ไม่ใช่เพราะไม่มี</div>
             )}
             <button onClick={() => setRescan(true)}
               style={{ minHeight: 44, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 13 }}>
-              📷 สแกนป้ายอื่น
+              สแกนป้ายอื่น
             </button>
           </div>
         );
       })()}
 
       {raw && !loading && !found && !pointHit && !extraFound && !extraLoading && (!tryProduct || (prodHit && !prodFound)) && (
-        <div style={{ ...card, borderColor: 'var(--amber, #f59e0b)' }}>
+        <div style={{ ...card, borderColor: 'var(--amber, var(--amber))' }}>
           <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>⚠️ ไม่พบสิ่งที่ตรงกับป้ายนี้</div>
           <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.8 }}>
             รหัสที่อ่านได้: <code style={{ background: 'var(--bg3)', padding: '1px 6px', borderRadius: 4 }}>{scan?.raw || raw}</code><br />
@@ -418,10 +608,10 @@ export default function ScanLanding() {
               <><br />ป้ายชนิดนี้ถูกต้อง แต่<b>ไม่พบแถวในทะเบียน</b> (อาจถูกลบ/เปลี่ยนรหัส) — พิมพ์ป้ายใหม่จากหน้า QR Labels</>
             )}
             {scan?.kind === null && <><br />ลองแล้ว: เครื่อง/จิ๊ก · ใบผลิต · MAT · บัตรพนักงาน · ชื่อไลน์</>}
-            {(mFailed || jigErr || pointErr || prodHit?.err?.length > 0 || extraErr) && <><br /><b style={{ color: 'var(--red, #ef4444)' }}>⚠️ โหลดทะเบียนไม่ครบ — อาจไม่ใช่ว่าไม่มีเครื่องนี้จริง ลองใหม่อีกครั้ง</b></>}
+            {(mFailed || jigErr || pointErr || prodHit?.err?.length > 0 || extraErr) && <><br /><b style={{ color: 'var(--red, var(--red))' }}>⚠️ โหลดทะเบียนไม่ครบ — อาจไม่ใช่ว่าไม่มีเครื่องนี้จริง ลองใหม่อีกครั้ง</b></>}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-            <button onClick={() => setRescan(true)} style={{ minHeight: 44, padding: '0 16px', fontWeight: 700 }}>📷 สแกนใหม่</button>
+            <button onClick={() => setRescan(true)} style={{ minHeight: 44, padding: '0 16px', fontWeight: 700 }}>สแกนใหม่</button>
             <button onClick={() => navigate('/')} style={{ minHeight: 44, padding: '0 16px', background: 'var(--bg3)' }}>หน้าแรก</button>
           </div>
         </div>
@@ -441,14 +631,14 @@ export default function ScanLanding() {
             {/* 🔨 แม่พิมพ์ → เด้งเข้าหมุดบนผังจัดเก็บ (แผงหมุดมีเปลี่ยนสถานะ + ใบซ่อมค้าง) · ตัวตัดสิน = findDieByScan ใน DieRegistry */}
             {isDie && canAccessPage('/die-registry', role) && (
               <ActionLink to={`/equipment?tab=die&die=layout&focus=${encodeURIComponent(hit.machine.id)}`} icon="🗺️"
-                label="ดูตำแหน่งบนผังจัดเก็บ / เปลี่ยนสถานะ" sub="เด้งไปหมุดของแม่พิมพ์ตัวนี้" tone="#a78bfa" />
+                label="ดูตำแหน่งบนผังจัดเก็บ / เปลี่ยนสถานะ" sub="เด้งไปหมุดของแม่พิมพ์ตัวนี้" tone="var(--blue)" />
             )}
             {hit.jig && canAccessPage('/pm-check', role) && (pmDepts?.length
               ? pmDepts.map(d => (
                   <ActionLink key={d} to={`/pm?tab=check&equip=${hit.jig.id}&dept=${encodeURIComponent(d)}`} icon={isAm(d) ? '🏭' : '✅'}
                     label={isAm(d) ? `ตรวจ AM (ผลิตตรวจเอง)${pmDepts.filter(isAm).length > 1 ? ` — ${teamLabel(d)}` : ''}`
                       : `ตรวจ PM (ช่าง)${pmDepts.filter(x => !isAm(x)).length > 1 ? ` — ${teamLabel(d)}` : ''}`}
-                    sub={`${teamLabel(d)} · เปิดใบตรวจตามจุดที่ตั้งไว้`} tone={isAm(d) ? '#22c55e' : 'var(--accent)'} />
+                    sub={`${teamLabel(d)} · เปิดใบตรวจตามจุดที่ตั้งไว้`} tone={isAm(d) ? 'var(--green)' : 'var(--accent)'} />
                 ))
               : (
                 <ActionLink to={`/pm?tab=check&equip=${hit.jig.id}`} icon="✅" label="ตรวจ PM เครื่องนี้"
@@ -456,7 +646,7 @@ export default function ScanLanding() {
               ))}
             {canAccessPage('/mtn-repair', role) && (
               <ActionLink to={`/mtn-repair?tab=list&q=${encodeURIComponent(hit.machine?.machine_no || hit.jig?.machine_no || hit.jig?.jig_no || '')}`}
-                icon="🔧" label="แจ้งซ่อม / ดูใบซ่อมของเครื่องนี้" sub="ใบ MO ที่ค้างอยู่ + เปิดใบใหม่" tone="#f59e0b" />
+                icon="🔧" label="แจ้งซ่อม / ดูใบซ่อมของเครื่องนี้" sub="ใบ MO ที่ค้างอยู่ + เปิดใบใหม่" tone="var(--amber)" />
             )}
             {!hit.jig && canAccessPage('/pm-setup', role) && (
               <ActionLink to={`/pm?tab=setup`} icon="⚙️" label="ยังไม่มีแผน PM — ไปตั้งจุดตรวจ"
@@ -465,22 +655,22 @@ export default function ScanLanding() {
             {hit.machine?.machine_no && canAccessPage('/mtn-repair', role) && (
               <button onClick={() => setShowHist(true)} style={{
                 display: 'flex', alignItems: 'center', gap: 12, minHeight: 56, padding: '10px 14px', textAlign: 'left',
-                borderRadius: 10, border: '1px solid #f59e0b', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer',
+                borderRadius: 'var(--r-md)', border: '1px solid var(--amber)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer',
               }}>
                 <span style={{ fontSize: 22 }}>📜</span>
-                <span><div style={{ fontSize: 15, fontWeight: 800, color: '#f59e0b' }}>ประวัติซ่อมเครื่องนี้</div>
+                <span><div style={{ fontSize: 15, fontWeight: 800, color: 'var(--amber)' }}>ประวัติซ่อมเครื่องนี้</div>
                   <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ใบ MO ทั้งหมด · เวลาซ่อม · ค่าใช้จ่าย</div></span>
               </button>
             )}
             {hit.machine?.machine_no && canAccessPage('/order-trace', role) && (
               <ActionLink to={`/order-trace?tab=symptom&machine=${encodeURIComponent(hit.machine.machine_no)}`} icon="📋"
-                label="สอบกลับ / ประวัติเหตุการณ์ของเครื่องนี้" sub="เครื่องหยุด + ของเสียที่ผูกเครื่องนี้ ในช่วงวันที่เลือก" tone="#60a5fa" />
+                label="สอบกลับ / ประวัติเหตุการณ์ของเครื่องนี้" sub="เครื่องหยุด + ของเสียที่ผูกเครื่องนี้ ในช่วงวันที่เลือก" tone="var(--blue)" />
             )}
           </div>
 
           <button onClick={() => setRescan(true)}
             style={{ minHeight: 44, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 13 }}>
-            📷 สแกนป้ายอื่น
+            สแกนป้ายอื่น
           </button>
         </div>
       )}

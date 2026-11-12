@@ -101,7 +101,7 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
   return (
     <div className="overlay"><div className="modal" style={{ width: 'min(860px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>🔀 เสนอ routing เข้า VSM — {set.part_no}</h3>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>เสนอ routing เข้า VSM — {set.part_no}</h3>
         <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
       </div>
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.6 }}>
@@ -123,7 +123,7 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
           </Link>
         </div>
       ) : !matNo ? (
-        <div style={{ background: 'rgba(245,158,11,0.12)', borderLeft: '3px solid #f59e0b', borderRadius: 6, padding: '10px 14px', fontSize: 12.5, color: 'var(--text)' }}>
+        <div style={{ background: 'rgba(245,158,11,0.12)', borderLeft: '3px solid #f59e0b', borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 12.5, color: 'var(--text)' }}>
           {how === 'ambiguous' ? <>
             ⚠️ เลขพาร์ท {set.part_no} ตรงกับหลาย MAT SAP — <b>เลือกให้ชัดก่อน (ระบบไม่เดาให้)</b>:
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
@@ -151,18 +151,18 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
         </div>
 
         {existing.length > 0 && (
-          <div style={{ background: 'rgba(245,158,11,0.12)', borderLeft: '3px solid #f59e0b', borderRadius: 6, padding: '8px 12px', fontSize: 12, color: 'var(--text)', marginBottom: 10 }}>
+          <div style={{ background: 'rgba(245,158,11,0.12)', borderLeft: '3px solid #f59e0b', borderRadius: 'var(--r-md)', padding: '8px 12px', fontSize: 12, color: 'var(--text)', marginBottom: 10 }}>
             ⚠️ พาร์ทนี้มี routing อยู่แล้ว {existing.length} ขั้น ({existing.map(r => r.step_name).slice(0, 3).join(' → ')}{existing.length > 3 ? ' → …' : ''}) —
             ยืนยันจะ<b>แทนที่ทั้งชุด</b> (ชุดเดิมเก็บเป็นประวัติ)
           </div>
         )}
         {included > 10 && (
           <div style={{ fontSize: 11.5, color: '#f59e0b', marginBottom: 8 }}>
-            💡 ติ๊กไว้ {included} ขั้น — ใบ VSM ที่อ่านง่ายมักมี 5–8 กล่อง ลองติ๊กออกขั้นย่อย (เช่นจุดตรวจ/สปอตซ้ำๆ) ให้เหลือขั้นหลัก
+            ติ๊กไว้ {included} ขั้น — ใบ VSM ที่อ่านง่ายมักมี 5–8 กล่อง ลองติ๊กออกขั้นย่อย (เช่นจุดตรวจ/สปอตซ้ำๆ) ให้เหลือขั้นหลัก
           </div>
         )}
 
-        <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+        <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
             <thead style={{ background: 'var(--bg2)' }}>
               <tr>{['✓', 'OP', 'ชนิด', 'ชื่อขั้น (แก้ได้)', 'ไลน์', 'เครื่อง', 'จุดพักหลังขั้น (WIP)'].map((h, i) =>
@@ -208,9 +208,9 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
         )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
+          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
           <button onClick={confirm} disabled={saving || !included}
-            style={{ padding: '8px 18px', borderRadius: 6, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', opacity: (saving || !included) ? 0.5 : 1 }}>
+            style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', opacity: (saving || !included) ? 0.5 : 1 }}>
             {saving ? '⏳ กำลังบันทึก…' : `✅ ยืนยันบันทึก ${included} ขั้น`}
           </button>
         </div>

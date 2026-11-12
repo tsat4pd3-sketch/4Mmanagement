@@ -32,6 +32,8 @@ import { ALL } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 import { rangeDays } from '../utils/timeRange';
 import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
+import NoticeBar from './NoticeBar';
+import InfoMore from './InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
 const th = { padding: '8px 10px', textAlign: 'left', fontSize: 12, fontWeight: 800, whiteSpace: 'nowrap' };
@@ -195,7 +197,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
             : rows.filter(r => r.kindKnown && (r.kind || 'machine') === c.key).length;
           return (
             <button key={c.key} onClick={() => setKind(c.key)} style={{
-              padding: '5px 12px', borderRadius: 16, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
               border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
               background: on ? 'var(--accent-dim)' : 'var(--bg3)', color: on ? 'var(--accent)' : 'var(--muted)',
             }}>{c.icon} {c.label} ({n})</button>
@@ -207,8 +209,8 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>นับแบบ:</span>
         <Segmented value={mode} onChange={setMode} label="นับแบบ" options={[
-          { value: 'full', label: '🔧 มุมเครื่อง (นาทีเต็ม)', title: 'เครื่องตัวนั้นหยุดจริงกี่นาที — ใช้ตัดสินใจงานซ่อม/อะไหล่' },
-          { value: 'line', label: '🏭 มุมไลน์ (ถ่วง 1/N)', title: 'ไลน์เสียเวลาไปเท่าไหร่ — สูตรเดียวกับ %A ใน Daily Report (เครื่องขนาน N ตัว หยุด 1 ตัว = ไลน์เสีย 1/N)' },
+          { value: 'full', label: 'มุมเครื่อง (นาทีเต็ม)', title: 'เครื่องตัวนั้นหยุดจริงกี่นาที — ใช้ตัดสินใจงานซ่อม/อะไหล่' },
+          { value: 'line', label: 'มุมไลน์ (ถ่วง 1/N)', title: 'ไลน์เสียเวลาไปเท่าไหร่ — สูตรเดียวกับ %A ใน Daily Report (เครื่องขนาน N ตัว หยุด 1 ตัว = ไลน์เสีย 1/N)' },
         ]} />
         {summary.parallelLines > 0 && (
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
@@ -224,11 +226,12 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
       </div>
 
       {loadErr && (
-        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid #ef4444', borderRadius: 10, padding: '9px 12px', fontSize: 12.5 }}>⚠️ {loadErr}</div>
+        <NoticeBar tone="bad" style={{ marginBottom: 0 }}>{loadErr}</NoticeBar>
       )}
 
       {/* ── บอกให้ชัดว่าเลขนี้คืออะไร — ไม่งั้นเอาไปเทียบกับระบบส่วนกลางแล้วเถียงกัน ── */}
       <div style={{ ...card, fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
+        <InfoMore label="ตัวเลขนี้นับจากอะไร · สูตร MTTR/MTBF" id="mr-def" size={12}>
         📐 <b>นับจาก downtime ที่หน้างานบันทึกจริง</b> (ไม่ใช่ใบแจ้งซ่อม) ในช่วง {days} วันล่าสุด ·
         หยุดตามแผน (PM/เปลี่ยนรุ่น) ไม่นับเป็น "ครั้งที่เสีย" แต่หักออกจากเวลาเดินเครื่อง
         <div><b>MTTR</b> = เวลาที่ไลน์หยุดเฉลี่ยต่อครั้ง (รวมเวลารอช่าง) — เฉลี่ยเฉพาะครั้งที่ปิดแล้ว</div>
@@ -238,23 +241,25 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
           {summary.idleCount > 0 && <> · ช่วงนี้มี <b>{summary.idleCount} เครื่องที่ไม่เคยเสีย</b></>}
           <br />⚠️ แม่พิมพ์/จิ๊กไม่ถูกเติมเข้ามา — เป็นทูลที่ขึ้นเครื่องเป็นช่วงๆ ชั่วโมงเดินยังวัดไม่ได้
         </div>
-        <div><b>MTBF</b> = เวลาเดินเครื่อง ÷ จำนวนครั้งที่เสีย · <b style={{ color: '#f59e0b' }}>เวลาเดินเครื่องเป็นค่าประมาณ</b> จากชั่วโมงกะของไลน์ที่อุปกรณ์สังกัด (ยังไม่มีตัวนับรายเครื่อง)</div>
+        <div><b>MTBF</b> = เวลาเดินเครื่อง ÷ จำนวนครั้งที่เสีย · <b style={{ color: 'var(--amber)' }}>เวลาเดินเครื่องเป็นค่าประมาณ</b> จากชั่วโมงกะของไลน์ที่อุปกรณ์สังกัด (ยังไม่มีตัวนับรายเครื่อง)</div>
         <div>
           ⏸️ เวลาเดินเครื่อง <b>หักเวลาพักตามนโยบายแล้ว</b>
           {summary.hasBreakPolicy
             ? <> (ช่วงนี้หักไป {fmtDur(summary.breakMin)} — นิยามเดียวกับ %A ใน Daily Report)</>
-            : <b style={{ color: '#ef4444' }}> — ยังโหลดนโยบายพักไม่ได้ ตัวเลขนี้จะสูงกว่าจริง</b>}
+            : <b style={{ color: 'var(--red)' }}> — ยังโหลดนโยบายพักไม่ได้ ตัวเลขนี้จะสูงกว่าจริง</b>}
         </div>
-        <div style={{ color: weighted ? '#3b82f6' : 'var(--text2)' }}>
+        <div style={{ color: weighted ? 'var(--blue)' : 'var(--text2)' }}>
           {weighted
             ? <>🏭 <b>โหมดมุมไลน์</b> — DT บนไลน์เครื่องขนานถูกหาร 1/N เหมือนสูตร %A ⇒ <b>เอาไปเทียบกับจอ OEE / รายงานกะได้</b></>
             : <>🔧 <b>โหมดมุมเครื่อง</b> — นับนาทีเต็มที่อุปกรณ์ตัวนั้นหยุด ⇒ ตัวเลขจะ<b>สูงกว่า</b>ที่จอ OEE หักจากไลน์ บนไลน์เครื่องขนาน (ไม่ใช่ตัวเลขผิด คนละคำถามกัน)</>}
         </div>
+        </InfoMore>
+        {!summary.hasBreakPolicy && <div data-warn="1" style={{ color: 'var(--red)', fontWeight: 700, marginTop: 6 }}>ยังโหลดนโยบายพักไม่ได้ — เวลาเดินเครื่อง/MTBF จะสูงกว่าจริง</div>}
       </div>
 
       {/* ── คุณภาพข้อมูล: บอกตรงๆ ว่าเทียบทะเบียนได้แค่ไหน ห้ามเงียบ ── */}
       {(summary.unmatched > 0 || summary.noMachineNo > 0 || summary.unknownShifts > 0) && (
-        <div style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.7 }}>
+        <div style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.45)', borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 12.5, lineHeight: 1.7 }}>
           <b>⚠️ ความครบของข้อมูล</b> — เทียบทะเบียนอุปกรณ์ได้ {summary.matched} จาก {summary.equipCount} เลข
           {summary.unmatched > 0 && <div>· <b>{summary.unmatched} เลขไม่อยู่ในทะเบียน</b> (หน้างานพิมพ์ชื่อเล่น เช่น “เลเซอร์08”) — <b>ยังนับ downtime/MTTR ให้</b> แต่บอกชนิดและ MTBF ไม่ได้ · ดูได้ที่ชิป ❔ ไม่อยู่ในทะเบียน</div>}
           {summary.noMachineNo > 0 && <div>· downtime {summary.noMachineNo} ครั้งไม่ได้ระบุเครื่องเลย — ไม่เข้าตารางนี้</div>}
@@ -267,20 +272,20 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
           ⚠️ วัดได้เฉพาะครั้งที่กดครบจังหวะจริง — ต้องโชว์ตัวหารและเหตุผลที่วัดไม่ได้เสมอ ห้ามเฉลี่ยเงียบ */}
       <div style={{ ...card, borderColor: ph.n > 0 ? 'var(--border)' : 'rgba(245,158,11,0.45)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
-          <div style={{ fontSize: 13, fontWeight: 800 }}>🕐 เวลาหายไปกับอะไร (ตั้งแต่เครื่องหยุด → กลับมารัน)</div>
+          <div style={{ fontSize: 13, fontWeight: 800 }}>เวลาหายไปกับอะไร (ตั้งแต่เครื่องหยุด → กลับมารัน)</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-            วัดแยกช่วงได้ <b style={{ color: ph.n > 0 ? '#22c55e' : '#f59e0b' }}>{ph.n}</b> ครั้ง
+            วัดแยกช่วงได้ <b style={{ color: ph.n > 0 ? '#22c55e' : 'var(--amber)' }}>{ph.n}</b> ครั้ง
             {ph.oneShot > 0 && <> · ตัดใบที่กดรวดเดียว {ph.oneShot} ครั้ง</>}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
           {[
-            { k: 'mttaMin', icon: '⏳', label: 'รอช่าง (MTTA)', color: '#ef4444', tip: 'ตั้งแต่เครื่องหยุด จนช่างกดรับงาน — คิว/ระยะทาง/การแจ้ง' },
-            { k: 'mttrPureMin', icon: '🔧', label: 'ซ่อมจริง (MTTR)', color: '#f59e0b', tip: 'ตั้งแต่ช่างรับงาน จนกดซ่อมเสร็จ — ทักษะช่าง/อะไหล่' },
-            { k: 'restartMin', icon: '▶️', label: 'กลับมารัน', color: '#3b82f6', tip: 'ตั้งแต่ซ่อมเสร็จ จนไลน์เดินต่อ — ตรวจชิ้นแรก/warm-up' },
+            { k: 'mttaMin', icon: '⏳', label: 'รอช่าง (MTTA)', color: 'var(--red)', tip: 'ตั้งแต่เครื่องหยุด จนช่างกดรับงาน — คิว/ระยะทาง/การแจ้ง' },
+            { k: 'mttrPureMin', icon: '🔧', label: 'ซ่อมจริง (MTTR)', color: 'var(--amber)', tip: 'ตั้งแต่ช่างรับงาน จนกดซ่อมเสร็จ — ทักษะช่าง/อะไหล่' },
+            { k: 'restartMin', icon: '▶️', label: 'กลับมารัน', color: 'var(--blue)', tip: 'ตั้งแต่ซ่อมเสร็จ จนไลน์เดินต่อ — ตรวจชิ้นแรก/warm-up' },
             { k: 'totalMin', icon: '🛑', label: 'รวม (Downtime)', color: 'var(--text)', tip: 'ผลรวมทั้ง 3 ท่อน = MTTR แบบ Restore ที่ตารางข้างล่างโชว์' },
           ].map(c => (
-            <div key={c.k} title={c.tip} style={{ flex: 1, minWidth: 140, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '8px 12px' }}>
+            <div key={c.k} title={c.tip} style={{ flex: 1, minWidth: 140, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
               <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{c.icon} {c.label}</div>
               <div style={{ fontSize: 19, fontWeight: 800, color: c.color }}>{fmtDur(ph[c.k])}</div>
               {ph.n > 0 && ph.totalMin > 0 && c.k !== 'totalMin' && (
@@ -295,7 +300,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
             ทั้งช่วงที่ดู — ยังแยกช่วงไม่ได้เพราะ:
             {summary.phaseGaps.no_ack > 0 && <> · <b>{summary.phaseGaps.no_ack}</b> ครั้งไม่ได้กด “รับงาน”</>}
             {summary.phaseGaps.no_fix > 0 && <> · <b>{summary.phaseGaps.no_fix}</b> ครั้งไม่ได้กด “ซ่อมเสร็จ”</>}
-            {summary.phaseGaps.after_end > 0 && <> · <b style={{ color: '#f59e0b' }}>{summary.phaseGaps.after_end}</b> ครั้งเปิด/รับใบซ่อม<b>หลังเครื่องกลับมารันแล้ว</b> (ใบ MO ถูกใช้เป็นเอกสารตามหลัง ไม่ใช่การจ่ายงานสด)</>}
+            {summary.phaseGaps.after_end > 0 && <> · <b style={{ color: 'var(--amber)' }}>{summary.phaseGaps.after_end}</b> ครั้งเปิด/รับใบซ่อม<b>หลังเครื่องกลับมารันแล้ว</b> (ใบ MO ถูกใช้เป็นเอกสารตามหลัง ไม่ใช่การจ่ายงานสด)</>}
             <div style={{ color: 'var(--muted)' }}>⇒ อยากได้ MTTA จริง ต้อง <b>กดรับงานตอนไปถึงหน้างาน</b> แล้วค่อยกดซ่อมเสร็จตอนซ่อมจบ</div>
           </div>
         )}
@@ -314,8 +319,8 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
             <div key={k.kind} style={{ ...card, flex: 1, minWidth: 190 }}>
               <div style={{ fontSize: 12, color: 'var(--muted)' }}>{meta.icon} {meta.label} · {k.equip} ตัว</div>
               <div style={{ display: 'flex', gap: 14, marginTop: 4, flexWrap: 'wrap' }}>
-                <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>MTTR</div><div style={{ fontSize: 16, fontWeight: 800, color: '#f59e0b' }}>{fmtDur(k.mttrMin)}</div></div>
-                <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>MTBF</div><div style={{ fontSize: 16, fontWeight: 800, color: '#3b82f6' }}>{fmtDur(k.mtbfMin)}</div></div>
+                <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>MTTR</div><div style={{ fontSize: 16, fontWeight: 800, color: 'var(--amber)' }}>{fmtDur(k.mttrMin)}</div></div>
+                <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>MTBF</div><div style={{ fontSize: 16, fontWeight: 800, color: 'var(--blue)' }}>{fmtDur(k.mtbfMin)}</div></div>
                 <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>หยุด</div><div style={{ fontSize: 16, fontWeight: 800 }}>{k.stops}</div></div>
               </div>
             </div>
@@ -329,7 +334,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
           ไม่มีอุปกรณ์ที่ตรงกับตัวกรอง — ลองขยายช่วงวันหรือเลือก “ทั้งหมด”
         </div>
       ) : (
-        <div className="table-sticky" style={{ border: '1px solid var(--border)', borderRadius: 10 }}>
+        <div className="table-sticky" style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
             <thead style={{ background: 'var(--bg2)', position: 'sticky', top: 0, zIndex: 1 }}>
               <tr>
@@ -337,7 +342,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
                 <th style={th}>ชนิด</th>
                 <th style={th}>ไลน์</th>
                 <th style={{ ...th, textAlign: 'right' }}>หยุด (ครั้ง)</th>
-                <th style={{ ...th, textAlign: 'right' }}>DT รวม{weighted && <span style={{ color: '#3b82f6' }}> (1/N)</span>}</th>
+                <th style={{ ...th, textAlign: 'right' }}>DT รวม{weighted && <span style={{ color: 'var(--blue)' }}> (1/N)</span>}</th>
                 <th style={{ ...th, textAlign: 'right' }}>MTTR</th>
                 <th style={{ ...th, textAlign: 'right' }}>MTBF</th>
                 <th style={{ ...th, textAlign: 'right' }}>พร้อมใช้</th>
@@ -360,33 +365,33 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
                           ✎ กรอกมา {r.rawNos.length} แบบ: {r.rawNos.join(' · ')}
                         </div>
                       )}
-                      {r.openStops > 0 && <div style={{ fontSize: 11, color: '#ef4444', fontWeight: 700 }}>🔴 ยังเปิดค้าง {r.openStops} ครั้ง</div>}
+                      {r.openStops > 0 && <div style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>🔴 ยังเปิดค้าง {r.openStops} ครั้ง</div>}
                       {r.neverFailed && <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700 }}>✅ ไม่เคยเสียในช่วงนี้</div>}
                     </td>
                     <td style={td}>
                       {meta
                         ? <span>{meta.icon} {meta.label}</span>
-                        : <span style={{ color: '#f59e0b', fontWeight: 700 }} title="เลขนี้ไม่มีในทะเบียนอุปกรณ์ — บอกชนิดไม่ได้">❔ ไม่อยู่ในทะเบียน</span>}
+                        : <span style={{ color: 'var(--amber)', fontWeight: 700 }} title="เลขนี้ไม่มีในทะเบียนอุปกรณ์ — บอกชนิดไม่ได้">❔ ไม่อยู่ในทะเบียน</span>}
                     </td>
                     <td style={{ ...td, color: r.lineName ? 'inherit' : 'var(--muted)' }}>
                       {r.lineName || '—'}
                       {r.parallelN > 1 && (
-                        <div style={{ fontSize: 11, color: '#3b82f6' }} title={`ไลน์นี้มีเครื่องวิ่งขนาน ${r.parallelN} ตัว — โหมดมุมไลน์จะหาร DT ด้วย ${r.parallelN}`}>
+                        <div style={{ fontSize: 11, color: 'var(--blue)' }} title={`ไลน์นี้มีเครื่องวิ่งขนาน ${r.parallelN} ตัว — โหมดมุมไลน์จะหาร DT ด้วย ${r.parallelN}`}>
                           ⇄ ขนาน {r.parallelN} ตัว
                         </div>
                       )}
                     </td>
                     <td style={tdNum}>{r.stops}{r.plannedStops > 0 && <span style={{ color: 'var(--muted)', fontSize: 11 }}> (+{r.plannedStops} ตามแผน)</span>}</td>
                     <td style={tdNum} title={r.parallelN > 1 ? `มุมเครื่อง ${fmtDur(r.dtMin)} · มุมไลน์ ${fmtDur(r.dtMinW)}` : undefined}>{fmtDur(v.dtMin)}</td>
-                    <td style={{ ...tdNum, color: '#f59e0b', fontWeight: 700 }}
+                    <td style={{ ...tdNum, color: 'var(--amber)', fontWeight: 700 }}
                         title={r.phaseN > 0 ? `แยกช่วง (${r.phaseN} ครั้ง): รอช่าง ${fmtDur(r.mttaMin)} · ซ่อมจริง ${fmtDur(r.mttrPureMin)} · กลับมารัน ${fmtDur(r.restartMin)}` : 'ยังแยกไม่ได้ — ต้องกดรับงาน/ซ่อมเสร็จตอนทำงานจริง'}>
                       {fmtDur(v.mttrMin)}{r.phaseN > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}> ⏳{fmtDur(r.mttaMin)}</span>}
                     </td>
-                    <td style={{ ...tdNum, color: v.mtbfMin == null ? 'var(--muted)' : '#3b82f6', fontWeight: 700 }}
+                    <td style={{ ...tdNum, color: v.mtbfMin == null ? 'var(--muted)' : 'var(--blue)', fontWeight: 700 }}
                         title={v.mtbfMin == null ? 'ไม่รู้เวลาเดินเครื่อง (ไม่รู้ไลน์ หรือไม่มีกะในช่วงนี้)' : 'ประมาณจากชั่วโมงกะของไลน์ (หักเวลาพักแล้ว)'}>
                       {fmtDur(v.mtbfMin)}
                     </td>
-                    <td style={{ ...tdNum, color: v.availPct == null ? 'var(--muted)' : v.availPct >= 95 ? '#22c55e' : v.availPct >= 90 ? '#f59e0b' : '#ef4444' }}>
+                    <td style={{ ...tdNum, color: v.availPct == null ? 'var(--muted)' : v.availPct >= 95 ? '#22c55e' : v.availPct >= 90 ? 'var(--amber)' : 'var(--red)' }}>
                       {v.availPct == null ? '—' : `${v.availPct}%`}
                     </td>
                     <td style={{ ...td, fontSize: 11.5, color: 'var(--text2)' }}>{r.topCause || '—'}</td>

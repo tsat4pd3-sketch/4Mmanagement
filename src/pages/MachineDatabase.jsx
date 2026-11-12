@@ -10,7 +10,7 @@ import { invalidateTable } from '../utils/masterInvalidate';
 import { toast } from '../components/Toast';
 import { can, canDelete as canDeleteUtil } from '../utils/permissions';
 import { EQUIPMENT_KINDS, kindOf, kindLabel, kindIcon } from '../utils/equipmentKinds';   // แม่พิมพ์/จิ๊กไม่ใช่เครื่องจักร — กรองแยกกัน
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, scopedLines as scopedLinesOf } from '../utils/sectionScope';
 import { getAncestorNames, getLineFamilyNames, lineNameCompare } from '../utils/lineHierarchy';
 import { loadMachineTraits, activeAutomationLevels, activeOperationModes, automationDisplay, operationDisplay } from '../utils/machineTraits';
 import EmojiPicker from '../components/EmojiPicker';
@@ -20,6 +20,7 @@ import { normalizeBrand, suggestBrand, brandProposals } from '../utils/machineBr
 import LineSelect from '../components/LineSelect';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
+import OverflowMenu from '../components/OverflowMenu';   // ⋯ ปุ่มตายตัว ≤2 (UI §6.35)
 import FilterBar from '../components/FilterBar';
 import SearchInput from '../components/SearchInput';
 import { ALL, allOf } from '../utils/filterLabels';
@@ -27,6 +28,7 @@ import { DeleteButton } from '../components/IconButton';
 import MachineRepairHistory from '../components/MachineRepairHistory';
 import { showsShutHeight } from '../utils/pressMachine';
 import { useNavigate } from 'react-router-dom';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ─── shared little UI bits ─────────────────────────────────── */
 function Field({ label, hint, children }) {
@@ -47,7 +49,7 @@ const inputStyle = {
   background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box',
 };
 const saveBtnStyle = {
-  background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8,
+  background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8,
   padding: '8px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
 };
 const cancelBtnStyle = {
@@ -60,19 +62,19 @@ const emptyMachine = { id: null, line_name: '', machine_no: '', machine_name: ''
 // รวม Facility + Utility เป็นหมวดเดียว (ทีมช่างดูแลทีมเดียวกัน + แยกยาก · คำสั่ง user 2026-07-24)
 // ค่าใน DB ใช้ 'facility' เป็นตัวแทน · 'utility' เดิม migrate มาเป็น facility แล้ว (โค้ดที่เหลือเช็ค !== 'production' อยู่แล้ว)
 const EQUIP_CATS = [
-  { v: 'production', t: '🏭 ไลน์ผลิต' },
-  { v: 'facility',   t: '🔧 Facility / Utility' },
+  { v: 'production', t: 'ไลน์ผลิต' },
+  { v: 'facility',   t: 'Facility / Utility' },
 ];
 // utility เดิม (ก่อน apply migration รวมหมวด) → นับเป็น facility ทุกที่ · ค่าว่าง = production
 const normCat = (c) => (c === 'utility' ? 'facility' : (c || 'production'));
-const emptyType    = { id: null, label: '', color: '#4d9fff', icon: '', sort_order: 0, is_active: true };
+const emptyType    = { id: null, label: '', color: 'var(--blue)', icon: '', sort_order: 0, is_active: true };
 const TYPE_COLORS  = ['#4d9fff', '#22c55e', '#f59e0b', '#ef4444', '#a855f7', '#ec4899', '#06b6d4', '#84cc16', '#6b7280'];
 
 /* ═══════════════════════════════════════════════════════════════
    MAIN PAGE
 ═══════════════════════════════════════════════════════════════ */
 export default function MachineDatabase() {
-  const { role, lineId: userLineId, sections: scopeSecs } = useContext(UserContext);
+  const { role, lineId: userLineId, sections: scopeSecs, scopeIdx } = useContext(UserContext);
   const canCreate = can('machines', 'create', role);
   const canEdit   = can('machines', 'edit', role);
   /* 🖥️🔴 ต้องผ่าน `canDelete()` ของกลาง (utils/permissions.js) — เดิมประกาศตัวแปรชื่อ `canDelete`
@@ -179,16 +181,12 @@ export default function MachineDatabase() {
 
   // mandatory scope filter (คำสั่ง user 2026-07-12) — leader = family ไลน์ตัวเอง, มี sections = เฉพาะ section ตัวเอง
   // user ไม่มี scope เห็นหมดเหมือนเดิม · กรองก่อน filter อิสระเสมอ (pattern มาตรฐาน CLAUDE.md)
+  /* 🔭 ของกลาง `scopedLines()` (QC audit 09/11 · กวาดรอบ 2) — สูตรเดิมในหน้าแคบกว่าที่ `profiles`
+     ตั้งไว้ (leader ได้ครอบครัวไลน์ล้วน · ไม่รู้จัก `scopeIdx`) · ตาข่าย "ไม่เหลือ = ไม่กรอง" คงไว้ */
   const scopedLines = useMemo(() => {
-    if (role === 'leader' && userLineId) {
-      // เทียบ id ด้วย String() — lineId จาก profile อาจเป็นคนละ type กับ production_lines.id (pattern เดียวกับ EventLog)
-      const myLine = lines.find(l => String(l.id) === String(userLineId));
-      const fam = new Set(myLine ? getLineFamilyNames(lines, myLine.name) : []);
-      return fam.size ? lines.filter(l => fam.has(l.name)) : lines;
-    }
-    if (scopeSecs?.length) return lines.filter(l => inSectionScope(scopeSecs, l.section));
-    return lines;
-  }, [lines, role, userLineId, scopeSecs]);
+    const out = scopedLinesOf({ role, lineId: userLineId, sections: scopeSecs, lines, scopeIdx });
+    return out.length ? out : lines;
+  }, [lines, role, userLineId, scopeSecs, scopeIdx]);
   const scopedLineNames = useMemo(() => new Set(scopedLines.map(l => l.name)), [scopedLines]);
   const scopeActive = scopedLines.length !== lines.length;
 
@@ -372,9 +370,11 @@ export default function MachineDatabase() {
         sub={`รายการเครื่องจักรทุกไลน์ · ${machines.filter(m => m.is_active).length} เครื่องที่ใช้งานอยู่`}
         actions={(canEdit || canCreate) ? (
           <>
-            {canEdit && <button onClick={() => setShowTypeManager(true)} style={cancelBtnStyle}>🏷️ จัดการประเภทเครื่องจักร</button>}
-            {canEdit && hasBrandCol && brandTodo.length > 0 && <button onClick={() => setShowBrandReview(true)} style={cancelBtnStyle}>🏷️ แยกยี่ห้อจากชื่อ ({brandTodo.length})</button>}
-            {canCreate && <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่มเครื่องจักร</button>}
+            {/* ปุ่มตายตัว ≤2 (UI §6.35): [จัดการประเภท] [+ เพิ่มเครื่องจักร] · แยกยี่ห้อจากชื่อ → ⋯ (มี badge จำนวนที่ค้าง) */}
+            <OverflowMenu items={[{ key: 'brand', icon: '🏷️', label: 'แยกยี่ห้อจากชื่อ', badge: brandTodo.length, onClick: () => setShowBrandReview(true),
+              hidden: !(canEdit && hasBrandCol && brandTodo.length > 0) }]} />
+            {canEdit && <button type="button" className="pg-btn" onClick={() => setShowTypeManager(true)}>จัดการประเภทเครื่องจักร</button>}
+            {canCreate && <button type="button" className="pg-btn primary" onClick={() => openEdit()}>+ เพิ่มเครื่องจักร</button>}
           </>
         ) : null} />
 
@@ -414,13 +414,13 @@ export default function MachineDatabase() {
         <SearchInput value={search} onChange={setSearch} fields="หมายเลข/ชื่อเครื่อง" />
         <span className="spacer" />
         {grouped.length > 1 && (
-          <button type="button" className="ctl-btn" onClick={() => {
+          <button type="button" className="pg-btn sm" onClick={() => {
             const allCollapsed = grouped.every(([n]) => collapsedGroups.has(n));
             const next = allCollapsed ? new Set() : new Set(grouped.map(([n]) => n));
             setCollapsedGroups(next);
             try { localStorage.setItem('md_group_collapse', JSON.stringify([...next])); } catch { /* ignore */ }
-          }} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text)', cursor: 'pointer', fontSize: 12, padding: '0 12px' }}>
-            {grouped.every(([n]) => collapsedGroups.has(n)) ? '▼ กางทั้งหมด' : '▶ ย่อทั้งหมด'}
+          }}>
+            {grouped.every(([n]) => collapsedGroups.has(n)) ? 'กางทั้งหมด' : 'ย่อทั้งหมด'}
           </button>
         )}
         <div className="filter-count" style={{ textAlign: 'right' }}>
@@ -451,41 +451,41 @@ export default function MachineDatabase() {
       {grouped.map(([lineName, items]) => {
         const isCollapsed = collapsedGroups.has(lineName);
         return (
-        <div key={lineName} style={{ marginBottom: 18, border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+        <div key={lineName} style={{ marginBottom: 18, border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', overflow: 'hidden' }}>
           <button type="button" onClick={() => toggleGroup(lineName)}
             style={{ width: '100%', textAlign: 'left', padding: '10px 16px', background: 'var(--bg2)', borderBottom: isCollapsed ? 'none' : '1px solid var(--border)', borderTop: 'none', borderLeft: 'none', borderRight: 'none', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', color: 'var(--text)' }}>
             <span style={{ fontSize: 11, color: 'var(--muted)', width: 12 }}>{isCollapsed ? '▶' : '▼'}</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>⚙️ {lineName}</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{lineName}</span>
             <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>{items.length} เครื่อง</span>
           </button>
           {!isCollapsed && (
           <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
             {items.map(item => (
-              <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, opacity: item.is_active ? 1 : 0.5 }}>
+              <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', opacity: item.is_active ? 1 : 0.5 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 14, fontWeight: 800, fontFamily: 'monospace', color: 'var(--text)' }}>{item.machine_no}</span>
                     {item.machine_name && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{item.machine_name}</span>}
-                    {item.brand && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }} title="ยี่ห้อ">🏷️ {item.brand}</span>}
+                    {item.brand && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-pill)', background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }} title="ยี่ห้อ">{item.brand}</span>}
                     {item.io_no && <span style={{ fontSize: 11, color: 'var(--text2)', fontFamily: 'monospace' }}>I/O {item.io_no}</span>}
                     {item.machine_types && (
-                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: `${item.machine_types.color}22`, color: item.machine_types.color, fontWeight: 700 }}>
+                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-pill)', background: `${tint(item.machine_types.color, 'dim')}`, color: item.machine_types.color, fontWeight: 700 }}>
                         {item.machine_types.icon || ''} {item.machine_types.label}
                       </span>
                     )}
-                    {item.automation_level && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }}>{automationDisplay(item.automation_level)}</span>}
-                    {item.operation_mode && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 20, background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }}>{operationDisplay(item.operation_mode)}{item.operation_mode === 'gang' && item.gang_count ? ` ×${item.gang_count}` : ''}</span>}
-                    {item.equipment_category && item.equipment_category !== 'production' && <span style={{ fontSize: 11, color: '#f59a3f' }}>🔧 Facility / Utility</span>}
-                    {!item.machine_type_id && item.equipment_category === 'production' && <span style={{ fontSize: 11, color: '#f59e0b' }}>ยังไม่ระบุประเภท</span>}
-                    {(supplyByMachine[item.id]?.length > 0) && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'rgba(74,144,224,0.15)', color: '#4a90e0', fontWeight: 700 }} title={`จ่ายให้: ${supplyByMachine[item.id].join(', ')}`}>🔗 จ่าย {supplyByMachine[item.id].length} ไลน์</span>}
-                    {!item.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}>(ปิดใช้)</span>}
+                    {item.automation_level && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-pill)', background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }}>{automationDisplay(item.automation_level)}</span>}
+                    {item.operation_mode && <span style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-pill)', background: 'var(--bg2)', color: 'var(--text2)', fontWeight: 700 }}>{operationDisplay(item.operation_mode)}{item.operation_mode === 'gang' && item.gang_count ? ` ×${item.gang_count}` : ''}</span>}
+                    {item.equipment_category && item.equipment_category !== 'production' && <span style={{ fontSize: 11, color: 'var(--amber)' }}>Facility / Utility</span>}
+                    {!item.machine_type_id && item.equipment_category === 'production' && <span style={{ fontSize: 11, color: 'var(--amber)' }}>ยังไม่ระบุประเภท</span>}
+                    {(supplyByMachine[item.id]?.length > 0) && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-pill)', background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700 }} title={`จ่ายให้: ${supplyByMachine[item.id].join(', ')}`}>จ่าย {supplyByMachine[item.id].length} ไลน์</span>}
+                    {!item.is_active && <span style={{ fontSize: 11, color: 'var(--red)' }}>(ปิดใช้)</span>}
                   </div>
                 </div>
                 {(canEdit || mayDelete) && (
                   <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                    <button className="tbtn" onClick={() => setHistNo(item.machine_no)} title="ใบแจ้งซ่อมทุกใบของเครื่องนี้" style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>📜 ประวัติซ่อม</button>
-                    {canEdit && <button className="tbtn" onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
-                    {mayDelete && <button className="tbtn" onClick={() => handleDelete(item)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15 }}>✕</button>}
+                    <button type="button" className="pg-btn sm" onClick={() => setHistNo(item.machine_no)} title="ใบแจ้งซ่อมทุกใบของเครื่องนี้">ประวัติซ่อม</button>
+                    {canEdit && <button type="button" className="pg-btn sm" onClick={() => openEdit(item)}>แก้ไข</button>}
+                    {mayDelete && <button className="tbtn" onClick={() => handleDelete(item)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 15 }}>✕</button>}
                   </div>
                 )}
               </div>
@@ -500,7 +500,7 @@ export default function MachineDatabase() {
       {/* Add/Edit machine modal */}
       {editing && (
         <div className="overlay" style={{ zIndex: 2000 }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,420px)' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 24, width: 'min(95vw,420px)' }}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 20, color: 'var(--text)' }}>
               {editing.id ? `แก้ไข${kindLabel(editing.equipment_kind)}` : '+ เพิ่มอุปกรณ์'}
             </div>
@@ -512,14 +512,14 @@ export default function MachineDatabase() {
                     const on = kindOf(editing.equipment_kind) === k.key;
                     return <button key={k.key} type="button" title={k.desc}
                       onClick={() => setEditing(f => ({ ...f, equipment_kind: k.key }))}
-                      style={{ flex: '1 1 110px', padding: '7px 6px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+                      style={{ flex: '1 1 110px', padding: '7px 6px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
                         border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>
                       {k.icon} {k.label}</button>;
                   })}
                 </div>
                 {kindOf(editing.equipment_kind) === 'die' && (
                   <div style={{ fontSize: 11, color: 'var(--accent2)', marginTop: 5, lineHeight: 1.5 }}>
-                    🔨 แม่พิมพ์มีรายละเอียดเพิ่ม (ชุด · ลำดับ OP · นับ shot · ลับคม) — ตั้งที่หน้า <b>ทะเบียนแม่พิมพ์</b>
+                    แม่พิมพ์มีรายละเอียดเพิ่ม (ชุด · ลำดับ OP · นับ shot · ลับคม) — ตั้งที่หน้า <b>ทะเบียนแม่พิมพ์</b>
                   </div>
                 )}
               </Field>
@@ -528,7 +528,7 @@ export default function MachineDatabase() {
                   {EQUIP_CATS.map(c => {
                     const on = (editing.equipment_category || 'production') === c.v;
                     return <button key={c.v} type="button" onClick={() => setEditing(f => ({ ...f, equipment_category: c.v, line_name: '' }))}
-                      style={{ flex: 1, padding: '7px 6px', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+                      style={{ flex: 1, padding: '7px 6px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
                         border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>{c.t}</button>;
                   })}
                 </div>
@@ -679,7 +679,7 @@ export default function MachineDatabase() {
                       if (!(laneN > 1) && !kids.length) {
                         if (!isParallelLine(lineRow?.flow_mode)) return null;
                         return (
-                          <Field label="🔀 หยุดแล้วกระทบกี่เลน">
+                          <Field label="หยุดแล้วกระทบกี่เลน">
                             <div style={{ fontSize: 11, color: 'var(--amber)', lineHeight: 1.6 }}>
                               ไลน์นี้เป็น <b>เครื่องขนาน</b> แต่ยังไม่ได้ตั้ง <b>จำนวนเลน</b> ที่ทะเบียนไลน์
                               ⇒ สูตร OEE ยังไม่หารเลน · กรอกช่องนี้จะไม่มีผล
@@ -718,18 +718,18 @@ export default function MachineDatabase() {
                 );
               })()}
               {(editing.equipment_category || 'production') !== 'production' && (
-                <Field label="🔗 จ่ายให้ไลน์ (Supply Route)">
+                <Field label="จ่ายให้ไลน์ (Supply Route)">
                   {!editing.id ? (
                     <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>บันทึกเครื่องก่อน แล้วเปิดแก้ไขอีกครั้งเพื่อตั้งไลน์ที่จ่าย</div>
                   ) : (
                     <div>
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>อุปกรณ์นี้จ่ายให้ไลน์ไหนบ้าง — ถ้าตัดไฟ/มีปัญหาจะรู้ว่ากระทบไลน์ไหน</div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 130, overflowY: 'auto', padding: 4, border: '1px solid var(--border)', borderRadius: 8 }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, maxHeight: 130, overflowY: 'auto', padding: 4, border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
                         {scopedLines.filter(l => !parentChildrenMap[l.name]).map(l => {
                           const on = supplyLines.includes(l.name);
                           return <button key={l.id} type="button" onClick={() => setSupplyLines(p => on ? p.filter(x => x !== l.name) : [...p, l.name])}
-                            style={{ padding: '4px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                              border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>{on ? '✓ ' : ''}{l.name}</button>;
+                            style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                              border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`, background: on ? 'var(--accent)' : 'var(--bg2)', color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>{on ? ' ' : ''}{l.name}</button>;
                         })}
                       </div>
                       {supplyLines.length > 0 && <div style={{ fontSize: 11.5, color: 'var(--accent2)', marginTop: 4 }}>กระทบ {supplyLines.length} ไลน์เมื่ออุปกรณ์นี้หยุด</div>}
@@ -790,9 +790,9 @@ function BrandReviewModal({ proposals, onClose, onDone }) {
   };
   return (
     <div className="overlay" style={{ zIndex: 2100 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 20, width: 'min(95vw,640px)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 20, width: 'min(95vw,640px)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>🏷️ แยกยี่ห้อจากชื่อเครื่อง</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>แยกยี่ห้อจากชื่อเครื่อง</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.6 }}>
@@ -870,9 +870,9 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
 
   return (
     <div className="overlay" style={{ zIndex: 2100 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14, padding: 24, width: 'min(95vw,460px)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 24, width: 'min(95vw,460px)', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>🏷️ ประเภทเครื่องจักร</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>ประเภทเครื่องจักร</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
         </div>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12 }}>
@@ -882,12 +882,12 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
         <div style={{ flex: 1, overflowY: 'auto', marginBottom: 12 }}>
           {types.map(t => (
             <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
-              <span style={{ width: 12, height: 12, borderRadius: 4, background: t.color, flexShrink: 0 }} />
+              <span style={{ width: 12, height: 12, borderRadius: 'var(--r-xs)', background: t.color, flexShrink: 0 }} />
               <span style={{ fontSize: 13, color: 'var(--text)', flex: 1 }}>{t.icon || ''} {t.label}
                 {hasMoCol && <span style={{ fontSize: 11, color: t.mo_item_type ? 'var(--text2)' : 'var(--muted)', marginLeft: 6 }}>{t.mo_item_type ? `→ ใบ MO: ${t.mo_item_type}` : '· ยังไม่ผูกชนิดในใบ MO'}</span>}</span>
               {canEdit && (
                 <>
-                  <button className="tbtn" onClick={() => startEdit(t)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 9px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
+                  <button type="button" className="pg-btn sm" onClick={() => startEdit(t)}>แก้ไข</button>
                   <DeleteButton onClick={() => handleDelete(t)} title="ลบรายการนี้" />
                 </>
               )}
@@ -898,7 +898,7 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
 
         {canEdit && (
           editingId ? (
-            <div style={{ background: 'var(--bg2)', borderRadius: 10, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ background: 'var(--bg2)', borderRadius: 'var(--r-md)', padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
               <input autoFocus placeholder="ชื่อประเภท เช่น Robot - Arc Welding" value={form.label}
                 onChange={e => setForm(f => ({ ...f, label: e.target.value }))} style={inputStyle} />
               {hasMoCol && (
@@ -918,7 +918,7 @@ function MachineTypeManager({ types, canEdit, onClose, onChange }) {
                   {/* สีที่สุ่มมาอาจอยู่นอก swatch ตายตัว — prepend ให้เห็น/เลือกกลับได้เสมอ */}
                   {[...new Set([form.color, ...TYPE_COLORS])].map(c => (
                     <button key={c} type="button" onClick={() => setForm(f => ({ ...f, color: c }))}
-                      style={{ width: 20, height: 20, borderRadius: 5, background: c, border: form.color === c ? '2px solid var(--text)' : '2px solid transparent', cursor: 'pointer' }} />
+                      style={{ width: 20, height: 20, borderRadius: 'var(--r-md)', background: c, border: form.color === c ? '2px solid var(--text)' : '2px solid transparent', cursor: 'pointer' }} />
                   ))}
                 </div>
               </div>

@@ -190,7 +190,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
               {ps.map(p => (
                 <div key={p.id} onClick={() => setSel(p)}
                   style={{
-                    padding: '6px 8px', cursor: 'pointer', fontSize: 12.5, borderRadius: 5,
+                    padding: '6px 8px', cursor: 'pointer', fontSize: 12.5, borderRadius: 'var(--r-xs)',
                     display: 'flex', justifyContent: 'space-between', gap: 8,
                     background: sel?.id === p.id ? 'var(--accent)' : 'transparent',
                     color: sel?.id === p.id ? '#08130a' : 'var(--text)',
@@ -215,17 +215,17 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
             </div>
             {canEdit && <div style={{ display: 'flex', gap: 8 }}>
               {!steps.length && sel.line_name && (
-                <button onClick={seedFromProduct} style={{ padding: '7px 14px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }}>
+                <button onClick={seedFromProduct} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }}>
                   ⚡ สร้างขั้นตั้งต้นจากไลน์
                 </button>
               )}
-              <button onClick={openNew} style={{ padding: '7px 16px', borderRadius: 6, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>+ เพิ่มขั้น</button>
+              <button onClick={openNew} style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>+ เพิ่มขั้น</button>
             </div>}
           </div>
 
           {loading && <div style={{ color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด…</div>}
           {!loading && !steps.length && (
-            <div style={{ padding: 22, textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--bg2)', borderRadius: 8 }}>
+            <div style={{ padding: 22, textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--bg2)', borderRadius: 'var(--r-md)' }}>
               ยังไม่ได้กำหนดลำดับกระบวนการ<br />
               <span style={{ fontSize: 12 }}>VSM จะใช้ไลน์เดียวจาก Product Master ไปก่อน แล้วขึ้นเตือนว่ายังไม่ลง routing</span>
             </div>
@@ -248,7 +248,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
                       </td>
                       <td style={{ padding: '7px 8px', fontSize: 12, color: 'var(--text)', borderTop: '1px solid var(--border)' }}>
                         {r.is_outsourced
-                          ? <span style={{ color: '#a78bfa' }}>🏭 จ้างนอก · {r.vendor_name}</span>
+                          ? <span style={{ color: '#a78bfa' }}>จ้างนอก · {r.vendor_name}</span>
                           : (r.line_name || '—')}
                       </td>
                       {[r.ct_sec, r.setup_sec, r.lot_size, r.operators].map((v, k) => (
@@ -300,7 +300,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
               <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <input type="checkbox" id="rt-out" checked={form.is_outsourced}
                   onChange={e => setForm(f => ({ ...f, is_outsourced: e.target.checked }))} style={{ width: 'auto' }} />
-                <label htmlFor="rt-out" style={{ fontSize: 12.5, color: 'var(--text)', cursor: 'pointer' }}>🏭 เป็นงานจ้างนอก (ส่งออกไปทำข้างนอก เช่น พ่นสี)</label>
+                <label htmlFor="rt-out" style={{ fontSize: 12.5, color: 'var(--text)', cursor: 'pointer' }}>เป็นงานจ้างนอก (ส่งออกไปทำข้างนอก เช่น พ่นสี)</label>
               </div>
               {form.is_outsourced ? (
                 <div style={{ gridColumn: '1 / -1' }}>
@@ -356,8 +356,8 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-              <button onClick={() => setEditing(null)} style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-              <button onClick={save} disabled={saving} style={{ padding: '8px 20px', borderRadius: 6, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700, opacity: saving ? 0.6 : 1 }}>
+              <button onClick={() => setEditing(null)} style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+              <button onClick={save} disabled={saving} style={{ padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700, opacity: saving ? 0.6 : 1 }}>
                 {saving ? 'กำลังบันทึก…' : 'บันทึก'}
               </button>
             </div>

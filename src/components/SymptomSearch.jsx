@@ -223,7 +223,7 @@ export default function SymptomSearch({ inScope, onOpenOrder, machine = null, on
         <SearchInput value={q} onChange={setQ} onKeyDown={(e) => { if (e.key === 'Enter') run(); }}
           fields="อาการ เช่น ตัดไม่ขาด · นัทไม่มี · เป็นครีบ · โรบอทชนจิ๊ก" />
         <button onClick={run} disabled={busy || noInput}
-          style={{ padding: '0 18px', borderRadius: 8, border: 'none', fontWeight: 800, fontSize: 13,
+          style={{ padding: '0 18px', borderRadius: 'var(--r-md)', border: 'none', fontWeight: 800, fontSize: 13,
                    background: busy || noInput ? 'var(--bg3)' : 'var(--accent)', color: busy || noInput ? 'var(--muted)' : '#fff',
                    cursor: busy || noInput ? 'default' : 'pointer' }}>
           {busy ? 'กำลังค้น…' : '🔎 ค้นหา'}
@@ -231,21 +231,21 @@ export default function SymptomSearch({ inScope, onOpenOrder, machine = null, on
       </TimeRangeBar>
       {machine && (
         <div style={{ ...box, borderColor: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 13, fontWeight: 800 }}>⚙️ เฉพาะเครื่อง <b style={{ fontSize: 15 }}>{machine}</b></span>
+          <span style={{ fontSize: 13, fontWeight: 800 }}>เฉพาะเครื่อง <b style={{ fontSize: 15 }}>{machine}</b></span>
           <span style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 260px', lineHeight: 1.55 }}>
             กด 🔎 ค้นหาได้เลยโดยไม่ต้องพิมพ์อาการ (= ทุกเหตุการณ์ของเครื่องนี้ในช่วงวัน) · พิมพ์อาการเพื่อแคบลง
             · ของเสียเห็นเฉพาะใบที่ระบุเครื่องตอนเปิดใบ (ไลน์เครื่องขนาน) — ไลน์ไหลทีละชิ้นไม่ได้ผูกของเสียกับเครื่อง
           </span>
           {onClearMachine && (
             <button onClick={() => { onClearMachine(); setRes(null); }}
-              style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 8, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', cursor: 'pointer' }}>
+              style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', cursor: 'pointer' }}>
               ✕ ทุกเครื่อง
             </button>
           )}
         </div>
       )}
       <div style={box}>
-        <div style={{ fontSize: 13.5, fontWeight: 800, marginBottom: 4 }}>🔎 ค้นจากอาการที่ลูกค้าแจ้ง</div>
+        <div style={{ fontSize: 13.5, fontWeight: 800, marginBottom: 4 }}>ค้นจากอาการที่ลูกค้าแจ้ง</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.55 }}>
           ค้นจาก <b>ชื่อประเภท</b> + <b>ข้อความที่พนักงานพิมพ์</b> ของ <b>ของเสีย</b> และ <b>เครื่องหยุด</b> ในช่วงวันที่เลือก
           · เป็นการค้นด้วย <b>คำ</b> ไม่ใช่ความหมาย — ลองคำใกล้เคียงหลายแบบด้วย
@@ -274,9 +274,9 @@ export default function SymptomSearch({ inScope, onOpenOrder, machine = null, on
           <div style={{ ...box, display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center' }}>
             <div><div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>เจอทั้งหมด</div>
               <div style={{ fontSize: 22, fontWeight: 900 }}>{res.rows.length} <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ครั้ง</span></div></div>
-            <div><div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>🚫 ของเสีย</div>
+            <div><div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>ของเสีย</div>
               <div style={{ fontSize: 18, fontWeight: 800 }}>{sum.def.length} <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>ครั้ง · {sum.ngQty.toLocaleString()} ชิ้น</span></div></div>
-            <div><div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>🔧 เครื่องหยุด</div>
+            <div><div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>เครื่องหยุด</div>
               <div style={{ fontSize: 18, fontWeight: 800 }}>{sum.dt.length} <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>ครั้ง · {sum.dtMin.toLocaleString()} นาที</span></div></div>
             <div><div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>กระจายตัว</div>
               <div style={{ fontSize: 12.5, fontWeight: 700 }}>{sum.days} วัน · {sum.lines.length} ไลน์{sum.machines.length ? ` · ${sum.machines.length} เครื่อง` : ''}</div></div>
@@ -284,11 +284,11 @@ export default function SymptomSearch({ inScope, onOpenOrder, machine = null, on
 
           {sum.clusters.length > 1 && (
             <div style={{ ...box }}>
-              <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>📝 อาการนี้ถูกเขียนไว้กี่แบบ</div>
+              <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 6 }}>อาการนี้ถูกเขียนไว้กี่แบบ</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {sum.clusters.map((c, i) => (
                   <span key={i} title={c.samples.length ? `เขียนแบบอื่น: ${c.samples.join(' · ')}` : undefined}
-                    style={{ fontSize: 11.5, fontWeight: 700, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 999, padding: '3px 10px' }}>
+                    style={{ fontSize: 11.5, fontWeight: 700, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-pill)', padding: '3px 10px' }}>
                     {c.name} <b>×{c.count}</b>{c.variants > 1 ? <span style={{ color: 'var(--muted)' }}> ({c.variants} สำนวน)</span> : null}
                   </span>
                 ))}
@@ -332,7 +332,7 @@ export default function SymptomSearch({ inScope, onOpenOrder, machine = null, on
                       <td style={td}>
                         {!isDt && prodNo && onOpenOrder && (
                           <button onClick={() => onOpenOrder(prodNo)}
-                            style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 9px', borderRadius: 6, cursor: 'pointer',
+                            style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 9px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                                      background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', whiteSpace: 'nowrap' }}>
                             → สอบกลับใบนี้
                           </button>

@@ -1,5 +1,5 @@
 /**
- * QaCopyPointsModal — 📋 คัดลอกจุดตรวจของพาร์ทนี้ ไป "พาร์ทอื่น" ทีละหลายพาร์ท (/qa-setup · 2026-10-19)
+ * QaCopyPointsModal — คัดลอกจุดตรวจของพาร์ทนี้ ไป "พาร์ทอื่น" ทีละหลายพาร์ท (/qa-setup · 2026-10-19)
  * คู่กับ PM "คัดลอกไปเครื่องอื่น" — หลักเดียวกัน ระบบเดียว (📄 docs/modules/inspection-point-setup.md)
  * ตัวเขียนจริง = `copyQaPointsToParts()` (`lib/qaPointsCopy.js`)
  *
@@ -86,11 +86,11 @@ export default function QaCopyPointsModal({ part, itemCount, parts, lines, wctx,
   const skip = (report || []).filter(r => !r.copied);
 
   return (
-    <InspectEditorModal title={`📋 คัดลอกจุดตรวจของ ${partLabel(part)} ไปพาร์ทอื่น`}
+    <InspectEditorModal title={`คัดลอกจุดตรวจของ ${partLabel(part)} ไปพาร์ทอื่น`}
       subtitle={`${itemCount} จุด · สเปค/Rank/Stage/ความถี่ไปครบ · รูปโคลสอัพคัดลอกไปด้วย`}
       onClose={onClose} onSave={run} saving={busy}
       saveLabel={picked.length ? `📋 คัดลอกไป ${picked.length} พาร์ท` : 'เลือกพาร์ทปลายทาง'}>
-      <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px' }}>
+      <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.7, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
         ใช้กับพาร์ทพี่น้องที่สเปคเหมือนกัน (เช่น RH/LH · ต่างลูกค้า) — ตั้งพาร์ทเดียวแล้วคัดลอก ไม่ต้องพิมพ์ซ้ำ
         <br />📍 <b>หมุด</b>: พาร์ทปลายทางใช้แบบคนละแผ่น ⇒ หมุดถูกถอดออก จุดตรวจขึ้นเป็น "ยังไม่วางตำแหน่ง" ให้ปักใหม่ใน 🎯
       </div>
@@ -103,7 +103,7 @@ export default function QaCopyPointsModal({ part, itemCount, parts, lines, wctx,
 
       <SearchInput value={search} onChange={setSearch} grow={false} placeholder="ค้น Part No. / ชื่อ / ลูกค้า / ไลน์..." />
       {blockedN > 0 && (
-        <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>🔒 {blockedN} พาร์ทอยู่ไลน์นอกส่วนงานของคุณ — แสดงจาง เลือกไม่ได้</div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{blockedN} พาร์ทอยู่ไลน์นอกส่วนงานของคุณ — แสดงจาง เลือกไม่ได้</div>
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 6, alignContent: 'start' }}>
@@ -133,12 +133,12 @@ export default function QaCopyPointsModal({ part, itemCount, parts, lines, wctx,
       </div>
 
       {report && (
-        <div style={{ fontSize: 12, lineHeight: 1.8, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px' }}>
+        <div style={{ fontSize: 12, lineHeight: 1.8, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
           <b style={{ color: 'var(--accent)' }}>✅ คัดลอกสำเร็จ {ok.length} พาร์ท</b>
           {ok.map(r => (
             <div key={r.partId}>
               · {r.label} — {r.count} จุด{r.drawings ? ` + แบบ ${r.drawings} แผ่น (หมุดตามเดิม)` : ' · ต้องปักหมุดใหม่'}
-              {onOpenPart && <button onClick={() => onOpenPart(r.partId)} style={{ marginLeft: 8, fontSize: 11, padding: '1px 8px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--text2)', cursor: 'pointer' }}>เปิดพาร์ทนี้ →</button>}
+              {onOpenPart && <button onClick={() => onOpenPart(r.partId)} style={{ marginLeft: 8, fontSize: 11, padding: '1px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--text2)', cursor: 'pointer' }}>เปิดพาร์ทนี้ →</button>}
             </div>
           ))}
           {!!skip.length && (

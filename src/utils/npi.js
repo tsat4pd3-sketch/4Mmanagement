@@ -10,6 +10,7 @@
 
    "วันนี้" รับเป็น 'YYYY-MM-DD' (จาก todayLocal — ห้าม toISOString) เทียบเป็น string ได้เลย */
 import { addDaysStr } from './workDate.js';
+import { linearFlow } from './stepFlow.js';
 
 export const DUE_SOON_DAYS = 7;   // เหลือ ≤ 7 วัน = เหลือง (1 สัปดาห์พอให้ตามงานทัน — เกณฑ์เดียวกับ PM forecast)
 
@@ -323,3 +324,26 @@ export function groupByPhase(delivs, phases) {
   if (orphan.length) groups.push({ phase: { phase_code: '_orphan', label: 'ไม่อยู่ในเฟสของแม่แบบ', seq: 999 }, rows: orphan });
   return groups;
 }
+
+/* ── แถบ "ถึงขั้นไหน" (<StepFlow> · UI §6.30 · 12/11) — ECI + PPAP · คีย์ต้องตรง ECI_STATUS / PPAP_STATUS ข้างบน ── */
+export const eciFlow = (r) => linearFlow({
+  status: r?.status, row: r,
+  steps: [
+    { label: 'รับเรื่อง ECI', who: 'IEC', action: 'ประเมินผลกระทบ (แบบ · PE doc · 4M · tooling)' },
+    { label: 'ประเมินผลกระทบ', who: 'IEC', action: 'สรุปผลกระทบแล้วเสนออนุมัติ' },
+    { label: 'อนุมัติ', who: 'ผู้มีสิทธิ์ npi:approve', action: 'ผูกของจริงครบทุกขาแล้วปิด (implemented)' },
+    { label: 'ทำแล้ว (ปิด)' },
+  ],
+  at: { open: 0, evaluating: 1, approved: 2, implemented: 4 },
+  exits: { rejected: { tone: 'bad', label: 'ปฏิเสธ', at: 2 } },
+});
+export const ppapFlow = (status) => linearFlow({
+  status,
+  steps: [
+    { label: 'รวบรวมเอกสาร PPAP', who: 'IEC / QA', action: 'รวบรวม elements ให้ครบแล้วส่งลูกค้า' },
+    { label: 'ส่งลูกค้า', who: 'ลูกค้า', action: 'พิจารณา PSW' },
+    { label: 'ลูกค้าอนุมัติ' },
+  ],
+  at: { not_started: 0, in_progress: 0, submitted: 1, approved: 3 },
+  exits: { interim: { tone: 'warn', label: 'Interim approval (มีเงื่อนไข)', at: 2 }, rejected: { tone: 'bad', label: 'ลูกค้าตีกลับ', at: 1 } },
+});

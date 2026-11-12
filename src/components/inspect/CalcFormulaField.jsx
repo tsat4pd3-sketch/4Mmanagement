@@ -11,7 +11,7 @@ export default function CalcFormulaField({ calc, onChange, options = [], problem
   const set = (patch) => onChange({ op: CALC_OP, a: '', b: '', abs: false, ...(calc || {}), ...patch })
   const sel = { flex: '1 1 140px', minWidth: 0 }
   return (
-    <div style={{ marginBottom: 8, padding: on ? '8px 10px' : 0, borderRadius: 8,
+    <div style={{ marginBottom: 8, padding: on ? '8px 10px' : 0, borderRadius: 'var(--r-md)',
       background: on ? 'rgba(77,159,255,0.08)' : 'transparent', border: on ? '1px solid rgba(77,159,255,0.35)' : 'none' }}>
       <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: on ? '#4d9fff' : 'var(--text2)', cursor: 'pointer' }}>
         <input type="checkbox" checked={on} onChange={e => onChange(e.target.checked ? { op: CALC_OP, a: '', b: '', abs: false } : null)} style={{ width: 'auto' }} />

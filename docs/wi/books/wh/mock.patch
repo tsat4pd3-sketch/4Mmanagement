@@ -1,0 +1,89 @@
+--- a/mock.js
++++ b/mock.js
+@@ -466,6 +466,8 @@
+     qty_received: i % 4 === 0 ? 55 : null, diff_reason: i % 4 === 0 ? 'ของเสีย 5' : null,
+     received_by: i % 4 === 0 ? 'สมชาย ใจดี' : null, received_at: i % 4 === 0 ? new Date().toISOString() : null,
+   }),
++  wip_replenish_requests: (r, i) => ({ ...r, mat_no: `2005${7000 + i}`, qty: 40, line_name: FAM_LINE,
++    status: ['pending','preparing','delivered'][i % 3], source: 'line_request' }),
+   child_lot_requests: (r, i) => ({
+     ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
+     lot_qty: isNullish(r) ? null : 14,
+@@ -966,6 +968,77 @@
+     { board_part_id: 'mp-6', row_key: 'to_vendor', period_key: '2026-10-01', qty: 398, txt: null },
+   ],
+ }
++/* ===== WI Warehouse & Delivery — ข้อมูลทรงจริงของ /customer-demand + /rack-center (patch เฉพาะสำเนานี้) ===== */
++const WH_T = (off) => {   // เวลาไทย now+off นาที → { due_date, ship_time }
++  const t = new Date(Date.now() + off * 60e3), p2 = (n) => String(n).padStart(2, '0')   // เวลาเครื่อง (หน้าใช้ getHours เครื่อง)
++  return { due_date: t.getFullYear() + '-' + p2(t.getMonth() + 1) + '-' + p2(t.getDate()), ship_time: p2(t.getHours()) + ':' + p2(t.getMinutes()) + ':00' }
++}
++const WH_ISO = (off) => new Date(Date.now() + off * 60e3).toISOString()
++Object.assign(TABLE_FIXED, {
++  customer_pull_batches: [
++    { id: 'pb-1', ship_to: 'GBL9A', uploaded_at: WH_ISO(-40), uploaded_by: 'วิภา จัดส่ง', file_name: 'eSMART_GBL9A_0800-1000.xlsx',
++      window_start: WH_ISO(-240), window_end: WH_ISO(-120), work_date: '2026-11-02', ship_time: '12:00', row_count: 12, new_signals: 12, orders_updated: 3, orders_created: 1, orders_skipped: 1 },
++    { id: 'pb-2', ship_to: 'GBL9A', uploaded_at: WH_ISO(-160), uploaded_by: 'วิภา จัดส่ง', file_name: 'eSMART_GBL9A_0600-0800.xlsx',
++      window_start: WH_ISO(-360), window_end: WH_ISO(-240), work_date: '2026-11-02', ship_time: '10:00', row_count: 9, new_signals: 9, orders_updated: 2, orders_created: 0, orders_skipped: 0 },
++  ],
++  demand_upload_batches: [
++    { id: 'eb-1', kind: 'orders', uploaded_at: WH_ISO(-300), uploaded_by: 'Sales A', file_name: '862_02.11.26.xlsx', row_count: 148 },
++    { id: 'eb-2', kind: 'forecast', uploaded_at: WH_ISO(-1700), uploaded_by: 'Sales A', file_name: '830_01.11.26.xlsx', row_count: 420 },
++  ],
++  customer_shipping_orders: [
++    { id: 'cso-1', created_at: WH_ISO(-600), customer: 'GRBNA', mat_no: '10101001', part_name: 'BRACKET;SHOCK ABS 4X4,LH', source: 'edi_862',
++      customer_part_no: 'GR-8841', qty: 1200, ...WH_T(-75), status: 'confirmed', order_no: 'PO-58811', dock_code: 'D2' },
++    { id: 'cso-2', created_at: WH_ISO(-580), customer: 'GRBNA', mat_no: '10101001', part_name: 'BRACKET;SHOCK ABS 4X4,LH', source: 'edi_862',
++      customer_part_no: 'GR-8841', qty: 800, ...WH_T(-30), status: 'shipped', shipped_by: 'สมชาย ส่งของ', shipped_at: WH_ISO(-35) },
++    { id: 'cso-3', customer: 'GRBNA', mat_no: '10105763', part_name: 'MBR-SIDE MID INR LH', source: 'manual',
++      customer_part_no: null, qty: 300, ...WH_T(50), status: 'confirmed', order_no: 'TEL-021', created_at: WH_ISO(-90), created_by_name: 'วิภา จัดส่ง' },
++    { id: 'cso-4', created_at: WH_ISO(-560), customer: 'GRBNA', mat_no: '10101001', part_name: 'BRACKET;SHOCK ABS 4X4,LH', source: 'edi_862',
++      customer_part_no: 'GR-8841', qty: 150, ...WH_T(200), status: 'cancelled', cancel_reason: 'ลูกค้ายกเลิก' },
++    { id: 'cso-5', created_at: WH_ISO(-540), customer: 'GBL9A', mat_no: '10076603', part_name: 'BRACKET;SHOCK ABS 4X4 (STEP 1)', source: 'edi_862',
++      customer_part_no: 'BL-2210', qty: 500, ...WH_T(110), status: 'prepared', dock_code: 'A1' },
++    { id: 'cso-6', created_at: WH_ISO(-520), customer: null, mat_no: '10088639', part_name: 'ไม่ระบุลูกค้า', source: 'edi_862',
++      customer_part_no: null, qty: 60, ...WH_T(150), status: 'pending' },
++    { id: 'cso-7', created_at: WH_ISO(-500), customer: 'GBL9A', mat_no: '10101001', part_name: 'BRACKET;SHOCK ABS 4X4,LH', source: 'edi_862',
++      customer_part_no: 'BL-2290', qty: 400, ...WH_T(20), status: 'pending', pull_batch_id: 'pb-1' },
++  ],
++  shipping_workflow_steps: [
++    { id: 'wf-1', customer: null, step_no: 1, name: 'ยืนยันออเดอร์', offset_min: 240, requires_status: 'confirmed', deducts_stock: false, is_active: true },
++    { id: 'wf-2', customer: null, step_no: 2, name: 'เตรียมของเสร็จ', offset_min: 120, requires_status: 'prepared', deducts_stock: true, is_active: true },
++    { id: 'wf-3', customer: null, step_no: 3, name: 'โหลดขึ้นรถ', offset_min: 60, requires_status: 'loaded', deducts_stock: false, is_active: true },
++    { id: 'wf-4', customer: null, step_no: 4, name: 'ส่งถึงลูกค้า', offset_min: 0, requires_status: 'shipped', deducts_stock: false, is_active: true },
++  ],
++  ship_to_plants: [
++    { code: 'GRBNA', customer_name: 'AAT', plant_name: 'AAT Rayong', note: '', sort_order: 10, is_active: true },
++    { code: 'GBL9A', customer_name: 'FTM', plant_name: 'FTM Pluak Daeng', note: 'milk run', sort_order: 20, is_active: true },
++  ],
++  customer_pull_rounds: [
++    { id: 'pr-1', ship_to: 'GBL9A', dock_code: 'A1', supplier_code: 'TSAT', pattern: 'normal', period_start: '08:00:00', period_end: '10:00:00', prepare_from: '10:00:00', prepare_to: '11:00:00', pickup_time: '12:00:00', pickup_day_offset: 0, delivery_time: '13:00:00', note: '', is_active: true },
++    { id: 'pr-2', ship_to: 'GBL9A', dock_code: 'A1', supplier_code: 'TSAT', pattern: 'normal', period_start: '10:00:00', period_end: '12:00:00', prepare_from: '12:00:00', prepare_to: '13:00:00', pickup_time: '14:00:00', pickup_day_offset: 0, delivery_time: '15:00:00', note: '', is_active: true },
++  ],
++  container_types: [
++    { id: 'ct-1', code: 'BOX-A', name: 'กล่องพลาสติก A', capacity: 50, category: 'BOX', supplier: 'ไทยพลาสติก', is_active: true },
++    { id: 'ct-2', code: 'RK-01', name: 'แร็คเหล็ก RK-01', capacity: 20, category: 'RACK', supplier: null, is_active: true },
++  ],
++  container_categories: [
++    { code: 'BOX', name: 'กล่อง', note: null, sort_order: 10, is_active: true },
++    { code: 'RACK', name: 'แร็ค', note: null, sort_order: 20, is_active: true },
++    { code: 'BASKET', name: 'ตะกร้า', note: null, sort_order: 30, is_active: true },
++    { code: 'PALLETTE', name: 'พาเลท', note: null, sort_order: 40, is_active: true },
++    { code: 'OTHER', name: 'อื่นๆ', note: null, sort_order: 50, is_active: true },
++  ],
++  rack_requests: [
++    { id: 'rr-1', line_name: LINE_NAME(1), container_type_id: 'ct-1', container_name: 'กล่องพลาสติก A', qty: 10, status: 'requested', requested_by: 'หัวหน้าไลน์ A', requested_at: WH_ISO(-25), note: 'ด่วน' },
++    { id: 'rr-2', line_name: LINE_NAME(2), container_type_id: 'ct-2', container_name: 'แร็คเหล็ก RK-01', qty: 4, status: 'preparing', requested_by: 'หัวหน้าไลน์ B', requested_at: WH_ISO(-50), prepared_at: WH_ISO(-40) },
++    { id: 'rr-3', line_name: LINE_NAME(3), container_type_id: 'ct-1', container_name: 'กล่องพลาสติก A', qty: 6, status: 'delivered', requested_by: 'หัวหน้าไลน์ C', requested_at: WH_ISO(-120), prepared_at: WH_ISO(-110), delivered_at: WH_ISO(-70) },
++    { id: 'rr-4', line_name: LINE_NAME(1), container_type_id: 'ct-2', container_name: 'แร็คเหล็ก RK-01', qty: 2, status: 'received', requested_by: 'หัวหน้าไลน์ A', requested_at: WH_ISO(-300), received_at: WH_ISO(-200) },
++  ],
++  packaging_withdrawal_requests: [
++    { id: 'pk-1', status: 'pending', packaging_code: 'PKG-BOX-A', packaging_name: 'กล่องพลาสติก A', qty: 24, source_line: LINE_NAME(1), product_name: 'BRACKET;SHOCK ABS 4X4,LH', source_prod_no: 'P2611-0012', created_at: WH_ISO(-30) },
++    { id: 'pk-2', status: 'pending', packaging_code: 'PKG-RK-01', packaging_name: 'แร็คเหล็ก RK-01', qty: 3, source_line: LINE_NAME(2), product_name: 'MBR-SIDE MID INR LH', source_prod_no: 'P2611-0015', created_at: WH_ISO(-10) },
++  ],
++  internal_delivery_sla: [{ kind: 'rack', prepare_within_min: 15, deliver_within_min: 45 }],
++})
++
+ /* ➕ แถวเพิ่มเฉพาะตาราง (ต่อท้ายผลของ TABLE_ROWS) — ใช้ตอนต้องการ "ทรงพิเศษ" ที่ ROWS กลางให้ไม่ได้
+    🔴 bom_items — **ห้ามถอด** (14/10) เดิม 2 สาขานี้ไม่เคยถูกเรนเดอร์ในฮาร์เนสเลย:
+      ① ใบของพาร์ท **ว่าง** แต่ลูกถูกกรอกไว้ในใบอื่น  → 10101003 (ใบ id-3 ว่าง · ลูกอยู่ในใบ id-1)

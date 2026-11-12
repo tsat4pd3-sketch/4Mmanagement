@@ -14,6 +14,7 @@
       (ชื่อเปลี่ยนได้ + โรงงานอื่นตอน rollout เรียกไม่เหมือนกัน)
    ══════════════════════════════════════════════════════════════════════ */
 import { supabase } from '../supabaseClient'
+import { isOrphanDept, nodeMap } from './orgLayers.js'   // 🏢 "ขึ้นตรงฝ่าย" = ไม่มีแม่เป็นหน่วย (รองรับชั้นบน · 04/11)
 
 /* fallback ตอนตารางยังไม่ apply / โหลดไม่ทัน — ต้องตรงกับ seed ใน migration */
 export const DEFAULT_DIVISIONS = [
@@ -93,8 +94,9 @@ export function divisionOfEmployee(emp, orgNodes) {
 export function scopeUnitsForDivision(divisionCode, orgNodes) {
   if (!divisionCode || !orgNodes?.length) return []
   const out = []
+  const byId = nodeMap(orgNodes)
   orgNodes.forEach(n => {
-    if (n.kind !== 'section' && !(n.kind === 'department' && !n.parent_id)) return
+    if (n.kind !== 'section' && !isOrphanDept(n, byId)) return
     if (divisionOfNode(n.id, orgNodes) !== divisionCode) return
     const label = n.code || n.name
     if (label && !out.includes(label)) out.push(label)

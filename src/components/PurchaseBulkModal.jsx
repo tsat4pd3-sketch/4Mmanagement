@@ -182,18 +182,18 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
     /* ⚠️ ไม่ปิดจากการคลิกพื้นหลัง — กรอกจำนวนค้างแล้วเผลอแตะข้างนอกไม่ควรหาย */
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3000,
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 14,
+      <div style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)',
         width: 'min(560px, 100%)', maxHeight: '90vh', overflowY: 'auto', padding: 18 }}>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>🛒 {nextLabel} — รวมยอดทั้งพาร์ท</span>
+          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{nextLabel} — รวมยอดทั้งพาร์ท</span>
           <button onClick={onClose} disabled={busy}
-            style={{ marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 7, cursor: busy ? 'not-allowed' : 'pointer',
+            style={{ marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-md)', cursor: busy ? 'not-allowed' : 'pointer',
               background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-body)' }}>✕</button>
         </div>
         <div style={{ fontSize: 12.5, color: 'var(--text2)', marginBottom: 12 }}>
           <b style={{ color: 'var(--text)' }}>{mat}</b> · {group.part_name || '—'}
-          {group.supplier && <> · 🏢 {group.supplier}</>}
+          {group.supplier && <> · {group.supplier}</>}
         </div>
 
         {slips === null && <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 12.5 }}>กำลังอ่านใบจริง…</div>}
@@ -214,10 +214,10 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
               <span style={{ fontSize: 12.5, color: 'var(--text2)' }}>เลื่อนกี่ใบ</span>
               <input type="number" min={1} max={slips.length} value={take}
                 onChange={e => setTake(e.target.value)} placeholder={String(slips.length)} disabled={busy}
-                style={{ width: 110, padding: '5px 9px', fontSize: 13, borderRadius: 7,
+                style={{ width: 110, padding: '5px 9px', fontSize: 13, borderRadius: 'var(--ctl-r)',
                   background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }} />
               <button onClick={() => setTake('')} disabled={busy}
-                style={{ fontSize: 11.5, fontWeight: 700, padding: '5px 10px', borderRadius: 7, cursor: 'pointer',
+                style={{ fontSize: 11.5, fontWeight: 700, padding: '5px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                   background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-body)' }}>
                 ทั้งหมด ({fmt(slips.length)})
               </button>
@@ -238,7 +238,7 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
           {/* ปลายทางจริง — กลุ่มนี้อาจกระจายหลายไลน์ทั้งที่การ์ดโชว์ไลน์เดียว */}
           <div style={{ ...box, marginBottom: 10 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>
-              📍 ปลายทางของใบที่จะเลื่อน ({byDest.length} แห่ง)
+              ปลายทางของใบที่จะเลื่อน ({byDest.length} แห่ง)
               {next === 'received' && <span style={{ fontWeight: 400, color: 'var(--muted)' }}> — สต็อกจะถูกเติมแยกตามนี้</span>}
             </div>
             {byDest.map(d => (
@@ -261,10 +261,10 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
 
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button onClick={onClose} disabled={busy}
-              style={{ fontSize: 12.5, fontWeight: 700, padding: '8px 14px', borderRadius: 8, cursor: busy ? 'not-allowed' : 'pointer',
+              style={{ fontSize: 12.5, fontWeight: 700, padding: '8px 14px', borderRadius: 'var(--r-md)', cursor: busy ? 'not-allowed' : 'pointer',
                 background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-body)' }}>ยกเลิก</button>
             <button onClick={run} disabled={busy || !n}
-              style={{ fontSize: 12.5, fontWeight: 800, padding: '8px 16px', borderRadius: 8,
+              style={{ fontSize: 12.5, fontWeight: 800, padding: '8px 16px', borderRadius: 'var(--r-md)',
                 cursor: busy || !n ? 'not-allowed' : 'pointer', opacity: busy || !n ? 0.6 : 1,
                 background: 'var(--accent)', color: 'var(--accent-ink)', border: '1px solid var(--accent)', fontFamily: 'var(--font-body)' }}>
               {busy ? 'กำลังบันทึก…' : `${nextLabel} ${fmt(n)} ใบ`}

@@ -94,7 +94,7 @@ export default function PlanTimeline({
               {/* ── ราง ── */}
               <div style={{ position: 'relative', height: ROW_H + 8,
                 background: isNight ? 'rgba(99,102,241,0.07)' : 'var(--bg2)',
-                border: '1px solid var(--border)', borderRadius: 7, overflow: 'hidden' }}>
+                border: '1px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
                 {ticks.map(t => (
                   <div key={t.ms} style={{ position: 'absolute', left: `${t.pct}%`, top: 0, bottom: 0,
                     width: 1, background: 'var(--border)', opacity: 0.6 }} />
@@ -120,7 +120,7 @@ export default function PlanTimeline({
                         <div title={`เปลี่ยนรุ่นก่อนเริ่มใบนี้ ~${fmtMin(b.setupMs / 60000)}`}
                           style={{ position: 'absolute', left: `${setup.leftPct}%`, width: `${setup.widthPct}%`,
                             top: 4, height: ROW_H, background: 'repeating-linear-gradient(45deg, rgba(245,158,11,0.35) 0 5px, transparent 5px 10px)',
-                            border: '1px solid rgba(245,158,11,0.5)', borderRadius: 4, pointerEvents: 'none' }} />
+                            border: '1px solid rgba(245,158,11,0.5)', borderRadius: 'var(--r-xs)', pointerEvents: 'none' }} />
                       )}
                       {/* 🔴 ไม่รู้เวลาเปลี่ยนรุ่น = ขีดประบางๆ ให้เห็นว่ามีช่วงที่ยังตอบไม่ได้ (ไม่ใช่ 0) */}
                       {run && !b.setupKnown && boxIndex > 0 && !run.cutLeft && (
@@ -214,7 +214,7 @@ export default function PlanTimeline({
       {/* ── บรรทัดความจริงใต้ราง ── */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', fontSize: 11.5, marginLeft: multi ? LABEL_W + 8 : 0 }}>
         <span style={{ color: 'var(--text2)' }}>
-          🏁 คิวจบ <b style={{ color: over ? '#ef4444' : 'var(--text)' }}>
+          คิวจบ <b style={{ color: over ? '#ef4444' : 'var(--text)' }}>
             {lay.unknownCount > 0 ? '—' : (spansDays || multi ? fmtDayHm(lay.endMs) : fmtHm(lay.endMs))}</b>
           {/* 🔴 "ล้น" ที่นี่ = ล้นเลย**ขอบเขตทั้งหมด** ไม่ใช่ล้นกะ — งานที่ล้นกะไหลไปกะถัดไปแล้ว */}
           {lay.overflowMin > 0 && <b style={{ color: '#ef4444' }}> · ล้นเลยขอบเขต {fmtMin(lay.overflowMin)}</b>}
@@ -229,7 +229,7 @@ export default function PlanTimeline({
             ⚠️ {lay.setupUnknownCount} ช่วงยังไม่รู้เวลาเปลี่ยนรุ่น (เส้นประส้ม) — เวลาที่เห็น<b>เร็วกว่าจริง</b>
           </span>
         )}
-        {editable && <span style={{ color: 'var(--muted)' }}>🧲 ลากกล่องเพื่อสลับก่อนหลัง (จอสัมผัสใช้ปุ่ม ↑↓ ในตารางด้านล่าง)</span>}
+        {editable && <span style={{ color: 'var(--muted)' }}>ลากกล่องเพื่อสลับก่อนหลัง (จอสัมผัสใช้ปุ่ม ↑↓ ในตารางด้านล่าง)</span>}
       </div>
     </div>
   );

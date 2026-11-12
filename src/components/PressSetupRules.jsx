@@ -17,9 +17,9 @@ import { resolveSetupRule, sequenceSetup, orderByDieHeight, setupDataReadiness }
 
 const COLS = 'id, scope_kind, scope_value, per_mm_sec, base_min, same_die_min, height_steps, note, is_active, updated_by_name, updated_at';
 const SCOPES = [
-  { key: 'global', label: '🏭 ทั้งโรงงาน (ค่าตั้งต้น)' },
-  { key: 'line', label: '📍 เฉพาะไลน์' },
-  { key: 'machine', label: '⚙️ เฉพาะเครื่อง' },
+  { key: 'global', label: 'ทั้งโรงงาน (ค่าตั้งต้น)' },
+  { key: 'line', label: 'เฉพาะไลน์' },
+  { key: 'machine', label: 'เฉพาะเครื่อง' },
 ];
 const scopeLabel = (r) => (r.scope_kind === 'global' ? 'ทั้งโรงงาน' : `${r.scope_kind === 'line' ? 'ไลน์' : 'เครื่อง'} ${r.scope_value || '—'}`);
 
@@ -184,8 +184,8 @@ export default function PressSetupRules({ dies = [], lineNames = [], canEdit = f
       )}
 
       {/* ความพร้อมของข้อมูล — บอกตรงๆ ว่ายังขาดอะไร */}
-      <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 12px', fontSize: 12, lineHeight: 1.8 }}>
-        <b>📋 ความพร้อมของข้อมูล</b><br />
+      <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontSize: 12, lineHeight: 1.8 }}>
+        <b>ความพร้อมของข้อมูล</b><br />
         กฎที่ใช้งานอยู่ <b>{ready.ruleCount}</b> ข้อ ·
         แม่พิมพ์ในขอบเขตนี้ <b>{ready.dieTotal}</b> ตัว — กรอกความสูงแล้ว <b>{ready.dieWithHeight}</b>
         {ready.dieMissing > 0 && <span style={{ color: '#f59e0b' }}> · ยังไม่กรอก <b>{ready.dieMissing}</b> ตัว</span>}
@@ -215,7 +215,7 @@ export default function PressSetupRules({ dies = [], lineNames = [], canEdit = f
             return (
               <div key={r.id} style={{
                 background: 'var(--card)', border: `1px solid ${dirty ? 'rgba(245,158,11,0.5)' : 'var(--border)'}`,
-                borderRadius: 10, padding: '10px 12px', opacity: off ? 0.55 : 1,
+                borderRadius: 'var(--r-md)', padding: '10px 12px', opacity: off ? 0.55 : 1,
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
                   <b style={{ fontSize: 13 }}>{scopeLabel(r)}</b>
@@ -225,7 +225,7 @@ export default function PressSetupRules({ dies = [], lineNames = [], canEdit = f
                     <span style={{ fontSize: 11, color: 'var(--muted)' }}>แก้ล่าสุด: {r.updated_by_name}</span>
                   )}
                   {canEdit && <>
-                    {dirty && <button onClick={() => saveRow(r)} disabled={busy} style={btn('var(--accent)', 'var(--accent-ink)')}>💾 บันทึก</button>}
+                    {dirty && <button onClick={() => saveRow(r)} disabled={busy} style={btn('var(--accent)', 'var(--accent-ink)')}>บันทึก</button>}
                     <button onClick={() => toggle(r)} style={btn('var(--bg2)', 'var(--text2)')}>{off ? 'เปิดใช้' : 'ปิดใช้'}</button>
                   </>}
                 </div>
@@ -270,7 +270,7 @@ export default function PressSetupRules({ dies = [], lineNames = [], canEdit = f
           })}
 
           {canEdit && (adding ? (
-            <div style={{ background: 'var(--bg2)', border: '1px dashed var(--border2)', borderRadius: 10, padding: '10px 12px', display: 'grid', gap: 8 }}>
+            <div style={{ background: 'var(--bg2)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '10px 12px', display: 'grid', gap: 8 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
                 <label style={{ fontSize: 11, color: 'var(--muted)' }}>ขอบเขต
                   <select value={adding.scope_kind || 'global'} onChange={e => setAdding(a => ({ ...a, scope_kind: e.target.value, scope_value: '' }))} style={{ ...inp, marginTop: 3 }}>
@@ -319,9 +319,9 @@ export default function PressSetupRules({ dies = [], lineNames = [], canEdit = f
 
       {/* ตัวอย่างผลของการจัดลำดับ — ข้อเสนอ ไม่ใช่คำสั่ง */}
       {state === 'ok' && lineNames.length > 0 && (
-        <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px', fontSize: 12 }}>
+        <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '10px 12px', fontSize: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-            <b>🧪 ลองเทียบลำดับ</b>
+            <b>ลองเทียบลำดับ</b>
             <select value={previewLine} onChange={e => setPreviewLine(e.target.value)} style={{ ...inp, width: 'auto' }}>
               {lineNames.map(n => <option key={n} value={n}>{n}</option>)}
             </select>

@@ -17,7 +17,7 @@ import { UserContext } from '../App';
 import { toast } from '../components/Toast';
 import { can } from '../utils/permissions';
 import { isFgMat } from '../utils/matPrefix';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, lineScope } from '../utils/sectionScope';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { loadCompanyCalendar, countWorkingDaysInMonth } from '../utils/companyCalendar';
 import { groupRoutings } from '../utils/routing';
@@ -42,6 +42,7 @@ import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import { liveChannel } from '../utils/liveChannel';
 import { DeleteButton } from '../components/IconButton';
+import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 const monthKeyNow = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
 // วันงานตามกฎระบบ: ก่อน 08:00 = วันก่อนหน้า (กะดึกข้ามวัน) — ห้าม toISOString (UTC เพี้ยน)
@@ -56,22 +57,22 @@ const monthBounds = mk => {
   return { from: `${mk}-01`, to: `${mk}-${String(last).padStart(2, '0')}` };
 };
 const STATES = [
-  { key: 'current', label: '📍 Current state' },
-  { key: 'future', label: '🎯 Future state' },
-  { key: 'ideal', label: '✨ Ideal state' },
+  { key: 'current', label: 'Current state' },
+  { key: 'future', label: 'Future state' },
+  { key: 'ideal', label: 'Ideal state' },
 ];
 const TABS = [
-  { key: 'doc', label: '📋 เอกสาร VSM (snapshot)' },
-  { key: 'live', label: '⚡ สายธารสด (Realtime)' },
+  { key: 'doc', label: 'เอกสาร VSM (snapshot)' },
+  { key: 'live', label: 'สายธารสด (Realtime)' },
 ];
 const WARN_STYLE = {
-  error: { bg: 'rgba(239,68,68,0.12)', bd: '#ef4444', icon: '⛔' },
-  warn: { bg: 'rgba(245,158,11,0.12)', bd: '#f59e0b', icon: '⚠️' },
-  info: { bg: 'rgba(59,130,246,0.10)', bd: '#3b82f6', icon: 'ℹ️' },
+  error: { bg: 'var(--red-dim)', bd: 'var(--red)', icon: '⛔' },
+  warn: { bg: 'var(--amber-dim)', bd: 'var(--amber)', icon: '⚠️' },
+  info: { bg: 'var(--blue-dim)', bd: 'var(--blue)', icon: 'ℹ️' },
 };
 
 export default function VSM() {
-  const { role, lineId, sections, fullName } = useContext(UserContext);
+  const { role, lineId, sections, fullName, scopeIdx } = useContext(UserContext);
   const scopeSecs = sections || [];
   const canManage = can('vsm', 'manage', role);
   const [tab, setTab] = useTabParam(TABS.map(t => t.key), 'doc');
@@ -124,14 +125,12 @@ export default function VSM() {
   }, []);
 
   // scope มาตรฐาน: leader = family ไลน์ตัวเอง · role อื่น = ตาม sections · ไม่มี scope = ทั้งหมด
+  /* 🔭 ของกลาง `lineScope()` (QC audit 09/11) — สูตรเดิมที่นี่แคบกว่าที่ `profiles` ตั้งไว้
+     (leader ได้ครอบครัวไลน์ล้วน · ไม่รู้จัก scopeIdx) · `null` = ไม่จำกัด (ความหมายเดิม) */
   const scopeLineNames = useMemo(() => {
-    if (role === 'leader' && lineId) {
-      const me = lines.find(l => String(l.id) === String(lineId));
-      return me ? new Set(getLineFamilyNames(lines, me.name).map(n => n.toLowerCase())) : null;
-    }
-    if (scopeSecs.length) return new Set(lines.filter(l => inSectionScope(scopeSecs, l.section)).map(l => l.name.toLowerCase()));
-    return null;
-  }, [role, lineId, lines, scopeSecs]);
+    const r = lineScope({ role, lineId, sections: scopeSecs, lines, scopeIdx });
+    return r.unlimited ? null : new Set(r.names.map(n => String(n).toLowerCase()));
+  }, [role, lineId, lines, scopeSecs, scopeIdx]);
 
   /* ตัวเลือก FG — เฉพาะเบอร์ 1 (สินค้าสำเร็จรูป) + กรองตาม scope (กฎ dropdown-scope)
      🔴 ไม่กรองด้วยคำค้นที่นี่อีก (QC 06/10) — เดิมหน้านี้มี **2 ตัวควบคุมทำงานเดียวกัน**:
@@ -145,6 +144,26 @@ export default function VSM() {
     if (scopeLineNames && p.line_name && !scopeLineNames.has(String(p.line_name).toLowerCase())) return false;
     return true;
   }), [products, scopeLineNames]);
+
+  /* 🔭 ใบ VSM ที่บันทึกไว้ — กรองตามขอบเขตบัญชีด้วยแกนเดียวกับตัวเลือก FG ข้างบน (09/11)
+     ใบผูก `mat_no` ของ FG ⇒ ไลน์ของใบ = `dr_products.line_name` ของ MAT นั้น
+     · MAT มีหลายแถว (หลายลูกค้า/ไลน์) = ซ่อนเฉพาะเมื่อ**ทุก**ไลน์ที่รู้อยู่นอกขอบเขต
+     · หา MAT ในทะเบียนไม่เจอ / ไม่มีไลน์ = ตัดสินไม่ได้ ⇒ คงไว้ · `scopeLineNames = null` = ชุดเดิมเป๊ะ
+     🔴 ซ่อนไปกี่ใบต้องเขียนบนจอ (`savedHidden`) */
+  const savedVisible = useMemo(() => {
+    if (!scopeLineNames) return savedMaps;
+    const linesOfMat = {};
+    products.forEach(p => {
+      if (!p.mat_no || !p.line_name) return;
+      (linesOfMat[p.mat_no] ||= new Set()).add(String(p.line_name).toLowerCase());
+    });
+    return savedMaps.filter(m => {
+      const ls = linesOfMat[m.mat_no];
+      if (!ls || !ls.size) return true;
+      return [...ls].some(n => scopeLineNames.has(n));
+    });
+  }, [savedMaps, products, scopeLineNames]);
+  const savedHidden = savedMaps.length - savedVisible.length;
 
   // ชุด PFC (/pe-docs) ที่ตรงกับ FG นี้ — worklist ใช้ชี้ปุ่ม "เสนอ routing จาก PFC" ให้ตรงชุด
   const peSetForFg = useMemo(() => {
@@ -509,23 +528,30 @@ export default function VSM() {
         <span className="spacer" />
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button onClick={() => generate(false)} disabled={!matNo || busy} style={btn('var(--accent)', { opacity: (!matNo || busy) ? 0.5 : 1 })}>
-            {busy ? '⏳ กำลังดึง…' : '⚡ สร้างร่างจากข้อมูลจริง'}
+            {busy ? 'กำลังดึง…' : 'สร้างร่างจากข้อมูลจริง'}
           </button>
           {model && rawRef && (
-            <button onClick={() => generate(true)} disabled={busy} style={btn('var(--bg3)', { color: 'var(--text)' })}>↻ ดึงข้อมูลใหม่</button>
+            <button onClick={() => generate(true)} disabled={busy} style={btn('var(--bg3)', { color: 'var(--text)' })}>ดึงข้อมูลใหม่</button>
           )}
-          {model && canManage && <button onClick={save} disabled={busy} style={btn('#3b82f6', { color: '#fff' })}>💾 บันทึก</button>}
-          {model && <button onClick={() => doPrint('a3')} style={btn('#f59e0b')}>📋 A3 Report (Toyota)</button>}
-          {model && <button onClick={() => doPrint('sheet')} style={btn('var(--bg3)', { color: 'var(--text)' })}>🖨️ ใบ VSM</button>}
-          {model && <button onClick={() => setShowA3(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>✍️ เนื้อหา A3</button>}
-          <button onClick={() => setShowLoad(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>📂 ใบที่บันทึกไว้ ({savedMaps.length})</button>
+          {model && canManage && <button onClick={save} disabled={busy} style={btn('var(--blue)', { color: '#fff' })}>บันทึก</button>}
+          {model && <button onClick={() => doPrint('a3')} style={btn('var(--amber)')}>A3 Report (Toyota)</button>}
+          {model && <button onClick={() => doPrint('sheet')} style={btn('var(--bg3)', { color: 'var(--text)' })}>ใบ VSM</button>}
+          {model && <button onClick={() => setShowA3(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>เนื้อหา A3</button>}
+          <button onClick={() => setShowLoad(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>ใบที่บันทึกไว้ ({savedVisible.length})</button>
         </div>
       </FilterBar>
 
       {showLoad && (
         <div style={{ ...S.card, marginBottom: 14, maxHeight: 260, overflowY: 'auto' }}>
-          {!savedMaps.length && <div style={{ fontSize: 13, color: 'var(--muted)' }}>ยังไม่มีใบที่บันทึกไว้</div>}
-          {savedMaps.map(m => (
+          {!savedVisible.length && <div style={{ fontSize: 13, color: 'var(--muted)' }}>
+            {savedHidden ? 'ไม่มีใบของไลน์ในขอบเขตของคุณ' : 'ยังไม่มีใบที่บันทึกไว้'}
+          </div>}
+          {savedHidden > 0 && (
+            <div style={{ fontSize: 12, color: 'var(--muted)', padding: '4px 8px' }}>
+              🔭 แสดงเฉพาะใบของไลน์ในขอบเขตของคุณ · ซ่อนใบของไลน์อื่น {savedHidden} ใบ
+            </div>
+          )}
+          {savedVisible.map(m => (
             <div key={m.id} onClick={() => openSaved(m.id)}
               style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '7px 8px', borderBottom: '1px solid var(--border)', cursor: 'pointer', fontSize: 12.5, color: 'var(--text)' }}>
               <span style={{ fontWeight: 700, minWidth: 92 }}>{m.mat_no}</span>
@@ -541,10 +567,10 @@ export default function VSM() {
       {!model && (
         <div style={{ ...S.card, textAlign: 'center', padding: 40, color: 'var(--muted)', fontSize: 14 }}>
           เลือกสินค้าสำเร็จรูปแล้วกด <b style={{ color: 'var(--text)' }}>⚡ สร้างร่างจากข้อมูลจริง</b>
-          <div style={{ fontSize: 12, marginTop: 8 }}>
+          <InfoMore label="ลำดับกระบวนการมาจากไหน" size={11.5} style={{ marginTop: 8 }}>
             ลำดับกระบวนการ (ปั๊ม → ประกอบ → …) ตั้งที่ <b>Product Master → 🔀 Routing</b> —
             ยังไม่ได้ตั้ง ระบบจะใช้ไลน์เดียวจาก Product Master ไปก่อนแล้วเตือนไว้
-          </div>
+          </InfoMore>
         </div>
       )}
 
@@ -567,7 +593,7 @@ export default function VSM() {
                 <label style={{ fontSize: 11.5, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{label}</label>
                 <textarea rows={rows} value={a3[k] || ''} onChange={e => setA3(v => ({ ...v, [k]: e.target.value }))}
                   placeholder={ph}
-                  style={{ width: '100%', fontSize: 12.5, padding: '7px 10px', borderRadius: 6, resize: 'vertical',
+                  style={{ width: '100%', fontSize: 12.5, padding: '7px 10px', borderRadius: 'var(--ctl-r)', resize: 'vertical',
                     border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
               </div>
             ))}
@@ -578,7 +604,7 @@ export default function VSM() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
               <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>⑥ แผนดำเนินการ (ใคร / อะไร / เมื่อไหร่)</label>
               <button onClick={() => setA3(v => ({ ...v, plan: [...(v.plan || []), { what: '', who: '', when: '', status: '' }] }))}
-                style={{ padding: '4px 12px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>
+                style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>
                 + เพิ่มแถว
               </button>
             </div>
@@ -592,7 +618,7 @@ export default function VSM() {
                         inputStyle={{ fontSize: 12, padding: '5px 26px 5px 8px', borderRadius: 5, background: 'var(--bg2)' }} />
                     : <input key={f} value={r[f] || ''} placeholder={ph}
                         onChange={e => setA3(v => ({ ...v, plan: v.plan.map((x, j) => j === i ? { ...x, [f]: e.target.value } : x) }))}
-                        style={{ fontSize: 12, padding: '5px 8px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
+                        style={{ fontSize: 12, padding: '5px 8px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
                 ))}
                 <DeleteButton onClick={() => setA3(v => ({ ...v, plan: v.plan.filter((_, j) => j !== i) }))} title="ลบ" />
               </div>
@@ -606,8 +632,8 @@ export default function VSM() {
         {/* ⚠️ ข้อมูลดิบโหลดไม่ครบ — ต่างจาก worklist ข้างล่าง (นั่นคือ "ยังไม่มีใครลงข้อมูล")
             อันนี้คือ "มีข้อมูลแต่ดึงมาไม่หมด" ⇒ ตัวเลขต่ำกว่าจริง ห้ามบันทึกเป็นเอกสาร */}
         {loadWarn && (
-          <div style={{ ...S.card, marginBottom: 12, padding: '10px 14px', border: '1px solid #f59e0b', background: 'rgba(245,158,11,0.10)' }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#f59e0b' }}>⚠️ {loadWarn}</div>
+          <div style={{ ...S.card, marginBottom: 12, padding: '10px 14px', border: '1px solid var(--amber)', background: 'var(--amber-dim)' }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--amber)' }}>⚠️ {loadWarn}</div>
             <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 3 }}>ลองกด "↻ ดึงข้อมูลใหม่" อีกครั้ง — ถ้ายังขึ้นซ้ำให้แจ้งผู้ดูแลระบบ</div>
           </div>
         )}
@@ -619,7 +645,7 @@ export default function VSM() {
           return (
             <div style={{ ...S.card, marginBottom: 12, padding: '10px 14px' }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: gaps.length ? 8 : 0 }}>
-                📋 ข้อมูลที่ VSM ยังขาด{gaps.length ? ` · ${gaps.length} รายการ` : ''}
+                ข้อมูลที่ VSM ยังขาด{gaps.length ? ` · ${gaps.length} รายการ` : ''}
                 {gaps.length > 0 && <span style={{ fontWeight: 400, fontSize: 11, color: 'var(--muted)' }}> — กดปุ่มท้ายรายการเพื่อไปลงข้อมูลที่ต้นทาง</span>}
               </div>
               {!gaps.length && <div style={{ fontSize: 12.5, color: 'var(--accent)', marginTop: 6 }}>✅ ข้อมูลครบทุกช่องของใบนี้แล้ว</div>}
@@ -627,7 +653,7 @@ export default function VSM() {
                 {gaps.map((g, i) => {
                   const st = WARN_STYLE[g.level] || WARN_STYLE.info;
                   return (
-                    <div key={i} style={{ background: st.bg, borderLeft: `3px solid ${st.bd}`, borderRadius: 6, padding: '7px 12px', fontSize: 12.5, color: 'var(--text)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <div key={i} style={{ background: st.bg, borderLeft: `3px solid ${st.bd}`, borderRadius: 'var(--r-md)', padding: '7px 12px', fontSize: 12.5, color: 'var(--text)', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                       <span style={{ flex: '1 1 340px' }}>{st.icon} {g.text}</span>
                       <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {g.actions.map((a, j) => a.to ? (
@@ -657,7 +683,7 @@ export default function VSM() {
           <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>ปรับค่าในกล่องกระบวนการ</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
             ช่องว่าง = ใช้ค่าที่ระบบคำนวณให้ · กรอกทับเมื่อค่าจริงไม่ตรง ·
-            <b style={{ color: '#f59e0b' }}> คงคลังระหว่างทาง (WIP) ระบบไม่ได้เก็บ ต้องกรอกเอง</b>
+            <b style={{ color: 'var(--amber)' }}> คงคลังระหว่างทาง (WIP) ระบบไม่ได้เก็บ ต้องกรอกเอง</b>
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
             <thead><tr style={{ background: 'var(--bg2)' }}>
@@ -673,8 +699,8 @@ export default function VSM() {
                       placeholder={val == null ? '—' : String(Math.round(val * 10) / 10)}
                       title={src ? `ค่าที่ระบบคำนวณ: ${val ?? '—'} (จาก ${src})` : 'ระบบไม่มีข้อมูล'}
                       style={{
-                        width: 82, fontSize: 12, padding: '4px 6px', borderRadius: 5, background: 'var(--bg2)', color: 'var(--text)',
-                        border: `1px solid ${val == null && !ov[field] ? '#f59e0b' : 'var(--border)'}`,
+                        width: 82, fontSize: 12, padding: '4px 6px', borderRadius: 'var(--ctl-r)', background: 'var(--bg2)', color: 'var(--text)',
+                        border: `1px solid ${val == null && !ov[field] ? 'var(--amber)' : 'var(--border)'}`,
                       }} />
                   </td>
                 );
@@ -682,8 +708,8 @@ export default function VSM() {
                 return <tr key={b.key}>
                   <td style={{ padding: '6px 8px', fontSize: 12, color: 'var(--muted)', borderTop: '1px solid var(--border)' }}>{i + 1}</td>
                   <td style={{ padding: '6px 8px', fontSize: 12.5, fontWeight: 700, color: 'var(--text)', borderTop: '1px solid var(--border)' }}>
-                    {b.name}{b.isOutsourced && <span style={{ color: '#a78bfa', fontWeight: 400 }}> · จ้างนอก</span>}
-                    {b.isFallback && <span style={{ color: '#ef4444', fontWeight: 400, fontSize: 11 }}> · ยังไม่ลง routing</span>}
+                    {b.name}{b.isOutsourced && <span style={{ color: 'var(--blue)', fontWeight: 400 }}> · จ้างนอก</span>}
+                    {b.isFallback && <span style={{ color: 'var(--red)', fontWeight: 400, fontSize: 11 }}> · ยังไม่ลง routing</span>}
                   </td>
                   <td style={{ padding: '6px 8px', fontSize: 12, color: 'var(--muted)', borderTop: '1px solid var(--border)' }}>{b.line || '—'}</td>
                   {cell('ct_sec', b.ct, b.ctSrc)}
@@ -709,20 +735,20 @@ export default function VSM() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10, alignContent: 'start' }}>
             <div>
               <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>
-                🚚 ลูกค้า — {model.customer.name || model.header.customer || 'ไม่ระบุ'}
+                ลูกค้า — {model.customer.name || model.header.customer || 'ไม่ระบุ'}
               </label>
               <input value={overrides.__customer_pattern || ''} onChange={e => setTopOv('__customer_pattern', e.target.value)}
                 placeholder={model.customer.roundsPerDay ? `ระบบเห็น ${model.customer.roundsPerDay} รอบ/วัน` : 'เช่น 1:4:2'}
-                style={{ width: '100%', fontSize: 12.5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
+                style={{ width: '100%', fontSize: 12.5, padding: '6px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
             </div>
             {model.suppliers.map(sp => (
               <div key={sp.matNo}>
                 <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>
-                  🏭 {sp.supplier || 'ยังไม่ระบุผู้ส่งมอบ'} · {sp.matNo}
+                  {sp.supplier || 'ยังไม่ระบุผู้ส่งมอบ'} · {sp.matNo}
                 </label>
                 <input value={(overrides.__supplier_pattern || {})[sp.matNo] || ''} onChange={e => setSupPattern(sp.matNo, e.target.value)}
                   placeholder="เช่น 7:1:1"
-                  style={{ width: '100%', fontSize: 12.5, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
+                  style={{ width: '100%', fontSize: 12.5, padding: '6px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
               </div>
             ))}
             {!model.suppliers.length && <div style={{ fontSize: 12, color: 'var(--muted)' }}>BOM ของสินค้านี้ยังไม่มีพาร์ทซื้อนอก</div>}
@@ -786,7 +812,7 @@ export default function VSM() {
               สถานะไลน์ / ยอดวันนี้ / คงคลัง ▲ = <b style={{ color: 'var(--accent)' }}>สด</b><br />
               มุมมองนี้<b>ไม่บันทึก/ไม่พิมพ์</b> — เอกสาร VSM ทางการ (snapshot) อยู่แท็บ 📋
             </div>
-            {liveRaw && <button onClick={loadLive} style={btn('var(--bg3)', { color: 'var(--text)' })}>↻ รีเฟรชตอนนี้</button>}
+            {liveRaw && <button onClick={loadLive} style={btn('var(--bg3)', { color: 'var(--text)' })}>รีเฟรชตอนนี้</button>}
           </FilterBar>
 
           {!matNo && (
@@ -800,13 +826,13 @@ export default function VSM() {
           {/* โหลดโครงพลาด (เน็ตสะดุด ฯลฯ) — ห้ามจอว่างตัน ต้องมีปุ่มลองใหม่ */}
           {matNo && !liveBusy && !liveModel && liveErr && (
             <div style={{ ...S.card, textAlign: 'center', padding: 30 }}>
-              <div style={{ fontSize: 13.5, color: '#ef4444', fontWeight: 700, marginBottom: 6 }}>
+              <div style={{ fontSize: 13.5, color: 'var(--red)', fontWeight: 700, marginBottom: 6 }}>
                 ⛔ โหลดโครงสายธารไม่สำเร็จ
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
                 {liveErr} — มักเป็นสัญญาณเน็ตสะดุดชั่วคราว ลองใหม่ได้เลย
               </div>
-              <button onClick={() => setLiveTick(t => t + 1)} style={btn('var(--accent)')}>🔄 ลองใหม่</button>
+              <button onClick={() => setLiveTick(t => t + 1)} style={btn('var(--accent)')}>ลองใหม่</button>
             </div>
           )}
 
@@ -815,22 +841,22 @@ export default function VSM() {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700,
-                padding: '5px 12px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--text)',
+                padding: '5px 12px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', color: 'var(--text)',
               }}>
                 {/* จุดสถานะ live = นิ่ง+เรืองแสง ห้ามกระพริบ (Andon สงวนกระพริบให้แดง) */}
-                <span style={{ width: 8, height: 8, borderRadius: 99, background: '#22c55e', boxShadow: '0 0 6px #22c55e' }} />
+                <span style={{ width: 8, height: 8, borderRadius: 'var(--r-pill)', background: 'var(--green)', boxShadow: '0 0 6px var(--green)' }} />
                 REALTIME · อัปเดต {liveData?.at ? new Date(liveData.at).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
                 <span style={{ color: 'var(--muted)', fontWeight: 400 }}>· วันงาน {liveData?.workDate || getWorkDate()}</span>
               </span>
               {liveData?.partial && (
-                <span style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 999, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid #f59e0b' }}>
+                <span style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 'var(--r-pill)', background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber)' }}>
                   ⚠ โหลดข้อมูลสดไม่ครบ — ตัวเลขบางส่วนอาจขาด (จะลองใหม่รอบถัดไป)
                 </span>
               )}
               {chips.map(([k, nn]) => (
                 <span key={k} className={k === 'down' && nn > 0 ? 'dt-alarm-blink' : undefined}
                   style={{
-                    fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 999,
+                    fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 'var(--r-pill)',
                     background: 'var(--bg3)', border: '1px solid var(--border)',
                     // dt-alarm-blink ทาพื้นแดง — ตัวอักษรต้องขาว ไม่งั้นแดงบนแดงอ่านไม่ออก
                     color: k === 'down' && nn > 0 ? '#fff' : nn > 0 ? LIVE_STATUS[k].color : 'var(--muted)',
@@ -839,21 +865,28 @@ export default function VSM() {
                 </span>
               ))}
               {(liveData?.summary?.plannedOpen || 0) > 0 && (
-                <span style={{ fontSize: 12, padding: '5px 12px', borderRadius: 999, background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
-                  🗓️ หยุดตามแผนค้าง {liveData.summary.plannedOpen} รายการ (ไม่นับเป็น Andon)
+                <span style={{ fontSize: 12, padding: '5px 12px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', color: 'var(--muted)', border: '1px solid var(--border)' }}>
+                  หยุดตามแผนค้าง {liveData.summary.plannedOpen} รายการ (ไม่นับเป็น Andon)
+                </span>
+              )}
+              {/* แถวเปิดค้างในกะที่ปิดไปแล้ว = คนลืมปิดรายการ — ไม่ใช่ Andon (กฎ dtOpenKind) แต่ห้ามซ่อน */}
+              {(liveData?.summary?.forgottenDt || 0) > 0 && (
+                <span title="กะปิดไปแล้วแต่รายการ Downtime ยังไม่ถูกปิด — นาทีที่หยุดไม่ได้ถูกหักใน %A ของกะนั้น"
+                  style={{ fontSize: 12, padding: '5px 12px', borderRadius: 'var(--r-pill)', background: 'var(--bg3)', color: 'var(--amber)', border: '1px solid var(--border)', fontWeight: 700 }}>
+                  ⚠️ ไม่ได้ปิดรายการ {liveData.summary.forgottenDt} ใบ (กะปิดแล้ว)
                 </span>
               )}
             </div>
 
             {/* ── Downtime ค้าง (Andon) — ต้องเห็นก่อนอย่างอื่น ห้ามซ่อน ── */}
             {(liveData?.summary?.alarms || []).length > 0 && (
-              <div style={{ background: 'rgba(239,68,68,0.10)', borderLeft: '3px solid #ef4444', borderRadius: 6, padding: '8px 12px', marginBottom: 12 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 800, color: '#ef4444', marginBottom: 4 }}>🚨 Downtime ค้างในสายธารนี้</div>
+              <div style={{ background: 'var(--red-dim)', borderLeft: '3px solid var(--red)', borderRadius: 'var(--r-md)', padding: '8px 12px', marginBottom: 12 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--red)', marginBottom: 4 }}>Downtime ค้างในสายธารนี้</div>
                 {liveData.summary.alarms.map((a, i) => (
                   <div key={i} style={{ fontSize: 12.5, color: 'var(--text)', padding: '2px 0' }}>
                     <b>{a.line}</b>{a.machineNo ? ` · ${a.machineNo}` : ''} — {a.typeName || 'ไม่ระบุประเภท'}
                     {a.description ? ` · 💬 ${a.description}` : ''}
-                    {a.openMin != null && <span style={{ color: '#ef4444', fontWeight: 700 }}> · ค้าง {a.openMin} นาที</span>}
+                    {a.openMin != null && <span style={{ color: 'var(--red)', fontWeight: 700 }}> · ค้าง {a.openMin} นาที</span>}
                   </div>
                 ))}
               </div>
@@ -864,7 +897,7 @@ export default function VSM() {
               <div style={{ marginBottom: 12, display: 'grid', gap: 6 }}>
                 {liveModel.warnings.map((w, i) => {
                   const st = WARN_STYLE[w.level] || WARN_STYLE.info;
-                  return <div key={i} style={{ background: st.bg, borderLeft: `3px solid ${st.bd}`, borderRadius: 6, padding: '7px 12px', fontSize: 12.5, color: 'var(--text)' }}>
+                  return <div key={i} style={{ background: st.bg, borderLeft: `3px solid ${st.bd}`, borderRadius: 'var(--r-md)', padding: '7px 12px', fontSize: 12.5, color: 'var(--text)' }}>
                     {st.icon} {w.text}
                   </div>;
                 })}
@@ -876,8 +909,8 @@ export default function VSM() {
               <VsmCanvas model={liveModel} palette={palette} live={liveData} />
             </div>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 14 }}>
-              ขอบกล่องกระบวนการ: <b style={{ color: '#ef4444' }}>แดงกระพริบ = Downtime ค้าง</b> ·
-              <b style={{ color: '#22c55e' }}> เขียว = กำลังผลิต</b> · เส้นประจาง = ยังไม่เปิดกะวันนี้ —
+              ขอบกล่องกระบวนการ: <b style={{ color: 'var(--red)' }}>แดงกระพริบ = Downtime ค้าง</b> ·
+              <b style={{ color: 'var(--green)' }}> เขียว = กำลังผลิต</b> · เส้นประจาง = ยังไม่เปิดกะวันนี้ —
               วางเมาส์บนกล่องเพื่อดูสถานะ · ▲ คงคลัง/PLT/%VA คำนวณจากยอดคงเหลือปัจจุบัน
             </div>
 
@@ -895,7 +928,7 @@ export default function VSM() {
                         <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · {b.line || '—'}</span>
                       </div>
                       <span className={lv?.status === 'down' ? 'dt-alarm-blink' : undefined}
-                        style={{ fontSize: 11.5, fontWeight: 700, color: lv?.status === 'down' ? '#fff' : meta.color, whiteSpace: 'nowrap', padding: '2px 8px', borderRadius: 999, background: 'var(--bg2)' }}>
+                        style={{ fontSize: 11.5, fontWeight: 700, color: lv?.status === 'down' ? '#fff' : meta.color, whiteSpace: 'nowrap', padding: '2px 8px', borderRadius: 'var(--r-pill)', background: 'var(--bg2)' }}>
                         {meta.label}
                       </span>
                     </div>
@@ -907,13 +940,13 @@ export default function VSM() {
                     </div>
                     <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{oee.note}</div>
                     {(lv?.alarms || []).map((a, j) => (
-                      <div key={j} style={{ fontSize: 11.5, color: '#ef4444' }}>
-                        🚨 {a.machineNo || 'ไม่ระบุเครื่อง'} · {a.typeName || '—'}{a.openMin != null ? ` · ค้าง ${a.openMin} นาที` : ''}
+                      <div key={j} style={{ fontSize: 11.5, color: 'var(--red)' }}>
+                        {a.machineNo || 'ไม่ระบุเครื่อง'} · {a.typeName || '—'}{a.openMin != null ? ` · ค้าง ${a.openMin} นาที` : ''}
                       </div>
                     ))}
                     {(lv?.plannedOpen || []).length > 0 && (
                       <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                        🗓️ หยุดตามแผนค้าง {lv.plannedOpen.length} รายการ
+                        หยุดตามแผนค้าง {lv.plannedOpen.length} รายการ
                       </div>
                     )}
                   </div>

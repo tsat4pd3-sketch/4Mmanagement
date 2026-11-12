@@ -40,6 +40,8 @@ const BINS = [
     color: '#e05252', from: 'qty_ng', fromLabel: 'NG' },
 ];
 
+/* 🟡 05/11: ระบบตั้งแท็กเหลือง "รอพิจารณา" ให้เองตั้งแต่ตอนบันทึกงานเสีย (คำสั่ง user)
+ *    ⇒ โมดัลนี้เหลือหน้าที่ **ลงเพิ่ม/ลงถังแดงตรง/แก้จำนวน** ที่คนกดเอง ไม่ใช่ทางหลักอีกแล้ว */
 export default function QualityBinLinkModal({ defect, session, actorName, existing, onClose, onSaved }) {
   const matNo = defect?.prod_orders?.mat_no || '';
   const [partNo, setPartNo] = useState('');
@@ -148,12 +150,13 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
   return (
     <div className="overlay" style={{ zIndex: 2200 }} /* ไม่ปิดจาก backdrop — UI-CONVENTIONS §5: เผลอแตะพื้นหลังแล้วข้อมูลหายทั้งฟอร์ม (ปิดด้วยปุ่มยกเลิก/✕ เท่านั้น) */>
       <div onClick={e => e.stopPropagation()} style={{
-        background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 14,
+        background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)',
         padding: 20, width: 'min(96vw, 640px)', maxHeight: '90vh', overflowY: 'auto' }}>
 
         <div style={{ fontSize: 15.5, fontWeight: 800, color: 'var(--text)', marginBottom: 3 }}>
-          🗑️ ลงถังเหลือง / ถังแดง
+          ลงถังเหลือง / ถังแดง
         </div>
+
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
           {defectName}
           {/* ลำดับ Part No. → ชื่องาน → MAT (UI §6.21) */}
@@ -169,7 +172,7 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
           const r = rows[b.key];
           return (
             <div key={b.key} style={{
-              border: `1px solid ${r.on ? b.color : 'var(--border)'}`, borderRadius: 10,
+              border: `1px solid ${r.on ? b.color : 'var(--border)'}`, borderRadius: 'var(--r-md)',
               padding: 12, marginBottom: 10, background: r.on ? 'var(--bg2)' : 'transparent' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
                 <input type="checkbox" checked={r.on} onChange={e => set(b.key, { on: e.target.checked })}
@@ -256,7 +259,7 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
         {/* ✅ สร้างใบแล้ว — บอกว่าไปดู/กรอกต่อที่ไหน แทนการปิดหน้าต่างเงียบ (เดิมคนหาใบของตัวเองไม่เจอ) */}
         {created && (
           <div style={{ border: '1px solid rgba(34,197,94,0.45)', background: 'rgba(34,197,94,0.1)',
-            borderRadius: 10, padding: 14, fontSize: 12.5, color: 'var(--text)', lineHeight: 1.7 }}>
+            borderRadius: 'var(--r-md)', padding: 14, fontSize: 12.5, color: 'var(--text)', lineHeight: 1.7 }}>
             <b style={{ color: '#22c55e', fontSize: 13.5 }}>✅ ลงถังเรียบร้อย</b>
             {created.map(c => (
               <div key={c.key}>{c.icon} {c.name} — {c.qty.toLocaleString('th-TH')} ชิ้น</div>
@@ -274,12 +277,12 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
         )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--border2)',
+          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)',
             background: 'none', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>
             {created ? 'ปิด' : 'ยกเลิก'}</button>
           {!created && (
             <button onClick={save} disabled={saving || !picked.length} style={{
-              padding: '8px 20px', borderRadius: 8, border: 'none',
+              padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none',
               background: picked.length ? '#e05252' : 'var(--border2)', color: '#fff',
               fontSize: 13, fontWeight: 700, cursor: saving || !picked.length ? 'default' : 'pointer',
               opacity: saving ? 0.6 : 1 }}>

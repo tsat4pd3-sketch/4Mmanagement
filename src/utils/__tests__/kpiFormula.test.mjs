@@ -22,7 +22,8 @@ const dlohDef = (scope_kind, scope_value) => ({ id: `d-${scope_value || 'plant'}
 
 test('ตัวแปรระดับโรงงานทุกตัวมี level plant · ตัวแปรหน่วยไม่มี · plant var อ่านจาก plant เสมอแม้นิยามอยู่หน่วย', () => {
   assert.ok(KPI_BASE_VARS.every(v => v.level === 'plant' || v.level === 'unit'));
-  assert.deepEqual(BASE_VARS_BY_LEVEL.plant.map(v => v.key), ['sale_total', 'sale_product', 'sale_trading', 'cogs', 'days_in_month']);
+  assert.deepEqual(BASE_VARS_BY_LEVEL.plant.map(v => v.key), ['sale_total', 'sale_product', 'sale_trading', 'cogs', 'days_in_month', 'manpower']);   // 09/11 manpower = คนทั้งโรงงาน (ยอดขาย/หัว ค่ากลาง)
+  assert.equal(baseScopeForVar('manpower', { kind: 'section', value: 'PD1' }), 'plant');
   assert.equal(baseScopeForVar('sale_product', { kind: 'section', value: 'PD1' }), 'plant');
   assert.equal(baseScopeForVar('dl', { kind: 'section', value: 'PD1' }), 'section:PD1');
   assert.equal(baseScopeForVar('dl', PLANT), 'plant');
@@ -88,24 +89,26 @@ test('sale_per_head = Σ Total Sales ม.ค.→เดือนนี้ ÷ ก�
   assert.deepEqual(fm.missing[6].map(x => x.key), ['sale_total']);
 });
 
-test('ตัวแปรประมาณจากทะเบียน (auto) ไม่ทับค่าที่กรอกไว้ — เติมได้แค่ช่องว่าง · formulaMonthMode บอกว่าช่องไหนยังกรอกมือได้', () => {
-  const r = [row('plant', '', 'sale_total', 1, 160_000_000), row('plant', '', 'sale_total', 2, 160_000_000)];
-  const auto = (sk, v, m) => (v === 'manpower' && sk === 'section:PD1' ? 32 : null);   // ทะเบียน PD1 มี 32 คน (ของจริง ~300)
+test('ตัวแปรประมาณจากทะเบียน (auto) ไม่ทับค่าที่กรอกไว้ — เติมได้แค่ช่องว่าง · formulaMonthMode บอกว่าช่องไหนยังกรอกมือได้ · ยอดขาย/หัว = ค่ากลางโรงงาน', () => {
+  const r = [row('plant', '', 'sale_total', 1, 160_000_000), row('plant', '', 'sale_total', 2, 160_000_000),
+    row('section', 'PD1', 'manpower', 1, 32), row('section', 'PD1', 'manpower', 2, 32)];   // 09/11: กำลังคนที่หน่วยกรอกเอง **ต้องไม่ถูกใช้** (เคส PD1 = 47.951)
+  const auto = (sk, v, m) => (v === 'manpower' && sk === 'plant' ? 320 : null);   // ทะเบียนทั้งโรงงาน (≈ · ของจริงจากใบบัญชี ~382)
   const base = buildBaseIndex(r, { auto });
   const def = { id: 'sph1', name: 'Annual Sale Per Head', provider: 'formula', provider_config: { formula: 'sale_per_head' }, scope_kind: 'section', scope_value: 'PD1', unit: 'MB/Head', decimals: 3 };
   const entries = { sph1: { 1: 0.52 } };   // ม.ค. ทีมกรอกค่าจริงไว้ · ก.พ. ว่าง
   const { entries: e2, info } = applyFormulaEntries([def], entries, base, org);
   assert.equal(e2.sph1[1], 0.52, 'ม.ค. ค่ากรอกมือชนะสูตรที่ใช้กำลังคนประมาณ');
-  assert.ok(Math.abs(e2.sph1[2] - 320 / 32) < 1e-6, 'ก.พ. ว่าง ⇒ เติมด้วยค่าประมาณ (320 MB สะสม ÷ 32)');
+  assert.ok(Math.abs(e2.sph1[2] - 320 / 320) < 1e-6, 'ก.พ. ว่าง ⇒ เติมด้วยค่าประมาณ (320 MB สะสม ÷ คนทั้งโรงงาน 320 ≈ทะเบียน) — ไม่ใช่ ÷ 32 ของ PD1');
   assert.deepEqual(info.sph1.usedManual, [1]); assert.deepEqual(info.sph1.computed, [2]); assert.deepEqual(info.sph1.approx, [2]);
+  assert.equal(info.sph1.varScopes.manpower, 'plant', 'ตัวหารอ่านจาก ทั้งโรงงาน เสมอ');
   assert.equal(formulaMonthMode(info.sph1, 1), 'manual', 'ช่อง ม.ค. ยังกรอกมือได้');
   assert.equal(formulaMonthMode(info.sph1, 2), 'computed');
   assert.equal(formulaMonthMode(info.sph1, 3), 'manual', 'ไม่มีอะไรเลย = กรอกมือได้');
   assert.equal(formulaMonthMode(null, 1), 'manual');
   assert.match(formulaNoteText(info.sph1, 1, { def }), /✍️ ใช้ค่ากรอกมือ — สูตรคำนวณได้ .* แต่ใช้กำลังคนประมาณจากทะเบียน/);
   assert.match(formulaNoteText(info.sph1, 2, { def }), /≈ทะเบียนพนักงาน/);
-  // ตัวเลขฐานกรอกมือครบ ⇒ สูตรชนะตามกฎเดิม
-  const base2 = buildBaseIndex([...r, row('section', 'PD1', 'manpower', 1, 300)], { auto });
+  // ตัวเลขฐานกรอกมือครบ (กำลังคน ทั้งโรงงาน จากใบบัญชี) ⇒ สูตรชนะตามกฎเดิม
+  const base2 = buildBaseIndex([...r, row('plant', '', 'manpower', 1, 382)], { auto });
   const o2 = applyFormulaEntries([def], entries, base2, org);
-  assert.ok(Math.abs(o2.entries.sph1[1] - 160 / 300) < 1e-6); assert.equal(formulaMonthMode(o2.info.sph1, 1), 'computed');
+  assert.ok(Math.abs(o2.entries.sph1[1] - 160 / 382) < 1e-6); assert.equal(formulaMonthMode(o2.info.sph1, 1), 'computed');
 });

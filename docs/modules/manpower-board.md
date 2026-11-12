@@ -319,3 +319,24 @@ user ถามให้ไล่ตรวจว่ามีคอลัมน์
 
 🔴 **ก่อนเสนอลบตารางใดๆ ต้องครบ 3 ข้อ:** (ก) `git log -S '<ชื่อตาราง>'` ดูว่าเพิ่งสร้างไหม
 (ข) grep ทั้ง **ชื่อตาราง** ไม่ใช่แค่ `from('…')` (ค) เช็คว่ามีกฎใน CLAUDE.md/docs อ้างถึงหรือเปล่า
+
+## 🔭 09/11 — ขอบเขตบัญชีแกนเดียวกับทุกจอ (user "แก้ manpower-board ให้ครบด้วยเลย")
+· เดิมกรองแค่รายชื่อส่วนงานด้วย `inSectionScope(scopeSecs)` — ไม่ใช้ `lineScope` · ไม่ดูไลน์ของหัวหน้าไลน์ · `?dept=` เปิดแผนกนอกขอบเขตได้
+· ตอนนี้: `viewScope = lineScope({ role, lineId, sections, lines, scopeIdx })` (`unlimited` = เดิมเป๊ะ)
+  — ส่วนงานที่เลือกได้ = ที่ตั้งไว้ ∪ ส่วนงานของไลน์ในขอบเขต · บัญชีที่ไม่ได้ถือทั้งส่วนงาน (หัวหน้าไลน์) = เหลือเฉพาะแผนกที่มีไลน์ในขอบเขต
+  และถ้าเหลือแผนกเดียวจะล็อกที่แผนกนั้น (แท็บแผน vs มาจริง/ประวัติไม่กางทั้งส่วนงาน)
+  — `?dept=` ที่อยู่นอกแผนกที่เห็นได้ = ไม่สน + ชิปเตือน · ตัดขอบเขตไม่ได้ = ชิปเหลือง · ซ่อนแผนก = ชิปบอกจำนวน
+· ต้นไม้เลือกส่วนงาน/แผนก (`SectionScopeSelect`) รับเฉพาะไลน์ในขอบเขตเมื่อบัญชีถูกจำกัด
+
+---
+
+## 📦 ฉบับเต็มเดิมจาก CLAUDE.md — 🧑‍🤝‍🧑 Manpower Control Board — `/manpower-board`
+
+> ย้ายมา 2026-11-12 (รีด CLAUDE.md รอบ 4 · `docs/modules/claude-md-slim.md`) — ยกมาทั้งดุ้น ไม่แก้คำ ·
+> CLAUDE.md เหลือเฉพาะกฎข้าม session + pointer มาที่นี่
+
+
+กฎ `utils/manpowerBoard.js` · แถว = **ตำแหน่ง** · กะทีม = `shiftFromTeam` **ห้าม A = Shift 01** · กะไม่ตั้ง = `null`
+· ช่องว่าง: ช่องต่อทีม `manpower_slot_plans` → จุดงาน `station_slot_plans` → std · 🔴 **ช่างประจำไลน์ = `line_technicians` ห้ามยัด `employees.line_id`** · คนยืม = `mergeBorrowedEmployees()`
+· 🔴 **คนวิ่งข้ามแผนก = `employee_flex_units` (อ้างอิง) — ห้ามย้าย `employees.org_node_id` ห้ามแตะ `cost_center`** · **"ไปช่วย ≠ นับเป็นกำลังคน"** (ไม่เข้าช่องว่าง/ตัวนับ) · มีด่าน `manpower-flex-reference-only`
+> 📄 `docs/modules/manpower-board.md`

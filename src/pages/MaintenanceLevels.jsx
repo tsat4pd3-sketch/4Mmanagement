@@ -32,7 +32,7 @@ import useProductionLines from '../utils/useProductionLines';
 import useTabParam from '../utils/useTabParam';
 import { urlParam, urlPick, urlNum } from '../utils/urlInit';
 import { getLineFamilyNames } from '../utils/lineHierarchy';
-import { inSectionScope } from '../utils/sectionScope';
+import { inSectionScope, lineScope } from '../utils/sectionScope';
 import { getWorkDate } from '../utils/workDate';
 import { loadPmTeams, isAmTeam } from '../utils/pmTeams';
 import { EQUIPMENT_KINDS, KIND_META } from '../utils/equipmentKinds';
@@ -43,6 +43,8 @@ import {
   buildMaintenanceLevels, summarizeItems, actionsOf, splitWindows,
   PRIORITY, TREND_META, THRESH, WINDOW,
 } from '../utils/maintenanceLevels';
+import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
+import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
 const inp = { padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
@@ -69,8 +71,8 @@ const n1 = (v) => (v == null ? '—' : Number(v).toLocaleString('th-TH', { maxim
 function Chip({ color, children, title }) {
   return (
     <span title={title} style={{
-      display: 'inline-block', padding: '2px 9px', borderRadius: 12, fontSize: 11.5, fontWeight: 800,
-      color, border: `1px solid ${color}66`, background: `${color}1a`, whiteSpace: 'nowrap',
+      display: 'inline-block', padding: '2px 9px', borderRadius: 'var(--r-lg)', fontSize: 11.5, fontWeight: 800,
+      color, border: `1px solid ${tint(color, 'line')}`, background: `${tint(color, 'dim')}`, whiteSpace: 'nowrap',
     }}>{children}</span>
   );
 }
@@ -113,7 +115,7 @@ function EquipCell({ it }) {
 }
 
 export default function MaintenanceLevels() {
-  const { role, lineId, sections } = useContext(UserContext);
+  const { role, lineId, sections, scopeIdx } = useContext(UserContext);
   const navigate = useNavigate();
   const lines = useProductionLines();
   const [view, setView] = useTabParam(['todo', 'equip'], 'todo', 'view');
@@ -208,12 +210,14 @@ export default function MaintenanceLevels() {
   }, [raw, lineFamilyOf, lines, todayStr]);
 
   /* ขอบเขตไลน์ — เกณฑ์เดียวกับ /mtn-analysis และ /mtn-repair (ต้องแก้พร้อมกันทั้ง 3 ที่) */
+  /* 🔭 ขอบเขตไลน์ — **ของกลาง `lineScope()` เท่านั้น** (QC audit 09/11)
+     สูตรที่เคยก๊อปไว้ที่นี่ให้ leader เห็นแค่ครอบครัวไลน์ตัวเอง = แคบกว่าที่ `profiles` ตั้งไว้
+     (กฎ 26/10: ไลน์ตัวเอง ∪ ส่วนงานที่กำกับไว้) และไม่รู้จักแกน Cost Center/ผัง (`scopeIdx`)
+     `null` = ไม่จำกัด (ความหมายเดิมของตัวแปรนี้) */
   const scopeLines = useMemo(() => {
-    if (role === 'admin') return null;
-    if (role === 'leader' && lineId) { const self = lines.find(l => String(l.id) === String(lineId)); return self ? new Set(getLineFamilyNames(lines, self.name)) : new Set(); }
-    if (sections?.length) return new Set(lines.filter(l => inSectionScope(sections, l.section)).map(l => l.name));
-    return null;
-  }, [lines, role, lineId, sections]);
+    const r = lineScope({ role, lineId, sections: sections || [], lines, scopeIdx });
+    return r.unlimited ? null : new Set(r.names);
+  }, [lines, role, lineId, sections, scopeIdx]);
   /* 🔴 ช่องเลือกไลน์ต้อง "ไม่ตาย" — ส่วนงานที่ไม่มีไลน์ผลิตสังกัดเลย (QA · Planning&Store · ฝั่งช่าง)
      กรองด้วย section แล้วเหลือ 0 ⇒ dropdown ว่างเปล่า = แจ้งซ่อม/เลือกไลน์ไม่ได้ทั้งหน้า (เคสจริง 26/10)
      ⇒ ต้องผ่าน `scopeLines()` ของกลางใน `components/LineSelect.jsx` ที่มีตาข่าย
@@ -221,8 +225,8 @@ export default function MaintenanceLevels() {
      ⚠️ **คนละแกนกับ `scopeLines` (Set) ข้างบน** ซึ่งเป็นตัวกรองรายการ + ฐานของด่านสิทธิ์ขั้นเซ็น
         (`reporterScope`) — ตัวนั้นต้อง fail-closed เหมือนเดิม **ห้ามยุบรวมกัน** */
   const scopedLineObjs = useMemo(
-    () => pickerLines(lines, { role, lineId, sections }),
-    [lines, role, lineId, sections]);
+    () => pickerLines(lines, { role, lineId, sections, scopeIdx }),
+    [lines, role, lineId, sections, scopeIdx]);
   const famOfSel = useMemo(() => (line ? new Set(lineFamilyOf(line)) : null), [line, lineFamilyOf]);
 
   // กรองระดับอุปกรณ์ (ขอบเขต → ไลน์ → ชนิด → คำค้น) — การ์ดหัว 3 ระดับคิดจากชุดนี้
@@ -252,7 +256,7 @@ export default function MaintenanceLevels() {
     <Page style={{ display: 'grid', gap: 14 }}>
       {/* อยู่ใต้ /pm (Hub) เท่านั้น ⇒ ชื่อหน้าถูกซ่อนโดย Hub · ใส่ไว้เพื่อให้หน้านี้ยังมีหัวถ้าเปิดเดี่ยว (UI-STANDARD §2) */}
       <PageHeader title="3 ระดับ PM" icon="🧭" />
-      {loadErr && <div style={{ ...card, borderColor: '#ef4444', color: '#ef4444', fontSize: 13, fontWeight: 700 }}>⚠️ {loadErr}</div>}
+      {loadErr && <div style={{ ...card, borderColor: 'var(--red)', color: 'var(--red)', fontSize: 13, fontWeight: 700 }}>⚠️ {loadErr}</div>}
 
       {/* ── ตัวกรอง ── */}
       <FilterBar>
@@ -263,7 +267,7 @@ export default function MaintenanceLevels() {
         ]} />
         <SearchInput value={q} onChange={setQ} fields="เลขเครื่อง / ชื่อ / ไลน์" ariaLabel="ค้นหาอุปกรณ์" />
         <span className="spacer" />
-        <button onClick={() => setReloadKey(k => k + 1)} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 8, padding: '0 12px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>🔄 รีเฟรช</button>
+        <button onClick={() => setReloadKey(k => k + 1)} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '0 12px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>รีเฟรช</button>
       </FilterBar>
       {/* 🔴 การ์ดสถิติ 3 ใบ = **เนื้อหา** ต้องอยู่ใต้แถบกรอง (UI-STANDARD §2.1 ลำดับตายตัว)
           ย้ายลงมา 20/10 — ตัวเลขในการ์ดก็มาจาก `sum` ที่คิดจากของที่ผ่านตัวกรองแล้ว */}
@@ -275,16 +279,16 @@ export default function MaintenanceLevels() {
             ? `ช่องว่าง: ${sum.preventive.failingNoPlan} อุปกรณ์เสีย ≥${THRESH.minStops} ครั้ง/30 วัน แต่ยังไม่มีแผน PM ที่มีรอบ`
             : 'แผนที่เป็น "ตามรอบ" ไม่มีวันครบกำหนด = ระบบเตือนล่วงหน้าไม่ได้'}>
           <Stat label="มีแผน PM" value={sum.preventive.withPlan} sub={`(มีรอบจริง ${sum.preventive.withCycle})`} />
-          <Stat label="เลยกำหนด" value={sum.preventive.overdue} color={sum.preventive.overdue ? '#ef4444' : undefined} />
+          <Stat label="เลยกำหนด" value={sum.preventive.overdue} color={sum.preventive.overdue ? 'var(--red)' : undefined} />
           <Stat label="ใกล้ครบกำหนด" value={sum.preventive.dueSoon} color={sum.preventive.dueSoon ? '#f59a3f' : undefined} />
           <Stat label="มีรอบแต่ยังไม่เคยตรวจ" value={sum.preventive.never} />
         </LevelCard>
 
-        <LevelCard step="2" title="Predictive — ดูจากข้อมูลจริง" en="Reliability-based (downtime)" color="#a855f7"
+        <LevelCard step="2" title="Predictive — ดูจากข้อมูลจริง" en="Reliability-based (downtime)" color="var(--blue)"
           question="เครื่องกำลังเสียบ่อยขึ้นไหม · จะเสียอีกเมื่อไหร่"
           foot={`เทียบ ${WINDOW.recentDays} วันล่าสุด (ตั้งแต่ ${fmtYmd(cov?.recentFrom)}) กับ ${WINDOW.baseDays} วันก่อนหน้า · ต่อชั่วโมงเดินเครื่องจริง (หักพักแล้ว)`}>
           <Stat label="วิเคราะห์ได้" value={sum.predictive.analysed} sub={sum.predictive.nodata ? `(ไม่รู้ชั่วโมงเดิน ${sum.predictive.nodata})` : ''} />
-          <Stat label="แนวโน้มแย่ลง" value={sum.predictive.worse} color={sum.predictive.worse ? '#ef4444' : undefined} />
+          <Stat label="แนวโน้มแย่ลง" value={sum.predictive.worse} color={sum.predictive.worse ? 'var(--red)' : undefined} />
           <Stat label={`คาดเสียภายใน ${THRESH.soonDays} วัน`} value={sum.predictive.etaSoon} color={sum.predictive.etaSoon ? '#f59a3f' : undefined} />
           <Stat label="ดีขึ้น" value={sum.predictive.better} color={sum.predictive.better ? '#3dd65c' : undefined} />
           <Stat label="เวลาหยุดที่คาด 30 วันข้างหน้า" value={fmtDur(sum.predictive.riskMin30)} />
@@ -302,29 +306,12 @@ export default function MaintenanceLevels() {
         </LevelCard>
       </div>
 
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        {KIND_CHIPS.map(c => {
-          const on = kind === c.key;
-          return (
-            <button key={c.key} onClick={() => setKind(c.key)} style={{
-              padding: '5px 12px', borderRadius: 16, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
-              background: on ? 'var(--accent-dim)' : 'var(--bg3)', color: on ? 'var(--accent)' : 'var(--muted)',
-            }}>{c.icon} {c.label}</button>
-          );
-        })}
-        {view === 'todo' && [0, 1, 2, 3].map(p => {
-          const on = prio === p;
-          const c = p ? PRIORITY[p].color : 'var(--accent)';
-          return (
-            <button key={`p${p}`} onClick={() => setPrio(p)} style={{
-              padding: '5px 12px', borderRadius: 16, fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              border: `1.5px solid ${on ? c : 'var(--border2)'}`, background: on ? `${p ? c : '#3dd65c'}1a` : 'var(--bg3)',
-              color: on ? c : 'var(--muted)', marginLeft: p === 0 ? 8 : 0,
-            }}>{p ? PRIORITY[p].label : ALL.priority}</button>
-          );
-        })}
-      </div>
+      {/* ชนิดอุปกรณ์ = แท็บเส้นใต้ · ความสำคัญ (todo) = Segmented ปลายแถว (UI §6.36 ข้อ 0 · 06/11) */}
+      <TabBar size="sm" value={kind} onChange={setKind} tabs={KIND_CHIPS.map(c => ({ key: c.key, label: c.label }))}
+        right={view === 'todo' && (
+          <Segmented size="sm" label="ความสำคัญ" value={prio} onChange={setPrio}
+            options={[0, 1, 2, 3].map(p => ({ value: p, label: p ? PRIORITY[p].label : ALL.priority }))} />
+        )} />
 
       {/* ── ตาราง ── */}
       {!shownRows.length ? (
@@ -332,7 +319,7 @@ export default function MaintenanceLevels() {
           {view === 'todo' ? 'ไม่มีคำแนะนำในตัวกรองนี้ ✅' : 'ไม่มีอุปกรณ์ในตัวกรองนี้ (อุปกรณ์ที่ไม่มีแผน PM และไม่เคยเสียใน 90 วัน ไม่ขึ้นรายการ)'}
         </div>
       ) : view === 'todo' ? (
-        <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
+        <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
             <thead><tr style={{ background: 'var(--bg3)' }}>
               {['ความด่วน', 'อุปกรณ์', 'ควรทำ', 'เพราะอะไร (ข้อมูลจริง)', 'ภายใน', ''].map(h => <th key={h} style={th}>{h}</th>)}
@@ -346,7 +333,7 @@ export default function MaintenanceLevels() {
                   <td style={{ ...td, color: 'var(--text2)', lineHeight: 1.55, minWidth: 280 }}>{a.why}</td>
                   <td style={{ ...td, whiteSpace: 'nowrap', fontWeight: 700 }}>{a.byYmd === todayStr ? 'วันนี้' : fmtYmd(a.byYmd)}</td>
                   <td style={td}>
-                    <button onClick={() => navigate(a.link)} style={{ background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 8, padding: '5px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                    <button onClick={() => navigate(a.link)} style={{ background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '5px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
                       {a.linkLabel} →
                     </button>
                   </td>
@@ -356,7 +343,7 @@ export default function MaintenanceLevels() {
           </table>
         </div>
       ) : (
-        <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 12 }}>
+        <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1080 }}>
             <thead><tr style={{ background: 'var(--bg3)' }}>
               {['อุปกรณ์', '① แผน PM', '② เสีย 30 วัน', 'ต่อ 100 ชม.เดิน', 'แนวโน้ม', 'MTBF', 'คาดเสียครั้งถัดไป', 'เวลาหยุดที่คาด 30 วัน', '≈ มูลค่า', '③ คำแนะนำ'].map(h => <th key={h} style={th}>{h}</th>)}

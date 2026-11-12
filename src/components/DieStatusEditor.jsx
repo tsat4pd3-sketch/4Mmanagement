@@ -42,9 +42,9 @@ export default function DieStatusEditor({ die, canEdit, fullName, ready, onSaved
       <div style={{ display: 'grid', gap: 4 }}>
         <span style={{
           alignSelf: 'start', justifySelf: 'start', fontSize: 12, fontWeight: 700, padding: '3px 10px',
-          borderRadius: 999, color: meta.color, background: meta.bg, border: `1px solid ${meta.color}`,
+          borderRadius: 'var(--r-pill)', color: meta.color, background: meta.bg, border: `1px solid ${meta.color}`,
         }}>{meta.icon} {meta.label}</span>
-        {ext.status_note && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>📝 {ext.status_note}</div>}
+        {ext.status_note && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{ext.status_note}</div>}
         {ext.status_updated_at && (
           <div style={{ fontSize: 11, color: 'var(--muted)' }}>
             อัพเดท {new Date(ext.status_updated_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}
@@ -73,7 +73,7 @@ export default function DieStatusEditor({ die, canEdit, fullName, ready, onSaved
       )}
       {dirty && (
         <button onClick={save} disabled={saving} style={{
-          background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8,
+          background: '#16a34a', color: '#fff', border: 'none', borderRadius: 'var(--r-md)',
           padding: '7px 14px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', justifySelf: 'start',
           opacity: saving ? 0.6 : 1,
         }}>{saving ? 'กำลังบันทึก…' : '💾 บันทึกสถานะ'}</button>

@@ -75,11 +75,11 @@ export default function PartLevelCoveragePanel() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ ...card, padding: '14px 16px' }}>
         <div style={{ fontWeight: 800, fontSize: 15, fontFamily: 'var(--font-display)', marginBottom: 4 }}>
-          📍 จุดเรียกเติมชิ้นส่วน — ไลน์ไหนยังไม่ตั้ง
+          จุดเรียกเติมชิ้นส่วน — ไลน์ไหนยังไม่ตั้ง
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.65 }}>
           พาร์ทที่ <b>ไลน์ใช้</b> (ต้องเบิกจากสโตร์) และยังไม่มีใครตั้ง <b>min</b> ไว้ = ระบบจะ<b>ไม่เสนอให้เบิก</b>เลย
-          ⇒ ไลน์ต้องไปโทร/เดินบอกสโตร์เอง · ตั้งค่าจริงที่ <b>⚙️ ตั้งค่าผัง → 🏭 ผลิต (ผังไลน์) → เลือกไลน์ → 📦 จุดเรียกเติมชิ้นส่วน</b>
+          ⇒ ไลน์ต้องไปโทร/เดินบอกสโตร์เอง · ตั้งค่าจริงที่ <b>ตั้งค่าผัง → 🏭 ผลิต (ผังไลน์) → เลือกไลน์ → 📦 จุดเรียกเติมชิ้นส่วน</b>
           <br />
           ⚠️ นับจาก “พาร์ทที่เคยเดินผ่านไลน์นี้” (มีแถวในสรุปยอด — รวมแถวที่ยอดเหลือ 0)
           · พาร์ทที่ <b>ไลน์ผลิตเอง</b> ไม่นับที่นี่ (เป็น “ผลิตเติม” · ค่า min/max อยู่ที่ <b>/products → 🎴 Kanban Std</b>)
@@ -144,10 +144,10 @@ export default function PartLevelCoveragePanel() {
                   </div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     {done
-                      ? <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 700 }}>✅ ตั้งครบ {g.consume} พาร์ท</span>
-                      : <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, background: 'rgba(239,68,68,0.12)', color: '#ef4444', fontWeight: 700 }}>🔴 ยังไม่ตั้ง {g.unwatched} / {g.consume} พาร์ท</span>}
-                    {g.rowNoMin > 0 && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 10, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', fontWeight: 700 }}>🟡 {g.rowNoMin} แถวไม่ใส่ min</span>}
-                    {g.produce > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>🏭 ผลิตเอง {g.produce}</span>}
+                      ? <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-md)', background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 700 }}>✅ ตั้งครบ {g.consume} พาร์ท</span>
+                      : <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-md)', background: 'rgba(239,68,68,0.12)', color: '#ef4444', fontWeight: 700 }}>🔴 ยังไม่ตั้ง {g.unwatched} / {g.consume} พาร์ท</span>}
+                    {g.rowNoMin > 0 && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-md)', background: 'rgba(245,158,11,0.12)', color: '#f59e0b', fontWeight: 700 }}>🟡 {g.rowNoMin} แถวไม่ใส่ min</span>}
+                    {g.produce > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ผลิตเอง {g.produce}</span>}
                   </div>
                 </div>
                 <div style={{ display: folded ? 'none' : undefined, overflowX: 'auto' }}>

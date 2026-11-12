@@ -184,7 +184,7 @@ export function BoardPlanPreview({ made = [], skipped = [] }) {
       <div style={{ display: 'grid', gap: 6 }}>
         {made.map((sh) => (
           <div key={sh.name} style={{
-            border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px',
+            border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '7px 10px',
             background: 'var(--bg2)', fontSize: FS,
           }}>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'baseline' }}>
@@ -223,7 +223,7 @@ export function BoardPlanPreview({ made = [], skipped = [] }) {
         </div>
       ) : null}
 
-      <div style={{ fontSize: FS - 0.5, color: 'var(--muted)', lineHeight: 1.8, background: 'var(--bg2)', borderRadius: 6, padding: '7px 10px' }}>
+      <div style={{ fontSize: FS - 0.5, color: 'var(--muted)', lineHeight: 1.8, background: 'var(--bg2)', borderRadius: 'var(--r-md)', padding: '7px 10px' }}>
         ℹ️ ช่อง <b>UNBOUND / BALANCE / ค้างที่ร้านชุบ</b> เก็บเฉพาะ “ยอดยกมา” ของคอลัมน์แรก —
         ช่องที่เหลือระบบคำนวณใหม่ทุกครั้งด้วยสูตรเดียวกับในไฟล์ จึงไม่มีทางขัดกันเอง ·
         ส่วนนี้ <b>ไม่แตะทะเบียนสินค้า คัมบัง หรือออเดอร์ลูกค้า</b> — ยกผิดก็ลบบอร์ดทิ้งได้

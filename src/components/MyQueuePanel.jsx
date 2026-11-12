@@ -14,6 +14,9 @@
    3. **เลือกเฉพาะคอลัมน์ที่ใช้** — `mtn_orders` มี 116 คอลัมน์ `select('*')` = 1.59 MB/ครั้ง
    4. **ว่างต้องขึ้น "ไม่มีงานค้าง" ห้ามซ่อนแผง** · โหลดไม่ครบต้องเขียนบนจอว่าไม่ครบ
       (ผู้ใช้ต้องแยก "เคลียร์หมดแล้ว" ออกจาก "คิวรีล่ม" ให้ได้)
+   5. **แหล่งใหม่ต้องส่งทุกครั้ง** (ส่ง undefined = partial โดยตั้งใจ) — ปัจจุบัน: ใบ MO ·
+      กะขอปิด · 4M · ใบติดตามงาน · คำขอขึ้นขั้นทักษะ · **🟡 ถังเหลืองรอพิจารณา (09/11)**
+      ตารางถังไม่มีคอลัมน์ส่วนงาน ⇒ ที่นี่เติม `section` จากทะเบียนไลน์ให้ก่อนส่ง
    ═══════════════════════════════════════════════════════════════════════════ */
 import { useCallback, useContext, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -24,8 +27,9 @@ import { loadProductionLines } from '../utils/useProductionLines';
 import { OPEN_MO_STATUSES, actorSideOf } from '../utils/mtnStepPerm';
 import { isAmTeam } from '../utils/pmTeams';
 import { positionRank } from '../utils/positions';
-import { can as canPerm, isActionSeeded } from '../utils/permissions';
+import { can as canPerm, isActionSeeded, canSeeded as canSeededPerm } from '../utils/permissions';
 import { teamKeyOf } from '../utils/mtnTeams';
+import { pendingYellow } from '../utils/qualityBin';
 import {
   TIER, TIER_TITLE, EMPTY_TEXT, OLD_DAYS, buildQueue, badgeCount, capped,
 } from '../utils/myQueue';
@@ -66,7 +70,7 @@ export async function loadMyQueue(me) {
   const ok = (r) => (r.error ? undefined : (r.data || []));
 
   const canLu = !!(me.canLevelUp || me.canLevelUp100);
-  const [moR, sesR, prR, fourR, actR, lines, luR] = await Promise.all([
+  const [moR, sesR, prR, fourR, actR, lines, luR, binR, binRedR, redPendR] = await Promise.all([
     /* กรองด้วยสถานะที่ยังมีคนต้องทำต่อ — เดิม `.gt('current_step', 1)` ตัดใบ "รอจ่ายงาน" (current_step = 1)
        ทิ้งทั้งหมด และ `.is('approve_at', null)` ตัดใบ MTN ที่อนุมัติแล้วแต่ยังรอปิดใบ (ขั้น 8) */
     supabaseDR.from('mtn_orders').select(MO_COLS)
@@ -86,6 +90,23 @@ export async function loadMyQueue(me) {
       ? supabase.from('skill_level_up_requests').select('id, to_level, requested_at, employees!inner(section, is_active)')
         .eq('status', 'pending').eq('employees.is_active', true).limit(500)
       : Promise.resolve({ data: null, error: null }),
+    /* 🟡 ถังเหลืองรอพิจารณา — เงื่อนไขเดียวกับแผงในหน้าถัง (`pendingYellow`) · เลือกเฉพาะคอลัมน์ที่คิวใช้
+       (ตารางนี้กว้าง — `select('*')` คือตัวกิน egress · กฎเขียน DB ข้อ 11) */
+    supabaseDR.from('quality_bin_records')
+      .select('id, bin, is_active, work_date, line_name, mat_no, part_name, part_no, qty, cause, qa_decision, return_date, special_use_doc_no, repair_date, qty_ng')
+      .eq('bin', 'yellow').eq('is_active', true)
+      /* 🔴 ตัดสินแล้วแต่ยังไม่จบ = ยังค้าง (บั๊ก A 10/11) — ตัด "งานดี" ฝั่ง server ที่เหลือตัดสินด้วย pendingYellow() */
+      .or('qa_decision.is.null,qa_decision.neq.good').is('return_date', null)
+      .order('work_date', { ascending: true }).limit(200),
+    /* ใบเหลืองที่ย้ายลงถังแดงไปแล้ว = ออกจากคิว (ไม่งั้นเป็น "ของค้างเทียม" ที่ทำให้คนเลิกเชื่อจอ)
+       แถวจริงตอนนี้ 0 — แต่ต้องถามไว้ เพราะทางย้ายมือยังเปิดอยู่ในหน้าถัง */
+    supabaseDR.from('quality_bin_records').select('from_yellow_id')
+      .eq('bin', 'red').eq('is_active', true).not('from_yellow_id', 'is', null).limit(1000),
+    /* 🔴 ถังแดงยังไม่ออกใบ (10/11) — หัวหน้าแผนกต้องเห็นเพื่อทวงหัวหน้าไลน์ · เฉพาะคอลัมน์ที่คิวใช้
+       ⚠️ นับเฉพาะ "ยังไม่ผูกใบ" — ผูกใบร่างแล้วดูที่หน้าถัง (ขึ้นส้ม "ร่าง · ยังไม่ส่งอนุมัติ") */
+    supabaseDR.from('quality_bin_records').select('id, work_date, line_name, qty')
+      .eq('bin', 'red').eq('is_active', true).is('scrap_report_id', null)
+      .order('work_date', { ascending: true }).limit(300),
   ]);
   const levelUps = canLu ? ok(luR)?.map(r => ({ id: r.id, to_level: r.to_level, requested_at: r.requested_at, section: r.employees?.section })) : undefined;
 
@@ -95,6 +116,23 @@ export async function loadMyQueue(me) {
   const fourM = ok(fourR)?.map(f => ({
     ...f, section: secOfLine.get(String(f.line_name || '').trim().toLowerCase()),
   }));
+
+  /* 🟡 ถังเหลือง: เติม `section` จากทะเบียนไลน์ (ตารางถังไม่มีคอลัมน์ส่วนงาน) — ไลน์นอกทะเบียน
+     ปล่อย undefined ให้ buildQueue นับเป็น "ชี้ส่วนงานไม่ได้" แล้วจอเขียนบอก ห้ามเดาให้
+     🔴 ก้อนใดก้อนหนึ่งล่ม = ส่ง undefined ⇒ partial (คิวที่ "ครบไม่จริง" แย่กว่าคิวที่บอกว่าโหลดไม่ครบ) */
+  /* 🔴 ชนเพดาน 1000 = เพดาน PostgREST พอดี ⇒ รายการใบแดงอาจไม่ครบ แล้วใบที่ย้ายลงแดงไปแล้ว
+     กลับมาค้างในคิวของทุกคน (ของค้างเทียม — สิ่งที่ตัวกรองนี้มีไว้กัน) ⇒ ถือเป็น "ไม่รู้" เหมือนคิวรีล่ม */
+  const redRows = binRedR.error ? null : (binRedR.data || []);
+  const movedToRed = (redRows && redRows.length < 1000) ? new Set(redRows.map(r => r.from_yellow_id)) : null;
+  /* 🔴 ชนเพดาน 200 ของคิวเอง = "โหลดไม่ครบ" ไม่ใช่ "มีแค่นี้" ⇒ ติดธงให้จอเขียนบอก (กฎเขียน DB ข้อ 5) */
+  const binsTruncated = Array.isArray(binR.data) && binR.data.length >= 200;
+  const bins = (binR.error || !movedToRed) ? undefined
+    : pendingYellow(binR.data || [], movedToRed)
+      .map(b => ({ ...b, section: secOfLine.get(String(b.line_name || '').trim().toLowerCase()) }));
+
+  const redBins = redPendR.error ? null
+    : (redPendR.data || []).map(b => ({ ...b, section: secOfLine.get(String(b.line_name || '').trim().toLowerCase()) }));
+  const redBinsTruncated = Array.isArray(redPendR.data) && redPendR.data.length >= 300;
 
   const moRows = ok(moR);
   const mo = moRows?.filter(o => !DEAD.includes(String(o.status || '')));
@@ -116,7 +154,7 @@ export async function loadMyQueue(me) {
      🔴 คิวรีล่ม = `mo` เป็น undefined ⇒ **ไม่ส่ง** `moAll` เพื่อให้ `countsCapped` ติดธง
         ห้ามส่ง [] (จะกลายเป็น "ทุกกองมี 0 ใบ" ทั้งที่ไม่รู้ · ลิสต์ว่าง 2 ความหมาย · กฎข้อ 12) */
   return buildQueue({ mo, moAll: mo, moAllCapped: moTruncated, moTruncated,
-    sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps }, me);
+    sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps, bins, binsTruncated, redBins, redBinsTruncated }, me);
 }
 
 /* ── UI ชิ้นเล็ก ────────────────────────────────────────────────────────── */
@@ -138,7 +176,7 @@ function Row({ it, onGo }) {
       </span>
       {it.age != null && (
         <span title={`ค้างมา ${it.age} วัน`} style={{
-          flexShrink: 0, fontSize: 11, fontWeight: 700, padding: '1px 6px', borderRadius: 999,
+          flexShrink: 0, fontSize: 11, fontWeight: 700, padding: '1px 6px', borderRadius: 'var(--r-pill)',
           color: old ? '#ef4444' : 'var(--muted)',
           background: old ? '#ef444418' : 'transparent',
         }}>{it.age}ว</span>
@@ -242,6 +280,8 @@ export function useMyQueue(open = false) {
           // ⬆️ คีย์เดียวกับปุ่มอนุมัติใน /operator?tab=levelup
           canLevelUp: canPerm('skills', 'approve_levelup', role),
           canLevelUp100: canPerm('skills', 'approve_levelup_100', role),
+          // 🔎 ถังเหลืองขั้น QA (ตัดสิน/ตรวจรับ) — คีย์เดียวกับปุ่มในหน้าถัง
+          canBinDecide: canSeededPerm('qa', 'bin_decide', role),
         });
       } catch {
         /* supabase-js คืน error ไม่ throw — มาถึงนี่ได้เฉพาะกรณีผิดปกติ ⇒ ถือว่าไม่ครบ ห้ามขึ้นว่าไม่มีงาน */

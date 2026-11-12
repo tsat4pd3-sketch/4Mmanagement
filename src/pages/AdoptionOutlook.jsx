@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, supabaseDR } from '../supabaseClient';
+import { fetchAllPages } from '../utils/fetchByIds';
 import { loadProductionLines } from '../utils/useProductionLines';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
@@ -10,6 +11,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { RATE_COMPONENTS, fmtBaht } from '../utils/costSaving';
 import { rnd, rint, pick } from '../utils/seededRandom';
 import { groupLean } from '../utils/oee';
+import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 /* ══ 🔮 ภาพเมื่อทุกแผนกใช้ครบ (Full-Adoption Outlook) · 2026-08-13 ═══════════════════════
    ทำอะไร: ตอบผู้บริหารว่า "ถ้าทุกแผนกใช้ระบบเต็มรูปแบบ จะได้อะไร" ด้วย 2 มุม
@@ -570,8 +572,15 @@ async function loadAll() {
   const ents = { lines: eLines, machines: eMachines, products: eProducts, customers: eCustomers, dtTypes: eDt, defTypes: eDef };
 
   /* ── loss ที่วัดได้จริงในหน้าต่าง 30 วัน (ใช้คิดเงินในแท็บ ROI) ── */
-  const { data: winSess } = await supabaseDR.from('production_sessions')
-    .select('id, work_date').gte('work_date', from).lte('work_date', today);
+  /* 🔴 เพดาน 1,000 แถว — ทุกสถานะ ทุกไลน์ 30 วัน วัดจริง 11/11/26 = **989 แถว เหลือที่ 11**
+     `ids` ชุดนี้เป็นตัวตั้งของ loss/ROI (บาท/เดือน) ⇒ ชนเมื่อไหร่ตัวเลขเงินต่ำกว่าจริงแบบเงียบ
+     (เดิมยัง `const { data } = await …` กลืน error ด้วย — ผิดกฎเขียน DB ข้อ 1) */
+  const winPage = await fetchAllPages(
+    () => supabaseDR.from('production_sessions').select('id, work_date').gte('work_date', from).lte('work_date', today),
+    { orderBy: ['work_date', 'id'] },
+  );
+  const winSess = winPage.rows;
+  const sessLoadErr = winPage.error || (winPage.truncated ? 'กะในหน้าต่าง 30 วันเยอะเกินกว่าจะโหลดครบ' : null);
   const ids = (winSess || []).map(s => s.id);
 
   const [dts, defs, rates] = await Promise.all([
@@ -787,7 +796,7 @@ const Badge = ({ tone, children }) => {
   const dashed = tone === 'guess' || tone === 'sim';   // ของที่ "ยังไม่จริง" ใช้เส้นประเสมอ
   return <span style={{
     fontSize: 11, fontWeight: 700, color: c, whiteSpace: 'nowrap',
-    border: `1px ${dashed ? 'dashed' : 'solid'} ${c}`, borderRadius: 4, padding: '1px 6px',
+    border: `1px ${dashed ? 'dashed' : 'solid'} ${c}`, borderRadius: 'var(--r-xs)', padding: '1px 6px',
   }}>{children}</span>;
 };
 
@@ -807,12 +816,12 @@ function SignalRow({ s, navigate }) {
         {p != null && <span style={{ fontSize: 12, fontWeight: 800, color: col, minWidth: 42, textAlign: 'right' }}>{p.toFixed(0)}%</span>}
       </div>
       {p != null && (
-        <div style={{ height: 5, background: 'var(--bg3)', borderRadius: 999, overflow: 'hidden', marginTop: 4 }}>
-          <div style={{ width: `${p}%`, height: '100%', background: col, borderRadius: 999 }} />
+        <div style={{ height: 5, background: 'var(--bg3)', borderRadius: 'var(--r-pill)', overflow: 'hidden', marginTop: 4 }}>
+          <div style={{ width: `${p}%`, height: '100%', background: col, borderRadius: 'var(--r-pill)' }} />
         </div>
       )}
       {s.gap && !failed && (
-        <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 4 }}>
+        <div style={{ fontSize: 11.5, color: 'var(--amber)', marginTop: 4 }}>
           ⚠ {s.gap}
           {s.gapTo && <button onClick={() => navigate(s.gapTo)} style={{
             marginLeft: 6, background: 'none', border: 'none', padding: 0, cursor: 'pointer',
@@ -832,7 +841,7 @@ function LevelPill({ n, dim }) {
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700,
       color: dim ? 'var(--muted)' : col, border: `1px solid ${dim ? 'var(--border2)' : col}`,
-      borderRadius: 999, padding: '2px 9px', whiteSpace: 'nowrap', opacity: dim ? 0.75 : 1,
+      borderRadius: 'var(--r-pill)', padding: '2px 9px', whiteSpace: 'nowrap', opacity: dim ? 0.75 : 1,
     }}>{L.icon} {L.name}</span>
   );
 }
@@ -845,18 +854,8 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-        {[{ key: 'all', icon: '🔗', label: allOf('มิติ') }, ...DIMENSIONS].map(d => {
-          const on = only === d.key;
-          return (
-            <button key={d.key} onClick={() => setOnly(d.key)} style={{
-              fontSize: 13, fontWeight: 700, padding: '6px 13px', borderRadius: 999, cursor: 'pointer',
-              background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
-              border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
-            }}>{d.icon} {d.label}</button>
-          );
-        })}
-      </div>
+      <TabBar size="sm" value={only} onChange={setOnly}
+        tabs={[{ key: 'all', label: allOf('มิติ') }, ...DIMENSIONS].map(d => ({ key: d.key, label: d.label }))} />
 
       {dims.map(dim => (
         <div key={dim.key} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -870,7 +869,7 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
 
                 {/* สายข้อมูล — หัวใจของหน้านี้: ให้เห็นว่าคำตอบต้องต่อจากหลายแผนก และขาดตรงไหน */}
                 <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 5 }}>
-                  ต้องต่อข้อมูลจาก {q.chain.length} จุด{missing > 0 && <b style={{ color: '#f59e0b' }}> · ยังขาด {missing}</b>}
+                  ต้องต่อข้อมูลจาก {q.chain.length} จุด{missing > 0 && <b style={{ color: 'var(--amber)' }}> · ยังขาด {missing}</b>}
                 </div>
                 <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center', marginBottom: 11 }}>
                   {q.chain.map((s, si) => {
@@ -878,15 +877,15 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
                     /* โหมดสาธิต: จุดที่ยังไม่มีข้อมูลจริง แสดงเป็น "ต่อติดแบบจำลอง" (ม่วง)
                        — ห้ามทำให้ดูเหมือนเขียวของจริง ไม่งั้นคนดูแยกไม่ออกว่าอันไหนมีจริง */
                     const sim = !ok && demoOn;
-                    const col = ok ? '#22c55e' : sim ? '#a78bfa' : 'var(--muted)';
+                    const col = ok ? 'var(--green)' : sim ? 'var(--blue)' : 'var(--muted)';
                     return (
                       <span key={si} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                         {si > 0 && <span style={{ color: 'var(--muted)', fontSize: 12 }}>→</span>}
                         <span title={`ข้อมูลจาก: ${s.d}${sim ? ' (จำลองในโหมดสาธิต)' : ''}`} style={{
-                          fontSize: 11.5, fontWeight: 600, borderRadius: 7, padding: '3px 8px', whiteSpace: 'nowrap',
+                          fontSize: 11.5, fontWeight: 600, borderRadius: 'var(--r-md)', padding: '3px 8px', whiteSpace: 'nowrap',
                           color: col,
-                          background: ok ? 'rgba(34,197,94,0.10)' : sim ? 'rgba(167,139,250,0.12)' : 'transparent',
-                          border: `1px ${ok ? 'solid' : 'dashed'} ${ok ? 'rgba(34,197,94,0.5)' : sim ? '#a78bfa' : 'var(--border2)'}`,
+                          background: ok ? 'var(--green-dim)' : sim ? 'var(--blue-dim)' : 'transparent',
+                          border: `1px ${ok ? 'solid' : 'dashed'} ${ok ? 'var(--green-line)' : sim ? 'var(--blue)' : 'var(--border2)'}`,
                         }}>
                           {ok ? '✓' : sim ? '🧪' : '○'} {s.l}
                           <span style={{ opacity: 0.65, marginLeft: 4 }}>· {s.d}</span>
@@ -897,14 +896,14 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
                 </div>
 
                 <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', alignContent: 'start' }}>
-                  <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px' }}>
+                  <div style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '9px 11px' }}>
                     <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap', marginBottom: 5 }}>
                       <span style={{ fontSize: 12.5, fontWeight: 700 }}>วันนี้</span>
                       <LevelPill n={q.now} /><Badge tone="real">วัดจริง</Badge>
                     </div>
                     <div style={{ fontSize: 12.5, lineHeight: 1.55, color: 'var(--text2)' }}>{q.nowTxt}</div>
                   </div>
-                  <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px' }}>
+                  <div style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '9px 11px' }}>
                     <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap', marginBottom: 5 }}>
                       <span style={{ fontSize: 12.5, fontWeight: 700 }}>เมื่อข้อมูลเชื่อมครบ</span>
                       <LevelPill n={q.full} /><Badge tone="guess">คาดการณ์</Badge>
@@ -919,14 +918,14 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
                   const tc = dm.tone === 'bad' ? '#ef4444' : dm.tone === 'warn' ? '#f59e0b' : '#22c55e';
                   return (
                     <div style={{
-                      marginTop: 11, borderRadius: 9, padding: '10px 12px',
-                      background: 'rgba(167,139,250,0.07)', border: '1px dashed #a78bfa',
+                      marginTop: 11, borderRadius: 'var(--r-md)', padding: '10px 12px',
+                      background: 'var(--blue-dim)', border: '1px dashed var(--blue)',
                     }}>
                       <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap', marginBottom: 7 }}>
-                        <span style={{ fontSize: 12, fontWeight: 800, color: '#a78bfa' }}>🧪 ตัวอย่างคำตอบเมื่อข้อมูลครบ</span>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--blue)' }}>ตัวอย่างคำตอบเมื่อข้อมูลครบ</span>
                         <span style={{
-                          fontSize: 11, fontWeight: 700, color: '#a78bfa',
-                          border: '1px dashed #a78bfa', borderRadius: 4, padding: '1px 6px',
+                          fontSize: 11, fontWeight: 700, color: 'var(--blue)',
+                          border: '1px dashed var(--blue)', borderRadius: 'var(--r-xs)', padding: '1px 6px',
                         }}>ตัวเลขจำลอง · ชื่อไลน์/เครื่อง/ลูกค้าเป็นของจริง</span>
                       </div>
                       <div style={{ fontSize: 13.5, fontWeight: 800, color: tc, lineHeight: 1.45, marginBottom: 7 }}>{dm.head}</div>
@@ -939,7 +938,7 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
                         <div style={{
                           marginTop: 8, paddingTop: 7, borderTop: '1px solid var(--border)',
                           fontSize: 12, lineHeight: 1.55, fontStyle: 'italic',
-                        }}>💡 {dm.note}</div>
+                        }}>{dm.note}</div>
                       )}
                     </div>
                   );
@@ -947,7 +946,7 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
 
                 {q.need?.length > 0 && (
                   <div style={{ marginTop: 10, fontSize: 12, color: 'var(--muted)' }}>
-                    <b style={{ color: '#f59e0b' }}>ต้องเติมอะไรถึงจะไปถึง:</b> {q.need.join(' · ')}
+                    <b style={{ color: 'var(--amber)' }}>ต้องเติมอะไรถึงจะไปถึง:</b> {q.need.join(' · ')}
                     <button onClick={() => navigate(q.to)} style={{
                       marginLeft: 8, background: 'none', border: 'none', padding: 0, cursor: 'pointer',
                       color: 'var(--accent)', fontSize: 12, fontWeight: 700, textDecoration: 'underline',
@@ -990,7 +989,7 @@ function LadderTab({ c, navigate, isMobile }) {
             <div style={{ fontSize: 12.5, color: 'var(--text2)', marginBottom: 10 }}>{L.desc}</div>
 
             <div style={{ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', alignContent: 'start' }}>
-              <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px' }}>
+              <div style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '9px 11px' }}>
                 <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 5 }}>
                   วันนี้อยู่ระดับนี้ <span style={{ color: c0, fontSize: 15 }}>{nowAt.length}</span> คำถาม <Badge tone="real">วัดจริง</Badge>
                 </div>
@@ -1000,7 +999,7 @@ function LadderTab({ c, navigate, isMobile }) {
                   </ul>
                   : <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>— ยังไม่มีคำถามไหนอยู่ระดับนี้</div>}
               </div>
-              <div style={{ background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px' }}>
+              <div style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '9px 11px' }}>
                 <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 5 }}>
                   จะขึ้นมาอยู่ระดับนี้ <span style={{ color: c0, fontSize: 15 }}>{fullAt.length}</span> คำถาม <Badge tone="guess">เมื่อข้อมูลครบ</Badge>
                 </div>
@@ -1016,8 +1015,8 @@ function LadderTab({ c, navigate, isMobile }) {
       })}
 
       {/* กุญแจที่ปลดล็อกได้เยอะที่สุด — นับว่าข้อมูลชิ้นไหนถูกใช้ในหลายคำถามที่สุด แล้วยังไม่มี */}
-      <div style={{ ...cardSt, borderLeft: '4px solid #ef4444' }}>
-        <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 3 }}>🔑 ข้อมูลชิ้นไหนปลดล็อกได้เยอะที่สุด</div>
+      <div style={{ ...cardSt, borderLeft: '4px solid var(--red)' }}>
+        <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 3 }}>ข้อมูลชิ้นไหนปลดล็อกได้เยอะที่สุด</div>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
           นับจากสายข้อมูลของทุกคำถาม — ชิ้นที่ยังไม่มี และถูกใช้ในหลายคำถามที่สุด ควรทำก่อน
         </div>
@@ -1029,16 +1028,16 @@ function LadderTab({ c, navigate, isMobile }) {
             (tally[k] ||= { l: s.l, d: s.d, n: 0 }).n++;
           }));
           const list = Object.values(tally).sort((a, b) => b.n - a.n);
-          if (!list.length) return <div style={{ fontSize: 13, color: '#22c55e' }}>✅ สายข้อมูลครบทุกจุดแล้ว</div>;
+          if (!list.length) return <div style={{ fontSize: 13, color: 'var(--green)' }}>✅ สายข้อมูลครบทุกจุดแล้ว</div>;
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {list.map((x, i) => (
                 <div key={i} style={{
                   display: 'flex', gap: 9, alignItems: 'center',
-                  background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '7px 11px',
+                  background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '7px 11px',
                 }}>
                   <span style={{
-                    fontSize: 13, fontWeight: 800, color: x.n >= 3 ? '#ef4444' : x.n === 2 ? '#f59e0b' : 'var(--muted)',
+                    fontSize: 13, fontWeight: 800, color: x.n >= 3 ? 'var(--red)' : x.n === 2 ? 'var(--amber)' : 'var(--muted)',
                     minWidth: 58, whiteSpace: 'nowrap',
                   }}>{x.n} คำถาม</span>
                   <span style={{ flex: 1, minWidth: 0, fontSize: 12.5 }}>
@@ -1067,14 +1066,14 @@ function DeptTab({ c, navigate, isMobile }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* สรุปความพร้อมรวม — เรียงแผนกที่ห่างเป้าที่สุดขึ้นก่อน (ชี้เป้าให้ลงมือ) */}
       <div style={{ ...cardSt }}>
-        <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 9 }}>📊 ความครบของข้อมูล — เทียบกันทุกแผนก</div>
+        <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 9 }}>ความครบของข้อมูล — เทียบกันทุกแผนก</div>
         <div style={{ display: 'grid', gap: 9, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'repeat(auto-fit, minmax(min(220px,100%),1fr))', alignContent: 'start' }}>
           {[...rows].sort((a, b) => (a.ready ?? 999) - (b.ready ?? 999)).map(r => {
             const col = r.ready == null ? 'var(--muted)' : r.ready >= 80 ? '#22c55e' : r.ready >= 40 ? '#f59e0b' : '#ef4444';
             return (
               <button key={r.key} onClick={() => navigate(r.to)} style={{
                 textAlign: 'left', cursor: 'pointer', background: 'var(--bg3)',
-                border: `1px solid var(--border2)`, borderLeft: `4px solid ${col}`, borderRadius: 8, padding: '9px 11px', color: 'var(--text)',
+                border: `1px solid var(--border2)`, borderLeft: `4px solid ${col}`, borderRadius: 'var(--r-md)', padding: '9px 11px', color: 'var(--text)',
               }}>
                 <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{r.icon} {r.label}</div>
                 <div style={{ fontSize: 25, fontWeight: 800, color: col, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>
@@ -1096,7 +1095,7 @@ function DeptTab({ c, navigate, isMobile }) {
           <div style={{ display: 'flex', gap: 9, alignItems: 'center', flexWrap: 'wrap', marginBottom: 4 }}>
             <span style={{ fontSize: 15.5, fontWeight: 700 }}>{r.icon} {r.label}</span>
             <button onClick={() => navigate(r.to)} style={{
-              fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 999, cursor: 'pointer',
+              fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
               background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)',
             }}>เปิด Dashboard →</button>
           </div>
@@ -1141,7 +1140,7 @@ function RoiTab({ c, loss, rates, demoOn, day, navigate, isMobile }) {
   const noNgCost = !c.partsWithCost;          // ไม่มีต้นทุน/ชิ้น = คิดเงินของเสียไม่ได้
 
   const Fact = ({ label, value, unit, sub }) => (
-    <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '10px 12px' }}>
+    <div style={{ background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
       <div style={{ fontSize: 12, color: 'var(--muted)' }}>{label}</div>
       <div style={{ fontSize: 23, fontWeight: 800, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>
         {value}{unit && <span style={{ fontSize: 13, fontWeight: 700 }}> {unit}</span>}
@@ -1170,7 +1169,7 @@ function RoiTab({ c, loss, rates, demoOn, day, navigate, isMobile }) {
       </div>
 
       {/* 2) สมมติฐานที่ผู้ใช้ปรับเอง — ต้องแยกให้ขาดจากข้อเท็จจริงข้างบน */}
-      <div style={{ ...cardSt, borderLeft: '4px solid #f59e0b' }}>
+      <div style={{ ...cardSt, borderLeft: '4px solid var(--amber)' }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
           <span style={{ fontSize: 14.5, fontWeight: 700 }}>② สมมติฐาน — ปรับได้</span>
           {realRate ? <Badge tone="real">rate จากระบบ</Badge> : <Badge tone="guess">ยังไม่มี rate จริงในระบบ</Badge>}
@@ -1183,7 +1182,7 @@ function RoiTab({ c, loss, rates, demoOn, day, navigate, isMobile }) {
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4 }}>
               {realRate
                 ? <>ค่าเฉลี่ยจาก <b>cost_center_rates</b> ในระบบ (DL+OH+DP)</>
-                : <>ยังไม่มีใครกรอก Activity Rate — ตัวเลขนี้จึงเป็น<b style={{ color: '#f59e0b' }}>สมมติฐาน</b> ·{' '}
+                : <>ยังไม่มีใครกรอก Activity Rate — ตัวเลขนี้จึงเป็น<b style={{ color: 'var(--amber)' }}>สมมติฐาน</b> ·{' '}
                   <button onClick={() => navigate('/org-setup')} style={{
                     background: 'none', border: 'none', padding: 0, cursor: 'pointer',
                     color: 'var(--accent)', fontSize: 11.5, fontWeight: 700, textDecoration: 'underline',
@@ -1209,8 +1208,8 @@ function RoiTab({ c, loss, rates, demoOn, day, navigate, isMobile }) {
           <Fact label={`ถ้าลดได้ ${cut}%`} value={fmtBaht(cutBaht)} unit="บาท/เดือน" sub={`≈ ${fmtBaht(cutBaht * 12)} บาท/ปี`} />
           {/* โหมดสาธิต: สมมติต้นทุน/ชิ้น เพื่อให้เห็นว่าช่องนี้จะตอบอะไรเมื่อกรอกต้นทุนแล้ว */}
           {noNgCost && demoOn ? (
-            <div style={{ background: 'rgba(167,139,250,0.10)', border: '1px dashed #a78bfa', borderRadius: 8, padding: '10px 12px' }}>
-              <div style={{ fontSize: 12, color: '#a78bfa', fontWeight: 700 }}>🧪 ของเสียคิดเป็นเงิน (จำลอง)</div>
+            <div style={{ background: 'var(--blue-dim)', border: '1px dashed var(--blue)', borderRadius: 'var(--r-md)', padding: '10px 12px' }}>
+              <div style={{ fontSize: 12, color: 'var(--blue)', fontWeight: 700 }}>ของเสียคิดเป็นเงิน (จำลอง)</div>
               <div style={{ fontSize: 23, fontWeight: 800, lineHeight: 1.2, fontVariantNumeric: 'tabular-nums' }}>
                 {fmtBaht(loss.ngQty * (60 + rnd(`${day}|ngcost`) * 120))}<span style={{ fontSize: 13, fontWeight: 700 }}> บาท</span>
               </div>
@@ -1224,7 +1223,7 @@ function RoiTab({ c, loss, rates, demoOn, day, navigate, isMobile }) {
           )}
         </div>
         {noNgCost && !demoOn && (
-          <div style={{ fontSize: 12, color: '#f59e0b', marginTop: 10 }}>
+          <div style={{ fontSize: 12, color: 'var(--amber)', marginTop: 10 }}>
             ⚠ ของเสีย {fmtNum(loss.ngQty)} ชิ้นแปลงเป็นบาทไม่ได้ เพราะยังไม่มีต้นทุนต่อชิ้นใน Parts Master ·{' '}
             <button onClick={() => navigate('/products')} style={{
               background: 'none', border: 'none', padding: 0, cursor: 'pointer',
@@ -1235,7 +1234,7 @@ function RoiTab({ c, loss, rates, demoOn, day, navigate, isMobile }) {
       </div>
 
       {/* 4) ทำไมวันนี้ยังไม่ได้เงินก้อนนี้ — ผูกกลับไปที่ช่องว่างที่วัดได้ */}
-      <div style={{ ...cardSt, borderLeft: '4px solid #ef4444' }}>
+      <div style={{ ...cardSt, borderLeft: '4px solid var(--red)' }}>
         <div style={{ fontSize: 14.5, fontWeight: 700, marginBottom: 3 }}>④ ทำไมวันนี้ยังไม่ได้เงินก้อนนี้</div>
         <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 10 }}>
           ระบบ<b style={{ color: 'var(--text)' }}>วัดความสูญเสียได้แล้ว</b> แต่ขั้นตอนที่จะแปลงเป็นการแก้จริงยังขาด
@@ -1249,7 +1248,7 @@ function RoiTab({ c, loss, rates, demoOn, day, navigate, isMobile }) {
           ].map((x, i) => (
             <button key={i} onClick={() => navigate(x.to)} style={{
               display: 'flex', gap: 9, alignItems: 'flex-start', textAlign: 'left', cursor: 'pointer', width: '100%',
-              background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 8, padding: '8px 11px', color: 'var(--text)',
+              background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 11px', color: 'var(--text)',
             }}>
               <span style={{ fontSize: 15 }}>{x.icon}</span>
               <span style={{ flex: 1, minWidth: 0 }}>
@@ -1270,7 +1269,7 @@ function RoiTab({ c, loss, rates, demoOn, day, navigate, isMobile }) {
 const StepHead = ({ n, icon, title, sub, tone }) => (
   <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 10 }}>
     <div style={{
-      width: 28, height: 28, borderRadius: 999, flexShrink: 0, display: 'grid', placeItems: 'center',
+      width: 28, height: 28, borderRadius: 'var(--r-pill)', flexShrink: 0, display: 'grid', placeItems: 'center',
       background: tone || 'var(--accent)', color: tone ? '#08120a' : 'var(--accent-ink)', fontWeight: 800, fontSize: 13,
     }}>{n}</div>
     <div style={{ minWidth: 0 }}>
@@ -1286,24 +1285,24 @@ const ApqBar = ({ label, val, hint, worst }) => {
   const col = v == null ? 'var(--muted)' : v >= 85 ? '#22c55e' : v >= 60 ? '#f59e0b' : '#ef4444';
   return (
     <div style={{
-      background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px',
-      border: worst ? '1px solid #ef4444' : '1px solid var(--border)',
+      background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '9px 11px',
+      border: worst ? '1px solid var(--red)' : '1px solid var(--border)',
     }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
         <span style={{ fontSize: 12, fontWeight: 700 }}>{label}</span>
         <span style={{ fontSize: 17, fontWeight: 800, color: col }}>{v == null ? '—' : `${v.toFixed(0)}%`}</span>
       </div>
-      <div style={{ height: 5, background: 'var(--bg2)', borderRadius: 999, overflow: 'hidden', margin: '5px 0 4px' }}>
+      <div style={{ height: 5, background: 'var(--bg2)', borderRadius: 'var(--r-pill)', overflow: 'hidden', margin: '5px 0 4px' }}>
         <div style={{ width: `${v == null ? 0 : Math.max(0, Math.min(100, v))}%`, height: '100%', background: col }} />
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.45 }}>{hint}</div>
-      {worst && <div style={{ fontSize: 11, fontWeight: 800, color: '#ef4444', marginTop: 3 }}>◀ ตัวฉุดหลักของกะนี้</div>}
+      {worst && <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--red)', marginTop: 3 }}>◀ ตัวฉุดหลักของกะนี้</div>}
     </div>
   );
 };
 
 function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
-  if (err) return <div style={{ ...cardSt, borderLeft: '4px solid #ef4444', fontSize: 13 }}>โหลดข้อมูลกะไม่สำเร็จ: {err}</div>;
+  if (err) return <div style={{ ...cardSt, borderLeft: '4px solid var(--red)', fontSize: 13 }}>โหลดข้อมูลกะไม่สำเร็จ: {err}</div>;
   if (!dd) return <div style={{ fontSize: 13, color: 'var(--muted)' }}>กำลังหากะที่ควรเอามาเจาะ…</div>;
   if (dd.empty) return (
     <div style={{ ...cardSt, fontSize: 13, lineHeight: 1.7 }}>
@@ -1415,11 +1414,11 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
   return (
     <div style={{ display: 'grid', gap: 12 }}>
       {/* ── กะที่ถูกเลือก ── */}
-      <div style={{ ...cardSt, borderLeft: '4px solid #ef4444' }}>
+      <div style={{ ...cardSt, borderLeft: '4px solid var(--red)' }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: 16, fontWeight: 800 }}>
-              🔬 {S.line_name} · {S.work_date} · {shiftTh}
+              {S.line_name} · {S.work_date} · {shiftTh}
             </div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
               กะที่ <b>OEE ต่ำสุดและมีเนื้อให้เจาะ</b> ในช่วง {dd.from} – {dd.to} —
@@ -1428,7 +1427,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <Badge tone="real">วัดจริง</Badge>
-            <div style={{ fontSize: 30, fontWeight: 800, color: '#ef4444', lineHeight: 1 }}>
+            <div style={{ fontSize: 30, fontWeight: 800, color: 'var(--red)', lineHeight: 1 }}>
               {S.oee == null ? '—' : `${(+S.oee).toFixed(0)}%`}
             </div>
           </div>
@@ -1445,10 +1444,10 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
         <div style={{ ...gcol(3), marginTop: 10 }}>
           {[
             { l: 'เป้าจากใบผลิต', v: tgt ? `${fmtNum(tgt)} ชิ้น` : '—' },
-            { l: 'ทำได้จริง', v: `${fmtNum(act || S.actual_qty)} ชิ้น`, c: tgt && act < tgt ? '#ef4444' : undefined },
+            { l: 'ทำได้จริง', v: `${fmtNum(act || S.actual_qty)} ชิ้น`, c: tgt && act < tgt ? 'var(--red)' : undefined },
             { l: 'เวลาหยุดรวม', v: `${fmtNum(dtMinAll)} นาที`, s: `นอกแผน ${fmtNum(dtUnplanned.reduce((a, d) => a + d.min, 0))} · ตามแผน ${fmtNum(dtPlanned.reduce((a, d) => a + d.min, 0))}` },
           ].map((x, i) => (
-            <div key={i} style={{ background: 'var(--bg3)', borderRadius: 8, padding: '9px 11px' }}>
+            <div key={i} style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '9px 11px' }}>
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>{x.l}</div>
               <div style={{ fontSize: 16, fontWeight: 800, color: x.c }}>{x.v}</div>
               {x.s && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{x.s}</div>}
@@ -1457,7 +1456,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
         </div>
         {tgt > 0 && act < tgt && (
           <div style={{ marginTop: 9, fontSize: 12.5, lineHeight: 1.6 }}>
-            👉 ขาดเป้า <b style={{ color: '#ef4444' }}>{fmtNum(tgt - act)} ชิ้น</b>
+            ขาดเป้า <b style={{ color: 'var(--red)' }}>{fmtNum(tgt - act)} ชิ้น</b>
             {ct ? <> · ที่ CT {ct} วิ/ชิ้น = เวลาที่หายไปราว <b>{fmtNum((tgt - act) * ct / 60)} นาที</b></> : null}
           </div>
         )}
@@ -1465,12 +1464,12 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
 
       {/* ── ชั้น 2 ── */}
       <div style={cardSt}>
-        <StepHead n="2" icon="🧩" title="เวลาที่หายไป เป็นความสูญเสียประเภทไหน" tone="#f59e0b"
+        <StepHead n="2" icon="🧩" title="เวลาที่หายไป เป็นความสูญเสียประเภทไหน" tone="var(--amber)"
           sub="6 Big Losses (TPM) — แกนที่ออกแบบมาสำหรับ “เวลาที่หายไป” โดยเฉพาะ และผูกกลับไปที่ A/P/Q ได้ตรงตัว" />
 
         <div style={{
           fontSize: 11.5, lineHeight: 1.6, color: 'var(--text2)', background: 'var(--bg3)',
-          borderRadius: 8, padding: '8px 10px', marginBottom: 10,
+          borderRadius: 'var(--r-md)', padding: '8px 10px', marginBottom: 10,
         }}>
           ✅ จัดกลุ่มจาก<b>ค่าที่หัวหน้าตั้งไว้เองใน master</b> (ประเภท Downtime → 6 Big Losses)
           <b> ไม่ใช่การเดาจากข้อความ</b> — แก้การจัดหมวดได้ที่ Daily Report → ⚙️ ตั้งค่า
@@ -1478,7 +1477,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
 
         <div style={gcol(isMobile ? 1 : 2)}>
           {known.map(g => (
-            <div key={g.key} style={{ background: 'var(--bg3)', borderRadius: 8, padding: '10px 11px', borderLeft: `3px solid ${g.meta.color}` }}>
+            <div key={g.key} style={{ background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '10px 11px', borderLeft: `3px solid ${g.meta.color}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 6 }}>
                 <span style={{ fontSize: 13, fontWeight: 800 }}>{g.meta.icon} {g.meta.label}</span>
                 <span style={{ fontSize: 15, fontWeight: 800, color: g.meta.color }}>
@@ -1488,7 +1487,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '3px 0 6px', flexWrap: 'wrap' }}>
                 <span style={{
                   fontSize: 11, fontWeight: 800, color: '#08120a', background: g.meta.color,
-                  borderRadius: 4, padding: '1px 7px',
+                  borderRadius: 'var(--r-xs)', padding: '1px 7px',
                 }}>ทำให้ {g.meta.oee} ตก</span>
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                   {g.count} รายการ{dtMinAll && g.min ? ` · ${Math.round(g.min / dtMinAll * 100)}% ของเวลาหยุด` : ''}
@@ -1505,7 +1504,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
                 ))}
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 7, lineHeight: 1.55, borderTop: '1px solid var(--border)', paddingTop: 6 }}>
-                💡 แนวทางแก้: {g.meta.fix}
+                แนวทางแก้: {g.meta.fix}
               </div>
             </div>
           ))}
@@ -1515,7 +1514,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
         {unknownLoss && (
           <div style={{
             marginTop: 9, fontSize: 11.5, lineHeight: 1.6, background: 'var(--bg3)',
-            border: '1px dashed var(--border2)', borderRadius: 8, padding: '8px 10px', color: 'var(--muted)',
+            border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 10px', color: 'var(--muted)',
           }}>
             ⚪ <b style={{ color: 'var(--text2)' }}>ยังไม่จัดหมวด {fmtNum(unknownLoss.min)} นาที</b> ({unknownLoss.count} รายการ:{' '}
             {unknownLoss.types.map(t => `“${t.name}”`).join(' · ')}) —
@@ -1527,7 +1526,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
         {aMin > 0 && (
           <div style={{
             marginTop: 9, fontSize: 12.5, lineHeight: 1.6, background: 'rgba(245,154,63,.09)',
-            border: '1px solid var(--accent2)', borderRadius: 8, padding: '8px 10px',
+            border: '1px solid var(--accent2)', borderRadius: 'var(--r-md)', padding: '8px 10px',
           }}>
             🔗 <b>ต่อกลับชั้นที่ 1 ได้ทันที</b> — A ที่ตกไป อธิบายได้ด้วยเครื่องเสีย + ตั้งเครื่อง
             รวม <b>{fmtNum(aMin)} นาที</b> · ส่วน P กับ Q มีก้อนของตัวเองแยกกันชัดเจน
@@ -1537,8 +1536,8 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
         {/* จุดที่ข้อมูลจริงมักผูกกันเอง — เครื่องเดียวเสียซ้ำ */}
         {Object.entries(machCount).filter(([, n]) => n >= 2).map(([m, n]) => (
           <div key={m} style={{
-            marginTop: 9, fontSize: 12.5, lineHeight: 1.6, background: 'rgba(239,68,68,0.08)',
-            border: '1px solid #ef4444', borderRadius: 8, padding: '8px 10px',
+            marginTop: 9, fontSize: 12.5, lineHeight: 1.6, background: 'var(--red-dim)',
+            border: '1px solid var(--red)', borderRadius: 'var(--r-md)', padding: '8px 10px',
           }}>
             🔎 <b>{m} เสีย {n} ครั้งในกะเดียว</b> — คนละอาการกัน ({machRows.filter(d => d.machine_no === m).map(d => d.description?.trim() || d.dt_type).join(' / ')})
             <div style={{ color: 'var(--muted)', marginTop: 3 }}>
@@ -1559,7 +1558,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
           <div style={{ display: 'grid', gap: 5 }}>
             {dd.def.map((f, i) => (
               <div key={i} style={{
-                background: 'var(--bg3)', borderLeft: '3px solid #ec4899', borderRadius: 6,
+                background: 'var(--bg3)', borderLeft: '3px solid #ec4899', borderRadius: 'var(--r-md)',
                 padding: '8px 11px', fontSize: 12.5, lineHeight: 1.55,
               }}>
                 <b style={{ color: '#ec4899' }}>{fmtNum(f.qty)} ชิ้น</b> · {f.def_type}
@@ -1575,7 +1574,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
         {linkedDefs.map(({ f, equip }, i) => (
           <div key={i} style={{
             marginTop: 9, fontSize: 12.5, lineHeight: 1.6, background: 'rgba(236,72,153,0.08)',
-            border: '1px solid #ec4899', borderRadius: 8, padding: '8px 10px',
+            border: '1px solid #ec4899', borderRadius: 'var(--r-md)', padding: '8px 10px',
           }}>
             🔗 <b>4M · Machine — เวลาที่หาย กับ ของเสีย ชี้ไปที่ “{equip}” ตัวเดียวกัน</b>
             <div style={{ marginTop: 3 }}>
@@ -1591,7 +1590,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
 
         {/* 4M ที่ "เปลี่ยนวันนั้น" — Changing Point คือ 4M ตัวจริงที่โรงงานใช้ */}
         <div style={{ marginTop: 11 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 5 }}>📝 4M ที่เปลี่ยนในวันนั้น (Changing Point)</div>
+          <div style={{ fontSize: 12.5, fontWeight: 800, marginBottom: 5 }}>4M ที่เปลี่ยนในวันนั้น (Changing Point)</div>
           {dd.fourM.length > 0 ? (
             <div style={{ display: 'grid', gap: 4 }}>
               {dd.fourM.slice(0, 6).map((m, i) => (
@@ -1611,26 +1610,26 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
 
       {/* ── ชั้น 4 ── */}
       <div style={cardSt}>
-        <StepHead n="4" icon="📐" title="ย้อนกลับไปถามเอกสารออกแบบ — เคยคาดไว้มั้ย" tone="#a78bfa"
+        <StepHead n="4" icon="📐" title="ย้อนกลับไปถามเอกสารออกแบบ — เคยคาดไว้มั้ย" tone="var(--blue)"
           sub="รู้ว่าเกิดอะไรแล้ว คำถามถัดไปคือ ตอนออกแบบกระบวนการ เราเคยคาดอาการนี้ไว้หรือเปล่า และที่ดักไว้มันพอมั้ย" />
 
         {/* สถานะเอกสารของพาร์ทนี้ — แยก "ยังไม่มีของพาร์ทนี้" ออกจาก "ทั้งระบบยังไม่มีอะไรเลย" */}
         {peSet ? (
           <div style={{
-            ...cardSt, background: 'var(--bg3)', borderLeft: '4px solid #22c55e', marginBottom: 10, fontSize: 12.5, lineHeight: 1.7,
+            ...cardSt, background: 'var(--bg3)', borderLeft: '4px solid var(--green)', marginBottom: 10, fontSize: 12.5, lineHeight: 1.7,
           }}>
-            <b style={{ color: '#22c55e' }}>พาร์ทนี้มีชุดเอกสารแล้ว</b> — {peSet.part_no}
+            <b style={{ color: 'var(--green)' }}>พาร์ทนี้มีชุดเอกสารแล้ว</b> — {peSet.part_no}
             {peSet.part_name ? ` · ${peSet.part_name}` : ''} ({peSet.line_name || '—'})
             <button onClick={() => navigate(peLink)} style={{
-              marginLeft: 8, fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 999,
+              marginLeft: 8, fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--r-md)',
               cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none',
             }}>เปิดดู →</button>
           </div>
         ) : !demoOn && (
           <div style={{
-            ...cardSt, background: 'var(--bg3)', borderLeft: '4px solid #f59e0b', marginBottom: 10, fontSize: 12.5, lineHeight: 1.7,
+            ...cardSt, background: 'var(--bg3)', borderLeft: '4px solid var(--amber)', marginBottom: 10, fontSize: 12.5, lineHeight: 1.7,
           }}>
-            <b style={{ color: '#f59e0b' }}>พาร์ทที่ผลิตในกะนี้ยังไม่มีชุดเอกสาร</b> — จึงยังย้อนกลับไปถามไม่ได้ว่า
+            <b style={{ color: 'var(--amber)' }}>พาร์ทที่ผลิตในกะนี้ยังไม่มีชุดเอกสาร</b> — จึงยังย้อนกลับไปถามไม่ได้ว่า
             อาการที่เกิดวันนี้ <b>เคยถูกคาดไว้ตอนออกแบบกระบวนการหรือเปล่า</b>
             <div style={{ marginTop: 6, color: 'var(--muted)' }}>
               โมดูล Flow / PFMEA / Control Plan <b>มีหน้าจอให้กรอกแล้ว</b> และตอนนี้ลงไปแล้ว {fmtNum(dd.pe.totalSets)} พาร์ท —
@@ -1638,9 +1637,9 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
               คือตอบไม่ได้ว่า “เคยรู้อยู่แล้วแต่ปล่อย” หรือ “ไม่เคยคิดถึงเลย”
             </div>
             <button onClick={() => navigate('/pe-docs')} style={{
-              marginTop: 8, fontSize: 11.5, fontWeight: 700, padding: '5px 12px', borderRadius: 999,
+              marginTop: 8, fontSize: 11.5, fontWeight: 700, padding: '5px 12px', borderRadius: 'var(--r-md)',
               cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)',
-            }}>📐 ไปลงเอกสารพาร์ทนี้</button>
+            }}>ไปลงเอกสารพาร์ทนี้</button>
           </div>
         )}
 
@@ -1651,8 +1650,8 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
             const vc = sim ? (sim.verdict === 'ok' ? '#22c55e' : sim.verdict === 'warn' ? '#f59e0b' : '#ef4444') : null;
             return (
               <div key={d.name} style={{
-                background: 'var(--bg3)', borderRadius: 8, padding: '10px 11px',
-                border: sim ? '1px dashed #a78bfa' : '1px solid var(--border)',
+                background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '10px 11px',
+                border: sim ? '1px dashed var(--blue)' : '1px solid var(--border)',
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'center' }}>
                   <span style={{ fontSize: 13, fontWeight: 800 }}>{d.icon} {d.name}</span>
@@ -1688,7 +1687,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
 
         {demoOn && !peReady && (
           <div style={{ marginTop: 10, fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
-            🧪 ทั้ง 3 การ์ดข้างบนเป็น<b>ตัวอย่างคำตอบ</b> — ชื่อเครื่อง/อาการ/ประเภทของเสีย
+            ทั้ง 3 การ์ดข้างบนเป็น<b>ตัวอย่างคำตอบ</b> — ชื่อเครื่อง/อาการ/ประเภทของเสีย
             เป็นของจริงจากกะนี้ แต่ค่า S-O-D · RPN · ความถี่ใน Control Plan เป็น<b>ตัวเลขสมมติ</b>
           </div>
         )}
@@ -1727,7 +1726,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
             { l: '🔧 ใบแจ้งซ่อม', to: '/mtn-repair' },
           ].map(b => (
             <button key={b.to} onClick={() => navigate(b.to)} style={{
-              fontSize: 12, fontWeight: 700, padding: '7px 12px', borderRadius: 999, cursor: 'pointer',
+              fontSize: 12, fontWeight: 700, padding: '7px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
               background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
             }}>{b.l}</button>
           ))}
@@ -1771,7 +1770,7 @@ export default function AdoptionOutlook() {
   if (err) return (
     <Page>
       <PageHeader title="ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร" icon="🔮" />
-      <div style={{ ...cardSt, borderLeft: '4px solid #ef4444', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ: {err}</div>
+      <div style={{ ...cardSt, borderLeft: '4px solid var(--red)', fontSize: 13 }}>โหลดข้อมูลไม่สำเร็จ: {err}</div>
     </Page>
   );
   if (!d) return (
@@ -1787,19 +1786,19 @@ export default function AdoptionOutlook() {
         title="ภาพเมื่อข้อมูลเชื่อมกันทั้งองค์กร" icon="🔮"
         sub={`ข้อมูล ณ ${d.loss.to} · ฝั่ง "วันนี้" นับสดจากฐานจริงทั้งหมด ไม่มีตัวเลขสมมติ`}
         tabs={[
-          { key: 'dim', label: '🔍 มิติที่มองเห็นได้' },
-          { key: 'deep', label: '🔬 เจาะ 1 กะจริง' },
-          { key: 'ladder', label: '📈 4 ระดับ (ถึง Prescriptive)' },
-          { key: 'dept', label: '🏭 ก่อน-หลัง รายแผนก' },
-          { key: 'roi', label: '💰 เงินที่ประหยัดได้' },
+          { key: 'dim', label: 'มิติที่มองเห็นได้' },
+          { key: 'deep', label: 'เจาะ 1 กะจริง' },
+          { key: 'ladder', label: '4 ระดับ (ถึง Prescriptive)' },
+          { key: 'dept', label: 'ก่อน-หลัง รายแผนก' },
+          { key: 'roi', label: 'เงินที่ประหยัดได้' },
         ]}
         tab={tab} onTab={setTab}
         actions={
-          <button onClick={() => setDemoRaw(demoOn ? 'off' : 'on')} title="เติมข้อมูลที่ยังไม่มีด้วยตัวเลขจำลอง เพื่อสาธิตให้เห็นหน้าตาคำตอบ" style={{
+          <button type="button" className="pg-btn" onClick={() => setDemoRaw(demoOn ? 'off' : 'on')} title="เติมข้อมูลที่ยังไม่มีด้วยตัวเลขจำลอง เพื่อสาธิตให้เห็นหน้าตาคำตอบ" style={{
             fontSize: 13, fontWeight: 700, padding: '7px 14px', borderRadius: 999, cursor: 'pointer',
-            background: demoOn ? '#a78bfa' : 'var(--bg3)', color: demoOn ? '#12081f' : 'var(--text)',
-            border: `1px ${demoOn ? 'solid' : 'dashed'} ${demoOn ? '#a78bfa' : 'var(--border2)'}`,
-          }}>🧪 โหมดสาธิต {demoOn ? 'เปิดอยู่' : 'ปิด'}</button>
+            background: demoOn ? 'var(--blue)' : 'var(--bg3)', color: demoOn ? '#12081f' : 'var(--text)',
+            border: `1px ${demoOn ? 'solid' : 'dashed'} ${demoOn ? 'var(--blue)' : 'var(--border2)'}`,
+          }}>โหมดสาธิต {demoOn ? 'เปิดอยู่' : 'ปิด'}</button>
         }
       />
 
@@ -1823,10 +1822,10 @@ export default function AdoptionOutlook() {
       {/* แถบเตือนโหมดสาธิต — ต้องเด่นและอยู่เหนือเนื้อหาเสมอ กันคนเปิดค้างแล้วเข้าใจว่าเป็นของจริง */}
       {demoOn && (
         <div style={{
-          ...cardSt, borderLeft: '4px solid #a78bfa', background: 'rgba(167,139,250,0.08)',
+          ...cardSt, borderLeft: '4px solid var(--blue)', background: 'var(--blue-dim)',
           marginBottom: 12, fontSize: 12.5, lineHeight: 1.6,
         }}>
-          <b style={{ color: '#a78bfa' }}>🧪 โหมดสาธิตเปิดอยู่</b> — ส่วนที่ข้อมูลจริงยังไม่มี ถูกเติมด้วย
+          <b style={{ color: 'var(--blue)' }}>โหมดสาธิตเปิดอยู่</b> — ส่วนที่ข้อมูลจริงยังไม่มี ถูกเติมด้วย
           <b> ตัวเลขจำลอง</b> เพื่อให้เห็นว่า “หน้าตาคำตอบ” เป็นยังไงเมื่อทุกแผนกใช้ครบ
           <div style={{ marginTop: 5, color: 'var(--muted)' }}>
             ชื่อไลน์ · เครื่องจักร · สินค้า · ลูกค้า = <b>ของจริงจากฐานข้อมูล</b> ·

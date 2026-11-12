@@ -92,7 +92,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
-        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>🌳 {rootMat}</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{rootMat}</span>
         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{rootName || ''}</span>
         <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto' }}>
           {rows.length} รายการ · ลึก {maxLevel} ชั้น
@@ -101,7 +101,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
 
       {/* 🔴 นับซ้ำ — ของก้อนเดียวถูกเขียน 2 ชั้น (ตัวที่ user เรียกว่า "BOM เละ") */}
       {dupCount > 0 && (
-        <div style={{ background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 9,
+        <div style={{ background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 'var(--r-md)',
           padding: '9px 12px', fontSize: 11.5, color: 'var(--text2)', marginBottom: 8, lineHeight: 1.7 }}>
           🔴 <b style={{ color: TONE.crit }}>นับซ้ำ {dupCount} รายการ</b> — ของพวกนี้อยู่ในชั้นลึกอยู่แล้ว
           แต่ถูกใส่ที่ชั้น 1 ด้วย (BOM ถูก “แบน” มาจากโครงหลายชั้นของ SAP)
@@ -118,7 +118,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
           </div>
           {delRows.length > 0 && (
             <button onClick={() => doDelete(delRows)} disabled={busy}
-              style={{ marginTop: 7, fontSize: 11.5, fontWeight: 800, padding: '6px 13px', borderRadius: 7,
+              style={{ marginTop: 7, fontSize: 11.5, fontWeight: 800, padding: '6px 13px', borderRadius: 'var(--r-md)',
                 cursor: busy ? 'wait' : 'pointer', background: 'rgba(239,68,68,0.15)', color: TONE.crit,
                 border: `1px solid ${TONE.crit}`, fontFamily: 'var(--font-body)' }}>
               🧹 ลบแถวชั้น 1 ที่นับซ้ำทั้งหมด ({delRows.length} รายการ)
@@ -133,7 +133,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
       )}
 
       {flowCount > 0 && (
-        <div style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 9,
+        <div style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 'var(--r-md)',
           padding: '9px 12px', fontSize: 11.5, color: 'var(--text2)', marginBottom: 8, lineHeight: 1.7 }}>
           ⚠️ <b style={{ color: TONE.warn }}>ผิด pattern การไหล {flowCount} รายการ</b> — ดูคำอธิบายในแถว
           <div style={{ marginTop: 2, color: 'var(--muted)', fontFamily: 'monospace', fontSize: 11 }}>
@@ -206,7 +206,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
                     {r.fromOtherSheet && (
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}
                         title="นิยามไว้ครั้งเดียวในใบของตัวเอง — ใบนี้ยืมมากางให้ ไม่ได้กรอกซ้ำ">
-                        📄 ชั้นล่างมาจากใบของ {r.mat_no} เอง
+                        ชั้นล่างมาจากใบของ {r.mat_no} เอง
                       </div>
                     )}
                     {/* ⚠️ นิยามไว้ 2 ที่ — บอกตรงๆ ว่าต่างกันกี่รายการ ห้ามเงียบ (จอต้องซื่อสัตย์)
@@ -218,7 +218,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
                       if (!d) return (
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}
                           title={`${r.mat_no} มีใบ BOM ของตัวเอง — ใบขั้นงานบอก "ขั้นนี้กินอะไร" คนละคำถามกับใบพาร์ท จึงไม่เทียบให้`}>
-                          📄 {r.mat_no} มีใบของตัวเองด้วย (ใบขั้นงานไม่เทียบกับใบพาร์ท)
+                          {r.mat_no} มีใบของตัวเองด้วย (ใบขั้นงานไม่เทียบกับใบพาร์ท)
                         </div>
                       );
                       return (
@@ -237,7 +237,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
                         🔴 นับซ้ำ — ตัวนี้อยู่ชั้นลึกอยู่แล้ว
                         {onDeleteDupes && r.id && (
                           <button onClick={() => doDelete([r])} disabled={busy} title="ลบแถวชั้น 1 นี้ทิ้ง"
-                            style={{ fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 5,
+                            style={{ fontSize: 11, fontWeight: 800, padding: '1px 7px', borderRadius: 'var(--r-md)',
                               cursor: busy ? 'wait' : 'pointer', background: 'rgba(239,68,68,0.15)',
                               color: TONE.crit, border: `1px solid ${TONE.crit}`, fontFamily: 'var(--font-body)' }}>
                             🗑 ลบแถวนี้
@@ -270,7 +270,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
 
       {rows.length > shown.length && (
         <button onClick={() => setShowAll(true)}
-          style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, padding: '5px 12px', borderRadius: 7, cursor: 'pointer',
+          style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, padding: '5px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
             background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-body)' }}>
           ▾ แสดงอีก {rows.length - shown.length} รายการ
         </button>

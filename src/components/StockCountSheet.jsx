@@ -205,7 +205,7 @@ export default function StockCountSheet({ role, scope }) {
     const approved = approveNow && canApprove;
     if (!window.confirm(
       `บันทึกผลตรวจนับ ${txns.length} รายการที่ ${lineFilter}?`
-      + `\n📈 เพิ่ม ${summary.up} พาร์ท (${n0(summary.upQty)} ชิ้น) · 📉 ลด ${summary.down} พาร์ท (${n0(summary.downQty)} ชิ้น)`
+      + `\n📈 เพิ่ม ${summary.up} พาร์ท (${n0(summary.upQty)} ชิ้น) · ลด ${summary.down} พาร์ท (${n0(summary.downQty)} ชิ้น)`
       + (approved ? '\n\n✅ มีผลกับยอดคงเหลือทันที (คุณมีสิทธิ์อนุมัติ)' : '\n\n⏳ เข้าคิวรออนุมัติจากสโตร์ก่อนมีผล'))) return;
     setSaving(true);
     let ok = true;
@@ -231,7 +231,7 @@ export default function StockCountSheet({ role, scope }) {
 
       {/* ── 📋 ตรวจนับ / เฟิร์มยอด ─────────────────────────────────────────── */}
       <div style={card}>
-        <div style={{ fontSize:15, fontWeight:800, marginBottom:6 }}>📋 ตรวจนับ / เฟิร์มยอด</div>
+        <div style={{ fontSize:15, fontWeight:800, marginBottom:6 }}>ตรวจนับ / เฟิร์มยอด</div>
         <div style={{ fontSize:12, color:'var(--muted)', lineHeight:1.65, marginBottom:12 }}>
           กรอก <b>ยอดที่นับได้จริง</b> (ไม่ใช่ผลต่าง) ระบบคิดส่วนต่างให้เอง แล้วบันทึกเป็นรายการ 🔧 ปรับยอดทีเดียวทั้งคลัง
           · เว้นว่าง = ยังไม่นับ ไม่แตะยอดเดิม · กรอก 0 = นับแล้วไม่มีของ
@@ -245,19 +245,19 @@ export default function StockCountSheet({ role, scope }) {
             lines={lines} value={lineFilter} onChange={changeLine} {...scope}
             placeholder="— เลือกไลน์/คลังที่จะนับ —"
             style={{ width: isMobile ? '100%' : 260, padding:'6px 8px', borderRadius:6, border:'1px solid var(--border)', background:'var(--bg2)', color:'var(--text)', fontSize: isMobile ? 16 : 13 }}
-            extraGroups={[{ label: '🏬 คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
+            extraGroups={[{ label: 'คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
           />
           <label style={{ fontSize:12, color:'var(--muted)' }}>
             วันที่นับ{' '}
             <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)}
-              style={{ width:150, padding:'6px 8px', borderRadius:6, border:'1px solid var(--border)', background:'var(--bg2)', color:'var(--text)', fontSize:13 }} />
+              style={{ width:150, padding:'6px 8px', borderRadius: 'var(--ctl-r)', border:'1px solid var(--border)', background:'var(--bg2)', color:'var(--text)', fontSize:13 }} />
           </label>
           <label style={{ fontSize:12, display:'flex', alignItems:'center', gap:6, cursor:'pointer' }}>
             <input type="checkbox" checked={hideZero} onChange={e => setHideZero(e.target.checked)} style={{ width:'auto' }} />
             ซ่อนพาร์ทที่ยอดเป็น 0
           </label>
           <input value={note} onChange={e => setNote(e.target.value)} placeholder="หมายเหตุรอบนับ (ไม่บังคับ)"
-            style={{ width: isMobile ? '100%' : 220, padding:'6px 8px', borderRadius:6, border:'1px solid var(--border)', background:'var(--bg2)', color:'var(--text)', fontSize:13 }} />
+            style={{ width: isMobile ? '100%' : 220, padding:'6px 8px', borderRadius: 'var(--ctl-r)', border:'1px solid var(--border)', background:'var(--bg2)', color:'var(--text)', fontSize:13 }} />
         </div>
 
         {!lineFilter ? (
@@ -330,8 +330,8 @@ export default function StockCountSheet({ role, scope }) {
                    (ของที่ล้างยอดได้ในคลิกเดียวโดยไม่มีใครยืนยัน = ยอดหายเงียบ) */}
             {canCount && (
               <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center', marginTop:12,
-                background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:8, padding:'8px 10px' }}>
-                <span style={{ fontSize:12, fontWeight:700, color:'var(--text2)' }}>🧹 ตัวช่วยกรอก</span>
+                background:'var(--bg2)', border:'1px solid var(--border)', borderRadius: 'var(--r-md)', padding:'8px 10px' }}>
+                <span style={{ fontSize:12, fontWeight:700, color:'var(--text2)' }}>ตัวช่วยกรอก</span>
                 <button style={{ ...btn('var(--bg3)', 'var(--text)'), border:'1px solid var(--border2)', fontSize:12, padding:'6px 12px' }}
                   onClick={() => setCounts(c => {
                     const next = { ...c };
@@ -355,7 +355,7 @@ export default function StockCountSheet({ role, scope }) {
               style={isMobile ? undefined : { display:'flex', flexWrap:'wrap', gap:12, alignItems:'center', marginTop:12 }}>
               <div style={{ fontSize:12, color:'var(--muted)' }}>
                 นับแล้ว <b style={{ color:'var(--text)' }}>{summary.counted}</b>/{rows.length} พาร์ท ·
-                ตรง {summary.same} · 📈 เพิ่ม {summary.up} ({n0(summary.upQty)}) · 📉 ลด {summary.down} ({n0(summary.downQty)})
+                ตรง {summary.same} · เพิ่ม {summary.up} ({n0(summary.upQty)}) · ลด {summary.down} ({n0(summary.downQty)})
               </div>
               {canApprove && (
                 <label style={{ fontSize:12, display:'flex', alignItems:'center', gap:6, cursor:'pointer' }}>
@@ -381,9 +381,9 @@ export default function StockCountSheet({ role, scope }) {
               "หน้านี้มีแต่ตาราง" (feedback user 24/09) — ต้องพับ + จำกัดความสูงเสมอ */}
       <div style={card}>
         <div style={{ display:'flex', flexWrap:'wrap', gap:10, alignItems:'center', marginBottom:8 }}>
-          <div style={{ fontSize:15, fontWeight:800 }}>🚚 ส่งลูกค้าแล้ว แต่ยังไม่ถูกหักออกจากคลัง</div>
+          <div style={{ fontSize:15, fontWeight:800 }}>ส่งลูกค้าแล้ว แต่ยังไม่ถูกหักออกจากคลัง</div>
           {!!shipGap.open.length && (
-            <span style={{ fontSize:12, fontWeight:800, background:'#ef444422', color:'#ef4444', padding:'3px 10px', borderRadius:999 }}>
+            <span style={{ fontSize:12, fontWeight:800, background:'#ef444422', color:'#ef4444', padding:'3px 10px', borderRadius: 'var(--r-pill)' }}>
               {shipGap.open.length} ใบ · {n0(openQty)} ชิ้น
             </span>
           )}
@@ -419,7 +419,7 @@ export default function StockCountSheet({ role, scope }) {
         ) : (
           <>
             {showGap && !!shipGap.open.length && (
-              <div style={{ overflowX:'auto', overflowY:'auto', maxHeight:'42vh', marginBottom:10, border:'1px solid var(--border2)', borderRadius:8 }}>
+              <div style={{ overflowX:'auto', overflowY:'auto', maxHeight:'42vh', marginBottom:10, border:'1px solid var(--border2)', borderRadius: 'var(--r-md)' }}>
                 <table style={{ width:'100%', borderCollapse:'collapse', minWidth:640 }}>
                   <thead><tr>
                     {['วันส่ง', 'ลูกค้า', 'MAT', 'จำนวน', 'คงเหลือหลังหัก'].map((h, i) => (

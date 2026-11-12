@@ -5,6 +5,7 @@
       เอกสาร PE เป็นเอกสารควบคุม การแก้ต้องมีคนกดยืนยันเสมอ (หลักเดียวกับ AI intake)
    ⚠️ "จับคู่ไม่ได้" ไม่ใช่ความเงียบ — ต้องคืนข้อเสนอชนิด `missing` ออกไปให้จอขึ้นสีแดง
       เพราะนั่นคือคำตอบที่มีค่าที่สุด: *ตอนออกแบบไม่เคยคิดถึงอาการนี้เลย* */
+import { linearFlow } from './stepFlow.js';
 
 import { noteSimilarity, normalizeNote, CLUSTER_THRESHOLD } from './textCluster.js'; // .js เพื่อให้ node:test resolve ได้ (bundler ไม่สน)
 
@@ -309,3 +310,15 @@ export function findRepeats(claim, all = [], months = REPEAT_MONTHS) {
 
 /** เคลมที่ "ซ้ำแน่" เท่านั้น (ใช้กับตัวนับ/แถบเตือนสีแดง) */
 export const sureRepeats = (list) => list.filter((c) => c._sure);
+
+/* แถบ "ถึงขั้นไหน" คำขอแก้เอกสาร PE (<StepFlow compact> · UI §6.30 · 12/11) — QA/Improvement → PE */
+export const crFlow = (cr) => linearFlow({
+  status: cr?.status, row: cr,
+  steps: [
+    { label: 'เสนอแก้เอกสาร', who: 'PE', action: 'พิจารณารับเรื่อง' },
+    { label: 'PE รับเรื่อง', who: 'PE', action: 'แก้เอกสาร + ออก revision' },
+    { label: 'แก้เอกสารแล้ว' },
+  ],
+  at: { proposed: 0, accepted: 1, applied: 3 },
+  exits: { rejected: { tone: 'none', label: 'ไม่แก้', at: 0 } },
+});

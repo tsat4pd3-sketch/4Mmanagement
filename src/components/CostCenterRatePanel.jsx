@@ -141,7 +141,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
           วางเป็น CollapseCard พี่น้องแยกจากตาราง rate: ทะเบียน = "รหัสมีอะไรบ้าง" · rate = "รหัสนั้นราคาเท่าไร"
           สิทธิ์เขียนใช้คีย์เดียวกับ RLS (cost_rate:manage) · แก้แล้ว invalidate cache ให้ <CostCenterSelect> ทุกหน้าเห็นทันที */}
       <CollapseCard id="cc_master" storePrefix="orgsetup" defaultOpen={false}
-        title={<span>💰 ทะเบียน Cost Center <span style={{ fontWeight: 600, color: 'var(--muted)' }}>(รหัสจากบัญชี — ช่อง Cost Center ทุกหน้าเลือกจากที่นี่)</span></span>}>
+        title={<span>ทะเบียน Cost Center <span style={{ fontWeight: 600, color: 'var(--muted)' }}>(รหัสจากบัญชี — ช่อง Cost Center ทุกหน้าเลือกจากที่นี่)</span></span>}>
         {/* 🔴 onBeforeDelete = ด่านนับปลายทางก่อนลบ (fail-closed) — ห้ามถอด
             06/10 มีการลบ 31 รหัสด้วยเหตุผล "ชื่อว่าง น่าจะไม่ได้ใช้" แต่ 29 รหัสในนั้น
             บัญชีตั้ง activity rate ปี 2026 ไว้ครบ (ชื่อหน่วยจริงอยู่ใน note ของแถว rate)
@@ -158,7 +158,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
           emptyText="ยังไม่มีรหัสในทะเบียน — กด + เพิ่ม (รหัสที่ไลน์/ผังใช้อยู่แล้วยังเลือกได้จากกลุ่ม 📜)" />
       </CollapseCard>
       <CollapseCard id="cc_rates" storePrefix="orgsetup" count={groupList.length}
-        title={<span>💰 Activity Rate ต่อ Cost Center <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({RATE_COMPONENTS.map(c => c.label).join('/')} บาท/ชม. — ใช้คิด cost saving ในโปรเจคปรับปรุง)</span></span>}>
+        title={<span>Activity Rate ต่อ Cost Center <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({RATE_COMPONENTS.map(c => c.label).join('/')} บาท/ชม. — ใช้คิด cost saving ในโปรเจคปรับปรุง)</span></span>}>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
           rate เป็นของ <b>รหัส Cost Center</b> (ไม่ได้ผูกกับไลน์) — ปกติบัญชีตั้งที่ <b>ชั้นกลุ่ม</b> แล้วชั้นแผนก/ส่วนรวมขึ้นเองตามลำดับชั้นในผัง
           · <b>บัญชีส่ง rate รอบใหม่ = กด “＋ rate ใหม่”</b> (ประวัติเดิมคงไว้ โปรเจคเก่าคำนวณด้วย rate ณ ช่วงนั้น) — ปุ่ม ✏️ ไว้แก้เฉพาะตอนกรอกตัวเลขผิด
@@ -171,7 +171,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
             </span>
           )}
         </div>
-        <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 8, maxHeight: 420 }}>
+        <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', maxHeight: 420 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
             <thead style={{ background: 'var(--bg2)' }}>
               <tr>
@@ -213,7 +213,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                       <td style={{ padding: '7px 10px', fontSize: 11, color: 'var(--muted)', maxWidth: 260 }}>
                         {orgGroup.length > 0 && <span>▦ {orgGroup.join(', ')}</span>}
                         {orgGroup.length > 0 && lns.length > 0 && ' · '}
-                        {lns.length > 0 && <span>🏭 {lns.join(', ')}</span>}
+                        {lns.length > 0 && <span>{lns.join(', ')}</span>}
                         {orgOther.length > 0 && <span style={{ opacity: 0.7 }}>{(orgGroup.length || lns.length) ? ' · ' : ''}🏛️ {orgOther.join(', ')}</span>}
                         {!orgGroup.length && !lns.length && !orgOther.length && <span style={{ opacity: 0.6 }}>— ไม่มีในผัง/ไลน์แล้ว (ประวัติ)</span>}
                       </td>
@@ -237,7 +237,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                         {canEdit ? (<>
                           <button onClick={() => setForm({ ...emptyForm(), cost_center: cc, ...(cur ? Object.fromEntries(RATE_COMPONENTS.map(c => [c.field, cur[c.field]])) : {}) })}
                             title="บัญชีปรับ rate รอบใหม่ → กดปุ่มนี้ (rate เดิมเก็บเป็นประวัติ โปรเจคเก่ายังคิดด้วยตัวเดิม)"
-                            style={{ background: 'none', border: '1px solid var(--accent)', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 800, color: 'var(--accent)', padding: '2px 9px' }}>＋ rate ใหม่</button>
+                            style={{ background: 'none', border: '1px solid var(--accent)', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11, fontWeight: 800, color: 'var(--accent)', padding: '2px 9px' }}>＋ rate ใหม่</button>
                           {cur && <button onClick={() => setForm({ ...emptyForm(), ...cur, id: cur.id })}
                             title="แก้ตัวเลขที่กรอกผิดของแถวนี้ — ไม่ใช่สำหรับ rate รอบใหม่ (ใช้ ＋ rate ใหม่ แทน)"
                             style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, opacity: 0.55, marginLeft: 6 }}>✏️</button>}
@@ -268,7 +268,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
           </table>
         </div>
         {canEdit ? (
-          <button onClick={() => setForm({ ...emptyForm() })} style={{ marginTop: 8, padding: '6px 14px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+          <button onClick={() => setForm({ ...emptyForm() })} style={{ marginTop: 8, padding: '6px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
             ➕ เพิ่ม rate (เลือกรหัสจากผัง/ไลน์)
           </button>
         ) : (
@@ -319,14 +319,14 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                   </label>
                 </div>
                 {form.id && (
-                  <div style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 6, padding: '6px 9px', lineHeight: 1.6 }}>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '6px 9px', lineHeight: 1.6 }}>
                     {dateLocked ? (
                       <>
                         🔒 วัน Effective ล็อกกันแก้พลาด — <b>ปรับ rate รอบใหม่ให้กด ＋ rate ในตาราง</b> (แถวเดิมเก็บเป็นประวัติ โปรเจคที่เริ่มก่อนหน้ายังคิดด้วย rate เดิม)
-                        <button onClick={unlockDate} style={{ marginLeft: 6, background: 'none', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--accent)', fontSize: 11, fontWeight: 800, cursor: 'pointer', padding: '1px 7px' }}>🔓 แก้วันที่</button>
+                        <button onClick={unlockDate} style={{ marginLeft: 6, background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', color: 'var(--accent)', fontSize: 11, fontWeight: 800, cursor: 'pointer', padding: '1px 7px' }}>แก้วันที่</button>
                       </>
                     ) : (
-                      <span style={{ color: '#f59e0b', fontWeight: 700 }}>🔓 ปลดล็อกวันที่แล้ว — เปลี่ยนวันนี้ = เปลี่ยนย้อนหลังว่า rate นี้ครอบช่วงไหน cost saving ของโปรเจคที่คำนวณด้วย rate ช่วงนี้จะขยับตาม</span>
+                      <span style={{ color: '#f59e0b', fontWeight: 700 }}>ปลดล็อกวันที่แล้ว — เปลี่ยนวันนี้ = เปลี่ยนย้อนหลังว่า rate นี้ครอบช่วงไหน cost saving ของโปรเจคที่คำนวณด้วย rate ช่วงนี้จะขยับตาม</span>
                     )}
                     <div style={{ marginTop: 3, opacity: 0.85 }}>
                       เวลาที่แก้ระบบบันทึกเอง: สร้าง {fmtStamp(form.created_at)} · แก้ล่าสุด {fmtStamp(form.updated_at)} (ใครแก้ดูได้ที่ audit log)
@@ -347,8 +347,8 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                   <input value={form.note || ''} onChange={e => setForm({ ...form, note: e.target.value })} placeholder="เช่น rate ปี 2026 จากบัญชี" style={{ marginTop: 4 }} />
                 </label>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-                  <button onClick={() => setForm(null)} style={{ padding: '7px 16px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>ยกเลิก</button>
-                  <button onClick={handleSave} disabled={saving} style={{ padding: '7px 18px', borderRadius: 7, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 800, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+                  <button onClick={() => setForm(null)} style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>ยกเลิก</button>
+                  <button onClick={handleSave} disabled={saving} style={{ padding: '7px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 800, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
                     {saving ? 'กำลังบันทึก...' : '💾 บันทึก'}
                   </button>
                 </div>
