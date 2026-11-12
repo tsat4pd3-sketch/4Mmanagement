@@ -44,6 +44,62 @@ export const VOLUME_SOURCES = {
 };
 
 export const rfqStatusMeta = (s) => RFQ_STATUS[s] || { label: s || '—', tone: 'none', stage: 0 };
+
+/** 🧑‍💼 คนในโมดูลนี้ = บัญชีที่ role การตลาด (feedback Marketing 12/11 "ข้อมูลคนที่ขึ้นยังเป็นคนในบริษัทเรา")
+ *  Marketing ไม่อยู่ในทะเบียนพนักงาน/ผังองค์กรของโรงงาน ⇒ ช่อง "ผู้รับผิดชอบ" ต้อง `strict` ด้วยชุดนี้
+ *  ชื่อนอกลิสต์ยังพิมพ์เองได้ (ติดป้ายไม่ได้อยู่ในทะเบียน) — ห้ามถอด strict กลับไปโชว์ทั้งโรงงาน */
+export const MKT_PEOPLE_ROLES = ['marketing'];
+
+/** ขั้นของสายธาร RFQ (แถบ ✓→⑦ บนใบ · ถอดจาก flowchart Q-neX) — `stage` ใน RFQ_STATUS ชี้มาที่ลำดับนี้ */
+export const RFQ_FLOW_STEPS = [
+  { n: 1, label: 'รับ RFQ' },
+  { n: 2, label: 'IEC ประเมิน' },
+  { n: 3, label: 'MKT ทบทวน' },
+  { n: 4, label: 'คิดต้นทุน' },
+  { n: 5, label: 'ทบทวนราคา' },
+  { n: 6, label: 'อนุมัติราคา' },
+  { n: 7, label: 'ส่งใบเสนอราคา' },
+  { n: 8, label: 'ลูกค้าพิจารณา' },
+  { n: 9, label: 'ผลตัดสิน' },
+];
+/** "⏳ รอ: ใคร — ทำอะไร" ต่อสถานะ (ข้อความเดียวทั้งระบบ · ห้ามแต่งในหน้า) */
+const RFQ_WAITING = {
+  received:        'MKT — ส่ง CRD ให้ IEC/แผนกที่เกี่ยวข้องประเมิน',
+  assessing:       'IEC/แผนก — ประเมินความเป็นไปได้ + ต้นทุนเบื้องต้น',
+  pre_review:      'MKT — ทบทวน concept/cost ก่อนคิดราคา',
+  costing:         'CSC — คิดต้นทุน (Cost Breakdown)',
+  quote_review:    'MKT Engineer — ทบทวนราคาเสนอ',
+  quote_approval:  'MKT Manager — อนุมัติใบเสนอราคา',
+  quoted:          'ลูกค้า — ตอบใบเสนอราคา',
+  customer_review: 'ลูกค้า — ตัดสินผล (nomination)',
+  design_change:   'MKT — รับแบบที่แก้แล้วส่งประเมินใหม่',
+};
+
+/**
+ * แถบขั้นตอนของใบ RFQ 1 ใบ → { steps:[{n,label,state:'done'|'current'|'todo',tone?}], waiting, closed }
+ * · ขั้นก่อนสถานะปัจจุบัน = done (ทำนอกระบบก็นับว่าผ่านแล้ว — เฟส 1 ยังไม่มีขั้น 3-6 ในจอ)
+ * · ขั้น 9 ปิดแล้ว = ใส่ tone ของผล (ได้งาน good · ไม่ได้ bad · ยกเลิก/ปฏิเสธ none) และ label เป็นผลจริง
+ * · `award` ส่งมาเมื่อได้งาน: ยังไม่ออกใบแจ้งจัดทำ = ยังมีคนต้องทำต่อ (ไม่ใช่ "จบแล้ว")
+ * · สถานะที่ไม่รู้จัก = ไม่มี current (ทุกขั้น todo) + waiting = null — จอเขียนว่าสถานะอ่านไม่ออก ห้ามเดา
+ */
+export function rfqFlow(status, { award = null } = {}) {
+  const meta = RFQ_STATUS[status];
+  const cur = meta?.stage || 0;
+  const closed = !!meta?.closed;
+  const steps = RFQ_FLOW_STEPS.map(s => {
+    let state = s.n < cur ? 'done' : s.n === cur ? 'current' : 'todo';
+    if (closed && s.n === 9) state = 'done';
+    const out = { n: s.n, label: s.label, state };
+    if (closed && s.n === 9) { out.label = meta.label; out.tone = meta.tone; }
+    return out;
+  });
+  let waiting = null;
+  if (!meta) waiting = null;
+  else if (status === 'awarded') waiting = award?.production_order_no ? null : 'MKT — ออกใบแจ้งจัดทำ (F-MKT-001/002) ส่งโรงงาน';
+  else if (closed) waiting = null;
+  else waiting = RFQ_WAITING[status] || null;
+  return { steps, waiting, closed, known: !!meta };
+}
 /** ผล award เขียนทับสถานะ RFQ เสมอ (awarded/lost/cancelled = สถานะปิด) */
 export const isClosed = (status) => !!RFQ_STATUS[status]?.closed;
 
