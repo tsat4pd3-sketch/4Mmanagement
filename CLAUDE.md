@@ -230,100 +230,45 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 ---
 
 ## Layer Process Audit — LPA paperless (2026-07-20)
-
-หน้า `/lpa` (`LayerProcessAudit.jsx`, ฝ่ายผลิต)
-🔴 **ช่องว่างในตารางตรวจรายวันต้องตอบได้ว่า "ไม่ได้ตรวจ / ไม่ได้ผลิต / ไม่ต้องตรวจวันนั้น"** —
-ตัดสินที่ **`src/utils/dailyCheckDay.js`** (`checkDayState()`) + รู้ว่าวันไหนผลิตจาก `src/utils/runDays.js`
-· **ตัวหาร % = ตรวจแล้ว + ขาดตรวจ เท่านั้น** · 🔴 **อ่านไม่ได้ = `unknown` ห้ามบีบเป็น "ไม่ได้ผลิต"** (มีด่าน)
-· 🔴 **สัญลักษณ์สถานะห้ามยืมตัวอักษรของ "คำตอบ" ในใบเดียวกัน** (`✗`≈`N` · `–`≈`N/A` = "ตรวจแล้วผิดปกติ")
-  ⇒ ใช้ `CHECK_DAY_META`/`CHECK_DAY_LEGEND` **ห้ามแต่ง mark/สีเองในหน้า** (มีด่าน · UI §6.29)
+หน้า `/lpa` · 🔴 **ช่องว่างในตารางตรวจรายวัน (ไม่ได้ตรวจ/ไม่ได้ผลิต/ไม่ต้องตรวจ) ตัดสินที่ `checkDayState()`
+(`src/utils/dailyCheckDay.js`) · อ่านไม่ได้ = `unknown` · ห้ามแต่ง mark/สีเอง ใช้ `CHECK_DAY_META`** (มีด่าน · UI §6.29)
 > 📄 รายละเอียดเต็ม → `docs/modules/lpa-audit.md`
 
 ---
 
 ## ใบรายงานปัญหาการผลิต + ถังเหลือง/ถังแดง (paperless · 2026-08-19)
-
-> ### 🔴 ฟอร์มที่ยื่นออกไปแล้ว = **บันทึก** ไม่ใช่ใบที่ generate ใหม่ (2026-09-25 · มีด่าน)
-> ใบที่มีเลขที่/ต้องเก็บตามอายุเอกสาร: **ออกใบ = เขียนทะเบียนก่อนค่อยพิมพ์** (ล้ม = ห้ามพิมพ์ต่อเงียบ) ·
-> เก็บ **`snapshot` = เนื้อใบ** · **พิมพ์ซ้ำ = ใบเดิม ไม่ออกเลขใหม่** · snapshot ไม่ตรงข้อมูลปัจจุบัน = เขียนบนจอ ·
-> เลข running = "เลขสูงสุดของเดือน+1" **ห้าม `count()+1`** · ต้นแบบ `src/lib/prodProblemDoc.js`
-> · ถังเหลือง/แดง: อายุแท็ก · ผล QA 4 ทาง · เลข WI ซ่อม → `src/utils/qualityBin.js`/`repair_wi_registry`
->   **ห้ามประกาศซ้ำในหน้า** · **ห้ามเพิ่ม `closed_at` ที่ต้องมีคนกดปิด** (ไม่มีใครกด = ของค้างเทียมเต็มจอ)
+> ### 🔴 ใบที่มีเลขที่ = **บันทึก** ไม่ใช่ใบที่ generate ใหม่ (มีด่าน)
+> ออกใบ = เขียนทะเบียนก่อนพิมพ์ · เก็บ `snapshot` · พิมพ์ซ้ำ = ใบเดิม · เลข running = สูงสุดของเดือน+1 **ห้าม `count()+1`**
+> · ต้นแบบ `src/lib/prodProblemDoc.js` · ถังเหลือง/แดง → `src/utils/qualityBin.js` **ห้ามประกาศซ้ำในหน้า**
 
 > 📄 รายละเอียดเต็ม → `docs/modules/production-problem-report-bins.md`
 
 ---
 
 ## Production Plan — วางแผนการผลิต (`/production-plan` · แท็บ `?tab=lots` แผนสั่งงานล็อต)
-
-สูตรทั้งหมดอยู่ใน **`src/utils/planLots.js` + `planTimeline.js` ห้ามคิดเองในหน้า**
-
-**กฎที่ทุก session ต้องรู้ (ที่เหลืออ่านในเอกสาร):**
-- **🧩 แผน = "กรอบ" (Layer 1) · ผลิตเปิดคัมบัง-คอนเฟิร์มยอด = ของจริง (Layer 2)** (คำสั่ง user 01/10)
-  🔴 **แผนไม่สร้างใบผลิต ไม่เขียนสถานะ** — จับคู่จาก**ยอดรวมต่อพาร์ท** (`matchPlanToActual`)
-  ⇒ ออกใบตามล็อตแล้วให้หน้างานสแกนด้วย = **เป้านับซ้ำ** · **`over`/`offPlan` ต้องโชว์ ห้ามกลืน**
-- 🔴 **ห้ามแก้ `prod_orders.session_id` ให้เป็น null ได้** — ทั้งระบบ join `production_sessions!inner`
-- **ยกเลิกล็อต = `cancelled` ห้าม `delete`** (มีด่าน) · 🚫 **ห้ามพ่น `NaN` ออกจอ** (ใช้ `qtyText()`)
-- 🔑 สิทธิ์ฟีเจอร์ใหม่ใช้ `canSeeded()` · ⛔ ถอดแล้วอย่ารื้อกลับ: ปุ่ม "เริ่มล็อตนี้" · `reconcilePlan()` · `production_plan:start`
-> ### 🔴 บอร์ดไทม์ไลน์ต้องบอก "หลุดแผนแค่ไหน" เป็น **เวลา + ยอด** ไม่ใช่ "กี่ใบ" (2026-09-30)
-> · ตัวเลขทุกตัวมาจาก **`planStatusOf()`** (`utils/heijunkaQueue.js`) · วาดด้วย **`<PlanSlipBar>`** **ห้ามคิดเองในหน้า** ·
->   ต้นเหตุ/ผู้ถูกพาล = `dayDelaySummaryOf()` / `pushChainOf()` · `<DelayBlameBar>` ·
->   **หน้าที่วาดบอร์ดต้องส่ง `frameEndMs`** · 🔴 **ไม่มี CT / ไม่มีงานเหลือ / ไม่ส่งปลายกะ = `null` ห้ามคืน 0**
-> · 🔴 **"ถูกพาล" นับเฉพาะใบที่ต่อท้ายต้นเหตุที่ช้าจริง · โทษไม่เกินเวลาที่ต้นเหตุกินเกิน** (เข้าคิว ≠ ดีเลย์)
->   · 🔴 จัดอันดับด้วย `blameTotalMin` **ห้ามเรียงด้วย `ownLateMin` ล้วน** (มีด่าน) · ใบยังไม่ปิด = เขียน `≥`
-> · 🔴 **ใบไม่เคยถูกปิด = `neverClosed` ⇒ เขียน "N ใบไม่เคยถูกปิด" ห้ามรายงานเป็น "ช้ากว่าแผน N ชม."**
-
-> 📄 **รายละเอียด (ปันยอดข้ามกะ · ไทม์ไลน์ลากจัดแผน · ยืดข้ามเบรค · จองเครื่องทดลอง `source='trial'`
-> · เวลาเปลี่ยนรุ่น/ความสูงแม่พิมพ์ที่ยังกรอกไม่ครบ)** → `docs/modules/production-plan.md`
+สูตรอยู่ `src/utils/planLots.js` · `planTimeline.js` · บอร์ดหลุดแผน `planStatusOf()` (`utils/heijunkaQueue.js`) — **ห้ามคิดเองในหน้า** (มีด่าน)
+· 🔴 **แผน = กรอบ ไม่สร้างใบผลิต ไม่เขียนสถานะ** (`matchPlanToActual`) · 🔴 **ห้ามแก้ `prod_orders.session_id` เป็น null** (ทั้งระบบ join `production_sessions!inner`)
+> 📄 รายละเอียดเต็ม (ยกเลิกล็อต · บอร์ดหลุดแผน/ผู้ถูกพาล · ของที่ถอดแล้ว) → `docs/modules/production-plan.md`
 
 ## MTN Work-Order — ใบแจ้งซ่อม MO (`/mtn-repair`) · JIG/DIE/PD 7 ขั้น · **ทีม MTN 8 ขั้น ไม่มี QA**
-
-ตารางอยู่ DR project (anon-open) · 🔴 **เลขขั้นคนละความหมายระหว่าง 2 ฟอร์ม** ⇒ แตกสาขาด้วย
-`stageOf(step, { mtnForm })` (`mtnStepPerm.js`) **ห้ามเขียน `step === 7`** — มีด่าน regressionGuards
-· **หน้านี้เหลือ 2 แท็บ (รายการ MO · ข้อมูลหลัก)** — KPI ช่าง → `/mtn-analysis?tab=kpi` ·
-อะไหล่/ผังคลัง → `/equipment?tab=spare|rack` **ห้ามเอากลับมา**
-· 🔒 **ช่องเซ็นขั้น 6/7/8 ล็อก "ฝั่ง + ตำแหน่ง"** (04/10) — ขั้นฝั่งช่าง ฝ่ายผู้แจ้งกดไม่ได้ และกลับกัน ·
-  🔴 **ล็อกเต็ม `manage_master` ก็ข้ามไม่ได้** (ห้ามย้ายบรรทัดนั้นขึ้นก่อนด่าน) · ฝั่ง = `actorSideOf()`
-  **ห้ามเดาจากชื่อ** · **ไม่รู้ = ไม่บล็อก แต่จอต้องเขียนว่าไม่ได้ตรวจ** · คีย์แยก `mtn_head`/`close_cost`
-> 📄 รายละเอียดเต็ม → `docs/modules/mtn-work-order.md`
+ตารางอยู่ DR · 🔴 **เลขขั้นคนละความหมายระหว่าง 2 ฟอร์ม** ⇒ `stageOf(step, { mtnForm })` (`mtnStepPerm.js`) **ห้ามเขียน `step === 7`** (มีด่าน)
+> 📄 รายละเอียดเต็ม (แท็บที่ย้ายออก · ล็อกช่องเซ็นฝั่ง+ตำแหน่ง `actorSideOf()`) → `docs/modules/mtn-work-order.md`
 
 ## 🗑️ "อื่นๆ / ไม่ระบุ" ห้ามขึ้นอันดับ 1 ของจอวิเคราะห์ (2026-09-23 · คำสั่ง user)
-
-ใช้กับทุกจอที่วิเคราะห์ input พนักงาน
-**กติกา 5 ชั้น** — `utils/unclassified.js` (1-3) · `downtimeCategory.js` (4) · `autoCategory.js` (5)
-1. 🔴 **ต้นทาง — ห้ามเขียน `'อื่นๆ'` ทับค่าที่ระบบรู้อยู่แล้ว** (มีด่าน `regressionGuards`)
-2. **ทะเบียน taxonomy ต้องครบ + มี group** (ทีมที่ไม่มีอาการในทะเบียน = เลือกได้แค่ "อื่นๆ")
-3. **จอต้องบอกตรงๆ ว่าชี้เป้าไม่ได้กี่ %** · แยก "อื่นๆ ที่มีข้อความ" (จับกลุ่มต่อได้) ออกจาก
-   "ไม่กรอกเลย" · **งานตามแผน (PM) ไม่ใช่ปัญหา กันออกจากพาเรโต แต่ห้ามซ่อน**
-4. 🔑 **ถังขยะที่มีคีย์อื่นกรอกไว้แล้ว ต้องแตกด้วยคีย์นั้นก่อน อย่ารีบเดาจากคำ** (มีด่าน)
-   — `dtBucketName` (`utils/downtimeCategory.js`)
-5. 🔎 **เดาหมวดจากคำ — ท่าสุดท้าย** · 🔴 **พจนานุกรมมาจากข้อมูลโรงงานเท่านั้น** `STOP`/`FILLER`
-   ใส่ได้แค่คำกลางของภาษา ใส่ชื่ออุปกรณ์ = เดา taxonomy = ผิดกฎ (มีด่าน) · ก้ำกึ่ง → null
-   · **ห้ามเขียนผลเดากลับฐาน** จอต้องบอกว่าเดากี่ใบ/จากคำไหน
-   · 🔴 **ชั้นภาษาไทย = `utils/thaiText.js` · สถิติคำ = `utils/termStats.js` เท่านั้น** (เกณฑ์ตัดสิน/
-     คีย์เสียง/คำกำกวม อยู่ในไฟล์โมดูล — **ผ่อนเกณฑ์เมื่อไหร่พังทันที ห้ามแก้โดยไม่อ่าน**)
-> 📄 `docs/modules/mtn-problem-analysis.md` §การจัดประเภท · §รอบ 3 · §รอบ 4 (ทฤษฎี+ตัวเลข)
+ใช้กับทุกจอที่วิเคราะห์ input พนักงาน · กติกา 5 ชั้น `utils/unclassified.js` (1-3) · `downtimeCategory.js` (4) · `autoCategory.js` (5)
+· 🔴 **ห้ามเขียน `'อื่นๆ'` ทับค่าที่ระบบรู้** · จอต้องบอกว่าชี้เป้าไม่ได้กี่ % · **ห้ามเขียนผลเดากลับฐาน** (มีด่าน)
+· 🔴 **ชั้นภาษาไทย = `utils/thaiText.js` · สถิติคำ = `utils/termStats.js` เท่านั้น — ห้ามผ่อนเกณฑ์โดยไม่อ่านไฟล์โมดูล**
+> 📄 `docs/modules/mtn-problem-analysis.md` §การจัดประเภท · §รอบ 3 · §รอบ 4
 
 ## 📦 ของหน้าไลน์คุมที่ "พื้นที่ → ไลน์ → พาร์ท" — **เลิกจุด WIP แล้ว** (2026-10-01 · คำสั่ง user)
-
-🔴 **"จุด" ที่เหลือในระบบต้องเป็น "ที่อยู่" ไม่ใช่ "ถังที่มียอด"** — ยอดคงเหลืออยู่ที่ **ไลน์ + พาร์ท**
-(`line_part_levels`) ที่เดียว
-· ชั้นบัญชี = **SLoc** (`P411` = ทั้ง Apron Assy — ตรง SAP · `slocOfLine()` derive จากไลน์แม่)
-· **`wip_buffer_points` = ตารางอ่านประวัติเท่านั้น ห้ามมีจอไหนเขียน/เรียก `wip_point_add_qty` อีก** (มีด่าน)
-· ⚠️ **คนละตัวกับ `workstations` (จุดงาน = ที่ยืนของคน) และ `line_delivery_points` (ป้าย QR จุดส่ง = ที่อยู่ ไม่มียอด)** — 2 ตัวนี้ยังใช้อยู่
-📄 ตัวเลข + สิ่งที่ถอดออก + งานค้าง → `docs/modules/demand-flow-tower.md` §เลิกจุด WIP
+🔴 **ยอดคงเหลืออยู่ที่ ไลน์ + พาร์ท (`line_part_levels`) ที่เดียว** · `wip_buffer_points` = อ่านประวัติเท่านั้น
+**ห้ามเขียน/เรียก `wip_point_add_qty`** (มีด่าน) · คนละตัวกับ `workstations` / `line_delivery_points` (ยังใช้อยู่)
+📄 `docs/modules/demand-flow-tower.md` §เลิกจุด WIP
 
 ## ⏱️ ความจุกะ + ⌨️ คีย์บอร์ดของ picker (2026-10-02 · feedback หน้างาน)
-
-🔴 **ความจุกะคิดผ่าน `src/utils/shiftCapacity.js` เท่านั้น — ห้ามบวก `qty×CT` สะสมเองในหน้า** (มีด่าน)
-`one_piece_flow` = บวกทั้งกะ · **`parallel_machine` = ภาระของ "เลนที่ใบใหม่จะไปลง" ไม่ใช่ผลรวมทั้งไลน์**
-· ยุบคู่ RH/LH ด้วย `pairLoadTotal` (ชิ้น ≠ shot) · 🔴 **ไม่รู้ความจุ/ไม่รู้ CT = ไม่เตือน** · ใบที่คิดไม่ได้คืน `unknownCt` ให้จอเขียนบอก
-· `confirmed` **ยังนับเป็นภาระ** — ตัดเฉพาะ `cancelled`/`imported`/`carry_over`
-
-🔴 **picker: "เปิดลิสต์เฉยๆ ต้องไม่มีแถวติดอาวุธ"** — `initialActiveRow()` (`utils/pickerKeys.js` · มีด่าน)
-**เครื่องสแกนส่ง Enter ตามท้ายรหัสเสมอ**
-· ไม่มีคำค้น = `NO_ROW` · มีคำค้น = แถวแรก · **ช่องสแกนที่บล็อก ต้องคาเคอร์เซอร์ไว้ที่เดิม**
-📄 ตัวเลข + ลูกโซ่เต็ม → `docs/modules/daily-report.md`
+🔴 **ความจุกะคิดผ่าน `src/utils/shiftCapacity.js` เท่านั้น — ห้ามบวก `qty×CT` เองในหน้า** (มีด่าน) · ไม่รู้ความจุ/CT = ไม่เตือน
+🔴 **picker: เปิดลิสต์เฉยๆ ต้องไม่มีแถวติดอาวุธ** — `initialActiveRow()` (`utils/pickerKeys.js` · มีด่าน) · เครื่องสแกนส่ง Enter ท้ายรหัสเสมอ
+📄 → `docs/modules/daily-report.md`
 
 ## 🏷️ `machine_no` = คีย์ join แบบ text — เขียนต่างแบบ = แท่งซ้ำทุกจอ (2026-09-25)
 
@@ -381,11 +326,8 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 > 📄 กติกา + กับดักที่เจอจริง → `docs/UI-CONVENTIONS.md` §6.9
 
 ## 🔍 KPI ช่าง + QC 7 Tools · `/mtn-analysis` (2026-09-22)
-
-2 แท็บ `?tab=kpi|qc7` · สูตร `src/utils/qc7.js` · ตัววาด `src/components/Qc7Charts.jsx` —
-**โมดูลอื่นเอาไปใช้ต่อ ห้ามเขียนใหม่** · 🔴 แยกชนิดสินทรัพย์ (`?asset=`) ด้วย `machines.equipment_kind`
-**ห้ามใช้ `mtn_dept`** (ส่วนใหญ่ลงเป็นทีม production ปนทุกชนิดของสินทรัพย์)
-· 🔴 **พาเรโตอยู่แท็บ `qc7` ที่เดียว** (เดิมซ้ำใน KPI)
+สูตร `src/utils/qc7.js` · ตัววาด `src/components/Qc7Charts.jsx` — **โมดูลอื่นเอาไปใช้ต่อ ห้ามเขียนใหม่** ·
+🔴 แยกชนิดสินทรัพย์ด้วย `machines.equipment_kind` **ห้ามใช้ `mtn_dept`**
 > 📄 `docs/modules/mtn-problem-analysis.md`
 
 ## 🧰 `/equipment` — ศูนย์ทะเบียนอุปกรณ์ของช่าง (2026-09-22)
@@ -396,30 +338,18 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 ---
 
 ## DIE MAINTENANCE — Layout & สถานะแม่พิมพ์ (2026-08-19)
-
-> ### ⏱️ เวลาเปลี่ยนรุ่นงานปั๊ม (setup time · 2026-09-25) — คิดผ่าน `src/utils/pressSetup.js` เท่านั้น
-> `die_height_mm` + ช่วง shut height + กฎ `press_setup_rules` (เครื่อง ชนะ ไลน์ ชนะ global · กรอกที่ `/equipment?tab=die` + `/machines`)
-> ผลของความสูง = **อัตราเชิงเส้น `per_mm_sec`** (ช่างปั๊ม: 1 มม. = 1 วินาที) · **ห้ามฝังเลขเวลา setup ในโค้ด**
-> · 🔴 **ไม่มีกฎ/ไม่รู้เวลาฐาน = `null` ห้ามคืน 0** · ไม่รู้ความสูง = ธง `unknown_height` + บอกว่าต่ำกว่าจริง ·
->   `fitsPress` คืน `null` ≠ `false` · ตัวไม่รู้ความสูงต่อท้ายลำดับ ห้ามตัดทิ้ง · `canPlan` ≠ `canTotal`
-> · 🔴 **`varMin` (เทียบลำดับ ไม่ต้องรู้เวลาฐาน เพราะหักกลบ) ≠ `totalMin`** · ชั้น 2-3 ยังไม่ทำ ห้ามเริ่มจนกว่า user สั่ง
+> ⏱️ **เวลาเปลี่ยนรุ่นงานปั๊มคิดผ่าน `src/utils/pressSetup.js` เท่านั้น** · ห้ามฝังเลขเวลา setup ในโค้ด ·
+> 🔴 ไม่มีกฎ/ไม่รู้เวลาฐาน = `null` ห้ามคืน 0
 > 📄 `docs/modules/die-maintenance.md`
 
 ---
 
 ## PM Predictive & Planner Sync — เห็นวัน PM ล่วงหน้า + buffer (2026-07-16)
+> 📄 รายละเอียดเต็ม → `docs/modules/pm-predictive-planner-sync.md` · AM↔PM → `docs/modules/am-pm-linkage-audit.md`
 
-> 📄 รายละเอียดเต็ม → `docs/modules/pm-predictive-planner-sync.md`
-
-> ### 🔴 AM ↔ PM — กฎข้าม session (2026-10-09 · audit `docs/modules/am-pm-linkage-audit.md`)
-> · **ทีม AM = `isAmTeam(department)` (`utils/pmTeams.js`) ห้าม hardcode `'production'`** (มีด่าน) · ฝั่ง edge อ่าน `mtn_teams.kind`
-> · **`next_due_date` ว่าง ≠ ปกติ** — ตัวนับ PM ทุกจอผ่าน `planDueBucket()` (`lib/pmSchedule.js`) · ถัง `never`/`no_cycle` ต้องเขียนบนจอ
->   · แผน `run_day` ไม่มีวันปฏิทิน: `resolvePlanDue` คืน `status:'run_day'` **ห้ามถอยไป last_done+interval** · ตัดสินจริงที่จอ AM/PMSchedule
-> · **"กะนี้ AM ตรวจแล้วหรือยัง" มีที่เดียว = `lib/dailyAmBoard.js`** (ทะเบียน `pm_daily_line_targets` + inspections + opened_at) · ห้ามคิวรี inspections เอง (มีด่าน)
->   · 🔴 **"ไลน์ไหนเดินอยู่" ต้องนับไลน์แม่-ลูก** ผ่าน `openFamilyLines()` (`lib/pmDailyStatus.js`) **ห้ามเทียบชื่อตรงตัว** (มีด่าน)
->     — ไลน์แม่หลายตัวไม่เคยเปิดกะในชื่อตัวเอง ⇒ ชุดนี้เป็นประตูของงานตรวจ (`utils/prodRoutine.js`) = **งานตรวจหายเงียบ**
-> · **ทะเบียนรายวัน ⇒ แผน AM = run_day อัตโนมัติชั้น DB** (`pm_am_plan_follow_registry`) —
->   **ห้ามเขียน `next_due_date` ลงแผน run_day** จากจอใด · เอาออกจากทะเบียน = `is_active=false` ห้าม delete · AM ไม่นับในชั้น Preventive ของช่าง
+> ### 🔴 AM ↔ PM (มีด่านทุกข้อ)
+> ทีม AM = `isAmTeam()` (`utils/pmTeams.js`) ห้าม hardcode · ตัวนับ PM ผ่าน `planDueBucket()` (`lib/pmSchedule.js`) ·
+> "กะนี้ AM ตรวจแล้วหรือยัง" = `lib/dailyAmBoard.js` ที่เดียว · ไลน์ที่เดินอยู่นับแม่-ลูกผ่าน `openFamilyLines()`
 
 ---
 
@@ -430,37 +360,21 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 ---
 
 ## Employee Skills & EXP Farming (ย้ายฝั่ง server ทั้งหมด — 2026-07-13)
-
-ระบบสะสม EXP ทักษะพนักงานจากการทำงานจริง — ห้ามเขียนคะแนน `employee_skills` จาก client นอกเหนือจาก
-2 flow ที่อนุญาต · ทุกการเพิ่มคะแนนอัตโนมัติต้องเป็นฟังก์ชันฝั่ง DB เท่านั้น
-- **⭐ v2 (2026-09-24) วัด "ความสามารถ" ไม่ใช่ "การมาทำงาน"** — 4 ขา (ปริมาณสะสมแบบ log · คุณภาพ ·
-  ความหลากหลาย/เหตุผิดปกติ · การรับรอง) + **ประตูรายขั้น** · ค่าเกณฑ์ทุกตัวอยู่ใน `skill_exp_config`
-  **ห้าม hardcode ใน SQL/JS** · `fn_skill_exp_rebuild()` **คำนวณใหม่ทั้งก้อนทุกคืน** (idempotent โดยโครงสร้าง)
-- 🔴 **`shadow_score = null` = "ประเมินไม่ได้" ไม่ใช่ "ได้ 0"** —
-  ห้ามเอาไปแสดงเป็น 0 ห้ามเอาไปกดคะแนนจริง · 🔴 **ขึ้นขั้น 25/50/75/100 ต้องผ่านคนอนุมัติเสมอ**
-- 🔴 **ขา "ปริมาณ" นับ `shots` (จังหวะ) ไม่ใช่ `qty_ok` (ชิ้น)** — กฎ "ชิ้น ≠ shot" ใช้ที่นี่ด้วย ·
-  `n_ref` เป็นค่า**ต่อสถานี** จาก CT จริง ⇒ **ห้ามหาร `cum_cycles` ด้วย `n_ref` เองในหน้า**
-  ใช้ `cum_ratio` + `bandProgress()` (`src/utils/skillExp.js` · มีด่าน)
-- ตอนนี้อยู่ **shadow mode** (`is_enabled=false`) — v1 ยังคุมคะแนนจริง · สลับ/เคลียร์คิวที่ `/operator?tab=levelup`
-> 📄 รายละเอียดเต็ม → `docs/modules/employee-skills-exp.md` (§v2 + 4 หัวข้อย่อย) ·
-> **เหตุผล/งานวิจัย/ตารางเวลาต่อขั้น → `docs/SKILL-EXP-ALGORITHM-DESIGN.md` (อ่านก่อนปรับเกณฑ์)**
+🔴 **ห้ามเขียนคะแนน `employee_skills` จาก client นอก 2 flow ที่อนุญาต · เพิ่มคะแนนอัตโนมัติ = ฟังก์ชันฝั่ง DB เท่านั้น**
+· ค่าเกณฑ์อยู่ `skill_exp_config` ห้าม hardcode · `shadow_score = null` = ประเมินไม่ได้ ไม่ใช่ 0 · ขึ้นขั้นต้องผ่านคนอนุมัติ
+· ขา "ปริมาณ" นับ shots ใช้ `bandProgress()` (`src/utils/skillExp.js` · มีด่าน)
+> 📄 `docs/modules/employee-skills-exp.md` · ก่อนปรับเกณฑ์อ่าน `docs/SKILL-EXP-ALGORITHM-DESIGN.md`
 
 ---
 
 ## PE Core Tools — Process Flow / PFMEA / Control Plan (2026-08-13)
-
-หน้า `/pe-docs` (`PEDocs.jsx`, หมวด คุณภาพ & วิศวกรรม)
-· **📚 คลัง PFMEA กลาง (2026-09-15):** พาร์ทถือ*สำเนา* ของ master (ไม่ใช่ pointer) · ไหลกลับ = **ระบบเสนอ คนตัดสิน** (`pe_master_proposals` · ห้าม auto-update master) · RPN คำนวณใน `src/utils/peMaster.js` เท่านั้น · migration `20260915_pe_fmea_master_main.sql` (**apply แล้ว**)
+หน้า `/pe-docs` · RPN คำนวณใน `src/utils/peMaster.js` เท่านั้น · คลัง PFMEA: ระบบเสนอ คนตัดสิน (ห้าม auto-update master)
 > 📄 รายละเอียดเต็ม → `docs/modules/pe-core-tools.md`
 
 ---
 
 ## 🚀 NPI — พาร์ทใหม่ APQP / PPAP / Drawing Rev / ECI / Tooling Plan (`/npi` · 2026-09-07)
-
-หมวด คุณภาพ & วิศวกรรม
-· **ตาราง `npi_*` 13 ตัวอยู่ Main project — ห้ามย้ายไป DR** (เฟส 4 จะเปิดให้ supplier ภายนอก login · DR anon-open = supplier เห็นข้อมูลผลิตทั้งโรงงาน)
-· เฟส/รายการเอกสาร = **แม่แบบ data-driven ต่อลูกค้า** (APQP AIAG 5 เฟส + PPAP 18 elements · Toyota SPTT0-4) ห้าม hardcode · พาร์ทถือ snapshot + 🔄 sync เติมที่ขาด
-· ไฟสี/สรุปคำนวณใน `src/utils/npi.js` เท่านั้น · ECI ปิดได้ต่อเมื่อผูกของจริงครบทุกขา (แบบ rev ใหม่ / `pe_change_requests` / ใบ 4M Method / แผน tooling — DB check)
+· 🔴 **ตาราง `npi_*` อยู่ Main project — ห้ามย้ายไป DR** (supplier ภายนอกจะ login · DR anon-open) · สูตรไฟสี `src/utils/npi.js`
 > 📄 รายละเอียดเต็ม → `docs/modules/npi-apqp.md`
 
 ---
@@ -485,72 +399,36 @@ Realtime + Edge Functions/Deno) · Telegram Bot API · deploy = Render.com (Stat
 > · **ที่มาตัวเลข/ใบจริง/คู่มือ KPI Online → `docs/OBEYA-KPI-SOURCES.md` (อ่านก่อนแตะ KPI)**
 
 ## 🌳 ชั้น BOM ที่แก้ได้ + ผูกขั้นตอน (PFC/OP) — `/products` แท็บ BOM (2026-09-16)
-
-> **🔴 ต้นไม้ BOM ต้องผ่าน `buildBomIndex()` (`src/utils/bomTree.js`) เท่านั้น · ห้ามเขียน `matOf[b.product_id]` เองอีก**
-> (มีด่าน) — `bom_items.parent_mat` (ใครก็เป็นแม่ได้ ไม่ต้องเป็น `dr_products`)
-> ชนะ `product_id` · `op_no` = ขั้นที่ชิ้นนี้ถูกใส่ตาม PFC · ย้ายชั้นผ่าน `moveBomLine()` (กันวนลูป)
-> 🔴 **"ใบนี้ว่าง" ≠ "พาร์ทนี้ไม่มีลูก"** — ลูกอาจถูกกรอกไว้ในใบอื่น
-> ⇒ ก่อนประกาศว่าไม่มีลูก ต้องถาม **`sheetsWithKidsOf()`** ก่อน · กางด้วย `explodeBom(..., { startSheet })`
-> **ห้ามรวมหลายใบเป็นชุดเดียว** (รวม = นับซ้ำ) · มุมมองพาร์ท = อ่านอย่างเดียว ห้ามแก้/สร้างใบให้เอง (มีด่าน)
-> 🔴 **`bomOf(mat, sheet)` = "ชุดของใบที่กางอยู่ชนะทั้งชุด" ไม่ได้รวม 2 ชุด** ⇒ ของที่มีแต่ในใบของพาร์ทเอง
-> **ไม่ถูกระเบิดเลย** · คู่ที่นิยามไว้ 2 ใบไล่เคลียร์ที่ `/products?tab=bomdup` (กฎ `src/utils/bomDupAudit.js`)
-> — **จอชี้อย่างเดียว ห้ามยุบ/ลบ/แก้ qty ของ `bom_items` ให้เอง** (PE แก้เอง · คำสั่ง user 19/10 · มีด่าน)
-> 🔴 **ตัดสินว่า "ยุบได้" ต้องดูทุกใบที่นิยามพาร์ทนั้น ไม่ใช่ 2 ใบ** (`auditBomSheetGroups()` ไฟล์เดียวกัน)
->
-> ### 🔻 confirm ใบผลิต = **ตัดลูกที่ติดตัวมัน · ลูกไปตัดหลาน** (หลัก SAP · 5/11 · คำสั่ง user)
-> 🔴 **ผัง BOM สร้างใบเดียว — ลูก/หลานไม่ต้องมีใบ BOM แยก** · "ลูกของ mat นี้" ถาม
->   **`fn_bom_kid_rows(mat, sheet)`** (ใบที่กางอยู่ → ใบของตัวเอง → ใบอื่นที่นิยามลูกไว้ ใบเดียว ห้ามรวม)
-> 🔴 **รายการที่จะตัดมาจาก `fn_bom_direct_demand(mat)` (DR) ที่เดียว — trigger
->   `fn_explode_child_demand` ห้ามวน `bom_items` ทั้งใบ** (`parent_mat` ⇒ ทั้งใบ ≠ ลูกตรง · มี 2 ด่าน)
->   · ลูกไม่พอ = ออกใบให้**ลูกไปผลิตเอง** แล้วใบของลูกค่อยตัดลูกของมันต่อ
-> 🔴 **"ของลม" (`bom_phantom_mats` · `fn_bom_is_phantom()`) = ข้อยกเว้นที่ PE ติ๊กเอง ไม่ใช่ค่าเริ่มต้น**
->   (ขั้น OP อัตโนมัติ) — ติ๊กแล้วข้ามตัวมันไปตัดลูกที่ชั้นแม่ · **ห้าม seed/เดาให้ใคร**
-> 🔴 **โซ่ขาด (`fn_bom_deduct_gaps()`) = mat ที่อยู่ใน BOM แต่ไม่มีใบไหนตัดเลย — จอ
->   `/products?tab=phantom` ต้องโชว์ ห้ามซ่อน ห้ามกลบด้วยการติ๊กของลม** (ป้ายจอ `utils/bomPhantom.js`
->   · อ่าน `ownOrders` ไม่ได้ = `unknown` ห้ามบีบเป็น 0)
-> 🔴 **"ต่อ 1 FG" ฝั่งแผน (`explodeBom`) ≠ สิ่งที่ตัดตอน confirm** — ฝั่งแผนคูณสะสมทุกชั้น · ห้ามสลับ
+> **🔴 ต้นไม้ BOM ผ่าน `buildBomIndex()` (`src/utils/bomTree.js`) เท่านั้น** · "ใบนี้ว่าง ≠ พาร์ทไม่มีลูก" ถาม `sheetsWithKidsOf()` ·
+> **ห้ามรวมหลายใบเป็นชุดเดียว** (นับซ้ำ) · จอชี้ใบซ้ำ **ห้ามแก้ `bom_items` ให้เอง** (มีด่าน)
+> 🔻 confirm ใบผลิต: รายการที่ตัดมาจาก `fn_bom_direct_demand(mat)` (DR) ที่เดียว · ของลม = PE ติ๊กเอง ห้าม seed ·
+> โซ่ขาด `fn_bom_deduct_gaps()` ต้องโชว์ · 🔴 **"ต่อ 1 FG" ฝั่งแผน (`explodeBom`) ≠ สิ่งที่ตัดตอน confirm**
 > 📄 `docs/modules/bom-levels.md`
 
 ---
 
 ## 📌 คิวงานของฉัน — แผงในเมนูบัญชี (2026-09-25 · คำสั่ง user)
-
-กฎการแบ่งชั้น = `src/utils/myQueue.js` (pure · มีเทส) · โหลด/วาด = `components/MyQueuePanel.jsx`
-- **ดึง ไม่ใช่ยิง** (ไม่สร้างแถว `notifications`) · **🔔 กระดิ่งแท็บ "🎯 รอคุณ" = ชั้น `mine` ชุดเดียวกัน** (`useMyQueue` โหลดร่วม)
-- **🔴 3 ชั้นห้ามยุบ:** `mine` รอเราตรง (+ช่องเซ็นที่ตำแหน่งเราเซ็นได้คนเดียว `soleSignerFor()`) · `unit` คิวหน่วยงาน · `floor` ทั้งโรงงาน (**สรุปบรรทัดเดียว**)
-- **🔴 badge (รูปโปรไฟล์ + กระดิ่ง + ไอคอนแอป) นับเฉพาะ `mine` ผ่าน `badgeCount()`** · 0 หรือโหลดไม่ครบ = **ไม่วาดเลย**
-- **🔴 ว่างต้องขึ้น "ไม่มีงานค้าง" ห้ามซ่อน · โหลดไม่ครบต้องเขียนบนจอ** (`partial`) — "เคลียร์หมด" ≠ "คิวรีล่ม"
+กฎ `src/utils/myQueue.js` · 🔴 **3 ชั้น `mine`/`unit`/`floor` ห้ามยุบ · badge นับเฉพาะ `mine` ผ่าน `badgeCount()`**
 > 📄 `docs/modules/my-queue.md`
 
 ---
 
 ## 📉 Monitoring — Excel ทีมวางแผนเข้าระบบ (`/monitoring` · 02/10)
-
-13 ชีท = **การตั้งค่า ไม่ใช่ 13 จอ** — ชุดแถวอยู่ `monitor_boards.rows` (DR) · เลขทุกตัวออกจาก
-`buildGrid()` (`utils/monitorGrid.js`) ที่เดียว (มีด่าน)
-· 🔴 **ช่องยอดยกมาว่าง = `null` ทั้งแถว ห้ามเดา 0** · ระบบไม่รู้ = ขีด `–` · คนกรอกชนะระบบ —
-  🔒 **ยกเว้นช่อง IN ที่ระบบมีตัวเลขแล้ว = ล็อก** (`makeLockLookup` · `monitorSystem.js`) ยอดไม่ตรง = ขอปรับยอดคลัง (`StockAdjustRequestModal`) ห้ามเปิดให้พิมพ์ทับ
-· ⚠️ **แต่ละชีทคิด Total SL คนละสูตร — เก็บเป็น `sl_row` ห้ามยุบเอง**
-· 📦 **บอร์ดชนิด `fg` ผูก "ลูกค้า" ไม่ใช่ "ไลน์"** (ยอดสั่งจาก EDI 862/830) ⇒ **IN ห้ามกรองไลน์**
+เลขทุกตัวออกจาก `buildGrid()` (`utils/monitorGrid.js`) ที่เดียว (มีด่าน) · 🔴 ยอดยกมาว่าง = `null` ห้ามเดา 0 ·
+ช่อง IN ที่ระบบมีเลขแล้ว = ล็อก (`makeLockLookup`)
 📄 `docs/modules/monitoring-boards.md`
 
 ---
 
 ## 🧑‍🤝‍🧑 Manpower Control Board — `/manpower-board`
-
-กฎ `utils/manpowerBoard.js` · แถว = **ตำแหน่ง** · กะทีม = `shiftFromTeam` **ห้าม A = Shift 01** · กะไม่ตั้ง = `null`
-· ช่องว่าง: ช่องต่อทีม `manpower_slot_plans` → จุดงาน `station_slot_plans` → std · 🔴 **ช่างประจำไลน์ = `line_technicians` ห้ามยัด `employees.line_id`** · คนยืม = `mergeBorrowedEmployees()`
-· 🔴 **คนวิ่งข้ามแผนก = `employee_flex_units` (อ้างอิง) — ห้ามย้าย `employees.org_node_id` ห้ามแตะ `cost_center`** · **"ไปช่วย ≠ นับเป็นกำลังคน"** (ไม่เข้าช่องว่าง/ตัวนับ) · มีด่าน `manpower-flex-reference-only`
+กฎ `utils/manpowerBoard.js` · 🔴 ช่างประจำไลน์ = `line_technicians` ห้ามยัด `employees.line_id` ·
+🔴 **คนวิ่งข้ามแผนก = `employee_flex_units` ห้ามย้าย `employees.org_node_id`/`cost_center`** (มีด่าน)
 > 📄 `docs/modules/manpower-board.md`
 
 ---
 
 ## 📦 อัพเดทโปรแกรม — `/program-update` (2026-10-01 · คำสั่ง user)
-
-· 🔴 **แหล่งความจริงคือ git** — `scripts/gen-changelog.mjs` → `public/changelog.json` (อยู่ในขั้น build)
-  **ห้ามแก้ไฟล์นั้นมือ · ห้ามทำทะเบียนอัพเดทให้คนมาจดเอง** (ช่องที่ไม่มีใครกรอก = ช่องตาย)
-· 🔴 **สคริปต์ห้ามทำ build ล่ม · clone ตื้นห้ามเขียนทับ** (ของใหม่น้อยกว่าเดิม >10% = ไม่เขียน)
-· กฎตีชนิด = `src/utils/changelog.js` (**ต้องมีตะกร้ารับท้ายลิสต์** — commit ไม่ตามรูปห้ามหายจากจอ)
+🔴 **`public/changelog.json` สร้างจาก git (`scripts/gen-changelog.mjs`) — ห้ามแก้มือ · สคริปต์ห้ามทำ build ล่ม**
 > 📄 `docs/modules/program-update.md`
 
 ---

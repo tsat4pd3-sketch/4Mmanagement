@@ -132,3 +132,17 @@ single-source audit สร้าง DR `suppliers` (code · name · kind · cont
 
 ## 🪜 แถบ "ถึงขั้นไหน" (2026-11-12)
 ECI + PPAP — แถบ ✓→○ ในโมดัล (`eciFlow/ppapFlow` ใน `utils/npi.js`) · เฟส APQP ใช้การ์ดเฟสเดิม ไม่ใส่แถบ · กติกา + ทะเบียนทุกใบ → `docs/modules/step-flow.md` · UI §6.30
+
+---
+
+## 📦 ฉบับเต็มเดิมจาก CLAUDE.md — 🚀 NPI — พาร์ทใหม่ APQP / PPAP / Drawing Rev / ECI / Tooling Plan (`/npi` · 2026-09-07)
+
+> ย้ายมา 2026-11-12 (รีด CLAUDE.md รอบ 4 · `docs/modules/claude-md-slim.md`) — ยกมาทั้งดุ้น ไม่แก้คำ ·
+> CLAUDE.md เหลือเฉพาะกฎข้าม session + pointer มาที่นี่
+
+
+หมวด คุณภาพ & วิศวกรรม
+· **ตาราง `npi_*` 13 ตัวอยู่ Main project — ห้ามย้ายไป DR** (เฟส 4 จะเปิดให้ supplier ภายนอก login · DR anon-open = supplier เห็นข้อมูลผลิตทั้งโรงงาน)
+· เฟส/รายการเอกสาร = **แม่แบบ data-driven ต่อลูกค้า** (APQP AIAG 5 เฟส + PPAP 18 elements · Toyota SPTT0-4) ห้าม hardcode · พาร์ทถือ snapshot + 🔄 sync เติมที่ขาด
+· ไฟสี/สรุปคำนวณใน `src/utils/npi.js` เท่านั้น · ECI ปิดได้ต่อเมื่อผูกของจริงครบทุกขา (แบบ rev ใหม่ / `pe_change_requests` / ใบ 4M Method / แผน tooling — DB check)
+> 📄 รายละเอียดเต็ม → `docs/modules/npi-apqp.md`

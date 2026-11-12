@@ -84,3 +84,17 @@
 3. **จอขาวทั้งแอป** = ไม่ใช่เรื่องหน้านี้ ⇒ `RootErrorBoundary`/version-guard ใน `main.jsx`
 4. **เด้งกลับหน้าหลัก** = ไม่มีสิทธิ์ `page:/program-update` (seed แล้ว 11 role — role ที่เพิ่มทีหลัง
    ต้องเปิดเองที่ `/permissions`)
+
+---
+
+## 📦 ฉบับเต็มเดิมจาก CLAUDE.md — 📦 อัพเดทโปรแกรม — `/program-update` (2026-10-01 · คำสั่ง user)
+
+> ย้ายมา 2026-11-12 (รีด CLAUDE.md รอบ 4 · `docs/modules/claude-md-slim.md`) — ยกมาทั้งดุ้น ไม่แก้คำ ·
+> CLAUDE.md เหลือเฉพาะกฎข้าม session + pointer มาที่นี่
+
+
+· 🔴 **แหล่งความจริงคือ git** — `scripts/gen-changelog.mjs` → `public/changelog.json` (อยู่ในขั้น build)
+  **ห้ามแก้ไฟล์นั้นมือ · ห้ามทำทะเบียนอัพเดทให้คนมาจดเอง** (ช่องที่ไม่มีใครกรอก = ช่องตาย)
+· 🔴 **สคริปต์ห้ามทำ build ล่ม · clone ตื้นห้ามเขียนทับ** (ของใหม่น้อยกว่าเดิม >10% = ไม่เขียน)
+· กฎตีชนิด = `src/utils/changelog.js` (**ต้องมีตะกร้ารับท้ายลิสต์** — commit ไม่ตามรูปห้ามหายจากจอ)
+> 📄 `docs/modules/program-update.md`
