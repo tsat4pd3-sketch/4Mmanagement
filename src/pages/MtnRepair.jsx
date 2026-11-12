@@ -22,6 +22,7 @@ import { PURPOSES, CAUSE_CATS, needsPlantManager, needsApprovalFirst, laborAmoun
 import AuditLogViewer from '../components/AuditLogViewer';
 import { can, canDelete, isActionSeeded, isSharedAccount } from '../utils/permissions';
 import { confirmSign, needsSignConfirm } from '../utils/signConfirm';
+import { moTimeline } from '../utils/mtnTimeline';   // ⏱️ 4 ช่วงของไลน์หยุด (คำศัพท์ชุดเดียวของระบบ)
 import { MO_DONE_STATUSES, MO_STATUS_META as STATUS_META, QA_NOT_RELATED, QA_RELATED, QA_SKIP_REASON_STEP4, canBounceBack, canDoStep, canHandoff, canSignMtnApproval, canSkipQa, isMoOpen, isOrderReporter, isQaSkipped, isWaitingQa, lastStep, orderReporterText, nextStepOf, moQaState, mtnCloseStage, moStatusLabel, moStatusMeta, orderInReporterScope, stageOf, stepDenyHint, stepLabel, stepMeta, moWaitMeta, qaRelatedView, moRemoveMode, MO_REMOVE_BLOCKED, MO_REMOVE_CANCEL, MO_REMOVE_DELETE, actorSideOf, stepAssumptions, assumptionHint } from '../utils/mtnStepPerm';
 import { positionRank } from '../utils/positions';
 import { findOpenOnMachine, dupLevel } from '../utils/mtnDuplicate';
@@ -2337,6 +2338,33 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
   // หยุดนับ MTTR = รออะไหล่ PR / อยู่กับ supplier หลัง MTN ตัดสินเส้นทาง (20/10) ∪ ช่วงส่งภายนอก — union ไม่หักซ้ำ
   const ttr = techRepairMin(o), ttrGross = grossRepairMin(o), venHold = mttrHoldMin(o);
   const bd = minutesBetween(o.report_at, o.repair_done_at);
+  /* ⏱️ แถบ 4 ช่วงของไลน์หยุด (11/11 · user วาดไดอะแกรมมาให้) — คำศัพท์/สูตรอยู่ `utils/mtnTimeline.js`
+     🔴 โหลดแถว downtime ที่ผูกไว้ **เฉพาะใบที่มี `source_downtime_id`** (วัดจริง 56% ของใบ)
+        ใบที่ไม่ได้ผูก = ตอบไม่ได้ว่าไลน์หยุดกี่นาที ⇒ จอต้องเขียนบอก ห้ามเดาจากเวลาในใบ
+     🔴 1 คิวรีเล็กตอน "เปิดใบ" เท่านั้น ไม่ได้ยิงตอนโหลดรายการ (กฎ egress ของหน้านี้) */
+  const [dtRow, setDtRow] = useState({ state: o.source_downtime_id ? 'loading' : 'none', row: null });
+  useEffect(() => {
+    if (!o.source_downtime_id) { setDtRow({ state: 'none', row: null }); return () => {}; }
+    let alive = true;
+    setDtRow({ state: 'loading', row: null });
+    supabaseDR.from('downtime_logs')
+      .select('started_at, ended_at, duration_min, call_mtn_at, call_mtn_ack_at')
+      .eq('id', o.source_downtime_id).maybeSingle()
+      .then(({ data, error }) => {
+        if (!alive) return;
+        setDtRow(error || !data ? { state: 'error', row: null } : { state: 'ok', row: data });
+      });
+    return () => { alive = false; };
+  }, [o.source_downtime_id]);
+  /* stamp ฝั่งการ์ด downtime ชนะ ถ้าไม่มีค่อยถอยไปใช้ของใบ MO (วัดแล้วค่ากลางต่างกัน 0.0 นาที) */
+  const tl = useMemo(() => (dtRow.state === 'ok' ? moTimeline({
+    lineStopAt: dtRow.row.started_at,
+    callAt: dtRow.row.call_mtn_at || o.report_at,
+    ackAt: dtRow.row.call_mtn_ack_at || o.accept_at,
+    repairDoneAt: o.repair_done_at,
+    runAgainAt: dtRow.row.ended_at,
+    lineStopMin: dtRow.row.duration_min,
+  }) : null), [dtRow, o.report_at, o.accept_at, o.repair_done_at]);
   const [dparts, setDparts] = useState([]);
   /* ✍️ ลายเซ็นปัจจุบันของแต่ละคน (uid → url) — ดึงสดจากโปรไฟล์ ไม่เชื่อ URL ที่ใบเก็บไว้
      เพราะไฟล์เดิมถูกลบตอนคนเปลี่ยนลายเซ็น (93 ใบเป็นรูปเสียอยู่ตอนนี้ · utils/signResolve.js)
@@ -3080,9 +3108,48 @@ function DetailDrawer({ order, role, allUnits = false, parts = [], mtnDepts = MT
           )}
           <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 10, fontSize: 12.5 }}>
             <div style={{ fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>⏱ KPI</div>
-            <Row k="เข้าดำเนินการ (Response)" v={fmtMin(resp)} /><Row k="เวลาซ่อม (TTR)" v={venHold > 0 && ttr != null
+            <Row k="เข้าดำเนินการ (MTTA)" v={fmtMin(resp)} /><Row k="เวลาซ่อม (TTR)" v={venHold > 0 && ttr != null
               ? `${fmtMin(ttr)} (หักหยุด MTTR ${fmtMin(venHold)} · รวมทั้งหมด ${fmtMin(ttrGross)})`
-              : fmtMin(ttr)} /><Row k="หยุดรวม (Breakdown)" v={fmtMin(bd)} />
+              : fmtMin(ttr)} />
+            {/* 🔴 เดิมบรรทัดนี้ชื่อ "หยุดรวม (Breakdown)" — ชวนอ่านว่าเป็นเวลาที่ไลน์หยุด
+                ทั้งที่เป็นนาฬิกาฝั่งช่างล้วน (กดเรียก → กดซ่อมเสร็จ) เป็นต้นเหตุที่หน้างานสับสน
+                ว่า 16 นาที กับ 30 นาที อันไหนคือ Machine Breakdown (11/11 · คำสั่ง user) */}
+            <Row k="รวมเวลาฝั่งช่าง (MTTA+TTR)" v={fmtMin(bd)} />
+
+            {/* ── แถบ 4 ช่วงของไลน์หยุด — ตามไดอะแกรมที่ user วาด (11/11) ──────────
+                🔴 โชว์เฉพาะใบที่ผูกการ์ด downtime ได้ · ใบที่ผูกไม่ได้ต้องเขียนบอก ห้ามเดา */}
+            <div style={{ marginTop: 8, borderTop: '1px solid var(--border)', paddingTop: 7 }}>
+              {dtRow.state === 'none' && (
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>
+                  ใบนี้ไม่ได้เปิดจากรายการเครื่องหยุด — <b>ระบบจึงไม่รู้ว่าไลน์หยุดจริงกี่นาที</b>
+                  {' '}(เลขข้างบนเป็นนาฬิกาฝั่งช่างเท่านั้น)
+                </div>
+              )}
+              {dtRow.state === 'loading' && <div style={{ fontSize: 11, color: 'var(--muted)' }}>กำลังโหลดเวลาไลน์หยุด…</div>}
+              {dtRow.state === 'error' && (
+                <div style={{ fontSize: 11, color: 'var(--amber)' }}>⚠ โหลดรายการเครื่องหยุดที่ผูกไว้ไม่สำเร็จ — แถบแบ่งช่วงไม่แสดง</div>
+              )}
+              {tl && (<>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 3 }}>
+                  ไลน์หยุดจริง {fmtMin(tl.lineStopMin)}
+                  {tl.mcBreakdownMin != null && <span style={{ color: 'var(--muted)', fontWeight: 400 }}>
+                    {' '}· M/C Breakdown (ถึงซ่อมเสร็จ) {fmtMin(tl.mcBreakdownMin)}</span>}
+                </div>
+                {tl.segs.map(sg => (
+                  <Row key={sg.key}
+                    k={`${sg.owner === 'mtn' ? '🔧' : '🏭'} ${sg.label}`}
+                    v={sg.known ? fmtMin(Math.round(sg.min)) : '— (ไม่มีเวลาที่ต้องใช้)'} />
+                ))}
+                {tl.outOfOrder && (
+                  <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>
+                    ⚠ เวลาในใบไม่เรียงตามจริง (กดปุ่มย้อนหลัง) — แบ่งช่วงบางช่วงไม่ได้
+                  </div>
+                )}
+                {tl.missing.length > 0 && !tl.outOfOrder && (
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>ยังไม่มี: {tl.missing.join(' · ')}</div>
+                )}
+              </>)}
+            </div>
           </div>
         </div>
       </div>

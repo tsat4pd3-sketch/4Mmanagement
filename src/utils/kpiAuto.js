@@ -99,6 +99,42 @@ export function mtnAutoSeries(roll, year, team) {
   return { months: out, machines };
 }
 
+/* ══ 📊 แตกชั่วโมง "ไลน์หยุด" เป็นช่วง — เลขตัวเดียวกัน ไม่มีตรงไหนหายไป ══  2026-11-11
+   คำสั่ง user: *"ให้โชว์กราฟแท่งแบบนี้ เพื่อให้เห็นว่าเลขตัวเดียวกัน ไม่ได้มีตรงไหนหายไป
+   แต่บอกได้ว่าไปอยู่ช่วงไหน"* (ไดอะแกรมที่ user วาด — ดู `utils/mtnTimeline.js`)
+
+   🔴 **ตัวตั้งคือ "ไลน์หยุด" (Line stop) ซึ่งเป็นเลขเดียวกับที่ KPI ทางการใช้** — ไม่ใช่เลขชุดใหม่
+      ⇒ ①+②+③+④+ยังแบ่งไม่ได้ **ต้องเท่ากับ `breakdown_hr` เป๊ะ** (ฝั่ง SQL clamp มาให้แล้ว)
+   🔴 **"ยังแบ่งไม่ได้" ห้ามหาย** — ต.ค. 2026 ฝั่ง machine แบ่งได้ 162.7 จาก 810.1 ชม. (20%)
+      ที่เหลือ 647.6 ชม. คือครั้งที่ไม่มีใบ MO (1,493 จาก 1,818 ครั้ง) ⇒ ไม่มี stamp ให้แบ่ง
+      นี่คือ "ข้อมูลที่ขาด" ที่ต้องเห็นบนจอ ไม่ใช่สิ่งที่ควรซ่อนเพราะแท่งจะได้สวย
+   🔴 RPC รุ่นก่อน 11/11 ไม่มี `seg_*` ⇒ `known:false` ห้ามคืน 0 */
+export function mtnSegSeries(roll, year, team) {
+  const kind = team?.equip_type || null;
+  const rows = (roll?.dt || []).filter(x => !kind || x?.kind === kind);
+  if (!rows.length || !rows.some(x => x?.seg_unsplit_min != null)) {
+    return { known: false, parts: [], unknownHr: 0, totalHr: 0, moEvents: 0, events: 0 };
+  }
+  const yr = String(year);
+  const mine = rows.filter(x => String(x?.m || '').startsWith(yr));
+  const sum = (f) => mine.reduce((s, x) => s + num(x[f]), 0) / 60;
+  return {
+    known: true,
+    totalHr: sum('breakdown_min'),
+    parts: [
+      { key: 'precall', label: '① ก่อนเรียกช่าง', hr: sum('seg_precall_min') },
+      { key: 'mtta',    label: '② MTTA รอช่างรับงาน', hr: sum('seg_mtta_min') },
+      { key: 'ttr',     label: '③ TTR เวลาซ่อม', hr: sum('seg_ttr_min') },
+      { key: 'restart', label: '④ คืนไลน์ (Restart)', hr: sum('seg_restart_min') },
+    ],
+    unknownHr: sum('seg_unsplit_min'),
+    events: mine.reduce((s, x) => s + num(x.events), 0),
+    moEvents: mine.reduce((s, x) => s + num(x.mo_events), 0),
+    /* M/C Breakdown ตามที่ user วาด = Line stop − ④ คืนไลน์ (ไม่ใช่ค่าทางการ — ของทางการคือ Line stop เต็ม) */
+    mcBreakdownHr: sum('mc_breakdown_min'),
+  };
+}
+
 /* ══ 🕳️ "ชั่วโมงที่ยังชี้เจ้าของไม่ได้" ══════════════════════════  2026-11-11
    คำสั่ง user: *"single source truth ต้องไม่มีค่าไหนหายไป แต่ต้องเคาะว่าจะไปอยู่ตรงไหน"*
 

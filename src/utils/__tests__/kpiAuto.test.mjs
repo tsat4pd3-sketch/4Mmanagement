@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mtnAutoSeries, mtnGapSeries, autoKpiOfName, toRowUnit, HOURS_PER_MONTH, autoUnitMismatch, autoDetailText } from '../kpiAuto.js';
+import { mtnAutoSeries, mtnGapSeries, mtnSegSeries, autoKpiOfName, toRowUnit, HOURS_PER_MONTH, autoUnitMismatch, autoDetailText } from '../kpiAuto.js';
 
 const roll = {
   machines: [{ kind: 'die', n: 266 }, { kind: 'jig', n: 172 }, { kind: 'machine', n: 216 }, { kind: 'facility', n: 38 }],
@@ -180,4 +180,51 @@ test('🔴 ชั่วโมงชี้เจ้าของไม่ได้
   assert.equal(withGap.breakdown_hr, noGap.breakdown_hr, 'ค่าของทีมต้องไม่ขยับเพราะ dt_gap');
   assert.equal(withGap.mbd, noGap.mbd);
   assert.equal(withGap.mtbf, noGap.mtbf);
+});
+
+/* ══ 📊 แตกชั่วโมงไลน์หยุดเป็นช่วง (11/11 · user: "ให้เห็นว่าเลขตัวเดียวกัน ไม่มีตรงไหนหายไป") ══ */
+
+const SEG_ROLL = {
+  machines: [{ kind: 'machine', n: 259 }],
+  months: ['2026-10'],
+  mo: [],
+  dt: [{ m: '2026-10', kind: 'machine', events: 1818, mo_events: 325, breakdown_min: 48606,
+         mc_breakdown_min: 47610, seg_precall_min: 2436, seg_mtta_min: 4968,
+         seg_ttr_min: 1362, seg_restart_min: 996, seg_unsplit_min: 38844 }],
+};
+const MACHINE = { key: 'maintenance', equip_type: 'machine' };
+
+test('📊 ①+②+③+④+ยังแบ่งไม่ได้ ต้องเท่ากับไลน์หยุดเป๊ะ (ตัวพิสูจน์ว่าไม่มีอะไรหาย)', () => {
+  const g = mtnSegSeries(SEG_ROLL, 2026, MACHINE);
+  assert.equal(g.known, true);
+  const sum = g.parts.reduce((s, p) => s + p.hr, 0) + g.unknownHr;
+  assert.ok(Math.abs(sum - g.totalHr) < 1e-9, `บวกกลับ ${sum} ต้องเท่ากับ ${g.totalHr}`);
+  assert.ok(Math.abs(g.totalHr - 810.1) < 0.1);
+  assert.deepEqual(g.parts.map(p => p.key), ['precall', 'mtta', 'ttr', 'restart']);
+  assert.ok(Math.abs(g.unknownHr - 647.4) < 0.2, 'ส่วนที่ยังแบ่งไม่ได้ต้องอยู่ครบ ห้ามหาย');
+});
+
+test('🔴 M/C Breakdown (ตามที่ user วาด) = ไลน์หยุด − คืนไลน์', () => {
+  const g = mtnSegSeries(SEG_ROLL, 2026, MACHINE);
+  const restart = g.parts.find(p => p.key === 'restart').hr;
+  assert.ok(Math.abs(g.mcBreakdownHr - (g.totalHr - restart)) < 0.01);
+  assert.ok(g.mcBreakdownHr < g.totalHr, 'ต้องน้อยกว่าไลน์หยุดเสมอ');
+});
+
+test('🔴 RPC รุ่นเก่าไม่มี seg_* = known:false ห้ามคืน 0 ว่าแบ่งไม่มีอะไรเลย', () => {
+  const g = mtnSegSeries(roll, 2026, JIG);      // roll เดิมไม่มีฟิลด์ seg_*
+  assert.equal(g.known, false);
+  assert.deepEqual(g.parts, []);
+  for (const bad of [null, undefined, {}, 'x']) assert.equal(mtnSegSeries(bad, 2026, JIG).known, false);
+});
+
+test('แยกตามชนิดอุปกรณ์ของทีม — ทีมอื่นต้องไม่ปนเข้ามา', () => {
+  const two = { ...SEG_ROLL, dt: [...SEG_ROLL.dt,
+    { m: '2026-10', kind: 'jig', events: 280, mo_events: 41, breakdown_min: 4254,
+      mc_breakdown_min: 4224, seg_precall_min: 486, seg_mtta_min: 648, seg_ttr_min: 162,
+      seg_restart_min: 30, seg_unsplit_min: 2922 }] };
+  const m = mtnSegSeries(two, 2026, MACHINE);
+  assert.ok(Math.abs(m.totalHr - 810.1) < 0.1, 'ของ jig ต้องไม่ถูกบวกเข้ามา');
+  const j = mtnSegSeries(two, 2026, { key: 'jig_maintenance', equip_type: 'jig' });
+  assert.ok(Math.abs(j.totalHr - 70.9) < 0.1);
 });

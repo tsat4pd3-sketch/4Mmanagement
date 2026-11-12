@@ -11,7 +11,8 @@ import { loadAffectsLanes } from '../utils/affectsLanes';
 import { defectUnitCost } from '../utils/costSaving';
 import { fetchByIds } from '../utils/fetchByIds';
 import useOrgScope from '../utils/useOrgScope';
-import { mtnAutoSeries, mtnGapSeries, autoKpiOfName, toRowUnit, HOURS_PER_MONTH, autoUnitMismatch } from '../utils/kpiAuto';
+import { mtnAutoSeries, mtnGapSeries, mtnSegSeries, autoKpiOfName, toRowUnit, HOURS_PER_MONTH, autoUnitMismatch } from '../utils/kpiAuto';
+import LineStopBar from './LineStopBar';   // 📊 แท่งพิสูจน์ว่าชั่วโมงไลน์หยุดบวกกลับได้ครบ
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import OrgScopePicker from './OrgScopePicker';
 import FilterBar from './FilterBar';
@@ -327,6 +328,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
      (11/11 · คำสั่ง user "ต้องไม่มีค่าไหนหายไป แต่ต้องเคาะว่าจะไปอยู่ตรงไหน")
      ไม่เอาไปบวกใน KPI ทีมไหน — เดาเจ้าของไม่ได้ ⇒ เขียนบนจอให้คนไปปิดที่ต้นทางแทน */
   const mtnGap = useMemo(() => (mtnRoll?.data ? mtnGapSeries(mtnRoll.data, year) : null), [mtnRoll, year]);
+  /* 📊 แตกชั่วโมงไลน์หยุดของทีมนี้เป็นช่วง (11/11 · คำสั่ง user "ให้เห็นว่าเลขตัวเดียวกัน") */
+  const mtnSeg = useMemo(() => (mtnTeam && mtnRoll?.data && mtnRoll.year === year
+    ? mtnSegSeries(mtnRoll.data, year, mtnTeam) : null), [mtnTeam, mtnRoll, year]);
   /* เติมค่าที่ระบบคำนวณลงเดือนที่ยังว่าง — เขียนผ่าน kpi_manual_entries เหมือนคนกรอก (สอบกลับได้ · ค่าทับมือไม่ได้) */
   const isPlantScope = isPlant(scope);   // primitive สำหรับ deps (กฎ DB ข้อ 9)
   const load = useCallback(async () => {
@@ -1210,6 +1214,29 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
               </span>
             )}
           </div>
+          {/* 📊 แท่งไลน์หยุดแตกช่วง — "เลขตัวเดียวกัน ไม่มีตรงไหนหายไป แต่บอกได้ว่าไปอยู่ช่วงไหน"
+              🔴 ยอดเต็มของแท่ง = ชั่วโมงไลน์หยุด ซึ่งเป็น **ตัวตั้งเดียวกับ Machine Break Down/MTTR/MTBF**
+                 ⇒ อ่านแท่งนี้แล้วต้องกลับไปอ่านแถว KPI ข้างล่างได้โดยไม่ต้องแปลงอะไร */}
+          {mtnTeam && mtnSeg?.known && mtnSeg.totalHr > 0 && (
+            <div style={{ margin: '2px 0 10px', background: 'var(--bg3)', border: '1px solid var(--border2)',
+                          borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
+              <LineStopBar
+                title={`⏱️ ชั่วโมงไลน์หยุดปี ${year} แตกตามช่วง`}
+                total={mtnSeg.totalHr}
+                parts={[
+                  { ...mtnSeg.parts[0], color: 'var(--purple)' },
+                  { ...mtnSeg.parts[1], color: 'var(--blue)' },
+                  { ...mtnSeg.parts[2], color: 'var(--amber)' },
+                  { ...mtnSeg.parts[3], color: 'var(--green)' },
+                ]}
+                unknownHr={mtnSeg.unknownHr}
+                unknownLabel="ยังแบ่งช่วงไม่ได้ (ไม่มีใบ MO ผูกไว้)"
+                note={`เสีย ${mtnSeg.events.toLocaleString('th-TH')} ครั้ง · มีใบ MO ${mtnSeg.moEvents.toLocaleString('th-TH')} ครั้ง`
+                  + ` — ครั้งที่ไม่มีใบ MO ไม่มีเวลากดเรียกช่าง/ซ่อมเสร็จ จึงแบ่งช่วงไม่ได้ (ยอดยังนับอยู่ครบ)`
+                  + ` · M/C Breakdown ถึงซ่อมเสร็จ = ${mtnSeg.mcBreakdownHr.toLocaleString('th-TH', { maximumFractionDigits: 1 })} ชม.`}
+              />
+            </div>
+          )}
           {/* 🕳️ "ไม่มีค่าไหนหายไป" (11/11 · คำสั่ง user) — ชั่วโมงเครื่องหยุดที่ระบบชี้ไม่ได้ว่าเป็นอุปกรณ์ชนิดไหน
               จึงไม่เข้า KPI ทีมใดเลย · 🔴 **ยอดรวมทั้งโรงงาน ไม่ใช่ของทีมที่เปิดดูอยู่** และห้ามเอาไปบวกให้ทีมไหน
               แยก 2 เหตุเพราะคนละทางแก้ · `known:false` = RPC รุ่นเก่ายังไม่ส่งมา ⇒ เขียนว่า "ยังไม่รู้" ห้ามโชว์ 0 */}
