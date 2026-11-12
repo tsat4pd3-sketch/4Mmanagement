@@ -41,7 +41,7 @@ import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 // วันงาน — ของกลาง (ตัด 08:00 · 12/10 เลิกก๊อปฟังก์ชันไว้ในไฟล์ตามกฎ CLAUDE.md)
-import { getWorkDate } from '../utils/workDate';
+import { useWorkDate } from '../utils/useWorkDate';   // 📅 จอแขวนเปิดค้างข้ามวัน — ต้องอัปเดตวันงานเอง (12/11)
 import SectionScopeSelect from '../components/SectionScopeSelect';
 import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
@@ -81,7 +81,9 @@ export default function TvBoard({ onOpenMenu = null }) {
   const [linesTry, setLinesTry] = useState(0);
   const [fs, setFs] = useState(false);
   const [barOpen, setBarOpen] = useState(false);   // แถบตั้งค่า — พับไว้ จอ TV ต้องเป็นเนื้อหาล้วน
-  const workDate = getWorkDate();
+  /* 🔴 ห้ามใช้ `getWorkDate()` ตรงๆ ที่นี่ — จอแขวนเปิดค้างไม่มีอะไรสั่ง re-render
+     ⇒ พอข้าม 08:00 จะยังถามวันงานเมื่อวาน = "ไม่มีไลน์เปิด" เทาทั้งจอ (บั๊กหน้างาน 12/11) */
+  const workDate = useWorkDate();
 
   useEffect(() => {
     /* ทะเบียนไลน์เป็น master → cache กลาง (จอเปิดค้างทั้งวัน ห้าม poll ซ้ำ · กฎ egress)

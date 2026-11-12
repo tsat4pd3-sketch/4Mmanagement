@@ -25,6 +25,7 @@ import ParetoAbcChart from '../components/ParetoAbcChart';
 import PageHeader from '../components/PageHeader';
 import Segmented from '../components/Segmented';
 import Page from '../components/Page';
+import { useWorkDate } from '../utils/useWorkDate';   // 📅 จอเปิดค้างข้ามวัน (12/11)
 /* 🚨 จอเฝ้าระวัง (MtnAndonBoard) ย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28)
    หน้านี้ = "คิวงานที่กดไปทำ" · `/tv` = "จอแขวน" — mount บอร์ดเดียวกัน 2 ที่คือทางเข้าซ้ำ */
 
@@ -43,11 +44,8 @@ import Page from '../components/Page';
    ═════════════════════════════════════════════════════════════════════════════════════════ */
 
 /* ── helper กลาง ─────────────────────────────────────────────────────────────────────── */
-function getWorkDate() {
-  const d = new Date();
-  if (d.getHours() < 8) d.setDate(d.getDate() - 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
+/* 📅 วันงานมาจาก `useWorkDate()` (hook กลาง) — เดิมไฟล์นี้ก๊อปนิยาม `getWorkDate` ไว้เอง
+   แล้วเรียกในตัว component ⇒ จอที่เปิดค้างไม่อัปเดตวันงานข้ามวัน (บั๊กหน้างาน 12/11) */
 /* บวกวันบน 'YYYY-MM-DD' แบบ local — ห้าม toISOString (UTC เพี้ยน 1 วันช่วง 00:00-07:00 ไทย) */
 const dayAdd = (s, n) => { const d = new Date(`${s}T00:00:00`); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const fmtNum = (n) => (n == null ? '—' : Math.round(n).toLocaleString('en-US'));
@@ -897,7 +895,7 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
-  const workDate = getWorkDate();
+  const workDate = useWorkDate();
 
   /* ลิงก์เก่า `?view=kpi` → `/obeya?tab=table` (17/09 ย้ายตาราง KPI รายเดือนไปอยู่กับบอร์ด KPI)
      **redirect ไม่ใช่ลบทิ้ง** — คนที่บุ๊กมาร์กแท็บนี้ไว้ต้องยังเข้าถึงงานเดิมได้ (กฎเดียวกับ ?view=andon)

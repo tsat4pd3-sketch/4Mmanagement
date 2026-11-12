@@ -10041,3 +10041,43 @@ test('🚦 mo-close-gated-by-pr-loop — ปิดใบ MO ต้องถา�
     + '   ให้ถาม openPrRows() / moCloseGate() ใน utils/moChase.js ที่เดียว\n');
   /* ทางออกต้องเปิดอยู่: ด่านปิดใบ ห้ามไปล็อกแผง PR (ไม่งั้นวงจรล็อกตัวเอง) — ข้อ ① ของด่านข้างบนคุมอยู่ */
 });
+
+test('📅 board-workdate-must-refresh — จอที่เปิดค้างทั้งวัน ต้องอัปเดตวันงานเองตอนข้าม 08:00', () => {
+  /* 🔴 บั๊กจริงที่หน้างานแจ้ง 12/11 (ทีม MTN + DIE MTN · สังเกตมา 3-4 วัน):
+       "โหมดจอแขวนของทีมซัพพอต ถ้าเปิดทิ้งไว้ ไม่ดึงข้อมูลขึ้นมา จะไม่เห็น Status เลยว่า
+        ไลน์ไหนเปิดหรือปิด เป็นสีเทาหมด กด refresh ก็ไม่หาย ต้องออก browser แล้วเข้าใหม่"
+     ต้นเหตุ: `const workDate = getWorkDate()` เขียนในตัว component ⇒ คิดใหม่เฉพาะตอน
+       re-render · จอแขวนที่ไม่มีใครแตะ ไม่มีอะไรสั่ง re-render ⇒ ข้าม 08:00 แล้วยังถาม
+       `production_sessions` ด้วยวันงานเมื่อวาน (กะปิดหมดแล้ว) = "ไม่มีไลน์เปิด" เทาทั้งจอ
+     ⇒ จอกลุ่มนี้ต้องใช้ `useWorkDate()` เท่านั้น (utils/useWorkDate.js) */
+  for (const f of ['src/pages/TvBoard.jsx', 'src/pages/DeptDashboard.jsx', 'src/pages/FlowTower.jsx']) {
+    const src = stripComments(readFileSync(join(ROOT, f), 'utf8'));
+    assert.ok(/useWorkDate\(\)/.test(src),
+      `\n\n❌ ${f} ไม่ได้ใช้ useWorkDate() แล้ว — จอเปิดค้างจะค้างวันงานเก่าข้ามวัน\n`);
+    assert.ok(!/const\s+\w+\s*=\s*getWorkDate\(\)\s*;/.test(src),
+      `\n\n❌ ${f} กลับไปจับวันงานตอน render ด้วย getWorkDate() อีกแล้ว\n`
+      + '   จอแขวนไม่มีอะไรสั่ง re-render ⇒ ข้าม 08:00 แล้วสถานะไลน์เทาทั้งจอ\n'
+      + '   ให้ใช้ useWorkDate() (คืนค่าเดิมเป๊ะเมื่อวันยังไม่เปลี่ยน = ไม่ re-render ฟรี)\n');
+  }
+  /* hook ต้องไม่ re-render ฟรีๆ — ไม่งั้นจอ TV เสีย egress จากนาฬิกา (กฎ egress ข้อ 11) */
+  const hook = stripComments(readFileSync(join(ROOT, 'src/utils/useWorkDate.js'), 'utf8'));
+  assert.ok(/setWd\(prev =>/.test(hook),
+    '\n\n❌ useWorkDate ต้องเซ็ตด้วยฟังก์ชันที่คืน `prev` เมื่อค่าเท่าเดิม (React bail out)\n'
+    + '   ไม่งั้นจอ TV re-render ทุกนาทีและยิงโหลดใหม่ = egress เพิ่มฟรี\n');
+  assert.ok(/visibilitychange/.test(hook),
+    '\n\n❌ useWorkDate ไม่ได้เช็คตอนจอกลับมา (visibilitychange) — เบราว์เซอร์ทีวีพักหน้าจอแล้วจะช้าไป 1 รอบ\n');
+});
+
+test('🚦 andon-must-read-both-query-errors — คิวรีกะล้ม ห้ามกลายเป็น "ไม่มีไลน์เปิด" เงียบๆ', () => {
+  /* 🔴 บั๊กเดียวกับข้างบน อีกเส้นทางหนึ่ง (12/11):
+       เดิม `if (dtRes.error) { ...; return; }` แล้ว **ไม่เคยอ่าน `sessRes.error` เลย**
+       ⇒ คิวรี production_sessions ล้ม → data = undefined → `|| []` → openLines = []
+         = เทาทุกไลน์ โดยจอไม่ขึ้นอะไรบอก (ผิดกฎ "ห้ามล้มเหลวเงียบ" + กฎ DB ข้อ 1) */
+  const src = stripComments(readFileSync(join(ROOT, 'src/components/MtnAndonBoard.jsx'), 'utf8'));
+  assert.ok(/sessRes\.error/.test(src),
+    '\n\n❌ MtnAndonBoard ไม่ได้อ่าน error ของคิวรีกะ (`sessRes.error`)\n'
+    + '   ล้มเมื่อไหร่ = openLines ว่าง = เทาทุกไลน์เงียบๆ ทั้งที่ไลน์เปิดอยู่จริง\n');
+  /* และต้องไม่ปล่อยให้ `|| []` เป็นทางเดียวที่รองรับความล้มเหลว */
+  assert.ok(/setDtErr\(errs\.length/.test(src),
+    '\n\n❌ MtnAndonBoard ไม่ได้เอา error ขึ้นจอรวมทั้ง 2 คิวรีแล้ว — จอต้องเขียนบอก ห้ามเงียบ\n');
+});
