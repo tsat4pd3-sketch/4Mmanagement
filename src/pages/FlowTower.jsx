@@ -15,6 +15,7 @@ import { coalesce, makeIdleGate } from '../utils/liveRefresh';
 import { loadDivisions, divisionsSync, divisionMeta } from '../utils/orgDivisions';
 import { liveChannel } from '../utils/liveChannel';
 import { openOnly } from '../utils/shipStatus';
+import { tr } from '../utils/i18n';
 import { useWorkDate } from '../utils/useWorkDate';   // 📅 บอร์ดเปิดค้างข้ามวัน (12/11)
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
@@ -260,7 +261,7 @@ export default function FlowTower() {
       <PageHeader
         title="สายธารความต้องการ (Flow Control Tower)" icon="🔗"
         sub={`ความต้องการของลูกค้าไหลย้อนไปถึงวัตถุดิบครบหรือยัง · ข้อมูลสด ${workDate}`}
-        actions={<button type="button" className="pg-btn" onClick={load} style={{ cursor: 'pointer' }}>รีเฟรช</button>}
+        actions={<button type="button" className="pg-btn" onClick={load} style={{ cursor: 'pointer' }}>{tr('รีเฟรช')}</button>}
       />
 
       {err && (
@@ -284,7 +285,7 @@ export default function FlowTower() {
           </span>
         ))}
         <button onClick={() => navigate('/org-setup')} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 11, cursor: 'pointer', textDecoration: 'underline' }}>
-          จัดการผังองค์กร
+          {tr('จัดการผังองค์กร')}
         </button>
       </div>
 
@@ -361,7 +362,7 @@ export default function FlowTower() {
                   <thead><tr style={{ background: 'var(--bg2)' }}>
                     {/* ยุบ "ชื่อพาร์ท + MAT" เป็นคอลัมน์เดียว — <MatLabel> ให้ครบ Part No./ชื่อ/MAT (30/09) */}
                     {['ชิ้นงาน', 'ค้างสะสม', 'ปลายทาง', 'ค่าที่เสนอ', ''].map((h, i) => (
-                      <th key={h} style={{ padding: '7px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: i === 2 || i === 4 ? 'right' : 'left', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
+                      <th key={h} style={{ padding: '7px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: i === 2 || i === 4 ? 'right' : 'left', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{tr(h)}</th>
                     ))}
                   </tr></thead>
                   <tbody>
@@ -381,7 +382,7 @@ export default function FlowTower() {
                             : canFix && b.suggested_lot > 0 && (
                             <button onClick={() => setLot(b)} disabled={busy === b.mat_no}
                               style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--green-line)', background: 'var(--green-dim)', color: 'var(--green)', fontWeight: 800, fontSize: 11, cursor: busy ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}>
-                              {busy === b.mat_no ? '…' : 'ตั้งล็อต'}
+                              {busy === b.mat_no ? '…' : tr('ตั้งล็อต')}
                             </button>
                           )}
                         </td>
@@ -402,7 +403,7 @@ export default function FlowTower() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead><tr style={{ background: 'var(--bg2)' }}>
               {['ช่วง', 'กลไก', 'สถานะ', 'หลักฐานจากข้อมูลจริง'].map(h => (
-                <th key={h} style={{ padding: '7px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+                <th key={h} style={{ padding: '7px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{tr(h)}</th>
               ))}
             </tr></thead>
             <tbody>

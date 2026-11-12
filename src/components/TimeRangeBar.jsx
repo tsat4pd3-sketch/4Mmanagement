@@ -10,6 +10,7 @@ import {
   bucketIndex, autoBucket,
 } from '../utils/timeRange';
 
+import { tr } from '../utils/i18n';
 /* ══ ⏱️ TimeRangeBar — แถบกรองช่วงเวลามาตรฐาน ใช้เหมือนกันทุกหน้า (2026-09-23 · คำสั่ง user) ══
  *
  * *"ระบบการกรองช่วงเวลา อยากไห้เป็นมาตรฐานเดียวกัน มีเหมือนกันทุกหน้า คือ เลือกสเกลที่จะดู
@@ -182,7 +183,7 @@ export default function TimeRangeBar({
           <button onClick={() => setBucket(1)} disabled={scale === coarsest}
             style={{ ...btnBase, height: 28, padding: '0 9px', background: 'var(--bg3)', color: 'var(--text)',
               border: '1px solid var(--border2)', opacity: scale === coarsest ? 0.4 : 1 }}
-            title="หยาบลง 1 ขั้น">หยาบลง +</button>
+            title="หยาบลง 1 ขั้น">{tr('หยาบลง +')}</button>
           {/* กฎความซื่อสัตย์: ละเอียดกว่านี้ไม่ได้ ต้องบอกว่าทำไม ห้ามให้คนกดแล้วงงว่าปุ่มเสีย */}
           {capped && finest !== 'hour' && (
             <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>

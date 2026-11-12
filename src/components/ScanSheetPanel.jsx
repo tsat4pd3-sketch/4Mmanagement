@@ -8,6 +8,7 @@ import { lineProcessTypes, typeFitsLine, defaultSheetPicks } from '../utils/scan
 import { buildScanSheetHtml } from '../lib/scanSheetPrint';
 import { withDocFoot, docFormSync, fullCode } from '../utils/docForms';
 
+import { tr } from '../utils/i18n';
 /* 🗒️ แท็บ "ใบสแกนประจำไลน์ (A4)" ใน /qr-labels — เฟส 2 (2026-10-28 · คำสั่ง user: A4 แผ่นแยกตามไลน์)
    เลือกไลน์ → ระบบติ๊กประเภท Downtime/งานเสียที่เป็นของไลน์นั้นไว้ให้ (กติกาเดียวกับ dropdown ใน Daily Report)
    → ติ๊กเพิ่ม/เอาออก → พิมพ์ · กติกา `utils/scanSheet.js` · ตัวพิมพ์ `lib/scanSheetPrint.js` · ทะเบียนเอกสาร `scan_sheet` */
@@ -82,7 +83,7 @@ export default function ScanSheetPanel({ lines, canPrint }) {
     const box = (t) => (
       <label key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: picks.has(String(t.id)) ? 'var(--accent-dim)' : 'var(--bg2)', cursor: 'pointer', fontSize: 13 }}>
         <input type="checkbox" checked={picks.has(String(t.id))} onChange={() => flip(setPicks)(String(t.id))} />
-        <span style={{ minWidth: 0 }}>{t.name_th}{t.category === 'planned' && <span style={{ color: 'var(--muted)', fontSize: 11 }}> · ในแผน</span>}</span>
+        <span style={{ minWidth: 0 }}>{t.name_th}{t.category === 'planned' && <span style={{ color: 'var(--muted)', fontSize: 11 }}> {tr('· ในแผน')}</span>}</span>
       </label>
     );
     return (
@@ -91,8 +92,8 @@ export default function ScanSheetPanel({ lines, canPrint }) {
           <b style={{ fontSize: 14 }}>{title}</b>
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>เลือก {picks.size} รายการ</span>
           <span className="spacer" style={{ marginLeft: 'auto' }} />
-          <button type="button" className="tbtn" onClick={() => setPicks(defaultSheetPicks(rows, pts))} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer' }}>↺ ของไลน์นี้</button>
-          <button type="button" className="tbtn" onClick={() => setPicks(new Set())} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer' }}>ล้าง</button>
+          <button type="button" className="tbtn" onClick={() => setPicks(defaultSheetPicks(rows, pts))} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer' }}>{tr('↺ ของไลน์นี้')}</button>
+          <button type="button" className="tbtn" onClick={() => setPicks(new Set())} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer' }}>{tr('ล้าง')}</button>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 6, alignContent: 'start' }}>{mine.map(box)}</div>
         {others.length > 0 && (
@@ -114,7 +115,7 @@ export default function ScanSheetPanel({ lines, canPrint }) {
       </div>
       {loadErr && <div style={{ fontSize: 12.5, color: 'var(--red)', marginBottom: 10 }}>⚠️ {loadErr} — ยังพิมพ์ไม่ได้</div>}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-        <LineSelect lines={visLines} value={lineName} onChange={setLineName} placeholder="— เลือกไลน์ —" />
+        <LineSelect lines={visLines} value={lineName} onChange={setLineName} placeholder={tr('— เลือกไลน์ —')} />
         {line && <span style={{ fontSize: 12, color: 'var(--muted)' }}>กระบวนการของไลน์: {pts.size ? [...pts].join(', ') : 'ไม่พบ (ติ๊กเฉพาะประเภทกลาง)'}</span>}
         <span style={{ marginLeft: 'auto' }} />
         {canPrint && (

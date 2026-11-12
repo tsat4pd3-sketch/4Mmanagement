@@ -16,6 +16,7 @@ import { useState } from 'react';
 import { useProductionLinesState, invalidateProductionLines } from '../utils/useProductionLines';
 import { registryFailText } from '../utils/useMasterRows';
 
+import { tr } from '../utils/i18n';
 export default function LineRegistryAlert() {
   const { failed, stale, message, loading, reload } = useProductionLinesState();
   const [busy, setBusy] = useState(false);
@@ -47,7 +48,7 @@ export default function LineRegistryAlert() {
         padding: '5px 11px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
         border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)',
         cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1,
-      }}>{busy ? 'กำลังโหลด…' : '🔄 โหลดทะเบียนไลน์ใหม่'}</button>
+      }}>{busy ? tr('กำลังโหลด…') : tr('🔄 โหลดทะเบียนไลน์ใหม่')}</button>
     </div>
   );
 }

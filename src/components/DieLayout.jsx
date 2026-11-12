@@ -25,6 +25,7 @@ import FilterBar from './FilterBar';
 import SearchInput from './SearchInput';
 import ScanModal from './ScanModal';   // 📷 สแกนป้ายแม่พิมพ์ → เด้งเข้าหมุด (2026-10-06)
 import { uploadOpts } from '../utils/storageUpload';
+import { tr } from '../utils/i18n';
 import { dieSetMats } from '../utils/dieSetMats'; // 🔨 ชุดแม่พิมพ์ทำได้ 2 MAT (งานคู่ RH/LH)
 
 const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
@@ -306,32 +307,32 @@ export default function DieLayout({
       {/* ── แถบเครื่องมือ ── มาตรฐาน FilterBar (UI-STANDARD 2026-09-24 — เดิมช่อง/ปุ่มสูง 3 แบบ) */}
       <FilterBar>
         {fromFactoryMap && (
-          <button onClick={() => navigate('/factory-map')} style={btnGhost}>← กลับผังรวมโรงงาน</button>
+          <button onClick={() => navigate('/factory-map')} style={btnGhost}>{tr('← กลับผังรวมโรงงาน')}</button>
         )}
         <select value={areaId} onChange={e => { setAreaId(e.target.value); setSelId(null); setPlacingId(null); hist.clear(); }}>
-          {!areas.length && <option value="">— ยังไม่มีผังจัดเก็บ —</option>}
-          {areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          {!areas.length && <option value="">{tr('— ยังไม่มีผังจัดเก็บ —')}</option>}
+          {areas.map(a => <option key={a.id} value={a.id}>{tr(a.name)}</option>)}
         </select>
         <SearchInput value={q} onChange={setQ} fields="เลขแม่พิมพ์ / ชื่อพาร์ท / สถานะ" />
         {onScanDie && (
           <button onClick={() => setScanOpen(true)} style={btnGhost} title="สแกนป้าย QR ที่ติดแม่พิมพ์ แล้วเด้งไปหมุดของตัวนั้น">
-            สแกนป้ายแม่พิมพ์
+            {tr('สแกนป้ายแม่พิมพ์')}
           </button>
         )}
         <span className="spacer" />
         <button onClick={() => setShowLabels(v => !v)} style={{ ...btnGhost, padding: '0 11px' }} title="โชว์/ซ่อนป้ายชื่อหมุด">
-          {showLabels ? 'ซ่อนป้าย' : 'โชว์ป้าย'}
+          {showLabels ? tr('ซ่อนป้าย') : tr('โชว์ป้าย')}
         </button>
         {canEdit && <>
           <button onClick={() => { setEdit(v => !v); setPlacingId(null); }} style={{ ...(edit ? btnPri : btnGhost) }}>
-            {edit ? '✓ เสร็จแล้ว' : '✏️ แก้ผัง'}
+            {edit ? tr('✓ เสร็จแล้ว') : tr('✏️ แก้ผัง')}
           </button>
-          <button onClick={() => setAreaForm({ mode: 'new' })} style={btnGhost}>➕ ผังใหม่</button>
+          <button onClick={() => setAreaForm({ mode: 'new' })} style={btnGhost}>{tr('➕ ผังใหม่')}</button>
           {area && <button onClick={() => setAreaForm({ mode: 'edit', area })} style={btnGhost}>⚙️</button>}
         </>}
         {onFactoryMap && (
           <button onClick={() => navigate('/factory-map')} style={btnGhost} title="โซนนี้ถูกตีกรอบบนผังรวมโรงงานแล้ว — คลิกกรอบบนผังรวมเด้งกลับมาที่นี่ได้">
-            ดูบนผังรวมโรงงาน
+            {tr('ดูบนผังรวมโรงงาน')}
           </button>
         )}
       </FilterBar>
@@ -367,7 +368,7 @@ export default function DieLayout({
       {edit && (
         <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 'var(--r-md)', padding: '8px 12px', marginBottom: 10, fontSize: 12.5 }}>
           ✏️ <b>โหมดแก้ผัง</b> — {placingDie
-            ? <>คลิกตำแหน่งบนรูปเพื่อวาง <b style={{ color: 'var(--accent)' }}>{placingDie.machine_no}</b> <button onClick={() => setPlacingId(null)} style={{ ...btnGhost, padding: '2px 8px', fontSize: 11.5, marginLeft: 6 }}>ยกเลิก</button></>
+            ? <>คลิกตำแหน่งบนรูปเพื่อวาง <b style={{ color: 'var(--accent)' }}>{placingDie.machine_no}</b> <button onClick={() => setPlacingId(null)} style={{ ...btnGhost, padding: '2px 8px', fontSize: 11.5, marginLeft: 6 }}>{tr('ยกเลิก')}</button></>
             : <>เลือกแม่พิมพ์จากลิสต์ "ยังไม่ได้วางบนผัง" แล้วกด 📍 วาง · ลากหมุดเพื่อย้ายตำแหน่ง</>}
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
             <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={undoBtnStyle(hist.canUndo && !hist.busy)} title="Ctrl+Z">↩️ Undo</button>
@@ -384,7 +385,7 @@ export default function DieLayout({
             ถ่ายรูปคลัง/พื้นที่วางแม่พิมพ์ (มุมสูงหรือมุมที่เห็นช่องวางชัด) → สร้างผังใหม่ → อัปโหลดรูป → วางหมุดแม่พิมพ์รายตัว<br />
             จากนั้นค้นเลขแม่พิมพ์แล้วระบบจะชี้ว่าอยู่ตรงไหน + สีหมุดบอกสถานะ/ใบซ่อมค้าง
           </div>
-          {canEdit && <button onClick={() => setAreaForm({ mode: 'new' })} style={{ ...btnPri, marginTop: 14 }}>➕ สร้างผังจัดเก็บ</button>}
+          {canEdit && <button onClick={() => setAreaForm({ mode: 'new' })} style={{ ...btnPri, marginTop: 14 }}>{tr('➕ สร้างผังจัดเก็บ')}</button>}
         </div>
       ) : (
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 330px', gap: 12, alignItems: 'start' }}>
@@ -394,7 +395,7 @@ export default function DieLayout({
               <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border)', borderRadius: 'var(--r-md)' }}>
                 <div style={{ fontSize: 13, marginBottom: 10 }}>ยังไม่มีรูปผัง — อัปโหลดรูปคลัง/พื้นที่วางแม่พิมพ์</div>
                 {canEdit && <label style={{ ...btnPri, display: 'inline-block', cursor: 'pointer' }}>
-                  อัปโหลดรูป<input type="file" accept="image/*" onChange={uploadImg} style={{ display: 'none' }} />
+                  {tr('อัปโหลดรูป')}<input type="file" accept="image/*" onChange={uploadImg} style={{ display: 'none' }} />
                 </label>}
               </div>
             ) : (
@@ -460,7 +461,7 @@ export default function DieLayout({
             {area?.image_url && canEdit && edit && (
               <div style={{ marginTop: 8 }}>
                 <label style={{ ...btnGhost, display: 'inline-block', cursor: 'pointer', fontSize: 12 }}>
-                  เปลี่ยนรูปผัง<input type="file" accept="image/*" onChange={uploadImg} style={{ display: 'none' }} />
+                  {tr('เปลี่ยนรูปผัง')}<input type="file" accept="image/*" onChange={uploadImg} style={{ display: 'none' }} />
                 </label>
               </div>
             )}
@@ -520,11 +521,11 @@ export default function DieLayout({
                       {canEdit && edit && (
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           <button onClick={() => setPlacingId(selDie.id)} style={{ ...btnGhost, padding: '5px 10px', fontSize: 12 }}>
-                            {placed ? 'วางตำแหน่งใหม่' : 'วางบนผังนี้'}
+                            {placed ? tr('วางตำแหน่งใหม่') : tr('วางบนผังนี้')}
                           </button>
                           {placed && (
                             <button onClick={() => removeFromMap(selDie)} style={{ ...btnGhost, padding: '5px 10px', fontSize: 12, color: '#ef4444' }}>
-                              ✕ เอาออกจากผัง
+                              {tr('✕ เอาออกจากผัง')}
                             </button>
                           )}
                         </div>
@@ -561,7 +562,7 @@ export default function DieLayout({
                         {canEdit && edit && (
                           <button onClick={() => { setSelId(d.id); setPlacingId(d.id); }}
                             style={{ ...btnGhost, padding: '2px 8px', fontSize: 11, borderColor: placingId === d.id ? 'var(--accent)' : 'var(--border)' }}>
-                            วาง
+                            {tr('วาง')}
                           </button>
                         )}
                       </div>
@@ -647,14 +648,14 @@ function AreaFormModal({ mode, area, onClose, onSaved }) {
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(440px, 96vw)' }}>
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 14 }}>{mode === 'new' ? '➕ สร้างผังจัดเก็บแม่พิมพ์' : '⚙️ แก้ไขผังจัดเก็บ'}</div>
         <div style={{ display: 'grid', gap: 10 }}>
-          <div><label style={lbl}>ชื่อผัง <span style={{ color: '#ef4444' }}>*</span></label>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="เช่น คลังแม่พิมพ์หลัก / โซนข้าง LINE A (800 Ton)" style={inp} /></div>
-          <div><label style={lbl}>หมายเหตุ</label><input value={note} onChange={e => setNote(e.target.value)} style={inp} /></div>
+          <div><label style={lbl}>{tr('ชื่อผัง')} <span style={{ color: '#ef4444' }}>*</span></label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder={tr('เช่น คลังแม่พิมพ์หลัก / โซนข้าง LINE A (800 Ton)')} style={inp} /></div>
+          <div><label style={lbl}>{tr('หมายเหตุ')}</label><input value={note} onChange={e => setNote(e.target.value)} style={inp} /></div>
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-          {mode === 'edit' && <button onClick={del} style={{ ...btnGhost, color: '#ef4444', marginRight: 'auto' }}>ลบผัง</button>}
-          <button onClick={onClose} style={btnGhost}>ยกเลิก</button>
-          <button onClick={save} disabled={saving} style={{ ...btnPri, opacity: saving ? 0.5 : 1 }}>บันทึก</button>
+          {mode === 'edit' && <button onClick={del} style={{ ...btnGhost, color: '#ef4444', marginRight: 'auto' }}>{tr('ลบผัง')}</button>}
+          <button onClick={onClose} style={btnGhost}>{tr('ยกเลิก')}</button>
+          <button onClick={save} disabled={saving} style={{ ...btnPri, opacity: saving ? 0.5 : 1 }}>{tr('บันทึก')}</button>
         </div>
       </div>
     </div>

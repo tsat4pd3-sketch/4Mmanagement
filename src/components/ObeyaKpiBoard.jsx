@@ -49,6 +49,7 @@ import {
 } from '../utils/obeyaYear';
 import { ST, worstStatus, safetyKind, isInjury, ymd } from '../utils/obeya';
 
+import { tr } from '../utils/i18n';
 /* ══ 📋 OBEYA — บอร์ด KPI ส่วนงาน · 2026-08-27 → 2026-09-23 (วาดใหม่เป็น "แผ่น A4" ชุดเดียวกับจอ SQDCM) ═══
    แทนกระดาษ "OBEYA KPI monitoring" ที่แปะผนังห้องประชุมหน้างาน (คำสั่งนายใหญ่ผ่าน user 2026-08-27)
    user เคาะ 3 ข้อ: ① แยกรายส่วนงาน ② ตัวไหนวิ่งทุกกะให้อัพเดทรายวัน ③ มีแกน Safety
@@ -1004,14 +1005,14 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           {monthText}{live && <span style={{ marginLeft: 5, fontSize: 11, fontWeight: 800, color: 'var(--green)', verticalAlign: 'middle' }}>● สด</span>}
         </b>
         <button onClick={() => shiftMonth(1)} disabled={live} title={live ? 'อยู่เดือนปัจจุบันแล้ว' : 'เดือนถัดไป'} style={navBtn}>▶</button>
-        {!live && <button onClick={() => setParam('date', '')} title="กลับเดือนปัจจุบัน (ตามวันจริง)" style={{ ...navBtn, fontSize: 11.5, padding: '2px 8px', fontWeight: 700 }}>⟲ สด</button>}
+        {!live && <button onClick={() => setParam('date', '')} title="กลับเดือนปัจจุบัน (ตามวันจริง)" style={{ ...navBtn, fontSize: 11.5, padding: '2px 8px', fontWeight: 700 }}>{tr('⟲ สด')}</button>}
       </span>
       <span className="sep" />
       {/* 🎯 โฟกัสช่วงค่า — ยกพื้นแกน Y ให้เห็น gap T/C (แกนไม่เริ่ม 0 ⇒ แผ่นเขียนบอกเอง) */}
       <button onClick={() => setParam('yfocus', yFocus ? '' : '1')} style={pill(yFocus)} aria-pressed={yFocus}
         title={yFocus ? 'กำลังโฟกัสช่วงค่า: แกน Y เริ่มใกล้ค่าต่ำสุด ให้เห็นระยะห่าง Target/Commitment ชัด · กดเพื่อกลับแกนเริ่ม 0'
           : 'โฟกัสช่วงค่า: ตัดที่ว่างใต้กราฟ ยกพื้นแกน Y ขึ้นใกล้ค่าต่ำสุด ให้เห็นระยะห่าง Target/Commitment ชัดขึ้น (แผ่นจะเขียนบอกว่าแกนไม่เริ่ม 0)'}>
-        {yFocus ? 'โฟกัสช่วงค่า' : 'แกนเริ่ม 0'}
+        {yFocus ? tr('โฟกัสช่วงค่า') : tr('แกนเริ่ม 0')}
       </button>
     </>
   );
@@ -1029,16 +1030,16 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
               {/* ปุ่มตายตัว ≤2 (UI §6.35 · 04/11): หลัก = บันทึกเหตุการณ์ · รอง = โหมดจอ TV · จัดเรียงแผ่น → ⋯ */}
               {canRecord && (
                 <button type="button" className="pg-btn primary" onClick={() => setShowSafety({})}>
-                  + บันทึกเหตุการณ์ความปลอดภัย
+                  {tr('+ บันทึกเหตุการณ์ความปลอดภัย')}
                 </button>
               )}
               {arrange && canNote && (
                 <button type="button" className="pg-btn" onClick={() => setArrange(false)} aria-pressed={arrange}
                   title={arrange ? 'ปิดโหมดจัดเรียง' : 'จัดลำดับแผ่น KPI ของขอบเขตนี้เอง — กด ◀ ▶ บนแผ่น · บันทึกทันที · มีผลกับทุกคนที่ดูขอบเขตนี้'}>
-                  {arrange ? 'เสร็จสิ้นจัดเรียง' : 'จัดเรียงแผ่น'}
+                  {arrange ? tr('เสร็จสิ้นจัดเรียง') : tr('จัดเรียงแผ่น')}
                 </button>
               )}
-              <button type="button" className="pg-btn" onClick={() => goBoard(true)}>โหมดจอ TV</button>
+              <button type="button" className="pg-btn" onClick={() => goBoard(true)}>{tr('โหมดจอ TV')}</button>
               <OverflowMenu items={[
                 { key: 'arrange', icon: '⇅', label: 'จัดเรียงแผ่น KPI', onClick: () => setArrange(true), hidden: !canNote || arrange,
                   title: 'จัดลำดับแผ่น KPI ของขอบเขตนี้เอง (บันทึกต่อขอบเขต)' },
@@ -1054,7 +1055,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
           {tv ? <b style={{ fontSize: 24 }}>{monthText}{live && <span style={{ marginLeft: 8, fontSize: 20, color: 'var(--green)' }}>● สด</span>}</b> : controls}
           <StatusLamp k={tv ? 2 : 1} w={999} stat={overallLamp} />
           <div style={{ flex: 1 }} />
-          <button className="tv-hide" onClick={() => goBoard(false)} style={pill(false)}>ออกจากโหมดจอ</button>
+          <button className="tv-hide" onClick={() => goBoard(false)} style={pill(false)}>{tr('ออกจากโหมดจอ')}</button>
         </div>
       )}
 

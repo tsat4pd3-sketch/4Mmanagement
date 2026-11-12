@@ -33,6 +33,7 @@ import { checkWrite, checkWriteRows } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import SearchInput from '../components/SearchInput';
 import { DeleteButton } from '../components/IconButton';
+import { tr } from '../utils/i18n';
 import { isGifFile, GIF_MAX_BYTES, GIF_TOO_BIG_MSG } from '../utils/imageFileKind';   // ตัวตรวจชนิดไฟล์ + เพดาน GIF = จุดเดียว
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
@@ -1287,7 +1288,7 @@ export default function LineSetup({ embedded = false } = {}) {
             </div>
             {/* 09/11 (คำสั่ง user "แผนกที่ไม่ใช่ shopfloor ไม่น่าต้องมาขึ้นปน"): หน้านี้ต้องเห็นทุกหน่วย (unitKind.js)
                 แต่ "แยกกลุ่มให้เห็น" — ไลน์ผลิตเป็นลิสต์หลัก · หน่วยสนับสนุนเป็นกลุ่ม 🗂️ แยกท้าย ไม่ปนกัน */}
-            <LineSelect lines={lines} value={selectedLine} onChange={selectLine} placeholder="เลือกไลน์…"
+            <LineSelect lines={lines} value={selectedLine} onChange={selectLine} placeholder={tr('เลือกไลน์…')}
               extraGroups={supportGroup} extraAt="end"
               style={{ width: '100%', fontSize: 13, fontWeight: 700, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--accent)' }} />
           </div>
@@ -1391,14 +1392,14 @@ export default function LineSetup({ embedded = false } = {}) {
                         style={{ fontSize: 11, padding: '1px 3px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', flexShrink: 0, maxWidth: 68 }}
                       >
                         <option value="">Section</option>
-                        {sectionOptsInScope.map(s => <option key={s} value={s}>{s}</option>)}
+                        {sectionOptsInScope.map(s => <option key={s} value={s}>{tr(s)}</option>)}
                       </select>
                       {/* Parent line selector — can't assign parent to a line that already has children */}
                       {!l._isParent && (
                         /* 2026-09-07: ไลน์แม่ผ่าน <LineSelect> (ส่งเฉพาะไลน์ราก) — wrapper กัน click ทะลุไปเลือกแถว */
                         <span onClick={e => e.stopPropagation()} title="ไลน์หลัก (parent)" style={{ display: 'inline-flex', flexShrink: 0 }}>
                           <LineSelect lines={lines.filter(p => p.name !== l.name && !p.parent_line_name)} value={l.parent_line_name || ''} includeSupport
-                            onChange={v => handleUpdateParent(l, v)} placeholder="ไม่มีหลัก"
+                            onChange={v => handleUpdateParent(l, v)} placeholder={tr('ไม่มีหลัก')}
                             style={{ fontSize: 11, padding: '1px 3px', borderRadius: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: l.parent_line_name ? 'var(--accent)' : 'var(--muted)', cursor: 'pointer', flexShrink: 0, maxWidth: 76 }} />
                         </span>
                       )}
@@ -1420,19 +1421,19 @@ export default function LineSetup({ embedded = false } = {}) {
           {canEdit && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div style={{ display: 'flex', gap: 6 }}>
-              <input placeholder="ชื่อไลน์ใหม่ เช่น HDF3" value={newLineName}
+              <input placeholder={tr('ชื่อไลน์ใหม่ เช่น HDF3')} value={newLineName}
                 onChange={e => setNewLineName(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleAddLine()}
                 style={{ flex: 1, fontSize: 13, padding: '8px 10px' }} />
               <select value={newLineSection} onChange={e => setNewLineSection(e.target.value)}
                 style={{ fontSize: 12, padding: '8px 8px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', flexShrink: 0, width: 'auto' }}>
                 <option value="">Section</option>
-                {sectionOptsInScope.map(s => <option key={s} value={s}>{s}</option>)}
+                {sectionOptsInScope.map(s => <option key={s} value={s}>{tr(s)}</option>)}
               </select>
             </div>
             {/* 2026-09-07: <LineSelect> ส่งเฉพาะไลน์ราก · cascade: เลือก section แล้วเห็นเฉพาะไลน์แม่ของ section นั้น (2026-07-21) */}
             <LineSelect includeSupport lines={lines.filter(l => !l.parent_line_name && (!newLineSection || l.section === newLineSection))}
-              value={newLineParent} onChange={setNewLineParent} placeholder="ไม่มีไลน์หลัก (standalone)"
+              value={newLineParent} onChange={setNewLineParent} placeholder={tr('ไม่มีไลน์หลัก (standalone)')}
               style={{ fontSize: 12, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border2)', background: 'var(--bg3)', color: newLineParent ? 'var(--accent)' : 'var(--text2)' }} />
             {/* 🔴 ชนิดหน่วย — ถามตั้งแต่ตอนสร้าง (13/10 · คำสั่ง user) ไม่งั้นสำนักงาน/งานสนับสนุน
                 ถูกสร้างเป็น "ไลน์ผลิต" แล้วไปโผล่ในแผนผลิต/OEE/ใบตรวจรายวันทุกจอ */}
@@ -1453,7 +1454,7 @@ export default function LineSetup({ embedded = false } = {}) {
             )}
             <button type="button" className="pg-btn sm primary" onClick={handleAddLine} disabled={isAddingLine || !newLineName.trim()}
              >
-              {isAddingLine ? '...' : '+ เพิ่มไลน์'}
+              {isAddingLine ? '...' : tr('+ เพิ่มไลน์')}
             </button>
           </div>
           )}
@@ -1466,7 +1467,7 @@ export default function LineSetup({ embedded = false } = {}) {
               {!usingParentLayout && (
                 <button onClick={handleDeleteLayout}
                   style={{ fontSize: 12, color: 'var(--red)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontFamily: 'var(--font-body)' }}>
-                  ลบรูปผังนี้{lines.find(l => l.name === selectedLine)?.parent_line_name ? ' (กลับไปใช้ผังไลน์แม่)' : ''}
+                  {tr('ลบรูปผังนี้')}{lines.find(l => l.name === selectedLine)?.parent_line_name ? ' (กลับไปใช้ผังไลน์แม่)' : ''}
                 </button>
               )}
               <label style={{ fontSize: 12, color: 'var(--blue)', cursor: 'pointer' }}>
@@ -1482,11 +1483,11 @@ export default function LineSetup({ embedded = false } = {}) {
             </h4>
             {(tempPos || formData.id) ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg2)', padding: 14, borderRadius: 'var(--r-md)' }}>
-                <input placeholder="ชื่อจุด (OP10)" value={formData.name}
+                <input placeholder={tr('ชื่อจุด (OP10)')} value={formData.name}
                   onChange={e => setFormData({ ...formData, name: e.target.value })} />
                 <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>
-                  สกิลที่ต้องการ: {Object.keys(formData.requirements).length > 0 && (
-                    <span style={{ color: 'var(--blue)', fontWeight: 400 }}>({Object.keys(formData.requirements).length} สกิล)</span>
+                  {tr('สกิลที่ต้องการ:')} {Object.keys(formData.requirements).length > 0 && (
+                    <span style={{ color: 'var(--blue)', fontWeight: 400 }}>({Object.keys(formData.requirements).length} {tr('สกิล)')}</span>
                   )}
                 </label>
                 {skillDefs.length === 0 ? (
@@ -1552,18 +1553,18 @@ export default function LineSetup({ embedded = false } = {}) {
                 </label>
                 {formData.skill_allowance && (
                   <div style={{ marginTop: 8 }}>
-                    <label style={labelSt}>ประเภทค่าฝีมือ</label>
+                    <label style={labelSt}>{tr('ประเภทค่าฝีมือ')}</label>
                     <select value={formData.skill_allowance_type}
                       onChange={e => setFormData({ ...formData, skill_allowance_type: e.target.value })}
                       style={{ marginTop: 4, width: '100%' }}>
-                      <option value="">-- เลือกประเภท --</option>
-                      {skillAllowanceTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                      <option value="">{tr('-- เลือกประเภท --')}</option>
+                      {skillAllowanceTypes.map(t => <option key={t} value={t}>{tr(t)}</option>)}
                     </select>
                   </div>
                 )}
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                   <button type="button" className="pg-btn sm" onClick={handleSaveStation} style={{ flex: 1 }}>
-                    {formData.id ? 'บันทึก' : 'เพิ่ม'}
+                    {formData.id ? tr('บันทึก') : tr('เพิ่ม')}
                   </button>
                   <button onClick={() => { setTempPos(null); setFormData({ id: null, name: '', requirements: {}, skill_allowance: false, skill_allowance_type: '' }); }}
                     style={{ padding: '9px 14px', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 7 }}>
@@ -1632,7 +1633,7 @@ export default function LineSetup({ embedded = false } = {}) {
               {(machineTempPos || machineForm.id) ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--bg2)', padding: 14, borderRadius: 'var(--r-md)', marginBottom: 14 }}>
                   {/* ซ่อนเครื่องที่วางบนผังไปแล้ว (ทุกไลน์ในครอบครัว) — เหลือเฉพาะที่ยังไม่วาง + ตัวที่กำลังแก้ */}
-                  <SearchSelect value={machineForm.machine_no || ''} placeholder="-- ค้นหาเครื่องจักร (รหัส/ชื่อ) --"
+                  <SearchSelect value={machineForm.machine_no || ''} placeholder={tr('-- ค้นหาเครื่องจักร (รหัส/ชื่อ) --')}
                     options={[
                       ...selectableMachines.filter(m => !m.machine_type_id).map(m => ({ id: m.machine_no, label: `${m.machine_no}${m.machine_name ? ` - ${m.machine_name}` : ''}`, keywords: m.machine_name || '' })),
                       ...machineTypes.flatMap(t => selectableMachines.filter(m => m.machine_type_id === t.id).map(m => ({ id: m.machine_no, label: `${m.machine_no}${m.machine_name ? ` - ${m.machine_name}` : ''}`, group: `${t.icon || ''} ${t.label}`, keywords: m.machine_name || '' }))),
@@ -1644,10 +1645,10 @@ export default function LineSetup({ embedded = false } = {}) {
                     <div style={{ fontSize: 11, color: 'var(--muted)' }}>เครื่องจักรทุกเครื่องของไลน์นี้ถูกวางบนผังแล้ว — ลบจุดเดิมก่อนถ้าต้องการวางใหม่</div>
                   )}
                   <div>
-                    <label style={{ ...labelSt, display: 'block', marginBottom: 4 }}>กลุ่มเครื่องคู่ขนาน (Redundancy Group) — ไม่บังคับ</label>
+                    <label style={{ ...labelSt, display: 'block', marginBottom: 4 }}>{tr('กลุ่มเครื่องคู่ขนาน (Redundancy Group) — ไม่บังคับ')}</label>
                     <input type="text" list="redundancy-group-options" value={machineForm.redundancy_group}
                       onChange={e => setMachineForm({ ...machineForm, redundancy_group: e.target.value })}
-                      placeholder="เช่น Laser Group" />
+                      placeholder={tr('เช่น Laser Group')} />
                     <datalist id="redundancy-group-options">
                       {[...new Set(machinePoints.map(p => p.redundancy_group).filter(Boolean))].map(g => (
                         <option key={g} value={g} />
@@ -1659,7 +1660,7 @@ export default function LineSetup({ embedded = false } = {}) {
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                     <button type="button" className="pg-btn sm" onClick={handleSaveMachine} style={{ flex: 1 }}>
-                      {machineForm.id ? 'บันทึก' : 'เพิ่ม'}
+                      {machineForm.id ? tr('บันทึก') : tr('เพิ่ม')}
                     </button>
                     <button type="button" className="pg-btn sm" onClick={() => { setMachineTempPos(null); setMachineForm({ id: null, machine_no: '', redundancy_group: '' }); }}
                      >
@@ -1783,13 +1784,13 @@ export default function LineSetup({ embedded = false } = {}) {
             )}
             <div style={{ display: 'flex', gap: 10, marginBottom: 6 }}>
               <div style={{ flex: 1 }}>
-                <label style={labelSt}>กะเช้า (คน)</label>
+                <label style={labelSt}>{tr('กะเช้า (คน)')}</label>
                 <input type="number" min={0} value={stdDay} disabled={!canEdit}
                   onChange={e => setStdDay(e.target.value)}
                   style={{ marginTop: 4, fontSize: 18, fontWeight: 700, textAlign: 'center' }} />
               </div>
               <div style={{ flex: 1 }}>
-                <label style={labelSt}>กะดึก (คน)</label>
+                <label style={labelSt}>{tr('กะดึก (คน)')}</label>
                 <input type="number" min={0} value={stdNight} disabled={!canEdit}
                   onChange={e => setStdNight(e.target.value)}
                   style={{ marginTop: 4, fontSize: 18, fontWeight: 700, textAlign: 'center' }} />
@@ -1830,7 +1831,7 @@ export default function LineSetup({ embedded = false } = {}) {
                 *"ไลน์นึงมีหัวหน้าได้ 2-3 คน แล้วแต่ว่ามีกี่กะการทำงาน"* ⇒ ช่องข้อความช่องเดียวตอบไม่ได้
                 กฎทั้งหมดอยู่ใน utils/lineHeads.js (จอใบค่าฝีมือใช้ชุดเดียวกัน) */}
             <div style={{ marginBottom: 14 }}>
-              <label style={labelSt}>หัวหน้างานของไลน์นี้ <span style={{ fontWeight: 400, color: 'var(--muted)' }}>· ใช้ในใบค่าฝีมือ</span></label>
+              <label style={labelSt}>{tr('หัวหน้างานของไลน์นี้')} <span style={{ fontWeight: 400, color: 'var(--muted)' }}>{tr('· ใช้ในใบค่าฝีมือ')}</span></label>
               <div style={{ marginTop: 4, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border)' }}>
                 {lineHeads.rows.length ? (
                   <>
@@ -1923,7 +1924,7 @@ export default function LineSetup({ embedded = false } = {}) {
             </div>
             {/* ชนิดหน่วย ต้องมาก่อน "ประเภทไลน์" — ตอบคำถามที่ใหญ่กว่า (เป็นไลน์ผลิตไหม) */}
             <div style={{ marginBottom: 12 }}>
-              <label style={labelSt}>ชนิดหน่วย</label>
+              <label style={labelSt}>{tr('ชนิดหน่วย')}</label>
               <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
                 {UNIT_KINDS.map(k => (
                   <button key={k.key} type="button" disabled={!canEdit} title={k.desc}
@@ -1942,20 +1943,20 @@ export default function LineSetup({ embedded = false } = {}) {
               </div>
             </div>
             <div style={{ marginBottom: 12 }}>
-              <label style={labelSt}>ประเภทไลน์</label>
+              <label style={labelSt}>{tr('ประเภทไลน์')}</label>
               <select value={lineType} disabled={!canEdit}
                 onChange={e => setLineType(e.target.value)}
                 style={{ marginTop: 4, fontSize: 13, fontWeight: 600 }}>
-                <option value="">— ยังไม่ระบุ —</option>
-                {LINE_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                <option value="">{tr('— ยังไม่ระบุ —')}</option>
+                {LINE_TYPES.map(t => <option key={t.value} value={t.value}>{tr(t.label)}</option>)}
               </select>
             </div>
             <div style={{ marginBottom: 12 }}>
-              <label style={labelSt}>รูปแบบการไหลงาน (บอร์ด Heijunka)</label>
+              <label style={labelSt}>{tr('รูปแบบการไหลงาน (บอร์ด Heijunka)')}</label>
               <select value={flowMode} disabled={!canEdit}
                 onChange={e => setFlowMode(e.target.value)}
                 style={{ marginTop: 4, fontSize: 13, fontWeight: 600 }}>
-                {FLOW_MODES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                {FLOW_MODES.map(t => <option key={t.value} value={t.value}>{tr(t.label)}</option>)}
               </select>
               <div style={{ marginTop: 5 }}>
                 <Hint label="โหมดนี้ทำอะไร">
@@ -1966,11 +1967,11 @@ export default function LineSetup({ embedded = false } = {}) {
               </div>
               <div style={{ marginTop: 8 }}>
                 <label style={{ ...labelSt, fontSize: 11 }}>
-                  จำนวนเครื่องหลักวิ่งขนาน (N) — ใช้หัก Downtime ที่ระบุเครื่อง 1/N ในสูตร OEE
+                  {tr('จำนวนเครื่องหลักวิ่งขนาน (N) — ใช้หัก Downtime ที่ระบุเครื่อง 1/N ในสูตร OEE')}
                 </label>
                 <input type="number" min="1" value={parallelStations} disabled={!canEdit}
                   onChange={e => setParallelStations(e.target.value)}
-                  placeholder="เช่น 3" style={{ marginTop: 4, width: 120 }} />
+                  placeholder={tr('เช่น 3')} style={{ marginTop: 4, width: 120 }} />
                 <div style={{ marginTop: 4 }}>
                   <Hint label="N คือเลขอะไร">
                     = <strong style={{ color: 'var(--text)' }}>เครื่องหลักที่เดินพร้อมกันจริงตอนเต็มกำลัง</strong> (ไม่ใช่จำนวนเครื่องทั้งหมดในไลน์ และไม่ใช่จำนวนคน)
@@ -1996,7 +1997,7 @@ export default function LineSetup({ embedded = false } = {}) {
                 borderTop: '1px solid var(--border)', paddingTop: 12,
                 color: selLineObj.is_active === false ? 'var(--amber)' : 'var(--muted)', cursor: 'pointer' }}>
                 <input type="checkbox" checked={selLineObj.is_active === false} onChange={e => handleToggleRetire(e.target.checked)} />
-                <span>⏸ ปลดระวางไลน์นี้ {selLineObj.is_active === false
+                <span>{tr('⏸ ปลดระวางไลน์นี้')} {selLineObj.is_active === false
                   ? '(ไม่โผล่ให้เลือกใหม่แล้ว · ข้อมูลเก่ายังอ่านได้)'
                   : '— ใช้แทนการลบ เมื่อเลิกใช้ไลน์ · มีผลทันที ไม่ต้องกดบันทึก'}</span>
               </label>

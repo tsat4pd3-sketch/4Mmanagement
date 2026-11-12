@@ -13,6 +13,7 @@ import PageHeader from '../components/PageHeader';
 import { ALL } from '../utils/filterLabels';
 import Page from '../components/Page';
 import { UserContext } from '../App';
+import { tr } from '../utils/i18n';
 import { NOTIFY_CATEGORY_LABEL } from '../utils/notifyPrefs';   // 🔕 ป้ายหมวด — ของกลาง ใช้ร่วมกับโมดัลของผู้ใช้
 
 const inputStyle = {
@@ -351,7 +352,7 @@ export default function NotificationConfig() {
               style={{ ...monoStyle, flex: 1, minWidth: 220 }}
             />
             <button type="button" className="pg-btn sm primary" onClick={saveToken} disabled={busy === 'token'}>
-              {busy === 'token' ? 'บันทึก...' : 'บันทึก Token'}
+              {busy === 'token' ? tr('บันทึก...') : tr('บันทึก Token')}
             </button>
           </>
         ) : (
@@ -379,7 +380,7 @@ export default function NotificationConfig() {
         />
         <div style={{ fontSize: 12.5, color: 'var(--text)' }}>นาที</div>
         <button type="button" className="pg-btn sm primary" onClick={saveOpenMin} disabled={busy === 'openmin'}>
-          {busy === 'openmin' ? 'บันทึก...' : 'บันทึก'}
+          {busy === 'openmin' ? tr('บันทึก...') : tr('บันทึก')}
         </button>
         <InfoMore size={11} style={{ flexBasis: '100%' }} id="nc_dtopen"
           lead={<>เปิดค้างนานเกินเวลานี้ → ส่ง Telegram + เตือนเสียงหน้า Production</>}>
@@ -399,19 +400,19 @@ export default function NotificationConfig() {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
         {rooms.map(room => (
           <div key={room.id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 12, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-            <input value={room.name} onChange={e => patchRoom(room.id, 'name', e.target.value)} placeholder="ชื่อห้อง" style={{ ...inputStyle, width: 200, flex: '0 0 auto' }} />
-            <input value={room.chat_id ?? ''} onChange={e => patchRoom(room.id, 'chat_id', e.target.value)} placeholder="chat_id เช่น -1001234567890" style={{ ...monoStyle, flex: 1, minWidth: 170, borderColor: (room.chat_id ?? '').trim() ? undefined : 'var(--accent2)' }} />
+            <input value={room.name} onChange={e => patchRoom(room.id, 'name', e.target.value)} placeholder={tr('ชื่อห้อง')} style={{ ...inputStyle, width: 200, flex: '0 0 auto' }} />
+            <input value={room.chat_id ?? ''} onChange={e => patchRoom(room.id, 'chat_id', e.target.value)} placeholder={tr('chat_id เช่น -1001234567890')} style={{ ...monoStyle, flex: 1, minWidth: 170, borderColor: (room.chat_id ?? '').trim() ? undefined : 'var(--accent2)' }} />
             <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={room.is_active} onChange={e => patchRoom(room.id, 'is_active', e.target.checked)} />เปิด
+              <input type="checkbox" checked={room.is_active} onChange={e => patchRoom(room.id, 'is_active', e.target.checked)} />{tr('เปิด')}
             </label>
             <select value={room.team ?? ''} onChange={e => patchRoom(room.id, 'team', e.target.value || null)} title="ห้องของทีมช่างซ่อมไหน (ใบแจ้งซ่อม MO จะเข้าห้องของทีมตามหน่วยงาน)" style={{ ...inputStyle, width: 150, flex: '0 0 auto' }}>
-              <option value="">{ALL.team}</option>
+              <option value="">{tr(ALL.team)}</option>
               {/* 2026-09-07: วนทีมจาก mtn_teams (pmTeamsSync — data-driven) · ค่าที่เก็บ = key เสมอ */}
-              {pmTeamsSync().map(t => <option key={t.key} value={t.key}>ทีม {t.icon ? `${t.icon} ` : ''}{deptNameOf(t.key)}</option>)}
+              {pmTeamsSync().map(t => <option key={t.key} value={t.key}>{tr('ทีม')} {t.icon ? `${t.icon} ` : ''}{deptNameOf(t.key)}</option>)}
             </select>
-            <button type="button" className="pg-btn sm primary" onClick={() => saveRoom(room)} disabled={busy === room.id}>บันทึก</button>
-            <button type="button" className="pg-btn sm" onClick={() => testRoom(room)} disabled={busy === `test-${room.id}`}>ทดสอบ</button>
-            <button type="button" className="pg-btn sm danger" onClick={() => deleteRoom(room)}>ลบ</button>
+            <button type="button" className="pg-btn sm primary" onClick={() => saveRoom(room)} disabled={busy === room.id}>{tr('บันทึก')}</button>
+            <button type="button" className="pg-btn sm" onClick={() => testRoom(room)} disabled={busy === `test-${room.id}`}>{tr('ทดสอบ')}</button>
+            <button type="button" className="pg-btn sm danger" onClick={() => deleteRoom(room)}>{tr('ลบ')}</button>
             {!(room.chat_id ?? '').trim() && (
               <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--accent2)' }}>
                 ⚠️ ยังไม่ใส่ chat_id — รายการที่เลือกห้องนี้จะไปเข้า<b>กลุ่มเดิม (fallback)</b> ไม่ใช่ห้องนี้
@@ -421,9 +422,9 @@ export default function NotificationConfig() {
         ))}
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 26, flexWrap: 'wrap' }}>
-        <input value={newRoom.name} onChange={e => setNewRoom(n => ({ ...n, name: e.target.value }))} placeholder="+ ชื่อห้องใหม่" style={{ ...inputStyle, width: 200 }} />
-        <input value={newRoom.chat_id} onChange={e => setNewRoom(n => ({ ...n, chat_id: e.target.value }))} placeholder="chat_id (ใส่ทีหลังได้)" style={{ ...monoStyle, flex: 1, minWidth: 170 }} />
-        <button type="button" className="pg-btn sm" onClick={addRoom} disabled={busy === 'new'}>+ เพิ่มห้อง</button>
+        <input value={newRoom.name} onChange={e => setNewRoom(n => ({ ...n, name: e.target.value }))} placeholder={tr('+ ชื่อห้องใหม่')} style={{ ...inputStyle, width: 200 }} />
+        <input value={newRoom.chat_id} onChange={e => setNewRoom(n => ({ ...n, chat_id: e.target.value }))} placeholder={tr('chat_id (ใส่ทีหลังได้)')} style={{ ...monoStyle, flex: 1, minWidth: 170 }} />
+        <button type="button" className="pg-btn sm" onClick={addRoom} disabled={busy === 'new'}>{tr('+ เพิ่มห้อง')}</button>
       </div>
 
       {/* ── Rules ── */}
@@ -529,7 +530,7 @@ export default function NotificationConfig() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                           <button type="button" className="pg-btn sm" onClick={() => setOpenTarget(openTarget === rule.event_key ? null : rule.event_key)}
                            >
-                            {openTarget === rule.event_key ? 'ปิดตัวจำกัดผู้รับ' : 'จำกัดผู้รับ (ส่วนงาน / แผนก)'}
+                            {openTarget === rule.event_key ? tr('ปิดตัวจำกัดผู้รับ') : tr('จำกัดผู้รับ (ส่วนงาน / แผนก)')}
                           </button>
                           <span style={{ fontSize: 11, color: (rule.inapp_sections?.length || rule.inapp_depts?.length || rule.inapp_match_section) ? 'var(--accent)' : 'var(--muted)' }}>
                             {targetSummary(rule)}
@@ -550,13 +551,13 @@ export default function NotificationConfig() {
                                 onChange={e => updateRule(rule.event_key, { inapp_cast: e.target.checked ? 'fallback' : 'always' })}
                                 style={{ marginTop: 2, flexShrink: 0 }} />
                               <span>
-                                <b>ส่งถึงเจ้าของงานก่อน — ยิงตาม role เฉพาะตอนที่รายการบอกตัวคนไม่ได้</b>
+                                <b>{tr('ส่งถึงเจ้าของงานก่อน — ยิงตาม role เฉพาะตอนที่รายการบอกตัวคนไม่ได้')}</b>
                                 <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2, lineHeight: 1.6 }}>
-                                  ไม่ติ๊ก = ยิงตาม role ที่เลือกไว้<b>ทุกครั้ง</b> แม้รายการนั้นจะรู้อยู่แล้วว่าใครเกี่ยว (พฤติกรรมเดิม) ·
-                                  ติ๊ก = ส่งให้<b>คนที่มีชื่ออยู่ในรายการนั้น</b> (ผู้แจ้ง / ผู้รับงาน / ผู้ตรวจ) ก่อน
-                                  แล้วจะยิงตาม role <b>ต่อเมื่อรายการไม่มีชื่อใครเลย</b> — ใบไม่มีทางเดินไปเงียบๆ
+                                  ไม่ติ๊ก = ยิงตาม role ที่เลือกไว้<b>{tr('ทุกครั้ง')}</b> แม้รายการนั้นจะรู้อยู่แล้วว่าใครเกี่ยว (พฤติกรรมเดิม) ·
+                                  ติ๊ก = ส่งให้<b>{tr('คนที่มีชื่ออยู่ในรายการนั้น')}</b> (ผู้แจ้ง / ผู้รับงาน / ผู้ตรวจ) ก่อน
+                                  แล้วจะยิงตาม role <b>{tr('ต่อเมื่อรายการไม่มีชื่อใครเลย')}</b> {tr('— ใบไม่มีทางเดินไปเงียบๆ')}
                                   <div style={{ marginTop: 3 }}>
-                                    ⚠️ เรื่องที่ระบบยัง<b>ไม่ได้ส่งชื่อเจ้าของงานมา</b> ติ๊กแล้วจะเหมือนเดิมทุกอย่าง (ไม่เสียหาย)
+                                    {tr('⚠️ เรื่องที่ระบบยัง')}<b>{tr('ไม่ได้ส่งชื่อเจ้าของงานมา')}</b> ติ๊กแล้วจะเหมือนเดิมทุกอย่าง (ไม่เสียหาย)
                                     — ดูว่าเรื่องไหนส่งมาแล้วบ้างที่ <code>docs/modules/notifications-flood.md</code> §6
                                   </div>
                                 </div>
@@ -574,11 +575,11 @@ export default function NotificationConfig() {
                                 onChange={e => updateRule(rule.event_key, { can_mute: !e.target.checked })}
                                 style={{ marginTop: 2, flexShrink: 0 }} />
                               <span>
-                                <b>ผู้ใช้ปิดแจ้งเตือนเรื่องนี้เองไม่ได้</b>
+                                <b>{tr('ผู้ใช้ปิดแจ้งเตือนเรื่องนี้เองไม่ได้')}</b>
                                 <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2, lineHeight: 1.6 }}>
-                                  ไม่ติ๊ก = ใครก็ปิดเรื่องนี้เองได้ที่ <b>เมนูโปรไฟล์ → 🔕 ตั้งค่าแจ้งเตือนของฉัน</b> (ค่าเริ่มต้น) ·
-                                  ติ๊ก = เด้งเสมอ แม้เขาจะกดปิด — ใช้กับ<b>คิวงานที่มีของรอคนกลุ่มนี้ลงมือ</b>
-                                  (ใบรออนุมัติ · ใบซ่อมรอรับ · เรียกช่าง) ปิดแล้วงานค้างเงียบ
+                                  ไม่ติ๊ก = ใครก็ปิดเรื่องนี้เองได้ที่ <b>{tr('เมนูโปรไฟล์ → 🔕 ตั้งค่าแจ้งเตือนของฉัน')}</b> (ค่าเริ่มต้น) ·
+                                  ติ๊ก = เด้งเสมอ แม้เขาจะกดปิด — ใช้กับ<b>{tr('คิวงานที่มีของรอคนกลุ่มนี้ลงมือ')}</b>
+                                  {tr('(ใบรออนุมัติ · ใบซ่อมรอรับ · เรียกช่าง) ปิดแล้วงานค้างเงียบ')}
                                 </div>
                               </span>
                             </label>
@@ -587,7 +588,7 @@ export default function NotificationConfig() {
                               <input type="checkbox" checked={!!rule.inapp_match_section}
                                 onChange={e => updateRule(rule.event_key, { inapp_match_section: e.target.checked })} style={{ marginTop: 2, flexShrink: 0 }} />
                               <span>
-                                <b>แจ้งเฉพาะคนที่ดูแลส่วนงานของเหตุการณ์นั้น</b>
+                                <b>{tr('แจ้งเฉพาะคนที่ดูแลส่วนงานของเหตุการณ์นั้น')}</b>
                                 <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2 }}>
                                   เช่น ของเสียที่ Line 60 → เด้งหาหัวหน้า PD2 เท่านั้น ไม่กวนส่วนงานอื่น ·
                                   คนที่ไม่ได้จำกัดขอบเขต ได้รับเสมอ ·
@@ -605,10 +606,10 @@ export default function NotificationConfig() {
                               <input type="checkbox" checked={!!rule.inapp_scope_strict} disabled={!rule.inapp_match_section}
                                 onChange={e => updateRule(rule.event_key, { inapp_scope_strict: e.target.checked })} style={{ marginTop: 2, flexShrink: 0 }} />
                               <span>
-                                <b>ผู้บริหารก็ถูกกรองตามส่วนงานด้วย</b>
+                                <b>{tr('ผู้บริหารก็ถูกกรองตามส่วนงานด้วย')}</b>
                                 <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2 }}>
-                                  ไม่ติ๊ก = ผู้ดูแลระบบ / ผู้จัดการ ได้รับ<b>ทุกส่วนงาน</b>แม้เรื่องนี้กรองส่วนงานอยู่ (พฤติกรรมเดิม) ·
-                                  ติ๊ก = ผจก. PD1 ได้เฉพาะ PD1 เหมือนคนอื่น — เหมาะกับ<b>เรื่องที่ยิงถี่</b> ·
+                                  ไม่ติ๊ก = ผู้ดูแลระบบ / ผู้จัดการ ได้รับ<b>{tr('ทุกส่วนงาน')}</b>แม้เรื่องนี้กรองส่วนงานอยู่ (พฤติกรรมเดิม) ·
+                                  ติ๊ก = ผจก. PD1 ได้เฉพาะ PD1 เหมือนคนอื่น — เหมาะกับ<b>{tr('เรื่องที่ยิงถี่')}</b> ·
                                   ⚠️ คนที่ยังไม่ได้ตั้งส่วนงานยังได้รับทุกส่วนงานอยู่ (ตั้งได้ที่หน้าจัดการผู้ใช้งาน)
                                 </div>
                               </span>
@@ -665,7 +666,7 @@ export default function NotificationConfig() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <button type="button" className="pg-btn sm" onClick={() => editingTpl === rule.event_key ? setEditingTpl(null) : startEditTpl(rule)}
                        >
-                        {editingTpl === rule.event_key ? 'ปิดตัวแก้ข้อความ' : 'ปรับข้อความ'}
+                        {editingTpl === rule.event_key ? tr('ปิดตัวแก้ข้อความ') : tr('ปรับข้อความ')}
                       </button>
                       <span style={{ fontSize: 11, color: rule.template ? 'var(--accent)' : 'var(--muted)' }}>
                         {rule.template ? '● ใช้ข้อความที่กำหนดเอง' : '○ ใช้ข้อความมาตรฐานของระบบ'}
@@ -686,7 +687,7 @@ export default function NotificationConfig() {
                           ))}
                         </div>
                         <textarea value={tplDraft} onChange={e => setTplDraft(e.target.value)} rows={6}
-                          placeholder="พิมพ์ข้อความ… เว้นว่าง = กลับไปใช้ข้อความมาตรฐาน"
+                          placeholder={tr('พิมพ์ข้อความ… เว้นว่าง = กลับไปใช้ข้อความมาตรฐาน')}
                           style={{ ...inputStyle, fontFamily: 'monospace', lineHeight: 1.5, resize: 'vertical' }} />
                         <div>
                           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ตัวอย่าง (ข้อมูลสมมติ):</div>
@@ -695,13 +696,13 @@ export default function NotificationConfig() {
                         </div>
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                           <button type="button" className="pg-btn sm primary" onClick={() => saveTpl(rule)}
-                           >บันทึกข้อความ</button>
+                           >{tr('บันทึกข้อความ')}</button>
                           <button type="button" className="pg-btn sm" onClick={() => setTplDraft(DEFAULT_TEMPLATES[rule.event_key] ?? '')}
-                           >โหลดแบบเริ่มต้น</button>
+                           >{tr('โหลดแบบเริ่มต้น')}</button>
                           <button type="button" className="pg-btn sm danger" onClick={() => resetTpl(rule)}
-                           >ใช้ข้อความมาตรฐาน</button>
+                           >{tr('ใช้ข้อความมาตรฐาน')}</button>
                           <button type="button" className="pg-btn sm" onClick={() => setEditingTpl(null)}
-                           >ยกเลิก</button>
+                           >{tr('ยกเลิก')}</button>
                         </div>
                       </div>
                     )}

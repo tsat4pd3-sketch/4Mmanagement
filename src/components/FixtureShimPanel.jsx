@@ -7,6 +7,7 @@ import {
   toolLifeStatus, learnedToolLife, suggestMaxShim,
 } from '../utils/fixturePoints';
 
+import { tr } from '../utils/i18n';
 /* ═══════════════════════════════════════════════════════════════
    🔧 บันทึกการใส่/ถอดชิม — หัวใจของโมดูล
 
@@ -150,7 +151,7 @@ export default function FixtureShimPanel({
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={{ fontSize: 12.5, fontWeight: 700 }}>จุด:</span>
         <select value={pointId || ''} onChange={e => onPickPoint(e.target.value)} style={{ ...inp, width: 300 }}>
-          <option value="">— เลือกจุด —</option>
+          <option value="">{tr('— เลือกจุด —')}</option>
           {points.map(p => {
             const s = shimStack(p);
             const mark = s.level === 'over' ? '🔴 ' : s.level === 'warn' ? '🟠 ' : '';
@@ -212,7 +213,7 @@ export default function FixtureShimPanel({
               <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))' }}>
                 <Field label="สิ่งที่ทำ">
                   <select value={f.action} onChange={e => setF(p => ({ ...p, action: e.target.value }))} style={inp}>
-                    {SHIM_ACTIONS.map(a => <option key={a.key} value={a.key}>{a.label}</option>)}
+                    {SHIM_ACTIONS.map(a => <option key={a.key} value={a.key}>{tr(a.label)}</option>)}
                   </select>
                 </Field>
                 <Field label="วิธีกรอก" hint="ลงที่ค่ารวมเหมือนกัน">
@@ -251,7 +252,7 @@ export default function FixtureShimPanel({
                 </Field>
                 <Field label="เหตุผล">
                   <select value={f.reason} onChange={e => setF(p => ({ ...p, reason: e.target.value }))} style={inp}>
-                    {SHIM_REASONS.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+                    {SHIM_REASONS.map(r => <option key={r.key} value={r.key}>{tr(r.label)}</option>)}
                   </select>
                 </Field>
                 <Field label="หมายเหตุ" hint={f.reason === 'other' ? 'บังคับ' : 'ถ้ามี'}>
@@ -285,7 +286,7 @@ export default function FixtureShimPanel({
                                  color: preview.after != null ? '#fff' : 'var(--muted)', border: 'none',
                                  borderRadius: 'var(--r-md)', padding: '9px 22px', fontSize: 13, fontWeight: 700,
                                  cursor: saving || preview.after == null ? 'not-allowed' : 'pointer' }}>
-                  {saving ? 'กำลังบันทึก…' : '💾 บันทึก'}
+                  {saving ? tr('กำลังบันทึก…') : tr('💾 บันทึก')}
                 </button>
               </div>
             </div>
@@ -316,7 +317,7 @@ export default function FixtureShimPanel({
                 ⚠️ โหลดประวัติไม่สำเร็จ: {loadErr} — <b>ไม่ใช่ว่าไม่มีประวัติ</b>
                 <button onClick={load} style={{ marginLeft: 8, padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 12,
                         background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
-                  ลองใหม่
+                  {tr('ลองใหม่')}
                 </button>
               </div>
             ) : !events.length ? (
@@ -327,7 +328,7 @@ export default function FixtureShimPanel({
                   <thead style={{ position: 'sticky', top: 0, background: 'var(--bg2)' }}>
                     <tr style={{ textAlign: 'left' }}>
                       {['เมื่อ', 'ทำอะไร', 'ก่อน → หลัง', 'เหตุผล', 'ผู้ทำ', 'อนุมัติ'].map(h => (
-                        <th key={h} style={{ padding: '7px 10px' }}>{h}</th>
+                        <th key={h} style={{ padding: '7px 10px' }}>{tr(h)}</th>
                       ))}
                     </tr>
                   </thead>
@@ -353,7 +354,7 @@ export default function FixtureShimPanel({
                           ) : canApprove ? (
                             <button onClick={() => approve(ev)}
                                     style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, cursor: 'pointer',
-                                             background: '#16a34a', color: '#fff', border: 'none' }}>อนุมัติ</button>
+                                             background: '#16a34a', color: '#fff', border: 'none' }}>{tr('อนุมัติ')}</button>
                           ) : (
                             <span style={{ color: '#f59e0b' }}>รออนุมัติ</span>
                           )}

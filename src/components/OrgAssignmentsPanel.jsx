@@ -19,6 +19,7 @@ import {
   ASSIGNMENT_KINDS, assignmentRoleText, assignmentStatus, STATUS,
   needsConfirm, reviewSummary, todayLocal,
 } from '../utils/orgAssignments';
+import { tr } from '../utils/i18n';
 import { positionLabel, loadPositions } from '../utils/positions';   // บทบาท = ตำแหน่งจริงในทะเบียน (21/10)
 
 const NODE_KIND_TH = { section: 'ส่วน', department: 'แผนก', line: 'กลุ่ม', team: 'ทีม' };
@@ -108,7 +109,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
   return (
     <div className="card" style={{ padding: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontFamily: 'var(--font-display)' }}>ใครคุมหน่วยไหน · ตำแหน่งจริง / รักษาการ</h3>
+        <h3 style={{ margin: 0, fontSize: 15, fontFamily: 'var(--font-display)' }}>{tr('ใครคุมหน่วยไหน · ตำแหน่งจริง / รักษาการ')}</h3>
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>
           ตอบ “ใครคุมหน่วยไหน” — คนละเรื่องกับ “สังกัดที่ไหน” · คนเดียวคุมได้หลายหน่วย
         </span>
@@ -157,10 +158,10 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
           background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: 11, marginBottom: 10 }}>
           {/* ⚠️ <SearchSelect> ใช้ `options: [{id,label}]` และคืนค่าเป็น `({id})` — ไม่ใช่ value ดิบ
               (ส่งผิดรูปแล้ว build ยังผ่าน แต่ลิสต์จะว่างและเลือกไม่ติด) */}
-          <SearchSelect value={form.profile_id} placeholder="— เลือกคน —"
+          <SearchSelect value={form.profile_id} placeholder={tr('— เลือกคน —')}
             onChange={({ id }) => setForm(f => ({ ...f, profile_id: id || '' }))}
             options={people.map(p => ({ id: p.id, label: p.full_name || '(ไม่ระบุชื่อ)', sub: p.role }))} />
-          <SearchSelect value={form.org_node_id} placeholder="— เลือกหน่วยงาน —"
+          <SearchSelect value={form.org_node_id} placeholder={tr('— เลือกหน่วยงาน —')}
             onChange={({ id }) => setForm(f => ({ ...f, org_node_id: id || '' }))}
             options={nodes.map(n => ({ id: n.id, label: n.name,
               group: NODE_KIND_TH[n.kind] || n.kind }))} />
@@ -178,7 +179,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
           </div>
           <button onClick={add} disabled={busy} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', fontWeight: 700,
             fontSize: 12, cursor: busy ? 'default' : 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
-            บันทึก
+            {tr('บันทึก')}
           </button>
         </div>
       )}
@@ -191,12 +192,12 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
         <div style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 640, fontSize: 12 }}>
             <thead><tr>
-              <th style={{ textAlign: 'left' }}>หน่วยงาน</th>
-              <th style={{ textAlign: 'left' }}>ผู้รับผิดชอบ</th>
-              <th style={{ textAlign: 'center' }}>บทบาท</th>
-              <th style={{ textAlign: 'center' }}>สถานะ</th>
-              <th style={{ textAlign: 'center', minWidth: 148 }}>วันสิ้นสุด</th>
-              {canEdit && <th style={{ textAlign: 'center' }}>จัดการ</th>}
+              <th style={{ textAlign: 'left' }}>{tr('หน่วยงาน')}</th>
+              <th style={{ textAlign: 'left' }}>{tr('ผู้รับผิดชอบ')}</th>
+              <th style={{ textAlign: 'center' }}>{tr('บทบาท')}</th>
+              <th style={{ textAlign: 'center' }}>{tr('สถานะ')}</th>
+              <th style={{ textAlign: 'center', minWidth: 148 }}>{tr('วันสิ้นสุด')}</th>
+              {canEdit && <th style={{ textAlign: 'center' }}>{tr('จัดการ')}</th>}
             </tr></thead>
             <tbody>
               {rows.map(r => {
@@ -229,7 +230,7 @@ export default function OrgAssignmentsPanel({ nodes = [] }) {
                             <button type="button" className="tbtn" onClick={() => confirmRow(r)} disabled={busy}
                               title="ยืนยันว่าข้อมูลจากผังองค์กรถูกต้อง"
                               style={{ height: 30, padding: '0 10px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 700, cursor: busy ? 'default' : 'pointer',
-                                border: '1px solid rgba(34,197,94,0.5)', background: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>✓ ยืนยัน</button>
+                                border: '1px solid rgba(34,197,94,0.5)', background: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>{tr('✓ ยืนยัน')}</button>
                           )}
                           <DeleteButton onClick={() => remove(r)} disabled={busy} title="ลบรายการนี้" />
                         </div>

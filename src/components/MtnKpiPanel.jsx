@@ -8,6 +8,7 @@ import { ALL } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 import { rangeDays } from '../utils/timeRange';
 import { urlParam } from '../utils/urlInit';
+import { tr as trI18n } from '../utils/i18n';
 import InfoMore from './InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 /* ══ 📊 KPI ช่าง — MTTA / MTTR / MDT + ความพึงพอใจ + ความน่าเชื่อถือรายอุปกรณ์ ══════════
@@ -153,7 +154,7 @@ export default function MtnKpiPanel({ orders = [], scopeLines = null, lineObjs =
           <div>
             อยากดู <b style={{ color: 'var(--text2)' }}>พาเรโต / ก้างปลา / ฮิสโตแกรม / กราฟควบคุม</b> แยกตามชนิดอุปกรณ์ →{' '}
             <button type="button" onClick={onGoQc7} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--accent)', fontWeight: 800, fontSize: 11.5, cursor: 'pointer', textDecoration: 'underline' }}>
-              ไปแท็บ QC 7 Tools
+              {trI18n('ไปแท็บ QC 7 Tools')}
             </button>
           </div>
         )}

@@ -35,6 +35,7 @@ import { toHierarchicalOptions, getLineFamilyNames } from '../utils/lineHierarch
 import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { isSupportUnit } from '../utils/unitKind';
 
+import { tr } from '../utils/i18n';
 /** กรองไลน์ตาม scope มาตรฐาน — leader = ครอบครัวไลน์ตัวเอง · อื่น = ตาม sections
  *  คืน array เดิมเมื่อไม่ถูกจำกัด (admin / ไม่มี scope) */
 export function scopeLines(lines, { role, lineId, sections, scopeIdx = null } = {}) {
@@ -147,7 +148,7 @@ export default function LineSelect({
   const selectEl = (
     <select id={id} value={value} disabled={disabled} required={required} style={scan && isMobile && !disabled ? { ...style, flex: 1, minWidth: 0, width: 'auto' } : style}
       onChange={e => onChange?.(e.target.value)}>
-      {placeholder != null && <option value="">{placeholder}</option>}
+      {placeholder != null && <option value="">{tr(placeholder)}</option>}
       {extraAt !== 'end' && extraEls}
       {grouped.pinned.map(o => <option key={o.value} value={o.value}>{indent(o)}</option>)}
       {grouped.groups.map(g => {

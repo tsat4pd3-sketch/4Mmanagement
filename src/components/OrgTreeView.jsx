@@ -21,6 +21,7 @@ import { buildCcIndex } from '../utils/ccScope';
 import { ORG_PARENT_KIND, orgSaveBlockReason, filterParentOptions } from '../utils/orgNodeEdit';
 import { orgNodeCompare } from '../utils/listOrder';
 import SearchInput from './SearchInput';
+import { tr } from '../utils/i18n';
 import { printOrgChart } from '../lib/orgChartPrint';   // 🖨️ ใบผังองค์กร FM-HRM-I-001
 
 /** ชั้นในผัง ↔ "เลเวล" ที่โรงงานใช้ (= หลักที่ 5 ของรหัส CC · ดู utils/roleMeta.js ORG_LEVELS)
@@ -207,21 +208,21 @@ export default function OrgTreeView({ nodes = [], scopeCtx = {}, canEdit = false
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                 <select disabled={busy} defaultValue={n.parent_id || ''}
                   onChange={e => doMove(n, e.target.value)} style={{ width: 'auto', fontSize: 12 }}>
-                  <option value="">— เลือกหน่วยแม่ —</option>
-                  {parentOpts.rows.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                  <option value="">{tr('— เลือกหน่วยแม่ —')}</option>
+                  {parentOpts.rows.map(o => <option key={o.id} value={o.id}>{tr(o.name)}</option>)}
                 </select>
                 {parentOpts.hidden > 0 && (
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}>ซ่อน {parentOpts.hidden} หน่วยนอกขอบเขตคุณ</span>
                 )}
                 <button type="button" className="tbtn" onClick={() => setMoving(null)}
-                  style={{ fontSize: 11, padding: '2px 8px' }}>ยกเลิก</button>
+                  style={{ fontSize: 11, padding: '2px 8px' }}>{tr('ยกเลิก')}</button>
               </span>
             ) : (
               <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 6 }}>
                 {(n.kind === 'section' || n.kind === 'department') && (
                   <button type="button" className="tbtn" onClick={() => doPrint({ mode: 'dept', rootId: n.id })}
                     disabled={printing} title="ออกใบผังองค์กรเฉพาะหน่วยนี้ (กางถึงกลุ่ม + รายชื่อ)"
-                    style={{ fontSize: 11, padding: '2px 8px' }}>ผังย่อย</button>
+                    style={{ fontSize: 11, padding: '2px 8px' }}>{tr('ผังย่อย')}</button>
                 )}
                 {n.parent_id && (
                   <button type="button" className="tbtn" onClick={() => toggleInherit(n)} disabled={busy}
@@ -229,11 +230,11 @@ export default function OrgTreeView({ nodes = [], scopeCtx = {}, canEdit = false
                       ? 'ให้ขอบเขตของหน่วยแม่ครอบหน่วยนี้ตามปกติ'
                       : 'หน่วยนี้มาฝากไว้ใต้หน่วยแม่ — ไม่ให้หน่วยแม่มีสิทธิ์แก้ข้อมูล'}
                     style={{ fontSize: 11, padding: '2px 8px' }}>
-                    {n.inherit_scope === false ? '🔓 ให้ตกทอด' : '🔒 ไม่ตกทอด'}
+                    {n.inherit_scope === false ? tr('🔓 ให้ตกทอด') : tr('🔒 ไม่ตกทอด')}
                   </button>
                 )}
                 <button type="button" className="tbtn" onClick={() => setMoving(n.id)} disabled={busy}
-                  style={{ fontSize: 11, padding: '2px 8px' }}>↕ ย้าย</button>
+                  style={{ fontSize: 11, padding: '2px 8px' }}>{tr('↕ ย้าย')}</button>
               </span>
             )
           )}
@@ -250,10 +251,10 @@ export default function OrgTreeView({ nodes = [], scopeCtx = {}, canEdit = false
         <SearchInput value={q} onChange={setQ} fields="ชื่อหน่วย / รหัส / CC" />
         <button type="button" className="tbtn" onClick={() => doPrint({ mode: 'overall' })} disabled={printing}
           title="ออกใบแผนผังองค์กรทั้งโรงงาน (ฝ่าย → ส่วน → แผนก) ตามฟอร์ม FM-HRM-I-001"
-          style={{ fontSize: 12, padding: '3px 10px' }}>ผังใหญ่ (ทั้งโรงงาน)</button>
+          style={{ fontSize: 12, padding: '3px 10px' }}>{tr('ผังใหญ่ (ทั้งโรงงาน)')}</button>
         <label style={{ fontSize: 12, color: 'var(--text2)', display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
           <input type="checkbox" checked={showOff} onChange={e => setShowOff(e.target.checked)} style={{ margin: 0 }} />
-          โชว์ที่ปิดใช้งาน ({offCount})
+          {tr('โชว์ที่ปิดใช้งาน (')}{offCount})
         </label>
         <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 'auto', lineHeight: 1.5 }}>
           ลำดับชั้นมาจากผัง (หน่วยแม่) ไม่ใช่ตัวเลขรหัส · เทา = ตกทอดจากหน่วยแม่

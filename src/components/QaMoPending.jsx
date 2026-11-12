@@ -17,6 +17,7 @@ import { OPEN_MO_STATUSES, moWaitMeta } from '../utils/mtnStepPerm';
 import { ageDays, OLD_DAYS } from '../utils/myQueue';
 import SearchInput from './SearchInput';
 
+import { tr } from '../utils/i18n';
 /* เพดานต่อคิวรีของ PostgREST (กฎเหล็กข้อ 5) — ได้ครบพอดี = อาจมีมากกว่านี้ ⇒ ต้องเขียนบอก */
 const LIMIT = 1000;
 const COLS = [
@@ -81,7 +82,7 @@ export default function QaMoPending() {
           <button onClick={load} disabled={busy}
             style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none',
                      cursor: busy ? 'default' : 'pointer', padding: 0, textDecoration: 'underline' }}>
-            {busy ? 'กำลังโหลด…' : 'โหลดใหม่'}
+            {busy ? tr('กำลังโหลด…') : tr('โหลดใหม่')}
           </button>
           <div style={{ marginLeft: 'auto', minWidth: 190 }}>
             <SearchInput value={q} onChange={setQ} fields="เลข MO / ไลน์ / เครื่อง / อุปกรณ์" />
@@ -126,7 +127,7 @@ export default function QaMoPending() {
               <tr style={{ background: 'var(--bg2)', textAlign: 'left' }}>
                 {['เลข MO', 'วันที่แจ้ง', 'ค้าง', 'ส่วนงาน', 'ไลน์ / เครื่อง', 'อุปกรณ์', 'อาการ'].map(h => (
                   <th key={h} style={{ padding: '7px 9px', fontWeight: 800, whiteSpace: 'nowrap',
-                                       borderBottom: '1px solid var(--border)' }}>{h}</th>
+                                       borderBottom: '1px solid var(--border)' }}>{tr(h)}</th>
                 ))}
               </tr>
             </thead>

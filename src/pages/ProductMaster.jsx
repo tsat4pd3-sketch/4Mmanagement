@@ -66,6 +66,7 @@ import { downloadCsvDoc, csvText } from '../utils/csvDoc';
 import { DeleteButton } from '../components/IconButton';
 import { loadFamilyQtyTotals, familyQtyChip } from '../utils/familyTotals';
 import NoticeBar from '../components/NoticeBar';
+import { tr } from '../utils/i18n';
 import { statusColor } from '../utils/statusTone';   // สีสถานะชุดเดียวทั้งระบบ (ห้ามตั้ง hex เอง)
 import { fetchAllRows } from '../utils/fetchAllRows';          // ทะเบียนที่โตได้ ห้าม select() เปล่า (เพดาน 1000 แถว)
 import { fetchAllPages } from '../utils/fetchByIds';            // คิวรีที่ต้องการ shape เอง (bom_items)
@@ -237,7 +238,7 @@ function PartsPickModal({ parts, onPick, onClose }) {
           ))}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
-          <button onClick={onClose} style={btnSecondary}>ปิด</button>
+          <button onClick={onClose} style={btnSecondary}>{tr('ปิด')}</button>
         </div>
       </div>
     </div>
@@ -930,7 +931,7 @@ export default function ProductMaster() {
           {' '}— หน้านี้รองรับเฉพาะเลขขึ้นต้น <strong>1</strong> (FG ส่งลูกค้า) และ <strong>2</strong> (Child Part ผลิตเอง)
         </div>
         <button onClick={() => setMainTab('parts')} style={{ ...btnPrimary, background: 'var(--amber)', fontSize: 12, padding: '6px 14px', whiteSpace: 'nowrap' }}>
-          ไปที่ Parts Master →
+          {tr('ไปที่ Parts Master →')}
         </button>
       </div>
 
@@ -945,13 +946,13 @@ export default function ProductMaster() {
         <span className="filter-label">ความครบ</span>
         <select value={readyFilter} onChange={e => setReadyFilter(e.target.value)}
           title="กรองตามความครบของข้อมูล — Routing/Packaging ยังไม่บังคับวันนี้ (อนาคตบังคับ)">
-          <option value="">{ALL.status}</option>
-          <option value="req">ยังไม่ครบ (ที่บังคับแล้ว)</option>
-          <option value="any">… ยังไม่ครบ (รวมที่อนาคตบังคับ)</option>
+          <option value="">{tr(ALL.status)}</option>
+          <option value="req">{tr('ยังไม่ครบ (ที่บังคับแล้ว)')}</option>
+          <option value="any">{tr('… ยังไม่ครบ (รวมที่อนาคตบังคับ)')}</option>
         </select>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--muted)' }}>
           <input type="checkbox" checked={showHistory} onChange={e => setShowHistory(e.target.checked)} />
-          แสดงประวัติ EC
+          {tr('แสดงประวัติ EC')}
         </label>
         <SearchInput value={search} onChange={setSearch} fields="ชื่อ / MAT.NO / P.NO / ลูกค้า" />
         <span className="spacer" />
@@ -960,11 +961,11 @@ export default function ProductMaster() {
           <button onClick={downloadProductTemplate} style={{ ...btnSecondary, fontSize: 12 }}>CSV Template</button>
           <button onClick={() => csvInputRef.current?.click()} disabled={csvImporting}
             style={{ ...btnSecondary, fontSize: 12, opacity: csvImporting ? 0.6 : 1 }}>
-            {csvImporting ? 'กำลังนำเข้า...' : 'นำเข้า CSV'}
+            {csvImporting ? tr('กำลังนำเข้า...') : tr('นำเข้า CSV')}
           </button>
           <input ref={csvInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleProductCsvUpload} />
         </>}
-        {canCreate && <button onClick={() => openEdit()} style={btnPrimary}>+ เพิ่มสินค้า</button>}
+        {canCreate && <button onClick={() => openEdit()} style={btnPrimary}>{tr('+ เพิ่มสินค้า')}</button>}
       </FilterBar>
 
       {/* 🔩 worklist — ขั้นตอน (OP) ที่ "เสี่ยงนับซ้ำจริง" (2026-09-16 · เปลี่ยนเกณฑ์ตามคำสั่ง user)
@@ -1135,9 +1136,9 @@ export default function ProductMaster() {
                   {(canEdit || mayDelete) && (
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'flex-start' }}>
                       {canEdit && active && <button type="button" className="pg-btn sm" onClick={() => openEC(active)} title="Engineering Change">EC</button>}
-                      {canEdit && <button type="button" className="pg-btn sm" onClick={() => openEdit(item)}>แก้ไข</button>}
+                      {canEdit && <button type="button" className="pg-btn sm" onClick={() => openEdit(item)}>{tr('แก้ไข')}</button>}
                       {/* สินค้าที่ปิดใช้งาน (ไม่ใช่ superseded โดย EC) → ปุ่มเปิดกลับ · สินค้าที่ยัง active → ✕ ปิดใช้งาน */}
-                      {mayDelete && !item.is_active && !item.superseded_by && <button type="button" className="pg-btn sm" onClick={() => handleReactivate(item.id)} title="เปิดใช้งานสินค้ากลับ">เปิดใช้งาน</button>}
+                      {mayDelete && !item.is_active && !item.superseded_by && <button type="button" className="pg-btn sm" onClick={() => handleReactivate(item.id)} title="เปิดใช้งานสินค้ากลับ">{tr('เปิดใช้งาน')}</button>}
                       {mayDelete && item.is_active && <button className="tbtn" onClick={() => handleDelete(item.id)} title="ปิดใช้งานสินค้า (เก็บประวัติ)" style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>✕</button>}
                     </div>
                   )}
@@ -1183,7 +1184,7 @@ export default function ProductMaster() {
                             </div>
                             {(canEdit || mayDelete) && (
                               <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                                {canEdit && <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
+                                {canEdit && <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>{tr('แก้ไข')}</button>}
                                 {mayDelete && <button className="tbtn" onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 13 }}>✕</button>}
                               </div>
                             )}
@@ -1193,7 +1194,7 @@ export default function ProductMaster() {
                       {canCreate && (
                         <button type="button" className="pg-btn sm" onClick={() => openKanbanEdit(null, active?.id || members[0]?.id || '', item.mat_no || '')}
                           style={{ alignSelf: 'flex-start', marginTop: 2 }}>
-                          + เพิ่ม MAT.NO
+                          {tr('+ เพิ่ม MAT.NO')}
                         </button>
                       )}
                     </div>
@@ -1244,7 +1245,7 @@ export default function ProductMaster() {
                   </div>
                   <button onClick={() => setExpandedNameGroups(p => ({ ...p, [nameKey]: !isExpGroupExpanded }))}
                     style={{ ...btnSecondary, fontSize: 11, padding: '4px 10px', flexShrink: 0 }}>
-                    {isExpGroupExpanded ? 'ย่อ' : 'ขยาย'}
+                    {isExpGroupExpanded ? tr('ย่อ') : tr('ขยาย')}
                   </button>
                 </div>
 
@@ -1268,7 +1269,7 @@ export default function ProductMaster() {
                         {(canEdit || mayDelete) && (
                           <div style={{ display: 'flex', gap: 4, marginLeft: 'auto', flexShrink: 0 }}>
                             {canEdit && <button type="button" className="pg-btn sm" onClick={() => openEC(v)} title="Engineering Change">EC</button>}
-                            {canEdit && <button type="button" className="pg-btn sm" onClick={() => openEdit(v)}>แก้ไข</button>}
+                            {canEdit && <button type="button" className="pg-btn sm" onClick={() => openEdit(v)}>{tr('แก้ไข')}</button>}
                             {mayDelete && <button className="tbtn" onClick={() => handleDelete(v.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 13 }}>✕</button>}
                           </div>
                         )}
@@ -1301,7 +1302,7 @@ export default function ProductMaster() {
                               </div>
                               {(canEdit || mayDelete) && (
                                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                                  {canEdit && <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>}
+                                  {canEdit && <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>{tr('แก้ไข')}</button>}
                                   {mayDelete && <button className="tbtn" onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 13 }}>✕</button>}
                                 </div>
                               )}
@@ -1311,7 +1312,7 @@ export default function ProductMaster() {
                         {canCreate && allVariants.filter(v => !stds.some(s => s.product_id === v.id)).map(v => (
                           <button type="button" className="pg-btn sm" key={v.id} onClick={() => openKanbanEdit(null, v.id, v.mat_no)}
                             style={{ alignSelf: 'flex-start', marginTop: 2 }}>
-                            + เพิ่ม MAT.NO ({v.customer || v.mat_no})
+                            {tr('+ เพิ่ม MAT.NO (')}{v.customer || v.mat_no})
                           </button>
                         ))}
                       </div>
@@ -1377,7 +1378,7 @@ export default function ProductMaster() {
                   )}
                 </Field>
                 <Field label={ecSource ? 'P.NO ใหม่ *' : 'P.NO'}>
-                  <input value={form.p_no} onChange={e => setForm(f => ({ ...f, p_no: e.target.value }))} placeholder="เช่น RC3B16E061BB" style={{ ...inputSt, borderColor: ecSource ? 'var(--blue-line)' : undefined }} />
+                  <input value={form.p_no} onChange={e => setForm(f => ({ ...f, p_no: e.target.value }))} placeholder={tr('เช่น RC3B16E061BB')} style={{ ...inputSt, borderColor: ecSource ? 'var(--blue-line)' : undefined }} />
                 </Field>
               </div>
               {ecSource && (
@@ -1390,9 +1391,9 @@ export default function ProductMaster() {
                   {/* 2026-09-07: เลือกจากรายชื่อลูกค้าที่ derive จาก Product Master ∪ ship_to_plants (<CustomerSelect>) —
                       EDI/forecast/claim/NPI join ด้วยสตริงนี้ สะกดต่างตัวเดียว = ลูกค้าแตกเป็น 2 ราย · ลูกค้าใหม่ยังพิมพ์ได้พร้อมป้าย */}
                   <CustomerSelect value={form.customer} onChange={({ customer }) => setForm(f => ({ ...f, customer }))}
-                    placeholder="เช่น FORD" inputStyle={{ background: 'var(--bg)', fontFamily: 'var(--font-body)' }} />
+                    placeholder={tr('เช่น FORD')} inputStyle={{ background: 'var(--bg)', fontFamily: 'var(--font-body)' }} />
                 </Field>
-                <Field label="รหัสสินค้า (Code)"><input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="เช่น HDF-001" style={inputSt} /></Field>
+                <Field label="รหัสสินค้า (Code)"><input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder={tr('เช่น HDF-001')} style={inputSt} /></Field>
               </div>
               <Field label="ประเภทกระบวนการ *">
                 <select value={form.process_type} onChange={e => setForm(f => ({ ...f, process_type: e.target.value }))} style={inputSt}>
@@ -1401,26 +1402,26 @@ export default function ProductMaster() {
               </Field>
               <Field label="รูปแบบขึ้นกัมบัง *">
                 <select value={form.posting_mode} onChange={e => setForm(f => ({ ...f, posting_mode: e.target.value }))} style={inputSt}>
-                  <option value="immediate">มีกัมบังก็ผลิต (ขึ้น Order ทุกครั้งที่ scan)</option>
-                  <option value="lot_accumulate">สะสม Lot ก่อนขึ้น Order (Lot Post)</option>
+                  <option value="immediate">{tr('มีกัมบังก็ผลิต (ขึ้น Order ทุกครั้งที่ scan)')}</option>
+                  <option value="lot_accumulate">{tr('สะสม Lot ก่อนขึ้น Order (Lot Post)')}</option>
                 </select>
               </Field>
               {form.posting_mode === 'lot_accumulate' && (
                 <Field label="จำนวนสะสมขั้นต่ำก่อนขึ้น Order (ชิ้น) *">
                   <input type="number" min="1" value={form.lot_accumulate_threshold}
                     onChange={e => setForm(f => ({ ...f, lot_accumulate_threshold: e.target.value }))}
-                    placeholder="เช่น 800, 1000" style={inputSt} />
+                    placeholder={tr('เช่น 800, 1000')} style={inputSt} />
                 </Field>
               )}
               <Field label="ไลน์ผลิตหลัก">
                 {/* 2026-09-07: ผ่าน <LineSelect> (ลำดับชั้น §5.3 ข้อ 8 · ไลน์ปลดระวางไม่โผล่แต่ค่าที่ตั้งไว้ยังเห็น)
                     — ไลน์แม่ยังเลือกได้ (HYDROFORM มีสินค้าผูกตัวแม่) */}
-                <LineSelect lines={lines} value={form.line_name} onChange={v => setForm(f => ({ ...f, line_name: v }))} placeholder="ไม่ระบุ" style={inputSt} />
+                <LineSelect lines={lines} value={form.line_name} onChange={v => setForm(f => ({ ...f, line_name: v }))} placeholder={tr('ไม่ระบุ')} style={inputSt} />
               </Field>
               <Field label="MAT.NO คู่ (RH/LH) — สแกนคู่ 2 ครั้ง เปิด/ปิดอิสระต่อข้าง">
                 <MatSearchField value={form.pair_mat_no} onChange={v => setForm(f => ({ ...f, pair_mat_no: v }))}
                   options={items.filter(i => i.mat_no && i.mat_no !== form.mat_no && i.is_active)}
-                  placeholder="พิมพ์เลข MAT หรือชื่อ เพื่อค้นหาคู่… (ว่าง = ไม่มีคู่)"
+                  placeholder={tr('พิมพ์เลข MAT หรือชื่อ เพื่อค้นหาคู่… (ว่าง = ไม่มีคู่)')}
                   hint="ลิสต์เรียงตามเลข · แสดงเฉพาะสินค้าที่ใช้งานอยู่" />
               </Field>
               {/* 🔩 ชั้น Operation — รายการที่เป็น "ขั้นตอน" ของพาร์ทจริง (เช่นงานขับนัท SUB APRON 1 รายการ/1 OP)
@@ -1429,7 +1430,7 @@ export default function ProductMaster() {
               <div style={{ border: '1px solid var(--blue-line)', borderRadius: 'var(--r-md)', padding: '10px 12px', background: 'var(--blue-dim)' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input type="checkbox" checked={!!form.is_operation} onChange={e => setForm(f => ({ ...f, is_operation: e.target.checked }))} />
-                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--blue)' }}>รายการขั้นตอน (OP) — ไม่ใช่พาร์ทจริง</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--blue)' }}>{tr('รายการขั้นตอน (OP) — ไม่ใช่พาร์ทจริง')}</span>
                 </label>
                 <InfoMore size={11} style={{ marginTop: 4 }} id="pm_op"
                   lead={<>เช่น งานขับนัทแต่ละสเต็ปของชิ้นเดียวกัน</>}>
@@ -1465,11 +1466,11 @@ export default function ProductMaster() {
                               tag: bomMats.has(norm(p.mat_no)) ? '📦BOMไลน์นี้' : '🗂ทะเบียน' }));
                           return [...real, ...bought];
                         })()}
-                        placeholder="พิมพ์เลข MAT หรือชื่อพาร์ทจริง เพื่อค้นหา… (ว่าง = ไม่มีพาร์ทจริงให้ยอดไปซ้ำ)"
+                        placeholder={tr('พิมพ์เลข MAT หรือชื่อพาร์ทจริง เพื่อค้นหา… (ว่าง = ไม่มีพาร์ทจริงให้ยอดไปซ้ำ)')}
                         hint="ชิ้นงานเดียวกันถูกนับ 2 รอบ (ใบของขั้น + ใบของพาร์ทจริง) — ชี้ว่าไปซ้ำกับตัวไหน ระบบจะยุบยอดขั้นเข้าพาร์ทนั้น · **ปลายทางต้องเป็นพาร์ทจริงที่มีใบผลิต (1xxx FG / 2xxx ผลิตเอง)** · เป็น sub ของ sub = ชี้ไปที่ขั้นอื่นก่อนได้ แต่สุดท้ายต้องจบที่ 1xxx/2xxx · ของซื้อนอก (3xxx) / วัตถุดิบ (5xxx) ไม่มีใบผลิต ⇒ ผูกไปก็ไม่มีผล · ไม่มีตัวให้ซ้ำ = ปล่อยว่าง (ถูกแล้ว ไม่ใช่กรอกไม่ครบ) · เรียง: 🏭ไลน์นี้ → 📦ตาม BOM ของไลน์ → ที่เหลือ" />
                     </Field>
                     <Field label="ลำดับขั้น (เลข OP ตาม Process Flow เช่น 190, 200 — ไม่รู้ปล่อยว่าง ห้ามเดา)">
-                      <input type="number" min="0" value={form.op_seq} onChange={e => setForm(f => ({ ...f, op_seq: e.target.value }))} placeholder="เช่น 190" style={inputSt} />
+                      <input type="number" min="0" value={form.op_seq} onChange={e => setForm(f => ({ ...f, op_seq: e.target.value }))} placeholder={tr('เช่น 190')} style={inputSt} />
                     </Field>
                     {/* ⚠️ บอกเมื่อค่าไม่สอดคล้องกับสูตรจริง ห้ามเงียบ
                         (แต่ห้ามเตือนว่า "parent เป็น component ของตัวเอง" — นั่นคือเรื่องปกติ) */}
@@ -1516,8 +1517,8 @@ export default function ProductMaster() {
                 )}
               </div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <Field label="Cycle Time (วินาที)"><input type="number" min="0" step="0.1" value={form.cycle_time_sec} onChange={e => setForm(f => ({ ...f, cycle_time_sec: e.target.value }))} placeholder="เช่น 45.5" style={inputSt} /></Field>
-                <Field label="Target ต่อกะ (ชิ้น)"><input type="number" min="0" value={form.target_per_shift} onChange={e => setForm(f => ({ ...f, target_per_shift: e.target.value }))} placeholder="เช่น 500" style={inputSt} /></Field>
+                <Field label="Cycle Time (วินาที)"><input type="number" min="0" step="0.1" value={form.cycle_time_sec} onChange={e => setForm(f => ({ ...f, cycle_time_sec: e.target.value }))} placeholder={tr('เช่น 45.5')} style={inputSt} /></Field>
+                <Field label="Target ต่อกะ (ชิ้น)"><input type="number" min="0" value={form.target_per_shift} onChange={e => setForm(f => ({ ...f, target_per_shift: e.target.value }))} placeholder={tr('เช่น 500')} style={inputSt} /></Field>
               </div>
               <Field label="รูปภาพ Product (แสดงที่ตู้ Kanban)">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -1540,14 +1541,14 @@ export default function ProductMaster() {
               {!ecSource && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
-                  <span style={{ fontSize: 13, color: 'var(--text)' }}>ใช้งานอยู่</span>
+                  <span style={{ fontSize: 13, color: 'var(--text)' }}>{tr('ใช้งานอยู่')}</span>
                 </label>
               )}
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
-              <button onClick={() => { setEditing(null); setEcSource(null); }} style={btnSecondary}>ยกเลิก</button>
+              <button onClick={() => { setEditing(null); setEcSource(null); }} style={btnSecondary}>{tr('ยกเลิก')}</button>
               <button onClick={handleSave} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1, background: ecSource ? '#7c3aed' : undefined }}>
-                {saving ? (imageUploading ? 'กำลังอัปโหลดรูป...' : '...') : ecSource ? 'บันทึก EC' : 'บันทึก'}
+                {saving ? (imageUploading ? tr('กำลังอัปโหลดรูป...') : '...') : ecSource ? tr('บันทึก EC') : tr('บันทึก')}
               </button>
             </div>
           </div>
@@ -1566,7 +1567,7 @@ export default function ProductMaster() {
                 <Field label="MAT.NO *">
                   {/* 2026-09-07: เลือกจาก Product Master ผ่าน <ProductSelect> (ไม่ allowFree — Kanban Std ของสินค้าที่ไม่มีจริงไม่มีความหมาย)
                       เดิมพิมพ์เอง + ปุ่ม 🗂 parts_master · เลือกแล้วเติม qty ตั้งต้นจาก qty_per_pkg ของ Parts Master เหมือนเดิม */}
-                  <ProductSelect value={kanbanForm.mat_no} products={items} placeholder="ค้น MAT / ชื่อ / P/N…" history={kanbanMatHist}
+                  <ProductSelect value={kanbanForm.mat_no} products={items} placeholder={tr('ค้น MAT / ชื่อ / P/N…')} history={kanbanMatHist}
                     inputStyle={{ background: 'var(--bg)', fontWeight: 700 }}
                     onChange={({ mat_no }) => setKanbanForm(f => {
                       const pm = pmParts.find(p => (p.mat_no || '').trim().toUpperCase() === mat_no);
@@ -1584,13 +1585,13 @@ export default function ProductMaster() {
               </div>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <input type="checkbox" checked={kanbanForm.is_active} onChange={e => setKanbanForm(f => ({ ...f, is_active: e.target.checked }))} />
-                <span style={{ fontSize: 13, color: 'var(--text)' }}>ใช้งานอยู่</span>
+                <span style={{ fontSize: 13, color: 'var(--text)' }}>{tr('ใช้งานอยู่')}</span>
               </label>
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
-              <button onClick={() => setKanbanEditing(null)} style={btnSecondary}>ยกเลิก</button>
+              <button onClick={() => setKanbanEditing(null)} style={btnSecondary}>{tr('ยกเลิก')}</button>
               <button onClick={handleKanbanSave} disabled={kanbanSaving || !kanbanForm.mat_no} style={{ ...btnPrimary, opacity: (kanbanSaving || !kanbanForm.mat_no) ? 0.5 : 1 }}>
-                {kanbanSaving ? '...' : 'บันทึก'}
+                {kanbanSaving ? '...' : tr('บันทึก')}
               </button>
             </div>
           </div>
@@ -1691,8 +1692,8 @@ export default function ProductMaster() {
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
                   <input type="checkbox" checked={csvPreview.overwriteAll}
                     onChange={e => setCsvPreview(p => ({ ...p, overwriteAll: e.target.checked }))} />
-                  <span style={{ color: 'var(--text)', fontWeight: 600 }}>เขียนทับรายการซ้ำทั้งหมด</span>
-                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>(ถ้าปิด จะข้ามรายการซ้ำ เว้นแต่เลือกแต่ละรายการด้านล่าง)</span>
+                  <span style={{ color: 'var(--text)', fontWeight: 600 }}>{tr('เขียนทับรายการซ้ำทั้งหมด')}</span>
+                  <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('(ถ้าปิด จะข้ามรายการซ้ำ เว้นแต่เลือกแต่ละรายการด้านล่าง)')}</span>
                 </label>
               </div>
             )}
@@ -1749,7 +1750,7 @@ export default function ProductMaster() {
 
             {/* footer */}
             <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', flexShrink: 0, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <button onClick={() => setCsvPreview(null)} style={btnSecondary}>ยกเลิก</button>
+              <button onClick={() => setCsvPreview(null)} style={btnSecondary}>{tr('ยกเลิก')}</button>
               <button onClick={confirmCsvImport} style={btnPrimary}>
                 {(() => {
                   const selectedDups = csvPreview.dupRows.filter(d => csvPreview.overwriteAll || d.include).length;
@@ -1773,7 +1774,7 @@ export default function ProductMaster() {
 const EMPTY_BOM = { qty_per_unit: 1, qty_per_pkg: '', note: '', source_line: '', item_no: '', storage_location: '', op_no: '' };
 
 const TH = ({ children, w }) => (
-  <th style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap', width: w }}>{children}</th>
+  <th style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap', width: w }}>{tr(children)}</th>
 );
 const TD = ({ children, style }) => (
   <td style={{ padding: '8px 10px', fontSize: 13, color: 'var(--text)', borderTop: '1px solid var(--border)', ...style }}>{children}</td>
@@ -1843,7 +1844,7 @@ function OpStepsPanel({ parent, products, bomIx, parentKids, canEdit, guard, ful
                 {canEdit && choices.length > 0 && adding !== op.id && (
                   <button className="pg-btn" disabled={busy} onClick={() => { setAdding(op.id); setPick({}); }}>+ เลือกของที่ขั้นนี้กิน</button>
                 )}
-                <button className="pg-btn" onClick={() => onOpenSheet?.(op.mat_no)} title="ของที่ขั้นใส่เพิ่มนอก BOM แม่ (เช่นนัทของขั้น) แก้ที่ใบของขั้น">เปิดใบของขั้น</button>
+                <button className="pg-btn" onClick={() => onOpenSheet?.(op.mat_no)} title="ของที่ขั้นใส่เพิ่มนอก BOM แม่ (เช่นนัทของขั้น) แก้ที่ใบของขั้น">{tr('เปิดใบของขั้น')}</button>
               </span>
             </div>
             <div style={{ marginTop: 5, fontSize: 12, lineHeight: 1.7 }}>
@@ -1880,7 +1881,7 @@ function OpStepsPanel({ parent, products, bomIx, parentKids, canEdit, guard, ful
                   );
                 })}
                 <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                  <button className="pg-btn" disabled={busy} onClick={() => save(op)}>💾 บันทึก</button>
+                  <button className="pg-btn" disabled={busy} onClick={() => save(op)}>{tr('💾 บันทึก')}</button>
                   <button className="pg-btn" disabled={busy} onClick={() => { setAdding(null); setPick({}); }}>ยกเลิก</button>
                 </div>
               </div>
@@ -2668,7 +2669,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
         {canCreate && (
           <button type="button" className="pg-btn sm" onClick={() => setHeadPick(true)} disabled={headBusy}
             style={{ marginTop: 8, width: '100%' }}>
-            {headBusy ? 'กำลังเปิดใบ…' : 'เปิดใบ BOM ให้พาร์ทจากทะเบียน'}
+            {headBusy ? tr('กำลังเปิดใบ…') : tr('เปิดใบ BOM ให้พาร์ทจากทะเบียน')}
           </button>
         )}
         {/* 📥 นำเข้าจาก SAP — **อยู่แผงซ้าย ไม่ใช่ในหัวใบที่เลือก** (user 01/10: "ควรมีตั้งแต่ยังไม่กดที่พาร์ท")
@@ -2678,7 +2679,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
           <button type="button" className="pg-btn sm" onClick={() => sapFileRef.current?.click()} disabled={sapBusy}
             title="Display Multilevel BOM (CS12) หรือ BOM & Routing Report ที่ export จาก SAP — ระบบหาใบปลายทางจากเลข Material ในไฟล์เอง"
             style={{ marginTop: 6, width: '100%' }}>
-            {sapBusy ? 'กำลังอ่าน…' : 'นำเข้า BOM จาก SAP'}
+            {sapBusy ? tr('กำลังอ่าน…') : tr('นำเข้า BOM จาก SAP')}
           </button>
         )}
         <input ref={sapFileRef} type="file" accept=".xls,.txt,.tsv,.csv" style={{ display: 'none' }} onChange={handleSapFile} />
@@ -2740,7 +2741,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
                 <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--blue)' }}>มุมมองพาร์ท {partView.mat}</span>
                 <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{nameOfMat(partView.mat)}</span>
                 <button type="button" onClick={() => setPartView(null)}
-                  style={{ ...btnSecondary, padding: '3px 10px', fontSize: 11.5, marginLeft: 'auto' }}>ปิดมุมมองนี้</button>
+                  style={{ ...btnSecondary, padding: '3px 10px', fontSize: 11.5, marginLeft: 'auto' }}>{tr('ปิดมุมมองนี้')}</button>
               </div>
               {parentsBar(partView.mat)}
               <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7, margin: '8px 0' }}>
@@ -2802,8 +2803,8 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
               </div>
               {canCreate && (
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button type="button" className="pg-btn sm primary" onClick={() => openPicker('')}>+ เพิ่มพาร์ทย่อย</button>
-                  <button type="button" className="pg-btn sm" onClick={() => { setCopySource(''); setShowCopyBom(true); }}>คัดลอก BOM จาก...</button>
+                  <button type="button" className="pg-btn sm primary" onClick={() => openPicker('')}>{tr('+ เพิ่มพาร์ทย่อย')}</button>
+                  <button type="button" className="pg-btn sm" onClick={() => { setCopySource(''); setShowCopyBom(true); }}>{tr('คัดลอก BOM จาก...')}</button>
 
                 </div>
               )}
@@ -2864,7 +2865,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
                       ))}
                       <button type="button" onClick={() => openSheetOfMat(products.find(pr => pr.id === showId)?.mat_no || '')}
                         disabled={!products.find(pr => pr.id === showId)?.mat_no}
-                        style={{ ...btnSecondary, padding: '3px 9px', fontSize: 11 }}>ไปเปิดใบนั้น</button>
+                        style={{ ...btnSecondary, padding: '3px 9px', fontSize: 11 }}>{tr('ไปเปิดใบนั้น')}</button>
                     </div>
                     <BomTreeView rootMat={selProduct.mat_no} rootName={selProduct.name}
                       bomOf={bomIx.bomOf} sheetFor={bomIx.sheetFor} ownSheetOf={bomIx.ownSheetOf}
@@ -2901,9 +2902,9 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
                             <select value={it.parent_mat || ''} onChange={e => doMoveLine(it, e.target.value)}
                               title="ย้ายบรรทัดนี้ไปเป็นลูกของบรรทัดอื่นในใบเดียวกัน"
                               style={{ ...inputSt, width: 140, padding: '4px 6px', fontSize: 11.5 }}>
-                              <option value="">— ชั้น 1 (ใต้ {selProduct.mat_no || 'FG'}) —</option>
+                              <option value="">{tr('— ชั้น 1 (ใต้')} {selProduct.mat_no || 'FG'}) —</option>
                               {items.filter(o => o.id !== it.id && o.mat_no).map(o => (
-                                <option key={o.id} value={o.mat_no}>ใต้ {o.mat_no}</option>
+                                <option key={o.id} value={o.mat_no}>{tr('ใต้')} {o.mat_no}</option>
                               ))}
                             </select>
                           ) : (
@@ -2992,9 +2993,9 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
                 <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>เพิ่มเข้าไปใต้:</span>
                 <select value={pickerParent} onChange={e => { setPickerParent(e.target.value); setPickerSel([]); }}
                   style={{ ...inputSt, width: 260, padding: '5px 8px', fontSize: 12, background: 'var(--bg2)' }}>
-                  <option value="">— ชั้น 1 (ใต้ {selProduct?.mat_no || 'FG'}) —</option>
+                  <option value="">{tr('— ชั้น 1 (ใต้')} {selProduct?.mat_no || 'FG'}) —</option>
                   {[...new Map(items.filter(o => o.mat_no).map(o => [o.mat_no, o])).values()].map(o => (
-                    <option key={o.id} value={o.mat_no}>ใต้ {o.part_name || o.mat_no}{o.part_name ? ` · MAT ${o.mat_no}` : ''}</option>
+                    <option key={o.id} value={o.mat_no}>{tr('ใต้')} {o.part_name || o.mat_no}{o.part_name ? ` · MAT ${o.mat_no}` : ''}</option>
                   ))}
                 </select>
                 {pickerParent && (
@@ -3055,7 +3056,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
                     </div>
                     {sel && (
                       <div onClick={e => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                        <label style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, whiteSpace: 'nowrap' }}>QTY/ชิ้น</label>
+                        <label style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, whiteSpace: 'nowrap' }}>{tr('QTY/ชิ้น')}</label>
                         <input type="number" min="0.001" step="any" value={sel.qty_per_unit}
                           onChange={e => setPickQty(p.id, e.target.value)}
                           style={{ ...inputSt, width: 72, textAlign: 'center', fontSize: 14, fontWeight: 800, padding: '4px 8px', background: 'var(--bg)' }} />
@@ -3074,7 +3075,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
                   : 'คลิกพาร์ทเพื่อเลือก'}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => setShowPicker(false)} style={btnSecondary}>ยกเลิก</button>
+                <button onClick={() => setShowPicker(false)} style={btnSecondary}>{tr('ยกเลิก')}</button>
                 <button onClick={handlePickerSave} disabled={saving || !pickerSel.length}
                   style={{ ...btnPrimary, opacity: (saving || !pickerSel.length) ? 0.5 : 1 }}>
                   {saving ? '...' : `เพิ่ม ${pickerSel.length || ''} พาร์ท`}
@@ -3097,25 +3098,25 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
                   ⇒ แถวที่ชื่อเข้ามาผิด (เช่นนำเข้าแล้วได้เลข MAT เป็นชื่อ) **แก้ในจอไม่ได้เลย**
                   SAP ยัด "ชื่อ + Part No." ไว้ในคอลัมน์ Object description ช่องเดียว ⇒ ต้องแยกเองได้ */}
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ชื่อพาร์ท (Part Name) *</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('ชื่อพาร์ท (Part Name) *')}</label>
                 <input style={inputSt} value={form.part_name} onChange={e => setForm(f => ({ ...f, part_name: e.target.value }))}
-                  placeholder="เช่น PACK SUPT ASY RAD-FVL" />
+                  placeholder={tr('เช่น PACK SUPT ASY RAD-FVL')} />
                 {String(form.part_name).trim() === String(editItem.mat_no).trim() && (
                   <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, marginTop: 3 }}>⚠ ชื่อยังเป็นเลข MAT — แถวนี้นำเข้ามาตอนตัวแกะยังอ่านคอลัมน์ชื่อไม่ได้ (แก้แล้ว 02/10) · นำเข้าไฟล์เดิมซ้ำจะเติมชื่อให้เอง</div>
                 )}
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Part No. (ลูกค้า)</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('Part No. (ลูกค้า)')}</label>
                 <input style={{ ...inputSt, fontFamily: 'monospace' }} value={form.part_no} onChange={e => setForm(f => ({ ...f, part_no: e.target.value }))}
-                  placeholder="SAP ไม่มีคอลัมน์นี้แยก — อยู่ในชื่อ เช่น …-MB3B-8A297-CB" />
+                  placeholder={tr('SAP ไม่มีคอลัมน์นี้แยก — อยู่ในชื่อ เช่น …-MB3B-8A297-CB')} />
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>QTY / ชิ้นงาน *</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('QTY / ชิ้นงาน *')}</label>
                 <input autoFocus type="number" min="0.001" step="any" style={{ ...inputSt, fontSize: 22, fontWeight: 900, textAlign: 'center' }} value={form.qty_per_unit} onChange={e => setForm(f => ({ ...f, qty_per_unit: e.target.value }))} />
               </div>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>QTY / Packaging</label>
-                <input type="number" min="1" step="any" style={inputSt} value={form.qty_per_pkg} onChange={e => setForm(f => ({ ...f, qty_per_pkg: e.target.value }))} placeholder="จำนวนต่อกล่อง/แพ็ค" />
+                <input type="number" min="1" step="any" style={inputSt} value={form.qty_per_pkg} onChange={e => setForm(f => ({ ...f, qty_per_pkg: e.target.value }))} placeholder={tr('จำนวนต่อกล่อง/แพ็ค')} />
               </div>
               {/* 🏭 ขั้นตอนที่ชิ้นนี้ถูกใส่เข้าไป (PFC) — จุดที่ **เหนือ SAP** (2026-09-16 · คำสั่ง user
                   "ถ้าทำเลเวล bom ได้แบบ pfc … เหนือกว่า sap ตรงที่เรามี OP")
@@ -3123,11 +3124,11 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
                   เป็น optional ที่แทบไม่มีใคร maintain · ของเราบรรทัดเดียวตอบทั้งสองคำถาม */}
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>
-                  ขั้นตอนที่ใส่เข้าไป (เลข OP ตาม PFC)
+                  {tr('ขั้นตอนที่ใส่เข้าไป (เลข OP ตาม PFC)')}
                 </label>
                 <input style={{ ...inputSt, fontFamily: 'monospace' }} maxLength={20}
                   value={form.op_no} onChange={e => setForm(f => ({ ...f, op_no: e.target.value }))}
-                  placeholder="เช่น 190 — ไม่รู้ปล่อยว่าง ห้ามเดา" />
+                  placeholder={tr('เช่น 190 — ไม่รู้ปล่อยว่าง ห้ามเดา')} />
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.4 }}>
                   ใช้ตอบ "ของเสียหลุดขั้นไหน ตัดอะไร" · "สโตร์ต้องส่งของนี้ไปขั้นไหน" — ว่าง = ยังไม่ระบุ (ไม่ใช่ error)
                 </div>
@@ -3135,7 +3136,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
               {/* 📍 2 ช่องนี้เทียบกับ SAP โดยตรง (user ทัก 2026-09-02 ว่าเรายังไม่มี) */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>เลขรายการ (Item)</label>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('เลขรายการ (Item)')}</label>
                   <input type="number" min="1" max="9999" step="10" style={{ ...inputSt, fontFamily: 'monospace' }}
                     value={form.item_no} onChange={e => setForm(f => ({ ...f, item_no: e.target.value }))}
                     placeholder={String(nextItemNo(items))} />
@@ -3145,24 +3146,24 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
                   </div>
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>คลังที่เบิก (Stor.Loc.)</label>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('คลังที่เบิก (Stor.Loc.)')}</label>
                   {/* เลือกจากทะเบียนเป็นหลัก — รหัสต้องนิ่ง ไม่งั้นจับคู่ไม่ได้
                       แต่ต้องพิมพ์เองได้ด้วย (PE อาจไม่มีสิทธิ์แก้ทะเบียน = ห้ามทางตัน) */}
                   {slocFree ? (
                     <input autoFocus style={{ ...inputSt, fontFamily: 'monospace', textTransform: 'uppercase' }} maxLength={6}
                       value={form.storage_location} onChange={e => setForm(f => ({ ...f, storage_location: e.target.value }))}
-                      placeholder="เช่น S401" />
+                      placeholder={tr('เช่น S401')} />
                   ) : (
                     <select style={{ ...inputSt, fontFamily: 'monospace' }} value={slocInList ? slocLabel(form.storage_location) : ''}
                       onChange={e => {
                         if (e.target.value === '__free') { setSlocFree(true); setForm(f => ({ ...f, storage_location: '' })); return; }
                         setForm(f => ({ ...f, storage_location: e.target.value }));
                       }}>
-                      <option value="">— ยังไม่ระบุ —</option>
+                      <option value="">{tr('— ยังไม่ระบุ —')}</option>
                       {slocChoices.map(s => (
                         <option key={s.code} value={s.code}>{s.code} · {s.name}</option>
                       ))}
-                      <option value="__free">พิมพ์รหัสเอง (ยังไม่ลงทะเบียน)</option>
+                      <option value="__free">{tr('พิมพ์รหัสเอง (ยังไม่ลงทะเบียน)')}</option>
                     </select>
                   )}
                   <div style={{ fontSize: 11, marginTop: 3, lineHeight: 1.45 }}>
@@ -3183,20 +3184,20 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
                 </div>
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ผลิตที่ไลน์ (source line — พาร์ทผลิตเอง 200)</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('ผลิตที่ไลน์ (source line — พาร์ทผลิตเอง 200)')}</label>
                 {/* 2026-09-07: source_line เป็น join key (Heijunka/StoreLotQueue/FlowTower/VSM จัดกลุ่มด้วยชื่อนี้) → เลือกจากทะเบียนไลน์
                     ผ่าน <LineSelect> ห้ามพิมพ์เอง (HDF-1 vs HDF1 = ไลน์ผีเงียบๆ) · ว่าง = ของซื้อ/วัตถุดิบ */}
                 <LineSelect lines={plLines} value={form.source_line} onChange={v => setForm(f => ({ ...f, source_line: v }))}
-                  placeholder="เว้นว่าง = ของซื้อ/วัตถุดิบ (ดึงจากสโตร์)" style={inputSt} />
+                  placeholder={tr('เว้นว่าง = ของซื้อ/วัตถุดิบ (ดึงจากสโตร์)')} style={inputSt} />
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>หมายเหตุ</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('หมายเหตุ')}</label>
                 <input style={inputSt} value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-              <button onClick={() => setShowEdit(false)} style={btnSecondary}>ยกเลิก</button>
-              <button onClick={handleEditSave} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : 'บันทึก'}</button>
+              <button onClick={() => setShowEdit(false)} style={btnSecondary}>{tr('ยกเลิก')}</button>
+              <button onClick={handleEditSave} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : tr('บันทึก')}</button>
             </div>
           </div>
         </div>
@@ -3239,9 +3240,9 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
                 </span>
                 <span style={{ display: 'flex', gap: 6, marginLeft: 'auto' }}>
                   <button type="button" onClick={() => setSapPn(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, { ...v, use: true }])))}
-                    style={{ ...btnSecondary, padding: '3px 10px', fontSize: 11 }}>ติ๊กทั้งหมด</button>
+                    style={{ ...btnSecondary, padding: '3px 10px', fontSize: 11 }}>{tr('ติ๊กทั้งหมด')}</button>
                   <button type="button" onClick={() => setSapPn(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, { ...v, use: false }])))}
-                    style={{ ...btnSecondary, padding: '3px 10px', fontSize: 11 }}>ล้างทั้งหมด</button>
+                    style={{ ...btnSecondary, padding: '3px 10px', fontSize: 11 }}>{tr('ล้างทั้งหมด')}</button>
                 </span>
               </div>
               {pkgMissing > 0 && (
@@ -3267,7 +3268,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
                   <thead><tr style={{ position: 'sticky', top: 0, background: 'var(--bg2)' }}>
                     {/* ลำดับคอลัมน์ตามกฎ 30/09: Part Name ก่อน MAT SAP (เลข MAT เป็นรหัสภายใน) */}
                     {['', 'ชั้น', 'ITEM', 'รายละเอียด', 'Part No. (เสนอ)', 'MAT SAP', 'จำนวน', 'หน่วย', 'QTY/PKG', 'ใต้', 'Prod.SLoc', 'Stor.Loc'].map(h =>
-                      <th key={h} style={{ ...cell, textAlign: 'left', fontWeight: 700, color: 'var(--muted)' }}>{h}</th>)}
+                      <th key={h} style={{ ...cell, textAlign: 'left', fontWeight: 700, color: 'var(--muted)' }}>{tr(h)}</th>)}
                   </tr></thead>
                   <tbody>
                     {[...diff.add.map(r => ({ ...r, _k: '➕' })), ...diff.update.map(r => ({ ...r, _k: '✏️' }))].map((r, i) => (
@@ -3314,7 +3315,7 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
                 </table>
               </div>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-                <button onClick={() => setSapImp(null)} disabled={sapBusy} style={{ ...btnSecondary, padding: '8px 16px' }}>ยกเลิก</button>
+                <button onClick={() => setSapImp(null)} disabled={sapBusy} style={{ ...btnSecondary, padding: '8px 16px' }}>{tr('ยกเลิก')}</button>
                 <button type="button" className="pg-btn sm primary" onClick={applySapImport} disabled={sapBusy || (!diff.add.length && !diff.update.length && !miss.length)}
                   style={{ opacity: sapBusy ? 0.6 : 1 }}>
                   {sapBusy ? 'กำลังนำเข้า…' : `นำเข้า (เพิ่ม ${diff.add.length} · แก้ ${diff.update.length})`}
@@ -3333,21 +3334,21 @@ function BOMPanel({ canCreate, canEdit, mayDelete, fullName, guard }) {
               คัดลอกพาร์ทจาก BOM ของ product ที่เลือก เข้ามาใน <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{selProduct?.name}</span>
               <br/>(พาร์ทที่มีอยู่แล้วจะถูกข้าม)
             </div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>เลือก Product ต้นฉบับ</label>
+            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 6 }}>{tr('เลือก Product ต้นฉบับ')}</label>
             <select style={{ ...inputSt, marginBottom: 20 }} value={copySource} onChange={e => setCopySource(e.target.value)}>
-              <option value="">— เลือก product —</option>
+              <option value="">{tr('— เลือก product —')}</option>
               {products
                 .filter(p => p.id !== selProduct?.id && (counts[p.id] || 0) > 0)
                 .map(p => (
                   <option key={p.id} value={p.id}>
-                    {p.name}{p.customer ? ` [${p.customer}]` : ''}{p.line_name ? ` · ${p.line_name}` : ''} — {counts[p.id]} พาร์ท
+                    {p.name}{p.customer ? ` [${p.customer}]` : ''}{p.line_name ? ` · ${p.line_name}` : ''} — {counts[p.id]} {tr('พาร์ท')}
                   </option>
                 ))}
             </select>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button onClick={() => setShowCopyBom(false)} style={btnSecondary}>ยกเลิก</button>
+              <button onClick={() => setShowCopyBom(false)} style={btnSecondary}>{tr('ยกเลิก')}</button>
               <button onClick={handleCopyBom} disabled={copying || !copySource} style={{ ...btnPrimary, opacity: (copying || !copySource) ? 0.5 : 1 }}>
-                {copying ? '...' : 'คัดลอก BOM'}
+                {copying ? '...' : tr('คัดลอก BOM')}
               </button>
             </div>
           </div>
@@ -3445,7 +3446,7 @@ function ExportPanel() {
               <button onClick={() => run(e)} disabled={!!busy || missing || !n}
                 style={{ ...btnPrimary, width: '100%', textAlign: 'center', fontSize: 12,
                   opacity: (busy || missing || !n) ? 0.5 : 1, cursor: (busy || missing || !n) ? 'not-allowed' : 'pointer' }}>
-                {busy === e.key ? 'กำลังดึง…' : 'ดาวน์โหลด CSV'}
+                {busy === e.key ? tr('กำลังดึง…') : tr('ดาวน์โหลด CSV')}
               </button>
             </div>
           );
@@ -3676,12 +3677,12 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
             title="rev เก่าที่ถูก EC แทนแล้ว — ของจริงอยู่ที่แท็บ 3️⃣ Products"
             style={{ ...btnSecondary, padding: '6px 12px', fontSize: 12, whiteSpace: 'nowrap',
               borderColor: hideOld ? 'var(--accent)' : 'var(--border)', color: hideOld ? 'var(--accent)' : 'var(--text2)' }}>
-            {hideOld ? '☑' : '☐'} ซ่อน rev ที่ถูกแทนแล้ว ({supersededCount})
+            {hideOld ? '☑' : '☐'} {tr('ซ่อน rev ที่ถูกแทนแล้ว (')}{supersededCount})
           </button>
         )}
         <select value={prefixFilter} onChange={e => setPFilter(e.target.value)}>
-          <option value="">{ALL.type}</option>
-          {MAT_PREFIXES.map(m => <option key={m.prefix} value={m.prefix}>{m.label}</option>)}
+          <option value="">{tr(ALL.type)}</option>
+          {MAT_PREFIXES.map(m => <option key={m.prefix} value={m.prefix}>{tr(m.label)}</option>)}
         </select>
         <SearchInput value={search} onChange={setSearch} fields="Part Name / Mat SAP / Part No. / Supplier" />
         <span className="spacer" />
@@ -3689,10 +3690,10 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
           <button onClick={downloadPartsTemplate} style={{ ...btnSecondary, fontSize: 12 }}>CSV Template</button>
           <button onClick={() => csvRef.current?.click()} disabled={csvImporting}
             style={{ ...btnSecondary, fontSize: 12, opacity: csvImporting ? 0.6 : 1 }}>
-            {csvImporting ? 'กำลังนำเข้า...' : 'นำเข้า CSV'}
+            {csvImporting ? tr('กำลังนำเข้า...') : tr('นำเข้า CSV')}
           </button>
           <input ref={csvRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handlePartsCsvUpload} />
-          <button onClick={openNew} style={btnPrimary}>เพิ่มพาร์ท</button>
+          <button onClick={openNew} style={btnPrimary}>{tr('เพิ่มพาร์ท')}</button>
         </>}
       </FilterBar>
 
@@ -3706,15 +3707,15 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
               <tr>
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}></th>
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' }}>Mat SAP</th>
-                <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>ชื่อพาร์ท</th>
+                <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{tr('ชื่อพาร์ท')}</th>
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>Part No.</th>
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>UOM</th>
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'right' }}>Qty/Pkg</th>
-                <th title="ที่จัดเก็บหลัก (05/11) — สโตร์หยิบจากพื้นที่นี้" style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' }}>ที่จัดเก็บ</th>
-                <th title="Material Cost บาท/ชิ้น (raw mat)" style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'right', whiteSpace: 'nowrap' }}>Mat ฿</th>
-                <th title="Standard Cost บาท/ชิ้น จากบัญชี (รวม mat+DL+OH+DP) — ใช้คิด cost saving" style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'right', whiteSpace: 'nowrap' }}>Std ฿</th>
+                <th title="ที่จัดเก็บหลัก (05/11) — สโตร์หยิบจากพื้นที่นี้" style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' }}>{tr('ที่จัดเก็บ')}</th>
+                <th title="Material Cost บาท/ชิ้น (raw mat)" style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'right', whiteSpace: 'nowrap' }}>{tr('Mat ฿')}</th>
+                <th title="Standard Cost บาท/ชิ้น จากบัญชี (รวม mat+DL+OH+DP) — ใช้คิด cost saving" style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'right', whiteSpace: 'nowrap' }}>{tr('Std ฿')}</th>
                 <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>Supplier</th>
-                <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'center' }}>สถานะ</th>
+                <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'center' }}>{tr('สถานะ')}</th>
                 {canEdit && <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)' }}></th>}
               </tr>
             </thead>
@@ -3816,10 +3817,10 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Mat SAP * <span style={{ fontWeight: 500 }}>(ตัวเลข 8 หลัก)</span></label>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Mat SAP * <span style={{ fontWeight: 500 }}>{tr('(ตัวเลข 8 หลัก)')}</span></label>
                   <input style={{ ...inputSt, fontFamily: 'monospace', color: matColor(form.mat_no) }}
                     value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value }))}
-                    placeholder="เช่น 30051864" />
+                    placeholder={tr('เช่น 30051864')} />
                   {/* ทะเบียนกลางเก็บเฉพาะเลข SAP จริง (ชั้น OP ห้ามเข้าที่นี่) → เตือนได้โดยไม่มี false positive
                       ⚠️ เตือน ไม่บล็อก — ข้อมูลเก่า/เคสยกเว้นต้องยังบันทึกได้ */}
                   {form.mat_no.trim() && !isSapMat(form.mat_no) && (
@@ -3840,10 +3841,10 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                 <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Part Name *</label>
                 <input autoFocus={!editPart} style={inputSt}
                   value={form.part_name} onChange={e => setForm(f => ({ ...f, part_name: e.target.value }))}
-                  placeholder="ชื่อพาร์ท" />
+                  placeholder={tr('ชื่อพาร์ท')} />
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>รูปภาพพาร์ท</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('รูปภาพพาร์ท')}</label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   {(imagePreview || form.image_url) && (
                     <img loading="lazy" src={imagePreview || form.image_url} alt="" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
@@ -3866,7 +3867,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                   <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>UOM</label>
                   <select style={inputSt} value={form.uom || ''} onChange={e => setForm(f => ({ ...f, uom: e.target.value }))}>
                     {/* ลิสต์จากทะเบียน `uom_units` (/products แท็บ 📏 หน่วยนับ) · ค่าเดิมนอกทะเบียนโชว์เป็น "ค่าเดิม" ไม่ขึ้นตัวแรกแทน */}
-                    {uomOptions(uomIdx, form.uom).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    {uomOptions(uomIdx, form.uom).map(o => <option key={o.value} value={o.value}>{tr(o.label)}</option>)}
                   </select>
                   {uomState.failed && <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>{registryFailText('ทะเบียนหน่วยนับ', uomState.stale)}</div>}
                 </div>
@@ -3874,22 +3875,22 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                   <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Qty / Packaging</label>
                   <input type="number" min="1" step="any" style={inputSt}
                     value={form.qty_per_pkg} onChange={e => setForm(f => ({ ...f, qty_per_pkg: e.target.value }))}
-                    placeholder="จำนวนต่อกล่อง" />
+                    placeholder={tr('จำนวนต่อกล่อง')} />
                 </div>
               </div>
               {/* ต้นทุน/ชิ้น — ใช้คิด cost saving ของเสียใน /improvements (standard ชนะ material เสมอ) */}
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Material Cost (บาท/ชิ้น)</label>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('Material Cost (บาท/ชิ้น)')}</label>
                   <input type="number" min="0" step="any" style={inputSt}
                     value={form.material_cost ?? ''} onChange={e => setForm(f => ({ ...f, material_cost: e.target.value }))}
-                    placeholder="ต้นทุนวัตถุดิบ (raw mat)" />
+                    placeholder={tr('ต้นทุนวัตถุดิบ (raw mat)')} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Standard Cost (บาท/ชิ้น)</label>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('Standard Cost (บาท/ชิ้น)')}</label>
                   <input type="number" min="0" step="any" style={inputSt}
                     value={form.standard_cost ?? ''} onChange={e => setForm(f => ({ ...f, standard_cost: e.target.value }))}
-                    placeholder="จากบัญชี (รวม mat+DL+OH+DP)" />
+                    placeholder={tr('จากบัญชี (รวม mat+DL+OH+DP)')} />
                 </div>
               </div>
               <div>
@@ -3897,29 +3898,29 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
                 {/* 2026-09-08: เลือกจากทะเบียน suppliers (วัตถุดิบ/ผลิตเองขึ้นก่อน) — พิมพ์เองได้พร้อมป้าย · ค่าที่เก็บยังเป็นชื่อ text */}
                 <SupplierSelect value={form.supplier || ''} kinds={['material', 'internal']}
                   onChange={r => setForm(f => ({ ...f, supplier: r.supplier }))}
-                  placeholder="ชื่อ Supplier / ผู้ผลิต" inputStyle={inputSt} />
+                  placeholder={tr('ชื่อ Supplier / ผู้ผลิต')} inputStyle={inputSt} />
               </div>
               <div>
                 {/* 🏠 05/11 (คำสั่ง user) — "ที่จัดเก็บหลัก" ของพาร์ท ≠ ไลน์ที่ผลิต · สโตร์หยิบจากที่นี่ แล้วส่งไปพื้นที่ของไลน์ที่เปิดใบผลิตแม่
                     เลือกได้เฉพาะรหัสสโตร์/คลัง (S/R/W) · ว่าง = ยังไม่ตั้ง (ระบบไม่เดาจากเลข MAT) */}
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ที่จัดเก็บหลัก (สโตร์/คลัง)</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('ที่จัดเก็บหลัก (สโตร์/คลัง)')}</label>
                 <StorageLocSelect value={form.home_sloc || ''} kinds={STORE_SLOC_KINDS} allowFree={false}
                   onChange={v => setForm(f => ({ ...f, home_sloc: typeof v === 'string' ? v : (v?.code || '') }))}
-                  placeholder="เช่น S402 · R401 · W401" inputStyle={inputSt} />
+                  placeholder={tr('เช่น S402 · R401 · W401')} inputStyle={inputSt} />
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>หมายเหตุ</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('หมายเหตุ')}</label>
                 <input style={inputSt}
                   value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
               </div>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
                 <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
-                เปิดใช้งาน
+                {tr('เปิดใช้งาน')}
               </label>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
-              <button onClick={() => setShowModal(false)} style={btnSecondary}>ยกเลิก</button>
-              <button onClick={handleSave} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? (imageUploading ? 'กำลังอัปโหลดรูป...' : '...') : 'บันทึก'}</button>
+              <button onClick={() => setShowModal(false)} style={btnSecondary}>{tr('ยกเลิก')}</button>
+              <button onClick={handleSave} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? (imageUploading ? tr('กำลังอัปโหลดรูป...') : '...') : tr('บันทึก')}</button>
             </div>
           </div>
         </div>
@@ -4037,7 +4038,7 @@ function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
           <h3 style={{ margin: 0, fontSize: 'clamp(16px,2vw,20px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>Packaging</h3>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>ผูกภาชนะกับ product · พอ FG ผลิต → ยิงใบเบิกภาชนะไป Rack Center อัตโนมัติ · ใช้ฐานภาชนะเดียวกับ Rack Center</p>
         </div>
-        {canEdit && <button onClick={() => setShowMaster(true)} style={{ ...btnSecondary }}>จัดการภาชนะ (Container Types) ({masters.length})</button>}
+        {canEdit && <button onClick={() => setShowMaster(true)} style={{ ...btnSecondary }}>{tr('จัดการภาชนะ (Container Types) (')}{masters.length})</button>}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(240px, 320px) 1fr', gap: 16, alignItems: 'start' }}>
@@ -4068,7 +4069,7 @@ function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
             <>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 10, flexWrap: 'wrap' }}>
                 <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{selProduct.name}</div>
-                {canCreate && <button onClick={openAddLink} style={{ ...btnPrimary }}>+ ผูก Packaging</button>}
+                {canCreate && <button onClick={openAddLink} style={{ ...btnPrimary }}>{tr('+ ผูก Packaging')}</button>}
               </div>
               {loading ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด...</div>
                 : links.length === 0 ? <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--bg2)', borderRadius: 'var(--r-md)', border: '1px dashed var(--border)' }}>ยังไม่ผูก packaging{canCreate && ' — กด "+ ผูก Packaging"'}</div>
@@ -4103,27 +4104,27 @@ function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 16, fontFamily: 'var(--font-display)' }}>{editLink ? '✏️ แก้ไข' : '➕ ผูก'} Packaging</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ภาชนะ *</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('ภาชนะ *')}</label>
                 <select style={inputSt} value={linkForm.packaging_code} disabled={!!editLink}
                   onChange={e => { const m = masters.find(x => x.code === e.target.value); setLinkForm(f => ({ ...f, packaging_code: e.target.value, packaging_name: m?.name || '' })); }}>
-                  <option value="">— เลือกภาชนะ (Container Types) —</option>
+                  <option value="">{tr('— เลือกภาชนะ (Container Types) —')}</option>
                   {masters.map(m => <option key={m.id} value={m.code}>{m.code} · {m.name}{m.category ? ` (${m.category})` : ''}</option>)}
                 </select>
                 {masters.length === 0 && <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>ยังไม่มีภาชนะ — กด "🗃 จัดการภาชนะ" เพิ่มก่อน</div>}
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>จำนวนชิ้น FG ต่อ 1 บรรจุภัณฑ์ *</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('จำนวนชิ้น FG ต่อ 1 บรรจุภัณฑ์ *')}</label>
                 <input type="number" min="1" step="1" style={{ ...inputSt, textAlign: 'center', fontWeight: 900, fontSize: 16 }} value={linkForm.pcs_per_pkg} onChange={e => setLinkForm(f => ({ ...f, pcs_per_pkg: e.target.value }))} />
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>เช่น 100 = 1 กล่องใส่ได้ 100 ชิ้น → ผลิต 200 ชิ้น เบิก 2 กล่อง</div>
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>หมายเหตุ</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('หมายเหตุ')}</label>
                 <input style={inputSt} value={linkForm.note} onChange={e => setLinkForm(f => ({ ...f, note: e.target.value }))} />
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-              <button onClick={() => setShowLink(false)} style={btnSecondary}>ยกเลิก</button>
-              <button onClick={saveLink} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : 'บันทึก'}</button>
+              <button onClick={() => setShowLink(false)} style={btnSecondary}>{tr('ยกเลิก')}</button>
+              <button onClick={saveLink} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : tr('บันทึก')}</button>
             </div>
           </div>
         </div>
@@ -4138,13 +4139,13 @@ function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
             {canEdit && (
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr 1fr 1fr auto', gap: 8, alignItems: 'end', marginBottom: 14 }}>
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>Code *</label><input style={inputSt} value={masterForm.code} onChange={e => setMasterForm(f => ({ ...f, code: e.target.value }))} placeholder="BOX-A" /></div>
-                <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>ชื่อ *</label><input style={inputSt} value={masterForm.name} onChange={e => setMasterForm(f => ({ ...f, name: e.target.value }))} /></div>
-                <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>ประเภท</label>
+                <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ชื่อ *')}</label><input style={inputSt} value={masterForm.name} onChange={e => setMasterForm(f => ({ ...f, name: e.target.value }))} /></div>
+                <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ประเภท')}</label>
                   {/* ทะเบียน `container_categories` — บังคับเลือก (user 05/11) · เพิ่มประเภทใหม่ได้ที่แผงด้านล่าง
                       ค่าเดิมนอกทะเบียนโชว์เป็น "ค่าเดิม" ไม่ถูกเปลี่ยนเงียบๆ */}
                   <select style={inputSt} value={masterForm.category || ''} onChange={e => setMasterForm(f => ({ ...f, category: e.target.value }))}>
-                    {!masterForm.category && <option value="">— เลือก —</option>}
-                    {containerCategoryOptions(catState.rows, masterForm.category).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    {!masterForm.category && <option value="">{tr('— เลือก —')}</option>}
+                    {containerCategoryOptions(catState.rows, masterForm.category).map(o => <option key={o.value} value={o.value}>{tr(o.label)}</option>)}
                   </select>
                   {catState.failed && <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>{registryFailText('ทะเบียนประเภทภาชนะ', catState.stale)}</div>}</div>
                 <div><label style={{ fontSize: 11, color: 'var(--muted)' }}>Supplier</label>
@@ -4184,7 +4185,7 @@ function PackagingPanel({ canCreate, canEdit, mayDelete, fullName }) {
                 ]} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-              <button onClick={() => { setShowMaster(false); setEditMaster(null); setMasterForm(EMPTY_PKG_MASTER); }} style={btnSecondary}>ปิด</button>
+              <button onClick={() => { setShowMaster(false); setEditMaster(null); setMasterForm(EMPTY_PKG_MASTER); }} style={btnSecondary}>{tr('ปิด')}</button>
             </div>
           </div>
         </div>
@@ -4265,7 +4266,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
         <div>
           <h3 style={{ margin: 0, fontSize: 'clamp(16px,2vw,20px)', fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-            Kanban Std — มาตรฐาน Qty/Kanban รายพาร์ท
+            {tr('Kanban Std — มาตรฐาน Qty/Kanban รายพาร์ท')}
           </h3>
           <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--muted)' }}>
             UOM และข้อมูลพาร์ทดึงจาก 🗂 Parts Master โดยตรง (ไม่เก็บซ้ำ) · Qty/Kanban ตั้งต้นจาก Qty/Pkg (1 ใบ Kanban = 1 packaging)
@@ -4273,7 +4274,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
         </div>
         <input
           style={{ ...inputSt, width: 220 }}
-          placeholder="ค้นหา Mat No. / Part Name..."
+          placeholder={tr('ค้นหา Mat No. / Part Name...')}
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
@@ -4286,7 +4287,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
               <tr style={{ background: 'var(--bg2)' }}>
                 {/* ยุบ "Part Name + Mat No." เป็นคอลัมน์เดียว — <MatLabel> ให้ครบ Part No./ชื่อ/MAT (30/09) */}
                 {['ชิ้นงาน', 'Supplier', 'UOM', 'Qty/Pkg', 'Qty/Kanban', 'Min', 'Max', 'Lot size', 'อัปเดต'].map(h => (
-                  <th key={h} style={{ padding: '9px 14px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
+                  <th key={h} style={{ padding: '9px 14px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{tr(h)}</th>
                 ))}
                 {canEdit && <th style={{ padding: '9px 14px', width: 80 }}></th>}
               </tr>
@@ -4328,7 +4329,7 @@ function KanbanStdPanel({ canEdit, fullName }) {
                       <td style={{ padding: '8px 14px', borderTop: '1px solid var(--border)' }}>
                         <button type="button" className="pg-btn sm" onClick={() => openEdit(row)}
                          >
-                          แก้ไข
+                          {tr('แก้ไข')}
                         </button>
                       </td>
                     )}
@@ -4360,14 +4361,14 @@ function KanbanStdPanel({ canEdit, fullName }) {
               </div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Min (สต็อกขั้นต่ำสโตร์)</label>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('Min (สต็อกขั้นต่ำสโตร์)')}</label>
                   <input type="number" min="0" step="1" style={{ ...inputSt, textAlign: 'center', fontWeight: 700 }}
-                    value={form.min_qty} onChange={e => setForm(f => ({ ...f, min_qty: e.target.value }))} placeholder="เว้นว่าง = ไม่คุม" />
+                    value={form.min_qty} onChange={e => setForm(f => ({ ...f, min_qty: e.target.value }))} placeholder={tr('เว้นว่าง = ไม่คุม')} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Max (เติมขึ้นถึง)</label>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('Max (เติมขึ้นถึง)')}</label>
                   <input type="number" min="0" step="1" style={{ ...inputSt, textAlign: 'center', fontWeight: 700 }}
-                    value={form.max_qty} onChange={e => setForm(f => ({ ...f, max_qty: e.target.value }))} placeholder="เว้นว่าง = ไม่คุม" />
+                    value={form.max_qty} onChange={e => setForm(f => ({ ...f, max_qty: e.target.value }))} placeholder={tr('เว้นว่าง = ไม่คุม')} />
                 </div>
               </div>
               <div>
@@ -4376,10 +4377,10 @@ function KanbanStdPanel({ canEdit, fullName }) {
                     แต่ไม่มีวันกลายเป็นใบสั่ง (ข้อมูลจริง 2026-08: 44 พาร์ท 1.3 ล้านชิ้นค้างแบบนี้)
                     พาร์ทพิเศษที่ "ผลิตตามสั่ง ไม่รอสะสม" → ใส่ 1 (lot-for-lot) ไม่ใช่เว้นว่าง */}
                 <label style={{ fontSize: 11, fontWeight: 700, color: '#7c3aed', display: 'block', marginBottom: 4 }}>
-                  Lot size — สะสม demand ครบเท่านี้ (<strong>ชิ้น</strong>) → ยิงใบสั่งผลิต + ใบเบิกวัตถุดิบอัตโนมัติ
+                  {tr('Lot size — สะสม demand ครบเท่านี้ (')}<strong>{tr('ชิ้น')}</strong>{tr(') → ยิงใบสั่งผลิต + ใบเบิกวัตถุดิบอัตโนมัติ')}
                 </label>
                 <input type="number" min="1" step="1" style={{ ...inputSt, textAlign: 'center', fontWeight: 900, fontSize: 16 }}
-                  value={form.lot_size} onChange={e => setForm(f => ({ ...f, lot_size: e.target.value }))} placeholder="พาร์ทพิเศษ/ผลิตตามสั่ง → ใส่ 1" />
+                  value={form.lot_size} onChange={e => setForm(f => ({ ...f, lot_size: e.target.value }))} placeholder={tr('พาร์ทพิเศษ/ผลิตตามสั่ง → ใส่ 1')} />
                 <div style={{ fontSize: 11, lineHeight: 1.6, marginTop: 4, color: 'var(--muted)' }}>
                   <b style={{ color: 'var(--text)' }}>1</b> = ผลิตตามที่สั่ง ไม่ต้องรอสะสมล็อต (lot-for-lot — ใช้กับพาร์ทพิเศษที่ไม่มีขนาดล็อตประจำ)
                 </div>
@@ -4396,9 +4397,9 @@ function KanbanStdPanel({ canEdit, fullName }) {
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
-              <button onClick={() => setShowModal(false)} style={btnSecondary}>ยกเลิก</button>
+              <button onClick={() => setShowModal(false)} style={btnSecondary}>{tr('ยกเลิก')}</button>
               <button onClick={handleSave} disabled={saving} style={{ ...btnPrimary, background: '#7c3aed', opacity: saving ? 0.6 : 1 }}>
-                {saving ? '...' : 'บันทึก'}
+                {saving ? '...' : tr('บันทึก')}
               </button>
             </div>
           </div>

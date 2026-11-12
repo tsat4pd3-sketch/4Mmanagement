@@ -30,6 +30,7 @@ import { loadPmTeams, pmTeamsSync, teamKind, recordPermFor, isAmTeam, splitInspB
 import { MTN_TEAMS, deptNameOf, teamKeyOf, teamForEquipmentKind, teamsForUser, canWriteTeam, teamBlockText } from '../utils/mtnTeams'
 import { checkWriteRows } from '../utils/dbWrite';
 import NoticeBar from '../components/NoticeBar';
+import { tr } from '../utils/i18n';
 import { getWorkDate } from '../utils/workDate'
 import { amShiftInfo, AM_MO_COLS } from '../lib/dailyAmBoard'
 import { DEFAULT_POINT_KINDS, pointDueStatus, pointPin, shimStack, deriveShimAction } from '../utils/fixturePoints'
@@ -273,7 +274,7 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
               <button type="button" onPointerDown={e => e.stopPropagation()} onClick={() => setShowCpPhoto(false)}
                 style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 999, cursor: 'pointer',
                          border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--text2)' }}>
-                ดูรูปเครื่อง
+                {tr('ดูรูปเครื่อง')}
               </button>
             )}
           </div>
@@ -283,7 +284,7 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
             style={{ position: 'absolute', left: 8, top: 8, zIndex: 3, fontSize: 11, fontWeight: 700, padding: '3px 9px',
                      borderRadius: 999, cursor: 'pointer', border: '1px solid var(--accent)',
                      background: 'var(--card)', color: 'var(--accent)' }}>
-            🔍 ดูรูปของข้อ {(cpIndex[activeCp.id] ?? 0) + 1}
+            {tr('🔍 ดูรูปของข้อ')} {(cpIndex[activeCp.id] ?? 0) + 1}
           </button>
         )}
         {/* layer = กล่องรูปจริง (หัก letterbox) — pin ใช้ % ของ layer นี้
@@ -325,7 +326,7 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', marginTop: compact ? 6 : 8 }}>
           <button onClick={e => { e.stopPropagation(); setShowCpPhoto(false); setPlaying(p => !p) }} title={playing ? 'หยุดหมุน' : 'หมุนอัตโนมัติ'}
             style={{ background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '3px 11px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-            {playing ? 'หยุด' : 'หมุนเอง'}
+            {playing ? tr('หยุด') : tr('หมุนเอง')}
           </button>
           <div style={{ display: 'flex', gap: 5 }}>
             {frames.map((f, i) => (
@@ -459,7 +460,7 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
           {cp.description}
         </p>
       )}
-      {cp.type === 'note' && <input value={note} onChange={e => onChangeNote(e.target.value)} placeholder="หมายเหตุ (ถ้ามี)..." />}
+      {cp.type === 'note' && <input value={note} onChange={e => onChangeNote(e.target.value)} placeholder={tr('หมายเหตุ (ถ้ามี)...')} />}
     </div>
   )
 }
@@ -483,7 +484,7 @@ function MeasureRow({ cp, idx, r, onChange, methodIndex }) {
         {c && <span style={{ fontSize: 11, fontWeight: 700, color: c.text }}>{status === 'pass' ? '● OK' : '✕ NG'}</span>}
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input type="number" value={r.mval ?? ''} onChange={e => onChange({ ...r, mval: e.target.value })} placeholder="อ่านค่า"
+        <input type="number" value={r.mval ?? ''} onChange={e => onChange({ ...r, mval: e.target.value })} placeholder={tr('อ่านค่า')}
           style={{ width: 110, textAlign: 'center', fontFamily: 'monospace', border: `1px solid ${c?.border ?? 'var(--border)'}` }} />
         {cp.unit && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{cp.unit}</span>}
         <span style={{ fontSize: 11.5, color: 'var(--muted)', marginLeft: 'auto' }}>เกณฑ์: <b style={{ color: 'var(--text2)' }}>{measureStdText(cp)}</b></span>
@@ -561,7 +562,7 @@ function NgRecheckPanel({ result, cp, onSaved, canRecord = false, deptWrite = nu
   return (
     <div style={{ marginTop: 6, borderRadius: 'var(--r-md)', background: 'rgba(224,92,74,0.06)', border: '1px solid rgba(224,92,74,0.25)', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
       <p style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>NG — ต้องการ action</p>
-      <textarea value={action} onChange={e => setAction(e.target.value)} rows={2} placeholder="อธิบายการแก้ไข..." />
+      <textarea value={action} onChange={e => setAction(e.target.value)} rows={2} placeholder={tr('อธิบายการแก้ไข...')} />
       {cp.type === 'variable' && (
         <div>
           <p style={{ fontSize: 11, color: 'var(--muted)', margin: '0 0 4px' }}>วัดใหม่ 3 ครั้ง</p>
@@ -576,7 +577,7 @@ function NgRecheckPanel({ result, cp, onSaved, canRecord = false, deptWrite = nu
         </div>
       )}
       <button onClick={submit} disabled={saving || !action.trim()} style={{ padding: '6px 0', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer', opacity: saving || !action.trim() ? 0.5 : 1 }}>
-        {saving ? 'กำลังบันทึก...' : 'บันทึก Action'}
+        {saving ? tr('กำลังบันทึก...') : tr('บันทึก Action')}
       </button>
     </div>
   )
@@ -811,22 +812,22 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
           )}
           {canApprove && insp.approval_status === 'pending' && !rejecting && (
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={handleApprove} disabled={approving} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{approving ? 'กำลังบันทึก...' : (isAm ? 'อนุมัติ' : 'ยืนยันผลตรวจ')}</button>
-              <button onClick={() => setRejecting(true)} disabled={approving} style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid #e05c4a', background: 'rgba(224,92,74,0.08)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>ตีกลับ</button>
+              <button onClick={handleApprove} disabled={approving} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{approving ? tr('กำลังบันทึก...') : (isAm ? tr('อนุมัติ') : tr('ยืนยันผลตรวจ'))}</button>
+              <button onClick={() => setRejecting(true)} disabled={approving} style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid #e05c4a', background: 'rgba(224,92,74,0.08)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{tr('ตีกลับ')}</button>
             </div>
           )}
           {rejecting && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={2} placeholder="ระบุเหตุผลที่ตีกลับ..." />
+              <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={2} placeholder={tr('ระบุเหตุผลที่ตีกลับ...')} />
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => { setRejecting(false); setRejectReason('') }} style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', fontSize: 12, cursor: 'pointer' }}>ยกเลิก</button>
-                <button onClick={handleReject} disabled={approving || !rejectReason.trim()} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid #e05c4a', background: 'rgba(224,92,74,0.08)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{approving ? 'กำลังบันทึก...' : 'ยืนยันตีกลับ'}</button>
+                <button onClick={() => { setRejecting(false); setRejectReason('') }} style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)', fontSize: 12, cursor: 'pointer' }}>{tr('ยกเลิก')}</button>
+                <button onClick={handleReject} disabled={approving || !rejectReason.trim()} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid #e05c4a', background: 'rgba(224,92,74,0.08)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{approving ? tr('กำลังบันทึก...') : tr('ยืนยันตีกลับ')}</button>
               </div>
             </div>
           )}
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => handleExport('pdf')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid rgba(224,92,74,0.4)', background: 'rgba(224,92,74,0.1)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'pdf' ? 'กำลัง export...' : 'PDF'}</button>
-            <button onClick={() => handleExport('excel')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'excel' ? 'กำลัง export...' : 'Excel'}</button>
+            <button onClick={() => handleExport('pdf')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: '1px solid rgba(224,92,74,0.4)', background: 'rgba(224,92,74,0.1)', color: '#e05c4a', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'pdf' ? tr('กำลัง export...') : 'PDF'}</button>
+            <button onClick={() => handleExport('excel')} disabled={!!exporting} style={{ flex: 1, padding: '8px 0', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{exporting === 'excel' ? tr('กำลัง export...') : 'Excel'}</button>
           </div>
         </div>
       </motion.div>
@@ -1773,7 +1774,7 @@ export default function PMCheckData() {
           <>
             <div style={{ ...S.header, ...(isNarrow ? { padding: '10px 12px', flexWrap: 'wrap' } : null) }}>
               {isNarrow && (
-                <button onClick={clearJig} title="กลับไปเลือกอุปกรณ์" style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', borderRadius: 'var(--r-md)', padding: '6px 10px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>อุปกรณ์</button>
+                <button onClick={clearJig} title="กลับไปเลือกอุปกรณ์" style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', borderRadius: 'var(--r-md)', padding: '6px 10px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{tr('อุปกรณ์')}</button>
               )}
               {jigImg && <img loading="lazy" src={jigImg} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'contain', background: 'var(--bg2)', border: '1px solid var(--border)' }} />}
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -1781,10 +1782,10 @@ export default function PMCheckData() {
                 <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>{selectedJig.jig_no && `No: ${selectedJig.jig_no}`}{selectedJig.process && ` · ${selectedJig.process}`}</p>
               </div>
               <div style={S.tabBar}>
-                <button onClick={() => setTab('record')} style={S.tabBtn(tab === 'record')}>บันทึก</button>
+                <button onClick={() => setTab('record')} style={S.tabBtn(tab === 'record')}>{tr('บันทึก')}</button>
                 <button onClick={() => setTab('history')} style={S.tabBtn(tab === 'history')}>
                   {/* 🔀 นับ "ของทีมนี้" เท่านั้น · มีของทีมอื่นบนเครื่องเดียวกัน = ติดจุดไว้ให้รู้ (กดเข้าไปอ่านได้) */}
-                  ประวัติ ({inspections.length}{histMeta?.otherN ? '+' : ''})
+                  {tr('ประวัติ (')}{inspections.length}{histMeta?.otherN ? '+' : ''})
                 </button>
               </div>
             </div>
@@ -1847,7 +1848,7 @@ export default function PMCheckData() {
                     <div style={{ textAlign: 'center', color: 'var(--red)', fontSize: 13, padding: '32px 12px', lineHeight: 1.7 }}>
                       ⚠️ โหลดรายการตรวจไม่สำเร็จ — ยังไม่รู้ว่าเครื่องนี้มีจุดตรวจหรือไม่
                       <div style={{ fontSize: 12, color: 'var(--muted)' }}>{cpLoad.msg}</div>
-                      <button onClick={() => setCpReload(n => n + 1)} style={{ marginTop: 10, padding: '6px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ลองใหม่</button>
+                      <button onClick={() => setCpReload(n => n + 1)} style={{ marginTop: 10, padding: '6px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>{tr('ลองใหม่')}</button>
                     </div>
                   ) : checkpoints.length === 0 ? (
                     <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '32px 12px', lineHeight: 1.7 }}>
@@ -1956,7 +1957,7 @@ export default function PMCheckData() {
                             <button onClick={() => setActiveCpId(todo[0].id)}
                               style={{ marginTop: 10, padding: '7px 18px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12.5, fontWeight: 800,
                                 border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)' }}>
-                              เริ่มที่ข้อ {checkpoints.indexOf(todo[0]) + 1} — {todo[0].name}
+                              {tr('เริ่มที่ข้อ')} {checkpoints.indexOf(todo[0]) + 1} — {todo[0].name}
                             </button>
                           )}
                         </div>
@@ -2011,14 +2012,14 @@ export default function PMCheckData() {
                         const nextTodo = todo.find(c => checkpoints.indexOf(c) > i) || todo.find(c => c.id !== activeCpId)
                         return (
                           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
-                            <button onClick={() => go(-1)} disabled={i <= 0} style={S.navBtn(i <= 0)}>ข้อก่อน</button>
-                            <button onClick={() => go(1)} disabled={i >= checkpoints.length - 1} style={S.navBtn(i >= checkpoints.length - 1)}>ข้อถัดไป ▶</button>
+                            <button onClick={() => go(-1)} disabled={i <= 0} style={S.navBtn(i <= 0)}>{tr('ข้อก่อน')}</button>
+                            <button onClick={() => go(1)} disabled={i >= checkpoints.length - 1} style={S.navBtn(i >= checkpoints.length - 1)}>{tr('ข้อถัดไป ▶')}</button>
                             {nextTodo && (
                               <button onClick={() => setActiveCpId(nextTodo.id)} style={{ ...S.navBtn(false), borderColor: 'var(--amber)', color: 'var(--amber)' }}>
-                                ข้อที่ยังไม่ตรวจ ({checkpoints.indexOf(nextTodo) + 1})
+                                {tr('ข้อที่ยังไม่ตรวจ (')}{checkpoints.indexOf(nextTodo) + 1})
                               </button>
                             )}
-                            <button onClick={() => setActiveCpId(null)} style={{ ...S.navBtn(false), marginLeft: 'auto' }}>ปิดข้อนี้</button>
+                            <button onClick={() => setActiveCpId(null)} style={{ ...S.navBtn(false), marginLeft: 'auto' }}>{tr('ปิดข้อนี้')}</button>
                           </div>
                         )
                       })()}
@@ -2061,13 +2062,13 @@ export default function PMCheckData() {
                                   </div>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                     <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                                      ค่าชิมรวมที่วัดได้
+                                      {tr('ค่าชิมรวมที่วัดได้')}
                                       <input type="number" step="0.01" inputMode="decimal" value={v.mm} disabled={!canShim} placeholder="mm"
                                         onChange={e => setShimVals(prev => ({ ...prev, [pt.id]: { ...v, mm: e.target.value } }))}
                                         style={{ width: 84, textAlign: 'center', fontFamily: 'monospace' }} />
                                       <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>mm</span>
                                     </label>
-                                    <input value={v.note} disabled={!canShim} placeholder="หมายเหตุ (แผ่นที่ซ้อน/เหตุผล)"
+                                    <input value={v.note} disabled={!canShim} placeholder={tr('หมายเหตุ (แผ่นที่ซ้อน/เหตุผล)')}
                                       onChange={e => setShimVals(prev => ({ ...prev, [pt.id]: { ...v, note: e.target.value } }))}
                                       style={{ flex: '1 1 160px', minWidth: 120 }} />
                                     {mm != null && (
@@ -2084,7 +2085,7 @@ export default function PMCheckData() {
                         )
                       })()}
                       <InspectorCodeField value={inspectorCode} onChange={setInspectorCode} required style={{ marginTop: 8 }} />
-                      <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="หมายเหตุ (ถ้ามี)..." style={{ marginTop: 8 }} />
+                      <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder={tr('หมายเหตุ (ถ้ามี)...')} style={{ marginTop: 8 }} />
                       {/* 🔴 ปุ่มบันทึก "สีต้องตรงกับความจริง" (06/10 · คอมเมนต์ทีม MTN ข้อ 3)
                           *"ถ้ากรอกรายละเอียดไม่ครบทุกจุด ให้ปุ่มบันทึกขึ้นเป็นสีแดงหรือสีเหลืองไว้ก่อนได้มั้ย
                             ตอนนี้เป็นสีเขียว ถ้าพนักงานกดข้าม จะสามารถบันทึกได้ถึงข้อมูลจะไม่ครบ"*
@@ -2165,7 +2166,7 @@ export default function PMCheckData() {
                       <button type="button" onClick={toggleOtherHist} style={{
                         padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11, fontWeight: 700,
                         border: '1px dashed var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
-                      }}>{showOther ? 'ซ่อนใบของทีมอื่น' : 'ดูใบของทีมอื่นด้วย'}</button>
+                      }}>{showOther ? tr('ซ่อนใบของทีมอื่น') : tr('ดูใบของทีมอื่นด้วย')}</button>
                     </div>
                   )}
                   {!!histMeta?.unknownN && (
@@ -2219,7 +2220,7 @@ export default function PMCheckData() {
                           <button onClick={e => { e.stopPropagation(); openMoFromHistory(insp) }} style={{
                             padding: '5px 11px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
                             border: '1px solid #fb923c', background: 'rgba(251,146,60,0.12)', color: '#fb923c',
-                          }}>เปิดใบแจ้งซ่อม</button>
+                          }}>{tr('เปิดใบแจ้งซ่อม')}</button>
                         )}
                         <span style={{ color: 'var(--muted)' }}>›</span>
                       </div>
@@ -2281,7 +2282,7 @@ export default function PMCheckData() {
               <div>
                 <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>เหตุผลที่ไม่เปิดใบแจ้งซ่อม</div>
                 <textarea value={moWaiveReason} onChange={e => setMoWaiveReason(e.target.value)} rows={2}
-                  placeholder="เช่น แก้ไขเองหน้างานแล้ว / แจ้งหัวหน้าให้เปิดใบแล้ว" style={{ width: '100%' }} />
+                  placeholder={tr('เช่น แก้ไขเองหน้างานแล้ว / แจ้งหัวหน้าให้เปิดใบแล้ว')} style={{ width: '100%' }} />
               </div>
             )}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
@@ -2289,30 +2290,30 @@ export default function PMCheckData() {
                 <button onClick={() => setMoPrompt(null)} disabled={moSaving} style={{
                   padding: '9px 18px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
                   border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
-                }}>ไว้ก่อน</button>
+                }}>{tr('ไว้ก่อน')}</button>
               )}
               {isAmPrompt && !moWaiving && (
                 <button onClick={() => setMoWaiving(true)} disabled={moSaving} style={{
                   padding: '9px 18px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
                   border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
-                }}>ไม่เปิดใบ (ระบุเหตุผล)</button>
+                }}>{tr('ไม่เปิดใบ (ระบุเหตุผล)')}</button>
               )}
               {isAmPrompt && moWaiving && (<>
                 <button onClick={() => setMoWaiving(false)} disabled={moSaving} style={{
                   padding: '9px 14px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
                   border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)',
-                }}>กลับ</button>
+                }}>{tr('กลับ')}</button>
                 <button onClick={waiveMo} disabled={moSaving || !amWaiverReasonValid(moWaiveReason)} style={{
                   padding: '9px 18px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
                   border: '1px solid var(--amber)', background: 'var(--amber-dim)', color: 'var(--amber)',
                   opacity: moSaving || !amWaiverReasonValid(moWaiveReason) ? 0.5 : 1,
-                }}>บันทึกเหตุผล</button>
+                }}>{tr('บันทึกเหตุผล')}</button>
               </>)}
               {can('mtn_repair', 'report', userRole) && !moWaiving && (
                 <button onClick={createMoFromInspection} disabled={moSaving} style={{
                   padding: '9px 20px', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 800, cursor: 'pointer',
                   border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', opacity: moSaving ? 0.6 : 1,
-                }}>{moSaving ? 'กำลังเปิดใบ...' : 'เปิดใบแจ้งซ่อม'}</button>
+                }}>{moSaving ? tr('กำลังเปิดใบ...') : tr('เปิดใบแจ้งซ่อม')}</button>
               )}
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>
@@ -2326,7 +2327,7 @@ export default function PMCheckData() {
             {isAmPrompt && (
               <button type="button" onClick={() => setMoPrompt(null)} disabled={moSaving}
                 style={{ all: 'unset', cursor: 'pointer', fontSize: 11, color: 'var(--muted)', textAlign: 'center', textDecoration: 'underline' }}>
-                ปิดหน้าต่าง — รายการนี้จะค้าง “⚠ ยังไม่เปิดใบแจ้งซ่อม” บนบอร์ด AM จนกว่าจะเปิดใบหรือระบุเหตุผล
+                {tr('ปิดหน้าต่าง — รายการนี้จะค้าง “⚠ ยังไม่เปิดใบแจ้งซ่อม” บนบอร์ด AM จนกว่าจะเปิดใบหรือระบุเหตุผล')}
               </button>
             )}
           </div>

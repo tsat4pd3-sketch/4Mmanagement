@@ -38,6 +38,7 @@ import { loadDocForms } from '../utils/docForms';
 import { xlsxDocName } from '../utils/csvDoc';
 
 import NoticeBar from '../components/NoticeBar';
+import { tr } from '../utils/i18n';
 /* ═══════════════════════════════════════════════════════════════
    ทะเบียนแม่พิมพ์ & DIE MAINTENANCE — /die-registry
 
@@ -185,7 +186,7 @@ function SetPairNote({ set, products, role, onDone, prodLines = [] }) {
       {canPair ? (
         <button type="button" className="pg-btn sm" onClick={setPair} disabled={busy}
           style={{ marginLeft: 6 }}>
-          {busy ? 'กำลังตั้ง…' : r.state === 'mismatch' ? 'ตั้งคู่ใหม่เป็น ' + b : 'ตั้งคู่ให้เลย'}
+          {busy ? tr('กำลังตั้ง…') : r.state === 'mismatch' ? tr('ตั้งคู่ใหม่เป็น ') + b : tr('ตั้งคู่ให้เลย')}
         </button>
       ) : (
         <span style={{ color: 'var(--muted)' }}> · บัญชีคุณไม่มีสิทธิ์แก้ทะเบียนสินค้า ตั้งคู่ที่ /products</span>
@@ -660,12 +661,12 @@ export default function DieRegistry() {
       {/* filter bar — มาตรฐาน FilterBar (UI-STANDARD 2026-09-24) · ไลน์ = ชื่อเครื่องปั๊มจากแม่พิมพ์ (ไม่ใช่ production_lines) จึงไม่ใช้ LineSelect */}
       <FilterBar>
         <select value={filterLine} onChange={e => setFilterLine(e.target.value)}>
-          <option value="">{ALL.line}</option>
-          {dieLineNames.map(n => <option key={n} value={n}>{n}</option>)}
+          <option value="">{tr(ALL.line)}</option>
+          {dieLineNames.map(n => <option key={n} value={n}>{tr(n)}</option>)}
         </select>
         <select value={filterKind} onChange={e => setFilterKind(e.target.value)}>
           <option value="">{allOf('รูปแบบชุด')}</option>
-          <option value={KIND_NONE}>— ยังไม่ระบุ ({stat.noKind}) —</option>
+          <option value={KIND_NONE}>{tr('— ยังไม่ระบุ (')}{stat.noKind}) —</option>
           {setKinds.map(k => <option key={k.key} value={k.key}>{k.label}{k.is_active ? '' : ' (ปิดใช้)'}</option>)}
         </select>
         <SearchInput value={search} onChange={setSearch} fields="พาร์ท / ชื่อชุด / MAT / เลขแม่พิมพ์" />
@@ -674,11 +675,11 @@ export default function DieRegistry() {
         {/* 📥 Excel ให้ทีม DIE เอาไปไล่ข้อมูล (05/11 · คำสั่ง user) — ทั้งหมดในขอบเขต ไม่ตามตัวกรอง (worklist ต้องครบ) */}
         <button onClick={exportExcel} disabled={exporting} title="แม่พิมพ์ราย OP + ชุด ทั้งหมดในขอบเขตของคุณ — ช่องว่าง = ยังไม่ได้กรอก"
           style={{ ...cancelBtnStyle, padding: '0 12px' }}>
-          {exporting ? 'กำลังสร้างไฟล์…' : 'Export Excel'}
+          {exporting ? tr('กำลังสร้างไฟล์…') : 'Export Excel'}
         </button>
         {canEdit && (
           <button onClick={() => setEditSet({ ...emptySet, line_name: filterLine || '' })} style={{ ...saveBtnStyle, padding: '0 14px' }}>
-            + เพิ่มชุด
+            {tr('+ เพิ่มชุด')}
           </button>
         )}
       </FilterBar>
@@ -724,7 +725,7 @@ export default function DieRegistry() {
             border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '5px 12px',
             fontSize: 12, fontWeight: 700, cursor: 'pointer',
           }}>
-            {todoOnly ? 'กำลังดูเฉพาะที่ต้องแก้' : 'ดูเฉพาะที่ต้องแก้'}
+            {todoOnly ? tr('กำลังดูเฉพาะที่ต้องแก้') : tr('ดูเฉพาะที่ต้องแก้')}
           </button>
         </div>
       )}
@@ -820,14 +821,14 @@ export default function DieRegistry() {
                           <thead>
                             <tr style={{ color: 'var(--muted)', textAlign: 'left' }}>
                               <th style={{ padding: '4px 6px', fontWeight: 600 }}>OP</th>
-                              <th style={{ padding: '4px 6px', fontWeight: 600 }}>เลข</th>
-                              <th style={{ padding: '4px 6px', fontWeight: 600 }}>กระบวนการ</th>
-                              <th style={{ padding: '4px 6px', fontWeight: 600 }}>ชื่อแม่พิมพ์</th>
-                              <th style={{ padding: '4px 6px', fontWeight: 600, textAlign: 'right' }} title="ชิ้นเข้า → ชิ้นออก ต่อ 1 shot (ม้วน = ป้อนคอยล์)">เข้า→ออก/shot</th>
-                              <th style={{ padding: '4px 6px', fontWeight: 600, textAlign: 'right' }}>ตัน</th>
-                              <th style={{ padding: '4px 6px', fontWeight: 600, textAlign: 'right' }} title="ความสูงตอนปิดแม่พิมพ์ (มม.) — ใช้คำนวณเวลาเปลี่ยนรุ่น">สูงปิด (มม.)</th>
-                              <th style={{ padding: '4px 6px', fontWeight: 600, textAlign: 'right' }}>shot สะสม</th>
-                              <th style={{ padding: '4px 6px', fontWeight: 600, textAlign: 'right' }}>เจียร</th>
+                              <th style={{ padding: '4px 6px', fontWeight: 600 }}>{tr('เลข')}</th>
+                              <th style={{ padding: '4px 6px', fontWeight: 600 }}>{tr('กระบวนการ')}</th>
+                              <th style={{ padding: '4px 6px', fontWeight: 600 }}>{tr('ชื่อแม่พิมพ์')}</th>
+                              <th style={{ padding: '4px 6px', fontWeight: 600, textAlign: 'right' }} title="ชิ้นเข้า → ชิ้นออก ต่อ 1 shot (ม้วน = ป้อนคอยล์)">{tr('เข้า→ออก/shot')}</th>
+                              <th style={{ padding: '4px 6px', fontWeight: 600, textAlign: 'right' }}>{tr('ตัน')}</th>
+                              <th style={{ padding: '4px 6px', fontWeight: 600, textAlign: 'right' }} title="ความสูงตอนปิดแม่พิมพ์ (มม.) — ใช้คำนวณเวลาเปลี่ยนรุ่น">{tr('สูงปิด (มม.)')}</th>
+                              <th style={{ padding: '4px 6px', fontWeight: 600, textAlign: 'right' }}>{tr('shot สะสม')}</th>
+                              <th style={{ padding: '4px 6px', fontWeight: 600, textAlign: 'right' }}>{tr('เจียร')}</th>
                               {canEdit && <th style={{ width: 40 }} />}
                             </tr>
                           </thead>
@@ -890,7 +891,7 @@ export default function DieRegistry() {
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginTop: 8 }}>
                           <select style={{ ...inputStyle, width: 'auto', minWidth: 260, flex: 1 }} value={addShare.machineId}
                             onChange={e => setAddShare(a => ({ ...a, machineId: e.target.value }))}>
-                            <option value="">— เลือกแม่พิมพ์ที่จะใช้ร่วม —</option>
+                            <option value="">{tr('— เลือกแม่พิมพ์ที่จะใช้ร่วม —')}</option>
                             {shareOptions(s).map(d => (
                               <option key={d.id} value={d.id}>
                                 {d.ext?.die_no || '—'} · {setsById[d.ext?.die_set_id]?.set_code || 'ไม่มีชุด'}
@@ -898,15 +899,15 @@ export default function DieRegistry() {
                               </option>
                             ))}
                           </select>
-                          <input style={{ ...inputStyle, width: 90 }} type="number" step="10" placeholder="OP ในชุดนี้"
+                          <input style={{ ...inputStyle, width: 90 }} type="number" step="10" placeholder={tr('OP ในชุดนี้')}
                             value={addShare.opSeq} onChange={e => setAddShare(a => ({ ...a, opSeq: e.target.value }))} />
-                          <button style={{ ...saveBtnStyle, padding: '6px 12px' }} disabled={saving} onClick={() => saveShare(s)}>บันทึก</button>
-                          <button style={{ ...cancelBtnStyle, padding: '6px 12px' }} onClick={() => setAddShare(null)}>ยกเลิก</button>
+                          <button style={{ ...saveBtnStyle, padding: '6px 12px' }} disabled={saving} onClick={() => saveShare(s)}>{tr('บันทึก')}</button>
+                          <button style={{ ...cancelBtnStyle, padding: '6px 12px' }} onClick={() => setAddShare(null)}>{tr('ยกเลิก')}</button>
                         </div>
                       ) : (
                         <button onClick={() => setAddShare({ setId: s.id, machineId: '', opSeq: '' })}
                           style={{ ...cancelBtnStyle, padding: '4px 10px', fontSize: 11.5, marginTop: 8 }}>
-                          + เพิ่มแม่พิมพ์ใช้ร่วมจากชุดอื่น
+                          {tr('+ เพิ่มแม่พิมพ์ใช้ร่วมจากชุดอื่น')}
                         </button>
                       ))}
                       {s.note && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>{s.note}</div>}
@@ -1015,7 +1016,7 @@ export default function DieRegistry() {
               {/* ทะเบียน = DR `die_press_lines` (แผง ⚙️ ท้ายแท็บทะเบียน · 2026-09-08 — ปิด audit #28) กลุ่มเครื่องปั๊ม (LINE A ( 800 Ton ) ฯลฯ)
                   ตั้งใจแยกจาก production_lines · ชื่อเก่าที่ชุด/แม่พิมพ์ใช้อยู่แต่ยังไม่ลงทะเบียนยังเลือกซ้ำได้ (กันสะกดต่างจน
                   inScope()/ฟิลเตอร์/MO แตกเป็นคนละไลน์) · "✏️ ระบุใหม่" เฉพาะกรณีจริงที่ยังไม่มีในทะเบียน */}
-              <SelectOrFree value={editSet.line_name || ''} options={setLineOptions} placeholder="— เลือกจากทะเบียนกลุ่มเครื่องปั๊ม —"
+              <SelectOrFree value={editSet.line_name || ''} options={setLineOptions} placeholder={tr('— เลือกจากทะเบียนกลุ่มเครื่องปั๊ม —')}
                 freeLabel="✏️ ระบุใหม่ (ยังไม่มีในทะเบียน die_press_lines)" freePlaceholder="เช่น LINE A ( 800 Ton )" style={inputStyle} inputStyle={inputStyle}
                 onChange={v => setEditSet(f => ({ ...f, line_name: v }))} />
             </Field>
@@ -1023,8 +1024,8 @@ export default function DieRegistry() {
               {/* ตัวเลือกจากทะเบียน die_set_kinds (แผง ⚙️ ท้ายแท็บ) · ค่าปัจจุบันที่ถูกปิดใช้ยังอยู่ในลิสต์ (ไม่บันทึกทับเงียบ) */}
               <select style={inputStyle} value={editSet.kind || ''}
                 onChange={e => setEditSet(f => ({ ...f, kind: e.target.value }))}>
-                <option value="">— ยังไม่ระบุ —</option>
-                {dieSetKindOptions(setKinds, editSet.kind || '').map(k => <option key={k.key} value={k.key}>{k.label}</option>)}
+                <option value="">{tr('— ยังไม่ระบุ —')}</option>
+                {dieSetKindOptions(setKinds, editSet.kind || '').map(k => <option key={k.key} value={k.key}>{tr(k.label)}</option>)}
               </select>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
                 {editSet.kind ? setKinds.find(k => k.key === editSet.kind)?.desc : 'ยังไม่ระบุ — ใบแจ้งซ่อมจะเติมชนิดอุปกรณ์จากรูปแบบชุดไม่ได้ (ถ้าแม่พิมพ์ไม่มีประเภท OP ผู้แจ้งต้องเลือกเอง)'}
@@ -1038,8 +1039,8 @@ export default function DieRegistry() {
             <Field label="เจ้าของแม่พิมพ์">
               <select style={inputStyle} value={editSet.owner || ''}
                 onChange={e => setEditSet(f => ({ ...f, owner: e.target.value }))}>
-                <option value="">— ยังไม่ระบุ —</option>
-                {DIE_OWNERS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+                <option value="">{tr('— ยังไม่ระบุ —')}</option>
+                {DIE_OWNERS.map(o => <option key={o.key} value={o.key}>{tr(o.label)}</option>)}
                 {editSet.owner && !DIE_OWNERS.some(o => o.key === editSet.owner) && <option value={editSet.owner}>{dieOwnerLabel(editSet.owner)}</option>}
               </select>
             </Field>
@@ -1052,7 +1053,7 @@ export default function DieRegistry() {
               {suggestPps(editSet) != null && !String(editSet.pieces_per_stroke ?? '').trim() && (
                 <button type="button" className="pg-btn sm" onClick={() => setEditSet(f => ({ ...f, pieces_per_stroke: String(suggestPps(f)) }))}
                   style={{ marginTop: 4 }}>
-                  ลง MAT ไว้ {suggestPps(editSet)} ตัว — ใช้ {suggestPps(editSet)} ชิ้น/stroke?
+                  {tr('ลง MAT ไว้')} {suggestPps(editSet)} {tr('ตัว — ใช้')} {suggestPps(editSet)} {tr('ชิ้น/stroke?')}
                 </button>
               )}
             </Field>
@@ -1064,8 +1065,8 @@ export default function DieRegistry() {
             </Field>
           </div>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-            <button style={cancelBtnStyle} onClick={() => setEditSet(null)}>ยกเลิก</button>
-            <button style={saveBtnStyle} disabled={saving} onClick={saveSet}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+            <button style={cancelBtnStyle} onClick={() => setEditSet(null)}>{tr('ยกเลิก')}</button>
+            <button style={saveBtnStyle} disabled={saving} onClick={saveSet}>{saving ? tr('กำลังบันทึก...') : tr('บันทึก')}</button>
           </div>
         </Modal>
       )}
@@ -1082,7 +1083,7 @@ export default function DieRegistry() {
             <Field label="ชุดบ้าน (อยู่ชุดไหน)" hint="ชุดอื่นยืมไปใช้ได้ที่หน้าชุด">
               <select style={inputStyle} value={editDie.die_set_id || ''}
                 onChange={e => setEditDie(f => ({ ...f, die_set_id: e.target.value }))}>
-                <option value="">— ยังไม่ระบุ —</option>
+                <option value="">{tr('— ยังไม่ระบุ —')}</option>
                 {sets.filter(s => inScope(s.line_name)).map(s => (
                   <option key={s.id} value={s.id}>{s.part_name} {s.line_name ? `· ${s.line_name}` : ''}</option>
                 ))}
@@ -1095,8 +1096,8 @@ export default function DieRegistry() {
             <Field label="กระบวนการ">
               <select style={inputStyle} value={editDie.op_type || ''}
                 onChange={e => setEditDie(f => ({ ...f, op_type: e.target.value }))}>
-                <option value="">— ยังไม่ระบุ —</option>
-                {opTypes.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                <option value="">{tr('— ยังไม่ระบุ —')}</option>
+                {opTypes.map(t => <option key={t.key} value={t.key}>{tr(t.label)}</option>)}
               </select>
             </Field>
             <Field label="ชื่อ OP (ตามที่เขียนบนแม่พิมพ์)">
@@ -1119,8 +1120,8 @@ export default function DieRegistry() {
             <Field label="ชนิดป้อนเข้า OP นี้">
               <select style={inputStyle} value={editDie.feed_type || ''}
                 onChange={e => setEditDie(f => ({ ...f, feed_type: e.target.value }))}>
-                <option value="">— ยังไม่ระบุ —</option>
-                {FEED_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                <option value="">{tr('— ยังไม่ระบุ —')}</option>
+                {FEED_TYPES.map(t => <option key={t.key} value={t.key}>{tr(t.label)}</option>)}
               </select>
             </Field>
             {editDie.feed_type !== 'coil' && (
@@ -1149,9 +1150,9 @@ export default function DieRegistry() {
             </Field>
             <Field label="ขนาด ยาว × กว้าง (มม.)" hint="สูง = ความสูงตอนปิด">
               <div style={{ display: 'flex', gap: 6 }}>
-                <input style={inputStyle} type="number" min="0" placeholder="ยาว" value={editDie.length_mm ?? ''}
+                <input style={inputStyle} type="number" min="0" placeholder={tr('ยาว')} value={editDie.length_mm ?? ''}
                   onChange={e => setEditDie(f => ({ ...f, length_mm: e.target.value }))} />
-                <input style={inputStyle} type="number" min="0" placeholder="กว้าง" value={editDie.width_mm ?? ''}
+                <input style={inputStyle} type="number" min="0" placeholder={tr('กว้าง')} value={editDie.width_mm ?? ''}
                   onChange={e => setEditDie(f => ({ ...f, width_mm: e.target.value }))} />
               </div>
             </Field>
@@ -1174,8 +1175,8 @@ export default function DieRegistry() {
             shot สะสม {Number(editDie.shot_total || 0).toLocaleString()} — เป็นตัวนับจากการผลิต แก้ที่นี่ไม่ได้
           </div>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-            <button style={cancelBtnStyle} onClick={() => setEditDie(null)}>ยกเลิก</button>
-            <button style={saveBtnStyle} disabled={saving} onClick={saveDie}>{saving ? 'กำลังบันทึก...' : 'บันทึก'}</button>
+            <button style={cancelBtnStyle} onClick={() => setEditDie(null)}>{tr('ยกเลิก')}</button>
+            <button style={saveBtnStyle} disabled={saving} onClick={saveDie}>{saving ? tr('กำลังบันทึก...') : tr('บันทึก')}</button>
           </div>
         </Modal>
       )}

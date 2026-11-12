@@ -4,6 +4,7 @@ import {
   PARETO_CUTOFF, labelWidthPx, pctLabelY,
 } from '../utils/pareto';
 
+import { tr } from '../utils/i18n';
 /* ══ 📊 Pareto มาตรฐานสากล — แท่งตั้ง + เส้น % สะสม 2 แกน (2026-09-22 · คำสั่ง user) ════════
    *"ลองดู pareto ที่เป็นระดับสากล เทียบกับ pareto ในเว็บเรา ยังเทียบกันไม่ติดเลย …
      แนวนอนไม่เวิค เป็นแนวตั้งและเอียง text เอา ให้ 90 องศาก็ได้นะ เอียงอ่านก็ยังได้"*
@@ -211,11 +212,11 @@ export default function ParetoChart({
         <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 5, alignItems: 'center' }}>
           {tail && showTailToggle && (
             <button type="button" onClick={() => setShowAll(true)} style={miniBtn}>
-              ▸ กางหางยาว {tail.length} รายการ
+              {tr('▸ กางหางยาว')} {tail.length} {tr('รายการ')}
             </button>
           )}
           {showAll && rows.length > maxBars && (
-            <button type="button" onClick={() => setShowAll(false)} style={miniBtn}>◂ ย่อหางยาว</button>
+            <button type="button" onClick={() => setShowAll(false)} style={miniBtn}>{tr('◂ ย่อหางยาว')}</button>
           )}
           <span style={{ opacity: 0.8 }}>ป้าย:</span>
           {[0, -45, -90].map(a => (

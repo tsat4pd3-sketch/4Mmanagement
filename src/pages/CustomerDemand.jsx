@@ -27,6 +27,7 @@ import { buildEsmartManaged, isEsmartPlanRow } from '../utils/shipPlan'; // แ�
 import { fetchAllPages } from '../utils/fetchByIds';
 import PartCard, { partCardGrid } from '../components/PartCard';   // 🃏 การ์ดมาตรฐานเดียวกับสโตร์ (UI §6.23)
 import usePartImages from '../utils/usePartImages';
+import { tr } from '../utils/i18n';
 import { storeBtn } from '../utils/storeUi'; // วันงาน + รอบ → due_date ตามปฏิทิน (16/10)
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
@@ -626,7 +627,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
         <button onClick={() => shiftDay(-1)} style={{ ...btn(false), width: 'auto', flexShrink: 0 }}>◀</button>
         <input type="date" value={day} onChange={e => e.target.value && setDay(e.target.value)} />
         <button onClick={() => shiftDay(1)} style={{ ...btn(false), width: 'auto', flexShrink: 0 }}>▶</button>
-        {!isToday && <button onClick={() => setDay(workDateStr())} style={{ ...btn(true), width: 'auto', flexShrink: 0 }}>วันนี้</button>}
+        {!isToday && <button onClick={() => setDay(workDateStr())} style={{ ...btn(true), width: 'auto', flexShrink: 0 }}>{tr('วันนี้')}</button>}
         <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--muted)', flexShrink: 0 }}>
           วันงาน 08:00 → 08:00
         </span>
@@ -643,7 +644,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
           <button onClick={() => setDay(pastDueReal.reduce((a, p) => (p.due_date > a ? p.due_date : a), pastDueReal[0].due_date))}
             title="คลิกเพื่อกระโดดไปวันงานล่าสุดที่ยังมีใบค้างส่ง"
             style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1.5px solid var(--red-line)', background: 'var(--red-dim)', color: 'var(--red)', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0 }}>
-            ค้างส่งจากวันก่อน {pastDueReal.length} ใบ — กดดู
+            {tr('ค้างส่งจากวันก่อน')} {pastDueReal.length} {tr('ใบ — กดดู')}
           </button>
         )}
         {canAdd && (
@@ -652,7 +653,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
           <button onClick={() => setShowPull(true)}
             title="ลูกค้าส่งไฟล์ยอดเรียกงานจริง (e-SMART) มาเป็นช่วงเวลา — อัพเข้าระบบเพื่อยืนยัน/แก้ยอดของรอบนั้น · พาร์ทที่ไม่อยู่ในไฟล์ถือว่าตรงกับ 862"
             style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--blue)', background: 'var(--blue-dim)', color: 'var(--blue)', fontSize: 12, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0, marginLeft: 'auto' }}>
-            อัพโหลด e-SMART
+            {tr('อัพโหลด e-SMART')}
           </button>
         )}
         {canAdd && (
@@ -692,38 +693,38 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
                 และ<strong>ไม่ถูกแทนที่</strong>ตอนอัพโหลด 862 รอบถัดไป (แทนที่เฉพาะใบจาก EDI)
               </div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ลูกค้า (Ship-to)
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{tr('ลูกค้า (Ship-to)')}
                   {/* เลือกจากทะเบียน ship_to_plants (active) — code นี้เป็น join key ของ custLabel/ชาร์ต/workflow ต่อลูกค้า พิมพ์เองไม่ได้ (2026-09-07)
                       ค่าที่ติดมาแต่ไม่อยู่ในทะเบียน active คงไว้เป็นตัวเลือก ⚠ ไม่ล้างเงียบ (save จะถามยืนยัน) */}
                   <select value={addForm.customer} onChange={e => setAddForm(f => ({ ...f, customer: e.target.value }))} style={inputSt}>
-                    <option value="">— ไม่ระบุลูกค้า —</option>
-                    {addForm.customer && !(shipToCodes || []).includes(addForm.customer) && <option value={addForm.customer}>⚠ {addForm.customer} (นอกทะเบียน)</option>}
+                    <option value="">{tr('— ไม่ระบุลูกค้า —')}</option>
+                    {addForm.customer && !(shipToCodes || []).includes(addForm.customer) && <option value={addForm.customer}>⚠ {addForm.customer} {tr('(นอกทะเบียน)')}</option>}
                     {(shipToCodes || []).map(c => <option key={c} value={c}>{custLabel(c)}</option>)}
                   </select>
                 </label>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>MAT No. *
                   {/* picker กลาง Product Master + กลุ่ม 📜 MAT ที่เคยบันทึกไว้ (นอกทะเบียน → save ถามยืนยัน) · เลือกแล้วเติมชื่อพาร์ทให้ (2026-09-07) */}
-                  <ProductSelect products={prodMaster} value={addForm.mat_no} placeholder="ค้น MAT / ชื่อพาร์ท / P/N…" history={shipMatHist}
+                  <ProductSelect products={prodMaster} value={addForm.mat_no} placeholder={tr('ค้น MAT / ชื่อพาร์ท / P/N…')} history={shipMatHist}
                     onChange={({ mat_no, name }) => setAddForm(f => ({ ...f, mat_no, part_name: name || prodNames[mat_no] || f.part_name }))} />
                 </label>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>จำนวน (ชิ้น) *
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{tr('จำนวน (ชิ้น) *')}
                   <input type="number" min="1" value={addForm.qty} onChange={e => setAddForm(f => ({ ...f, qty: e.target.value }))} style={inputSt} />
                 </label>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ชื่อพาร์ท{prodNames[addForm.mat_no.trim()] ? ' (จาก Product Master)' : ''}
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{tr('ชื่อพาร์ท')}{prodNames[addForm.mat_no.trim()] ? ' (จาก Product Master)' : ''}
                   {/* snapshot ชื่อจาก dr_products — MAT ที่เลือกจากทะเบียนแล้วห้ามแก้ชื่อเอง (ชื่อคนละแบบ = สอบกลับไม่เจอ) (2026-09-07) */}
                   <input value={addForm.part_name} readOnly={!!prodNames[addForm.mat_no.trim()]} onChange={e => setAddForm(f => ({ ...f, part_name: e.target.value }))}
                     style={{ ...inputSt, opacity: prodNames[addForm.mat_no.trim()] ? 0.75 : 1 }} />
                 </label>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>วันงาน (08:00 → 07:59) *
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{tr('วันงาน (08:00 → 07:59) *')}
                   <input type="date" value={addForm.due_date} onChange={e => setAddForm(f => ({ ...f, due_date: e.target.value }))} style={inputSt} />
                   {addForm.ship_time && addForm.ship_time < '08:00' && addForm.due_date && (
-                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)' }}>รอบกะดึก → ส่งจริง {shipDueDate(addForm.due_date, addForm.ship_time)} {addForm.ship_time}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)' }}>{tr('รอบกะดึก → ส่งจริง')} {shipDueDate(addForm.due_date, addForm.ship_time)} {addForm.ship_time}</span>
                   )}
                 </label>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>รอบเวลาส่ง (เว้นว่าง = ⏳ ไม่ระบุ)
                   <input type="time" value={addForm.ship_time} onChange={e => setAddForm(f => ({ ...f, ship_time: e.target.value }))} style={inputSt} />
                 </label>
-                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>เลขที่ PO
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{tr('เลขที่ PO')}
                   <input value={addForm.order_no} onChange={e => setAddForm(f => ({ ...f, order_no: e.target.value }))} style={inputSt} />
                 </label>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>Dock
@@ -733,9 +734,9 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                 <button onClick={saveAddOrder} disabled={addSaving}
                   style={{ flex: 1, padding: '10px 12px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: addSaving ? 0.6 : 1 }}>
-                  {addSaving ? 'กำลังบันทึก...' : 'เพิ่ม order'}
+                  {addSaving ? tr('กำลังบันทึก...') : tr('เพิ่ม order')}
                 </button>
-                <button onClick={() => setShowAdd(false)} style={btn(false)}>ยกเลิก</button>
+                <button onClick={() => setShowAdd(false)} style={btn(false)}>{tr('ยกเลิก')}</button>
               </div>
             </div>
           </div>
@@ -954,7 +955,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
                       })()}
                       <button onClick={() => goToCard(o)}
                         style={{ flex: 1, padding: '7px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', fontFamily: 'var(--font-body)' }}>
-                        ไปที่การ์ด
+                        {tr('ไปที่การ์ด')}
                       </button>
                       {canAdd && isOpenOrder(o) && (
                         <button className="tbtn" onClick={() => cancelOrder(o)} disabled={busy === o.id}
@@ -1189,7 +1190,7 @@ function WorkflowSection({ canEdit }) {
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ชุดเฟสของ:</span>
         <select value={scope} onChange={e => setScope(e.target.value)} style={{ ...inputSt, width: 220 }}>
-          <option value="">ค่ามาตรฐาน (ทุกลูกค้า)</option>
+          <option value="">{tr('ค่ามาตรฐาน (ทุกลูกค้า)')}</option>
           {codes.map(c => (
             <option key={c.code} value={c.code}>
               {c.customer_name && c.customer_name !== c.code ? `${c.customer_name} (${c.code})` : c.code}
@@ -1197,7 +1198,7 @@ function WorkflowSection({ canEdit }) {
           ))}
         </select>
         {scope && steps.length === 0 && canEdit && (
-          <button onClick={copyFromDefault} style={btn(false)}>คัดลอกจากค่ามาตรฐาน</button>
+          <button onClick={copyFromDefault} style={btn(false)}>{tr('คัดลอกจากค่ามาตรฐาน')}</button>
         )}
         {scope && steps.length === 0 && (
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>ลูกค้านี้ยังไม่มีชุดเฟสของตัวเอง — ตอนนี้ใช้ค่ามาตรฐานอยู่</span>
@@ -1207,7 +1208,7 @@ function WorkflowSection({ canEdit }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
           <thead><tr style={{ background: 'var(--bg2)' }}>
             {['ลำดับ', 'ชื่อเฟส', 'ก่อนเวลาส่ง (นาที)', 'ต้องถึงสถานะ', '📦 หักสต็อก', ''].map(h => (
-              <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{h}</th>
+              <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{tr(h)}</th>
             ))}
           </tr></thead>
           <tbody>
@@ -1218,7 +1219,7 @@ function WorkflowSection({ canEdit }) {
                 <td style={cell}>{canEdit ? <input type="number" min="0" value={val(r, 'offset_min')} onChange={e => setVal(r, 'offset_min', e.target.value)} style={{ ...edSt, width: 110 }} /> : <span style={{ fontSize: 13 }}>{r.offset_min}</span>}</td>
                 <td style={cell}>{canEdit ? (
                   <select value={val(r, 'requires_status')} onChange={e => setVal(r, 'requires_status', e.target.value)} style={{ ...edSt, width: 170 }}>
-                    {REQ_STATUS_OPTIONS.map(x => <option key={x.value} value={x.value}>{x.label}</option>)}
+                    {REQ_STATUS_OPTIONS.map(x => <option key={x.value} value={x.value}>{tr(x.label)}</option>)}
                   </select>
                 ) : <span style={{ fontSize: 12 }}>{REQ_STATUS_OPTIONS.find(x => x.value === r.requires_status)?.label || r.requires_status}</span>}</td>
                 <td style={{ ...cell, whiteSpace: 'nowrap' }}>
@@ -1227,7 +1228,7 @@ function WorkflowSection({ canEdit }) {
                       title="ติ๊กเฟสที่ของถูกตัดออกจาก warehouse จริง (SAP ตัดตั้งแต่ย้ายเข้าพื้นที่ shipping area)">
                       <input type="checkbox" checked={!!val(r, 'deducts_stock')}
                         onChange={e => setVal(r, 'deducts_stock', e.target.checked)} style={{ width: 'auto', margin: 0 }} />
-                      หักที่เฟสนี้
+                      {tr('หักที่เฟสนี้')}
                     </label>
                   ) : <span style={{ fontSize: 12 }}>{r.deducts_stock ? '📦 หักที่เฟสนี้' : '—'}</span>}
                   {r.id === cutStep?.id && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 800, color: 'var(--blue)' }}>← จุดหักจริง</span>}
@@ -1236,13 +1237,13 @@ function WorkflowSection({ canEdit }) {
                   {canEdit && draft[r.id] && (
                     <button className="tbtn" onClick={() => save(r)} disabled={busy === r.id}
                       style={{ padding: '5px 14px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', marginRight: 6 }}>
-                      {busy === r.id ? '...' : 'บันทึก'}
+                      {busy === r.id ? '...' : tr('บันทึก')}
                     </button>
                   )}
                   {canEdit && (
                     <button className="tbtn" onClick={() => remove(r)} disabled={busy === r.id}
                       style={{ padding: '5px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', fontFamily: 'var(--font-body)' }}>
-                      ลบ
+                      {tr('ลบ')}
                     </button>
                   )}
                 </td>
@@ -1252,7 +1253,7 @@ function WorkflowSection({ canEdit }) {
         </table>
       </div>
       {canEdit && (
-        <button onClick={add} style={{ ...btn(false), marginTop: 12 }}>เพิ่มเฟส</button>
+        <button onClick={add} style={{ ...btn(false), marginTop: 12 }}>{tr('เพิ่มเฟส')}</button>
       )}
       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10, lineHeight: 1.7 }}>
         ตัวอย่าง: ส่งถึงลูกค้า 13:00 → เตรียมงานเสร็จ (120 นาที) deadline 11:00 · โหลดขึ้นรถ (60 นาที) deadline 12:00 · รถออก/ส่ง (0 นาที) deadline 13:00<br />
@@ -1339,7 +1340,7 @@ function ShipToTab({ canEdit, onChanged, fullName }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
           <thead><tr style={{ background: 'var(--bg2)' }}>
             {['ลำดับในชาร์ต', 'Code', 'ชื่อลูกค้า *', 'โรงงาน/ท่า', 'หมายเหตุ', ''].map(h => (
-              <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{h}</th>
+              <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{tr(h)}</th>
             ))}
           </tr></thead>
           <tbody>
@@ -1360,13 +1361,13 @@ function ShipToTab({ canEdit, onChanged, fullName }) {
                   {canEdit && draft[r.code] && (
                     <button className="tbtn" onClick={() => save(r.code)} disabled={busy === r.code}
                       style={{ padding: '5px 14px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', marginRight: 6 }}>
-                      {busy === r.code ? '...' : 'บันทึก'}
+                      {busy === r.code ? '...' : tr('บันทึก')}
                     </button>
                   )}
                   {canEdit && (
                     <button className="tbtn" onClick={() => removeCode(r)} disabled={busy === r.code}
                       style={{ padding: '5px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', fontFamily: 'var(--font-body)' }}>
-                      ลบ
+                      {tr('ลบ')}
                     </button>
                   )}
                 </td>
@@ -1377,8 +1378,8 @@ function ShipToTab({ canEdit, onChanged, fullName }) {
       </div>
       {canEdit && (
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-          <input value={newCode} onChange={e => setNewCode(e.target.value)} placeholder="เพิ่ม code ใหม่" style={{ ...inputSt, width: 160 }} />
-          <button onClick={addCode} style={btn(false)}>เพิ่ม</button>
+          <input value={newCode} onChange={e => setNewCode(e.target.value)} placeholder={tr('เพิ่ม code ใหม่')} style={{ ...inputSt, width: 160 }} />
+          <button onClick={addCode} style={btn(false)}>{tr('เพิ่ม')}</button>
         </div>
       )}
     </div>

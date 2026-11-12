@@ -11,6 +11,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { RATE_COMPONENTS, fmtBaht } from '../utils/costSaving';
 import { rnd, rint, pick } from '../utils/seededRandom';
 import { groupLean } from '../utils/oee';
+import { tr } from '../utils/i18n';
 import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 /* ══ 🔮 ภาพเมื่อทุกแผนกใช้ครบ (Full-Adoption Outlook) · 2026-08-13 ═══════════════════════
@@ -826,7 +827,7 @@ function SignalRow({ s, navigate }) {
           {s.gapTo && <button onClick={() => navigate(s.gapTo)} style={{
             marginLeft: 6, background: 'none', border: 'none', padding: 0, cursor: 'pointer',
             color: 'var(--accent)', fontSize: 11.5, fontWeight: 700, textDecoration: 'underline',
-          }}>ไปจัดการ →</button>}
+          }}>{tr('ไปจัดการ →')}</button>}
         </div>
       )}
     </div>
@@ -950,7 +951,7 @@ function DimensionTab({ c, ents, demoOn, day, navigate, isMobile }) {
                     <button onClick={() => navigate(q.to)} style={{
                       marginLeft: 8, background: 'none', border: 'none', padding: 0, cursor: 'pointer',
                       color: 'var(--accent)', fontSize: 12, fontWeight: 700, textDecoration: 'underline',
-                    }}>เปิดหน้าที่เกี่ยวข้อง →</button>
+                    }}>{tr('เปิดหน้าที่เกี่ยวข้อง →')}</button>
                   </div>
                 )}
               </div>
@@ -1097,7 +1098,7 @@ function DeptTab({ c, navigate, isMobile }) {
             <button onClick={() => navigate(r.to)} style={{
               fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
               background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)',
-            }}>เปิด Dashboard →</button>
+            }}>{tr('เปิด Dashboard →')}</button>
           </div>
           <div style={{ display: 'grid', gap: 14, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', alignContent: 'start' }}>
             <div>
@@ -1176,25 +1177,25 @@ function RoiTab({ c, loss, rates, demoOn, day, navigate, isMobile }) {
         </div>
         <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', alignContent: 'start' }}>
           <label style={{ fontSize: 12.5 }}>
-            ต้นทุนเวลาเดินไลน์ (บาท/ชม.)
+            {tr('ต้นทุนเวลาเดินไลน์ (บาท/ชม.)')}
             <input type="number" min={0} value={rate} onChange={e => setRate(Math.max(0, +e.target.value || 0))}
               style={{ width: 130, marginLeft: 8, padding: '4px 8px', fontSize: 13 }} />
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4 }}>
               {realRate
-                ? <>ค่าเฉลี่ยจาก <b>cost_center_rates</b> ในระบบ (DL+OH+DP)</>
-                : <>ยังไม่มีใครกรอก Activity Rate — ตัวเลขนี้จึงเป็น<b style={{ color: 'var(--amber)' }}>สมมติฐาน</b> ·{' '}
+                ? <>{tr('ค่าเฉลี่ยจาก')} <b>cost_center_rates</b> {tr('ในระบบ (DL+OH+DP)')}</>
+                : <>{tr('ยังไม่มีใครกรอก Activity Rate — ตัวเลขนี้จึงเป็น')}<b style={{ color: 'var(--amber)' }}>{tr('สมมติฐาน')}</b> ·{' '}
                   <button onClick={() => navigate('/org-setup')} style={{
                     background: 'none', border: 'none', padding: 0, cursor: 'pointer',
                     color: 'var(--accent)', fontSize: 11.5, fontWeight: 700, textDecoration: 'underline',
-                  }}>กรอกค่าจริงที่ผังองค์กร →</button> แล้วตัวเลขนี้จะกลายเป็นของจริงทันที</>}
+                  }}>{tr('กรอกค่าจริงที่ผังองค์กร →')}</button> {tr('แล้วตัวเลขนี้จะกลายเป็นของจริงทันที')}</>}
             </div>
           </label>
           <label style={{ fontSize: 12.5 }}>
-            คาดว่าจะลดเวลาหยุดได้ <b>{cut}%</b>
+            {tr('คาดว่าจะลดเวลาหยุดได้')} <b>{cut}%</b>
             <input type="range" min={0} max={60} value={cut} onChange={e => setCut(+e.target.value)}
               style={{ width: '100%', marginTop: 6 }} />
             <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-              ระบบ<b>ไม่รับประกัน</b>ตัวเลขนี้ — เลื่อนเพื่อดูว่าถ้าลดได้เท่านี้ จะเป็นเงินเท่าไหร่
+              {tr('ระบบ')}<b>{tr('ไม่รับประกัน')}</b>{tr('ตัวเลขนี้ — เลื่อนเพื่อดูว่าถ้าลดได้เท่านี้ จะเป็นเงินเท่าไหร่')}
             </div>
           </label>
         </div>
@@ -1228,7 +1229,7 @@ function RoiTab({ c, loss, rates, demoOn, day, navigate, isMobile }) {
             <button onClick={() => navigate('/products')} style={{
               background: 'none', border: 'none', padding: 0, cursor: 'pointer',
               color: 'var(--accent)', fontSize: 12, fontWeight: 700, textDecoration: 'underline',
-            }}>ไปกรอกต้นทุน →</button>
+            }}>{tr('ไปกรอกต้นทุน →')}</button>
           </div>
         )}
       </div>
@@ -1623,7 +1624,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
             <button onClick={() => navigate(peLink)} style={{
               marginLeft: 8, fontSize: 11.5, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--r-md)',
               cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none',
-            }}>เปิดดู →</button>
+            }}>{tr('เปิดดู →')}</button>
           </div>
         ) : !demoOn && (
           <div style={{
@@ -1639,7 +1640,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
             <button onClick={() => navigate('/pe-docs')} style={{
               marginTop: 8, fontSize: 11.5, fontWeight: 700, padding: '5px 12px', borderRadius: 'var(--r-md)',
               cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)',
-            }}>ไปลงเอกสารพาร์ทนี้</button>
+            }}>{tr('ไปลงเอกสารพาร์ทนี้')}</button>
           </div>
         )}
 
@@ -1674,7 +1675,7 @@ function DeepDiveTab({ dd, err, demoOn, navigate, isMobile }) {
                   <button onClick={() => navigate(peLink)} style={{
                     fontSize: 12, color: 'var(--accent)', background: 'none', border: 'none',
                     padding: 0, cursor: 'pointer', textAlign: 'left', fontWeight: 700,
-                  }}>เปิดดูรายตัวของพาร์ทนี้ →</button>
+                  }}>{tr('เปิดดูรายตัวของพาร์ทนี้ →')}</button>
                 ) : (
                   <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                     {peSet ? 'ชุดนี้ยังไม่ได้ลงหัวข้อนี้' : 'พาร์ทนี้ยังไม่มีเอกสาร'} — ตอบคำถามนี้ไม่ได้

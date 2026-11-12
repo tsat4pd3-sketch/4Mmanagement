@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../supabaseClient'
 import { resolveEmployeeSigner } from '../utils/employeeSignature'
 
+import { tr } from '../utils/i18n';
 /* `required` (B4 · 10/11) — ใบ AM ต้องมีบัตรผู้ตรวจทุกใบ: ป้าย "*จำเป็น" + placeholder ไม่ชวนให้เว้นว่าง (ด่านจริงอยู่ตอนบันทึก) */
 export default function InspectorCodeField({ value, onChange, disabled = false, label = 'รหัสพนักงานผู้ตรวจ (สแกนบัตร / พิมพ์)', required = false, style }) {
   const code = String(value || '').trim()
@@ -21,7 +22,7 @@ export default function InspectorCodeField({ value, onChange, disabled = false, 
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 3, ...style }}>
-      <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>{label}{required && <span style={{ color: 'var(--red)' }}> * จำเป็น</span>}</label>
+      <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>{label}{required && <span style={{ color: 'var(--red)' }}> {tr('* จำเป็น')}</span>}</label>
       {/* key = remount เมื่อค่าจากภายนอกเปลี่ยน (input uncontrolled ⇒ สแกนรหัสใหม่ทับได้ทันที) */}
       <input key={code} defaultValue={code} disabled={disabled} inputMode="text" autoComplete="off"
         onBlur={e => { const v = e.target.value.trim(); if (v !== code) onChange(v) }}

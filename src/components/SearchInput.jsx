@@ -1,3 +1,4 @@
+import { tr } from '../utils/i18n';
 /* ══ 🔍 SearchInput — ช่องค้นหาในรายการ (2026-09-24 · UI-STANDARD.md §4) ═══════════════
    เดิมมี ~60 แบบ: 🔍/🔎/ไม่มีไอคอน · "ค้นหา/ค้น/หา/พิมพ์" · "…"/"..."/"— … —" (audit 23/09)
    มาตรฐาน: ไอคอน 🔍 อยู่ในกรอบ (ไม่ใช่ในข้อความ) · placeholder = "ค้นหา <ช่องที่ค้นได้>"
@@ -13,7 +14,7 @@
 const ICON_PAD = { paddingLeft: 30, paddingRight: 28 };
 
 export default function SearchInput({ value, onChange, fields, placeholder, grow = true, style, inputStyle, autoFocus, onKeyDown, ariaLabel }) {
-  const ph = placeholder || (fields ? `ค้นหา ${fields}` : 'ค้นหา');
+  const ph = placeholder || (fields ? `${tr('ค้นหา')} ${tr(fields)}` : tr('ค้นหา'));   // 🌐 12/11: ป้าย + ช่องที่ค้นได้แปลผ่าน tr()
   return (
     <div className={`search-input${grow ? ' grow' : ''}`} style={style}>
       <span className="search-ico" aria-hidden="true">🔍</span>

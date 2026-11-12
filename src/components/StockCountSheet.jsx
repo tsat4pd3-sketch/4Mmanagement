@@ -18,6 +18,7 @@ import LineSelect from './LineSelect';
 import { useDraftAutosave, loadDraft, clearDraft } from '../utils/formDraft';   // 📝 ร่างในเครื่อง (มือถือ · 22/10)
 import DraftRestoreBar from './DraftRestoreBar';
 
+import { tr } from '../utils/i18n';
 /* ─── 📋 ตรวจนับ / เฟิร์มยอด — แท็บใน /line-stock (2026-09-23) ─────────────────
    เกิดจาก feedback หน้างาน (แพลนนิ่ง): "Stock บางตัวไม่ตรง" + "ให้ PD คีย์ผลิต
    แล้วเฟิร์มยอดให้เลยได้มั้ย"
@@ -243,20 +244,20 @@ export default function StockCountSheet({ role, scope }) {
         <div style={{ display:'flex', flexWrap:'wrap', gap:10, alignItems:'center', marginBottom:12 }}>
           <LineSelect
             lines={lines} value={lineFilter} onChange={changeLine} {...scope}
-            placeholder="— เลือกไลน์/คลังที่จะนับ —"
+            placeholder={tr('— เลือกไลน์/คลังที่จะนับ —')}
             style={{ width: isMobile ? '100%' : 260, padding:'6px 8px', borderRadius:6, border:'1px solid var(--border)', background:'var(--bg2)', color:'var(--text)', fontSize: isMobile ? 16 : 13 }}
             extraGroups={[{ label: 'คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
           />
           <label style={{ fontSize:12, color:'var(--muted)' }}>
-            วันที่นับ{' '}
+            {tr('วันที่นับ')}{' '}
             <input type="date" value={workDate} onChange={e => setWorkDate(e.target.value)}
               style={{ width:150, padding:'6px 8px', borderRadius: 'var(--ctl-r)', border:'1px solid var(--border)', background:'var(--bg2)', color:'var(--text)', fontSize:13 }} />
           </label>
           <label style={{ fontSize:12, display:'flex', alignItems:'center', gap:6, cursor:'pointer' }}>
             <input type="checkbox" checked={hideZero} onChange={e => setHideZero(e.target.checked)} style={{ width:'auto' }} />
-            ซ่อนพาร์ทที่ยอดเป็น 0
+            {tr('ซ่อนพาร์ทที่ยอดเป็น 0')}
           </label>
-          <input value={note} onChange={e => setNote(e.target.value)} placeholder="หมายเหตุรอบนับ (ไม่บังคับ)"
+          <input value={note} onChange={e => setNote(e.target.value)} placeholder={tr('หมายเหตุรอบนับ (ไม่บังคับ)')}
             style={{ width: isMobile ? '100%' : 220, padding:'6px 8px', borderRadius: 'var(--ctl-r)', border:'1px solid var(--border)', background:'var(--bg2)', color:'var(--text)', fontSize:13 }} />
         </div>
 
@@ -279,7 +280,7 @@ export default function StockCountSheet({ role, scope }) {
                       <MatLabel mat={r.mat_no} name={r.part_name} />
                       <div className="sc-row">
                         <div className="sc-sys"><span>ในระบบ</span><b>{n0(r.qty_on_hand)}</b></div>
-                        <input type="number" inputMode="numeric" min="0" placeholder="นับได้" aria-label={`นับได้จริง ${r.mat_no}`}
+                        <input type="number" inputMode="numeric" min="0" placeholder={tr('นับได้')} aria-label={`นับได้จริง ${r.mat_no}`}
                           value={counts[r.mat_no] ?? ''}
                           onChange={e => setCounts(c => ({ ...c, [r.mat_no]: e.target.value }))} />
                         <div className="sc-diff" style={{ color: !d ? (typed ? 'var(--accent)' : 'var(--muted)') : d.dir === 'up' ? '#22c55e' : '#ef4444' }}>
@@ -295,10 +296,10 @@ export default function StockCountSheet({ role, scope }) {
               <table style={{ width:'100%', borderCollapse:'collapse', minWidth:620 }}>
                 <thead><tr>
                   {/* ยุบ "ชื่อชิ้นงาน + MAT" เป็นคอลัมน์เดียว — <MatLabel> ให้ครบ Part No./ชื่อ/MAT ในที่เท่าเดิม (30/09) */}
-                  <th style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1 }}>ชิ้นงาน</th>
-                  <th style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1, textAlign:'right' }}>ยอดในระบบ</th>
-                  <th style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1, textAlign:'right' }}>นับได้จริง</th>
-                  <th style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1, textAlign:'right' }}>ผลต่าง</th>
+                  <th style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1 }}>{tr('ชิ้นงาน')}</th>
+                  <th style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1, textAlign:'right' }}>{tr('ยอดในระบบ')}</th>
+                  <th style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1, textAlign:'right' }}>{tr('นับได้จริง')}</th>
+                  <th style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1, textAlign:'right' }}>{tr('ผลต่าง')}</th>
                 </tr></thead>
                 <tbody>
                   {rows.map(r => {
@@ -342,7 +343,7 @@ export default function StockCountSheet({ role, scope }) {
                 </button>
                 <button style={{ ...btn('var(--bg3)', 'var(--text)'), border:'1px solid var(--border2)', fontSize:12, padding:'6px 12px' }}
                   onClick={() => setCounts({})}>
-                  ล้างที่กรอก
+                  {tr('ล้างที่กรอก')}
                 </button>
                 <span style={{ fontSize:11, color:'var(--muted)' }}>
                   ตั้งต้นคลังใหม่ = เติม 0 ทั้งหมด แล้วแก้เฉพาะแถวที่นับเจอของ — ยังต้องกดบันทึกเอง
@@ -360,7 +361,7 @@ export default function StockCountSheet({ role, scope }) {
               {canApprove && (
                 <label style={{ fontSize:12, display:'flex', alignItems:'center', gap:6, cursor:'pointer' }}>
                   <input type="checkbox" checked={approveNow} onChange={e => setApproveNow(e.target.checked)} style={{ width:'auto' }} />
-                  อนุมัติเลย (มีผลกับยอดทันที)
+                  {tr('อนุมัติเลย (มีผลกับยอดทันที)')}
                 </label>
               )}
               {canCount ? (
@@ -424,7 +425,7 @@ export default function StockCountSheet({ role, scope }) {
                   <thead><tr>
                     {['วันส่ง', 'ลูกค้า', 'MAT', 'จำนวน', 'คงเหลือหลังหัก'].map((h, i) => (
                       <th key={h} style={{ ...th, position:'sticky', top:0, background:'var(--card)', zIndex:1,
-                        textAlign: i >= 3 ? 'right' : 'left' }}>{h}</th>
+                        textAlign: i >= 3 ? 'right' : 'left' }}>{tr(h)}</th>
                     ))}
                   </tr></thead>
                   <tbody>

@@ -25,6 +25,7 @@ import {
   summarizeMachineFacts, compareWithSessions, reasonRows, tagRows, suggestDowntimeType, stopTotals, STATE_META, STATE_ORDER,
 } from '../utils/machineFacts';
 
+import { tr } from '../utils/i18n';
 const DAYS = 7;
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 14, boxShadow: 'var(--shadow-sm)', minWidth: 0 };
 const th = { textAlign: 'left', padding: '6px 8px', fontSize: 12, color: 'var(--muted)', fontWeight: 700, borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' };
@@ -130,7 +131,7 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
         {!tags.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ยังไม่เห็นรหัสเครื่องจากต้นทางนี้</div> : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr><th style={th}>รหัสต้นทาง</th><th style={th}>เห็นล่าสุด</th><th style={th}>เครื่องใน ESM</th><th style={th}>ผู้ยืนยัน</th></tr></thead>
+              <thead><tr><th style={th}>{tr('รหัสต้นทาง')}</th><th style={th}>{tr('เห็นล่าสุด')}</th><th style={th}>{tr('เครื่องใน ESM')}</th><th style={th}>{tr('ผู้ยืนยัน')}</th></tr></thead>
               <tbody>
                 {tags.map(t => {
                   const cur = t.map?.machine_id || '';
@@ -150,12 +151,12 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
                               {t.suggest && (
                                 <button type="button" className="pg-btn" disabled={!!busy}
                                   onClick={() => save(`tag:${t.tag}`, 'map_tag', { tag: t.tag, machine_id: t.suggest.id }, `ผูก ${t.tag}`)}>
-                                  ✓ ใช้ข้อเสนอ: {t.suggest.machine_no}{t.suggest.line_name ? ` · ${t.suggest.line_name}` : ''}</button>
+                                  {tr('✓ ใช้ข้อเสนอ:')} {t.suggest.machine_no}{t.suggest.line_name ? ` · ${t.suggest.line_name}` : ''}</button>
                               )}
                               {cur && (
                                 <button type="button" className="pg-btn" disabled={!!busy}
                                   onClick={() => window.confirm(`เลิกผูก ${t.tag}? ข้อมูลของรหัสนี้จะหายจากตารางเทียบจนกว่าจะผูกใหม่`) &&
-                                    save(`tag:${t.tag}`, 'map_tag', { tag: t.tag, machine_id: null }, `เลิกผูก ${t.tag}`)}>เลิกผูก</button>
+                                    save(`tag:${t.tag}`, 'map_tag', { tag: t.tag, machine_id: null }, `เลิกผูก ${t.tag}`)}>{tr('เลิกผูก')}</button>
                               )}
                             </div>
                           </div>
@@ -190,7 +191,7 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
         {!reasons.rows.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ยังไม่เห็นเหตุผลหยุดจากต้นทางนี้</div> : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr><th style={th}>ชุดเหตุผล</th><th style={th}>รหัส · ชื่อฝั่งต้นทาง</th><th style={th}>{DAYS} วัน</th><th style={th}>ประเภท downtime ใน ESM</th></tr></thead>
+              <thead><tr><th style={th}>{tr('ชุดเหตุผล')}</th><th style={th}>{tr('รหัส · ชื่อฝั่งต้นทาง')}</th><th style={th}>{DAYS} {tr('วัน')}</th><th style={th}>{tr('ประเภท downtime ใน ESM')}</th></tr></thead>
               <tbody>
                 {reasons.rows.map(r => {
                   const k = `rsn:${r.kind}:${r.code}`;
@@ -205,7 +206,7 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
                       <td style={{ ...td, minWidth: 260 }}>
                         {canManage ? (
                           <div style={{ display: 'grid', gap: 6 }}>
-                            <SearchSelect value={cur} options={dtOptions} placeholder="ค้นประเภท downtime…"
+                            <SearchSelect value={cur} options={dtOptions} placeholder={tr('ค้นประเภท downtime…')}
                               loadFail={data.errs.includes('ประเภท downtime') ? 'โหลดประเภท downtime ไม่สำเร็จ' : ''}
                               onChange={({ id }) => id && id !== cur && save(k, 'map_reason', { ...base, downtime_type_id: id }, `จับคู่เหตุผล ${r.code}`)} />
                             {cur && !dtById.has(cur) && !data.errs.includes('ประเภท downtime') && (
@@ -214,15 +215,15 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                               {sug && (
                                 <button type="button" className="pg-btn" disabled={!!busy}
-                                  onClick={() => save(k, 'map_reason', { ...base, downtime_type_id: sug.id }, `จับคู่เหตุผล ${r.code}`)}>✓ ใช้ข้อเสนอ: {sug.name_th}</button>
+                                  onClick={() => save(k, 'map_reason', { ...base, downtime_type_id: sug.id }, `จับคู่เหตุผล ${r.code}`)}>{tr('✓ ใช้ข้อเสนอ:')} {sug.name_th}</button>
                               )}
                               {!(r.map && !cur) && (
                                 <button type="button" className="pg-btn" disabled={!!busy}
-                                  onClick={() => save(k, 'map_reason', { ...base, downtime_type_id: null }, `บันทึก "ไม่มีใน ESM" ${r.code}`)}>ไม่มีใน ESM</button>
+                                  onClick={() => save(k, 'map_reason', { ...base, downtime_type_id: null }, `บันทึก "ไม่มีใน ESM" ${r.code}`)}>{tr('ไม่มีใน ESM')}</button>
                               )}
                               {r.map && (
                                 <button type="button" className="pg-btn" disabled={!!busy}
-                                  onClick={() => save(k, 'map_reason', { ...base, clear: true }, `ล้างการจับคู่ ${r.code}`)}>ล้าง</button>
+                                  onClick={() => save(k, 'map_reason', { ...base, clear: true }, `ล้างการจับคู่ ${r.code}`)}>{tr('ล้าง')}</button>
                               )}
                               {r.map && !cur && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ตรวจแล้ว: ไม่มีตัวตรงใน ESM</span>}
                             </div>
@@ -260,11 +261,11 @@ export default function MachineFactsPanel({ src, canManage, callAdmin }) {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
-                    <th style={th}>วัน · กะ</th><th style={th}>ไลน์</th>
-                    <th style={th}>Daily Report: ยอดผลิต</th><th style={th}>DT คนลง (นาที)</th>
-                    <th style={th}>เครื่อง</th><th style={th}>ชิ้นจากเครื่อง</th><th style={th}>NG กดหน้าเครื่อง</th>
-                    {STATE_ORDER.map(s => <th key={s} style={th} title={STATE_META[s].label}>{STATE_META[s].label} (นาที)</th>)}
-                    <th style={th}>หยุดสั้น (นาที)</th><th style={th}>DT คนลงเครื่องนี้</th>
+                    <th style={th}>{tr('วัน · กะ')}</th><th style={th}>{tr('ไลน์')}</th>
+                    <th style={th}>{tr('Daily Report: ยอดผลิต')}</th><th style={th}>{tr('DT คนลง (นาที)')}</th>
+                    <th style={th}>{tr('เครื่อง')}</th><th style={th}>{tr('ชิ้นจากเครื่อง')}</th><th style={th}>{tr('NG กดหน้าเครื่อง')}</th>
+                    {STATE_ORDER.map(s => <th key={s} style={th} title={STATE_META[s].label}>{STATE_META[s].label} {tr('(นาที)')}</th>)}
+                    <th style={th}>{tr('หยุดสั้น (นาที)')}</th><th style={th}>{tr('DT คนลงเครื่องนี้')}</th>
                   </tr>
                 </thead>
                 <tbody>

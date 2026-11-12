@@ -32,6 +32,7 @@ import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import { planTaskSummary } from '../utils/pmCoordSummary';
 import useIsMobile from '../utils/useIsMobile';
 import StepFlow from '../components/StepFlow';
+import { tr } from '../utils/i18n';
 import { pmCoordinationFlow } from '../utils/stepFlow';   // 🔴 เพดาน 1000 แถว + URL ยาว (กฎเหล็ก DB ข้อ 5)
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
@@ -213,7 +214,7 @@ export default function PmCoordination() {
         permKey="pm_coord:manage" hint="ฝ่ายผลิตดูแผนที่ถูกนัดและพิมพ์ใบได้ตามปกติ (ตั้งใจให้เห็นทุก role)" />
       <PageHeader title="แผนประสานงาน PM / งานเครื่องจักร" icon="🗓️"
         sub="งาน PM/แก้เครื่องหลายวัน · แจ้ง Production ล่วงหน้า"
-        actions={canManage && <button type="button" className="pg-btn" onClick={() => setEditing({ _new: true, title: '', tasks: [] })} style={btnPri}>สร้างแผนใหม่</button>} />
+        actions={canManage && <button type="button" className="pg-btn" onClick={() => setEditing({ _new: true, title: '', tasks: [] })} style={btnPri}>{tr('สร้างแผนใหม่')}</button>} />
 
       {/* UI-STANDARD 2026-09-24 — ตัวเลือกสถานะ 4 ตัว = Segmented · "ทุกสถานะ" ซ้ายสุด (state 'all' เดิม) */}
       <FilterBar>
@@ -226,7 +227,7 @@ export default function PmCoordination() {
         <SearchInput value={fQ} onChange={setFQ} fields="ชื่อแผน / เครื่อง / ไลน์ / งาน" />
         <span className="spacer" />
         <span className="filter-count">{shown.length} แผน{noLineHidden ? ` · ซ่อนแผนไม่ระบุไลน์ ${noLineHidden}` : ''}</span>
-        <button type="button" onClick={load} style={{ ...btnGhost, padding: '5px 11px', fontSize: 12 }}>รีเฟรช</button>
+        <button type="button" onClick={load} style={{ ...btnGhost, padding: '5px 11px', fontSize: 12 }}>{tr('รีเฟรช')}</button>
       </FilterBar>
 
       {loadErr && (
@@ -261,7 +262,7 @@ export default function PmCoordination() {
         <div className="table-sticky" style={{ overflowX: 'auto', maxHeight: 'calc(100vh - 260px)', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
           <table className="rec-list" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
             <thead>
-              <tr>{['แผน', 'เครื่อง', 'ไลน์', 'ช่วงวันที่', 'งานถัดไป', 'ความคืบหน้า', 'สถานะ', ''].map((h, i) => <th key={i} style={{ textAlign: 'left' }}>{h}</th>)}</tr>
+              <tr>{['แผน', 'เครื่อง', 'ไลน์', 'ช่วงวันที่', 'งานถัดไป', 'ความคืบหน้า', 'สถานะ', ''].map((h, i) => <th key={i} style={{ textAlign: 'left' }}>{tr(h)}</th>)}</tr>
             </thead>
             <tbody>
               {shown.map(({ p, sum }) => (
@@ -402,11 +403,11 @@ function PlanRow({ plan: p, sum, open, onToggle, tasks, canManage, pmPlan, fullN
             {p.remark && <div style={{ fontSize: 12, color: 'var(--red)', margin: '4px 0 8px', padding: '5px 8px', borderRadius: 'var(--r-md)', background: 'var(--red-dim)', whiteSpace: 'normal' }}>📌 <b>Remark:</b> {p.remark}</div>}
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
               <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>สร้างโดย {p.created_by || '—'}</span>
-              <button onClick={() => printPlan(p, tasks)} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5, marginLeft: 'auto' }}>พิมพ์</button>
+              <button onClick={() => printPlan(p, tasks)} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5, marginLeft: 'auto' }}>{tr('พิมพ์')}</button>
               {canManage && <>
-                <button onClick={notify} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5 }}>แจ้ง Production</button>
-                <button onClick={onEdit} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5 }}>แก้ไข</button>
-                {p.status !== 'done' && <button onClick={() => setStatus('done')} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5, color: 'var(--green)' }}>เสร็จ</button>}
+                <button onClick={notify} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5 }}>{tr('แจ้ง Production')}</button>
+                <button onClick={onEdit} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5 }}>{tr('แก้ไข')}</button>
+                {p.status !== 'done' && <button onClick={() => setStatus('done')} style={{ ...btnGhost, padding: '5px 11px', fontSize: 11.5, color: 'var(--green)' }}>{tr('เสร็จ')}</button>}
                 <DeleteButton onClick={del} title="ลบ" />
               </>}
             </div>
@@ -539,57 +540,57 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
 
         {plan._new && pmPlans.length > 0 && (
           <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 'var(--r-md)', background: 'rgba(74,144,224,0.10)', border: '1px solid rgba(74,144,224,0.4)' }}>
-            <label style={{ ...lbl, color: '#4a90e0' }}>สร้างจากแผน PM เดิม (ผูกให้อัตโนมัติ + เติมวันครบกำหนด)</label>
-            <SearchSelect value={String(f.pm_plan_id || '')} placeholder="— ไม่ผูก (สร้างแผนอิสระ) — พิมพ์ค้นหาเครื่อง/ไลน์" inputStyle={inp}
+            <label style={{ ...lbl, color: '#4a90e0' }}>{tr('สร้างจากแผน PM เดิม (ผูกให้อัตโนมัติ + เติมวันครบกำหนด)')}</label>
+            <SearchSelect value={String(f.pm_plan_id || '')} placeholder={tr('— ไม่ผูก (สร้างแผนอิสระ) — พิมพ์ค้นหาเครื่อง/ไลน์')} inputStyle={inp}
               options={pmPlans.map(p => ({ id: String(p.plan_id), label: [p.machine_name, p.machine_no].filter(Boolean).join(' ') || String(p.plan_id), sub: `${p.line_name || ''}${p.next_due_date ? ` · ครบ ${beDate(p.next_due_date)}` : ''}`, keywords: `${p.machine_no || ''} ${p.line_name || ''}` }))}
               onChange={({ id }) => fromPmPlan(id)} />
           </div>
         )}
 
-        <label style={lbl}>หัวเรื่องงาน *</label>
-        <input value={f.title} onChange={e => setF(v => ({ ...v, title: e.target.value }))} placeholder="เช่น Cleaning Cutting Head" style={inp} />
+        <label style={lbl}>{tr('หัวเรื่องงาน *')}</label>
+        <input value={f.title} onChange={e => setF(v => ({ ...v, title: e.target.value }))} placeholder={tr('เช่น Cleaning Cutting Head')} style={inp} />
 
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
           <div>
-            <label style={lbl}>เครื่องจักร (เลือกหมายเลขเครื่องจากทะเบียน)</label>
+            <label style={lbl}>{tr('เครื่องจักร (เลือกหมายเลขเครื่องจากทะเบียน)')}</label>
             {/* <MachineSelect> แทน datalist — machOpts กรอง scope แล้ว · เครื่องของไลน์ที่เลือกขึ้นก่อน · 2026-09-07 */}
             <MachineSelect value={f.machine_no} onChange={onMachinePick} machines={machOpts} lines={f.line_name ? [f.line_name] : undefined} history={machineHist}
-              placeholder="ค้นเลขเครื่อง เช่น RB-104, LS-10, CT-02" inputStyle={{ background: 'var(--bg)' }} />
+              placeholder={tr('ค้นเลขเครื่อง เช่น RB-104, LS-10, CT-02')} inputStyle={{ background: 'var(--bg)' }} />
             {f.machine_id && f.machine_name
               ? <div style={{ fontSize: 11, color: 'var(--accent)', marginTop: 3 }}>✓ {f.machine_name}{f.line_name ? ` · ${f.line_name}` : ''}</div>
               : f.machine_no ? <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>⚠ ยังไม่ได้เลือกจากทะเบียน — เลือกจากลิสต์เพื่อผูกเครื่อง</div> : null}
           </div>
           <div>
-            <label style={lbl}>ไลน์</label>
+            <label style={lbl}>{tr('ไลน์')}</label>
             {/* <LineSelect> — ส่ง array ที่กรอง scope แล้ว (pre-filter เดิม) · 2026-09-07 */}
             <LineSelect lines={lines.filter(l => !scopeLines || scopeLines.has(l.name))} value={f.line_name}
-              onChange={v => setF(x => ({ ...x, line_name: v }))} placeholder="— เลือกไลน์ —" style={inp} />
+              onChange={v => setF(x => ({ ...x, line_name: v }))} placeholder={tr('— เลือกไลน์ —')} style={inp} />
           </div>
         </div>
 
         <div style={{ marginTop: 14, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <label style={{ ...lbl, margin: 0 }}>แผนงาน & รายละเอียด (แต่ละวัน)</label>
-          <button onClick={addTask} style={{ ...btnGhost, padding: '4px 10px', fontSize: 11.5 }}>เพิ่มขั้นงาน</button>
+          <label style={{ ...lbl, margin: 0 }}>{tr('แผนงาน & รายละเอียด (แต่ละวัน)')}</label>
+          <button onClick={addTask} style={{ ...btnGhost, padding: '4px 10px', fontSize: 11.5 }}>{tr('เพิ่มขั้นงาน')}</button>
         </div>
         {tasks.map((t, i) => (
           <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 10, marginBottom: 8, background: t.is_support ? 'var(--red-dim)' : 'var(--bg2)' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '150px 1fr auto', gap: 8, alignItems: 'end' }}>
               <div>
-                <label style={lblS}>วันที่</label>
+                <label style={lblS}>{tr('วันที่')}</label>
                 <input type="date" value={t.task_date || ''} onChange={e => setTask(i, 'task_date', e.target.value)} style={{ ...inp, width: '100%' }} />
               </div>
               <div>
-                <label style={lblS}>ทีมรับผิดชอบ</label>
+                <label style={lblS}>{tr('ทีมรับผิดชอบ')}</label>
                 <select value={t.team || ''} onChange={e => setTask(i, 'team', e.target.value)} style={inp}>
-                  <option value="">— ทีม —</option>
-                  {teams.map(tm => <option key={tm.key} value={tm.key}>{tm.label}</option>)}
+                  <option value="">{tr('— ทีม —')}</option>
+                  {teams.map(tm => <option key={tm.key} value={tm.key}>{tr(tm.label)}</option>)}
                 </select>
               </div>
               <button onClick={() => rmTask(i)} style={{ ...btnGhost, padding: '7px 10px', fontSize: 12, color: 'var(--red)' }}>✕</button>
             </div>
             <div style={{ marginTop: 8 }}>
-              <label style={lblS}>รายละเอียด</label>
-              <input value={t.description || ''} onChange={e => setTask(i, 'description', e.target.value)} placeholder="เช่น Production ถอดชุด Cutting ออกจากเครื่อง" style={inp} />
+              <label style={lblS}>{tr('รายละเอียด')}</label>
+              <input value={t.description || ''} onChange={e => setTask(i, 'description', e.target.value)} placeholder={tr('เช่น Production ถอดชุด Cutting ออกจากเครื่อง')} style={inp} />
             </div>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
@@ -600,18 +601,18 @@ function PlanModal({ plan, lines, machines, teams, pmPlans = [], scopeLines, ful
               </div>
               <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5, color: t.is_support ? 'var(--red)' : 'var(--text)', cursor: 'pointer' }}>
                 <input type="checkbox" checked={!!t.is_support} onChange={e => setTask(i, 'is_support', e.target.checked)} style={{ width: 'auto' }} />
-                ⚠️ ต้อง Production Support (เน้นในใบแจ้ง)
+                {tr('⚠️ ต้อง Production Support (เน้นในใบแจ้ง)')}
               </label>
             </div>
           </div>
         ))}
 
-        <label style={{ ...lbl, marginTop: 8 }}>Remark / หมายเหตุ</label>
-        <textarea value={f.remark} onChange={e => setF(v => ({ ...v, remark: e.target.value }))} rows={2} placeholder="เช่น รบกวน Production Support เรื่องการปรับคุณภาพ…" style={{ ...inp, resize: 'vertical' }} />
+        <label style={{ ...lbl, marginTop: 8 }}>{tr('Remark / หมายเหตุ')}</label>
+        <textarea value={f.remark} onChange={e => setF(v => ({ ...v, remark: e.target.value }))} rows={2} placeholder={tr('เช่น รบกวน Production Support เรื่องการปรับคุณภาพ…')} style={{ ...inp, resize: 'vertical' }} />
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-          <button onClick={onClose} style={btnGhost}>ยกเลิก</button>
-          <button onClick={save} disabled={busy} style={btnPri}>{busy ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+          <button onClick={onClose} style={btnGhost}>{tr('ยกเลิก')}</button>
+          <button onClick={save} disabled={busy} style={btnPri}>{busy ? tr('กำลังบันทึก…') : tr('บันทึก')}</button>
         </div>
       </div>
     </div>
@@ -647,7 +648,7 @@ function printPlan(p, tasks) {
     .sign{margin-top:40px;display:flex;justify-content:flex-end;gap:60px;font-size:14px;text-align:center;}
     .sign div{border-top:1px solid #444;padding-top:4px;min-width:180px;}
   </style></head><body>
-  <div class="hd"><img src="${logoSrc}" alt=""><div><h1>แผนประสานงาน PM / งานเครื่องจักร</h1>
+  <div class="hd"><img src="${logoSrc}" alt=""><div><h1>{tr('แผนประสานงาน PM / งานเครื่องจักร')}</h1>
     <div style="font-size:13px;color:#666;">Thai Summit — Maintenance</div></div></div>
   <div style="font-size:17px;font-weight:700;">${p.title || ''}</div>
   <div class="meta">เครื่อง: <b>${[p.machine_name, p.machine_no].filter(Boolean).join(' ') || '—'}</b>${p.line_name ? ` &nbsp;·&nbsp; 🏭 ไลน์: <b>${p.line_name}</b>` : ''}</div>

@@ -7,6 +7,7 @@ import EmojiPicker from './EmojiPicker';
 import { pickUnusedColor } from '../utils/colorPick';
 import { DeleteButton } from './IconButton';
 import { loadProcessTypeRefs, processTypeBlockMessage } from '../utils/processTypeRefs';
+import { tr } from '../utils/i18n';
 import InfoMore from './InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 /* ── ProcessTypeSetup — ตัวจัดการ master กระบวนการผลิต (process_types, DR) ─────────────
@@ -79,7 +80,7 @@ export default function ProcessTypeSetup({ role }) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div style={{ fontSize: 13, color: 'var(--muted)' }}>{items.length} กระบวนการ</div>
-        {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่มกระบวนการ</button>}
+        {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>{tr('+ เพิ่มกระบวนการ')}</button>}
       </div>
       <InfoMore label="กระบวนการที่ตั้งไว้ที่นี่ใช้ที่ไหนบ้าง" id="pts-usage" size={12} style={{ marginBottom: 16 }}>
         กระบวนการที่ตั้งไว้ที่นี่ถูกใช้ร่วมกันทั้งระบบ: tag เครื่องจักร (ตั้งค่าผังไลน์) · สินค้า (Product Master) ·
@@ -111,7 +112,7 @@ export default function ProcessTypeSetup({ role }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 10 }}>
                 <Field label="ชื่อกระบวนการ *">
-                  <input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} placeholder="เช่น Laser Cutting" style={inputStyle} />
+                  <input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} placeholder={tr('เช่น Laser Cutting')} style={inputStyle} />
                 </Field>
                 <Field label="ไอคอน (emoji)">
                   <EmojiPicker value={form.icon || ''} onChange={v => setForm(f => ({ ...f, icon: v }))} style={inputStyle} />
@@ -131,11 +132,11 @@ export default function ProcessTypeSetup({ role }) {
               </div>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text)' }}>
                 <input type="checkbox" checked={form.is_active !== false} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} style={{ width: 'auto' }} />
-                ใช้งานอยู่
+                {tr('ใช้งานอยู่')}
               </label>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-                <button onClick={() => setEditing(null)} style={cancelBtnStyle}>ยกเลิก</button>
-                <button onClick={handleSave} disabled={saving} style={saveBtnStyle}>{saving ? '⏳...' : '💾 บันทึก'}</button>
+                <button onClick={() => setEditing(null)} style={cancelBtnStyle}>{tr('ยกเลิก')}</button>
+                <button onClick={handleSave} disabled={saving} style={saveBtnStyle}>{saving ? '⏳...' : tr('💾 บันทึก')}</button>
               </div>
             </div>
           </div>

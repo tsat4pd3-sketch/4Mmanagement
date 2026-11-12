@@ -17,6 +17,7 @@ import MatLabel from './MatLabel';
 import SearchInput from './SearchInput';
 import Segmented from './Segmented';
 
+import { tr } from '../utils/i18n';
 const COLS = 'id, line_name, mat_no, part_name, request_qty, picked_qty, delivered_at, delivered_by, status, sap_pending_qty, sap_pending_note, sap_pending_at, sap_pending_by_name, sap_cleared_at, sap_cleared_by_name';
 const fmt = (v) => (v == null ? '—' : Number(v).toLocaleString());
 const dt = (iso) => (iso ? new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
@@ -76,7 +77,7 @@ export default function SapPendingReport() {
           ใบที่สโตร์ส่งถึงไลน์แล้ว แต่ <b>ตัดจ่ายใน SAP ไม่ได้</b> (ติ๊ก 🧾 ในป๊อปอัป "ถึงไลน์แล้ว") — ตัดใน SAP เสร็จแล้วกด "✔ ตัดใน SAP แล้ว" ·
           ยอดสต็อกในระบบนี้ขยับไปตั้งแต่ตอนส่งแล้ว ไม่เปลี่ยนอีก
         </div>
-        <button className="tbtn" onClick={load} style={{ padding: '7px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 12.5 }}>↻ รีเฟรช</button>
+        <button className="tbtn" onClick={load} style={{ padding: '7px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 12.5 }}>{tr('↻ รีเฟรช')}</button>
       </div>
 
       {err && <div style={{ ...card, color: 'var(--red)', fontSize: 13 }}>โหลดไม่สำเร็จ — {err}</div>}
@@ -91,7 +92,7 @@ export default function SapPendingReport() {
         <div style={card}>
           <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>สรุปรายพาร์ท</div>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr><th style={th}>พาร์ท</th><th style={{ ...th, textAlign: 'right' }}>ค้างตัด</th><th style={{ ...th, textAlign: 'right' }}>ใบ</th><th style={th}>ไลน์</th><th style={th}>ค้างตั้งแต่</th></tr></thead>
+            <thead><tr><th style={th}>{tr('พาร์ท')}</th><th style={{ ...th, textAlign: 'right' }}>{tr('ค้างตัด')}</th><th style={{ ...th, textAlign: 'right' }}>{tr('ใบ')}</th><th style={th}>{tr('ไลน์')}</th><th style={th}>{tr('ค้างตั้งแต่')}</th></tr></thead>
             <tbody>
               {parts.map(p => (
                 <tr key={p.mat_no}>
@@ -115,8 +116,8 @@ export default function SapPendingReport() {
             <>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead><tr>
-                  <th style={th}>พาร์ท</th><th style={th}>ไลน์</th><th style={{ ...th, textAlign: 'right' }}>ส่ง</th>
-                  <th style={{ ...th, textAlign: 'right' }}>ค้างตัด</th><th style={th}>สาเหตุ</th><th style={th}>จดเมื่อ/โดย</th><th style={th} />
+                  <th style={th}>{tr('พาร์ท')}</th><th style={th}>{tr('ไลน์')}</th><th style={{ ...th, textAlign: 'right' }}>{tr('ส่ง')}</th>
+                  <th style={{ ...th, textAlign: 'right' }}>{tr('ค้างตัด')}</th><th style={th}>{tr('สาเหตุ')}</th><th style={th}>{tr('จดเมื่อ/โดย')}</th><th style={th} />
                 </tr></thead>
                 <tbody>
                   {list.map(r => (
@@ -133,7 +134,7 @@ export default function SapPendingReport() {
                           : canClear && (
                             <button disabled={busy === r.id} onClick={() => clear(r)}
                               style={{ padding: '6px 10px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                              {busy === r.id ? '…' : '✔ ตัดใน SAP แล้ว'}
+                              {busy === r.id ? '…' : tr('✔ ตัดใน SAP แล้ว')}
                             </button>
                           )}
                       </td>

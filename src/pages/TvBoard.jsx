@@ -43,6 +43,7 @@ import { OPEN_MO_STATUSES } from '../utils/dieStatus';
 // วันงาน — ของกลาง (ตัด 08:00 · 12/10 เลิกก๊อปฟังก์ชันไว้ในไฟล์ตามกฎ CLAUDE.md)
 import { useWorkDate } from '../utils/useWorkDate';   // 📅 จอแขวนเปิดค้างข้ามวัน — ต้องอัปเดตวันงานเอง (12/11)
 import SectionScopeSelect from '../components/SectionScopeSelect';
+import { tr } from '../utils/i18n';
 import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 
@@ -202,9 +203,9 @@ export default function TvBoard({ onOpenMenu = null }) {
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {/* ☰ เมนู (13/10 · feedback user) — เดิมเข้ามาแล้วไปหน้าอื่นไม่ได้ · ไม่ส่ง onOpenMenu (บัญชีจอแขวน) = ไม่วาด */}
-          {onOpenMenu && <button onClick={onOpenMenu} style={btn(false)} title="เปิดเมนู — ไปหน้าอื่น (จอยังโล่งเหมือนเดิมจนกว่าจะกด)">เมนู</button>}
+          {onOpenMenu && <button onClick={onOpenMenu} style={btn(false)} title="เปิดเมนู — ไปหน้าอื่น (จอยังโล่งเหมือนเดิมจนกว่าจะกด)">{tr('เมนู')}</button>}
           <button onClick={toggleFs} style={btn(fs)} title="เต็มจอ — เก็บแถบเบราว์เซอร์คืนพื้นที่ให้ผัง">⛶</button>
-          <button onClick={() => setBarOpen(o => !o)} style={btn(barOpen)}>ตั้งค่าจอ</button>
+          <button onClick={() => setBarOpen(o => !o)} style={btn(barOpen)}>{tr('ตั้งค่าจอ')}</button>
         </div>
       </div>
 
@@ -225,7 +226,7 @@ export default function TvBoard({ onOpenMenu = null }) {
           {/* 🔊 ขอบเขตเสียง — ตัว <DowntimeSiren> ในบอร์ดอ่าน `?sound=` ตัวเดียวกัน */}
           {/* จอสโตร์เงียบเป็นค่าเริ่มต้น (เสียงเรียกช่างไม่ใช่งานสโตร์ · 12/10) — เปิดได้ด้วย `?sound=all` */}
           <button onClick={() => setParam('sound', sp.get('sound') === 'all' ? '' : 'all')} style={btn(sp.get('sound') === 'all')}>
-            {sp.get('sound') === 'all' ? 'ดังทุกเครื่องหยุด' : dept === 'store' ? 'ไม่มีเสียง' : 'ดังเฉพาะเรียกช่าง'}
+            {sp.get('sound') === 'all' ? tr('ดังทุกเครื่องหยุด') : dept === 'store' ? tr('ไม่มีเสียง') : tr('ดังเฉพาะเรียกช่าง')}
           </button>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>
             ตั้งเสร็จแล้ว <b>บุ๊กมาร์กหน้านี้ไว้ที่ทีวี</b> — ค่าอยู่ใน URL จอจะจำเอง ไม่ต้องมากดทุกเช้า
@@ -253,7 +254,7 @@ export default function TvBoard({ onOpenMenu = null }) {
             ? 'ไม่พบทะเบียนไลน์ผลิต — จอนี้แสดงอะไรไม่ได้ (ตั้งไลน์ที่หน้า ตั้งค่าไลน์ผลิต)'
             : `โหลดทะเบียนไลน์ไม่สำเร็จ — กำลังลองใหม่อัตโนมัติทุก 30 วินาที (${linesState})`}</span>
           <button onClick={() => { setLinesState('loading'); setLinesTry(n => n + 1); }}
-            style={{ fontSize: 13, padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--red)', background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}>ลองใหม่</button>
+            style={{ fontSize: 13, padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--red)', background: 'transparent', color: 'var(--red)', cursor: 'pointer' }}>{tr('ลองใหม่')}</button>
         </div>
       )}
       {dept !== 'mo' && !d && !err && (linesState === 'loading' || linesState === 'ok') && (

@@ -13,6 +13,7 @@ import { openOrderDemand } from '../utils/openOrderDemand';
 import { normSearch } from '../utils/thaiText';
 import MatLabel from './MatLabel';
 
+import { tr } from '../utils/i18n';
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--shadow-sm)' };
 const fmt = (n) => (n == null ? '—' : Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 }));
 const STORE_LOC = 'STORE';
@@ -89,7 +90,7 @@ export default function OpenOrderDemandPanel({ q = '' }) {
           ตอนไลน์ปิดใบ ระบบตัดสต็อกและออกใบตามเดิม
         </div>
         <button onClick={load} disabled={busy} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', cursor: busy ? 'wait' : 'pointer', fontSize: 12, fontWeight: 700, fontFamily: 'var(--font-body)', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>
-          {busy ? '⏳ กำลังโหลด…' : '🔄 รีเฟรช'}
+          {busy ? tr('⏳ กำลังโหลด…') : tr('🔄 รีเฟรช')}
         </button>
       </div>
 
@@ -124,7 +125,7 @@ export default function OpenOrderDemandPanel({ q = '' }) {
                 <thead>
                   <tr>
                     {[['ชิ้นส่วน', 'left'], ['ต้องใช้', 'right'], ['หน้าไลน์มี', 'right'], ['ต้องส่งเพิ่ม', 'right'], ['STORE มี', 'right'], ['จากใบผลิต', 'left']].map(([h, al]) => (
-                      <th key={h} style={{ padding: '8px 14px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: al, whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h} style={{ padding: '8px 14px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: al, whiteSpace: 'nowrap' }}>{tr(h)}</th>
                     ))}
                   </tr>
                 </thead>

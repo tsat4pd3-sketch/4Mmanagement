@@ -35,6 +35,7 @@ import useSuppliers from '../utils/useSuppliers';
 import { uploadOpts } from '../utils/storageUpload';
 import { DeleteButton } from './IconButton';
 import { SpareDemandBanner } from './PmSpares';
+import { tr } from '../utils/i18n';
 import { localDateStr } from '../utils/workDate'; // วันปฏิทินเดียวกับแท็บแผน PM (ymd(new Date())) — ไม่ใช่วันทำงานตัด 08:00
 
 // ต่อท้ายลิสต์คั่นด้วย , โดยไม่ซ้ำ (used_with ยังเก็บเป็น text — คอลัมน์ id ยังไม่มี)
@@ -293,36 +294,36 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
       {/* ── แถบเครื่องมือ ── มาตรฐาน FilterBar (UI-STANDARD 2026-09-24): ขอบเขต → ตัวกรอง → ค้นหา → ปุ่ม */}
       <FilterBar>
         <select value={fTeam} onChange={e => setFTeam(e.target.value)}>
-          <option value="">{ALL.team}</option>
+          <option value="">{tr(ALL.team)}</option>
           {teams.map((t, i) => <option key={`${t.key}-${i}`} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
         </select>
         <select value={fSection} onChange={e => setFSection(e.target.value)}
           title="คลังของหน่วยงานไหน — เลือกแล้วยังเห็นของกลางของทีมด้วยเสมอ">
-          <option value="">{ALL.unit}</option>
+          <option value="">{tr(ALL.unit)}</option>
           {/* key ผสม index — รหัสหน่วยงานหลัง normalize อาจซ้ำกัน (เคยขึ้นเตือน "unique key" ใน console) */}
-          {secOpts.map((o, i) => <option key={`${o.code}-${i}`} value={o.code}>{o.label}</option>)}
+          {secOpts.map((o, i) => <option key={`${o.code}-${i}`} value={o.code}>{tr(o.label)}</option>)}
         </select>
         <select value={fCat} onChange={e => setFCat(e.target.value)}>
-          <option value="">{ALL.category}</option>
+          <option value="">{tr(ALL.category)}</option>
           {teamCats.map((c, i) => <option key={`${c.key}-${i}`} value={c.key}>{c.icon || ''} {c.label}</option>)}
         </select>
         <select value={fRank} onChange={e => setFRank(e.target.value)}>
-          <option value="">{ALL.rank}</option>
+          <option value="">{tr(ALL.rank)}</option>
           {['A', 'B', 'C'].map(r => <option key={r} value={r}>Rank {r}</option>)}
         </select>
         <select value={fState} onChange={e => setFState(e.target.value)}>
-          <option value="">{ALL.status}</option>
-          <option value="out">หมด</option>
-          <option value="low">ต่ำกว่าขั้นต่ำ</option>
-          <option value="over">เกินสูงสุด</option>
-          <option value="ok">ปกติ</option>
+          <option value="">{tr(ALL.status)}</option>
+          <option value="out">{tr('หมด')}</option>
+          <option value="low">{tr('ต่ำกว่าขั้นต่ำ')}</option>
+          <option value="over">{tr('เกินสูงสุด')}</option>
+          <option value="ok">{tr('ปกติ')}</option>
         </select>
         <SearchInput value={q} onChange={setQ} fields="ชื่อ / รหัส / MAT / Part no. / ผู้ขาย / ชั้นวาง / ใช้กับ" />
         <span className="spacer" />
-        <button onClick={printList} style={{ ...btnGhost, padding: '0 13px', fontSize: 12.5 }}>พิมพ์</button>
-        {canEdit && <button onClick={() => setShowImport(true)} style={{ ...btnGhost, padding: '0 13px', fontSize: 12.5 }}>นำเข้า/อัพเดท</button>}
-        {canEdit && <button onClick={() => setShowCats(true)} style={{ ...btnGhost, padding: '0 13px', fontSize: 12.5 }}>หมวด</button>}
-        {canEdit && <button onClick={() => setEditPart('new')} style={{ ...btnPri, padding: '0 15px', fontSize: 12.5 }}>➕ เพิ่มอะไหล่</button>}
+        <button onClick={printList} style={{ ...btnGhost, padding: '0 13px', fontSize: 12.5 }}>{tr('พิมพ์')}</button>
+        {canEdit && <button onClick={() => setShowImport(true)} style={{ ...btnGhost, padding: '0 13px', fontSize: 12.5 }}>{tr('นำเข้า/อัพเดท')}</button>}
+        {canEdit && <button onClick={() => setShowCats(true)} style={{ ...btnGhost, padding: '0 13px', fontSize: 12.5 }}>{tr('หมวด')}</button>}
+        {canEdit && <button onClick={() => setEditPart('new')} style={{ ...btnPri, padding: '0 15px', fontSize: 12.5 }}>{tr('➕ เพิ่มอะไหล่')}</button>}
       </FilterBar>
 
       {/* 🔩 อะไหล่ที่ PM ที่จะถึงต้องใช้ (2026-10-08) — ตัวเดียวกับแท็บแผน PM ⇒ ฝั่งคลัง/ฝั่งช่างเห็นเลขชุดเดียวกัน
@@ -348,7 +349,7 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
         <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '7px 12px', marginBottom: 10, fontSize: 12.5, color: 'var(--text2)' }}>
           กำลังดูคลังของ <b style={{ color: 'var(--text)' }}>{sectionLabel(fSection, orgSecs)}</b> (รวมของกลาง) ·
           ซ่อนอยู่ <b>{hiddenBySection}</b> รายการของหน่วยงานอื่น
-          <button onClick={() => setFSection('')} style={{ ...btnGhost, padding: '3px 10px', fontSize: 11.5, marginLeft: 8 }}>ดูทุกหน่วยงาน</button>
+          <button onClick={() => setFSection('')} style={{ ...btnGhost, padding: '3px 10px', fontSize: 11.5, marginLeft: 8 }}>{tr('ดูทุกหน่วยงาน')}</button>
         </div>
       )}
 
@@ -367,17 +368,17 @@ export default function SparePartMaster({ parts = [], reload, fullName, role, my
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1080 }}>
           <thead><tr>
             <th style={{ ...th, width: 44 }}></th>
-            <th style={th}>อะไหล่</th>
+            <th style={th}>{tr('อะไหล่')}</th>
             <th style={th}>Part no. / MAT</th>
-            <th style={th}>หมวด</th>
-            <th style={th}>ชั้นวาง</th>
-            <th style={{ ...th, textAlign: 'right' }}>คงเหลือ</th>
-            <th style={{ ...th, textAlign: 'center' }}>ขั้นต่ำ/สูงสุด</th>
+            <th style={th}>{tr('หมวด')}</th>
+            <th style={th}>{tr('ชั้นวาง')}</th>
+            <th style={{ ...th, textAlign: 'right' }}>{tr('คงเหลือ')}</th>
+            <th style={{ ...th, textAlign: 'center' }}>{tr('ขั้นต่ำ/สูงสุด')}</th>
             <th style={{ ...th, textAlign: 'center' }}>Rank</th>
-            <th style={{ ...th, textAlign: 'right' }}>ใช้/เดือน</th>
-            <th style={{ ...th, textAlign: 'right' }}>LT (วัน)</th>
-            <th style={th}>ผู้ขาย</th>
-            <th style={{ ...th, textAlign: 'right' }}>ราคา/หน่วย</th>
+            <th style={{ ...th, textAlign: 'right' }}>{tr('ใช้/เดือน')}</th>
+            <th style={{ ...th, textAlign: 'right' }}>{tr('LT (วัน)')}</th>
+            <th style={th}>{tr('ผู้ขาย')}</th>
+            <th style={{ ...th, textAlign: 'right' }}>{tr('ราคา/หน่วย')}</th>
             <th style={{ ...th, width: 190 }}></th>
           </tr></thead>
           <tbody>
@@ -523,7 +524,7 @@ function StockMoveModal({ part, type, fullName, onClose, onDone }) {
             <input type="number" min="0" step="any" autoFocus value={qty} onChange={e => setQty(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && valid && !notEnough && save()} style={inp} />
           </Field>
-          <Field label="หมายเหตุ"><input value={note} onChange={e => setNote(e.target.value)} placeholder="ไม่บังคับ" style={inp} /></Field>
+          <Field label="หมายเหตุ"><input value={note} onChange={e => setNote(e.target.value)} placeholder={tr('ไม่บังคับ')} style={inp} /></Field>
           {valid && (
             <div style={{ fontSize: 12.5, background: 'var(--bg3)', border: `1px solid ${notEnough ? '#ef4444' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '8px 11px' }}>
               {notEnough
@@ -534,9 +535,9 @@ function StockMoveModal({ part, type, fullName, onClose, onDone }) {
           )}
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-          <button onClick={onClose} style={btnGhost}>ยกเลิก</button>
+          <button onClick={onClose} style={btnGhost}>{tr('ยกเลิก')}</button>
           <button onClick={save} disabled={!valid || notEnough || saving} style={{ ...btnPri, opacity: (!valid || notEnough || saving) ? 0.5 : 1, cursor: (!valid || notEnough || saving) ? 'not-allowed' : 'pointer' }}>
-            {saving ? 'กำลังบันทึก…' : 'บันทึก'}
+            {saving ? tr('กำลังบันทึก…') : tr('บันทึก')}
           </button>
         </div>
       </div>
@@ -698,7 +699,7 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
           <div style={{ display: 'grid', gap: 12 }}>
             <div className="mgrid" style={g2}>
               <Field label="ชื่ออะไหล่" required><input value={f.name} onChange={e => set('name', e.target.value)} style={inp} /></Field>
-              <Field label="รหัสภายใน"><input value={f.code} onChange={e => set('code', e.target.value)} placeholder="เช่น SP-001" style={inp} /></Field>
+              <Field label="รหัสภายใน"><input value={f.code} onChange={e => set('code', e.target.value)} placeholder={tr('เช่น SP-001')} style={inp} /></Field>
               <Field label="เลข MAT (SAP)"><input value={f.mat_no} onChange={e => set('mat_no', e.target.value)} style={inp} /></Field>
               <Field label="Part no. (ผู้ผลิต)"><input value={f.part_no} onChange={e => set('part_no', e.target.value)} style={inp} /></Field>
               <Field label="ทีมที่ดูแลคลัง" required>
@@ -708,11 +709,11 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
               </Field>
               <Field label="หน่วยงานเจ้าของ" hint="ใครดูแล/เก็บที่ไหน — เว้นว่าง = ของกลางของทีม ทุกหน่วยงานใช้ร่วม">
                 <select value={sectionKeyOf(f.section)} onChange={e => set('section', e.target.value)} style={inp}>
-                  <option value="">{COMMON_SECTION_LABEL}</option>
-                  {secOpts.map((o, i) => <option key={`${o.code}-${i}`} value={o.code}>{o.label}</option>)}
+                  <option value="">{tr(COMMON_SECTION_LABEL)}</option>
+                  {secOpts.map((o, i) => <option key={`${o.code}-${i}`} value={o.code}>{tr(o.label)}</option>)}
                   {/* ค่าเดิมที่ไม่อยู่ในลิสต์ต้องยังเลือกได้ ไม่งั้นเปิดแก้ไขแล้วหน่วยงานหายเงียบ */}
                   {f.section && !secOpts.some(o => o.code === sectionKeyOf(f.section)) &&
-                    <option value={f.section}>⚠ {f.section} (ไม่มีในผัง)</option>}
+                    <option value={f.section}>⚠ {f.section} {tr('(ไม่มีในผัง)')}</option>}
                 </select>
                 {/* หน้างานตั้งรหัสเองเป็น PD3-xxx อยู่แล้ว → เสนอให้กดใช้ (ห้ามเติมให้เอง เดาผิดสต็อกไปผิดหน่วยงาน) */}
                 {(() => {
@@ -723,7 +724,7 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
                       รหัสขึ้นต้นด้วย <b>{g}</b> —{' '}
                       <button type="button" onClick={() => set('section', g)}
                         style={{ background: 'none', border: 'none', color: '#f59e0b', textDecoration: 'underline', cursor: 'pointer', font: 'inherit', padding: 0 }}>
-                        ใช้ {g} เป็นหน่วยงานเจ้าของ
+                        {tr('ใช้')} {g} {tr('เป็นหน่วยงานเจ้าของ')}
                       </button>
                     </div>
                   );
@@ -731,21 +732,21 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
               </Field>
               <Field label="หมวดอะไหล่">
                 <select value={f.category} onChange={e => set('category', e.target.value)} style={inp}>
-                  <option value="">— ไม่ระบุ —</option>
+                  <option value="">{tr('— ไม่ระบุ —')}</option>
                   {cats.map(c => <option key={c.key} value={c.key}>{c.icon || ''} {c.key} · {c.label}</option>)}
                 </select>
               </Field>
               <Field label="ตำแหน่งชั้นวาง" hint="เลือกช่องจากผังชั้นวาง (แท็บ 🗺️ ผังคลัง) — รหัสตรงกันทั้งคลัง หาของเจอเร็ว">
                 {/* <SearchSelect> จาก mtn_rack_cells แทน datalist ค่าเก่า — พิมพ์เองได้แต่ติดป้าย (ช่องที่ยังไม่วางผัง) · 2026-09-07 */}
                 <SearchSelect value={shelfSel ? shelfSel.id : ''} text={f.shelf} options={shelfOptions} allowFree
-                  placeholder="ค้นรหัสชั้น / ชื่อชั้นวาง…" freeHint="(ยังไม่มีช่องนี้ในผังชั้นวาง — วางผังที่แท็บ 🗺️)"
+                  placeholder={tr('ค้นรหัสชั้น / ชื่อชั้นวาง…')} freeHint="(ยังไม่มีช่องนี้ในผังชั้นวาง — วางผังที่แท็บ 🗺️)"
                   emptyText="ไม่พบช่องชั้นวาง — วางผังที่แท็บ 🗺️ ผังคลังก่อน"
                   onChange={({ text }) => set('shelf', text)} inputStyle={{ background: 'var(--bg)' }} />
               </Field>
               <Field label="ใช้กับ (เครื่อง/จิ๊ก)" hint="พิมพ์ได้ · หรือเลือกจากทะเบียนเครื่องให้เลขตรงกัน (คั่นด้วย ,)">
-                <input value={f.used_with} onChange={e => set('used_with', e.target.value)} placeholder="เช่น RB-104, จิ๊ก APRON" style={inp} />
+                <input value={f.used_with} onChange={e => set('used_with', e.target.value)} placeholder={tr('เช่น RB-104, จิ๊ก APRON')} style={inp} />
                 {/* ตัวช่วยเติมเลขเครื่องจาก <MachineSelect> — เลือกแล้วต่อท้ายลิสต์ (ยังเก็บเป็น text ตาม schema เดิม) · 2026-09-07 */}
-                <MachineSelect value={usedQ} groupByLine placeholder="➕ เพิ่มเครื่อง/จิ๊กจากทะเบียน…" style={{ marginTop: 6 }}
+                <MachineSelect value={usedQ} groupByLine placeholder={tr('➕ เพิ่มเครื่อง/จิ๊กจากทะเบียน…')} style={{ marginTop: 6 }}
                   inputStyle={{ background: 'var(--bg)', fontSize: 12, padding: '6px 30px 6px 10px' }}
                   onChange={res => { if (res.opt) { set('used_with', appendCsv(f.used_with, res.machine_no)); setUsedQ(''); } else setUsedQ(res.machine_no || ''); }} />
               </Field>
@@ -789,7 +790,7 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
               {/* ยอดใช้ย้อนหลัง — ทางลัดให้ Rank ทำงานได้ทันทีตอนย้ายข้อมูลจาก Excel */}
               {!isNew && (
                 <div style={{ marginBottom: 10 }}>
-                  <label style={lbl}>ยอดที่ <b>เบิกใช้</b> ย้อนหลัง (ชิ้น/เดือน) — คีย์จากไฟล์ Excel เดิมได้</label>
+                  <label style={lbl}>{tr('ยอดที่')} <b>{tr('เบิกใช้')}</b> {tr('ย้อนหลัง (ชิ้น/เดือน) — คีย์จากไฟล์ Excel เดิมได้')}</label>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {months.map(k => {
                       const sysOut = usageRows.filter(r => r.source !== 'manual' && r.month_key === k)
@@ -812,7 +813,7 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
               <div className="mgrid" style={g2}>
                 <Field label="กำหนด Rank เอง (ทับค่าที่คำนวณ)">
                   <select value={f.rank_override} onChange={e => set('rank_override', e.target.value)} style={inp}>
-                    <option value="">— ใช้ค่าที่ระบบคำนวณ —</option>
+                    <option value="">{tr('— ใช้ค่าที่ระบบคำนวณ —')}</option>
                     {['A', 'B', 'C'].map(r => <option key={r} value={r}>Rank {r} · {RANK_META[r].desc}</option>)}
                   </select>
                 </Field>
@@ -827,14 +828,14 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
             <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '150px 1fr', gap: 12 }}>
                 <div>
-                  <label style={lbl}>รูปอะไหล่</label>
+                  <label style={lbl}>{tr('รูปอะไหล่')}</label>
                   {img
                     ? <div style={{ position: 'relative' }}>
                       <img src={img} alt="" style={{ width: 140, height: 140, objectFit: 'cover', borderRadius: 8, border: '1px solid var(--border)' }} />
                       <button onClick={() => setImg('')} className="tbtn" style={{ ...btnGhost, position: 'absolute', top: 4, right: 4, padding: '3px 8px', fontSize: 12, color: '#ef4444' }}>✕</button>
                     </div>
                     : <label style={{ ...btnGhost, display: 'grid', placeItems: 'center', width: 140, height: 140, cursor: 'pointer', fontSize: 12, color: 'var(--muted)' }}>
-                      เลือกรูป<input type="file" accept="image/*" onChange={onPick} style={{ display: 'none' }} />
+                      {tr('เลือกรูป')}<input type="file" accept="image/*" onChange={onPick} style={{ display: 'none' }} />
                     </label>}
                 </div>
                 <Field label="หมายเหตุ">
@@ -845,8 +846,8 @@ function PartEditModal({ part, cats, teams, shelfOpts, rackCells = [], secOpts =
           </div>
 
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-            <button onClick={onClose} style={btnGhost}>ยกเลิก</button>
-            <button onClick={save} disabled={saving} style={{ ...btnPri, opacity: saving ? 0.5 : 1 }}>{saving ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+            <button onClick={onClose} style={btnGhost}>{tr('ยกเลิก')}</button>
+            <button onClick={save} disabled={saving} style={{ ...btnPri, opacity: saving ? 0.5 : 1 }}>{saving ? tr('กำลังบันทึก…') : tr('บันทึก')}</button>
           </div>
         </div>
       </div>
@@ -912,7 +913,7 @@ function HistoryModal({ part, usageRows, onClose }) {
         {txns?.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>ยังไม่มีการเคลื่อนไหว</div>}
         {!!txns?.length && (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr><th style={th}>เวลา</th><th style={th}>รายการ</th><th style={{ ...th, textAlign: 'right' }}>จำนวน</th><th style={{ ...th, textAlign: 'right' }}>คงเหลือ</th><th style={th}>โดย</th><th style={th}>หมายเหตุ</th></tr></thead>
+            <thead><tr><th style={th}>{tr('เวลา')}</th><th style={th}>{tr('รายการ')}</th><th style={{ ...th, textAlign: 'right' }}>{tr('จำนวน')}</th><th style={{ ...th, textAlign: 'right' }}>{tr('คงเหลือ')}</th><th style={th}>{tr('โดย')}</th><th style={th}>{tr('หมายเหตุ')}</th></tr></thead>
             <tbody>
               {txns.map(t => {
                 const m = TXN_META[t.type] || { label: t.type, color: 'var(--text2)' };
@@ -931,7 +932,7 @@ function HistoryModal({ part, usageRows, onClose }) {
             </tbody>
           </table>
         )}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}><button onClick={onClose} style={btnGhost}>ปิด</button></div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}><button onClick={onClose} style={btnGhost}>{tr('ปิด')}</button></div>
       </div>
     </div>
   );
@@ -1070,17 +1071,17 @@ function ImportModal({ parts, cats, teams, fullName, ownOf = () => ({ ok: true }
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
           <label style={{ ...btnPri, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.5 : 1 }}>
-            เลือกไฟล์<input type="file" accept=".xlsx,.xls,.csv" disabled={busy} onChange={pick} style={{ display: 'none' }} />
+            {tr('เลือกไฟล์')}<input type="file" accept=".xlsx,.xls,.csv" disabled={busy} onChange={pick} style={{ display: 'none' }} />
           </label>
-          <button onClick={template} style={{ ...btnGhost, padding: '8px 13px', fontSize: 12.5 }}>⬇️ ดาวน์โหลดไฟล์ตัวอย่าง</button>
+          <button onClick={template} style={{ ...btnGhost, padding: '8px 13px', fontSize: 12.5 }}>{tr('⬇️ ดาวน์โหลดไฟล์ตัวอย่าง')}</button>
           {fileName && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{fileName}</span>}
         </div>
 
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10, fontSize: 12.5 }}>
           <span style={{ fontWeight: 700, color: 'var(--text2)' }}>นำเข้าเป็นของหน่วยงาน:</span>
           <select value={impSection} onChange={e => setImpSection(e.target.value)} style={{ ...inp, width: 200 }}>
-            <option value="">{COMMON_SECTION_LABEL}</option>
-            {secOpts.map((o, i) => <option key={`${o.code}-${i}`} value={o.code}>{o.label}</option>)}
+            <option value="">{tr(COMMON_SECTION_LABEL)}</option>
+            {secOpts.map((o, i) => <option key={`${o.code}-${i}`} value={o.code}>{tr(o.label)}</option>)}
           </select>
           <span style={{ color: 'var(--muted)', fontSize: 11.5 }}>
             1 ไฟล์ = 1 หน่วยงาน · จับคู่ของเดิม<b>เฉพาะในหน่วยงานนี้</b> (ไม่ทับคลังของหน่วยงานอื่นที่ใช้เลขเดียวกัน)
@@ -1096,7 +1097,7 @@ function ImportModal({ parts, cats, teams, fullName, ownOf = () => ({ ok: true }
           ))}
           <label style={{ display: 'flex', gap: 5, alignItems: 'center', cursor: 'pointer', marginLeft: 'auto' }}>
             <input type="checkbox" checked={withStock} onChange={e => setWithStock(e.target.checked)} style={{ width: 'auto' }} />
-            อัพเดทยอดคงเหลือด้วย <span style={{ color: 'var(--muted)', fontSize: 11 }}>(ลงเป็นรายการรับเข้า/ปรับยอดในประวัติ)</span>
+            {tr('อัพเดทยอดคงเหลือด้วย')} <span style={{ color: 'var(--muted)', fontSize: 11 }}>{tr('(ลงเป็นรายการรับเข้า/ปรับยอดในประวัติ)')}</span>
           </label>
         </div>
 
@@ -1125,9 +1126,9 @@ function ImportModal({ parts, cats, teams, fullName, ownOf = () => ({ ok: true }
             <div className="table-sticky" style={{ maxHeight: 320, border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
                 <thead><tr>
-                  <th style={th}>แถว</th><th style={th}>สถานะ</th><th style={th}>ชื่ออะไหล่</th>
-                  <th style={th}>รหัส</th><th style={th}>MAT</th><th style={th}>ชั้นวาง</th>
-                  <th style={{ ...th, textAlign: 'right' }}>LT</th><th style={th}>หมายเหตุการนำเข้า</th>
+                  <th style={th}>{tr('แถว')}</th><th style={th}>{tr('สถานะ')}</th><th style={th}>{tr('ชื่ออะไหล่')}</th>
+                  <th style={th}>{tr('รหัส')}</th><th style={th}>MAT</th><th style={th}>{tr('ชั้นวาง')}</th>
+                  <th style={{ ...th, textAlign: 'right' }}>LT</th><th style={th}>{tr('หมายเหตุการนำเข้า')}</th>
                 </tr></thead>
                 <tbody>
                   {matched.slice(0, 200).map((r, i) => {
@@ -1162,7 +1163,7 @@ function ImportModal({ parts, cats, teams, fullName, ownOf = () => ({ ok: true }
         )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-          <button onClick={onClose} disabled={busy} style={{ ...btnGhost, opacity: busy ? 0.5 : 1 }}>ปิด</button>
+          <button onClick={onClose} disabled={busy} style={{ ...btnGhost, opacity: busy ? 0.5 : 1 }}>{tr('ปิด')}</button>
           <button onClick={apply} disabled={busy || !parsed || !(stat.create + stat.update)}
             style={{ ...btnPri, opacity: (busy || !parsed || !(stat.create + stat.update)) ? 0.5 : 1 }}>
             {busy ? 'กำลังทำงาน…' : `นำเข้า ${stat.create + stat.update} รายการ`}
@@ -1198,11 +1199,11 @@ function CategoryModal({ cats, teams = [], onClose, onSaved }) {
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 2 }}>หมวดอะไหล่</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 12 }}>รหัสหมวดใช้จัดกลุ่มในคลัง — เพิ่ม/แก้ได้เอง ไม่ต้องแก้โค้ด · ตั้งทีมได้ถ้าหมวดนั้นใช้เฉพาะบางทีม (เช่น LP = Locating Pin ของ JIG)</div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
-          <input value={n.key} onChange={e => setN(p => ({ ...p, key: e.target.value }))} placeholder="รหัส (EE)" style={{ ...inp, width: 90 }} />
-          <input value={n.icon} onChange={e => setN(p => ({ ...p, icon: e.target.value }))} placeholder="ไอคอน" style={{ ...inp, width: 70 }} />
-          <input value={n.label} onChange={e => setN(p => ({ ...p, label: e.target.value }))} placeholder="ชื่อหมวด" style={{ ...inp, width: 200, flex: '1 1 160px' }} />
+          <input value={n.key} onChange={e => setN(p => ({ ...p, key: e.target.value }))} placeholder={tr('รหัส (EE)')} style={{ ...inp, width: 90 }} />
+          <input value={n.icon} onChange={e => setN(p => ({ ...p, icon: e.target.value }))} placeholder={tr('ไอคอน')} style={{ ...inp, width: 70 }} />
+          <input value={n.label} onChange={e => setN(p => ({ ...p, label: e.target.value }))} placeholder={tr('ชื่อหมวด')} style={{ ...inp, width: 200, flex: '1 1 160px' }} />
           <input type="color" value={n.color} onChange={e => setN(p => ({ ...p, color: e.target.value }))} style={{ ...inp, width: 50, padding: 3 }} />
-          <button onClick={add} style={btnPri}>+ เพิ่ม</button>
+          <button onClick={add} style={btnPri}>{tr('+ เพิ่ม')}</button>
         </div>
         <div style={{ display: 'grid', gap: 6 }}>
           {cats.map(c => (
@@ -1213,14 +1214,14 @@ function CategoryModal({ cats, teams = [], onClose, onSaved }) {
               <input type="color" defaultValue={c.color || '#94a3b8'} onBlur={e => e.target.value !== c.color && upd(c.key, { color: e.target.value })} style={{ ...inp, width: 46, padding: 3 }} />
               <select value={c.team || ''} onChange={e => upd(c.key, { team: e.target.value || null })}
                 title="ทีมที่ใช้หมวดนี้" style={{ ...inp, width: 165, flex: '0 0 auto' }}>
-                <option value="">🌐 ใช้ร่วมทุกทีม</option>
+                <option value="">{tr('🌐 ใช้ร่วมทุกทีม')}</option>
                 {teams.map((t, i) => <option key={`${t.key}-${i}`} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
               </select>
               <DeleteButton onClick={() => confirm(`ซ่อนหมวด ${c.key}?`) && upd(c.key, { is_active: false })} title="ลบ" />
             </div>
           ))}
         </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}><button onClick={onClose} style={btnGhost}>ปิด</button></div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}><button onClick={onClose} style={btnGhost}>{tr('ปิด')}</button></div>
       </div>
     </div>
   );

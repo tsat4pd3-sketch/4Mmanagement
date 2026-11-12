@@ -9,6 +9,7 @@ import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import { openOnly } from '../utils/shipStatus';
 import NoticeBar from '../components/NoticeBar';
+import { tr } from '../utils/i18n';
 import { periodHead, periodTone } from '../utils/periodHead';   // 🗓️ หัวคอลัมน์ชุดเดียวกับบอร์ด Monitoring (08/10)
 import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
@@ -168,12 +169,12 @@ export default function RundownStock() {
             <div className="search-input grow">
               <span className="search-ico" aria-hidden="true">🔍</span>
               <input type="search" value={q} onChange={(e) => setQ(e.target.value)}
-                placeholder="ค้นหา MAT / PART NO. / ชื่อ / ลูกค้า" aria-label="ค้นหาพาร์ท" style={{ paddingLeft: 30 }} />
+                placeholder={tr('ค้นหา MAT / PART NO. / ชื่อ / ลูกค้า')} aria-label="ค้นหาพาร์ท" style={{ paddingLeft: 30 }} />
               {q ? <button type="button" className="search-clear" aria-label="ล้างคำค้น" onClick={() => setQ('')}>✕</button> : null}
             </div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
               <input type="checkbox" checked={onlyShort} onChange={(e) => setOnlyShort(e.target.checked)} />
-              เฉพาะพาร์ทที่ของจะขาด
+              {tr('เฉพาะพาร์ทที่ของจะขาด')}
               {shortCount ? <b style={{ color: 'var(--red)' }}>({shortCount})</b> : null}
             </label>
           </div>
@@ -209,7 +210,7 @@ export default function RundownStock() {
                 <thead>
                   <tr style={{ background: 'var(--bg2)' }}>
                     <th style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 1, minWidth: 170 }}>
-                      พาร์ท <span style={{ fontWeight: 400 }}>({shown.length}/{view.length})</span>
+                      {tr('พาร์ท')} <span style={{ fontWeight: 400 }}>({shown.length}/{view.length})</span>
                     </th>
                     {(() => {
                       /* คอลัมน์ "ยกมา" = stock พร้อมส่งตอนนี้ — ป้าย/สีชุดเดียวกับคอลัมน์ยกมาของบอร์ด */

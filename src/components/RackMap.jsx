@@ -21,6 +21,7 @@ import { stockState, computeSpareRank, RANK_META, RANK_RULE, monthKeysBack } fro
 import { checkWriteRows } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 
+import { tr } from '../utils/i18n';
 const lbl = { display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 4 };
 const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
 const btnPri = { background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '9px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' };
@@ -305,16 +306,16 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
       {/* ── แถบเครื่องมือ ── */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
         <select value={rackId} onChange={e => setRackId(e.target.value)} style={{ ...inp, width: 250 }}>
-          {!racks.length && <option value="">— ยังไม่มีผังชั้นวาง —</option>}
+          {!racks.length && <option value="">{tr('— ยังไม่มีผังชั้นวาง —')}</option>}
           {racks.map(r => <option key={r.id} value={r.id}>{r.section ? `[${sectionKeyOf(r.section)}] ` : ''}{r.name}</option>)}
         </select>
-        <input value={q} onChange={e => setQ(e.target.value)} placeholder="หาของ — พิมพ์ชื่อ/รหัส/MAT แล้วดูว่าอยู่ช่องไหน"
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder={tr('หาของ — พิมพ์ชื่อ/รหัส/MAT แล้วดูว่าอยู่ช่องไหน')}
           style={{ ...inp, width: 340, flex: '1 1 240px' }} />
         {canEdit && <>
           <button onClick={() => { setEdit(v => !v); setSelCell(null); }} style={{ ...(edit ? btnPri : btnGhost), padding: '8px 14px', fontSize: 12.5 }}>
-            {edit ? '✓ เสร็จแล้ว' : '✏️ แก้ผัง'}
+            {edit ? tr('✓ เสร็จแล้ว') : tr('✏️ แก้ผัง')}
           </button>
-          <button onClick={() => setShowRackForm({ mode: 'new' })} style={{ ...btnGhost, padding: '8px 13px', fontSize: 12.5 }}>➕ ผังใหม่</button>
+          <button onClick={() => setShowRackForm({ mode: 'new' })} style={{ ...btnGhost, padding: '8px 13px', fontSize: 12.5 }}>{tr('➕ ผังใหม่')}</button>
           {rack && <button onClick={() => setShowRackForm({ mode: 'edit', rack })} style={{ ...btnGhost, padding: '8px 13px', fontSize: 12.5 }}>⚙️</button>}
         </>}
       </div>
@@ -336,7 +337,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 8 }}>
             <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={undoBtnStyle(hist.canUndo && !hist.busy)} title="Ctrl+Z">↩️ Undo</button>
             <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title="Ctrl+Y">↪️ Redo</button>
-            {rack && <button onClick={() => setShowGrid(true)} style={{ ...btnGhost, padding: '6px 11px', fontSize: 12 }}>⊞ สร้างตารางอัตโนมัติ</button>}
+            {rack && <button onClick={() => setShowGrid(true)} style={{ ...btnGhost, padding: '6px 11px', fontSize: 12 }}>{tr('⊞ สร้างตารางอัตโนมัติ')}</button>}
           </div>
         </div>
       )}
@@ -349,7 +350,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
             ถ่ายรูป<b>ด้านหน้า</b>ของชั้นวางอะไหล่ → สร้างผังใหม่ → อัปโหลดรูป → ตีช่องแต่ละชั้น แล้วใส่รหัสชั้นวางให้ตรงกับที่กรอกในอะไหล่<br />
             จากนั้นค้นชื่ออะไหล่แล้วระบบจะบอกว่าอยู่ช่องไหนบนผัง
           </div>
-          {canEdit && <button onClick={() => setShowRackForm({ mode: 'new' })} style={{ ...btnPri, marginTop: 14 }}>➕ สร้างผังชั้นวาง</button>}
+          {canEdit && <button onClick={() => setShowRackForm({ mode: 'new' })} style={{ ...btnPri, marginTop: 14 }}>{tr('➕ สร้างผังชั้นวาง')}</button>}
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 320px', gap: 12, alignItems: 'start' }} className="mgrid">
@@ -359,7 +360,7 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
               <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border)', borderRadius: 'var(--r-md)' }}>
                 <div style={{ fontSize: 13, marginBottom: 10 }}>ยังไม่มีรูปชั้นวาง — อัปโหลดรูปด้านหน้าของชั้น</div>
                 {canEdit && <label style={{ ...btnPri, display: 'inline-block', cursor: 'pointer' }}>
-                  อัปโหลดรูป<input type="file" accept="image/*" onChange={uploadImg} style={{ display: 'none' }} />
+                  {tr('อัปโหลดรูป')}<input type="file" accept="image/*" onChange={uploadImg} style={{ display: 'none' }} />
                 </label>}
               </div>
             ) : (
@@ -431,8 +432,8 @@ export default function RackMap({ parts = [], canEdit, myTeams = [], mySection =
                 </div>
                 {edit && (
                   <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-                    <button onClick={() => renameCell(selCell)} style={{ ...btnGhost, padding: '5px 10px', fontSize: 12 }}>✏️ เปลี่ยนรหัส</button>
-                    <button onClick={() => delCell(selCell)} style={{ ...btnGhost, padding: '5px 10px', fontSize: 12, color: '#ef4444' }}>ลบช่อง</button>
+                    <button onClick={() => renameCell(selCell)} style={{ ...btnGhost, padding: '5px 10px', fontSize: 12 }}>{tr('✏️ เปลี่ยนรหัส')}</button>
+                    <button onClick={() => delCell(selCell)} style={{ ...btnGhost, padding: '5px 10px', fontSize: 12, color: '#ef4444' }}>{tr('ลบช่อง')}</button>
                   </div>
                 )}
                 {(() => {
@@ -547,16 +548,16 @@ function GridModal({ rackId, existing, onClose, onDone, onBeforeSave }) {
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 2 }}>⊞ สร้างตารางช่องอัตโนมัติ</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 14 }}>ชั้นวางส่วนใหญ่เป็นตาราง — กำหนดจำนวนแถว/คอลัมน์แล้วปรับตำแหน่งทีหลังได้</div>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 12 }}>
-          <div><label style={lbl}>จำนวนชั้น (แถว)</label><input type="number" min="1" max="20" value={rows} onChange={e => setRows(Math.max(1, Number(e.target.value) || 1))} style={inp} /></div>
-          <div><label style={lbl}>ช่องต่อชั้น (คอลัมน์)</label><input type="number" min="1" max="20" value={cols} onChange={e => setCols(Math.max(1, Number(e.target.value) || 1))} style={inp} /></div>
-          <div><label style={lbl}>ขึ้นต้นรหัส</label><input value={prefix} onChange={e => setPrefix(e.target.value)} style={inp} /></div>
+          <div><label style={lbl}>{tr('จำนวนชั้น (แถว)')}</label><input type="number" min="1" max="20" value={rows} onChange={e => setRows(Math.max(1, Number(e.target.value) || 1))} style={inp} /></div>
+          <div><label style={lbl}>{tr('ช่องต่อชั้น (คอลัมน์)')}</label><input type="number" min="1" max="20" value={cols} onChange={e => setCols(Math.max(1, Number(e.target.value) || 1))} style={inp} /></div>
+          <div><label style={lbl}>{tr('ขึ้นต้นรหัส')}</label><input value={prefix} onChange={e => setPrefix(e.target.value)} style={inp} /></div>
         </div>
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>พื้นที่ตารางบนรูป (% ของรูป)</div>
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8, marginBottom: 12 }}>
           {[['x', 'ซ้าย'], ['y', 'บน'], ['w', 'กว้าง'], ['h', 'สูง']].map(([k, t]) => (
             <div key={k}><label style={lbl}>{t}</label><input type="number" min="0" max="100" value={area[k]} onChange={e => nf(k, e.target.value)} style={inp} /></div>
           ))}
-          <div><label style={lbl}>ระยะห่าง</label><input type="number" min="0" max="10" step="0.5" value={gap} onChange={e => setGap(Number(e.target.value) || 0)} style={inp} /></div>
+          <div><label style={lbl}>{tr('ระยะห่าง')}</label><input type="number" min="0" max="10" step="0.5" value={gap} onChange={e => setGap(Number(e.target.value) || 0)} style={inp} /></div>
         </div>
         <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 10, marginBottom: 12 }}>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>
@@ -571,7 +572,7 @@ function GridModal({ rackId, existing, onClose, onDone, onBeforeSave }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={btnGhost}>ยกเลิก</button>
+          <button onClick={onClose} style={btnGhost}>{tr('ยกเลิก')}</button>
           <button onClick={save} disabled={saving} style={{ ...btnPri, opacity: saving ? 0.5 : 1 }}>{saving ? 'กำลังสร้าง…' : `สร้าง ${preview.length - dup} ช่อง`}</button>
         </div>
       </div>
@@ -616,27 +617,27 @@ function RackFormModal({ mode, rack, teams, myTeams, secOpts = [], defSection = 
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(440px, 96vw)' }}>
         <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 14 }}>{mode === 'new' ? '➕ สร้างผังชั้นวาง' : '⚙️ แก้ไขผังชั้นวาง'}</div>
         <div style={{ display: 'grid', gap: 10 }}>
-          <div><label style={lbl}>ชื่อผัง <span style={{ color: '#ef4444' }}>*</span></label>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="เช่น ชั้นวาง A (ห้องอะไหล่ JIG)" style={inp} /></div>
-          <div><label style={lbl}>ทีมที่ดูแล</label>
+          <div><label style={lbl}>{tr('ชื่อผัง')} <span style={{ color: '#ef4444' }}>*</span></label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder={tr('เช่น ชั้นวาง A (ห้องอะไหล่ JIG)')} style={inp} /></div>
+          <div><label style={lbl}>{tr('ทีมที่ดูแล')}</label>
             <select value={team} onChange={e => setTeam(e.target.value)} style={inp}>
               {teams.map(t => <option key={t.key} value={t.key}>{t.icon || ''} {t.dept_name || t.label}</option>)}
             </select></div>
-          <div><label style={lbl}>หน่วยงานเจ้าของ</label>
+          <div><label style={lbl}>{tr('หน่วยงานเจ้าของ')}</label>
             <select value={sectionKeyOf(section)} onChange={e => setSection(e.target.value)} style={inp}>
-              <option value="">{COMMON_SECTION_LABEL}</option>
-              {secOpts.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
+              <option value="">{tr(COMMON_SECTION_LABEL)}</option>
+              {secOpts.map(o => <option key={o.code} value={o.code}>{tr(o.label)}</option>)}
               {/* ค่าเดิมนอกลิสต์ต้องยังเลือกได้ ไม่งั้นเปิดแก้ไขแล้วหน่วยงานหายเงียบ */}
               {section && !secOpts.some(o => o.code === sectionKeyOf(section)) &&
-                <option value={section}>⚠ {section} (ไม่มีในผัง)</option>}
+                <option value={section}>⚠ {section} {tr('(ไม่มีในผัง)')}</option>}
             </select>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>แต่ละหน่วยงานเก็บของคนละพื้นที่ — ระบุไว้จะได้รู้ว่าผังนี้ของใคร</div></div>
-          <div><label style={lbl}>หมายเหตุ</label><input value={note} onChange={e => setNote(e.target.value)} style={inp} /></div>
+          <div><label style={lbl}>{tr('หมายเหตุ')}</label><input value={note} onChange={e => setNote(e.target.value)} style={inp} /></div>
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-          {mode === 'edit' && <button onClick={del} style={{ ...btnGhost, color: '#ef4444', marginRight: 'auto' }}>ลบผัง</button>}
-          <button onClick={onClose} style={btnGhost}>ยกเลิก</button>
-          <button onClick={save} disabled={saving} style={{ ...btnPri, opacity: saving ? 0.5 : 1 }}>บันทึก</button>
+          {mode === 'edit' && <button onClick={del} style={{ ...btnGhost, color: '#ef4444', marginRight: 'auto' }}>{tr('ลบผัง')}</button>}
+          <button onClick={onClose} style={btnGhost}>{tr('ยกเลิก')}</button>
+          <button onClick={save} disabled={saving} style={{ ...btnPri, opacity: saving ? 0.5 : 1 }}>{tr('บันทึก')}</button>
         </div>
       </div>
     </div>

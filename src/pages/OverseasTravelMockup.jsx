@@ -6,6 +6,7 @@ import { toast } from '../components/Toast';
 import useTabParam from '../utils/useTabParam';
 import { getWorkDate, addDaysStr } from '../utils/workDate';
 
+import { tr } from '../utils/i18n';
 /* ══ ✈️ เบิกเงินเดินทางต่างประเทศ — MOCKUP workflow (2026-10-29 · คำสั่ง user · ผัง "Overseas Business Travel Process") ══
    ถอดจากผัง swimlane 6 ช่อง: ผู้เดินทาง · ผู้อนุมัติ · HR/Compliance · Travel/Admin · Finance/Accounting/ECM
    ลำดับ 7 ข้อตามคอลัมน์ "คำอธิบาย" ของผัง = แถบสถานะ 7 ขั้นของทุกใบ:
@@ -315,57 +316,57 @@ export default function OverseasTravelMockup() {
         <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', alignItems: 'start' }}>
           <div style={{ ...card, display: 'grid', gap: 10 }}>
             <h3 style={h3}>{editId ? `✏️ แก้ไขคำขอ ${items.find(r => r.id === editId)?.no || ''}` : '🧳 Travel Request — ยื่นคำขอเดินทาง'}</h3>
-            <label style={field}>วัตถุประสงค์
-              <input value={form.purpose} onChange={e => setForm(f => ({ ...f, purpose: e.target.value }))} placeholder="เช่น ประชุมลูกค้า / อบรม / audit supplier" />
+            <label style={field}>{tr('วัตถุประสงค์')}
+              <input value={form.purpose} onChange={e => setForm(f => ({ ...f, purpose: e.target.value }))} placeholder={tr('เช่น ประชุมลูกค้า / อบรม / audit supplier')} />
             </label>
-            <label style={field}>ประเทศปลายทาง
+            <label style={field}>{tr('ประเทศปลายทาง')}
               <input value={form.country} onChange={e => setForm(f => ({ ...f, country: e.target.value }))} />
             </label>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <label style={field}>วันไป<input type="date" value={form.from} onChange={e => setForm(f => ({ ...f, from: e.target.value }))} /></label>
-              <label style={field}>วันกลับ<input type="date" value={form.to} onChange={e => setForm(f => ({ ...f, to: e.target.value }))} /></label>
+              <label style={field}>{tr('วันไป')}<input type="date" value={form.from} onChange={e => setForm(f => ({ ...f, from: e.target.value }))} /></label>
+              <label style={field}>{tr('วันกลับ')}<input type="date" value={form.to} onChange={e => setForm(f => ({ ...f, to: e.target.value }))} /></label>
               <span style={{ ...muted, alignSelf: 'end', paddingBottom: 8 }}>{tripDays(form.from, form.to) ? `${tripDays(form.from, form.to)} วัน` : ''}</span>
             </div>
-            <label style={field}>งบประมาณโดยประมาณ (บาท)
+            <label style={field}>{tr('งบประมาณโดยประมาณ (บาท)')}
               <input type="number" min="0" value={form.budget} onChange={e => setForm(f => ({ ...f, budget: e.target.value }))} style={{ maxWidth: 200 }} />
             </label>
             <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13 }}>
-              <input type="checkbox" checked={form.advReq} onChange={e => setForm(f => ({ ...f, advReq: e.target.checked }))} /> ขอเงินทดรอง (Advance)
+              <input type="checkbox" checked={form.advReq} onChange={e => setForm(f => ({ ...f, advReq: e.target.checked }))} /> {tr('ขอเงินทดรอง (Advance)')}
             </label>
             {form.advReq && (
-              <label style={field}>ยอด Advance (บาท)
+              <label style={field}>{tr('ยอด Advance (บาท)')}
                 <input type="number" min="0" value={form.advAmount} onChange={e => setForm(f => ({ ...f, advAmount: e.target.value }))} style={{ maxWidth: 200 }} />
               </label>
             )}
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <button type="button" style={btnPrimary} onClick={submit}>{editId ? 'ส่งใหม่ → Line Manager' : 'ยื่นคำขอ → Line Manager'}</button>
-              {editId && <button type="button" style={btnGhost} onClick={() => { setEditId(null); setForm(blankRequest(today)); }}>ยกเลิกแก้ไข</button>}
+              <button type="button" style={btnPrimary} onClick={submit}>{editId ? tr('ส่งใหม่ → Line Manager') : tr('ยื่นคำขอ → Line Manager')}</button>
+              {editId && <button type="button" style={btnGhost} onClick={() => { setEditId(null); setForm(blankRequest(today)); }}>{tr('ยกเลิกแก้ไข')}</button>}
               {missing.length > 0 && <span style={muted}>ยังขาด: {missing.join(' · ')}</span>}
             </div>
           </div>
 
           <div style={{ display: 'grid', gap: 12 }}>
-            <h3 style={h3}>งานที่รอผู้เดินทาง ({counts.traveler})</h3>
+            <h3 style={h3}>{tr('งานที่รอผู้เดินทาง (')}{counts.traveler})</h3>
             {mine('traveler').length ? mine('traveler').map(r => reqCard(r, (
               <div style={{ display: 'grid', gap: 8 }}>
-                {r.returned && <div><button type="button" style={btnPrimary} onClick={() => startEdit(r)}>แก้ไขคำขอ</button></div>}
+                {r.returned && <div><button type="button" style={btnPrimary} onClick={() => startEdit(r)}>{tr('แก้ไขคำขอ')}</button></div>}
                 {!r.returned && r.admin.visaReq && !r.visaDocsSent && !r.ready && (
-                  <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.visaDocsSent = true; return n; }, 'ผู้เดินทางส่งเอกสาร Visa')}>ส่งเอกสาร Visa</button></div>
+                  <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.visaDocsSent = true; return n; }, 'ผู้เดินทางส่งเอกสาร Visa')}>{tr('ส่งเอกสาร Visa')}</button></div>
                 )}
                 {r.ready && !r.trip.started && (
-                  <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.trip.started = true; return n; }, 'เริ่มเดินทางปฏิบัติงาน')}>เริ่มเดินทาง</button></div>
+                  <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.trip.started = true; return n; }, 'เริ่มเดินทางปฏิบัติงาน')}>{tr('เริ่มเดินทาง')}</button></div>
                 )}
                 {r.trip.started && !r.trip.ended && (
                   <div style={{ display: 'grid', gap: 6 }}>
                     {r.trip.activities.map((a, i) => <div key={i} style={{ fontSize: 13 }}>• {a}</div>)}
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <input value={activity} onChange={e => setActivity(e.target.value)} placeholder="บันทึกกิจกรรมระหว่างเดินทาง" style={{ flex: 1, minWidth: 200 }} />
+                      <input value={activity} onChange={e => setActivity(e.target.value)} placeholder={tr('บันทึกกิจกรรมระหว่างเดินทาง')} style={{ flex: 1, minWidth: 200 }} />
                       <button type="button" style={btnGhost} onClick={() => {
                         if (!activity.trim()) return;
                         upd(r.id, n => { n.trip.activities = [...n.trip.activities, activity.trim()]; return n; }); setActivity('');
                       }}>+ บันทึก</button>
                     </div>
-                    <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.trip.ended = true; return n; }, 'จบการเดินทาง')}>จบการเดินทาง</button></div>
+                    <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.trip.ended = true; return n; }, 'จบการเดินทาง')}>{tr('จบการเดินทาง')}</button></div>
                   </div>
                 )}
                 {r.trip.ended && !r.claim.submitted && (
@@ -378,10 +379,10 @@ export default function OverseasTravelMockup() {
                       </div>
                     ))}
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <select value={line.cat} onChange={e => setLine(l => ({ ...l, cat: e.target.value }))}>{EXPENSE_CATS.map(c => <option key={c}>{c}</option>)}</select>
-                      <input type="number" min="0" value={line.amount} onChange={e => setLine(l => ({ ...l, amount: e.target.value }))} placeholder="บาท" style={{ width: 120 }} />
+                      <select value={line.cat} onChange={e => setLine(l => ({ ...l, cat: e.target.value }))}>{EXPENSE_CATS.map(c => <option key={c}>{tr(c)}</option>)}</select>
+                      <input type="number" min="0" value={line.amount} onChange={e => setLine(l => ({ ...l, amount: e.target.value }))} placeholder={tr('บาท')} style={{ width: 120 }} />
                       <label style={{ fontSize: 13, display: 'flex', gap: 4, alignItems: 'center' }}>
-                        <input type="checkbox" checked={line.receipt} onChange={e => setLine(l => ({ ...l, receipt: e.target.checked }))} /> มีใบเสร็จ
+                        <input type="checkbox" checked={line.receipt} onChange={e => setLine(l => ({ ...l, receipt: e.target.checked }))} /> {tr('มีใบเสร็จ')}
                       </label>
                       <button type="button" style={btnGhost} onClick={() => {
                         if (!(Number(line.amount) > 0)) { toast.error('ใส่ยอดเงิน'); return; }
@@ -390,7 +391,7 @@ export default function OverseasTravelMockup() {
                       }}>+ เพิ่มรายการ</button>
                     </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.claim.submitted = true; return n; }, `ยื่น Expense Claim ${baht(claimTotal(r))}`)}>ยื่น Expense Claim ({baht(claimTotal(r))})</button>
+                      <button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.claim.submitted = true; return n; }, `ยื่น Expense Claim ${baht(claimTotal(r))}`)}>{tr('ยื่น Expense Claim (')}{baht(claimTotal(r))})</button>
                       <span style={muted}>ไม่มีค่าใช้จ่ายนอกเบี้ยเลี้ยง = ยื่นแบบไม่มีรายการได้</span>
                     </div>
                   </div>
@@ -415,7 +416,7 @@ export default function OverseasTravelMockup() {
 
       {tab === 'approver' && (
         <div style={{ display: 'grid', gap: 12 }}>
-          <h3 style={h3}>รอพิจารณา ({counts.approver}) — ลำดับ Line Manager → Department Head → Executive</h3>
+          <h3 style={h3}>{tr('รอพิจารณา (')}{counts.approver}{tr(') — ลำดับ Line Manager → Department Head → Executive')}</h3>
           {mine('approver').length ? mine('approver').map((r) => {
             const lvl = nextApproval(r);
             return reqCard(r, (
@@ -425,14 +426,14 @@ export default function OverseasTravelMockup() {
                 </div>
                 {returnFor === r.id ? (
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <input value={reason} onChange={e => setReason(e.target.value)} placeholder="เหตุผลที่ส่งกลับแก้ไข (บังคับ)" style={{ flex: 1, minWidth: 220 }} />
-                    <button type="button" style={{ ...btnGhost, color: 'var(--red)' }} onClick={() => doReturn(r)}>ยืนยันส่งกลับ</button>
-                    <button type="button" style={btnGhost} onClick={() => { setReturnFor(null); setReason(''); }}>ยกเลิก</button>
+                    <input value={reason} onChange={e => setReason(e.target.value)} placeholder={tr('เหตุผลที่ส่งกลับแก้ไข (บังคับ)')} style={{ flex: 1, minWidth: 220 }} />
+                    <button type="button" style={{ ...btnGhost, color: 'var(--red)' }} onClick={() => doReturn(r)}>{tr('ยืนยันส่งกลับ')}</button>
+                    <button type="button" style={btnGhost} onClick={() => { setReturnFor(null); setReason(''); }}>{tr('ยกเลิก')}</button>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.appr[lvl.k] = true; return n; }, `${lvl.label} อนุมัติ`)}>อนุมัติ (ในฐานะ {lvl.label})</button>
-                    <button type="button" style={btnGhost} onClick={() => { setReturnFor(r.id); setReason(''); }}>ส่งกลับแก้ไข</button>
+                    <button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.appr[lvl.k] = true; return n; }, `${lvl.label} อนุมัติ`)}>{tr('อนุมัติ (ในฐานะ')} {lvl.label})</button>
+                    <button type="button" style={btnGhost} onClick={() => { setReturnFor(r.id); setReason(''); }}>{tr('ส่งกลับแก้ไข')}</button>
                   </div>
                 )}
               </div>
@@ -443,12 +444,12 @@ export default function OverseasTravelMockup() {
 
       {tab === 'hr' && (
         <div style={{ display: 'grid', gap: 12 }}>
-          <h3 style={h3}>รอ HR / Compliance ({counts.hr})</h3>
+          <h3 style={h3}>{tr('รอ HR / Compliance (')}{counts.hr})</h3>
           {mine('hr').length ? mine('hr').map(r => reqCard(r, (
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {!r.hrOk
-                ? <button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.hrOk = true; return n; }, 'HR ตรวจสิทธิ์การเดินทาง: ผ่าน')}>HR: สิทธิ์การเดินทางผ่าน</button>
-                : <button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.compOk = true; return n; }, `Compliance ตรวจข้อกำหนด ${r.country}: ผ่าน`)}>Compliance: ข้อกำหนดประเทศ/ลูกค้าผ่าน</button>}
+                ? <button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.hrOk = true; return n; }, 'HR ตรวจสิทธิ์การเดินทาง: ผ่าน')}>{tr('HR: สิทธิ์การเดินทางผ่าน')}</button>
+                : <button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.compOk = true; return n; }, `Compliance ตรวจข้อกำหนด ${r.country}: ผ่าน`)}>{tr('Compliance: ข้อกำหนดประเทศ/ลูกค้าผ่าน')}</button>}
             </div>
           ))) : empty('ไม่มีคำขอรอ HR / Compliance')}
         </div>
@@ -457,7 +458,7 @@ export default function OverseasTravelMockup() {
       {tab === 'admin' && (
         <div style={{ display: 'grid', gap: 12 }}>
           {/* แท็บนี้โชว์ทุกใบที่อยู่ขั้นเตรียมเดินทาง (รวมใบที่รอเอกสาร Visa จากผู้เดินทาง) — ตัวเลขบนแท็บนับเฉพาะที่ Admin กดได้ */}
-          <h3 style={h3}>ขั้นเตรียมเดินทาง ({prepItems.length} ใบ · รอ Admin ทำ {counts.admin})</h3>
+          <h3 style={h3}>{tr('ขั้นเตรียมเดินทาง (')}{prepItems.length} {tr('ใบ · รอ Admin ทำ')} {counts.admin})</h3>
           {prepItems.length ? prepItems.map((r) => {
             const a = r.admin;
             const blockers = readyBlockers(r);
@@ -471,13 +472,13 @@ export default function OverseasTravelMockup() {
                 {a.visaReq && <Check ok={a.visaApplied}>Admin ยื่น Visa และติดตามผล</Check>}
                 {ADMIN_STEPS.map(x => <Check key={x.k} ok={a[x.k]}>{x.label}</Check>)}
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                  {!a.passport && <button type="button" style={btnPrimary} onClick={() => tick('passport', 'ตรวจ Passport ผ่าน')}>ตรวจ Passport ผ่าน</button>}
+                  {!a.passport && <button type="button" style={btnPrimary} onClick={() => tick('passport', 'ตรวจ Passport ผ่าน')}>{tr('ตรวจ Passport ผ่าน')}</button>}
                   {a.passport && a.visaReq == null && (<>
-                    <button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.admin.visaReq = true; return n; }, 'Admin: ต้องใช้ Visa — แจ้งผู้เดินทางส่งเอกสาร')}>ต้องใช้ Visa</button>
-                    <button type="button" style={btnGhost} onClick={() => upd(r.id, n => { n.admin.visaReq = false; return n; }, 'Admin: ไม่ต้องใช้ Visa')}>ไม่ต้องใช้ Visa</button>
+                    <button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.admin.visaReq = true; return n; }, 'Admin: ต้องใช้ Visa — แจ้งผู้เดินทางส่งเอกสาร')}>{tr('ต้องใช้ Visa')}</button>
+                    <button type="button" style={btnGhost} onClick={() => upd(r.id, n => { n.admin.visaReq = false; return n; }, 'Admin: ไม่ต้องใช้ Visa')}>{tr('ไม่ต้องใช้ Visa')}</button>
                   </>)}
                   {a.visaReq && !a.visaApplied && (r.visaDocsSent
-                    ? <button type="button" style={btnPrimary} onClick={() => tick('visaApplied', 'ยื่น Visa และติดตามผล')}>ยื่น Visa แล้ว</button>
+                    ? <button type="button" style={btnPrimary} onClick={() => tick('visaApplied', 'ยื่น Visa และติดตามผล')}>{tr('ยื่น Visa แล้ว')}</button>
                     : <span style={muted}>รอผู้เดินทางส่งเอกสาร Visa</span>)}
                   {a.passport && a.visaReq != null && (!a.visaReq || a.visaApplied) && nextStep && (
                     <button type="button" style={btnPrimary} onClick={() => tick(nextStep.k, nextStep.label)}>{nextStep.label}</button>
@@ -496,7 +497,7 @@ export default function OverseasTravelMockup() {
 
       {tab === 'finance' && (
         <div style={{ display: 'grid', gap: 12 }}>
-          <h3 style={h3}>รอ Finance / Accounting / ECM ({counts.finance})</h3>
+          <h3 style={h3}>{tr('รอ Finance / Accounting / ECM (')}{counts.finance})</h3>
           {mine('finance').length ? mine('finance').map((r) => {
             const f = r.fin;
             const inClose = r.claim.submitted && r.report.submitted;
@@ -507,13 +508,13 @@ export default function OverseasTravelMockup() {
             return reqCard(r, (
               <div style={{ display: 'grid', gap: 6 }}>
                 {!r.budgetOk && (
-                  <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.budgetOk = true; return n; }, `Finance ตรวจงบประมาณ ${baht(r.budget)}: ผ่าน`)}>Budget Verification: งบผ่าน</button></div>
+                  <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.budgetOk = true; return n; }, `Finance ตรวจงบประมาณ ${baht(r.budget)}: ผ่าน`)}>{tr('Budget Verification: งบผ่าน')}</button></div>
                 )}
                 {r.budgetOk && r.advReq && !r.adv.approved && !r.ready && (
-                  <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.adv.approved = true; return n; }, `อนุมัติ Advance ${baht(r.advAmount)}`)}>อนุมัติ Advance {baht(r.advAmount)} (ตามระเบียบ)</button></div>
+                  <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.adv.approved = true; return n; }, `อนุมัติ Advance ${baht(r.advAmount)}`)}>{tr('อนุมัติ Advance')} {baht(r.advAmount)} {tr('(ตามระเบียบ)')}</button></div>
                 )}
                 {r.advReq && r.adv.approved && !r.adv.paid && (
-                  <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.adv.paid = true; return n; }, `โอน Advance ${baht(r.advAmount)} ให้ผู้เดินทาง`)}>โอน Advance ให้ผู้เดินทาง</button></div>
+                  <div><button type="button" style={btnPrimary} onClick={() => upd(r.id, n => { n.adv.paid = true; return n; }, `โอน Advance ${baht(r.advAmount)} ให้ผู้เดินทาง`)}>{tr('โอน Advance ให้ผู้เดินทาง')}</button></div>
                 )}
                 {inClose && (
                   <div style={{ display: 'grid', gap: 4 }}>
@@ -539,10 +540,10 @@ export default function OverseasTravelMockup() {
                       <Check ok={f.posted}>ลงบัญชี</Check><Check ok={f.archived}>ECM ปิดงาน</Check>
                     </div>
                     <div>
-                      {!f.verified && <button type="button" style={btnPrimary} onClick={() => set('verified', 'Finance ตรวจค่าใช้จ่าย (ใบเสร็จ/นโยบาย) + คำนวณเบี้ยเลี้ยง + หักล้าง Advance')}>ตรวจค่าใช้จ่ายผ่าน</button>}
+                      {!f.verified && <button type="button" style={btnPrimary} onClick={() => set('verified', 'Finance ตรวจค่าใช้จ่าย (ใบเสร็จ/นโยบาย) + คำนวณเบี้ยเลี้ยง + หักล้าง Advance')}>{tr('ตรวจค่าใช้จ่ายผ่าน')}</button>}
                       {f.verified && !f.finalOk && <button type="button" style={btnPrimary} onClick={() => set('finalOk', 'Final Approval อนุมัติค่าใช้จ่าย')}>Final Approval</button>}
-                      {f.finalOk && !f.posted && <button type="button" style={btnPrimary} onClick={() => set('posted', 'Accounting ลงบัญชีค่าใช้จ่าย')}>ลงบัญชี</button>}
-                      {f.posted && !f.archived && <button type="button" style={btnPrimary} onClick={() => set('archived', 'ECM จัดเก็บเอกสารและปิดงาน')}>ECM จัดเก็บเอกสาร / ปิดงาน</button>}
+                      {f.finalOk && !f.posted && <button type="button" style={btnPrimary} onClick={() => set('posted', 'Accounting ลงบัญชีค่าใช้จ่าย')}>{tr('ลงบัญชี')}</button>}
+                      {f.posted && !f.archived && <button type="button" style={btnPrimary} onClick={() => set('archived', 'ECM จัดเก็บเอกสารและปิดงาน')}>{tr('ECM จัดเก็บเอกสาร / ปิดงาน')}</button>}
                     </div>
                   </div>
                 )}

@@ -6,6 +6,7 @@ import { toast } from './Toast';
 import { pullRows, rpnOf } from '../utils/peMaster';
 import { inp, btn, ghost, Pill, Modal, WarnBar } from './NpiUi';
 
+import { tr } from '../utils/i18n';
 export default function PeMasterPullModal({ procs, fmea, masters, masterItems, initialProcId, onClose, onDone }) {
   const linked = useMemo(() => (procs || []).filter(p => p.master_process_id), [procs]);
   const [procId, setProcId] = useState(initialProcId && linked.some(p => p.id === initialProcId) ? initialProcId : (linked[0]?.id || ''));
@@ -28,7 +29,7 @@ export default function PeMasterPullModal({ procs, fmea, masters, masterItems, i
 
   return (
     <Modal title="เติม failure mode จาก master" onClose={onClose} width={760}
-      footer={<><button style={ghost} onClick={onClose}>ยกเลิก</button><button style={btn()} disabled={saving || !chosen.length} onClick={run}>{saving ? 'กำลังเพิ่ม…' : `➕ เพิ่ม ${chosen.length} รายการ`}</button></>}>
+      footer={<><button style={ghost} onClick={onClose}>{tr('ยกเลิก')}</button><button style={btn()} disabled={saving || !chosen.length} onClick={run}>{saving ? 'กำลังเพิ่ม…' : `➕ เพิ่ม ${chosen.length} รายการ`}</button></>}>
       {!linked.length ? <WarnBar color="#f59e0b">ยังไม่มี OP ไหนผูกกระบวนการมาตรฐาน — ไปที่แท็บ Flow → ✏️ OP → เลือก "กระบวนการมาตรฐาน" ก่อน</WarnBar> : (
         <>
           <select style={{ ...inp, marginBottom: 8 }} value={procId} onChange={e => { setProcId(e.target.value); setPicked(null); }}>

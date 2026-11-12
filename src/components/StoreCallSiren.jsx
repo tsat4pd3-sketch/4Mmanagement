@@ -38,6 +38,7 @@ import { reqSourceMeta } from '../utils/replenishGate';
 import useIsMobile from '../utils/useIsMobile';
 import useSiren, { SIREN_PATTERN_CALL } from '../utils/useSiren';
 
+import { tr } from '../utils/i18n';
 /* egress: จอแขวนเปิดค้างทั้งวัน ⇒ เลือกเฉพาะคอลัมน์ที่ใช้ (กฎเหล็ก DB ข้อ 11) */
 const COLS = 'id, line_name, mat_no, part_name, request_qty, requested_at, requested_by, source, store_ack_at';
 const COLS_NO_ACK = 'id, line_name, mat_no, part_name, requested_at, requested_by, request_qty, source';
@@ -192,7 +193,7 @@ export default function StoreCallSiren({ slot = 0 }) {
             <button onClick={() => goPrep(a)} title="ไปหน้าเตรียมงาน — Line Stock › 📤 ขาออก › ตู้ตามเลขพาร์ท (กรองเฉพาะพาร์ทนี้)"
               style={{ flexShrink: 0, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)',
                 padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
-              ไปเตรียมงาน
+              {tr('ไปเตรียมงาน')}
             </button>
             <button onClick={() => ack(a)}
               title={canAck ? 'หยุดเสียงเท่านั้น — ใบยังรอหยิบอยู่ในคิวสโตร์เหมือนเดิม'
@@ -200,7 +201,7 @@ export default function StoreCallSiren({ slot = 0 }) {
               style={{ flexShrink: 0, background: canAck ? '#22c55e' : 'var(--bg3)', color: canAck ? '#04140a' : 'var(--text2)',
                 border: canAck ? 'none' : '1px solid var(--border2)', borderRadius: 'var(--r-md)',
                 padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
-              {canAck ? 'รับทราบ · หยุดเสียง' : '🔇 ปิดเสียงเฉพาะจอนี้'}
+              {canAck ? tr('รับทราบ · หยุดเสียง') : tr('🔇 ปิดเสียงเฉพาะจอนี้')}
             </button>
           </div>
         );

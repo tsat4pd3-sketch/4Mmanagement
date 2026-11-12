@@ -13,6 +13,7 @@ import { can } from '../utils/permissions';
 import { checkWriteRows } from '../utils/dbWrite';
 import { dieSetMats, matSlotFor } from '../utils/dieSetMats';
 
+import { tr } from '../utils/i18n';
 export default function DieMatLinkButton({ set, mat, role, onDone }) {
   const [busy, setBusy] = useState(false);
   const m = String(mat ?? '').trim();

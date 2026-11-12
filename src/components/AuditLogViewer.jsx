@@ -4,6 +4,7 @@ import SearchInput from './SearchInput';
 import { ALL } from '../utils/filterLabels';
 import { AUDIT_ACTIONS, AUDIT_SKIP_FIELDS, tableLabel, fieldLabel, rowLabel } from '../utils/auditLabels';
 
+import { tr } from '../utils/i18n';
 /* ── AuditLogViewer — จอกลางดูประวัติ "ใครแก้อะไร" (2026-08-19) ────────────────────
    ใช้ร่วมทั้งหน้า /audit-log (ทั้งระบบ) และแท็บย่อยในหน้างาน (จำกัดเฉพาะตารางของตัวเอง)
    **ห้ามเขียนจอดู audit ใหม่ที่อื่น** — ต่อยอดตัวนี้
@@ -80,20 +81,20 @@ export default function AuditLogViewer({ client, tables, limit = 300, intro, fmt
       <FilterBar style={{ marginBottom: 10 }}>
         {showTable && (
           <select value={fTable} onChange={e => setFTable(e.target.value)}>
-            <option value="">{ALL.table}</option>
+            <option value="">{tr(ALL.table)}</option>
             {tableOpts.map(t => <option key={t} value={t}>{tableLabel(t)}</option>)}
           </select>
         )}
         <select value={fActor} onChange={e => setFActor(e.target.value)}>
-          <option value="">{ALL.person}</option>
-          {actorOpts.map(a => <option key={a} value={a}>{a}</option>)}
+          <option value="">{tr(ALL.person)}</option>
+          {actorOpts.map(a => <option key={a} value={a}>{tr(a)}</option>)}
         </select>
         <SearchInput value={q} onChange={setQ} fields="ชื่อรายการ / คน" />
         <span className="spacer" />
         <span className="filter-count">
           {shown.length} รายการ{rows.length >= limit ? ` (แสดง ${limit} ล่าสุด — เก่ากว่านี้ยังมีอีก)` : ''}
         </span>
-        <button onClick={load} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 'var(--r-md)', padding: '0 12px', cursor: 'pointer', fontWeight: 700 }}>↻ รีเฟรช</button>
+        <button onClick={load} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 'var(--r-md)', padding: '0 12px', cursor: 'pointer', fontWeight: 700 }}>{tr('↻ รีเฟรช')}</button>
       </FilterBar>
 
       {loading && <div style={{ color: 'var(--muted)', padding: 16, fontSize: 13 }}>กำลังโหลด…</div>}

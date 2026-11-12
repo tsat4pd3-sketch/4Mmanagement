@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
 
+import { tr } from '../utils/i18n';
 /**
  * ประวัติการแก้คะแนนทักษะของพนักงาน 1 คน — อ่านจาก `audit_log` (Main)
  *
@@ -70,7 +71,7 @@ export default function SkillEditHistory({ employeeId, limit = 30 }) {
           display: 'flex', alignItems: 'center', gap: 6, width: 'auto',
         }}>
         <span style={{ fontSize: 11 }}>{open ? '▼' : '▶'}</span>
-        🕓 ประวัติการแก้คะแนน
+        {tr('🕓 ประวัติการแก้คะแนน')}
       </button>
 
       {open && (
@@ -85,7 +86,7 @@ export default function SkillEditHistory({ employeeId, limit = 30 }) {
             <div style={{ fontSize: 12, color: '#ef4444', background: '#ef444415', border: '1px solid #ef444440', borderRadius: 'var(--r-md)', padding: '7px 9px' }}>
               ⚠️ โหลดประวัติไม่สำเร็จ — {err}
               <button type="button" onClick={load}
-                style={{ marginLeft: 8, fontSize: 11, padding: '2px 8px', width: 'auto', cursor: 'pointer' }}>ลองใหม่</button>
+                style={{ marginLeft: 8, fontSize: 11, padding: '2px 8px', width: 'auto', cursor: 'pointer' }}>{tr('ลองใหม่')}</button>
             </div>
           )}
 

@@ -23,6 +23,7 @@ import MatLabel from './MatLabel';
 import SearchInput from './SearchInput';
 import Segmented from './Segmented';
 
+import { tr } from '../utils/i18n';
 const COLS = 'id, created_at, source, ref_id, line_name, mat_no, part_name, sent_qty, received_qty, short_qty, work_date, reported_by, note, status, proposed_outcome, proposed_by, proposed_side, proposed_at, confirmed_by, confirmed_side, resolved_at, resolved_by, resolve_note, sap_doc';
 const fmt = (v) => (v == null ? '—' : Number(v).toLocaleString());
 const dt = (iso) => (iso ? new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
@@ -145,7 +146,7 @@ export default function StockDiscrepancyReport() {
           <b> อีกฝ่าย (คนละคน) ยืนยัน</b> ยอดจึงออกจากคลังพัก · ใส่เลขเอกสาร SAP ที่ใช้ปรับได้
           {!sides.length && <div style={{ marginTop: 4, color: 'var(--muted)' }}>บัญชีนี้ดูได้อย่างเดียว (ไม่มีสิทธิ์ heijunka:operate / wip_request:receive)</div>}
         </div>
-        <button className="tbtn" onClick={load} style={btn(false)}>↻ รีเฟรช</button>
+        <button className="tbtn" onClick={load} style={btn(false)}>{tr('↻ รีเฟรช')}</button>
       </div>
 
       {err && <div style={{ ...card, color: 'var(--red)', fontSize: 13 }}>โหลดไม่สำเร็จ — {err}</div>}
@@ -155,8 +156,8 @@ export default function StockDiscrepancyReport() {
           <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)', marginBottom: 6 }}>สรุปรายเดือน</div>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>
-              <th style={th}>เดือน</th><th style={{ ...th, textAlign: 'right' }}>เคส</th><th style={{ ...th, textAlign: 'right' }}>ขาดรวม</th>
-              <th style={{ ...th, textAlign: 'right' }}>ยังค้าง</th><th style={{ ...th, textAlign: 'right' }}>คืน STORE</th><th style={{ ...th, textAlign: 'right' }}>ตัดหาย</th><th style={th} />
+              <th style={th}>{tr('เดือน')}</th><th style={{ ...th, textAlign: 'right' }}>{tr('เคส')}</th><th style={{ ...th, textAlign: 'right' }}>{tr('ขาดรวม')}</th>
+              <th style={{ ...th, textAlign: 'right' }}>{tr('ยังค้าง')}</th><th style={{ ...th, textAlign: 'right' }}>{tr('คืน STORE')}</th><th style={{ ...th, textAlign: 'right' }}>{tr('ตัดหาย')}</th><th style={th} />
             </tr></thead>
             <tbody>
               {months.map(m => (
@@ -167,7 +168,7 @@ export default function StockDiscrepancyReport() {
                   <td style={{ ...td, textAlign: 'right', fontWeight: 900, color: m.openQty ? 'var(--amber)' : 'var(--muted)' }}>{fmt(m.openQty)} ({fmt(m.openCases)} เคส)</td>
                   <td style={{ ...td, textAlign: 'right' }}>{fmt(m.returnedQty)}</td>
                   <td style={{ ...td, textAlign: 'right', color: m.writtenOffQty ? 'var(--red)' : 'var(--muted)' }}>{fmt(m.writtenOffQty)}</td>
-                  <td style={td}><button className="tbtn" onClick={() => setMonth(month === m.month ? '' : m.month)} style={btn(month === m.month)}>{month === m.month ? '✓ กำลังดู' : 'ดูเดือนนี้'}</button></td>
+                  <td style={td}><button className="tbtn" onClick={() => setMonth(month === m.month ? '' : m.month)} style={btn(month === m.month)}>{month === m.month ? tr('✓ กำลังดู') : tr('ดูเดือนนี้')}</button></td>
                 </tr>
               ))}
             </tbody>
@@ -179,7 +180,7 @@ export default function StockDiscrepancyReport() {
         <Segmented value={view} onChange={setView} label="สถานะ"
           options={[{ value: 'open', label: 'ยังไม่เคลียร์' }, { value: 'done', label: 'เคลียร์แล้ว' }, { value: 'all', label: 'ทั้งหมด' }]} />
         <SearchInput value={q} onChange={setQ} fields="MAT / ชื่อพาร์ท / ไลน์ / เลข SAP / หมายเหตุ" grow={false} />
-        {month && <span style={{ fontSize: 12, color: 'var(--text2)' }}>เดือน {month} <button className="tbtn" onClick={() => setMonth('')} style={btn(false)}>✕ ทุกเดือน</button></span>}
+        {month && <span style={{ fontSize: 12, color: 'var(--text2)' }}>เดือน {month} <button className="tbtn" onClick={() => setMonth('')} style={btn(false)}>{tr('✕ ทุกเดือน')}</button></span>}
         <div style={{ flex: 1 }} />
         <button className="tbtn" onClick={exportCsv} disabled={!list.length} style={btn(false)}>⬇️ Export CSV</button>
       </div>
@@ -191,9 +192,9 @@ export default function StockDiscrepancyReport() {
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead><tr>
-                  <th style={th}>วันที่</th><th style={th}>พาร์ท</th><th style={th}>ไลน์</th>
-                  <th style={{ ...th, textAlign: 'right' }}>ส่ง</th><th style={{ ...th, textAlign: 'right' }}>รับจริง</th><th style={{ ...th, textAlign: 'right' }}>ขาด</th>
-                  <th style={th}>สถานะ</th><th style={th}>รายละเอียด</th><th style={th} />
+                  <th style={th}>{tr('วันที่')}</th><th style={th}>{tr('พาร์ท')}</th><th style={th}>{tr('ไลน์')}</th>
+                  <th style={{ ...th, textAlign: 'right' }}>{tr('ส่ง')}</th><th style={{ ...th, textAlign: 'right' }}>{tr('รับจริง')}</th><th style={{ ...th, textAlign: 'right' }}>{tr('ขาด')}</th>
+                  <th style={th}>{tr('สถานะ')}</th><th style={th}>{tr('รายละเอียด')}</th><th style={th} />
                 </tr></thead>
                 <tbody>
                   {list.map(r => {
@@ -219,11 +220,11 @@ export default function StockDiscrepancyReport() {
                           <div style={{ color: 'var(--muted)' }}>แจ้งโดย {r.reported_by || '—'}</div>
                         </td>
                         <td style={td}>
-                          {canPropose && <button className="tbtn" disabled={busy === r.id} onClick={() => openForm(r, 'propose')} style={btn(true)}>เสนอผลเคลียร์</button>}
+                          {canPropose && <button className="tbtn" disabled={busy === r.id} onClick={() => openForm(r, 'propose')} style={btn(true)}>{tr('เสนอผลเคลียร์')}</button>}
                           {canConfirm && (
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                              <button className="tbtn" disabled={busy === r.id} onClick={() => openForm(r, 'confirm')} style={btn(true)}>✔ ยืนยัน</button>
-                              <button className="tbtn" disabled={busy === r.id} onClick={() => rejectProposal(r)} style={btn(false)}>ไม่เห็นด้วย</button>
+                              <button className="tbtn" disabled={busy === r.id} onClick={() => openForm(r, 'confirm')} style={btn(true)}>{tr('✔ ยืนยัน')}</button>
+                              <button className="tbtn" disabled={busy === r.id} onClick={() => rejectProposal(r)} style={btn(false)}>{tr('ไม่เห็นด้วย')}</button>
                             </div>
                           )}
                           {r.status === 'proposed' && !canConfirm && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>รออีกฝ่ายยืนยัน</span>}
@@ -249,19 +250,19 @@ export default function StockDiscrepancyReport() {
               {form.mode === 'confirm' && <div style={{ marginTop: 4 }}>เสนอ <b>{OUTCOME_LABEL[form.d.proposed_outcome]}</b> โดย {form.d.proposed_by || '—'} ({SIDE_LABEL[form.d.proposed_side]})</div>}
             </div>
             <div style={{ display: 'grid', gap: 8 }}>
-              <label style={{ fontSize: 12, color: 'var(--muted)' }}>กดในนามฝ่าย
+              <label style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('กดในนามฝ่าย')}
                 <Segmented value={form.side} onChange={v => setForm(f => ({ ...f, side: v }))} label="ฝ่าย"
                   options={sides.map(s => ({ value: s, label: SIDE_LABEL[s] }))} />
               </label>
               {form.mode === 'propose' && (
-                <label style={{ fontSize: 12, color: 'var(--muted)' }}>ผล
+                <label style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ผล')}
                   <Segmented value={form.outcome} onChange={v => setForm(f => ({ ...f, outcome: v }))} label="ผลเคลียร์"
                     options={[{ value: 'returned', label: OUTCOME_LABEL.returned }, { value: 'written_off', label: OUTCOME_LABEL.written_off }]} />
                 </label>
               )}
-              <input value={form.sapDoc} onChange={e => setForm(f => ({ ...f, sapDoc: e.target.value }))} placeholder="เลขเอกสาร SAP ที่ใช้ปรับ (ถ้ามี)"
+              <input value={form.sapDoc} onChange={e => setForm(f => ({ ...f, sapDoc: e.target.value }))} placeholder={tr('เลขเอกสาร SAP ที่ใช้ปรับ (ถ้ามี)')}
                 style={{ padding: '8px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }} />
-              <input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="หมายเหตุ / สาเหตุที่ขาด"
+              <input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder={tr('หมายเหตุ / สาเหตุที่ขาด')}
                 style={{ padding: '8px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }} />
               {(() => {
                 const why = form.mode === 'propose'
@@ -271,9 +272,9 @@ export default function StockDiscrepancyReport() {
               })()}
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-              <button className="tbtn" onClick={() => setForm(null)} style={btn(false)}>ยกเลิก</button>
+              <button className="tbtn" onClick={() => setForm(null)} style={btn(false)}>{tr('ยกเลิก')}</button>
               <button className="tbtn" disabled={busy === form.d.id} onClick={form.mode === 'propose' ? propose : confirm} style={btn(true)}>
-                {busy === form.d.id ? '…' : form.mode === 'propose' ? 'เสนอ (รออีกฝ่ายยืนยัน)' : 'ยืนยัน · ย้ายยอดออกจากคลังพัก'}
+                {busy === form.d.id ? '…' : form.mode === 'propose' ? tr('เสนอ (รออีกฝ่ายยืนยัน)') : tr('ยืนยัน · ย้ายยอดออกจากคลังพัก')}
               </button>
             </div>
           </div>

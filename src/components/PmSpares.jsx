@@ -21,6 +21,7 @@ import SearchSelect from './SearchSelect'
 import { planReadiness, SPARE_HORIZON_DAYS } from '../utils/pmSpares'
 import { loadSpareParts, loadPmSpareDemand } from '../lib/pmSpareData'
 
+import { tr } from '../utils/i18n';
 const fmtN = (n) => (n == null ? '—' : Number(n).toLocaleString('th-TH', { maximumFractionDigits: 2 }))
 const fmtYmd = (ymd) => {
   if (!ymd) return '—'
@@ -145,7 +146,7 @@ export function PlanSparesModal({ row, canEdit, canIssue, byName, byUid, onClose
         <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
             <thead><tr style={{ background: 'var(--bg3)' }}>
-              {['อะไหล่', 'ใช้ต่อรอบ', 'คงเหลือ', 'สถานะ', ''].map(h => <th key={h} style={th}>{h}</th>)}
+              {['อะไหล่', 'ใช้ต่อรอบ', 'คงเหลือ', 'สถานะ', ''].map(h => <th key={h} style={th}>{tr(h)}</th>)}
             </tr></thead>
             <tbody>
               {!ready.items.length && (
@@ -177,10 +178,10 @@ export function PlanSparesModal({ row, canEdit, canIssue, byName, byUid, onClose
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap', marginTop: 10 }}>
             <div style={{ flex: '1 1 260px', minWidth: 0 }}>
               <SearchSelect value={pick.id} text={pick.text} options={options} onChange={({ id, text }) => setPick({ id: id || '', text: text || '' })}
-                placeholder="ค้นอะไหล่จากคลัง (ชื่อ / รหัส / ชั้นวาง)" emptyText="ไม่พบในคลังอะไหล่ — เพิ่มอะไหล่ใหม่ที่ ทะเบียนอุปกรณ์ → คลังอะไหล่" />
+                placeholder={tr('ค้นอะไหล่จากคลัง (ชื่อ / รหัส / ชั้นวาง)')} emptyText="ไม่พบในคลังอะไหล่ — เพิ่มอะไหล่ใหม่ที่ ทะเบียนอุปกรณ์ → คลังอะไหล่" />
             </div>
             <input type="number" min="0" step="any" value={pickQty} onChange={e => setPickQty(e.target.value)} style={{ ...inp, width: 80 }} aria-label="จำนวนต่อรอบ" />
-            <button onClick={addLine} disabled={busy || !pick.id} style={{ ...btn('#3dd65c', true), opacity: pick.id ? 1 : 0.5 }}>+ เพิ่ม</button>
+            <button onClick={addLine} disabled={busy || !pick.id} style={{ ...btn('#3dd65c', true), opacity: pick.id ? 1 : 0.5 }}>{tr('+ เพิ่ม')}</button>
           </div>
         )}
 
@@ -192,7 +193,7 @@ export function PlanSparesModal({ row, canEdit, canIssue, byName, byUid, onClose
           </span>
           {canIssue
             ? <button onClick={issue} disabled={busy || !ready.allOk} title={ready.allOk ? 'ตัดสต็อกทุกรายการในครั้งเดียว' : 'มีอะไหล่ไม่พอ'}
-                style={{ ...btn('#4a90e0', true), opacity: ready.allOk ? 1 : 0.45, cursor: ready.allOk ? 'pointer' : 'not-allowed' }}>เบิกอะไหล่ตามแผน PM</button>
+                style={{ ...btn('#4a90e0', true), opacity: ready.allOk ? 1 : 0.45, cursor: ready.allOk ? 'pointer' : 'not-allowed' }}>{tr('เบิกอะไหล่ตามแผน PM')}</button>
             : <span style={{ fontSize: 12, color: 'var(--muted)' }}>เบิกได้เฉพาะผู้มีสิทธิ์เบิกอะไหล่</span>}
         </div>
 
@@ -256,7 +257,7 @@ export function SpareDemandBanner({ todayStr, reloadKey = 0, onOpenPlan }) {
                   {s.noDuePlans > 0 && <> · แผนที่ยังไม่มีวัน PM {s.noDuePlans} (คาดไม่ได้)</>}
                 </span>}
         </span>
-        {(s.parts > 0 || s.noDuePlans > 0) && <button onClick={() => setOpen(true)} style={btn(c)}>ดูรายการ</button>}
+        {(s.parts > 0 || s.noDuePlans > 0) && <button onClick={() => setOpen(true)} style={btn(c)}>{tr('ดูรายการ')}</button>}
       </div>
       {open && <SpareDemandModal demand={d} error={state.error} onClose={() => setOpen(false)} onOpenPlan={onOpenPlan} />}
     </>
@@ -273,7 +274,7 @@ function SpareDemandModal({ demand, error, onClose, onOpenPlan }) {
       <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead><tr style={{ background: 'var(--bg3)' }}>
-            {['อะไหล่', 'ต้องใช้', 'คงเหลือ', 'หลังใช้', 'ใช้ครั้งแรก', 'เริ่มขาด', 'ต้องสั่งภายใน', 'PM ที่ใช้'].map(h => <th key={h} style={th}>{h}</th>)}
+            {['อะไหล่', 'ต้องใช้', 'คงเหลือ', 'หลังใช้', 'ใช้ครั้งแรก', 'เริ่มขาด', 'ต้องสั่งภายใน', 'PM ที่ใช้'].map(h => <th key={h} style={th}>{tr(h)}</th>)}
           </tr></thead>
           <tbody>
             {demand.rows.map(r => (
@@ -300,7 +301,7 @@ function SpareDemandModal({ demand, error, onClose, onOpenPlan }) {
                 </td>
                 <td style={td}>
                   <button onClick={() => setOpenRow(openRow === r.part.id ? null : r.part.id)} style={{ ...btn('#8b8b96'), padding: '3px 9px', fontSize: 12 }}>
-                    {r.uses.length} ครั้ง {openRow === r.part.id ? '▴' : '▾'}
+                    {r.uses.length} {tr('ครั้ง')} {openRow === r.part.id ? '▴' : '▾'}
                   </button>
                   {openRow === r.part.id && (
                     <div style={{ marginTop: 4 }}>

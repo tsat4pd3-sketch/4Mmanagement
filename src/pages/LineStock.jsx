@@ -58,6 +58,7 @@ import { sapEquivalent } from '../utils/sapView';   // 🔩 มุม SAP (09/11
 import { loadProductsMaster } from '../utils/useProducts';
 import { INFLOW_MODES, inflowModeOf, inflowPatchFor, inflowModesFor } from '../utils/stockReceipts';
 import { IconButton, DeleteButton } from '../components/IconButton';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
@@ -555,12 +556,12 @@ function StockTab({ role, scope }) {
             style={{ ...btn(showPending ? 'var(--amber)' : 'var(--bg2)', showPending ? '#1a1206' : 'var(--text)'),
               position: 'relative',
               border: pendingMine.length > 0 ? '1px solid var(--amber)' : '1px solid var(--border)' }}>
-            รออนุมัติ{pendingMine.length > 0 ? ` (${pendingMine.length})` : ''}
+            {tr('รออนุมัติ')}{pendingMine.length > 0 ? ` (${pendingMine.length})` : ''}
             <ToggleDot on={showPending} />
           </button>
         )}
         <button onClick={() => setShowTxn(v => !v)} style={btn(showTxn ? 'var(--accent)' : 'var(--bg2)', showTxn ? 'var(--accent-ink)' : 'var(--text)')}>
-          {showTxn ? 'ดู Stock' : 'ประวัติ Transaction'}
+          {showTxn ? tr('ดู Stock') : tr('ประวัติ Transaction')}
         </button>
         {canIssue && (
           <button onClick={() => { setForm({ ...EMPTY_FORM, type:'issue', work_date:getToday() }); setShowForm(true); }} style={btn('var(--accent)')}>
@@ -591,7 +592,7 @@ function StockTab({ role, scope }) {
               <thead>
                 <tr style={{ background:'var(--bg2)' }}>
                   {['วันที่','ไลน์','ชิ้นงาน','ประเภท','จำนวน','หมายเหตุ','โดย', canApprove ? 'จัดการ' : 'สถานะ'].map(h => (
-                    <th key={h} style={{ padding:'8px 12px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign:'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{h}</th>
+                    <th key={h} style={{ padding:'8px 12px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign:'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{tr(h)}</th>
                   ))}
                 </tr>
               </thead>
@@ -616,9 +617,9 @@ function StockTab({ role, scope }) {
                       {canApprove ? (
                         <div style={{ display:'flex', gap:6 }}>
                           <button onClick={() => reviewTxn(t, 'approved')} disabled={reviewing === t.id}
-                            style={{ ...btn('var(--accent)'), padding:'4px 10px', fontSize:11, opacity: reviewing === t.id ? 0.6 : 1 }}>อนุมัติ</button>
+                            style={{ ...btn('var(--accent)'), padding:'4px 10px', fontSize:11, opacity: reviewing === t.id ? 0.6 : 1 }}>{tr('อนุมัติ')}</button>
                           <button onClick={() => { setRejectTx(t); setRejectReason(''); }} disabled={reviewing === t.id}
-                            style={{ ...btn('var(--bg)', 'var(--red)'), border:'1px solid var(--red)40', padding:'4px 10px', fontSize:11 }}>ปฏิเสธ</button>
+                            style={{ ...btn('var(--bg)', 'var(--red)'), border:'1px solid var(--red)40', padding:'4px 10px', fontSize:11 }}>{tr('ปฏิเสธ')}</button>
                         </div>
                       ) : (
                         <span style={{ fontSize:11, padding:'2px 8px', borderRadius: 'var(--r-md)', fontWeight:700, background:`${tint(STATUS_COLOR.pending, 'dim')}`, color:STATUS_COLOR.pending }}>{STATUS_LABEL.pending}</span>
@@ -692,7 +693,7 @@ function StockTab({ role, scope }) {
             {keys.length > 1 && !forceOpen && (
               <button type="button" onClick={() => persistCollapsed(allFolded ? new Set() : new Set(keys))}
                 style={{ ...inputSt, width:'auto', cursor:'pointer', fontSize:12, padding:'6px 12px' }}>
-                {allFolded ? 'กางทั้งหมด' : 'ย่อทั้งหมด'}
+                {allFolded ? tr('กางทั้งหมด') : tr('ย่อทั้งหมด')}
               </button>
             )}
             <span style={{ fontSize:11, color:'var(--muted)' }}>
@@ -770,7 +771,7 @@ function StockTab({ role, scope }) {
                       <thead>
                         <tr style={{ background:'var(--bg2)' }}>
                           {[['#','left'],['รูป','left'],['ชิ้นงาน','left'],['STD/กล่อง','right'],['MAX','right'],['MIN','right'],['คงเหลือ (ชิ้น)','right'],['สถานะ','left']].map(([h, al]) => (
-                            <th key={h} style={{ padding:'8px 14px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign: al, whiteSpace:'nowrap', textTransform:'uppercase' }}>{h}</th>
+                            <th key={h} style={{ padding:'8px 14px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign: al, whiteSpace:'nowrap', textTransform:'uppercase' }}>{tr(h)}</th>
                           ))}
                           {canIssue && <th style={{ padding:'8px 14px', width:90 }}></th>}
                         </tr>
@@ -852,7 +853,7 @@ function StockTab({ role, scope }) {
                         {sv.rows.length > 0 && (
                           <table style={{ marginTop:6, borderCollapse:'collapse', fontSize:12 }}>
                             <thead><tr>{['ของที่ขั้นกิน','ในระบบ (ของดิบ)','+ ชิ้นผ่านขั้น','= SAP เห็น'].map(h => (
-                              <th key={h} style={{ padding:'4px 12px', textAlign: h === 'ของที่ขั้นกิน' ? 'left' : 'right', fontSize:11, color:'var(--muted)', fontWeight:800 }}>{h}</th>))}</tr></thead>
+                              <th key={h} style={{ padding:'4px 12px', textAlign: h === 'ของที่ขั้นกิน' ? 'left' : 'right', fontSize:11, color:'var(--muted)', fontWeight:800 }}>{tr(h)}</th>))}</tr></thead>
                             <tbody>{sv.rows.map(r => (
                               <tr key={r.mat_no}>
                                 <td style={{ padding:'4px 12px' }}><MatLabel mat={r.mat_no} name={bomMap[r.mat_no]} size={12} /></td>
@@ -904,7 +905,7 @@ function StockTab({ role, scope }) {
               <thead>
                 <tr style={{ background:'var(--bg2)' }}>
                   {['วันที่','ไลน์','ชิ้นงาน','ประเภท','จำนวน','หมายเหตุ','โดย'].map(h => (
-                    <th key={h} style={{ padding:'8px 12px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign:'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{h}</th>
+                    <th key={h} style={{ padding:'8px 12px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign:'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{tr(h)}</th>
                   ))}
                 </tr>
               </thead>
@@ -938,7 +939,7 @@ function StockTab({ role, scope }) {
           {txnRows.length > txnShow && (
             <div style={{ padding:'10px 16px', borderTop:'1px solid var(--border)', display:'flex', gap:10, alignItems:'center', fontSize:12.5, color:'var(--muted)' }}>
               แสดง {txnShow.toLocaleString()} จาก {txnRows.length.toLocaleString()} รายการ
-              <button onClick={() => setTxnShow(n => n + TXN_PAGE)} style={{ ...btn('var(--bg)', 'var(--text)'), border:'1px solid var(--border2)', fontSize:12 }}>แสดงเพิ่ม {Math.min(TXN_PAGE, txnRows.length - txnShow).toLocaleString()}</button>
+              <button onClick={() => setTxnShow(n => n + TXN_PAGE)} style={{ ...btn('var(--bg)', 'var(--text)'), border:'1px solid var(--border2)', fontSize:12 }}>{tr('แสดงเพิ่ม')} {Math.min(TXN_PAGE, txnRows.length - txnShow).toLocaleString()}</button>
               <span>· Export CSV ได้ครบทุกแถว</span>
             </div>
           )}
@@ -956,7 +957,7 @@ function StockTab({ role, scope }) {
             <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, alignItems:'start' }}>
               {/* Type selector */}
               <div>
-                <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:6 }}>ประเภท</label>
+                <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:6 }}>{tr('ประเภท')}</label>
                 <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
                   {['issue','return','adjust'].map(t => (
                     <button key={t} onClick={() => setForm(f => ({ ...f, type:t }))}
@@ -972,9 +973,9 @@ function StockTab({ role, scope }) {
 
               <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
                 <div>
-                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>ไลน์การผลิต *</label>
+                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>{tr('ไลน์การผลิต *')}</label>
                   <LineSelect
-                    lines={lines} value={form.line_name} {...scope} style={inputSt} placeholder="เลือกไลน์..."
+                    lines={lines} value={form.line_name} {...scope} style={inputSt} placeholder={tr('เลือกไลน์...')}
                     onChange={v => setForm(f => ({ ...f, line_name: v }))}
                     extraGroups={[{ label: 'คลัง', options: warehouseNames.map(n => ({ value: n })) }]}
                   />
@@ -998,15 +999,15 @@ function StockTab({ role, scope }) {
                   )}
                 </div>
                 <div>
-                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>วันที่</label>
+                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>{tr('วันที่')}</label>
                   <input type="date" style={inputSt} value={form.work_date} onChange={e => setForm(f => ({ ...f, work_date:e.target.value }))} />
                 </div>
               </div>
 
               {/* เลือก MAT จาก BOM ของ product */}
               <div>
-                <label style={{ fontSize:11, fontWeight:700, color:'var(--blue)', display:'block', marginBottom:4 }}>ดึง MAT จาก BOM ของ Product (ไม่บังคับ)</label>
-                <SearchSelect value={String(bomProduct || '')} placeholder="— ค้นหา Product (MAT/ชื่อ) เพื่อดูพาร์ทย่อยใน BOM —" inputStyle={inputSt}
+                <label style={{ fontSize:11, fontWeight:700, color:'var(--blue)', display:'block', marginBottom:4 }}>{tr('ดึง MAT จาก BOM ของ Product (ไม่บังคับ)')}</label>
+                <SearchSelect value={String(bomProduct || '')} placeholder={tr('— ค้นหา Product (MAT/ชื่อ) เพื่อดูพาร์ทย่อยใน BOM —')} inputStyle={inputSt}
                   /* 🔴 เลข MAT ต้องอยู่ช่อง `code` (nowrap ห้ามตัด) ไม่ใช่ต่อท้าย `label`
                      — label ถูก ellipsis ตัดท้าย ⇒ MAT ที่อยู่ท้ายสุดหายทุกแถว (QC 06/10)
                      รหัสที่ถูกตัดครึ่งไม่ได้แค่อ่านไม่ครบ แต่ **อ่านผิดตัวได้** */
@@ -1048,20 +1049,20 @@ function StockTab({ role, scope }) {
                 <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>MAT SAP *</label>
                 <ProductSelect value={form.mat_no} allowFree extraOptions={matExtraOptions} history={txnMatHist}
                   lines={form.line_name ? [form.line_name] : undefined}
-                  placeholder="ค้น MAT / ชื่อพาร์ท…" freeHint="MAT นอกทะเบียนต้องยืนยันอีกครั้งตอนบันทึก"
+                  placeholder={tr('ค้น MAT / ชื่อพาร์ท…')} freeHint="MAT นอกทะเบียนต้องยืนยันอีกครั้งตอนบันทึก"
                   inputStyle={{ fontWeight:700 }}
                   onChange={({ mat_no, name }) => setForm(f => ({ ...f, mat_no, part_name: name || bomMap[mat_no] || f.part_name }))} />
               </div>
 
               <div>
                 <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>Part Name</label>
-                <input style={inputSt} value={form.part_name} onChange={e => setForm(f => ({ ...f, part_name:e.target.value }))} placeholder="กรอกหรือเลือกจาก Mat SAP" />
+                <input style={inputSt} value={form.part_name} onChange={e => setForm(f => ({ ...f, part_name:e.target.value }))} placeholder={tr('กรอกหรือเลือกจาก Mat SAP')} />
               </div>
 
               {/* ปรับยอด: เลือกทิศทาง เพิ่ม/ลด (stocktake ที่นับได้น้อยกว่าระบบก็ลดได้) */}
               {form.type === 'adjust' && (
                 <div>
-                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:6 }}>ทิศทางปรับ</label>
+                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:6 }}>{tr('ทิศทางปรับ')}</label>
                   <div style={{ display:'flex', gap:6 }}>
                     {[{ k:'up', l:'➕ เพิ่มยอด', c:'var(--green)' }, { k:'down', l:'➖ ลดยอด', c:'var(--red)' }].map(d => (
                       <button key={d.k} type="button" onClick={() => setForm(f => ({ ...f, dir:d.k }))}
@@ -1075,7 +1076,7 @@ function StockTab({ role, scope }) {
 
               <div>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:4 }}>
-                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)' }}>จำนวน (ชิ้น) *</label>
+                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)' }}>{tr('จำนวน (ชิ้น) *')}</label>
                   {form.line_name && form.mat_no.trim() && (
                     <span style={{ fontSize:11, color:'var(--muted)' }}>คงเหลือปัจจุบัน: <b style={{ color: onHandOf(form.line_name, form.mat_no) <= 0 ? 'var(--red)' : 'var(--text)' }}>{onHandOf(form.line_name, form.mat_no).toLocaleString()}</b></span>
                   )}
@@ -1085,15 +1086,15 @@ function StockTab({ role, scope }) {
               </div>
 
               <div>
-                <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>หมายเหตุ</label>
-                <input style={inputSt} value={form.note} onChange={e => setForm(f => ({ ...f, note:e.target.value }))} placeholder="เช่น Kanban ใบที่ 3, Lot A001..." />
+                <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>{tr('หมายเหตุ')}</label>
+                <input style={inputSt} value={form.note} onChange={e => setForm(f => ({ ...f, note:e.target.value }))} placeholder={tr('เช่น Kanban ใบที่ 3, Lot A001...')} />
               </div>
             </div>
 
             <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
-              <button onClick={() => setShowForm(false)} style={{ ...btn('var(--bg2)', 'var(--text)'), border:'1px solid var(--border)' }}>ยกเลิก</button>
+              <button onClick={() => setShowForm(false)} style={{ ...btn('var(--bg2)', 'var(--text)'), border:'1px solid var(--border)' }}>{tr('ยกเลิก')}</button>
               <button onClick={handleSave} disabled={saving} style={{ ...btn(TYPE_COLOR[form.type]), opacity:saving ? 0.6 : 1 }}>
-                {saving ? '...' : 'บันทึก'}
+                {saving ? '...' : tr('บันทึก')}
               </button>
             </div>
           </div>
@@ -1108,12 +1109,12 @@ function StockTab({ role, scope }) {
             <div style={{ fontSize:12, color:'var(--muted)', marginBottom:14 }}>
               {TYPE_LABEL[rejectTx.type]} · <span style={{ fontFamily:'monospace', color:'var(--blue)' }}>{rejectTx.mat_no}</span> · {rejectTx.line_name} · {parseFloat(rejectTx.qty).toLocaleString()}
             </div>
-            <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>เหตุผลที่ปฏิเสธ</label>
-            <input style={inputSt} value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder="เช่น ยอดไม่ตรงกับการนับจริง" autoFocus />
+            <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>{tr('เหตุผลที่ปฏิเสธ')}</label>
+            <input style={inputSt} value={rejectReason} onChange={e => setRejectReason(e.target.value)} placeholder={tr('เช่น ยอดไม่ตรงกับการนับจริง')} autoFocus />
             <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
-              <button onClick={() => setRejectTx(null)} style={{ ...btn('var(--bg2)', 'var(--text)'), border:'1px solid var(--border)' }}>ยกเลิก</button>
+              <button onClick={() => setRejectTx(null)} style={{ ...btn('var(--bg2)', 'var(--text)'), border:'1px solid var(--border)' }}>{tr('ยกเลิก')}</button>
               <button onClick={() => reviewTxn(rejectTx, 'rejected', rejectReason)} disabled={reviewing === rejectTx.id}
-                style={{ ...btn('var(--red)'), opacity: reviewing === rejectTx.id ? 0.6 : 1 }}>ยืนยันปฏิเสธ</button>
+                style={{ ...btn('var(--red)'), opacity: reviewing === rejectTx.id ? 0.6 : 1 }}>{tr('ยืนยันปฏิเสธ')}</button>
             </div>
           </div>
         </div>
@@ -1282,7 +1283,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
           placeholder={ALL.line} />
         <span className="spacer" />
         {canEdit && (
-          <button onClick={openNew} style={btn('#0284c7')}>+ เพิ่มรอบจัดส่ง</button>
+          <button onClick={openNew} style={btn('#0284c7')}>{tr('+ เพิ่มรอบจัดส่ง')}</button>
         )}
       </FilterBar>
       <p style={{ margin:'0 0 12px', fontSize:13, color:'var(--muted)' }}>⏰ ตั้งค่าเวลาเตรียมและเวลาจัดส่งพาร์ทแต่ละรอบตามไลน์และกะ</p>
@@ -1304,7 +1305,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                   <thead>
                     <tr style={{ background:'var(--bg2)' }}>
                       {['กะ','รอบที่','ตัดยอด','เตรียม','ส่ง','จุด','เสร็จ~','หมายเหตุ'].map(h => (
-                        <th key={h} style={{ padding:'8px 14px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign:'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{h}</th>
+                        <th key={h} style={{ padding:'8px 14px', fontSize:11, fontWeight:800, color:'var(--muted)', textAlign:'left', whiteSpace:'nowrap', textTransform:'uppercase' }}>{tr(h)}</th>
                       ))}
                       {canEdit && <th style={{ padding:'8px 14px', width:100 }}></th>}
                     </tr>
@@ -1367,18 +1368,18 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
             </div>
             <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
               <div>
-                <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>ไลน์การผลิต *</label>
+                <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>{tr('ไลน์การผลิต *')}</label>
                 {/* เดิมเป็น input+datalist (พิมพ์เองได้) → รอบจัดส่งที่ชื่อไลน์พิมพ์ผิดจะกำพร้าเงียบ
                     ไม่มีวันแสดงคู่กับไลน์ไหนเลย · เปลี่ยนเป็น LineSelect ให้เลือกจากทะเบียนอย่างเดียว */}
                 <LineSelect
-                  lines={lines} value={form.line_name} {...scope} style={inputSt} placeholder="เลือกไลน์..."
+                  lines={lines} value={form.line_name} {...scope} style={inputSt} placeholder={tr('เลือกไลน์...')}
                   onChange={v => setForm(f => ({ ...f, line_name: v, round_no: editId ? f.round_no : String(nextRoundNo(v, f.shift)) }))}
                 />
               </div>
 
               <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
                 <div>
-                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>กะ *</label>
+                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>{tr('กะ *')}</label>
                   {/* ⚠️ ถอด "🔄 ทุกกะ (all)" ออกแล้ว (2026-08-26) — เป็นตัวเลือกที่ล้มเหลวเงียบ:
                       ตัวจัดสรร demand ใน HeijunkaKanban จับคู่รอบกับกะด้วยคีย์ `${กลุ่มไลน์}|${shift}`
                       แล้วเทียบกับ `production_sessions.shift` ซึ่งมีแค่ 'day'/'night'
@@ -1386,15 +1387,15 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                       (ตรวจแล้วไม่มีแถวไหนใช้ 'all' เลย — ถอดได้ไม่กระทบใคร)
                       จะรองรับจริงต้องแก้ `roundWindows`/`roundAlloc` ให้แยกคีย์ตามกะด้วย ไม่ใช่แค่ปล่อยตัวเลือกไว้ */}
                   <select value={form.shift} onChange={e => setForm(f => ({ ...f, shift: e.target.value, round_no: editId ? f.round_no : String(nextRoundNo(f.line_name, e.target.value)) }))} style={inputSt}>
-                    <option value="day">กะเช้า (day)</option>
-                    <option value="night">กะดึก (night)</option>
+                    <option value="day">{tr('กะเช้า (day)')}</option>
+                    <option value="night">{tr('กะดึก (night)')}</option>
                   </select>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
                     กะดึกต้องตั้งรอบของตัวเองแยก — รอบกะเช้าไม่ครอบกะดึกให้
                   </div>
                 </div>
                 <div>
-                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>รอบที่ *</label>
+                  <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>{tr('รอบที่ *')}</label>
                   <div style={{ display:'flex', gap:6 }}>
                     <input type="number" min="1" step="1"
                       style={{ ...inputSt, textAlign:'center', fontWeight:900 }}
@@ -1417,7 +1418,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                 <div style={{ fontSize:11, fontWeight:800, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.05em' }}>⏰ Shipping Time Chart</div>
                 <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
                   <div>
-                    <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>ตัดยอดรับออเดอร์</label>
+                    <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>{tr('ตัดยอดรับออเดอร์')}</label>
                     <input type="time" style={{ ...inputSt, fontFamily:'monospace' }}
                       value={form.cutoff_time}
                       onChange={e => {
@@ -1428,7 +1429,7 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>เวลาเตรียมของ (นาที)</label>
+                    <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>{tr('เวลาเตรียมของ (นาที)')}</label>
                     <input type="number" min="1" style={{ ...inputSt, textAlign:'center' }}
                       value={form.prep_minutes}
                       onChange={e => {
@@ -1441,21 +1442,21 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
                 </div>
                 <div className="mgrid" style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10 }}>
                   <div>
-                    <label style={{ fontSize:11, fontWeight:700, color:'var(--accent)', display:'block', marginBottom:4 }}>เวลาเริ่มส่ง *</label>
+                    <label style={{ fontSize:11, fontWeight:700, color:'var(--accent)', display:'block', marginBottom:4 }}>{tr('เวลาเริ่มส่ง *')}</label>
                     <input type="time" style={{ ...inputSt, fontFamily:'monospace', fontWeight:800, color:'var(--accent)' }}
                       value={form.delivery_time}
                       onChange={e => setForm(f => ({ ...f, delivery_time: e.target.value }))}
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>จำนวนจุดส่ง</label>
+                    <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>{tr('จำนวนจุดส่ง')}</label>
                     <input type="number" min="1" style={{ ...inputSt, textAlign:'center' }}
                       value={form.points_count}
                       onChange={e => setForm(f => ({ ...f, points_count: e.target.value }))}
                     />
                   </div>
                   <div>
-                    <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>นาที/จุด</label>
+                    <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>{tr('นาที/จุด')}</label>
                     <input type="number" min="1" style={{ ...inputSt, textAlign:'center' }}
                       value={form.time_per_point_min}
                       onChange={e => setForm(f => ({ ...f, time_per_point_min: e.target.value }))}
@@ -1471,19 +1472,19 @@ function DeliveryRoundsTab({ canEdit, fullName, scope }) {
               </div>
 
               <div>
-                <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>หมายเหตุ</label>
+                <label style={{ fontSize:11, fontWeight:700, color:'var(--muted)', display:'block', marginBottom:4 }}>{tr('หมายเหตุ')}</label>
                 <input style={inputSt}
                   value={form.note}
                   onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
-                  placeholder="เช่น รอบก่อนปิดกะ, เร่งด่วน..."
+                  placeholder={tr('เช่น รอบก่อนปิดกะ, เร่งด่วน...')}
                 />
               </div>
             </div>
 
             <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
-              <button onClick={() => setShowModal(false)} style={{ ...btn('var(--bg2)', 'var(--text)'), border:'1px solid var(--border)' }}>ยกเลิก</button>
+              <button onClick={() => setShowModal(false)} style={{ ...btn('var(--bg2)', 'var(--text)'), border:'1px solid var(--border)' }}>{tr('ยกเลิก')}</button>
               <button onClick={handleSave} disabled={saving} style={{ ...btn('#0284c7'), opacity:saving ? 0.6 : 1 }}>
-                {saving ? '...' : 'บันทึก'}
+                {saving ? '...' : tr('บันทึก')}
               </button>
             </div>
           </div>
@@ -1734,7 +1735,7 @@ function InflowRulesTab({ canEdit }) {
         <table style={{ width: '100%', minWidth: 560, borderCollapse: 'collapse' }}>
           <thead><tr style={{ background: 'var(--bg2)' }}>
             {['เงื่อนไข MAT No.', 'ปลายทาง (line_name)', 'วิธีรับเข้า', ''].map(h => (
-              <th key={h} style={{ padding: '9px 14px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{h}</th>
+              <th key={h} style={{ padding: '9px 14px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left' }}>{tr(h)}</th>
             ))}
           </tr></thead>
           <tbody>
@@ -1764,7 +1765,7 @@ function InflowRulesTab({ canEdit }) {
                   {canEdit && (
                     <button onClick={() => deleteRule(r)}
                       style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', fontFamily: 'var(--font-body)' }}>
-                      ลบ
+                      {tr('ลบ')}
                     </button>
                   )}
                 </td>
@@ -1782,8 +1783,8 @@ function InflowRulesTab({ canEdit }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ชนิดเงื่อนไข</span>
               <select value={form.match_type} onChange={e => setForm(f => ({ ...f, match_type: e.target.value }))} style={{ ...inputSt, width: 150 }}>
-                <option value="prefix">MAT ขึ้นต้นด้วย…</option>
-                <option value="mat">MAT ตรงตัว</option>
+                <option value="prefix">{tr('MAT ขึ้นต้นด้วย…')}</option>
+                <option value="mat">{tr('MAT ตรงตัว')}</option>
               </select>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -1800,11 +1801,11 @@ function InflowRulesTab({ canEdit }) {
               {/* dest_line_name ถูก copy เป็น line_stock_transactions.line_name โดย trigger = join key ของ line_stock_summary
                   พิมพ์ผิด = "ไลน์ผี" ที่มีของแต่ไม่มีใครเห็น → เลือกจากทะเบียนไลน์ + คลังกลางเท่านั้น (2026-09-07 · บั๊กคลาสเดียวกับรอบจัดส่ง) */}
               <LineSelect lines={lines} value={form.dest_line_name} onChange={v => setForm(f => ({ ...f, dest_line_name: v }))} {...scope}
-                placeholder="— เลือกปลายทาง —" style={{ ...inputSt, width: 240 }}
+                placeholder={tr('— เลือกปลายทาง —')} style={{ ...inputSt, width: 240 }}
                 extraGroups={[{ label: 'คลัง', options: [...new Set([...WAREHOUSE_LOCATIONS, ...dests.filter(d => !lines.some(l => l.name === d))])].sort().map(n => ({ value: n })) }]} />
             </div>
             <button onClick={addRule} disabled={saving} style={{ ...btn('var(--accent)', 'var(--accent-ink)'), opacity: saving ? 0.6 : 1 }}>
-              {saving ? '...' : 'บันทึก'}
+              {saving ? '...' : tr('บันทึก')}
             </button>
           </div>
         </div>

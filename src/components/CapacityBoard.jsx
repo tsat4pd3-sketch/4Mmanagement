@@ -14,6 +14,7 @@ import {
 } from '../utils/capacityPatterns';
 import { jphTable, jphSummary } from '../utils/jph';
 
+import { tr } from '../utils/i18n';
 /* ─── 📊 Capacity — แท็บใน /production-plan (2026-09-24) ────────────────────────
    user ส่งสไลด์ `Capacity_TSATP.4_update_June_26.pptx` มาพร้อมภาพหน้านี้ แล้วบอกว่า
    *"capacity โรงงานเราดูกันแบบนี้ แต่ในโปรแกรมเราเป็นแบบนี้ คนจะดูไม่เข้าใจ"*
@@ -196,12 +197,12 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
       <FilterBar>
         <LineSelect lines={linesWithDemand} value={activeLine?.name || ''} onChange={setLineName} {...scope} placeholder={null} />
         <select value={oeeMode} onChange={e => setOeeMode(e.target.value)}>
-          <option value="actual">OEE จริง (median 60 วัน)</option>
-          <option value="target">OEE เป้า (A×P×Q)</option>
+          <option value="actual">{tr('OEE จริง (median 60 วัน)')}</option>
+          <option value="target">{tr('OEE เป้า (A×P×Q)')}</option>
         </select>
         <span className="spacer" />
         <button style={btn('var(--bg3)', 'var(--text)')} onClick={() => setShowReg(v => !v)}>
-          {showReg ? '▲ ปิดทะเบียนรูปแบบกะ' : '⚙️ ทะเบียนรูปแบบกะ'}
+          {showReg ? tr('▲ ปิดทะเบียนรูปแบบกะ') : tr('⚙️ ทะเบียนรูปแบบกะ')}
         </button>
       </FilterBar>
 
@@ -252,11 +253,11 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
           <div style={{ overflowX:'auto' }}>
             <table style={{ width:'100%', borderCollapse:'collapse', minWidth:620 }}>
               <thead><tr>
-                <th style={{ ...th, textAlign:'left' }}>รูปแบบกะ</th>
-                <th style={th}>ชั่วโมง/วัน</th>
-                <th style={{ ...th, textAlign:'left' }}>นับวันจาก</th>
-                <th style={th}>เพดานเดือนนี้ (ชม.)</th>
-                <th style={{ ...th, textAlign:'left' }}>หมายเหตุ</th>
+                <th style={{ ...th, textAlign:'left' }}>{tr('รูปแบบกะ')}</th>
+                <th style={th}>{tr('ชั่วโมง/วัน')}</th>
+                <th style={{ ...th, textAlign:'left' }}>{tr('นับวันจาก')}</th>
+                <th style={th}>{tr('เพดานเดือนนี้ (ชม.)')}</th>
+                <th style={{ ...th, textAlign:'left' }}>{tr('หมายเหตุ')}</th>
               </tr></thead>
               <tbody>
                 {patterns.map(p => {
@@ -279,7 +280,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
                         {canEdit && !patErr ? (
                           <select value={cur.day_source}
                             onChange={e => setDraft(x => ({ ...x, [p.key]: { ...cur, day_source: e.target.value } }))}>
-                            {Object.entries(DAY_SOURCE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                            {Object.entries(DAY_SOURCE_LABEL).map(([k, v]) => <option key={k} value={k}>{tr(v)}</option>)}
                           </select>
                         ) : DAY_SOURCE_LABEL[p.day_source]}
                       </td>
@@ -341,20 +342,20 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
         <div style={{ overflowX:'auto' }}>
           <table style={{ width:'100%', borderCollapse:'collapse', minWidth:860 }}>
             <thead><tr>
-              <th style={{ ...th, textAlign:'left' }}>เดือน</th>
-              <th style={th}>วันทำงาน</th>
-              <th style={th}>จำนวนชิ้น<div style={{ fontWeight:400, fontSize:11 }}>รวมทุกลูกค้า</div></th>
+              <th style={{ ...th, textAlign:'left' }}>{tr('เดือน')}</th>
+              <th style={th}>{tr('วันทำงาน')}</th>
+              <th style={th}>{tr('จำนวนชิ้น')}<div style={{ fontWeight:400, fontSize:11 }}>{tr('รวมทุกลูกค้า')}</div></th>
               {custCols.map(c => (
                 <th key={c.customer} style={{ ...th, color: c.customer === NO_CUST ? '#f59e0b' : 'var(--muted)' }}>
-                  {c.customer}<div style={{ fontWeight:400, fontSize:11 }}>ชิ้น</div>
+                  {c.customer}<div style={{ fontWeight:400, fontSize:11 }}>{tr('ชิ้น')}</div>
                 </th>
               ))}
-              <th style={th}>2 shift<div style={{ fontWeight:400, fontSize:11 }}>เพดาน (ชม.)</div></th>
-              <th style={th}>ActWorkload<div style={{ fontWeight:400, fontSize:11 }}>ภาระงาน (ชม.)</div></th>
-              <th style={th}>RworkOEE<div style={{ fontWeight:400, fontSize:11 }}>ต้องใช้จริง (ชม.)</div></th>
-              <th style={th}>Cap OEE Act<div style={{ fontWeight:400, fontSize:11 }}>เพดาน×OEE</div></th>
-              <th style={th}>Diff OT OEE<div style={{ fontWeight:400, fontSize:11 }}>เหลือ/ขาด</div></th>
-              <th style={{ ...th, textAlign:'left' }}>ต้องเปิดกะแบบไหน</th>
+              <th style={th}>2 shift<div style={{ fontWeight:400, fontSize:11 }}>{tr('เพดาน (ชม.)')}</div></th>
+              <th style={th}>ActWorkload<div style={{ fontWeight:400, fontSize:11 }}>{tr('ภาระงาน (ชม.)')}</div></th>
+              <th style={th}>RworkOEE<div style={{ fontWeight:400, fontSize:11 }}>{tr('ต้องใช้จริง (ชม.)')}</div></th>
+              <th style={th}>Cap OEE Act<div style={{ fontWeight:400, fontSize:11 }}>{tr('เพดาน×OEE')}</div></th>
+              <th style={th}>Diff OT OEE<div style={{ fontWeight:400, fontSize:11 }}>{tr('เหลือ/ขาด')}</div></th>
+              <th style={{ ...th, textAlign:'left' }}>{tr('ต้องเปิดกะแบบไหน')}</th>
             </tr></thead>
             <tbody>
               {rows.map(r => (
@@ -444,7 +445,7 @@ export default function CapacityBoard({ role, scope, lines, months, calMap, dema
                 {[['MAT / ชื่องาน', 'left'], ['ลูกค้า', 'left'], ['ยอด 12 ด. (ชิ้น)', 'right'], ['CT (วิ)', 'right'],
                   ['JPH มาตรฐาน', 'right'], ['ควรได้ (×OEE)', 'right'], ['JPH ของจริง', 'right'],
                   ['ทำได้ %', 'right'], ['สถานะ', 'left']].map(([h, al]) => (
-                  <th key={h} style={{ ...th, textAlign: al, position:'sticky', top:0, background:'var(--card)', zIndex:1 }}>{h}</th>
+                  <th key={h} style={{ ...th, textAlign: al, position:'sticky', top:0, background:'var(--card)', zIndex:1 }}>{tr(h)}</th>
                 ))}
               </tr></thead>
               <tbody>

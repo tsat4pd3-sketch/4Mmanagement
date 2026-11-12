@@ -41,6 +41,7 @@ import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import { acceptImageFile } from '../utils/acceptImageFile';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 // บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
@@ -1379,7 +1380,7 @@ export default function Management() {
               <button onClick={() => retryLinesRef.current?.()}
                 style={{ marginLeft: 6, fontSize: 11, padding: '1px 8px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                          background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-                ลองใหม่
+                {tr('ลองใหม่')}
               </button>
             </div>
           )}
@@ -1419,7 +1420,7 @@ export default function Management() {
                   โหมดย้อนหลัง — <b>อ่านอย่างเดียว จัดคนไม่ได้</b> · แสดงจุดงานสุดท้ายของกะนั้น
                   <button onClick={() => { setBoardDate(todayWorkDate); setViewShift(getCurrentShift()); }}
                     style={{ marginLeft: 6, padding: '2px 9px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>
-                    ⟳ กลับมาดูสด
+                    {tr('⟳ กลับมาดูสด')}
                   </button>
                 </div>
               )}
@@ -1524,7 +1525,7 @@ export default function Management() {
             {isMobile && can('management', 'assign_special_task', role) && selectedWorker && !specialEmpIds.has(selectedWorker.employee_id) && (
               <button onClick={() => { setSpecialModal(selectedWorker); setSpecialTaskType('5ส'); }}
                 style={{ marginTop: 6, padding: '8px', borderRadius: 'var(--r-md)', background: 'var(--amber-dim)', border: '1px dashed var(--amber-line)', color: 'var(--amber)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                กำหนดงานนอกไลน์ให้ผู้ถูกเลือก
+                {tr('กำหนดงานนอกไลน์ให้ผู้ถูกเลือก')}
               </button>
             )}
           </div>
@@ -1885,7 +1886,7 @@ export default function Management() {
                     style={{ width: 140, padding: '3px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
                   <button onClick={() => shiftBoardDate(1)} disabled={boardDate >= todayWd} style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: boardDate >= todayWd ? 'default' : 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)', opacity: boardDate >= todayWd ? 0.4 : 1 }}>▶</button>
                   {boardDate !== todayWd && (
-                    <button onClick={() => setBoardDate(todayWd)} style={{ padding: '3px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--accent)', border: '1px solid var(--accent)', color: 'var(--accent-ink)' }}>วันนี้</button>
+                    <button onClick={() => setBoardDate(todayWd)} style={{ padding: '3px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--accent)', border: '1px solid var(--accent)', color: 'var(--accent-ink)' }}>{tr('วันนี้')}</button>
                   )}
                   {/* ⚠️ ชิป "ดีเลย์ N ใบ" ถอดออก 30/09 — ซ้ำกับ "ยังค้าง N" ในสรุปวัน (`totalDelayed` ยังคุมสีขอบ) */}
                   {/* 📋 ขนาดของการหลุดแผน (นาที + ชิ้น + คาดจบ) — "กี่ใบ" อย่างเดียวตอบหน้างานไม่ได้ */}
@@ -2814,13 +2815,13 @@ export default function Management() {
                 }}
                 style={{ flex: 1, padding: '13px', background: 'rgba(231,76,60,0.12)', color: 'var(--red)', border: '1px solid rgba(231,76,60,0.3)', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
               >
-                ส่งกลับ Pool
+                {tr('ส่งกลับ Pool')}
               </button>
               <button
                 onClick={() => setDetailSheet(null)}
                 style={{ flex: 1, padding: '13px', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
               >
-                ปิด
+                {tr('ปิด')}
               </button>
             </div>
           </div>
@@ -2871,7 +2872,7 @@ export default function Management() {
                             onClick={async () => { await saveHomePosition(workerHere, st.id); }}
                             style={{ fontSize: 11, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', cursor: 'pointer', fontWeight: 700 }}
                             title="บันทึกเป็นตำแหน่งประจำ"
-                          >บันทึกตำแหน่งประจำ</button>
+                          >{tr('บันทึกตำแหน่งประจำ')}</button>
                         )}
                         {homePositions[workerHere.employee_id] === String(st.id) && (
                           <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontWeight: 700 }}>ตำแหน่งประจำ</span>
@@ -2928,7 +2929,7 @@ export default function Management() {
       {specialModal && (
         <div className="overlay">
           <div className="modal" style={{ width: 'min(360px, 94vw)' }}>
-            <h3 style={{ marginTop: 0, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>กำหนดงานนอกไลน์</h3>
+            <h3 style={{ marginTop: 0, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>{tr('กำหนดงานนอกไลน์')}</h3>
             <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -10 }}>{specialModal.employees?.name}</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
               {specialTaskOptions.map(t => (
@@ -2944,11 +2945,11 @@ export default function Management() {
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => assignSpecialTask(specialModal, specialTaskType)}
                 style={{ flex: 2, padding: 12, background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
-                ยืนยัน
+                {tr('ยืนยัน')}
               </button>
               <button onClick={() => setSpecialModal(null)}
                 style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', cursor: 'pointer' }}>
-                ยกเลิก
+                {tr('ยกเลิก')}
               </button>
             </div>
           </div>
@@ -2967,7 +2968,7 @@ export default function Management() {
             {/* Image upload */}
             <div>
               <label style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, display: 'block', marginBottom: 6 }}>
-                รูปหลักฐาน OJT <span style={{ color: 'var(--muted)' }}>(ไม่บังคับ)</span>
+                {tr('รูปหลักฐาน OJT')} <span style={{ color: 'var(--muted)' }}>{tr('(ไม่บังคับ)')}</span>
               </label>
               <div
                 style={{ border: `2px dashed ${docImageFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 'var(--r-md)', padding: '10px 12px', background: docImageFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center' }}
@@ -3046,16 +3047,16 @@ export default function Management() {
       {show4MModal && (
         <div className="overlay">
           <div className="modal" style={{ width: 'min(420px, 94vw)' }}>
-            <h3 style={{ marginTop: 0, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>บันทึก 4M Change</h3>
+            <h3 style={{ marginTop: 0, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>{tr('บันทึก 4M Change')}</h3>
             <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -10 }}>ไลน์: {show4MModal.lineName}</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label style={labelSt}>ประเภทการเปลี่ยนแปลง</label>
+                <label style={labelSt}>{tr('ประเภทการเปลี่ยนแปลง')}</label>
                 <select value={log4MForm.category} onChange={e => setLog4MForm({ ...log4MForm, category: e.target.value })}>
-                  <option value="Man">Man — คน / พนักงาน</option>
-                  <option value="Machine">Machine — เครื่องจักร</option>
-                  <option value="Material">Material — วัสดุ</option>
-                  <option value="Method">Method — วิธีการ</option>
+                  <option value="Man">{tr('Man — คน / พนักงาน')}</option>
+                  <option value="Machine">{tr('Machine — เครื่องจักร')}</option>
+                  <option value="Material">{tr('Material — วัสดุ')}</option>
+                  <option value="Method">{tr('Method — วิธีการ')}</option>
                 </select>
               </div>
               {/* Man: 3-case logic */}
@@ -3081,11 +3082,11 @@ export default function Management() {
                     {/* skill + history */}
                     <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
                       <input type="checkbox" checked={log4MForm.skillOk} onChange={e => setLog4MForm({ ...log4MForm, skillOk: e.target.checked })} style={{ width: 15, height: 15 }} />
-                      ทักษะผ่านเกณฑ์ที่กำหนด
+                      {tr('ทักษะผ่านเกณฑ์ที่กำหนด')}
                     </label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
                       <input type="checkbox" checked={log4MForm.hasHistory} onChange={e => setLog4MForm({ ...log4MForm, hasHistory: e.target.checked })} style={{ width: 15, height: 15 }} />
-                      มีประวัติเคยทำงานจุดนี้มาก่อน
+                      {tr('มีประวัติเคยทำงานจุดนี้มาก่อน')}
                     </label>
                     {/* result badge */}
                     <div style={{ fontSize: 11, padding: '5px 8px', borderRadius: 'var(--r-md)', background: meta.bg, color: meta.color, fontWeight: 600 }}>
@@ -3119,9 +3120,9 @@ export default function Management() {
                 </div>
               )}
               <div>
-                <label style={labelSt}>รายละเอียด</label>
+                <label style={labelSt}>{tr('รายละเอียด')}</label>
                 <textarea value={log4MForm.description} onChange={e => setLog4MForm({ ...log4MForm, description: e.target.value })}
-                  placeholder="ระบุรายละเอียดการเปลี่ยนแปลง..." rows={3} style={{ resize: 'vertical' }} />
+                  placeholder={tr('ระบุรายละเอียดการเปลี่ยนแปลง...')} rows={3} style={{ resize: 'vertical' }} />
               </div>
               {/* Image upload — required when needsImage */}
               {(() => {
@@ -3155,7 +3156,7 @@ export default function Management() {
                     {reqImageFile && (
                       <button type="button" onClick={() => { setReqImageFile(null); setReqImagePreview(null); }}
                         style={{ marginTop: 4, fontSize: 11, color: 'var(--red)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                        ลบรูป
+                        {tr('ลบรูป')}
                       </button>
                     )}
                   </div>
@@ -3163,7 +3164,7 @@ export default function Management() {
               })()}
               <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
                 <button onClick={handleSave4MLog} disabled={isSaving4M} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 15, opacity: isSaving4M ? 0.6 : 1, cursor: isSaving4M ? 'not-allowed' : 'pointer' }}>
-                  {isSaving4M ? 'กำลังบันทึก...' : 'บันทึก 4M Log'}
+                  {isSaving4M ? tr('กำลังบันทึก...') : tr('บันทึก 4M Log')}
                 </button>
                 <button onClick={() => { if (!isSaving4M) { setShow4MModal(null); setLog4MForm({ category: 'Man', description: '' }); setReqImageFile(null); setReqImagePreview(null); } }}
                   style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: isSaving4M ? 'not-allowed' : 'pointer' }}>

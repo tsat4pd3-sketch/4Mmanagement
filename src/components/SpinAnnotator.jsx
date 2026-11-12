@@ -3,6 +3,7 @@ import useImgBox from '../utils/useImgBox'
 import CalloutPin from './CalloutPin'
 import { acceptImageFile } from '../utils/acceptImageFile';
 
+import { tr } from '../utils/i18n';
 /* 📍 ตัวปักหมุดจุดตรวจบนรูปอ้างอิง — **ตัวกลางของ "ตั้งค่าจุดตรวจ" ทุกระบบ**
    (2026-10-15 · คำสั่ง user: *"ใช้หลักการเดียวกันในการสร้าง — ต่างกันแค่อุปกรณ์ vs ชิ้นงาน
     กับรายละเอียดที่ต้องตรวจ · user เรียนระบบเดียวแล้วทำเป็นทั้งคู่"*)
@@ -164,7 +165,7 @@ export default function SpinAnnotator({
           <button type="button" style={tinyBtn} onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))} disabled={zoom <= 1} title="ซูมออก" aria-label="ซูมออก">➖</button>
           <span style={{ fontSize: 12, fontWeight: 800, minWidth: 46, textAlign: 'center', color: 'var(--text)' }}>{Math.round(zoom * 100)}%</span>
           <button type="button" style={tinyBtn} onClick={() => setZoom(z => Math.min(ZOOM_MAX, +(z + 0.5).toFixed(2)))} disabled={zoom >= ZOOM_MAX || !fit} title="ซูมเข้า" aria-label="ซูมเข้า">➕</button>
-          {zoom > 1 && <button type="button" style={tinyBtn} onClick={() => setZoom(1)}>↺ พอดีกรอบ</button>}
+          {zoom > 1 && <button type="button" style={tinyBtn} onClick={() => setZoom(1)}>{tr('↺ พอดีกรอบ')}</button>}
           <span style={{ fontSize: 11, color: arming && zoom > 1 ? 'var(--accent)' : 'var(--muted)', fontWeight: arming && zoom > 1 ? 700 : 400 }}>
             {arming && zoom > 1 ? '📍 แตะที่รูปเพื่อวางตำแหน่ง' : zoom > 1 ? 'เลื่อนดูส่วนอื่นในกรอบได้' : 'ซูมเข้าเพื่อวางจุดเล็กๆ ให้แม่น'}
           </span>
@@ -209,7 +210,7 @@ export default function SpinAnnotator({
       {!readOnlyFrames && cur && (onRenameFrame || onReplaceFrame) && (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>{cur.title || `รูปที่ ${frameIdx + 1}`}</span>
-          {onRenameFrame && <button type="button" style={tinyBtn} onClick={() => onRenameFrame(cur._key)}>✏️ ตั้งชื่อ</button>}
+          {onRenameFrame && <button type="button" style={tinyBtn} onClick={() => onRenameFrame(cur._key)}>{tr('✏️ ตั้งชื่อ')}</button>}
           {onReplaceFrame && (
             <>
               <input ref={replaceRef} type="file" hidden accept={acceptPdf ? 'image/*,application/pdf' : 'image/*'} onChange={async e => {
@@ -219,7 +220,7 @@ export default function SpinAnnotator({
                 if (ok) onReplaceFrame(cur._key, ok)
               }} />
               <button type="button" style={tinyBtn} disabled={busy} onClick={() => replaceRef.current?.click()}
-                title="เปลี่ยนไฟล์รูป (เช่น Drawing Rev ใหม่) — หมุดอยู่ตำแหน่งเดิม">เปลี่ยนรูป</button>
+                title="เปลี่ยนไฟล์รูป (เช่น Drawing Rev ใหม่) — หมุดอยู่ตำแหน่งเดิม">{tr('เปลี่ยนรูป')}</button>
             </>
           )}
         </div>

@@ -27,6 +27,7 @@ import {
 } from '../utils/fixturePoints';
 
 import NoticeBar from '../components/NoticeBar';
+import { tr } from '../utils/i18n';
 const jigImgUrl = (path) => supabaseDR.storage.from('jig-images').getPublicUrl(path).data.publicUrl;
 
 /* ═══════════════════════════════════════════════════════════════
@@ -412,7 +413,7 @@ export default function FixtureRegistry() {
           <FilterBar>
             <SearchInput value={q} onChange={setQ} fields="ฟิกเจอร์" grow={false} />
             <select value={fxId} onChange={e => setFxId(e.target.value)}>
-              <option value="">— เลือกจิ๊ก / ฟิกเจอร์ ({shownFixtures.length}) —</option>
+              <option value="">{tr('— เลือกจิ๊ก / ฟิกเจอร์ (')}{shownFixtures.length}) —</option>
               {shownFixtures.map(f => (
                 <option key={f.id} value={f.id}>
                   {hasImg(f) ? '📷 ' : ''}{f.machine_no} · {f.machine_name || '—'}{f.line_name ? ` (${f.line_name})` : ''}
@@ -421,7 +422,7 @@ export default function FixtureRegistry() {
             </select>
             <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }} title="มีรูปเครื่องจาก PM Setup แล้ว = ปักตำแหน่งจุดบนรูปได้ทันที">
               <input type="checkbox" checked={onlyWithImg} onChange={e => setOnlyWithImg(e.target.checked)} />
-              📷 เฉพาะที่มีรูป ({withImgCount})
+              {tr('📷 เฉพาะที่มีรูป (')}{withImgCount})
             </label>
             {scopeOn && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>เห็นเฉพาะส่วนงานของคุณ</span>}
           </FilterBar>
@@ -480,7 +481,7 @@ export default function FixtureRegistry() {
                 <thead style={{ background: 'var(--bg2)' }}>
                   <tr style={{ textAlign: 'left' }}>
                     {['ฟิกเจอร์', 'จุด', 'ชิม (รวม/เพดาน)', 'กำหนดตรวจ', 'สิ่งที่ต้องทำ'].map(h =>
-                      <th key={h} style={{ padding: '8px 10px' }}>{h}</th>)}
+                      <th key={h} style={{ padding: '8px 10px' }}>{tr(h)}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -539,15 +540,15 @@ export default function FixtureRegistry() {
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button type="button" className="pg-btn sm primary" onClick={() => setEditing({ ...emptyPoint })}
                      >
-                เพิ่มจุด
+                {tr('เพิ่มจุด')}
               </button>
               <button type="button" className="pg-btn sm" onClick={genTemplate}
                      >
-                สร้างจากแม่แบบ
+                {tr('สร้างจากแม่แบบ')}
               </button>
               <button type="button" className="pg-btn sm" onClick={copyFrom}
                      >
-                ⧉ คัดลอกจากฟิกเจอร์อื่น
+                {tr('⧉ คัดลอกจากฟิกเจอร์อื่น')}
               </button>
             </div>
           )}
@@ -601,7 +602,7 @@ export default function FixtureRegistry() {
                 <thead style={{ background: 'var(--bg2)' }}>
                   <tr style={{ textAlign: 'left' }}>
                     {['จุด', 'ชนิด', 'บนรูป', 'baseline', 'ปัจจุบัน', 'เพดาน', 'ความถี่ตรวจ', 'อายุชิ้นส่วน', ''].map(h =>
-                      <th key={h} style={{ padding: '8px 10px' }}>{h}</th>)}
+                      <th key={h} style={{ padding: '8px 10px' }}>{tr(h)}</th>)}
                   </tr>
                 </thead>
                 <tbody>
@@ -623,7 +624,7 @@ export default function FixtureRegistry() {
                           {canManage && frames.length > 0 && (
                             <button onClick={() => setArmPoint(a => a === p.id ? '' : p.id)} title="วางตำแหน่งบนรูป"
                               style={{ marginLeft: 6, background: armPoint === p.id ? 'var(--accent)' : 'var(--bg2)', color: armPoint === p.id ? 'var(--accent-ink)' : 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '2px 7px', fontSize: 11, cursor: 'pointer' }}>
-                              {armPoint === p.id ? 'คลิกรูป…' : (pointPin(p, cpById)?.source === 'own' ? 'ย้าย' : 'วาง')}
+                              {armPoint === p.id ? tr('คลิกรูป…') : (pointPin(p, cpById)?.source === 'own' ? tr('ย้าย') : tr('วาง'))}
                             </button>
                           )}
                         </td>
@@ -705,9 +706,9 @@ export default function FixtureRegistry() {
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
               <button type="button" className="pg-btn sm" onClick={() => setTpl(null)}
-                     >ยกเลิก</button>
+                     >{tr('ยกเลิก')}</button>
               <button type="button" className="pg-btn sm primary" onClick={runTemplate}
-                     >สร้างจุด</button>
+                     >{tr('สร้างจุด')}</button>
             </div>
           </div>
         </div>
@@ -776,9 +777,9 @@ export default function FixtureRegistry() {
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
               <button type="button" className="pg-btn sm" onClick={() => setEditing(null)}
-                     >ยกเลิก</button>
+                     >{tr('ยกเลิก')}</button>
               <button type="button" className="pg-btn sm primary" onClick={savePoint}
-                     >บันทึก</button>
+                     >{tr('บันทึก')}</button>
             </div>
           </div>
         </div>

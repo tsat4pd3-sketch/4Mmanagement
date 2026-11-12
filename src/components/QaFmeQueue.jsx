@@ -27,6 +27,7 @@ import { cachedMaster } from '../utils/masterCache';
 import { assessFmeReadiness } from '../utils/qaFmeReadiness';
 import QaFmeBoard from './QaFmeBoard';
 
+import { tr } from '../utils/i18n';
 const STAGE_META = {
   first:  { label: 'ชิ้นแรก',      icon: '1️⃣', color: '#f59e0b' },
   middle: { label: 'ระหว่างผลิต',  icon: '2️⃣', color: '#4d9fff' },
@@ -191,7 +192,7 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
           ))}
         </div>
         {canManage && (
-          <button onClick={() => setShowCfg(v => !v)} style={btn('var(--bg3)', 'var(--text2)')}>ตั้งค่าการเรียกตรวจ</button>
+          <button onClick={() => setShowCfg(v => !v)} style={btn('var(--bg3)', 'var(--text2)')}>{tr('ตั้งค่าการเรียกตรวจ')}</button>
         )}
       </div>
 
@@ -216,7 +217,7 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
               title={cfg.is_enabled ? 'ปิดระบบเรียกตรวจ' : !readiness ? 'กำลังตรวจความพร้อม…'
                 : readiness.canEnable ? 'พร้อมเปิด' : 'ยังเปิดไม่ได้ — แก้รายการ ❌ ด้านล่างก่อน'}
               onChange={e => saveCfg({ is_enabled: e.target.checked })} style={{ width: 'auto' }} />
-            เปิดระบบเรียก QA ตรวจอัตโนมัติ (แจ้งเข้าห้อง Telegram)
+            {tr('เปิดระบบเรียก QA ตรวจอัตโนมัติ (แจ้งเข้าห้อง Telegram)')}
           </label>
           <ReadinessList readiness={readiness} enabled={!!cfg.is_enabled} onRecheck={loadReadiness} />
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
@@ -325,7 +326,7 @@ export default function QaFmeQueue({ scopedLineNames, onOpen }) {
                 <button disabled={!o.part_id} onClick={() => onOpen?.(o)}
                   title={o.part_id ? 'เปิดใบตรวจของรุ่นนี้' : 'ผูกพาร์ทกับเลข MAT ที่ /qa-setup ก่อนถึงจะเปิดใบให้อัตโนมัติได้'}
                   style={{ ...btn('rgba(34,197,94,0.12)', '#22c55e'), opacity: o.part_id ? 1 : 0.45, cursor: o.part_id ? 'pointer' : 'not-allowed' }}>
-                  เปิดใบตรวจ
+                  {tr('เปิดใบตรวจ')}
                 </button>
                 <button onClick={() => skip(o)} title="ยกเลิกงานตรวจนี้ (ต้องระบุเหตุผล)"
                   style={btn('var(--bg2)', 'var(--muted)')}>✕</button>
@@ -353,7 +354,7 @@ function ReadinessList({ readiness, enabled, onRecheck }) {
           <span style={{ fontSize: 11.5, color: '#ef4444', fontWeight: 700 }}>ระบบเปิดอยู่ทั้งที่ยังไม่พร้อม — QA อาจได้คิวที่เปิดใบไม่ได้</span>
         )}
         <span style={{ flex: 1 }} />
-        <button onClick={recheck} disabled={busy} style={btn('var(--bg3)', 'var(--text2)')}>{busy ? '…' : '🔄 ตรวจใหม่'}</button>
+        <button onClick={recheck} disabled={busy} style={btn('var(--bg3)', 'var(--text2)')}>{busy ? '…' : tr('🔄 ตรวจใหม่')}</button>
       </div>
       {readiness ? readiness.checks.map(c => {
         const icon = c.ok === true ? '✅' : c.ok === null ? '❔' : c.hard ? '❌' : '⚠️';

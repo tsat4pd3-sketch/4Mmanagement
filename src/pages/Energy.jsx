@@ -47,6 +47,7 @@ import { loadOpInfo, opInfoSync } from '../utils/opItems';
 import EnergyLiveBoard from '../components/EnergyLiveBoard';
 import { shortTick, fmtAxis, alignedYWidth, CELL_BAR_FILL } from '../utils/chartAxis';
 import { useLatestRequest } from '../utils/useLatestRequest';
+import { tr } from '../utils/i18n';
 /* ⚠️ ยอดชิ้นย่อ "k" เฉพาะเลขใหญ่จริง — หลักพันย่อแล้วได้ "2k 1k 1k" ปัดชนกัน = อ่านค่าไม่ได้ (23/09) */
 const fmtPieces = v => (v >= 10000 ? Math.round(v / 1000) + 'k' : Math.round(v || 0).toLocaleString());
 
@@ -483,9 +484,9 @@ export default function Energy() {
         <td style={td}>
           <select value={r?.source || 'manual'} disabled={!canEdit || !r}
             onChange={e => saveCell(target, { source: e.target.value })} style={{ ...inp, width: 112 }}>
-            <option value="manual">กรอกมือ</option>
-            <option value="meter">จากมิเตอร์</option>
-            <option value="estimated">≈ ประมาณการ</option>
+            <option value="manual">{tr('กรอกมือ')}</option>
+            <option value="meter">{tr('จากมิเตอร์')}</option>
+            <option value="estimated">{tr('≈ ประมาณการ')}</option>
           </select></td>
         <td style={td}><input defaultValue={r?.note ?? ''} readOnly={!canEdit} placeholder="—"
           onBlur={e => { const v = e.target.value.trim() || null; if (v !== (r?.note ?? null)) saveCell(target, { note: v }); }}
@@ -496,7 +497,7 @@ export default function Energy() {
               title={meteredSet.has(keyOf(p)) ? 'มีมิเตอร์ — นับเข้าผลรวมที่วัดได้' : 'ยังไม่มีมิเตอร์ — กดเพื่อย้ายไปกลุ่มที่วัดได้'}
               style={{ padding: '4px 9px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: canEdit ? 'pointer' : 'default',
                 border: '1px solid var(--border2)', background: 'var(--bg3)', color: meteredSet.has(keyOf(p)) ? GOOD : 'var(--muted)' }}>
-              {meteredSet.has(keyOf(p)) ? 'มีมิเตอร์' : '+ มีมิเตอร์'}
+              {meteredSet.has(keyOf(p)) ? tr('มีมิเตอร์') : tr('+ มีมิเตอร์')}
             </button>
           </td>
         )}
@@ -507,9 +508,9 @@ export default function Energy() {
   const ptLabel = (p) => `${p.kind === 'zone' ? '🔧' : p.depth > 0 ? '↳ 🏭' : '🏭'} ${p.name}`;
   const head = (withMeter) => (
     <thead><tr>
-      <th style={th}>พื้นที่</th><th style={th}>หน่วย (kWh)</th><th style={th}>ค่าไฟ (บาท)</th>
-      <th style={th}>บาท/หน่วย</th><th style={th}>เทียบเดือนก่อน</th><th style={th}>ที่มา</th><th style={th}>หมายเหตุ</th>
-      {withMeter && <th style={{ ...th, textAlign: 'center' }}>มิเตอร์</th>}
+      <th style={th}>{tr('พื้นที่')}</th><th style={th}>{tr('หน่วย (kWh)')}</th><th style={th}>{tr('ค่าไฟ (บาท)')}</th>
+      <th style={th}>{tr('บาท/หน่วย')}</th><th style={th}>{tr('เทียบเดือนก่อน')}</th><th style={th}>{tr('ที่มา')}</th><th style={th}>{tr('หมายเหตุ')}</th>
+      {withMeter && <th style={{ ...th, textAlign: 'center' }}>{tr('มิเตอร์')}</th>}
     </tr></thead>
   );
 
@@ -579,7 +580,7 @@ export default function Energy() {
         : tab === 'input' ? (
           <>
             {/* ① ทั้งโรงงาน — บิล vs ผลรวมที่วัดได้ vs ส่วนที่ยังไม่ได้แยกมิเตอร์ */}
-            <h3 style={secTitle}>ทั้งโรงงาน</h3>
+            <h3 style={secTitle}>{tr('ทั้งโรงงาน')}</h3>
             <div style={{ ...card, padding: 0, overflowX: 'auto', marginBottom: 8 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
                 {head()}
@@ -604,7 +605,7 @@ export default function Energy() {
             </div>
 
             {/* ② จุดที่มีมิเตอร์ — ที่กรอกจริง */}
-            <h3 style={secTitle}>จุดที่มีมิเตอร์ ({meteredPts.length}) <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--muted)' }}>— รวมขึ้นไปเป็นยอดที่วัดได้</span></h3>
+            <h3 style={secTitle}>{tr('จุดที่มีมิเตอร์ (')}{meteredPts.length}) <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--muted)' }}>{tr('— รวมขึ้นไปเป็นยอดที่วัดได้')}</span></h3>
             {/* กติกาที่คนกรอกต้องรู้ก่อนพิมพ์ตัวแรก — เขียนไว้ตรงนี้ ไม่ใช่ให้เดาจากผลลัพธ์ */}
             <div style={{ fontSize: 11.5, color: 'var(--text2)', margin: '-4px 0 8px', lineHeight: 1.6 }}>
               📏 <b>ลงตามที่มิเตอร์อ่านได้จริง</b> — เบรกเกอร์แยก HDF-01 / HDF-02 ก็ลงแยกได้เลย ไม่ต้องบวกมือรวมที่ไลน์แม่<br />
@@ -626,12 +627,12 @@ export default function Energy() {
 
             {/* ③ จุดที่ยังไม่มีมิเตอร์ — พับไว้ ไม่ให้ 13 แถวเปล่ากลบของที่กรอกจริง */}
             <h3 style={{ ...secTitle, display: 'flex', alignItems: 'center', gap: 8 }}>
-              จุดที่ยังไม่มีมิเตอร์ ({otherPts.length})
+              {tr('จุดที่ยังไม่มีมิเตอร์ (')}{otherPts.length})
               <button onClick={() => setShowUnmetered(v => !v)}
                 style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
-                {showUnmetered ? 'ซ่อน' : 'แสดง'}
+                {showUnmetered ? tr('ซ่อน') : tr('แสดง')}
               </button>
-              <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--muted)' }}>— ทุกไลน์ในกลุ่ม + โซน · กรอกได้ถ้ามีตัวเลข แต่ยังไม่นับเข้าผลรวมที่วัดได้ (กด <b>+ มีมิเตอร์</b> เพื่อย้ายขึ้นไป)</span>
+              <span style={{ fontWeight: 400, fontSize: 11.5, color: 'var(--muted)' }}>{tr('— ทุกไลน์ในกลุ่ม + โซน · กรอกได้ถ้ามีตัวเลข แต่ยังไม่นับเข้าผลรวมที่วัดได้ (กด')} <b>{tr('+ มีมิเตอร์')}</b> {tr('เพื่อย้ายขึ้นไป)')}</span>
             </h3>
             {showUnmetered && (
               <div style={{ ...card, padding: 0, overflowX: 'auto' }}>
@@ -792,9 +793,9 @@ export default function Energy() {
               <div style={{ ...secTitle, padding: '12px 14px 0' }}>รายจุด · 6 เดือนล่าสุด (kWh)</div>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
                 <thead><tr>
-                  <th style={th}>จุด</th>
+                  <th style={th}>{tr('จุด')}</th>
                   {months.slice(-6).map(mk => <th key={mk} style={{ ...th, textAlign: 'right' }}>{monthLabel(mk).replace(/ 25/, ' ')}</th>)}
-                  <th style={{ ...th, textAlign: 'right' }}>เทียบเดือนก่อน</th>
+                  <th style={{ ...th, textAlign: 'right' }}>{tr('เทียบเดือนก่อน')}</th>
                 </tr></thead>
                 <tbody>
                   {/* ตารางนี้โชว์เฉพาะจุดที่มีข้อมูล → ต้องคิด depth ใหม่ด้วย (แม่ที่ไม่มีข้อมูลไม่อยู่ในตาราง) */}
@@ -887,20 +888,20 @@ function EfSetup({ factors, canEdit, cfgMissing, onSaved, month }) {
       {canEdit && !cfgMissing && (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 14 }}>
           <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>kgCO2e / kWh<br />
-            <input type="number" step="0.0001" value={kg} onChange={e => setKg(e.target.value)} placeholder="เช่น 0.4999" style={{ ...inp, width: 130 }} /></label>
-          <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>มีผลตั้งแต่<br />
+            <input type="number" step="0.0001" value={kg} onChange={e => setKg(e.target.value)} placeholder={tr('เช่น 0.4999')} style={{ ...inp, width: 130 }} /></label>
+          <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('มีผลตั้งแต่')}<br />
             <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ ...inp, width: 150 }} /></label>
-          <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 240px' }}>ที่มา (บังคับ)<br />
-            <input value={ref} onChange={e => setRef(e.target.value)} placeholder="เช่น TGO Emission Factor ฉบับ … 25xx" style={inp} /></label>
+          <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 240px' }}>{tr('ที่มา (บังคับ)')}<br />
+            <input value={ref} onChange={e => setRef(e.target.value)} placeholder={tr('เช่น TGO Emission Factor ฉบับ … 25xx')} style={inp} /></label>
           <button onClick={add} disabled={busy}
             style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-            {busy ? '⏳' : '+ เพิ่มค่า'}
+            {busy ? '⏳' : tr('+ เพิ่มค่า')}
           </button>
         </div>
       )}
 
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead><tr><th style={th}>มีผลตั้งแต่</th><th style={th}>kgCO2e/kWh</th><th style={th}>ที่มา</th></tr></thead>
+        <thead><tr><th style={th}>{tr('มีผลตั้งแต่')}</th><th style={th}>kgCO2e/kWh</th><th style={th}>{tr('ที่มา')}</th></tr></thead>
         <tbody>
           {factors.length === 0 && <tr><td style={{ ...td, color: 'var(--muted)' }} colSpan={3}>ยังไม่มีค่าที่ตั้งไว้</td></tr>}
           {[...factors].sort((a, b) => String(b.effective_from).localeCompare(String(a.effective_from))).map(f => (

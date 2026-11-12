@@ -3,6 +3,7 @@ import { clusterNotes } from '../utils/textCluster';
 import { classifyAbc, PARETO_CUTOFF, vagueShare } from '../utils/pareto';
 import ParetoChart from './ParetoChart';
 
+import { tr } from '../utils/i18n';
 /* ── Pareto + ABC Analysis + Drill-down (ใช้ร่วมทุกกราฟพาเรโต) — 2026-08-04 คำสั่ง user ────────
    1) ABC: จัดกลุ่มตาม % สะสม (A ≤80% ตัวหลัก · B ≤95% · C หางยาว) — สีตามกลุ่ม ไม่ใช่สีรายประเภท
    2) **ความหนาแท่งไม่เท่ากันตามกลุ่ม** — A หนา+ชื่อเต็ม · B บาง+ชื่อย่อ · C บางมาก (ในโหมดย่อ
@@ -210,7 +211,7 @@ export default function ParetoAbcChart({
           </div>
         )}
         <button onClick={() => setOpen(true)} title="ขยายดูทุกรายการ"
-          style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', color: 'var(--text2)', fontSize: 11.5, fontWeight: 700, padding: '3px 9px', cursor: 'pointer' }}>⤢ ขยาย</button>
+          style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', color: 'var(--text2)', fontSize: 11.5, fontWeight: 700, padding: '3px 9px', cursor: 'pointer' }}>{tr('⤢ ขยาย')}</button>
       </div>
       {/* มูลค่ารวม + ส่วนที่ตีมูลค่าไม่ได้ — ห้ามเงียบ ไม่งั้นยอดเงินดูเหมือนครบทั้งที่ขาด */}
       {hasMoney && (
@@ -315,8 +316,8 @@ export default function ParetoAbcChart({
               <div style={{ overflowX: 'auto' }}>
                 <table style={tbl}>
                   <thead><tr style={{ color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
-                    <th style={thL}>#</th><th style={thL}>รายการ</th><th style={thC}>กลุ่ม</th>
-                    <th style={thR}>{unitOf}</th>{hasMoney && <th style={thR}>{money ? unit : 'บาท'}</th>}<th style={thR}>ครั้ง</th><th style={thR}>%</th><th style={thR}>สะสม %</th>
+                    <th style={thL}>#</th><th style={thL}>{tr('รายการ')}</th><th style={thC}>{tr('กลุ่ม')}</th>
+                    <th style={thR}>{tr(unitOf)}</th>{hasMoney && <th style={thR}>{money ? unit : 'บาท'}</th>}<th style={thR}>{tr('ครั้ง')}</th><th style={thR}>%</th><th style={thR}>{tr('สะสม %')}</th>
                   </tr></thead>
                   <tbody>
                     {rows.map((d, i) => (

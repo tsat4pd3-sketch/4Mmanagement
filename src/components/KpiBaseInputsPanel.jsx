@@ -15,6 +15,7 @@ import { isPlant } from '../utils/orgScope';
 import { BASE_VARS_BY_LEVEL, baseScopeKeyOf, baseScopeColumns, buildBaseIndex, formulasUsingVar, PLANT_BASE_KEY } from '../utils/kpiFormula';
 import KpiBaseImportModal from './KpiBaseImportModal';
 
+import { tr } from '../utils/i18n';
 const MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 const fmt = (v) => (v == null ? '' : Number(v).toLocaleString('th-TH', { maximumFractionDigits: 2 }));
 
@@ -116,7 +117,7 @@ export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: 
       </div>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ borderCollapse: 'collapse', fontSize: 12, width: '100%' }}>
-          <thead><tr><th style={{ ...th, textAlign: 'left' }}>ตัวแปร</th>{MONTHS.map(m => <th key={m} style={th}>{m}</th>)}</tr></thead>
+          <thead><tr><th style={{ ...th, textAlign: 'left' }}>{tr('ตัวแปร')}</th>{MONTHS.map(m => <th key={m} style={th}>{tr(m)}</th>)}</tr></thead>
           <tbody>
             {vars.map(v => (
               <tr key={v.key}>
@@ -157,7 +158,7 @@ export default function KpiBaseInputsPanel({ year, scope, org, rows = [], base: 
           <button type="button" onClick={e => { e.preventDefault(); e.stopPropagation(); setImporting(true); }}
             title="อัพโหลด monthly report ของบัญชี (.xlsx/.xlsb) แล้วให้ระบบอ่านแถว/เดือนให้ ตรวจก่อนบันทึก"
             style={{ marginLeft: 10, padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 12, fontWeight: 700, verticalAlign: 'middle' }}>
-            นำเข้าจาก Excel บัญชี
+            {tr('นำเข้าจาก Excel บัญชี')}
           </button>
         )}
       </summary>

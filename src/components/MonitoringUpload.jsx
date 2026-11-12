@@ -23,6 +23,7 @@ import { refStockOf, inflowDestOf } from '../utils/partRefStock';
 import { buildBoardPlan, writeBoardPlan, BoardPlanPreview } from './MonitorImport';
 import MatLabel from './MatLabel';
 
+import { tr } from '../utils/i18n';
 /* วันที่งาน (ตัด 08:00 — งานกะดึกข้ามวันนับเป็นวันก่อนหน้า)
    ⚠️ ห้ามใช้ toISOString() — คืน UTC ทำให้วันที่เพี้ยนสำหรับไทย (กฎ Date/Time ใน CLAUDE.md)
    (ยังไม่มี util กลางของ getWorkDate — ทุกหน้าประกาศเองเหมือนกันหมด) */
@@ -361,7 +362,7 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
           <thead><tr>
             {['ชีท', 'ชนิด', 'ลูกค้า', 'พาร์ท', 'ออเดอร์', 'ถึงวันที่'].map((h, i) => (
               <th key={h} style={{ textAlign: i >= 3 ? 'right' : 'left', padding: '4px 8px', fontSize: 11,
-                                   color: 'var(--muted)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{h}</th>
+                                   color: 'var(--muted)', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' }}>{tr(h)}</th>
             ))}
           </tr></thead>
           <tbody>
@@ -503,12 +504,12 @@ function PreviewPanel({ p, canBoard, onCancel, onConfirm, busy, card, warnBox })
         <button onClick={onConfirm} disabled={busy}
                 style={{ padding: '8px 16px', fontSize: 13, fontWeight: 700, borderRadius: 'var(--r-md)',
                          background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', cursor: busy ? 'wait' : 'pointer' }}>
-          {busy ? 'กำลังเขียน…' : '✔ ยืนยันนำเข้า (ลงให้ครบทุกส่วนในครั้งเดียว)'}
+          {busy ? tr('กำลังเขียน…') : tr('✔ ยืนยันนำเข้า (ลงให้ครบทุกส่วนในครั้งเดียว)')}
         </button>
         <button onClick={onCancel} disabled={busy}
                 style={{ padding: '8px 16px', fontSize: 13, borderRadius: 'var(--r-md)', background: 'var(--bg3)',
                          color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
-          ยกเลิก
+          {tr('ยกเลิก')}
         </button>
       </div>
     </div>
@@ -527,7 +528,7 @@ function KbDiffTable({ title, why, rows = [] }) {
         <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
           {/* ลำดับบนจอ = Part No. → Part Name → MAT SAP (UI §ลำดับ MAT · มีด่าน) ⇒ ใช้ <MatLabel> วาดให้ */}
           <thead><tr style={{ textAlign: 'left', color: 'var(--muted)' }}>
-            <th>พาร์ท</th><th style={{ textAlign: 'right' }}>ในไฟล์</th><th style={{ textAlign: 'right' }}>ในทะเบียน</th>
+            <th>{tr('พาร์ท')}</th><th style={{ textAlign: 'right' }}>{tr('ในไฟล์')}</th><th style={{ textAlign: 'right' }}>{tr('ในทะเบียน')}</th>
           </tr></thead>
           <tbody>
             {rows.slice(0, 40).map((l, i) => (

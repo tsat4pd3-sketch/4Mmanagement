@@ -4,6 +4,7 @@ import { matColor, matLabel } from '../utils/matPrefix';
 import { GROUP_VERDICTS } from '../utils/bomDupAudit';
 import { statusColor } from '../utils/statusTone';
 
+import { tr } from '../utils/i18n';
 /* ═══ 📋 "พาร์ทนี้ถูกนิยามลูกไว้ในใบไหนบ้าง" — ตารางกลุ่ม (ใต้ตารางคู่ใน /products?tab=bomdup) ═══
    ทำไมต้องมีทั้ง 2 ตาราง — ตารางคู่เทียบได้แค่ **2 ใบ** (ใบที่ใช้มัน ↔ ใบของพาร์ทเอง) ⇒ ตกไป 2 คลาส:
      ① พาร์ทที่ **ไม่มีใบ BOM ของตัวเองเลย** แต่ถูกนิยามไว้หลายใบ — ตารางคู่ข้ามทั้งหมด
@@ -106,10 +107,10 @@ export default function BomSheetGroups({ groups = [], counts = {}, search = '', 
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
             <thead>
               <tr style={{ background: 'var(--bg3)' }}>
-                <th style={th}>ผลตรวจระบบ</th>
-                <th style={th}>พาร์ท</th>
-                <th style={th}>ถูกนิยามไว้ในใบ</th>
-                <th style={th}>ของที่แต่ละใบเขียนไม่ตรงกัน</th>
+                <th style={th}>{tr('ผลตรวจระบบ')}</th>
+                <th style={th}>{tr('พาร์ท')}</th>
+                <th style={th}>{tr('ถูกนิยามไว้ในใบ')}</th>
+                <th style={th}>{tr('ของที่แต่ละใบเขียนไม่ตรงกัน')}</th>
               </tr>
             </thead>
             <tbody>

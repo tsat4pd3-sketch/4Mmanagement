@@ -38,6 +38,7 @@ import useTabParam from '../utils/useTabParam';
 import QaInspectorScopes from '../components/QaInspectorScopes';
 import Page from '../components/Page';
 import SearchInput from '../components/SearchInput';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* 📐 แท็บของหน้านี้ — `?tab=` (UI-CONVENTIONS §6.8: ห้ามวาดแถบแท็บเอง ใช้ PageHeader+useTabParam) */
@@ -440,7 +441,7 @@ export default function QAInspectionSetup() {
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button style={btnSt()} onClick={() => setEditor({})}
                     title="แผ่น Drawing/รูปชิ้นงาน + ปักหมุด + สเปคทุกจุด — หน้าตาและวิธีใช้เดียวกับตั้งค่าจุดตรวจ PM">
-                    ตั้งค่าจุดตรวจ & Drawing
+                    {tr('ตั้งค่าจุดตรวจ & Drawing')}
                   </button>
                   <button style={ghostBtn} onClick={() => setPartModal({
                     ...EMPTY_PART, ...sel,
@@ -448,8 +449,8 @@ export default function QAInspectionSetup() {
                     line_name: sel.line_name || '', dwg_no: sel.dwg_no || '', drawing_rev: sel.drawing_rev || '',
                     concern_no: sel.concern_no || '', part_rank: sel.part_rank || '', part_kind: sel.part_kind || '',
                     mat_no: sel.mat_no || '',
-                  })}>แก้ไข Part</button>
-                  <button style={{ ...ghostBtn, color: 'var(--red)', borderColor: 'var(--red-line)' }} onClick={delPart}>ลบ</button>
+                  })}>{tr('แก้ไข Part')}</button>
+                  <button style={{ ...ghostBtn, color: 'var(--red)', borderColor: 'var(--red-line)' }} onClick={delPart}>{tr('ลบ')}</button>
                 </div>
               )}
             </div>
@@ -493,18 +494,18 @@ export default function QAInspectionSetup() {
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                     {/* คัดลอก "ออกจาก" พาร์ทนี้ไม่ได้แก้พาร์ทนี้ ⇒ ไม่ต้องผ่าน partWrite · ปลายทางเช็คขอบเขตในโมดัล */}
                     {canManage && items.length > 0 && (
-                      <button style={ghostBtn} onClick={() => setCopyOpen(true)} title="คัดลอกจุดตรวจชุดนี้ไปพาร์ทอื่นที่ยังไม่มีจุดตรวจ">คัดลอกไปพาร์ทอื่น</button>
+                      <button style={ghostBtn} onClick={() => setCopyOpen(true)} title="คัดลอกจุดตรวจชุดนี้ไปพาร์ทอื่นที่ยังไม่มีจุดตรวจ">{tr('คัดลอกไปพาร์ทอื่น')}</button>
                     )}
-                    {canEdit && <button style={btnSt()} onClick={() => setEditor({})}>แก้ไข / เพิ่มจุดตรวจ</button>}
+                    {canEdit && <button style={btnSt()} onClick={() => setEditor({})}>{tr('แก้ไข / เพิ่มจุดตรวจ')}</button>}
                   </div>
                 )}
               </div>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
                   <thead><tr>
-                    <th style={thSt}>No.</th><th style={thSt}>Inspection item</th><th style={thSt}>ชนิด</th>
+                    <th style={thSt}>No.</th><th style={thSt}>Inspection item</th><th style={thSt}>{tr('ชนิด')}</th>
                     <th style={thSt}>Quality standard</th><th style={thSt}>Inspection equipment</th>
-                    <th style={thSt}>Rank</th><th style={thSt}>Stage</th><th style={thSt}>ความถี่ / n</th>
+                    <th style={thSt}>Rank</th><th style={thSt}>Stage</th><th style={thSt}>{tr('ความถี่ / n')}</th>
                     {canManage && <th style={thSt}></th>}
                   </tr></thead>
                   <tbody>
@@ -603,35 +604,35 @@ export default function QAInspectionSetup() {
             <Field label="Model"><input style={inputSt} value={partModal.model} onChange={e => setPartModal(f => ({ ...f, model: e.target.value }))} /></Field>
             <Field label="ไลน์ผลิต">
               {/* qa_parts.line_name ใช้ scope พาร์ทใน QaCheckSheet — ชื่อต้อง canonical → <LineSelect> (2026-09-07) */}
-              <LineSelect lines={lines} value={partModal.line_name || ''} placeholder="— ไม่ระบุ —" style={inputSt}
+              <LineSelect lines={lines} value={partModal.line_name || ''} placeholder={tr('— ไม่ระบุ —')} style={inputSt}
                 onChange={v => setPartModal(f => ({ ...f, line_name: v }))} />
             </Field>
-            <Field label="Dwg. No."><input style={inputSt} placeholder="เช่น 97/3" value={partModal.dwg_no} onChange={e => setPartModal(f => ({ ...f, dwg_no: e.target.value }))} /></Field>
-            <Field label="Revision"><input style={inputSt} placeholder="เช่น 01" value={partModal.drawing_rev} onChange={e => setPartModal(f => ({ ...f, drawing_rev: e.target.value }))} /></Field>
-            <Field label="Concern No."><input style={inputSt} placeholder="เช่น C14225724" value={partModal.concern_no} onChange={e => setPartModal(f => ({ ...f, concern_no: e.target.value }))} /></Field>
+            <Field label="Dwg. No."><input style={inputSt} placeholder={tr('เช่น 97/3')} value={partModal.dwg_no} onChange={e => setPartModal(f => ({ ...f, dwg_no: e.target.value }))} /></Field>
+            <Field label="Revision"><input style={inputSt} placeholder={tr('เช่น 01')} value={partModal.drawing_rev} onChange={e => setPartModal(f => ({ ...f, drawing_rev: e.target.value }))} /></Field>
+            <Field label="Concern No."><input style={inputSt} placeholder={tr('เช่น C14225724')} value={partModal.concern_no} onChange={e => setPartModal(f => ({ ...f, concern_no: e.target.value }))} /></Field>
             <Field label="Part Classification">
               <select style={inputSt} value={partModal.part_rank} onChange={e => setPartModal(f => ({ ...f, part_rank: e.target.value }))}>
-                <option value="">— ไม่ระบุ —</option>
-                {Object.entries(PART_RANK).map(([v, r]) => <option key={v} value={v}>{r.label}</option>)}
+                <option value="">{tr('— ไม่ระบุ —')}</option>
+                {Object.entries(PART_RANK).map(([v, r]) => <option key={v} value={v}>{tr(r.label)}</option>)}
               </select>
             </Field>
             <Field label="ชนิด Part">
               <select style={inputSt} value={partModal.part_kind} onChange={e => setPartModal(f => ({ ...f, part_kind: e.target.value }))}>
-                <option value="">— ไม่ระบุ —</option>
-                {Object.entries(PART_KIND).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                <option value="">{tr('— ไม่ระบุ —')}</option>
+                {Object.entries(PART_KIND).map(([v, l]) => <option key={v} value={v}>{tr(l)}</option>)}
               </select>
             </Field>
             {partModal.id && (
               <Field label="สถานะ">
                 <select style={inputSt} value={partModal.is_active ? '1' : '0'} onChange={e => setPartModal(f => ({ ...f, is_active: e.target.value === '1' }))}>
-                  <option value="1">ใช้งาน</option><option value="0">ปิดใช้งาน</option>
+                  <option value="1">{tr('ใช้งาน')}</option><option value="0">{tr('ปิดใช้งาน')}</option>
                 </select>
               </Field>
             )}
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-            <button style={ghostBtn} onClick={() => setPartModal(null)}>ยกเลิก</button>
-            <button style={btnSt()} onClick={savePart}>บันทึก</button>
+            <button style={ghostBtn} onClick={() => setPartModal(null)}>{tr('ยกเลิก')}</button>
+            <button style={btnSt()} onClick={savePart}>{tr('บันทึก')}</button>
           </div>
         </Modal>
       )}

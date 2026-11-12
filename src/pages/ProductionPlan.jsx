@@ -37,6 +37,7 @@ import { scheduleBackward, makePrevWorkDay } from '../utils/backwardPlan';
 import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
 import NoticeBar from '../components/NoticeBar';
 import SectionScopeSelect from '../components/SectionScopeSelect';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ═══ วางแผนการผลิต (Active Planner) — 🗓️ /production-plan ══════════════════
@@ -659,12 +660,12 @@ export default function ProductionPlan() {
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}
           title="ระเบิด BOM ของพาร์ทที่ลูกค้าสั่ง เพื่อให้ไลน์ที่ทำพาร์ทลูกเห็นงานของตัวเองในแผนด้วย">
           <input type="checkbox" checked={useBom} onChange={e => setUseBom(e.target.checked)} style={{ width: 'auto' }} />
-          🌳 รวมงานจาก BOM
+          {tr('🌳 รวมงานจาก BOM')}
         </label>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}
           title="หักของที่มีอยู่แล้วใน STORE ออกจากความต้องการก่อน (ของกองเดียวใช้ได้ครั้งเดียว เรียงตามวัน)">
           <input type="checkbox" checked={useBuffer} onChange={e => setUseBuffer(e.target.checked)} style={{ width: 'auto' }} />
-          📦 หักสต็อก STORE
+          {tr('📦 หักสต็อก STORE')}
         </label>
         <span className="spacer" />
         <span className="filter-label">วางแผนที่กำลัง:</span>
@@ -964,11 +965,11 @@ export default function ProductionPlan() {
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
                 <thead><tr>
-                  <th style={{ ...th, textAlign: 'left' }}>เดือน</th>
-                  <th style={th}>ยอดต้องการ (ชิ้น)</th>
-                  <th style={th}>กะที่ต้องใช้</th>
-                  <th style={th}>กะเช้าที่มี</th>
-                  <th style={{ ...th, textAlign: 'left' }}>สรุปแผน</th>
+                  <th style={{ ...th, textAlign: 'left' }}>{tr('เดือน')}</th>
+                  <th style={th}>{tr('ยอดต้องการ (ชิ้น)')}</th>
+                  <th style={th}>{tr('กะที่ต้องใช้')}</th>
+                  <th style={th}>{tr('กะเช้าที่มี')}</th>
+                  <th style={{ ...th, textAlign: 'left' }}>{tr('สรุปแผน')}</th>
                 </tr></thead>
                 <tbody>
                   {rows.map(r => (

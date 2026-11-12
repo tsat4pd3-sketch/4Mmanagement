@@ -14,6 +14,7 @@ import useSiren, { SIREN_PATTERN_ALARM } from '../utils/useSiren';
 import { teamKeyOf, deptNameOf } from '../utils/mtnTeams'
 import useIsMobile from '../utils/useIsMobile';
 
+import { tr } from '../utils/i18n';
 /* เสียง+แถบเตือน downtime บนเว็บ — แยกตามหน้า (คำสั่ง user 2026-07-14):
      mode='call_mtn'   → ดังหน้า Maintenance (มีคนกดปุ่ม "เรียกช่าง")
      mode='open_15min' → ดังหน้า Production  (เครื่องเปิดค้างเกินเกณฑ์นาที · scanner mark open_alerted_at)
@@ -214,7 +215,7 @@ export default function DowntimeSiren({ mode = 'open_15min', team = null, lineNa
               แตะเพื่อเปิดเสียง
             </span>
           )}
-          <button onClick={() => ack(a)} style={{ flexShrink: 0, background: m.color, color: '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>รับทราบ · หยุดเสียง</button>
+          <button onClick={() => ack(a)} style={{ flexShrink: 0, background: m.color, color: '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '7px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>{tr('รับทราบ · หยุดเสียง')}</button>
         </div>
         )
       })}

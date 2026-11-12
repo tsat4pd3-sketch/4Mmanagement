@@ -59,6 +59,7 @@ import NoticeBar from '../components/NoticeBar';
 import StepFlow from '../components/StepFlow';
 import { fourMFlow } from '../utils/fourMFlow';
 import SectionScopeSelect from '../components/SectionScopeSelect';
+import { tr as trI18n } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* โลโก้สำหรับฝังในใบพิมพ์ — cache ต่อ "url" ไม่ใช่ตัวเดียวตายตัว (QC audit 08/10)
@@ -449,17 +450,17 @@ body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
 table{border-collapse:collapse;width:100%}
 @media print{@page{size:A4 portrait;margin:10mm}body{-webkit-print-color-adjust:exact}}</style>
 </head><body style="padding:10mm">
-<h2 style="margin:0 0 4px;font-size:16px">รายชื่อพนักงานจองมาทำ OT (สำหรับจองรถรับส่ง)</h2>
+<h2 style="margin:0 0 4px;font-size:16px">{trI18n('รายชื่อพนักงานจองมาทำ OT (สำหรับจองรถรับส่ง)')}</h2>
 <p style="color:#666;margin:0 0 12px;font-size:10px">วันที่ทำ OT: ${date} (${DAY_TYPE_META[dayType].label}) · พิมพ์วันที่: ${printedAt} · รวม ${filteredRows.length} คน</p>
 <table><thead><tr style="background:#f3f4f6">
 <th style="border:1px solid #ccc;padding:4px">#</th>
-<th style="border:1px solid #ccc;padding:4px">รหัส</th>
-<th style="border:1px solid #ccc;padding:4px">ชื่อ</th>
-<th style="border:1px solid #ccc;padding:4px">ไลน์/แผนก</th>
-<th style="border:1px solid #ccc;padding:4px">กะ</th>
-<th style="border:1px solid #ccc;padding:4px">ช่วงเวลา OT</th>
-<th style="border:1px solid #ccc;padding:4px">สายรถ</th>
-<th style="border:1px solid #ccc;padding:4px">งานที่ทำ</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('รหัส')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ชื่อ')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ไลน์/แผนก')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('กะ')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ช่วงเวลา OT')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('สายรถ')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('งานที่ทำ')}</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank');
@@ -493,14 +494,14 @@ table{border-collapse:collapse;width:100%}
               position: 'relative',
               padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
               background: showMaster ? 'var(--amber-dim)' : 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)',
-            }}>จัดการสายรถ/งาน OT<ToggleDot on={showMaster} /></button>
+            }}>{trI18n('จัดการสายรถ/งาน OT')}<ToggleDot on={showMaster} /></button>
           )}
           <CsvBtn onClick={handleExportCsv} />
           {canExport && (
             <button onClick={handlePrint} style={{
               padding: '7px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
               background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)',
-            }}>พิมพ์</button>
+            }}>{trI18n('พิมพ์')}</button>
           )}
         </div>
       </FilterBar>
@@ -516,13 +517,13 @@ table{border-collapse:collapse;width:100%}
           <thead>
             <tr>
               <th style={{ minWidth: 40 }}>#</th>
-              <th style={{ minWidth: 100 }}>รหัส</th>
-              <th style={{ minWidth: 180 }}>ชื่อ-สกุล</th>
-              <th style={{ minWidth: 140 }}>ไลน์/แผนก</th>
-              <th style={{ minWidth: 70, textAlign: 'center' }}>กะ</th>
-              <th style={{ minWidth: 130, textAlign: 'center' }}>ช่วงเวลา OT</th>
-              <th style={{ minWidth: 160 }}>สายรถ</th>
-              <th style={{ minWidth: 160 }}>งานที่ทำ</th>
+              <th style={{ minWidth: 100 }}>{trI18n('รหัส')}</th>
+              <th style={{ minWidth: 180 }}>{trI18n('ชื่อ-สกุล')}</th>
+              <th style={{ minWidth: 140 }}>{trI18n('ไลน์/แผนก')}</th>
+              <th style={{ minWidth: 70, textAlign: 'center' }}>{trI18n('กะ')}</th>
+              <th style={{ minWidth: 130, textAlign: 'center' }}>{trI18n('ช่วงเวลา OT')}</th>
+              <th style={{ minWidth: 160 }}>{trI18n('สายรถ')}</th>
+              <th style={{ minWidth: 160 }}>{trI18n('งานที่ทำ')}</th>
             </tr>
           </thead>
           <tbody>
@@ -628,16 +629,16 @@ function OtMasterDataPanel() {
       <div>
         <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>สายรถรับส่ง</div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          <input placeholder="รหัส เช่น A17" value={newRouteCode} onChange={e => setNewRouteCode(e.target.value)} style={{ width: 70, padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
-          <input placeholder="ชื่อสาย เช่น มาบยางพร-ปลวกแดง" value={newRouteName} onChange={e => setNewRouteName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
-          <button onClick={addRoute} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
+          <input placeholder={trI18n('รหัส เช่น A17')} value={newRouteCode} onChange={e => setNewRouteCode(e.target.value)} style={{ width: 70, padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
+          <input placeholder={trI18n('ชื่อสาย เช่น มาบยางพร-ปลวกแดง')} value={newRouteName} onChange={e => setNewRouteName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
+          <button onClick={addRoute} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{trI18n('+ เพิ่ม')}</button>
         </div>
         <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {busRoutes.map(r => (
             <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 'var(--r-md)', background: r.is_active ? 'transparent' : 'var(--bg2)', opacity: r.is_active ? 1 : 0.5 }}>
               <span style={{ flex: 1 }}>{r.code} {r.name}</span>
-              <button onClick={() => toggleRouteActive(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
-              <button onClick={() => removeRoute(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
+              <button onClick={() => toggleRouteActive(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? trI18n('ปิดใช้') : trI18n('เปิดใช้')}</button>
+              <button onClick={() => removeRoute(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>{trI18n('ลบ')}</button>
             </div>
           ))}
           {!loading && busRoutes.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีสายรถ</div>}
@@ -647,15 +648,15 @@ function OtMasterDataPanel() {
       <div>
         <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>งานที่ทำ OT</div>
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          <input placeholder="ชื่องาน เช่น ผลิตตามแผน" value={newTaskName} onChange={e => setNewTaskName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
-          <button onClick={addTask} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
+          <input placeholder={trI18n('ชื่องาน เช่น ผลิตตามแผน')} value={newTaskName} onChange={e => setNewTaskName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
+          <button onClick={addTask} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{trI18n('+ เพิ่ม')}</button>
         </div>
         <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {taskTypes.map(t => (
             <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 'var(--r-md)', background: t.is_active ? 'transparent' : 'var(--bg2)', opacity: t.is_active ? 1 : 0.5 }}>
               <span style={{ flex: 1 }}>{t.name}</span>
-              <button onClick={() => toggleTaskActive(t)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{t.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
-              <button onClick={() => removeTask(t)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
+              <button onClick={() => toggleTaskActive(t)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{t.is_active ? trI18n('ปิดใช้') : trI18n('เปิดใช้')}</button>
+              <button onClick={() => removeTask(t)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>{trI18n('ลบ')}</button>
             </div>
           ))}
           {!loading && taskTypes.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีงาน</div>}
@@ -665,9 +666,9 @@ function OtMasterDataPanel() {
       {/* master ของหน้าเช็คชื่อ/จัดกำลังคนอีก 2 ลิสต์ (เลิก hardcode ในโค้ด — QC audit 2026-08-19)
           สิทธิ์เดียวกับแผงนี้ (ot_master:manage) — กลุ่มเดียวกัน ไม่เพิ่ม permission key ใหม่ */}
       <SimpleNameMaster table="special_task_types" title="งานนอกไลน์ (หน้า จัดการไลน์ผลิต)"
-        placeholder="เช่น 5ส, คัดงาน" offNote="จะไม่ขึ้นให้เลือกตอนมอบหมายงานนอกไลน์" />
+        placeholder={trI18n('เช่น 5ส, คัดงาน')} offNote="จะไม่ขึ้นให้เลือกตอนมอบหมายงานนอกไลน์" />
       <SimpleNameMaster table="leave_types" title="ประเภทลา (หน้า เช็คชื่อ)"
-        placeholder="เช่น ลากิจ, ลาป่วย" offNote="จะไม่ขึ้นให้เลือกตอนบันทึกการลา" />
+        placeholder={trI18n('เช่น ลากิจ, ลาป่วย')} offNote="จะไม่ขึ้นให้เลือกตอนบันทึกการลา" />
     </div>
   );
 }
@@ -711,14 +712,14 @@ function SimpleNameMaster({ table, title, placeholder, offNote }) {
         <>
           <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
             <input placeholder={placeholder} value={newName} onChange={e => setNewName(e.target.value)} style={{ flex: 1, padding: '6px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12 }} />
-            <button onClick={add} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
+            <button onClick={add} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{trI18n('+ เพิ่ม')}</button>
           </div>
           <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {rows.map(r => (
               <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, padding: '4px 6px', borderRadius: 'var(--r-md)', background: r.is_active ? 'transparent' : 'var(--bg2)', opacity: r.is_active ? 1 : 0.5 }}>
                 <span style={{ flex: 1 }}>{r.name}</span>
-                <button onClick={() => toggle(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? 'ปิดใช้' : 'เปิดใช้'}</button>
-                <button onClick={() => remove(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
+                <button onClick={() => toggle(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--border)' }}>{r.is_active ? trI18n('ปิดใช้') : trI18n('เปิดใช้')}</button>
+                <button onClick={() => remove(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>{trI18n('ลบ')}</button>
               </div>
             ))}
             {rows.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีรายการ</div>}
@@ -832,20 +833,20 @@ body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
 table{border-collapse:collapse;width:100%}
 @media print{@page{size:A4 landscape;margin:10mm}body{-webkit-print-color-adjust:exact}}</style>
 </head><body style="padding:10mm">
-<h2 style="margin:0 0 4px;font-size:16px">รายงานเช็คชื่อประจำวัน</h2>
+<h2 style="margin:0 0 4px;font-size:16px">{trI18n('รายงานเช็คชื่อประจำวัน')}</h2>
 <p style="color:#666;margin:0 0 12px;font-size:10px">วันที่: ${date} (${dayTypeLabel}) · กะ: ${shift === 'day' ? 'เช้า' : shift === 'night' ? 'ดึก' : 'ทั้งหมด'} · พิมพ์วันที่: ${todayStr} · รวม ${filteredLogs.length} คน</p>
 <table><thead><tr style="background:#f3f4f6">
 <th style="border:1px solid #ccc;padding:4px">#</th>
-<th style="border:1px solid #ccc;padding:4px">รหัส</th>
-<th style="border:1px solid #ccc;padding:4px">ชื่อ</th>
-<th style="border:1px solid #ccc;padding:4px">แผนก</th>
-<th style="border:1px solid #ccc;padding:4px">ทีม</th>
-<th style="border:1px solid #ccc;padding:4px">มาทำงาน</th>
-<th style="border:1px solid #ccc;padding:4px">หมวก</th>
-<th style="border:1px solid #ccc;padding:4px">รองเท้า</th>
-<th style="border:1px solid #ccc;padding:4px">ถุงมือ</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('รหัส')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ชื่อ')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('แผนก')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ทีม')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('มาทำงาน')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('หมวก')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('รองเท้า')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ถุงมือ')}</th>
 <th style="border:1px solid #ccc;padding:4px">OT</th>
-<th style="border:1px solid #ccc;padding:4px">จุดงาน</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('จุดงาน')}</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank');
@@ -861,7 +862,7 @@ table{border-collapse:collapse;width:100%}
         <LineScopeSelect lines={linesInScope} sections={dailySections} section={dailySection} line={dailyLine} unit={dailyDept} pickDept valueKey="id"
           onChange={(sec, ln, { unit }) => { setDailySection(ln || unit ? '' : sec); setDailyLine(ln); setDailyDept(unit || ''); }} />
         <select value={dailyTeam} onChange={e => setDailyTeam(e.target.value)}>
-          <option value="">{ALL.team}</option>
+          <option value="">{trI18n(ALL.team)}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
         <input type="date" value={date} onChange={e => setDate(e.target.value)} />
@@ -889,7 +890,7 @@ table{border-collapse:collapse;width:100%}
       {loading ? <Loader /> : (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 500 }}>
-            <thead><tr><th>โปรไฟล์</th><th>ID</th><th>ชื่อ</th><th>แผนก</th><th>PPE</th><th>จุดงาน</th></tr></thead>
+            <thead><tr><th>{trI18n('โปรไฟล์')}</th><th>ID</th><th>{trI18n('ชื่อ')}</th><th>{trI18n('แผนก')}</th><th>PPE</th><th>{trI18n('จุดงาน')}</th></tr></thead>
             <tbody>
               {filteredLogs.length === 0 ? <EmptyRow cols={6} /> : filteredLogs.map(l => (
                 <tr key={l.id}>
@@ -1024,16 +1025,16 @@ body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
 table{border-collapse:collapse;width:100%}
 @media print{@page{size:A4 portrait;margin:10mm}body{-webkit-print-color-adjust:exact}}</style>
 </head><body style="padding:10mm">
-<h2 style="margin:0 0 4px;font-size:16px">รายงานรายพนักงาน</h2>
+<h2 style="margin:0 0 4px;font-size:16px">{trI18n('รายงานรายพนักงาน')}</h2>
 <p style="color:#666;margin:0 0 12px;font-size:10px">${emp?.employee_id_code || ''} — ${emp?.name || ''} · เดือน: ${month} · พิมพ์วันที่: ${todayStr}</p>
 <table><thead><tr style="background:#f3f4f6">
-<th style="border:1px solid #ccc;padding:4px">วันที่</th>
-<th style="border:1px solid #ccc;padding:4px">ประเภทวัน</th>
-<th style="border:1px solid #ccc;padding:4px">มาทำงาน</th>
-<th style="border:1px solid #ccc;padding:4px">หมวก</th>
-<th style="border:1px solid #ccc;padding:4px">รองเท้า</th>
-<th style="border:1px solid #ccc;padding:4px">ถุงมือ</th>
-<th style="border:1px solid #ccc;padding:4px">จุดงาน</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('วันที่')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ประเภทวัน')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('มาทำงาน')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('หมวก')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('รองเท้า')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ถุงมือ')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('จุดงาน')}</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank');
@@ -1047,11 +1048,11 @@ table{border-collapse:collapse;width:100%}
         <SectionScopeSelect pickDept value={empSection} dept={empDept} only={empSections}
           onChange={(sec, info) => { setEmpSection(sec); setEmpDept(info.unit || ''); }} />
         <select value={empTeam} onChange={e => setEmpTeam(e.target.value)}>
-          <option value="">{ALL.team}</option>
+          <option value="">{trI18n(ALL.team)}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
-        <SearchSelect value={String(selected ?? '')} placeholder="ค้นหาพนักงาน (รหัส/ชื่อ)…" style={{ flex: '0 1 320px', minWidth: 240 }}
+        <SearchSelect value={String(selected ?? '')} placeholder={trI18n('ค้นหาพนักงาน (รหัส/ชื่อ)…')} style={{ flex: '0 1 320px', minWidth: 240 }}
           options={filteredEmployees.map(e => ({ id: String(e.id), label: `${e.employee_id_code} — ${e.name}`, keywords: e.employee_id_code }))}
           onChange={({ id }) => setSelected(filteredEmployees.find(e => String(e.id) === id)?.id ?? id)} />
         <span className="spacer" />
@@ -1075,7 +1076,7 @@ table{border-collapse:collapse;width:100%}
       {loading ? <Loader /> : (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 400 }}>
-            <thead><tr><th>วันที่</th><th>PPE</th><th>จุดงาน</th></tr></thead>
+            <thead><tr><th>{trI18n('วันที่')}</th><th>PPE</th><th>{trI18n('จุดงาน')}</th></tr></thead>
             <tbody>
               {logs.length === 0 ? <EmptyRow cols={3} /> : logs.map((l, i) => (
                 <tr key={i}>
@@ -1227,14 +1228,14 @@ table{border-collapse:collapse;width:100%}
 <p style="color:#666;margin:0 0 12px;font-size:10px">ไลน์: ${station?.line_name || ''} · ${from} — ${to} · พิมพ์วันที่: ${todayStr} · รวม ${filteredRows.length} รายการ</p>
 <table><thead><tr style="background:#f3f4f6">
 <th style="border:1px solid #ccc;padding:4px">#</th>
-<th style="border:1px solid #ccc;padding:4px">วันที่</th>
-<th style="border:1px solid #ccc;padding:4px">ประเภทวัน</th>
-<th style="border:1px solid #ccc;padding:4px">รหัส</th>
-<th style="border:1px solid #ccc;padding:4px">ชื่อ</th>
-<th style="border:1px solid #ccc;padding:4px">ทีม</th>
-<th style="border:1px solid #ccc;padding:4px">กะ</th>
-<th style="border:1px solid #ccc;padding:4px">มาทำงาน</th>
-<th style="border:1px solid #ccc;padding:4px">PPE ครบ</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('วันที่')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ประเภทวัน')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('รหัส')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ชื่อ')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ทีม')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('กะ')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('มาทำงาน')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('PPE ครบ')}</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank');
@@ -1254,12 +1255,12 @@ table{border-collapse:collapse;width:100%}
         <select value={selectedStation} onChange={e => setSelectedStation(e.target.value)} style={{ minWidth: 200 }}>
           {Object.entries(byLine).map(([line, sts]) => (
             <optgroup key={line} label={line}>
-              {sts.map(s => <option key={s.id} value={String(s.id)}>{s.station_name}</option>)}
+              {sts.map(s => <option key={s.id} value={String(s.id)}>{trI18n(s.station_name)}</option>)}
             </optgroup>
           ))}
         </select>
         <select value={stationTeam} onChange={e => setStationTeam(e.target.value)}>
-          <option value="">{ALL.team}</option>
+          <option value="">{trI18n(ALL.team)}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
         <Segmented value={stationShift} onChange={setStationShift} options={SHIFT_OPTIONS} label="กะ" />
@@ -1290,13 +1291,13 @@ table{border-collapse:collapse;width:100%}
           <table style={{ minWidth: 520 }}>
             <thead>
               <tr>
-                <th>วันที่</th>
-                <th>โปรไฟล์</th>
-                <th>รหัส</th>
-                <th>ชื่อ</th>
-                <th>ทีม</th>
+                <th>{trI18n('วันที่')}</th>
+                <th>{trI18n('โปรไฟล์')}</th>
+                <th>{trI18n('รหัส')}</th>
+                <th>{trI18n('ชื่อ')}</th>
+                <th>{trI18n('ทีม')}</th>
                 <th>PPE</th>
-                <th>สถานะ</th>
+                <th>{trI18n('สถานะ')}</th>
               </tr>
             </thead>
             <tbody>
@@ -1411,17 +1412,17 @@ body{font-family:'Sarabun',sans-serif;font-size:11px;color:#000;background:#fff}
 table{border-collapse:collapse;width:100%}
 @media print{@page{size:A4 portrait;margin:10mm}body{-webkit-print-color-adjust:exact}}</style>
 </head><body style="padding:10mm">
-<h2 style="margin:0 0 4px;font-size:16px">สรุปการมาทำงานช่วงเวลา</h2>
+<h2 style="margin:0 0 4px;font-size:16px">{trI18n('สรุปการมาทำงานช่วงเวลา')}</h2>
 <p style="color:#666;margin:0 0 12px;font-size:10px">${from} — ${to} · พิมพ์วันที่: ${todayStr} · รวม ${filteredRows.length} คน</p>
 <table><thead><tr style="background:#f3f4f6">
 <th style="border:1px solid #ccc;padding:4px">#</th>
-<th style="border:1px solid #ccc;padding:4px">รหัส</th>
-<th style="border:1px solid #ccc;padding:4px">ชื่อ</th>
-<th style="border:1px solid #ccc;padding:4px">ส่วนงาน</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('รหัส')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ชื่อ')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('ส่วนงาน')}</th>
 <th style="border:1px solid #ccc;padding:4px">Team</th>
-<th style="border:1px solid #ccc;padding:4px">มาทำงาน</th>
-<th style="border:1px solid #ccc;padding:4px">วันทั้งหมด</th>
-<th style="border:1px solid #ccc;padding:4px">%การมาทำงาน</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('มาทำงาน')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('วันทั้งหมด')}</th>
+<th style="border:1px solid #ccc;padding:4px">{trI18n('%การมาทำงาน')}</th>
 </tr></thead><tbody>${rowsHtml}</tbody></table>
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank');
@@ -1440,7 +1441,7 @@ table{border-collapse:collapse;width:100%}
         <LineScopeSelect lines={rangeLinesInScope} sections={rangeSections} section={rangeSection} line={rangeLine} unit={rangeUnit.name} pickDept valueKey="id" onUnitLines={ul => setRangeUnit(u => fillUnitLines(u, ul))}
           onChange={(sec, ln, { unit, lines: ul }) => { setRangeSection(ln || unit ? '' : sec); setRangeLine(ln); setRangeUnit({ name: unit || '', lines: unit ? ul : [] }); }} />
         <select value={rangeTeam} onChange={e => setRangeTeam(e.target.value)}>
-          <option value="">{ALL.team}</option>
+          <option value="">{trI18n(ALL.team)}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
         <span className="spacer" />
@@ -1460,7 +1461,7 @@ table{border-collapse:collapse;width:100%}
       {loading ? <Loader /> : (
         <div className="card table-sticky" style={{ overflowX: 'auto' }}>
           <table style={{ minWidth: 420 }}>
-            <thead><tr><th>ID</th><th>ชื่อ</th><th>มาทำงาน</th><th>%</th></tr></thead>
+            <thead><tr><th>ID</th><th>{trI18n('ชื่อ')}</th><th>{trI18n('มาทำงาน')}</th><th>%</th></tr></thead>
             <tbody>
               {filteredRows.length === 0 ? <EmptyRow cols={4} /> : filteredRows.map((r, i) => (
                 <tr key={i}>
@@ -1858,18 +1859,18 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
       {rejectModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', padding: '24px 24px 20px', width: 'min(420px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
-            <h3 style={{ margin: '0 0 14px', color: 'var(--red)', fontFamily: 'var(--font-display)' }}>❌ ระบุเหตุผลที่ Reject</h3>
+            <h3 style={{ margin: '0 0 14px', color: 'var(--red)', fontFamily: 'var(--font-display)' }}>{trI18n('❌ ระบุเหตุผลที่ Reject')}</h3>
             <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)}
-              placeholder="เหตุผลที่ไม่อนุมัติ..." rows={3}
+              placeholder={trI18n('เหตุผลที่ไม่อนุมัติ...')} rows={3}
               style={{ width: '100%', borderRadius: 'var(--ctl-r)', padding: '8px 10px', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
             <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
               <button onClick={handleReject}
                 style={{ flex: 2, padding: 11, background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: 'pointer' }}>
-                ยืนยัน Reject
+                {trI18n('ยืนยัน Reject')}
               </button>
               <button onClick={() => { setRejectModal(null); setRejectReason(''); }}
                 style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', cursor: 'pointer' }}>
-                ยกเลิก
+                {trI18n('ยกเลิก')}
               </button>
             </div>
           </div>
@@ -1880,7 +1881,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
       {qaApproveModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', padding: '24px 24px 20px', width: 'min(460px,94vw)', boxShadow: 'var(--shadow-lg)' }}>
-            <h3 style={{ margin: '0 0 4px', color: 'var(--blue)', fontFamily: 'var(--font-display)' }}>QA ยืนยันคุณภาพงาน</h3>
+            <h3 style={{ margin: '0 0 4px', color: 'var(--blue)', fontFamily: 'var(--font-display)' }}>{trI18n('QA ยืนยันคุณภาพงาน')}</h3>
             <p style={{ margin: '0 0 14px', color: 'var(--muted)', fontSize: 13 }}>
               {qaApproveModal.line_name} · {qaApproveModal.category} · {qaApproveModal.description}
             </p>
@@ -1913,17 +1914,17 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
             {qaImageFile && (
               <button type="button" onClick={() => { setQaImageFile(null); setQaImagePreview(null); }}
                 style={{ marginTop: 4, fontSize: 11, color: 'var(--red)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                ลบรูป
+                {trI18n('ลบรูป')}
               </button>
             )}
             <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
               <button onClick={handleQaApproveSubmit} disabled={isApprovingSaving}
                 style={{ flex: 2, padding: 11, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: isApprovingSaving ? 'not-allowed' : 'pointer', opacity: isApprovingSaving ? 0.6 : 1 }}>
-                {isApprovingSaving ? 'กำลังบันทึก...' : 'QA Approve'}
+                {isApprovingSaving ? trI18n('กำลังบันทึก...') : 'QA Approve'}
               </button>
               <button onClick={() => { setQaApproveModal(null); setQaImageFile(null); setQaImagePreview(null); }} disabled={isApprovingSaving}
                 style={{ flex: 1, padding: 11, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', cursor: 'pointer' }}>
-                ยกเลิก
+                {trI18n('ยกเลิก')}
               </button>
             </div>
           </div>
@@ -1962,13 +1963,13 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
           </>);
         })()}
         <select value={cat} onChange={e => setCat(e.target.value)}>
-          <option value="">{ALL.type}</option>
-          {Object.keys(CAT_META).map(k => <option key={k} value={k}>{k}</option>)}
+          <option value="">{trI18n(ALL.type)}</option>
+          {Object.keys(CAT_META).map(k => <option key={k} value={k}>{trI18n(k)}</option>)}
         </select>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-          <option value="">{ALL.status}</option>
+          <option value="">{trI18n(ALL.status)}</option>
           {/* วาดจาก STATUS_META ตัวเดียว — เดิม hardcode ป้ายซ้ำ ⇒ เพิ่มสถานะแล้วลืมแก้ที่นี่ */}
-          {Object.entries(STATUS_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          {Object.entries(STATUS_META).map(([k, v]) => <option key={k} value={k}>{trI18n(v.label)}</option>)}
         </select>
         {actionableCount > 0 && (
           <span style={{ fontSize: 11, fontWeight: 700, background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '3px 8px' }}>
@@ -1995,7 +1996,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
             style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
               background: 'var(--amber-dim)', color: '#ca8a04', border: '1px solid var(--amber-line)',
               opacity: cpcExporting ? 0.5 : 1 }}>
-            {cpcExporting ? 'กำลังสร้าง...' : 'Export Changing Point'}
+            {cpcExporting ? trI18n('กำลังสร้าง...') : 'Export Changing Point'}
           </button>
         )}
         {!line && <span style={{ fontSize: 11, color: '#d97706' }}>ใบ Changing Point ต้องเลือก 1 ไลน์</span>}
@@ -2004,7 +2005,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
             position: 'relative',
             padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
             background: showDocPanel ? 'var(--amber-dim)' : 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)',
-          }}>จัดการเอกสาร<ToggleDot on={showDocPanel} /></button>
+          }}>{trI18n('จัดการเอกสาร')}<ToggleDot on={showDocPanel} /></button>
         )}
       </TimeRangeBar>
 
@@ -2088,7 +2089,7 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
             background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', fontSize: 12.5, color: 'var(--text)' }}>
             <span>เน้นใบที่เลือกมา — <b>{focusRow.line_name || 'ไม่ระบุไลน์'}</b> · {focusRow.category} · {fmtDate(focusRow.work_date)}</span>
             <button onClick={() => setFocus('')} style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
-              ล้างการเน้น
+              {trI18n('ล้างการเน้น')}
             </button>
           </div>
         ) : (
@@ -2097,10 +2098,10 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
             <span>⚠️ ไม่พบใบที่เลือกในรายการนี้ — อาจถูกอนุมัติ/ปฏิเสธไปแล้ว หรืออยู่นอกช่วงวัน/ตัวกรอง หรือนอกขอบเขตส่วนงานของคุณ</span>
             <button onClick={() => { setStatusFilter(''); setCat(''); setLine(''); setFourMSection(''); }}
               style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)' }}>
-              ล้างตัวกรอง
+              {trI18n('ล้างตัวกรอง')}
             </button>
             <button onClick={() => setFocus('')} style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
-              ปิด
+              {trI18n('ปิด')}
             </button>
           </div>
         )
@@ -2111,9 +2112,9 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
           <table style={{ minWidth: 720 }}>
             <thead>
               <tr>
-                <th>วันที่</th><th>ไลน์</th><th>ประเภท</th><th>รายละเอียด</th>
-                <th style={{ textAlign: 'center' }}>สถานะ</th>
-                <th style={{ textAlign: 'center', minWidth: 90 }}>ระดับ</th>
+                <th>{trI18n('วันที่')}</th><th>{trI18n('ไลน์')}</th><th>{trI18n('ประเภท')}</th><th>{trI18n('รายละเอียด')}</th>
+                <th style={{ textAlign: 'center' }}>{trI18n('สถานะ')}</th>
+                <th style={{ textAlign: 'center', minWidth: 90 }}>{trI18n('ระดับ')}</th>
                 <th style={{ textAlign: 'center', minWidth: 160 }}>Action</th>
               </tr>
             </thead>
@@ -2142,13 +2143,13 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                         {l.request_image_url && (
                           <button onClick={() => setImageViewModal({ url: l.request_image_url, title: 'รูปจากผู้แจ้ง' })}
                             style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', fontWeight: 600 }}>
-                            รูปแจ้ง
+                            {trI18n('รูปแจ้ง')}
                           </button>
                         )}
                         {l.qa_image_url && (
                           <button onClick={() => setImageViewModal({ url: l.qa_image_url, title: 'รูป QA ยืนยัน' })}
                             style={{ fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', fontWeight: 600 }}>
-                            รูป QA
+                            {trI18n('รูป QA')}
                           </button>
                         )}
                       </div>
@@ -2310,33 +2311,33 @@ function DocumentControlPanel() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 10 }}>
         <div>
-          <label style={{ fontSize: 11, color: 'var(--muted)' }}>เลขฟอร์ม (doc_no)</label>
-          <input value={docNo} onChange={e => setDocNo(e.target.value)} placeholder="เช่น FM-PD-037" style={inSt} />
+          <label style={{ fontSize: 11, color: 'var(--muted)' }}>{trI18n('เลขฟอร์ม (doc_no)')}</label>
+          <input value={docNo} onChange={e => setDocNo(e.target.value)} placeholder={trI18n('เช่น FM-PD-037')} style={inSt} />
         </div>
         <div>
           <label style={{ fontSize: 11, color: 'var(--muted)' }}>Revision</label>
-          <input value={revision} onChange={e => setRevision(e.target.value)} placeholder="เช่น 00" style={inSt} />
+          <input value={revision} onChange={e => setRevision(e.target.value)} placeholder={trI18n('เช่น 00')} style={inSt} />
         </div>
         <div>
           <label style={{ fontSize: 11, color: 'var(--muted)' }}>Effective Date</label>
           <input type="date" value={effectiveDate || ''} onChange={e => setEffectiveDate(e.target.value)} style={inSt} />
         </div>
         <div>
-          <label style={{ fontSize: 11, color: 'var(--muted)' }}>ผู้ออกเอกสาร (Issued)</label>
-          <SearchSelect value={issuedBy || ''} placeholder="— เลือก (พิมพ์ค้นหาชื่อ) —" inputStyle={inSt}
+          <label style={{ fontSize: 11, color: 'var(--muted)' }}>{trI18n('ผู้ออกเอกสาร (Issued)')}</label>
+          <SearchSelect value={issuedBy || ''} placeholder={trI18n('— เลือก (พิมพ์ค้นหาชื่อ) —')} inputStyle={inSt}
             options={profiles.map(p => ({ id: p.id, label: p.full_name }))} onChange={({ id }) => setIssuedBy(id)} />
         </div>
       </div>
 
       <div style={{ marginBottom: 10 }}>
-        <label style={{ fontSize: 11, color: 'var(--muted)' }}>Legend (2 บรรทัด)</label>
+        <label style={{ fontSize: 11, color: 'var(--muted)' }}>{trI18n('Legend (2 บรรทัด)')}</label>
         <textarea value={legend} onChange={e => setLegend(e.target.value)} rows={2} style={{ ...inSt, resize: 'vertical' }} />
       </div>
 
       <button onClick={saveDoc} disabled={saving} style={{
         padding: '7px 16px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
         background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', opacity: saving ? 0.6 : 1, marginBottom: 18,
-      }}>{saving ? 'กำลังบันทึก...' : 'บันทึกข้อมูลเอกสาร'}</button>
+      }}>{saving ? trI18n('กำลังบันทึก...') : trI18n('บันทึกข้อมูลเอกสาร')}</button>
 
       <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>ประวัติการแก้ไขเอกสาร (Revision History)</div>
       <div style={{ overflowX: 'auto', marginBottom: 10 }}>
@@ -2344,7 +2345,7 @@ function DocumentControlPanel() {
           <thead>
             <tr>
               <th style={{ fontSize: 11 }}>#</th>
-              <th style={{ fontSize: 11 }}>วันที่บันทึก</th>
+              <th style={{ fontSize: 11 }}>{trI18n('วันที่บันทึก')}</th>
               <th style={{ fontSize: 11 }}>Rev</th>
               <th style={{ fontSize: 11 }}>Issued date</th>
               <th style={{ fontSize: 11 }}>Description</th>
@@ -2364,7 +2365,7 @@ function DocumentControlPanel() {
                 <td style={{ fontSize: 12 }}>{r.responsible || '—'}</td>
                 <td style={{ fontSize: 12 }}>{r.approved_name || '—'}</td>
                 <td>
-                  <button onClick={() => removeRevision(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>ลบ</button>
+                  <button onClick={() => removeRevision(r)} style={{ fontSize: 11, padding: '2px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'transparent', border: '1px solid var(--red-line)', color: 'var(--red)' }}>{trI18n('ลบ')}</button>
                 </td>
               </tr>
             ))}
@@ -2385,7 +2386,7 @@ function DocumentControlPanel() {
           onChange={({ name }) => setNewRev(v => ({ ...v, responsible: name }))} />
         <PersonSelect value={newRev.approved_name} history={apprHist} placeholder="Approved" inputStyle={{ fontSize: 12, padding: '6px 30px 6px 8px' }}
           onChange={({ name }) => setNewRev(v => ({ ...v, approved_name: name }))} />
-        <button onClick={addRevision} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>+ เพิ่ม</button>
+        <button onClick={addRevision} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{trI18n('+ เพิ่ม')}</button>
       </div>
     </div>
   );
@@ -2419,7 +2420,7 @@ function EmpScopeFilters({ lines, filterSection, setFilterSection, filterLine, s
         unit={setFilterDept ? (filterDept || '') : ''} pickDept={!!setFilterDept}
         onChange={(sec, ln, { unit }) => { setFilterSection(ln || unit ? '' : sec); setFilterLine(ln); setFilterDept && setFilterDept(unit || ''); }} />
       <select value={filterTeam} onChange={e => setFilterTeam(e.target.value)}>
-        <option value="">{ALL.team}</option>
+        <option value="">{trI18n(ALL.team)}</option>
         {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
       </select>
     </>
@@ -2563,12 +2564,12 @@ table{border-collapse:collapse;width:100%}
 <table><thead>
 <tr style="background:#f3f4f6">
 <th rowspan="2" style="border:1px solid #ccc;padding:3px">#</th>
-<th rowspan="2" style="border:1px solid #ccc;padding:3px">รหัส</th>
-<th rowspan="2" style="border:1px solid #ccc;padding:3px">ชื่อ</th>
-<th rowspan="2" style="border:1px solid #ccc;padding:3px">ส่วนงาน</th>
+<th rowspan="2" style="border:1px solid #ccc;padding:3px">{trI18n('รหัส')}</th>
+<th rowspan="2" style="border:1px solid #ccc;padding:3px">{trI18n('ชื่อ')}</th>
+<th rowspan="2" style="border:1px solid #ccc;padding:3px">{trI18n('ส่วนงาน')}</th>
 <th rowspan="2" style="border:1px solid #ccc;padding:3px">Team</th>
 ${catHeaderCells}
-<th rowspan="2" style="border:1px solid #ccc;padding:3px;background:#d1fae5;color:#16a34a">เฉลี่ย</th>
+<th rowspan="2" style="border:1px solid #ccc;padding:3px;background:#d1fae5;color:#16a34a">{trI18n('เฉลี่ย')}</th>
 </tr>
 <tr style="background:#e5e7eb">${headerCells}</tr>
 </thead><tbody>${rowsHtml}</tbody></table>
@@ -2683,8 +2684,8 @@ ${catHeaderCells}
                 </tr>
                 {/* Skill name row */}
                 <tr>
-                  <th style={{ minWidth: 44, textAlign: 'center', position: 'sticky', left: 0, zIndex: 3, background: 'var(--card)' }}>รูป</th>
-                  <th style={{ minWidth: 130, textAlign: 'left', position: 'sticky', left: 52, zIndex: 3, background: 'var(--card)' }}>พนักงาน</th>
+                  <th style={{ minWidth: 44, textAlign: 'center', position: 'sticky', left: 0, zIndex: 3, background: 'var(--card)' }}>{trI18n('รูป')}</th>
+                  <th style={{ minWidth: 130, textAlign: 'left', position: 'sticky', left: 52, zIndex: 3, background: 'var(--card)' }}>{trI18n('พนักงาน')}</th>
                   {visibleGroups.map(g => g.skills.map((s, si) => (
                     <th key={s.name} style={{
                       minWidth: 56,
@@ -2904,15 +2905,15 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
   </tr></table>
   <table style="width:100%"><thead>
     <tr style="background:#d1d5db">
-      <th style="border:1px solid #666;padding:3px;text-align:center;width:24px" rowspan="3">ลำดับ</th>
-      <th style="border:1px solid #666;padding:3px;text-align:center;width:70px" rowspan="3">เลขที่บัตร</th>
-      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:110px" rowspan="3">ชื่อ-นามสกุล</th>
-      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:80px" rowspan="3">ตำแหน่ง</th>
-      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:60px" rowspan="3">อายุงาน</th>
-      <th style="border:1px solid #666;padding:3px;text-align:center" colspan="${orderedDefs.length + 1}">ทักษะความสามารถการปฏิบัติงานของพนักงาน</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;width:24px" rowspan="3">{trI18n('ลำดับ')}</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;width:70px" rowspan="3">{trI18n('เลขที่บัตร')}</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:110px" rowspan="3">{trI18n('ชื่อ-นามสกุล')}</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:80px" rowspan="3">{trI18n('ตำแหน่ง')}</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center;min-width:60px" rowspan="3">{trI18n('อายุงาน')}</th>
+      <th style="border:1px solid #666;padding:3px;text-align:center" colspan="${orderedDefs.length + 1}">{trI18n('ทักษะความสามารถการปฏิบัติงานของพนักงาน')}</th>
     </tr>
     <tr style="background:#f9fafb">${catHeaderCells}
-      <th style="border:1px solid #666;background:#d1fae5;padding:3px 2px;font-size:8px;text-align:center" rowspan="2">ทักษะโดยรวม</th>
+      <th style="border:1px solid #666;background:#d1fae5;padding:3px 2px;font-size:8px;text-align:center" rowspan="2">{trI18n('ทักษะโดยรวม')}</th>
     </tr>
     <tr style="background:#e5e7eb">${skillHeaderCells}
     </tr>
@@ -2920,9 +2921,9 @@ function buildMultiSkillHtml({ empRows, levelCounts, skillDefs, dept, section, d
   <div style="margin-top:10px">
     <table style="width:100%"><thead>
       <tr style="background:#d1d5db">
-        <th style="border:1px solid #666;padding:3px;font-size:9px;text-align:center" colspan="2" rowspan="2">ระดับความสามารถ</th>
+        <th style="border:1px solid #666;padding:3px;font-size:9px;text-align:center" colspan="2" rowspan="2">{trI18n('ระดับความสามารถ')}</th>
         ${catGroups.map(g => `<th colspan="${g.skills.length}" style="border:1px solid #666;background:${g.color}18;color:${g.color};padding:3px 2px;font-size:8px;font-weight:800;text-align:center">${g.icon} ${g.label}</th>`).join('')}
-        <th style="border:1px solid #666;background:#d1fae5;padding:3px 2px;font-size:9px;text-align:center" rowspan="2">ทักษะโดยรวม</th>
+        <th style="border:1px solid #666;background:#d1fae5;padding:3px 2px;font-size:9px;text-align:center" rowspan="2">{trI18n('ทักษะโดยรวม')}</th>
       </tr>
       <tr style="background:#e5e7eb">
         ${orderedDefs.map(s => `<th style="border:1px solid #666;background:#e5e7eb;padding:3px 2px;font-size:9px;text-align:center;writing-mode:vertical-rl;transform:rotate(180deg);height:70px;white-space:nowrap">${s.label}</th>`).join('')}
@@ -3138,7 +3139,7 @@ function MultiSkillFormTab() {
         <span className="spacer" />
         <button onClick={load} disabled={loading}
           style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
-          {loading ? 'กำลังโหลด...' : 'ดึงข้อมูล'}
+          {loading ? trI18n('กำลังโหลด...') : trI18n('ดึงข้อมูล')}
         </button>
         {employees.length > 0 && (
           <CsvBtn onClick={() => {
@@ -3180,13 +3181,13 @@ function MultiSkillFormTab() {
                   <select value={val} onChange={e => set(e.target.value)} style={{ width: '100%', padding: '6px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)' }}>
                     <option value="">—</option>
                     {val && !opts.includes(val) && <option value={val}>{plain ? val : `${val} ⚠ ไม่มีในผัง`}</option>}
-                    {opts.map(o => <option key={o} value={o}>{o}</option>)}
+                    {opts.map(o => <option key={o} value={o}>{trI18n(o)}</option>)}
                   </select>
                 </div>
               ))}
               <div>
                 <span style={lbSt}>หัวหน้าแผนก</span>
-                <PersonSelect value={headName} roles={['supervisor']} lineIds={filterLine ? [filterLine] : undefined} placeholder="ค้นชื่อหัวหน้าแผนก…"
+                <PersonSelect value={headName} roles={['supervisor']} lineIds={filterLine ? [filterLine] : undefined} placeholder={trI18n('ค้นชื่อหัวหน้าแผนก…')}
                   onChange={({ name }) => setHeadName(name)} inputStyle={{ padding: '6px 30px 6px 10px' }} />
               </div>
             </div>
@@ -3204,7 +3205,7 @@ function MultiSkillFormTab() {
                     <span style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 'var(--r-xs)', padding: '1px 5px' }}>{autoRole}</span>
                   </div>
                   {/* 2026-09-07 เลือกจาก profiles (<PersonSelect>) — role ตามช่องขึ้นก่อน · เลือกแล้วลายเซ็นตามมาเอง (พิมพ์เองยังได้แต่ติดป้าย) */}
-                  <PersonSelect value={name} roles={autoRole.split('/')} lineIds={filterLine ? [filterLine] : undefined} placeholder="ชื่อ-นามสกุล"
+                  <PersonSelect value={name} roles={autoRole.split('/')} lineIds={filterLine ? [filterLine] : undefined} placeholder={trI18n('ชื่อ-นามสกุล')}
                     style={{ marginBottom: 6 }} inputStyle={{ padding: '5px 30px 5px 8px', fontSize: 12 }}
                     onChange={({ name: nm, signature_url }) => { setName(nm); if (signature_url) setSig(signature_url); }} />
                   {sig ? (
@@ -3216,7 +3217,7 @@ function MultiSkillFormTab() {
                   ) : (
                     <label style={{ display: 'block', cursor: 'pointer' }}>
                       <div style={{ height: 48, border: '1px dashed var(--border2)', borderRadius: 'var(--r-xs)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--muted)' }}>
-                        อัปโหลดลายเซ็น
+                        {trI18n('อัปโหลดลายเซ็น')}
                       </div>
                       <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async e => {
                         const picked = e.target.files?.[0];
@@ -3297,15 +3298,15 @@ function MultiSkillFormTab() {
               <thead>
                 <tr>
                   <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', width: 30, textAlign: 'center', position: 'sticky', left: 0, zIndex: 3 }}>#</th>
-                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 120, position: 'sticky', left: 30, zIndex: 3 }}>ชื่อ-สกุล</th>
-                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 80, position: 'sticky', left: 150, zIndex: 3 }}>ตำแหน่ง</th>
+                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 120, position: 'sticky', left: 30, zIndex: 3 }}>{trI18n('ชื่อ-สกุล')}</th>
+                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 80, position: 'sticky', left: 150, zIndex: 3 }}>{trI18n('ตำแหน่ง')}</th>
                   {msVisibleGroups.map(g => (
                     <th key={g.key} colSpan={g.skills.length} style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: `${tint(g.color, 'dim')}`, color: g.color, textAlign: 'center' }}>
                       <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '0.04em' }}>{g.icon} {g.label}</div>
                       {g.desc && <div style={{ fontSize: 11, fontWeight: 400, color: g.color, opacity: 0.75, marginTop: 1 }}>{g.desc}</div>}
                     </th>
                   ))}
-                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--green-dim)', color: 'var(--green)', width: 44, textAlign: 'center', fontSize: 11, verticalAlign: 'bottom' }}>ทักษะโดยรวม</th>
+                  <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--green-dim)', color: 'var(--green)', width: 44, textAlign: 'center', fontSize: 11, verticalAlign: 'bottom' }}>{trI18n('ทักษะโดยรวม')}</th>
                 </tr>
                 <tr>
                   {msVisibleDefs.map((s, si) => {
@@ -3361,18 +3362,18 @@ function MultiSkillFormTab() {
               <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr>
-                    <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 8px', background: 'var(--bg3)', minWidth: 60 }}>ระดับ</th>
-                    <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 8px', background: 'var(--bg3)', minWidth: 120 }}>ความหมาย</th>
+                    <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 8px', background: 'var(--bg3)', minWidth: 60 }}>{trI18n('ระดับ')}</th>
+                    <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 8px', background: 'var(--bg3)', minWidth: 120 }}>{trI18n('ความหมาย')}</th>
                     {msVisibleGroups.map(g => (
                       <th key={g.key} colSpan={g.skills.length} style={{ border: '1px solid var(--border2)', padding: '3px 4px', background: `${tint(g.color, 'dim')}`, color: g.color, textAlign: 'center', fontSize: 11, fontWeight: 800 }}>
                         {g.icon} {g.label}
                       </th>
                     ))}
-                    <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--green-dim)', color: 'var(--green)', width: 68, textAlign: 'center', fontSize: 11 }}>รวม</th>
+                    <th rowSpan={2} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--green-dim)', color: 'var(--green)', width: 68, textAlign: 'center', fontSize: 11 }}>{trI18n('รวม')}</th>
                   </tr>
                   <tr>
                     {msVisibleDefs.map(s => (
-                      <th key={s.name} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 44, textAlign: 'center', fontSize: 11 }}>{s.label}</th>
+                      <th key={s.name} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 44, textAlign: 'center', fontSize: 11 }}>{trI18n(s.label)}</th>
                     ))}
                   </tr>
                 </thead>
@@ -3808,16 +3809,16 @@ function SkillAllowanceTab() {
   <thead>
     <tr><th colspan="${totalCols}" style="border:none;background:#fff;padding:0;text-align:left">${headerBlock}</th></tr>
     <tr>
-      <th rowspan="2">ลำดับ</th>
-      <th rowspan="2">เลขที่บัตรพนักงาน</th>
-      <th rowspan="2">ชื่อ - สกุล</th>
-      <th rowspan="2">กะ</th>
+      <th rowspan="2">{trI18n('ลำดับ')}</th>
+      <th rowspan="2">{trI18n('เลขที่บัตรพนักงาน')}</th>
+      <th rowspan="2">{trI18n('ชื่อ - สกุล')}</th>
+      <th rowspan="2">{trI18n('กะ')}</th>
       <th colspan="${days.length}">เดือน ${THAI_MONTHS[month]}</th>
-      <th rowspan="2">รวม</th>
-      <th rowspan="2">ลายเซ็นพนักงาน</th>
-      <th rowspan="2">TA ตรวจสอบการทำงาน</th>
-      <th rowspan="2">ลายเซ็น TA</th>
-      <th rowspan="2">หมายเหตุ</th>
+      <th rowspan="2">{trI18n('รวม')}</th>
+      <th rowspan="2">{trI18n('ลายเซ็นพนักงาน')}</th>
+      <th rowspan="2">{trI18n('TA ตรวจสอบการทำงาน')}</th>
+      <th rowspan="2">{trI18n('ลายเซ็น TA')}</th>
+      <th rowspan="2">{trI18n('หมายเหตุ')}</th>
     </tr>
     <tr>
       ${days.map(d => `<th>${d}</th>`).join('')}
@@ -3850,7 +3851,7 @@ function SkillAllowanceTab() {
         <LineSelect lines={scopedLineNames ? lines.filter(l => scopedLineNames.includes(l.name)) : lines} value={line} placeholder={ALL.line}
           onChange={setLine} />
         <select value={team} onChange={e => setTeam(e.target.value)}>
-          <option value="">{ALL.team}</option>
+          <option value="">{trI18n(ALL.team)}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
         <span className="filter-label">ปี</span>
@@ -3861,17 +3862,17 @@ function SkillAllowanceTab() {
         </select>
         <span className="filter-label">เดือน</span>
         <select value={month} onChange={e => setMonth(Number(e.target.value))}>
-          {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+          {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{trI18n(m)}</option>)}
         </select>
         <span className="filter-label">งวด</span>
         <select value={period} onChange={e => setPeriod(Number(e.target.value))}>
-          <option value={1}>งวด 1 (วันที่ 1-15)</option>
-          <option value={2}>งวด 2 (วันที่ 16-สิ้นเดือน)</option>
+          <option value={1}>{trI18n('งวด 1 (วันที่ 1-15)')}</option>
+          <option value={2}>{trI18n('งวด 2 (วันที่ 16-สิ้นเดือน)')}</option>
         </select>
         <span className="spacer" />
         <button onClick={load} disabled={loading}
           style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
-          {loading ? 'กำลังโหลด...' : 'ดึงข้อมูล'}
+          {loading ? trI18n('กำลังโหลด...') : trI18n('ดึงข้อมูล')}
         </button>
         {rows.length > 0 && (
           <span className="filter-count" style={{ fontStyle: 'italic' }}>กด Export ด้านล่างเพื่อพิมพ์</span>
@@ -3908,8 +3909,8 @@ function SkillAllowanceTab() {
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ประเภทงาน</div>
           <select value={workType} onChange={e => setWorkType(e.target.value)} style={{ width: 'auto', padding: '6px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }}>
-            <option value="">— เลือกประเภท —</option>
-            {workTypes.map(w => <option key={w} value={w}>{w}</option>)}
+            <option value="">{trI18n('— เลือกประเภท —')}</option>
+            {workTypes.map(w => <option key={w} value={w}>{trI18n(w)}</option>)}
           </select>
         </div>
         <div>
@@ -3932,7 +3933,7 @@ function SkillAllowanceTab() {
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>บันทึกโดย (หัวหน้างาน)</div>
           {/* 2026-09-07 เลือกคนจาก profiles ผ่าน <PersonSelect> (ค่า auto-fill เดิมยังโชว์ · พิมพ์เองได้พร้อมป้าย) */}
-          <PersonSelect value={signerHead} roles={['supervisor', 'leader']} placeholder="ค้นชื่อ…" style={{ width: 200 }} onChange={({ name }) => setSignerHead(name)} />
+          <PersonSelect value={signerHead} roles={['supervisor', 'leader']} placeholder={trI18n('ค้นชื่อ…')} style={{ width: 200 }} onChange={({ name }) => setSignerHead(name)} />
           {/* 👨‍🔧 รายชื่อหัวหน้างานจริงของไลน์นี้ (28/10 · feedback user "ไลน์นึงมีหัวหน้าได้ 2-3 คน")
               🔴 ใบนี้มีช่องเซ็น "หัวหน้างาน" ช่องเดียว ⇒ มีหลายคน = **ให้คนเลือก ห้ามเดาให้** */}
           {headChoices.length > 1 && (
@@ -3979,17 +3980,17 @@ function SkillAllowanceTab() {
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>บันทึกโดย (ผู้จัดการต้นสังกัด)</div>
           {/* 2026-09-07 เลือกคนจาก profiles ผ่าน <PersonSelect> (ค่า auto-fill เดิมยังโชว์ · พิมพ์เองได้พร้อมป้าย) */}
-          <PersonSelect value={signerManager} roles={['manager']} placeholder="ค้นชื่อ…" style={{ width: 200 }} onChange={({ name }) => setSignerManager(name)} />
+          <PersonSelect value={signerManager} roles={['manager']} placeholder={trI18n('ค้นชื่อ…')} style={{ width: 200 }} onChange={({ name }) => setSignerManager(name)} />
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>บันทึกโดย (เจ้าหน้าที่ TA)</div>
           {/* 2026-09-07 เลือกคนจาก profiles ผ่าน <PersonSelect> (ค่า auto-fill เดิมยังโชว์ · พิมพ์เองได้พร้อมป้าย) */}
-          <PersonSelect value={signerTA} placeholder="ค้นชื่อ…" style={{ width: 200 }} onChange={({ name }) => setSignerTA(name)} />
+          <PersonSelect value={signerTA} placeholder={trI18n('ค้นชื่อ…')} style={{ width: 200 }} onChange={({ name }) => setSignerTA(name)} />
         </div>
         <div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>บันทึกโดย (ผู้จัดการส่วน HRM)</div>
           {/* 2026-09-07 เลือกคนจาก profiles ผ่าน <PersonSelect> (ค่า auto-fill เดิมยังโชว์ · พิมพ์เองได้พร้อมป้าย) */}
-          <PersonSelect value={signerHRM} placeholder="ค้นชื่อ…" style={{ width: 200 }} onChange={({ name }) => setSignerHRM(name)} />
+          <PersonSelect value={signerHRM} placeholder={trI18n('ค้นชื่อ…')} style={{ width: 200 }} onChange={({ name }) => setSignerHRM(name)} />
         </div>
       </div>
 
@@ -4017,14 +4018,14 @@ function SkillAllowanceTab() {
           <table style={{ minWidth: 600, borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr>
-                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', whiteSpace: 'nowrap' }}>ลำดับ</th>
-                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', whiteSpace: 'nowrap' }}>รหัส</th>
-                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 120 }}>ชื่อ - สกุล</th>
-                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)' }}>กะ</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', whiteSpace: 'nowrap' }}>{trI18n('ลำดับ')}</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', whiteSpace: 'nowrap' }}>{trI18n('รหัส')}</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 120 }}>{trI18n('ชื่อ - สกุล')}</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)' }}>{trI18n('กะ')}</th>
                 {days.map(d => (
-                  <th key={d} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 24, textAlign: 'center', fontSize: 11 }}>{d}</th>
+                  <th key={d} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: 'var(--bg3)', width: 24, textAlign: 'center', fontSize: 11 }}>{trI18n(d)}</th>
                 ))}
-                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', textAlign: 'center' }}>รวม</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', textAlign: 'center' }}>{trI18n('รวม')}</th>
               </tr>
             </thead>
             <tbody>
@@ -4329,7 +4330,7 @@ function AttendanceFormTab() {
     const dayHeaderRow2 = days.map(d => {
       const sun = isSunday(d);
       const bg = sun ? 'background:#fff8d0;' : '';
-      return `<th style="${thStyle}${bg}width:7px">ช</th><th style="${thStyle}${bg}width:7px">บ</th><th style="${thStyle}${bg}width:7px">อ</th>`;
+      return `<th style="${thStyle}${bg}width:7px">{trI18n('ช')}</th><th style="${thStyle}${bg}width:7px">{trI18n('บ')}</th><th style="${thStyle}${bg}width:7px">{trI18n('อ')}</th>`;
     }).join('');
 
     const dayCols = days.map(() => `<col style="width:7px"/><col style="width:7px"/><col style="width:7px"/>`).join('');
@@ -4437,18 +4438,18 @@ function AttendanceFormTab() {
   </colgroup>
   <thead>
     <tr>
-      <th rowspan="2" style="${thStyle}">ลำดับ</th>
-      <th rowspan="2" style="${thStyle}">ชื่อ - สกุล</th>
-      <th rowspan="2" style="${thStyle}">เลขที่บัตร</th>
+      <th rowspan="2" style="${thStyle}">{trI18n('ลำดับ')}</th>
+      <th rowspan="2" style="${thStyle}">{trI18n('ชื่อ - สกุล')}</th>
+      <th rowspan="2" style="${thStyle}">{trI18n('เลขที่บัตร')}</th>
       ${dayHeaderRow1}
-      <th rowspan="2" style="${thStyle}width:13px">ส</th>
-      <th rowspan="2" style="${thStyle}width:13px">ป</th>
-      <th rowspan="2" style="${thStyle}width:13px">ก</th>
-      <th rowspan="2" style="${thStyle}width:14px">พ</th>
-      <th rowspan="2" style="${thStyle}width:14px">กธ</th>
-      <th rowspan="2" style="${thStyle}width:14px">บ</th>
-      <th rowspan="2" style="${thStyle}width:13px">ข</th>
-      <th rowspan="2" style="${thStyle}width:14px">พง</th>
+      <th rowspan="2" style="${thStyle}width:13px">{trI18n('ส')}</th>
+      <th rowspan="2" style="${thStyle}width:13px">{trI18n('ป')}</th>
+      <th rowspan="2" style="${thStyle}width:13px">{trI18n('ก')}</th>
+      <th rowspan="2" style="${thStyle}width:14px">{trI18n('พ')}</th>
+      <th rowspan="2" style="${thStyle}width:14px">{trI18n('กธ')}</th>
+      <th rowspan="2" style="${thStyle}width:14px">{trI18n('บ')}</th>
+      <th rowspan="2" style="${thStyle}width:13px">{trI18n('ข')}</th>
+      <th rowspan="2" style="${thStyle}width:14px">{trI18n('พง')}</th>
       <th rowspan="2" style="${thStyle}width:16px">OT</th>
     </tr>
     <tr>
@@ -4491,7 +4492,7 @@ function AttendanceFormTab() {
         <LineScopeSelect lines={attLinesInScope} sections={attSections} section={dept} line={line} unit={empDept} pickDept
           onChange={(sec, ln, { unit }) => { setDept(ln || unit ? '' : sec); setLine(ln); setEmpDept(unit || ''); }} />
         <select value={team} onChange={e => setTeam(e.target.value)}>
-          <option value="">{ALL.team}</option>
+          <option value="">{trI18n(ALL.team)}</option>
           {teams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
         </select>
         <span className="filter-label">ปี</span>
@@ -4502,12 +4503,12 @@ function AttendanceFormTab() {
         </select>
         <span className="filter-label">เดือน</span>
         <select value={month} onChange={e => setMonth(Number(e.target.value))}>
-          {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{m}</option>)}
+          {THAI_MONTHS.slice(1).map((m, i) => <option key={i+1} value={i+1}>{trI18n(m)}</option>)}
         </select>
         <span className="filter-label">งวด</span>
         <select value={period} onChange={e => setPeriod(Number(e.target.value))}>
-          <option value={1}>งวด 1 (วันที่ 1-15)</option>
-          <option value={2}>งวด 2 (วันที่ 16-สิ้นเดือน)</option>
+          <option value={1}>{trI18n('งวด 1 (วันที่ 1-15)')}</option>
+          <option value={2}>{trI18n('งวด 2 (วันที่ 16-สิ้นเดือน)')}</option>
         </select>
         <span className="spacer" />
         {/* เลขที่เอกสาร = ค่าหัวใบพิมพ์ (ไม่ใช่ตัวกรองมุมมอง) ⇒ อยู่หลัง spacer ชิดปุ่ม (UI-STANDARD §3.5) */}
@@ -4516,12 +4517,12 @@ function AttendanceFormTab() {
           type="text"
           value={formNo}
           onChange={e => setFormNo(e.target.value)}
-          placeholder="เช่น F-HR-001"
+          placeholder={trI18n('เช่น F-HR-001')}
           style={{ width: 110 }}
         />
         <button onClick={load} disabled={loading}
           style={{ padding: '0 20px', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: 'pointer', opacity: loading ? 0.6 : 1 }}>
-          {loading ? 'กำลังโหลด...' : 'ดึงข้อมูล'}
+          {loading ? trI18n('กำลังโหลด...') : trI18n('ดึงข้อมูล')}
         </button>
         {empRows.length > 0 && (
           <span className="filter-count" style={{ fontStyle: 'italic' }}>กด Export ด้านล่างเพื่อพิมพ์</span>
@@ -4581,13 +4582,13 @@ function AttendanceFormTab() {
             <thead>
               <tr>
                 <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', whiteSpace: 'nowrap' }}>#</th>
-                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 100 }}>ชื่อ - สกุล</th>
-                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)' }}>รหัส</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', minWidth: 100 }}>{trI18n('ชื่อ - สกุล')}</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)' }}>{trI18n('รหัส')}</th>
                 {days.map(d => (
-                  <th key={d} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: isSunday(d) ? 'rgba(245,200,50,0.35)' : 'var(--bg3)', width: 22, textAlign: 'center', fontSize: 11 }}>{d}</th>
+                  <th key={d} style={{ border: '1px solid var(--border2)', padding: '4px 3px', background: isSunday(d) ? 'rgba(245,200,50,0.35)' : 'var(--bg3)', width: 22, textAlign: 'center', fontSize: 11 }}>{trI18n(d)}</th>
                 ))}
-                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', textAlign: 'center' }}>รวม</th>
-                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'rgba(255,150,50,0.15)', textAlign: 'center', color: '#c05000' }}>OT (ชม.)</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'var(--bg3)', textAlign: 'center' }}>{trI18n('รวม')}</th>
+                <th style={{ border: '1px solid var(--border2)', padding: '4px 6px', background: 'rgba(255,150,50,0.15)', textAlign: 'center', color: '#c05000' }}>{trI18n('OT (ชม.)')}</th>
               </tr>
             </thead>
             <tbody>

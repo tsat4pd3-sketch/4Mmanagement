@@ -10,6 +10,7 @@ import { buildWipChains, computeChainWip, netRequirement } from '../utils/wipCha
 import { fetchAllPages } from '../utils/fetchByIds';
 import { openOnly } from '../utils/shipStatus';
 
+import { tr } from '../utils/i18n';
 /* ═══ 📦 WIP ระหว่างขั้น (เฟส 1 · 2026-08-18) — แท็บใน /line-stock ═══
    ยอดค้างทุก buffer ของสาย OP คำนวณจากใบผลิตที่บันทึกอยู่แล้ว (Σขั้น − Σปลายทาง)
    หน้างานไม่ต้องคีย์รับ-จ่าย · บัญชีภายในแผนก ไม่เกี่ยว SAP/สต็อกทางการ
@@ -190,7 +191,7 @@ export default function WipBetweenSteps() {
             {/* เฟส 2 — ความต้องการ → ต้องผลิต FG เพิ่มเท่าไหร่ (ทดสต็อก FG ให้) */}
             {chainView.parentIsProduced && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10, padding: '8px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', fontSize: 12.5 }}>
-                <label style={{ fontWeight: 700 }}>ความต้องการ (ชิ้น)</label>
+                <label style={{ fontWeight: 700 }}>{tr('ความต้องการ (ชิ้น)')}</label>
                 <input type="number" min="0" value={demandVal}
                   onChange={e => setDemand(d => ({ ...d, [pm]: e.target.value }))}
                   placeholder="0" style={{ width: 110, padding: '5px 8px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, fontWeight: 700 }} />
@@ -211,10 +212,10 @@ export default function WipBetweenSteps() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                 <thead>
                   <tr style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'left' }}>
-                    <th style={{ padding: '4px 8px' }}>ขั้น (OP)</th>
-                    <th style={{ padding: '4px 8px' }}>สถานี · สะสม</th>
-                    <th style={{ padding: '4px 8px', textAlign: 'right' }}>ผ่านขั้นนี้แล้ว ยังไม่ถึงปลายทาง</th>
-                    {net && <th style={{ padding: '4px 8px', textAlign: 'right' }}>ต้องทำเพิ่ม</th>}
+                    <th style={{ padding: '4px 8px' }}>{tr('ขั้น (OP)')}</th>
+                    <th style={{ padding: '4px 8px' }}>{tr('สถานี · สะสม')}</th>
+                    <th style={{ padding: '4px 8px', textAlign: 'right' }}>{tr('ผ่านขั้นนี้แล้ว ยังไม่ถึงปลายทาง')}</th>
+                    {net && <th style={{ padding: '4px 8px', textAlign: 'right' }}>{tr('ต้องทำเพิ่ม')}</th>}
                     <th style={{ padding: '4px 8px' }}></th>
                   </tr>
                 </thead>
@@ -296,15 +297,15 @@ export default function WipBetweenSteps() {
               กรอก<b>จำนวนที่นับได้จริงตอนนี้</b> (ของที่ผ่านขั้นนี้แล้วและยังไม่ถึงปลายทาง) — ระบบจะตั้งต้นจากเลขนี้แล้วนับใบผลิตต่อให้เอง
             </div>
             <input type="number" min="0" autoFocus value={countQty} onChange={e => setCountQty(e.target.value)}
-              placeholder="จำนวนที่นับได้ (ชิ้น)" style={{ padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 14 }} />
+              placeholder={tr('จำนวนที่นับได้ (ชิ้น)')} style={{ padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 14 }} />
             <input value={countNote} onChange={e => setCountNote(e.target.value)}
-              placeholder="หมายเหตุ (ถ้ามี)" style={{ padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
+              placeholder={tr('หมายเหตุ (ถ้ามี)')} style={{ padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }} />
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button disabled={saving} onClick={() => setCounting(null)}
-                style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+                style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>{tr('ยกเลิก')}</button>
               <button disabled={saving} onClick={saveCount}
                 style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
-                {saving ? 'กำลังบันทึก…' : '💾 บันทึกยอดนับจริง'}
+                {saving ? tr('กำลังบันทึก…') : tr('💾 บันทึกยอดนับจริง')}
               </button>
             </div>
           </div>

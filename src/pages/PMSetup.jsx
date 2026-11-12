@@ -50,6 +50,7 @@ import Segmented from '../components/Segmented';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
 import OverflowMenu from '../components/OverflowMenu';
+import { tr } from '../utils/i18n';
 import InfoMore from '../components/InfoMore';   // ⋯ ปุ่มตายตัว ≤2 (UI §6.35)
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 /* สีจาก token (var(--red) …) ต่อ alpha-hex ไม่ได้ (SVG/CSS parse พัง = ดำ · UI §6.17) ⇒ ย่อยเป็น -dim/-line · hex จาก DB ยังต่อ alpha ได้เหมือนเดิม */
@@ -187,30 +188,30 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
       extra={isVar && (
         <button type="button" onClick={onDuplicate} title="ทำสำเนาจุดนี้เป็นอีกแกน (X↔Y) — copy ชื่อ/tool ให้ กรอกแค่ spec"
           style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 600, cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)' }}>
-          ⧉ อีกแกน
+          {tr('⧉ อีกแกน')}
         </button>
       )}>
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-        <input value={cp.name} onChange={e => onChange({ name: e.target.value })} placeholder="ชื่อจุดตรวจสอบ เช่น LP1" />
+        <input value={cp.name} onChange={e => onChange({ name: e.target.value })} placeholder={tr('ชื่อจุดตรวจสอบ เช่น LP1')} />
         {/* 🔴 ช่องนี้ = ตัวจัดกลุ่มการ์ด (groupCheckpoints + <div key={g.name}>) ⇒ ถ้าส่งค่าออกทุก
             keystroke การ์ดจะย้ายกลุ่ม/ถูก unmount ทุกตัวอักษร = หลุดโฟกัส ต้องคลิกกลับทุกครั้ง
             ⇒ ต้องเป็น <CommitInput> (ส่งค่าตอน blur/Enter) ห้ามเปลี่ยนกลับเป็น <input> */}
         <CommitInput value={cp.group_name ?? ''} onCommit={v => onChange({ group_name: v })}
-          placeholder="กลุ่ม/หัวข้อ (Item) เช่น Locate Pin" list="cp-group-options" />
+          placeholder={tr('กลุ่ม/หัวข้อ (Item) เช่น Locate Pin')} list="cp-group-options" />
       </div>
 
       <div className="mgrid" style={S.inputRow}>
         <div style={{ marginBottom: 10 }}>
-          <label style={S.label}>ประเภท (Category)</label>
+          <label style={S.label}>{tr('ประเภท (Category)')}</label>
           <select value={cp.category ?? ''} onChange={e => onChange({ category: e.target.value || null })}>
-            <option value="">— ไม่ระบุ —</option>
+            <option value="">{tr('— ไม่ระบุ —')}</option>
             {catOpts.map(c => <option key={c.code} value={c.code}>{c.code} — {c.label}</option>)}
           </select>
         </div>
         <div style={{ marginBottom: 10 }}>
-          <label style={S.label}>วิธีการตรวจสอบ</label>
+          <label style={S.label}>{tr('วิธีการตรวจสอบ')}</label>
           <select value={cp.checking_method ?? ''} onChange={e => onChange({ checking_method: e.target.value || null })}>
-            <option value="">— ไม่ระบุ —</option>
+            <option value="">{tr('— ไม่ระบุ —')}</option>
             {(methods ?? []).map(m => <option key={m.code} value={m.code}>{m.icon} {m.label}</option>)}
           </select>
         </div>
@@ -245,7 +246,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
             <div className="mgrid" style={S.inputRow}>
               {mMode !== 'lte' && <div><label style={{ ...S.label, color: 'var(--green)' }}>{mMode === 'between' ? 'ค่าต่ำสุด (min)' : 'ค่าต่ำสุด (≥)'}</label><input type="number" value={cp.lsl} onChange={e => onChange({ lsl: e.target.value })} placeholder="0.45" /></div>}
               {mMode !== 'gte' && <div><label style={{ ...S.label, color: 'var(--green)' }}>{mMode === 'between' ? 'ค่าสูงสุด (max)' : 'ค่าสูงสุด (≤)'}</label><input type="number" value={cp.usl} onChange={e => onChange({ usl: e.target.value })} placeholder="—" /></div>}
-              <div><label style={S.label}>หน่วย</label><input value={cp.unit} onChange={e => onChange({ unit: e.target.value })} placeholder="Mpa" /></div>
+              <div><label style={S.label}>{tr('หน่วย')}</label><input value={cp.unit} onChange={e => onChange({ unit: e.target.value })} placeholder="Mpa" /></div>
             </div>
             <p style={{ fontSize: 11, color: 'var(--muted)', margin: 0 }}>อ่านค่าครั้งเดียว → ระบบเทียบเกณฑ์ ขึ้น OK/NG ให้อัตโนมัติ</p>
           </div>
@@ -290,7 +291,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
             {cp.type === 'note' && <span style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', color: 'var(--muted)', fontSize: 11, border: '1px solid var(--border)' }}>+ ข้อความ</span>}
           </div>
           <div>
-            <label style={S.label}>เกณฑ์ตัดสิน (Standard) — ขึ้นบรรทัดใหม่ได้</label>
+            <label style={S.label}>{tr('เกณฑ์ตัดสิน (Standard) — ขึ้นบรรทัดใหม่ได้')}</label>
             <textarea rows={2} value={cp.description ?? ''} onChange={e => onChange({ description: e.target.value })}
               placeholder={'เช่น กดชิ้นงานแน่น ไม่หลวมคลอน\nไม่เกิดการรั่วซึมบริเวณซิล, Fitting'} />
           </div>
@@ -1087,7 +1088,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                       return (
                         <>
                           <select value={moveTo} onChange={e => { setMoveTo(e.target.value); setError('') }} style={{ width: 'auto', minWidth: 150, fontSize: 12 }}>
-                            <option value="">— เลือกแผนกปลายทาง —</option>
+                            <option value="">{tr('— เลือกแผนกปลายทาง —')}</option>
                             {okRows.map(t => (
                               <option key={t.key} value={t.key}>{t.icon ? `${t.icon} ` : ''}{t.label}</option>
                             ))}
@@ -1101,11 +1102,11 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                     })()}
                     <button type="button" disabled={!moveTo || moveBusy} onClick={() => handleTransfer('move')}
                       style={{ ...S.btnSm(deptColor), opacity: (!moveTo || moveBusy) ? 0.5 : 1 }} title="เปลี่ยนเจ้าของรายการตรวจ — ประวัติการตรวจย้ายตามไปด้วย">
-                      {moveBusy ? '…' : 'ย้าย'}
+                      {moveBusy ? '…' : tr('ย้าย')}
                     </button>
                     <button type="button" disabled={!moveTo || moveBusy} onClick={() => handleTransfer('copy')}
                       style={{ ...S.btnSm('var(--blue)'), opacity: (!moveTo || moveBusy) ? 0.5 : 1 }} title="ทำสำเนาจุดตรวจให้อีกแผนก — ของเดิมยังอยู่ ประวัติแยกกัน">
-                      {moveBusy ? '…' : '⧉ คัดลอก'}
+                      {moveBusy ? '…' : tr('⧉ คัดลอก')}
                     </button>
                   </div>
                 )}
@@ -1143,9 +1144,9 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                         {/* ตัวกรองลิสต์ติ๊กหลายเครื่อง ⇒ ใช้ <SearchInput> (ไม่ใช่ MachineSelect ซึ่งเลือกได้ตัวเดียว) · UI-STANDARD §4 */}
                         <SearchInput value={copyQ} onChange={setCopyQ} fields="เลขเครื่อง / ไลน์" grow={false} />
                         <button type="button" onClick={() => setCopyTo(shown.map(e => e.id))} style={S.btnSm('var(--blue)')}>
-                          เลือกที่เห็นทั้งหมด ({shown.length})
+                          {tr('เลือกที่เห็นทั้งหมด (')}{shown.length})
                         </button>
-                        {!!copyTo.length && <button type="button" onClick={() => setCopyTo([])} style={S.btnSm('#888')}>ล้าง</button>}
+                        {!!copyTo.length && <button type="button" onClick={() => setCopyTo([])} style={S.btnSm('#888')}>{tr('ล้าง')}</button>}
                         <span className="spacer" style={{ flex: 1 }} />
                         <button type="button" disabled={!copyTo.length || copyBusy} onClick={handleCopyToEquipment}
                           style={{ ...S.btnSm('var(--blue)'), opacity: (!copyTo.length || copyBusy) ? 0.5 : 1, fontWeight: 800 }}>
@@ -1221,10 +1222,10 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
 
           {!isEdit && (
             <div>
-              <label style={S.label}>ประเภทการเพิ่ม</label>
+              <label style={S.label}>{tr('ประเภทการเพิ่ม')}</label>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => handleModeSwitch('workstation')} style={S.modeBtn(addMode === 'workstation')}>เลือกจาก Floor Map</button>
-                <button onClick={() => handleModeSwitch('manual')} style={S.modeBtn(addMode === 'manual')}>Facility / อื่นๆ</button>
+                <button onClick={() => handleModeSwitch('workstation')} style={S.modeBtn(addMode === 'workstation')}>{tr('เลือกจาก Floor Map')}</button>
+                <button onClick={() => handleModeSwitch('manual')} style={S.modeBtn(addMode === 'manual')}>{tr('Facility / อื่นๆ')}</button>
               </div>
               <p style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
                 {addMode === 'workstation' ? 'เลือกเครื่องจักรจริงจาก Daily Report Machine Master' : 'เพิ่มเครื่องจักร/JIG ที่ไม่ได้อยู่ใน Machine Master เช่น Air Pump, Compressor'}
@@ -1236,7 +1237,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             <div>
               {/* 🔴 ตัวกรองชนิด — ต้องอยู่ "ก่อน" ช่องเลือก ไม่งั้นคนกดเลือกจากลิสต์ 713 ตัวที่ปนกันหมดก่อน
                   แล้วค่อยเห็นปุ่มชนิดข้างล่าง (ซึ่งเดิมไม่ได้กรองอะไรเลย) — feedback หน้างาน 2026-09-16 */}
-              <label style={S.label}>ชนิดอุปกรณ์ที่จะเลือก</label>
+              <label style={S.label}>{tr('ชนิดอุปกรณ์ที่จะเลือก')}</label>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
                 {[...Object.entries(EQUIP_TYPE_LABEL), ['all', 'ทั้งหมด']].map(([k, v]) => (
                   <button key={k} onClick={() => {
@@ -1252,7 +1253,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                   }}>{v} <span style={{ opacity: 0.7, fontWeight: 500 }}>({kindCounts[k] ?? 0})</span></button>
                 ))}
               </div>
-              <label style={S.label}>เลือกเครื่องจักร ({machineOptionsShown.length} ตัว)</label>
+              <label style={S.label}>{tr('เลือกเครื่องจักร (')}{machineOptionsShown.length} {tr('ตัว)')}</label>
               {/* 🔴 ต้อง groupByLine — feedback หน้างาน 2026-09-08 "ปกติมันจะเป็นไลน์ผลิตค่ะ ตอนจะแอดอุปกรณ์ใหม่":
                   ทะเบียนมี 635 ตัว (แม่พิมพ์ 262 · เครื่อง 189 · จิ๊ก 148 · facility 36) และ 272 ตัวใช้ชื่อพาร์ทยาวๆ
                   เป็น machine_no → ลิสต์แบนเรียงตามรหัสขึ้น "4B-01 / 4X4 BRACKET…" ปนกัน ไล่หาไลน์ตัวเองไม่ได้
@@ -1281,7 +1282,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
               โหมด Facility/อื่นๆ: ไม่มีลิสต์เครื่อง → ปุ่มชนิดคือค่าที่จะบันทึกจริง */}
           {(addMode === 'manual' || isEdit) && (
             <div>
-              <label style={S.label}>ประเภทอุปกรณ์</label>
+              <label style={S.label}>{tr('ประเภทอุปกรณ์')}</label>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {Object.entries(EQUIP_TYPE_LABEL).map(([k, v]) => (
                   <button key={k} onClick={() => setEquipType(k)} style={{
@@ -1297,7 +1298,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
 
           {addMode === 'manual' && (
             <div>
-              <label style={S.label}>หมวดหมู่เครื่องจักร</label>
+              <label style={S.label}>{tr('หมวดหมู่เครื่องจักร')}</label>
               <div style={{ display: 'flex', gap: 6 }}>
                 {Object.entries(CATEGORY_TYPE_META).map(([k, v]) => (
                   <button key={k} onClick={() => setEquipCategory(k)} style={{
@@ -1312,24 +1313,24 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
           )}
 
           <div>
-            <label style={S.label}>ชื่ออุปกรณ์ *</label>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="เช่น JIG-001 ตรวจ Pin Diameter"
+            <label style={S.label}>{tr('ชื่ออุปกรณ์ *')}</label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder={tr('เช่น JIG-001 ตรวจ Pin Diameter')}
               readOnly={addMode === 'workstation' && !!machineId && !isEdit}
               style={{ opacity: (addMode === 'workstation' && !!machineId && !isEdit) ? 0.7 : 1 }} />
           </div>
 
           <div>
-            <label style={S.label}>รายละเอียด (ไม่บังคับ)</label>
-            <input value={description} onChange={e => setDescription(e.target.value)} placeholder="คำอธิบายเพิ่มเติม" />
+            <label style={S.label}>{tr('รายละเอียด (ไม่บังคับ)')}</label>
+            <input value={description} onChange={e => setDescription(e.target.value)} placeholder={tr('คำอธิบายเพิ่มเติม')} />
           </div>
 
           <div className="mgrid" style={S.inputRow}>
-            <div><label style={S.label}>No./รหัส</label><input value={jigNo} onChange={e => setJigNo(e.target.value)} placeholder="JIG-001" /></div>
+            <div><label style={S.label}>{tr('No./รหัส')}</label><input value={jigNo} onChange={e => setJigNo(e.target.value)} placeholder="JIG-001" /></div>
             {/* Process = key จาก process_types (label โชว์) — ค่าเก่าที่พิมพ์ไว้ (เช่น "Welding") ยังเลือกค้างได้ ไม่หายเงียบ · 2026-09-07 */}
             <div><label style={S.label}>Process</label>
               <select value={process} onChange={e => setProcess(e.target.value)} style={{ width: '100%' }}>
-                <option value="">— ไม่ระบุ —</option>
-                {process && !procTypes.some(p => p.key === process) && <option value={process}>⚠ {process} (ไม่มีในทะเบียนกระบวนการ)</option>}
+                <option value="">{tr('— ไม่ระบุ —')}</option>
+                {process && !procTypes.some(p => p.key === process) && <option value={process}>⚠ {process} {tr('(ไม่มีในทะเบียนกระบวนการ)')}</option>}
                 {procTypes.map(p => <option key={p.key} value={p.key}>{p.icon ? `${p.icon} ` : ''}{p.label}</option>)}
               </select>
             </div>
@@ -1352,7 +1353,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             <div><label style={S.label}>Part Name</label><input value={partName} onChange={e => setPartName(e.target.value)} placeholder="Pin A" /></div>
             <div><label style={S.label}>Part No.</label><input value={partNo} onChange={e => setPartNo(e.target.value)} placeholder="P-0001" /></div>
             {/* ค้นพาร์ทจาก Product Master → เติม Part Name/No. ให้ (jigs ไม่เก็บ mat_no) · พิมพ์ทับได้ = จิ๊กที่ใช้กับหลายพาร์ท · 2026-09-07 */}
-            <div style={{ gridColumn: '1 / -1' }}><label style={S.label}>เลือกพาร์ทจาก Product Master (เติม Part Name / Part No. ให้)</label>
+            <div style={{ gridColumn: '1 / -1' }}><label style={S.label}>{tr('เลือกพาร์ทจาก Product Master (เติม Part Name / Part No. ให้)')}</label>
               <ProductSelect value={partMat} lines={lineName ? [lineName] : undefined} allowFree
                 freeHint="(พาร์ทที่ยังไม่อยู่ใน Product Master — กรอก Part Name/No. เองด้านบน)"
                 onChange={res => {
@@ -1363,27 +1364,27 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
           </div>
 
           {(addMode === 'manual' || isEdit) && (
-            <div><label style={S.label}>ไลน์ / พื้นที่</label>
+            <div><label style={S.label}>{tr('ไลน์ / พื้นที่')}</label>
               {/* <LineSelect> แทนช่องพิมพ์เอง — jigs.line_name เป็นคีย์จัดกลุ่ม DailyPM/PMSchedule/FactoryMap · พื้นที่ facility
                   แยก optgroup จาก pm_facility_areas · ค่าเก่าที่ไม่อยู่ในทะเบียนยังโชว์ ⚠ ไม่หายเงียบ · 2026-09-07 */}
-              <LineSelect lines={lineOptions} value={lineName} onChange={setLineName} placeholder="— เลือกไลน์ / พื้นที่ —" includeRetired
+              <LineSelect lines={lineOptions} value={lineName} onChange={setLineName} placeholder={tr('— เลือกไลน์ / พื้นที่ —')} includeRetired
                 extraGroups={[{ label: 'พื้นที่ Facility / Utility', options: facilityAreas.filter(a => !lineOptions.some(l => l.name === a.name)).map(a => ({ value: a.name, label: a.name })) }]}
                 style={{ width: '100%' }} />
             </div>
           )}
 
           <div>
-            <label style={S.label}>รอบ PM — ทำซ้ำทุกกี่วัน ({deptLabel})</label>
+            <label style={S.label}>{tr('รอบ PM — ทำซ้ำทุกกี่วัน (')}{deptLabel})</label>
             <div style={S.freqBtns}>
               {CYCLE_PRESETS.map(p => <button key={p.days} onClick={() => setCycleDays(String(p.days))} style={S.freqBtn(Number(cycleDays) === p.days)}>{p.label}</button>)}
             </div>
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end', marginTop: 8 }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--text2)' }}>
-                หรือกำหนดเอง ทุก
+                {tr('หรือกำหนดเอง ทุก')}
                 <input type="number" min="1" max="3650" value={cycleDays} onChange={e => setCycleDays(e.target.value)} style={{ width: 80 }} aria-label="รอบ PM (วัน)" />
-                วัน
+                {tr('วัน')}
               </label>
-              <label style={{ fontSize: 12.5, color: 'var(--text2)' }}>วัน PM ครั้งถัดไป <span style={{ color: 'var(--muted)' }}>(ไม่บังคับ)</span>
+              <label style={{ fontSize: 12.5, color: 'var(--text2)' }}>{tr('วัน PM ครั้งถัดไป')} <span style={{ color: 'var(--muted)' }}>{tr('(ไม่บังคับ)')}</span>
                 <input type="date" value={nextDue} onChange={e => { setNextDue(e.target.value); setNextDueDirty(true) }} style={{ width: 170, display: 'block', marginTop: 3 }} />
               </label>
             </div>
@@ -1396,7 +1397,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
 
           {/* Phase 2 — plan type: time / usage / hybrid */}
           <div>
-            <label style={S.label}>รูปแบบแผน PM</label>
+            <label style={S.label}>{tr('รูปแบบแผน PM')}</label>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {[
                 { v: 'time', label: 'ตามเวลา', hint: 'ครบรอบตามความถี่' },
@@ -1414,11 +1415,11 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             {(planType === 'usage' || planType === 'hybrid') && (
               <div className="mgrid" style={{ marginTop: 8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <div>
-                  <label style={S.label}>ครบเมื่อผลิตถึง (ชิ้น)</label>
-                  <input type="number" min="1" value={usageThreshold} onChange={e => setUsageThreshold(e.target.value)} placeholder="เช่น 50000" />
+                  <label style={S.label}>{tr('ครบเมื่อผลิตถึง (ชิ้น)')}</label>
+                  <input type="number" min="1" value={usageThreshold} onChange={e => setUsageThreshold(e.target.value)} placeholder={tr('เช่น 50000')} />
                 </div>
                 <div>
-                  <label style={S.label}>นับยอดจากไลน์</label>
+                  <label style={S.label}>{tr('นับยอดจากไลน์')}</label>
                   {/* <LineSelect> ไม่ส่ง scope (ตั้งใจ — นับ shot อ้างไลน์ข้ามส่วนงานได้) · includeRetired + ค่าเก่าที่ไม่อยู่ในทะเบียน
                       ยังเลือกค้างได้ (guarantee #4 ของ LineSelect) · 2026-09-07 */}
                   <LineSelect lines={lineOptions} value={usageLine} onChange={setUsageLine} includeRetired
@@ -1432,7 +1433,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
           </div>
 
           <div>
-            <label style={S.label}>รูปแบบ Check Sheet</label>
+            <label style={S.label}>{tr('รูปแบบ Check Sheet')}</label>
             <div style={{ display: 'flex', gap: 8 }}>
               {[{ v: 'image_pin', label: 'รูป + จุดตรวจ' }, { v: 'list', label: 'รายการหัวข้อ' }].map(({ v, label }) => (
                 <button key={v} onClick={() => setLayoutType(v)} style={S.modeBtn(layoutType === v)}>{label}</button>
@@ -1571,7 +1572,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                           <button type="button" onClick={() => setFrameFilter(null)}
                             style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
                                      border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--text2)' }}>
-                            ดูทุกมุม
+                            {tr('ดูทุกมุม')}
                           </button>
                         </div>
                       </div>
@@ -1596,8 +1597,8 @@ function EquipmentTable({ groups, canSetup, onEdit, onDelete }) {
     <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'auto', maxHeight: 'calc(100vh - 230px)' }}>
       <table className="rec-list" style={{ minWidth: 760 }}>
         <thead><tr>
-          <th style={{ width: 44 }} aria-label="รูป"></th><th>อุปกรณ์</th><th>No.</th><th>ชนิด</th><th>เครื่อง</th>
-          <th style={{ textAlign: 'right' }}>จุดตรวจ</th><th>สถานะ</th>{canSetup && <th aria-label="คำสั่ง"></th>}
+          <th style={{ width: 44 }} aria-label="รูป"></th><th>{tr('อุปกรณ์')}</th><th>No.</th><th>{tr('ชนิด')}</th><th>{tr('เครื่อง')}</th>
+          <th style={{ textAlign: 'right' }}>{tr('จุดตรวจ')}</th><th>{tr('สถานะ')}</th>{canSetup && <th aria-label="คำสั่ง"></th>}
         </tr></thead>
         <tbody>
           {groups.map(g => (
@@ -1639,8 +1640,8 @@ function EquipmentTable({ groups, canSetup, onEdit, onDelete }) {
                     </td>
                     {canSetup && (
                       <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
-                        <button onClick={e => { e.stopPropagation(); onEdit(j) }} style={S.btnSm('var(--accent)')}>แก้ไข</button>
-                        <button className="tbtn" onClick={e => { e.stopPropagation(); onDelete(j) }} style={{ ...S.btnSm('var(--red)'), marginLeft: 6 }}>ลบ</button>
+                        <button onClick={e => { e.stopPropagation(); onEdit(j) }} style={S.btnSm('var(--accent)')}>{tr('แก้ไข')}</button>
+                        <button className="tbtn" onClick={e => { e.stopPropagation(); onDelete(j) }} style={{ ...S.btnSm('var(--red)'), marginLeft: 6 }}>{tr('ลบ')}</button>
                       </td>
                     )}
                   </tr>
@@ -1861,7 +1862,7 @@ export default function PMSetup() {
                 {' '}
                 <button onClick={toggleTeamKind} title="สลับว่าทีมนี้เป็นงาน AM หรือ PM (เก็บที่ mtn_teams.kind)"
                   style={{ ...S.btnSm('var(--muted)'), padding: '1px 8px', fontSize: 11, marginLeft: 4 }}>
-                  เปลี่ยนเป็น {teamKindOf(department) === 'am' ? 'PM' : 'AM'}
+                  {tr('เปลี่ยนเป็น')} {teamKindOf(department) === 'am' ? 'PM' : 'AM'}
                 </button>
               </>
             )}
@@ -1874,13 +1875,13 @@ export default function PMSetup() {
           <LineScopeSelect lines={lines} section={fScope.section} line={fScope.line}
             onChange={(section, line, info) => setFScope({ section, line, names: info?.lines?.length ? info.lines : (section || line ? [line || section] : null) })} />
           <select value={fStatus} onChange={e => setFStatus(e.target.value)} aria-label="สถานะ">
-            {statusOptions.map(o => <option key={o.value} value={o.value} title={o.title}>{o.label}</option>)}
+            {statusOptions.map(o => <option key={o.value} value={o.value} title={o.title}>{tr(o.label)}</option>)}
           </select>
           <SearchInput value={fQ} onChange={setFQ} fields="ชื่อ / No. / เลขเครื่อง / ไลน์" />
           <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
             แสดง <b style={{ color: 'var(--text)' }}>{shownRows.length}</b> จาก {allRows.length}
           </span>
-          {filtered && <button type="button" onClick={clearFilters} style={S.jumpBtn}>ล้างตัวกรอง</button>}
+          {filtered && <button type="button" onClick={clearFilters} style={S.jumpBtn}>{tr('ล้างตัวกรอง')}</button>}
         </>}
         actions={canSetup && <>
           {/* ปุ่มตายตัว ≤2 (UI §6.35): [+ เพิ่มอุปกรณ์] · ทะเบียนประเภท/วิธีตรวจ → ⋯ */}
@@ -1888,20 +1889,20 @@ export default function PMSetup() {
             { key: 'cat', icon: '⚙️', label: 'ทะเบียนประเภท', onClick: () => setTaxModal('category') },
             { key: 'method', icon: '📋', label: 'ทะเบียนวิธีตรวจ', onClick: () => setTaxModal('method') },
           ]} />
-          <button type="button" className="pg-btn primary" onClick={openCreate}>+ เพิ่มอุปกรณ์</button>
+          <button type="button" className="pg-btn primary" onClick={openCreate}>{tr('+ เพิ่มอุปกรณ์')}</button>
         </>} />
 
       {/* 🔴 โหลดไม่ครบต้องเขียนบนจอ — ห้ามปล่อยลิสต์ว่างแล้วอ่านว่า "ยังไม่มีอุปกรณ์" */}
       {loadErr && !loading && (
         <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--red)', color: 'var(--red)', fontSize: 12.5 }}>
           ⚠ โหลดข้อมูลไม่ครบ — ตัวเลข/รายการด้านล่างอาจขาด: {loadErr}
-          <button type="button" onClick={fetchData} style={{ ...S.jumpBtn, marginLeft: 8 }}>ลองใหม่</button>
+          <button type="button" onClick={fetchData} style={{ ...S.jumpBtn, marginLeft: 8 }}>{tr('ลองใหม่')}</button>
         </div>
       )}
       {droppedNoLine > 0 && fStatus !== 'no_line' && (
         <div style={{ marginBottom: 10, fontSize: 12, color: 'var(--muted)' }}>
           ℹ️ มีอีก <b>{droppedNoLine}</b> อุปกรณ์ที่ตรงคำค้น/สถานะ แต่ช่องไลน์ว่างหรือชื่อไม่ตรงทะเบียน จึงไม่อยู่ในผลกรองไลน์ —
-          <button type="button" onClick={() => setFStatus('no_line')} style={{ ...S.jumpBtn, marginLeft: 6 }}>ดูรายการนี้</button>
+          <button type="button" onClick={() => setFStatus('no_line')} style={{ ...S.jumpBtn, marginLeft: 6 }}>{tr('ดูรายการนี้')}</button>
         </div>
       )}
 
@@ -1914,14 +1915,14 @@ export default function PMSetup() {
           <div style={{ fontSize: 40, marginBottom: 12 }}>🔩</div>
           <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>ยังไม่มีอุปกรณ์</p>
           <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 20 }}>กดปุ่ม "เพิ่มอุปกรณ์" เพื่อเริ่มต้น</p>
-          {canSetup && <button onClick={openCreate} style={S.primaryBtn}>+ เพิ่มอุปกรณ์</button>}
+          {canSetup && <button onClick={openCreate} style={S.primaryBtn}>{tr('+ เพิ่มอุปกรณ์')}</button>}
         </div>
       ) : (
         shownRows.length === 0 ? (
           <div style={S.empty}>
             <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>ไม่พบอุปกรณ์ตามตัวกรอง</p>
             <p style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 14 }}>ทีมนี้มีทั้งหมด {allRows.length} อุปกรณ์</p>
-            {filtered && <button type="button" onClick={clearFilters} style={S.jumpBtn}>ล้างตัวกรอง</button>}
+            {filtered && <button type="button" onClick={clearFilters} style={S.jumpBtn}>{tr('ล้างตัวกรอง')}</button>}
           </div>
         ) : (
           <EquipmentTable groups={shownGroups} canSetup={canSetup} onEdit={openEdit} onDelete={handleDelete} />

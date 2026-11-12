@@ -3,6 +3,7 @@ import { allOf } from '../utils/filterLabels';
 import SearchSelect from './SearchSelect';
 import { SCOPE_KIND_META, scopeKey, parseScopeKey, filterScopeOptions, isPlant } from '../utils/orgScope';
 
+import { tr } from '../utils/i18n';
 /* ══ <OrgScopePicker> — เลือก "ขอบเขต" ตามผังองค์กร ทุกมิติ (2026-09-23 · คำสั่ง user) ═════════════
    *"เลือกส่วนงานตอนนี้เหมือนเลือกได้แค่ section และไม่ตรงกับผังองค์กร ควรกรองได้ทุกมิติในผังองค์กร"*
 
@@ -176,7 +177,7 @@ export default function OrgScopePicker({
   const ownerChip = isCc && ccOwner ? (
     <button type="button" onClick={() => emit(ownerKey)} title={`เลิกกรองด้วยรหัส — ดูทั้ง ${index.labelOf(ccOwner.kind, ccOwner.value)}`}
       style={{ padding: '3px 8px', fontSize: 11.5, borderRadius: 'var(--r-md)', cursor: 'pointer', fontWeight: 700, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)' }}>
-      ↑ ทั้ง {index.labelOf(ccOwner.kind, ccOwner.value)}
+      {tr('↑ ทั้ง')} {index.labelOf(ccOwner.kind, ccOwner.value)}
     </button>
   ) : null;
   /* ⚠️ ผังโหลดไม่สำเร็จ — ต้องเห็นข้างช่องทั้ง 2 โหมด (native select ไม่มีที่เขียนในลิสต์) */

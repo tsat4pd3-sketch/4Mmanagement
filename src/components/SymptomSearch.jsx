@@ -7,6 +7,7 @@ import SearchInput from './SearchInput';
 import useTimeRange from '../utils/useTimeRange';
 import { machineKey, machineNoLikePattern } from '../utils/machineNo';
 
+import { tr as trI18n } from '../utils/i18n';
 /* ── 🔎 ค้นด้วย "อาการ" — สอบกลับจากปลายทางเข้าหาต้นเหตุ (2026-08-26 · คำถามหน้างาน) ────
    *"ลูกค้าแจ้ง ปัญหาตัดไม่ขาด — หา downtime/defect ที่เกี่ยวกับอาการนี้ได้มั้ย"*
 
@@ -226,7 +227,7 @@ export default function SymptomSearch({ inScope, onOpenOrder, machine = null, on
           style={{ padding: '0 18px', borderRadius: 'var(--r-md)', border: 'none', fontWeight: 800, fontSize: 13,
                    background: busy || noInput ? 'var(--bg3)' : 'var(--accent)', color: busy || noInput ? 'var(--muted)' : '#fff',
                    cursor: busy || noInput ? 'default' : 'pointer' }}>
-          {busy ? 'กำลังค้น…' : '🔎 ค้นหา'}
+          {busy ? trI18n('กำลังค้น…') : trI18n('🔎 ค้นหา')}
         </button>
       </TimeRangeBar>
       {machine && (
@@ -239,7 +240,7 @@ export default function SymptomSearch({ inScope, onOpenOrder, machine = null, on
           {onClearMachine && (
             <button onClick={() => { onClearMachine(); setRes(null); }}
               style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', cursor: 'pointer' }}>
-              ✕ ทุกเครื่อง
+              {trI18n('✕ ทุกเครื่อง')}
             </button>
           )}
         </div>
@@ -308,9 +309,9 @@ export default function SymptomSearch({ inScope, onOpenOrder, machine = null, on
           <div style={{ ...box, padding: 0, overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
               <thead><tr style={{ background: 'var(--bg3)' }}>
-                <th style={th}>วันที่</th><th style={th}>ไลน์ / กะ</th><th style={th}>ชนิด</th>
-                <th style={th}>ประเภท</th><th style={th}>เครื่อง / ชิ้นงาน</th>
-                <th style={{ ...th, textAlign: 'right' }}>จำนวน</th><th style={th}>ข้อความที่บันทึก</th><th style={th}></th>
+                <th style={th}>{trI18n('วันที่')}</th><th style={th}>{trI18n('ไลน์ / กะ')}</th><th style={th}>{trI18n('ชนิด')}</th>
+                <th style={th}>{trI18n('ประเภท')}</th><th style={th}>{trI18n('เครื่อง / ชิ้นงาน')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{trI18n('จำนวน')}</th><th style={th}>{trI18n('ข้อความที่บันทึก')}</th><th style={th}></th>
               </tr></thead>
               <tbody>
                 {res.rows.slice(0, 200).map((r) => {
@@ -334,7 +335,7 @@ export default function SymptomSearch({ inScope, onOpenOrder, machine = null, on
                           <button onClick={() => onOpenOrder(prodNo)}
                             style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 9px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                                      background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', whiteSpace: 'nowrap' }}>
-                            → สอบกลับใบนี้
+                            {trI18n('→ สอบกลับใบนี้')}
                           </button>
                         )}
                       </td>

@@ -16,6 +16,7 @@ import {
   classifyIntermediate, phantomCounts, sortIntermediates, PHANTOM_VERDICTS,
 } from '../utils/bomPhantom';
 
+import { tr } from '../utils/i18n';
 /* ═══ 🫧 ของลม (phantom) — ทะเบียนให้ PE คุม "คอนเฟิมแม่ ตัดลูก ไม่ตัดหลาน" ═══════════
    แท็บ 🫧 ใน /products (?tab=phantom) · 4/11 · คำสั่ง user (หลัก SAP)
 
@@ -199,9 +200,9 @@ export default function BomPhantomPanel({ onOpenSheet }) {
           <div style={{ overflowX: 'auto', marginTop: 6 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>
-                <th style={th}>ชิ้นงาน</th><th style={th}>ห้อยใต้</th>
-                <th style={{ ...th, textAlign: 'right' }}>ใบผลิตเอง</th>
-                <th style={{ ...th, textAlign: 'right' }}>คงเหลือ</th><th style={th}>ต้องทำอะไร</th>
+                <th style={th}>{tr('ชิ้นงาน')}</th><th style={th}>{tr('ห้อยใต้')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('ใบผลิตเอง')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('คงเหลือ')}</th><th style={th}>{tr('ต้องทำอะไร')}</th>
               </tr></thead>
               <tbody>
                 {gaps.map(g => (
@@ -239,13 +240,13 @@ export default function BomPhantomPanel({ onOpenSheet }) {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <th style={th}>ชิ้นงาน</th>
-                <th style={th}>สถานะ</th>
-                <th style={{ ...th, textAlign: 'right' }}>ใบผลิตเอง</th>
-                <th style={{ ...th, textAlign: 'right' }}>คงเหลือ</th>
-                <th style={{ ...th, textAlign: 'right' }}>ถูกอ้างในใบ</th>
-                <th style={{ ...th, textAlign: 'right' }}>ลูก (แถว)</th>
-                <th style={th}>จัดการ</th>
+                <th style={th}>{tr('ชิ้นงาน')}</th>
+                <th style={th}>{tr('สถานะ')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('ใบผลิตเอง')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('คงเหลือ')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('ถูกอ้างในใบ')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('ลูก (แถว)')}</th>
+                <th style={th}>{tr('จัดการ')}</th>
               </tr>
             </thead>
             <tbody>
@@ -295,7 +296,7 @@ export default function BomPhantomPanel({ onOpenSheet }) {
                             style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-md)',
                                      border: '1px solid var(--border)', color: 'var(--text)',
                                      background: 'var(--card)', cursor: 'pointer' }}>
-                            {isPhantom ? 'ไม่ใช่ของลม' : 'ติ๊กเป็นของลม'}
+                            {isPhantom ? tr('ไม่ใช่ของลม') : tr('ติ๊กเป็นของลม')}
                           </button>
                         </span>
                       )}

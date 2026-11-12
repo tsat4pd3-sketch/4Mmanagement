@@ -18,6 +18,7 @@ import { machineHistoryRows } from '../utils/machineHistoryForm';
 import { teamKeyOf, deptNameOf } from '../utils/mtnTeams';
 import { toast } from './Toast';
 
+import { tr } from '../utils/i18n';
 const fmtMin = (m) => (m == null ? '—' : m >= 60 ? `${(m / 60).toFixed(1)} ชม.` : `${Math.round(m)} นาที`);
 const fmtBaht = (v) => (v == null ? '—' : `${Number(v).toLocaleString('th-TH', { maximumFractionDigits: 0 })} บาท`);
 
@@ -125,9 +126,9 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>ทีมช่าง:</span>
                 <select value={team} onChange={e => setTeam(e.target.value)} aria-label="กรองตามทีมช่าง"
                   style={{ height: 26, fontSize: 11.5, borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', padding: '0 6px' }}>
-                  <option value="all">ทุกทีม ({state.orders.length} ใบ)</option>
+                  <option value="all">{tr('ทุกทีม (')}{state.orders.length} {tr('ใบ)')}</option>
                   {teamsSeen.map(([k, n]) => (
-                    <option key={k || '_none'} value={k}>{k ? (deptNameOf(k) || k) : '— ไม่ระบุทีม —'} ({n} ใบ)</option>
+                    <option key={k || '_none'} value={k}>{k ? (deptNameOf(k) || k) : '— ไม่ระบุทีม —'} ({n} {tr('ใบ)')}</option>
                   ))}
                 </select>
                 {hidden > 0 && (
@@ -155,7 +156,7 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
           }} title="ใบบันทึกประวัติการซ่อมและการทำ PM MACHINE (FM-MTN-005) — A4 แนวนอน หน้าละ 15 แถว"
             style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 700, cursor: 'pointer', opacity: state.loading || state.err || exporting ? 0.6 : 1 }}>
             {exporting ? 'กำลังสร้าง…' : '⬇️ Excel (FM-MTN-005)'}</button>
-          <button onClick={onClose} style={{ background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '7px 14px', fontSize: 13, cursor: 'pointer' }}>✕ ปิด</button>
+          <button onClick={onClose} style={{ background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '7px 14px', fontSize: 13, cursor: 'pointer' }}>{tr('✕ ปิด')}</button>
         </div>
         <div style={{ overflow: 'auto', padding: 14 }}>
           {state.loading && <div style={{ color: 'var(--muted)', fontSize: 13 }}>⏳ กำลังโหลดประวัติ…</div>}
@@ -185,9 +186,9 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead><tr>
-                    <th style={th}>แจ้งเมื่อ</th><th style={th}>เลข MO</th><th style={th}>สถานะ</th><th style={th}>ประเภท</th>
-                    <th style={th}>ปัญหา / วิธีแก้</th><th style={th}>ช่าง</th><th style={th}>PR</th>
-                    <th style={th}>ซ่อมจริง</th><th style={th}>ค่าใช้จ่าย</th>
+                    <th style={th}>{tr('แจ้งเมื่อ')}</th><th style={th}>{tr('เลข MO')}</th><th style={th}>{tr('สถานะ')}</th><th style={th}>{tr('ประเภท')}</th>
+                    <th style={th}>{tr('ปัญหา / วิธีแก้')}</th><th style={th}>{tr('ช่าง')}</th><th style={th}>PR</th>
+                    <th style={th}>{tr('ซ่อมจริง')}</th><th style={th}>{tr('ค่าใช้จ่าย')}</th>
                   </tr></thead>
                   <tbody>
                     {(showAll ? sum.rows : sum.rows.slice(0, ROWS_FIRST)).map(r => {
@@ -197,7 +198,7 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
                           <td style={{ ...td, whiteSpace: 'nowrap' }}>{fmtDateTime(r.at)}</td>
                           <td style={td}>
                             {onOpenOrder
-                              ? <button onClick={() => onOpenOrder(r.o)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontFamily: 'monospace', fontSize: 12, padding: 0, textAlign: 'left' }}>{r.o.mo_no || '(ยังไม่ออกเลข)'}</button>
+                              ? <button onClick={() => onOpenOrder(r.o)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontFamily: 'monospace', fontSize: 12, padding: 0, textAlign: 'left' }}>{r.o.mo_no || tr('(ยังไม่ออกเลข)')}</button>
                               : <span style={{ fontFamily: 'monospace' }}>{r.o.mo_no || '—'}</span>}
                           </td>
                           <td style={{ ...td, color: st.color, fontWeight: 700 }}>{st.label}</td>
@@ -220,7 +221,7 @@ export default function MachineRepairHistory({ machineNo, onClose, onOpenOrder }
                   <button onClick={() => setShowAll(true)}
                     style={{ marginTop: 8, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)',
                       borderRadius: 'var(--r-md)', padding: '6px 12px', fontSize: 12.5, cursor: 'pointer' }}>
-                    ▾ แสดงอีก {sum.rows.length - ROWS_FIRST} ใบ (ทั้งหมด {sum.rows.length} ใบ)
+                    {tr('▾ แสดงอีก')} {sum.rows.length - ROWS_FIRST} {tr('ใบ (ทั้งหมด')} {sum.rows.length} {tr('ใบ)')}
                   </button>
                 )}
               </div>

@@ -25,6 +25,7 @@ import { urlParam } from '../utils/urlInit';
 import { scopeLines as pickerLines } from '../components/LineSelect';   // ตาข่าย "กรองแล้วไม่เหลือ = ไม่กรอง" ของช่องเลือกไลน์
 import { Panel, NotEnough, Histogram, ControlChart, ScatterPlot, Fishbone, CheckSheet, Stratify, RunChart } from '../components/Qc7Charts';
 import NoticeBar from '../components/NoticeBar';
+import { tr as trI18n } from '../utils/i18n';
 import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 /* ══ 🔍 วิเคราะห์ปัญหา (ซ่อมบำรุง) — QC 7 Tools แยกตามชนิดสินทรัพย์ ══════════  2026-09-22
@@ -429,7 +430,7 @@ export default function MtnAnalysis() {
              โชว์ทั้งคู่พร้อมกัน = คนกดแล้วไม่เห็นอะไรเปลี่ยน แล้วคิดว่าจอค้าง */
           tab === 'qc7' ? null : (
             <button type="button" className="pg-btn" onClick={load} disabled={loading} style={{ cursor: loading ? 'default' : 'pointer' }}>
-              {loading ? 'กำลังโหลด…' : 'รีเฟรช'}
+              {loading ? trI18n('กำลังโหลด…') : trI18n('รีเฟรช')}
             </button>
           )
         }

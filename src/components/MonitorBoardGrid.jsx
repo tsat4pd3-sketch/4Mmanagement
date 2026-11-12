@@ -8,6 +8,7 @@ import { rowDefs, balanceRowKey, minRowKey } from '../utils/monitorBoards';
 import { matText } from '../utils/matLabel';
 import { supabaseDR } from '../supabaseClient';
 import PartThumb from './PartThumb';
+import { tr } from '../utils/i18n';
 import { loadPartImages, partImageOf } from '../utils/partImages';   // 🖼️ รูปชิ้นงาน (12/10 · user "รูปยังไม่ขึ้น")
 import { periodHead, isTodayPeriod, startIndexForToday, periodTone } from '../utils/periodHead';   // 🗓️ หัวคอลัมน์ชุดเดียวทุกตาราง (08/10)
 
@@ -201,14 +202,14 @@ export default function MonitorBoardGrid({
         <div className="search-input grow">
           <span className="search-ico" aria-hidden="true">🔍</span>
           <input type="search" value={q} onChange={(e) => setQ(e.target.value)}
-            placeholder="ค้นหา MAT / PART NO. / ชื่อ / รุ่น" aria-label="ค้นหาพาร์ทในบอร์ด"
+            placeholder={tr('ค้นหา MAT / PART NO. / ชื่อ / รุ่น')} aria-label="ค้นหาพาร์ทในบอร์ด"
             style={{ paddingLeft: 30 }} />
           {q ? <button type="button" className="search-clear" aria-label="ล้างคำค้น" onClick={() => setQ('')}>✕</button> : null}
         </div>
         {balKey ? (
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
             <input type="checkbox" checked={onlyProblem} onChange={(e) => setOnlyProblem(e.target.checked)} />
-            เฉพาะพาร์ทที่ของจะขาด
+            {tr('เฉพาะพาร์ทที่ของจะขาด')}
             {breaches.length ? <b style={{ color: 'var(--danger, #ef4444)' }}>({breaches.length})</b> : null}
           </label>
         ) : null}
@@ -221,7 +222,7 @@ export default function MonitorBoardGrid({
               {` (จาก ${body.length} ช่วง)`}
             </span>
             <button type="button" onClick={() => setWinStart(homeStart)} disabled={winStart === homeStart}
-              title="กลับมาที่คอลัมน์วันนี้">วันนี้</button>
+              title="กลับมาที่คอลัมน์วันนี้">{tr('วันนี้')}</button>
             <button type="button"
               onClick={() => setWinStart((s) => Math.min(Math.max(0, body.length - (windowSize - 1)), s + (windowSize - 1)))}
               disabled={winStart >= body.length - (windowSize - 1)} aria-label="ช่วงวันที่ถัดไป">→</button>
@@ -259,9 +260,9 @@ export default function MonitorBoardGrid({
           <thead>
             <tr>
               <th style={{ ...thSticky, width: HEAD_W, minWidth: HEAD_W, textAlign: 'left' }}>
-                พาร์ท <span style={{ color: 'var(--muted)', fontWeight: 400 }}>({shown.length}/{parts.length})</span>
+                {tr('พาร์ท')} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>({shown.length}/{parts.length})</span>
               </th>
-              <th style={{ ...thBase, minWidth: 108, textAlign: 'left' }}>แถว</th>
+              <th style={{ ...thBase, minWidth: 108, textAlign: 'left' }}>{tr('แถว')}</th>
               {win.map((p) => {
                 /* 🗓️ ป้าย + สี มาจาก utils/periodHead.js — ตัวเดียวกับตาราง Balance FG (RundownStock) */
                 const isSeed = p.key === seed?.key;

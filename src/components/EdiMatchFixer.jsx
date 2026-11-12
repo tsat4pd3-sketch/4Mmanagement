@@ -6,6 +6,7 @@ import { checkWrite } from '../utils/dbWrite';
 import { normKey } from '../utils/ediMerge';
 import { isFgMat } from '../utils/matPrefix';
 
+import { tr } from '../utils/i18n';
 /* ─── 🔗 แก้คำเตือนจับคู่พาร์ท EDI บนจอ preview (2026-10-01 · คำสั่ง user) ──────────────
    user: *"แจ้ง error มาก็ไม่รู้จะไปแก้ยังไง · แจ้งให้เช็คว่าจับคู่ถูกมั้ย แล้วตัดสินใจอะไรได้"*
 
@@ -146,7 +147,7 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
                     <ProductSelect value={pick[`${a.part}|${a.st}`] || ''} onChange={o => setPick(p => ({ ...p, [`${a.part}|${a.st}`]: o?.mat_no || '' }))} />
                   </div>
                   <button type="button" disabled={!!busy || !pick[`${a.part}|${a.st}`]} style={btn(false)}
-                    onClick={() => save(a.st, a.part, pick[`${a.part}|${a.st}`], 'เลือกตัวขายเอง')}>ใช้ตัวนี้</button>
+                    onClick={() => save(a.st, a.part, pick[`${a.part}|${a.st}`], 'เลือกตัวขายเอง')}>{tr('ใช้ตัวนี้')}</button>
                 </>
               ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{a.mats.filter(isFgMat).join(' | ') || '—'}</span>}
             </div>
@@ -178,8 +179,8 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
                     </div>
                     <select value={scope[part] ?? ''} onChange={e => setScope(s => ({ ...s, [part]: e.target.value }))}
                       style={{ fontSize: 12, padding: '5px 8px', borderRadius: 'var(--ctl-r)', background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)' }}>
-                      <option value="">ใช้กับทุก ship-to</option>
-                      {sts.map(st => <option key={st} value={st}>เฉพาะ {lbl(st)}</option>)}
+                      <option value="">{tr('ใช้กับทุก ship-to')}</option>
+                      {sts.map(st => <option key={st} value={st}>{tr('เฉพาะ')} {lbl(st)}</option>)}
                     </select>
                     <button type="button" disabled={!!busy || !pick[part]} style={btn(true)}
                       onClick={() => save(scope[part] ?? '', part, pick[part], 'เลือกเองบนจอนำเข้า EDI')}>
@@ -212,13 +213,13 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
                   {soldButtons(b.part, '')}
                   {isFgMat(b.mat) && (
                     <button type="button" disabled={!!busy} style={btn(true)}
-                      onClick={() => save('', b.part, b.mat, 'ยืนยันคู่ที่เดาจาก base part')}>✓ ถูก</button>
+                      onClick={() => save('', b.part, b.mat, 'ยืนยันคู่ที่เดาจาก base part')}>{tr('✓ ถูก')}</button>
                   )}
                   <div style={{ minWidth: 220 }}>
                     <ProductSelect value={pick[b.part] || ''} onChange={o => setPick(p => ({ ...p, [b.part]: o?.mat_no || '' }))} />
                   </div>
                   <button type="button" disabled={!!busy || !pick[b.part]} style={btn(false)}
-                    onClick={() => save('', b.part, pick[b.part], 'เปลี่ยนจากคู่ที่เดาจาก base part')}>เปลี่ยนเป็นตัวนี้</button>
+                    onClick={() => save('', b.part, pick[b.part], 'เปลี่ยนจากคู่ที่เดาจาก base part')}>{tr('เปลี่ยนเป็นตัวนี้')}</button>
                 </>
               )}
             </div>
@@ -250,7 +251,7 @@ export default function EdiMatchFixer({ edi, canEdit, custLabel, onSaved }) {
                     <ProductSelect value={pick[n.part] || ''} onChange={o => setPick(p => ({ ...p, [n.part]: o?.mat_no || '' }))} />
                   </div>
                   <button type="button" disabled={!!busy || !pick[n.part]} style={btn(false)}
-                    onClick={() => save('', n.part, pick[n.part], 'เลือกตัวขายเอง')}>ใช้ตัวนี้</button>
+                    onClick={() => save('', n.part, pick[n.part], 'เลือกตัวขายเอง')}>{tr('ใช้ตัวนี้')}</button>
                 </>
               )}
             </div>

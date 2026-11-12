@@ -1,5 +1,6 @@
 import { calcOf, calcFormula, CALC_OP } from '../../utils/inspectCalc'
 
+import { tr } from '../../utils/i18n';
 /* 🧮 ช่องตั้งสูตร "จุดคำนวณ" ในการ์ดจุดตรวจ — ตัวเดียวทั้ง PM และ QA (2026-10-19)
    ติ๊กแล้วเลือกจุด A กับจุด B → ตอนตรวจระบบเติมค่า A − B ให้เอง (คนตรวจไม่ต้องพิมพ์)
    `options` = จุดที่อ้างได้ [{ key, label }] — ตัวเรียกกรองเฉพาะจุดวัดตัวเลขที่ไม่ใช่จุดคำนวณ และไม่ใช่ตัวเอง
@@ -15,7 +16,7 @@ export default function CalcFormulaField({ calc, onChange, options = [], problem
       background: on ? 'rgba(77,159,255,0.08)' : 'transparent', border: on ? '1px solid rgba(77,159,255,0.35)' : 'none' }}>
       <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: on ? '#4d9fff' : 'var(--text2)', cursor: 'pointer' }}>
         <input type="checkbox" checked={on} onChange={e => onChange(e.target.checked ? { op: CALC_OP, a: '', b: '', abs: false } : null)} style={{ width: 'auto' }} />
-        🧮 คำนวณจากจุดอื่น (ผลต่าง A − B) — ตอนตรวจไม่ต้องพิมพ์ ระบบคิดให้
+        {tr('🧮 คำนวณจากจุดอื่น (ผลต่าง A − B) — ตอนตรวจไม่ต้องพิมพ์ ระบบคิดให้')}
       </label>
       {on && (
         <>
@@ -26,16 +27,16 @@ export default function CalcFormulaField({ calc, onChange, options = [], problem
           ) : (
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 6 }}>
               <select value={c?.a || ''} onChange={e => set({ a: e.target.value })} style={sel} aria-label="จุด A">
-                <option value="">— จุด A —</option>
-                {options.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+                <option value="">{tr('— จุด A —')}</option>
+                {options.map(o => <option key={o.key} value={o.key}>{tr(o.label)}</option>)}
               </select>
               <span style={{ fontWeight: 800, fontSize: 14 }}>−</span>
               <select value={c?.b || ''} onChange={e => set({ b: e.target.value })} style={sel} aria-label="จุด B">
-                <option value="">— จุด B —</option>
-                {options.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+                <option value="">{tr('— จุด B —')}</option>
+                {options.map(o => <option key={o.key} value={o.key}>{tr(o.label)}</option>)}
               </select>
               <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, whiteSpace: 'nowrap' }}>
-                <input type="checkbox" checked={!!c?.abs} onChange={e => set({ abs: e.target.checked })} style={{ width: 'auto' }} /> ไม่คิดเครื่องหมาย |A − B|
+                <input type="checkbox" checked={!!c?.abs} onChange={e => set({ abs: e.target.checked })} style={{ width: 'auto' }} /> {tr('ไม่คิดเครื่องหมาย |A − B|')}
               </label>
             </div>
           )}

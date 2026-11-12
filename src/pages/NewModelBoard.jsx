@@ -16,6 +16,7 @@ import {
 import {
   IEC_TEAMS, CUSTOMERS, PROJECTS, SPTT_REQUIREMENTS, TMA_SPTT_DOCS, SOURCE_DATE,
 } from '../data/nmBoard737D';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ══ 🧭 บอร์ด New Model (IEC) — บอร์ด OBEYA ของงานพาร์ทรุ่นใหม่ในเวอร์ชันออนไลน์ ═════════
@@ -383,12 +384,12 @@ function LevelOverview({ data, go }) {
               </div>
               {!!c.projects.length && (
                 <div style={{ fontSize: 11.5, color: 'var(--text2)' }}>
-                  {c.projects.map(p => p.title).join(' · ')} — ด่าน {c.projects[0].stage}
+                  {c.projects.map(p => p.title).join(' · ')} {tr('— ด่าน')} {c.projects[0].stage}
                 </div>
               )}
               {worst && <div style={{ fontSize: 11.5, color: 'var(--red)' }}>🔴 {worst.title}</div>}
               <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-                ทีม {teams.join(' · ') || '–'} · ด่าน {c.milestones.length ? c.milestones.join(' → ') : 'ยังไม่ตั้งแม่แบบ'}
+                {tr('ทีม')} {teams.join(' · ') || '–'} {tr('· ด่าน')} {c.milestones.length ? c.milestones.join(' → ') : 'ยังไม่ตั้งแม่แบบ'}
               </div>
             </button>
           );
@@ -405,7 +406,7 @@ function LevelOverview({ data, go }) {
                 textAlign: 'left', padding: '7px 0', cursor: 'pointer' }}>
               <div style={{ fontSize: 12.5, color: 'var(--text)' }}>{r.issue}</div>
               <div style={{ fontSize: 11.5, color: 'var(--red)' }}>
-                เลย {r.late} วัน · กำหนด {r.due} · {r.pic} · {r.project.title} / {r.panel.label}
+                {tr('เลย')} {r.late} {tr('วัน · กำหนด')} {r.due} · {r.pic} · {r.project.title} / {r.panel.label}
               </div>
             </button>
           ))}
@@ -445,8 +446,8 @@ function LevelCustomer({ cust, go }) {
             <span style={{ fontSize: 15, fontWeight: 700 }}>{p.title}</span>
             {p.focus && <span style={{ fontSize: 11, background: 'var(--bg3)', padding: '1px 7px', borderRadius: 'var(--r-pill)' }}>⭐ Focus</span>}
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text2)' }}>ด่านปัจจุบัน {p.stage} · สภาพชิ้นงาน {p.partCondition}</div>
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>ส่งชิ้นงาน (PAD) {p.pad} · ปิด SPTT#2 ภายใน {p.targetSptt2}</div>
+          <div style={{ fontSize: 12, color: 'var(--text2)' }}>{tr('ด่านปัจจุบัน')} {p.stage} {tr('· สภาพชิ้นงาน')} {p.partCondition}</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ส่งชิ้นงาน (PAD)')} {p.pad} {tr('· ปิด SPTT#2 ภายใน')} {p.targetSptt2}</div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 2 }}>
             {PROJECT_AXES.map(a => (
               <span key={a.key} style={{ display: 'flex', gap: 5, alignItems: 'center', fontSize: 11.5 }}>
@@ -454,7 +455,7 @@ function LevelCustomer({ cust, go }) {
               </span>
             ))}
           </div>
-          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{countsLabel(evaCounts(p.panels))} · {p.panels.length} แผง</div>
+          <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{countsLabel(evaCounts(p.panels))} · {p.panels.length} {tr('แผง')}</div>
         </button>
       ))}
     </div>
@@ -557,7 +558,7 @@ function PopTable({ proj, go }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
             <thead><tr>
               <th style={{ ...th, width: 34 }}>EVA</th><th style={{ ...th, width: 40 }}>#</th>
-              <th style={th}>Topic</th><th style={th}>หัวข้อย่อย</th><th style={th}>สถานะ</th>
+              <th style={th}>Topic</th><th style={th}>{tr('หัวข้อย่อย')}</th><th style={th}>{tr('สถานะ')}</th>
             </tr></thead>
             <tbody>
               {proj.pop.map(m => {
@@ -600,9 +601,9 @@ function LotTable({ proj }) {
         <Scroller>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 460 }}>
             <thead><tr>
-              <th style={{ ...th, width: 40 }}>#</th><th style={th}>ล็อต</th>
-              <th style={th}>เงื่อนไขที่ต้องผ่าน</th>
-              <th style={{ ...th, width: 90 }}>ส่งมอบ</th><th style={{ ...th, width: 90 }}>คุณภาพ</th>
+              <th style={{ ...th, width: 40 }}>#</th><th style={th}>{tr('ล็อต')}</th>
+              <th style={th}>{tr('เงื่อนไขที่ต้องผ่าน')}</th>
+              <th style={{ ...th, width: 90 }}>{tr('ส่งมอบ')}</th><th style={{ ...th, width: 90 }}>{tr('คุณภาพ')}</th>
             </tr></thead>
             <tbody>
               {rows.map(l => (
@@ -755,7 +756,7 @@ function LevelBucket({ proj, bucket, go }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
               <thead><tr>
                 <th style={{ ...th, width: 34 }}>EVA</th><th style={{ ...th, width: 40 }}>#</th>
-                <th style={th}>หัวข้อ</th><th style={th}>อยู่ใต้</th><th style={th}>คำอธิบาย</th>
+                <th style={th}>{tr('หัวข้อ')}</th><th style={th}>{tr('อยู่ใต้')}</th><th style={th}>{tr('คำอธิบาย')}</th>
               </tr></thead>
               <tbody>
                 {leaves.map(l => (
@@ -809,7 +810,7 @@ function LevelPop({ proj, main, go }) {
             <button onClick={() => go({ cust: proj.customer, proj: proj.id, panel: main.panel })}
               style={{ marginTop: 9, background: 'var(--bg3)', border: '1px solid var(--border)',
                 color: 'var(--text)', borderRadius: 'var(--r-md)', padding: '6px 12px', cursor: 'pointer', fontSize: 12 }}>
-              เปิดแผงหลักฐาน →
+              {tr('เปิดแผงหลักฐาน →')}
             </button>
           )}
         </div>
@@ -819,7 +820,7 @@ function LevelPop({ proj, main, go }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
               <thead><tr>
                 <th style={{ ...th, width: 34 }}>EVA</th><th style={{ ...th, width: 44 }}>#</th>
-                <th style={th}>sub KPI</th><th style={th}>ข้างใน</th><th style={th}>ที่มาของไฟ</th>
+                <th style={th}>sub KPI</th><th style={th}>{tr('ข้างใน')}</th><th style={th}>{tr('ที่มาของไฟ')}</th>
               </tr></thead>
               <tbody>
                 {kids.map(s => {
@@ -874,7 +875,7 @@ function LevelPopSub({ proj, main, sub, go }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 500 }}>
               <thead><tr>
                 <th style={{ ...th, width: 34 }}>EVA</th><th style={th}>Topic</th>
-                <th style={th}>หลักฐาน</th><th style={th}>บันทึก</th>
+                <th style={th}>{tr('หลักฐาน')}</th><th style={th}>{tr('บันทึก')}</th>
               </tr></thead>
               <tbody>
                 {topics.map(t => (
@@ -903,7 +904,7 @@ function PanelActivity({ p }) {
   return (
     <Scroller>
       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
-        <thead><tr><th style={{ ...th, width: 34 }}>EVA</th>{cols.map(c => <th key={c} style={th}>{c}</th>)}<th style={th}>ผู้รับผิดชอบ</th></tr></thead>
+        <thead><tr><th style={{ ...th, width: 34 }}>EVA</th>{cols.map(c => <th key={c} style={th}>{tr(c)}</th>)}<th style={th}>{tr('ผู้รับผิดชอบ')}</th></tr></thead>
         <tbody>
           {p.rows.map((r, i) => (
             <tr key={i}>
@@ -928,13 +929,13 @@ function PanelMatrix({ p }) {
       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
         <thead>
           <tr>
-            <th style={th} rowSpan={2}>พาร์ท</th>
+            <th style={th} rowSpan={2}>{tr('พาร์ท')}</th>
             {ms.map((m, i) => <th key={m} style={{ ...th, textAlign: 'center', borderLeft: '1px solid var(--border)' }} colSpan={checks.length + 1}>
               {m}{p.targets?.[i] && <div style={{ fontWeight: 400, color: 'var(--text2)' }}>{p.targets[i]}</div>}
             </th>)}
           </tr>
           <tr>
-            {ms.map(m => [...checks.map(c => <th key={`${m}-${c}`} style={{ ...th, textAlign: 'center' }}>{c}</th>),
+            {ms.map(m => [...checks.map(c => <th key={`${m}-${c}`} style={{ ...th, textAlign: 'center' }}>{tr(c)}</th>),
               <th key={`${m}-eva`} style={{ ...th, textAlign: 'center' }}>EVA</th>])}
           </tr>
         </thead>
@@ -971,7 +972,7 @@ function PanelIssues({ p }) {
     <Scroller>
       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
         <thead><tr>
-          {['#', 'วันที่', 'หมวด', 'ปัญหา', 'สาเหตุ', 'มาตรการ', 'ผู้รับผิดชอบ', 'กำหนด', 'สถานะ'].map(c => <th key={c} style={th}>{c}</th>)}
+          {['#', 'วันที่', 'หมวด', 'ปัญหา', 'สาเหตุ', 'มาตรการ', 'ผู้รับผิดชอบ', 'กำหนด', 'สถานะ'].map(c => <th key={c} style={th}>{tr(c)}</th>)}
         </tr></thead>
         <tbody>
           {p.rows.map(r => (
@@ -1012,7 +1013,7 @@ function PanelDoc({ p }) {
       {!!p.tree?.length && (
         <Scroller>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 520 }}>
-            <thead><tr>{['ลำดับ', 'ชื่อชิ้นงาน', 'เลขพาร์ท', 'สเปกวัสดุ'].map(c => <th key={c} style={th}>{c}</th>)}</tr></thead>
+            <thead><tr>{['ลำดับ', 'ชื่อชิ้นงาน', 'เลขพาร์ท', 'สเปกวัสดุ'].map(c => <th key={c} style={th}>{tr(c)}</th>)}</tr></thead>
             <tbody>{p.tree.map(t => (
               <tr key={t.seq}>
                 <td style={{ ...td, whiteSpace: 'nowrap', color: 'var(--muted)' }}>{t.seq}</td>
@@ -1029,7 +1030,7 @@ function PanelDoc({ p }) {
       {p.table && (
         <Scroller>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
-            <thead><tr>{p.table.columns.map(c => <th key={c} style={th}>{c}</th>)}</tr></thead>
+            <thead><tr>{p.table.columns.map(c => <th key={c} style={th}>{tr(c)}</th>)}</tr></thead>
             <tbody>{p.table.rows.map((r, i) => (
               <tr key={i}>{r.map((v, j) => <td key={j} style={{ ...td, whiteSpace: 'nowrap' }}>{v}</td>)}</tr>
             ))}</tbody>
@@ -1094,7 +1095,7 @@ function LevelPanel({ proj, panel }) {
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>เกณฑ์ผ่านของแต่ละด่าน (Requirement of SPTT Milestone)</div>
           <Scroller>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
-              <thead><tr>{['SPTT', 'ด่านลูกค้า', 'Off-Tool', 'Off-Process', 'คุณภาพที่ต้องได้', 'กำลังผลิตที่ต้องได้'].map(c => <th key={c} style={th}>{c}</th>)}</tr></thead>
+              <thead><tr>{['SPTT', 'ด่านลูกค้า', 'Off-Tool', 'Off-Process', 'คุณภาพที่ต้องได้', 'กำลังผลิตที่ต้องได้'].map(c => <th key={c} style={th}>{tr(c)}</th>)}</tr></thead>
               <tbody>{SPTT_REQUIREMENTS.map(r => (
                 <tr key={r.sptt}>
                   <td style={{ ...td, whiteSpace: 'nowrap', fontWeight: 700 }}>{r.sptt}</td>
@@ -1114,7 +1115,7 @@ function LevelPanel({ proj, panel }) {
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>ชุดเอกสารที่ลูกค้าบังคับต่อด่าน (TMA SPTT Document · ตัวเลข = จำนวนหน้า)</div>
           <Scroller>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 660 }}>
-              <thead><tr>{['#', 'เอกสาร', 'CV 1st', 'CV 2nd', '1A (LVPT)', 'MPT (HVPT)', 'QCS', 'SOP'].map(c => <th key={c} style={th}>{c}</th>)}</tr></thead>
+              <thead><tr>{['#', 'เอกสาร', 'CV 1st', 'CV 2nd', '1A (LVPT)', 'MPT (HVPT)', 'QCS', 'SOP'].map(c => <th key={c} style={th}>{tr(c)}</th>)}</tr></thead>
               <tbody>{TMA_SPTT_DOCS.map(d => (
                 <tr key={d.seq}>
                   <td style={td}>{d.seq}</td>
@@ -1368,7 +1369,7 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
               <button onClick={onClosePanel} style={{
                 marginLeft: 'auto', background: 'var(--bg3)', border: '1px solid var(--border)',
                 color: 'var(--text)', borderRadius: 'var(--r-md)', padding: '6px 12px', cursor: 'pointer', fontSize: 13,
-              }}>ปิด (Esc)</button>
+              }}>{tr('ปิด (Esc)')}</button>
             </div>
             <LevelPanel proj={proj} panel={openPanel} />
           </div>
@@ -1404,7 +1405,7 @@ function TvView({ projects, index, onIndex, onExit, openPanelKey, onPick, onClos
               <button onClick={() => setPaused(v => !v)} style={{
                 background: 'none', border: '1px solid var(--border)', color: 'var(--text2)',
                 borderRadius: 'var(--r-md)', padding: '0.3vh 0.6vw', cursor: 'pointer', fontSize: F.sub,
-              }}>{paused ? 'เล่นต่อ' : 'หยุดสลับ'}</button>
+              }}>{paused ? tr('เล่นต่อ') : tr('หยุดสลับ')}</button>
               {projects.map((pj, i) => (
                 <button key={pj.id} onClick={() => onIndex(i)} title={pj.title} style={{
                   width: '0.8vw', height: '0.8vw', minWidth: 10, minHeight: 10, borderRadius: '50%',

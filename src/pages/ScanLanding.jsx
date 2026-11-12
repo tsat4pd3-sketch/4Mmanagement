@@ -53,6 +53,7 @@ import { canWriteLine, canWriteUnit, writeBlockText } from '../utils/writeScope'
 import { getWorkDate, getCurrentShift } from '../utils/workDate';
 import { toast } from '../components/Toast';
 
+import { tr } from '../utils/i18n';
 const card = {
   background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
   padding: 16, boxShadow: 'var(--shadow-sm)',
@@ -347,7 +348,7 @@ export default function ScanLanding() {
             ส่อง QR ที่ติดเครื่องด้วยกล้องมือถือ หรือกดสแกนจากในแอป
           </p>
           <button onClick={() => setRescan(true)} style={{ minHeight: 44, padding: '0 20px', fontSize: 14, fontWeight: 800 }}>
-            สแกนเลย
+            {tr('สแกนเลย')}
           </button>
         </div>
       )}
@@ -372,7 +373,7 @@ export default function ScanLanding() {
           )}
           <button onClick={() => setRescan(true)}
             style={{ minHeight: 44, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 13 }}>
-            สแกนป้ายอื่น
+            {tr('สแกนป้ายอื่น')}
           </button>
         </div>
       )}
@@ -429,7 +430,7 @@ export default function ScanLanding() {
                       {ckResult === 'busy' ? 'กำลังบันทึก…' : 'เช็คชื่อ “มางาน” เลย'}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                      บันทึกทันทีในนาม {fullName || 'ผู้ใช้นี้'} · {getWorkDate()} · {getCurrentShift() === 'night' ? 'กะดึก' : 'กะเช้า'}
+                      {tr('บันทึกทันทีในนาม')} {fullName || 'ผู้ใช้นี้'} · {getWorkDate()} · {getCurrentShift() === 'night' ? 'กะดึก' : 'กะเช้า'}
                     </div>
                   </span>
                 </button>
@@ -488,13 +489,13 @@ export default function ScanLanding() {
                       <button type="button" onClick={savePpe} disabled={ppe.saving}
                         style={{ flex: 2, minHeight: 46, borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)',
                           color: 'var(--accent-ink)', fontSize: 15, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
-                        {ppe.saving ? 'บันทึก…' : 'บันทึกผลตรวจ PPE'}
+                        {ppe.saving ? tr('บันทึก…') : tr('บันทึกผลตรวจ PPE')}
                       </button>
                       {/* ข้าม = ไม่เขียนอะไรเลย ⇒ ค้างเป็น "ยังไม่ได้ตรวจ" ให้หัวหน้าไปติ๊กต่อ */}
                       <button type="button" onClick={() => setPpe(p => ({ ...p, done: 'skipped' }))} disabled={ppe.saving}
                         style={{ flex: 1, minHeight: 46, borderRadius: 'var(--r-md)', border: '1px solid var(--border)',
                           background: 'var(--bg3)', color: 'var(--text2)', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
-                        ข้ามไว้ก่อน
+                        {tr('ข้ามไว้ก่อน')}
                       </button>
                     </div>
                   </>)}
@@ -550,7 +551,7 @@ export default function ScanLanding() {
           {!prodFound && (
             <button onClick={() => setRescan(true)}
               style={{ minHeight: 44, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 13 }}>
-              สแกนป้ายอื่น
+              {tr('สแกนป้ายอื่น')}
             </button>
           )}
         </div>
@@ -591,7 +592,7 @@ export default function ScanLanding() {
             )}
             <button onClick={() => setRescan(true)}
               style={{ minHeight: 44, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 13 }}>
-              สแกนป้ายอื่น
+              {tr('สแกนป้ายอื่น')}
             </button>
           </div>
         );
@@ -611,8 +612,8 @@ export default function ScanLanding() {
             {(mFailed || jigErr || pointErr || prodHit?.err?.length > 0 || extraErr) && <><br /><b style={{ color: 'var(--red, var(--red))' }}>⚠️ โหลดทะเบียนไม่ครบ — อาจไม่ใช่ว่าไม่มีเครื่องนี้จริง ลองใหม่อีกครั้ง</b></>}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-            <button onClick={() => setRescan(true)} style={{ minHeight: 44, padding: '0 16px', fontWeight: 700 }}>สแกนใหม่</button>
-            <button onClick={() => navigate('/')} style={{ minHeight: 44, padding: '0 16px', background: 'var(--bg3)' }}>หน้าแรก</button>
+            <button onClick={() => setRescan(true)} style={{ minHeight: 44, padding: '0 16px', fontWeight: 700 }}>{tr('สแกนใหม่')}</button>
+            <button onClick={() => navigate('/')} style={{ minHeight: 44, padding: '0 16px', background: 'var(--bg3)' }}>{tr('หน้าแรก')}</button>
           </div>
         </div>
       )}
@@ -658,8 +659,8 @@ export default function ScanLanding() {
                 borderRadius: 'var(--r-md)', border: '1px solid var(--amber)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer',
               }}>
                 <span style={{ fontSize: 22 }}>📜</span>
-                <span><div style={{ fontSize: 15, fontWeight: 800, color: 'var(--amber)' }}>ประวัติซ่อมเครื่องนี้</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ใบ MO ทั้งหมด · เวลาซ่อม · ค่าใช้จ่าย</div></span>
+                <span><div style={{ fontSize: 15, fontWeight: 800, color: 'var(--amber)' }}>{tr('ประวัติซ่อมเครื่องนี้')}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('ใบ MO ทั้งหมด · เวลาซ่อม · ค่าใช้จ่าย')}</div></span>
               </button>
             )}
             {hit.machine?.machine_no && canAccessPage('/order-trace', role) && (
@@ -670,7 +671,7 @@ export default function ScanLanding() {
 
           <button onClick={() => setRescan(true)}
             style={{ minHeight: 44, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 13 }}>
-            สแกนป้ายอื่น
+            {tr('สแกนป้ายอื่น')}
           </button>
         </div>
       )}

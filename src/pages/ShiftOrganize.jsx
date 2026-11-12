@@ -23,6 +23,7 @@ import PageHeader from '../components/PageHeader';
 import NoticeBar from '../components/NoticeBar';
 import Page from '../components/Page';
 import { DeleteButton } from '../components/IconButton';
+import { tr } from '../utils/i18n';
 function getWeekDates(refDate) {
   const d = new Date(refDate);
   const day = d.getDay();
@@ -500,7 +501,7 @@ export default function ShiftOrganize() {
       {/* Week Navigator */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
         <button type="button" className="pg-btn sm pg-btn-icon" onClick={prevWeek}>‹</button>
-        <button type="button" className="pg-btn sm" onClick={goToday} >วันนี้</button>
+        <button type="button" className="pg-btn sm" onClick={goToday} >{tr('วันนี้')}</button>
         <button type="button" className="pg-btn sm pg-btn-icon" onClick={nextWeek}>›</button>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', border: '1px solid var(--border2)' }}>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>สัปดาห์</span>
@@ -513,7 +514,7 @@ export default function ShiftOrganize() {
           <button type="button" className="pg-btn sm" onClick={() => setShowAutoFill(true)}
             title="ต่อรอบสลับกะที่ตั้งไว้แล้วไปข้างหน้า — ไม่ทับสัปดาห์ที่ตั้งไว้ และต้องดู preview ก่อนยืนยัน"
            >
-            เติมกะล่วงหน้า
+            {tr('เติมกะล่วงหน้า')}
           </button>
         )}
       </div>
@@ -560,11 +561,11 @@ export default function ShiftOrganize() {
         <table>
           <thead>
             <tr>
-              <th style={{ minWidth: 180 }}>ไลน์ผลิต</th>
+              <th style={{ minWidth: 180 }}>{tr('ไลน์ผลิต')}</th>
               <th style={{ minWidth: 80 }}>Section</th>
-              <th style={{ textAlign: 'center', minWidth: 130 }}>กะเช้า</th>
-              <th style={{ textAlign: 'center', minWidth: 130 }}>กะดึก</th>
-              {canEdit && <th style={{ textAlign: 'center', minWidth: 90 }}>จัดการ</th>}
+              <th style={{ textAlign: 'center', minWidth: 130 }}>{tr('กะเช้า')}</th>
+              <th style={{ textAlign: 'center', minWidth: 130 }}>{tr('กะดึก')}</th>
+              {canEdit && <th style={{ textAlign: 'center', minWidth: 90 }}>{tr('จัดการ')}</th>}
             </tr>
           </thead>
           <tbody>
@@ -634,12 +635,12 @@ export default function ShiftOrganize() {
                           cursor: 'pointer',
                         }}
                       >
-                        {team ? 'สลับ' : '+ กำหนด'}
+                        {team ? tr('สลับ') : tr('+ กำหนด')}
                       </button>
                       {isChild && !following && (
                         <button type="button" className="pg-btn sm" onClick={() => resetToParent(line.id)} title="กลับไปใช้กะตามไลน์แม่"
                           style={{ marginLeft: 6 }}>
-                          ตามแม่
+                          {tr('ตามแม่')}
                         </button>
                       )}
                     </td>
@@ -663,7 +664,7 @@ export default function ShiftOrganize() {
       {deptRows.length > 0 && (
         <>
           <h3 style={{ margin: '0 0 4px', fontFamily: 'var(--font-display)', fontSize: 15, color: 'var(--text2)' }}>
-            หน่วยงานสนับสนุน (ตั้งกะทั้งแผนก)
+            {tr('หน่วยงานสนับสนุน (ตั้งกะทั้งแผนก)')}
           </h3>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12, padding: '0 2px' }}>
             พนักงานที่ไม่ได้ผูกกับไลน์ผลิต (ช่างซ่อมบำรุง · QA · คลัง) หมุน A/B พร้อมกันทั้งแผนก
@@ -675,11 +676,11 @@ export default function ShiftOrganize() {
             <table>
               <thead>
                 <tr>
-                  <th style={{ minWidth: 180 }}>หน่วยงาน</th>
-                  <th style={{ minWidth: 120 }}>พนักงาน</th>
-                  <th style={{ textAlign: 'center', minWidth: 130 }}>กะเช้า</th>
-                  <th style={{ textAlign: 'center', minWidth: 130 }}>กะดึก</th>
-                  {canEditDept && <th style={{ textAlign: 'center', minWidth: 90 }}>จัดการ</th>}
+                  <th style={{ minWidth: 180 }}>{tr('หน่วยงาน')}</th>
+                  <th style={{ minWidth: 120 }}>{tr('พนักงาน')}</th>
+                  <th style={{ textAlign: 'center', minWidth: 130 }}>{tr('กะเช้า')}</th>
+                  <th style={{ textAlign: 'center', minWidth: 130 }}>{tr('กะดึก')}</th>
+                  {canEditDept && <th style={{ textAlign: 'center', minWidth: 90 }}>{tr('จัดการ')}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -739,7 +740,7 @@ export default function ShiftOrganize() {
                               background: isPending ? 'var(--amber-dim)' : 'var(--bg3)',
                               color: isPending ? 'var(--amber)' : 'var(--text2)', cursor: 'pointer',
                             }}>
-                            {team ? 'สลับ' : '+ กำหนด'}
+                            {team ? tr('สลับ') : tr('+ กำหนด')}
                           </button>
                           )}
                         </td>
@@ -772,14 +773,14 @@ export default function ShiftOrganize() {
       {/* Individual Overrides */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <h3 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 15, color: 'var(--text2)' }}>
-          รายการพิเศษรายบุคคล (สัปดาห์นี้)
+          {tr('รายการพิเศษรายบุคคล (สัปดาห์นี้)')}
         </h3>
         {canEdit && (
           <button type="button" className="pg-btn sm"
             onClick={() => { setOvrDate(weekStart); setShowOvrModal(true); }}
            
           >
-            เพิ่มรายการ
+            {tr('เพิ่มรายการ')}
           </button>
         )}
       </div>
@@ -788,12 +789,12 @@ export default function ShiftOrganize() {
         <table style={{ minWidth: 500 }}>
           <thead>
             <tr>
-              <th>วันที่</th>
-              <th>รหัส</th>
-              <th>พนักงาน</th>
-              <th style={{ textAlign: 'center' }}>กะ</th>
-              <th>เหตุผล</th>
-              {canEdit && <th style={{ textAlign: 'center' }}>ลบ</th>}
+              <th>{tr('วันที่')}</th>
+              <th>{tr('รหัส')}</th>
+              <th>{tr('พนักงาน')}</th>
+              <th style={{ textAlign: 'center' }}>{tr('กะ')}</th>
+              <th>{tr('เหตุผล')}</th>
+              {canEdit && <th style={{ textAlign: 'center' }}>{tr('ลบ')}</th>}
             </tr>
           </thead>
           <tbody>
@@ -833,14 +834,14 @@ export default function ShiftOrganize() {
       {/* Shift Merge Events */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, marginTop: 28 }}>
         <h3 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 15, color: 'var(--text2)' }}>
-          ⚡ เหตุการณ์ยุบกะ (Shift Merge)
+          {tr('⚡ เหตุการณ์ยุบกะ (Shift Merge)')}
         </h3>
         {canEdit && (
           <button type="button" className="pg-btn sm danger"
             onClick={() => { setMrgStart(weekStart); setMrgEnd(toDateStr(weekDates[6])); setShowMergeModal(true); }}
            
           >
-            สร้างเหตุการณ์ยุบกะ
+            {tr('สร้างเหตุการณ์ยุบกะ')}
           </button>
         )}
       </div>
@@ -848,12 +849,12 @@ export default function ShiftOrganize() {
         <table style={{ minWidth: 560 }}>
           <thead>
             <tr>
-              <th>ขอบเขต</th>
-              <th style={{ textAlign: 'center' }}>วันที่เริ่ม</th>
-              <th style={{ textAlign: 'center' }}>วันที่สิ้นสุด</th>
-              <th style={{ textAlign: 'center' }}>เปลี่ยนเป็น</th>
-              <th>สาเหตุ</th>
-              {canEdit && <th style={{ textAlign: 'center' }}>ลบ</th>}
+              <th>{tr('ขอบเขต')}</th>
+              <th style={{ textAlign: 'center' }}>{tr('วันที่เริ่ม')}</th>
+              <th style={{ textAlign: 'center' }}>{tr('วันที่สิ้นสุด')}</th>
+              <th style={{ textAlign: 'center' }}>{tr('เปลี่ยนเป็น')}</th>
+              <th>{tr('สาเหตุ')}</th>
+              {canEdit && <th style={{ textAlign: 'center' }}>{tr('ลบ')}</th>}
             </tr>
           </thead>
           <tbody>
@@ -909,11 +910,11 @@ export default function ShiftOrganize() {
         <div className="overlay">
           <div className="modal">
             <h3 style={{ marginTop: 0, marginBottom: 18, fontFamily: 'var(--font-display)', color: 'var(--text)', fontSize: 16 }}>
-              ⚡ สร้างเหตุการณ์ยุบกะ
+              {tr('⚡ สร้างเหตุการณ์ยุบกะ')}
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
-                <label style={labelSt}>ขอบเขต</label>
+                <label style={labelSt}>{tr('ขอบเขต')}</label>
                 <div style={{ display: 'flex', gap: 8 }}>
                   {['section', 'line'].map(s => (
                     <button key={s} onClick={() => setMrgScope(s)}
@@ -923,7 +924,7 @@ export default function ShiftOrganize() {
                         background: mrgScope === s ? 'var(--accent-dim)' : 'var(--bg3)',
                         color: mrgScope === s ? 'var(--accent)' : 'var(--text2)',
                       }}>
-                      {s === 'section' ? 'Section' : 'ไลน์เดียว'}
+                      {s === 'section' ? 'Section' : tr('ไลน์เดียว')}
                     </button>
                   ))}
                 </div>
@@ -932,31 +933,31 @@ export default function ShiftOrganize() {
                 <div>
                   <label style={labelSt}>Section</label>
                   <select value={mrgSection} onChange={e => setMrgSection(e.target.value)}>
-                    <option value="">— เลือก Section —</option>
+                    <option value="">{tr('— เลือก Section —')}</option>
                     {scopedSections.map(sec => (
-                      <option key={sec} value={sec}>{sec}</option>
+                      <option key={sec} value={sec}>{tr(sec)}</option>
                     ))}
                   </select>
                 </div>
               ) : (
                 <div>
-                  <label style={labelSt}>ไลน์ผลิต</label>
+                  <label style={labelSt}>{tr('ไลน์ผลิต')}</label>
                   {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง) — คง scope เดิม (scopedLines) */}
-                  <LineSelect lines={scopedLines} value={mrgLineId} valueKey="id" placeholder="— เลือกไลน์ —" onChange={setMrgLineId} includeSupport />
+                  <LineSelect lines={scopedLines} value={mrgLineId} valueKey="id" placeholder={tr('— เลือกไลน์ —')} onChange={setMrgLineId} includeSupport />
                 </div>
               )}
               <div style={{ display: 'flex', gap: 10 }}>
                 <div style={{ flex: 1 }}>
-                  <label style={labelSt}>วันที่เริ่ม</label>
+                  <label style={labelSt}>{tr('วันที่เริ่ม')}</label>
                   <input type="date" value={mrgStart} onChange={e => setMrgStart(e.target.value)} />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <label style={labelSt}>วันที่สิ้นสุด</label>
+                  <label style={labelSt}>{tr('วันที่สิ้นสุด')}</label>
                   <input type="date" value={mrgEnd} min={mrgStart} onChange={e => setMrgEnd(e.target.value)} />
                 </div>
               </div>
               <div>
-                <label style={labelSt}>เปลี่ยนทุกคนใน scope นี้เป็น</label>
+                <label style={labelSt}>{tr('เปลี่ยนทุกคนใน scope นี้เป็น')}</label>
                 <div style={{ display: 'flex', gap: 8 }}>
                   {[['day', '☀️ กะเช้า'], ['night', '🌙 กะดึก']].map(([val, label]) => (
                     <button key={val} onClick={() => setMrgShift(val)}
@@ -970,8 +971,8 @@ export default function ShiftOrganize() {
                 </div>
               </div>
               <div>
-                <label style={labelSt}>สาเหตุ / หมายเหตุ</label>
-                <input type="text" placeholder="เช่น ลดแผนผลิต Q2, ลูกค้าลด order" value={mrgReason} onChange={e => setMrgReason(e.target.value)} />
+                <label style={labelSt}>{tr('สาเหตุ / หมายเหตุ')}</label>
+                <input type="text" placeholder={tr('เช่น ลดแผนผลิต Q2, ลูกค้าลด order')} value={mrgReason} onChange={e => setMrgReason(e.target.value)} />
               </div>
 
               {/* Preview */}
@@ -991,11 +992,11 @@ export default function ShiftOrganize() {
                   onClick={handleAddMergeEvent}
                   disabled={!(mrgScope === 'section' ? mrgSection : mrgLineId) || !mrgStart || !mrgEnd}
                   style={{ flex: 2, opacity: !(mrgScope === 'section' ? mrgSection : mrgLineId) ? 0.5 : 1 }}>
-                  ยืนยันยุบกะ
+                  {tr('ยืนยันยุบกะ')}
                 </button>
                 <button type="button" className="pg-btn sm" onClick={() => setShowMergeModal(false)}
                   style={{ flex: 1 }}>
-                  ยกเลิก
+                  {tr('ยกเลิก')}
                 </button>
               </div>
             </div>
@@ -1008,16 +1009,16 @@ export default function ShiftOrganize() {
         <div className="overlay">
           <div className="modal">
             <h3 style={{ marginTop: 0, marginBottom: 18, fontFamily: 'var(--font-display)', color: 'var(--text)', fontSize: 16 }}>
-              เพิ่มรายการพิเศษรายบุคคล
+              {tr('เพิ่มรายการพิเศษรายบุคคล')}
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
-                <label style={labelSt}>วันที่</label>
+                <label style={labelSt}>{tr('วันที่')}</label>
                 <input type="date" value={ovrDate} onChange={e => setOvrDate(e.target.value)} />
               </div>
               <div>
-                <label style={labelSt}>พนักงาน</label>
-                <SearchSelect value={String(ovrEmpId ?? '')} placeholder="ค้นหาพนักงาน (รหัส/ชื่อ)…"
+                <label style={labelSt}>{tr('พนักงาน')}</label>
+                <SearchSelect value={String(ovrEmpId ?? '')} placeholder={tr('ค้นหาพนักงาน (รหัส/ชื่อ)…')}
                   options={employees.map(emp => {
                     /* 🔧🗂️ ติดป้ายกลุ่มให้คนที่ไม่ใช่หน้างาน — จอนี้เห็นครบทุกกลุ่มแล้ว (ไม่กรอง) ⇒ ต้องแยกออกด้วยตา */
                     const g = staffGroupOf(emp);
@@ -1027,24 +1028,24 @@ export default function ShiftOrganize() {
                   onChange={({ id }) => setOvrEmpId(id)} />
               </div>
               <div>
-                <label style={labelSt}>กะ</label>
+                <label style={labelSt}>{tr('กะ')}</label>
                 <select value={ovrShift} onChange={e => setOvrShift(e.target.value)}>
-                  <option value="day">กะเช้า (08:00–19:59)</option>
-                  <option value="night">กะดึก (20:00–07:59)</option>
+                  <option value="day">{tr('กะเช้า (08:00–19:59)')}</option>
+                  <option value="night">{tr('กะดึก (20:00–07:59)')}</option>
                 </select>
               </div>
               <div>
-                <label style={labelSt}>เหตุผล (ถ้ามี)</label>
-                <input type="text" placeholder="เช่น ขอเปลี่ยนกะ" value={ovrReason} onChange={e => setOvrReason(e.target.value)} />
+                <label style={labelSt}>{tr('เหตุผล (ถ้ามี)')}</label>
+                <input type="text" placeholder={tr('เช่น ขอเปลี่ยนกะ')} value={ovrReason} onChange={e => setOvrReason(e.target.value)} />
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                 <button type="button" className="pg-btn sm primary" onClick={handleAddOverride} disabled={!ovrEmpId}
                   style={{ flex: 2 }}>
-                  บันทึก
+                  {tr('บันทึก')}
                 </button>
                 <button type="button" className="pg-btn sm" onClick={() => setShowOvrModal(false)}
                   style={{ flex: 1 }}>
-                  ยกเลิก
+                  {tr('ยกเลิก')}
                 </button>
               </div>
             </div>

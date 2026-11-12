@@ -58,6 +58,7 @@ import { uploadQualityPhoto, removeQualityImg } from '../utils/qualityImage';
 import { notifyEvent } from '../utils/notifyEvent';
 import { DeleteButton } from './IconButton';
 
+import { tr as trI18n } from '../utils/i18n';
 const BINS = [
   { key: 'yellow', label: '🟡 ถังเหลือง — ชิ้นงานต้องสงสัย', short: 'ถังเหลือง', color: '#f5b942' },
   { key: 'red',    label: '🔴 ถังแดง — ชิ้นงานเสีย',        short: 'ถังแดง',   color: '#e05252' },
@@ -884,7 +885,7 @@ export default function QualityBins({ mode = 'full' }) {
     <div className="overlay"
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 20, width: 'min(96vw, 460px)' }}>
-        <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>🔧 ลงผลซ่อม (ขั้น 3)</h3>
+        <h3 style={{ margin: '0 0 4px', fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{trI18n('🔧 ลงผลซ่อม (ขั้น 3)')}</h3>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
           {binDocLabel(repairing.row)} · {Number(repairing.row.qty) || 0} ชิ้น — บันทึกแล้วส่งให้ QA ตรวจรับ (ขั้น 4)
         </div>
@@ -892,17 +893,17 @@ export default function QualityBins({ mode = 'full' }) {
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)', marginBottom: 10 }}>↩️ QA ตีกลับรอบก่อน: {repairing.row.repair_reject_note}</div>
         )}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignContent: 'start' }}>
-          <div><label style={lbl}>ซ่อมแล้วดี (ชิ้น)</label>
+          <div><label style={lbl}>{trI18n('ซ่อมแล้วดี (ชิ้น)')}</label>
             <input type="number" min="0" value={repairing.ok} onChange={e => setRepairing(f => ({ ...f, ok: e.target.value }))} style={inp} /></div>
-          <div><label style={lbl}>ซ่อมไม่ได้ (ชิ้น) → ถังแดงตอนตรวจรับ</label>
+          <div><label style={lbl}>{trI18n('ซ่อมไม่ได้ (ชิ้น) → ถังแดงตอนตรวจรับ')}</label>
             <input type="number" min="0" value={repairing.ng} onChange={e => setRepairing(f => ({ ...f, ng: e.target.value }))} style={inp} /></div>
-          <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>รายละเอียดการซ่อม (ทำอะไร · ตาม WI ไหน) *</label>
+          <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>{trI18n('รายละเอียดการซ่อม (ทำอะไร · ตาม WI ไหน) *')}</label>
             <input value={repairing.detail} onChange={e => setRepairing(f => ({ ...f, detail: e.target.value }))} style={inp} /></div>
         </div>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>ผู้ซ่อม: {fullName || '—'} · วันที่ {today()} · แนบรูปหลังซ่อมได้ที่ ✏️ แก้ไขรายการ</div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
-          <button onClick={() => setRepairing(null)} style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-          <button disabled={!!deciding} onClick={saveRepair} style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>บันทึกผลซ่อม → ส่ง QA</button>
+          <button onClick={() => setRepairing(null)} style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>{trI18n('ยกเลิก')}</button>
+          <button disabled={!!deciding} onClick={saveRepair} style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>{trI18n('บันทึกผลซ่อม → ส่ง QA')}</button>
         </div>
       </div>
     </div>
@@ -957,16 +958,16 @@ export default function QualityBins({ mode = 'full' }) {
             style={{ padding: '7px 13px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 800, cursor: 'pointer',
               border: '1px solid #f97316', whiteSpace: 'nowrap',
               background: overdueOnly ? '#f97316' : 'transparent', color: overdueOnly ? '#2a1204' : '#f97316' }}>
-            ⏱ เกินอายุแท็ก {overdueCount}
+            {trI18n('⏱ เกินอายุแท็ก')} {overdueCount}
           </button>
         )}
         <span className="spacer" />
-        {canRecord && <button onClick={openNew} style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>+ บันทึกรายการ</button>}
-        <button onClick={doPrint} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>พิมพ์ใบ {B.short}</button>
+        {canRecord && <button onClick={openNew} style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>{trI18n('+ บันทึกรายการ')}</button>}
+        <button onClick={doPrint} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>{trI18n('พิมพ์ใบ')} {B.short}</button>
         <button onClick={() => setShowWiReg(v => !v)}
           title="ทะเบียน QRs ↔ WI การซ่อม ตาม WI-PD3-069 §6 — อาการไหนซ่อมตาม WI เล่มไหน"
           style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: showWiReg ? 'var(--bg2)' : 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
-          ทะเบียน WI ซ่อม
+          {trI18n('ทะเบียน WI ซ่อม')}
         </button>
       </TimeRangeBar>
 
@@ -983,7 +984,7 @@ export default function QualityBins({ mode = 'full' }) {
         {!loading && overdueErr && (
           <span style={{ color: '#e05252', fontWeight: 700 }} title={overdueErr}> · ⚠️ รายการค้างเกินอายุแท็กอาจไม่ครบ ({overdueErr})</span>
         )}
-        {overdueOnly && <span> · แสดงเฉพาะของค้าง (ทุกวันที่ ไม่ขึ้นกับช่วงที่เลือก) <button onClick={() => setOverdueOnly(false)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 12.5, textDecoration: 'underline', padding: 0 }}>แสดงทั้งหมด</button></span>}
+        {overdueOnly && <span> · แสดงเฉพาะของค้าง (ทุกวันที่ ไม่ขึ้นกับช่วงที่เลือก) <button onClick={() => setOverdueOnly(false)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 12.5, textDecoration: 'underline', padding: 0 }}>{trI18n('แสดงทั้งหมด')}</button></span>}
       </div>
 
       {/* ── ตาราง ── */}
@@ -993,7 +994,7 @@ export default function QualityBins({ mode = 'full' }) {
             {(isY
               ? ['วันที่ลงถัง', 'อายุแท็ก', 'ชิ้นงาน', 'จำนวนรอพิจารณา', 'สาเหตุ', 'ผู้แจ้ง', 'ผล QA', 'ซ่อมเมื่อ', 'ผู้ซ่อม', 'QA', 'OK', 'NG', 'กลับเข้ากระบวนการ', '']
               : ['วันที่ลงถัง', 'อายุแท็ก', 'ชิ้นงาน', 'ไลน์', 'จำนวนเสีย', 'สาเหตุ', 'ผู้แจ้ง', 'QA', 'ผู้กำจัดทำลาย', 'ตำแหน่ง', 'ใบรายงานของเสีย', '']
-            ).map((h, i) => <th key={i} style={th}>{h}</th>)}
+            ).map((h, i) => <th key={i} style={th}>{trI18n(h)}</th>)}
           </tr></thead>
           <tbody>
             {!loading && !filtered.length && (
@@ -1148,30 +1149,30 @@ export default function QualityBins({ mode = 'full' }) {
               {editing === 'new' ? 'บันทึกรายการ' : 'แก้ไขรายการ'} — {B.short}
             </h3>
             <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, alignContent: 'start' }}>
-              <div><label style={lbl}>วันที่ลงถัง *</label>
+              <div><label style={lbl}>{trI18n('วันที่ลงถัง *')}</label>
                 <input type="date" value={form.work_date} onChange={e => setForm(f => ({ ...f, work_date: e.target.value }))} style={inp} /></div>
-              <div><label style={lbl}>ไลน์การผลิต</label>
+              <div><label style={lbl}>{trI18n('ไลน์การผลิต')}</label>
                 <LineSelect lines={lineObjs} value={form.line_name} style={inp}
                   onChange={v => setForm(f => ({ ...f, line_name: v }))} /></div>
-              <div><label style={lbl}>จำนวน (ชิ้น) *</label>
+              <div><label style={lbl}>{trI18n('จำนวน (ชิ้น) *')}</label>
                 <input type="number" value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} style={inp} /></div>
 
-              <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>ชิ้นงาน (เลือกจาก Product Master หรือพิมพ์เอง)</label>
+              <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>{trI18n('ชิ้นงาน (เลือกจาก Product Master หรือพิมพ์เอง)')}</label>
                 {/* 2026-09-07 <ProductSelect> — สินค้าของครอบครัวไลน์ที่เลือกขึ้นก่อน · พิมพ์เองได้ (ของที่ยังไม่อยู่ในทะเบียนมาถึงถังจริง) พร้อมป้าย */}
                 <ProductSelect value={form.mat_no} lines={famLines} allowFree freeHint="ชิ้นงานที่ยังไม่อยู่ใน Product Master" history={binMatHist}
-                  placeholder="MAT / รหัสชิ้นงาน" inputStyle={inp}
+                  placeholder={trI18n('MAT / รหัสชิ้นงาน')} inputStyle={inp}
                   onChange={({ mat_no, name, p_no, line_name, opt, known }) => {
                     const inReg = !!opt && known !== false; // กลุ่ม 📜 เคยบันทึกไว้ = นอกทะเบียน → ปฏิบัติเหมือนพิมพ์เอง (2026-09-07)
                     setMatLocked(inReg);
                     setForm(f => ({ ...f, mat_no, ...(inReg ? { part_name: name || f.part_name, part_no: p_no || f.part_no, line_name: f.line_name || line_name || '' } : {}) }));
                   }} /></div>
               {/* ตรง Product Master → ชื่อ/Part No. ล็อกตามทะเบียน (ล้าง MAT เพื่อแก้เอง) — กันสะกดชื่อชิ้นงานคนละแบบ */}
-              <div><label style={lbl}>ชื่อชิ้นงาน</label>
+              <div><label style={lbl}>{trI18n('ชื่อชิ้นงาน')}</label>
                 <input value={form.part_name} readOnly={matLocked} title={matLocked ? 'ตาม Product Master — ล้างช่อง MAT เพื่อแก้เอง' : ''} onChange={e => setForm(f => ({ ...f, part_name: e.target.value }))} style={{ ...inp, opacity: matLocked ? 0.75 : 1 }} /></div>
-              <div><label style={lbl}>Part No. (เลขลูกค้า)</label>
+              <div><label style={lbl}>{trI18n('Part No. (เลขลูกค้า)')}</label>
                 <input value={form.part_no} readOnly={matLocked} title={matLocked ? 'ตาม Product Master — ล้างช่อง MAT เพื่อแก้เอง' : ''} onChange={e => setForm(f => ({ ...f, part_no: e.target.value }))} style={{ ...inp, opacity: matLocked ? 0.75 : 1 }} /></div>
 
-              <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>สาเหตุ</label>
+              <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>{trI18n('สาเหตุ')}</label>
                 <input value={form.cause} onChange={e => setForm(f => ({ ...f, cause: e.target.value }))} style={inp} /></div>
               {/* 📷 รูปตอนพบ — ทางเลือก ห้ามบังคับ (หน้างานใส่ถุงมือ/รีบ · คำสั่ง user 12/10)
                   ประโยชน์หลัก: QA ตัดสิน 4 ทางจากรูปได้โดยไม่ต้องเดินไปดูของ และของที่ถูกซ่อม/
@@ -1184,9 +1185,9 @@ export default function QualityBins({ mode = 'full' }) {
                 />
               </div>
               {/* 2026-09-07 ชื่อคนเลือกจาก employees+profiles ผ่าน <PersonSelect> (คนในครอบครัวไลน์ขึ้นก่อน · เก็บชื่อ snapshot — ตาราง DR) */}
-              <div><label style={lbl}>ผู้แจ้ง (พนักงาน)</label>
+              <div><label style={lbl}>{trI18n('ผู้แจ้ง (พนักงาน)')}</label>
                 <PersonSelect value={form.reported_by} source="both" lines={famLines} history={reportedHist} inputStyle={inp} onChange={({ name }) => setForm(f => ({ ...f, reported_by: name }))} /></div>
-              <div><label style={lbl}>ผู้ตรวจสอบ (QA)</label>
+              <div><label style={lbl}>{trI18n('ผู้ตรวจสอบ (QA)')}</label>
                 <PersonSelect value={form.qa_by} source="both" roles={['qa']} lines={famLines} history={qaByHist} inputStyle={inp} onChange={({ name }) => setForm(f => ({ ...f, qa_by: name }))} /></div>
 
               {isY ? (<>
@@ -1219,8 +1220,8 @@ export default function QualityBins({ mode = 'full' }) {
                 )}
                 {form.qa_decision === 'use_as_is' && (
                   <div style={{ gridColumn: '1 / -1' }}>
-                    <label style={lbl}>เลขที่ใบ {SPECIAL_USE_FORM} (ใบขออนุมัติใช้ชิ้นส่วนเป็นกรณีพิเศษ)</label>
-                    <input value={form.special_use_doc_no} placeholder="ยังไม่ออกใบ = เว้นว่างไว้ก่อน (จะยังนับเป็นของค้างในถัง)"
+                    <label style={lbl}>{trI18n('เลขที่ใบ')} {SPECIAL_USE_FORM} {trI18n('(ใบขออนุมัติใช้ชิ้นส่วนเป็นกรณีพิเศษ)')}</label>
+                    <input value={form.special_use_doc_no} placeholder={trI18n('ยังไม่ออกใบ = เว้นว่างไว้ก่อน (จะยังนับเป็นของค้างในถัง)')}
                       onChange={e => setForm(f => ({ ...f, special_use_doc_no: e.target.value }))} style={inp} />
                   </div>
                 )}
@@ -1231,17 +1232,17 @@ export default function QualityBins({ mode = 'full' }) {
                   </div>
                 )}
                 <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ผลการซ่อม</div>
-                <div><label style={lbl}>วันที่ซ่อมชิ้นงาน</label>
+                <div><label style={lbl}>{trI18n('วันที่ซ่อมชิ้นงาน')}</label>
                   <input type="date" value={form.repair_date} onChange={e => setForm(f => ({ ...f, repair_date: e.target.value }))} style={inp} /></div>
-                <div><label style={lbl}>ผู้ดำเนินการซ่อม</label>
+                <div><label style={lbl}>{trI18n('ผู้ดำเนินการซ่อม')}</label>
                   <PersonSelect value={form.repair_by} source="both" lines={famLines} history={repairByHist} inputStyle={inp} onChange={({ name }) => setForm(f => ({ ...f, repair_by: name }))} /></div>
-                <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>รายละเอียดการซ่อมชิ้นงาน</label>
+                <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>{trI18n('รายละเอียดการซ่อมชิ้นงาน')}</label>
                   <input value={form.repair_detail} onChange={e => setForm(f => ({ ...f, repair_detail: e.target.value }))} style={inp} /></div>
-                <div><label style={lbl}>ผลซ่อม OK (ชิ้น)</label>
+                <div><label style={lbl}>{trI18n('ผลซ่อม OK (ชิ้น)')}</label>
                   <input type="number" value={form.qty_ok} onChange={e => setForm(f => ({ ...f, qty_ok: e.target.value }))} style={inp} /></div>
-                <div><label style={lbl}>ผลซ่อม NG (ชิ้น)</label>
+                <div><label style={lbl}>{trI18n('ผลซ่อม NG (ชิ้น)')}</label>
                   <input type="number" value={form.qty_ng} onChange={e => setForm(f => ({ ...f, qty_ng: e.target.value }))} style={inp} /></div>
-                <div><label style={lbl}>วันที่นำกลับเข้ากระบวนการ</label>
+                <div><label style={lbl}>{trI18n('วันที่นำกลับเข้ากระบวนการ')}</label>
                   <input type="date" value={form.return_date} disabled={!canDecide} title={canDecide ? '' : 'วันกลับเข้ากระบวนการ = QA ตรวจรับ (ขั้น 4) เท่านั้น'}
                     onChange={e => setForm(f => ({ ...f, return_date: e.target.value }))} style={inp} /></div>
                 {/* 📷 รูปหลังซ่อม — ปิดลูป "ซ่อมแล้วใช้ได้จริง" คู่กับรายละเอียดการซ่อม (I DO I CHECK) */}
@@ -1254,22 +1255,22 @@ export default function QualityBins({ mode = 'full' }) {
                 </div>
               </>) : (<>
                 <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>การกำจัดทำลาย (ตาม DOA)</div>
-                <div><label style={lbl}>ผู้กำจัดทำลาย</label>
+                <div><label style={lbl}>{trI18n('ผู้กำจัดทำลาย')}</label>
                   {/* เลือกคนแล้ว "ตำแหน่ง" เติมจากทะเบียน (positions master) อัตโนมัติ — ยังแก้เองได้ */}
                   <PersonSelect value={form.disposed_by} source="both" lines={famLines} history={disposedByHist} inputStyle={inp}
                     onChange={({ name, position, opt }) => setForm(f => ({ ...f, disposed_by: name, ...(opt && position ? { disposed_position: positionLabel(position) || position } : {}) }))} /></div>
-                <div><label style={lbl}>ตำแหน่ง</label>
+                <div><label style={lbl}>{trI18n('ตำแหน่ง')}</label>
                   <input value={form.disposed_position} onChange={e => setForm(f => ({ ...f, disposed_position: e.target.value }))}
-                    placeholder="ระดับหัวหน้ากลุ่ม-วิศวกรขึ้นไป" style={inp} /></div>
+                    placeholder={trI18n('ระดับหัวหน้ากลุ่ม-วิศวกรขึ้นไป')} style={inp} /></div>
               </>)}
 
-              <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>หมายเหตุ</label>
+              <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>{trI18n('หมายเหตุ')}</label>
                 <input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} style={inp} /></div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-              <button onClick={() => setEditing(null)} style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+              <button onClick={() => setEditing(null)} style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>{trI18n('ยกเลิก')}</button>
               <button onClick={save} disabled={saving} style={{ padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700, opacity: saving ? 0.6 : 1 }}>
-                {saving ? 'กำลังบันทึก…' : 'บันทึก'}
+                {saving ? trI18n('กำลังบันทึก…') : trI18n('บันทึก')}
               </button>
             </div>
           </div>

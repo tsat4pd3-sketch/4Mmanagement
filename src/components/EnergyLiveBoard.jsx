@@ -19,6 +19,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { fetchReadingsSince } from '../lib/energyReadings';
 import EnergyMeterDetail from './EnergyMeterDetail';
 
+import { tr } from '../utils/i18n';
 /* สีผ่าน token เท่านั้น (ด่าน colorRatchet · พาเลต ≤5 สี) */
 const GOOD = 'var(--green)', WARN = 'var(--amber)', BAD = 'var(--red)', IDLE = 'var(--muted)', ACC = 'var(--accent2)', INFO = 'var(--blue)';
 const EVENTS_SHOW = 50;
@@ -144,7 +145,7 @@ export default function EnergyLiveBoard() {
     if (!dm) return (
       <div style={{ display: 'grid', gap: 10 }}>
         <NoticeBar tone="warn">ไม่พบตู้ <b>{meterParam}</b> ในทะเบียนบอร์ดสด (อาจถูกปิดใช้/เปลี่ยนชื่อ)</NoticeBar>
-        <div><button type="button" className="pg-btn" onClick={() => openMeter(null)}>← กลับบอร์ดรวม</button></div>
+        <div><button type="button" className="pg-btn" onClick={() => openMeter(null)}>{tr('← กลับบอร์ดรวม')}</button></div>
       </div>
     );
     return <EnergyMeterDetail key={dm.key} m={dm} machines={machinesOf[dm.key] || []} boardMeters={board.meters}

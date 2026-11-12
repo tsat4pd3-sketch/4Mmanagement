@@ -22,6 +22,7 @@ import ScanModal from './ScanModal';
 import { qtyUnit, isCoilUom } from '../utils/coilUom';
 import { checkPickPart, checkPickQty, buildPickPayload, validatePickPayload, overrideReasonOk, OVERRIDE_REASONS } from '../utils/replenishGate';
 
+import { tr } from '../utils/i18n';
 const fmt = (v) => (v == null ? '—' : Number(v).toLocaleString());
 const btn = (bg, color, border = 'transparent', disabled = false) => ({
   padding: '9px 16px', borderRadius: 8, border: `1px solid ${border}`, background: bg, color,
@@ -78,7 +79,7 @@ export default function PickScanModal({ request, canOverride = false, fullName, 
         <div onClick={e => e.stopPropagation()} className="modal-scroll"
           style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(520px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)' }}>เริ่มเตรียม — สแกนยืนยันของที่หยิบ</h3>
+            <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)' }}>{tr('เริ่มเตรียม — สแกนยืนยันของที่หยิบ')}</h3>
             <button onClick={onClose} className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>✕</button>
           </div>
 
@@ -115,7 +116,7 @@ export default function PickScanModal({ request, canOverride = false, fullName, 
           )}
           {!overriding && (
             <button onClick={() => setScanOpen(true)} disabled={busy} style={{ ...btn('var(--accent)', 'var(--accent-ink)', 'transparent', busy), marginTop: 8 }}>
-              {partOk ? 'สแกนใหม่' : 'สแกนพาร์ท'}
+              {partOk ? tr('สแกนใหม่') : tr('สแกนพาร์ท')}
             </button>
           )}
 
@@ -134,7 +135,7 @@ export default function PickScanModal({ request, canOverride = false, fullName, 
           {qtyCheck.status === 'under' && (
             <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, fontSize: 12.5, color: 'var(--text)' }}>
               <input type="checkbox" checked={shortOk} onChange={e => setShortOk(e.target.checked)} style={{ width: 'auto' }} />
-              ยืนยันว่าส่งไม่ครบ {fmt(-qtyCheck.diff)} {qtyUnit(request?.uom)} — ไลน์จะเห็นตอนกดรับของ
+              {tr('ยืนยันว่าส่งไม่ครบ')} {fmt(-qtyCheck.diff)} {qtyUnit(request?.uom)} {tr('— ไลน์จะเห็นตอนกดรับของ')}
             </label>
           )}
 
@@ -144,9 +145,9 @@ export default function PickScanModal({ request, canOverride = false, fullName, 
 
           {!overriding && (
             <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
-              <button onClick={onClose} disabled={busy} style={btn('transparent', 'var(--muted)', 'var(--border2)', busy)}>ยกเลิก</button>
+              <button onClick={onClose} disabled={busy} style={btn('transparent', 'var(--muted)', 'var(--border2)', busy)}>{tr('ยกเลิก')}</button>
               <button onClick={confirmScanned} disabled={!canConfirm} style={btn(canConfirm ? '#22c55e' : 'var(--bg3)', canConfirm ? '#04140a' : 'var(--muted)', 'transparent', !canConfirm)}>
-                {busy ? '…' : '🔧 ยืนยัน · เริ่มเตรียม'}
+                {busy ? '…' : tr('🔧 ยืนยัน · เริ่มเตรียม')}
               </button>
             </div>
           )}
@@ -157,23 +158,23 @@ export default function PickScanModal({ request, canOverride = false, fullName, 
                 !overriding ? (
                   <button onClick={() => setOverriding(true)} disabled={busy}
                     style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: 12, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
-                    สแกนไม่ได้ / ป้ายพาร์ทหาย → ปลดบล็อกโดยหัวหน้า (บันทึกชื่อ+เหตุผล)
+                    {tr('สแกนไม่ได้ / ป้ายพาร์ทหาย → ปลดบล็อกโดยหัวหน้า (บันทึกชื่อ+เหตุผล)')}
                   </button>
                 ) : (
                   <div>
                     <div style={{ fontSize: 12.5, fontWeight: 800, color: '#ef4444' }}>ปลดบล็อก — ระบุเหตุผล (ถูกบันทึกเป็นข้อมูล)</div>
                     <select value={reasonKey} onChange={e => setReasonKey(e.target.value)} style={{ ...inputSt, marginTop: 6 }}>
-                      <option value="">— เลือกเหตุผล —</option>
-                      {OVERRIDE_REASONS.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+                      <option value="">{tr('— เลือกเหตุผล —')}</option>
+                      {OVERRIDE_REASONS.map(r => <option key={r.key} value={r.key}>{tr(r.label)}</option>)}
                     </select>
                     <input value={reasonNote} onChange={e => setReasonNote(e.target.value)}
                       placeholder={reasonKey === 'other' ? 'ระบุเหตุผล (บังคับ)' : 'รายละเอียดเพิ่มเติม (ไม่บังคับ)'} style={{ ...inputSt, marginTop: 6 }} />
                     <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 4 }}>ผู้ปลด: {fullName || '—'}</div>
                     <div style={{ display: 'flex', gap: 8, marginTop: 10, justifyContent: 'flex-end' }}>
-                      <button onClick={() => setOverriding(false)} disabled={busy} style={btn('transparent', 'var(--muted)', 'var(--border2)', busy)}>กลับไปสแกน</button>
+                      <button onClick={() => setOverriding(false)} disabled={busy} style={btn('transparent', 'var(--muted)', 'var(--border2)', busy)}>{tr('กลับไปสแกน')}</button>
                       <button onClick={confirmOverride} disabled={busy || !qtyOk || !overrideReasonOk(reasonKey, reasonNote)}
                         style={btn('#ef4444', '#fff', 'transparent', busy || !qtyOk || !overrideReasonOk(reasonKey, reasonNote))}>
-                        {busy ? '…' : '🔓 ปลดบล็อก + เริ่มเตรียม'}
+                        {busy ? '…' : tr('🔓 ปลดบล็อก + เริ่มเตรียม')}
                       </button>
                     </div>
                   </div>

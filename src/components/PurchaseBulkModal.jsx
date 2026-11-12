@@ -3,6 +3,7 @@ import { supabaseDR } from '../supabaseClient';
 import { toast } from './Toast';
 import { buildReceiptRows, RECEIPT_LINE } from '../utils/stockReceipt';
 
+import { tr } from '../utils/i18n';
 /* ═══ 🛒 สั่งซื้อ/รับเข้า "รวมยอดทั้งพาร์ท" — คิวจัดซื้อ ═══════════════════════════
    ที่มา: `fn_explode_child_demand` ออกใบ **1 ใบต่อ 1 ล็อต** (เพดาน 50 ใบ/การปิดออเดอร์)
    ⇒ คิวจริง 2,211 ใบ = แค่ ~25 พาร์ท · ตัวอย่าง 30045438 = **384 ใบ** ของพาร์ทเดียว
@@ -219,7 +220,7 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
               <button onClick={() => setTake('')} disabled={busy}
                 style={{ fontSize: 11.5, fontWeight: 700, padding: '5px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                   background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-body)' }}>
-                ทั้งหมด ({fmt(slips.length)})
+                {tr('ทั้งหมด (')}{fmt(slips.length)})
               </button>
             </div>
             {/* ⭐ ยอดจริงจากใบที่จะเลื่อน ไม่ใช่ค่าประมาณจาก min/max */}
@@ -262,7 +263,7 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button onClick={onClose} disabled={busy}
               style={{ fontSize: 12.5, fontWeight: 700, padding: '8px 14px', borderRadius: 'var(--r-md)', cursor: busy ? 'not-allowed' : 'pointer',
-                background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-body)' }}>ยกเลิก</button>
+                background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-body)' }}>{tr('ยกเลิก')}</button>
             <button onClick={run} disabled={busy || !n}
               style={{ fontSize: 12.5, fontWeight: 800, padding: '8px 16px', borderRadius: 'var(--r-md)',
                 cursor: busy || !n ? 'not-allowed' : 'pointer', opacity: busy || !n ? 0.6 : 1,

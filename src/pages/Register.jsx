@@ -24,6 +24,7 @@ import { uploadOpts } from '../utils/storageUpload';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 
+import { tr } from '../utils/i18n';
 export default function Register() {
   const { role, lineId: userLineId, sections: scopeSecs = [] } = useContext(UserContext);
   const canRegister = can('employees', 'register', role);
@@ -170,12 +171,12 @@ export default function Register() {
         <form onSubmit={handleRegister} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
-              <label style={labelSt}>รหัสพนักงาน</label>
-              <input type="text" placeholder="เช่น EMP001" value={empCode} onChange={e => setEmpCode(e.target.value)} required />
+              <label style={labelSt}>{tr('รหัสพนักงาน')}</label>
+              <input type="text" placeholder={tr('เช่น EMP001')} value={empCode} onChange={e => setEmpCode(e.target.value)} required />
             </div>
             <div>
-              <label style={labelSt}>ชื่อ - นามสกุล</label>
-              <input type="text" placeholder="ชื่อเต็มของพนักงาน" value={name} onChange={e => setName(e.target.value)} required />
+              <label style={labelSt}>{tr('ชื่อ - นามสกุล')}</label>
+              <input type="text" placeholder={tr('ชื่อเต็มของพนักงาน')} value={name} onChange={e => setName(e.target.value)} required />
             </div>
           </div>
 
@@ -183,7 +184,7 @@ export default function Register() {
               🔴 เดิมหน้านี้ไม่มีช่องนี้ ⇒ ทุกคนที่ลงทะเบียนทางนี้ตกไปที่ default 'shopfloor'
                  = QA/วิศวกร/ธุรการ ถูกนับเป็นกำลังคนหน้าไลน์เงียบๆ (audit 26/10) */}
           <div>
-            <label style={labelSt}>ประเภทพนักงาน</label>
+            <label style={labelSt}>{tr('ประเภทพนักงาน')}</label>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {STAFF_KINDS.map(k => (
                 <button key={k.key} type="button" onClick={() => setStaffKind(k.key)}
@@ -200,28 +201,28 @@ export default function Register() {
           </div>
 
           <div>
-            <label style={labelSt}>วันเริ่มงาน</label>
+            <label style={labelSt}>{tr('วันเริ่มงาน')}</label>
             <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
           </div>
 
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
-              <label style={labelSt}>ตำแหน่งงาน</label>
+              <label style={labelSt}>{tr('ตำแหน่งงาน')}</label>
               {/* ตำแหน่งงาน — master list กลาง (src/utils/positions.js) ใช้ร่วมทุกหน้า */}
               <select value={position} onChange={e => setPosition(e.target.value)}>
-                <option value="">— เลือก —</option>
-                {positionOptionsWith(position).map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                <option value="">{tr('— เลือก —')}</option>
+                {positionOptionsWith(position).map(p => <option key={p.value} value={p.value}>{tr(p.label)}</option>)}
               </select>
             </div>
             <div>
-              <label style={labelSt}>Section / ส่วน</label>
+              <label style={labelSt}>{tr('Section / ส่วน')}</label>
               {lockedSection ? (
                 <input type="text" value={lockedSection} disabled style={{ opacity: 0.6, cursor: 'not-allowed' }} />
               ) : (
                 <select value={section} onChange={e => { setSection(e.target.value); setDepartment(''); setGroupName(''); setLineId(null); }}>
-                  <option value="">— เลือก —</option>
-                  {sectionOptsInScope.map(s => <option key={s.id} value={s.code || s.name}>{s.name}</option>)}
-                  {showOrphanOpt && <option value={ORPHAN_SECTION}>{ORPHAN_SECTION_LABEL}</option>}
+                  <option value="">{tr('— เลือก —')}</option>
+                  {sectionOptsInScope.map(s => <option key={s.id} value={s.code || s.name}>{tr(s.name)}</option>)}
+                  {showOrphanOpt && <option value={ORPHAN_SECTION}>{tr(ORPHAN_SECTION_LABEL)}</option>}
                 </select>
               )}
             </div>
@@ -229,10 +230,10 @@ export default function Register() {
 
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
-              <label style={labelSt}>Department / แผนก</label>
+              <label style={labelSt}>{tr('Department / แผนก')}</label>
               <select value={department} onChange={e => { setDepartment(e.target.value); setGroupName(''); setLineId(null); }} disabled={!section}>
                 <option value="">{section ? '— เลือก —' : 'เลือก Section ก่อน'}</option>
-                {deptOpts.map(d => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
+                {deptOpts.map(d => <option key={d.id} value={d.code || d.name}>{tr(d.name)}</option>)}
               </select>
               {isOrphanSec && (
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.4 }}>
@@ -250,7 +251,7 @@ export default function Register() {
               )}
             </div>
             <div>
-              <label style={labelSt}>Team / กะ</label>
+              <label style={labelSt}>{tr('Team / กะ')}</label>
               {/* 🔴 สายสนับสนุน = ไม่ผูกไลน์/ทีม — `newEmployeeRow()` ตัดเป็น null ให้อยู่แล้ว
                   ช่องจึงต้องปิดด้วย ไม่งั้นจอสัญญาอย่าง ฐานเก็บอีกอย่าง */}
               <select value={isSupportKind ? '' : team} disabled={isSupportKind}
@@ -266,7 +267,7 @@ export default function Register() {
               ช่องเลือกที่กว้างเกิน ~420px อ่านยาก (ตาต้องกวาดจากป้ายไปค่าไกลมาก) */}
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
           <div>
-            <label style={labelSt}>Group / กลุ่ม (Line)</label>
+            <label style={labelSt}>{tr('Group / กลุ่ม (Line)')}</label>
             {isSupportKind ? (
               <div style={{ fontSize: 12, color: 'var(--muted)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '8px 10px', lineHeight: 1.5 }}>
                 สายสนับสนุนไม่ผูกกลุ่ม/ไลน์ผลิต — สังกัดอยู่ที่ <b>ส่วนงาน + แผนก</b> ข้างบนแทน
@@ -340,16 +341,16 @@ export default function Register() {
           </div>
 
           <div>
-            <label style={labelSt}>สายรถรับส่ง (สำหรับจองรถ OT)</label>
+            <label style={labelSt}>{tr('สายรถรับส่ง (สำหรับจองรถ OT)')}</label>
             <select value={busRouteId} onChange={e => setBusRouteId(e.target.value)}>
-              <option value="">— ไม่ระบุ —</option>
+              <option value="">{tr('— ไม่ระบุ —')}</option>
               {busRoutes.map(r => <option key={r.id} value={r.id}>{r.code} {r.name}</option>)}
             </select>
           </div>
           </div>
 
           <div>
-            <label style={labelSt}>รูปถ่าย (ถ้ามี)</label>
+            <label style={labelSt}>{tr('รูปถ่าย (ถ้ามี)')}</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {photoPreview && <img loading="lazy" src={photoPreview} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: '50%', border: '1px solid var(--border)' }} />}
               <input id="photo-upload" type="file" accept="image/*" onChange={e => {
@@ -377,7 +378,7 @@ export default function Register() {
               fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15,
             }}
           >
-            {isUploading ? 'กำลังบันทึก...' : canRegister ? 'บันทึกข้อมูลพนักงาน' : 'ไม่มีสิทธิ์ลงทะเบียนพนักงาน'}
+            {isUploading ? tr('กำลังบันทึก...') : canRegister ? tr('บันทึกข้อมูลพนักงาน') : tr('ไม่มีสิทธิ์ลงทะเบียนพนักงาน')}
           </button>
         </form>
       </div>

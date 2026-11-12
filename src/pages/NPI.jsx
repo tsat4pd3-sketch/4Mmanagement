@@ -36,6 +36,7 @@ import NpiTemplates from '../components/NpiTemplates';
 import PeSetFromMasterModal from '../components/PeSetFromMasterModal';
 import { DeleteButton } from '../components/IconButton';
 
+import { tr } from '../utils/i18n';
 /* ═══════════════════════════════════════════════════════════════════════════
    🚀 NPI — พาร์ทใหม่: APQP / PPAP / Drawing Rev / ECI / Tooling Plan — /npi
    2026-09-07 · แบบเต็ม + กฎ: docs/modules/npi-apqp.md
@@ -336,7 +337,7 @@ export default function NPI() {
 
   const projectSelect = (
     <select value={projectId} onChange={e => setProject(e.target.value)} className="grow" style={{ minWidth: 220, maxWidth: 420 }}>
-      <option value="">— เลือกโปรเจครุ่นใหม่ —</option>
+      <option value="">{tr('— เลือกโปรเจครุ่นใหม่ —')}</option>
       {projects.map(p => <option key={p.id} value={p.id}>{p.project_code} · {p.name}{p.status !== 'active' && p.status !== 'planning' ? ` (${PROJECT_STATUS[p.status]?.label})` : ''}</option>)}
     </select>
   );
@@ -352,8 +353,8 @@ export default function NPI() {
             <a href={nmBoardHref} style={{ ...ghost, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
               title="เปิดบอร์ด New Model (IEC) ของรุ่นนี้">บอร์ด New Model</a>
           )}
-          {project && canEdit && <button type="button" className="pg-btn" onClick={() => setProjModal({ ...emptyProject, ...project })}>โปรเจค</button>}
-          {canEdit && <button type="button" className="pg-btn" onClick={() => setProjModal({ ...emptyProject, project_code: nextProjectCode(projects.map(p => p.project_code), today), template_id: templates[0]?.id || '' })}>+ โปรเจค</button>}
+          {project && canEdit && <button type="button" className="pg-btn" onClick={() => setProjModal({ ...emptyProject, ...project })}>{tr('โปรเจค')}</button>}
+          {canEdit && <button type="button" className="pg-btn" onClick={() => setProjModal({ ...emptyProject, project_code: nextProjectCode(projects.map(p => p.project_code), today), template_id: templates[0]?.id || '' })}>{tr('+ โปรเจค')}</button>}
         </>}
         tabs={tabs} tab={tab} onTab={setTab} />
 
@@ -423,9 +424,9 @@ export default function NPI() {
       {projModal && (
         <Modal title={projModal.id ? 'แก้ไขโปรเจครุ่นใหม่' : 'สร้างโปรเจครุ่นใหม่'} onClose={() => setProjModal(null)} width={680}
           footer={<>
-            {projModal.id && <button style={{ ...ghost, color: 'var(--red)', marginRight: 'auto' }} onClick={() => { setProjModal(null); delProject(projModal); }}>ลบโปรเจค</button>}
-            <button style={ghost} onClick={() => setProjModal(null)}>ยกเลิก</button>
-            <button style={btn()} disabled={saving} onClick={saveProject}>{saving ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+            {projModal.id && <button style={{ ...ghost, color: 'var(--red)', marginRight: 'auto' }} onClick={() => { setProjModal(null); delProject(projModal); }}>{tr('ลบโปรเจค')}</button>}
+            <button style={ghost} onClick={() => setProjModal(null)}>{tr('ยกเลิก')}</button>
+            <button style={btn()} disabled={saving} onClick={saveProject}>{saving ? tr('กำลังบันทึก…') : tr('บันทึก')}</button>
           </>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label="รหัสโปรเจค" hint="เว้นว่าง = ระบบตั้งให้"><input style={inp} value={projModal.project_code} onChange={e => setProjModal({ ...projModal, project_code: e.target.value })} placeholder="NPI-2026-001" /></Field>
@@ -435,8 +436,8 @@ export default function NPI() {
             <Field label="Model" hint="จุดโยง pe_doc_sets.model"><input style={inp} value={projModal.model || ''} onChange={e => setProjModal({ ...projModal, model: e.target.value })} placeholder="P703" /></Field>
             <Field label="แม่แบบเฟส (ลูกค้า) *" hint="เปลี่ยนภายหลังไม่ย้อนแก้พาร์ทที่สร้างแล้ว" span={2}>
               <select style={inp} value={projModal.template_id} onChange={e => setProjModal({ ...projModal, template_id: e.target.value })} disabled={!!projModal.id && parts.length > 0}>
-                <option value="">— เลือก —</option>
-                {templates.filter(t => t.is_active).map(t => <option key={t.id} value={t.id}>{t.label}{t.customer ? ` (${t.customer})` : ''} · {t.phases.length} เฟส / {t.delivs.length} รายการ</option>)}
+                <option value="">{tr('— เลือก —')}</option>
+                {templates.filter(t => t.is_active).map(t => <option key={t.id} value={t.id}>{t.label}{t.customer ? ` (${t.customer})` : ''} · {t.phases.length} {tr('เฟส /')} {t.delivs.length} {tr('รายการ')}</option>)}
               </select>
             </Field>
             <Field label="วัน kickoff"><input type="date" style={inp} value={projModal.kickoff_date || ''} onChange={e => setProjModal({ ...projModal, kickoff_date: e.target.value })} /></Field>
@@ -451,7 +452,7 @@ export default function NPI() {
               hint="ผูกแล้วบอร์ด /nm-board จะดึงตัวเลขจริงจากโปรเจคนี้ไปแสดง และกดข้ามไปมาได้ · เว้นว่าง = ยังไม่ผูก">
               <select style={inp} value={projModal.nm_board_id || ''}
                 onChange={e => setProjModal({ ...projModal, nm_board_id: e.target.value })}>
-                <option value="">— ยังไม่ผูกกับบอร์ด —</option>
+                <option value="">{tr('— ยังไม่ผูกกับบอร์ด —')}</option>
                 {boardOptions(NM_BOARD_PROJECTS, { customer: projModal.customer, model: projModal.model }).map(o => (
                   <option key={o.id} value={o.id}>{o.label}{o.hint ? ` — ${o.hint}` : ''}</option>
                 ))}
@@ -465,17 +466,17 @@ export default function NPI() {
       {partModal && project && (
         <Modal title={partModal.id ? `แก้ไขพาร์ท ${partModal.part_no}` : 'เพิ่มพาร์ทในโปรเจค'} onClose={() => setPartModal(null)} width={720}
           footer={<>
-            <button style={ghost} onClick={() => setPartModal(null)}>ยกเลิก</button>
-            <button style={btn()} disabled={saving} onClick={savePart}>{saving ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+            <button style={ghost} onClick={() => setPartModal(null)}>{tr('ยกเลิก')}</button>
+            <button style={btn()} disabled={saving} onClick={savePart}>{saving ? tr('กำลังบันทึก…') : tr('บันทึก')}</button>
           </>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label="ชุด PFC/FMEA/CP ที่มีอยู่" hint="เลือกแล้วเติมข้อมูลพาร์ทให้ · ไม่มี = สร้างจากคลัง PFMEA ได้เลย" span={2}>
               <div style={{ display: 'flex', gap: 6 }}>
               <select style={inp} value={partModal.pe_set_id} onChange={e => pickPeSet(e.target.value)}>
-                <option value="">— ยังไม่มีชุดเอกสาร PE (สร้างที่ /pe-docs แล้วค่อยผูก) —</option>
+                <option value="">{tr('— ยังไม่มีชุดเอกสาร PE (สร้างที่ /pe-docs แล้วค่อยผูก) —')}</option>
                 {peSets.map(s => <option key={s.id} value={s.id}>{s.part_no} · {s.part_name || '—'} · {s.model || ''} {s.line_name ? `· ${s.line_name}` : ''}</option>)}
               </select>
-                <button style={{ ...ghost, whiteSpace: 'nowrap' }} onClick={() => setFromMasterOpen(true)} title={peMasters.length ? 'เลือกกระบวนการมาตรฐานตามลำดับผลิต → ได้ OP + PFMEA ร่างทันที' : 'คลัง PFMEA ยังว่าง (ยังไม่ apply migration 20260915_pe_fmea_master)'}>สร้างจาก master</button>
+                <button style={{ ...ghost, whiteSpace: 'nowrap' }} onClick={() => setFromMasterOpen(true)} title={peMasters.length ? 'เลือกกระบวนการมาตรฐานตามลำดับผลิต → ได้ OP + PFMEA ร่างทันที' : 'คลัง PFMEA ยังว่าง (ยังไม่ apply migration 20260915_pe_fmea_master)'}>{tr('สร้างจาก master')}</button>
               </div>
             </Field>
             <Field label="Part No. (ลูกค้า) *"><input style={inp} value={partModal.part_no} onChange={e => setPartModal({ ...partModal, part_no: e.target.value })} placeholder="MB3B-16E060-CH" /></Field>
@@ -487,11 +488,11 @@ export default function NPI() {
                 onChange={r => setPartModal({ ...partModal, mat_no: r.mat_no })} />
             </Field>
             <Field label="ไลน์ที่วางแผนผลิต">
-              <LineSelect lines={lines} value={partModal.line_name || ''} onChange={v => setPartModal({ ...partModal, line_name: v })} role={role} lineId={lineId} sections={sections} style={inp} placeholder="— ยังไม่กำหนด —" />
+              <LineSelect lines={lines} value={partModal.line_name || ''} onChange={v => setPartModal({ ...partModal, line_name: v })} role={role} lineId={lineId} sections={sections} style={inp} placeholder={tr('— ยังไม่กำหนด —')} />
             </Field>
             <Field label="มาตรฐานตรวจ QA (qa_parts)" hint="ตั้งที่ /qa-setup">
               <select style={inp} value={partModal.qa_part_id} onChange={e => setPartModal({ ...partModal, qa_part_id: e.target.value })}>
-                <option value="">— ยังไม่ผูก —</option>
+                <option value="">{tr('— ยังไม่ผูก —')}</option>
                 {qaParts.map(q => <option key={q.id} value={q.id}>{q.part_no} · {q.part_name || ''}</option>)}
               </select>
             </Field>
@@ -530,14 +531,14 @@ function PartsTable({ parts, rollByPart, partId, onPick, canEdit, onAdd, onEdit,
     <div style={{ ...card, marginBottom: 14 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
         <div style={{ fontSize: 14, fontWeight: 800 }}>พาร์ทในโปรเจค ({parts.length})</div>
-        {canEdit && <button style={btn()} onClick={onAdd}>+ พาร์ท</button>}
+        {canEdit && <button style={btn()} onClick={onAdd}>{tr('+ พาร์ท')}</button>}
       </div>
       {!parts.length ? <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>ยังไม่มีพาร์ท — กด + พาร์ท (เลือกจากชุด PFC/FMEA/CP ที่มีอยู่ได้เลย เช่น 060/061)</div> : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>
-              <th style={thSt}></th><th style={thSt}>Part No.</th><th style={thSt}>ชื่อ</th><th style={thSt}>ไลน์</th>
-              <th style={thSt}>เฟสปัจจุบัน</th><th style={{ ...thSt, textAlign: 'right' }}>เอกสาร</th><th style={thSt}>PPAP</th><th style={thSt}>PE docs</th><th style={thSt}>สถานะ</th><th style={thSt}></th>
+              <th style={thSt}></th><th style={thSt}>Part No.</th><th style={thSt}>{tr('ชื่อ')}</th><th style={thSt}>{tr('ไลน์')}</th>
+              <th style={thSt}>{tr('เฟสปัจจุบัน')}</th><th style={{ ...thSt, textAlign: 'right' }}>{tr('เอกสาร')}</th><th style={thSt}>PPAP</th><th style={thSt}>PE docs</th><th style={thSt}>{tr('สถานะ')}</th><th style={thSt}></th>
             </tr></thead>
             <tbody>
               {parts.map(p => {
@@ -637,9 +638,9 @@ function Board({ projects, rollByProject, templates, project, tplPhases, parts, 
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead><tr>
                     <th style={thSt}>Part</th>
-                    {tplPhases.map(ph => <th key={ph.code} style={{ ...thSt, textAlign: 'center', color: ph.color || 'var(--muted)' }}>{ph.label}</th>)}
+                    {tplPhases.map(ph => <th key={ph.code} style={{ ...thSt, textAlign: 'center', color: ph.color || 'var(--muted)' }}>{tr(ph.label)}</th>)}
                     <th style={{ ...thSt, textAlign: 'center' }}>PPAP</th>
-                    <th style={{ ...thSt, textAlign: 'right' }}>รวม</th>
+                    <th style={{ ...thSt, textAlign: 'right' }}>{tr('รวม')}</th>
                   </tr></thead>
                   <tbody>
                     {parts.map(p => {

@@ -26,6 +26,7 @@ import ParetoAbcChart from '../components/ParetoAbcChart';
 import PageHeader from '../components/PageHeader';
 import Segmented from '../components/Segmented';
 import Page from '../components/Page';
+import { tr } from '../utils/i18n';
 import { useWorkDate } from '../utils/useWorkDate';   // 📅 จอเปิดค้างข้ามวัน (12/11)
 /* 🚨 จอเฝ้าระวัง (MtnAndonBoard) ย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28)
    หน้านี้ = "คิวงานที่กดไปทำ" · `/tv` = "จอแขวน" — mount บอร์ดเดียวกัน 2 ที่คือทางเข้าซ้ำ */
@@ -126,7 +127,7 @@ function ActionList({ items, empty = '✅ ไม่มีงานค้าง',
             <b>{it.title}</b>
             {it.detail && <span style={{ color: 'var(--muted)' }}> · {it.detail}</span>}
           </span>
-          {it.age != null && <span style={{ fontSize: 11.5, color: it.age >= 3 ? 'var(--red)' : 'var(--muted)', whiteSpace: 'nowrap' }}>{it.age} วัน</span>}
+          {it.age != null && <span style={{ fontSize: 11.5, color: it.age >= 3 ? 'var(--red)' : 'var(--muted)', whiteSpace: 'nowrap' }}>{it.age} {tr('วัน')}</span>}
           {it.tag && <span style={{ fontSize: 11, fontWeight: 700, color: it.tagColor || 'var(--muted)', whiteSpace: 'nowrap' }}>{it.tag}</span>}
         </button>
       ))}
@@ -388,7 +389,7 @@ function ProductionView({ d, ctx }) {
     <Section title="ไลน์ที่ต้องเข้าไปช่วยก่อน" sub={`เรียงจาก % ทำได้น้อยสุด · วันงาน ${fmtDate(workDate)}`}>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ ...tableSt, minWidth: 620 }}>
-          <thead><tr><th style={TH}>ไลน์</th><th style={THR}>เป้า</th><th style={THR}>ผลิตได้</th><th style={THR}>%</th><th style={THR}>OEE</th><th style={THR}>DT (น.)</th><th style={THR}>NG</th></tr></thead>
+          <thead><tr><th style={TH}>{tr('ไลน์')}</th><th style={THR}>{tr('เป้า')}</th><th style={THR}>{tr('ผลิตได้')}</th><th style={THR}>%</th><th style={THR}>OEE</th><th style={THR}>{tr('DT (น.)')}</th><th style={THR}>NG</th></tr></thead>
           <tbody>
             {lineRows.map(l => (
               <tr key={l.line}>
@@ -547,7 +548,7 @@ function MaintenanceView({ d, ctx }) {
       sub="ฝ่ายผลิตลง downtime ไว้แต่ไม่ได้เปิดใบซ่อม → ช่างไม่เห็นงาน · เรียงตามนาทีที่เสียไปมากสุด (30 วัน)">
       <div style={{ overflowX: 'auto' }}>
         <table style={{ ...tableSt, minWidth: 640 }}>
-          <thead><tr><th style={TH}>เครื่อง</th><th style={TH}>ไลน์</th><th style={THR}>ครั้ง</th><th style={THR}>รวม (นาที)</th><th style={TH}>สาเหตุที่พบบ่อย</th><th style={TH}></th></tr></thead>
+          <thead><tr><th style={TH}>{tr('เครื่อง')}</th><th style={TH}>{tr('ไลน์')}</th><th style={THR}>{tr('ครั้ง')}</th><th style={THR}>{tr('รวม (นาที)')}</th><th style={TH}>{tr('สาเหตุที่พบบ่อย')}</th><th style={TH}></th></tr></thead>
           <tbody>
             {gap.slice(0, 12).map(m => (
               <tr key={m.machine}>
@@ -556,7 +557,7 @@ function MaintenanceView({ d, ctx }) {
                 <td style={TDR}>{m.times}</td>
                 <td style={{ ...TDR, color: 'var(--amber)', fontWeight: 700 }}>{fmtNum(m.min)}</td>
                 <td style={{ ...TD, fontSize: 12, color: 'var(--muted)' }}>{Object.entries(m.causes).sort((a, b) => b[1] - a[1])[0]?.[0]}</td>
-                <td style={TD}><button type="button" className="pg-btn sm" onClick={() => navigate('/mtn-repair')}>เปิดใบซ่อม →</button></td>
+                <td style={TD}><button type="button" className="pg-btn sm" onClick={() => navigate('/mtn-repair')}>{tr('เปิดใบซ่อม →')}</button></td>
               </tr>
             ))}
             {!gap.length && <tr><td style={TD} colSpan={6}>✅ ไม่มี — เครื่องที่หยุดซ้ำมีใบซ่อมครบแล้ว</td></tr>}
@@ -568,7 +569,7 @@ function MaintenanceView({ d, ctx }) {
     <Section title="PM ที่ใกล้ครบกำหนด (14 วันข้างหน้า)">
       <div style={{ overflowX: 'auto' }}>
         <table style={{ ...tableSt, minWidth: 520 }}>
-          <thead><tr><th style={TH}>อุปกรณ์</th><th style={TH}>ไลน์</th><th style={TH}>ครบกำหนด</th><th style={THR}>เหลือ (วัน)</th></tr></thead>
+          <thead><tr><th style={TH}>{tr('อุปกรณ์')}</th><th style={TH}>{tr('ไลน์')}</th><th style={TH}>{tr('ครบกำหนด')}</th><th style={THR}>{tr('เหลือ (วัน)')}</th></tr></thead>
           <tbody>
             {[...overdue, ...dueSoon].slice(0, 12).map(p => (
               <tr key={p.id}>
@@ -686,7 +687,7 @@ function StoreView({ d, ctx }) {
     <Section title="พาร์ทที่ต้องเติมก่อน" sub="เรียงจากขาดมากสุดเทียบ Min">
       <div style={{ overflowX: 'auto' }}>
         <table style={{ ...tableSt, minWidth: 600 }}>
-          <thead><tr><th style={TH}>MAT</th><th style={TH}>ชื่อ</th><th style={THR}>คงเหลือ</th><th style={THR}>Min</th><th style={THR}>ขาด</th></tr></thead>
+          <thead><tr><th style={TH}>MAT</th><th style={TH}>{tr('ชื่อ')}</th><th style={THR}>{tr('คงเหลือ')}</th><th style={THR}>Min</th><th style={THR}>{tr('ขาด')}</th></tr></thead>
           <tbody>
             {under.slice(0, 12).map(r => (
               <tr key={r.mat_no}>
@@ -989,7 +990,7 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
         <PageHeader
           title={embedded ? OBEYA_TITLE : 'Dashboard ส่วนงาน'} icon={embedded ? OBEYA_ICON : '📊'}
           sub={<>วันงาน {fmtDate(workDate)} · {scopeText} · อ่านอย่างเดียว (กดที่รายการเพื่อไปหน้าที่ทำงานจริง)</>}
-          actions={<button type="button" className="pg-btn" onClick={load}>รีเฟรช</button>}
+          actions={<button type="button" className="pg-btn" onClick={load}>{tr('รีเฟรช')}</button>}
           /* 📑 KPI รายเดือน ย้ายไป `/obeya?tab=table` แล้ว (17/09 · user ทักว่าซ้ำกับบอร์ด KPI ของ Obeya)
              เหตุผล: หน้านี้ตัดด้วย `?dept=` = หน้าที่/ฝ่าย · แต่ตาราง KPI ตัดด้วยส่วนงาน × กลุ่มไลน์ × ปี
              = แกนของ Obeya ⇒ มันไม่เคยใช้แกนของหน้านี้เลย (คอมเมนต์เดิมด้านล่างก็เขียนไว้เอง)
@@ -1005,7 +1006,7 @@ export default function DeptDashboard({ embedded = false, tabs, tab: hubTab, onT
             {/* 📺 จอเฝ้าระวังย้ายไปหน้า `/tv` แล้ว (nav audit 2026-08-28) — ปุ่มนี้คงทางเข้าเดิมไว้ (ห้ามตัดทางออกของใคร) */}
             <button className="ctl-btn" onClick={() => navigate(`/tv?dept=${dept === 'store' ? 'store' : dept === 'production' ? 'production' : 'maintenance'}`)}
               title="เปิด Andon Board สำหรับแขวนทีวี (ผัง + เครื่องหยุด + เสียงเตือน)"
-              style={tvBtn(false)}>Andon Board (จอแขวน)</button>
+              style={tvBtn(false)}>{tr('Andon Board (จอแขวน)')}</button>
           </>) : undefined}
         />
 

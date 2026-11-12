@@ -15,6 +15,7 @@ import {
 import BomSheetGroups from './BomSheetGroups';
 import { statusColor } from '../utils/statusTone';
 
+import { tr } from '../utils/i18n';
 /* ═══ 🔁 คู่ที่ "ของชิ้นเดียวถูกนิยามไว้ 2 ใบ" — จอให้ PE ไล่เคลียร์ ════════════════════
    แท็บ 🔁 ใน /products (?tab=bomdup) · user 08/10: *"ทำจอสรุป 94 คู่ให้ PE ไล่เคลียร์เลย"*
 
@@ -245,14 +246,14 @@ export default function BomDupPanel({ onOpenSheet }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
             <thead>
               <tr style={{ background: 'var(--bg3)' }}>
-                <th style={th}>ผลตรวจระบบ</th>
-                <th style={th}>ใบ</th>
-                <th style={th}>พาร์ทที่ถูกนิยาม 2 ที่</th>
-                <th style={{ ...th, textAlign: 'right' }}>ตรงกัน</th>
-                <th style={th}>จำนวนไม่ตรง (ใบนี้ ↔ ใบนั้น)</th>
-                <th style={th}>ใบนี้มี แต่ใบนั้นไม่มี</th>
-                <th style={th}>ใบนั้นมี แต่ใบนี้ไม่มี (ไม่ถูกระเบิด)</th>
-                <th style={th}>การตัดสิน</th>
+                <th style={th}>{tr('ผลตรวจระบบ')}</th>
+                <th style={th}>{tr('ใบ')}</th>
+                <th style={th}>{tr('พาร์ทที่ถูกนิยาม 2 ที่')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('ตรงกัน')}</th>
+                <th style={th}>{tr('จำนวนไม่ตรง (ใบนี้ ↔ ใบนั้น)')}</th>
+                <th style={th}>{tr('ใบนี้มี แต่ใบนั้นไม่มี')}</th>
+                <th style={th}>{tr('ใบนั้นมี แต่ใบนี้ไม่มี (ไม่ถูกระเบิด)')}</th>
+                <th style={th}>{tr('การตัดสิน')}</th>
               </tr>
             </thead>
             <tbody>
@@ -349,7 +350,7 @@ export default function BomDupPanel({ onOpenSheet }) {
                       ) : noteFor === p.dupKey ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                           <input value={noteText} onChange={e => setNoteText(e.target.value)}
-                            placeholder="หมายเหตุ (ไม่ใส่ก็ได้)" autoFocus
+                            placeholder={tr('หมายเหตุ (ไม่ใส่ก็ได้)')} autoFocus
                             style={{ fontSize: 11.5, padding: '4px 7px', borderRadius: 'var(--ctl-r)',
                               border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }} />
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -361,7 +362,7 @@ export default function BomDupPanel({ onOpenSheet }) {
                               </button>
                             ))}
                             <button type="button" onClick={() => { setNoteFor(''); setNoteText(''); }}
-                              style={{ ...btn, fontSize: 11 }}>ยกเลิก</button>
+                              style={{ ...btn, fontSize: 11 }}>{tr('ยกเลิก')}</button>
                           </div>
                         </div>
                       ) : (
@@ -369,12 +370,12 @@ export default function BomDupPanel({ onOpenSheet }) {
                           <button type="button" disabled={busy}
                             onClick={() => { setNoteFor(p.dupKey); setNoteText(p.review?.note || ''); }}
                             style={{ ...btn, fontSize: 11, cursor: busy ? 'wait' : 'pointer' }}>
-                            {p.cleared ? '✏️ แก้ผลตรวจ' : '✓ ตรวจแล้ว…'}
+                            {p.cleared ? tr('✏️ แก้ผลตรวจ') : tr('✓ ตรวจแล้ว…')}
                           </button>
                           {p.review && (
                             <button type="button" disabled={busy} onClick={() => clearReview(p)}
                               title="ลบผลตรวจ — คู่นี้กลับเข้าคิว"
-                              style={{ ...btn, fontSize: 11, cursor: busy ? 'wait' : 'pointer' }}>↩ ยกเลิก</button>
+                              style={{ ...btn, fontSize: 11, cursor: busy ? 'wait' : 'pointer' }}>{tr('↩ ยกเลิก')}</button>
                           )}
                         </div>
                       )}

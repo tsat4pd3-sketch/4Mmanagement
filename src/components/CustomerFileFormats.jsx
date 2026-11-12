@@ -24,6 +24,7 @@ import { toast } from './Toast';
 import { checkWrite } from '../utils/dbWrite';
 import { FALLBACK_EDI_DICT } from '../utils/ediDetect';
 
+import { tr } from '../utils/i18n';
 /* ช่องที่ระบบอ่านได้ — 3 ตัวแรกขาดไม่ได้ (ไม่มี = ประกอบความต้องการไม่ได้เลย) */
 const FIELDS = [
   { key: 'part', label: 'เลขพาร์ท', required: true },
@@ -124,7 +125,7 @@ export default function CustomerFileFormats({ canManage, onChanged }) {
           ลูกค้าเจ้าใหม่ที่ส่งไฟล์คนละหน้าตา — เพิ่มที่นี่ ไม่ต้องแก้โปรแกรม
         </span>
         {canManage && !editing && (
-          <button onClick={() => { setDraft(blankDraft()); setAdding(true); }} style={{ ...btn('var(--accent)'), marginLeft: 'auto' }}>+ เพิ่มฟอร์แมต</button>
+          <button onClick={() => { setDraft(blankDraft()); setAdding(true); }} style={{ ...btn('var(--accent)'), marginLeft: 'auto' }}>{tr('+ เพิ่มฟอร์แมต')}</button>
         )}
       </div>
 
@@ -147,8 +148,8 @@ export default function CustomerFileFormats({ canManage, onChanged }) {
               {!r.is_active && <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>ปิดใช้</span>}
               {canManage && !editing && (
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-                  <button onClick={() => startEdit(r)} style={btn('var(--bg2)', 'var(--text)')}>✎ แก้</button>
-                  <button onClick={() => toggleActive(r)} style={btn('var(--bg2)', 'var(--text)')}>{r.is_active ? '⏸ ปิดใช้' : '▶ เปิดใช้'}</button>
+                  <button onClick={() => startEdit(r)} style={btn('var(--bg2)', 'var(--text)')}>{tr('✎ แก้')}</button>
+                  <button onClick={() => toggleActive(r)} style={btn('var(--bg2)', 'var(--text)')}>{r.is_active ? tr('⏸ ปิดใช้') : tr('▶ เปิดใช้')}</button>
                 </span>
               )}
             </div>
@@ -164,21 +165,21 @@ export default function CustomerFileFormats({ canManage, onChanged }) {
       {editing && (
         <div style={{ marginTop: 10, padding: 10, borderRadius: 'var(--r-md)', background: 'var(--card)', border: '1px solid var(--accent)' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8, marginBottom: 8 }}>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>รหัส (ห้ามซ้ำ)
+            <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('รหัส (ห้ามซ้ำ)')}
               <input value={D.code || ''} disabled={D._edit} placeholder="tsra_order"
                 onChange={e => setDraft({ ...D, code: e.target.value })} style={{ ...inp, fontFamily: 'monospace' }} />
             </label>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>ชื่อที่แสดง
-              <input value={D.name || ''} placeholder="ใบสั่งซื้อ TSRA"
+            <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('ชื่อที่แสดง')}
+              <input value={D.name || ''} placeholder={tr('ใบสั่งซื้อ TSRA')}
                 onChange={e => setDraft({ ...D, name: e.target.value })} style={inp} />
             </label>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>ลูกค้า
+            <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('ลูกค้า')}
               <input value={D.customer_name || ''} placeholder="TSRA"
                 onChange={e => setDraft({ ...D, customer_name: e.target.value })} style={inp} />
             </label>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>ชนิดไฟล์
+            <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('ชนิดไฟล์')}
               <select value={D.kind} onChange={e => setDraft({ ...D, kind: e.target.value })} style={inp}>
-                {KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
+                {KINDS.map(k => <option key={k.value} value={k.value}>{tr(k.label)}</option>)}
               </select>
             </label>
           </div>
@@ -198,8 +199,8 @@ export default function CustomerFileFormats({ canManage, onChanged }) {
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-            <button disabled={busy} onClick={save} style={btn('var(--accent)')}>{busy ? 'กำลังบันทึก…' : '💾 บันทึก'}</button>
-            <button disabled={busy} onClick={() => { setDraft(null); setAdding(false); }} style={btn('var(--bg2)', 'var(--text)')}>ยกเลิก</button>
+            <button disabled={busy} onClick={save} style={btn('var(--accent)')}>{busy ? tr('กำลังบันทึก…') : tr('💾 บันทึก')}</button>
+            <button disabled={busy} onClick={() => { setDraft(null); setAdding(false); }} style={btn('var(--bg2)', 'var(--text)')}>{tr('ยกเลิก')}</button>
           </div>
         </div>
       )}

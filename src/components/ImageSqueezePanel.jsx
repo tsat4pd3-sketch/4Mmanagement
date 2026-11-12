@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { toast } from './Toast';
 import { supabase, supabaseDR } from '../supabaseClient';
 import { recompressLayouts } from '../utils/recompressLayouts';
+import { tr } from '../utils/i18n';
 import InfoMore from './InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 /* ══ 🗜️ ImageSqueezePanel — แผงบีบรูปที่อัปไว้แล้วทั้งระบบ ═══════════════════════════
@@ -139,7 +140,7 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
         ) : !scan ? (
           <div style={{ fontSize: 12.5, color: 'var(--accent2)' }}>
             สำรวจไม่สำเร็จ — ยังไม่รู้ว่าเหลือกี่ใบ{' '}
-            <button onClick={() => doScan()} style={linkBtn}>ลองใหม่</button>
+            <button onClick={() => doScan()} style={linkBtn}>{tr('ลองใหม่')}</button>
           </div>
         ) : scan.total === 0 ? (
           <div style={{ fontSize: 12.5, color: 'var(--accent)' }}>
@@ -174,7 +175,7 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
               </div>
             )}
             <button onClick={() => doScan()} disabled={!!busy} style={{ ...linkBtn, justifySelf: 'start', marginTop: 2 }}>
-              สำรวจใหม่
+              {tr('สำรวจใหม่')}
             </button>
           </div>
         )}

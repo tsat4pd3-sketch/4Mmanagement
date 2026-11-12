@@ -6,6 +6,7 @@ import { buildFlowGraph, downstreamOf, upstreamOf, lineAvgCtSec, bufferCoverMin 
 import LineSelect from './LineSelect';
 import { DeleteButton } from './IconButton';
 
+import { tr } from '../utils/i18n';
 /* ═══ 🔗 สายการไหลระหว่างไลน์ — แผงใน /linesetup (2026-08-19) ═══
    ตอบ "ไลน์นี้ป้อนงานให้ใคร / รับของมาจากใคร" ซึ่งระบบเดิมไม่เคยเก็บไว้ที่ไหนเลย
    (machine_flow_links = ในไลน์เดียวกัน · part_routings = รายพาร์ท ยังลงไม่ครบ)
@@ -151,9 +152,9 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
               {canEdit && !form && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                   <button onClick={() => setForm({ dir: 'down', other: '', buffer_label: '', buffer_qty: '' })}
-                    style={btnSt}>➕ ป้อนให้ไลน์…</button>
+                    style={btnSt}>{tr('➕ ป้อนให้ไลน์…')}</button>
                   <button onClick={() => setForm({ dir: 'up', other: '', buffer_label: '', buffer_qty: '' })}
-                    style={btnSt}>➕ รับของจากไลน์…</button>
+                    style={btnSt}>{tr('➕ รับของจากไลน์…')}</button>
                 </div>
               )}
 
@@ -163,17 +164,17 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
                     {form.dir === 'down' ? `${lineName} ➡️ ป้อนให้` : `⬅️ รับของจาก … ➡️ ${lineName}`}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
-                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ไลน์
+                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{tr('ไลน์')}
                       {/* 2026-09-07: <LineSelect> (ลำดับชั้นแม่→ลูก · ตัดปลดระวาง) — from_line/to_line เป็น join key ของ Heijunka/FlowTower */}
                       <LineSelect lines={pickLines} value={form.other} onChange={v => setForm({ ...form, other: v })} style={{ marginTop: 3 }} />
                     </label>
-                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>ชื่อจุดพัก (ถ้ามี)
+                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{tr('ชื่อจุดพัก (ถ้ามี)')}
                       <input value={form.buffer_label} onChange={e => setForm({ ...form, buffer_label: e.target.value })}
-                        placeholder="เช่น ชั้นพัก HDF-Laser" style={{ marginTop: 3 }} />
+                        placeholder={tr('เช่น ชั้นพัก HDF-Laser')} style={{ marginTop: 3 }} />
                     </label>
-                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>buffer (ชิ้น)
+                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{tr('buffer (ชิ้น)')}
                       <input type="number" min="0" value={form.buffer_qty} onChange={e => setForm({ ...form, buffer_qty: e.target.value })}
-                        placeholder="ไม่รู้ = เว้นว่าง" style={{ marginTop: 3 }} />
+                        placeholder={tr('ไม่รู้ = เว้นว่าง')} style={{ marginTop: 3 }} />
                     </label>
                   </div>
                   {(childrenOf[form.other] || []).length > 0 && (
@@ -194,10 +195,10 @@ export default function LineFlowPanel({ lineName, lines = [], canEdit = false })
                     </div>
                   )}
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                    <button onClick={() => setForm(null)} style={btnSt}>ยกเลิก</button>
+                    <button onClick={() => setForm(null)} style={btnSt}>{tr('ยกเลิก')}</button>
                     <button onClick={save} disabled={saving}
                       style={{ ...btnSt, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', fontWeight: 800, opacity: saving ? 0.6 : 1 }}>
-                      {saving ? 'กำลังบันทึก...' : '💾 บันทึก'}
+                      {saving ? tr('กำลังบันทึก...') : tr('💾 บันทึก')}
                     </button>
                   </div>
                 </div>

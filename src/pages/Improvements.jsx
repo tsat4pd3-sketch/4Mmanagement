@@ -35,6 +35,7 @@ import { ALL } from '../utils/filterLabels';
 import { acceptImageFile } from '../utils/acceptImageFile';
 import { DeleteButton } from '../components/IconButton';
 import { MO_VOID_NOT_IN } from '../utils/mtnStepPerm';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ── เฟส PDCA ของขั้นงาน (คำสั่ง user 2026-08-19: แผนงานต้องเห็นชัดว่าขั้นไหนคือ P-D-C-A) ──
@@ -966,7 +967,7 @@ export default function Improvements() {
         sub="เลือกปัญหาจากพาเรโต้ → บันทึกการแก้ไข → ระบบเทียบผลก่อน/หลังให้อัตโนมัติ"
         actions={canManage && (
           <button type="button" className="pg-btn primary" onClick={openCreate} style={{ cursor: 'pointer' }}>
-            เพิ่มโปรเจคปรับปรุง
+            {tr('เพิ่มโปรเจคปรับปรุง')}
           </button>
         )} />
       <FilterBar style={{ marginBottom: 8 }}>
@@ -1095,8 +1096,7 @@ export default function Improvements() {
                 {!started && imp.status === 'monitoring' && canManage && (
                   <button type="button" className="pg-btn sm" onClick={() => setDoModal({ imp, action: imp.action_taken || '', date: todayStr() })}
                     style={{ marginTop: 6, textAlign: 'left', width: '100%' }}>
-                    ยังไม่ได้ลงมือแก้จริง (อยู่ช่วงวิเคราะห์/วางแผน) — เริ่มลงมือเมื่อไหร่กดที่นี่
-                    เพื่อยืนยันการแก้ไข + ตั้ง "วันเริ่มแก้" เป็นจุดตัดเทียบก่อน/หลัง แล้วผลจริงจะเริ่มคำนวณ
+                    {tr('ยังไม่ได้ลงมือแก้จริง (อยู่ช่วงวิเคราะห์/วางแผน) — เริ่มลงมือเมื่อไหร่กดที่นี่ เพื่อยืนยันการแก้ไข + ตั้ง "วันเริ่มแก้" เป็นจุดตัดเทียบก่อน/หลัง แล้วผลจริงจะเริ่มคำนวณ')}
                   </button>
                 )}
                 {/* before/after images */}
@@ -1371,18 +1371,18 @@ export default function Improvements() {
                           {canManage && (
                             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 4, paddingTop: 6, borderTop: '1px dashed var(--border)' }}>
                               {/* width กัน index.css input{width:100%} ดันแถวแตก (กับดัก CSS ใน CLAUDE.md) */}
-                              <input placeholder="ขั้นงานใหม่ เช่น สั่งทำ jig ใหม่" value={msDraft[imp.id]?.title || ''}
+                              <input placeholder={tr('ขั้นงานใหม่ เช่น สั่งทำ jig ใหม่')} value={msDraft[imp.id]?.title || ''}
                                 onChange={e => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], title: e.target.value } }))}
                                 style={{ width: 170, padding: '5px 8px', fontSize: 11, borderRadius: 'var(--ctl-r)', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
                               {/* เฟส PDCA ของขั้นใหม่ — ไม่เลือก = "–" (ไม่เดาให้) */}
                               <select value={msDraft[imp.id]?.phase || ''} title="เฟส PDCA ของขั้นนี้"
                                 onChange={e => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], phase: e.target.value } }))}
                                 style={{ width: 92, padding: '4px 6px', fontSize: 11, borderRadius: 'var(--ctl-r)', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }}>
-                                <option value="">เฟส —</option>
+                                <option value="">{tr('เฟส —')}</option>
                                 {Object.entries(PHASES).map(([k, p]) => <option key={k} value={k}>{p.s} · {p.label.split(' — ')[0]}</option>)}
                               </select>
                               {/* 2026-09-07 เลือกคนผ่าน <PersonSelect> (profiles+employees · คนของไลน์นี้ขึ้นก่อน) — milestones อยู่ DR เก็บชื่อ snapshot */}
-                              <PersonSelect value={msDraft[imp.id]?.assignee || ''} source="both" history={assigneeHist} placeholder="ผู้รับผิดชอบ"
+                              <PersonSelect value={msDraft[imp.id]?.assignee || ''} source="both" history={assigneeHist} placeholder={tr('ผู้รับผิดชอบ')}
                                 lines={imp.line_name ? getLineFamilyNames(lines, imp.line_name) : undefined}
                                 style={{ width: 150 }} inputStyle={{ padding: '5px 26px 5px 8px', fontSize: 11, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--border)' }}
                                 onChange={({ name }) => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], assignee: name } }))} />
@@ -1393,7 +1393,7 @@ export default function Improvements() {
                                 onChange={e => setMsDraft(p => ({ ...p, [imp.id]: { ...p[imp.id], planned_end: e.target.value } }))}
                                 style={{ width: 125, padding: '4px 6px', fontSize: 11, borderRadius: 'var(--ctl-r)', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
                               <button type="button" className="pg-btn sm" onClick={() => addMilestone(imp.id)}
-                               >เพิ่มขั้น</button>
+                               >{tr('เพิ่มขั้น')}</button>
                             </div>
                           )}
                           {ms.length === 0 && !canManage && <div style={{ fontSize: 11, color: 'var(--muted)' }}>ยังไม่มีแผนงาน</div>}
@@ -1410,18 +1410,18 @@ export default function Improvements() {
                   {imp.created_by_name && <span style={{ fontSize: 11, color: 'var(--muted)', marginRight: 'auto' }}>โดย {imp.created_by_name}</span>}
                   {canManage && imp.status === 'monitoring' && (
                     <>
-                      <button type="button" className="pg-btn sm" onClick={() => setCloseModal({ imp, note: '', peImpact: null })}>ปิดจ๊อบ</button>
-                      <button type="button" className="pg-btn sm" onClick={() => setStatus(imp, 'cancelled')}>ยกเลิก</button>
+                      <button type="button" className="pg-btn sm" onClick={() => setCloseModal({ imp, note: '', peImpact: null })}>{tr('ปิดจ๊อบ')}</button>
+                      <button type="button" className="pg-btn sm" onClick={() => setStatus(imp, 'cancelled')}>{tr('ยกเลิก')}</button>
                     </>
                   )}
                   {canManage && imp.status !== 'monitoring' && (
-                    <button type="button" className="pg-btn sm" onClick={() => setStatus(imp, 'monitoring', imp.result_note)}>ติดตามต่อ</button>
+                    <button type="button" className="pg-btn sm" onClick={() => setStatus(imp, 'monitoring', imp.result_note)}>{tr('ติดตามต่อ')}</button>
                   )}
                   {/* 📐 คำขอแก้เอกสาร PE — เข้าได้ทุกเมื่อ (ดูสถานะคำขอ/เสนอเพิ่ม) ไม่ใช่ one-shot ตอนปิดจ๊อบ */}
                   <button type="button" className="pg-btn sm" onClick={() => setPeModal(imp)} title="เสนอ/ดูคำขอแก้ PFMEA · Control Plan จากโปรเจคนี้">PE</button>
                   {/* 📋 ใบ A3 — พิมพ์ได้ทุก role (อ่านอย่างเดียวก็ต้องเอาใบไปประชุมได้) แก้เนื้อหาเฉพาะคนมีสิทธิ์ */}
                   <button type="button" className="pg-btn sm" onClick={() => openA3(imp)} title="ออกใบ A3 Report (PDCA / DMAIC) จากข้อมูลจริงของโปรเจคนี้">A3</button>
-                  {canManage && <button type="button" className="pg-btn sm" onClick={() => openEdit(imp)}>แก้ไข</button>}
+                  {canManage && <button type="button" className="pg-btn sm" onClick={() => openEdit(imp)}>{tr('แก้ไข')}</button>}
                   {canDel && <DeleteButton onClick={() => handleDelete(imp)} title="ลบ" />}
                 </div>
               </div>
@@ -1444,40 +1444,40 @@ export default function Improvements() {
               style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))', gap: 16 }}>
               {/* ซ้าย: ข้อมูลโปรเจค */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ชื่อโปรเจค *
-                  <input value={modal.title} onChange={e => setModal({ ...modal, title: e.target.value })} placeholder="เช่น ลดดาวไทม์แม่พิมพ์ติดขัด HDF1" style={{ marginTop: 4 }} />
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{tr('ชื่อโปรเจค *')}
+                  <input value={modal.title} onChange={e => setModal({ ...modal, title: e.target.value })} placeholder={tr('เช่น ลดดาวไทม์แม่พิมพ์ติดขัด HDF1')} style={{ marginTop: 4 }} />
                 </label>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>ไลน์ *
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>{tr('ไลน์ *')}
                     {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คง pre-filter "ไลน์ลูก + scope" (lineOptions) เดิม */}
-                    <LineSelect lines={lineOptions} value={modal.line_name} placeholder="— เลือกไลน์ —" style={{ marginTop: 4 }}
+                    <LineSelect lines={lineOptions} value={modal.line_name} placeholder={tr('— เลือกไลน์ —')} style={{ marginTop: 4 }}
                       onChange={v => setModal({ ...modal, line_name: v, machine_no: '', mat_no: '' })} />
                   </label>
-                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>ประเภทปัญหา *
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>{tr('ประเภทปัญหา *')}
                     <select value={modal.problem_source} onChange={e => setModal({ ...modal, problem_source: e.target.value, problem_type_id: '', problem_label: '' })} style={{ marginTop: 4 }}>
                       <option value="downtime">Downtime</option>
-                      <option value="defect">ของเสีย/คุณภาพ</option>
-                      <option value="mtn">ใบซ่อม MTN</option>
+                      <option value="defect">{tr('ของเสีย/คุณภาพ')}</option>
+                      <option value="mtn">{tr('ใบซ่อม MTN')}</option>
                     </select>
                   </label>
                 </div>
                 {modal.problem_source === 'mtn' ? (
-                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ลักษณะปัญหา (จากใบซ่อม MTN)
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{tr('ลักษณะปัญหา (จากใบซ่อม MTN)')}
                     <select value={modal.problem_label || ''} onChange={e => setModal({ ...modal, problem_label: e.target.value, problem_type_id: '' })} style={{ marginTop: 4 }}>
-                      <option value="">{ALL.symptom}</option>
-                      {mtnProblemTypes.map(c => <option key={c} value={c}>{c}</option>)}
+                      <option value="">{tr(ALL.symptom)}</option>
+                      {mtnProblemTypes.map(c => <option key={c} value={c}>{tr(c)}</option>)}
                     </select>
                   </label>
                 ) : (
-                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ปัญหาที่แก้ (จาก master {modal.problem_source === 'defect' ? 'ของเสีย' : 'Downtime'})
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{tr('ปัญหาที่แก้ (จาก master')} {modal.problem_source === 'defect' ? 'ของเสีย' : 'Downtime'})
                     <select value={modal.problem_type_id} onChange={e => setModal({ ...modal, problem_type_id: e.target.value })} style={{ marginTop: 4 }}>
-                      <option value="">{ALL.type}</option>
-                      {typeOpts.map(t => <option key={t.id} value={t.id}>{t.name_th}</option>)}
+                      <option value="">{tr(ALL.type)}</option>
+                      {typeOpts.map(t => <option key={t.id} value={t.id}>{tr(t.name_th)}</option>)}
                     </select>
                   </label>
                 )}
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>เครื่องจักร/จุดงาน
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>{tr('เครื่องจักร/จุดงาน')}
                     <SearchSelect value={modal.machine_no || ''} placeholder={`${ALL.machine} — พิมพ์ค้นหาเครื่อง`} style={{ marginTop: 4 }}
                       options={[
                         /* ค่าที่ตั้งไว้แต่ไม่มีในทะเบียน ต้องยังแสดงได้ — ไม่งั้นช่องโชว์ "ทั้งไลน์" ทั้งที่ state กรองรายเครื่องอยู่ */
@@ -1490,7 +1490,7 @@ export default function Improvements() {
                       ]}
                       onChange={({ id }) => setModal({ ...modal, machine_no: id })} />
                   </label>
-                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>สินค้า
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', flex: 1 }}>{tr('สินค้า')}
                     <SearchSelect value={modal.mat_no || ''} placeholder={`${ALL.product} — พิมพ์ค้นหา MAT / ชื่อ`} style={{ marginTop: 4 }}
                       options={[
                         ...(modal.mat_no && !prodAll.some(p => p.mat_no === modal.mat_no) && !prodUnreg.includes(modal.mat_no) ? [{ id: modal.mat_no, label: `⚠ ${modal.mat_no}`, sub: 'ตามที่บันทึกไว้ (ไม่มีในทะเบียนสินค้าของไลน์นี้)' }] : []),
@@ -1502,7 +1502,7 @@ export default function Improvements() {
                     {/* ลิสต์ว่าง = ต้องบอกว่าทำไม ห้ามปล่อยให้ดูเหมือน dropdown เสีย */}
                     {prodAll.length === 0 && prodUnreg.length === 0 && (
                       <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 600, marginTop: 3, lineHeight: 1.5 }}>
-                        ยังไม่มีสินค้าผูกกับไลน์ {modal.line_name} (หรือไลน์แม่/ลูก) ใน Product Master — ตั้ง “ไลน์” ของสินค้าที่ /products ก่อน
+                        {tr('ยังไม่มีสินค้าผูกกับไลน์')} {modal.line_name} {tr('(หรือไลน์แม่/ลูก) ใน Product Master — ตั้ง “ไลน์” ของสินค้าที่ /products ก่อน')}
                       </div>
                     )}
                   </label>
@@ -1510,12 +1510,12 @@ export default function Improvements() {
                 {/* 🎯 เป้าหมาย (Plan) — ผลจริงจะคำนวณหลังกดยืนยัน "เริ่มลงมือแก้จริง" เท่านั้น */}
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }} title="ตั้งเป้าตอนเปิดโปรเจค (ขั้น Plan) — ระบบคำนวณเงินที่คาดว่าจะประหยัดให้">
-                    เป้าหมาย <span style={{ fontWeight: 600, fontSize: 11 }}>(ตั้งใจ “ลดลง” เท่าไหร่)</span>
+                    {tr('เป้าหมาย')} <span style={{ fontWeight: 600, fontSize: 11 }}>{tr('(ตั้งใจ “ลดลง” เท่าไหร่)')}</span>
                     <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                      <input type="number" min="0" step="any" placeholder="เช่น 50" value={modal.target_value}
+                      <input type="number" min="0" step="any" placeholder={tr('เช่น 50')} value={modal.target_value}
                         onChange={e => setModal({ ...modal, target_value: e.target.value })} style={{ width: 110 }} />
                       <select value={modal.target_mode || 'pct'} onChange={e => setModal({ ...modal, target_mode: e.target.value })} style={{ width: 160 }}>
-                        <option value="pct">% ลดลง</option>
+                        <option value="pct">{tr('% ลดลง')}</option>
                         <option value="per_day">{modal.problem_source === 'defect' ? 'ชิ้น/วัน ที่ลดลง' : modal.problem_source === 'mtn' ? 'ใบ/วัน ที่ลดลง' : 'นาที/วัน ที่ลดลง'}</option>
                       </select>
                     </div>
@@ -1526,26 +1526,26 @@ export default function Improvements() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }} title="จุดตัดเทียบก่อน/หลัง — ถ้ายังไม่ได้ลงมือจริง ระบบจะเลื่อนให้ตอนกดเริ่มขั้น Do">วันเริ่มแก้ไข * <span style={{ fontWeight: 600, fontSize: 11 }}>(= จุดตัดเทียบก่อน/หลัง)</span>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }} title="จุดตัดเทียบก่อน/หลัง — ถ้ายังไม่ได้ลงมือจริง ระบบจะเลื่อนให้ตอนกดเริ่มขั้น Do">{tr('วันเริ่มแก้ไข *')} <span style={{ fontWeight: 600, fontSize: 11 }}>(= จุดตัดเทียบก่อน/หลัง)</span>
                     {/* width กัน index.css input{width:100%} (กับดัก CSS ใน CLAUDE.md) */}
                     <input type="date" value={modal.start_date} onChange={e => setModal({ ...modal, start_date: e.target.value })} style={{ marginTop: 4, width: 150, display: 'block' }} />
                   </label>
-                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>หน้าต่างเทียบผล
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{tr('หน้าต่างเทียบผล')}
                     <select value={modal.baseline_days} onChange={e => setModal({ ...modal, baseline_days: e.target.value })} style={{ marginTop: 4, width: 130, display: 'block' }}>
-                      {[14, 30, 60, 90].map(d => <option key={d} value={d}>{d} วัน</option>)}
+                      {[14, 30, 60, 90].map(d => <option key={d} value={d}>{d} {tr('วัน')}</option>)}
                     </select>
                   </label>
-                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>เงินลงทุน (บาท)
+                  <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{tr('เงินลงทุน (บาท)')}
                     {/* ใช้คิดระยะคืนทุนเทียบ cost saving/เดือน — ไม่บังคับ */}
                     <input type="number" min="0" step="any" value={modal.invest_cost ?? ''} onChange={e => setModal({ ...modal, invest_cost: e.target.value })}
-                      placeholder="ค่าอะไหล่/จิ๊ก/ปรับปรุง" style={{ marginTop: 4, width: 150, display: 'block' }} />
+                      placeholder={tr('ค่าอะไหล่/จิ๊ก/ปรับปรุง')} style={{ marginTop: 4, width: 150, display: 'block' }} />
                   </label>
                 </div>
-                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>สภาพปัญหา/สาเหตุ
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{tr('สภาพปัญหา/สาเหตุ')}
                   <textarea value={modal.description || ''} onChange={e => setModal({ ...modal, description: e.target.value })} rows={2} style={{ marginTop: 4 }} />
                 </label>
-                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>การแก้ไข (Action)
-                  <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: 11 }}> — ยังวิเคราะห์อยู่ก็เว้นได้ การ์ดจะชวนกรอกตอนกดเริ่มขั้น Do (แยกจังหวะ Plan/Do ตามหลัก PDCA)</span>
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{tr('การแก้ไข (Action)')}
+                  <span style={{ fontWeight: 600, color: 'var(--muted)', fontSize: 11 }}> {tr('— ยังวิเคราะห์อยู่ก็เว้นได้ การ์ดจะชวนกรอกตอนกดเริ่มขั้น Do (แยกจังหวะ Plan/Do ตามหลัก PDCA)')}</span>
                   <textarea value={modal.action_taken || ''} onChange={e => setModal({ ...modal, action_taken: e.target.value })} rows={2} style={{ marginTop: 4 }} />
                 </label>
                 <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -1636,9 +1636,9 @@ export default function Improvements() {
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-              <button type="button" className="pg-btn sm" onClick={() => setModal(null)}>ยกเลิก</button>
+              <button type="button" className="pg-btn sm" onClick={() => setModal(null)}>{tr('ยกเลิก')}</button>
               <button type="button" className="pg-btn sm primary" disabled={saving} onClick={handleSave} style={{ opacity: saving ? 0.6 : 1 }}>
-                {saving ? 'กำลังบันทึก...' : 'บันทึก'}
+                {saving ? tr('กำลังบันทึก...') : tr('บันทึก')}
               </button>
             </div>
           </div>
@@ -1654,17 +1654,17 @@ export default function Improvements() {
               วันเริ่มแก้คือ<b>จุดตัดเทียบก่อน/หลัง</b> — ตั้งเป็นวันที่ลงมือจริง ตัวเลข % ลด/Cost Saving ถึงจะแม่น
               (ปล่อยเป็นวันเปิดโปรเจคทั้งที่ยังวิเคราะห์อยู่ = ช่วง "หลังแก้" ปนวันที่ยังไม่ได้แก้)
             </div>
-            <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>การแก้ไขที่ลงมือทำ (Action) *
+            <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{tr('การแก้ไขที่ลงมือทำ (Action) *')}
               <textarea value={doModal.action} onChange={e => setDoModal({ ...doModal, action: e.target.value })} rows={3}
-                placeholder="เช่น แก้ JOB ROBOT จุดเชื่อม 12 · เปลี่ยน Reed sensor + ย้ายตำแหน่ง bracket" style={{ marginTop: 4 }} />
+                placeholder={tr('เช่น แก้ JOB ROBOT จุดเชื่อม 12 · เปลี่ยน Reed sensor + ย้ายตำแหน่ง bracket')} style={{ marginTop: 4 }} />
             </label>
-            <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', display: 'block', marginTop: 8 }}>วันเริ่มแก้จริง *
+            <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)', display: 'block', marginTop: 8 }}>{tr('วันเริ่มแก้จริง *')}
               {/* width กัน index.css input{width:100%} */}
               <input type="date" value={doModal.date} onChange={e => setDoModal({ ...doModal, date: e.target.value })} style={{ marginTop: 4, width: 150, display: 'block' }} />
             </label>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
-              <button type="button" className="pg-btn sm" onClick={() => setDoModal(null)}>ไว้ก่อน</button>
-              <button type="button" className="pg-btn sm" onClick={saveDoStart}>บันทึกเริ่มลงมือ</button>
+              <button type="button" className="pg-btn sm" onClick={() => setDoModal(null)}>{tr('ไว้ก่อน')}</button>
+              <button type="button" className="pg-btn sm" onClick={saveDoStart}>{tr('บันทึกเริ่มลงมือ')}</button>
             </div>
           </div>
         </div>
@@ -1773,12 +1773,12 @@ export default function Improvements() {
               </div>
 
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14, flexWrap: 'wrap' }}>
-                <button type="button" className="pg-btn sm" onClick={() => setA3Modal(null)}>ปิด</button>
-                <button type="button" className="pg-btn sm" onClick={printA3}>พิมพ์อย่างเดียว</button>
+                <button type="button" className="pg-btn sm" onClick={() => setA3Modal(null)}>{tr('ปิด')}</button>
+                <button type="button" className="pg-btn sm" onClick={printA3}>{tr('พิมพ์อย่างเดียว')}</button>
                 {canManage && (
                   <button type="button" className="pg-btn sm primary" onClick={async () => { await saveA3(); await printA3(); }} disabled={a3Modal.saving}
                     style={{ opacity: a3Modal.saving ? 0.6 : 1 }}>
-                    {a3Modal.saving ? 'กำลังบันทึก…' : 'บันทึก & พิมพ์ A3'}
+                    {a3Modal.saving ? tr('กำลังบันทึก…') : tr('บันทึก & พิมพ์ A3')}
                   </button>
                 )}
               </div>
@@ -1792,8 +1792,8 @@ export default function Improvements() {
         <div className="overlay">
           <div className="modal">
             <h3 style={{ margin: '0 0 10px', fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>✅ ปิดโปรเจค "{closeModal.imp.title}"</h3>
-            <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>สรุปผลการปรับปรุง
-              <textarea value={closeModal.note} onChange={e => setCloseModal({ ...closeModal, note: e.target.value })} rows={3} placeholder="เช่น ดาวไทม์ลดลง 70% หลังเปลี่ยน jig ใหม่" style={{ marginTop: 4 }} />
+            <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{tr('สรุปผลการปรับปรุง')}
+              <textarea value={closeModal.note} onChange={e => setCloseModal({ ...closeModal, note: e.target.value })} rows={3} placeholder={tr('เช่น ดาวไทม์ลดลง 70% หลังเปลี่ยน jig ใหม่')} style={{ marginTop: 4 }} />
             </label>
             {/* ── soft gate ขั้น Act (2026-08-19): การแก้วิธีการ/จิ๊ก/พารามิเตอร์ = process change ที่ IATF
                 ต้องทบทวน PFMEA/Control Plan — บังคับให้ "ตอบ" ก่อนปิด แต่ไม่บังคับให้แก้เอกสารเสร็จ
@@ -1810,7 +1810,7 @@ export default function Improvements() {
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
-              <button type="button" className="pg-btn sm" onClick={() => setCloseModal(null)}>ยกเลิก</button>
+              <button type="button" className="pg-btn sm" onClick={() => setCloseModal(null)}>{tr('ยกเลิก')}</button>
               <button disabled={!closeModal.peImpact}
                 title={closeModal.peImpact ? '' : 'ตอบก่อนว่ากระทบเอกสาร PE ไหม (ขั้น Act ของ PDCA)'}
                 onClick={() => {
@@ -1818,7 +1818,7 @@ export default function Improvements() {
                   if (closeModal.peImpact === 'yes') setPeModal(closeModal.imp);
                   setCloseModal(null);
                 }}
-                style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', background: closeModal.peImpact ? 'var(--green)' : 'var(--bg3)', color: closeModal.peImpact ? '#08130a' : 'var(--muted)', fontWeight: 800, fontSize: 12, cursor: closeModal.peImpact ? 'pointer' : 'not-allowed' }}>ปิดจ๊อบ</button>
+                style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', background: closeModal.peImpact ? 'var(--green)' : 'var(--bg3)', color: closeModal.peImpact ? '#08130a' : 'var(--muted)', fontWeight: 800, fontSize: 12, cursor: closeModal.peImpact ? 'pointer' : 'not-allowed' }}>{tr('ปิดจ๊อบ')}</button>
             </div>
           </div>
         </div>

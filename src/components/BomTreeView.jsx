@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { explodeBom, checkBomFlow, uomLabel, itemNoLabel, slocLabel, sheetChildDiff } from '../utils/bomTree';
 
+import { tr } from '../utils/i18n';
 /* ═══ 🌳 BOM หลายชั้น — เทียบเคียงจอ SAP "Display Multilevel BOM" (CS12) ══════════
    user ส่งภาพจอ SAP มาให้ศึกษา 2026-09-02 แล้วสั่งยกระดับ feature BOM
 
@@ -155,14 +156,14 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
           <thead><tr style={{ background: 'var(--bg2)' }}>
-            <th style={th}>ชั้น</th>
+            <th style={th}>{tr('ชั้น')}</th>
             <th style={th}>Item</th>
             <th style={th}>Component</th>
-            <th style={th}>รายละเอียด</th>
-            <th style={{ ...th, textAlign: 'right' }}>จำนวน/ตัวแม่</th>
-            <th style={th}>หน่วย</th>
-            <th style={th}>คลัง</th>
-            <th style={{ ...th, textAlign: 'right' }}>ต่อ 1 FG</th>
+            <th style={th}>{tr('รายละเอียด')}</th>
+            <th style={{ ...th, textAlign: 'right' }}>{tr('จำนวน/ตัวแม่')}</th>
+            <th style={th}>{tr('หน่วย')}</th>
+            <th style={th}>{tr('คลัง')}</th>
+            <th style={{ ...th, textAlign: 'right' }}>{tr('ต่อ 1 FG')}</th>
           </tr></thead>
           <tbody>
             {shown.map((r, i) => {
@@ -272,7 +273,7 @@ export default function BomTreeView({ rootMat, rootName, bomOf, sheetFor, ownShe
         <button onClick={() => setShowAll(true)}
           style={{ marginTop: 8, fontSize: 11.5, fontWeight: 700, padding: '5px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
             background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-body)' }}>
-          ▾ แสดงอีก {rows.length - shown.length} รายการ
+          {tr('▾ แสดงอีก')} {rows.length - shown.length} {tr('รายการ')}
         </button>
       )}
 

@@ -8,6 +8,7 @@ import { jigEquipTypeOf, EQUIPMENT_KINDS } from '../utils/equipmentKinds';
 import FilterBar from './FilterBar';
 import SearchInput from './SearchInput';
 import { ALL } from '../utils/filterLabels';
+import { tr } from '../utils/i18n';
 import LineSelect from './LineSelect'; // dropdown ไลน์ = <LineSelect> เท่านั้น (single-source audit 2026-09-07)
 
 /* ═══════════════════════════════════════════════════════════════
@@ -141,7 +142,7 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
         )}
         <button onClick={pickAllShown} style={{ padding: '0 12px', borderRadius: 'var(--r-md)', fontSize: 12.5,
                 background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', cursor: 'pointer' }}>
-          ติ๊ก/เอาออก ทั้งที่แสดง ({shown.length})
+          {tr('ติ๊ก/เอาออก ทั้งที่แสดง (')}{shown.length})
         </button>
       </FilterBar>
 
@@ -150,10 +151,10 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
           <thead style={{ position: 'sticky', top: 0, background: 'var(--bg2)', zIndex: 1 }}>
             <tr style={{ textAlign: 'left' }}>
               <th style={{ padding: '8px 10px', width: 38 }}></th>
-              <th style={{ padding: '8px 10px' }}>เลขเครื่อง</th>
-              <th style={{ padding: '8px 10px' }}>ชื่อ</th>
-              <th style={{ padding: '8px 10px' }}>ไลน์</th>
-              <th style={{ padding: '8px 10px' }}>ทำไมระบบถึงเสนอ</th>
+              <th style={{ padding: '8px 10px' }}>{tr('เลขเครื่อง')}</th>
+              <th style={{ padding: '8px 10px' }}>{tr('ชื่อ')}</th>
+              <th style={{ padding: '8px 10px' }}>{tr('ไลน์')}</th>
+              <th style={{ padding: '8px 10px' }}>{tr('ทำไมระบบถึงเสนอ')}</th>
             </tr>
           </thead>
           <tbody>

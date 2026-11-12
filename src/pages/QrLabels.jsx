@@ -32,6 +32,7 @@ import { loadStorageLocations } from '../utils/useStorageLocations';
 import ScanSheetPanel from '../components/ScanSheetPanel';
 
 import NoticeBar from '../components/NoticeBar';
+import { tr } from '../utils/i18n';
 /* ชนิดป้าย ⇒ Segmented (UI-STANDARD §3 · เดิมเป็นชิปสีเอง)
    2026-10-06 · คำสั่ง user: แยกแท็บ 🔨 แม่พิมพ์ ออกจาก ⚙️ เครื่องจักร (เดิมแม่พิมพ์ปนอยู่ในแท็บเครื่องจักร
    และแท็บจิ๊กชื่อ "จิ๊ก/แม่พิมพ์" = คนพิมพ์ป้ายแม่พิมพ์ผิดแท็บ) · แท็บจิ๊ก = ทะเบียน PM (`jigs` · ESM:J)
@@ -306,12 +307,12 @@ export default function QrLabels() {
         <span className="filter-count">เลือก {sel.size} / {visible.length}</span>
         <span className="filter-label">ขนาดป้าย</span>
         <select value={size} onChange={e => setSize(e.target.value)}>
-          {Object.values(SIZES).map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+          {Object.values(SIZES).map(s => <option key={s.key} value={s.key}>{tr(s.label)}</option>)}
         </select>
         {canPrint && (
           <button onClick={handlePrint} disabled={!sel.size}
             style={{ padding: '0 18px', borderRadius: 'var(--r-md)', border: 'none', fontSize: 13.5, fontWeight: 800, cursor: sel.size ? 'pointer' : 'not-allowed', background: sel.size ? 'var(--accent)' : 'var(--bg3)', color: sel.size ? 'var(--accent-ink)' : 'var(--muted)' }}>
-            พิมพ์ป้าย ({sel.size})
+            {tr('พิมพ์ป้าย (')}{sel.size})
           </button>
         )}
       </FilterBar>
@@ -373,8 +374,8 @@ export default function QrLabels() {
                 <input type="checkbox" checked={visible.length > 0 && sel.size === visible.length} onChange={toggleAll} style={{ width: 'auto', cursor: 'pointer' }} />
               </th>
               <th style={th}>{kind === 'delivery' ? 'รหัสสั้น' : kind === 'part' ? 'MAT' : 'เลข'}</th>
-              <th style={th}>ชื่อ</th>
-              <th style={th}>ไลน์</th>
+              <th style={th}>{tr('ชื่อ')}</th>
+              <th style={th}>{tr('ไลน์')}</th>
             </tr>
           </thead>
           <tbody>

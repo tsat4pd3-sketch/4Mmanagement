@@ -8,6 +8,7 @@ import { DAY_TYPE_META } from '../utils/companyCalendar';
 import InfoMore from '../components/InfoMore';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 const MONTH_NAMES = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
 const WEEKDAY_HEAD = ['อา.','จ.','อ.','พ.','พฤ.','ศ.','ส.'];
@@ -152,13 +153,13 @@ export default function CompanyCalendar() {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               {/* width กัน index.css input/select {width:100%} ยืดเต็ม toolbar (กับดัก CSS ใน CLAUDE.md) */}
               <select value={bulkWeekday} onChange={e => setBulkWeekday(e.target.value)} style={{ width: 'auto' }}>
-                {WEEKDAY_HEAD.map((w, i) => <option key={i} value={i}>{w}</option>)}
+                {WEEKDAY_HEAD.map((w, i) => <option key={i} value={i}>{tr(w)}</option>)}
               </select>
               <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>เป็น</span>
               <select value={bulkType} onChange={e => setBulkType(e.target.value)} style={{ width: 'auto' }}>
-                {DAY_TYPES.filter(t => t !== 'working').map(t => <option key={t} value={t}>{DAY_TYPE_META[t].label}</option>)}
+                {DAY_TYPES.filter(t => t !== 'working').map(t => <option key={t} value={t}>{tr(DAY_TYPE_META[t].label)}</option>)}
               </select>
-              <button onClick={handleBulkWeekday} disabled={loading} style={primaryBtnSt}>ตั้งค่าทั้งปี</button>
+              <button onClick={handleBulkWeekday} disabled={loading} style={primaryBtnSt}>{tr('ตั้งค่าทั้งปี')}</button>
             </div>
           </div>
           <div>
@@ -169,10 +170,10 @@ export default function CompanyCalendar() {
               {/* width กัน index.css input/select {width:100%} ยืดเต็ม toolbar (กับดัก CSS ใน CLAUDE.md) */}
               <input type="date" value={singleDate} onChange={e => setSingleDate(e.target.value)} style={{ width: 150 }} />
               <select value={singleType} onChange={e => setSingleType(e.target.value)} style={{ width: 'auto' }}>
-                {DAY_TYPES.filter(t => t !== 'working').map(t => <option key={t} value={t}>{DAY_TYPE_META[t].label}</option>)}
+                {DAY_TYPES.filter(t => t !== 'working').map(t => <option key={t} value={t}>{tr(DAY_TYPE_META[t].label)}</option>)}
               </select>
-              <input placeholder="หมายเหตุ เช่น วันสงกรานต์" value={singleNote} onChange={e => setSingleNote(e.target.value)} style={{ width: 180 }} />
-              <button onClick={handleAddSingle} disabled={loading} style={primaryBtnSt}>เพิ่ม</button>
+              <input placeholder={tr('หมายเหตุ เช่น วันสงกรานต์')} value={singleNote} onChange={e => setSingleNote(e.target.value)} style={{ width: 180 }} />
+              <button onClick={handleAddSingle} disabled={loading} style={primaryBtnSt}>{tr('เพิ่ม')}</button>
             </div>
           </div>
         </div>
@@ -249,7 +250,7 @@ export default function CompanyCalendar() {
             ● มีการเปลี่ยนแปลงที่ยังไม่บันทึก {pendingCount} วัน
           </span>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={handleDiscardDraft} disabled={saving} style={cancelBtnSt}>ยกเลิก</button>
+            <button onClick={handleDiscardDraft} disabled={saving} style={cancelBtnSt}>{tr('ยกเลิก')}</button>
             <button onClick={handleSaveDraft} disabled={saving} style={saveBtnSt}>{saving ? 'กำลังบันทึก...' : `บันทึก (${pendingCount})`}</button>
           </div>
         </div>

@@ -12,6 +12,7 @@ import { looksLikeImage, isGifFile } from '../utils/imageFileKind';
 import { takeFeedbackPrefill } from '../utils/feedbackPrefill';
 import { usePerms } from '../utils/usePerms';
 
+import { tr } from '../utils/i18n';
 /*
   💬 กล่องรับ feedback จากผู้ใช้หน้างาน (2026-08-14 · คำขอ user)
   เดิม feedback วิ่งผ่าน LINE → ตกหล่น ค้นย้อนไม่ได้ ไม่รู้ว่าเรื่องไหนแก้แล้ว
@@ -340,7 +341,7 @@ export default function FeedbackModal({ onClose }) {
                     style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 'var(--r-md)',
                       border: '1px dashed var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
                       cursor: shots.length >= MAX_SHOTS ? 'default' : 'pointer', opacity: shots.length >= MAX_SHOTS ? 0.5 : 1 }}>
-                    แนบรูปหน้าจอ
+                    {tr('แนบรูปหน้าจอ')}
                   </button>
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                     {shots.length ? `${shots.length}/${MAX_SHOTS} รูป` : `วงกรอบ/ชี้จุดมาจากมือถือได้เลย (สูงสุด ${MAX_SHOTS} รูป)`}
@@ -378,13 +379,13 @@ export default function FeedbackModal({ onClose }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                 <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
                   <input type="checkbox" checked={onlyOpen} onChange={e => setOnlyOpen(e.target.checked)} style={{ width: 'auto' }} />
-                  เฉพาะที่ยังไม่ปิด
+                  {tr('เฉพาะที่ยังไม่ปิด')}
                 </label>
                 <button onClick={copyForClaude} title="คัดลอกเรื่องที่แสดงอยู่เป็นข้อความ แล้วเอาไปวางในแชท Claude ให้ช่วยดู/แก้"
                   style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>
-                  คัดลอกให้ Claude
+                  {tr('คัดลอกให้ Claude')}
                 </button>
-                <button onClick={load} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>↻ รีเฟรช</button>
+                <button onClick={load} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>{tr('↻ รีเฟรช')}</button>
               </div>
 
               {loading ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด...</div>
@@ -428,14 +429,14 @@ export default function FeedbackModal({ onClose }) {
                         <div style={{ marginTop: 7 }}>
                           <textarea rows={2} value={noteDraft[r.id] ?? r.admin_note ?? ''}
                             onChange={e => setNoteDraft(d => ({ ...d, [r.id]: e.target.value }))}
-                            placeholder="ตอบผู้แจ้ง (เขาจะเห็นในกล่องนี้ + เด้งกระดิ่งให้)"
+                            placeholder={tr('ตอบผู้แจ้ง (เขาจะเห็นในกล่องนี้ + เด้งกระดิ่งให้)')}
                             style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--ctl-r)',
                               padding: '6px 8px', color: 'var(--text)', fontSize: 12, fontFamily: 'inherit', resize: 'vertical' }} />
                           <button onClick={() => saveNote(r)} disabled={savingNote === r.id || !(noteDraft[r.id] ?? r.admin_note ?? '').trim()}
                             style={{ marginTop: 4, fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 'var(--r-md)', border: 'none',
                               background: 'var(--accent)', color: 'var(--accent-ink)',
                               cursor: savingNote === r.id ? 'default' : 'pointer', opacity: savingNote === r.id ? 0.5 : 1 }}>
-                            {savingNote === r.id ? 'กำลังส่ง...' : '📨 ส่งคำตอบให้ผู้แจ้ง'}
+                            {savingNote === r.id ? tr('กำลังส่ง...') : tr('📨 ส่งคำตอบให้ผู้แจ้ง')}
                           </button>
                         </div>
                       )}

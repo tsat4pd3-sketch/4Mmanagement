@@ -17,6 +17,7 @@ import MatLabel from './MatLabel';
 import SearchInput from './SearchInput';
 import { normSearch } from '../utils/thaiText';
 
+import { tr } from '../utils/i18n';
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--shadow-sm)' };
 const fmt = (n) => Number(n || 0).toLocaleString();
 
@@ -125,7 +126,7 @@ export default function PartLevelCoveragePanel() {
             {t.rowNoMin > 0 && <> · 🟡 <b>{fmt(t.rowNoMin)}</b> รายการ<b>มีแถวจุดเรียกเติมแล้วแต่ไม่ได้ใส่ min</b> — ระบบยังไม่เตือนอะไรเลย</>}
           </div>
 
-          <SearchInput value={q} onChange={setQ} placeholder="ค้นไลน์ / MAT / ชื่อพาร์ท" />
+          <SearchInput value={q} onChange={setQ} placeholder={tr('ค้นไลน์ / MAT / ชื่อพาร์ท')} />
 
           {rows.length === 0 ? (
             <div style={{ ...card, padding: '26px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
@@ -155,7 +156,7 @@ export default function PartLevelCoveragePanel() {
                     <thead>
                       <tr style={{ background: 'var(--bg2)' }}>
                         {[['#', 'left'], ['ชิ้นงาน', 'left'], ['คงเหลือหน้าไลน์', 'right'], ['จุดเรียกเติม', 'left']].map(([h, al]) => (
-                          <th key={h} style={{ padding: '8px 14px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: al, whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
+                          <th key={h} style={{ padding: '8px 14px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: al, whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{tr(h)}</th>
                         ))}
                       </tr>
                     </thead>

@@ -29,6 +29,7 @@ import { LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import PartCard, { partCardGrid } from '../components/PartCard';
 import { storeBtn } from '../utils/storeUi';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ─── RACK CENTER — เรียกภาชนะ/แร็คเปล่าคืนกลับมาใช้ ──────────────────────
@@ -337,7 +338,7 @@ export default function RackCenter() {
           <>
             {/* ปุ่มตายตัว ≤2 (UI §6.35): [สแกน] [เรียกภาชนะ] · ป้าย QR → ⋯ */}
             <OverflowMenu items={[{ key: 'qr', icon: '🏷️', label: 'ป้าย QR', onClick: () => setQrOpen(true), title: 'พิมพ์แผ่นป้าย QR ไปแปะหน้างาน' }]} />
-            <button type="button" className="pg-btn" onClick={() => setScanOpen(true)} title="สแกน QR ที่แปะหน้างาน — กล้องในแอป หรือปืนยิงสแกน">สแกน</button>
+            <button type="button" className="pg-btn" onClick={() => setScanOpen(true)} title="สแกน QR ที่แปะหน้างาน — กล้องในแอป หรือปืนยิงสแกน">{tr('สแกน')}</button>
             <button type="button" className="pg-btn primary" onClick={() => { setForm({ ...EMPTY_FORM, line_name: lineFilter }); setShowForm(true); }}>เรียกภาชนะ</button>
           </>
         ) : null}
@@ -347,7 +348,7 @@ export default function RackCenter() {
           placeholder={ALL.line} />
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)', cursor: 'pointer' }}>
           <input type="checkbox" checked={showDone} onChange={e => setShowDone(e.target.checked)} />
-          แสดงที่รับแล้ว
+          {tr('แสดงที่รับแล้ว')}
         </label>
       </FilterBar>
       {(scopedNames || viewScope.unsure) && (reqScoped.hidden + pkgScoped.hidden > 0 || viewScope.unsure) && (
@@ -393,7 +394,7 @@ export default function RackCenter() {
                     ? (
                       <button onClick={() => issuePkg(p)} disabled={pkgBusy === p.id}
                         style={storeBtn('primary', { width: '100%', opacity: pkgBusy === p.id ? 0.55 : 1 })}>
-                        {pkgBusy === p.id ? 'กำลังบันทึก…' : 'จ่าย Packaging'}
+                        {pkgBusy === p.id ? tr('กำลังบันทึก…') : tr('จ่าย Packaging')}
                       </button>
                     ) : null} />
               ))}
@@ -577,31 +578,31 @@ export default function RackCenter() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ไลน์การผลิต *</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('ไลน์การผลิต *')}</label>
                 <LineSelect lines={lines} value={form.line_name} {...scope} style={inputSt}
-                  placeholder="เลือกไลน์..." onChange={v => setForm(f => ({ ...f, line_name: v }))} />
+                  placeholder={tr('เลือกไลน์...')} onChange={v => setForm(f => ({ ...f, line_name: v }))} />
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ชนิดภาชนะ *</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('ชนิดภาชนะ *')}</label>
                 <select value={form.container_type_id} onChange={e => setForm(f => ({ ...f, container_type_id: e.target.value }))} style={inputSt}>
-                  <option value="">เลือกภาชนะ...</option>
+                  <option value="">{tr('เลือกภาชนะ...')}</option>
                   {containerTypes.map(c => <option key={c.id} value={c.id}>{c.name}{c.capacity ? ` (จุ ${c.capacity})` : ''}</option>)}
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>จำนวน (ใบ/ใบ) *</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('จำนวน (ใบ/ใบ) *')}</label>
                 <input type="number" min="1" step="1" style={{ ...inputSt, fontSize: 20, fontWeight: 900, textAlign: 'center' }}
                   value={form.qty} onChange={e => setForm(f => ({ ...f, qty: e.target.value }))} />
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>หมายเหตุ</label>
-                <input style={inputSt} value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="เช่น ด่วน, จุดส่ง..." />
+                <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('หมายเหตุ')}</label>
+                <input style={inputSt} value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder={tr('เช่น ด่วน, จุดส่ง...')} />
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
-              <button onClick={() => setShowForm(false)} style={{ ...btn('var(--bg2)', 'var(--text)'), border: '1px solid var(--border)' }}>ยกเลิก</button>
+              <button onClick={() => setShowForm(false)} style={{ ...btn('var(--bg2)', 'var(--text)'), border: '1px solid var(--border)' }}>{tr('ยกเลิก')}</button>
               <button onClick={handleRequest} disabled={saving} style={{ ...btn('var(--accent)', 'var(--accent-ink)'), opacity: saving ? 0.6 : 1 }}>
-                {saving ? '...' : 'เรียกภาชนะ'}
+                {saving ? '...' : tr('เรียกภาชนะ')}
               </button>
             </div>
           </div>
@@ -656,7 +657,7 @@ function QrScanModal({ onClose, onResult }) {
         <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>ปืนยิงสแกน / วางข้อความ QR แล้วกด Enter</div>
         <input autoFocus value={manual} onChange={e => setManual(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && manual.trim()) onResult(manual); }}
-          placeholder="ยิงสแกนลงช่องนี้ได้เลย…" style={inputSt} />
+          placeholder={tr('ยิงสแกนลงช่องนี้ได้เลย…')} style={inputSt} />
       </div>
     </div>
   );

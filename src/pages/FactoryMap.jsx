@@ -64,6 +64,7 @@ import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบาย
 import TabBar from '../components/TabBar';
 
 import NoticeBar from '../components/NoticeBar';
+import { tr } from '../utils/i18n';
 /* ── ผังรวมโรงงาน (Factory Master Map) — polygon อิสระ + เลือก metric, 2026-07-16 ──────
    รูปผังใหญ่ทั้งโรงงาน 1 รูป + วาด polygon ล้อมแต่ละไลน์ (L/U ได้) ระบายสีตาม metric ที่เลือก
    metric: ยอดผลิต / OEE / Downtime / ของเสีย — เลือกดูได้ · มี side panel จัดอันดับไลน์ (ใช้พื้นที่ข้าง)
@@ -2712,7 +2713,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
             color: 'var(--amber)', background: 'var(--amber)1a', border: '1px solid var(--amber)55' }}>
             ⚠ อ่านทะเบียนไลน์ไม่สำเร็จ — กรอบยังไม่มีสีสถานะ · กำลังลองใหม่ทุก 20 วิ
             <button type="button" className="tv-hide" onClick={() => { invalidateProductionLines(); loadMap(); }}
-              style={{ marginLeft: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', borderRadius: 'var(--r-md)', padding: '1px 8px', border: '1px solid var(--amber)55', background: 'transparent', color: 'var(--amber)' }}>ลองใหม่</button>
+              style={{ marginLeft: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', borderRadius: 'var(--r-md)', padding: '1px 8px', border: '1px solid var(--amber)55', background: 'transparent', color: 'var(--amber)' }}>{tr('ลองใหม่')}</button>
           </span>
         )}
         {/* 🔭 ขอบเขตบัญชี — ผังเหลือเฉพาะส่วนงาน/ไลน์ของบัญชีนี้ ต้องบอกว่าซ่อนไปกี่ไลน์ (กฎ "กรองแล้วต้องเขียนบนจอ") */}
@@ -2798,7 +2799,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
             </button>
             <button onClick={togglePanelHide} style={{ ...miniTab(panelHide), padding: '3px 8px', fontSize: 11.5 }}
               title={panelHide ? 'แสดงแผงสรุปด้านขวา' : 'ซ่อนแผงขวา — คืนพื้นที่ให้ผัง (เหมาะกับจอ TV)'}>
-              {panelHide ? 'แผงขวา' : 'ซ่อนแผงขวา'}
+              {panelHide ? tr('แผงขวา') : tr('ซ่อนแผงขวา')}
             </button>
           </span>
         )}
@@ -2810,17 +2811,17 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
             {uploading ? '⏳ กำลังอัปโหลด...' : (imageUrl ? '🖼️ เปลี่ยนรูปผัง' : '🖼️ อัปโหลดรูปผังโรงงาน')}
             <input type="file" accept="image/*" onChange={handleUpload} disabled={uploading} style={{ display: 'none' }} />
           </label>
-          {imageUrl && !drawing && <button onClick={() => { setDrawing(true); setDraft([]); }} style={btn(false)}>วาดกรอบใหม่ (ไลน์ / 🏬 โซนคลัง / 🔧 facility)</button>}
+          {imageUrl && !drawing && <button onClick={() => { setDrawing(true); setDraft([]); }} style={btn(false)}>{tr('วาดกรอบใหม่ (ไลน์ / 🏬 โซนคลัง / 🔧 facility)')}</button>}
           {!drawing && <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={undoBtnStyle(hist.canUndo && !hist.busy)} title="ย้อนกลับ (Ctrl+Z)">Undo</button>}
           {!drawing && <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy} style={undoBtnStyle(hist.canRedo && !hist.busy)} title="ทำซ้ำ (Ctrl+Y)">Redo</button>}
-          {!drawing && regions.length > 0 && <button onClick={straightenAll} disabled={hist.busy} style={btn(false)} title={`ขอบที่เอียงไม่เกิน ${AXIS_TOL_DEG}° ดีดเข้าแนวตั้ง/นอน · ขอบเฉียงจริงไม่แตะ · Undo ได้`}>📐 จัดให้ตรง</button>}
+          {!drawing && regions.length > 0 && <button onClick={straightenAll} disabled={hist.busy} style={btn(false)} title={`ขอบที่เอียงไม่เกิน ${AXIS_TOL_DEG}° ดีดเข้าแนวตั้ง/นอน · ขอบเฉียงจริงไม่แตะ · Undo ได้`}>{tr('📐 จัดให้ตรง')}</button>}
           {!drawing && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ลากมุม = คงมุมฉาก (กด <b>Alt</b> ค้าง = อิสระ) · ลากวงกลมกลางขอบ = ดันทั้งด้าน</span>}
           {drawing && (
             <>
               <span style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700 }}>คลิกทีละจุดล้อมพื้นที่ (L/U ได้) · กด <b>Shift</b> = เส้นตั้งฉาก · เข้าใกล้จุดแรก = ดูดปิดรูป</span>
-              <button onClick={finishDraw} disabled={draft.length < 3} style={btn(true)}>เสร็จ ({draft.length} จุด)</button>
-              <button onClick={() => setDraft(p => p.slice(0, -1))} disabled={!draft.length} style={btn(false)}>ลบจุดล่าสุด</button>
-              <button onClick={cancelDraw} style={btn(false)}>ยกเลิก</button>
+              <button onClick={finishDraw} disabled={draft.length < 3} style={btn(true)}>{tr('เสร็จ (')}{draft.length} {tr('จุด)')}</button>
+              <button onClick={() => setDraft(p => p.slice(0, -1))} disabled={!draft.length} style={btn(false)}>{tr('ลบจุดล่าสุด')}</button>
+              <button onClick={cancelDraw} style={btn(false)}>{tr('ยกเลิก')}</button>
             </>
           )}
           {!drawing && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ลากกลางรูป=ย้าย · ลากจุดมุม=ปรับรูปทรง</span>}
@@ -2863,8 +2864,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                 <button onClick={() => orbit.step(15)} title="หมุนขวา 15° (หมุนได้ไม่เกิน ±45° จากมุมเริ่ม)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>⟳</button>
                 <button onClick={() => orbit.tiltBy(8)} title="ก้มลง (มองเฉียงขึ้น)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>▼</button>
                 <button onClick={() => orbit.tiltBy(-8)} title="เงยขึ้น (มองจากบนมากขึ้น)" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 12 }}>▲</button>
-                <button onClick={() => orbit.setAuto(a => !a)} title="แกว่งมุมมองไป-กลับเองช้าๆ (เหมาะกับจอแขวน)" style={{ ...miniTab(orbit.auto), padding: '2px 8px', fontSize: 11.5 }}>{orbit.auto ? 'หยุดทัวร์' : 'ทัวร์'}</button>
-                <button onClick={orbit.reset} title="กลับมุมเริ่มต้น + ซูมพอดีกรอบ" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11.5 }}>มุมเดิม</button>
+                <button onClick={() => orbit.setAuto(a => !a)} title="แกว่งมุมมองไป-กลับเองช้าๆ (เหมาะกับจอแขวน)" style={{ ...miniTab(orbit.auto), padding: '2px 8px', fontSize: 11.5 }}>{orbit.auto ? tr('หยุดทัวร์') : tr('ทัวร์')}</button>
+                <button onClick={orbit.reset} title="กลับมุมเริ่มต้น + ซูมพอดีกรอบ" style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11.5 }}>{tr('มุมเดิม')}</button>
               </span>
             </div>
           )}
@@ -3211,7 +3212,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                   {isReview ? (<>
                     <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       {fmtThaiDate(reviewDate)}
-                      {reviewDate !== reviewDefaultDate() && <button className="tv-hide" onClick={() => setReviewDate(reviewDefaultDate())} style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11 }}>วันล่าสุด</button>}
+                      {reviewDate !== reviewDefaultDate() && <button className="tv-hide" onClick={() => setReviewDate(reviewDefaultDate())} style={{ ...miniTab(false), padding: '2px 8px', fontSize: 11 }}>{tr('วันล่าสุด')}</button>}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>ภาพรวมทั้งวัน (กะเช้า+ดึก) สำหรับประชุมผู้จัดการ · เปลี่ยนวันที่ที่สวิตช์เหนือผัง · เรียงไลน์ที่ทำได้ต่ำสุดขึ้นบน<span className="tv-hide"> · คลิกแถวเปิดรายละเอียดไลน์</span></div>
                   </>) : (
@@ -3254,7 +3255,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                     <div style={{ fontSize: 12, color: 'var(--red)', padding: 14, textAlign: 'center', border: '1px solid var(--red)55', borderRadius: 'var(--r-md)' }}>
                       ⚠️ โหลดสรุปวันนี้ไม่สำเร็จ — ตัวเลขด้านบนจึงเป็น 0 <b>ไม่ใช่ "ไม่มีการผลิต"</b>
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, wordBreak: 'break-all' }}>{sumBox.error}</div>
-                      <button onClick={loadReview} style={{ ...miniTab(false), marginTop: 8, padding: '3px 10px', fontSize: 11.5 }}>ลองใหม่</button>
+                      <button onClick={loadReview} style={{ ...miniTab(false), marginTop: 8, padding: '3px 10px', fontSize: 11.5 }}>{tr('ลองใหม่')}</button>
                     </div>
                   ) : sumBox.ranked.every(x => !x.r.target && !x.r.dtMin && !x.r.ng && x.r.oee == null) ? (
                     <div style={{ fontSize: 12, color: 'var(--muted)', padding: 20, textAlign: 'center' }}>{isReview ? 'ไม่มีข้อมูลการผลิตของวันที่เลือก' : 'ยังไม่มีไลน์ไหนลงยอดวันนี้'}</div>
@@ -3619,10 +3620,10 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 460, fontVariantNumeric: 'tabular-nums' }}>
                   <thead><tr style={{ color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
-                    <th style={TH_L}>ไลน์ · กะ</th>
+                    <th style={TH_L}>{tr('ไลน์ · กะ')}</th>
                     <th style={TH_R}>OEE</th>
-                    <th style={TH_R}>เวลารับภาระ</th>
-                    <th style={TH_R}>OEE × เวลา</th>
+                    <th style={TH_R}>{tr('เวลารับภาระ')}</th>
+                    <th style={TH_R}>{tr('OEE × เวลา')}</th>
                   </tr></thead>
                   <tbody>
                     {rows.map((r, i) => (
@@ -3722,7 +3723,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                       onSelectMachine={isMobile ? undefined : setLensSel} />
                   )}
                   {lens === 'people' && floorMapTarget(storyLine) && (
-                    <button onClick={() => openFloorMap(storyLine)} style={{ ...miniTab(false), fontSize: 11.5, padding: '3px 10px', marginTop: 8 }}>เปิดผังคนเต็มจอ (OT · PPE · กะ)</button>
+                    <button onClick={() => openFloorMap(storyLine)} style={{ ...miniTab(false), fontSize: 11.5, padding: '3px 10px', marginTop: 8 }}>{tr('เปิดผังคนเต็มจอ (OT · PPE · กะ)')}</button>
                   )}
                 </div>
               )}
@@ -3802,8 +3803,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 420, fontVariantNumeric: 'tabular-nums' }}>
                           {/* ⚠️ index.css มี `th { text-align: left }` — rule ตรงชนะ inherit จาก <tr> ต้องสั่ง textAlign ที่ th เอง ไม่งั้นหัวกับค่าเหลื่อมกัน */}
                           <thead><tr style={{ color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
-                            <th style={TH_L}>MAT / ชิ้นงาน</th>
-                            <th style={TH_R}>เป้า</th><th style={TH_R}>ผลิตได้</th><th style={TH_R}>%</th><th style={TH_R}>ใบ</th>
+                            <th style={TH_L}>{tr('MAT / ชิ้นงาน')}</th>
+                            <th style={TH_R}>{tr('เป้า')}</th><th style={TH_R}>{tr('ผลิตได้')}</th><th style={TH_R}>%</th><th style={TH_R}>{tr('ใบ')}</th>
                           </tr></thead>
                           <tbody>
                             {s.parts.map(p => {
@@ -4153,10 +4154,10 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                       <thead>
                         <tr style={{ color: 'var(--muted)', borderBottom: '1px solid var(--border)' }}>
-                          <th style={TH_L}>ไลน์</th>
-                          <th style={{ ...TH_R, whiteSpace: 'nowrap' }} title="ทำได้ / เป้า ณ เวลานี้ / เป้าเต็มกะ">ผลิต (ทำ/ณ เวลานี้/เต็ม)</th>
-                          <th style={TH_R}>คน</th>
-                          <th style={TH_R}>DT (น.)</th>
+                          <th style={TH_L}>{tr('ไลน์')}</th>
+                          <th style={{ ...TH_R, whiteSpace: 'nowrap' }} title="ทำได้ / เป้า ณ เวลานี้ / เป้าเต็มกะ">{tr('ผลิต (ทำ/ณ เวลานี้/เต็ม)')}</th>
+                          <th style={TH_R}>{tr('คน')}</th>
+                          <th style={TH_R}>{tr('DT (น.)')}</th>
                           <th style={TH_R}>NG</th>
                         </tr>
                       </thead>
@@ -4207,7 +4208,7 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                     <thead><tr style={{ color: 'var(--muted)', textAlign: 'left' }}>
-                      {['MAT', 'ชื่อพาร์ท', 'คงเหลือ', 'กล่อง', 'Min', 'Max', 'สถานะ'].map(h => <th key={h} style={{ padding: '4px 6px', borderBottom: '1px solid var(--border2)' }}>{h}</th>)}
+                      {['MAT', 'ชื่อพาร์ท', 'คงเหลือ', 'กล่อง', 'Min', 'Max', 'สถานะ'].map(h => <th key={h} style={{ padding: '4px 6px', borderBottom: '1px solid var(--border2)' }}>{tr(h)}</th>)}
                     </tr></thead>
                     <tbody>
                       {f.mats.slice().sort((a, b) => (b.short ? 1 : 0) - (a.short ? 1 : 0) || b.qty - a.qty).map(m => (
@@ -4229,9 +4230,9 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
                 * ยอด = สต็อกของ MAT ที่ผูกกับโซน จาก ledger คลังกลาง (FG WAREHOUSE / STORE) — ระบบยังไม่บันทึกยอด "รายโซน" จริง (เฟสถัดไป)
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                <button onClick={() => navigate('/line-stock?tab=zones')} style={{ flex: 1, padding: '9px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>จัดการโซน / ผูก MAT</button>
+                <button onClick={() => navigate('/line-stock?tab=zones')} style={{ flex: 1, padding: '9px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>{tr('จัดการโซน / ผูก MAT')}</button>
                 <button onClick={() => navigate('/rundown-stock')} style={{ flex: 1, padding: '9px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>Rundown Stock</button>
-                <button onClick={() => setStoreZoneModal(null)} style={{ flex: 1, padding: '9px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 800, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>ปิด</button>
+                <button onClick={() => setStoreZoneModal(null)} style={{ flex: 1, padding: '9px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 800, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>{tr('ปิด')}</button>
               </div>
             </div>
           </div>
@@ -4245,13 +4246,13 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
             <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>ตีกรอบให้ไลน์/โซนไหน?</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>เลือกไลน์ผลิต หรือโซน MTN/facility ที่จะผูกกับรูปที่วาด ({assignFor.length} จุด) · กลุ่มที่ตีรายไลน์ลูกครบแล้วไม่ขึ้นในลิสต์ (ไม่ต้องตีแม่ซ้ำ)</div>
             <select value={assignLine} onChange={e => setAssignLine(e.target.value)} autoFocus style={{ width: '100%', padding: '10px 12px', borderRadius: 'var(--ctl-r)', fontSize: 14, marginBottom: newZone !== '' || assignLine === '__new__' ? 8 : 16 }}>
-              <option value="">— เลือกไลน์/โซน —</option>
-              {prodOpts.length > 0 && <optgroup label="ไลน์ผลิต (ยังไม่มีกรอบ)">{prodOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
-              {leafOpts.length > 0 && <optgroup label="↳ ไลน์ย่อยที่ยังไม่ได้ตี (กลุ่มตีเป็นรายลูก)">{leafOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
-              {facOpts.length > 0 && <optgroup label="โซน MTN / Facility">{facOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
-              {dieOpts.length > 0 && <optgroup label="คลังแม่พิมพ์ (ผังจัดเก็บใน /die-registry)">{dieOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
-              {storeOpts.length > 0 && <optgroup label="โซนคลังสินค้า (ทะเบียนใน /line-stock แท็บโซนคลัง)">{storeOpts.map(n => <option key={n} value={n}>{n}</option>)}</optgroup>}
-              <optgroup label="อื่นๆ"><option value="__new__">พิมพ์ชื่อโซนใหม่…</option></optgroup>
+              <option value="">{tr('— เลือกไลน์/โซน —')}</option>
+              {prodOpts.length > 0 && <optgroup label="ไลน์ผลิต (ยังไม่มีกรอบ)">{prodOpts.map(n => <option key={n} value={n}>{tr(n)}</option>)}</optgroup>}
+              {leafOpts.length > 0 && <optgroup label="↳ ไลน์ย่อยที่ยังไม่ได้ตี (กลุ่มตีเป็นรายลูก)">{leafOpts.map(n => <option key={n} value={n}>{tr(n)}</option>)}</optgroup>}
+              {facOpts.length > 0 && <optgroup label="โซน MTN / Facility">{facOpts.map(n => <option key={n} value={n}>{tr(n)}</option>)}</optgroup>}
+              {dieOpts.length > 0 && <optgroup label="คลังแม่พิมพ์ (ผังจัดเก็บใน /die-registry)">{dieOpts.map(n => <option key={n} value={n}>{tr(n)}</option>)}</optgroup>}
+              {storeOpts.length > 0 && <optgroup label="โซนคลังสินค้า (ทะเบียนใน /line-stock แท็บโซนคลัง)">{storeOpts.map(n => <option key={n} value={n}>{tr(n)}</option>)}</optgroup>}
+              <optgroup label="อื่นๆ"><option value="__new__">{tr('พิมพ์ชื่อโซนใหม่…')}</option></optgroup>
             </select>
             {assignLine === '__new__' && (
               <div style={{ marginBottom: 16, display: 'grid', gap: 8 }}>
@@ -4281,8 +4282,8 @@ export default function FactoryMap({ setupMode = false, viewParam = 'view' }) {
               </div>
             )}
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => { setAssignFor(null); setNewZone(''); }} style={{ flex: 1, padding: '11px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>ยกเลิก</button>
-              <button onClick={confirmAssign} disabled={!okAssign} style={{ flex: 2, padding: '11px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 800, cursor: okAssign ? 'pointer' : 'not-allowed', background: okAssign ? 'var(--accent)' : 'var(--muted)', color: '#fff', border: 'none' }}>ตีกรอบ</button>
+              <button onClick={() => { setAssignFor(null); setNewZone(''); }} style={{ flex: 1, padding: '11px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>{tr('ยกเลิก')}</button>
+              <button onClick={confirmAssign} disabled={!okAssign} style={{ flex: 2, padding: '11px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 800, cursor: okAssign ? 'pointer' : 'not-allowed', background: okAssign ? 'var(--accent)' : 'var(--muted)', color: '#fff', border: 'none' }}>{tr('ตีกรอบ')}</button>
             </div>
             </>; })()}
           </div>

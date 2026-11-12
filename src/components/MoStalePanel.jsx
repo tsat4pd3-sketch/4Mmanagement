@@ -29,6 +29,7 @@ import { chaseSideMeta } from '../utils/moChase';
 /* 🔗 โซ่ส่งต่อที่ขาด — กฎตัดสินอยู่ util ที่เดียว (11/11 · ห้ามเทียบสถานะใบลูกในไฟล์นี้) */
 import { handoffGapMeta } from '../utils/moHandoffGaps';
 
+import { tr } from '../utils/i18n';
 const FIRST_ROWS = 8;   // โชว์ก่อน 8 ใบ ที่เหลือพับ + บอกจำนวนที่พับ (§5.5 "ห้ามตัดข้อมูลเงียบ")
 
 /** ชิปตัวเลข — กดได้ = ปุ่ม (ตัวกรองของหน้าแม่) · กดไม่ได้ = span (ขั้นที่ไม่ใช่ stage เช่นใบตีกลับ) */
@@ -270,7 +271,7 @@ export default function MoStalePanel({
                 style={{ justifySelf: 'start', marginTop: 2, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
                   background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)',
                   borderRadius: 'var(--ctl-r)', padding: '4px 11px' }}>
-                ▼ แสดงอีก {rows.length - rowsShown.length} ใบ
+                {tr('▼ แสดงอีก')} {rows.length - rowsShown.length} {tr('ใบ')}
               </button>
             )}
             {all && rows.length > FIRST_ROWS && (
@@ -278,7 +279,7 @@ export default function MoStalePanel({
                 style={{ justifySelf: 'start', marginTop: 2, fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
                   background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)',
                   borderRadius: 'var(--ctl-r)', padding: '4px 11px' }}>
-                ▲ ย่อเหลือ {FIRST_ROWS} ใบ
+                {tr('▲ ย่อเหลือ')} {FIRST_ROWS} {tr('ใบ')}
               </button>
             )}
           </div>

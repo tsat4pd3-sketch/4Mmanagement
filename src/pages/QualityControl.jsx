@@ -63,6 +63,7 @@ import SearchInput from '../components/SearchInput';
 import { ALL, allOf } from '../utils/filterLabels';
 import { shortTick, fmtAxis, CELL_BAR_FILL } from '../utils/chartAxis';
 import { DeleteButton } from '../components/IconButton';
+import { tr as trI18n } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ตัวกรองสถานะใบ NCR / CAPA (UI-STANDARD 2026-09-24) — ค่า state เดิม 'all'/'active'/'closed' */
@@ -760,7 +761,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
       <div style={{ ...cardSt, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <Field label="จุดควบคุม (Part / Characteristic)">
           <select value={selId || ''} onChange={e => setSelId(e.target.value || null)} style={{ ...inputSt, minWidth: 'min(320px, 100%)' }}>
-            {chars.length === 0 && <option value="">— ยังไม่มีจุดควบคุม กด "+ เพิ่มจุดควบคุม" —</option>}
+            {chars.length === 0 && <option value="">{trI18n('— ยังไม่มีจุดควบคุม กด "+ เพิ่มจุดควบคุม" —')}</option>}
             {chars.map(c => (
               <option key={c.id} value={c.id}>
                 {c.part_no} · {c.characteristic}{c.unit ? ` (${c.unit})` : ''}{c.is_active ? '' : ' [ปิดใช้งาน]'}
@@ -770,18 +771,18 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
         </Field>
         <Field label="ใช้ subgroup ล่าสุด">
           <select value={limitN} onChange={e => setLimitN(Number(e.target.value))} style={inputSt}>
-            {[25, 50, 100].map(n => <option key={n} value={n}>{n} กลุ่ม</option>)}
+            {[25, 50, 100].map(n => <option key={n} value={n}>{n} {trI18n('กลุ่ม')}</option>)}
           </select>
         </Field>
         {canManage && (
           <div style={{ display: 'flex', gap: 8 }}>
-            <button style={btnSt()} onClick={() => setCharModal({ ...EMPTY_CHAR })}>+ เพิ่มจุดควบคุม</button>
+            <button style={btnSt()} onClick={() => setCharModal({ ...EMPTY_CHAR })}>{trI18n('+ เพิ่มจุดควบคุม')}</button>
             {sel && <button style={ghostBtn} onClick={() => setCharModal({
               ...sel,
               nominal: sel.nominal ?? '', usl: sel.usl ?? '', lsl: sel.lsl ?? '',
               part_name: sel.part_name || '', line_name: sel.line_name || '', unit: sel.unit || '',
               gauge: sel.gauge || '', control_method: sel.control_method || '',
-            })}>แก้ไข</button>}
+            })}>{trI18n('แก้ไข')}</button>}
           </div>
         )}
       </div>
@@ -898,15 +899,15 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
                       onChange={e => setReadings(r => r.map((x, j) => j === i ? e.target.value : x))}
                       style={{ ...inputSt, width: 86 }} />
                   ))}
-                  <button style={btnSt()} onClick={saveMeasurement}>บันทึก</button>
+                  <button style={btnSt()} onClick={saveMeasurement}>{trI18n('บันทึก')}</button>
                 </div>
               ) : <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>คุณไม่มีสิทธิ์บันทึกผลวัด (qa:record)</div>}
 
               <div style={{ maxHeight: 250, overflowY: 'auto', overflowX: 'auto' }}>
                 <table style={{ width: '100%', minWidth: 460, borderCollapse: 'collapse' }}>
                   <thead><tr>
-                    <th style={thSt}>วันที่</th><th style={thSt}>กะ</th><th style={thSt}>ค่าวัด</th>
-                    <th style={thSt}>X̄</th><th style={thSt}>ผู้วัด</th>{canManage && <th style={thSt}></th>}
+                    <th style={thSt}>{trI18n('วันที่')}</th><th style={thSt}>{trI18n('กะ')}</th><th style={thSt}>{trI18n('ค่าวัด')}</th>
+                    <th style={thSt}>X̄</th><th style={thSt}>{trI18n('ผู้วัด')}</th>{canManage && <th style={thSt}></th>}
                   </tr></thead>
                   <tbody>
                     {[...rows].reverse().map(r => {
@@ -942,10 +943,10 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
                 onChange={({ part_no, part_name }) => setCharModal(f => ({ ...f, part_no, ...(part_name != null ? { part_name } : {}) }))} />
             </Field>
             <Field label="Part Name"><input style={inputSt} value={charModal.part_name} onChange={e => setCharModal(f => ({ ...f, part_name: e.target.value }))} /></Field>
-            <Field label="จุดควบคุม / Characteristic *" span><input style={inputSt} placeholder="เช่น ความกว้างร่อง A หลังตัด" value={charModal.characteristic} onChange={e => setCharModal(f => ({ ...f, characteristic: e.target.value }))} /></Field>
+            <Field label="จุดควบคุม / Characteristic *" span><input style={inputSt} placeholder={trI18n('เช่น ความกว้างร่อง A หลังตัด')} value={charModal.characteristic} onChange={e => setCharModal(f => ({ ...f, characteristic: e.target.value }))} /></Field>
             <Field label="ไลน์ผลิต">
               {/* dropdown ไลน์ = <LineSelect> เท่านั้น (ปลดระวาง/scope/ลำดับชั้นเหมือนทุกหน้า · 2026-09-07) */}
-              <LineSelect lines={lineObjs} value={charModal.line_name || ''} placeholder="— ไม่ระบุ —" style={inputSt}
+              <LineSelect lines={lineObjs} value={charModal.line_name || ''} placeholder={trI18n('— ไม่ระบุ —')} style={inputSt}
                 onChange={v => setCharModal(f => ({ ...f, line_name: v }))} />
             </Field>
             <Field label="หน่วย"><input style={inputSt} value={charModal.unit} onChange={e => setCharModal(f => ({ ...f, unit: e.target.value }))} /></Field>
@@ -961,18 +962,18 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
             <Field label="เครื่องมือวัด">
               <InstrumentSelect value={charModal.gauge} instruments={instruments} history={gaugeHist} onChange={v => setCharModal(f => ({ ...f, gauge: v }))} />
             </Field>
-            <Field label="อ้างอิง Control Plan" span><input style={inputSt} placeholder="เช่น CP-HDF-001 ข้อ 12" value={charModal.control_method} onChange={e => setCharModal(f => ({ ...f, control_method: e.target.value }))} /></Field>
+            <Field label="อ้างอิง Control Plan" span><input style={inputSt} placeholder={trI18n('เช่น CP-HDF-001 ข้อ 12')} value={charModal.control_method} onChange={e => setCharModal(f => ({ ...f, control_method: e.target.value }))} /></Field>
             {charModal.id && (
               <Field label="สถานะ">
                 <select style={inputSt} value={charModal.is_active ? '1' : '0'} onChange={e => setCharModal(f => ({ ...f, is_active: e.target.value === '1' }))}>
-                  <option value="1">ใช้งาน</option><option value="0">ปิดใช้งาน</option>
+                  <option value="1">{trI18n('ใช้งาน')}</option><option value="0">{trI18n('ปิดใช้งาน')}</option>
                 </select>
               </Field>
             )}
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-            <button style={ghostBtn} onClick={() => setCharModal(null)}>ยกเลิก</button>
-            <button style={btnSt()} onClick={saveChar}>บันทึก</button>
+            <button style={ghostBtn} onClick={() => setCharModal(null)}>{trI18n('ยกเลิก')}</button>
+            <button style={btnSt()} onClick={saveChar}>{trI18n('บันทึก')}</button>
           </div>
         </Modal>
       )}
@@ -1120,14 +1121,14 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
         {/* UI-STANDARD 2026-09-24: 3 ตัวเลือกเท่ากัน → Segmented · "ทุก…" ซ้ายสุด (state 'all' เดิม) */}
         <Segmented label="สถานะ" value={filter} onChange={setFilter} options={NCR_STATUS_SEG} />
         <span className="spacer" />
-        {canRecord && <button style={btnSt('var(--red)')} onClick={() => setCreateModal({ ...EMPTY_NCR, report_date: getWorkDate() })}>เปิด NCR ใหม่</button>}
+        {canRecord && <button style={btnSt('var(--red)')} onClick={() => setCreateModal({ ...EMPTY_NCR, report_date: getWorkDate() })}>{trI18n('เปิด NCR ใหม่')}</button>}
       </FilterBar>
 
       <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
           <thead><tr>
-            <th style={thSt}>เลขที่</th><th style={thSt}>วันที่</th><th style={thSt}>ไลน์</th><th style={thSt}>Part</th>
-            <th style={thSt}>ปัญหา</th><th style={thSt}>NG</th><th style={thSt}>ที่มา</th><th style={thSt}>ระดับ</th><th style={thSt}>สถานะ</th>
+            <th style={thSt}>{trI18n('เลขที่')}</th><th style={thSt}>{trI18n('วันที่')}</th><th style={thSt}>{trI18n('ไลน์')}</th><th style={thSt}>Part</th>
+            <th style={thSt}>{trI18n('ปัญหา')}</th><th style={thSt}>NG</th><th style={thSt}>{trI18n('ที่มา')}</th><th style={thSt}>{trI18n('ระดับ')}</th><th style={thSt}>{trI18n('สถานะ')}</th>
           </tr></thead>
           <tbody>
             {list.map(n => (
@@ -1156,7 +1157,7 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
             <Field label="วันที่พบ"><input type="date" style={inputSt} value={createModal.report_date} onChange={e => setCreateModal(f => ({ ...f, report_date: e.target.value }))} /></Field>
             <Field label="ไลน์ผลิต">
               {/* <LineSelect> กรอง scope (leader = ครอบครัวไลน์ · sections) ให้เอง — ถอด filter ที่เขียนเองออก (2026-09-07) */}
-              <LineSelect lines={lineObjs} value={createModal.line_name || ''} placeholder="— ไม่ระบุ —" style={inputSt}
+              <LineSelect lines={lineObjs} value={createModal.line_name || ''} placeholder={trI18n('— ไม่ระบุ —')} style={inputSt}
                 role={role} lineId={lineId} sections={sections}
                 onChange={v => setCreateModal(f => ({ ...f, line_name: v }))} />
             </Field>
@@ -1168,12 +1169,12 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
             <Field label="Part Name"><input style={inputSt} value={createModal.part_name} onChange={e => setCreateModal(f => ({ ...f, part_name: e.target.value }))} /></Field>
             <Field label="ที่มา">
               <select style={inputSt} value={createModal.source} onChange={e => setCreateModal(f => ({ ...f, source: e.target.value }))}>
-                {Object.entries(NCR_SOURCE).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                {Object.entries(NCR_SOURCE).map(([v, l]) => <option key={v} value={v}>{trI18n(l)}</option>)}
               </select>
             </Field>
             <Field label="ระดับความรุนแรง">
               <select style={inputSt} value={createModal.severity} onChange={e => setCreateModal(f => ({ ...f, severity: e.target.value }))}>
-                {Object.entries(NCR_SEV).map(([v, s]) => <option key={v} value={v}>{s.label}</option>)}
+                {Object.entries(NCR_SEV).map(([v, s]) => <option key={v} value={v}>{trI18n(s.label)}</option>)}
               </select>
             </Field>
             <Field label="จำนวนที่ตรวจพบ/กักกัน (ชิ้น)"><input type="number" style={inputSt} value={createModal.qty_found} onChange={e => setCreateModal(f => ({ ...f, qty_found: e.target.value }))} /></Field>
@@ -1183,8 +1184,8 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
             </Field>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-            <button style={ghostBtn} onClick={() => setCreateModal(null)}>ยกเลิก</button>
-            <button style={btnSt('var(--red)')} onClick={createNCR}>{createModal.id ? 'บันทึกการแก้ไข' : 'เปิด NCR'}</button>
+            <button style={ghostBtn} onClick={() => setCreateModal(null)}>{trI18n('ยกเลิก')}</button>
+            <button style={btnSt('var(--red)')} onClick={createNCR}>{createModal.id ? trI18n('บันทึกการแก้ไข') : trI18n('เปิด NCR')}</button>
           </div>
         </Modal>
       )}
@@ -1212,8 +1213,8 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
           {/* ✏️ / ❌ ใบที่เปิดผิด — แก้หัวใบได้จนกว่าจะปิด · ยกเลิกได้ถ้ายังไม่ผูก 8D (เลขที่คงอยู่ ไม่ลบเอกสาร) */}
           {isOpenQaDoc(detail) && canRecord && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-              <button style={ghostBtn} onClick={() => setCreateModal({ ...EMPTY_NCR, ...detail, part_no: detail.part_no || '', part_name: detail.part_name || '' })}>แก้ข้อมูลใบ (ไลน์/พาร์ท/อาการ/จำนวน)</button>
-              <button style={ghostBtn} onClick={() => cancelNCR(detail)}>ยกเลิกใบนี้ (เปิดผิด)</button>
+              <button style={ghostBtn} onClick={() => setCreateModal({ ...EMPTY_NCR, ...detail, part_no: detail.part_no || '', part_name: detail.part_name || '' })}>{trI18n('แก้ข้อมูลใบ (ไลน์/พาร์ท/อาการ/จำนวน)')}</button>
+              <button style={ghostBtn} onClick={() => cancelNCR(detail)}>{trI18n('ยกเลิกใบนี้ (เปิดผิด)')}</button>
             </div>
           )}
 
@@ -1229,8 +1230,8 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
                 <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <Field label="3) Disposition (เฉพาะ qa:manage)">
                     <select style={inputSt} value={edit.disposition} onChange={e => setEdit(x => ({ ...x, disposition: e.target.value }))}>
-                      <option value="">— เลือก —</option>
-                      {Object.entries(DISPO).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                      <option value="">{trI18n('— เลือก —')}</option>
+                      {Object.entries(DISPO).map(([v, l]) => <option key={v} value={v}>{trI18n(l)}</option>)}
                     </select>
                   </Field>
                   <Field label="หมายเหตุ disposition">
@@ -1239,7 +1240,7 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
                 </div>
               )}
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                <button style={ghostBtn} onClick={() => onOpenCapa(detail)}>เปิด 8D CAPA จาก NCR นี้</button>
+                <button style={ghostBtn} onClick={() => onOpenCapa(detail)}>{trI18n('เปิด 8D CAPA จาก NCR นี้')}</button>
                 <button style={btnSt('var(--amber)')} onClick={() => {
                   if (!edit.containment.trim()) { toast.error('กรอกมาตรการกักกันก่อน'); return; }
                   updateNCR(detail.id, {
@@ -1455,14 +1456,14 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
           part_no: '', line_name: '',
           d1_team: '', d2_problem: '', d3_containment: '', d4_root_cause: '', d5_corrective: '',
           d6_implement: '', d7_prevent: '', d8_closure: '', effectiveness: '', status: 'open',
-        })}>เปิด CAPA ใหม่</button>}
+        })}>{trI18n('เปิด CAPA ใหม่')}</button>}
       </FilterBar>
 
       <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
           <thead><tr>
-            <th style={thSt}>เลขที่</th><th style={thSt}>หัวข้อ</th><th style={thSt}>NCR อ้างอิง</th>
-            <th style={thSt}>ผู้รับผิดชอบ</th><th style={thSt}>กำหนดปิด</th><th style={thSt}>สถานะ</th>
+            <th style={thSt}>{trI18n('เลขที่')}</th><th style={thSt}>{trI18n('หัวข้อ')}</th><th style={thSt}>{trI18n('NCR อ้างอิง')}</th>
+            <th style={thSt}>{trI18n('ผู้รับผิดชอบ')}</th><th style={thSt}>{trI18n('กำหนดปิด')}</th><th style={thSt}>{trI18n('สถานะ')}</th>
           </tr></thead>
           <tbody>
             {visible.map(c => {
@@ -1521,7 +1522,7 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
                 onChange={({ part_no }) => setDetail(f => ({ ...f, part_no }))} />
             </Field>
             <Field label="ไลน์ผลิต">
-              <LineSelect lines={lineObjs} value={detail.line_name || ''} placeholder="— ไม่ระบุ —" style={inputSt}
+              <LineSelect lines={lineObjs} value={detail.line_name || ''} placeholder={trI18n('— ไม่ระบุ —')} style={inputSt}
                 disabled={!canRecord} onChange={v => setDetail(f => ({ ...f, line_name: v }))} />
             </Field>
           </div>
@@ -1576,14 +1577,14 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
                   <Field label="สรุปเรื่องเอกสาร PE (ตอบก่อนปิด)">
                     <select style={inputSt} value={detail.pe_review_status || 'pending'} disabled={!canRecord}
                       onChange={e => setDetail(f => ({ ...f, pe_review_status: e.target.value }))}>
-                      <option value="pending">ยังไม่ได้ตรวจสอบ</option>
-                      <option value="done">ทบทวน/แก้เอกสารแล้ว</option>
-                      <option value="na">พิจารณาแล้วว่าไม่ต้องแก้</option>
+                      <option value="pending">{trI18n('ยังไม่ได้ตรวจสอบ')}</option>
+                      <option value="done">{trI18n('ทบทวน/แก้เอกสารแล้ว')}</option>
+                      <option value="na">{trI18n('พิจารณาแล้วว่าไม่ต้องแก้')}</option>
                     </select>
                   </Field>
                   <Field label="หมายเหตุ (บังคับเมื่อเลือก 'ไม่ต้องแก้')">
                     <input style={inputSt} value={detail.pe_review_note || ''} disabled={!canRecord}
-                      placeholder="เช่น อาการนี้เป็น special cause ครั้งเดียว ไม่กระทบการควบคุมประจำ"
+                      placeholder={trI18n('เช่น อาการนี้เป็น special cause ครั้งเดียว ไม่กระทบการควบคุมประจำ')}
                       onChange={e => setDetail(f => ({ ...f, pe_review_note: e.target.value }))} />
                   </Field>
                 </div>
@@ -1598,8 +1599,8 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
 
           {detail.status !== 'closed' && (
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, flexWrap: 'wrap' }}>
-              <button style={ghostBtn} onClick={() => setDetail(null)}>ยกเลิก</button>
-              {canRecord && <button style={btnSt('var(--amber)')} onClick={() => save({ status: detail.id ? (detail.status === 'open' ? 'in_progress' : detail.status) : 'open' })}>บันทึก</button>}
+              <button style={ghostBtn} onClick={() => setDetail(null)}>{trI18n('ยกเลิก')}</button>
+              {canRecord && <button style={btnSt('var(--amber)')} onClick={() => save({ status: detail.id ? (detail.status === 'open' ? 'in_progress' : detail.status) : 'open' })}>{trI18n('บันทึก')}</button>}
               {canRecord && detail.id && detail.status !== 'verify' && (
                 <button style={btnSt('var(--blue)')} onClick={() => {
                   if (!detail.d5_corrective?.trim()) { toast.error('กรอก D5 มาตรการแก้ไขถาวรก่อนส่งตรวจ'); return; }
@@ -1736,7 +1737,7 @@ function InstrumentTab({ lineObjs, canManage }) {
       <FilterBar>
         <SearchInput value={search} onChange={setSearch} fields="รหัส / ชื่อ / ตำแหน่ง" />
         <span className="spacer" />
-        {canManage && <button style={btnSt()} onClick={() => setModal({ ...EMPTY_INST })}>+ เพิ่มเครื่องมือวัด</button>}
+        {canManage && <button style={btnSt()} onClick={() => setModal({ ...EMPTY_INST })}>{trI18n('+ เพิ่มเครื่องมือวัด')}</button>}
       </FilterBar>
       {/* การ์ดตัวนับ = เนื้อหา ⇒ อยู่ใต้แถบกรอง (UI-STANDARD §2.1) */}
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -1748,8 +1749,8 @@ function InstrumentTab({ lineObjs, canManage }) {
       <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
           <thead><tr>
-            <th style={thSt}>รหัส</th><th style={thSt}>ชื่อเครื่องมือ</th><th style={thSt}>ชนิด</th><th style={thSt}>Range / Res.</th>
-            <th style={thSt}>ตำแหน่ง</th><th style={thSt}>สอบเทียบล่าสุด</th><th style={thSt}>ครบกำหนด</th><th style={thSt}>สถานะ</th>
+            <th style={thSt}>{trI18n('รหัส')}</th><th style={thSt}>{trI18n('ชื่อเครื่องมือ')}</th><th style={thSt}>{trI18n('ชนิด')}</th><th style={thSt}>Range / Res.</th>
+            <th style={thSt}>{trI18n('ตำแหน่ง')}</th><th style={thSt}>{trI18n('สอบเทียบล่าสุด')}</th><th style={thSt}>{trI18n('ครบกำหนด')}</th><th style={thSt}>{trI18n('สถานะ')}</th>
             {canManage && <th style={thSt}></th>}
           </tr></thead>
           <tbody>
@@ -1793,11 +1794,11 @@ function InstrumentTab({ lineObjs, canManage }) {
             <Field label="Range"><input style={inputSt} placeholder="0-150 mm" value={modal.range_spec} onChange={e => setModal(f => ({ ...f, range_spec: e.target.value }))} /></Field>
             <Field label="Resolution"><input style={inputSt} placeholder="0.01 mm" value={modal.resolution} onChange={e => setModal(f => ({ ...f, resolution: e.target.value }))} /></Field>
             <Field label="ตำแหน่ง/แผนก">
-              <SelectOrFree value={modal.location} options={orgUnits} placeholder="— เลือกจากผังองค์กร —" freePlaceholder="ระบุเอง เช่น ห้อง CMM" style={inputSt}
+              <SelectOrFree value={modal.location} options={orgUnits} placeholder={trI18n('— เลือกจากผังองค์กร —')} freePlaceholder="ระบุเอง เช่น ห้อง CMM" style={inputSt}
                 onChange={v => setModal(f => ({ ...f, location: v }))} />
             </Field>
             <Field label="ไลน์">
-              <LineSelect lines={lineObjs} value={modal.line_name || ''} placeholder="— ไม่ระบุ —" style={inputSt}
+              <LineSelect lines={lineObjs} value={modal.line_name || ''} placeholder={trI18n('— ไม่ระบุ —')} style={inputSt}
                 onChange={v => setModal(f => ({ ...f, line_name: v }))} />
             </Field>
             <Field label="รอบสอบเทียบ (เดือน)"><input type="number" min="1" style={inputSt} value={modal.cal_freq_months} onChange={e => setModal(f => ({ ...f, cal_freq_months: e.target.value }))} /></Field>
@@ -1806,14 +1807,14 @@ function InstrumentTab({ lineObjs, canManage }) {
             <Field label="เลขที่ Certificate"><input style={inputSt} value={modal.cert_no} onChange={e => setModal(f => ({ ...f, cert_no: e.target.value }))} /></Field>
             <Field label="สถานะ">
               <select style={inputSt} value={modal.status} onChange={e => setModal(f => ({ ...f, status: e.target.value }))}>
-                <option value="active">ใช้งาน</option><option value="repair">ส่งซ่อม</option><option value="retired">ยกเลิกใช้</option>
+                <option value="active">{trI18n('ใช้งาน')}</option><option value="repair">{trI18n('ส่งซ่อม')}</option><option value="retired">{trI18n('ยกเลิกใช้')}</option>
               </select>
             </Field>
             <Field label="หมายเหตุ" span><input style={inputSt} value={modal.remark} onChange={e => setModal(f => ({ ...f, remark: e.target.value }))} /></Field>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-            <button style={ghostBtn} onClick={() => setModal(null)}>ยกเลิก</button>
-            <button style={btnSt()} onClick={() => save()}>บันทึก</button>
+            <button style={ghostBtn} onClick={() => setModal(null)}>{trI18n('ยกเลิก')}</button>
+            <button style={btnSt()} onClick={() => save()}>{trI18n('บันทึก')}</button>
           </div>
         </Modal>
       )}

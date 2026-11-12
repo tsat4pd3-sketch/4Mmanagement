@@ -25,6 +25,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from './Toast';
 import { checkWrite } from '../utils/dbWrite';
 
+import { tr } from '../utils/i18n';
 const inp = { padding: '5px 8px', borderRadius: 6, fontSize: 12, border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', width: '100%' };
 const btn = (bg, color = '#fff') => ({ padding: '5px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, cursor: 'pointer', background: bg, color, border: '1px solid var(--border)', whiteSpace: 'nowrap' });
 
@@ -145,10 +146,10 @@ export default function SimpleMasterPanel({
       ) : (
         <>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
-            <input placeholder="ค้นหา…" value={q} onChange={e => setQ(e.target.value)} style={{ ...inp, width: 220 }} />
-            {offCount > 0 && <label style={{ fontSize: 11.5, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 4 }}><input type="checkbox" checked={showOff} onChange={e => setShowOff(e.target.checked)} /> แสดงที่ปิดใช้ ({offCount})</label>}
+            <input placeholder={tr('ค้นหา…')} value={q} onChange={e => setQ(e.target.value)} style={{ ...inp, width: 220 }} />
+            {offCount > 0 && <label style={{ fontSize: 11.5, color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: 4 }}><input type="checkbox" checked={showOff} onChange={e => setShowOff(e.target.checked)} /> {tr('แสดงที่ปิดใช้ (')}{offCount})</label>}
             <div style={{ flex: 1 }} />
-            {canManage && !adding && <button onClick={() => setAdding({})} style={btn('var(--accent)', 'var(--accent-ink)')}>+ เพิ่ม</button>}
+            {canManage && !adding && <button onClick={() => setAdding({})} style={btn('var(--accent)', 'var(--accent-ink)')}>{tr('+ เพิ่ม')}</button>}
           </div>
 
           {adding && (
@@ -156,8 +157,8 @@ export default function SimpleMasterPanel({
               {!keyFrom && <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>{keyCol}</div><input value={adding[keyCol] || ''} onChange={e => setAdding(a => ({ ...a, [keyCol]: e.target.value }))} style={{ ...inp, fontFamily: 'monospace' }} /></div>}
               {fields.map(f => <div key={f.key}><div style={{ fontSize: 11, color: 'var(--muted)' }}>{f.label}{f.required ? ' *' : ''}</div><FieldInput f={f} value={adding[f.key]} onChange={v => setAdding(a => ({ ...a, [f.key]: v }))} /></div>)}
               <div style={{ display: 'flex', gap: 4 }}>
-                <button onClick={add} disabled={busy} style={btn('var(--accent)', 'var(--accent-ink)')}>บันทึก</button>
-                <button onClick={() => setAdding(null)} style={btn('var(--bg3)', 'var(--text2)')}>ยกเลิก</button>
+                <button onClick={add} disabled={busy} style={btn('var(--accent)', 'var(--accent-ink)')}>{tr('บันทึก')}</button>
+                <button onClick={() => setAdding(null)} style={btn('var(--bg3)', 'var(--text2)')}>{tr('ยกเลิก')}</button>
               </div>
             </div>
           )}
@@ -165,8 +166,8 @@ export default function SimpleMasterPanel({
           <div style={{ maxHeight, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead><tr style={{ background: 'var(--bg3)' }}>
-                <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: 'var(--muted)' }}>{keyCol}</th>
-                {fields.map(f => <th key={f.key} style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: 'var(--muted)', width: f.width }}>{f.label}</th>)}
+                <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: 'var(--muted)' }}>{tr(keyCol)}</th>
+                {fields.map(f => <th key={f.key} style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: 'var(--muted)', width: f.width }}>{tr(f.label)}</th>)}
                 {canManage && <th style={{ width: 150 }} />}
               </tr></thead>
               <tbody>
@@ -185,8 +186,8 @@ export default function SimpleMasterPanel({
                       {canManage && (
                         <td style={{ padding: '4px 6px', whiteSpace: 'nowrap' }}>
                           {d && <button onClick={() => saveRow(r)} disabled={busy} style={{ ...btn('var(--accent)', 'var(--accent-ink)'), marginRight: 4 }}>💾</button>}
-                          <button onClick={() => toggle(r)} style={{ ...btn('transparent', 'var(--text2)'), marginRight: 4 }}>{r.is_active === false ? 'เปิดใช้' : 'ปิดใช้'}</button>
-                          <button onClick={() => remove(r)} style={btn('transparent', '#ef4444')}>ลบ</button>
+                          <button onClick={() => toggle(r)} style={{ ...btn('transparent', 'var(--text2)'), marginRight: 4 }}>{r.is_active === false ? tr('เปิดใช้') : tr('ปิดใช้')}</button>
+                          <button onClick={() => remove(r)} style={btn('transparent', '#ef4444')}>{tr('ลบ')}</button>
                         </td>
                       )}
                     </tr>

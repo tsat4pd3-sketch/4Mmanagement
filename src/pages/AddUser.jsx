@@ -42,6 +42,7 @@ import SearchInput from '../components/SearchInput';
 import { ALL } from '../utils/filterLabels';
 import NoticeBar from '../components/NoticeBar';
 import SectionScopeSelect from '../components/SectionScopeSelect';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 /* ทีมช่างซ่อม (profiles.mtn_teams) — เดิมมีหน้าที่เดียวคือ "แยกคิวใบแจ้งซ่อม MO ให้ถูกทีม"
    🔴 ตั้งแต่ 2026-10-04 ช่องนี้ยังเป็นตัวบอก **"อยู่ฝั่งช่าง หรือ ฝั่งผู้แจ้ง"** ของด่านล็อกช่องเซ็น
@@ -885,7 +886,7 @@ export default function AddUser() {
         actions={
           <button type="button" className="pg-btn"
             onClick={openCreate} style={{ cursor: 'pointer' }}>
-            เพิ่มผู้ใช้ใหม่
+            {tr('เพิ่มผู้ใช้ใหม่')}
           </button>
         } />
 
@@ -899,14 +900,14 @@ export default function AddUser() {
       <FilterBar style={{ marginBottom: 12 }}>
         <SectionScopeSelect lines={lines} value={filterSection} onChange={s => setFilterSection(s)} />
         <select value={filterRole} onChange={e => setFilterRole(e.target.value)}>
-          <option value="">{ALL.role}</option>
+          <option value="">{tr(ALL.role)}</option>
           <RoleOptGroups />
         </select>
         <SearchInput value={q} onChange={setQ} fields="ชื่อ / อีเมล / ตำแหน่ง" />
         {(q || filterRole || filterSection || onlyFixUsers) && (
           <button onClick={() => { setQ(''); setFilterRole(''); setFilterSection(''); setOnlyFixUsers(false); }}
             style={{ padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
-            ล้างตัวกรอง
+            {tr('ล้างตัวกรอง')}
           </button>
         )}
         <span className="spacer" />
@@ -1008,7 +1009,7 @@ export default function AddUser() {
                   }}
                   style={{ width: 'auto', fontSize: 11.5, fontWeight: 700, padding: '2px 0', cursor: 'pointer',
                     background: 'none', border: 'none', color: 'var(--muted)' }}>
-                  ℹ️ ข้อมูลประกอบ — ไม่มีผลกับสิทธิ์ ไม่ต้องรีบแก้ ({issueIdx.infoTotal} เรื่อง) {showInfoIssues ? 'พับ' : 'กาง'}
+                  {tr('ℹ️ ข้อมูลประกอบ — ไม่มีผลกับสิทธิ์ ไม่ต้องรีบแก้ (')}{issueIdx.infoTotal} {tr('เรื่อง)')} {showInfoIssues ? 'พับ' : 'กาง'}
                 </button>
                 {showInfoIssues && groups.info.map(row)}
               </div>
@@ -1053,7 +1054,7 @@ export default function AddUser() {
                       <b style={{ minWidth: 150 }}>{u.full_name || u.email || '—'}</b>
                       <button type="button" onClick={() => openEdit(u)}
                         style={{ width: 'auto', marginLeft: 'auto', fontSize: 11, padding: '3px 10px', cursor: 'pointer' }}>
-                        แก้ไข → เลือกพนักงาน
+                        {tr('แก้ไข → เลือกพนักงาน')}
                       </button>
                     </div>
                   ))}
@@ -1086,7 +1087,7 @@ export default function AddUser() {
                       </div>
                       <button type="button" onClick={() => syncFromEmployee(u)}
                         style={{ width: 'auto', marginLeft: 'auto', fontSize: 11, padding: '3px 10px', cursor: 'pointer' }}>
-                        ใช้ค่าจากฐานพนักงาน
+                        {tr('ใช้ค่าจากฐานพนักงาน')}
                       </button>
                     </div>
                   ))}
@@ -1201,14 +1202,14 @@ export default function AddUser() {
                           <button type="button" disabled={busy} onClick={() => openEdit(u)}
                             title="เปิดแก้ไขบัญชี — ในโมดัลมีปุ่มเพิ่มคนเข้าฐานพนักงาน ถ้ายังไม่มีชื่อเขา"
                             style={{ width: 'auto', fontSize: 11, padding: '3px 9px', cursor: busy ? 'default' : 'pointer' }}>
-                            เปิดแก้ไข / เพิ่มเข้าฐาน
+                            {tr('เปิดแก้ไข / เพิ่มเข้าฐาน')}
                           </button>
                           {/* ทาง 3: ไม่ใช่คน (จอ TV / ประจำเครื่อง / บัญชีทดสอบ) */}
                           <button type="button" disabled={busy} onClick={() => markShared(u)}
                             title="จอ TV หรือบัญชีประจำเครื่อง = บัญชีกลาง ไม่ต้องผูกตัวตน"
                             style={{ width: 'auto', fontSize: 11, padding: '3px 9px', cursor: busy ? 'default' : 'pointer',
                               background: 'var(--bg2)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
-                            เป็นบัญชีกลาง
+                            {tr('เป็นบัญชีกลาง')}
                           </button>
                         </div>
                       </div>
@@ -1317,7 +1318,7 @@ export default function AddUser() {
             <span style={{ flex: 1 }} />
             <button type="button" onClick={() => setTableIssue(null)}
               style={{ width: 'auto', fontSize: 11.5, padding: '3px 10px', cursor: 'pointer', borderRadius: 'var(--r-md)',
-                border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }}>แสดงทุกบัญชี</button>
+                border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }}>{tr('แสดงทุกบัญชี')}</button>
           </div>
         );
       })()}
@@ -1333,7 +1334,7 @@ export default function AddUser() {
               <Th label="Team" sortKey="team" style={{ textAlign: 'center', minWidth: 80 }} />
               <Th label="สร้างเมื่อ" sortKey="created_at" style={{ textAlign: 'center', minWidth: 96 }} />
               <Th label="เข้าใช้ล่าสุด" sortKey="last_login" style={{ textAlign: 'center', minWidth: 104 }} />
-              <th style={{ textAlign: 'center', minWidth: 80 }}>แก้ไข</th>
+              <th style={{ textAlign: 'center', minWidth: 80 }}>{tr('แก้ไข')}</th>
             </tr>
           </thead>
           <tbody>
@@ -1439,7 +1440,7 @@ export default function AddUser() {
                       onClick={() => openEdit(u)}
                       style={{ padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 600, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}
                     >
-                      แก้ไข
+                      {tr('แก้ไข')}
                     </button>
                   </td>
                 </tr>
@@ -1538,11 +1539,11 @@ export default function AddUser() {
               {modalMode === 'create' ? (
                 <>
                   <div>
-                    <label style={labelSt}>อีเมล</label>
+                    <label style={labelSt}>{tr('อีเมล')}</label>
                     <input type="email" placeholder="user@company.com" value={form.email} onChange={e => setF('email', e.target.value)} />
                   </div>
                   <div>
-                    <label style={labelSt}>รหัสผ่าน (อย่างน้อย 6 ตัว)</label>
+                    <label style={labelSt}>{tr('รหัสผ่าน (อย่างน้อย 6 ตัว)')}</label>
                     <input type="password" placeholder="••••••" value={form.password} onChange={e => setF('password', e.target.value)} />
                   </div>
                 </>
@@ -1553,10 +1554,10 @@ export default function AddUser() {
                   </div>
                   {form.role !== 'admin' && (
                     <div>
-                      <label style={labelSt}>ตั้งรหัสผ่านใหม่ (กรณีลืมรหัส / login ไม่ได้)</label>
+                      <label style={labelSt}>{tr('ตั้งรหัสผ่านใหม่ (กรณีลืมรหัส / login ไม่ได้)')}</label>
                       <div style={{ display: 'flex', gap: 8 }}>
                         {/* input ใน flex row ต้องกำหนด width เอง (กฎ F5 — index.css default 100%) */}
-                        <input type="text" placeholder="รหัสใหม่ อย่างน้อย 6 ตัว..." value={resetPw}
+                        <input type="text" placeholder={tr('รหัสใหม่ อย่างน้อย 6 ตัว...')} value={resetPw}
                           onChange={e => setResetPw(e.target.value)}
                           autoComplete="off"
                           style={{ flex: 1, width: 'auto', minWidth: 0 }} />
@@ -1566,7 +1567,7 @@ export default function AddUser() {
                             cursor: (resetPwBusy || resetPw.length < 6) ? 'not-allowed' : 'pointer',
                             background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)',
                             opacity: (resetPwBusy || resetPw.length < 6) ? 0.5 : 1 }}>
-                          {resetPwBusy ? 'กำลังตั้ง...' : 'รีเซ็ตรหัส'}
+                          {resetPwBusy ? tr('กำลังตั้ง...') : tr('รีเซ็ตรหัส')}
                         </button>
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
@@ -1578,7 +1579,7 @@ export default function AddUser() {
               )}
 
               <div>
-                <label style={labelSt}>ประเภทบัญชี</label>
+                <label style={labelSt}>{tr('ประเภทบัญชี')}</label>
                 {/* ⚠️ บัญชีของคน ต้องผูกตัวตนจากฐานพนักงาน — ทีม/ไลน์/ส่วนงาน อ่านจากที่นั่นที่เดียว
                     บัญชีหน่วยงาน/อุปกรณ์ (maintenance/warehouse1/Display) ไม่มีตัวตนใน employees และไม่ควรมี */}
                 <div style={{ display: 'flex', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
@@ -1621,8 +1622,8 @@ export default function AddUser() {
 
                 {form.accountKind === 'person' ? (
                   <>
-                    <label style={labelSt}>พนักงาน (ตัวตนของบัญชีนี้) <span style={{ color: 'var(--red)' }}>*</span></label>
-                    <input type="text" placeholder="ค้นด้วยรหัส / ชื่อ" value={empSearch}
+                    <label style={labelSt}>{tr('พนักงาน (ตัวตนของบัญชีนี้)')} <span style={{ color: 'var(--red)' }}>*</span></label>
+                    <input type="text" placeholder={tr('ค้นด้วยรหัส / ชื่อ')} value={empSearch}
                       onChange={e => setEmpSearch(e.target.value)} style={{ marginBottom: 6 }} />
                     <select value={form.employeeId}
                       onChange={e => {
@@ -1639,7 +1640,7 @@ export default function AddUser() {
                           position: emp.position || f.position,
                         }));
                       }}>
-                      <option value="">— เลือกพนักงาน —</option>
+                      <option value="">{tr('— เลือกพนักงาน —')}</option>
                       {empMatches
                         .slice(0, 300)
                         .map(e2 => (
@@ -1669,7 +1670,7 @@ export default function AddUser() {
                         onClick={() => setNewEmp({ name: (empSearch.trim() || form.fullName || ''), employee_id_code: '', department: '', section: '', staff_kind: STAFF_SUPPORT })}
                         style={{ marginTop: 8, width: 'auto', padding: '7px 12px', borderRadius: 'var(--r-md)', border: '1px dashed var(--accent)',
                           background: 'transparent', color: 'var(--accent)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                        ＋ ไม่มีชื่อในฐานพนักงาน — เพิ่มคนนี้เข้าฐาน
+                        {tr('＋ ไม่มีชื่อในฐานพนักงาน — เพิ่มคนนี้เข้าฐาน')}
                       </button>
                     )}
 
@@ -1678,19 +1679,19 @@ export default function AddUser() {
                         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>➕ เพิ่มคนนี้เข้าฐานพนักงาน</div>
                         <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 8 }}>
                           <div>
-                            <label style={labelSt}>ชื่อ - นามสกุล <span style={{ color: 'var(--red)' }}>*</span></label>
+                            <label style={labelSt}>{tr('ชื่อ - นามสกุล')} <span style={{ color: 'var(--red)' }}>*</span></label>
                             <input type="text" autoFocus value={newEmp.name}
                               onChange={e => setNewEmp(v => ({ ...v, name: e.target.value }))} />
                           </div>
                           <div>
-                            <label style={labelSt}>รหัสพนักงาน <span style={{ color: 'var(--red)' }}>*</span></label>
-                            <input type="text" placeholder="เช่น 12345" value={newEmp.employee_id_code}
+                            <label style={labelSt}>{tr('รหัสพนักงาน')} <span style={{ color: 'var(--red)' }}>*</span></label>
+                            <input type="text" placeholder={tr('เช่น 12345')} value={newEmp.employee_id_code}
                               onChange={e => setNewEmp(v => ({ ...v, employee_id_code: e.target.value }))} />
                           </div>
                         </div>
 
                         <div>
-                          <label style={labelSt}>ประเภทพนักงาน</label>
+                          <label style={labelSt}>{tr('ประเภทพนักงาน')}</label>
                           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                             {STAFF_KINDS.map(k => (
                               <button key={k.key} type="button" onClick={() => setNewEmp(v => ({ ...v, staff_kind: k.key }))}
@@ -1713,16 +1714,16 @@ export default function AddUser() {
                             แผนก cascade ตามส่วนงาน (ใช้ deptOptionsFor เดียวกับหน้าลงทะเบียนพนักงาน) */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                           <div>
-                            <label style={labelSt}>ส่วนงาน (Section)</label>
+                            <label style={labelSt}>{tr('ส่วนงาน (Section)')}</label>
                             <select value={newEmp.section}
                               onChange={e => setNewEmp(v => ({ ...v, section: e.target.value, department: '' }))}>
-                              <option value="">— ไม่ระบุ —</option>
-                              <option value={ORPHAN_SECTION}>{ORPHAN_SECTION_LABEL}</option>
-                              {sectionOpts.map(sc => <option key={sc} value={sc}>{sc}</option>)}
+                              <option value="">{tr('— ไม่ระบุ —')}</option>
+                              <option value={ORPHAN_SECTION}>{tr(ORPHAN_SECTION_LABEL)}</option>
+                              {sectionOpts.map(sc => <option key={sc} value={sc}>{tr(sc)}</option>)}
                             </select>
                           </div>
                           <div>
-                            <label style={labelSt}>แผนก</label>
+                            <label style={labelSt}>{tr('แผนก')}</label>
                             <select value={newEmp.department} onChange={e => setNewEmp(v => ({ ...v, department: e.target.value }))}>
                               <option value="">{newEmp.section ? '— ไม่ระบุ —' : '— เลือกส่วนงานก่อน —'}</option>
                               {deptOptionsFor(newEmp.section, orgNodes.sections, orgNodes.depts)
@@ -1750,11 +1751,11 @@ export default function AddUser() {
                         <div style={{ display: 'flex', gap: 8 }}>
                           <button type="button" onClick={addEmployee} disabled={newEmpSaving}
                             style={{ width: 'auto', padding: '8px 14px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: newEmpSaving ? 0.6 : 1 }}>
-                            {newEmpSaving ? 'กำลังบันทึก...' : 'บันทึกเข้าฐานพนักงาน + ผูกกับบัญชีนี้'}
+                            {newEmpSaving ? tr('กำลังบันทึก...') : tr('บันทึกเข้าฐานพนักงาน + ผูกกับบัญชีนี้')}
                           </button>
                           <button type="button" onClick={() => setNewEmp(null)}
                             style={{ width: 'auto', padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)', fontSize: 12, cursor: 'pointer' }}>
-                            ยกเลิก
+                            {tr('ยกเลิก')}
                           </button>
                         </div>
                       </div>
@@ -1762,40 +1763,40 @@ export default function AddUser() {
                   </>
                 ) : (
                   <>
-                    <label style={labelSt}>ชื่อ - นามสกุล</label>
-                    <input type="text" placeholder="ชื่อเต็ม" value={form.fullName} onChange={e => setF('fullName', e.target.value)} />
+                    <label style={labelSt}>{tr('ชื่อ - นามสกุล')}</label>
+                    <input type="text" placeholder={tr('ชื่อเต็ม')} value={form.fullName} onChange={e => setF('fullName', e.target.value)} />
                   </>
                 )}
               </div>
 
               <div>
-                <label style={labelSt}>ตำแหน่งงาน (Position)</label>
+                <label style={labelSt}>{tr('ตำแหน่งงาน (Position)')}</label>
                 {/* 2026-09-07: เลิกช่อง "อื่นๆ (พิมพ์เอง)" — ตำแหน่งนอก master ไม่มีระดับงาน (คำเตือน AM/PM เงียบ)
                     ตำแหน่งใหม่ให้เพิ่มเข้าทะเบียน positions ก่อนแล้วเลือก · ค่าเก่าที่เคยพิมพ์ไว้ยังโชว์ (positionOptionsWith) ไม่หายตอนบันทึก */}
                 <div style={{ display: 'flex', gap: 6 }}>
                   <select value={form.position} onChange={e => setF('position', e.target.value)} style={{ flex: 1, minWidth: 0 }}>
-                    <option value="">— ไม่ระบุ —</option>
+                    <option value="">{tr('— ไม่ระบุ —')}</option>
                     {positionOptionsWith(form.position).map(p => (
                       <option key={p.value} value={p.value}>{p.label}{p.level == null && !posOpts().some(o => o.value === p.value) ? ' ⚠ นอกทะเบียน' : ''}</option>
                     ))}
                   </select>
                   <button type="button" onClick={() => setNewPos(v => (v ? null : { key: '', label_th: '', level: 'staff' }))}
                     style={{ whiteSpace: 'nowrap', padding: '0 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                    {newPos ? 'ยกเลิก' : '+ เพิ่มตำแหน่งใหม่'}
+                    {newPos ? tr('ยกเลิก') : tr('+ เพิ่มตำแหน่งใหม่')}
                   </button>
                 </div>
                 {newPos && (
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr 1fr auto', gap: 6, marginTop: 6, alignItems: 'center', padding: 8, background: 'var(--bg3)', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)' }}>
-                    <input type="text" autoFocus placeholder="key (a-z/_) เช่น asst_head" value={newPos.key}
+                    <input type="text" autoFocus placeholder={tr('key (a-z/_) เช่น asst_head')} value={newPos.key}
                       onChange={e => setNewPos(p => ({ ...p, key: e.target.value }))} style={{ fontFamily: 'monospace' }} />
-                    <input type="text" placeholder="ชื่อตำแหน่ง (ไทย) เช่น ผู้ช่วยหัวหน้าแผนก" value={newPos.label_th}
+                    <input type="text" placeholder={tr('ชื่อตำแหน่ง (ไทย) เช่น ผู้ช่วยหัวหน้าแผนก')} value={newPos.label_th}
                       onChange={e => setNewPos(p => ({ ...p, label_th: e.target.value }))} />
                     <select value={newPos.level} onChange={e => setNewPos(p => ({ ...p, level: e.target.value }))} title="ระดับงาน — ใช้ตัดสินว่าใครทำ AM ใครทำ PM">
-                      {POSITION_LEVELS.map(l => <option key={l.key} value={l.key}>{l.label}</option>)}
+                      {POSITION_LEVELS.map(l => <option key={l.key} value={l.key}>{tr(l.label)}</option>)}
                     </select>
                     <button type="button" onClick={addPosition} disabled={newPosSaving}
                       style={{ whiteSpace: 'nowrap', padding: '8px 12px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 700, cursor: 'pointer', opacity: newPosSaving ? 0.6 : 1 }}>
-                      {newPosSaving ? '...' : 'บันทึกตำแหน่ง'}
+                      {newPosSaving ? '...' : tr('บันทึกตำแหน่ง')}
                     </button>
                   </div>
                 )}
@@ -1845,8 +1846,8 @@ export default function AddUser() {
                   return (
                     <div>
                       <label style={labelSt}>
-                        ส่วนงานที่สังกัด
-                        <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>
+                        {tr('ส่วนงานที่สังกัด')}
+                        <span style={{ color: 'var(--muted)', fontWeight: 400 }}> {tr('· จากฐานพนักงาน')}</span>
                       </label>
                       <div style={{ padding: '8px 12px', background: 'var(--bg3)', borderRadius: 'var(--r-md)', fontSize: 12.5,
                         color: emp?.section ? 'var(--text)' : 'var(--amber)', border: '1px solid var(--border2)' }}>
@@ -1865,11 +1866,11 @@ export default function AddUser() {
                 /* บัญชีกลาง (จอ TV / ประจำเครื่อง) ไม่มีตัวตนในทะเบียน — เลือกเองได้ 1 ส่วนงาน */
                 return (
                   <div>
-                    <label style={labelSt}>ส่วนงานที่สังกัด</label>
+                    <label style={labelSt}>{tr('ส่วนงานที่สังกัด')}</label>
                     <select value={form.homeSection} onChange={e => setF('homeSection', e.target.value)}>
-                      <option value="">— ไม่ผูกส่วนงาน —</option>
+                      <option value="">{tr('— ไม่ผูกส่วนงาน —')}</option>
                       {[...new Set([...sectionOpts, ...orphanDeptOpts, ...(form.homeSection ? [form.homeSection] : [])])]
-                        .map(sec => <option key={sec} value={sec}>{sec}</option>)}
+                        .map(sec => <option key={sec} value={sec}>{tr(sec)}</option>)}
                     </select>
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                       ใช้ตอบว่า <b>“แก้ข้อมูลของใครได้”</b> — ไม่ผูก = แก้อะไรไม่ได้นอกจากที่ชุดสิทธิ์เปิดให้ทั้งโรงงาน
@@ -1904,13 +1905,13 @@ export default function AddUser() {
                 return (<>
                   <div>
                     <label style={labelSt}>
-                      Team {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}
-                      {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>}
+                      Team {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>{tr('* จำเป็น')}</span>}
+                      {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> {tr('· จากฐานพนักงาน')}</span>}
                     </label>
                     <select value={effTeam} disabled={linked}
                       title={linked ? 'แก้ที่ฐานข้อมูลพนักงาน (หน้าพนักงาน) — ที่นี่แสดงค่าจริงเท่านั้น' : undefined}
                       onChange={e => setF('team', e.target.value)}>
-                      <option value="">— เลือก —</option>
+                      <option value="">{tr('— เลือก —')}</option>
                       {teamOpts.map(t => <option key={t} value={t}>Team {t} {TEAM_DESC[t] || ''}</option>)}
                     </select>
                     {/* Team ของบัญชีไม่ได้บอกแค่ "เข้ากะไหน" แต่คุม "เห็นใครบ้าง" ในหน้าเช็คชื่อด้วย
@@ -1928,8 +1929,8 @@ export default function AddUser() {
                   {/* ใช้ <LineSelect> ตัวกลาง (มีลำดับชั้น/scope/ไลน์ปลดระวาง) + ล็อกเมื่อผูกพนักงาน */}
                   <div title={linked ? 'แก้ที่ฐานข้อมูลพนักงาน (หน้าพนักงาน) — ที่นี่แสดงค่าจริงเท่านั้น' : undefined}>
                     <label style={labelSt}>
-                      ไลน์ผลิต / Group {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>* จำเป็น</span>}
-                      {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · จากฐานพนักงาน</span>}
+                      {tr('ไลน์ผลิต / Group')} {form.role === 'leader' && !linked && <span style={{ color: 'var(--red)' }}>{tr('* จำเป็น')}</span>}
+                      {linked && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> {tr('· จากฐานพนักงาน')}</span>}
                     </label>
                     <LineSelect lines={lines} value={effLine} valueKey="id" includeSupport
                       disabled={linked} onChange={v => setF('lineId', v)} />
@@ -1953,7 +1954,7 @@ export default function AddUser() {
               </div>
 
               <div>
-                <label style={labelSt}>① ชุดสิทธิ์การใช้งาน (Role) — <span style={{ fontWeight: 600, color: 'var(--muted)' }}>"กดอะไรได้" ไม่ใช่ "สังกัดหน่วยไหน"</span></label>
+                <label style={labelSt}>{tr('① ชุดสิทธิ์การใช้งาน (Role) —')} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>"กดอะไรได้" ไม่ใช่ "สังกัดหน่วยไหน"</span></label>
                 <select value={form.role} onChange={e => setF('role', e.target.value)}>
                   <RoleOptGroups withDesc />
                 </select>
@@ -2005,7 +2006,7 @@ export default function AddUser() {
                   const recoNarrower = orgReco?.depth && isWiderThan(form.scopeDepth || 'unit', orgReco.depth);
                   return (
                     <>
-                      <label style={labelSt}>② ขอบเขตการมองเห็น — <span style={{ fontWeight: 600, color: 'var(--muted)' }}>"เห็นข้อมูลของใคร"</span></label>
+                      <label style={labelSt}>{tr('② ขอบเขตการมองเห็น —')} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>"เห็นข้อมูลของใคร"</span></label>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                         {SCOPE_DEPTHS.map(d => {
                           const m = SCOPE_DEPTH_META[d];
@@ -2058,8 +2059,8 @@ export default function AddUser() {
                   🔴 ห้ามเอาช่องติ๊กส่วนงานกลับมา — 2 ช่องที่ตอบคำถามเดียวกันคือต้นเหตุของ "ตั้งแล้วขัดกัน" */}
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelSt}>
-                  ③ หน่วยที่ดูแล — <span style={{ fontWeight: 600, color: 'var(--muted)' }}>"เห็น + แก้ข้อมูลของใครได้" (ติ๊กที่ต้นไม้ข้างล่าง)</span>
-                  {form.role === 'supervisor' && <span style={{ color: 'var(--red)' }}> * จำเป็นอย่างน้อย 1</span>}
+                  {tr('③ หน่วยที่ดูแล —')} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>"เห็น + แก้ข้อมูลของใครได้" (ติ๊กที่ต้นไม้ข้างล่าง)</span>
+                  {form.role === 'supervisor' && <span style={{ color: 'var(--red)' }}> {tr('* จำเป็นอย่างน้อย 1')}</span>}
                 </label>
                 <div style={{ fontSize: 11.5, lineHeight: 1.7, padding: '7px 10px', borderRadius: 'var(--r-md)',
                   background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
@@ -2096,7 +2097,7 @@ export default function AddUser() {
                   🔴 จอนี้ไม่ใช่ด่าน — ด่านจริงคือ `canWriteScope()` ในฟังก์ชันที่เขียน DB */}
               <div style={{ gridColumn: '1 / -1' }}>
                 <label style={labelSt}>
-                  ติ๊กหน่วยที่ดูแล (Cost Center · ตามผังองค์กร) — <span style={{ fontWeight: 600, color: 'var(--muted)' }}>“ติ๊กแม่ = ได้ทั้งกิ่ง”</span>
+                  {tr('ติ๊กหน่วยที่ดูแล (Cost Center · ตามผังองค์กร) —')} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>“ติ๊กแม่ = ได้ทั้งกิ่ง”</span>
                 </label>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 5, lineHeight: 1.6 }}>
                   ติ๊ก<b>ชั้นส่วนงาน</b> = ได้ทุกแผนก/ไลน์/ทีมที่อยู่<b>ใต้ลงไป</b>ทั้งหมด — ไม่ต้องติ๊กลูกทีละตัว ·
@@ -2115,7 +2116,7 @@ export default function AddUser() {
                       <button type="button" onClick={() => toggleCc(ccFromEmp.cc)}
                         style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700,
                           cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
-                        ＋ ใช้รหัสนี้
+                        {tr('＋ ใช้รหัสนี้')}
                       </button>
                     )}
                   </div>
@@ -2139,7 +2140,7 @@ export default function AddUser() {
                   return (
                     <>
                       <div style={{ marginBottom: 5 }}>
-                        <SearchInput value={ccSearch} onChange={setCcSearch} placeholder="ค้นรหัส / ชื่อหน่วยงาน…" />
+                        <SearchInput value={ccSearch} onChange={setCcSearch} placeholder={tr('ค้นรหัส / ชื่อหน่วยงาน…')} />
                       </div>
                       <div style={{ maxHeight: 260, overflowY: 'auto', padding: '6px 8px', background: 'var(--bg3)',
                         borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', display: 'grid', gap: 3, alignContent: 'start' }}>
@@ -2207,7 +2208,7 @@ export default function AddUser() {
                         <button key={cc} type="button" onClick={() => toggleCc(cc)}
                           style={{ marginLeft: 6, padding: '2px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700,
                             cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
-                          ถอด {cc}
+                          {tr('ถอด')} {cc}
                         </button>
                       ))}
                     </div>
@@ -2218,7 +2219,7 @@ export default function AddUser() {
               {/* ทีมช่างซ่อม — แยกคิวใบแจ้งซ่อม MO (โผล่เฉพาะ role งานซ่อม) · แยกจาก Section ไม่กระทบ scope ข้อมูลผลิต */}
               {isMtnTeamRole(form.role) && (
                 <div style={{ gridColumn: '1 / -1' }}>
-                  <label style={labelSt}>ทีมช่างซ่อม (แยกคิวใบแจ้งซ่อม MO + บอกว่าอยู่ฝั่งช่าง)</label>
+                  <label style={labelSt}>{tr('ทีมช่างซ่อม (แยกคิวใบแจ้งซ่อม MO + บอกว่าอยู่ฝั่งช่าง)')}</label>
                   {/* 🔒 ช่องนี้ตัดสิน "ฝั่ง" ของด่านล็อกช่องเซ็นขั้น 6/7/8 ด้วย — ต้องเขียนบอกคนตั้งค่า
                       ไม่งั้น ผจก.ช่างที่ไม่ได้ติ๊กจะกดช่องของตัวเองไม่ได้ แล้วหาสาเหตุไม่เจอ */}
                   <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '-2px 0 6px', lineHeight: 1.6 }}>
@@ -2319,14 +2320,14 @@ export default function AddUser() {
                     </div>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8, flexWrap: 'wrap' }}>
                       <select value={reassignTo} onChange={e => setReassignTo(e.target.value)} style={{ flex: 1, minWidth: 220 }}>
-                        <option value="">— เลือกบัญชีที่จะรับโอนประวัติ —</option>
+                        <option value="">{tr('— เลือกบัญชีที่จะรับโอนประวัติ —')}</option>
                         {others.map(u => (
                           <option key={u.id} value={u.id}>{u.full_name || '(ไม่มีชื่อ)'} · {u.email}</option>
                         ))}
                       </select>
                       <button type="button" disabled={!reassignTo || loading} onClick={() => handleDelete(reassignTo)}
                         style={{ padding: '8px 12px', background: reassignTo ? 'var(--red-dim)' : 'var(--bg3)', color: reassignTo ? 'var(--red)' : 'var(--muted)', border: '1px solid var(--red-line)', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 12, cursor: reassignTo && !loading ? 'pointer' : 'default' }}>
-                        🔀 โอนประวัติแล้วลบ
+                        {tr('🔀 โอนประวัติแล้วลบ')}
                       </button>
                     </div>
                   </div>
@@ -2338,7 +2339,7 @@ export default function AddUser() {
                   <button type="button" onClick={() => handleDelete()} disabled={loading}
                     title="ลบบัญชีถาวร (ลบตัวเอง/บัญชี admin ไม่ได้)"
                     style={{ padding: '12px 16px', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13, cursor: loading ? 'default' : 'pointer' }}>
-                    ลบผู้ใช้
+                    {tr('ลบผู้ใช้')}
                   </button>
                 )}
                 <button
@@ -2346,13 +2347,13 @@ export default function AddUser() {
                   disabled={loading}
                   style={{ flex: 2, padding: 12, background: loading ? 'var(--muted)' : 'var(--amber)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 14, cursor: loading ? 'default' : 'pointer' }}
                 >
-                  {loading ? 'กำลังบันทึก...' : modalMode === 'create' ? 'สร้าง Account' : 'บันทึก'}
+                  {loading ? tr('กำลังบันทึก...') : modalMode === 'create' ? tr('สร้าง Account') : tr('บันทึก')}
                 </button>
                 <button
                   onClick={() => setShowModal(false)}
                   style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', cursor: 'pointer' }}
                 >
-                  ยกเลิก
+                  {tr('ยกเลิก')}
                 </button>
               </div>
             </div>

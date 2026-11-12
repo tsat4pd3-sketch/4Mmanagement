@@ -25,6 +25,7 @@ import { energyPointOptions, energyZonesFrom } from '../utils/energy';
 import { INTEGRATION_KINDS, kindOf, kindLabel, sourceStatus, healthBars, SOURCE_STALE_MIN } from '../utils/integrationKinds';
 import { buildNodeRedFlow, envVarName } from '../utils/nodeRedFlow';
 
+import { tr } from '../utils/i18n';
 const COLS = 'id, code, name, note, kinds, key_hint, legacy_secret, is_paused, last_seen_at, last_ok_at, last_error, last_result, updated_at, updated_by';
 const INGEST_URL = `${DR_BASE_URL}/functions/v1/ingest-energy`;
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 14, boxShadow: 'var(--shadow-sm)' };
@@ -103,7 +104,7 @@ export default function Integrations() {
       tabs={[{ key: 'sources', label: 'แหล่งต้นทาง' }, { key: 'kinds', label: 'ชนิดข้อมูล' }]}
       tab={tab} onTab={(k) => { openSrc(null); setTab(k); }}
       actions={canManage && !srcCode && tab === 'sources'
-        ? <button type="button" className="pg-btn primary" onClick={() => setCreating(true)}>+ เพิ่มการเชื่อมต่อ</button> : null} />
+        ? <button type="button" className="pg-btn primary" onClick={() => setCreating(true)}>{tr('+ เพิ่มการเชื่อมต่อ')}</button> : null} />
   );
 
   return (
@@ -121,7 +122,7 @@ export default function Integrations() {
           : (
             <div style={{ display: 'grid', gap: 10 }}>
               <NoticeBar tone="warn">ไม่พบต้นทางรหัส <b>{srcCode}</b> ในทะเบียน</NoticeBar>
-              <div><button type="button" className="pg-btn" onClick={() => openSrc(null)}>← การเชื่อมต่อทั้งหมด</button></div>
+              <div><button type="button" className="pg-btn" onClick={() => openSrc(null)}>{tr('← การเชื่อมต่อทั้งหมด')}</button></div>
             </div>
           )
       ) : (
@@ -236,7 +237,7 @@ function SourceDetail({ src, hours, nowMs, canManage, canMap, onBack, onChanged,
   return (
     <div style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-        <button type="button" className="pg-btn" onClick={onBack}>← การเชื่อมต่อทั้งหมด</button>
+        <button type="button" className="pg-btn" onClick={onBack}>{tr('← การเชื่อมต่อทั้งหมด')}</button>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>{src.name}
             <span style={{ marginLeft: 10, fontSize: 12, fontWeight: 700, color: m.color, border: `1px solid ${m.color}`, borderRadius: 999, padding: '1px 10px', verticalAlign: 'middle' }}>● {m.label}</span>
@@ -246,8 +247,8 @@ function SourceDetail({ src, hours, nowMs, canManage, canMap, onBack, onChanged,
       </div>
 
       <div style={{ ...card, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-        <button type="button" className="pg-btn primary" onClick={download} disabled={!flow.nodes.length}>⬇ ดาวน์โหลด flow</button>
-        <button type="button" className="pg-btn" onClick={copyFlow} disabled={!flow.nodes.length}>📋 คัดลอก flow</button>
+        <button type="button" className="pg-btn primary" onClick={download} disabled={!flow.nodes.length}>{tr('⬇ ดาวน์โหลด flow')}</button>
+        <button type="button" className="pg-btn" onClick={copyFlow} disabled={!flow.nodes.length}>{tr('📋 คัดลอก flow')}</button>
         {canManage && <>
           <button type="button" className="pg-btn" disabled={!!busy}
             onClick={() => act('rotate', 'ออกรหัสใหม่', src.key_hint
@@ -257,12 +258,12 @@ function SourceDetail({ src, hours, nowMs, canManage, canMap, onBack, onChanged,
           {src.legacy_secret && src.key_hint && (
             <button type="button" className="pg-btn" disabled={!!busy}
               onClick={() => act('legacy_off', 'เลิกใช้รหัสกลาง', 'ยืนยันว่า Node-RED เปลี่ยนไปใช้ ESM_SOURCE_KEY แล้ว? หลังกด รหัสกลางเดิมจะส่งเข้าต้นทางนี้ไม่ได้')}>
-              เลิกใช้รหัสกลาง</button>
+              {tr('เลิกใช้รหัสกลาง')}</button>
           )}
           <button type="button" className="pg-btn" disabled={!!busy} style={{ color: src.is_paused ? 'var(--green)' : 'var(--red)' }}
             onClick={() => act(src.is_paused ? 'resume' : 'pause', src.is_paused ? 'เปิดรับต่อ' : 'พักการรับ',
               src.is_paused ? null : 'พักการรับ = ข้อมูลจากต้นทางนี้จะไม่ถูกบันทึกจนกว่าจะเปิดรับต่อ ยืนยัน?')}>
-            {src.is_paused ? '▶ เปิดรับต่อ' : '⏸ พักการรับ'}</button>
+            {src.is_paused ? tr('▶ เปิดรับต่อ') : tr('⏸ พักการรับ')}</button>
         </>}
         <span style={{ fontSize: 12, color: noAuth ? 'var(--red)' : 'var(--muted)' }}>
           {noAuth ? '⚠ ยังไม่ได้ออกรหัส — ต้นทางนี้ส่งข้อมูลเข้าไม่ได้จนกว่าจะออกรหัส'
@@ -395,14 +396,14 @@ function CreateModal({ onClose, onCreated }) {
           <b style={{ fontSize: 17 }}>เพิ่มการเชื่อมต่อ</b>
           <button type="button" className="tbtn" aria-label="ปิด" onClick={onClose}>✕</button>
         </div>
-        <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>รหัสต้นทาง (a-z 0-9 - _ · ใช้เป็นคำนำหน้า topic)
-          <input value={code} onChange={e => setCode(e.target.value.toLowerCase().trim())} placeholder="เช่น pd2-oee" />
-          {code && !codeOk && <span style={{ color: 'var(--red)', fontSize: 12 }}>ใช้ได้แค่ a-z 0-9 - _ ยาว 2-40 ตัว</span>}
+        <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>{tr('รหัสต้นทาง (a-z 0-9 - _ · ใช้เป็นคำนำหน้า topic)')}
+          <input value={code} onChange={e => setCode(e.target.value.toLowerCase().trim())} placeholder={tr('เช่น pd2-oee')} />
+          {code && !codeOk && <span style={{ color: 'var(--red)', fontSize: 12 }}>{tr('ใช้ได้แค่ a-z 0-9 - _ ยาว 2-40 ตัว')}</span>}
         </label>
-        <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>ชื่อที่แสดง
-          <input value={name} onChange={e => setName(e.target.value)} placeholder="เช่น Node-RED PD2 · OEE" />
+        <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>{tr('ชื่อที่แสดง')}
+          <input value={name} onChange={e => setName(e.target.value)} placeholder={tr('เช่น Node-RED PD2 · OEE')} />
         </label>
-        <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>หมายเหตุ (ที่อยู่เครื่อง / ฐานข้อมูลต้นทาง / ผู้ดูแล)
+        <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>{tr('หมายเหตุ (ที่อยู่เครื่อง / ฐานข้อมูลต้นทาง / ผู้ดูแล)')}
           <input value={note} onChange={e => setNote(e.target.value)} />
         </label>
         <div style={{ fontSize: 13 }}>ชนิดข้อมูลที่ต้นทางนี้ส่ง</div>
@@ -410,14 +411,14 @@ function CreateModal({ onClose, onCreated }) {
           {INTEGRATION_KINDS.map(k => (
             <label key={k.key} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, opacity: k.status === 'live' ? 1 : 0.6 }}>
               <input type="checkbox" checked={kinds.includes(k.key)} disabled={k.status !== 'live'} onChange={() => toggle(k.key)} />
-              <span>{k.icon} {k.label}{k.status !== 'live' && <span style={{ color: 'var(--amber)' }}> (ยังไม่มีปลายทางรับ)</span>}</span>
+              <span>{k.icon} {k.label}{k.status !== 'live' && <span style={{ color: 'var(--amber)' }}> {tr('(ยังไม่มีปลายทางรับ)')}</span>}</span>
             </label>
           ))}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button type="button" className="pg-btn" onClick={onClose}>ยกเลิก</button>
+          <button type="button" className="pg-btn" onClick={onClose}>{tr('ยกเลิก')}</button>
           <button type="button" className="pg-btn primary" disabled={busy || !codeOk || !name.trim() || !kinds.length} onClick={submit}>
-            {busy ? 'กำลังสร้าง…' : 'สร้าง + ออกรหัสลับ'}</button>
+            {busy ? tr('กำลังสร้าง…') : tr('สร้าง + ออกรหัสลับ')}</button>
         </div>
       </div>
     </div>
@@ -444,8 +445,8 @@ function KeyModal({ info, onClose }) {
           <li>Deploy แล้วดูแถบสุขภาพการส่ง — ภายใน 1 นาทีควรเป็นสีเขียว</li>
         </ol>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button type="button" className="pg-btn" onClick={copy}>📋 คัดลอกรหัส</button>
-          <button type="button" className="pg-btn primary" onClick={onClose}>จดไว้แล้ว ปิด</button>
+          <button type="button" className="pg-btn" onClick={copy}>{tr('📋 คัดลอกรหัส')}</button>
+          <button type="button" className="pg-btn primary" onClick={onClose}>{tr('จดไว้แล้ว ปิด')}</button>
         </div>
       </div>
     </div>

@@ -26,6 +26,7 @@ import Page, { Hub } from '../components/Page';
 import PageHeader from '../components/PageHeader';
 import { ALL } from '../utils/filterLabels';
 import { urlParam } from '../utils/urlInit';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 function publicUrl(path) {
@@ -443,7 +444,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
         sub="ดูสถานะ PM บนผังจริง · กรองตามผู้รับผิดชอบ"
         actions={cameFrom === 'factory-map' && (
           /* มาจากผังรวมโรงงาน (คลิกโซน facility) → ปุ่มกลับไปที่เดิม */
-          <button type="button" className="pg-btn" onClick={() => navigate('/factory-map')} style={S.viewBtn(false)}>กลับผังรวมโรงงาน</button>
+          <button type="button" className="pg-btn" onClick={() => navigate('/factory-map')} style={S.viewBtn(false)}>{tr('กลับผังรวมโรงงาน')}</button>
         )}
         tabs={[
           !setupMode && { key: 'overview', label: 'ภาพรวมทั้งโรงงาน' },
@@ -555,7 +556,7 @@ export default function MtnMachineLayout({ setupMode = false }) {
           <div style={S.side}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>โซน Facility ({areas.length})</span>
-              {editMode && <button onClick={addArea} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', padding: '3px 9px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>+ โซน</button>}
+              {editMode && <button onClick={addArea} style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', padding: '3px 9px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{tr('+ โซน')}</button>}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 12 }}>
               {areas.map(a => (

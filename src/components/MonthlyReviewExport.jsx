@@ -28,6 +28,7 @@ import titleC from '../assets/tsg/title-c.jpg';
 import titleD from '../assets/tsg/title-d.jpg';
 import dividerImg from '../assets/tsg/divider.jpg';
 
+import { tr } from '../utils/i18n';
 async function urlToDataUrl(url) {
   if (!url) return null;
   try {
@@ -242,10 +243,10 @@ export default function MonthlyReviewExport({ onClose }) {
             <div>
               <div style={lb}>ช่วงเทียบย้อนหลัง (progression)</div>
               <select value={trendMonths} onChange={e => setTrendMonths(Number(e.target.value))} disabled={mode === 'full'} style={{ width: '100%', maxWidth: 260, opacity: mode === 'full' ? 0.55 : 1 }}>
-                <option value={1}>ไม่เทียบ — เฉพาะเดือนที่เลือก</option>
-                <option value={3}>3 เดือน (เดือนที่เลือก + ย้อนหลัง 2)</option>
-                <option value={6}>6 เดือน (ย้อนหลัง 5)</option>
-                <option value={12}>12 เดือน (ย้อนหลัง 11)</option>
+                <option value={1}>{tr('ไม่เทียบ — เฉพาะเดือนที่เลือก')}</option>
+                <option value={3}>{tr('3 เดือน (เดือนที่เลือก + ย้อนหลัง 2)')}</option>
+                <option value={6}>{tr('6 เดือน (ย้อนหลัง 5)')}</option>
+                <option value={12}>{tr('12 เดือน (ย้อนหลัง 11)')}</option>
               </select>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
                 {mode === 'full'
@@ -269,12 +270,12 @@ export default function MonthlyReviewExport({ onClose }) {
                         <TriBox state={st} onChange={() => toggleLines(secLines)} />
                         {s.code}
                         <span style={{ fontWeight: 400, color: 'var(--muted)' }}>
-                          ({secLines.filter(l => selLines.has(l)).length}/{secLines.length} ไลน์)
+                          ({secLines.filter(l => selLines.has(l)).length}/{secLines.length} {tr('ไลน์)')}
                         </span>
                       </label>
                       <button onClick={() => setOpenSecs(p => ({ ...p, [s.code]: !open }))}
                         style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 12, padding: '2px 6px' }}>
-                        {open ? '▾ ย่อ' : '▸ เจาะรายไลน์'}
+                        {open ? tr('▾ ย่อ') : tr('▸ เจาะรายไลน์')}
                       </button>
                     </div>
                     {open && (
@@ -320,9 +321,9 @@ export default function MonthlyReviewExport({ onClose }) {
             Focus เดือนถัดไป · ไฟล์เปิดแก้/เติม story ต่อใน PowerPoint ได้ก่อนขึ้นประชุม
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <button onClick={onClose} disabled={busy} style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>ยกเลิก</button>
+            <button onClick={onClose} disabled={busy} style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>{tr('ยกเลิก')}</button>
             <button onClick={handleGenerate} disabled={busy} style={{ padding: '9px 22px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.7 : 1 }}>
-              {busy ? '⏳ กำลังสร้าง…' : '📽️ สร้างไฟล์ .pptx'}
+              {busy ? tr('⏳ กำลังสร้าง…') : tr('📽️ สร้างไฟล์ .pptx')}
             </button>
           </div>
         </div>

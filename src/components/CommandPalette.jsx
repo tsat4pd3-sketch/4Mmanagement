@@ -4,6 +4,7 @@ import { NAV_ITEMS } from '../App';
 import { canAccessPage } from '../utils/permissions';
 import { topPaths } from '../utils/navRecent';
 
+import { tr } from '../utils/i18n';
 /* ══ ⌘K / Ctrl+K — ค้นหาเมนู 51 รายการใน 2 วินาที ═══════════════════════════════════════
    เมนูมี 8 หมวด 51 รายการ ของใหม่หายาก ต้องจำว่าอยู่หมวดไหน (ดู NAVIGATION-REVIEW §2.5)
    → พิมพ์คำเดียวแล้วเจอ ไม่ต้องไล่กางทีละหมวด
@@ -108,7 +109,7 @@ export default function CommandPalette({ open, onClose, role }) {
           <span style={{ fontSize: 16, flexShrink: 0 }}>🔎</span>
           <input
             ref={inputRef} value={q} onChange={e => setQ(e.target.value)} onKeyDown={onKey}
-            placeholder="ค้นหาเมนู… (พิมพ์ชื่อหน้า/หมวด เช่น ซ่อม, oee, สต๊อก)"
+            placeholder={tr('ค้นหาเมนู… (พิมพ์ชื่อหน้า/หมวด เช่น ซ่อม, oee, สต๊อก)')}
             style={{
               flex: 1, width: 'auto', background: 'transparent', border: 'none', outline: 'none',
               color: 'var(--text)', fontSize: 15, fontFamily: 'var(--font-body)', padding: 0,
@@ -141,7 +142,7 @@ export default function CommandPalette({ open, onClose, role }) {
                 <span style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 14, fontWeight: 700 }}>
                   {item.label}
                 </span>
-                {item.recent && <span style={{ fontSize: 11, color: 'var(--accent)', flexShrink: 0 }}>⭐ ใช้บ่อย</span>}
+                {item.recent && <span style={{ fontSize: 11, color: 'var(--accent)', flexShrink: 0 }}>{tr('⭐ ใช้บ่อย')}</span>}
                 <span style={{ fontSize: 11.5, color: 'var(--muted)', flexShrink: 0, maxWidth: '38%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {item.group}
                 </span>

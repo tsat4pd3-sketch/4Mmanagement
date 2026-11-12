@@ -6,6 +6,7 @@ import { uploadOpts } from '../utils/storageUpload';
 import { acceptImageFile } from '../utils/acceptImageFile';
 import { luma, pickPaperCutoff, clipPaperToWhite, inkRatioOk } from '../utils/signatureImage';
 
+import { tr } from '../utils/i18n';
 /**
  * ✍️ วาด/อัปโหลดลายเซ็น — ค่าเริ่มต้น = ลายเซ็นของ "บัญชีที่ login อยู่" (profiles.signature_url)
  * 🆕 03/11 (ประชุม 02/11 C1): ใช้กับ **ลายเซ็นพนักงาน** ได้ด้วย โดยส่ง
@@ -296,7 +297,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
                 marginTop: 8, padding: '6px 14px', fontSize: 12, borderRadius: 'var(--r-md)',
                 background: 'var(--bg3)', border: '1px solid var(--border2)',
                 color: 'var(--text2)', cursor: 'pointer',
-              }}>ล้าง</button>
+              }}>{tr('ล้าง')}</button>
             </div>
           )}
 
@@ -323,13 +324,13 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
               border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer',
               opacity: saving ? 0.7 : 1, fontSize: 13,
             }}>
-              {saving ? 'กำลังบันทึก...' : '💾 บันทึกลายเซ็น'}
+              {saving ? tr('กำลังบันทึก...') : tr('💾 บันทึกลายเซ็น')}
             </button>
             <button onClick={onClose} style={{
               flex: 1, padding: '10px 0', background: 'var(--bg3)',
               border: '1px solid var(--border2)', borderRadius: 'var(--r-md)',
               color: 'var(--text2)', cursor: 'pointer', fontSize: 13,
-            }}>ยกเลิก</button>
+            }}>{tr('ยกเลิก')}</button>
           </div>
         </div>
       </div>

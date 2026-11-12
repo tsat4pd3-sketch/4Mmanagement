@@ -41,6 +41,7 @@ import {
   CartesianGrid, ReferenceLine, LabelList, Cell,
 } from 'recharts';
 
+import { tr } from '../utils/i18n';
 /* ═══ 📑 KPI รายเดือน (เฟส 1 · 2026-08-24 — เฟส 2 กรอกมือ + Excel 3 ชีท + drill-down · คำสั่ง user) ═══
    แทน "แพ็คกระดาษรายเดือน" ที่ปริ้นเซ็นกัน (Internal Defect Report ราย section + OEE รายเดือน)
    ซึ่งเป็นหลักฐานเบื้องหลังฟอร์ม KPI Monitoring FM-HRM-6-024
@@ -778,7 +779,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         PPM = ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶ (ไม่รวมงานทดลอง) · พิมพ์ ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}
       </div>
       <table style="border-collapse:collapse;width:100%">
-        <tr><th style="${th};text-align:left">KPI</th>${TH_M.map(m => `<th style="${th}">${m}</th>`).join('')}<th style="${th}">สรุปทั้งปี</th></tr>
+        <tr><th style="${th};text-align:left">KPI</th>${TH_M.map(m => `<th style="${th}">${m}</th>`).join('')}<th style="${th}">{tr('สรุปทั้งปี')}</th></tr>
         ${rows}
         ${manRows ? `<tr><td colspan="14" style="${td};text-align:left;background:#f4f4f4;font-weight:bold">KPI กรอกมือ (นอกระบบ)${!isPlant(scope) ? ' — รวมนิยามที่ตกทอดจากระดับแม่ (ติดป้ายในวงเล็บ)' : ''}</td></tr>${manRows}` : ''}
       </table>
@@ -1048,8 +1049,8 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         {months && !loading && (
           <>
             <span className="spacer" />
-            <button onClick={handleExcel} style={btnSt}>⬇️ Excel 3 ชีท</button>
-            <button onClick={handlePrint} style={btnSt}>พิมพ์ / PDF</button>
+            <button onClick={handleExcel} style={btnSt}>{tr('⬇️ Excel 3 ชีท')}</button>
+            <button onClick={handlePrint} style={btnSt}>{tr('พิมพ์ / PDF')}</button>
           </>
         )}
       </FilterBar>
@@ -1074,7 +1075,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
         </div>
       )}
       {loading && <div style={{ ...card, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังโหลดข้อมูลทั้งปี... {prog}</div>}
-      {err && <div style={{ ...card, borderColor: '#ef4444', color: '#ef4444', fontSize: 13 }}>โหลดไม่สำเร็จ: {err} <button onClick={load} style={{ marginLeft: 8, cursor: 'pointer' }}>ลองใหม่</button></div>}
+      {err && <div style={{ ...card, borderColor: '#ef4444', color: '#ef4444', fontSize: 13 }}>โหลดไม่สำเร็จ: {err} <button onClick={load} style={{ marginLeft: 8, cursor: 'pointer' }}>{tr('ลองใหม่')}</button></div>}
 
       {!loading && !err && months && (
         <div style={{ ...card, overflowX: 'auto' }}>
@@ -1087,12 +1088,12 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                 <th style={{ ...thSt, textAlign: 'left' }}>KPI</th>
                 {TH_M.map((m, i) => (
                   <th key={m} style={{ ...thSt, color: i === curMonthIdx ? 'var(--accent)' : 'var(--muted)' }}>
-                    {m}{i === curMonthIdx && <div style={{ fontSize: 11, fontWeight: 600 }}>ยังไม่จบ</div>}
+                    {m}{i === curMonthIdx && <div style={{ fontSize: 11, fontWeight: 600 }}>{tr('ยังไม่จบ')}</div>}
                   </th>
                 ))}
-                <th style={{ ...thSt, color: 'var(--text)' }}>รวม/เฉลี่ย</th>
-                <th style={{ ...thSt, textAlign: 'center' }}>เทรนด์ (คลิกดูใหญ่)</th>
-                {canManage && <th style={{ ...thSt, textAlign: 'center' }}>เป้า</th>}
+                <th style={{ ...thSt, color: 'var(--text)' }}>{tr('รวม/เฉลี่ย')}</th>
+                <th style={{ ...thSt, textAlign: 'center' }}>{tr('เทรนด์ (คลิกดูใหญ่)')}</th>
+                {canManage && <th style={{ ...thSt, textAlign: 'center' }}>{tr('เป้า')}</th>}
               </tr>
             </thead>
             <tbody>
@@ -1166,7 +1167,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                 <b>{m.name}</b> · หน่วยที่ถือ {m.unitDefs.map(d2 => d2.scope_value || d2.section).filter(Boolean).join(' · ')}
                 {m.hiddenEntries > 0 && <span style={{ color: '#ef4444' }}> · ✍️ มีค่าที่หน่วยกรอกไว้ {m.hiddenEntries} ช่อง ถูกซ่อนอยู่</span>}
                 {canManage && isPlant(kpiScope)
-                  ? <button onClick={() => createPlantDef(m)} style={{ ...btnSt, marginLeft: 8, padding: '2px 8px', fontSize: 11.5 }}>＋ สร้างนิยามโรงงานจากของ {m.unitDefs[0]?.scope_value || m.unitDefs[0]?.section}</button>
+                  ? <button onClick={() => createPlantDef(m)} style={{ ...btnSt, marginLeft: 8, padding: '2px 8px', fontSize: 11.5 }}>{tr('＋ สร้างนิยามโรงงานจากของ')} {m.unitDefs[0]?.scope_value || m.unitDefs[0]?.section}</button>
                   : <span style={{ marginLeft: 8, color: 'var(--muted)' }}>→ สร้างที่ขอบเขต <b style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setScope({ ...PLANT })}>ทั้งโรงงาน</b>{canManageKpi ? '' : ' (ต้องมีสิทธิ์ kpi:manage)'}</span>}
               </li>
             ))}
@@ -1181,30 +1182,30 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
               KPI นอกระบบ (กรอกมือ) — DL/OH % · Satisfaction · Safety · HR
             </span>
             {canManage && (
-              <button onClick={() => setEditDef({})} style={{ ...btnSt, padding: '4px 10px', fontSize: 12 }}>＋ เพิ่ม KPI</button>
+              <button onClick={() => setEditDef({})} style={{ ...btnSt, padding: '4px 10px', fontSize: 12 }}>{tr('＋ เพิ่ม KPI')}</button>
             )}
             {canManage && !catMissing && (
               <>
                 <button onClick={copyFromYear} disabled={copying}
                   title="คัดลอกรายการ KPI (ชื่อ/เป้า/สูตร) จากปีอื่นมาตั้งเป็นชุดของปีนี้ — ค่ารายเดือนไม่ถูกคัดลอก"
                   style={{ ...btnSt, padding: '4px 10px', fontSize: 12, opacity: copying ? 0.6 : 1 }}>
-                  {copying ? '⏳ กำลังคัดลอก…' : '📋 คัดลอกชุด KPI จากปีอื่น'}
+                  {copying ? tr('⏳ กำลังคัดลอก…') : tr('📋 คัดลอกชุด KPI จากปีอื่น')}
                 </button>
                 <button onClick={() => setShowCat(true)} title="ดู/แก้ชื่อ KPI ในทะเบียน — แก้ชื่อแล้วเปลี่ยนพร้อมกันทุกปีทุกส่วนงาน"
-                  style={{ ...btnSt, padding: '4px 10px', fontSize: 12 }}>ทะเบียนชื่อ KPI ({catalog.length})</button>
+                  style={{ ...btnSt, padding: '4px 10px', fontSize: 12 }}>{tr('ทะเบียนชื่อ KPI (')}{catalog.length})</button>
               </>
             )}
             {/* 📘 ทะเบียนมาตรฐานของกลุ่ม — เปิดดูได้ทุก role (เป็นเอกสารอ้างอิง) ปุ่ม "หยิบ" ข้างในถึงค่อยเช็คสิทธิ์ */}
             <button onClick={() => setShowStd(true)}
               title="ดูข้อ KPI มาตรฐานของกลุ่มสำหรับหน่วยงานนี้ — ข้อไหนบังคับ ข้อไหนเลือกได้ และใบนี้หยิบครบหรือยัง"
-              style={{ ...btnSt, padding: '4px 10px', fontSize: 12 }}>มาตรฐานกลุ่ม</button>
+              style={{ ...btnSt, padding: '4px 10px', fontSize: 12 }}>{tr('มาตรฐานกลุ่ม')}</button>
             {/* แผนรายเดือน — ปิดไว้ก่อนเพราะเปิดแล้วตารางสูงเท่าตัว · เปิดดูได้ทุก role (กรอกถึงเช็ค kpi:manage) */}
             <button onClick={() => setShowPlan(v => !v)} aria-pressed={showPlan}
               title="แสดงแถวแผนรายเดือน 12 ค่า — สำหรับ KPI ที่แผนไม่เท่ากันทุกเดือน (DL/OH ตาม budget) และ KPI สะสมที่เทียบเป้าทั้งปีตั้งแต่กลางปีไม่ได้"
               style={{ ...btnSt, padding: '4px 10px', fontSize: 12,
                 background: showPlan ? 'var(--accent-dim)' : undefined,
                 borderColor: showPlan ? 'var(--accent)' : undefined }}>
-              แผนรายเดือน{showPlan ? ' ✓' : ''}
+              {tr('แผนรายเดือน')}{showPlan ? ' ✓' : ''}
             </button>
             {!isPlant(scope) && (
               <span style={{ fontSize: 11.5, color: '#f59e0b' }}>
@@ -1289,7 +1290,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                       <span style={{ color: 'var(--text)' }}>{defName(d2)}</span>
                       <span style={{ fontSize: 11, color: 'var(--muted)' }}>{perspectiveLabel(d2.category)} · {isPlant(sc) ? 'ทั้งโรงงาน' : org.labelOf(sc.kind, sc.value)}{d2.source && d2.source !== 'manual' ? ` · ${d2.source}` : ''}</span>
                       {canManage && (
-                        <button onClick={() => restoreDef(d2)} style={{ ...btnSt, padding: '2px 8px', fontSize: 11.5 }} title="เปิดใช้งานแถวเดิมคืน — ค่าที่เคยกรอกไว้กลับมาด้วย">↩ เปิดคืน</button>
+                        <button onClick={() => restoreDef(d2)} style={{ ...btnSt, padding: '2px 8px', fontSize: 11.5 }} title="เปิดใช้งานแถวเดิมคืน — ค่าที่เคยกรอกไว้กลับมาด้วย">{tr('↩ เปิดคืน')}</button>
                       )}
                     </div>
                   );
@@ -1323,9 +1324,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
               <thead>
                 <tr>
                   <th style={{ ...thSt, textAlign: 'left' }}>KPI</th>
-                  {TH_M.map(m => <th key={m} style={thSt}>{m}</th>)}
-                  <th style={{ ...thSt, color: 'var(--text)' }} title="วิธีรวม 12 เดือนต่างกันรายตัว (เฉลี่ย/รวมปี/สูงสุด/ล่าสุด) — ป้ายใต้ตัวเลขบอกว่าแถวนั้นรวมแบบไหน">สรุปทั้งปี</th>
-                  <th style={{ ...thSt, textAlign: 'center' }}>เทรนด์</th>
+                  {TH_M.map(m => <th key={m} style={thSt}>{tr(m)}</th>)}
+                  <th style={{ ...thSt, color: 'var(--text)' }} title="วิธีรวม 12 เดือนต่างกันรายตัว (เฉลี่ย/รวมปี/สูงสุด/ล่าสุด) — ป้ายใต้ตัวเลขบอกว่าแถวนั้นรวมแบบไหน">{tr('สรุปทั้งปี')}</th>
+                  <th style={{ ...thSt, textAlign: 'center' }}>{tr('เทรนด์')}</th>
                   {canManage && <th style={thSt} />}
                 </tr>
               </thead>
@@ -1561,7 +1562,7 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
                         {canManage && (
                           <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                             <button onClick={() => setEditDef({ catalog_id: lead.catalog_id || '', kpi_catalog: lead.kpi_catalog || null, name: defName(lead), category: lead.category || 'internal', direction: lead.direction || '' })}
-                              title="ตั้ง KPI นี้ที่ระดับนี้ (เป้า/น้ำหนักของระดับนี้เอง · เดือนที่กรอกเองจะชนะค่าจากลูก)" style={{ ...btnSt, padding: '2px 8px', fontSize: 11 }}>＋ ตั้งที่ระดับนี้</button>
+                              title="ตั้ง KPI นี้ที่ระดับนี้ (เป้า/น้ำหนักของระดับนี้เอง · เดือนที่กรอกเองจะชนะค่าจากลูก)" style={{ ...btnSt, padding: '2px 8px', fontSize: 11 }}>{tr('＋ ตั้งที่ระดับนี้')}</button>
                           </td>
                         )}
                       </tr>
@@ -1665,14 +1666,14 @@ function AutoTargetModal({ row, def, year, scopeText, deep, onClose, onSave }) {
           <div>
             <div style={lbl}>เป้าตัวเลข</div>
             <input style={inp} type="number" step="any" value={f.target_value}
-              onChange={e => set('target_value', e.target.value)} placeholder="เว้นว่าง = ไม่ตัดสิน ○△✗" />
+              onChange={e => set('target_value', e.target.value)} placeholder={tr('เว้นว่าง = ไม่ตัดสิน ○△✗')} />
           </div>
           <div>
             <div style={lbl}>ทิศทาง *</div>
             <select style={inp} value={f.direction} onChange={e => set('direction', e.target.value)}>
-              <option value="">— เลือก —</option>
-              <option value="up">มากกว่าดี (≥ เป้า = Y)</option>
-              <option value="down">น้อยกว่าดี (≤ เป้า = Y)</option>
+              <option value="">{tr('— เลือก —')}</option>
+              <option value="up">{tr('มากกว่าดี (≥ เป้า = Y)')}</option>
+              <option value="down">{tr('น้อยกว่าดี (≤ เป้า = Y)')}</option>
             </select>
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
@@ -1682,7 +1683,7 @@ function AutoTargetModal({ row, def, year, scopeText, deep, onClose, onSave }) {
           <label style={{ gridColumn: '1 / -1', display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12, cursor: 'pointer' }}
             title="KPI สะสม (ยอดขาย/หัว · TS Academy) เทียบเป้าทั้งปีตั้งแต่กลางปี = แดงทุกเดือน — ติ๊กแล้วแต่ละเดือนเทียบกับ 'แผนรายเดือน' ของเดือนนั้น (แถวแผนรายเดือนในตาราง / นำเข้าจากชีทบัญชี) · เดือนที่ไม่มีแผน = เทียบเป้าทั้งปีตามเดิม">
             <input type="checkbox" checked={!!f.score_by_plan} onChange={e => set('score_by_plan', e.target.checked)} style={{ marginTop: 2 }} />
-            <span>📅 <b>ตัดสิน ○△✗ รายเดือนด้วยแผนสะสมของเดือนนั้น</b> (KPI สะสม) — Commitment ของเดือน = แผน × (Commit ปี ÷ Target ปี)</span>
+            <span>📅 <b>{tr('ตัดสิน ○△✗ รายเดือนด้วยแผนสะสมของเดือนนั้น')}</b> (KPI สะสม) — Commitment ของเดือน = แผน × (Commit ปี ÷ Target ปี)</span>
           </label>
           <div>
             <div style={lbl}>Target (ข้อความ)</div>
@@ -1702,8 +1703,8 @@ function AutoTargetModal({ row, def, year, scopeText, deep, onClose, onSave }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-          <button onClick={close} style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-          <button onClick={() => onSave(f)} style={{ padding: '7px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: 'pointer', fontSize: 13 }}>บันทึก</button>
+          <button onClick={close} style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>{tr('ยกเลิก')}</button>
+          <button onClick={() => onSave(f)} style={{ padding: '7px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: 'pointer', fontSize: 13 }}>{tr('บันทึก')}</button>
         </div>
       </div>
     </div>
@@ -1781,7 +1782,7 @@ function CatalogModal({ rows, canManage, usedNames = [], onClose, onChanged, onP
           <br />🔓 หน่วย/ทศนิยม แต่ละแถวตั้งทับได้ในโมดัลนิยาม (ว่าง = ตามที่นี่) ·
           🔒 <b>วิธีรวม 12 เดือน ตั้งทับรายแถวไม่ได้</b> — แผนกหนึ่งเฉลี่ย อีกแผนกรวม แล้วเอาเลขมาเทียบกันไม่ได้
         </div>
-        <input style={inp} value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหาชื่อ KPI…" />
+        <input style={inp} value={q} onChange={e => setQ(e.target.value)} placeholder={tr('ค้นหาชื่อ KPI…')} />
         <div style={{ overflowY: 'auto', marginTop: 10, flex: 1 }}>
           {!shown.length ? (
             <div style={{ fontSize: 12.5, color: 'var(--muted)', padding: '14px 4px' }}>
@@ -1801,11 +1802,11 @@ function CatalogModal({ rows, canManage, usedNames = [], onClose, onChanged, onP
                         {[CATS.find(c => c.key === r.category)?.label, r.formula_text, r.scope_text].filter(Boolean).join(' · ')}
                       </div>
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 5 }}>
-                        <label style={miniLbl}>หน่วย
+                        <label style={miniLbl}>{tr('หน่วย')}
                           <input style={{ ...mini, width: 78 }} defaultValue={r.unit || ''} disabled={!canManage || busy === r.id}
                             onBlur={e => { const v = e.target.value.trim() || null; if (v !== (r.unit || null)) patch(r, 'unit', v, 'หน่วย'); }} />
                         </label>
-                        <label style={miniLbl}>ทศนิยม
+                        <label style={miniLbl}>{tr('ทศนิยม')}
                           <input style={{ ...mini, width: 48 }} type="number" min="0" max="6" step="1"
                             defaultValue={r.decimals ?? 2} disabled={!canManage || busy === r.id}
                             onBlur={e => {
@@ -1815,34 +1816,34 @@ function CatalogModal({ rows, canManage, usedNames = [], onClose, onChanged, onP
                               if (v !== (r.decimals ?? 2)) patch(r, 'decimals', v, 'ทศนิยม');
                             }} />
                         </label>
-                        <label style={miniLbl}>ทิศทาง
+                        <label style={miniLbl}>{tr('ทิศทาง')}
                           <select style={{ ...mini, width: 96 }} value={r.direction || ''} disabled={!canManage || busy === r.id}
                             onChange={e => patch(r, 'direction', e.target.value || null, 'ทิศทาง')}>
                             <option value="">—</option>
-                            <option value="up">มากยิ่งดี</option>
-                            <option value="down">น้อยยิ่งดี</option>
+                            <option value="up">{tr('มากยิ่งดี')}</option>
+                            <option value="down">{tr('น้อยยิ่งดี')}</option>
                           </select>
                         </label>
                         <label style={miniLbl} title="ค่าโรงงาน = ทุกหน่วยงานที่ถือ KPI นี้อ่านตัวเลขจากนิยามระดับ ทั้งโรงงาน ตัวเดียวกัน (เช่น %RM · Customer Satisfaction) · ของหน่วยงานเอง = แต่ละหน่วยกรอกของตัวเอง">
-                          ค่าเป็นของ
+                          {tr('ค่าเป็นของ')}
                           <select style={{ ...mini, width: 150 }} value={valueScopeOf({ kpi_catalog: r })} disabled={!canManage || busy === r.id}
                             onChange={e => patch(r, 'value_scope', e.target.value, 'ค่าเป็นของ')}>
                             {KPI_VALUE_SCOPES.map(m => <option key={m.key} value={m.key}>{m.key === 'plant' ? '🏭 ค่าโรงงาน (ใช้ร่วมทุกหน่วย)' : 'หน่วยงานเอง'}</option>)}
                           </select>
                         </label>
                         <label style={miniLbl} title="KPI นี้ขึ้นแผ่นไหนบนบอร์ด OBEYA (8 แผ่นหลัก) — ชื่อทางการต่างจากชื่อบนบอร์ดก็จับคู่ได้ (เช่น DSI = Inventory Balance · TS Academy = Training) · ไม่เลือก = ขึ้นเป็นแผ่นแยกของหน่วย (def:<id>)">
-                          ช่องบนบอร์ด
+                          {tr('ช่องบนบอร์ด')}
                           <select style={{ ...mini, width: 190 }} value={boardSlotOf({ kpi_catalog: r }) || ''} disabled={!canManage || busy === r.id}
                             onChange={e => patch(r, 'board_slot', e.target.value || null, 'ช่องบนบอร์ด')}>
-                            <option value="">— ไม่เข้าช่องมาตรฐาน (แผ่นแยก) —</option>
-                            {KPI_BOARD_SLOTS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+                            <option value="">{tr('— ไม่เข้าช่องมาตรฐาน (แผ่นแยก) —')}</option>
+                            {KPI_BOARD_SLOTS.map(m => <option key={m.key} value={m.key}>{tr(m.label)}</option>)}
                           </select>
                         </label>
                         <label style={miniLbl} title="ของตัวตน KPI — ตั้งที่นี่ที่เดียว แต่ละแผนก override ไม่ได้ (ไม่งั้นเอาเลขมาเทียบกันไม่ได้)">
-                          วิธีรวม 12 เดือน
+                          {tr('วิธีรวม 12 เดือน')}
                           <select style={{ ...mini, width: 168 }} value={summaryModeOf({ kpi_catalog: r })} disabled={!canManage || busy === r.id}
                             onChange={e => patch(r, 'summary_mode', e.target.value, 'วิธีรวม 12 เดือน')}>
-                            {KPI_SUMMARY_MODES.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+                            {KPI_SUMMARY_MODES.map(m => <option key={m.key} value={m.key}>{tr(m.label)}</option>)}
                           </select>
                         </label>
                       </div>
@@ -1862,7 +1863,7 @@ function CatalogModal({ rows, canManage, usedNames = [], onClose, onChanged, onP
           )}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
-          <button onClick={onClose} style={{ padding: '7px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ปิด</button>
+          <button onClick={onClose} style={{ padding: '7px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>{tr('ปิด')}</button>
         </div>
       </div>
     </div>
@@ -1945,7 +1946,7 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
             <div style={lbl}>ชื่อ KPI * {!catMissing && <span style={{ fontWeight: 500 }}>(เลือกจากทะเบียน — พิมพ์ใหม่ได้ถ้ายังไม่มี)</span>}</div>
             {catMissing ? (
               <>
-                <input style={inp} value={f.name} onChange={e => set('name', e.target.value)} placeholder="เช่น DL cost ต่อยอดขาย (%)" />
+                <input style={inp} value={f.name} onChange={e => set('name', e.target.value)} placeholder={tr('เช่น DL cost ต่อยอดขาย (%)')} />
                 <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4 }}>
                   ⚠ ยังไม่ได้ apply migration ทะเบียนชื่อ KPI — พิมพ์ชื่อเองไปก่อน (เสี่ยงพิมพ์ต่างกันแล้วแตกเป็นคนละหัวข้อ)
                 </div>
@@ -1954,7 +1955,7 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
               <>
                 <SearchSelect
                   value={f.catalog_id} text={f.name} options={catOpts} allowFree
-                  placeholder="พิมพ์เพื่อค้นชื่อ KPI ในทะเบียน…"
+                  placeholder={tr('พิมพ์เพื่อค้นชื่อ KPI ในทะเบียน…')}
                   emptyText="ยังไม่มีชื่อนี้ในทะเบียน — พิมพ์ต่อได้ ระบบจะเพิ่มให้ตอนบันทึก"
                   freeHint="เป็นชื่อใหม่ (จะถูกเพิ่มเข้าทะเบียน)"
                   inputStyle={inp}
@@ -1976,7 +1977,7 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
                     {nameNote.pick && (
                       <button type="button" onClick={() => setF(p => ({ ...p, catalog_id: nameNote.pick.id, name: nameNote.pick.name }))}
                         style={{ padding: '2px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 11 }}>
-                        ใช้ชื่อนี้แทน
+                        {tr('ใช้ชื่อนี้แทน')}
                       </button>
                     )}
                   </div>
@@ -2006,12 +2007,12 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
                 <div style={lbl}>ที่มาของตัวเลขรายเดือน</div>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   <select style={{ ...inp, width: 'auto' }} value={f.provider} onChange={e => set('provider', e.target.value)}>
-                    <option value="manual">✍️ กรอกมือรายเดือน</option>
-                    <option value="formula">🧮 คำนวณจากตัวเลขฐาน (บัญชี/SAP กรอกยอดเงิน ระบบหารให้)</option>
+                    <option value="manual">{tr('✍️ กรอกมือรายเดือน')}</option>
+                    <option value="formula">{tr('🧮 คำนวณจากตัวเลขฐาน (บัญชี/SAP กรอกยอดเงิน ระบบหารให้)')}</option>
                   </select>
                   {f.provider === 'formula' && (
                     <select style={{ ...inp, width: 'auto' }} value={f.formula} onChange={e => set('formula', e.target.value)}>
-                      <option value="">— เลือกสูตร —</option>
+                      <option value="">{tr('— เลือกสูตร —')}</option>
                       {KPI_FORMULAS.map(x => <option key={x.key} value={x.key}>{x.label} = {x.expr}</option>)}
                     </select>
                   )}
@@ -2035,7 +2036,7 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
           <div>
             <div style={lbl}>หมวด (ตามใบ Appraisal)</div>
             <select style={inp} value={f.category} onChange={e => set('category', e.target.value)}>
-              {CATS.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+              {CATS.map(c => <option key={c.key} value={c.key}>{tr(c.label)}</option>)}
             </select>
           </div>
           <div>
@@ -2063,9 +2064,9 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
           <div>
             <div style={lbl}>ทิศทาง</div>
             <select style={inp} value={f.direction} onChange={e => set('direction', e.target.value)}>
-              <option value="">— ไม่ตัดสิน ○△✗ —</option>
-              <option value="up">ยิ่งมากยิ่งดี (≥ เป้า = Y)</option>
-              <option value="down">ยิ่งน้อยยิ่งดี (≤ เป้า = Y)</option>
+              <option value="">{tr('— ไม่ตัดสิน ○△✗ —')}</option>
+              <option value="up">{tr('ยิ่งมากยิ่งดี (≥ เป้า = Y)')}</option>
+              <option value="down">{tr('ยิ่งน้อยยิ่งดี (≤ เป้า = Y)')}</option>
             </select>
           </div>
           <div>
@@ -2078,11 +2079,11 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
           </div>
           <div>
             <div style={lbl}>Formula (คอลัมน์ในชีท Monitoring)</div>
-            <input style={inp} value={f.formula_text} onChange={e => set('formula_text', e.target.value)} placeholder="เช่น DL ÷ ยอดขาย × 100" />
+            <input style={inp} value={f.formula_text} onChange={e => set('formula_text', e.target.value)} placeholder={tr('เช่น DL ÷ ยอดขาย × 100')} />
           </div>
           <div>
             <div style={lbl}>Scope / ที่มาข้อมูล</div>
-            <input style={inp} value={f.scope_text} onChange={e => set('scope_text', e.target.value)} placeholder="เช่น Data from Acc / QSM / HRM" />
+            <input style={inp} value={f.scope_text} onChange={e => set('scope_text', e.target.value)} placeholder={tr('เช่น Data from Acc / QSM / HRM')} />
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
             <div style={lbl}>IMPROVEMENT ACTIVITY (ชีท Action FM-HRM-6-025)</div>
@@ -2096,8 +2097,8 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-          <button onClick={onClose} style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-          <button onClick={() => onSave(f)} style={{ padding: '7px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: 'pointer', fontSize: 13 }}>บันทึก</button>
+          <button onClick={onClose} style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>{tr('ยกเลิก')}</button>
+          <button onClick={() => onSave(f)} style={{ padding: '7px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: 'pointer', fontSize: 13 }}>{tr('บันทึก')}</button>
         </div>
       </div>
     </div>

@@ -30,6 +30,7 @@ import { DeleteButton } from '../components/IconButton';
 import StepFlow from '../components/StepFlow';
 import { ojtFlow } from '../utils/stepFlow';
 
+import { tr } from '../utils/i18n';
 /* ══════════════════════════════════════════════════════════════
    📖 OJT Training — ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING)
    Paperless ของฟอร์มกระดาษ FM-HRM-004: บันทึกการอบรมในระบบ + พนักงานเซ็นชื่อบนจอ
@@ -128,9 +129,9 @@ function SignPadModal({ title, onCancel, onDone }) {
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 10 }}>✍️ {title}</div>
         <SignCanvas ref={pad} />
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-          <button onClick={() => pad.current?.clear()} style={padBtn('var(--bg3)', 'var(--text2)')}>ล้าง</button>
-          <button onClick={onCancel} style={padBtn('var(--bg3)', 'var(--text2)')}>ยกเลิก</button>
-          <button onClick={done} style={{ ...padBtn('var(--accent)', 'var(--accent-ink)', 'none'), padding: '7px 18px', fontWeight: 700 }}>ใช้ลายเซ็นนี้</button>
+          <button onClick={() => pad.current?.clear()} style={padBtn('var(--bg3)', 'var(--text2)')}>{tr('ล้าง')}</button>
+          <button onClick={onCancel} style={padBtn('var(--bg3)', 'var(--text2)')}>{tr('ยกเลิก')}</button>
+          <button onClick={done} style={{ ...padBtn('var(--accent)', 'var(--accent-ink)', 'none'), padding: '7px 18px', fontWeight: 700 }}>{tr('ใช้ลายเซ็นนี้')}</button>
         </div>
       </div>
     </div>
@@ -173,8 +174,8 @@ function SignQueueModal({ queue, onCancel, onDone }) {
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>รหัส {cur.code || '—'}{cur.hadSign ? ' · มีลายเซ็นเดิมอยู่แล้ว (เซ็นใหม่จะทับของเดิม)' : ''}</div>
         <SignCanvas ref={pad} height={190} />
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', marginTop: 12 }}>
-          <button onClick={() => pad.current?.clear()} style={padBtn('var(--bg3)', 'var(--text2)')}>ล้าง</button>
-          <button onClick={() => { pad.current?.clear(); go(done); }} style={padBtn('var(--bg3)', 'var(--muted)')}>ข้ามคนนี้</button>
+          <button onClick={() => pad.current?.clear()} style={padBtn('var(--bg3)', 'var(--text2)')}>{tr('ล้าง')}</button>
+          <button onClick={() => { pad.current?.clear(); go(done); }} style={padBtn('var(--bg3)', 'var(--muted)')}>{tr('ข้ามคนนี้')}</button>
           <button onClick={() => onDone(done)} style={padBtn('var(--bg3)', 'var(--text2)')}>
             {done.size ? `หยุดแล้วบันทึก ${done.size} ลายเซ็น` : 'ปิด'}
           </button>
@@ -725,10 +726,10 @@ table{border-collapse:collapse}
 
 <table style="width:100%;border:1px solid #000;border-top:none">
   <tr style="background:#f0f0f0">
-    <th style="border:1px solid #000;padding:2px;width:34%;font-size:10px">หัวข้อและรหัสเอกสารที่สอน</th>
-    <th style="border:1px solid #000;padding:2px;width:18%;font-size:10px">ผู้สอนงาน</th>
-    <th style="border:1px solid #000;padding:2px;width:12%;font-size:10px">ระยะเวลา</th>
-    <th style="border:1px solid #000;padding:2px;font-size:10px">ขอบเขตเนื้อหา</th>
+    <th style="border:1px solid #000;padding:2px;width:34%;font-size:10px">{tr('หัวข้อและรหัสเอกสารที่สอน')}</th>
+    <th style="border:1px solid #000;padding:2px;width:18%;font-size:10px">{tr('ผู้สอนงาน')}</th>
+    <th style="border:1px solid #000;padding:2px;width:12%;font-size:10px">{tr('ระยะเวลา')}</th>
+    <th style="border:1px solid #000;padding:2px;font-size:10px">{tr('ขอบเขตเนื้อหา')}</th>
   </tr>
   <tr>
     <td style="border:1px solid #000;padding:3px 6px;vertical-align:top">${topicHtml}</td>
@@ -740,17 +741,17 @@ table{border-collapse:collapse}
 
 <table style="width:100%;border:1px solid #000;border-top:none;margin-top:0">
   <tr style="background:#f0f0f0;font-size:10px">
-    <th rowspan="3" style="border:1px solid #000;padding:2px">รายชื่อพนักงาน</th>
-    <th rowspan="3" style="border:1px solid #000;padding:2px;width:70px">เลขประจำตัว</th>
-    <th colspan="10" style="border:1px solid #000;padding:2px">ความเข้าใจ</th>
-    <th rowspan="3" style="border:1px solid #000;padding:2px;width:90px">พนักงานลงชื่อ</th>
-    <th colspan="2" style="border:1px solid #000;padding:2px">ผลการประเมิน<br/>(ความเข้าใจ)</th>
+    <th rowspan="3" style="border:1px solid #000;padding:2px">{tr('รายชื่อพนักงาน')}</th>
+    <th rowspan="3" style="border:1px solid #000;padding:2px;width:70px">{tr('เลขประจำตัว')}</th>
+    <th colspan="10" style="border:1px solid #000;padding:2px">{tr('ความเข้าใจ')}</th>
+    <th rowspan="3" style="border:1px solid #000;padding:2px;width:90px">{tr('พนักงานลงชื่อ')}</th>
+    <th colspan="2" style="border:1px solid #000;padding:2px">{tr('ผลการประเมิน')}<br/>{tr('(ความเข้าใจ)')}</th>
   </tr>
   <tr style="background:#f0f0f0;font-size:10px">
-    <th colspan="5" style="border:1px solid #000;padding:1px">ก่อนOJT</th>
-    <th colspan="5" style="border:1px solid #000;padding:1px;background:#f7f3c8">หลังOJT</th>
-    <th rowspan="2" style="border:1px solid #000;padding:1px;width:44px">เห็นด้วย</th>
-    <th rowspan="2" style="border:1px solid #000;padding:1px;width:50px">ไม่เห็นด้วย</th>
+    <th colspan="5" style="border:1px solid #000;padding:1px">{tr('ก่อนOJT')}</th>
+    <th colspan="5" style="border:1px solid #000;padding:1px;background:#f7f3c8">{tr('หลังOJT')}</th>
+    <th rowspan="2" style="border:1px solid #000;padding:1px;width:44px">{tr('เห็นด้วย')}</th>
+    <th rowspan="2" style="border:1px solid #000;padding:1px;width:50px">{tr('ไม่เห็นด้วย')}</th>
   </tr>
   <tr style="background:#f0f0f0;font-size:9px">
     ${SCORE_LABELS.map(sl => `<th style="border:1px solid #000;width:16px">${sl}</th>`).join('')}
@@ -898,7 +899,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
             )}
             {mayDelete && (
               <button onClick={() => clearSelfSignOjt(kind)} style={{ alignSelf: 'flex-start', padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11 }}>
-                ปลดลายเซ็น
+                {tr('ปลดลายเซ็น')}
               </button>
             )}
           </div>
@@ -909,7 +910,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             <button onClick={() => signSelfOjt(kind)} style={{ alignSelf: 'flex-start', padding: '6px 12px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>
-              {S.verb} (ในนาม {fullName || 'คุณ'})
+              {S.verb} {tr('(ในนาม')} {fullName || 'คุณ'})
             </button>
             {S.gated && posRank == null && (
               <div style={{ fontSize: 11, color: 'var(--amber)' }}>⚠️ บัญชีนี้ยังไม่ได้ตั้งตำแหน่ง — ระบบ<b>ไม่ได้ตรวจ</b>ว่าถึงระดับที่เซ็นช่องนี้ได้ (ตั้งที่ /add-user)</div>
@@ -933,7 +934,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
     <select value={val === null || val === undefined ? '' : val} onChange={e => onChange(e.target.value === '' ? null : Number(e.target.value))}
       style={{ width: 'auto', padding: '4px 6px', borderRadius: 'var(--ctl-r)', fontSize: 12 }}>
       <option value="">—</option>
-      {SCORE_LABELS.map((s, i) => <option key={s} value={i}>{s}</option>)}
+      {SCORE_LABELS.map((s, i) => <option key={s} value={i}>{tr(s)}</option>)}
     </select>
   );
 
@@ -953,7 +954,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
         actions={canRecord ? (
           <button type="button" className="pg-btn" onClick={() => setEditing(emptyDraft())}
             style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>
-            สร้างใบอบรม
+            {tr('สร้างใบอบรม')}
           </button>
         ) : null} />
 
@@ -969,11 +970,11 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
           <table style={{ width: '100%', minWidth: 760 }}>
             <thead>
               <tr>
-                <th style={{ minWidth: 90 }}>วันที่</th>
-                <th style={{ minWidth: 220, textAlign: 'left' }}>หัวข้อที่สอน</th>
-                <th>ส่วน/แผนก</th>
-                <th>ผู้สอน</th>
-                <th style={{ textAlign: 'center' }}>ผู้เข้าอบรม</th>
+                <th style={{ minWidth: 90 }}>{tr('วันที่')}</th>
+                <th style={{ minWidth: 220, textAlign: 'left' }}>{tr('หัวข้อที่สอน')}</th>
+                <th>{tr('ส่วน/แผนก')}</th>
+                <th>{tr('ผู้สอน')}</th>
+                <th style={{ textAlign: 'center' }}>{tr('ผู้เข้าอบรม')}</th>
                 <th style={{ textAlign: 'center', minWidth: 150 }}></th>
               </tr>
             </thead>
@@ -1046,12 +1047,12 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                 <div>
                   <div style={lb}>ส่วน</div>
                   <select value={editing.section || ''} onChange={e => setEditing(p => ({ ...p, section: e.target.value, department: '' }))} style={{ width: '100%' }}>
-                    <option value="">— เลือก —</option>
-                    {(effSections.length ? orgSections.filter(s => inSectionScope(effSections, s)) : orgSections).map(s => <option key={s} value={s}>{s}</option>)}
+                    <option value="">{tr('— เลือก —')}</option>
+                    {(effSections.length ? orgSections.filter(s => inSectionScope(effSections, s)) : orgSections).map(s => <option key={s} value={s}>{tr(s)}</option>)}
                     {/* แผนกขึ้นตรงฝ่าย (MTN/JIG MTN/DIE MTN) — เดิม cascade เขียนเองทำให้ออกใบ OJT
                         ให้ช่างระบุแผนกไม่ได้เลย (QC audit 2026-08-18 · sentinel เห็นเฉพาะ user ไม่จำกัด scope) */}
                     {!effSections.length && orphanDepts(orgDeptNodes).length > 0 && (
-                      <option value={ORPHAN_SECTION}>{ORPHAN_SECTION_LABEL}</option>
+                      <option value={ORPHAN_SECTION}>{tr(ORPHAN_SECTION_LABEL)}</option>
                     )}
                   </select>
                 </div>
@@ -1064,9 +1065,9 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                     return (
                       <select value={editing.department || ''} disabled={!editing.section} onChange={e => setF('department', e.target.value)} style={{ width: '100%' }}>
                         <option value="">{editing.section ? '— เลือก —' : 'เลือกส่วนก่อน'}</option>
-                        {depOpts.map(d => <option key={d.id} value={d.code || d.name}>{d.name}</option>)}
+                        {depOpts.map(d => <option key={d.id} value={d.code || d.name}>{tr(d.name)}</option>)}
                         {editing.department && !depOpts.some(d => (d.code || d.name) === editing.department) && (
-                          <option value={editing.department}>{editing.department} (นอกผัง — ค่าเดิม)</option>
+                          <option value={editing.department}>{editing.department} {tr('(นอกผัง — ค่าเดิม)')}</option>
                         )}
                       </select>
                     );
@@ -1146,7 +1147,7 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
               <div>
                 <div style={{ ...lb, fontSize: 13, color: 'var(--text)' }}>พนักงานผู้เข้าอบรม ({editing.attendees.length} คน)</div>
                 <div style={{ position: 'relative', marginBottom: 8 }}>
-                  <input type="text" placeholder="ค้นหาชื่อ/รหัสพนักงาน แล้วคลิกเพื่อเพิ่ม..." value={empSearch} onChange={e => setEmpSearch(e.target.value)}
+                  <input type="text" placeholder={tr('ค้นหาชื่อ/รหัสพนักงาน แล้วคลิกเพื่อเพิ่ม...')} value={empSearch} onChange={e => setEmpSearch(e.target.value)}
                     style={{ width: 'min(100%, 380px)', padding: '7px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }} />
                   {searchResults.length > 0 && (
                     <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 10, background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', width: 'min(100%, 380px)', maxHeight: 220, overflowY: 'auto', boxShadow: 'var(--shadow-float)' }}>
@@ -1189,12 +1190,12 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                   <table style={{ width: '100%', minWidth: 780 }}>
                     <thead>
                       <tr style={{ fontSize: 12 }}>
-                        <th style={{ textAlign: 'left' }}>พนักงาน</th>
-                        <th style={{ textAlign: 'center' }}>ก่อน OJT (0-4)</th>
-                        <th style={{ textAlign: 'center' }}>หลัง OJT (0-4)</th>
-                        <th style={{ textAlign: 'center' }}>ลายเซ็น</th>
-                        <th style={{ textAlign: 'center' }}>ผลประเมิน</th>
-                        <th style={{ textAlign: 'left' }}>ผู้ประเมิน</th>
+                        <th style={{ textAlign: 'left' }}>{tr('พนักงาน')}</th>
+                        <th style={{ textAlign: 'center' }}>{tr('ก่อน OJT (0-4)')}</th>
+                        <th style={{ textAlign: 'center' }}>{tr('หลัง OJT (0-4)')}</th>
+                        <th style={{ textAlign: 'center' }}>{tr('ลายเซ็น')}</th>
+                        <th style={{ textAlign: 'center' }}>{tr('ผลประเมิน')}</th>
+                        <th style={{ textAlign: 'left' }}>{tr('ผู้ประเมิน')}</th>
                         <th></th>
                       </tr>
                     </thead>
@@ -1216,8 +1217,8 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
                               onChange={e => setAtt(idx, 'eval_agree', e.target.value === '' ? null : e.target.value === '1')}
                               style={{ width: 'auto', padding: '4px 6px', borderRadius: 'var(--ctl-r)', fontSize: 12 }}>
                               <option value="">—</option>
-                              <option value="1">เห็นด้วย</option>
-                              <option value="0">ไม่เห็นด้วย</option>
+                              <option value="1">{tr('เห็นด้วย')}</option>
+                              <option value="0">{tr('ไม่เห็นด้วย')}</option>
                             </select>
                           </td>
                           <td>
@@ -1244,10 +1245,10 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
               </div>
 
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-                <button onClick={closeEdit} style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+                <button onClick={closeEdit} style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>{tr('ยกเลิก')}</button>
                 <button onClick={handleSave} disabled={saving || !canRecord}
                   style={{ padding: '9px 22px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer', fontSize: 13, opacity: saving ? 0.6 : 1 }}>
-                  {saving ? 'กำลังบันทึก...' : 'บันทึกใบอบรม'}
+                  {saving ? tr('กำลังบันทึก...') : tr('บันทึกใบอบรม')}
                 </button>
               </div>
             </div>

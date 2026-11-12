@@ -65,6 +65,7 @@ import StoreCallSiren from './StoreCallSiren';
 import ProdRoutineCard, { useProdRoutine } from './ProdRoutineCard';
 import { routineMapOf, ROUTINE_MAP_COLOR } from '../utils/prodRoutine';
 import { liveChannel } from '../utils/liveChannel';
+import { tr } from '../utils/i18n';
 import TabBar from './TabBar';   // แถบเลือกทีม = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
@@ -834,10 +835,10 @@ export default function MtnAndonBoard({ d, ctx, cards = 'maintenance' }) {
                 </div>
 
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-                  <button onClick={() => navigate('/mtn-repair')} style={chip(true)}>ใบแจ้งซ่อม</button>
+                  <button onClick={() => navigate('/mtn-repair')} style={chip(true)}>{tr('ใบแจ้งซ่อม')}</button>
                   {/* ⚠️ ชี้ปลายทางจริง ไม่เด้งผ่าน redirect — `/pm-schedule` เป็น route เก่าที่ยุบเข้าศูนย์ PM แล้ว */}
-                  <button onClick={() => navigate('/pm?tab=plan')} style={chip(false)}>แผน PM</button>
-                  <button onClick={() => navigate(`/factory-map`)} style={chip(false)}>ผังรวมโรงงาน</button>
+                  <button onClick={() => navigate('/pm?tab=plan')} style={chip(false)}>{tr('แผน PM')}</button>
+                  <button onClick={() => navigate(`/factory-map`)} style={chip(false)}>{tr('ผังรวมโรงงาน')}</button>
                 </div>
               </div>
             </div>

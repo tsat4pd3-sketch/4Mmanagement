@@ -14,6 +14,7 @@ import { tooltipProps, axisTick, alignedYWidth, fmtAxis, CHART_MARGIN } from '..
 import NoticeBar from './NoticeBar';
 import useIsMobile from '../utils/useIsMobile';
 
+import { tr } from '../utils/i18n';
 const GOOD = 'var(--green)', WARN = 'var(--amber)', BAD = 'var(--red)', IDLE = 'var(--muted)', ACC = 'var(--accent2)', INFO = 'var(--blue)';
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 14, boxShadow: 'var(--shadow-sm)' };
 const PAGE = 1000;
@@ -113,7 +114,7 @@ export default function EnergyMeterDetail({ m, machines, boardMeters, totalToday
   return (
     <div style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <button type="button" onClick={onBack} className="pg-btn" style={{ whiteSpace: 'nowrap' }}>← กลับบอร์ดรวม</button>
+        <button type="button" onClick={onBack} className="pg-btn" style={{ whiteSpace: 'nowrap' }}>{tr('← กลับบอร์ดรวม')}</button>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>{m.name} <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted)' }}>· ตู้ {m.panel}</span></div>
           <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{m.subtitle}</div>

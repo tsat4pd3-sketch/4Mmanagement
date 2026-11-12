@@ -28,6 +28,7 @@ import {
 import { CELL_BAR_FILL } from '../utils/chartAxis';
 import useTvShell, { tvSizer } from '../utils/useTvShell';
 
+import { tr } from '../utils/i18n';
 /* ═══ 📟 OEE บอร์ดหน้าไลน์ — /line-oee (2026-08-25 · คำสั่ง user "เพิ่มหน้า OEE หน้าไลน์แบบนี้") ═══
    จอ TV ประจำไลน์ผลิต 1 จอ = 1 ไลน์ (deep-link ?line=<ชื่อกลุ่มไลน์>) — โครงตามภาพอ้างอิง
    OEE SUMMARY WEEKLY ของ vendor: Overall vs Target/Variance · เทรนด์รายวัน · การ์ด A/P/Q
@@ -560,7 +561,7 @@ export default function LineOeeBoard() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 4, ...(tv ? { tableLayout: 'fixed' } : {}) }}>
                   {tv && <colgroup><col style={{ width: '22%' }} /><col /><col style={{ width: '16%' }} /><col style={{ width: '11%' }} /><col style={{ width: '20%' }} /></colgroup>}
                   <thead><tr>{['เวลา', 'รายการ', 'เครื่อง', 'นาที', 'สถานะ'].map(h => (
-                    <th key={h} style={{ fontSize: T(11, 20), color: 'var(--muted)', textAlign: 'left', padding: tv ? '4px 6px' : '3px 6px', borderBottom: '1px solid var(--border2)' }}>{h}</th>))}
+                    <th key={h} style={{ fontSize: T(11, 20), color: 'var(--muted)', textAlign: 'left', padding: tv ? '4px 6px' : '3px 6px', borderBottom: '1px solid var(--border2)' }}>{tr(h)}</th>))}
                   </tr></thead>
                   {/* จอประชุม: 5 แถวล่าสุด ตัวใหญ่ · ตัดคำอธิบายย่อย (คนยืนห่าง 2–3 ม. อ่านไม่ทัน) */}
                   <tbody>{(tv ? C.history.slice(0, 5) : C.history).map(d2 => {

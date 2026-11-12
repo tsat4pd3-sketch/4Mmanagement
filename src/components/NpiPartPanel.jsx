@@ -21,6 +21,7 @@ import useColumnHistory from '../utils/useColumnHistory';
 import { DeleteButton } from './IconButton';
 import { npiBlock } from '../utils/npiScope';
 
+import { tr } from '../utils/i18n';
 export default function NpiPartPanel({ part, project, template, phases, delivs, drawings, tooling, peSets, qaParts, canEdit, canApprove, fullName, today, onChanged, partWriteOf }) {
   /* 🔐 ชั้นที่ 3 — ทุกแถวในแผงนี้เป็นของ `part` ตัวเดียว ⇒ ถามกฎครั้งเดียว (src/utils/npiScope.js)
      ไม่ได้รับ `partWriteOf` / พาร์ทไม่ระบุไลน์ = ตัดสินไม่ได้ ⇒ ไม่บล็อก (คงพฤติกรรมเดิม) */
@@ -177,9 +178,9 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <button style={ghost} onClick={() => printPpapChecklist({ project, part, delivs, phases, today }) || toast.error('เบราว์เซอร์บล็อกหน้าต่างพิมพ์')}>PPAP checklist</button>
-          {mayEdit && <button style={ghost} onClick={() => setPpapModal({ ppap_status: part.ppap_status, ppap_level: part.ppap_level, psw_no: part.psw_no || '', psw_submitted_at: part.psw_submitted_at || '', psw_approved_at: part.psw_approved_at || '', status: part.status })}>สถานะ PPAP/PSW</button>}
-          {mayEdit && <button style={ghost} disabled={saving} onClick={syncTemplate} title="เติมเฟส/รายการที่แม่แบบมีแต่พาร์ทนี้ยังไม่มี (ไม่แตะของเดิม)">sync แม่แบบ</button>}
-          {mayEdit && <button style={btn()} onClick={() => setDvModal({ label: '', phase_code: roll.current?.phase_code || phases[0]?.phase_code || '', doc_kind: 'other', required: true, ppap_element: false, seq: 900 })}>+ รายการ</button>}
+          {mayEdit && <button style={ghost} onClick={() => setPpapModal({ ppap_status: part.ppap_status, ppap_level: part.ppap_level, psw_no: part.psw_no || '', psw_submitted_at: part.psw_submitted_at || '', psw_approved_at: part.psw_approved_at || '', status: part.status })}>{tr('สถานะ PPAP/PSW')}</button>}
+          {mayEdit && <button style={ghost} disabled={saving} onClick={syncTemplate} title="เติมเฟส/รายการที่แม่แบบมีแต่พาร์ทนี้ยังไม่มี (ไม่แตะของเดิม)">{tr('sync แม่แบบ')}</button>}
+          {mayEdit && <button style={btn()} onClick={() => setDvModal({ label: '', phase_code: roll.current?.phase_code || phases[0]?.phase_code || '', doc_kind: 'other', required: true, ppap_element: false, seq: 900 })}>{tr('+ รายการ')}</button>}
           {canEdit && scopeMsg && (
             <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center', maxWidth: 420, lineHeight: 1.45 }}>{scopeMsg}</span>
           )}
@@ -261,7 +262,7 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead><tr>
-                      <th style={thSt}></th><th style={thSt}>รายการ</th><th style={thSt}>สถานะ</th><th style={thSt}>กำหนด</th><th style={thSt}>เสร็จ</th><th style={thSt}>เจ้าของ</th><th style={thSt}>หลักฐาน/อ้างอิง</th><th style={thSt}>หมายเหตุ</th><th style={thSt}></th>
+                      <th style={thSt}></th><th style={thSt}>{tr('รายการ')}</th><th style={thSt}>{tr('สถานะ')}</th><th style={thSt}>{tr('กำหนด')}</th><th style={thSt}>{tr('เสร็จ')}</th><th style={thSt}>{tr('เจ้าของ')}</th><th style={thSt}>{tr('หลักฐาน/อ้างอิง')}</th><th style={thSt}>{tr('หมายเหตุ')}</th><th style={thSt}></th>
                     </tr></thead>
                     <tbody>
                       {rows.map(d => {
@@ -313,7 +314,7 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
 
       {phaseModal && (
         <Modal title={`เฟส ${phaseModal.label}`} onClose={() => setPhaseModal(null)} width={560}
-          footer={<><button style={ghost} onClick={() => setPhaseModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={savePhase}>บันทึก</button></>}>
+          footer={<><button style={ghost} onClick={() => setPhaseModal(null)}>{tr('ยกเลิก')}</button><button style={btn()} disabled={saving} onClick={savePhase}>{tr('บันทึก')}</button></>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label="แผนเริ่ม"><input type="date" style={inp} value={phaseModal.plan_start} onChange={e => setPhaseModal({ ...phaseModal, plan_start: e.target.value })} /></Field>
             <Field label="แผนจบ" hint="เลยวันนี้แล้วยังไม่ปิด = แดง"><input type="date" style={inp} value={phaseModal.plan_end} onChange={e => setPhaseModal({ ...phaseModal, plan_end: e.target.value })} /></Field>
@@ -329,28 +330,28 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
 
       {dvModal && (
         <Modal title={dvModal.id ? 'แก้ไขรายการเอกสาร' : 'เพิ่มรายการเอกสาร (เฉพาะพาร์ทนี้)'} onClose={() => setDvModal(null)} width={640}
-          footer={<><button style={ghost} onClick={() => setDvModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={saveDeliv}>บันทึก</button></>}>
+          footer={<><button style={ghost} onClick={() => setDvModal(null)}>{tr('ยกเลิก')}</button><button style={btn()} disabled={saving} onClick={saveDeliv}>{tr('บันทึก')}</button></>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label="ชื่อรายการ *" span={2}><input style={inp} value={dvModal.label} onChange={e => setDvModal({ ...dvModal, label: e.target.value })} /></Field>
-            <Field label="เฟส"><select style={inp} value={dvModal.phase_code} onChange={e => setDvModal({ ...dvModal, phase_code: e.target.value })}>{[...phases].sort((a, b) => a.seq - b.seq).map(p => <option key={p.phase_code} value={p.phase_code}>{p.label}</option>)}</select></Field>
+            <Field label="เฟส"><select style={inp} value={dvModal.phase_code} onChange={e => setDvModal({ ...dvModal, phase_code: e.target.value })}>{[...phases].sort((a, b) => a.seq - b.seq).map(p => <option key={p.phase_code} value={p.phase_code}>{tr(p.label)}</option>)}</select></Field>
             <Field label="ชนิดเอกสาร"><select style={inp} value={dvModal.doc_kind} onChange={e => setDvModal({ ...dvModal, doc_kind: e.target.value })}>{Object.entries(DOC_KIND).map(([k, m]) => <option key={k} value={k}>{m.icon} {m.label}</option>)}</select></Field>
             <Field label="กำหนดส่ง"><input type="date" style={inp} value={dvModal.due_date || ''} onChange={e => setDvModal({ ...dvModal, due_date: e.target.value })} /></Field>
             <Field label="เสร็จเมื่อ"><input type="date" style={inp} value={dvModal.done_at || ''} onChange={e => setDvModal({ ...dvModal, done_at: e.target.value })} /></Field>
             <Field label="ผู้รับผิดชอบ"><PersonSelect value={dvModal.owner_name || ''} history={dvOwnerHist} onChange={r => setDvModal({ ...dvModal, owner_name: r.name })} /></Field>
-            <Field label="ทีมเจ้าของ"><select style={inp} value={dvModal.owner_role || ''} onChange={e => setDvModal({ ...dvModal, owner_role: e.target.value })}><option value="">—</option>{Object.entries(OWNER_ROLE).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
-            <Field label="อ้างอิงของจริงในระบบ"><select style={inp} value={dvModal.ref_kind || ''} onChange={e => setDvModal({ ...dvModal, ref_kind: e.target.value, ref_id: '' })}><option value="">—</option>{Object.entries(REF_KIND).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
+            <Field label="ทีมเจ้าของ"><select style={inp} value={dvModal.owner_role || ''} onChange={e => setDvModal({ ...dvModal, owner_role: e.target.value })}><option value="">—</option>{Object.entries(OWNER_ROLE).map(([k, l]) => <option key={k} value={k}>{tr(l)}</option>)}</select></Field>
+            <Field label="อ้างอิงของจริงในระบบ"><select style={inp} value={dvModal.ref_kind || ''} onChange={e => setDvModal({ ...dvModal, ref_kind: e.target.value, ref_id: '' })}><option value="">—</option>{Object.entries(REF_KIND).map(([k, l]) => <option key={k} value={k}>{tr(l)}</option>)}</select></Field>
             <Field label="รายการที่อ้าง">
               {dvModal.ref_kind === 'drawing' ? <select style={inp} value={dvModal.ref_id || ''} onChange={e => setDvModal({ ...dvModal, ref_id: e.target.value })}><option value="">—</option>{drawings.map(dw => <option key={dw.id} value={dw.id}>{dw.kind.toUpperCase()} {dw.rev} {dw.is_current ? '(ปัจจุบัน)' : ''}</option>)}</select>
-                : dvModal.ref_kind === 'tooling' ? <select style={inp} value={dvModal.ref_id || ''} onChange={e => setDvModal({ ...dvModal, ref_id: e.target.value })}><option value="">—</option>{tooling.map(t => <option key={t.id} value={t.id}>{t.tool_name}</option>)}</select>
+                : dvModal.ref_kind === 'tooling' ? <select style={inp} value={dvModal.ref_id || ''} onChange={e => setDvModal({ ...dvModal, ref_id: e.target.value })}><option value="">—</option>{tooling.map(t => <option key={t.id} value={t.id}>{tr(t.tool_name)}</option>)}</select>
                 : dvModal.ref_kind === 'url' ? <input style={inp} value={dvModal.ref_id || ''} onChange={e => setDvModal({ ...dvModal, ref_id: e.target.value })} placeholder="https://…" />
                 : dvModal.ref_kind === 'pe_set' ? <div style={{ fontSize: 12, color: 'var(--muted)', paddingTop: 6 }}>{peSet ? `ชุด ${peSet.part_no}` : 'พาร์ทยังไม่ผูกชุด PE'}</div>
                 : dvModal.ref_kind === 'qa_part' ? <div style={{ fontSize: 12, color: 'var(--muted)', paddingTop: 6 }}>{qaPart ? `QA ${qaPart.part_no}` : 'พาร์ทยังไม่ผูก QA part'}</div>
-                : <input style={inp} value={dvModal.ref_id || ''} onChange={e => setDvModal({ ...dvModal, ref_id: e.target.value })} placeholder="เลขเอกสาร/อ้างอิง" />}
+                : <input style={inp} value={dvModal.ref_id || ''} onChange={e => setDvModal({ ...dvModal, ref_id: e.target.value })} placeholder={tr('เลขเอกสาร/อ้างอิง')} />}
             </Field>
             <Field label="ลำดับ"><input type="number" style={inp} value={dvModal.seq ?? 0} onChange={e => setDvModal({ ...dvModal, seq: e.target.value })} /></Field>
             <div style={{ display: 'flex', gap: 14, alignItems: 'center', paddingTop: 20 }}>
-              <label style={{ fontSize: 12.5 }}><input type="checkbox" checked={dvModal.required !== false} onChange={e => setDvModal({ ...dvModal, required: e.target.checked })} /> บังคับ</label>
-              <label style={{ fontSize: 12.5 }}><input type="checkbox" checked={!!dvModal.ppap_element} onChange={e => setDvModal({ ...dvModal, ppap_element: e.target.checked })} /> อยู่ในชุด PPAP</label>
+              <label style={{ fontSize: 12.5 }}><input type="checkbox" checked={dvModal.required !== false} onChange={e => setDvModal({ ...dvModal, required: e.target.checked })} /> {tr('บังคับ')}</label>
+              <label style={{ fontSize: 12.5 }}><input type="checkbox" checked={!!dvModal.ppap_element} onChange={e => setDvModal({ ...dvModal, ppap_element: e.target.checked })} /> {tr('อยู่ในชุด PPAP')}</label>
             </div>
             <Field label="หมายเหตุ" span={2}><textarea style={{ ...inp, minHeight: 50 }} value={dvModal.note || ''} onChange={e => setDvModal({ ...dvModal, note: e.target.value })} /></Field>
           </div>
@@ -359,14 +360,14 @@ export default function NpiPartPanel({ part, project, template, phases, delivs, 
 
       {ppapModal && (
         <Modal title={`สถานะ PPAP / PSW — ${part.part_no}`} onClose={() => setPpapModal(null)} width={560}
-          footer={<><button style={ghost} onClick={() => setPpapModal(null)}>ยกเลิก</button><button style={btn()} disabled={saving} onClick={savePpap}>บันทึก</button></>}>
+          footer={<><button style={ghost} onClick={() => setPpapModal(null)}>{tr('ยกเลิก')}</button><button style={btn()} disabled={saving} onClick={savePpap}>{tr('บันทึก')}</button></>}>
           {/* 🪜 ถึงขั้นไหน — กฎ ppapFlow() (utils/npi.js) · UI §6.30 · วาดตามสถานะที่เลือกอยู่ */}
           {(() => { const f = ppapFlow(ppapModal.ppap_status); return <div style={{ marginBottom: 12 }}><StepFlow steps={f.steps} waiting={f.waiting} unknown={!f.known} /></div>; })()}
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
             <Field label="สถานะ PPAP" hint={canApprove ? '' : 'ผลจากลูกค้าต้องมี npi:approve'}><MetaSelect value={ppapModal.ppap_status} onChange={v => setPpapModal({ ...ppapModal, ppap_status: v, psw_submitted_at: v === 'submitted' && !ppapModal.psw_submitted_at ? today : ppapModal.psw_submitted_at, psw_approved_at: v === 'approved' && !ppapModal.psw_approved_at ? today : ppapModal.psw_approved_at })} meta={PPAP_STATUS} /></Field>
             <Field label="PPAP level"><select style={inp} value={ppapModal.ppap_level} onChange={e => setPpapModal({ ...ppapModal, ppap_level: e.target.value })}>{[1, 2, 3, 4, 5].map(l => <option key={l} value={l}>Level {l}</option>)}</select></Field>
             <Field label="PSW No."><input style={inp} value={ppapModal.psw_no} onChange={e => setPpapModal({ ...ppapModal, psw_no: e.target.value })} /></Field>
-            <Field label="สถานะพาร์ท"><select style={inp} value={ppapModal.status} onChange={e => setPpapModal({ ...ppapModal, status: e.target.value })}>{['active', 'on_hold', 'completed', 'cancelled'].map(s => <option key={s} value={s}>{s}</option>)}</select></Field>
+            <Field label="สถานะพาร์ท"><select style={inp} value={ppapModal.status} onChange={e => setPpapModal({ ...ppapModal, status: e.target.value })}>{['active', 'on_hold', 'completed', 'cancelled'].map(s => <option key={s} value={s}>{tr(s)}</option>)}</select></Field>
             <Field label="วันส่งลูกค้า"><input type="date" style={inp} value={ppapModal.psw_submitted_at} onChange={e => setPpapModal({ ...ppapModal, psw_submitted_at: e.target.value })} /></Field>
             <Field label="วันลูกค้าอนุมัติ"><input type="date" style={inp} value={ppapModal.psw_approved_at} onChange={e => setPpapModal({ ...ppapModal, psw_approved_at: e.target.value })} /></Field>
           </div>

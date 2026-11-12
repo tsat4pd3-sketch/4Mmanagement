@@ -21,6 +21,7 @@ import { todayLocal as localToday } from '../utils/dateFormat';
 import { notifyEvent } from '../utils/notifyEvent';
 import { fetchByIds } from '../utils/fetchByIds';
 
+import { tr } from '../utils/i18n';
 const btn = (bg, fg = '#08130a') => ({ padding: '5px 11px', borderRadius: 7, border: 'none', background: bg, color: fg, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' });
 const ghost = { padding: '5px 11px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' };
 const inputSt = { width: '100%', padding: '6px 9px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12 };
@@ -61,9 +62,9 @@ function CrRow({ cr, canDecide, onDecide, onApply }) {
       </div>
       {canDecide && (cr.status === 'proposed' || cr.status === 'accepted') && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          {cr.status === 'proposed' && <button style={btn('#4d9fff', '#fff')} onClick={() => onDecide(cr, 'accepted')}>รับเรื่อง</button>}
-          <button style={btn('#22c55e')} onClick={() => onApply(cr)}>✅ ออก revision</button>
-          <button style={ghost} onClick={() => onDecide(cr, 'rejected')}>ไม่แก้</button>
+          {cr.status === 'proposed' && <button style={btn('#4d9fff', '#fff')} onClick={() => onDecide(cr, 'accepted')}>{tr('รับเรื่อง')}</button>}
+          <button style={btn('#22c55e')} onClick={() => onApply(cr)}>{tr('✅ ออก revision')}</button>
+          <button style={ghost} onClick={() => onDecide(cr, 'rejected')}>{tr('ไม่แก้')}</button>
         </div>
       )}
     </div>
@@ -270,9 +271,9 @@ export default function PeChangeRequests({
         {mode === 'source' && canPropose && (
           <>
             <button style={ghost} disabled={busy} onClick={runSuggest} title="ให้ระบบค้น PFMEA / Control Plan ที่เกี่ยวกับอาการและสาเหตุที่กรอกไว้">
-              {busy ? '⏳ กำลังค้น...' : '🔍 หาเอกสารที่เกี่ยว'}
+              {busy ? tr('⏳ กำลังค้น...') : tr('🔍 หาเอกสารที่เกี่ยว')}
             </button>
-            <button style={ghost} onClick={() => setManual({ doc_type: 'fmea', leg: 'occurrence', proposal: '', set_id: setInfo?.set?.id || '' })}>➕ เพิ่มเอง</button>
+            <button style={ghost} onClick={() => setManual({ doc_type: 'fmea', leg: 'occurrence', proposal: '', set_id: setInfo?.set?.id || '' })}>{tr('➕ เพิ่มเอง')}</button>
           </>
         )}
       </div>
@@ -319,8 +320,8 @@ export default function PeChangeRequests({
                 ))}
               </div>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 9 }}>
-                <button style={ghost} onClick={() => setSugs(null)}>ยกเลิก</button>
-                <button style={btn('var(--accent)')} disabled={busy} onClick={saveSuggestions}>ส่งให้ทีม PE</button>
+                <button style={ghost} onClick={() => setSugs(null)}>{tr('ยกเลิก')}</button>
+                <button style={btn('var(--accent)')} disabled={busy} onClick={saveSuggestions}>{tr('ส่งให้ทีม PE')}</button>
               </div>
             </>
           )}
@@ -332,17 +333,17 @@ export default function PeChangeRequests({
         <div style={{ padding: 11, borderBottom: '1px solid var(--border)', display: 'grid', gap: 8 }}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <select style={{ ...inputSt, width: 'auto' }} value={manual.doc_type} onChange={(e) => setManual((m) => ({ ...m, doc_type: e.target.value }))}>
-              {Object.entries(DOC_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              {Object.entries(DOC_LABEL).map(([k, v]) => <option key={k} value={k}>{tr(v)}</option>)}
             </select>
             <select style={{ ...inputSt, width: 'auto' }} value={manual.leg} onChange={(e) => setManual((m) => ({ ...m, leg: e.target.value }))}>
               {Object.entries(LEG_META).map(([k, v]) => <option key={k} value={k}>{v.short} — {v.label}</option>)}
             </select>
             {!setInfo?.set && <span style={{ fontSize: 11, color: '#f59e0b', alignSelf: 'center' }}>กด "🔍 หาเอกสารที่เกี่ยว" ก่อน เพื่อจับคู่ชุดเอกสาร</span>}
           </div>
-          <textarea rows={3} style={inputSt} placeholder="ต้องแก้อะไรในเอกสาร" value={manual.proposal} onChange={(e) => setManual((m) => ({ ...m, proposal: e.target.value }))} />
+          <textarea rows={3} style={inputSt} placeholder={tr('ต้องแก้อะไรในเอกสาร')} value={manual.proposal} onChange={(e) => setManual((m) => ({ ...m, proposal: e.target.value }))} />
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button style={ghost} onClick={() => setManual(null)}>ยกเลิก</button>
-            <button style={btn('var(--accent)')} disabled={busy || !setInfo?.set} onClick={saveManual}>เพิ่ม</button>
+            <button style={ghost} onClick={() => setManual(null)}>{tr('ยกเลิก')}</button>
+            <button style={btn('var(--accent)')} disabled={busy || !setInfo?.set} onClick={saveManual}>{tr('เพิ่ม')}</button>
           </div>
         </div>
       )}
@@ -354,25 +355,25 @@ export default function PeChangeRequests({
       {applyFor && (
         <div className="modal-scroll" /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */ /* modal-scroll = เลื่อนถึงปุ่มล่างได้เมื่อจอเตี้ย/คีย์บอร์ดเด้ง (UI-CONVENTIONS §4 · index.css) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000, padding: 16 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 16, width: 'min(560px, 100%)' }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: '0 0 4px', fontSize: 15 }}>✅ ออก revision — {DOC_LABEL[applyFor.cr.doc_type]}</h3>
+            <h3 style={{ margin: '0 0 4px', fontSize: 15 }}>{tr('✅ ออก revision —')} {DOC_LABEL[applyFor.cr.doc_type]}</h3>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.6 }}>
               บันทึกนี้จะไปอยู่ในประวัติ revision ของชุดเอกสาร <b>พร้อมที่มา</b> ({applyFor.cr.ref_label || applyFor.cr.ref_kind}) ·
               <b> แก้เนื้อหาเอกสารจริงที่ /pe-docs เอง</b> — ระบบไม่แก้ให้อัตโนมัติ
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, marginBottom: 9 }}>
-              <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>Rev. (ถ้ามี)
-                <input style={inputSt} value={applyFor.rev_no} onChange={(e) => setApplyFor((a) => ({ ...a, rev_no: e.target.value }))} placeholder="เช่น 17" />
+              <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('Rev. (ถ้ามี)')}
+                <input style={inputSt} value={applyFor.rev_no} onChange={(e) => setApplyFor((a) => ({ ...a, rev_no: e.target.value }))} placeholder={tr('เช่น 17')} />
               </label>
-              <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>วันที่
+              <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('วันที่')}
                 <input type="date" style={inputSt} value={applyFor.rev_date} onChange={(e) => setApplyFor((a) => ({ ...a, rev_date: e.target.value }))} />
               </label>
             </div>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>สรุปการแก้ไข *
+            <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('สรุปการแก้ไข *')}
               <textarea rows={3} style={inputSt} value={applyFor.content} onChange={(e) => setApplyFor((a) => ({ ...a, content: e.target.value }))} />
             </label>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-              <button style={ghost} onClick={() => setApplyFor(null)}>ยกเลิก</button>
-              <button style={btn('#22c55e')} disabled={busy} onClick={doApply}>บันทึก revision</button>
+              <button style={ghost} onClick={() => setApplyFor(null)}>{tr('ยกเลิก')}</button>
+              <button style={btn('#22c55e')} disabled={busy} onClick={doApply}>{tr('บันทึก revision')}</button>
             </div>
           </div>
         </div>

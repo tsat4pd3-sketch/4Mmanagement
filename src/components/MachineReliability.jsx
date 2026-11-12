@@ -33,6 +33,7 @@ import useTimeRange from '../utils/useTimeRange';
 import { rangeDays } from '../utils/timeRange';
 import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
 import NoticeBar from './NoticeBar';
+import { tr as trI18n } from '../utils/i18n';
 import InfoMore from './InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
@@ -221,7 +222,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
         <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text2)', cursor: 'pointer', marginLeft: 4 }}
                title="เครื่องที่เดินทั้งช่วงโดยไม่เสียเลย ทำให้ MTBF ของกลุ่มสูงขึ้น — ไม่นับ = ตัวเลขต่ำกว่าจริง">
           <input type="checkbox" checked={withIdle} onChange={e => setWithIdle(e.target.checked)} />
-          รวมเครื่องที่ไม่เคยเสีย{summary.idleCount > 0 && ` (${summary.idleCount})`}
+          {trI18n('รวมเครื่องที่ไม่เคยเสีย')}{summary.idleCount > 0 && ` (${summary.idleCount})`}
         </label>
       </div>
 
@@ -338,16 +339,16 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
             <thead style={{ background: 'var(--bg2)', position: 'sticky', top: 0, zIndex: 1 }}>
               <tr>
-                <th style={th}>อุปกรณ์</th>
-                <th style={th}>ชนิด</th>
-                <th style={th}>ไลน์</th>
-                <th style={{ ...th, textAlign: 'right' }}>หยุด (ครั้ง)</th>
-                <th style={{ ...th, textAlign: 'right' }}>DT รวม{weighted && <span style={{ color: 'var(--blue)' }}> (1/N)</span>}</th>
+                <th style={th}>{trI18n('อุปกรณ์')}</th>
+                <th style={th}>{trI18n('ชนิด')}</th>
+                <th style={th}>{trI18n('ไลน์')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{trI18n('หยุด (ครั้ง)')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{trI18n('DT รวม')}{weighted && <span style={{ color: 'var(--blue)' }}> (1/N)</span>}</th>
                 <th style={{ ...th, textAlign: 'right' }}>MTTR</th>
                 <th style={{ ...th, textAlign: 'right' }}>MTBF</th>
-                <th style={{ ...th, textAlign: 'right' }}>พร้อมใช้</th>
-                <th style={th}>สาเหตุหลัก</th>
-                <th style={{ ...th, textAlign: 'right' }}>ล่าสุด</th>
+                <th style={{ ...th, textAlign: 'right' }}>{trI18n('พร้อมใช้')}</th>
+                <th style={th}>{trI18n('สาเหตุหลัก')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{trI18n('ล่าสุด')}</th>
               </tr>
             </thead>
             <tbody>

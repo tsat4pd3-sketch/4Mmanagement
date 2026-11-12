@@ -20,6 +20,7 @@ import PageHeader from '../components/PageHeader';
 import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
 import InfoMore from '../components/InfoMore';
+import { tr } from '../utils/i18n';
 import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 /* ══ 🏢 ภาพรวมกลุ่มบริษัท TSG (Group Overview) — MOCKUP หลายโรงงาน · 2026-08-05 ══════════
@@ -438,10 +439,10 @@ export default function GroupOverview() {
               <span style={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.code || it.name}</span>
               {/* ป้ายจริง/จำลอง ใช้กับ "บริษัท" เท่านั้น — โซน/กลุ่มธุรกิจเป็นก้อนรวม (มีทั้งของจริงและจำลอง) */}
               {it.companies
-                ? <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{it.companies.length} บริษัท</span>
+                ? <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{it.companies.length} {tr('บริษัท')}</span>
                 : it.real
-                  ? <span style={{ fontSize: 11, color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 'var(--r-xs)', padding: '0 5px', whiteSpace: 'nowrap' }}>จริง</span>
-                  : <span style={{ fontSize: 11, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 'var(--r-xs)', padding: '0 5px', whiteSpace: 'nowrap' }}>จำลอง</span>}
+                  ? <span style={{ fontSize: 11, color: 'var(--green)', border: '1px solid var(--green)', borderRadius: 'var(--r-xs)', padding: '0 5px', whiteSpace: 'nowrap' }}>{tr('จริง')}</span>
+                  : <span style={{ fontSize: 11, color: 'var(--amber)', border: '1px dashed var(--amber)', borderRadius: 'var(--r-xs)', padding: '0 5px', whiteSpace: 'nowrap' }}>{tr('จำลอง')}</span>}
             </button>
             <div style={{ height: 22, background: 'var(--bg3)', borderRadius: 'var(--r-xs)', overflow: 'hidden', position: 'relative' }}>
               <div style={{ width: `${clamp(it.target / maxT * 100, 2, 100)}%`, height: '100%', background: 'var(--bg2)', position: 'absolute', inset: 0, borderRight: '1px dashed var(--border2)' }} />
@@ -509,7 +510,7 @@ export default function GroupOverview() {
           <input type="date" value={date} max={getWorkDate()} onChange={e => setDate(e.target.value)} />
           <button className="tbtn ctl-btn" onClick={() => setDate(shiftDate(date, 1))} disabled={date >= getWorkDate()} style={{ ...btn, opacity: date >= getWorkDate() ? 0.4 : 1 }}>▶</button>
         </>}
-        actions={<button type="button" className="pg-btn" onClick={load}>รีเฟรช</button>}
+        actions={<button type="button" className="pg-btn" onClick={load}>{tr('รีเฟรช')}</button>}
       />
 
       {/* ── จริง vs จำลอง — บรรทัดเดียวที่เห็นตลอด (กันเข้าใจผิดว่ามีหลายบริษัทในระบบแล้ว · ห้ามพับ)
@@ -679,7 +680,7 @@ export default function GroupOverview() {
 
                   <button onClick={() => setSel(s => ({ ...s, node: g.key, comp: null }))}
                     style={{ ...btn, width: '100%', padding: '7px 10px', fontSize: 13, marginTop: 10 }}>
-                    ดูบริษัทในกลุ่ม ({g.companies.length})
+                    {tr('ดูบริษัทในกลุ่ม (')}{g.companies.length})
                   </button>
                 </div>
               );
@@ -769,7 +770,7 @@ export default function GroupOverview() {
 
                   <button onClick={() => setPickComp(c)}
                     style={{ ...btn, width: '100%', padding: '7px 10px', fontSize: 13, marginTop: 8 }}>
-                    เปิดบริษัทนี้ ({c.lines.length} ไลน์)
+                    {tr('เปิดบริษัทนี้ (')}{c.lines.length} {tr('ไลน์)')}
                   </button>
                 </div>
               );
@@ -792,9 +793,9 @@ export default function GroupOverview() {
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums', minWidth: 640 }}>
                 <thead><tr>
-                  <th style={TH}>ไลน์</th><th style={TH}>ประเภท</th><th style={THR}>เป้า</th><th style={THR}>ผลิตได้</th>
-                  <th style={THR}>%</th><th style={THR}>OEE</th><th style={THR}>DT (น.)</th>
-                  <th style={THR}>NG</th><th style={THR}>คน</th>
+                  <th style={TH}>{tr('ไลน์')}</th><th style={TH}>{tr('ประเภท')}</th><th style={THR}>{tr('เป้า')}</th><th style={THR}>{tr('ผลิตได้')}</th>
+                  <th style={THR}>%</th><th style={THR}>OEE</th><th style={THR}>{tr('DT (น.)')}</th>
+                  <th style={THR}>NG</th><th style={THR}>{tr('คน')}</th>
                 </tr></thead>
                 <tbody>
                   {[...compNode.lines].sort((a, b) => (b.target - b.actual) - (a.target - a.actual)).map(l => {
@@ -833,10 +834,10 @@ export default function GroupOverview() {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontVariantNumeric: 'tabular-nums', minWidth: 700 }}>
               <thead><tr>
-                {!compNode && <th style={TH}>กลุ่มธุรกิจ</th>}
-                {!compNode && <th style={TH}>บริษัท</th>}
-                <th style={TH}>ไลน์</th><th style={TH}>ประเภท</th><th style={THR}>ขาดเป้า</th>
-                <th style={THR}>ผลิต/เป้า</th><th style={THR}>OEE</th><th style={THR}>DT (น.)</th><th style={THR}>NG</th>
+                {!compNode && <th style={TH}>{tr('กลุ่มธุรกิจ')}</th>}
+                {!compNode && <th style={TH}>{tr('บริษัท')}</th>}
+                <th style={TH}>{tr('ไลน์')}</th><th style={TH}>{tr('ประเภท')}</th><th style={THR}>{tr('ขาดเป้า')}</th>
+                <th style={THR}>{tr('ผลิต/เป้า')}</th><th style={THR}>OEE</th><th style={THR}>{tr('DT (น.)')}</th><th style={THR}>NG</th>
               </tr></thead>
               <tbody>
                 {(hotAll ? hotspots : hotspots.slice(0, 5)).map((l, i) => {
@@ -945,7 +946,7 @@ export default function GroupOverview() {
               <button onClick={() => { setPickComp(null); navigate('/factory-map'); }} style={{
                 ...btn, width: '100%', marginTop: 9, fontSize: 12.5, padding: '8px 10px',
               }}>
-                ดูตัวอย่างหน้าผังโรงงาน (ใช้ผังจริงของ TSAT4)
+                {tr('ดูตัวอย่างหน้าผังโรงงาน (ใช้ผังจริงของ TSAT4)')}
               </button>
             )}
           </div>
@@ -958,8 +959,8 @@ export default function GroupOverview() {
           background: 'none', border: 'none', color: 'var(--text)', cursor: 'pointer', padding: 0,
           fontSize: 15, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
         }}>
-          <span>{showHow ? '▼' : '▶'}</span> 🛠️ ถ้าจะรองรับหลายบริษัทในกลุ่มจริง ต้องทำอะไรบ้าง
-          <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)' }}>(สรุปเชิงเทคนิค)</span>
+          <span>{showHow ? '▼' : '▶'}</span> {tr('🛠️ ถ้าจะรองรับหลายบริษัทในกลุ่มจริง ต้องทำอะไรบ้าง')}
+          <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)' }}>{tr('(สรุปเชิงเทคนิค)')}</span>
         </button>
         {showHow && (
           <div style={{ fontSize: 13, lineHeight: 1.85, marginTop: 10, color: 'var(--text2)' }}>

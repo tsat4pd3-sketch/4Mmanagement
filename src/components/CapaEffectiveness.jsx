@@ -21,6 +21,7 @@ import {
 } from '../utils/capaEffect';
 import { ALL } from '../utils/filterLabels';
 
+import { tr } from '../utils/i18n';
 const inputSt = { width: '100%', padding: '6px 9px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12 };
 const btn = (bg, fg = '#08130a') => ({ padding: '5px 11px', borderRadius: 7, border: 'none', background: bg, color: fg, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' });
 
@@ -237,15 +238,15 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
         {!closed && (
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '160px 130px 1fr', gap: 10 }}>
             <label style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>
-              วันที่มาตรการมีผลจริง (D6) *
+              {tr('วันที่มาตรการมีผลจริง (D6) *')}
               <input type="date" style={{ ...inputSt, marginTop: 4 }} value={pivot} max={todayStr()} disabled={!canEdit}
                 onChange={(e) => onChange({ d6_effective_from: e.target.value || null })} />
             </label>
             <label style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>
-              หน้าต่างเทียบ
+              {tr('หน้าต่างเทียบ')}
               <select style={{ ...inputSt, marginTop: 4 }} value={win} disabled={!canEdit}
                 onChange={(e) => onChange({ eff_window_days: Number(e.target.value) })}>
-                {[14, 30, 60, 90].map((d) => <option key={d} value={d}>{d} วัน</option>)}
+                {[14, 30, 60, 90].map((d) => <option key={d} value={d}>{d} {tr('วัน')}</option>)}
               </select>
             </label>
             <label style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>
@@ -255,8 +256,8 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
                   const t = types.find((x) => x.id === e.target.value);
                   onChange({ eff_defect_type_id: e.target.value || null, eff_defect_type_label: t?.name_th || null });
                 }}>
-                <option value="">{ALL.type}</option>
-                {types.map((t) => <option key={t.id} value={t.id}>{t.name_th}</option>)}
+                <option value="">{tr(ALL.type)}</option>
+                {types.map((t) => <option key={t.id} value={t.id}>{tr(t.name_th)}</option>)}
               </select>
             </label>
           </div>

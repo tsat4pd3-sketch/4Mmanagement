@@ -15,6 +15,7 @@ import { toast } from '../components/Toast';
 import { MQTT_FIELDS, mqttField, LIVE_STALE_MIN, liveAgeMin } from '../utils/energy';
 import { DeleteButton } from './IconButton';
 
+import { tr } from '../utils/i18n';
 const inp = { width: '100%', padding: '7px 9px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: 14 };
 const th = { textAlign: 'left', fontSize: 11.5, color: 'var(--muted)', fontWeight: 700, padding: '7px 8px', borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap' };
@@ -146,36 +147,36 @@ export default function EnergyMqttTopics({ points, canEdit }) {
             <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '2 1 260px' }}>MQTT topic<br />
               <input value={form.topic} onChange={e => setForm(f => ({ ...f, topic: e.target.value }))}
                 placeholder="plant/utility/steel/power" style={{ ...inp, fontFamily: 'monospace' }} /></label>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 170px' }}>ค่าที่อ่าน<br />
+            <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 170px' }}>{tr('ค่าที่อ่าน')}<br />
               <select value={form.field} onChange={e => setForm(f => ({ ...f, field: e.target.value }))} style={inp}>
                 {MQTT_FIELDS.map(f => <option key={f.key} value={f.key}>{f.label}{f.unit ? ` (${f.unit})` : ''}</option>)}
               </select></label>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '2 1 220px' }}>ผูกกับจุดวัด<br />
+            <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '2 1 220px' }}>{tr('ผูกกับจุดวัด')}<br />
               <select value={form.scope_name ? `${form.scope_kind}::${form.scope_name}` : ''}
                 onChange={e => { const [k, ...n] = e.target.value.split('::'); setForm(f => ({ ...f, scope_kind: k || 'zone', scope_name: n.join('::') })); }}
                 style={inp}>
-                <option value="">— เลือกจุดวัด —</option>
+                <option value="">{tr('— เลือกจุดวัด —')}</option>
                 <optgroup label="โซน utility / facility">
-                  {points.filter(p => p.kind === 'zone').map(p => <option key={`z${p.name}`} value={`zone::${p.name}`}>{p.name}</option>)}
+                  {points.filter(p => p.kind === 'zone').map(p => <option key={`z${p.name}`} value={`zone::${p.name}`}>{tr(p.name)}</option>)}
                 </optgroup>
                 <optgroup label="ไลน์ผลิต">
-                  {points.filter(p => p.kind === 'line').map(p => <option key={`l${p.name}`} value={`line::${p.name}`}>{p.name}</option>)}
+                  {points.filter(p => p.kind === 'line').map(p => <option key={`l${p.name}`} value={`line::${p.name}`}>{tr(p.name)}</option>)}
                 </optgroup>
               </select></label>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 90px' }}>ตัวคูณ<br />
+            <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 90px' }}>{tr('ตัวคูณ')}<br />
               <input value={form.scale} onChange={e => setForm(f => ({ ...f, scale: e.target.value }))}
                 title="มิเตอร์บางตัวส่งเป็น W (×0.001) หรือคูณ 10 มาแล้ว" style={inp} /></label>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 180px' }}>ตำแหน่งใน JSON (ถ้ามี)<br />
+            <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 180px' }}>{tr('ตำแหน่งใน JSON (ถ้ามี)')}<br />
               <input value={form.json_path} onChange={e => setForm(f => ({ ...f, json_path: e.target.value }))}
                 placeholder="$.data.activePower" style={{ ...inp, fontFamily: 'monospace' }} /></label>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 160px' }}>หมายเหตุ<br />
+            <label style={{ fontSize: 11.5, color: 'var(--muted)', flex: '1 1 160px' }}>{tr('หมายเหตุ')}<br />
               <input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} style={inp} /></label>
             <button onClick={save} disabled={busy}
               style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-              {busy ? '⏳' : editId ? '💾 บันทึก' : '+ เพิ่ม'}
+              {busy ? '⏳' : editId ? tr('💾 บันทึก') : tr('+ เพิ่ม')}
             </button>
             {editId && <button onClick={() => { setEditId(null); setForm(EMPTY); }}
-              style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>}
+              style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>{tr('ยกเลิก')}</button>}
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.6 }}>
             <b>payload เป็นตัวเลขล้วน</b> (เช่น <code>26.2</code>) → เว้นช่อง JSON ว่าง ·
@@ -193,7 +194,7 @@ export default function EnergyMqttTopics({ points, canEdit }) {
             ค่าจาก topic พวกนี้ <b>ยังไม่ถูกเก็บ</b> — กด "ผูก" เพื่อเติมลงฟอร์มด้านบน
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead><tr><th style={th}>topic</th><th style={th}>ตัวอย่างค่า</th><th style={th}>เห็นล่าสุด</th><th style={th} /></tr></thead>
+            <thead><tr><th style={th}>topic</th><th style={th}>{tr('ตัวอย่างค่า')}</th><th style={th}>{tr('เห็นล่าสุด')}</th><th style={th} /></tr></thead>
             <tbody>
               {unmapped.map(u => (
                 <tr key={u.topic}>
@@ -202,7 +203,7 @@ export default function EnergyMqttTopics({ points, canEdit }) {
                   <td style={{ ...td, color: 'var(--muted)' }}>{liveAgeMin(u.last_seen) != null ? `${liveAgeMin(u.last_seen)} นาทีก่อน` : '—'}</td>
                   <td style={{ ...td, textAlign: 'right' }}>
                     {canEdit && <button onClick={() => adoptTopic(u)}
-                      style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--accent)', cursor: 'pointer' }}>+ ผูก</button>}
+                      style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--accent)', cursor: 'pointer' }}>{tr('+ ผูก')}</button>}
                   </td>
                 </tr>
               ))}
@@ -221,9 +222,9 @@ export default function EnergyMqttTopics({ points, canEdit }) {
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
             <thead><tr>
-              <th style={th}>topic</th><th style={th}>ค่าที่อ่าน</th><th style={th}>จุดวัด</th>
-              <th style={th}>ตัวคูณ</th><th style={th}>ค่าล่าสุด</th><th style={th}>สถานะ</th>
-              {canEdit && <th style={{ ...th, textAlign: 'right' }}>จัดการ</th>}
+              <th style={th}>topic</th><th style={th}>{tr('ค่าที่อ่าน')}</th><th style={th}>{tr('จุดวัด')}</th>
+              <th style={th}>{tr('ตัวคูณ')}</th><th style={th}>{tr('ค่าล่าสุด')}</th><th style={th}>{tr('สถานะ')}</th>
+              {canEdit && <th style={{ ...th, textAlign: 'right' }}>{tr('จัดการ')}</th>}
             </tr></thead>
             <tbody>
               {rows.map(r => {
@@ -254,7 +255,7 @@ export default function EnergyMqttTopics({ points, canEdit }) {
                       <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                         <button onClick={() => toggleActive(r)} title={r.is_active ? 'ปิดใช้ชั่วคราว (ไม่ลบ)' : 'เปิดใช้'}
                           style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, marginRight: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: r.is_active ? GOOD : 'var(--muted)', cursor: 'pointer' }}>
-                          {r.is_active ? 'ใช้อยู่' : 'ปิด'}
+                          {r.is_active ? tr('ใช้อยู่') : tr('ปิด')}
                         </button>
                         <button onClick={() => editRow(r)} style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, marginRight: 4, border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>✏️</button>
                         <DeleteButton onClick={() => del(r)} title="ลบ" />

@@ -43,6 +43,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useMergeParams } from '../utils/useTabParam';
 import { parseQrPayload, findQaPartByScan } from '../utils/qrCode';
 
+import { tr } from '../utils/i18n';
 /* ── helpers เวลา/วันงาน (กฎเดียวกับทั้งระบบ) ───────────────────────────── */
 const getWorkDate = () => {
   const d = new Date();
@@ -699,10 +700,10 @@ export default function QaCheckSheet({ canRecord }) {
           alignItems: 'end',
         }}>
           <div>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>พาร์ทที่ตรวจ</label>
+            <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>{tr('พาร์ทที่ตรวจ')}</label>
             <div style={{ display: 'flex', gap: 6 }}>
               <select style={{ ...inputSt, flex: 1, minWidth: 0 }} value={partId || ''} onChange={e => setPartId(e.target.value || null)}>
-                {scopedParts.length === 0 && <option value="">— ยังไม่มีพาร์ทในขอบเขตของคุณ —</option>}
+                {scopedParts.length === 0 && <option value="">{tr('— ยังไม่มีพาร์ทในขอบเขตของคุณ —')}</option>}
                 {scopedParts.map(p => (
                   <option key={p.id} value={p.id}>
                     {p.part_no}{p.part_name ? ` · ${p.part_name}` : ''}{p.line_name ? ` (${p.line_name})` : ''}
@@ -714,19 +715,19 @@ export default function QaCheckSheet({ canRecord }) {
             </div>
           </div>
           <div>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>วันงาน</label>
+            <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>{tr('วันงาน')}</label>
             <input type="date" style={inputSt} value={workDate} max={getWorkDate()}
               onChange={e => setWorkDate(e.target.value || getWorkDate())} />
           </div>
           <div>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>กะ</label>
+            <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>{tr('กะ')}</label>
             <select style={inputSt} value={shift} onChange={e => setShift(e.target.value)}>
-              <option value="day">☀️ กะเช้า</option>
-              <option value="night">🌙 กะดึก</option>
+              <option value="day">{tr('☀️ กะเช้า')}</option>
+              <option value="night">{tr('🌙 กะดึก')}</option>
             </select>
           </div>
           <div>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>รอบที่</label>
+            <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>{tr('รอบที่')}</label>
             <input type="number" min={1} max={20} style={inputSt} value={roundNo}
               onChange={e => setRoundNo(Math.min(20, Math.max(1, parseInt(e.target.value, 10) || 1)))} />
           </div>
@@ -765,7 +766,7 @@ export default function QaCheckSheet({ canRecord }) {
               <button type="button" className="tbtn" disabled={printing || !matchesKey(sheet)} onClick={handlePrint}
                 title={matchesKey(sheet) ? 'พิมพ์/บันทึก PDF ใบตรวจรอบนี้' : 'ยังไม่มีใบตรวจของรอบนี้'}
                 style={{ padding: '5px 12px', fontSize: 12, fontWeight: 700 }}>
-                {printing ? 'กำลังเตรียม…' : '🖨️ พิมพ์ใบตรวจ'}
+                {printing ? tr('กำลังเตรียม…') : tr('🖨️ พิมพ์ใบตรวจ')}
               </button>
             </>
           )}
@@ -781,7 +782,7 @@ export default function QaCheckSheet({ canRecord }) {
                 <div style={{ fontWeight: 800, fontSize: 13 }}>แบบ + จุดตรวจ</div>
                 <span style={{ flex: 1 }} />
                 <button style={ghostBtn} onClick={() => setShowDrawing(s => !s)}>
-                  {showDrawing ? '▾ ซ่อนแบบ' : '▸ แสดงแบบ'}
+                  {showDrawing ? tr('▾ ซ่อนแบบ') : tr('▸ แสดงแบบ')}
                 </button>
               </div>
               {showDrawing && (
@@ -989,11 +990,11 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
             <button className="tbtn" disabled={busy}
               onClick={() => onDraft({ judgement: 'ng', values })}
               style={{ ...ghostBtn, padding: isMobile ? '10px 14px' : '7px 12px', background: judged === 'ng' ? JUDGE.ng.color : 'var(--bg3)', color: judged === 'ng' ? '#fff' : JUDGE.ng.color, borderColor: JUDGE.ng.color, fontWeight: 800 }}>
-              ✕ ไม่ผ่าน
+              {tr('✕ ไม่ผ่าน')}
             </button>
             <button className="tbtn" disabled={busy} title="ไม่ได้ตรวจจุดนี้ในรอบนี้"
               onClick={() => onSave('na')}
-              style={{ ...ghostBtn, padding: isMobile ? '10px 12px' : '7px 10px' }}>ข้าม</button>
+              style={{ ...ghostBtn, padding: isMobile ? '10px 12px' : '7px 10px' }}>{tr('ข้าม')}</button>
           </div>
         )}
       </div>
@@ -1003,14 +1004,14 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
         <div style={{ marginTop: 8, padding: 10, borderRadius: 'var(--r-md)', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)' }}
           onClick={e => e.stopPropagation()}>
           <div className="mgrid" style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 120px auto' }}>
-            <input style={inputSt} placeholder="เสียอย่างไร / เจอที่ไหน (บังคับกรอก)"
+            <input style={inputSt} placeholder={tr('เสียอย่างไร / เจอที่ไหน (บังคับกรอก)')}
               value={draft?.note ?? res?.note ?? ''} onChange={e => onDraft({ note: e.target.value, judgement: 'ng' })} />
-            <input type="number" min={1} style={inputSt} placeholder="จำนวน NG"
+            <input type="number" min={1} style={inputSt} placeholder={tr('จำนวน NG')}
               value={draft?.qty_ng ?? res?.qty_ng ?? 1} onChange={e => onDraft({ qty_ng: e.target.value, judgement: 'ng' })} />
             <button disabled={busy}
               onClick={() => onSave('ng', { values: values.filter(v => v !== ''), note: draft?.note ?? res?.note ?? '', qty_ng: draft?.qty_ng ?? res?.qty_ng ?? 1 })}
               style={{ ...ghostBtn, background: JUDGE.ng.color, color: '#fff', borderColor: JUDGE.ng.color, fontWeight: 800 }}>
-              บันทึก NG
+              {tr('บันทึก NG')}
             </button>
           </div>
         </div>
@@ -1028,7 +1029,7 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
           {judged === 'ng' && !res.ncr_id && canRecord && (
             <button onClick={e => { e.stopPropagation(); onOpenNcr(res); }} disabled={busy}
               style={{ ...ghostBtn, padding: '4px 10px', borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
-              เปิด NCR
+              {tr('เปิด NCR')}
             </button>
           )}
         </div>

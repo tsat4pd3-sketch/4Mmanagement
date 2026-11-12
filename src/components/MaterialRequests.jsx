@@ -40,6 +40,7 @@ import { useUomUnitsState } from '../utils/useUomUnits'; // 📏 ทะเบี
 import { buildUomIndex, normUom, uomOptions, DEFAULT_UOM } from '../utils/uom';
 import { registryFailText } from '../utils/useMasterRows.js';
 
+import { tr } from '../utils/i18n';
 const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -320,12 +321,12 @@ export default function MaterialRequests() {
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
         <span className="filter-label">สถานะ</span>
         <select value={fStatus} onChange={e => setFStatus(e.target.value)}>
-          <option value="">{ALL.status}</option>
+          <option value="">{tr(ALL.status)}</option>
           {['draft', 'submitted', 'approved', 'issued', 'cancelled'].map(s =>
             <option key={s} value={s}>{statusMeta(s).label}</option>)}
         </select>
         <span className="spacer" />
-        {canRecord && <button onClick={openNew} style={btnSt('var(--accent)')}>＋ ออกใบเบิกใหม่</button>}
+        {canRecord && <button onClick={openNew} style={btnSt('var(--accent)')}>{tr('＋ ออกใบเบิกใหม่')}</button>}
       </FilterBar>
 
       <InfoMore style={{ marginBottom: 10 }} id="mr_help"
@@ -348,7 +349,7 @@ export default function MaterialRequests() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 760 }}>
             <thead><tr>
               {['เลขที่', 'วันที่เบิก', 'ประเภท', 'ผู้ขอเบิก', 'หน่วยงาน', 'รายละเอียด', 'สถานะ', ''].map((h, i) =>
-                <th key={i} style={thSt}>{h}</th>)}
+                <th key={i} style={thSt}>{tr(h)}</th>)}
             </tr></thead>
             <tbody>
               {visible.map(r => {
@@ -397,7 +398,7 @@ export default function MaterialRequests() {
       {picker && (
         <Modal title="เลือกรหัสสินค้าคงคลัง (จากทะเบียนกลาง Parts Master)" dismissable onClose={() => { setPicker(null); setPq(''); }}>
           <input autoFocus value={pq} onChange={e => setPq(e.target.value)}
-            placeholder="ค้นด้วยรหัส MAT หรือชื่อพาร์ท" style={{ ...inpSt, width: '100%', marginBottom: 8 }} />
+            placeholder={tr('ค้นด้วยรหัส MAT หรือชื่อพาร์ท')} style={{ ...inpSt, width: '100%', marginBottom: 8 }} />
           {!parts.length && (
             <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 8 }}>
               ⚠️ ยังไม่มีข้อมูลใน Parts Master — กรอกรหัส/ชื่อเองได้ในตาราง แล้วไปลงทะเบียนที่ Product Master → 🗂 Parts Master
@@ -458,8 +459,8 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
         <F label="เลขที่เอกสาร"><input value={req.doc_no || ''} readOnly={ro} onChange={e => setReq({ doc_no: e.target.value })} style={inpSt} /></F>
         <F label="ประเภท">
           <select value={req.kind} disabled={ro} onChange={e => changeKind(e.target.value)} style={inpSt}>
-            <option value="withdraw">ขอเบิก</option>
-            <option value="return">ขอคืน</option>
+            <option value="withdraw">{tr('ขอเบิก')}</option>
+            <option value="return">{tr('ขอคืน')}</option>
           </select>
         </F>
         <F label="สถานะ"><input value={statusMeta(req.status).label} readOnly style={{ ...inpSt, color: statusMeta(req.status).color, fontWeight: 700 }} /></F>
@@ -467,12 +468,12 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
         {/* ผู้ขอ = user ระบบ (profiles) · ผู้ขอที่ไม่มีบัญชีพิมพ์เองได้พร้อมป้าย (2026-09-07) */}
         <F label="ชื่อผู้ขอเบิก"><PersonSelect value={req.requester_name || ''} history={requesterHist} disabled={ro} inputStyle={{ fontSize: 12.5, padding: '6px 30px 6px 8px' }} onChange={r => setReq({ requester_name: r.name })} /></F>
         <F label="หน่วยงาน / ตำแหน่ง">
-          <SelectOrFree value={req.requester_dept || ''} options={orgSections} readOnly={ro} placeholder="— เลือกส่วนงาน —"
+          <SelectOrFree value={req.requester_dept || ''} options={orgSections} readOnly={ro} placeholder={tr('— เลือกส่วนงาน —')}
             onChange={v => setReq({ requester_dept: v })} selectStyle={inpSt} inputStyle={inpSt} />
         </F>
         <F label="ไลน์ที่ขอของ (ใช้จับคู่ใบของเสีย)">
           {/* ชื่อไลน์ต้อง canonical (จับคู่ใบของเสีย) → <LineSelect> · scopedLines กรอง scope ไว้แล้ว (2026-09-07) */}
-          <LineSelect lines={scopedLines} value={req.line_name || ''} disabled={ro} placeholder="— ไม่ระบุ —" style={inpSt}
+          <LineSelect lines={scopedLines} value={req.line_name || ''} disabled={ro} placeholder={tr('— ไม่ระบุ —')} style={inpSt}
             onChange={v => setReq({ line_name: v || null })} />
         </F>
 
@@ -480,7 +481,7 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
         <F label="วันที่ต้องการสินค้า"><input type="date" value={req.need_date || ''} readOnly={ro} onChange={e => setReq({ need_date: e.target.value })} style={inpSt} /></F>
         <F label={`ประเภทของการ${KIND_LABEL[req.kind]}`}>
           <select value={req.move_code || ''} disabled={ro} onChange={e => setReq({ move_code: e.target.value })} style={inpSt}>
-            {moves.map(m => <option key={m.code} value={m.code}>{m.label}</option>)}
+            {moves.map(m => <option key={m.code} value={m.code}>{tr(m.label)}</option>)}
           </select>
         </F>
 
@@ -496,7 +497,7 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
 
       <F label="รายละเอียด" full>
         <input value={req.detail || ''} readOnly={ro} onChange={e => setReq({ detail: e.target.value })}
-          placeholder="เช่น Test ประจำปี" style={{ ...inpSt, width: '100%' }} />
+          placeholder={tr('เช่น Test ประจำปี')} style={{ ...inpSt, width: '100%' }} />
       </F>
 
       {/* ── รายการสินค้า ── */}
@@ -504,15 +505,15 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
         <b style={{ fontSize: 13 }}>รายการสินค้าคงคลัง</b>
         <span style={{ flex: 1 }} />
         {canRecord && <>
-          <button onClick={() => onPick(null)} style={btnSt()}>เลือกจาก Parts Master</button>
-          <button onClick={addItem} style={btnSt()}>＋ เพิ่มแถว</button>
+          <button onClick={() => onPick(null)} style={btnSt()}>{tr('เลือกจาก Parts Master')}</button>
+          <button onClick={addItem} style={btnSt()}>{tr('＋ เพิ่มแถว')}</button>
         </>}
       </div>
       <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
           <thead><tr>
             {['#', 'รหัสสินค้าคงคลัง', 'รายละเอียด', 'จำนวนที่ขอ', 'หน่วย', 'จ่าย/รับคืนจริง', 'วันที่ผลิต', 'Batch No.', ''].map((h, i) =>
-              <th key={i} style={thSt}>{h}</th>)}
+              <th key={i} style={thSt}>{tr(h)}</th>)}
           </tr></thead>
           <tbody>
             {items.map((it, i) => (
@@ -553,7 +554,7 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 3 }}>
               {s.label} <span style={{ fontWeight: 400 }}>({s.group === 'req' ? 'ผู้เบิก/คืน' : 'ผู้จ่ายสินค้า'})</span>
             </div>
-            <SearchSelect disabled={ro} value={signers.find(x => x.full_name === req[`${s.k}_name`])?.id || ''} placeholder="— เลือก (พิมพ์ค้นหาชื่อ) —"
+            <SearchSelect disabled={ro} value={signers.find(x => x.full_name === req[`${s.k}_name`])?.id || ''} placeholder={tr('— เลือก (พิมพ์ค้นหาชื่อ) —')}
               inputStyle={inpSt} options={signers.map(x => ({ id: x.id, label: x.full_name }))} onChange={({ id }) => pickSigner(s.k, id)} />
             <input type="date" disabled={ro} value={req[`${s.k}_date`] || ''}
               onChange={e => setReq({ [`${s.k}_date`]: e.target.value || null })} style={{ ...inpSt, width: '100%', marginTop: 4 }} />
@@ -567,11 +568,11 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
       </div>
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-        <button onClick={onClose} style={btnSt()}>ปิด</button>
+        <button onClick={onClose} style={btnSt()}>{tr('ปิด')}</button>
         {canRecord && <>
-          <button onClick={() => onSave()} style={btnSt()}>บันทึก</button>
+          <button onClick={() => onSave()} style={btnSt()}>{tr('บันทึก')}</button>
           {req.status === 'draft' &&
-            <button onClick={() => onSave('submitted')} style={btnSt('var(--accent)')}>บันทึก + ส่งขออนุมัติ</button>}
+            <button onClick={() => onSave('submitted')} style={btnSt('var(--accent)')}>{tr('บันทึก + ส่งขออนุมัติ')}</button>}
         </>}
       </div>
     </Modal>

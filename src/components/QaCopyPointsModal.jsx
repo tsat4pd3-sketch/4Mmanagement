@@ -16,6 +16,7 @@ import InspectEditorModal from './inspect/InspectEditorModal';
 import SearchInput from './SearchInput';
 import { toast } from './Toast';
 
+import { tr } from '../utils/i18n';
 const partLabel = (p) => p?.part_no || p?.part_name || 'ชิ้นงาน';
 const rowSt = (on, dim) => ({
   display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, cursor: dim ? 'not-allowed' : 'pointer',
@@ -97,11 +98,11 @@ export default function QaCopyPointsModal({ part, itemCount, parts, lines, wctx,
 
       <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12.5, cursor: 'pointer' }}>
         <input type="checkbox" checked={withDrawings} onChange={e => setWithDrawings(e.target.checked)} style={{ marginTop: 3 }} />
-        <span>คัดลอก<b>แผ่นแบบ (Drawing)</b> ไปด้วย — เฉพาะพาร์ทที่ยังไม่มีแบบเลย · หมุดอยู่ตำแหน่งเดิม
-          <span style={{ color: 'var(--muted)' }}> (ใช้เมื่อแบบเป็นแผ่นเดียวกันจริง · พาร์ทที่มีแบบอยู่แล้วไม่ถูกแตะ)</span></span>
+        <span>{tr('คัดลอก')}<b>{tr('แผ่นแบบ (Drawing)')}</b> {tr('ไปด้วย — เฉพาะพาร์ทที่ยังไม่มีแบบเลย · หมุดอยู่ตำแหน่งเดิม')}
+          <span style={{ color: 'var(--muted)' }}> {tr('(ใช้เมื่อแบบเป็นแผ่นเดียวกันจริง · พาร์ทที่มีแบบอยู่แล้วไม่ถูกแตะ)')}</span></span>
       </label>
 
-      <SearchInput value={search} onChange={setSearch} grow={false} placeholder="ค้น Part No. / ชื่อ / ลูกค้า / ไลน์..." />
+      <SearchInput value={search} onChange={setSearch} grow={false} placeholder={tr('ค้น Part No. / ชื่อ / ลูกค้า / ไลน์...')} />
       {blockedN > 0 && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{blockedN} พาร์ทอยู่ไลน์นอกส่วนงานของคุณ — แสดงจาง เลือกไม่ได้</div>
       )}
@@ -138,7 +139,7 @@ export default function QaCopyPointsModal({ part, itemCount, parts, lines, wctx,
           {ok.map(r => (
             <div key={r.partId}>
               · {r.label} — {r.count} จุด{r.drawings ? ` + แบบ ${r.drawings} แผ่น (หมุดตามเดิม)` : ' · ต้องปักหมุดใหม่'}
-              {onOpenPart && <button onClick={() => onOpenPart(r.partId)} style={{ marginLeft: 8, fontSize: 11, padding: '1px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--text2)', cursor: 'pointer' }}>เปิดพาร์ทนี้ →</button>}
+              {onOpenPart && <button onClick={() => onOpenPart(r.partId)} style={{ marginLeft: 8, fontSize: 11, padding: '1px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--card)', color: 'var(--text2)', cursor: 'pointer' }}>{tr('เปิดพาร์ทนี้ →')}</button>}
             </div>
           ))}
           {!!skip.length && (

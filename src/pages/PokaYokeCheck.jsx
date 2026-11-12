@@ -19,6 +19,7 @@ import { DeleteButton } from '../components/IconButton';
 /* 🔴 "ยังไม่ได้ทดสอบ" ต้องแยกจาก "กะนี้ไม่ได้ผลิต" (13/10 · คำสั่ง user) */
 import { loadRunDays, ranOn } from '../utils/runDays';
 import NoticeBar from '../components/NoticeBar';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 const NO_LINES = [];
 
@@ -166,7 +167,7 @@ export default function PokaYokeCheck() {
         {/* <PersonSelect> profiles+employees ของไลน์ที่เลือกขึ้นก่อน · default = ชื่อผู้ใช้ · เก็บ snapshot checker_name เหมือนเดิม · 2026-09-07 */}
         <PersonSelect value={checker} source="both" lines={selFam} history={checkerHist} onChange={res => setChecker(res.name)} style={{ flex: '1 1 180px', maxWidth: 260 }} inputStyle={{ background: 'var(--bg)' }} />
         <span className="spacer" />
-        {canManage && <button onClick={() => setDEditing({ line_name: selLine, name: '', is_active: true, sort: (Math.max(0, ...devices.map(d => d.sort || 0)) + 1) })} style={btnAccent}>เพิ่มอุปกรณ์</button>}
+        {canManage && <button onClick={() => setDEditing({ line_name: selLine, name: '', is_active: true, sort: (Math.max(0, ...devices.map(d => d.sort || 0)) + 1) })} style={btnAccent}>{tr('เพิ่มอุปกรณ์')}</button>}
       </FilterBar>
 
       {/* 🔴 "ยังไม่ทดสอบ" กับ "กะนี้ไม่ได้ผลิต" คนละเรื่อง — ไม่บอก คนอ่านจะนับเป็นขาดตรวจทั้งที่ไลน์ไม่ได้เดิน
@@ -215,9 +216,9 @@ export default function PokaYokeCheck() {
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button disabled={!canRecord} onClick={() => saveCheck(d, { result: 'pass', detected: true })}
-                      style={resBtn(res === 'pass', 'var(--green)', canRecord)}>ผ่าน (จับ NG ได้)</button>
+                      style={resBtn(res === 'pass', 'var(--green)', canRecord)}>{tr('ผ่าน (จับ NG ได้)')}</button>
                     <button disabled={!canRecord} onClick={() => saveCheck(d, { result: 'fail', detected: false })}
-                      style={resBtn(res === 'fail', 'var(--red)', canRecord)}>ไม่ผ่าน</button>
+                      style={resBtn(res === 'fail', 'var(--red)', canRecord)}>{tr('ไม่ผ่าน')}</button>
                   </div>
                   {canManage && (
                     <div style={{ display: 'flex', gap: 4 }}>
@@ -228,7 +229,7 @@ export default function PokaYokeCheck() {
                 </div>
                 {res && (
                   <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <input placeholder="หมายเหตุ / การแก้ไข (ถ้าไม่ผ่าน)" defaultValue={c?.note || ''}
+                    <input placeholder={tr('หมายเหตุ / การแก้ไข (ถ้าไม่ผ่าน)')} defaultValue={c?.note || ''}
                       onBlur={e => { if ((e.target.value || '') !== (c?.note || '')) saveCheck(d, { note: e.target.value }); }}
                       disabled={!canRecord} style={{ flex: 1, minWidth: 200, fontSize: 12 }} />
                     <span style={{ fontSize: 11, color: 'var(--muted)' }}>ผู้ตรวจ: {c?.checker_name || '—'}</span>
@@ -255,20 +256,20 @@ export default function PokaYokeCheck() {
               </div>
               <div><div style={lb}>จุดงาน/ตำแหน่ง</div>
                 {/* เลือกจาก workstations ของไลน์ (ทะเบียนสถานี) — "ระบุเอง" เฉพาะอุปกรณ์ที่ไม่อยู่ประจำสถานี · ค่าเก่าที่ไม่ตรงทะเบียนโชว์ในโหมดระบุเอง · 2026-09-07 */}
-                <SelectOrFree value={dEditing.station || ''} options={stations} placeholder="— ไม่ระบุสถานี —" freeLabel="✏️ ระบุเอง (ไม่อยู่ประจำสถานี)" freePlaceholder="ระบุเอง (อุปกรณ์ที่ไม่ได้อยู่ประจำสถานี)"
+                <SelectOrFree value={dEditing.station || ''} options={stations} placeholder={tr('— ไม่ระบุสถานี —')} freeLabel="✏️ ระบุเอง (ไม่อยู่ประจำสถานี)" freePlaceholder="ระบุเอง (อุปกรณ์ที่ไม่ได้อยู่ประจำสถานี)"
                   onChange={v => setDEditing(p => ({ ...p, station: v }))} style={{ width: '100%' }} />
               </div>
-              <div><div style={lb}>วิธีทดสอบ</div><input value={dEditing.test_method || ''} onChange={e => setDEditing(p => ({ ...p, test_method: e.target.value }))} style={{ width: '100%' }} placeholder="เช่น ใส่ชิ้น NG แล้วเครื่องต้อง alarm/ไม่ปล่อยผ่าน" /></div>
+              <div><div style={lb}>วิธีทดสอบ</div><input value={dEditing.test_method || ''} onChange={e => setDEditing(p => ({ ...p, test_method: e.target.value }))} style={{ width: '100%' }} placeholder={tr('เช่น ใส่ชิ้น NG แล้วเครื่องต้อง alarm/ไม่ปล่อยผ่าน')} /></div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: 10 }}>
                 <div><div style={lb}>ชิ้น master NG ที่ใช้</div><input value={dEditing.master_ref || ''} onChange={e => setDEditing(p => ({ ...p, master_ref: e.target.value }))} style={{ width: '100%' }} /></div>
                 <div><div style={lb}>ลำดับ</div><input type="number" value={dEditing.sort ?? 0} onChange={e => setDEditing(p => ({ ...p, sort: e.target.value }))} style={{ width: '100%' }} /></div>
               </div>
               <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, color: 'var(--text2)' }}>
-                <input type="checkbox" checked={dEditing.is_active !== false} onChange={e => setDEditing(p => ({ ...p, is_active: e.target.checked }))} style={{ width: 'auto' }} /> ใช้งาน
+                <input type="checkbox" checked={dEditing.is_active !== false} onChange={e => setDEditing(p => ({ ...p, is_active: e.target.checked }))} style={{ width: 'auto' }} /> {tr('ใช้งาน')}
               </label>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-                <button onClick={() => setDEditing(null)} style={btnGray}>ยกเลิก</button>
-                <button onClick={saveDevice} style={btnAccent}>บันทึก</button>
+                <button onClick={() => setDEditing(null)} style={btnGray}>{tr('ยกเลิก')}</button>
+                <button onClick={saveDevice} style={btnAccent}>{tr('บันทึก')}</button>
               </div>
             </div>
           </div>

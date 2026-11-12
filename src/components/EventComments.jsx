@@ -4,6 +4,7 @@ import { UserContext } from '../App';
 import { toast } from './Toast';
 import { fmtDateTime } from '../utils/dateFormat';
 
+import { tr } from '../utils/i18n';
 /* ── EventComments — คอมเมนต์ + 🔔 mention ใต้เหตุการณ์ (นำร่อง 2026-07-16) ─────────
    ก้าวแรกของการสื่อสารในระบบแทน chat แยก: คุยกันใต้ใบงานจริง ประวัติติดใบ
    ใช้: <EventComments refKind="mtn_order" refId={o.id} contextLabel={`ใบซ่อม ${o.mo_no}`} />
@@ -150,12 +151,12 @@ export default function EventComments({ refKind, refId, contextLabel = 'รา�
               <div style={{ position: 'relative' }}>
                 <button className="tbtn" onClick={() => setPickOpen(o => !o)}
                   style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', background: 'var(--bg2)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '3px 10px', cursor: 'pointer' }}>
-                  แจ้งเตือนถึง... ▾
+                  {tr('แจ้งเตือนถึง... ▾')}
                 </button>
                 {pickOpen && (
                   <div style={{ position: 'absolute', bottom: 'calc(100% + 4px)', left: 0, zIndex: 50, width: 230, background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', boxShadow: 'var(--shadow-lg)', padding: 8 }}>
                     {/* width:'auto' กัน trap input{width:100%}? — อยู่ใน column เต็มกล่อง ใช้ 100% ได้ */}
-                    <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="ค้นหาชื่อ..."
+                    <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder={tr('ค้นหาชื่อ...')}
                       style={{ fontSize: 12, padding: '6px 9px', marginBottom: 6 }} />
                     <div style={{ maxHeight: 180, overflowY: 'auto' }}>
                       {shownUsers.map(u => (
@@ -175,12 +176,12 @@ export default function EventComments({ refKind, refId, contextLabel = 'รา�
           {/* ช่องพิมพ์ + ส่ง */}
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
             <textarea value={body} onChange={e => setBody(e.target.value)} rows={2}
-              placeholder="พิมพ์คอมเมนต์... (Ctrl+Enter เพื่อส่ง)"
+              placeholder={tr('พิมพ์คอมเมนต์... (Ctrl+Enter เพื่อส่ง)')}
               onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) post(); }}
               style={{ flex: 1, fontSize: 13, resize: 'vertical', minHeight: 40, width: 'auto' }} />
             <button className="tbtn" onClick={post} disabled={posting || !body.trim()}
               style={{ padding: '9px 16px', borderRadius: 'var(--r-md)', border: 'none', cursor: posting || !body.trim() ? 'default' : 'pointer', background: body.trim() ? 'var(--accent)' : 'var(--border2)', color: body.trim() ? 'var(--accent-ink)' : 'var(--muted)', fontSize: 13, fontWeight: 800, flexShrink: 0 }}>
-              {posting ? '...' : 'ส่ง'}
+              {posting ? '...' : tr('ส่ง')}
             </button>
           </div>
         </>

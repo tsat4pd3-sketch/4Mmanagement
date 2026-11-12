@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { CLOSE_AHEAD_WARN_MIN, dtCoverMin, fmtOffset } from '../utils/shiftWindow';
 
+import { tr } from '../utils/i18n';
 /**
  * ⏱ ไทม์ไลน์เครื่องหยุดรายไลน์ — "หยุดตอนไหนของวัน" ไม่ใช่แค่ "หยุดรวมกี่นาที"
  *
@@ -234,7 +235,7 @@ export default function DowntimeTimeline({ sessions = [], downtimes = [], workDa
             {hhmm(sel.st)} – {sel.open ? <b style={{ color: '#ef4444' }}>ยังหยุดอยู่</b> : hhmm(sel.en)} · <b>{sel.mins}</b> นาที
           </div>
           {sel.note && <div style={{ color: 'var(--text2)' }}>{sel.note}</div>}
-          <button onClick={() => setSel(null)} style={{ marginTop: 4, background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 11, cursor: 'pointer', padding: 0 }}>✕ ปิด</button>
+          <button onClick={() => setSel(null)} style={{ marginTop: 4, background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: 11, cursor: 'pointer', padding: 0 }}>{tr('✕ ปิด')}</button>
         </div>
       )}
 

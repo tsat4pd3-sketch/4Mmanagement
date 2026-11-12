@@ -21,6 +21,7 @@ import SearchInput from './SearchInput';
 import { ALL } from '../utils/filterLabels';
 import useTimeRange from '../utils/useTimeRange';
 
+import { tr as trI18n } from '../utils/i18n';
 const card = {
   background: 'var(--card)', border: '1px solid var(--border)',
   borderRadius: 'var(--radius-lg)', padding: 16,
@@ -147,7 +148,7 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} onReload={load} loading={loading}
       >
         <select value={shipTo} onChange={e => setShipTo(e.target.value)}>
-          <option value="">{ALL.customer}</option>
+          <option value="">{trI18n(ALL.customer)}</option>
           {Object.keys(shipToMap || {}).sort().map(c => (
             <option key={c} value={c}>{custLabel ? custLabel(c) : c}</option>
           ))}
@@ -209,7 +210,7 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
       {hidden > 0 && (
         <button onClick={() => setLimit(l => l + PAGE)}
           style={{ ...inputSt, cursor: 'pointer', fontWeight: 800, padding: '10px', width: '100%' }}>
-          ▼ แสดงอีก {Math.min(PAGE, hidden)} (ทั้งหมด {shown.length})
+          {trI18n('▼ แสดงอีก')} {Math.min(PAGE, hidden)} {trI18n('(ทั้งหมด')} {shown.length})
         </button>
       )}
     </div>
@@ -269,7 +270,7 @@ function IntakeCard({ e, custLabel, open, onToggle }) {
         )}
         {canOpen && (
           <button onClick={onToggle} style={{ ...chip(open, m.color), marginLeft: 'auto', fontSize: 11 }}>
-            {open ? '▲ ปิดรายละเอียด' : '▼ ดูรายการที่ลูกค้าดึง'}
+            {open ? trI18n('▲ ปิดรายละเอียด') : trI18n('▼ ดูรายการที่ลูกค้าดึง')}
           </button>
         )}
       </div>
@@ -307,10 +308,10 @@ function PullBatchDetail({ batchId }) {
     <div style={{ overflowX: 'auto', marginTop: 10, border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
         <thead><tr style={{ background: 'var(--bg2)' }}>
-          <th style={th}>เลขพาร์ทลูกค้า</th><th style={th}>MAT</th><th style={th}>เวลาที่ลูกค้าดึง</th>
-          <th style={{ ...th, textAlign: 'right' }}>ภาชนะ</th>
-          <th style={{ ...th, textAlign: 'right' }}>ต่อภาชนะ</th>
-          <th style={{ ...th, textAlign: 'right' }}>รวม</th>
+          <th style={th}>{trI18n('เลขพาร์ทลูกค้า')}</th><th style={th}>MAT</th><th style={th}>{trI18n('เวลาที่ลูกค้าดึง')}</th>
+          <th style={{ ...th, textAlign: 'right' }}>{trI18n('ภาชนะ')}</th>
+          <th style={{ ...th, textAlign: 'right' }}>{trI18n('ต่อภาชนะ')}</th>
+          <th style={{ ...th, textAlign: 'right' }}>{trI18n('รวม')}</th>
           <th style={th}>Dock</th>
         </tr></thead>
         <tbody>

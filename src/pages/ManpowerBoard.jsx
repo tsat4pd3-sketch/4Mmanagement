@@ -49,6 +49,7 @@ import {
 } from '../utils/manpowerBoard';
 
 import SectionScopeSelect from '../components/SectionScopeSelect';
+import { tr as trI18n } from '../utils/i18n';
 /* ═══════════════════════════════════════════════════════════════════════════════════════
    🧑‍🤝‍🧑 Manpower Control Board — /manpower-board (2026-10-06 · คำสั่ง user)
 
@@ -284,7 +285,7 @@ export default function ManpowerBoard() {
             <button type="button" className="pg-btn" onClick={() => setSetupOpen(true)}
               style={{ padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
                 border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)' }}
-              title="ตั้งจำนวนช่องตำแหน่งต่อทีม + ผูกช่างประจำไลน์ (สิทธิ์ manpower_board:edit)">ตั้งค่าบอร์ด</button>
+              title="ตั้งจำนวนช่องตำแหน่งต่อทีม + ผูกช่างประจำไลน์ (สิทธิ์ manpower_board:edit)">{trI18n('ตั้งค่าบอร์ด')}</button>
           )}
           <button type="button" className="pg-btn" onClick={() => merge({ tv: tv ? '0' : '1' })} aria-pressed={tv}
             style={{ padding: '7px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
@@ -690,7 +691,7 @@ function LayoutTab({ board, depts, lines, attendance, maps, tv, stationPlans, sk
       <FilterBar bare>
         {!tv && layouts.length > 1 && (
           <select value={String(layout?.id ?? '')} onChange={e => setPick(e.target.value)} aria-label="ผังไลน์">
-            {layouts.map(l => <option key={l.id} value={String(l.id)}>{l.line_name}</option>)}
+            {layouts.map(l => <option key={l.id} value={String(l.id)}>{trI18n(l.line_name)}</option>)}
           </select>
         )}
         <span className="spacer" />
@@ -725,7 +726,7 @@ function SkillGapTable({ gaps, defs }) {
     <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
       <div style={{ padding: '10px 12px', fontWeight: 800 }}>ยืนจุดที่ทักษะยังไม่ถึง <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--muted)' }}>(คนที่มาวันนี้ · เทียบกับทักษะที่จุดงานต้องการ)</span></div>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-        <thead><tr><th style={th}>พนักงาน</th><th style={th}>จุดงาน</th><th style={th}>กะ</th><th style={{ ...th, textAlign: 'right' }}>ผ่าน</th><th style={th}>ทักษะที่ยังไม่ถึง (มี / ต้องการ)</th></tr></thead>
+        <thead><tr><th style={th}>{trI18n('พนักงาน')}</th><th style={th}>{trI18n('จุดงาน')}</th><th style={th}>{trI18n('กะ')}</th><th style={{ ...th, textAlign: 'right' }}>{trI18n('ผ่าน')}</th><th style={th}>{trI18n('ทักษะที่ยังไม่ถึง (มี / ต้องการ)')}</th></tr></thead>
         <tbody>
           {gaps.map(g => (
             <tr key={`${g.emp.id}-${g.station.id}`}>
@@ -1167,11 +1168,11 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
             <div style={{ padding: '10px 12px', fontWeight: 800 }}>สรุปต่อแผนก</div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>
-                <th style={th}>แผนก</th><th style={{ ...th, textAlign: 'right' }}>กะที่เช็คแล้ว</th><th style={{ ...th, textAlign: 'right' }}>กะที่ขาดคน</th>
-                <th style={{ ...th, textAlign: 'right' }}>ยืนจริง / ในทะเบียน</th><th style={{ ...th, textAlign: 'right' }}>ขาดคน (คน-กะ)</th>
-                <th style={{ ...th, textAlign: 'right' }}>ช่องว่างอัตรากำลัง</th><th style={{ ...th, textAlign: 'right' }}>ลา</th><th style={{ ...th, textAlign: 'right' }}>ขาดงาน</th>
-                <th style={{ ...th, textAlign: 'right' }}>ยังไม่เช็ค</th><th style={{ ...th, textAlign: 'right' }}>ถูกยืมออก</th><th style={{ ...th, textAlign: 'right' }}>ยืมเข้า</th>
-                <th style={th}>ขาดหนักสุด</th><th style={{ ...th, textAlign: 'right' }}>กะไม่ได้เช็คชื่อ</th>
+                <th style={th}>{trI18n('แผนก')}</th><th style={{ ...th, textAlign: 'right' }}>{trI18n('กะที่เช็คแล้ว')}</th><th style={{ ...th, textAlign: 'right' }}>{trI18n('กะที่ขาดคน')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{trI18n('ยืนจริง / ในทะเบียน')}</th><th style={{ ...th, textAlign: 'right' }}>{trI18n('ขาดคน (คน-กะ)')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{trI18n('ช่องว่างอัตรากำลัง')}</th><th style={{ ...th, textAlign: 'right' }}>{trI18n('ลา')}</th><th style={{ ...th, textAlign: 'right' }}>{trI18n('ขาดงาน')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{trI18n('ยังไม่เช็ค')}</th><th style={{ ...th, textAlign: 'right' }}>{trI18n('ถูกยืมออก')}</th><th style={{ ...th, textAlign: 'right' }}>{trI18n('ยืมเข้า')}</th>
+                <th style={th}>{trI18n('ขาดหนักสุด')}</th><th style={{ ...th, textAlign: 'right' }}>{trI18n('กะไม่ได้เช็คชื่อ')}</th>
               </tr></thead>
               <tbody>
                 {summary.map(sm => (
@@ -1213,11 +1214,11 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
             <div style={{ padding: '10px 12px', fontWeight: 800 }}>คนมาน้อยแล้ว OEE เป็นอย่างไร <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--muted)' }}>(เทียบกะที่คนมาตามปกติ กับกะที่คนมาน้อยกว่าปกติ ของแผนกเดียวกัน)</span></div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>
-                <th style={th}>แผนก</th>
-                <th style={{ ...th, textAlign: 'right' }}>ปกติ (คนยืนจริง/กะ)</th>
-                <th style={{ ...th, textAlign: 'right' }}>คนมาตามปกติ: OEE · %P</th>
-                <th style={{ ...th, textAlign: 'right' }}>คนมาน้อยกว่าปกติ: OEE · %P</th>
-                <th style={{ ...th, textAlign: 'right' }}>ส่วนต่าง OEE</th>
+                <th style={th}>{trI18n('แผนก')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{trI18n('ปกติ (คนยืนจริง/กะ)')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{trI18n('คนมาตามปกติ: OEE · %P')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{trI18n('คนมาน้อยกว่าปกติ: OEE · %P')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{trI18n('ส่วนต่าง OEE')}</th>
               </tr></thead>
               <tbody>
                 {oeeCmp.map(c => {
@@ -1250,7 +1251,7 @@ function StaffingTab({ section, deptParam, today, nodes, employees, lines, slotP
             <div style={{ padding: '10px 12px', fontWeight: 800 }}>รายวัน — คนขาดกี่คน <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--muted)' }}>(ตัวเลข = คนขาด (ลา/ขาดงาน/ยังไม่เช็ค/ถูกยืมออก) · +n = คนเกิน · ✓ = มากันครบ · · = ไม่ได้เช็คชื่อ · ชี้ที่ช่องเพื่อดูสาเหตุ + ช่องว่างอัตรากำลัง)</span></div>
             <table style={{ borderCollapse: 'collapse' }}>
               <thead><tr>
-                <th style={{ ...th, position: 'sticky', left: 0, background: 'var(--card)', zIndex: 1 }}>แผนก · กะ</th>
+                <th style={{ ...th, position: 'sticky', left: 0, background: 'var(--card)', zIndex: 1 }}>{trI18n('แผนก · กะ')}</th>
                 {days.map(d => <th key={d.date} style={{ ...th, textAlign: 'center', padding: '8px 4px' }}>{dShort(d.date)}</th>)}
               </tr></thead>
               <tbody>
@@ -1370,9 +1371,9 @@ function HistoryTab({ section, dept, deptParam, nodes, lines, stations, employee
             <div style={{ padding: '10px 12px', fontWeight: 800 }}>สรุปรายเดือน</div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>
-                <th style={th}>เดือน</th><th style={{ ...th, textAlign: 'right' }}>แก้ (ครั้ง)</th>
-                <th style={{ ...th, textAlign: 'right' }}>ช่องต่อทีม สุทธิ</th><th style={{ ...th, textAlign: 'right' }}>คน/กะของจุด สุทธิ</th>
-                <th style={{ ...th, textAlign: 'right' }}>ช่าง เข้า / ออก</th><th style={th}>คนแก้</th>
+                <th style={th}>{trI18n('เดือน')}</th><th style={{ ...th, textAlign: 'right' }}>{trI18n('แก้ (ครั้ง)')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{trI18n('ช่องต่อทีม สุทธิ')}</th><th style={{ ...th, textAlign: 'right' }}>{trI18n('คน/กะของจุด สุทธิ')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{trI18n('ช่าง เข้า / ออก')}</th><th style={th}>{trI18n('คนแก้')}</th>
               </tr></thead>
               <tbody>
                 {months.map(m => (
@@ -1394,8 +1395,8 @@ function HistoryTab({ section, dept, deptParam, nodes, lines, stations, employee
           <div className="card table-sticky" style={{ padding: 0, overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>
-                <th style={th}>เวลา</th><th style={th}>คนแก้</th><th style={th}>เรื่อง</th><th style={th}>ที่ไหน</th>
-                <th style={th}>ทีม</th><th style={th}>เปลี่ยนเป็น</th>
+                <th style={th}>{trI18n('เวลา')}</th><th style={th}>{trI18n('คนแก้')}</th><th style={th}>{trI18n('เรื่อง')}</th><th style={th}>{trI18n('ที่ไหน')}</th>
+                <th style={th}>{trI18n('ทีม')}</th><th style={th}>{trI18n('เปลี่ยนเป็น')}</th>
               </tr></thead>
               <tbody>
                 {list.map(c => (

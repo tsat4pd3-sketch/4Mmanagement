@@ -7,6 +7,7 @@ import { sumUsage, dailyRate, usageEta, usageProgress, USAGE_LEVELS } from '../u
 import { dieUsage, setMatsOf } from '../utils/dieUsage';            // 🔨 แม่พิมพ์นับจากพาร์ทของชุด ไม่ใช่ยอดไลน์ (08/11)
 import { membersBySet } from '../utils/dieRegistryExport';
 
+import { tr } from '../utils/i18n';
 /* ══ 📊 ยอดผลิตสะสมรายอุปกรณ์ — แท็บใน /pm-forecast ══════════════════  2026-09-15
    คำสั่ง user: *"ดูหน้าไหนได้บ้างว่าเครื่องไหนผ่านการผลิตไปแล้วกี่ชิ้นงาน"*
    (ก่อนหน้านี้ **ไม่มีหน้าไหนดูได้เลย** — ยอดผลิตทุกจอเป็นราย "ไลน์" หรือราย "สินค้า")
@@ -155,7 +156,7 @@ export default function PmUsageBoard({ daily = [], lines = [], plans = [], today
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', fontSize: 12.5 }}>
         <span style={{ color: 'var(--text2)' }}>30 วันล่าสุด <b style={{ color: 'var(--accent)', fontSize: 14 }}>{N(grand.d30)}</b> ชิ้น · ทั้งช่วง (120 วัน) <b>{N(grand.all)}</b> ชิ้น · {rows.length} ไลน์</span>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text2)', cursor: 'pointer' }}>
-          <input type="checkbox" checked={onlyWithThreshold} onChange={e => setOnlyWithThreshold(e.target.checked)} />เฉพาะไลน์ที่มีอุปกรณ์ตั้งเกณฑ์ PM ตามยอดผลิตแล้ว
+          <input type="checkbox" checked={onlyWithThreshold} onChange={e => setOnlyWithThreshold(e.target.checked)} />{tr('เฉพาะไลน์ที่มีอุปกรณ์ตั้งเกณฑ์ PM ตามยอดผลิตแล้ว')}
         </label>
       </div>
 
@@ -164,7 +165,7 @@ export default function PmUsageBoard({ daily = [], lines = [], plans = [], today
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 780 }}>
             <thead>
               <tr style={{ background: 'var(--bg3)', color: 'var(--muted)', textAlign: 'left' }}>
-                {['ไลน์', 'อุปกรณ์', '30 วัน (ชิ้น)', '90 วัน', 'ทั้งช่วง', 'อัตรา/วันเดินงาน', 'วันเดินงาน 30 วัน', 'ผลิตล่าสุด'].map(h => <th key={h} style={th}>{h}</th>)}
+                {['ไลน์', 'อุปกรณ์', '30 วัน (ชิ้น)', '90 วัน', 'ทั้งช่วง', 'อัตรา/วันเดินงาน', 'วันเดินงาน 30 วัน', 'ผลิตล่าสุด'].map(h => <th key={h} style={th}>{tr(h)}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -191,7 +192,7 @@ export default function PmUsageBoard({ daily = [], lines = [], plans = [], today
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                             <thead>
                               <tr style={{ color: 'var(--muted)', textAlign: 'left' }}>
-                                {['อุปกรณ์', 'ชนิด', 'ยอดตั้งแต่ PM ล่าสุด', 'เกณฑ์ PM', 'ความคืบหน้า', 'คาดถึงเกณฑ์'].map(h => <th key={h} style={{ padding: '4px 8px', fontWeight: 700 }}>{h}</th>)}
+                                {['อุปกรณ์', 'ชนิด', 'ยอดตั้งแต่ PM ล่าสุด', 'เกณฑ์ PM', 'ความคืบหน้า', 'คาดถึงเกณฑ์'].map(h => <th key={h} style={{ padding: '4px 8px', fontWeight: 700 }}>{tr(h)}</th>)}
                               </tr>
                             </thead>
                             <tbody>

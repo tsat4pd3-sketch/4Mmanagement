@@ -27,6 +27,7 @@ import useColumnHistory from '../utils/useColumnHistory';
 import { isOpenQaDoc, qaDocInFilter, QA_CANCELLED, claimFlow } from '../utils/qaDocStatus';
 import StepFlow from './StepFlow';
 
+import { tr } from '../utils/i18n';
 const STATUS = {
   open: { label: 'รับเรื่องแล้ว', color: '#ef4444' },
   investigating: { label: 'กำลังสอบสวน', color: '#f59e0b' },
@@ -213,7 +214,7 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
           { value: 'all', label: ALL.status }, { value: 'active', label: 'ยังไม่ปิด' }, { value: 'closed', label: 'ปิดแล้ว' }, { value: 'cancelled', label: 'ยกเลิก' },
         ]} />
         <span className="spacer" />
-        {canRecord && <button style={btnSt()} onClick={() => setDetail(EMPTY())}>รับเคลมใหม่</button>}
+        {canRecord && <button style={btnSt()} onClick={() => setDetail(EMPTY())}>{tr('รับเคลมใหม่')}</button>}
       </FilterBar>
 
       {/* ── สรุปสั้น: ตัวเลขที่ผู้จัดการถามก่อนเสมอ ── */}
@@ -253,7 +254,7 @@ export default function QaClaims({ lines = [], scopeNames = null, role, lineId, 
       <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
           <thead style={{ background: 'var(--bg2)' }}>
-            <tr>{['เลขเคลม', 'วันที่', 'ลูกค้า', 'พาร์ท', 'อาการ', 'จำนวน', 'กำหนดตอบ', 'สถานะ', 'งานแก้ไข'].map((h) => <th key={h} style={thSt}>{h}</th>)}</tr>
+            <tr>{['เลขเคลม', 'วันที่', 'ลูกค้า', 'พาร์ท', 'อาการ', 'จำนวน', 'กำหนดตอบ', 'สถานะ', 'งานแก้ไข'].map((h) => <th key={h} style={thSt}>{tr(h)}</th>)}</tr>
           </thead>
           <tbody>
             {shown.map((c) => {
@@ -335,32 +336,32 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
           <Field label="วันที่รับเคลม *"><input type="date" style={inputSt} value={detail.claim_date} onChange={set('claim_date')} disabled={ro} /></Field>
           {/* ลูกค้า = ชื่อกลุ่มทะเบียนเคลม — เลือกจากรายชื่อลูกค้าใน Product Master (CustomerSelect) กันสะกดต่างแล้วแตกกลุ่ม (2026-09-07) */}
           <Field label="ลูกค้า *"><CustomerSelect value={detail.customer || ''} history={custHist} onChange={({ customer }) => setDetail((f) => ({ ...f, customer }))} disabled={ro} /></Field>
-          <Field label="เลขเคลมฝั่งลูกค้า"><input style={inputSt} value={detail.customer_ref || ''} onChange={set('customer_ref')} placeholder="เช่น WLS6033" disabled={ro} /></Field>
+          <Field label="เลขเคลมฝั่งลูกค้า"><input style={inputSt} value={detail.customer_ref || ''} onChange={set('customer_ref')} placeholder={tr('เช่น WLS6033')} disabled={ro} /></Field>
           <Field label="กำหนดตอบกลับ"><input type="date" style={inputSt} value={detail.due_reply_date || ''} onChange={set('due_reply_date')} disabled={ro} /></Field>
           <Field label="เลขพาร์ท (กุญแจหาเอกสาร PFMEA)">
-            <PartSelect value={detail.part_no || ''} options={partOpts} history={partHist} disabled={ro} placeholder="ค้นเลขพาร์ท / MAT / ชื่อ…"
+            <PartSelect value={detail.part_no || ''} options={partOpts} history={partHist} disabled={ro} placeholder={tr('ค้นเลขพาร์ท / MAT / ชื่อ…')}
               onChange={({ part_no, part_name }) => setDetail((f) => ({ ...f, part_no, ...(part_name != null ? { part_name } : {}) }))} />
           </Field>
           <Field label="ชื่อพาร์ท"><input style={inputSt} value={detail.part_name || ''} onChange={set('part_name')} disabled={ro} /></Field>
           <Field label="ไลน์ผลิต">
             {/* <LineSelect> — ลำดับชั้น/ปลดระวาง/scope เหมือนทุกหน้า (เดิม lines.map ชื่อล้วน · 2026-09-07) */}
-            <LineSelect lines={lines} value={detail.line_name || ''} placeholder="— ไม่ระบุ —" style={inputSt} disabled={ro}
+            <LineSelect lines={lines} value={detail.line_name || ''} placeholder={tr('— ไม่ระบุ —')} style={inputSt} disabled={ro}
               role={role} lineId={lineId} sections={sections} onChange={(v) => setDetail((f) => ({ ...f, line_name: v }))} />
           </Field>
           <Field label="ประเภท">
             <select style={inputSt} value={detail.category} onChange={set('category')} disabled={ro}>
-              {Object.entries(CATEGORY).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              {Object.entries(CATEGORY).map(([k, v]) => <option key={k} value={k}>{tr(v)}</option>)}
             </select>
           </Field>
           <Field label="ความรุนแรง">
             <select style={inputSt} value={detail.severity} onChange={set('severity')} disabled={ro}>
-              {Object.entries(SEVERITY).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              {Object.entries(SEVERITY).map(([k, v]) => <option key={k} value={k}>{tr(v.label)}</option>)}
             </select>
           </Field>
           <Field label="จำนวนที่เคลม (ชิ้น)"><input type="number" style={inputSt} value={detail.qty_claim} onChange={set('qty_claim')} disabled={ro} /></Field>
           <Field label="จำนวนที่ส่งคืน"><input type="number" style={inputSt} value={detail.qty_returned} onChange={set('qty_returned')} disabled={ro} /></Field>
           <Field label="Lot / Invoice ที่อ้าง"><input style={inputSt} value={detail.lot_ref || ''} onChange={set('lot_ref')} disabled={ro} /></Field>
-          <Field label="ค่าใช้จ่ายที่เกิด (บาท)"><input type="number" style={inputSt} value={detail.cost_impact} onChange={set('cost_impact')} placeholder="คัดแยก/ขนส่ง/ชดเชย" disabled={ro} /></Field>
+          <Field label="ค่าใช้จ่ายที่เกิด (บาท)"><input type="number" style={inputSt} value={detail.cost_impact} onChange={set('cost_impact')} placeholder={tr('คัดแยก/ขนส่ง/ชดเชย')} disabled={ro} /></Field>
         </div>
 
         <Field label="อาการที่ลูกค้าแจ้ง * (ข้อความนี้คือต้นทางที่ระบบใช้ค้น PFMEA/Control Plan)" span={2}>
@@ -380,10 +381,10 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
           <div style={{ marginTop: 14, padding: '10px 13px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', fontSize: 12.5, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <b>งานแก้ไข:</b>
             {detail.capa_id
-              ? <><Chip label="มี 8D แล้ว" color="#22c55e" /><button style={ghostBtn} onClick={() => openCapa(detail)}>เปิดใบ 8D →</button></>
+              ? <><Chip label="มี 8D แล้ว" color="#22c55e" /><button style={ghostBtn} onClick={() => openCapa(detail)}>{tr('เปิดใบ 8D →')}</button></>
               : <>
                 <span style={{ color: '#ef4444' }}>ยังไม่มี 8D — เคลมลูกค้าต้องมีการแก้ไขเป็นระบบเสมอ</span>
-                {canRecord && <button style={btnSt('#f59e0b')} disabled={busy} onClick={() => openCapa(detail)}>เปิด 8D จากเคลมนี้</button>}
+                {canRecord && <button style={btnSt('#f59e0b')} disabled={busy} onClick={() => openCapa(detail)}>{tr('เปิด 8D จากเคลมนี้')}</button>}
               </>}
             <span style={{ flex: 1 }} />
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>ในใบ 8D จะมีปุ่มให้ระบบค้น PFMEA/Control Plan ที่ต้องแก้ต่อ</span>
@@ -391,12 +392,12 @@ function ClaimModal({ detail, setDetail, lines, role, lineId, sections, partOpts
         )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, flexWrap: 'wrap' }}>
-          <button style={ghostBtn} onClick={() => setDetail(null)}>ปิด</button>
+          <button style={ghostBtn} onClick={() => setDetail(null)}>{tr('ปิด')}</button>
           {/* ❌ เปิดผิด / ใบซ้ำ → ยกเลิกพร้อมเหตุผล (เลขที่ยังอยู่ · ไม่ลบเอกสาร) — ใบที่ผูก 8D แล้วยกเลิกไม่ได้ */}
           {!ro && detail.id && !detail.capa_id && (
-            <button style={ghostBtn} disabled={busy} onClick={() => cancel(detail)}>❌ ยกเลิกใบนี้ (เปิดผิด)</button>
+            <button style={ghostBtn} disabled={busy} onClick={() => cancel(detail)}>{tr('❌ ยกเลิกใบนี้ (เปิดผิด)')}</button>
           )}
-          {!ro && <button style={btnSt('#f59e0b')} disabled={busy} onClick={() => save()}>บันทึก</button>}
+          {!ro && <button style={btnSt('#f59e0b')} disabled={busy} onClick={() => save()}>{tr('บันทึก')}</button>}
           {!ro && detail.id && detail.status !== 'replied' && (
             <button style={btnSt('#4d9fff', '#fff')} disabled={busy} onClick={() => {
               if (!detail.reply_note?.trim()) { toast.error('กรอกสรุปที่ตอบลูกค้าก่อน'); return; }

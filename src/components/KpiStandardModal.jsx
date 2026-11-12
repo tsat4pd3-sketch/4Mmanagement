@@ -22,6 +22,7 @@ import {
   matchStdItems, checkStdSelection, requirementOf, KPI_PERSPECTIVES,
 } from '../utils/kpiSetup';
 
+import { tr } from '../utils/i18n';
 /* 23/09: รับ `scope`/`scopeCols` จาก OrgScopePicker (แทน section+group) — แถวที่หยิบเขียน scope_kind/scope_value ตรง */
 export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '', defs = [], canManage, onClose, onChanged, closedDefs = [], onRestore }) {
   /* หน่วยงานมาตรฐานที่ใบนี้อิงอยู่ — จำไว้ที่ `kpi_definitions.std_unit` ของแถวในใบ
@@ -138,7 +139,7 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
           <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>หน่วยงานตามเอกสารกลุ่ม</span>
           <select value={unit} onChange={e => setUnit(e.target.value)} style={sel}>
-            <option value="">— เลือกหน่วยงาน —</option>
+            <option value="">{tr('— เลือกหน่วยงาน —')}</option>
             {KPI_STD_UNITS.map(u => (
               <option key={u.unit} value={u.unit}>{stdUnitLabel(u.unit)}{u.seeded ? '' : ' (ยังไม่มีในทะเบียน)'}</option>
             ))}
@@ -182,7 +183,7 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
               </span>
               {canManage && nPickedFixed < nFixed && (
                 <button onClick={pickAllFixed} disabled={!!busy} style={{ ...btn, opacity: busy ? 0.6 : 1 }}>
-                  ＋ หยิบข้อบังคับที่ขาด ({nFixed - nPickedFixed})
+                  {tr('＋ หยิบข้อบังคับที่ขาด (')}{nFixed - nPickedFixed})
                 </button>
               )}
             </div>
@@ -217,7 +218,7 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
                           </td>
                           <td style={{ ...td, width: 76, whiteSpace: 'nowrap' }}>
                             {canManage && !row && !isStdParent(item) && (
-                              <button onClick={() => pick(item)} disabled={!!busy} style={{ ...btn, opacity: busy ? 0.6 : 1 }}>＋ หยิบ</button>
+                              <button onClick={() => pick(item)} disabled={!!busy} style={{ ...btn, opacity: busy ? 0.6 : 1 }}>{tr('＋ หยิบ')}</button>
                             )}
                           </td>
                         </tr>
@@ -236,7 +237,7 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
         )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
-          <button onClick={onClose} style={{ ...btn, padding: '6px 16px', fontSize: 12.5 }}>ปิด</button>
+          <button onClick={onClose} style={{ ...btn, padding: '6px 16px', fontSize: 12.5 }}>{tr('ปิด')}</button>
         </div>
       </div>
     </div>

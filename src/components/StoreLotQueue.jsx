@@ -8,6 +8,7 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { fetchByIds } from '../utils/fetchByIds';
 import ReadOnlyNote from './ReadOnlyNote';
 
+import { tr } from '../utils/i18n';
 /**
  * 🔩 คิวสั่งผลิตจากสโตร์ — แผงบนหน้า Daily Report ของ "ไลน์ที่ต้องปั๊มพาร์ทลูก"
  *
@@ -296,7 +297,7 @@ export default function StoreLotQueue({ lineName, lines = [], role }) {
         </div>
         <button onClick={load} title="โหลดคิวใหม่"
           style={{ background: 'transparent', color: 'var(--muted)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '4px 10px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-          ↻ รีเฟรช
+          {tr('↻ รีเฟรช')}
         </button>
       </div>
 

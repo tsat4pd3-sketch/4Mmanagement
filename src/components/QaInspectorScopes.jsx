@@ -20,6 +20,7 @@ import { positionLabel } from '../utils/positions';
 import PersonSelect from './PersonSelect';
 import { DeleteButton } from './IconButton';
 
+import { tr } from '../utils/i18n';
 const KIND_TH = { section: 'ส่วนงาน', department: 'แผนก', line: 'กลุ่ม/ไลน์' };
 
 export default function QaInspectorScopes({ canManage = false }) {
@@ -136,7 +137,7 @@ export default function QaInspectorScopes({ canManage = false }) {
                 {canManage && (
                   <div style={{ minWidth: 220, flex: '1 1 220px', maxWidth: 360 }}>
                     <PersonSelect source="employees" allowFree={false} value="" disabled={busy}
-                      placeholder="+ เพิ่ม QC ที่รับตรวจหน่วยนี้: ค้นชื่อ / รหัส…" onChange={(p) => add(u.id, p)} />
+                      placeholder={tr('+ เพิ่ม QC ที่รับตรวจหน่วยนี้: ค้นชื่อ / รหัส…')} onChange={(p) => add(u.id, p)} />
                   </div>
                 )}
                 {!mine.length && !canManage && <span style={{ fontSize: 12, color: 'var(--muted)' }}>— ยังไม่ได้ตั้ง —</span>}

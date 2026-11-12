@@ -29,6 +29,7 @@ import { RATE } from '../utils/refreshRates';
 import { useLiveBoard } from '../utils/useLiveBoard';
 import { visibleInterval } from '../utils/usePolling';
 
+import { tr } from '../utils/i18n';
 const STAGE = {
   first:  { label: 'ชิ้นแรก',      icon: '1️⃣' },
   middle: { label: 'ระหว่างผลิต',  icon: '2️⃣' },
@@ -283,7 +284,7 @@ export default function QaFmeBoard({ scopedLineNames, onOpen }) {
                           fontWeight: 700, cursor: o.part_id ? 'pointer' : 'not-allowed',
                           background: 'rgba(34,197,94,0.12)', color: '#22c55e',
                           border: '1px solid var(--border2)', opacity: o.part_id ? 1 : 0.45 }}>
-                        เปิดใบตรวจ
+                        {tr('เปิดใบตรวจ')}
                       </button>
                     )}
                   </>

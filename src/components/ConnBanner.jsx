@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { onConnChange, connState, connRetryNow } from '../utils/connGuard';
 
+import { tr } from '../utils/i18n';
 /* ── ConnBanner — "ตอนนี้เชื่อมต่อฐานข้อมูลไม่ได้" (2026-10-21 · เหตุการณ์จริง) ──────────
    🔴 ที่มา: 21/10 20:20–20:44 ฐานข้อมูลตอบ 503 ทุกคำขอ แต่หน้าจอขึ้นแค่ "กำลังโหลด..." ค้าง
       ⇒ หน้างานไม่รู้ว่าพัง นึกว่าเน็ตตัวเองช้า เลย**กดรีเฟรชซ้ำ** = ยิงใหม่ทั้งหน้า
@@ -41,7 +42,7 @@ export default function ConnBanner() {
       <button onClick={connRetryNow} style={{
         background: '#fff', color: '#7f1d1d', border: 'none', borderRadius: 'var(--r-md)',
         padding: '3px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-      }}>ลองใหม่เดี๋ยวนี้</button>
+      }}>{tr('ลองใหม่เดี๋ยวนี้')}</button>
       <span style={{ opacity: 0.8, fontWeight: 500, fontSize: 11 }}>
         · อย่ากดรีเฟรชซ้ำๆ จะยิ่งช้า · ปิดจอที่ไม่ได้ใช้ช่วยได้
       </span>

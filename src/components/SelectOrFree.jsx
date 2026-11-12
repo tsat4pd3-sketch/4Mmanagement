@@ -15,6 +15,7 @@
    ══════════════════════════════════════════════════════════════════════════ */
 import { useState } from 'react';
 
+import { tr } from '../utils/i18n';
 export default function SelectOrFree({
   value = '', onChange, options = [], disabled, readOnly,
   placeholder = '— เลือก —', freeLabel = '✏️ ระบุเอง…', freePlaceholder = 'ระบุเอง',
@@ -47,9 +48,9 @@ export default function SelectOrFree({
   return (
     <select value={cur} disabled={disabled || readOnly} style={{ padding: pad, fontSize: fs, ...style, ...selectStyle }}
       onChange={e => { if (e.target.value === '__free__') { setFree(true); onChange?.(''); } else onChange?.(e.target.value); }}>
-      <option value="">{placeholder}</option>
-      {list.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-      {allowFree && <option value="__free__">{freeLabel}</option>}
+      <option value="">{tr(placeholder)}</option>
+      {list.map(o => <option key={o.value} value={o.value}>{tr(o.label)}</option>)}
+      {allowFree && <option value="__free__">{tr(freeLabel)}</option>}
     </select>
   );
 }

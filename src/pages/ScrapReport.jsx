@@ -51,6 +51,7 @@ import useIsMobile from '../utils/useIsMobile';
    ⚠️ แท็บที่ /qa ยังอยู่เหมือนเดิม (QA = คนพิจารณา) — ข้อมูลชุดเดียวกัน ไม่ได้ก๊อป */
 import QualityBins from '../components/QualityBins';
 import useTabParam from '../utils/useTabParam';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ── date helpers (ห้าม toISOString หา work date — ดู CLAUDE.md) ── */
@@ -733,7 +734,7 @@ export default function ScrapReport() {
         <span className="filter-label">ถึง</span>
         <input type="date" value={listTo} min={listFrom} onChange={e => setListTo(e.target.value)} />
         <span className="spacer" />
-        {canRecord && <button style={btnSt()} onClick={openNew}>+ เปิดใบใหม่</button>}
+        {canRecord && <button style={btnSt()} onClick={openNew}>{tr('+ เปิดใบใหม่')}</button>}
       </FilterBar>
 
       {/* 🔴 ตัดขอบเขตไม่ชัด = เขียนบนจอ ห้ามปล่อยให้คนเข้าใจว่ารายการที่เห็นคือทั้งหมดของเขา
@@ -763,7 +764,7 @@ export default function ScrapReport() {
                 <div className="sr-line">{rep.line_name || '—'} · {fmtD(rep.report_date)}</div>
                 <div className="sr-sum"><ItemCount reportId={rep.id} /> · ของเสีย <ScrapSum reportId={rep.id} /></div>
                 <div className="sr-acts">
-                  {canRecord && <button className="sr-main" onClick={() => openEdit(rep)}>เปิด/แก้ใบ</button>}
+                  {canRecord && <button className="sr-main" onClick={() => openEdit(rep)}>{tr('เปิด/แก้ใบ')}</button>}
                   <button onClick={() => doPrint(rep)}>PDF</button>
                   <button onClick={() => doExport(rep)}>Excel</button>
                   {canDel && <DeleteButton onClick={() => delReport(rep)} title="ลบ" />}
@@ -780,7 +781,7 @@ export default function ScrapReport() {
                     <button onClick={() => { setListFrom(outside.latest); setListTo(getWorkDate()); }}
                       style={{ marginTop: 6, fontSize: 13, fontWeight: 800, padding: '8px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                         background: 'rgba(61,214,92,0.12)', color: 'var(--accent)', border: '1px solid rgba(61,214,92,0.45)', fontFamily: 'var(--font-body)' }}>
-                      ขยายช่วงไปถึงวันนั้น
+                      {tr('ขยายช่วงไปถึงวันนั้น')}
                     </button>
                   </span>
                 ) : emptyWhy === 'scope0'
@@ -795,8 +796,8 @@ export default function ScrapReport() {
       <div className="table-sticky" style={{ ...cardSt, padding: 0, overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
           <thead><tr>
-            <th style={thSt}>เลขที่</th><th style={thSt}>วันที่</th><th style={thSt}>ไลน์</th>
-            <th style={thSt}>รายการ</th><th style={thSt}>รวมของเสีย</th><th style={thSt}>สถานะ</th><th style={thSt}></th>
+            <th style={thSt}>{tr('เลขที่')}</th><th style={thSt}>{tr('วันที่')}</th><th style={thSt}>{tr('ไลน์')}</th>
+            <th style={thSt}>{tr('รายการ')}</th><th style={thSt}>{tr('รวมของเสีย')}</th><th style={thSt}>{tr('สถานะ')}</th><th style={thSt}></th>
           </tr></thead>
           <tbody>
             {reports.map(rep => (
@@ -825,7 +826,7 @@ export default function ScrapReport() {
                     <button onClick={() => { setListFrom(outside.latest); setListTo(getWorkDate()); }}
                       style={{ marginLeft: 6, fontSize: 12, fontWeight: 800, padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                         background: 'rgba(61,214,92,0.12)', color: 'var(--accent)', border: '1px solid rgba(61,214,92,0.45)', fontFamily: 'var(--font-body)' }}>
-                      ขยายช่วงไปถึงวันนั้น
+                      {tr('ขยายช่วงไปถึงวันนั้น')}
                     </button>
                   </span>
                 ) : emptyWhy === 'scope0' ? (
@@ -851,15 +852,15 @@ export default function ScrapReport() {
             <Field label="วันที่"><input type="date" style={inputSt} value={editor.report.report_date} onChange={e => setRep({ report_date: e.target.value })} /></Field>
             <Field label="ไลน์ *">
               {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — เลือกไลน์แล้ว "ส่วน" เติมจาก production_lines.section อัตโนมัติ */}
-              <LineSelect lines={lines} value={editor.report.line_name} style={inputSt} placeholder="— เลือกไลน์ —"
+              <LineSelect lines={lines} value={editor.report.line_name} style={inputSt} placeholder={tr('— เลือกไลน์ —')}
                 onChange={v => { const ln = allLines.find(l => l.name === v); setRep({ line_name: v, ...(ln?.section ? { section: ln.section } : {}) }); }} />
             </Field>
             {/* 2026-09-07 แผนก = <select> จากผังองค์กร (cascade จากส่วน) · ค่าเดิมที่ไม่อยู่ในผังยังโชว์ ไม่หายเงียบ */}
             <Field label="แผนก">
               <select style={inputSt} value={editor.report.dept || ''} onChange={e => setRep({ dept: e.target.value })}>
                 <option value="">—</option>
-                {editor.report.dept && !deptsOf(editor.report.section).includes(editor.report.dept) && <option value={editor.report.dept}>{editor.report.dept} ⚠ ไม่มีในผัง</option>}
-                {deptsOf(editor.report.section).map(d => <option key={d} value={d}>{d}</option>)}
+                {editor.report.dept && !deptsOf(editor.report.section).includes(editor.report.dept) && <option value={editor.report.dept}>{editor.report.dept} {tr('⚠ ไม่มีในผัง')}</option>}
+                {deptsOf(editor.report.section).map(d => <option key={d} value={d}>{tr(d)}</option>)}
               </select>
             </Field>
             {/* 2026-09-07 ส่วน = auto จากไลน์ (อ่านอย่างเดียวเมื่อไลน์มี section) · ไลน์ไม่มี section → เลือกจากผังองค์กร */}
@@ -870,8 +871,8 @@ export default function ScrapReport() {
                   <select style={inputSt} value={editor.report.section || ''} disabled={!!lnSec}
                     onChange={e => setRep({ section: e.target.value, dept: '' })}>
                     <option value="">—</option>
-                    {editor.report.section && !orgSections.includes(editor.report.section) && <option value={editor.report.section}>{editor.report.section}</option>}
-                    {orgSections.map(sec => <option key={sec} value={sec}>{sec}</option>)}
+                    {editor.report.section && !orgSections.includes(editor.report.section) && <option value={editor.report.section}>{tr(editor.report.section)}</option>}
+                    {orgSections.map(sec => <option key={sec} value={sec}>{tr(sec)}</option>)}
                   </select>
                 );
               })()}
@@ -900,19 +901,19 @@ export default function ScrapReport() {
             {/* 🔴 ทางที่ WI บังคับ (§5.5) — วางก่อน "ดึงจาก Daily Report" ให้เป็นทางหลักที่ตาเห็นก่อน */}
             <button style={btnSt('#e05252')} onClick={pullFromRedBins}
               title="ดึงรายการตามแท็กแดง (ถังแดง) ของไลน์+วันนี้ ที่ยังไม่เคยออกใบ — ทางที่ WI-PD3-069 §5.5 กำหนด">
-              ⤵ ดึงจากถังแดง
+              {tr('⤵ ดึงจากถังแดง')}
             </button>
-            <button style={btnSt('var(--blue)')} onClick={pullFromDefectLogs}>⤵ ดึงจาก Daily Report</button>
+            <button style={btnSt('var(--blue)')} onClick={pullFromDefectLogs}>{tr('⤵ ดึงจาก Daily Report')}</button>
             {/* ทางที่ 2: ของที่ QA เบิกไปทดสอบแบบทำลาย (ใบ FM-STO-003) — 2026-08-24 */}
-            <button style={btnSt('var(--blue)')} onClick={openReqPicker}>⤵ ดึงจากใบเบิก QA</button>
+            <button style={btnSt('var(--blue)')} onClick={openReqPicker}>{tr('⤵ ดึงจากใบเบิก QA')}</button>
             {opScan.opRowsCount > 0 && (
               <button style={btnSt('var(--amber)')} onClick={() => explodeOpItems(editor.items)}
                 title="แทนแถวของขั้นตอนด้วยวัตถุดิบ/พาร์ทที่ใส่เข้าไปจนถึงขั้นนั้น — เลขที่สโตร์ตัด SAP ได้จริง">
-                ระเบิดขั้นตอน ({opScan.opRowsCount})
+                {tr('ระเบิดขั้นตอน (')}{opScan.opRowsCount})
               </button>
             )}
             <button style={ghostBtn} onClick={() => { setSapPicker({ addSource: true }); setSapSearch(''); }}>เพิ่มจาก SAP/BOM</button>
-            <button style={ghostBtn} onClick={() => addItem('sub')}>+ พาร์ทย่อย (กรอกเอง)</button>
+            <button style={ghostBtn} onClick={() => addItem('sub')}>{tr('+ พาร์ทย่อย (กรอกเอง)')}</button>
           </div>
 
           {/* ⚠️ แถบเตือน "เลขนี้ SAP ตัดไม่ได้" — ห้ามซ่อน (ใบของเสียที่ตัดสต๊อกไม่ได้ = งานค้างของสโตร์)
@@ -941,10 +942,10 @@ export default function ScrapReport() {
           <div className="sr-items-box" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
             <table className="sr-items" style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1050 }}>
               <thead><tr>
-                <th style={thSt}>#</th><th style={thSt}>ที่มา</th><th style={thSt}>PART NO.</th><th style={thSt}>PART NAME</th>
+                <th style={thSt}>#</th><th style={thSt}>{tr('ที่มา')}</th><th style={thSt}>PART NO.</th><th style={thSt}>PART NAME</th>
                 <th style={thSt}>MAT SAP</th><th style={thSt}>MODEL</th><th style={thSt}>CODE</th><th style={thSt}>BOM</th>
-                <th style={thSt}>Q'TY</th><th style={thSt}>สาเหตุ</th><th style={thSt}>ช่วง</th><th style={thSt}>ยืนยัน</th>
-                <th style={thSt}>รหัสงานเสีย</th><th style={thSt} title="รูปหลักฐานของเสีย">📷</th><th style={thSt}></th>
+                <th style={thSt}>Q'TY</th><th style={thSt}>{tr('สาเหตุ')}</th><th style={thSt}>{tr('ช่วง')}</th><th style={thSt}>{tr('ยืนยัน')}</th>
+                <th style={thSt}>{tr('รหัสงานเสีย')}</th><th style={thSt} title="รูปหลักฐานของเสีย">📷</th><th style={thSt}></th>
               </tr></thead>
               <tbody>
                 {editor.items.map((it, i) => (
@@ -984,7 +985,7 @@ export default function ScrapReport() {
                     <td style={tdSt} data-l="MODEL" className="sr-c"><input style={{ ...inputSt, width: 66, padding: '5px 7px' }} value={it.model} onChange={e => setItem(it._key, { model: e.target.value })} /></td>
                     <td style={tdSt} data-l="CODE" className="sr-c">
                       <select style={{ ...inputSt, width: 60, padding: '5px 4px' }} value={it.code} onChange={e => setItem(it._key, { code: e.target.value })}>
-                        <option value="">—</option>{CODE_OPTS.map(([v]) => <option key={v} value={v}>{v}</option>)}
+                        <option value="">—</option>{CODE_OPTS.map(([v]) => <option key={v} value={v}>{tr(v)}</option>)}
                       </select>
                     </td>
                     <td style={tdSt} data-l="BOM" className="sr-c"><input style={{ ...inputSt, width: 60, padding: '5px 7px' }} value={it.bom_ref} onChange={e => setItem(it._key, { bom_ref: e.target.value })} /></td>
@@ -998,18 +999,18 @@ export default function ScrapReport() {
                     </td>
                     <td style={tdSt} data-l="สาเหตุ" className="sr-c">
                       <select style={{ ...inputSt, width: 90, padding: '5px 4px' }} value={it.m_cause} onChange={e => setItem(it._key, { m_cause: e.target.value })}>
-                        <option value="">—</option>{M_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        <option value="">—</option>{M_OPTS.map(([v, l]) => <option key={v} value={v}>{tr(l)}</option>)}
                       </select>
                     </td>
                     <td style={tdSt} data-l="ช่วง" className="sr-c">
                       <select style={{ ...inputSt, width: 96, padding: '5px 4px' }} value={it.stage} onChange={e => setItem(it._key, { stage: e.target.value })}>
-                        {STAGE_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                        {STAGE_OPTS.map(([v, l]) => <option key={v} value={v}>{tr(l)}</option>)}
                       </select>
                     </td>
                     <td style={tdSt} data-l="ยืนยัน" className="sr-c sr-big"><input type="number" style={{ ...inputSt, width: 64, padding: '5px 7px' }} value={it.confirm_qty} onChange={e => setItem(it._key, { confirm_qty: e.target.value })} /></td>
                     <td style={tdSt} data-l="รหัสงานเสีย" className="sr-c sr-dcode">
                       <button style={{ ...ghostBtn, padding: '5px 8px', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} onClick={() => setDefectPicker(it._key)}>
-                        {it.defect_codes || '+ เลือก'}
+                        {it.defect_codes || tr('+ เลือก')}
                       </button>
                     </td>
                     {/* 📷 รูปหลักฐาน — แถวที่ดึงจากถังแดงจะมีรูปติดมาเอง (found_img ของแท็กแดง)
@@ -1054,15 +1055,15 @@ export default function ScrapReport() {
             <Field label="ผู้อนุมัติ (ผจก.ทั่วไป)"><PersonSelect value={editor.report.approver_gm_name || ''} roles={['manager', 'admin']} lines={editor.report.line_name ? getLineFamilyNames(allLines, editor.report.line_name) : undefined} history={approverGmHist} inputStyle={inputSt} onChange={({ name }) => setRep({ approver_gm_name: name })} /></Field>
             <Field label="สถานะ">
               <select style={inputSt} value={editor.report.status} onChange={e => setRep({ status: e.target.value })} disabled={!canManage && editor.report.status === 'approved'}>
-                <option value="draft">ร่าง</option><option value="submitted">ส่งอนุมัติ</option>
-                {canManage && <option value="approved">อนุมัติแล้ว</option>}
+                <option value="draft">{tr('ร่าง')}</option><option value="submitted">{tr('ส่งอนุมัติ')}</option>
+                {canManage && <option value="approved">{tr('อนุมัติแล้ว')}</option>}
               </select>
             </Field>
           </div>
 
           <div className={isMobile ? 'sr-foot m-stickfoot' : 'sr-foot'} style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-            <button style={ghostBtn} onClick={closeEditor}>ยกเลิก</button>
-            {canRecord && <button style={btnSt()} onClick={saveReport}>บันทึกใบ</button>}
+            <button style={ghostBtn} onClick={closeEditor}>{tr('ยกเลิก')}</button>
+            {canRecord && <button style={btnSt()} onClick={saveReport}>{tr('บันทึกใบ')}</button>}
           </div>
         </Modal>
       )}
@@ -1152,7 +1153,7 @@ export default function ScrapReport() {
                 onPick={(f) => setItem(photoItem, f ? { _imgFile: f } : { _imgFile: null, defect_img: null })}
               />
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-                <button style={{ ...ghostBtn, padding: '7px 16px' }} onClick={() => setPhotoItem(null)}>ปิด</button>
+                <button style={{ ...ghostBtn, padding: '7px 16px' }} onClick={() => setPhotoItem(null)}>{tr('ปิด')}</button>
               </div>
             </div>
           </Modal>
@@ -1200,8 +1201,8 @@ function DefectPicker({ types, value, onClose, onSave }) {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 }}>
         <div style={{ fontSize: 12, color: 'var(--muted)' }}>เลือก: <b>{[...sel].join(', ') || '—'}</b></div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button style={ghostBtn} onClick={onClose}>ยกเลิก</button>
-          <button style={btnSt()} onClick={() => onSave([...sel].join(','))}>ตกลง</button>
+          <button style={ghostBtn} onClick={onClose}>{tr('ยกเลิก')}</button>
+          <button style={btnSt()} onClick={() => onSave([...sel].join(','))}>{tr('ตกลง')}</button>
         </div>
       </div>
     </Modal>

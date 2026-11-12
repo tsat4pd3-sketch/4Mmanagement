@@ -465,6 +465,28 @@ const RULES = [
     allow: {},
   },
   {
+    id: 'i18n-chrome-literal',
+    scan: ['src/pages', 'src/components'], ext: ['.jsx'],
+    /* ปุ่ม/หัวตาราง/option/placeholder ที่เขียนข้อความไทยดิบบรรทัดเดียว — ต้องผ่าน tr() (รอบ 2 ของชั้นภาษา 12/11)
+       จับเฉพาะรูปที่ codemod ห่อให้ได้แน่ (เปิด-ปิดบรรทัดเดียว ไม่มี {}) · ข้อความข้าง JSX/หลายบรรทัดยังไม่บังคับ */
+    re: /<(?:button|th|option)\b[^>\n]*>\s*[^<{}\n]*[\u0E00-\u0E7F][^<{}\n]*<\/(?:button|th|option)>|placeholder="[^"\n]*[\u0E00-\u0E7F]/g,
+    why: 'user ทัก 12/11/2026 *"สลับภาษาไทย-อังกฤษยังไม่สมบูรณ์"* — วัดโหมดอังกฤษ: ปุ่มไทยค้าง 1,156 จุด · หัวตาราง 210 · placeholder 89 '
+       + 'ทั้งที่โครงหลักแปลแล้ว ⇒ ห่อ tr() ให้ครบทั้งระบบ (2,890 จุด) แล้วห้ามเขียนดิบกลับมา',
+    fix: "{tr('ข้อความ')} (import { tr } from '<path>/utils/i18n' · ไฟล์ที่มี const tr = useTimeRange() ใช้ `tr as trI18n`) "
+       + "+ เติมคำใน src/i18n/en.js หมวดรอบ 2 · UI-CONVENTIONS §6.34 ข้อ 7",
+    allow: {},
+  },
+  {
+    id: 'i18n-import-path-depth',
+    scan: ['src/components/inspect'], ext: ['.jsx'],   // เฉพาะโฟลเดอร์ย่อย — ไฟล์ตรงใต้ pages/components ใช้ '../utils/i18n' ถูกแล้ว
+    /* ไฟล์ในโฟลเดอร์ย่อย (src/components/inspect/…) เขียน import '../utils/i18n' = ชี้ผิดชั้น — lint ไม่จับ (resolve ตอน bundle)
+       vite dev ตอบ 500 ⇒ 3 หน้าพังใน crashsweep (12/11) · ต้องเป็น '../../utils/i18n' */
+    re: /from '\.\.\/utils\/i18n'/g,
+    why: 'codemod รอบ 2 ใส่ path ชั้นเดียวให้ทุกไฟล์ ⇒ src/components/inspect/* 6 ไฟล์ resolve ไม่ได้ · build เงียบเพราะ grep ดูแค่ผลเทส',
+    fix: "ไฟล์ใต้โฟลเดอร์ย่อย import { tr } from '../../utils/i18n' (นับชั้นจริง)",
+    allow: {},
+  },
+  {
     id: 'section-select-hand-built',
     scan: ['src/pages', 'src/components'], ext: ['.jsx'],
     /* ช่อง "ทุกส่วนงาน" ที่วาดเป็น <select> ลิสต์แบนเอง — ต้องเป็นต้นไม้ผังองค์กร (SectionScopeSelect/LineScopeSelect/OrgScopePicker) */

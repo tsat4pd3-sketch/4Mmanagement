@@ -43,6 +43,7 @@ import {
   buildMaintenanceLevels, summarizeItems, actionsOf, splitWindows,
   PRIORITY, TREND_META, THRESH, WINDOW,
 } from '../utils/maintenanceLevels';
+import { tr as trI18n } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
@@ -267,7 +268,7 @@ export default function MaintenanceLevels() {
         ]} />
         <SearchInput value={q} onChange={setQ} fields="เลขเครื่อง / ชื่อ / ไลน์" ariaLabel="ค้นหาอุปกรณ์" />
         <span className="spacer" />
-        <button onClick={() => setReloadKey(k => k + 1)} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '0 12px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>รีเฟรช</button>
+        <button onClick={() => setReloadKey(k => k + 1)} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '0 12px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>{trI18n('รีเฟรช')}</button>
       </FilterBar>
       {/* 🔴 การ์ดสถิติ 3 ใบ = **เนื้อหา** ต้องอยู่ใต้แถบกรอง (UI-STANDARD §2.1 ลำดับตายตัว)
           ย้ายลงมา 20/10 — ตัวเลขในการ์ดก็มาจาก `sum` ที่คิดจากของที่ผ่านตัวกรองแล้ว */}
@@ -322,7 +323,7 @@ export default function MaintenanceLevels() {
         <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
             <thead><tr style={{ background: 'var(--bg3)' }}>
-              {['ความด่วน', 'อุปกรณ์', 'ควรทำ', 'เพราะอะไร (ข้อมูลจริง)', 'ภายใน', ''].map(h => <th key={h} style={th}>{h}</th>)}
+              {['ความด่วน', 'อุปกรณ์', 'ควรทำ', 'เพราะอะไร (ข้อมูลจริง)', 'ภายใน', ''].map(h => <th key={h} style={th}>{trI18n(h)}</th>)}
             </tr></thead>
             <tbody>
               {acts.slice(0, limit).map(a => (
@@ -346,7 +347,7 @@ export default function MaintenanceLevels() {
         <div className="table-sticky" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1080 }}>
             <thead><tr style={{ background: 'var(--bg3)' }}>
-              {['อุปกรณ์', '① แผน PM', '② เสีย 30 วัน', 'ต่อ 100 ชม.เดิน', 'แนวโน้ม', 'MTBF', 'คาดเสียครั้งถัดไป', 'เวลาหยุดที่คาด 30 วัน', '≈ มูลค่า', '③ คำแนะนำ'].map(h => <th key={h} style={th}>{h}</th>)}
+              {['อุปกรณ์', '① แผน PM', '② เสีย 30 วัน', 'ต่อ 100 ชม.เดิน', 'แนวโน้ม', 'MTBF', 'คาดเสียครั้งถัดไป', 'เวลาหยุดที่คาด 30 วัน', '≈ มูลค่า', '③ คำแนะนำ'].map(h => <th key={h} style={th}>{trI18n(h)}</th>)}
             </tr></thead>
             <tbody>
               {scoped.slice(0, limit).map(it => {
@@ -393,7 +394,7 @@ export default function MaintenanceLevels() {
       )}
       {shownRows.length > limit && (
         <button onClick={() => setLimit(l => l + PAGE)} style={{ ...inp, width: 'auto', justifySelf: 'center', cursor: 'pointer', fontWeight: 700 }}>
-          แสดงอีก {Math.min(PAGE, shownRows.length - limit)} รายการ (เหลือ {shownRows.length - limit})
+          {trI18n('แสดงอีก')} {Math.min(PAGE, shownRows.length - limit)} {trI18n('รายการ (เหลือ')} {shownRows.length - limit})
         </button>
       )}
 

@@ -33,6 +33,7 @@ import { QA_BUCKET, qaFileUrl, qaPathOfUrl } from '../lib/qaImages';
 import CalcFormulaField from './inspect/CalcFormulaField';
 import { calcOf, calcProblems } from '../utils/inspectCalc';
 
+import { tr } from '../utils/i18n';
 const BUCKET = QA_BUCKET;
 const PIN_DEFAULT = '#4d9fff';
 /* ชื่อ view มาตรฐานของแบบ 2D orthographic — ให้ทุกคนตั้งชื่อแผ่นสม่ำเสมอ */
@@ -78,11 +79,11 @@ function QaPointCard({ p, onChange, onDelete, isPinning, onPinToggle, onUnpin, h
       closeup={{ preview: p._imgPreview, onPick: f => onChange({ _imgFile: f }), onClear: () => onChange({ _imgFile: null, _imgPreview: null, image_path: null }) }}>
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '90px 1fr', gap: 8, marginBottom: 8 }}>
         <input value={p.balloon_no} onChange={e => onChange({ balloon_no: e.target.value })} placeholder="No." aria-label="เลข balloon" title="เลข balloon ตามแบบ เช่น H35, A1, 7" />
-        <input value={p.characteristic} onChange={e => onChange({ characteristic: e.target.value })} placeholder="ชื่อจุดตรวจ เช่น ความกว้างร่อง A" />
+        <input value={p.characteristic} onChange={e => onChange({ characteristic: e.target.value })} placeholder={tr('ชื่อจุดตรวจ เช่น ความกว้างร่อง A')} />
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-        <button type="button" onClick={() => onChange({ item_type: 'variable' })} style={S.typeBtn(isVar, '#4d9fff')}>Variable (ค่าตัวเลข)</button>
+        <button type="button" onClick={() => onChange({ item_type: 'variable' })} style={S.typeBtn(isVar, '#4d9fff')}>{tr('Variable (ค่าตัวเลข)')}</button>
         <button type="button" onClick={() => onChange({ item_type: 'attribute', calc: null })} style={S.typeBtn(!isVar, '#9b8de8')}>✅ Attribute (OK/NG)</button>
       </div>
 
@@ -94,7 +95,7 @@ function QaPointCard({ p, onChange, onDelete, isPinning, onPinToggle, onUnpin, h
             <div><label style={{ ...S.label, color: '#e05c4a' }}>LSL</label><input type="number" step="any" value={p.lsl} onChange={e => onChange({ lsl: e.target.value })} placeholder="—" /></div>
             <div><label style={S.label}>Nominal</label><input type="number" step="any" value={p.nominal} onChange={e => onChange({ nominal: e.target.value })} placeholder="—" /></div>
             <div><label style={{ ...S.label, color: '#e05c4a' }}>USL</label><input type="number" step="any" value={p.usl} onChange={e => onChange({ usl: e.target.value })} placeholder="—" /></div>
-            <div><label style={S.label}>หน่วย</label><input value={p.unit} onChange={e => onChange({ unit: e.target.value })} placeholder="mm" /></div>
+            <div><label style={S.label}>{tr('หน่วย')}</label><input value={p.unit} onChange={e => onChange({ unit: e.target.value })} placeholder="mm" /></div>
           </div>
           {/* พรีวิวจากค่าชุดเดียวกับที่ตัดสินอัตโนมัติ (utils/qaSpec — ห้ามประกอบข้อความสเปคเอง) */}
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>
@@ -110,14 +111,14 @@ function QaPointCard({ p, onChange, onDelete, isPinning, onPinToggle, onUnpin, h
 
       <div className="mgrid" style={S.row2}>
         <div>
-          <label style={S.label}>วิธี / เครื่องมือตรวจ</label>
+          <label style={S.label}>{tr('วิธี / เครื่องมือตรวจ')}</label>
           {/* ทะเบียนเครื่องมือวัด (Main qa_instruments) โหลด+cache ใน <InstrumentSelect> เอง */}
           <InstrumentSelect value={p.method} history={methodHist} onChange={v => onChange({ method: v })} placeholder="Vernier / CF / Visual…" />
         </div>
         <div>
           <label style={S.label}>Rank (◆ M / SC)</label>
           <select value={p.rank} onChange={e => onChange({ rank: e.target.value })}>
-            <option value="">— ไม่ระบุ —</option>
+            <option value="">{tr('— ไม่ระบุ —')}</option>
             <option value="M">M</option>
             <option value="SC">SC (Significant Characteristic)</option>
           </select>
@@ -127,17 +128,17 @@ function QaPointCard({ p, onChange, onDelete, isPinning, onPinToggle, onUnpin, h
         <div>
           <label style={S.label}>Stage</label>
           <select value={p.stage} onChange={e => onChange({ stage: e.target.value })}>
-            {Object.entries(QA_STAGES).map(([v, s]) => <option key={v} value={v}>{s.label}</option>)}
+            {Object.entries(QA_STAGES).map(([v, s]) => <option key={v} value={v}>{tr(s.label)}</option>)}
           </select>
         </div>
-        <div><label style={S.label}>ความถี่</label><input value={p.frequency} onChange={e => onChange({ frequency: e.target.value })} placeholder="5 ชิ้น/กะ" /></div>
+        <div><label style={S.label}>{tr('ความถี่')}</label><input value={p.frequency} onChange={e => onChange({ frequency: e.target.value })} placeholder={tr('5 ชิ้น/กะ')} /></div>
         <div><label style={S.label}>n</label><input type="number" min="1" value={p.sample_size} onChange={e => onChange({ sample_size: e.target.value })} /></div>
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <input value={p.remark} onChange={e => onChange({ remark: e.target.value })} placeholder="หมายเหตุ" style={{ flex: 1 }} />
+        <input value={p.remark} onChange={e => onChange({ remark: e.target.value })} placeholder={tr('หมายเหตุ')} style={{ flex: 1 }} />
         {p.id && (
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
-            <input type="checkbox" checked={!!p.is_active} onChange={e => onChange({ is_active: e.target.checked })} /> ใช้งาน
+            <input type="checkbox" checked={!!p.is_active} onChange={e => onChange({ is_active: e.target.checked })} /> {tr('ใช้งาน')}
           </label>
         )}
       </div>
@@ -165,13 +166,13 @@ function TitlePicker({ current, used, onPick, onClose }) {
           })}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <input value={custom} onChange={e => setCustom(e.target.value)} placeholder="หรือพิมพ์ชื่อเอง เช่น Section C-C" style={{ flex: 1 }}
+          <input value={custom} onChange={e => setCustom(e.target.value)} placeholder={tr('หรือพิมพ์ชื่อเอง เช่น Section C-C')} style={{ flex: 1 }}
             onKeyDown={e => { if (e.key === 'Enter' && custom.trim()) onPick(custom.trim()); }} />
           <button type="button" disabled={!custom.trim()} onClick={() => onPick(custom.trim())}
-            style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer' }}>ตกลง</button>
+            style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer' }}>{tr('ตกลง')}</button>
         </div>
         <div style={{ textAlign: 'right', marginTop: 10 }}>
-          <button type="button" onClick={onClose} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ข้าม</button>
+          <button type="button" onClick={onClose} style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>{tr('ข้าม')}</button>
         </div>
       </div>
     </div>

@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
 import { mondayOf, addDays, detectRotation, projectWeeks } from '../utils/shiftRotation';
 
+import { tr } from '../utils/i18n';
 /**
  * เติมตารางกะล่วงหน้าจาก "รอบสลับที่หัวหน้าตั้งไว้จริง"
  *
@@ -218,8 +219,8 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
               <div className="table-sticky" style={{ overflowX: 'auto', marginBottom: 14, border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead><tr style={{ background: 'var(--bg2)' }}>
-                    <th style={th}>ไลน์ / หน่วยงาน</th>
-                    <th style={th}>รอบที่ตรวจพบ</th>
+                    <th style={th}>{tr('ไลน์ / หน่วยงาน')}</th>
+                    <th style={th}>{tr('รอบที่ตรวจพบ')}</th>
                     {ready[0].weeks.slice(0, 8).map(w => (
                       <th key={w.monday} style={{ ...th, textAlign: 'center' }}>{w.monday.slice(5)}</th>
                     ))}
@@ -275,7 +276,7 @@ export default function ShiftAutoFillModal({ weekStart, lines = [], deptRows = [
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 6 }}>
           <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'transparent', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>
-            ปิด
+            {tr('ปิด')}
           </button>
           <button onClick={apply} disabled={saving || loading || !ready.length}
             style={{

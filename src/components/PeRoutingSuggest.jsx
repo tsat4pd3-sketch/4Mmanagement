@@ -13,6 +13,7 @@ import { toast } from './Toast';
 import { proposeRoutingFromPfc, resolveMatForSet, toRoutingRows } from '../utils/peRouting';
 import LineSelect from './LineSelect';
 
+import { tr } from '../utils/i18n';
 const inp = { fontSize: 12, padding: '4px 7px', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' };
 const KIND_TH = { process: '🔧 ขั้นผลิต', inspection: '🔍 จุดตรวจ' };
 
@@ -101,7 +102,7 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
   return (
     <div className="overlay"><div className="modal" style={{ width: 'min(860px, 96vw)', maxHeight: '92vh', overflowY: 'auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>เสนอ routing เข้า VSM — {set.part_no}</h3>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>{tr('เสนอ routing เข้า VSM —')} {set.part_no}</h3>
         <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
       </div>
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.6 }}>
@@ -166,7 +167,7 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
             <thead style={{ background: 'var(--bg2)' }}>
               <tr>{['✓', 'OP', 'ชนิด', 'ชื่อขั้น (แก้ได้)', 'ไลน์', 'เครื่อง', 'จุดพักหลังขั้น (WIP)'].map((h, i) =>
-                <th key={i} style={{ padding: '6px 8px', fontSize: 11, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' }}>{h}</th>)}
+                <th key={i} style={{ padding: '6px 8px', fontSize: 11, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' }}>{tr(h)}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -188,7 +189,7 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
                   <td style={{ padding: '4px 8px', borderTop: '1px solid var(--border)', fontFamily: 'monospace', fontSize: 12, color: 'var(--text2)' }}>{s.machine_no || '—'}</td>
                   <td style={{ padding: '4px 6px', borderTop: '1px solid var(--border)' }}>
                     <input value={s.wip_label || ''} onChange={e => setStep(i, { wip_label: e.target.value })}
-                      placeholder="เช่น Store Semi" style={{ ...inp, width: 130 }} />
+                      placeholder={tr('เช่น Store Semi')} style={{ ...inp, width: 130 }} />
                   </td>
                 </tr>
               ))}
@@ -208,7 +209,7 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
         )}
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
+          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, cursor: 'pointer' }}>{tr('ยกเลิก')}</button>
           <button onClick={confirm} disabled={saving || !included}
             style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', opacity: (saving || !included) ? 0.5 : 1 }}>
             {saving ? '⏳ กำลังบันทึก…' : `✅ ยืนยันบันทึก ${included} ขั้น`}

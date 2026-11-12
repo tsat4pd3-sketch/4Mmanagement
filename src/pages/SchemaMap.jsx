@@ -16,6 +16,7 @@ import { auditProject, auditText, fmtBytes } from '../utils/schemaAudit';
 import { openFeedback } from '../utils/feedbackPrefill';
 import { UserContext } from '../App';
 import USAGE from 'virtual:schema-usage';
+import { tr } from '../utils/i18n';
 import TabBar from '../components/TabBar';   // แถบเลือกมุมมอง = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 /* ══ 🗄️ โครงสร้างฐานข้อมูล (Data Map) — /schema ═══════════════════════════════════════
@@ -247,7 +248,7 @@ export default function SchemaMap() {
         title="โครงสร้างฐานข้อมูล" icon="🗄️"
         sub={loading ? 'กำลังอ่านโครงสร้างจากฐานข้อมูล…'
           : `${total} ตาราง/วิว · ${totalFk} เส้นความสัมพันธ์ (FK) · ${USAGE.pages?.length || 0} หน้าในระบบ`}
-        actions={<button type="button" className="pg-btn" onClick={reload}>อ่านใหม่</button>}
+        actions={<button type="button" className="pg-btn" onClick={reload}>{tr('อ่านใหม่')}</button>}
         tabs={[
           { key: 'tables', label: 'ตาราง / คีย์ / ความสัมพันธ์' },
           { key: 'pages', label: 'หน้าไหนใช้ตารางไหน' },
@@ -402,7 +403,7 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
       <div style={{ ...card(), display: 'grid', gap: 10 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ minWidth: 0 }}>
-            {isMobile && <button onClick={onBack} style={{ ...btn(), marginBottom: 6 }}>กลับไปลิสต์ตาราง</button>}
+            {isMobile && <button onClick={onBack} style={{ ...btn(), marginBottom: 6 }}>{tr('กลับไปลิสต์ตาราง')}</button>}
             <div style={{ fontSize: isMobile ? 17 : 20, fontWeight: 800, wordBreak: 'break-all' }}>
               {sel.proj === 'main' ? '🗄️' : '🏭'} {sel.table}
             </div>
@@ -411,8 +412,8 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <button onClick={() => onCopy(summary(), 'คัดลอกข้อมูลตารางแล้ว — วางในแชท/ใบแจ้งได้เลย')} style={btn()}>คัดลอกข้อมูลตาราง</button>
-            <button onClick={() => onCopy(url, 'คัดลอกลิงก์แล้ว')} style={btn()}>คัดลอกลิงก์</button>
+            <button onClick={() => onCopy(summary(), 'คัดลอกข้อมูลตารางแล้ว — วางในแชท/ใบแจ้งได้เลย')} style={btn()}>{tr('คัดลอกข้อมูลตาราง')}</button>
+            <button onClick={() => onCopy(url, 'คัดลอกลิงก์แล้ว')} style={btn()}>{tr('คัดลอกลิงก์')}</button>
             <button onClick={() => openFeedback(bugReportText({
               table: sel.table, projectLabel: `${P.label} (${P.screen})`, projectId: P.id,
               detail: d, pages, url,
@@ -505,7 +506,7 @@ function TableDetail({ sel, detail, err, isMobile, pages, url, userName, size, o
             <thead>
               <tr>
                 {['คอลัมน์', 'ชนิดข้อมูล', 'ว่างได้?', 'คีย์', 'ค่าเริ่มต้น / หมายเหตุ'].map((h, i) => (
-                  <th key={h} style={{ textAlign: 'left', padding: '5px 7px', borderBottom: '1px solid var(--border2)', color: 'var(--muted)', fontSize: 11.5, whiteSpace: 'nowrap', width: i === 4 ? '35%' : undefined }}>{h}</th>
+                  <th key={h} style={{ textAlign: 'left', padding: '5px 7px', borderBottom: '1px solid var(--border2)', color: 'var(--muted)', fontSize: 11.5, whiteSpace: 'nowrap', width: i === 4 ? '35%' : undefined }}>{tr(h)}</th>
                 ))}
               </tr>
             </thead>
@@ -614,7 +615,7 @@ function PagesTab({ q, setQ, isMobile, catalog, ghosts, onPick }) {
                 {p.label || p.comp}
               </span>
               <code style={{ fontSize: 11.5, color: 'var(--muted)', flexShrink: 0 }}>{p.path}</code>
-              <span style={{ fontSize: 11.5, color: 'var(--muted)', flexShrink: 0 }}>{on ? '▾' : '▸'} {tables.length} ตาราง</span>
+              <span style={{ fontSize: 11.5, color: 'var(--muted)', flexShrink: 0 }}>{on ? '▾' : '▸'} {tables.length} {tr('ตาราง')}</span>
             </button>
             {on && (
               <div style={{ padding: '0 12px 11px', display: 'grid', gap: 6 }}>
@@ -705,7 +706,7 @@ function AuditTab({ audits, isMobile, loading, onPick, onCopy }) {
                 {P.label} <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--muted)' }}>· {result.total} ตาราง/วิว</span>
               </div>
               <button onClick={() => onCopy(auditText(result, `${P.label} (${P.screen})`), 'คัดลอกผลตรวจแล้ว')} style={btn()}>
-                คัดลอกผลตรวจ
+                {tr('คัดลอกผลตรวจ')}
               </button>
             </div>
 

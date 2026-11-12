@@ -4,6 +4,7 @@ import { toast } from './Toast';
 import { checkWrite } from '../utils/dbWrite';
 import { mailsMissingFiles } from '../utils/mailInbox';
 
+import { tr } from '../utils/i18n';
 /* ─── 📬 ไฟล์จากเมลรอนำเข้า (2026-09-30) ─────────────────────────────────────
    แถวในคิว `demand_mail_inbox` (DR) เกิดจากสคริปต์ Outlook บนเครื่อง user
    (tools/outlook-mail-ingest) → Edge Function `ingest-demand-mail`
@@ -158,7 +159,7 @@ export default function DemandMailInbox({ refreshKey, onOpen, fullName }) {
             </button>
             <button type="button" onClick={() => skip(r)}
               style={{ fontSize: 12, padding: '6px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
-                background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>ข้าม</button>
+                background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>{tr('ข้าม')}</button>
           </div>
         );
       })}

@@ -82,6 +82,7 @@ import {
   axisOeeYear, axisSafetyYear, axisQualityYear, axisDeliveryYear, axisCostYear, axisManYear, paretoYear,
 } from '../utils/obeyaYear';
 
+import { tr } from '../utils/i18n';
 /* วันที่งาน (ตัด 08:00 — งานกะดึกข้ามวันนับเป็นวันก่อนหน้า)
    ⚠️ ห้ามใช้ toISOString() — คืน UTC ทำให้วันที่เพี้ยนสำหรับไทย (กฎ Date/Time ใน CLAUDE.md) */
 const getWorkDate = () => {
@@ -775,7 +776,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               <Segmented label="ช่วงที่ดู" value={custom || monthSel ? null : period} onChange={pickPeriod}
                 options={PERIODS.map(p => ({ value: p.key, label: PERIOD_LABEL[p.key] || p.label }))} />
               {monthSel && (
-                <button className="ctl-btn" onClick={() => pickPeriod('year')} title="กลับไปดูทั้งปี" style={yearNavBtn}>← ปี {year}</button>
+                <button className="ctl-btn" onClick={() => pickPeriod('year')} title="กลับไปดูทั้งปี" style={yearNavBtn}>{tr('← ปี')} {year}</button>
               )}
               {isYear && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -790,9 +791,9 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             <>
               {/* ปุ่มตายตัว ≤2 (UI §6.35 · 04/11): หลัก = ตั้ง Action · รอง = โหมดจอ TV */}
               {canRecord && (
-                <button type="button" className="pg-btn primary tv-hide" onClick={() => openModal()}>+ ตั้ง Action</button>
+                <button type="button" className="pg-btn primary tv-hide" onClick={() => openModal()}>{tr('+ ตั้ง Action')}</button>
               )}
-              <button type="button" className="pg-btn" onClick={() => goBoard(true)}>โหมดจอ TV</button>
+              <button type="button" className="pg-btn" onClick={() => goBoard(true)}>{tr('โหมดจอ TV')}</button>
             </>
           )}
         />
@@ -828,7 +829,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           <button className="tv-hide" onClick={() => goBoard(false)} style={{
             fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
             background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
-          }}>ออกจากโหมดจอ</button>
+          }}>{tr('ออกจากโหมดจอ')}</button>
         </div>
       )}
 
@@ -1063,7 +1064,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                     <button className="tv-hide" onClick={() => openModal()} style={{
                       alignSelf: 'flex-start', fontSize: fs(12), fontWeight: 800, padding: '6px 14px',
                       borderRadius: 'var(--r-md)', background: 'var(--accent2)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer',
-                    }}>➕ ตั้งใบแรก</button>
+                    }}>{tr('➕ ตั้งใบแรก')}</button>
                   )}
                 </div>
               ) : (
@@ -1080,7 +1081,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                       <button className="tv-hide" onClick={() => openModal()} style={{
                         fontSize: fs(10.5), fontWeight: 800, padding: '2px 10px', borderRadius: 'var(--r-md)', marginLeft: 'auto',
                         background: 'var(--accent2)', color: 'var(--accent-ink)', border: 'none', cursor: 'pointer',
-                      }}>➕ ตั้ง Action</button>
+                      }}>{tr('➕ ตั้ง Action')}</button>
                     )}
                   </div>
                   <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -1111,7 +1112,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                             <button className="tv-hide" onClick={() => setClosing({ a, result: a.result_value || '', file: null })} style={{
                               fontSize: fs(10), fontWeight: 700, padding: '1px 7px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                               background: 'var(--bg2)', color: 'var(--green)', border: '1px solid var(--green-line)',
-                            }}>ปิด</button>
+                            }}>{tr('ปิด')}</button>
                           )}
                         </div>
                       );
@@ -1140,14 +1141,14 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)',
             padding: 16, width: 'min(460px, 100%)', maxHeight: '90%', overflowY: 'auto',
           }}>
-            <h3 style={{ margin: '0 0 4px', fontSize: 17 }}>✅ ปิดงานติดตาม</h3>
+            <h3 style={{ margin: '0 0 4px', fontSize: 17 }}>{tr('✅ ปิดงานติดตาม')}</h3>
             <div style={{ fontSize: 12.5, color: 'var(--text2)', marginBottom: 10 }}>
               {(closing.a.problem || '').trim() || '(ไม่มีหัวข้อ)'}
             </div>
             <div style={{ display: 'grid', gap: 9 }}>
-              <label style={{ fontSize: 12.5, color: 'var(--muted)' }}>ทำอะไรไป / ผลที่ได้ (ไม่บังคับ)
+              <label style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ทำอะไรไป / ผลที่ได้ (ไม่บังคับ)')}
                 <textarea value={closing.result} rows={3} onChange={e => setClosing({ ...closing, result: e.target.value })}
-                  style={{ marginTop: 3, fontSize: 13.5 }} placeholder="เช่น เปลี่ยนตัวจับชิ้นงานเป็นแบบ quick clamp · เวลาเปลี่ยนรุ่นลดจาก 25 → 14 นาที" />
+                  style={{ marginTop: 3, fontSize: 13.5 }} placeholder={tr('เช่น เปลี่ยนตัวจับชิ้นงานเป็นแบบ quick clamp · เวลาเปลี่ยนรุ่นลดจาก 25 → 14 นาที')} />
               </label>
               <QualityPhotoField label="รูปหลักฐาน (ไม่บังคับ)" url={closing.a.result_img || null} file={closing.file}
                 hint="ถ่ายสิ่งที่แก้ไปจริง — เดือนหน้าปัญหาเดิมกลับมาจะได้ย้อนดูได้"
@@ -1157,11 +1158,11 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               <button onClick={() => setClosing(null)} disabled={closeSaving} style={{
                 fontSize: 13, padding: '7px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                 background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)',
-              }}>ยกเลิก</button>
+              }}>{tr('ยกเลิก')}</button>
               <button onClick={doClose} disabled={closeSaving} style={{
                 fontSize: 13, fontWeight: 800, padding: '7px 18px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                 background: 'var(--green)', color: 'var(--accent-ink)', border: 'none',
-              }}>{closeSaving ? '⏳ กำลังบันทึก...' : '✅ ปิดงาน'}</button>
+              }}>{closeSaving ? tr('⏳ กำลังบันทึก...') : tr('✅ ปิดงาน')}</button>
             </div>
           </div>
         </div>
@@ -1177,40 +1178,40 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
             background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)',
             padding: 16, width: 'min(520px, 100%)', maxHeight: '90%', overflowY: 'auto',
           }}>
-            <h3 style={{ margin: '0 0 10px', fontSize: 17 }}>➕ ตั้ง Action Item (OBEYA {today})</h3>
+            <h3 style={{ margin: '0 0 10px', fontSize: 17 }}>{tr('➕ ตั้ง Action Item (OBEYA')} {today})</h3>
             <div style={{ display: 'grid', gap: 9 }}>
-              <label style={{ fontSize: 12.5, color: 'var(--muted)' }}>แกนที่จะไปแก้
+              <label style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('แกนที่จะไปแก้')}
                 <select value={modal.kpi_key} onChange={e => setModal({ ...modal, kpi_key: e.target.value })}
                   style={{ marginTop: 3, fontSize: 13.5 }}>
-                  <option value="">— ไม่ระบุแกน —</option>
+                  <option value="">{tr('— ไม่ระบุแกน —')}</option>
                   {OBEYA_AXES.map(a => <option key={a.key} value={a.key}>{a.icon} {a.key} · {a.label}</option>)}
                   <option value="OEE">⚙️ OEE</option>
                 </select>
               </label>
-              <label style={{ fontSize: 12.5, color: 'var(--muted)' }}>ปัญหา / สิ่งที่ต้องทำ *
+              <label style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ปัญหา / สิ่งที่ต้องทำ *')}
                 <textarea value={modal.problem} rows={2} onChange={e => setModal({ ...modal, problem: e.target.value })}
-                  style={{ marginTop: 3, fontSize: 13.5 }} placeholder="เช่น ลดเวลาเปลี่ยนแม่พิมพ์ไลน์ 060 จาก 25 นาที เหลือ 15 นาที" />
+                  style={{ marginTop: 3, fontSize: 13.5 }} placeholder={tr('เช่น ลดเวลาเปลี่ยนแม่พิมพ์ไลน์ 060 จาก 25 นาที เหลือ 15 นาที')} />
               </label>
-              <label style={{ fontSize: 12.5, color: 'var(--muted)' }}>สาเหตุ (ถ้ารู้แล้ว)
+              <label style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('สาเหตุ (ถ้ารู้แล้ว)')}
                 <textarea value={modal.root_cause} rows={2} onChange={e => setModal({ ...modal, root_cause: e.target.value })}
                   style={{ marginTop: 3, fontSize: 13.5 }} />
               </label>
-              <label style={{ fontSize: 12.5, color: 'var(--muted)' }}>ไลน์
+              <label style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ไลน์')}
                 <LineSelect lines={lines} value={modal.line_name} onChange={v => setModal({ ...modal, line_name: v })}
                   role={role} lineId={lineId} sections={sections} style={{ marginTop: 3, fontSize: 13.5 }} />
               </label>
               <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ผู้รับผิดชอบ
                 <PersonSelect value={modal.assignee || ''} source="both" history={assigneeHist}
-                  placeholder="ชื่อผู้รับผิดชอบ" style={{ marginTop: 3 }}
+                  placeholder={tr('ชื่อผู้รับผิดชอบ')} style={{ marginTop: 3 }}
                   onChange={v => setModal({ ...modal, assignee: v })} />
               </div>
               <div style={{ display: 'flex', gap: 9 }}>
-                <label style={{ fontSize: 12.5, color: 'var(--muted)', flex: 1 }}>กำหนดเสร็จ
+                <label style={{ fontSize: 12.5, color: 'var(--muted)', flex: 1 }}>{tr('กำหนดเสร็จ')}
                   <input type="date" value={modal.due_date} onChange={e => setModal({ ...modal, due_date: e.target.value })}
                     style={{ marginTop: 3, fontSize: 13.5, width: '100%' }} />
                 </label>
-                <label style={{ fontSize: 12.5, color: 'var(--muted)', flex: 1 }}>เป้าที่ตกลงกัน
-                  <input type="number" step="0.1" value={modal.target_value} placeholder="เช่น 82"
+                <label style={{ fontSize: 12.5, color: 'var(--muted)', flex: 1 }}>{tr('เป้าที่ตกลงกัน')}
+                  <input type="number" step="0.1" value={modal.target_value} placeholder={tr('เช่น 82')}
                     onChange={e => setModal({ ...modal, target_value: e.target.value })}
                     style={{ marginTop: 3, fontSize: 13.5, width: '100%' }} />
                 </label>
@@ -1220,11 +1221,11 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               <button onClick={() => setModal(null)} disabled={saving} style={{
                 fontSize: 13.5, padding: '7px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                 background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)',
-              }}>ยกเลิก</button>
+              }}>{tr('ยกเลิก')}</button>
               <button onClick={saveAction} disabled={saving} style={{
                 fontSize: 13.5, fontWeight: 800, padding: '7px 16px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                 background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none',
-              }}>{saving ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+              }}>{saving ? tr('กำลังบันทึก…') : tr('บันทึก')}</button>
             </div>
           </div>
         </div>

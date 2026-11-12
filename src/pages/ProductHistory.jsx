@@ -17,6 +17,7 @@ import TimeRangeBar from '../components/TimeRangeBar';
 import useTimeRange from '../utils/useTimeRange';
 
 import NoticeBar from '../components/NoticeBar';
+import { tr as trI18n } from '../utils/i18n';
 // ประวัติผลิตราย Product — ดูย้อนหลังว่าสินค้าตัวหนึ่งผลิตที่ไลน์ไหน/กะไหน เท่าไหร่ เสียเท่าไหร่ (2026-07-24)
 // + ประวัติการแก้ master data ของสินค้านั้น (audit_log — ใครแก้ line_name/CT เมื่อไหร่)
 
@@ -369,7 +370,7 @@ export default function ProductHistory() {
                 <button onClick={() => { setSelMat(null); setPickerOpen(true); setGroupMode(false); }}
                   style={{ fontSize: 12, fontWeight: 700, padding: '7px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                     background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-                  ปิด — เลือกสินค้าอื่น
+                  {trI18n('ปิด — เลือกสินค้าอื่น')}
                 </button>
               </div>
             </div>
@@ -477,12 +478,12 @@ export default function ProductHistory() {
               <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>คลิกวันเพื่อแตกราย "ไลน์·กะ" · คลิกกะเพื่อแตกรายใบ</div>
               <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 760 }}>
                 <thead><tr>
-                  <th style={th}>วัน → ไลน์·กะ → ใบ</th>
-                  <th style={{ ...th, textAlign: 'right' }}>ใบ</th>
-                  <th style={{ ...th, textAlign: 'right' }}>เป้า</th>
-                  <th style={{ ...th, textAlign: 'right' }}>ผลิตได้</th>
+                  <th style={th}>{trI18n('วัน → ไลน์·กะ → ใบ')}</th>
+                  <th style={{ ...th, textAlign: 'right' }}>{trI18n('ใบ')}</th>
+                  <th style={{ ...th, textAlign: 'right' }}>{trI18n('เป้า')}</th>
+                  <th style={{ ...th, textAlign: 'right' }}>{trI18n('ผลิตได้')}</th>
                   <th style={{ ...th, textAlign: 'right' }}>NG</th>
-                  <th style={th}>สถานะ</th><th style={th}>เปิด–ปิด</th>
+                  <th style={th}>{trI18n('สถานะ')}</th><th style={th}>{trI18n('เปิด–ปิด')}</th>
                 </tr></thead>
                 <tbody>
                   {(showAllDays ? dayGroups : dayGroups.slice(0, 45)).map(g => {
@@ -534,7 +535,7 @@ export default function ProductHistory() {
                 <button onClick={() => setShowAllDays(true)}
                   style={{ marginTop: 8, fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                     background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-                  แสดงอีก {(dayGroups.length - 45).toLocaleString()} วัน (ทั้งหมด {dayGroups.length.toLocaleString()} วัน)
+                  {trI18n('แสดงอีก')} {(dayGroups.length - 45).toLocaleString()} {trI18n('วัน (ทั้งหมด')} {dayGroups.length.toLocaleString()} {trI18n('วัน)')}
                 </button>
               )}
             </div>

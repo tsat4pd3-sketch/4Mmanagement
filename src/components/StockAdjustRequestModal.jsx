@@ -14,6 +14,7 @@ import { countDelta } from '../utils/stockCount';
 import { getWorkDate } from '../utils/workDate';
 import { toast } from './Toast';
 
+import { tr } from '../utils/i18n';
 const fmt = (v) => (v === null || v === undefined ? '–' : Number(v).toLocaleString());
 
 export default function StockAdjustRequestModal({ req, by, onClose }) {
@@ -73,8 +74,8 @@ export default function StockAdjustRequestModal({ req, by, onClose }) {
               คลัง <b>{loc}</b> · ยอดในระบบ <b>{noBase ? 'ยังไม่มีแถว (ถือเป็น 0)' : fmt(onHand)}</b>
             </div>
             <div>
-              <label style={lbl}>ยอดที่นับได้จริง (ชิ้น)</label>
-              <input inputMode="decimal" value={counted} style={{ width: '100%' }} onChange={e => setCounted(e.target.value)} placeholder="เช่น 1200" />
+              <label style={lbl}>{tr('ยอดที่นับได้จริง (ชิ้น)')}</label>
+              <input inputMode="decimal" value={counted} style={{ width: '100%' }} onChange={e => setCounted(e.target.value)} placeholder={tr('เช่น 1200')} />
               {d ? (
                 <div style={{ fontSize: 12, marginTop: 4, color: d.dir === 'up' ? 'var(--green, #22c55e)' : '#f87171' }}>
                   ผลต่าง {d.delta > 0 ? '+' : ''}{fmt(d.delta)} ชิ้น
@@ -82,21 +83,21 @@ export default function StockAdjustRequestModal({ req, by, onClose }) {
               ) : null}
             </div>
             <div>
-              <label style={lbl}>เหตุผล (บังคับ)</label>
-              <input value={reason} style={{ width: '100%' }} onChange={e => setReason(e.target.value)} placeholder="เช่น นับจริงที่ชั้น A3 · ใบรับเข้าตกหล่น" />
+              <label style={lbl}>{tr('เหตุผล (บังคับ)')}</label>
+              <input value={reason} style={{ width: '100%' }} onChange={e => setReason(e.target.value)} placeholder={tr('เช่น นับจริงที่ชั้น A3 · ใบรับเข้าตกหล่น')} />
             </div>
           </div>
         )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
           <button type="button" onClick={onClose} disabled={busy}
             style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>
-            ยกเลิก
+            {tr('ยกเลิก')}
           </button>
           <button type="button" onClick={submit} disabled={!canSend}
             style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', fontWeight: 800, fontSize: 13,
               background: canSend ? 'var(--accent)' : 'var(--bg3)', color: canSend ? 'var(--accent-ink)' : 'var(--muted)',
               cursor: canSend ? 'pointer' : 'default' }}>
-            {busy ? 'กำลังส่ง…' : 'ส่งคำขอ (รออนุมัติ)'}
+            {busy ? tr('กำลังส่ง…') : tr('ส่งคำขอ (รออนุมัติ)')}
           </button>
         </div>
       </div>

@@ -37,6 +37,7 @@ import { useDraftAutosave, loadDraft, clearDraft } from '../utils/formDraft';   
 import DraftRestoreBar from '../components/DraftRestoreBar';
 
 import NoticeBar from '../components/NoticeBar';
+import { tr } from '../utils/i18n';
 /* ══════════════════════════════════════════════════════════════
    📋 Layer Process Audit (LPA) — paperless แทนฟอร์มกระดาษ 2 ใบ:
    1) Layer Process Audit Plan   — แผนตรวจรายเดือน ต่อไลน์+กะ (สถานีรายวัน + ชั้นผู้ตรวจ ○●⊗)
@@ -114,9 +115,9 @@ function SignPadModal({ title, onCancel, onDone }) {
         <canvas ref={cvRef} width={560} height={180} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={up}
           style={{ width: '100%', height: 160, border: '1px dashed var(--border2)', borderRadius: 10, background: '#fff', touchAction: 'none', cursor: 'crosshair', display: 'block' }} />
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
-          <button onClick={clear} style={btnGray}>ล้าง</button>
-          <button onClick={onCancel} style={btnGray}>ยกเลิก</button>
-          <button onClick={done} style={btnAccent}>ใช้ลายเซ็นนี้</button>
+          <button onClick={clear} style={btnGray}>{tr('ล้าง')}</button>
+          <button onClick={onCancel} style={btnGray}>{tr('ยกเลิก')}</button>
+          <button onClick={done} style={btnAccent}>{tr('ใช้ลายเซ็นนี้')}</button>
         </div>
       </div>
     </div>
@@ -1097,9 +1098,9 @@ ${issuesHtml}
         <div className="card" style={{ padding: 16 }}>
           {/* หัวไตรมาส + ปุ่มเลื่อนไตรมาส */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-            <button onClick={() => setSelMonth(shiftMonth(qMonths[0], -3))} style={btnGhost}>ไตรมาสก่อน</button>
+            <button onClick={() => setSelMonth(shiftMonth(qMonths[0], -3))} style={btnGhost}>{tr('ไตรมาสก่อน')}</button>
             <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)' }}>ไตรมาส Q{quarterOf(selMonth)} · {monthLabel(qMonths[0])} – {monthLabel(qMonths[2])}</div>
-            <button onClick={() => setSelMonth(shiftMonth(qMonths[0], 3))} style={btnGhost}>ไตรมาสถัดไป ▶</button>
+            <button onClick={() => setSelMonth(shiftMonth(qMonths[0], 3))} style={btnGhost}>{tr('ไตรมาสถัดไป ▶')}</button>
           </div>
           {qErr && (
             <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5,
@@ -1124,13 +1125,13 @@ ${issuesHtml}
             </div>
             {canManage && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button onClick={fillStationsFromWorkstations} style={btnTeal} title="ดึงรายชื่อจุดงานทั้งหมดในไลน์นี้ (รวมไลน์ย่อย) มาเป็นสถานีตรวจตั้งต้น — LPA ตรวจกระบวนการที่จุดงาน ไม่ใช่ทุกเครื่องจักร">ดึงจุดงานในไลน์</button>
-                <button onClick={autoFillQuarter} style={btnAmber} title="กระจายจุดงานให้ครบทุกจุดภายในแต่ละเดือน (Leader ทุกวัน · SV ต้นสัปดาห์ · MGR รายเดือน · GM รายไตรมาส)">เติมแผนทั้งไตรมาส</button>
-                <button onClick={saveQuarter} disabled={savingPlan} style={btnAccent}>{savingPlan ? '...' : 'บันทึกแผนไตรมาส'}</button>
-                <button onClick={printPlan} disabled={printing} style={btnBlue} title={`พิมพ์ใบแผนของเดือน ${monthLabel(selMonth)} (บันทึกก่อนพิมพ์)`}>พิมพ์ ({monthLabel(selMonth)})</button>
+                <button onClick={fillStationsFromWorkstations} style={btnTeal} title="ดึงรายชื่อจุดงานทั้งหมดในไลน์นี้ (รวมไลน์ย่อย) มาเป็นสถานีตรวจตั้งต้น — LPA ตรวจกระบวนการที่จุดงาน ไม่ใช่ทุกเครื่องจักร">{tr('ดึงจุดงานในไลน์')}</button>
+                <button onClick={autoFillQuarter} style={btnAmber} title="กระจายจุดงานให้ครบทุกจุดภายในแต่ละเดือน (Leader ทุกวัน · SV ต้นสัปดาห์ · MGR รายเดือน · GM รายไตรมาส)">{tr('เติมแผนทั้งไตรมาส')}</button>
+                <button onClick={saveQuarter} disabled={savingPlan} style={btnAccent}>{savingPlan ? '...' : tr('บันทึกแผนไตรมาส')}</button>
+                <button onClick={printPlan} disabled={printing} style={btnBlue} title={`พิมพ์ใบแผนของเดือน ${monthLabel(selMonth)} (บันทึกก่อนพิมพ์)`}>{tr('พิมพ์ (')}{monthLabel(selMonth)})</button>
               </div>
             )}
-            {!canManage && <button onClick={printPlan} disabled={printing} style={btnBlue}>พิมพ์ ({monthLabel(selMonth)})</button>}
+            {!canManage && <button onClick={printPlan} disabled={printing} style={btnBlue}>{tr('พิมพ์ (')}{monthLabel(selMonth)})</button>}
           </div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
             <span style={{ color: 'var(--text2)' }}>○ วางแผน</span> · <span style={{ color: 'var(--green)' }}>● ตรวจแล้ว</span> · <span style={{ color: 'var(--red)' }}>⊗ เลยกำหนดยังไม่ตรวจ</span> · แถวเขียว = วันหยุด · หลายสถานี/วัน = คั่นด้วย ,
@@ -1145,13 +1146,13 @@ ${issuesHtml}
                 <div style={{ padding: '7px 12px', background: isFocus ? 'var(--green-dim)' : 'var(--bg3)', fontWeight: 800, fontSize: 14, color: isFocus ? 'var(--accent)' : 'var(--text)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   {monthLabel(mk)}
                   {isFocus ? <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted)' }}>(เดือนที่เลือก — ใช้พิมพ์/รายงาน)</span>
-                    : <button onClick={() => setSelMonth(mk)} style={{ ...btnGhost, padding: '2px 8px', fontSize: 11 }}>เลือกเดือนนี้</button>}
+                    : <button onClick={() => setSelMonth(mk)} style={{ ...btnGhost, padding: '2px 8px', fontSize: 11 }}>{tr('เลือกเดือนนี้')}</button>}
                 </div>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', minWidth: 720 }}>
                     <thead>
                       <tr style={{ fontSize: 12 }}>
-                        <th style={{ width: 90 }}>วันที่</th>
+                        <th style={{ width: 90 }}>{tr('วันที่')}</th>
                         <th style={{ textAlign: 'left' }}>Station for audit</th>
                         {LAYERS.map(l => <th key={l.key} style={{ width: 96, textAlign: 'center' }}>{l.label}<div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>{l.freq}</div></th>)}
                       </tr>
@@ -1168,7 +1169,7 @@ ${issuesHtml}
                             </td>
                             <td>
                               {holiday ? <span style={{ fontSize: 11, color: '#4caf50' }}>วันหยุด</span> : (
-                                <SelectOrFree value={pd.station || ''} onChange={v => setQDay(mk, d, { station: v })} disabled={!canManage} placeholder="— เลือกสถานี —" compact
+                                <SelectOrFree value={pd.station || ''} onChange={v => setQDay(mk, d, { station: v })} disabled={!canManage} placeholder={tr('— เลือกสถานี —')} compact
                                   options={[...(qHeader.stations || '').split(/[\n,]+/), ...wsNames]} style={{ width: 'min(100%, 320px)' }} />
                               )}
                             </td>
@@ -1224,7 +1225,7 @@ ${issuesHtml}
             <div>
               <div style={lb}>Station ที่ตรวจ</div>
               {/* สถานีจากแผนเดือนนี้ ∪ จุดงานในผังไลน์ + ระบุเอง (lpa_audits.station เดิมพิมพ์เอง · 2026-09-07) */}
-              <SelectOrFree value={draft?.station || ''} onChange={v => setDraft(prev => ({ ...prev, station: v }))} placeholder="— เลือกสถานี —" compact
+              <SelectOrFree value={draft?.station || ''} onChange={v => setDraft(prev => ({ ...prev, station: v }))} placeholder={tr('— เลือกสถานี —')} compact
                 options={[...auditPlanStations, ...wsNames]} style={{ width: 190, padding: '6px 10px', borderRadius: 7, fontSize: 13 }} />
             </div>
             <div>
@@ -1239,7 +1240,7 @@ ${issuesHtml}
                 {draft?.auditor_sig_url
                   ? <img src={draft.auditor_sig_url} alt="" style={{ height: 30, background: '#fff', borderRadius: 4, padding: 2 }} />
                   : <span style={{ fontSize: 11, color: 'var(--muted)' }}>ยังไม่มี</span>}
-                {canRecord && <button onClick={() => setShowSignPad(true)} style={{ ...btnGray, padding: '5px 10px', fontSize: 12 }}>เซ็นใหม่</button>}
+                {canRecord && <button onClick={() => setShowSignPad(true)} style={{ ...btnGray, padding: '5px 10px', fontSize: 12 }}>{tr('เซ็นใหม่')}</button>}
               </div>
             </div>
           </div>
@@ -1247,13 +1248,13 @@ ${issuesHtml}
           {draft?.id && (
             <div style={{ fontSize: 12, color: 'var(--green)', marginBottom: 8, display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
               ✅ วันนี้บันทึกผลตรวจชั้นนี้ไว้แล้ว — แก้ไขแล้วกดบันทึกทับได้
-              {mayDelete && <button onClick={deleteAudit} style={{ ...btnGray, color: 'var(--red)', border: '1px solid var(--red-line)', fontSize: 12, padding: '4px 10px' }}>ลบผลตรวจนี้</button>}
+              {mayDelete && <button onClick={deleteAudit} style={{ ...btnGray, color: 'var(--red)', border: '1px solid var(--red-line)', fontSize: 12, padding: '4px 10px' }}>{tr('ลบผลตรวจนี้')}</button>}
             </div>
           )}
 
           {canRecord && (
             <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-              <button onClick={setAllY} style={btnGray}>ข้อที่ยังไม่ตอบ = Y ทั้งหมด</button>
+              <button onClick={setAllY} style={btnGray}>{tr('ข้อที่ยังไม่ตอบ = Y ทั้งหมด')}</button>
               <div style={{ fontSize: 12, color: 'var(--muted)', alignSelf: 'center' }}>
                 ตอบแล้ว {auditQuestions.filter(q => draft?.answers[q.id]?.answer).length}/{auditQuestions.length} ข้อ · N/T ต้องกรอกรายละเอียดปัญหา
               </div>
@@ -1290,7 +1291,7 @@ ${issuesHtml}
                       </div>
                       {['N', 'T'].includes(a?.answer) && (
                         <input type="text" value={a?.note || ''} onChange={e => setAnsNote(q.id, e.target.value)} disabled={!canRecord}
-                          placeholder="รายละเอียดปัญหา / เงื่อนไข (บังคับ)" style={{ flex: '1 1 240px', fontSize: 12, padding: '6px 8px', border: '1px solid ' + ansMeta(a.answer).color, borderRadius: 'var(--ctl-r)' }} />
+                          placeholder={tr('รายละเอียดปัญหา / เงื่อนไข (บังคับ)')} style={{ flex: '1 1 240px', fontSize: 12, padding: '6px 8px', border: '1px solid ' + ansMeta(a.answer).color, borderRadius: 'var(--ctl-r)' }} />
                       )}
                     </div>
                   );
@@ -1332,7 +1333,7 @@ ${issuesHtml}
           {canRecord && !isMobile && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 6 }}>
               <button onClick={saveAudit} disabled={savingAudit} style={{ ...btnAccent, padding: '10px 26px' }}>
-                {savingAudit ? 'กำลังบันทึก...' : 'บันทึกผลตรวจ'}
+                {savingAudit ? tr('กำลังบันทึก...') : tr('บันทึกผลตรวจ')}
               </button>
             </div>
           )}
@@ -1340,7 +1341,7 @@ ${issuesHtml}
           {canRecord && isMobile && (
             <div className="m-savebar">
               <span className="m-savebar-sum">ตอบแล้ว {auditQuestions.filter(q => draft?.answers[q.id]?.answer).length}/{auditQuestions.length} ข้อ</span>
-              <button type="button" onClick={saveAudit} disabled={savingAudit}>{savingAudit ? 'กำลังบันทึก...' : 'บันทึกผลตรวจ'}</button>
+              <button type="button" onClick={saveAudit} disabled={savingAudit}>{savingAudit ? tr('กำลังบันทึก...') : tr('บันทึกผลตรวจ')}</button>
             </div>
           )}
           {!canRecord && <div style={{ fontSize: 12, color: 'var(--muted)' }}>คุณมีสิทธิ์ดูอย่างเดียว (บันทึกผลได้เฉพาะ role ที่มีสิทธิ์ lpa:record)</div>}
@@ -1437,9 +1438,9 @@ ${issuesHtml}
               <table style={{ borderCollapse: 'collapse', minWidth: 1100 }}>
                 <thead>
                   <tr style={{ fontSize: 11 }}>
-                    <th style={{ ...cellStyle, minWidth: 40 }}>ข้อ</th>
+                    <th style={{ ...cellStyle, minWidth: 40 }}>{tr('ข้อ')}</th>
                     <th style={{ ...cellStyle, minWidth: 260, textAlign: 'left', position: 'sticky', left: 0, background: 'var(--card)', zIndex: 2 }}>Audit Checklist / Question</th>
-                    {daysArr.map(d => <th key={d} style={{ ...cellStyle, background: isHoliday(dateOf(selMonth, d)) ? 'rgba(46,125,50,0.25)' : undefined }}>{d}</th>)}
+                    {daysArr.map(d => <th key={d} style={{ ...cellStyle, background: isHoliday(dateOf(selMonth, d)) ? 'rgba(46,125,50,0.25)' : undefined }}>{tr(d)}</th>)}
                     {[1, 2, 3, 4].map(w => <th key={w} style={{ ...cellStyle, background: 'var(--green-dim)' }}>W{w}</th>)}
                     <th style={{ ...cellStyle, background: 'rgba(148,163,184,0.15)' }}>M</th>
                     <th style={{ ...cellStyle, background: 'var(--amber-dim)' }}>Q</th>
@@ -1453,7 +1454,7 @@ ${issuesHtml}
                   <tr style={{ fontSize: 11 }}>
                     <th style={{ ...cellStyle, minWidth: 40 }} />
                     <th style={{ ...cellStyle, textAlign: 'left', position: 'sticky', left: 0, background: 'var(--card)', zIndex: 2, fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>
-                      สถานะวัน
+                      {tr('สถานะวัน')}
                     </th>
                     {daysArr.map((d, i) => {
                       const st = dayStates[i];
@@ -1519,11 +1520,11 @@ ${issuesHtml}
             <div>
               <div style={lb}>จัดการคำถามของ</div>
               <LineSelect lines={visibleLines} value={qScope} onChange={(v) => { setQScopePicked(true); setQScope(v); }} style={{ minWidth: 220 }}
-                placeholder="ทะเบียนกลาง (ใช้ร่วมทุกไลน์)" />
+                placeholder={tr('ทะเบียนกลาง (ใช้ร่วมทุกไลน์)')} />
             </div>
             <button
               onClick={() => setQEditing({ category: 'safety', seq: (Math.max(0, ...questions.map(q => q.seq)) + 1), question: '', line_name: qScope || '', issue_start: '', issue_end: '', is_active: true })}
-              style={btnAccent}>เพิ่มคำถาม{qScope ? ` (เฉพาะไลน์ ${qScope})` : ' (เข้าทะเบียนกลาง — ทุกไลน์เห็น)'}</button>
+              style={btnAccent}>{tr('เพิ่มคำถาม')}{qScope ? ` (เฉพาะไลน์ ${qScope})` : ' (เข้าทะเบียนกลาง — ทุกไลน์เห็น)'}</button>
           </div>
           {/* 🔴 ป้าย "ตอนนี้คุณกำลังแก้ของใคร" — ห้ามถอด (2026-10-12 · feedback user)
               เคสจริง: มีคนกดลบข้อ common 2 ข้อจากมุมมอง "ทุกไลน์" ⇒ หายจากใบตรวจทุกไลน์
@@ -1590,7 +1591,7 @@ ${issuesHtml}
                         <button className="tbtn" onClick={() => toggleHideForLine(q, qScope)}
                           title={hiddenHere ? `เอาข้อนี้กลับมาใช้ที่ไลน์ ${qScope}` : `เลิกใช้ข้อนี้เฉพาะไลน์ ${qScope} (ไลน์อื่นและทะเบียนกลางไม่กระทบ)`}
                           style={{ ...btnGray, color: hiddenHere ? 'var(--accent)' : 'var(--red)', padding: '4px 10px', fontSize: 12, whiteSpace: 'nowrap' }}>
-                          {hiddenHere ? 'ใช้ที่ไลน์นี้' : 'ไม่ใช้ที่ไลน์นี้'}
+                          {hiddenHere ? tr('ใช้ที่ไลน์นี้') : tr('ไม่ใช้ที่ไลน์นี้')}
                         </button>
                       ) : (
                         // ข้อ common (มุมมองทุกไลน์) หรือข้อเฉพาะไลน์ → แก้/ปิด/ลบเต็มที่
@@ -1622,7 +1623,7 @@ ${issuesHtml}
                 <div>
                   <div style={lb}>หมวด</div>
                   <select value={qEditing.category} onChange={e => setQEditing(p => ({ ...p, category: e.target.value }))} style={{ width: '100%' }}>
-                    {CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.full}</option>)}
+                    {CATEGORIES.map(c => <option key={c.key} value={c.key}>{tr(c.full)}</option>)}
                   </select>
                 </div>
                 <div><div style={lb}>ลำดับ</div><input type="number" value={qEditing.seq} onChange={e => setQEditing(p => ({ ...p, seq: e.target.value }))} style={{ width: '100%' }} /></div>
@@ -1640,8 +1641,8 @@ ${issuesHtml}
                 </div>
               )}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-                <button onClick={() => setQEditing(null)} style={btnGray}>ยกเลิก</button>
-                <button onClick={saveQuestion} style={btnAccent}>บันทึก</button>
+                <button onClick={() => setQEditing(null)} style={btnGray}>{tr('ยกเลิก')}</button>
+                <button onClick={saveQuestion} style={btnAccent}>{tr('บันทึก')}</button>
               </div>
             </div>
           </div>

@@ -41,6 +41,7 @@ import { SESSION_STATUSES_REAL } from '../utils/sessionStatus';
 import { machineLaneCount } from '../utils/machineAssets';
 import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
 import SectionScopeSelect from '../components/SectionScopeSelect';
+import { tr } from '../utils/i18n';
 loadDocForms(); // ทะเบียนเอกสาร — แถบเลขฟอร์มท้ายใบพิมพ์ (ตั้งที่ /doc-forms · 2026-07-30)
 
 // Gesture Mode (MediaPipe) — lazy ทั้ง component และโค้ด MediaPipe ข้างใน: โหลดเฉพาะตอนผู้ใช้กด 📷
@@ -609,11 +610,11 @@ export default function MorningMeeting() {
 <p>📦 ผลิตรวม <b>${sum.actual}${sum.target > 0 ? `/${sum.target} (${sum.achieve}%)` : ' (ไม่มีเป้าให้เทียบ)'}</b> · 📊 OEE เฉลี่ย ${sum.oeeAvg ?? '-'}% ·
 ⏱️ Downtime ${sum.dtMin} นาที (${sum.dtCount} ครั้ง${sum.dtPct != null ? ` = ${sum.dtPct}% ของเวลาเครื่องรวม ≈${Math.round(sum.dtBaseMin / 60)} ชม. · ${sum.dtMachines} เครื่อง` : ''} — รวมทุกไลน์/เครื่อง เวลาซ้อนกันได้) · ❌ NG ${sum.ng} · 👥 เข้างาน ${sum.present}/${sum.attTotal}</p>
 <h2>📉 งานหลุดแผน (${missedOrders.length})</h2>
-<table><tr><th style="${td}">ไลน์</th><th style="${td}">พาร์ท</th><th style="${td}">เป้า</th><th style="${td}">ได้จริง</th><th style="${td}">ขาด</th><th style="${td}">สาเหตุ</th></tr>${missedRows || `<tr><td colspan="6" style="${td}">— ไม่มี —</td></tr>`}</table>
-<h2>🛠️ Top Downtime นอกแผน</h2>
-<table><tr><th style="${td}">สาเหตุ</th><th style="${td}">นาที</th><th style="${td}">ครั้ง</th><th style="${td}">เครื่อง</th></tr>${dtRows || `<tr><td colspan="4" style="${td}">— ไม่มี —</td></tr>`}</table>
+<table><tr><th style="${td}">{tr('ไลน์')}</th><th style="${td}">{tr('พาร์ท')}</th><th style="${td}">{tr('เป้า')}</th><th style="${td}">{tr('ได้จริง')}</th><th style="${td}">{tr('ขาด')}</th><th style="${td}">{tr('สาเหตุ')}</th></tr>${missedRows || `<tr><td colspan="6" style="${td}">— ไม่มี —</td></tr>`}</table>
+<h2>{tr('🛠️ Top Downtime นอกแผน')}</h2>
+<table><tr><th style="${td}">{tr('สาเหตุ')}</th><th style="${td}">{tr('นาที')}</th><th style="${td}">{tr('ครั้ง')}</th><th style="${td}">{tr('เครื่อง')}</th></tr>${dtRows || `<tr><td colspan="4" style="${td}">— ไม่มี —</td></tr>`}</table>
 <h2>📌 Action Items</h2>
-<table><tr><th style="${td}">จากวัน</th><th style="${td}">ไลน์</th><th style="${td}">เรื่อง</th><th style="${td}">ผู้รับผิดชอบ</th><th style="${td}">กำหนด</th><th style="${td}">สถานะ</th></tr>${actRows || `<tr><td colspan="6" style="${td}">— ไม่มี —</td></tr>`}</table>
+<table><tr><th style="${td}">{tr('จากวัน')}</th><th style="${td}">{tr('ไลน์')}</th><th style="${td}">{tr('เรื่อง')}</th><th style="${td}">{tr('ผู้รับผิดชอบ')}</th><th style="${td}">{tr('กำหนด')}</th><th style="${td}">{tr('สถานะ')}</th></tr>${actRows || `<tr><td colspan="6" style="${td}">— ไม่มี —</td></tr>`}</table>
 <p style="margin-top:18px;color:#888">พิมพ์จาก ESM Morning Meeting · ${new Date().toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}</p>
 <script>window.onload = () => window.print();</script></body></html>`;
     const w = window.open('', '_blank'); w.document.write(withDocFoot(html, 'morning_meeting')); w.document.close();
@@ -739,7 +740,7 @@ export default function MorningMeeting() {
 
   const MissedPanel = ({ bounded } = {}) => (
     <div style={card}>
-      <h2 style={h2St}>งานหลุดแผน <span style={chip(missedOrders.length ? 'var(--red)' : 'var(--green)')}>{missedOrders.length} รายการ</span></h2>
+      <h2 style={h2St}>{tr('งานหลุดแผน')} <span style={chip(missedOrders.length ? 'var(--red)' : 'var(--green)')}>{missedOrders.length} {tr('รายการ')}</span></h2>
       {missedOrders.length === 0 ? (
         <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 700 }}>✅ ทุกใบงานได้ตามเป้า</div>
       ) : (
@@ -748,7 +749,7 @@ export default function MorningMeeting() {
             <thead>
               <tr style={{ color: 'var(--muted)', textAlign: 'left' }}>
                 {['ไลน์', 'พาร์ท / ใบงาน', 'เป้า', 'ได้จริง', 'ขาด', 'สาเหตุ (อัตโนมัติจากข้อมูลที่บันทึก)', canRecord ? '' : null].filter(v => v !== null).map(h => (
-                  <th key={h} style={{ padding: '4px 8px', borderBottom: '1px solid var(--border)', fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
+                  <th key={h} style={{ padding: '4px 8px', borderBottom: '1px solid var(--border)', fontSize: 11, whiteSpace: 'nowrap' }}>{tr(h)}</th>
                 ))}
               </tr>
             </thead>
@@ -791,7 +792,7 @@ export default function MorningMeeting() {
   const DtDefectPanel = () => (
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 1fr', gap: 10 }}>
       <div style={{ ...card, height: '100%' }}>
-        <h2 style={h2St}>Top Downtime นอกแผน <span style={chip(sum.dtMin ? 'var(--red)' : 'var(--green)')}>{sum.dtMin} นาที</span></h2>
+        <h2 style={h2St}>{tr('Top Downtime นอกแผน')} <span style={chip(sum.dtMin ? 'var(--red)' : 'var(--green)')}>{sum.dtMin} {tr('นาที')}</span></h2>
         {topDowntime.unplanned.length === 0 ? <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 700 }}>✅ ไม่มี Downtime นอกแผน</div> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {topDowntime.unplanned.map(t => (
@@ -842,7 +843,7 @@ export default function MorningMeeting() {
         )}
       </div>
       <div style={{ ...card, height: '100%' }}>
-        <h2 style={h2St}>Top ของเสีย (NG/Suspect)</h2>
+        <h2 style={h2St}>{tr('Top ของเสีย (NG/Suspect)')}</h2>
         {topDefects.length === 0 ? <div style={{ fontSize: 13, color: 'var(--green)', fontWeight: 700 }}>✅ ไม่มีของเสียที่บันทึก</div> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {topDefects.map((t, i) => (
@@ -879,7 +880,7 @@ export default function MorningMeeting() {
     routine.forEach(m => { routineByLine[m.line_name] = (routineByLine[m.line_name] || 0) + 1; });
     return (
       <div style={card}>
-        <h2 style={h2St}>4M Change เมื่อวาน <span style={chip('var(--blue)')}>{fourM.length} รายการ</span></h2>
+        <h2 style={h2St}>{tr('4M Change เมื่อวาน')} <span style={chip('var(--blue)')}>{fourM.length} {tr('รายการ')}</span></h2>
         {fourM.length === 0 ? <div style={{ fontSize: 13, color: 'var(--muted)' }}>— ไม่มีบันทึก 4M —</div> : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5, ...(bounded ? { maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' } : null) }}>
             {notable.map(m => {
@@ -930,7 +931,7 @@ export default function MorningMeeting() {
 
   const ReadinessPanel = ({ bounded } = {}) => (
     <div style={card}>
-      <h2 style={h2St}>ความพร้อมเช้านี้</h2>
+      <h2 style={h2St}>{tr('ความพร้อมเช้านี้')}</h2>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, ...(bounded ? { maxHeight: 'calc(100vh - 340px)', overflowY: 'auto' } : null) }}>
         {/* เครื่องยังซ่อมค้าง — Andon แดง (กระพริบเฉพาะที่ยังค้างจริง ตามกฎ) */}
         {openDts.length > 0 ? openDts.map(d => (
@@ -974,10 +975,10 @@ export default function MorningMeeting() {
   const ActionsPanel = ({ bounded } = {}) => (
     <div style={card}>
       <h2 style={h2St}>
-        Action Items <span style={chip(openActions.length ? 'var(--amber)' : 'var(--green)')}>{openActions.length} ค้าง</span>
+        Action Items <span style={chip(openActions.length ? 'var(--amber)' : 'var(--green)')}>{openActions.length} {tr('ค้าง')}</span>
         {canRecord && (
           <button type="button" className="pg-btn sm" onClick={() => openActModal()} style={{ marginLeft: 'auto' }}>
-            เพิ่ม Action
+            {tr('เพิ่ม Action')}
           </button>
         )}
       </h2>
@@ -1003,8 +1004,8 @@ export default function MorningMeeting() {
                   <span style={chip(st.color)}>{st.label}</span>
                   {canRecord && ['open', 'doing'].includes(a.status) && (
                     <>
-                      {a.status === 'open' && <button type="button" className="pg-btn sm" onClick={() => setActStatus(a, 'doing')}>เริ่มทำ</button>}
-                      <button type="button" className="pg-btn sm" onClick={() => setActStatus(a, 'done')}>เสร็จ</button>
+                      {a.status === 'open' && <button type="button" className="pg-btn sm" onClick={() => setActStatus(a, 'doing')}>{tr('เริ่มทำ')}</button>}
+                      <button type="button" className="pg-btn sm" onClick={() => setActStatus(a, 'done')}>{tr('เสร็จ')}</button>
                       <button type="button" className="pg-btn sm pg-btn-icon" onClick={() => setActStatus(a, 'cancelled')}>✕</button>
                     </>
                   )}
@@ -1076,10 +1077,10 @@ export default function MorningMeeting() {
         actions={<>
           {/* ปุ่มตายตัว ≤2 (UI §6.35): [โหมดประชุม] [ส่งสรุป Telegram] · พิมพ์ → ⋯ */}
           <OverflowMenu items={[{ key: 'print', icon: '📄', label: 'พิมพ์', onClick: handlePrint, title: 'พิมพ์สรุปเป็นเอกสาร' }]} />
-          <button type="button" className="pg-btn" onClick={() => { setSlide(0); setTvMode(true); }} title="โหมดจอ TV — ไล่วาระทีละหน้า (◀ ▶ เปลี่ยน, Esc ออก)">โหมดประชุม</button>
+          <button type="button" className="pg-btn" onClick={() => { setSlide(0); setTvMode(true); }} title="โหมดจอ TV — ไล่วาระทีละหน้า (◀ ▶ เปลี่ยน, Esc ออก)">{tr('โหมดประชุม')}</button>
           {canRecord && (
             <button type="button" className="pg-btn primary" onClick={sendTelegram} disabled={sendingTg} style={{ opacity: sendingTg ? 0.6 : 1 }} title="ส่งสรุปประชุมเข้า Telegram">
-              {sendingTg ? 'กำลังส่ง…' : 'ส่งสรุป Telegram'}
+              {sendingTg ? tr('กำลังส่ง…') : tr('ส่งสรุป Telegram')}
             </button>
           )}
         </>} />
@@ -1160,39 +1161,39 @@ export default function MorningMeeting() {
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }} />
           <div style={{ position: 'relative', zIndex: 10, width: '100%', maxWidth: 460, borderRadius: 'var(--r-lg)', background: 'var(--bg2)', border: '1px solid var(--border2)', boxShadow: 'var(--shadow-lg)', padding: 18 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>➕ Action Item — ประชุม {fmtDate(meetingDate)}</h3>
+              <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{tr('➕ Action Item — ประชุม')} {fmtDate(meetingDate)}</h3>
               <button onClick={() => setActModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>ปัญหา / สิ่งที่ต้องทำ *
+              <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>{tr('ปัญหา / สิ่งที่ต้องทำ *')}
                 <textarea rows={2} value={actModal.problem} onChange={e => setActModal(v => ({ ...v, problem: e.target.value }))}
                   style={{ marginTop: 4, fontSize: 13, resize: 'vertical' }} />
               </label>
-              <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>สาเหตุ (สรุปในที่ประชุม)
+              <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>{tr('สาเหตุ (สรุปในที่ประชุม)')}
                 <input value={actModal.root_cause} onChange={e => setActModal(v => ({ ...v, root_cause: e.target.value }))}
-                  style={{ marginTop: 4, fontSize: 13 }} placeholder="เช่น น็อตจับจิ๊กสึก / วัตถุดิบมาช้า" />
+                  style={{ marginTop: 4, fontSize: 13 }} placeholder={tr('เช่น น็อตจับจิ๊กสึก / วัตถุดิบมาช้า')} />
               </label>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>ไลน์
+                <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>{tr('ไลน์')}
                   {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง) — คง scope+section filter เดิม (viewLines) */}
-                  <LineSelect lines={viewLines} value={actModal.line_name} placeholder="— เรื่องรวม —" style={{ marginTop: 4, fontSize: 13 }}
+                  <LineSelect lines={viewLines} value={actModal.line_name} placeholder={tr('— เรื่องรวม —')} style={{ marginTop: 4, fontSize: 13 }}
                     onChange={v => setActModal(x => ({ ...x, line_name: v }))} />
                 </label>
-                <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>กำหนดเสร็จ
+                <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>{tr('กำหนดเสร็จ')}
                   <input type="date" value={actModal.due_date || ''} onChange={e => setActModal(v => ({ ...v, due_date: e.target.value }))}
                     style={{ marginTop: 4, fontSize: 13 }} />
                 </label>
               </div>
-              <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>ผู้รับผิดชอบ
+              <label style={{ fontSize: 12, color: 'var(--text2)', fontWeight: 700 }}>{tr('ผู้รับผิดชอบ')}
                 {/* 2026-09-07 เลือกจาก profiles+employees ผ่าน <PersonSelect> (คนของไลน์ที่เลือกขึ้นก่อน) — ตารางเก็บชื่อ text ไม่มีคอลัมน์ id */}
-                <PersonSelect value={actModal.assignee || ''} source="both" history={assigneeHist} placeholder="ชื่อผู้รับผิดชอบ" style={{ marginTop: 4 }}
+                <PersonSelect value={actModal.assignee || ''} source="both" history={assigneeHist} placeholder={tr('ชื่อผู้รับผิดชอบ')} style={{ marginTop: 4 }}
                   lines={actModal.line_name ? getLineFamilyNames(allLines, actModal.line_name) : undefined}
                   onChange={({ name }) => setActModal(v => ({ ...v, assignee: name }))} />
               </label>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
-                <button onClick={() => setActModal(null)} style={btnSt(false)}>ยกเลิก</button>
+                <button onClick={() => setActModal(null)} style={btnSt(false)}>{tr('ยกเลิก')}</button>
                 <button onClick={saveAction} disabled={savingAct} style={{ ...btnSt(true), opacity: savingAct ? 0.6 : 1 }}>
-                  {savingAct ? 'กำลังบันทึก…' : 'บันทึก'}
+                  {savingAct ? tr('กำลังบันทึก…') : tr('บันทึก')}
                 </button>
               </div>
             </div>

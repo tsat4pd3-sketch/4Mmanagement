@@ -35,6 +35,7 @@ import { fmtAxis } from '../utils/chartAxis';
 import { loadDocForms } from '../utils/docForms';
 import { downloadCsvDoc } from '../utils/csvDoc';
 import NoticeBar from '../components/NoticeBar';
+import { tr } from '../utils/i18n';
 import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 /* ─── PLANNER & SALES — Forecast Planner + อัพโหลดไฟล์จากลูกค้า ──────────────
@@ -893,13 +894,13 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
               <button key={t.k} onClick={() => { setKind(t.k); setHeaders([]); setRows([]); setFileName(''); }} style={btn(kind === t.k)}>{t.label}</button>
             ))}
             <label style={{ ...btn(false), display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              เลือกไฟล์ Excel/CSV (เลือกหลายไฟล์ได้)
+              {tr('เลือกไฟล์ Excel/CSV (เลือกหลายไฟล์ได้)')}
               <input type="file" accept=".xlsx,.xlsm,.xlsb,.xls,.csv" multiple style={{ display: 'none' }}
                 onChange={e => { mailRowsRef.current = []; handleFiles(e.target.files, kind); e.target.value = ''; }} />
             </label>
             {fileName && <span style={{ alignSelf: 'center', fontSize: 12, color: 'var(--muted)' }}>{fileName} · {rows.length} แถว</span>}
             <button type="button" onClick={() => setShowFmt(v => !v)} style={{ ...btn(false), marginLeft: 'auto' }}>
-              ฟอร์แมตไฟล์ลูกค้า{fmtRows.length ? ` (${fmtRows.length})` : ''}
+              {tr('ฟอร์แมตไฟล์ลูกค้า')}{fmtRows.length ? ` (${fmtRows.length})` : ''}
             </button>
           </div>
 
@@ -1004,9 +1005,9 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={doImportEdi} disabled={saving}
                   style={{ padding: '9px 22px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
-                  {saving ? 'กำลังนำเข้า...' : 'ยืนยันนำเข้า EDI'}
+                  {saving ? tr('กำลังนำเข้า...') : tr('ยืนยันนำเข้า EDI')}
                 </button>
-                <button onClick={() => setEdi(null)} style={{ ...btn(false) }}>ยกเลิก</button>
+                <button onClick={() => setEdi(null)} style={{ ...btn(false) }}>{tr('ยกเลิก')}</button>
               </div>
             </div>
           )}
@@ -1015,7 +1016,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
               {kind === 'forecast' && monthCols.length >= 2 && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text2)', marginBottom: 10, cursor: 'pointer' }}>
                   <input type="checkbox" checked={wideMode} onChange={e => setWideMode(e.target.checked)} />
-                  ไฟล์เป็นแบบ "เดือนละคอลัมน์" — พบคอลัมน์เดือน {monthCols.length} เดือน ({monthCols.slice(0, 4).map(m => m.label).join(', ')}{monthCols.length > 4 ? ' …' : ''})
+                  ไฟล์เป็นแบบ "เดือนละคอลัมน์" — พบคอลัมน์เดือน {monthCols.length} {tr('เดือน (')}{monthCols.slice(0, 4).map(m => m.label).join(', ')}{monthCols.length > 4 ? ' …' : ''})
                 </label>
               )}
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -1023,7 +1024,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                   <div key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{f.label}</span>
                     <select value={mapping[f.key] ?? -1} onChange={e => setMapping(m => ({ ...m, [f.key]: Number(e.target.value) }))} style={{ ...inputSt, minWidth: 140 }}>
-                      <option value={-1}>— ไม่ใช้ —</option>
+                      <option value={-1}>{tr('— ไม่ใช้ —')}</option>
                       {headers.map(h => <option key={h.idx} value={h.idx}>{h.text || `(คอลัมน์ ${h.idx + 1})`}</option>)}
                     </select>
                   </div>
@@ -1064,7 +1065,7 @@ function UploadTab({ canUpload, fullName, onImported, custLabel }) {
                   <span style={{ color: 'var(--muted)' }}> · {b.row_count} แถว · {b.uploaded_by} · {new Date(b.uploaded_at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })}</span>
                 </div>
                 {canUpload && (
-                  <button onClick={() => deleteBatch(b)} style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', flexShrink: 0, fontFamily: 'var(--font-body)' }}>ลบ</button>
+                  <button onClick={() => deleteBatch(b)} style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--red-dim)', color: 'var(--red)', border: '1px solid var(--red-line)', flexShrink: 0, fontFamily: 'var(--font-body)' }}>{tr('ลบ')}</button>
                 )}
               </div>
             ))}
@@ -1202,7 +1203,7 @@ function PlannerTab({ refreshKey, custLabel }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 640 }}>
               <thead><tr style={{ background: 'var(--bg2)' }}>
                 {['พาร์ท', 'ลูกค้า', 'Forecast', 'Order จริง', 'Coverage', 'ภาระ (ชม.)'].map(h => (
-                  <th key={h} style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: h === 'พาร์ท' || h === 'ลูกค้า' ? 'left' : 'right' }}>{h}</th>
+                  <th key={h} style={{ padding: '8px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: h === 'พาร์ท' || h === 'ลูกค้า' ? 'left' : 'right' }}>{tr(h)}</th>
                 ))}
               </tr></thead>
               <tbody>
@@ -1671,7 +1672,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
           <span className="filter-label">⏱ ชม.ทำงาน/วัน <span style={{ color: 'var(--blue)' }}>(คิด capacity)</span></span>
           <input type="number" value={settings.hours_per_day} onChange={e => setSettings(s => ({ ...s, hours_per_day: e.target.value }))} style={{ width: 80 }} />
         </>)}
-        {canApply && <button onClick={saveSettings} style={btn(false)}>ค่ากลาง</button>}
+        {canApply && <button onClick={saveSettings} style={btn(false)}>{tr('ค่ากลาง')}</button>}
         <span className="spacer" />
         <span className="filter-count">{rows.length} พาร์ท · <b style={{ color: 'var(--amber)' }}>{changedRows.length}</b> เปลี่ยน</span>
         {canApply && (
@@ -1713,7 +1714,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
               {Object.keys(suggestByCust).length > 0 && <span style={{ color: 'var(--green)', fontWeight: 700 }}> · ระบบแนะนำได้ {Object.keys(suggestByCust).length} พาร์ท (ตัด revision เทียบ base)</span>}
             </div>
           </div>
-          {canApply && <button onClick={openMapModal} style={{ ...btn(true) }}>จับคู่เลข SAP</button>}
+          {canApply && <button onClick={openMapModal} style={{ ...btn(true) }}>{tr('จับคู่เลข SAP')}</button>}
         </div>
       )}
 
@@ -1831,7 +1832,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
             <div style={{ overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                 <thead><tr style={{ background: 'var(--bg2)' }}>
-                  {['เลขพาร์ทลูกค้า', 'Order/เดือน', 'เลข SAP ภายใน'].map(h => <th key={h} style={{ padding: '7px 10px', fontSize: 11, color: 'var(--muted)', textAlign: h === 'Order/เดือน' ? 'right' : 'left' }}>{h}</th>)}
+                  {['เลขพาร์ทลูกค้า', 'Order/เดือน', 'เลข SAP ภายใน'].map(h => <th key={h} style={{ padding: '7px 10px', fontSize: 11, color: 'var(--muted)', textAlign: h === 'Order/เดือน' ? 'right' : 'left' }}>{tr(h)}</th>)}
                 </tr></thead>
                 <tbody>
                   {unmapped.map(u => (
@@ -1840,7 +1841,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
                       <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(u.order)}</td>
                       <td style={{ padding: '6px 10px', borderTop: '1px solid var(--border)' }}>
                         {/* picker กลาง Product Master (ค้น MAT/ชื่อ/P/N/ไลน์) — ไม่รับเลขนอกทะเบียน (2026-09-07 แทน datalist) */}
-                        <ProductSelect value={mapSel[u.mat] || ''} placeholder="ค้นเลข SAP / ชื่อ…"
+                        <ProductSelect value={mapSel[u.mat] || ''} placeholder={tr('ค้นเลข SAP / ชื่อ…')}
                           onChange={({ mat_no }) => setMapSel(s => ({ ...s, [u.mat]: mat_no }))}
                           inputStyle={{ padding: '5px 30px 5px 8px', fontSize: 12,
                             borderColor: mapSel[u.mat] && drMap[mapSel[u.mat]] ? 'var(--green)' : mapSel[u.mat] ? 'var(--red)' : 'var(--border)' }} />
@@ -1867,7 +1868,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>* พาร์ทที่ยังไม่มีเลข SAP ในระบบเลย ต้องไปเพิ่มที่ Product Master ก่อน แล้วค่อยกลับมาจับคู่</div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
-              <button onClick={() => setMapModal(false)} style={{ ...btn(false) }}>ปิด</button>
+              <button onClick={() => setMapModal(false)} style={{ ...btn(false) }}>{tr('ปิด')}</button>
               <button onClick={doMapping} disabled={mapping || Object.values(mapSel).filter(v => v && drMap[v]).length === 0}
                 style={{ ...btn(true), opacity: mapping || Object.values(mapSel).filter(v => v && drMap[v]).length === 0 ? 0.5 : 1 }}>
                 {mapping ? '...' : `จับคู่ (${Object.values(mapSel).filter(v => v && drMap[v]).length})`}
@@ -1888,7 +1889,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
             </div>
             <div style={{ overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
-                <thead><tr style={{ background: 'var(--bg2)' }}>{['Mat','Total เดิม (ใบ)','→ ใหม่ (ใบ)','Max (ชิ้น)','ขนาดล็อต (ชิ้น)'].map(h => <th key={h} style={{ padding: '7px 10px', fontSize: 11, color: 'var(--muted)', textAlign: h === 'Mat' ? 'left' : 'right' }}>{h}</th>)}</tr></thead>
+                <thead><tr style={{ background: 'var(--bg2)' }}>{['Mat','Total เดิม (ใบ)','→ ใหม่ (ใบ)','Max (ชิ้น)','ขนาดล็อต (ชิ้น)'].map(h => <th key={h} style={{ padding: '7px 10px', fontSize: 11, color: 'var(--muted)', textAlign: h === 'Mat' ? 'left' : 'right' }}>{tr(h)}</th>)}</tr></thead>
                 <tbody>
                   {preview.map(row => {
                     // ขนาดล็อตคือค่าที่ทริกเกอร์ระเบิดความต้องการใช้ตรงๆ — เปลี่ยนแล้วกระทบจำนวนใบสั่งทันที ต้องเห็นก่อนกดยืนยัน
@@ -1910,7 +1911,7 @@ function KanbanCalcTab({ canApply, fullName, custLabel }) {
               </table>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-              <button onClick={() => setPreview(null)} style={{ ...btn(false) }}>ยกเลิก</button>
+              <button onClick={() => setPreview(null)} style={{ ...btn(false) }}>{tr('ยกเลิก')}</button>
               <button onClick={doApply} disabled={applying} style={{ ...btn(true), opacity: applying ? 0.6 : 1 }}>{applying ? '...' : `ยืนยัน Apply (${changedRows.length})`}</button>
             </div>
           </div>

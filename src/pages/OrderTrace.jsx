@@ -28,6 +28,7 @@ import useTimeRange from '../utils/useTimeRange';
 import { urlBool } from '../utils/urlInit';
 
 import NoticeBar from '../components/NoticeBar';
+import { tr as trI18n } from '../utils/i18n';
 /*
   🔎 สอบกลับ Order (Order Traceability) — 2026-07-30
   รู้ prod_no ที่สแกน kanban → เห็นทุกอย่างที่เกิดขึ้นกับใบนั้น + สถานการณ์รอบข้าง ณ เวลานั้น:
@@ -1035,7 +1036,7 @@ export default function OrderTrace() {
           title="สอบกลับ = ทวนสอบของที่ออกจากไลน์ไปแล้ว · ใบที่ยังผลิตอยู่จึงไม่แสดงโดยปริยาย">
           <input type="checkbox" checked={includeOpen} style={{ width: 'auto' }}
             onChange={e => { const v = e.target.checked; setIncludeOpen(v); doSearch(undefined, { includeOpen: v }); }} />
-          รวมใบที่กำลังผลิต
+          {trI18n('รวมใบที่กำลังผลิต')}
         </label>
         {/* ช่องค้นหา + ปุ่มค้นหา = กลุ่มเดียวกัน (UX audit 05/10) — เดิมช่อง grow ยืดเต็มแถวแล้วปุ่มไปอยู่สุดขอบ
             + placeholder ยาวจนถูกตัด ("…เลข Julian เช่น 24726A" ไม่เคยโชว์ครบ) ⇒ ป้ายสั้น · รายละเอียดอยู่ใน title */}
@@ -1046,7 +1047,7 @@ export default function OrderTrace() {
             fields="PROD.NO / MAT / ชื่อชิ้นงาน / Julian" autoFocus />
           <button onClick={() => doSearch()} disabled={searching}
             style={{ height: 'var(--ctl-h)', padding: '0 18px', flexShrink: 0, borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: 'pointer' }}>
-            {searching ? '⏳' : 'ค้นหา'}
+            {searching ? '⏳' : trI18n('ค้นหา')}
           </button>
           <button onClick={() => setScanOpen(true)} title="สแกนคัมบัง / ใบผลิต / ป้ายเครื่องด้วยกล้อง"
             style={{ height: 'var(--ctl-h)', padding: '0 12px', flexShrink: 0, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontWeight: 700, cursor: 'pointer' }}>
@@ -1055,7 +1056,7 @@ export default function OrderTrace() {
         </div>
         {sel && <>
           <span className="spacer" />
-          <button onClick={() => { setSel(null); }} style={{ padding: '0 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>ปิด — ดูใบอื่น</button>
+          <button onClick={() => { setSel(null); }} style={{ padding: '0 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>{trI18n('ปิด — ดูใบอื่น')}</button>
         </>}
       </TimeRangeBar>
 
@@ -1130,9 +1131,9 @@ export default function OrderTrace() {
           <div style={{ ...card, marginBottom: 16, padding: 0, maxHeight: 'calc(100vh - 330px)', minHeight: 260, overflow: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
               <thead><tr style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'left', position: 'sticky', top: 0, background: 'var(--card)', zIndex: 1, boxShadow: 'inset 0 -1px 0 var(--border)' }}>
-                <th style={{ padding: '8px 6px' }}>PROD.NO</th><th>MAT / ชิ้นงาน</th><th>ไลน์ / เครื่อง</th><th>วัน / กะ</th><th>เปิด → ปิด</th>
-                <th style={{ textAlign: 'right' }}>เป้า</th><th style={{ textAlign: 'right' }}>ผลิต</th><th style={{ textAlign: 'right' }}>%</th>
-                <th style={{ textAlign: 'right' }}>NG</th><th style={{ textAlign: 'right' }}>OEE กะ</th><th>ผู้เปิด / ปิด</th><th>สถานะ</th>
+                <th style={{ padding: '8px 6px' }}>PROD.NO</th><th>{trI18n('MAT / ชิ้นงาน')}</th><th>{trI18n('ไลน์ / เครื่อง')}</th><th>{trI18n('วัน / กะ')}</th><th>{trI18n('เปิด → ปิด')}</th>
+                <th style={{ textAlign: 'right' }}>{trI18n('เป้า')}</th><th style={{ textAlign: 'right' }}>{trI18n('ผลิต')}</th><th style={{ textAlign: 'right' }}>%</th>
+                <th style={{ textAlign: 'right' }}>NG</th><th style={{ textAlign: 'right' }}>{trI18n('OEE กะ')}</th><th>{trI18n('ผู้เปิด / ปิด')}</th><th>{trI18n('สถานะ')}</th>
               </tr></thead>
               <tbody>
                 {results.map(o => {
@@ -1238,7 +1239,7 @@ export default function OrderTrace() {
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
                       <select value={claimFm} onChange={e => setClaimFm(e.target.value)}
                         style={{ flex: '2 1 320px', minWidth: 0, padding: '7px 10px', fontSize: 13, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', borderRadius: 'var(--ctl-r)' }}>
-                        <option value="">— เลือกอาการที่ลูกค้าแจ้ง (จาก PFMEA {trace.pe.fmea.length} รายการ) —</option>
+                        <option value="">{trI18n('— เลือกอาการที่ลูกค้าแจ้ง (จาก PFMEA')} {trace.pe.fmea.length} {trI18n('รายการ) —')}</option>
                         {trace.pe.fmea.slice().sort((a, b) =>
                           ((b.severity || 0) * (b.occurrence || 0) * (b.detection || 0)) - ((a.severity || 0) * (a.occurrence || 0) * (a.detection || 0))
                         ).map(f => {
@@ -1250,7 +1251,7 @@ export default function OrderTrace() {
                         })}
                       </select>
                       <input value={claimNote} onChange={e => setClaimNote(e.target.value)}
-                        placeholder="รายละเอียดที่ลูกค้าแจ้ง เช่น ตำแหน่ง M8 ด้านซ้าย"
+                        placeholder={trI18n('รายละเอียดที่ลูกค้าแจ้ง เช่น ตำแหน่ง M8 ด้านซ้าย')}
                         style={{ flex: '1 1 220px', minWidth: 0, padding: '7px 10px', fontSize: 13, background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)', borderRadius: 'var(--ctl-r)' }} />
                     </div>
 
@@ -1424,7 +1425,7 @@ export default function OrderTrace() {
                       <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
                           <thead><tr style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'left' }}>
-                            <th style={{ padding: '4px 6px' }}>พนักงาน</th><th>จุดที่เข้าวันนั้น</th><th>จุดประจำ</th><th>Skill fit</th><th>PPE</th><th>หมายเหตุ</th>
+                            <th style={{ padding: '4px 6px' }}>{trI18n('พนักงาน')}</th><th>{trI18n('จุดที่เข้าวันนั้น')}</th><th>{trI18n('จุดประจำ')}</th><th>Skill fit</th><th>PPE</th><th>{trI18n('หมายเหตุ')}</th>
                           </tr></thead>
                           <tbody>
                             {enrich.map((p, i) => (

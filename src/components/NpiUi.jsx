@@ -5,6 +5,7 @@ import { LIGHT } from '../utils/npi';
 import { uploadAttachment, removeAttachment, attachFileName } from '../utils/fileAttach';
 import FilePickBase from './FilePick';
 
+import { tr } from '../utils/i18n';
 export const inp = {
   width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)',
   background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box',
@@ -53,7 +54,7 @@ export function LightDot({ light = 'grey', size = 12, title }) {
 export function MetaSelect({ value, onChange, meta, disabled, style, exclude = [] }) {
   return (
     <select value={value || ''} onChange={e => onChange(e.target.value)} disabled={disabled} style={{ ...inp, ...style }}>
-      {Object.entries(meta).filter(([k]) => !exclude.includes(k)).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
+      {Object.entries(meta).filter(([k]) => !exclude.includes(k)).map(([k, m]) => <option key={k} value={k}>{tr(m.label)}</option>)}
     </select>
   );
 }

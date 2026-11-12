@@ -32,6 +32,7 @@ import { SLOC_KINDS, slocKindMeta, slocKindGuess, slocLabel, slocValid, SLOC_FOR
 import { loadHomeSlocs } from '../utils/homeSloc';
 import { DeleteButton } from './IconButton';
 
+import { tr } from '../utils/i18n';
 const inputSt = {
   width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border)',
   background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontFamily: 'var(--font-body)',
@@ -248,7 +249,7 @@ export default function StorageLocPanel() {
           {canManage && !missing && (
             <button onClick={() => setEdit({ code: '', name: '', kind: '', note: '', sort_order: (rows.length + 1) * 10, is_active: true, line_names: [] })}
               style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: 'none', cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)' }}>
-              + เพิ่มรหัสคลัง
+              {tr('+ เพิ่มรหัสคลัง')}
             </button>
           )}
         </div>
@@ -388,7 +389,7 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>รหัส *</label>
+            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('รหัส *')}</label>
             <input autoFocus={isNew} disabled={!isNew} maxLength={6}
               style={{ ...inputSt, fontFamily: 'monospace', fontSize: 18, fontWeight: 800, textAlign: 'center', textTransform: 'uppercase', opacity: isNew ? 1 : 0.55 }}
               value={f.code} onChange={e => setF(v => ({ ...v, code: e.target.value }))} placeholder="S401" />
@@ -401,13 +402,13 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
             </div>
           </div>
           <div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ชื่อพื้นที่ *</label>
-            <input autoFocus={!isNew} style={inputSt} value={f.name} onChange={e => setF(v => ({ ...v, name: e.target.value }))} placeholder="เช่น พื้นที่ผลิต Apron Assy" />
+            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('ชื่อพื้นที่ *')}</label>
+            <input autoFocus={!isNew} style={inputSt} value={f.name} onChange={e => setF(v => ({ ...v, name: e.target.value }))} placeholder={tr('เช่น พื้นที่ผลิต Apron Assy')} />
           </div>
           <div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ชนิดพื้นที่</label>
+            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('ชนิดพื้นที่')}</label>
             <select style={inputSt} value={f.kind || ''} onChange={e => setF(v => ({ ...v, kind: e.target.value }))}>
-              <option value="">— ยังไม่ระบุ —</option>
+              <option value="">{tr('— ยังไม่ระบุ —')}</option>
               {Object.entries(SLOC_KINDS).map(([k, m]) => <option key={k} value={k}>{m.icon} {m.label}</option>)}
             </select>
             {/* 💡 ระบบเสนอจากตัวอักษรนำหน้า **คนกดยืนยันเอง** ไม่เติมให้อัตโนมัติ */}
@@ -420,7 +421,7 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
 
           {/* 🔗 ไลน์ที่ตกอยู่ในพื้นที่นี้ — ใส่ไลน์แม่ครั้งเดียว ลูกตกทอด */}
           <div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ไลน์/พื้นที่ที่อยู่ในรหัสคลังนี้</label>
+            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('ไลน์/พื้นที่ที่อยู่ในรหัสคลังนี้')}</label>
             {noLineMap ? (
               <div style={{ fontSize: 11.5, color: '#f59e0b' }}>ยังไม่ได้ apply migration <code>{MIG_DR}</code> (DR) — ผูกไลน์ยังไม่ได้</div>
             ) : (
@@ -433,7 +434,7 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
                     </span>
                   ))}
                   <LineSelect lines={(lines || []).filter(l => !f.line_names.includes(l.name))} value={addLine} onChange={addName}
-                    placeholder="+ เพิ่มไลน์ (ใส่ไลน์แม่ = ครอบทั้งแผนก)" role={role} lineId={lineId} sections={sections}
+                    placeholder={tr('+ เพิ่มไลน์ (ใส่ไลน์แม่ = ครอบทั้งแผนก)')} role={role} lineId={lineId} sections={sections}
                     style={{ width: 260, padding: '6px 9px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12.5 }} />
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
@@ -446,7 +447,7 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
           </div>
 
           <div>
-            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>หมายเหตุ</label>
+            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('หมายเหตุ')}</label>
             <input style={inputSt} value={f.note || ''} onChange={e => setF(v => ({ ...v, note: e.target.value }))} />
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text)', cursor: 'pointer' }}>
@@ -455,10 +456,10 @@ function LocForm({ init, isNew, onSave, onClose, rows, lines, noLineMap, role, l
           </label>
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-          <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>ยกเลิก</button>
+          <button onClick={onClose} style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>{tr('ยกเลิก')}</button>
           <button onClick={submit} disabled={busy || badFormat}
             style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: busy || badFormat ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)', opacity: busy || badFormat ? 0.5 : 1 }}>
-            {busy ? '...' : '💾 บันทึก'}
+            {busy ? '...' : tr('💾 บันทึก')}
           </button>
         </div>
       </div>

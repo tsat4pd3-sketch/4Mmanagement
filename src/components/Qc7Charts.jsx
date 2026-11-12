@@ -3,6 +3,7 @@ import {
   histogram, controlChartXmR, scatter, fishbone, checkSheet, stratify, runChart, BONES,
 } from '../utils/qc7';
 
+import { tr } from '../utils/i18n';
 /* ══ QC 7 Tools — ชิ้นส่วนกราฟที่ใช้ซ้ำได้ (2026-09-22) ═══════════════════════════════════
    สูตรทั้งหมดอยู่ `src/utils/qc7.js` (pure + มีเทส) — ที่นี่วาดอย่างเดียว ห้ามคิดเลขเอง
    (บทเรียนเดียวกับ ParetoAbcChart ที่สูตรเคยฝังใน .jsx แล้วไม่เคยถูกเทสเลย)
@@ -233,8 +234,8 @@ export function CheckSheet({ records, rowOf, colOf, rowLabel = 'อุปกร�
           <thead>
             <tr>
               <th style={{ textAlign: 'left', padding: '4px 6px', color: 'var(--muted)', fontWeight: 700, position: 'sticky', left: 0, background: 'var(--card)' }}>{rowLabel} \ {colLabel}</th>
-              {cs.cols.map(c => <th key={c} style={{ padding: '4px 6px', color: 'var(--text2)', fontWeight: 700, whiteSpace: 'nowrap' }}>{c}</th>)}
-              <th style={{ padding: '4px 6px', color: 'var(--text)', fontWeight: 800 }}>รวม</th>
+              {cs.cols.map(c => <th key={c} style={{ padding: '4px 6px', color: 'var(--text2)', fontWeight: 700, whiteSpace: 'nowrap' }}>{tr(c)}</th>)}
+              <th style={{ padding: '4px 6px', color: 'var(--text)', fontWeight: 800 }}>{tr('รวม')}</th>
             </tr>
           </thead>
           <tbody>

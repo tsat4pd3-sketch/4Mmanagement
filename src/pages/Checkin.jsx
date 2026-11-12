@@ -46,6 +46,7 @@ import { badgeScanOutcome } from '../utils/badgeCheckin';   // 🪪 สแกน
 import { SCAN_EVENT } from '../utils/scanWedge';
 
 import SectionScopeSelect from '../components/SectionScopeSelect';
+import { tr } from '../utils/i18n';
 // fallback เมื่อ master ยังว่าง/ยังไม่ apply migration 20260819 — ตัวจริงอยู่ตาราง leave_types
 // (จัดการที่ /report แผงจองรถ OT · เลิก hardcode ตาม QC audit 2026-08-19)
 const DEFAULT_LEAVE_TYPES = ['ลากิจ', 'ลาป่วย', 'ลาพักร้อน', 'อื่นๆ'];
@@ -1366,7 +1367,7 @@ export default function Checkin() {
                                 onClick={() => unborrowEmployee(emp)}
                                 title="ยกเลิกยืมตัว — คืนกลับไลน์เดิม"
                                 style={{ padding: '2px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)' }}
-                              >คืน</button>
+                              >{tr('คืน')}</button>
                             )}
                           </div>
                         )}
@@ -1392,15 +1393,15 @@ export default function Checkin() {
                           width: '100%',
                         }}
                       >
-                        <option value="">— ไม่ลา —</option>
-                        {leaveTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                        <option value="">{tr('— ไม่ลา —')}</option>
+                        {leaveTypes.map(t => <option key={t} value={t}>{tr(t)}</option>)}
                       </select>
 
                       {/* หมายเหตุ (แสดงเมื่อเลือก อื่นๆ) */}
                       {rec.leave_type === 'อื่นๆ' && (
                         <input
                           type="text"
-                          placeholder="ระบุเหตุผล..."
+                          placeholder={tr('ระบุเหตุผล...')}
                           value={rec.remark || ''}
                           onChange={e => setAttendance(prev => ({ ...prev, [emp.id]: { ...prev[emp.id], remark: e.target.value } }))}
                           style={{
@@ -1464,7 +1465,7 @@ export default function Checkin() {
                             min={0.5} max={8} step={0.5}
                             value={rec.leave_hours || ''}
                             onChange={e => setField(emp.id, 'leave_hours', e.target.value)}
-                            placeholder="จำนวนชั่วโมง"
+                            placeholder={tr('จำนวนชั่วโมง')}
                             style={{ padding: '4px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12, width: '100%' }}
                           />
                           <span style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>ชม.</span>
@@ -1475,7 +1476,7 @@ export default function Checkin() {
               const cRemark = (
                     <input
                       type="text"
-                      placeholder="หมายเหตุ..."
+                      placeholder={tr('หมายเหตุ...')}
                       value={rec.remark || ''}
                       onChange={e => setField(emp.id, 'remark', e.target.value)}
                       style={{ fontSize: 12, padding: '5px 8px' }}
@@ -1501,9 +1502,9 @@ export default function Checkin() {
                                   title="วันหยุด — เลือกช่วงเวลา OT"
                                   style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130, color: 'var(--amber)', fontWeight: 700 }}
                                 >
-                                  <option value="">— ช่วงเวลา OT —</option>
+                                  <option value="">{tr('— ช่วงเวลา OT —')}</option>
                                   {holidayPeriodsForShift('night').map(p => (
-                                    <option key={p.value} value={p.value}>{p.hours} ชม. · {p.time}</option>
+                                    <option key={p.value} value={p.value}>{p.hours} {tr('ชม. ·')} {p.time}</option>
                                   ))}
                                 </select>
                               )}
@@ -1512,8 +1513,8 @@ export default function Checkin() {
                                 onChange={e => setOtTask(emp.id, e.target.value || null)}
                                 style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130 }}
                               >
-                                <option value="">— งานที่ทำ —</option>
-                                {taskTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                <option value="">{tr('— งานที่ทำ —')}</option>
+                                {taskTypes.map(t => <option key={t.id} value={t.id}>{tr(t.name)}</option>)}
                               </select>
                             </>
                           )}
@@ -1527,9 +1528,9 @@ export default function Checkin() {
                               title="วันหยุด — เลือกช่วงเวลา OT"
                               style={{ fontSize: 11, padding: '2px 4px', maxWidth: 140, color: 'var(--amber)', fontWeight: 700 }}
                             >
-                              <option value="">— ช่วงเวลา OT —</option>
+                              <option value="">{tr('— ช่วงเวลา OT —')}</option>
                               {holidayPeriodsForShift('day').map(p => (
-                                <option key={p.value} value={p.value}>{p.hours} ชม. · {p.time}</option>
+                                <option key={p.value} value={p.value}>{p.hours} {tr('ชม. ·')} {p.time}</option>
                               ))}
                             </select>
                           )}
@@ -1538,8 +1539,8 @@ export default function Checkin() {
                             onChange={e => setOtTask(emp.id, e.target.value || null)}
                             style={{ fontSize: 11, padding: '2px 4px', maxWidth: 140 }}
                           >
-                            <option value="">— งานที่ทำ —</option>
-                            {taskTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                            <option value="">{tr('— งานที่ทำ —')}</option>
+                            {taskTypes.map(t => <option key={t.id} value={t.id}>{tr(t.name)}</option>)}
                           </select>
                         </div>
                       ) : (
@@ -1564,9 +1565,9 @@ export default function Checkin() {
                                 title="วันหยุด — เลือกช่วงเวลา OT"
                                 style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130, color: 'var(--amber)', fontWeight: 700 }}
                               >
-                                <option value="">— ช่วงเวลา OT —</option>
+                                <option value="">{tr('— ช่วงเวลา OT —')}</option>
                                 {holidayPeriodsForShift(shiftInfo.shift).map(p => (
-                                  <option key={p.value} value={p.value}>{p.hours} ชม. · {p.time}</option>
+                                  <option key={p.value} value={p.value}>{p.hours} {tr('ชม. ·')} {p.time}</option>
                                 ))}
                               </select>
                               <select
@@ -1574,8 +1575,8 @@ export default function Checkin() {
                                 onChange={e => setOtExtraTask(emp.id, d, e.target.value || null)}
                                 style={{ fontSize: 11, padding: '2px 4px', maxWidth: 130 }}
                               >
-                                <option value="">— งานที่ทำ —</option>
-                                {taskTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                <option value="">{tr('— งานที่ทำ —')}</option>
+                                {taskTypes.map(t => <option key={t.id} value={t.id}>{tr(t.name)}</option>)}
                               </select>
                             </>
                           )}
@@ -1708,7 +1709,7 @@ export default function Checkin() {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', whiteSpace: 'nowrap' }}>มาช่วยไลน์</span>
               {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง) — คง scope เดิม (scopedLines) */}
-              <LineSelect lines={scopedLines} value={borrowLineId} valueKey="id" placeholder="— เลือกไลน์ปลายทาง —" includeSupport
+              <LineSelect lines={scopedLines} value={borrowLineId} valueKey="id" placeholder={tr('— เลือกไลน์ปลายทาง —')} includeSupport
                 style={{ padding: '7px 10px', borderRadius: 6, fontSize: 13, width: 'auto', minWidth: 200, flex: 1 }} onChange={setBorrowLineId} />
             </div>
             <SearchInput value={borrowSearch} onChange={setBorrowSearch} autoFocus grow={false}
@@ -1744,7 +1745,7 @@ export default function Checkin() {
                             onClick={() => borrowEmployee(r)}
                             disabled={!helpersReady}
                             style={{ padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: helpersReady ? 'pointer' : 'not-allowed', background: helpersReady ? 'var(--accent)' : 'var(--muted)', color: '#fff', border: 'none', whiteSpace: 'nowrap' }}
-                          >ยืมตัว</button>
+                          >{tr('ยืมตัว')}</button>
                         )}
                   </div>
                 );
@@ -1785,7 +1786,7 @@ export default function Checkin() {
           {canRecord && (
             <button type="button" className="pg-btn" onClick={openBorrowModal}
               title="ดึงพนักงานจากไลน์/ส่วนงานอื่นมาช่วยกะนี้ — จะโผล่ในรายชื่อเช็คชื่อและผังจัดกำลังคนของไลน์ปลายทาง">
-              ยืมพนักงาน
+              {tr('ยืมพนักงาน')}
             </button>
           )}
           <button type="button" className="pg-btn primary"
@@ -1793,7 +1794,7 @@ export default function Checkin() {
             disabled={isSaving || previewNight || !canRecord}
             title={previewNight ? 'ปิดโหมด Preview ก่อนบันทึก' : !canRecord ? 'บัญชีของคุณไม่มีสิทธิ์บันทึกเช็คชื่อ' : undefined}
             style={{ opacity: (isSaving || previewNight || !canRecord) ? 0.55 : 1, cursor: (previewNight || !canRecord) ? 'not-allowed' : 'pointer' }}>
-            {isSaving ? 'กำลังบันทึก...' : previewNight ? 'ปิด Preview ก่อนบันทึก' : !canRecord ? 'ไม่มีสิทธิ์บันทึก' : 'บันทึก'}
+            {isSaving ? tr('กำลังบันทึก...') : previewNight ? tr('ปิด Preview ก่อนบันทึก') : !canRecord ? tr('ไม่มีสิทธิ์บันทึก') : tr('บันทึก')}
           </button>
         </>} />
 
@@ -1815,7 +1816,7 @@ export default function Checkin() {
         </div>
         <button type="button" className="pg-btn" onClick={handleSwitchUser} style={{ marginLeft: 'auto' }}
           title="ออกจากระบบเครื่องนี้ แล้วให้คนที่จะเช็คชื่อ login ด้วยบัญชีตัวเอง">
-          ไม่ใช่ฉัน — สลับผู้ใช้
+          {tr('ไม่ใช่ฉัน — สลับผู้ใช้')}
         </button>
       </div>
 
@@ -1927,7 +1928,7 @@ export default function Checkin() {
         <button type="button" onClick={() => setConfirmScan(true)}
           style={{ width: '100%', minHeight: 52, marginBottom: 12, borderRadius: 'var(--r-md)', border: '2px solid var(--accent)', background: 'var(--accent-dim)',
             color: 'var(--accent)', fontSize: 16, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
-          สแกนบัตรพนักงานเช็คชื่อ
+          {tr('สแกนบัตรพนักงานเช็คชื่อ')}
         </button>
       )}
       {/* 🪪 ด่านเดียวก่อนเริ่มยิงบัตร — บอกว่า "ในนามใคร" และว่าทุกใบจะลงระบบทันที
@@ -1944,9 +1945,9 @@ export default function Checkin() {
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
               <button type="button" onClick={() => setConfirmScan(false)}
-                style={{ flex: 1, minHeight: 46, borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>ยกเลิก</button>
+                style={{ flex: 1, minHeight: 46, borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>{tr('ยกเลิก')}</button>
               <button type="button" onClick={() => { setScanSaved([]); setConfirmScan(false); setBadgeScanOpen(true); }}
-                style={{ flex: 1, minHeight: 46, borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 15, fontWeight: 800, cursor: 'pointer' }}>เริ่มสแกน</button>
+                style={{ flex: 1, minHeight: 46, borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 15, fontWeight: 800, cursor: 'pointer' }}>{tr('เริ่มสแกน')}</button>
             </div>
           </div>
         </div>
@@ -1982,17 +1983,17 @@ export default function Checkin() {
         <table style={{ minWidth: 820 }}>
           <thead>
             <tr>
-              <th style={{ minWidth: 160 }}>พนักงาน</th>
-              <th style={{ textAlign: 'center', minWidth: 48 }}>กะ</th>
-              <th style={{ textAlign: 'center', minWidth: 64 }}>มางาน</th>
-              <th style={{ textAlign: 'center', minWidth: 64 }}>หมวก</th>
-              <th style={{ textAlign: 'center', minWidth: 64 }}>รองเท้า</th>
-              <th style={{ textAlign: 'center', minWidth: 64 }}>ถุงมือ</th>
+              <th style={{ minWidth: 160 }}>{tr('พนักงาน')}</th>
+              <th style={{ textAlign: 'center', minWidth: 48 }}>{tr('กะ')}</th>
+              <th style={{ textAlign: 'center', minWidth: 64 }}>{tr('มางาน')}</th>
+              <th style={{ textAlign: 'center', minWidth: 64 }}>{tr('หมวก')}</th>
+              <th style={{ textAlign: 'center', minWidth: 64 }}>{tr('รองเท้า')}</th>
+              <th style={{ textAlign: 'center', minWidth: 64 }}>{tr('ถุงมือ')}</th>
               <th style={{ textAlign: 'center', minWidth: 72 }} title="OT ปกติ | OT+23 = กะเช้าต่อถึง 23:00 (พิเศษ)">OT</th>
-              <th style={{ minWidth: 220 }}>การลา</th>
-              <th style={{ minWidth: 140 }}>หมายเหตุ</th>
-              <th style={{ textAlign: 'center', minWidth: 110 }}>สถานะ</th>
-              <th style={{ textAlign: 'center', minWidth: 150 }} title="จองรถรับส่งสำหรับ OT พร้อมระบุงานที่ทำ — ใช้ออกรายงานให้ธุรการจองรถรับส่ง · ช่อง 🔶 = จองล่วงหน้าเพิ่มสำหรับวันหยุดต่อเนื่อง (ตามปฏิทินบริษัท)">จองรถ OT / งานที่ทำ</th>
+              <th style={{ minWidth: 220 }}>{tr('การลา')}</th>
+              <th style={{ minWidth: 140 }}>{tr('หมายเหตุ')}</th>
+              <th style={{ textAlign: 'center', minWidth: 110 }}>{tr('สถานะ')}</th>
+              <th style={{ textAlign: 'center', minWidth: 150 }} title="จองรถรับส่งสำหรับ OT พร้อมระบุงานที่ทำ — ใช้ออกรายงานให้ธุรการจองรถรับส่ง · ช่อง 🔶 = จองล่วงหน้าเพิ่มสำหรับวันหยุดต่อเนื่อง (ตามปฏิทินบริษัท)">{tr('จองรถ OT / งานที่ทำ')}</th>
             </tr>
           </thead>
           <tbody>
@@ -2016,7 +2017,7 @@ export default function Checkin() {
         <div className="m-savebar">
           <span className="m-savebar-sum">มา {displayed.filter(e => attendance[e.id]?.is_present).length}/{displayed.length} คน</span>
           <button type="button" onClick={() => setConfirmSave(true)} disabled={isSaving || previewNight || !canRecord}>
-            {isSaving ? 'กำลังบันทึก...' : previewNight ? 'ปิด Preview ก่อน' : !canRecord ? 'ไม่มีสิทธิ์บันทึก' : 'บันทึก'}
+            {isSaving ? tr('กำลังบันทึก...') : previewNight ? tr('ปิด Preview ก่อน') : !canRecord ? tr('ไม่มีสิทธิ์บันทึก') : tr('บันทึก')}
           </button>
         </div>
       )}
@@ -2054,13 +2055,13 @@ export default function Checkin() {
                 onClick={handleSwitchUser}
                 style={{ flex: 1, padding: '11px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 700, cursor: 'pointer',
                   background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>
-                ไม่ใช่ฉัน
+                {tr('ไม่ใช่ฉัน')}
               </button>
               <button
                 onClick={handleSave}
                 style={{ flex: 2, padding: '11px 0', borderRadius: 'var(--r-md)', fontSize: 13, fontWeight: 800, cursor: 'pointer',
                   background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
-                ใช่ บันทึกเลย
+                {tr('ใช่ บันทึกเลย')}
               </button>
             </div>
           </div>
@@ -2077,18 +2078,18 @@ export default function Checkin() {
 
             <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>วันที่ทำ OT</label>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>{tr('วันที่ทำ OT')}</label>
                 <input type="date" value={otBookDate}
                   onChange={e => { setOtBookDate(e.target.value); loadOtBookExisting(e.target.value, otBookShift); }}
                   style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }} />
               </div>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>กะ</label>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>{tr('กะ')}</label>
                 <select value={otBookShift}
                   onChange={e => { setOtBookShift(e.target.value); loadOtBookExisting(otBookDate, e.target.value); }}
                   style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }}>
-                  <option value="day">กะเช้า</option>
-                  <option value="night">กะดึก</option>
+                  <option value="day">{tr('กะเช้า')}</option>
+                  <option value="night">{tr('กะดึก')}</option>
                 </select>
               </div>
             </div>
@@ -2101,16 +2102,16 @@ export default function Checkin() {
 
             <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>ไลน์</label>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>{tr('ไลน์')}</label>
                 {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> — คง pre-filter "ไลน์ที่มีพนักงาน" (otBookLineOptions) */}
-                <LineSelect lines={otBookLineOptions} value={otBookLineId} valueKey="id" placeholder="— เลือกไลน์ —" includeSupport
+                <LineSelect lines={otBookLineOptions} value={otBookLineId} valueKey="id" placeholder={tr('— เลือกไลน์ —')} includeSupport
                   style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }} onChange={setOtBookLineId} />
               </div>
               <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>ทีม</label>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>{tr('ทีม')}</label>
                 <select value={otBookTeam} onChange={e => setOtBookTeam(e.target.value)}
                   style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }}>
-                  <option value="">{ALL.team}</option>
+                  <option value="">{tr(ALL.team)}</option>
                   {orgTeams.map(t => <option key={t} value={t}>Team {t}</option>)}{/* 2026-09-07 ทีมจากผังองค์กร (useOrgTeams) */}
                 </select>
               </div>
@@ -2143,16 +2144,16 @@ export default function Checkin() {
                         <select value={otBookPeriods[emp.id] || ''} onChange={e => setOtBookPeriods(prev => ({ ...prev, [emp.id]: e.target.value }))}
                           title="วันหยุด — เลือกช่วงเวลา OT"
                           style={{ fontSize: 11, padding: '4px 6px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--amber-line)', background: 'var(--bg)', color: 'var(--amber)', fontWeight: 700, width: 150 }}>
-                          <option value="">— ช่วงเวลา OT —</option>
+                          <option value="">{tr('— ช่วงเวลา OT —')}</option>
                           {holidayPeriodsForShift(otBookShift).map(p => (
-                            <option key={p.value} value={p.value}>{p.hours} ชม. · {p.time}</option>
+                            <option key={p.value} value={p.value}>{p.hours} {tr('ชม. ·')} {p.time}</option>
                           ))}
                         </select>
                       )}
                       <select value={otBookTasks[emp.id] || ''} onChange={e => setOtBookTasks(prev => ({ ...prev, [emp.id]: e.target.value }))}
                         style={{ fontSize: 11, padding: '4px 6px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)', width: 150 }}>
-                        <option value="">— งานที่ทำ —</option>
-                        {taskTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        <option value="">{tr('— งานที่ทำ —')}</option>
+                        {taskTypes.map(t => <option key={t.id} value={t.id}>{tr(t.name)}</option>)}
                       </select>
                     </div>
                   )}
@@ -2161,10 +2162,10 @@ export default function Checkin() {
             </div>
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowOtBookModal(false)} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>
+              <button onClick={() => setShowOtBookModal(false)} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>{tr('ยกเลิก')}</button>
               <button onClick={handleSaveOtBookModal} disabled={otBookSaving || !otBookLineId || !canRecord}
                 style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: otBookSaving || !otBookLineId ? 'not-allowed' : 'pointer', opacity: otBookSaving || !otBookLineId ? 0.6 : 1 }}>
-                {otBookSaving ? 'กำลังบันทึก...' : 'บันทึกการจอง'}
+                {otBookSaving ? tr('กำลังบันทึก...') : tr('บันทึกการจอง')}
               </button>
             </div>
           </div>
@@ -2180,27 +2181,27 @@ export default function Checkin() {
               สร้างฟอร์ม 2 หน้า ตามฟอร์มกระดาษจริงที่ใช้หน้างาน:<br />
               1) ใบรายงานการปฏิบัติงานชดเชย/ทำ OT &nbsp; 2) บันทึกการมาทำงาน
             </div>
-            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>เดือน</label>
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>{tr('เดือน')}</label>
             <input type="month" value={exportMonth} onChange={e => setExportMonth(e.target.value)}
               style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', marginBottom: 12, background: 'var(--bg)', color: 'var(--text)' }} />
 
-            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>ช่วงครึ่งเดือน</label>
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>{tr('ช่วงครึ่งเดือน')}</label>
             <select value={exportHalf} onChange={e => setExportHalf(e.target.value)}
               style={{ width: '100%', padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', marginBottom: 12, background: 'var(--bg)', color: 'var(--text)' }}>
-              <option value="1-15">วันที่ 1-15</option>
-              <option value="16-end">วันที่ 16-สิ้นเดือน</option>
+              <option value="1-15">{tr('วันที่ 1-15')}</option>
+              <option value="16-end">{tr('วันที่ 16-สิ้นเดือน')}</option>
             </select>
 
-            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>ส่วนงาน</label>
+            <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: 4 }}>{tr('ส่วนงาน')}</label>
             {/* จำกัดตัวเลือกตาม scope — ต้นไม้ผังองค์กรตัวเดียวกับจออื่น (SectionScopeSelect อ่าน UserContext.sections เอง) */}
             <SectionScopeSelect lines={lines} value={exportSection} onChange={s => setExportSection(s)} only={sections}
               width="100%" style={{ marginBottom: 18 }} />
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button onClick={() => setShowExport(false)} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>ยกเลิก</button>
+              <button onClick={() => setShowExport(false)} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>{tr('ยกเลิก')}</button>
               <button onClick={handleExportForms} disabled={exporting}
                 style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer' }}>
-                {exporting ? 'กำลังสร้าง...' : 'สร้าง PDF'}
+                {exporting ? tr('กำลังสร้าง...') : tr('สร้าง PDF')}
               </button>
             </div>
           </div>

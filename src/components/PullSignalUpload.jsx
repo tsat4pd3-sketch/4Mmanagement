@@ -25,6 +25,7 @@ import {
   FALLBACK_PROFILE, pickProfile, parsePullFile, aggregateSignals,
   planDockLegs, dockLegsOf, dockKey, signalKey, dateStr, timeStr, findDuplicateUploads, orderShipAt, pullRoundOptions, shipSlotOf, fileNameStamp, shipDueDate} from '../utils/pullSignal';
 
+import { tr } from '../utils/i18n';
 const SOURCE = 'esmart';
 const inputSt = {
   padding: '8px 10px', borderRadius: 8, fontSize: 13, background: 'var(--bg2)',
@@ -544,7 +545,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                 </div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                   <input type="checkbox" checked={dateAck} onChange={e => setDateAck(e.target.checked)} />
-                  ตรวจแล้ว วันงานและรอบส่งถูกต้อง
+                  {tr('ตรวจแล้ว วันงานและรอบส่งถูกต้อง')}
                 </label>
               </div>
             )}
@@ -570,7 +571,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                 </div>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8, cursor: 'pointer', fontSize: 12, fontWeight: 800 }}>
                   <input type="checkbox" checked={dupAck} onChange={e => setDupAck(e.target.checked)} />
-                  รับทราบว่าเป็นไฟล์ซ้ำ — ยืนยันจะอัพต่อ
+                  {tr('รับทราบว่าเป็นไฟล์ซ้ำ — ยืนยันจะอัพต่อ')}
                 </label>
               </div>
             )}
@@ -578,7 +579,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
             <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, marginBottom: 10 }}>
               <Field label="ลูกค้า (Plant Code)">
                 <select value={shipTo} onChange={e => setShipTo(e.target.value)} style={inputSt}>
-                  {!shipTo && <option value="">— เลือก —</option>}
+                  {!shipTo && <option value="">{tr('— เลือก —')}</option>}
                   {[...new Set([shipTo, ...Object.keys(shipToMap || {})].filter(Boolean))].sort().map(c => (
                     <option key={c} value={c}>{shipToMap?.[c]?.customer_name && shipToMap[c].customer_name !== c ? `${shipToMap[c].customer_name} (${c})` : c}</option>
                   ))}
@@ -663,14 +664,14 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
             <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760, fontVariantNumeric: 'tabular-nums' }}>
                 <thead><tr style={{ background: 'var(--bg2)' }}>
-                  <th style={th}>เลขพาร์ทลูกค้า</th>
+                  <th style={th}>{tr('เลขพาร์ทลูกค้า')}</th>
                   <th style={th}>MAT SAP</th>
-                  <th style={thR}>ดึง (ครั้ง)</th>
-                  <th style={thR}>ลูกค้ายืนยัน</th>
-                  <th style={thR}>862 เดิม</th>
-                  <th style={thR}>ส่วนต่าง</th>
-                  <th style={th}>รอบปลายทาง</th>
-                  <th style={th}>จะทำอะไร</th>
+                  <th style={thR}>{tr('ดึง (ครั้ง)')}</th>
+                  <th style={thR}>{tr('ลูกค้ายืนยัน')}</th>
+                  <th style={thR}>{tr('862 เดิม')}</th>
+                  <th style={thR}>{tr('ส่วนต่าง')}</th>
+                  <th style={th}>{tr('รอบปลายทาง')}</th>
+                  <th style={th}>{tr('จะทำอะไร')}</th>
                 </tr></thead>
                 <tbody>
                   {plan.map((x, i) => {
@@ -726,7 +727,7 @@ export default function PullSignalUpload({ open, onClose, onApplied, fullName, s
                 {tally.locked ? ` · ทำไปแล้ว ${tally.locked}` : ''}
                 {tally.unresolved ? ` · ⚠ จับคู่ไม่ได้ ${tally.unresolved}` : ''}
               </span>
-              <button onClick={() => { reset(); onClose?.(); }} style={{ ...inputSt, cursor: 'pointer', fontWeight: 700 }}>ยกเลิก</button>
+              <button onClick={() => { reset(); onClose?.(); }} style={{ ...inputSt, cursor: 'pointer', fontWeight: 700 }}>{tr('ยกเลิก')}</button>
               <button onClick={apply} disabled={saving || !canImport || !shipTo || !shipTime || legs.some(l => !l.shipTime || !l.workDate) || blockedByDup || blockedByDate}
                 style={{
                   padding: '9px 18px', borderRadius: 'var(--r-md)', border: 'none', fontSize: 13, fontWeight: 800,

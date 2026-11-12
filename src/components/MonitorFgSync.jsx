@@ -7,6 +7,7 @@ import { DEMAND_SKIP_STATUS } from '../utils/monitorSystem';
 import { ROW_PRESETS, BOARD_DEFAULTS, boardKeyOfSheet, partRowKey, dedupeByKey } from '../utils/monitorBoards';
 import { getWorkDate, addDaysStr } from '../utils/workDate';
 
+import { tr } from '../utils/i18n';
 /* ══ 📦 MonitorFgSync — สร้าง/อัพเดทบอร์ด "FG ทุกตัว" จากออเดอร์ลูกค้า (2026-10-06) ═══════
    คำขอ user: *"อยากไห้มอนิเตอร์ได้ทุก product FG ก็ได้ด้วยที่อัพจาก 862 830"*
 
@@ -171,7 +172,7 @@ export default function MonitorFgSync({ onClose, fullName, onSynced }) {
       <div className="modal" style={{ maxWidth: 760, width: 'min(96vw, 760px)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
           <h3 style={{ margin: 0, fontSize: 16, fontFamily: 'var(--font-display)' }}>
-            สร้างบอร์ด FG จากออเดอร์ลูกค้า (EDI 862/830)
+            {tr('สร้างบอร์ด FG จากออเดอร์ลูกค้า (EDI 862/830)')}
           </h3>
           <button type="button" onClick={onClose} aria-label="ปิด"
             style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer' }}>✕</button>
@@ -230,14 +231,14 @@ export default function MonitorFgSync({ onClose, fullName, onSynced }) {
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
               <button type="button" onClick={onClose} disabled={busy}
                 style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, cursor: 'pointer' }}>
-                ยกเลิก
+                {tr('ยกเลิก')}
               </button>
               <button type="button" onClick={apply} disabled={busy || !preview.groups.length}
                 style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', fontWeight: 800, fontSize: 13,
                   background: busy || !preview.groups.length ? 'var(--bg3)' : 'var(--accent)',
                   color: busy || !preview.groups.length ? 'var(--muted)' : 'var(--accent-ink)',
                   cursor: busy || !preview.groups.length ? 'default' : 'pointer' }}>
-                {busy ? 'กำลังซิงก์…' : '📦 สร้าง/อัพเดทบอร์ด'}
+                {busy ? tr('กำลังซิงก์…') : tr('📦 สร้าง/อัพเดทบอร์ด')}
               </button>
             </div>
           </>

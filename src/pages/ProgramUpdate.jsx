@@ -22,6 +22,7 @@ import SearchInput from '../components/SearchInput';
 import useTimeRange from '../utils/useTimeRange';
 import { useMergeParams } from '../utils/useTabParam';
 import { KINDS, USER_KINDS, kindOf, buildFeed, countByKind, limitFeed } from '../utils/changelog';
+import { tr as trI18n } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* เพดานรายการที่วาดต่อรอบ — ช่วงกว้างมาก (ทั้งประวัติ = 1,157 รายการ) ทำจอ TV/มือถือหน่วง
@@ -227,7 +228,7 @@ export default function ProgramUpdate() {
                   onClick={() => setDayCap(m => ({ ...m, [day.date]: day.items.length }))}
                   style={{ margin: '2px 0 6px', padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700,
                            cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }}>
-                  ดูอีก {(day.items.length - (dayCap[day.date] || DAY_ROWS)).toLocaleString()} รายการของวันนี้
+                  {trI18n('ดูอีก')} {(day.items.length - (dayCap[day.date] || DAY_ROWS)).toLocaleString()} {trI18n('รายการของวันนี้')}
                 </button>
               )}
             </div>);
@@ -241,7 +242,7 @@ export default function ProgramUpdate() {
               <button type="button" onClick={() => setCap(c => c + PAGE_ROWS)}
                 style={{ marginLeft: 6, padding: '4px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700,
                          cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)' }}>
-                ดูเพิ่ม {Math.min(PAGE_ROWS, view.hidden).toLocaleString()} รายการ
+                {trI18n('ดูเพิ่ม')} {Math.min(PAGE_ROWS, view.hidden).toLocaleString()} {trI18n('รายการ')}
               </button>
               <div style={{ fontSize: 11, marginTop: 4 }}>
                 (วาดทีละ {PAGE_ROWS} รายการ — ช่วงกว้างมากแล้ววาดหมดทีเดียวทำจอหน้างานหน่วง)

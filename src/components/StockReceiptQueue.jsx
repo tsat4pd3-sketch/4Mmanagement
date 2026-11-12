@@ -18,6 +18,7 @@ import {
 } from '../utils/stockReceipts';
 import { mergeById } from '../utils/mergeRows';
 
+import { tr } from '../utils/i18n';
 /* ═══ 📥 คิวรอรับเข้าคลัง — ของที่ปิดใบผลิตแล้ว รอคนนับของจริงแล้วกดรับ (2026-10-02 · คำสั่ง user)
 
    ใครทำอะไร:  ไลน์ผลิตสแกนปิดใบ (ผู้ส่ง) → ใบเข้าคิวนี้อัตโนมัติ → คลังปลายทางนับของจริง (ผู้รับ)
@@ -119,7 +120,7 @@ export default function StockReceiptQueue() {
           options={[{ value: '', label: allOf('คลัง') }, ...dests.map(d => ({ value: d, label: d }))]} />
         <SearchInput value={q} onChange={setQ} fields="เลขใบผลิต / MAT / ชื่อพาร์ท / ไลน์" grow={false} onKeyDown={onSearchKey} />
         <button type="button" onClick={() => setShowDone(v => !v)} style={storeBtn('secondary', { minHeight: 36, padding: '6px 12px', fontSize: 12.5 })}>
-          {showDone ? '⏳ เฉพาะที่รอรับ' : '✅ รวมที่รับแล้ว 24 ชม.'}
+          {showDone ? tr('⏳ เฉพาะที่รอรับ') : tr('✅ รวมที่รับแล้ว 24 ชม.')}
         </button>
       </FilterBar>
 
@@ -159,13 +160,13 @@ export default function StockReceiptQueue() {
                 footer={pending && canReceive ? (editing ? (
                   <div style={{ display: 'grid', gap: 8 }}>
                     <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>
-                      ยอดที่นับได้จริง (ใบผลิต {fmt(r.qty_expected)})
+                      {tr('ยอดที่นับได้จริง (ใบผลิต')} {fmt(r.qty_expected)})
                       <input type="number" min="0" inputMode="numeric" value={form.qty} autoFocus
                         onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
                         style={{ display: 'block', width: '100%', marginTop: 4, padding: '8px 10px', fontSize: 15, fontWeight: 800,
                           borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', boxSizing: 'border-box' }} />
                     </label>
-                    <input placeholder="เหตุผล (บังคับเมื่อยอดไม่ตรง) เช่น ของเสีย 5 / ยังมาไม่ครบ" value={form.reason}
+                    <input placeholder={tr('เหตุผล (บังคับเมื่อยอดไม่ตรง) เช่น ของเสีย 5 / ยังมาไม่ครบ')} value={form.reason}
                       onChange={e => setForm(f => ({ ...f, reason: e.target.value }))}
                       style={{ padding: '8px 10px', fontSize: 13, borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)' }} />
                     <div style={{ display: 'flex', gap: 8 }}>
@@ -173,7 +174,7 @@ export default function StockReceiptQueue() {
                         onClick={async () => { if (await receive(r, form.qty, form.reason.trim())) setDiffFor(null); }}>
                         {busy === r.id ? 'กำลังบันทึก…' : `✅ รับเข้า ${form.qty === '' ? '' : fmt(form.qty)}`}
                       </button>
-                      <button type="button" style={storeBtn('secondary')} onClick={() => setDiffFor(null)}>ยกเลิก</button>
+                      <button type="button" style={storeBtn('secondary')} onClick={() => setDiffFor(null)}>{tr('ยกเลิก')}</button>
                     </div>
                   </div>
                 ) : (

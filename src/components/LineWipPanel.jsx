@@ -7,6 +7,7 @@ import { fetchAllPages, fetchByIds } from '../utils/fetchByIds';
 import { loadProductsMaster } from '../utils/useProducts';
 import { buildLineWip, WIP_STATUS } from '../utils/lineWipLedger';
 
+import { tr } from '../utils/i18n';
 /**
  * 📦 WIP ที่ไลน์ — แผงบนหน้า Daily Report ของไลน์ที่กำลังเปิดกะ
  *
@@ -357,7 +358,7 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
           {wip.parts.length > rows.length && (
             <button onClick={() => setShowAll(true)}
               style={{ marginTop: 6, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 11, fontWeight: 700, color: 'var(--muted)', fontFamily: 'var(--font-body)' }}>
-              ▸ ดูอีก {wip.parts.length - rows.length} พาร์ท
+              {tr('▸ ดูอีก')} {wip.parts.length - rows.length} {tr('พาร์ท')}
             </button>
           )}
 

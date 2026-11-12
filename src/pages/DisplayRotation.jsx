@@ -26,6 +26,7 @@ import {
 } from '../utils/displayRotation';
 
 import SectionScopeSelect from '../components/SectionScopeSelect';
+import { tr } from '../utils/i18n';
 /* ══ 🔁 ตั้งค่าจอวนหน้า — /display-rotation ══════════════════════════════════════════
    2026-10-09 · คำสั่ง user: "แบบมีหน้า config ได้ ว่าจอ user นี้จะเปิดอะไรวนบ้าง"
    2026-10-14 · รอบ 2 (feedback หลังติดทีวี 13 จอ):
@@ -252,9 +253,9 @@ export default function DisplayRotation() {
 
   const actions = selId && canEdit ? (
     <>
-      {plans[selId] && <button type="button" onClick={removePlan} style={btnGhost}>ลบรอบ</button>}
+      {plans[selId] && <button type="button" onClick={removePlan} style={btnGhost}>{tr('ลบรอบ')}</button>}
       <button type="button" onClick={save} disabled={saving || !dirty} style={btnPrimary}>
-        {saving ? 'กำลังบันทึก…' : dirty ? 'บันทึก' : 'บันทึกแล้ว'}
+        {saving ? tr('กำลังบันทึก…') : dirty ? tr('บันทึก') : tr('บันทึกแล้ว')}
       </button>
     </>
   ) : null;
@@ -333,7 +334,7 @@ export default function DisplayRotation() {
               </div>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 700 }}>
                 <input type="checkbox" checked={!!form.enabled} disabled={!canEdit} onChange={e => setF('enabled', e.target.checked)} />
-                เปิดการวนหน้า
+                {tr('เปิดการวนหน้า')}
                 <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--muted)' }}>(ปิด = เก็บรอบไว้ แต่จอค้างหน้าเดิม)</span>
               </label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
@@ -347,7 +348,7 @@ export default function DisplayRotation() {
                 </Field>
                 <Field label="รีโหลดเต็มหน้า (ล้างหน่วยความจำทีวี)">
                   <select value={form.reload_min ?? ''} disabled={!canEdit} onChange={e => setF('reload_min', e.target.value === '' ? '' : Number(e.target.value))}>
-                    {RELOAD_OPTS.map(o => <option key={o.label} value={o.v}>{o.label}</option>)}
+                    {RELOAD_OPTS.map(o => <option key={o.label} value={o.v}>{tr(o.label)}</option>)}
                   </select>
                 </Field>
               </div>
@@ -435,12 +436,12 @@ export default function DisplayRotation() {
                 </div>
               )}
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'prev' })}>ก่อนหน้า</button>
+                <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'prev' })}>{tr('ก่อนหน้า')}</button>
                 {live?.held
-                  ? <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'resume' })}>วนต่อ</button>
-                  : <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'hold' })}>หยุดค้าง</button>}
-                <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'next' })}>ถัดไป ▶▶</button>
-                <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'reload' })} title="ให้จอโหลดใหม่ — ใช้หลังบันทึกรอบใหม่">รีโหลดจอ</button>
+                  ? <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'resume' })}>{tr('วนต่อ')}</button>
+                  : <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'hold' })}>{tr('หยุดค้าง')}</button>}
+                <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'next' })}>{tr('ถัดไป ▶▶')}</button>
+                <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'reload' })} title="ให้จอโหลดใหม่ — ใช้หลังบันทึกรอบใหม่">{tr('รีโหลดจอ')}</button>
               </div>
               {savedPlayable.length > 0 && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -573,7 +574,7 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
       <div style={{ fontWeight: 800, fontSize: 14, paddingTop: 8, textAlign: 'center', color: focused ? 'var(--accent)' : 'var(--text)' }}>{i + 1}</div>
       <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
         <SearchSelect value={pageOptions.some(p => p.id === base) ? base : ''} options={pageOptions}
-          placeholder="— ค้นหาหน้า —" disabled={!canEdit}
+          placeholder={tr('— ค้นหาหน้า —')} disabled={!canEdit}
           onChange={({ id }) => onChange({ path: id || '' })} />
 
         {defs && (
@@ -583,8 +584,8 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
                 <span style={{ fontWeight: 700 }}>{d.label}</span>
                 {d.kind === 'select' && (
                   <select value={params[d.key] || ''} disabled={!canEdit} onChange={e => setParam(d.key, e.target.value)}>
-                    <option value="">— ค่าเริ่มต้นของหน้า —</option>
-                    {d.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    <option value="">{tr('— ค่าเริ่มต้นของหน้า —')}</option>
+                    {d.options.map(o => <option key={o.value} value={o.value}>{tr(o.label)}</option>)}
                   </select>
                 )}
                 {d.kind === 'section' && (
@@ -654,7 +655,7 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
                   <select value={params[d.key] || ''} disabled={!canEdit || srcOpts.wtype == null} onChange={e => setParam(d.key, e.target.value)}>
                     <option value="">{srcState('wtype') || '— ยังไม่เลือก —'}</option>
                     {params[d.key] && Array.isArray(srcOpts.wtype) && !srcOpts.wtype.includes(params[d.key]) && <option value={params[d.key]}>{`(ไม่พบในทะเบียน) ${params[d.key]}`}</option>}
-                    {(Array.isArray(srcOpts.wtype) ? srcOpts.wtype : []).map(t => <option key={t} value={t}>{t}</option>)}
+                    {(Array.isArray(srcOpts.wtype) ? srcOpts.wtype : []).map(t => <option key={t} value={t}>{tr(t)}</option>)}
                   </select>
                 )}
                 {d.kind === 'storeline' && (
@@ -663,7 +664,7 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
                       sections={tvSections} placeholder={ALL.line}
                       extraGroups={warehouseOpts.length ? [{ label: 'คลัง', options: warehouseOpts.map(n => ({ value: n })) }] : undefined}
                       onChange={v => setParam(d.key, v)} />
-                    {srcState('storeline') && <span style={{ fontSize: 11, color: 'var(--muted)' }}>คลัง: {srcState('storeline')}</span>}
+                    {srcState('storeline') && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('คลัง:')} {srcState('storeline')}</span>}
                   </span>
                 )}
                 {d.kind === 'line' && (
@@ -678,7 +679,7 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
           {!defs && (
-            <input type="text" value={rawQ} disabled={!canEdit || !base} placeholder="ต่อท้ายลิงก์ (ขั้นสูง · ไม่บังคับ)"
+            <input type="text" value={rawQ} disabled={!canEdit || !base} placeholder={tr('ต่อท้ายลิงก์ (ขั้นสูง · ไม่บังคับ)')}
               onChange={e => {
                 const v = e.target.value.trim();
                 onChange({ path: `${base}${v && !/^[?#]/.test(v) ? `?${v}` : v}` });

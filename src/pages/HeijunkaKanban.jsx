@@ -58,6 +58,7 @@ import PartThumb from '../components/PartThumb';
 import { loadPartImages, partImageOf, imageCoverage } from '../utils/partImages';
 import { loadDocForms } from '../utils/docForms';
 import { downloadCsvDoc } from '../utils/csvDoc';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* 🧭 ทะเบียนมุมมองของบอร์ดสโตร์ (2026-09-25 · คำสั่ง user *"สับสนการใช้งาน แต่ละ tab มากๆ"*)
@@ -153,7 +154,7 @@ function OnDemandStrip({ wipRequests = [], nowMs, onGo }) {
       {tile('🔧', 'กำลังเตรียม', n('preparing'), 'สแกนพาร์ทแล้ว · ตัดสต็อกแล้ว')}
       {tile('📍', 'ส่งแล้ว รอไลน์รับ', n('delivered'), 'ไลน์กดรับใน Daily Report → ใบจบ')}
       <button onClick={onGo} style={{ alignSelf: 'center', padding: '9px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
-        เปิดตู้งานสโตร์
+        {tr('เปิดตู้งานสโตร์')}
       </button>
     </div>
   );
@@ -274,18 +275,18 @@ function StoreBoardView({ rounds, deliveries, view, kanbanStd, onConfirm, confir
                       {canOperate && needAction && (
                         <button onClick={e => { e.stopPropagation(); onConfirm(r, alloc.parts); }} disabled={confirming === r.id}
                           style={{ marginTop: 8, width: '100%', padding: '6px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', fontFamily: 'var(--font-body)' }}>
-                          {confirming === r.id ? 'กำลังบันทึก…' : 'ยืนยันส่งแล้ว'}
+                          {confirming === r.id ? tr('กำลังบันทึก…') : tr('ยืนยันส่งแล้ว')}
                         </button>
                       )}
                       {canOperate && isConf && !isReceived && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 8 }} onClick={e => e.stopPropagation()}>
                           <button onClick={() => onReceive(r, alloc.parts, 'full')}
                             style={storeBtn('primary', { flex: 1, padding: '10px 6px' })}>
-                            รับครบ
+                            {tr('รับครบ')}
                           </button>
                           <button onClick={() => onReceive(r, alloc.parts, 'partial')}
                             style={storeBtn('secondary', { flex: 1, padding: '10px 6px', color: 'var(--amber)', borderColor: 'var(--amber-line)' })}>
-                            รับไม่ครบ
+                            {tr('รับไม่ครบ')}
                           </button>
                         </div>
                       )}
@@ -654,18 +655,18 @@ function DeliveryRoundsPanel({ rounds, deliveries, onConfirm, confirming, onRece
                       {canOperate && !isConf && (status.label === '⏳ กำลังเตรียม' || status.label === '🔴 ค้างส่ง') && (
                         <button onClick={() => onConfirm(r, parts)} disabled={confirming === r.id}
                           style={{ marginTop: 6, width: '100%', padding: '5px 10px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', fontFamily: 'var(--font-body)' }}>
-                          {confirming === r.id ? 'กำลังบันทึก…' : 'ยืนยันส่งแล้ว'}
+                          {confirming === r.id ? tr('กำลังบันทึก…') : tr('ยืนยันส่งแล้ว')}
                         </button>
                       )}
                       {canOperate && isConf && !isReceived && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
                           <button onClick={() => onReceive(r, parts, 'full')}
                             style={storeBtn('primary', { flex: 1, padding: '10px 6px', fontSize: 13 })}>
-                            รับครบ
+                            {tr('รับครบ')}
                           </button>
                           <button onClick={() => onReceive(r, parts, 'partial')}
                             style={storeBtn('secondary', { flex: 1, padding: '10px 6px', fontSize: 13, color: 'var(--amber)', borderColor: 'var(--amber-line)' })}>
-                            ไม่ครบ
+                            {tr('ไม่ครบ')}
                           </button>
                         </div>
                       )}
@@ -896,7 +897,7 @@ function AccGroup({ title, hint, color, rows, fmt, defaultOpen, cap = 0 }) {
       {open && hidden > 0 && (
         <button className="tbtn" onClick={() => setAll(true)}
           style={{ marginTop: 8, padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, cursor: 'pointer', background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', fontFamily: 'var(--font-body)' }}>
-          ดูอีก {hidden} รายการที่เหลือ
+          {tr('ดูอีก')} {hidden} {tr('รายการที่เหลือ')}
         </button>
       )}
     </div>
@@ -1086,7 +1087,7 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, releaseD
                         {canOperate && st.next && (
                           <button onClick={() => onAdvanceLot(lot, st.next)} disabled={busy === lot.id}
                             style={storeBtn('primary', { marginTop: 8, width: '100%' })}>
-                            {busy === lot.id ? 'กำลังบันทึก…' : st.nextLabel}
+                            {busy === lot.id ? tr('กำลังบันทึก…') : st.nextLabel}
                           </button>
                         )}
                       </div>
@@ -1106,7 +1107,7 @@ function PullBoard({ lotRequests, rawRequests, accumulator, lotSizeMap, releaseD
                                   : canOperate
                                     ? <button onClick={() => onIssueRaw(r)} disabled={busy === r.id}
                                         style={storeBtn('primary', { padding: '8px 18px', fontSize: 13 })}>
-                                        {busy === r.id ? 'กำลังบันทึก…' : 'จ่าย'}
+                                        {busy === r.id ? tr('กำลังบันทึก…') : tr('จ่าย')}
                                       </button>
                                     : null}
                               </div>
@@ -1223,7 +1224,7 @@ function QueueCard({ code, name, qty, unit, qtyLabel = 'จำนวน', destin
           <>
             {actionLabel && (
               <button onClick={onAction} disabled={busy} style={storeBtn('primary', { width: '100%', opacity: busy ? 0.55 : 1 })}>
-                {busy ? 'กำลังบันทึก…' : actionLabel}
+                {busy ? tr('กำลังบันทึก…') : actionLabel}
               </button>
             )}
             {footerExtra}
@@ -1394,7 +1395,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
                 statusLabel={st.label} statusColor={st.color} statusBg={st.bg} statusBorder={st.border}
                 actionLabel={canOperate ? nextLabel : null} busy={busy === w.id} onAction={() => onAdvanceWip(w)}
                 footerExtra={canOperate && onCancelWip && orphanOrderReq(w) ? (
-                  <button onClick={() => onCancelWip(w)} disabled={busy === w.id} style={storeBtn('secondary', { width: '100%', marginTop: 6 })}>ยกเลิกใบเบิกนี้ (ใบผลิตปิดแล้ว)</button>
+                  <button onClick={() => onCancelWip(w)} disabled={busy === w.id} style={storeBtn('secondary', { width: '100%', marginTop: 6 })}>{tr('ยกเลิกใบเบิกนี้ (ใบผลิตปิดแล้ว)')}</button>
                 ) : null}
                 rows={[{ k: 'ที่มา', v: src.label },
                      { k: w.source === 'store_forecast' ? 'เปิดใบ' : 'ไลน์แจ้ง',
@@ -1457,7 +1458,7 @@ function UnifiedStoreBoard({ store, setStore, opsStores = null, readOnly = false
           const sideLbl = direction === 'out' ? 'ต้นทาง' : 'ปลายทาง';
           return (<>
             <select value={storeSel} onChange={e => setStoreSel(e.target.value)} aria-label={`พื้นที่สโตร์${sideLbl}`}>
-              <option value="">{sideLbl}: ทุกพื้นที่สโตร์</option>
+              <option value="">{sideLbl}{tr(': ทุกพื้นที่สโตร์')}</option>
               {storeOpts.map(a => <option key={a} value={a}>{sideLbl}: 🏬 {a === '—' ? 'พาร์ทที่ยังไม่ตั้งที่จัดเก็บหลัก' : a}</option>)}
             </select>
             <select value={areaSel} onChange={e => setAreaSel(e.target.value)} aria-label={direction === 'out' ? 'พื้นที่ปลายทาง' : 'พื้นที่ต้นทาง'}>
@@ -3084,7 +3085,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
               <button onClick={() => setWorkDate(liveWorkDate)} style={{
                 padding: '2px 8px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11, fontWeight: 700,
                 fontFamily: 'var(--font-body)', background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text2)',
-              }}>⟳ กลับวันนี้</button>
+              }}>{tr('⟳ กลับวันนี้')}</button>
             </div>
           )}
         </>} />
@@ -3256,7 +3257,7 @@ export default function HeijunkaKanban({ mode = 'monitor', opsStores = null, dir
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
               <thead>
                 <tr style={{ background: 'var(--bg2)' }}>
-                  <th style={{ padding: '10px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 1 }}>พาร์ทย่อย</th>
+                  <th style={{ padding: '10px 12px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', position: 'sticky', left: 0, background: 'var(--bg2)', zIndex: 1 }}>{tr('พาร์ทย่อย')}</th>
                   {view.cols.map(c => (
                     <th key={c.id} style={{ padding: '10px 12px', fontSize: 11, fontWeight: 800, color: 'var(--text2)', textAlign: 'center', whiteSpace: 'nowrap' }}>
                       {c.line}<br />
@@ -3402,10 +3403,10 @@ function ReceiveModal({ round, parts, mode, fmt, saving, onCancel, onSubmit }) {
         )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
-          <button onClick={onCancel} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>ยกเลิก</button>
+          <button onClick={onCancel} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 700, fontFamily: 'var(--font-body)' }}>{tr('ยกเลิก')}</button>
           <button onClick={() => onSubmit(actual)} disabled={saving}
             style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: 'none', background: mode === 'full' ? '#22c55e' : '#f59e0b', color: '#08130a', cursor: 'pointer', fontSize: 13, fontWeight: 800, fontFamily: 'var(--font-body)', opacity: saving ? 0.6 : 1 }}>
-            {saving ? '...' : mode === 'full' ? 'ยืนยันรับครบ' : 'บันทึกรับไม่ครบ'}
+            {saving ? '...' : mode === 'full' ? tr('ยืนยันรับครบ') : tr('บันทึกรับไม่ครบ')}
           </button>
         </div>
       </div>

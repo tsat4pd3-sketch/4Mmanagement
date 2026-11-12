@@ -34,6 +34,7 @@ import {
 
 import SectionScopeSelect from '../components/SectionScopeSelect';
 import useOrgScope from '../utils/useOrgScope';
+import { tr as trI18n } from '../utils/i18n';
 /* ═══════════════════════════════════════════════════════════════════════════════════════
    📈 กำลังคน & Turnover — /workforce-insight (2026-09-02 · คำขอ user)
 
@@ -293,7 +294,7 @@ function ManpowerTab({ employees, empById, lines, sectionsList, secFilter, setSe
 
       <div className="card table-sticky" style={{ overflowX: 'auto' }}>
         <table style={{ minWidth: 480 }}>
-          <thead><tr><th>วันที่</th><th>มาทำงาน</th><th>ลา</th><th>ขาด</th><th>OT</th><th>รวมเช็คชื่อ</th></tr></thead>
+          <thead><tr><th>{trI18n('วันที่')}</th><th>{trI18n('มาทำงาน')}</th><th>{trI18n('ลา')}</th><th>{trI18n('ขาด')}</th><th>OT</th><th>{trI18n('รวมเช็คชื่อ')}</th></tr></thead>
           <tbody>
             {daily.length === 0 ? <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--muted)', padding: 20 }}>ไม่มีข้อมูล</td></tr>
               : [...daily].reverse().map(d => (
@@ -451,7 +452,7 @@ function MovesTab({ empById, sectionsList, secFilter, setSecFilter, inScope, org
 
       <div className="card table-sticky" style={{ overflowX: 'auto' }}>
         <table style={{ minWidth: 640 }}>
-          <thead><tr><th>วันที่</th><th>กะ</th><th>ชื่อ</th><th>ไลน์</th><th>จุดเดิม → จุดใหม่</th><th>เวลา</th><th>ผู้มอบหมาย</th></tr></thead>
+          <thead><tr><th>{trI18n('วันที่')}</th><th>{trI18n('กะ')}</th><th>{trI18n('ชื่อ')}</th><th>{trI18n('ไลน์')}</th><th>{trI18n('จุดเดิม → จุดใหม่')}</th><th>{trI18n('เวลา')}</th><th>{trI18n('ผู้มอบหมาย')}</th></tr></thead>
           <tbody>
             {moves.length === 0 ? <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--muted)', padding: 20 }}>ไม่มีการย้ายจุดงานในช่วงนี้</td></tr>
               : moves.slice(0, 300).map((mv, i) => {
@@ -579,9 +580,9 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
       <FilterBar style={{ marginBottom: 16 }}>
         <SectionScopeSelect index={orgIndex} failed={orgFail} value={secFilter} onChange={s => setSecFilter(s)} only={sectionsList} />
         <select value={monthsBack} onChange={e => setMonthsBack(Number(e.target.value))}>
-          <option value={3}>3 เดือนล่าสุด</option>
-          <option value={6}>6 เดือนล่าสุด</option>
-          <option value={12}>12 เดือนล่าสุด</option>
+          <option value={3}>{trI18n('3 เดือนล่าสุด')}</option>
+          <option value={6}>{trI18n('6 เดือนล่าสุด')}</option>
+          <option value={12}>{trI18n('12 เดือนล่าสุด')}</option>
         </select>
         {(loading) && <span className="filter-count">กำลังโหลดประวัติการออกงาน…</span>}
       </FilterBar>
@@ -643,7 +644,7 @@ function TurnoverTab({ employees, sectionsList, secFilter, setSecFilter, inScope
       <div className="card table-sticky" style={{ overflowX: 'auto', marginBottom: 16 }}>
         <div style={{ padding: '10px 14px', fontWeight: 700, fontSize: 13, borderBottom: '1px solid var(--border)' }}>รายชื่อที่ inactive — รู้วันที่ออก</div>
         <table style={{ minWidth: 640 }}>
-          <thead><tr><th>รหัส</th><th>ชื่อ</th><th>ส่วนงาน</th><th>แผนก</th><th>ตำแหน่ง</th><th>เริ่มงาน</th><th>ออกงาน</th><th>อายุงาน</th></tr></thead>
+          <thead><tr><th>{trI18n('รหัส')}</th><th>{trI18n('ชื่อ')}</th><th>{trI18n('ส่วนงาน')}</th><th>{trI18n('แผนก')}</th><th>{trI18n('ตำแหน่ง')}</th><th>{trI18n('เริ่มงาน')}</th><th>{trI18n('ออกงาน')}</th><th>{trI18n('อายุงาน')}</th></tr></thead>
           <tbody>
             {knownExits.length === 0 ? <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 20 }}>ไม่มีข้อมูล</td></tr>
               : knownExits.map(x => {
@@ -829,22 +830,22 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope,
           {monthOpts.map(m => <option key={m} value={m}>{monthLabel(m)}{m === monthKey(today) ? ' (เดือนนี้)' : ''}</option>)}
         </select>
         <label style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6 }}>
-          เกณฑ์
+          {trI18n('เกณฑ์')}
           <input type="number" min={1} max={31} value={threshold} style={{ width: 66 }}
             onChange={e => setThreshold(Math.max(1, Math.min(31, Number(e.target.value) || 20)))} />
-          วันขึ้นไป
+          {trI18n('วันขึ้นไป')}
         </label>
         <label style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
           <input type="checkbox" checked={onlyOver} onChange={e => setOnlyOver(e.target.checked)} />
-          แสดงเฉพาะที่ถึงเกณฑ์
+          {trI18n('แสดงเฉพาะที่ถึงเกณฑ์')}
         </label>
         <label style={{ fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}
           title="วันหยุดมักไม่มีการเช็คชื่อ แต่มีใบจอง OT อยู่ — ปิดตัวเลือกนี้ = นับเฉพาะวันที่มีการเช็คชื่อจริง">
           <input type="checkbox" checked={useBookings} onChange={e => setUseBookings(e.target.checked)} />
-          นับใบจอง OT ที่ไม่มีเช็คชื่อด้วย
+          {trI18n('นับใบจอง OT ที่ไม่มีเช็คชื่อด้วย')}
         </label>
         <span className="spacer" />
-        <button onClick={doExcel} style={csvBtnSt}>Excel (ฟอร์ม HR)</button>
+        <button onClick={doExcel} style={csvBtnSt}>{trI18n('Excel (ฟอร์ม HR)')}</button>
         <button onClick={doCSV} style={csvBtnSt}>CSV</button>
       </FilterBar>
 
@@ -918,11 +919,11 @@ function OtMonthlyTab({ empById, sectionsList, secFilter, setSecFilter, inScope,
         <table style={{ minWidth: 980 }}>
           <thead>
             <tr>
-              <th style={{ width: 40 }}>#</th><th>รหัส</th><th>ชื่อ - นามสกุล</th><th>ตำแหน่ง</th><th>ส่วน</th><th>ฝ่าย</th>
-              <th style={{ textAlign: 'center' }}>OT วันทำงาน</th><th style={{ textAlign: 'center' }}>OT วันหยุด</th>
-              <th style={{ textAlign: 'center' }}>รวม</th>
-              {isCurrentMonth && <th style={{ textAlign: 'center' }}>คาดสิ้นเดือน</th>}
-              <th>หมายเหตุ (เหตุผลจากงานที่จอง)</th>
+              <th style={{ width: 40 }}>#</th><th>{trI18n('รหัส')}</th><th>{trI18n('ชื่อ - นามสกุล')}</th><th>{trI18n('ตำแหน่ง')}</th><th>{trI18n('ส่วน')}</th><th>{trI18n('ฝ่าย')}</th>
+              <th style={{ textAlign: 'center' }}>{trI18n('OT วันทำงาน')}</th><th style={{ textAlign: 'center' }}>{trI18n('OT วันหยุด')}</th>
+              <th style={{ textAlign: 'center' }}>{trI18n('รวม')}</th>
+              {isCurrentMonth && <th style={{ textAlign: 'center' }}>{trI18n('คาดสิ้นเดือน')}</th>}
+              <th>{trI18n('หมายเหตุ (เหตุผลจากงานที่จอง)')}</th>
             </tr>
           </thead>
           <tbody>

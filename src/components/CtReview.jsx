@@ -23,6 +23,7 @@ import { getWorkDate, addDaysStr } from '../utils/workDate';
 import { fetchByIds } from '../utils/fetchByIds';
 import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
 
+import { tr } from '../utils/i18n';
 const DAYS_BACK = 60;
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' };
 const th = { textAlign: 'left', fontSize: 11, color: 'var(--muted)', fontWeight: 700, padding: '6px 8px', whiteSpace: 'nowrap' };
@@ -210,11 +211,11 @@ export default function CtReview({ lines = [] }) {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
               <thead><tr>
-                <th style={th}>MAT.NO</th><th style={th}>ชิ้นงาน</th><th style={th}>ไลน์</th>
-                <th style={{ ...th, textAlign: 'right' }}>มาตรฐาน</th>
-                <th style={{ ...th, textAlign: 'right' }}>เสนอ</th>
-                <th style={{ ...th, textAlign: 'right' }}>อ้างอิง</th>
-                <th style={th}>ผู้เสนอ</th><th style={th} />
+                <th style={th}>MAT.NO</th><th style={th}>{tr('ชิ้นงาน')}</th><th style={th}>{tr('ไลน์')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('มาตรฐาน')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('เสนอ')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('อ้างอิง')}</th>
+                <th style={th}>{tr('ผู้เสนอ')}</th><th style={th} />
               </tr></thead>
               <tbody>
                 {queue.map(q => (
@@ -234,9 +235,9 @@ export default function CtReview({ lines = [] }) {
                         <>
                           <button className="tbtn" disabled={busy === q.id} onClick={() => approve(q)}
                             style={{ background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', marginRight: 6 }}>
-                            ✓ อนุมัติ
+                            {tr('✓ อนุมัติ')}
                           </button>
-                          <button className="tbtn" disabled={busy === q.id} onClick={() => reject(q)}>✕ ปฏิเสธ</button>
+                          <button className="tbtn" disabled={busy === q.id} onClick={() => reject(q)}>{tr('✕ ปฏิเสธ')}</button>
                         </>
                       )}
                     </td>
@@ -270,13 +271,13 @@ export default function CtReview({ lines = [] }) {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 780 }}>
               <thead><tr>
-                <th style={th}>MAT.NO</th><th style={th}>ชิ้นงาน</th>
-                <th style={{ ...th, textAlign: 'right' }}>CT มาตรฐาน</th>
-                <th style={{ ...th, textAlign: 'right' }}>สังเกตได้ (กลาง)</th>
-                <th style={{ ...th, textAlign: 'right' }}>กระจาย p25–p75</th>
-                <th style={{ ...th, textAlign: 'right' }}>ใบที่ใช้</th>
-                <th style={{ ...th, textAlign: 'right' }}>ต่าง</th>
-                <th style={th}>ข้อสังเกต</th><th style={th} />
+                <th style={th}>MAT.NO</th><th style={th}>{tr('ชิ้นงาน')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('CT มาตรฐาน')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('สังเกตได้ (กลาง)')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('กระจาย p25–p75')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('ใบที่ใช้')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('ต่าง')}</th>
+                <th style={th}>{tr('ข้อสังเกต')}</th><th style={th} />
               </tr></thead>
               <tbody>
                 {rows.map(r => (
@@ -300,7 +301,7 @@ export default function CtReview({ lines = [] }) {
                       {inQueue.has(r.matNo)
                         ? <span style={{ fontSize: 11, color: '#f59e0b' }}>อยู่ในคิวแล้ว</span>
                         : r.canPropose
-                          ? <button className="tbtn" disabled={busy === r.matNo} onClick={() => propose(r)}>เสนอปรับ</button>
+                          ? <button className="tbtn" disabled={busy === r.matNo} onClick={() => propose(r)}>{tr('เสนอปรับ')}</button>
                           : <span style={{ fontSize: 11, color: 'var(--muted)' }}>—</span>}
                     </td>
                   </tr>

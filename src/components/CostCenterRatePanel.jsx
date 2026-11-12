@@ -12,6 +12,7 @@ import { RATE_COMPONENTS, rateFor, fmtBaht } from '../utils/costSaving';
 import { loadCostCenterRefs, costCenterBlockMessage } from '../utils/costCenterRefs';
 import { DeleteButton } from './IconButton';
 
+import { tr } from '../utils/i18n';
 /* ═══ 💰 Activity Rate ต่อ Cost Center — แผงใน /org-setup (2026-08-11) ═══
    rate ที่บัญชีคำนวณ ต่อ cost center (ก้อนตาม RATE_COMPONENTS) — ใช้แปลงผล Improvement เป็น cost saving
    ลิสต์ cost center = union จากผังองค์กร (org_nodes.cost_center) + ไลน์ผลิต (production_lines.cost_center)
@@ -166,7 +167,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
           {otherCount > 0 && (
             <span> · ซ่อนรหัสระดับส่วน/แผนก {otherCount} รหัส{' '}
               <button onClick={() => setShowAllLevels(v => !v)} style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
-                {showAllLevels ? 'กลับมาแสดงเฉพาะระดับกลุ่ม' : 'แสดงทั้งหมด'}
+                {showAllLevels ? tr('กลับมาแสดงเฉพาะระดับกลุ่ม') : tr('แสดงทั้งหมด')}
               </button>
             </span>
           )}
@@ -183,7 +184,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                   ...RATE_COMPONENTS.map(c => ({ h: c.label, right: true, title: c.full })),
                   { h: 'รวม/ชม.', right: true }, { h: 'Effective', right: true }, { h: '', right: false },
                 ].map((c, i) => (
-                  <th key={i} title={c.title} style={{ padding: '7px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: c.right ? 'right' : 'left', whiteSpace: 'nowrap' }}>{c.h}</th>
+                  <th key={i} title={c.title} style={{ padding: '7px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: c.right ? 'right' : 'left', whiteSpace: 'nowrap' }}>{tr(c.h)}</th>
                 ))}
               </tr>
             </thead>
@@ -227,7 +228,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                         {cur ? cur.effective_from : '—'}
                         {hist.length > 1 && (
                           <button onClick={() => setHistOpen(p => ({ ...p, [cc]: !open }))} style={{ marginLeft: 6, background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11, cursor: 'pointer', fontWeight: 700 }}>
-                            ประวัติ {hist.length} {open ? '▲' : '▼'}
+                            {tr('ประวัติ')} {hist.length} {open ? '▲' : '▼'}
                           </button>
                         )}
                       </td>
@@ -269,7 +270,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
         </div>
         {canEdit ? (
           <button onClick={() => setForm({ ...emptyForm() })} style={{ marginTop: 8, padding: '6px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-            ➕ เพิ่ม rate (เลือกรหัสจากผัง/ไลน์)
+            {tr('➕ เพิ่ม rate (เลือกรหัสจากผัง/ไลน์)')}
           </button>
         ) : (
           /* ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล — UI-CONVENTIONS §6.9 */
@@ -323,7 +324,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                     {dateLocked ? (
                       <>
                         🔒 วัน Effective ล็อกกันแก้พลาด — <b>ปรับ rate รอบใหม่ให้กด ＋ rate ในตาราง</b> (แถวเดิมเก็บเป็นประวัติ โปรเจคที่เริ่มก่อนหน้ายังคิดด้วย rate เดิม)
-                        <button onClick={unlockDate} style={{ marginLeft: 6, background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', color: 'var(--accent)', fontSize: 11, fontWeight: 800, cursor: 'pointer', padding: '1px 7px' }}>แก้วันที่</button>
+                        <button onClick={unlockDate} style={{ marginLeft: 6, background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', color: 'var(--accent)', fontSize: 11, fontWeight: 800, cursor: 'pointer', padding: '1px 7px' }}>{tr('แก้วันที่')}</button>
                       </>
                     ) : (
                       <span style={{ color: '#f59e0b', fontWeight: 700 }}>ปลดล็อกวันที่แล้ว — เปลี่ยนวันนี้ = เปลี่ยนย้อนหลังว่า rate นี้ครอบช่วงไหน cost saving ของโปรเจคที่คำนวณด้วย rate ช่วงนี้จะขยับตาม</span>
@@ -336,20 +337,20 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
                   {RATE_COMPONENTS.map(c => (
                     <label key={c.key} style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{c.label} <span style={{ fontWeight: 600 }}>({c.full})</span>
-                      <input type="number" min="0" step="any" value={form[c.field]} onChange={e => setForm({ ...form, [c.field]: e.target.value })} placeholder="บาท/ชม." style={{ marginTop: 4 }} />
+                      <input type="number" min="0" step="any" value={form[c.field]} onChange={e => setForm({ ...form, [c.field]: e.target.value })} placeholder={tr('บาท/ชม.')} style={{ marginTop: 4 }} />
                     </label>
                   ))}
                 </div>
                 <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--accent)', textAlign: 'right' }}>
                   รวม {fmtBaht(RATE_COMPONENTS.reduce((a, c) => a + (Number(form[c.field]) || 0), 0))} บาท/ชม.
                 </div>
-                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>หมายเหตุ
-                  <input value={form.note || ''} onChange={e => setForm({ ...form, note: e.target.value })} placeholder="เช่น rate ปี 2026 จากบัญชี" style={{ marginTop: 4 }} />
+                <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{tr('หมายเหตุ')}
+                  <input value={form.note || ''} onChange={e => setForm({ ...form, note: e.target.value })} placeholder={tr('เช่น rate ปี 2026 จากบัญชี')} style={{ marginTop: 4 }} />
                 </label>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-                  <button onClick={() => setForm(null)} style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>ยกเลิก</button>
+                  <button onClick={() => setForm(null)} style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{tr('ยกเลิก')}</button>
                   <button onClick={handleSave} disabled={saving} style={{ padding: '7px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 12, fontWeight: 800, cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
-                    {saving ? 'กำลังบันทึก...' : '💾 บันทึก'}
+                    {saving ? tr('กำลังบันทึก...') : tr('💾 บันทึก')}
                   </button>
                 </div>
               </div>

@@ -27,6 +27,7 @@ import OrgTreeView from '../components/OrgTreeView';   // 🌳 มุมมอ�
 import Page from '../components/Page';
 import { IconButton, DeleteButton } from '../components/IconButton';
 import NoticeBar from '../components/NoticeBar';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 /* 🔴 ชั้นไหนมีพาเนล/ปุ่มเพิ่มบนจอ ต้องมีป้ายครบทุกชั้น — ขาดตัวไหน หัวโมดัลขึ้น "เพิ่ม undefined"
    (เกิดจริง 05/10 ตอนเพิ่มชั้นทีมแล้วลืมเติมที่นี่ · มีด่าน regressionGuards) */
@@ -526,7 +527,7 @@ export default function OrgSetup() {
                   {sgEdit && (
                     <button onClick={saveSigners} disabled={sgSaving || !key}
                       style={{ padding: '7px 18px', background: sgSaving || !key ? 'var(--muted)' : 'var(--accent)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 13, cursor: sgSaving || !key ? 'default' : 'pointer' }}>
-                      {sgSaving ? 'กำลังบันทึก...' : 'บันทึก'}
+                      {sgSaving ? tr('กำลังบันทึก...') : tr('บันทึก')}
                     </button>
                   )}
                 </div>
@@ -542,9 +543,9 @@ export default function OrgSetup() {
                 {!key && <div style={{ fontSize: 11, color: 'var(--amber)', marginBottom: 8 }}>⚠ ส่วนนี้ยังไม่มี Code/ชื่อที่ตรงกับ production_lines.section — ใบค่าฝีมืออาจดึงไม่เจอ</div>}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10 }}>
                   {/* 2026-09-07: ผู้เซ็นเลือกจากทะเบียนผู้ใช้ผ่าน <PersonSelect> (allowFree — HR/TA อาจไม่มีบัญชี ESM · เก็บ snapshot ชื่อเหมือนเดิม) */}
-                  <div><label style={labelSt}>ผู้จัดการต้นสังกัด</label><PersonSelect value={sgManager} onChange={({ name }) => setSgManager(name)} disabled={!sgEdit} style={{ marginTop: 4 }} inputStyle={sgEdit ? undefined : { opacity: 0.6 }} /></div>
-                  <div><label style={labelSt}>เจ้าหน้าที่ TA</label><PersonSelect value={sgTA} onChange={({ name }) => setSgTA(name)} disabled={!sgEdit} style={{ marginTop: 4 }} inputStyle={sgEdit ? undefined : { opacity: 0.6 }} /></div>
-                  <div><label style={labelSt}>ผู้จัดการส่วน HRM</label><PersonSelect value={sgHRM} onChange={({ name }) => setSgHRM(name)} disabled={!sgEdit} style={{ marginTop: 4 }} inputStyle={sgEdit ? undefined : { opacity: 0.6 }} /></div>
+                  <div><label style={labelSt}>{tr('ผู้จัดการต้นสังกัด')}</label><PersonSelect value={sgManager} onChange={({ name }) => setSgManager(name)} disabled={!sgEdit} style={{ marginTop: 4 }} inputStyle={sgEdit ? undefined : { opacity: 0.6 }} /></div>
+                  <div><label style={labelSt}>{tr('เจ้าหน้าที่ TA')}</label><PersonSelect value={sgTA} onChange={({ name }) => setSgTA(name)} disabled={!sgEdit} style={{ marginTop: 4 }} inputStyle={sgEdit ? undefined : { opacity: 0.6 }} /></div>
+                  <div><label style={labelSt}>{tr('ผู้จัดการส่วน HRM')}</label><PersonSelect value={sgHRM} onChange={({ name }) => setSgHRM(name)} disabled={!sgEdit} style={{ marginTop: 4 }} inputStyle={sgEdit ? undefined : { opacity: 0.6 }} /></div>
                 </div>
               </div>
             );
@@ -570,15 +571,15 @@ export default function OrgSetup() {
             </h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
-                <label style={labelSt}>ชื่อ</label>
-                <input type="text" value={formName} onChange={e => setFormName(e.target.value)} placeholder="เช่น PD5 / HYDROFORM LASERCUT / LINE E / Team D" />
+                <label style={labelSt}>{tr('ชื่อ')}</label>
+                <input type="text" value={formName} onChange={e => setFormName(e.target.value)} placeholder={tr('เช่น PD5 / HYDROFORM LASERCUT / LINE E / Team D')} />
               </div>
               {modal.kind !== 'section' && (
                 <div>
                   <label style={labelSt}>{PARENT_LABEL[modal.kind]}</label>
                   <select value={modal.parentId ?? ''} onChange={e => setModal(m => ({ ...m, parentId: e.target.value || null }))}>
-                    {isAdmin && modal.kind === 'department' && <option value="">ขึ้นตรงฝ่าย — ไม่อยู่ใต้ Section ใด</option>}
-                    {parentChoices.rows.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                    {isAdmin && modal.kind === 'department' && <option value="">{tr('ขึ้นตรงฝ่าย — ไม่อยู่ใต้ Section ใด')}</option>}
+                    {parentChoices.rows.map(o => <option key={o.id} value={o.id}>{tr(o.label)}</option>)}
                   </select>
                   {/* 🔴 กรองแถวออกแล้วต้องเขียนบนจอว่าซ่อนกี่รายการ — ไม่งั้นดูเหมือนผังมีแค่นี้ */}
                   {parentChoices.hidden > 0 && (
@@ -610,7 +611,7 @@ export default function OrgSetup() {
                 {modal.kind === 'line' && formRefLineId ? (
                   <>
                     <input type="text" value={lineById[String(formRefLineId)]?.cost_center || ''} readOnly disabled
-                      placeholder="— ยังไม่ได้ตั้งที่หน้าจัดการไลน์ —" style={{ opacity: 0.7, cursor: 'not-allowed' }} />
+                      placeholder={tr('— ยังไม่ได้ตั้งที่หน้าจัดการไลน์ —')} style={{ opacity: 0.7, cursor: 'not-allowed' }} />
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>single source — cost center ของไลน์มาจากหน้า <strong>จัดการไลน์</strong> (แก้ที่นั่นที่เดียว)</div>
                   </>
                 ) : (
@@ -623,10 +624,10 @@ export default function OrgSetup() {
               </div>
               {['section', 'department'].includes(modal.kind) && (
                 <div>
-                  <label style={labelSt}>ประเภทแรงงาน (Direct/Indirect)</label>
+                  <label style={labelSt}>{tr('ประเภทแรงงาน (Direct/Indirect)')}</label>
                   <select value={formLaborType} onChange={e => setFormLaborType(e.target.value)}>
-                    <option value="direct">Direct — ฝ่ายผลิต (operator ทำงานผลิตโดยตรง)</option>
-                    <option value="indirect">Indirect — สนับสนุน (ช่างซ่อมบำรุง/QA/ธุรการ/ขาย)</option>
+                    <option value="direct">{tr('Direct — ฝ่ายผลิต (operator ทำงานผลิตโดยตรง)')}</option>
+                    <option value="indirect">{tr('Indirect — สนับสนุน (ช่างซ่อมบำรุง/QA/ธุรการ/ขาย)')}</option>
                   </select>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
                     พนักงานใน{modal.kind === 'section' ? 'ส่วน' : 'แผนก'}นี้จะถูกจัดเป็นประเภทนี้อัตโนมัติ{modal.kind === 'section' ? ' (แผนกตั้งทับได้)' : ' (ช่างส่วนใหญ่อยู่ระดับแผนก)'}
@@ -635,13 +636,13 @@ export default function OrgSetup() {
               )}
               {['section', 'department'].includes(modal.kind) && (
                 <div>
-                  <label style={labelSt}>ฝ่าย (Division)</label>
+                  <label style={labelSt}>{tr('ฝ่าย (Division)')}</label>
                   {/* gate ด้วย org:manage_divisions — คีย์นี้ถูกลงทะเบียนใน permission_catalog
                       + ใช้เป็น RLS ของตาราง org_divisions อยู่แล้ว แต่ไม่เคยมีโค้ดฝั่ง UI เรียก
                       = ติ๊กใน /permissions แล้วไม่มีผล (กฎ: ห้ามลงทะเบียน key ที่โค้ดไม่ใช้) */}
                   <select value={formDivision} disabled={!canDivisions}
                     onChange={e => setFormDivision(e.target.value)}>
-                    <option value="">— ตกทอดจากตัวแม่ / ยังไม่ระบุ —</option>
+                    <option value="">{tr('— ตกทอดจากตัวแม่ / ยังไม่ระบุ —')}</option>
                     {divisionsSync().map(d => <option key={d.code} value={d.code}>{d.icon} {d.label}</option>)}
                   </select>
                   <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
@@ -665,9 +666,9 @@ export default function OrgSetup() {
                 );
                 return (
                   <div>
-                    <label style={labelSt}>ผูกกับไลน์ผลิตจริง (production_lines)</label>
+                    <label style={labelSt}>{tr('ผูกกับไลน์ผลิตจริง (production_lines)')}</label>
                     <LineSelect lines={lines} value={formRefLineId} valueKey="id" includeSupport
-                      placeholder="— ไม่ผูก —" onChange={setFormRefLineId} />
+                      placeholder={tr('— ไม่ผูก —')} onChange={setFormRefLineId} />
                     {supportUnit && (
                       <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>
                         ⚠️ หน่วยแม่เป็นสายสนับสนุน (Indirect) แต่กลุ่มนี้ผูกไลน์ผลิตไว้ — ตรวจว่าตั้งใจไหม
@@ -678,10 +679,10 @@ export default function OrgSetup() {
               })()}
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                 <button onClick={handleSave} disabled={saving} style={{ flex: 2, padding: 11, background: saving ? 'var(--muted)' : 'var(--amber)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: saving ? 'default' : 'pointer' }}>
-                  {saving ? 'กำลังบันทึก...' : 'บันทึก'}
+                  {saving ? tr('กำลังบันทึก...') : tr('บันทึก')}
                 </button>
                 <button type="button" className="pg-btn sm" onClick={() => setModal(null)} style={{ flex: 1 }}>
-                  ยกเลิก
+                  {tr('ยกเลิก')}
                 </button>
               </div>
             </div>

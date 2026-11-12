@@ -17,6 +17,7 @@ import { POSITION_LEVELS } from '../utils/positions';
 import { SCOPE_DEPTH_META, SCOPE_DEPTHS } from '../utils/scopeDepth';
 import useTabParam from '../utils/useTabParam';
 import { NAV_GROUP_ORDER } from '../App';
+import { tr } from '../utils/i18n';
 import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 // ชื่อ/สีชุดสิทธิ์อ่านจาก src/utils/roleMeta.js ที่เดียว (ห้ามนิยามซ้ำในหน้า)
@@ -349,7 +350,7 @@ export default function PermissionsManagement() {
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
         <thead>
           <tr style={{ borderBottom: '2px solid var(--border)' }}>
-            <th style={{ textAlign: 'left', padding: '8px 10px', color: 'var(--muted)', position: 'sticky', left: 0, background: 'var(--bg)' }}>{firstColLabel}</th>
+            <th style={{ textAlign: 'left', padding: '8px 10px', color: 'var(--muted)', position: 'sticky', left: 0, background: 'var(--bg)' }}>{tr(firstColLabel)}</th>
             {cols.map(r => (
               <th key={r.value} style={{ textAlign: 'center', padding: '8px 4px', minWidth: 90 }} title={r.value}>
                 <span style={{ fontSize: 11, fontWeight: 800, color: r.color }}>{r.icon} {r.label}</span>
@@ -432,7 +433,7 @@ export default function PermissionsManagement() {
     <Page>
       <div style={{ padding: 24, margin: 24, borderRadius: 'var(--r-md)', border: '1px solid var(--red-line)', background: 'var(--red-dim)', color: 'var(--red)', fontSize: 14 }}>
         ⚠️ โหลดตารางสิทธิ์ไม่ครบ ({loadErr}) — ไม่แสดงตารางเพื่อกันการติ๊กทับค่าจริง ·{' '}
-        <button onClick={load} style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--red)', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontWeight: 700 }}>ลองใหม่</button>
+        <button onClick={load} style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--red)', background: 'transparent', color: 'var(--red)', cursor: 'pointer', fontWeight: 700 }}>{tr('ลองใหม่')}</button>
       </div>
     </Page>
   );
@@ -504,11 +505,11 @@ export default function PermissionsManagement() {
           <SearchInput value={q} onChange={setQ} fields="ชื่อฟังก์ชัน / คีย์สิทธิ์" />
           <label className="tbtn" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
             <input type="checkbox" checked={onlyDiff} onChange={e => setOnlyDiff(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
-            เฉพาะที่ชุดสิทธิ์ต่างกัน
+            {tr('เฉพาะที่ชุดสิทธิ์ต่างกัน')}
           </label>
           <label className="tbtn" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
             <input type="checkbox" checked={hideUnused} onChange={e => setHideUnused(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
-            ซ่อนชุดสิทธิ์ที่ยังไม่มีใครถือ
+            {tr('ซ่อนชุดสิทธิ์ที่ยังไม่มีใครถือ')}
           </label>
           <span className="spacer" />
           <span style={{ fontSize: 12, color: 'var(--muted)' }}>
@@ -539,7 +540,7 @@ export default function PermissionsManagement() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                  <th style={{ textAlign: 'left', padding: '8px 10px', color: 'var(--muted)', position: 'sticky', left: 0, background: 'var(--bg)', minWidth: 240 }}>ฟังก์ชัน</th>
+                  <th style={{ textAlign: 'left', padding: '8px 10px', color: 'var(--muted)', position: 'sticky', left: 0, background: 'var(--bg)', minWidth: 240 }}>{tr('ฟังก์ชัน')}</th>
                   {matrixCols.map(r => {
                     const n = accounts ? (accounts[r.value] || 0) : null;
                     return (

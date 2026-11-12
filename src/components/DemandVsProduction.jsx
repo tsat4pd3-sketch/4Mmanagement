@@ -22,6 +22,7 @@ import {
   demandKeysOf, rowMatchesProduct, demandByDay, dedupeForecastRows, simulate, prodRate, advise, addDay, demandOf, demandSrcOf,
 } from '../utils/demandSupply';
 
+import { tr } from '../utils/i18n';
 const fmt = (n) => Math.round(Number(n) || 0).toLocaleString('en-US');
 const dLabel = (s) => { const [, m, d] = s.split('-'); return `${+d}/${+m}`; };
 const normK = (v) => String(v ?? '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
@@ -179,9 +180,9 @@ export default function DemandVsProduction({ products, prodByDay, today }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620, fontSize: 12 }}>
               <thead><tr style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'right' }}>
                 <th style={{ textAlign: 'left', padding: '6px 8px' }}>MAT SAP</th>
-                <th style={{ padding: '6px 8px' }}>สต็อก</th><th style={{ padding: '6px 8px' }}>ต้องส่ง</th>
-                <th style={{ padding: '6px 8px' }}>ผลิตได้</th><th style={{ padding: '6px 8px' }}>ปลายช่วง</th>
-                <th style={{ textAlign: 'left', padding: '6px 8px' }}>สถานะ</th>
+                <th style={{ padding: '6px 8px' }}>{tr('สต็อก')}</th><th style={{ padding: '6px 8px' }}>{tr('ต้องส่ง')}</th>
+                <th style={{ padding: '6px 8px' }}>{tr('ผลิตได้')}</th><th style={{ padding: '6px 8px' }}>{tr('ปลายช่วง')}</th>
+                <th style={{ textAlign: 'left', padding: '6px 8px' }}>{tr('สถานะ')}</th>
               </tr></thead>
               <tbody>
                 {perMat.map((x) => (
@@ -247,7 +248,7 @@ export default function DemandVsProduction({ products, prodByDay, today }) {
           <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 4 }}>มองไปข้างหน้า</div>
           <select value={horizon} onChange={(e) => setHorizon(Number(e.target.value))}
             style={{ width: 110, padding: '6px 9px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12 }}>
-            {[14, 30, 60, 90].map((d) => <option key={d} value={d}>{d} วัน</option>)}
+            {[14, 30, 60, 90].map((d) => <option key={d} value={d}>{d} {tr('วัน')}</option>)}
           </select>
         </div>
       </div>

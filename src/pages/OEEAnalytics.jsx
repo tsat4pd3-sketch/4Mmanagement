@@ -50,6 +50,7 @@ import { useLatestRequest } from '../utils/useLatestRequest';
 import { MORE_MARK } from '../components/InfoMore';   // เครื่องหมาย "อ่านเพิ่ม" ชุดเดียวกันทั้งระบบ
 import { BREAK_POLICY_COLS } from '../utils/oeeMasters';
 import NoticeBar from '../components/NoticeBar';
+import { tr as trI18n } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 const MonthlyReviewExport = lazy(() => import('../components/MonthlyReviewExport'));
 
@@ -1428,13 +1429,13 @@ export default function OEEAnalytics() {
           {canSetTarget && (
             <button type="button" className="pg-btn"
               onClick={() => setShowTargetModal(true)} title="ตั้ง Target A/P/Q รายกรุ๊ป (OEE = A×P×Q อัตโนมัติ) — ระดับส่วนคำนวณจากค่าเฉลี่ยของกรุ๊ป">
-              ตั้ง Target
+              {trI18n('ตั้ง Target')}
             </button>
           )}
           {canExportReview && (
             <button type="button" className="pg-btn"
               onClick={() => setShowReviewExport(true)} title="สร้างเด็ค Monthly Performance Review (.pptx) ตาม template TSG จากข้อมูลเดือนที่เลือก">
-              รายงานเดือน
+              {trI18n('รายงานเดือน')}
             </button>
           )}
         </>}
@@ -1465,8 +1466,8 @@ export default function OEEAnalytics() {
               }} />
 
             <select value={tdTeam} onChange={e => setTdTeam(e.target.value)}>
-              <option value="">{ALL.team}</option>
-              {tdTeam && !orgTeams.includes(tdTeam) && <option value={tdTeam}>Team {tdTeam} (ไม่อยู่ในผัง)</option>}
+              <option value="">{trI18n(ALL.team)}</option>
+              {tdTeam && !orgTeams.includes(tdTeam) && <option value={tdTeam}>Team {tdTeam} {trI18n('(ไม่อยู่ในผัง)')}</option>}
               {orgTeams.map(t => <option key={t} value={t}>Team {t}</option>)}
             </select>
 
@@ -1483,7 +1484,7 @@ export default function OEEAnalytics() {
             <button onClick={() => setAutoRefresh(v => !v)} style={s.tab(autoRefresh)}>
               {/* จุดเขียวนิ่ง — กระพริบสงวนให้สถานะแดง (Andon) เท่านั้น ตาม UI-CONVENTIONS */}
               <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: autoRefresh ? 'var(--green)' : 'var(--muted)', marginRight: 6, boxShadow: autoRefresh ? '0 0 5px 1px var(--green-line)' : 'none' }} />
-              รีเฟรชอัตโนมัติ
+              {trI18n('รีเฟรชอัตโนมัติ')}
             </button>
             {tdLoading && <span className="filter-count">กำลังโหลด...</span>}
           </FilterBar>
@@ -1715,7 +1716,7 @@ export default function OEEAnalytics() {
               <button onClick={() => { tr.setScale('day'); tr.setRange(dateStrAdd(tdDate, -29), tdDate); setViewTab('trend'); }}
                 title="เปิดแท็บแนวโน้ม/ประวัติ พร้อมตั้งช่วง 30 วันล่าสุดให้"
                 style={{ ...s.tab(false), color: 'var(--blue)', border: '1px solid var(--blue-line)', whiteSpace: 'nowrap' }}>
-                ดูย้อนหลังเต็ม (30 วัน)
+                {trI18n('ดูย้อนหลังเต็ม (30 วัน)')}
               </button>
               {/* ⚠️ ตัวกรองทีมมีผลกับตัวเลข "วันนี้" แต่ไม่มีผลกับค่าเฉลี่ยย้อนหลัง (ตารางกะโหลดมาแค่วันที่เลือก)
                   — ห้ามปล่อยให้คนอ่านคิดว่าเทียบทีมเดียวกัน */}
@@ -1935,7 +1936,7 @@ export default function OEEAnalytics() {
                       <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 620 }}>
                         <thead><tr style={{ background: 'var(--bg2)' }}>
                           {['ไลน์', 'กะ', 'เวลา', 'เครื่อง', 'ชิ้นงาน', 'นาที', 'หมายเหตุ / ผู้บันทึก'].map((h, i) =>
-                            <th key={i} style={th}>{h}</th>)}
+                            <th key={i} style={th}>{trI18n(h)}</th>)}
                         </tr></thead>
                         <tbody>
                           {tdDrillRows.map(d => (
@@ -2192,8 +2193,8 @@ export default function OEEAnalytics() {
             sectionStyle={s.section} titleStyle={s.title} />
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--muted)', marginTop: -8, marginBottom: 8, cursor: 'pointer' }}>
             <input type="checkbox" checked={dtIncludePlanned} onChange={e => setDtIncludePlanned(e.target.checked)} style={{ width: 'auto' }} />
-            รวม "หยุดตามแผน" ด้วย ({Math.round(dtPlannedMin).toLocaleString()} นาที)
-            <span style={{ color: 'var(--muted)' }}>— ปกติไม่นับ เพราะไม่ใช่การสูญเสียที่ต้องแก้</span>
+            รวม "หยุดตามแผน" ด้วย ({Math.round(dtPlannedMin).toLocaleString()} {trI18n('นาที)')}
+            <span style={{ color: 'var(--muted)' }}>{trI18n('— ปกติไม่นับ เพราะไม่ใช่การสูญเสียที่ต้องแก้')}</span>
           </label>
         </div>
 
@@ -2348,10 +2349,10 @@ export default function OEEAnalytics() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ borderBottom: '2px solid var(--border)', color: 'var(--muted)' }}>
-                <th style={{ padding: '6px 8px', textAlign: 'left' }}>ช่วงเวลา</th>
-                <th style={{ padding: '6px 8px', textAlign: 'right' }}>กะ</th>
-                <th style={{ padding: '6px 8px', textAlign: 'right' }}>ผลิตรวม</th>
-                <th style={{ padding: '6px 8px', textAlign: 'right' }}>DT (นาที)</th>
+                <th style={{ padding: '6px 8px', textAlign: 'left' }}>{trI18n('ช่วงเวลา')}</th>
+                <th style={{ padding: '6px 8px', textAlign: 'right' }}>{trI18n('กะ')}</th>
+                <th style={{ padding: '6px 8px', textAlign: 'right' }}>{trI18n('ผลิตรวม')}</th>
+                <th style={{ padding: '6px 8px', textAlign: 'right' }}>{trI18n('DT (นาที)')}</th>
                 {/* 🚦 เขียนเป้าไว้บนหัวคอลัมน์ เพราะสีในตารางตัดสินจากเป้าพวกนี้ (23/09 · statusTone)
                     เดิมตารางทาสีด้วยเกณฑ์ตายตัวในไฟล์ โดยไม่มีอะไรบอกคนอ่านว่าเทียบกับอะไร */}
                 <th style={{ padding: '6px 8px', textAlign: 'right' }}>A% <span style={{ fontWeight: 400 }}>(≥{trTarget.a})</span></th>
@@ -2519,7 +2520,7 @@ function OeeTargetModal({ groups, targets, fullName, onClose, onSaved }) {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ fontSize: 11, color: 'var(--muted)' }}>
-                    <th style={{ textAlign: 'left', padding: '6px 4px' }}>กรุ๊ป / ไลน์หลัก</th>
+                    <th style={{ textAlign: 'left', padding: '6px 4px' }}>{trI18n('กรุ๊ป / ไลน์หลัก')}</th>
                     {METRICS.map(m => <th key={m.key} style={{ textAlign: 'right', padding: '6px 4px', width: 76 }}>{m.label} ≥ %</th>)}
                     <th style={{ textAlign: 'right', padding: '6px 4px', width: 90 }} title="คำนวณจาก A×P×Q อัตโนมัติ — ไม่ต้องกรอก">OEE = A×P×Q</th>
                   </tr>
@@ -2550,10 +2551,10 @@ function OeeTargetModal({ groups, targets, fullName, onClose, onSaved }) {
         </div>
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', padding: '12px 18px', borderTop: '1px solid var(--border)' }}>
-          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+          <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>{trI18n('ยกเลิก')}</button>
           <button onClick={handleSave} disabled={saving}
             style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, fontSize: 13, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
-            {saving ? 'กำลังบันทึก...' : 'บันทึก Target'}
+            {saving ? trI18n('กำลังบันทึก...') : trI18n('บันทึก Target')}
           </button>
         </div>
       </div>

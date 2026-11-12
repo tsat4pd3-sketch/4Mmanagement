@@ -25,6 +25,7 @@ import { isTodayPeriod } from '../utils/periodHead';
 import { buildPnIndex, pickStockMat } from '../utils/matResolve';
 import { openOnly } from '../utils/shipStatus';
 
+import { tr } from '../utils/i18n';
 /* 🔴 จุดอัพโหลดไฟล์ Monitoring มี **จุดเดียวทั้งระบบ** (08/10 คำสั่ง user) — ตัวเดียวกับที่
    `/planner-sales?tab=monitoring` ใช้ · กดที่ไหนก็ลงครบทุกชั้นในครั้งเดียว ห้ามแยกกลับเป็น 2 ตัว */
 const MonitoringUpload = lazy(() => import('../components/MonitoringUpload'));
@@ -596,12 +597,12 @@ export default function Monitoring() {
               title="สร้าง/อัพเดทบอร์ด FG ต่อลูกค้า จากออเดอร์ EDI 862/830 ที่นำเข้าไว้แล้ว"
               style={{ fontSize: 13, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
                 background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-              สร้างบอร์ด FG จากออเดอร์
+              {tr('สร้างบอร์ด FG จากออเดอร์')}
             </button>
             <button type="button" className="pg-btn" onClick={() => setShowImport(true)}
               style={{ fontSize: 13, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
                 background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
-              นำเข้าจากไฟล์ Excel
+              {tr('นำเข้าจากไฟล์ Excel')}
             </button>
           </div>
         ) : null}
@@ -611,7 +612,7 @@ export default function Monitoring() {
                 <select> ที่ไม่มี minWidth:0 จะดันกล่องจนล้นออกนอกจอแล้วปัดไม่ได้
                 (mobilesweep จับได้ 02/10) · label ต้อง minWidth:0 และ select ต้อง maxWidth:100% */}
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: FS + 1, minWidth: 0, flex: '0 1 380px', maxWidth: 380 }}>
-              <span style={{ flexShrink: 0 }}>บอร์ด</span>
+              <span style={{ flexShrink: 0 }}>{tr('บอร์ด')}</span>
               <select value={board?.id || ''} onChange={e => setBoardId(e.target.value)}
                 style={{ minWidth: 0, maxWidth: '100%', flex: 1 }}>
                 {tabBoards.map(b => (

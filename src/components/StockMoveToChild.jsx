@@ -23,6 +23,7 @@ import { parentAreaCovers } from '../utils/storageLoc';
 import MatLabel from './MatLabel';
 import { toast } from './Toast';
 
+import { tr } from '../utils/i18n';
 const th = { padding: '7px 10px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' };
 const td = { padding: '6px 10px', fontSize: 12, color: 'var(--text)', borderTop: '1px solid var(--border)' };
 const inp = { padding: '5px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12 };
@@ -168,9 +169,9 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
               <thead><tr style={{ background: 'var(--bg2)', position: 'sticky', top: 0 }}>
                 {/* ยุบ "ชื่อพาร์ท + MAT" เป็นคอลัมน์เดียว — <MatLabel> ให้ครบ Part No./ชื่อ/MAT (30/09) */}
-                <th style={th}>ชิ้นงาน</th><th style={{ ...th, textAlign: 'right' }}>คงเหลือ</th>
-                <th style={th}>อยู่ที่ (ไลน์แม่)</th><th style={th}>ย้ายไป (ไลน์ลูก)</th>
-                <th style={{ ...th, textAlign: 'right' }}>จำนวน</th><th style={th}></th>
+                <th style={th}>{tr('ชิ้นงาน')}</th><th style={{ ...th, textAlign: 'right' }}>{tr('คงเหลือ')}</th>
+                <th style={th}>{tr('อยู่ที่ (ไลน์แม่)')}</th><th style={th}>{tr('ย้ายไป (ไลน์ลูก)')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('จำนวน')}</th><th style={th}></th>
               </tr></thead>
               <tbody>
                 {rows.map(r => {
@@ -185,10 +186,10 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
                         {/* จัดกลุ่มพร้อมเหตุผล — ทุกไลน์ที่เป็นไปได้ต้องอยู่ในลิสต์เสมอ ห้ามตัดทิ้ง */}
                         <select value={sel} disabled={!canIssue} style={{ ...inp, width: 190 }}
                           onChange={e => setPick(p => ({ ...p, [r.key]: { ...p[r.key], to: e.target.value } }))}>
-                          <option value="">— เลือก —</option>
+                          <option value="">{tr('— เลือก —')}</option>
                           {r.groups.map(g => (
                             <optgroup key={g.key} label={g.note ? `${g.label} · ${g.note}` : g.label}>
-                              {g.lines.map(n => <option key={n} value={n}>{n}</option>)}
+                              {g.lines.map(n => <option key={n} value={n}>{tr(n)}</option>)}
                             </optgroup>
                           ))}
                         </select>
@@ -214,7 +215,7 @@ export default function StockMoveToChild({ lines, stock, products, productBom, c
                         <button disabled={!canIssue || busy === r.key} onClick={() => move(r)}
                           style={{ padding: '5px 12px', borderRadius: 'var(--r-md)', border: 'none', fontSize: 12, fontWeight: 700,
                             background: canIssue ? '#f59e0b' : 'var(--muted)', color: '#fff', cursor: canIssue ? 'pointer' : 'not-allowed' }}>
-                          {busy === r.key ? '...' : '🔀 ย้าย'}
+                          {busy === r.key ? '...' : tr('🔀 ย้าย')}
                         </button>
                       </td>
                     </tr>

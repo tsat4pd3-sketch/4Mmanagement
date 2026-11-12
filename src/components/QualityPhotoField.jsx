@@ -18,6 +18,7 @@ import ImageCropModal from './ImageCropModal';
 import { acceptImageFile } from '../utils/acceptImageFile';
 import { QUALITY_IMG_ASPECT } from '../utils/qualityImage';
 
+import { tr } from '../utils/i18n';
 const lbl = { fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 3 };
 
 export default function QualityPhotoField({
@@ -65,7 +66,7 @@ export default function QualityPhotoField({
               style={{
                 fontSize: 11.5, padding: '4px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                 border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)',
-              }}>เอารูปออก</button>
+              }}>{tr('เอารูปออก')}</button>
           )}
         </div>
       )}

@@ -4,6 +4,7 @@ import useIsMobile from '../utils/useIsMobile';
 import { FRAME_START, frameMin, breaksToFrame } from '../utils/timeFrame';
 import { getRoundStatus, roundDeliveryMin, addMinutes } from '../utils/deliveryRounds';
 import { forecastRunout, byUrgency, RUNOUT_REASON } from '../utils/wipRunout';
+import { tr } from '../utils/i18n';
 import { storeBtn } from '../utils/storeUi';   // 🖐 เป้ากด 44px ของโมดูลสโตร์ (2026-09-25)
 import { slocCodeOfLine } from '../utils/storageLoc';   // 🏬 มุม SAP ของไลน์ปลายทาง (2026-09-08)
 
@@ -564,7 +565,7 @@ export default function StoreTimeChart({
               <StockNote cov={cov} fmt={fmt} />
               <button onClick={() => goToCard(r)}
                 style={{ marginTop: 10, width: '100%', padding: '7px 10px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 800, cursor: 'pointer', background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', fontFamily: 'var(--font-body)' }}>
-                ↓ ดูของที่ต้องเตรียม
+                {tr('↓ ดูของที่ต้องเตรียม')}
               </button>
             </div>
           </>
@@ -636,7 +637,7 @@ export default function StoreTimeChart({
               <button onClick={toggleAssume} title="ซ่อนพาร์ทที่ยังไม่มียอด WIP ออกจากไทม์ไลน์ (เหลือเฉพาะพาร์ทที่มีข้อมูลจริง)"
                 style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)',
                 padding: '5px 10px', cursor: 'pointer', fontSize: 11, fontWeight: 700, color: 'var(--text2)', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
-                ดูเฉพาะที่มียอดจริง
+                {tr('ดูเฉพาะที่มียอดจริง')}
               </button>
             </div>
           )}
@@ -648,7 +649,7 @@ export default function StoreTimeChart({
               </span>
               <button onClick={toggleAssume} style={{ background: 'rgba(245,158,11,0.14)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 'var(--r-md)',
                 padding: '5px 10px', cursor: 'pointer', fontSize: 11, fontWeight: 800, color: '#f59e0b', fontFamily: 'var(--font-body)', whiteSpace: 'nowrap' }}>
-                คิดเป็น 0 แล้วส่งเต็มจำนวน
+                {tr('คิดเป็น 0 แล้วส่งเต็มจำนวน')}
               </button>
             </div>
           )}
@@ -765,7 +766,7 @@ export default function StoreTimeChart({
               {selItems.length > 0 && (
                 <button onClick={() => setSel({})} disabled={creating}
                   style={{ minHeight: 44, padding: '10px 16px', borderRadius: 'var(--radius)', border: '1px solid var(--border2)', background: 'transparent', color: 'var(--muted)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
-                  ล้าง
+                  {tr('ล้าง')}
                 </button>
               )}
               <button onClick={createSelected} disabled={!selItems.length || creating}
@@ -977,15 +978,15 @@ export default function StoreTimeChart({
                   {canOperate && need && (
                     <button onClick={() => onConfirm(r, alloc.parts)} disabled={confirming === r.id}
                       style={storeBtn('primary', { marginTop: 9, width: '100%' })}>
-                      {confirming === r.id ? 'กำลังบันทึก…' : '✅ ยืนยันส่งออกจากสโตร์'}
+                      {confirming === r.id ? tr('กำลังบันทึก…') : tr('✅ ยืนยันส่งออกจากสโตร์')}
                     </button>
                   )}
                   {canOperate && conf && !done && (
                     <div style={{ display: 'flex', gap: 6, marginTop: 9 }}>
                       <button onClick={() => onReceive(r, alloc.parts, 'full')}
-                        style={storeBtn('primary', { flex: 1, padding: '10px 6px' })}>✔️ รับครบ</button>
+                        style={storeBtn('primary', { flex: 1, padding: '10px 6px' })}>{tr('✔️ รับครบ')}</button>
                       <button onClick={() => onReceive(r, alloc.parts, 'partial')}
-                        style={storeBtn('secondary', { flex: 1, padding: '10px 6px', color: '#f59e0b', borderColor: 'rgba(245,158,11,0.45)' })}>⚠️ รับไม่ครบ</button>
+                        style={storeBtn('secondary', { flex: 1, padding: '10px 6px', color: '#f59e0b', borderColor: 'rgba(245,158,11,0.45)' })}>{tr('⚠️ รับไม่ครบ')}</button>
                     </div>
                   )}
 

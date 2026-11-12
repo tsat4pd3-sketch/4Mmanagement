@@ -17,6 +17,7 @@ import { STATUS_META } from '../lib/pmSchedule';
 import { machineKey } from '../utils/machineNo';
 import { markerFor, dtByMachine, dtWithoutMachine, stationMarker, STATION_META, LENS_LABEL, DT_COLOR, NO_DATA_COLOR } from '../utils/lineLens';
 
+import { tr } from '../utils/i18n';
 const LEGEND = {
   pm: [['overdue', STATUS_META.overdue], ['due_soon', STATUS_META.due_soon], ['ok', STATUS_META.ok], ['never', STATUS_META.never], ['no_plan', { label: 'ไม่มีแผน PM', color: NO_DATA_COLOR }]],
   am: [['overdue', STATUS_META.overdue], ['due_soon', STATUS_META.due_soon], ['ok', STATUS_META.ok], ['no_plan', { label: 'ไม่มีแผน AM', color: NO_DATA_COLOR }]],
@@ -131,7 +132,7 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
           height={height || 'clamp(320px, 58vh, 720px)'} defaultPills={false} autoCrop={crop} vivid />
         {markers.length > 0 && (
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', fontSize: 11.5, color: 'var(--muted)' }}>
-            <button onClick={() => setCrop(v => !v)} style={chip(crop)}>{crop ? '✂️ ครอปเฉพาะโซนที่มีหมุด' : '🗺️ ทั้งผัง'}</button>
+            <button onClick={() => setCrop(v => !v)} style={chip(crop)}>{crop ? tr('✂️ ครอปเฉพาะโซนที่มีหมุด') : tr('🗺️ ทั้งผัง')}</button>
             <span>{isPeople ? 'คลิกจุดงานเพื่อดูคน + ทักษะ' : 'คลิกหมุดเพื่อดูชื่อ + รายละเอียดเครื่อง'}</span>
           </div>
         )}

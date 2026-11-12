@@ -14,6 +14,7 @@ import { Link, useLocation } from 'react-router-dom';
 import Page from '../components/Page';
 import PageHeader from '../components/PageHeader';
 
+import { tr } from '../utils/i18n';
 export default function NotFound() {
   const { pathname, search } = useLocation();
   const btn = {
@@ -42,7 +43,7 @@ export default function NotFound() {
 
       <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
         <button type="button" style={{ ...btn, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}
-          onClick={() => window.location.reload()}>โหลดใหม่</button>
+          onClick={() => window.location.reload()}>{tr('โหลดใหม่')}</button>
         <Link to="/" style={btn}>🏠 กลับหน้าหลัก</Link>
       </div>
     </Page>

@@ -42,6 +42,7 @@ import { RATE, LIVE } from '../utils/refreshRates';
 import { coalesce } from '../utils/liveRefresh';
 import { liveChannel } from '../utils/liveChannel';
 import { DeleteButton } from '../components/IconButton';
+import { tr } from '../utils/i18n';
 import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 const monthKeyNow = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
@@ -500,7 +501,7 @@ export default function VSM() {
     <>
       <span className="filter-label">สินค้าสำเร็จรูป (FG · เบอร์ 1)</span>
       <ProductSelect value={matNo} products={fgOptions} onChange={({ mat_no }) => setMatNo(mat_no || '')}
-        placeholder="— ค้น MAT / ชื่อ / P/N เพื่อเลือกสินค้า —" style={{ flex: 1, minWidth: 240 }} />
+        placeholder={tr('— ค้น MAT / ชื่อ / P/N เพื่อเลือกสินค้า —')} style={{ flex: 1, minWidth: 240 }} />
     </>
   );
 
@@ -523,21 +524,21 @@ export default function VSM() {
         <input type="month" value={monthKey} onChange={e => setMonthKey(e.target.value)} />
         <span className="filter-label">สถานะผัง</span>
         <select value={state} onChange={e => setState(e.target.value)}>
-          {STATES.map(s => <option key={s.key} value={s.key}>{s.label}</option>)}
+          {STATES.map(s => <option key={s.key} value={s.key}>{tr(s.label)}</option>)}
         </select>
         <span className="spacer" />
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button onClick={() => generate(false)} disabled={!matNo || busy} style={btn('var(--accent)', { opacity: (!matNo || busy) ? 0.5 : 1 })}>
-            {busy ? 'กำลังดึง…' : 'สร้างร่างจากข้อมูลจริง'}
+            {busy ? tr('กำลังดึง…') : tr('สร้างร่างจากข้อมูลจริง')}
           </button>
           {model && rawRef && (
-            <button onClick={() => generate(true)} disabled={busy} style={btn('var(--bg3)', { color: 'var(--text)' })}>ดึงข้อมูลใหม่</button>
+            <button onClick={() => generate(true)} disabled={busy} style={btn('var(--bg3)', { color: 'var(--text)' })}>{tr('ดึงข้อมูลใหม่')}</button>
           )}
-          {model && canManage && <button onClick={save} disabled={busy} style={btn('var(--blue)', { color: '#fff' })}>บันทึก</button>}
+          {model && canManage && <button onClick={save} disabled={busy} style={btn('var(--blue)', { color: '#fff' })}>{tr('บันทึก')}</button>}
           {model && <button onClick={() => doPrint('a3')} style={btn('var(--amber)')}>A3 Report (Toyota)</button>}
-          {model && <button onClick={() => doPrint('sheet')} style={btn('var(--bg3)', { color: 'var(--text)' })}>ใบ VSM</button>}
-          {model && <button onClick={() => setShowA3(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>เนื้อหา A3</button>}
-          <button onClick={() => setShowLoad(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>ใบที่บันทึกไว้ ({savedVisible.length})</button>
+          {model && <button onClick={() => doPrint('sheet')} style={btn('var(--bg3)', { color: 'var(--text)' })}>{tr('ใบ VSM')}</button>}
+          {model && <button onClick={() => setShowA3(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>{tr('เนื้อหา A3')}</button>}
+          <button onClick={() => setShowLoad(v => !v)} style={btn('var(--bg3)', { color: 'var(--text)' })}>{tr('ใบที่บันทึกไว้ (')}{savedVisible.length})</button>
         </div>
       </FilterBar>
 
@@ -602,7 +603,7 @@ export default function VSM() {
           {/* ⑥ แผนดำเนินการ */}
           <div style={{ marginTop: 14 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>⑥ แผนดำเนินการ (ใคร / อะไร / เมื่อไหร่)</label>
+              <label style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('⑥ แผนดำเนินการ (ใคร / อะไร / เมื่อไหร่)')}</label>
               <button onClick={() => setA3(v => ({ ...v, plan: [...(v.plan || []), { what: '', who: '', when: '', status: '' }] }))}
                 style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 12 }}>
                 + เพิ่มแถว
@@ -688,7 +689,7 @@ export default function VSM() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
             <thead><tr style={{ background: 'var(--bg2)' }}>
               {['ขั้น', 'กระบวนการ', 'ไลน์', 'C/T (sec)', 'C/O (sec)', '%OEE', 'LOT', 'คน', 'คงคลังหลังขั้นนี้ (pcs)'].map(h =>
-                <th key={h} style={{ padding: '7px 8px', fontSize: 11.5, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' }}>{h}</th>)}
+                <th key={h} style={{ padding: '7px 8px', fontSize: 11.5, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' }}>{tr(h)}</th>)}
             </tr></thead>
             <tbody>
               {model.chain.map((b, i) => {
@@ -735,7 +736,7 @@ export default function VSM() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10, alignContent: 'start' }}>
             <div>
               <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>
-                ลูกค้า — {model.customer.name || model.header.customer || 'ไม่ระบุ'}
+                {tr('ลูกค้า —')} {model.customer.name || model.header.customer || 'ไม่ระบุ'}
               </label>
               <input value={overrides.__customer_pattern || ''} onChange={e => setTopOv('__customer_pattern', e.target.value)}
                 placeholder={model.customer.roundsPerDay ? `ระบบเห็น ${model.customer.roundsPerDay} รอบ/วัน` : 'เช่น 1:4:2'}
@@ -747,7 +748,7 @@ export default function VSM() {
                   {sp.supplier || 'ยังไม่ระบุผู้ส่งมอบ'} · {sp.matNo}
                 </label>
                 <input value={(overrides.__supplier_pattern || {})[sp.matNo] || ''} onChange={e => setSupPattern(sp.matNo, e.target.value)}
-                  placeholder="เช่น 7:1:1"
+                  placeholder={tr('เช่น 7:1:1')}
                   style={{ width: '100%', fontSize: 12.5, padding: '6px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }} />
               </div>
             ))}
@@ -812,7 +813,7 @@ export default function VSM() {
               สถานะไลน์ / ยอดวันนี้ / คงคลัง ▲ = <b style={{ color: 'var(--accent)' }}>สด</b><br />
               มุมมองนี้<b>ไม่บันทึก/ไม่พิมพ์</b> — เอกสาร VSM ทางการ (snapshot) อยู่แท็บ 📋
             </div>
-            {liveRaw && <button onClick={loadLive} style={btn('var(--bg3)', { color: 'var(--text)' })}>รีเฟรชตอนนี้</button>}
+            {liveRaw && <button onClick={loadLive} style={btn('var(--bg3)', { color: 'var(--text)' })}>{tr('รีเฟรชตอนนี้')}</button>}
           </FilterBar>
 
           {!matNo && (
@@ -832,7 +833,7 @@ export default function VSM() {
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
                 {liveErr} — มักเป็นสัญญาณเน็ตสะดุดชั่วคราว ลองใหม่ได้เลย
               </div>
-              <button onClick={() => setLiveTick(t => t + 1)} style={btn('var(--accent)')}>ลองใหม่</button>
+              <button onClick={() => setLiveTick(t => t + 1)} style={btn('var(--accent)')}>{tr('ลองใหม่')}</button>
             </div>
           )}
 

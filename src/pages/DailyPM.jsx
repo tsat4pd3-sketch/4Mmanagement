@@ -21,6 +21,7 @@ import { visibleInterval } from '../utils/usePolling'
 import { RATE, LIVE } from '../utils/refreshRates'
 import { coalesce, makeIdleGate } from '../utils/liveRefresh'
 import { liveChannel } from '../utils/liveChannel';
+import { tr } from '../utils/i18n';
 import Page from '../components/Page'
 import PageHeader from '../components/PageHeader'
 import FilterBar from '../components/FilterBar'
@@ -404,7 +405,7 @@ export default function DailyPM() {
           <div data-page-note="1" style={{ marginBottom: 14, padding: guideOpen ? '12px 16px' : '8px 16px', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)' }}>
             <button type="button" onClick={toggleGuide} aria-expanded={guideOpen}
               style={{ all: 'unset', cursor: 'pointer', fontSize: 12, fontWeight: 800, color: 'var(--text)', display: 'block', width: '100%', marginBottom: guideOpen ? 8 : 0 }}>
-              {guideOpen ? '▾' : '▸'} วิธีใช้งาน Autonomous Maintenance (AM) — 4 ขั้น
+              {guideOpen ? '▾' : '▸'} {tr('วิธีใช้งาน Autonomous Maintenance (AM) — 4 ขั้น')}
             </button>
             {guideOpen && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: 8 }}>
               {[
@@ -434,7 +435,7 @@ export default function DailyPM() {
             <SearchInput value={regQ} onChange={setRegQ} fields="ชื่อเครื่อง / เลขเครื่อง / No. / ไลน์" />
             <span className="spacer" />
             <span className="filter-count">แสดง {regView.shownN} จาก {regView.myN} เครื่อง</span>
-            {regFiltered && <button type="button" onClick={clearRegFilters} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>ล้างตัวกรอง</button>}
+            {regFiltered && <button type="button" onClick={clearRegFilters} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>{tr('ล้างตัวกรอง')}</button>}
           </FilterBar>
           {/* 🔴 ซ่อนแล้วต้องบอก — "ไม่มีเครื่อง" ทั้งที่มีแต่อยู่นอกขอบเขต = จอโกหก */}
           {(regView.outScopeN > 0 || regView.droppedNoLine > 0) && (
@@ -448,7 +449,7 @@ export default function DailyPM() {
           {jigs.length > 0 && regView.groups.length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>
               ไม่มีเครื่องที่ตรงกับตัวกรอง{regView.outScopeN > 0 ? ` (นอกขอบเขตของคุณ ${regView.outScopeN} เครื่อง)` : ''}
-              {regFiltered && <div><button type="button" onClick={clearRegFilters} style={{ marginTop: 10, background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '5px 12px', fontSize: 12, cursor: 'pointer' }}>ล้างตัวกรอง</button></div>}
+              {regFiltered && <div><button type="button" onClick={clearRegFilters} style={{ marginTop: 10, background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '5px 12px', fontSize: 12, cursor: 'pointer' }}>{tr('ล้างตัวกรอง')}</button></div>}
             </div>
           ) : Object.keys(jigsByLine).length === 0 ? (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>
@@ -493,11 +494,11 @@ export default function DailyPM() {
                               {/* ชื่อเต็ม ตัดได้ไม่เกิน 2 บรรทัด — ห้ามตัดจนเหลือตัวเดียวแบบ nowrap เดิม */}
                               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', lineHeight: 1.35, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>{j.name}</div>
                               {(j.machine_no || j.jig_no) && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 1 }}>{[j.machine_no, j.jig_no].filter(Boolean).join(' · ')}</div>}
-                              {/* <LineSelect> (2026-09-07) — ห่อ div preventDefault กัน click ไปโดน <label> แล้ว toggle checkbox (เดิมทำที่ <select>)
+                              {/* <LineSelect> (2026-09-07) — ห่อ div preventDefault กัน click ไปโดน <label> {tr('แล้ว toggle checkbox (เดิมทำที่')} <select>)
                                   · ค่า '' = placeholder ไม่ยิง assign · scopedProdLines กรอง scope แล้ว */}
                               {noLine && canManage && (
                                 <div onClick={e => e.preventDefault()}>
-                                  <LineSelect lines={scopedProdLines} value="" onChange={v => v && assignJigLine(j, v)} placeholder="เลือกไลน์ให้เครื่องนี้…"
+                                  <LineSelect lines={scopedProdLines} value="" onChange={v => v && assignJigLine(j, v)} placeholder={tr('เลือกไลน์ให้เครื่องนี้…')}
                                     style={{ width: '100%', marginTop: 6, padding: '4px 8px', fontSize: 12, borderRadius: 6, background: 'var(--bg)', border: '1px solid var(--amber-line)', color: 'var(--text)' }} />
                                 </div>
                               )}

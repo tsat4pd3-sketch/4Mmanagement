@@ -2,6 +2,7 @@ import { useState, useEffect, useContext, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase, supabaseDR } from '../supabaseClient'
 import { loadLinesRes } from '../utils/useProductionLines';
+import { tr } from '../utils/i18n';
 import { UserContext } from '../App'
 import { can } from '../utils/permissions'
 import { toast } from '../components/Toast'
@@ -216,7 +217,7 @@ export default function PmForecast() {
           : 'ยอดผลิตสะสมของอุปกรณ์แต่ละตัว — ฐานของ PM แบบนับยอดผลิต (condition-based) แทนรอบเวลา'}
         tabs={[{ key: 'due', label: 'PM ที่จะครบกำหนด' }, { key: 'usage', label: 'ยอดผลิตสะสมรายอุปกรณ์' }]}
         tab={tab} onTab={setTab}
-        actions={<button type="button" className="pg-btn" onClick={load} style={{ cursor: 'pointer' }}>รีเฟรช</button>}
+        actions={<button type="button" className="pg-btn" onClick={load} style={{ cursor: 'pointer' }}>{tr('รีเฟรช')}</button>}
       />
 
       {prodErr && (
@@ -241,15 +242,15 @@ export default function PmForecast() {
         <LineScopeSelect lines={scopeLines} section={fScope.section} line={fScope.line}
           onChange={(section, line, info) => setFScope({ section, line, names: info?.lines?.length ? info.lines : (section || line ? [line || section] : null) })} />
         <select value={onlyWindow} onChange={e => setOnlyWindow(e.target.value)} aria-label="สถานะ">
-          <option value="">ทุกสถานะ ({rows.length})</option>
-          <option value="overdue">เลยกำหนด ({overdueCount})</option>
-          <option value="window">เข้า window แล้ว ({windowCount})</option>
-          <option value="later">ยังไม่ถึง window ({rows.filter(STATUS_KEEP.later).length})</option>
+          <option value="">{tr('ทุกสถานะ (')}{rows.length})</option>
+          <option value="overdue">{tr('เลยกำหนด (')}{overdueCount})</option>
+          <option value="window">{tr('เข้า window แล้ว (')}{windowCount})</option>
+          <option value="later">{tr('ยังไม่ถึง window (')}{rows.filter(STATUS_KEEP.later).length})</option>
         </select>
         <SearchInput value={fQ} onChange={setFQ} fields="ไลน์ / อุปกรณ์" />
         <span className="filter-count">แสดง {shown.length} จาก {rows.length}</span>
         {droppedNoLine > 0 && <span className="filter-count" style={{ color: '#f59a3f' }} title="ชื่อไลน์ของแผนไม่ตรงทะเบียนไลน์ผลิต — กรองตามไลน์ไม่ได้">⚠ อีก {droppedNoLine} แผนไลน์ไม่ตรงทะเบียน</span>}
-        {filtered && <button type="button" onClick={clearFilters} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>ล้างตัวกรอง</button>}
+        {filtered && <button type="button" onClick={clearFilters} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '4px 10px', fontSize: 12, cursor: 'pointer' }}>{tr('ล้างตัวกรอง')}</button>}
         <span className="spacer" />
         {noLineN > 0 && <span className="filter-count" title="แผนที่ทั้งตัวแผน (usage_source_line) และเครื่อง (line_name) ไม่มีไลน์ — คิดยอดผลิต/วัน PM ไม่ได้ ไปตั้งไลน์ให้เครื่องที่ทะเบียนอุปกรณ์" style={{ color: '#f59a3f', fontWeight: 700 }}>⚠ {noLineN} แผนไม่มีไลน์ — ไม่แสดง</span>}
         {totalBuffer > 0 && <span className="filter-count" style={{ color: 'var(--accent2)', fontWeight: 700 }}>Σ buffer ที่ต้องเตรียม ≈ {totalBuffer.toLocaleString()} ชิ้น</span>}
@@ -264,7 +265,7 @@ export default function PmForecast() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 860 }}>
               <thead>
                 <tr style={{ background: 'var(--bg3)', color: 'var(--muted)', textAlign: 'left' }}>
-                  {['ไลน์ / อุปกรณ์', 'ชนิด', 'ความคืบหน้า', 'คาดวัน PM', 'อีก', 'ระยะ PM (ชม.)', 'lead (วัน)', 'เผื่อ %', 'buffer (ชิ้น)', ...(canCoord ? ['ประสานงาน'] : [])].map(h => <th key={h} style={{ padding: '9px 10px', fontWeight: 700, whiteSpace: 'nowrap' }}>{h}</th>)}
+                  {['ไลน์ / อุปกรณ์', 'ชนิด', 'ความคืบหน้า', 'คาดวัน PM', 'อีก', 'ระยะ PM (ชม.)', 'lead (วัน)', 'เผื่อ %', 'buffer (ชิ้น)', ...(canCoord ? ['ประสานงาน'] : [])].map(h => <th key={h} style={{ padding: '9px 10px', fontWeight: 700, whiteSpace: 'nowrap' }}>{tr(h)}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -286,7 +287,7 @@ export default function PmForecast() {
                       <td style={{ padding: '8px 10px' }}>{canManage ? <input type="number" defaultValue={p.lead_time_days ?? 10} onBlur={e => { const v = Number(e.target.value) || 0; if (v !== (p.lead_time_days ?? 10)) saveCfg(p.id, { lead_time_days: v }) }} style={inp} /> : (p.lead_time_days ?? 10)}</td>
                       <td style={{ padding: '8px 10px' }}>{canManage ? <input type="number" defaultValue={p.buffer_margin_pct ?? 15} onBlur={e => { const v = Number(e.target.value) || 0; if (v !== (p.buffer_margin_pct ?? 15)) saveCfg(p.id, { buffer_margin_pct: v }) }} style={inp} /> : (p.buffer_margin_pct ?? 15)}</td>
                       <td style={{ padding: '8px 10px', fontWeight: 800, color: r.inWindow && r.buffer ? 'var(--accent2)' : 'var(--muted)', whiteSpace: 'nowrap' }}>{r.buffer ? r.buffer.toLocaleString() : (p.pm_duration_hours ? '0' : 'ตั้งระยะ PM')}</td>
-                      {canCoord && <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}><button onClick={() => toCoordination(r)} title="สร้างแผนประสานงาน PM (แจ้ง Production)" style={{ background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '5px 10px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>แผนประสานงาน</button></td>}
+                      {canCoord && <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}><button onClick={() => toCoordination(r)} title="สร้างแผนประสานงาน PM (แจ้ง Production)" style={{ background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '5px 10px', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>{tr('แผนประสานงาน')}</button></td>}
                     </tr>
                   )
                 })}

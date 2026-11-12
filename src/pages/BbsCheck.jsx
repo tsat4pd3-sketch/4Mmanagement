@@ -41,6 +41,7 @@ import OverflowMenu from '../components/OverflowMenu';   // ⋯ ปุ่มต�
 import NoticeBar from '../components/NoticeBar';
 import FilterBar from '../components/FilterBar';
 import { DeleteButton } from '../components/IconButton';
+import { tr } from '../utils/i18n';
 /* ⚠️ ห้าม import SHIFT_OPTIONS มาใช้ที่นี่ (เคยพลาดมาแล้ว — ดูหัวข้อ SHEET_SHIFT_OPTIONS ด้านล่าง) */
 
 const thisMonth = () => {
@@ -471,10 +472,10 @@ export default function BbsCheck() {
           <OverflowMenu items={[{ key: 'agree', icon: '📋', label: 'ข้อตกลง', badge: agreements.length, onClick: () => setShowAgree(true) }]} />
           {canRecord && (
             <button type="button" className="pg-btn primary" onClick={autoFill} disabled={busy || !emps.length}>
-              {busy ? 'กำลังเติม…' : 'เติมจากผลตรวจ PPE'}
+              {busy ? tr('กำลังเติม…') : tr('เติมจากผลตรวจ PPE')}
             </button>
           )}
-          <button type="button" className="pg-btn" onClick={doPrint} disabled={!sheet}>พิมพ์ / PDF</button>
+          <button type="button" className="pg-btn" onClick={doPrint} disabled={!sheet}>{tr('พิมพ์ / PDF')}</button>
         </>} />
 
       {/* ── แถบเลือกใบ ── ลำดับ: ไลน์ → เดือน → กะ */}
@@ -491,20 +492,20 @@ export default function BbsCheck() {
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: 12 }}>
         <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <div>
-            <label style={lbl}>ผู้ตรวจสอบ (ลายเซ็น: โปรไฟล์ → ฐานพนักงาน)</label>
+            <label style={lbl}>{tr('ผู้ตรวจสอบ (ลายเซ็น: โปรไฟล์ → ฐานพนักงาน)')}</label>
             <SearchSelect disabled={!canRecord} value={signers.find(s => s.full_name === sheet?.inspector_name)?.id || ''}
-              placeholder="— เลือกผู้ตรวจสอบ (พิมพ์ค้นหา) —" style={{ width: 240 }} inputStyle={{ padding: '6px 30px 6px 8px', fontSize: 12.5 }}
+              placeholder={tr('— เลือกผู้ตรวจสอบ (พิมพ์ค้นหา) —')} style={{ width: 240 }} inputStyle={{ padding: '6px 30px 6px 8px', fontSize: 12.5 }}
               options={signers.map(s => ({ id: s.id, label: s.full_name }))} onChange={({ id }) => setInspector(id)} />
           </div>
           <div>
-            <label style={lbl}>รหัสพนักงาน (สแกนบัตร / พิมพ์)</label>
+            <label style={lbl}>{tr('รหัสพนักงาน (สแกนบัตร / พิมพ์)')}</label>
             {/* key = remount เมื่อระบบเติมรหัสให้ (input uncontrolled) · ยังพิมพ์แก้เองได้
                 เครื่องสแกนส่ง Enter ตามท้ายรหัสเสมอ ⇒ Enter = ยืนยันรหัส (blur) ไม่ใช่ submit อะไร
                 ผู้รับเหมาที่ไม่มีบัตร = พิมพ์รหัสเอง · ชื่อ/ลายเซ็นดึงจากฐานพนักงานตามรหัส (C1 · 03/11) */}
             <input key={`${sheet?.id || ''}|${sheet?.inspector_code || ''}`} defaultValue={sheet?.inspector_code || ''} disabled={!canRecord || !sheet}
               onBlur={e => setInspectorCode(e.target.value.trim())}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
-              placeholder="เช่น 61234"
+              placeholder={tr('เช่น 61234')}
               style={{ width: 110, padding: '6px 8px', fontSize: 12.5 }} />
             {codeSigner && codeSigner.state !== 'no_code' && (
               <div style={{ fontSize: 11, marginTop: 3, maxWidth: 220, lineHeight: 1.4,
@@ -515,7 +516,7 @@ export default function BbsCheck() {
             )}
           </div>
           <div style={{ textAlign: 'center' }}>
-            <label style={lbl}>ลายเซ็น</label>
+            <label style={lbl}>{tr('ลายเซ็น')}</label>
             {shownSig
               ? <img src={shownSig} alt="ลายเซ็น" style={{ height: 34, background: '#fff', borderRadius: 4, padding: 2 }} />
               : <div style={{ fontSize: 11, color: 'var(--muted)', padding: '9px 0' }}>
@@ -566,7 +567,7 @@ export default function BbsCheck() {
               style={{ width: 240, padding: '6px 8px', fontSize: 12.5 }}>
               {agreements.length
                 ? agreements.map(a => <option key={a.seq} value={a.seq}>{a.seq}. {a.text}</option>)
-                : <option value={1}>1. (ยังไม่ได้บันทึกข้อตกลง)</option>}
+                : <option value={1}>{tr('1. (ยังไม่ได้บันทึกข้อตกลง)')}</option>}
             </select>
           )}
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>คลิกช่องเดิมซ้ำด้วยแปรงเดิม = ล้างช่อง</span>
@@ -605,7 +606,7 @@ export default function BbsCheck() {
                 <button onClick={() => setSelDay(Math.min(days, day + 1))} disabled={day >= days} style={navBtn} aria-label="วันถัดไป">▶</button>
               </div>
               {dstr !== today && today.startsWith(month) && (
-                <button onClick={() => setSelDay(Number(today.slice(8, 10)))} style={{ ...btn('var(--accent)'), width: '100%', minHeight: 40, marginBottom: 10 }}>ไปวันนี้</button>
+                <button onClick={() => setSelDay(Number(today.slice(8, 10)))} style={{ ...btn('var(--accent)'), width: '100%', minHeight: 40, marginBottom: 10 }}>{tr('ไปวันนี้')}</button>
               )}
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 8, alignContent: 'start' }}>
                 {emps.map((e, i) => {
@@ -665,11 +666,11 @@ export default function BbsCheck() {
           <table className="table-sticky" style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: 900 }}>
             <thead>
               <tr>
-                <th style={th(190, 'left')}>พนักงาน</th>
+                <th style={th(190, 'left')}>{tr('พนักงาน')}</th>
                 {Array.from({ length: days }, (_, i) => i + 1).map(d => (
                   <th key={d} style={{ ...th(26), color: `${month}-${String(d).padStart(2, '0')}` === today ? 'var(--accent)' : undefined }}>{d}</th>
                 ))}
-                <th style={th(150, 'left')}>หมายเหตุ</th>
+                <th style={th(150, 'left')}>{tr('หมายเหตุ')}</th>
               </tr>
             </thead>
             <tbody>
@@ -813,7 +814,7 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
   return (
     <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', width: 'min(760px,96vw)', maxHeight: '88vh', overflow: 'auto', padding: 18 }}>
-        <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>ข้อตกลงด้านความปลอดภัยในการปฏิบัติงาน</h3>
+        <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>{tr('ข้อตกลงด้านความปลอดภัยในการปฏิบัติงาน')}</h3>
         <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
           เลขข้อนี้คือตัวเลขที่พิมพ์ลงช่องในใบเมื่อพบพฤติกรรมไม่เหมาะสม ·
           ข้อที่ผูกกับ “การตรวจ PPE” ระบบจะเติมช่องให้อัตโนมัติได้
@@ -824,9 +825,9 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
 
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
           <thead><tr>
-            <th style={{ ...th(46), textAlign: 'center' }}>ข้อ</th>
-            <th style={{ ...th(null, 'left'), paddingLeft: 6 }}>สิ่งที่ควรทำ</th>
-            <th style={{ ...th(210, 'left'), paddingLeft: 6 }}>เติมอัตโนมัติจาก</th>
+            <th style={{ ...th(46), textAlign: 'center' }}>{tr('ข้อ')}</th>
+            <th style={{ ...th(null, 'left'), paddingLeft: 6 }}>{tr('สิ่งที่ควรทำ')}</th>
+            <th style={{ ...th(210, 'left'), paddingLeft: 6 }}>{tr('เติมอัตโนมัติจาก')}</th>
             {canManage && <th style={th(40)} />}
           </tr></thead>
           <tbody>
@@ -840,14 +841,14 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
                 <td style={{ ...td(), textAlign: 'left' }}>
                   <input value={r.text || ''} disabled={!canManage}
                     onChange={e => patch(i, { text: e.target.value })}
-                    placeholder="เช่น สวมใส่อุปกรณ์ป้องกันเสียงในพื้นที่กำหนด"
+                    placeholder={tr('เช่น สวมใส่อุปกรณ์ป้องกันเสียงในพื้นที่กำหนด')}
                     style={{ width: '100%', padding: '5px 7px', fontSize: 12.5 }} />
                 </td>
                 <td style={{ ...td(), textAlign: 'left' }}>
                   <select value={r.auto_source || ''} disabled={!canManage}
                     onChange={e => patch(i, { auto_source: e.target.value || null })}
                     style={{ width: '100%', padding: '5px 7px', fontSize: 12 }}>
-                    {AUTO_OPTS.map(o => <option key={o.v} value={o.v}>{o.t}</option>)}
+                    {AUTO_OPTS.map(o => <option key={o.v} value={o.v}>{tr(o.t)}</option>)}
                   </select>
                 </td>
                 {canManage && (
@@ -867,11 +868,11 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
         )}
 
         <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
-          {canManage && <button onClick={add} style={btn()}>＋ เพิ่มข้อ</button>}
-          <button onClick={onClose} style={btn()}>ปิด</button>
+          {canManage && <button onClick={add} style={btn()}>{tr('＋ เพิ่มข้อ')}</button>}
+          <button onClick={onClose} style={btn()}>{tr('ปิด')}</button>
           {canManage && (
             <button onClick={save} disabled={saving} style={btn('var(--accent)')}>
-              {saving ? 'กำลังบันทึก…' : 'บันทึก'}
+              {saving ? tr('กำลังบันทึก…') : tr('บันทึก')}
             </button>
           )}
         </div>

@@ -46,6 +46,7 @@ import Segmented from '../components/Segmented';
 import TabBar from '../components/TabBar';
 import { urlPick, urlBool, urlParam } from '../utils/urlInit';
 import SectionScopeSelect from '../components/SectionScopeSelect';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* เกณฑ์ "อัตราการมาทำงาน" ของจอนี้ — การ์ดบนสุดกับการ์ดรายไลน์ต้องใช้ชุดเดียวกัน (2026-10-19)
@@ -1051,7 +1052,7 @@ export default function Dashboard({ view = 'timeline' }) {
           {tvScroll && !isMobile && (
             <button type="button" onClick={() => setScrollMode(false)}
               style={{ padding: '7px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-              กลับเป็นหมุนหน้า
+              {tr('กลับเป็นหมุนหน้า')}
             </button>
           )}
         </motion.div>
@@ -1078,9 +1079,9 @@ export default function Dashboard({ view = 'timeline' }) {
               {' '}— ตั้งตารางกะแล้วตัวเลขจะขึ้นเอง
             </div>
           </div>
-          <button type="button" className="pg-btn sm" onClick={() => setSelectedShift('all')}>ดูรวมทุกกะ</button>
+          <button type="button" className="pg-btn sm" onClick={() => setSelectedShift('all')}>{tr('ดูรวมทุกกะ')}</button>
           {canAccessPage('/shift-organize', role) && (
-            <button type="button" className="pg-btn sm" onClick={() => navigate('/shift-organize')}>ไปตั้งตารางกะ</button>
+            <button type="button" className="pg-btn sm" onClick={() => navigate('/shift-organize')}>{tr('ไปตั้งตารางกะ')}</button>
           )}
         </div>
       )}
@@ -1520,7 +1521,7 @@ export default function Dashboard({ view = 'timeline' }) {
                   style={{ width: 148, padding: '4px 8px', borderRadius: 'var(--ctl-r)', fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
                 <button onClick={() => shiftDate(1)} disabled={boardDate >= todayStr} style={{ ...dateBtn, opacity: boardDate >= todayStr ? 0.4 : 1, cursor: boardDate >= todayStr ? 'default' : 'pointer' }}>▶</button>
                 {boardDate !== todayStr && (
-                  <button onClick={() => setBoardDate(todayStr)} style={{ ...dateBtn, background: 'var(--accent)', color: 'var(--accent-ink)', border: '1px solid var(--accent)' }}>วันนี้</button>
+                  <button onClick={() => setBoardDate(todayStr)} style={{ ...dateBtn, background: 'var(--accent)', color: 'var(--accent-ink)', border: '1px solid var(--accent)' }}>{tr('วันนี้')}</button>
                 )}
               </div>
             </div>
@@ -1566,7 +1567,7 @@ export default function Dashboard({ view = 'timeline' }) {
                           style={{ width: 210 }} inputStyle={{ fontSize: 12.5, background: 'var(--bg2)' }} />
                         {(effSel || boardQuery) && (
                           <button type="button" onClick={() => { setBoardLineSel(''); setBoardQuery(''); }}
-                            style={{ ...chip(false), color: 'var(--muted)' }}>ล้างตัวกรอง</button>
+                            style={{ ...chip(false), color: 'var(--muted)' }}>{tr('ล้างตัวกรอง')}</button>
                         )}
                       </>} />
                   )}

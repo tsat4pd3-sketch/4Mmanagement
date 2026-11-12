@@ -35,6 +35,7 @@ import { getWorkDate } from '../utils/workDate'
 import { loadDocForms } from '../utils/docForms'
 import { xlsxDocName } from '../utils/csvDoc'
 
+import { tr } from '../utils/i18n';
 // กะเป็น "ส่วนหนึ่งของคีย์" (AM ตรวจต้นกะ) ⇒ ไม่มีตัวเลือก "ทุกกะ" (filterLabels.js: ห้ามใช้ SHIFT_OPTIONS กับจอแบบนี้)
 const AM_SHIFT_OPTIONS = [
   { value: 'day', label: 'กะเช้า' },
@@ -235,7 +236,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
     <div>
       <FilterBar style={{ marginBottom: 12 }}>
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--muted)' }}>
-          เดือน <input type="month" value={month} onChange={e => e.target.value && setMonth(e.target.value)} />
+          {tr('เดือน')} <input type="month" value={month} onChange={e => e.target.value && setMonth(e.target.value)} />
         </label>
         <Segmented label="กะ" value={shift} onChange={setShift} options={AM_SHIFT_OPTIONS} />
         <LineScopeSelect lines={scopedLines} section={scope.section} line={scope.line}
@@ -245,7 +246,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
         {rep && <span className="filter-count">{shown.length} ไลน์ · {shown.reduce((a, r) => a + r.machines.length, 0)} เครื่อง</span>}
         <button type="button" onClick={exportXlsx} disabled={!rep || exporting || !shown.length}
           style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '5px 12px', fontSize: 12, fontWeight: 700 }}>
-          {exporting ? '⏳ กำลังส่งออก…' : '📥 Excel'}
+          {exporting ? tr('⏳ กำลังส่งออก…') : '📥 Excel'}
         </button>
       </FilterBar>
 
@@ -310,10 +311,10 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
                   <tr>
                     <th style={{ ...cell, ...stickyCol, zIndex: 2 }}>{view === 'line' ? 'ไลน์' : 'ไลน์ / เครื่อง'}</th>
                     {rep.days.map(d => <th key={d} style={{ ...cell, background: holiday(d) ? HOLIDAY_BG : undefined }}>{Number(d.slice(8))}</th>)}
-                    <th style={cell} title="ตรวจแล้ว / ต้องตรวจ (เครื่อง-วัน)">ตรวจ/ต้อง</th>
-                    <th style={cell}>ขาด</th>
+                    <th style={cell} title="ตรวจแล้ว / ต้องตรวจ (เครื่อง-วัน)">{tr('ตรวจ/ต้อง')}</th>
+                    <th style={cell}>{tr('ขาด')}</th>
                     <th style={cell} title="ไม่ได้เปิดกะ/ไม่ได้ผลิต">NP</th>
-                    <th style={cell}>%ครบ</th>
+                    <th style={cell}>{tr('%ครบ')}</th>
                     <th style={cell}>NG</th>
                   </tr>
                 </thead>
@@ -429,7 +430,7 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
                         {rv.ok && (
                           <button type="button" onClick={() => { setRevoking(a); setReason('') }}
                             style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '4px 10px', fontSize: 12 }}>
-                            ↩ เพิกถอน
+                            {tr('↩ เพิกถอน')}
                           </button>
                         )}
                         {drift.length > 0 && (
@@ -495,14 +496,14 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
                 ? <img src={mySignature} alt="ลายเซ็นของคุณ" style={{ height: 40, maxWidth: 180, objectFit: 'contain', background: '#fff', borderRadius: 4, padding: 2, marginTop: 4 }} />
                 : <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>บัญชีนี้ยังไม่มีลายเซ็นในโปรไฟล์ — บันทึกได้ แต่ Excel จะมีแค่ชื่อ (ตั้งลายเซ็นที่เมนูบัญชี)</div>}
               {myRank == null && <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4 }}>{amApprovalAssumptionText(['approver'])}</div>}
-              <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder="ความเห็น/ข้อสั่งการ (ถ้ามี)"
+              <textarea value={note} onChange={e => setNote(e.target.value)} rows={2} placeholder={tr('ความเห็น/ข้อสั่งการ (ถ้ามี)')}
                 style={{ width: '100%', marginTop: 10, fontSize: 12, boxSizing: 'border-box' }} />
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
                 <button type="button" disabled={busy} onClick={() => setSigning(null)}
-                  style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '6px 14px', fontSize: 12 }}>ยกเลิก</button>
+                  style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '6px 14px', fontSize: 12 }}>{tr('ยกเลิก')}</button>
                 <button type="button" disabled={busy || !row} onClick={doSign}
                   style={{ background: 'var(--accent)', border: 'none', color: 'var(--accent-ink)', borderRadius: 'var(--r-md)', padding: '6px 14px', fontSize: 12, fontWeight: 700 }}>
-                  {busy ? '⏳ กำลังบันทึก…' : '✍️ ยืนยันลงนาม'}
+                  {busy ? tr('⏳ กำลังบันทึก…') : tr('✍️ ยืนยันลงนาม')}
                 </button>
               </div>
             </div>
@@ -523,10 +524,10 @@ export default function AmMonthlyReport({ lines = [], scopedLines = [] }) {
               style={{ width: '100%', marginTop: 10, fontSize: 12, boxSizing: 'border-box' }} />
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
               <button type="button" disabled={busy} onClick={() => setRevoking(null)}
-                style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '6px 14px', fontSize: 12 }}>ยกเลิก</button>
+                style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--r-md)', padding: '6px 14px', fontSize: 12 }}>{tr('ยกเลิก')}</button>
               <button type="button" disabled={busy || reason.trim().length < AM_REVOKE_REASON_MIN} onClick={doRevoke}
                 style={{ background: 'var(--red)', border: 'none', color: '#fff', borderRadius: 'var(--r-md)', padding: '6px 14px', fontSize: 12, fontWeight: 700 }}>
-                {busy ? '⏳ กำลังบันทึก…' : 'ยืนยันเพิกถอน'}
+                {busy ? tr('⏳ กำลังบันทึก…') : tr('ยืนยันเพิกถอน')}
               </button>
             </div>
           </div>

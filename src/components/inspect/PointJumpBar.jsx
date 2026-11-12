@@ -2,6 +2,7 @@ import { useState } from 'react'
 import SearchInput from '../SearchInput'
 import { cpJumpMatches } from '../../utils/cpJump'
 
+import { tr } from '../../utils/i18n';
 /* 🎯 แถบ "ไปที่จุด" — ชิปทุกจุด + ช่องค้นเลข/ชื่อ/กลุ่ม (Enter = ไปจุดแรกที่ตรง)
    ใช้ร่วม PM + QA (กติกาจับคู่ `cpJumpMatches` ที่เดียว) · ชิปจุดที่ยังไม่มีชื่อ = กรอบประแดง
    points: [{ _key, name, group_name }] เรียงตามลำดับบนจอ · labels: { _key: '1.3' }
@@ -22,9 +23,9 @@ export default function PointJumpBar({ points, labels, onJump, flashKey, compact
           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (hits[0]) onJump(hits[0]._key) } }} />
         {!compact && (
           <>
-            <button type="button" onClick={onTop} title="กลับขึ้นบนสุด" style={jumpBtn}>⤒ บนสุด</button>
+            <button type="button" onClick={onTop} title="กลับขึ้นบนสุด" style={jumpBtn}>{tr('⤒ บนสุด')}</button>
             <button type="button" onClick={() => { const last = points[points.length - 1]; if (last) onJump(last._key) }}
-              title="ไปจุดสุดท้าย" style={jumpBtn}>⤓ ท้ายสุด</button>
+              title="ไปจุดสุดท้าย" style={jumpBtn}>{tr('⤓ ท้ายสุด')}</button>
           </>
         )}
       </div>

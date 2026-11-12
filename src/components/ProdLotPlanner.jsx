@@ -48,6 +48,7 @@ import TrialBookingModal from './TrialBookingModal';
 /* 🔨 ชุดแม่พิมพ์ทำได้ 2 MAT — ห้ามเทียบ mat_no ตรงๆ · กอง "ยังไม่ผูก MAT" ต้องเลือกได้ (เหตุผลในไฟล์นั้น) */
 import { dieSetMats, dieSetsForMat, matSlotFor } from '../utils/dieSetMats';
 
+import { tr } from '../utils/i18n';
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 12, boxShadow: 'var(--shadow-sm)' };
 const th = { padding: '5px 8px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' };
 const td = { padding: '5px 8px', fontSize: 12, whiteSpace: 'nowrap' };
@@ -401,35 +402,35 @@ export default function ProdLotPlanner({
         ]} />
         <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}
           title="คิวจะไหลต่อไปได้กี่กะ — ไม่พอก็ยืดเพิ่ม (งานที่ล้นเลยขอบเขตจะขึ้นเตือน ไม่ถูกยัดลงกะสุดท้าย)">
-          ไหลต่อได้
+          {tr('ไหลต่อได้')}
           <select value={segCount} onChange={e => setSegCount(Number(e.target.value))}>
-            <option value={2}>1 วัน (2 กะ)</option>
-            <option value={4}>2 วัน (4 กะ)</option>
-            <option value={6}>3 วัน (6 กะ)</option>
-            <option value={10}>5 วัน (10 กะ)</option>
-            <option value={14}>7 วัน (14 กะ)</option>
+            <option value={2}>{tr('1 วัน (2 กะ)')}</option>
+            <option value={4}>{tr('2 วัน (4 กะ)')}</option>
+            <option value={6}>{tr('3 วัน (6 กะ)')}</option>
+            <option value={10}>{tr('5 วัน (10 กะ)')}</option>
+            <option value={14}>{tr('7 วัน (14 กะ)')}</option>
           </select>
         </label>
         {/* 🔴 วันหยุด OT เปิดทำได้ แต่ต้องคนสั่ง — ระบบไม่เดาว่าจะเรียกคนมาทำวันหยุด */}
         <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}
           title="วันหยุดแบบ OT (×1.5 / ×2) เรียกคนมาทำได้ — ติ๊กแล้วคิวจะไหลลงวันหยุดพวกนั้นด้วย · วันหยุด ม.75 ไม่เข้าข่าย">
           <input type="checkbox" checked={useOtHoliday} onChange={e => setUseOtHoliday(e.target.checked)} />
-          ใช้วันหยุด OT
+          {tr('ใช้วันหยุด OT')}
         </label>
         <span className="spacer" />
         {mayWrite && (
           <>
             <button onClick={() => setTrialOpen(true)}
               title="งาน new model ที่ขอเครื่องมาทดลอง — จองเวลาเครื่องให้เห็นบนไทม์ไลน์ (พาร์ทยังไม่ต้องมีในระบบ)">
-              จองเครื่องทดลอง
+              {tr('จองเครื่องทดลอง')}
             </button>
             <button onClick={() => { setLots(suggestSequence(lots, dieOf)); setDirty(true); }}
               title="เรียงตามความสูงแม่พิมพ์ให้เสียเวลาเปลี่ยนรุ่นน้อยสุด — เป็นข้อเสนอ แก้ทับได้">
-              เสนอลำดับ
+              {tr('เสนอลำดับ')}
             </button>
             <button onClick={save} disabled={saving || !dirty}
               style={{ background: dirty ? 'var(--accent)' : undefined, color: dirty ? 'var(--accent-ink)' : undefined, fontWeight: 800 }}>
-              {saving ? 'กำลังบันทึก…' : dirty ? '💾 บันทึกแผน' : 'บันทึกแล้ว'}
+              {saving ? tr('กำลังบันทึก…') : dirty ? tr('💾 บันทึกแผน') : tr('บันทึกแล้ว')}
             </button>
           </>
         )}
@@ -545,15 +546,15 @@ export default function ProdLotPlanner({
           : (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>
-              <th style={{ ...th, textAlign: 'center' }}>ลำดับ</th>
-              <th style={{ ...th, textAlign: 'left' }}>พาร์ท</th>
-              <th style={{ ...th, textAlign: 'right' }}>จำนวน</th>
-              <th style={{ ...th, textAlign: 'right' }}>เวลาผลิต</th>
-              <th style={{ ...th, textAlign: 'left' }}>ลงกะ</th>
-              <th style={{ ...th, textAlign: 'left' }}>เครื่อง</th>
-              <th style={{ ...th, textAlign: 'left' }}>แม่พิมพ์</th>
-              <th style={{ ...th, textAlign: 'left' }}>สถานะ</th>
-              {mayWrite && <th style={{ ...th, textAlign: 'center' }}>จัดการ</th>}
+              <th style={{ ...th, textAlign: 'center' }}>{tr('ลำดับ')}</th>
+              <th style={{ ...th, textAlign: 'left' }}>{tr('พาร์ท')}</th>
+              <th style={{ ...th, textAlign: 'right' }}>{tr('จำนวน')}</th>
+              <th style={{ ...th, textAlign: 'right' }}>{tr('เวลาผลิต')}</th>
+              <th style={{ ...th, textAlign: 'left' }}>{tr('ลงกะ')}</th>
+              <th style={{ ...th, textAlign: 'left' }}>{tr('เครื่อง')}</th>
+              <th style={{ ...th, textAlign: 'left' }}>{tr('แม่พิมพ์')}</th>
+              <th style={{ ...th, textAlign: 'left' }}>{tr('สถานะ')}</th>
+              {mayWrite && <th style={{ ...th, textAlign: 'center' }}>{tr('จัดการ')}</th>}
             </tr></thead>
             <tbody>
               {rec.rows.map((r, i) => {
@@ -627,10 +628,10 @@ export default function ProdLotPlanner({
                         const opt = dieOptsForMat(l.mat_no);
                         return (
                           <select value={l.die_no || ''} onChange={e => patch(l.id, { die_no: e.target.value || null })} style={{ fontSize: 12, maxWidth: 170 }}>
-                            <option value="">— ไม่ระบุ —</option>
+                            <option value="">{tr('— ไม่ระบุ —')}</option>
                             {opt.linked.length > 0 && (
                               <optgroup label={`ทะเบียนบอกว่าทำพาร์ทนี้ (${opt.linked.length})`}>
-                                {opt.linked.map(d => <option key={d.id} value={d.set_code}>{d.set_code}</option>)}
+                                {opt.linked.map(d => <option key={d.id} value={d.set_code}>{tr(d.set_code)}</option>)}
                               </optgroup>
                             )}
                             {/* 🔴 "ยังไม่ผูก MAT" = ยังไม่รู้ **ไม่ใช่ "ไม่ใช่ตัวนี้"** — ซ่อนกองนี้ = คนที่รู้ก็เลือกไม่ได้ */}
@@ -717,7 +718,7 @@ export default function ProdLotPlanner({
                 <MatLabel mat={u.mat} size={12} />
                 <b style={{ fontSize: 12 }}>{u.qty.toLocaleString()}</b>
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้น</span>
-                {mayWrite && <button onClick={() => addLot(u.mat, u.qty)} style={{ fontSize: 11 }}>+ เข้าแผน</button>}
+                {mayWrite && <button onClick={() => addLot(u.mat, u.qty)} style={{ fontSize: 11 }}>{tr('+ เข้าแผน')}</button>}
               </div>
             ))}
           </div>
@@ -735,7 +736,7 @@ export default function ProdLotPlanner({
                 <div key={p.mat} style={{ border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '5px 9px', display: 'flex', alignItems: 'baseline', gap: 7 }}>
                   <MatLabel mat={p.mat} size={12} />
                   {p.isOp && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ต่อ Process</span>}
-                  {mayWrite && <button onClick={() => addLot(p.mat, 1)} style={{ fontSize: 11 }}>+ เข้าแผน</button>}
+                  {mayWrite && <button onClick={() => addLot(p.mat, 1)} style={{ fontSize: 11 }}>{tr('+ เข้าแผน')}</button>}
                 </div>
               ))}
             </div>

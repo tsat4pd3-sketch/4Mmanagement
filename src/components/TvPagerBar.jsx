@@ -5,6 +5,7 @@
 import useTvShell from '../utils/useTvShell';
 import { SUBPAGE_ATTR } from '../utils/displayRotation';
 
+import { tr } from '../utils/i18n';
 export default function TvPagerBar({ pager, intervalSec = 20, onScrollMode }) {
   const tv = useTvShell();   // 📺 จอประชุม: ตัวใหญ่ให้อ่านจากระยะ 2–3 ม. ว่าอยู่หน้าไหน (UI §6.32)
   if (!pager || pager.pageCount < 2) return null;
@@ -31,7 +32,7 @@ export default function TvPagerBar({ pager, intervalSec = 20, onScrollMode }) {
       <button type="button" style={btn} onClick={() => pager.setPaused(!pager.paused)}>
         {pager.paused ? '▶ หมุนต่อ' : `⏸ หมุนทุก ${intervalSec} วิ`}
       </button>
-      {onScrollMode && <button type="button" style={{ ...btn, color: 'var(--muted)' }} onClick={onScrollMode}>เลื่อนเอง</button>}
+      {onScrollMode && <button type="button" style={{ ...btn, color: 'var(--muted)' }} onClick={onScrollMode}>{tr('เลื่อนเอง')}</button>}
       {pager.parts > 1 && <span style={{ color: 'var(--amber)', fontSize: tv ? 18 : 12 }}>บอร์ดนี้ยาวเกินจอ — ต่อ {pager.part}/{pager.parts}</span>}
     </div>
   );

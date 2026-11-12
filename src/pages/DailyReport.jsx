@@ -105,6 +105,7 @@ import { shiftCloseFlow } from '../utils/stepFlow';
 import StepFlow from '../components/StepFlow';
 import MachineSelect from '../components/MachineSelect';
 import { loadFamilyQtyTotals, familyQtyChip } from '../utils/familyTotals';
+import { tr } from '../utils/i18n';
 import { statusColor as toneColor, toneVar, toneDim, toneLine } from '../utils/statusTone';   // 🎨 token พาเลต 5 สี (UI §6.17)   // สีสถานะชุดเดียวทั้งระบบ (ห้ามตั้ง hex เอง · ชื่อ statusColor ชนกับตัวแปรในหน้า)
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
@@ -1327,7 +1328,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         <button type="button" onClick={() => setCloseEndTime(chk.nowHHmm)}
           style={{ marginTop: 6, padding: '4px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer',
             borderRadius: 'var(--r-md)', border: '1px solid var(--amber-line)', background: 'var(--amber-dim)', color: 'var(--amber)' }}>
-          ใช้เวลาตอนนี้ ({chk.nowHHmm})
+          {tr('ใช้เวลาตอนนี้ (')}{chk.nowHHmm})
         </button>
         <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 600, color: 'var(--muted)' }}>
           · ถ้ากะนี้เดินถึงเวลานั้นจริง กรอกไว้เหมือนเดิมได้
@@ -3352,9 +3353,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
             <span className="dr-mpick-main">
               {selSession
                 ? <><b>{selSession.line_name}</b><span>{selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)}</span></>
-                : <b>เลือกกะที่จะบันทึก</b>}
+                : <b>{tr('เลือกกะที่จะบันทึก')}</b>}
             </span>
-            <span className="dr-mpick-act">เปลี่ยนกะ ({sessions.length}){staleSessions.length ? ` · ⏰${staleSessions.length}` : ''} {(mPickOpen || !selSession) ? '▴' : '▾'}</span>
+            <span className="dr-mpick-act">{tr('เปลี่ยนกะ (')}{sessions.length}){staleSessions.length ? ` · ⏰${staleSessions.length}` : ''} {(mPickOpen || !selSession) ? '▴' : '▾'}</span>
           </button>
         )}
         {sessListHidden && (
@@ -3395,7 +3396,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     persistSessGroups(new Set(allCollapsed ? keep : [...groupNames, ...keep])); }}
                     title={allCollapsed ? 'กางทุกกลุ่ม' : 'ย่อทุกกลุ่ม'}
                     style={{ marginLeft: 'auto', fontSize: 11, padding: '2px 7px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>
-                    {allCollapsed ? 'กางทั้งหมด' : 'ย่อทั้งหมด'}
+                    {allCollapsed ? tr('กางทั้งหมด') : tr('ย่อทั้งหมด')}
                   </button>
                 )}
                 {!isMobile && (
@@ -3480,7 +3481,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   <button onClick={() => toggleSessGroup(groupName)}
                     style={{ display: 'block', width: '100%', marginBottom: 6, padding: '4px 10px 6px 16px', background: 'none', border: 'none',
                       textAlign: 'left', cursor: 'pointer', fontSize: 11, color: 'var(--muted)' }}>
-                    +{hiddenInGroup} กะในกลุ่มนี้ถูกย่อไว้ — กางดู
+                    +{hiddenInGroup} {tr('กะในกลุ่มนี้ถูกย่อไว้ — กางดู')}
                   </button>
                 )}
               </div>
@@ -3508,7 +3509,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         fontSize: 11, fontWeight: 800, padding: '6px 8px', borderRadius: 'var(--r-md)', letterSpacing: '0.3px',
                         background: 'var(--amber-dim)', border: '1px solid var(--amber-line)', color: 'var(--amber)' }}>
                       <span style={{ fontSize: 11 }}>{staleOpen ? '▼' : '▶'}</span>
-                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>⏰ ค้างจากวันก่อน</span>
+                      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tr('⏰ ค้างจากวันก่อน')}</span>
                       <span style={{ fontWeight: 700 }}>{staleSessions.length}</span>
                     </button>
                     {staleOpen && (() => {
@@ -3699,7 +3700,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       )}
 
                       {canOpen && !svDecides && (
-                        <button type="button" className="pg-btn" onClick={openNewShift}>+ เปิดกะใหม่</button>
+                        <button type="button" className="pg-btn" onClick={openNewShift}>{tr('+ เปิดกะใหม่')}</button>
                       )}
 
                       {/* open — request/direct close (ปุ่มหลักของหน้า) */}
@@ -3725,8 +3726,8 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       {/* pending_close — SV sees approve/reject (คู่ตัดสิน = 2 ช่องของแถว) */}
                       {svDecides && (
                         <>
-                          <button type="button" className="pg-btn primary" onClick={() => setShowApproveReview(true)}>ตรวจสอบ & อนุมัติ</button>
-                          <button type="button" className="pg-btn danger" onClick={() => { setRejectReason(''); setShowRejectModal(true); }}>ปฏิเสธ</button>
+                          <button type="button" className="pg-btn primary" onClick={() => setShowApproveReview(true)}>{tr('ตรวจสอบ & อนุมัติ')}</button>
+                          <button type="button" className="pg-btn danger" onClick={() => { setRejectReason(''); setShowRejectModal(true); }}>{tr('ปฏิเสธ')}</button>
                         </>
                       )}
 
@@ -3945,30 +3946,30 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                      📱 มือถือ = ปุ่มเดิม (ใหญ่ กดง่าย) */
                   if (!isMobile) return (
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap', marginLeft: 'auto' }}>
-                      <button type="button" className="pg-btn sm primary" onClick={onScanOpen} title="Scan เปิด Order (Tag Card)">Scan เปิด</button>
-                      <button type="button" className="pg-btn sm" onClick={onManualOpen} title="เปิดเป้า (ไม่มีบาร์โค้ด) — ไลน์ที่ไม่มี kanban card / SAP ไม่ gen barcode — เปิดเป้าเองแล้วอัพเดทยอดสะสม">เปิดเป้า</button>
-                      <button type="button" className="pg-btn sm" onClick={onScanClose} title="Scan ปิด / Confirm">Scan ปิด</button>
-                      <button type="button" className="pg-btn sm danger" onClick={onDefect} title="บันทึกงานเสีย">งานเสีย</button>
+                      <button type="button" className="pg-btn sm primary" onClick={onScanOpen} title="Scan เปิด Order (Tag Card)">{tr('Scan เปิด')}</button>
+                      <button type="button" className="pg-btn sm" onClick={onManualOpen} title="เปิดเป้า (ไม่มีบาร์โค้ด) — ไลน์ที่ไม่มี kanban card / SAP ไม่ gen barcode — เปิดเป้าเองแล้วอัพเดทยอดสะสม">{tr('เปิดเป้า')}</button>
+                      <button type="button" className="pg-btn sm" onClick={onScanClose} title="Scan ปิด / Confirm">{tr('Scan ปิด')}</button>
+                      <button type="button" className="pg-btn sm danger" onClick={onDefect} title="บันทึกงานเสีย">{tr('งานเสีย')}</button>
                     </div>
                   );
                   return (
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <button onClick={onScanOpen}
                       style={{ background: 'var(--amber)', color: '#000', border: 'none', borderRadius: 'var(--r-md)', padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
-                      Scan เปิด Order
+                      {tr('Scan เปิด Order')}
                     </button>
                     <button onClick={onManualOpen}
                       title="ไลน์ที่ไม่มี kanban card / SAP ไม่ gen barcode — เปิดเป้าเองแล้วอัพเดทยอดสะสม"
                       style={{ background: 'var(--blue-dim)', color: 'var(--blue)', border: '1px solid var(--blue-line)', borderRadius: 'var(--r-md)', padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
-                      เปิดเป้า (ไม่มีบาร์โค้ด)
+                      {tr('เปิดเป้า (ไม่มีบาร์โค้ด)')}
                     </button>
                     <button onClick={onScanClose}
                       style={{ background: 'var(--green)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
-                      Scan ปิด / Confirm
+                      {tr('Scan ปิด / Confirm')}
                     </button>
                     <button onClick={onDefect}
                       style={{ background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '7px 16px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
-                      บันทึกงานเสีย
+                      {tr('บันทึกงานเสีย')}
                     </button>
                   </div>
                   );
@@ -3991,7 +3992,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 return (
                   <div style={{ marginBottom: 10, padding: '8px 12px', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 'var(--r-md)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--blue)' }}>ไลน์เครื่องขนาน — เปิด Order ถัดไปที่เครื่อง:</span>
-                    <MachineSelect value={openMachineNo || ''} machines={lineMachines} strict placeholder="— ไม่ระบุเครื่อง (กระจายอัตโนมัติ) — พิมพ์ค้นหา" style={{ width: 280 }}
+                    <MachineSelect value={openMachineNo || ''} machines={lineMachines} strict placeholder={tr('— ไม่ระบุเครื่อง (กระจายอัตโนมัติ) — พิมพ์ค้นหา')} style={{ width: 280 }}
                       inputStyle={{ fontSize: 12, fontWeight: 600, padding: '6px 30px 6px 8px' }}
                       onChange={({ machine_no }) => setOpenMachineNo(machine_no || '')} />
                     {lineMachines.length === 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>(ยังไม่มีเครื่องในทะเบียน — เพิ่มที่ Machine Database)</span>}
@@ -4036,12 +4037,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                       <button onClick={() => setCarryListOpen(v => !v)}
                         style={{ background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '6px 11px', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                        {carryListOpen ? '▾' : '▸'} เลือกใบ ({carryPick.size}/{carryOrders.length})
+                        {carryListOpen ? '▾' : '▸'} {tr('เลือกใบ (')}{carryPick.size}/{carryOrders.length})
                       </button>
                       <button onClick={handleImportCarryOrders} disabled={carryPick.size === 0}
                         title={carryPick.size === 0 ? 'ยังไม่ได้เลือกใบไหนเลย' : 'ใบที่ไม่ได้เลือกยังค้างต่อ ไม่ถูกลบ'}
                         style={{ background: carryPick.size ? 'var(--blue)' : 'var(--bg3)', color: carryPick.size ? '#fff' : 'var(--muted)', border: 'none', borderRadius: 'var(--r-md)', padding: '6px 14px', fontSize: 12, fontWeight: 700, cursor: carryPick.size ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
-                        รับยอดต่อ {carryPick.size < carryOrders.length ? `(${carryPick.size} ใบ)` : ''}
+                        {tr('รับยอดต่อ')} {carryPick.size < carryOrders.length ? `(${carryPick.size} ใบ)` : ''}
                       </button>
                     </div>
                   </div>
@@ -4052,9 +4053,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     <div style={{ marginTop: 8, borderTop: '1px solid var(--blue-line)', paddingTop: 8, maxHeight: 220, overflowY: 'auto' }}>
                       <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
                         <button onClick={() => setCarryPick(new Set(carryOrders.map(o => o.id)))}
-                          style={{ fontSize: 11, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>เลือกทั้งหมด</button>
+                          style={{ fontSize: 11, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>{tr('เลือกทั้งหมด')}</button>
                         <button onClick={() => setCarryPick(new Set())}
-                          style={{ fontSize: 11, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>ไม่เลือกเลย</button>
+                          style={{ fontSize: 11, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>{tr('ไม่เลือกเลย')}</button>
                       </div>
                       {carryOrders.map(o => {
                         const age = debtAgeDays(o.production_sessions?.work_date, selSession?.work_date);
@@ -4067,9 +4068,9 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                             <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--muted)', flexShrink: 0 }}>{o.prod_no}</span>
                             <MatLabel mat={o.mat_no} name={o.part_name} size={11} style={{ flexWrap: 'nowrap', overflow: 'hidden', minWidth: 0 }} />
                             <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 800, color: 'var(--text2)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                              {debtPcs(o).toLocaleString()} ชิ้น
+                              {debtPcs(o).toLocaleString()} {tr('ชิ้น')}
                               {age != null && age > 0 && (
-                                <span style={{ color: age >= 7 ? 'var(--red)' : 'var(--amber)', fontWeight: 700 }}> · {age} วัน</span>
+                                <span style={{ color: age >= 7 ? 'var(--red)' : 'var(--amber)', fontWeight: 700 }}> · {age} {tr('วัน')}</span>
                               )}
                             </span>
                           </label>
@@ -4321,7 +4322,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         <button onClick={() => handleRevertOrder(o)}
                           title="ถอยใบ — สแกนปิดเกินยอดที่ผลิตได้/ปิดผิดใบ ย้อนกลับเป็นกำลังผลิต (ระบบถอนยอดที่รับเข้า stock อัตโนมัติให้ด้วย)"
                           style={{ background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)', borderRadius: 'var(--r-md)', padding: '5px 11px', fontSize: 11, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                          ถอยใบ
+                          {tr('ถอยใบ')}
                         </button>
                       )}
                       </div>
@@ -4351,7 +4352,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                             title="ใบนี้ทำค้างอยู่? กรอกยอดที่ทำได้ เพื่อให้ยอดส่งต่อกะหน้าแม่นขึ้น (ไม่บังคับ)"
                             style={{ background: 'none', border: '1px dashed var(--border)', borderRadius: 'var(--r-md)', padding: '3px 10px',
                               fontSize: 11, fontWeight: 700, color: 'var(--muted)', cursor: 'pointer' }}>
-                            ใบนี้ทำค้าง — กรอกยอด
+                            {tr('ใบนี้ทำค้าง — กรอกยอด')}
                           </button>
                         </div>
                       )}
@@ -4367,12 +4368,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                             style={{ width: 100, padding: '6px 10px', fontSize: 13, fontWeight: 700, borderRadius: 'var(--ctl-r)', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
                           <button onClick={() => handleManualQtyUpdate(o)}
                             style={{ background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '6px 14px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
-                            อัพเดทยอด
+                            {tr('อัพเดทยอด')}
                           </button>
                           {manualOpen && (
                             <button onClick={() => handleManualClose(o)}
                               style={{ background: 'var(--green-dim)', color: 'var(--green)', border: '1px solid var(--green-line)', borderRadius: 'var(--r-md)', padding: '6px 14px', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
-                              ปิดใบนี้ (ยอดจริง)
+                              {tr('ปิดใบนี้ (ยอดจริง)')}
                             </button>
                           )}
                           {scanOpen && (
@@ -4608,11 +4609,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       {canScan && d.duration_min == null && !d.ended_at && d.dr_downtime_types?.category !== 'planned' && (
                         d.call_mtn
                           ? <span title={`เรียกช่างแล้ว${d.call_mtn_by ? ` โดย ${d.call_mtn_by}` : ''}`} style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', background: 'var(--green-dim)', border: '1px solid var(--green-line)', borderRadius: 'var(--r-pill)', padding: '3px 9px', whiteSpace: 'nowrap' }}>📞 เรียกช่างแล้ว</span>
-                          : <button onClick={() => setMoDtPick({ d, team: teamForMachine(d.machine_no, machines), mode: 'call' })} title="แจ้งช่าง MTN ให้เข้าหน้างานทันที — เลือกทีมช่างก่อน" style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: 'var(--red)', border: 'none', borderRadius: 'var(--r-md)', padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>เรียกช่าง</button>
+                          : <button onClick={() => setMoDtPick({ d, team: teamForMachine(d.machine_no, machines), mode: 'call' })} title="แจ้งช่าง MTN ให้เข้าหน้างานทันที — เลือกทีมช่างก่อน" style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: 'var(--red)', border: 'none', borderRadius: 'var(--r-md)', padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>{tr('เรียกช่าง')}</button>
                       )}
                       {/* เปิดใบแจ้งซ่อม MO จาก downtime — เฉพาะ "นอกแผน" (ในแผน เช่น Set up/รอ QA/5ส. ไม่ใช่เหตุเครื่องเสีย — คำสั่ง user 2026-07-24) */}
                       {canScan && can('mtn_repair', 'report', role) && d.dr_downtime_types?.category !== 'planned' && (
-                        <button onClick={() => openMoPicker(d)} title="เปิดใบแจ้งซ่อม MO (7 ขั้น) จากรายการนี้" style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: 'var(--blue)', border: 'none', borderRadius: 'var(--r-md)', padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>เปิดใบซ่อม</button>
+                        <button onClick={() => openMoPicker(d)} title="เปิดใบแจ้งซ่อม MO (7 ขั้น) จากรายการนี้" style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: 'var(--blue)', border: 'none', borderRadius: 'var(--r-md)', padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>{tr('เปิดใบซ่อม')}</button>
                       )}
                       {/* 🛠 วิธีแก้ไข + ผลตรวจติดตาม — โผล่เมื่อรายการนี้ยาวถึงเกณฑ์ใบรายงานปัญหา (นอกแผน ≥30 นาที)
                           feedback หัวหน้ากลุ่ม 2026-08-19: "ถ้าเกิน 30 นาที ให้มีไอคอนขึ้นมาให้ลงวิธีแก้ไข"
@@ -4758,7 +4759,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 ))}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => setMoDtPick(null)} style={{ flex: 1, padding: '10px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>ยกเลิก</button>
+                <button onClick={() => setMoDtPick(null)} style={{ flex: 1, padding: '10px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{tr('ยกเลิก')}</button>
                 {/* ป๊อปอัพนี้เหลือทาง "เรียกช่าง" ทางเดียว — เปิดใบซ่อมย้ายไปฟอร์มเต็ม MoReportFromDowntime (08/11) */}
                 <button disabled={moSaving} onClick={() => handleCallMtn(moDtPick.d, moDtPick.team)}
                   style={{ flex: 2, padding: '10px 0', borderRadius: 'var(--r-md)', border: 'none', background: pickColor, color: '#fff', fontSize: 13, fontWeight: 800, cursor: moSaving ? 'wait' : 'pointer', opacity: moSaving ? 0.6 : 1 }}>
@@ -4779,7 +4780,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <Field label="ไลน์การผลิต">
                   {/* 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง/ค่าไม่รู้จัก เหมือนทุกหน้า) — คง pre-filter scope เปิดกะ (openScopeLineNames) ไว้เท่าเดิม */}
                   <LineSelect lines={openableLines}
-                    value={openForm.line_name} placeholder="เลือกไลน์..." style={inputStyle} scan
+                    value={openForm.line_name} placeholder={tr('เลือกไลน์...')} style={inputStyle} scan
                     onChange={v => setOpenForm(f => ({ ...f, line_name: v }))} />
                   {/* 🔴 ลิสต์ว่าง = ต้องบอกว่าเพราะอะไร ห้ามปล่อยช่องเปล่า (เคสจริง 28/10 หน้างานเปิดกะไม่ได้
                       แล้วไม่มีอะไรบนจอบอกเลยว่าติดตรงไหน — ต้องไปถามกันในไลน์แชท) */}
@@ -4793,15 +4794,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       <button type="button" onClick={reloadLineRegistry}
                         style={{ marginTop: 6, padding: '4px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                           background: 'var(--amber-dim)', color: 'var(--amber)', border: '1px solid var(--amber-line)' }}>
-                        โหลดทะเบียนไลน์ใหม่
+                        {tr('โหลดทะเบียนไลน์ใหม่')}
                       </button>
                     </div>
                   )}
                 </Field>
                 <Field label="กะทำงาน">
                   <select value={openForm.shift} onChange={e => setOpenForm(f => ({ ...f, shift: e.target.value, start_time: shiftStartTime(e.target.value) }))} style={inputStyle}>
-                    <option value="day">กะเช้า (08:00–20:00)</option>
-                    <option value="night">กะดึก (20:00–08:00)</option>
+                    <option value="day">{tr('กะเช้า (08:00–20:00)')}</option>
+                    <option value="night">{tr('กะดึก (20:00–08:00)')}</option>
                   </select>
                 </Field>
 
@@ -4810,11 +4811,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 </Field>
               </div>
               <div className={isMobile ? 'm-modalfoot' : undefined} style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
-                <button onClick={() => setShowOpen(false)} style={cancelBtnStyle}>ยกเลิก</button>
+                <button onClick={() => setShowOpen(false)} style={cancelBtnStyle}>{tr('ยกเลิก')}</button>
                 <button onClick={handleOpenSession} disabled={!openForm.line_name || openingSession || !openableLines.length}
                   title={!openableLines.length ? 'ยังไม่มีไลน์ให้เลือก — ดูเหตุผลข้างช่องไลน์การผลิต' : undefined}
                   style={{ ...saveBtnStyle, opacity: (!openForm.line_name || openingSession || !openableLines.length) ? 0.5 : 1 }}>
-                  {openingSession ? 'กำลังเปิดกะ...' : 'เปิดกะ'}</button>
+                  {openingSession ? tr('กำลังเปิดกะ...') : tr('เปิดกะ')}</button>
               </div>
             </div>
           </div>
@@ -4848,21 +4849,21 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
                 {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)}
               </div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>ปัญหา (หัวเรื่องบนหัวใบ)</label>
+              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{tr('ปัญหา (หัวเรื่องบนหัวใบ)')}</label>
               <input value={problemSheet.title} autoFocus
                 onChange={e => setProblemSheet(v => ({ ...v, title: e.target.value }))}
                 onKeyDown={e => { if (e.key === 'Enter') doPrint(); }}
-                placeholder="เว้นว่างได้ ถ้าจะเขียนมือบนกระดาษ"
+                placeholder={tr('เว้นว่างได้ ถ้าจะเขียนมือบนกระดาษ')}
                 style={{ width: '100%', marginTop: 6, padding: '10px 12px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }} />
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, marginBottom: 14, lineHeight: 1.6 }}>
                 ระบบเสนอจากรายการที่กินเวลา/จำนวนมากสุดของกะนี้ — แก้ทับหรือล้างทิ้งได้ ช่องอื่นในใบดึงจากที่บันทึกไว้แล้วอัตโนมัติ
                 <br />📌 กดแล้วระบบ <b>ออกเลขที่ใบและเก็บเนื้อใบไว้</b> (FM-PD1-019 เก็บ 1 ปี) — พิมพ์ซ้ำใบเดิมได้ที่แท็บ 📋 ประวัติ ไม่ต้องเก็บกระดาษเอง
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                <button onClick={() => setProblemSheet(null)} style={cancelBtnStyle}>ยกเลิก</button>
+                <button onClick={() => setProblemSheet(null)} style={cancelBtnStyle}>{tr('ยกเลิก')}</button>
                 <button onClick={doPrint} disabled={problemSheet.busy}
                   style={{ ...saveBtnStyle, background: 'var(--amber)', fontWeight: 700, opacity: problemSheet.busy ? 0.6 : 1 }}>
-                  {problemSheet.busy ? 'กำลังออกใบ…' : 'ออกใบ + พิมพ์'}
+                  {problemSheet.busy ? tr('กำลังออกใบ…') : tr('ออกใบ + พิมพ์')}
                 </button>
               </div>
             </div>
@@ -4877,15 +4878,15 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
                 {selSession.line_name} · {selSession.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(selSession.work_date)} · ขอโดย {selSession.close_requested_by_name || '—'}
               </div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>ระบุสิ่งที่ต้องกลับไปแก้ไข (remark) *</label>
+              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{tr('ระบุสิ่งที่ต้องกลับไปแก้ไข (remark) *')}</label>
               <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} autoFocus rows={4}
-                placeholder="เช่น ยอด NG ไม่ตรงกับที่บันทึก / ลืมปิด Downtime เครื่อง / เวลาปิดกะผิด — หัวหน้ากลุ่มจะเห็นข้อความนี้"
+                placeholder={tr('เช่น ยอด NG ไม่ตรงกับที่บันทึก / ลืมปิด Downtime เครื่อง / เวลาปิดกะผิด — หัวหน้ากลุ่มจะเห็นข้อความนี้')}
                 style={{ width: '100%', marginTop: 6, marginBottom: 14, padding: '10px 12px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }} />
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                <button onClick={() => { setShowRejectModal(false); setRejectReason(''); }} style={cancelBtnStyle}>ยกเลิก</button>
+                <button onClick={() => { setShowRejectModal(false); setRejectReason(''); }} style={cancelBtnStyle}>{tr('ยกเลิก')}</button>
                 <button onClick={handleRejectClose} disabled={savingReject || !rejectReason.trim()}
                   style={{ ...saveBtnStyle, background: 'var(--red)', fontWeight: 700, opacity: (savingReject || !rejectReason.trim()) ? 0.5 : 1 }}>
-                  {savingReject ? 'กำลังส่ง...' : 'ยืนยันปฏิเสธ + ส่งกลับแก้ไข'}
+                  {savingReject ? tr('กำลังส่ง...') : tr('ยืนยันปฏิเสธ + ส่งกลับแก้ไข')}
                 </button>
               </div>
             </div>
@@ -5202,12 +5203,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 )}
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <button onClick={() => setShowApproveReview(false)} style={cancelBtnStyle}>ปิด</button>
-                  <button onClick={() => { setShowApproveReview(false); setRejectReason(''); setShowRejectModal(true); }} style={{ ...cancelBtnStyle, borderColor: 'var(--red)', color: 'var(--red)', fontWeight: 700 }}>ปฏิเสธ</button>
+                  <button onClick={() => setShowApproveReview(false)} style={cancelBtnStyle}>{tr('ปิด')}</button>
+                  <button onClick={() => { setShowApproveReview(false); setRejectReason(''); setShowRejectModal(true); }} style={{ ...cancelBtnStyle, borderColor: 'var(--red)', color: 'var(--red)', fontWeight: 700 }}>{tr('ปฏิเสธ')}</button>
                   <input type="text" value={approveNote} onChange={e => setApproveNote(e.target.value)}
-                    placeholder="หมายเหตุผู้อนุมัติ (ไม่บังคับ) — เช่น ข้อสังเกต/สิ่งที่ให้ไปแก้กะหน้า"
+                    placeholder={tr('หมายเหตุผู้อนุมัติ (ไม่บังคับ) — เช่น ข้อสังเกต/สิ่งที่ให้ไปแก้กะหน้า')}
                     style={{ flex: '1 1 260px', fontSize: 12, padding: '8px 10px', borderRadius: 'var(--ctl-r)' }} />
-                  <button onClick={() => { setShowApproveReview(false); handleApproveClose(); }} style={{ ...saveBtnStyle, background: 'var(--green)', fontWeight: 700 }}>ยืนยันอนุมัติ</button>
+                  <button onClick={() => { setShowApproveReview(false); handleApproveClose(); }} style={{ ...saveBtnStyle, background: 'var(--green)', fontWeight: 700 }}>{tr('ยืนยันอนุมัติ')}</button>
                 </div>
               </div>
             </div>
@@ -5274,7 +5275,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 ))}
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
-                  <button onClick={() => setDtCloseConfirm(null)} style={cancelBtnStyle}>กลับไปแก้</button>
+                  <button onClick={() => setDtCloseConfirm(null)} style={cancelBtnStyle}>{tr('กลับไปแก้')}</button>
                   <button
                     onClick={() => { setDtCloseConfirm(null); handleCloseSession({ dtConfirmed: true }); }}
                     style={{ ...saveBtnStyle, background: 'var(--amber)', fontWeight: 800 }}>
@@ -5346,7 +5347,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       ติ๊กครบทุกข้อก่อน ({must.filter(c => recheckTicks[c.key]).length}/{must.length})
                     </span>
                   )}
-                  <button onClick={() => setCloseRecheck(null)} style={cancelBtnStyle}>กลับไปแก้</button>
+                  <button onClick={() => setCloseRecheck(null)} style={cancelBtnStyle}>{tr('กลับไปแก้')}</button>
                   <button
                     disabled={!allTicked}
                     onClick={() => { setCloseRecheck(null); handleCloseSession({ dtConfirmed: true, recheckDone: true }); }}
@@ -5464,7 +5465,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                                 background: decision === 'close' ? 'var(--green-dim)' : 'var(--bg)',
                                 color: decision === 'close' ? 'var(--green)' : 'var(--text2)',
                               }}>
-                              เครื่องกลับมาแล้ว
+                              {tr('เครื่องกลับมาแล้ว')}
                             </button>
                             {decision === 'close' && (
                               <TimeInput24 value={dtCloseTimes[d.id] || ''} onChange={e => setDtCloseTimes(p => ({ ...p, [d.id]: e.target.value }))} style={{ fontSize: 13 }} />
@@ -5476,7 +5477,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                                 background: decision === 'carry' ? 'var(--red-dim)' : 'var(--bg)',
                                 color: decision === 'carry' ? 'var(--red)' : 'var(--text2)',
                               }}>
-                              ยังซ่อมอยู่ — ตัดยอดข้ามกะ
+                              {tr('ยังซ่อมอยู่ — ตัดยอดข้ามกะ')}
                             </button>
                           </div>
                           {decision === 'carry' && (
@@ -5973,7 +5974,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     {closeIsRequest ? 'หมายเหตุถึงผู้อนุมัติ' : 'หมายเหตุปิดกะ'} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(ไม่บังคับ)</span>
                   </div>
                   <textarea value={closeNote} onChange={e => setCloseNote(e.target.value)} rows={2}
-                    placeholder="เช่น ยอดไม่ถึงเป้าเพราะรอ material ตั้งแต่ 14:00 · เครื่องเสียช่วงบ่าย รอช่าง"
+                    placeholder={tr('เช่น ยอดไม่ถึงเป้าเพราะรอ material ตั้งแต่ 14:00 · เครื่องเสียช่วงบ่าย รอช่าง')}
                     style={{ width: '100%', padding: '8px 10px', fontSize: 12.5, borderRadius: 'var(--ctl-r)', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', resize: 'vertical', fontFamily: 'inherit' }} />
                 </div>
 
@@ -5985,7 +5986,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   <button onClick={() => handleCloseSession()} disabled={savingClose || splitCloseOrders(prodOrders.filter(o => o.status === 'open'), carryQtyActual).needDecision.some(o => !carryOverDecisions[o.id])}
                     style={{ ...saveBtnStyle, background: 'var(--red)',
                       opacity: (savingClose || prodOrders.filter(o => o.status === 'open').some(o => !carryOverDecisions[o.id])) ? 0.5 : 1 }}>
-                    {savingClose ? '...' : closeIsRequest ? 'ส่งขอปิดกะ' : 'ยืนยันปิดกะ'}
+                    {savingClose ? '...' : closeIsRequest ? tr('ส่งขอปิดกะ') : tr('ยืนยันปิดกะ')}
                   </button>
                 </div>
               </div>
@@ -6073,7 +6074,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   <button onClick={() => { setShowEditTimes(false); setMatTimeOverride({}); }} style={cancelBtnStyle}>ยกเลิก</button>
                   <button onClick={handleSaveTimes} disabled={savingTimes}
                     style={{ ...saveBtnStyle, background: 'var(--blue)', opacity: savingTimes ? 0.6 : 1 }}>
-                    {savingTimes ? '...' : 'บันทึก + คำนวณ OEE ใหม่'}
+                    {savingTimes ? '...' : tr('บันทึก + คำนวณ OEE ใหม่')}
                   </button>
                 </div>
               </div>
@@ -6118,20 +6119,20 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   ติ๊กแล้วใบถัดไปในกะนี้ทำตามคำตอบเดียวกันเอง · ยังมี toast + แถบบนจอบอกทุกใบ ไม่เงียบ */}
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
                 <input type="checkbox" checked={overflowRemember} onChange={e => setOverflowRemember(e.target.checked)} />
-                ใช้คำตอบนี้กับใบที่เกินเวลาถัดไป<b style={{ color: 'var(--text)' }}>ในกะนี้</b> (ไม่ต้องถามซ้ำทุกใบ)
+                {tr('ใช้คำตอบนี้กับใบที่เกินเวลาถัดไป')}<b style={{ color: 'var(--text)' }}>{tr('ในกะนี้')}</b> {tr('(ไม่ต้องถามซ้ำทุกใบ)')}
               </label>
               <div style={{ display: 'flex', gap: 10 }}>
                 <button
                   onClick={() => { if (overflowRemember) setOverflowMode('carry'); runOverflowChoice('carry', overflowInfo); }}
                   disabled={savingProdOpen}
                   style={{ flex: 1, padding: '12px 8px', borderRadius: 'var(--r-md)', border: '2px solid var(--blue-line)', background: 'var(--blue-dim)', color: 'var(--blue)', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-                  ส่งเป็นยอดค้างกะถัดไป
+                  {tr('ส่งเป็นยอดค้างกะถัดไป')}
                 </button>
                 <button
                   onClick={() => { if (overflowRemember) setOverflowMode('force'); runOverflowChoice('force', overflowInfo); }}
                   disabled={savingProdOpen}
                   style={{ flex: 1, padding: '12px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
-                  เปิดกะนี้ต่อ (OT)
+                  {tr('เปิดกะนี้ต่อ (OT)')}
                 </button>
               </div>
               {/* "เปิด OT" ไม่ใช่เช็คเปล่า — บอกตั้งแต่ตอนเลือกว่ามีเพดาน ไม่ใช่ให้ไปเซอร์ไพรส์ตอนใบที่ 4 */}
@@ -6141,7 +6142,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 {' '}· เต็มแล้วใบถัดไปจะถูก<b style={{ color: 'var(--blue)' }}>ส่งเป็นยอดค้างกะถัดไปให้อัตโนมัติ</b>
               </div>
               <button onClick={() => { setOverflowInfo(null); refocusScanOpen(); }} style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 12 }}>
-                ยกเลิก
+                {tr('ยกเลิก')}
               </button>
             </div>
           </div>
@@ -6227,11 +6228,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button disabled={savingManual} onClick={handleManualOpen}
                     style={{ flex: 2, padding: 12, background: 'var(--blue)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 800, fontSize: 14, cursor: 'pointer', opacity: savingManual ? 0.6 : 1 }}>
-                    {savingManual ? 'กำลังบันทึก...' : 'เปิดเป้า'}
+                    {savingManual ? tr('กำลังบันทึก...') : tr('เปิดเป้า')}
                   </button>
                   <button onClick={() => setShowManualOpen(false)}
                     style={{ flex: 1, padding: 12, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
-                    ยกเลิก
+                    {tr('ยกเลิก')}
                   </button>
                 </div>
               </div>
@@ -6280,13 +6281,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       if (dupScan) { e.preventDefault(); e.currentTarget.select(); return; }
                       document.getElementById('open-mat-select')?.focus();
                     }}
-                    placeholder="สแกน PROD.NO..."
+                    placeholder={tr('สแกน PROD.NO...')}
                     style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 15 }} />
                   <ScanLenHint value={openProdForm.prod_no} />
                   {isMobile && !prodKbd && (
                     <button type="button" onClick={() => { openProdInputRef.current?.blur(); setProdKbd(true); setTimeout(() => openProdInputRef.current?.focus(), 30); }}
                       style={{ marginTop: 6, minHeight: 40, padding: '6px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                      พิมพ์เอง (ป้ายสแกนไม่ติด)
+                      {tr('พิมพ์เอง (ป้ายสแกนไม่ติด)')}
                     </button>
                   )}
                 </Field>
@@ -6312,7 +6313,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                             setTimeout(() => openProdInputRef.current?.focus(), 100);
                           }}
                           style={{ flex: 1, minHeight: 48, borderRadius: 'var(--r-md)', border: 'none', background: 'var(--amber)', color: '#000', fontWeight: 900, fontSize: 15, cursor: 'pointer' }}>
-                          {savingProdOpen ? 'กำลังเปิด…' : 'ใช่ เปิดใบ'}
+                          {savingProdOpen ? tr('กำลังเปิด…') : tr('ใช่ เปิดใบ')}
                         </button>
                         <button type="button"
                           onClick={() => { setCarriedMat(null); setOpenProdStd(null); setOpenProdForm(f => ({ ...f, mat_no: '', qty: '' })); setTimeout(() => document.getElementById('open-mat-select')?.focus(), 30); }}
@@ -6350,7 +6351,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           <div style={{ opacity: 0.85 }}>ถ้าพาร์ทไหนเป็นของไลน์นี้จริง ให้ไปตั้งไลน์ให้ถูกที่ <b>Product Master</b> แล้วลิสต์นี้จะเหลือเฉพาะของไลน์นี้เอง</div>
                         </div>
                       )}
-                      <SearchSelect inputId="open-mat-select" value={openProdForm.mat_no || ''} placeholder="— ค้นหา MAT.NO / ชื่อสินค้า —"
+                      <SearchSelect inputId="open-mat-select" value={openProdForm.mat_no || ''} placeholder={tr('— ค้นหา MAT.NO / ชื่อสินค้า —')}
                         inputStyle={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 14 }}
                         options={lineStds.map(s => {
                           /* ชื่อสินค้าซ้ำกันเป๊ะ = พนักงานเลือกผิดใบได้ (หน้างานแจ้ง 2026-08-14) → ต่อท้ายเลขพาร์ทลูกค้า + ธง ⚠ */
@@ -6400,7 +6401,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     </span>
                     <button type="button" onClick={() => { setOverflowMode(null); setOverflowRemember(false); refocusScanOpen(); }}
                       style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text2)', cursor: 'pointer' }}>
-                      กลับไปถามทุกใบ
+                      {tr('กลับไปถามทุกใบ')}
                     </button>
                   </div>
                 )}
@@ -6476,12 +6477,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               )}
 
               <div className={isMobile ? 'm-modalfoot' : undefined} style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
-                <button onClick={() => { setShowScanOpen(false); }} style={cancelBtnStyle}>ปิด</button>
+                <button onClick={() => { setShowScanOpen(false); }} style={cancelBtnStyle}>{tr('ปิด')}</button>
                 <button onClick={handleScanOpen}
                   disabled={savingProdOpen || !openProdForm.prod_no || !openProdForm.mat_no || !openProdForm.qty || (openProdForm.is_backfill && !openProdForm.backfill_time) || !!prodOrders.find(o => o.prod_no === openProdForm.prod_no)}
                   style={{ ...saveBtnStyle, background: 'var(--amber)', color: '#000', fontSize: 14,
                     opacity: (savingProdOpen || !openProdForm.prod_no || !openProdForm.mat_no || !openProdForm.qty || (openProdForm.is_backfill && !openProdForm.backfill_time)) ? 0.5 : 1 }}>
-                  {savingProdOpen ? '...' : 'เปิด Order'}
+                  {savingProdOpen ? '...' : tr('เปิด Order')}
                 </button>
               </div>
             </div>
@@ -6509,13 +6510,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     if (closeMatch) handleScanCloseImmediate(closeMatch);
                     else if (closeProdNo) crossLookup(closeProdNo);
                   }}
-                  placeholder="สแกน PROD.NO..."
+                  placeholder={tr('สแกน PROD.NO...')}
                   style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 15 }} />
                 <ScanLenHint value={closeProdNo} />
                   {isMobile && !prodKbd && (
                     <button type="button" onClick={() => { closeProdInputRef.current?.blur(); setProdKbd(true); setTimeout(() => closeProdInputRef.current?.focus(), 30); }}
                       style={{ marginTop: 6, minHeight: 40, padding: '6px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                      พิมพ์เอง (ป้ายสแกนไม่ติด)
+                      {tr('พิมพ์เอง (ป้ายสแกนไม่ติด)')}
                     </button>
                   )}
               </Field>
@@ -6552,7 +6553,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       {!crossFind && (
                         <button type="button" onClick={() => crossLookup(closeProdNo)}
                           style={{ marginTop: 8, padding: '6px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                          ค้นทั้งโรงงาน (ใบอาจเปิดไว้ที่ไลน์อื่น)
+                          {tr('ค้นทั้งโรงงาน (ใบอาจเปิดไว้ที่ไลน์อื่น)')}
                         </button>
                       )}
                       {crossFind?.loading && <div style={{ marginTop: 8, color: 'var(--muted)' }}>กำลังค้นทั้งโรงงาน…</div>}
@@ -6594,7 +6595,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                                 <div style={{ fontSize: 20, fontWeight: 900, color: 'var(--amber)', lineHeight: 1 }}>{r.qty}<span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}> ชิ้น</span></div>
                                 <button type="button" onClick={() => doCrossLineClose(r)} disabled={savingProdClose}
                                   style={{ padding: '7px 13px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--amber)', color: '#fff', fontSize: 12, fontWeight: 800, cursor: savingProdClose ? 'default' : 'pointer', opacity: savingProdClose ? 0.5 : 1, whiteSpace: 'nowrap' }}>
-                                  ปิดใบนี้ให้ไลน์นั้น
+                                  {tr('ปิดใบนี้ให้ไลน์นั้น')}
                                 </button>
                               </div>
                             </div>
@@ -6621,10 +6622,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               )}
 
               <div className={isMobile ? 'm-modalfoot' : undefined} style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
-                <button onClick={() => { setShowScanClose(false); setCrossFind(null); }} style={cancelBtnStyle}>ปิด</button>
+                <button onClick={() => { setShowScanClose(false); setCrossFind(null); }} style={cancelBtnStyle}>{tr('ปิด')}</button>
                 <button onClick={handleScanClose} disabled={savingProdClose || !closeMatch}
                   style={{ ...saveBtnStyle, background: 'var(--green)', fontSize: 14, opacity: (!closeMatch || savingProdClose) ? 0.5 : 1 }}>
-                  {savingProdClose ? '...' : 'Confirm ปิด Order'}
+                  {savingProdClose ? '...' : tr('Confirm ปิด Order')}
                 </button>
               </div>
             </div>
@@ -6653,7 +6654,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                   return (
                     <Field label="MAT.NO ที่เสีย *">
                       <select autoFocus value={defectForm.mat_no} onChange={e => setDefectForm(f => ({ ...f, mat_no: e.target.value }))} style={inputStyle}>
-                        <option value="">เลือก MAT.NO...</option>
+                        <option value="">{tr('เลือก MAT.NO...')}</option>
                         {matNoOptions.map(mn => {
                           const o = prodOrders.find(o => o.mat_no === mn);
                           /* value = mat_no (คีย์ที่เก็บจริง ห้ามเปลี่ยน) · ข้อความเรียง Part No. → ชื่อ → MAT */
@@ -6675,13 +6676,13 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     const sel = (
                       <select value={defectForm.defect_type_id} onChange={e => setDefectForm(f => ({ ...f, defect_type_id: e.target.value }))}
                         style={isMobile ? { ...inputStyle, flex: 1, minWidth: 0 } : inputStyle}>
-                        <option value="">เลือกประเภท...</option>
+                        <option value="">{tr('เลือกประเภท...')}</option>
                         {filtered.map(t => (
-                          <option key={t.id} value={t.id}>{t.name_th}</option>
+                          <option key={t.id} value={t.id}>{tr(t.name_th)}</option>
                         ))}
                         {others.length > 0 && (
                           <optgroup label="กระบวนการอื่น">
-                            {others.map(t => (<option key={t.id} value={t.id}>{t.name_th}</option>))}
+                            {others.map(t => (<option key={t.id} value={t.id}>{tr(t.name_th)}</option>))}
                           </optgroup>
                         )}
                       </select>
@@ -6725,7 +6726,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 </div>
 
                 <Field label="รายละเอียด / สาเหตุ">
-                  <input type="text" value={defectForm.description} onChange={e => setDefectForm(f => ({ ...f, description: e.target.value }))} placeholder="เช่น มิติไม่ได้เพราะแม่พิมพ์สึก..." style={inputStyle} />
+                  <input type="text" value={defectForm.description} onChange={e => setDefectForm(f => ({ ...f, description: e.target.value }))} placeholder={tr('เช่น มิติไม่ได้เพราะแม่พิมพ์สึก...')} style={inputStyle} />
                 </Field>
 
                 {/* 📷 รูปงานเสีย — **ทางเลือก ห้ามทำเป็นช่องบังคับ** (คำสั่ง user 12/10)
@@ -6753,7 +6754,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           onChange={e => setDefectForm(f => ({ ...f, is_trial: e.target.checked }))}
                           style={{ width: 'auto', margin: 0 }} />
                         <span style={{ fontSize: 12.5, fontWeight: 700, color: on ? 'var(--blue)' : 'var(--text2)' }}>
-                          งานทดลอง (Try-out) — ไม่นับเข้า %Q
+                          {tr('งานทดลอง (Try-out) — ไม่นับเข้า %Q')}
                         </span>
                       </label>
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
@@ -6767,10 +6768,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               </div>
 
               <div className={isMobile ? 'm-modalfoot' : undefined} style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
-                <button onClick={() => setShowDefect(false)} style={cancelBtnStyle}>ยกเลิก</button>
+                <button onClick={() => setShowDefect(false)} style={cancelBtnStyle}>{tr('ยกเลิก')}</button>
                 <button onClick={handleAddDefectLog} disabled={savingDefect || !defectForm.defect_type_id}
                   style={{ ...saveBtnStyle, background: 'var(--red)', opacity: (!defectForm.defect_type_id || savingDefect) ? 0.5 : 1 }}>
-                  {savingDefect ? '...' : (defectForm.id ? 'บันทึกการแก้ไข' : 'บันทึกงานเสีย')}
+                  {savingDefect ? '...' : (defectForm.id ? tr('บันทึกการแก้ไข') : tr('บันทึกงานเสีย'))}
                 </button>
               </div>
             </div>
@@ -6928,7 +6929,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         ];
                       });
                       return (
-                        <SearchSelect value={String(dtForm.downtime_type_id || '')} placeholder="เลือกประเภท… (พิมพ์ค้นหา)" inputStyle={inputStyle}
+                        <SearchSelect value={String(dtForm.downtime_type_id || '')} placeholder={tr('เลือกประเภท… (พิมพ์ค้นหา)')} inputStyle={inputStyle}
                           options={options} scan="ประเภท Downtime (ใบสแกนประจำไลน์)"
                           onChange={({ id }) => setDtForm(f => ({ ...f, downtime_type_id: id }))} />
                       );
@@ -6958,7 +6959,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       <Field label="⏱ จำนวนนาที">
                         <input type="number" min="0.5" step="0.5" value={dtForm.duration_min}
                           onChange={e => setDtForm(f => ({ ...f, duration_min: e.target.value }))}
-                          placeholder="เช่น 30" style={{ ...inputStyle, fontSize: 18, fontWeight: 800, textAlign: 'center' }} />
+                          placeholder={tr('เช่น 30')} style={{ ...inputStyle, fontSize: 18, fontWeight: 800, textAlign: 'center' }} />
                       </Field>
                     )}
                   </div>
@@ -7056,7 +7057,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                               {dtKind !== 'all' && ` · กรองชนิดแล้วเหลือ ${dtMachineOptions.length}`}</span>
                             <button type="button" onClick={() => setDtMachineAll(v => !v)}
                               style={{ background: 'none', border: 'none', padding: 0, color: 'var(--accent)', fontSize: 11, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>
-                              {dtMachineAll ? 'เฉพาะไลน์นี้' : 'ค้นทั้งโรงงาน'}
+                              {dtMachineAll ? tr('เฉพาะไลน์นี้') : tr('ค้นทั้งโรงงาน')}
                             </button>
                           </>
                         )}
@@ -7067,7 +7068,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                           <span>{dtTypeAll ? 'แสดงทุกเครื่อง' : `เฉพาะเครื่องประเภท ${dtTypeLabels.join(' / ') || '(ประเภทที่ทะเบียนผูกไว้)'} ตามประเภท Downtime`}</span>
                           <button type="button" onClick={() => setDtTypeAll(v => !v)}
                             style={{ background: 'none', border: 'none', padding: 0, color: 'var(--accent)', fontSize: 11, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}>
-                            {dtTypeAll ? 'กรองตามประเภท Downtime' : 'แสดงทุกเครื่อง'}
+                            {dtTypeAll ? tr('กรองตามประเภท Downtime') : tr('แสดงทุกเครื่อง')}
                           </button>
                         </div>
                       )}
@@ -7101,7 +7102,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         </div>
                       ) : (
                         <select value={dtForm.mat_no} onChange={e => setDtForm(f => ({ ...f, mat_no: e.target.value }))} style={inputStyle}>
-                          <option value="">เลือกชิ้นงาน...</option>
+                          <option value="">{tr('เลือกชิ้นงาน...')}</option>
                           {dtMatOptions.map(o => (
                             <option key={o.mat_no} value={o.mat_no}>
                               {o.src === 'order' ? '▶ ' : '⚠ '}{o.mat_no}{o.name ? ` · ${o.name}` : ''}{o.src === 'current' ? ' (ไม่มีใบงานในกะนี้)' : ''}
@@ -7112,18 +7113,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                     </Field>
                   </div>
                   <Field label="รายละเอียด">
-                    <input type="text" value={dtForm.description} onChange={e => setDtForm(f => ({ ...f, description: e.target.value }))} placeholder="สาเหตุ..." style={inputStyle} />
+                    <input type="text" value={dtForm.description} onChange={e => setDtForm(f => ({ ...f, description: e.target.value }))} placeholder={tr('สาเหตุ...')} style={inputStyle} />
                   </Field>
                 </div>
 
                 <div className={isMobile ? 'm-modalfoot' : undefined} style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
-                  <button onClick={() => setShowDT(false)} style={cancelBtnStyle}>ยกเลิก</button>
+                  <button onClick={() => setShowDT(false)} style={cancelBtnStyle}>{tr('ยกเลิก')}</button>
                   {(() => {
                     const dtInvalid = !dtForm.downtime_type_id || !hasResult || (!dtMachineOptional && !dtForm.machine_no) || (!dtMachineOptional && dtMatOptions.length > 0 && !dtForm.mat_no);
                     return (
                       <button onClick={handleAddDT} disabled={savingDT || dtInvalid}
                         style={{ ...saveBtnStyle, background: 'var(--red)', opacity: (dtInvalid || savingDT) ? 0.5 : 1 }}>
-                        {savingDT ? '...' : (dtForm.id ? 'บันทึกการแก้ไข' : 'บันทึก Downtime')}
+                        {savingDT ? '...' : (dtForm.id ? tr('บันทึกการแก้ไข') : tr('บันทึก Downtime'))}
                       </button>
                     );
                   })()}
@@ -7237,7 +7238,7 @@ function StaleTab({ stale, onOpenSession, role }) {
   if (stale?.error) return (
     <div style={{ background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 'var(--r-md)', padding: '14px 18px', color: 'var(--red)', fontSize: 13, fontWeight: 700 }}>
       ⚠ โหลดรายการกะค้างไม่สำเร็จ — {stale.error.message || 'ไม่ทราบสาเหตุ'}
-      <button onClick={() => stale.reload?.()} style={{ marginLeft: 12, ...saveBtnStyle, padding: '4px 12px', fontSize: 12 }}>ลองใหม่</button>
+      <button onClick={() => stale.reload?.()} style={{ marginLeft: 12, ...saveBtnStyle, padding: '4px 12px', fontSize: 12 }}>{tr('ลองใหม่')}</button>
     </div>
   );
 
@@ -7256,7 +7257,7 @@ function StaleTab({ stale, onOpenSession, role }) {
               เกินเป้า {STALE_SESSION_DAYS} วัน {over.length} กะ · เก่าสุด {rows[0]?.age} วัน
             </span>
           )}
-          <button onClick={() => stale.reload?.()} style={{ marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>รีเฟรช</button>
+          <button onClick={() => stale.reload?.()} style={{ marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>{tr('รีเฟรช')}</button>
         </div>
         {/* ข้อเท็จจริง (แดง) เห็นตลอด · คำอธิบายที่เหลือพับหลัง ⓘ (UI §6.10 · 04/11) */}
         <InfoMore id="dr-stale-why" size={11.5}
@@ -7271,7 +7272,7 @@ function StaleTab({ stale, onOpenSession, role }) {
               <>
                 <button onClick={scanEmpty}
                   style={{ fontSize: 12, fontWeight: 700, padding: '5px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
-                  ตรวจหากะเปล่า
+                  {tr('ตรวจหากะเปล่า')}
                 </button>
                 <InfoMore id="dr-stale-empty" size={11} lead="กะเปล่า = เปิดผิด/เปิดทิ้งไว้">
                   กะที่ไม่มี Order / Downtime / ของเสีย เลย — ทำโมฆะทีเดียวได้ ไม่ต้องไล่ทีละกะ (เก็บประวัติไว้ ไม่ได้ลบ)
@@ -7283,7 +7284,7 @@ function StaleTab({ stale, onOpenSession, role }) {
               /* โหลดไม่ครบ = ห้ามบอกว่า "ไม่มีกะเปล่า" (จะกลายเป็นตีกะที่มีข้อมูลว่าเปล่าแล้วลบทิ้ง) */
               <span style={{ fontSize: 12, color: 'var(--amber)' }}>
                 ⚠ ตรวจไม่สำเร็จ — {emptyScan.err} · ยังทำโมฆะไม่ได้
-                <button onClick={() => setEmptyScan(null)} style={{ marginLeft: 8, fontSize: 11.5, padding: '3px 9px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>ลองใหม่</button>
+                <button onClick={() => setEmptyScan(null)} style={{ marginLeft: 8, fontSize: 11.5, padding: '3px 9px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>{tr('ลองใหม่')}</button>
               </span>
             ) : emptyScan.ids.length === 0 ? (
               <span style={{ fontSize: 12, color: 'var(--text2)' }}>
@@ -7294,7 +7295,7 @@ function StaleTab({ stale, onOpenSession, role }) {
                 <button onClick={voidEmpty}
                   title="ทำเป็นโมฆะ = เก็บแถวไว้แต่ไม่ถูกนับเป็นกะจริง (ไม่ได้ลบ) — ช่องกะว่างให้เปิดใบใหม่ได้"
                   style={{ fontSize: 12, fontWeight: 800, padding: '5px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', background: 'var(--bg3)', border: '1px solid var(--muted)', color: 'var(--muted)' }}>
-                  ทำโมฆะ {emptyScan.ids.length} กะ
+                  {tr('ทำโมฆะ')} {emptyScan.ids.length} {tr('กะ')}
                 </button>
                 <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                   อีก {rows.length - emptyScan.ids.length} กะมีข้อมูลจริง — ต้องปิด/อนุมัติเอง (ระบบไม่ปิดให้)
@@ -7568,12 +7569,12 @@ function HistoryTab({ role }) {
           placeholder={ALL.line}
           onChange={v => setFilter(f => ({ ...f, line_name: v }))} />
         <input type="date" value={filter.date} onChange={e => setFilter(f => ({ ...f, date: e.target.value }))} />
-        <button onClick={() => setFilter({ date: '', line_name: '' })} style={cancelBtnStyle}>ล้าง</button>
+        <button onClick={() => setFilter({ date: '', line_name: '' })} style={cancelBtnStyle}>{tr('ล้าง')}</button>
       </FilterBar>
 
       {loadErr && (
         <div style={{ color: 'var(--red)', background: 'var(--red-dim)', border: '1px solid var(--red-line)', borderRadius: 'var(--r-md)', padding: '10px 14px', marginBottom: 12, fontSize: 13 }}>
-          ⚠️ โหลดประวัติกะไม่สำเร็จ ({loadErr}) — รายการด้านล่างอาจไม่ครบ/ไม่ใช่ล่าสุด · <button onClick={load} style={cancelBtnStyle}>ลองใหม่</button>
+          ⚠️ โหลดประวัติกะไม่สำเร็จ ({loadErr}) — รายการด้านล่างอาจไม่ครบ/ไม่ใช่ล่าสุด · <button onClick={load} style={cancelBtnStyle}>{tr('ลองใหม่')}</button>
         </div>
       )}
       {!loadErr && sessions.length === 0 && <div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>ไม่พบข้อมูล</div>}
@@ -7673,7 +7674,7 @@ function HistoryTab({ role }) {
                       disabled={deleting === s.id}
                       title="กะที่เปิดผิดแล้วปิดทิ้ง — ทำเป็นโมฆะ (เก็บประวัติไว้ ไม่ถูกนับเป็นกะจริง) แทนการลบ"
                       style={{ background: 'transparent', border: '1px solid var(--muted)', color: 'var(--muted)', borderRadius: 'var(--r-md)', padding: '3px 10px', fontSize: 11, cursor: 'pointer', fontWeight: 700, opacity: deleting === s.id ? 0.5 : 1 }}>
-                      โมฆะ
+                      {tr('โมฆะ')}
                     </button>
                   )}
                   {/* 🔴 กะที่มีข้อมูลแล้วทำอะไรไม่ได้ — ต้องเขียนบอกว่าทำไม ไม่ใช่ปล่อยให้ที่ว่างเงียบๆ
@@ -8045,21 +8046,21 @@ function HistoryTab({ role }) {
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
                 {hs.line_name} · {hs.shift === 'day' ? 'กะเช้า' : 'กะดึก'} · {fmtDate(hs.work_date)}
               </div>
-              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>ปัญหา (หัวเรื่องบนหัวใบ)</label>
+              <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>{tr('ปัญหา (หัวเรื่องบนหัวใบ)')}</label>
               <input value={histSheet.title} autoFocus
                 onChange={e => setHistSheet(v => ({ ...v, title: e.target.value }))}
                 onKeyDown={e => { if (e.key === 'Enter') doPrint(); }}
-                placeholder="เว้นว่างได้ ถ้าจะเขียนมือบนกระดาษ"
+                placeholder={tr('เว้นว่างได้ ถ้าจะเขียนมือบนกระดาษ')}
                 style={{ width: '100%', marginTop: 6, padding: '10px 12px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }} />
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, marginBottom: 14, lineHeight: 1.6 }}>
                 ออกใหม่ได้ทุกเมื่อ — ดึงจาก downtime/ของเสียที่บันทึกไว้ของกะนี้ <b>ไม่ต้องเซฟไฟล์เก็บเอง</b>
                 <br />📌 ระบบ <b>ออกเลขที่ใบและเก็บเนื้อใบไว้</b> (FM-PD1-019 เก็บ 1 ปี) — ครั้งต่อไปกดปุ่ม 🧾 เลขที่ใบ เพื่อพิมพ์ใบเดิมซ้ำ
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                <button onClick={() => setHistSheet(null)} style={cancelBtnStyle}>ยกเลิก</button>
+                <button onClick={() => setHistSheet(null)} style={cancelBtnStyle}>{tr('ยกเลิก')}</button>
                 <button onClick={doPrint} disabled={histSheet.busy}
                   style={{ ...saveBtnStyle, background: 'var(--amber)', fontWeight: 700, opacity: histSheet.busy ? 0.6 : 1 }}>
-                  {histSheet.busy ? 'กำลังออกใบ…' : 'ออกใบ + พิมพ์'}
+                  {histSheet.busy ? tr('กำลังออกใบ…') : tr('ออกใบ + พิมพ์')}
                 </button>
               </div>
             </div>
@@ -8543,7 +8544,7 @@ function ExportTab() {
             <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>{r.desc}</div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               <button style={btnSm('var(--muted)')} onClick={() => handlePreview(r.key)} disabled={loading}>
-                ดูตัวอย่าง
+                {tr('ดูตัวอย่าง')}
               </button>
               <button style={btnSm('var(--green)')} onClick={async () => {
                 const sessions = await fetchData();
@@ -8570,7 +8571,7 @@ function ExportTab() {
           <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 14, lineHeight: 1.5 }}>
             1 หน้า/กะ — หัวกระดาษ, ยอดผลิต+OEE, Kanban, Downtime, NG, ช่องเซ็นชื่อ
           </div>
-          <button style={btnSm('var(--red)')} onClick={handleExportShiftForm} disabled={loading}>PDF ฟอร์ม</button>
+          <button style={btnSm('var(--red)')} onClick={handleExportShiftForm} disabled={loading}>{tr('PDF ฟอร์ม')}</button>
         </div>
       </div>
 
@@ -8599,7 +8600,7 @@ function ExportTab() {
               <thead>
                 <tr>
                   {preview.cols.map(c => (
-                    <th key={c} style={{ padding: '6px 8px', textAlign: 'left', background: 'var(--bg2)', borderBottom: '2px solid var(--border)', color: 'var(--text)', fontWeight: 700, whiteSpace: 'nowrap', fontSize: 11 }}>{c}</th>
+                    <th key={c} style={{ padding: '6px 8px', textAlign: 'left', background: 'var(--bg2)', borderBottom: '2px solid var(--border)', color: 'var(--text)', fontWeight: 700, whiteSpace: 'nowrap', fontSize: 11 }}>{tr(c)}</th>
                   ))}
                 </tr>
               </thead>
@@ -8715,7 +8716,7 @@ function DefectTypeSetup({ role }) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div style={{ fontSize: 13, color: 'var(--muted)' }}>{items.length} ประเภท</div>
-        {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่มประเภทงานเสีย</button>}
+        {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>{tr('+ เพิ่มประเภทงานเสีย')}</button>}
       </div>
 
       <NoticeBar tone="bad" style={{ marginBottom: 16 }}>
@@ -8750,7 +8751,7 @@ function DefectTypeSetup({ role }) {
                   <div style={{ fontSize: 11, color: 'var(--muted)' }}>#{item.sort_order}</div>
                   {canEdit && (
                     <div style={{ display: 'flex', gap: 6 }}>
-                      <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
+                      <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>{tr('แก้ไข')}</button>
                       <button className="tbtn" onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 15 }}>✕</button>
                     </div>
                   )}
@@ -8769,13 +8770,13 @@ function DefectTypeSetup({ role }) {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <Field label="ชื่อประเภท *">
-                <input autoFocus value={form.name_th} onChange={e => setForm(f => ({ ...f, name_th: e.target.value }))} placeholder="เช่น มิติไม่ได้" style={inputStyle} />
+                <input autoFocus value={form.name_th} onChange={e => setForm(f => ({ ...f, name_th: e.target.value }))} placeholder={tr('เช่น มิติไม่ได้')} style={inputStyle} />
               </Field>
               <Field label="กระบวนการ">
                 <select value={form.process_type} onChange={e => setForm(f => ({ ...f, process_type: e.target.value }))} style={inputStyle}>
-                  <option value="">ยังไม่กำหนด (แสดงทุกไลน์)</option>
+                  <option value="">{tr('ยังไม่กำหนด (แสดงทุกไลน์)')}</option>
                   {activeProcessTypes().map(pt => <option key={pt.key} value={pt.key}>{`${pt.icon || ''} ${pt.label}`.trim()}</option>)}
-                  <option value="common">Common (ทุกกระบวนการ)</option>
+                  <option value="common">{tr('Common (ทุกกระบวนการ)')}</option>
                 </select>
               </Field>
               <Field label="สี">
@@ -8790,14 +8791,14 @@ function DefectTypeSetup({ role }) {
               </Field>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
-                <span style={{ fontSize: 13, color: 'var(--text)' }}>ใช้งานอยู่</span>
+                <span style={{ fontSize: 13, color: 'var(--text)' }}>{tr('ใช้งานอยู่')}</span>
               </label>
               {/* งานทดลอง — ของเสียจากลองแม่พิมพ์/ลองงานใหม่ ไม่ควรฉุด OEE ของไลน์ (2026-08-17) */}
               <div style={{ padding: '9px 11px', borderRadius: 'var(--r-md)', border: `1px solid ${form.excl_from_q ? 'var(--blue)' : 'var(--border)'}`,
                 background: form.excl_from_q ? 'var(--blue-dim)' : 'var(--bg2)' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input type="checkbox" checked={form.excl_from_q} onChange={e => setForm(f => ({ ...f, excl_from_q: e.target.checked }))} style={{ width: 'auto', margin: 0 }} />
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: form.excl_from_q ? 'var(--blue)' : 'var(--text)' }}>งานทดลอง — ไม่นับเข้า %Q</span>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: form.excl_from_q ? 'var(--blue)' : 'var(--text)' }}>{tr('งานทดลอง — ไม่นับเข้า %Q')}</span>
                 </label>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.6 }}>
                   ติ๊กแล้ว ของเสียประเภทนี้จะไม่ถูกนับใน %Q ของ OEE ทุกจอ แต่ยังนับใน "มูลค่าของเสียทั้งหมด"
@@ -8806,8 +8807,8 @@ function DefectTypeSetup({ role }) {
               </div>
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
-              <button onClick={() => setEditing(null)} style={cancelBtnStyle}>ยกเลิก</button>
-              <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : 'บันทึก'}</button>
+              <button onClick={() => setEditing(null)} style={cancelBtnStyle}>{tr('ยกเลิก')}</button>
+              <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : tr('บันทึก')}</button>
             </div>
           </div>
         </div>
@@ -8935,11 +8936,11 @@ function BreakLineRules({ policy, lines, canEdit, onClose }) {
           <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 8 }}>+ เพิ่มไลน์ที่พักไม่เท่าค่ากลาง</div>
             <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 110px auto', gap: 8, alignItems: 'center' }}>
-              <LineSelect lines={lines} value={addLine} onChange={setAddLine} placeholder="— เลือกไลน์ —" style={inputStyle} />
-              <input type="number" min="0" max={BREAK_RULE_MAX} value={addMin} placeholder="นาที"
+              <LineSelect lines={lines} value={addLine} onChange={setAddLine} placeholder={tr('— เลือกไลน์ —')} style={inputStyle} />
+              <input type="number" min="0" max={BREAK_RULE_MAX} value={addMin} placeholder={tr('นาที')}
                 onChange={e => setAddMin(e.target.value)}
                 style={{ ...inputStyle, fontWeight: 800, fontSize: 16, textAlign: 'center' }} />
-              <button onClick={handleAdd} disabled={busy} style={{ ...saveBtnStyle, opacity: busy ? 0.6 : 1 }}>{busy ? '...' : 'เพิ่ม'}</button>
+              <button onClick={handleAdd} disabled={busy} style={{ ...saveBtnStyle, opacity: busy ? 0.6 : 1 }}>{busy ? '...' : tr('เพิ่ม')}</button>
             </div>
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6, lineHeight: 1.5 }}>
               ใส่ <strong style={{ color: 'var(--text2)' }}>0</strong> = ไลน์นี้ไม่มีพักรายการนี้เลย ·
@@ -8949,7 +8950,7 @@ function BreakLineRules({ policy, lines, canEdit, onClose }) {
         )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}>
-          <button onClick={onClose} style={cancelBtnStyle}>ปิด</button>
+          <button onClick={onClose} style={cancelBtnStyle}>{tr('ปิด')}</button>
         </div>
       </div>
     </div>
@@ -9050,7 +9051,7 @@ function BreakPolicySetup({ role }) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div style={{ fontSize: 13, color: 'var(--muted)' }}>{items.length} นโยบาย</div>
-        {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่มนโยบาย</button>}
+        {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>{tr('+ เพิ่มนโยบาย')}</button>}
       </div>
 
       <NoticeBar tone="ok" style={{ marginBottom: 16 }}>
@@ -9092,11 +9093,11 @@ function BreakPolicySetup({ role }) {
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               <button onClick={() => setRulesFor(item)} title="ตั้งว่าไลน์ไหนพักไม่เท่าค่ากลาง"
-                style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>รายไลน์</button>
+                style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>{tr('รายไลน์')}</button>
             </div>
             {canEdit && (
               <div style={{ display: 'flex', gap: 6 }}>
-                <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
+                <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '4px 12px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>{tr('แก้ไข')}</button>
                 <button className="tbtn" onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 15 }}>✕</button>
               </div>
             )}
@@ -9116,15 +9117,15 @@ function BreakPolicySetup({ role }) {
               {editing === 'new' ? '+ เพิ่มนโยบายหยุดพัก' : 'แก้ไขนโยบาย'}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <Field label="ชื่อภาษาไทย *"><input autoFocus value={form.name_th} onChange={e => setForm(f => ({ ...f, name_th: e.target.value }))} placeholder="เช่น พักกินข้าว" style={inputStyle} /></Field>
-              <Field label="ชื่อภาษาอังกฤษ"><input value={form.name_en} onChange={e => setForm(f => ({ ...f, name_en: e.target.value }))} placeholder="เช่น Lunch Break" style={inputStyle} /></Field>
+              <Field label="ชื่อภาษาไทย *"><input autoFocus value={form.name_th} onChange={e => setForm(f => ({ ...f, name_th: e.target.value }))} placeholder={tr('เช่น พักกินข้าว')} style={inputStyle} /></Field>
+              <Field label="ชื่อภาษาอังกฤษ"><input value={form.name_en} onChange={e => setForm(f => ({ ...f, name_en: e.target.value }))} placeholder={tr('เช่น Lunch Break')} style={inputStyle} /></Field>
               {/* 🔚 พักบางตัว (5ส.) เป็น "ท้ายกะ" — เวลาเลื่อนตามว่าวันนั้นเลิกกี่โมง
                   (เลิก 17:30 / 20:00 เมื่อทำโอ / 17:00 วันหยุดมาโอ 8 ชม. / 08:00 กะดึก)
                   ตั้งแบบนี้แถวเดียวครอบทุกรูปแบบวัน ไม่ต้องแตกแถวตาม ot_scope อีก */}
               <Field label="ยึดเวลาจาก">
                 <select value={form.anchor} onChange={e => setForm(f => ({ ...f, anchor: e.target.value }))} style={inputStyle}>
-                  <option value="clock">เวลานาฬิกา (เริ่มเวลาเดิมทุกวัน)</option>
-                  <option value="shift_end">ท้ายกะ (เลื่อนตามเวลาเลิกกะของวันนั้น)</option>
+                  <option value="clock">{tr('เวลานาฬิกา (เริ่มเวลาเดิมทุกวัน)')}</option>
+                  <option value="shift_end">{tr('ท้ายกะ (เลื่อนตามเวลาเลิกกะของวันนั้น)')}</option>
                 </select>
               </Field>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -9145,7 +9146,7 @@ function BreakPolicySetup({ role }) {
                 {/* 🏖️ นาทีพักของ "วันที่ไม่ใช่วันทำงาน" (27/10 · คำสั่ง user: วันหยุดพักเที่ยง 50 → 60)
                     ว่าง = ใช้ค่าเดียวกับช่องซ้ายทุกวัน (พฤติกรรมเดิม) */}
                 <Field label="วันหยุด (นาที)">
-                  <input type="number" min="0" placeholder="เท่าเดิม"
+                  <input type="number" min="0" placeholder={tr('เท่าเดิม')}
                     value={form.duration_min_holiday ?? ''}
                     onChange={e => setForm(f => ({ ...f, duration_min_holiday: e.target.value }))}
                     style={{ ...inputStyle, fontWeight: 800, fontSize: 16, textAlign: 'center' }} />
@@ -9165,16 +9166,16 @@ function BreakPolicySetup({ role }) {
               )}
               <Field label="ใช้กับกะ">
                 <select value={form.shift} onChange={e => setForm(f => ({ ...f, shift: e.target.value }))} style={inputStyle}>
-                  <option value="both">ทั้งสองกะ</option>
-                  <option value="day">กะเช้าเท่านั้น</option>
-                  <option value="night">กะดึกเท่านั้น</option>
+                  <option value="both">{tr('ทั้งสองกะ')}</option>
+                  <option value="day">{tr('กะเช้าเท่านั้น')}</option>
+                  <option value="night">{tr('กะดึกเท่านั้น')}</option>
                 </select>
               </Field>
               <Field label="ใช้กับวันแบบไหน">
                 <select value={form.ot_scope} onChange={e => setForm(f => ({ ...f, ot_scope: e.target.value }))} style={inputStyle}>
-                  <option value="always">ทุกวัน (ปกติ)</option>
-                  <option value="ot">เฉพาะวันที่ทำโอ</option>
-                  <option value="no_ot">เฉพาะวันที่ไม่ทำโอ</option>
+                  <option value="always">{tr('ทุกวัน (ปกติ)')}</option>
+                  <option value="ot">{tr('เฉพาะวันที่ทำโอ')}</option>
+                  <option value="no_ot">{tr('เฉพาะวันที่ไม่ทำโอ')}</option>
                 </select>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
                   ใช้กับพักที่มี 2 รอบสลับกันระหว่างวันทำโอ/ไม่ทำโอ เช่น พักเบรค OT —
@@ -9185,7 +9186,7 @@ function BreakPolicySetup({ role }) {
               </Field>
               <Field label="ใช้กับกระบวนการ">
                 <select value={form.process_type} onChange={e => setForm(f => ({ ...f, process_type: e.target.value }))} style={inputStyle}>
-                  <option value="common">ทุกกระบวนการ</option>
+                  <option value="common">{tr('ทุกกระบวนการ')}</option>
                   {activeProcessTypes().map(pt => <option key={pt.key} value={pt.key}>{`${pt.icon || ''} ${pt.label} เท่านั้น`.trim()}</option>)}
                 </select>
               </Field>
@@ -9194,12 +9195,12 @@ function BreakPolicySetup({ role }) {
               </Field>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
-                <span style={{ fontSize: 13, color: 'var(--text)' }}>ใช้งานอยู่</span>
+                <span style={{ fontSize: 13, color: 'var(--text)' }}>{tr('ใช้งานอยู่')}</span>
               </label>
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
-              <button onClick={() => setEditing(null)} style={cancelBtnStyle}>ยกเลิก</button>
-              <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : 'บันทึก'}</button>
+              <button onClick={() => setEditing(null)} style={cancelBtnStyle}>{tr('ยกเลิก')}</button>
+              <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : tr('บันทึก')}</button>
             </div>
           </div>
         </div>
@@ -9409,10 +9410,10 @@ function ProductSetup({ role }) {
           <div style={{ fontSize: 14, color: 'var(--muted)' }}>{families.length} รายการ ({items.filter(i => i.is_active).length} ใช้งาน)</div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: 'var(--muted)' }}>
             <input type="checkbox" checked={showHistory} onChange={e => setShowHistory(e.target.checked)} />
-            แสดงประวัติ EC
+            {tr('แสดงประวัติ EC')}
           </label>
         </div>
-        {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่มสินค้า</button>}
+        {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>{tr('+ เพิ่มสินค้า')}</button>}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -9466,7 +9467,7 @@ function ProductSetup({ role }) {
                     {active && (
                       <button onClick={() => openEC(active)} title="Engineering Change — สร้าง revision ใหม่" style={{ background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 'var(--r-md)', padding: '4px 10px', fontSize: 11, cursor: 'pointer', color: 'var(--blue)', fontWeight: 700 }}>EC</button>
                     )}
-                    <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
+                    <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '4px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>{tr('แก้ไข')}</button>
                     <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>✕</button>
                   </div>
                 )}
@@ -9524,7 +9525,7 @@ function ProductSetup({ role }) {
                               </div>
                               {canEdit && (
                                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                                  <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
+                                  <button onClick={() => openKanbanEdit(std)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '3px 8px', fontSize: 11, cursor: 'pointer', color: 'var(--text)' }}>{tr('แก้ไข')}</button>
                                   <button onClick={() => handleKanbanDelete(std.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 13 }}>✕</button>
                                 </div>
                               )}
@@ -9535,7 +9536,7 @@ function ProductSetup({ role }) {
                           <button
                             onClick={() => openKanbanEdit(null, active?.id || members[0]?.id || '')}
                             style={{ alignSelf: 'flex-start', marginTop: 2, background: 'var(--blue-dim)', border: '1px dashed var(--blue-line)', borderRadius: 'var(--r-md)', padding: '4px 12px', fontSize: 11, color: 'var(--blue)', cursor: 'pointer', fontWeight: 700 }}>
-                            + เพิ่ม MAT.NO
+                            {tr('+ เพิ่ม MAT.NO')}
                           </button>
                         )}
                       </div>
@@ -9565,10 +9566,10 @@ function ProductSetup({ role }) {
               <Field label="ชื่อสินค้า / Model *"><input autoFocus value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={inputStyle} /></Field>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label={ecSource ? 'MAT.NO ใหม่ (SAP) *' : 'MAT.NO (SAP)'}>
-                  <input value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))} placeholder="เช่น 10100399" style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, borderColor: ecSource ? 'var(--blue-line)' : undefined }} />
+                  <input value={form.mat_no} onChange={e => setForm(f => ({ ...f, mat_no: e.target.value.toUpperCase() }))} placeholder={tr('เช่น 10100399')} style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, borderColor: ecSource ? 'var(--blue-line)' : undefined }} />
                 </Field>
                 <Field label={ecSource ? 'P.NO ใหม่ *' : 'P.NO'}>
-                  <input value={form.p_no} onChange={e => setForm(f => ({ ...f, p_no: e.target.value }))} placeholder="เช่น RC3B16E061BB" style={{ ...inputStyle, borderColor: ecSource ? 'var(--blue-line)' : undefined }} />
+                  <input value={form.p_no} onChange={e => setForm(f => ({ ...f, p_no: e.target.value }))} placeholder={tr('เช่น RC3B16E061BB')} style={{ ...inputStyle, borderColor: ecSource ? 'var(--blue-line)' : undefined }} />
                 </Field>
               </div>
               {ecSource && (
@@ -9579,9 +9580,9 @@ function ProductSetup({ role }) {
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label="Customer">
                   {/* 2026-09-07 เลือกจากรายชื่อลูกค้าที่มีใน Product Master (CustomerSelect) — พิมพ์ลูกค้าใหม่ได้แต่ติดป้าย ไม่ให้สะกดแตกเป็นคนละลูกค้า */}
-                  <CustomerSelect value={form.customer || ''} onChange={({ customer }) => setForm(f => ({ ...f, customer }))} placeholder="เช่น FORD" inputStyle={inputStyle} />
+                  <CustomerSelect value={form.customer || ''} onChange={({ customer }) => setForm(f => ({ ...f, customer }))} placeholder={tr('เช่น FORD')} inputStyle={inputStyle} />
                 </Field>
-                <Field label="รหัสสินค้า (Code)"><input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="เช่น HDF-001" style={inputStyle} /></Field>
+                <Field label="รหัสสินค้า (Code)"><input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder={tr('เช่น HDF-001')} style={inputStyle} /></Field>
               </div>
               <Field label="ประเภทกระบวนการ *">
                 <select value={form.process_type} onChange={e => setForm(f => ({ ...f, process_type: e.target.value }))} style={inputStyle}>
@@ -9589,24 +9590,24 @@ function ProductSetup({ role }) {
                 </select>
               </Field>
               <Field label="ไลน์ผลิตหลัก">
-                <LineSelect lines={lines} value={form.line_name} placeholder="ไม่ระบุ" style={inputStyle}
+                <LineSelect lines={lines} value={form.line_name} placeholder={tr('ไม่ระบุ')} style={inputStyle}
                   onChange={v => setForm(f => ({ ...f, line_name: v }))} />
               </Field>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <Field label="Cycle Time (วินาที)"><input type="number" min="0" step="0.1" value={form.cycle_time_sec} onChange={e => setForm(f => ({ ...f, cycle_time_sec: e.target.value }))} placeholder="เช่น 45.5" style={inputStyle} /></Field>
-                <Field label="Target ต่อกะ (ชิ้น)"><input type="number" min="0" value={form.target_per_shift} onChange={e => setForm(f => ({ ...f, target_per_shift: e.target.value }))} placeholder="เช่น 500" style={inputStyle} /></Field>
+                <Field label="Cycle Time (วินาที)"><input type="number" min="0" step="0.1" value={form.cycle_time_sec} onChange={e => setForm(f => ({ ...f, cycle_time_sec: e.target.value }))} placeholder={tr('เช่น 45.5')} style={inputStyle} /></Field>
+                <Field label="Target ต่อกะ (ชิ้น)"><input type="number" min="0" value={form.target_per_shift} onChange={e => setForm(f => ({ ...f, target_per_shift: e.target.value }))} placeholder={tr('เช่น 500')} style={inputStyle} /></Field>
               </div>
               {!ecSource && (
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
-                  <span style={{ fontSize: 13, color: 'var(--text)' }}>ใช้งานอยู่</span>
+                  <span style={{ fontSize: 13, color: 'var(--text)' }}>{tr('ใช้งานอยู่')}</span>
                 </label>
               )}
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
-              <button onClick={() => { setEditing(null); setEcSource(null); }} style={cancelBtnStyle}>ยกเลิก</button>
+              <button onClick={() => { setEditing(null); setEcSource(null); }} style={cancelBtnStyle}>{tr('ยกเลิก')}</button>
               <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1, background: ecSource ? 'var(--blue)' : undefined }}>
-                {saving ? '...' : ecSource ? 'บันทึก EC' : 'บันทึก'}
+                {saving ? '...' : ecSource ? tr('บันทึก EC') : tr('บันทึก')}
               </button>
             </div>
           </div>
@@ -9624,7 +9625,7 @@ function ProductSetup({ role }) {
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <Field label="MAT.NO *">
                   {/* 2026-09-07 เลือกจาก Product Master (ไม่ allowFree) + กลุ่ม 📜 MAT ที่เคยบันทึกไว้ (product_id ว่าง) · เซ็ต product_id คู่กับ mat_no */}
-                  <ProductSelect products={items} value={kanbanForm.mat_no} placeholder="เช่น 10100335" history={kanbanMatHist}
+                  <ProductSelect products={items} value={kanbanForm.mat_no} placeholder={tr('เช่น 10100335')} history={kanbanMatHist}
                     lines={items.find(i => i.id === kanbanForm.product_id)?.line_name ? [items.find(i => i.id === kanbanForm.product_id).line_name] : undefined}
                     inputStyle={{ ...inputStyle, fontWeight: 700 }}
                     onChange={({ mat_no, id }) => setKanbanForm(f => ({ ...f, mat_no, product_id: id || '' }))} />
@@ -9637,14 +9638,14 @@ function ProductSetup({ role }) {
               </div>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <input type="checkbox" checked={kanbanForm.is_active} onChange={e => setKanbanForm(f => ({ ...f, is_active: e.target.checked }))} />
-                <span style={{ fontSize: 13, color: 'var(--text)' }}>ใช้งานอยู่</span>
+                <span style={{ fontSize: 13, color: 'var(--text)' }}>{tr('ใช้งานอยู่')}</span>
               </label>
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
-              <button onClick={() => setKanbanEditing(null)} style={cancelBtnStyle}>ยกเลิก</button>
+              <button onClick={() => setKanbanEditing(null)} style={cancelBtnStyle}>{tr('ยกเลิก')}</button>
               <button onClick={handleKanbanSave} disabled={kanbanSaving || !kanbanForm.mat_no}
                 style={{ ...saveBtnStyle, opacity: (kanbanSaving || !kanbanForm.mat_no) ? 0.5 : 1 }}>
-                {kanbanSaving ? '...' : 'บันทึก'}
+                {kanbanSaving ? '...' : tr('บันทึก')}
               </button>
             </div>
           </div>
@@ -9730,7 +9731,7 @@ function DowntimeTypeSetup({ role }) {
         <div style={{ fontSize: 11, color: 'var(--muted)' }}>#{item.sort_order}</div>
         {canEdit && (
           <div style={{ display: 'flex', gap: 6 }}>
-            <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '3px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>แก้ไข</button>
+            <button onClick={() => openEdit(item)} style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '3px 10px', fontSize: 12, cursor: 'pointer', color: 'var(--text)' }}>{tr('แก้ไข')}</button>
             <button onClick={() => handleDelete(item.id)} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 14 }}>✕</button>
           </div>
         )}
@@ -9742,7 +9743,7 @@ function DowntimeTypeSetup({ role }) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div style={{ fontSize: 14, color: 'var(--muted)' }}>{items.length} ประเภท</div>
-        {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>+ เพิ่มประเภท</button>}
+        {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>{tr('+ เพิ่มประเภท')}</button>}
       </div>
 
       {processGroups.map(pg => {
@@ -9789,26 +9790,26 @@ function DowntimeTypeSetup({ role }) {
               <Field label="กระบวนการ">
                 <select value={form.process_type} onChange={e => setForm(f => ({ ...f, process_type: e.target.value }))} style={inputStyle}>
                   {activeProcessTypes().map(pt => <option key={pt.key} value={pt.key}>{`${pt.icon || ''} ${pt.label}`.trim()}</option>)}
-                  <option value="common">Common (ทุกกระบวนการ)</option>
+                  <option value="common">{tr('Common (ทุกกระบวนการ)')}</option>
                 </select>
               </Field>
               <Field label="หมวดหมู่ (ใช้คิด OEE)">
                 <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))} style={inputStyle}>
-                  <option value="unplanned">นอกแผน (Unplanned)</option>
-                  <option value="planned">ในแผน (Planned)</option>
+                  <option value="unplanned">{tr('นอกแผน (Unplanned)')}</option>
+                  <option value="planned">{tr('ในแผน (Planned)')}</option>
                 </select>
               </Field>
               {/* แกน Lean — แยกจาก category ที่ใช้คิด OEE โดยตั้งใจ (ดู src/utils/oee.js §6)
                   ตอบคนละคำถาม: "เวลาที่เสียไปเป็นความสูญเปล่าประเภทไหน แก้ด้วยเครื่องมืออะไร" */}
               <Field label="6 Big Losses (TPM) — สำหรับวิเคราะห์ ไม่กระทบ OEE">
                 <select value={form.six_big_loss} onChange={e => setForm(f => ({ ...f, six_big_loss: e.target.value }))} style={inputStyle}>
-                  <option value="">— ยังไม่จัดหมวด —</option>
-                  {SIX_BIG_LOSSES.map(l => <option key={l.key} value={l.key}>{l.icon} {l.label} (กระทบ {l.oee})</option>)}
+                  <option value="">{tr('— ยังไม่จัดหมวด —')}</option>
+                  {SIX_BIG_LOSSES.map(l => <option key={l.key} value={l.key}>{l.icon} {l.label} {tr('(กระทบ')} {l.oee})</option>)}
                 </select>
               </Field>
               <Field label="8 Wastes (Lean) — สำหรับวิเคราะห์ ไม่กระทบ OEE">
                 <select value={form.waste_type} onChange={e => setForm(f => ({ ...f, waste_type: e.target.value }))} style={inputStyle}>
-                  <option value="">— ยังไม่จัดหมวด —</option>
+                  <option value="">{tr('— ยังไม่จัดหมวด —')}</option>
                   {EIGHT_WASTES.map(w => <option key={w.key} value={w.key}>{w.icon} {w.label}</option>)}
                 </select>
               </Field>
@@ -9823,7 +9824,7 @@ function DowntimeTypeSetup({ role }) {
                           const cur = f.equipment_kinds || [];
                           return { ...f, equipment_kinds: on ? cur.filter(x => x !== k.key) : [...cur, k.key] };
                         })} />
-                        {k.icon} {k.label} (ทั้งชนิด)
+                        {k.icon} {k.label} {tr('(ทั้งชนิด)')}
                       </label>
                     );
                   })}
@@ -9862,12 +9863,12 @@ function DowntimeTypeSetup({ role }) {
               </Field>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <input type="checkbox" checked={form.is_active} onChange={e => setForm(f => ({ ...f, is_active: e.target.checked }))} />
-                <span style={{ fontSize: 13, color: 'var(--text)' }}>ใช้งานอยู่</span>
+                <span style={{ fontSize: 13, color: 'var(--text)' }}>{tr('ใช้งานอยู่')}</span>
               </label>
             </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
-              <button onClick={() => setEditing(null)} style={cancelBtnStyle}>ยกเลิก</button>
-              <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : 'บันทึก'}</button>
+              <button onClick={() => setEditing(null)} style={cancelBtnStyle}>{tr('ยกเลิก')}</button>
+              <button onClick={handleSave} disabled={saving} style={{ ...saveBtnStyle, opacity: saving ? 0.6 : 1 }}>{saving ? '...' : tr('บันทึก')}</button>
             </div>
           </div>
         </div>

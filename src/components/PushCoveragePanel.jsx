@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { naturalCompare } from '../utils/listOrder';
 import { pushCoverageFailText } from '../utils/pushPrompt';
+import { tr } from '../utils/i18n';
 import InfoMore from './InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 const DAYS = 7;
@@ -77,7 +78,7 @@ export default function PushCoveragePanel() {
         <button onClick={load} disabled={busy}
           style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--accent)', background: 'none',
                    border: 'none', cursor: busy ? 'default' : 'pointer', padding: 0, textDecoration: 'underline' }}>
-          {busy ? 'กำลังโหลด…' : 'โหลดใหม่'}
+          {busy ? tr('กำลังโหลด…') : tr('โหลดใหม่')}
         </button>
       </div>
 

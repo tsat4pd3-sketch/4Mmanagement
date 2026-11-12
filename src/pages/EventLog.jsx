@@ -26,6 +26,7 @@ import Page from '../components/Page';
 import FilterBar from '../components/FilterBar';
 import Segmented from '../components/Segmented';
 import { ALL } from '../utils/filterLabels';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ─── TimeInput24 — native time picker (spinner arrows + clock UI) ─── */
@@ -299,7 +300,7 @@ export default function EventLog() {
           <button type="button" className="pg-btn"
             onClick={() => setTab(tab === 'create' ? 'list' : 'create')}
             style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: tab === 'create' ? 'var(--bg3)' : 'var(--accent)', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
-            {tab === 'create' ? 'กลับรายการ' : '+ บันทึก Event ใหม่'}
+            {tab === 'create' ? tr('กลับรายการ') : tr('+ บันทึก Event ใหม่')}
           </button>
         )}
       />
@@ -371,18 +372,18 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
 
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div>
-            <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>วันที่</label>
+            <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('วันที่')}</label>
             <input type="date" value={form.work_date} onChange={e => f('work_date', e.target.value)} />
           </div>
           <div>
-            <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>เวลา</label>
+            <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('เวลา')}</label>
             <TimeInput24 value={form.event_time} onChange={e => f('event_time', e.target.value)} />
           </div>
         </div>
 
         <div>
-          <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>ไลน์ผลิต *</label>
-          <LineSelect lines={lines} value={form.line_name} placeholder="-- เลือกไลน์ --"
+          <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('ไลน์ผลิต *')}</label>
+          <LineSelect lines={lines} value={form.line_name} placeholder={tr('-- เลือกไลน์ --')}
             onChange={v => f('line_name', v)} />
         </div>
 
@@ -391,13 +392,13 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
             <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Station Number</label>
             {/* station = เลขเครื่อง (SP-67) จากทะเบียน machines (DR) — ออกรายงาน CQI-15 ให้ลูกค้าตรวจ ต้องสะกดตรงทะเบียน (2026-09-07) */}
             <MachineSelect value={form.station_number || ''} lines={famNames} allowFree history={stationHist} freeHint="สถานีที่ยังไม่มีในทะเบียนเครื่อง /machines"
-              placeholder="เช่น SP-67" onChange={r => f('station_number', r.machine_no)} />
+              placeholder={tr('เช่น SP-67')} onChange={r => f('station_number', r.machine_no)} />
           </div>
           <div>
             <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Weld Cell Operator</label>
             {/* พนักงานจากทะเบียน employees — คนในครอบครัวไลน์ที่เลือกขึ้นก่อน · เก็บชื่อ snapshot เหมือนเดิม (2026-09-07) */}
             <PersonSelect source="employees" value={form.weld_cell_operator || ''} lineIds={famIds} history={operatorHist}
-              placeholder="ชื่อพนักงาน" onChange={r => f('weld_cell_operator', r.name)} />
+              placeholder={tr('ชื่อพนักงาน')} onChange={r => f('weld_cell_operator', r.name)} />
           </div>
         </div>
 
@@ -405,7 +406,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
         <div>
           <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Event *</label>
           <select value={form.event_no} onChange={e => f('event_no', e.target.value)}>
-            <option value="">-- เลือก Event --</option>
+            <option value="">{tr('-- เลือก Event --')}</option>
             {Object.entries(groupedEvents).map(([cat, evs]) => (
               <optgroup key={cat} label={`Category ${cat}: ${CAT_META[cat].labelTh}`}>
                 {evs.map(ev => (
@@ -429,8 +430,8 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
         )}
 
         <div>
-          <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Issue / สาเหตุ</label>
-          <textarea rows={3} placeholder="อธิบายปัญหาที่เกิดขึ้น..." value={form.issue_description}
+          <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>{tr('Issue / สาเหตุ')}</label>
+          <textarea rows={3} placeholder={tr('อธิบายปัญหาที่เกิดขึ้น...')} value={form.issue_description}
             onChange={e => f('issue_description', e.target.value)}
             style={{ resize: 'vertical' }} />
         </div>
@@ -458,14 +459,14 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
 
         <div>
           <label style={{ fontSize: 11, color: 'var(--muted)', display: 'block', marginBottom: 4 }}>Remark</label>
-          <input type="text" value={form.remark} onChange={e => f('remark', e.target.value)} placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)" />
+          <input type="text" value={form.remark} onChange={e => f('remark', e.target.value)} placeholder={tr('หมายเหตุเพิ่มเติม (ถ้ามี)')} />
         </div>
 
         <button
           onClick={onSubmit}
           disabled={submitting || !form.line_name || !form.event_no}
           style={{ padding: '12px 0', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 15, cursor: 'pointer', marginTop: 4 }}>
-          {submitting ? 'กำลังบันทึก...' : 'บันทึก Event & ส่ง Notification'}
+          {submitting ? tr('กำลังบันทึก...') : tr('บันทึก Event & ส่ง Notification')}
         </button>
       </div>
 
@@ -782,8 +783,8 @@ function exportPDF(logs) {
         <th colspan="3">Event</th>
         <th rowspan="2" style="width:40px">Event ID</th>
         <th rowspan="2" style="width:18px"></th>
-        <th rowspan="2" style="width:46px">ส่วนงาน</th>
-        <th rowspan="2" style="width:110px">รายละเอียดงาน</th>
+        <th rowspan="2" style="width:46px">{tr('ส่วนงาน')}</th>
+        <th rowspan="2" style="width:110px">{tr('รายละเอียดงาน')}</th>
         <th rowspan="2" style="width:40px">Product Q'ty</th>
         <th rowspan="2" style="width:32px">OK Q'ty</th>
         <th rowspan="2" style="width:32px">NG Q'ty</th>
@@ -844,11 +845,11 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
           options={[{ value: 'all', label: ALL.category }, ...['A', 'B', 'C'].map(c => ({ value: c, label: `Cat ${c}` }))]} />
         {/* Status */}
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-          <option value="all">{ALL.status}</option>
-          <option value="pending">รอดำเนินการ</option>
-          <option value="in_progress">กำลังดำเนินการ</option>
-          <option value="approved">อนุมัติแล้ว</option>
-          <option value="rejected">ปฏิเสธ</option>
+          <option value="all">{tr(ALL.status)}</option>
+          <option value="pending">{tr('รอดำเนินการ')}</option>
+          <option value="in_progress">{tr('กำลังดำเนินการ')}</option>
+          <option value="approved">{tr('อนุมัติแล้ว')}</option>
+          <option value="rejected">{tr('ปฏิเสธ')}</option>
         </select>
         <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} />
         {filterDate && (
@@ -914,15 +915,15 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
           <table>
             <thead>
               <tr>
-                <th>วันที่ / เวลา</th>
-                <th>ไลน์</th>
+                <th>{tr('วันที่ / เวลา')}</th>
+                <th>{tr('ไลน์')}</th>
                 <th>Station</th>
                 <th>Event</th>
                 <th>Issue</th>
                 <th style={{ textAlign: 'center' }}>Qty OK/NG</th>
                 <th>Approval</th>
-                <th>สถานะ</th>
-                <th>ผู้บันทึก</th>
+                <th>{tr('สถานะ')}</th>
+                <th>{tr('ผู้บันทึก')}</th>
               </tr>
             </thead>
             <tbody>
@@ -1196,7 +1197,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
             {mayDelete && !confirmDelete && (
               <button onClick={() => setConfirmDelete(true)}
                 style={{ background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                ลบ
+                {tr('ลบ')}
               </button>
             )}
             {mayDelete && confirmDelete && (
@@ -1204,11 +1205,11 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                 <span style={{ fontSize: 12, color: 'var(--red)', fontWeight: 700 }}>ยืนยันลบ?</span>
                 <button onClick={handleDelete} disabled={deleting}
                   style={{ background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.6 : 1 }}>
-                  {deleting ? '...' : 'ยืนยัน'}
+                  {deleting ? '...' : tr('ยืนยัน')}
                 </button>
                 <button onClick={() => setConfirmDelete(false)}
                   style={{ background: 'var(--bg2)', color: 'var(--text)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '5px 10px', fontSize: 12, cursor: 'pointer' }}>
-                  ยกเลิก
+                  {tr('ยกเลิก')}
                 </button>
               </div>
             )}
@@ -1291,29 +1292,29 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                           fontWeight: 700, fontSize: 11,
                           cursor: checklistDone ? 'pointer' : 'not-allowed',
                           opacity: checklistDone ? 1 : 0.5 }}>
-                        อนุมัติ
+                        {tr('อนุมัติ')}
                       </button>
                       <button
                         disabled={approvingRole === appr.role_key}
                         onClick={() => setShowReject(appr.role_key)}
                         style={{ flex: 1, padding: '6px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'transparent', color: 'var(--red)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
-                        ปฏิเสธ
+                        {tr('ปฏิเสธ')}
                       </button>
                     </div>
                   )}
                   {showReject === appr.role_key && (
                     <div style={{ marginTop: 8 }}>
-                      <input type="text" placeholder="เหตุผลที่ปฏิเสธ..." value={rejectNote}
+                      <input type="text" placeholder={tr('เหตุผลที่ปฏิเสธ...')} value={rejectNote}
                         onChange={e => setRejectNote(e.target.value)}
                         style={{ fontSize: 12, marginBottom: 6 }} />
                       <div style={{ display: 'flex', gap: 6 }}>
                         <button onClick={() => handleApprove(appr.role_key, 'rejected')}
                           style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--red-dim)', color: 'var(--red)', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>
-                          ยืนยันปฏิเสธ
+                          {tr('ยืนยันปฏิเสธ')}
                         </button>
                         <button onClick={() => setShowReject(null)}
                           style={{ flex: 1, padding: '5px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'transparent', color: 'var(--muted)', fontSize: 11, cursor: 'pointer' }}>
-                          ยกเลิก
+                          {tr('ยกเลิก')}
                         </button>
                       </div>
                     </div>

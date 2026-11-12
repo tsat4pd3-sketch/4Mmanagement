@@ -31,6 +31,7 @@ import { useOrgSections } from '../utils/useOrgSections';
 import { inSectionScope } from '../utils/sectionScope';
 import { resolvePpe, ppeSourceText, PPE_SCOPE_LABEL } from '../utils/ppeRequirements';
 
+import { tr } from '../utils/i18n';
 const SCOPE_OPTS = [
   { value: 'plant',   label: 'ทั้งโรงงาน' },
   { value: 'section', label: 'ส่วนงาน' },
@@ -174,8 +175,8 @@ export default function PpeSetup() {
               onChange={(v) => { setKind(v); if (v === 'plant') { setSecKey(''); setLineKey(''); setStKey(''); } }} />
             {kind === 'section' && (
               <select value={secKey} onChange={e => setSecKey(e.target.value)}>
-                <option value="">— เลือกส่วนงาน —</option>
-                {sectionNames.map(s => <option key={s} value={s}>{s}</option>)}
+                <option value="">{tr('— เลือกส่วนงาน —')}</option>
+                {sectionNames.map(s => <option key={s} value={s}>{tr(s)}</option>)}
               </select>
             )}
             {(kind === 'line' || kind === 'station') && (

@@ -19,6 +19,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { parseQrPayload } from '../utils/qrCode';
 import useIsMobile from '../utils/useIsMobile';
 
+import { tr } from '../utils/i18n';
 const hasNativeDetector = () => typeof window !== 'undefined' && 'BarcodeDetector' in window;
 
 export default function ScanModal({
@@ -185,7 +186,7 @@ export default function ScanModal({
           {!camOn && (
             <button onClick={startCam} className="tbtn"
               style={{ padding: '12px 22px', borderRadius: 'var(--r-md)', border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-              เปิดกล้องสแกน
+              {tr('เปิดกล้องสแกน')}
             </button>
           )}
           {camOn && (
@@ -194,7 +195,7 @@ export default function ScanModal({
               <div style={{ position: 'absolute', inset: '18%', border: '3px solid rgba(52,211,153,0.9)', borderRadius: 'var(--r-lg)', pointerEvents: 'none' }} />
               <button onClick={stopCam} className="tbtn"
                 style={{ position: 'absolute', right: 8, bottom: 8, padding: '6px 12px', borderRadius: 'var(--r-md)', border: '1px solid rgba(255,255,255,0.35)', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 12, cursor: 'pointer' }}>
-                ปิดกล้อง
+                {tr('ปิดกล้อง')}
               </button>
             </>
           )}
@@ -204,7 +205,7 @@ export default function ScanModal({
         {/* เครื่องยิง / พิมพ์เอง */}
         <div style={{ marginTop: 14 }}>
           <label style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>
-            ยิงด้วยเครื่องสแกน หรือพิมพ์รหัสเอง
+            {tr('ยิงด้วยเครื่องสแกน หรือพิมพ์รหัสเอง')}
           </label>
           <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
             <input
@@ -224,12 +225,12 @@ export default function ScanModal({
             {isMobile && !kbd && (
               <button type="button" className="tbtn" onClick={() => { inputRef.current?.blur(); setKbd(true); setTimeout(() => inputRef.current?.focus(), 30); }}
                 style={{ padding: '9px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', flexShrink: 0 }}>
-                ⌨️ พิมพ์เอง
+                {tr('⌨️ พิมพ์เอง')}
               </button>
             )}
             <button onClick={submitTyped} className="tbtn"
               style={{ padding: '9px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13.5, cursor: 'pointer', flexShrink: 0 }}>
-              ตกลง
+              {tr('ตกลง')}
             </button>
           </div>
         </div>

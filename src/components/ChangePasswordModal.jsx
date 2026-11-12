@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { toast } from './Toast';
 
+import { tr } from '../utils/i18n';
 export default function ChangePasswordModal({ open, onClose, userEmail }) {
   const [current,  setCurrent]  = useState('');
   const [next,     setNext]     = useState('');
@@ -86,14 +87,14 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
           {/* Current password */}
           <div>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>
-              รหัสผ่านเดิม
+              {tr('รหัสผ่านเดิม')}
             </label>
             <div style={{ position: 'relative' }}>
               <input
                 type={showCur ? 'text' : 'password'}
                 value={current}
                 onChange={e => setCurrent(e.target.value)}
-                placeholder="กรอกรหัสผ่านปัจจุบัน"
+                placeholder={tr('กรอกรหัสผ่านปัจจุบัน')}
                 autoComplete="current-password"
                 style={{ paddingRight: 40 }}
                 disabled={loading}
@@ -115,14 +116,14 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
           {/* New password */}
           <div>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>
-              รหัสผ่านใหม่
+              {tr('รหัสผ่านใหม่')}
             </label>
             <div style={{ position: 'relative' }}>
               <input
                 type={showNew ? 'text' : 'password'}
                 value={next}
                 onChange={e => setNext(e.target.value)}
-                placeholder="อย่างน้อย 6 ตัวอักษร"
+                placeholder={tr('อย่างน้อย 6 ตัวอักษร')}
                 autoComplete="new-password"
                 style={{
                   paddingRight: 40,
@@ -148,13 +149,13 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
           {/* Confirm password */}
           <div>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text2)', marginBottom: 5 }}>
-              ยืนยันรหัสผ่านใหม่
+              {tr('ยืนยันรหัสผ่านใหม่')}
             </label>
             <input
               type={showNew ? 'text' : 'password'}
               value={confirm}
               onChange={e => setConfirm(e.target.value)}
-              placeholder="กรอกรหัสผ่านใหม่อีกครั้ง"
+              placeholder={tr('กรอกรหัสผ่านใหม่อีกครั้ง')}
               autoComplete="new-password"
               style={{
                 borderColor: match ? 'var(--accent)' : noMatch ? '#ef4444' : undefined,
@@ -193,7 +194,7 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
                 border: '1px solid var(--border2)', background: 'var(--bg3)',
                 color: 'var(--text2)', fontWeight: 600, fontSize: 13,
               }}
-            >ยกเลิก</button>
+            >{tr('ยกเลิก')}</button>
             <button
               type="submit"
               disabled={loading || !current || next.length < 6 || next !== confirm}
@@ -206,7 +207,7 @@ export default function ChangePasswordModal({ open, onClose, userEmail }) {
                 transition: 'background 0.2s',
               }}
             >
-              {loading ? '⏳ กำลังบันทึก...' : '🔐 เปลี่ยนรหัสผ่าน'}
+              {loading ? tr('⏳ กำลังบันทึก...') : tr('🔐 เปลี่ยนรหัสผ่าน')}
             </button>
           </div>
         </form>
