@@ -3,7 +3,7 @@
       (วัดจริง 20/10: 252 จาก 332 คู่มี qty_on_hand = 0 ซึ่งแปลว่า "ไม่ได้นับ" ไม่ใช่ "หมด") */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { refillNeed, refillSummary, daysSince, STALE_DAYS } from '../replenish.js';
+import { refillNeed, refillSummary, daysSince, STALE_DAYS, minAlerts, minAlertSummary, isFgMat } from '../replenish.js';
 
 const NOW = '2026-10-21T10:00:00Z';
 const fresh = '2026-10-20T08:00:00Z';
@@ -89,4 +89,81 @@ test('สรุปตอน cards ไม่รู้เลย = null ไม่�
   assert.equal(refillSummary(rows).cards, null);
   assert.equal(refillSummary([]).coverage, null);
   assert.deepEqual(refillSummary(null).need, 0);
+});
+
+/* ═══ 🔔 ของถึง min → ส่งความต้องการไปหาไลน์เจ้าของงาน + ฝ่ายวางแผน (13/11) ══════════
+   วัดจริงวันนั้น: ทะเบียน 74 แถว · ชิ้นส่วน 41 (ไม่มี max เลยสักแถว · ไม่มีบัญชี 7 · ติด min 32)
+   · FG ปนมา 32 แถว ซึ่งห้ามมี min ที่ไลน์ */
+const LV = (mat, min, max, line = 'Line 60', part = '') => ({ line_name: line, mat_no: mat, min_qty: min, max_qty: max, part_name: part });
+
+test('ติด min = ต้องรู้ min + ยอดที่นับแล้ว · เกิน min = ยังพอ', () => {
+  const rows = minAlerts([LV('20058498', 100, null), LV('20058495', 100, null)],
+    (ln, m) => (m === '20058498' ? 80 : 500), () => 'Assy GOR');
+  assert.equal(rows[0].state, 'at_min');
+  assert.equal(rows[0].ownerLine, 'Assy GOR');
+  assert.equal(rows[1].state, 'ok');
+});
+
+test('🔴 ไม่มีบัญชี = unknown ห้ามนับเป็นติด min (ไม่เคยนับ ≠ ของหมด)', () => {
+  const r = minAlerts([LV('20058498', 100, null)], () => null)[0];
+  assert.equal(r.state, 'unknown');
+  assert.equal(r.refillPcs, null);
+  assert.match(r.why, /ไม่เคยนับ/);
+});
+
+test('🔴 ไม่รู้ max = ติด min ได้ แต่บอก "ต้องผลิตเท่าไหร่" ไม่ได้ (null ห้ามเดา)', () => {
+  const noMax = minAlerts([LV('20058498', 100, null)], () => 80)[0];
+  assert.equal(noMax.state, 'at_min');
+  assert.equal(noMax.refillPcs, null);
+  const withMax = minAlerts([LV('20058498', 100, 500)], () => 80)[0];
+  assert.equal(withMax.refillPcs, 420);
+});
+
+test('ยอดเท่ากับ min พอดี = ติด min แล้ว (min คือ "ถึงจุดสั่ง" ไม่ใช่ "ต่ำกว่าจุดสั่ง")', () => {
+  assert.equal(minAlerts([LV('20058498', 100, null)], () => 100)[0].state, 'at_min');
+});
+
+test('ยังไม่ตั้ง min = unknown ห้ามเงียบ', () => {
+  for (const m of [null, 0, undefined, 'x'])
+    assert.equal(minAlerts([LV('X', m, null)], () => 10)[0].state, 'unknown');
+});
+
+test('🔴 ไลน์เจ้าของงานมาจาก Product Master ไม่ใช่ไลน์ที่ของกอง (แจ้งผิดไลน์ = คนไม่ได้เตรียม)', () => {
+  const r = minAlerts([LV('10086024', 100, null, 'FG WAREHOUSE')], () => 10, () => 'Assy GOR')[0];
+  assert.equal(r.line_name, 'FG WAREHOUSE');   // ของกองอยู่ที่คลัง
+  assert.equal(r.ownerLine, 'Assy GOR');       // แต่คนที่ต้องเตรียมคือไลน์นี้
+});
+
+test('🔴 FG ติดธงไว้ ห้ามกรองทิ้งเงียบ (ทะเบียนเปื้อนต้องเห็นถึงจะมีคนไปล้าง)', () => {
+  assert.equal(isFgMat('10086024'), true);
+  assert.equal(isFgMat('20058498'), false);
+  const rows = minAlerts([LV('10086024', 100, null), LV('20058498', 100, null)], () => 10);
+  assert.equal(rows.length, 2, 'ห้ามหายไปจากลิสต์');
+  assert.equal(rows.filter(r => r.fgNotAllowed).length, 1);
+});
+
+test('เรียง: ติด min ก่อน → ขาดลึกสุดก่อน → ตอบไม่ได้ต่อท้าย', () => {
+  const rows = minAlerts([
+    LV('A', 100, null), LV('B', 100, null), LV('C', 100, null), LV('D', 100, null),
+  ], (ln, m) => ({ A: 90, B: 10, C: 500, D: null }[m]));
+  assert.deepEqual(rows.map(r => r.mat_no), ['B', 'A', 'C', 'D']);
+});
+
+test('สรุปหัวข้อ — ต้องบอกได้ว่าติดกี่ตัว ตอบไม่ได้กี่ตัว และกี่ตัวที่ยังไม่รู้ว่าต้องผลิตเท่าไหร่', () => {
+  const rows = minAlerts([
+    LV('20058498', 100, null), LV('20058495', 100, 400), LV('10086024', 100, null), LV('20066660', 100, null),
+  ], (ln, m) => ({ '20058498': 80, '20058495': 80, '10086024': 80, '20066660': null }[m]), () => 'Assy GOR');
+  const s = minAlertSummary(rows);
+  assert.equal(s.atMin, 3);
+  assert.equal(s.unknown, 1);
+  assert.equal(s.noMax, 2);     // 20058498 + 10086024 ติด min แต่ไม่รู้ max
+  assert.equal(s.fgRows, 1);
+  assert.equal(s.lines, 1);
+});
+
+test('ลิสต์ว่าง/ข้อมูลเพี้ยน ต้องไม่ระเบิด', () => {
+  assert.deepEqual(minAlerts([], () => 1), []);
+  assert.deepEqual(minAlerts(null, () => 1), []);
+  assert.equal(minAlertSummary([]).atMin, 0);
+  assert.equal(minAlerts([null, LV('A', 100, null)], () => 1).length, 1);
 });

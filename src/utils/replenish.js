@@ -114,3 +114,79 @@ export function refillSummary(rows = []) {
     coverage: total ? Math.round(((need + full) / total) * 100) : null,
   };
 }
+
+/* ═══ 🔔 "ของถึง min แล้ว" — ส่งความต้องการไปหาไลน์เจ้าของงาน + ฝ่ายวางแผน (2026-11-13) ═══
+ *
+ * คำสั่ง user 13/11: *"เมื่อ stock ลดลงถึง min จะแสดงความต้องการไปหาไลน์ผลิตเจ้าของงานนั้น
+ * เพื่อให้เตรียมตัว และไปฝ่ายวางแผนเพื่อเห็นว่ามีงานตัวไหนต้องจัดแผนลง"*
+ *
+ * 🔴 **"ติด min" กับ "ต้องผลิตเท่าไหร่" เป็นคนละคำถาม — ตอบได้คนละชุด**
+ *   · ติด min = รู้ min + รู้ยอดที่นับแล้ว ⇒ **ตอบได้**
+ *   · ต้องผลิตเท่าไหร่ = ต้องรู้ max ด้วย ⇒ วัดจริง 13/11: **41 แถวของชิ้นส่วน ไม่มี max เลยสักแถว**
+ *     ⇒ ตอบ "ต้องผลิตเท่าไหร่" ไม่ได้ **ห้ามเดา** (คืน `refillPcs: null` · จอต้องเขียนว่ายังตอบไม่ได้)
+ *
+ * 🔴 **ไม่มีบัญชี ≠ ของหมด** — คู่ไลน์+พาร์ทที่ไม่มีแถวใน ledger เลย = `unknown` ห้ามนับเป็น "ติด min"
+ *   (วัดจริง 13/11: ชิ้นส่วน 7 จาก 41 แถวไม่มีบัญชีเลย) · กับดักเดียวกับ `refillNeed()` ข้างบน
+ *
+ * 🔴 **"ไลน์เจ้าของงาน" ≠ "ไลน์ที่ของไปกอง"** — เจ้าของงานมาจาก `dr_products.line_name`
+ *   (ช่อง "ไลน์" ใน Product Master) · ไลน์ที่ของกองคือ `line_part_levels.line_name`
+ *   วัดจริง 13/11: ชิ้นส่วนตรงกันทั้ง 41 แถว · FG ต่างกัน 5 แถว (แต่ FG ไม่ควรมี min ที่ไลน์อยู่แล้ว)
+ *   ⇒ **ส่งงานไปหาไลน์ ต้องใช้เจ้าของงาน ไม่ใช่ที่ของกอง** (ไม่งั้นแจ้งผิดไลน์)
+ *
+ * ⚠️ FG (mat ขึ้นต้น 1) **ห้ามมี min/max ที่ไลน์** (กฎเดิมใน `utils/monitoringSheet.js`)
+ *   แต่ทะเบียนจริงมี FG ปน 32 จาก 74 แถว ⇒ `minAlerts` ติดธง `fgNotAllowed` ให้จอเขียนบอก
+ *   **ห้ามกรองทิ้งเงียบ** (ซ่อน = ไม่มีใครรู้ว่าทะเบียนเปื้อน แล้วมันจะเปื้อนต่อไปเรื่อยๆ)
+ * ═══════════════════════════════════════════════════════════════════════════════ */
+
+/** FG = MAT ขึ้นต้นด้วย 1 (กฎเดียวกับ `utils/matPrefix.js`) — ของสำเร็จรูป ไม่ใช่ของที่ไลน์ถือ */
+export const isFgMat = (mat) => /^1/.test(String(mat ?? '').trim());
+
+/**
+ * ของที่ถึง min แล้ว — ตัวเดียวที่ทั้งจอผลิตและจอวางแผนต้องอ่าน
+ * @param levels  [{ line_name, mat_no, min_qty, max_qty, part_name }] ทะเบียน `line_part_levels`
+ * @param onHandOf (line_name, mat_no) => number|null   · **`null` = ไม่มีบัญชี ห้ามส่ง 0 มาแทน**
+ * @param ownerLineOf (mat_no) => string|null           · ไลน์เจ้าของงานจาก Product Master
+ * @returns [{ line_name, ownerLine, mat_no, part_name, min, max, onHand, state, refillPcs, why, fgNotAllowed }]
+ *          `state`: 'at_min' (ติด min แล้ว) · 'ok' (ยังพอ) · 'unknown' (ตอบไม่ได้)
+ *          เรียง: ติด min ก่อน → ขาดลึกสุดก่อน → ตอบไม่ได้ต่อท้าย (**ห้ามตัดทิ้ง**)
+ */
+export function minAlerts(levels = [], onHandOf = () => null, ownerLineOf = () => null) {
+  const rows = (levels || []).filter(Boolean).map((l) => {
+    const min = num(l.min_qty);
+    const max = num(l.max_qty);
+    const onHand = num(onHandOf(l.line_name, l.mat_no));
+    const base = {
+      line_name: l.line_name || '', mat_no: l.mat_no || '', part_name: l.part_name || '',
+      ownerLine: ownerLineOf(l.mat_no) || null,
+      min, max, onHand, refillPcs: null,
+      fgNotAllowed: isFgMat(l.mat_no),
+    };
+    if (min == null || min <= 0) return { ...base, state: 'unknown', why: 'ยังไม่ตั้ง min ของคู่ไลน์+พาร์ทนี้' };
+    /* 🔴 ไม่มีบัญชี = ยังไม่เคยนับ ไม่ใช่ของหมด — นับเป็น "ติด min" ไม่ได้ */
+    if (onHand == null) return { ...base, state: 'unknown', why: 'ไม่มีบัญชีคงเหลือของคู่นี้ — ยังไม่เคยนับ' };
+    if (onHand > min) return { ...base, state: 'ok', why: null };
+    return {
+      ...base, state: 'at_min',
+      /* รู้ max ถึงจะบอกได้ว่าเติมเท่าไหร่ — ไม่รู้ = null ให้จอเขียนว่ายังตอบไม่ได้ */
+      refillPcs: max != null && max > min ? Math.max(0, Math.round(max - onHand)) : null,
+      why: null,
+    };
+  });
+  const rank = { at_min: 0, ok: 1, unknown: 2 };
+  return rows.sort((a, b) => (rank[a.state] - rank[b.state])
+    || ((b.min - b.onHand) - (a.min - a.onHand))
+    || String(a.mat_no).localeCompare(String(b.mat_no)));
+}
+
+/** สรุปให้จอเขียนบนหัวข้อได้ตรงๆ — `noMax` = ติด min แล้วแต่ยังบอกไม่ได้ว่าต้องผลิตเท่าไหร่ */
+export function minAlertSummary(rows = []) {
+  const at = (rows || []).filter(r => r?.state === 'at_min');
+  return {
+    atMin: at.length,
+    unknown: (rows || []).filter(r => r?.state === 'unknown').length,
+    ok: (rows || []).filter(r => r?.state === 'ok').length,
+    noMax: at.filter(r => r.refillPcs == null).length,
+    fgRows: (rows || []).filter(r => r?.fgNotAllowed).length,
+    lines: [...new Set(at.map(r => r.ownerLine).filter(Boolean))].length,
+  };
+}
