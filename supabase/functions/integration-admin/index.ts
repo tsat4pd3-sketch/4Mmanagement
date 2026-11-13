@@ -22,7 +22,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 const MAIN_URL = 'https://ewhdfqwfwofivojtsizn.supabase.co';
-const KINDS = ['energy_readings', 'energy_events', 'energy_daily', 'energy_limits', 'machine_state', 'piece_count'];
+const KINDS = ['energy_readings', 'energy_events', 'energy_daily', 'energy_limits', 'machine_state', 'piece_count', 'machine_live'];
 const COLS = 'id, code, name, note, kinds, key_hint, legacy_secret, is_paused, last_seen_at, last_ok_at, last_error, updated_at, updated_by';
 const CORS = {
   'access-control-allow-origin': '*',
@@ -135,9 +135,9 @@ Deno.serve(async (req) => {
     }
     case 'map_reason': {
       if (!id) return json({ error: 'id required' }, 400);
-      const kind = body.kind === 'onplan' || body.kind === 'unplan' ? body.kind : null;
+      const kind = ['onplan', 'unplan', 'alarm'].includes(body.kind) ? body.kind : null;
       const code = Number.isInteger(Number(body.code)) && body.code !== '' && body.code != null ? Number(body.code) : null;
-      if (!kind || code == null) return json({ error: 'ต้องระบุชนิด (onplan/unplan) + รหัสเหตุผล' }, 400);
+      if (!kind || code == null) return json({ error: 'ต้องระบุชนิด (onplan/unplan/alarm) + รหัสเหตุผล' }, 400);
       if (body.clear) {
         const { error } = await sb.from('machine_reason_map').delete().eq('source_id', id).eq('reason_kind', kind).eq('reason_code', code);
         return error ? json({ error: error.message }, 500) : json({ ok: true });

@@ -11,6 +11,7 @@ import { isOpenDT, isPlannedDT, dtOpenKind, isForgottenDT, DT_OPEN_META } from '
 import { dtBucketName, dtTrashStats, buildDtIndex } from '../utils/downtimeCategory';
 import { getLineFamilyNames, getLeafLineNames, getAncestorNames, isLeafLine } from '../utils/lineHierarchy';
 import LineSelect, { lineOptions } from '../components/LineSelect';
+import LineJigCards from '../components/LineJigCards';
 import { getWorkDate } from '../utils/workDate';
 import { cachedMaster } from '../utils/masterCache';
 import { loadBreakPolicies, loadCtProducts, loadCtKanban } from '../utils/oeeMasters';
@@ -126,6 +127,8 @@ export default function LineOeeBoard() {
     return q && options.includes(q) ? q : (options[0] || '');
   }, [sp, options]);
   const setLine = (v) => { const n = new URLSearchParams(sp); n.set('line', v); setSp(n, { replace: true }); };
+  /* ไลน์ที่ใช้หาจิ๊ก Node-RED — กติกาเดียวกับ load(): leaf = ตัวเอง · แม่ = ทั้งครอบครัว (useMemo กัน array ใหม่ทุก render — กฎ DB ข้อ 9) */
+  const jigLineNames = useMemo(() => (!line || !lines.length ? [] : isLeafLine(lines, line) ? [line] : getLineFamilyNames(lines, line)), [line, lines]);
 
   /* ── โหลดข้อมูลทั้งหน้าต่าง (ไลน์เดียว 14 วัน — payload เล็ก) · poll RATE.BOARD ── */
   const begin = useLatestRequest();   // เปลี่ยนไลน์ระหว่างโหลด = คำตอบของไลน์เก่าห้ามทับจอ (กฎ DB ข้อ 4)
@@ -604,6 +607,9 @@ export default function LineOeeBoard() {
               )}
             </div>
           </div>
+
+          {/* 🏭 รายจิ๊กจากเครื่อง (Node-RED) — เฉพาะไลน์ที่ผูกเครื่องแล้ว · ไลน์อื่นไม่วาดอะไร (13/11) */}
+          <LineJigCards lineNames={jigLineNames} style={{ flex: tv ? '0 0 auto' : undefined }} />
 
           {/* footer สถานะปัจจุบัน — กระพริบเฉพาะแดง (DT นอกแผนค้าง) ตาม Andon */}
           <div style={{ ...card, display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 14, padding: '8px 16px', flex: tv ? '0 0 auto' : undefined }}>

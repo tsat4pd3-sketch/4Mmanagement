@@ -14,7 +14,8 @@ import { getLineFamilyNames } from '../utils/lineHierarchy';
 import { can } from '../utils/permissions';
 import { toast } from '../components/Toast';
 import useIsMobile from '../utils/useIsMobile';
-import OeeInsightPanel from '../components/OeeInsightPanel';
+import OeeInsightPanel from '../components/OeeInsightPanel'
+import JigOeeAnalytics from '../components/JigOeeAnalytics';
 import ParetoAbcChart from '../components/ParetoAbcChart';
 import DowntimeTimeline from '../components/DowntimeTimeline';
 import { pairAwareTotal, collapseOps, orderTotal } from '../utils/pairTotals';
@@ -311,7 +312,7 @@ const STATUS_BADGE = {
 export default function OEEAnalytics() {
   const { role, lineId: userLineId, sections: scopeSecs = [], fullName, scopeIdx } = useContext(UserContext);
   const isMobile = useIsMobile(); // ≤768px: grid วิเคราะห์ยุบเป็นคอลัมน์เดียว กันกราฟถูกตัด (desktop ไม่เปลี่ยน)
-  const [viewTab, setViewTab] = useTabParam(['today', 'trend', 'insight'], 'today');
+  const [viewTab, setViewTab] = useTabParam(['today', 'trend', 'insight', 'machine'], 'today');
   // break_policies — ใช้คิดเวลาพักนโยบายสำหรับ OOE/TEEP (ต้องประกาศก่อน tdKpi/kpi ที่เรียกใช้)
   const [breakPols, setBreakPols] = useState([]);
   /* 🔀 "เครื่องไหนหยุดแล้วครอบกี่เลน" (machines.affects_lanes · utils/affectsLanes.js)
@@ -1422,6 +1423,7 @@ export default function OEEAnalytics() {
           { key: 'today', label: 'ภาพรวมวันนี้' },
           { key: 'trend', label: 'แนวโน้ม/ประวัติ' },
           { key: 'insight', label: 'วิเคราะห์สาเหตุ' },
+          { key: 'machine', label: 'รายเครื่อง (จากเครื่องจักร)' },
         ]}
         tab={viewTab} onTab={setViewTab}
         actions={<>
@@ -1970,6 +1972,9 @@ export default function OEEAnalytics() {
             );
           })()}
         </>
+      ) : viewTab === 'machine' ? (
+        /* 🏭 OEE รายจิ๊กจากข้อมูลเครื่อง (Node-RED) — สูตร ESM · คนละชุดกับ OEE ไลน์ที่ประทับ (13/11 · คำสั่ง user) */
+        <JigOeeAnalytics />
       ) : viewTab === 'insight' ? (
         /* ขอบเขตที่เจาะมา (section จากแท็บวันนี้ = ค่าที่รับจาก URL แล้วตรวจสิทธิ์แล้ว) ต้องตามมาถึงแท็บนี้ด้วย
            ไม่งั้นเจาะ "ดูของเสียละเอียด" จาก OBEYA ที่กรอง PD4 แล้วได้พาเรโตทั้งโรงงาน */

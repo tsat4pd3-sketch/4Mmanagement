@@ -40,19 +40,21 @@ export function factShiftOf(v) {
  *  หยุดตามแผน/ไม่มีแผน = OnplanMaster · FAULT/IDLE = UnplanMaster · COMM_LOSS/อื่นๆ = ยังไม่รู้ ⇒ null (ห้ามเดา) */
 export function reasonKindOf(state) {
   if (state === 'planned_stop' || state === 'no_plan') return 'onplan';
-  if (state === 'fault' || state === 'idle') return 'unplan';
+  if (state === 'fault') return 'alarm';                          // 13/11: FAULT = AlarmMaster (หลักฐานจากจอ Node-RED)
+  if (state === 'unplanned' || state === 'idle') return 'unplan';
   return null;
 }
 
 export const STATE_META = {
-  fault:        { label: 'เสีย / ขัดข้อง', color: 'var(--red, #e5484d)' },
+  fault:        { label: 'Alarm / เสีย', color: 'var(--red, #e5484d)' },
+  unplanned:    { label: 'หยุดนอกแผน',   color: 'var(--orange, #f97316)' },
   idle:         { label: 'ว่าง (รอ)',      color: 'var(--yellow, #f5a524)' },
   planned_stop: { label: 'หยุดตามแผน',     color: 'var(--blue, #3b82f6)' },
   no_plan:      { label: 'ไม่มีแผนผลิต',   color: 'var(--text-dim, #888)' },
   comm_loss:    { label: 'ขาดการสื่อสาร',  color: 'var(--purple, #a855f7)' },
   other:        { label: 'อื่นๆ (ต้นทางส่งค่าที่ไม่รู้จัก)', color: 'var(--text-dim, #888)' },
 };
-export const STATE_ORDER = ['fault', 'idle', 'planned_stop', 'no_plan', 'comm_loss', 'other'];
+export const STATE_ORDER = ['fault', 'unplanned', 'idle', 'planned_stop', 'no_plan', 'comm_loss', 'other'];
 
 /** tag → machine_id จากทะเบียนจับคู่ (เฉพาะที่ผูกแล้ว) */
 export function tagIndex(tagMap = []) {
@@ -140,7 +142,7 @@ export function stopTotals(stopSec = {}) {
   const v = (k) => Number(stopSec[k]) || 0;
   return {
     all: STATE_ORDER.reduce((s, k) => s + v(k), 0),
-    unplanned: v('fault') + v('idle'),
+    unplanned: v('fault') + v('unplanned') + v('idle'),
     planned: v('planned_stop') + v('no_plan'),
     unknown: v('comm_loss') + v('other'),
   };
@@ -172,7 +174,8 @@ export function reasonRows(states = [], reasonMap = []) {
   }
   // ที่เคยจับคู่ไว้แต่ช่วงนี้ไม่เห็น ยังต้องโชว์ (แก้/ลบได้)
   for (const [key, m] of mapped) if (!out.has(key)) out.set(key, { kind: m.reason_kind, code: m.reason_code, text: m.reason_text, count: 0, sec: 0, map: m });
-  const rows = [...out.values()].sort((a, b) => (a.kind === b.kind ? a.code - b.code : a.kind === 'onplan' ? -1 : 1));
+  const KORD = { onplan: 0, alarm: 1, unplan: 2 };
+  const rows = [...out.values()].sort((a, b) => (a.kind === b.kind ? a.code - b.code : (KORD[a.kind] ?? 9) - (KORD[b.kind] ?? 9)));
   return { rows, unmappable, noReason };
 }
 
@@ -304,7 +307,7 @@ export function faultGaps({
   for (const t of tagMap || []) if (t?.tag && t?.machine_id && noById.get(t.machine_id)) tagNo.set(t.tag, noById.get(t.machine_id));
   const withOrders = new Set((orders || []).map(o => (o?.machine_no ? machineKey(o.machine_no) : '')).filter(Boolean));
   const dts = (downtimes || []).map(d => ({ mk: d?.machine_no ? machineKey(d.machine_no) : '', iv: dtInterval(d, nowMs) })).filter(d => d.iv);
-  const rmap = new Map((reasonMap || []).filter(r => r.reason_kind === 'unplan').map(r => [Number(r.reason_code), r.downtime_type_id || null]));
+  const rmap = new Map((reasonMap || []).filter(r => r.reason_kind === 'alarm').map(r => [Number(r.reason_code), r.downtime_type_id || null]));
 
   const out = [];
   for (const s of states || []) {

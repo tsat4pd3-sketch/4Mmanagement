@@ -57,7 +57,9 @@ test('flow PD2: ช่วงหยุด + นับชิ้น ส่งข้
   assert.match(all, /FROM oee_stop/);
   assert.match(all, /FROM oee_piece/);
   assert.match(all, /IN \('PLANNED_STOP', 'NO_PLAN'\) THEN o\.Description/);
-  assert.match(all, /IN \('FAULT', 'IDLE'\) THEN u\.Description/);
+  assert.match(all, /= 'FAULT' THEN a\.Description/);
+  assert.match(all, /IN \('UNPLANNED', 'IDLE'\) THEN u\.Description/);
+  assert.match(all, /LEFT JOIN AlarmMaster a ON a\.AlarmCode = s\.reason_code/);
   assert.match(all, /DATE_FORMAT\(s\.start_ts/);                                 // ไม่ปล่อย Date ของ mysql node (โซนเพี้ยน)
   assert.match(all, /msg\.payload = \{ states: rows \}/);
   assert.match(all, /msg\.payload = \{ pieces: rows \}/);
@@ -103,4 +105,14 @@ test('edge integration-admin ใช้รายชื่อชนิดเดี
   const edge = [...m[1].matchAll(/'([^']+)'/g)].map(x => x[1]).sort();
   assert.deepEqual(edge, INTEGRATION_KINDS.map(k => k.key).sort(),
     '\n❌ ชนิดข้อมูลใน edge integration-admin ไม่ตรง src/utils/integrationKinds.js — แก้ 2 ที่ให้ตรงกันแล้ว deploy edge ใหม่\n');
+});
+
+test('flow PD2: สถานะสด ส่งข้อความต้นทางตามจริง (MachineStatus) · ไม่แปลรหัสเอง', () => {
+  const r = buildNodeRedFlow({ source: { code: 'pd2-oee', key_hint: 'ab12' }, kinds: ['machine_live'], ingestUrl: 'https://x.test/f' });
+  assert.deepEqual(r.built, ['machine_live']);
+  const all = r.nodes.map(n => n.func || '').join('\n');
+  assert.match(all, /FROM MachineStatus m/);
+  assert.match(all, /MAX\(d\.StartTime\)/);
+  assert.match(all, /msg\.payload = \{ live: rows \}/);
+  assert.doesNotMatch(all, /oee_shift|availability/i);
 });

@@ -26,6 +26,9 @@ export const INTEGRATION_KINDS = [
   { key: 'piece_count', label: 'นับชิ้น', icon: '🔢', status: 'live', module: 'oee',
     body: 'pieces', dest: 'machine_counters', home: null,
     help: 'ชิ้นต่อนาทีจากเครื่อง (+NG ที่กดหน้าเครื่อง) — เทียบกับยอดที่คนลง · ยังไม่เข้าสูตร OEE · เก็บ 90 วัน' },
+  { key: 'machine_live', label: 'สถานะสดของเครื่อง', icon: '🟢', status: 'live', module: 'oee',
+    body: 'live', dest: 'machine_live_state', home: '/line-oee',
+    help: 'ตอนนี้เครื่องอยู่สถานะไหน มาตั้งแต่เมื่อไหร่ (ข้อความตามต้นทาง) · 1 แถว/เครื่อง ทับทุกนาที' },
 ];
 
 export const kindOf = (key) => INTEGRATION_KINDS.find(k => k.key === key) || null;

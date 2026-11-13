@@ -170,7 +170,8 @@ return msg;` },
 
   if (want.has('machine_state')) {
     built.push('machine_state');
-    // เหตุผล: หยุดตามแผน (PLANNED_STOP/NO_PLAN) อ่านจาก OnplanMaster · FAULT/IDLE อ่านจาก UnplanMaster (ยืนยันโดย user 11/11)
+    // เหตุผล: หยุดตามแผน (PLANNED_STOP/NO_PLAN) = OnplanMaster · FAULT = AlarmMaster (หลักฐาน 13/11: รหัส 15 จอ Node-RED
+    //         = "Robot Water Flow Error") · UNPLANNED/IDLE = UnplanMaster (user 11/11)
     //         สถานะอื่น (COMM_LOSS) ยังไม่รู้ว่าใช้ master ไหน ⇒ ส่งรหัสดิบ ไม่ส่งชื่อ (ห้ามเดา)
     block('s', 'ESM: ช่วงหยุดของเครื่องทุก 1 นาที (oee_stop · ส่ง 5 นาทีล่าสุด · ซ้ำ = ทับ)', { name: 'ทุก 1 นาที', repeat: '60', once: true, onceDelay: '15' },
       { name: 'SQL ช่วงหยุด 5 นาที', code:
@@ -180,11 +181,13 @@ SELECT s.machine_id AS machine,
        DATE_FORMAT(s.end_ts, '%Y-%m-%d %H:%i:%s') AS end,
        s.duration_sec, s.state, s.reason_code, s.is_minor,
        CASE WHEN s.state IN ('PLANNED_STOP', 'NO_PLAN') THEN o.Description
-            WHEN s.state IN ('FAULT', 'IDLE') THEN u.Description
+            WHEN s.state = 'FAULT' THEN a.Description
+            WHEN s.state IN ('UNPLANNED', 'IDLE') THEN u.Description
             ELSE NULL END AS reason_text
 FROM oee_stop s
 LEFT JOIN OnplanMaster o ON o.OnplanCode = s.reason_code
 LEFT JOIN UnplanMaster u ON u.UnplanCode = s.reason_code
+LEFT JOIN AlarmMaster a ON a.AlarmCode = s.reason_code
 WHERE s.end_ts >= NOW() - INTERVAL 5 MINUTE
 ORDER BY s.start_ts
 LIMIT 2000\`;
@@ -222,6 +225,38 @@ ${hdr}
 msg.payload = { pieces: rows };
 return msg;` },
       'ผลส่งนับชิ้น');
+  }
+
+  if (want.has('machine_live')) {
+    built.push('machine_live');
+    // MachineStatus = สถานะปัจจุบัน 1 แถว/เครื่อง · since = เริ่มช่วงสถานะล่าสุดจาก View_MachineState_Duration
+    // ส่งข้อความตามต้นทาง — ESM ไม่แปลรหัส MCStateType เอง (ห้ามเดา)
+    block('v', 'ESM: สถานะสดของเครื่องทุก 1 นาที (MachineStatus)', { name: 'ทุก 1 นาที', repeat: '60', once: true, onceDelay: '35' },
+      { name: 'SQL สถานะปัจจุบัน', code:
+`msg.topic = \`
+SELECT m.MachineID AS machine,
+       m.MCStateType AS state_code,
+       f.MCStateDescription AS state_text,
+       f.AlarmDescription AS alarm_text,
+       f.OnplanDescription AS onplan_text,
+       f.UnplanDescription AS unplan_text,
+       m.ProductionEnable AS production_enable,
+       m.TotalProduct AS total_product,
+       DATE_FORMAT(m.LastUpdate, '%Y-%m-%d %H:%i:%s') AS last_update,
+       (SELECT DATE_FORMAT(MAX(d.StartTime), '%Y-%m-%d %H:%i:%s')
+          FROM View_MachineState_Duration d
+         WHERE d.MachineID = m.MachineID AND d.StartTime >= NOW() - INTERVAL 1 DAY) AS since
+FROM MachineStatus m
+LEFT JOIN View_MachineStatus_Formatted f ON f.MachineID = m.MachineID\`;
+return msg;` },
+      'MachineStatus (เลือก DB db_user02)',
+      { name: '→ live', code:
+`const rows = Array.isArray(msg.payload) ? msg.payload : [];
+if (!rows.length) { node.warn('MachineStatus ไม่มีแถว — ไม่ส่ง'); return null; }
+${hdr}
+msg.payload = { live: rows };
+return msg;` },
+      'ผลส่งสถานะสด');
   }
 
   if (nodes.length) {

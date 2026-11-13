@@ -49,8 +49,8 @@ Node-RED (ต้นทาง) ──POST /functions/v1/ingest-energy──▶ ES
 |---|---|
 | `supabase/migrations/20261111_integration_hub_dr.sql` (DR · **apply แล้ว 11/11**) | `integration_sources` · `integration_hourly` · `fn_integration_tick` · seed `dieshop` (legacy) |
 | `supabase/migrations/20261111b_integration_hub_perm_main.sql` (Main · **apply แล้ว 11/11**) | `permission_catalog` `integration:manage` (sort 919 · ค่าเริ่มต้น admin) |
-| `supabase/functions/ingest-energy` (**v7 deploy 11/11**) | `identify()` ระบุต้นทาง · พัก 423 · `tick` ทุกครั้ง · `states`/`pieces` |
-| `supabase/functions/integration-admin` (**v2 deploy 11/11** · verify_jwt=true) | create / rotate / update / pause / resume / legacy_off / map_tag / map_reason |
+| `supabase/functions/ingest-energy` (**v8 deploy 13/11**) | `identify()` ระบุต้นทาง · พัก 423 · `tick` ทุกครั้ง · `states`/`pieces` |
+| `supabase/functions/integration-admin` (**v3 deploy 13/11** · verify_jwt=true) | create / rotate / update / pause / resume / legacy_off / map_tag / map_reason |
 | `supabase/migrations/20261111c_machine_facts_dr.sql` (DR · **apply แล้ว**) | `machine_tag_map` · `machine_state_events` · `machine_counters` |
 | `supabase/migrations/20261111d_machine_reason_map_dr.sql` (DR · **apply แล้ว**) | `machine_reason_map` (เหตุผลต้นทาง → `dr_downtime_types`) |
 | `supabase/migrations/20261111e_machine_counter_hourly_dr.sql` (DR · **apply แล้ว**) | rpc `fn_machine_counter_hourly` (รวมรายชั่วโมง · ไม่คิด KPI) |
@@ -80,7 +80,7 @@ Node-RED (ต้นทาง) ──POST /functions/v1/ingest-energy──▶ ES
 3. **เวลา:** SQL ใน flow ใช้ `DATE_FORMAT` เป็นสตริงไทย (ไม่ปล่อย Date ของ mysql node) → edge `bkk()` ต่อ +07:00
 4. **ชิ้นที่อ่านยอดไม่ออก = ทิ้ง ห้ามบีบเป็น 0** · นาทีที่ไม่มีแถว = "ไม่รู้" ไม่ใช่ 0 · ส่งซ้ำ = ทับ (ต้นทางส่งยอดเต็มนาที)
 5. **เก็บรหัสเครื่องของต้นทาง (`machine_tag`) ผูกกับ `machines.id` ตอนอ่าน** — แก้การผูกแล้วข้อมูลย้อนหลังตามเอง
-6. **เหตุผล:** `PLANNED_STOP`/`NO_PLAN` → OnplanMaster · `FAULT`/`IDLE` → UnplanMaster (user ยืนยัน 11/11) ·
+6. **เหตุผล:** `PLANNED_STOP`/`NO_PLAN` → OnplanMaster · **`FAULT` → AlarmMaster** (แก้ 13/11 — หลักฐาน: รหัส 15 จอ Node-RED = "Robot Water Flow Error" แต่เดิม join UnplanMaster ได้ "รอชิ้นงานจาก Store") · `UNPLANNED`/`IDLE` → UnplanMaster ·
    รหัสเลขเดียวกันคนละ master ⇒ คีย์ = `(reason_kind, reason_code)` · `COMM_LOSS` = ไม่รู้ ⇒ ไม่ส่งชื่อ ไม่ให้จับคู่ (`reasonKindOf()`)
 6.1 **รหัสเหตุผล 0 = "ปกติ / ไม่ได้กดเหตุผล"** (พนักงานรีเซ็ตแล้วกลับเป็น 0 · user ยืนยัน 13/11) — ไม่ใช่เหตุผลหยุด
    ⇒ ไม่อยู่ในรายการจับคู่ · จอนับแยกว่ากี่ช่วง/กี่นาที (`NO_REASON_CODE` · `reasonRows().noReason`)
@@ -117,3 +117,39 @@ user เลือกจาก 4 ทาง: ① เทียบอย่างเ
 |---|---|
 | `src/utils/machineFacts.js` `faultGaps()` | กฎตัดสิน (pure · มีเทส) |
 | `src/components/MachineFaultGaps.jsx` | แถบเตือนใน Daily Report การ์ด Downtime |
+
+## 🏭 OEE รายจิ๊ก/เครื่อง จากข้อมูลเครื่อง (13/11 · คำสั่ง user "ทำให้หมด ให้ ESM เหนือกว่า Node-RED")
+
+**จอ:** `/line-oee` แถวการ์ดรายจิ๊ก (`LineJigCards` · เฉพาะไลน์ที่ผูก Node-RED) · `/oee-analytics?tab=machine`
+(`?mview=shift` ภาพรวมกะ + ดูลึก `?jig=` · `?mview=report` รายงานช่วงวัน + Pareto + Loss + เทียบเครื่อง + รายกะ + CSV `csv_jig_oee_shift`)
+
+**กฎ (ห้ามหลุด):**
+1. **สูตรอยู่ `src/utils/machineOee.js` ที่เดียว** (pure · มีเทส) · โหลด/ประกอบ `src/lib/jigOeeData.js` · วาด `src/components/JigOee.jsx` — ห้ามคิดในหน้า
+2. **เป็น OEE "รายจิ๊ก" แยกจาก OEE ไลน์ที่ประทับตอนปิดกะ** (`oee.js`) — ห้ามเอาไปทับ/เฉลี่ยรวม · จอเขียนกำกับเสมอ
+3. นิยามเวลา: แผน = กรอบกะที่ผ่านไป − ไม่มีแผน − หยุดตามแผน − ขาดการสื่อสาร (กันออก+บอก) ·
+   เสีย A = Alarm + หยุดนอกแผน + Idle ที่**ไม่ใช่**หยุดสั้น · หยุดสั้นของ Alarm/หยุดนอกแผน = เสีย P ·
+   **Idle สั้น = จังหวะโหลดงาน นับเป็นเวลาเดิน** (ตรงจอ Node-RED: Idle≥2 นาที 33 น. = ของเรา 33.4 น.)
+4. **P = ชิ้นทั้งหมด (`qty` รวม NG — user ยืนยัน) × CT ของ MAT ในใบบนจิ๊ก ÷ เวลาเดิน** · ไม่มีใบ/ไม่มี CT = `null` + เหตุผล
+   (**ห้ามใช้ ideal ของต้นทาง**) · หลาย MAT CT ต่างกัน = ถ่วงยอดที่ยืนยัน + บอก · P > 100% = ตัด + ชูธง `pOver`
+5. **Q = NG ที่คนตัดสิน** (`defectQty` ของ defect_logs ผ่าน `prod_order_id` ของใบบนจิ๊ก) · NG หน้าเครื่อง = โชว์คู่ ไม่ใช้คิด
+6. รวมหลายกะ/จิ๊ก = **ถ่วงเวลา** (`combineJigRows`) ห้ามเฉลี่ย % · ย้อนหลังใช้ rpc `fn_machine_shift_facts` (แค่รวมวินาที)
+7. MTTR/MTBF จาก Alarm ของเครื่อง (คนละแหล่งกับ `/mtn-analysis` ที่คิดจากใบแจ้งซ่อม)
+8. เทียบจอ Node-RED 13/11 JTSRA03-04: A 85.4 vs 85.3 · P 95.5 vs 95.8 (ต่างแค่ปัดนาที) — เทสล็อกไว้
+
+**ที่ ESM เหนือกว่า:** CT รายพาร์ทจากใบจริง · Q จาก QA · ชิ้นเครื่อง vs ยืนยัน vs แผน ต่อจิ๊ก · เหตุผลที่คิดไม่ได้เขียนบนจอ ·
+เตือนเครื่องเสียที่ยังไม่ลง downtime (ทางที่ 2) · ผูกกับใบผลิต/QA/ซ่อมของ ESM
+
+## 🟢 สถานะสด `machine_live` (13/11)
+- `oee_stop` ส่งได้แค่ช่วงหยุดที่จบแล้ว ⇒ ชนิดใหม่ `machine_live` อ่าน `MachineStatus` + `View_MachineState_Duration` (since)
+- ตาราง `machine_live_state` (1 แถว/เครื่อง ทับทุกนาที · migration `20261113d`) · edge ingest-energy **v8** รับ `body.live`
+- 🔴 **เก็บ/โชว์ข้อความตามต้นทาง ไม่แปลรหัส MCStateType เอง** (ยังไม่รู้ MCStateMaster) ⇒ ชิปสถานะสดไม่มีสี
+- ส่งเกิน 3 นาที (`LIVE_STALE_MS`) = การ์ดถอยไป "สถานะล่าสุดที่รู้*" + เขียนว่าสถานะสดขาด
+
+| ไฟล์ | หน้าที่ |
+|---|---|
+| `supabase/migrations/20261113_machine_facts_alarm_unplanned_dr.sql` (DR · apply แล้ว) | state `unplanned` · reason_kind `alarm` |
+| `supabase/migrations/20261113b_machine_shift_facts_dr.sql` (DR · apply แล้ว) | rpc `fn_machine_shift_facts` (ตัดคร่อมกะ) |
+| `supabase/migrations/20261113c_doc_forms_csv_jig_oee_main.sql` (Main · apply แล้ว) | ทะเบียน CSV `csv_jig_oee_shift` |
+| `supabase/migrations/20261113d_machine_live_state_dr.sql` (DR · apply แล้ว) | `machine_live_state` |
+| `src/utils/machineOee.js` · `src/lib/jigOeeData.js` | สูตร · โหลด |
+| `src/components/JigOee.jsx` · `JigOeeAnalytics.jsx` · `LineJigCards.jsx` | การ์ด/ดูลึก/รายงาน · แท็บ · แถวบน /line-oee |

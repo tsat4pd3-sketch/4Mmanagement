@@ -7,6 +7,7 @@
       secrets: INGEST_SECRET (ต้องตรงกับฝั่ง bridge) · SUPABASE_URL · SUPABASE_SERVICE_ROLE_KEY
 
    สายงาน: MQTT → bridge (สรุป 15 นาที) → ที่นี่ → energy_live / energy_topic_unmapped
+   v8 (2026-11-13): + body.live (สถานะสดต่อเครื่อง → machine_live_state) · STATE_MAP + UNPLANNED
    v6 (2026-11-11): + body.states (ช่วงหยุดของเครื่อง → machine_state_events) + body.pieces (ชิ้นต่อนาที → machine_counters)
      ข้อมูลจากเครื่อง "เฟสเดินคู่" — ยังไม่เข้าสูตร OEE · ต้องระบุต้นทางได้ (source id) ไม่งั้นข้าม · เก็บ 90 วัน
    v5 (2026-11-11): ศูนย์เชื่อมต่อ — รู้ว่า "ใครส่ง" (integration_sources · 📄 docs/modules/integration-hub.md)
@@ -95,7 +96,7 @@ Deno.serve(async (req) => {
   try { res = await handle(sb, req, src.id); } catch (e) { res = json({ ok: false, error: String((e as Error)?.message || e) }, 500); }
   let out: any = null;
   try { out = await res.clone().json(); } catch { /* ไม่ใช่ json */ }
-  const saved = ['saved', 'history', 'events', 'daily', 'states', 'pieces'].reduce((s, k) => s + (Number(out?.[k]) || 0), 0)
+  const saved = ['saved', 'history', 'events', 'daily', 'states', 'pieces', 'live'].reduce((s, k) => s + (Number(out?.[k]) || 0), 0)
     + (Number(out?.limits?.updated) || 0);
   await tick(res.status < 300, saved, out?.error ?? (res.status < 300 ? null : `HTTP ${res.status}`),
     out ? { status: res.status, ...out } : { status: res.status });
@@ -103,7 +104,7 @@ Deno.serve(async (req) => {
 });
 
 /** สถานะดิบของต้นทาง → ชุดค่าของ ESM (ไม่รู้จัก = 'other' เก็บค่าดิบไว้ใน source_state ไม่ทิ้ง) */
-const STATE_MAP: Record<string, string> = { FAULT: 'fault', IDLE: 'idle', PLANNED_STOP: 'planned_stop', NO_PLAN: 'no_plan', COMM_LOSS: 'comm_loss' };
+const STATE_MAP: Record<string, string> = { FAULT: 'fault', UNPLANNED: 'unplanned', IDLE: 'idle', PLANNED_STOP: 'planned_stop', NO_PLAN: 'no_plan', COMM_LOSS: 'comm_loss' };
 const FACTS_KEEP_DAYS = 90;
 
 async function handle(sb: any, req: Request, sourceId: string | null): Promise<Response> {
@@ -115,12 +116,29 @@ async function handle(sb: any, req: Request, sourceId: string | null): Promise<R
   const limits: any[] = Array.isArray(body?.limits) ? body.limits : [];
   const states: any[] = Array.isArray(body?.states) ? body.states : [];
   const pieces: any[] = Array.isArray(body?.pieces) ? body.pieces : [];
-  if (!readings.length && !events.length && !daily.length && !limits.length && !states.length && !pieces.length) return json({ ok: true, saved: 0 });
+  const liveIn: any[] = Array.isArray(body?.live) ? body.live : [];
+  if (!readings.length && !events.length && !daily.length && !limits.length && !states.length && !pieces.length && !liveIn.length) return json({ ok: true, saved: 0 });
 
   /* 🏭 ข้อมูลจากเครื่อง (v6) — ต้องรู้ต้นทาง (ผูก tag ↔ เครื่องต่อต้นทาง) · เวลาต้นทาง = เวลาไทยไม่มีโซน ⇒ bkk() */
-  let stSaved = 0, pcSaved = 0;
-  if ((states.length || pieces.length) && !sourceId) {
-    return json({ ok: false, error: 'states/pieces ต้องส่งจากต้นทางที่ลงทะเบียน (x-source-key หรือ x-source)' }, 400);
+  let stSaved = 0, pcSaved = 0, lvSaved = 0;
+  if ((states.length || pieces.length || liveIn.length) && !sourceId) {
+    return json({ ok: false, error: 'states/pieces/live ต้องส่งจากต้นทางที่ลงทะเบียน (x-source-key หรือ x-source)' }, 400);
+  }
+  /* 🟢 สถานะสด (v8 · 13/11) — 1 แถว/เครื่อง ทับทุกครั้ง · เก็บข้อความต้นทางตามจริง (ESM ไม่แปลรหัสสถานะเอง) */
+  if (liveIn.length) {
+    const txt = (v: unknown) => (v == null || v === '' ? null : String(v).slice(0, 200));
+    const rows = liveIn.map((x: any) => ({
+      source_id: sourceId, machine_tag: String(x.machine ?? '').trim(),
+      state_code: num(x.state_code), state_text: txt(x.state_text), since: bkk(x.since),
+      alarm_text: txt(x.alarm_text), onplan_text: txt(x.onplan_text), unplan_text: txt(x.unplan_text),
+      production_enable: x.production_enable == null ? null : !!Number(x.production_enable),
+      total_product: num(x.total_product), source_updated_at: bkk(x.last_update), received_at: new Date().toISOString(),
+    })).filter((r: any) => r.machine_tag);
+    if (rows.length) {
+      const { error } = await sb.from('machine_live_state').upsert(rows, { onConflict: 'source_id,machine_tag' });
+      if (error) return json({ ok: false, error: `live: ${error.message}` }, 500);
+      lvSaved = rows.length;
+    }
   }
   if (states.length) {
     const rows = states.map((x: any) => {
@@ -155,7 +173,7 @@ async function handle(sb: any, req: Request, sourceId: string | null): Promise<R
     }
   }
   if (!readings.length && !events.length && !daily.length && !limits.length) {
-    return json({ ok: true, saved: 0, states: stSaved, pieces: pcSaved });
+    return json({ ok: true, saved: 0, states: stSaved, pieces: pcSaved, live: lvSaved });
   }
 
   // ทะเบียน topic → จุดวัด (ตั้งจากหน้า /energy แท็บ 📡)
@@ -322,5 +340,5 @@ async function handle(sb: any, req: Request, sourceId: string | null): Promise<R
   }
 
   return json({ ok: true, saved: live.length, history: histSaved, unmapped: unknown.length, events: evSaved, daily: daySaved,
-    limits: { updated: limUpdated, unknown: limUnknown }, states: stSaved, pieces: pcSaved });
+    limits: { updated: limUpdated, unknown: limUnknown }, states: stSaved, pieces: pcSaved, live: lvSaved });
 }

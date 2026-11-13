@@ -14,10 +14,11 @@ test('กะ ESM จากเวลาไทย: 07:59 = ดึกของเ�
   assert.equal(factShiftOf('ไม่ใช่เวลา'), null);
 });
 
-test('master เหตุผล: ตามแผน/ไม่มีแผน = onplan · FAULT/IDLE = unplan · COMM_LOSS = ไม่รู้ (null)', () => {
+test('master เหตุผล: ตามแผน/ไม่มีแผน = onplan · FAULT = alarm · UNPLANNED/IDLE = unplan · COMM_LOSS = ไม่รู้ (null)', () => {
   assert.equal(reasonKindOf('planned_stop'), 'onplan');
   assert.equal(reasonKindOf('no_plan'), 'onplan');
-  assert.equal(reasonKindOf('fault'), 'unplan');
+  assert.equal(reasonKindOf('fault'), 'alarm');
+  assert.equal(reasonKindOf('unplanned'), 'unplan');
   assert.equal(reasonKindOf('idle'), 'unplan');
   assert.equal(reasonKindOf('comm_loss'), null);
 });
@@ -68,10 +69,10 @@ test('เหตุผล: แยกตาม master (รหัสเดียว
     { state: 'comm_loss', reason_code: 0 },
   ], [{ reason_kind: 'unplan', reason_code: 9, reason_text: 'JIG', downtime_type_id: 't1' }]);
   assert.equal(unmappable, 1);
-  assert.deepEqual(rows.map(r => `${r.kind}:${r.code}:${r.count}`), ['onplan:3:1', 'unplan:3:3', 'unplan:9:0']);
-  assert.equal(rows[1].sec, 160);
+  assert.deepEqual(rows.map(r => `${r.kind}:${r.code}:${r.count}`), ['onplan:3:1', 'alarm:3:2', 'unplan:3:1', 'unplan:9:0']);
+  assert.equal(rows[1].sec, 150);
   assert.equal(rows[1].text, 'Robot alarm');
-  assert.equal(rows[2].map.downtime_type_id, 't1');
+  assert.equal(rows[3].map.downtime_type_id, 't1');
 });
 
 test('เสนอประเภท downtime: ชื่อตรงเป๊ะตัวเดียวเท่านั้น · คล้าย/ซ้ำ = ไม่เสนอ', () => {
@@ -157,7 +158,7 @@ test('เครื่องเสียแต่ยังไม่ลง DT: FAU
     tagMap: [{ tag: 'T3', machine_id: 'm3' }, { tag: 'T4', machine_id: 'm4' }, { tag: 'T9', machine_id: null }],
     machines: [{ id: 'm3', machine_no: 'JTSRA03-03' }, { id: 'm4', machine_no: 'JTSRA03-04' }],
     orders: [{ machine_no: 'jtsra 03-03' }],                       // มีใบเฉพาะ 03-03
-    reasonMap: [{ reason_kind: 'unplan', reason_code: 7, downtime_type_id: 'dtRobot' }],
+    reasonMap: [{ reason_kind: 'alarm', reason_code: 7, downtime_type_id: 'dtRobot' }],
     session, nowMs: Date.parse(bkk('2026-11-13T15:00:00')),
   };
   const st = (tag, a, b, extra = {}) => ({ machine_tag: tag, started_at: bkk(`2026-11-13T${a}:00`), ended_at: bkk(`2026-11-13T${b}:00`), state: 'fault', reason_code: 7, ...extra });

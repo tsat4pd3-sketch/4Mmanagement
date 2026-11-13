@@ -677,6 +677,14 @@ const TABLE_ROWS = {
     hour_at: isNullish(r) ? null : new Date(Date.now() - (i + 1) * 3600000).toISOString(),
     qty: 40 + i, ng: i % 2, minutes: 60,
   }),
+  fn_machine_shift_facts: (r, i) => ({
+    ...r, machine_tag: `JTSRA03-0${(i % 4) + 1}`, work_date: '2026-11-13', shift: i % 2 ? 'night' : 'day',
+    state: ['fault', 'idle', 'planned_stop', 'no_plan', 'unplanned'][i % 5], is_minor: i % 3 === 0, sec: 300 + i * 10, n: 1 + (i % 4),
+  }),
+  machine_live_state: (r, i) => ({
+    ...r, machine_tag: `JTSRA03-0${(i % 4) + 1}`, state_code: i % 5, state_text: i % 2 ? 'รองาน/Idle' : 'เดินเครื่อง',
+    since: new Date(Date.now() - (i + 1) * 60000).toISOString(), alarm_text: i % 3 ? null : 'None', received_at: new Date(Date.now() - (i % 2 ? 30000 : 600000)).toISOString(),
+  }),
   machine_reason_map: (r, i) => ({ ...r, reason_kind: i % 2 ? 'onplan' : 'unplan', reason_code: i % 4, downtime_type_id: i % 3 ? `id-${i}` : null }),
 
   v_demand_flow_blocks: (r, i) => ({
