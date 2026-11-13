@@ -10,6 +10,7 @@ import { detectMonthColumns, detectVarRows, extractValues, rowLabels, IMPORT_MUL
 import { getWorkDate } from '../utils/workDate';
 import { PLANT_BASE_KEY } from '../utils/kpiFormula';
 
+import { tr } from '../utils/i18n';
 const MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 const fmt = (v) => (v == null ? '–' : Number(v).toLocaleString('th-TH', { maximumFractionDigits: 2 }));
 const memKey = (sheet) => `esm.kpiBaseImport.${sheet}`;
@@ -124,41 +125,41 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', boxShadow: 'var(--shadow-lg)', width: 'min(1180px, 100%)', maxHeight: '92vh', overflow: 'auto', padding: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <b style={{ fontSize: 14, color: 'var(--text)' }}>นำเข้าตัวเลขฐานจาก Excel ของบัญชี — ปี {year + 543}</b>
-          <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>ค่ากลาง → ทั้งโรงงาน · ยอดเงินของหน่วย → {unitLabel}</span>
+          <b style={{ fontSize: 14, color: 'var(--text)' }}>{tr('นำเข้าตัวเลขฐานจาก Excel ของบัญชี — ปี')} {year + 543}</b>
+          <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('ค่ากลาง → ทั้งโรงงาน · ยอดเงินของหน่วย →')} {unitLabel}</span>
           <span style={{ flex: 1 }} />
-          <button onClick={onClose} style={{ ...inp, cursor: 'pointer' }}>ปิด</button>
+          <button onClick={onClose} style={{ ...inp, cursor: 'pointer' }}>{tr('ปิด')}</button>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
           <input type="file" accept=".xlsx,.xlsm,.xlsb,.xls,.csv" onChange={e => pick(e.target.files?.[0] || null)} style={{ fontSize: 12 }} />
           {wb && (
             <>
-              <span style={{ fontSize: 12, color: 'var(--text2)' }}>ชีท</span>
-              <select style={inp} value={sheet} onChange={e => setSheet(e.target.value)}>{wb.names.map(n => <option key={n} value={n}>{n}</option>)}</select>
-              <span style={{ fontSize: 12, color: 'var(--text2)' }}>หน่วยเงินในไฟล์</span>
-              <select style={inp} value={mult} onChange={e => setMult(Number(e.target.value))}>{IMPORT_MULTIPLIERS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}</select>
-              <span style={{ fontSize: 12, color: 'var(--text2)' }}>ถึงเดือน</span>
-              <select style={inp} value={maxMonth} onChange={e => setMaxMonth(Number(e.target.value))} title="เดือนล่าสุดที่บัญชีปิดแล้ว — เดือนหลังจากนี้ในไฟล์เป็นแผน/Rolling ไม่นำเข้า">
-                <option value={0}>— ไม่นำเข้า —</option>
-                {Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{MONTH_TH[i]}</option>)}
+              <span style={{ fontSize: 12, color: 'var(--text2)' }}>{tr('ชีท')}</span>
+              <select style={inp} value={sheet} onChange={e => setSheet(e.target.value)}>{wb.names.map(n => <option key={n} value={n}>{tr(n)}</option>)}</select>
+              <span style={{ fontSize: 12, color: 'var(--text2)' }}>{tr('หน่วยเงินในไฟล์')}</span>
+              <select style={inp} value={mult} onChange={e => setMult(Number(e.target.value))}>{IMPORT_MULTIPLIERS.map(m => <option key={m.value} value={m.value}>{tr(m.label)}</option>)}</select>
+              <span style={{ fontSize: 12, color: 'var(--text2)' }}>{tr('ถึงเดือน')}</span>
+              <select style={inp} value={maxMonth} onChange={e => setMaxMonth(Number(e.target.value))} title={tr('เดือนล่าสุดที่บัญชีปิดแล้ว — เดือนหลังจากนี้ในไฟล์เป็นแผน/Rolling ไม่นำเข้า')}>
+                <option value={0}>{tr('— ไม่นำเข้า —')}</option>
+                {Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{tr(MONTH_TH[i])}</option>)}
               </select>
-              <span style={{ fontSize: 12, color: 'var(--text2)' }}>แถวหัวเดือน</span>
+              <span style={{ fontSize: 12, color: 'var(--text2)' }}>{tr('แถวหัวเดือน')}</span>
               <select style={inp} value={monthRow ?? ''} onChange={e => setMonthRow(e.target.value === '' ? null : Number(e.target.value))}>
-                <option value="">— ไม่พบ —</option>
-                {grid.map((r, i) => <option key={i} value={i}>แถว {i + 1}: {(r || []).slice(0, 6).map(c => (c instanceof Date ? c.toISOString().slice(0, 7) : String(c ?? ''))).join(' | ').slice(0, 60)}</option>)}
+                <option value="">{tr('— ไม่พบ —')}</option>
+                {grid.map((r, i) => <option key={i} value={i}>{tr('แถว')} {i + 1}: {(r || []).slice(0, 6).map(c => (c instanceof Date ? c.toISOString().slice(0, 7) : String(c ?? ''))).join(' | ').slice(0, 60)}</option>)}
               </select>
             </>
           )}
         </div>
         {err && <div style={{ marginTop: 8, color: '#ef4444', fontSize: 12.5 }}>{err}</div>}
         {wb && monthInfo?.subRow != null && (
-          <div style={{ marginTop: 6, fontSize: 12, color: '#38bdf8' }}>ℹ️ หัวเดือนคร่อมบล็อก PLAN | Rolling | ACTUAL — ใช้คอลัมน์ <b>ACTUAL → Amount</b> ของแต่ละเดือน (แถว {monthInfo.subRow + 1})</div>
+          <div style={{ marginTop: 6, fontSize: 12, color: '#38bdf8' }}>{tr('ℹ️ หัวเดือนคร่อมบล็อก PLAN | Rolling | ACTUAL — ใช้คอลัมน์')} <b>ACTUAL → Amount</b> {tr('ของแต่ละเดือน (แถว')} {monthInfo.subRow + 1})</div>
         )}
         {wb && rollingM.length > 0 && (
-          <div style={{ marginTop: 6, fontSize: 12.5, color: '#f59e0b' }}>⚠ เดือน {rollingM.map(m => MONTH_TH[m - 1]).join(' · ')} ไม่มีคอลัมน์ ACTUAL — ใช้ <b>Rolling</b> แทน (เดือนที่ยังไม่ปิด Rolling = แผน) · ลด "ถึงเดือน" ถ้าไม่ใช่ตัวเลขจริง</div>
+          <div style={{ marginTop: 6, fontSize: 12.5, color: '#f59e0b' }}>{tr('⚠ เดือน')} {rollingM.map(m => MONTH_TH[m - 1]).join(' · ')} {tr('ไม่มีคอลัมน์ ACTUAL — ใช้')} <b>Rolling</b> แทน (เดือนที่ยังไม่ปิด Rolling = แผน) · ลด "ถึงเดือน" ถ้าไม่ใช่ตัวเลขจริง</div>
         )}
         {wb && magWarn && <div style={{ marginTop: 6, fontSize: 12.5, color: '#f59e0b' }}>{magWarn}</div>}
-        {wb && zeroWarn && <div style={{ marginTop: 6, fontSize: 12.5, color: '#ef4444', fontWeight: 700 }}>{zeroWarn} <button type="button" onClick={() => setMaxMonth(closedM)} style={{ ...inp, cursor: 'pointer', marginLeft: 6 }}>ตั้งเป็น {MONTH_TH[closedM - 1]}</button></div>}
+        {wb && zeroWarn && <div style={{ marginTop: 6, fontSize: 12.5, color: '#ef4444', fontWeight: 700 }}>{zeroWarn} <button type="button" onClick={() => setMaxMonth(closedM)} style={{ ...inp, cursor: 'pointer', marginLeft: 6 }}>{tr('ตั้งเป็น')} {MONTH_TH[closedM - 1]}</button></div>}
         {wb && grid && sheetKind(grid, sheet) === 'inventory' && (
           <div style={{ marginTop: 6, fontSize: 12, color: 'var(--muted)' }}>ℹ️ ชีทสต็อก — จับให้เฉพาะ "มูลค่าสินค้าคงคลัง" (แถว Inventory Balance All) · COGS/RM/ยอดขายในชีทนี้เป็นคนละฐานกับ PL Summary จึงไม่จับอัตโนมัติ (เลือกเองได้ถ้าบัญชียืนยัน)</div>
         )}
@@ -170,10 +171,10 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
             <table style={{ borderCollapse: 'collapse', width: '100%' }}>
               <thead>
                 <tr>
-                  <th style={{ ...th, textAlign: 'left' }}>นำเข้า</th>
-                  <th style={{ ...th, textAlign: 'left' }}>ตัวแปร → เขียนที่</th>
-                  <th style={{ ...th, textAlign: 'left' }}>แถวในไฟล์</th>
-                  {months.map(m => <th key={m} style={th}>{MONTHS[m - 1]}</th>)}
+                  <th style={{ ...th, textAlign: 'left' }}>{tr('นำเข้า')}</th>
+                  <th style={{ ...th, textAlign: 'left' }}>{tr('ตัวแปร → เขียนที่')}</th>
+                  <th style={{ ...th, textAlign: 'left' }}>{tr('แถวในไฟล์')}</th>
+                  {months.map(m => <th key={m} style={th}>{tr(MONTHS[m - 1])}</th>)}
                 </tr>
               </thead>
               <tbody>
@@ -188,13 +189,13 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
                         <input type="checkbox" checked={!!on[v.key] && ok && row != null} disabled={!ok || row == null} onChange={e => setOn(p => ({ ...p, [v.key]: e.target.checked }))} />
                       </td>
                       <td style={{ ...td, textAlign: 'left', whiteSpace: 'normal', minWidth: 190 }}>
-                        <b>{v.label}</b> <span style={{ color: 'var(--muted)' }}>({v.unit})</span>
+                        <b>{tr(v.label)}</b> <span style={{ color: 'var(--muted)' }}>({v.unit})</span>
                         <div style={{ fontSize: 11, color: ok ? 'var(--muted)' : '#f59e0b' }}>→ {targetOf(v)}{!ok ? (v.level === 'plant' ? ' · นำเข้าได้เฉพาะตอนดู ทั้งโรงงาน' : ' · ไม่มีสิทธิ์เขียนขอบเขตนี้') : ''}</div>
                       </td>
                       <td style={{ ...td, textAlign: 'left' }}>
                         <select style={{ ...inp, maxWidth: 260 }} value={row ?? ''} onChange={e => setVarRows(p => ({ ...p, [v.key]: e.target.value === '' ? null : Number(e.target.value) }))}>
-                          <option value="">— ไม่นำเข้า —</option>
-                          {labels.map(x => <option key={x.row} value={x.row}>แถว {x.row + 1}: {x.label.slice(0, 50)}</option>)}
+                          <option value="">{tr('— ไม่นำเข้า —')}</option>
+                          {labels.map(x => <option key={x.row} value={x.row}>{tr('แถว')} {x.row + 1}: {x.label.slice(0, 50)}</option>)}
                         </select>
                       </td>
                       {months.map((m) => {
@@ -219,7 +220,7 @@ export default function KpiBaseImportModal({ year, unitLabel, unitSk, base, canP
           </div>
         )}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
-          <button onClick={onClose} style={{ ...inp, cursor: 'pointer' }}>ยกเลิก</button>
+          <button onClick={onClose} style={{ ...inp, cursor: 'pointer' }}>{tr('ยกเลิก')}</button>
           <button onClick={doImport} disabled={busy || !nCells}
             style={{ ...inp, cursor: nCells ? 'pointer' : 'not-allowed', background: nCells ? 'var(--accent)' : 'var(--bg2)', color: nCells ? 'var(--accent-ink)' : 'var(--muted)', fontWeight: 700 }}>
             {busy ? '⏳ กำลังบันทึก…' : `💾 นำเข้า ${nCells} ค่า (${chosen.length} ตัวแปร)`}

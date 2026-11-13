@@ -28,6 +28,7 @@ import titleC from '../assets/tsg/title-c.jpg';
 import titleD from '../assets/tsg/title-d.jpg';
 import dividerImg from '../assets/tsg/divider.jpg';
 
+import { tr } from '../utils/i18n';
 async function urlToDataUrl(url) {
   if (!url) return null;
   try {
@@ -211,7 +212,7 @@ export default function MonthlyReviewExport({ onClose }) {
         </div>
         <div style={{ display: 'grid', gap: 12 }}>
           <div>
-            <div style={lb}>รูปแบบเด็ค</div>
+            <div style={lb}>{tr('รูปแบบเด็ค')}</div>
             <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               {MODES.map(m => (
                 <label key={m.key} style={{
@@ -223,40 +224,40 @@ export default function MonthlyReviewExport({ onClose }) {
                     <input type="radio" name="deckMode" checked={mode === m.key} onChange={() => setMode(m.key)} style={{ width: 'auto' }} />
                     {m.label}
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.5, marginTop: 4 }}>{m.desc}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.5, marginTop: 4 }}>{tr(m.desc)}</div>
                 </label>
               ))}
             </div>
             {mode === 'full' && (
               <div style={{ fontSize: 11.5, color: 'var(--accent2, #d9a441)', marginTop: 6, lineHeight: 1.6 }}>
-                ⚠️ ประมาณ <b>{estSlides} สไลด์</b> ({totalSel} ไลน์ × 4 + ภาพรวม) — เลือกไลน์เยอะจะสร้างนาน
+                ⚠️ ประมาณ <b>{estSlides} {tr('สไลด์')}</b> ({totalSel} ไลน์ × 4 + ภาพรวม) — เลือกไลน์เยอะจะสร้างนาน
                 และไฟล์ใหญ่ · แนะนำติ๊กเฉพาะส่วนงาน/ไลน์ที่จะนำเสนอจริง
               </div>
             )}
           </div>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 10, alignItems: 'end' }}>
             <div>
-              <div style={lb}>เดือนรายงาน</div>
+              <div style={lb}>{tr('เดือนรายงาน')}</div>
               <input type="month" value={monthKey} onChange={e => setMonthKey(e.target.value)} style={{ width: 180 }} />
             </div>
             <div>
-              <div style={lb}>ช่วงเทียบย้อนหลัง (progression)</div>
+              <div style={lb}>{tr('ช่วงเทียบย้อนหลัง (progression)')}</div>
               <select value={trendMonths} onChange={e => setTrendMonths(Number(e.target.value))} disabled={mode === 'full'} style={{ width: '100%', maxWidth: 260, opacity: mode === 'full' ? 0.55 : 1 }}>
-                <option value={1}>ไม่เทียบ — เฉพาะเดือนที่เลือก</option>
-                <option value={3}>3 เดือน (เดือนที่เลือก + ย้อนหลัง 2)</option>
-                <option value={6}>6 เดือน (ย้อนหลัง 5)</option>
-                <option value={12}>12 เดือน (ย้อนหลัง 11)</option>
+                <option value={1}>{tr('ไม่เทียบ — เฉพาะเดือนที่เลือก')}</option>
+                <option value={3}>{tr('3 เดือน (เดือนที่เลือก + ย้อนหลัง 2)')}</option>
+                <option value={6}>{tr('6 เดือน (ย้อนหลัง 5)')}</option>
+                <option value={12}>{tr('12 เดือน (ย้อนหลัง 11)')}</option>
               </select>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
                 {mode === 'full'
-                  ? <>โหมด Full data ใช้ <b>ปีปฏิทิน (ม.ค. → เดือนที่เลือก)</b> เสมอ — กราฟ Jan–Dec และ OEE รายไตรมาส Q1–Q4 มีความหมายเฉพาะบนปีปฏิทิน</>
-                  : <>เพิ่มสไลด์ <b>PERFORMANCE TREND</b> (กราฟ OEE รายส่วนงาน + ตาราง OEE/DT/PPM/Output ต่อเดือน + Δ)
+                  ? <>{tr('โหมด Full data ใช้')} <b>{tr('ปีปฏิทิน (ม.ค. → เดือนที่เลือก)')}</b> {tr('เสมอ — กราฟ Jan–Dec และ OEE รายไตรมาส Q1–Q4 มีความหมายเฉพาะบนปีปฏิทิน')}</>
+                  : <>{tr('เพิ่มสไลด์')} <b>PERFORMANCE TREND</b> (กราฟ OEE รายส่วนงาน + ตาราง OEE/DT/PPM/Output ต่อเดือน + Δ)
                     และป้าย ▲▼ เทียบเดือนก่อนบนการ์ดตัวเลข · ย้อนหลังยิ่งเยอะยิ่งใช้เวลาดึงข้อมูลนานขึ้น</>}
               </div>
             </div>
           </div>
           <div>
-            <div style={lb}>ขอบเขตรายงาน — ติ๊กได้ตั้งแต่ทั้งส่วนงาน จนถึงรายไลน์ (เลือกแล้ว {totalSel} ไลน์)</div>
+            <div style={lb}>{tr('ขอบเขตรายงาน — ติ๊กได้ตั้งแต่ทั้งส่วนงาน จนถึงรายไลน์ (เลือกแล้ว')} {totalSel} ไลน์)</div>
             <div style={{ display: 'grid', gap: 6 }}>
               {tree.map(s => {
                 const secLines = linesOfSec(s);
@@ -269,12 +270,12 @@ export default function MonthlyReviewExport({ onClose }) {
                         <TriBox state={st} onChange={() => toggleLines(secLines)} />
                         {s.code}
                         <span style={{ fontWeight: 400, color: 'var(--muted)' }}>
-                          ({secLines.filter(l => selLines.has(l)).length}/{secLines.length} ไลน์)
+                          ({secLines.filter(l => selLines.has(l)).length}/{secLines.length} {tr('ไลน์)')}
                         </span>
                       </label>
                       <button onClick={() => setOpenSecs(p => ({ ...p, [s.code]: !open }))}
                         style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 12, padding: '2px 6px' }}>
-                        {open ? '▾ ย่อ' : '▸ เจาะรายไลน์'}
+                        {open ? tr('▾ ย่อ') : tr('▸ เจาะรายไลน์')}
                       </button>
                     </div>
                     {open && (
@@ -303,26 +304,26 @@ export default function MonthlyReviewExport({ onClose }) {
                 );
               })}
               {!tree.length && (loadError
-                ? <span style={{ fontSize: 12, color: 'var(--danger, #e05252)' }}>⚠ โหลดรายชื่อไลน์ไม่สำเร็จ: {loadError} — ปิดแล้วเปิดใหม่อีกครั้ง</span>
-                : <span style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด…</span>)}
+                ? <span style={{ fontSize: 12, color: 'var(--danger, #e05252)' }}>{tr('⚠ โหลดรายชื่อไลน์ไม่สำเร็จ:')} {loadError} {tr('— ปิดแล้วเปิดใหม่อีกครั้ง')}</span>
+                : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</span>)}
             </div>
           </div>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            <div><div style={lb}>ผู้นำเสนอ</div><input type="text" value={presenter} onChange={e => setPresenter(e.target.value)} style={{ width: '100%' }} /></div>
-            <div><div style={lb}>ตำแหน่ง</div><input type="text" value={presPosition} onChange={e => setPresPosition(e.target.value)} style={{ width: '100%' }} /></div>
+            <div><div style={lb}>{tr('ผู้นำเสนอ')}</div><input type="text" value={presenter} onChange={e => setPresenter(e.target.value)} style={{ width: '100%' }} /></div>
+            <div><div style={lb}>{tr('ตำแหน่ง')}</div><input type="text" value={presPosition} onChange={e => setPresPosition(e.target.value)} style={{ width: '100%' }} /></div>
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.6 }}>
             สร้างเด็ค PowerPoint ตาม template TSG <b>Revision 01</b> (พื้นขาว · เขียว-ส้มชุดใหม่ · โลโก้ใหม่)
             จากข้อมูลกะที่ปิดแล้วของเดือนที่เลือก — Executive Summary → กราฟ OEE รายไลน์ →
-            <b>PERFORMANCE TREND ย้อนหลัง</b> → รายส่วน/ไลน์ → Top Downtime +
-            <b>วิธีแก้ไข/ผลติดตามที่หัวหน้างานลงในระบบ</b> + ใบซ่อม MO →
-            Top Defects → <b>Loss Analysis (6 Big Losses / 8 Wastes + มูลค่าเป็นบาท)</b> →
+            <b>{tr('PERFORMANCE TREND ย้อนหลัง')}</b> → รายส่วน/ไลน์ → Top Downtime +
+            <b>{tr('วิธีแก้ไข/ผลติดตามที่หัวหน้างานลงในระบบ')}</b> + ใบซ่อม MO →
+            Top Defects → <b>{tr('Loss Analysis (6 Big Losses / 8 Wastes + มูลค่าเป็นบาท)')}</b> →
             Focus เดือนถัดไป · ไฟล์เปิดแก้/เติม story ต่อใน PowerPoint ได้ก่อนขึ้นประชุม
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <button onClick={onClose} disabled={busy} style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>ยกเลิก</button>
+            <button onClick={onClose} disabled={busy} style={{ padding: '9px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'none', color: 'var(--text2)', cursor: 'pointer', fontWeight: 700 }}>{tr('ยกเลิก')}</button>
             <button onClick={handleGenerate} disabled={busy} style={{ padding: '9px 22px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.7 : 1 }}>
-              {busy ? '⏳ กำลังสร้าง…' : '📽️ สร้างไฟล์ .pptx'}
+              {busy ? tr('⏳ กำลังสร้าง…') : tr('📽️ สร้างไฟล์ .pptx')}
             </button>
           </div>
         </div>

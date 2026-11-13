@@ -104,6 +104,24 @@ export function breakRulesForLine(index, lineName) {
   return m && m.size ? m : null;
 }
 
+/** 📸 index ของ "ไลน์เดียว" จาก snapshot ตอนปิดกะ — **ไม่แตะทะเบียนกลาง**
+ *  ใช้ตอนคำนวณกะเก่าซ้ำ: กฎพักรายไลน์ถูกแก้ภายหลังได้ ⇒ ต้องเอาชุดที่ใช้ตอนนั้นกลับมา
+ *  🔴 ไม่มีกฎ (`{}`) = คืน index ว่าง **ห้ามถอยไปทะเบียนกลาง** — กะนั้นไม่มีข้อยกเว้นจริงๆ
+ *  @param {string|null} lineName ชื่อไลน์ของกะ
+ *  @param {object} minsById `{ '<policy id>': นาที }`
+ */
+export function breakLineRuleIndexOf(lineName, minsById = {}) {
+  const ln = nameKey(lineName);
+  const m = new Map();
+  for (const [pid, d] of Object.entries(minsById || {})) {
+    const n = Number(d);
+    if (!pid || !Number.isFinite(n) || n < 0) continue;
+    m.set(String(pid), n);
+  }
+  if (!ln || !m.size) return { byLine: new Map(), orphanLines: [], ruleCount: 0 };
+  return { byLine: new Map([[ln, m]]), orphanLines: [], ruleCount: m.size };
+}
+
 /**
  * คืน `policies` ที่ใส่นาทีของไลน์นี้แล้ว
  * 🔴 ไม่มีอะไรทับ = คืน **array เดิม (===)** — ไลน์ที่ไม่ตั้งข้อยกเว้นได้พฤติกรรมเดิมเป๊ะ

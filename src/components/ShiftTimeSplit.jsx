@@ -1,3 +1,4 @@
+import { tr } from '../utils/i18n';
 /* ══ แถบ "นาทีที่หายไปของกะ" — งาน / หยุดตามแผน / เสียนอกแผน / อธิบายไม่ได้ ═══════════
    ที่มา (user 2026-09-16): "จะรู้ได้ยังไงว่าตอนนี้ดีเลย์ไปแล้วกี่ใบ และต้อง recover ยังไง"
 
@@ -80,7 +81,7 @@ export default function ShiftTimeSplit({ split, compact = false }) {
         </div>
       )}
       {split.noBreakPolicy && (
-        <div style={{ fontSize: fs, color: 'var(--muted)', marginTop: 2 }}>· ยังไม่ได้ตั้งนโยบายเวลาพักของกะนี้ — เทียบกับค่าที่บันทึกตอนปิดกะไม่ได้</div>
+        <div style={{ fontSize: fs, color: 'var(--muted)', marginTop: 2 }}>{tr('· ยังไม่ได้ตั้งนโยบายเวลาพักของกะนี้ — เทียบกับค่าที่บันทึกตอนปิดกะไม่ได้')}</div>
       )}
     </div>
   );

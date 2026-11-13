@@ -168,3 +168,6 @@
 
 · migration `20261102_ojt_approved_at_main.sql` (**apply แล้ว 02/11** · nullable ไม่มี default ⇒ revert = drop ได้)
 · ด่าน `ojt-approver-self-sign-only` · `manager-sign-rank-single-source` · เทส `managerSignRank.test.mjs`
+
+## 🪜 แถบ "ถึงขั้นไหน" (2026-11-12)
+ใบ OJT — แถบ ✓→○ ในโมดัล ตัดสินจากช่องเซ็นจริง (`ojtFlow()` `utils/stepFlow.js`) · กติกา + ทะเบียนทุกใบ → `docs/modules/step-flow.md` · UI §6.30

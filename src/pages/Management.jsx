@@ -41,6 +41,7 @@ import { liveChannel } from '../utils/liveChannel';
 import { checkWrite } from '../utils/dbWrite';
 import { uploadOpts } from '../utils/storageUpload';
 import { acceptImageFile } from '../utils/acceptImageFile';
+import { tr } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 // บีบรูปก่อนอัปโหลด — ตัวจริงอยู่ src/utils/resizeImage.js (ห้ามก๊อปโค้ดบีบรูปซ้ำอีก)
@@ -1177,7 +1178,7 @@ export default function Management() {
         {/* assign to special task */}
         {can('management', 'assign_special_task', role) && (
           <button onClick={(e) => { e.stopPropagation(); setSpecialModal(worker); setSpecialTaskType('5ส'); }}
-            title="กำหนดงานนอกไลน์"
+            title={tr('กำหนดงานนอกไลน์')}
             style={{ position: 'absolute', top: 4, right: 4, width: 22, height: 22, borderRadius: '50%', background: 'var(--amber-line)', border: '1px solid rgba(0,0,0,0.3)', color: '#fff', fontSize: 11, lineHeight: '22px', textAlign: 'center', cursor: 'pointer', padding: 0 }}>
             🏷
           </button>
@@ -1290,7 +1291,7 @@ export default function Management() {
       {/* โชว์/ซ่อนป้ายชื่อทุกจุด — icon 36×36 เท่าปุ่มอื่น (ป้ายเตือน alarm/ต่ำกว่า min โชว์เสมอ) */}
       <button
         onClick={() => setShowPills(v => !v)}
-        title={(showPills ? 'ซ่อน' : 'โชว์') + 'ป้ายชื่อทุกจุดบนผัง (คน/เครื่องจักร)\nป้ายเตือน (เครื่อง Downtime) แสดงเสมอ'}
+        title={(showPills ? tr('ซ่อน') : tr('โชว์')) + 'ป้ายชื่อทุกจุดบนผัง (คน/เครื่องจักร)\nป้ายเตือน (เครื่อง Downtime) แสดงเสมอ'}
         style={{
           position: 'relative', flexShrink: 0,
           width: 36, height: 36, borderRadius: 'var(--r-md)',
@@ -1324,24 +1325,24 @@ export default function Management() {
           เดิมช่องเลือกไลน์ + ปุ่มกะอยู่ในแผงซ้าย และปุ่มสลับมุมมองเป็นแถวแยกเหนือผัง — ย้ายขึ้นมาตามลำดับมาตรฐาน
           ชื่อหน้า → แถบกรอง → เนื้อหา (UI-STANDARD §2) · ปุ่มมุมมองยังโผล่เฉพาะตอนบอร์ดเบียดผัง (boardWouldSquish) เหมือนเดิม
           🔴 ปุ่มกะต้องโผล่เสมอเมื่อเลือกไลน์แล้ว แม้กะนั้นไม่มีคน (ไม่งั้นสลับไปกะว่างแล้วไม่มีทางกลับ · 27/08) */}
-      <PageHeader title="จัดการไลน์ผลิต" icon="🔄"
-        sub="จัดกำลังคนลงจุดงานบนผังไลน์ · บอร์ด Heijunka · บันทึก 4M ของไลน์ที่เลือก"
+      <PageHeader title={tr('จัดการไลน์ผลิต')} icon="🔄"
+        sub={tr('จัดกำลังคนลงจุดงานบนผังไลน์ · บอร์ด Heijunka · บันทึก 4M ของไลน์ที่เลือก')}
         filters={<>
           {/* เลือกได้ทั้งไลน์หลัก (view รวมไลน์ย่อยทั้งหมด) และไลน์ย่อย — รายการใน `lines` ถูก scope ไว้แล้วตอน fetch
               <LineSelect> = ลำดับชั้น/ปลดระวาง/ค่าไม่รู้จัก · ไม่มี option ว่าง */}
           <LineSelect lines={lines} value={selectedLine} placeholder={null} onChange={setSelectedLine} />
           {selectedLine && (
-            <Segmented value={viewShift} onChange={setViewShift} label="กะที่ดู"
+            <Segmented value={viewShift} onChange={setViewShift} label={tr('กะที่ดู')}
               options={[{ value: 'day', label: 'กะเช้า' }, { value: 'night', label: 'กะดึก' }]} />
           )}
           {selectedLine && (
-            <span title="เปลี่ยนวันที่ได้ที่แถบ Heijunka" style={{ fontSize: 12, color: isLiveView ? 'var(--muted)' : 'var(--blue)', fontWeight: isLiveView ? 400 : 700, whiteSpace: 'nowrap' }}>
+            <span title={tr('เปลี่ยนวันที่ได้ที่แถบ Heijunka')} style={{ fontSize: 12, color: isLiveView ? 'var(--muted)' : 'var(--blue)', fontWeight: isLiveView ? 400 : 700, whiteSpace: 'nowrap' }}>
               {boardDate}{boardDate === todayWorkDate ? ' (วันนี้)' : ' · ย้อนหลัง'}
             </span>
           )}
           {boardWouldSquish && (
-            <span title="kanban เยอะ — สลับดูทีละมุมเต็มจอ" style={{ display: 'contents' }}>
-              <Segmented value={mainView} onChange={switchView} label="มุมมอง"
+            <span title={tr('kanban เยอะ — สลับดูทีละมุมเต็มจอ')} style={{ display: 'contents' }}>
+              <Segmented value={mainView} onChange={switchView} label={tr('มุมมอง')}
                 options={[{ value: 'map', label: 'ผังไลน์ + คน' }, { value: 'heijunka', label: 'Heijunka' }]} />
             </span>
           )}
@@ -1365,7 +1366,7 @@ export default function Management() {
         {!isMobile && !panelCollapsed && (
           <button
             onClick={() => setPanelCollapsed(true)}
-            title="ย่อแถบไลน์ผลิต"
+            title={tr('ย่อแถบไลน์ผลิต')}
             style={{ alignSelf: 'flex-end', marginBottom: 6, flexShrink: 0, width: 32, height: 32, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none' }}>
             ◀
           </button>
@@ -1379,7 +1380,7 @@ export default function Management() {
               <button onClick={() => retryLinesRef.current?.()}
                 style={{ marginLeft: 6, fontSize: 11, padding: '1px 8px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                          background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
-                ลองใหม่
+                {tr('ลองใหม่')}
               </button>
             </div>
           )}
@@ -1398,7 +1399,7 @@ export default function Management() {
         {/* instruction banner on mobile when worker selected */}
         {isMobile && selectedWorker && (
           <div style={{ marginBottom: 8, padding: '8px 12px', borderRadius: 'var(--r-md)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', fontSize: 12, fontWeight: 600, color: 'var(--blue)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-            <span>แตะ station ด้านล่างเพื่อจัดตำแหน่ง</span>
+            <span>{tr('แตะ station ด้านล่างเพื่อจัดตำแหน่ง')}</span>
             <button onClick={() => setSelectedWorker(null)} style={{ background: 'none', border: 'none', color: 'var(--blue)', fontSize: 18, cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button>
           </div>
         )}
@@ -1416,10 +1417,10 @@ export default function Management() {
               background: 'var(--blue-dim)', border: '1px solid var(--blue-line)' }}>
               {!isLiveView && (
                 <div style={{ fontSize: 11, color: 'var(--blue)', lineHeight: 1.5 }}>
-                  โหมดย้อนหลัง — <b>อ่านอย่างเดียว จัดคนไม่ได้</b> · แสดงจุดงานสุดท้ายของกะนั้น
+                  โหมดย้อนหลัง — <b>{tr('อ่านอย่างเดียว จัดคนไม่ได้')}</b> · แสดงจุดงานสุดท้ายของกะนั้น
                   <button onClick={() => { setBoardDate(todayWorkDate); setViewShift(getCurrentShift()); }}
                     style={{ marginLeft: 6, padding: '2px 9px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 700, cursor: 'pointer', background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>
-                    ⟳ กลับมาดูสด
+                    {tr('⟳ กลับมาดูสด')}
                   </button>
                 </div>
               )}
@@ -1430,15 +1431,15 @@ export default function Management() {
           {!isMobile && selectedLine && (familyManpower.total > 0 || familyManpower.hidden.length > 0) && (
             <div style={{ marginBottom: 8, padding: '8px 10px', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', flexShrink: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>กำลังคนกลุ่มนี้</span>
-                <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent)' }}>{familyManpower.total} คน</span>
+                <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{tr('กำลังคนกลุ่มนี้')}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent)' }}>{familyManpower.total} {tr('คน')}</span>
               </div>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
                 ประจำสถานี · บนผังนี้ {familyManpower.onMap}{familyManpower.hiddenTotal ? ` · ไลน์ย่อย(ผังแยก) ${familyManpower.hiddenTotal}` : ''}
               </div>
               {familyManpower.hidden.length > 0 && (
                 <div style={{ marginTop: 7, display: 'grid', gap: 4 }}>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>ไลน์ย่อย (ผังแยก — ไม่โผล่บนผังนี้)</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{tr('ไลน์ย่อย (ผังแยก — ไม่โผล่บนผังนี้)')}</div>
                   {familyManpower.hidden.map(h => {
                     const open = openSubLine === h.lineName;
                     return (
@@ -1446,7 +1447,7 @@ export default function Management() {
                         <div onClick={() => setOpenSubLine(open ? null : h.lineName)}
                           style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', padding: '4px 7px', borderRadius: 'var(--r-md)', background: 'var(--bg2)', border: '1px solid var(--border2)' }}>
                           <span style={{ minWidth: 0, fontSize: 11.5, fontWeight: 700, color: 'var(--text2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{open ? '▾' : '▸'} {h.lineName}</span>
-                          <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--blue)', flexShrink: 0, marginLeft: 6 }}>{h.workers.length} คน</span>
+                          <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--blue)', flexShrink: 0, marginLeft: 6 }}>{h.workers.length} {tr('คน')}</span>
                         </div>
                         {open && (
                           <div style={{ padding: '4px 6px 2px 12px', display: 'grid', gap: 3 }}>
@@ -1471,18 +1472,18 @@ export default function Management() {
           {/* มือถือ + pool ว่างทั้งสองส่วน: ยุบเหลือแถบเดียว คืนพื้นที่ให้ผังคน (desktop เหมือนเดิม) */}
           {isMobile && poolWorkers.length === 0 && specialWorkers.length === 0 ? (
             <div style={{ fontSize: 11, color: 'var(--muted)', padding: '2px 0', display: 'flex', gap: 10, alignItems: 'center' }}>
-              <span>🔵 พร้อมทำงาน 0</span><span style={{ color: 'var(--amber-line)' }}>🟡 งานนอกไลน์ 0</span><span>— ไม่มีพนักงานใน Pool</span>
+              <span>{tr('🔵 พร้อมทำงาน 0')}</span><span style={{ color: 'var(--amber-line)' }}>{tr('🟡 งานนอกไลน์ 0')}</span><span>{tr('— ไม่มีพนักงานใน Pool')}</span>
             </div>
           ) : (<>
           {/* Normal pool — 70% */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexShrink: 0 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>🔵 พร้อมทำงาน</span>
-            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{poolWorkers.length} คน</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{tr('🔵 พร้อมทำงาน')}</span>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{poolWorkers.length} {tr('คน')}</span>
           </div>
           <div style={{ overflowY: 'auto', display: isMobile ? 'flex' : 'grid', gridTemplateColumns: POOL_GRID_COLS(isUltra), flexDirection: 'column', gap: isWide ? 7 : 6, ...(isMobile ? { maxHeight: '28vh' } : { flex: '7 1 0', minHeight: 0, alignContent: 'start' }) }}>
             {poolWorkers.map(w => <PoolCard key={w.id} worker={w} />)}
             {poolWorkers.length === 0 && (
-              <div style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'center', padding: '8px 0', gridColumn: '1/-1' }}>ไม่มีพนักงานใน Pool</div>
+              <div style={{ color: 'var(--muted)', fontSize: 11, textAlign: 'center', padding: '8px 0', gridColumn: '1/-1' }}>{tr('ไม่มีพนักงานใน Pool')}</div>
             )}
           </div>
 
@@ -1499,11 +1500,11 @@ export default function Management() {
             style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--amber-line)', flexShrink: 0 }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', fontFamily: 'var(--font-display)' }}>🟡 งานนอกไลน์</span>
-              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{specialWorkers.length} คน</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', fontFamily: 'var(--font-display)' }}>{tr('🟡 งานนอกไลน์')}</span>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{specialWorkers.length} {tr('คน')}</span>
             </div>
             {can('management', 'assign_manpower', role) && isLiveView && specialWorkers.length > 0 && (
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 5, fontStyle: 'italic' }}>drag กลับไลน์ผลิตได้</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 5, fontStyle: 'italic' }}>{tr('drag กลับไลน์ผลิตได้')}</div>
             )}
           </div>
           <div
@@ -1524,7 +1525,7 @@ export default function Management() {
             {isMobile && can('management', 'assign_special_task', role) && selectedWorker && !specialEmpIds.has(selectedWorker.employee_id) && (
               <button onClick={() => { setSpecialModal(selectedWorker); setSpecialTaskType('5ส'); }}
                 style={{ marginTop: 6, padding: '8px', borderRadius: 'var(--r-md)', background: 'var(--amber-dim)', border: '1px dashed var(--amber-line)', color: 'var(--amber)', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                กำหนดงานนอกไลน์ให้ผู้ถูกเลือก
+                {tr('กำหนดงานนอกไลน์ให้ผู้ถูกเลือก')}
               </button>
             )}
           </div>
@@ -1534,12 +1535,12 @@ export default function Management() {
         {/* 4M buttons — desktop only in sidebar */}
         {selectedLine && !isMobile && (
           <div style={{ paddingTop: 12, borderTop: '1px solid var(--border)', flexShrink: 0 }}>
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>บันทึก 4M ไลน์</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{tr('บันทึก 4M ไลน์')}</div>
             {/* 4M เป็นการบันทึก "สิ่งที่เกิดตอนนี้" — ยังกดได้ในโหมดย้อนหลัง แต่ต้องบอกว่าจะลงวันไหน
                 ไม่งั้นบันทึกแล้วไม่โผล่ในลิสต์ที่กำลังดู แล้วเข้าใจว่าบันทึกไม่ติด (ห้ามเงียบ) */}
             {!isLiveView && (
               <div style={{ fontSize: 11, color: 'var(--blue)', marginBottom: 6, lineHeight: 1.5 }}>
-                ⚠️ กำลังดูย้อนหลัง — บันทึกใหม่จะลงวันที่ <b>วันนี้</b> ไม่โผล่ในรายการของ {boardDate}
+                ⚠️ กำลังดูย้อนหลัง — บันทึกใหม่จะลงวันที่ <b>{tr('วันนี้')}</b> {tr('ไม่โผล่ในรายการของ')} {boardDate}
               </div>
             )}
             {LINE_4M_CATEGORIES.map(cat => (
@@ -1580,14 +1581,14 @@ export default function Management() {
       <div ref={canvasAreaRef} style={{ flex: 1, minWidth: 0, position: 'relative', padding: isMobile ? 10 : '10px 52px 10px 10px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {/* ปุ่มขยายแถบไลน์ผลิตกลับ (โผล่เฉพาะตอนย่อ pool — pool กว้าง 0) · สไตล์เดียวกับ ☰/▶ อื่น */}
         {!isMobile && panelCollapsed && (
-          <button onClick={() => setPanelCollapsed(false)} title="ขยายแถบไลน์ผลิต"
+          <button onClick={() => setPanelCollapsed(false)} title={tr('ขยายแถบไลน์ผลิต')}
             style={{ alignSelf: 'flex-start', marginBottom: 8, width: 36, height: 36, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', outline: 'none', flexShrink: 0, boxShadow: 'var(--shadow-sm)' }}>
             ▶
           </button>
         )}
         {autoManAlert && (
           <div style={{ position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', background: 'var(--blue-line)', color: '#fff', padding: '8px 18px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 600, zIndex: 200, boxShadow: 'var(--shadow-float)', whiteSpace: 'nowrap' }}>
-            🆕 Man Change: {autoManAlert.name} — ประจำ {autoManAlert.station} เป็นครั้งแรก
+            🆕 Man Change: {autoManAlert.name} {tr('— ประจำ')} {autoManAlert.station} เป็นครั้งแรก
           </div>
         )}
         {/* มือถือ: ไม่มี rail ขวา → แถบปุ่มกรองแนวนอนชิดขวาบนแทน */}
@@ -1605,7 +1606,7 @@ export default function Management() {
             · โหมดคู่ → บอร์ดสูงตามเนื้อหา (flexShrink:0) · โหมดสลับ → เต็มพื้นที่ + scroll ในตัว */}
         {(!boardWouldSquish || mainView === 'heijunka') && (
         <div ref={boardSectionRef} style={boardWouldSquish ? { flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden' } : { flexShrink: 0 }}>
-        {boardWouldSquish && !lineProdData && <div style={{ padding: 20, color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีข้อมูลการผลิตของไลน์นี้</div>}
+        {boardWouldSquish && !lineProdData && <div style={{ padding: 20, color: 'var(--muted)', fontSize: 13 }}>{tr('ยังไม่มีข้อมูลการผลิตของไลน์นี้')}</div>}
         {/* ── Mini Heijunka board ── */}
         {lineProdData && (() => {
           const HOURS = [8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,0,1,2,3,4,5,6,7];
@@ -1876,7 +1877,7 @@ export default function Management() {
               <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, background: 'var(--bg2)' }}>
                 <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>
                   Heijunka — {selectedLine}
-                  {isHistorical && <span style={{ marginLeft: 8, fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-md)', background: 'var(--blue-dim)', color: 'var(--blue)' }}>ย้อนหลัง {boardDate}</span>}
+                  {isHistorical && <span style={{ marginLeft: 8, fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-md)', background: 'var(--blue-dim)', color: 'var(--blue)' }}>{tr('ย้อนหลัง')} {boardDate}</span>}
                 </span>
                 <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap' }}>
                   <button onClick={() => shiftBoardDate(-1)} style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)' }}>◀</button>
@@ -1885,7 +1886,7 @@ export default function Management() {
                     style={{ width: 140, padding: '3px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)', fontFamily: 'var(--font-body)' }} />
                   <button onClick={() => shiftBoardDate(1)} disabled={boardDate >= todayWd} style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: boardDate >= todayWd ? 'default' : 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text2)', opacity: boardDate >= todayWd ? 0.4 : 1 }}>▶</button>
                   {boardDate !== todayWd && (
-                    <button onClick={() => setBoardDate(todayWd)} style={{ padding: '3px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--accent)', border: '1px solid var(--accent)', color: 'var(--accent-ink)' }}>วันนี้</button>
+                    <button onClick={() => setBoardDate(todayWd)} style={{ padding: '3px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: 'var(--accent)', border: '1px solid var(--accent)', color: 'var(--accent-ink)' }}>{tr('วันนี้')}</button>
                   )}
                   {/* ⚠️ ชิป "ดีเลย์ N ใบ" ถอดออก 30/09 — ซ้ำกับ "ยังค้าง N" ในสรุปวัน (`totalDelayed` ยังคุมสีขอบ) */}
                   {/* 📋 ขนาดของการหลุดแผน (นาที + ชิ้น + คาดจบ) — "กี่ใบ" อย่างเดียวตอบหน้างานไม่ได้ */}
@@ -1919,7 +1920,7 @@ export default function Management() {
                     });
                   })()}
                   {isMobile && (
-                    <button className="tbtn" onClick={() => setShowLegendMobile(v => !v)} title="สัญลักษณ์สถานะการ์ด"
+                    <button className="tbtn" onClick={() => setShowLegendMobile(v => !v)} title={tr('สัญลักษณ์สถานะการ์ด')}
                       style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12, fontWeight: 700, background: showLegendMobile ? 'var(--accent-dim)' : 'var(--bg)', border: `1px solid ${showLegendMobile ? 'var(--accent)' : 'var(--border)'}`, color: showLegendMobile ? 'var(--accent)' : 'var(--text2)' }}>
                       ℹ️
                     </button>
@@ -1929,7 +1930,7 @@ export default function Management() {
               {/* Kanban ที่เปิดอยู่ ต่อ MAT.NO */}
               {matNoChips.length > 0 && (
                 <div style={{ padding: '7px 14px', borderBottom: '1px solid var(--border2)', display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center', background: 'var(--bg)' }}>
-                  <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>Kanban เปิดอยู่:</span>
+                  <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{tr('Kanban เปิดอยู่:')}</span>
                   {matNoChips.map(([matNo, count]) => (
                     <span key={matNo} style={{ fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-pill)', fontWeight: 700, background: 'var(--blue-dim)', color: 'var(--blue)', fontFamily: 'monospace' }}>
                       {matNo} · {count} ใบ
@@ -1951,7 +1952,7 @@ export default function Management() {
                 ].map(item => (
                   <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <span style={{ width: 18, height: 18, borderRadius: 'var(--r-xs)', background: `${tint(item.c, 'dim')}`, border: `1.2px solid ${tint(item.c, 'line')}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: item.c, flexShrink: 0 }}>{item.icon}</span>
-                    <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{item.label}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}>{tr(item.label)}</span>
                   </div>
                 ))}
               </div>
@@ -2072,7 +2073,7 @@ export default function Management() {
                                     {icon} {o.prod_no || (oi + 1)}
                                   </div>
                                   {/* ใบ manual ที่ยังเปิด: ยอดสะสม/เป้า — ใบสแกน/ปิดแล้ว: จำนวนตามเดิม */}
-                                  <div style={{ fontSize: 11, color: o.is_manual && !o.isDone && pctBlock >= 45 ? 'rgba(255,255,255,0.85)' : 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.is_manual && !o.isDone ? `${o.qty_actual ?? 0}/${o.qty_target ?? o.qty}` : o.qty}ชิ้น{isOverCap && <span style={{ color: 'var(--red)', fontWeight: 800 }}> 🔴ล้น+{(overMs / 3600000).toFixed(1)}ชม.</span>}</div>
+                                  <div style={{ fontSize: 11, color: o.is_manual && !o.isDone && pctBlock >= 45 ? 'rgba(255,255,255,0.85)' : 'var(--muted)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{o.is_manual && !o.isDone ? `${o.qty_actual ?? 0}/${o.qty_target ?? o.qty}` : o.qty}{tr('ชิ้น')}{isOverCap && <span style={{ color: 'var(--red)', fontWeight: 800 }}> {tr('🔴ล้น+')}{(overMs / 3600000).toFixed(1)}{tr('ชม.')}</span>}</div>
                                 </div>
                                 )}
                               </div>
@@ -2086,7 +2087,7 @@ export default function Management() {
                               )}
                               {/* หางเงาแดง — ยังไม่ปิดงานแม้เลยกำหนดแล้ว ครองไลน์อยู่จนถึงตอนนี้ ดันใบถัดไปไปต่อท้าย */}
                               {tailWidthPct > 0 && (
-                                <div title="ยังไม่ปิดงาน — ดีเลย์ยังดำเนินอยู่"
+                                <div title={tr('ยังไม่ปิดงาน — ดีเลย์ยังดำเนินอยู่')}
                                   style={{
                                     position: 'absolute', top: 3, bottom: 3,
                                     left: `${tailLeftPct}%`, width: `${tailWidthPct}%`,
@@ -2114,8 +2115,8 @@ export default function Management() {
                     {/* Hour header — เวลาคู่: บรรทัดบน ☀️ 08–19 / บรรทัดล่าง 🌙 20–07 คอลัมน์เดียวกัน */}
                     <div style={{ display: 'flex', borderBottom: '1px solid var(--border2)', background: 'var(--bg2)', position: 'relative' }}>
                       <div style={{ width: LEFT_W, flexShrink: 0, borderRight: '1px solid var(--border2)', padding: '3px 8px', fontSize: 11, fontWeight: 700, color: 'var(--muted)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, ...(isMobile ? { position: 'sticky', left: 0, zIndex: 3, background: 'var(--bg2)' } : null) }}>
-                        <span>กะเช้า{isMobile ? '' : ' (แถบบน)'}</span>
-                        <span>กะดึก{isMobile ? '' : ' (แถบล่าง)'}</span>
+                        <span>{tr('กะเช้า')}{isMobile ? '' : ' (แถบบน)'}</span>
+                        <span>{tr('กะดึก')}{isMobile ? '' : ' (แถบล่าง)'}</span>
                       </div>
                       {/* ป้ายเวลาปัจจุบัน ลอยตรงตำแหน่ง playhead (คอลัมน์ใช้ร่วม 2 กะ — ไอคอนบอกว่าอยู่กะไหน) */}
                       {(() => {
@@ -2186,7 +2187,7 @@ export default function Management() {
                               </div>
                               <div style={{ display: 'flex', alignItems: 'baseline', gap: 3, flexWrap: 'wrap' }}>
                                 <span style={{ fontSize: 14, fontWeight: 900, color: barColor, lineHeight: 1 }}>{rowActual}</span>
-                                <span style={{ fontSize: 11, color: 'var(--muted)' }}>/{rowDemand} ชิ้น · {doneCount}/{row.cards.length}ใบ</span>
+                                <span style={{ fontSize: 11, color: 'var(--muted)' }}>/{rowDemand} {tr('ชิ้น ·')} {doneCount}/{row.cards.length}{tr('ใบ')}</span>
                                 {delayed > 0 && <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>⚠️{delayed}</span>}
                                 {isOpen && delayed === 0 && <span style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700 }}>● Live</span>}
                               </div>
@@ -2197,8 +2198,8 @@ export default function Management() {
                                     — เศษตัวเลขที่อ่านผิดได้ แย่กว่าไม่มีตัวเลข */}
                                 {!isMobile && <PlanSlipBar st={rowPlan} fmtMs={fmtMs} oneLine compact />}
                                 {finOver && (
-                                  <span title="งานที่เหลือล้นกรอบวันงาน (08:00 ของวันถัดไป) — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต"
-                                    style={{ fontSize: 11, fontWeight: 800, color: 'var(--red)' }}>🔴 ล้นวันงาน</span>
+                                  <span title={tr('งานที่เหลือล้นกรอบวันงาน (08:00 ของวันถัดไป) — ต้องยกยอดข้ามกะ/เพิ่มกำลังผลิต')}
+                                    style={{ fontSize: 11, fontWeight: 800, color: 'var(--red)' }}>{tr('🔴 ล้นวันงาน')}</span>
                                 )}
                               </div>
                             </div>
@@ -2226,7 +2227,7 @@ export default function Management() {
         {ppeAlertsInView.length > 0 && (
           <div className="dt-alarm-banner" style={{ border: '1px solid var(--red-line)', borderRadius: 'var(--r-md)', padding: '8px 12px', marginBottom: 8, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 800, color: 'var(--red)' }}>
-              <span className="dt-alarm-icon">⛑</span> PPE ไม่ครบ {ppeAlertsInView.length} คน — ห้ามเข้าไลน์จนกว่าจะครบ
+              <span className="dt-alarm-icon">⛑</span> {tr('PPE ไม่ครบ')} {ppeAlertsInView.length} คน — ห้ามเข้าไลน์จนกว่าจะครบ
             </span>
             {ppeAlertsInView.map(p => (
               <span key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'rgba(0,0,0,0.25)', border: '1px solid var(--red-line)' }}>
@@ -2234,7 +2235,7 @@ export default function Management() {
                   ? <img loading="lazy" src={p.employees.image_url} className="person-alarm-red" style={{ width: 22, height: 22, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: '2px solid var(--red)' }} />
                   : <span className="person-alarm-red" style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid var(--red)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 }}>👤</span>}
                 <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)' }}>{p.employees?.name?.split(' ')[0] || '?'}</span>
-                <span style={{ fontSize: 11, color: '#fca5a5' }}>ขาด: {ppeMissingList(p).join(', ')}</span>
+                <span style={{ fontSize: 11, color: '#fca5a5' }}>{tr('ขาด:')} {ppeMissingList(p).join(', ')}</span>
               </span>
             ))}
           </div>
@@ -2410,7 +2411,7 @@ export default function Management() {
                     )}
                   {/* top-left: home position */}
                   {workerAtStation?.employee_id && homePositions[workerAtStation.employee_id] === String(st.id) && (
-                    <span title="ตำแหน่งประจำ" style={chipStyle({ top: -4, left: -4 })}>🏠</span>
+                    <span title={tr('ตำแหน่งประจำ')} style={chipStyle({ top: -4, left: -4 })}>🏠</span>
                   )}
                   {/* top-right: pending OJT doc */}
                   {(pendingDocByLine[st.line_name]?.length > 0) && (() => {
@@ -2424,7 +2425,7 @@ export default function Management() {
                     return (
                       <span key="pending-doc-badge"
                         onClick={(e) => { e.stopPropagation(); setPendingDocModal({ log: relevantLog }); setDocImageFile(null); setDocImagePreview(null); }}
-                        title="ค้างแนบเอกสาร OJT — คลิกเพื่อแนบ"
+                        title={tr('ค้างแนบเอกสาร OJT — คลิกเพื่อแนบ')}
                         style={{ ...chipStyle({ top: -4, right: -4 }), cursor: 'pointer' }}
                       >⚠️</span>
                     );
@@ -2439,7 +2440,7 @@ export default function Management() {
                     return (
                       <span key="pending-doc-home-badge"
                         onClick={(e) => { e.stopPropagation(); setPendingDocModal({ log: relevantLog }); setDocImageFile(null); setDocImagePreview(null); }}
-                        title="ค้างแนบเอกสาร OJT — คลิกเพื่อแนบ"
+                        title={tr('ค้างแนบเอกสาร OJT — คลิกเพื่อแนบ')}
                         style={{ ...chipStyle({ top: -4, right: -4 }), cursor: 'pointer' }}
                       >⚠️</span>
                     );
@@ -2447,14 +2448,14 @@ export default function Management() {
                   {/* bottom-right: บันทึก 4M */}
                   {!isMobile && (
                     <button onClick={(e) => { e.stopPropagation(); setShow4MModal({ stationId: st.id, lineName: st.line_name }); setLog4MForm({ category: 'Man', description: '' }); }}
-                      title="บันทึก 4M"
+                      title={tr('บันทึก 4M')}
                       style={{ ...chipStyle({ bottom: -4, right: -4 }), color: 'white', fontWeight: 700, cursor: 'pointer' }}>+</button>
                   )}
                   {/* left-middle: 4M category dots */}
                   {(hasMan || has4M) && (
                     <div style={{ position: 'absolute', left: -5, top: '50%', transform: 'translateY(-50%)', display: 'flex', flexDirection: 'column', gap: 2, zIndex: 3 }}>
-                      {hasMan && <span title="มีบันทึก 4M หมวด Man" style={{ width: Math.max(6, Math.round(MK * 0.14)), height: Math.max(6, Math.round(MK * 0.14)), borderRadius: '50%', background: '#4d9fff', border: '1px solid rgba(0,0,0,0.5)', display: 'inline-block' }} />}
-                      {has4M  && <span title="มีบันทึก 4M" style={{ width: Math.max(6, Math.round(MK * 0.14)), height: Math.max(6, Math.round(MK * 0.14)), borderRadius: '50%', background: '#e74c3c', border: '1px solid rgba(0,0,0,0.5)', display: 'inline-block' }} />}
+                      {hasMan && <span title={tr('มีบันทึก 4M หมวด Man')} style={{ width: Math.max(6, Math.round(MK * 0.14)), height: Math.max(6, Math.round(MK * 0.14)), borderRadius: '50%', background: '#4d9fff', border: '1px solid rgba(0,0,0,0.5)', display: 'inline-block' }} />}
+                      {has4M  && <span title={tr('มีบันทึก 4M')} style={{ width: Math.max(6, Math.round(MK * 0.14)), height: Math.max(6, Math.round(MK * 0.14)), borderRadius: '50%', background: '#e74c3c', border: '1px solid rgba(0,0,0,0.5)', display: 'inline-block' }} />}
                     </div>
                   )}
                 </div>
@@ -2503,8 +2504,7 @@ export default function Management() {
                       <div key={d.label} style={{ marginBottom: 5 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
                           <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.75)', display: 'flex', alignItems: 'center', gap: 3 }}>
-                            <span style={{ width: 5, height: 5, borderRadius: '50%', background: d.color, display: 'inline-block' }} />{d.label}
-                          </span>
+                            <span style={{ width: 5, height: 5, borderRadius: '50%', background: d.color, display: 'inline-block' }} />{tr(d.label)}</span>
                           <span style={{ fontSize: 11, fontWeight: 800, color: d.pass ? '#22c55e' : '#ef4444', marginLeft: 8 }}>
                             {d.actual}<span style={{ fontWeight: 400, color: 'rgba(255,255,255,0.4)' }}>/{d.required}</span>
                           </span>
@@ -2590,7 +2590,7 @@ export default function Management() {
               <div style={{ fontSize: 48, opacity: 0.25 }}>🏭</div>
               <div style={{ fontSize: 13, color: 'var(--muted)', textAlign: 'center' }}>
                 ยังไม่มีผังไลน์ —{' '}
-                <span style={{ color: 'var(--accent)', fontWeight: 600, cursor: 'default' }}>ตั้งค่าที่หน้า ตั้งค่าผังไลน์</span>
+                <span style={{ color: 'var(--accent)', fontWeight: 600, cursor: 'default' }}>{tr('ตั้งค่าที่หน้า ตั้งค่าผังไลน์')}</span>
               </div>
               {workers.length > 0 && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 12, width: '100%', maxWidth: 700 }}>
@@ -2607,12 +2607,12 @@ export default function Management() {
                     { label: 'งานนอกไลน์', count: specialWorkers.length },
                   ].map(s => (
                     <div key={s.label} style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: '14px 18px', textAlign: 'center' }}>
-                      <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{s.label}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{tr(s.label)}</div>
                       <div style={{ fontSize: 30, fontWeight: 800, fontFamily: 'var(--font-display)', color: 'var(--text)', lineHeight: 1.1, marginTop: 3 }}>
-                        {s.count}<span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text2)', marginLeft: 3 }}>คน</span>
+                        {s.count}<span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text2)', marginLeft: 3 }}>{tr('คน')}</span>
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                        {Math.round(s.count / workers.length * 100)}% ของ {workers.length} คนวันนี้
+                        {Math.round(s.count / workers.length * 100)}{tr('% ของ')} {workers.length} คนวันนี้
                       </div>
                     </div>
                   ))}
@@ -2620,7 +2620,7 @@ export default function Management() {
               )}
               {workers.length > 0 && (
                 <div style={{ width: '100%', maxWidth: 700 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>รายชื่อพนักงานวันนี้</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>{tr('รายชื่อพนักงานวันนี้')}</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 8 }}>
                     {workers.map(w => (
                       <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
@@ -2655,7 +2655,7 @@ export default function Management() {
             boxShadow: '0 4px 20px rgba(61,214,92,0.4)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
-          title="บันทึก 4M"
+          title={tr('บันทึก 4M')}
         >🚨</button>
       )}
 
@@ -2686,7 +2686,7 @@ export default function Management() {
                 .filter(d => d.score > 0)
                 .sort((a, b) => b.score - a.score);
               if (radarDataFiltered.length === 0) return (
-                <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '20px 0' }}>ยังไม่มีข้อมูลทักษะ</div>
+                <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '20px 0' }}>{tr('ยังไม่มีข้อมูลทักษะ')}</div>
               );
               return (
                 <ResponsiveContainer width="100%" height={200}>
@@ -2698,7 +2698,7 @@ export default function Management() {
                 </ResponsiveContainer>
               );
             })() : (
-              <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '20px 0' }}>ยังไม่มีข้อมูลทักษะ</div>
+              <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '20px 0' }}>{tr('ยังไม่มีข้อมูลทักษะ')}</div>
             )}
           </div>
         </div>
@@ -2774,7 +2774,7 @@ export default function Management() {
             {/* Skills */}
             {skillDefs.length > 0 && (
               <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>ทักษะ</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>{tr('ทักษะ')}</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {skillDefs.map(sd => {
                     const skills = detailSheet.worker.employees?.employee_skills || [];
@@ -2787,8 +2787,7 @@ export default function Management() {
                       <div key={sd.name}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                           <span style={{ fontSize: 13, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: sd.color, display: 'inline-block', flexShrink: 0 }} />{sd.label}
-                          </span>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: sd.color, display: 'inline-block', flexShrink: 0 }} />{tr(sd.label)}</span>
                           <span style={{ fontSize: 13, fontWeight: 700, color: bar }}>
                             {score > 0 ? `${score}%` : '—'}{fitReq && <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 11 }}>/{fitReq.required}%</span>}
                             {fitReq && <span style={{ marginLeft: 4 }}>{fitReq.pass ? '✓' : '✗'}</span>}
@@ -2814,13 +2813,13 @@ export default function Management() {
                 }}
                 style={{ flex: 1, padding: '13px', background: 'rgba(231,76,60,0.12)', color: 'var(--red)', border: '1px solid rgba(231,76,60,0.3)', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
               >
-                ส่งกลับ Pool
+                {tr('ส่งกลับ Pool')}
               </button>
               <button
                 onClick={() => setDetailSheet(null)}
                 style={{ flex: 1, padding: '13px', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
               >
-                ปิด
+                {tr('ปิด')}
               </button>
             </div>
           </div>
@@ -2845,7 +2844,7 @@ export default function Management() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
                 <div>
                   <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>{st.station_name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>เลือกพนักงานประจำจุดนี้</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{tr('เลือกพนักงานประจำจุดนี้')}</div>
                 </div>
                 <button onClick={() => setStationModal(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 22, cursor: 'pointer' }}>×</button>
               </div>
@@ -2853,7 +2852,7 @@ export default function Management() {
               {/* Current worker */}
               {workerHere && (
                 <div style={{ marginBottom: 12, padding: '10px 12px', background: `${tint(fitColor(fitHere.score), 'dim')}`, border: `1px solid ${tint(fitColor(fitHere.score), 'line')}`, borderRadius: 'var(--r-lg)' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>ประจำอยู่ตอนนี้</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{tr('ประจำอยู่ตอนนี้')}</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     {workerHere.employees?.image_url
                       ? <img loading="lazy" src={workerHere.employees.image_url} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover', objectPosition: 'top', border: `2px solid ${fitColor(fitHere.score)}`, flexShrink: 0 }} />
@@ -2870,11 +2869,11 @@ export default function Management() {
                           <button
                             onClick={async () => { await saveHomePosition(workerHere, st.id); }}
                             style={{ fontSize: 11, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'rgba(77,159,255,0.12)', color: '#4d9fff', border: '1px solid rgba(77,159,255,0.3)', cursor: 'pointer', fontWeight: 700 }}
-                            title="บันทึกเป็นตำแหน่งประจำ"
-                          >บันทึกตำแหน่งประจำ</button>
+                            title={tr('บันทึกเป็นตำแหน่งประจำ')}
+                          >{tr('บันทึกตำแหน่งประจำ')}</button>
                         )}
                         {homePositions[workerHere.employee_id] === String(st.id) && (
-                          <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontWeight: 700 }}>ตำแหน่งประจำ</span>
+                          <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 'var(--r-md)', background: 'rgba(34,197,94,0.12)', color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', fontWeight: 700 }}>{tr('ตำแหน่งประจำ')}</span>
                         )}
                         {canAssignManpower && <button
                           onClick={() => { assignWorker(workerHere.id, 'Pool'); setStationModal(null); }}
@@ -2892,7 +2891,7 @@ export default function Management() {
               </div>
               <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {sortedPool.length === 0 && (
-                  <div style={{ color: 'var(--muted)', fontSize: 12, textAlign: 'center', padding: '20px 0' }}>ไม่มีพนักงานใน Pool</div>
+                  <div style={{ color: 'var(--muted)', fontSize: 12, textAlign: 'center', padding: '20px 0' }}>{tr('ไม่มีพนักงานใน Pool')}</div>
                 )}
                 {sortedPool.map(w => {
                   const fc = fitColor(w._fit.score);
@@ -2910,7 +2909,7 @@ export default function Management() {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', display: 'flex', alignItems: 'center', gap: 5 }}>
                           {w.employees?.name}
-                          {isHome && <span style={{ fontSize: 11 }} title="ตำแหน่งประจำ">🏠</span>}
+                          {isHome && <span style={{ fontSize: 11 }} title={tr('ตำแหน่งประจำ')}>🏠</span>}
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--muted)' }}>{w.employees?.employee_id_code}{w.employees?.team ? ` · Team ${w.employees.team}` : ''}</div>
                       </div>
@@ -2928,7 +2927,7 @@ export default function Management() {
       {specialModal && (
         <div className="overlay">
           <div className="modal" style={{ width: 'min(360px, 94vw)' }}>
-            <h3 style={{ marginTop: 0, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>กำหนดงานนอกไลน์</h3>
+            <h3 style={{ marginTop: 0, color: '#f59e0b', fontFamily: 'var(--font-display)' }}>{tr('กำหนดงานนอกไลน์')}</h3>
             <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -10 }}>{specialModal.employees?.name}</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
               {specialTaskOptions.map(t => (
@@ -2944,11 +2943,11 @@ export default function Management() {
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={() => assignSpecialTask(specialModal, specialTaskType)}
                 style={{ flex: 2, padding: 12, background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}>
-                ยืนยัน
+                {tr('ยืนยัน')}
               </button>
               <button onClick={() => setSpecialModal(null)}
                 style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', cursor: 'pointer' }}>
-                ยกเลิก
+                {tr('ยกเลิก')}
               </button>
             </div>
           </div>
@@ -2959,7 +2958,7 @@ export default function Management() {
       {pendingDocModal && (
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ background: 'var(--card)', borderRadius: 'var(--r-lg)', padding: 24, width: '100%', maxWidth: 420, display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{ fontWeight: 700, fontSize: 16 }}>แนบเอกสาร OJT</div>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>{tr('แนบเอกสาร OJT')}</div>
             <div style={{ fontSize: 13, color: 'var(--text2)' }}>
               <b>{pendingDocModal.log.category}</b> · {pendingDocModal.log.line_name}<br/>
               {pendingDocModal.log.description}
@@ -2967,7 +2966,7 @@ export default function Management() {
             {/* Image upload */}
             <div>
               <label style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, display: 'block', marginBottom: 6 }}>
-                รูปหลักฐาน OJT <span style={{ color: 'var(--muted)' }}>(ไม่บังคับ)</span>
+                {tr('รูปหลักฐาน OJT')} <span style={{ color: 'var(--muted)' }}>{tr('(ไม่บังคับ)')}</span>
               </label>
               <div
                 style={{ border: `2px dashed ${docImageFile ? '#a855f7' : 'var(--border2)'}`, borderRadius: 'var(--r-md)', padding: '10px 12px', background: docImageFile ? 'rgba(168,85,247,0.06)' : 'var(--bg2)', cursor: 'pointer', textAlign: 'center' }}
@@ -2975,7 +2974,7 @@ export default function Management() {
               >
                 {docImagePreview
                   ? <img src={docImagePreview} alt="" style={{ maxHeight: 140, borderRadius: 6, objectFit: 'contain' }} />
-                  : <span style={{ color: 'var(--muted)', fontSize: 13 }}>แตะเพื่อเลือกรูป</span>
+                  : <span style={{ color: 'var(--muted)', fontSize: 13 }}>{tr('แตะเพื่อเลือกรูป')}</span>
                 }
               </div>
               <input id="doc-img-input" type="file" accept="image/*" style={{ display: 'none' }}
@@ -3046,16 +3045,16 @@ export default function Management() {
       {show4MModal && (
         <div className="overlay">
           <div className="modal" style={{ width: 'min(420px, 94vw)' }}>
-            <h3 style={{ marginTop: 0, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>บันทึก 4M Change</h3>
-            <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -10 }}>ไลน์: {show4MModal.lineName}</p>
+            <h3 style={{ marginTop: 0, color: 'var(--accent)', fontFamily: 'var(--font-display)' }}>{tr('บันทึก 4M Change')}</h3>
+            <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: -10 }}>{tr('ไลน์:')} {show4MModal.lineName}</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label style={labelSt}>ประเภทการเปลี่ยนแปลง</label>
+                <label style={labelSt}>{tr('ประเภทการเปลี่ยนแปลง')}</label>
                 <select value={log4MForm.category} onChange={e => setLog4MForm({ ...log4MForm, category: e.target.value })}>
-                  <option value="Man">Man — คน / พนักงาน</option>
-                  <option value="Machine">Machine — เครื่องจักร</option>
-                  <option value="Material">Material — วัสดุ</option>
-                  <option value="Method">Method — วิธีการ</option>
+                  <option value="Man">{tr('Man — คน / พนักงาน')}</option>
+                  <option value="Machine">{tr('Machine — เครื่องจักร')}</option>
+                  <option value="Material">{tr('Material — วัสดุ')}</option>
+                  <option value="Method">{tr('Method — วิธีการ')}</option>
                 </select>
               </div>
               {/* Man: 3-case logic */}
@@ -3064,7 +3063,7 @@ export default function Management() {
                 const meta = MAN_CASE_META[manCase];
                 return (
                   <div style={{ background: 'var(--blue-dim)', borderRadius: 'var(--r-md)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 2 }}>ลักษณะการย้ายงาน</div>
+                    <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 2 }}>{tr('ลักษณะการย้ายงาน')}</div>
                     {/* move type */}
                     <div style={{ display: 'flex', gap: 8 }}>
                       {[{ v: 'same', label: 'ไลน์เดิม', desc: 'ย้ายในไลน์/ส่วนงานเดียวกัน' }, { v: 'cross', label: 'ข้ามไลน์', desc: 'ย้ายข้ามไลน์ / ข้ามส่วนงาน' }].map(opt => (
@@ -3073,39 +3072,37 @@ export default function Management() {
                           background: log4MForm.moveType === opt.v ? 'var(--blue-dim)' : 'transparent' }}>
                           <input type="radio" name="moveType" value={opt.v} checked={log4MForm.moveType === opt.v}
                             onChange={() => setLog4MForm({ ...log4MForm, moveType: opt.v })} style={{ display: 'none' }} />
-                          <span style={{ fontSize: 13, fontWeight: 700 }}>{opt.label}</span>
-                          <span style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>{opt.desc}</span>
+                          <span style={{ fontSize: 13, fontWeight: 700 }}>{tr(opt.label)}</span>
+                          <span style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>{tr(opt.desc)}</span>
                         </label>
                       ))}
                     </div>
                     {/* skill + history */}
                     <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
                       <input type="checkbox" checked={log4MForm.skillOk} onChange={e => setLog4MForm({ ...log4MForm, skillOk: e.target.checked })} style={{ width: 15, height: 15 }} />
-                      ทักษะผ่านเกณฑ์ที่กำหนด
+                      {tr('ทักษะผ่านเกณฑ์ที่กำหนด')}
                     </label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
                       <input type="checkbox" checked={log4MForm.hasHistory} onChange={e => setLog4MForm({ ...log4MForm, hasHistory: e.target.checked })} style={{ width: 15, height: 15 }} />
-                      มีประวัติเคยทำงานจุดนี้มาก่อน
+                      {tr('มีประวัติเคยทำงานจุดนี้มาก่อน')}
                     </label>
                     {/* result badge */}
-                    <div style={{ fontSize: 11, padding: '5px 8px', borderRadius: 'var(--r-md)', background: meta.bg, color: meta.color, fontWeight: 600 }}>
-                      {meta.label}
-                    </div>
+                    <div style={{ fontSize: 11, padding: '5px 8px', borderRadius: 'var(--r-md)', background: meta.bg, color: meta.color, fontWeight: 600 }}>{tr(meta.label)}</div>
                   </div>
                 );
               })()}
               {/* Machine/Material/Method: replace vs change */}
               {log4MForm.category !== 'Man' && (
                 <div style={{ background: 'var(--amber-dim)', borderRadius: 'var(--r-md)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 2 }}>ลักษณะการเปลี่ยนแปลง</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 600, marginBottom: 2 }}>{tr('ลักษณะการเปลี่ยนแปลง')}</div>
                   <div style={{ display: 'flex', gap: 10 }}>
                     {[{ v: 'replace', label: 'Replace', desc: 'สลับ / ทดแทน' }, { v: 'change', label: 'Change', desc: 'เปลี่ยนแปลง' }].map(opt => (
                       <label key={opt.v} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, padding: '8px 6px', borderRadius: 'var(--r-md)', cursor: 'pointer',
                         border: `2px solid ${log4MForm.subtype === opt.v ? (opt.v === 'replace' ? 'var(--green)' : 'var(--red)') : 'var(--border2)'}`,
                         background: log4MForm.subtype === opt.v ? (opt.v === 'replace' ? 'var(--green-dim)' : 'var(--red-dim)') : 'transparent' }}>
                         <input type="radio" name="subtype" value={opt.v} checked={log4MForm.subtype === opt.v} onChange={() => setLog4MForm({ ...log4MForm, subtype: opt.v })} style={{ display: 'none' }} />
-                        <span style={{ fontSize: 14, fontWeight: 700 }}>{opt.label}</span>
-                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{opt.desc}</span>
+                        <span style={{ fontSize: 14, fontWeight: 700 }}>{tr(opt.label)}</span>
+                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr(opt.desc)}</span>
                       </label>
                     ))}
                   </div>
@@ -3119,9 +3116,9 @@ export default function Management() {
                 </div>
               )}
               <div>
-                <label style={labelSt}>รายละเอียด</label>
+                <label style={labelSt}>{tr('รายละเอียด')}</label>
                 <textarea value={log4MForm.description} onChange={e => setLog4MForm({ ...log4MForm, description: e.target.value })}
-                  placeholder="ระบุรายละเอียดการเปลี่ยนแปลง..." rows={3} style={{ resize: 'vertical' }} />
+                  placeholder={tr('ระบุรายละเอียดการเปลี่ยนแปลง...')} rows={3} style={{ resize: 'vertical' }} />
               </div>
               {/* Image upload — required when needsImage */}
               {(() => {
@@ -3150,12 +3147,12 @@ export default function Management() {
                         }} />
                       {reqImagePreview
                         ? <img src={reqImagePreview} style={{ maxHeight: 140, maxWidth: '100%', borderRadius: 6, objectFit: 'contain' }} />
-                        : <div style={{ color: 'var(--muted)', fontSize: 13 }}>แตะเพื่อเลือกรูป (JPG/PNG/WebP)</div>}
+                        : <div style={{ color: 'var(--muted)', fontSize: 13 }}>{tr('แตะเพื่อเลือกรูป (JPG/PNG/WebP)')}</div>}
                     </div>
                     {reqImageFile && (
                       <button type="button" onClick={() => { setReqImageFile(null); setReqImagePreview(null); }}
                         style={{ marginTop: 4, fontSize: 11, color: 'var(--red)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                        ลบรูป
+                        {tr('ลบรูป')}
                       </button>
                     )}
                   </div>
@@ -3163,7 +3160,7 @@ export default function Management() {
               })()}
               <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
                 <button onClick={handleSave4MLog} disabled={isSaving4M} style={{ flex: 2, padding: 12, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, fontFamily: 'var(--font-display)', fontSize: 15, opacity: isSaving4M ? 0.6 : 1, cursor: isSaving4M ? 'not-allowed' : 'pointer' }}>
-                  {isSaving4M ? 'กำลังบันทึก...' : 'บันทึก 4M Log'}
+                  {isSaving4M ? tr('กำลังบันทึก...') : tr('บันทึก 4M Log')}
                 </button>
                 <button onClick={() => { if (!isSaving4M) { setShow4MModal(null); setLog4MForm({ category: 'Man', description: '' }); setReqImageFile(null); setReqImagePreview(null); } }}
                   style={{ flex: 1, padding: 12, background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 8, cursor: isSaving4M ? 'not-allowed' : 'pointer' }}>
@@ -3266,7 +3263,7 @@ function WorkerHoverCard({ card, skillDefs }) {
                 const sc = pass === false ? '#ef4444' : pass === true ? 'var(--accent)' : 'var(--text2)';
                 return (
                   <div key={s.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--bg3)', border: `1px solid ${tint(sc, 'dim')}`, borderRadius: 'var(--r-xs)', padding: '4px 6px' }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 4 }}>{s.label}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginRight: 4 }}>{tr(s.label)}</span>
                     <span style={{ fontSize: 11, fontWeight: 900, color: sc, fontFamily: 'var(--font-display)', flexShrink: 0 }}>
                       {s.score > 0 ? s.score : '—'}{s.req ? <span style={{ fontSize: 11, opacity: 0.6 }}>/{s.req.required}</span> : ''}
                     </span>
@@ -3274,7 +3271,7 @@ function WorkerHoverCard({ card, skillDefs }) {
                 );
               })}
               {hiddenCount > 0 && (
-                <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>+{hiddenCount} ทักษะอื่นๆ</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>+{hiddenCount} {tr('ทักษะอื่นๆ')}</div>
               )}
             </div>
           )}
@@ -3285,7 +3282,7 @@ function WorkerHoverCard({ card, skillDefs }) {
           Thai skill labels don't clip past the card edges at high skill counts. */}
       {skillDefs.length > 0 && radarData.length > 0 && (
         <>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', textAlign: 'center', marginTop: 4, marginBottom: 2 }}>ภาพรวมทักษะ</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.07em', textAlign: 'center', marginTop: 4, marginBottom: 2 }}>{tr('ภาพรวมทักษะ')}</div>
           <div style={{ width: '100%', height: 220 }}>
             <ResponsiveContainer width="100%" height="100%">
               <RadarChart data={radarData} margin={{ top: 16, right: 70, bottom: 16, left: 70 }}>
@@ -3329,8 +3326,7 @@ function FitPopup({ fitPopup, onClose }) {
         <div key={d.label} style={{ marginBottom: 7 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
             <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', gap: 5 }}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: d.color, display: 'inline-block' }} />{d.label}
-            </span>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: d.color, display: 'inline-block' }} />{tr(d.label)}</span>
             <span style={{ fontSize: 11, fontWeight: 800, color: d.pass ? '#22c55e' : '#ef4444' }}>
               {d.actual}<span style={{ color: 'rgba(255,255,255,0.35)', fontWeight: 400 }}>/{d.required}%</span> {d.pass ? '✓' : '✗'}
             </span>
@@ -3436,7 +3432,7 @@ function PointDetailCard({ detail, alarms, onClose }) {
         </div>
 
         {loading && (
-          <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', padding: '8px 0 2px' }}>กำลังโหลดข้อมูล...</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', padding: '8px 0 2px' }}>{tr('กำลังโหลดข้อมูล...')}</div>
         )}
         {notRegistered && (
           <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', background: 'var(--bg3)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '10px 12px', marginTop: infoRows.length ? 8 : 0 }}>

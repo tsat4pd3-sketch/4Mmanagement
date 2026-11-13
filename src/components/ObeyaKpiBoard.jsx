@@ -49,6 +49,7 @@ import {
 } from '../utils/obeyaYear';
 import { ST, worstStatus, safetyKind, isInjury, ymd } from '../utils/obeya';
 
+import { tr } from '../utils/i18n';
 /* ══ 📋 OBEYA — บอร์ด KPI ส่วนงาน · 2026-08-27 → 2026-09-23 (วาดใหม่เป็น "แผ่น A4" ชุดเดียวกับจอ SQDCM) ═══
    แทนกระดาษ "OBEYA KPI monitoring" ที่แปะผนังห้องประชุมหน้างาน (คำสั่งนายใหญ่ผ่าน user 2026-08-27)
    user เคาะ 3 ข้อ: ① แยกรายส่วนงาน ② ตัวไหนวิ่งทุกกะให้อัพเดทรายวัน ③ มีแกน Safety
@@ -126,7 +127,7 @@ const monthEnd = (k, today) => {
 };
 /** ป้ายสถานะ (คำ + เหตุผล) ให้ StatusLamp — คำชุดเดียวกับจอ SQDCM */
 const LAMP_LABEL = { good: 'ตามเป้า', warn: 'ถึง Commitment', bad: 'หลุดเป้า', none: 'ตัดสินไม่ได้' };
-const toLamp = (st, why) => ({ status: st === ST.unknown ? 'none' : st, label: st === ST.unknown ? (why?.startsWith('ยังไม่มี') || why?.startsWith('ยังไม่กรอก') ? 'ยังไม่มีข้อมูล' : 'ไม่มีเป้า') : LAMP_LABEL[st], why: why || '' });
+const toLamp = (st, why) => ({ status: st === ST.unknown ? 'none' : st, label: st === ST.unknown ? (why?.startsWith('ยังไม่มี') || why?.startsWith('ยังไม่กรอก') ? tr('ยังไม่มีข้อมูล') : tr('ไม่มีเป้า')) : LAMP_LABEL[st], why: why || '' });
 
 /* แผ่น KPI บนมือถือ: หัว (ชื่อ·ตัวเลขใหญ่·ไฟ) ~90px + กราฟ ~200px + ท้าย — อ่านออก ไม่ต้องเลื่อนในแผ่น */
 const MOBILE_SHEET_H = 330;
@@ -629,10 +630,16 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       if (value == null) {
         why = r.auto && !fromDept ? (note || 'ยังไม่มีข้อมูลเดือนนี้') : roll ? 'หน่วยลูกยังไม่กรอกค่าเดือนนี้' : (man || fromDept ? 'ยังไม่กรอกค่าเดือนนี้' : 'ยังไม่ได้ตั้ง KPI ตัวนี้ — ตั้งที่แท็บ ⚙️');
       } else if (def && (target != null || bars?.commit_value != null)) {
-        const sc = scoreDef(value, def);
+        /* 📅 score_by_plan (11/11): เทียบแผนสะสมของเดือนที่โชว์ — แผนของแถวนี้ ไม่มี = แผนของแผ่นโรงงานที่แชร์ค่า (ยอดขาย/หัว) */
+        const planEarly = planByKpi[def?.id] || (man?.sharedDef ? planByKpi[man.sharedDef.id] : null) || {};
+        const mSel = Number(String(valueKey || monthKey).slice(5, 7)) || monthNo;
+        const sc = scoreDef(value, def, { plan: def?.score_by_plan ? planEarly[mSel] ?? null : null });
         st = sc.status === 'good' ? ST.good : sc.status === 'warn' ? ST.warn : sc.status === 'bad' ? ST.bad : ST.unknown;
         const cb = sc.bars.commit_value != null ? ` · Commit ${fmtBar(sc.bars.commit_compare, sc.bars.commit_value, unit)}` : '';
-        why = `เทียบ Target ${fmtBar(sc.bars.target_compare, sc.bars.target_value, unit)}${cb}`;
+        why = sc.bars.byPlan
+          ? `เทียบแผนสะสม ${monthLabel(`${year}-${String(mSel).padStart(2, '0')}`)} ${fmtBar(sc.bars.target_compare, sc.bars.target_value, unit)}${cb} (เป้าทั้งปี ${fmtBar(sc.bars.target_compare, sc.bars.annualTarget, unit)})`
+          : def?.score_by_plan ? `เดือนนี้ยังไม่มีแผนสะสม — เทียบเป้าทั้งปี ${fmtBar(sc.bars.target_compare, sc.bars.target_value, unit)}${cb}`
+          : `เทียบ Target ${fmtBar(sc.bars.target_compare, sc.bars.target_value, unit)}${cb}`;
       } else {
         why = r.auto && !fromDept ? 'ยังไม่ตั้งเป้า — ตั้งที่แท็บ ⚙️ ปุ่ม 🎯 ท้ายแถว' : 'ยังไม่ตั้งเป้า — ตั้งที่แท็บ ⚙️ ตอนแก้นิยาม KPI';
       }
@@ -655,7 +662,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       });
       const fcScore = fc.value != null && def && (target != null || def.commit_value != null || def.commitment) ? scoreDef(fc.value, def) : null;
       /* เส้นแผนรายเดือน + เครื่องหมายโน้ต ติดไปกับจุดกราฟ (สเกลเดียวกับผลจริง — ห้ามแกน Y 2 ข้าง) */
-      const planMap = planByKpi[planDef?.id] || {};
+      const planMap = planByKpi[planDef?.id] || (man?.sharedDef ? planByKpi[man.sharedDef.id] : null) || {};   // แผ่นที่แชร์ค่าโรงงานใช้แผนของแผ่นโรงงาน
       const notesOfRow = notesBy[r.key] || {};
       series = series.map((p, i) => (i < 12
         ? { ...p, plan: planMap[i + 1] ?? null, notes: notesOfRow[i + 1] || [], noteMark: (notesOfRow[i + 1] || []).length ? '📝' : '' }
@@ -882,7 +889,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         <div style={{ position: 'absolute', top: 0, right: 6, zIndex: 2, display: 'flex', gap: 2 }}>
           {[['%', false], ['ชม.', true]].map(([lb, on]) => (
             <button key={lb} type="button" onClick={(e) => { e.stopPropagation(); if (hv !== on) toggleHr(r.key); }}
-              title="สลับหน่วยที่ดู — ชม. = ชั่วโมงเครื่องหยุด แปลงจาก % ด้วยฐาน 730 ชม. × จำนวนเครื่อง (ตัวเลข KPI ทางการและไฟสถานะยังเป็น %)"
+              title={tr('สลับหน่วยที่ดู — ชม. = ชั่วโมงเครื่องหยุด แปลงจาก % ด้วยฐาน 730 ชม. × จำนวนเครื่อง (ตัวเลข KPI ทางการและไฟสถานะยังเป็น %)')}
               style={{ fontSize: fs(10), lineHeight: 1.3, padding: '1px 6px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', cursor: 'pointer', fontWeight: 700,
                 background: hv === on ? 'var(--accent)' : 'var(--card)', color: hv === on ? 'var(--accent-ink)' : 'var(--muted)' }}>{lb}</button>
           ))}
@@ -986,26 +993,26 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
     <>
       {/* ขอบเขต = ผังองค์กรทุกมิติ (23/09) — 1 บอร์ดต่อ 1 ขอบเขต (ฝ่าย/ส่วนงาน/แผนก/กลุ่มไลน์/ไลน์/CC) · ชิป = เจาะลง/กลับขึ้นหนึ่งชั้น */}
       <OrgScopePicker ccOnly index={org} value={scope || PLANT} onChange={setScope} scopeSet={scopeSet} sections={sections} failed={orgFailed}
-        width={230} title="เลือกขอบเขตตามรหัส cost center (Obeya/KPI สรุปตามรหัส)" />
+        width={230} title={tr('เลือกขอบเขตตามรหัส cost center (Obeya/KPI สรุปตามรหัส)')} />
       {parentScope && <button onClick={() => setScope(parentScope)} style={pill(false)} title={`กลับขึ้น ${org.labelOf(parentScope.kind, parentScope.value)}`}>↑</button>}
       {childChips.map(c => (
-        <button key={c.key} onClick={() => setScope({ kind: c.kind, value: c.value })} style={pill(false)} title={`เจาะ ${org.labelOf(c.kind, c.value)}`}>{c.label}</button>
+        <button key={c.key} onClick={() => setScope({ kind: c.kind, value: c.value })} style={pill(false)} title={`เจาะ ${org.labelOf(c.kind, c.value)}`}>{tr(c.label)}</button>
       ))}
       <span className="sep" />
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-        <button onClick={() => shiftMonth(-1)} title="เดือนก่อน" style={navBtn}>◀</button>
+        <button onClick={() => shiftMonth(-1)} title={tr('เดือนก่อน')} style={navBtn}>◀</button>
         <b style={{ fontSize: 13, minWidth: 92, textAlign: 'center' }} title={live ? 'เดือนปัจจุบัน — ตามวันจริง ข้ามเดือนแล้วเลื่อนเอง' : `ปักดูเดือน ${monthText} อยู่ — กด "สด" เพื่อกลับเดือนปัจจุบัน`}>
-          {monthText}{live && <span style={{ marginLeft: 5, fontSize: 11, fontWeight: 800, color: 'var(--green)', verticalAlign: 'middle' }}>● สด</span>}
+          {monthText}{live && <span style={{ marginLeft: 5, fontSize: 11, fontWeight: 800, color: 'var(--green)', verticalAlign: 'middle' }}>{tr('● สด')}</span>}
         </b>
-        <button onClick={() => shiftMonth(1)} disabled={live} title={live ? 'อยู่เดือนปัจจุบันแล้ว' : 'เดือนถัดไป'} style={navBtn}>▶</button>
-        {!live && <button onClick={() => setParam('date', '')} title="กลับเดือนปัจจุบัน (ตามวันจริง)" style={{ ...navBtn, fontSize: 11.5, padding: '2px 8px', fontWeight: 700 }}>⟲ สด</button>}
+        <button onClick={() => shiftMonth(1)} disabled={live} title={live ? tr('อยู่เดือนปัจจุบันแล้ว') : tr('เดือนถัดไป')} style={navBtn}>▶</button>
+        {!live && <button onClick={() => setParam('date', '')} title={tr('กลับเดือนปัจจุบัน (ตามวันจริง)')} style={{ ...navBtn, fontSize: 11.5, padding: '2px 8px', fontWeight: 700 }}>{tr('⟲ สด')}</button>}
       </span>
       <span className="sep" />
       {/* 🎯 โฟกัสช่วงค่า — ยกพื้นแกน Y ให้เห็น gap T/C (แกนไม่เริ่ม 0 ⇒ แผ่นเขียนบอกเอง) */}
       <button onClick={() => setParam('yfocus', yFocus ? '' : '1')} style={pill(yFocus)} aria-pressed={yFocus}
         title={yFocus ? 'กำลังโฟกัสช่วงค่า: แกน Y เริ่มใกล้ค่าต่ำสุด ให้เห็นระยะห่าง Target/Commitment ชัด · กดเพื่อกลับแกนเริ่ม 0'
           : 'โฟกัสช่วงค่า: ตัดที่ว่างใต้กราฟ ยกพื้นแกน Y ขึ้นใกล้ค่าต่ำสุด ให้เห็นระยะห่าง Target/Commitment ชัดขึ้น (แผ่นจะเขียนบอกว่าแกนไม่เริ่ม 0)'}>
-        {yFocus ? 'โฟกัสช่วงค่า' : 'แกนเริ่ม 0'}
+        {yFocus ? tr('โฟกัสช่วงค่า') : tr('แกนเริ่ม 0')}
       </button>
     </>
   );
@@ -1023,16 +1030,16 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
               {/* ปุ่มตายตัว ≤2 (UI §6.35 · 04/11): หลัก = บันทึกเหตุการณ์ · รอง = โหมดจอ TV · จัดเรียงแผ่น → ⋯ */}
               {canRecord && (
                 <button type="button" className="pg-btn primary" onClick={() => setShowSafety({})}>
-                  + บันทึกเหตุการณ์ความปลอดภัย
+                  {tr('+ บันทึกเหตุการณ์ความปลอดภัย')}
                 </button>
               )}
               {arrange && canNote && (
                 <button type="button" className="pg-btn" onClick={() => setArrange(false)} aria-pressed={arrange}
-                  title={arrange ? 'ปิดโหมดจัดเรียง' : 'จัดลำดับแผ่น KPI ของขอบเขตนี้เอง — กด ◀ ▶ บนแผ่น · บันทึกทันที · มีผลกับทุกคนที่ดูขอบเขตนี้'}>
-                  {arrange ? 'เสร็จสิ้นจัดเรียง' : 'จัดเรียงแผ่น'}
+                  title={arrange ? tr('ปิดโหมดจัดเรียง') : tr('จัดลำดับแผ่น KPI ของขอบเขตนี้เอง — กด ◀ ▶ บนแผ่น · บันทึกทันที · มีผลกับทุกคนที่ดูขอบเขตนี้')}>
+                  {arrange ? tr('เสร็จสิ้นจัดเรียง') : tr('จัดเรียงแผ่น')}
                 </button>
               )}
-              <button type="button" className="pg-btn" onClick={() => goBoard(true)}>โหมดจอ TV</button>
+              <button type="button" className="pg-btn" onClick={() => goBoard(true)}>{tr('โหมดจอ TV')}</button>
               <OverflowMenu items={[
                 { key: 'arrange', icon: '⇅', label: 'จัดเรียงแผ่น KPI', onClick: () => setArrange(true), hidden: !canNote || arrange,
                   title: 'จัดลำดับแผ่น KPI ของขอบเขตนี้เอง (บันทึกต่อขอบเขต)' },
@@ -1045,10 +1052,10 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', flexShrink: 0, borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
           <div style={{ fontSize: tv ? 26 : 18, fontWeight: 900 }}>OBEYA · {scope ? org.labelOf(scope.kind, scope.value) : '—'}</div>
           {/* 📺 จอประชุม: ตัวเลือกขอบเขต/เดือน/โฟกัส ไม่มีใครกด ⇒ เหลือแค่ "ดูเดือนไหน" ตัวโต */}
-          {tv ? <b style={{ fontSize: 24 }}>{monthText}{live && <span style={{ marginLeft: 8, fontSize: 20, color: 'var(--green)' }}>● สด</span>}</b> : controls}
+          {tv ? <b style={{ fontSize: 24 }}>{monthText}{live && <span style={{ marginLeft: 8, fontSize: 20, color: 'var(--green)' }}>{tr('● สด')}</span>}</b> : controls}
           <StatusLamp k={tv ? 2 : 1} w={999} stat={overallLamp} />
           <div style={{ flex: 1 }} />
-          <button className="tv-hide" onClick={() => goBoard(false)} style={pill(false)}>ออกจากโหมดจอ</button>
+          <button className="tv-hide" onClick={() => goBoard(false)} style={pill(false)}>{tr('ออกจากโหมดจอ')}</button>
         </div>
       )}
 
@@ -1060,17 +1067,17 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
             ที่ไม่พอจริง (มือถือหัวเพจสูง) = ถอยไป `auto` ยอมให้เลื่อน ดีกว่าตัดเนื้อหาหาย */}
         <div ref={wrapRef} style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: fitOn ? 'clip' : 'auto' }}>
           {loading && !data ? (
-            <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลดข้อมูล…</div>
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลดข้อมูล…')}</div>
           ) : !scope ? (
-            <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังเลือกขอบเขตเริ่มต้น…</div>
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังเลือกขอบเขตเริ่มต้น…')}</div>
           ) : (
             <div style={sheetsBox}>
               {pageItems.filter((x) => x.kind === 'kpi').map(({ row: r }) => (
                 <div key={r.key} style={{ position: 'relative', minHeight: 0, display: 'grid' }}>
                 {arrange && (
                   <div style={{ position: 'absolute', top: 4, right: 6, zIndex: 3, display: 'flex', gap: 4 }}>
-                    <button onClick={() => moveSheet(r.key, -1)} disabled={rows[0]?.key === r.key} title="เลื่อนไปก่อนหน้า" style={{ ...navBtn, fontSize: 13, padding: '2px 8px' }}>◀</button>
-                    <button onClick={() => moveSheet(r.key, 1)} disabled={rows[rows.length - 1]?.key === r.key} title="เลื่อนไปถัดไป" style={{ ...navBtn, fontSize: 13, padding: '2px 8px' }}>▶</button>
+                    <button onClick={() => moveSheet(r.key, -1)} disabled={rows[0]?.key === r.key} title={tr('เลื่อนไปก่อนหน้า')} style={{ ...navBtn, fontSize: 13, padding: '2px 8px' }}>◀</button>
+                    <button onClick={() => moveSheet(r.key, 1)} disabled={rows[rows.length - 1]?.key === r.key} title={tr('เลื่อนไปถัดไป')} style={{ ...navBtn, fontSize: 13, padding: '2px 8px' }}>▶</button>
                   </div>
                 )}
                 <Sheet k={k} cw={cw} icon={r.icon} title={r.name}
@@ -1094,7 +1101,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
 
               {/* ═══ งานที่ต้องตามแก้ — สิ่งที่ทำให้บอร์ดนี้เป็น Obeya ไม่ใช่แค่จอตัวเลข ═══ */}
               {has('todo') && (
-              <Sheet k={k} cw={cw} icon="🚨" title="งานที่ต้องตามแก้"
+              <Sheet k={k} cw={cw} icon="🚨" title={tr('งานที่ต้องตามแก้')}
                 sub={`action จากประชุมเช้า/ห้อง Obeya + เหตุความปลอดภัยที่ยังไม่ปิด${data?.actsMissing ? ' · ⚠ ยังไม่มีตารางติดตาม' : ''}`}
                 big={todo.length ? String(overdue || todo.length) : '0'} unit={overdue ? 'รายการเกินกำหนด' : 'รายการค้าง'}
                 stat={todo.length
@@ -1143,7 +1150,7 @@ export default function ObeyaKpiBoard({ tabs, tab, onTab }) {
       {/* คำอธิบายยาว = พับหลัง ⓘ (UI §6.10 · 04/11 user "text อธิบายเยอะๆ ควรเป็น tooltip") — เดิม 3 บรรทัดใต้บอร์ดตลอดเวลา */}
       {!board && (
         <div className="tv-hide" style={{ marginTop: 8 }}>
-          <InfoMore id="obeya-kpi-legend" label="ที่มาของตัวเลข · ความหมายสี" size={11}>
+          <InfoMore id="obeya-kpi-legend" label={tr('ที่มาของตัวเลข · ความหมายสี')} size={11}>
             ตัวเลข = สะสมเดือนที่เลือก · ⚡ ระบบคำนวณจากกะที่ปิดแล้ว (OEE ถ่วงเวลารับภาระ · PPM = ของเสีย ÷ ยอดที่ผลิตทั้งหมด (สแกนดี + เสีย) × 10⁶ ไม่รวมงานทดลอง)
             · ✍️ ต้องกรอกที่แท็บ ⚙️ ตั้งค่า KPI / กรอกผล · สีแท่ง/ไฟ = เกณฑ์ทางการ ถึง Target = เขียว · ถึงแค่ Commitment = เหลือง · ไม่ถึง = แดง · ไม่มีเป้าหรือไม่มีค่า = เทา (ไม่ใช่ผ่าน)
             · แท่ง "สรุป" = {`เฉลี่ยถ่วงน้ำหนักทั้งปี (แถว ⚡) / เฉลี่ยเดือนที่กรอก (แถว ✍️)`} · กดแท่งเดือนเพื่อดูเดือนนั้น

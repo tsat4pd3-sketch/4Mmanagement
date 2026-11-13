@@ -3,6 +3,7 @@ import { allOf } from '../utils/filterLabels';
 import SearchSelect from './SearchSelect';
 import { SCOPE_KIND_META, scopeKey, parseScopeKey, filterScopeOptions, isPlant } from '../utils/orgScope';
 
+import { tr } from '../utils/i18n';
 /* ══ <OrgScopePicker> — เลือก "ขอบเขต" ตามผังองค์กร ทุกมิติ (2026-09-23 · คำสั่ง user) ═════════════
    *"เลือกส่วนงานตอนนี้เหมือนเลือกได้แค่ section และไม่ตรงกับผังองค์กร ควรกรองได้ทุกมิติในผังองค์กร"*
 
@@ -176,12 +177,12 @@ export default function OrgScopePicker({
   const ownerChip = isCc && ccOwner ? (
     <button type="button" onClick={() => emit(ownerKey)} title={`เลิกกรองด้วยรหัส — ดูทั้ง ${index.labelOf(ccOwner.kind, ccOwner.value)}`}
       style={{ padding: '3px 8px', fontSize: 11.5, borderRadius: 'var(--r-md)', cursor: 'pointer', fontWeight: 700, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)' }}>
-      ↑ ทั้ง {index.labelOf(ccOwner.kind, ccOwner.value)}
+      {tr('↑ ทั้ง')} {index.labelOf(ccOwner.kind, ccOwner.value)}
     </button>
   ) : null;
   /* ⚠️ ผังโหลดไม่สำเร็จ — ต้องเห็นข้างช่องทั้ง 2 โหมด (native select ไม่มีที่เขียนในลิสต์) */
   const failNote = failed
-    ? <span key="orgfail" style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>⚠️ {failed} — ตัวเลือกไม่ครบ</span>
+    ? <span key="orgfail" style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>⚠️ {failed} {tr('— ตัวเลือกไม่ครบ')}</span>
     : null;
   const wrap = (node) => (ccSelect || ccHint || ownerChip || failNote
     ? (
@@ -234,8 +235,8 @@ export default function OrgScopePicker({
     return (
       <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : ''} options={sOpts}
         onChange={({ id: k }) => { if (k) emit(k); else if (plantLabel != null) emit('plant'); }}
-        placeholder={ccAllowed ? 'ค้นส่วนงาน / แผนก / ไลน์ / รหัส cost center…' : 'ค้นส่วนงาน / แผนก / ไลน์…'}
-        emptyText="ไม่พบในผังองค์กร — ตั้งผังที่ /org-setup"
+        placeholder={ccAllowed ? tr('ค้นส่วนงาน / แผนก / ไลน์ / รหัส cost center…') : tr('ค้นส่วนงาน / แผนก / ไลน์…')}
+        emptyText={tr('ไม่พบในผังองค์กร — ตั้งผังที่ /org-setup')}
         loadFail={failed ? `⚠️ ${failed} — ตัวเลือกขอบเขตไม่ครบ (ไม่ได้แปลว่าผังมีแค่นี้)` : ''}
         maxRows={999} disabled={disabled} inputId={id} style={{ width, ...style }} inputStyle={inputStyle} />
     );

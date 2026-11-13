@@ -7,6 +7,7 @@
  * ถอดจากใบกระดาษที่ user ส่งมา 2026-08-24 — ช่องติ๊กบนใบมี 2 บล็อก (เบิก/คืน) คนละชุดตัวเลือก
  * ตัวเลขในวงเล็บคือ movement type ของ SAP ที่พิมพ์อยู่บนใบจริง (311/261/201/907/202/908)
  */
+import { linearFlow } from './stepFlow.js';
 
 /** ประเภทของการเบิก (บล็อกบนของใบ) */
 export const WITHDRAW_MOVES = [
@@ -96,3 +97,16 @@ export const nextReqNo = (dateStr, maxInMonth) => {
   if (!pre) return '';
   return `${pre}${String((maxInMonth || 0) + 1).padStart(3, '0')}`;
 };
+
+/* แถบ "ถึงขั้นไหน" ใบ FM-STO-003 (<StepFlow> · UI §6.30 · 12/11) — ผู้ขอ → ผู้อนุมัติ → สโตร์ */
+export const matReqFlow = (r) => linearFlow({
+  status: r?.status, row: r,
+  steps: [
+    { label: 'ร่างใบขอ', who: 'ผู้ขอ (หน่วยงาน)', action: 'กรอกรายการแล้วส่งอนุมัติ' },
+    { label: 'รออนุมัติ', who: 'ผู้มีสิทธิ์อนุมัติ', action: 'อนุมัติใบ' },
+    { label: 'สโตร์จ่าย / รับคืน', who: 'สโตร์', action: r?.kind === 'return' ? 'รับของคืนเข้าคลัง' : 'จ่ายของตามใบ' },
+    { label: 'จ่ายของแล้ว' },
+  ],
+  at: { draft: 0, submitted: 1, approved: 2, issued: 4 },
+  exits: { cancelled: { tone: 'none', label: 'ยกเลิก', at: (row) => (row?.approved_by || row?.approved_at ? 2 : row?.submitted_at || row?.submitted_by ? 1 : 0) } },
+});

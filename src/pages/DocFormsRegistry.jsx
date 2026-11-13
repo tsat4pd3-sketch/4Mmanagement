@@ -13,6 +13,7 @@ import PersonSelect from '../components/PersonSelect';
 import PageHeader from '../components/PageHeader';
 import Page from '../components/Page';
 import { DeleteButton } from '../components/IconButton';
+import { tr } from '../utils/i18n';
 import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 /* ══════════════════════════════════════════════════════════════
@@ -202,30 +203,30 @@ export default function DocFormsRegistry() {
 
   return (
     <Page>
-      <PageHeader title="ทะเบียนเอกสาร & ฟอร์ม" icon="📄"
+      <PageHeader title={tr('ทะเบียนเอกสาร & ฟอร์ม')} icon="📄"
         sub={<>
           ทะเบียนเลขฟอร์ม / Rev / วันมีผล ของฟอร์มพิมพ์ทุกตัว — แก้ที่นี่ ใบพิมพ์เปลี่ยนตามทันที
           {!canManage && ' · คุณมีสิทธิ์ดูอย่างเดียว'}
         </>} />
 
-      {loading ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>กำลังโหลด...</div> : (
+      {loading ? <div style={{ textAlign: 'center', padding: 40, color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div> : (
         <div className="card" style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', minWidth: 860 }}>
             <thead>
               <tr style={{ fontSize: 12 }}>
-                <th style={{ textAlign: 'left', whiteSpace: 'nowrap' }}>เลขฟอร์ม</th>
-                <th style={{ textAlign: 'left', minWidth: 260 }}>ชื่อเอกสาร</th>
+                <th style={{ textAlign: 'left', whiteSpace: 'nowrap' }}>{tr('เลขฟอร์ม')}</th>
+                <th style={{ textAlign: 'left', minWidth: 260 }}>{tr('ชื่อเอกสาร')}</th>
                 <th>Rev</th>
                 <th style={{ whiteSpace: 'nowrap' }}>Effective Date</th>
-                <th style={{ whiteSpace: 'nowrap' }}>กระดาษ</th>
-                <th style={{ whiteSpace: 'nowrap' }}>ใช้ที่หน้า</th>
+                <th style={{ whiteSpace: 'nowrap' }}>{tr('กระดาษ')}</th>
+                <th style={{ whiteSpace: 'nowrap' }}>{tr('ใช้ที่หน้า')}</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {rows.map(r => (
                 <tr key={r.id} style={{ opacity: r.is_active ? 1 : 0.45 }}>
-                  <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{r.form_code || <span style={{ color: 'var(--muted)', fontWeight: 400 }}>— ไม่มีเลข —</span>}</td>
+                  <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{r.form_code || <span style={{ color: 'var(--muted)', fontWeight: 400 }}>{tr('— ไม่มีเลข —')}</span>}</td>
                   <td style={{ fontSize: 13 }}>{r.title || '—'}
                     {r.notes && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{r.notes}</div>}
                   </td>
@@ -233,7 +234,7 @@ export default function DocFormsRegistry() {
                   <td style={{ textAlign: 'center', fontSize: 12, whiteSpace: 'nowrap' }}>{r.effective_date || '—'}</td>
                   <td style={{ textAlign: 'center', fontSize: 12, whiteSpace: 'nowrap' }}>
                     {r.paper_size ? `${r.paper_size} ${r.orientation === 'landscape' ? 'แนวนอน' : 'แนวตั้ง'}` : (r.paper || '—')}
-                    {r.layout_locked === false && <div style={{ fontSize: 11, color: 'var(--accent)' }}>ปรับแนวได้</div>}
+                    {r.layout_locked === false && <div style={{ fontSize: 11, color: 'var(--accent)' }}>{tr('ปรับแนวได้')}</div>}
                   </td>
                   <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
                     {r.used_route
@@ -241,11 +242,11 @@ export default function DocFormsRegistry() {
                       : '—'}
                   </td>
                   <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
-                    <button className="tbtn" onClick={() => preview(r)} title="ทดลองพิมพ์ / บันทึกเป็น PDF (ตัวอย่าง มีลายน้ำ)"
-                      style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', marginRight: 6 }}>ตัวอย่าง</button>
+                    <button className="tbtn" onClick={() => preview(r)} title={tr('ทดลองพิมพ์ / บันทึกเป็น PDF (ตัวอย่าง มีลายน้ำ)')}
+                      style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', marginRight: 6 }}>{tr('ตัวอย่าง')}</button>
                     {canManage && (
                       <button className="tbtn" onClick={() => openEdit(r)}
-                        style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>แก้ไข</button>
+                        style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', fontSize: 12, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)' }}>{tr('แก้ไข')}</button>
                     )}
                   </td>
                 </tr>
@@ -255,7 +256,7 @@ export default function DocFormsRegistry() {
         </div>
       )}
 
-      <InfoMore label="ฟอร์มใหม่เข้าทะเบียนยังไง" size={11.5} style={{ marginTop: 10 }}>
+      <InfoMore label={tr('ฟอร์มใหม่เข้าทะเบียนยังไง')} size={11.5} style={{ marginTop: 10 }}>
         💡 ฟอร์มใหม่จะถูกเพิ่มเข้าทะเบียนโดยทีมพัฒนาเมื่อสร้างฟอร์มในระบบ (คีย์อ้างอิงผูกกับโค้ด) — หน้านี้แก้ เลขฟอร์ม/Rev/Effective/ช่องลายเซ็น/หมายเหตุ ได้เอง
       </InfoMore>
 
@@ -264,27 +265,27 @@ export default function DocFormsRegistry() {
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 940px)', maxHeight: '92vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>✏️ แก้ไขทะเบียน — <span style={{ color: 'var(--accent)' }}>{editing.doc_key}</span></div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{tr('✏️ แก้ไขทะเบียน —')} <span style={{ color: 'var(--accent)' }}>{editing.doc_key}</span></div>
               <button onClick={() => setEditing(null)} style={{ background: 'none', border: 'none', fontSize: 20, color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-                <div><div style={lb}>เลขฟอร์ม</div><input type="text" value={editing.form_code || ''} onChange={e => setF('form_code', e.target.value)} placeholder="FM-XXX-000" style={{ width: '100%' }} /></div>
+                <div><div style={lb}>{tr('เลขฟอร์ม')}</div><input type="text" value={editing.form_code || ''} onChange={e => setF('form_code', e.target.value)} placeholder="FM-XXX-000" style={{ width: '100%' }} /></div>
                 <div><div style={lb}>Rev</div><input type="text" value={editing.rev || ''} onChange={e => setF('rev', e.target.value)} placeholder="Rev.01" style={{ width: '100%' }} /></div>
-                <div><div style={lb}>Effective Date (ตามที่พิมพ์บนฟอร์ม)</div><input type="text" value={editing.effective_date || ''} onChange={e => setF('effective_date', e.target.value)} placeholder="12/05/2017" style={{ width: '100%' }} /></div>
+                <div><div style={lb}>{tr('Effective Date (ตามที่พิมพ์บนฟอร์ม)')}</div><input type="text" value={editing.effective_date || ''} onChange={e => setF('effective_date', e.target.value)} placeholder="12/05/2017" style={{ width: '100%' }} /></div>
               </div>
-              <div><div style={lb}>ชื่อเอกสาร</div><input type="text" value={editing.title || ''} onChange={e => setF('title', e.target.value)} style={{ width: '100%' }} /></div>
+              <div><div style={lb}>{tr('ชื่อเอกสาร')}</div><input type="text" value={editing.title || ''} onChange={e => setF('title', e.target.value)} style={{ width: '100%' }} /></div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
-                  <div style={lb}>ขนาด / แนวกระดาษ</div>
+                  <div style={lb}>{tr('ขนาด / แนวกระดาษ')}</div>
                   <div style={{ display: 'flex', gap: 6 }}>
                     <select value={editing.paper_size || 'A4'} onChange={e => setF('paper_size', e.target.value)} style={{ width: 90 }}>
-                      {['A4', 'A3', 'Letter'].map(v => <option key={v} value={v}>{v}</option>)}
+                      {['A4', 'A3', 'Letter'].map(v => <option key={v} value={v}>{tr(v)}</option>)}
                     </select>
                     <select value={editing.orientation || 'portrait'} onChange={e => setF('orientation', e.target.value)}
                       disabled={editing.layout_locked !== false} style={{ flex: 1 }}>
-                      <option value="portrait">แนวตั้ง (portrait)</option>
-                      <option value="landscape">แนวนอน (landscape)</option>
+                      <option value="portrait">{tr('แนวตั้ง (portrait)')}</option>
+                      <option value="landscape">{tr('แนวนอน (landscape)')}</option>
                     </select>
                   </div>
                   <div style={{ fontSize: 11, color: editing.layout_locked !== false ? 'var(--muted)' : 'var(--accent)', marginTop: 3, lineHeight: 1.5 }}>
@@ -294,7 +295,7 @@ export default function DocFormsRegistry() {
                   </div>
                 </div>
                 <div>
-                  <div style={lb}>ใช้งาน</div>
+                  <div style={lb}>{tr('ใช้งาน')}</div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--text)', cursor: 'pointer', paddingTop: 6 }}>
                     <input type="checkbox" checked={editing.is_active !== false} onChange={e => setF('is_active', e.target.checked)} style={{ width: 'auto' }} />
                     เปิดใช้ (ปิด = ฟอร์มใช้ค่า default ในโค้ด)
@@ -304,21 +305,21 @@ export default function DocFormsRegistry() {
               <div>
                 <div style={lb}>ช่องลายเซ็นหัวเอกสาร (บรรทัดละช่อง — เว้นว่าง = ใช้ default ของฟอร์ม)</div>
                 <textarea rows={3} value={editing._sigText} onChange={e => setF('_sigText', e.target.value)} placeholder={'ผู้จัดทำ\nระดับจัดการอนุมัติ\nผู้รับทราบ'} style={{ width: '100%', fontSize: 13 }} />
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>⚠️ จำนวนช่องต้องเท่าเดิมตาม layout ฟอร์ม (เปลี่ยนได้เฉพาะข้อความ)</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{tr('⚠️ จำนวนช่องต้องเท่าเดิมตาม layout ฟอร์ม (เปลี่ยนได้เฉพาะข้อความ)')}</div>
               </div>
-              <div><div style={lb}>ข้อความท้ายฟอร์มเพิ่มเติม (footer)</div><input type="text" value={editing.footer_note || ''} onChange={e => setF('footer_note', e.target.value)} style={{ width: '100%' }} /></div>
+              <div><div style={lb}>{tr('ข้อความท้ายฟอร์มเพิ่มเติม (footer)')}</div><input type="text" value={editing.footer_note || ''} onChange={e => setF('footer_note', e.target.value)} style={{ width: '100%' }} /></div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
-                  <div style={lb}>Legend / คำอธิบายสัญลักษณ์บนฟอร์ม (ถ้ามี)</div>
+                  <div style={lb}>{tr('Legend / คำอธิบายสัญลักษณ์บนฟอร์ม (ถ้ามี)')}</div>
                   <textarea rows={2} value={editing.legend || ''} onChange={e => setF('legend', e.target.value)} style={{ width: '100%', fontSize: 13, resize: 'vertical' }} />
                 </div>
                 <div>
-                  <div style={lb}>ผู้ออกเอกสาร (Issued — ใช้ชื่อ+ลายเซ็นบนฟอร์มที่รองรับ)</div>
-                  <SearchSelect value={editing.issued_by || ''} placeholder="— ไม่ระบุ (พิมพ์ค้นหาชื่อ) —"
+                  <div style={lb}>{tr('ผู้ออกเอกสาร (Issued — ใช้ชื่อ+ลายเซ็นบนฟอร์มที่รองรับ)')}</div>
+                  <SearchSelect value={editing.issued_by || ''} placeholder={tr('— ไม่ระบุ (พิมพ์ค้นหาชื่อ) —')}
                     options={profiles.map(p => ({ id: p.id, label: p.full_name }))} onChange={({ id }) => setF('issued_by', id)} />
                 </div>
               </div>
-              <div><div style={lb}>หมายเหตุ (แสดงเฉพาะในทะเบียน)</div><input type="text" value={editing.notes || ''} onChange={e => setF('notes', e.target.value)} style={{ width: '100%' }} /></div>
+              <div><div style={lb}>{tr('หมายเหตุ (แสดงเฉพาะในทะเบียน)')}</div><input type="text" value={editing.notes || ''} onChange={e => setF('notes', e.target.value)} style={{ width: '100%' }} /></div>
 
               {/* ── ชุดช่องเซ็นเฉพาะส่วนงาน — ฐานกลาง 1 ชุด + override ต่อส่วนงาน ─────────────────
                    เลขฟอร์ม/Rev เป็นของบริษัท (ชุดเดียว) · ชื่อคนเซ็นเป็นของแผนก → แยกที่ชั้นนี้
@@ -330,14 +331,14 @@ export default function DocFormsRegistry() {
                   </div>
                   {canManage && (
                     <button onClick={() => openScope(editing, null)}
-                      style={{ padding: '4px 11px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--accent)', border: '1px solid var(--border2)' }}>+ เพิ่มส่วนงาน</button>
+                      style={{ padding: '4px 11px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer', background: 'var(--bg3)', color: 'var(--accent)', border: '1px solid var(--border2)' }}>{tr('+ เพิ่มส่วนงาน')}</button>
                   )}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', margin: '3px 0 7px', lineHeight: 1.6 }}>
-                  ส่วนงานที่ไม่ได้ตั้งไว้ = ใช้ช่องเซ็นชุดกลางด้านบน · ตั้งได้เฉพาะ <b>ข้อความป้าย</b> กับ <b>ชื่อผู้เซ็นประจำ</b> (จำนวนช่องเปลี่ยนไม่ได้ — ผูกกับ layout ฟอร์ม)
+                  ส่วนงานที่ไม่ได้ตั้งไว้ = ใช้ช่องเซ็นชุดกลางด้านบน · ตั้งได้เฉพาะ <b>{tr('ข้อความป้าย')}</b> {tr('กับ')} <b>{tr('ชื่อผู้เซ็นประจำ')}</b> (จำนวนช่องเปลี่ยนไม่ได้ — ผูกกับ layout ฟอร์ม)
                 </div>
                 {scopes.length === 0 ? (
-                  <div style={{ fontSize: 12, color: 'var(--muted)', padding: '8px 0' }}>ยังไม่มี — ทุกส่วนงานใช้ชุดกลาง</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', padding: '8px 0' }}>{tr('ยังไม่มี — ทุกส่วนงานใช้ชุดกลาง')}</div>
                 ) : (
                   <div style={{ display: 'grid', gap: 5 }}>
                     {scopes.map(sc => (
@@ -346,11 +347,11 @@ export default function DocFormsRegistry() {
                         <span style={{ fontSize: 11.5, color: 'var(--text2)', flex: 1, minWidth: 160 }}>
                           {(sc.sig_names || []).filter(Boolean).length
                             ? (sc.sig_names || []).map((n, i) => n ? `${(sc.sig_blocks || editing.sig_blocks || [])[i] || ''}: ${n}` : null).filter(Boolean).join(' · ')
-                            : <span style={{ color: 'var(--muted)' }}>เปลี่ยนเฉพาะป้ายช่อง</span>}
+                            : <span style={{ color: 'var(--muted)' }}>{tr('เปลี่ยนเฉพาะป้ายช่อง')}</span>}
                         </span>
-                        <button onClick={() => preview(editing, sc.section)} style={sbtn}>ตัวอย่าง</button>
+                        <button onClick={() => preview(editing, sc.section)} style={sbtn}>{tr('ตัวอย่าง')}</button>
                         {canManage && <button onClick={() => openScope(editing, sc)} style={sbtn}>✏️</button>}
-                        {canManage && <DeleteButton onClick={() => removeScope(sc)} title="ลบ" />}
+                        {canManage && <DeleteButton onClick={() => removeScope(sc)} title={tr('ลบ')} />}
                       </div>
                     ))}
                   </div>
@@ -359,23 +360,23 @@ export default function DocFormsRegistry() {
 
               {/* ── ทดลองพิมพ์ ── */}
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>ทดลองพิมพ์ / บันทึก PDF</span>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>{tr('ทดลองพิมพ์ / บันทึก PDF')}</span>
                 <select value={previewScope} onChange={e => setPreviewScope(e.target.value)} style={{ width: 220, fontSize: 12.5 }}>
-                  <option value="">— ชุดกลาง (ทุกส่วนงาน) —</option>
-                  {scopes.map(sc => <option key={sc.id} value={sc.section}>{sc.section}</option>)}
+                  <option value="">{tr('— ชุดกลาง (ทุกส่วนงาน) —')}</option>
+                  {scopes.map(sc => <option key={sc.id} value={sc.section}>{tr(sc.section)}</option>)}
                 </select>
                 <button onClick={() => preview(editing, previewScope)}
-                  style={{ padding: '5px 13px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid var(--accent)' }}>เปิดตัวอย่าง</button>
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>ใบตัวอย่างมีลายน้ำ “ตัวอย่าง” — เซฟ PDF จากหน้าต่างพิมพ์ของเบราว์เซอร์ · บันทึกทะเบียนก่อนถึงจะเห็นค่าล่าสุด</span>
+                  style={{ padding: '5px 13px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid var(--accent)' }}>{tr('เปิดตัวอย่าง')}</button>
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ใบตัวอย่างมีลายน้ำ “ตัวอย่าง” — เซฟ PDF จากหน้าต่างพิมพ์ของเบราว์เซอร์ · บันทึกทะเบียนก่อนถึงจะเห็นค่าล่าสุด')}</span>
               </div>
 
               {/* Revision History — เขียนตรงเข้า doc_form_revisions ทันที (ไม่รอปุ่มบันทึกหลัก) */}
               <div style={{ borderTop: '1px solid var(--border2)', paddingTop: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>ประวัติการแก้ไขเอกสาร (Revision History) <span style={{ color: 'var(--muted)', fontWeight: 600 }}>({revisions.length})</span></div>
+                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>{tr('ประวัติการแก้ไขเอกสาร (Revision History)')} <span style={{ color: 'var(--muted)', fontWeight: 600 }}>({revisions.length})</span></div>
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', minWidth: 700, fontSize: 12 }}>
                     <thead><tr style={{ fontSize: 11, color: 'var(--muted)' }}>
-                      <th>#</th><th>วันที่บันทึก</th><th>Rev</th><th>Issued date</th><th style={{ textAlign: 'left' }}>Description</th><th>Responsible</th><th>Approved</th><th></th>
+                      <th>#</th><th>{tr('วันที่บันทึก')}</th><th>Rev</th><th>Issued date</th><th style={{ textAlign: 'left' }}>Description</th><th>Responsible</th><th>Approved</th><th></th>
                     </tr></thead>
                     <tbody>
                       {revisions.map(r => (
@@ -388,30 +389,30 @@ export default function DocFormsRegistry() {
                           <td style={{ textAlign: 'center' }}>{r.responsible || '—'}</td>
                           <td style={{ textAlign: 'center' }}>{r.approved_name || '—'}</td>
                           <td style={{ textAlign: 'center' }}>
-                            <DeleteButton onClick={() => removeRevision(r)} title="ลบ" />
+                            <DeleteButton onClick={() => removeRevision(r)} title={tr('ลบ')} />
                           </td>
                         </tr>
                       ))}
-                      {!revisions.length && <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 8 }}>ยังไม่มีประวัติการแก้ไข</td></tr>}
+                      {!revisions.length && <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--muted)', padding: 8 }}>{tr('ยังไม่มีประวัติการแก้ไข')}</td></tr>}
                     </tbody>
                   </table>
                 </div>
                 {/* 2026-09-07: Responsible/Approved เลือกจากทะเบียนผู้ใช้ผ่าน <PersonSelect> (allowFree — ประวัติเก่ามีชื่อคนที่ลาออกแล้ว)
                     alignItems start = ลิสต์ picker กางในบรรทัดโดยไม่ดันช่องข้างๆ */}
                 <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '110px 70px 110px 1fr 150px 150px auto', gap: 6, marginTop: 8, alignItems: 'start' }}>
-                  <input type="date" value={newRev.record_date} onChange={e => setNewRev(v => ({ ...v, record_date: e.target.value }))} title="วันที่บันทึก" style={{ width: '100%' }} />
+                  <input type="date" value={newRev.record_date} onChange={e => setNewRev(v => ({ ...v, record_date: e.target.value }))} title={tr('วันที่บันทึก')} style={{ width: '100%' }} />
                   <input type="text" value={newRev.rev} onChange={e => setNewRev(v => ({ ...v, rev: e.target.value }))} placeholder="Rev" style={{ width: '100%' }} />
                   <input type="date" value={newRev.issued_date} onChange={e => setNewRev(v => ({ ...v, issued_date: e.target.value }))} title="Issued date" style={{ width: '100%' }} />
                   <input type="text" value={newRev.description} onChange={e => setNewRev(v => ({ ...v, description: e.target.value }))} placeholder="Description" style={{ width: '100%' }} />
                   <PersonSelect value={newRev.responsible} onChange={({ name }) => setNewRev(v => ({ ...v, responsible: name }))} placeholder="Responsible" />
                   <PersonSelect value={newRev.approved_name} onChange={({ name }) => setNewRev(v => ({ ...v, approved_name: name }))} placeholder="Approved" />
-                  <button onClick={addRevision} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>+ เพิ่ม</button>
+                  <button onClick={addRevision} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' }}>{tr('+ เพิ่ม')}</button>
                 </div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
-                <button onClick={() => setEditing(null)} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+                <button onClick={() => setEditing(null)} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>{tr('ยกเลิก')}</button>
                 <button onClick={save} disabled={saving} style={{ padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13, opacity: saving ? 0.6 : 1 }}>
-                  {saving ? '...' : 'บันทึก'}
+                  {saving ? '...' : tr('บันทึก')}
                 </button>
               </div>
             </div>
@@ -424,34 +425,34 @@ export default function DocFormsRegistry() {
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 700px)', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-              <div style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--text)' }}>✍️ ชุดช่องลายเซ็นของส่วนงาน</div>
+              <div style={{ fontSize: 14.5, fontWeight: 800, color: 'var(--text)' }}>{tr('✍️ ชุดช่องลายเซ็นของส่วนงาน')}</div>
               <button onClick={() => setScopeEdit(null)} style={{ background: 'none', border: 'none', fontSize: 20, color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div>
-                <div style={lb}>ส่วนงาน (จากผังองค์กร)</div>
+                <div style={lb}>{tr('ส่วนงาน (จากผังองค์กร)')}</div>
                 <select value={scopeEdit.section} onChange={e => setScopeEdit(v => ({ ...v, section: e.target.value }))}
                   disabled={!!scopeEdit.id} style={{ width: '100%' }}>
-                  <option value="">— เลือกส่วนงาน —</option>
+                  <option value="">{tr('— เลือกส่วนงาน —')}</option>
                   {sections.map(sc => {
                     const code = sc.code || sc.name;
                     const used = scopes.some(x => x.section === code && x.id !== scopeEdit.id);
                     return <option key={sc.id} value={code} disabled={used}>{code}{sc.name && sc.name !== code ? ` — ${sc.name}` : ''}{used ? ' (ตั้งไว้แล้ว)' : ''}</option>;
                   })}
                 </select>
-                {!!scopeEdit.id && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>เปลี่ยนส่วนงานไม่ได้ — ถ้าผิดให้ลบแล้วเพิ่มใหม่</div>}
+                {!!scopeEdit.id && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{tr('เปลี่ยนส่วนงานไม่ได้ — ถ้าผิดให้ลบแล้วเพิ่มใหม่')}</div>}
               </div>
               <div>
-                <div style={lb}>ช่องลายเซ็น — ป้าย + ชื่อผู้เซ็นประจำ</div>
+                <div style={lb}>{tr('ช่องลายเซ็น — ป้าย + ชื่อผู้เซ็นประจำ')}</div>
                 {scopeEdit.labels.length === 0 ? (
-                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>ฟอร์มนี้ยังไม่ได้ตั้งช่องลายเซ็นในชุดกลาง — ตั้งที่ช่อง “ช่องลายเซ็นหัวเอกสาร” ก่อน</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ฟอร์มนี้ยังไม่ได้ตั้งช่องลายเซ็นในชุดกลาง — ตั้งที่ช่อง “ช่องลายเซ็นหัวเอกสาร” ก่อน')}</div>
                 ) : scopeEdit.labels.map((lbl, i) => (
                   <div key={i} style={{ display: 'grid', gridTemplateColumns: '24px 1fr 1fr', gap: 6, alignItems: 'start', marginBottom: 5 }}>
                     <span style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', paddingTop: 8 }}>{i + 1}</span>
-                    <input type="text" value={lbl} placeholder="ป้ายช่อง" style={{ width: '100%', fontSize: 12.5 }}
+                    <input type="text" value={lbl} placeholder={tr('ป้ายช่อง')} style={{ width: '100%', fontSize: 12.5 }}
                       onChange={e => setScopeEdit(v => ({ ...v, labels: v.labels.map((x, j) => j === i ? e.target.value : x) }))} />
                     {/* 2026-09-07: ผู้เซ็นประจำเลือกจากทะเบียนผู้ใช้ผ่าน <PersonSelect> (allowFree — ผู้จัดการที่ไม่มี login มีจริง · ป้าย "ไม่ได้อยู่ในทะเบียน" ให้เห็น) */}
-                    <PersonSelect value={scopeEdit.names[i] || ''} placeholder="ชื่อผู้เซ็นประจำ (เว้นว่าง = เซ็นสด)" inputStyle={{ fontSize: 12.5 }}
+                    <PersonSelect value={scopeEdit.names[i] || ''} placeholder={tr('ชื่อผู้เซ็นประจำ (เว้นว่าง = เซ็นสด)')} inputStyle={{ fontSize: 12.5 }}
                       onChange={({ name }) => setScopeEdit(v => ({ ...v, names: v.names.map((x, j) => j === i ? name : x) }))} />
                   </div>
                 ))}
@@ -462,15 +463,15 @@ export default function DocFormsRegistry() {
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div><div style={lb}>footer เฉพาะส่วนงาน (เว้นว่าง = ใช้ของกลาง)</div>
                   <input type="text" value={scopeEdit.footer_note} onChange={e => setScopeEdit(v => ({ ...v, footer_note: e.target.value }))} style={{ width: '100%' }} /></div>
-                <div><div style={lb}>ผู้ออกเอกสารเฉพาะส่วนงาน</div>
-                  <SearchSelect value={scopeEdit.issued_by || ''} placeholder="— ใช้ของกลาง (พิมพ์ค้นหาชื่อ) —"
+                <div><div style={lb}>{tr('ผู้ออกเอกสารเฉพาะส่วนงาน')}</div>
+                  <SearchSelect value={scopeEdit.issued_by || ''} placeholder={tr('— ใช้ของกลาง (พิมพ์ค้นหาชื่อ) —')}
                     options={profiles.map(p => ({ id: p.id, label: p.full_name }))} onChange={({ id }) => setScopeEdit(v => ({ ...v, issued_by: id }))} /></div>
               </div>
               <div><div style={lb}>Legend เฉพาะส่วนงาน (เว้นว่าง = ใช้ของกลาง)</div>
                 <textarea rows={2} value={scopeEdit.legend} onChange={e => setScopeEdit(v => ({ ...v, legend: e.target.value }))} style={{ width: '100%', fontSize: 12.5 }} /></div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                <button onClick={() => setScopeEdit(null)} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
-                <button onClick={saveScope} style={{ padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>บันทึก</button>
+                <button onClick={() => setScopeEdit(null)} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>{tr('ยกเลิก')}</button>
+                <button onClick={saveScope} style={{ padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: 'pointer', fontSize: 13 }}>{tr('บันทึก')}</button>
               </div>
             </div>
           </div>

@@ -27,8 +27,9 @@ import { loadLinesRes } from '../utils/useProductionLines';
 import { useOrgSections } from '../utils/useOrgSections';
 import { scopedLineNames } from '../utils/sectionScope';
 import {
-  movesFor, moveNeeds, moveLabel, KIND_LABEL, statusMeta, nextReqNo, maxReqSeq, reqNoPrefix, isPullable,
+  movesFor, moveNeeds, moveLabel, KIND_LABEL, statusMeta, nextReqNo, maxReqSeq, reqNoPrefix, isPullable, matReqFlow,
 } from '../utils/materialRequest';
+import StepFlow from './StepFlow';
 import { printMaterialRequest } from '../lib/materialRequestPrint';
 import { notifyEvent } from '../utils/notifyEvent';
 import SearchSelect from './SearchSelect';
@@ -39,6 +40,7 @@ import { useUomUnitsState } from '../utils/useUomUnits'; // 📏 ทะเบี
 import { buildUomIndex, normUom, uomOptions, DEFAULT_UOM } from '../utils/uom';
 import { registryFailText } from '../utils/useMasterRows.js';
 
+import { tr } from '../utils/i18n';
 const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -315,29 +317,29 @@ export default function MaterialRequests() {
 
       {/* UI-STANDARD 2026-09-24: แถบกรองมาตรฐาน — ช่วงเวลา → ตัวกรอง → ปุ่มหลักชิดขวา */}
       <FilterBar style={{ marginBottom: 10 }}>
-        <span className="filter-label">เดือน</span>
+        <span className="filter-label">{tr('เดือน')}</span>
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
-        <span className="filter-label">สถานะ</span>
+        <span className="filter-label">{tr('สถานะ')}</span>
         <select value={fStatus} onChange={e => setFStatus(e.target.value)}>
-          <option value="">{ALL.status}</option>
+          <option value="">{tr(ALL.status)}</option>
           {['draft', 'submitted', 'approved', 'issued', 'cancelled'].map(s =>
             <option key={s} value={s}>{statusMeta(s).label}</option>)}
         </select>
         <span className="spacer" />
-        {canRecord && <button onClick={openNew} style={btnSt('var(--accent)')}>＋ ออกใบเบิกใหม่</button>}
+        {canRecord && <button onClick={openNew} style={btnSt('var(--accent)')}>{tr('＋ ออกใบเบิกใหม่')}</button>}
       </FilterBar>
 
       <InfoMore style={{ marginBottom: 10 }} id="mr_help"
-        lead={<>📦 ใบนี้ใช้เบิกชิ้นงานจากฝ่ายผลิตไปทดสอบ — ของที่ทดสอบแล้วดึงเข้า<b>ใบรายงานของเสีย</b>ได้</>}>
-        ที่หน้า <b>ใบรายงานของเสีย</b> กดปุ่ม “⤵ ดึงจากใบเบิก QA” แล้วเลือกใบ —
+        lead={<>{tr('📦 ใบนี้ใช้เบิกชิ้นงานจากฝ่ายผลิตไปทดสอบ — ของที่ทดสอบแล้วดึงเข้า')}<b>{tr('ใบรายงานของเสีย')}</b>{tr('ได้')}</>}>
+        ที่หน้า <b>{tr('ใบรายงานของเสีย')}</b> กดปุ่ม “⤵ ดึงจากใบเบิก QA” แล้วเลือกใบ —
         รายการจะถูกเติมให้พร้อมผูกกลับมาที่ใบเบิกใบนี้ (สืบย้อนได้ว่าชิ้นไหนเบิกด้วยใบไหน)
-        <br />⚠️ ดึงได้เฉพาะใบที่ <b>อนุมัติแล้ว</b> ขึ้นไป — ใบที่ยังไม่อนุมัติแปลว่ายังไม่ได้ของ
+        <br />{tr('⚠️ ดึงได้เฉพาะใบที่')} <b>{tr('อนุมัติแล้ว')}</b> ขึ้นไป — ใบที่ยังไม่อนุมัติแปลว่ายังไม่ได้ของ
         จะรายงานว่าทำลายไปแล้วไม่ได้
-        <br />จำนวนที่ดึงไปใช้ <b>“จำนวนที่จ่ายจริง”</b> ก่อนเสมอ ไม่มีค่อยใช้จำนวนที่ขอเบิก
+        <br />{tr('จำนวนที่ดึงไปใช้')} <b>{tr('“จำนวนที่จ่ายจริง”')}</b> ก่อนเสมอ ไม่มีค่อยใช้จำนวนที่ขอเบิก
       </InfoMore>
 
       {loading ? (
-        <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>
+        <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>
       ) : !visible.length ? (
         <div style={{ padding: 26, textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)' }}>
           ยังไม่มีใบเบิกในเดือนนี้{hidden > 0 && ` (ซ่อน ${hidden} ใบของส่วนงานอื่น)`}
@@ -347,7 +349,7 @@ export default function MaterialRequests() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5, minWidth: 760 }}>
             <thead><tr>
               {['เลขที่', 'วันที่เบิก', 'ประเภท', 'ผู้ขอเบิก', 'หน่วยงาน', 'รายละเอียด', 'สถานะ', ''].map((h, i) =>
-                <th key={i} style={thSt}>{h}</th>)}
+                <th key={i} style={thSt}>{tr(h)}</th>)}
             </tr></thead>
             <tbody>
               {visible.map(r => {
@@ -362,16 +364,16 @@ export default function MaterialRequests() {
                     <td style={tdSt}>{r.requester_dept || '—'}</td>
                     <td style={tdSt}>{r.detail || '—'}</td>
                     <td style={tdSt}>
-                      <span style={{ color: st.color, fontWeight: 700 }}>{st.label}</span>
-                      {isPullable(r) && <span title="ดึงเข้าใบรายงานของเสียได้" style={{ marginLeft: 4 }}>⤵</span>}
+                      <span style={{ color: st.color, fontWeight: 700 }}>{tr(st.label)}</span>
+                      {isPullable(r) && <span title={tr('ดึงเข้าใบรายงานของเสียได้')} style={{ marginLeft: 4 }}>⤵</span>}
                     </td>
                     <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                       <button onClick={() => openEdit(r)} style={miniBtn}>{canRecord ? '✏️' : '👁'}</button>
-                      <button onClick={() => doPrint(r)} style={miniBtn} title="พิมพ์ / PDF">🖨️</button>
-                      {canRecord && r.status === 'draft' && <button onClick={() => setStatus(r, 'submitted')} style={miniBtn} title="ส่งขออนุมัติ">📤</button>}
-                      {canManage && r.status === 'submitted' && <button onClick={() => setStatus(r, 'approved')} style={miniBtn} title="อนุมัติ">✅</button>}
-                      {canRecord && r.status === 'approved' && <button onClick={() => setStatus(r, 'issued')} style={miniBtn} title="สโตร์จ่ายของแล้ว">📦</button>}
-                      {canManage && <DeleteButton onClick={() => remove(r)} title="ลบ" />}
+                      <button onClick={() => doPrint(r)} style={miniBtn} title={tr('พิมพ์ / PDF')}>🖨️</button>
+                      {canRecord && r.status === 'draft' && <button onClick={() => setStatus(r, 'submitted')} style={miniBtn} title={tr('ส่งขออนุมัติ')}>📤</button>}
+                      {canManage && r.status === 'submitted' && <button onClick={() => setStatus(r, 'approved')} style={miniBtn} title={tr('อนุมัติ')}>✅</button>}
+                      {canRecord && r.status === 'approved' && <button onClick={() => setStatus(r, 'issued')} style={miniBtn} title={tr('สโตร์จ่ายของแล้ว')}>📦</button>}
+                      {canManage && <DeleteButton onClick={() => remove(r)} title={tr('ลบ')} />}
                     </td>
                   </tr>
                 );
@@ -381,7 +383,7 @@ export default function MaterialRequests() {
         </div>
       )}
       {hidden > 0 && visible.length > 0 && (
-        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>ซ่อน {hidden} ใบของส่วนงานอื่น (ตามขอบเขตของบัญชีนี้)</div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>{tr('ซ่อน')} {hidden} {tr('ใบของส่วนงานอื่น (ตามขอบเขตของบัญชีนี้)')}</div>
       )}
 
       {editor && (
@@ -394,9 +396,9 @@ export default function MaterialRequests() {
       )}
 
       {picker && (
-        <Modal title="เลือกรหัสสินค้าคงคลัง (จากทะเบียนกลาง Parts Master)" dismissable onClose={() => { setPicker(null); setPq(''); }}>
+        <Modal title={tr('เลือกรหัสสินค้าคงคลัง (จากทะเบียนกลาง Parts Master)')} dismissable onClose={() => { setPicker(null); setPq(''); }}>
           <input autoFocus value={pq} onChange={e => setPq(e.target.value)}
-            placeholder="ค้นด้วยรหัส MAT หรือชื่อพาร์ท" style={{ ...inpSt, width: '100%', marginBottom: 8 }} />
+            placeholder={tr('ค้นด้วยรหัส MAT หรือชื่อพาร์ท')} style={{ ...inpSt, width: '100%', marginBottom: 8 }} />
           {!parts.length && (
             <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 8 }}>
               ⚠️ ยังไม่มีข้อมูลใน Parts Master — กรอกรหัส/ชื่อเองได้ในตาราง แล้วไปลงทะเบียนที่ Product Master → 🗂 Parts Master
@@ -412,7 +414,7 @@ export default function MaterialRequests() {
               </div>
             ))}
             {!pickList.length && parts.length > 0 &&
-              <div style={{ padding: 16, textAlign: 'center', color: 'var(--muted)', fontSize: 12.5 }}>ไม่พบรายการที่ตรงกับคำค้น</div>}
+              <div style={{ padding: 16, textAlign: 'center', color: 'var(--muted)', fontSize: 12.5 }}>{tr('ไม่พบรายการที่ตรงกับคำค้น')}</div>}
           </div>
         </Modal>
       )}
@@ -449,67 +451,69 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
   return (
     <Modal title={`${req.id ? 'แก้ไข' : 'ออก'}ใบขอ${KIND_LABEL[req.kind]}สินค้าคงคลัง (FM-STO-003)`} onClose={onClose} width={1020}>
       <ReadOnlyNote show={ro} role={role} compact what="แก้ใบเบิก" permKey="scrap:record" />
+      {/* 🪜 ถึงขั้นไหน — กฎ matReqFlow() (utils/materialRequest.js) · UI §6.30 */}
+      {req.id && (() => { const f = matReqFlow(req); return <div style={{ marginBottom: 12 }}><StepFlow steps={f.steps} waiting={f.waiting} unknown={!f.known} /></div>; })()}
 
       {/* mgrid = กติกากลางของ grid ในโมดัล (UI-CONVENTIONS §4) — มือถือยุบเป็นคอลัมน์เดียว */}
       <div className="mgrid" style={grid3}>
-        <F label="เลขที่เอกสาร"><input value={req.doc_no || ''} readOnly={ro} onChange={e => setReq({ doc_no: e.target.value })} style={inpSt} /></F>
-        <F label="ประเภท">
+        <F label={tr('เลขที่เอกสาร')}><input value={req.doc_no || ''} readOnly={ro} onChange={e => setReq({ doc_no: e.target.value })} style={inpSt} /></F>
+        <F label={tr('ประเภท')}>
           <select value={req.kind} disabled={ro} onChange={e => changeKind(e.target.value)} style={inpSt}>
-            <option value="withdraw">ขอเบิก</option>
-            <option value="return">ขอคืน</option>
+            <option value="withdraw">{tr('ขอเบิก')}</option>
+            <option value="return">{tr('ขอคืน')}</option>
           </select>
         </F>
-        <F label="สถานะ"><input value={statusMeta(req.status).label} readOnly style={{ ...inpSt, color: statusMeta(req.status).color, fontWeight: 700 }} /></F>
+        <F label={tr('สถานะ')}><input value={statusMeta(req.status).label} readOnly style={{ ...inpSt, color: statusMeta(req.status).color, fontWeight: 700 }} /></F>
 
         {/* ผู้ขอ = user ระบบ (profiles) · ผู้ขอที่ไม่มีบัญชีพิมพ์เองได้พร้อมป้าย (2026-09-07) */}
-        <F label="ชื่อผู้ขอเบิก"><PersonSelect value={req.requester_name || ''} history={requesterHist} disabled={ro} inputStyle={{ fontSize: 12.5, padding: '6px 30px 6px 8px' }} onChange={r => setReq({ requester_name: r.name })} /></F>
-        <F label="หน่วยงาน / ตำแหน่ง">
-          <SelectOrFree value={req.requester_dept || ''} options={orgSections} readOnly={ro} placeholder="— เลือกส่วนงาน —"
+        <F label={tr('ชื่อผู้ขอเบิก')}><PersonSelect value={req.requester_name || ''} history={requesterHist} disabled={ro} inputStyle={{ fontSize: 12.5, padding: '6px 30px 6px 8px' }} onChange={r => setReq({ requester_name: r.name })} /></F>
+        <F label={tr('หน่วยงาน / ตำแหน่ง')}>
+          <SelectOrFree value={req.requester_dept || ''} options={orgSections} readOnly={ro} placeholder={tr('— เลือกส่วนงาน —')}
             onChange={v => setReq({ requester_dept: v })} selectStyle={inpSt} inputStyle={inpSt} />
         </F>
-        <F label="ไลน์ที่ขอของ (ใช้จับคู่ใบของเสีย)">
+        <F label={tr('ไลน์ที่ขอของ (ใช้จับคู่ใบของเสีย)')}>
           {/* ชื่อไลน์ต้อง canonical (จับคู่ใบของเสีย) → <LineSelect> · scopedLines กรอง scope ไว้แล้ว (2026-09-07) */}
-          <LineSelect lines={scopedLines} value={req.line_name || ''} disabled={ro} placeholder="— ไม่ระบุ —" style={inpSt}
+          <LineSelect lines={scopedLines} value={req.line_name || ''} disabled={ro} placeholder={tr('— ไม่ระบุ —')} style={inpSt}
             onChange={v => setReq({ line_name: v || null })} />
         </F>
 
-        <F label="วันที่เบิก *"><input type="date" value={req.request_date || ''} readOnly={ro} onChange={e => setReq({ request_date: e.target.value })} style={inpSt} /></F>
-        <F label="วันที่ต้องการสินค้า"><input type="date" value={req.need_date || ''} readOnly={ro} onChange={e => setReq({ need_date: e.target.value })} style={inpSt} /></F>
+        <F label={tr('วันที่เบิก *')}><input type="date" value={req.request_date || ''} readOnly={ro} onChange={e => setReq({ request_date: e.target.value })} style={inpSt} /></F>
+        <F label={tr('วันที่ต้องการสินค้า')}><input type="date" value={req.need_date || ''} readOnly={ro} onChange={e => setReq({ need_date: e.target.value })} style={inpSt} /></F>
         <F label={`ประเภทของการ${KIND_LABEL[req.kind]}`}>
           <select value={req.move_code || ''} disabled={ro} onChange={e => setReq({ move_code: e.target.value })} style={inpSt}>
-            {moves.map(m => <option key={m.code} value={m.code}>{m.label}</option>)}
+            {moves.map(m => <option key={m.code} value={m.code}>{tr(m.label)}</option>)}
           </select>
         </F>
 
         {/* ช่องข้างช่องติ๊กบนใบ — โผล่เฉพาะที่ประเภทนั้นต้องใช้ */}
         {/* รหัสคลังจากทะเบียน storage_locations (DR · migration 20260902) — รหัสนอกทะเบียนยังบันทึกได้พร้อมป้าย ⚠ (2026-09-07) */}
-        {needs === 'dest' && <F label="Storage Location ปลายทาง"><StorageLocSelect value={req.dest_storage_location || ''} history={destHist} disabled={ro} inputStyle={{ fontSize: 12.5, padding: '6px 30px 6px 8px' }} onChange={({ code }) => setReq({ dest_storage_location: code })} /></F>}
+        {needs === 'dest' && <F label={tr('Storage Location ปลายทาง')}><StorageLocSelect value={req.dest_storage_location || ''} history={destHist} disabled={ro} inputStyle={{ fontSize: 12.5, padding: '6px 30px 6px 8px' }} onChange={({ code }) => setReq({ dest_storage_location: code })} /></F>}
         {needs === 'order' && <F label="Production Order"><input value={req.order_no || ''} readOnly={ro} onChange={e => setReq({ order_no: e.target.value })} style={inpSt} /></F>}
         {needs === 'cc' && <F label="Cost Center"><input value={req.cost_center || ''} readOnly={ro} onChange={e => setReq({ cost_center: e.target.value })} style={inpSt} /></F>}
 
-        <F label="รหัสโรงงาน (Plant)"><input value={req.plant_code || ''} readOnly={ro} onChange={e => setReq({ plant_code: e.target.value })} style={inpSt} /></F>
-        <F label="รหัสคลังสินค้า / สโตร์"><StorageLocSelect value={req.storage_location || ''} history={slocHist} disabled={ro} inputStyle={{ fontSize: 12.5, padding: '6px 30px 6px 8px' }} onChange={({ code }) => setReq({ storage_location: code })} /></F>
+        <F label={tr('รหัสโรงงาน (Plant)')}><input value={req.plant_code || ''} readOnly={ro} onChange={e => setReq({ plant_code: e.target.value })} style={inpSt} /></F>
+        <F label={tr('รหัสคลังสินค้า / สโตร์')}><StorageLocSelect value={req.storage_location || ''} history={slocHist} disabled={ro} inputStyle={{ fontSize: 12.5, padding: '6px 30px 6px 8px' }} onChange={({ code }) => setReq({ storage_location: code })} /></F>
       </div>
 
-      <F label="รายละเอียด" full>
+      <F label={tr('รายละเอียด')} full>
         <input value={req.detail || ''} readOnly={ro} onChange={e => setReq({ detail: e.target.value })}
-          placeholder="เช่น Test ประจำปี" style={{ ...inpSt, width: '100%' }} />
+          placeholder={tr('เช่น Test ประจำปี')} style={{ ...inpSt, width: '100%' }} />
       </F>
 
       {/* ── รายการสินค้า ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '12px 0 6px' }}>
-        <b style={{ fontSize: 13 }}>รายการสินค้าคงคลัง</b>
+        <b style={{ fontSize: 13 }}>{tr('รายการสินค้าคงคลัง')}</b>
         <span style={{ flex: 1 }} />
         {canRecord && <>
-          <button onClick={() => onPick(null)} style={btnSt()}>เลือกจาก Parts Master</button>
-          <button onClick={addItem} style={btnSt()}>＋ เพิ่มแถว</button>
+          <button onClick={() => onPick(null)} style={btnSt()}>{tr('เลือกจาก Parts Master')}</button>
+          <button onClick={addItem} style={btnSt()}>{tr('＋ เพิ่มแถว')}</button>
         </>}
       </div>
       <div style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 820 }}>
           <thead><tr>
             {['#', 'รหัสสินค้าคงคลัง', 'รายละเอียด', 'จำนวนที่ขอ', 'หน่วย', 'จ่าย/รับคืนจริง', 'วันที่ผลิต', 'Batch No.', ''].map((h, i) =>
-              <th key={i} style={thSt}>{h}</th>)}
+              <th key={i} style={thSt}>{tr(h)}</th>)}
           </tr></thead>
           <tbody>
             {items.map((it, i) => (
@@ -519,7 +523,7 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
                   <div style={{ display: 'flex', gap: 3 }}>
                     <input value={it.mat_no || ''} readOnly={ro} style={{ ...inpSt, width: 100 }}
                       onChange={e => { const v = e.target.value; const u = uomOf(v); setItem(it._key, { mat_no: v, ...(u ? { unit: u } : {}) }); }} />
-                    {canRecord && <button onClick={() => onPick(it._key)} style={miniBtn} title="เลือกจากทะเบียน">🗂</button>}
+                    {canRecord && <button onClick={() => onPick(it._key)} style={miniBtn} title={tr('เลือกจากทะเบียน')}>🗂</button>}
                   </div>
                 </td>
                 <td style={tdSt}><input value={it.description || ''} readOnly={ro} onChange={e => setItem(it._key, { description: e.target.value })} style={{ ...inpSt, width: 230 }} /></td>
@@ -532,7 +536,7 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
                 <td style={tdSt}><input type="number" min="0" value={it.qty_issued ?? ''} readOnly={ro} onChange={e => setItem(it._key, { qty_issued: e.target.value })} style={{ ...inpSt, width: 84 }} /></td>
                 <td style={tdSt}><input type="date" value={it.produced_date || ''} readOnly={ro} onChange={e => setItem(it._key, { produced_date: e.target.value })} style={{ ...inpSt, width: 130 }} /></td>
                 <td style={tdSt}><input value={it.batch_no || ''} readOnly={ro} onChange={e => setItem(it._key, { batch_no: e.target.value })} style={{ ...inpSt, width: 90 }} /></td>
-                <td style={tdSt}>{canRecord && <DeleteButton onClick={() => delItem(it._key)} title="ลบ" />}</td>
+                <td style={tdSt}>{canRecord && <DeleteButton onClick={() => delItem(it._key)} title={tr('ลบ')} />}</td>
               </tr>
             ))}
           </tbody>
@@ -543,14 +547,14 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
       </div>
 
       {/* ── ลายเซ็น ── */}
-      <div style={{ margin: '14px 0 6px', fontSize: 13, fontWeight: 700 }}>ลายเซ็น</div>
+      <div style={{ margin: '14px 0 6px', fontSize: 13, fontWeight: 700 }}>{tr('ลายเซ็น')}</div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         {SIGS.map(s => (
           <div key={s.k} style={{ flex: '1 1 180px', minWidth: 170, border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 8 }}>
             <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 3 }}>
-              {s.label} <span style={{ fontWeight: 400 }}>({s.group === 'req' ? 'ผู้เบิก/คืน' : 'ผู้จ่ายสินค้า'})</span>
+              {s.label} <span style={{ fontWeight: 400 }}>({s.group === 'req' ? tr('ผู้เบิก/คืน') : tr('ผู้จ่ายสินค้า')})</span>
             </div>
-            <SearchSelect disabled={ro} value={signers.find(x => x.full_name === req[`${s.k}_name`])?.id || ''} placeholder="— เลือก (พิมพ์ค้นหาชื่อ) —"
+            <SearchSelect disabled={ro} value={signers.find(x => x.full_name === req[`${s.k}_name`])?.id || ''} placeholder={tr('— เลือก (พิมพ์ค้นหาชื่อ) —')}
               inputStyle={inpSt} options={signers.map(x => ({ id: x.id, label: x.full_name }))} onChange={({ id }) => pickSigner(s.k, id)} />
             <input type="date" disabled={ro} value={req[`${s.k}_date`] || ''}
               onChange={e => setReq({ [`${s.k}_date`]: e.target.value || null })} style={{ ...inpSt, width: '100%', marginTop: 4 }} />
@@ -564,11 +568,11 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
       </div>
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-        <button onClick={onClose} style={btnSt()}>ปิด</button>
+        <button onClick={onClose} style={btnSt()}>{tr('ปิด')}</button>
         {canRecord && <>
-          <button onClick={() => onSave()} style={btnSt()}>บันทึก</button>
+          <button onClick={() => onSave()} style={btnSt()}>{tr('บันทึก')}</button>
           {req.status === 'draft' &&
-            <button onClick={() => onSave('submitted')} style={btnSt('var(--accent)')}>บันทึก + ส่งขออนุมัติ</button>}
+            <button onClick={() => onSave('submitted')} style={btnSt('var(--accent)')}>{tr('บันทึก + ส่งขออนุมัติ')}</button>}
         </>}
       </div>
     </Modal>

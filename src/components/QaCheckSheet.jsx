@@ -43,6 +43,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useMergeParams } from '../utils/useTabParam';
 import { parseQrPayload, findQaPartByScan } from '../utils/qrCode';
 
+import { tr } from '../utils/i18n';
 /* ── helpers เวลา/วันงาน (กฎเดียวกับทั้งระบบ) ───────────────────────────── */
 const getWorkDate = () => {
   const d = new Date();
@@ -653,7 +654,7 @@ export default function QaCheckSheet({ canRecord }) {
           ...cardSt, marginBottom: 12, borderColor: '#f59e0b',
           background: 'rgba(245,158,11,0.10)', color: 'var(--text2)', fontSize: 12.5,
         }}>
-          ⚠️ <b>ยังใช้บันทึกผลไม่ได้</b> — ตารางใบตรวจยังไม่ถูกสร้างในฐานข้อมูล
+          ⚠️ <b>{tr('ยังใช้บันทึกผลไม่ได้')}</b> — ตารางใบตรวจยังไม่ถูกสร้างในฐานข้อมูล
           (ต้อง apply migration <code>20260804_qa_inspection_check_sheet.sql</code> ที่ Supabase project หลักก่อน)
           · ระหว่างนี้ยังดูมาตรฐาน/จุดตรวจของแต่ละพาร์ทได้ตามปกติ
         </div>
@@ -687,7 +688,7 @@ export default function QaCheckSheet({ canRecord }) {
       }} />
 
       {scanOpen && (
-        <ScanModal title="สแกนชิ้นงาน → เลือกพาร์ท" hint="ส่องบาร์โค้ด MAT บนกล่อง/บัตรคัมบัง หรือพิมพ์เลขพาร์ท"
+        <ScanModal title={tr('สแกนชิ้นงาน → เลือกพาร์ท')} hint={tr('ส่องบาร์โค้ด MAT บนกล่อง/บัตรคัมบัง หรือพิมพ์เลขพาร์ท')}
           onScan={pickByScan} onClose={() => setScanOpen(false)} />
       )}
 
@@ -699,40 +700,40 @@ export default function QaCheckSheet({ canRecord }) {
           alignItems: 'end',
         }}>
           <div>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>พาร์ทที่ตรวจ</label>
+            <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>{tr('พาร์ทที่ตรวจ')}</label>
             <div style={{ display: 'flex', gap: 6 }}>
               <select style={{ ...inputSt, flex: 1, minWidth: 0 }} value={partId || ''} onChange={e => setPartId(e.target.value || null)}>
-                {scopedParts.length === 0 && <option value="">— ยังไม่มีพาร์ทในขอบเขตของคุณ —</option>}
+                {scopedParts.length === 0 && <option value="">{tr('— ยังไม่มีพาร์ทในขอบเขตของคุณ —')}</option>}
                 {scopedParts.map(p => (
                   <option key={p.id} value={p.id}>
                     {p.part_no}{p.part_name ? ` · ${p.part_name}` : ''}{p.line_name ? ` (${p.line_name})` : ''}
                   </option>
                 ))}
               </select>
-              <button type="button" onClick={() => setScanOpen(true)} title="สแกนบาร์โค้ด MAT บนกล่อง/คัมบัง"
+              <button type="button" onClick={() => setScanOpen(true)} title={tr('สแกนบาร์โค้ด MAT บนกล่อง/คัมบัง')}
                 style={{ flexShrink: 0, minWidth: 44, padding: '0 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontWeight: 700, cursor: 'pointer' }}>📷</button>
             </div>
           </div>
           <div>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>วันงาน</label>
+            <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>{tr('วันงาน')}</label>
             <input type="date" style={inputSt} value={workDate} max={getWorkDate()}
               onChange={e => setWorkDate(e.target.value || getWorkDate())} />
           </div>
           <div>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>กะ</label>
+            <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>{tr('กะ')}</label>
             <select style={inputSt} value={shift} onChange={e => setShift(e.target.value)}>
-              <option value="day">☀️ กะเช้า</option>
-              <option value="night">🌙 กะดึก</option>
+              <option value="day">{tr('☀️ กะเช้า')}</option>
+              <option value="night">{tr('🌙 กะดึก')}</option>
             </select>
           </div>
           <div>
-            <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>รอบที่</label>
+            <label style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>{tr('รอบที่')}</label>
             <input type="number" min={1} max={20} style={inputSt} value={roundNo}
               onChange={e => setRoundNo(Math.min(20, Math.max(1, parseInt(e.target.value, 10) || 1)))} />
           </div>
           <div style={{ fontSize: 12, color: 'var(--muted)' }}>
             ผู้ตรวจ (บัญชี): <b style={{ color: 'var(--text2)' }}>{sheet?.inspector_name || fullName || '—'}</b>
-            {part?.line_name && <div>ไลน์: <b style={{ color: 'var(--text2)' }}>{part.line_name}</b></div>}
+            {part?.line_name && <div>{tr('ไลน์:')} <b style={{ color: 'var(--text2)' }}>{part.line_name}</b></div>}
           </div>
           <InspectorCodeField disabled={!canRecord} value={matchesKey(sheet) ? (sheet.inspector_code || '') : pendingCode}
             onChange={async (v) => {
@@ -757,15 +758,15 @@ export default function QaCheckSheet({ canRecord }) {
               {summary.ng > 0 && <Chip label={`ไม่ผ่าน ${summary.ng}`} color={JUDGE.ng.color} />}
               {summary.na > 0 && <Chip label={`ข้าม ${summary.na}`} color={JUDGE.na.color} />}
               {sheet?.status === 'done'
-                ? <Chip label={sheet.result === 'pass' ? '✅ ปิดใบแล้ว — ผ่าน' : '⛔ ปิดใบแล้ว — ไม่ผ่าน'} color={sheet.result === 'pass' ? '#22c55e' : '#ef4444'} />
-                : <Chip label={sheet ? '📝 กำลังตรวจ' : '○ ยังไม่เริ่มตรวจ'} color={sheet ? '#4d9fff' : '#6b7280'} />}
+                ? <Chip label={sheet.result === 'pass' ? tr('✅ ปิดใบแล้ว — ผ่าน') : tr('⛔ ปิดใบแล้ว — ไม่ผ่าน')} color={sheet.result === 'pass' ? '#22c55e' : '#ef4444'} />
+                : <Chip label={sheet ? tr('📝 กำลังตรวจ') : tr('○ ยังไม่เริ่มตรวจ')} color={sheet ? '#4d9fff' : '#6b7280'} />}
               <span style={{ flex: 1 }} />
               {/* ใบปิดเองเมื่อตัวเดินกฎบอก "ยอมรับ" — ไม่มีปุ่มปิดใบ/ผ่านทั้งหมด (ตรวจทีละชิ้น 2026-09-07) */}
               <Chip label={`ชิ้นที่ตรวจแล้ว ${pieces.length}`} color="#6b7280" />
               <button type="button" className="tbtn" disabled={printing || !matchesKey(sheet)} onClick={handlePrint}
-                title={matchesKey(sheet) ? 'พิมพ์/บันทึก PDF ใบตรวจรอบนี้' : 'ยังไม่มีใบตรวจของรอบนี้'}
+                title={matchesKey(sheet) ? tr('พิมพ์/บันทึก PDF ใบตรวจรอบนี้') : tr('ยังไม่มีใบตรวจของรอบนี้')}
                 style={{ padding: '5px 12px', fontSize: 12, fontWeight: 700 }}>
-                {printing ? 'กำลังเตรียม…' : '🖨️ พิมพ์ใบตรวจ'}
+                {printing ? tr('กำลังเตรียม…') : tr('🖨️ พิมพ์ใบตรวจ')}
               </button>
             </>
           )}
@@ -778,10 +779,10 @@ export default function QaCheckSheet({ canRecord }) {
           {drawings.length > 0 && (
             <div style={{ ...cardSt, position: isMobile ? 'static' : 'sticky', top: 10 }}>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-                <div style={{ fontWeight: 800, fontSize: 13 }}>แบบ + จุดตรวจ</div>
+                <div style={{ fontWeight: 800, fontSize: 13 }}>{tr('แบบ + จุดตรวจ')}</div>
                 <span style={{ flex: 1 }} />
                 <button style={ghostBtn} onClick={() => setShowDrawing(s => !s)}>
-                  {showDrawing ? '▾ ซ่อนแบบ' : '▸ แสดงแบบ'}
+                  {showDrawing ? tr('▾ ซ่อนแบบ') : tr('▸ แสดงแบบ')}
                 </button>
               </div>
               {showDrawing && (
@@ -799,7 +800,7 @@ export default function QaCheckSheet({ canRecord }) {
                   {isPdf ? (
                     <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                       แผ่นนี้เป็น PDF — ดูจุดตรวจได้จากรายการด้านขวา ·{' '}
-                      <a href={activeDwg.drawing_url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>เปิดแบบ ↗</a>
+                      <a href={activeDwg.drawing_url} target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>{tr('เปิดแบบ ↗')}</a>
                     </div>
                   ) : activeDwg && (
                     <div ref={boxRef}>
@@ -831,7 +832,7 @@ export default function QaCheckSheet({ canRecord }) {
                           วงโปร่ง = ยังไม่ตรวจ (สีขอบ = rank)
                         </span>
                         <span>🟢 ทึบเขียว = ผ่าน</span><span>🔴 ทึบแดง = ไม่ผ่าน</span><span>⚪ ทึบเทา = ข้าม</span>
-                        <span>· แตะหมุดเพื่อไปที่จุดนั้น</span>
+                        <span>{tr('· แตะหมุดเพื่อไปที่จุดนั้น')}</span>
                         {pinItems.some(i => i.image_path) && <span>· 🔍 = มีรูปซูมของจุด แตะหมุดเพื่อดู</span>}
                       </div>
                     </div>
@@ -854,7 +855,7 @@ export default function QaCheckSheet({ canRecord }) {
           <div style={{ ...cardSt, padding: 0 }}>
             <div style={{ padding: '12px 16px', fontWeight: 800, fontSize: 13.5, borderBottom: '1px solid var(--border)' }}>
               สรุปต่อจุด ({items.length})
-              {loading && <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 12 }}> · กำลังโหลด…</span>}
+              {loading && <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 12 }}> {tr('· กำลังโหลด…')}</span>}
               <span style={{ fontWeight: 400, color: 'var(--muted)', fontSize: 12 }}>
                 {' '}· {readOnly && canRecord ? 'ใบปิดแล้ว' : !canRecord ? 'ไม่มีสิทธิ์บันทึก — ดูอย่างเดียว' : 'บันทึกที่แผงตรวจทีละชิ้นด้านบน'}
               </span>
@@ -878,7 +879,7 @@ export default function QaCheckSheet({ canRecord }) {
       {/* ประวัติใบตรวจของพาร์ทนี้ */}
       {recent.length > 0 && (
         <div style={{ ...cardSt, marginTop: 12 }}>
-          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>ใบตรวจล่าสุดของพาร์ทนี้</div>
+          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>{tr('ใบตรวจล่าสุดของพาร์ทนี้')}</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {recent.map(s => {
               const cur = s.id === sheet?.id;
@@ -886,7 +887,7 @@ export default function QaCheckSheet({ canRecord }) {
               return (
                 <button key={s.id} onClick={() => { setWorkDate(s.work_date); setShift(s.shift); setRoundNo(s.round_no); }}
                   style={{ ...ghostBtn, padding: '6px 10px', borderColor: cur ? 'var(--accent)' : `${color}55`, color, fontWeight: cur ? 800 : 600 }}>
-                  {s.work_date} · {s.shift === 'day' ? '☀️' : '🌙'} รอบ {s.round_no}
+                  {s.work_date} · {s.shift === 'day' ? '☀️' : '🌙'} {tr('รอบ')} {s.round_no}
                   {s.status === 'done' ? (s.result === 'pass' ? ' ✓' : ' ✕') : ' …'}
                 </button>
               );
@@ -935,7 +936,7 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
         <div style={{ flex: '1 1 240px', minWidth: 200 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{item.characteristic}</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 2 }}>
-            <span>สเปค: {specOf(item)}</span>
+            <span>{tr('สเปค:')} {specOf(item)}</span>
             {item.method && <span>· {item.method}</span>}
             {item.frequency && <span>· {item.frequency}</span>}
             {item.sample_size != null && <span>· n={item.sample_size}</span>}
@@ -944,7 +945,7 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
             <Chip label={item.item_type === 'variable' ? 'Variable' : 'Attribute'} color={item.item_type === 'variable' ? '#4d9fff' : '#a78bfa'} />
             {item.rank && <Chip label={`Rank ${item.rank}`} color={RANK[item.rank].color} />}
             {item.stage && <Chip label={STAGE[item.stage]?.label || item.stage} color={STAGE[item.stage]?.color || '#6b7280'} />}
-            {res?.ncr_id && <Chip label="เปิด NCR แล้ว" color="#ef4444" />}
+            {res?.ncr_id && <Chip label={tr('เปิด NCR แล้ว')} color="#ef4444" />}
           </div>
         </div>
 
@@ -989,11 +990,11 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
             <button className="tbtn" disabled={busy}
               onClick={() => onDraft({ judgement: 'ng', values })}
               style={{ ...ghostBtn, padding: isMobile ? '10px 14px' : '7px 12px', background: judged === 'ng' ? JUDGE.ng.color : 'var(--bg3)', color: judged === 'ng' ? '#fff' : JUDGE.ng.color, borderColor: JUDGE.ng.color, fontWeight: 800 }}>
-              ✕ ไม่ผ่าน
+              {tr('✕ ไม่ผ่าน')}
             </button>
-            <button className="tbtn" disabled={busy} title="ไม่ได้ตรวจจุดนี้ในรอบนี้"
+            <button className="tbtn" disabled={busy} title={tr('ไม่ได้ตรวจจุดนี้ในรอบนี้')}
               onClick={() => onSave('na')}
-              style={{ ...ghostBtn, padding: isMobile ? '10px 12px' : '7px 10px' }}>ข้าม</button>
+              style={{ ...ghostBtn, padding: isMobile ? '10px 12px' : '7px 10px' }}>{tr('ข้าม')}</button>
           </div>
         )}
       </div>
@@ -1003,14 +1004,14 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
         <div style={{ marginTop: 8, padding: 10, borderRadius: 'var(--r-md)', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.35)' }}
           onClick={e => e.stopPropagation()}>
           <div className="mgrid" style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : '1fr 120px auto' }}>
-            <input style={inputSt} placeholder="เสียอย่างไร / เจอที่ไหน (บังคับกรอก)"
+            <input style={inputSt} placeholder={tr('เสียอย่างไร / เจอที่ไหน (บังคับกรอก)')}
               value={draft?.note ?? res?.note ?? ''} onChange={e => onDraft({ note: e.target.value, judgement: 'ng' })} />
-            <input type="number" min={1} style={inputSt} placeholder="จำนวน NG"
+            <input type="number" min={1} style={inputSt} placeholder={tr('จำนวน NG')}
               value={draft?.qty_ng ?? res?.qty_ng ?? 1} onChange={e => onDraft({ qty_ng: e.target.value, judgement: 'ng' })} />
             <button disabled={busy}
               onClick={() => onSave('ng', { values: values.filter(v => v !== ''), note: draft?.note ?? res?.note ?? '', qty_ng: draft?.qty_ng ?? res?.qty_ng ?? 1 })}
               style={{ ...ghostBtn, background: JUDGE.ng.color, color: '#fff', borderColor: JUDGE.ng.color, fontWeight: 800 }}>
-              บันทึก NG
+              {tr('บันทึก NG')}
             </button>
           </div>
         </div>
@@ -1020,15 +1021,15 @@ function ItemRow({ item, res, draft, selected, readOnly, canRecord, busy, isMobi
       {judged && (
         <div style={{ marginTop: 6, fontSize: 11.5, color: 'var(--muted)', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <Chip label={JUDGE[judged].label} color={JUDGE[judged].color} />
-          {res.values_json?.length > 0 && <span>ค่าที่วัด: {res.values_json.join(', ')}</span>}
-          {judged === 'ng' && res.qty_ng > 0 && <span>· NG {res.qty_ng} ชิ้น</span>}
+          {res.values_json?.length > 0 && <span>{tr('ค่าที่วัด:')} {res.values_json.join(', ')}</span>}
+          {judged === 'ng' && res.qty_ng > 0 && <span>· NG {res.qty_ng} {tr('ชิ้น')}</span>}
           {res.note && <span>· {res.note}</span>}
-          {res.recorded_by && <span>· โดย {res.recorded_by}</span>}
+          {res.recorded_by && <span>{tr('· โดย')} {res.recorded_by}</span>}
           {/* เปิด NCR ได้แม้ใบปิดแล้ว — NCR เป็นงานตามหลัง ไม่ใช่การแก้ผลตรวจ */}
           {judged === 'ng' && !res.ncr_id && canRecord && (
             <button onClick={e => { e.stopPropagation(); onOpenNcr(res); }} disabled={busy}
               style={{ ...ghostBtn, padding: '4px 10px', borderColor: '#ef4444', color: '#ef4444', fontWeight: 700 }}>
-              เปิด NCR
+              {tr('เปิด NCR')}
             </button>
           )}
         </div>

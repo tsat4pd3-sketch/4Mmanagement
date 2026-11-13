@@ -31,6 +31,7 @@ import { useOrgSections } from '../utils/useOrgSections';
 import { inSectionScope } from '../utils/sectionScope';
 import { resolvePpe, ppeSourceText, PPE_SCOPE_LABEL } from '../utils/ppeRequirements';
 
+import { tr } from '../utils/i18n';
 const SCOPE_OPTS = [
   { value: 'plant',   label: 'ทั้งโรงงาน' },
   { value: 'section', label: 'ส่วนงาน' },
@@ -166,16 +167,16 @@ export default function PpeSetup() {
 
   return (
     <Page>
-      <PageHeader icon="🦺" title="ข้อกำหนด PPE ของแต่ละหน่วยงาน"
+      <PageHeader icon="🦺" title={tr('ข้อกำหนด PPE ของแต่ละหน่วยงาน')}
         subtitle="ตั้งว่าหน่วยไหนต้องใส่อะไร — ตกทอด ทั้งโรงงาน → ส่วนงาน → ไลน์ (แม่→ลูก) → จุดงาน · ชั้นล่างชนะชั้นบน"
         filters={(
           <FilterBar>
-            <Segmented label="ตั้งค่าที่ชั้น" value={kind} options={SCOPE_OPTS}
+            <Segmented label={tr('ตั้งค่าที่ชั้น')} value={kind} options={SCOPE_OPTS}
               onChange={(v) => { setKind(v); if (v === 'plant') { setSecKey(''); setLineKey(''); setStKey(''); } }} />
             {kind === 'section' && (
               <select value={secKey} onChange={e => setSecKey(e.target.value)}>
-                <option value="">— เลือกส่วนงาน —</option>
-                {sectionNames.map(s => <option key={s} value={s}>{s}</option>)}
+                <option value="">{tr('— เลือกส่วนงาน —')}</option>
+                {sectionNames.map(s => <option key={s} value={s}>{tr(s)}</option>)}
               </select>
             )}
             {(kind === 'line' || kind === 'station') && (
@@ -191,7 +192,7 @@ export default function PpeSetup() {
                     : !stations.length ? 'ไลน์นี้ยังไม่มีจุดงาน'
                     : '— เลือกจุดงาน —'}
                 </option>
-                {stations.map(st => <option key={st.id} value={st.id}>{st.station_name || '(ไม่มีชื่อ)'}</option>)}
+                {stations.map(st => <option key={st.id} value={st.id}>{st.station_name || tr('(ไม่มีชื่อ)')}</option>)}
               </select>
             )}
           </FilterBar>
@@ -199,27 +200,27 @@ export default function PpeSetup() {
 
       {loadErr && (
         <NoticeBar tone="bad">
-          <b>อ่านทะเบียน PPE ไม่สำเร็จ</b> — ยังตั้งค่าไม่ได้ และหน้าจอนี้ไม่ได้แปลว่า "ไม่มีข้อกำหนด"
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>{loadErr} · โหลดหน้าใหม่อีกครั้ง</div>
+          <b>{tr('อ่านทะเบียน PPE ไม่สำเร็จ')}</b> — ยังตั้งค่าไม่ได้ และหน้าจอนี้ไม่ได้แปลว่า "ไม่มีข้อกำหนด"
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>{loadErr} {tr('· โหลดหน้าใหม่อีกครั้ง')}</div>
         </NoticeBar>
       )}
       {linesFailed && <NoticeBar tone="warn">อ่านทะเบียนไลน์ไม่สำเร็จ — ชั้น "ไลน์/จุดงาน" อาจไม่ครบ</NoticeBar>}
       {!canEdit && !loadErr && (
-        <NoticeBar tone="warn">บัญชีนี้ดูได้อย่างเดียว (ต้องมีสิทธิ์ <code>ppe:manage</code>) — ขอสิทธิ์ที่หน้าจัดการสิทธิ์</NoticeBar>
+        <NoticeBar tone="warn">{tr('บัญชีนี้ดูได้อย่างเดียว (ต้องมีสิทธิ์')} <code>ppe:manage</code>) — ขอสิทธิ์ที่หน้าจัดการสิทธิ์</NoticeBar>
       )}
-      {loading && <div style={{ ...card, color: 'var(--muted)' }}>กำลังโหลด…</div>}
+      {loading && <div style={{ ...card, color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</div>}
 
       {kind === 'station' && !!lineKey && stFail && (
         <NoticeBar tone="bad">
-          <b>อ่านทะเบียนจุดงานไม่สำเร็จ</b> — ช่องเลือกจุดงานที่ว่างอยู่<b>ไม่ได้แปลว่าไลน์นี้ไม่มีจุดงาน</b>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>{stFail} · โหลดหน้าใหม่อีกครั้ง</div>
+          <b>{tr('อ่านทะเบียนจุดงานไม่สำเร็จ')}</b> {tr('— ช่องเลือกจุดงานที่ว่างอยู่')}<b>{tr('ไม่ได้แปลว่าไลน์นี้ไม่มีจุดงาน')}</b>
+          <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>{stFail} {tr('· โหลดหน้าใหม่อีกครั้ง')}</div>
         </NoticeBar>
       )}
       {kind === 'station' && !!lineKey && !stFail && !stations.length && (
         <NoticeBar tone="warn">
           ไลน์ <b>{lineById[String(lineKey)]?.name || lineKey}</b> ยังไม่ได้ตั้งจุดงานไว้ จึงตั้งข้อกำหนดรายจุดงานไม่ได้
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 3 }}>
-            ตั้งจุดงานที่หน้า <b>ตั้งค่าผัง/Floorplan</b> → แท็บผังไลน์ · หรือตั้งข้อกำหนดที่ชั้น <b>ไลน์</b> แทน (ตกทอดถึงทุกจุดงานในไลน์)
+            ตั้งจุดงานที่หน้า <b>{tr('ตั้งค่าผัง/Floorplan')}</b> {tr('→ แท็บผังไลน์ · หรือตั้งข้อกำหนดที่ชั้น')} <b>{tr('ไลน์')}</b> แทน (ตกทอดถึงทุกจุดงานในไลน์)
           </div>
         </NoticeBar>
       )}
@@ -231,7 +232,7 @@ export default function PpeSetup() {
 
       {!loading && !loadErr && !!scopeKey && (<>
         <div style={{ ...card, marginBottom: 12 }}>
-          <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>กำลังตั้งค่าที่</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>{tr('กำลังตั้งค่าที่')}</div>
           <div style={{ fontSize: 20, fontWeight: 900 }}>{PPE_SCOPE_LABEL[kind]} · {scopeName}</div>
           <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>
             ผลสุดท้ายของหน่วยนี้ = ต้องใส่ <b style={{ color: 'var(--green)' }}>{effective.required.length}</b> ชิ้น
@@ -251,7 +252,7 @@ export default function PpeSetup() {
                 <div style={{ flex: '1 1 180px', minWidth: 0 }}>
                   <div style={{ fontSize: 15, fontWeight: 700, color: effOn ? 'var(--text)' : 'var(--muted)' }}>
                     {effOn ? '🟢' : '⚪'} {item.name_th}
-                    {item.legacy_col && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}> · มีช่องเดิมในใบเช็คชื่อ</span>}
+                    {item.legacy_col && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 600 }}> {tr('· มีช่องเดิมในใบเช็คชื่อ')}</span>}
                   </div>
                   {/* 🔴 กฎข้อ 3 — ต้องบอกเสมอว่าค่าที่เห็นมาจากชั้นไหน */}
                   <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 1 }}>
@@ -263,16 +264,16 @@ export default function PpeSetup() {
                 </div>
                 <Segmented size="sm" value={v} options={VAL_OPTS} label={item.name_th}
                   onChange={(nv) => setValue(item, nv)} />
-                {saving === String(item.id) && <span style={{ fontSize: 12, color: 'var(--amber)' }}>บันทึก…</span>}
+                {saving === String(item.id) && <span style={{ fontSize: 12, color: 'var(--amber)' }}>{tr('บันทึก…')}</span>}
               </div>
             );
           })}
         </div>
 
         <p style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.8, marginTop: 10 }}>
-          <b>ตกทอด</b> = ใช้ตามชั้นบน (ไม่ได้ตั้งที่นี่) · <b>บังคับ</b> = หน่วยนี้ต้องใส่ ·
-          <b> ยกเว้น</b> = หน่วยนี้ไม่ต้องใส่ แม้ชั้นบนจะบังคับ<br />
-          รายการที่ตั้งไว้จะไปขึ้นให้ติ๊กตอน <b>สแกนบัตรเช็คชื่อ</b> — ขึ้นเฉพาะรายการที่หน่วยนั้นบังคับ
+          <b>{tr('ตกทอด')}</b> = ใช้ตามชั้นบน (ไม่ได้ตั้งที่นี่) · <b>{tr('บังคับ')}</b> = หน่วยนี้ต้องใส่ ·
+          <b> {tr('ยกเว้น')}</b> = หน่วยนี้ไม่ต้องใส่ แม้ชั้นบนจะบังคับ<br />
+          รายการที่ตั้งไว้จะไปขึ้นให้ติ๊กตอน <b>{tr('สแกนบัตรเช็คชื่อ')}</b> — ขึ้นเฉพาะรายการที่หน่วยนั้นบังคับ
         </p>
       </>)}
     </Page>

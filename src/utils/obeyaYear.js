@@ -290,6 +290,6 @@ export const attachManOverlay = (series, manOverlap) =>
  *  (จอ SQDCM ยังใช้ `monthBarStatus`/`statusOf` เพราะแกน SQDCM ไม่ใช่ "แถว KPI" ที่มี Commitment) */
 export const monthBarScore = (p, def) => {
   if (p == null || p.v == null) return 'none';
-  const st = scoreDef(p.v, def).status;
+  const st = scoreDef(p.v, def, { plan: p.plan ?? null }).status;   // 📅 score_by_plan: สีแท่งเทียบแผนสะสมของเดือนนั้น
   return st === 'good' || st === 'warn' || st === 'bad' ? st : 'none';
 };

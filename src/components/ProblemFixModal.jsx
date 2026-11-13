@@ -19,6 +19,7 @@ import useColumnHistory from '../utils/useColumnHistory';
 /* 📕 ทะเบียน QRs ↔ WI การซ่อม (WI-PD3-069 §6) — กติกาการจับคู่อยู่ใน util กลาง (pure + มีเทส) */
 import { matchRepairWi } from '../utils/repairWi';
 
+import { tr } from '../utils/i18n';
 const TABLE = { downtime: 'downtime_logs', defect: 'defect_logs' };
 const TYPE_COL = { downtime: 'downtime_type_id', defect: 'defect_type_id' };
 
@@ -134,9 +135,9 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>{title}</div>
 
         {/* ── วิธีแก้ไข ── */}
-        <label style={lbl}>วิธีการแก้ไข</label>
+        <label style={lbl}>{tr('วิธีการแก้ไข')}</label>
         <textarea value={fix} onChange={e => setFix(e.target.value)} style={ta}
-          placeholder="แก้ยังไง เปลี่ยนอะไร ปรับค่าอะไร — เขียนให้กะถัดไปอ่านแล้วทำตามได้" />
+          placeholder={tr('แก้ยังไง เปลี่ยนอะไร ปรับค่าอะไร — เขียนให้กะถัดไปอ่านแล้วทำตามได้')} />
 
         {/* 📕 WI การซ่อมที่ขึ้นทะเบียน (WI-PD3-069 §6) — ขึ้นก่อน "เคยแก้มาก่อน"
             เพราะเป็น **ข้อกำหนด** ไม่ใช่ประสบการณ์: ของที่ซ่อมได้ต้องซ่อมตาม WI เล่มที่กำหนด
@@ -144,7 +145,7 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
         {wiHits.length > 0 && (
           <div style={{ marginTop: 8, marginBottom: 4 }}>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 5 }}>
-              อาการ/พาร์ทนี้มี <b style={{ color: 'var(--text)' }}>WI การซ่อม</b> ขึ้นทะเบียนไว้ (WI-PD3-069 §6) — ซ่อมแล้วอ้างเล่มนี้
+              อาการ/พาร์ทนี้มี <b style={{ color: 'var(--text)' }}>{tr('WI การซ่อม')}</b> ขึ้นทะเบียนไว้ (WI-PD3-069 §6) — ซ่อมแล้วอ้างเล่มนี้
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {wiHits.map(w => (
@@ -196,21 +197,21 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
         )}
 
         <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>ผู้แก้ไข</span>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ผู้แก้ไข')}</span>
           {/* 2026-09-07 เลือกจาก profiles+employees ผ่าน <PersonSelect> (ผู้แก้มักเป็นช่าง/พนักงาน) — เก็บชื่อ snapshot (ตาราง DR) */}
-          <PersonSelect value={fixBy} source="both" history={fixByHist} placeholder="ชื่อผู้แก้ไข" style={{ width: 260 }} inputStyle={inp}
+          <PersonSelect value={fixBy} source="both" history={fixByHist} placeholder={tr('ชื่อผู้แก้ไข')} style={{ width: 260 }} inputStyle={inp}
             onChange={({ name }) => setFixBy(name)} />
         </div>
 
         {/* ── ผลตรวจติดตาม ── */}
         <div style={{ borderTop: '1px solid var(--border)', margin: '16px 0 12px' }} />
-        <label style={lbl}>ผลการตรวจติดตามการแก้ไข</label>
+        <label style={lbl}>{tr('ผลการตรวจติดตามการแก้ไข')}</label>
         <textarea value={res} onChange={e => setRes(e.target.value)} style={ta}
-          placeholder="แก้แล้วหายจริงไหม ตามดูแล้วผลเป็นยังไง — ลงทีหลังได้ ไม่ต้องกรอกพร้อมวิธีแก้" />
+          placeholder={tr('แก้แล้วหายจริงไหม ตามดูแล้วผลเป็นยังไง — ลงทีหลังได้ ไม่ต้องกรอกพร้อมวิธีแก้')} />
         <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>ผู้ตรวจติดตาม</span>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ผู้ตรวจติดตาม')}</span>
           {/* 2026-09-07 <PersonSelect> — default ผู้ใช้ปัจจุบันเหมือนเดิม */}
-          <PersonSelect value={resBy} source="both" history={followHist} placeholder="ชื่อผู้ตรวจติดตาม" style={{ width: 260 }} inputStyle={inp}
+          <PersonSelect value={resBy} source="both" history={followHist} placeholder={tr('ชื่อผู้ตรวจติดตาม')} style={{ width: 260 }} inputStyle={inp}
             onChange={({ name }) => setResBy(name)} />
         </div>
 
@@ -221,11 +222,11 @@ export default function ProblemFixModal({ kind, row, title, actorName, onClose, 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
           <button onClick={onClose} style={{
             padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)',
-            background: 'none', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>ยกเลิก</button>
+            background: 'none', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>{tr('ยกเลิก')}</button>
           <button onClick={save} disabled={saving} style={{
             padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none', background: '#f59e0b',
             color: '#fff', fontSize: 13, fontWeight: 700, cursor: saving ? 'default' : 'pointer',
-            opacity: saving ? 0.6 : 1 }}>{saving ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+            opacity: saving ? 0.6 : 1 }}>{saving ? tr('กำลังบันทึก…') : tr('บันทึก')}</button>
         </div>
       </div>
     </div>

@@ -57,7 +57,7 @@ test('flow PD2: ช่วงหยุด + นับชิ้น ส่งข้
   assert.match(all, /FROM oee_stop/);
   assert.match(all, /FROM oee_piece/);
   assert.match(all, /IN \('PLANNED_STOP', 'NO_PLAN'\) THEN o\.Description/);
-  assert.match(all, /= 'FAULT' THEN u\.Description/);
+  assert.match(all, /IN \('FAULT', 'IDLE'\) THEN u\.Description/);
   assert.match(all, /DATE_FORMAT\(s\.start_ts/);                                 // ไม่ปล่อย Date ของ mysql node (โซนเพี้ยน)
   assert.match(all, /msg\.payload = \{ states: rows \}/);
   assert.match(all, /msg\.payload = \{ pieces: rows \}/);

@@ -22,6 +22,7 @@ import {
   sendBlockReason, sendStockWarn, openQtyOf, receiveBlockReason, orderZone, OUTSOURCE_LINE_TYPE,
 } from '../utils/plating';
 
+import { tr } from '../utils/i18n';
 /* ═══ 🧪 งานชุบภายนอก — แท็บในตู้ Kanban รวม (/heijunka) · 2026-10-13 คำสั่ง user
 
    ลำดับงานจริง (user 13/10 · ตัวอย่าง GOR 297):
@@ -269,8 +270,8 @@ export default function PlatingBoard({ q = '', showDone = false, readOnly = fals
 
   return (
     <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
-      {masterErr && <div style={errTxt}>⚠ โหลดทะเบียนสินค้า/BOM/กฎคลัง/ไลน์ไม่ครบ — {masterErr} · รายการงานชุบบนจออาจขาด</div>}
-      {liveErr && <div style={errTxt}>⚠ โหลดใบส่งชุบ/ยอดคลังไม่ครบ — {liveErr} · ตัวเลขบนจออาจขาด</div>}
+      {masterErr && <div style={errTxt}>{tr('⚠ โหลดทะเบียนสินค้า/BOM/กฎคลัง/ไลน์ไม่ครบ —')} {masterErr} {tr('· รายการงานชุบบนจออาจขาด')}</div>}
+      {liveErr && <div style={errTxt}>{tr('⚠ โหลดใบส่งชุบ/ยอดคลังไม่ครบ —')} {liveErr} {tr('· ตัวเลขบนจออาจขาด')}</div>}
       {masterReady && !platList.length && (
         <div style={warnTxt}>
           ยังไม่มีสินค้าหลังชุบ — ระบบนับสินค้าที่อยู่บน "ไลน์ประเภท 🧪 จ้างนอก" เป็นงานหลังชุบ ·
@@ -287,29 +288,29 @@ export default function PlatingBoard({ q = '', showDone = false, readOnly = fals
           return (
             <div key={g.vendor} style={{ ...box, flex: '1 1 220px', borderColor: late ? '#ef4444' : 'var(--border)' }}>
               <div style={{ fontSize: 13, fontWeight: 800 }}>{g.vendor}</div>
-              <div style={{ fontSize: 22, fontWeight: 800, fontFamily: 'var(--font-display)' }}>{fmt(g.open)} <span style={{ fontSize: 12, color: 'var(--muted)' }}>ชิ้นอยู่ที่ร้าน</span></div>
-              <div style={muted}>{g.orders} ใบ · {g.items.length} พาร์ท · เก่าสุด {oldest} วัน
+              <div style={{ fontSize: 22, fontWeight: 800, fontFamily: 'var(--font-display)' }}>{fmt(g.open)} <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ชิ้นอยู่ที่ร้าน')}</span></div>
+              <div style={muted}>{g.orders} {tr('ใบ ·')} {g.items.length} {tr('พาร์ท · เก่าสุด')} {oldest} วัน
                 {g.leadDays == null ? ' · ยังไม่ตั้ง lead time ร้าน (ทะเบียน Supplier)' : ` · lead time ${g.leadDays} วัน`}</div>
-              {late && <div style={errTxt}>มีงานเกิน lead time</div>}
+              {late && <div style={errTxt}>{tr('มีงานเกิน lead time')}</div>}
             </div>
           );
         })}
-        {!groups.length && masterReady && <div style={{ ...box, flex: '1 1 220px', ...muted }}>ไม่มีงานค้างที่ร้านชุบ</div>}
+        {!groups.length && masterReady && <div style={{ ...box, flex: '1 1 220px', ...muted }}>{tr('ไม่มีงานค้างที่ร้านชุบ')}</div>}
         <button type="button" disabled={!canSend} onClick={() => setSendOpen(v => !v)}
           style={storeBtn(sendOpen ? 'secondary' : 'primary', { alignSelf: 'center', opacity: canSend ? 1 : 0.5 })}
-          title={canSend ? '' : 'ไม่มีสิทธิ์ส่งชุบ (plating:send)'}>
-          {sendOpen ? '▾ ปิดฟอร์มส่ง' : '📤 ส่งงานไปชุบ'}
+          title={canSend ? '' : tr('ไม่มีสิทธิ์ส่งชุบ (plating:send)')}>
+          {sendOpen ? tr('▾ ปิดฟอร์มส่ง') : tr('📤 ส่งงานไปชุบ')}
         </button>
       </div>
 
       {sendOpen && (
         <div style={box}>
-          <h3 style={h3}>ส่งงานไปชุบ</h3>
+          <h3 style={h3}>{tr('ส่งงานไปชุบ')}</h3>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8 }}>
             <div style={{ flex: '1 1 240px', minWidth: 0 }}>
-              <SupplierSelect value={vendor} onChange={({ supplier }) => setVendor(supplier || '')} kinds={['service']} placeholder="ร้านชุบ (ทะเบียน Supplier)…" />
+              <SupplierSelect value={vendor} onChange={({ supplier }) => setVendor(supplier || '')} kinds={['service']} placeholder={tr('ร้านชุบ (ทะเบียน Supplier)…')} />
             </div>
-            <input placeholder="เลขใบส่งของ (ถ้ามี)" value={docNo} onChange={e => setDocNo(e.target.value)} style={{ ...inp, flex: '1 1 160px' }} aria-label="เลขใบส่งของ" />
+            <input placeholder={tr('เลขใบส่งของ (ถ้ามี)')} value={docNo} onChange={e => setDocNo(e.target.value)} style={{ ...inp, flex: '1 1 160px' }} aria-label={tr('เลขใบส่งของ')} />
           </div>
           <div style={{ display: 'grid', gap: 8 }}>
             {sendLines.map((l, idx) => {
@@ -320,31 +321,31 @@ export default function PlatingBoard({ q = '', showDone = false, readOnly = fals
                     <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--muted)' }}>#{idx + 1}</span>
                     <div style={{ flex: '2 1 260px', minWidth: 0 }}>
                       <ProductSelect value={l.after} onChange={({ mat_no }) => setLine(l.key, { after: mat_no || '', before: '' })}
-                        products={platList} includeInactive disabled={!platList.length} placeholder="งานหลังชุบ — ค้น MAT / ชื่อ / P/N…" />
+                        products={platList} includeInactive disabled={!platList.length} placeholder={tr('งานหลังชุบ — ค้น MAT / ชื่อ / P/N…')} />
                     </div>
-                    <input type="number" min="0" inputMode="numeric" placeholder="จำนวน" value={l.qty}
-                      onChange={e => setLine(l.key, { qty: e.target.value })} style={{ ...inp, width: 110 }} aria-label="จำนวนที่ส่ง" />
+                    <input type="number" min="0" inputMode="numeric" placeholder={tr('จำนวน')} value={l.qty}
+                      onChange={e => setLine(l.key, { qty: e.target.value })} style={{ ...inp, width: 110 }} aria-label={tr('จำนวนที่ส่ง')} />
                     {sendLines.length > 1 && (
-                      <button type="button" onClick={() => setSendLines(ls => ls.filter(x => x.key !== l.key))} style={storeBtn('secondary', { minHeight: 40, padding: '6px 12px' })} aria-label="ลบรายการ">✕</button>
+                      <button type="button" onClick={() => setSendLines(ls => ls.filter(x => x.key !== l.key))} style={storeBtn('secondary', { minHeight: 40, padding: '6px 12px' })} aria-label={tr('ลบรายการ')}>✕</button>
                     )}
                   </div>
                   {l.after && (
                     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', fontSize: 12.5 }}>
-                      <span>ส่งเป็นเลขก่อนชุบ:</span>
+                      <span>{tr('ส่งเป็นเลขก่อนชุบ:')}</span>
                       {i.cands.length > 1 || (i.cands.length === 1 && !i.cands[0].linked) ? (
-                        <select value={i.before} onChange={e => setLine(l.key, { before: e.target.value })} style={{ ...inp, minHeight: 36 }} aria-label="เลขก่อนชุบ">
-                          <option value="">— เลือก —</option>
+                        <select value={i.before} onChange={e => setLine(l.key, { before: e.target.value })} style={{ ...inp, minHeight: 36 }} aria-label={tr('เลขก่อนชุบ')}>
+                          <option value="">{tr('— เลือก —')}</option>
                           {i.cands.map(c => <option key={c.mat} value={c.mat}>{c.mat} {c.name}{c.linked ? '' : ' (P/N ตรง · ยังไม่ผูก BOM)'}</option>)}
                         </select>
                       ) : i.cands.length === 1 ? <b>{i.cands[0].mat} {i.cands[0].name}</b> : (
                         <div style={{ flex: '1 1 240px', minWidth: 0 }}>
-                          <ProductSelect value={l.before} onChange={({ mat_no }) => setLine(l.key, { before: mat_no || '' })} products={products} placeholder="ไม่เจอใน BOM — เลือกเลขก่อนชุบเอง…" />
+                          <ProductSelect value={l.before} onChange={({ mat_no }) => setLine(l.key, { before: mat_no || '' })} products={products} placeholder={tr('ไม่เจอใน BOM — เลือกเลขก่อนชุบเอง…')} />
                         </div>
                       )}
-                      {i.before && !i.linked && <span style={warnTxt}>ส่งครั้งแรก ระบบจะผูก BOM {l.after} ← {i.before} ให้</span>}
+                      {i.before && !i.linked && <span style={warnTxt}>{tr('ส่งครั้งแรก ระบบจะผูก BOM')} {l.after} ← {i.before} {tr('ให้')}</span>}
                     </div>
                   )}
-                  {i.before && <div style={muted}>ตัดของจาก <b>{i.fromLoc || '—'}</b>{i.fromLoc && <> · ระบบเห็นคงเหลือ {i.have == null ? 'ไม่มีข้อมูลสต็อก' : `${fmt(i.have)} ชิ้น`}</>}</div>}
+                  {i.before && <div style={muted}>{tr('ตัดของจาก')} <b>{i.fromLoc || '—'}</b>{i.fromLoc && <> {tr('· ระบบเห็นคงเหลือ')} {i.have == null ? 'ไม่มีข้อมูลสต็อก' : `${fmt(i.have)} ชิ้น`}</>}</div>}
                   {i.block && l.qty !== '' && l.after && <div style={errTxt}>{i.block}</div>}
                   {i.warn && <div style={warnTxt}>{i.warn}</div>}
                 </div>
@@ -352,7 +353,7 @@ export default function PlatingBoard({ q = '', showDone = false, readOnly = fals
             })}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10, alignItems: 'center' }}>
-            <button type="button" onClick={() => setSendLines(ls => [...ls, blankLine()])} style={storeBtn('secondary')}>+ เพิ่มรายการ</button>
+            <button type="button" onClick={() => setSendLines(ls => [...ls, blankLine()])} style={storeBtn('secondary')}>{tr('+ เพิ่มรายการ')}</button>
             <button type="button" disabled={!!sendBlock || String(busy || '').startsWith('send|')} onClick={doSend}
               style={storeBtn('primary', { opacity: sendBlock ? 0.5 : 1 })}>
               {String(busy || '').startsWith('send|') ? 'กำลังบันทึก…' : `📤 ส่ง ${filled.length} รายการ · ${fmt(filled.reduce((a, l) => a + Number(l.qty || 0), 0))} ชิ้น`}
@@ -366,9 +367,9 @@ export default function PlatingBoard({ q = '', showDone = false, readOnly = fals
       {part !== 'send' && (<>
       {/* 🃏 การ์ดใบส่งชุบ — รอรับกลับ */}
       <div style={muted}>
-        อยู่ที่ร้านรวม <b>{fmt(totalOpen)} ชิ้น · {orders.length} ใบ</b> · งานกลับมา: นับของจริงก่อน ครบกดรับ · ไม่ครบกรอกยอดที่นับได้ + รายละเอียด
+        อยู่ที่ร้านรวม <b>{fmt(totalOpen)} {tr('ชิ้น ·')} {orders.length} {tr('ใบ')}</b> · งานกลับมา: นับของจริงก่อน ครบกดรับ · ไม่ครบกรอกยอดที่นับได้ + รายละเอียด
         (ส่วนที่เหลือค้างร้านต่อ หรือติ๊กปิดใบถ้าไม่กลับแล้ว) · ร้านชุบไม่ยืนยันยอดเอง สโตร์เป็นคนยืนยัน
-        {!canReceive && <span style={warnTxt}> · บัญชีนี้ไม่มีสิทธิ์รับคืน (plating:receive) — ดูได้อย่างเดียว</span>}
+        {!canReceive && <span style={warnTxt}> {tr('· บัญชีนี้ไม่มีสิทธิ์รับคืน (plating:receive) — ดูได้อย่างเดียว')}</span>}
       </div>
       {cards.length === 0 ? (
         <div style={{ padding: 24, textAlign: 'center', ...muted }}>
@@ -399,13 +400,13 @@ export default function PlatingBoard({ q = '', showDone = false, readOnly = fals
               footer={isOpen && canReceive ? (editing ? (
                 <div style={{ display: 'grid', gap: 8 }}>
                   <label style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>
-                    ยอดที่นับได้จริง (ค้างร้าน {fmt(open)})
+                    {tr('ยอดที่นับได้จริง (ค้างร้าน')} {fmt(open)})
                     <input type="number" min="0" inputMode="numeric" value={form.qty} autoFocus
                       onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
                       style={{ ...inp, display: 'block', width: '100%', marginTop: 4, fontSize: 15, fontWeight: 800 }} />
                   </label>
-                  <input placeholder="รายละเอียด (บังคับเมื่อไม่ครบ) เช่น ร้านทยอยส่ง / NG ที่ร้าน 5" value={form.reason}
-                    onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} style={inp} aria-label="รายละเอียด" />
+                  <input placeholder={tr('รายละเอียด (บังคับเมื่อไม่ครบ) เช่น ร้านทยอยส่ง / NG ที่ร้าน 5')} value={form.reason}
+                    onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} style={inp} aria-label={tr('รายละเอียด')} />
                   <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 12.5 }}>
                     <input type="checkbox" checked={form.close} onChange={e => setForm(f => ({ ...f, close: e.target.checked }))} />
                     ปิดใบนี้ — ส่วนที่ขาดไม่กลับแล้ว (ไม่ติ๊ก = ส่วนที่เหลือยังค้างร้าน ทยอยรับได้)
@@ -415,7 +416,7 @@ export default function PlatingBoard({ q = '', showDone = false, readOnly = fals
                       onClick={async () => { if (await receive(o, form.qty, form.reason.trim(), form.close)) setDiffFor(null); }}>
                       {busy === `recv|${o.id}` ? 'กำลังบันทึก…' : `✅ รับเข้า ${form.qty === '' ? '' : fmt(form.qty)}`}
                     </button>
-                    <button type="button" style={storeBtn('secondary')} onClick={() => setDiffFor(null)}>ยกเลิก</button>
+                    <button type="button" style={storeBtn('secondary')} onClick={() => setDiffFor(null)}>{tr('ยกเลิก')}</button>
                   </div>
                 </div>
               ) : (
@@ -425,7 +426,7 @@ export default function PlatingBoard({ q = '', showDone = false, readOnly = fals
                     {busy === `recv|${o.id}` ? 'กำลังบันทึก…' : `✅ นับแล้วครบ · รับ ${fmt(open)}`}
                   </button>
                   <button type="button" style={storeBtn('secondary')}
-                    onClick={() => { setDiffFor(o.id); setForm({ qty: String(open), reason: '', close: false }); }}>✏️ ไม่ครบ</button>
+                    onClick={() => { setDiffFor(o.id); setForm({ qty: String(open), reason: '', close: false }); }}>{tr('✏️ ไม่ครบ')}</button>
                 </div>
               )) : null} />
           );
@@ -437,9 +438,9 @@ export default function PlatingBoard({ q = '', showDone = false, readOnly = fals
       {/* 🏬 หลังชุบในคลัง → W/H */}
       {afterStock.length > 0 && (
         <div style={box}>
-          <h3 style={h3}>งานหลังชุบในคลัง → ส่งเข้า W/H</h3>
-          {!canToWh && <div style={warnTxt}>บัญชีนี้ไม่มีสิทธิ์ส่งเข้า W/H (plating:to_wh) — ดูได้อย่างเดียว</div>}
-          <div style={muted}>ระบบแปลงเป็นเบอร์ 1xx ตาม BOM ให้เอง — เฉพาะ FG ที่มีลูกเป็นงานหลังชุบตัวเดียว · FG ที่ต้องประกอบต่อ ส่งไปไลน์ตามใบผลิตปกติ</div>
+          <h3 style={h3}>{tr('งานหลังชุบในคลัง → ส่งเข้า W/H')}</h3>
+          {!canToWh && <div style={warnTxt}>{tr('บัญชีนี้ไม่มีสิทธิ์ส่งเข้า W/H (plating:to_wh) — ดูได้อย่างเดียว')}</div>}
+          <div style={muted}>{tr('ระบบแปลงเป็นเบอร์ 1xx ตาม BOM ให้เอง — เฉพาะ FG ที่มีลูกเป็นงานหลังชุบตัวเดียว · FG ที่ต้องประกอบต่อ ส่งไปไลน์ตามใบผลิตปกติ')}</div>
           <div style={{ ...partCardGrid(), marginTop: 8 }}>
             {afterStock.map(a => {
               const direct = a.targets.filter(t => t.direct);
@@ -456,14 +457,14 @@ export default function PlatingBoard({ q = '', showDone = false, readOnly = fals
                   footer={direct.length > 0 && canToWh ? (
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       {direct.length > 1 && (
-                        <select value={fg} onChange={e => setWhFg(m => ({ ...m, [a.after]: e.target.value }))} style={{ ...inp, flex: '1 1 100%' }} aria-label="FG ปลายทาง">
-                          <option value="">— เลือก FG —</option>
+                        <select value={fg} onChange={e => setWhFg(m => ({ ...m, [a.after]: e.target.value }))} style={{ ...inp, flex: '1 1 100%' }} aria-label={tr('FG ปลายทาง')}>
+                          <option value="">{tr('— เลือก FG —')}</option>
                           {direct.map(t => <option key={t.fg} value={t.fg}>{t.fg} {t.name}</option>)}
                         </select>
                       )}
-                      <input type="number" min="0" inputMode="numeric" placeholder="จำนวน" value={whQty[a.after] || ''}
-                        onChange={e => setWhQty(m => ({ ...m, [a.after]: e.target.value }))} style={{ ...inp, width: 100 }} aria-label="จำนวนส่งเข้า W/H" />
-                      <button type="button" disabled={busy === `wh|${a.after}` || !a.loc} onClick={() => doToWh(a)} style={storeBtn('primary', { flex: 1 })}>ส่งเข้า W/H</button>
+                      <input type="number" min="0" inputMode="numeric" placeholder={tr('จำนวน')} value={whQty[a.after] || ''}
+                        onChange={e => setWhQty(m => ({ ...m, [a.after]: e.target.value }))} style={{ ...inp, width: 100 }} aria-label={tr('จำนวนส่งเข้า W/H')} />
+                      <button type="button" disabled={busy === `wh|${a.after}` || !a.loc} onClick={() => doToWh(a)} style={storeBtn('primary', { flex: 1 })}>{tr('ส่งเข้า W/H')}</button>
                     </div>
                   ) : null} />
               );
@@ -475,14 +476,14 @@ export default function PlatingBoard({ q = '', showDone = false, readOnly = fals
       {/* ⚙️ ตั้งค่า / ตัดยอด */}
       <div style={box}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <h3 style={{ ...h3, margin: 0 }}>สินค้าหลังชุบ {platList.length} ตัว</h3>
-          {unknownBefore.length > 0 && <span style={warnTxt}>{unknownBefore.length} ตัวยังไม่ผูกเลขก่อนชุบใน BOM</span>}
-          <button type="button" onClick={() => setSetupOpen(v => !v)} style={{ ...storeBtn('secondary'), marginLeft: 'auto' }}>{setupOpen ? '▾ ซ่อน' : '▸ ดู/ผูก BOM · ตัดยอด'}</button>
+          <h3 style={{ ...h3, margin: 0 }}>{tr('สินค้าหลังชุบ')} {platList.length} {tr('ตัว')}</h3>
+          {unknownBefore.length > 0 && <span style={warnTxt}>{unknownBefore.length} {tr('ตัวยังไม่ผูกเลขก่อนชุบใน BOM')}</span>}
+          <button type="button" onClick={() => setSetupOpen(v => !v)} style={{ ...storeBtn('secondary'), marginLeft: 'auto' }}>{setupOpen ? tr('▾ ซ่อน') : tr('▸ ดู/ผูก BOM · ตัดยอด')}</button>
         </div>
         {setupOpen && (
           <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
             <div style={muted}>
-              สินค้าหลังชุบ = สินค้าบนไลน์ประเภท 🧪 จ้างนอก ({outLines.length ? outLines.join(', ') : 'ยังไม่มี — ตั้งที่ /line-setup'}) หรือที่ตั้งร้านไว้ ·
+              สินค้าหลังชุบ = สินค้าบนไลน์ประเภท 🧪 จ้างนอก ({outLines.length ? outLines.join(', ') : tr('ยังไม่มี — ตั้งที่ /line-setup')}) หรือที่ตั้งร้านไว้ ·
               เลขก่อนชุบอ่านจาก BOM · ยังไม่ผูก = ระบบเสนอจาก P/N ตรงกัน (ส่งครั้งแรกจะผูกให้เอง หรือผูกล่วงหน้าที่นี่)
             </div>
             {routes.map(r => (
@@ -493,17 +494,17 @@ export default function PlatingBoard({ q = '', showDone = false, readOnly = fals
                     <span style={warnTxt}>{r.problem}</span>
                     {canSetup && (
                       <>
-                        <select value={linkPick[r.after] || ''} onChange={e => setLinkPick(m => ({ ...m, [r.after]: e.target.value }))} style={{ ...inp, minHeight: 34 }} aria-label="เลขก่อนชุบ">
-                          <option value="">— เลขก่อนชุบ —</option>
+                        <select value={linkPick[r.after] || ''} onChange={e => setLinkPick(m => ({ ...m, [r.after]: e.target.value }))} style={{ ...inp, minHeight: 34 }} aria-label={tr('เลขก่อนชุบ')}>
+                          <option value="">{tr('— เลขก่อนชุบ —')}</option>
                           {r.candidates.map(c => <option key={c.mat} value={c.mat}>{c.mat} {c.name}</option>)}
                         </select>
                         {!r.candidates.length && (
                           <div style={{ minWidth: 220 }}>
-                            <ProductSelect value={linkPick[r.after] || ''} onChange={({ mat_no }) => setLinkPick(m => ({ ...m, [r.after]: mat_no || '' }))} products={products} placeholder="ค้นเลขก่อนชุบ…" />
+                            <ProductSelect value={linkPick[r.after] || ''} onChange={({ mat_no }) => setLinkPick(m => ({ ...m, [r.after]: mat_no || '' }))} products={products} placeholder={tr('ค้นเลขก่อนชุบ…')} />
                           </div>
                         )}
                         <button type="button" disabled={!linkPick[r.after] || busy === `link|${r.after}`} onClick={() => doLink(r)}
-                          style={storeBtn('secondary', { minHeight: 34, padding: '4px 10px', fontSize: 12 })}>ผูก BOM</button>
+                          style={storeBtn('secondary', { minHeight: 34, padding: '4px 10px', fontSize: 12 })}>{tr('ผูก BOM')}</button>
                       </>
                     )}
                   </>
@@ -512,18 +513,18 @@ export default function PlatingBoard({ q = '', showDone = false, readOnly = fals
             ))}
             {canWriteoff && groups.length > 0 && (
               <div style={{ display: 'grid', gap: 6, marginTop: 6, paddingTop: 8, borderTop: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 13, fontWeight: 800 }}>✂️ ตัดยอดค้างร้าน (ปีละครั้ง · ต้องมีเหตุผล)</div>
+                <div style={{ fontSize: 13, fontWeight: 800 }}>{tr('✂️ ตัดยอดค้างร้าน (ปีละครั้ง · ต้องมีเหตุผล)')}</div>
                 {groups.map(g => (
                   <div key={g.vendor} style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 12.5, minWidth: 140 }}>{g.vendor} · ค้าง {fmt(g.open)}</span>
+                    <span style={{ fontSize: 12.5, minWidth: 140 }}>{g.vendor} {tr('· ค้าง')} {fmt(g.open)}</span>
                     {woFor === g.vendor ? (
                       <>
-                        <input placeholder="เหตุผล เช่น ตัดยอดสิ้นปี 2026 ตามที่ตกลงกับร้าน" value={woReason} onChange={e => setWoReason(e.target.value)} style={{ ...inp, flex: '1 1 260px' }} aria-label="เหตุผลการตัดยอด" />
-                        <button type="button" disabled={busy === `wo|${g.vendor}`} onClick={() => doWriteoff(g)} style={storeBtn('primary')}>ยืนยันตัดยอด</button>
-                        <button type="button" onClick={() => setWoFor(null)} style={storeBtn('secondary')}>ยกเลิก</button>
+                        <input placeholder={tr('เหตุผล เช่น ตัดยอดสิ้นปี 2026 ตามที่ตกลงกับร้าน')} value={woReason} onChange={e => setWoReason(e.target.value)} style={{ ...inp, flex: '1 1 260px' }} aria-label={tr('เหตุผลการตัดยอด')} />
+                        <button type="button" disabled={busy === `wo|${g.vendor}`} onClick={() => doWriteoff(g)} style={storeBtn('primary')}>{tr('ยืนยันตัดยอด')}</button>
+                        <button type="button" onClick={() => setWoFor(null)} style={storeBtn('secondary')}>{tr('ยกเลิก')}</button>
                       </>
                     ) : (
-                      <button type="button" onClick={() => { setWoFor(g.vendor); setWoReason(''); }} style={storeBtn('secondary')}>✂️ ตัดยอด…</button>
+                      <button type="button" onClick={() => { setWoFor(g.vendor); setWoReason(''); }} style={storeBtn('secondary')}>{tr('✂️ ตัดยอด…')}</button>
                     )}
                   </div>
                 ))}

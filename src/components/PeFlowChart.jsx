@@ -1,3 +1,4 @@
+import { tr } from '../utils/i18n';
 /* ═══ ผังกระบวนการผลิต (Process Flow Chart) — วาดจากข้อมูล pe_processes ═══
    2026-08-17 · ใช้ในแท็บ Flow ของ /pe-docs + ตัวพิมพ์ src/lib/pePfcPrint.js
 
@@ -195,7 +196,7 @@ export default function PeFlowChart({ procs = [], onPick, mode = 'dark', highlig
   if (!procs.length) return null;
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} width="100%" style={{ maxWidth: '100%', background: theme.bg, display: 'block' }} role="img" aria-label="ผังกระบวนการผลิต">
+    <svg viewBox={`0 0 ${width} ${height}`} width="100%" style={{ maxWidth: '100%', background: theme.bg, display: 'block' }} role="img" aria-label={tr('ผังกระบวนการผลิต')}>
       <defs>
         <marker id="pfcArrow" markerWidth="9" markerHeight="9" refX="7" refY="3.2" orient="auto">
           <path d="M0,0 L7,3.2 L0,6.4 z" fill={theme.line} />
@@ -245,7 +246,7 @@ export default function PeFlowChart({ procs = [], onPick, mode = 'dark', highlig
           {(f.parts.length ? f.parts : ['(ยังไม่ระบุ child part)']).slice(0, 2).map((p, i) => (
             <text key={i} x={f.x + f.w / 2} y={f.y + 19 + i * 15} textAnchor="middle" fontSize={11} fill={theme.text}>{p.length > 24 ? `${p.slice(0, 23)}…` : p}</text>
           ))}
-          {f.parts.length > 2 && <text x={f.x + f.w / 2} y={f.y + 45} textAnchor="middle" fontSize={11} fill={theme.muted}>+ อีก {f.parts.length - 2}</text>}
+          {f.parts.length > 2 && <text x={f.x + f.w / 2} y={f.y + 45} textAnchor="middle" fontSize={11} fill={theme.muted}>{tr('+ อีก')} {f.parts.length - 2}</text>}
         </g>
       ))}
 

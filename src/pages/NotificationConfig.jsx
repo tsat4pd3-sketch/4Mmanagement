@@ -13,6 +13,7 @@ import PageHeader from '../components/PageHeader';
 import { ALL } from '../utils/filterLabels';
 import Page from '../components/Page';
 import { UserContext } from '../App';
+import { tr } from '../utils/i18n';
 import { NOTIFY_CATEGORY_LABEL } from '../utils/notifyPrefs';   // 🔕 ป้ายหมวด — ของกลาง ใช้ร่วมกับโมดัลของผู้ใช้
 
 const inputStyle = {
@@ -322,12 +323,12 @@ export default function NotificationConfig() {
   }
   const insertPh = (ph) => setTplDraft(d => `${d}${d && !d.endsWith(' ') && !d.endsWith('\n') ? ' ' : ''}{${ph}}`)
 
-  if (loading) return <Page width="form"><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>กำลังโหลด...</div></Page>
+  if (loading) return <Page width="form"><div style={{ color: 'var(--muted)', textAlign: 'center', padding: 40 }}>{tr('กำลังโหลด...')}</div></Page>
 
   return (
     <Page width="form">
-      <PageHeader title="ตั้งค่าระบบแจ้งเตือน (Telegram)" icon="🔔" />
-      <InfoMore label="วิธีจัดห้อง" size={11.5} style={{ marginBottom: 22 }}>
+      <PageHeader title={tr('ตั้งค่าระบบแจ้งเตือน (Telegram)')} icon="🔔" />
+      <InfoMore label={tr('วิธีจัดห้อง')} size={11.5} style={{ marginBottom: 22 }}>
         1 บอทยิงได้หลายห้อง · สร้าง/ลบห้องได้เอง · เลือกได้ว่าเรื่องไหนเข้าห้องไหน · ห้องที่ยังไม่ใส่ chat_id จะไปเข้ากลุ่มเดิม (fallback)
       </InfoMore>
 
@@ -347,11 +348,11 @@ export default function NotificationConfig() {
             <input
               type="password" autoComplete="off"
               value={tokenInput} onChange={e => setTokenInput(e.target.value)}
-              placeholder={tokenStatus.is_set ? 'วาง token ใหม่เพื่อเปลี่ยน' : 'วาง token จาก @BotFather'}
+              placeholder={tokenStatus.is_set ? tr('วาง token ใหม่เพื่อเปลี่ยน') : tr('วาง token จาก @BotFather')}
               style={{ ...monoStyle, flex: 1, minWidth: 220 }}
             />
             <button type="button" className="pg-btn sm primary" onClick={saveToken} disabled={busy === 'token'}>
-              {busy === 'token' ? 'บันทึก...' : 'บันทึก Token'}
+              {busy === 'token' ? tr('บันทึก...') : tr('บันทึก Token')}
             </button>
           </>
         ) : (
@@ -361,13 +362,13 @@ export default function NotificationConfig() {
             ส่วนอื่นของหน้านี้ (ห้อง · เรื่องที่แจ้ง · ผู้รับ) ตั้งได้ตามปกติ
           </div>
         )}
-        <InfoMore label="เรื่อง token" size={11.5} style={{ flexBasis: '100%' }}>
+        <InfoMore label={tr('เรื่อง token')} size={11.5} style={{ flexBasis: '100%' }}>
           🔒 token เก็บแบบเข้ารหัสฝั่ง server — บันทึกแล้วดูย้อนหลังไม่ได้ (โชว์แค่ 4 ตัวท้าย) · ถ้าไม่ตั้งที่นี่ ระบบใช้ token เดิมที่ตั้งไว้ในระบบ
         </InfoMore>
       </div>
 
       {/* ── Downtime open-alert threshold ── */}
-      <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 10 }}>เครื่องเปิดค้าง — เกณฑ์แจ้งเตือน</div>
+      <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 10 }}>{tr('เครื่องเปิดค้าง — เกณฑ์แจ้งเตือน')}</div>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 14, marginBottom: 26, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
         <div style={{ fontSize: 12.5, color: 'var(--text)' }}>
           แจ้งเตือนเมื่อ Downtime เปิดค้าง (ยังไม่ปิดรายการ) เกิน
@@ -377,58 +378,58 @@ export default function NotificationConfig() {
           value={openMin} onChange={e => setOpenMin(e.target.value)}
           style={{ width: 90, textAlign: 'center', fontSize: 14, fontWeight: 700, padding: '8px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)' }}
         />
-        <div style={{ fontSize: 12.5, color: 'var(--text)' }}>นาที</div>
+        <div style={{ fontSize: 12.5, color: 'var(--text)' }}>{tr('นาที')}</div>
         <button type="button" className="pg-btn sm primary" onClick={saveOpenMin} disabled={busy === 'openmin'}>
-          {busy === 'openmin' ? 'บันทึก...' : 'บันทึก'}
+          {busy === 'openmin' ? tr('บันทึก...') : tr('บันทึก')}
         </button>
         <InfoMore size={11} style={{ flexBasis: '100%' }} id="nc_dtopen"
-          lead={<>เปิดค้างนานเกินเวลานี้ → ส่ง Telegram + เตือนเสียงหน้า Production</>}>
-          บันทึก Downtime ใหม่จะ<b>ไม่แจ้งทันที</b> (ปิดรายการแล้ว → สรุปตอนปิดกะ)
+          lead={<>{tr('เปิดค้างนานเกินเวลานี้ → ส่ง Telegram + เตือนเสียงหน้า Production')}</>}>
+          บันทึก Downtime ใหม่จะ<b>{tr('ไม่แจ้งทันที')}</b> (ปิดรายการแล้ว → สรุปตอนปิดกะ)
           <br />ปุ่ม “เรียกช่าง MTN” ในหน้า Daily Report แจ้งทันทีเสมอ (เตือนเสียงหน้า Maintenance)
         </InfoMore>
       </div>
 
       {/* ── Rooms ── */}
-      <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>ห้องแจ้งเตือน</div>
-      <InfoMore style={{ marginBottom: 10 }} id="nc_rooms" label="แจ้งซ่อมแยกทีม"
-        lead={<>🔧 ตั้ง “ทีม” ให้ห้องได้ — ใบแจ้งซ่อมของทีมนั้นจะเข้าเฉพาะห้องของทีม</>}>
+      <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>{tr('ห้องแจ้งเตือน')}</div>
+      <InfoMore style={{ marginBottom: 10 }} id="nc_rooms" label={tr('แจ้งซ่อมแยกทีม')}
+        lead={<>{tr('🔧 ตั้ง “ทีม” ให้ห้องได้ — ใบแจ้งซ่อมของทีมนั้นจะเข้าเฉพาะห้องของทีม')}</>}>
         ใส่ chat_id ของกลุ่มทีมนั้น (JIG/DIE/MTN/PRODUCTION) → ใบแจ้งซ่อม MO ที่แจ้งถึงทีมนี้
-        จะเข้า<b>เฉพาะห้องของทีม</b>
+        จะเข้า<b>{tr('เฉพาะห้องของทีม')}</b>
         <br />ทีมที่ยังไม่มีห้องเฉพาะ = เข้าห้องรวม (ตามที่เลือกในกฎ maintenance ด้านล่าง)
       </InfoMore>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
         {rooms.map(room => (
           <div key={room.id} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 12, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-            <input value={room.name} onChange={e => patchRoom(room.id, 'name', e.target.value)} placeholder="ชื่อห้อง" style={{ ...inputStyle, width: 200, flex: '0 0 auto' }} />
-            <input value={room.chat_id ?? ''} onChange={e => patchRoom(room.id, 'chat_id', e.target.value)} placeholder="chat_id เช่น -1001234567890" style={{ ...monoStyle, flex: 1, minWidth: 170, borderColor: (room.chat_id ?? '').trim() ? undefined : 'var(--accent2)' }} />
+            <input value={room.name} onChange={e => patchRoom(room.id, 'name', e.target.value)} placeholder={tr('ชื่อห้อง')} style={{ ...inputStyle, width: 200, flex: '0 0 auto' }} />
+            <input value={room.chat_id ?? ''} onChange={e => patchRoom(room.id, 'chat_id', e.target.value)} placeholder={tr('chat_id เช่น -1001234567890')} style={{ ...monoStyle, flex: 1, minWidth: 170, borderColor: (room.chat_id ?? '').trim() ? undefined : 'var(--accent2)' }} />
             <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text2)', cursor: 'pointer' }}>
-              <input type="checkbox" checked={room.is_active} onChange={e => patchRoom(room.id, 'is_active', e.target.checked)} />เปิด
+              <input type="checkbox" checked={room.is_active} onChange={e => patchRoom(room.id, 'is_active', e.target.checked)} />{tr('เปิด')}
             </label>
-            <select value={room.team ?? ''} onChange={e => patchRoom(room.id, 'team', e.target.value || null)} title="ห้องของทีมช่างซ่อมไหน (ใบแจ้งซ่อม MO จะเข้าห้องของทีมตามหน่วยงาน)" style={{ ...inputStyle, width: 150, flex: '0 0 auto' }}>
-              <option value="">{ALL.team}</option>
+            <select value={room.team ?? ''} onChange={e => patchRoom(room.id, 'team', e.target.value || null)} title={tr('ห้องของทีมช่างซ่อมไหน (ใบแจ้งซ่อม MO จะเข้าห้องของทีมตามหน่วยงาน)')} style={{ ...inputStyle, width: 150, flex: '0 0 auto' }}>
+              <option value="">{tr(ALL.team)}</option>
               {/* 2026-09-07: วนทีมจาก mtn_teams (pmTeamsSync — data-driven) · ค่าที่เก็บ = key เสมอ */}
-              {pmTeamsSync().map(t => <option key={t.key} value={t.key}>ทีม {t.icon ? `${t.icon} ` : ''}{deptNameOf(t.key)}</option>)}
+              {pmTeamsSync().map(t => <option key={t.key} value={t.key}>{tr('ทีม')} {t.icon ? `${t.icon} ` : ''}{deptNameOf(t.key)}</option>)}
             </select>
-            <button type="button" className="pg-btn sm primary" onClick={() => saveRoom(room)} disabled={busy === room.id}>บันทึก</button>
-            <button type="button" className="pg-btn sm" onClick={() => testRoom(room)} disabled={busy === `test-${room.id}`}>ทดสอบ</button>
-            <button type="button" className="pg-btn sm danger" onClick={() => deleteRoom(room)}>ลบ</button>
+            <button type="button" className="pg-btn sm primary" onClick={() => saveRoom(room)} disabled={busy === room.id}>{tr('บันทึก')}</button>
+            <button type="button" className="pg-btn sm" onClick={() => testRoom(room)} disabled={busy === `test-${room.id}`}>{tr('ทดสอบ')}</button>
+            <button type="button" className="pg-btn sm danger" onClick={() => deleteRoom(room)}>{tr('ลบ')}</button>
             {!(room.chat_id ?? '').trim() && (
               <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--accent2)' }}>
-                ⚠️ ยังไม่ใส่ chat_id — รายการที่เลือกห้องนี้จะไปเข้า<b>กลุ่มเดิม (fallback)</b> ไม่ใช่ห้องนี้
+                ⚠️ ยังไม่ใส่ chat_id — รายการที่เลือกห้องนี้จะไปเข้า<b>{tr('กลุ่มเดิม (fallback)')}</b> ไม่ใช่ห้องนี้
               </div>
             )}
           </div>
         ))}
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 26, flexWrap: 'wrap' }}>
-        <input value={newRoom.name} onChange={e => setNewRoom(n => ({ ...n, name: e.target.value }))} placeholder="+ ชื่อห้องใหม่" style={{ ...inputStyle, width: 200 }} />
-        <input value={newRoom.chat_id} onChange={e => setNewRoom(n => ({ ...n, chat_id: e.target.value }))} placeholder="chat_id (ใส่ทีหลังได้)" style={{ ...monoStyle, flex: 1, minWidth: 170 }} />
-        <button type="button" className="pg-btn sm" onClick={addRoom} disabled={busy === 'new'}>+ เพิ่มห้อง</button>
+        <input value={newRoom.name} onChange={e => setNewRoom(n => ({ ...n, name: e.target.value }))} placeholder={tr('+ ชื่อห้องใหม่')} style={{ ...inputStyle, width: 200 }} />
+        <input value={newRoom.chat_id} onChange={e => setNewRoom(n => ({ ...n, chat_id: e.target.value }))} placeholder={tr('chat_id (ใส่ทีหลังได้)')} style={{ ...monoStyle, flex: 1, minWidth: 170 }} />
+        <button type="button" className="pg-btn sm" onClick={addRoom} disabled={busy === 'new'}>{tr('+ เพิ่มห้อง')}</button>
       </div>
 
       {/* ── Rules ── */}
-      <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>รายการแจ้งเตือน — เลือกว่าเรื่องไหนเข้าห้องไหน</div>
-      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>กดเลือกห้องได้ <b>หลายห้อง</b> ต่อหนึ่งเรื่อง · ไม่เลือกห้องเลย = เข้ากลุ่มเดิม (fallback)</div>
+      <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)', marginBottom: 4 }}>{tr('รายการแจ้งเตือน — เลือกว่าเรื่องไหนเข้าห้องไหน')}</div>
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>{tr('กดเลือกห้องได้')} <b>{tr('หลายห้อง')}</b> ต่อหนึ่งเรื่อง · ไม่เลือกห้องเลย = เข้ากลุ่มเดิม (fallback)</div>
       {/* 📏 พับเป็นหมวด (2026-10-13 · ด่าน lengthsweep) — ฐานจริง 13/10: **65 เรื่อง × 8 ห้อง**
           ⇒ กางทุกหมวดพร้อมกัน = หน้ายาว ~12 เท่าของจอ หาเรื่องที่จะแก้ไม่เจอ (ไม่ใช่ของ mock)
           · หัวหมวดโชว์จำนวนเรื่องเสมอ · จำสถานะที่กด/พับไว้ใน localStorage (CollapseCard)
@@ -453,14 +454,14 @@ export default function NotificationConfig() {
                       if (!e.target.checked && !confirm(`ปิดการแจ้งเตือน "${rule.label}" ?\n\nเรื่องนี้จะไม่ส่งเข้า Telegram จนกว่าจะเปิดใหม่`)) return
                       updateRule(rule.event_key, { is_enabled: e.target.checked })
                     }} style={{ flexShrink: 0 }} />
-                    <span style={{ fontSize: 13, fontWeight: 600, color: rule.is_enabled ? 'var(--text)' : 'var(--muted)' }}>{rule.label}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: rule.is_enabled ? 'var(--text)' : 'var(--muted)' }}>{tr(rule.label)}</span>
                   </label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end', flex: '1 1 300px', minWidth: 0, opacity: rule.is_enabled ? 1 : 0.5 }}>
                     {rooms.map(room => {
                       const on = selected.includes(room.id)
                       const noChat = !(room.chat_id ?? '').trim()
                       return (
-                        <label key={room.id} title={noChat ? 'ห้องนี้ยังไม่มี chat_id' : ''}
+                        <label key={room.id} title={noChat ? tr('ห้องนี้ยังไม่มี chat_id') : ''}
                           style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, cursor: rule.is_enabled ? 'pointer' : 'default',
                             background: on ? 'var(--bg2)' : 'transparent', border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
                             color: on ? 'var(--text)' : 'var(--muted)', borderRadius: 'var(--r-md)', padding: '4px 10px', userSelect: 'none' }}>
@@ -472,12 +473,12 @@ export default function NotificationConfig() {
                   </div>
                   {rule.is_enabled && selected.length === 0 && (
                     <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--muted)' }}>
-                      ยังไม่เลือกห้อง → จะไปเข้า<b>กลุ่มเดิม (fallback)</b>
+                      ยังไม่เลือกห้อง → จะไปเข้า<b>{tr('กลุ่มเดิม (fallback)')}</b>
                     </div>
                   )}
                   {rule.is_enabled && allSelectedMissChat && (
                     <div style={{ flexBasis: '100%', fontSize: 11, color: 'var(--accent2)' }}>
-                      ⚠️ ห้องที่เลือกยังไม่ใส่ chat_id → ตอนนี้จะไปเข้า<b>กลุ่มเดิม</b> ไม่ใช่ห้องนี้ (ไปเติม chat_id ที่ส่วน “ห้องแจ้งเตือน” ด้านบน)
+                      ⚠️ ห้องที่เลือกยังไม่ใส่ chat_id → ตอนนี้จะไปเข้า<b>{tr('กลุ่มเดิม')}</b> ไม่ใช่ห้องนี้ (ไปเติม chat_id ที่ส่วน “ห้องแจ้งเตือน” ด้านบน)
                     </div>
                   )}
 
@@ -529,7 +530,7 @@ export default function NotificationConfig() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                           <button type="button" className="pg-btn sm" onClick={() => setOpenTarget(openTarget === rule.event_key ? null : rule.event_key)}
                            >
-                            {openTarget === rule.event_key ? 'ปิดตัวจำกัดผู้รับ' : 'จำกัดผู้รับ (ส่วนงาน / แผนก)'}
+                            {openTarget === rule.event_key ? tr('ปิดตัวจำกัดผู้รับ') : tr('จำกัดผู้รับ (ส่วนงาน / แผนก)')}
                           </button>
                           <span style={{ fontSize: 11, color: (rule.inapp_sections?.length || rule.inapp_depts?.length || rule.inapp_match_section) ? 'var(--accent)' : 'var(--muted)' }}>
                             {targetSummary(rule)}
@@ -550,13 +551,13 @@ export default function NotificationConfig() {
                                 onChange={e => updateRule(rule.event_key, { inapp_cast: e.target.checked ? 'fallback' : 'always' })}
                                 style={{ marginTop: 2, flexShrink: 0 }} />
                               <span>
-                                <b>ส่งถึงเจ้าของงานก่อน — ยิงตาม role เฉพาะตอนที่รายการบอกตัวคนไม่ได้</b>
+                                <b>{tr('ส่งถึงเจ้าของงานก่อน — ยิงตาม role เฉพาะตอนที่รายการบอกตัวคนไม่ได้')}</b>
                                 <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2, lineHeight: 1.6 }}>
-                                  ไม่ติ๊ก = ยิงตาม role ที่เลือกไว้<b>ทุกครั้ง</b> แม้รายการนั้นจะรู้อยู่แล้วว่าใครเกี่ยว (พฤติกรรมเดิม) ·
-                                  ติ๊ก = ส่งให้<b>คนที่มีชื่ออยู่ในรายการนั้น</b> (ผู้แจ้ง / ผู้รับงาน / ผู้ตรวจ) ก่อน
-                                  แล้วจะยิงตาม role <b>ต่อเมื่อรายการไม่มีชื่อใครเลย</b> — ใบไม่มีทางเดินไปเงียบๆ
+                                  ไม่ติ๊ก = ยิงตาม role ที่เลือกไว้<b>{tr('ทุกครั้ง')}</b> แม้รายการนั้นจะรู้อยู่แล้วว่าใครเกี่ยว (พฤติกรรมเดิม) ·
+                                  ติ๊ก = ส่งให้<b>{tr('คนที่มีชื่ออยู่ในรายการนั้น')}</b> (ผู้แจ้ง / ผู้รับงาน / ผู้ตรวจ) ก่อน
+                                  แล้วจะยิงตาม role <b>{tr('ต่อเมื่อรายการไม่มีชื่อใครเลย')}</b> {tr('— ใบไม่มีทางเดินไปเงียบๆ')}
                                   <div style={{ marginTop: 3 }}>
-                                    ⚠️ เรื่องที่ระบบยัง<b>ไม่ได้ส่งชื่อเจ้าของงานมา</b> ติ๊กแล้วจะเหมือนเดิมทุกอย่าง (ไม่เสียหาย)
+                                    {tr('⚠️ เรื่องที่ระบบยัง')}<b>{tr('ไม่ได้ส่งชื่อเจ้าของงานมา')}</b> ติ๊กแล้วจะเหมือนเดิมทุกอย่าง (ไม่เสียหาย)
                                     — ดูว่าเรื่องไหนส่งมาแล้วบ้างที่ <code>docs/modules/notifications-flood.md</code> §6
                                   </div>
                                 </div>
@@ -574,11 +575,11 @@ export default function NotificationConfig() {
                                 onChange={e => updateRule(rule.event_key, { can_mute: !e.target.checked })}
                                 style={{ marginTop: 2, flexShrink: 0 }} />
                               <span>
-                                <b>ผู้ใช้ปิดแจ้งเตือนเรื่องนี้เองไม่ได้</b>
+                                <b>{tr('ผู้ใช้ปิดแจ้งเตือนเรื่องนี้เองไม่ได้')}</b>
                                 <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2, lineHeight: 1.6 }}>
-                                  ไม่ติ๊ก = ใครก็ปิดเรื่องนี้เองได้ที่ <b>เมนูโปรไฟล์ → 🔕 ตั้งค่าแจ้งเตือนของฉัน</b> (ค่าเริ่มต้น) ·
-                                  ติ๊ก = เด้งเสมอ แม้เขาจะกดปิด — ใช้กับ<b>คิวงานที่มีของรอคนกลุ่มนี้ลงมือ</b>
-                                  (ใบรออนุมัติ · ใบซ่อมรอรับ · เรียกช่าง) ปิดแล้วงานค้างเงียบ
+                                  ไม่ติ๊ก = ใครก็ปิดเรื่องนี้เองได้ที่ <b>{tr('เมนูโปรไฟล์ → 🔕 ตั้งค่าแจ้งเตือนของฉัน')}</b> (ค่าเริ่มต้น) ·
+                                  ติ๊ก = เด้งเสมอ แม้เขาจะกดปิด — ใช้กับ<b>{tr('คิวงานที่มีของรอคนกลุ่มนี้ลงมือ')}</b>
+                                  {tr('(ใบรออนุมัติ · ใบซ่อมรอรับ · เรียกช่าง) ปิดแล้วงานค้างเงียบ')}
                                 </div>
                               </span>
                             </label>
@@ -587,7 +588,7 @@ export default function NotificationConfig() {
                               <input type="checkbox" checked={!!rule.inapp_match_section}
                                 onChange={e => updateRule(rule.event_key, { inapp_match_section: e.target.checked })} style={{ marginTop: 2, flexShrink: 0 }} />
                               <span>
-                                <b>แจ้งเฉพาะคนที่ดูแลส่วนงานของเหตุการณ์นั้น</b>
+                                <b>{tr('แจ้งเฉพาะคนที่ดูแลส่วนงานของเหตุการณ์นั้น')}</b>
                                 <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2 }}>
                                   เช่น ของเสียที่ Line 60 → เด้งหาหัวหน้า PD2 เท่านั้น ไม่กวนส่วนงานอื่น ·
                                   คนที่ไม่ได้จำกัดขอบเขต ได้รับเสมอ ·
@@ -605,10 +606,10 @@ export default function NotificationConfig() {
                               <input type="checkbox" checked={!!rule.inapp_scope_strict} disabled={!rule.inapp_match_section}
                                 onChange={e => updateRule(rule.event_key, { inapp_scope_strict: e.target.checked })} style={{ marginTop: 2, flexShrink: 0 }} />
                               <span>
-                                <b>ผู้บริหารก็ถูกกรองตามส่วนงานด้วย</b>
+                                <b>{tr('ผู้บริหารก็ถูกกรองตามส่วนงานด้วย')}</b>
                                 <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2 }}>
-                                  ไม่ติ๊ก = ผู้ดูแลระบบ / ผู้จัดการ ได้รับ<b>ทุกส่วนงาน</b>แม้เรื่องนี้กรองส่วนงานอยู่ (พฤติกรรมเดิม) ·
-                                  ติ๊ก = ผจก. PD1 ได้เฉพาะ PD1 เหมือนคนอื่น — เหมาะกับ<b>เรื่องที่ยิงถี่</b> ·
+                                  ไม่ติ๊ก = ผู้ดูแลระบบ / ผู้จัดการ ได้รับ<b>{tr('ทุกส่วนงาน')}</b>แม้เรื่องนี้กรองส่วนงานอยู่ (พฤติกรรมเดิม) ·
+                                  ติ๊ก = ผจก. PD1 ได้เฉพาะ PD1 เหมือนคนอื่น — เหมาะกับ<b>{tr('เรื่องที่ยิงถี่')}</b> ·
                                   ⚠️ คนที่ยังไม่ได้ตั้งส่วนงานยังได้รับทุกส่วนงานอยู่ (ตั้งได้ที่หน้าจัดการผู้ใช้งาน)
                                 </div>
                               </span>
@@ -619,7 +620,7 @@ export default function NotificationConfig() {
                                 เฉพาะส่วนงาน — ไม่เลือก = ทุกส่วนงาน
                               </div>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                {secOpts.length === 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>— ยังไม่มีข้อมูลส่วนงาน —</span>}
+                                {secOpts.length === 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('— ยังไม่มีข้อมูลส่วนงาน —')}</span>}
                                 {secOpts.map(sc => {
                                   const on = (rule.inapp_sections || []).includes(sc)
                                   return (
@@ -637,10 +638,10 @@ export default function NotificationConfig() {
                             <div>
                               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 5 }}>
                                 เฉพาะแผนก — ไม่เลือก = ทุกแผนก
-                                <span style={{ marginLeft: 6 }}>(ใช้ได้เมื่อบัญชีผู้ใช้ถูกผูกกับพนักงานแล้วที่ “จัดการผู้ใช้งาน”)</span>
+                                <span style={{ marginLeft: 6 }}>{tr('(ใช้ได้เมื่อบัญชีผู้ใช้ถูกผูกกับพนักงานแล้วที่ “จัดการผู้ใช้งาน”)')}</span>
                               </div>
                               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                {deptOpts.length === 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>— ยังไม่มีข้อมูลแผนก —</span>}
+                                {deptOpts.length === 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('— ยังไม่มีข้อมูลแผนก —')}</span>}
                                 {deptOpts.map(dp => {
                                   const on = (rule.inapp_depts || []).includes(dp)
                                   return (
@@ -665,7 +666,7 @@ export default function NotificationConfig() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <button type="button" className="pg-btn sm" onClick={() => editingTpl === rule.event_key ? setEditingTpl(null) : startEditTpl(rule)}
                        >
-                        {editingTpl === rule.event_key ? 'ปิดตัวแก้ข้อความ' : 'ปรับข้อความ'}
+                        {editingTpl === rule.event_key ? tr('ปิดตัวแก้ข้อความ') : tr('ปรับข้อความ')}
                       </button>
                       <span style={{ fontSize: 11, color: rule.template ? 'var(--accent)' : 'var(--muted)' }}>
                         {rule.template ? '● ใช้ข้อความที่กำหนดเอง' : '○ ใช้ข้อความมาตรฐานของระบบ'}
@@ -686,22 +687,22 @@ export default function NotificationConfig() {
                           ))}
                         </div>
                         <textarea value={tplDraft} onChange={e => setTplDraft(e.target.value)} rows={6}
-                          placeholder="พิมพ์ข้อความ… เว้นว่าง = กลับไปใช้ข้อความมาตรฐาน"
+                          placeholder={tr('พิมพ์ข้อความ… เว้นว่าง = กลับไปใช้ข้อความมาตรฐาน')}
                           style={{ ...inputStyle, fontFamily: 'monospace', lineHeight: 1.5, resize: 'vertical' }} />
                         <div>
-                          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>ตัวอย่าง (ข้อมูลสมมติ):</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>{tr('ตัวอย่าง (ข้อมูลสมมติ):')}</div>
                           <div style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 10, fontSize: 12, color: 'var(--text)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
                             dangerouslySetInnerHTML={{ __html: renderPreview(tplDraft) || '<span style="color:var(--muted)">— ว่าง (จะใช้ข้อความมาตรฐาน) —</span>' }} />
                         </div>
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                           <button type="button" className="pg-btn sm primary" onClick={() => saveTpl(rule)}
-                           >บันทึกข้อความ</button>
+                           >{tr('บันทึกข้อความ')}</button>
                           <button type="button" className="pg-btn sm" onClick={() => setTplDraft(DEFAULT_TEMPLATES[rule.event_key] ?? '')}
-                           >โหลดแบบเริ่มต้น</button>
+                           >{tr('โหลดแบบเริ่มต้น')}</button>
                           <button type="button" className="pg-btn sm danger" onClick={() => resetTpl(rule)}
-                           >ใช้ข้อความมาตรฐาน</button>
+                           >{tr('ใช้ข้อความมาตรฐาน')}</button>
                           <button type="button" className="pg-btn sm" onClick={() => setEditingTpl(null)}
-                           >ยกเลิก</button>
+                           >{tr('ยกเลิก')}</button>
                         </div>
                       </div>
                     )}
@@ -715,10 +716,10 @@ export default function NotificationConfig() {
       </div>
 
       <div style={{ marginTop: 24, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 16, fontSize: 12, color: 'var(--text2)', lineHeight: 1.7 }}>
-        <div style={{ fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>วิธีเอา chat_id ของกลุ่ม</div>
-        1. สร้างบอทที่ <b>@BotFather</b> → <code>/newbot</code> (บอทตัวเดียวใช้ได้ทุกห้อง — token เก็บเป็น secret ในระบบ)<br />
-        2. สร้างกลุ่มแต่ละเรื่อง แล้ว <b>add บอท</b> เข้ากลุ่ม (เป็นสมาชิกก็พอ)<br />
-        3. add <b>@getidsbot</b> เข้ากลุ่มชั่วคราว → บอก <code>Group ID: -100…</code> → copy ใส่ช่อง chat_id → บันทึก → ทดสอบ
+        <div style={{ fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>{tr('วิธีเอา chat_id ของกลุ่ม')}</div>
+        1. สร้างบอทที่ <b>@BotFather</b> → <code>/newbot</code> {tr('(บอทตัวเดียวใช้ได้ทุกห้อง — token เก็บเป็น secret ในระบบ)')}<br />
+        2. สร้างกลุ่มแต่ละเรื่อง แล้ว <b>{tr('add บอท')}</b> {tr('เข้ากลุ่ม (เป็นสมาชิกก็พอ)')}<br />
+        3. add <b>@getidsbot</b> {tr('เข้ากลุ่มชั่วคราว → บอก')} <code>Group ID: -100…</code> → copy ใส่ช่อง chat_id → บันทึก → ทดสอบ
       </div>
     </Page>
   )

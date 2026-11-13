@@ -6,6 +6,7 @@ import { uploadOpts } from '../utils/storageUpload';
 import { acceptImageFile } from '../utils/acceptImageFile';
 import { luma, pickPaperCutoff, clipPaperToWhite, inkRatioOk } from '../utils/signatureImage';
 
+import { tr } from '../utils/i18n';
 /**
  * ✍️ วาด/อัปโหลดลายเซ็น — ค่าเริ่มต้น = ลายเซ็นของ "บัญชีที่ login อยู่" (profiles.signature_url)
  * 🆕 03/11 (ประชุม 02/11 C1): ใช้กับ **ลายเซ็นพนักงาน** ได้ด้วย โดยส่ง
@@ -236,7 +237,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
           borderBottom: '1px solid var(--border)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
-          <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>{title || '✍️ จัดการลายเซ็น'}</div>
+          <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>{title || tr('✍️ จัดการลายเซ็น')}</div>
           <button onClick={onClose} style={{
             background: 'none', border: 'none', cursor: 'pointer',
             color: 'var(--muted)', fontSize: 18, lineHeight: 1, padding: '2px 6px',
@@ -247,7 +248,7 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
           {/* Current signature preview */}
           {currentSignatureUrl && (
             <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>ลายเซ็นปัจจุบัน</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>{tr('ลายเซ็นปัจจุบัน')}</div>
               <div style={{
                 border: '1px solid var(--border)', borderRadius: 'var(--r-md)',
                 padding: 8, background: 'var(--bg2)', textAlign: 'center',
@@ -269,14 +270,14 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
                 background: tab === t.key ? 'var(--accent)' : 'var(--bg2)',
                 color: tab === t.key ? '#fff' : 'var(--text2)',
                 transition: 'all 0.15s',
-              }}>{t.label}</button>
+              }}>{tr(t.label)}</button>
             ))}
           </div>
 
           {/* Draw tab */}
           {tab === 'draw' && (
             <div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>วาดลายเซ็นในกรอบด้านล่าง</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>{tr('วาดลายเซ็นในกรอบด้านล่าง')}</div>
               <div style={{ border: '2px solid var(--border)', borderRadius: 'var(--r-md)', overflow: 'hidden', background: '#fff', cursor: 'crosshair' }}>
                 <canvas
                   ref={canvasRef}
@@ -296,14 +297,14 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
                 marginTop: 8, padding: '6px 14px', fontSize: 12, borderRadius: 'var(--r-md)',
                 background: 'var(--bg3)', border: '1px solid var(--border2)',
                 color: 'var(--text2)', cursor: 'pointer',
-              }}>ล้าง</button>
+              }}>{tr('ล้าง')}</button>
             </div>
           )}
 
           {/* Upload tab */}
           {tab === 'upload' && (
             <div>
-              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>เลือกไฟล์รูปภาพลายเซ็น</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>{tr('เลือกไฟล์รูปภาพลายเซ็น')}</div>
               <input type="file" accept="image/*" onChange={handleFileChange} style={{ fontSize: 13 }} />
               {uploadPreview && (
                 <div style={{
@@ -323,13 +324,13 @@ export default function SignatureModal({ open, onClose, currentSignatureUrl, onS
               border: 'none', borderRadius: 'var(--r-md)', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer',
               opacity: saving ? 0.7 : 1, fontSize: 13,
             }}>
-              {saving ? 'กำลังบันทึก...' : '💾 บันทึกลายเซ็น'}
+              {saving ? tr('กำลังบันทึก...') : tr('💾 บันทึกลายเซ็น')}
             </button>
             <button onClick={onClose} style={{
               flex: 1, padding: '10px 0', background: 'var(--bg3)',
               border: '1px solid var(--border2)', borderRadius: 'var(--r-md)',
               color: 'var(--text2)', cursor: 'pointer', fontSize: 13,
-            }}>ยกเลิก</button>
+            }}>{tr('ยกเลิก')}</button>
           </div>
         </div>
       </div>

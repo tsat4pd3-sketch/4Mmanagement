@@ -232,3 +232,6 @@
 - ช่อง **รหัสพนักงานผู้ตรวจ** (`<InspectorCodeField>` · สแกนบัตร/พิมพ์) → `qa_inspection_sheets.inspector_code` · คงค่าข้ามใบในแท็บ
 - ผู้ตรวจบนใบ = `inspectorForExport()` (มีรหัส = คนตามรหัส · ไม่มี = บัญชีที่สร้างใบ) · หาลายเซ็นไม่ได้ = เว้นช่อง + เหตุผลบนใบ
 - 🔴 ทุกจุดในมาตรฐานต้องอยู่บนใบ (ที่ยังไม่ตรวจ = แถวเทา "ยังไม่ตรวจ") · ใบยังไม่ `done` = แถบเตือน — แถวคิดที่ `src/utils/qaPrintRows.js` (มีเทส)
+
+## 🪜 แถบ "ถึงขั้นไหน" (2026-11-12)
+NCR · 8D · เคลม · ถังเหลือง/แดง — แถบ ✓→○ (`ncrFlow/capaFlow/claimFlow` ใน `utils/qaDocStatus.js` · `ncFlow` ใน `utils/qualityBin.js`) · กติกา + ทะเบียนทุกใบ → `docs/modules/step-flow.md` · UI §6.30

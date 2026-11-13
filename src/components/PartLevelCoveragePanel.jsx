@@ -17,6 +17,7 @@ import MatLabel from './MatLabel';
 import SearchInput from './SearchInput';
 import { normSearch } from '../utils/thaiText';
 
+import { tr } from '../utils/i18n';
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--shadow-sm)' };
 const fmt = (n) => Number(n || 0).toLocaleString();
 
@@ -78,11 +79,11 @@ export default function PartLevelCoveragePanel() {
           จุดเรียกเติมชิ้นส่วน — ไลน์ไหนยังไม่ตั้ง
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.65 }}>
-          พาร์ทที่ <b>ไลน์ใช้</b> (ต้องเบิกจากสโตร์) และยังไม่มีใครตั้ง <b>min</b> ไว้ = ระบบจะ<b>ไม่เสนอให้เบิก</b>เลย
-          ⇒ ไลน์ต้องไปโทร/เดินบอกสโตร์เอง · ตั้งค่าจริงที่ <b>ตั้งค่าผัง → 🏭 ผลิต (ผังไลน์) → เลือกไลน์ → 📦 จุดเรียกเติมชิ้นส่วน</b>
+          พาร์ทที่ <b>{tr('ไลน์ใช้')}</b> {tr('(ต้องเบิกจากสโตร์) และยังไม่มีใครตั้ง')} <b>min</b> ไว้ = ระบบจะ<b>{tr('ไม่เสนอให้เบิก')}</b>เลย
+          ⇒ ไลน์ต้องไปโทร/เดินบอกสโตร์เอง · ตั้งค่าจริงที่ <b>{tr('ตั้งค่าผัง → 🏭 ผลิต (ผังไลน์) → เลือกไลน์ → 📦 จุดเรียกเติมชิ้นส่วน')}</b>
           <br />
           ⚠️ นับจาก “พาร์ทที่เคยเดินผ่านไลน์นี้” (มีแถวในสรุปยอด — รวมแถวที่ยอดเหลือ 0)
-          · พาร์ทที่ <b>ไลน์ผลิตเอง</b> ไม่นับที่นี่ (เป็น “ผลิตเติม” · ค่า min/max อยู่ที่ <b>/products → 🎴 Kanban Std</b>)
+          · พาร์ทที่ <b>{tr('ไลน์ผลิตเอง')}</b> {tr('ไม่นับที่นี่ (เป็น “ผลิตเติม” · ค่า min/max อยู่ที่')} <b>/products → 🎴 Kanban Std</b>)
           · จอนี้ชี้อย่างเดียว ไม่ตั้งค่าแทนใคร
         </div>
       </div>
@@ -99,7 +100,7 @@ export default function PartLevelCoveragePanel() {
       )}
 
       {busy && !data ? (
-        <div style={{ ...card, padding: '30px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังรวบรวม…</div>
+        <div style={{ ...card, padding: '30px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{tr('กำลังรวบรวม…')}</div>
       ) : !t ? null : (
         <>
           {/* สรุปทั้งโรงงาน — ตัวเลขที่เอาไปตามงานได้ */}
@@ -122,10 +123,10 @@ export default function PartLevelCoveragePanel() {
           <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.7 }}>
             กันออกจากตัวนับ: <b>{fmt(t.skipped)}</b> รายการของคลัง (STORE / FG WAREHOUSE / ปลายทางที่ไม่ใช่ไลน์ผลิต)
             · <b>{fmt(t.produce)}</b> รายการเป็นของที่ไลน์ผลิตเอง (ผลิตเติม)
-            {t.rowNoMin > 0 && <> · 🟡 <b>{fmt(t.rowNoMin)}</b> รายการ<b>มีแถวจุดเรียกเติมแล้วแต่ไม่ได้ใส่ min</b> — ระบบยังไม่เตือนอะไรเลย</>}
+            {t.rowNoMin > 0 && <> · 🟡 <b>{fmt(t.rowNoMin)}</b> {tr('รายการ')}<b>{tr('มีแถวจุดเรียกเติมแล้วแต่ไม่ได้ใส่ min')}</b> {tr('— ระบบยังไม่เตือนอะไรเลย')}</>}
           </div>
 
-          <SearchInput value={q} onChange={setQ} placeholder="ค้นไลน์ / MAT / ชื่อพาร์ท" />
+          <SearchInput value={q} onChange={setQ} placeholder={tr('ค้นไลน์ / MAT / ชื่อพาร์ท')} />
 
           {rows.length === 0 ? (
             <div style={{ ...card, padding: '26px 16px', textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
@@ -144,10 +145,10 @@ export default function PartLevelCoveragePanel() {
                   </div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     {done
-                      ? <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-md)', background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 700 }}>✅ ตั้งครบ {g.consume} พาร์ท</span>
-                      : <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-md)', background: 'rgba(239,68,68,0.12)', color: '#ef4444', fontWeight: 700 }}>🔴 ยังไม่ตั้ง {g.unwatched} / {g.consume} พาร์ท</span>}
-                    {g.rowNoMin > 0 && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-md)', background: 'rgba(245,158,11,0.12)', color: '#f59e0b', fontWeight: 700 }}>🟡 {g.rowNoMin} แถวไม่ใส่ min</span>}
-                    {g.produce > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ผลิตเอง {g.produce}</span>}
+                      ? <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-md)', background: 'rgba(34,197,94,0.12)', color: '#22c55e', fontWeight: 700 }}>{tr('✅ ตั้งครบ')} {g.consume} {tr('พาร์ท')}</span>
+                      : <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-md)', background: 'rgba(239,68,68,0.12)', color: '#ef4444', fontWeight: 700 }}>{tr('🔴 ยังไม่ตั้ง')} {g.unwatched} / {g.consume} {tr('พาร์ท')}</span>}
+                    {g.rowNoMin > 0 && <span style={{ fontSize: 11, padding: '2px 9px', borderRadius: 'var(--r-md)', background: 'rgba(245,158,11,0.12)', color: '#f59e0b', fontWeight: 700 }}>🟡 {g.rowNoMin} {tr('แถวไม่ใส่ min')}</span>}
+                    {g.produce > 0 && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ผลิตเอง')} {g.produce}</span>}
                   </div>
                 </div>
                 <div style={{ display: folded ? 'none' : undefined, overflowX: 'auto' }}>
@@ -155,7 +156,7 @@ export default function PartLevelCoveragePanel() {
                     <thead>
                       <tr style={{ background: 'var(--bg2)' }}>
                         {[['#', 'left'], ['ชิ้นงาน', 'left'], ['คงเหลือหน้าไลน์', 'right'], ['จุดเรียกเติม', 'left']].map(([h, al]) => (
-                          <th key={h} style={{ padding: '8px 14px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: al, whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
+                          <th key={h} style={{ padding: '8px 14px', fontSize: 11, fontWeight: 800, color: 'var(--muted)', textAlign: al, whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{tr(h)}</th>
                         ))}
                       </tr>
                     </thead>
@@ -167,14 +168,14 @@ export default function PartLevelCoveragePanel() {
                             <MatLabel mat={p.mat_no} name={p.part_name} size={13} />
                           </td>
                           <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', textAlign: 'right', fontSize: 13, fontWeight: 700, color: p.qty > 0 ? 'var(--text)' : '#ef4444' }}>
-                            {fmt(p.qty)}{p.qty <= 0 && <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}> (หมด)</span>}
+                            {fmt(p.qty)}{p.qty <= 0 && <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--muted)' }}> {tr('(หมด)')}</span>}
                           </td>
                           <td style={{ padding: '9px 14px', borderTop: '1px solid var(--border)', fontSize: 11.5 }}>
                             {p.watched
-                              ? <span style={{ color: '#22c55e', fontWeight: 700 }}>✅ ตั้งแล้ว</span>
+                              ? <span style={{ color: '#22c55e', fontWeight: 700 }}>{tr('✅ ตั้งแล้ว')}</span>
                               : p.hasRowNoMin
-                                ? <span style={{ color: '#f59e0b', fontWeight: 700 }}>🟡 มีแถวแต่ไม่ได้ใส่ min — ระบบไม่เตือน</span>
-                                : <span style={{ color: '#ef4444', fontWeight: 700 }}>🔴 ยังไม่ตั้ง</span>}
+                                ? <span style={{ color: '#f59e0b', fontWeight: 700 }}>{tr('🟡 มีแถวแต่ไม่ได้ใส่ min — ระบบไม่เตือน')}</span>
+                                : <span style={{ color: '#ef4444', fontWeight: 700 }}>{tr('🔴 ยังไม่ตั้ง')}</span>}
                           </td>
                         </tr>
                       ))}

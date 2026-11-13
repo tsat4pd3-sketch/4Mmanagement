@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion'
 
+import { tr } from '../../utils/i18n';
 /* 🪟 โมดัล "ตั้งค่าจุดตรวจ" — กรอบเดียวกันทุกระบบ (PM อุปกรณ์ · QA ชิ้นงาน)
    หัว: ชื่อ + บรรทัดรอง · ตัว: เลื่อนได้ (เป็นตัวที่ sticky เกาะ — ห้ามใส่ overflow ให้กล่องข้างใน)
    ท้าย: ยกเลิก / บันทึก — **แก้ทั้งหมดในโมดัลแล้วกดบันทึกครั้งเดียว** (หลักเดียวกันทุกระบบ)
@@ -32,12 +33,12 @@ export default function InspectEditorModal({ title, subtitle, subColor, wide, bo
             <h2 style={S.title}>{title}</h2>
             {subtitle && <span style={{ fontSize: 12, color: subColor || 'var(--muted)' }}>{subtitle}</span>}
           </div>
-          <button onClick={onClose} aria-label="ปิด" style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>×</button>
+          <button onClick={onClose} aria-label={tr('ปิด')} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
         <div ref={bodyRef} style={S.body}>{children}</div>
         <div style={S.foot}>
-          <button onClick={onClose} style={S.cancel}>ยกเลิก</button>
-          <button onClick={onSave} disabled={saving} style={{ ...S.save, ...saveStyle, opacity: saving ? 0.6 : 1 }}>{saving ? 'กำลังบันทึก...' : saveLabel}</button>
+          <button onClick={onClose} style={S.cancel}>{tr('ยกเลิก')}</button>
+          <button onClick={onSave} disabled={saving} style={{ ...S.save, ...saveStyle, opacity: saving ? 0.6 : 1 }}>{saving ? tr('กำลังบันทึก...') : saveLabel}</button>
         </div>
       </motion.div>
     </div>

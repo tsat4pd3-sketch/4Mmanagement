@@ -1,6 +1,19 @@
 # MTN Work-Order — ใบแจ้งซ่อม MO (JIG/DIE/PRODUCTION 7 ขั้น · **ทีม MTN 8 ขั้น ไม่มี QA**)
 
 
+## 🪜 แถบ "ตอนนี้ถึงขั้นไหน" ✓—✓—③ บนหัวใบ MO (2026-11-12 · คำสั่ง user "ใส่แถบขั้นตอนแบบนี้ในใบ MO")
+
+· วาดด้วยของกลาง `<StepFlow>` (`components/StepFlow.jsx` · UI §6.30) ใน `DetailDrawer` เหนือกล่องขั้น 1-7/8
+· 🔴 **กฎขั้นอยู่ที่ `moFlow(order)` ใน `utils/mtnStepPerm.js` ที่เดียว** — ประกอบจากของกลางเดิมทั้งหมด:
+  `nextStepOf` (ขั้นถัดไป · ใบ MTN ช่วง handover แยก 6/7/8 ด้วย `mtnCloseStage` ⇒ **ต้อง select `mtn_head_at`/`approve_at`**)
+  + `moQaState` (ขั้น 5 ของ JIG/DIE/PD: ตรวจแล้ว ✓ · **ข้าม = ⏭ เหลือง ห้าม ✓ เขียว** · รอ = current)
+  + `stepMeta` (ชื่อขั้น/ใครทำ · ฟอร์ม MTN 8 ขั้น / tool team ขั้น 4 ของช่าง) — ห้ามเขียน `status === 'x'` ในหน้า
+· สถานะจบที่ไม่ใช่ปิดงาน (`rejected`/`returned` = แดง · `transferred`/`cancelled` = เทา) = ใบหยุดที่ขั้นถัดจาก `current_step`
+  แล้วป้ายขั้นนั้นเป็นชื่อสถานะ — ใบที่ถูกตีกลับต้องเห็นว่าตกตรงไหน ไม่ใช่เขียวยาว
+· `waiting_vendor` = ใบยังเปิด แต่ไม่มีขั้นในลูปที่รอ ⇒ ขั้น 3 current + "⏳ รอ: ผู้รับจ้างภายนอก (supplier)"
+· สถานะที่ `MO_STATUS_LABEL` ไม่รู้จัก = `known:false` → แถบเขียน "สถานะนี้ระบบไม่รู้จัก" (ห้ามเดา)
+· เทส `mtnStepPerm.test.mjs` ข้อ `moFlow` · ภาพ MoCard/MoRow ยังใช้แถบ % เดิม (ไม่ได้ย้าย — จอรายการต้องแคบ)
+
 ## 📋 จอรายการ = ตาราง 1 ใบ 1 บรรทัด · ฟอร์มแจ้งซ่อม = คอลัมน์เดียว (2026-10-05 · คำสั่ง user)
 - *"ข้อมูล 100+ MO แล้ว การ์ดดูยากมาก"* ⇒ `MoRow` ใน `<table className="mo-list">` (CSS ใน `index.css`)
   คอลัมน์: เลข MO · สถานะ · ขั้น · แจ้งเมื่อ · ทีมช่าง · ไลน์ · ชนิด·เครื่อง · ปัญหา · รายละเอียด · ประเภท
@@ -2957,3 +2970,20 @@ foreign key (to_order_id) references public.mtn_orders(id) on delete restrict
 - **คิวรี health check รายวันยังนับเกิน** — อยู่ใน prompt ของ routine รายวัน ต้องให้ user สั่งแก้
   (ตัด `transferred`/`rejected` ออกจาก "เปิดค้าง")
 - 2 ใบที่ค้างจริงที่ทีมซ่อมบำรุง (`handover` 28 วัน) = เรื่องคน ไม่ใช่โค้ด
+
+---
+
+## 📦 ฉบับเต็มเดิมจาก CLAUDE.md — MTN Work-Order — ใบแจ้งซ่อม MO (`/mtn-repair`) · JIG/DIE/PD 7 ขั้น · **ทีม MTN 8 ขั้น ไม่มี QA**
+
+> ย้ายมา 2026-11-12 (รีด CLAUDE.md รอบ 4 · `docs/modules/claude-md-slim.md`) — ยกมาทั้งดุ้น ไม่แก้คำ ·
+> CLAUDE.md เหลือเฉพาะกฎข้าม session + pointer มาที่นี่
+
+
+ตารางอยู่ DR project (anon-open) · 🔴 **เลขขั้นคนละความหมายระหว่าง 2 ฟอร์ม** ⇒ แตกสาขาด้วย
+`stageOf(step, { mtnForm })` (`mtnStepPerm.js`) **ห้ามเขียน `step === 7`** — มีด่าน regressionGuards
+· **หน้านี้เหลือ 2 แท็บ (รายการ MO · ข้อมูลหลัก)** — KPI ช่าง → `/mtn-analysis?tab=kpi` ·
+อะไหล่/ผังคลัง → `/equipment?tab=spare|rack` **ห้ามเอากลับมา**
+· 🔒 **ช่องเซ็นขั้น 6/7/8 ล็อก "ฝั่ง + ตำแหน่ง"** (04/10) — ขั้นฝั่งช่าง ฝ่ายผู้แจ้งกดไม่ได้ และกลับกัน ·
+  🔴 **ล็อกเต็ม `manage_master` ก็ข้ามไม่ได้** (ห้ามย้ายบรรทัดนั้นขึ้นก่อนด่าน) · ฝั่ง = `actorSideOf()`
+  **ห้ามเดาจากชื่อ** · **ไม่รู้ = ไม่บล็อก แต่จอต้องเขียนว่าไม่ได้ตรวจ** · คีย์แยก `mtn_head`/`close_cost`
+> 📄 รายละเอียดเต็ม → `docs/modules/mtn-work-order.md`

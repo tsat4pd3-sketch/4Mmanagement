@@ -12,6 +12,7 @@ import { looksLikeImage, isGifFile } from '../utils/imageFileKind';
 import { takeFeedbackPrefill } from '../utils/feedbackPrefill';
 import { usePerms } from '../utils/usePerms';
 
+import { tr } from '../utils/i18n';
 /*
   💬 กล่องรับ feedback จากผู้ใช้หน้างาน (2026-08-14 · คำขอ user)
   เดิม feedback วิ่งผ่าน LINE → ตกหล่น ค้นย้อนไม่ได้ ไม่รู้ว่าเรื่องไหนแก้แล้ว
@@ -253,7 +254,7 @@ export default function FeedbackModal({ onClose }) {
     const list = shown;
     if (!list.length) { toast.info('ไม่มีเรื่องให้คัดลอก'); return; }
     const byPage = {};
-    list.forEach(r => { const k = r.page_path || '(ไม่ระบุหน้า)'; byPage[k] = (byPage[k] || 0) + 1; });
+    list.forEach(r => { const k = r.page_path || tr('(ไม่ระบุหน้า)'); byPage[k] = (byPage[k] || 0) + 1; });
     const head = `feedback จากผู้ใช้ ${list.length} เรื่อง (ดึงเมื่อ ${fmt(new Date().toISOString())})\n`
       + `รวมตามหน้า: ${Object.entries(byPage).sort((a, b) => b[1] - a[1]).map(([p, n]) => `${p} ×${n}`).join(' · ')}\n`;
     const body = list.map((r, i) => {
@@ -293,7 +294,7 @@ export default function FeedbackModal({ onClose }) {
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', width: '100%', maxWidth: 620, maxHeight: '86vh', display: 'flex', flexDirection: 'column' }}>
 
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ fontSize: 15, fontWeight: 800, flex: 1 }}>แจ้งปัญหา / ข้อเสนอแนะ</div>
+          <div style={{ fontSize: 15, fontWeight: 800, flex: 1 }}>{tr('แจ้งปัญหา / ข้อเสนอแนะ')}</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
 
@@ -340,7 +341,7 @@ export default function FeedbackModal({ onClose }) {
                     style={{ fontSize: 12, fontWeight: 700, padding: '6px 12px', borderRadius: 'var(--r-md)',
                       border: '1px dashed var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
                       cursor: shots.length >= MAX_SHOTS ? 'default' : 'pointer', opacity: shots.length >= MAX_SHOTS ? 0.5 : 1 }}>
-                    แนบรูปหน้าจอ
+                    {tr('แนบรูปหน้าจอ')}
                   </button>
                   <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                     {shots.length ? `${shots.length}/${MAX_SHOTS} รูป` : `วงกรอบ/ชี้จุดมาจากมือถือได้เลย (สูงสุด ${MAX_SHOTS} รูป)`}
@@ -352,7 +353,7 @@ export default function FeedbackModal({ onClose }) {
                       <div key={sh.id} style={{ position: 'relative' }}>
                         <img src={sh.preview} alt="" onClick={() => setZoom(sh.preview)}
                           style={{ width: 92, height: 68, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border2)', cursor: 'zoom-in', display: 'block' }} />
-                        <button type="button" onClick={() => dropShot(sh.id)} title="ถอดรูปนี้ออก"
+                        <button type="button" onClick={() => dropShot(sh.id)} title={tr('ถอดรูปนี้ออก')}
                           style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: '50%',
                             border: '1px solid var(--border2)', background: 'var(--bg)', color: '#ef4444',
                             fontSize: 13, fontWeight: 800, lineHeight: 1, cursor: 'pointer', padding: 0 }}>×</button>
@@ -363,7 +364,7 @@ export default function FeedbackModal({ onClose }) {
               </div>
 
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.7 }}>
-                แนบให้อัตโนมัติ: หน้าที่เปิดอยู่ <code>{location.pathname}</code> · ผู้แจ้ง <b>{fullName || '—'}</b>
+                แนบให้อัตโนมัติ: หน้าที่เปิดอยู่ <code>{location.pathname}</code> {tr('· ผู้แจ้ง')} <b>{fullName || '—'}</b>
                 <br />ไม่ต้องพิมพ์ว่าอยู่หน้าไหน · รูปถูกบีบก่อนส่งให้เอง (ตัวหนังสือในรูปยังอ่านออก)
               </div>
 
@@ -378,16 +379,16 @@ export default function FeedbackModal({ onClose }) {
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                 <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
                   <input type="checkbox" checked={onlyOpen} onChange={e => setOnlyOpen(e.target.checked)} style={{ width: 'auto' }} />
-                  เฉพาะที่ยังไม่ปิด
+                  {tr('เฉพาะที่ยังไม่ปิด')}
                 </label>
-                <button onClick={copyForClaude} title="คัดลอกเรื่องที่แสดงอยู่เป็นข้อความ แล้วเอาไปวางในแชท Claude ให้ช่วยดู/แก้"
+                <button onClick={copyForClaude} title={tr('คัดลอกเรื่องที่แสดงอยู่เป็นข้อความ แล้วเอาไปวางในแชท Claude ให้ช่วยดู/แก้')}
                   style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>
-                  คัดลอกให้ Claude
+                  {tr('คัดลอกให้ Claude')}
                 </button>
-                <button onClick={load} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>↻ รีเฟรช</button>
+                <button onClick={load} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer' }}>{tr('↻ รีเฟรช')}</button>
               </div>
 
-              {loading ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด...</div>
+              {loading ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>
                 : !shown.length ? <div style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', padding: 20 }}>
                     {rows.length ? 'ไม่มีเรื่องที่ยังไม่ปิด 👍' : 'ยังไม่มีเรื่องที่ส่งเข้ามา'}
                   </div>
@@ -398,7 +399,7 @@ export default function FeedbackModal({ onClose }) {
                     <div key={r.id} style={{ ...box, marginBottom: 8 }}>
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', fontSize: 11 }}>
                         <span style={{ color: k.color, fontWeight: 700 }}>{k.icon} {k.label}</span>
-                        <span style={{ color: st.color, fontWeight: 700 }}>{st.label}</span>
+                        <span style={{ color: st.color, fontWeight: 700 }}>{tr(st.label)}</span>
                         <span style={{ color: 'var(--muted)', marginLeft: 'auto' }}>{fmt(r.created_at)}</span>
                       </div>
                       <div style={{ fontSize: 13, color: 'var(--text)', margin: '5px 0', whiteSpace: 'pre-wrap' }}>{r.message}</div>
@@ -428,14 +429,14 @@ export default function FeedbackModal({ onClose }) {
                         <div style={{ marginTop: 7 }}>
                           <textarea rows={2} value={noteDraft[r.id] ?? r.admin_note ?? ''}
                             onChange={e => setNoteDraft(d => ({ ...d, [r.id]: e.target.value }))}
-                            placeholder="ตอบผู้แจ้ง (เขาจะเห็นในกล่องนี้ + เด้งกระดิ่งให้)"
+                            placeholder={tr('ตอบผู้แจ้ง (เขาจะเห็นในกล่องนี้ + เด้งกระดิ่งให้)')}
                             style={{ width: '100%', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--ctl-r)',
                               padding: '6px 8px', color: 'var(--text)', fontSize: 12, fontFamily: 'inherit', resize: 'vertical' }} />
                           <button onClick={() => saveNote(r)} disabled={savingNote === r.id || !(noteDraft[r.id] ?? r.admin_note ?? '').trim()}
                             style={{ marginTop: 4, fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 'var(--r-md)', border: 'none',
                               background: 'var(--accent)', color: 'var(--accent-ink)',
                               cursor: savingNote === r.id ? 'default' : 'pointer', opacity: savingNote === r.id ? 0.5 : 1 }}>
-                            {savingNote === r.id ? 'กำลังส่ง...' : '📨 ส่งคำตอบให้ผู้แจ้ง'}
+                            {savingNote === r.id ? tr('กำลังส่ง...') : tr('📨 ส่งคำตอบให้ผู้แจ้ง')}
                           </button>
                         </div>
                       )}

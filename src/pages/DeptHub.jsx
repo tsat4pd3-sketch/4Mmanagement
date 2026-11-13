@@ -25,6 +25,7 @@ import { visibleInterval } from '../utils/usePolling';
 import { RATE, LIVE } from '../utils/refreshRates';
 import { liveChannel } from '../utils/liveChannel';
 import { coalesce, makeIdleGate } from '../utils/liveRefresh';
+import { tr } from '../utils/i18n';
 import Icon from '../components/Icon';   // ✒️ ไอคอนเส้นแทน emoji (UI §6.36)
 
 /* ── DeptHub — landing "Smart Factory / Industry 5.0" (redesign v2 2026-07-13) ──
@@ -437,7 +438,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
 
         {/* Avatar → เมนูโปรไฟล์: เปลี่ยนรูป / ลายเซ็น / เปลี่ยนรหัสผ่าน */}
         <div style={{ position: 'relative' }}>
-          <button onClick={() => setProfileOpen(o => !o)} title="โปรไฟล์ของฉัน" style={{
+          <button onClick={() => setProfileOpen(o => !o)} title={tr('โปรไฟล์ของฉัน')} style={{
             width: 40, height: 40, borderRadius: '50%', padding: 0, cursor: 'pointer', overflow: 'hidden',
             border: `2px solid ${profileOpen ? 'var(--accent)' : 'var(--border2)'}`,
             background: 'var(--card)', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -493,7 +494,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
                     }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                       <Icon glyph={it.icon} size={15} />
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.label}</span>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tr(it.label)}</span>
                     </span>
                     {it.kind === 'toggle' && (
                       <span style={{ width: 32, height: 18, borderRadius: 'var(--r-md)', flexShrink: 0, position: 'relative', background: it.on ? 'var(--accent)' : 'var(--border2)', transition: 'background 0.25s' }}>
@@ -647,9 +648,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
               <Icon glyph={d.icon} size={28} strokeWidth={1.5} />
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 'clamp(15px, 2vw, 17px)', fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', letterSpacing: '-0.01em', lineHeight: 1.2 }}>
-                  {d.label}
-                </div>
+                <div style={{ fontSize: 'clamp(15px, 2vw, 17px)', fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-display)', letterSpacing: '-0.01em', lineHeight: 1.2 }}>{tr(d.label)}</div>
                 {/* ชื่อหมวดไทยใต้ชื่ออังกฤษ — โหมด English ถ้าแปลแล้วซ้ำกับหัว (Production/Production) ไม่วาดซ้ำ */}
                 {tr(d.labelTh) !== d.label && (
                 <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, fontFamily: 'var(--font-body)' }}>
@@ -706,7 +705,7 @@ export default function DeptHub({ onLogout, theme, onToggleTheme, userFullName, 
       {cropFile && (
         /* 🚫 รูปคนไม่รับ GIF + บันทึกเป็น webp — สเปคเดียวกับ /operator · /register · sidebar */
         <ImageCropModal file={cropFile} aspect={1} shape="circle" outputSize={480} allowGif={false} webp
-          title="จัดตำแหน่งรูปโปรไฟล์" onCancel={() => setCropFile(null)} onConfirm={onAvatarCropped} />
+          title={tr('จัดตำแหน่งรูปโปรไฟล์')} onCancel={() => setCropFile(null)} onConfirm={onAvatarCropped} />
       )}
       <SignatureModal open={sigOpen} onClose={() => setSigOpen(false)}
         currentSignatureUrl={userSignatureUrl} onSaved={(url) => onSignatureSaved?.(url)} />

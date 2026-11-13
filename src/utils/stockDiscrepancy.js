@@ -6,6 +6,7 @@
      ฝ่าย: 'store' = `heijunka:operate` · 'line' = `wip_request:receive`
    🔴 ห้ามกลับไปตัดส่วนที่ขาดทิ้ง (consume ที่ไลน์อย่างเดียว) — ยอดจะหายจากทุกคลัง (เคสจริง 04/11 · 2 ใบ 100 ชิ้น)
    pure — เทส `__tests__/stockDiscrepancy.test.mjs` */
+import { linearFlow } from './stepFlow.js';
 
 export const SUSPENSE_LOC = 'ผลต่างรอเคลียร์';
 export const RETURN_LOC = 'STORE';
@@ -80,3 +81,14 @@ export function monthlySummary(rows = []) {
   }
   return [...m.values()].sort((a, b) => b.month.localeCompare(a.month));
 }
+
+/* แถบ "ถึงขั้นไหน" ผลต่างรับ-ส่ง (<StepFlow compact> · UI §6.30 · 12/11) — ฝ่ายหนึ่งเสนอ อีกฝ่ายยืนยัน */
+export const discrepancyFlow = (r) => linearFlow({
+  status: r?.status, row: r,
+  steps: [
+    { label: 'พบผลต่าง', who: 'สโตร์ หรือ ผลิต', action: 'เสนอทางเคลียร์ (คืน STORE / ตัดหาย)' },
+    { label: 'เสนอทางเคลียร์', who: r?.proposed_side === 'store' ? 'ผลิต (อีกฝ่าย)' : r?.proposed_side === 'line' ? 'สโตร์ (อีกฝ่าย)' : 'อีกฝ่าย', action: 'ยืนยัน' },
+    { label: 'เคลียร์แล้ว' },
+  ],
+  at: { open: 0, proposed: 1, returned: 3, written_off: 3 },
+});

@@ -35,6 +35,7 @@ import { toHierarchicalOptions, getLineFamilyNames } from '../utils/lineHierarch
 import { inSectionScope, scopedLines } from '../utils/sectionScope';
 import { isSupportUnit } from '../utils/unitKind';
 
+import { tr } from '../utils/i18n';
 /** กรองไลน์ตาม scope มาตรฐาน — leader = ครอบครัวไลน์ตัวเอง · อื่น = ตาม sections
  *  คืน array เดิมเมื่อไม่ถูกจำกัด (admin / ไม่มี scope) */
 export function scopeLines(lines, { role, lineId, sections, scopeIdx = null } = {}) {
@@ -147,7 +148,7 @@ export default function LineSelect({
   const selectEl = (
     <select id={id} value={value} disabled={disabled} required={required} style={scan && isMobile && !disabled ? { ...style, flex: 1, minWidth: 0, width: 'auto' } : style}
       onChange={e => onChange?.(e.target.value)}>
-      {placeholder != null && <option value="">{placeholder}</option>}
+      {placeholder != null && <option value="">{tr(placeholder)}</option>}
       {extraAt !== 'end' && extraEls}
       {grouped.pinned.map(o => <option key={o.value} value={o.value}>{indent(o)}</option>)}
       {grouped.groups.map(g => {
@@ -164,10 +165,10 @@ export default function LineSelect({
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'stretch', width: style?.width || '100%' }}>
       {selectEl}
-      <button type="button" onClick={() => setScanOpen(true)} aria-label="สแกนป้ายไลน์" title="สแกนป้ายไลน์"
+      <button type="button" onClick={() => setScanOpen(true)} aria-label={tr('สแกนป้ายไลน์')} title={tr('สแกนป้ายไลน์')}
         style={{ flexShrink: 0, minWidth: 48, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 18, cursor: 'pointer' }}>📷</button>
       {scanOpen && (
-        <ScanModal title="สแกนป้ายไลน์" hint="ยิง QR ไลน์ที่หัวใบสแกนประจำไลน์ หรือป้ายชื่อไลน์"
+        <ScanModal title={tr('สแกนป้ายไลน์')} hint={tr('ยิง QR ไลน์ที่หัวใบสแกนประจำไลน์ หรือป้ายชื่อไลน์')}
           onClose={() => setScanOpen(false)}
           onScan={(parsed) => {
             const r = resolveLine(parsed, pickable);

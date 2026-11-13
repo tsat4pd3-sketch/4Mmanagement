@@ -25,6 +25,7 @@ import FilterBar from './FilterBar';
 import SearchInput from './SearchInput';
 import ScanModal from './ScanModal';   // 📷 สแกนป้ายแม่พิมพ์ → เด้งเข้าหมุด (2026-10-06)
 import { uploadOpts } from '../utils/storageUpload';
+import { tr } from '../utils/i18n';
 import { dieSetMats } from '../utils/dieSetMats'; // 🔨 ชุดแม่พิมพ์ทำได้ 2 MAT (งานคู่ RH/LH)
 
 const inp = { width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box' };
@@ -285,7 +286,7 @@ export default function DieLayout({
   if (!ready) {
     return (
       <div style={{ ...warnBox, marginTop: 4 }}>
-        <b>⚠️ ยังใช้ผังจัดเก็บแม่พิมพ์ไม่ได้</b>
+        <b>{tr('⚠️ ยังใช้ผังจัดเก็บแม่พิมพ์ไม่ได้')}</b>
         <div style={{ marginTop: 4, lineHeight: 1.8 }}>
           {MIGRATION_HINT}<br />
           หลัง apply แล้ว refresh หน้านี้ — จะสร้างผัง (ถ่ายรูปคลัง/พื้นที่วางแม่พิมพ์) แล้ววางหมุดแม่พิมพ์รายตัวได้ทันที
@@ -306,39 +307,39 @@ export default function DieLayout({
       {/* ── แถบเครื่องมือ ── มาตรฐาน FilterBar (UI-STANDARD 2026-09-24 — เดิมช่อง/ปุ่มสูง 3 แบบ) */}
       <FilterBar>
         {fromFactoryMap && (
-          <button onClick={() => navigate('/factory-map')} style={btnGhost}>← กลับผังรวมโรงงาน</button>
+          <button onClick={() => navigate('/factory-map')} style={btnGhost}>{tr('← กลับผังรวมโรงงาน')}</button>
         )}
         <select value={areaId} onChange={e => { setAreaId(e.target.value); setSelId(null); setPlacingId(null); hist.clear(); }}>
-          {!areas.length && <option value="">— ยังไม่มีผังจัดเก็บ —</option>}
-          {areas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          {!areas.length && <option value="">{tr('— ยังไม่มีผังจัดเก็บ —')}</option>}
+          {areas.map(a => <option key={a.id} value={a.id}>{tr(a.name)}</option>)}
         </select>
         <SearchInput value={q} onChange={setQ} fields="เลขแม่พิมพ์ / ชื่อพาร์ท / สถานะ" />
         {onScanDie && (
-          <button onClick={() => setScanOpen(true)} style={btnGhost} title="สแกนป้าย QR ที่ติดแม่พิมพ์ แล้วเด้งไปหมุดของตัวนั้น">
-            สแกนป้ายแม่พิมพ์
+          <button onClick={() => setScanOpen(true)} style={btnGhost} title={tr('สแกนป้าย QR ที่ติดแม่พิมพ์ แล้วเด้งไปหมุดของตัวนั้น')}>
+            {tr('สแกนป้ายแม่พิมพ์')}
           </button>
         )}
         <span className="spacer" />
-        <button onClick={() => setShowLabels(v => !v)} style={{ ...btnGhost, padding: '0 11px' }} title="โชว์/ซ่อนป้ายชื่อหมุด">
-          {showLabels ? 'ซ่อนป้าย' : 'โชว์ป้าย'}
+        <button onClick={() => setShowLabels(v => !v)} style={{ ...btnGhost, padding: '0 11px' }} title={tr('โชว์/ซ่อนป้ายชื่อหมุด')}>
+          {showLabels ? tr('ซ่อนป้าย') : tr('โชว์ป้าย')}
         </button>
         {canEdit && <>
           <button onClick={() => { setEdit(v => !v); setPlacingId(null); }} style={{ ...(edit ? btnPri : btnGhost) }}>
-            {edit ? '✓ เสร็จแล้ว' : '✏️ แก้ผัง'}
+            {edit ? tr('✓ เสร็จแล้ว') : tr('✏️ แก้ผัง')}
           </button>
-          <button onClick={() => setAreaForm({ mode: 'new' })} style={btnGhost}>➕ ผังใหม่</button>
+          <button onClick={() => setAreaForm({ mode: 'new' })} style={btnGhost}>{tr('➕ ผังใหม่')}</button>
           {area && <button onClick={() => setAreaForm({ mode: 'edit', area })} style={btnGhost}>⚙️</button>}
         </>}
         {onFactoryMap && (
-          <button onClick={() => navigate('/factory-map')} style={btnGhost} title="โซนนี้ถูกตีกรอบบนผังรวมโรงงานแล้ว — คลิกกรอบบนผังรวมเด้งกลับมาที่นี่ได้">
-            ดูบนผังรวมโรงงาน
+          <button onClick={() => navigate('/factory-map')} style={btnGhost} title={tr('โซนนี้ถูกตีกรอบบนผังรวมโรงงานแล้ว — คลิกกรอบบนผังรวมเด้งกลับมาที่นี่ได้')}>
+            {tr('ดูบนผังรวมโรงงาน')}
           </button>
         )}
       </FilterBar>
       {/* บอกสถานะ link กับผังรวม — ห้ามเงียบ: ตีกรอบแล้วโซนบนผังรวมจะโชว์สถานะแม่พิมพ์ + คลิกเด้งมาหน้านี้ */}
       {area && mapZoneNames && !onFactoryMap && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 10 }}>
-          ผังนี้ยังไม่ถูกตีกรอบบนผังรวมโรงงาน — ไปที่ <b>ผังรวมโรงงาน → โหมดแก้ผัง</b> แล้วตีกรอบเลือกโซน
+          ผังนี้ยังไม่ถูกตีกรอบบนผังรวมโรงงาน — ไปที่ <b>{tr('ผังรวมโรงงาน → โหมดแก้ผัง')}</b> แล้วตีกรอบเลือกโซน
           "🔨 <b>{area.name}</b>" (โซนบนผังรวมจะโชว์จำนวน/ใบซ่อมค้างของแม่พิมพ์ และคลิกเด้งเข้าผังนี้)
         </div>
       )}
@@ -347,7 +348,7 @@ export default function DieLayout({
       {!!hits && (
         <div style={{ background: 'var(--bg3)', border: '1px solid var(--accent)', borderRadius: 'var(--r-md)', padding: '8px 12px', marginBottom: 10, fontSize: 12.5 }}>
           {hits.length ? <>
-            พบ <b>{hits.length}</b> ตัว ·{' '}
+            พบ <b>{hits.length}</b> {tr('ตัว ·')}{' '}
             {hits.slice(0, 6).map(d => {
               const placed = d.ext?.area_id && d.ext?.pos_x != null;
               return (
@@ -359,15 +360,15 @@ export default function DieLayout({
                 </button>
               );
             })}
-            {hits.length > 6 && <span style={{ color: 'var(--muted)' }}>…อีก {hits.length - 6}</span>}
-          </> : <span style={{ color: 'var(--muted)' }}>ไม่พบแม่พิมพ์ตามคำค้น</span>}
+            {hits.length > 6 && <span style={{ color: 'var(--muted)' }}>{tr('…อีก')} {hits.length - 6}</span>}
+          </> : <span style={{ color: 'var(--muted)' }}>{tr('ไม่พบแม่พิมพ์ตามคำค้น')}</span>}
         </div>
       )}
 
       {edit && (
         <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 'var(--r-md)', padding: '8px 12px', marginBottom: 10, fontSize: 12.5 }}>
-          ✏️ <b>โหมดแก้ผัง</b> — {placingDie
-            ? <>คลิกตำแหน่งบนรูปเพื่อวาง <b style={{ color: 'var(--accent)' }}>{placingDie.machine_no}</b> <button onClick={() => setPlacingId(null)} style={{ ...btnGhost, padding: '2px 8px', fontSize: 11.5, marginLeft: 6 }}>ยกเลิก</button></>
+          ✏️ <b>{tr('โหมดแก้ผัง')}</b> — {placingDie
+            ? <>{tr('คลิกตำแหน่งบนรูปเพื่อวาง')} <b style={{ color: 'var(--accent)' }}>{placingDie.machine_no}</b> <button onClick={() => setPlacingId(null)} style={{ ...btnGhost, padding: '2px 8px', fontSize: 11.5, marginLeft: 6 }}>{tr('ยกเลิก')}</button></>
             : <>เลือกแม่พิมพ์จากลิสต์ "ยังไม่ได้วางบนผัง" แล้วกด 📍 วาง · ลากหมุดเพื่อย้ายตำแหน่ง</>}
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
             <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy} style={undoBtnStyle(hist.canUndo && !hist.busy)} title="Ctrl+Z">↩️ Undo</button>
@@ -379,12 +380,12 @@ export default function DieLayout({
       {!areas.length ? (
         <div style={{ background: 'var(--card)', border: '1px dashed var(--border)', borderRadius: 'var(--r-md)', padding: 40, textAlign: 'center', color: 'var(--muted)' }}>
           <div style={{ fontSize: 34, marginBottom: 8 }}>🗺️</div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>ยังไม่มีผังจัดเก็บแม่พิมพ์</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>{tr('ยังไม่มีผังจัดเก็บแม่พิมพ์')}</div>
           <div style={{ fontSize: 12.5, lineHeight: 1.8 }}>
             ถ่ายรูปคลัง/พื้นที่วางแม่พิมพ์ (มุมสูงหรือมุมที่เห็นช่องวางชัด) → สร้างผังใหม่ → อัปโหลดรูป → วางหมุดแม่พิมพ์รายตัว<br />
             จากนั้นค้นเลขแม่พิมพ์แล้วระบบจะชี้ว่าอยู่ตรงไหน + สีหมุดบอกสถานะ/ใบซ่อมค้าง
           </div>
-          {canEdit && <button onClick={() => setAreaForm({ mode: 'new' })} style={{ ...btnPri, marginTop: 14 }}>➕ สร้างผังจัดเก็บ</button>}
+          {canEdit && <button onClick={() => setAreaForm({ mode: 'new' })} style={{ ...btnPri, marginTop: 14 }}>{tr('➕ สร้างผังจัดเก็บ')}</button>}
         </div>
       ) : (
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 330px', gap: 12, alignItems: 'start' }}>
@@ -392,9 +393,9 @@ export default function DieLayout({
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 10 }}>
             {!area?.image_url ? (
               <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border)', borderRadius: 'var(--r-md)' }}>
-                <div style={{ fontSize: 13, marginBottom: 10 }}>ยังไม่มีรูปผัง — อัปโหลดรูปคลัง/พื้นที่วางแม่พิมพ์</div>
+                <div style={{ fontSize: 13, marginBottom: 10 }}>{tr('ยังไม่มีรูปผัง — อัปโหลดรูปคลัง/พื้นที่วางแม่พิมพ์')}</div>
                 {canEdit && <label style={{ ...btnPri, display: 'inline-block', cursor: 'pointer' }}>
-                  อัปโหลดรูป<input type="file" accept="image/*" onChange={uploadImg} style={{ display: 'none' }} />
+                  {tr('อัปโหลดรูป')}<input type="file" accept="image/*" onChange={uploadImg} style={{ display: 'none' }} />
                 </label>}
               </div>
             ) : (
@@ -455,12 +456,12 @@ export default function DieLayout({
               {legendItems.map(([c, t]) => (
                 <span key={t}><span style={{ display: 'inline-block', width: 10, height: 10, background: c, borderRadius: '50%', marginRight: 4 }} />{t}</span>
               ))}
-              <span style={{ marginLeft: 'auto' }}>วางแล้ว {placedHere.length} ตัวในผังนี้</span>
+              <span style={{ marginLeft: 'auto' }}>{tr('วางแล้ว')} {placedHere.length} {tr('ตัวในผังนี้')}</span>
             </div>
             {area?.image_url && canEdit && edit && (
               <div style={{ marginTop: 8 }}>
                 <label style={{ ...btnGhost, display: 'inline-block', cursor: 'pointer', fontSize: 12 }}>
-                  เปลี่ยนรูปผัง<input type="file" accept="image/*" onChange={uploadImg} style={{ display: 'none' }} />
+                  {tr('เปลี่ยนรูปผัง')}<input type="file" accept="image/*" onChange={uploadImg} style={{ display: 'none' }} />
                 </label>
               </div>
             )}
@@ -486,45 +487,45 @@ export default function DieLayout({
                   return (
                     <div style={{ display: 'grid', gap: 8, fontSize: 12 }}>
                       <div style={{ color: 'var(--muted)', lineHeight: 1.7 }}>
-                        {setName && <>ชุด <b style={{ color: 'var(--text)' }}>{setName}</b>{e.op_seq != null && <> · OP{e.op_seq}</>}<br /></>}
-                        {feedLine && <>🏭 ป้อนไลน์ผลิต <b style={{ color: 'var(--text)' }}>{feedLine}</b>{dieSet?.mat_no ? ` (MAT ${dieSet.mat_no})` : ''}<br /></>}
-                        {selDie.line_name && <>เครื่องปั๊ม {selDie.line_name} · </>}
+                        {setName && <>{tr('ชุด')} <b style={{ color: 'var(--text)' }}>{setName}</b>{e.op_seq != null && <> · OP{e.op_seq}</>}<br /></>}
+                        {feedLine && <>{tr('🏭 ป้อนไลน์ผลิต')} <b style={{ color: 'var(--text)' }}>{feedLine}</b>{dieSet?.mat_no ? ` (MAT ${dieSet.mat_no})` : ''}<br /></>}
+                        {selDie.line_name && <>{tr('เครื่องปั๊ม')} {selDie.line_name} · </>}
                         ตัน {e.tonnage_ton ?? '—'} · shot {Number(e.shot_total || 0).toLocaleString()} ·
                         เจียร {e.regrind_count || 0}{e.regrind_limit ? `/${e.regrind_limit}` : ''}
-                        {regrindOver(e) && <b style={{ color: '#ef4444' }}> ⚠️ เจียรครบเกณฑ์แล้ว</b>}
+                        {regrindOver(e) && <b style={{ color: '#ef4444' }}> {tr('⚠️ เจียรครบเกณฑ์แล้ว')}</b>}
                       </div>
 
                       {/* ใบซ่อมค้าง — derive จากระบบ MO จริง */}
                       {mos.length > 0 && (
                         <div style={{ border: '1px solid #ef4444', background: 'rgba(239,68,68,0.1)', borderRadius: 'var(--r-md)', padding: '7px 9px' }}>
-                          <div style={{ fontSize: 12, fontWeight: 800, color: '#ef4444', marginBottom: 3 }}>ใบซ่อม MO ค้าง {mos.length} ใบ</div>
+                          <div style={{ fontSize: 12, fontWeight: 800, color: '#ef4444', marginBottom: 3 }}>{tr('ใบซ่อม MO ค้าง')} {mos.length} {tr('ใบ')}</div>
                           {mos.map(o => (
                             <div key={o.id} style={{ fontSize: 11.5, lineHeight: 1.7 }}>
-                              <b>{o.mo_no || '(ยังไม่ออกเลข MO)'}</b> · {moStatusLabel(o)}
-                              {o.report_at && <span style={{ color: 'var(--muted)' }}> · แจ้ง {new Date(o.report_at).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' })}</span>}
+                              <b>{o.mo_no || tr('(ยังไม่ออกเลข MO)')}</b> · {moStatusLabel(o)}
+                              {o.report_at && <span style={{ color: 'var(--muted)' }}> {tr('· แจ้ง')} {new Date(o.report_at).toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok' })}</span>}
                             </div>
                           ))}
-                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>ดำเนินการต่อที่หน้า 🛠️ แจ้งซ่อม (MO)</div>
+                          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{tr('ดำเนินการต่อที่หน้า 🛠️ แจ้งซ่อม (MO)')}</div>
                         </div>
                       )}
 
                       <div>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>สถานะแม่พิมพ์</div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>{tr('สถานะแม่พิมพ์')}</div>
                         <DieStatusEditor die={selDie} canEdit={canEdit} fullName={fullName} ready={ready} compact
                           onSaved={(patch) => patchDieExt(selDie.id, patch)} />
                       </div>
 
                       <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                        {placed ? <>อยู่ผัง <b style={{ color: 'var(--text)' }}>{areaNameOf(e.area_id)}</b></> : 'ยังไม่ได้วางบนผัง'}
+                        {placed ? <>{tr('อยู่ผัง')} <b style={{ color: 'var(--text)' }}>{areaNameOf(e.area_id)}</b></> : 'ยังไม่ได้วางบนผัง'}
                       </div>
                       {canEdit && edit && (
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           <button onClick={() => setPlacingId(selDie.id)} style={{ ...btnGhost, padding: '5px 10px', fontSize: 12 }}>
-                            {placed ? 'วางตำแหน่งใหม่' : 'วางบนผังนี้'}
+                            {placed ? tr('วางตำแหน่งใหม่') : tr('วางบนผังนี้')}
                           </button>
                           {placed && (
                             <button onClick={() => removeFromMap(selDie)} style={{ ...btnGhost, padding: '5px 10px', fontSize: 12, color: '#ef4444' }}>
-                              ✕ เอาออกจากผัง
+                              {tr('✕ เอาออกจากผัง')}
                             </button>
                           )}
                         </div>
@@ -561,13 +562,13 @@ export default function DieLayout({
                         {canEdit && edit && (
                           <button onClick={() => { setSelId(d.id); setPlacingId(d.id); }}
                             style={{ ...btnGhost, padding: '2px 8px', fontSize: 11, borderColor: placingId === d.id ? 'var(--accent)' : 'var(--border)' }}>
-                            วาง
+                            {tr('วาง')}
                           </button>
                         )}
                       </div>
                     ))}
                   {unplaced.length > 60 && (
-                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>…อีก {unplaced.length - 60} ตัว (ใช้ช่องค้นหากรองก่อน)</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('…อีก')} {unplaced.length - 60} {tr('ตัว (ใช้ช่องค้นหากรองก่อน)')}</div>
                   )}
                 </div>
               </div>
@@ -577,7 +578,7 @@ export default function DieLayout({
       )}
 
       {scanOpen && (
-        <ScanModal title="สแกนป้ายแม่พิมพ์" hint="ส่องป้าย QR ที่ติดแม่พิมพ์ หรือพิมพ์/ยิงเลขแม่พิมพ์"
+        <ScanModal title={tr('สแกนป้ายแม่พิมพ์')} hint={tr('ส่องป้าย QR ที่ติดแม่พิมพ์ หรือพิมพ์/ยิงเลขแม่พิมพ์')}
           onScan={(parsed) => onScanDie(parsed)}   // คืนข้อความ = โชว์ในโมดัลให้สแกนใหม่ · undefined = เจอ ปิดเอง
           onClose={() => setScanOpen(false)} />
       )}
@@ -645,16 +646,16 @@ function AreaFormModal({ mode, area, onClose, onSaved }) {
   return (
     <div className="modal-scroll" /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */ /* modal-scroll = เลื่อนถึงปุ่มล่างได้เมื่อจอเตี้ย/คีย์บอร์ดเด้ง (UI-CONVENTIONS §4 · index.css) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'grid', placeItems: 'center', zIndex: 2000, padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(440px, 96vw)' }}>
-        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 14 }}>{mode === 'new' ? '➕ สร้างผังจัดเก็บแม่พิมพ์' : '⚙️ แก้ไขผังจัดเก็บ'}</div>
+        <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 14 }}>{mode === 'new' ? tr('➕ สร้างผังจัดเก็บแม่พิมพ์') : tr('⚙️ แก้ไขผังจัดเก็บ')}</div>
         <div style={{ display: 'grid', gap: 10 }}>
-          <div><label style={lbl}>ชื่อผัง <span style={{ color: '#ef4444' }}>*</span></label>
-            <input value={name} onChange={e => setName(e.target.value)} placeholder="เช่น คลังแม่พิมพ์หลัก / โซนข้าง LINE A (800 Ton)" style={inp} /></div>
-          <div><label style={lbl}>หมายเหตุ</label><input value={note} onChange={e => setNote(e.target.value)} style={inp} /></div>
+          <div><label style={lbl}>{tr('ชื่อผัง')} <span style={{ color: '#ef4444' }}>*</span></label>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder={tr('เช่น คลังแม่พิมพ์หลัก / โซนข้าง LINE A (800 Ton)')} style={inp} /></div>
+          <div><label style={lbl}>{tr('หมายเหตุ')}</label><input value={note} onChange={e => setNote(e.target.value)} style={inp} /></div>
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-          {mode === 'edit' && <button onClick={del} style={{ ...btnGhost, color: '#ef4444', marginRight: 'auto' }}>ลบผัง</button>}
-          <button onClick={onClose} style={btnGhost}>ยกเลิก</button>
-          <button onClick={save} disabled={saving} style={{ ...btnPri, opacity: saving ? 0.5 : 1 }}>บันทึก</button>
+          {mode === 'edit' && <button onClick={del} style={{ ...btnGhost, color: '#ef4444', marginRight: 'auto' }}>{tr('ลบผัง')}</button>}
+          <button onClick={onClose} style={btnGhost}>{tr('ยกเลิก')}</button>
+          <button onClick={save} disabled={saving} style={{ ...btnPri, opacity: saving ? 0.5 : 1 }}>{tr('บันทึก')}</button>
         </div>
       </div>
     </div>

@@ -8,13 +8,14 @@ import useLang from '../utils/useLang';   // 🌐 ชื่อหน้า/ค�
 import Icon, { stripIcon } from './Icon';   // ✒️ ไอคอนเส้นแทน emoji · แท็บตัด emoji นำหน้า (UI §6.36)
 import TabBar from './TabBar';
 
+import { tr } from '../utils/i18n';
 /* ══ 🧭 PageHeader — หัวหน้าเพจมาตรฐาน (breadcrumb + ชื่อหน้า + ปุ่ม + แท็บ) ══════════════
    ทุกหน้าควรขึ้นด้วย component นี้ ห้ามวาดหัวเรื่อง/แถบแท็บเอง
    (ดู docs/NAVIGATION-REVIEW.md — เดิมมีหัวเรื่องแค่ 22 จาก 56 หน้า และแท็บมุมโค้ง 7/8/12 ปนกัน)
 
    ใช้:
      const [tab, setTab] = useTabParam(['list','kpi'], 'list');
-     <PageHeader title="แจ้งซ่อม MTN (MO)" icon="🛠️" sub="ค้างดำเนินการ 3 ใบ"
+     <PageHeader title={tr('แจ้งซ่อม MTN (MO)')} icon="🛠️" sub={tr('ค้างดำเนินการ 3 ใบ')}
        actions={<button…/>} tabs={[{key:'list',label: 'รายการ MO'},…]} tab={tab} onTab={setTab} />
 
    • breadcrumb (หมวด › ชื่อหน้า) generate เองจาก NAV_ITEMS ตาม pathname — ไม่ต้องใส่มือ

@@ -5,6 +5,7 @@ import { LIGHT } from '../utils/npi';
 import { uploadAttachment, removeAttachment, attachFileName } from '../utils/fileAttach';
 import FilePickBase from './FilePick';
 
+import { tr } from '../utils/i18n';
 export const inp = {
   width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid var(--border)',
   background: 'var(--bg)', color: 'var(--text)', fontSize: 13, boxSizing: 'border-box',
@@ -53,7 +54,7 @@ export function LightDot({ light = 'grey', size = 12, title }) {
 export function MetaSelect({ value, onChange, meta, disabled, style, exclude = [] }) {
   return (
     <select value={value || ''} onChange={e => onChange(e.target.value)} disabled={disabled} style={{ ...inp, ...style }}>
-      {Object.entries(meta).filter(([k]) => !exclude.includes(k)).map(([k, m]) => <option key={k} value={k}>{m.label}</option>)}
+      {Object.entries(meta).filter(([k]) => !exclude.includes(k)).map(([k, m]) => <option key={k} value={k}>{tr(m.label)}</option>)}
     </select>
   );
 }
@@ -66,7 +67,7 @@ export function Modal({ title, onClose, children, width = 640, footer }) {
         style={{ width: `min(${width}px, 96vw)`, maxHeight: '92vh', overflowY: 'auto', padding: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 8 }}>
           <h3 style={{ margin: 0, fontSize: 16 }}>{title}</h3>
-          <button className="tbtn" onClick={onClose} aria-label="ปิด" style={{ ...ghost, padding: '4px 9px' }}>✕</button>
+          <button className="tbtn" onClick={onClose} aria-label={tr('ปิด')} style={{ ...ghost, padding: '4px 9px' }}>✕</button>
         </div>
         {children}
         {footer && <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>{footer}</div>}

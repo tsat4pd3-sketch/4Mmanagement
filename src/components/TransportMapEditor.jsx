@@ -11,6 +11,7 @@ import LineSelect from './LineSelect'
 import useProductionLines from '../utils/useProductionLines'
 import { WAREHOUSE_LOCATIONS } from '../utils/storageZones'
 
+import { tr } from '../utils/i18n';
 /* ─── TransportMapEditor — วาดกราฟถนน/ทางเดินรถบนผังใหญ่ (Store/AMR) ──────────
    ใช้รูปผังตัวเดียวกับ /factory-map (factory_map ฝั่ง Main) เป็นฉากหลัง
    node/edge เก็บฝั่ง DR (transport_nodes/transport_edges) พิกัด % 0-100
@@ -352,10 +353,10 @@ export default function TransportMapEditor() {
     background: on ? 'var(--accent-dim, rgba(74,222,128,.15))' : 'var(--bg3)', color: on ? 'var(--accent)' : 'var(--muted)',
   })
 
-  if (loading) return <div style={{ padding: 30, color: 'var(--muted)' }}>กำลังโหลดผัง…</div>
+  if (loading) return <div style={{ padding: 30, color: 'var(--muted)' }}>{tr('กำลังโหลดผัง…')}</div>
   if (!imageUrl) return (
     <div style={{ padding: 30, borderRadius: 'var(--r-lg)', border: '1px dashed var(--border2)', background: 'var(--card)', color: 'var(--muted)', maxWidth: 640 }}>
-      ยังไม่มีรูปผังโรงงาน — อัปโหลดที่แท็บ <b style={{ color: 'var(--text2)' }}>ภาพรวมโรงงาน</b> ก่อน แล้วกลับมาวาดถนนทับผังเดียวกัน
+      ยังไม่มีรูปผังโรงงาน — อัปโหลดที่แท็บ <b style={{ color: 'var(--text2)' }}>{tr('ภาพรวมโรงงาน')}</b> ก่อน แล้วกลับมาวาดถนนทับผังเดียวกัน
     </div>
   )
 
@@ -371,27 +372,27 @@ export default function TransportMapEditor() {
             <button key={k} onClick={() => { setMode(k); setEdgeFrom(null); setSel(null); resetChain() }} style={btn(mode === k)}>{l}</button>
           ))}
           {mode === 'draw' && chainLast && (
-            <button onClick={resetChain} style={{ padding: '7px 13px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, border: '1.5px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-ink)' }}>✓ จบเส้น (Esc)</button>
+            <button onClick={resetChain} style={{ padding: '7px 13px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, border: '1.5px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-ink)' }}>{tr('✓ จบเส้น (Esc)')}</button>
           )}
           {mode === 'node' && (
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--text2)' }}>
-              ชนิดจุด:
+              {tr('ชนิดจุด:')}
               <select value={addKind} onChange={e => setAddKind(e.target.value)} style={{ width: 150, padding: '5px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12.5, background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)' }}>
                 {NODE_KINDS.map(n => <option key={n.key} value={n.key}>{n.icon} {n.label}</option>)}
               </select>
             </label>
           )}
           <button onClick={() => { setScaleMode(v => !v); setScalePts([]); setScaleMeters('') }}
-            style={btn(scaleMode)}>มาตราส่วน</button>
-          <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy || busy} style={undoBtnStyle(hist.canUndo && !hist.busy && !busy)} title="ย้อนกลับ (Ctrl+Z)">↩️ Undo</button>
-          <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy || busy} style={undoBtnStyle(hist.canRedo && !hist.busy && !busy)} title="ทำซ้ำ (Ctrl+Y)">↪️ Redo</button>
+            style={btn(scaleMode)}>{tr('มาตราส่วน')}</button>
+          <button onClick={hist.undo} disabled={!hist.canUndo || hist.busy || busy} style={undoBtnStyle(hist.canUndo && !hist.busy && !busy)} title={tr('ย้อนกลับ (Ctrl+Z)')}>↩️ Undo</button>
+          <button onClick={hist.redo} disabled={!hist.canRedo || hist.busy || busy} style={undoBtnStyle(hist.canRedo && !hist.busy && !busy)} title={tr('ทำซ้ำ (Ctrl+Y)')}>↪️ Redo</button>
           <span style={{ fontSize: 12, color: 'var(--muted)', marginLeft: 'auto' }}>
-            {nodes.length} จุด · {edges.length} เส้น · {graphStat.stops} จุดจอด{graphStat.isolated ? ` · ⚠ ${graphStat.isolated} จุดยังไม่เชื่อมถนน` : ''}
+            {nodes.length} {tr('จุด ·')} {edges.length} {tr('เส้น ·')} {graphStat.stops} {tr('จุดจอด')}{graphStat.isolated ? ` · ⚠ ${graphStat.isolated} จุดยังไม่เชื่อมถนน` : ''}
             {mpu ? ` · 1 หน่วย ≈ ${mpu.toFixed(2)} ม.` : ' · ยังไม่ตั้งมาตราส่วน'}
           </span>
         </div>
       ) : (
-        <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ดูอย่างเดียว (ต้องมีสิทธิ์ transport:manage เพื่อแก้)</div>
+        <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ดูอย่างเดียว (ต้องมีสิทธิ์ transport:manage เพื่อแก้)')}</div>
       )}
       {canEdit && scaleMode && (
         <div style={{ fontSize: 12, color: '#f0abfc', background: 'rgba(217,70,239,0.1)', border: '1px solid rgba(217,70,239,0.4)', borderRadius: 'var(--r-md)', padding: '7px 11px' }}>
@@ -488,7 +489,7 @@ export default function TransportMapEditor() {
         {/* side editor */}
         <div style={{ flex: '0 0 250px', minWidth: 230, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 12 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text2)', marginBottom: 8 }}>สัญลักษณ์</div>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text2)', marginBottom: 8 }}>{tr('สัญลักษณ์')}</div>
             {NODE_KINDS.map(k => (
               <div key={k.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>
                 <span style={{ width: 15, height: 15, borderRadius: '50%', background: k.color, display: 'inline-block' }} /> {k.icon} {k.label}
@@ -498,9 +499,9 @@ export default function TransportMapEditor() {
 
           {canEdit && selNode && (
             <div style={{ background: 'var(--card)', border: '1px solid var(--accent)', borderRadius: 'var(--r-md)', padding: 12 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>✏️ แก้ไขจุด</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>{tr('✏️ แก้ไขจุด')}</div>
               <FieldLbl t="ชื่อจุด">
-                <input value={selNode.name || ''} onChange={e => patchNode(selNode.id, { name: e.target.value })} placeholder="เช่น STORE-IN, แยก A" style={inp} />
+                <input value={selNode.name || ''} onChange={e => patchNode(selNode.id, { name: e.target.value })} placeholder={tr('เช่น STORE-IN, แยก A')} style={inp} />
               </FieldLbl>
               <FieldLbl t="ชนิด">
                 <select value={selNode.kind} onChange={e => patchNode(selNode.id, { kind: e.target.value })} style={inp}>
@@ -511,30 +512,30 @@ export default function TransportMapEditor() {
                 {/* line_name เป็น join key ที่ Transport.jsx ใช้จับจุดจอดของรอบ (isOfLine) — สะกดผิด = รอบหาจุดไม่เจอ
                     → เลือกจากทะเบียนไลน์ + คลังกลาง/โซนคลังเท่านั้น (2026-09-07 แทน datalist พิมพ์เอง) */}
                 <LineSelect lines={lines} value={selNode.line_name || ''} onChange={v => patchNode(selNode.id, { line_name: v || null })}
-                  placeholder="— ไม่ผูก —" style={inp}
+                  placeholder={tr('— ไม่ผูก —')} style={inp}
                   extraGroups={[{ label: 'คลัง / โซนคลัง', options: [...new Set([...WAREHOUSE_LOCATIONS, ...storeZoneNames])].map(n => ({ value: n })) }]} />
               </FieldLbl>
               <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: 'var(--text2)', margin: '6px 0', cursor: 'pointer' }}>
-                <input type="checkbox" checked={selNode.is_active !== false} onChange={e => patchNode(selNode.id, { is_active: e.target.checked })} style={{ width: 'auto' }} /> ใช้งาน
+                <input type="checkbox" checked={selNode.is_active !== false} onChange={e => patchNode(selNode.id, { is_active: e.target.checked })} style={{ width: 'auto' }} /> {tr('ใช้งาน')}
               </label>
-              <button onClick={() => delNode(selNode.id)} style={delBtn}>ลบจุดนี้</button>
+              <button onClick={() => delNode(selNode.id)} style={delBtn}>{tr('ลบจุดนี้')}</button>
             </div>
           )}
           {canEdit && selEdge && (
             <div style={{ background: 'var(--card)', border: '1px solid var(--accent)', borderRadius: 'var(--r-md)', padding: 12 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>✏️ แก้ไขถนน</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', marginBottom: 8 }}>{tr('✏️ แก้ไขถนน')}</div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
                 {(nById[selEdge.a_node]?.name || 'จุด')} ↔ {(nById[selEdge.b_node]?.name || 'จุด')}<br />
                 ระยะ (หน่วยผัง) ≈ {edgeWeight(selEdge, nById).toFixed(1)}
               </div>
               <label style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: 'var(--text2)', margin: '6px 0', cursor: 'pointer' }}>
-                <input type="checkbox" checked={selEdge.bidir === false} onChange={e => patchEdge(selEdge.id, { bidir: !e.target.checked })} style={{ width: 'auto' }} /> เดินทางเดียว (one-way {(nById[selEdge.a_node]?.name || 'A')}→{(nById[selEdge.b_node]?.name || 'B')})
+                <input type="checkbox" checked={selEdge.bidir === false} onChange={e => patchEdge(selEdge.id, { bidir: !e.target.checked })} style={{ width: 'auto' }} /> {tr('เดินทางเดียว (one-way')} {(nById[selEdge.a_node]?.name || 'A')}→{(nById[selEdge.b_node]?.name || 'B')})
               </label>
-              <button onClick={() => delEdge(selEdge.id)} style={delBtn}>ลบถนนนี้</button>
+              <button onClick={() => delEdge(selEdge.id)} style={delBtn}>{tr('ลบถนนนี้')}</button>
             </div>
           )}
           {canEdit && !sel && (
-            <div style={{ fontSize: 12, color: 'var(--muted)', padding: '4px 2px' }}>เลือกจุด/เส้นบนผังเพื่อแก้ไข</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)', padding: '4px 2px' }}>{tr('เลือกจุด/เส้นบนผังเพื่อแก้ไข')}</div>
           )}
         </div>
       </div>
@@ -547,15 +548,15 @@ export default function TransportMapEditor() {
         return (
           <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
             <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 20, width: 'min(94vw, 380px)' }}>
-              <h3 style={{ margin: '0 0 10px', fontSize: 16, fontWeight: 900, color: 'var(--text)' }}>ตั้งมาตราส่วน</h3>
-              <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 10 }}>ระยะ 2 จุดที่เลือก = <b style={{ color: 'var(--text2)' }}>{unitDist.toFixed(2)}</b> หน่วยผัง</div>
-              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ระยะจริงของ 2 จุดนี้ (เมตร)</span>
+              <h3 style={{ margin: '0 0 10px', fontSize: 16, fontWeight: 900, color: 'var(--text)' }}>{tr('ตั้งมาตราส่วน')}</h3>
+              <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 10 }}>ระยะ 2 จุดที่เลือก = <b style={{ color: 'var(--text2)' }}>{unitDist.toFixed(2)}</b> {tr('หน่วยผัง')}</div>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{tr('ระยะจริงของ 2 จุดนี้ (เมตร)')}</span>
               <input type="number" min="0" step="0.1" autoFocus value={scaleMeters} onChange={e => setScaleMeters(e.target.value)}
-                placeholder="เช่น 25" style={inp} />
-              {ok && <div style={{ fontSize: 12.5, color: 'var(--accent)', fontWeight: 700, marginTop: 8 }}>→ 1 หน่วยผัง ≈ {(m / unitDist).toFixed(2)} ม. (ทั้งผังกว้าง ≈ {(m / unitDist * 100).toFixed(0)} ม.)</div>}
+                placeholder={tr('เช่น 25')} style={inp} />
+              {ok && <div style={{ fontSize: 12.5, color: 'var(--accent)', fontWeight: 700, marginTop: 8 }}>{tr('→ 1 หน่วยผัง ≈')} {(m / unitDist).toFixed(2)} {tr('ม. (ทั้งผังกว้าง ≈')} {(m / unitDist * 100).toFixed(0)} ม.)</div>}
               <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
-                <button onClick={() => setScalePts([])} style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 13, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>เลือกจุดใหม่</button>
-                <button onClick={() => ok && saveScale(m / unitDist)} disabled={!ok} style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', cursor: ok ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 700, background: ok ? 'var(--accent)' : 'var(--bg2)', color: ok ? 'var(--accent-ink)' : 'var(--muted)', border: 'none' }}>บันทึก</button>
+                <button onClick={() => setScalePts([])} style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 13, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>{tr('เลือกจุดใหม่')}</button>
+                <button onClick={() => ok && saveScale(m / unitDist)} disabled={!ok} style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', cursor: ok ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 700, background: ok ? 'var(--accent)' : 'var(--bg2)', color: ok ? 'var(--accent-ink)' : 'var(--muted)', border: 'none' }}>{tr('บันทึก')}</button>
               </div>
             </div>
           </div>

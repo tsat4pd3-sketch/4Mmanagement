@@ -4,6 +4,7 @@ import { isHeicFile, toDecodableImage } from '../utils/heicToJpeg';
 import { looksLikeImage, isGifFile, extOf, GIF_MAX_BYTES } from '../utils/imageFileKind';
 import Segmented from './Segmented';
 
+import { tr } from '../utils/i18n';
 /* ─── ImageCropModal ───────────────────────────────────────────────────────
    Crop/reposition + zoom รูปก่อนอัปโหลด ให้เห็นกรอบจริงที่จะถูกใช้แสดงผล
    ป้องกันรูปตกขอบ/ล้นกรอบ — ใช้ร่วมกันได้ทุกหน้าที่มีการอัปโหลดรูป
@@ -259,7 +260,7 @@ export default function ImageCropModal({
             ⚠️ วางไว้ "ก่อน" แถบซูม — สลับโหมดแล้วแถบซูมโผล่/หาย ปุ่มที่เพิ่งกดต้องไม่ขยับหนี */}
         {allowFull && !isGif && (
           <div style={{ marginTop: 12 }}>
-            <Segmented size="sm" label="โหมดรูป" value={useFull ? 'full' : 'crop'}
+            <Segmented size="sm" label={tr('โหมดรูป')} value={useFull ? 'full' : 'crop'}
               onChange={v => setUseFull(v === 'full')}
               options={[
                 { value: 'full', label: 'ใช้ทั้งรูป' },
@@ -284,10 +285,10 @@ export default function ImageCropModal({
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
           {/* type="button" จำเป็น — modal นี้ถูก render อยู่ใน <form> ของหน้า Register/Operator
               ถ้าไม่ระบุ ปุ่มจะเป็น submit โดย default ทำให้ฟอร์มถูกบันทึกทันทีก่อนรูปถูกแนบ (รูปหายเงียบๆ) */}
-          <button type="button" onClick={onCancel} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+          <button type="button" onClick={onCancel} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>{tr('ยกเลิก')}</button>
           <button type="button" onClick={handleConfirm} disabled={!srcFile || converting}
             style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, cursor: (!srcFile || converting) ? 'default' : 'pointer', fontSize: 13, opacity: (!srcFile || converting) ? 0.5 : 1 }}>
-            {converting ? 'กำลังแปลง…' : '✓ ใช้รูปนี้'}
+            {converting ? tr('กำลังแปลง…') : tr('✓ ใช้รูปนี้')}
           </button>
         </div>
       </div>

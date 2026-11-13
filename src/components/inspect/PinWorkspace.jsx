@@ -1,6 +1,7 @@
 import PointJumpBar from './PointJumpBar'
 import { JUMP_MIN } from '../../utils/cpJump'
 
+import { tr } from '../../utils/i18n';
 /* 📌 ผังจอ "รูปอ้างอิง + การ์ดจุดตรวจ" — ใช้ร่วม PM + QA (2026-10-15 · ระบบเดียว เรียนครั้งเดียว)
    จอกว้าง (twoCol): รูปซ้าย `sticky` · การ์ดเลื่อนขวา · จอแคบ: รูปตรึงบนหัว (พื้นทึบ full-bleed)
    🔴 sticky เกาะ body ของโมดัล (overflowY:auto) — ห้ามใส่ overflow ให้กล่องในนี้
@@ -41,7 +42,7 @@ export default function PinWorkspace({ twoCol, stickyRef, board, boardTitle, boa
             : { marginBottom: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
             <span style={label}>{listTitle}</span>
-            {onAdd && <button type="button" onClick={onAdd} style={addBtn}>+ เพิ่มจุดตรวจ</button>}
+            {onAdd && <button type="button" onClick={onAdd} style={addBtn}>{tr('+ เพิ่มจุดตรวจ')}</button>}
           </div>
           {!compact && bar}
         </div>

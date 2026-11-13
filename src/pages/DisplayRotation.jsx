@@ -26,6 +26,7 @@ import {
 } from '../utils/displayRotation';
 
 import SectionScopeSelect from '../components/SectionScopeSelect';
+import { tr } from '../utils/i18n';
 /* ══ 🔁 ตั้งค่าจอวนหน้า — /display-rotation ══════════════════════════════════════════
    2026-10-09 · คำสั่ง user: "แบบมีหน้า config ได้ ว่าจอ user นี้จะเปิดอะไรวนบ้าง"
    2026-10-14 · รอบ 2 (feedback หลังติดทีวี 13 จอ):
@@ -252,9 +253,9 @@ export default function DisplayRotation() {
 
   const actions = selId && canEdit ? (
     <>
-      {plans[selId] && <button type="button" onClick={removePlan} style={btnGhost}>ลบรอบ</button>}
+      {plans[selId] && <button type="button" onClick={removePlan} style={btnGhost}>{tr('ลบรอบ')}</button>}
       <button type="button" onClick={save} disabled={saving || !dirty} style={btnPrimary}>
-        {saving ? 'กำลังบันทึก…' : dirty ? 'บันทึก' : 'บันทึกแล้ว'}
+        {saving ? tr('กำลังบันทึก…') : dirty ? tr('บันทึก') : tr('บันทึกแล้ว')}
       </button>
     </>
   ) : null;
@@ -265,19 +266,19 @@ export default function DisplayRotation() {
 
   return (
     <Page>
-      <PageHeader title="ตั้งค่าจอวนหน้า" icon="🔁"
-        sub="เลือกจอ → ตั้งหน้าที่วน หน้าละกี่วินาที (+ แท็บ/ไลน์ของแต่ละหน้า) · สั่งจอเปลี่ยนหน้าได้จากที่นี่"
+      <PageHeader title={tr('ตั้งค่าจอวนหน้า')} icon="🔁"
+        sub={tr('เลือกจอ → ตั้งหน้าที่วน หน้าละกี่วินาที (+ แท็บ/ไลน์ของแต่ละหน้า) · สั่งจอเปลี่ยนหน้าได้จากที่นี่')}
         actions={actions} />
 
-      {loadErr && <div style={warnBox}>⚠ โหลดข้อมูลไม่ครบ: {loadErr} — รายการด้านล่างอาจไม่ครบ</div>}
-      {!canEdit && <div style={infoBox}>ดูอย่างเดียว — ต้องมีสิทธิ์ “จอวนหน้า: ตั้งว่าบัญชีจอไหนเปิดหน้าอะไรวนบ้าง” (ตั้งที่ /permissions)</div>}
+      {loadErr && <div style={warnBox}>{tr('⚠ โหลดข้อมูลไม่ครบ:')} {loadErr} {tr('— รายการด้านล่างอาจไม่ครบ')}</div>}
+      {!canEdit && <div style={infoBox}>{tr('ดูอย่างเดียว — ต้องมีสิทธิ์ “จอวนหน้า: ตั้งว่าบัญชีจอไหนเปิดหน้าอะไรวนบ้าง” (ตั้งที่ /permissions)')}</div>}
 
       {/* ── เลือกจอ (การ์ด) ── */}
       <section className="card" style={{ padding: 14, marginBottom: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-          <div style={{ fontSize: 14, fontWeight: 800 }}>จอที่คุณดูแล ({screens.length})</div>
+          <div style={{ fontSize: 14, fontWeight: 800 }}>{tr('จอที่คุณดูแล (')}{screens.length})</div>
           {hiddenScreens > 0 && (
-            <div style={{ fontSize: 12, color: 'var(--muted)' }}>· ซ่อน {hiddenScreens} จอที่อยู่นอกส่วนงานของคุณ</div>
+            <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('· ซ่อน')} {hiddenScreens} {tr('จอที่อยู่นอกส่วนงานของคุณ')}</div>
           )}
           <div style={{ flex: 1 }} />
           {screens.length > 8 && <div style={{ width: 240, maxWidth: '100%' }}><SearchInput value={q} onChange={setQ} fields="ชื่อจอ / ส่วนงาน / หมายเหตุ" /></div>}
@@ -315,7 +316,7 @@ export default function DisplayRotation() {
       </section>
 
       {!selAcc && screens.length > 0 && (
-        <div style={{ ...infoBox, textAlign: 'center', padding: 24, fontSize: 13 }}>เลือกจอด้านบนเพื่อตั้งรอบ</div>
+        <div style={{ ...infoBox, textAlign: 'center', padding: 24, fontSize: 13 }}>{tr('เลือกจอด้านบนเพื่อตั้งรอบ')}</div>
       )}
 
       {selAcc && (
@@ -325,7 +326,7 @@ export default function DisplayRotation() {
             <section className="card" style={{ padding: 16, display: 'grid', gap: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                 <div style={{ fontSize: 16, fontWeight: 800 }}>{selAcc.full_name}</div>
-                <span style={chipSt}>ส่วนงาน: {tvSections.length ? tvSections.join(', ') : 'ทั้งโรงงาน (ยังไม่ตั้ง)'}</span>
+                <span style={chipSt}>{tr('ส่วนงาน:')} {tvSections.length ? tvSections.join(', ') : 'ทั้งโรงงาน (ยังไม่ตั้ง)'}</span>
                 {emails[selAcc.id] && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{emails[selAcc.id]}</span>}
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: -6 }}>
@@ -333,25 +334,25 @@ export default function DisplayRotation() {
               </div>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, fontWeight: 700 }}>
                 <input type="checkbox" checked={!!form.enabled} disabled={!canEdit} onChange={e => setF('enabled', e.target.checked)} />
-                เปิดการวนหน้า
+                {tr('เปิดการวนหน้า')}
                 <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--muted)' }}>(ปิด = เก็บรอบไว้ แต่จอค้างหน้าเดิม)</span>
               </label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-                <Field label="ค่าตั้งต้น วินาที/หน้า">
+                <Field label={tr('ค่าตั้งต้น วินาที/หน้า')}>
                   <input type="number" min={ROT_LIMITS.minSec} max={ROT_LIMITS.maxSec} value={form.default_sec ?? ''} disabled={!canEdit}
                     onChange={e => setF('default_sec', e.target.value)} style={{ width: 110 }} />
                 </Field>
-                <Field label="มีคนแตะจอ = หยุดวน (วินาที)">
+                <Field label={tr('มีคนแตะจอ = หยุดวน (วินาที)')}>
                   <input type="number" min={ROT_LIMITS.minPauseSec} max={ROT_LIMITS.maxPauseSec} value={form.pause_sec ?? ''} disabled={!canEdit}
                     onChange={e => setF('pause_sec', e.target.value)} style={{ width: 110 }} />
                 </Field>
-                <Field label="รีโหลดเต็มหน้า (ล้างหน่วยความจำทีวี)">
+                <Field label={tr('รีโหลดเต็มหน้า (ล้างหน่วยความจำทีวี)')}>
                   <select value={form.reload_min ?? ''} disabled={!canEdit} onChange={e => setF('reload_min', e.target.value === '' ? '' : Number(e.target.value))}>
-                    {RELOAD_OPTS.map(o => <option key={o.label} value={o.v}>{o.label}</option>)}
+                    {RELOAD_OPTS.map(o => <option key={o.label} value={o.v}>{tr(o.label)}</option>)}
                   </select>
                 </Field>
               </div>
-              <Field label="ตำแหน่งที่ติดจอ / หมายเหตุ">
+              <Field label={tr('ตำแหน่งที่ติดจอ / หมายเหตุ')}>
                 <input type="text" value={form.note || ''} disabled={!canEdit} maxLength={200}
                   onChange={e => setF('note', e.target.value)}
                   placeholder={`เช่น ${tvSections[0] || 'PD3'} ห้องช่าง ผนังซ้าย`} />
@@ -360,10 +361,10 @@ export default function DisplayRotation() {
 
             <section className="card" style={{ padding: 16 }}>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
-                <div style={{ fontSize: 15, fontWeight: 800 }}>ลำดับหน้าที่วน</div>
+                <div style={{ fontSize: 15, fontWeight: 800 }}>{tr('ลำดับหน้าที่วน')}</div>
                 <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                  วนจริง {preview.playable.length} หน้า · ครบรอบ {fmtSec(cycleSec)}
-                  {preview.skipped.length > 0 && <span style={{ color: 'var(--red)', fontWeight: 700 }}> · จะถูกข้าม {preview.skipped.length} หน้า</span>}
+                  วนจริง {preview.playable.length} {tr('หน้า · ครบรอบ')} {fmtSec(cycleSec)}
+                  {preview.skipped.length > 0 && <span style={{ color: 'var(--red)', fontWeight: 700 }}> {tr('· จะถูกข้าม')} {preview.skipped.length} {tr('หน้า')}</span>}
                 </div>
               </div>
               <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>
@@ -372,7 +373,7 @@ export default function DisplayRotation() {
               </div>
 
               {form.items.length === 0 && (
-                <div style={{ fontSize: 13, color: 'var(--muted)', padding: '8px 0' }}>ยังไม่มีหน้าในรอบ — กด “+ เพิ่มหน้า”</div>
+                <div style={{ fontSize: 13, color: 'var(--muted)', padding: '8px 0' }}>{tr('ยังไม่มีหน้าในรอบ — กด “+ เพิ่มหน้า”')}</div>
               )}
 
               <div style={{ display: 'grid', gap: 8 }}>
@@ -391,13 +392,13 @@ export default function DisplayRotation() {
 
               {canEdit && form.items.length < ROT_LIMITS.maxItems && (
                 <button type="button" onClick={() => { setF('items', [...form.items, { path: '', sec: null }]); setFocusIdx(form.items.length); }}
-                  style={{ ...btnGhost, marginTop: 10 }}>+ เพิ่มหน้า</button>
+                  style={{ ...btnGhost, marginTop: 10 }}>{tr('+ เพิ่มหน้า')}</button>
               )}
               {/* 🧾 ชุดสำเร็จรูป: ใบ MO ตามขั้น 4 หน้า (03/11 · ประชุม 02/11 ข้อ B6 "จอ TV ทีม MTN วนหน้า MO")
                   แค่เติมลิงก์ `/tv?dept=mo&mo=…&team=…` ต่อท้าย — แก้/ลบทีละรายการได้ตามปกติ */}
               {canEdit && form.items.length + 4 <= ROT_LIMITS.maxItems && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
-                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>เติมชุดใบ MO (รอรับงาน · กำลังซ่อม · รอตรวจรับ · รอปิดใบ):</span>
+                  <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('เติมชุดใบ MO (รอรับงาน · กำลังซ่อม · รอตรวจรับ · รอปิดใบ):')}</span>
                   {[['maintenance', 'MTN'], ['jig_maintenance', 'JIG'], ['die_maintenance', 'DIE'], ['', 'ทุกทีม']].map(([k, t]) => (
                     <button key={k || 'all'} type="button" style={btnGhost}
                       onClick={() => { setF('items', [...form.items, ...moRotationItems(k)]); setFocusIdx(form.items.length); }}>
@@ -419,13 +420,13 @@ export default function DisplayRotation() {
           <div style={{ display: 'grid', gap: 12, minWidth: 0, position: isMobile ? 'static' : 'sticky', top: 12 }}>
             <section className="card" style={{ padding: 14, display: 'grid', gap: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <div style={{ fontSize: 15, fontWeight: 800 }}>สั่งจอ</div>
+                <div style={{ fontSize: 15, fontWeight: 800 }}>{tr('สั่งจอ')}</div>
                 {online ? (
                   <span style={{ ...chipSt, color: 'var(--green)', borderColor: 'var(--green)' }}>
                     🟢 ออนไลน์ · หน้า {(live.idx ?? 0) + 1}/{live.n}{live.held ? ' · ⏸ หยุดอยู่' : ''}
                   </span>
                 ) : (
-                  <span style={{ ...chipSt, color: 'var(--muted)' }}>⚪ ไม่ได้เปิดอยู่ / ยังไม่ได้ login</span>
+                  <span style={{ ...chipSt, color: 'var(--muted)' }}>{tr('⚪ ไม่ได้เปิดอยู่ / ยังไม่ได้ login')}</span>
                 )}
               </div>
               {online && live.path && (
@@ -435,12 +436,12 @@ export default function DisplayRotation() {
                 </div>
               )}
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'prev' })}>ก่อนหน้า</button>
+                <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'prev' })}>{tr('ก่อนหน้า')}</button>
                 {live?.held
-                  ? <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'resume' })}>วนต่อ</button>
-                  : <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'hold' })}>หยุดค้าง</button>}
-                <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'next' })}>ถัดไป ▶▶</button>
-                <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'reload' })} title="ให้จอโหลดใหม่ — ใช้หลังบันทึกรอบใหม่">รีโหลดจอ</button>
+                  ? <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'resume' })}>{tr('วนต่อ')}</button>
+                  : <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'hold' })}>{tr('หยุดค้าง')}</button>}
+                <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'next' })}>{tr('ถัดไป ▶▶')}</button>
+                <button type="button" style={btnGhost} disabled={!online || !canEdit} onClick={() => send({ type: 'reload' })} title={tr('ให้จอโหลดใหม่ — ใช้หลังบันทึกรอบใหม่')}>{tr('รีโหลดจอ')}</button>
               </div>
               {savedPlayable.length > 0 && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -459,8 +460,8 @@ export default function DisplayRotation() {
 
             <section className="card" style={{ padding: 14 }}>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                <div style={{ fontSize: 15, fontWeight: 800 }}>ตัวอย่างหน้า {focusItem ? `#${focusIdx + 1}` : ''}</div>
-                <div style={{ fontSize: 12, color: 'var(--muted)' }}>กดแถวทางซ้ายเพื่อสลับ</div>
+                <div style={{ fontSize: 15, fontWeight: 800 }}>{tr('ตัวอย่างหน้า')} {focusItem ? `#${focusIdx + 1}` : ''}</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('กดแถวทางซ้ายเพื่อสลับ')}</div>
               </div>
               <PagePreview path={focusPath} />
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 6 }}>
@@ -557,9 +558,9 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
         <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{fmtSec(shownSec)}</span>
         {canEdit && (
           <>
-            <button type="button" onClick={(e) => { e.stopPropagation(); onMove(-1); }} disabled={i === 0} style={btnXs} title="เลื่อนขึ้น">▲</button>
-            <button type="button" onClick={(e) => { e.stopPropagation(); onMove(1); }} disabled={i === n - 1} style={btnXs} title="เลื่อนลง">▼</button>
-            <button type="button" onClick={(e) => { e.stopPropagation(); onRemove(); }} style={btnXs} title="เอาออก">✕</button>
+            <button type="button" onClick={(e) => { e.stopPropagation(); onMove(-1); }} disabled={i === 0} style={btnXs} title={tr('เลื่อนขึ้น')}>▲</button>
+            <button type="button" onClick={(e) => { e.stopPropagation(); onMove(1); }} disabled={i === n - 1} style={btnXs} title={tr('เลื่อนลง')}>▼</button>
+            <button type="button" onClick={(e) => { e.stopPropagation(); onRemove(); }} style={btnXs} title={tr('เอาออก')}>✕</button>
           </>
         )}
       </div>
@@ -573,18 +574,18 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
       <div style={{ fontWeight: 800, fontSize: 14, paddingTop: 8, textAlign: 'center', color: focused ? 'var(--accent)' : 'var(--text)' }}>{i + 1}</div>
       <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
         <SearchSelect value={pageOptions.some(p => p.id === base) ? base : ''} options={pageOptions}
-          placeholder="— ค้นหาหน้า —" disabled={!canEdit}
+          placeholder={tr('— ค้นหาหน้า —')} disabled={!canEdit}
           onChange={({ id }) => onChange({ path: id || '' })} />
 
         {defs && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {defs.filter(d => paramVisible(d, params)).map(d => (
               <label key={d.key} style={{ display: 'grid', gap: 2, fontSize: 11, color: 'var(--muted)', minWidth: 0, alignContent: 'start' }}>
-                <span style={{ fontWeight: 700 }}>{d.label}</span>
+                <span style={{ fontWeight: 700 }}>{tr(d.label)}</span>
                 {d.kind === 'select' && (
                   <select value={params[d.key] || ''} disabled={!canEdit} onChange={e => setParam(d.key, e.target.value)}>
-                    <option value="">— ค่าเริ่มต้นของหน้า —</option>
-                    {d.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    <option value="">{tr('— ค่าเริ่มต้นของหน้า —')}</option>
+                    {d.options.map(o => <option key={o.value} value={o.value}>{tr(o.label)}</option>)}
                   </select>
                 )}
                 {d.kind === 'section' && (
@@ -645,16 +646,16 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
                 )}
                 {d.kind === 'station' && (
                   <select value={params[d.key] || ''} disabled={!canEdit || srcOpts.station == null} onChange={e => setParam(d.key, e.target.value)}>
-                    <option value="">{srcState('station') || '— ค่าเริ่มต้นของหน้า (จุดงานแรก) —'}</option>
+                    <option value="">{srcState('station') || tr('— ค่าเริ่มต้นของหน้า (จุดงานแรก) —')}</option>
                     {params[d.key] && !stationOpts.some(w => String(w.id) === params[d.key]) && <option value={params[d.key]}>{`(ไม่พบในรายการ) ${params[d.key]}`}</option>}
                     {stationOpts.map(w => <option key={w.id} value={String(w.id)}>{`${w.line_name || '—'} · ${w.station_name || w.id}`}</option>)}
                   </select>
                 )}
                 {d.kind === 'wtype' && (
                   <select value={params[d.key] || ''} disabled={!canEdit || srcOpts.wtype == null} onChange={e => setParam(d.key, e.target.value)}>
-                    <option value="">{srcState('wtype') || '— ยังไม่เลือก —'}</option>
+                    <option value="">{srcState('wtype') || tr('— ยังไม่เลือก —')}</option>
                     {params[d.key] && Array.isArray(srcOpts.wtype) && !srcOpts.wtype.includes(params[d.key]) && <option value={params[d.key]}>{`(ไม่พบในทะเบียน) ${params[d.key]}`}</option>}
-                    {(Array.isArray(srcOpts.wtype) ? srcOpts.wtype : []).map(t => <option key={t} value={t}>{t}</option>)}
+                    {(Array.isArray(srcOpts.wtype) ? srcOpts.wtype : []).map(t => <option key={t} value={t}>{tr(t)}</option>)}
                   </select>
                 )}
                 {d.kind === 'storeline' && (
@@ -663,7 +664,7 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
                       sections={tvSections} placeholder={ALL.line}
                       extraGroups={warehouseOpts.length ? [{ label: 'คลัง', options: warehouseOpts.map(n => ({ value: n })) }] : undefined}
                       onChange={v => setParam(d.key, v)} />
-                    {srcState('storeline') && <span style={{ fontSize: 11, color: 'var(--muted)' }}>คลัง: {srcState('storeline')}</span>}
+                    {srcState('storeline') && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('คลัง:')} {srcState('storeline')}</span>}
                   </span>
                 )}
                 {d.kind === 'line' && (
@@ -678,7 +679,7 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
           {!defs && (
-            <input type="text" value={rawQ} disabled={!canEdit || !base} placeholder="ต่อท้ายลิงก์ (ขั้นสูง · ไม่บังคับ)"
+            <input type="text" value={rawQ} disabled={!canEdit || !base} placeholder={tr('ต่อท้ายลิงก์ (ขั้นสูง · ไม่บังคับ)')}
               onChange={e => {
                 const v = e.target.value.trim();
                 onChange({ path: `${base}${v && !/^[?#]/.test(v) ? `?${v}` : v}` });
@@ -687,13 +688,13 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
           )}
           {defs && <div style={{ flex: 1 }} />}
           <input type="number" min={ROT_LIMITS.minSec} max={ROT_LIMITS.maxSec} value={it.sec ?? ''} disabled={!canEdit}
-            placeholder={`${Math.max(secOf({}, defaultSec), minSecForPath(it.path))} วิ`} title="วินาทีของหน้านี้ (ว่าง = ค่าตั้งต้น)"
+            placeholder={`${Math.max(secOf({}, defaultSec), minSecForPath(it.path))} วิ`} title={tr('วินาทีของหน้านี้ (ว่าง = ค่าตั้งต้น)')}
             onChange={e => onChange({ sec: e.target.value === '' ? null : e.target.value })} style={{ width: 96 }} />
           {canEdit && (
             <>
-              <button type="button" onClick={(e) => { e.stopPropagation(); onMove(-1); }} disabled={i === 0} style={btnSm} title="เลื่อนขึ้น">▲</button>
-              <button type="button" onClick={(e) => { e.stopPropagation(); onMove(1); }} disabled={i === n - 1} style={btnSm} title="เลื่อนลง">▼</button>
-              <button type="button" onClick={(e) => { e.stopPropagation(); onRemove(); }} style={btnSm} title="เอาออก">✕</button>
+              <button type="button" onClick={(e) => { e.stopPropagation(); onMove(-1); }} disabled={i === 0} style={btnSm} title={tr('เลื่อนขึ้น')}>▲</button>
+              <button type="button" onClick={(e) => { e.stopPropagation(); onMove(1); }} disabled={i === n - 1} style={btnSm} title={tr('เลื่อนลง')}>▼</button>
+              <button type="button" onClick={(e) => { e.stopPropagation(); onRemove(); }} style={btnSm} title={tr('เอาออก')}>✕</button>
             </>
           )}
         </div>
@@ -746,12 +747,12 @@ function PagePreview({ path }) {
           {/* key ใน array เดียวกัน = ตอนสลับ React ย้าย iframe ตัวใหม่ขึ้นมาเฉยๆ ไม่สร้างใหม่ (ไม่โหลดซ้ำ) */}
           {[shown, path].filter((p, i, a) => p && a.indexOf(p) === i).map(p => (
             // ?tvshell=1 = เห็นกรอบจอ TV เหมือนบนทีวีจริง (ไม่มีเมนู/หัวเพจ · แถบบนชุดเดียว)
-            <iframe key={p} src={`${p}${p.includes('?') ? '&' : '?'}${TV_SHELL_PARAM}=1`} title={p === shown ? 'ตัวอย่างหน้า' : 'ตัวอย่างหน้า (กำลังโหลด)'}
+            <iframe key={p} src={`${p}${p.includes('?') ? '&' : '?'}${TV_SHELL_PARAM}=1`} title={p === shown ? tr('ตัวอย่างหน้า') : tr('ตัวอย่างหน้า (กำลังโหลด)')}
               onLoad={p === path ? () => setReady(true) : undefined} style={frameSt(p !== shown)} />
           ))}
           {path !== shown && (
             <div style={{ position: 'absolute', right: 8, bottom: 8, padding: '3px 10px', borderRadius: 'var(--r-pill)', fontSize: 11,
-              background: 'var(--card)', border: '1px solid var(--border2)', color: 'var(--muted)' }}>⏳ กำลังโหลดตัวอย่าง…</div>
+              background: 'var(--card)', border: '1px solid var(--border2)', color: 'var(--muted)' }}>{tr('⏳ กำลังโหลดตัวอย่าง…')}</div>
           )}
         </>
       ) : (

@@ -16,6 +16,7 @@ import {
   classifyIntermediate, phantomCounts, sortIntermediates, PHANTOM_VERDICTS,
 } from '../utils/bomPhantom';
 
+import { tr } from '../utils/i18n';
 /* ═══ 🫧 ของลม (phantom) — ทะเบียนให้ PE คุม "คอนเฟิมแม่ ตัดลูก ไม่ตัดหลาน" ═══════════
    แท็บ 🫧 ใน /products (?tab=phantom) · 4/11 · คำสั่ง user (หลัก SAP)
 
@@ -157,7 +158,7 @@ export default function BomPhantomPanel({ onOpenSheet }) {
       {/* 09/11: ลำดับมาตรฐาน แท็บ → แถบกรอง → เนื้อหา (stdsweep เคยฟ้อง "ของแทรก ~733px") —
           คำอธิบาย 3 ย่อหน้าพับเป็น ⓘ ท้ายแถบกรอง · การ์ดสรุป/โซ่ขาด อยู่ใต้แถบกรอง (โซ่ขาดยังโชว์เสมอ ห้ามซ่อน) */}
       <FilterBar style={{ marginBottom: 12 }}>
-        <Segmented label="สถานะ" value={filter} onChange={setFilter} options={[
+        <Segmented label={tr('สถานะ')} value={filter} onChange={setFilter} options={[
           { value: 'all',       label: `ทั้งหมด (${counts.total})` },
           { value: 'gap',       label: `🔴 โซ่ขาด (${counts.gap})` },
           { value: 'seeded',    label: `🟡 รอยืนยัน (${counts.seeded})` },
@@ -166,42 +167,42 @@ export default function BomPhantomPanel({ onOpenSheet }) {
         ]} />
         <SearchInput value={search} onChange={setSearch} fields="MAT / ชื่อพาร์ท" />
         <span className="spacer" />
-        <span className="filter-count">{shown.length} รายการ</span>
-        <InfoMore label="กฎการตัดสต็อก / ของลมคืออะไร" id="bom_phantom_help">
-          <b>กฎการตัดสต็อก</b> — คอนเฟิมใบไหน ตัด<b>ลูกที่ติดตัวใบนั้น</b>เท่านั้น · <b>ลูกมีหน้าที่ไปตัดหลาน</b>เมื่อใบของลูกถูกคอนเฟิม ·
-          ผัง BOM สร้าง<b>ใบเดียว</b> ลูก/หลานไม่ต้องมีใบแยก
-          <div style={{ marginTop: 4 }}><b>ของลม (phantom)</b> = <b>ข้อยกเว้น</b> สำหรับชิ้นที่ไม่มีวันเปิดใบผลิตเอง —
+        <span className="filter-count">{shown.length} {tr('รายการ')}</span>
+        <InfoMore label={tr('กฎการตัดสต็อก / ของลมคืออะไร')} id="bom_phantom_help">
+          <b>{tr('กฎการตัดสต็อก')}</b> {tr('— คอนเฟิมใบไหน ตัด')}<b>{tr('ลูกที่ติดตัวใบนั้น')}</b>{tr('เท่านั้น ·')} <b>{tr('ลูกมีหน้าที่ไปตัดหลาน')}</b>เมื่อใบของลูกถูกคอนเฟิม ·
+          ผัง BOM สร้าง<b>{tr('ใบเดียว')}</b> ลูก/หลานไม่ต้องมีใบแยก
+          <div style={{ marginTop: 4 }}><b>{tr('ของลม (phantom)')}</b> = <b>{tr('ข้อยกเว้น')}</b> สำหรับชิ้นที่ไม่มีวันเปิดใบผลิตเอง —
             ติ๊กแล้วระบบจะข้ามตัวมัน ไปตัดลูกของมันที่ชั้นแม่แทน (ขั้น OP เป็นของลมอัตโนมัติ)</div>
-          <div style={{ marginTop: 4 }}>จอนี้แก้ได้แค่ทะเบียนของลม — <b>ไม่แก้ BOM ให้</b> (PE เป็นเจ้าของข้อมูล)</div>
+          <div style={{ marginTop: 4 }}>{tr('จอนี้แก้ได้แค่ทะเบียนของลม —')} <b>{tr('ไม่แก้ BOM ให้')}</b> {tr('(PE เป็นเจ้าของข้อมูล)')}</div>
         </InfoMore>
       </FilterBar>
 
       {loadFail && (
-        <NoticeBar tone="bad" style={{ marginBottom: 10 }}>อ่านข้อมูลไม่สำเร็จ — <b>ตัวเลขข้างล่างเชื่อไม่ได้</b> ({loadFail})</NoticeBar>
+        <NoticeBar tone="bad" style={{ marginBottom: 10 }}>{tr('อ่านข้อมูลไม่สำเร็จ —')} <b>{tr('ตัวเลขข้างล่างเชื่อไม่ได้')}</b> ({loadFail})</NoticeBar>
       )}
 
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-        <Card n={counts.total} label="ลูกกลางทั้งหมด" />
-        <Card n={gaps.length} label="🔴 โซ่ขาด (ไม่มีใครตัด)" color={gaps.length ? BAD : undefined} />
-        <Card n={counts.seeded} label="🟡 ระบบเดา รอยืนยัน" color={counts.seeded ? WARN : undefined} />
-        <Card n={counts.confirmed} label="ของลม ยืนยันแล้ว" color={OK} />
-        <Card n={counts.real} label="ของจริง (มีใบผลิตเอง)" />
-        {counts.unknown > 0 && <Card n={counts.unknown} label="⚠️ ตัดสินไม่ได้" color={WARN} />}
+        <Card n={counts.total} label={tr('ลูกกลางทั้งหมด')} />
+        <Card n={gaps.length} label={tr('🔴 โซ่ขาด (ไม่มีใครตัด)')} color={gaps.length ? BAD : undefined} />
+        <Card n={counts.seeded} label={tr('🟡 ระบบเดา รอยืนยัน')} color={counts.seeded ? WARN : undefined} />
+        <Card n={counts.confirmed} label={tr('ของลม ยืนยันแล้ว')} color={OK} />
+        <Card n={counts.real} label={tr('ของจริง (มีใบผลิตเอง)')} />
+        {counts.unknown > 0 && <Card n={counts.unknown} label={tr('⚠️ ตัดสินไม่ได้')} color={WARN} />}
       </div>
 
       {/* 🔴 โซ่ขาด = mat ที่อยู่ใน BOM แต่ไม่มีใบไหนตัดมันเลย — ต้องโชว์ ห้ามซ่อน (กฎความซื่อสัตย์ของจอ) */}
       {gaps.length > 0 && (
         <div style={{ background: 'var(--card)', border: `1px solid ${BAD}`, borderRadius: 'var(--r-md)',
                       padding: '8px 12px', marginBottom: 10, fontSize: 12, lineHeight: 1.6 }}>
-          🔴 <b style={{ color: BAD }}>โซ่ขาด {gaps.length} รายการ</b> — อยู่ใน BOM แต่
-          <b> ไม่มีใบผลิตไหนตัดมันไปใช้เลย</b> (กฎ: ตัดลูกตรง · ลูกไปตัดหลาน ⇒ โซ่ต้องเดินถึงทุกชั้น)
+          🔴 <b style={{ color: BAD }}>{tr('โซ่ขาด')} {gaps.length} {tr('รายการ')}</b> — อยู่ใน BOM แต่
+          <b> {tr('ไม่มีใบผลิตไหนตัดมันไปใช้เลย')}</b> (กฎ: ตัดลูกตรง · ลูกไปตัดหลาน ⇒ โซ่ต้องเดินถึงทุกชั้น)
           <div style={{ overflowX: 'auto', marginTop: 6 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr>
-                <th style={th}>ชิ้นงาน</th><th style={th}>ห้อยใต้</th>
-                <th style={{ ...th, textAlign: 'right' }}>ใบผลิตเอง</th>
-                <th style={{ ...th, textAlign: 'right' }}>คงเหลือ</th><th style={th}>ต้องทำอะไร</th>
+                <th style={th}>{tr('ชิ้นงาน')}</th><th style={th}>{tr('ห้อยใต้')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('ใบผลิตเอง')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('คงเหลือ')}</th><th style={th}>{tr('ต้องทำอะไร')}</th>
               </tr></thead>
               <tbody>
                 {gaps.map(g => (
@@ -224,12 +225,12 @@ export default function BomPhantomPanel({ onOpenSheet }) {
 
       {hidden > 0 && (
         <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '6px 2px' }}>
-          ซ่อนอยู่ {hidden} รายการจากตัวกรอง (ทั้งหมด {list.length})
+          ซ่อนอยู่ {hidden} {tr('รายการจากตัวกรอง (ทั้งหมด')} {list.length})
         </div>
       )}
 
       {loading ? (
-        <div style={{ fontSize: 12, color: 'var(--muted)', padding: 12 }}>กำลังโหลด…</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)', padding: 12 }}>{tr('กำลังโหลด…')}</div>
       ) : shown.length === 0 ? (
         <div style={{ fontSize: 12, color: 'var(--muted)', padding: 12 }}>
           {loadFail ? 'อ่านข้อมูลไม่ได้ — ไม่ใช่ว่าไม่มีรายการ' : 'ไม่มีรายการตามตัวกรองนี้'}
@@ -239,13 +240,13 @@ export default function BomPhantomPanel({ onOpenSheet }) {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <th style={th}>ชิ้นงาน</th>
-                <th style={th}>สถานะ</th>
-                <th style={{ ...th, textAlign: 'right' }}>ใบผลิตเอง</th>
-                <th style={{ ...th, textAlign: 'right' }}>คงเหลือ</th>
-                <th style={{ ...th, textAlign: 'right' }}>ถูกอ้างในใบ</th>
-                <th style={{ ...th, textAlign: 'right' }}>ลูก (แถว)</th>
-                <th style={th}>จัดการ</th>
+                <th style={th}>{tr('ชิ้นงาน')}</th>
+                <th style={th}>{tr('สถานะ')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('ใบผลิตเอง')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('คงเหลือ')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('ถูกอ้างในใบ')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('ลูก (แถว)')}</th>
+                <th style={th}>{tr('จัดการ')}</th>
               </tr>
             </thead>
             <tbody>
@@ -279,9 +280,9 @@ export default function BomPhantomPanel({ onOpenSheet }) {
                     <td style={{ ...td, textAlign: 'right' }}>{fmtQty(r.kid_rows)}</td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>
                       {r.verdict === 'op' ? (
-                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>อัตโนมัติ</span>
+                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('อัตโนมัติ')}</span>
                       ) : !canEdit ? (
-                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>ดูอย่างเดียว</span>
+                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ดูอย่างเดียว')}</span>
                       ) : (
                         <span style={{ display: 'inline-flex', gap: 6 }}>
                           {r.verdict === 'seeded' && (
@@ -295,7 +296,7 @@ export default function BomPhantomPanel({ onOpenSheet }) {
                             style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-md)',
                                      border: '1px solid var(--border)', color: 'var(--text)',
                                      background: 'var(--card)', cursor: 'pointer' }}>
-                            {isPhantom ? 'ไม่ใช่ของลม' : 'ติ๊กเป็นของลม'}
+                            {isPhantom ? tr('ไม่ใช่ของลม') : tr('ติ๊กเป็นของลม')}
                           </button>
                         </span>
                       )}

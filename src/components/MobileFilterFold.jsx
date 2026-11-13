@@ -2,6 +2,7 @@ import { Children, Fragment, isValidElement, useLayoutEffect, useRef, useState }
 import SearchInput from './SearchInput';
 import Segmented from './Segmented';
 
+import { tr } from '../utils/i18n';
 /* ══ 🔎 MobileFilterFold — พับแถบตัวกรองบนมือถือ (2026-10-15 · docs/MOBILE-UX-STANDARD.md §2 ข้อ 3) ══════════════
    ปัญหาที่เจอบน handheld 360×640: แถบกรอง (ช่วงเวลา + dropdown 5 ตัว + กะ + ค้นหา) กินจอแรกทั้งจอ
    ⇒ ปุ่มหลัก ("➕ แจ้งซ่อมใหม่" /mtn-repair) ตกไปจอที่ 2 · คนหน้างานเปิดมาเพื่อ "ทำงาน" ไม่ใช่ "กรอง"
@@ -67,7 +68,7 @@ export default function MobileFilterFold({ summary, search, tail, children }) {
         <button type="button" className="mfold-toggle" aria-expanded={open} onClick={() => setOpen(o => !o)}>
           <span className="mfold-ico" aria-hidden="true">🔎</span>
           <span className="mfold-txt">
-            <b>ตัวกรอง</b>{summary ? <span className="mfold-sum"> · {summary}</span> : null}
+            <b>{tr('ตัวกรอง')}</b>{summary ? <span className="mfold-sum"> · {summary}</span> : null}
           </span>
           {/* บอก "ค่าที่ตั้งไว้" ไม่ใช่แค่จำนวน — คนต้องรู้ว่าทำไมรายการหาย (เช่น 🔵 ยังไม่ปิด) */}
           {active.length > 0 && <span className="mfold-n" title={active.join(' · ')}>{active[0]}{active.length > 1 ? ` +${active.length - 1}` : ''}</span>}

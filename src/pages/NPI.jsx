@@ -36,6 +36,7 @@ import NpiTemplates from '../components/NpiTemplates';
 import PeSetFromMasterModal from '../components/PeSetFromMasterModal';
 import { DeleteButton } from '../components/IconButton';
 
+import { tr } from '../utils/i18n';
 /* ═══════════════════════════════════════════════════════════════════════════
    🚀 NPI — พาร์ทใหม่: APQP / PPAP / Drawing Rev / ECI / Tooling Plan — /npi
    2026-09-07 · แบบเต็ม + กฎ: docs/modules/npi-apqp.md
@@ -336,24 +337,24 @@ export default function NPI() {
 
   const projectSelect = (
     <select value={projectId} onChange={e => setProject(e.target.value)} className="grow" style={{ minWidth: 220, maxWidth: 420 }}>
-      <option value="">— เลือกโปรเจครุ่นใหม่ —</option>
+      <option value="">{tr('— เลือกโปรเจครุ่นใหม่ —')}</option>
       {projects.map(p => <option key={p.id} value={p.id}>{p.project_code} · {p.name}{p.status !== 'active' && p.status !== 'planning' ? ` (${PROJECT_STATUS[p.status]?.label})` : ''}</option>)}
     </select>
   );
 
   return (
     <Page>
-      <PageHeader title="พาร์ทใหม่ — APQP / PPAP" icon="🚀" sub={sub}
-        filters={<><span className="filter-label">โปรเจค</span>{projectSelect}</>}
+      <PageHeader title={tr('พาร์ทใหม่ — APQP / PPAP')} icon="🚀" sub={sub}
+        filters={<><span className="filter-label">{tr('โปรเจค')}</span>{projectSelect}</>}
         actions={<>
           {/* 🧭 ข้ามไปบอร์ด New Model ของรุ่นเดียวกัน — โผล่เฉพาะเมื่อผูกแล้วเท่านั้น
               (ปุ่มที่กดไปแล้วไม่ตรงรุ่น แย่กว่าไม่มีปุ่ม · ยังไม่ผูก = ไปติ๊กที่ ✏️ โปรเจค) */}
           {nmBoardHref && (
             <a href={nmBoardHref} style={{ ...ghost, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
-              title="เปิดบอร์ด New Model (IEC) ของรุ่นนี้">บอร์ด New Model</a>
+              title={tr('เปิดบอร์ด New Model (IEC) ของรุ่นนี้')}>{tr('บอร์ด New Model')}</a>
           )}
-          {project && canEdit && <button type="button" className="pg-btn" onClick={() => setProjModal({ ...emptyProject, ...project })}>โปรเจค</button>}
-          {canEdit && <button type="button" className="pg-btn" onClick={() => setProjModal({ ...emptyProject, project_code: nextProjectCode(projects.map(p => p.project_code), today), template_id: templates[0]?.id || '' })}>+ โปรเจค</button>}
+          {project && canEdit && <button type="button" className="pg-btn" onClick={() => setProjModal({ ...emptyProject, ...project })}>{tr('โปรเจค')}</button>}
+          {canEdit && <button type="button" className="pg-btn" onClick={() => setProjModal({ ...emptyProject, project_code: nextProjectCode(projects.map(p => p.project_code), today), template_id: templates[0]?.id || '' })}>{tr('+ โปรเจค')}</button>}
         </>}
         tabs={tabs} tab={tab} onTab={setTab} />
 
@@ -363,7 +364,7 @@ export default function NPI() {
         <ReadOnlyNote role={role} what="อนุมัติเอกสารส่งมอบ/PPAP · ปล่อยแบบ · ตัดสิน ECI" permKey="npi:approve" compact />
       )}
       <InfoMore id="npi_help" lead="ต้นน้ำของ ESM: ติดตามพาร์ทรุ่นใหม่ตั้งแต่รับงานจนถึง SOP">
-        เฟสและรายการเอกสารส่งมอบมาจาก <b>แม่แบบต่อลูกค้า</b> (APQP 5 เฟส + PPAP 18 elements · Toyota SPTT0–4) — เพิ่มลูกค้าใหม่ที่แท็บ ⚙️ แม่แบบ ไม่ต้องแก้โค้ด ·
+        เฟสและรายการเอกสารส่งมอบมาจาก <b>{tr('แม่แบบต่อลูกค้า')}</b> (APQP 5 เฟส + PPAP 18 elements · Toyota SPTT0–4) — เพิ่มลูกค้าใหม่ที่แท็บ ⚙️ แม่แบบ ไม่ต้องแก้โค้ด ·
         พาร์ทจะได้สำเนาเฟส/รายการ ณ วันสร้าง (แม่แบบเปลี่ยนทีหลังไม่ย้อนแก้ — กด 🔄 sync เพื่อเติมรายการที่ขาด) ·
         ไฟสี: 🟢 อนุมัติ/ตามแผน · 🟡 กำลังทำ/รออนุมัติ/เหลือ ≤7 วัน · 🔴 เลยกำหนด/ตีกลับ/เฟสเลยวันแผน ·
         ผูกพาร์ทกับชุด PFC/FMEA/CP (`/pe-docs`) และมาตรฐานตรวจ QA (`/qa-setup`) เพื่อให้เอกสารตอน SOP เป็นชุดเดียวกับ mass production ·
@@ -371,7 +372,7 @@ export default function NPI() {
         ยังไม่ทำ: supplier portal (เฟส 4) · การแจ้งเตือนอัตโนมัติเมื่อเอกสารเลยกำหนด
       </InfoMore>
 
-      {loading ? <div style={{ color: 'var(--muted)', padding: 30 }}>กำลังโหลด…</div> : (
+      {loading ? <div style={{ color: 'var(--muted)', padding: 30 }}>{tr('กำลังโหลด…')}</div> : (
         <>
           {tab === 'board' && (
             <Board projects={projects} rollByProject={rollByProject} templates={templates} project={project} tplPhases={tplPhases}
@@ -421,43 +422,43 @@ export default function NPI() {
       )}
 
       {projModal && (
-        <Modal title={projModal.id ? 'แก้ไขโปรเจครุ่นใหม่' : 'สร้างโปรเจครุ่นใหม่'} onClose={() => setProjModal(null)} width={680}
+        <Modal title={projModal.id ? tr('แก้ไขโปรเจครุ่นใหม่') : tr('สร้างโปรเจครุ่นใหม่')} onClose={() => setProjModal(null)} width={680}
           footer={<>
-            {projModal.id && <button style={{ ...ghost, color: 'var(--red)', marginRight: 'auto' }} onClick={() => { setProjModal(null); delProject(projModal); }}>ลบโปรเจค</button>}
-            <button style={ghost} onClick={() => setProjModal(null)}>ยกเลิก</button>
-            <button style={btn()} disabled={saving} onClick={saveProject}>{saving ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+            {projModal.id && <button style={{ ...ghost, color: 'var(--red)', marginRight: 'auto' }} onClick={() => { setProjModal(null); delProject(projModal); }}>{tr('ลบโปรเจค')}</button>}
+            <button style={ghost} onClick={() => setProjModal(null)}>{tr('ยกเลิก')}</button>
+            <button style={btn()} disabled={saving} onClick={saveProject}>{saving ? tr('กำลังบันทึก…') : tr('บันทึก')}</button>
           </>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
-            <Field label="รหัสโปรเจค" hint="เว้นว่าง = ระบบตั้งให้"><input style={inp} value={projModal.project_code} onChange={e => setProjModal({ ...projModal, project_code: e.target.value })} placeholder="NPI-2026-001" /></Field>
-            <Field label="ชื่อโปรเจค *"><input style={inp} value={projModal.name} onChange={e => setProjModal({ ...projModal, name: e.target.value })} placeholder="P703 MCA 2027" /></Field>
+            <Field label={tr('รหัสโปรเจค')} hint={tr('เว้นว่าง = ระบบตั้งให้')}><input style={inp} value={projModal.project_code} onChange={e => setProjModal({ ...projModal, project_code: e.target.value })} placeholder="NPI-2026-001" /></Field>
+            <Field label={tr('ชื่อโปรเจค *')}><input style={inp} value={projModal.name} onChange={e => setProjModal({ ...projModal, name: e.target.value })} placeholder="P703 MCA 2027" /></Field>
             {/* ลูกค้า — จากรายชื่อใน Product Master (CustomerSelect) ให้ตรงกับแม่แบบ/ชุด PE (2026-09-07) */}
-            <Field label="ลูกค้า"><CustomerSelect value={projModal.customer || ''} history={custHist} placeholder="FORD" onChange={({ customer }) => setProjModal({ ...projModal, customer })} /></Field>
-            <Field label="Model" hint="จุดโยง pe_doc_sets.model"><input style={inp} value={projModal.model || ''} onChange={e => setProjModal({ ...projModal, model: e.target.value })} placeholder="P703" /></Field>
-            <Field label="แม่แบบเฟส (ลูกค้า) *" hint="เปลี่ยนภายหลังไม่ย้อนแก้พาร์ทที่สร้างแล้ว" span={2}>
+            <Field label={tr('ลูกค้า')}><CustomerSelect value={projModal.customer || ''} history={custHist} placeholder="FORD" onChange={({ customer }) => setProjModal({ ...projModal, customer })} /></Field>
+            <Field label="Model" hint={tr('จุดโยง pe_doc_sets.model')}><input style={inp} value={projModal.model || ''} onChange={e => setProjModal({ ...projModal, model: e.target.value })} placeholder="P703" /></Field>
+            <Field label={tr('แม่แบบเฟส (ลูกค้า) *')} hint={tr('เปลี่ยนภายหลังไม่ย้อนแก้พาร์ทที่สร้างแล้ว')} span={2}>
               <select style={inp} value={projModal.template_id} onChange={e => setProjModal({ ...projModal, template_id: e.target.value })} disabled={!!projModal.id && parts.length > 0}>
-                <option value="">— เลือก —</option>
-                {templates.filter(t => t.is_active).map(t => <option key={t.id} value={t.id}>{t.label}{t.customer ? ` (${t.customer})` : ''} · {t.phases.length} เฟส / {t.delivs.length} รายการ</option>)}
+                <option value="">{tr('— เลือก —')}</option>
+                {templates.filter(t => t.is_active).map(t => <option key={t.id} value={t.id}>{t.label}{t.customer ? ` (${t.customer})` : ''} · {t.phases.length} {tr('เฟส /')} {t.delivs.length} {tr('รายการ')}</option>)}
               </select>
             </Field>
-            <Field label="วัน kickoff"><input type="date" style={inp} value={projModal.kickoff_date || ''} onChange={e => setProjModal({ ...projModal, kickoff_date: e.target.value })} /></Field>
-            <Field label="วัน SOP" hint="พาร์ทใหม่จะกระจายวันแผนเฟสจาก kickoff→SOP ให้ (แก้ได้)"><input type="date" style={inp} value={projModal.sop_date || ''} onChange={e => setProjModal({ ...projModal, sop_date: e.target.value })} /></Field>
-            <Field label="สถานะ"><MetaSelect value={projModal.status} onChange={v => setProjModal({ ...projModal, status: v })} meta={PROJECT_STATUS} /></Field>
+            <Field label={tr('วัน kickoff')}><input type="date" style={inp} value={projModal.kickoff_date || ''} onChange={e => setProjModal({ ...projModal, kickoff_date: e.target.value })} /></Field>
+            <Field label={tr('วัน SOP')} hint={tr('พาร์ทใหม่จะกระจายวันแผนเฟสจาก kickoff→SOP ให้ (แก้ได้)')}><input type="date" style={inp} value={projModal.sop_date || ''} onChange={e => setProjModal({ ...projModal, sop_date: e.target.value })} /></Field>
+            <Field label={tr('สถานะ')}><MetaSelect value={projModal.status} onChange={v => setProjModal({ ...projModal, status: v })} meta={PROJECT_STATUS} /></Field>
             {/* leader = user ระบบ (profiles) → PersonSelect แทน datalist (npi_projects ยังไม่มีคอลัมน์ leader_uid — เก็บชื่ออย่างเดียว · 2026-09-07) */}
             <Field label="Project leader"><PersonSelect value={projModal.leader_name || ''} history={leaderHist} onChange={r => setProjModal({ ...projModal, leader_name: r.name })} /></Field>
             {/* 🔗 ผูกกับบอร์ด New Model (/nm-board) — 2026-10-06 · คำสั่ง user "2 หน้านี้ต้อง link กัน"
                 🔴 ระบบ **เรียง** ตัวที่น่าจะใช่ขึ้นก่อนเท่านั้น ห้ามเลือกให้เอง — ผูกผิดรุ่น = บอร์ดโชว์ตัวเลขของรุ่นอื่น
                    ซึ่งแย่กว่าไม่โชว์เลย (กฎความซื่อสัตย์ของจอ) */}
-            <Field label="รุ่นบนบอร์ด New Model" span={2}
-              hint="ผูกแล้วบอร์ด /nm-board จะดึงตัวเลขจริงจากโปรเจคนี้ไปแสดง และกดข้ามไปมาได้ · เว้นว่าง = ยังไม่ผูก">
+            <Field label={tr('รุ่นบนบอร์ด New Model')} span={2}
+              hint={tr('ผูกแล้วบอร์ด /nm-board จะดึงตัวเลขจริงจากโปรเจคนี้ไปแสดง และกดข้ามไปมาได้ · เว้นว่าง = ยังไม่ผูก')}>
               <select style={inp} value={projModal.nm_board_id || ''}
                 onChange={e => setProjModal({ ...projModal, nm_board_id: e.target.value })}>
-                <option value="">— ยังไม่ผูกกับบอร์ด —</option>
+                <option value="">{tr('— ยังไม่ผูกกับบอร์ด —')}</option>
                 {boardOptions(NM_BOARD_PROJECTS, { customer: projModal.customer, model: projModal.model }).map(o => (
                   <option key={o.id} value={o.id}>{o.label}{o.hint ? ` — ${o.hint}` : ''}</option>
                 ))}
               </select>
             </Field>
-            <Field label="รายละเอียด" span={2}><textarea style={{ ...inp, minHeight: 60 }} value={projModal.description || ''} onChange={e => setProjModal({ ...projModal, description: e.target.value })} /></Field>
+            <Field label={tr('รายละเอียด')} span={2}><textarea style={{ ...inp, minHeight: 60 }} value={projModal.description || ''} onChange={e => setProjModal({ ...projModal, description: e.target.value })} /></Field>
           </div>
         </Modal>
       )}
@@ -465,47 +466,47 @@ export default function NPI() {
       {partModal && project && (
         <Modal title={partModal.id ? `แก้ไขพาร์ท ${partModal.part_no}` : 'เพิ่มพาร์ทในโปรเจค'} onClose={() => setPartModal(null)} width={720}
           footer={<>
-            <button style={ghost} onClick={() => setPartModal(null)}>ยกเลิก</button>
-            <button style={btn()} disabled={saving} onClick={savePart}>{saving ? 'กำลังบันทึก…' : 'บันทึก'}</button>
+            <button style={ghost} onClick={() => setPartModal(null)}>{tr('ยกเลิก')}</button>
+            <button style={btn()} disabled={saving} onClick={savePart}>{saving ? tr('กำลังบันทึก…') : tr('บันทึก')}</button>
           </>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
-            <Field label="ชุด PFC/FMEA/CP ที่มีอยู่" hint="เลือกแล้วเติมข้อมูลพาร์ทให้ · ไม่มี = สร้างจากคลัง PFMEA ได้เลย" span={2}>
+            <Field label={tr('ชุด PFC/FMEA/CP ที่มีอยู่')} hint={tr('เลือกแล้วเติมข้อมูลพาร์ทให้ · ไม่มี = สร้างจากคลัง PFMEA ได้เลย')} span={2}>
               <div style={{ display: 'flex', gap: 6 }}>
               <select style={inp} value={partModal.pe_set_id} onChange={e => pickPeSet(e.target.value)}>
-                <option value="">— ยังไม่มีชุดเอกสาร PE (สร้างที่ /pe-docs แล้วค่อยผูก) —</option>
+                <option value="">{tr('— ยังไม่มีชุดเอกสาร PE (สร้างที่ /pe-docs แล้วค่อยผูก) —')}</option>
                 {peSets.map(s => <option key={s.id} value={s.id}>{s.part_no} · {s.part_name || '—'} · {s.model || ''} {s.line_name ? `· ${s.line_name}` : ''}</option>)}
               </select>
-                <button style={{ ...ghost, whiteSpace: 'nowrap' }} onClick={() => setFromMasterOpen(true)} title={peMasters.length ? 'เลือกกระบวนการมาตรฐานตามลำดับผลิต → ได้ OP + PFMEA ร่างทันที' : 'คลัง PFMEA ยังว่าง (ยังไม่ apply migration 20260915_pe_fmea_master)'}>สร้างจาก master</button>
+                <button style={{ ...ghost, whiteSpace: 'nowrap' }} onClick={() => setFromMasterOpen(true)} title={peMasters.length ? tr('เลือกกระบวนการมาตรฐานตามลำดับผลิต → ได้ OP + PFMEA ร่างทันที') : tr('คลัง PFMEA ยังว่าง (ยังไม่ apply migration 20260915_pe_fmea_master)')}>{tr('สร้างจาก master')}</button>
               </div>
             </Field>
-            <Field label="Part No. (ลูกค้า) *"><input style={inp} value={partModal.part_no} onChange={e => setPartModal({ ...partModal, part_no: e.target.value })} placeholder="MB3B-16E060-CH" /></Field>
-            <Field label="ชื่อพาร์ท"><input style={inp} value={partModal.part_name || ''} onChange={e => setPartModal({ ...partModal, part_name: e.target.value })} /></Field>
+            <Field label={tr('Part No. (ลูกค้า) *')}><input style={inp} value={partModal.part_no} onChange={e => setPartModal({ ...partModal, part_no: e.target.value })} placeholder="MB3B-16E060-CH" /></Field>
+            <Field label={tr('ชื่อพาร์ท')}><input style={inp} value={partModal.part_name || ''} onChange={e => setPartModal({ ...partModal, part_name: e.target.value })} /></Field>
             {/* 🔴 mat_no = คีย์โยง Product Master ตอน SOP → ProductSelect · พาร์ทใหม่ก่อน SOP ยังไม่มีใน master พิมพ์เองได้พร้อมป้าย (2026-09-07) */}
-            <Field label="MAT No. (SAP)" hint="โยง Product Master ตอน SOP">
+            <Field label="MAT No. (SAP)" hint={tr('โยง Product Master ตอน SOP')}>
               <ProductSelect value={partModal.mat_no || ''} lines={partModal.line_name ? [partModal.line_name] : undefined} history={matHist}
                 allowFree freeHint="พาร์ทใหม่ที่ยังไม่มีใน Product Master — ผูกให้ตรงตอน SOP"
                 onChange={r => setPartModal({ ...partModal, mat_no: r.mat_no })} />
             </Field>
-            <Field label="ไลน์ที่วางแผนผลิต">
-              <LineSelect lines={lines} value={partModal.line_name || ''} onChange={v => setPartModal({ ...partModal, line_name: v })} role={role} lineId={lineId} sections={sections} style={inp} placeholder="— ยังไม่กำหนด —" />
+            <Field label={tr('ไลน์ที่วางแผนผลิต')}>
+              <LineSelect lines={lines} value={partModal.line_name || ''} onChange={v => setPartModal({ ...partModal, line_name: v })} role={role} lineId={lineId} sections={sections} style={inp} placeholder={tr('— ยังไม่กำหนด —')} />
             </Field>
-            <Field label="มาตรฐานตรวจ QA (qa_parts)" hint="ตั้งที่ /qa-setup">
+            <Field label={tr('มาตรฐานตรวจ QA (qa_parts)')} hint={tr('ตั้งที่ /qa-setup')}>
               <select style={inp} value={partModal.qa_part_id} onChange={e => setPartModal({ ...partModal, qa_part_id: e.target.value })}>
-                <option value="">— ยังไม่ผูก —</option>
+                <option value="">{tr('— ยังไม่ผูก —')}</option>
                 {qaParts.map(q => <option key={q.id} value={q.id}>{q.part_no} · {q.part_name || ''}</option>)}
               </select>
             </Field>
-            <Field label="PPAP level" hint="ลูกค้ากำหนด (default 3)">
+            <Field label="PPAP level" hint={tr('ลูกค้ากำหนด (default 3)')}>
               <select style={inp} value={partModal.ppap_level} onChange={e => setPartModal({ ...partModal, ppap_level: e.target.value })}>
                 {[1, 2, 3, 4, 5].map(l => <option key={l} value={l}>Level {l}</option>)}
               </select>
             </Field>
-            <Field label="ผู้รับผิดชอบพาร์ท"><PersonSelect value={partModal.owner_name || ''} history={ownerHist} onChange={r => setPartModal({ ...partModal, owner_name: r.name })} /></Field>
-            <Field label="หมายเหตุ"><input style={inp} value={partModal.remark || ''} onChange={e => setPartModal({ ...partModal, remark: e.target.value })} /></Field>
+            <Field label={tr('ผู้รับผิดชอบพาร์ท')}><PersonSelect value={partModal.owner_name || ''} history={ownerHist} onChange={r => setPartModal({ ...partModal, owner_name: r.name })} /></Field>
+            <Field label={tr('หมายเหตุ')}><input style={inp} value={partModal.remark || ''} onChange={e => setPartModal({ ...partModal, remark: e.target.value })} /></Field>
           </div>
           {!partModal.id && (
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 10 }}>
-              บันทึกแล้วระบบจะสร้าง <b>{template?.phases?.length || 0} เฟส</b> + <b>{template?.delivs?.filter(d => d.is_active !== false).length || 0} รายการเอกสารส่งมอบ</b> จากแม่แบบ "{template?.label || '—'}" ให้พาร์ทนี้
+              บันทึกแล้วระบบจะสร้าง <b>{template?.phases?.length || 0} {tr('เฟส')}</b> + <b>{template?.delivs?.filter(d => d.is_active !== false).length || 0} {tr('รายการเอกสารส่งมอบ')}</b> จากแม่แบบ "{template?.label || '—'}" ให้พาร์ทนี้
             </div>
           )}
         </Modal>
@@ -521,7 +522,7 @@ export default function NPI() {
 }
 
 function NeedProject() {
-  return <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>เลือกโปรเจครุ่นใหม่ที่หัวหน้าเพจก่อน (หรือกด + โปรเจค)</div>;
+  return <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>{tr('เลือกโปรเจครุ่นใหม่ที่หัวหน้าเพจก่อน (หรือกด + โปรเจค)')}</div>;
 }
 
 /* ── ตารางพาร์ทของโปรเจค ── */
@@ -529,15 +530,15 @@ function PartsTable({ parts, rollByPart, partId, onPick, canEdit, onAdd, onEdit,
   return (
     <div style={{ ...card, marginBottom: 14 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-        <div style={{ fontSize: 14, fontWeight: 800 }}>พาร์ทในโปรเจค ({parts.length})</div>
-        {canEdit && <button style={btn()} onClick={onAdd}>+ พาร์ท</button>}
+        <div style={{ fontSize: 14, fontWeight: 800 }}>{tr('พาร์ทในโปรเจค (')}{parts.length})</div>
+        {canEdit && <button style={btn()} onClick={onAdd}>{tr('+ พาร์ท')}</button>}
       </div>
-      {!parts.length ? <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>ยังไม่มีพาร์ท — กด + พาร์ท (เลือกจากชุด PFC/FMEA/CP ที่มีอยู่ได้เลย เช่น 060/061)</div> : (
+      {!parts.length ? <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>{tr('ยังไม่มีพาร์ท — กด + พาร์ท (เลือกจากชุด PFC/FMEA/CP ที่มีอยู่ได้เลย เช่น 060/061)')}</div> : (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>
-              <th style={thSt}></th><th style={thSt}>Part No.</th><th style={thSt}>ชื่อ</th><th style={thSt}>ไลน์</th>
-              <th style={thSt}>เฟสปัจจุบัน</th><th style={{ ...thSt, textAlign: 'right' }}>เอกสาร</th><th style={thSt}>PPAP</th><th style={thSt}>PE docs</th><th style={thSt}>สถานะ</th><th style={thSt}></th>
+              <th style={thSt}></th><th style={thSt}>Part No.</th><th style={thSt}>{tr('ชื่อ')}</th><th style={thSt}>{tr('ไลน์')}</th>
+              <th style={thSt}>{tr('เฟสปัจจุบัน')}</th><th style={{ ...thSt, textAlign: 'right' }}>{tr('เอกสาร')}</th><th style={thSt}>PPAP</th><th style={thSt}>PE docs</th><th style={thSt}>{tr('สถานะ')}</th><th style={thSt}></th>
             </tr></thead>
             <tbody>
               {parts.map(p => {
@@ -548,16 +549,16 @@ function PartsTable({ parts, rollByPart, partId, onPick, canEdit, onAdd, onEdit,
                     <td style={tdSt}><LightDot light={r.light} /></td>
                     <td style={{ ...tdSt, fontFamily: 'monospace', fontWeight: 800, color: 'var(--text)' }}>{p.part_no}</td>
                     <td style={tdSt}>{p.part_name || <span style={{ color: 'var(--muted)' }}>—</span>}</td>
-                    <td style={tdSt}>{p.line_name || <span style={{ color: 'var(--amber)', fontWeight: 700 }} title="ยังไม่กำหนดไลน์">—</span>}</td>
-                    <td style={tdSt}>{r.current ? <Pill label={r.current.label} color="var(--blue)" /> : <span style={{ color: 'var(--amber)' }}>ไม่มีเฟส</span>}</td>
-                    <td style={{ ...tdSt, textAlign: 'right', whiteSpace: 'nowrap' }}>{r.done ?? 0}/{r.total ?? 0} <span style={{ color: 'var(--muted)' }}>({r.pct ?? 0}%)</span>{r.overdue ? <span style={{ color: 'var(--red)', fontWeight: 800 }}> · เลย {r.overdue}</span> : null}</td>
+                    <td style={tdSt}>{p.line_name || <span style={{ color: 'var(--amber)', fontWeight: 700 }} title={tr('ยังไม่กำหนดไลน์')}>—</span>}</td>
+                    <td style={tdSt}>{r.current ? <Pill label={r.current.label} color="var(--blue)" /> : <span style={{ color: 'var(--amber)' }}>{tr('ไม่มีเฟส')}</span>}</td>
+                    <td style={{ ...tdSt, textAlign: 'right', whiteSpace: 'nowrap' }}>{r.done ?? 0}/{r.total ?? 0} <span style={{ color: 'var(--muted)' }}>({r.pct ?? 0}%)</span>{r.overdue ? <span style={{ color: 'var(--red)', fontWeight: 800 }}> {tr('· เลย')} {r.overdue}</span> : null}</td>
                     <td style={tdSt}><Pill label={`${PPAP_STATUS[p.ppap_status]?.label || p.ppap_status} ${r.ppap ? `${r.ppap.done}/${r.ppap.total}` : ''}`} color={PPAP_STATUS[p.ppap_status]?.color} /></td>
                     <td style={tdSt} onClick={e => e.stopPropagation()}>
-                      {p.pe_set_id ? <Link to={`/pe-docs?set=${p.pe_set_id}`} style={{ color: 'var(--blue)', fontSize: 12 }}>📐 {peSets.find(s => s.id === p.pe_set_id)?.part_no || 'เปิด'}</Link> : <span style={{ color: 'var(--amber)', fontSize: 11.5 }} title="ยังไม่ผูกชุด PFC/FMEA/CP">ยังไม่ผูก</span>}
+                      {p.pe_set_id ? <Link to={`/pe-docs?set=${p.pe_set_id}`} style={{ color: 'var(--blue)', fontSize: 12 }}>📐 {peSets.find(s => s.id === p.pe_set_id)?.part_no || 'เปิด'}</Link> : <span style={{ color: 'var(--amber)', fontSize: 11.5 }} title={tr('ยังไม่ผูกชุด PFC/FMEA/CP')}>{tr('ยังไม่ผูก')}</span>}
                     </td>
                     <td style={tdSt}><Pill label={PART_STATUS[p.status]?.label || p.status} color={PART_STATUS[p.status]?.color} /></td>
                     <td style={{ ...tdSt, whiteSpace: 'nowrap' }} onClick={e => e.stopPropagation()}>
-                      {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => onEdit(p)}>✏️</button> <DeleteButton onClick={() => onDel(p)} title="ลบ" /></>}
+                      {canEdit && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => onEdit(p)}>✏️</button> <DeleteButton onClick={() => onDel(p)} title={tr('ลบ')} /></>}
                     </td>
                   </tr>
                 );
@@ -590,7 +591,7 @@ function Board({ projects, rollByProject, templates, project, tplPhases, parts, 
     <div>
       {/* โปรเจคทั้งหมด */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10, alignItems: 'start', marginBottom: 14 }}>
-        {!projects.length && <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีโปรเจครุ่นใหม่ — กด + โปรเจค ที่หัวหน้าเพจ</div>}
+        {!projects.length && <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>{tr('ยังไม่มีโปรเจครุ่นใหม่ — กด + โปรเจค ที่หัวหน้าเพจ')}</div>}
         {projects.map(pj => {
           const r = rollByProject[pj.id] || projectRollup([]);
           const tpl = templates.find(t => t.id === pj.template_id);
@@ -604,9 +605,9 @@ function Board({ projects, rollByProject, templates, project, tplPhases, parts, 
               </div>
               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>{pj.project_code} · {pj.customer || '—'} · {tpl?.label || '—'}</div>
               <div style={{ display: 'flex', gap: 12, marginTop: 8, fontSize: 12.5, flexWrap: 'wrap' }}>
-                <span>{r.parts} พาร์ท</span>
+                <span>{r.parts} {tr('พาร์ท')}</span>
                 <span>{r.done}/{r.total} ({r.pct}%)</span>
-                {r.overdue > 0 && <span style={{ color: 'var(--red)', fontWeight: 800 }}>⏰ เลย {r.overdue}</span>}
+                {r.overdue > 0 && <span style={{ color: 'var(--red)', fontWeight: 800 }}>{tr('⏰ เลย')} {r.overdue}</span>}
                 <span style={{ color: left != null && left < 0 ? 'var(--red)' : 'var(--text2)' }}>SOP {pj.sop_date ? fmtDate(pj.sop_date) : '—'}{left != null ? ` (${left >= 0 ? `อีก ${left} วัน` : `เลย ${-left} วัน`})` : ''}</span>
               </div>
               <div style={{ height: 6, background: 'var(--bg2)', borderRadius: 'var(--r-xs)', marginTop: 8, overflow: 'hidden' }}>
@@ -630,16 +631,16 @@ function Board({ projects, rollByProject, templates, project, tplPhases, parts, 
           </div>
 
           <div style={{ ...card }}>
-            <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>พาร์ท × เฟส — {project.name}</div>
+            <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>{tr('พาร์ท × เฟส —')} {project.name}</div>
             {!parts.length ? <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>ยังไม่มีพาร์ท — เพิ่มที่แท็บ 📦 พาร์ท & PPAP</div>
-              : !tplPhases.length ? <div style={{ color: 'var(--amber)', fontSize: 12.5, fontWeight: 700 }}>แม่แบบของโปรเจคนี้ยังไม่มีเฟส — ตั้งที่แท็บ ⚙️ แม่แบบ</div> : (
+              : !tplPhases.length ? <div style={{ color: 'var(--amber)', fontSize: 12.5, fontWeight: 700 }}>{tr('แม่แบบของโปรเจคนี้ยังไม่มีเฟส — ตั้งที่แท็บ ⚙️ แม่แบบ')}</div> : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead><tr>
                     <th style={thSt}>Part</th>
-                    {tplPhases.map(ph => <th key={ph.code} style={{ ...thSt, textAlign: 'center', color: ph.color || 'var(--muted)' }}>{ph.label}</th>)}
+                    {tplPhases.map(ph => <th key={ph.code} style={{ ...thSt, textAlign: 'center', color: ph.color || 'var(--muted)' }}>{tr(ph.label)}</th>)}
                     <th style={{ ...thSt, textAlign: 'center' }}>PPAP</th>
-                    <th style={{ ...thSt, textAlign: 'right' }}>รวม</th>
+                    <th style={{ ...thSt, textAlign: 'right' }}>{tr('รวม')}</th>
                   </tr></thead>
                   <tbody>
                     {parts.map(p => {

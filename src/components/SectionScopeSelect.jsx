@@ -16,6 +16,7 @@ import useOrgScope from '../utils/useOrgScope';
 import { PLANT } from '../utils/orgScope';
 import { ALL } from '../utils/filterLabels';
 
+import { tr } from '../utils/i18n';
 const PICKABLE = ['section'];
 const PICKABLE_DEPT = ['section', 'department'];
 
@@ -62,6 +63,6 @@ export default function SectionScopeSelect({
     <OrgScopePicker index={index} value={cur} onChange={emit} scopeSet={null} sections={sections} failed={failed}
       costCenter={false} pickable={pickDept ? PICKABLE_DEPT : PICKABLE} plantLabel={allLabel}
       disabled={disabled} id={id} style={style} width={width}
-      title={title || (pickDept ? 'ขอบเขต: ส่วนงาน / แผนก (หัวสีเทา = ระดับที่หน้านี้ไม่ได้กรอง)' : 'ขอบเขต: ส่วนงาน (หัวสีเทา = ระดับที่หน้านี้ไม่ได้กรอง)')} />
+      title={title || (pickDept ? tr('ขอบเขต: ส่วนงาน / แผนก (หัวสีเทา = ระดับที่หน้านี้ไม่ได้กรอง)') : tr('ขอบเขต: ส่วนงาน (หัวสีเทา = ระดับที่หน้านี้ไม่ได้กรอง)'))} />
   );
 }

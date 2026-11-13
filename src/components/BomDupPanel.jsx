@@ -15,6 +15,7 @@ import {
 import BomSheetGroups from './BomSheetGroups';
 import { statusColor } from '../utils/statusTone';
 
+import { tr } from '../utils/i18n';
 /* ═══ 🔁 คู่ที่ "ของชิ้นเดียวถูกนิยามไว้ 2 ใบ" — จอให้ PE ไล่เคลียร์ ════════════════════
    แท็บ 🔁 ใน /products (?tab=bomdup) · user 08/10: *"ทำจอสรุป 94 คู่ให้ PE ไล่เคลียร์เลย"*
 
@@ -173,7 +174,7 @@ export default function BomDupPanel({ onOpenSheet }) {
     await load();
   };
 
-  if (loading) return <div style={{ padding: 16, fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด…</div>;
+  if (loading) return <div style={{ padding: 16, fontSize: 12, color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</div>;
 
   return (
     <>
@@ -193,14 +194,14 @@ export default function BomDupPanel({ onOpenSheet }) {
         <div style={{ fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>
           ของชิ้นเดียวถูกกรอกลูกไว้ 2 ที่ — ใบที่ใช้มัน และใบ BOM ของตัวมันเอง
         </div>
-        ระบบใช้ <b>ชุดของใบที่กำลังกางอยู่ชนะทั้งชุด</b> (ไม่ได้เอา 2 ชุดมารวมกัน) ⇒
-        ตัวที่มีแต่ในใบของพาร์ทเอง <b style={{ color: BAD }}>ไม่ถูกระเบิดเลย</b> ·
-        <b> จอนี้ชี้ให้เห็นอย่างเดียว ไม่ยุบ/ไม่ลบ/ไม่เลือกใบให้เอง</b> —
+        ระบบใช้ <b>{tr('ชุดของใบที่กำลังกางอยู่ชนะทั้งชุด')}</b> (ไม่ได้เอา 2 ชุดมารวมกัน) ⇒
+        ตัวที่มีแต่ในใบของพาร์ทเอง <b style={{ color: BAD }}>{tr('ไม่ถูกระเบิดเลย')}</b> ·
+        <b> {tr('จอนี้ชี้ให้เห็นอย่างเดียว ไม่ยุบ/ไม่ลบ/ไม่เลือกใบให้เอง')}</b> —
         ของบางตัวใช้ต่างกันตามรุ่น/ลูกค้าได้จริง การตัดสินเป็นของ PE/Planning
       </div>
 
       <FilterBar style={{ marginBottom: 12 }}>
-        <Segmented label="สถานะ" value={vFilter} onChange={setVFilter} options={[
+        <Segmented label={tr('สถานะ')} value={vFilter} onChange={setVFilter} options={[
           { value: 'open', label: `ยังไม่ตรวจ (${prog.open})` },
           { value: 'hot', label: `🔥 ของร้อน (${prog.openHot})` },
           { value: 'cleared', label: `ตรวจแล้ว (${prog.cleared})` },
@@ -208,7 +209,7 @@ export default function BomDupPanel({ onOpenSheet }) {
         ]} />
         <SearchInput value={search} onChange={setSearch} fields="MAT ใบ / พาร์ท / ชื่อ" />
         <span className="spacer" />
-        <span className="filter-count">{shown.length} คู่</span>
+        <span className="filter-count">{shown.length} {tr('คู่')}</span>
       </FilterBar>
 
       {/* ── ความคืบหน้า ── */}
@@ -245,14 +246,14 @@ export default function BomDupPanel({ onOpenSheet }) {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
             <thead>
               <tr style={{ background: 'var(--bg3)' }}>
-                <th style={th}>ผลตรวจระบบ</th>
-                <th style={th}>ใบ</th>
-                <th style={th}>พาร์ทที่ถูกนิยาม 2 ที่</th>
-                <th style={{ ...th, textAlign: 'right' }}>ตรงกัน</th>
-                <th style={th}>จำนวนไม่ตรง (ใบนี้ ↔ ใบนั้น)</th>
-                <th style={th}>ใบนี้มี แต่ใบนั้นไม่มี</th>
-                <th style={th}>ใบนั้นมี แต่ใบนี้ไม่มี (ไม่ถูกระเบิด)</th>
-                <th style={th}>การตัดสิน</th>
+                <th style={th}>{tr('ผลตรวจระบบ')}</th>
+                <th style={th}>{tr('ใบ')}</th>
+                <th style={th}>{tr('พาร์ทที่ถูกนิยาม 2 ที่')}</th>
+                <th style={{ ...th, textAlign: 'right' }}>{tr('ตรงกัน')}</th>
+                <th style={th}>{tr('จำนวนไม่ตรง (ใบนี้ ↔ ใบนั้น)')}</th>
+                <th style={th}>{tr('ใบนี้มี แต่ใบนั้นไม่มี')}</th>
+                <th style={th}>{tr('ใบนั้นมี แต่ใบนี้ไม่มี (ไม่ถูกระเบิด)')}</th>
+                <th style={th}>{tr('การตัดสิน')}</th>
               </tr>
             </thead>
             <tbody>
@@ -263,7 +264,7 @@ export default function BomDupPanel({ onOpenSheet }) {
                 return (
                   <tr key={p.dupKey} style={p.cleared ? { opacity: 0.62 } : undefined}>
                     <td style={td}>
-                      <span style={chip(tone)} title={meta.why}>{meta.label}</span>
+                      <span style={chip(tone)} title={meta.why}>{tr(meta.label)}</span>
                       {/* 🔴 "ขาดของ" ต้องบอกจำนวนให้เห็นขนาด ไม่ใช่แค่ป้าย */}
                       {p.missingFromExplode.length > 0 && (
                         <div style={{ fontSize: 11, color: BAD, fontWeight: 800, marginTop: 3 }}>
@@ -275,7 +276,7 @@ export default function BomDupPanel({ onOpenSheet }) {
                       {p.hasThirdSheet && (
                         <div style={{ fontSize: 11, color: BAD, fontWeight: 800, marginTop: 3, lineHeight: 1.5 }}>
                           ⚠️ มีใบที่ 3: {p.otherSheets.map(o => o.sheetMat || o.sheetId).join(', ')}
-                          <div style={{ fontWeight: 400, color: 'var(--muted)' }}>ดูตารางกลุ่มด้านล่างก่อนตัดสิน</div>
+                          <div style={{ fontWeight: 400, color: 'var(--muted)' }}>{tr('ดูตารางกลุ่มด้านล่างก่อนตัดสิน')}</div>
                         </div>
                       )}
                     </td>
@@ -345,23 +346,21 @@ export default function BomDupPanel({ onOpenSheet }) {
                         </div>
                       )}
                       {!canReview ? (
-                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>ต้องมีสิทธิ์ products:edit</span>
+                        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ต้องมีสิทธิ์ products:edit')}</span>
                       ) : noteFor === p.dupKey ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
                           <input value={noteText} onChange={e => setNoteText(e.target.value)}
-                            placeholder="หมายเหตุ (ไม่ใส่ก็ได้)" autoFocus
+                            placeholder={tr('หมายเหตุ (ไม่ใส่ก็ได้)')} autoFocus
                             style={{ fontSize: 11.5, padding: '4px 7px', borderRadius: 'var(--ctl-r)',
                               border: '1px solid var(--border2)', background: 'var(--bg)', color: 'var(--text)' }} />
                           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                             {DUP_DECISIONS.map(d => (
                               <button key={d.value} type="button" disabled={busy} title={d.hint}
                                 onClick={() => saveReview(p, d.value, noteText)}
-                                style={{ ...btn, fontSize: 11, cursor: busy ? 'wait' : 'pointer' }}>
-                                {d.label}
-                              </button>
+                                style={{ ...btn, fontSize: 11, cursor: busy ? 'wait' : 'pointer' }}>{tr(d.label)}</button>
                             ))}
                             <button type="button" onClick={() => { setNoteFor(''); setNoteText(''); }}
-                              style={{ ...btn, fontSize: 11 }}>ยกเลิก</button>
+                              style={{ ...btn, fontSize: 11 }}>{tr('ยกเลิก')}</button>
                           </div>
                         </div>
                       ) : (
@@ -369,12 +368,12 @@ export default function BomDupPanel({ onOpenSheet }) {
                           <button type="button" disabled={busy}
                             onClick={() => { setNoteFor(p.dupKey); setNoteText(p.review?.note || ''); }}
                             style={{ ...btn, fontSize: 11, cursor: busy ? 'wait' : 'pointer' }}>
-                            {p.cleared ? '✏️ แก้ผลตรวจ' : '✓ ตรวจแล้ว…'}
+                            {p.cleared ? tr('✏️ แก้ผลตรวจ') : tr('✓ ตรวจแล้ว…')}
                           </button>
                           {p.review && (
                             <button type="button" disabled={busy} onClick={() => clearReview(p)}
-                              title="ลบผลตรวจ — คู่นี้กลับเข้าคิว"
-                              style={{ ...btn, fontSize: 11, cursor: busy ? 'wait' : 'pointer' }}>↩ ยกเลิก</button>
+                              title={tr('ลบผลตรวจ — คู่นี้กลับเข้าคิว')}
+                              style={{ ...btn, fontSize: 11, cursor: busy ? 'wait' : 'pointer' }}>{tr('↩ ยกเลิก')}</button>
                           )}
                         </div>
                       )}
@@ -395,7 +394,7 @@ export default function BomDupPanel({ onOpenSheet }) {
           .map(([k, m]) => (
             <div key={k} style={{ padding: '7px 10px', borderRadius: 'var(--r-md)', fontSize: 11, lineHeight: 1.55,
               color: 'var(--text2)', border: '1px solid var(--border)', background: 'var(--card)' }}>
-              <span style={chip(statusColor(m.tone))}>{m.label}</span>
+              <span style={chip(statusColor(m.tone))}>{tr(m.label)}</span>
               <span style={{ marginLeft: 6, color: 'var(--muted)' }}>({counts[k] ?? 0} คู่)</span>
               <div style={{ marginTop: 3 }}>{m.why}</div>
             </div>

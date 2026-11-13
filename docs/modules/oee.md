@@ -1761,6 +1761,12 @@ const oee = (A != null && P != null && Q != null) ? A * P * Q : null;
 · migration `20260917c_ct_history_snapshot_dr.sql` (**apply แล้ว**) · กะเก่าก่อน 17/09 = `ct_snapshot` null
 · ออกแบบเฟสถัดไป → `docs/ADAPTIVE-CT-DESIGN.md` (📌 ยังไม่เลือกทาง รอ user ตัดสิน)
 
+> ### ✅ ต่อยอด 2026-11-11 — **สูตรอ่าน snapshot กลับได้แล้ว + ตรึงเวลาพักด้วย**
+> เฟส 0 เก็บ `ct_snapshot` ไว้ **แต่ `computeSessionOee` ไม่เคยอ่านมัน** (อ่าน CT สดเสมอ)
+> ⇒ ตรึงไว้แต่คำนวณย้อนก็ยังไม่ตรง · 11/11 เพิ่ม `readCtSnapshot()` + `break_snapshot`
+> (นโยบายพัก + กฎพักรายไลน์ + `process_type`) ⇒ **snapshot ชนะทะเบียนสด · ไม่มี = ถอยไปทะเบียนสดเป๊ะ**
+> 📄 กติกาเต็ม 8 ข้อ + จุดที่ stamp → **`docs/modules/daily-report.md` §snapshot CT + เวลาพัก**
+
 ---
 
 ## 🔩 "%P ทะลุ 100" สาเหตุที่ 3 — งานคู่นับ CT ซ้ำ 2 เท่า (2026-09-18 · แก้แล้ว)
@@ -2777,3 +2783,4 @@ OEE ก.ย.: LASER-345 82.5→**83.0** · LASER-789 86.3→**86.7** · HDF1 84.
 - 🔁 **คิดย้อนหลังแล้ว (คำสั่ง user 10/11):** migration `20261110c_restamp_q_pending_ng_dr.sql` (DR) — กะที่ปิดแล้วที่ NG
   อยู่ในถังเหลืองรอพิจารณา · สำรองค่าเดิมใน `archive.restamp_q_20261110` · apply คู่กับการ merge โค้ด §7.2
   (ลง DB ก่อนโค้ด = จอเก่ากับค่าที่ stamp ไม่ตรงกันชั่วคราว)
+· **จอ Andon ฝ่ายผลิต (`/tv?dept=production`) มี OEE สดรายไลน์แล้ว (11/11)** — `lib/liveLineOee.js` → `computeLiveOee` ชุดเดียวกัน (📄 `dept-dashboard-tv.md`)

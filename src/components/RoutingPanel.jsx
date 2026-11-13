@@ -18,6 +18,7 @@ import { checkWriteRows } from '../utils/dbWrite';
 import LineSelect from './LineSelect';
 import MachineSelect from './MachineSelect';
 import { DeleteButton } from './IconButton';
+import { tr } from '../utils/i18n';
 import SupplierSelect from './SupplierSelect'; // ผู้รับจ้าง = ทะเบียน DR suppliers (จ้างนอก/บริการขึ้นก่อน) — 2026-09-08
 import useColumnHistory from '../utils/useColumnHistory'; // 📜 เลขเครื่องที่เคยบันทึกใน routing — ทะเบียน machines ไม่มีก็ยังเลือกซ้ำได้ (2026-09-07)
 
@@ -81,7 +82,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
 
   const byLine = useMemo(() => {
     const g = {};
-    filtered.forEach(p => { (g[p.line_name || '— ไม่ระบุไลน์'] ||= []).push(p); });
+    filtered.forEach(p => { (g[p.line_name || tr('— ไม่ระบุไลน์')] ||= []).push(p); });
     return Object.entries(g).sort((a, b) => a[0].localeCompare(b[0]));
   }, [filtered]);
 
@@ -182,7 +183,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
     <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(260px, 340px) 1fr', gap: 16, alignItems: 'start' }}>
       {/* ── ซ้าย: เลือกพาร์ท ── */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 12 }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="ค้นหา MAT / ชื่อ / P/N…" style={{ ...inp, marginBottom: 10 }} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder={tr('ค้นหา MAT / ชื่อ / P/N…')} style={{ ...inp, marginBottom: 10 }} />
         <div style={{ maxHeight: isMobile ? 260 : 560, overflowY: 'auto' }}>
           {byLine.map(([ln, ps]) => (
             <div key={ln}>
@@ -206,28 +207,28 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
 
       {/* ── ขวา: ขั้นตอน ── */}
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 14 }}>
-        {!sel && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 28, textAlign: 'center' }}>เลือกพาร์ททางซ้ายเพื่อกำหนดลำดับกระบวนการ</div>}
+        {!sel && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 28, textAlign: 'center' }}>{tr('เลือกพาร์ททางซ้ายเพื่อกำหนดลำดับกระบวนการ')}</div>}
         {sel && <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
             <div>
               <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{sel.mat_no} · {sel.name}</div>
-              <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ไลน์ใน Product Master: {sel.line_name || '—'} · CT {sel.cycle_time_sec ?? '—'} sec</div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('ไลน์ใน Product Master:')} {sel.line_name || '—'} · CT {sel.cycle_time_sec ?? '—'} sec</div>
             </div>
             {canEdit && <div style={{ display: 'flex', gap: 8 }}>
               {!steps.length && sel.line_name && (
                 <button onClick={seedFromProduct} style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 12.5, fontWeight: 600 }}>
-                  ⚡ สร้างขั้นตั้งต้นจากไลน์
+                  {tr('⚡ สร้างขั้นตั้งต้นจากไลน์')}
                 </button>
               )}
-              <button onClick={openNew} style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>+ เพิ่มขั้น</button>
+              <button onClick={openNew} style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>{tr('+ เพิ่มขั้น')}</button>
             </div>}
           </div>
 
-          {loading && <div style={{ color: 'var(--muted)', fontSize: 13 }}>กำลังโหลด…</div>}
+          {loading && <div style={{ color: 'var(--muted)', fontSize: 13 }}>{tr('กำลังโหลด…')}</div>}
           {!loading && !steps.length && (
             <div style={{ padding: 22, textAlign: 'center', color: 'var(--muted)', fontSize: 13, background: 'var(--bg2)', borderRadius: 'var(--r-md)' }}>
               ยังไม่ได้กำหนดลำดับกระบวนการ<br />
-              <span style={{ fontSize: 12 }}>VSM จะใช้ไลน์เดียวจาก Product Master ไปก่อน แล้วขึ้นเตือนว่ายังไม่ลง routing</span>
+              <span style={{ fontSize: 12 }}>{tr('VSM จะใช้ไลน์เดียวจาก Product Master ไปก่อน แล้วขึ้นเตือนว่ายังไม่ลง routing')}</span>
             </div>
           )}
 
@@ -236,7 +237,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
                 <thead><tr style={{ background: 'var(--bg2)' }}>
                   {['#', 'กระบวนการ', 'ไลน์ / ผู้รับจ้าง', 'C/T', 'C/O', 'LOT', 'คน', 'จุดพักหลังขั้นนี้', ''].map((h, i) =>
-                    <th key={i} style={{ padding: '7px 8px', fontSize: 11.5, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' }}>{h}</th>)}
+                    <th key={i} style={{ padding: '7px 8px', fontSize: 11.5, color: 'var(--muted)', textAlign: 'left', whiteSpace: 'nowrap' }}>{tr(h)}</th>)}
                 </tr></thead>
                 <tbody>
                   {steps.map((r, i) => (
@@ -248,7 +249,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
                       </td>
                       <td style={{ padding: '7px 8px', fontSize: 12, color: 'var(--text)', borderTop: '1px solid var(--border)' }}>
                         {r.is_outsourced
-                          ? <span style={{ color: '#a78bfa' }}>จ้างนอก · {r.vendor_name}</span>
+                          ? <span style={{ color: '#a78bfa' }}>{tr('จ้างนอก ·')} {r.vendor_name}</span>
                           : (r.line_name || '—')}
                       </td>
                       {[r.ct_sec, r.setup_sec, r.lot_size, r.operators].map((v, k) => (
@@ -261,12 +262,12 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
                       </td>
                       <td style={{ padding: '5px 8px', borderTop: '1px solid var(--border)', whiteSpace: 'nowrap' }}>
                         {canEdit && <>
-                          <button onClick={() => move(i, -1)} disabled={i === 0} title="เลื่อนขึ้น"
+                          <button onClick={() => move(i, -1)} disabled={i === 0} title={tr('เลื่อนขึ้น')}
                             style={{ background: 'none', border: 'none', cursor: i === 0 ? 'default' : 'pointer', opacity: i === 0 ? 0.3 : 1, fontSize: 13 }}>▲</button>
-                          <button onClick={() => move(i, 1)} disabled={i === steps.length - 1} title="เลื่อนลง"
+                          <button onClick={() => move(i, 1)} disabled={i === steps.length - 1} title={tr('เลื่อนลง')}
                             style={{ background: 'none', border: 'none', cursor: i === steps.length - 1 ? 'default' : 'pointer', opacity: i === steps.length - 1 ? 0.3 : 1, fontSize: 13 }}>▼</button>
-                          <button onClick={() => openEdit(r)} title="แก้ไข" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>
-                          <DeleteButton onClick={() => remove(r)} title="ลบ" />
+                          <button onClick={() => openEdit(r)} title={tr('แก้ไข')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>
+                          <DeleteButton onClick={() => remove(r)} title={tr('ลบ')} />
                         </>}
                       </td>
                     </tr>
@@ -293,30 +294,30 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
             </h3>
             <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, alignContent: 'start' }}>
               <div style={{ gridColumn: '1 / -1' }}>
-                <label style={lbl}>ชื่อกระบวนการ (ที่จะโชว์ในกล่อง VSM) *</label>
+                <label style={lbl}>{tr('ชื่อกระบวนการ (ที่จะโชว์ในกล่อง VSM) *')}</label>
                 <input value={form.step_name} onChange={e => setForm(f => ({ ...f, step_name: e.target.value }))}
-                  placeholder="เช่น STAMPING PRESS 300 TON" style={inp} />
+                  placeholder={tr('เช่น STAMPING PRESS 300 TON')} style={inp} />
               </div>
               <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <input type="checkbox" id="rt-out" checked={form.is_outsourced}
                   onChange={e => setForm(f => ({ ...f, is_outsourced: e.target.checked }))} style={{ width: 'auto' }} />
-                <label htmlFor="rt-out" style={{ fontSize: 12.5, color: 'var(--text)', cursor: 'pointer' }}>เป็นงานจ้างนอก (ส่งออกไปทำข้างนอก เช่น พ่นสี)</label>
+                <label htmlFor="rt-out" style={{ fontSize: 12.5, color: 'var(--text)', cursor: 'pointer' }}>{tr('เป็นงานจ้างนอก (ส่งออกไปทำข้างนอก เช่น พ่นสี)')}</label>
               </div>
               {form.is_outsourced ? (
                 <div style={{ gridColumn: '1 / -1' }}>
-                  <label style={lbl}>ผู้รับจ้าง *</label>
+                  <label style={lbl}>{tr('ผู้รับจ้าง *')}</label>
                   {/* 2026-09-08: <SupplierSelect> แทน input เปล่า — vendor_name ยังเก็บชื่อ text (VSM/OrderTrace อ่านค่าเดิมได้) · พิมพ์เองได้พร้อมป้าย */}
-                  <SupplierSelect value={form.vendor_name || ''} kinds={['service']} placeholder="เช่น JAROONRAT"
+                  <SupplierSelect value={form.vendor_name || ''} kinds={['service']} placeholder={tr('เช่น JAROONRAT')}
                     onChange={r => setForm(f => ({ ...f, vendor_name: r.supplier }))} inputStyle={inp} />
                 </div>
               ) : (<>
                 <div>
-                  <label style={lbl}>ไลน์ที่ทำ *</label>
+                  <label style={lbl}>{tr('ไลน์ที่ทำ *')}</label>
                   {/* 2026-09-07: <LineSelect> (ลำดับชั้น §5.3 ข้อ 8 · ปลดระวางไม่โผล่) — line_name เป็น join key ที่ VSM (vsmModel) ใช้ */}
                   <LineSelect lines={uniqLines} value={form.line_name} onChange={v => setForm(f => ({ ...f, line_name: v }))} style={inp} />
                 </div>
                 <div>
-                  <label style={lbl}>หมายเลขเครื่อง (ถ้ามี)</label>
+                  <label style={lbl}>{tr('หมายเลขเครื่อง (ถ้ามี)')}</label>
                   {/* 2026-09-07: เลือกจากทะเบียนเครื่อง (DR machines) ผ่าน <MachineSelect> — เครื่องของไลน์ที่เลือกขึ้นก่อน · ไม่ allowFree
                       (machine_no เป็น text join key ที่ VSM/OrderTrace เทียบด้วย normNo) */}
                   <MachineSelect value={form.machine_no} lines={machinePrefLines} history={machineHist}
@@ -325,9 +326,9 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
                 </div>
               </>)}
               <div>
-                <label style={lbl}>กระบวนการ</label>
+                <label style={lbl}>{tr('กระบวนการ')}</label>
                 <select value={form.process_type} onChange={e => setForm(f => ({ ...f, process_type: e.target.value }))} style={inp}>
-                  <option value="">— ไม่ระบุ —</option>
+                  <option value="">{tr('— ไม่ระบุ —')}</option>
                   {activeProcessTypes().map(p => <option key={p.key} value={p.key}>{p.icon || ''} {p.label}</option>)}
                 </select>
               </div>
@@ -343,22 +344,22 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
                 </div>
               ))}
               <div>
-                <label style={lbl}>ชื่อจุดพักหลังขั้นนี้</label>
-                <input value={form.wip_label} onChange={e => setForm(f => ({ ...f, wip_label: e.target.value }))} placeholder="เช่น Store Blank" style={inp} />
+                <label style={lbl}>{tr('ชื่อจุดพักหลังขั้นนี้')}</label>
+                <input value={form.wip_label} onChange={e => setForm(f => ({ ...f, wip_label: e.target.value }))} placeholder={tr('เช่น Store Blank')} style={inp} />
               </div>
               <div>
-                <label style={lbl}>คงคลังที่จุดพัก (ชิ้น)</label>
-                <input type="number" value={form.wip_qty} onChange={e => setForm(f => ({ ...f, wip_qty: e.target.value }))} placeholder="ระบบไม่เก็บ WIP — กรอกเอง" style={inp} />
+                <label style={lbl}>{tr('คงคลังที่จุดพัก (ชิ้น)')}</label>
+                <input type="number" value={form.wip_qty} onChange={e => setForm(f => ({ ...f, wip_qty: e.target.value }))} placeholder={tr('ระบบไม่เก็บ WIP — กรอกเอง')} style={inp} />
               </div>
               <div style={{ gridColumn: '1 / -1' }}>
-                <label style={lbl}>หมายเหตุ</label>
+                <label style={lbl}>{tr('หมายเหตุ')}</label>
                 <input value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} style={inp} />
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
-              <button onClick={() => setEditing(null)} style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>ยกเลิก</button>
+              <button onClick={() => setEditing(null)} style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', fontSize: 13 }}>{tr('ยกเลิก')}</button>
               <button onClick={save} disabled={saving} style={{ padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700, opacity: saving ? 0.6 : 1 }}>
-                {saving ? 'กำลังบันทึก…' : 'บันทึก'}
+                {saving ? tr('กำลังบันทึก…') : tr('บันทึก')}
               </button>
             </div>
           </div>

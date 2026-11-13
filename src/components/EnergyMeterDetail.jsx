@@ -14,6 +14,7 @@ import { tooltipProps, axisTick, alignedYWidth, fmtAxis, CHART_MARGIN } from '..
 import NoticeBar from './NoticeBar';
 import useIsMobile from '../utils/useIsMobile';
 
+import { tr } from '../utils/i18n';
 const GOOD = 'var(--green)', WARN = 'var(--amber)', BAD = 'var(--red)', IDLE = 'var(--muted)', ACC = 'var(--accent2)', INFO = 'var(--blue)';
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 14, boxShadow: 'var(--shadow-sm)' };
 const PAGE = 1000;
@@ -113,40 +114,40 @@ export default function EnergyMeterDetail({ m, machines, boardMeters, totalToday
   return (
     <div style={{ display: 'grid', gap: 14, alignContent: 'start' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <button type="button" onClick={onBack} className="pg-btn" style={{ whiteSpace: 'nowrap' }}>← กลับบอร์ดรวม</button>
+        <button type="button" onClick={onBack} className="pg-btn" style={{ whiteSpace: 'nowrap' }}>{tr('← กลับบอร์ดรวม')}</button>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>{m.name} <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted)' }}>· ตู้ {m.panel}</span></div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--text)' }}>{m.name} <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted)' }}>{tr('· ตู้')} {m.panel}</span></div>
           <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{m.subtitle}</div>
         </div>
         <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: st.color, border: `1px solid ${st.color}`, borderRadius: 999, padding: '3px 12px', whiteSpace: 'nowrap' }}>● {st.label}</span>
       </div>
 
-      {err && <NoticeBar tone="bad">โหลดข้อมูลตู้ไม่สำเร็จ: {err} — กราฟเป็นของรอบก่อนหน้า</NoticeBar>}
+      {err && <NoticeBar tone="bad">{tr('โหลดข้อมูลตู้ไม่สำเร็จ:')} {err} {tr('— กราฟเป็นของรอบก่อนหน้า')}</NoticeBar>}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, alignContent: 'start' }}>
-        <Kpi color={m.overKw ? BAD : GOOD} label="กำลังไฟ (สูงสุดในนาทีล่าสุด)" value={fmt(m.kw, 2)} unit="kW"
+        <Kpi color={m.overKw ? BAD : GOOD} label={tr('กำลังไฟ (สูงสุดในนาทีล่าสุด)')} value={fmt(m.kw, 2)} unit="kW"
           sub={`สูงสุดวันนี้ ${fmt(m.peakKw)} kW · ลิมิต ${m.limitKw ?? '—'} kW`} />
-        <Kpi color={INFO} label="ใช้ไฟวันนี้" value={fmt(m.todayKwh)} unit="kWh"
+        <Kpi color={INFO} label={tr('ใช้ไฟวันนี้')} value={fmt(m.todayKwh)} unit="kWh"
           sub={todayPct != null ? `${fmt(todayPct, 0)}% ของไฟทุกตู้วันนี้` : 'ตั้งแต่ 00:00 น.'} />
-        <Kpi color={INFO} label="ใช้ไฟเดือนนี้" value={fmt(m.monthKwh, 0)} unit="kWh"
+        <Kpi color={INFO} label={tr('ใช้ไฟเดือนนี้')} value={fmt(m.monthKwh, 0)} unit="kWh"
           sub={avgDay != null ? `เฉลี่ยวันละ ${fmt(avgDay)} kWh (${m.monthDays} วันที่มีข้อมูล)` : 'ยังไม่มีข้อมูลของเดือนนี้'} />
-        <Kpi color={INFO} label="เลขมิเตอร์สะสม" value={fmt(m.kwhTotal, 0)} unit="kWh" sub="อ่านตรงจากมิเตอร์ (Active Energy)" />
-        <Kpi color={m.overA ? BAD : ACC} label="แรงดัน · กระแส" value={<><span style={{ color: INFO }}>{fmt(m.v, 0)}</span><small style={{ fontSize: 13, color: 'var(--muted)' }}> V </small><span style={{ color: m.overA ? BAD : ACC }}>{fmt(m.a)}</span></>} unit="A"
+        <Kpi color={INFO} label={tr('เลขมิเตอร์สะสม')} value={fmt(m.kwhTotal, 0)} unit="kWh" sub={tr('อ่านตรงจากมิเตอร์ (Active Energy)')} />
+        <Kpi color={m.overA ? BAD : ACC} label={tr('แรงดัน · กระแส')} value={<><span style={{ color: INFO }}>{fmt(m.v, 0)}</span><small style={{ fontSize: 13, color: 'var(--muted)' }}> V </small><span style={{ color: m.overA ? BAD : ACC }}>{fmt(m.a)}</span></>} unit="A"
           sub={`V เฉลี่ย 3 เฟส · A เฟสที่สูงสุด · ลิมิต ${m.limitA ?? '—'} A`} />
-        <Kpi color={st.color} label="สถานะมิเตอร์" value={st.label} unit=""
+        <Kpi color={st.color} label={tr('สถานะมิเตอร์')} value={st.label} unit=""
           sub={m.ageMin == null ? 'ยังไม่เคยได้รับข้อมูล' : m.ageMin < 1 ? 'ข้อมูลล่าสุดเมื่อสักครู่' : `ข้อมูลล่าสุด ${m.ageMin} นาทีที่แล้ว`} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'minmax(0, 1fr)' : 'minmax(0, 2fr) minmax(260px, 1fr)', gap: 12, alignContent: 'start' }}>
         <div style={{ ...card, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>กราฟ 24 ชม. ล่าสุด · {m.name}</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{tr('กราฟ 24 ชม. ล่าสุด ·')} {m.name}</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
             1 จุด = 1 นาที (kW = สูงสุดของนาที · A = เฟสที่สูงสุด) · เส้นประแดง = ลิมิต · ช่วงที่มิเตอร์หลุดเกิน 5 นาทีเส้นขาด
           </div>
-          {!loaded ? <div style={{ color: 'var(--muted)', padding: 20 }}>กำลังโหลด…</div>
-            : series.length < 2 ? <div style={{ color: 'var(--muted)', padding: 20, fontSize: 12.5 }}>ยังไม่มีค่ารายนาทีใน 24 ชม. ล่าสุด</div>
+          {!loaded ? <div style={{ color: 'var(--muted)', padding: 20 }}>{tr('กำลังโหลด…')}</div>
+            : series.length < 2 ? <div style={{ color: 'var(--muted)', padding: 20, fontSize: 12.5 }}>{tr('ยังไม่มีค่ารายนาทีใน 24 ชม. ล่าสุด')}</div>
               : (<>
-                <div style={{ fontSize: 12, fontWeight: 700, color: GOOD, marginTop: 8 }}>กำลังไฟ (kW)</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: GOOD, marginTop: 8 }}>{tr('กำลังไฟ (kW)')}</div>
                 <ResponsiveContainer width="100%" height={170}>
                   <LineChart data={series} syncId={`meter-${m.key}`} margin={CHART_MARGIN}>
                     <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
@@ -157,7 +158,7 @@ export default function EnergyMeterDetail({ m, machines, boardMeters, totalToday
                     <Line type="linear" dataKey="kw" stroke={GOOD} dot={false} strokeWidth={1.5} isAnimationActive={false} connectNulls={false} />
                   </LineChart>
                 </ResponsiveContainer>
-                <div style={{ fontSize: 12, fontWeight: 700, color: ACC, marginTop: 6 }}>กระแส เฟสที่สูงสุด (A)</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: ACC, marginTop: 6 }}>{tr('กระแส เฟสที่สูงสุด (A)')}</div>
                 <ResponsiveContainer width="100%" height={170}>
                   <LineChart data={series} syncId={`meter-${m.key}`} margin={CHART_MARGIN}>
                     <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" vertical={false} />
@@ -175,7 +176,7 @@ export default function EnergyMeterDetail({ m, machines, boardMeters, totalToday
         </div>
 
         <div style={{ ...card, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>สัดส่วนโหลดตอนนี้</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{tr('สัดส่วนโหลดตอนนี้')}</div>
           <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>
             kW ของตู้ ÷ รวมทุกตู้ที่ออนไลน์ ({fmt(share.total)} kW)
           </div>
@@ -191,22 +192,22 @@ export default function EnergyMeterDetail({ m, machines, boardMeters, totalToday
               </div>
             ))}
           </div>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginTop: 16 }}>เครื่องที่ตู้นี้จ่ายไฟ</div>
-          {!byLine.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ยังไม่ได้ผูกเครื่องกับตู้นี้</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)', marginTop: 16 }}>{tr('เครื่องที่ตู้นี้จ่ายไฟ')}</div>
+          {!byLine.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ยังไม่ได้ผูกเครื่องกับตู้นี้')}</div>
             : byLine.map(([line, nos]) => (
               <div key={line} style={{ fontSize: 12.5, color: 'var(--text2)', marginTop: 6 }}>
                 <b style={{ color: 'var(--text)' }}>{line}</b> ({nos.length}) — {nos.join(', ')}
               </div>
             ))}
-          {byLine.length > 1 && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>ตู้จ่ายหลายไลน์ — ค่าไฟเป็นยอดรวมทั้งตู้ ไม่ได้แบ่งรายไลน์</div>}
+          {byLine.length > 1 && <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 6 }}>{tr('ตู้จ่ายหลายไลน์ — ค่าไฟเป็นยอดรวมทั้งตู้ ไม่ได้แบ่งรายไลน์')}</div>}
         </div>
       </div>
 
       <div style={{ ...card, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>ใช้ไฟรายวัน {DAYS} วันล่าสุด (kWh)</div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{tr('ใช้ไฟรายวัน')} {DAYS} {tr('วันล่าสุด (kWh)')}</div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>จากเลขมิเตอร์ต้น-ท้ายวัน · วันที่ไม่มีแท่ง = ไม่มีข้อมูล (ไม่ใช่ 0)</div>
-        {daily == null ? <div style={{ color: 'var(--muted)', padding: 16, fontSize: 12.5 }}>{loaded ? 'อ่านยอดรายวันไม่ได้' : 'กำลังโหลด…'}</div>
-          : !dailyBars.length ? <div style={{ color: 'var(--muted)', padding: 16, fontSize: 12.5 }}>ยังไม่มียอดรายวัน</div>
+        {daily == null ? <div style={{ color: 'var(--muted)', padding: 16, fontSize: 12.5 }}>{loaded ? tr('อ่านยอดรายวันไม่ได้') : tr('กำลังโหลด…')}</div>
+          : !dailyBars.length ? <div style={{ color: 'var(--muted)', padding: 16, fontSize: 12.5 }}>{tr('ยังไม่มียอดรายวัน')}</div>
             : (
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={dailyBars} margin={CHART_MARGIN}>
@@ -222,10 +223,10 @@ export default function EnergyMeterDetail({ m, machines, boardMeters, totalToday
       </div>
 
       <div style={{ ...card }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>เหตุการณ์ของ {m.name}</div>
-        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>จาก Node-RED (เกณฑ์ตั้งที่ Node-RED) · {EVENTS_SHOW} รายการล่าสุด · ใหม่อยู่บน</div>
-        {events == null ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{loaded ? 'อ่านเหตุการณ์ไม่ได้' : 'กำลังโหลด…'}</div>
-          : !events.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ยังไม่มีเหตุการณ์ของตู้นี้</div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text)' }}>{tr('เหตุการณ์ของ')} {m.name}</div>
+        <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>{tr('จาก Node-RED (เกณฑ์ตั้งที่ Node-RED) ·')} {EVENTS_SHOW} {tr('รายการล่าสุด · ใหม่อยู่บน')}</div>
+        {events == null ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{loaded ? tr('อ่านเหตุการณ์ไม่ได้') : tr('กำลังโหลด…')}</div>
+          : !events.length ? <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ยังไม่มีเหตุการณ์ของตู้นี้')}</div>
             : (
               <div style={{ maxHeight: 320, overflowY: 'auto', display: 'grid', gap: 2 }}>
                 {events.map(e => {

@@ -53,6 +53,7 @@ import { canWriteLine, canWriteUnit, writeBlockText } from '../utils/writeScope'
 import { getWorkDate, getCurrentShift } from '../utils/workDate';
 import { toast } from '../components/Toast';
 
+import { tr } from '../utils/i18n';
 const card = {
   background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)',
   padding: 16, boxShadow: 'var(--shadow-sm)',
@@ -284,7 +285,7 @@ export default function ScanLanding() {
 
   const doCheckin = async () => {
     if (!emp || ckResult === 'busy') return;
-    if (emp.is_active === false) { setCkResult({ kind: 'blocked', text: 'พนักงานคนนี้ถูกปิดใช้งาน/พ้นสภาพแล้ว — เช็คชื่อไม่ได้' }); return; }
+    if (emp.is_active === false) { setCkResult({ kind: 'blocked', text: tr('พนักงานคนนี้ถูกปิดใช้งาน/พ้นสภาพแล้ว — เช็คชื่อไม่ได้') }); return; }
     /* 🔴 อ่านทะเบียนไลน์ไม่ได้ = **ยังตัดสินขอบเขตไม่ได้** ⇒ ไม่เขียน (fail-closed)
        ปล่อยผ่าน = คนนอกขอบเขตถูกเช็คชื่อตอนทะเบียนล่ม · บีบเป็น "ไม่มีสิทธิ์" = จอโกหก */
     if (emp.line_id && (linesFailed || linesLoading)) {
@@ -299,7 +300,7 @@ export default function ScanLanding() {
     }
     setCkResult('busy');
     const { data: userData } = await supabase.auth.getUser();
-    if (!userData?.user?.id) { setCkResult({ kind: 'blocked', text: 'ยังไม่ได้เข้าระบบ — บันทึกไม่ได้' }); return; }
+    if (!userData?.user?.id) { setCkResult({ kind: 'blocked', text: tr('ยังไม่ได้เข้าระบบ — บันทึกไม่ได้') }); return; }
     const workDateStr = getWorkDate();
     const r = await checkinByBadge(supabase, { emp, workDateStr, shift: getCurrentShift(), userId: userData.user.id });
     const where = [empLineName || emp.section, r.shift === 'night' ? 'กะดึก' : 'กะเช้า', workDateStr].filter(Boolean).join(' · ');
@@ -336,43 +337,43 @@ export default function ScanLanding() {
 
   return (
     <Page>
-      <PageHeader icon="📷" title="สแกนเข้างาน"
-        sub="ส่อง QR ที่ติดเครื่อง หรือบาร์โค้ดคัมบัง/ใบผลิต แล้วเลือกได้เลยว่าจะทำอะไร" />
+      <PageHeader icon="📷" title={tr('สแกนเข้างาน')}
+        sub={tr('ส่อง QR ที่ติดเครื่อง หรือบาร์โค้ดคัมบัง/ใบผลิต แล้วเลือกได้เลยว่าจะทำอะไร')} />
 
       {!raw && (
         <div style={{ ...card, textAlign: 'center' }}>
           <div style={{ fontSize: 40, marginBottom: 6 }}>📷</div>
-          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>ยังไม่มีรหัสจากป้าย</div>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>{tr('ยังไม่มีรหัสจากป้าย')}</div>
           <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '0 0 12px' }}>
             ส่อง QR ที่ติดเครื่องด้วยกล้องมือถือ หรือกดสแกนจากในแอป
           </p>
           <button onClick={() => setRescan(true)} style={{ minHeight: 44, padding: '0 20px', fontSize: 14, fontWeight: 800 }}>
-            สแกนเลย
+            {tr('สแกนเลย')}
           </button>
         </div>
       )}
 
-      {raw && loading && <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>กำลังค้นหาอุปกรณ์…</div>}
+      {raw && loading && <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>{tr('กำลังค้นหาอุปกรณ์…')}</div>}
 
       {raw && !loading && pointHit && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={card}>
-            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>จุดส่งงาน</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>{tr('จุดส่งงาน')}</div>
             <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1.2 }}>{pointHit.name || pointHit.code || '—'}</div>
             <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
               {[pointHit.code && `รหัส ${pointHit.code}`, (pointHit.line_names || []).join(', ')].filter(Boolean).join(' · ')}
-              {pointHit.is_active === false && <b style={{ color: 'var(--red, var(--red))' }}> · ปิดใช้งานแล้ว</b>}
+              {pointHit.is_active === false && <b style={{ color: 'var(--red, var(--red))' }}> {tr('· ปิดใช้งานแล้ว')}</b>}
             </div>
             <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '10px 0 0', lineHeight: 1.7 }}>
-              ป้ายนี้ใช้ยืนยันตอน <b>สโตร์ส่งของถึงไลน์</b> — สแกนจากปุ่ม 📍 ในใบเติม WIP (หน้า Heijunka) ไม่ใช่ป้ายเครื่องจักร
+              ป้ายนี้ใช้ยืนยันตอน <b>{tr('สโตร์ส่งของถึงไลน์')}</b> — สแกนจากปุ่ม 📍 ในใบเติม WIP (หน้า Heijunka) ไม่ใช่ป้ายเครื่องจักร
             </p>
           </div>
           {canAccessPage('/heijunka', role) && (
-            <ActionLink to="/heijunka" icon="🔄" label="ไปหน้าส่งของ (Heijunka)" sub="เลือกใบที่จะส่ง แล้วสแกนป้ายนี้ยืนยัน" />
+            <ActionLink to="/heijunka" icon="🔄" label={tr('ไปหน้าส่งของ (Heijunka)')} sub={tr('เลือกใบที่จะส่ง แล้วสแกนป้ายนี้ยืนยัน')} />
           )}
           <button onClick={() => setRescan(true)}
             style={{ minHeight: 44, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 13 }}>
-            สแกนป้ายอื่น
+            {tr('สแกนป้ายอื่น')}
           </button>
         </div>
       )}
@@ -383,35 +384,35 @@ export default function ScanLanding() {
             const q = encodeURIComponent(lineHit.name);
             return (<>
               <div style={card}>
-                <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>ไลน์ผลิต</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>{tr('ไลน์ผลิต')}</div>
                 <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1.2 }}>{lineHit.name}</div>
                 <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
                   {[lineHit.section && `ส่วนงาน ${lineHit.section}`, lineHit.parent_line_name && `ใต้ ${lineHit.parent_line_name}`].filter(Boolean).join(' · ')}
-                  {lineHit.is_active === false && <b style={{ color: 'var(--red, var(--red))' }}> · ปิดใช้งานแล้ว</b>}
+                  {lineHit.is_active === false && <b style={{ color: 'var(--red, var(--red))' }}> {tr('· ปิดใช้งานแล้ว')}</b>}
                 </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {canAccessPage('/daily-report', role) && <ActionLink to={`/daily-report?line=${q}`} icon="📋" label="Daily Report ของไลน์นี้" sub="เปิดกะ · สแกนใบผลิต · ลง Downtime / งานเสีย" />}
-                {canAccessPage('/line-oee', role) && <ActionLink to={`/line-oee?line=${q}`} icon="📈" label="OEE สดของไลน์" sub="A × P × Q ของกะนี้" tone="var(--green)" />}
-                {canAccessPage('/management', role) && <ActionLink to={`/management?line=${q}`} icon="🗓️" label="แผน / สถานะงานของไลน์" sub="ใบผลิตที่กำลังเดิน + คิวถัดไป" tone="var(--blue)" />}
-                {canAccessPage('/people-board', role) && <ActionLink to={`/people-board?line=${q}`} icon="🧑‍🤝‍🧑" label="คนในไลน์ / จุดงาน" sub="ใครอยู่จุดไหน กะนี้" tone="var(--blue)" />}
-                {canAccessPage('/pm-check', role) && <ActionLink to={`/pm?tab=check&line=${q}`} icon="✅" label="ตรวจ AM / PM ของไลน์" sub="ใบตรวจของอุปกรณ์ในไลน์นี้" tone="var(--amber)" />}
-                {canAccessPage('/qr-labels', role) && <ActionLink to={`/qr-labels?kind=sheet&line=${q}`} icon="🗒️" label="พิมพ์ใบสแกนประจำไลน์ (A4)" sub="QR ประเภท Downtime / งานเสียของไลน์นี้" tone="var(--muted)" />}
+                {canAccessPage('/daily-report', role) && <ActionLink to={`/daily-report?line=${q}`} icon="📋" label={tr('Daily Report ของไลน์นี้')} sub={tr('เปิดกะ · สแกนใบผลิต · ลง Downtime / งานเสีย')} />}
+                {canAccessPage('/line-oee', role) && <ActionLink to={`/line-oee?line=${q}`} icon="📈" label={tr('OEE สดของไลน์')} sub={tr('A × P × Q ของกะนี้')} tone="var(--green)" />}
+                {canAccessPage('/management', role) && <ActionLink to={`/management?line=${q}`} icon="🗓️" label={tr('แผน / สถานะงานของไลน์')} sub={tr('ใบผลิตที่กำลังเดิน + คิวถัดไป')} tone="var(--blue)" />}
+                {canAccessPage('/people-board', role) && <ActionLink to={`/people-board?line=${q}`} icon="🧑‍🤝‍🧑" label={tr('คนในไลน์ / จุดงาน')} sub={tr('ใครอยู่จุดไหน กะนี้')} tone="var(--blue)" />}
+                {canAccessPage('/pm-check', role) && <ActionLink to={`/pm?tab=check&line=${q}`} icon="✅" label={tr('ตรวจ AM / PM ของไลน์')} sub={tr('ใบตรวจของอุปกรณ์ในไลน์นี้')} tone="var(--amber)" />}
+                {canAccessPage('/qr-labels', role) && <ActionLink to={`/qr-labels?kind=sheet&line=${q}`} icon="🗒️" label={tr('พิมพ์ใบสแกนประจำไลน์ (A4)')} sub={tr('QR ประเภท Downtime / งานเสียของไลน์นี้')} tone="var(--muted)" />}
               </div>
             </>);
           })()}
 
           {emp && (<>
             <div style={card}>
-              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>พนักงาน</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>{tr('พนักงาน')}</div>
               <div style={{ fontSize: 24, fontWeight: 900, lineHeight: 1.2 }}>{emp.name || '—'}</div>
               <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
                 {[`รหัส ${emp.employee_id_code}`, emp.position, lineById[String(emp.line_id)]?.name, emp.section].filter(Boolean).join(' · ')}
-                {emp.is_active === false && <b style={{ color: 'var(--red, var(--red))' }}> · พ้นสภาพ / ปิดใช้งาน</b>}
+                {emp.is_active === false && <b style={{ color: 'var(--red, var(--red))' }}> {tr('· พ้นสภาพ / ปิดใช้งาน')}</b>}
               </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {canAccessPage('/operator', role) && <ActionLink to={`/operator?q=${encodeURIComponent(emp.employee_id_code)}`} icon="👤" label="ข้อมูลพนักงาน / ทักษะ" sub="เปิดฐานข้อมูลพนักงานที่คนนี้" />}
+              {canAccessPage('/operator', role) && <ActionLink to={`/operator?q=${encodeURIComponent(emp.employee_id_code)}`} icon="👤" label={tr('ข้อมูลพนักงาน / ทักษะ')} sub={tr('เปิดฐานข้อมูลพนักงานที่คนนี้')} />}
 
               {/* 🪪 เช็คชื่อจบที่นี่ — ไม่พาไปหน้าเช็คชื่อแล้วให้ยิงซ้ำ (10/11 · คำสั่ง user)
                   ปุ่มโผล่ตามสิทธิ์จริง (กฎข้อ 2) · นอกขอบเขต = โชว์ปุ่มแต่กดแล้วบอกเหตุผล
@@ -429,7 +430,7 @@ export default function ScanLanding() {
                       {ckResult === 'busy' ? 'กำลังบันทึก…' : 'เช็คชื่อ “มางาน” เลย'}
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                      บันทึกทันทีในนาม {fullName || 'ผู้ใช้นี้'} · {getWorkDate()} · {getCurrentShift() === 'night' ? 'กะดึก' : 'กะเช้า'}
+                      {tr('บันทึกทันทีในนาม')} {fullName || 'ผู้ใช้นี้'} · {getWorkDate()} · {getCurrentShift() === 'night' ? 'กะดึก' : 'กะเช้า'}
                     </div>
                   </span>
                 </button>
@@ -447,7 +448,7 @@ export default function ScanLanding() {
                     <div style={{ fontSize: 16, fontWeight: 800, color: tone, lineHeight: 1.3 }}>{head}</div>
                     <div style={{ fontSize: 12.5, color: 'var(--text2)', marginTop: 3, lineHeight: 1.6 }}>{ckResult.text}</div>
                     {ckResult.kind === 'already' && (
-                      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>ไม่ได้บันทึกซ้ำ — ของเดิม (PPE / OT / การลา) ยังอยู่ครบ</div>
+                      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{tr('ไม่ได้บันทึกซ้ำ — ของเดิม (PPE / OT / การลา) ยังอยู่ครบ')}</div>
                     )}
                   </div>
                 );
@@ -459,8 +460,8 @@ export default function ScanLanding() {
                   {ppe.unknown ? (
                     /* 🔴 อ่านทะเบียนไม่ได้ ≠ "ไม่ต้องใส่อะไร" — เขียนบนจอ ห้ามข้ามเงียบ */
                     <div style={{ fontSize: 13, color: 'var(--red)', lineHeight: 1.6 }}>
-                      <b>อ่านทะเบียน PPE ไม่สำเร็จ</b> — เช็คชื่อบันทึกแล้ว แต่ยังถาม PPE ไม่ได้
-                      <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 3 }}>ไปติ๊กที่หน้าเช็คชื่อแทน</div>
+                      <b>{tr('อ่านทะเบียน PPE ไม่สำเร็จ')}</b> — เช็คชื่อบันทึกแล้ว แต่ยังถาม PPE ไม่ได้
+                      <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 3 }}>{tr('ไปติ๊กที่หน้าเช็คชื่อแทน')}</div>
                     </div>
                   ) : (<>
                     <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--amber)' }}>
@@ -488,13 +489,13 @@ export default function ScanLanding() {
                       <button type="button" onClick={savePpe} disabled={ppe.saving}
                         style={{ flex: 2, minHeight: 46, borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)',
                           color: 'var(--accent-ink)', fontSize: 15, fontWeight: 800, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
-                        {ppe.saving ? 'บันทึก…' : 'บันทึกผลตรวจ PPE'}
+                        {ppe.saving ? tr('บันทึก…') : tr('บันทึกผลตรวจ PPE')}
                       </button>
                       {/* ข้าม = ไม่เขียนอะไรเลย ⇒ ค้างเป็น "ยังไม่ได้ตรวจ" ให้หัวหน้าไปติ๊กต่อ */}
                       <button type="button" onClick={() => setPpe(p => ({ ...p, done: 'skipped' }))} disabled={ppe.saving}
                         style={{ flex: 1, minHeight: 46, borderRadius: 'var(--r-md)', border: '1px solid var(--border)',
                           background: 'var(--bg3)', color: 'var(--text2)', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-body)' }}>
-                        ข้ามไว้ก่อน
+                        {tr('ข้ามไว้ก่อน')}
                       </button>
                     </div>
                   </>)}
@@ -508,22 +509,22 @@ export default function ScanLanding() {
                 </div>
               )}
               {canAccessPage('/checkin', role) && (
-                <ActionLink to="/checkin" icon="📋" label="เปิดหน้าเช็คชื่อ (ทั้งไลน์)"
-                  sub="ติ๊ก PPE · การลา · OT · ยิงบัตรรัวทีละหลายคน" tone="var(--muted)" />
+                <ActionLink to="/checkin" icon="📋" label={tr('เปิดหน้าเช็คชื่อ (ทั้งไลน์)')}
+                  sub={tr('ติ๊ก PPE · การลา · OT · ยิงบัตรรัวทีละหลายคน')} tone="var(--muted)" />
               )}
             </div>
           </>)}
 
           {storageHit && (
             <div style={card}>
-              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>ที่เก็บ / รหัสคลัง</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>{tr('ที่เก็บ / รหัสคลัง')}</div>
               <div style={{ fontSize: 26, fontWeight: 900, lineHeight: 1.2 }}>{storageHit.code}</div>
               <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
                 {[storageHit.name, storageHit.kind, (storageHit.line_names || []).join(', ')].filter(Boolean).join(' · ')}
-                {storageHit.is_active === false && <b style={{ color: 'var(--red, var(--red))' }}> · ปิดใช้งานแล้ว</b>}
+                {storageHit.is_active === false && <b style={{ color: 'var(--red, var(--red))' }}> {tr('· ปิดใช้งานแล้ว')}</b>}
               </div>
               <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '10px 0 0', lineHeight: 1.7 }}>
-                ป้ายนี้ใช้ <b>ยิงในช่องรหัสคลัง</b> (ช่องที่มีปุ่ม 📷) แทนการเลือกจากรายการ
+                ป้ายนี้ใช้ <b>{tr('ยิงในช่องรหัสคลัง')}</b> (ช่องที่มีปุ่ม 📷) แทนการเลือกจากรายการ
               </p>
             </div>
           )}
@@ -533,31 +534,31 @@ export default function ScanLanding() {
             const isDt = typeKind === 'downtime_type';
             return (<>
               <div style={card}>
-                <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>{isDt ? '⏱ ประเภท Downtime' : '🔴 ประเภทงานเสีย'}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, marginBottom: 2 }}>{isDt ? tr('⏱ ประเภท Downtime') : tr('🔴 ประเภทงานเสีย')}</div>
                 <div style={{ fontSize: 24, fontWeight: 900, lineHeight: 1.2 }}>{t.name_th || '—'}</div>
                 <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>
                   {[isDt && (t.category === 'planned' ? 'ในแผน' : 'นอกแผน'), t.process_type && `กระบวนการ ${t.process_type}`].filter(Boolean).join(' · ')}
-                  {t.is_active === false && <b style={{ color: 'var(--red, var(--red))' }}> · ปิดใช้งานแล้ว — ยิงลงใบไม่ได้ พิมพ์แผ่นใหม่</b>}
+                  {t.is_active === false && <b style={{ color: 'var(--red, var(--red))' }}> {tr('· ปิดใช้งานแล้ว — ยิงลงใบไม่ได้ พิมพ์แผ่นใหม่')}</b>}
                 </div>
                 <p style={{ fontSize: 12.5, color: 'var(--muted)', margin: '10px 0 0', lineHeight: 1.7 }}>
-                  ป้ายนี้มาจาก <b>ใบสแกนประจำไลน์</b> — ใช้ยิงตอนบันทึก {isDt ? 'Downtime' : 'งานเสีย'} ใน Daily Report (ปุ่ม 📷 ข้างช่องประเภท หรือกดปุ่มสแกนข้างเครื่องตอนฟอร์มเปิดอยู่)
+                  ป้ายนี้มาจาก <b>{tr('ใบสแกนประจำไลน์')}</b> {tr('— ใช้ยิงตอนบันทึก')} {isDt ? 'Downtime' : 'งานเสีย'} ใน Daily Report (ปุ่ม 📷 ข้างช่องประเภท หรือกดปุ่มสแกนข้างเครื่องตอนฟอร์มเปิดอยู่)
                 </p>
               </div>
-              {canAccessPage('/daily-report', role) && <ActionLink to="/daily-report" icon="📋" label="ไป Daily Report" sub={`เปิดฟอร์มบันทึก${isDt ? ' Downtime' : 'งานเสีย'} แล้วยิงป้ายนี้`} />}
+              {canAccessPage('/daily-report', role) && <ActionLink to="/daily-report" icon="📋" label={tr('ไป Daily Report')} sub={`เปิดฟอร์มบันทึก${isDt ? ' Downtime' : 'งานเสีย'} แล้วยิงป้ายนี้`} />}
             </>);
           })()}
 
           {!prodFound && (
             <button onClick={() => setRescan(true)}
               style={{ minHeight: 44, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 13 }}>
-              สแกนป้ายอื่น
+              {tr('สแกนป้ายอื่น')}
             </button>
           )}
         </div>
       )}
 
       {raw && !loading && !found && !pointHit && (extraLoading || (tryProduct && !prodHit)) && !extraFound && !prodFound && (
-        <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่ใช่ป้ายอุปกรณ์ — กำลังค้นเป็นใบผลิต / MAT / บัตรพนักงาน / ไลน์…</div>
+        <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>{tr('ไม่ใช่ป้ายอุปกรณ์ — กำลังค้นเป็นใบผลิต / MAT / บัตรพนักงาน / ไลน์…')}</div>
       )}
 
       {raw && !loading && !found && !pointHit && prodFound && (() => {
@@ -579,19 +580,19 @@ export default function ScanLanding() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {canAccessPage('/qa', role) && (qaPart
                 ? <ActionLink to={`/qa?tab=sheet&part=${encodeURIComponent(qaPart.mat_no || qaPart.part_no)}`} icon="✅"
-                    label="ตรวจชิ้นงาน (ใบตรวจ QA)" sub={`เปิดใบตรวจของ ${qaPart.part_no || qaPart.mat_no} — วันงาน/กะปัจจุบัน`} tone="var(--green)" />
-                : <ActionLink to="/qa-setup" icon="📐" label="ยังไม่มีมาตรฐานการตรวจของพาร์ทนี้"
-                    sub="ตั้งจุดตรวจที่ มาตรฐานการตรวจ & Drawing ก่อน จึงจะเปิดใบตรวจได้" tone="var(--muted)" />)}
+                    label={tr('ตรวจชิ้นงาน (ใบตรวจ QA)')} sub={`เปิดใบตรวจของ ${qaPart.part_no || qaPart.mat_no} — วันงาน/กะปัจจุบัน`} tone="var(--green)" />
+                : <ActionLink to="/qa-setup" icon="📐" label={tr('ยังไม่มีมาตรฐานการตรวจของพาร์ทนี้')}
+                    sub={tr('ตั้งจุดตรวจที่ มาตรฐานการตรวจ & Drawing ก่อน จึงจะเปิดใบตรวจได้')} tone="var(--muted)" />)}
               {canAccessPage('/order-trace', role) && (order
-                ? <ActionLink to={`/order-trace?prod=${encodeURIComponent(order.prod_no)}`} icon="🔎" label="สอบกลับใบผลิตนี้" sub="ทุกเหตุการณ์ของใบ — คน/เครื่อง/ของเสีย/4M" tone="var(--blue)" />
-                : <ActionLink to={`/order-trace?q=${encodeURIComponent(mat)}`} icon="🔎" label="ดูใบผลิตของพาร์ทนี้" sub="ค้นใบผลิตในช่วงวันล่าสุด" tone="var(--blue)" />)}
+                ? <ActionLink to={`/order-trace?prod=${encodeURIComponent(order.prod_no)}`} icon="🔎" label={tr('สอบกลับใบผลิตนี้')} sub={tr('ทุกเหตุการณ์ของใบ — คน/เครื่อง/ของเสีย/4M')} tone="var(--blue)" />
+                : <ActionLink to={`/order-trace?q=${encodeURIComponent(mat)}`} icon="🔎" label={tr('ดูใบผลิตของพาร์ทนี้')} sub={tr('ค้นใบผลิตในช่วงวันล่าสุด')} tone="var(--blue)" />)}
             </div>
             {prodHit.err.length > 0 && (
-              <div style={{ fontSize: 12, color: 'var(--red, var(--red))' }}>⚠️ โหลด{prodHit.err.join(' · ')}ไม่สำเร็จ — ปุ่มบางอันอาจหายไปเพราะอ่านไม่ได้ ไม่ใช่เพราะไม่มี</div>
+              <div style={{ fontSize: 12, color: 'var(--red, var(--red))' }}>{tr('⚠️ โหลด')}{prodHit.err.join(' · ')}{tr('ไม่สำเร็จ — ปุ่มบางอันอาจหายไปเพราะอ่านไม่ได้ ไม่ใช่เพราะไม่มี')}</div>
             )}
             <button onClick={() => setRescan(true)}
               style={{ minHeight: 44, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 13 }}>
-              สแกนป้ายอื่น
+              {tr('สแกนป้ายอื่น')}
             </button>
           </div>
         );
@@ -599,20 +600,20 @@ export default function ScanLanding() {
 
       {raw && !loading && !found && !pointHit && !extraFound && !extraLoading && (!tryProduct || (prodHit && !prodFound)) && (
         <div style={{ ...card, borderColor: 'var(--amber, var(--amber))' }}>
-          <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>⚠️ ไม่พบสิ่งที่ตรงกับป้ายนี้</div>
+          <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 6 }}>{tr('⚠️ ไม่พบสิ่งที่ตรงกับป้ายนี้')}</div>
           <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.8 }}>
             รหัสที่อ่านได้: <code style={{ background: 'var(--bg3)', padding: '1px 6px', borderRadius: 4 }}>{scan?.raw || raw}</code><br />
             ชนิดป้าย: {scan?.typed ? `${QR_KINDS[scan.kind]?.icon ?? ''} ${QR_KINDS[scan.kind]?.label ?? scan.kind}` : 'เลขเปล่า (ไม่ใช่ป้ายของระบบ)'}
             {/* 🗒️ ป้ายเฟส 2 ที่หาแถวไม่เจอ (ถูกลบ/ปิด) — บอกว่าป้ายใช้ที่ไหน ไม่ปล่อยให้คิดว่าป้ายเสีย (28/10) */}
             {['line', 'downtime_type', 'defect_type', 'storage'].includes(scan?.kind) && (
-              <><br />ป้ายชนิดนี้ถูกต้อง แต่<b>ไม่พบแถวในทะเบียน</b> (อาจถูกลบ/เปลี่ยนรหัส) — พิมพ์ป้ายใหม่จากหน้า QR Labels</>
+              <><br />{tr('ป้ายชนิดนี้ถูกต้อง แต่')}<b>{tr('ไม่พบแถวในทะเบียน')}</b> {tr('(อาจถูกลบ/เปลี่ยนรหัส) — พิมพ์ป้ายใหม่จากหน้า QR Labels')}</>
             )}
-            {scan?.kind === null && <><br />ลองแล้ว: เครื่อง/จิ๊ก · ใบผลิต · MAT · บัตรพนักงาน · ชื่อไลน์</>}
-            {(mFailed || jigErr || pointErr || prodHit?.err?.length > 0 || extraErr) && <><br /><b style={{ color: 'var(--red, var(--red))' }}>⚠️ โหลดทะเบียนไม่ครบ — อาจไม่ใช่ว่าไม่มีเครื่องนี้จริง ลองใหม่อีกครั้ง</b></>}
+            {scan?.kind === null && <><br />{tr('ลองแล้ว: เครื่อง/จิ๊ก · ใบผลิต · MAT · บัตรพนักงาน · ชื่อไลน์')}</>}
+            {(mFailed || jigErr || pointErr || prodHit?.err?.length > 0 || extraErr) && <><br /><b style={{ color: 'var(--red, var(--red))' }}>{tr('⚠️ โหลดทะเบียนไม่ครบ — อาจไม่ใช่ว่าไม่มีเครื่องนี้จริง ลองใหม่อีกครั้ง')}</b></>}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-            <button onClick={() => setRescan(true)} style={{ minHeight: 44, padding: '0 16px', fontWeight: 700 }}>สแกนใหม่</button>
-            <button onClick={() => navigate('/')} style={{ minHeight: 44, padding: '0 16px', background: 'var(--bg3)' }}>หน้าแรก</button>
+            <button onClick={() => setRescan(true)} style={{ minHeight: 44, padding: '0 16px', fontWeight: 700 }}>{tr('สแกนใหม่')}</button>
+            <button onClick={() => navigate('/')} style={{ minHeight: 44, padding: '0 16px', background: 'var(--bg3)' }}>{tr('หน้าแรก')}</button>
           </div>
         </div>
       )}
@@ -631,7 +632,7 @@ export default function ScanLanding() {
             {/* 🔨 แม่พิมพ์ → เด้งเข้าหมุดบนผังจัดเก็บ (แผงหมุดมีเปลี่ยนสถานะ + ใบซ่อมค้าง) · ตัวตัดสิน = findDieByScan ใน DieRegistry */}
             {isDie && canAccessPage('/die-registry', role) && (
               <ActionLink to={`/equipment?tab=die&die=layout&focus=${encodeURIComponent(hit.machine.id)}`} icon="🗺️"
-                label="ดูตำแหน่งบนผังจัดเก็บ / เปลี่ยนสถานะ" sub="เด้งไปหมุดของแม่พิมพ์ตัวนี้" tone="var(--blue)" />
+                label={tr('ดูตำแหน่งบนผังจัดเก็บ / เปลี่ยนสถานะ')} sub={tr('เด้งไปหมุดของแม่พิมพ์ตัวนี้')} tone="var(--blue)" />
             )}
             {hit.jig && canAccessPage('/pm-check', role) && (pmDepts?.length
               ? pmDepts.map(d => (
@@ -641,16 +642,16 @@ export default function ScanLanding() {
                     sub={`${teamLabel(d)} · เปิดใบตรวจตามจุดที่ตั้งไว้`} tone={isAm(d) ? 'var(--green)' : 'var(--accent)'} />
                 ))
               : (
-                <ActionLink to={`/pm?tab=check&equip=${hit.jig.id}`} icon="✅" label="ตรวจ PM เครื่องนี้"
-                  sub={pmDepts === null ? 'กำลังหาใบตรวจ…' : 'ยังไม่พบใบตรวจของอุปกรณ์นี้ — เลือกแผนกในหน้าตรวจ'} />
+                <ActionLink to={`/pm?tab=check&equip=${hit.jig.id}`} icon="✅" label={tr('ตรวจ PM เครื่องนี้')}
+                  sub={pmDepts === null ? tr('กำลังหาใบตรวจ…') : tr('ยังไม่พบใบตรวจของอุปกรณ์นี้ — เลือกแผนกในหน้าตรวจ')} />
               ))}
             {canAccessPage('/mtn-repair', role) && (
               <ActionLink to={`/mtn-repair?tab=list&q=${encodeURIComponent(hit.machine?.machine_no || hit.jig?.machine_no || hit.jig?.jig_no || '')}`}
-                icon="🔧" label="แจ้งซ่อม / ดูใบซ่อมของเครื่องนี้" sub="ใบ MO ที่ค้างอยู่ + เปิดใบใหม่" tone="var(--amber)" />
+                icon="🔧" label={tr('แจ้งซ่อม / ดูใบซ่อมของเครื่องนี้')} sub={tr('ใบ MO ที่ค้างอยู่ + เปิดใบใหม่')} tone="var(--amber)" />
             )}
             {!hit.jig && canAccessPage('/pm-setup', role) && (
-              <ActionLink to={`/pm?tab=setup`} icon="⚙️" label="ยังไม่มีแผน PM — ไปตั้งจุดตรวจ"
-                sub="เครื่องนี้ยังไม่มีทะเบียนตรวจ PM" tone="var(--muted)" />
+              <ActionLink to={`/pm?tab=setup`} icon="⚙️" label={tr('ยังไม่มีแผน PM — ไปตั้งจุดตรวจ')}
+                sub={tr('เครื่องนี้ยังไม่มีทะเบียนตรวจ PM')} tone="var(--muted)" />
             )}
             {hit.machine?.machine_no && canAccessPage('/mtn-repair', role) && (
               <button onClick={() => setShowHist(true)} style={{
@@ -658,19 +659,19 @@ export default function ScanLanding() {
                 borderRadius: 'var(--r-md)', border: '1px solid var(--amber)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer',
               }}>
                 <span style={{ fontSize: 22 }}>📜</span>
-                <span><div style={{ fontSize: 15, fontWeight: 800, color: 'var(--amber)' }}>ประวัติซ่อมเครื่องนี้</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>ใบ MO ทั้งหมด · เวลาซ่อม · ค่าใช้จ่าย</div></span>
+                <span><div style={{ fontSize: 15, fontWeight: 800, color: 'var(--amber)' }}>{tr('ประวัติซ่อมเครื่องนี้')}</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('ใบ MO ทั้งหมด · เวลาซ่อม · ค่าใช้จ่าย')}</div></span>
               </button>
             )}
             {hit.machine?.machine_no && canAccessPage('/order-trace', role) && (
               <ActionLink to={`/order-trace?tab=symptom&machine=${encodeURIComponent(hit.machine.machine_no)}`} icon="📋"
-                label="สอบกลับ / ประวัติเหตุการณ์ของเครื่องนี้" sub="เครื่องหยุด + ของเสียที่ผูกเครื่องนี้ ในช่วงวันที่เลือก" tone="var(--blue)" />
+                label={tr('สอบกลับ / ประวัติเหตุการณ์ของเครื่องนี้')} sub={tr('เครื่องหยุด + ของเสียที่ผูกเครื่องนี้ ในช่วงวันที่เลือก')} tone="var(--blue)" />
             )}
           </div>
 
           <button onClick={() => setRescan(true)}
             style={{ minHeight: 44, background: 'var(--bg3)', border: '1px solid var(--border2)', fontSize: 13 }}>
-            สแกนป้ายอื่น
+            {tr('สแกนป้ายอื่น')}
           </button>
         </div>
       )}
@@ -681,7 +682,7 @@ export default function ScanLanding() {
       )}
 
       {rescan && (
-        <ScanModal title="สแกนป้าย / บาร์โค้ด / บัตร"
+        <ScanModal title={tr('สแกนป้าย / บาร์โค้ด / บัตร')}
           onScan={(parsed) => { if (!parsed?.raw) return 'อ่านรหัสไม่ได้'; setSp({ c: parsed.raw }); setRescan(false); }}
           onClose={() => setRescan(false)} />
       )}

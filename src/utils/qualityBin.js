@@ -210,6 +210,35 @@ export function yellowStuckReason(row, { hasRedChild = false } = {}) {
 export const NC_STEP_LABEL = {
   2: 'QA ตัดสิน', 3: 'ฝ่ายผลิตซ่อม', 4: 'QA ตรวจรับงานซ่อม', 5: 'ถังแดง · ออกใบรายงานของเสีย',
 };
+/** แถบ ✓→⑤ ของแถวถังเหลือง/แดง (<StepFlow compact> · UI §6.30 · 12/11) — ประกอบจาก `ncStep()` ที่เดียว
+ *  · ขั้นที่ "ไม่ต้องทำ" (งานดี/ขอใช้ จบที่ขั้น 2 · ทำลายข้ามซ่อม) = `skipped` ⏭ ห้าม ✓ เขียว
+ *  · แถวถังแดงไม่ถือประวัติซ่อมของแถวเหลืองแม่ ⇒ ขั้น 3-4 ของแถวแดง = skipped เสมอ (ดูประวัติที่แถวเหลือง) */
+export const NC_FLOW_STEPS = [
+  { label: 'ติดแท็กถังเหลือง', who: 'ไลน์ / ระบบ' }, { label: 'QA ตัดสิน', who: 'QA' }, { label: 'ฝ่ายผลิตซ่อม', who: 'ฝ่ายผลิต' },
+  { label: 'QA ตรวจรับงานซ่อม', who: 'QA' }, { label: 'ถังแดง · ใบรายงานของเสีย', who: 'ฝ่ายผลิต' },
+];
+export function ncFlow(row, opts = {}) {
+  const mk = (states, waiting, closed, known = true) => ({
+    steps: NC_FLOW_STEPS.map((d, i) => ({ n: i + 1, label: d.label, who: d.who, state: states[i] })), waiting, closed, known,
+  });
+  const D = 'done', C = 'current', T = 'todo', K = 'skipped';
+  if (!row) return mk([T, T, T, T, T], null, false, false);
+  const st = ncStep(row, opts);
+  if (st.key === 'done') {
+    if (row.bin === 'red') return mk([D, D, K, K, D], null, true);
+    if (row.qa_decision === 'repair' && row.repair_date) return mk([D, D, D, D, K], null, true);
+    return mk([D, D, K, K, K], null, true);
+  }
+  const who = st.owner === 'qa' ? 'QA' : st.owner === 'prod' ? 'ฝ่ายผลิต' : null;
+  const w = who ? `${who} — ${st.label}` : st.label;
+  switch (st.key) {
+    case 'qa_decide': case 'use_as_is_doc': return mk([D, C, T, T, T], w, false);
+    case 'repair':        return mk([D, D, C, T, T], w, false);
+    case 'repair_accept': return mk([D, D, D, C, T], w, false);
+    case 'to_red': case 'red_report': return mk([D, D, K, K, C], w, false);
+    default: return mk([T, T, T, T, T], null, false, false);
+  }
+}
 export function ncStep(row, { hasRedChild = false, scrapStatusOf = null } = {}) {
   const S = (step, owner, key, label) => ({ step, owner, key, label });
   if (!row) return S(null, null, 'none', '—');

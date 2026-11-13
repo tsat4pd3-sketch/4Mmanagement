@@ -21,6 +21,7 @@ import { cachedMaster } from '../utils/masterCache';
 import { labelAnchor as anchorOf, plainLabelLayout } from '../utils/regionGeom';
 import useTvShell from '../utils/useTvShell';
 
+import { tr } from '../utils/i18n';
 /* 📺 ป้ายบนผัง = หน้าตาเดียวกับ /factory-map (22/10 · user "ทำป้ายบนผังให้เป็นแบบเดียวกัน")
    ปกติ = ข้อความล้วนในกรอบ · ผิดปกติ = การ์ดพื้นเข้ม ขอบล่างหนาสีสถานะ ชื่อบน/สถานะล่าง · จอ TV ขยาย ×1.4
    (ค่าเดียวกับ `lblScale` บนจอ TV ของผังรวม) — แก้หน้าตาป้ายที่หนึ่ง ต้องแก้อีกที่ด้วย */
@@ -136,9 +137,9 @@ export default function FactoryMiniMap({ stateOf, onPick, bottomReserve = 28 }) 
     return plainLabelLayout(regions, { wrapW: w, wrapH: h, reserved, skip: new Set(marks.map(m => m.r.line_name)), charPx: 7.4 * K, linePx: 18 * K });
   }, [regions, marks, boxWH, K]);
 
-  if (err) return <div style={box}>⚠ โหลดผังโรงงานไม่สำเร็จ — {err}</div>;
+  if (err) return <div style={box}>{tr('⚠ โหลดผังโรงงานไม่สำเร็จ —')} {err}</div>;
   if (!map?.image_url) {
-    return <div style={box}>ยังไม่มีรูปผังโรงงาน — ให้ผู้ดูแลอัปโหลดที่ ตั้งค่าผัง/Floorplan ก่อน</div>;
+    return <div style={box}>{tr('ยังไม่มีรูปผังโรงงาน — ให้ผู้ดูแลอัปโหลดที่ ตั้งค่าผัง/Floorplan ก่อน')}</div>;
   }
 
   return (
@@ -215,7 +216,7 @@ export default function FactoryMiniMap({ stateOf, onPick, bottomReserve = 28 }) 
               textShadow: '0 1px 3px rgba(0,0,0,0.95)', boxShadow: 'var(--shadow-float)',
             }}>
               <div style={{ fontSize: 'clamp(11px,1vw,14px)', fontWeight: 800, color: '#fff', letterSpacing: 0.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.3 }}>{r.line_name}</div>
-              <div style={{ fontSize: 'clamp(11px,0.9vw,12.5px)', fontWeight: 800, color: st.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>{st.label}</div>
+              <div style={{ fontSize: 'clamp(11px,0.9vw,12.5px)', fontWeight: 800, color: st.color, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>{tr(st.label)}</div>
             </div>
           </div>
           );
