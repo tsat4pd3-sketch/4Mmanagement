@@ -477,6 +477,17 @@ const RULES = [
     allow: { 'src/pages/Report.jsx': 'ใบพิมพ์ OT เป็น HTML string ใน template literal (กระดาษไทย ไม่แปล · {tr()} ในสตริงพิมพ์ออกมาตรงตัว — บั๊กรอบ 2 แก้ 13/11)' },
   },
   {
+    id: 'i18n-map-label-at-declaration',
+    scan: ['src/pages', 'src/components', 'src/utils', 'src/lib'], ext: ['.jsx', '.js'],
+    /* label: tr('…') ที่จุดประกาศ map ค่าคงที่ — แปลตอน import ครั้งเดียว · สลับภาษาแล้ว App remount (ไม่ reload) ⇒ ป้ายค้างภาษาเดิม */
+    /* จับเฉพาะบรรทัดที่เป็น "แถวของ map" (เริ่มด้วย key: { … หรือ { … หรือ property ตรงๆ) — tr() ใน props ของ call ตอน render ไม่เข้าข่าย */
+    re: /^\s*(?:[\w$'"]+\s*:\s*\{\s*|\{\s*)?(?:[\w$]+\s*:\s*[^,\n{}]*,\s*)*(?:label|desc|hint|short|title|sub)\s*:\s*(?:tr|trI18n)\(\s*'/gm,
+    why: 'รอบ 3c (13/11): สลับภาษาทำงานด้วยการ remount ต้นไม้ React ไม่ใช่ reload ⇒ ค่าคงที่ระดับโมดูลที่เรียก tr() ตอน import '
+       + 'จะแปลครั้งเดียวแล้วค้าง — จอโชว์ภาษาเก่าทั้งที่สลับแล้ว',
+    fix: "เก็บไทยไว้ที่ map · แปลที่จุดวาด {tr(meta.label)} (📄 docs/modules/i18n.md §รอบ 3c)",
+    allow: {},
+  },
+  {
     id: 'i18n-import-path-depth',
     scan: ['src/components/inspect'], ext: ['.jsx'],   // เฉพาะโฟลเดอร์ย่อย — ไฟล์ตรงใต้ pages/components ใช้ '../utils/i18n' ถูกแล้ว
     /* ไฟล์ในโฟลเดอร์ย่อย (src/components/inspect/…) เขียน import '../utils/i18n' = ชี้ผิดชั้น — lint ไม่จับ (resolve ตอน bundle)
@@ -10497,4 +10508,65 @@ test('➕ register-folded-into-operator — เมนูเดียว · แ�
     bad.push('การ์ดฟอร์มต้องตรึง maxWidth 960 เอง (ฝังในหน้าแม่แล้ว <Page width="form"> ไม่คุมความกว้างให้)');
 
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n❌ ') + '\n');
+});
+
+test('🔧 dt-mb-flag-three-state — ธง "เครื่องเสียของช่าง" ต้องมี 3 สถานะ และห้ามแตะเลขที่ส่งกลุ่ม', () => {
+  /* 🔴 13/11 คำสั่ง user *"ทำข้อ 2 ติดธงในทะเบียนประเภท downtime"*
+     ที่มา: KPI ทางการนับทุกแถวที่ไม่ใช่ planned เข้า Machine Break Down/MTTR/MTBF ของช่าง
+       ⇒ ช่างแบกชั่วโมงที่ไม่เคยถูกเรียก 813.6 ชม. (78.8% ของ ต.ค.) ซึ่งมี "แก้ไขปัญหาคุณภาพ"
+         107.6 ชม. ที่ไม่ใช่เครื่องเสียเลย · เดาจากชื่อประเภทไม่ได้ (กฎ §อื่นๆ/ไม่ระบุ ข้อ 5)
+       ⇒ ให้คนที่รู้งานติ๊กในทะเบียนครั้งเดียว แล้วทุกจอใช้ธงเดียวกัน
+     กับดัก 3 ข้อที่ด่านนี้กัน:
+       ① ยุบเหลือ 2 สถานะ (`!!row.is_machine_breakdown`) ⇒ "ยังไม่มีใครติ๊ก" กลายเป็น "ไม่ใช่ของช่าง"
+          = ตัวเลขช่างดีขึ้นฟรีทันทีโดยไม่มีใครตัดสิน (ล้มเหลวเงียบที่ตรวจไม่ได้จากจอ)
+       ② เก็บ `false` ลงฐานแทน `null` ⇒ แยก "ตัดสินแล้วว่าไม่ใช่" กับ "ยังไม่ได้ตัดสิน" ไม่ออกตลอดกาล
+       ③ เอาธงไปทับเลขที่ส่งกลุ่ม — กลุ่มเป็นเจ้าของนิยาม KPI (ESM = ที่ผลิตตัวเลข Actual)
+          ⇒ mbd/mtbf/mttr ใน kpiAuto ห้ามรู้จักธงนี้เลย (มีเทสเลขเท่าเดิมใน kpiAuto.test.mjs ด้วย)
+     📄 src/utils/dtBreakdownOwner.js · docs/OBEYA-KPI-SOURCES.md §15.2 */
+  const own = stripComments(readFileSync(join(ROOT, 'src/utils/dtBreakdownOwner.js'), 'utf8'));
+  /* ① ครบ 3 สถานะ และ unset ต้องเป็น null */
+  for (const k of ['yes', 'no', 'unset']) {
+    assert.ok(new RegExp(`key: '${k}'`).test(own),
+      `\n\n❌ dtBreakdownOwner.js ไม่มีสถานะ '${k}' แล้ว — 3 สถานะห้ามยุบเหลือ 2\n`
+      + '   "ยังไม่ระบุ" ≠ "ไม่ใช่ของช่าง" (ยุบ = ตัวเลขช่างดีขึ้นฟรีโดยไม่มีใครตัดสิน)\n');
+  }
+  assert.ok(/key: 'unset',[\s\S]{0,200}?value: null/.test(own),
+    '\n\n❌ สถานะ unset ต้องเก็บ null — เก็บ false = แยก "ตัดสินแล้วว่าไม่ใช่" กับ "ยังไม่ตัดสิน" ไม่ออก\n');
+  assert.ok(/if \(v === true\) return 'yes';[\s\S]{0,120}?if \(v === false\) return 'no';/.test(own),
+    '\n\n❌ mbFlagOf ต้องเทียบ === true / === false ตรงๆ\n'
+    + '   ใช้ truthiness = undefined (คิวรีไม่ได้ select คอลัมน์) ไหลเข้าฝั่งใดฝั่งหนึ่งเงียบๆ\n');
+
+  /* ② จอทะเบียนต้องเขียนผ่าน mbValueForDb ห้าม || false */
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.ok(/is_machine_breakdown:\s*mbValueForDb\(/.test(dr),
+    '\n\n❌ ฟอร์มทะเบียนประเภท downtime ต้องเขียนธงผ่าน mbValueForDb() เท่านั้น\n'
+    + '   เขียนค่าดิบ/`|| false` = ยัด false ให้ประเภทที่ยังไม่มีใครติ๊ก\n');
+  assert.ok(!/is_machine_breakdown[^\n]*\|\|\s*false/.test(dr) && !/!!\s*\w*\.?is_machine_breakdown/.test(dr),
+    '\n\n❌ เจอการบีบธงเป็น boolean 2 สถานะในหน้า (`|| false` / `!!`) — null ต้องคงเป็น null\n');
+  /* ②ข ช่องติ๊กต้องอยู่ **แผงประเภท downtime** ไม่ใช่แผงประเภทงานเสีย
+     เคสจริง 13/11: UI ไปโผล่ในฟอร์ม `dr_defect_types` ส่วน payload อยู่ฟอร์ม `dr_downtime_types`
+     ⇒ คนกดติ๊กในฟอร์มงานเสีย = ส่ง `mb_flag` ลงตารางที่ไม่มีคอลัมน์นี้ = บันทึกล้มทั้งใบ
+     (เจอเพราะ merge conflict ไม่ใช่เพราะเทส — จึงต้องมีด่าน) */
+  const iPayload = dr.indexOf('is_machine_breakdown: mbValueForDb');
+  const iUi = dr.indexOf('MB_FLAGS.map(');
+  assert.ok(iPayload > 0 && iUi > iPayload,
+    '\n\n❌ ช่องติ๊กธง (MB_FLAGS.map) ไม่ได้อยู่ในแผงประเภท downtime เดียวกับตัวบันทึก\n'
+    + '   แผงประเภทงานเสีย (dr_defect_types) ไม่มีคอลัมน์ is_machine_breakdown\n'
+    + '   ⇒ ติ๊กแล้วกดบันทึก = ส่งคีย์ที่ตารางไม่รู้จัก = บันทึกล้มทั้งใบ\n');
+
+  /* ③ ธงห้ามไปอยู่ในสูตรที่ส่งกลุ่ม */
+  const auto = stripComments(readFileSync(join(ROOT, 'src/utils/kpiAuto.js'), 'utf8'));
+  const official = auto.slice(0, auto.indexOf('export function mtnOwnerSeries'));
+  assert.ok(official.length > 0, '\n\n❌ ไม่เจอ mtnOwnerSeries() ใน kpiAuto.js — แท่ง "ของช่าง/ไม่ใช่" หายไป\n');
+  assert.ok(!/mb_yes_min|mb_no_min/.test(official),
+    '\n\n❌ ธง is_machine_breakdown ไปโผล่ในสูตร KPI ที่ส่งกลุ่ม (ก่อน mtnOwnerSeries)\n'
+    + '   🔴 Machine Break Down / MTBF / MTTR ต้องนับไลน์หยุดเต็มตาม KPI Guideline เหมือนเดิม\n'
+    + '   กลุ่มเป็นเจ้าของนิยาม · ESM = ที่ผลิตตัวเลข Actual (ห้ามคิดเกณฑ์เอง)\n');
+  /* ถังที่ 3 ต้องถูกนับและโชว์ ไม่ใช่โยนทิ้ง */
+  assert.ok(/mb_unset_min/.test(auto),
+    '\n\n❌ mtnOwnerSeries ไม่นับถัง "ยังไม่ระบุ" แล้ว — ชั่วโมงหายจากจอ (จอโกหก)\n');
+  const kpi = stripComments(readFileSync(join(ROOT, 'src/components/KpiMonthly.jsx'), 'utf8'));
+  assert.ok(/unknownHr=\{mtnOwner\.unsetHr\}/.test(kpi),
+    '\n\n❌ จอ KPI ต้องวาดถัง "ยังไม่ระบุ" เป็นช่องที่มองเห็น (unknownHr)\n'
+    + '   ซ่อน = คนอ่านคิดว่าติ๊กครบแล้ว ทั้งที่ยังไม่มีใครตัดสิน\n');
 });

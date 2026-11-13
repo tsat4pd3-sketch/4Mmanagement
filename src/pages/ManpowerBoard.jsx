@@ -461,7 +461,7 @@ function SkillCard({ p, skills }) {
         return (
           <div key={s.skill_name} title={`${d?.label || s.skill_name}: ${s.score}`}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, gap: 4 }}>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d?.label || s.skill_name}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{trI18n(d?.label) || s.skill_name}</span>
               <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--muted)' }}>{s.score}</span>
             </div>
             <div style={{ height: 4, borderRadius: 'var(--r-xs)', background: 'var(--bg3)' }}>
@@ -696,7 +696,7 @@ function LayoutTab({ board, depts, lines, attendance, maps, tv, stationPlans, sk
         )}
         <span className="spacer" />
         <span style={{ display: 'flex', gap: 12, fontSize: 12, flexWrap: 'wrap' }}>
-          {Object.entries(SHIFT_META).map(([k, m]) => <span key={k} style={{ color: m.color, fontWeight: 700 }}>● {m.label}</span>)}
+          {Object.entries(SHIFT_META).map(([k, m]) => <span key={k} style={{ color: m.color, fontWeight: 700 }}>● {trI18n(m.label)}</span>)}
           <span style={{ color: 'var(--muted)' }}>จาง = ลา/ขาด · ✳ = ย้ายมาวันนี้ · ↗ = วันนี้ไปจุดอื่น · วงประ + สีกะ = ขาดคนประจำกะนั้น</span>
         </span>
       </FilterBar>
@@ -739,7 +739,7 @@ function SkillGapTable({ gaps, defs }) {
                   {g.missing.map(m => (
                     <span key={m.skill_name} style={{ whiteSpace: 'nowrap', fontSize: 12, padding: '1px 8px', borderRadius: 'var(--r-pill)',
                       border: `1px ${m.assessed ? 'solid' : 'dashed'} var(--border2)`, color: m.assessed ? 'var(--text)' : 'var(--muted)' }}>
-                      {defs[m.skill_name]?.label || m.skill_name}{' '}
+                      {trI18n(defs[m.skill_name]?.label) || m.skill_name}{' '}
                       {m.assessed ? <b style={{ fontVariantNumeric: 'tabular-nums' }}>{m.actual}/{m.required}</b> : <span>{trI18n('ยังไม่ประเมิน (ต้องการ')} {m.required})</span>}
                       {m.pending != null && <span title={trI18n('ได้ขั้นนี้แล้วจากการสะสม EXP — รอหัวหน้ากดอนุมัติ')} style={{ marginLeft: 4, color: m.waitApproval ? 'var(--blue)' : 'var(--muted)' }}>{trI18n('⏳ รออนุมัติขั้น')} {m.pending}</span>}
                     </span>
@@ -952,7 +952,7 @@ function TvCard({ p, skills }) {
         return (
           <div key={s.skill_name} title={`${d?.label || s.skill_name}: ${s.score}`}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, gap: 4 }}>
-              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d?.label || s.skill_name}</span>
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{trI18n(d?.label) || s.skill_name}</span>
               <span style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--muted)' }}>{s.score}</span>
             </div>
             <div style={{ height: 4, borderRadius: 'var(--r-xs)', background: 'var(--bg3)' }}>
@@ -1403,7 +1403,7 @@ function HistoryTab({ section, dept, deptParam, nodes, lines, stations, employee
                   <tr key={c.id}>
                     <td style={{ ...td, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{fmtAt(c.at)}</td>
                     <td style={td}>{c.actor}</td>
-                    <td style={{ ...td, whiteSpace: 'nowrap' }}>{SLOT_KIND_META[c.kind].icon} {SLOT_KIND_META[c.kind].label}</td>
+                    <td style={{ ...td, whiteSpace: 'nowrap' }}>{SLOT_KIND_META[c.kind].icon} {trI18n(SLOT_KIND_META[c.kind].label)}</td>
                     <td style={td}>{c.where}</td>
                     <td style={{ ...td, whiteSpace: 'nowrap' }}>{c.kind === 'team' ? (c.team ? `ทีม ${c.team}` : 'ไม่ระบุทีม') : '–'}</td>
                     {/* ไม่ใส่สีเขียว/แดง — ช่องเพิ่มไม่ได้แปลว่า "ดี" (UI §6.17 สี = ความหมาย) */}

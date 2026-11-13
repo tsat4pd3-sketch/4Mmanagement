@@ -918,10 +918,10 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
                           ? <div style={{ fontSize: 11, color: 'var(--green)', fontWeight: 700, marginTop: 4 }}>{tr('stock พร้อมส่งครบ')}</div>
                           : cov.offFg >= cov.short
                             /* ของมีพอแต่อยู่นอกคลัง FG (STORE/มินิสโตร์) — ปัญหาอยู่ขั้นแพ็ค/รับเข้าคลัง ไม่ใช่ "ต้องผลิต" */
-                            ? <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, marginTop: 4 }}>{tr('🟠 คลัง FG มี')} {fmt(cov.covered)} {tr('— อีก')} {fmt(cov.short)} {tr('อยู่นอกคลัง FG (ยังไม่ผ่านรับเข้า)')}</div>
+                            ? <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, marginTop: 4 }}>{tr('🟠 คลัง FG มี')} {fmt(cov.covered)} {tr('— อีก')} {fmt(tr(cov.short))} {tr('อยู่นอกคลัง FG (ยังไม่ผ่านรับเข้า)')}</div>
                             : cov.covered > 0 || cov.offFg > 0
-                              ? <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, marginTop: 4 }}>{tr('⚠️ stock มี')} {fmt(cov.covered)}{cov.offFg > 0 ? ` (+${fmt(cov.offFg)} นอกคลัง FG)` : ''} {tr('— ขาด')} {fmt(cov.short)} {tr('ชิ้น')}</div>
-                              : <div style={{ fontSize: 12, color: 'var(--red)', fontWeight: 800, marginTop: 4 }}>{tr('ไม่มี stock พร้อมส่ง — ขาด')} {fmt(cov.short)} {tr('ชิ้น ต้องผลิต!')}</div>
+                              ? <div style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, marginTop: 4 }}>{tr('⚠️ stock มี')} {fmt(cov.covered)}{cov.offFg > 0 ? ` (+${fmt(cov.offFg)} นอกคลัง FG)` : ''} {tr('— ขาด')} {fmt(tr(cov.short))} {tr('ชิ้น')}</div>
+                              : <div style={{ fontSize: 12, color: 'var(--red)', fontWeight: 800, marginTop: 4 }}>{tr('ไม่มี stock พร้อมส่ง — ขาด')} {fmt(tr(cov.short))} {tr('ชิ้น ต้องผลิต!')}</div>
                     )}
                     {isOpenOrder(o) && phases.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 8 }}>
@@ -949,7 +949,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
                           <button onClick={() => { advance(o); setPopup(null); }} disabled={busy === o.id}
                             title={nx.terminal ? tr('เฟสท้ายสุดที่ตั้งไว้ = จบงาน (ปิดรอบส่งเลย ไม่มีขั้นถัดไป)') : undefined}
                             style={{ flex: 1, padding: '7px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, cursor: 'pointer', background: `${tint(nx.color, 'dim')}`, color: nx.color, border: `1px solid ${tint(nx.color, 'line')}`, fontFamily: 'var(--font-body)' }}>
-                            {busy === o.id ? '...' : nx.label}
+                            {busy === o.id ? '...' : tr(nx.label)}
                           </button>
                         );
                       })()}
@@ -1020,10 +1020,10 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
                   : cov.short <= 0
                     ? <span style={{ color: 'var(--green)', fontWeight: 700 }}>{tr('พร้อมส่งครบ')}</span>
                     : cov.offFg >= cov.short
-                      ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>{tr('🟠 คลัง FG มี')} {fmt(cov.covered)} {tr('— อีก')} {fmt(cov.short)} {tr('อยู่นอกคลัง FG (ยังไม่ผ่านรับเข้า)')}</span>
+                      ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>{tr('🟠 คลัง FG มี')} {fmt(cov.covered)} {tr('— อีก')} {fmt(tr(cov.short))} {tr('อยู่นอกคลัง FG (ยังไม่ผ่านรับเข้า)')}</span>
                       : cov.covered > 0 || cov.offFg > 0
-                        ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>{tr('⚠️ มี')} {fmt(cov.covered)}{cov.offFg > 0 ? ` (+${fmt(cov.offFg)} นอกคลัง FG)` : ''} {tr('— ขาด')} {fmt(cov.short)} {tr('(รอผลิต)')}</span>
-                        : <span style={{ color: 'var(--red)', fontWeight: 800 }}>{tr('ไม่มีของพร้อมส่ง — ขาด')} {fmt(cov.short)} {tr('ต้องผลิต!')}</span>;
+                        ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>{tr('⚠️ มี')} {fmt(cov.covered)}{cov.offFg > 0 ? ` (+${fmt(cov.offFg)} นอกคลัง FG)` : ''} {tr('— ขาด')} {fmt(tr(cov.short))} {tr('(รอผลิต)')}</span>
+                        : <span style={{ color: 'var(--red)', fontWeight: 800 }}>{tr('ไม่มีของพร้อมส่ง — ขาด')} {fmt(tr(cov.short))} {tr('ต้องผลิต!')}</span>;
               const nx = nextStep(o);
               return (
                 <div key={o.id} id={`ship-card-${o.id}`} style={{ borderRadius: 'var(--radius-lg)',
@@ -1061,7 +1061,7 @@ function ShippingTab({ fullName, refreshKey, custLabel, canAdd, shipToCodes, shi
                           <button onClick={() => advance(o)} disabled={busy === o.id}
                             title={nx.terminal ? tr('เฟสท้ายสุดที่ตั้งไว้ = จบงาน (ปิดรอบส่งเลย ไม่มีขั้นถัดไป)') : undefined}
                             style={storeBtn('primary', { width: '100%' })}>
-                            {busy === o.id ? '...' : nx.label}
+                            {busy === o.id ? '...' : tr(nx.label)}
                           </button>
                         )}
                       </div>

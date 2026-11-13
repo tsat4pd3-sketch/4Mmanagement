@@ -135,6 +135,34 @@ export function mtnSegSeries(roll, year, team) {
   };
 }
 
+/* ══ 🔧 "ชั่วโมงนี้เป็นเครื่องเสียของช่างไหม" — 3 ถังตามธงในทะเบียน ══  2026-11-13
+   คำสั่ง user: *"ทำข้อ 2 ติดธงในทะเบียนประเภท downtime"*
+   ธงอยู่ `dr_downtime_types.is_machine_breakdown` · กติกา/ชื่อถัง = `utils/dtBreakdownOwner.js`
+
+   🔴 **ไม่แตะเลขทางการ** — `mbd`/`mtbf`/`mttr` ยังคิดจากไลน์หยุดเต็มเหมือนเดิม
+      (กลุ่มเป็นเจ้าของนิยาม KPI · ESM = ที่ผลิตตัวเลข Actual) ตัวนี้เป็น**อีกมุมคู่กัน**
+   🔴 **บวกกลับต้องเท่าไลน์หยุดเสมอ** (ฝั่ง SQL แยก 3 filter จากแถวเดียวกัน ⇒ ไม่มีทางหาย)
+   🔴 **`unset` ≠ `no`** — ยังไม่มีใครติ๊ก ห้ามนับให้ฝั่งไหน ต้องเป็นถังที่เห็นบนจอ
+      วัด 13/11: ยังไม่ติ๊กเลยสักประเภท ⇒ ต.ค. machine 810.1 ชม. อยู่ถัง `unset` ทั้งก้อน
+   🔴 RPC รุ่นก่อน 13/11 ไม่มี `mb_*` ⇒ `known:false` ห้ามคืน 0 */
+export function mtnOwnerSeries(roll, year, team) {
+  const kind = team?.equip_type || null;
+  const rows = (roll?.dt || []).filter(x => !kind || x?.kind === kind);
+  if (!rows.length || !rows.some(x => x?.mb_unset_min !== undefined)) {
+    return { known: false, yesHr: 0, noHr: 0, unsetHr: 0, totalHr: 0, decidedPct: null };
+  }
+  const yr = String(year);
+  const mine = rows.filter(x => String(x?.m || '').startsWith(yr));
+  const sum = (f) => mine.reduce((s, x) => s + num(x[f]), 0) / 60;
+  const yesHr = sum('mb_yes_min'), noHr = sum('mb_no_min'), unsetHr = sum('mb_unset_min');
+  const totalHr = yesHr + noHr + unsetHr;
+  return {
+    known: true, yesHr, noHr, unsetHr, totalHr,
+    /* ตัดสินไปแล้วกี่ % ของชั่วโมง — ไม่มีชั่วโมงเลย = null ห้ามคืน 0 */
+    decidedPct: totalHr > 0 ? ((yesHr + noHr) / totalHr) * 100 : null,
+  };
+}
+
 /* ══ 🕳️ "ชั่วโมงที่ยังชี้เจ้าของไม่ได้" ══════════════════════════  2026-11-11
    คำสั่ง user: *"single source truth ต้องไม่มีค่าไหนหายไป แต่ต้องเคาะว่าจะไปอยู่ตรงไหน"*
 

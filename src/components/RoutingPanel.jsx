@@ -329,7 +329,7 @@ export default function RoutingPanel({ canEdit, lines = [] }) {
                 <label style={lbl}>{tr('กระบวนการ')}</label>
                 <select value={form.process_type} onChange={e => setForm(f => ({ ...f, process_type: e.target.value }))} style={inp}>
                   <option value="">{tr('— ไม่ระบุ —')}</option>
-                  {activeProcessTypes().map(p => <option key={p.key} value={p.key}>{p.icon || ''} {p.label}</option>)}
+                  {activeProcessTypes().map(p => <option key={p.key} value={p.key}>{p.icon || ''} {tr(p.label)}</option>)}
                 </select>
               </div>
               {[

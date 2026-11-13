@@ -265,7 +265,7 @@ function ReadyChips({ ready, onGo, compact }) {
             style={{ fontSize: 11, fontWeight: 700, padding: compact ? '1px 6px' : '2px 8px', borderRadius: 'var(--r-md)',
               background: c.bg, color: c.fg, border: `1px solid ${tint(c.fg, 'dim')}`, cursor: go ? 'pointer' : 'default',
               fontFamily: 'var(--font-body)', lineHeight: 1.5 }}>
-            {st.icon} {compact ? '' : st.label + ' '}{c.mark}{st.hint ? '*' : ''}
+            {st.icon} {compact ? '' : tr(st.label) + ' '}{c.mark}{tr(st.hint) ? '*' : ''}
           </button>
         );
       })}
@@ -3439,7 +3439,7 @@ function ExportPanel() {
           return (
             <div key={e.key} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 14,
               display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>{e.icon} {e.label}</div>
+              <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>{e.icon} {tr(e.label)}</div>
               <div style={{ fontSize: 11, color: missing ? 'var(--amber)' : 'var(--muted)', fontFamily: 'monospace', flex: 1 }}>
                 {e.key}{missing ? ' · ⚠️ อ่านไม่ได้' : n === undefined ? ' · กำลังนับ…' : ` · ${n.toLocaleString()} แถว`}
               </div>
@@ -3666,7 +3666,7 @@ function PartsMasterPanel({ canCreate, canEdit, fullName, setCsvPreview, reloadK
       {/* legend */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '10px 14px', background: 'var(--bg2)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', fontSize: 11 }}>
         {MAT_PREFIXES.map(m => (
-          <span key={m.prefix} style={{ padding: '2px 10px', borderRadius: 'var(--r-lg)', background: `${tint(m.color, 'dim')}`, color: m.color, fontWeight: 700, fontFamily: 'monospace' }}>{m.label}</span>
+          <span key={m.prefix} style={{ padding: '2px 10px', borderRadius: 'var(--r-lg)', background: `${tint(m.color, 'dim')}`, color: m.color, fontWeight: 700, fontFamily: 'monospace' }}>{tr(m.label)}</span>
         ))}
       </div>
 

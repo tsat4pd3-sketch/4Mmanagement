@@ -66,8 +66,8 @@ const ROLES = ROLE_OPTIONS.map(r => ({ ...r, label: `${r.icon} ${r.label} (${r.e
 const ROLE_GROUPS = groupRolesByAxis(ROLES);
 // <optgroup> ของ role — ใช้ซ้ำทุก dropdown ที่เลือก role ในหน้านี้
 const RoleOptGroups = ({ withDesc = false }) => ROLE_GROUPS.map(g => (
-  <optgroup key={g.axis} label={g.label}>
-    {g.roles.map(r => <option key={r.value} value={r.value}>{r.label}{withDesc ? ` — ${r.desc}` : ''}</option>)}
+  <optgroup key={g.axis} label={tr(g.label)}>
+    {g.roles.map(r => <option key={r.value} value={r.value}>{tr(r.label)}{withDesc ? ` — ${r.desc}` : ''}</option>)}
   </optgroup>
 ));
 // sections = ขอบเขต**การมองเห็น** (เลือกได้หลายอัน ทุก role) — ว่าง = เห็นทุกส่วนงาน
@@ -1484,7 +1484,7 @@ export default function AddUser() {
         {ROLE_GROUPS.map(g => (
           <div key={g.axis} style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--text)', marginBottom: 2 }}>
-              {g.label} <span style={{ fontWeight: 400, color: 'var(--muted)' }}>— {g.hint}</span>
+              {tr(g.label)} <span style={{ fontWeight: 400, color: 'var(--muted)' }}>— {tr(g.hint)}</span>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))', gap: 8 }}>
               {g.roles.map(r => {
@@ -1598,7 +1598,7 @@ export default function AddUser() {
                         background: form.accountKind === o.k ? 'var(--green-dim)' : 'var(--bg2)',
                         color: form.accountKind === o.k ? 'var(--text)' : 'var(--text2)',
                       }}>
-                      <div style={{ fontWeight: 700 }}>{o.icon} {o.label}</div>
+                      <div style={{ fontWeight: 700 }}>{o.icon} {tr(o.label)}</div>
                       <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr(o.desc)}</div>
                     </button>
                   ))}
@@ -1777,7 +1777,7 @@ export default function AddUser() {
                   <select value={form.position} onChange={e => setF('position', e.target.value)} style={{ flex: 1, minWidth: 0 }}>
                     <option value="">{tr('— ไม่ระบุ —')}</option>
                     {positionOptionsWith(form.position).map(p => (
-                      <option key={p.value} value={p.value}>{p.label}{p.level == null && !posOpts().some(o => o.value === p.value) ? ' ⚠ นอกทะเบียน' : ''}</option>
+                      <option key={p.value} value={p.value}>{tr(p.label)}{p.level == null && !posOpts().some(o => o.value === p.value) ? ' ⚠ นอกทะเบียน' : ''}</option>
                     ))}
                   </select>
                   <button type="button" onClick={() => setNewPos(v => (v ? null : { key: '', label_th: '', level: 'staff' }))}
@@ -2014,24 +2014,24 @@ export default function AddUser() {
                           const wide = d === 'all';
                           const col = wide ? 'var(--amber)' : 'var(--blue)';
                           return (
-                            <button key={d} type="button" title={m.desc}
+                            <button key={d} type="button" title={tr(m.desc)}
                               onClick={() => setF('scopeDepth', d)}
                               style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700,
                                 cursor: 'pointer', background: on ? `${tint(col, 'dim')}` : 'var(--bg2)',
                                 border: `1px solid ${on ? col : 'var(--border2)'}`,
                                 color: on ? col : 'var(--text2)' }}>
-                              {m.icon} {m.label}
+                              {m.icon} {tr(m.label)}
                               {d === suggested && <span style={{ fontSize: 11, opacity: 0.75 }}> {tr('· แนะนำ')}</span>}
                             </button>
                           );
                         })}
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-                        {SCOPE_DEPTH_META[form.scopeDepth || 'unit'].desc}
+                        {tr(SCOPE_DEPTH_META[form.scopeDepth || 'unit'].desc)}
                         {orgReco?.depth
-                          ? <> {tr('· ผังแนะนำ “')}{SCOPE_DEPTH_META[orgReco.depth].label}” — {recoWhy} · <b>{tr('ตั้งต่างได้')}</b></>
+                          ? <> {tr('· ผังแนะนำ “')}{tr(SCOPE_DEPTH_META[orgReco.depth].label)}” — {recoWhy} · <b>{tr('ตั้งต่างได้')}</b></>
                           : lvl ? <> {tr('· ระดับ')} <b>{levelMeta(lvl)?.label || lvl}</b> ปกติใช้
-                              “{SCOPE_DEPTH_META[suggested].label}” — <b>{tr('ตั้งต่างจากที่แนะนำได้')}</b> {tr('ของจริงมีข้อยกเว้นเสมอ')}</>
+                              “{tr(SCOPE_DEPTH_META[suggested].label)}” — <b>{tr('ตั้งต่างจากที่แนะนำได้')}</b> {tr('ของจริงมีข้อยกเว้นเสมอ')}</>
                             : <> {tr('· ยังไม่ได้เลือกตำแหน่ง — เลือกแล้วระบบจะแนะนำความกว้างที่เหมาะให้')}</>}
                         {orgReco && !orgReco.depth && recoWhy && <> · ⚠️ {recoWhy}</>}
                         {recoNarrower && (
@@ -2164,7 +2164,7 @@ export default function AddUser() {
                                 {meta?.icon || '•'} {r.name}
                               </span>
                               <code style={{ fontSize: 11, color: 'var(--muted)' }}>{r.cc}</code>
-                              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{meta?.short || r.kind}</span>
+                              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr(meta?.short) || r.kind}</span>
                               {on && nCov > 0 && (
                                 <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)' }}>{tr('⤵ ครอบอีก')} {nCov} {tr('หน่วย')}</span>
                               )}

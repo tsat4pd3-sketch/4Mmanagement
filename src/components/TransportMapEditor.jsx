@@ -378,7 +378,7 @@ export default function TransportMapEditor() {
             <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--text2)' }}>
               {tr('ชนิดจุด:')}
               <select value={addKind} onChange={e => setAddKind(e.target.value)} style={{ width: 150, padding: '5px 8px', borderRadius: 'var(--ctl-r)', fontSize: 12.5, background: 'var(--card)', border: '1px solid var(--border)', color: 'var(--text)' }}>
-                {NODE_KINDS.map(n => <option key={n.key} value={n.key}>{n.icon} {n.label}</option>)}
+                {NODE_KINDS.map(n => <option key={n.key} value={n.key}>{n.icon} {tr(n.label)}</option>)}
               </select>
             </label>
           )}
@@ -467,7 +467,7 @@ export default function TransportMapEditor() {
             const isFrom = edgeFrom === n.id || (mode === 'draw' && chainLast === n.id)
             return (
               <div key={n.id} data-node data-ux-ok="จุดบนผัง ลอยทับรูป (UI §6.20)" onClick={(e) => onNodeClick(e, n)} onPointerDown={(e) => onNodePointerDown(e, n)}
-                title={n.name || k.label}
+                title={n.name || tr(k.label)}
                 style={{
                   position: 'absolute', left: `${n.x}%`, top: `${n.y}%`, transform: 'translate(-50%,-50%)',
                   width: n.kind === 'junction' ? 15 : 22, height: n.kind === 'junction' ? 15 : 22, borderRadius: '50%',
@@ -492,7 +492,7 @@ export default function TransportMapEditor() {
             <div style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text2)', marginBottom: 8 }}>{tr('สัญลักษณ์')}</div>
             {NODE_KINDS.map(k => (
               <div key={k.key} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>
-                <span style={{ width: 15, height: 15, borderRadius: '50%', background: k.color, display: 'inline-block' }} /> {k.icon} {k.label}
+                <span style={{ width: 15, height: 15, borderRadius: '50%', background: k.color, display: 'inline-block' }} /> {k.icon} {tr(k.label)}
               </div>
             ))}
           </div>
@@ -505,7 +505,7 @@ export default function TransportMapEditor() {
               </FieldLbl>
               <FieldLbl t="ชนิด">
                 <select value={selNode.kind} onChange={e => patchNode(selNode.id, { kind: e.target.value })} style={inp}>
-                  {NODE_KINDS.map(n => <option key={n.key} value={n.key}>{n.icon} {n.label}</option>)}
+                  {NODE_KINDS.map(n => <option key={n.key} value={n.key}>{n.icon} {tr(n.label)}</option>)}
                 </select>
               </FieldLbl>
               <FieldLbl t="ผูกไลน์/สโตร์ (optional)">

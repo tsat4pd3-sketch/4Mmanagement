@@ -56,7 +56,7 @@ export default function LineStopBar({ total, parts = [], unknownHr = 0, unknownL
           const w = pct(r.hr);
           if (w <= 0) return null;
           return (
-            <div key={r.key} title={`${r.label} — ${fmtHr(r.hr)} (${w.toFixed(1)}%)`}
+            <div key={r.key} title={`${tr(r.label)} — ${fmtHr(r.hr)} (${w.toFixed(1)}%)`}
               style={{ width: `${w}%`, background: r.color,
                        borderRight: '1px solid var(--border)',
                        /* แถบ "ยังแบ่งไม่ได้" ต้องดูต่างจากช่วงที่รู้ชัด แต่ยังมองเห็น */
@@ -70,7 +70,7 @@ export default function LineStopBar({ total, parts = [], unknownHr = 0, unknownL
           <span key={r.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: r.dim ? 'var(--muted)' : 'var(--text2)' }}>
             <i style={{ width: 9, height: 9, borderRadius: 2, background: r.color, border: '1px solid var(--border)',
                         opacity: r.dim ? 0.55 : 1, display: 'inline-block' }} />
-            {r.label} <b style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtHr(r.hr)}</b>
+            {tr(r.label)} <b style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtHr(r.hr)}</b>
             <span style={{ color: 'var(--muted)' }}>({pct(r.hr).toFixed(1)}%)</span>
           </span>
         ))}

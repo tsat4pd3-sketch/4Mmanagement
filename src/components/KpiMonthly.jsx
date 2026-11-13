@@ -11,7 +11,7 @@ import { loadAffectsLanes } from '../utils/affectsLanes';
 import { defectUnitCost } from '../utils/costSaving';
 import { fetchByIds } from '../utils/fetchByIds';
 import useOrgScope from '../utils/useOrgScope';
-import { mtnAutoSeries, mtnGapSeries, mtnSegSeries, autoKpiOfName, toRowUnit, HOURS_PER_MONTH, autoUnitMismatch } from '../utils/kpiAuto';
+import { mtnAutoSeries, mtnGapSeries, mtnSegSeries, mtnOwnerSeries, autoKpiOfName, toRowUnit, HOURS_PER_MONTH, autoUnitMismatch } from '../utils/kpiAuto';
 import LineStopBar from './LineStopBar';   // 📊 แท่งพิสูจน์ว่าชั่วโมงไลน์หยุดบวกกลับได้ครบ
 import { loadPmTeams, pmTeamsSync } from '../utils/pmTeams';
 import OrgScopePicker from './OrgScopePicker';
@@ -332,6 +332,9 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
   /* 📊 แตกชั่วโมงไลน์หยุดของทีมนี้เป็นช่วง (11/11 · คำสั่ง user "ให้เห็นว่าเลขตัวเดียวกัน") */
   const mtnSeg = useMemo(() => (mtnTeam && mtnRoll?.data && mtnRoll.year === year
     ? mtnSegSeries(mtnRoll.data, year, mtnTeam) : null), [mtnTeam, mtnRoll, year]);
+  /* 🔧 แยกชั่วโมงตามธง "เครื่องเสียของช่างไหม" ในทะเบียนประเภท downtime (13/11 · คำสั่ง user) */
+  const mtnOwner = useMemo(() => (mtnTeam && mtnRoll?.data && mtnRoll.year === year
+    ? mtnOwnerSeries(mtnRoll.data, year, mtnTeam) : null), [mtnTeam, mtnRoll, year]);
   /* เติมค่าที่ระบบคำนวณลงเดือนที่ยังว่าง — เขียนผ่าน kpi_manual_entries เหมือนคนกรอก (สอบกลับได้ · ค่าทับมือไม่ได้) */
   const isPlantScope = isPlant(scope);   // primitive สำหรับ deps (กฎ DB ข้อ 9)
   const load = useCallback(async () => {
@@ -1242,6 +1245,31 @@ export default function KpiMonthly({ lines, scopeSet, isMobile }) {
               />
             </div>
           )}
+          {/* 🔧 แท่งที่ 2 — ชั่วโมงเดียวกัน แบ่งตาม "ของช่าง / ไม่ใช่ของช่าง / ยังไม่ระบุ" (13/11)
+              🔴 ยอดเต็มเท่าแท่งบน (ไลน์หยุด) · 🔴 "ยังไม่ระบุ" ต้องเห็น ห้ามนับให้ฝั่งไหน
+              🔴 ไม่แตะเลขที่ส่งกลุ่ม — แถว KPI ข้างล่างยังคิดจากไลน์หยุดเต็มเหมือนเดิม */}
+          {mtnTeam && mtnOwner?.known && mtnOwner.totalHr > 0 && (
+            <div style={{ margin: '2px 0 10px', background: 'var(--bg3)', border: '1px solid var(--border2)',
+                          borderRadius: 'var(--r-md)', padding: '8px 10px' }}>
+              <LineStopBar
+                title={`🔧 ${tr('ชั่วโมงเดียวกันนี้ เป็นเครื่องเสียของช่างเท่าไหร่')} (${tr('ปี')} ${year + 543})`}
+                total={mtnOwner.totalHr}
+                parts={[
+                  { key: 'yes', label: 'ของช่าง (เครื่องเสีย)', hr: mtnOwner.yesHr, color: 'var(--red)' },
+                  { key: 'no', label: 'ไม่ใช่ของช่าง (คุณภาพ · ปรับตั้ง · รอของ)', hr: mtnOwner.noHr, color: 'var(--green)' },
+                ]}
+                unknownHr={mtnOwner.unsetHr}
+                unknownLabel="ยังไม่ระบุ (ไม่มีใครติ๊กธงในทะเบียน)"
+                note={mtnOwner.decidedPct != null && mtnOwner.decidedPct < 99.9
+                  ? `${tr('ติ๊กธงไปแล้ว')} ${mtnOwner.decidedPct.toFixed(0)}% ${tr('ของชั่วโมง — ที่เหลือยังไม่ถูกนับให้ฝั่งไหน')}`
+                    + ` · ${tr('ติ๊กได้ที่ ตั้งค่า → ประเภท Downtime ในหน้ารายงานผลิตรายวัน')}`
+                  : tr('ติ๊กครบทุกประเภทแล้ว')}
+              />
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
+                🔴 {tr('แท่งนี้ไม่กระทบเลขที่ส่งกลุ่ม — Machine Break Down / MTBF / MTTR ในตารางข้างล่างยังนับไลน์หยุดเต็มตาม KPI Guideline เหมือนเดิม')}
+              </div>
+            </div>
+          )}
           {/* 🕳️ "ไม่มีค่าไหนหายไป" (11/11 · คำสั่ง user) — ชั่วโมงเครื่องหยุดที่ระบบชี้ไม่ได้ว่าเป็นอุปกรณ์ชนิดไหน
               จึงไม่เข้า KPI ทีมใดเลย · 🔴 **ยอดรวมทั้งโรงงาน ไม่ใช่ของทีมที่เปิดดูอยู่** และห้ามเอาไปบวกให้ทีมไหน
               แยก 2 เหตุเพราะคนละทางแก้ · `known:false` = RPC รุ่นเก่ายังไม่ส่งมา ⇒ เขียนว่า "ยังไม่รู้" ห้ามโชว์ 0 */}
@@ -2013,7 +2041,7 @@ function DefModal({ init, year, scope, org, orgFailed = '', scopeSet, userSectio
                   {f.provider === 'formula' && (
                     <select style={{ ...inp, width: 'auto' }} value={f.formula} onChange={e => set('formula', e.target.value)}>
                       <option value="">{tr('— เลือกสูตร —')}</option>
-                      {KPI_FORMULAS.map(x => <option key={x.key} value={x.key}>{x.label} = {x.expr}</option>)}
+                      {KPI_FORMULAS.map(x => <option key={x.key} value={x.key}>{tr(x.label)} = {x.expr}</option>)}
                     </select>
                   )}
                 </div>

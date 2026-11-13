@@ -123,7 +123,7 @@ function ThumbMap({ imageUrl, alt, markers }) {
                   <div style={{ position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)', marginTop: 1, background: 'var(--red-line)', borderRadius: 'var(--r-xs)', padding: '0px 5px', fontSize: 11, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap', maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis' }}>{tr(m.label)}</div>
                 </div>
               ) : (
-                <div style={{ position: 'relative' }} title={m.personAlarm?.label || m.names}>
+                <div style={{ position: 'relative' }} title={tr(m.personAlarm?.label) || m.names}>
                   <div
                     className={m.personAlarm ? (m.personAlarm.kind === 'red' ? 'person-alarm-red' : 'person-alarm-amber') : undefined}
                     style={{
@@ -2210,8 +2210,8 @@ export default function Dashboard({ view = 'timeline' }) {
                               <div style={{ width: LEFT_W, flexShrink: 0, padding: '4px 8px', borderRight: '1px solid var(--border2)', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 7, overflow: 'hidden', ...(isMobile ? { position: 'sticky', left: 0, zIndex: 6, background: 'var(--card)' } : null) }}>
                                 {row.img && <img loading="lazy" src={row.img} alt="" style={{ width: T(44, 56), height: T(44, 56), objectFit: 'cover', borderRadius: 6, flexShrink: 0 }} />}
                                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0 }}>
-                                  <div title={row.label} style={{ fontSize: T(11, 19), color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>
-                                    {row.label}
+                                  <div title={tr(row.label)} style={{ fontSize: T(11, 19), color: 'var(--text2)', fontWeight: 700, lineHeight: 1.25, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>
+                                    {tr(row.label)}
                                     {/* บอร์ดรวมหลาย sub-line — ป้ายบอกว่าแถวนี้ของไลน์ไหน (product เดียวกันคนละไลน์ = คนละแถว) */}
                                     {multiSubLine && row.line && (
                                       <span style={{ marginLeft: 4, fontSize: T(11, 17), fontWeight: 800, color: 'var(--blue)', background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', borderRadius: 'var(--r-xs)', padding: '0 5px', whiteSpace: 'nowrap' }}>{row.line}</span>
@@ -2790,7 +2790,7 @@ export default function Dashboard({ view = 'timeline' }) {
                           <div key={`${ws.id}-${emp.id}`}
                             onMouseEnter={e => { e.currentTarget.style.zIndex = 50; }}
                             onMouseLeave={e => { e.currentTarget.style.zIndex = 2; }}
-                            title={pAlarm?.label}
+                            title={tr(pAlarm?.label)}
                             style={{
                               // wrapper สูงเท่าวงกลมเท่านั้น — ป้ายทั้งหมดห้อยใต้แบบ absolute
                               // กันจุดกึ่งกลางวงกลมเลื่อนขึ้นครึ่งป้าย (UI-CONVENTIONS §1.1)

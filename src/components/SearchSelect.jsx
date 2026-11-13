@@ -267,7 +267,7 @@ export default function SearchSelect({
                           <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 12.5, fontWeight: 800, color: 'var(--text)' }}>{o.lead}</span>
                         )}
                         <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: o.lead ? 400 : 700, color: o.lead ? 'var(--text2)' : 'var(--text)', ...clampSt }}>
-                          {o.title ?? o.label}
+                          {o.title ?? tr(o.label)}
                         </span>
                       </div>
                       {/* บรรทัด 2 — รหัสนำ (ห้ามตัด) + ข้อความประกอบ (ตัดได้) */}

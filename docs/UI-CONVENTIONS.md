@@ -2645,7 +2645,8 @@ pseudo ตัวนี้ `position:absolute` **โปร่งใส มอง�
    ป้ายที่ประกอบตัวเลข (`ทุกไลน์ (3)`) ยังไทย — ให้ส่ง `badge` แยกจาก label · 📄 `docs/modules/i18n.md` §รอบ 2
    **รอบ 3 (13/11): ข้อความทั่วไป (span/div/p/td/li) · tooltip `title=` · prop `label/sub/hint/help/emptyText` · ternary/fallback ใน title/child
    ผ่าน `tr()` แล้ว (~8,500 จุด · พจนานุกรม +6,350 คำ)** — ข้อความใหม่ทุกชิ้นที่คนเห็นเขียน `{tr('…')}` + เติม `en.js` ·
-   🔴 **HTML string ใบพิมพ์ (template literal) ห้ามครอบ `tr()`** พิมพ์ออกตรงตัว · 📄 `docs/modules/i18n.md` §รอบ 3
+   🔴 **HTML string ใบพิมพ์ (template literal) ห้ามครอบ `tr()`** พิมพ์ออกตรงตัว ·
+   🔴 **`label:` ใน map ค่าคงที่ แปลที่จุดวาด `{tr(meta.label)}` ห้าม `label: tr('…')` ที่จุดประกาศ** (สลับภาษา = remount ไม่ reload ⇒ ค่าคงที่ค้างภาษาเดิม) · 📄 `docs/modules/i18n.md` §รอบ 3
 6. **ด่าน `src/utils/__tests__/i18n.test.mjs`** — เมนู · หมวด · ชื่อย่อ rail · `ALL` · timeRange · `<PageHeader title="…">` คงที่
    ต้องมีคำแปลครบ · **เพิ่มเมนู/หน้าใหม่ต้องเติม `en.js` ในคอมมิทเดียวกัน** (ตก = build ล่ม · ห้ามถอดเทส)
 7. ชื่อย่อบน rail 64px ภาษาอังกฤษต้อง ≤ ~9 ตัวอักษร (`Maint.` ไม่ใช่ `Maintenance` — ถูกตัดเป็น `Mainten…`)

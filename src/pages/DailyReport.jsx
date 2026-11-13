@@ -62,6 +62,7 @@ import DieMatLinkButton from '../components/DieMatLinkButton';
 import MoReportFromDowntime from '../components/MoReportFromDowntime';   // ฟอร์มแจ้งซ่อมเต็ม (lazy) — เปิดใบจาก Downtime
 import { dieCandidatesForMats } from '../utils/dieCandidates';
 import { dtMachineRule, machineFitsDtType, idsForDb } from '../utils/dtMachineFilter';
+import { MB_FLAGS, mbFlagOf, mbFlagMeta, mbValueForDb } from '../utils/dtBreakdownOwner';   // 🔧 ธง "เครื่องเสียของช่างไหม" (13/11)
 import { kindOf, EQUIPMENT_KINDS, KIND_META } from '../utils/equipmentKinds';
 import { resolveMachine, normCode, resolveTypeRow, QR_KINDS } from '../utils/qrCode';
 import { SCAN_EVENT } from '../utils/scanWedge';
@@ -5317,7 +5318,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                         {c.detail && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{c.detail}</div>}
                         {c.hint && (
                           <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 4, lineHeight: 1.6 }}>
-                            <b>{tr('ต้องไปตรวจ:')}</b> {c.hint}
+                            <b>{tr('ต้องไปตรวจ:')}</b> {tr(c.hint)}
                           </div>
                         )}
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, fontStyle: 'italic' }}>
@@ -9679,16 +9680,19 @@ function DowntimeTypeSetup({ role }) {
   const openEdit = (item = null) => {
     setEditing(item?.id || 'new');
     setForm(item
-      ? { name_th: item.name_th, name_en: item.name_en || '', category: item.category, process_type: item.process_type || 'welding_assembly', color: item.color, sort_order: item.sort_order, is_active: item.is_active, six_big_loss: item.six_big_loss || '', waste_type: item.waste_type || '', machine_type_ids: item.machine_type_ids || [], equipment_kinds: item.equipment_kinds || [] }
+      ? { name_th: item.name_th, name_en: item.name_en || '', category: item.category, process_type: item.process_type || 'welding_assembly', color: item.color, sort_order: item.sort_order, is_active: item.is_active, six_big_loss: item.six_big_loss || '', waste_type: item.waste_type || '', machine_type_ids: item.machine_type_ids || [], equipment_kinds: item.equipment_kinds || [], mb_flag: mbFlagOf(item) }
       // สร้างใหม่ default สีที่ยังไม่ซ้ำกับประเภทที่มี (ผู้ใช้เปลี่ยนทับได้)
-      : { name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: pickUnusedColor(items.map(i => i.color)), sort_order: items.length + 1, is_active: true, six_big_loss: '', waste_type: '', machine_type_ids: [], equipment_kinds: [] });
+      : { name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: pickUnusedColor(items.map(i => i.color)), sort_order: items.length + 1, is_active: true, six_big_loss: '', waste_type: '', machine_type_ids: [], equipment_kinds: [], mb_flag: 'unset' });
   };
 
   const handleSave = async () => {
     if (!form.name_th) { toast.error('กรอกชื่อประเภท'); return; }
     setSaving(true);
     // ค่าว่าง = ยังไม่จัดหมวด Lean → เก็บเป็น null (ห้ามเก็บ '' — จะกลายเป็นถังใหม่ในหน้าวิเคราะห์)
-    const payload = { ...form, six_big_loss: form.six_big_loss || null, waste_type: form.waste_type || null, machine_type_ids: idsForDb(form.machine_type_ids), equipment_kinds: idsForDb(form.equipment_kinds) };
+    /* 🔧 ธง "ของช่างไหม" — `mb_flag` เป็นคีย์บนจอ ต้องแปลงเป็น boolean/null ก่อนลงฐาน
+         🔴 ยังไม่ระบุ = null ห้ามเก็บ false (false = ตัดสินแล้วว่าไม่ใช่ของช่าง คนละเรื่อง) */
+    const { mb_flag, ...rest } = form;
+    const payload = { ...rest, six_big_loss: form.six_big_loss || null, waste_type: form.waste_type || null, machine_type_ids: idsForDb(form.machine_type_ids), equipment_kinds: idsForDb(form.equipment_kinds), is_machine_breakdown: mbValueForDb(mb_flag) };
     const { error } = editing === 'new'
       ? await supabaseDR.from('dr_downtime_types').insert(payload)
       : await supabaseDR.from('dr_downtime_types').update(payload).eq('id', editing);
@@ -9726,6 +9730,22 @@ function DowntimeTypeSetup({ role }) {
         <div style={{ fontSize: 11, color: 'var(--muted)', background: item.category === 'unplanned' ? 'var(--red-dim)' : 'var(--blue-dim)', borderRadius: 'var(--r-xs)', padding: '2px 6px' }}>
           {item.category === 'unplanned' ? '⚠ นอกแผน' : '📋 ในแผน'}
         </div>
+        {/* 🔧 ธง "ของช่างไหม" (13/11) — ต้องเห็นจากลิสต์ ไม่ต้องเปิดทีละใบ
+            🔴 "ยังไม่ระบุ" ต้องเด่นกว่า 2 อันแรก เพราะมันคือ "งานที่ยังไม่ได้ทำ" ไม่ใช่ค่าปกติ
+            🔴 ประเภท `planned` ไม่เข้า KPI ช่างอยู่แล้ว ⇒ ไม่ต้องติ๊ก ไม่ต้องทวง */}
+        {item.category !== 'planned' && (() => {
+          const fl = mbFlagOf(item);
+          const meta = { yes: { ic: '🔧', bg: 'var(--red-dim)', fg: 'var(--red)' },
+                         no: { ic: '🚫', bg: 'var(--green-dim)', fg: 'var(--green)' },
+                         unset: { ic: '❓', bg: 'var(--amber-dim)', fg: 'var(--amber)' } }[fl];
+          return (
+            <div title={tr(mbFlagMeta(fl).hint)}
+              style={{ fontSize: 11, fontWeight: fl === 'unset' ? 800 : 600, color: meta.fg, background: meta.bg,
+                       borderRadius: 'var(--r-xs)', padding: '2px 6px', whiteSpace: 'nowrap' }}>
+              {meta.ic} {tr(mbFlagMeta(fl).short)}
+            </div>
+          );
+        })()}
         <div style={{ fontSize: 11, color: 'var(--muted)' }}>#{item.sort_order}</div>
         {canEdit && (
           <div style={{ display: 'flex', gap: 6 }}>
@@ -9740,7 +9760,23 @@ function DowntimeTypeSetup({ role }) {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <div style={{ fontSize: 14, color: 'var(--muted)' }}>{items.length} {tr('ประเภท')}</div>
+        <div style={{ fontSize: 14, color: 'var(--muted)' }}>
+          {items.length} {tr('ประเภท')}
+          {/* 🔧 ตัวนับงานที่ยังไม่ได้ทำ (13/11) — ธง "ของช่างไหม" ยังไม่ติ๊กกี่ประเภท
+              🔴 ประเภท `planned` ไม่เข้า KPI ช่าง ⇒ ไม่นับ ไม่ทวง
+              🔴 นับ 0 = ครบแล้ว ⇒ ไม่โชว์ป้ายเลย (ห้ามโชว์ป้ายเหลืองค้างไว้) */}
+          {(() => {
+            const todo = items.filter(i => i.category !== 'planned' && mbFlagOf(i) === 'unset').length;
+            if (!todo) return null;
+            return (
+              <span title={tr('ติ๊กเพื่อแยกมุมมองใน KPI ช่าง — ประเภทในแผนไม่ต้องติ๊ก')}
+                style={{ marginLeft: 8, fontSize: 11, fontWeight: 800, color: 'var(--amber)',
+                         background: 'var(--amber-dim)', borderRadius: 'var(--r-xs)', padding: '2px 7px' }}>
+                ❓ {todo} {tr('ประเภทที่ยังไม่ติ๊กธง "ของช่างไหม"')}
+              </span>
+            );
+          })()}
+        </div>
         {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>{tr('+ เพิ่มประเภท')}</button>}
       </div>
 
@@ -9800,13 +9836,13 @@ function DowntimeTypeSetup({ role }) {
               <Field label={tr('6 Big Losses (TPM) — สำหรับวิเคราะห์ ไม่กระทบ OEE')}>
                 <select value={form.six_big_loss} onChange={e => setForm(f => ({ ...f, six_big_loss: e.target.value }))} style={inputStyle}>
                   <option value="">{tr('— ยังไม่จัดหมวด —')}</option>
-                  {SIX_BIG_LOSSES.map(l => <option key={l.key} value={l.key}>{l.icon} {l.label} {tr('(กระทบ')} {l.oee})</option>)}
+                  {SIX_BIG_LOSSES.map(l => <option key={l.key} value={l.key}>{l.icon} {tr(l.label)} {tr('(กระทบ')} {l.oee})</option>)}
                 </select>
               </Field>
               <Field label={tr('8 Wastes (Lean) — สำหรับวิเคราะห์ ไม่กระทบ OEE')}>
                 <select value={form.waste_type} onChange={e => setForm(f => ({ ...f, waste_type: e.target.value }))} style={inputStyle}>
                   <option value="">{tr('— ยังไม่จัดหมวด —')}</option>
-                  {EIGHT_WASTES.map(w => <option key={w.key} value={w.key}>{w.icon} {w.label}</option>)}
+                  {EIGHT_WASTES.map(w => <option key={w.key} value={w.key}>{w.icon} {tr(w.label)}</option>)}
                 </select>
               </Field>
               <Field label={tr('เกิดกับเครื่องประเภทไหน (กรองช่องเลือกเครื่องตอนลง Downtime · ไม่ติ๊ก = ทุกเครื่อง)')}>
@@ -9820,7 +9856,7 @@ function DowntimeTypeSetup({ role }) {
                           const cur = f.equipment_kinds || [];
                           return { ...f, equipment_kinds: on ? cur.filter(x => x !== k.key) : [...cur, k.key] };
                         })} />
-                        {k.icon} {k.label} {tr('(ทั้งชนิด)')}
+                        {k.icon} {tr(k.label)} {tr('(ทั้งชนิด)')}
                       </label>
                     );
                   })}
@@ -9835,7 +9871,7 @@ function DowntimeTypeSetup({ role }) {
                             const cur = f.machine_type_ids || [];
                             return { ...f, machine_type_ids: on ? cur.filter(x => x !== t.id) : [...cur, t.id] };
                           })} />
-                          {t.label}
+                          {tr(t.label)}
                         </label>
                       );
                     })}
@@ -9845,6 +9881,31 @@ function DowntimeTypeSetup({ role }) {
                   {(form.machine_type_ids || []).length + (form.equipment_kinds || []).length
                     ? `ติ๊ก ${(form.equipment_kinds || []).length} ชนิด + ${(form.machine_type_ids || []).length} ประเภทเครื่อง (เข้าข้อใดข้อหนึ่ง = ขึ้นในลิสต์)`
                     : 'ไม่ติ๊ก = เกิดได้กับทุกเครื่อง (เช่น Sensor / ระบบลม)'}
+                </div>
+              </Field>
+              {/* 🔧 ธง "เครื่องเสียที่ช่างรับผิดชอบไหม" (13/11 · คำสั่ง user "ติดธงในทะเบียนประเภท downtime")
+                  🔴 3 สถานะ ห้ามยุบเหลือ 2 — "ยังไม่ระบุ" ≠ "ไม่ใช่ของช่าง"
+                  🔴 **คนละแกนกับ `category`/`six_big_loss`/`equipment_kinds`** บนตารางเดียวกัน ห้ามเอามาแทนกัน
+                  🔴 ธงนี้ **ไม่แตะเลข KPI ที่ส่งกลุ่ม** (ยังนับไลน์หยุดเต็มเหมือนเดิม) ให้อีกมุมคู่กันเท่านั้น */}
+              <Field label={tr('เป็นเครื่องเสียที่ช่างรับผิดชอบไหม')}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {MB_FLAGS.map(fl => {
+                    const on = (form.mb_flag || 'unset') === fl.key;
+                    return (
+                      <button key={fl.key} type="button" onClick={() => setForm(f => ({ ...f, mb_flag: fl.key }))}
+                        title={tr(fl.hint)}
+                        style={{ fontSize: 12, fontWeight: 700, padding: '5px 11px', cursor: 'pointer',
+                                 borderRadius: 'var(--ctl-r)', border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+                                 background: on ? 'var(--accent-dim)' : 'var(--card)',
+                                 color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>
+                        {tr(fl.label)}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
+                  {tr(mbFlagMeta(form.mb_flag || 'unset').hint)}
+                  <div>{tr('ใช้แยกมุมมองใน KPI ช่างเท่านั้น — ไม่กระทบ Machine Break Down / MTBF / MTTR ที่ส่งกลุ่ม')}</div>
                 </div>
               </Field>
               <Field label={tr('สี')}>

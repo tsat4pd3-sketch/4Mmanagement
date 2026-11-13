@@ -12,6 +12,7 @@
 
 import { useMemo } from 'react';
 
+import { tr } from '../utils/i18n';
 const NICE = [1, 2, 2.5, 5, 10];
 /** หาสเกลแกน Y ที่อ่านสบาย (ลงท้าย 1/2/2.5/5/10 × 10^n) แล้วคืนเส้น grid
  *  integer = นับเป็นชิ้น → step ต่ำสุด 1 (ไม่งั้นได้แกน 0.25 / 0.5 ซึ่งไม่มีความหมายกับจำนวนชิ้น) */
@@ -124,7 +125,7 @@ export default function DailyBars({ data, height = 150, unit = '', valueLabel, m
               <div key={r.key} style={{
                 flex: `1 0 ${minBar}px`, maxWidth: maxBar, fontSize: 11, color: 'var(--muted)',
                 textAlign: 'center', whiteSpace: 'nowrap', overflow: 'visible', marginTop: 2,
-              }}>{i % everyN === 0 ? r.label : ''}</div>
+              }}>{i % everyN === 0 ? tr(r.label) : ''}</div>
             ))}
           </div>
         </div>

@@ -337,7 +337,7 @@ export default function MonitorBoardGrid({
                     ...tdBase, whiteSpace: 'nowrap', fontWeight: isCalc ? 400 : 700,
                     color: isCalc ? 'var(--muted)' : 'var(--text)',
                   }}>
-                    {row.label}
+                    {tr(row.label)}
                     {row.kind === 'system' ? <span title={tr('ระบบดึงให้เอง — กรอกทับได้')} style={{ color: 'var(--muted)' }}> ⚙</span> : null}
                     {isCalc ? (
                       <span title={tr('ระบบคำนวณจากแถวอื่น — พิมพ์ทับไม่ได้')}

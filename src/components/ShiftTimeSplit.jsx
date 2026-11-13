@@ -62,8 +62,8 @@ export default function ShiftTimeSplit({ split, compact = false }) {
           if (v <= 0 && s.k !== 'unknownMin') return null;
           const hot = s.k === 'unknownMin' && v > 0;
           return (
-            <span key={s.k} title={s.label} style={{ fontSize: fs, color: hot ? 'var(--text)' : 'var(--muted)', fontWeight: hot ? 800 : 600 }}>
-              {s.icon} {s.label} <span style={{ color: s.c, fontWeight: 800 }}>{v}</span> น.
+            <span key={s.k} title={tr(s.label)} style={{ fontSize: fs, color: hot ? 'var(--text)' : 'var(--muted)', fontWeight: hot ? 800 : 600 }}>
+              {s.icon} {tr(s.label)} <span style={{ color: s.c, fontWeight: 800 }}>{v}</span> น.
             </span>
           );
         })}

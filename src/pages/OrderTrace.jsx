@@ -1610,7 +1610,7 @@ export default function OrderTrace() {
                           background: r.confirmed ? 'var(--green-dim)' : 'var(--bg3)' }}>
                           <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
                             {r.sortOrder != null && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)' }}>{trI18n('ขั้นที่')} {r.sortOrder}</span>}
-                            <b style={{ fontSize: 13 }}>{r.kind === 'die' ? '🧱' : r.kind === 'jig' ? '🧰' : '⚙️'} {r.label}</b>
+                            <b style={{ fontSize: 13 }}>{r.kind === 'die' ? '🧱' : r.kind === 'jig' ? '🧰' : '⚙️'} {trI18n(r.label)}</b>
                             {r.name && <span style={{ fontSize: 11.5, color: 'var(--text2)' }}>{r.name}</span>}
                             {r.confirmed && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)' }}>{trI18n('ใบนี้ระบุ')}</span>}
                             {r.usage === 'suspect' && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{trI18n('ผู้ต้องสงสัย')}</span>}

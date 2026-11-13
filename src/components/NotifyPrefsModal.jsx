@@ -126,7 +126,7 @@ export default function NotifyPrefsModal({ role, onClose }) {
                           onChange={e => toggle(r.event_key, !e.target.checked)}
                           style={{ width: 'auto', marginTop: 2, flexShrink: 0 }} />
                         <span style={{ fontSize: 12.5, color: r.locked ? 'var(--muted)' : 'var(--text)', lineHeight: 1.5, minWidth: 0 }}>
-                          {r.label}
+                          {tr(r.label)}
                           {r.locked && <span style={{ fontSize: 11, color: toneVar('warn'), fontWeight: 700 }}> {tr('· งานที่รอคุณ ปิดไม่ได้')}</span>}
                         </span>
                       </label>

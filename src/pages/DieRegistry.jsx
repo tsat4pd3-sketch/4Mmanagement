@@ -667,7 +667,7 @@ export default function DieRegistry() {
         <select value={filterKind} onChange={e => setFilterKind(e.target.value)}>
           <option value="">{allOf('รูปแบบชุด')}</option>
           <option value={KIND_NONE}>{tr('— ยังไม่ระบุ (')}{stat.noKind}) —</option>
-          {setKinds.map(k => <option key={k.key} value={k.key}>{k.label}{k.is_active ? '' : ' (ปิดใช้)'}</option>)}
+          {setKinds.map(k => <option key={k.key} value={k.key}>{tr(k.label)}{k.is_active ? '' : ' (ปิดใช้)'}</option>)}
         </select>
         <SearchInput value={search} onChange={setSearch} fields="พาร์ท / ชื่อชุด / MAT / เลขแม่พิมพ์" />
         <span className="spacer" />
@@ -701,7 +701,7 @@ export default function DieRegistry() {
             hint: 'รูปแบบชุดว่าง = ใบแจ้งซ่อมเติมชนิดอุปกรณ์ให้ไม่ได้ (ถ้าแม่พิมพ์ไม่มีประเภท OP) · กรองด้วยช่อง "รูปแบบชุด" → ยังไม่ระบุ' },
           { t: 'ชุดที่ข้อมูลไม่ครบ', v: stat.todo, warn: stat.todo > 0 },
         ].map(c => (
-          <div key={c.t} title={c.hint || undefined} style={{
+          <div key={c.t} title={tr(c.hint) || undefined} style={{
             background: 'var(--card)', border: `1px solid ${c.warn ? 'var(--amber-line)' : 'var(--border)'}`,
             borderRadius: 'var(--r-md)', padding: '8px 14px', minWidth: 110,
           }}>

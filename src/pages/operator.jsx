@@ -1146,7 +1146,7 @@ export default function Operator() {
                     color: active ? g.text : 'var(--muted)',
                     transition: 'all 0.15s',
                   }}>
-                  {icon} {g.label}
+                  {icon} {tr(g.label)}
                 </button>
               );
             })}
@@ -1167,7 +1167,7 @@ export default function Operator() {
                     border: `1px solid ${active ? t.color : 'var(--border2)'}`,
                     background: active ? `${tint(t.color, 'dim')}` : 'var(--bg3)',
                     color: active ? t.color : 'var(--muted)', transition: 'all 0.15s' }}>
-                  {t.icon} {t.label}
+                  {t.icon} {tr(t.label)}
                 </button>
               );
             })}
@@ -1185,7 +1185,7 @@ export default function Operator() {
                     border: `1px solid ${active ? m.color : 'var(--border2)'}`,
                     background: active ? `${tint(m.color, 'dim')}` : 'var(--bg3)',
                     color: active ? m.color : 'var(--muted)', transition: 'all 0.15s' }}>
-                  {m.icon} {m.short}
+                  {m.icon} {tr(m.short)}
                 </button>
               );
             })}
@@ -1330,7 +1330,7 @@ export default function Operator() {
                   <th style={{ fontSize: 11, whiteSpace: 'nowrap' }}>{tr('วันเริ่มงาน')}</th>
                   {activeSkillDefs.map(sd => (
                     <th key={sd.name} style={{ fontSize: 11, color: sd.color, whiteSpace: 'nowrap' }}>
-                      <div>{SKILL_CAT_META_FULL[sd.category || 'hard_skill']?.icon || '🔧'} {sd.label}</div>
+                      <div>{SKILL_CAT_META_FULL[sd.category || 'hard_skill']?.icon || '🔧'} {tr(sd.label)}</div>
                       {(sd.scope_division || sd.scope_section) && <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>{skillScopeLabel(sd)}</div>}
                     </th>
                   ))}
@@ -1390,7 +1390,7 @@ export default function Operator() {
                         padding: '1px 7px', borderRadius: 'var(--r-xs)',
                         background: grade.badge, color: grade.text, border: `1px solid ${grade.border}`,
                       }}>
-                        {grade.label}
+                        {tr(grade.label)}
                       </div>
                     </td>
                     <td style={{ position: 'sticky', left: 148, background: 'var(--bg2)', zIndex: 1, boxShadow: '2px 0 6px rgba(0,0,0,0.15)' }}>
@@ -1408,7 +1408,7 @@ export default function Operator() {
                     <td style={{ fontSize: 12, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
                       {emp.section || '—'}
                       {emp.section && (() => { const m = laborMeta(empLabor(emp)); return (
-                        <span title={m.label} style={{ marginLeft: 5, fontSize: 11, padding: '0 4px', borderRadius: 'var(--r-xs)', background: `${tint(m.color, 'dim')}`, color: m.color, border: `1px solid ${tint(m.color, 'line')}`, fontWeight: 700 }}>{m.icon}</span>
+                        <span title={tr(m.label)} style={{ marginLeft: 5, fontSize: 11, padding: '0 4px', borderRadius: 'var(--r-xs)', background: `${tint(m.color, 'dim')}`, color: m.color, border: `1px solid ${tint(m.color, 'line')}`, fontWeight: 700 }}>{m.icon}</span>
                       ); })()}
                     </td>
                     {/* ค่าที่ไม่มีในผังองค์กรทำเป็นสีเหลืองนิ่ง + tooltip บอกเหตุผล (ไม่กระพริบ — ไม่ใช่ alarm) */}
@@ -1524,7 +1524,7 @@ export default function Operator() {
             {grouped.map(g => g.skills.length === 0 ? null : (
               <div key={g.key} style={{ marginBottom: 20 }}>
                 <div style={{ marginBottom: 8, display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{g.icon} {g.label}</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{g.icon} {tr(g.label)}</span>
                   {g.desc && <span style={{ fontSize: 11, color: g.color, opacity: 0.7 }}>{tr(g.desc)}</span>}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
@@ -1599,7 +1599,7 @@ export default function Operator() {
                   <label style={labelSt}>{tr('ประเภทสกิล')}</label>
                   <select value={newSkill.category} onChange={e => setNewSkill({ ...newSkill, category: e.target.value })}>
                     {Object.entries(CAT_META).map(([k, m]) => (
-                      <option key={k} value={k}>{m.icon} {m.label}</option>
+                      <option key={k} value={k}>{m.icon} {tr(m.label)}</option>
                     ))}
                   </select>
                 </div>
@@ -1609,7 +1609,7 @@ export default function Operator() {
                   <select value={newSkill.scope_division}
                     onChange={e => setNewSkill({ ...newSkill, scope_division: e.target.value, scope_section: '' })}>
                     <option value="">{tr('— ทุกฝ่าย (สกิลกลาง) —')}</option>
-                    {divisionsSync().map(d => <option key={d.code} value={d.code}>{d.icon} {d.label}</option>)}
+                    {divisionsSync().map(d => <option key={d.code} value={d.code}>{d.icon} {tr(d.label)}</option>)}
                   </select>
                 </div>
                 <div>
@@ -1682,7 +1682,7 @@ export default function Operator() {
                       <select value={editingSkill.category || 'hard_skill'}
                         onChange={e => setEditingSkill({ ...editingSkill, category: e.target.value })}>
                         {Object.entries(SKILL_CAT_META_FULL).map(([k, m]) => (
-                          <option key={k} value={k}>{m.icon} {m.label}</option>
+                          <option key={k} value={k}>{m.icon} {tr(m.label)}</option>
                         ))}
                       </select>
                     </div>
@@ -1691,7 +1691,7 @@ export default function Operator() {
                       <select value={editingSkill.scope_division || ''}
                         onChange={e => setEditingSkill({ ...editingSkill, scope_division: e.target.value, scope_section: '' })}>
                         <option value="">{tr('— ทุกฝ่าย (สกิลกลาง) —')}</option>
-                        {divisionsSync().map(d => <option key={d.code} value={d.code}>{d.icon} {d.label}</option>)}
+                        {divisionsSync().map(d => <option key={d.code} value={d.code}>{d.icon} {tr(d.label)}</option>)}
                       </select>
                     </div>
                     <div>
@@ -1719,7 +1719,7 @@ export default function Operator() {
                       <input type="color" value={editingSkill.color}
                         onChange={e => setEditingSkill({ ...editingSkill, color: e.target.value })}
                         style={{ width: 44, height: 36, padding: 2, borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg3)', cursor: 'pointer' }} />
-                      <span style={{ fontSize: 13, color: editingSkill.color, fontWeight: 700 }}>● {editingSkill.label || 'ตัวอย่าง'}</span>
+                      <span style={{ fontSize: 13, color: editingSkill.color, fontWeight: 700 }}>● {tr(editingSkill.label) || 'ตัวอย่าง'}</span>
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 10 }}>
@@ -1795,7 +1795,7 @@ export default function Operator() {
               <div key={lv.min} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 'var(--r-md)', background: lv.bg, fontSize: 11 }}>
                 <span style={{ fontWeight: 800, color: lv.color }}>{lv.min === 100 ? '100' : `${lv.min}–${lv.min === 75 ? 99 : lv.min === 50 ? 74 : lv.min === 25 ? 49 : lv.min === 0 ? 24 : 100}`}</span>
                 <span style={{ color: lv.color, fontWeight: 600 }}>{tr(lv.label)}</span>
-                <span style={{ color: 'var(--muted)' }}>— {lv.desc}</span>
+                <span style={{ color: 'var(--muted)' }}>— {tr(lv.desc)}</span>
               </div>
             ))}
           </div>
@@ -2138,7 +2138,7 @@ export default function Operator() {
                   onChange={e => setEditingEmp({ ...editingEmp, mtn_team: e.target.value || null })}>
                   <option value="">{tr('— ไม่ใช่ช่าง —')}</option>
                   {(mtnTeamRows.length ? mtnTeamRows : DEFAULT_TEAMS).map(t => (
-                    <option key={t.key} value={t.key}>{t.icon ? `${t.icon} ` : ''}{t.dept_name || t.label || t.key}</option>
+                    <option key={t.key} value={t.key}>{t.icon ? `${t.icon} ` : ''}{t.dept_name || tr(t.label) || t.key}</option>
                   ))}
                 </select>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
@@ -2313,7 +2313,7 @@ export default function Operator() {
                   {grouped.map(g => (
                     <div key={g.key} style={{ marginBottom: 14 }}>
                       <div style={{ marginBottom: 6, display: 'flex', alignItems: 'baseline', gap: 7 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{g.icon} {g.label}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{g.icon} {tr(g.label)}</span>
                         {g.desc && <span style={{ fontSize: 11, color: g.color, opacity: 0.7 }}>{tr(g.desc)}</span>}
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))', gap: 8 }}>
@@ -2348,7 +2348,7 @@ export default function Operator() {
                                   })}
                                   style={{ width: 14, height: 14, cursor: rowEditable ? 'pointer' : 'default' }} />
                                 <span style={{ fontSize: 11, fontWeight: 600, color: enabled ? sd.color : 'var(--muted)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {sd.label}
+                                  {tr(sd.label)}
                                   {(sd.scope_division || sd.scope_section) && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · {skillScopeLabel(sd)}</span>}
                                 </span>
                                 {enabled && lv && (

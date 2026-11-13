@@ -389,7 +389,7 @@ function VariableRow({ cp, idx, r, onChange, methodIndex, calcText }) {
             อ้างเลขนี้ทั้งหมด ⇒ จับคู่ไม่ได้ว่าแถวไหนคือข้อไหน (user: "เห็นปนกันไปหมด")
             หมุดบนรูปเป็นคนละเรื่อง — ไม่ปักก็ยังเป็นข้อที่ N ของใบอยู่ดี */}
         <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>
-        {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
+        {method && <span title={tr(method.label)} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}{cp.axis && <span style={{ marginLeft: 6, fontSize: 11, color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 'var(--r-xs)', padding: '0 4px' }}>{cp.axis}</span>}</p>
         <CpImage cp={cp} />
         {c && <span style={{ fontSize: 11, fontWeight: 700, color: c.text }}>{status === 'pass' ? '●' : status === 'warning' ? '⚠' : '✕'}</span>}
@@ -439,7 +439,7 @@ function AttrRow({ cp, idx, value, note, onChangeAttr, onChangeNote, methodIndex
             อ้างเลขนี้ทั้งหมด ⇒ จับคู่ไม่ได้ว่าแถวไหนคือข้อไหน (user: "เห็นปนกันไปหมด")
             หมุดบนรูปเป็นคนละเรื่อง — ไม่ปักก็ยังเป็นข้อที่ N ของใบอยู่ดี */}
         <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>
-        {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
+        {method && <span title={tr(method.label)} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}</p>
         <CpImage cp={cp} />
         <div style={{ display: 'flex', gap: 4 }}>
@@ -478,7 +478,7 @@ function MeasureRow({ cp, idx, r, onChange, methodIndex }) {
             อ้างเลขนี้ทั้งหมด ⇒ จับคู่ไม่ได้ว่าแถวไหนคือข้อไหน (user: "เห็นปนกันไปหมด")
             หมุดบนรูปเป็นคนละเรื่อง — ไม่ปักก็ยังเป็นข้อที่ N ของใบอยู่ดี */}
         <span style={{ width: 18, height: 18, borderRadius: '50%', background: categoryColor(cp.category), color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{idx + 1}</span>
-        {method && <span title={method.label} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
+        {method && <span title={tr(method.label)} style={{ fontSize: 13, flexShrink: 0 }}>{method.icon}</span>}
         <p style={{ flex: 1, fontSize: 13, fontWeight: 700, color: 'var(--text)', margin: 0 }}>{cp.name}</p>
         <CpImage cp={cp} />
         {c && <span style={{ fontSize: 11, fontWeight: 700, color: c.text }}>{status === 'pass' ? '● OK' : '✕ NG'}</span>}
@@ -1616,7 +1616,7 @@ export default function PMCheckData() {
       {showSidebar && (
       <div style={{ ...S.sidebar, ...(isNarrow ? { width: '100%', borderRight: 'none', position: 'static', height: 'auto' } : null) }}>
         <div style={{ ...S.deptBar, paddingTop: 12 }}>
-          {teams.map(d => <button key={d.key} onClick={() => setDept(d.key)} style={S.deptBtn(department === d.key, d.color || DEPT_COLORS[d.key] || '#3dd65c')}>{d.icon ? `${d.icon} ` : ''}{d.label}</button>)}
+          {teams.map(d => <button key={d.key} onClick={() => setDept(d.key)} style={S.deptBtn(department === d.key, d.color || DEPT_COLORS[d.key] || '#3dd65c')}>{d.icon ? `${d.icon} ` : ''}{tr(d.label)}</button>)}
         </div>
         {/* AM (ผลิตตรวจเอง) กับ PM (ช่าง) เป็นคนละงาน — บอกให้ชัดว่าแท็บที่เลือกอยู่คืออะไร */}
         <div style={{ padding: '0 16px 10px', fontSize: 11, color: 'var(--muted)', lineHeight: 1.5 }}>
@@ -1748,7 +1748,7 @@ export default function PMCheckData() {
             {jigGroups.map(g => (
               <div key={g.key}>
                 <div style={{ fontSize: 11, fontWeight: 800, color: g.known ? 'var(--text2)' : 'var(--amber)', margin: '8px 2px 5px', lineHeight: 1.4 }}>
-                  {g.label} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· {g.rows.length}</span>
+                  {tr(g.label)} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· {g.rows.length}</span>
                 </div>
                 {g.rows.map(({ jig }) => (
                   <div key={jig.id} onClick={() => selectJig(jig)} style={S.jigItem(selectedJig?.id === jig.id, deptColor)}>
@@ -1870,7 +1870,7 @@ export default function PMCheckData() {
                                 <button key={d.department} onClick={() => setDept(d.department)}
                                   style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                                     border: `1.5px solid ${t?.color || 'var(--border2)'}`, background: 'var(--card)', color: t?.color || 'var(--text)' }}>
-                                  {t?.icon || ''} {t?.label || d.department} · {d.checkpointCount} จุด
+                                  {t?.icon || ''} {tr(t?.label) || d.department} · {d.checkpointCount} จุด
                                 </button>)
                             })}
                           </div>
@@ -2054,7 +2054,7 @@ export default function PMCheckData() {
                                   style={{ ...S.cpRow(null), borderColor: overMax ? 'var(--red)' : mm != null ? SHIM_PIN_COLOR : 'var(--border)', scrollMarginTop: (stackCompact ? viewerH : 0) + progH + 12 }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                     <span style={{ minWidth: 22, height: 18, padding: '0 5px', borderRadius: 'var(--r-md)', background: pinned ? SHIM_PIN_COLOR : 'var(--border2)', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }} title={pinned ? tr('ปักบนรูปแล้ว') : tr('ยังไม่ปักบนรูป')}>{pt.point_no}</span>
-                                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{k.icon} {k.label}{pt.name ? <span style={{ fontWeight: 500, color: 'var(--muted)' }}> · {pt.name}</span> : null}</span>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{k.icon} {tr(k.label)}{pt.name ? <span style={{ fontWeight: 500, color: 'var(--muted)' }}> · {pt.name}</span> : null}</span>
                                     <span style={{ fontSize: 11.5, color: 'var(--muted)', marginLeft: 'auto' }}>
                                       ชิมรวม <b style={{ color: st.level === 'over' ? 'var(--red)' : st.level === 'warn' ? 'var(--amber)' : 'var(--text)' }}>{st.current ?? '—'}</b> {tr('/ เพดาน')} {pt.max_shim_mm ?? 'ไม่ตั้ง'} mm
                                       {due.level !== 'unset' && <span style={{ marginLeft: 8, color: due.due ? 'var(--red)' : due.level === 'soon' ? 'var(--amber)' : 'var(--muted)' }}>· {due.text}</span>}

@@ -222,7 +222,7 @@ export default function MonthlyReviewExport({ onClose }) {
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 800, fontSize: 13, color: mode === m.key ? 'var(--accent)' : 'var(--text2)' }}>
                     <input type="radio" name="deckMode" checked={mode === m.key} onChange={() => setMode(m.key)} style={{ width: 'auto' }} />
-                    {m.label}
+                    {tr(m.label)}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.5, marginTop: 4 }}>{tr(m.desc)}</div>
                 </label>

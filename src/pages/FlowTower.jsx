@@ -421,7 +421,7 @@ export default function FlowTower() {
                   <td style={{ padding: '8px 12px', fontWeight: 800, whiteSpace: 'nowrap' }}>{seg}</td>
                   <td style={{ padding: '8px 12px', color: 'var(--text2)' }}>{mech}</td>
                   <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: ST[st].dot, background: ST[st].bg, padding: '3px 9px', borderRadius: 'var(--r-pill)' }}>● {ST[st].label}</span>
+                    <span style={{ fontSize: 11, fontWeight: 800, color: ST[st].dot, background: ST[st].bg, padding: '3px 9px', borderRadius: 'var(--r-pill)' }}>● {tr(ST[st].label)}</span>
                   </td>
                   <td style={{ padding: '8px 12px', color: 'var(--muted)', fontSize: 11 }}>{ev}</td>
                 </tr>

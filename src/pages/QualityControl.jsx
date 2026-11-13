@@ -1142,8 +1142,8 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
                 <td style={{ ...tdSt, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.defect_desc}</td>
                 <td style={{ ...tdSt, fontWeight: 700, color: n.qty_ng ? 'var(--red)' : undefined }}>{n.qty_ng}</td>
                 <td style={tdSt}>{NCR_SOURCE[n.source] || n.source}</td>
-                <td style={tdSt}><Chip label={NCR_SEV[n.severity]?.label || n.severity} color={NCR_SEV[n.severity]?.color || '#6b7280'} /></td>
-                <td style={tdSt}><Chip label={NCR_STATUS[n.status]?.label || n.status} color={NCR_STATUS[n.status]?.color || '#6b7280'} /></td>
+                <td style={tdSt}><Chip label={trI18n(NCR_SEV[n.severity]?.label) || n.severity} color={NCR_SEV[n.severity]?.color || '#6b7280'} /></td>
+                <td style={tdSt}><Chip label={trI18n(NCR_STATUS[n.status]?.label) || n.status} color={NCR_STATUS[n.status]?.color || '#6b7280'} /></td>
               </tr>
             ))}
             {list.length === 0 && <tr><td style={tdSt} colSpan={9}><span style={{ color: 'var(--muted)' }}>{trI18n('ไม่มีรายการ')}</span></td></tr>}
@@ -1193,8 +1193,8 @@ function NCRTab({ lineObjs, canRecord, canManage, onOpenCapa, partOpts = [] }) {
       {detail && (
         <Modal title={`${detail.ncr_no}`} onClose={() => setDetail(null)} width={640}>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-            <Chip label={NCR_STATUS[detail.status]?.label || detail.status} color={NCR_STATUS[detail.status]?.color || '#6b7280'} />
-            <Chip label={NCR_SEV[detail.severity]?.label || detail.severity} color={NCR_SEV[detail.severity]?.color || '#6b7280'} />
+            <Chip label={trI18n(NCR_STATUS[detail.status]?.label) || detail.status} color={NCR_STATUS[detail.status]?.color || '#6b7280'} />
+            <Chip label={trI18n(NCR_SEV[detail.severity]?.label) || detail.severity} color={NCR_SEV[detail.severity]?.color || '#6b7280'} />
             <Chip label={NCR_SOURCE[detail.source] || detail.source} color="var(--blue)" />
           </div>
           {/* 🪜 ถึงขั้นไหน — กฎ ncrFlow() (utils/qaDocStatus.js) · UI §6.30 */}
@@ -1485,10 +1485,10 @@ function CAPATab({ canRecord, canManage, prefill, onPrefillDone, lineObjs = [], 
                     {fmtD(c.due_date)}{overdue ? ' ⚠️' : ''}
                   </td>
                   <td style={tdSt}>
-                    <Chip label={CAPA_STATUS[c.status]?.label || c.status} color={CAPA_STATUS[c.status]?.color || '#6b7280'} />
+                    <Chip label={trI18n(CAPA_STATUS[c.status]?.label) || c.status} color={CAPA_STATUS[c.status]?.color || '#6b7280'} />
                     {/* ผลวัดจริงตอนปิด — ปิดทั้งที่ของเสียไม่ลด ต้องเห็นจากลิสต์ ไม่ใช่ซ่อนอยู่ในใบ */}
                     {c.eff_verdict && EFF_V[c.eff_verdict] && (
-                      <span style={{ marginLeft: 5 }}><Chip label={EFF_V[c.eff_verdict].short} color={EFF_V[c.eff_verdict].color} /></span>
+                      <span style={{ marginLeft: 5 }}><Chip label={trI18n(EFF_V[c.eff_verdict].short)} color={EFF_V[c.eff_verdict].color} /></span>
                     )}
                   </td>
                 </tr>
@@ -1765,7 +1765,7 @@ function InstrumentTab({ lineObjs, canManage }) {
                   <td style={tdSt}>{[i.location, i.line_name].filter(Boolean).join(' · ') || '—'}</td>
                   <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>{fmtD(i.last_calibrated)}</td>
                   <td style={{ ...tdSt, whiteSpace: 'nowrap', fontWeight: 700, color: s.color }}>{fmtD(nextDue(i))}</td>
-                  <td style={tdSt}><Chip label={s.label} color={s.color} /></td>
+                  <td style={tdSt}><Chip label={trI18n(s.label)} color={s.color} /></td>
                   {canManage && <td style={tdSt}>
                     <button className="tbtn" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }} onClick={() => setModal({
                       ...EMPTY_INST, ...i,

@@ -251,7 +251,7 @@ export function SpareDemandBanner({ todayStr, reloadKey = 0, onOpenPlan }) {
             : !s.parts && !s.noDuePlans ? <span style={{ color: 'var(--muted)' }}>{tr('— ยังไม่มีแผน PM ไหนผูกอะไหล่ (กดปุ่ม 🔩 ในมุมมองตาราง)')}</span>
               : <span style={{ color: 'var(--muted)' }}>
                   — ต้องใช้ {s.parts} รายการ
-                  {bad && <> · <b style={{ color: '#ef4444' }}>{tr('ขาด')} {s.short}</b></>}
+                  {bad && <> · <b style={{ color: '#ef4444' }}>{tr('ขาด')} {tr(s.short)}</b></>}
                   {s.orderLate > 0 && <> · <b style={{ color: '#ef4444' }}>{tr('สั่งไม่ทัน leadtime')} {s.orderLate}</b></>}
                   {s.belowMin > 0 && <> {tr('· ต่ำกว่า safety')} {s.belowMin}</>}
                   {s.noDuePlans > 0 && <> {tr('· แผนที่ยังไม่มีวัน PM')} {s.noDuePlans} {tr('(คาดไม่ได้)')}</>}

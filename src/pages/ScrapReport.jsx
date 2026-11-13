@@ -759,7 +759,7 @@ export default function ScrapReport() {
               <div key={rep.id} className="sr-card">
                 <div className="sr-head">
                   <b>{rep.doc_no || '—'}</b>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 'var(--r-pill)', color: sm?.color, background: `${tint(sm?.color, 'dim')}`, border: `1px solid ${tint(sm?.color, 'line')}` }}>{sm?.label || rep.status}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 'var(--r-pill)', color: sm?.color, background: `${tint(sm?.color, 'dim')}`, border: `1px solid ${tint(sm?.color, 'line')}` }}>{tr(sm?.label) || rep.status}</span>
                 </div>
                 <div className="sr-line">{rep.line_name || '—'} · {fmtD(rep.report_date)}</div>
                 <div className="sr-sum"><ItemCount reportId={rep.id} /> {tr('· ของเสีย')} <ScrapSum reportId={rep.id} /></div>
@@ -807,7 +807,7 @@ export default function ScrapReport() {
                 <td style={tdSt}>{rep.line_name || '—'}</td>
                 <td style={tdSt}><ItemCount reportId={rep.id} /></td>
                 <td style={tdSt}><ScrapSum reportId={rep.id} /></td>
-                <td style={tdSt}><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 'var(--r-pill)', color: STATUS_META[rep.status]?.color, background: `${tint(STATUS_META[rep.status]?.color, 'dim')}`, border: `1px solid ${tint(STATUS_META[rep.status]?.color, 'line')}` }}>{STATUS_META[rep.status]?.label || rep.status}</span></td>
+                <td style={tdSt}><span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 'var(--r-pill)', color: STATUS_META[rep.status]?.color, background: `${tint(STATUS_META[rep.status]?.color, 'dim')}`, border: `1px solid ${tint(STATUS_META[rep.status]?.color, 'line')}` }}>{tr(STATUS_META[rep.status]?.label) || rep.status}</span></td>
                 <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                   <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px' }} onClick={() => doPrint(rep)}>PDF</button>
                   <button className="tbtn" style={{ ...ghostBtn, padding: '4px 10px', marginLeft: 4 }} onClick={() => doExport(rep)}>Excel</button>
@@ -1186,7 +1186,7 @@ function DefectPicker({ types, value, onClose, onSave }) {
         {list.map(t => (
           <label key={t.code} style={{ fontSize: 12, display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', padding: '3px 5px', borderRadius: 'var(--r-md)', background: sel.has(t.code) ? 'var(--accent-dim)' : 'transparent' }}>
             <input type="checkbox" style={{ width: 'auto' }} checked={sel.has(t.code)} onChange={() => toggle(t.code)} />
-            <b style={{ minWidth: 30 }}>{t.code}</b> {t.label}
+            <b style={{ minWidth: 30 }}>{t.code}</b> {tr(t.label)}
           </label>
         ))}
       </div>

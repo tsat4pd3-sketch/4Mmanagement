@@ -117,8 +117,8 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
     const r = requirementOf(req);
     if (!r) return <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('หัวข้อแม่')}</span>;
     return (
-      <span title={r.hint} style={{ fontSize: 11, fontWeight: 800, color: r.color, border: `1px solid ${r.color}55`, borderRadius: 'var(--r-xs)', padding: '1px 5px', whiteSpace: 'nowrap' }}>
-        {r.label}
+      <span title={tr(r.hint)} style={{ fontSize: 11, fontWeight: 800, color: r.color, border: `1px solid ${r.color}55`, borderRadius: 'var(--r-xs)', padding: '1px 5px', whiteSpace: 'nowrap' }}>
+        {tr(r.label)}
       </span>
     );
   };

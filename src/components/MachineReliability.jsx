@@ -201,7 +201,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
               padding: '5px 12px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
               border: `1.5px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
               background: on ? 'var(--accent-dim)' : 'var(--bg3)', color: on ? 'var(--accent)' : 'var(--muted)',
-            }}>{c.icon} {c.label} ({n})</button>
+            }}>{c.icon} {trI18n(c.label)} ({n})</button>
           );
         })}
       </div>
@@ -287,7 +287,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
             { k: 'totalMin', icon: '🛑', label: 'รวม (Downtime)', color: 'var(--text)', tip: 'ผลรวมทั้ง 3 ท่อน = MTTR แบบ Restore ที่ตารางข้างล่างโชว์' },
           ].map(c => (
             <div key={c.k} title={c.tip} style={{ flex: 1, minWidth: 140, background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
-              <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{c.icon} {c.label}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{c.icon} {trI18n(c.label)}</div>
               <div style={{ fontSize: 19, fontWeight: 800, color: c.color }}>{fmtDur(ph[c.k])}</div>
               {ph.n > 0 && ph.totalMin > 0 && c.k !== 'totalMin' && (
                 <div style={{ fontSize: 11, color: 'var(--muted)' }}>{Math.round((ph[c.k] / ph.totalMin) * 100)}{trI18n('% ของเวลาที่หยุด')}</div>
@@ -318,7 +318,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
           const meta = k.kind === '_unknown' ? { icon: '❔', label: 'ไม่อยู่ในทะเบียน' } : (KIND_META[k.kind] || KIND_META.machine);
           return (
             <div key={k.kind} style={{ ...card, flex: 1, minWidth: 190 }}>
-              <div style={{ fontSize: 12, color: 'var(--muted)' }}>{meta.icon} {meta.label} · {k.equip} {trI18n('ตัว')}</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>{meta.icon} {trI18n(meta.label)} · {k.equip} {trI18n('ตัว')}</div>
               <div style={{ display: 'flex', gap: 14, marginTop: 4, flexWrap: 'wrap' }}>
                 <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>MTTR</div><div style={{ fontSize: 16, fontWeight: 800, color: 'var(--amber)' }}>{fmtDur(k.mttrMin)}</div></div>
                 <div><div style={{ fontSize: 11, color: 'var(--muted)' }}>MTBF</div><div style={{ fontSize: 16, fontWeight: 800, color: 'var(--blue)' }}>{fmtDur(k.mtbfMin)}</div></div>
@@ -371,7 +371,7 @@ export default function MachineReliability({ machines = [], lineObjs = [], scope
                     </td>
                     <td style={td}>
                       {meta
-                        ? <span>{meta.icon} {meta.label}</span>
+                        ? <span>{meta.icon} {trI18n(meta.label)}</span>
                         : <span style={{ color: 'var(--amber)', fontWeight: 700 }} title={trI18n('เลขนี้ไม่มีในทะเบียนอุปกรณ์ — บอกชนิดไม่ได้')}>{trI18n('❔ ไม่อยู่ในทะเบียน')}</span>}
                     </td>
                     <td style={{ ...td, color: r.lineName ? 'inherit' : 'var(--muted)' }}>

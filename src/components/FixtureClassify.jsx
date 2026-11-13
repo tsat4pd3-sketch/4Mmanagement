@@ -187,7 +187,7 @@ export default function FixtureClassify({ machines, mapKeys, canEdit, lines = []
           <select value={kind} onChange={e => setKind(e.target.value)}
                   style={{ width: 200, padding: '7px 10px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)',
                            background: 'var(--bg)', color: 'var(--text)', fontSize: 13 }}>
-            {EQUIPMENT_KINDS.map(k => <option key={k.key} value={k.key}>{k.icon} {k.label}</option>)}
+            {EQUIPMENT_KINDS.map(k => <option key={k.key} value={k.key}>{k.icon} {tr(k.label)}</option>)}
           </select>
           <button onClick={save} disabled={!picked.size || saving}
                   style={{ background: picked.size ? '#16a34a' : 'var(--bg2)', color: picked.size ? '#fff' : 'var(--muted)',

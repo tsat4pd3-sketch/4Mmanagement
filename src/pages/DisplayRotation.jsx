@@ -608,7 +608,7 @@ function ItemRow({ i, it, n, canEdit, focused, onFocus, pageOptions, defaultSec,
                             background: cur.includes(o.value) ? 'var(--accent-dim)' : 'var(--card)',
                             color: cur.includes(o.value) ? 'var(--accent)' : 'var(--text2)',
                             border: `1px solid ${cur.includes(o.value) ? 'var(--accent)' : 'var(--border2)'}` }}>
-                          {cur.includes(o.value) ? `${cur.indexOf(o.value) + 1}. ` : ''}{o.label}
+                          {cur.includes(o.value) ? `${cur.indexOf(o.value) + 1}. ` : ''}{tr(o.label)}
                         </button>
                       ))}
                     </span>

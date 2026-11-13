@@ -176,7 +176,7 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
                     <td style={{ ...tdSt, fontFamily: 'monospace', fontWeight: 800, color: 'var(--text)' }}>{dw.rev} {dw.is_current && <Pill label={tr('ปัจจุบัน')} color="#22c55e" small />}</td>
                     <td style={tdSt}>{dw.rev_date ? fmtDate(dw.rev_date) : '—'}</td>
                     <td style={tdSt}>{dw.eci_no || '—'}</td>
-                    <td style={tdSt}><Pill label={DWG_STATUS[dw.status]?.label || dw.status} color={DWG_STATUS[dw.status]?.color} /></td>
+                    <td style={tdSt}><Pill label={tr(DWG_STATUS[dw.status]?.label) || dw.status} color={DWG_STATUS[dw.status]?.color} /></td>
                     <td style={{ ...tdSt, maxWidth: 260 }}>{dw.description || ''}</td>
                     <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>
                       {dw.file_url && <a href={dw.file_url} target="_blank" rel="noreferrer" style={{ color: '#4d9fff' }}>{(dw.file_name || fileName(dw.file_url)).slice(0, 24)}</a>}
@@ -218,7 +218,7 @@ export default function NpiDrawingsEci({ project, parts, partId, onPickPart, dra
                       <td style={tdSt}>{p?.part_no || <span style={{ color: 'var(--muted)' }}>{tr('ทั้งโปรเจค')}</span>}</td>
                       <td style={{ ...tdSt, maxWidth: 280 }}>{e.title}</td>
                       <td style={tdSt}>{e.source === 'customer' ? tr('ลูกค้า') : tr('ภายใน')}</td>
-                      <td style={tdSt}><Pill label={ECI_STATUS[e.status]?.label} color={ECI_STATUS[e.status]?.color} />{e.status === 'rejected' && e.reject_reason && <div style={{ fontSize: 11, color: '#f59e0b' }}>{e.reject_reason}</div>}</td>
+                      <td style={tdSt}><Pill label={tr(ECI_STATUS[e.status]?.label)} color={ECI_STATUS[e.status]?.color} />{e.status === 'rejected' && e.reject_reason && <div style={{ fontSize: 11, color: '#f59e0b' }}>{e.reject_reason}</div>}</td>
                       <td style={tdSt}>
                         {legs.length ? <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>{legs.map(l => <Pill key={l.flag} label={`${e[l.link] ? '✓' : '○'} ${l.label}`} color={e[l.link] ? '#22c55e' : '#f59e0b'} small />)}</div> : <span style={{ color: 'var(--muted)' }}>{tr('ยังไม่ประเมิน')}</span>}
                         {legs.length > 0 && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{linked}/{legs.length}</div>}

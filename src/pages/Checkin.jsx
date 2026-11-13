@@ -1304,7 +1304,7 @@ export default function Checkin() {
       <Fragment key={emp.id}>
         {newGroup && (
           <div className="ck-group">
-            {gMeta?.label} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· {groupCounts[grp]} คน
+            {tr(gMeta?.label)} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· {groupCounts[grp]} คน
               {grp !== STAFF_SHOPFLOOR && ' — เช็คชื่อได้ แต่ไม่ถูกนับเป็นกำลังคนของไลน์ผลิต'}</span>
           </div>
         )}
@@ -1312,7 +1312,7 @@ export default function Checkin() {
           <div className="ck-top">
             <div style={{ flex: 1, minWidth: 0 }}>{cEmp}</div>
             <div className="ck-status" style={{ color: meta.color }}>
-              {emp.assignedShift ? (emp.assignedShift === 'day' ? 'เช้า · ' : 'ดึก · ') : ''}{meta.label}
+              {emp.assignedShift ? (emp.assignedShift === 'day' ? 'เช้า · ' : 'ดึก · ') : ''}{tr(meta.label)}
               {hasLeave && rec.leave_type && <div style={{ fontSize: 11, opacity: 0.85 }}>{rec.leave_type}</div>}
             </div>
           </div>
@@ -1448,7 +1448,7 @@ export default function Checkin() {
                                 transition: 'all 0.15s', lineHeight: 1.3,
                               }}
                             >
-                              {opt.label}
+                              {tr(opt.label)}
                               <div style={{ fontSize: 11, opacity: 0.8, fontWeight: 400 }}>{opt.sub}</div>
                             </button>
                           ))}
@@ -1588,7 +1588,7 @@ export default function Checkin() {
                 {newGroup && (
                   <tr>
                     <td colSpan={99} style={{ background: 'var(--bg3)', padding: '6px 10px', fontSize: 12, fontWeight: 800, color: 'var(--text2)' }}>
-                      {gMeta?.label} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· {groupCounts[grp]} คน
+                      {tr(gMeta?.label)} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· {groupCounts[grp]} คน
                         {grp !== STAFF_SHOPFLOOR && ' — เช็คชื่อได้ แต่ไม่ถูกนับเป็นกำลังคนของไลน์ผลิต'}</span>
                     </td>
                   </tr>
@@ -1666,7 +1666,7 @@ export default function Checkin() {
 
                   {/* Status */}
                   <td style={{ textAlign: 'center', fontWeight: 700, color: meta.color, whiteSpace: 'nowrap', fontSize: 12 }}>
-                    {meta.label}
+                    {tr(meta.label)}
                     {hasLeave && rec.leave_type && (
                       <div style={{ fontSize: 11, fontWeight: 600, color: meta.color, marginTop: 1, opacity: 0.8 }}>
                         {rec.leave_type}
@@ -1697,7 +1697,7 @@ export default function Checkin() {
               <button onClick={() => setShowBorrowModal(false)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer', padding: 4 }}>✕</button>
             </div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
-              {shiftInfo.label} · {shiftInfo.workDateStr} — คนที่ยืมจะโผล่ในรายชื่อเช็คชื่อและผังจัดกำลังคนของไลน์ปลายทาง เฉพาะกะนี้ (ไม่ย้ายสังกัดถาวร) · หมดกะแล้วหลุดเอง ไม่ต้องกดคืน — กด ✕ คืน เฉพาะเมื่อจะให้ไลน์อื่นยืมต่อในกะเดียวกัน
+              {tr(shiftInfo.label)} · {shiftInfo.workDateStr} — คนที่ยืมจะโผล่ในรายชื่อเช็คชื่อและผังจัดกำลังคนของไลน์ปลายทาง เฉพาะกะนี้ (ไม่ย้ายสังกัดถาวร) · หมดกะแล้วหลุดเอง ไม่ต้องกดคืน — กด ✕ คืน เฉพาะเมื่อจะให้ไลน์อื่นยืมต่อในกะเดียวกัน
             </div>
             {!helpersReady && (
               <NoticeBar tone="bad" style={{ marginBottom: 10 }}>
@@ -1762,7 +1762,7 @@ export default function Checkin() {
             color:      shiftInfo.shift === 'day' ? 'var(--amber)'     : 'var(--blue)',
             border: `1px solid ${shiftInfo.shift === 'day' ? 'var(--amber-line)' : 'var(--blue-line)'}`,
           }}>
-            {shiftInfo.label} · {shiftInfo.timeRange}
+            {tr(shiftInfo.label)} · {shiftInfo.timeRange}
           </span>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>{shiftInfo.workDateStr}</span>
         </span>}
@@ -1859,7 +1859,7 @@ export default function Checkin() {
             fontSize: 12, padding: '3px 10px', borderRadius: 'var(--r-pill)',
             background: m.bg, color: m.color, border: `1px solid ${m.line}`, fontWeight: 600,
           }}>
-            {m.label} {counts[key]}
+            {tr(m.label)} {counts[key]}
           </span>
         ) : null)}
         {role === 'leader' && <span style={{ fontSize: 12, color: 'var(--muted)', padding: '3px 0' }}>{tr('รวม')} {displayed.length} {tr('คน')}</span>}
@@ -1871,7 +1871,7 @@ export default function Checkin() {
         <NoticeBar tone="warn" style={{ marginBottom: 14 }}
           action={{ label: 'โหลดรายชื่อกะใหม่', title: 'สิ่งที่ยังไม่บันทึกจะหาย',
             onClick: () => { setPreviewNight(false); setShiftChanged(null); setRealShiftInfo(getShiftInfo()); } }}>
-          <b>{tr('เวลาข้ามเข้า')} {shiftChanged.label} ({shiftChanged.workDateStr}) แล้ว</b> {tr('— หน้านี้ยังเป็นรายชื่อ')}{realShiftInfo.label} ({realShiftInfo.workDateStr})
+          <b>{tr('เวลาข้ามเข้า')} {tr(shiftChanged.label)} ({shiftChanged.workDateStr}) แล้ว</b> {tr('— หน้านี้ยังเป็นรายชื่อ')}{tr(realShiftInfo.label)} ({realShiftInfo.workDateStr})
           · กดบันทึกตอนนี้ = บันทึกของกะเดิม (ถูกต้องถ้ายังกรอกกะเดิมอยู่)
         </NoticeBar>
       )}

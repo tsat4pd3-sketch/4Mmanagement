@@ -192,7 +192,7 @@ export default function TvBoard({ onOpenMenu = null }) {
           ph-chrome = กรอบจอ TV ซ่อน (แถบบนของกรอบบอกชื่อ/มุมมอง/วันงานแทน · index.css) */}
       <div className="ph-chrome" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 16, fontWeight: 900, fontFamily: 'var(--font-display)', color: 'var(--text)' }}>
-          {cur.icon} Andon Board · {cur.label}
+          {cur.icon} Andon Board · {tr(cur.label)}
         </span>
         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
           {cur.sub} {tr('· วันงาน')} {workDate}
@@ -219,7 +219,7 @@ export default function TvBoard({ onOpenMenu = null }) {
           {dept === 'mo' && <>
             <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
             {[{ key: '', icon: '🧾', label: 'ทุกขั้น' }, ...MO_TV_GROUPS].map(x => (
-              <button key={x.key || 'all'} onClick={() => setParam('mo', x.key)} style={btn((sp.get('mo') || '') === x.key)}>{x.icon} {x.label}</button>
+              <button key={x.key || 'all'} onClick={() => setParam('mo', x.key)} style={btn((sp.get('mo') || '') === x.key)}>{x.icon} {tr(x.label)}</button>
             ))}
           </>}
           <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />

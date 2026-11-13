@@ -1043,7 +1043,7 @@ export default function LineSetup({ embedded = false } = {}) {
                 background: activeTab === t.key ? 'var(--accent-dim)' : 'var(--bg2)',
                 color: activeTab === t.key ? 'var(--accent)' : 'var(--text2)',
               }}>
-              {t.label}
+              {tr(t.label)}
             </button>
           ))}
           {canEdit && (
@@ -1439,11 +1439,11 @@ export default function LineSetup({ embedded = false } = {}) {
                 ถูกสร้างเป็น "ไลน์ผลิต" แล้วไปโผล่ในแผนผลิต/OEE/ใบตรวจรายวันทุกจอ */}
             <div style={{ display: 'flex', gap: 6 }}>
               {UNIT_KINDS.map(k => (
-                <button key={k.key} type="button" onClick={() => setNewUnitKind(k.key)} title={k.desc}
+                <button key={k.key} type="button" onClick={() => setNewUnitKind(k.key)} title={tr(k.desc)}
                   style={{ flex: 1, padding: '7px 8px', fontSize: 12, fontWeight: 700, borderRadius: 'var(--r-md)', cursor: 'pointer',
                     border: `1px solid ${newUnitKind === k.key ? 'var(--accent)' : 'var(--border2)'}`,
                     background: newUnitKind === k.key ? 'var(--accent-dim)' : 'var(--bg3)',
-                    color: newUnitKind === k.key ? 'var(--text)' : 'var(--text2)' }}>{k.label}</button>
+                    color: newUnitKind === k.key ? 'var(--text)' : 'var(--text2)' }}>{tr(k.label)}</button>
               ))}
             </div>
             {newUnitKind === UNIT_SUPPORT && (
@@ -1502,7 +1502,7 @@ export default function LineSetup({ embedded = false } = {}) {
                       return (
                         <div key={catKey}>
                           <div style={{ marginBottom: 4, paddingBottom: 3, borderBottom: `1px solid ${tint(catMeta.color, 'dim')}`, display: 'flex', alignItems: 'baseline', gap: 7 }}>
-                            <span style={{ fontSize: 11, fontWeight: 800, color: catMeta.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{catMeta.icon} {catMeta.label}</span>
+                            <span style={{ fontSize: 11, fontWeight: 800, color: catMeta.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{catMeta.icon} {tr(catMeta.label)}</span>
                             {catMeta.desc && <span style={{ fontSize: 11, color: catMeta.color, opacity: 0.7 }}>{tr(catMeta.desc)}</span>}
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -1925,13 +1925,13 @@ export default function LineSetup({ embedded = false } = {}) {
               <label style={labelSt}>{tr('ชนิดหน่วย')}</label>
               <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
                 {UNIT_KINDS.map(k => (
-                  <button key={k.key} type="button" disabled={!canEdit} title={k.desc}
+                  <button key={k.key} type="button" disabled={!canEdit} title={tr(k.desc)}
                     onClick={() => setUnitKind(k.key)}
                     style={{ flex: 1, padding: '7px 8px', fontSize: 12, fontWeight: 700, borderRadius: 'var(--r-md)',
                       cursor: canEdit ? 'pointer' : 'default',
                       border: `1px solid ${unitKind === k.key ? 'var(--accent)' : 'var(--border2)'}`,
                       background: unitKind === k.key ? 'var(--accent-dim)' : 'var(--bg3)',
-                      color: unitKind === k.key ? 'var(--text)' : 'var(--text2)' }}>{k.label}</button>
+                      color: unitKind === k.key ? 'var(--text)' : 'var(--text2)' }}>{tr(k.label)}</button>
                 ))}
               </div>
               <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5 }}>

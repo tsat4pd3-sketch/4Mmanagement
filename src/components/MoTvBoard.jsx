@@ -114,7 +114,7 @@ export default function MoTvBoard({ inScope, isMobile = false }) {
                 background: on ? 'var(--accent)' : 'var(--bg3)', color: on ? 'var(--accent-ink)' : 'var(--text)',
                 border: `1px solid ${on ? 'var(--accent)' : 'var(--border2)'}`,
               }}>
-              {x.icon} {x.label} · {rows ? n : '…'}
+              {x.icon} {tr(x.label)} · {rows ? n : '…'}
             </button>
           );
         })}

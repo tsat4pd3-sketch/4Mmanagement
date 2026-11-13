@@ -44,7 +44,7 @@ export default function DieStatusEditor({ die, canEdit, fullName, ready, onSaved
         <span style={{
           alignSelf: 'start', justifySelf: 'start', fontSize: 12, fontWeight: 700, padding: '3px 10px',
           borderRadius: 'var(--r-pill)', color: meta.color, background: meta.bg, border: `1px solid ${meta.color}`,
-        }}>{meta.icon} {meta.label}</span>
+        }}>{meta.icon} {tr(meta.label)}</span>
         {ext.status_note && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{ext.status_note}</div>}
         {ext.status_updated_at && (
           <div style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -60,7 +60,7 @@ export default function DieStatusEditor({ die, canEdit, fullName, ready, onSaved
     <div style={{ display: 'grid', gap: 6 }}>
       <select value={status} onChange={e => setStatus(e.target.value)} style={{ ...inp, borderColor: dieStatusMeta(status || null).color }}>
         <option value="">{tr('❔ ยังไม่ระบุสถานะ')}</option>
-        {DIE_STATUSES.map(s => <option key={s.key} value={s.key}>{s.icon} {s.label}</option>)}
+        {DIE_STATUSES.map(s => <option key={s.key} value={s.key}>{s.icon} {tr(s.label)}</option>)}
       </select>
       {!compact && (
         <div style={{ fontSize: 11, color: 'var(--muted)' }}>{dieStatusMeta(status || null).desc}</div>

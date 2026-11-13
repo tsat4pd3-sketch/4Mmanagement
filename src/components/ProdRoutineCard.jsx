@@ -109,7 +109,7 @@ export default function ProdRoutineCard({ data, navigate, big = 1 }) {
   return (<>
     <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
       <span style={{ fontSize: 13 * big, fontWeight: 900 }}>{tr('งานประจำกะที่ยังไม่ทำ')}</span>
-      {shift && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{shift.label} · {shift.workDateStr} {tr('· เฉพาะไลน์ที่เปิดกะ (')}{openInScope ?? 0})</span>}
+      {shift && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr(shift.label)} · {shift.workDateStr} {tr('· เฉพาะไลน์ที่เปิดกะ (')}{openInScope ?? 0})</span>}
     </div>
     {errs.length > 0 && (
       <div style={{ ...card, borderColor: bad, color: bad, fontSize: 12.5 }}>

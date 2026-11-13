@@ -203,13 +203,13 @@ export default function DieStatusBoard({
                           onChange={ev => changeStatus(d, ev.target.value)}
                           style={{ ...inp, width: '100%', padding: '5px 7px', fontSize: 12, borderColor: meta.color, color: meta.color, fontWeight: 700 }}>
                           <option value="">{tr('❔ ยังไม่ระบุสถานะ')}</option>
-                          {DIE_STATUSES.map(s => <option key={s.key} value={s.key}>{s.icon} {s.label}</option>)}
+                          {DIE_STATUSES.map(s => <option key={s.key} value={s.key}>{s.icon} {tr(s.label)}</option>)}
                         </select>
                       ) : (
                         <span style={{
                           fontSize: 11.5, fontWeight: 700, padding: '2px 9px', borderRadius: 'var(--r-pill)',
                           color: meta.color, background: meta.bg, border: `1px solid ${meta.color}`, whiteSpace: 'nowrap',
-                        }}>{meta.icon} {meta.label}</span>
+                        }}>{meta.icon} {tr(meta.label)}</span>
                       )}
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, display: 'flex', gap: 4, alignItems: 'baseline' }}>
                         <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={e.status_note || ''}>

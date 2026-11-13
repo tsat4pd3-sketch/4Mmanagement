@@ -205,14 +205,14 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
           <label style={S.label}>{tr('ประเภท (Category)')}</label>
           <select value={cp.category ?? ''} onChange={e => onChange({ category: e.target.value || null })}>
             <option value="">{tr('— ไม่ระบุ —')}</option>
-            {catOpts.map(c => <option key={c.code} value={c.code}>{c.code} — {c.label}</option>)}
+            {catOpts.map(c => <option key={c.code} value={c.code}>{c.code} — {tr(c.label)}</option>)}
           </select>
         </div>
         <div style={{ marginBottom: 10 }}>
           <label style={S.label}>{tr('วิธีการตรวจสอบ')}</label>
           <select value={cp.checking_method ?? ''} onChange={e => onChange({ checking_method: e.target.value || null })}>
             <option value="">{tr('— ไม่ระบุ —')}</option>
-            {(methods ?? []).map(m => <option key={m.code} value={m.code}>{m.icon} {m.label}</option>)}
+            {(methods ?? []).map(m => <option key={m.code} value={m.code}>{m.icon} {tr(m.label)}</option>)}
           </select>
         </div>
       </div>
@@ -1036,7 +1036,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                   border: `1px solid ${isCur ? (t?.color || deptColor) : 'var(--border2)'}`,
                   color: isCur ? (t?.color || deptColor) : 'var(--text2)',
                 }}>
-                  {t?.icon ? `${t.icon} ` : ''}{t?.label ?? d.department}
+                  {t?.icon ? `${t.icon} ` : ''}{tr(t?.label) ?? d.department}
                   <b style={{ fontWeight: 800 }}>{d.checkpointCount} {tr('จุด')}</b>
                   {d.inspectionCount > 0 && <span style={{ color: 'var(--muted)', fontWeight: 600 }}>{tr('· ตรวจแล้ว')} {d.inspectionCount} {tr('ครั้ง')}</span>}
                   {isCur && <span style={{ color: 'var(--muted)', fontWeight: 600 }}>{tr('· กำลังแก้')}</span>}
@@ -1090,7 +1090,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                           <select value={moveTo} onChange={e => { setMoveTo(e.target.value); setError('') }} style={{ width: 'auto', minWidth: 150, fontSize: 12 }}>
                             <option value="">{tr('— เลือกแผนกปลายทาง —')}</option>
                             {okRows.map(t => (
-                              <option key={t.key} value={t.key}>{t.icon ? `${t.icon} ` : ''}{t.label}</option>
+                              <option key={t.key} value={t.key}>{t.icon ? `${t.icon} ` : ''}{tr(t.label)}</option>
                             ))}
                           </select>
                           {/* กรองออกแล้วต้องบอก — ไม่งั้นดูเหมือนระบบมีแค่ไม่กี่ทีม */}
@@ -1306,7 +1306,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                     border: `1.5px solid ${equipCategory === k ? v.color + '60' : 'var(--border2)'}`,
                     background: equipCategory === k ? v.color + '18' : 'var(--bg3)',
                     color: equipCategory === k ? v.color : 'var(--muted)',
-                  }}>{v.icon} {v.label}</button>
+                  }}>{v.icon} {tr(v.label)}</button>
                 ))}
               </div>
             </div>
@@ -1331,7 +1331,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
               <select value={process} onChange={e => setProcess(e.target.value)} style={{ width: '100%' }}>
                 <option value="">{tr('— ไม่ระบุ —')}</option>
                 {process && !procTypes.some(p => p.key === process) && <option value={process}>⚠ {process} {tr('(ไม่มีในทะเบียนกระบวนการ)')}</option>}
-                {procTypes.map(p => <option key={p.key} value={p.key}>{p.icon ? `${p.icon} ` : ''}{p.label}</option>)}
+                {procTypes.map(p => <option key={p.key} value={p.key}>{p.icon ? `${p.icon} ` : ''}{tr(p.label)}</option>)}
               </select>
             </div>
             <div><label style={S.label}>Model</label><input value={model} onChange={e => setModel(e.target.value)} placeholder="Model A" /></div>
@@ -1605,7 +1605,7 @@ function EquipmentTable({ groups, canSetup, onEdit, onDelete }) {
             <Fragment key={g.key}>
               <tr style={{ cursor: 'default' }}>
                 <td colSpan={cols} style={{ background: 'var(--bg3)', fontWeight: 800, fontSize: 12.5, color: g.known ? 'var(--accent)' : 'var(--muted)' }}>
-                  {g.label}{g.section ? <span style={{ color: 'var(--muted)', fontWeight: 600 }}> · {g.section}</span> : null}
+                  {tr(g.label)}{g.section ? <span style={{ color: 'var(--muted)', fontWeight: 600 }}> · {g.section}</span> : null}
                   <span style={{ color: 'var(--muted)', fontWeight: 600 }}> ({g.rows.length})</span>
                   {!g.known && <span style={{ color: 'var(--muted)', fontWeight: 500 }}> {tr('— ไม่อยู่ในทะเบียนไลน์ (กรองตามไลน์ไม่ได้)')}</span>}
                 </td>

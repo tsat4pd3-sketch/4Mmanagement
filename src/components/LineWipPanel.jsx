@@ -294,7 +294,7 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
               { icon: '📦', label: 'ค้างที่ไลน์',       now: null,         all: t.shouldRemain, tone: t.shouldRemain < 0 ? TONE.crit : 'var(--accent)', note: 'ส่งเข้า − ตัดเป็น FG' },
             ].map(k => (
               <div key={k.label} style={{ ...card, background: 'var(--bg2)', padding: '8px 11px' }}>
-                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{k.icon} {k.label}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{k.icon} {tr(k.label)}</div>
                 <div style={{ fontSize: 20, fontWeight: 900, color: k.tone, fontFamily: 'var(--font-display)', lineHeight: 1.25 }}>
                   {fmt(k.now ?? k.all)}
                 </div>
@@ -337,7 +337,7 @@ export default function LineWipPanel({ lineName, workDate, lines = [] }) {
               const tone = TONE[meta.tone] || 'var(--muted)';
               return (
                 <div key={p.mat_no} style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 11.5, padding: '1px 0' }}>
-                  <span style={{ width: 18 }} title={meta.label}>{meta.icon}</span>
+                  <span style={{ width: 18 }} title={tr(meta.label)}>{meta.icon}</span>
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {/* ครบ 3 ค่าผ่านของกลาง (30/09) */}
                     <MatLabel mat={p.mat_no} name={p.part_name} size={11} />

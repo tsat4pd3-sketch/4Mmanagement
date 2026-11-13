@@ -40,8 +40,8 @@ function CrRow({ cr, canDecide, onDecide, onApply }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 4 }}>
           <Pill label={DOC_LABEL[cr.doc_type] || cr.doc_type} color="#4d9fff" />
-          {leg && <Pill label={leg.short} color={leg.color} title={leg.hint} />}
-          <Pill label={st.label} color={st.color} />
+          {leg && <Pill label={tr(leg.short)} color={leg.color} title={tr(leg.hint)} />}
+          <Pill label={tr(st.label)} color={st.color} />
           {isSug && (
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>
               ระบบเสนอ · ความมั่นใจ {cr.confidence != null ? `${Math.round(cr.confidence * 100)}%` : '—'}
@@ -308,7 +308,7 @@ export default function PeChangeRequests({
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 3 }}>
                         <Pill label={DOC_LABEL[x.doc_type]} color="#4d9fff" />
-                        {LEG_META[x.leg] && <Pill label={LEG_META[x.leg].short} color={LEG_META[x.leg].color} title={LEG_META[x.leg].hint} />}
+                        {LEG_META[x.leg] && <Pill label={tr(LEG_META[x.leg].short)} color={LEG_META[x.leg].color} title={tr(LEG_META[x.leg].hint)} />}
                         <span style={{ fontSize: 11, color: x.confidence >= 0.6 ? '#22c55e' : x.confidence > 0 ? '#f59e0b' : '#ef4444' }}>
                           {x.confidence > 0 ? `ความมั่นใจ ${Math.round(x.confidence * 100)}%` : 'ไม่พบในเอกสาร'}
                         </span>
@@ -336,7 +336,7 @@ export default function PeChangeRequests({
               {Object.entries(DOC_LABEL).map(([k, v]) => <option key={k} value={k}>{tr(v)}</option>)}
             </select>
             <select style={{ ...inputSt, width: 'auto' }} value={manual.leg} onChange={(e) => setManual((m) => ({ ...m, leg: e.target.value }))}>
-              {Object.entries(LEG_META).map(([k, v]) => <option key={k} value={k}>{v.short} — {v.label}</option>)}
+              {Object.entries(LEG_META).map(([k, v]) => <option key={k} value={k}>{tr(v.short)} — {tr(v.label)}</option>)}
             </select>
             {!setInfo?.set && <span style={{ fontSize: 11, color: '#f59e0b', alignSelf: 'center' }}>กด "🔍 หาเอกสารที่เกี่ยว" ก่อน เพื่อจับคู่ชุดเอกสาร</span>}
           </div>

@@ -189,7 +189,7 @@ export default function RundownStock() {
             ...(untracked ? [{ icon: '❔', label: 'ยังเช็ค stock ไม่ได้ (เลขยังไม่จับคู่ MAT SAP)', value: untracked, warn: true }] : []),
           ].map(c => (
             <div key={c.label} style={{ flex: '1 1 160px', background: 'var(--bg2)', border: `1px solid ${c.warn ? 'var(--red-line)' : 'var(--border)'}`, borderRadius: 'var(--r-md)', padding: '8px 12px' }}>
-              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{c.icon} {c.label}</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>{c.icon} {tr(c.label)}</div>
               <div style={{ fontSize: 22, fontWeight: 900, color: c.warn && c.value > 0 ? 'var(--red)' : 'var(--text)', fontFamily: 'var(--font-display)' }}>{c.value}</div>
             </div>
           ))}

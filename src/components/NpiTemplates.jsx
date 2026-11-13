@@ -69,7 +69,7 @@ export default function NpiTemplates({ templates, onChanged }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <div style={{ fontSize: 14, fontWeight: 800 }}>{tr('แม่แบบเฟส / รายการเอกสาร')}</div>
           <select value={tpl?.id || ''} onChange={e => setTplId(e.target.value)} style={{ ...inp, width: 'auto', minWidth: 240 }}>
-            {templates.map(t => <option key={t.id} value={t.id}>{t.label}{t.customer ? ` (${t.customer})` : ''}{t.is_active ? '' : ' · ปิดใช้'}</option>)}
+            {templates.map(t => <option key={t.id} value={t.id}>{tr(t.label)}{t.customer ? ` (${t.customer})` : ''}{t.is_active ? '' : ' · ปิดใช้'}</option>)}
           </select>
           {tpl && <button style={ghost} onClick={() => setTplModal({ ...tpl })}>{tr('✏️ แม่แบบ')}</button>}
         </div>
@@ -110,7 +110,7 @@ export default function NpiTemplates({ templates, onChanged }) {
                     <td style={tdSt}>{phases.find(p => p.code === d.phase_code)?.label || <span style={{ color: '#f59e0b' }}>{d.phase_code} {tr('(ไม่มีเฟส)')}</span>}</td>
                     <td style={tdSt}>{d.seq}</td>
                     <td style={tdSt}><b style={{ color: 'var(--text)' }}>{tr(d.label)}</b><div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--muted)' }}>{d.code}</div></td>
-                    <td style={tdSt}>{DOC_KIND[d.doc_kind]?.icon} {DOC_KIND[d.doc_kind]?.label}</td>
+                    <td style={tdSt}>{DOC_KIND[d.doc_kind]?.icon} {tr(DOC_KIND[d.doc_kind]?.label)}</td>
                     <td style={tdSt}>{OWNER_ROLE[d.owner_role] || d.owner_role || '—'}</td>
                     <td style={tdSt}>{d.required ? '✓' : '—'}</td>
                     <td style={tdSt}>{d.ppap_element && <Pill label="PPAP" color="#a855f7" small />}</td>
@@ -159,7 +159,7 @@ export default function NpiTemplates({ templates, onChanged }) {
             <Field label="code" hint={dvModal.id ? tr('เปลี่ยนไม่ได้') : tr('ว่าง = จากชื่อ')}><input style={inp} value={dvModal.code || ''} disabled={!!dvModal.id} onChange={e => setDvModal({ ...dvModal, code: e.target.value })} /></Field>
             <Field label={tr('เฟส *')}><select style={inp} value={dvModal.phase_code} onChange={e => setDvModal({ ...dvModal, phase_code: e.target.value })}>{phases.map(p => <option key={p.code} value={p.code}>{tr(p.label)}</option>)}</select></Field>
             <Field label={tr('ลำดับในเฟส')}><input type="number" style={inp} value={dvModal.seq} onChange={e => setDvModal({ ...dvModal, seq: e.target.value })} /></Field>
-            <Field label={tr('ชนิดเอกสาร')}><select style={inp} value={dvModal.doc_kind} onChange={e => setDvModal({ ...dvModal, doc_kind: e.target.value })}>{Object.entries(DOC_KIND).map(([k, m]) => <option key={k} value={k}>{m.icon} {m.label}</option>)}</select></Field>
+            <Field label={tr('ชนิดเอกสาร')}><select style={inp} value={dvModal.doc_kind} onChange={e => setDvModal({ ...dvModal, doc_kind: e.target.value })}>{Object.entries(DOC_KIND).map(([k, m]) => <option key={k} value={k}>{m.icon} {tr(m.label)}</option>)}</select></Field>
             <Field label={tr('ทีมเจ้าของ (default)')}><select style={inp} value={dvModal.owner_role} onChange={e => setDvModal({ ...dvModal, owner_role: e.target.value })}><option value="">—</option>{Object.entries(OWNER_ROLE).map(([k, l]) => <option key={k} value={k}>{tr(l)}</option>)}</select></Field>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 18, fontSize: 12.5 }}>
               <label><input type="checkbox" checked={dvModal.required !== false} onChange={e => setDvModal({ ...dvModal, required: e.target.checked })} /> {tr('บังคับ')}</label>
