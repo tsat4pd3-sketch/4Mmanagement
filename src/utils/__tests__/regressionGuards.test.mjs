@@ -10384,3 +10384,54 @@ test('🛡️ DailyReport: ด่าน poka-yoke ตอนลงยอด + ก
   assert.match(stripComments(readFileSync(join(ROOT, 'src/utils/downtimeCarryRules.js'), 'utf8')),
     /export function decidedDtLogs\(/, '\n\n❌ decidedDtLogs ต้องอยู่ใน utils (pure) ไม่ใช่ในหน้า\n')
 })
+
+test('🔧 dt-mb-flag-three-state — ธง "เครื่องเสียของช่าง" ต้องมี 3 สถานะ และห้ามแตะเลขที่ส่งกลุ่ม', () => {
+  /* 🔴 13/11 คำสั่ง user *"ทำข้อ 2 ติดธงในทะเบียนประเภท downtime"*
+     ที่มา: KPI ทางการนับทุกแถวที่ไม่ใช่ planned เข้า Machine Break Down/MTTR/MTBF ของช่าง
+       ⇒ ช่างแบกชั่วโมงที่ไม่เคยถูกเรียก 813.6 ชม. (78.8% ของ ต.ค.) ซึ่งมี "แก้ไขปัญหาคุณภาพ"
+         107.6 ชม. ที่ไม่ใช่เครื่องเสียเลย · เดาจากชื่อประเภทไม่ได้ (กฎ §อื่นๆ/ไม่ระบุ ข้อ 5)
+       ⇒ ให้คนที่รู้งานติ๊กในทะเบียนครั้งเดียว แล้วทุกจอใช้ธงเดียวกัน
+     กับดัก 3 ข้อที่ด่านนี้กัน:
+       ① ยุบเหลือ 2 สถานะ (`!!row.is_machine_breakdown`) ⇒ "ยังไม่มีใครติ๊ก" กลายเป็น "ไม่ใช่ของช่าง"
+          = ตัวเลขช่างดีขึ้นฟรีทันทีโดยไม่มีใครตัดสิน (ล้มเหลวเงียบที่ตรวจไม่ได้จากจอ)
+       ② เก็บ `false` ลงฐานแทน `null` ⇒ แยก "ตัดสินแล้วว่าไม่ใช่" กับ "ยังไม่ได้ตัดสิน" ไม่ออกตลอดกาล
+       ③ เอาธงไปทับเลขที่ส่งกลุ่ม — กลุ่มเป็นเจ้าของนิยาม KPI (ESM = ที่ผลิตตัวเลข Actual)
+          ⇒ mbd/mtbf/mttr ใน kpiAuto ห้ามรู้จักธงนี้เลย (มีเทสเลขเท่าเดิมใน kpiAuto.test.mjs ด้วย)
+     📄 src/utils/dtBreakdownOwner.js · docs/OBEYA-KPI-SOURCES.md §15.2 */
+  const own = stripComments(readFileSync(join(ROOT, 'src/utils/dtBreakdownOwner.js'), 'utf8'));
+  /* ① ครบ 3 สถานะ และ unset ต้องเป็น null */
+  for (const k of ['yes', 'no', 'unset']) {
+    assert.ok(new RegExp(`key: '${k}'`).test(own),
+      `\n\n❌ dtBreakdownOwner.js ไม่มีสถานะ '${k}' แล้ว — 3 สถานะห้ามยุบเหลือ 2\n`
+      + '   "ยังไม่ระบุ" ≠ "ไม่ใช่ของช่าง" (ยุบ = ตัวเลขช่างดีขึ้นฟรีโดยไม่มีใครตัดสิน)\n');
+  }
+  assert.ok(/key: 'unset',[\s\S]{0,200}?value: null/.test(own),
+    '\n\n❌ สถานะ unset ต้องเก็บ null — เก็บ false = แยก "ตัดสินแล้วว่าไม่ใช่" กับ "ยังไม่ตัดสิน" ไม่ออก\n');
+  assert.ok(/if \(v === true\) return 'yes';[\s\S]{0,120}?if \(v === false\) return 'no';/.test(own),
+    '\n\n❌ mbFlagOf ต้องเทียบ === true / === false ตรงๆ\n'
+    + '   ใช้ truthiness = undefined (คิวรีไม่ได้ select คอลัมน์) ไหลเข้าฝั่งใดฝั่งหนึ่งเงียบๆ\n');
+
+  /* ② จอทะเบียนต้องเขียนผ่าน mbValueForDb ห้าม || false */
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  assert.ok(/is_machine_breakdown:\s*mbValueForDb\(/.test(dr),
+    '\n\n❌ ฟอร์มทะเบียนประเภท downtime ต้องเขียนธงผ่าน mbValueForDb() เท่านั้น\n'
+    + '   เขียนค่าดิบ/`|| false` = ยัด false ให้ประเภทที่ยังไม่มีใครติ๊ก\n');
+  assert.ok(!/is_machine_breakdown[^\n]*\|\|\s*false/.test(dr) && !/!!\s*\w*\.?is_machine_breakdown/.test(dr),
+    '\n\n❌ เจอการบีบธงเป็น boolean 2 สถานะในหน้า (`|| false` / `!!`) — null ต้องคงเป็น null\n');
+
+  /* ③ ธงห้ามไปอยู่ในสูตรที่ส่งกลุ่ม */
+  const auto = stripComments(readFileSync(join(ROOT, 'src/utils/kpiAuto.js'), 'utf8'));
+  const official = auto.slice(0, auto.indexOf('export function mtnOwnerSeries'));
+  assert.ok(official.length > 0, '\n\n❌ ไม่เจอ mtnOwnerSeries() ใน kpiAuto.js — แท่ง "ของช่าง/ไม่ใช่" หายไป\n');
+  assert.ok(!/mb_yes_min|mb_no_min/.test(official),
+    '\n\n❌ ธง is_machine_breakdown ไปโผล่ในสูตร KPI ที่ส่งกลุ่ม (ก่อน mtnOwnerSeries)\n'
+    + '   🔴 Machine Break Down / MTBF / MTTR ต้องนับไลน์หยุดเต็มตาม KPI Guideline เหมือนเดิม\n'
+    + '   กลุ่มเป็นเจ้าของนิยาม · ESM = ที่ผลิตตัวเลข Actual (ห้ามคิดเกณฑ์เอง)\n');
+  /* ถังที่ 3 ต้องถูกนับและโชว์ ไม่ใช่โยนทิ้ง */
+  assert.ok(/mb_unset_min/.test(auto),
+    '\n\n❌ mtnOwnerSeries ไม่นับถัง "ยังไม่ระบุ" แล้ว — ชั่วโมงหายจากจอ (จอโกหก)\n');
+  const kpi = stripComments(readFileSync(join(ROOT, 'src/components/KpiMonthly.jsx'), 'utf8'));
+  assert.ok(/unknownHr=\{mtnOwner\.unsetHr\}/.test(kpi),
+    '\n\n❌ จอ KPI ต้องวาดถัง "ยังไม่ระบุ" เป็นช่องที่มองเห็น (unknownHr)\n'
+    + '   ซ่อน = คนอ่านคิดว่าติ๊กครบแล้ว ทั้งที่ยังไม่มีใครตัดสิน\n');
+});

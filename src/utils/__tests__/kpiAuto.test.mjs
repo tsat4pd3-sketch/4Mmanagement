@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mtnAutoSeries, mtnGapSeries, mtnSegSeries, autoKpiOfName, toRowUnit, HOURS_PER_MONTH, autoUnitMismatch, autoDetailText } from '../kpiAuto.js';
+import { mtnAutoSeries, mtnGapSeries, mtnSegSeries, mtnOwnerSeries, autoKpiOfName, toRowUnit, HOURS_PER_MONTH, autoUnitMismatch, autoDetailText } from '../kpiAuto.js';
 
 const roll = {
   machines: [{ kind: 'die', n: 266 }, { kind: 'jig', n: 172 }, { kind: 'machine', n: 216 }, { kind: 'facility', n: 38 }],
@@ -227,4 +227,46 @@ test('แยกตามชนิดอุปกรณ์ของทีม — 
   assert.ok(Math.abs(m.totalHr - 810.1) < 0.1, 'ของ jig ต้องไม่ถูกบวกเข้ามา');
   const j = mtnSegSeries(two, 2026, { key: 'jig_maintenance', equip_type: 'jig' });
   assert.ok(Math.abs(j.totalHr - 70.9) < 0.1);
+});
+
+/* ══ 🔧 3 ถังตามธง "เครื่องเสียของช่างไหม" (13/11 · คำสั่ง user "ติดธงในทะเบียน") ══ */
+
+const OWNER_ROLL = {
+  machines: [{ kind: 'machine', n: 259 }], months: ['2026-10'], mo: [],
+  dt: [{ m: '2026-10', kind: 'machine', events: 1818, breakdown_min: 48606,
+         mb_yes_min: 30000, mb_no_min: 6456, mb_unset_min: 12150 }],
+};
+
+test('🔧 แยก 3 ถังตามธง — บวกกลับต้องเท่าไลน์หยุด', () => {
+  const o = mtnOwnerSeries(OWNER_ROLL, 2026, { key: 'maintenance', equip_type: 'machine' });
+  assert.equal(o.known, true);
+  assert.ok(Math.abs(o.yesHr + o.noHr + o.unsetHr - o.totalHr) < 1e-9);
+  assert.ok(Math.abs(o.totalHr - 810.1) < 0.1, 'รวมแล้วเท่าไลน์หยุด 810.1 ชม.');
+  assert.ok(Math.abs(o.decidedPct - 75) < 0.1, 'ตัดสินแล้ว 36,456 จาก 48,606 นาที');
+});
+
+test('🔴 ยังไม่มีใครติ๊ก = อยู่ถัง unset ทั้งก้อน · ห้ามไหลเข้าฝั่งช่าง', () => {
+  const none = { ...OWNER_ROLL, dt: [{ m: '2026-10', kind: 'machine', breakdown_min: 48606,
+    mb_yes_min: null, mb_no_min: null, mb_unset_min: 48606 }] };
+  const o = mtnOwnerSeries(none, 2026, { key: 'maintenance', equip_type: 'machine' });
+  assert.equal(o.yesHr, 0);
+  assert.equal(o.noHr, 0);
+  assert.ok(Math.abs(o.unsetHr - 810.1) < 0.1);
+  assert.equal(o.decidedPct, 0, 'ตัดสินแล้ว 0% — คนละเรื่องกับ "ไม่มีข้อมูล"');
+});
+
+test('🔴 RPC รุ่นเก่าไม่มี mb_* = known:false ห้ามคืน 0 ว่าไม่มีชั่วโมงของช่าง', () => {
+  assert.equal(mtnOwnerSeries(roll, 2026, JIG).known, false);
+  for (const bad of [null, undefined, {}, 'x']) assert.equal(mtnOwnerSeries(bad, 2026, JIG).known, false);
+});
+
+test('🔴 ธงไม่แตะเลขทางการ — mbd/mtbf/mttr ต้องเท่าเดิมเป๊ะ', () => {
+  const MACHINE2 = { key: 'maintenance', equip_type: 'machine' };
+  const withFlag = mtnAutoSeries(OWNER_ROLL, 2026, MACHINE2).months.find(m => m.k === '2026-10');
+  const noFlag = mtnAutoSeries({ ...OWNER_ROLL,
+    dt: [{ m: '2026-10', kind: 'machine', events: 1818, breakdown_min: 48606 }] },
+    2026, MACHINE2).months.find(m => m.k === '2026-10');
+  assert.equal(withFlag.mbd, noFlag.mbd);
+  assert.equal(withFlag.mtbf, noFlag.mtbf);
+  assert.equal(withFlag.breakdown_hr, noFlag.breakdown_hr);
 });

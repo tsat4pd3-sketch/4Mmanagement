@@ -62,6 +62,7 @@ import DieMatLinkButton from '../components/DieMatLinkButton';
 import MoReportFromDowntime from '../components/MoReportFromDowntime';   // ฟอร์มแจ้งซ่อมเต็ม (lazy) — เปิดใบจาก Downtime
 import { dieCandidatesForMats } from '../utils/dieCandidates';
 import { dtMachineRule, machineFitsDtType, idsForDb } from '../utils/dtMachineFilter';
+import { MB_FLAGS, mbFlagOf, mbFlagMeta, mbValueForDb } from '../utils/dtBreakdownOwner';   // 🔧 ธง "เครื่องเสียของช่างไหม" (13/11)
 import { kindOf, EQUIPMENT_KINDS, KIND_META } from '../utils/equipmentKinds';
 import { resolveMachine, normCode, resolveTypeRow, QR_KINDS } from '../utils/qrCode';
 import { SCAN_EVENT } from '../utils/scanWedge';
@@ -8779,6 +8780,30 @@ function DefectTypeSetup({ role }) {
                   <option value="common">{tr('Common (ทุกกระบวนการ)')}</option>
                 </select>
               </Field>
+              {/* 🔧 ธง "เครื่องเสียที่ช่างรับผิดชอบไหม" (13/11 · คำสั่ง user "ติดธงในทะเบียนประเภท downtime")
+                  🔴 3 สถานะ ห้ามยุบเหลือ 2 — "ยังไม่ระบุ" ≠ "ไม่ใช่ของช่าง"
+                  🔴 ธงนี้ **ไม่แตะเลข KPI ที่ส่งกลุ่ม** (ยังนับไลน์หยุดเต็มเหมือนเดิม) ให้อีกมุมคู่กันเท่านั้น */}
+              <Field label="เป็นเครื่องเสียที่ช่างรับผิดชอบไหม (ใช้แยกมุมมองใน KPI ช่าง · ไม่กระทบเลขที่ส่งกลุ่ม)">
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {MB_FLAGS.map(fl => {
+                    const on = (form.mb_flag || 'unset') === fl.key;
+                    return (
+                      <button key={fl.key} type="button" onClick={() => setForm(f => ({ ...f, mb_flag: fl.key }))}
+                        title={fl.hint}
+                        style={{ fontSize: 12, fontWeight: 700, padding: '5px 11px', cursor: 'pointer',
+                                 borderRadius: 'var(--ctl-r)', border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
+                                 background: on ? 'var(--accent-dim)' : 'var(--card)',
+                                 color: on ? 'var(--accent-ink)' : 'var(--text2)' }}>
+                        {fl.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
+                  {mbFlagMeta(form.mb_flag || 'unset').hint}
+                  <div>ชั่วโมงของประเภทที่ยัง <b>ยังไม่ระบุ</b> จะอยู่ถังแยกบนจอ KPI — ไม่ถูกนับให้ฝั่งไหน</div>
+                </div>
+              </Field>
               <Field label="สี">
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input type="color" value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))}
@@ -9681,16 +9706,19 @@ function DowntimeTypeSetup({ role }) {
   const openEdit = (item = null) => {
     setEditing(item?.id || 'new');
     setForm(item
-      ? { name_th: item.name_th, name_en: item.name_en || '', category: item.category, process_type: item.process_type || 'welding_assembly', color: item.color, sort_order: item.sort_order, is_active: item.is_active, six_big_loss: item.six_big_loss || '', waste_type: item.waste_type || '', machine_type_ids: item.machine_type_ids || [], equipment_kinds: item.equipment_kinds || [] }
+      ? { name_th: item.name_th, name_en: item.name_en || '', category: item.category, process_type: item.process_type || 'welding_assembly', color: item.color, sort_order: item.sort_order, is_active: item.is_active, six_big_loss: item.six_big_loss || '', waste_type: item.waste_type || '', machine_type_ids: item.machine_type_ids || [], equipment_kinds: item.equipment_kinds || [], mb_flag: mbFlagOf(item) }
       // สร้างใหม่ default สีที่ยังไม่ซ้ำกับประเภทที่มี (ผู้ใช้เปลี่ยนทับได้)
-      : { name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: pickUnusedColor(items.map(i => i.color)), sort_order: items.length + 1, is_active: true, six_big_loss: '', waste_type: '', machine_type_ids: [], equipment_kinds: [] });
+      : { name_th: '', name_en: '', category: 'unplanned', process_type: 'welding_assembly', color: pickUnusedColor(items.map(i => i.color)), sort_order: items.length + 1, is_active: true, six_big_loss: '', waste_type: '', machine_type_ids: [], equipment_kinds: [], mb_flag: 'unset' });
   };
 
   const handleSave = async () => {
     if (!form.name_th) { toast.error('กรอกชื่อประเภท'); return; }
     setSaving(true);
     // ค่าว่าง = ยังไม่จัดหมวด Lean → เก็บเป็น null (ห้ามเก็บ '' — จะกลายเป็นถังใหม่ในหน้าวิเคราะห์)
-    const payload = { ...form, six_big_loss: form.six_big_loss || null, waste_type: form.waste_type || null, machine_type_ids: idsForDb(form.machine_type_ids), equipment_kinds: idsForDb(form.equipment_kinds) };
+    /* 🔧 ธง "ของช่างไหม" — `mb_flag` เป็นคีย์บนจอ ต้องแปลงเป็น boolean/null ก่อนลงฐาน
+         🔴 ยังไม่ระบุ = null ห้ามเก็บ false (false = ตัดสินแล้วว่าไม่ใช่ของช่าง คนละเรื่อง) */
+    const { mb_flag, ...rest } = form;
+    const payload = { ...rest, six_big_loss: form.six_big_loss || null, waste_type: form.waste_type || null, machine_type_ids: idsForDb(form.machine_type_ids), equipment_kinds: idsForDb(form.equipment_kinds), is_machine_breakdown: mbValueForDb(mb_flag) };
     const { error } = editing === 'new'
       ? await supabaseDR.from('dr_downtime_types').insert(payload)
       : await supabaseDR.from('dr_downtime_types').update(payload).eq('id', editing);
