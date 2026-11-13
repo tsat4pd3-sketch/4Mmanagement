@@ -97,10 +97,10 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
       <div style={card}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.6, minWidth: 220, flex: 1 }}>
-            <b style={{ color: 'var(--text)', fontSize: 14 }}>บีบรูปที่อัปไว้แล้วให้เล็กลง</b><br />
-            แปลงเป็น <b>WebP</b> — <b>ความละเอียดเท่าเดิม ไม่เบลอ</b> แต่ไฟล์เล็กลงราวครึ่งหนึ่ง
+            <b style={{ color: 'var(--text)', fontSize: 14 }}>{tr('บีบรูปที่อัปไว้แล้วให้เล็กลง')}</b><br />
+            แปลงเป็น <b>WebP</b> — <b>{tr('ความละเอียดเท่าเดิม ไม่เบลอ')}</b> แต่ไฟล์เล็กลงราวครึ่งหนึ่ง
             <br />
-            <InfoMore label="แผงนี้มีไว้ทำไม" id="squeeze-why" size={12}>
+            <InfoMore label={tr('แผงนี้มีไว้ทำไม')} id="squeeze-why" size={12}>
               รูปที่อัปใหม่หลังจากนี้ถูกบีบตั้งแต่ตอนอัปอยู่แล้ว — แผงนี้มีไว้ตามเก็บ “รูปเก่า”
               · กดซ้ำได้เรื่อยๆ ใบที่ทำแล้วถูกข้ามก่อนโหลด (ไม่เสียค่าเน็ตซ้ำ)
             </InfoMore>
@@ -108,7 +108,7 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
           <button
             onClick={handleRun}
             disabled={!canRun || !!busy || scanning || scan?.total === 0}
-            title={!canRun ? 'ต้องมีสิทธิ์จัดการข้อมูลหลัก' : ''}
+            title={!canRun ? tr('ต้องมีสิทธิ์จัดการข้อมูลหลัก') : ''}
             style={{
               padding: '10px 16px', borderRadius: 'var(--r-md)', border: 'none', flexShrink: 0,
               background: (!canRun || busy || scanning || scan?.total === 0) ? 'var(--bg3)' : 'var(--accent)',
@@ -136,7 +136,7 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
           </span>
         </div>
         {scanning ? (
-          <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>กำลังสำรวจ…</div>
+          <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('กำลังสำรวจ…')}</div>
         ) : !scan ? (
           <div style={{ fontSize: 12.5, color: 'var(--accent2)' }}>
             สำรวจไม่สำเร็จ — ยังไม่รู้ว่าเหลือกี่ใบ{' '}
@@ -159,18 +159,18 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
                 padding: '5px 8px', background: 'var(--bg2)', borderRadius: 'var(--r-md)',
               }}>
                 <span style={{ color: 'var(--text2)' }}>{g}</span>
-                <b style={{ color: 'var(--text)', flexShrink: 0 }}>{n.toLocaleString()} ใบ</b>
+                <b style={{ color: 'var(--text)', flexShrink: 0 }}>{n.toLocaleString()} {tr('ใบ')}</b>
               </div>
             ))}
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, fontSize: 13, paddingTop: 4 }}>
-              <span style={{ color: 'var(--text2)' }}>รวม</span>
-              <b style={{ color: 'var(--accent2)' }}>{scan.total.toLocaleString()} ใบ</b>
+              <span style={{ color: 'var(--text2)' }}>{tr('รวม')}</span>
+              <b style={{ color: 'var(--accent2)' }}>{scan.total.toLocaleString()} {tr('ใบ')}</b>
             </div>
             {/* 🔴 แยก "ตรวจแล้วไม่ต้องบีบ" ออกจาก "ยังไม่ได้ตรวจ" — เดิมรวมกันแล้วเรียกว่า
                 "ยังไม่ได้บีบ" ⇒ เลขไม่ลดสักที ทั้งที่งานเสร็จแล้ว (user ทัก 13/10) */}
             {scan.checkedSkip > 0 && (
               <div style={{ fontSize: 11.5, color: 'var(--muted)', paddingTop: 2 }}>
-                อีก {scan.checkedSkip.toLocaleString()} ใบ <b>ตรวจแล้วไม่ต้องบีบ</b> (เล็กอยู่แล้ว / บีบแล้วไม่เล็กลงพอ)
+                อีก {scan.checkedSkip.toLocaleString()} {tr('ใบ')} <b>{tr('ตรวจแล้วไม่ต้องบีบ')}</b> (เล็กอยู่แล้ว / บีบแล้วไม่เล็กลงพอ)
                 — ไม่นับรวมและไม่โหลดซ้ำอีก
               </div>
             )}
@@ -183,24 +183,24 @@ export default function ImageSqueezePanel({ canRun = false, onDone }) {
 
       {result && (
         <div style={{ ...card, borderColor: result.error ? '#ef4444' : 'var(--accent)' }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>ผลรอบล่าสุด</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 6 }}>{tr('ผลรอบล่าสุด')}</div>
           <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.7 }}>
-            บีบสำเร็จ <b style={{ color: 'var(--accent)' }}>{result.done.toLocaleString()} ใบ</b>{' '}
+            บีบสำเร็จ <b style={{ color: 'var(--accent)' }}>{result.done.toLocaleString()} {tr('ใบ')}</b>{' '}
             · ประหยัดพื้นที่/ค่าเน็ต <b style={{ color: 'var(--accent)' }}>{result.mb} MB</b><br />
-            ข้าม {result.skip.toLocaleString()} ใบ <span style={{ color: 'var(--muted)' }}>(เล็กอยู่แล้ว / เป็น WebP แล้ว / บีบแล้วไม่เล็กลงพอ)</span>
+            ข้าม {result.skip.toLocaleString()} {tr('ใบ')} <span style={{ color: 'var(--muted)' }}>{tr('(เล็กอยู่แล้ว / เป็น WebP แล้ว / บีบแล้วไม่เล็กลงพอ)')}</span>
             {result.marked > 0 && (<><br /><span style={{ color: 'var(--muted)' }}>
               จดไว้ว่า “ตรวจแล้วไม่ต้องบีบ” {result.marked.toLocaleString()} ใบ — รอบหน้าจะไม่ถูกหยิบมาโหลดซ้ำ
             </span></>)}
             {result.markError && (<><br /><span style={{ color: '#ef4444' }}>
               จดทะเบียน “ตรวจแล้ว” ไม่สำเร็จ ({result.markError}) — เลขที่เหลือจะยังไม่ลด
             </span></>)}
-            {result.error > 0 && (<><br /><span style={{ color: '#ef4444' }}>ไม่สำเร็จ {result.error} ใบ</span></>)}
-            {result.remaining > 0 && (<><br />เหลืออีก <b>{result.remaining.toLocaleString()} ใบ</b>{result.stalled ? ' — หยุดไว้เพราะรอบล่าสุดไม่คืบหน้า (มีไฟล์เสีย)' : ' — กดซ้ำได้'}</>)}
+            {result.error > 0 && (<><br /><span style={{ color: '#ef4444' }}>{tr('ไม่สำเร็จ')} {result.error} {tr('ใบ')}</span></>)}
+            {result.remaining > 0 && (<><br />{tr('เหลืออีก')} <b>{result.remaining.toLocaleString()} {tr('ใบ')}</b>{result.stalled ? tr(' — หยุดไว้เพราะรอบล่าสุดไม่คืบหน้า (มีไฟล์เสีย)') : tr(' — กดซ้ำได้')}</>)}
           </div>
           {result.errors.length > 0 && (
             <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 11.5, color: 'var(--muted)' }}>
               {result.errors.slice(0, 8).map((e, i) => <li key={i}>{e}</li>)}
-              {result.errors.length > 8 && <li>… อีก {result.errors.length - 8} รายการ</li>}
+              {result.errors.length > 8 && <li>{tr('… อีก')} {result.errors.length - 8} {tr('รายการ')}</li>}
             </ul>
           )}
         </div>

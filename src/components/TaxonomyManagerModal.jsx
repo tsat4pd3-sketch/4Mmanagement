@@ -117,7 +117,7 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
 
         <div style={{ flex: 1, overflowY: 'auto', padding: 16 }}>
           {loading ? (
-            <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)' }}>กำลังโหลด...</div>
+            <div style={{ textAlign: 'center', padding: 30, color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {rows.map(r => (
@@ -125,25 +125,25 @@ export default function TaxonomyManagerModal({ table, title, extraField = 'color
                   {extraField === 'color' && <span style={{ width: 14, height: 14, borderRadius: '50%', background: r.color, flexShrink: 0 }} />}
                   {extraField === 'icon' && <span style={{ fontSize: 18, flexShrink: 0 }}>{r.icon}</span>}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{r.label}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{tr(r.label)}</span>
                     <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{r.code}</span>
-                    {withEquipTypes && <span style={{ fontSize: 11, color: 'var(--accent2)', marginLeft: 6, fontWeight: 700 }}>{r.equip_types?.length ? r.equip_types.join('/') : 'ทุกชนิด'}</span>}
+                    {withEquipTypes && <span style={{ fontSize: 11, color: 'var(--accent2)', marginLeft: 6, fontWeight: 700 }}>{r.equip_types?.length ? r.equip_types.join('/') : tr('ทุกชนิด')}</span>}
                     {withTeam && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6, fontWeight: 700 }}>{r.team ? (teams.find(t => t.key === r.team)?.dept_name || r.team) : '🌐 ทุกทีม'}</span>}
-                    {!r.is_active && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>(ปิดใช้งาน)</span>}
+                    {!r.is_active && <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 6 }}>{tr('(ปิดใช้งาน)')}</span>}
                   </div>
                   {canEditRow(r) ? <>
                     <button onClick={() => openEdit(r)} style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', cursor: 'pointer' }}>{tr('แก้ไข')}</button>
                     <button onClick={() => remove(r)} style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, border: '1px solid rgba(224,92,74,0.3)', background: 'rgba(224,92,74,0.1)', color: '#e05c4a', cursor: 'pointer' }}>{tr('ลบ')}</button>
-                  </> : <span title={lockNote(r)} style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>ดูอย่างเดียว</span>}
+                  </> : <span title={lockNote(r)} style={{ fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' }}>{tr('ดูอย่างเดียว')}</span>}
                 </div>
               ))}
-              {rows.length === 0 && <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: 20 }}>ยังไม่มีรายการ</p>}
+              {rows.length === 0 && <p style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: 20 }}>{tr('ยังไม่มีรายการ')}</p>}
             </div>
           )}
 
           {editing && (
             <div style={{ marginTop: 14, padding: 14, borderRadius: 'var(--r-md)', border: '1px solid var(--accent)', background: 'var(--bg3)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)', margin: 0 }}>{editing === 'new' ? 'เพิ่มรายการใหม่' : 'แก้ไขรายการ'}</p>
+              <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)', margin: 0 }}>{editing === 'new' ? tr('เพิ่มรายการใหม่') : tr('แก้ไขรายการ')}</p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8 }}>
                 <div><label style={lbl}>Code *</label><input value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} placeholder="LP" style={inp} /></div>
                 <div><label style={lbl}>Label *</label><input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} placeholder="Locator Pin" style={inp} /></div>

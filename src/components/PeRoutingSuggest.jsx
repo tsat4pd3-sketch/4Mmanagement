@@ -107,15 +107,15 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
       </div>
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginBottom: 12, lineHeight: 1.6 }}>
         ระบบแปลงรายการ OP ของ PFC เป็นร่างลำดับกระบวนการ (ตาราง <b>part_routings</b> ที่ใบ VSM ใช้) —
-        <b style={{ color: 'var(--text)' }}> ตรวจ/ติ๊กออก/แก้ชื่อ แล้วกดยืนยัน ระบบไม่บันทึกเองอัตโนมัติ</b> ·
+        <b style={{ color: 'var(--text)' }}> {tr('ตรวจ/ติ๊กออก/แก้ชื่อ แล้วกดยืนยัน ระบบไม่บันทึกเองอัตโนมัติ')}</b> ·
         CT / C/O / LOT / คน ไม่ต้องกรอก (VSM ไปหาจากข้อมูลจริงให้)
       </div>
 
       {products == null ? (
-        <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>⏳ กำลังโหลด…</div>
+        <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{tr('⏳ กำลังโหลด…')}</div>
       ) : done ? (
         <div style={{ padding: 24, textAlign: 'center' }}>
-          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--accent)', marginBottom: 8 }}>✅ บันทึก routing แล้ว</div>
+          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--accent)', marginBottom: 8 }}>{tr('✅ บันทึก routing แล้ว')}</div>
           <div style={{ fontSize: 12.5, color: 'var(--text2)', marginBottom: 14 }}>
             เปิดหน้า VSM เลือกสินค้า <b>{matNo}</b> แล้วกด "⚡ สร้างร่างจากข้อมูลจริง" — ผังจะแตกเป็นหลายกล่องตาม routing นี้
           </div>
@@ -126,7 +126,7 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
       ) : !matNo ? (
         <div style={{ background: 'rgba(245,158,11,0.12)', borderLeft: '3px solid #f59e0b', borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 12.5, color: 'var(--text)' }}>
           {how === 'ambiguous' ? <>
-            ⚠️ เลขพาร์ท {set.part_no} ตรงกับหลาย MAT SAP — <b>เลือกให้ชัดก่อน (ระบบไม่เดาให้)</b>:
+            ⚠️ เลขพาร์ท {set.part_no} {tr('ตรงกับหลาย MAT SAP —')} <b>{tr('เลือกให้ชัดก่อน (ระบบไม่เดาให้)')}</b>:
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
               {candidates.map(c => (
                 <button key={c.mat_no} onClick={() => { setMatNo(c.mat_no); setHow('picked'); }}
@@ -148,13 +148,13 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
           <span style={{ color: 'var(--muted)' }}>
             {how === 'set_mat' ? ' (จากชุดเอกสาร)' : how === 'p_no' ? ` (จับคู่ p_no ${set.part_no})` : ''}
           </span>
-          {!matched && <span style={{ color: '#f59e0b' }}> · ⚠ เลขนี้ยังไม่มีใน Product Master — ใบ VSM จะยังเลือกไม่ได้จนกว่าจะเพิ่มสินค้า</span>}
+          {!matched && <span style={{ color: '#f59e0b' }}> {tr('· ⚠ เลขนี้ยังไม่มีใน Product Master — ใบ VSM จะยังเลือกไม่ได้จนกว่าจะเพิ่มสินค้า')}</span>}
         </div>
 
         {existing.length > 0 && (
           <div style={{ background: 'rgba(245,158,11,0.12)', borderLeft: '3px solid #f59e0b', borderRadius: 'var(--r-md)', padding: '8px 12px', fontSize: 12, color: 'var(--text)', marginBottom: 10 }}>
-            ⚠️ พาร์ทนี้มี routing อยู่แล้ว {existing.length} ขั้น ({existing.map(r => r.step_name).slice(0, 3).join(' → ')}{existing.length > 3 ? ' → …' : ''}) —
-            ยืนยันจะ<b>แทนที่ทั้งชุด</b> (ชุดเดิมเก็บเป็นประวัติ)
+            ⚠️ พาร์ทนี้มี routing อยู่แล้ว {existing.length} {tr('ขั้น (')}{existing.map(r => r.step_name).slice(0, 3).join(' → ')}{existing.length > 3 ? ' → …' : ''}) —
+            ยืนยันจะ<b>{tr('แทนที่ทั้งชุด')}</b> (ชุดเดิมเก็บเป็นประวัติ)
           </div>
         )}
         {included > 10 && (
@@ -199,7 +199,7 @@ export default function PeRoutingSuggest({ set, procs, lines = [], onClose }) {
 
         {skipped.length > 0 && (
           <details style={{ marginTop: 8, fontSize: 11.5, color: 'var(--muted)' }}>
-            <summary style={{ cursor: 'pointer' }}>ข้าม {skipped.length} รายการ (ทางเข้า child part / ขนส่ง / rework / จุดพักที่แปลงเป็น WIP แล้ว)</summary>
+            <summary style={{ cursor: 'pointer' }}>{tr('ข้าม')} {skipped.length} {tr('รายการ (ทางเข้า child part / ขนส่ง / rework / จุดพักที่แปลงเป็น WIP แล้ว)')}</summary>
             {skipped.map((s, i) => (
               <div key={i} style={{ padding: '2px 0 0 14px' }}>
                 OP {s.op_no || '—'} · {s.name || '—'} — {s.reason === 'wip' ? `→ เป็นจุดพักหลัง OP ${s.target}` : s.kind}

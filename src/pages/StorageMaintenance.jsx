@@ -4,6 +4,7 @@ import Page from '../components/Page';
 import ImageSqueezePanel from '../components/ImageSqueezePanel';
 import { UserContext } from '../App';
 import { can, isActionSeeded } from '../utils/permissions';
+import { tr } from '../utils/i18n';
 import InfoMore from '../components/InfoMore';   // ⓘ คำอธิบายพับ (UI §6.10)
 
 /* ══ 🗜️ ดูแลพื้นที่จัดเก็บ / ค่าเน็ต — /storage-maintenance ═══════════════════════════
@@ -29,8 +30,8 @@ export default function StorageMaintenance() {
   return (
     <Page width="form">
       <PageHeader
-        title="ดูแลพื้นที่จัดเก็บ / ค่าเน็ต" icon="🗜️"
-        sub="บีบรูปที่อัปไว้แล้วให้เล็กลง — ความละเอียดเท่าเดิม"
+        title={tr('ดูแลพื้นที่จัดเก็บ / ค่าเน็ต')} icon="🗜️"
+        sub={tr('บีบรูปที่อัปไว้แล้วให้เล็กลง — ความละเอียดเท่าเดิม')}
       />
 
       {/* ทำไมต้องมีหน้านี้ — เขียนไว้เพราะเป็นเหตุการณ์ที่ทำให้ทั้งโรงงาน login ไม่ได้ */}
@@ -38,15 +39,15 @@ export default function StorageMaintenance() {
         background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--radius-lg)',
         padding: 12, marginBottom: 12, fontSize: 12, color: 'var(--text2)', lineHeight: 1.7,
       }}>
-        <b style={{ color: 'var(--text)' }}>ทำไมต้องบีบ:</b> Supabase คิดค่าบริการตาม
+        <b style={{ color: 'var(--text)' }}>{tr('ทำไมต้องบีบ:')}</b> Supabase คิดค่าบริการตาม
         “จำนวนไบต์ที่ส่งออกไปหาเครื่องผู้ใช้” (egress) — ไม่ใช่จำนวนครั้ง
         · รูปผัง PNG ใบเดียว 8 MB × จอที่เปิด 40 เครื่อง = 320 MB จากรูปใบเดียว
         <br />
-        <InfoMore label="ทำไมต้องบีบรูป" size={11.5}>
+        <InfoMore label={tr('ทำไมต้องบีบรูป')} size={11.5}>
           เคยเกิดจริง 11 ก.ย. 2026: โควต้าเต็ม → Supabase ระงับบริการทั้ง organization →
-          <b style={{ color: 'var(--accent2)' }}> ทั้งโรงงาน login ไม่ได้</b>
+          <b style={{ color: 'var(--accent2)' }}> {tr('ทั้งโรงงาน login ไม่ได้')}</b>
           {' '}· WebP เล็กกว่า PNG/JPEG ราวครึ่งหนึ่งที่คุณภาพเท่ากัน และ
-          <b> ไม่ลดความละเอียด</b> (เคยลดแล้วผังเบลออ่านไม่ออก — ห้ามทำซ้ำ)
+          <b> {tr('ไม่ลดความละเอียด')}</b> (เคยลดแล้วผังเบลออ่านไม่ออก — ห้ามทำซ้ำ)
         </InfoMore>
       </div>
 

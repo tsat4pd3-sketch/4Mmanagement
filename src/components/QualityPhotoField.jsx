@@ -36,7 +36,7 @@ export default function QualityPhotoField({
       </label>
 
       {preview ? (
-        <a href={preview} target="_blank" rel="noreferrer" title="เปิดรูปเต็ม">
+        <a href={preview} target="_blank" rel="noreferrer" title={tr('เปิดรูปเต็ม')}>
           <img src={preview} alt={label} style={{
             display: 'block', maxHeight: 120, maxWidth: '100%', borderRadius: 8,
             border: '1px solid var(--border)', marginBottom: 6,
@@ -47,7 +47,7 @@ export default function QualityPhotoField({
         <div style={{
           fontSize: 11.5, color: 'var(--muted)', padding: '10px 12px', marginBottom: 6,
           border: '1px dashed var(--border)', borderRadius: 'var(--r-md)', background: 'var(--bg2)',
-        }}>ยังไม่มีรูป</div>
+        }}>{tr('ยังไม่มีรูป')}</div>
       )}
 
       {!readOnly && (
@@ -75,7 +75,7 @@ export default function QualityPhotoField({
         <ImageCropModal
           file={cropFile} aspect={QUALITY_IMG_ASPECT} outputSize={1024} quality={0.8} webp
           allowFull fullDefault fullHint="เก็บทั้งภาพไว้ — ค่าแนะนำสำหรับรูปหลักฐาน"
-          title="จัดกรอบรูปหลักฐานของเสีย"
+          title={tr('จัดกรอบรูปหลักฐานของเสีย')}
           onCancel={() => setCropFile(null)}
           onConfirm={(cropped) => { onPick(cropped); setCropFile(null); }}
         />

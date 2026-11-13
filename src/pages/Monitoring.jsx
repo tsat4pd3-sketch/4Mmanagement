@@ -586,15 +586,15 @@ export default function Monitoring() {
   return (
     <Page>
       <PageHeader
-        title="Monitoring ติดตามแผน-สต๊อก" icon="📉"
-        sub="บอร์ดแทนไฟล์ Excel ของทีมวางแผน — PLAN กรอกเอง · ของเข้า/ออก/ขั้นต่ำ ระบบเติมให้"
+        title={tr('Monitoring ติดตามแผน-สต๊อก')} icon="📉"
+        sub={tr('บอร์ดแทนไฟล์ Excel ของทีมวางแผน — PLAN กรอกเอง · ของเข้า/ออก/ขั้นต่ำ ระบบเติมให้')}
         tabs={tabs} tab={tab} onTab={setTab}
         actions={canEdit ? (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {/* 📦 บอร์ด FG ไม่ได้มาจากไฟล์ Excel — ปุ่มจึงแยกจาก "นำเข้าจากไฟล์" ตั้งแต่หัวเพจ
                 (ปุ่มเดียวกันแล้วเดาจากแท็บ = คนกดผิดแล้วงงว่าทำไมไม่ขอไฟล์) */}
             <button type="button" className="pg-btn" onClick={() => setShowFgSync(true)}
-              title="สร้าง/อัพเดทบอร์ด FG ต่อลูกค้า จากออเดอร์ EDI 862/830 ที่นำเข้าไว้แล้ว"
+              title={tr('สร้าง/อัพเดทบอร์ด FG ต่อลูกค้า จากออเดอร์ EDI 862/830 ที่นำเข้าไว้แล้ว')}
               style={{ fontSize: 13, fontWeight: 700, padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
                 background: 'var(--bg3)', color: 'var(--text)', border: '1px solid var(--border2)' }}>
               {tr('สร้างบอร์ด FG จากออเดอร์')}
@@ -671,7 +671,7 @@ export default function Monitoring() {
       ) : null}
 
       {tab === 'fg' && fgView === 'rundown' ? (
-        <Suspense fallback={<div style={{ ...card, fontSize: FS + 1, color: 'var(--muted)' }}>กำลังโหลด…</div>}>
+        <Suspense fallback={<div style={{ ...card, fontSize: FS + 1, color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</div>}>
           {/* embed ทั้งดุ้น — ต้องครอบ <Hub> เสมอ ไม่งั้นหัวเรื่องซ้อน 2 ชั้น (มีด่าน · UI-STANDARD §2) */}
           <Hub><RundownStock /></Hub>
         </Suspense>
@@ -679,11 +679,11 @@ export default function Monitoring() {
         <div style={{ ...card, fontSize: FS + 1, lineHeight: 1.9 }}>
           ยังไม่มีบอร์ดในหมวดนี้ ({BOARD_TABS.find(t => t.key === tab)?.sheets})
           {canEdit
-            ? <> — กด <b>นำเข้าจากไฟล์ Excel</b> แล้วเลือกไฟล์ <code>1.Monitoring-&lt;เดือน&gt;.xlsx</code> ระบบจะสร้างบอร์ดให้ตามชีทในไฟล์</>
+            ? <> {tr('— กด')} <b>{tr('นำเข้าจากไฟล์ Excel')}</b> {tr('แล้วเลือกไฟล์')} <code>1.Monitoring-&lt;เดือน&gt;.xlsx</code> {tr('ระบบจะสร้างบอร์ดให้ตามชีทในไฟล์')}</>
             : ' — ต้องมีสิทธิ์จัดการบอร์ดจึงจะนำเข้าได้'}
         </div>
       ) : loading && !parts.length ? (
-        <div style={{ ...card, fontSize: FS + 1, color: 'var(--muted)' }}>กำลังโหลด…</div>
+        <div style={{ ...card, fontSize: FS + 1, color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</div>
       ) : (<>
         {/* 🔐 มีสิทธิ์จัดการบอร์ด แต่บอร์ดนี้เป็นของส่วนงานอื่น — เขียนบอก ห้ามให้ช่องเทาเฉยๆ */}
         {canEditPerm && !boardWrite.ok && (

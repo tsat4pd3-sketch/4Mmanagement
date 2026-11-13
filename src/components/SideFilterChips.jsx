@@ -14,6 +14,7 @@
 */
 import { SIDES, UNKNOWN_SIDE } from '../utils/logisticSide';
 
+import { tr } from '../utils/i18n';
 /**
  * value    — '' (ทั้งหมด) | 'inbound' | 'outbound' | 'unknown'
  * counts   — { inbound, outbound, unknown } จำนวนรายการต่อฝั่ง (จาก splitBySide)
@@ -36,7 +37,7 @@ export default function SideFilterChips({ value, onChange, counts = {}, total, u
 
   return (
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-      <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)' }}>ฝั่งงาน:</span>
+      <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--muted)' }}>{tr('ฝั่งงาน:')}</span>
       {chips.map(c => {
         const on = value === c.key;
         const dim = c.count === 0 && c.key !== '';

@@ -40,7 +40,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
     if (error) { toast.error(`${label}ไม่สำเร็จ: ${error.message}`); return false; }
     toast.success(`${label}แล้ว`); onChanged(); return true;
   };
-  const confirmMaster = (m) => write('ยืนยันกระบวนการ', () => supabase.from('pe_master_processes').update({ confirmed_by: fullName || 'ไม่ระบุชื่อ', confirmed_at: new Date().toISOString() }).eq('id', m.id));
+  const confirmMaster = (m) => write('ยืนยันกระบวนการ', () => supabase.from('pe_master_processes').update({ confirmed_by: fullName || tr('ไม่ระบุชื่อ'), confirmed_at: new Date().toISOString() }).eq('id', m.id));
   const saveMp = async () => {
     const m = mpModal; if (!m.name?.trim()) return toast.error('กรอกชื่อ');
     const row = { name: m.name.trim(), kind: m.kind, process_type: m.process_type?.trim() || null, description: m.description?.trim() || null, is_active: m.is_active !== false,
@@ -73,7 +73,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
     }
     setSaving(true);
     const { data: claimed, error: eClaim } = await supabase.from('pe_master_proposals')
-      .update({ status: 'accepted', decided_by: fullName || 'ไม่ระบุชื่อ', decided_at: new Date().toISOString() })
+      .update({ status: 'accepted', decided_by: fullName || tr('ไม่ระบุชื่อ'), decided_at: new Date().toISOString() })
       .eq('id', p.id).eq('status', 'proposed').select('id');
     if (eClaim) { setSaving(false); return toast.error(`รับข้อเสนอไม่สำเร็จ: ${eClaim.message}`); }
     if (!claimed?.length) { setSaving(false); onChanged(); return toast.error('ข้อเสนอนี้ถูกตัดสินไปแล้ว (หรือไม่มีสิทธิ์) — โหลดรายการใหม่ให้แล้ว'); }
@@ -107,7 +107,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
   };
   const reject = async () => {
     const r = rejectModal; if (!r.reason?.trim()) return toast.error('กรอกเหตุผล');
-    const ok = await write('ปฏิเสธข้อเสนอ', () => supabase.from('pe_master_proposals').update({ status: 'rejected', reject_reason: r.reason.trim(), decided_by: fullName || 'ไม่ระบุชื่อ', decided_at: new Date().toISOString() }).eq('id', r.id));
+    const ok = await write('ปฏิเสธข้อเสนอ', () => supabase.from('pe_master_proposals').update({ status: 'rejected', reject_reason: r.reason.trim(), decided_by: fullName || tr('ไม่ระบุชื่อ'), decided_at: new Date().toISOString() }).eq('id', r.id));
     if (ok) setRejectModal(null);
   };
 
@@ -118,8 +118,8 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
 
   return (
     <div>
-      {unconfirmed > 0 && <WarnBar color="#f59e0b">ระบบจับกลุ่ม OP ชื่อเดียวกันข้ามพาร์ทให้ {unconfirmed} กระบวนการ ยังรอ PE ยืนยันว่าเป็นกระบวนการเดียวกันจริง — กระบวนการที่ยังไม่ยืนยันดึงไปใช้ได้แต่จะติดป้ายเตือน</WarnBar>}
-      {pending.length > 0 && <WarnBar color="#a855f7">📬 มีข้อเสนออัพเดท master ค้าง {pending.length} รายการ{canApprove ? '' : ' (ต้องมี pe:approve จึงตัดสินได้)'}</WarnBar>}
+      {unconfirmed > 0 && <WarnBar color="#f59e0b">{tr('ระบบจับกลุ่ม OP ชื่อเดียวกันข้ามพาร์ทให้')} {unconfirmed} {tr('กระบวนการ ยังรอ PE ยืนยันว่าเป็นกระบวนการเดียวกันจริง — กระบวนการที่ยังไม่ยืนยันดึงไปใช้ได้แต่จะติดป้ายเตือน')}</WarnBar>}
+      {pending.length > 0 && <WarnBar color="#a855f7">{tr('📬 มีข้อเสนออัพเดท master ค้าง')} {pending.length} {tr('รายการ')}{canApprove ? '' : ' (ต้องมี pe:approve จึงตัดสินได้)'}</WarnBar>}
       <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1fr) minmax(0, 2fr)', gap: 12, alignItems: 'start' }}>
         {/* ── รายการกระบวนการมาตรฐาน ── */}
         <div style={card}>
@@ -128,8 +128,8 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
             <label style={{ fontSize: 11.5, whiteSpace: 'nowrap' }}><input type="checkbox" checked={onlyUnconfirmed} onChange={e => setOnlyUnconfirmed(e.target.checked)} /> {tr('รอยืนยัน')}</label>
             {canApprove && <button style={btn()} onClick={() => setMpModal({ name: '', kind: 'process', process_type: '', tags: '', description: '', is_active: true })}>{tr('+ กระบวนการ')}</button>}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>{list.length} กระบวนการ · เรียงตามจำนวนพาร์ทที่ใช้</div>
-          {!list.length && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{(masters || []).length ? 'ไม่มีกระบวนการที่ตรงกับตัวกรอง — ลองล้างคำค้น / เอาติ๊ก "รอยืนยัน" ออก' : 'ทะเบียนยังว่าง — กด "+ กระบวนการ" เพื่อสร้างตัวแรก (seed จากชุดเอกสารที่มีอยู่ทำไปแล้วตอน apply migration)'}</div>}
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 6 }}>{list.length} {tr('กระบวนการ · เรียงตามจำนวนพาร์ทที่ใช้')}</div>
+          {!list.length && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{(masters || []).length ? tr('ไม่มีกระบวนการที่ตรงกับตัวกรอง — ลองล้างคำค้น / เอาติ๊ก "รอยืนยัน" ออก') : tr('ทะเบียนยังว่าง — กด "+ กระบวนการ" เพื่อสร้างตัวแรก (seed จากชุดเอกสารที่มีอยู่ทำไปแล้วตอน apply migration)')}</div>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             {list.map(m => {
               const u = usage[m.id] || { sets: 0, ops: 0 };
@@ -140,10 +140,10 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                     <span style={{ fontWeight: 800, fontSize: 12.5 }}>{m.name}</span>
                     <Pill label={KIND_LABEL[m.kind] || m.kind} color="#64748b" small />
-                    {!m.confirmed_at && <Pill label="รอยืนยัน" color="#f59e0b" small />}
+                    {!m.confirmed_at && <Pill label={tr('รอยืนยัน')} color="#f59e0b" small />}
                     {pend > 0 && <Pill label={`${pend}`} color="#a855f7" small />}
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>v{m.version} · {n} failure mode · ใช้ใน {u.sets} พาร์ท / {u.ops} OP{m.family_tags?.length ? ` · ${m.family_tags.join(', ')}` : ''}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>v{m.version} · {n} {tr('failure mode · ใช้ใน')} {u.sets} {tr('พาร์ท /')} {u.ops} OP{m.family_tags?.length ? ` · ${m.family_tags.join(', ')}` : ''}</div>
                 </div>
               );
             })}
@@ -152,7 +152,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
 
         {/* ── รายละเอียดกระบวนการที่เลือก ── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
-          {!cur ? <div style={{ ...card, color: 'var(--muted)', fontSize: 12.5 }}>เลือกกระบวนการทางซ้ายเพื่อดู failure mode มาตรฐาน · ข้อเสนอ · พาร์ทที่ใช้</div> : (
+          {!cur ? <div style={{ ...card, color: 'var(--muted)', fontSize: 12.5 }}>{tr('เลือกกระบวนการทางซ้ายเพื่อดู failure mode มาตรฐาน · ข้อเสนอ · พาร์ทที่ใช้')}</div> : (
             <>
               <div style={card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
@@ -171,22 +171,22 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
                 </div>
                 {/* พาร์ทที่ใช้ */}
                 <div style={{ marginTop: 8, fontSize: 11.5, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <span style={{ color: 'var(--muted)' }}>ใช้ใน:</span>
+                  <span style={{ color: 'var(--muted)' }}>{tr('ใช้ใน:')}</span>
                   {(usage[cur.id]?.setIds || []).map(sid => <button key={sid} style={{ ...ghost, padding: '2px 8px', fontSize: 11 }} onClick={() => onOpenSet?.(sid)}>{setById[sid]?.part_no || sid.slice(0, 8)}</button>)}
-                  {!(usage[cur.id]?.setIds || []).length && <span style={{ color: 'var(--muted)' }}>ยังไม่มีพาร์ทผูก</span>}
+                  {!(usage[cur.id]?.setIds || []).length && <span style={{ color: 'var(--muted)' }}>{tr('ยังไม่มีพาร์ทผูก')}</span>}
                 </div>
               </div>
 
               {curPending.length > 0 && (
                 <div style={{ ...card, borderColor: '#a855f766' }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>ข้อเสนออัพเดท master ({curPending.length})</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>{tr('ข้อเสนออัพเดท master (')}{curPending.length})</div>
                   {curPending.map(p => (
                     <div key={p.id} style={{ borderTop: '1px solid var(--border)', padding: '8px 0', display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                       <div style={{ flex: 1, minWidth: 240 }}>
                         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                          <Pill label={p.kind === 'improve' ? 'ปรับปรุง' : 'รายการใหม่'} color={p.kind === 'improve' ? '#a855f7' : '#3b82f6'} small />
-                          <b style={{ fontSize: 12.5 }}>{p.kind === 'improve' ? (itemById[p.master_item_id]?.failure_mode || '(master item หาย)') : p.after?.failure_mode}</b>
-                          <span style={{ fontSize: 11, color: 'var(--muted)' }}>จาก {setById[p.source_set_id]?.part_no || '—'} · {fmtDate(p.created_at)} · {p.created_by_name || 'ระบบ'}</span>
+                          <Pill label={p.kind === 'improve' ? tr('ปรับปรุง') : tr('รายการใหม่')} color={p.kind === 'improve' ? '#a855f7' : '#3b82f6'} small />
+                          <b style={{ fontSize: 12.5 }}>{p.kind === 'improve' ? (itemById[p.master_item_id]?.failure_mode || tr('(master item หาย)')) : p.after?.failure_mode}</b>
+                          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('จาก')} {setById[p.source_set_id]?.part_no || '—'} · {fmtDate(p.created_at)} · {p.created_by_name || 'ระบบ'}</span>
                         </div>
                         <div style={{ fontSize: 12, marginTop: 3 }}>
                           RPN <b style={{ color: rpnColor(p.rpn_before) }}>{p.rpn_before ?? '—'}</b> → <b style={{ color: rpnColor(p.rpn_after) }}>{p.rpn_after ?? '—'}</b>
@@ -210,10 +210,10 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
 
               <div style={card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 6 }}>
-                  <div style={{ fontSize: 13, fontWeight: 800 }}>Failure mode มาตรฐาน ({items.length})</div>
+                  <div style={{ fontSize: 13, fontWeight: 800 }}>{tr('Failure mode มาตรฐาน (')}{items.length})</div>
                   {canApprove && <button style={ghost} onClick={() => setItemModal({ seq: items.length + 1, failure_mode: '', requirement: '', effects: '', severity: '', classification: '', causes: '', prevention: '', occurrence: '', detection_ctrl: '', detection: '', best_practice: '', is_active: true })}>{tr('+ รายการ')}</button>}
                 </div>
-                {!items.length && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ยังไม่มี — เพิ่มเอง หรือรอข้อเสนอจากพาร์ท</div>}
+                {!items.length && <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ยังไม่มี — เพิ่มเอง หรือรอข้อเสนอจากพาร์ท')}</div>}
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead><tr><th style={thSt}>#</th><th style={thSt}>Failure mode / Effects</th><th style={thSt}>Causes · Controls</th><th style={{ ...thSt, textAlign: 'center' }}>S·O·D</th><th style={{ ...thSt, textAlign: 'right' }}>RPN</th><th style={thSt}>v</th><th style={thSt}>{tr('ที่มา')}</th><th style={thSt}></th></tr></thead>
@@ -226,7 +226,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
                         <td style={{ ...tdSt, textAlign: 'right', fontWeight: 800, color: rpnColor(rpnOf(it)) }}>{rpnOf(it) ?? '—'}</td>
                         <td style={tdSt}>v{it.version}</td>
                         <td style={{ ...tdSt, fontSize: 11 }}>{it.origin_set_id ? (setById[it.origin_set_id]?.part_no || '—') : '—'}</td>
-                        <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>{canApprove && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setItemModal({ ...it, severity: it.severity ?? '', occurrence: it.occurrence ?? '', detection: it.detection ?? '' })}>✏️</button> <DeleteButton onClick={() => delItem(it)} title="ลบ" /></>}</td>
+                        <td style={{ ...tdSt, whiteSpace: 'nowrap' }}>{canApprove && <><button className="tbtn" style={{ ...ghost, padding: '2px 7px' }} onClick={() => setItemModal({ ...it, severity: it.severity ?? '', occurrence: it.occurrence ?? '', detection: it.detection ?? '' })}>✏️</button> <DeleteButton onClick={() => delItem(it)} title={tr('ลบ')} /></>}</td>
                       </tr>
                     ))}</tbody>
                   </table>
@@ -238,14 +238,14 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
       </div>
 
       {mpModal && (
-        <Modal title={mpModal.id ? 'แก้กระบวนการมาตรฐาน' : 'เพิ่มกระบวนการมาตรฐาน'} onClose={() => setMpModal(null)} width={560}
+        <Modal title={mpModal.id ? tr('แก้กระบวนการมาตรฐาน') : tr('เพิ่มกระบวนการมาตรฐาน')} onClose={() => setMpModal(null)} width={560}
           footer={<><button style={ghost} onClick={() => setMpModal(null)}>{tr('ยกเลิก')}</button><button style={btn()} disabled={saving} onClick={saveMp}>{tr('บันทึก')}</button></>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}>
-            <Field label="ชื่อกระบวนการ *" span={2}><input style={inp} value={mpModal.name} onChange={e => setMpModal({ ...mpModal, name: e.target.value })} placeholder="PROJECTION WELD NUT" /></Field>
-            <Field label="ชนิด"><select style={inp} value={mpModal.kind} onChange={e => setMpModal({ ...mpModal, kind: e.target.value })} disabled={!!mpModal.id}>{Object.entries(KIND_LABEL).map(([k, l]) => <option key={k} value={k}>{tr(l)}</option>)}</select></Field>
-            <Field label="process_type (DR)" hint="key ของ process_types"><input style={inp} value={mpModal.process_type} onChange={e => setMpModal({ ...mpModal, process_type: e.target.value })} placeholder="welding / stamping" /></Field>
-            <Field label="ตระกูลพาร์ท (คั่นด้วย ,)" span={2}><input style={inp} value={mpModal.tags} onChange={e => setMpModal({ ...mpModal, tags: e.target.value })} placeholder="fender_inner, rad_support" /></Field>
-            <Field label="คำอธิบาย" span={2}><textarea style={{ ...inp, minHeight: 50 }} value={mpModal.description} onChange={e => setMpModal({ ...mpModal, description: e.target.value })} /></Field>
+            <Field label={tr('ชื่อกระบวนการ *')} span={2}><input style={inp} value={mpModal.name} onChange={e => setMpModal({ ...mpModal, name: e.target.value })} placeholder="PROJECTION WELD NUT" /></Field>
+            <Field label={tr('ชนิด')}><select style={inp} value={mpModal.kind} onChange={e => setMpModal({ ...mpModal, kind: e.target.value })} disabled={!!mpModal.id}>{Object.entries(KIND_LABEL).map(([k, l]) => <option key={k} value={k}>{tr(l)}</option>)}</select></Field>
+            <Field label="process_type (DR)" hint={tr('key ของ process_types')}><input style={inp} value={mpModal.process_type} onChange={e => setMpModal({ ...mpModal, process_type: e.target.value })} placeholder="welding / stamping" /></Field>
+            <Field label={tr('ตระกูลพาร์ท (คั่นด้วย ,)')} span={2}><input style={inp} value={mpModal.tags} onChange={e => setMpModal({ ...mpModal, tags: e.target.value })} placeholder="fender_inner, rad_support" /></Field>
+            <Field label={tr('คำอธิบาย')} span={2}><textarea style={{ ...inp, minHeight: 50 }} value={mpModal.description} onChange={e => setMpModal({ ...mpModal, description: e.target.value })} /></Field>
             <label style={{ fontSize: 12.5 }}><input type="checkbox" checked={mpModal.is_active !== false} onChange={e => setMpModal({ ...mpModal, is_active: e.target.checked })} /> {tr('ใช้งาน')}</label>
           </div>
         </Modal>
@@ -254,7 +254,7 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
         <Modal title={itemModal.id ? `แก้ master: ${itemModal.failure_mode}` : 'เพิ่ม failure mode มาตรฐาน'} onClose={() => setItemModal(null)} width={760}
           footer={<><button style={ghost} onClick={() => setItemModal(null)}>{tr('ยกเลิก')}</button><button style={btn()} disabled={saving} onClick={saveItem}>{tr('บันทึก')}{itemModal.id ? ` (→ v${(itemModal.version || 1) + 1})` : ''}</button></>}>
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, alignItems: 'start' }}>
-            <Field label="ลำดับ"><input type="number" style={inp} value={itemModal.seq} onChange={e => setItemModal({ ...itemModal, seq: e.target.value })} /></Field>
+            <Field label={tr('ลำดับ')}><input type="number" style={inp} value={itemModal.seq} onChange={e => setItemModal({ ...itemModal, seq: e.target.value })} /></Field>
             <Field label="Failure mode *" span={2}><input style={inp} value={itemModal.failure_mode} onChange={e => setItemModal({ ...itemModal, failure_mode: e.target.value })} /></Field>
             <Field label="Requirement" span={3}><input style={inp} value={itemModal.requirement || ''} onChange={e => setItemModal({ ...itemModal, requirement: e.target.value })} /></Field>
             <Field label="Effects" span={2}><textarea style={{ ...inp, minHeight: 48 }} value={itemModal.effects || ''} onChange={e => setItemModal({ ...itemModal, effects: e.target.value })} /></Field>
@@ -265,15 +265,15 @@ export default function PeMasterLibrary({ masters, masterItems, proposals, usage
             <Field label="Class"><select style={inp} value={itemModal.classification || ''} onChange={e => setItemModal({ ...itemModal, classification: e.target.value })}><option value="">—</option><option value="CC">CC</option><option value="SC">SC</option></select></Field>
             <Field label="Detection control" span={2}><textarea style={{ ...inp, minHeight: 48 }} value={itemModal.detection_ctrl || ''} onChange={e => setItemModal({ ...itemModal, detection_ctrl: e.target.value })} /></Field>
             <Field label="D (1-10)"><input type="number" min={1} max={10} style={inp} value={itemModal.detection} onChange={e => setItemModal({ ...itemModal, detection: e.target.value })} /></Field>
-            <Field label="Best practice (สิ่งที่ทำแล้วดีขึ้น)" span={3}><input style={inp} value={itemModal.best_practice || ''} onChange={e => setItemModal({ ...itemModal, best_practice: e.target.value })} /></Field>
+            <Field label={tr('Best practice (สิ่งที่ทำแล้วดีขึ้น)')} span={3}><input style={inp} value={itemModal.best_practice || ''} onChange={e => setItemModal({ ...itemModal, best_practice: e.target.value })} /></Field>
             <label style={{ fontSize: 12.5 }}><input type="checkbox" checked={itemModal.is_active !== false} onChange={e => setItemModal({ ...itemModal, is_active: e.target.checked })} /> {tr('ใช้งาน')}</label>
           </div>
         </Modal>
       )}
       {rejectModal && (
-        <Modal title="ไม่รับข้อเสนอ" onClose={() => setRejectModal(null)} width={480}
+        <Modal title={tr('ไม่รับข้อเสนอ')} onClose={() => setRejectModal(null)} width={480}
           footer={<><button style={ghost} onClick={() => setRejectModal(null)}>{tr('ยกเลิก')}</button><button style={btn('#ef4444', '#fff')} disabled={saving} onClick={reject}>{tr('ปฏิเสธ')}</button></>}>
-          <Field label="เหตุผล * (auditor ถามว่าทำไมไม่รับ)"><textarea style={{ ...inp, minHeight: 60 }} value={rejectModal.reason} onChange={e => setRejectModal({ ...rejectModal, reason: e.target.value })} /></Field>
+          <Field label={tr('เหตุผล * (auditor ถามว่าทำไมไม่รับ)')}><textarea style={{ ...inp, minHeight: 60 }} value={rejectModal.reason} onChange={e => setRejectModal({ ...rejectModal, reason: e.target.value })} /></Field>
         </Modal>
       )}
     </div>

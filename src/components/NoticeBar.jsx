@@ -1,3 +1,4 @@
+import { tr } from '../utils/i18n';
 /* ══ ⚠️ NoticeBar — แถบแจ้งเหนือเนื้อหา "บรรทัดเดียว + ทางไปทำ" (2026-11-04 · UI-CONVENTIONS §6.35) ═══
    เดิมแต่ละหน้าซ้อนแถบเตือน 2–4 ชั้น (แดงเต็มพื้น + กล่องส้ม + ป้ายฟ้า) ก่อนถึงเนื้อหา ⇒ คนเลิกอ่าน
    กติกา: หนึ่งเรื่อง = หนึ่งแถบ · ข้อความสั้นบรรทัดเดียว (`children`) · มี `action` ถ้ามีที่ให้ไปแก้
@@ -18,7 +19,7 @@ export default function NoticeBar({ tone = 'warn', icon, action, children, style
       <span aria-hidden="true" style={{ color: c, fontWeight: 700, flexShrink: 0 }}>{icon ?? ICON[tone] ?? ICON.warn}</span>
       <span style={{ flex: 1, minWidth: 0 }}>{children}</span>
       {action && (
-        <button type="button" className="notice-bar-act" onClick={action.onClick} title={action.title}>{action.label}</button>
+        <button type="button" className="notice-bar-act" onClick={action.onClick} title={action.title}>{tr(action.label)}</button>
       )}
     </div>
   );

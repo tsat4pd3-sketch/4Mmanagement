@@ -5,6 +5,7 @@ import useTabParam from '../utils/useTabParam';
 import PageHeader from '../components/PageHeader';
 import Page, { Hub } from '../components/Page';
 
+import { tr } from '../utils/i18n';
 /* ── Daily Checker — ศูนย์รวมระบบเช็ครายวันของไลน์ผลิต (2026-07-23) ──────────────────
    ขมวด Daily PM + LPA (+ ระบบเช็คอื่นที่จะเพิ่ม) เป็นหน้าเดียว แยกด้วยแท็บ
    - แต่ละแท็บ = component หน้าเดิม (embed ทั้งดุ้น ไม่แก้ของเดิม) แสดงตามสิทธิ์หน้านั้นๆ
@@ -38,18 +39,18 @@ export default function DailyChecker() {
   return (
     <Page>
       {/* หัว + แท็บ — ใช้ PageHeader มาตรฐาน (UI §6.8) ห้ามวาดหัว/แถบแท็บเอง
-          หน้าลูกครอบด้วย <Hub> ⇒ ไม่วาดชื่อหน้าซ้ำ · <Page> ของหน้าลูกไม่เพิ่มขอบซ้ำ (UI-STANDARD §1) */}
+          หน้าลูกครอบด้วย <Hub> {tr('⇒ ไม่วาดชื่อหน้าซ้ำ ·')} <Page> ของหน้าลูกไม่เพิ่มขอบซ้ำ (UI-STANDARD §1) */}
         <PageHeader title="Daily Checker" icon="🗂️"
-          sub="ศูนย์รวมระบบตรวจเช็ครายวันของไลน์ผลิต — เลือกแท็บด้านล่าง"
+          sub={tr('ศูนย์รวมระบบตรวจเช็ครายวันของไลน์ผลิต — เลือกแท็บด้านล่าง')}
           tabs={available.map(t => ({ key: t.key, label: t.label }))} tab={active} onTab={setActive} />
 
       {/* เนื้อหาแท็บ (component หน้าเดิม) */}
       {Cur ? (
-        <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>}>
+        <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>}>
           <Hub><Cur /></Hub>
         </Suspense>
       ) : (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>ยังไม่มีสิทธิ์เข้าระบบเช็คใดในหน้านี้</div>
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('ยังไม่มีสิทธิ์เข้าระบบเช็คใดในหน้านี้')}</div>
       )}
     </Page>
   );

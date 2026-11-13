@@ -765,7 +765,7 @@ export default function QualityBins({ mode = 'full' }) {
             padding: '12px 14px', marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: pend.length ? 10 : 0 }}>
               <span style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--amber)' }}>
-                🟡 ค้างในสายถังเหลือง {pend.length} รายการ · {pcs.toLocaleString()} ชิ้น
+                🟡 ค้างในสายถังเหลือง {pend.length} {trI18n('รายการ ·')} {pcs.toLocaleString()} ชิ้น
               </span>
               {over > 0 && (
                 <span title={`เลยอายุแท็กเหลือง ${TAG_MAX_DAYS.yellow} วันตาม WI-PD3-087 §5.6`}
@@ -775,7 +775,7 @@ export default function QualityBins({ mode = 'full' }) {
                 </span>
               )}
               <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-                ของที่ลงงานเสียแล้วยังไม่ตัดสินว่า <b style={{ color: 'var(--text2)' }}>ซ่อมกลับมาดีได้</b> หรือ <b style={{ color: 'var(--text2)' }}>เสียแน่</b>
+                ของที่ลงงานเสียแล้วยังไม่ตัดสินว่า <b style={{ color: 'var(--text2)' }}>{trI18n('ซ่อมกลับมาดีได้')}</b> {trI18n('หรือ')} <b style={{ color: 'var(--text2)' }}>{trI18n('เสียแน่')}</b>
               </span>
             </div>
             {/* 🔴 โหลดคิวไม่สำเร็จ ห้ามเงียบ */}
@@ -786,7 +786,7 @@ export default function QualityBins({ mode = 'full' }) {
             )}
             {pend.length === 0 && !pendErr && (
               /* 🔴 ระหว่างโหลดห้ามเขียนว่า "ไม่มีของค้าง" — คิวว่างเทียมคือจอโกหก */
-              <div style={{ fontSize: 12, color: 'var(--muted)' }}>{loading ? 'กำลังโหลด…' : 'ไม่มีของค้างรอพิจารณา ✓'}</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>{loading ? trI18n('กำลังโหลด…') : trI18n('ไม่มีของค้างรอพิจารณา ✓')}</div>
             )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
               {show.map(r => {
@@ -800,7 +800,7 @@ export default function QualityBins({ mode = 'full' }) {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12.5 }}>
                         <b style={{ color: 'var(--text)' }}>{r.part_no || r.part_name || r.mat_no || '—'}</b>
                         {r.part_no && r.part_name && <span style={{ color: 'var(--muted)' }}>{r.part_name}</span>}
-                        <span style={{ fontWeight: 800, color: 'var(--amber)' }}>{(Number(r.qty) || 0).toLocaleString()} ชิ้น</span>
+                        <span style={{ fontWeight: 800, color: 'var(--amber)' }}>{(Number(r.qty) || 0).toLocaleString()} {trI18n('ชิ้น')}</span>
                         <span style={{ fontSize: 11, color: age?.over ? 'var(--red)' : 'var(--muted)', fontWeight: age?.over ? 800 : 400 }}>
                           {r.work_date}{age ? ` · ค้าง ${age.days} วัน` : ''}
                         </span>
@@ -817,7 +817,7 @@ export default function QualityBins({ mode = 'full' }) {
                           <StepFlow compact steps={flow.steps} unknown={!flow.known} style={{ marginTop: 3 }} />
                           <div style={{ fontSize: 11, fontWeight: 700, color: late ? 'var(--red)' : 'var(--text2)', marginTop: 2 }}>
                             ขั้น {st.step}/5 · {st.label}{who ? ` · รอ${who}` : ''}
-                            {r.qty_ok != null && st.step === 4 && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · ซ่อมดี {r.qty_ok} · ไม่ได้ {r.qty_ng ?? 0}{r.repair_detail ? ` · ${r.repair_detail}` : ''}</span>}
+                            {r.qty_ok != null && st.step === 4 && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> {trI18n('· ซ่อมดี')} {r.qty_ok} {trI18n('· ไม่ได้')} {r.qty_ng ?? 0}{r.repair_detail ? ` · ${r.repair_detail}` : ''}</span>}
                           </div>
                         </>) : null;
                       })()}
@@ -866,8 +866,8 @@ export default function QualityBins({ mode = 'full' }) {
             )}
             {pend.length > 0 && (
               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 8 }}>
-                ขั้น 2 ตัดสิน · ขั้น 4 ตรวจรับ = <b>QA</b> (สิทธิ์ qa:bin_decide{canDecide ? ' ✓' : ' — บัญชีนี้ไม่มี'}) ·
-                ขั้น 3 ลงผลซ่อม · ย้ายลงถังแดง = <b>ฝ่ายผลิต</b> (สิทธิ์ scrap:record{canRecord ? ' ✓' : ' — บัญชีนี้ไม่มี'})
+                ขั้น 2 ตัดสิน · ขั้น 4 ตรวจรับ = <b>QA</b> {trI18n('(สิทธิ์ qa:bin_decide')}{canDecide ? ' ✓' : ' — บัญชีนี้ไม่มี'}) ·
+                ขั้น 3 ลงผลซ่อม · ย้ายลงถังแดง = <b>{trI18n('ฝ่ายผลิต')}</b> {trI18n('(สิทธิ์ scrap:record')}{canRecord ? ' ✓' : ' — บัญชีนี้ไม่มี'})
               </div>
             )}
           </div>
@@ -890,7 +890,7 @@ export default function QualityBins({ mode = 'full' }) {
           {binDocLabel(repairing.row)} · {Number(repairing.row.qty) || 0} ชิ้น — บันทึกแล้วส่งให้ QA ตรวจรับ (ขั้น 4)
         </div>
         {repairing.row.repair_reject_note && (
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)', marginBottom: 10 }}>↩️ QA ตีกลับรอบก่อน: {repairing.row.repair_reject_note}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)', marginBottom: 10 }}>{trI18n('↩️ QA ตีกลับรอบก่อน:')} {repairing.row.repair_reject_note}</div>
         )}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignContent: 'start' }}>
           <div><label style={lbl}>{trI18n('ซ่อมแล้วดี (ชิ้น)')}</label>
@@ -900,7 +900,7 @@ export default function QualityBins({ mode = 'full' }) {
           <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>{trI18n('รายละเอียดการซ่อม (ทำอะไร · ตาม WI ไหน) *')}</label>
             <input value={repairing.detail} onChange={e => setRepairing(f => ({ ...f, detail: e.target.value }))} style={inp} /></div>
         </div>
-        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>ผู้ซ่อม: {fullName || '—'} · วันที่ {today()} · แนบรูปหลังซ่อมได้ที่ ✏️ แก้ไขรายการ</div>
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>{trI18n('ผู้ซ่อม:')} {fullName || '—'} {trI18n('· วันที่')} {today()} {trI18n('· แนบรูปหลังซ่อมได้ที่ ✏️ แก้ไขรายการ')}</div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
           <button onClick={() => setRepairing(null)} style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'transparent', color: 'var(--text2)', cursor: 'pointer', fontSize: 13 }}>{trI18n('ยกเลิก')}</button>
           <button disabled={!!deciding} onClick={saveRepair} style={{ padding: '7px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>{trI18n('บันทึกผลซ่อม → ส่ง QA')}</button>
@@ -915,10 +915,10 @@ export default function QualityBins({ mode = 'full' }) {
       <ReadOnlyNote show={!canDecide} role={role} what="ตัดสินผลของในถังเหลือง (เฉพาะ QA)" permKey="qa:bin_decide" />
       {renderPendQueue()}
       <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 10, lineHeight: 1.8 }}>
-        📄 เอกสารตัวจริง (ใบรายงานของเสีย · ทะเบียนถังเหลือง/ถังแดง · อายุแท็ก · ทะเบียน WI ซ่อม) อยู่ที่<b>ฝ่ายผลิต</b>
+        📄 เอกสารตัวจริง (ใบรายงานของเสีย · ทะเบียนถังเหลือง/ถังแดง · อายุแท็ก · ทะเบียน WI ซ่อม) อยู่ที่<b>{trI18n('ฝ่ายผลิต')}</b>
         {canAccessPage('/scrap-report', role)
-          ? <> → <Link to="/scrap-report?tab=bins" style={{ color: 'var(--accent)', fontWeight: 700 }}>ของเสีย: ใบรายงาน · ถังเหลือง/แดง ↗</Link></>
-          : <> — หน้า <b>ของเสีย: ใบรายงาน · ถังเหลือง/แดง</b> (บัญชีนี้ยังไม่มีสิทธิ์เข้าหน้านั้น)</>}
+          ? <> → <Link to="/scrap-report?tab=bins" style={{ color: 'var(--accent)', fontWeight: 700 }}>{trI18n('ของเสีย: ใบรายงาน · ถังเหลือง/แดง ↗')}</Link></>
+          : <> {trI18n('— หน้า')} <b>{trI18n('ของเสีย: ใบรายงาน · ถังเหลือง/แดง')}</b> {trI18n('(บัญชีนี้ยังไม่มีสิทธิ์เข้าหน้านั้น)')}</>}
         <br />
         {scopeRes.unsure
           ? <span style={{ color: 'var(--amber)', fontWeight: 700 }}>
@@ -928,8 +928,8 @@ export default function QualityBins({ mode = 'full' }) {
                   : 'ส่วนงานของบัญชีนี้ไม่ตรงกับไลน์ไหนในทะเบียน'}) — ตัวเลขข้างบนอาจไม่ใช่ขอบเขตจริงของคุณ
             </span>
           : scopeNames
-            ? <>🏷️ คิวนี้เฉพาะส่วนงานของคุณ ({scopeNames.length} ไลน์) — ของไลน์อื่นไม่ถูกนับในตัวเลขข้างบน</>
-            : <>🏷️ คิวนี้ทั้งโรงงาน (บัญชีนี้ไม่ถูกจำกัดส่วนงาน)</>}
+            ? <>{trI18n('🏷️ คิวนี้เฉพาะส่วนงานของคุณ (')}{scopeNames.length} ไลน์) — ของไลน์อื่นไม่ถูกนับในตัวเลขข้างบน</>
+            : <>{trI18n('🏷️ คิวนี้ทั้งโรงงาน (บัญชีนี้ไม่ถูกจำกัดส่วนงาน)')}</>}
       </div>
     </div>
   );
@@ -946,7 +946,7 @@ export default function QualityBins({ mode = 'full' }) {
         onFrom={tr.setFrom} onTo={tr.setTo} onPreset={tr.setPreset} style={{ marginBottom: 14 }}
       >
         {/* เลือกถัง = ตัวเลือก 2 ตัวที่เท่ากัน ⇒ Segmented อยู่ในแถบเดียว (เดิมเป็นแถวปุ่มแยกเหนือแถบกรอง) · สีถัง = ความหมาย */}
-        <Segmented label="ถัง" value={bin} onChange={setBin}
+        <Segmented label={trI18n('ถัง')} value={bin} onChange={setBin}
           options={BINS.map(b => ({ value: b.key, label: b.label, color: b.color }))} />
         <LineSelect lines={lineObjs} value={lineFilter} onChange={setLineFilter} placeholder={ALL.line} />
         <SearchInput value={search} onChange={setSearch} fields="ชิ้นงาน / สาเหตุ / ผู้แจ้ง" />
@@ -965,7 +965,7 @@ export default function QualityBins({ mode = 'full' }) {
         {canRecord && <button onClick={openNew} style={{ padding: '8px 18px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>{trI18n('+ บันทึกรายการ')}</button>}
         <button onClick={doPrint} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>{trI18n('พิมพ์ใบ')} {B.short}</button>
         <button onClick={() => setShowWiReg(v => !v)}
-          title="ทะเบียน QRs ↔ WI การซ่อม ตาม WI-PD3-069 §6 — อาการไหนซ่อมตาม WI เล่มไหน"
+          title={trI18n('ทะเบียน QRs ↔ WI การซ่อม ตาม WI-PD3-069 §6 — อาการไหนซ่อมตาม WI เล่มไหน')}
           style={{ padding: '8px 14px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: showWiReg ? 'var(--bg2)' : 'var(--bg3)', color: 'var(--text)', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
           {trI18n('ทะเบียน WI ซ่อม')}
         </button>
@@ -977,14 +977,14 @@ export default function QualityBins({ mode = 'full' }) {
 
       <div style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 8 }}>
         {loading ? 'กำลังโหลด…' : `${filtered.length} รายการ · รวม ${totalQty.toLocaleString('th-TH')} ชิ้น`}
-        {scopeNames && <span> · เฉพาะส่วนงานของคุณ ({scopeNames.length} ไลน์)</span>}
+        {scopeNames && <span> {trI18n('· เฉพาะส่วนงานของคุณ (')}{scopeNames.length} ไลน์)</span>}
         {!loading && overdueCount > 0 && (
-          <span style={{ color: '#f97316', fontWeight: 700 }}> · ⏱ เกินอายุแท็ก {overdueCount} รายการ</span>
+          <span style={{ color: '#f97316', fontWeight: 700 }}> {trI18n('· ⏱ เกินอายุแท็ก')} {overdueCount} {trI18n('รายการ')}</span>
         )}
         {!loading && overdueErr && (
-          <span style={{ color: '#e05252', fontWeight: 700 }} title={overdueErr}> · ⚠️ รายการค้างเกินอายุแท็กอาจไม่ครบ ({overdueErr})</span>
+          <span style={{ color: '#e05252', fontWeight: 700 }} title={overdueErr}> {trI18n('· ⚠️ รายการค้างเกินอายุแท็กอาจไม่ครบ (')}{overdueErr})</span>
         )}
-        {overdueOnly && <span> · แสดงเฉพาะของค้าง (ทุกวันที่ ไม่ขึ้นกับช่วงที่เลือก) <button onClick={() => setOverdueOnly(false)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 12.5, textDecoration: 'underline', padding: 0 }}>{trI18n('แสดงทั้งหมด')}</button></span>}
+        {overdueOnly && <span> {trI18n('· แสดงเฉพาะของค้าง (ทุกวันที่ ไม่ขึ้นกับช่วงที่เลือก)')} <button onClick={() => setOverdueOnly(false)} style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 12.5, textDecoration: 'underline', padding: 0 }}>{trI18n('แสดงทั้งหมด')}</button></span>}
       </div>
 
       {/* ── ตาราง ── */}
@@ -1011,12 +1011,12 @@ export default function QualityBins({ mode = 'full' }) {
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>{(() => {
                   const { age, closed } = ageMap[r.id] || {};
                   if (!age) return <span style={{ color: 'var(--muted)' }}>—</span>;
-                  if (closed) return <span style={{ fontSize: 11.5, color: 'var(--muted)' }} title="ออกจากถังแล้ว — หยุดนับอายุแท็ก">✓ จบแล้ว</span>;
+                  if (closed) return <span style={{ fontSize: 11.5, color: 'var(--muted)' }} title={trI18n('ออกจากถังแล้ว — หยุดนับอายุแท็ก')}>{trI18n('✓ จบแล้ว')}</span>;
                   return (
                     <span style={{ fontSize: 11.5, fontWeight: age.over ? 800 : 600, color: age.over ? '#f97316' : 'var(--text2)' }}
                       title={`ลงถัง ${r.work_date} · อายุแท็กสูงสุด ${age.limit} วันตาม WI-PD3-087 §5.6`}>
                       {age.over ? '⏱ ' : ''}{age.days} / {age.limit} วัน
-                      {age.over && <span style={{ display: 'block', fontSize: 11, fontWeight: 700 }}>เกิน {age.overBy} วัน</span>}
+                      {age.over && <span style={{ display: 'block', fontSize: 11, fontWeight: 700 }}>{trI18n('เกิน')} {age.overBy} {trI18n('วัน')}</span>}
                     </span>
                   );
                 })()}</td>
@@ -1026,7 +1026,7 @@ export default function QualityBins({ mode = 'full' }) {
                   {/* มาจากบันทึกงานเสียใน Daily Report — บอกที่มาไว้ กันคีย์ซ้ำ */}
                   {r.defect_log_id && (
                     <div style={{ fontSize: 11, color: '#0ea5e9' }}
-                      title="สร้างจากบันทึกงานเสียในหน้า Daily Report — ไม่ได้คีย์ใหม่">
+                      title={trI18n('สร้างจากบันทึกงานเสียในหน้า Daily Report — ไม่ได้คีย์ใหม่')}>
                       จาก Daily Report
                     </div>
                   )}
@@ -1051,14 +1051,14 @@ export default function QualityBins({ mode = 'full' }) {
                 {/* §5.4 ผลพิจารณา QA — null = "รอ QA พิจารณา" ห้ามเดาผลให้ (แถวเดิมทั้งหมดเป็น null) */}
                 {isY && <td style={{ ...td, whiteSpace: 'nowrap' }}>{(() => {
                   const d = decisionOf(r.qa_decision);
-                  if (!d) return <span style={{ fontSize: 11.5, color: '#f59e0b' }}>⏳ รอ QA พิจารณา</span>;
+                  if (!d) return <span style={{ fontSize: 11.5, color: '#f59e0b' }}>{trI18n('⏳ รอ QA พิจารณา')}</span>;
                   return (
                     <span style={{ fontSize: 11.5, fontWeight: 700, color: d.color }} title={d.hint}>
                       {d.label}
                       {r.qa_decision === 'use_as_is' && (
                         r.special_use_doc_no
                           ? <span style={{ display: 'block', fontSize: 11, color: 'var(--muted)' }}>{SPECIAL_USE_FORM} {r.special_use_doc_no}</span>
-                          : <span style={{ display: 'block', fontSize: 11, color: '#f59e0b' }}>⏳ รอเลขใบ {SPECIAL_USE_FORM}</span>
+                          : <span style={{ display: 'block', fontSize: 11, color: '#f59e0b' }}>{trI18n('⏳ รอเลขใบ')} {SPECIAL_USE_FORM}</span>
                       )}
                     </span>
                   );
@@ -1072,14 +1072,14 @@ export default function QualityBins({ mode = 'full' }) {
                 {!isY && <td style={td}>{r.disposed_by || '—'}</td>}
                 {!isY && <td style={td}>
                   {r.disposed_position || '—'}
-                  {r.from_yellow_id && <div style={{ fontSize: 11, color: '#f5b942' }}>🟡 มาจากถังเหลือง</div>}
+                  {r.from_yellow_id && <div style={{ fontSize: 11, color: '#f5b942' }}>{trI18n('🟡 มาจากถังเหลือง')}</div>}
                 </td>}
                 {/* 🔴 สาย DOA: ของในถังแดงต้องมีใบรายงานของเสีย (FM-PD2-002) เพื่อขออนุมัติทำลาย
                     ยังไม่ออกใบ = ส้มเตือน (งานค้าง ไม่ใช่ alarm — ไม่กระพริบ ตาม Andon convention) */}
                 {!isY && <td style={{ ...td, whiteSpace: 'nowrap' }}>
                   {r.scrap_report_id && scrapDocs[r.scrap_report_id]?.status === SCRAP_DRAFT
                     /* 🔴 ใบร่าง ≠ ขออนุมัติแล้ว — ยังเป็นงานค้าง (บั๊ก B 10/11) */
-                    ? <span title="ผูกใบแล้วแต่ใบยังเป็นร่าง — ยังไม่ได้ส่งขออนุมัติทำลาย"
+                    ? <span title={trI18n('ผูกใบแล้วแต่ใบยังเป็นร่าง — ยังไม่ได้ส่งขออนุมัติทำลาย')}
                         style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--amber)' }}>
                         📝 {scrapDocs[r.scrap_report_id]?.doc_no || ''} ร่าง · ยังไม่ส่งอนุมัติ
                       </span>
@@ -1087,24 +1087,24 @@ export default function QualityBins({ mode = 'full' }) {
                     ? <span style={{ fontSize: 11.5, fontWeight: 700, color: '#22c55e' }}>
                         {scrapDocs[r.scrap_report_id]?.doc_no || 'ออกใบแล้ว'}
                       </span>
-                    : <span title="ยังไม่ได้ออกใบรายงานของเสีย — ไปที่หน้า 🗑️ ใบรายงานของเสีย แล้วกด ⤵ ดึงจากถังแดง"
+                    : <span title={trI18n('ยังไม่ได้ออกใบรายงานของเสีย — ไปที่หน้า 🗑️ ใบรายงานของเสีย แล้วกด ⤵ ดึงจากถังแดง')}
                         style={{ fontSize: 11.5, fontWeight: 700, color: '#f59e0b' }}>
                         ⏳ ยังไม่ออกใบ
                       </span>}
                 </td>}
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                  {canRecord && <button onClick={() => openEdit(r)} title="แก้ไข" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>}
+                  {canRecord && <button onClick={() => openEdit(r)} title={trI18n('แก้ไข')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>✏️</button>}
                   {/* 🔴 ย้ายลงถังแดง — เดิมโผล่เฉพาะเมื่อกรอก "ซ่อมแล้ว NG" แล้ว
                       แต่ WI §5.4 ให้ QA ชี้ "ทำลาย" ได้ตรงๆ โดยไม่ต้องผ่านการซ่อม ⇒ เปิดปุ่มให้ด้วย */}
                   {canRecord && isY && ((Number(r.qty_ng) || 0) > 0 || r.qa_decision === 'scrap') && !redChildOf.has(r.id) && (
                     <button onClick={() => toRed(r)}
-                      title={(Number(r.qty_ng) || 0) > 0 ? 'ซ่อมแล้ว NG → ลงถังแดง' : 'QA ชี้ว่าทำลาย → ลงถังแดง'}
+                      title={(Number(r.qty_ng) || 0) > 0 ? trI18n('ซ่อมแล้ว NG → ลงถังแดง') : trI18n('QA ชี้ว่าทำลาย → ลงถังแดง')}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}>🔴</button>
                   )}
                   {isY && redChildOf.has(r.id) && (
-                    <span title="ย้ายลงถังแดงไปแล้ว" style={{ fontSize: 11, color: '#e05252', fontWeight: 700 }}>🔴 ย้ายแล้ว</span>
+                    <span title={trI18n('ย้ายลงถังแดงไปแล้ว')} style={{ fontSize: 11, color: '#e05252', fontWeight: 700 }}>{trI18n('🔴 ย้ายแล้ว')}</span>
                   )}
-                  {canManage && <DeleteButton onClick={() => remove(r)} title="ลบ" />}
+                  {canManage && <DeleteButton onClick={() => remove(r)} title={trI18n('ลบ')} />}
                 </td>
               </tr>
             ))}
@@ -1126,9 +1126,9 @@ export default function QualityBins({ mode = 'full' }) {
                (ไม่ใช่คอลัมน์อ้างอิง) ⇒ นับแบบ substring · ดู utils/masterRefs.js */
             onBeforeDelete={masterDeleteGuard(supabaseDR, 'repair_wi_registry', r => r?.wi_no)}
             canManage={canManage} stampCol="updated_by_name" stampName={fullName}
-            title="ทะเบียน QRs ↔ WI การซ่อม"
-            help="จาก WI-PD3-069 Rev.02 §6 — อาการที่ซ่อมได้ต้องอ้าง WI เล่มที่กำหนด · หัวหน้ากลุ่มจะเห็นชิปแนะนำ WI ตอนลงวิธีแก้ไขในหน้า Daily Report"
-            emptyText="ยังไม่มีรายการ — เพิ่มจากตัว WI-PD3-069 §6"
+            title={trI18n('ทะเบียน QRs ↔ WI การซ่อม')}
+            help={trI18n('จาก WI-PD3-069 Rev.02 §6 — อาการที่ซ่อมได้ต้องอ้าง WI เล่มที่กำหนด · หัวหน้ากลุ่มจะเห็นชิปแนะนำ WI ตอนลงวิธีแก้ไขในหน้า Daily Report')}
+            emptyText={trI18n('ยังไม่มีรายการ — เพิ่มจากตัว WI-PD3-069 §6')}
             offNote="รายการนี้จะไม่ถูกแนะนำในโมดัลลงวิธีแก้ไขอีก (บันทึกเก่าที่อ้าง WI นี้ไว้แล้วไม่กระทบ)"
             fields={[
               { key: 'symptom',   label: 'อาการ', required: true, placeholder: 'Missing nut' },
@@ -1168,9 +1168,9 @@ export default function QualityBins({ mode = 'full' }) {
                   }} /></div>
               {/* ตรง Product Master → ชื่อ/Part No. ล็อกตามทะเบียน (ล้าง MAT เพื่อแก้เอง) — กันสะกดชื่อชิ้นงานคนละแบบ */}
               <div><label style={lbl}>{trI18n('ชื่อชิ้นงาน')}</label>
-                <input value={form.part_name} readOnly={matLocked} title={matLocked ? 'ตาม Product Master — ล้างช่อง MAT เพื่อแก้เอง' : ''} onChange={e => setForm(f => ({ ...f, part_name: e.target.value }))} style={{ ...inp, opacity: matLocked ? 0.75 : 1 }} /></div>
+                <input value={form.part_name} readOnly={matLocked} title={matLocked ? trI18n('ตาม Product Master — ล้างช่อง MAT เพื่อแก้เอง') : ''} onChange={e => setForm(f => ({ ...f, part_name: e.target.value }))} style={{ ...inp, opacity: matLocked ? 0.75 : 1 }} /></div>
               <div><label style={lbl}>{trI18n('Part No. (เลขลูกค้า)')}</label>
-                <input value={form.part_no} readOnly={matLocked} title={matLocked ? 'ตาม Product Master — ล้างช่อง MAT เพื่อแก้เอง' : ''} onChange={e => setForm(f => ({ ...f, part_no: e.target.value }))} style={{ ...inp, opacity: matLocked ? 0.75 : 1 }} /></div>
+                <input value={form.part_no} readOnly={matLocked} title={matLocked ? trI18n('ตาม Product Master — ล้างช่อง MAT เพื่อแก้เอง') : ''} onChange={e => setForm(f => ({ ...f, part_no: e.target.value }))} style={{ ...inp, opacity: matLocked ? 0.75 : 1 }} /></div>
 
               <div style={{ gridColumn: '1 / -1' }}><label style={lbl}>{trI18n('สาเหตุ')}</label>
                 <input value={form.cause} onChange={e => setForm(f => ({ ...f, cause: e.target.value }))} style={inp} /></div>
@@ -1179,7 +1179,7 @@ export default function QualityBins({ mode = 'full' }) {
                   ทำลายไปแล้วยังสืบย้อนได้ว่าเสียยังไง */}
               <div style={{ gridColumn: '1 / -1' }}>
                 <QualityPhotoField
-                  label="รูปตอนพบของเสีย" hint="ไม่บังคับ — แนบไว้ช่วยให้ QA ตัดสินได้โดยไม่ต้องเดินไปดูของ"
+                  label={trI18n('รูปตอนพบของเสีย')} hint={trI18n('ไม่บังคับ — แนบไว้ช่วยให้ QA ตัดสินได้โดยไม่ต้องเดินไปดูของ')}
                   url={form.found_img || null} file={foundFile}
                   onPick={(f) => { setFoundFile(f); if (!f) setForm(fm => ({ ...fm, found_img: '' })); }}
                 />
@@ -1201,7 +1201,7 @@ export default function QualityBins({ mode = 'full' }) {
                   {QA_DECISIONS.map(d => {
                     const on = form.qa_decision === d.value;
                     return (
-                      <button key={d.value} type="button" title={canDecide ? d.hint : 'ตัดสินผลได้เฉพาะ QA (สิทธิ์ qa:bin_decide)'}
+                      <button key={d.value} type="button" title={canDecide ? d.hint : trI18n('ตัดสินผลได้เฉพาะ QA (สิทธิ์ qa:bin_decide)')}
                         disabled={!canDecide}
                         onClick={() => setForm(f => ({ ...f, qa_decision: on ? '' : d.value }))}
                         style={{ padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 800,
@@ -1231,7 +1231,7 @@ export default function QualityBins({ mode = 'full' }) {
                     (“เอาของลงถังแดง” เป็นการกระทำจริงหน้างาน ต้องมีคนกดยืนยัน)
                   </div>
                 )}
-                <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>ผลการซ่อม</div>
+                <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{trI18n('ผลการซ่อม')}</div>
                 <div><label style={lbl}>{trI18n('วันที่ซ่อมชิ้นงาน')}</label>
                   <input type="date" value={form.repair_date} onChange={e => setForm(f => ({ ...f, repair_date: e.target.value }))} style={inp} /></div>
                 <div><label style={lbl}>{trI18n('ผู้ดำเนินการซ่อม')}</label>
@@ -1243,18 +1243,18 @@ export default function QualityBins({ mode = 'full' }) {
                 <div><label style={lbl}>{trI18n('ผลซ่อม NG (ชิ้น)')}</label>
                   <input type="number" value={form.qty_ng} onChange={e => setForm(f => ({ ...f, qty_ng: e.target.value }))} style={inp} /></div>
                 <div><label style={lbl}>{trI18n('วันที่นำกลับเข้ากระบวนการ')}</label>
-                  <input type="date" value={form.return_date} disabled={!canDecide} title={canDecide ? '' : 'วันกลับเข้ากระบวนการ = QA ตรวจรับ (ขั้น 4) เท่านั้น'}
+                  <input type="date" value={form.return_date} disabled={!canDecide} title={canDecide ? '' : trI18n('วันกลับเข้ากระบวนการ = QA ตรวจรับ (ขั้น 4) เท่านั้น')}
                     onChange={e => setForm(f => ({ ...f, return_date: e.target.value }))} style={inp} /></div>
                 {/* 📷 รูปหลังซ่อม — ปิดลูป "ซ่อมแล้วใช้ได้จริง" คู่กับรายละเอียดการซ่อม (I DO I CHECK) */}
                 <div style={{ gridColumn: '1 / -1' }}>
                   <QualityPhotoField
-                    label="รูปหลังซ่อม" hint="ไม่บังคับ — คู่กับรายละเอียดการซ่อม ใช้ยืนยันว่าซ่อมแล้วใช้ได้จริง"
+                    label={trI18n('รูปหลังซ่อม')} hint={trI18n('ไม่บังคับ — คู่กับรายละเอียดการซ่อม ใช้ยืนยันว่าซ่อมแล้วใช้ได้จริง')}
                     url={form.repair_img || null} file={repairFile}
                     onPick={(f) => { setRepairFile(f); if (!f) setForm(fm => ({ ...fm, repair_img: '' })); }}
                   />
                 </div>
               </>) : (<>
-                <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>การกำจัดทำลาย (ตาม DOA)</div>
+                <div style={{ gridColumn: '1 / -1', borderTop: '1px solid var(--border)', paddingTop: 8, fontSize: 12, fontWeight: 700, color: 'var(--muted)' }}>{trI18n('การกำจัดทำลาย (ตาม DOA)')}</div>
                 <div><label style={lbl}>{trI18n('ผู้กำจัดทำลาย')}</label>
                   {/* เลือกคนแล้ว "ตำแหน่ง" เติมจากทะเบียน (positions master) อัตโนมัติ — ยังแก้เองได้ */}
                   <PersonSelect value={form.disposed_by} source="both" lines={famLines} history={disposedByHist} inputStyle={inp}

@@ -67,7 +67,7 @@ export function Modal({ title, onClose, children, width = 640, footer }) {
         style={{ width: `min(${width}px, 96vw)`, maxHeight: '92vh', overflowY: 'auto', padding: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 8 }}>
           <h3 style={{ margin: 0, fontSize: 16 }}>{title}</h3>
-          <button className="tbtn" onClick={onClose} aria-label="ปิด" style={{ ...ghost, padding: '4px 9px' }}>✕</button>
+          <button className="tbtn" onClick={onClose} aria-label={tr('ปิด')} style={{ ...ghost, padding: '4px 9px' }}>✕</button>
         </div>
         {children}
         {footer && <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>{footer}</div>}

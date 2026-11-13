@@ -10,6 +10,7 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { COUNTRIES, lonX, latY } from './worldGeo';
+import { tr } from '../utils/i18n';
 import TabBar from './TabBar';   // แถบเลือก = แท็บเส้นใต้มาตรฐาน (UI §6.36 ข้อ 0)
 
 /* กรอบเริ่มต้น: ครอบทุกภูมิภาคที่มีโรงงาน (อเมริกา → เอเชีย) + เผื่อบริบท */
@@ -157,7 +158,7 @@ export default function WorldFactoryMap({
         tabs={[{ key: '', label: 'ทั้งโลก' }, ...byCc.map(c => ({ key: c.cc, label: `${c.meta.flag} ${c.meta.name}`, badge: c.list.length }))]} />
       {!!groups.length && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', marginBottom: 8 }}>
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>ไฮไลต์กลุ่มธุรกิจ:</span>
+          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ไฮไลต์กลุ่มธุรกิจ:')}</span>
           <TabBar size="sm" style={{ flex: 1, minWidth: 200 }} value={gFilter ?? ''} onChange={k => setGFilter(k || null)}
             tabs={[{ key: '', label: 'ทุกกลุ่ม' }, ...groups.map(g => ({ key: g.key, label: g.short }))]} />
         </div>
@@ -218,7 +219,7 @@ export default function WorldFactoryMap({
                 </text>
                 <text x={lx} y={ly + 26 / k} textAnchor="middle" fill={col}
                   fontSize={13 / k} fontWeight="700" style={{ paintOrder: 'stroke', stroke: '#050d18', strokeWidth: 3.4 / k }}>
-                  {c.list.length} โรง · {fmt(c.actual)} ชิ้น
+                  {c.list.length} {tr('โรง ·')} {fmt(c.actual)} ชิ้น
                 </text>
               </g>
             );
@@ -298,9 +299,9 @@ export default function WorldFactoryMap({
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 8, fontSize: 12, color: 'var(--muted)' }}>
-        <span><b>ขนาดวง</b> = ยอดผลิตของวันนั้น</span>
-        <span><b>สี:</b> <b style={{ color: '#22c55e' }}>●</b> ตามเป้า <b style={{ color: '#f59e0b' }}>●</b> เฝ้าระวัง <b style={{ color: '#ef4444' }}>●</b> ต้องแก้</span>
-        {!!groups.length && <span><b>ไอคอนในหมุด:</b> {groups.map(g => `${g.icon} ${g.short}`).join(' · ')}</span>}
+        <span><b>{tr('ขนาดวง')}</b> = ยอดผลิตของวันนั้น</span>
+        <span><b>{tr('สี:')}</b> <b style={{ color: '#22c55e' }}>●</b> {tr('ตามเป้า')} <b style={{ color: '#f59e0b' }}>●</b> {tr('เฝ้าระวัง')} <b style={{ color: '#ef4444' }}>●</b> {tr('ต้องแก้')}</span>
+        {!!groups.length && <span><b>{tr('ไอคอนในหมุด:')}</b> {groups.map(g => `${g.icon} ${g.short}`).join(' · ')}</span>}
         <span>★ = บริษัทเรา (ข้อมูลจริง)</span>
         <span>คลิกประเทศ = ซูมเข้า · คลิกหมุด = เลือกทางเข้า</span>
       </div>

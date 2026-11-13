@@ -161,13 +161,13 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
           {Object.entries(INTAKE_KINDS).map(([k, m]) => (
             <button key={k} onClick={() => setKind(k)} style={chip(kind === k, m.color)}>{m.label} ({sum[k] || 0})</button>
           ))}
-          <span className="filter-count">รวม {sum.total} รายการ</span>
+          <span className="filter-count">{trI18n('รวม')} {sum.total} {trI18n('รายการ')}</span>
         </div>
         {sum.esmart > 0 && (
           <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 8 }}>
             ผลจาก e-SMART ในช่วงนี้ — อัพเดท <b style={{ color: '#22c55e' }}>{sum.ordersUpdated}</b> ใบ ·
             สร้างใหม่ <b style={{ color: '#0ea5e9' }}>{sum.ordersCreated}</b> ใบ
-            {sum.ordersSkipped > 0 && <> · <b style={{ color: '#f59e0b' }}>{sum.ordersSkipped}</b> รายการที่ไม่ได้แตะ (ทำไปแล้ว/จับคู่ไม่ได้)</>}
+            {sum.ordersSkipped > 0 && <> · <b style={{ color: '#f59e0b' }}>{sum.ordersSkipped}</b> {trI18n('รายการที่ไม่ได้แตะ (ทำไปแล้ว/จับคู่ไม่ได้)')}</>}
           </div>
         )}
       </div>
@@ -178,7 +178,7 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
         </div>
       ))}
 
-      {loading && <div style={{ ...card, fontSize: 12, color: 'var(--text2)' }}>⏳ กำลังโหลด…</div>}
+      {loading && <div style={{ ...card, fontSize: 12, color: 'var(--text2)' }}>{trI18n('⏳ กำลังโหลด…')}</div>}
 
       {!loading && !shown.length && (
         <div style={{ ...card, fontSize: 13, color: 'var(--muted)', textAlign: 'center' }}>
@@ -194,7 +194,7 @@ export default function OrderIntakeLog({ shipToMap, custLabel }) {
         {dayGroups.map(g => (
           <CollapseCard key={g.day} id={`intake_${g.day}`} storePrefix="oil"
             defaultOpen={g.day === todayKey}
-            title={<>{g.label}{g.day === todayKey && <span style={{ color: 'var(--accent)' }}> · วันนี้</span>}
+            title={<>{g.label}{g.day === todayKey && <span style={{ color: 'var(--accent)' }}> {trI18n('· วันนี้')}</span>}
               <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 12 }}> — {g.summary}</span></>}
             count={g.items.length}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -226,7 +226,7 @@ function IntakeCard({ e, custLabel, open, onToggle }) {
       background: 'var(--card)', backgroundImage: `linear-gradient(${m.color}0a, ${m.color}0a)`,
     }}>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'baseline' }}>
-        <span style={{ fontSize: 11, fontWeight: 800, color: m.color, whiteSpace: 'nowrap' }}>{m.label}</span>
+        <span style={{ fontSize: 11, fontWeight: 800, color: m.color, whiteSpace: 'nowrap' }}>{trI18n(m.label)}</span>
         <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)', flex: '1 1 220px', minWidth: 0, wordBreak: 'break-word' }}>
           {e.title}
         </span>
@@ -240,15 +240,15 @@ function IntakeCard({ e, custLabel, open, onToggle }) {
             const lagMin = Math.round((new Date(e.at).getTime() - made.getTime()) / 60000);
             const late = Number.isFinite(lagMin) && lagMin > 120;   // อัพช้ากว่า 2 ชม. = ข้อมูลเก่าแล้ว
             return (
-              <>🕐 ออกไฟล์ <b style={{ color: 'var(--text)' }}>{whenLabel(made)}</b>
+              <>{trI18n('🕐 ออกไฟล์')} <b style={{ color: 'var(--text)' }}>{whenLabel(made)}</b>
                 {Number.isFinite(lagMin) && lagMin >= 0 && (
-                  <span style={{ color: late ? '#f59e0b' : 'var(--muted)' }}> (อัพหลังจากนั้น {lagMin} นาที)</span>
+                  <span style={{ color: late ? '#f59e0b' : 'var(--muted)' }}> {trI18n('(อัพหลังจากนั้น')} {lagMin} นาที)</span>
                 )}
                 <br />
               </>
             );
           })()}
-          📥 อัพเข้าระบบ {whenLabel(e.at)} · {e.by || <span style={{ color: 'var(--muted)' }}>ไม่ระบุผู้ทำ</span>}
+          📥 อัพเข้าระบบ {whenLabel(e.at)} · {e.by || <span style={{ color: 'var(--muted)' }}>{trI18n('ไม่ระบุผู้ทำ')}</span>}
         </span>
       </div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 }}>
@@ -256,16 +256,16 @@ function IntakeCard({ e, custLabel, open, onToggle }) {
         {e.detail && <span style={{ fontSize: 12, color: 'var(--text2)' }}>{e.detail}</span>}
         {e.kind === 'esmart' && (
           <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-            {fmt(e.stats.rows)} แถว{e.stats.fresh !== e.stats.rows && ` (ใหม่ ${fmt(e.stats.fresh)})`}
-            {' · '}✏️ อัพเดท <b style={{ color: '#22c55e' }}>{fmt(e.stats.updated)}</b>
-            {' · '}➕ สร้าง <b style={{ color: '#0ea5e9' }}>{fmt(e.stats.created)}</b>
-            {e.stats.skipped > 0 && <> · <span style={{ color: '#f59e0b' }}>ไม่แตะ {fmt(e.stats.skipped)}</span></>}
+            {fmt(e.stats.rows)} {trI18n('แถว')}{e.stats.fresh !== e.stats.rows && ` (ใหม่ ${fmt(e.stats.fresh)})`}
+            {' · '}{trI18n('✏️ อัพเดท')} <b style={{ color: '#22c55e' }}>{fmt(e.stats.updated)}</b>
+            {' · '}{trI18n('➕ สร้าง')} <b style={{ color: '#0ea5e9' }}>{fmt(e.stats.created)}</b>
+            {e.stats.skipped > 0 && <> · <span style={{ color: '#f59e0b' }}>{trI18n('ไม่แตะ')} {fmt(e.stats.skipped)}</span></>}
           </span>
         )}
-        {e.kind === 'edi' && <span style={{ fontSize: 12, color: 'var(--text2)' }}>{fmt(e.stats.rows)} แถว</span>}
+        {e.kind === 'edi' && <span style={{ fontSize: 12, color: 'var(--text2)' }}>{fmt(e.stats.rows)} {trI18n('แถว')}</span>}
         {e.kind === 'manual' && (
           <span style={{ fontSize: 12, color: 'var(--text2)' }}>
-            <b style={{ color: 'var(--text)' }}>{fmt(e.stats.qty)}</b> ชิ้น · สถานะ {e.ref?.status || '—'}
+            <b style={{ color: 'var(--text)' }}>{fmt(e.stats.qty)}</b> {trI18n('ชิ้น · สถานะ')} {e.ref?.status || '—'}
           </span>
         )}
         {canOpen && (
@@ -292,8 +292,8 @@ function PullBatchDetail({ batchId }) {
     return () => { alive = false; };
   }, [batchId]);
 
-  if (err) return <div style={{ fontSize: 12, color: '#ef4444', marginTop: 8 }}>🔴 อ่านรายการไม่ได้: {err}</div>;
-  if (!rows) return <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 8 }}>⏳ กำลังโหลด…</div>;
+  if (err) return <div style={{ fontSize: 12, color: '#ef4444', marginTop: 8 }}>{trI18n('🔴 อ่านรายการไม่ได้:')} {err}</div>;
+  if (!rows) return <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 8 }}>{trI18n('⏳ กำลังโหลด…')}</div>;
   if (!rows.length) {
     return (
       <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 8 }}>

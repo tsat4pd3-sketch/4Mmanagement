@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import useTvShell from '../utils/useTvShell';
 import { boardFlipSec, SUBPAGE_ATTR } from '../utils/displayRotation';
 
+import { tr } from '../utils/i18n';
 /* ══ 📖 BoardPager — แถบ "กดเปลี่ยนหน้า" ของบอร์ดที่ห้ามเลื่อน (2026-09-25 · คำสั่ง user) ══
    *"ต้องไม่เป็น overflow ดูจบได้ในหน้าเดียว … ให้ใช้หลักการกดเปลี่ยนหน้า คล้ายๆ ตัวประชุมแถวเช้า"*
    หน้าตา/ปุ่มชุดเดียวกับโหมดประชุมใน `/morning-meeting` (◀ n/N ▶ + จุดบอกหน้า + ลูกศรคีย์บอร์ด)
@@ -63,14 +64,14 @@ export default function BoardPager({ page, count, onPage, labels = [], compact =
       flexWrap: 'nowrap', flexShrink: 0, overflow: 'clip', height: barH(compact, tv),
     }}>
       <button type="button" onClick={() => onPage(Math.max(0, page - 1))} disabled={page === 0}
-        title="หน้าก่อน (←)" style={btn(page === 0)}>◀</button>
+        title={tr('หน้าก่อน (←)')} style={btn(page === 0)}>◀</button>
 
       <span style={{ fontSize: tv ? 22 : compact ? 12 : 13, fontWeight: 800, color: 'var(--text2)', minWidth: 42, textAlign: 'center' }}>
         {page + 1}/{count}
       </span>
 
       <button type="button" onClick={() => onPage(Math.min(count - 1, page + 1))} disabled={page === count - 1}
-        title="หน้าถัดไป (→)" style={btn(page === count - 1)}>▶</button>
+        title={tr('หน้าถัดไป (→)')} style={btn(page === count - 1)}>▶</button>
 
       {/* จุดบอกหน้า — กดข้ามไปหน้าไหนก็ได้ · title บอกว่าหน้านั้นมีแผ่นอะไร (จอ TV ไม่มีเมาส์ก็ยังนับจุดได้) */}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginLeft: 3 }}>

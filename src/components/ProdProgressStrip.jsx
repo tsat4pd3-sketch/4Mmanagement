@@ -9,6 +9,7 @@ import { useLiveBoard } from '../utils/useLiveBoard';
 import { SESSION_STATUSES_REAL, SESSION_STATUSES_DONE } from '../utils/sessionStatus';
 import { countsInProgress, orderTargetQty, orderMadeQty, lineVerdict, PROGRESS_COLOR } from '../utils/prodProgress';
 
+import { tr } from '../utils/i18n';
 /* ═══ 📤 สั่งผลิตไปไลน์ไหน · ผลิตได้ตามที่มอบหมายไหม (แถบสรุปสำหรับฝั่ง Store) ═══
    ที่มา (user 2026-08-24): "สโตร์ควรเห็นทั้ง มอนิเตอร์ kanban ของสต๊อกที่กำลังจะต้องสั่งผลิต
    กับ kanban board ของฝ่ายผลิต ว่าสั่งผลิตอะไรไปไลน์ไหนบ้างเท่าไหร่ ผลิตได้ตามเป้าที่มอบหมายมั้ย"
@@ -130,15 +131,15 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
         </span>
         {totPct != null && (
           <span style={{ fontSize: 12, fontWeight: 800, color: totColor }}>
-            ทำได้ {fmt(tot.made)} จากเป้าทั้งกะ {fmt(tot.target)} ชิ้น ({totPct.toFixed(0)}%)
+            ทำได้ {fmt(tot.made)} {tr('จากเป้าทั้งกะ')} {fmt(tot.target)} {tr('ชิ้น (')}{totPct.toFixed(0)}%)
           </span>
         )}
         {/* บอกตรงๆ ว่าทำไมยังไม่มีสีแดง/เขียว — ไม่งั้นคนอ่าน % ต่ำตอนเช้าว่า "ตามหลัง" (12/10) */}
         {anyLive && totPct != null && (
-          <span style={{ fontSize: 11, color: 'var(--muted)' }}>· เป้าเป็นยอดทั้งกะ — กะยังไม่จบ ยังไม่ตัดสินว่าตามหลัง</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('· เป้าเป็นยอดทั้งกะ — กะยังไม่จบ ยังไม่ตัดสินว่าตามหลัง')}</span>
         )}
         {!open && behind > 0 && (
-          <span style={{ fontSize: 11.5, fontWeight: 800, color: '#ef4444' }}>· ตามหลัง {behind} ไลน์</span>
+          <span style={{ fontSize: 11.5, fontWeight: 800, color: '#ef4444' }}>{tr('· ตามหลัง')} {behind} {tr('ไลน์')}</span>
         )}
         <span style={{ fontSize: 11, color: 'var(--muted)' }}>
           วันงาน {workDate}
@@ -149,7 +150,7 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
 
       {!open ? null : d.noShift ? (
         /* ยังไม่เปิดกะ ≠ ไลน์ทำไม่ได้ — ห้ามโชว์ 0% แดง */
-        <div style={{ fontSize: 12, color: 'var(--muted)' }}>— ยังไม่มีไลน์ไหนเปิดกะของวันงานนี้</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('— ยังไม่มีไลน์ไหนเปิดกะของวันงานนี้')}</div>
       ) : (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {d.lines.map(l => (
@@ -173,10 +174,10 @@ export default function ProdProgressStrip({ workDate, scopeNames = null, onOpenL
                   <div style={{ height: 4, borderRadius: 'var(--r-xs)', background: 'var(--bg3)', overflow: 'hidden', margin: '3px 0 2px' }}>
                     <div style={{ width: `${Math.min(100, l.pct)}%`, height: '100%', background: l.color }} />
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{l.note} · {l.cnt} ใบ{l.open > 0 ? ` (ค้าง ${l.open})` : ''}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)' }}>{l.note} · {l.cnt} {tr('ใบ')}{l.open > 0 ? ` (ค้าง ${l.open})` : ''}</div>
                 </>
               ) : (
-                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>เปิดกะแล้ว · ยังไม่มีใบสั่งผลิต</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{tr('เปิดกะแล้ว · ยังไม่มีใบสั่งผลิต')}</div>
               )}
             </div>
           ))}

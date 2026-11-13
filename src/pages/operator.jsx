@@ -1050,7 +1050,7 @@ export default function Operator() {
       {/* UI-STANDARD 2026-09-24: แท็บย้ายเข้า PageHeader (เดิมวาดปุ่มเอง) — ชิปขอบเขตไปอยู่ช่อง actions
           แท็บโผล่ตามสิทธิ์จริง (role_permissions) ไม่ hardcode role — ตั้งที่ /permissions แล้วมีผลทันที
           index ต้องคงเดิม (0 พนักงาน · 1 กำหนดสกิล · 2 Level Up) เพราะเนื้อหาอ้าง tab === n · QC audit 2026-08-03 */}
-      <PageHeader title="ฐานข้อมูลพนักงาน" icon="👥"
+      <PageHeader title={tr('ฐานข้อมูลพนักงาน')} icon="👥"
         tabs={[
           [0, '👥 พนักงาน', true],
           [1, '⚙️ กำหนดสกิล', can('skills', 'edit', role)],
@@ -1103,12 +1103,12 @@ export default function Operator() {
                   return (
                     <>
                       {orgL.length > 0 && (
-                        <optgroup label="ในผังองค์กร">
+                        <optgroup label={tr('ในผังองค์กร')}>
                           {orgL.map(o => <option key={`o_${o}`} value={o}>{tr(o)}</option>)}
                         </optgroup>
                       )}
                       {legacyL.length > 0 && (
-                        <optgroup label="⚠ นอกผัง (ต้องจัดข้อมูล)">
+                        <optgroup label={tr('⚠ นอกผัง (ต้องจัดข้อมูล)')}>
                           {legacyL.map(o => <option key={`l_${o}`} value={o}>{tr(o)}</option>)}
                         </optgroup>
                       )}
@@ -1199,7 +1199,7 @@ export default function Operator() {
           </FilterBar>
 
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 14, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, color: 'var(--muted)' }}>ใช้งาน {employees.length} คน</span>
+            <span style={{ fontSize: 13, color: 'var(--muted)' }}>{tr('ใช้งาน')} {employees.length} {tr('คน')}</span>
             <button onClick={() => setShowInactive(s => !s)}
               style={{
                 position: 'relative',
@@ -1212,7 +1212,7 @@ export default function Operator() {
                 : `ปิดใช้งาน (${inactiveEmployees.length})`}
               <ToggleDot on={showInactive} />
             </button>
-            <span style={{ fontSize: 11, color: 'var(--muted)' }}>· คลิกที่พนักงานเพื่อดูสรุปทักษะ (Radar Chart)</span>
+            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('· คลิกที่พนักงานเพื่อดูสรุปทักษะ (Radar Chart)')}</span>
           </div>
 
           {/* worklist "ยังไม่มีรูป" — โผล่เฉพาะตอนที่ยังมีคนค้าง (นับเฉพาะคนที่ยังทำงานอยู่)
@@ -1227,7 +1227,7 @@ export default function Operator() {
                 ยังไม่มีรูป {noPhotoCount} คน
               </span>
               <span style={{ fontSize: 11, color: 'var(--text2)' }}>
-                เปิดแก้ไขรายคนแล้วอัปรูปได้เลย · <b>ใช้รูปนิ่ง JPG/PNG เท่านั้น (ไม่รับ GIF)</b> —
+                เปิดแก้ไขรายคนแล้วอัปรูปได้เลย · <b>{tr('ใช้รูปนิ่ง JPG/PNG เท่านั้น (ไม่รับ GIF)')}</b> —
                 ระบบย่อ/บีบให้อัตโนมัติ ไม่ต้องย่อมาก่อน
               </span>
               <button onClick={() => setFilterNoPhoto(v => !v)}
@@ -1252,12 +1252,12 @@ export default function Operator() {
               <span style={{ fontSize: 12.5, color: 'var(--amber)', fontWeight: 700 }}>
                 ⚠️ ข้อมูลไม่ตรงผังองค์กร {offOrgStat.total} คน
               </span>
-              <InfoMore label="เงื่อนไขที่นับว่า ไม่ตรงผัง" size={11.5}>
-                แผนก/กลุ่มไม่มีในผัง หรือ <b>ยังไม่ผูกไลน์ (คนหน้างานที่ไม่มีไลน์จะไม่ขึ้นในหน้าเช็คชื่อ)</b> — เปิดแก้ไขแล้วเลือกใหม่จาก dropdown ได้เลย
+              <InfoMore label={tr('เงื่อนไขที่นับว่า ไม่ตรงผัง')} size={11.5}>
+                แผนก/กลุ่มไม่มีในผัง หรือ <b>{tr('ยังไม่ผูกไลน์ (คนหน้างานที่ไม่มีไลน์จะไม่ขึ้นในหน้าเช็คชื่อ)')}</b> — เปิดแก้ไขแล้วเลือกใหม่จาก dropdown ได้เลย
                 · <b>ไลน์มาจาก "กลุ่ม" ไม่ใช่ "แผนก"</b> — ตั้งแผนกอย่างเดียวยังไม่พอ
                 {offOrgStat.blocked > 0 && (
-                  <> · <b style={{ color: 'var(--amber)' }}>ในนี้ {offOrgStat.blocked} คน ({offOrgStat.blockedSecs.join(', ')}) แก้ที่ฟอร์มยังไม่ได้</b> —
-                    ผังยังไม่มีแผนกของส่วนงานนี้ ต้องเพิ่มที่ <Link to="/org-setup" style={{ color: 'var(--amber)', fontWeight: 700 }}>ผังองค์กร</Link> ก่อน</>
+                  <> · <b style={{ color: 'var(--amber)' }}>{tr('ในนี้')} {offOrgStat.blocked} {tr('คน (')}{offOrgStat.blockedSecs.join(', ')}) แก้ที่ฟอร์มยังไม่ได้</b> —
+                    ผังยังไม่มีแผนกของส่วนงานนี้ ต้องเพิ่มที่ <Link to="/org-setup" style={{ color: 'var(--amber)', fontWeight: 700 }}>{tr('ผังองค์กร')}</Link> {tr('ก่อน')}</>
                 )}
               </InfoMore>
               <button onClick={() => setFilterOffOrg(v => !v)}
@@ -1360,7 +1360,7 @@ export default function Operator() {
                           />
                         ) : (
                           <div
-                            title="ยังไม่มีรูป — กด ✏️ แก้ไขเพื่ออัปโหลดรูป"
+                            title={tr('ยังไม่มีรูป — กด ✏️ แก้ไขเพื่ออัปโหลดรูป')}
                             style={{
                               width: 42, height: 42, borderRadius: 'var(--r-md)',
                               background: 'var(--bg3)', display: 'flex',
@@ -1410,8 +1410,8 @@ export default function Operator() {
                         || (needsDepartment(emp.position)
                             ? '—'
                             /* ไม่ใช่ "ยังไม่กรอก" แต่เป็น "ไม่มีแผนกโดยตำแหน่ง" — ต้องอ่านออกจากจอ */
-                            : <span title="ตำแหน่งระดับส่วนงาน — ดูแลทั้งส่วน ไม่ได้สังกัดแผนกใดแผนกหนึ่ง"
-                                style={{ color: 'var(--muted)' }}>ทั้งส่วนงาน</span>)}
+                            : <span title={tr('ตำแหน่งระดับส่วนงาน — ดูแลทั้งส่วน ไม่ได้สังกัดแผนกใดแผนกหนึ่ง')}
+                                style={{ color: 'var(--muted)' }}>{tr('ทั้งส่วนงาน')}</span>)}
                     </td>
                     <td style={{ fontSize: 12, color: offOrg.some(r => r.includes('กลุ่ม')) ? '#f59e0b' : 'var(--text2)' }}
                       title={offOrg.find(r => r.includes('กลุ่ม')) || ''}>
@@ -1432,9 +1432,7 @@ export default function Operator() {
                           {hasRecord ? (
                             <>
                               <div style={{ fontWeight: 700, fontSize: 13, color: lv.color }}>{score}</div>
-                              <div style={{ fontSize: 11, background: lv.bg, color: lv.color, borderRadius: 'var(--r-xs)', padding: '1px 5px', marginTop: 2, whiteSpace: 'nowrap' }}>
-                                {lv.label}
-                              </div>
+                              <div style={{ fontSize: 11, background: lv.bg, color: lv.color, borderRadius: 'var(--r-xs)', padding: '1px 5px', marginTop: 2, whiteSpace: 'nowrap' }}>{tr(lv.label)}</div>
                             </>
                           ) : (
                             <span style={{ color: 'var(--muted)', fontSize: 12 }}>—</span>
@@ -1457,7 +1455,7 @@ export default function Operator() {
                               style={{ fontSize: 13, color: 'var(--muted)', width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>🔒</span>
                           )}
                           {canEditEmp(emp) && (
-                          <button className="tbtn" title="แก้ไขข้อมูล" onClick={() => openEdit(emp)} style={{
+                          <button className="tbtn" title={tr('แก้ไขข้อมูล')} onClick={() => openEdit(emp)} style={{
                             width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
                             background: 'rgba(245,158,11,0.12)', color: '#f59e0b',
                             fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1469,7 +1467,7 @@ export default function Operator() {
                           </button>
                           )}
                           {can('employees', 'deactivate', role) && canEditEmp(emp) && (
-                          <button className="tbtn" title="ปิดใช้งาน" onClick={() => handleDeactivate(emp.id, emp.name)} style={{
+                          <button className="tbtn" title={tr('ปิดใช้งาน')} onClick={() => handleDeactivate(emp.id, emp.name)} style={{
                             width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
                             background: 'rgba(239,68,68,0.1)', color: '#ef4444',
                             fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1482,7 +1480,7 @@ export default function Operator() {
                           )}
                         </div>
                       ) : (can('employees', 'deactivate', role) && canEditEmp(emp)) ? (
-                        <button className="tbtn" title="เปิดใช้งานอีกครั้ง" onClick={() => handleReactivate(emp.id)} style={{
+                        <button className="tbtn" title={tr('เปิดใช้งานอีกครั้ง')} onClick={() => handleReactivate(emp.id)} style={{
                           width: 32, height: 32, borderRadius: '50%', border: 'none', cursor: 'pointer',
                           background: 'rgba(34,197,94,0.12)', color: '#22c55e',
                           fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1518,7 +1516,7 @@ export default function Operator() {
               <div key={g.key} style={{ marginBottom: 20 }}>
                 <div style={{ marginBottom: 8, display: 'flex', alignItems: 'baseline', gap: 8 }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{g.icon} {g.label}</span>
-                  {g.desc && <span style={{ fontSize: 11, color: g.color, opacity: 0.7 }}>{g.desc}</span>}
+                  {g.desc && <span style={{ fontSize: 11, color: g.color, opacity: 0.7 }}>{tr(g.desc)}</span>}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
                   {g.skills.map(sd => {
@@ -1529,7 +1527,7 @@ export default function Operator() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                         <div style={{ width: 10, height: 10, borderRadius: '50%', background: sd.color, flexShrink: 0 }} />
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: 13 }}>{sd.label}</div>
+                          <div style={{ fontWeight: 700, fontSize: 13 }}>{tr(sd.label)}</div>
                           <div style={{ display: 'flex', gap: 4, marginTop: 2, flexWrap: 'wrap' }}>
                             {(sd.scope_division || sd.scope_section) && (
                               <span style={{ fontSize: 11, background: 'rgba(77,159,255,0.12)', color: '#4d9fff', borderRadius: 'var(--r-xs)', padding: '0 5px', fontWeight: 600 }}>
@@ -1538,7 +1536,7 @@ export default function Operator() {
                             )}
                             {!sd.scope_division && !sd.scope_section && (
                               /* สกิลกลาง = แก้แล้วกระทบทุกส่วนงาน — ต้องเขียนบนจอ ไม่ใช่ปล่อยให้เดาจากช่องว่าง */
-                              <span title="ไม่ได้ผูกส่วนงาน — ใช้กับพนักงานทุกส่วนงาน แก้/ลบแล้วกระทบทั้งโรงงาน"
+                              <span title={tr('ไม่ได้ผูกส่วนงาน — ใช้กับพนักงานทุกส่วนงาน แก้/ลบแล้วกระทบทั้งโรงงาน')}
                                 style={{ fontSize: 11, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', borderRadius: 'var(--r-xs)', padding: '0 5px', fontWeight: 600 }}>
                                 สกิลกลาง (ทุกส่วนงาน)
                               </span>
@@ -1560,7 +1558,7 @@ export default function Operator() {
                       </div>
                       <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                         {can('skills', 'edit', role) && (
-                          <button onClick={() => setSubItemsSkill(sd)} title="หัวข้อการพิจารณา (ใบประเมินรายบุคคล)"
+                          <button onClick={() => setSubItemsSkill(sd)} title={tr('หัวข้อการพิจารณา (ใบประเมินรายบุคคล)')}
                             className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>📝</button>
                         )}
                         {can('skills', 'edit', role) && sdOk && (
@@ -1568,7 +1566,7 @@ export default function Operator() {
                             className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 13, padding: '2px 4px' }}>✏️</button>
                         )}
                         {can('skills', 'delete', role) && sdOk && (
-                          <DeleteButton onClick={() => handleDeleteSkill(sd)} title="ลบทักษะนี้" />
+                          <DeleteButton onClick={() => handleDeleteSkill(sd)} title={tr('ลบทักษะนี้')} />
                         )}
                       </div>
                     </div>
@@ -1580,7 +1578,7 @@ export default function Operator() {
 
             {/* Add skill form */}
             <div className="card" style={{ padding: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>➕ เพิ่มสกิลใหม่</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 12 }}>{tr('➕ เพิ่มสกิลใหม่')}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10, marginBottom: 10 }}>
                 <div>
                   <label style={labelSt}>{tr('ชื่อสกิล (ภาษาไทยหรืออังกฤษ)')}</label>
@@ -1609,7 +1607,7 @@ export default function Operator() {
                   <label style={labelSt}>{tr('เจาะจงส่วนงาน (ถ้ามี)')}</label>
                   <select value={newSkill.scope_section}
                     disabled={!newSkill.scope_division}
-                    title={!newSkill.scope_division ? 'เลือกฝ่ายก่อน ถึงจะเจาะจงส่วนงานได้' : undefined}
+                    title={!newSkill.scope_division ? tr('เลือกฝ่ายก่อน ถึงจะเจาะจงส่วนงานได้') : undefined}
                     onChange={e => setNewSkill({ ...newSkill, scope_section: e.target.value })}>
                     <option value="">{tr('— ทั้งฝ่าย —')}</option>
                     {sectionOptsForDivision(newSkill.scope_division).map(s => <option key={s} value={s}>{tr(s)}</option>)}
@@ -1630,7 +1628,7 @@ export default function Operator() {
                     <input type="color" value={newSkill.color}
                       onChange={e => { skillColorTouched.current = true; setNewSkill({ ...newSkill, color: e.target.value }); }}
                       style={{ width: 44, height: 36, padding: 2, borderRadius: 'var(--ctl-r)', border: '1px solid var(--border2)', background: 'var(--bg3)', cursor: 'pointer' }} />
-                    <span style={{ fontSize: 12, color: newSkill.color, fontWeight: 700 }}>● ตัวอย่าง</span>
+                    <span style={{ fontSize: 12, color: newSkill.color, fontWeight: 700 }}>{tr('● ตัวอย่าง')}</span>
                   </div>
                 </div>
               </div>
@@ -1645,14 +1643,14 @@ export default function Operator() {
 
             {/* Level reference */}
             <div className="card" style={{ padding: 14, marginTop: 16 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>มาตรฐานระดับสกิล</div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text2)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{tr('มาตรฐานระดับสกิล')}</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {SKILL_LEVELS.slice().reverse().map(lv => (
                   <div key={lv.min} style={{ display: 'flex', alignItems: 'center', gap: 6, background: lv.bg, borderRadius: 'var(--r-md)', padding: '6px 12px' }}>
                     <span style={{ fontWeight: 800, color: lv.color, fontSize: 15, minWidth: 28 }}>{lv.min}</span>
                     <div>
-                      <div style={{ fontSize: 11, color: lv.color, fontWeight: 700 }}>{lv.label}</div>
-                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{lv.desc}</div>
+                      <div style={{ fontSize: 11, color: lv.color, fontWeight: 700 }}>{tr(lv.label)}</div>
+                      <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr(lv.desc)}</div>
                     </div>
                   </div>
                 ))}
@@ -1691,7 +1689,7 @@ export default function Operator() {
                       <label style={labelSt}>{tr('เจาะจงส่วนงาน (ถ้ามี)')}</label>
                       <select value={editingSkill.scope_section || ''}
                         disabled={!editingSkill.scope_division}
-                        title={!editingSkill.scope_division ? 'เลือกฝ่ายก่อน ถึงจะเจาะจงส่วนงานได้' : undefined}
+                        title={!editingSkill.scope_division ? tr('เลือกฝ่ายก่อน ถึงจะเจาะจงส่วนงานได้') : undefined}
                         onChange={e => setEditingSkill({ ...editingSkill, scope_section: e.target.value })}>
                         <option value="">{tr('— ทั้งฝ่าย —')}</option>
                         {sectionOptsForDivision(editingSkill.scope_division).map(s => <option key={s} value={s}>{tr(s)}</option>)}
@@ -1749,20 +1747,20 @@ export default function Operator() {
             )}
             {can('skills', 'run_weekly_update', role) && (
               <>
-                <button onClick={runExpRebuild} disabled={!!expBusy} title="คำนวณหลักฐานสะสมใหม่ทั้งก้อนจากข้อมูลจริง"
+                <button onClick={runExpRebuild} disabled={!!expBusy} title={tr('คำนวณหลักฐานสะสมใหม่ทั้งก้อนจากข้อมูลจริง')}
                   style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                     background: 'rgba(132,204,18,0.12)', color: '#84cc16', border: '1px solid rgba(132,204,18,0.3)',
                     opacity: expBusy ? 0.6 : 1 }}>
                   {expBusy === 'rebuild' ? tr('กำลังคำนวณ...') : tr('คำนวณหลักฐานใหม่')}
                 </button>
-                <button onClick={() => runReeval(true)} disabled={!!expBusy} title="ประเมินคำขอค้างทั้งคิวตามเกณฑ์ใหม่ (ดูผลก่อน แล้วค่อยยืนยัน)"
+                <button onClick={() => runReeval(true)} disabled={!!expBusy} title={tr('ประเมินคำขอค้างทั้งคิวตามเกณฑ์ใหม่ (ดูผลก่อน แล้วค่อยยืนยัน)')}
                   style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                     background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)',
                     opacity: expBusy ? 0.6 : 1 }}>
                   {expBusy === 'reeval' ? tr('กำลังประเมิน...') : tr('ประเมินคิวใหม่')}
                 </button>
                 <button onClick={toggleExpLive} disabled={!!expBusy}
-                  title={expCfg?.is_enabled ? 'กำลังใช้สูตร EXP v2 กับคะแนนจริง' : 'สูตร EXP v2 คำนวณคู่ขนานอยู่ ยังไม่แตะคะแนนจริง'}
+                  title={expCfg?.is_enabled ? tr('กำลังใช้สูตร EXP v2 กับคะแนนจริง') : tr('สูตร EXP v2 คำนวณคู่ขนานอยู่ ยังไม่แตะคะแนนจริง')}
                   style={{ padding: '6px 14px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
                     background: expCfg?.is_enabled ? 'rgba(34,197,94,0.12)' : 'var(--bg2)',
                     color: expCfg?.is_enabled ? '#22c55e' : 'var(--muted)',
@@ -1777,8 +1775,8 @@ export default function Operator() {
           {expCfg && !expCfg.is_enabled && (
             <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12,
                           background: 'var(--bg2)', border: '1px solid var(--border2)', color: 'var(--text2)' }}>
-              ℹ️ <strong>โหมดทดลอง (shadow)</strong> — สูตร EXP v2 คำนวณหลักฐานให้ดูเทียบได้
-              แต่ <strong>คะแนนจริงยังมาจากสูตรเดิม</strong> (+1/วัน · +2/สัปดาห์) · กดปุ่ม ⚪ ด้านบนเพื่อเริ่มใช้จริง
+              ℹ️ <strong>{tr('โหมดทดลอง (shadow)')}</strong> — สูตร EXP v2 คำนวณหลักฐานให้ดูเทียบได้
+              แต่ <strong>{tr('คะแนนจริงยังมาจากสูตรเดิม')}</strong> (+1/วัน · +2/สัปดาห์) · กดปุ่ม ⚪ ด้านบนเพื่อเริ่มใช้จริง
             </div>
           )}
 
@@ -1787,7 +1785,7 @@ export default function Operator() {
             {SKILL_LEVELS.map(lv => (
               <div key={lv.min} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 'var(--r-md)', background: lv.bg, fontSize: 11 }}>
                 <span style={{ fontWeight: 800, color: lv.color }}>{lv.min === 100 ? '100' : `${lv.min}–${lv.min === 75 ? 99 : lv.min === 50 ? 74 : lv.min === 25 ? 49 : lv.min === 0 ? 24 : 100}`}</span>
-                <span style={{ color: lv.color, fontWeight: 600 }}>{lv.label}</span>
+                <span style={{ color: lv.color, fontWeight: 600 }}>{tr(lv.label)}</span>
                 <span style={{ color: 'var(--muted)' }}>— {lv.desc}</span>
               </div>
             ))}
@@ -1878,7 +1876,7 @@ export default function Operator() {
                               }} />
                             {luDocPreview
                               ? <img src={luDocPreview} style={{ maxHeight: 80, maxWidth: '100%', borderRadius: 4 }} />
-                              : <span style={{ color: 'var(--muted)', fontSize: 12 }}>{luDocFile ? luDocFile.name : '📎 แตะเลือกไฟล์'}</span>}
+                              : <span style={{ color: 'var(--muted)', fontSize: 12 }}>{luDocFile ? luDocFile.name : tr('📎 แตะเลือกไฟล์')}</span>}
                           </div>
                         </div>
                       )}
@@ -1903,7 +1901,7 @@ export default function Operator() {
                       // มีสิทธิ์อนุมัติแต่เขียนไม่ได้ = คนละเรื่องกับ "ไม่ใช่คิวของคุณ" ต้องบอกให้ต่างกัน
                       <span style={{ fontSize: 11, color: writeBlock ? '#f59e0b' : 'var(--muted)', maxWidth: 200, lineHeight: 1.45, flexShrink: 0 }}>
                         {writeBlock
-                          ? <>🔒 อนุมัติไม่ได้ — {writeBlock}</>
+                          ? <>{tr('🔒 อนุมัติไม่ได้ —')} {writeBlock}</>
                           : (req.to_level === 100 ? 'รอชุดสิทธิ์ทั้งฝ่ายอนุมัติ' : 'รอชุดสิทธิ์ระดับส่วนอนุมัติ')}
                       </span>
                     )}
@@ -2006,11 +2004,11 @@ export default function Operator() {
                         <div style={{ fontSize: 11, marginTop: 3, lineHeight: 1.5,
                           color: fit === 'mismatch' ? '#f59e0b' : 'var(--muted)' }}>
                           {fit === 'mismatch'
-                            ? <>⚠️ แม่แบบกำหนดตำแหน่งนี้ไว้ที่ <b>{allowed.join(' / ')}</b> — บันทึกได้ถ้าเป็นเคสรักษาการหรือข้อยกเว้น</>
+                            ? <>{tr('⚠️ แม่แบบกำหนดตำแหน่งนี้ไว้ที่')} <b>{allowed.join(' / ')}</b> {tr('— บันทึกได้ถ้าเป็นเคสรักษาการหรือข้อยกเว้น')}</>
                             : allowed.length
-                              ? <>แม่แบบกำหนดตำแหน่งนี้ไว้ที่ <b>{allowed.join(' / ')}</b> (ติ๊ก ✓ ในลิสต์)</>
-                              : <>แม่แบบไม่ได้ระบุเกรดของตำแหน่งนี้ — เลือกได้ตามจริง</>}
-                          {row && <> · <b>เลขน้อย = สูงกว่า</b> (เช่น S1 สูงกว่า S3)</>}
+                              ? <>{tr('แม่แบบกำหนดตำแหน่งนี้ไว้ที่')} <b>{allowed.join(' / ')}</b> {tr('(ติ๊ก ✓ ในลิสต์)')}</>
+                              : <>{tr('แม่แบบไม่ได้ระบุเกรดของตำแหน่งนี้ — เลือกได้ตามจริง')}</>}
+                          {row && <> · <b>เลขน้อย = สูงกว่า</b> {tr('(เช่น S1 สูงกว่า S3)')}</>}
                         </div>
                       </div>
                     );
@@ -2046,7 +2044,7 @@ export default function Operator() {
                       <>
                         <select value={editingEmp.department || ''} disabled={!empSection}
                           onChange={e => setEditingEmp({ ...editingEmp, department: e.target.value, group_name: '', line_id: null })}>
-                          <option value="">{empSection ? '— เลือก —' : 'เลือก Section ก่อน'}</option>
+                          <option value="">{empSection ? tr('— เลือก —') : tr('เลือก Section ก่อน')}</option>
                           {deptOpts.map(d => <option key={d.id} value={d.code || d.name}>{tr(d.name)}</option>)}
                         </select>
                         {empSection === ORPHAN_SECTION && (
@@ -2058,7 +2056,7 @@ export default function Operator() {
                             (กฎเดิมในหัวข้อ "บาง section แก้ผ่านฟอร์มไม่ได้" — เดิมมีแค่แถบรวมด้านบน ไม่ได้บอกตรงช่อง) */}
                         {empSection && empSection !== ORPHAN_SECTION && deptOpts.length === 0 && (
                           <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.5 }}>
-                            ⚠️ ส่วนงาน <b>{empSection}</b> ยังไม่มีแผนกในผังองค์กร — เพิ่มที่ <b>/org-setup</b> ก่อนถึงจะเลือกได้
+                            ⚠️ ส่วนงาน <b>{empSection}</b> {tr('ยังไม่มีแผนกในผังองค์กร — เพิ่มที่')} <b>/org-setup</b> ก่อนถึงจะเลือกได้
                           </div>
                         )}
                       </>
@@ -2076,14 +2074,14 @@ export default function Operator() {
                 return (
                   <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--muted)', lineHeight: 1.6,
                     background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '6px 9px' }}>
-                    💰 <b>สังกัดทางบัญชี</b> — หน่วยงาน{' '}
-                    <b style={{ color: 'var(--text)' }}>{home?.code || home?.name || '(ยังไม่ผูกหน่วยในผัง)'}</b>
+                    💰 <b>{tr('สังกัดทางบัญชี')}</b> {tr('— หน่วยงาน')}{' '}
+                    <b style={{ color: 'var(--text)' }}>{home?.code || home?.name || tr('(ยังไม่ผูกหน่วยในผัง)')}</b>
                     {' · '}Cost Center{' '}
                     {cc.code
                       ? <><b style={{ color: 'var(--text)', fontFamily: 'var(--font-display)' }}>{cc.code}</b>
-                          {cc.from && home && (cc.from !== (home.code || home.name)) && <span> (ตกทอดจาก {cc.from})</span>}</>
-                      : <span style={{ color: '#f59e0b' }}>ยังไม่ได้ตั้ง — ตั้งที่ /org-setup</span>}
-                    <div>แก้ที่ <b>ผังองค์กร (/org-setup)</b> — CC เป็นของหน่วยงาน คนที่สังกัดหน่วยนี้ได้รหัสเดียวกันทั้งหมด</div>
+                          {cc.from && home && (cc.from !== (home.code || home.name)) && <span> {tr('(ตกทอดจาก')} {cc.from})</span>}</>
+                      : <span style={{ color: '#f59e0b' }}>{tr('ยังไม่ได้ตั้ง — ตั้งที่ /org-setup')}</span>}
+                    <div>{tr('แก้ที่')} <b>{tr('ผังองค์กร (/org-setup)')}</b> {tr('— CC เป็นของหน่วยงาน คนที่สังกัดหน่วยนี้ได้รหัสเดียวกันทั้งหมด')}</div>
                   </div>
                 );
               })()}
@@ -2111,7 +2109,7 @@ export default function Operator() {
                   );
                 })()}
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.45 }}>
-                  A/B สลับเช้า-ดึกรายสัปดาห์ — ดู/ตั้งรอบหมุนที่ <Link to="/shift-organize" style={{ color: 'var(--accent)' }}>ตารางกะ</Link>
+                  A/B สลับเช้า-ดึกรายสัปดาห์ — ดู/ตั้งรอบหมุนที่ <Link to="/shift-organize" style={{ color: 'var(--accent)' }}>{tr('ตารางกะ')}</Link>
                 </div>
               </div>
 
@@ -2130,7 +2128,7 @@ export default function Operator() {
                 </select>
                 <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3, lineHeight: 1.6 }}>
                   ตั้งแล้วชื่อจะขึ้นให้เลือกในช่อง “มอบหมายช่างซ่อม” ของใบแจ้งซ่อม (ขั้นที่ 2)
-                  {' '}· ช่างฝ่ายผลิตเลือก <b>AM (ผลิตตรวจเอง)</b>
+                  {' '}{tr('· ช่างฝ่ายผลิตเลือก')} <b>{tr('AM (ผลิตตรวจเอง)')}</b>
                 </div>
               </div>
               <div>
@@ -2164,7 +2162,7 @@ export default function Operator() {
                         // เลือกกลุ่มในผัง → line_id จาก ref_line_id · เลือกค่าเดิม (นอกผัง) → คง line_id เดิม
                         setEditingEmp({ ...editingEmp, group_name: val, line_id: g ? (g.ref_line_id || null) : editingEmp.line_id });
                       }}>
-                        <option value="">{editingEmp.department ? '— เลือกกลุ่ม —' : 'เลือกแผนกก่อน'}</option>
+                        <option value="">{editingEmp.department ? tr('— เลือกกลุ่ม —') : tr('เลือกแผนกก่อน')}</option>
                         {orgGroups.map(g => (
                           <option key={g.id} value={g.name}>{g.name}{g.ref_line_id ? '' : '  ⚠ ยังไม่ผูกไลน์'}</option>
                         ))}
@@ -2173,8 +2171,8 @@ export default function Operator() {
                       {curInOrg && !curNode?.ref_line_id && (
                         <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, lineHeight: 1.45 }}>
                           ⚠️ กลุ่ม <b>{curNode?.name}</b> ยังไม่ได้ผูกกับไลน์ผลิตจริง — บันทึกได้ แต่คนนี้
-                          <b> จะไม่ขึ้นในหน้าเช็คชื่อ</b> · ผูกไลน์ให้กลุ่มนี้ที่{' '}
-                          <Link to="/org-setup" style={{ color: '#f59e0b', fontWeight: 700 }}>ผังองค์กร</Link> ก่อน
+                          <b> {tr('จะไม่ขึ้นในหน้าเช็คชื่อ')}</b> {tr('· ผูกไลน์ให้กลุ่มนี้ที่')}{' '}
+                          <Link to="/org-setup" style={{ color: '#f59e0b', fontWeight: 700 }}>{tr('ผังองค์กร')}</Link> ก่อน
                         </div>
                       )}
                       {!curInOrg && noRef.length > 0 && (
@@ -2189,7 +2187,7 @@ export default function Operator() {
                   // 2026-09-07 อ่านทะเบียนไลน์ผ่าน <LineSelect> (ลำดับชั้น/ปลดระวาง/ค่าเดิมนอกลิสต์ไม่หายเงียบ) — คง pre-filter scope+แผนก เดิม
                   return (
                     <LineSelect value={cur} includeSupport disabled={!editingEmp.department}
-                      placeholder={editingEmp.department ? '— เลือก Line —' : 'เลือกแผนกก่อน'}
+                      placeholder={editingEmp.department ? tr('— เลือก Line —') : tr('เลือกแผนกก่อน')}
                       lines={filterLinesByDept(
                         (scopeSecs.length ? lines.filter(l => inSectionScope(scopeSecs, l.section)) : lines)
                           // แผนกขึ้นตรงฝ่ายไม่มี section ให้กรอง — ปล่อยให้ filterLinesByDept คัดตามแผนกอย่างเดียว
@@ -2223,7 +2221,7 @@ export default function Operator() {
                 )}
                 {canEditSkillsFor(editingEmp) && !canEditHighSkill && (
                   <div style={{ fontSize: 11, color: '#f59e0b', background: '#f59e0b15', border: '1px solid #f59e0b40', borderRadius: 'var(--r-md)', padding: '6px 9px', marginBottom: 12, lineHeight: 1.5 }}>
-                    ตั้งคะแนนเองได้ถึง <b>{scoreCap}</b> (ระดับ “{getLevel(scoreCap).label}”) — สูงกว่านี้ต้องให้หัวหน้าส่วนขึ้นไปเป็นคนตั้ง
+                    ตั้งคะแนนเองได้ถึง <b>{scoreCap}</b> {tr('(ระดับ “')}{getLevel(scoreCap).label}”) — สูงกว่านี้ต้องให้หัวหน้าส่วนขึ้นไปเป็นคนตั้ง
                     <div style={{ color: 'var(--muted)', marginTop: 2 }}>
                       คะแนนที่สะสมเองจากการทำงานจริงยังขึ้นเกิน {scoreCap} ได้ตามปกติ ผ่านด่านอนุมัติอัพระดับ
                     </div>
@@ -2271,14 +2269,14 @@ export default function Operator() {
                           : `แสดงสกิลของ ${empDivLabel || 'ยังไม่ได้ติดป้ายฝ่าย'}${empSec ? ` · ${empSec}` : ''} + สกิลกลาง (${visibleSkillDefs.length}/${skillDefs.length})`}
                       </span>
                       {!empDiv && !showAllSkills && (
-                        <span style={{ color: '#f59e0b' }} title="ไปติดป้ายฝ่ายให้ส่วนงาน/แผนกนี้ที่หน้าผังองค์กร">
+                        <span style={{ color: '#f59e0b' }} title={tr('ไปติดป้ายฝ่ายให้ส่วนงาน/แผนกนี้ที่หน้าผังองค์กร')}>
                           ⚠️ ส่วนงานนี้ยังไม่ได้ติดป้ายฝ่าย — เห็นเฉพาะสกิลกลาง
                         </span>
                       )}
                       {empDiv && ownDivCount === 0 && !showAllSkills && (
                         <span style={{ color: '#f59e0b' }}
-                          title="ทะเบียนสกิลยังไม่มีตัวไหนติดป้ายฝ่ายนี้ไว้ — ตั้งที่หน้าทะเบียนสกิล (ช่อง 'ฝ่าย')">
-                          ⚠️ ฝ่าย{empDivLabel}ยังไม่มีสกิลของตัวเองเลย — ที่เห็นคือ<b>สกิลกลาง {centralCount} ตัว</b> (ใช้ร่วมทุกฝ่าย)
+                          title={tr('ทะเบียนสกิลยังไม่มีตัวไหนติดป้ายฝ่ายนี้ไว้ — ตั้งที่หน้าทะเบียนสกิล (ช่อง \'ฝ่าย\')')}>
+                          ⚠️ ฝ่าย{empDivLabel}{tr('ยังไม่มีสกิลของตัวเองเลย — ที่เห็นคือ')}<b>{tr('สกิลกลาง')} {centralCount} {tr('ตัว')}</b> (ใช้ร่วมทุกฝ่าย)
                         </span>
                       )}
                       {hiddenCount > 0 && !showAllSkills && (
@@ -2301,7 +2299,7 @@ export default function Operator() {
                     <div key={g.key} style={{ marginBottom: 14 }}>
                       <div style={{ marginBottom: 6, display: 'flex', alignItems: 'baseline', gap: 7 }}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: g.color, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{g.icon} {g.label}</span>
-                        {g.desc && <span style={{ fontSize: 11, color: g.color, opacity: 0.7 }}>{g.desc}</span>}
+                        {g.desc && <span style={{ fontSize: 11, color: g.color, opacity: 0.7 }}>{tr(g.desc)}</span>}
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(148px, 1fr))', gap: 8 }}>
                         {g.skills.map(sd => {
@@ -2326,7 +2324,7 @@ export default function Operator() {
                             <div key={sd.name} style={{ background: enabled ? 'var(--bg3)' : 'var(--bg2)', borderRadius: 'var(--r-md)', padding: '8px 10px', border: `1px solid ${pending ? '#f59e0b55' : enabled ? 'var(--border)' : 'var(--border2)'}`, opacity: enabled ? 1 : 0.6 }}>
                               {/* Toggle: มีทักษะนี้ */}
                               <label
-                                title={lockedAllowance ? 'ใบเซอร์ค่าฝีมือ ต้องระดับหัวหน้าแผนกขึ้นไปเป็นคนติ๊ก' : undefined}
+                                title={lockedAllowance ? tr('ใบเซอร์ค่าฝีมือ ต้องระดับหัวหน้าแผนกขึ้นไปเป็นคนติ๊ก') : undefined}
                                 style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 5, cursor: rowEditable ? 'pointer' : 'default' }}>
                                 <input type="checkbox" checked={enabled} disabled={!rowEditable}
                                   onChange={e => setEditingEmp({
@@ -2339,16 +2337,14 @@ export default function Operator() {
                                   {(sd.scope_division || sd.scope_section) && <span style={{ color: 'var(--muted)', fontWeight: 400 }}> · {skillScopeLabel(sd)}</span>}
                                 </span>
                                 {enabled && lv && (
-                                  <span style={{ background: lv.bg, color: lv.color, borderRadius: 'var(--r-xs)', padding: '1px 5px', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                                    {lv.label}
-                                  </span>
+                                  <span style={{ background: lv.bg, color: lv.color, borderRadius: 'var(--r-xs)', padding: '1px 5px', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{tr(lv.label)}</span>
                                 )}
                                 {!enabled && (
                                   <span style={{ fontSize: 11, color: 'var(--muted)', flexShrink: 0 }}>N/A</span>
                                 )}
                               </label>
                               {enabled && g.key === 'allowance_skill' ? (
-                                <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, textAlign: 'center', padding: '4px 0' }}>✓ มีใบเซอร์</div>
+                                <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 700, textAlign: 'center', padding: '4px 0' }}>{tr('✓ มีใบเซอร์')}</div>
                               ) : enabled ? (
                                 <input type="number" value={score}
                                   disabled={!rowEditable || lockedHigh}
@@ -2367,16 +2363,16 @@ export default function Operator() {
                                   min={0} max={scoreCap}
                                   style={{ width: '100%', boxSizing: 'border-box' }} />
                               ) : (
-                                <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', padding: '4px 0' }}>ไม่เกี่ยวข้อง</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', padding: '4px 0' }}>{tr('ไม่เกี่ยวข้อง')}</div>
                               )}
                               {pending && (
-                                <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 3 }}>⏳ รอ approve Lv.{pending}</div>
+                                <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700, marginTop: 3 }}>{tr('⏳ รอ approve Lv.')}{pending}</div>
                               )}
                               {lockedHigh && (
-                                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>เกินเพดาน {scoreCap} — แก้/เอาออกไม่ได้</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{tr('เกินเพดาน')} {scoreCap} {tr('— แก้/เอาออกไม่ได้')}</div>
                               )}
                               {lockedAllowance && (
-                                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>หัวหน้าแผนกขึ้นไปเท่านั้น</div>
+                                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{tr('หัวหน้าแผนกขึ้นไปเท่านั้น')}</div>
                               )}
                             </div>
                           );
@@ -2407,7 +2403,7 @@ export default function Operator() {
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                   {editingEmp.signature_url
                     ? <img src={editingEmp.signature_url} alt="ลายเซ็น" style={{ height: 40, maxWidth: 180, objectFit: 'contain', background: '#fff', borderRadius: 4, padding: 2, border: '1px solid var(--border)' }} />
-                    : <span style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีลายเซ็น — ใบตรวจจะเว้นช่องให้เซ็นมือ</span>}
+                    : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ยังไม่มีลายเซ็น — ใบตรวจจะเว้นช่องให้เซ็นมือ')}</span>}
                   {canEditEmp(editingEmp) && editingEmp.id && (
                     <button type="button" onClick={() => setEmpSigOpen(true)}
                       style={{ width: 'auto', padding: '6px 12px', fontSize: 12, borderRadius: 'var(--r-md)', cursor: 'pointer',
@@ -2425,7 +2421,7 @@ export default function Operator() {
               </div>
               {empCropFile && (
                 <ImageCropModal file={empCropFile} aspect={1} shape="circle" outputSize={480}
-                  title="จัดตำแหน่งรูปพนักงานให้ตรงกรอบ" allowGif={false} webp
+                  title={tr('จัดตำแหน่งรูปพนักงานให้ตรงกรอบ')} allowGif={false} webp
                   onCancel={() => setEmpCropFile(null)}
                   onConfirm={f => { setEditingEmp(prev => ({ ...prev, newPhoto: f })); setEmpCropFile(null); }} />
               )}
@@ -2545,12 +2541,12 @@ function SkillSubItemsModal({ skill, onClose }) {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
           <span style={{ width: 10, height: 10, borderRadius: '50%', background: skill.color, flexShrink: 0 }} />
-          <span style={{ fontSize: 13, fontWeight: 700 }}>{skill.label}</span>
-          <span style={{ fontSize: 11, color: 'var(--muted)' }}>ใช้ในใบประเมินทักษะรายบุคคล</span>
+          <span style={{ fontSize: 13, fontWeight: 700 }}>{tr(skill.label)}</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ใช้ในใบประเมินทักษะรายบุคคล')}</span>
         </div>
 
         {loading ? (
-          <div style={{ color: 'var(--muted)', fontSize: 13, padding: 12 }}>กำลังโหลด...</div>
+          <div style={{ color: 'var(--muted)', fontSize: 13, padding: 12 }}>{tr('กำลังโหลด...')}</div>
         ) : (
           <>
             {rows.length === 0 && (
@@ -2563,14 +2559,14 @@ function SkillSubItemsModal({ skill, onClose }) {
                 <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '7px 10px', border: '1px solid var(--border)' }}>
                   <span style={{ fontSize: 12, color: 'var(--muted)', width: 18, textAlign: 'center' }}>{i + 1}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13 }}>{r.label}</div>
-                    {r.wi_ref && <div style={{ fontSize: 11, color: 'var(--muted)' }}>อ้างอิง: {r.wi_ref}</div>}
+                    <div style={{ fontSize: 13 }}>{tr(r.label)}</div>
+                    {r.wi_ref && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('อ้างอิง:')} {r.wi_ref}</div>}
                   </div>
                   {canEdit && (
                     <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
                       <button onClick={() => move(i, -1)} disabled={i === 0} className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: i === 0 ? 'default' : 'pointer', fontSize: 13, opacity: i === 0 ? 0.3 : 1, padding: '2px 4px' }}>▲</button>
                       <button onClick={() => move(i, 1)} disabled={i === rows.length - 1} className="tbtn" style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: i === rows.length - 1 ? 'default' : 'pointer', fontSize: 13, opacity: i === rows.length - 1 ? 0.3 : 1, padding: '2px 4px' }}>▼</button>
-                      <DeleteButton onClick={() => delItem(r.id)} title="ลบรายการนี้" />
+                      <DeleteButton onClick={() => delItem(r.id)} title={tr('ลบรายการนี้')} />
                     </div>
                   )}
                 </div>
@@ -2579,7 +2575,7 @@ function SkillSubItemsModal({ skill, onClose }) {
 
             {canEdit && (
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 8 }}>➕ เพิ่มหัวข้อ</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 8 }}>{tr('➕ เพิ่มหัวข้อ')}</div>
                 <input placeholder={tr('หัวข้อการพิจารณา เช่น วางแผนการผลิต (plan production)')} value={newLabel}
                   onChange={e => setNewLabel(e.target.value)} onKeyDown={e => e.key === 'Enter' && addItem()}
                   style={{ marginBottom: 8 }} />

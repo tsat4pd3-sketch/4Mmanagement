@@ -195,7 +195,7 @@ export default function TvBoard({ onOpenMenu = null }) {
           {cur.icon} Andon Board · {cur.label}
         </span>
         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-          {cur.sub} · วันงาน {workDate}
+          {cur.sub} {tr('· วันงาน')} {workDate}
           {secFilter ? ` · เฉพาะ ${secFilter}` : ''}
           {scopeSet ? ` · ${scopeSet.size} ไลน์` : ' · ทุกไลน์'}
           {/* กรองตามขอบเขตบัญชีแล้วต้องบอกว่าซ่อนกี่ไลน์ · ตัดขอบเขตไม่ได้ต้องบอกว่ากำลังโชว์ทั้งโรงงาน */}
@@ -203,8 +203,8 @@ export default function TvBoard({ onOpenMenu = null }) {
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {/* ☰ เมนู (13/10 · feedback user) — เดิมเข้ามาแล้วไปหน้าอื่นไม่ได้ · ไม่ส่ง onOpenMenu (บัญชีจอแขวน) = ไม่วาด */}
-          {onOpenMenu && <button onClick={onOpenMenu} style={btn(false)} title="เปิดเมนู — ไปหน้าอื่น (จอยังโล่งเหมือนเดิมจนกว่าจะกด)">{tr('เมนู')}</button>}
-          <button onClick={toggleFs} style={btn(fs)} title="เต็มจอ — เก็บแถบเบราว์เซอร์คืนพื้นที่ให้ผัง">⛶</button>
+          {onOpenMenu && <button onClick={onOpenMenu} style={btn(false)} title={tr('เปิดเมนู — ไปหน้าอื่น (จอยังโล่งเหมือนเดิมจนกว่าจะกด)')}>{tr('เมนู')}</button>}
+          <button onClick={toggleFs} style={btn(fs)} title={tr('เต็มจอ — เก็บแถบเบราว์เซอร์คืนพื้นที่ให้ผัง')}>⛶</button>
           <button onClick={() => setBarOpen(o => !o)} style={btn(barOpen)}>{tr('ตั้งค่าจอ')}</button>
         </div>
       </div>
@@ -215,7 +215,7 @@ export default function TvBoard({ onOpenMenu = null }) {
           <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
           {/* ส่วนงาน — ค่าที่ไม่มีในลิสต์ (ส่วนงานถูกเปลี่ยนชื่อ) ต้องยังเลือกเห็นได้ ห้ามหายเงียบ */}
           <SectionScopeSelect lines={lines} value={secFilter} onChange={s => setParam('sec', s)} only={secOpts} width={220}
-            title="ทุกส่วนงานที่บัญชีนี้มีสิทธิ์เห็น" />
+            title={tr('ทุกส่วนงานที่บัญชีนี้มีสิทธิ์เห็น')} />
           {dept === 'mo' && <>
             <span style={{ width: 1, height: 20, background: 'var(--border2)' }} />
             {[{ key: '', icon: '🧾', label: 'ทุกขั้น' }, ...MO_TV_GROUPS].map(x => (
@@ -229,7 +229,7 @@ export default function TvBoard({ onOpenMenu = null }) {
             {sp.get('sound') === 'all' ? tr('ดังทุกเครื่องหยุด') : dept === 'store' ? tr('ไม่มีเสียง') : tr('ดังเฉพาะเรียกช่าง')}
           </button>
           <span style={{ fontSize: 11, color: 'var(--muted)' }}>
-            ตั้งเสร็จแล้ว <b>บุ๊กมาร์กหน้านี้ไว้ที่ทีวี</b> — ค่าอยู่ใน URL จอจะจำเอง ไม่ต้องมากดทุกเช้า
+            ตั้งเสร็จแล้ว <b>{tr('บุ๊กมาร์กหน้านี้ไว้ที่ทีวี')}</b> — ค่าอยู่ใน URL จอจะจำเอง ไม่ต้องมากดทุกเช้า
           </span>
         </div>
       )}
@@ -258,7 +258,7 @@ export default function TvBoard({ onOpenMenu = null }) {
         </div>
       )}
       {dept !== 'mo' && !d && !err && (linesState === 'loading' || linesState === 'ok') && (
-        <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: 40 }}>กำลังโหลด...</div>
+        <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: 40 }}>{tr('กำลังโหลด...')}</div>
       )}
       {dept === 'mo'
         ? (linesState === 'ok' && <MoTvBoard inScope={inScope} isMobile={isMobile} />)

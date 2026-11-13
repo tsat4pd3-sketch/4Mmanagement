@@ -260,7 +260,7 @@ export default function ImageCropModal({
             ⚠️ วางไว้ "ก่อน" แถบซูม — สลับโหมดแล้วแถบซูมโผล่/หาย ปุ่มที่เพิ่งกดต้องไม่ขยับหนี */}
         {allowFull && !isGif && (
           <div style={{ marginTop: 12 }}>
-            <Segmented size="sm" label="โหมดรูป" value={useFull ? 'full' : 'crop'}
+            <Segmented size="sm" label={tr('โหมดรูป')} value={useFull ? 'full' : 'crop'}
               onChange={v => setUseFull(v === 'full')}
               options={[
                 { value: 'full', label: 'ใช้ทั้งรูป' },

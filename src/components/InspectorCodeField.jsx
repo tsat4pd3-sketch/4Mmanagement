@@ -27,7 +27,7 @@ export default function InspectorCodeField({ value, onChange, disabled = false, 
       <input key={code} defaultValue={code} disabled={disabled} inputMode="text" autoComplete="off"
         onBlur={e => { const v = e.target.value.trim(); if (v !== code) onChange(v) }}
         onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur() } }}
-        placeholder={required ? 'สแกนบัตรผู้ตรวจ (หัวหน้าตรวจแทน = บัตรตัวเอง)' : 'เช่น 61234 · เว้นว่าง = ใช้บัญชีที่ login'}
+        placeholder={required ? tr('สแกนบัตรผู้ตรวจ (หัวหน้าตรวจแทน = บัตรตัวเอง)') : tr('เช่น 61234 · เว้นว่าง = ใช้บัญชีที่ login')}
         style={{ maxWidth: 260, padding: '6px 8px', fontSize: 13 }} />
       {signer && signer.state !== 'no_code' && (
         <div style={{ fontSize: 11.5, lineHeight: 1.4, color: signer.state === 'ok' ? 'var(--muted)' : 'var(--amber)' }}>

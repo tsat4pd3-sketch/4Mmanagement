@@ -424,7 +424,7 @@ export default function LayerProcessAudit() {
    *  ไม่ตรง = **ห้ามเขียน** (เพราะ `row` ผสม `id` ที่โหลดมา กับ `line_name: selLine` ที่เลือกอยู่
    *  ⇒ เขียนทับแผนของไลน์อื่น หรือชน PK แล้วเด้ง error งงๆ) */
   const monthMismatch = (loadedKey) => (isStale(loadedKey, monthKey)
-    ? staleBlockText({ what: 'แผนที่แสดงอยู่', unitWord: 'ไลน์/กะ/เดือน' })
+    ? staleBlockText({ what: tr('แผนที่แสดงอยู่'), unitWord: tr('ไลน์/กะ/เดือน') })
     : null);
 
   const savePlan = async () => {
@@ -661,7 +661,7 @@ export default function LayerProcessAudit() {
   const draftMismatch = () => {
     if (!draft) return 'ใบตรวจยังโหลดไม่เสร็จ — รอสักครู่แล้วลองอีกครั้ง';
     return isStale(draft.key, draftKey)
-      ? staleBlockText({ what: 'ใบที่แสดงอยู่', unitWord: 'ไลน์/กะ/วันที่/ชั้น' })
+      ? staleBlockText({ what: tr('ใบที่แสดงอยู่'), unitWord: tr('ไลน์/กะ/วันที่/ชั้น') })
       : null;
   };
 
@@ -994,7 +994,7 @@ table{border-collapse:collapse;width:100%}
   <tr>
     <td rowspan="3" style="border:1px solid #000;text-align:center;font-size:9px;font-weight:bold;width:26px">Description</td>
     <td rowspan="3" colspan="2" style="border:1px solid #000;text-align:center;font-size:9px;font-weight:bold">Audit Checklist / Question</td>
-    <td colspan="${nDays}" style="border:1px solid #000;text-align:center;font-size:9px;font-weight:bold">Audit Result (ผลการตรวจสอบ Y, N, T, N/A)</td>
+    <td colspan="${nDays}" style="border:1px solid #000;text-align:center;font-size:9px;font-weight:bold">{tr('Audit Result (ผลการตรวจสอบ Y, N, T, N/A)')}</td>
     <td colspan="4" style="border:1px solid #000;text-align:center;font-size:8px;font-weight:bold;background:#c9e4c5">Weekly</td>
     <td rowspan="2" style="border:1px solid #000;text-align:center;vertical-align:middle;width:20px;background:#e0e0e0"><div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:8px;font-weight:bold;margin:0 auto">Monthly</div></td>
     <td rowspan="2" style="border:1px solid #000;text-align:center;vertical-align:middle;width:20px;background:#f3e8a0"><div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:8px;font-weight:bold;margin:0 auto">Quarterly</div></td>
@@ -1007,14 +1007,14 @@ table{border-collapse:collapse;width:100%}
   </tr>
   ${catRows.join('')}
   <tr>
-    <td colspan="3" style="border:1px solid #000;text-align:right;padding:1px 6px;font-size:8px;font-weight:bold;height:74px;vertical-align:middle">Work Station (ระบุ Station ที่ทำการตรวจ)</td>
+    <td colspan="3" style="border:1px solid #000;text-align:right;padding:1px 6px;font-size:8px;font-weight:bold;height:74px;vertical-align:middle">{tr('Work Station (ระบุ Station ที่ทำการตรวจ)')}</td>
     ${stationRow}
     ${svAud.map(a => `<td style="border:1px solid #000;text-align:center;vertical-align:bottom;background:#c9e4c5"><div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:7px;margin:0 auto;white-space:nowrap;max-height:70px;overflow:hidden">${a?.station || ''}</div></td>`).join('')}
     <td style="border:1px solid #000;text-align:center;vertical-align:bottom;background:#e0e0e0"><div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:7px;margin:0 auto;white-space:nowrap;max-height:70px;overflow:hidden">${mgrAud?.station || ''}</div></td>
     <td style="border:1px solid #000;text-align:center;vertical-align:bottom;background:#f3e8a0"><div style="writing-mode:vertical-rl;transform:rotate(180deg);font-size:7px;margin:0 auto;white-space:nowrap;max-height:70px;overflow:hidden">${gmAud?.station || ''}</div></td>
   </tr>
   <tr>
-    <td colspan="3" style="border:1px solid #000;text-align:right;padding:1px 6px;font-size:8px;font-weight:bold;height:56px;vertical-align:middle">ลงชื่อ ผู้ตรวจสอบ</td>
+    <td colspan="3" style="border:1px solid #000;text-align:right;padding:1px 6px;font-size:8px;font-weight:bold;height:56px;vertical-align:middle">{tr('ลงชื่อ ผู้ตรวจสอบ')}</td>
     ${sigRow}
     ${svAud.map(a => sigCell(a, 'background:#c9e4c5;')).join('')}
     ${sigCell(mgrAud, 'background:#e0e0e0;')}
@@ -1029,15 +1029,15 @@ table{border-collapse:collapse;width:100%}
   </tr>
 </table>
 <div style="display:flex;gap:18px;margin-top:4px;font-size:8px;flex-wrap:wrap">
-  <div><b>หมายเหตุ :</b> Y หมายถึง การปฏิบัติตรงตามมาตรฐาน (YES)</div>
-  <div>N หมายถึง การปฏิบัติไม่ตรงตามมาตรฐาน (NO)</div>
-  <div>T หมายถึง การยอมรับให้ปฏิบัติงานต่อได้ แต่มีเงื่อนไข และต้องไม่ส่งผลต่อคุณภาพชิ้นงาน (Temporary Accept)</div>
-  <div>N/A หมายถึง ไม่เกี่ยวข้อง</div>
+  <div><b>{tr('หมายเหตุ :')}</b> {tr('Y หมายถึง การปฏิบัติตรงตามมาตรฐาน (YES)')}</div>
+  <div>{tr('N หมายถึง การปฏิบัติไม่ตรงตามมาตรฐาน (NO)')}</div>
+  <div>{tr('T หมายถึง การยอมรับให้ปฏิบัติงานต่อได้ แต่มีเงื่อนไข และต้องไม่ส่งผลต่อคุณภาพชิ้นงาน (Temporary Accept)')}</div>
+  <div>{tr('N/A หมายถึง ไม่เกี่ยวข้อง')}</div>
 </div>
 <div style="display:flex;gap:18px;margin-top:2px;font-size:8px;flex-wrap:wrap">
-  <div><span style="display:inline-block;width:24px;height:9px;background:#c9e4c5;border:1px solid #999;vertical-align:middle"></span> Weekly : Cross-Functional ทำการตรวจทุกสัปดาห์ โดยทำการสุ่มตรวจ</div>
-  <div><span style="display:inline-block;width:24px;height:9px;background:#e0e0e0;border:1px solid #999;vertical-align:middle"></span> Monthly : Manager ทำการตรวจทุกเดือน โดยทำการสุ่มตรวจ</div>
-  <div><span style="display:inline-block;width:24px;height:9px;background:#f3e8a0;border:1px solid #999;vertical-align:middle"></span> Quarterly : GM Plant ทำการตรวจทุก 3 เดือน โดยสุ่มตรวจ</div>
+  <div><span style="display:inline-block;width:24px;height:9px;background:#c9e4c5;border:1px solid #999;vertical-align:middle"></span> {tr('Weekly : Cross-Functional ทำการตรวจทุกสัปดาห์ โดยทำการสุ่มตรวจ')}</div>
+  <div><span style="display:inline-block;width:24px;height:9px;background:#e0e0e0;border:1px solid #999;vertical-align:middle"></span> {tr('Monthly : Manager ทำการตรวจทุกเดือน โดยทำการสุ่มตรวจ')}</div>
+  <div><span style="display:inline-block;width:24px;height:9px;background:#f3e8a0;border:1px solid #999;vertical-align:middle"></span> {tr('Quarterly : GM Plant ทำการตรวจทุก 3 เดือน โดยสุ่มตรวจ')}</div>
 </div>
 ${issuesHtml}
 <div style="display:flex;justify-content:space-between;margin-top:3px;font-size:9px"><div>${fullCode(df)}${df.footer_note ? ' · ' + df.footer_note : ''}</div><div>${df.effective_date ? 'Effective Date : ' + df.effective_date : ''}</div></div>
@@ -1054,12 +1054,12 @@ ${issuesHtml}
   // UI-STANDARD 2026-09-24 — แถบเลือกไลน์/กะ/เดือน = FilterBar · กะ 2 ตัวเลือก = Segmented
   const selectorBar = (
     <FilterBar style={{ marginBottom: 14 }}>
-      <span className="filter-label">ไลน์ / พื้นที่ตรวจ</span>
+      <span className="filter-label">{tr('ไลน์ / พื้นที่ตรวจ')}</span>
       {/* <LineSelect> — ลำดับชั้น/ตัดไลน์ปลดระวาง/ค่าเดิมไม่หายเงียบ (visibleLines กรอง scope ไว้แล้ว · 2026-09-07) */}
       <LineSelect lines={visibleLines} value={selLine} placeholder={null} onChange={setSelLine} />
-      <Segmented value={selShift} onChange={setSelShift} label="กะ"
+      <Segmented value={selShift} onChange={setSelShift} label={tr('กะ')}
         options={[{ value: 'day', label: SHIFT_META.day }, { value: 'night', label: SHIFT_META.night }]} />
-      <span className="filter-label">เดือน</span>
+      <span className="filter-label">{tr('เดือน')}</span>
       <input type="month" value={selMonth} onChange={e => e.target.value && setSelMonth(e.target.value)} />
     </FilterBar>
   );
@@ -1099,13 +1099,13 @@ ${issuesHtml}
           {/* หัวไตรมาส + ปุ่มเลื่อนไตรมาส */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
             <button onClick={() => setSelMonth(shiftMonth(qMonths[0], -3))} style={btnGhost}>{tr('ไตรมาสก่อน')}</button>
-            <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)' }}>ไตรมาส Q{quarterOf(selMonth)} · {monthLabel(qMonths[0])} – {monthLabel(qMonths[2])}</div>
+            <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)' }}>{tr('ไตรมาส Q')}{quarterOf(selMonth)} · {monthLabel(qMonths[0])} – {monthLabel(qMonths[2])}</div>
             <button onClick={() => setSelMonth(shiftMonth(qMonths[0], 3))} style={btnGhost}>{tr('ไตรมาสถัดไป ▶')}</button>
           </div>
           {qErr && (
             <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5,
               background: 'var(--card)', border: '1px solid var(--red)', color: 'var(--red)' }}>
-              ⚠ {qErr} — ช่องที่วางแผนไว้แสดงเป็น <b>?</b> (ยังบอกไม่ได้ว่าตรวจแล้วหรือยัง) <b>อย่าเพิ่งพิมพ์ใบนี้ไปเซ็น</b>
+              ⚠ {qErr} {tr('— ช่องที่วางแผนไว้แสดงเป็น')} <b>?</b> {tr('(ยังบอกไม่ได้ว่าตรวจแล้วหรือยัง)')} <b>{tr('อย่าเพิ่งพิมพ์ใบนี้ไปเซ็น')}</b>
             </div>
           )}
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginBottom: 12 }}>
@@ -1119,14 +1119,14 @@ ${issuesHtml}
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
             <div style={{ flex: '1 1 340px' }}>
-              <div style={lb}>รายชื่อสถานีตรวจ (Station for audit — บรรทัดละชื่อ หรือคั่นด้วย , · ดึงจากจุดงานในไลน์อัตโนมัติ แก้ไข/เพิ่มเองได้ · ใช้ทั้งไตรมาส)</div>
+              <div style={lb}>{tr('รายชื่อสถานีตรวจ (Station for audit — บรรทัดละชื่อ หรือคั่นด้วย , · ดึงจากจุดงานในไลน์อัตโนมัติ แก้ไข/เพิ่มเองได้ · ใช้ทั้งไตรมาส)')}</div>
               <textarea rows={3} value={qHeader.stations || ''} onChange={e => setQHeaderF('stations', e.target.value)} disabled={!canManage}
                 placeholder={'ปืนยิงBoat\nSTAMP MARK\nJig-01\nJig-02 ...'} style={{ width: '100%', fontSize: 13 }} />
             </div>
             {canManage && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button onClick={fillStationsFromWorkstations} style={btnTeal} title="ดึงรายชื่อจุดงานทั้งหมดในไลน์นี้ (รวมไลน์ย่อย) มาเป็นสถานีตรวจตั้งต้น — LPA ตรวจกระบวนการที่จุดงาน ไม่ใช่ทุกเครื่องจักร">{tr('ดึงจุดงานในไลน์')}</button>
-                <button onClick={autoFillQuarter} style={btnAmber} title="กระจายจุดงานให้ครบทุกจุดภายในแต่ละเดือน (Leader ทุกวัน · SV ต้นสัปดาห์ · MGR รายเดือน · GM รายไตรมาส)">{tr('เติมแผนทั้งไตรมาส')}</button>
+                <button onClick={fillStationsFromWorkstations} style={btnTeal} title={tr('ดึงรายชื่อจุดงานทั้งหมดในไลน์นี้ (รวมไลน์ย่อย) มาเป็นสถานีตรวจตั้งต้น — LPA ตรวจกระบวนการที่จุดงาน ไม่ใช่ทุกเครื่องจักร')}>{tr('ดึงจุดงานในไลน์')}</button>
+                <button onClick={autoFillQuarter} style={btnAmber} title={tr('กระจายจุดงานให้ครบทุกจุดภายในแต่ละเดือน (Leader ทุกวัน · SV ต้นสัปดาห์ · MGR รายเดือน · GM รายไตรมาส)')}>{tr('เติมแผนทั้งไตรมาส')}</button>
                 <button onClick={saveQuarter} disabled={savingPlan} style={btnAccent}>{savingPlan ? '...' : tr('บันทึกแผนไตรมาส')}</button>
                 <button onClick={printPlan} disabled={printing} style={btnBlue} title={`พิมพ์ใบแผนของเดือน ${monthLabel(selMonth)} (บันทึกก่อนพิมพ์)`}>{tr('พิมพ์ (')}{monthLabel(selMonth)})</button>
               </div>
@@ -1134,7 +1134,7 @@ ${issuesHtml}
             {!canManage && <button onClick={printPlan} disabled={printing} style={btnBlue}>{tr('พิมพ์ (')}{monthLabel(selMonth)})</button>}
           </div>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
-            <span style={{ color: 'var(--text2)' }}>○ วางแผน</span> · <span style={{ color: 'var(--green)' }}>● ตรวจแล้ว</span> · <span style={{ color: 'var(--red)' }}>⊗ เลยกำหนดยังไม่ตรวจ</span> · แถวเขียว = วันหยุด · หลายสถานี/วัน = คั่นด้วย ,
+            <span style={{ color: 'var(--text2)' }}>{tr('○ วางแผน')}</span> · <span style={{ color: 'var(--green)' }}>{tr('● ตรวจแล้ว')}</span> · <span style={{ color: 'var(--red)' }}>{tr('⊗ เลยกำหนดยังไม่ตรวจ')}</span> · แถวเขียว = วันหยุด · หลายสถานี/วัน = คั่นด้วย ,
           </div>
 
           {/* 3 เดือนของไตรมาส */}
@@ -1145,7 +1145,7 @@ ${issuesHtml}
               <div key={mk} style={{ marginTop: 12, border: isFocus ? '1px solid var(--accent)' : '1px solid var(--border2)', borderRadius: 'var(--r-md)', overflow: 'hidden' }}>
                 <div style={{ padding: '7px 12px', background: isFocus ? 'var(--green-dim)' : 'var(--bg3)', fontWeight: 800, fontSize: 14, color: isFocus ? 'var(--accent)' : 'var(--text)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   {monthLabel(mk)}
-                  {isFocus ? <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted)' }}>(เดือนที่เลือก — ใช้พิมพ์/รายงาน)</span>
+                  {isFocus ? <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted)' }}>{tr('(เดือนที่เลือก — ใช้พิมพ์/รายงาน)')}</span>
                     : <button onClick={() => setSelMonth(mk)} style={{ ...btnGhost, padding: '2px 8px', fontSize: 11 }}>{tr('เลือกเดือนนี้')}</button>}
                 </div>
                 <div style={{ overflowX: 'auto' }}>
@@ -1168,7 +1168,7 @@ ${issuesHtml}
                               {d} <span style={{ fontSize: 11, color: 'var(--muted)' }}>({DOW_TH[dowOf(dstr)]})</span>
                             </td>
                             <td>
-                              {holiday ? <span style={{ fontSize: 11, color: '#4caf50' }}>วันหยุด</span> : (
+                              {holiday ? <span style={{ fontSize: 11, color: '#4caf50' }}>{tr('วันหยุด')}</span> : (
                                 <SelectOrFree value={pd.station || ''} onChange={v => setQDay(mk, d, { station: v })} disabled={!canManage} placeholder={tr('— เลือกสถานี —')} compact
                                   options={[...(qHeader.stations || '').split(/[\n,]+/), ...wsNames]} style={{ width: 'min(100%, 320px)' }} />
                               )}
@@ -1206,40 +1206,40 @@ ${issuesHtml}
           {draftErr && (
             <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5,
               background: 'var(--card)', border: '1px solid var(--red)', color: 'var(--red)' }}>
-              ⚠ {draftErr} — <b>ยังบันทึกไม่ได้</b> (ถ้าบันทึกทับตอนนี้ คำตอบที่เคยตรวจไว้จะหาย) · ลองเปลี่ยนวัน/ไลน์แล้วกลับมาใหม่
+              ⚠ {draftErr} — <b>{tr('ยังบันทึกไม่ได้')}</b> (ถ้าบันทึกทับตอนนี้ คำตอบที่เคยตรวจไว้จะหาย) · ลองเปลี่ยนวัน/ไลน์แล้วกลับมาใหม่
             </div>
           )}
           <DraftRestoreBar draft={pendingDraft} what="ใบตรวจ LPA ชุดนี้" onRestore={restoreLpaDraft}
             onDiscard={() => { if (lpaDraftKey) clearDraft(lpaDraftKey); setPendingDraft(null); }} />
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
             <div>
-              <div style={lb}>วันที่ตรวจ</div>
+              <div style={lb}>{tr('วันที่ตรวจ')}</div>
               <input type="date" value={auditDate} onChange={e => e.target.value && setAuditDate(e.target.value)} style={{ width: 150, padding: '6px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }} />
             </div>
             <div>
-              <div style={lb}>ชั้นผู้ตรวจ (Layer)</div>
+              <div style={lb}>{tr('ชั้นผู้ตรวจ (Layer)')}</div>
               <select value={auditLayer} onChange={e => setAuditLayer(e.target.value)} style={{ width: 190, padding: '7px 10px', borderRadius: 'var(--ctl-r)', fontSize: 13 }}>
                 {LAYERS.map(l => <option key={l.key} value={l.key}>{l.label} · {l.freq}</option>)}
               </select>
             </div>
             <div>
-              <div style={lb}>Station ที่ตรวจ</div>
+              <div style={lb}>{tr('Station ที่ตรวจ')}</div>
               {/* สถานีจากแผนเดือนนี้ ∪ จุดงานในผังไลน์ + ระบุเอง (lpa_audits.station เดิมพิมพ์เอง · 2026-09-07) */}
               <SelectOrFree value={draft?.station || ''} onChange={v => setDraft(prev => ({ ...prev, station: v }))} placeholder={tr('— เลือกสถานี —')} compact
                 options={[...auditPlanStations, ...wsNames]} style={{ width: 190, padding: '6px 10px', borderRadius: 7, fontSize: 13 }} />
             </div>
             <div>
-              <div style={lb}>ผู้ตรวจ</div>
+              <div style={lb}>{tr('ผู้ตรวจ')}</div>
               {/* ผู้ตรวจจาก profiles → ลายเซ็นตามคนที่เลือก (ไม่ใช่แค่โปรไฟล์ตัวเอง) · พิมพ์เองยังได้ (2026-09-07) */}
               <PersonSelect value={draft?.auditor_name || ''} history={auditorHist} style={{ width: 200 }}
                 onChange={r => setDraft(prev => ({ ...prev, auditor_name: r.name, auditor_sig_url: r.kind === 'free' ? prev?.auditor_sig_url || null : (r.signature_url || null) }))} />
             </div>
             <div>
-              <div style={lb}>ลายเซ็น</div>
+              <div style={lb}>{tr('ลายเซ็น')}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 {draft?.auditor_sig_url
                   ? <img src={draft.auditor_sig_url} alt="" style={{ height: 30, background: '#fff', borderRadius: 4, padding: 2 }} />
-                  : <span style={{ fontSize: 11, color: 'var(--muted)' }}>ยังไม่มี</span>}
+                  : <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ยังไม่มี')}</span>}
                 {canRecord && <button onClick={() => setShowSignPad(true)} style={{ ...btnGray, padding: '5px 10px', fontSize: 12 }}>{tr('เซ็นใหม่')}</button>}
               </div>
             </div>
@@ -1274,7 +1274,7 @@ ${issuesHtml}
                       <div style={{ flex: '1 1 380px', fontSize: 13, color: cat.key === 'special' ? '#f87171' : 'var(--text)' }}>
                         <b>{q.seq}.</b> {q.question}
                         {q.category === 'special' && (q.issue_start || q.issue_end) && (
-                          <span style={{ fontSize: 11, color: 'var(--muted)' }}> (เฝ้าระวัง {thDate(q.issue_start)} - {thDate(q.issue_end)})</span>
+                          <span style={{ fontSize: 11, color: 'var(--muted)' }}> {tr('(เฝ้าระวัง')} {thDate(q.issue_start)} - {thDate(q.issue_end)})</span>
                         )}
                       </div>
                       <div style={{ display: 'flex', gap: 5, ...(isMobile ? { flex: '1 1 100%' } : null) }}>
@@ -1317,7 +1317,7 @@ ${issuesHtml}
                 return (
                   <div key={a.question_id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '7px 0', borderBottom: '1px dashed var(--border)', flexWrap: 'wrap' }}>
                     <div style={{ flex: '1 1 380px', fontSize: 13, color: 'var(--text2)' }}>
-                      {a.question_text || <i style={{ color: 'var(--muted)' }}>(ไม่ได้เก็บข้อความคำถามไว้)</i>}
+                      {a.question_text || <i style={{ color: 'var(--muted)' }}>{tr('(ไม่ได้เก็บข้อความคำถามไว้)')}</i>}
                       {a.note && <div style={{ fontSize: 11, color: 'var(--muted)' }}>↳ {a.note}</div>}
                     </div>
                     <span style={{
@@ -1340,11 +1340,11 @@ ${issuesHtml}
           {/* 📱 มือถือ: ปุ่มบันทึกเกาะล่างจอ + บอกว่าตอบไปกี่ข้อ (ข้อเยอะ ปุ่มท้ายฟอร์มอยู่ไกลหลายจอ) */}
           {canRecord && isMobile && (
             <div className="m-savebar">
-              <span className="m-savebar-sum">ตอบแล้ว {auditQuestions.filter(q => draft?.answers[q.id]?.answer).length}/{auditQuestions.length} ข้อ</span>
+              <span className="m-savebar-sum">{tr('ตอบแล้ว')} {auditQuestions.filter(q => draft?.answers[q.id]?.answer).length}/{auditQuestions.length} {tr('ข้อ')}</span>
               <button type="button" onClick={saveAudit} disabled={savingAudit}>{savingAudit ? tr('กำลังบันทึก...') : tr('บันทึกผลตรวจ')}</button>
             </div>
           )}
-          {!canRecord && <div style={{ fontSize: 12, color: 'var(--muted)' }}>คุณมีสิทธิ์ดูอย่างเดียว (บันทึกผลได้เฉพาะ role ที่มีสิทธิ์ lpa:record)</div>}
+          {!canRecord && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('คุณมีสิทธิ์ดูอย่างเดียว (บันทึกผลได้เฉพาะ role ที่มีสิทธิ์ lpa:record)')}</div>}
         </div>
       )}
 
@@ -1390,10 +1390,10 @@ ${issuesHtml}
               <div style={{ fontSize: 13, color: 'var(--text2)' }}>
                 ตรวจแล้วเดือนนี้: <b style={{ color: 'var(--text)' }}>{monthAudits.length}</b> ครั้ง
                 (Leader {monthAudits.filter(a => a.layer === 'leader').length} · SV {monthAudits.filter(a => a.layer === 'supervisor').length} · MGR {monthAudits.filter(a => a.layer === 'manager').length} · GM {monthAudits.filter(a => a.layer === 'gm').length})
-                {issues.length > 0 && <span style={{ color: 'var(--red)', fontWeight: 700 }}> · พบปัญหา N/T {issues.length} รายการ</span>}
+                {issues.length > 0 && <span style={{ color: 'var(--red)', fontWeight: 700 }}> {tr('· พบปัญหา N/T')} {issues.length} {tr('รายการ')}</span>}
                 {/* 🔴 "ตรวจแล้ว N ครั้ง" ลอยๆ ตอบไม่ได้ว่าขาดกี่วัน — ต้องมีตัวหาร (ดู utils/dailyCheckDay.js) */}
                 <div style={{ marginTop: 3, fontSize: 12, color: sum.missed ? 'var(--red)' : 'var(--muted)' }}>
-                  {checkDaysNote(sum)}{sum.pct != null && <> · ความครบ <b>{sum.pct}%</b></>}
+                  {checkDaysNote(sum)}{sum.pct != null && <> {tr('· ความครบ')} <b>{sum.pct}%</b></>}
                 </div>
                 {monthErr && (
                   <div style={{ marginTop: 3, fontSize: 11.5, color: 'var(--red)', fontWeight: 700 }}>
@@ -1403,7 +1403,7 @@ ${issuesHtml}
                 {!plan && !monthErr && (
                   <div style={{ marginTop: 3, fontSize: 11.5, color: 'var(--amber)' }}>
                     ⚠️ เดือนนี้ยังไม่มีแผนตรวจของ {selLine} ({SHIFT_META[selShift]}) — บอกไม่ได้ว่าวันไหนต้องตรวจ
-                    จึงยังไม่นับวันขาดตรวจ · ไปตั้งที่แท็บ <b>แผนตรวจ</b>
+                    จึงยังไม่นับวันขาดตรวจ · ไปตั้งที่แท็บ <b>{tr('แผนตรวจ')}</b>
                   </div>
                 )}
               </div>
@@ -1413,15 +1413,15 @@ ${issuesHtml}
                 — "คำตอบ" = ไปตรวจแล้วเจออะไร · "สถานะวัน" = วันนั้นต้องตรวจไหม/มีใครไปตรวจไหม */}
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', fontSize: 11.5, color: 'var(--muted)', marginBottom: 8 }}>
               <span>
-                <b style={{ color: 'var(--text2)' }}>คำตอบในช่อง:</b>{' '}
+                <b style={{ color: 'var(--text2)' }}>{tr('คำตอบในช่อง:')}</b>{' '}
                 {ANSWERS.map(a => (
                   <span key={a.key} style={{ marginRight: 8 }}>
-                    <b style={{ color: a.color }}>{a.label}</b> {a.desc.replace(/\s*\(.*\)$/, '')}
+                    <b style={{ color: a.color }}>{tr(a.label)}</b> {a.desc.replace(/\s*\(.*\)$/, '')}
                   </span>
                 ))}
               </span>
               <span style={{ borderLeft: '1px solid var(--border)', paddingLeft: 14 }}>
-                <b style={{ color: 'var(--text2)' }}>สถานะวัน (แถวบนสุด):</b>{' '}
+                <b style={{ color: 'var(--text2)' }}>{tr('สถานะวัน (แถวบนสุด):')}</b>{' '}
                 {CHECK_DAY_LEGEND.map(k => {
                   const m = CHECK_DAY_META[k];
                   return (
@@ -1499,7 +1499,7 @@ ${issuesHtml}
             </div>
             {issues.length > 0 && (
               <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--red)', marginBottom: 6 }}>บันทึกปัญหาที่พบ (N / T)</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--red)', marginBottom: 6 }}>{tr('บันทึกปัญหาที่พบ (N / T)')}</div>
                 {issues.map((i, idx) => (
                   <div key={idx} style={{ fontSize: 12, color: 'var(--text2)', padding: '4px 0', borderBottom: '1px dashed var(--border)' }}>
                     <b style={{ color: ansMeta(i.ans).color }}>[{i.ans}]</b> {thDate(i.date)} · {i.q} — <b style={{ color: 'var(--text)' }}>{i.note || '-'}</b>
@@ -1518,7 +1518,7 @@ ${issuesHtml}
           {/* เลือกขอบเขต: ทุกไลน์ (common) หรือรายไลน์ */}
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 10 }}>
             <div>
-              <div style={lb}>จัดการคำถามของ</div>
+              <div style={lb}>{tr('จัดการคำถามของ')}</div>
               <LineSelect lines={visibleLines} value={qScope} onChange={(v) => { setQScopePicked(true); setQScope(v); }} style={{ minWidth: 220 }}
                 placeholder={tr('ทะเบียนกลาง (ใช้ร่วมทุกไลน์)')} />
             </div>
@@ -1538,25 +1538,25 @@ ${issuesHtml}
               <>
                 <b style={{ fontSize: 13, color: 'var(--accent)' }}>กำลังแก้หัวข้อตรวจของไลน์ "{qScope}"</b>
                 <div style={{ color: 'var(--text2)', marginTop: 2 }}>
-                  ข้อที่ติดป้าย <b>ทะเบียนกลาง</b> = ของส่วนรวม แก้เนื้อหา/ลบที่นี่ไม่ได้ —
-                  ไม่อยากใช้ข้อไหนที่ไลน์นี้ กด <b>ไม่ใช้ที่ไลน์นี้</b> (ไลน์อื่นไม่กระทบ) ·
-                  ข้อที่ติดป้าย <b>เฉพาะไลน์นี้</b> เป็นของไลน์คุณเอง เพิ่ม/แก้/ลบได้เต็มที่
+                  ข้อที่ติดป้าย <b>{tr('ทะเบียนกลาง')}</b> = ของส่วนรวม แก้เนื้อหา/ลบที่นี่ไม่ได้ —
+                  ไม่อยากใช้ข้อไหนที่ไลน์นี้ กด <b>{tr('ไม่ใช้ที่ไลน์นี้')}</b> (ไลน์อื่นไม่กระทบ) ·
+                  ข้อที่ติดป้าย <b>{tr('เฉพาะไลน์นี้')}</b> เป็นของไลน์คุณเอง เพิ่ม/แก้/ลบได้เต็มที่
                 </div>
                 {qScopeStats && (
                   <div style={{ marginTop: 5, fontSize: 12, color: 'var(--text)' }}>
-                    เช็คลิสต์ของไลน์นี้ = <b>ดึงจากทะเบียนกลาง {qScopeStats.used}</b>
-                    {qScopeStats.off > 0 && <span style={{ color: 'var(--muted)' }}> (ปิดไว้ {qScopeStats.off})</span>}
-                    {' '}+ <b>ของไลน์นี้เอง {qScopeStats.own}</b> = <b>{qScopeStats.used + qScopeStats.own} ข้อ</b>
+                    เช็คลิสต์ของไลน์นี้ = <b>{tr('ดึงจากทะเบียนกลาง')} {qScopeStats.used}</b>
+                    {qScopeStats.off > 0 && <span style={{ color: 'var(--muted)' }}> {tr('(ปิดไว้')} {qScopeStats.off})</span>}
+                    {' '}+ <b>{tr('ของไลน์นี้เอง')} {qScopeStats.own}</b> = <b>{qScopeStats.used + qScopeStats.own} {tr('ข้อ')}</b>
                   </div>
                 )}
               </>
             ) : (
               <>
-                <b style={{ fontSize: 13, color: 'var(--amber)' }}>กำลังแก้ “ทะเบียนกลาง” — ทุกไลน์ใช้ร่วมกัน</b>
+                <b style={{ fontSize: 13, color: 'var(--amber)' }}>{tr('กำลังแก้ “ทะเบียนกลาง” — ทุกไลน์ใช้ร่วมกัน')}</b>
                 <div style={{ color: 'var(--text2)', marginTop: 2 }}>
-                  แก้/ลบที่นี่ <b>กระทบใบตรวจของทุกไลน์พร้อมกัน</b> ·
+                  แก้/ลบที่นี่ <b>{tr('กระทบใบตรวจของทุกไลน์พร้อมกัน')}</b> ·
                   ถ้าจะเพิ่ม/เอาออกเฉพาะแผนกตัวเอง ให้เลือกไลน์จากช่อง “จัดการคำถามของ” ด้านบนก่อน ·
-                  ข้อที่เคยถูกตรวจไปแล้ว <b>ลบไม่ได้</b> (ใบย้อนหลังจะอ่านไม่ครบ) ให้กด ⏸ ปิดใช้งานแทน
+                  ข้อที่เคยถูกตรวจไปแล้ว <b>{tr('ลบไม่ได้')}</b> (ใบย้อนหลังจะอ่านไม่ครบ) ให้กด ⏸ ปิดใช้งานแทน
                 </div>
               </>
             )}
@@ -1578,12 +1578,12 @@ ${issuesHtml}
                         <b>{q.seq}.</b> {q.question}
                         {/* ป้ายขอบเขตต้องขึ้น**ทั้ง 2 มุมมอง** — เดิมมุมมอง "ทุกไลน์" ไม่มีป้ายเลย
                             คนกดจึงไม่รู้ว่าแถวที่กำลังลบเป็นของส่วนรวม (เคส 12/10) */}
-                        {isCommon && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 'var(--r-xs)', padding: '0 5px', marginLeft: 6 }}>ทะเบียนกลาง</span>}
-                        {lineOwn && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-dim)', border: '1px solid var(--accent)', borderRadius: 'var(--r-xs)', padding: '0 5px', marginLeft: 6 }}>เฉพาะไลน์นี้</span>}
-                        {!qScope && q.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · ไลน์ {q.line_name}</span>}
+                        {isCommon && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber)', background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 'var(--r-xs)', padding: '0 5px', marginLeft: 6 }}>{tr('ทะเบียนกลาง')}</span>}
+                        {lineOwn && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-dim)', border: '1px solid var(--accent)', borderRadius: 'var(--r-xs)', padding: '0 5px', marginLeft: 6 }}>{tr('เฉพาะไลน์นี้')}</span>}
+                        {!qScope && q.line_name && <span style={{ fontSize: 11, color: 'var(--muted)' }}> {tr('· ไลน์')} {q.line_name}</span>}
                         {(q.issue_start || q.issue_end) && <span style={{ fontSize: 11, color: 'var(--muted)' }}> · {thDate(q.issue_start)} - {thDate(q.issue_end)}</span>}
-                        {hiddenHere && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}> · ไลน์นี้ไม่ใช้ข้อนี้</span>}
-                        {!q.is_active && <span style={{ fontSize: 11, color: 'var(--red)' }}> · ปิดใช้งาน</span>}
+                        {hiddenHere && <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}> {tr('· ไลน์นี้ไม่ใช้ข้อนี้')}</span>}
+                        {!q.is_active && <span style={{ fontSize: 11, color: 'var(--red)' }}> {tr('· ปิดใช้งาน')}</span>}
                       </div>
                       {qScope && isCommon ? (
                         // ข้อ common ในมุมมองรายไลน์ → ซ่อน/แสดงเฉพาะไลน์นี้ (แก้เนื้อหาไปทำที่ "ทุกไลน์")
@@ -1615,20 +1615,20 @@ ${issuesHtml}
         <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(96vw, 640px)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{qEditing.id ? '✏️ แก้ไข' : '➕ เพิ่ม'}คำถาม</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{qEditing.id ? '✏️ แก้ไข' : '➕ เพิ่ม'}{tr('คำถาม')}</div>
               <button onClick={() => setQEditing(null)} style={{ background: 'none', border: 'none', fontSize: 20, color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 90px', gap: 10 }}>
                 <div>
-                  <div style={lb}>หมวด</div>
+                  <div style={lb}>{tr('หมวด')}</div>
                   <select value={qEditing.category} onChange={e => setQEditing(p => ({ ...p, category: e.target.value }))} style={{ width: '100%' }}>
                     {CATEGORIES.map(c => <option key={c.key} value={c.key}>{tr(c.full)}</option>)}
                   </select>
                 </div>
-                <div><div style={lb}>ลำดับ</div><input type="number" value={qEditing.seq} onChange={e => setQEditing(p => ({ ...p, seq: e.target.value }))} style={{ width: '100%' }} /></div>
+                <div><div style={lb}>{tr('ลำดับ')}</div><input type="number" value={qEditing.seq} onChange={e => setQEditing(p => ({ ...p, seq: e.target.value }))} style={{ width: '100%' }} /></div>
               </div>
-              <div><div style={lb}>คำถาม</div><textarea rows={2} value={qEditing.question} onChange={e => setQEditing(p => ({ ...p, question: e.target.value }))} style={{ width: '100%', fontSize: 13 }} /></div>
+              <div><div style={lb}>{tr('คำถาม')}</div><textarea rows={2} value={qEditing.question} onChange={e => setQEditing(p => ({ ...p, question: e.target.value }))} style={{ width: '100%', fontSize: 13 }} /></div>
               <div>
                 <div style={lb}>ใช้กับไลน์ (เว้นว่าง = ทุกไลน์)</div>
                 <LineSelect lines={visibleLines} value={qEditing.line_name || ''} placeholder={ALL.line} style={{ width: '100%' }}
@@ -1636,8 +1636,8 @@ ${issuesHtml}
               </div>
               {qEditing.category === 'special' && (
                 <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <div><div style={lb}>เฝ้าระวังตั้งแต่ (Issue Date)</div><input type="date" value={qEditing.issue_start || ''} onChange={e => setQEditing(p => ({ ...p, issue_start: e.target.value }))} style={{ width: '100%' }} /></div>
-                  <div><div style={lb}>ถึงวันที่</div><input type="date" value={qEditing.issue_end || ''} onChange={e => setQEditing(p => ({ ...p, issue_end: e.target.value }))} style={{ width: '100%' }} /></div>
+                  <div><div style={lb}>{tr('เฝ้าระวังตั้งแต่ (Issue Date)')}</div><input type="date" value={qEditing.issue_start || ''} onChange={e => setQEditing(p => ({ ...p, issue_start: e.target.value }))} style={{ width: '100%' }} /></div>
+                  <div><div style={lb}>{tr('ถึงวันที่')}</div><input type="date" value={qEditing.issue_end || ''} onChange={e => setQEditing(p => ({ ...p, issue_end: e.target.value }))} style={{ width: '100%' }} /></div>
                 </div>
               )}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>

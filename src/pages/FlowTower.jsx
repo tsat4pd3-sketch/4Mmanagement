@@ -259,7 +259,7 @@ export default function FlowTower() {
   return (
     <Page>
       <PageHeader
-        title="สายธารความต้องการ (Flow Control Tower)" icon="🔗"
+        title={tr('สายธารความต้องการ (Flow Control Tower)')} icon="🔗"
         sub={`ความต้องการของลูกค้าไหลย้อนไปถึงวัตถุดิบครบหรือยัง · ข้อมูลสด ${workDate}`}
         actions={<button type="button" className="pg-btn" onClick={load} style={{ cursor: 'pointer' }}>{tr('รีเฟรช')}</button>}
       />
@@ -274,7 +274,7 @@ export default function FlowTower() {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10, alignItems: 'center' }}>
         {/* ⚠️ ยังโหลดไม่เสร็จ ≠ ยังไม่ได้ตั้ง — ห้ามขึ้นคำเตือนหลอกระหว่างรอ */}
         {divs.length === 0 ? (
-          <span style={{ fontSize: 11, color: 'var(--muted)' }}>กำลังอ่านผังองค์กร…</span>
+          <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('กำลังอ่านผังองค์กร…')}</span>
         ) : usedDivs.length === 0 ? (
           <span style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }}>
             ⚠️ ฝ่ายที่หน้านี้อ้างถึงยังไม่มีในผังองค์กร — ตั้งที่ /org-setup แล้วชื่อฝ่ายจะขึ้นเอง
@@ -320,17 +320,17 @@ export default function FlowTower() {
                   ))}
                   <div style={{ marginTop: 'auto', paddingTop: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: st.dot }} />
-                    <span style={{ fontSize: 11, fontWeight: 700, color: st.dot }}>{st.label}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: st.dot }}>{tr(st.label)}</span>
                   </div>
                 </div>
                 {lk && i < stations.length - 1 && (
                   <div style={{ flex: '1 1 96px', minWidth: 40, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>
-                    <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', lineHeight: 1.2, marginBottom: 3 }}>{lk.label}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center', lineHeight: 1.2, marginBottom: 3 }}>{tr(lk.label)}</div>
                     <div style={{ width: '100%', height: 2, background: ST[lk.st].dot, opacity: 0.75, position: 'relative' }}>
                       <span style={{ position: 'absolute', right: -1, top: -4, color: ST[lk.st].dot, fontSize: 11, lineHeight: 1 }}>▶</span>
                     </div>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: ST[lk.st].dot, marginTop: 3 }}>{ST[lk.st].label}</div>
-                    {lk.hint && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{lk.hint}</div>}
+                    <div style={{ fontSize: 11, fontWeight: 800, color: ST[lk.st].dot, marginTop: 3 }}>{tr(ST[lk.st].label)}</div>
+                    {lk.hint && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr(lk.hint)}</div>}
                   </div>
                 )}
               </div>
@@ -349,13 +349,13 @@ export default function FlowTower() {
             {S.blocks?.length ? `${fmt(S.blocks.length)} พาร์ท · ${fmt(S.blockQty)} ชิ้น` : 'ไม่มีจุดตัน'}
           </div>
         </div>
-        <InfoMore label="ทำไมยังออกใบสั่งไม่ได้" size={11.5} style={{ marginBottom: 10 }}>
+        <InfoMore label={tr('ทำไมยังออกใบสั่งไม่ได้')} size={11.5} style={{ marginBottom: 10 }}>
           ระบบระเบิด BOM แล้วสะสมความต้องการไว้ แต่**ยังออกใบสั่งไม่ได้เพราะไม่ได้ตั้ง "ขนาดล็อต"** (จะสั่งครั้งละกี่ชิ้น)
           — เป็นการตัดสินใจของคน ระบบจึงไม่ตั้งให้เอง · ค่าที่เสนอ = 1 กล่องตามบรรจุจริง กดยืนยันแล้วแก้ทีหลังได้
           · แถว ⏳ = ตั้งล็อตแล้วแต่ยอดค้างเกินเพดานออกใบต่อรอบ (MAX_LOTS) — จะทยอยออกใบเองทุกครั้งที่ปิดใบผลิต
         </InfoMore>
-        {!d ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด…</div>
-          : S.blocks.length === 0 ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>ทุกพาร์ทตั้งขนาดล็อตครบแล้ว</div>
+        {!d ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</div>
+          : S.blocks.length === 0 ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ทุกพาร์ทตั้งขนาดล็อตครบแล้ว')}</div>
             : (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -378,7 +378,7 @@ export default function FlowTower() {
                           {/* backlog_capped = ตั้งล็อตแล้ว (ค้างเพราะเพดาน MAX_LOTS) — ห้ามโชว์ปุ่มตั้งล็อต
                               (กดแล้วจะเขียนทับ lot_size ที่คนตั้งไว้ด้วยค่าเสนอ 1 กล่อง) · วิวเก่าไม่มีคอลัมน์นี้ = undefined = พฤติกรรมเดิม */}
                           {b.block_reason === 'backlog_capped'
-                            ? <span style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }} title="ตั้งขนาดล็อตแล้ว — ยอดค้างเกินเพดานการออกใบต่อรอบ (50 ใบ/การปิดออเดอร์) จะทยอยออกใบเองเมื่อมีการปิดใบผลิตครั้งถัดไป">⏳ รอทยอยออกใบ</span>
+                            ? <span style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700 }} title={tr('ตั้งขนาดล็อตแล้ว — ยอดค้างเกินเพดานการออกใบต่อรอบ (50 ใบ/การปิดออเดอร์) จะทยอยออกใบเองเมื่อมีการปิดใบผลิตครั้งถัดไป')}>{tr('⏳ รอทยอยออกใบ')}</span>
                             : canFix && b.suggested_lot > 0 && (
                             <button onClick={() => setLot(b)} disabled={busy === b.mat_no}
                               style={{ padding: '4px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--green-line)', background: 'var(--green-dim)', color: 'var(--green)', fontWeight: 800, fontSize: 11, cursor: busy ? 'wait' : 'pointer', fontFamily: 'var(--font-body)' }}>
@@ -390,15 +390,15 @@ export default function FlowTower() {
                     ))}
                   </tbody>
                 </table>
-                {S.blocks.length > 12 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>…และอีก {S.blocks.length - 12} พาร์ท</div>}
-                {!canFix && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>ดูอย่างเดียว — การตั้งขนาดล็อตต้องมีสิทธิ์แก้ข้อมูลสินค้า</div>}
+                {S.blocks.length > 12 && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>{tr('…และอีก')} {S.blocks.length - 12} {tr('พาร์ท')}</div>}
+                {!canFix && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>{tr('ดูอย่างเดียว — การตั้งขนาดล็อตต้องมีสิทธิ์แก้ข้อมูลสินค้า')}</div>}
               </div>
             )}
       </div>
 
       {/* ── ตารางข้อต่อ: ใช้เล่าตอนนำเสนอ ── */}
       <div style={{ ...card, padding: '14px 16px' }}>
-        <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 10, fontFamily: 'var(--font-display)' }}>ข้อต่อของสายข้อมูล — ใครส่งให้ใคร ด้วยกลไกอะไร</div>
+        <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 10, fontFamily: 'var(--font-display)' }}>{tr('ข้อต่อของสายข้อมูล — ใครส่งให้ใคร ด้วยกลไกอะไร')}</div>
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead><tr style={{ background: 'var(--bg2)' }}>
@@ -430,9 +430,9 @@ export default function FlowTower() {
           </table>
         </div>
         <div style={{ marginTop: 10, fontSize: 11, color: 'var(--muted)', lineHeight: 1.6 }}>
-          <b>⚪ ยังไม่ใช้</b> = แผนกนั้นยังไม่เริ่มทดลองใช้ (โปรเจคทยอยขยายผลรายแผนก) — <b>ไม่ใช่ระบบพัง</b> ·
-          <b style={{ color: 'var(--red)' }}> 🔴 ตัน</b> = มีความต้องการค้างจริงแต่ไม่ไหลออก ต้องแก้ ·
-          <b style={{ color: 'var(--amber)' }}> 🟠 ส่งต่อด้วยคน</b> = ยังไม่มีเส้นข้อมูลอัตโนมัติ ใช้คนตัดสินใจแทน
+          <b>{tr('⚪ ยังไม่ใช้')}</b> = แผนกนั้นยังไม่เริ่มทดลองใช้ (โปรเจคทยอยขยายผลรายแผนก) — <b>{tr('ไม่ใช่ระบบพัง')}</b> ·
+          <b style={{ color: 'var(--red)' }}> {tr('🔴 ตัน')}</b> = มีความต้องการค้างจริงแต่ไม่ไหลออก ต้องแก้ ·
+          <b style={{ color: 'var(--amber)' }}> {tr('🟠 ส่งต่อด้วยคน')}</b> = ยังไม่มีเส้นข้อมูลอัตโนมัติ ใช้คนตัดสินใจแทน
         </div>
       </div>
     </Page>

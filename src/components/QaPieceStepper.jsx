@@ -179,7 +179,7 @@ export default function QaPieceStepper({
         <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: 'var(--r-md)', padding: 12 }}>
           <div style={{ fontSize: 12.5, marginBottom: 8, lineHeight: 1.6 }}>
             ชิ้นที่ตกในรอบนี้: {failedInRound.map(p => `ชิ้น ${p.piece_no} (${(p.failed_items || []).map(f => `#${f.balloon_no}`).join(', ') || '—'})`).join(' · ') || '—'}
-            <br />ฝ่ายผลิตบันทึกว่าแก้ไขอะไร แล้ว QA กลับมาตรวจต่อ ต้องผ่านติดกัน {SEQ_RULE.PASSES_TO_ACCEPT} ชิ้นถึงยอมรับ (ตกอีกชิ้นเดียว = alarm ซ้ำ)
+            <br />{tr('ฝ่ายผลิตบันทึกว่าแก้ไขอะไร แล้ว QA กลับมาตรวจต่อ ต้องผ่านติดกัน')} {SEQ_RULE.PASSES_TO_ACCEPT} ชิ้นถึงยอมรับ (ตกอีกชิ้นเดียว = alarm ซ้ำ)
           </div>
           {canAction ? (
             <div style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? 'minmax(0,1fr)' : '2fr 1fr', alignItems: 'start' }}>
@@ -233,10 +233,10 @@ export default function QaPieceStepper({
                     name={i.characteristic} description={`สเปค: ${specLabel(i)}${i.method ? ` · ${i.method}` : ''}`} />}
                   <div style={{ flex: '1 1 180px', minWidth: 160 }}>
                     <div style={{ fontSize: 13, fontWeight: 700 }}>{i.characteristic}</div>
-                    <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>สเปค: {specLabel(i)}{i.method ? ` · ${i.method}` : ''}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('สเปค:')} {specLabel(i)}{i.method ? ` · ${i.method}` : ''}</div>
                   </div>
                   {i.item_type === 'variable' && calcOf(i) && (
-                    <span title="จุดคำนวณ — ระบบคิดจากจุดที่วัดของชิ้นนี้" style={{ ...inputSt, width: 'auto', minWidth: isMobile ? 110 : 96, padding: '6px 8px', display: 'inline-flex', gap: 6, alignItems: 'baseline', whiteSpace: 'nowrap', borderStyle: 'dashed' }}>
+                    <span title={tr('จุดคำนวณ — ระบบคิดจากจุดที่วัดของชิ้นนี้')} style={{ ...inputSt, width: 'auto', minWidth: isMobile ? 110 : 96, padding: '6px 8px', display: 'inline-flex', gap: 6, alignItems: 'baseline', whiteSpace: 'nowrap', borderStyle: 'dashed' }}>
                       <span style={{ fontSize: 11, color: '#4d9fff', fontWeight: 700 }}>{calcFormula(calcOf(i), id => labelById[id])} =</span>
                       <b>{d.value !== '' && d.value != null ? d.value : '…'}</b>
                     </span>
@@ -260,7 +260,7 @@ export default function QaPieceStepper({
                     <span style={{ fontSize: 12, fontWeight: 700, color: JUDGE[j].color, whiteSpace: 'nowrap' }}>{j === 'na' ? 'ข้าม' : `อัตโนมัติ: ${JUDGE[j].label}`}</span>
                   )}
                   {/* จุดคำนวณข้ามเองเมื่อจุด A/B ถูกข้าม — ไม่มีปุ่มข้ามของตัวเอง */}
-                  {!calcOf(i) && (<button className="tbtn" title="ไม่ได้ตรวจจุดนี้ในชิ้นนี้" onClick={() => setD(i.id, { judge: d.judge === 'na' ? null : 'na', value: d.judge === 'na' ? d.value : '' })}
+                  {!calcOf(i) && (<button className="tbtn" title={tr('ไม่ได้ตรวจจุดนี้ในชิ้นนี้')} onClick={() => setD(i.id, { judge: d.judge === 'na' ? null : 'na', value: d.judge === 'na' ? d.value : '' })}
                     style={btn(d.judge === 'na' ? JUDGE.na.color : 'var(--bg2)', d.judge === 'na' ? '#fff' : 'var(--muted)', { padding: isMobile ? '9px 10px' : '6px 9px', borderColor: 'var(--border2)' })}>{tr('ข้าม')}</button>)}
                   {j === 'ng' && (
                     <input style={{ ...inputSt, flex: '1 1 100%', border: '1px solid rgba(239,68,68,0.5)' }} placeholder={tr('เสียอย่างไร / เจอที่ไหน (บังคับกรอก)')}
@@ -271,7 +271,7 @@ export default function QaPieceStepper({
             })}
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
-            <button disabled={busy} onClick={passAllAttr} style={btn('var(--bg3)', 'var(--text2)')} title="ติ๊กผ่านให้จุดที่ยังไม่ตอบ (ยกเว้นจุดที่ต้องกรอกค่าวัด)">{tr('✓ ผ่านทุกจุดที่เหลือ')}</button>
+            <button disabled={busy} onClick={passAllAttr} style={btn('var(--bg3)', 'var(--text2)')} title={tr('ติ๊กผ่านให้จุดที่ยังไม่ตอบ (ยกเว้นจุดที่ต้องกรอกค่าวัด)')}>{tr('✓ ผ่านทุกจุดที่เหลือ')}</button>
             <span style={{ flex: 1 }} />
             <span style={{ fontSize: 12, color: result === 'fail' ? '#ef4444' : result === 'pass' ? '#22c55e' : 'var(--muted)', fontWeight: 700 }}>
               {result === 'fail' ? `ชิ้นนี้ตก ${failedItems.length} จุด` : result === 'pass' ? 'ชิ้นนี้ผ่านทุกจุด' : `เหลืออีก ${missing.length} จุด`}
@@ -284,7 +284,7 @@ export default function QaPieceStepper({
         </>
       )}
       {state === 'inspecting' && !canRecord && (
-        <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>ไม่มีสิทธิ์บันทึกผลตรวจ (qa:record) — ดูอย่างเดียว</div>
+        <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('ไม่มีสิทธิ์บันทึกผลตรวจ (qa:record) — ดูอย่างเดียว')}</div>
       )}
       {state === 'accepted' && (
         <div style={{ fontSize: 12.5, color: '#22c55e' }}>
@@ -296,20 +296,20 @@ export default function QaPieceStepper({
       {dispo && (
         <div className="modal-scroll" /* modal-scroll = เลื่อนถึงปุ่มล่างได้เมื่อจอเตี้ย/คีย์บอร์ดเด้ง (UI-CONVENTIONS §4 · index.css) */ style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid rgba(239,68,68,0.5)', borderRadius: 'var(--r-lg)', padding: 16, width: 'min(560px, 100%)' }}>
-            <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 6 }}>✕ ชิ้นที่ {seq?.nextPiece} ตก {dispo.payload.failedItems.length} จุด — จะทำอะไรกับชิ้นนี้</div>
+            <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 6 }}>{tr('✕ ชิ้นที่')} {seq?.nextPiece} {tr('ตก')} {dispo.payload.failedItems.length} {tr('จุด — จะทำอะไรกับชิ้นนี้')}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10, lineHeight: 1.6 }}>
               {dispo.payload.failedItems.map(f => `#${f.balloon_no} ${f.characteristic}${f.value != null && f.value !== '' ? ` = ${f.value}` : ''} (${f.spec_text})${f.note ? ` — ${f.note}` : ''}`).join(' · ')}
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
               {Object.entries(DISPOSITION).map(([k, m]) => (
                 <button key={k} onClick={() => setDispo(d => ({ ...d, disposition: k }))}
-                  style={btn(dispo.disposition === k ? m.color : 'var(--bg3)', dispo.disposition === k ? '#fff' : m.color, { borderColor: m.color })}>{m.label}</button>
+                  style={btn(dispo.disposition === k ? m.color : 'var(--bg3)', dispo.disposition === k ? '#fff' : m.color, { borderColor: m.color })}>{tr(m.label)}</button>
               ))}
             </div>
             <textarea style={{ ...inputSt, minHeight: 64 }} placeholder={tr('remark: จะซ่อมยังไง / กักไว้ที่ไหน / ทำไมทิ้ง (บังคับกรอก)')}
               value={dispo.remark} onChange={e => setDispo(d => ({ ...d, remark: e.target.value }))} />
             {dispo.disposition === 'scrap' && (
-              <div style={{ fontSize: 11.5, color: '#ef4444', marginTop: 6 }}>ระบบจะสร้างรายการ 🔴 ถังแดง 1 ชิ้นผูกกับใบตรวจนี้ให้ทันที</div>
+              <div style={{ fontSize: 11.5, color: '#ef4444', marginTop: 6 }}>{tr('ระบบจะสร้างรายการ 🔴 ถังแดง 1 ชิ้นผูกกับใบตรวจนี้ให้ทันที')}</div>
             )}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
               <button onClick={() => setDispo(null)} style={btn('var(--bg3)', 'var(--text2)')}>{tr('ยกเลิก')}</button>

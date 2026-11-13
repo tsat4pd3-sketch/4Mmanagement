@@ -180,8 +180,8 @@ export default function Transport() {
   return (
     <Page>
       <PageHeader
-        title="มอบหมายขนส่ง (Transport)" icon="🚚"
-        sub="มอบหมายคนขับ/ผู้ขน (carrier) ให้รอบส่งภายในของวันนี้ · ยึดรอบส่งที่ตั้งไว้แล้ว (📦 Line Stock → รอบจัดส่ง) · เฟส 1"
+        title={tr('มอบหมายขนส่ง (Transport)')} icon="🚚"
+        sub={tr('มอบหมายคนขับ/ผู้ขน (carrier) ให้รอบส่งภายในของวันนี้ · ยึดรอบส่งที่ตั้งไว้แล้ว (📦 Line Stock → รอบจัดส่ง) · เฟส 1')}
         tabs={[
           { key: 'assign', label: `🗓️ มอบหมายวันนี้ (${nAssigned}/${nRounds})` },
           { key: 'route', label: `🗺️ เส้นทางรอบส่ง (${nRoutes})` },
@@ -212,11 +212,11 @@ export default function Transport() {
                     return (
                       <div key={r.id} style={{ border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 11, background: 'var(--bg2)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'center' }}>
-                          <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{r.shift === 'night' ? '🌙' : '☀️'} รอบ {r.round_no}</span>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>{st.label}</span>
+                          <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{r.shift === 'night' ? '🌙' : '☀️'} {tr('รอบ')} {r.round_no}</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: st.color }}>{tr(st.label)}</span>
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
-                          ตัดยอด {(r.cutoff_time || '').slice(0, 5) || '—'} · ส่ง {(r.delivery_time || '').slice(0, 5) || '—'} · {r.points_count || 1} จุด
+                          ตัดยอด {(r.cutoff_time || '').slice(0, 5) || '—'} {tr('· ส่ง')} {(r.delivery_time || '').slice(0, 5) || '—'} · {r.points_count || 1} จุด
                         </div>
                         <div style={{ marginTop: 8 }}>
                           {canManage ? (
@@ -254,7 +254,7 @@ export default function Transport() {
       {tab === 'carriers' && (
         <div style={{ ...card }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-            <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)' }}>คนขับ / ผู้ขน</span>
+            <span style={{ fontWeight: 800, fontSize: 15, color: 'var(--text)' }}>{tr('คนขับ / ผู้ขน')}</span>
             {canManage && (
               <button onClick={() => setEditCarrier({ name: '', emp_code: '', shift: 'day', vehicles: [], section: '', is_active: true, note: '' })}
                 style={{ padding: '7px 14px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 13, fontWeight: 700, background: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }}>
@@ -276,7 +276,7 @@ export default function Transport() {
                     {c.emp_code ? `${c.emp_code} · ` : ''}{SHIFTS.find(s => s[0] === c.shift)?.[1] || 'ทุกกะ'}{c.section ? ` · ${c.section}` : ''}{!c.is_active ? ' · ⛔ ปิด' : ''}
                   </div>
                   <div style={{ fontSize: 11.5, color: 'var(--text2)', marginTop: 6 }}>
-                    {c.vehicles?.length ? c.vehicles.map(vehLabel).join(' · ') : <span style={{ color: 'var(--muted)' }}>— ยังไม่ระบุยานพาหนะ —</span>}
+                    {c.vehicles?.length ? c.vehicles.map(vehLabel).join(' · ') : <span style={{ color: 'var(--muted)' }}>{tr('— ยังไม่ระบุยานพาหนะ —')}</span>}
                   </div>
                 </div>
               ))}
@@ -420,7 +420,7 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
 
   if (!hasGraph) return (
     <div style={{ ...card, padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>
-      ยังไม่มีถนน/จุดจอดบนผัง — วาดก่อนที่ <b style={{ color: 'var(--text2)' }}>ตั้งค่าผัง/Floorplan → 📦 Store / AMR</b>
+      ยังไม่มีถนน/จุดจอดบนผัง — วาดก่อนที่ <b style={{ color: 'var(--text2)' }}>{tr('ตั้งค่าผัง/Floorplan → 📦 Store / AMR')}</b>
     </div>
   );
 
@@ -430,7 +430,7 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
       {/* '0 1 320px' + minWidth:0 — desktop กว้าง 320 เท่าเดิม แต่จอ 320px ยอมหดแทนที่จะดันล้น
           (เดิม '0 0 320px' + minWidth:280 = ไม่ยอมหดเลย ล้นออกนอกจอ 37px) */}
       <div style={{ ...card, flex: '0 1 320px', minWidth: 0, maxWidth: '100%' }}>
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>เลือกรอบส่ง</div>
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--muted)', marginBottom: 6 }}>{tr('เลือกรอบส่ง')}</div>
         <select value={selRound || ''} onChange={e => setSelRound(e.target.value || null)}
           style={{ width: '100%', padding: '7px 9px', borderRadius: 'var(--ctl-r)', fontSize: 13, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)', marginBottom: 12 }}>
           <option value="">{tr('— เลือกรอบ —')}</option>
@@ -442,20 +442,20 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
         </select>
 
         {!round ? (
-          <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>เลือกรอบส่งเพื่อกำหนดจุดจอดตามลำดับ</div>
+          <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('เลือกรอบส่งเพื่อกำหนดจุดจอดตามลำดับ')}</div>
         ) : (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-              <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>ลำดับจุดจอด ({stopIds.length})</span>
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>{tr('ลำดับจุดจอด (')}{stopIds.length})</span>
               {canManage && stopIds.length >= 3 && (
                 <button onClick={optimizeOrder} disabled={busy === round.id}
-                  title="ให้ระบบหาลำดับแวะที่ระยะรวมสั้นสุด (จุดแรกคงเป็นต้นทางเดิม)"
+                  title={tr('ให้ระบบหาลำดับแวะที่ระยะรวมสั้นสุด (จุดแรกคงเป็นต้นทางเดิม)')}
                   style={{ padding: '3px 9px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, background: 'var(--accent-dim, var(--green-dim))', color: 'var(--accent)', border: '1px solid var(--accent)' }}>
                   {tr('เรียงให้สั้นสุด')}
                 </button>
               )}
             </div>
-            {stopIds.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>ยังไม่มีจุดจอด — เพิ่มจากด้านล่าง</div>}
+            {stopIds.length === 0 && <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>{tr('ยังไม่มีจุดจอด — เพิ่มจากด้านล่าง')}</div>}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 12 }}>
               {stops.map((s, i) => {
                 const n = nById[s.node_id]; const k = nodeKind(n?.kind);
@@ -470,7 +470,7 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                       return (
                         <button onClick={() => canManage && saveStopAction?.(s.id, isLoad ? 'drop' : 'load')}
                           disabled={!canManage || busy === round.id}
-                          title={canManage ? 'คลิกสลับ รับของ ⇄ ส่งของ' : undefined}
+                          title={canManage ? tr('คลิกสลับ รับของ ⇄ ส่งของ') : undefined}
                           style={{ flex: '0 0 auto', padding: '1px 7px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 800, cursor: canManage ? 'pointer' : 'default',
                             background: isLoad ? 'var(--blue-dim)' : 'var(--green-dim)',
                             color: isLoad ? 'var(--blue)' : 'var(--accent)',
@@ -481,7 +481,7 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                     })()}
                     <span style={{ flex: 1, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {k.icon} {n?.name || n?.line_name || '(จุดไม่มีชื่อ)'}
-                      {broken && <span style={{ color: 'var(--red)', fontSize: 11 }}> · ⚠ ถนนขาด</span>}
+                      {broken && <span style={{ color: 'var(--red)', fontSize: 11 }}> {tr('· ⚠ ถนนขาด')}</span>}
                     </span>
                     {canManage && <>
                       <button onClick={() => moveStop(i, -1)} disabled={i === 0 || busy === round.id} style={miniBtn}>▲</button>
@@ -517,18 +517,18 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                         </button>
                       );
                     })}
-                    {addables.length === 0 && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>เพิ่มครบทุกจุดจอดแล้ว</span>}
+                    {addables.length === 0 && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('เพิ่มครบทุกจุดจอดแล้ว')}</span>}
                   </div>
                 </>
               );
             })()}
             <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border2)', fontSize: 12.5 }}>
               {stopIds.length < 2 ? (
-                <span style={{ color: 'var(--muted)' }}>ต้องมี ≥ 2 จุดจอดเพื่อคำนวณเส้นทาง</span>
+                <span style={{ color: 'var(--muted)' }}>{tr('ต้องมี ≥ 2 จุดจอดเพื่อคำนวณเส้นทาง')}</span>
               ) : route.ok ? (
-                <span style={{ color: 'var(--accent)', fontWeight: 700 }}>✅ เส้นทางรวม ≈ {route.distance.toFixed(1)} หน่วยผัง · {route.nodePath.length - 1} ช่วง</span>
+                <span style={{ color: 'var(--accent)', fontWeight: 700 }}>{tr('✅ เส้นทางรวม ≈')} {route.distance.toFixed(1)} {tr('หน่วยผัง ·')} {route.nodePath.length - 1} {tr('ช่วง')}</span>
               ) : (
-                <span style={{ color: 'var(--red)', fontWeight: 700 }}>⚠ ถนนขาดช่วง — จุดจอดบางคู่ยังเชื่อมกันไม่ถึง (เพิ่มถนนที่หน้า Store/AMR)</span>
+                <span style={{ color: 'var(--red)', fontWeight: 700 }}>{tr('⚠ ถนนขาดช่วง — จุดจอดบางคู่ยังเชื่อมกันไม่ถึง (เพิ่มถนนที่หน้า Store/AMR)')}</span>
               )}
             </div>
 
@@ -537,7 +537,7 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                 <div style={{ fontSize: 12.5, color: 'var(--text2)' }}>
                   ระยะจริง: {realDist != null
                     ? <b style={{ color: 'var(--text)' }}>{realDist >= 1000 ? (realDist / 1000).toFixed(2) + ' กม.' : realDist.toFixed(0) + ' ม.'}</b>
-                    : <span style={{ color: 'var(--muted)' }}>ยังไม่ตั้งมาตราส่วน (ตั้งที่ Store/AMR)</span>}
+                    : <span style={{ color: 'var(--muted)' }}>{tr('ยังไม่ตั้งมาตราส่วน (ตั้งที่ Store/AMR)')}</span>}
                 </div>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 13 }}>🚗</span>
@@ -550,7 +550,7 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                         onBlur={e => { const v = parseFloat(e.target.value); if (v > 0 && veh) saveVehSpeed(veh.code, v); }}
                         style={{ width: 54, padding: '4px 6px', borderRadius: 'var(--ctl-r)', fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /> {tr('กม./ชม.')}
                     </label>
-                  ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{speedKmh || '—'} กม./ชม.</span>}
+                  ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{speedKmh || '—'} {tr('กม./ชม.')}</span>}
                   {canManage ? (
                     <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 4 }}>
                       {tr('จุ')}
@@ -558,14 +558,14 @@ function RouteTab({ byLine, stopsByRound, stopNodes, nById, nodes, edges, imageU
                         onBlur={e => { const v = parseFloat(e.target.value); if (v > 0 && veh) saveVehCapacity(veh.code, v); }}
                         style={{ width: 50, padding: '4px 6px', borderRadius: 'var(--ctl-r)', fontSize: 12, background: 'var(--bg2)', border: '1px solid var(--border)', color: 'var(--text)' }} /> {tr('กล่อง/เที่ยว')}
                     </label>
-                  ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>จุ {veh?.capacity_pkg || '—'} กล่อง/เที่ยว</span>}
+                  ) : <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('จุ')} {veh?.capacity_pkg || '—'} {tr('กล่อง/เที่ยว')}</span>}
                 </div>
                 {totalMin != null ? (
                   <div style={{ fontSize: 12.5, color: 'var(--text)' }}>
                     ⏱️ เวลา: <b>{fmtMin(totalMin)}</b>
-                    <span style={{ color: 'var(--muted)' }}> (วิ่ง {fmtMin(moveMin)}{dwellTotal > 0 ? ` + แวะ ${fmtMin(dwellTotal)}` : ''})</span>
+                    <span style={{ color: 'var(--muted)' }}> {tr('(วิ่ง')} {fmtMin(moveMin)}{dwellTotal > 0 ? ` + แวะ ${fmtMin(dwellTotal)}` : ''})</span>
                   </div>
-                ) : <div style={{ fontSize: 12, color: 'var(--muted)' }}>⏱️ ตั้งมาตราส่วน + ความเร็ว เพื่อดูเวลา</div>}
+                ) : <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('⏱️ ตั้งมาตราส่วน + ความเร็ว เพื่อดูเวลา')}</div>}
                 {canManage && (
                   <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}>
                     {tr('เวลาแวะต่อจุด:')}
@@ -717,10 +717,10 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
     // ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop (UI-CONVENTIONS §5) · z ≥2000 กันกระดิ่งทับ (§7)
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', padding: 20, width: 'min(94vw, 440px)', maxHeight: '90vh', overflowY: 'auto' }}>
-        <h3 style={{ margin: '0 0 14px', fontSize: 17, fontWeight: 900, color: 'var(--text)' }}>{isNew ? '➕ เพิ่มคนขับ' : '✏️ แก้ไขคนขับ'}</h3>
+        <h3 style={{ margin: '0 0 14px', fontSize: 17, fontWeight: 900, color: 'var(--text)' }}>{isNew ? tr('➕ เพิ่มคนขับ') : tr('✏️ แก้ไขคนขับ')}</h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
           <div style={{ position: 'relative' }}>
-            <span style={lbl}>เลือกจากฐานพนักงาน</span>
+            <span style={lbl}>{tr('เลือกจากฐานพนักงาน')}</span>
             <input value={empQ} onChange={e => setEmpQ(e.target.value)} placeholder={tr('ค้นหาชื่อ / รหัสพนักงาน…')} style={inp} />
             {empMatches.length > 0 && (
               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 5, marginTop: 2, maxHeight: 220, overflowY: 'auto', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', boxShadow: 'var(--shadow-float)' }}>
@@ -731,19 +731,19 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
                 ))}
               </div>
             )}
-            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>เลือกแล้วเติมชื่อ+รหัสให้อัตโนมัติ · หรือพิมพ์เองด้านล่างเผื่อคนขับ outsource</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>{tr('เลือกแล้วเติมชื่อ+รหัสให้อัตโนมัติ · หรือพิมพ์เองด้านล่างเผื่อคนขับ outsource')}</div>
           </div>
-          <div><span style={lbl}>ชื่อ *</span><input value={f.name} onChange={e => { setF({ ...f, name: e.target.value }); setEmpLocked(false); }} style={inp} /></div>
+          <div><span style={lbl}>{tr('ชื่อ *')}</span><input value={f.name} onChange={e => { setF({ ...f, name: e.target.value }); setEmpLocked(false); }} style={inp} /></div>
           <div style={{ display: 'flex', gap: 10 }}>
-            <div style={{ flex: 1 }}><span style={lbl}>รหัสพนักงาน{empLocked ? ' (จากทะเบียน)' : ''}</span>
+            <div style={{ flex: 1 }}><span style={lbl}>{tr('รหัสพนักงาน')}{empLocked ? ' (จากทะเบียน)' : ''}</span>
               <input value={f.emp_code || ''} readOnly={empLocked} onChange={e => setF({ ...f, emp_code: e.target.value })} style={{ ...inp, opacity: empLocked ? 0.75 : 1 }} /></div>
-            <div style={{ flex: 1 }}><span style={lbl}>กะ</span>
+            <div style={{ flex: 1 }}><span style={lbl}>{tr('กะ')}</span>
               <select value={f.shift || ''} onChange={e => setF({ ...f, shift: e.target.value })} style={inp}>
                 {SHIFTS.map(s => <option key={s[0]} value={s[0]}>{tr(s[1])}</option>)}
               </select>
             </div>
           </div>
-          <div><span style={lbl}>ส่วนงาน (optional)</span>
+          <div><span style={lbl}>{tr('ส่วนงาน (optional)')}</span>
             <select value={f.section || ''} onChange={e => setF({ ...f, section: e.target.value })} style={inp}>
               <option value="">{tr('— ไม่ระบุ —')}</option>
               {/* ค่าเดิมที่ไม่อยู่ในผัง (ข้อมูลเก่า/พิมพ์มาก่อน) ต้องยังโชว์ ไม่หายเงียบ */}
@@ -752,7 +752,7 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
             </select>
           </div>
           <div>
-            <span style={lbl}>ยานพาหนะที่ขับได้ (สกิล)</span>
+            <span style={lbl}>{tr('ยานพาหนะที่ขับได้ (สกิล)')}</span>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
               {vehicles.map(v => {
                 const on = f.vehicles.includes(v.code);
@@ -769,7 +769,7 @@ function CarrierModal({ carrier, vehicles, employees = [], fullName, onClose, on
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text2)', cursor: 'pointer' }}>
             <input type="checkbox" checked={!!f.is_active} onChange={e => setF({ ...f, is_active: e.target.checked })} style={{ width: 'auto' }} /> {tr('ใช้งาน (active)')}
           </label>
-          <div><span style={lbl}>หมายเหตุ</span><input value={f.note || ''} onChange={e => setF({ ...f, note: e.target.value })} style={inp} /></div>
+          <div><span style={lbl}>{tr('หมายเหตุ')}</span><input value={f.note || ''} onChange={e => setF({ ...f, note: e.target.value })} style={inp} /></div>
         </div>
         <div style={{ display: 'flex', gap: 10, marginTop: 18, justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 13, background: 'var(--bg2)', color: 'var(--text2)', border: '1px solid var(--border)' }}>{tr('ยกเลิก')}</button>

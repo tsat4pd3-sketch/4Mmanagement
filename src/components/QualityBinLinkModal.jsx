@@ -185,7 +185,7 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
               {had > 0 && (
                 // เคยลงไปแล้ว = เตือนเสมอ ห้ามให้ลงซ้ำโดยไม่รู้ตัว (แต่ไม่บล็อก — ทยอยลงถังได้จริง)
                 <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 7 }}>
-                  ⚠ บันทึกงานเสียรายการนี้เคยลง{b.name}ไปแล้ว {had.toLocaleString('th-TH')} ชิ้น — ติ๊กใหม่ = ลงเพิ่มอีกใบ
+                  ⚠ บันทึกงานเสียรายการนี้เคยลง{b.name}{tr('ไปแล้ว')} {had.toLocaleString('th-TH')} ชิ้น — ติ๊กใหม่ = ลงเพิ่มอีกใบ
                 </div>
               )}
 
@@ -251,7 +251,7 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
             </div>
             {/* ⏱️ อายุแท็กตาม WI-PD3-087 §5.6 — บอกตั้งแต่ตอนลงถัง ว่ามีเวลาเท่าไหร่ก่อนของค้าง */}
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10, lineHeight: 1.5 }}>
-              ⏱️ อายุแท็กตาม WI: 🟡 เหลือง <b>{TAG_MAX_DAYS.yellow} วัน</b> · 🔴 แดง <b>{TAG_MAX_DAYS.red} วัน</b> นับจากวันที่ลงถัง —
+              ⏱️ อายุแท็กตาม WI: 🟡 เหลือง <b>{TAG_MAX_DAYS.yellow} {tr('วัน')}</b> {tr('· 🔴 แดง')} <b>{TAG_MAX_DAYS.red} {tr('วัน')}</b> นับจากวันที่ลงถัง —
               เกินแล้วจะขึ้นเตือนที่หน้า QA/QC → ถังเหลือง/ถังแดง
             </div>
           </div>
@@ -261,9 +261,9 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
         {created && (
           <div style={{ border: '1px solid rgba(34,197,94,0.45)', background: 'rgba(34,197,94,0.1)',
             borderRadius: 'var(--r-md)', padding: 14, fontSize: 12.5, color: 'var(--text)', lineHeight: 1.7 }}>
-            <b style={{ color: '#22c55e', fontSize: 13.5 }}>✅ ลงถังเรียบร้อย</b>
+            <b style={{ color: '#22c55e', fontSize: 13.5 }}>{tr('✅ ลงถังเรียบร้อย')}</b>
             {created.map(c => (
-              <div key={c.key}>{c.icon} {c.name} — {c.qty.toLocaleString('th-TH')} ชิ้น</div>
+              <div key={c.key}>{c.icon} {c.name} — {c.qty.toLocaleString('th-TH')} {tr('ชิ้น')}</div>
             ))}
             <div style={{ marginTop: 8, color: 'var(--muted)', fontSize: 11.5 }}>
               ช่องที่ยังไม่รู้ตอนนี้ (ผลพิจารณา QA · ผลการซ่อม OK/NG · วันนำกลับเข้ากระบวนการ)

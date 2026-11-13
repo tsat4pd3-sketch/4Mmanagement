@@ -40,8 +40,8 @@ export default function LineRegistryAlert() {
       <span style={{ flex: 1, minWidth: 220 }}>
         {registryFailText('ทะเบียนไลน์', stale)}
         <div style={{ fontWeight: 400, color: 'var(--text2)', marginTop: 2 }}>
-          ช่องเลือกไลน์ทุกหน้าจะว่างหรือไม่ครบ — <b>ไม่ใช่เรื่องสิทธิ์ และไม่ได้แปลว่าไลน์ถูกลบ</b>
-          {message ? <> · เหตุผลจากระบบ: {message}</> : null}
+          ช่องเลือกไลน์ทุกหน้าจะว่างหรือไม่ครบ — <b>{tr('ไม่ใช่เรื่องสิทธิ์ และไม่ได้แปลว่าไลน์ถูกลบ')}</b>
+          {message ? <> {tr('· เหตุผลจากระบบ:')} {message}</> : null}
         </div>
       </span>
       <button onClick={onReload} disabled={busy} style={{

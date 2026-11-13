@@ -186,7 +186,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
       onPinToggle={onPinToggle} onUnpin={onUnpin} onDelete={onDelete}
       closeup={{ preview: cp._imgPreview, onPick: onCpImage, onClear: () => onChange({ _imgFile: null, _imgPreview: null, image_path: null }) }}
       extra={isVar && (
-        <button type="button" onClick={onDuplicate} title="ทำสำเนาจุดนี้เป็นอีกแกน (X↔Y) — copy ชื่อ/tool ให้ กรอกแค่ spec"
+        <button type="button" onClick={onDuplicate} title={tr('ทำสำเนาจุดนี้เป็นอีกแกน (X↔Y) — copy ชื่อ/tool ให้ กรอกแค่ spec')}
           style={{ padding: '3px 8px', borderRadius: 'var(--r-md)', fontSize: 11, fontWeight: 600, cursor: 'pointer', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--muted)' }}>
           {tr('⧉ อีกแกน')}
         </button>
@@ -195,7 +195,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
         <input value={cp.name} onChange={e => onChange({ name: e.target.value })} placeholder={tr('ชื่อจุดตรวจสอบ เช่น LP1')} />
         {/* 🔴 ช่องนี้ = ตัวจัดกลุ่มการ์ด (groupCheckpoints + <div key={g.name}>) ⇒ ถ้าส่งค่าออกทุก
             keystroke การ์ดจะย้ายกลุ่ม/ถูก unmount ทุกตัวอักษร = หลุดโฟกัส ต้องคลิกกลับทุกครั้ง
-            ⇒ ต้องเป็น <CommitInput> (ส่งค่าตอน blur/Enter) ห้ามเปลี่ยนกลับเป็น <input> */}
+            ⇒ ต้องเป็น <CommitInput> {tr('(ส่งค่าตอน blur/Enter) ห้ามเปลี่ยนกลับเป็น')} <input> */}
         <CommitInput value={cp.group_name ?? ''} onCommit={v => onChange({ group_name: v })}
           placeholder={tr('กลุ่ม/หัวข้อ (Item) เช่น Locate Pin')} list="cp-group-options" />
       </div>
@@ -244,11 +244,11 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', gap: 6 }}>{modeBtn('gte', '≥ ต่ำสุด')}{modeBtn('lte', '≤ สูงสุด')}{modeBtn('between', 'ช่วง min–max')}</div>
             <div className="mgrid" style={S.inputRow}>
-              {mMode !== 'lte' && <div><label style={{ ...S.label, color: 'var(--green)' }}>{mMode === 'between' ? 'ค่าต่ำสุด (min)' : 'ค่าต่ำสุด (≥)'}</label><input type="number" value={cp.lsl} onChange={e => onChange({ lsl: e.target.value })} placeholder="0.45" /></div>}
-              {mMode !== 'gte' && <div><label style={{ ...S.label, color: 'var(--green)' }}>{mMode === 'between' ? 'ค่าสูงสุด (max)' : 'ค่าสูงสุด (≤)'}</label><input type="number" value={cp.usl} onChange={e => onChange({ usl: e.target.value })} placeholder="—" /></div>}
+              {mMode !== 'lte' && <div><label style={{ ...S.label, color: 'var(--green)' }}>{mMode === 'between' ? tr('ค่าต่ำสุด (min)') : tr('ค่าต่ำสุด (≥)')}</label><input type="number" value={cp.lsl} onChange={e => onChange({ lsl: e.target.value })} placeholder="0.45" /></div>}
+              {mMode !== 'gte' && <div><label style={{ ...S.label, color: 'var(--green)' }}>{mMode === 'between' ? tr('ค่าสูงสุด (max)') : tr('ค่าสูงสุด (≤)')}</label><input type="number" value={cp.usl} onChange={e => onChange({ usl: e.target.value })} placeholder="—" /></div>}
               <div><label style={S.label}>{tr('หน่วย')}</label><input value={cp.unit} onChange={e => onChange({ unit: e.target.value })} placeholder="Mpa" /></div>
             </div>
-            <p style={{ fontSize: 11, color: 'var(--muted)', margin: 0 }}>อ่านค่าครั้งเดียว → ระบบเทียบเกณฑ์ ขึ้น OK/NG ให้อัตโนมัติ</p>
+            <p style={{ fontSize: 11, color: 'var(--muted)', margin: 0 }}>{tr('อ่านค่าครั้งเดียว → ระบบเทียบเกณฑ์ ขึ้น OK/NG ให้อัตโนมัติ')}</p>
           </div>
         )
       })()}
@@ -288,7 +288,7 @@ function CheckpointCard({ cp, label, onChange, onDelete, onDuplicate, onCpImage,
           <div style={{ display: 'flex', gap: 8 }}>
             <span style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 11, fontWeight: 700, border: '1px solid var(--accent)' }}>OK</span>
             <span style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', background: 'var(--red-dim)', color: 'var(--red)', fontSize: 11, fontWeight: 700, border: '1px solid var(--red-line)' }}>NG</span>
-            {cp.type === 'note' && <span style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', color: 'var(--muted)', fontSize: 11, border: '1px solid var(--border)' }}>+ ข้อความ</span>}
+            {cp.type === 'note' && <span style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', background: 'var(--bg3)', color: 'var(--muted)', fontSize: 11, border: '1px solid var(--border)' }}>{tr('+ ข้อความ')}</span>}
           </div>
           <div>
             <label style={S.label}>{tr('เกณฑ์ตัดสิน (Standard) — ขึ้นบรรทัดใหม่ได้')}</label>
@@ -1019,7 +1019,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
 
   return (
     <InspectEditorModal wide={twoColSetup} bodyRef={bodyRef} onClose={onClose} onSave={handleSave} saving={saving}
-      title={isEdit ? 'แก้ไขอุปกรณ์' : 'เพิ่มอุปกรณ์ใหม่'} subtitle={deptLabel} subColor={deptColor}>
+      title={isEdit ? tr('แก้ไขอุปกรณ์') : tr('เพิ่มอุปกรณ์ใหม่')} subtitle={deptLabel} subColor={deptColor}>
           {isEdit && (() => {
             // 1 เครื่อง = หลายรายการตรวจแยกตามแผนก — ให้เห็นภาพรวมและย้าย/คัดลอกได้โดยไม่ต้องพิมพ์ใหม่
             const allTeams = pmTeamsSync()
@@ -1037,9 +1037,9 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                   color: isCur ? (t?.color || deptColor) : 'var(--text2)',
                 }}>
                   {t?.icon ? `${t.icon} ` : ''}{t?.label ?? d.department}
-                  <b style={{ fontWeight: 800 }}>{d.checkpointCount} จุด</b>
-                  {d.inspectionCount > 0 && <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· ตรวจแล้ว {d.inspectionCount} ครั้ง</span>}
-                  {isCur && <span style={{ color: 'var(--muted)', fontWeight: 600 }}>· กำลังแก้</span>}
+                  <b style={{ fontWeight: 800 }}>{d.checkpointCount} {tr('จุด')}</b>
+                  {d.inspectionCount > 0 && <span style={{ color: 'var(--muted)', fontWeight: 600 }}>{tr('· ตรวจแล้ว')} {d.inspectionCount} {tr('ครั้ง')}</span>}
+                  {isCur && <span style={{ color: 'var(--muted)', fontWeight: 600 }}>{tr('· กำลังแก้')}</span>}
                 </span>
               )
             }
@@ -1050,7 +1050,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {deptSummary.length === 0
-                    ? <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>ยังไม่มีรายการตรวจของแผนกใดเลย — จุดตรวจที่ลงด้านล่างจะเป็นของ <b style={{ color: deptColor }}>{deptLabel}</b></span>
+                    ? <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('ยังไม่มีรายการตรวจของแผนกใดเลย — จุดตรวจที่ลงด้านล่างจะเป็นของ')} <b style={{ color: deptColor }}>{deptLabel}</b></span>
                     : deptSummary.sort((a, b) => b.checkpointCount - a.checkpointCount).map(chip)}
                   {deptSummary.length > 0 && !cur && (
                     <span style={{ fontSize: 11.5, color: 'var(--muted)', alignSelf: 'center' }}>
@@ -1080,7 +1080,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
 
                 {cur && cur.checkpointCount > 0 && toolOpen === 'dept' && (
                   <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px dashed var(--border2)', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <span style={{ fontSize: 11.5, color: 'var(--text2)' }}>ย้าย/คัดลอก {cur.checkpointCount} จุดนี้ไป</span>
+                    <span style={{ fontSize: 11.5, color: 'var(--text2)' }}>{tr('ย้าย/คัดลอก')} {cur.checkpointCount} {tr('จุดนี้ไป')}</span>
                     {(() => {
                       const cands = allTeams.filter(t => t.key !== department)
                       const okRows = cands.filter(t => (teamWriteOf?.(t.key)?.ok) !== false)
@@ -1095,17 +1095,17 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                           </select>
                           {/* กรองออกแล้วต้องบอก — ไม่งั้นดูเหมือนระบบมีแค่ไม่กี่ทีม */}
                           {hidden > 0 && (
-                            <span style={{ fontSize: 11, color: 'var(--muted)' }}>ซ่อน {hidden} ทีมที่ไม่ใช่ทีมของคุณ</span>
+                            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ซ่อน')} {hidden} {tr('ทีมที่ไม่ใช่ทีมของคุณ')}</span>
                           )}
                         </>
                       )
                     })()}
                     <button type="button" disabled={!moveTo || moveBusy} onClick={() => handleTransfer('move')}
-                      style={{ ...S.btnSm(deptColor), opacity: (!moveTo || moveBusy) ? 0.5 : 1 }} title="เปลี่ยนเจ้าของรายการตรวจ — ประวัติการตรวจย้ายตามไปด้วย">
+                      style={{ ...S.btnSm(deptColor), opacity: (!moveTo || moveBusy) ? 0.5 : 1 }} title={tr('เปลี่ยนเจ้าของรายการตรวจ — ประวัติการตรวจย้ายตามไปด้วย')}>
                       {moveBusy ? '…' : tr('ย้าย')}
                     </button>
                     <button type="button" disabled={!moveTo || moveBusy} onClick={() => handleTransfer('copy')}
-                      style={{ ...S.btnSm('var(--blue)'), opacity: (!moveTo || moveBusy) ? 0.5 : 1 }} title="ทำสำเนาจุดตรวจให้อีกแผนก — ของเดิมยังอยู่ ประวัติแยกกัน">
+                      style={{ ...S.btnSm('var(--blue)'), opacity: (!moveTo || moveBusy) ? 0.5 : 1 }} title={tr('ทำสำเนาจุดตรวจให้อีกแผนก — ของเดิมยังอยู่ ประวัติแยกกัน')}>
                       {moveBusy ? '…' : tr('⧉ คัดลอก')}
                     </button>
                   </div>
@@ -1132,12 +1132,12 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                   return (
                     <div style={{ marginTop: 9, paddingTop: 9, borderTop: '1px dashed var(--border2)' }}>
                       <div style={{ fontSize: 11.5, color: 'var(--text2)', marginBottom: 6 }}>
-                        ติ๊กเครื่อง<b>ปลายทาง</b>ที่จะได้รับ {cur.checkpointCount} จุดตรวจของเครื่องนี้ (ตั้งต้นแสดงเฉพาะชนิดเดียวกัน)
+                        ติ๊กเครื่อง<b>{tr('ปลายทาง')}</b>{tr('ที่จะได้รับ')} {cur.checkpointCount} จุดตรวจของเครื่องนี้ (ตั้งต้นแสดงเฉพาะชนิดเดียวกัน)
                       </div>
                       {/* 🔴 โหลดรายชื่อเครื่องล้ม = เขียนบนจอ ห้ามปล่อยให้ลิสต์ว่างแล้วอ่านว่า "ไม่มีเครื่อง" (08/10) */}
                       {allEquipErr && (
                         <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--red)', marginBottom: 6 }}>
-                          ⚠ โหลดรายชื่อเครื่องไม่สำเร็จ ({allEquipErr}) — ลิสต์ด้านล่าง<b>ไม่ครบ</b> ยังเลือกปลายทางไม่ได้อย่างมั่นใจ
+                          ⚠ โหลดรายชื่อเครื่องไม่สำเร็จ ({allEquipErr}) — ลิสต์ด้านล่าง<b>{tr('ไม่ครบ')}</b> ยังเลือกปลายทางไม่ได้อย่างมั่นใจ
                         </div>
                       )}
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 6 }}>
@@ -1156,13 +1156,13 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                       {/* 🔴 ตัดรายการต้องบอกจำนวนที่ซ่อน **เสมอ** (UI §5.1.1) — ฐานจริง 325 เครื่อง
                            เดิมไม่ค้น = โชว์เฉพาะชนิดเดียวกันโดยไม่บอกว่าซ่อนไปกี่ตัว ⇒ ตัวกรองที่มองไม่เห็น */}
                       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 4 }}>
-                        แสดง <b style={{ color: 'var(--text2)' }}>{shown.length}</b> จาก {cands.length}
+                        แสดง <b style={{ color: 'var(--text2)' }}>{shown.length}</b> {tr('จาก')} {cands.length}
                         {!q && cands.length > shown.length
-                          ? <> · ซ่อนเครื่องชนิดอื่น {cands.length - shown.length} ตัว — <b>พิมพ์ค้นเพื่อดูทุกชนิด</b></>
+                          ? <> {tr('· ซ่อนเครื่องชนิดอื่น')} {cands.length - shown.length} {tr('ตัว —')} <b>{tr('พิมพ์ค้นเพื่อดูทุกชนิด')}</b></>
                           : q ? ' · กรองด้วยคำค้น (ทุกชนิด)' : ' · ครบทุกเครื่องแล้ว'}
                         {/* 🔴 "ค้นไม่เจอ" กับ "ยังไม่ได้เพิ่มเข้า PM" คนละเรื่อง — ต้องแยกให้เห็น */}
-                        {!!notPmYet.length && <> · <b style={{ color: 'var(--accent2)' }}>อีก {notPmYet.length} เครื่องที่ค้นเจอในทะเบียนเครื่องจักร
-                          ยังไม่ได้เพิ่มเป็นอุปกรณ์ PM</b> จึงยังคัดลอกไปไม่ได้</>}
+                        {!!notPmYet.length && <> · <b style={{ color: 'var(--accent2)' }}>{tr('อีก')} {notPmYet.length} เครื่องที่ค้นเจอในทะเบียนเครื่องจักร
+                          ยังไม่ได้เพิ่มเป็นอุปกรณ์ PM</b> {tr('จึงยังคัดลอกไปไม่ได้')}</>}
                       </div>
                       <div style={{ maxHeight: 148, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 6,
                         display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(168px, 1fr))', gap: 3, alignContent: 'start' }}>
@@ -1183,15 +1183,15 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                         })}
                         {!shown.length && <span style={{ fontSize: 11.5, color: 'var(--muted)', padding: 4, lineHeight: 1.7 }}>
                           {!q ? 'ไม่มีเครื่องชนิดเดียวกันตัวอื่น — พิมพ์ค้นเพื่อดูเครื่องชนิดอื่น'
-                            : notPmYet.length ? <>ไม่พบใน<b>ทะเบียนอุปกรณ์ PM</b> — แต่เจอ <b style={{ color: 'var(--accent2)' }}>{notPmYet.length} เครื่อง</b> ใน
+                            : notPmYet.length ? <>{tr('ไม่พบใน')}<b>{tr('ทะเบียนอุปกรณ์ PM')}</b> {tr('— แต่เจอ')} <b style={{ color: 'var(--accent2)' }}>{notPmYet.length} {tr('เครื่อง')}</b> ใน
                                 ทะเบียนเครื่องจักร ({notPmYet.slice(0, 4).map(m => m.machine_no || m.machine_name).join(' · ')}{notPmYet.length > 4 ? ' …' : ''})
-                                <br />⇒ เครื่องพวกนี้<b>ยังไม่ได้ถูกเพิ่มเป็นอุปกรณ์ PM</b> จึงยังไม่มีให้ติ๊ก —
-                                ปิดหน้าต่างนี้แล้วกด <b>“+ เพิ่มอุปกรณ์”</b> ให้เครื่องนั้นก่อน แล้วค่อยกลับมาคัดลอก</>
-                            : <>ไม่พบ “{copyQ.trim()}” ทั้งใน<b>ทะเบียนอุปกรณ์ PM</b>และ<b>ทะเบียนเครื่องจักร</b> — ตรวจว่าพิมพ์เลขเครื่องถูกไหม</>}</span>}
+                                <br />{tr('⇒ เครื่องพวกนี้')}<b>{tr('ยังไม่ได้ถูกเพิ่มเป็นอุปกรณ์ PM')}</b> จึงยังไม่มีให้ติ๊ก —
+                                ปิดหน้าต่างนี้แล้วกด <b>{tr('“+ เพิ่มอุปกรณ์”')}</b> {tr('ให้เครื่องนั้นก่อน แล้วค่อยกลับมาคัดลอก')}</>
+                            : <>{tr('ไม่พบ “')}{copyQ.trim()}{tr('” ทั้งใน')}<b>{tr('ทะเบียนอุปกรณ์ PM')}</b>{tr('และ')}<b>{tr('ทะเบียนเครื่องจักร')}</b> {tr('— ตรวจว่าพิมพ์เลขเครื่องถูกไหม')}</>}</span>}
                       </div>
                       <p style={{ fontSize: 11, color: 'var(--muted)', margin: '5px 0 0', lineHeight: 1.6 }}>
-                        เครื่องที่<b>มีจุดตรวจอยู่แล้วจะถูกข้าม ไม่ทับของเดิม</b> (ทับ = ประวัติผลตรวจของเครื่องนั้นหายถาวร)
-                        · คัดลอกเฉพาะ<b>นิยามจุดตรวจ</b> รอบเวลา/วันครบกำหนดของแต่ละเครื่องตั้งแยกกันเหมือนเดิม
+                        เครื่องที่<b>{tr('มีจุดตรวจอยู่แล้วจะถูกข้าม ไม่ทับของเดิม')}</b> (ทับ = ประวัติผลตรวจของเครื่องนั้นหายถาวร)
+                        · คัดลอกเฉพาะ<b>{tr('นิยามจุดตรวจ')}</b> รอบเวลา/วันครบกำหนดของแต่ละเครื่องตั้งแยกกันเหมือนเดิม
                       </p>
                       {/* 🔴 ผลรายเครื่อง — ห้ามสรุปเป็น "สำเร็จ" ก้อนเดียว */}
                       {copyReport && (() => {
@@ -1200,10 +1200,10 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                         const why = { target_has_checkpoints: 'มีจุดตรวจอยู่แล้ว', target_has_history: 'มีประวัติผลตรวจแล้ว', same: 'เครื่องต้นทาง', empty: 'ต้นทางไม่มีจุดตรวจ', error: 'ผิดพลาด' }
                         return (
                           <div style={{ marginTop: 7, fontSize: 11.5, lineHeight: 1.7, background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '7px 9px' }}>
-                            <b style={{ color: 'var(--accent)' }}>✅ คัดลอกสำเร็จ {ok.length} เครื่อง</b>
+                            <b style={{ color: 'var(--accent)' }}>{tr('✅ คัดลอกสำเร็จ')} {ok.length} {tr('เครื่อง')}</b>
                             {!!ok.length && <span style={{ color: 'var(--muted)' }}> — {ok.map(r => r.label).join(' · ')}</span>}
                             {!!skip.length && <div style={{ color: 'var(--accent2)', marginTop: 3 }}>
-                              ⚠️ ข้าม {skip.length} เครื่อง — {skip.map(r => `${r.label} (${why[r.reason] || r.reason}${r.message ? `: ${r.message}` : ''})`).join(' · ')}
+                              ⚠️ ข้าม {skip.length} {tr('เครื่อง —')} {skip.map(r => `${r.label} (${why[r.reason] || r.reason}${r.message ? `: ${r.message}` : ''})`).join(' · ')}
                             </div>}
                           </div>
                         )
@@ -1269,8 +1269,8 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                     <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px dashed var(--border2)', fontSize: 11.5, lineHeight: 1.6, color: 'var(--muted)' }}>
                       ℹ️ เครื่องนี้ขึ้นทะเบียน PM ไว้แล้วโดย{' '}
                       {existingNote.map(r => `${pmTeamsSync().find(t => t.key === r.department)?.label ?? r.department} (${r.checkpointCount} จุด)`).join(' · ')}
-                      <br />บันทึกครั้งนี้จะ<b style={{ color: 'var(--text2)' }}>เพิ่มรายการตรวจของ {deptLabel}</b> ให้เครื่องเดิม — ไม่สร้างอุปกรณ์ซ้ำ
-                      {' · '}อยากได้จุดตรวจชุดเดิม ให้เปิดแก้ไขเครื่องนี้ในแท็บแผนกนั้นแล้วกด <b style={{ color: 'var(--text2)' }}>⧉ คัดลอก</b>
+                      <br />{tr('บันทึกครั้งนี้จะ')}<b style={{ color: 'var(--text2)' }}>{tr('เพิ่มรายการตรวจของ')} {deptLabel}</b> ให้เครื่องเดิม — ไม่สร้างอุปกรณ์ซ้ำ
+                      {' · '}{tr('อยากได้จุดตรวจชุดเดิม ให้เปิดแก้ไขเครื่องนี้ในแท็บแผนกนั้นแล้วกด')} <b style={{ color: 'var(--text2)' }}>{tr('⧉ คัดลอก')}</b>
                     </div>
                   )}
                 </div>
@@ -1376,12 +1376,12 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
           <div>
             <label style={S.label}>{tr('รอบ PM — ทำซ้ำทุกกี่วัน (')}{deptLabel})</label>
             <div style={S.freqBtns}>
-              {CYCLE_PRESETS.map(p => <button key={p.days} onClick={() => setCycleDays(String(p.days))} style={S.freqBtn(Number(cycleDays) === p.days)}>{p.label}</button>)}
+              {CYCLE_PRESETS.map(p => <button key={p.days} onClick={() => setCycleDays(String(p.days))} style={S.freqBtn(Number(cycleDays) === p.days)}>{tr(p.label)}</button>)}
             </div>
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end', marginTop: 8 }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--text2)' }}>
                 {tr('หรือกำหนดเอง ทุก')}
-                <input type="number" min="1" max="3650" value={cycleDays} onChange={e => setCycleDays(e.target.value)} style={{ width: 80 }} aria-label="รอบ PM (วัน)" />
+                <input type="number" min="1" max="3650" value={cycleDays} onChange={e => setCycleDays(e.target.value)} style={{ width: 80 }} aria-label={tr('รอบ PM (วัน)')} />
                 {tr('วัน')}
               </label>
               <label style={{ fontSize: 12.5, color: 'var(--text2)' }}>{tr('วัน PM ครั้งถัดไป')} <span style={{ color: 'var(--muted)' }}>{tr('(ไม่บังคับ)')}</span>
@@ -1390,7 +1390,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             </div>
             <div style={{ marginTop: 6, fontSize: 11.5, color: Number(cycleDays) > 0 ? 'var(--muted)' : '#f59a3f' }}>
               {Number(cycleDays) > 0
-                ? <>รอบ: <b style={{ color: 'var(--accent)' }}>{cycleLabel(null, Number(cycleDays))}</b> · ครบกำหนด = {nextDue ? 'วันที่กำหนดไว้ แล้วหลังตรวจจริง = วันตรวจ + รอบ' : 'วันตรวจล่าสุด + รอบ (ยังไม่เคยตรวจ = ใส่วัน PM ครั้งถัดไปเพื่อให้ระบบเตือนได้)'}</>
+                ? <>{tr('รอบ:')} <b style={{ color: 'var(--accent)' }}>{cycleLabel(null, Number(cycleDays))}</b> · ครบกำหนด = {nextDue ? 'วันที่กำหนดไว้ แล้วหลังตรวจจริง = วันตรวจ + รอบ' : 'วันตรวจล่าสุด + รอบ (ยังไม่เคยตรวจ = ใส่วัน PM ครั้งถัดไปเพื่อให้ระบบเตือนได้)'}</>
                 : <>⚠️ ยังไม่ตั้งรอบ = ระบบคิดวันครบกำหนดและเตือนล่วงหน้าไม่ได้{planType === 'usage' ? ' (แผนตามการใช้งานอย่างเดียวไม่ต้องมีรอบวันก็ได้)' : ''}</>}
             </div>
           </div>
@@ -1409,7 +1409,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             </div>
             {(planType === 'time' || planType === 'hybrid') && (
               <div style={{ marginTop: 8, fontSize: 11, color: 'var(--muted)' }}>
-                🗓️ <b>ตามเวลา</b> = ใช้ “รอบ PM” ด้านบน (ตอนนี้: <b style={{ color: 'var(--accent)' }}>{cycleLabel(null, Number(cycleDays) || null)}</b>) → ครบกำหนด = วันตรวจล่าสุด + รอบนั้น
+                🗓️ <b>{tr('ตามเวลา')}</b> = ใช้ “รอบ PM” ด้านบน (ตอนนี้: <b style={{ color: 'var(--accent)' }}>{cycleLabel(null, Number(cycleDays) || null)}</b>) → ครบกำหนด = วันตรวจล่าสุด + รอบนั้น
               </div>
             )}
             {(planType === 'usage' || planType === 'hybrid') && (
@@ -1469,7 +1469,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
             )}
             boardFooter={layoutType === 'image_pin' && (
               <>
-                {activePinKey && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 0' }}>✦ หมุนไปเฟรมที่เห็นจุดชัด แล้วคลิกวางตำแหน่ง</p>}
+                {activePinKey && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '4px 0 0' }}>{tr('✦ หมุนไปเฟรมที่เห็นจุดชัด แล้วคลิกวางตำแหน่ง')}</p>}
               {/* คิวครอบรูป — เลือกหลายไฟล์ = ครอบทีละใบ (ผู้ใช้เลือกกรอบเอง ไม่ auto-crop) */}
               {cropQueue[0] && (
                 <ImageCropModal
@@ -1499,21 +1499,21 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                   <b style={{ color: comp.done ? 'var(--accent)' : 'var(--text)' }}>
                     {comp.done ? '✅ ใบนี้ครบตามแพทเทินแล้ว' : '📋 ความครบของใบนี้'}
                   </b>
-                  <span>มุม <b>{comp.frames}</b></span>
-                  <span>จุดตรวจ <b>{comp.cps}</b></span>
-                  <span>ปักหมุด <b style={{ color: comp.unpinned ? 'var(--amber)' : 'var(--accent)' }}>{comp.pinned}/{comp.cps}</b></span>
-                  <span>รูปขยาย <b style={{ color: comp.noPhoto ? 'var(--amber)' : 'var(--accent)' }}>{comp.withPhoto}/{comp.cps}</b></span>
+                  <span>{tr('มุม')} <b>{comp.frames}</b></span>
+                  <span>{tr('จุดตรวจ')} <b>{comp.cps}</b></span>
+                  <span>{tr('ปักหมุด')} <b style={{ color: comp.unpinned ? 'var(--amber)' : 'var(--accent)' }}>{comp.pinned}/{comp.cps}</b></span>
+                  <span>{tr('รูปขยาย')} <b style={{ color: comp.noPhoto ? 'var(--amber)' : 'var(--accent)' }}>{comp.withPhoto}/{comp.cps}</b></span>
                 </div>
                 {comp.missing.length > 0 && (
-                  <div style={{ fontSize: 11, color: 'var(--amber)' }}>ยังขาด: {comp.missing.join(' · ')}</div>
+                  <div style={{ fontSize: 11, color: 'var(--amber)' }}>{tr('ยังขาด:')} {comp.missing.join(' · ')}</div>
                 )}
                 {!comp.done && (
                   <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.7 }}>
-                    แพทเทินที่แนะนำ: ① เพิ่มรูป<b>มุมที่ 1</b> → ② <b>+ เพิ่มจุดตรวจ</b> แล้วกด 🔘 วางตำแหน่ง แตะบนรูป
-                    → ③ แนบ 📷 <b>รูปขยาย</b>ของจุดนั้น → ④ ครบมุมนี้แล้วค่อยไป<b>มุมที่ 2</b>
+                    แพทเทินที่แนะนำ: ① เพิ่มรูป<b>{tr('มุมที่ 1')}</b> → ② <b>{tr('+ เพิ่มจุดตรวจ')}</b> แล้วกด 🔘 วางตำแหน่ง แตะบนรูป
+                    → ③ แนบ 📷 <b>{tr('รูปขยาย')}</b>{tr('ของจุดนั้น → ④ ครบมุมนี้แล้วค่อยไป')}<b>{tr('มุมที่ 2')}</b>
                     {sheetExample && (
-                      <> · ตัวอย่างใบที่ทำครบ: <b>{sheetExample.equipment_name}</b>{' '}
-                        ({sheetExample.frames} มุม · {sheetExample.cps} จุด · ปักครบ · รูปขยายครบ
+                      <> {tr('· ตัวอย่างใบที่ทำครบ:')} <b>{sheetExample.equipment_name}</b>{' '}
+                        ({sheetExample.frames} {tr('มุม ·')} {sheetExample.cps} จุด · ปักครบ · รูปขยายครบ
                         {sheetExample.same_team ? '' : ` · ใบของ${teamLabel(sheetExample.department)}`})
                       </>
                     )}
@@ -1522,7 +1522,7 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                 {/* ไล่ทีละมุม — กดมุมไหน รูปก็เลื่อนไปมุมนั้นด้วย (ไม่งั้นกรองแล้วรูปไม่ตรง) */}
                 {comp.frames > 0 && (
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>ดูเฉพาะ:</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ดูเฉพาะ:')}</span>
                     {[{ k: null, t: `ทุกมุม (${comp.cps})` },
                       ...comp.byFrame.map(f => ({ k: f.key, t: `${f.title} (${f.n})`, idx: f.idx })),
                       ...(comp.unpinned > 0 ? [{ k: UNPINNED, t: `ยังไม่ปักหมุด (${comp.unpinned})`, warn: true }] : []),
@@ -1560,14 +1560,14 @@ const [allEquipErr, setAllEquipErr] = useState(null)   // 🔴 โหลดร�
                 return (
                   <>
                     {anyNamed && un.length > 0 && (
-                      <div style={{ ...groupHeaderStyle, background: 'var(--bg3)', color: 'var(--muted)' }}>ไม่ระบุกลุ่ม</div>
+                      <div style={{ ...groupHeaderStyle, background: 'var(--bg3)', color: 'var(--muted)' }}>{tr('ไม่ระบุกลุ่ม')}</div>
                     )}
                     {un.map(renderCard)}
                     {/* กรองแล้วไม่เหลืออะไร ต้องบอก + กดกลับได้ ห้ามปล่อยจอว่างเฉยๆ */}
                     {frameFilter != null && !anyNamed && un.length === 0 && (
                       <div style={{ textAlign: 'center', padding: '18px 12px', fontSize: 12, color: 'var(--muted)',
                                     border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)' }}>
-                        มุมนี้ยังไม่มีจุดตรวจ — กด <b>+ เพิ่มจุดตรวจ</b> แล้วกด 🔘 วางตำแหน่ง เพื่อปักหมุดบนรูปมุมนี้
+                        มุมนี้ยังไม่มีจุดตรวจ — กด <b>{tr('+ เพิ่มจุดตรวจ')}</b> แล้วกด 🔘 วางตำแหน่ง เพื่อปักหมุดบนรูปมุมนี้
                         <div style={{ marginTop: 8 }}>
                           <button type="button" onClick={() => setFrameFilter(null)}
                             style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
@@ -1597,8 +1597,8 @@ function EquipmentTable({ groups, canSetup, onEdit, onDelete }) {
     <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'auto', maxHeight: 'calc(100vh - 230px)' }}>
       <table className="rec-list" style={{ minWidth: 760 }}>
         <thead><tr>
-          <th style={{ width: 44 }} aria-label="รูป"></th><th>{tr('อุปกรณ์')}</th><th>No.</th><th>{tr('ชนิด')}</th><th>{tr('เครื่อง')}</th>
-          <th style={{ textAlign: 'right' }}>{tr('จุดตรวจ')}</th><th>{tr('สถานะ')}</th>{canSetup && <th aria-label="คำสั่ง"></th>}
+          <th style={{ width: 44 }} aria-label={tr('รูป')}></th><th>{tr('อุปกรณ์')}</th><th>No.</th><th>{tr('ชนิด')}</th><th>{tr('เครื่อง')}</th>
+          <th style={{ textAlign: 'right' }}>{tr('จุดตรวจ')}</th><th>{tr('สถานะ')}</th>{canSetup && <th aria-label={tr('คำสั่ง')}></th>}
         </tr></thead>
         <tbody>
           {groups.map(g => (
@@ -1607,7 +1607,7 @@ function EquipmentTable({ groups, canSetup, onEdit, onDelete }) {
                 <td colSpan={cols} style={{ background: 'var(--bg3)', fontWeight: 800, fontSize: 12.5, color: g.known ? 'var(--accent)' : 'var(--muted)' }}>
                   {g.label}{g.section ? <span style={{ color: 'var(--muted)', fontWeight: 600 }}> · {g.section}</span> : null}
                   <span style={{ color: 'var(--muted)', fontWeight: 600 }}> ({g.rows.length})</span>
-                  {!g.known && <span style={{ color: 'var(--muted)', fontWeight: 500 }}> — ไม่อยู่ในทะเบียนไลน์ (กรองตามไลน์ไม่ได้)</span>}
+                  {!g.known && <span style={{ color: 'var(--muted)', fontWeight: 500 }}> {tr('— ไม่อยู่ในทะเบียนไลน์ (กรองตามไลน์ไม่ได้)')}</span>}
                 </td>
               </tr>
               {g.rows.map(r => {
@@ -1629,14 +1629,14 @@ function EquipmentTable({ groups, canSetup, onEdit, onDelete }) {
                       <span style={S.tag(typeColor[j.equipment_type] ?? '#527855')}>{EQUIP_TYPE_LABEL[j.equipment_type] ?? j.equipment_type ?? '–'}</span>
                     </td>
                     <td style={{ whiteSpace: 'nowrap', color: 'var(--text2)' }}>
-                      {j.machine_no || '–'}{j.machine_id && <span title="เชื่อมกับ Machine Master" style={{ color: 'var(--accent)', marginLeft: 4 }}>🔗</span>}
+                      {j.machine_no || '–'}{j.machine_id && <span title={tr('เชื่อมกับ Machine Master')} style={{ color: 'var(--accent)', marginLeft: 4 }}>🔗</span>}
                     </td>
                     <td style={{ textAlign: 'right', whiteSpace: 'nowrap', fontWeight: 700, color: r.cpCount ? 'var(--accent)' : 'var(--muted)' }}>
-                      {r.cpCount}{r.hasPins && <span title="ปักหมุดบนรูปแล้ว" style={{ marginLeft: 4 }}>📍</span>}
+                      {r.cpCount}{r.hasPins && <span title={tr('ปักหมุดบนรูปแล้ว')} style={{ marginLeft: 4 }}>📍</span>}
                     </td>
                     <td style={{ whiteSpace: 'nowrap', fontSize: 12, fontWeight: 700, color: st?.color ?? 'var(--muted)' }}>
                       {st ? `${st.icon} ${st.label}` : '✓ พร้อม'}
-                      {r.status === 'am_pending' && <> · <Link to="/daily-checker?tab=pm" onClick={e => e.stopPropagation()} style={{ color: st.color, textDecoration: 'underline' }}>ลงทะเบียน</Link></>}
+                      {r.status === 'am_pending' && <> · <Link to="/daily-checker?tab=pm" onClick={e => e.stopPropagation()} style={{ color: st.color, textDecoration: 'underline' }}>{tr('ลงทะเบียน')}</Link></>}
                     </td>
                     {canSetup && (
                       <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
@@ -1851,16 +1851,16 @@ export default function PMSetup() {
 
   return (
     <Page style={S.page}>
-      <PageHeader title="ตั้งจุดตรวจ PM — อุปกรณ์ & จุดตรวจ" icon="⚙️"
+      <PageHeader title={tr('ตั้งจุดตรวจ PM — อุปกรณ์ & จุดตรวจ')} icon="⚙️"
         sub={<>
-          <div>{allRows.length} อุปกรณ์ · แผนก {teams.find(t => t.key === department)?.label ?? DEPT_LABEL[department] ?? department}</div>
+          <div>{allRows.length} {tr('อุปกรณ์ · แผนก')} {teams.find(t => t.key === department)?.label ?? DEPT_LABEL[department] ?? department}</div>
           {/* AM (ผลิตตรวจเอง) กับ PM (ช่าง) คนละงานกัน — บอกให้ชัดว่ากำลังตั้งค่าของใคร */}
           <div style={{ marginTop: 2 }}>
-            <b>{teamKind(department).short} · {teamKind(department).full}</b> <InfoMore id="pm-team-kind" label="ต่างจากอีกแบบยังไง">{teamKind(department).desc}</InfoMore>
+            <b>{teamKind(department).short} · {teamKind(department).full}</b> <InfoMore id="pm-team-kind" label={tr('ต่างจากอีกแบบยังไง')}>{teamKind(department).desc}</InfoMore>
             {canSetup && (
               <>
                 {' '}
-                <button onClick={toggleTeamKind} title="สลับว่าทีมนี้เป็นงาน AM หรือ PM (เก็บที่ mtn_teams.kind)"
+                <button onClick={toggleTeamKind} title={tr('สลับว่าทีมนี้เป็นงาน AM หรือ PM (เก็บที่ mtn_teams.kind)')}
                   style={{ ...S.btnSm('var(--muted)'), padding: '1px 8px', fontSize: 11, marginLeft: 4 }}>
                   {tr('เปลี่ยนเป็น')} {teamKindOf(department) === 'am' ? 'PM' : 'AM'}
                 </button>
@@ -1870,16 +1870,16 @@ export default function PMSetup() {
         </>}
         filters={<>
           {/* ทีม = ตัวเลือกแรกของแถบกรอง (13/10 · UI-STANDARD: ชื่อ → แท็บ → แถบกรอง → เนื้อหา — เดิมปุ่มทีมอยู่ใต้แถบกรอง) */}
-          <Segmented label="ทีม" value={department} onChange={setDept}
+          <Segmented label={tr('ทีม')} value={department} onChange={setDept}
             options={teams.map(d => ({ value: d.key, label: `${d.icon ? `${d.icon} ` : ''}${d.label}` }))} />
           <LineScopeSelect lines={lines} section={fScope.section} line={fScope.line}
             onChange={(section, line, info) => setFScope({ section, line, names: info?.lines?.length ? info.lines : (section || line ? [line || section] : null) })} />
-          <select value={fStatus} onChange={e => setFStatus(e.target.value)} aria-label="สถานะ">
+          <select value={fStatus} onChange={e => setFStatus(e.target.value)} aria-label={tr('สถานะ')}>
             {statusOptions.map(o => <option key={o.value} value={o.value} title={o.title}>{tr(o.label)}</option>)}
           </select>
           <SearchInput value={fQ} onChange={setFQ} fields="ชื่อ / No. / เลขเครื่อง / ไลน์" />
           <span style={{ fontSize: 12, color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-            แสดง <b style={{ color: 'var(--text)' }}>{shownRows.length}</b> จาก {allRows.length}
+            แสดง <b style={{ color: 'var(--text)' }}>{shownRows.length}</b> {tr('จาก')} {allRows.length}
           </span>
           {filtered && <button type="button" onClick={clearFilters} style={S.jumpBtn}>{tr('ล้างตัวกรอง')}</button>}
         </>}
@@ -1913,15 +1913,15 @@ export default function PMSetup() {
       ) : jigs.length === 0 && !loadErr ? (
         <div style={S.empty}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>🔩</div>
-          <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>ยังไม่มีอุปกรณ์</p>
+          <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>{tr('ยังไม่มีอุปกรณ์')}</p>
           <p style={{ fontSize: 13, color: 'var(--muted)', marginBottom: 20 }}>กดปุ่ม "เพิ่มอุปกรณ์" เพื่อเริ่มต้น</p>
           {canSetup && <button onClick={openCreate} style={S.primaryBtn}>{tr('+ เพิ่มอุปกรณ์')}</button>}
         </div>
       ) : (
         shownRows.length === 0 ? (
           <div style={S.empty}>
-            <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>ไม่พบอุปกรณ์ตามตัวกรอง</p>
-            <p style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 14 }}>ทีมนี้มีทั้งหมด {allRows.length} อุปกรณ์</p>
+            <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 8 }}>{tr('ไม่พบอุปกรณ์ตามตัวกรอง')}</p>
+            <p style={{ fontSize: 12.5, color: 'var(--muted)', marginBottom: 14 }}>{tr('ทีมนี้มีทั้งหมด')} {allRows.length} {tr('อุปกรณ์')}</p>
             {filtered && <button type="button" onClick={clearFilters} style={S.jumpBtn}>{tr('ล้างตัวกรอง')}</button>}
           </div>
         ) : (
@@ -1932,11 +1932,11 @@ export default function PMSetup() {
       <AnimatePresence>
         {showModal && <EquipmentModal onClose={() => setShowModal(false)} onSaved={handleSaved} editJig={editJig} department={department} categories={categories} methods={methods} deptWrite={deptWrite} teamWriteOf={teamWriteOf} />}
         {taxModal === 'category' && (
-          <TaxonomyManagerModal teams={pmTeamsSync()} role={role} myTeams={pmUserTeams} table="pm_checkpoint_categories" title="จัดการประเภทจุดตรวจ (Category)" extraField="color" withEquipTypes
+          <TaxonomyManagerModal teams={pmTeamsSync()} role={role} myTeams={pmUserTeams} table="pm_checkpoint_categories" title={tr('จัดการประเภทจุดตรวจ (Category)')} extraField="color" withEquipTypes
             onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />
         )}
         {taxModal === 'method' && (
-          <TaxonomyManagerModal teams={pmTeamsSync()} role={role} myTeams={pmUserTeams} table="pm_checking_methods" title="จัดการวิธีการตรวจสอบ" extraField="icon"
+          <TaxonomyManagerModal teams={pmTeamsSync()} role={role} myTeams={pmUserTeams} table="pm_checking_methods" title={tr('จัดการวิธีการตรวจสอบ')} extraField="icon"
             onClose={() => setTaxModal(null)} onChanged={loadTaxonomy} />
         )}
       </AnimatePresence>

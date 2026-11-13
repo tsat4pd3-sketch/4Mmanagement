@@ -116,7 +116,7 @@ export default function StockReceiptQueue() {
     <div style={{ display: 'grid', gap: 12 }}>
       {/* UI-STANDARD §1: แท็บ → แถบกรอง ติดกัน (ห้ามมีคำอธิบายคั่น) · แถบระดับหน้า = แถบมาตรฐาน ไม่ใช่ `bare` (stdsweep 05/10: เดิมห่าง 48px) */}
       <FilterBar>
-        <Segmented value={dest} onChange={setDest} label="คลังปลายทาง"
+        <Segmented value={dest} onChange={setDest} label={tr('คลังปลายทาง')}
           options={[{ value: '', label: allOf('คลัง') }, ...dests.map(d => ({ value: d, label: d }))]} />
         <SearchInput value={q} onChange={setQ} fields="เลขใบผลิต / MAT / ชื่อพาร์ท / ไลน์" grow={false} onKeyDown={onSearchKey} />
         <button type="button" onClick={() => setShowDone(v => !v)} style={storeBtn('secondary', { minHeight: 36, padding: '6px 12px', fontSize: 12.5 })}>
@@ -125,12 +125,12 @@ export default function StockReceiptQueue() {
       </FilterBar>
 
       <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.6 }}>
-        ไลน์สแกนปิดใบผลิตแล้ว ของถูกส่งมาที่คลังปลายทาง — <b>นับของจริงก่อน</b> ตรงกดรับ · ไม่ตรงกรอกยอดที่นับได้พร้อมเหตุผล ·
-        สต็อกเข้าตามที่กดรับเท่านั้น · รอรับอยู่ <b>{pendingCount} ใบ · {fmt(pendingQty)} ชิ้น</b>
-        {!canReceive && <span style={{ color: '#f59e0b', fontWeight: 700 }}> · บัญชีนี้ไม่มีสิทธิ์รับเข้า (line_stock:issue) — ดูได้อย่างเดียว</span>}
+        ไลน์สแกนปิดใบผลิตแล้ว ของถูกส่งมาที่คลังปลายทาง — <b>{tr('นับของจริงก่อน')}</b> ตรงกดรับ · ไม่ตรงกรอกยอดที่นับได้พร้อมเหตุผล ·
+        สต็อกเข้าตามที่กดรับเท่านั้น · รอรับอยู่ <b>{pendingCount} {tr('ใบ ·')} {fmt(pendingQty)} {tr('ชิ้น')}</b>
+        {!canReceive && <span style={{ color: '#f59e0b', fontWeight: 700 }}> {tr('· บัญชีนี้ไม่มีสิทธิ์รับเข้า (line_stock:issue) — ดูได้อย่างเดียว')}</span>}
       </div>
 
-      {loadErr && <div style={{ fontSize: 12.5, color: '#ef4444' }}>⚠ โหลดคิวไม่ครบ — {loadErr} · ตัวเลขบนจออาจขาด</div>}
+      {loadErr && <div style={{ fontSize: 12.5, color: '#ef4444' }}>{tr('⚠ โหลดคิวไม่ครบ —')} {loadErr} {tr('· ตัวเลขบนจออาจขาด')}</div>}
 
       {shown.length === 0
         ? <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>

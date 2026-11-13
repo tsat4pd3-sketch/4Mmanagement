@@ -115,7 +115,7 @@ export default function ProgramUpdate() {
   return (
     <Page>
       <PageHeader
-        icon="📦" title="อัพเดทโปรแกรม"
+        icon="📦" title={trI18n('อัพเดทโปรแกรม')}
         sub={data
           ? `ข้อมูลสดถึง ${fmtStamp(data.generatedAt)} · เก็บจากประวัติการแก้จริงของระบบ`
           : 'รายการสิ่งที่เพิ่ม/แก้ไปในระบบ — อ่านจากประวัติการแก้จริง'}
@@ -127,7 +127,7 @@ export default function ProgramUpdate() {
               ? `เก็บได้ถึง ${fmtThaiDate(data.from)} · เก่ากว่านั้นอยู่ในประวัติของระบบแต่ไม่อยู่ในไฟล์นี้`
               : null}
           >
-            <Segmented value={kind} onChange={setKind} options={segOpts} label="ชนิดการเปลี่ยนแปลง" />
+            <Segmented value={kind} onChange={setKind} options={segOpts} label={trI18n('ชนิดการเปลี่ยนแปลง')} />
             <SearchInput value={q} onChange={setQ} fields="ข้อความ / เรื่อง" />
           </TimeRangeBar>
         )}
@@ -136,7 +136,7 @@ export default function ProgramUpdate() {
       {err && (
         <div style={{ background: 'var(--card)', border: '1px solid var(--red)66', borderLeft: '4px solid var(--red)',
                       borderRadius: 'var(--r-md)', padding: '10px 14px', fontSize: 13, color: 'var(--text2)', lineHeight: 1.6 }}>
-          ❌ <b>โหลดรายการอัพเดทไม่สำเร็จ</b> ({err}) — <b>ไม่ได้หมายความว่าไม่มีอัพเดท</b>
+          ❌ <b>{trI18n('โหลดรายการอัพเดทไม่สำเร็จ')}</b> ({err}) — <b>{trI18n('ไม่ได้หมายความว่าไม่มีอัพเดท')}</b>
           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
             ไฟล์ <code>changelog.json</code> ถูกสร้างตอน build — ถ้าเพิ่ง deploy ลองรีเฟรชอีกครั้ง
           </div>
@@ -144,7 +144,7 @@ export default function ProgramUpdate() {
       )}
 
       {!data && !err && (
-        <div style={{ fontSize: 13, color: 'var(--muted)', padding: '12px 2px' }}>กำลังโหลดรายการอัพเดท…</div>
+        <div style={{ fontSize: 13, color: 'var(--muted)', padding: '12px 2px' }}>{trI18n('กำลังโหลดรายการอัพเดท…')}</div>
       )}
 
       {data && (
@@ -159,17 +159,17 @@ export default function ProgramUpdate() {
                 <div style={{ fontSize: 21, fontWeight: 800, color: k.color, lineHeight: 1.25 }}>
                   {(counts[k.key] || 0).toLocaleString()}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{k.hint}</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{trI18n(k.hint)}</div>
               </div>
             ))}
           </div>
 
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
             {fmtThaiDate(from)} – {fmtThaiDate(to)} · <b style={{ color: 'var(--text2)' }}>{shown.toLocaleString()}</b> รายการ
-            {view.hidden > 0 ? <> จาก {view.total.toLocaleString()}</> : null}
-            {' '}ใน {view.days.length} วันที่มีการแก้
+            {view.hidden > 0 ? <> {trI18n('จาก')} {view.total.toLocaleString()}</> : null}
+            {' '}{trI18n('ใน')} {view.days.length} วันที่มีการแก้
             {(kind !== 'all' || q) && inRange.length !== shown
-              ? <> · กรองจากทั้งหมด {inRange.length.toLocaleString()} รายการในช่วงนี้</> : null}
+              ? <> {trI18n('· กรองจากทั้งหมด')} {inRange.length.toLocaleString()} {trI18n('รายการในช่วงนี้')}</> : null}
           </div>
 
           {!feed.length ? (
@@ -182,7 +182,7 @@ export default function ProgramUpdate() {
           {view.days.length > 1 && (
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
               <button type="button" onClick={() => { setOpenDays({}); setAllOpen(a => !(a == null ? (fewItems || false) : a)); }}
-                title="กางทุกวันเพื่ออ่านต่อเนื่อง หรือพับให้เห็นเฉพาะหัววัน"
+                title={trI18n('กางทุกวันเพื่ออ่านต่อเนื่อง หรือพับให้เห็นเฉพาะหัววัน')}
                 style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
                          border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)' }}>
                 {(allOpen == null ? fewItems : allOpen) ? 'พับทุกวัน' : 'กางทุกวัน'}
@@ -195,12 +195,12 @@ export default function ProgramUpdate() {
             <div key={day.date} style={{ marginBottom: open ? 14 : 4 }}>
               {/* หัววันกดพับได้ — จำนวนรายการโชว์เสมอแม้พับ (ห้ามซ่อนเงียบ) */}
               <div onClick={() => setOpenDays(m => ({ ...m, [day.date]: !open }))}
-                title={open ? 'พับวันนี้' : 'กางดูรายการของวันนี้'}
+                title={open ? trI18n('พับวันนี้') : trI18n('กางดูรายการของวันนี้')}
                 style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5, cursor: 'pointer', userSelect: 'none' }}>
                 <span style={{ fontSize: 11, color: 'var(--muted)', width: 10 }}>{open ? '▾' : '▸'}</span>
                 <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text)' }}>{fmtThaiDate(day.date)}</div>
                 <div style={{ height: 1, flex: 1, background: 'var(--border)' }} />
-                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{day.items.length} รายการ</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)' }}>{day.items.length} {trI18n('รายการ')}</div>
               </div>
               {open && day.items.slice(0, dayCap[day.date] || DAY_ROWS).map(c => {
                 const k = kindOf(c.t);

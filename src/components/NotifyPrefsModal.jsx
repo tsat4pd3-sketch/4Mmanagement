@@ -73,8 +73,8 @@ export default function NotifyPrefsModal({ role, onClose }) {
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3200, display: 'flex', padding: '4vh 3vw' }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', width: 'min(96vw, 560px)', boxShadow: 'var(--shadow-lg)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '13px 16px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>ตั้งค่าแจ้งเตือนของฉัน</div>
-          <button onClick={onClose} aria-label="ปิด" style={{ background: 'none', border: 'none', fontSize: 21, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
+          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{tr('ตั้งค่าแจ้งเตือนของฉัน')}</div>
+          <button onClick={onClose} aria-label={tr('ปิด')} style={{ background: 'none', border: 'none', fontSize: 21, color: 'var(--muted)', cursor: 'pointer', lineHeight: 1 }}>✕</button>
         </div>
 
         <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -82,20 +82,20 @@ export default function NotifyPrefsModal({ role, onClose }) {
               🔴 ไม่พับ "คำเตือนสถานะจริง" (แถบโหลดไม่สำเร็จ · ป้าย 🔒 รายแถว) ตามกฎของ InfoMore */}
           <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.65 }}>
             <InfoMore id="notifyprefs_help" lead="ปิดเรื่องที่ไม่อยากให้เด้ง — มีผลกับของคุณคนเดียว">
-              สวิตช์นี้คุม <b>กระดิ่ง เสียง และการเด้งเข้ามือถือ</b> ของบัญชีคุณเท่านั้น
+              สวิตช์นี้คุม <b>{tr('กระดิ่ง เสียง และการเด้งเข้ามือถือ')}</b> ของบัญชีคุณเท่านั้น
               คนอื่นในหน่วยงานยังได้รับตามปกติ · ปิดแล้วเรื่องนั้นจะไม่สร้างแจ้งเตือนใหม่ให้คุณ
               แต่ของเก่าที่เคยเด้งแล้วยังอยู่ในกระดิ่งเหมือนเดิม
               <div style={{ marginTop: 4 }}>
-                🔒 <b>งานที่รอคุณลงมือ ปิดไม่ได้</b> — ใบที่ส่งถึงตัวคุณโดยตรง และคิวงานของหน่วยงานคุณ
+                🔒 <b>{tr('งานที่รอคุณลงมือ ปิดไม่ได้')}</b> — ใบที่ส่งถึงตัวคุณโดยตรง และคิวงานของหน่วยงานคุณ
                 จะเด้งเสมอ ไม่ว่าตั้งอะไรไว้ (เรื่องพวกนั้นจะขึ้นป้าย 🔒 ในลิสต์ข้างล่าง)
               </div>
             </InfoMore>
           </div>
 
-          {state === 'loading' && <div style={{ fontSize: 12.5, color: 'var(--muted)', padding: 10 }}>กำลังโหลด…</div>}
+          {state === 'loading' && <div style={{ fontSize: 12.5, color: 'var(--muted)', padding: 10 }}>{tr('กำลังโหลด…')}</div>}
           {state === 'error' && (
             <div role="alert" style={{ fontSize: 12, color: toneVar('bad'), background: toneDim('bad'), border: `1px solid ${toneLine('bad')}`, borderRadius: 'var(--r-md)', padding: '8px 10px', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <span style={{ flex: 1, minWidth: 180 }}>โหลดรายการแจ้งเตือนไม่สำเร็จ ({err}) — ยังตั้งค่าไม่ได้</span>
+              <span style={{ flex: 1, minWidth: 180 }}>{tr('โหลดรายการแจ้งเตือนไม่สำเร็จ (')}{err}) — ยังตั้งค่าไม่ได้</span>
               <button onClick={load} style={{ padding: '3px 10px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', fontSize: 12, cursor: 'pointer' }}>{tr('โหลดใหม่')}</button>
             </div>
           )}
@@ -103,23 +103,23 @@ export default function NotifyPrefsModal({ role, onClose }) {
           {state === 'ok' && !rows.length && (
             <div style={{ fontSize: 12.5, color: 'var(--muted)', padding: 10, lineHeight: 1.6 }}>
               ตอนนี้ยังไม่มีเรื่องแจ้งเตือนที่ส่งถึงสิทธิ์ของคุณ (<b>{role || '—'}</b>) จึงไม่มีอะไรให้ปิด
-              <div>ถ้าคิดว่าควรได้รับบางเรื่อง ให้แอดมินตั้งผู้รับที่หน้า “ตั้งค่าการแจ้งเตือน”</div>
+              <div>{tr('ถ้าคิดว่าควรได้รับบางเรื่อง ให้แอดมินตั้งผู้รับที่หน้า “ตั้งค่าการแจ้งเตือน”')}</div>
             </div>
           )}
 
           {state === 'ok' && rows.length > 0 && (<>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', fontWeight: 700 }}>
-              ปิดอยู่ {sum.muted} จาก {sum.total} เรื่องที่ปิดได้{sum.locked ? ` · ล็อกไว้ ${sum.locked} เรื่อง` : ''}
+              ปิดอยู่ {sum.muted} {tr('จาก')} {sum.total} {tr('เรื่องที่ปิดได้')}{sum.locked ? ` · ล็อกไว้ ${sum.locked} เรื่อง` : ''}
             </div>
             {groups.map(g => (
               <div key={g.category}>
-                <div style={{ ...lb, marginBottom: 5 }}>{g.label}</div>
+                <div style={{ ...lb, marginBottom: 5 }}>{tr(g.label)}</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {g.rows.map(r => {
                     const off = muted.has(r.event_key);
                     const working = busy === r.event_key;
                     return (
-                      <label key={r.event_key} title={r.locked ? 'เรื่องนี้เป็นงานที่รอคุณ — ปิดไม่ได้' : undefined}
+                      <label key={r.event_key} title={r.locked ? tr('เรื่องนี้เป็นงานที่รอคุณ — ปิดไม่ได้') : undefined}
                         style={{ display: 'flex', gap: 9, alignItems: 'flex-start', padding: '6px 9px', borderRadius: 'var(--r-md)',
                           background: 'var(--bg3)', border: '1px solid var(--border)', cursor: r.locked || working ? 'default' : 'pointer', opacity: working ? 0.6 : 1 }}>
                         <input type="checkbox" checked={!r.locked && !off} disabled={r.locked || working}

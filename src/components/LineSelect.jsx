@@ -165,10 +165,10 @@ export default function LineSelect({
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'stretch', width: style?.width || '100%' }}>
       {selectEl}
-      <button type="button" onClick={() => setScanOpen(true)} aria-label="สแกนป้ายไลน์" title="สแกนป้ายไลน์"
+      <button type="button" onClick={() => setScanOpen(true)} aria-label={tr('สแกนป้ายไลน์')} title={tr('สแกนป้ายไลน์')}
         style={{ flexShrink: 0, minWidth: 48, borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text)', fontSize: 18, cursor: 'pointer' }}>📷</button>
       {scanOpen && (
-        <ScanModal title="สแกนป้ายไลน์" hint="ยิง QR ไลน์ที่หัวใบสแกนประจำไลน์ หรือป้ายชื่อไลน์"
+        <ScanModal title={tr('สแกนป้ายไลน์')} hint={tr('ยิง QR ไลน์ที่หัวใบสแกนประจำไลน์ หรือป้ายชื่อไลน์')}
           onClose={() => setScanOpen(false)}
           onScan={(parsed) => {
             const r = resolveLine(parsed, pickable);

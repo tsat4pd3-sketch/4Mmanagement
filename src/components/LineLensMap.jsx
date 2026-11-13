@@ -110,7 +110,7 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--text)' }}>{isPeople ? 'ผังจุดงาน' : 'ผังเครื่องจักร'} · {LENS_LABEL[lens]}</span>
-        {pick && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ผังของ {pick}</span>}
+        {pick && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ผังของ')} {pick}</span>}
       </div>
       {state.choices?.length > 0 && (
         <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
@@ -119,9 +119,9 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
         </div>
       )}
       {state.loading ? (
-        <div style={box}>กำลังโหลดผัง{isPeople ? 'จุดงาน' : 'เครื่องจักร'}…</div>
+        <div style={box}>{tr('กำลังโหลดผัง')}{isPeople ? 'จุดงาน' : 'เครื่องจักร'}…</div>
       ) : state.error ? (
-        <div style={{ ...box, borderColor: '#ef4444', color: '#ef4444' }}>⚠ โหลดผัง{isPeople ? 'จุดงาน/คน' : 'เครื่องจักร'}ไม่สำเร็จ — {state.error}</div>
+        <div style={{ ...box, borderColor: '#ef4444', color: '#ef4444' }}>{tr('⚠ โหลดผัง')}{isPeople ? 'จุดงาน/คน' : 'เครื่องจักร'}{tr('ไม่สำเร็จ —')} {state.error}</div>
       ) : !state.image ? (
         <div style={box}>
           ไลน์นี้ยังไม่มีผังเลย์เอาต์{state.choices?.length ? ' — เลือกไลน์ย่อยด้านบนเพื่อดูผังของมัน' : ' — อัปโหลดผังที่หน้า ตั้งค่าไลน์ (/linesetup)'}
@@ -133,7 +133,7 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
         {markers.length > 0 && (
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', fontSize: 11.5, color: 'var(--muted)' }}>
             <button onClick={() => setCrop(v => !v)} style={chip(crop)}>{crop ? tr('✂️ ครอปเฉพาะโซนที่มีหมุด') : tr('🗺️ ทั้งผัง')}</button>
-            <span>{isPeople ? 'คลิกจุดงานเพื่อดูคน + ทักษะ' : 'คลิกหมุดเพื่อดูชื่อ + รายละเอียดเครื่อง'}</span>
+            <span>{isPeople ? tr('คลิกจุดงานเพื่อดูคน + ทักษะ') : tr('คลิกหมุดเพื่อดูชื่อ + รายละเอียดเครื่อง')}</span>
           </div>
         )}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', fontSize: 11.5 }}>
@@ -143,11 +143,11 @@ export default function LineLensMap({ lineName, family, parentName, lens, dtRows
             </span>
           ))}
         </div>
-        {!markers.length && <div style={{ fontSize: 11.5, color: '#f59e0b' }}>⚠ ยังไม่ได้วาง{isPeople ? 'จุดงาน' : 'หมุดเครื่อง'}บนผังนี้ — วางที่หน้า ตั้งค่าไลน์ (/linesetup)</div>}
+        {!markers.length && <div style={{ fontSize: 11.5, color: '#f59e0b' }}>{tr('⚠ ยังไม่ได้วาง')}{isPeople ? 'จุดงาน' : 'หมุดเครื่อง'}{tr('บนผังนี้ — วางที่หน้า ตั้งค่าไลน์ (/linesetup)')}</div>}
         {isPeople && state.unplaced?.length > 0 && (
-          <div style={{ fontSize: 11.5, color: '#f59e0b' }}>⚠ มาทำงานแต่ยังไม่ถูกวางจุด {state.unplaced.length} คน: {state.unplaced.slice(0, 6).map(u => u.name).join(', ')}{state.unplaced.length > 6 ? ' …' : ''} — ไม่อยู่บนผัง</div>
+          <div style={{ fontSize: 11.5, color: '#f59e0b' }}>{tr('⚠ มาทำงานแต่ยังไม่ถูกวางจุด')} {state.unplaced.length} {tr('คน:')} {state.unplaced.slice(0, 6).map(u => u.name).join(', ')}{state.unplaced.length > 6 ? ' …' : ''} {tr('— ไม่อยู่บนผัง')}</div>
         )}
-        {dtOffMap > 0 && <div style={{ fontSize: 11.5, color: '#f59e0b' }}>⚠ Downtime {dtOffMap} รายการวางบนผังไม่ได้ (ไม่ระบุเครื่อง หรือเครื่องนั้นไม่มีหมุด) — ดูในรายการด้านข้าง</div>}
+        {dtOffMap > 0 && <div style={{ fontSize: 11.5, color: '#f59e0b' }}>⚠ Downtime {dtOffMap} {tr('รายการวางบนผังไม่ได้ (ไม่ระบุเครื่อง หรือเครื่องนั้นไม่มีหมุด) — ดูในรายการด้านข้าง')}</div>}
         {sel && !onSelectMachine && <MachineDetailCard m={sel} lens={lens} />}
       </>)}
     </div>
@@ -160,10 +160,10 @@ export function MachineDetailCard({ m, lens, onClose }) {
   if (m._station) return <StationDetailCard m={m} onClose={onClose} />;
   return (
           <div style={{ background: 'var(--bg3)', border: `1px solid ${m.color}66`, borderLeft: `4px solid ${m.color}`, borderRadius: 'var(--r-md)', padding: '8px 10px', fontSize: 12 }}>
-            <div style={{ fontWeight: 800, color: 'var(--text)', display: 'flex', gap: 8, alignItems: 'flex-start' }}><span style={{ flex: 1, minWidth: 0 }}>{m._no}{m._name ? ` · ${m._name}` : ''} — <span style={{ color: m.color }}>{m.sub}</span></span>{onClose && <button onClick={onClose} title="ปิด" style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>✕</button>}</div>
+            <div style={{ fontWeight: 800, color: 'var(--text)', display: 'flex', gap: 8, alignItems: 'flex-start' }}><span style={{ flex: 1, minWidth: 0 }}>{m._no}{m._name ? ` · ${m._name}` : ''} — <span style={{ color: m.color }}>{m.sub}</span></span>{onClose && <button onClick={onClose} title={tr('ปิด')} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>✕</button>}</div>
             {(lens === 'pm' || lens === 'am' || lens === 'health') && (() => {
               const cls = (m._cls || []).filter(c => (lens === 'am' ? c.am : !c.am));
-              if (!cls.length) return <div style={{ color: 'var(--muted)', marginTop: 3 }}>ไม่มีแผน{lens === 'am' ? ' AM' : ' PM'} ของเครื่องนี้</div>;
+              if (!cls.length) return <div style={{ color: 'var(--muted)', marginTop: 3 }}>{tr('ไม่มีแผน')}{lens === 'am' ? ' AM' : ' PM'} {tr('ของเครื่องนี้')}</div>;
               return (
                 <div style={{ display: 'grid', gap: 2, marginTop: 4 }}>
                   {cls.map((c, i) => (
@@ -191,12 +191,12 @@ function StationDetailCard({ m, onClose }) {
     <div style={{ background: 'var(--bg3)', border: `1px solid ${m.color}66`, borderLeft: `4px solid ${m.color}`, borderRadius: 'var(--r-md)', padding: '8px 10px', fontSize: 12, display: 'grid', gap: 6 }}>
       <div style={{ fontWeight: 800, color: 'var(--text)', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
         <span style={{ flex: 1, minWidth: 0 }}>{st.station_name}{st.line_name ? ` · ${st.line_name}` : ''} — <span style={{ color: m.color }}>{m._sub}</span></span>
-        {onClose && <button onClick={onClose} title="ปิด" style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>✕</button>}
+        {onClose && <button onClick={onClose} title={tr('ปิด')} style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>✕</button>}
       </div>
       <div style={{ color: 'var(--muted)' }}>
         ทักษะที่จุดต้องการ: {st.reqs.length ? st.reqs.map(r => `${r.skill_name} ≥${r.min_score}`).join(' · ') : 'ยังไม่ตั้ง (ตั้งที่ ตั้งค่าไลน์)'}
       </div>
-      {!st.people.length && <div style={{ color: 'var(--muted)' }}>ยังไม่มีคนประจำจุดนี้ และวันนี้ไม่มีใครถูกวางที่จุดนี้</div>}
+      {!st.people.length && <div style={{ color: 'var(--muted)' }}>{tr('ยังไม่มีคนประจำจุดนี้ และวันนี้ไม่มีใครถูกวางที่จุดนี้')}</div>}
       {st.people.map(p => {
         const lv = p.fit ? (p.fit.score >= 100 ? '#22c55e' : p.fit.score >= 50 ? '#f59e0b' : '#f97316') : 'var(--muted)';
         return (
@@ -208,14 +208,14 @@ function StationDetailCard({ m, onClose }) {
               <div style={{ fontWeight: 700, color: 'var(--text)' }}>{p.name} <span style={{ fontWeight: 500, color: 'var(--muted)' }}>{shTxt(p.shift)} {attTxt(p)} · {p.source === 'today' ? 'วางจุดวันนี้' : 'จุดประจำ'}</span>{p.ppeBad && <span style={{ color: '#ef4444' }}> · ⚠PPE</span>}</div>
               {p.fit ? (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 8px', marginTop: 2 }}>
-                  <b style={{ color: lv }}>ผ่าน {p.fit.passed}/{p.fit.total}</b>
+                  <b style={{ color: lv }}>{tr('ผ่าน')} {p.fit.passed}/{p.fit.total}</b>
                   {p.fit.details.map(d => (
                     <span key={d.skill_name} style={{ color: d.pass ? 'var(--text2)' : '#f97316' }}>
                       {d.pass ? '✓' : '✗'} {d.skill_name} {d.assessed ? d.actual : 'ยังไม่ประเมิน'}/{d.required}
                     </span>
                   ))}
                 </div>
-              ) : <div style={{ color: 'var(--muted)' }}>จุดยังไม่ตั้งทักษะ — ประเมินความเหมาะไม่ได้</div>}
+              ) : <div style={{ color: 'var(--muted)' }}>{tr('จุดยังไม่ตั้งทักษะ — ประเมินความเหมาะไม่ได้')}</div>}
             </div>
           </div>
         );

@@ -324,7 +324,7 @@ function JigSpinCheck({ frames, checkpoints, results, activeCpId, onPinClick, sh
           ป้ายพวกนี้กินพื้นที่รูปไปเกือบครึ่ง แล้วบังจุดที่ต้องตรวจพอดี (จุดตรวจอยู่กลางรูปบ่อย) */}
       {spin && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', marginTop: compact ? 6 : 8 }}>
-          <button onClick={e => { e.stopPropagation(); setShowCpPhoto(false); setPlaying(p => !p) }} title={playing ? 'หยุดหมุน' : 'หมุนอัตโนมัติ'}
+          <button onClick={e => { e.stopPropagation(); setShowCpPhoto(false); setPlaying(p => !p) }} title={playing ? tr('หยุดหมุน') : tr('หมุนอัตโนมัติ')}
             style={{ background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '3px 11px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
             {playing ? tr('หยุด') : tr('หมุนเอง')}
           </button>
@@ -395,7 +395,7 @@ function VariableRow({ cp, idx, r, onChange, methodIndex, calcText }) {
         {c && <span style={{ fontSize: 11, fontWeight: 700, color: c.text }}>{status === 'pass' ? '●' : status === 'warning' ? '⚠' : '✕'}</span>}
       </div>
       {calcText && (
-        <div style={{ fontSize: 11.5, color: 'var(--blue)', fontWeight: 700 }}>ค่า = {calcText} · ระบบคิดให้จากค่าที่วัด ไม่ต้องกรอก</div>
+        <div style={{ fontSize: 11.5, color: 'var(--blue)', fontWeight: 700 }}>ค่า = {calcText} {tr('· ระบบคิดให้จากค่าที่วัด ไม่ต้องกรอก')}</div>
       )}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         {['v1', 'v2', 'v3'].map((k, i) => (
@@ -487,7 +487,7 @@ function MeasureRow({ cp, idx, r, onChange, methodIndex }) {
         <input type="number" value={r.mval ?? ''} onChange={e => onChange({ ...r, mval: e.target.value })} placeholder={tr('อ่านค่า')}
           style={{ width: 110, textAlign: 'center', fontFamily: 'monospace', border: `1px solid ${c?.border ?? 'var(--border)'}` }} />
         {cp.unit && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{cp.unit}</span>}
-        <span style={{ fontSize: 11.5, color: 'var(--muted)', marginLeft: 'auto' }}>เกณฑ์: <b style={{ color: 'var(--text2)' }}>{measureStdText(cp)}</b></span>
+        <span style={{ fontSize: 11.5, color: 'var(--muted)', marginLeft: 'auto' }}>{tr('เกณฑ์:')} <b style={{ color: 'var(--text2)' }}>{measureStdText(cp)}</b></span>
       </div>
     </div>
   )
@@ -549,7 +549,7 @@ function NgRecheckPanel({ result, cp, onSaved, canRecord = false, deptWrite = nu
   if (!canRecord) {
     return (
       <div style={{ marginTop: 6, borderRadius: 'var(--r-md)', background: 'rgba(224,92,74,0.06)', border: '1px solid rgba(224,92,74,0.25)', padding: '8px 12px' }}>
-        <p style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>NG — ยังไม่มี action</p>
+        <p style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>{tr('NG — ยังไม่มี action')}</p>
         <p style={{ fontSize: 11.5, color: 'var(--muted)', margin: '2px 0 0', lineHeight: 1.45 }}>
           {deptWrite && !deptWrite.ok
             ? teamBlockText(deptWrite, 'ผลตรวจของทีมนี้')
@@ -561,11 +561,11 @@ function NgRecheckPanel({ result, cp, onSaved, canRecord = false, deptWrite = nu
 
   return (
     <div style={{ marginTop: 6, borderRadius: 'var(--r-md)', background: 'rgba(224,92,74,0.06)', border: '1px solid rgba(224,92,74,0.25)', padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <p style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>NG — ต้องการ action</p>
+      <p style={{ fontSize: 11, color: '#e05c4a', fontWeight: 700, textTransform: 'uppercase', margin: 0 }}>{tr('NG — ต้องการ action')}</p>
       <textarea value={action} onChange={e => setAction(e.target.value)} rows={2} placeholder={tr('อธิบายการแก้ไข...')} />
       {cp.type === 'variable' && (
         <div>
-          <p style={{ fontSize: 11, color: 'var(--muted)', margin: '0 0 4px' }}>วัดใหม่ 3 ครั้ง</p>
+          <p style={{ fontSize: 11, color: 'var(--muted)', margin: '0 0 4px' }}>{tr('วัดใหม่ 3 ครั้ง')}</p>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             {[[rv1, setRv1, '①'], [rv2, setRv2, '②'], [rv3, setRv3, '③']].map(([v, set, label], i) => (
               <div key={i}><div style={{ fontSize: 11, color: 'var(--muted)', textAlign: 'center' }}>{label}</div>
@@ -744,8 +744,8 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
             <p style={{ fontWeight: 700, color: 'var(--text)', margin: 0, fontSize: 14 }}>{formatDate(insp.inspected_at)}</p>
             <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
               <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 'var(--r-md)', background: insp.status === 'pass' ? 'var(--accent-dim)' : insp.status === 'fail' ? 'rgba(224,92,74,0.12)' : 'var(--bg3)', color: insp.status === 'pass' ? 'var(--accent)' : insp.status === 'fail' ? '#e05c4a' : 'var(--muted)' }}>{insp.status?.toUpperCase()}</span>
-              {insp.approval_status === 'approved' && <span style={{ fontSize: 11, color: 'var(--accent)', border: '1px solid var(--accent)', padding: '2px 6px', borderRadius: 'var(--r-md)' }}>✓ อนุมัติแล้ว</span>}
-              {insp.approval_status === 'rejected' && <span style={{ fontSize: 11, color: '#e05c4a', border: '1px solid #e05c4a', padding: '2px 6px', borderRadius: 'var(--r-md)' }}>✕ ตีกลับ</span>}
+              {insp.approval_status === 'approved' && <span style={{ fontSize: 11, color: 'var(--accent)', border: '1px solid var(--accent)', padding: '2px 6px', borderRadius: 'var(--r-md)' }}>{tr('✓ อนุมัติแล้ว')}</span>}
+              {insp.approval_status === 'rejected' && <span style={{ fontSize: 11, color: '#e05c4a', border: '1px solid #e05c4a', padding: '2px 6px', borderRadius: 'var(--r-md)' }}>{tr('✕ ตีกลับ')}</span>}
             </div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
@@ -772,7 +772,7 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
                       ) : cp.type === 'measure' ? (
                         <p style={{ fontSize: 11, color: 'var(--muted)', fontFamily: 'monospace', margin: '2px 0 0' }}>
                           อ่านค่า: <strong style={{ color: 'var(--text2)' }}>{fmt(r.value_1)}</strong>{cp.unit ? ` ${cp.unit}` : ''}
-                          <span style={{ marginLeft: 6 }}>เกณฑ์ {measureStdText(cp)}</span>
+                          <span style={{ marginLeft: 6 }}>{tr('เกณฑ์')} {measureStdText(cp)}</span>
                         </p>
                       ) : (
                         <>
@@ -781,7 +781,7 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
                         </>
                       )}
                     </div>
-                    {c && <span style={{ fontSize: 11, fontWeight: 700, color: c.text }}>{c.label}</span>}
+                    {c && <span style={{ fontSize: 11, fontWeight: 700, color: c.text }}>{tr(c.label)}</span>}
                   </div>
                   {/* 📎 รูปหลักฐาน — แตะ = ซูมในแอป (A7 · 03/11) · เดิม <a target=_blank> เด้งออกจากใบที่เปิดอยู่
                       และรูปกว้างเต็มแถว (maxWidth 100%) ⇒ ใช้กล่องรูปย่อของกลางแบบเดียวกับรูปจุดตรวจ */}
@@ -789,7 +789,7 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
                       <PointThumb url={getPublicUrl(r.evidence_path)} height={90} mobileMax={90} label={null} color="var(--red)"
                         name={`หลักฐานสภาพจริง · ${cp.name}`} />
-                      <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>หลักฐานสภาพจริง (แตะเพื่อซูม)</span>
+                      <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>{tr('หลักฐานสภาพจริง (แตะเพื่อซูม)')}</span>
                     </div>
                   )}
                 </div>
@@ -797,15 +797,15 @@ function HistoryModal({ inspection, checkpoints: cpsFromPage, jig, onClose, user
               </div>
             )
           })}
-          {insp.notes && <div style={{ borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--card)', padding: 10 }}><p style={{ fontSize: 11, color: 'var(--muted)', margin: 0 }}>หมายเหตุ</p><p style={{ fontSize: 13, color: 'var(--text)', margin: '2px 0 0' }}>{insp.notes}</p></div>}
-          {insp.approval_status === 'rejected' && insp.reject_reason && <div style={{ borderRadius: 'var(--r-md)', border: '1px solid rgba(224,92,74,0.3)', background: 'rgba(224,92,74,0.06)', padding: 10 }}><p style={{ fontSize: 11, color: '#e05c4a', margin: 0 }}>เหตุผลที่ตีกลับ</p><p style={{ fontSize: 13, color: 'var(--text)', margin: '2px 0 0' }}>{insp.reject_reason}</p></div>}
+          {insp.notes && <div style={{ borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--card)', padding: 10 }}><p style={{ fontSize: 11, color: 'var(--muted)', margin: 0 }}>{tr('หมายเหตุ')}</p><p style={{ fontSize: 13, color: 'var(--text)', margin: '2px 0 0' }}>{insp.notes}</p></div>}
+          {insp.approval_status === 'rejected' && insp.reject_reason && <div style={{ borderRadius: 'var(--r-md)', border: '1px solid rgba(224,92,74,0.3)', background: 'rgba(224,92,74,0.06)', padding: 10 }}><p style={{ fontSize: 11, color: '#e05c4a', margin: 0 }}>{tr('เหตุผลที่ตีกลับ')}</p><p style={{ fontSize: 13, color: 'var(--text)', margin: '2px 0 0' }}>{insp.reject_reason}</p></div>}
         </div>
 
         <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {/* ✍️ B2 — ใบ AM ต้องบอกว่ารอใคร + ทำไมคุณกดไม่ได้ (ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล) */}
           {insp.approval_status === 'pending' && amVerdict && (
             <div style={{ fontSize: 12, color: amVerdict.ok ? 'var(--text2)' : 'var(--amber)', lineHeight: 1.6 }}>
-              {amVerdict.need ? <>รอ <b>{amVerdict.need.label}</b> {amVerdict.need.action}</> : 'รอผู้จัดการรับทราบ'}
+              {amVerdict.need ? <>{tr('รอ')} <b>{tr(amVerdict.need.label)}</b> {amVerdict.need.action}</> : 'รอผู้จัดการรับทราบ'}
               {!amVerdict.ok && <div>{verdictText(amVerdict)}</div>}
               {amApprovalAssumptionText(amVerdict.assumed) && <div style={{ color: 'var(--amber)' }}>{amApprovalAssumptionText(amVerdict.assumed)}</div>}
             </div>
@@ -1603,7 +1603,7 @@ export default function PMCheckData() {
   return (
     <Page width="full">
     {/* UI-STANDARD 2026-09-24 — หัวเพจมาตรฐาน (ใน PmHub ชื่อถูกซ่อน เหลือหัวของ hub ชั้นเดียว) */}
-    <PageHeader title="บันทึกผลตรวจ PM" icon="✅" />
+    <PageHeader title={tr('บันทึกผลตรวจ PM')} icon="✅" />
     {/* 🔐 เปิดทีมอื่นอยู่ — ดูได้ แต่ลงผล/อนุมัติ/เลื่อนรอบไม่ได้ (ต้องเขียนบอก ห้ามปุ่มเทาเฉยๆ) */}
     {!deptWrite.ok && (
       <div style={{ margin: '0 0 10px', padding: '8px 10px', borderLeft: '4px solid var(--amber)',
@@ -1628,7 +1628,7 @@ export default function PMCheckData() {
           {/* 📷 สแกนป้ายที่ติดเครื่อง → เปิดใบตรวจของเครื่องนั้นเลย (2026-10-02 · คำสั่ง user)
               เดิมหน้าพิมพ์ป้ายโฆษณาว่า "สแกนเลือกอุปกรณ์ได้ทันทีใน … ตรวจ PM" แต่หน้านี้ไม่มีปุ่มสแกน
               ⚠️ ป้ายเครื่องจักรเข้ารหัสด้วย machines.id — resolveJig เด้งไป "แถวเงา" ใน jigs ให้เอง */}
-          <button onClick={() => setScanOpen(true)} title="สแกน QR ที่ติดเครื่อง"
+          <button onClick={() => setScanOpen(true)} title={tr('สแกน QR ที่ติดเครื่อง')}
             style={{ minWidth: 44, minHeight: 44, padding: 0, fontSize: 18, borderRadius: 'var(--r-md)',
               background: 'var(--bg3)', border: '1px solid var(--border2)', cursor: 'pointer' }}>📷</button>
         </div>
@@ -1640,8 +1640,8 @@ export default function PMCheckData() {
         )}
         {!amTab && (qWords.length > 0 || jigScope.names?.length) && (
           <div style={{ padding: '0 16px 6px', fontSize: 11, color: 'var(--muted)' }}>
-            พบ {deptJigs.length} จาก {deptJigsAll.length} เครื่อง
-            {jigDropped > 0 && <span style={{ color: 'var(--amber)' }}> · อีก {jigDropped} เครื่องไลน์ไม่ตรงทะเบียน (กรองตามไลน์ไม่ได้)</span>}
+            พบ {deptJigs.length} {tr('จาก')} {deptJigsAll.length} เครื่อง
+            {jigDropped > 0 && <span style={{ color: 'var(--amber)' }}> {tr('· อีก')} {jigDropped} {tr('เครื่องไลน์ไม่ตรงทะเบียน (กรองตามไลน์ไม่ได้)')}</span>}
           </div>
         )}
         {listErr && (
@@ -1649,13 +1649,13 @@ export default function PMCheckData() {
             background: 'rgba(224,92,74,0.12)', border: '1px solid rgba(224,92,74,0.4)', color: 'var(--text)' }}>
             ⚠️ โหลดข้อมูลไม่ครบ — รายการ/ป้ายสถานะด้านล่างอาจไม่จริง<br />
             <span style={{ color: 'var(--muted)' }}>{listErr}</span>{' '}
-            <span onClick={() => window.location.reload()} style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>โหลดใหม่</span>
+            <span onClick={() => window.location.reload()} style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>{tr('โหลดใหม่')}</span>
           </div>
         )}
         <div style={S.jigList}>
           {isAmTeam(department) ? (() => {
             // แท็บฝ่ายผลิต: เฉพาะเครื่องที่ลงทะเบียน Daily PM จัดกลุ่มตามไลน์ + สถานะกะนี้
-            if (dailyLineByJig == null) return <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20 }}>กำลังโหลด...</p>
+            if (dailyLineByJig == null) return <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20 }}>{tr('กำลังโหลด...')}</p>
             const lineParam = searchParams.get('line')
             const byLine = {}
             const hiddenLines = new Set()   // ไลน์ที่ลงทะเบียน AM แต่อยู่นอกขอบเขตของบัญชีนี้ — ต้องเขียนบนจอว่าซ่อนกี่ไลน์
@@ -1683,7 +1683,7 @@ export default function PMCheckData() {
             const pendingReg = jigs.filter(j => hasAmChecklist(j.id) && !dailyLineByJig[j.id])
             const pendingBlock = pendingReg.length > 0 && (
               <div style={{ marginTop: 12, padding: '10px 12px', borderRadius: 'var(--r-md)', border: '1px dashed var(--amber)55', background: 'var(--amber-dim)' }}>
-                <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--amber)' }}>⚠ มีรายการตรวจ AM แล้ว แต่ยังไม่ได้ลงทะเบียน · {pendingReg.length} เครื่อง</div>
+                <div style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--amber)' }}>{tr('⚠ มีรายการตรวจ AM แล้ว แต่ยังไม่ได้ลงทะเบียน ·')} {pendingReg.length} {tr('เครื่อง')}</div>
                 <div style={{ fontSize: 11, color: 'var(--muted)', margin: '3px 0 6px', lineHeight: 1.5 }}>
                   ลงจุดตรวจไว้ที่ PM Setup แล้ว แต่ยังไม่ถูกติ๊กว่า “ต้องตรวจทุกต้นกะ” จึงยังไม่ขึ้นให้ตรวจที่นี่
                 </div>
@@ -1700,7 +1700,7 @@ export default function PMCheckData() {
               <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>
                 {lineParam ? `ไลน์ ${lineParam} ยังไม่ได้ลงทะเบียนเครื่องตรวจ${amScopeSet && !amScopeSet.has(lineParam) ? ' (หรืออยู่นอกขอบเขตของคุณ)' : ''}`
                   : hiddenLines.size ? 'ไลน์ในขอบเขตของคุณยังไม่มีเครื่องที่ลงทะเบียน AM' : 'ยังไม่มีเครื่องที่ลงทะเบียน AM'}<br />
-                <Link to="/daily-checker?tab=pm" style={{ color: 'var(--accent)', fontWeight: 700 }}>ไปลงทะเบียนที่แท็บ AM →</Link>
+                <Link to="/daily-checker?tab=pm" style={{ color: 'var(--accent)', fontWeight: 700 }}>{tr('ไปลงทะเบียนที่แท็บ AM →')}</Link>
               </p>
               {pendingBlock}
             </>)
@@ -1708,12 +1708,12 @@ export default function PMCheckData() {
               {scopeNote}
               {lineParam && (
                 <div style={{ fontSize: 11, color: 'var(--muted)', padding: '0 4px 6px' }}>
-                  กรองเฉพาะไลน์ {lineParam} · <span onClick={() => setParams({ line: null })} style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>ดูทุกไลน์</span>
+                  กรองเฉพาะไลน์ {lineParam} · <span onClick={() => setParams({ line: null })} style={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>{tr('ดูทุกไลน์')}</span>
                 </div>
               )}
               {lineNames.map(ln => (
                 <div key={ln} style={{ marginBottom: 10 }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: deptColor, padding: '2px 4px 4px' }}>{ln} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>· ตรวจแล้ว {byLine[ln].filter(j => checkedThisShift[j.id]).length}/{byLine[ln].length}</span></div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: deptColor, padding: '2px 4px 4px' }}>{ln} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>{tr('· ตรวจแล้ว')} {byLine[ln].filter(j => checkedThisShift[j.id]).length}/{byLine[ln].length}</span></div>
                   {byLine[ln].map(jig => {
                     const st = checkedThisShift[jig.id]
                     return (
@@ -1731,7 +1731,7 @@ export default function PMCheckData() {
                         {jig.machine_no && <p style={{ fontSize: 11, color: 'var(--muted)', margin: '2px 0 0' }}>{jig.machine_no}</p>}
                         {/* ลงทะเบียนไว้แต่ยังไม่มีจุดตรวจ AM — เปิดเข้าไปจะเจอฟอร์มเปล่า บอกไว้ตั้งแต่ในลิสต์ */}
                         {!hasAmChecklist(jig.id) && (
-                          <p style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, margin: '2px 0 0' }}>⚠ ยังไม่มีจุดตรวจ AM</p>
+                          <p style={{ fontSize: 11, color: 'var(--amber)', fontWeight: 700, margin: '2px 0 0' }}>{tr('⚠ ยังไม่มีจุดตรวจ AM')}</p>
                         )}
                       </div>
                     )
@@ -1742,8 +1742,8 @@ export default function PMCheckData() {
             </>)
           })() : (<>
             {deptJigs.length === 0 && ((qWords.length || jigScope.names?.length)
-              ? <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ไม่พบเครื่องที่ตรงกับ{jigQuery.trim() ? ` “${jigQuery.trim()}”` : 'ตัวกรอง'}<br /><span onClick={() => { setJigQuery(''); setJigScope({ section: '', line: '', names: null }) }} style={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>ล้างตัวกรอง</span></p>
-              : <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>ยังไม่มีอุปกรณ์ในทีมนี้<br /><span style={{ fontSize: 11 }}>({(teams.find(d => d.key === department) || {}).label})</span></p>)}
+              ? <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>{tr('ไม่พบเครื่องที่ตรงกับ')}{jigQuery.trim() ? ` “${jigQuery.trim()}”` : 'ตัวกรอง'}<br /><span onClick={() => { setJigQuery(''); setJigScope({ section: '', line: '', names: null }) }} style={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer', fontWeight: 700 }}>{tr('ล้างตัวกรอง')}</span></p>
+              : <p style={{ fontSize: 12, color: 'var(--muted)', textAlign: 'center', marginTop: 20, lineHeight: 1.6 }}>{tr('ยังไม่มีอุปกรณ์ในทีมนี้')}<br /><span style={{ fontSize: 11 }}>({(teams.find(d => d.key === department) || {}).label})</span></p>)}
             {/* จัดกลุ่มตามไลน์ (ทะเบียน ส่วนงาน→แม่→ลูก · ไม่ระบุไลน์ท้ายสุด) — เดิมเรียงตามชื่อยาวเหยียดเป็นแถวเดียว */}
             {jigGroups.map(g => (
               <div key={g.key}>
@@ -1768,13 +1768,13 @@ export default function PMCheckData() {
       <div style={S.main}>
         {!selectedJig ? (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <p style={{ color: 'var(--muted)', fontSize: 14 }}>เลือกอุปกรณ์จากรายการด้านซ้าย</p>
+            <p style={{ color: 'var(--muted)', fontSize: 14 }}>{tr('เลือกอุปกรณ์จากรายการด้านซ้าย')}</p>
           </div>
         ) : (
           <>
             <div style={{ ...S.header, ...(isNarrow ? { padding: '10px 12px', flexWrap: 'wrap' } : null) }}>
               {isNarrow && (
-                <button onClick={clearJig} title="กลับไปเลือกอุปกรณ์" style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', borderRadius: 'var(--r-md)', padding: '6px 10px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{tr('อุปกรณ์')}</button>
+                <button onClick={clearJig} title={tr('กลับไปเลือกอุปกรณ์')} style={{ flexShrink: 0, background: 'var(--bg3)', border: '1px solid var(--border2)', color: 'var(--text)', borderRadius: 'var(--r-md)', padding: '6px 10px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{tr('อุปกรณ์')}</button>
               )}
               {jigImg && <img loading="lazy" src={jigImg} alt="" style={{ width: 36, height: 36, borderRadius: 6, objectFit: 'contain', background: 'var(--bg2)', border: '1px solid var(--border)' }} />}
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -1843,7 +1843,7 @@ export default function PMCheckData() {
                 const formNode = (
                   <>
                   {cpLoad.status === 'loading' ? (
-                    <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '32px 12px' }}>กำลังโหลดรายการตรวจ…</div>
+                    <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 13, padding: '32px 12px' }}>{tr('กำลังโหลดรายการตรวจ…')}</div>
                   ) : cpLoad.status === 'error' ? (
                     <div style={{ textAlign: 'center', color: 'var(--red)', fontSize: 13, padding: '32px 12px', lineHeight: 1.7 }}>
                       ⚠️ โหลดรายการตรวจไม่สำเร็จ — ยังไม่รู้ว่าเครื่องนี้มีจุดตรวจหรือไม่
@@ -1856,7 +1856,7 @@ export default function PMCheckData() {
                       <br />
                       <span style={{ fontSize: 12 }}>
                         1 เครื่องมีรายการตรวจแยกตามแผนกได้ (ผลิตเช็ครายวัน · ช่างเช็คตามรอบ)
-                        <br />จุดตรวจของแต่ละแผนก<b>ปักอยู่คนละมุมของเครื่องได้</b> — จึงยังไม่แสดงรูปหมุนจนกว่าจะมีจุดตรวจของแผนกนี้
+                        <br />{tr('จุดตรวจของแต่ละแผนก')}<b>{tr('ปักอยู่คนละมุมของเครื่องได้')}</b> — จึงยังไม่แสดงรูปหมุนจนกว่าจะมีจุดตรวจของแผนกนี้
                       </span>
                       {otherDepts.length > 0 && (
                         <div style={{ marginTop: 16, padding: '12px 14px', display: 'inline-block', textAlign: 'left', background: 'var(--bg3)', border: '1px solid var(--border2)', borderRadius: 'var(--r-md)' }}>
@@ -1882,8 +1882,8 @@ export default function PMCheckData() {
                       {/* จิ๊กที่มีจุดชิมแต่ยังไม่มีจุดตรวจ PM (เช่น JHYD12-01) — ค่าชิมบันทึกที่ /fixture ได้เลย ไม่ต้องรอใบตรวจ */}
                       {shimPoints.length > 0 && (
                         <div style={{ fontSize: 12, marginTop: 10, color: SHIM_PIN_COLOR }}>
-                          เครื่องนี้มีจุดชิม {shimPoints.length} จุดในทะเบียน — ยังบันทึกค่าชิมได้ที่{' '}
-                          <Link to="/equipment?tab=jig&fx=shim" style={{ color: SHIM_PIN_COLOR, fontWeight: 700 }}>ทะเบียนจิ๊ก → 🔧 บันทึกชิม</Link>
+                          เครื่องนี้มีจุดชิม {shimPoints.length} {tr('จุดในทะเบียน — ยังบันทึกค่าชิมได้ที่')}{' '}
+                          <Link to="/equipment?tab=jig&fx=shim" style={{ color: SHIM_PIN_COLOR, fontWeight: 700 }}>{tr('ทะเบียนจิ๊ก → 🔧 บันทึกชิม')}</Link>
                           {' '}(ตั้งจุดตรวจ PM แล้ว จะกรอกค่าชิมพร้อมใบตรวจได้ที่นี่)
                         </div>
                       )}
@@ -1901,12 +1901,12 @@ export default function PMCheckData() {
                           display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 12, fontWeight: 800, color: doneN === checkpoints.length ? 'var(--accent)' : 'var(--text2)' }}>
                             ตรวจแล้ว {doneN}/{checkpoints.length}
-                            {todo.length > 0 && <span style={{ color: 'var(--amber)', fontWeight: 700 }}> · เหลือ {todo.length}</span>}
+                            {todo.length > 0 && <span style={{ color: 'var(--amber)', fontWeight: 700 }}> {tr('· เหลือ')} {todo.length}</span>}
                           </span>
                           {!showPhoto ? null : (
                             <>
                               <button onClick={() => { setPinFocus(v => !v); setActiveShimId(null) }}
-                                title={pinFocus ? 'สลับเป็นไล่ดูทุกข้อในหน้าเดียว' : (allPinned ? 'สลับเป็นแตะหมุดบนรูปแล้วขึ้นเฉพาะข้อนั้น' : 'สลับเป็นตรวจทีละข้อ')}
+                                title={pinFocus ? tr('สลับเป็นไล่ดูทุกข้อในหน้าเดียว') : (allPinned ? tr('สลับเป็นแตะหมุดบนรูปแล้วขึ้นเฉพาะข้อนั้น') : tr('สลับเป็นตรวจทีละข้อ'))}
                                 style={{ padding: '4px 12px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11.5, fontWeight: 700,
                                   border: `1px solid ${pinFocus ? 'var(--accent)' : 'var(--border2)'}`,
                                   background: pinFocus ? 'var(--accent-dim)' : 'var(--bg3)', color: pinFocus ? 'var(--accent)' : 'var(--text2)' }}>
@@ -1922,7 +1922,7 @@ export default function PMCheckData() {
                           )}
                           {(
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center', marginLeft: 'auto' }}>
-                              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{todo.length ? 'ยังไม่ตรวจ:' : 'ครบแล้ว 🎉'}</span>
+                              <span style={{ fontSize: 11, color: 'var(--muted)' }}>{todo.length ? tr('ยังไม่ตรวจ:') : tr('ครบแล้ว 🎉')}</span>
                               {(chipsAll ? todo : todo.slice(0, CHIP_CAP)).map(c => (
                                 <button key={c.id} onClick={() => { setActiveShimId(null); setActiveCpId(c.id) }}
                                   title={c.name}
@@ -2029,10 +2029,10 @@ export default function PMCheckData() {
                         return (
                           <div style={{ marginTop: 12 }}>
                             <div style={{ padding: '7px 12px', borderRadius: 'var(--r-md)', marginBottom: 8, background: 'var(--blue-dim)', border: '1px solid var(--blue-line)', fontSize: 12.5, fontWeight: 800, color: SHIM_PIN_COLOR }}>
-                              จุดชิม (Shim Record) · {shimPoints.length} จุด{dueN ? <span style={{ color: 'var(--red)' }}> · ถึงรอบ {dueN}</span> : null}
+                              จุดชิม (Shim Record) · {shimPoints.length} {tr('จุด')}{dueN ? <span style={{ color: 'var(--red)' }}> {tr('· ถึงรอบ')} {dueN}</span> : null}
                               <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--muted)', marginTop: 2 }}>
                                 วัดค่าชิมรวมตอนนี้แล้วกรอกเป็น mm — บันทึกพร้อมใบตรวจนี้ลงประวัติชิมของจุด (ไม่บังคับ · จุดที่ไม่กรอก = ไม่แตะ)
-                                {shimPins.length < shimPoints.length && <span> · {shimPoints.length - shimPins.length} จุดยังไม่ปักบนรูป — ปักที่ /fixture แท็บทะเบียนจุด</span>}
+                                {shimPins.length < shimPoints.length && <span> · {shimPoints.length - shimPins.length} {tr('จุดยังไม่ปักบนรูป — ปักที่ /fixture แท็บทะเบียนจุด')}</span>}
                               </div>
                             </div>
                             {!canShim && (
@@ -2053,10 +2053,10 @@ export default function PMCheckData() {
                                 <div key={pt.id} ref={el => { rowRefs.current[`shim:${pt.id}`] = el }}
                                   style={{ ...S.cpRow(null), borderColor: overMax ? 'var(--red)' : mm != null ? SHIM_PIN_COLOR : 'var(--border)', scrollMarginTop: (stackCompact ? viewerH : 0) + progH + 12 }}>
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                    <span style={{ minWidth: 22, height: 18, padding: '0 5px', borderRadius: 'var(--r-md)', background: pinned ? SHIM_PIN_COLOR : 'var(--border2)', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }} title={pinned ? 'ปักบนรูปแล้ว' : 'ยังไม่ปักบนรูป'}>{pt.point_no}</span>
+                                    <span style={{ minWidth: 22, height: 18, padding: '0 5px', borderRadius: 'var(--r-md)', background: pinned ? SHIM_PIN_COLOR : 'var(--border2)', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }} title={pinned ? tr('ปักบนรูปแล้ว') : tr('ยังไม่ปักบนรูป')}>{pt.point_no}</span>
                                     <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>{k.icon} {k.label}{pt.name ? <span style={{ fontWeight: 500, color: 'var(--muted)' }}> · {pt.name}</span> : null}</span>
                                     <span style={{ fontSize: 11.5, color: 'var(--muted)', marginLeft: 'auto' }}>
-                                      ชิมรวม <b style={{ color: st.level === 'over' ? 'var(--red)' : st.level === 'warn' ? 'var(--amber)' : 'var(--text)' }}>{st.current ?? '—'}</b> / เพดาน {pt.max_shim_mm ?? 'ไม่ตั้ง'} mm
+                                      ชิมรวม <b style={{ color: st.level === 'over' ? 'var(--red)' : st.level === 'warn' ? 'var(--amber)' : 'var(--text)' }}>{st.current ?? '—'}</b> {tr('/ เพดาน')} {pt.max_shim_mm ?? 'ไม่ตั้ง'} mm
                                       {due.level !== 'unset' && <span style={{ marginLeft: 8, color: due.due ? 'var(--red)' : due.level === 'soon' ? 'var(--amber)' : 'var(--muted)' }}>· {due.text}</span>}
                                     </span>
                                   </div>
@@ -2152,7 +2152,7 @@ export default function PMCheckData() {
                   {histMeta && !histMeta.teamsKnown && (
                     <p style={{ margin: 0, padding: '8px 10px', borderRadius: 'var(--r-md)', fontSize: 11.5, fontWeight: 600,
                                 border: '1px solid var(--amber)', background: 'var(--bg3)', color: 'var(--amber)' }}>
-                      ⚠️ อ่านทีมเจ้าของใบไม่ได้ — ลิสต์นี้เป็นใบ<b>ทุกทีม</b>ของเครื่องนี้ปนกัน และบอกไม่ได้ว่าใบไหนของใคร
+                      ⚠️ อ่านทีมเจ้าของใบไม่ได้ — ลิสต์นี้เป็นใบ<b>{tr('ทุกทีม')}</b>ของเครื่องนี้ปนกัน และบอกไม่ได้ว่าใบไหนของใคร
                     </p>
                   )}
                   {histMeta?.teamsKnown && otherN === null && (
@@ -2162,7 +2162,7 @@ export default function PMCheckData() {
                   )}
                   {!!otherN && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 11.5, color: 'var(--text2)' }}>
-                      <span>🔀 เครื่องนี้มีใบของทีมอื่นอีก <b>{otherN}</b> ใบ ({(histMeta.otherTeams || []).map(inspTeamLabel).join(' · ')})</span>
+                      <span>{tr('🔀 เครื่องนี้มีใบของทีมอื่นอีก')} <b>{otherN}</b> {tr('ใบ (')}{(histMeta.otherTeams || []).map(inspTeamLabel).join(' · ')})</span>
                       <button type="button" onClick={toggleOtherHist} style={{
                         padding: '3px 10px', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11, fontWeight: 700,
                         border: '1px dashed var(--border2)', background: 'var(--bg3)', color: 'var(--text2)',
@@ -2191,8 +2191,8 @@ export default function PMCheckData() {
                               {inspTeamLabel(clDeptById[insp.checklist_id])}
                             </span>
                           )}
-                          {insp.approval_status === 'approved' && <span style={{ fontSize: 11, color: 'var(--accent)' }}>{isAmTeam(clDeptById[insp.checklist_id] ?? department) ? '✓ อนุมัติแล้ว' : '✓ หัวหน้ายืนยันแล้ว'}</span>}
-                          {insp.approval_status === 'rejected' && <span style={{ fontSize: 11, color: '#e05c4a' }}>✕ ตีกลับ</span>}
+                          {insp.approval_status === 'approved' && <span style={{ fontSize: 11, color: 'var(--accent)' }}>{isAmTeam(clDeptById[insp.checklist_id] ?? department) ? tr('✓ อนุมัติแล้ว') : tr('✓ หัวหน้ายืนยันแล้ว')}</span>}
+                          {insp.approval_status === 'rejected' && <span style={{ fontSize: 11, color: '#e05c4a' }}>{tr('✕ ตีกลับ')}</span>}
                           {insp.approval_status === 'pending' && (() => {
                             // ✍️ B2 — ใบ AM บอกว่ารอใคร (ชั้นถัดไปเหนือคนตรวจ) · ใบช่าง = ป้ายเดิม
                             const am = isAmTeam(clDeptById[insp.checklist_id] ?? department)
@@ -2207,10 +2207,10 @@ export default function PMCheckData() {
                             </span>
                           )}
                           {insp.status === 'fail' && !moByInsp[insp.id] && insp.mo_waived_reason && (
-                            <span style={{ fontSize: 11, color: 'var(--muted)' }}>ไม่เปิดใบซ่อม: {insp.mo_waived_reason}</span>
+                            <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ไม่เปิดใบซ่อม:')} {insp.mo_waived_reason}</span>
                           )}
                           {insp.status === 'fail' && !moByInsp[insp.id] && !insp.mo_waived_reason && isAmTeam(clDeptById[insp.checklist_id] ?? department) && (
-                            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>⚠ ยังไม่เปิดใบซ่อม / ไม่ระบุเหตุผล</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>{tr('⚠ ยังไม่เปิดใบซ่อม / ไม่ระบุเหตุผล')}</span>
                           )}
                         </div>
                       </div>
@@ -2253,14 +2253,14 @@ export default function PMCheckData() {
         <div style={{ position: 'fixed', inset: 0, zIndex: 3100, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
           <div style={{ width: '100%', maxWidth: 460, background: 'var(--bg2)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
-              <div style={{ fontSize: 16, fontWeight: 800, color: '#e05c4a' }}>⚠ พบผลตรวจไม่ผ่าน {moPrompt.ngTopics.length} จุด</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: '#e05c4a' }}>{tr('⚠ พบผลตรวจไม่ผ่าน')} {moPrompt.ngTopics.length} {tr('จุด')}</div>
               <div style={{ fontSize: 12.5, color: 'var(--text2)', marginTop: 4 }}>{selectedJig?.name}</div>
             </div>
             <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '9px 12px', fontSize: 12, color: 'var(--text2)', lineHeight: 1.7, maxHeight: 130, overflowY: 'auto' }}>
               {moPrompt.ngTopics.map((n, i) => <div key={i}>• {n}</div>)}
             </div>
             <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>แจ้งถึงทีมช่าง</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>{tr('แจ้งถึงทีมช่าง')}</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {MTN_TEAMS.map(t => (
                   <button key={t} onClick={() => setMoTeam(t)} style={{
@@ -2280,7 +2280,7 @@ export default function PMCheckData() {
             {/* 🔧 B3 — ใบ AM: ข้ามได้เฉพาะเมื่อเขียนเหตุผล (บันทึกลงผลตรวจ · บอร์ด AM เห็น) */}
             {isAmPrompt && moWaiving && (
               <div>
-                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>เหตุผลที่ไม่เปิดใบแจ้งซ่อม</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>{tr('เหตุผลที่ไม่เปิดใบแจ้งซ่อม')}</div>
                 <textarea value={moWaiveReason} onChange={e => setMoWaiveReason(e.target.value)} rows={2}
                   placeholder={tr('เช่น แก้ไขเองหน้างานแล้ว / แจ้งหัวหน้าให้เปิดใบแล้ว')} style={{ width: '100%' }} />
               </div>
@@ -2338,7 +2338,7 @@ export default function PMCheckData() {
     {/* 📷 สแกนป้ายเครื่อง → เลือกอุปกรณ์นั้นให้เลย (คืน string = ข้อความ error ให้โชว์ในโมดัล)
         🔴 ไม่พบ/ไม่อยู่ในแผนกนี้ ต้องบอกเหตุผล ห้ามปิดเงียบแล้วไม่เกิดอะไรขึ้น */}
     {scanOpen && (
-      <ScanModal title="สแกนป้ายเครื่อง" hint="ส่องป้าย QR ที่ติดเครื่อง หรือยิงด้วยเครื่องสแกน"
+      <ScanModal title={tr('สแกนป้ายเครื่อง')} hint={tr('ส่องป้าย QR ที่ติดเครื่อง หรือยิงด้วยเครื่องสแกน')}
         onScan={(parsed) => {
           const j = resolveJig(parsed, jigs)
           if (!j) return 'ไม่พบอุปกรณ์นี้ในทะเบียน PM — ลงทะเบียนที่แท็บ ⚙️ ตั้งค่าจุดตรวจก่อน'

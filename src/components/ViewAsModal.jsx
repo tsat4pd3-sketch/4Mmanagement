@@ -69,7 +69,7 @@ export default function ViewAsModal({ current, onClose, onApply }) {
     <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 10001, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={{ background: 'var(--card)', border: '1.5px solid #a855f7', borderRadius: 'var(--r-lg)', padding: '20px 24px', maxWidth: 480, width: '100%', maxHeight: '88vh', overflowY: 'auto', boxShadow: 'var(--shadow-lg)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-          <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>จำลองมุมมอง role</div>
+          <div style={{ fontSize: 18, fontWeight: 900, color: 'var(--text)' }}>{tr('จำลองมุมมอง role')}</div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18, cursor: 'pointer', padding: 4 }}>✕</button>
         </div>
         <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.6, marginBottom: 12 }}>

@@ -142,7 +142,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
           วางเป็น CollapseCard พี่น้องแยกจากตาราง rate: ทะเบียน = "รหัสมีอะไรบ้าง" · rate = "รหัสนั้นราคาเท่าไร"
           สิทธิ์เขียนใช้คีย์เดียวกับ RLS (cost_rate:manage) · แก้แล้ว invalidate cache ให้ <CostCenterSelect> ทุกหน้าเห็นทันที */}
       <CollapseCard id="cc_master" storePrefix="orgsetup" defaultOpen={false}
-        title={<span>ทะเบียน Cost Center <span style={{ fontWeight: 600, color: 'var(--muted)' }}>(รหัสจากบัญชี — ช่อง Cost Center ทุกหน้าเลือกจากที่นี่)</span></span>}>
+        title={<span>{tr('ทะเบียน Cost Center')} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>{tr('(รหัสจากบัญชี — ช่อง Cost Center ทุกหน้าเลือกจากที่นี่)')}</span></span>}>
         {/* 🔴 onBeforeDelete = ด่านนับปลายทางก่อนลบ (fail-closed) — ห้ามถอด
             06/10 มีการลบ 31 รหัสด้วยเหตุผล "ชื่อว่าง น่าจะไม่ได้ใช้" แต่ 29 รหัสในนั้น
             บัญชีตั้ง activity rate ปี 2026 ไว้ครบ (ชื่อหน่วยจริงอยู่ใน note ของแถว rate)
@@ -155,17 +155,17 @@ export default function CostCenterRatePanel({ nodes, lines }) {
             { key: 'section', label: 'ส่วนงาน', placeholder: 'เช่น PD5' },
             { key: 'note', label: 'หมายเหตุ' },
           ]}
-          help="รหัสจากบัญชี · ไลน์/ผัง/rate เก็บรหัสนี้เป็น text · เพิ่มรหัสใหม่ที่นี่ก่อนแล้วค่อยไปตั้งที่ไลน์/ผัง"
-          emptyText="ยังไม่มีรหัสในทะเบียน — กด + เพิ่ม (รหัสที่ไลน์/ผังใช้อยู่แล้วยังเลือกได้จากกลุ่ม 📜)" />
+          help={tr('รหัสจากบัญชี · ไลน์/ผัง/rate เก็บรหัสนี้เป็น text · เพิ่มรหัสใหม่ที่นี่ก่อนแล้วค่อยไปตั้งที่ไลน์/ผัง')}
+          emptyText={tr('ยังไม่มีรหัสในทะเบียน — กด + เพิ่ม (รหัสที่ไลน์/ผังใช้อยู่แล้วยังเลือกได้จากกลุ่ม 📜)')} />
       </CollapseCard>
       <CollapseCard id="cc_rates" storePrefix="orgsetup" count={groupList.length}
-        title={<span>Activity Rate ต่อ Cost Center <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({RATE_COMPONENTS.map(c => c.label).join('/')} บาท/ชม. — ใช้คิด cost saving ในโปรเจคปรับปรุง)</span></span>}>
+        title={<span>{tr('Activity Rate ต่อ Cost Center')} <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({RATE_COMPONENTS.map(c => c.label).join('/')} บาท/ชม. — ใช้คิด cost saving ในโปรเจคปรับปรุง)</span></span>}>
         <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>
-          rate เป็นของ <b>รหัส Cost Center</b> (ไม่ได้ผูกกับไลน์) — ปกติบัญชีตั้งที่ <b>ชั้นกลุ่ม</b> แล้วชั้นแผนก/ส่วนรวมขึ้นเองตามลำดับชั้นในผัง
+          rate เป็นของ <b>{tr('รหัส Cost Center')}</b> {tr('(ไม่ได้ผูกกับไลน์) — ปกติบัญชีตั้งที่')} <b>{tr('ชั้นกลุ่ม')}</b> แล้วชั้นแผนก/ส่วนรวมขึ้นเองตามลำดับชั้นในผัง
           · <b>บัญชีส่ง rate รอบใหม่ = กด “＋ rate ใหม่”</b> (ประวัติเดิมคงไว้ โปรเจคเก่าคำนวณด้วย rate ณ ช่วงนั้น) — ปุ่ม ✏️ ไว้แก้เฉพาะตอนกรอกตัวเลขผิด
-          {noRateUsed > 0 && <span style={{ color: '#f59e0b', fontWeight: 700 }}> · ⚠ มี {noRateUsed} รหัสที่ไลน์ใช้อยู่แต่ยังไม่ตั้ง rate</span>}
+          {noRateUsed > 0 && <span style={{ color: '#f59e0b', fontWeight: 700 }}> {tr('· ⚠ มี')} {noRateUsed} {tr('รหัสที่ไลน์ใช้อยู่แต่ยังไม่ตั้ง rate')}</span>}
           {otherCount > 0 && (
-            <span> · ซ่อนรหัสระดับส่วน/แผนก {otherCount} รหัส{' '}
+            <span> {tr('· ซ่อนรหัสระดับส่วน/แผนก')} {otherCount} {tr('รหัส')}{' '}
               <button onClick={() => setShowAllLevels(v => !v)} style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: 0 }}>
                 {showAllLevels ? tr('กลับมาแสดงเฉพาะระดับกลุ่ม') : tr('แสดงทั้งหมด')}
               </button>
@@ -191,7 +191,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
             <tbody>
               {/* colSpan ต้องคิดจาก RATE_COMPONENTS ด้วย (2 คอลัมน์หน้า + ก้อน rate + รวม/effective/ปุ่ม) */}
               {shownList.length === 0 && (
-                <tr><td colSpan={2 + RATE_COMPONENTS.length + 3} style={{ padding: 14, fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>ยังไม่มี cost center ระดับกลุ่ม — กรอกที่ฟอร์มกลุ่มในผัง หรือหน้าจัดการไลน์ (ไลน์แม่) ก่อน</td></tr>
+                <tr><td colSpan={2 + RATE_COMPONENTS.length + 3} style={{ padding: 14, fontSize: 12, color: 'var(--muted)', textAlign: 'center' }}>{tr('ยังไม่มี cost center ระดับกลุ่ม — กรอกที่ฟอร์มกลุ่มในผัง หรือหน้าจัดการไลน์ (ไลน์แม่) ก่อน')}</td></tr>
               )}
               {shownList.map(({ cc, orgGroup, orgOther, lines: lns }) => {
                 const cur = rateFor(rates, cc, todayStr());
@@ -203,7 +203,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                     <tr style={{ borderTop: '1px solid var(--border)' }}>
                       <td style={{ padding: '7px 10px', fontSize: 12, fontWeight: 700, fontFamily: 'monospace', color: 'var(--text)', whiteSpace: 'nowrap' }}>
                         {cc}
-                        {lns.length > 0 && !cur && <span title="ไลน์ใช้รหัสนี้อยู่ แต่ยังไม่ตั้ง rate — cost saving ของไลน์นี้จะคำนวณไม่ได้" style={{ marginLeft: 6, fontSize: 11, color: '#f59e0b', fontWeight: 800 }}>⚠</span>}
+                        {lns.length > 0 && !cur && <span title={tr('ไลน์ใช้รหัสนี้อยู่ แต่ยังไม่ตั้ง rate — cost saving ของไลน์นี้จะคำนวณไม่ได้')} style={{ marginLeft: 6, fontSize: 11, color: '#f59e0b', fontWeight: 800 }}>⚠</span>}
                         {/* ⛔ ถอดธง "ไม่ใช่ 21406?" ออกแล้ว (2026-10-21 · คำสั่ง user
                             *"activity rate มันอิง cost center มันไม่ได้อิงไลน์"*)
                             ธงเดิมจุดชนวนจาก "มีไลน์ใช้รหัสนี้ + รหัสไม่ขึ้นต้น 21406" ซึ่งผิด 2 ชั้น:
@@ -216,7 +216,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                         {orgGroup.length > 0 && lns.length > 0 && ' · '}
                         {lns.length > 0 && <span>{lns.join(', ')}</span>}
                         {orgOther.length > 0 && <span style={{ opacity: 0.7 }}>{(orgGroup.length || lns.length) ? ' · ' : ''}🏛️ {orgOther.join(', ')}</span>}
-                        {!orgGroup.length && !lns.length && !orgOther.length && <span style={{ opacity: 0.6 }}>— ไม่มีในผัง/ไลน์แล้ว (ประวัติ)</span>}
+                        {!orgGroup.length && !lns.length && !orgOther.length && <span style={{ opacity: 0.6 }}>{tr('— ไม่มีในผัง/ไลน์แล้ว (ประวัติ)')}</span>}
                       </td>
                       {RATE_COMPONENTS.map(c => (
                         <td key={c.key} style={{ padding: '7px 10px', fontSize: 12, textAlign: 'right', fontFamily: 'monospace', color: cur ? 'var(--text2)' : 'var(--muted)' }}>
@@ -237,10 +237,10 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                       <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', textAlign: 'right' }}>
                         {canEdit ? (<>
                           <button onClick={() => setForm({ ...emptyForm(), cost_center: cc, ...(cur ? Object.fromEntries(RATE_COMPONENTS.map(c => [c.field, cur[c.field]])) : {}) })}
-                            title="บัญชีปรับ rate รอบใหม่ → กดปุ่มนี้ (rate เดิมเก็บเป็นประวัติ โปรเจคเก่ายังคิดด้วยตัวเดิม)"
-                            style={{ background: 'none', border: '1px solid var(--accent)', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11, fontWeight: 800, color: 'var(--accent)', padding: '2px 9px' }}>＋ rate ใหม่</button>
+                            title={tr('บัญชีปรับ rate รอบใหม่ → กดปุ่มนี้ (rate เดิมเก็บเป็นประวัติ โปรเจคเก่ายังคิดด้วยตัวเดิม)')}
+                            style={{ background: 'none', border: '1px solid var(--accent)', borderRadius: 'var(--r-md)', cursor: 'pointer', fontSize: 11, fontWeight: 800, color: 'var(--accent)', padding: '2px 9px' }}>{tr('＋ rate ใหม่')}</button>
                           {cur && <button onClick={() => setForm({ ...emptyForm(), ...cur, id: cur.id })}
-                            title="แก้ตัวเลขที่กรอกผิดของแถวนี้ — ไม่ใช่สำหรับ rate รอบใหม่ (ใช้ ＋ rate ใหม่ แทน)"
+                            title={tr('แก้ตัวเลขที่กรอกผิดของแถวนี้ — ไม่ใช่สำหรับ rate รอบใหม่ (ใช้ ＋ rate ใหม่ แทน)')}
                             style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, opacity: 0.55, marginLeft: 6 }}>✏️</button>}
                         </>) : <span style={{ fontSize: 11, color: 'var(--muted)' }}>🔒</span>}
                       </td>
@@ -257,7 +257,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                         <td style={{ padding: '4px 10px', whiteSpace: 'nowrap', textAlign: 'right' }}>
                           {canEdit && <>
                             <button onClick={() => setForm({ ...emptyForm(), ...r })} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}>✏️</button>
-                            <DeleteButton onClick={() => handleDelete(r)} title="ลบ" />
+                            <DeleteButton onClick={() => handleDelete(r)} title={tr('ลบ')} />
                           </>}
                         </td>
                       </tr>
@@ -276,7 +276,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
           /* ซ่อนปุ่มได้ ห้ามซ่อนเหตุผล — UI-CONVENTIONS §6.9 */
           <ReadOnlyNote role={role} permKey="cost_rate:manage"
             what="แก้ Activity Rate (ค่าแรง/ค่าเสื่อม/โสหุ้ย ต่อ cost center)"
-            hint="rate ชุดนี้เป็นตัวคูณของ “เงินที่ประหยัดได้” ทุกจอ (โปรเจคปรับปรุง · มูลค่าดาวไทม์/ของเสีย · เด็ครายงานเดือน) จึงเปิดให้เฉพาะผู้ดูแลระบบ/ผู้จัดการ" />
+            hint={tr('rate ชุดนี้เป็นตัวคูณของ “เงินที่ประหยัดได้” ทุกจอ (โปรเจคปรับปรุง · มูลค่าดาวไทม์/ของเสีย · เด็ครายงานเดือน) จึงเปิดให้เฉพาะผู้ดูแลระบบ/ผู้จัดการ')} />
         )}
 
         {/* modal ฟอร์ม rate — ห้ามปิดจาก backdrop ตาม UI-CONVENTIONS §5 */}
@@ -284,7 +284,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
           <div className="overlay">
             <div className="modal" style={{ width: 'min(560px, 94vw)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>{form.id ? '✏️ แก้ Activity Rate' : '➕ เพิ่ม Activity Rate'}</h3>
+                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>{form.id ? tr('✏️ แก้ Activity Rate') : tr('➕ เพิ่ม Activity Rate')}</h3>
                 <button onClick={() => setForm(null)} style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 20, cursor: 'pointer' }}>×</button>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -293,7 +293,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                     {form.id ? (
                       /* แก้แถวเดิม = ย้ายรหัสไม่ได้ · readOnly ไม่ใช่ disabled — ให้กล่องหน้าตาเหมือนกัน */
                       <input value={form.cost_center} readOnly
-                        title="ย้าย rate ข้าม cost center ไม่ได้ — ถ้ากรอกรหัสผิด ให้ลบแถวนี้แล้วเพิ่มใหม่"
+                        title={tr('ย้าย rate ข้าม cost center ไม่ได้ — ถ้ากรอกรหัสผิด ให้ลบแถวนี้แล้วเพิ่มใหม่')}
                         style={{ marginTop: 4, fontFamily: 'monospace', opacity: 0.75, cursor: 'not-allowed' }} />
                     ) : (
                       /* 2026-09-08: เลือกจากทะเบียน cost_centers ผ่าน <CostCenterSelect> (allowFree ปิด — รหัสใหม่ต้องตั้งที่แผงทะเบียนด้านบนก่อน)
@@ -315,7 +315,7 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                       onChange={e => setForm({ ...form, effective_from: e.target.value })}
                       onKeyDown={e => { if (dateLocked) e.preventDefault(); }}
                       onClick={e => { if (dateLocked) { e.preventDefault(); e.currentTarget.blur(); } }}
-                      title={dateLocked ? 'ล็อกกันแก้พลาด — กด 🔓 ถ้าต้องแก้วันจริงๆ' : ''}
+                      title={dateLocked ? tr('ล็อกกันแก้พลาด — กด 🔓 ถ้าต้องแก้วันจริงๆ') : ''}
                       style={{ marginTop: 4, width: 145, display: 'block', opacity: dateLocked ? 0.75 : 1, cursor: dateLocked ? 'not-allowed' : 'auto' }} />
                   </label>
                 </div>
@@ -323,14 +323,14 @@ export default function CostCenterRatePanel({ nodes, lines }) {
                   <div style={{ fontSize: 11, color: 'var(--muted)', background: 'var(--bg3)', borderRadius: 'var(--r-md)', padding: '6px 9px', lineHeight: 1.6 }}>
                     {dateLocked ? (
                       <>
-                        🔒 วัน Effective ล็อกกันแก้พลาด — <b>ปรับ rate รอบใหม่ให้กด ＋ rate ในตาราง</b> (แถวเดิมเก็บเป็นประวัติ โปรเจคที่เริ่มก่อนหน้ายังคิดด้วย rate เดิม)
+                        🔒 วัน Effective ล็อกกันแก้พลาด — <b>{tr('ปรับ rate รอบใหม่ให้กด ＋ rate ในตาราง')}</b> (แถวเดิมเก็บเป็นประวัติ โปรเจคที่เริ่มก่อนหน้ายังคิดด้วย rate เดิม)
                         <button onClick={unlockDate} style={{ marginLeft: 6, background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', color: 'var(--accent)', fontSize: 11, fontWeight: 800, cursor: 'pointer', padding: '1px 7px' }}>{tr('แก้วันที่')}</button>
                       </>
                     ) : (
                       <span style={{ color: '#f59e0b', fontWeight: 700 }}>ปลดล็อกวันที่แล้ว — เปลี่ยนวันนี้ = เปลี่ยนย้อนหลังว่า rate นี้ครอบช่วงไหน cost saving ของโปรเจคที่คำนวณด้วย rate ช่วงนี้จะขยับตาม</span>
                     )}
                     <div style={{ marginTop: 3, opacity: 0.85 }}>
-                      เวลาที่แก้ระบบบันทึกเอง: สร้าง {fmtStamp(form.created_at)} · แก้ล่าสุด {fmtStamp(form.updated_at)} (ใครแก้ดูได้ที่ audit log)
+                      เวลาที่แก้ระบบบันทึกเอง: สร้าง {fmtStamp(form.created_at)} {tr('· แก้ล่าสุด')} {fmtStamp(form.updated_at)} (ใครแก้ดูได้ที่ audit log)
                     </div>
                   </div>
                 )}

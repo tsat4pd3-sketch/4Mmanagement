@@ -12,6 +12,7 @@ import Page from '../components/Page';
 import ObeyaKpiBoard from '../components/ObeyaKpiBoard';
 import ObeyaSqdcmBoard from '../components/ObeyaSqdcmBoard';
 
+import { tr } from '../utils/i18n';
 const KpiMonthly = lazy(() => import('../components/KpiMonthly'));
 const DeptDashboard = lazy(() => import('./DeptDashboard'));
 
@@ -85,7 +86,7 @@ export default function Obeya() {
   /* UI-STANDARD 2026-09-24: ทุกแท็บอยู่ใน <Page> กรอบเดียวกัน — เดิมแต่ละแท็บมีรากของตัวเอง
      (kpi/sqdcm ชิด sidebar x=0 · todo/table x=24) ⇒ หัวเพจกระโดดตอนสลับแท็บ
      โหมดจอ TV ของบอร์ดเป็น position:fixed เต็มจอ — ไม่ถูกกรอบนี้บีบ */
-  const loadingNote = <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: 24 }}>กำลังโหลด...</div>;
+  const loadingNote = <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: 14, padding: 24 }}>{tr('กำลังโหลด...')}</div>;
   let body;
   if (tab === 'sqdcm') body = <ObeyaSqdcmBoard tabs={tabs} tab={tab} onTab={setTab} />;
   else if (tab === 'todo') {
@@ -101,7 +102,7 @@ export default function Obeya() {
         <PageHeader
           tabs={tabs} tab={tab} onTab={setTab}
           title={OBEYA_TITLE} icon={OBEYA_ICON}
-          sub="ตั้งนิยาม KPI · กรอกผลราย 12 เดือน · ออกฟอร์ม FM-HRM-6-022/024/025 — ข้อมูลชุดเดียวกับแท็บ 📋 บอร์ด"
+          sub={tr('ตั้งนิยาม KPI · กรอกผลราย 12 เดือน · ออกฟอร์ม FM-HRM-6-022/024/025 — ข้อมูลชุดเดียวกับแท็บ 📋 บอร์ด')}
         />
         <Suspense fallback={loadingNote}>
           <KpiMonthly lines={lines} scopeSet={scopeSet} isMobile={isMobile} />

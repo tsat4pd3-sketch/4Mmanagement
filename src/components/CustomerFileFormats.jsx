@@ -120,7 +120,7 @@ export default function CustomerFileFormats({ canManage, onChanged }) {
   return (
     <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-        <b style={{ fontSize: 13 }}>ฟอร์แมตไฟล์ความต้องการของลูกค้า</b>
+        <b style={{ fontSize: 13 }}>{tr('ฟอร์แมตไฟล์ความต้องการของลูกค้า')}</b>
         <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
           ลูกค้าเจ้าใหม่ที่ส่งไฟล์คนละหน้าตา — เพิ่มที่นี่ ไม่ต้องแก้โปรแกรม
         </span>
@@ -129,7 +129,7 @@ export default function CustomerFileFormats({ canManage, onChanged }) {
         )}
       </div>
 
-      {loading ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>กำลังโหลด…</div> : (
+      {loading ? <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</div> : (
         <div style={{ display: 'grid', gap: 6 }}>
           {rows.map(r => (
             <div key={r.code} style={{
@@ -145,7 +145,7 @@ export default function CustomerFileFormats({ canManage, onChanged }) {
               <span style={{ fontSize: 11, color: 'var(--muted)' }}>
                 {FIELDS.filter(f => (r.col_map?.[f.key] || []).length).length}/{FIELDS.length} ช่อง
               </span>
-              {!r.is_active && <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>ปิดใช้</span>}
+              {!r.is_active && <span style={{ fontSize: 11, color: '#f59e0b', fontWeight: 700 }}>{tr('ปิดใช้')}</span>}
               {canManage && !editing && (
                 <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
                   <button onClick={() => startEdit(r)} style={btn('var(--bg2)', 'var(--text)')}>{tr('✎ แก้')}</button>
@@ -193,7 +193,7 @@ export default function CustomerFileFormats({ canManage, onChanged }) {
                 {f.label}{f.required && <span style={{ color: '#ef4444' }}> *</span>}
                 <input value={D.col_map?.[f.key] || ''} placeholder={(FALLBACK_EDI_DICT[f.key] || []).slice(0, 2).join(', ')}
                   onChange={e => setDraft({ ...D, col_map: { ...D.col_map, [f.key]: e.target.value } })} style={inp} />
-                {f.hint && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{f.hint}</div>}
+                {f.hint && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{tr(f.hint)}</div>}
               </label>
             ))}
           </div>

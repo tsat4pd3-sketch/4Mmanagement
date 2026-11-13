@@ -8,11 +8,12 @@
  */
 import { cleanSignedDecimal, toggleSign } from '../utils/signedDecimal';
 
+import { tr } from '../utils/i18n';
 export default function SignedDecimalInput({ value, onChange, style, placeholder, ...rest }) {
   const v = value ?? ''
   return (
     <span style={{ display: 'inline-flex', alignItems: 'stretch', gap: 4 }}>
-      <button type="button" className="tbtn" title="กลับเครื่องหมาย + / −" aria-label="กลับเครื่องหมายบวกลบ"
+      <button type="button" className="tbtn" title={tr('กลับเครื่องหมาย + / −')} aria-label={tr('กลับเครื่องหมายบวกลบ')}
         onClick={() => onChange(toggleSign(v))}
         style={{ minWidth: 34, padding: '0 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)',
           background: String(v).startsWith('-') ? 'rgba(239,68,68,0.12)' : 'var(--bg2)',

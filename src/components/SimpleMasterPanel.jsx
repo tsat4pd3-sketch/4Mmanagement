@@ -142,7 +142,7 @@ export default function SimpleMasterPanel({
       {title && <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 4 }}>{title} <span style={{ color: 'var(--muted)', fontWeight: 600 }}>({rows.length})</span></div>}
       {help && <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8 }}>{help}</div>}
       {missing ? (
-        <div style={{ fontSize: 12, color: '#f59e0b' }}>⚠ ยังไม่ได้ apply migration ของตาราง {table} (แจ้ง admin) — ระหว่างนี้ช่องเลือกยังพิมพ์เองได้พร้อมป้ายเตือน</div>
+        <div style={{ fontSize: 12, color: '#f59e0b' }}>{tr('⚠ ยังไม่ได้ apply migration ของตาราง')} {table} {tr('(แจ้ง admin) — ระหว่างนี้ช่องเลือกยังพิมพ์เองได้พร้อมป้ายเตือน')}</div>
       ) : (
         <>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>

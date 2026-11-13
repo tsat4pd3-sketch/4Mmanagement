@@ -38,7 +38,7 @@ function TimeInput24({ value = '', onChange, style = {} }) {
         style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14, flex: '1 1 auto', minWidth: 0,
           background: 'var(--bg)', color: 'var(--text)', border: '1px solid var(--border)',
           borderRadius: 'var(--ctl-r)', padding: '5px 8px', ...style }} />
-      <button type="button" title="ใช้เวลาปัจจุบัน"
+      <button type="button" title={tr('ใช้เวลาปัจจุบัน')}
         onClick={() => onChange?.({ target: { value: new Date().toTimeString().slice(0,5) } })}
         style={{ fontSize: 12, fontWeight: 700, padding: '5px 8px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
         ตอนนี้
@@ -295,7 +295,7 @@ export default function EventLog() {
     <Page>
       <PageHeader
         title="CQI-15 Event Log" icon="⚡"
-        sub="งานเชื่อม · บันทึกเหตุการณ์ตาม Welding Event Matrix"
+        sub={tr('งานเชื่อม · บันทึกเหตุการณ์ตาม Welding Event Matrix')}
         actions={canCreate && (
           <button type="button" className="pg-btn"
             onClick={() => setTab(tab === 'create' ? 'list' : 'create')}
@@ -368,7 +368,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
     <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
       {/* Left: Form fields */}
       <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>ข้อมูล Event</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>{tr('ข้อมูล Event')}</div>
 
         <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div>
@@ -438,7 +438,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
 
         {/* Qty */}
         <div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, fontWeight: 700 }}>จำนวนชิ้นงาน</div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, fontWeight: 700 }}>{tr('จำนวนชิ้นงาน')}</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(64px, 1fr))', gap: 8 }}>
             {[
               { k: 'qty_total',  label: 'ทั้งหมด', color: 'var(--blue)' },
@@ -448,7 +448,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
               { k: 'qty_scrap',  label: 'Scrap',    color: 'var(--blue)' },
             ].map(q => (
               <div key={q.k} style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: q.color, marginBottom: 4 }}>{q.label}</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: q.color, marginBottom: 4 }}>{tr(q.label)}</div>
                 <input type="number" min={0} value={form[q.k]}
                   onChange={e => f(q.k, e.target.value)}
                   style={{ textAlign: 'center', padding: '6px 4px', fontSize: 14, fontWeight: 700 }} />
@@ -474,7 +474,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
       <div className="card">
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 16 }}>
           Checklist ตาม Matrix
-          {selectedEvent && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400, marginLeft: 8 }}>Event #{selectedEvent.event_no} · {eventChecks.length} รายการ</span>}
+          {selectedEvent && <span style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 400, marginLeft: 8 }}>Event #{selectedEvent.event_no} · {eventChecks.length} {tr('รายการ')}</span>}
         </div>
 
         {!selectedEvent ? (
@@ -495,7 +495,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
                     <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 'var(--r-pill)', background: rm.bg, color: rm.color, border: `1px solid ${tint(rm.color, 'line')}` }}>
                       {rk} · {rm.label}
                     </span>
-                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{items.length} รายการ</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted)' }}>{items.length} {tr('รายการ')}</span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {items.map(item => (
@@ -504,7 +504,7 @@ function CreateEventForm({ form, setForm, groupedEvents, lines, matrix, checkIte
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 11, color: 'var(--text)', lineHeight: 1.4 }}>{item.name_th}</div>
                           {item.is_critical && (
-                            <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>⚠ ต้องตรวจสอบชิ้นงานหลัง event</span>
+                            <span style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>{tr('⚠ ต้องตรวจสอบชิ้นงานหลัง event')}</span>
                           )}
                         </div>
                       </div>
@@ -802,7 +802,7 @@ function exportPDF(logs) {
     </thead>
     <tbody>${rowsHtml}</tbody>
   </table>
-  <div class="footer">หมายเหตุ: ในการเช็คย้อนกลับยึดตาม หัว/กลาง/ท้าย</div>
+  <div class="footer">{tr('หมายเหตุ: ในการเช็คย้อนกลับยึดตาม หัว/กลาง/ท้าย')}</div>
   <script>window.onload = function(){ window.print(); }</script>
   </body></html>`;
 
@@ -839,9 +839,9 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
       {/* Filters — UI-STANDARD 2026-09-24: FilterBar (bare ในหัวการ์ด) · หมวด 4 ตัวเลือก = Segmented */}
       <FilterBar bare style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
-        <span className="filter-label">กรอง:</span>
+        <span className="filter-label">{tr('กรอง:')}</span>
         {/* Category */}
-        <Segmented value={filterCat} onChange={setFilterCat} label="หมวด"
+        <Segmented value={filterCat} onChange={setFilterCat} label={tr('หมวด')}
           options={[{ value: 'all', label: ALL.category }, ...['A', 'B', 'C'].map(c => ({ value: c, label: `Cat ${c}` }))]} />
         {/* Status */}
         <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
@@ -853,10 +853,10 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
         </select>
         <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} />
         {filterDate && (
-          <button onClick={() => setFilterDate('')} title="ล้างวันที่" style={{ padding: '0 10px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
+          <button onClick={() => setFilterDate('')} title={tr('ล้างวันที่')} style={{ padding: '0 10px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--bg3)', color: 'var(--muted)', cursor: 'pointer' }}>✕</button>
         )}
         <span className="spacer" />
-        <span className="filter-count">{filtered.length} รายการ</span>
+        <span className="filter-count">{filtered.length} {tr('รายการ')}</span>
         {filtered.length > 0 && (
           <>
             <button
@@ -895,9 +895,9 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
           <div key={k.label} className="card"
             style={{ borderTop: `3px solid ${statusColor(k.tone)}`, padding: '14px 18px',
               gridColumn: k.primary ? 'span 2' : 'auto' }}>
-            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{k.label}</div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em' }}>{tr(k.label)}</div>
             <div style={{ fontSize: k.primary ? 44 : 30, fontWeight: 800, fontFamily: 'var(--font-display)', color: toneInk(k.tone), lineHeight: 1.2, marginTop: 4 }}>
-              {k.value}<span style={{ fontSize: k.primary ? 17 : 13, fontWeight: 500, color: 'var(--text2)', marginLeft: 4 }}>ใบ</span>
+              {k.value}<span style={{ fontSize: k.primary ? 17 : 13, fontWeight: 500, color: 'var(--text2)', marginLeft: 4 }}>{tr('ใบ')}</span>
             </div>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 3 }}>
               {k.sub ?? (stats.total > 0 ? `${Math.round(k.value / stats.total * 100)}% ของ ${stats.total} ใบ` : 'ยังไม่มีใบในช่วงนี้')}
@@ -907,9 +907,9 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
       </div>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)' }}>กำลังโหลด...</div>
+        <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>
       ) : filtered.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: 13 }}>ไม่มีข้อมูล</div>
+        <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--muted)', fontSize: 13 }}>{tr('ไม่มีข้อมูล')}</div>
       ) : (
         <div className="table-sticky" style={{ overflowX: 'auto' }}>
           <table>
@@ -990,9 +990,7 @@ function EventList({ logs, loading, onSelect, role, eventDefs }) {
                       </div>
                     </td>
                     <td>
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 'var(--r-pill)', background: sm.bg, color: sm.color }}>
-                        {sm.label}
-                      </span>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 'var(--r-pill)', background: sm.bg, color: sm.color }}>{tr(sm.label)}</span>
                     </td>
                     <td style={{ fontSize: 11, color: 'var(--muted)' }}>
                       {log.profiles?.full_name || '—'}
@@ -1170,7 +1168,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
               {cm && <span style={{ fontSize: 11, fontWeight: 800, padding: '3px 10px', borderRadius: 'var(--r-pill)', background: cm.bg, color: cm.color }}>{cm.icon} Category {cat} · {cm.labelTh}</span>}
-              <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--r-pill)', background: sm.bg, color: sm.color }}>{sm.label}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 'var(--r-pill)', background: sm.bg, color: sm.color }}>{tr(sm.label)}</span>
             </div>
             <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text)' }}>Event #{def?.event_no} · {def?.name_th}</div>
             <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>{log.line_name} · {log.station_number || 'ไม่ระบุ Station'} · {fmtDate(log.work_date)} {log.event_time || ''}</div>
@@ -1202,7 +1200,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
             )}
             {mayDelete && confirmDelete && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 12, color: 'var(--red)', fontWeight: 700 }}>ยืนยันลบ?</span>
+                <span style={{ fontSize: 12, color: 'var(--red)', fontWeight: 700 }}>{tr('ยืนยันลบ?')}</span>
                 <button onClick={handleDelete} disabled={deleting}
                   style={{ background: 'var(--red)', color: '#fff', border: 'none', borderRadius: 'var(--r-md)', padding: '5px 12px', fontSize: 12, fontWeight: 700, cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.6 : 1 }}>
                   {deleting ? '...' : tr('ยืนยัน')}
@@ -1227,7 +1225,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
             { label: 'Scrap',       value: log.qty_scrap, color: 'var(--blue)' },
           ].map(q => (
             <div key={q.label} style={{ background: 'var(--card)', borderRadius: 'var(--r-md)', padding: '10px 14px', textAlign: 'center', border: `1px solid ${tint(q.color, 'dim')}` }}>
-              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>{q.label}</div>
+              <div style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700, textTransform: 'uppercase' }}>{tr(q.label)}</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: q.color, fontFamily: 'var(--font-display)' }}>{q.value}</div>
             </div>
           ))}
@@ -1265,12 +1263,12 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                       {appr.status === 'approved' ? '✓ อนุมัติ' : appr.status === 'rejected' ? '✗ ปฏิเสธ' : '⋯ รอ'}
                     </span>
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>{rm.label}</div>
+                  <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 10 }}>{tr(rm.label)}</div>
                   {appr.status !== 'pending' && appr.profiles?.full_name && (
-                    <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 6 }}>โดย: {appr.profiles.full_name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 6 }}>{tr('โดย:')} {appr.profiles.full_name}</div>
                   )}
                   {appr.notes && (
-                    <div style={{ fontSize: 11, color: 'var(--red)', marginBottom: 6, fontStyle: 'italic' }}>หมายเหตุ: {appr.notes}</div>
+                    <div style={{ fontSize: 11, color: 'var(--red)', marginBottom: 6, fontStyle: 'italic' }}>{tr('หมายเหตุ:')} {appr.notes}</div>
                   )}
                   {/* Checklist progress for this role */}
                   {canApprove && checklistItems.length > 0 && (
@@ -1285,7 +1283,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                       <button
                         disabled={approvingRole === appr.role_key || !checklistDone}
                         onClick={() => handleApprove(appr.role_key, 'approved')}
-                        title={!checklistDone ? 'ต้องทำ Checklist ให้ครบก่อนอนุมัติ' : ''}
+                        title={!checklistDone ? tr('ต้องทำ Checklist ให้ครบก่อนอนุมัติ') : ''}
                         style={{ flex: 1, padding: '6px 0', borderRadius: 'var(--r-md)', border: 'none',
                           background: checklistDone ? rm.bg : 'var(--bg3)',
                           color: checklistDone ? rm.color : 'var(--muted)',
@@ -1331,7 +1329,7 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
             Checklist ({completions.filter(c => c.result !== 'pending').length}/{eventChecks.length} รายการเสร็จ)
           </div>
           {loadingChecks ? (
-            <div style={{ color: 'var(--muted)', fontSize: 12 }}>กำลังโหลด...</div>
+            <div style={{ color: 'var(--muted)', fontSize: 12 }}>{tr('กำลังโหลด...')}</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               {Object.entries(checksByRole).map(([rk, items]) => {
@@ -1355,8 +1353,8 @@ function EventDetailModal({ log, matrix, checkItems, eventDefs, role: roleProp, 
                             <span style={{ fontSize: 11, fontWeight: 800, color: rm.color, minWidth: 22 }}>#{item.check_no}</span>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 12, color: 'var(--text)', lineHeight: 1.4 }}>{item.name_th}</div>
-                              {item.is_critical && <div style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>⚠ ตรวจสอบชิ้นงานหลัง event</div>}
-                              {comp?.profiles?.full_name && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>โดย: {comp.profiles.full_name}</div>}
+                              {item.is_critical && <div style={{ fontSize: 11, color: 'var(--red)', fontWeight: 700 }}>{tr('⚠ ตรวจสอบชิ้นงานหลัง event')}</div>}
+                              {comp?.profiles?.full_name && <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{tr('โดย:')} {comp.profiles.full_name}</div>}
                             </div>
                             {canCheck ? (
                               <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>

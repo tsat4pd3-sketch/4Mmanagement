@@ -92,18 +92,18 @@ export default function AuditLogViewer({ client, tables, limit = 300, intro, fmt
         <SearchInput value={q} onChange={setQ} fields="ชื่อรายการ / คน" />
         <span className="spacer" />
         <span className="filter-count">
-          {shown.length} รายการ{rows.length >= limit ? ` (แสดง ${limit} ล่าสุด — เก่ากว่านี้ยังมีอีก)` : ''}
+          {shown.length} {tr('รายการ')}{rows.length >= limit ? ` (แสดง ${limit} ล่าสุด — เก่ากว่านี้ยังมีอีก)` : ''}
         </span>
         <button onClick={load} style={{ background: 'var(--bg3)', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: 'var(--r-md)', padding: '0 12px', cursor: 'pointer', fontWeight: 700 }}>{tr('↻ รีเฟรช')}</button>
       </FilterBar>
 
-      {loading && <div style={{ color: 'var(--muted)', padding: 16, fontSize: 13 }}>กำลังโหลด…</div>}
+      {loading && <div style={{ color: 'var(--muted)', padding: 16, fontSize: 13 }}>{tr('กำลังโหลด…')}</div>}
 
       {/* โหลดไม่ได้ ≠ ไม่มีประวัติ — ต้องแยกให้ขาด */}
       {!!err && (
         <div style={{ color: '#f59e0b', padding: 12, fontSize: 12.5, background: 'rgba(245,158,11,0.1)', border: '1px solid #f59e0b', borderRadius: 'var(--r-md)' }}>
           ⚠️ โหลดประวัติไม่ได้: {err}
-          <br />(ถ้าเป็นเพราะตาราง <code>audit_log</code> ไม่มี — ต้อง apply migration <code>20260724_audit_log_main.sql</code> / <code>_dr.sql</code> ก่อน)
+          <br />{tr('(ถ้าเป็นเพราะตาราง')} <code>audit_log</code> {tr('ไม่มี — ต้อง apply migration')} <code>20260724_audit_log_main.sql</code> / <code>_dr.sql</code> ก่อน)
         </div>
       )}
 
@@ -132,15 +132,15 @@ export default function AuditLogViewer({ client, tables, limit = 300, intro, fmt
             {r.action === 'CROSS_LINE_CLOSE' && (
               <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7 }}>
                 <div>
-                  <span style={{ color: 'var(--muted)' }}>ยอดเข้า:</span>{' '}
-                  <b>{r.new_data?.owner_line || '(ไม่รู้ไลน์)'}</b>
+                  <span style={{ color: 'var(--muted)' }}>{tr('ยอดเข้า:')}</span>{' '}
+                  <b>{r.new_data?.owner_line || tr('(ไม่รู้ไลน์)')}</b>
                   {r.new_data?.shift ? ` · ${r.new_data.shift === 'night' ? '🌙 กะดึก' : '☀️ กะเช้า'}` : ''}
                   {r.new_data?.work_date ? ` · ${String(r.new_data.work_date).slice(0, 10)}` : ''}
                   {r.new_data?.qty_ok != null ? ` · ${r.new_data.qty_ok} ชิ้น` : ''}
                 </div>
                 <div>
-                  <span style={{ color: 'var(--muted)' }}>ปิดจากจอของไลน์:</span>{' '}
-                  <b style={{ color: 'var(--amber)' }}>{r.new_data?.closed_from_line || '(ไม่ระบุ)'}</b>
+                  <span style={{ color: 'var(--muted)' }}>{tr('ปิดจากจอของไลน์:')}</span>{' '}
+                  <b style={{ color: 'var(--amber)' }}>{r.new_data?.closed_from_line || tr('(ไม่ระบุ)')}</b>
                   {/* ลำดับบังคับทั้งระบบ: Part Name → MAT SAP (แถว audit ไม่มี part_no เก็บไว้) */}
                   {(r.new_data?.part_name || r.new_data?.mat_no) ? (
                     <span style={{ color: 'var(--muted)' }}>

@@ -187,7 +187,7 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
         width: 'min(560px, 100%)', maxHeight: '90vh', overflowY: 'auto', padding: 18 }}>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{nextLabel} — รวมยอดทั้งพาร์ท</span>
+          <span style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>{nextLabel} {tr('— รวมยอดทั้งพาร์ท')}</span>
           <button onClick={onClose} disabled={busy}
             style={{ marginLeft: 'auto', fontSize: 12, padding: '4px 10px', borderRadius: 'var(--r-md)', cursor: busy ? 'not-allowed' : 'pointer',
               background: 'var(--bg3)', color: 'var(--text2)', border: '1px solid var(--border2)', fontFamily: 'var(--font-body)' }}>✕</button>
@@ -197,7 +197,7 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
           {group.supplier && <> · {group.supplier}</>}
         </div>
 
-        {slips === null && <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 12.5 }}>กำลังอ่านใบจริง…</div>}
+        {slips === null && <div style={{ padding: 20, textAlign: 'center', color: 'var(--muted)', fontSize: 12.5 }}>{tr('กำลังอ่านใบจริง…')}</div>}
 
         {err && (
           <div style={{ ...box, borderColor: 'rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.07)', color: '#ef4444', fontSize: 12 }}>
@@ -212,7 +212,7 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
         ) : (<>
           <div style={{ ...box, marginBottom: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 12.5, color: 'var(--text2)' }}>เลื่อนกี่ใบ</span>
+              <span style={{ fontSize: 12.5, color: 'var(--text2)' }}>{tr('เลื่อนกี่ใบ')}</span>
               <input type="number" min={1} max={slips.length} value={take}
                 onChange={e => setTake(e.target.value)} placeholder={String(slips.length)} disabled={busy}
                 style={{ width: 110, padding: '5px 9px', fontSize: 13, borderRadius: 'var(--ctl-r)',
@@ -225,13 +225,13 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
             </div>
             {/* ⭐ ยอดจริงจากใบที่จะเลื่อน ไม่ใช่ค่าประมาณจาก min/max */}
             <div style={{ fontSize: 13, marginTop: 8, color: 'var(--text)' }}>
-              จะเลื่อน <b style={{ color: 'var(--accent)' }}>{fmt(n)}</b> ใบ · รวม{' '}
+              จะเลื่อน <b style={{ color: 'var(--accent)' }}>{fmt(n)}</b> {tr('ใบ · รวม')}{' '}
               <b style={{ color: 'var(--accent)' }}>{fmt(pickedQty)}</b> ชิ้น
-              <span style={{ color: 'var(--muted)', fontSize: 11.5 }}> (นับจากใบจริง เรียงเก่าสุดก่อน)</span>
+              <span style={{ color: 'var(--muted)', fontSize: 11.5 }}> {tr('(นับจากใบจริง เรียงเก่าสุดก่อน)')}</span>
             </div>
             {n < slips.length && (
               <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
-                เหลือค้างในคิว {fmt(slips.length - n)} ใบ · {fmt(slips.reduce((s, r) => s + (Number(r.qty) || 0), 0) - pickedQty)} ชิ้น
+                เหลือค้างในคิว {fmt(slips.length - n)} {tr('ใบ ·')} {fmt(slips.reduce((s, r) => s + (Number(r.qty) || 0), 0) - pickedQty)} ชิ้น
               </div>
             )}
           </div>
@@ -240,14 +240,14 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
           <div style={{ ...box, marginBottom: 10 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)', marginBottom: 6 }}>
               ปลายทางของใบที่จะเลื่อน ({byDest.length} แห่ง)
-              {next === 'received' && <span style={{ fontWeight: 400, color: 'var(--muted)' }}> — สต็อกจะถูกเติมแยกตามนี้</span>}
+              {next === 'received' && <span style={{ fontWeight: 400, color: 'var(--muted)' }}> {tr('— สต็อกจะถูกเติมแยกตามนี้')}</span>}
             </div>
             {byDest.map(d => (
               <div key={d.dest || '_none'} style={{ display: 'flex', gap: 8, fontSize: 12.5, padding: '3px 0',
                 color: d.dest ? 'var(--text)' : '#f59e0b' }}>
-                <span style={{ flex: 1 }}>{d.dest || '⚠ ไม่ได้ระบุปลายทาง'}</span>
-                <span style={{ color: 'var(--muted)' }}>{fmt(d.slips)} ใบ</span>
-                <span style={{ fontWeight: 700, minWidth: 80, textAlign: 'right' }}>{fmt(d.qty)} ชิ้น</span>
+                <span style={{ flex: 1 }}>{d.dest || tr('⚠ ไม่ได้ระบุปลายทาง')}</span>
+                <span style={{ color: 'var(--muted)' }}>{fmt(d.slips)} {tr('ใบ')}</span>
+                <span style={{ fontWeight: 700, minWidth: 80, textAlign: 'right' }}>{fmt(d.qty)} {tr('ชิ้น')}</span>
               </div>
             ))}
           </div>
@@ -255,8 +255,8 @@ export default function PurchaseBulkModal({ group, next, nextLabel, fullName, wo
           {noDest && next === 'received' && (
             <div style={{ ...box, borderColor: 'rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.07)',
               fontSize: 12, color: 'var(--text2)', marginBottom: 10 }}>
-              ⚠️ <b style={{ color: '#f59e0b' }}>{fmt(noDest.slips)} ใบ ไม่ได้ระบุปลายทางสโตร์</b> — ใบจะถูกเลื่อนเป็นรับเข้า
-              แต่ <b>สต็อกส่วนนั้น ({fmt(noDest.qty)} ชิ้น) จะไม่ถูกเติม</b> ต้องไปบันทึกรับเข้าเองที่ 📦 Line Stock
+              ⚠️ <b style={{ color: '#f59e0b' }}>{fmt(noDest.slips)} {tr('ใบ ไม่ได้ระบุปลายทางสโตร์')}</b> — ใบจะถูกเลื่อนเป็นรับเข้า
+              แต่ <b>{tr('สต็อกส่วนนั้น (')}{fmt(noDest.qty)} ชิ้น) จะไม่ถูกเติม</b> ต้องไปบันทึกรับเข้าเองที่ 📦 Line Stock
             </div>
           )}
 

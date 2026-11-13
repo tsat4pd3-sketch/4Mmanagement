@@ -474,7 +474,7 @@ const RULES = [
        + 'ทั้งที่โครงหลักแปลแล้ว ⇒ ห่อ tr() ให้ครบทั้งระบบ (2,890 จุด) แล้วห้ามเขียนดิบกลับมา',
     fix: "{tr('ข้อความ')} (import { tr } from '<path>/utils/i18n' · ไฟล์ที่มี const tr = useTimeRange() ใช้ `tr as trI18n`) "
        + "+ เติมคำใน src/i18n/en.js หมวดรอบ 2 · UI-CONVENTIONS §6.34 ข้อ 7",
-    allow: {},
+    allow: { 'src/pages/Report.jsx': 'ใบพิมพ์ OT เป็น HTML string ใน template literal (กระดาษไทย ไม่แปล · {tr()} ในสตริงพิมพ์ออกมาตรงตัว — บั๊กรอบ 2 แก้ 13/11)' },
   },
   {
     id: 'i18n-import-path-depth',
@@ -7164,7 +7164,7 @@ test('🧹 ปุ่มล้างตัวกรองอยู่ในแถ
     if (rel.startsWith('src/i18n/')) continue;   // 🌐 พจนานุกรม ไทย→English ถือคำนี้เป็นคีย์แปล ไม่ใช่ปุ่ม (02/11)
     const src = stripComments(readFileSync(f, 'utf8'));
     // ปุ่มที่มีข้อความ "ล้างตัวกรอง" ของตัวเอง = วาดเอง
-    if (/<button[^>]*>[^<]*ล้างตัวกรอง/.test(src) || /'ล้างตัวกรอง'/.test(src)) bad.push(rel);
+    if (/<button[^>]*>[^<]*ล้างตัวกรอง/.test(src) || /(?<!tr\()(?<!trI18n\()'ล้างตัวกรอง'/.test(src)) bad.push(rel);   // 🌐 13/11: ข้อความอธิบายที่ครอบ tr('ล้างตัวกรอง') ไม่ใช่ปุ่ม
   }
   assert.deepEqual(bad, [], '\n\n❌ วาดปุ่มล้างตัวกรองเองใน: ' + bad.join(', ') + '\n'
     + '   แก้: ลบออก แล้วปล่อยให้ <FilterBar>/<TimeRangeBar> วาดให้ —\n'
@@ -9766,7 +9766,7 @@ test('🔴 close-shift-dt-confirm — ปิดกะที่มี Downtime �
     '\n\n❌ ป๊อปอัพไม่ได้เขียนว่า "เครื่องยังเบรกดาวน์อยู่" (ทางที่ 1 — ส่งต่อกะถัดไป)\n');
   assert.match(src, /เปิดรายการต่อให้กะถัดไป/,
     '\n\n❌ ป๊อปอัพต้องบอกว่าใบที่ยังเบรกดาวน์จะถูกเปิดต่อในกะถัดไป\n');
-  assert.match(src, /ปิดรายการที่ \{endStr/,
+  assert.match(src, /ปิดรายการที่(?:'\)\})? \{endStr/,   // 🌐 13/11: รองรับ {tr('… ปิดรายการที่')} {endStr}
     '\n\n❌ ป๊อปอัพไม่ได้บอกเวลาปิดของใบที่ "เครื่องกลับมาแล้ว" (ทางที่ 2)\n');
 });
 
@@ -9937,7 +9937,8 @@ test('🪪 badge-scan-saves-now — สแกนบัตรต้องเข�
   if (!/problem = await res/.test(sm)) bad.push('ScanModal ไม่ await onScan ที่เป็น Promise — ขึ้นเขียวก่อนรู้ผลจริง');
   if (!/await emit\(/.test(sm)) bad.push('ลูปกล้องไม่ await emit — ยิงใบถัดไปทับระหว่างบันทึกใบแรก');
 
-  const foot = ck.slice(ck.indexOf('<ScanModal title="สแกนบัตรพนักงาน"'), ck.indexOf('<ScanModal title="สแกนบัตรพนักงาน"') + 2200);
+  const SCAN_RE = /<ScanModal title=(?:"สแกนบัตรพนักงาน"|\{tr\('สแกนบัตรพนักงาน'\)\})/;   // 🌐 13/11: title ครอบ tr() แล้ว
+  const foot = ck.slice(ck.search(SCAN_RE), ck.search(SCAN_RE) + 2200);
   if (/ยังไม่ได้บันทึก<\/span>/.test(foot)) bad.push('ตัวนับในหน้าต่างสแกนยัง hardcode "ยังไม่ได้บันทึก" (จอโกหก)');
   if (!/scanSaved\.length/.test(foot)) bad.push('หน้าต่างสแกนไม่บอกว่ารอบนี้บันทึกไปกี่คน');
   assert.deepEqual(bad, [], bad.join('\n'));

@@ -770,19 +770,19 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
           filters={(
             <>
               <OrgScopePicker ccOnly index={org} value={scope} onChange={setScope} scopeSet={null} sections={sections} failed={orgFailed}
-                plantLabel={ALL.section} width={230} title="เลือกขอบเขต — เฉพาะหน่วยที่มี cost center (Obeya วัดที่ CC)" />
+                plantLabel={ALL.section} width={230} title={tr('เลือกขอบเขต — เฉพาะหน่วยที่มี cost center (Obeya วัดที่ CC)')} />
               <span className="sep" />
               {/* ช่วงที่ดู — value ว่างเมื่อใช้กรอบกำหนดเอง/เจาะเดือน ⇒ กดปุ่มเดิมซ้ำได้ (pickPeriod ล้าง custom) */}
-              <Segmented label="ช่วงที่ดู" value={custom || monthSel ? null : period} onChange={pickPeriod}
+              <Segmented label={tr('ช่วงที่ดู')} value={custom || monthSel ? null : period} onChange={pickPeriod}
                 options={PERIODS.map(p => ({ value: p.key, label: PERIOD_LABEL[p.key] || p.label }))} />
               {monthSel && (
-                <button className="ctl-btn" onClick={() => pickPeriod('year')} title="กลับไปดูทั้งปี" style={yearNavBtn}>{tr('← ปี')} {year}</button>
+                <button className="ctl-btn" onClick={() => pickPeriod('year')} title={tr('กลับไปดูทั้งปี')} style={yearNavBtn}>{tr('← ปี')} {year}</button>
               )}
               {isYear && (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  <button className="ctl-btn" onClick={() => setYear(y => y - 1)} title="ปีก่อน" style={yearNavBtn}>◀</button>
+                  <button className="ctl-btn" onClick={() => setYear(y => y - 1)} title={tr('ปีก่อน')} style={yearNavBtn}>◀</button>
                   <b style={{ fontSize: 14, minWidth: 44, textAlign: 'center' }}>{year}</b>
-                  <button className="ctl-btn" onClick={() => setYear(y => y + 1)} disabled={year >= yearOf(today)} title="ปีถัดไป" style={yearNavBtn}>▶</button>
+                  <button className="ctl-btn" onClick={() => setYear(y => y + 1)} disabled={year >= yearOf(today)} title={tr('ปีถัดไป')} style={yearNavBtn}>▶</button>
                 </span>
               )}
             </>
@@ -850,13 +850,13 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
       {/* 🔴 `clip` เมื่อคุมความสูงได้ · ที่ไม่พอจริง = ถอยไป `auto` ยอมให้เลื่อน (ดู useFitHeight) */}
       <div ref={wrapRef} style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: fitOn || shortScreen ? 'clip' : 'auto' }}>
         {loading && (isYear ? !yr : !fSess.length) ? (
-          <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลดข้อมูล…</div>
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลดข้อมูล…')}</div>
         ) : (
         <div style={sheetsBox}>
 
           {/* ═══ S — ความปลอดภัย ═══ */}
           {has('S') && (
-          <Sheet k={k} cw={cw} icon={axisSheet('S').icon} title="S ความปลอดภัย"
+          <Sheet k={k} cw={cw} icon={axisSheet('S').icon} title={tr('S ความปลอดภัย')}
             sub={`${ytdTag}ใส่ PPE ครบตอนเช็คชื่อ (leading)`} big={kS.value ?? '—'} unit={kS.value != null ? '%' : ''}
             stat={statusWhy(kS.value, kS.target, 'up', '%')}
             foot={<WarnNote k={k} text={kS.note} tone="bad" />}
@@ -884,7 +884,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
               %Q กระจุกใกล้ 100 ⇒ ขยายช่วงถาวรด้วย `focusDomain()` (เดิมเขียน domain เองว่า 95–100 โดยไม่มีป้าย = ผิดกติกาความซื่อสัตย์ 05/10)
               🔴 แกนไม่เริ่ม 0 ต้องมี <FocusAxisNote> เสมอ · ค่าที่มี 0 จริง = focusDomain คืน null = แกน 0–100 ตามปกติ */}
           {has('Q') && (() => { const qFocus = focusDomain([...(kQ.series || []).map(p => p.v), kQ.target], { max: 100 }); const qDom = qFocus ? qFocus.domain : [0, 100]; const qNote = (node) => (node ? <div style={{ position: 'relative', width: '100%', height: '100%' }}>{qFocus && <FocusAxisNote k={k} loText={String(qFocus.domain[0])} fixed />}{node}</div> : null); return (
-          <Sheet k={k} cw={cw} icon={axisSheet('Q').icon} title="Q คุณภาพ"
+          <Sheet k={k} cw={cw} icon={axisSheet('Q').icon} title={tr('Q คุณภาพ')}
             sub={`${ytdTag}%Q ถ่วงด้วยจำนวนผลิต · NG ${ngTotal.toLocaleString()} ชิ้น`}
             big={kQ.value ?? '—'} unit={kQ.value != null ? '%' : ''}
             delta={gapToTarget(kQ.value, kQ.target, 'up')} stat={statusWhy(kQ.value, kQ.target, 'up', '%')}
@@ -907,7 +907,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
           {/* ═══ D — ส่งมอบ ═══ */}
           {has('D') && (
-          <Sheet k={k} cw={cw} icon={axisSheet('D').icon} title="D ส่งมอบ"
+          <Sheet k={k} cw={cw} icon={axisSheet('D').icon} title={tr('D ส่งมอบ')}
             sub={`${ytdTag}ผลิตได้ตามแผนในใบงาน`} big={kD.value ?? '—'} unit={kD.value != null ? '%' : ''}
             delta={gapToTarget(kD.value, kD.target, 'up')} stat={statusWhy(kD.value, kD.target, 'up', '%')}
             foot={kD.note ? <WarnNote k={k} text={kD.note} />
@@ -934,7 +934,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
           {/* ═══ C — ต้นทุน ═══ */}
           {has('C') && (
-          <Sheet k={k} cw={cw} icon={axisSheet('C').icon} title="C ต้นทุนที่เสียไป"
+          <Sheet k={k} cw={cw} icon={axisSheet('C').icon} title={tr('C ต้นทุนที่เสียไป')}
             sub={`${isYear ? "รวมทั้งปี · " : ""}เครื่องหยุดนอกแผน + ของเสีย`}
             big={kC.value != null ? fmtBaht(kC.value) : '—'}
             stat={costStat}
@@ -958,7 +958,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
           {/* ═══ M — กำลังคน ═══ */}
           {has('M') && (
-          <Sheet k={k} cw={cw} icon={axisSheet('M').icon} title="M กำลังคน"
+          <Sheet k={k} cw={cw} icon={axisSheet('M').icon} title={tr('M กำลังคน')}
             sub={`${ytdTag}มา ${kM.present ?? 0} · ขาด ${kM.absent ?? 0}${kM.ot ? ` · OT ${kM.ot}` : ''}`}
             big={kM.value ?? '—'} unit={kM.value != null ? '%' : ''}
             delta={gapToTarget(kM.value, kM.target, 'up')} stat={statusWhy(kM.value, kM.target, 'up', '%')}
@@ -982,7 +982,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
           {/* ═══ OEE — แผ่นแนวนอน (2 ช่อง) ═══ */}
           {has('oee') && (
-          <Sheet k={k} cw={cw} span={2} icon="⚙️" title="OEE เทียบเป้า"
+          <Sheet k={k} cw={cw} span={2} icon="⚙️" title={tr('OEE เทียบเป้า')}
             sub={`${ytdTag}A ${kOee.a ?? '—'} · P ${kOee.p ?? '—'} · Q ${kOee.q ?? '—'}  |  เป้า A${target.a}/P${target.p}/Q${target.q}`}
             big={kOee.value ?? '—'} unit={kOee.value != null ? '%' : ''}
             delta={gapToTarget(kOee.value, kOee.target, 'up')}
@@ -1017,7 +1017,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
           {/* ═══ ทำไมหลุดเป้า — Pareto ═══ */}
           {has('why') && (
-          <Sheet k={k} cw={cw} icon="🔎" title="ทำไมถึงหลุดเป้า"
+          <Sheet k={k} cw={cw} icon="🔎" title={tr('ทำไมถึงหลุดเป้า')}
             sub={`${isYear ? 'รวมทั้งปี · ' : ''}เวลาเครื่องหยุดนอกแผน (นาที)`}
             big={pareto.total ? pareto.total.toLocaleString() : '—'} unit={pareto.total ? 'นาที' : ''}
             stat={paretoStat}
@@ -1046,7 +1046,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
 
           {/* ═══ ACTION BOARD — แผ่นแนวนอน (2 ช่อง) · ที่เดียวของหน้าที่เขียนข้อมูลได้ ═══ */}
           {has('action') && (
-          <Sheet k={k} cw={cw} span={2} icon="📋" title="ACTION BOARD — สิ่งที่ตกลงกันว่าจะแก้"
+          <Sheet k={k} cw={cw} span={2} icon="📋" title={tr('ACTION BOARD — สิ่งที่ตกลงกันว่าจะแก้')}
             sub={`${health.empty ? 'ยังไม่มีใครบันทึกสักใบ' : `เป็นๆ ${health.liveCount} ใบ · ปิดแล้ว ${health.done.length} ใบ${health.closeRate != null ? ` (${health.closeRate}%)` : ''}`}${scopedActs.hidden ? ` · นอกขอบเขต ${scopedActs.hidden} ใบ` : ''}`}
             big={health.overdue.length || (health.empty ? '0' : health.liveCount)}
             unit={health.overdue.length ? 'ใบเกินกำหนด' : 'ใบค้าง'}
@@ -1104,7 +1104,7 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                             {a.line_name || '—'} · {(a.assignee || '').trim() || 'ยังไม่ระบุผู้รับผิดชอบ'} · {a.due_date || 'ไม่มีกำหนด'}
                           </span>
                           {a.result_img && (
-                            <a href={a.result_img} target="_blank" rel="noreferrer" title="รูปหลักฐานที่แนบไว้"
+                            <a href={a.result_img} target="_blank" rel="noreferrer" title={tr('รูปหลักฐานที่แนบไว้')}
                               style={{ fontSize: fs(11), textDecoration: 'none' }}>📷</a>
                           )}
                           {canRecord && (
@@ -1150,8 +1150,8 @@ export default function ObeyaSqdcmBoard({ tabs, tab, onTab }) {
                 <textarea value={closing.result} rows={3} onChange={e => setClosing({ ...closing, result: e.target.value })}
                   style={{ marginTop: 3, fontSize: 13.5 }} placeholder={tr('เช่น เปลี่ยนตัวจับชิ้นงานเป็นแบบ quick clamp · เวลาเปลี่ยนรุ่นลดจาก 25 → 14 นาที')} />
               </label>
-              <QualityPhotoField label="รูปหลักฐาน (ไม่บังคับ)" url={closing.a.result_img || null} file={closing.file}
-                hint="ถ่ายสิ่งที่แก้ไปจริง — เดือนหน้าปัญหาเดิมกลับมาจะได้ย้อนดูได้"
+              <QualityPhotoField label={tr('รูปหลักฐาน (ไม่บังคับ)')} url={closing.a.result_img || null} file={closing.file}
+                hint={tr('ถ่ายสิ่งที่แก้ไปจริง — เดือนหน้าปัญหาเดิมกลับมาจะได้ย้อนดูได้')}
                 onPick={(f) => setClosing({ ...closing, file: f })} />
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>

@@ -71,13 +71,13 @@ export default function TrialBookingModal({ lineName, dies = [], onClose, onAdd 
 
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 800 }}>จองเครื่องทดลองงานใหม่</div>
+            <div style={{ fontSize: 15, fontWeight: 800 }}>{tr('จองเครื่องทดลองงานใหม่')}</div>
             <div style={{ fontSize: 11.5, color: 'var(--muted)', marginTop: 2 }}>
               {lineName} · งานนี้จะไปกินเวลาบนไทม์ไลน์เหมือนงานผลิตจริง เพื่อให้กะอื่นเห็นว่าเครื่องถูกจอง
             </div>
           </div>
           {/* ปิดได้จาก ✕ / ยกเลิก เท่านั้น (ชั้น backdrop ไม่รับคลิก — ดูคอมเมนต์ด้านบน) */}
-          <button type="button" onClick={onClose} aria-label="ปิด" title="ปิด"
+          <button type="button" onClick={onClose} aria-label={tr('ปิด')} title={tr('ปิด')}
             style={{ background: 'none', border: 'none', color: 'var(--muted)', fontSize: 18,
               cursor: 'pointer', lineHeight: 1, padding: 2, flexShrink: 0 }}>✕</button>
         </div>
@@ -96,7 +96,7 @@ export default function TrialBookingModal({ lineName, dies = [], onClose, onAdd 
         </div>
         {/* 🔴 ความซื่อสัตย์: บอกตรงๆ ว่าทำไมไม่ให้เลือกจากทะเบียนสินค้า */}
         <div style={{ fontSize: 11, color: 'var(--text2)', background: 'var(--bg2)', borderRadius: 'var(--r-md)', padding: '6px 9px' }}>
-          ℹ️ งานใหม่ยังไม่มีเลข MAT (SAP ยังไม่ออก) — ระบบ<b>ไม่สร้างพาร์ทลงทะเบียนสินค้าให้</b>
+          ℹ️ งานใหม่ยังไม่มีเลข MAT (SAP ยังไม่ออก) — ระบบ<b>{tr('ไม่สร้างพาร์ทลงทะเบียนสินค้าให้')}</b>
           เพราะพาร์ทอาจยังไม่เกิดจริง · เก็บ Part No. ไว้บนใบนี้ก่อน พอเลข MAT ออกค่อยผูกเข้าระบบทีหลัง
         </div>
 
@@ -145,9 +145,9 @@ export default function TrialBookingModal({ lineName, dies = [], onClose, onAdd 
             <label style={label}>{tr('⏱️ ขอใช้เครื่อง')} <b style={{ color: 'var(--accent)' }}>{tr('(บังคับ)')}</b></label>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <input type="number" min="0" max="48" value={f.hours} onChange={e => set('hours')(e.target.value)}
-                style={{ width: 70, textAlign: 'right' }} /><span style={{ fontSize: 12 }}>ชม.</span>
+                style={{ width: 70, textAlign: 'right' }} /><span style={{ fontSize: 12 }}>{tr('ชม.')}</span>
               <input type="number" min="0" max="59" step="5" value={f.mins} onChange={e => set('mins')(e.target.value)}
-                style={{ width: 70, textAlign: 'right' }} /><span style={{ fontSize: 12 }}>นาที</span>
+                style={{ width: 70, textAlign: 'right' }} /><span style={{ fontSize: 12 }}>{tr('นาที')}</span>
             </div>
           </div>
           <div>

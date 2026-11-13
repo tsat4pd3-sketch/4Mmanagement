@@ -1,5 +1,6 @@
 import { roleLabel } from '../utils/roleMeta';
 
+import { tr } from '../utils/i18n';
 /**
  * 🔒 แถบ "ทำไมปุ่มหาย" — ใช้ทุกหน้าที่ซ่อนปุ่ม/คอลัมน์ตามสิทธิ์
  *
@@ -36,16 +37,16 @@ export default function ReadOnlyNote({ show = true, role, what, permKey, hint, c
       padding: compact ? '7px 10px' : '10px 12px', marginBottom: compact ? 10 : 14,
       fontSize: compact ? 12 : 12.5, lineHeight: 1.65, ...style,
     }}>
-      🔒 <b>โหมดดูอย่างเดียว{what ? ` — บัญชีนี้ยังไม่มีสิทธิ์${what}` : ''}</b>
-      {!compact && <> จึงไม่เห็นปุ่ม/คอลัมน์สำหรับแก้ไข</>}
+      🔒 <b>{tr('โหมดดูอย่างเดียว')}{what ? ` — บัญชีนี้ยังไม่มีสิทธิ์${what}` : ''}</b>
+      {!compact && <> {tr('จึงไม่เห็นปุ่ม/คอลัมน์สำหรับแก้ไข')}</>}
       {!compact && (
         <div style={{ color: 'var(--text2)', marginTop: 3 }}>
           ให้ admin เปิดสิทธิ์{' '}
           {keys.map((k, i) => (
-            <span key={k}>{i > 0 && ' หรือ '}<code>{k}</code></span>
+            <span key={k}>{i > 0 && tr(' หรือ ')}<code>{k}</code></span>
           ))}
-          {role && <> ให้ role <b>{roleLabel(role)}</b></>}{' '}
-          ที่หน้า <b>จัดการสิทธิ์ (/permissions)</b> → แท็บ <b>สิทธิ์การทำงาน</b>
+          {role && <> {tr('ให้ role')} <b>{roleLabel(role)}</b></>}{' '}
+          ที่หน้า <b>{tr('จัดการสิทธิ์ (/permissions)')}</b> {tr('→ แท็บ')} <b>{tr('สิทธิ์การทำงาน')}</b>
           {hint && <div style={{ marginTop: 3, opacity: 0.85 }}>{hint}</div>}
         </div>
       )}
