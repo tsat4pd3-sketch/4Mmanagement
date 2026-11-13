@@ -10670,3 +10670,46 @@ test('🏠 checkin-opens-on-own-line — ค่าตั้งต้นมาจ
 
   assert.deepEqual(bad, [], '\n\n❌ ' + bad.join('\n❌ ') + '\n');
 });
+
+test('⏳ mo-details-pending — เรียกช่าง = ต้องมีใบ MO · ใบรอรายละเอียดต้องเห็นในคิว', () => {
+  /* 🔴 13/11 คำสั่ง user: *"บังคับเลยถ้าเรียกช่าง เพราะข้ามแผนก · อาจจะไม่บังคับใส่รายละเอียด
+     ตอนนั้นทันทีก็ได้ มาใส่ย้อนหลังได้ เป็น tab breakdown รอเพิ่มรายละเอียด MO"*
+     ข้อมูลตอนทำ: เรียกช่าง 1,072 ครั้ง — มีใบแล้ว 986 (92%) · ไม่มีใบ 86 (56 ใน 30 วัน)
+     กับดัก 4 ข้อที่ด่านนี้กัน:
+       ① ตัวบังคับหายไปจากฐาน (trigger) ⇒ กลับไปเป็น "เรียกช่างแล้วไม่มีใบ" เงียบๆ
+          — ต้องมีไฟล์ migration ในรีโป ไม่ใช่ apply ลอยๆ ผ่าน MCP แล้วลืม
+       ② `details_pending` หายจาก `MO_LIST_COLS` ⇒ ป้าย+ตัวกรองหายทั้งจอ (คอลัมน์ที่ไม่ select = undefined)
+       ③ หน้าเทียบ `details_pending === true` เอง ⇒ `undefined` (ไม่ได้ select) ถูกตัดสินเป็น "ใบครบ"
+       ④ โหมดเติมรายละเอียดเขียน status/current_step ทับ ⇒ ใบที่ช่างซ่อมอยู่ถูกดึงกลับไปกองรอรับงาน
+     📄 src/utils/moDetailsPending.js · docs/modules/mtn-work-order.md */
+  const dir = join(ROOT, 'supabase/migrations');
+  const files = readdirSync(dir).filter(f => f.endsWith('.sql'));
+  const hasTrg = files.some(f => /create\s+trigger\s+trg_dt_call_mtn_opens_mo/i.test(readFileSync(join(dir, f), 'utf8')));
+  assert.ok(hasTrg,
+    '\n\n❌ ไม่มี migration ที่สร้าง trigger `trg_dt_call_mtn_opens_mo` ในรีโป\n'
+    + '   ⇒ ตัวบังคับ "เรียกช่าง = ต้องมีใบ MO" ไม่มีใครรู้ว่ามีอยู่ กู้ฐานใหม่แล้วหาย\n');
+
+  const mr = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  /* ② */
+  assert.match(mr, /MO_LIST_COLS[\s\S]{0,4000}?'details_pending'/,
+    '\n\n❌ `details_pending` ไม่อยู่ใน MO_LIST_COLS — ป้าย/ตัวกรอง "รอเพิ่มรายละเอียด" หายทั้งจอเงียบๆ\n');
+  /* ③ — ห้ามเทียบธงเองในหน้า ต้องผ่านของกลาง */
+  for (const [file, src] of [['src/pages/MtnRepair.jsx', mr],
+                             ['src/pages/DailyReport.jsx', stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'))]]) {
+    assert.ok(!/\.details_pending\s*===\s*true/.test(src),
+      `\n\n❌ ${file} เทียบ \`details_pending === true\` เอง — ใช้ isDetailsPending() จาก utils/moDetailsPending.js\n`
+      + '   คอลัมน์ที่ไม่ได้ select มา = undefined ⇒ เทียบเองแล้วใบที่รอเอกสารหายจากคิว\n');
+    assert.match(src, /isDetailsPending\(/,
+      `\n\n❌ ${file} ไม่เรียก isDetailsPending() แล้ว — ใบที่รอรายละเอียดไม่ถูกแยกออกมา\n`);
+  }
+  /* ④ — โหมดเติมต้องถอดฟิลด์ของ "การเปิดใบ" ออกก่อนเขียนทับ */
+  assert.match(mr, /if \(fillOrderId\)[\s\S]{0,700}?status: _s[\s\S]{0,200}?current_step: _cs/,
+    '\n\n❌ โหมดเติมรายละเอียดไม่ได้ถอด status/current_step ออกจาก payload\n'
+    + '   ⇒ เขียน status:\'pending\' step:1 ทับใบที่ช่างรับงาน/ซ่อมไปแล้ว = ดึงใบกลับไปกองรอรับงาน\n');
+  assert.match(mr, /details_pending: done \? false : true/,
+    '\n\n❌ โหมดเติมต้องปลดธงเฉพาะเมื่อครบ (canClearDetailsFlag) — ปลดทุกครั้ง = ใบไม่ครบหลุดจากคิว\n');
+  /* ธงนี้ห้ามกลายเป็นด่านของขั้น (ไลน์ต้องไม่หยุดรอเอกสาร) */
+  assert.ok(!/details_pending[^\n]{0,80}(return toast\.error|canDoStep)/.test(mr),
+    '\n\n❌ เอาธง details_pending ไปบล็อกขั้น/ปุ่ม — ใบที่รอเอกสารต้องยังรับงาน/ซ่อม/ปิดได้ตามปกติ\n'
+    + '   (กฎโมดูล: "งานซ่อมกับบริการ แค่แจ้งให้ทราบ ไม่งั้นไลน์จะหยุดรอการอนุมัติ")\n');
+});

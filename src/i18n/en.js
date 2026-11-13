@@ -10309,6 +10309,19 @@ const EN = {
   'ติ๊กครบทุกประเภทแล้ว': 'Every type has been flagged',
   'แท่งนี้ไม่กระทบเลขที่ส่งกลุ่ม — Machine Break Down / MTBF / MTTR ในตารางข้างล่างยังนับไลน์หยุดเต็มตาม KPI Guideline เหมือนเดิม':
     'This bar does not affect the numbers reported to the group — Machine Break Down / MTBF / MTTR in the table below still count the full line stop per the KPI Guideline',
+
+  /* ── ⏳ ใบ MO ที่เปิดให้ตอนกดเรียกช่าง แล้วยังรอรายละเอียด (13/11) ── */
+  'เอกสารใบ MO': 'MO paperwork',
+  'รอเพิ่มรายละเอียด': 'Details pending',
+  '⏳ รอเพิ่มรายละเอียด': '⏳ Details pending',
+  '➕ เพิ่มรายละเอียด': '➕ Add details',
+  'เพิ่มรายละเอียด': 'Add details',
+  'ใบนี้เปิดให้อัตโนมัติตอนกดเรียกช่าง': 'This MO was opened automatically when maintenance was called',
+  'ยังไม่มีใครใส่รายละเอียด': 'nobody has filled in the details yet',
+  'เปิดใบให้อัตโนมัติตอนกดเรียกช่าง — เปิดใบนี้แล้วกดเพิ่มรายละเอียดได้':
+    'Opened automatically when maintenance was called — open it and add the details',
+  'เรียกช่างแล้ว — ระบบเปิดใบ MO ให้อัตโนมัติ · กดเพื่อเพิ่มรายละเอียด (ชนิดอุปกรณ์ · ลักษณะปัญหา · รูปก่อนซ่อม)':
+    'Maintenance was called — an MO was opened automatically · tap to add the details (equipment kind · problem · before photo)',
 };
 
 export default EN;

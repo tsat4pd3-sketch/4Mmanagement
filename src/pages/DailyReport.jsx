@@ -60,6 +60,7 @@ import SearchSelect from '../components/SearchSelect';
 import Segmented from '../components/Segmented';
 import DieMatLinkButton from '../components/DieMatLinkButton';
 import MoReportFromDowntime from '../components/MoReportFromDowntime';   // ฟอร์มแจ้งซ่อมเต็ม (lazy) — เปิดใบจาก Downtime
+import { isDetailsPending } from '../utils/moDetailsPending';   // ⏳ ใบที่เปิดให้ตอนเรียกช่าง ยังรอรายละเอียด (13/11)
 import { dieCandidatesForMats } from '../utils/dieCandidates';
 import { dtMachineRule, machineFitsDtType, idsForDb } from '../utils/dtMachineFilter';
 import { MB_FLAGS, mbFlagOf, mbFlagMeta, mbValueForDb } from '../utils/dtBreakdownOwner';   // 🔧 ธง "เครื่องเสียของช่างไหม" (13/11)
@@ -3305,14 +3306,24 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
            แล้วคนต้องเลือกชนิดอุปกรณ์ + กลุ่ม/ลักษณะปัญหาจากทะเบียน + รายละเอียดผ่านตัวตรวจ + **รูปบังคับ**
      🔴 เช็คใบซ้ำอ่าน error ด้วย — อ่านไม่ได้ = ไม่เปิด (fail-closed) · มีมากกว่า 1 ใบ = ถือว่ามีแล้ว */
   const openMoPicker = async (d) => {
-    const { data: exist, error } = await supabaseDR.from('mtn_orders').select('id, mo_no').eq('source_downtime_id', d.id).limit(1);
+    /* ⏳ 13/11 — กด "เรียกช่าง" แล้วฐานเปิดใบให้เองทันที (trigger `trg_dt_call_mtn_opens_mo`)
+       ⇒ ใบที่เจอตรงนี้อาจเป็น "ใบที่รอรายละเอียด" ไม่ใช่ใบที่กรอกครบแล้ว
+       🔴 เดิมเจอใบแล้วตอบ "มีใบแล้ว" แล้วตัน = คนเติมรายละเอียดไม่ได้จากหน้านี้เลย
+          ⇒ ใบที่ติดธงต้องพาไป **ฟอร์มเดิมในโหมดเติม** (เขียนทับใบเดิม ไม่เปิดใบที่ 2) */
+    const { data: exist, error } = await supabaseDR.from('mtn_orders')
+      .select('id, mo_no, details_pending, before_img').eq('source_downtime_id', d.id)
+      .order('report_at', { ascending: true }).limit(1);
     if (error) { toast.error('ตรวจใบซ้ำไม่สำเร็จ — ยังไม่เปิดใบ ลองใหม่อีกครั้ง (' + error.message + ')'); return; }
-    if (exist?.length) { toast.info(`มีใบแจ้งซ่อมของรายการนี้แล้ว${exist[0].mo_no ? ` (${exist[0].mo_no})` : ''}`); return; }
+    const found = exist?.[0];
+    if (found && isDetailsPending(found) !== true) {
+      toast.info(`มีใบแจ้งซ่อมของรายการนี้แล้ว${found.mo_no ? ` (${found.mo_no})` : ''}`); return;
+    }
     const p = (n) => String(n).padStart(2, '0');
     const at = d.started_at ? new Date(d.started_at) : null;
     const dtType = dtTypes.find(t => t.id === d.downtime_type_id);
     setMoFromDt({
       d,
+      fillOrderId: found?.id || null, hasBefore: !!found?.before_img,
       team: teamForMachine(d.machine_no, machines) || teamForItem(d.machine_no),
       initial: {
         line_name: selSession.line_name, machine_no: d.machine_no || '',
@@ -4614,7 +4625,17 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       )}
                       {/* เปิดใบแจ้งซ่อม MO จาก downtime — เฉพาะ "นอกแผน" (ในแผน เช่น Set up/รอ QA/5ส. ไม่ใช่เหตุเครื่องเสีย — คำสั่ง user 2026-07-24) */}
                       {canScan && can('mtn_repair', 'report', role) && d.dr_downtime_types?.category !== 'planned' && (
-                        <button onClick={() => openMoPicker(d)} title={tr('เปิดใบแจ้งซ่อม MO (7 ขั้น) จากรายการนี้')} style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: 'var(--blue)', border: 'none', borderRadius: 'var(--r-md)', padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>{tr('เปิดใบซ่อม')}</button>
+                        /* ⏳ 13/11 — เรียกช่างแล้ว = ฐานเปิดใบให้เองแล้ว (trigger) ⇒ ปุ่มนี้คือ "ไปเติมรายละเอียด"
+                            ไม่ใช่ "เปิดใบใหม่" · ป้ายต้องตรงกับความจริง ไม่งั้นคนกดแล้วเจอ toast ว่ามีใบแล้วก็งง
+                            🔴 ไม่ยิงคิวรีเพิ่มเพื่อถามว่าใบครบยัง — ตอนกดถามฐานสดอยู่แล้วใน openMoPicker
+                               (จอ Downtime เปิดค้างทั้งกะ · เพิ่มคิวรีต่อแถว = egress ฟรีๆ) */
+                        <button onClick={() => openMoPicker(d)}
+                          title={d.call_mtn
+                            ? tr('เรียกช่างแล้ว — ระบบเปิดใบ MO ให้อัตโนมัติ · กดเพื่อเพิ่มรายละเอียด (ชนิดอุปกรณ์ · ลักษณะปัญหา · รูปก่อนซ่อม)')
+                            : tr('เปิดใบแจ้งซ่อม MO (7 ขั้น) จากรายการนี้')}
+                          style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: d.call_mtn ? 'var(--amber)' : 'var(--blue)', border: 'none', borderRadius: 'var(--r-md)', padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                          {d.call_mtn ? tr('เพิ่มรายละเอียด') : tr('เปิดใบซ่อม')}
+                        </button>
                       )}
                       {/* 🛠 วิธีแก้ไข + ผลตรวจติดตาม — โผล่เมื่อรายการนี้ยาวถึงเกณฑ์ใบรายงานปัญหา (นอกแผน ≥30 นาที)
                           feedback หัวหน้ากลุ่ม 2026-08-19: "ถ้าเกิน 30 นาที ให้มีไอคอนขึ้นมาให้ลงวิธีแก้ไข"
@@ -4729,8 +4750,11 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         {moFromDt && (
           <MoReportFromDowntime downtime={moFromDt.d} lineName={selSession?.line_name} initial={moFromDt.initial}
               defaultDept={moFromDt.team} fullName={fullName}
+              fillOrderId={moFromDt.fillOrderId} hasBefore={moFromDt.hasBefore}
               onClose={() => setMoFromDt(null)}
-              onSaved={() => { setMoFromDt(null); toast.success('📝 เปิดใบแจ้งซ่อมแล้ว — ไปดำเนินการต่อที่หน้า "แจ้งซ่อม MTN"'); if (selSession?.id) loadDT(selSession.id); }} />
+              onSaved={() => { setMoFromDt(null); toast.success(moFromDt.fillOrderId
+                ? '📝 เพิ่มรายละเอียดใบแจ้งซ่อมแล้ว'
+                : '📝 เปิดใบแจ้งซ่อมแล้ว — ไปดำเนินการต่อที่หน้า "แจ้งซ่อม MTN"'); if (selSession?.id) loadDT(selSession.id); }} />
         )}
         {moDtPick && (() => { const pickTone = moDtPick.mode === 'call' ? 'bad' : 'info'; const pickColor = toneVar(pickTone);
           /* 🔴 ชั้น overlay ห้ามมี onClick ปิด (QC audit 06/10) — modal นี้มีปุ่มเลือกทีมช่าง
