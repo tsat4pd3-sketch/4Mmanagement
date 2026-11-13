@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { explainNetError } from '../utils/netError';
 
+import { tr } from '../utils/i18n';
 /* ── Toast store (singleton outside React) ── */
 const onMobile = () => { try { return window.matchMedia('(max-width:768px)').matches; } catch { return false; } };
 let _dispatch = null;
@@ -67,7 +68,7 @@ export function ToastContainer() {
   return (
     <div style={{ position: 'fixed', bottom: 'calc(24px + var(--mnav-h, 0px))', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center', pointerEvents: 'none' }}>
       {toasts.map(t => (
-        <div key={t.id} onClick={() => remove(t.id)} title="คลิกเพื่อปิด" style={{
+        <div key={t.id} onClick={() => remove(t.id)} title={tr('คลิกเพื่อปิด')} style={{
           display: 'flex', alignItems: 'center', gap: 10,
           padding: '10px 18px', borderRadius: 'var(--r-md)',
           background: 'rgba(18,18,28,0.96)', border: `1px solid ${COLORS[t.type]}55`,

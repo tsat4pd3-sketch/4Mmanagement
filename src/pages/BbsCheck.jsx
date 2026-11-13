@@ -41,6 +41,8 @@ import OverflowMenu from '../components/OverflowMenu';   // ⋯ ปุ่มต�
 import NoticeBar from '../components/NoticeBar';
 import FilterBar from '../components/FilterBar';
 import { DeleteButton } from '../components/IconButton';
+import { tr } from '../utils/i18n';
+import { pickSignerPatch } from '../utils/selfSign';
 /* ⚠️ ห้าม import SHIFT_OPTIONS มาใช้ที่นี่ (เคยพลาดมาแล้ว — ดูหัวข้อ SHEET_SHIFT_OPTIONS ด้านล่าง) */
 
 const thisMonth = () => {
@@ -393,10 +395,15 @@ export default function BbsCheck() {
     // รหัสพนักงานเติมจากทะเบียน employees ที่ชื่อตรงกับโปรไฟล์ (profiles ไม่ผูก employee_id เสมอไป) — แก้เองได้ (2026-09-07)
     const norm = (v) => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase();
     const emp = p ? allEmps.find(e => norm(e.name) === norm(p.full_name)) : null;
+    /* ✍️ ลายเซ็นต้องเป็นของเจ้าตัว (13/11 · คำสั่ง user · utils/selfSign.js)
+       · เลือก "ตัวเอง" = ลายเซ็นโปรไฟล์ + รหัสพนักงานของตัวเองตามเดิม
+       · เลือก "คนอื่น" = **ไม่แปะลายเซ็น และล้างรหัสพนักงาน** — ผู้ตรวจตัวจริงต้องสแกนบัตรเอง (ทาง C1 · 03/11)
+         ไม่ล้างรหัส = ลายเซ็นจากฐานพนักงานของรหัสเดิม/รหัสที่ระบบเติมให้ ขึ้นแทนเจ้าตัวเงียบๆ */
+    const pk = pickSignerPatch(p?.full_name, { fullName, mySig: p?.signature_url || null });
     const patch = {
-      inspector_name: p?.full_name || null,
-      inspector_sig_url: p?.signature_url || null,
-      ...(emp?.employee_id_code ? { inspector_code: emp.employee_id_code } : {}),
+      inspector_name: pk.name,
+      inspector_sig_url: pk.sig,
+      ...(pk.self ? (emp?.employee_id_code ? { inspector_code: emp.employee_id_code } : {}) : { inspector_code: null }),
       updated_by_name: fullName || null,
     };
     const { data, error } = await supabase.from('bbs_sheets')
@@ -404,7 +411,7 @@ export default function BbsCheck() {
     if (error) return toast.error(`บันทึกผู้ตรวจไม่สำเร็จ: ${error.message}`);
     if (!data?.length) return toast.error('บันทึกไม่สำเร็จ — บัญชีนี้ไม่มีสิทธิ์แก้ใบนี้');
     setSheet(s => ({ ...s, ...patch }));
-    toast.success('บันทึกผู้ตรวจสอบแล้ว');
+    toast.success(pk.self || !pk.name ? 'บันทึกผู้ตรวจสอบแล้ว' : `บันทึกผู้ตรวจสอบแล้ว — ลายเซ็นจะขึ้นเมื่อ ${pk.name} สแกนบัตร/login มาเลือกตัวเอง`);
   };
 
   const setInspectorCode = async (code) => {
@@ -461,28 +468,28 @@ export default function BbsCheck() {
       <ReadOnlyNote show={!canRecord} role={role} what="บันทึกผลสังเกต BBS" permKey="bbs:record" />
 
       {loadWarn && (
-        <NoticeBar tone="bad" style={{ marginBottom: 12 }}>{loadWarn} — ตัวเลขบนหน้านี้อาจไม่ครบ</NoticeBar>
+        <NoticeBar tone="bad" style={{ marginBottom: 12 }}>{loadWarn} {tr('— ตัวเลขบนหน้านี้อาจไม่ครบ')}</NoticeBar>
       )}
 
       {/* ── หัว + ปุ่มของใบ (UI-STANDARD 2026-09-24 — ใน /daily-checker หัวชื่อหน้าถูกซ่อนเอง เหลือปุ่ม) ── */}
-      <PageHeader title="สังเกตพฤติกรรมความปลอดภัย (BBS)" icon="🦺"
+      <PageHeader title={tr('สังเกตพฤติกรรมความปลอดภัย (BBS)')} icon="🦺"
         actions={<>
           {/* ปุ่มตายตัว ≤2 (UI §6.35): [เติมจากผลตรวจ PPE] [พิมพ์/PDF] · ข้อตกลง → ⋯ */}
           <OverflowMenu items={[{ key: 'agree', icon: '📋', label: 'ข้อตกลง', badge: agreements.length, onClick: () => setShowAgree(true) }]} />
           {canRecord && (
             <button type="button" className="pg-btn primary" onClick={autoFill} disabled={busy || !emps.length}>
-              {busy ? 'กำลังเติม…' : 'เติมจากผลตรวจ PPE'}
+              {busy ? tr('กำลังเติม…') : tr('เติมจากผลตรวจ PPE')}
             </button>
           )}
-          <button type="button" className="pg-btn" onClick={doPrint} disabled={!sheet}>พิมพ์ / PDF</button>
+          <button type="button" className="pg-btn" onClick={doPrint} disabled={!sheet}>{tr('พิมพ์ / PDF')}</button>
         </>} />
 
       {/* ── แถบเลือกใบ ── ลำดับ: ไลน์ → เดือน → กะ */}
       <FilterBar style={{ marginBottom: 12 }}>
-        <span className="filter-label">พื้นที่ / ไลน์</span>
+        <span className="filter-label">{tr('พื้นที่ / ไลน์')}</span>
         {/* <LineSelect valueKey="id"> — เก็บ line id เหมือนเดิม · scopedLines กรอง scope ไว้แล้ว (2026-09-07) */}
         <LineSelect lines={scopedLines} value={selLine} valueKey="id" placeholder={null} onChange={setSelLine} includeSupport />
-        <span className="filter-label">เดือน</span>
+        <span className="filter-label">{tr('เดือน')}</span>
         <input type="month" value={month} onChange={e => setMonth(e.target.value)} />
         {/* 🔴 ไม่มีปุ่มเลือกกะ — BBS ไม่แยกกะ (ดูหัวบล็อกไฟล์) ห้ามเติมกลับ */}
       </FilterBar>
@@ -491,20 +498,20 @@ export default function BbsCheck() {
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-start', marginBottom: 12 }}>
         <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 12px', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <div>
-            <label style={lbl}>ผู้ตรวจสอบ (ลายเซ็น: โปรไฟล์ → ฐานพนักงาน)</label>
+            <label style={lbl}>{tr('ผู้ตรวจสอบ (ลายเซ็น: โปรไฟล์ → ฐานพนักงาน)')}</label>
             <SearchSelect disabled={!canRecord} value={signers.find(s => s.full_name === sheet?.inspector_name)?.id || ''}
-              placeholder="— เลือกผู้ตรวจสอบ (พิมพ์ค้นหา) —" style={{ width: 240 }} inputStyle={{ padding: '6px 30px 6px 8px', fontSize: 12.5 }}
+              placeholder={tr('— เลือกผู้ตรวจสอบ (พิมพ์ค้นหา) —')} style={{ width: 240 }} inputStyle={{ padding: '6px 30px 6px 8px', fontSize: 12.5 }}
               options={signers.map(s => ({ id: s.id, label: s.full_name }))} onChange={({ id }) => setInspector(id)} />
           </div>
           <div>
-            <label style={lbl}>รหัสพนักงาน (สแกนบัตร / พิมพ์)</label>
+            <label style={lbl}>{tr('รหัสพนักงาน (สแกนบัตร / พิมพ์)')}</label>
             {/* key = remount เมื่อระบบเติมรหัสให้ (input uncontrolled) · ยังพิมพ์แก้เองได้
                 เครื่องสแกนส่ง Enter ตามท้ายรหัสเสมอ ⇒ Enter = ยืนยันรหัส (blur) ไม่ใช่ submit อะไร
                 ผู้รับเหมาที่ไม่มีบัตร = พิมพ์รหัสเอง · ชื่อ/ลายเซ็นดึงจากฐานพนักงานตามรหัส (C1 · 03/11) */}
             <input key={`${sheet?.id || ''}|${sheet?.inspector_code || ''}`} defaultValue={sheet?.inspector_code || ''} disabled={!canRecord || !sheet}
               onBlur={e => setInspectorCode(e.target.value.trim())}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
-              placeholder="เช่น 61234"
+              placeholder={tr('เช่น 61234')}
               style={{ width: 110, padding: '6px 8px', fontSize: 12.5 }} />
             {codeSigner && codeSigner.state !== 'no_code' && (
               <div style={{ fontSize: 11, marginTop: 3, maxWidth: 220, lineHeight: 1.4,
@@ -515,7 +522,7 @@ export default function BbsCheck() {
             )}
           </div>
           <div style={{ textAlign: 'center' }}>
-            <label style={lbl}>ลายเซ็น</label>
+            <label style={lbl}>{tr('ลายเซ็น')}</label>
             {shownSig
               ? <img src={shownSig} alt="ลายเซ็น" style={{ height: 34, background: '#fff', borderRadius: 4, padding: 2 }} />
               : <div style={{ fontSize: 11, color: 'var(--muted)', padding: '9px 0' }}>
@@ -529,11 +536,11 @@ export default function BbsCheck() {
           background: 'var(--amber-dim)', border: '1px solid var(--amber)', borderRadius: 'var(--r-md)',
           padding: '8px 12px', fontSize: 12, lineHeight: 1.6, maxWidth: 420,
         }}>
-          <b>ระบบเติมให้ได้ {autoAgreements.length} ข้อ จากทั้งหมด {agreements.length} ข้อ</b>
-          {autoAgreements.length > 0 && <> (ข้อ {autoAgreements.map(a => a.seq).join(', ')} — มาจากการตรวจ PPE รายวัน)</>}
+          <b>{tr('ระบบเติมให้ได้')} {autoAgreements.length} {tr('ข้อ จากทั้งหมด')} {agreements.length} {tr('ข้อ')}</b>
+          {autoAgreements.length > 0 && <> {tr('(ข้อ')} {autoAgreements.map(a => a.seq).join(', ')} — มาจากการตรวจ PPE รายวัน)</>}
           <div style={{ color: 'var(--text2)', marginTop: 2 }}>
-            ข้อที่เหลือต้องให้ผู้ตรวจสังเกตเองแล้วทาในตาราง · ระบบ<b>ไม่ทับ</b>ช่องที่กรอกเอง
-            และ<b>ไม่เติม</b>วันที่ไม่มีบันทึกเช็คชื่อ
+            ข้อที่เหลือต้องให้ผู้ตรวจสังเกตเองแล้วทาในตาราง · ระบบ<b>{tr('ไม่ทับ')}</b>ช่องที่กรอกเอง
+            และ<b>{tr('ไม่เติม')}</b>วันที่ไม่มีบันทึกเช็คชื่อ
           </div>
           {/* ⚠️ ข้อความ 13 ข้อในไฟล์ Excel ต้นฉบับฝังเป็น OLE object แกะไม่ได้ → ต้องให้คนกรอกเอง
               ห้ามเดาข้อความ · แต่ต้องบอกว่ายังไม่ครบ ไม่งั้นคนคิดว่าระบบมีแค่นี้ */}
@@ -548,16 +555,16 @@ export default function BbsCheck() {
       {/* ── แปรง (เลือกสัญลักษณ์ แล้วคลิกช่องเพื่อทา) — desktop เท่านั้น (มือถือกดชิปในการ์ดตรงๆ) ── */}
       {canRecord && !isMobile && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-          <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>ทาช่องด้วย:</span>
+          <span style={{ fontSize: 12, color: 'var(--muted)', fontWeight: 700 }}>{tr('ทาช่องด้วย:')}</span>
           {MARKS.map(m => {
             const on = brush === m.key;
             return (
-              <button key={m.key} onClick={() => setBrush(m.key)} title={m.label} style={{
+              <button key={m.key} onClick={() => setBrush(m.key)} title={tr(m.label)} style={{
                 padding: '6px 12px', borderRadius: 'var(--r-md)', fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
                 border: `1px solid ${on ? m.color : 'var(--border2)'}`,
                 background: on ? m.color : 'var(--bg3)', color: on ? '#fff' : 'var(--text2)',
               }}>
-                <b style={{ fontSize: 14 }}>{m.key === 'ng' ? brushSeq : m.glyph}</b> {m.label.split(' (')[0]}
+                <b style={{ fontSize: 14 }}>{m.key === 'ng' ? brushSeq : m.glyph}</b> {tr(m.label).split(' (')[0]}
               </button>
             );
           })}
@@ -566,7 +573,7 @@ export default function BbsCheck() {
               style={{ width: 240, padding: '6px 8px', fontSize: 12.5 }}>
               {agreements.length
                 ? agreements.map(a => <option key={a.seq} value={a.seq}>{a.seq}. {a.text}</option>)
-                : <option value={1}>1. (ยังไม่ได้บันทึกข้อตกลง)</option>}
+                : <option value={1}>{tr('1. (ยังไม่ได้บันทึกข้อตกลง)')}</option>}
             </select>
           )}
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>คลิกช่องเดิมซ้ำด้วยแปรงเดิม = ล้างช่อง</span>
@@ -575,7 +582,7 @@ export default function BbsCheck() {
 
       {/* ── ตาราง ── */}
       {loading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด...</div>
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด...')}</div>
       ) : !emps.length ? (
         <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)' }}>
           ไม่มีพนักงานในไลน์นี้ — ตรวจที่หน้าฐานข้อมูลพนักงานว่าผูก “ไลน์” ไว้แล้วหรือยัง
@@ -595,17 +602,17 @@ export default function BbsCheck() {
           return (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <button onClick={() => setSelDay(Math.max(1, day - 1))} disabled={day <= 1} style={navBtn} aria-label="วันก่อนหน้า">◀</button>
+                <button onClick={() => setSelDay(Math.max(1, day - 1))} disabled={day <= 1} style={navBtn} aria-label={tr('วันก่อนหน้า')}>◀</button>
                 <div style={{ flex: 1, textAlign: 'center' }}>
                   <div style={{ fontSize: 16, fontWeight: 800, color: dstr === today ? 'var(--accent)' : 'var(--text)' }}>
-                    วันที่ {day} {dstr === today && <span style={{ fontSize: 11, marginLeft: 4 }}>· วันนี้</span>}
+                    วันที่ {day} {dstr === today && <span style={{ fontSize: 11, marginLeft: 4 }}>{tr('· วันนี้')}</span>}
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>ทาแล้ว {done}/{emps.length} คน</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ทาแล้ว')} {done}/{emps.length} {tr('คน')}</div>
                 </div>
-                <button onClick={() => setSelDay(Math.min(days, day + 1))} disabled={day >= days} style={navBtn} aria-label="วันถัดไป">▶</button>
+                <button onClick={() => setSelDay(Math.min(days, day + 1))} disabled={day >= days} style={navBtn} aria-label={tr('วันถัดไป')}>▶</button>
               </div>
               {dstr !== today && today.startsWith(month) && (
-                <button onClick={() => setSelDay(Number(today.slice(8, 10)))} style={{ ...btn('var(--accent)'), width: '100%', minHeight: 40, marginBottom: 10 }}>ไปวันนี้</button>
+                <button onClick={() => setSelDay(Number(today.slice(8, 10)))} style={{ ...btn('var(--accent)'), width: '100%', minHeight: 40, marginBottom: 10 }}>{tr('ไปวันนี้')}</button>
               )}
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 8, alignContent: 'start' }}>
                 {emps.map((e, i) => {
@@ -619,7 +626,7 @@ export default function BbsCheck() {
                           <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.name}</div>
                           <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>
                             {e.employee_id_code}
-                            {c?.source === 'ppe' && <span style={{ marginLeft: 6, color: 'var(--green)' }}>เติมจากผลตรวจ PPE</span>}
+                            {c?.source === 'ppe' && <span style={{ marginLeft: 6, color: 'var(--green)' }}>{tr('เติมจากผลตรวจ PPE')}</span>}
                           </div>
                         </div>
                         <span style={{ minWidth: 40, height: 40, borderRadius: 'var(--r-md)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 900,
@@ -639,7 +646,7 @@ export default function BbsCheck() {
                       </div>
                       {picking && (
                         <div style={{ marginTop: 8, padding: 8, borderRadius: 'var(--r-md)', background: 'var(--red-dim)', border: '1px solid var(--red-line)' }}>
-                          <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 6 }}>ไม่เหมาะสม — ผิดข้อตกลงข้อไหน?</div>
+                          <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 6 }}>{tr('ไม่เหมาะสม — ผิดข้อตกลงข้อไหน?')}</div>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                             {(agreements.length ? agreements : [{ seq: 1, text: '(ยังไม่ได้บันทึกข้อตกลง)' }]).map(a => (
                               <button key={a.seq} title={a.text} onClick={() => { setNgPick(null); paint(e, day, 'ng', a.seq); }}
@@ -665,11 +672,11 @@ export default function BbsCheck() {
           <table className="table-sticky" style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: 900 }}>
             <thead>
               <tr>
-                <th style={th(190, 'left')}>พนักงาน</th>
+                <th style={th(190, 'left')}>{tr('พนักงาน')}</th>
                 {Array.from({ length: days }, (_, i) => i + 1).map(d => (
                   <th key={d} style={{ ...th(26), color: `${month}-${String(d).padStart(2, '0')}` === today ? 'var(--accent)' : undefined }}>{d}</th>
                 ))}
-                <th style={th(150, 'left')}>หมายเหตุ</th>
+                <th style={th(150, 'left')}>{tr('หมายเหตุ')}</th>
               </tr>
             </thead>
             <tbody>
@@ -711,19 +718,19 @@ export default function BbsCheck() {
       <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginTop: 10, fontSize: 12, alignItems: 'center' }}>
         {MARKS.map(m => (
           <span key={m.key} style={{ color: 'var(--text2)' }}>
-            <b style={{ color: m.color, fontSize: 14 }}>{m.key === 'ng' ? '1-13' : m.glyph}</b> {m.label}
+            <b style={{ color: m.color, fontSize: 14 }}>{m.key === 'ng' ? '1-13' : m.glyph}</b> {tr(m.label)}
           </span>
         ))}
         <span style={{ flex: 1 }} />
         <span role="status" style={{ color: 'var(--muted)' }}>
-          เดือนนี้: ✓ {stat.ok} · ไม่เหมาะสม {stat.ng} · ปรับแก้ {stat.fixed} · ไม่ได้ตรวจ {stat.na}
-          {' · '}เติมอัตโนมัติ {stat.auto} / กรอกเอง {stat.manual} ช่อง
+          เดือนนี้: ✓ {stat.ok} {tr('· ไม่เหมาะสม')} {stat.ng} {tr('· ปรับแก้')} {stat.fixed} {tr('· ไม่ได้ตรวจ')} {stat.na}
+          {' · '}{tr('เติมอัตโนมัติ')} {stat.auto} {tr('/ กรอกเอง')} {stat.manual} ช่อง
           {/* 🔴 ตัวหาร — ไม่มีแล้วบรรทัดนี้ตอบไม่ได้ว่ากรอกครบแค่ไหน (ดูเหตุผลที่ stat) */}
           {stat.due > 0 && (
             <>
-              {' · '}กรอกแล้ว <b style={{ color: 'var(--text)' }}>{stat.filled}</b>/{stat.due} ช่อง
-              {stat.blank > 0 && <> · <b style={{ color: 'var(--amber)' }}>ยังไม่กรอก {stat.blank}</b></>}
-              {' '}(ถึงวันที่ {stat.elapsed} · {emps.length} คน)
+              {' · '}{tr('กรอกแล้ว')} <b style={{ color: 'var(--text)' }}>{stat.filled}</b>/{stat.due} ช่อง
+              {stat.blank > 0 && <> · <b style={{ color: 'var(--amber)' }}>{tr('ยังไม่กรอก')} {stat.blank}</b></>}
+              {' '}{tr('(ถึงวันที่')} {stat.elapsed} · {emps.length} คน)
             </>
           )}
         </span>
@@ -811,9 +818,9 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
   };
 
   return (
-    <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */  style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div /* ⚠️ ฟอร์มกรอกข้อมูล — ไม่ปิดจาก backdrop กันเผลอแตะแล้วข้อมูลหาย (UI-CONVENTIONS §5) */  style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div onClick={e => e.stopPropagation()} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-lg)', width: 'min(760px,96vw)', maxHeight: '88vh', overflow: 'auto', padding: 18 }}>
-        <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>ข้อตกลงด้านความปลอดภัยในการปฏิบัติงาน</h3>
+        <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>{tr('ข้อตกลงด้านความปลอดภัยในการปฏิบัติงาน')}</h3>
         <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--muted)', lineHeight: 1.6 }}>
           เลขข้อนี้คือตัวเลขที่พิมพ์ลงช่องในใบเมื่อพบพฤติกรรมไม่เหมาะสม ·
           ข้อที่ผูกกับ “การตรวจ PPE” ระบบจะเติมช่องให้อัตโนมัติได้
@@ -824,9 +831,9 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
 
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
           <thead><tr>
-            <th style={{ ...th(46), textAlign: 'center' }}>ข้อ</th>
-            <th style={{ ...th(null, 'left'), paddingLeft: 6 }}>สิ่งที่ควรทำ</th>
-            <th style={{ ...th(210, 'left'), paddingLeft: 6 }}>เติมอัตโนมัติจาก</th>
+            <th style={{ ...th(46), textAlign: 'center' }}>{tr('ข้อ')}</th>
+            <th style={{ ...th(null, 'left'), paddingLeft: 6 }}>{tr('สิ่งที่ควรทำ')}</th>
+            <th style={{ ...th(210, 'left'), paddingLeft: 6 }}>{tr('เติมอัตโนมัติจาก')}</th>
             {canManage && <th style={th(40)} />}
           </tr></thead>
           <tbody>
@@ -840,19 +847,19 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
                 <td style={{ ...td(), textAlign: 'left' }}>
                   <input value={r.text || ''} disabled={!canManage}
                     onChange={e => patch(i, { text: e.target.value })}
-                    placeholder="เช่น สวมใส่อุปกรณ์ป้องกันเสียงในพื้นที่กำหนด"
+                    placeholder={tr('เช่น สวมใส่อุปกรณ์ป้องกันเสียงในพื้นที่กำหนด')}
                     style={{ width: '100%', padding: '5px 7px', fontSize: 12.5 }} />
                 </td>
                 <td style={{ ...td(), textAlign: 'left' }}>
                   <select value={r.auto_source || ''} disabled={!canManage}
                     onChange={e => patch(i, { auto_source: e.target.value || null })}
                     style={{ width: '100%', padding: '5px 7px', fontSize: 12 }}>
-                    {AUTO_OPTS.map(o => <option key={o.v} value={o.v}>{o.t}</option>)}
+                    {AUTO_OPTS.map(o => <option key={o.v} value={o.v}>{tr(o.t)}</option>)}
                   </select>
                 </td>
                 {canManage && (
                   <td style={td()}>
-                    <DeleteButton onClick={() => setRows(rr => rr.filter((_, k) => k !== i))} title="เอาออก (ปิดใช้งาน — ใบเก่ายังอ่านออก)" />
+                    <DeleteButton onClick={() => setRows(rr => rr.filter((_, k) => k !== i))} title={tr('เอาออก (ปิดใช้งาน — ใบเก่ายังอ่านออก)')} />
                   </td>
                 )}
               </tr>
@@ -867,11 +874,11 @@ function AgreementsModal({ agreements, canManage, role, onClose }) {
         )}
 
         <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
-          {canManage && <button onClick={add} style={btn()}>＋ เพิ่มข้อ</button>}
-          <button onClick={onClose} style={btn()}>ปิด</button>
+          {canManage && <button onClick={add} style={btn()}>{tr('＋ เพิ่มข้อ')}</button>}
+          <button onClick={onClose} style={btn()}>{tr('ปิด')}</button>
           {canManage && (
             <button onClick={save} disabled={saving} style={btn('var(--accent)')}>
-              {saving ? 'กำลังบันทึก…' : 'บันทึก'}
+              {saving ? tr('กำลังบันทึก…') : tr('บันทึก')}
             </button>
           )}
         </div>

@@ -22,6 +22,7 @@ import {
   matchStdItems, checkStdSelection, requirementOf, KPI_PERSPECTIVES,
 } from '../utils/kpiSetup';
 
+import { tr } from '../utils/i18n';
 /* 23/09: รับ `scope`/`scopeCols` จาก OrgScopePicker (แทน section+group) — แถวที่หยิบเขียน scope_kind/scope_value ตรง */
 export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '', defs = [], canManage, onClose, onChanged, closedDefs = [], onRestore }) {
   /* หน่วยงานมาตรฐานที่ใบนี้อิงอยู่ — จำไว้ที่ `kpi_definitions.std_unit` ของแถวในใบ
@@ -114,37 +115,37 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
 
   const Badge = ({ req }) => {
     const r = requirementOf(req);
-    if (!r) return <span style={{ fontSize: 11, color: 'var(--muted)' }}>หัวข้อแม่</span>;
+    if (!r) return <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('หัวข้อแม่')}</span>;
     return (
-      <span title={r.hint} style={{ fontSize: 11, fontWeight: 800, color: r.color, border: `1px solid ${r.color}55`, borderRadius: 'var(--r-xs)', padding: '1px 5px', whiteSpace: 'nowrap' }}>
-        {r.label}
+      <span title={tr(r.hint)} style={{ fontSize: 11, fontWeight: 800, color: r.color, border: `1px solid ${r.color}55`, borderRadius: 'var(--r-xs)', padding: '1px 5px', whiteSpace: 'nowrap' }}>
+        {tr(r.label)}
       </span>
     );
   };
 
   return (
     /* ไม่ใช่ฟอร์มที่กรอกค้าง แต่ปิดด้วยปุ่มอย่างเดียวให้เหมือนโมดัลอื่นในหน้านี้ (UI-CONVENTIONS §5) */
-    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 14 }}>
       <div style={{ background: 'var(--card)', border: '1px solid var(--border2)', borderRadius: 'var(--r-lg)', padding: 18, width: 'min(1000px, 97vw)', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
         <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>
           KPI Standard ของกลุ่ม — ปี {year + 543} · {scopeText || 'ทั้งโรงงาน'}
         </div>
         <div style={{ fontSize: 11.5, color: 'var(--muted)', margin: '4px 0 10px', lineHeight: 1.6 }}>
-          ทะเบียนนี้มาจาก <b>KPI Guideline ของกลุ่ม</b> (อ่านอย่างเดียว) — ESM ไม่ได้คิดเกณฑ์เอง ·
-          หยิบข้อ <b style={{ color: '#ef4444' }}>บังคับ</b> ให้ครบ + ติ๊ก <b style={{ color: '#3b82f6' }}>เลือกได้</b> ตามภาระงานจริง
+          ทะเบียนนี้มาจาก <b>{tr('KPI Guideline ของกลุ่ม')}</b> (อ่านอย่างเดียว) — ESM ไม่ได้คิดเกณฑ์เอง ·
+          หยิบข้อ <b style={{ color: '#ef4444' }}>{tr('บังคับ')}</b> {tr('ให้ครบ + ติ๊ก')} <b style={{ color: '#3b82f6' }}>{tr('เลือกได้')}</b> ตามภาระงานจริง
           แล้วถ่วงน้ำหนักรวมให้เป็น <b>{KPI_TOTAL_WEIGHT}</b> ที่ตาราง KPI
         </div>
 
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
-          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>หน่วยงานตามเอกสารกลุ่ม</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text2)' }}>{tr('หน่วยงานตามเอกสารกลุ่ม')}</span>
           <select value={unit} onChange={e => setUnit(e.target.value)} style={sel}>
-            <option value="">— เลือกหน่วยงาน —</option>
+            <option value="">{tr('— เลือกหน่วยงาน —')}</option>
             {KPI_STD_UNITS.map(u => (
               <option key={u.unit} value={u.unit}>{stdUnitLabel(u.unit)}{u.seeded ? '' : ' (ยังไม่มีในทะเบียน)'}</option>
             ))}
           </select>
           {savedUnit && unit !== savedUnit && (
-            <span style={{ fontSize: 11, color: '#f59e0b' }}>ใบนี้อิง <b>{savedUnit}</b> อยู่ — เปลี่ยนที่นี่ไม่ย้อนไปแก้แถวเดิม</span>
+            <span style={{ fontSize: 11, color: '#f59e0b' }}>{tr('ใบนี้อิง')} <b>{savedUnit}</b> {tr('อยู่ — เปลี่ยนที่นี่ไม่ย้อนไปแก้แถวเดิม')}</span>
           )}
         </div>
 
@@ -155,15 +156,15 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
         )}
 
         {!unit && !missing && (
-          <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>เลือกหน่วยงานด้านบนเพื่อดูข้อ KPI มาตรฐานของหน่วยงานนั้น</div>
+          <div style={{ fontSize: 12.5, color: 'var(--muted)' }}>{tr('เลือกหน่วยงานด้านบนเพื่อดูข้อ KPI มาตรฐานของหน่วยงานนั้น')}</div>
         )}
 
         {unit && !missing && items && !items.length && (
           /* 🔴 ห้ามโชว์ตารางว่างเฉยๆ — ต้องบอกว่า "ไม่มีข้อมูล" ไม่ใช่ "ไม่มีข้อบังคับ" */
           <div style={{ fontSize: 12.5, color: '#f59e0b', lineHeight: 1.7 }}>
             {seeded === false
-              ? <>หน่วยงาน <b>{unit}</b> <b>ยังไม่ได้ถอดเข้าทะเบียน</b> (ตารางต้นฉบับหน้า 16-18 นับ Fixed/Choice ไม่ตรงกับ PDF จึงตั้งใจยังไม่ใส่) — ใช้ใบกระดาษของกลุ่มไปก่อน</>
-              : <>ยังไม่มีทะเบียนมาตรฐานของ <b>{unit}</b> ปี {year + 543} — ทะเบียนที่ seed ไว้คือปี 2569 (2026)</>}
+              ? <>{tr('หน่วยงาน')} <b>{unit}</b> <b>{tr('ยังไม่ได้ถอดเข้าทะเบียน')}</b> {tr('(ตารางต้นฉบับหน้า 16-18 นับ Fixed/Choice ไม่ตรงกับ PDF จึงตั้งใจยังไม่ใส่) — ใช้ใบกระดาษของกลุ่มไปก่อน')}</>
+              : <>{tr('ยังไม่มีทะเบียนมาตรฐานของ')} <b>{unit}</b> {tr('ปี')} {year + 543} {tr('— ทะเบียนที่ seed ไว้คือปี 2569 (2026)')}</>}
             <div style={{ color: 'var(--muted)', marginTop: 4 }}>นี่คือ &ldquo;ไม่มีข้อมูลในระบบ&rdquo; ไม่ใช่ &ldquo;หน่วยงานนี้ไม่มีข้อบังคับ&rdquo;</div>
           </div>
         )}
@@ -173,7 +174,7 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, marginBottom: 8 }}>
               <span style={{ color: 'var(--text2)' }}>
                 บังคับ <b style={{ color: nPickedFixed === nFixed ? '#22c55e' : '#ef4444' }}>{nPickedFixed}/{nFixed}</b>
-                <span style={{ color: 'var(--muted)' }}> · เลือกได้ {nPickedChoice}/{nChoice}</span>
+                <span style={{ color: 'var(--muted)' }}> {tr('· เลือกได้')} {nPickedChoice}/{nChoice}</span>
               </span>
               <span style={{ color: 'var(--text2)' }}>
                 น้ำหนักรวมในใบ <b style={{ color: check.diff === 0 ? '#22c55e' : '#f59e0b' }}>{check.weight}</b>
@@ -182,7 +183,7 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
               </span>
               {canManage && nPickedFixed < nFixed && (
                 <button onClick={pickAllFixed} disabled={!!busy} style={{ ...btn, opacity: busy ? 0.6 : 1 }}>
-                  ＋ หยิบข้อบังคับที่ขาด ({nFixed - nPickedFixed})
+                  {tr('＋ หยิบข้อบังคับที่ขาด (')}{nFixed - nPickedFixed})
                 </button>
               )}
             </div>
@@ -195,7 +196,7 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
                     if (!rows.length) return null;
                     return [
                       <tr key={`h-${p.key}`}>
-                        <td colSpan={5} style={{ ...td, fontWeight: 800, color: 'var(--text)', background: 'var(--bg2)', fontSize: 12 }}>{p.label}</td>
+                        <td colSpan={5} style={{ ...td, fontWeight: 800, color: 'var(--text)', background: 'var(--bg2)', fontSize: 12 }}>{tr(p.label)}</td>
                       </tr>,
                       ...rows.map(({ item, row }) => (
                         <tr key={item.id} style={isStdParent(item) ? { opacity: 0.75 } : undefined}>
@@ -208,7 +209,7 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
                           </td>
                           <td style={{ ...td, width: 130, whiteSpace: 'nowrap' }}>
                             {row
-                              ? <span style={{ color: '#22c55e', fontSize: 11.5 }}>✅ มีในใบแล้ว{row.weight != null ? ` (น้ำหนัก ${row.weight})` : ' (ยังไม่ตั้งน้ำหนัก)'}</span>
+                              ? <span style={{ color: '#22c55e', fontSize: 11.5 }}>{tr('✅ มีในใบแล้ว')}{row.weight != null ? ` (น้ำหนัก ${row.weight})` : ' (ยังไม่ตั้งน้ำหนัก)'}</span>
                               : isStdParent(item)
                                 ? <span style={{ color: 'var(--muted)', fontSize: 11 }}>—</span>
                                 : <span style={{ color: isStdFixed(item) ? '#ef4444' : 'var(--muted)', fontSize: 11.5 }}>
@@ -217,7 +218,7 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
                           </td>
                           <td style={{ ...td, width: 76, whiteSpace: 'nowrap' }}>
                             {canManage && !row && !isStdParent(item) && (
-                              <button onClick={() => pick(item)} disabled={!!busy} style={{ ...btn, opacity: busy ? 0.6 : 1 }}>＋ หยิบ</button>
+                              <button onClick={() => pick(item)} disabled={!!busy} style={{ ...btn, opacity: busy ? 0.6 : 1 }}>{tr('＋ หยิบ')}</button>
                             )}
                           </td>
                         </tr>
@@ -229,14 +230,14 @@ export default function KpiStandardModal({ year, scopeCols = {}, scopeText = '',
             </div>
 
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8, lineHeight: 1.6 }}>
-              หยิบเข้าใบแล้ว <b>ยังไม่มีเป้า/น้ำหนัก</b> — ตั้งต่อที่ตาราง KPI (เอกสารกลุ่มให้หน่วยงานถ่วงน้ำหนักเอง ระบบเดาแทนไม่ได้) ·
-              ตัวเลขข้างบนเป็น <b>คำเตือน ไม่ได้บล็อกการบันทึก</b> — ใบจริงเพิ่มข้อนอกมาตรฐานได้
+              หยิบเข้าใบแล้ว <b>{tr('ยังไม่มีเป้า/น้ำหนัก')}</b> — ตั้งต่อที่ตาราง KPI (เอกสารกลุ่มให้หน่วยงานถ่วงน้ำหนักเอง ระบบเดาแทนไม่ได้) ·
+              ตัวเลขข้างบนเป็น <b>{tr('คำเตือน ไม่ได้บล็อกการบันทึก')}</b> — ใบจริงเพิ่มข้อนอกมาตรฐานได้
             </div>
           </>
         )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
-          <button onClick={onClose} style={{ ...btn, padding: '6px 16px', fontSize: 12.5 }}>ปิด</button>
+          <button onClick={onClose} style={{ ...btn, padding: '6px 16px', fontSize: 12.5 }}>{tr('ปิด')}</button>
         </div>
       </div>
     </div>

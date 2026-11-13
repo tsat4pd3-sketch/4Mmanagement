@@ -19,6 +19,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { parseQrPayload } from '../utils/qrCode';
 import useIsMobile from '../utils/useIsMobile';
 
+import { tr } from '../utils/i18n';
 const hasNativeDetector = () => typeof window !== 'undefined' && 'BarcodeDetector' in window;
 
 export default function ScanModal({
@@ -171,7 +172,7 @@ export default function ScanModal({
   };
 
   return (
-    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2400, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+    <div className="modal-scroll" style={{ position: 'fixed', inset: 0, zIndex: 2400, background: 'var(--scrim)', WebkitBackdropFilter: 'var(--scrim-blur)', backdropFilter: 'var(--scrim-blur)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
       <div style={box}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
           <h3 style={{ margin: 0, fontSize: 16, color: 'var(--text)' }}>{title}</h3>
@@ -185,7 +186,7 @@ export default function ScanModal({
           {!camOn && (
             <button onClick={startCam} className="tbtn"
               style={{ padding: '12px 22px', borderRadius: 'var(--r-md)', border: '1.5px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--accent)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-              เปิดกล้องสแกน
+              {tr('เปิดกล้องสแกน')}
             </button>
           )}
           {camOn && (
@@ -194,7 +195,7 @@ export default function ScanModal({
               <div style={{ position: 'absolute', inset: '18%', border: '3px solid rgba(52,211,153,0.9)', borderRadius: 'var(--r-lg)', pointerEvents: 'none' }} />
               <button onClick={stopCam} className="tbtn"
                 style={{ position: 'absolute', right: 8, bottom: 8, padding: '6px 12px', borderRadius: 'var(--r-md)', border: '1px solid rgba(255,255,255,0.35)', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 12, cursor: 'pointer' }}>
-                ปิดกล้อง
+                {tr('ปิดกล้อง')}
               </button>
             </>
           )}
@@ -204,7 +205,7 @@ export default function ScanModal({
         {/* เครื่องยิง / พิมพ์เอง */}
         <div style={{ marginTop: 14 }}>
           <label style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text2)' }}>
-            ยิงด้วยเครื่องสแกน หรือพิมพ์รหัสเอง
+            {tr('ยิงด้วยเครื่องสแกน หรือพิมพ์รหัสเอง')}
           </label>
           <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
             <input
@@ -217,29 +218,29 @@ export default function ScanModal({
                 setTyped(v);
               }}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitTyped(); } }}
-              placeholder={isMobile && !kbd ? 'กดปุ่มสแกนข้างเครื่องได้เลย' : 'เช่น RB-104 หรือ ESM:M:…'}
+              placeholder={isMobile && !kbd ? tr('กดปุ่มสแกนข้างเครื่องได้เลย') : tr('เช่น RB-104 หรือ ESM:M:…')}
               inputMode={isMobile && !kbd ? 'none' : undefined}
               style={{ flex: 1, minWidth: 0, padding: '9px 11px', borderRadius: 'var(--ctl-r)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: isMobile ? 16 : 14 }}
             />
             {isMobile && !kbd && (
               <button type="button" className="tbtn" onClick={() => { inputRef.current?.blur(); setKbd(true); setTimeout(() => inputRef.current?.focus(), 30); }}
                 style={{ padding: '9px 12px', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontWeight: 700, fontSize: 13.5, cursor: 'pointer', flexShrink: 0 }}>
-                ⌨️ พิมพ์เอง
+                {tr('⌨️ พิมพ์เอง')}
               </button>
             )}
             <button onClick={submitTyped} className="tbtn"
               style={{ padding: '9px 16px', borderRadius: 'var(--r-md)', border: 'none', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 800, fontSize: 13.5, cursor: 'pointer', flexShrink: 0 }}>
-              ตกลง
+              {tr('ตกลง')}
             </button>
           </div>
         </div>
 
-        {busy && <div style={{ marginTop: 10, fontSize: 13.5, fontWeight: 700, color: 'var(--amber)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>⏳ กำลังบันทึก…</div>}
+        {busy && <div style={{ marginTop: 10, fontSize: 13.5, fontWeight: 700, color: 'var(--amber)', background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>{tr('⏳ กำลังบันทึก…')}</div>}
         {!busy && err && <div style={{ marginTop: 10, fontSize: 13, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>✕ {err}</div>}
         {footer}
         {ok && !err && !busy && (okMsg
           ? <div style={{ marginTop: 10, fontSize: 15, fontWeight: 800, color: '#22c55e', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: 'var(--r-md)', padding: '8px 11px' }}>{okMsg}</div>
-          : <div style={{ marginTop: 10, fontSize: 13, color: '#22c55e' }}>✓ อ่านได้: <span style={{ fontFamily: 'monospace' }}>{ok}</span></div>)}
+          : <div style={{ marginTop: 10, fontSize: 13, color: '#22c55e' }}>{tr('✓ อ่านได้:')} <span style={{ fontFamily: 'monospace' }}>{ok}</span></div>)}
       </div>
     </div>
   );

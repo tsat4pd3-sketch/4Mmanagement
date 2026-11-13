@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fourMFlow } from '../fourMFlow.js';
+import { fourMFlow, fourMSelfBlock } from '../fourMFlow.js';
 
 const states = (f) => f.steps.map(s => s.state + (s.tone ? '/' + s.tone : ''));
 
@@ -31,4 +31,20 @@ test('ตีกลับ — ตกที่ SV ถ้ายังไม่ม�
 test('สถานะที่ไม่รู้จัก = known:false ห้ามเดา', () => {
   const f = fourMFlow({ status: 'open' });
   assert.equal(f.known, false); assert.equal(f.waiting, null); assert.ok(f.steps.every(s => s.state === 'todo'));
+});
+
+test('fourMSelfBlock: SV ห้ามอนุมัติใบที่ตัวเองเปิด', () => {
+  assert.equal(fourMSelfBlock({ status: 'pending', created_by: 'u1' }, 'u1')?.code, 'own_log');
+  assert.equal(fourMSelfBlock({ status: 'pending', created_by: 'u1' }, 'u2'), null);
+});
+test('fourMSelfBlock: QA ห้ามเป็นคนเปิดใบหรือคนที่เซ็น SV', () => {
+  assert.equal(fourMSelfBlock({ status: 'pending_qa', created_by: 'u1', sv_approved_by: 'u2' }, 'u1')?.code, 'own_log');
+  assert.equal(fourMSelfBlock({ status: 'pending_qa', created_by: 'u1', sv_approved_by: 'u2' }, 'u2')?.code, 'signed_sv');
+  assert.equal(fourMSelfBlock({ status: 'pending_qa', created_by: 'u1', sv_approved_by: 'u2' }, 'u3'), null);
+});
+test('fourMSelfBlock: ไม่รู้เจ้าของ/ไม่รู้ผู้ดู/สถานะอื่น = ไม่บล็อก', () => {
+  assert.equal(fourMSelfBlock({ status: 'pending', created_by: null }, 'u1'), null);
+  assert.equal(fourMSelfBlock({ status: 'pending', created_by: 'u1' }, null), null);
+  assert.equal(fourMSelfBlock({ status: 'approved', created_by: 'u1' }, 'u1'), null);
+  assert.equal(fourMSelfBlock({ status: 'rejected', created_by: 'u1' }, 'u1'), null);
 });

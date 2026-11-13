@@ -121,6 +121,13 @@ export function canAccessPage(path, role) {
   if (path === '/obeya') {
     return hasPermission('page:/obeya', role) || hasPermission('page:/dept-dashboard', role);
   }
+  /* 👥 ฐานข้อมูลพนักงานรับแท็บ ➕ เพิ่มพนักงาน (หน้า /register เดิม · 13/11 · คำสั่ง user)
+     piggyback สิทธิ์หน้าเดิม — คนที่มีแค่ `page:/register` ยังเข้า /operator ได้ (เห็นเฉพาะแท็บ ➕
+     · operator.jsx กรองแท็บด้วย hasPermission ซ้ำอีกชั้น) ⇒ ไม่ต้อง seed อะไรใหม่ ไม่มีใครหลุดสิทธิ์
+     (ตรวจทะเบียนจริง 13/11: ทุก role ที่มี page:/register มี page:/operator อยู่แล้ว) */
+  if (path === '/operator') {
+    return hasPermission('page:/operator', role) || hasPermission('page:/register', role);
+  }
   /* 🧰 ศูนย์ทะเบียนอุปกรณ์ = ศูนย์รวมแท็บทะเบียนของช่าง (เครื่อง/แม่พิมพ์/JIG/อะไหล่)
      piggyback สิทธิ์หน้าเดิมทั้งหมด — ไม่ต้อง seed page:/equipment
      แท็บใน EquipmentHub.jsx โผล่ตามสิทธิ์ย่อย ⇒ คนที่เข้าฐานข้อมูลเครื่องจักรไม่ได้
@@ -151,6 +158,12 @@ export function canAccessPage(path, role) {
      ไม่ต้อง seed คีย์ใหม่ (ใครเคยเห็นการ์ดคนบน /dashboard ก็ยังเห็นเหมือนเดิม) */
   if (path === '/people-board') {
     return hasPermission('page:/people-board', role) || hasPermission('page:/dashboard', role);
+  }
+  /* 🧩 ออกแบบใบงาน (e-Workflow · 13/11) — Key User = bucket dept_admin แจกได้แค่ action ห้ามแจก page:*
+     ⇒ piggyback คีย์ action `wf:design` (pattern เดียวกับ /display-rotation) · ปุ่มแก้ในหน้าคุมด้วยคีย์เดียวกัน
+     · ขอบเขต "ใบของส่วนงานไหน" ตัดสินฝั่ง DB (`wf_can_own`) */
+  if (path === '/workflow-designer') {
+    return hasPermission('page:/workflow-designer', role) || hasPermission('wf:design', role) || hasPermission('wf:publish', role);
   }
   if (path === '/display-rotation') {
     return hasPermission('page:/display-rotation', role) || hasPermission('display_rotation:manage', role);

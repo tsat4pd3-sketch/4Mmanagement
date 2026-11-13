@@ -3,6 +3,7 @@ import { allOf } from '../utils/filterLabels';
 import SearchSelect from './SearchSelect';
 import { SCOPE_KIND_META, scopeKey, parseScopeKey, filterScopeOptions, isPlant } from '../utils/orgScope';
 
+import { tr } from '../utils/i18n';
 /* ══ <OrgScopePicker> — เลือก "ขอบเขต" ตามผังองค์กร ทุกมิติ (2026-09-23 · คำสั่ง user) ═════════════
    *"เลือกส่วนงานตอนนี้เหมือนเลือกได้แค่ section และไม่ตรงกับผังองค์กร ควรกรองได้ทุกมิติในผังองค์กร"*
 
@@ -160,9 +161,9 @@ export default function OrgScopePicker({
       style={{ width: 210, fontSize: 13, ...inputStyle, ...(isCc ? { borderColor: 'var(--accent)', boxShadow: '0 0 0 1px var(--accent)' } : null) }}>
       <option value="">💰 {allOf('รหัส Cost Center')}</option>
       {/* รหัสที่เลือกไว้แต่ไม่อยู่ในตัวเลือก (ผังเปลี่ยน/นอกขอบเขต) ต้องไม่หายเงียบ */}
-      {ghost && isCc && <option value={ghost.key}>⚠ {ghost.label}</option>}
+      {ghost && isCc && <option value={ghost.key}>⚠ {tr(ghost.label)}</option>}
       {ccGroups.map(g => (
-        <optgroup key={g.label} label={g.label}>
+        <optgroup key={g.label} label={tr(g.label)}>
           {g.items.map(o => (
             <option key={o.key} value={o.key}>
               {`${o.value}${o.cc_name ? ` · ${o.cc_name}` : ''}`}
@@ -176,12 +177,12 @@ export default function OrgScopePicker({
   const ownerChip = isCc && ccOwner ? (
     <button type="button" onClick={() => emit(ownerKey)} title={`เลิกกรองด้วยรหัส — ดูทั้ง ${index.labelOf(ccOwner.kind, ccOwner.value)}`}
       style={{ padding: '3px 8px', fontSize: 11.5, borderRadius: 'var(--r-md)', cursor: 'pointer', fontWeight: 700, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text2)' }}>
-      ↑ ทั้ง {index.labelOf(ccOwner.kind, ccOwner.value)}
+      {tr('↑ ทั้ง')} {index.labelOf(ccOwner.kind, ccOwner.value)}
     </button>
   ) : null;
   /* ⚠️ ผังโหลดไม่สำเร็จ — ต้องเห็นข้างช่องทั้ง 2 โหมด (native select ไม่มีที่เขียนในลิสต์) */
   const failNote = failed
-    ? <span key="orgfail" style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>⚠️ {failed} — ตัวเลือกไม่ครบ</span>
+    ? <span key="orgfail" style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)' }}>⚠️ {failed} {tr('— ตัวเลือกไม่ครบ')}</span>
     : null;
   const wrap = (node) => (ccSelect || ccHint || ownerChip || failNote
     ? (
@@ -234,8 +235,8 @@ export default function OrgScopePicker({
     return (
       <SearchSelect value={sel ? sel.id : ''} text={sel ? sel.label : ''} options={sOpts}
         onChange={({ id: k }) => { if (k) emit(k); else if (plantLabel != null) emit('plant'); }}
-        placeholder={ccAllowed ? 'ค้นส่วนงาน / แผนก / ไลน์ / รหัส cost center…' : 'ค้นส่วนงาน / แผนก / ไลน์…'}
-        emptyText="ไม่พบในผังองค์กร — ตั้งผังที่ /org-setup"
+        placeholder={ccAllowed ? tr('ค้นส่วนงาน / แผนก / ไลน์ / รหัส cost center…') : tr('ค้นส่วนงาน / แผนก / ไลน์…')}
+        emptyText={tr('ไม่พบในผังองค์กร — ตั้งผังที่ /org-setup')}
         loadFail={failed ? `⚠️ ${failed} — ตัวเลือกขอบเขตไม่ครบ (ไม่ได้แปลว่าผังมีแค่นี้)` : ''}
         maxRows={999} disabled={disabled} inputId={id} style={{ width, ...style }} inputStyle={inputStyle} />
     );
@@ -274,10 +275,10 @@ export default function OrgScopePicker({
       /* เลือกหน่วยเจ้าของซ้ำตอนกรองด้วย cc = เลิกกรองด้วยรหัส (select ไม่ยิง change ถ้าค่าเท่าเดิม ⇒ จับที่ click ของ option ไม่ได้ · ใช้ชิป ↑ แทน) */
       onChange={e => emit(e.target.value)}
       style={{ width, fontSize: 13, ...style, ...inputStyle }}>
-      {ghost && !isCc && <option value={ghost.key}>⚠ {ghost.label}</option>}
+      {ghost && !isCc && <option value={ghost.key}>⚠ {tr(ghost.label)}</option>}
       {groups.map((g, i) => (g.label
         ? (
-          <optgroup key={i} label={g.label}>
+          <optgroup key={i} label={tr(g.label)}>
             {g.div && (!kinds || kinds.includes('division')) && (
               <option value={g.div.key} disabled={!canPick(g.div)}>{`${g.div.icon || '🏢'} ${g.div.label} (ทั้งฝ่าย)`}</option>
             )}

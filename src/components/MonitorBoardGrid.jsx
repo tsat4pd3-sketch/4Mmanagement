@@ -8,6 +8,7 @@ import { rowDefs, balanceRowKey, minRowKey } from '../utils/monitorBoards';
 import { matText } from '../utils/matLabel';
 import { supabaseDR } from '../supabaseClient';
 import PartThumb from './PartThumb';
+import { tr } from '../utils/i18n';
 import { loadPartImages, partImageOf } from '../utils/partImages';   // 🖼️ รูปชิ้นงาน (12/10 · user "รูปยังไม่ขึ้น")
 import { periodHead, isTodayPeriod, startIndexForToday, periodTone } from '../utils/periodHead';   // 🗓️ หัวคอลัมน์ชุดเดียวทุกตาราง (08/10)
 
@@ -177,11 +178,11 @@ export default function MonitorBoardGrid({
           ...card, padding: '8px 12px', fontSize: FS + 0.5, lineHeight: 1.7,
           borderColor: 'var(--accent2)', background: 'var(--bg2)',
         }}>
-          {truncated ? <div>🔴 <b>โหลดข้อมูลไม่ครบ</b> — ช่องที่กรอกไว้มีมากกว่าที่ดึงมาได้ ตัวเลขบางแถวจะต่ำกว่าจริง</div> : null}
+          {truncated ? <div>🔴 <b>{tr('โหลดข้อมูลไม่ครบ')}</b> {tr('— ช่องที่กรอกไว้มีมากกว่าที่ดึงมาได้ ตัวเลขบางแถวจะต่ำกว่าจริง')}</div> : null}
           {loadWarn ? <div>🔴 {loadWarn}</div> : null}
           {summary.partial ? (
             <div>
-              ⚠️ <b>{summary.seedMissingCount} พาร์ทยังไม่ใส่ยอดยกมา</b> (ช่องคอลัมน์แรก
+              ⚠️ <b>{summary.seedMissingCount} {tr('พาร์ทยังไม่ใส่ยอดยกมา')}</b> (ช่องคอลัมน์แรก
               {seed ? ` ${periodHead(seed.date, { today: todayKey }).bot}` : ''}) ⇒ แถวที่ต้องคำนวณของพาร์ทนั้นขึ้นขีด “–” ทั้งแถว
               — ระบบไม่เดายอดยกมาให้ เพราะ “ยกมา 0” กับ “ไม่รู้ว่ายกมาเท่าไหร่” ตัดสินใจคนละแบบ
               <div style={{ color: 'var(--muted)', marginTop: 2 }}>
@@ -191,7 +192,7 @@ export default function MonitorBoardGrid({
             </div>
           ) : null}
           {unknownRecur.length ? (
-            <div>🔴 แถว {unknownRecur.map((r) => r.label).join(', ')} อ้างสูตรที่ระบบยังไม่มี ⇒ ขึ้นขีดทั้งแถว</div>
+            <div>{tr('🔴 แถว')} {unknownRecur.map((r) => r.label).join(', ')} {tr('อ้างสูตรที่ระบบยังไม่มี ⇒ ขึ้นขีดทั้งแถว')}</div>
           ) : null}
         </div>
       ) : null}
@@ -201,30 +202,30 @@ export default function MonitorBoardGrid({
         <div className="search-input grow">
           <span className="search-ico" aria-hidden="true">🔍</span>
           <input type="search" value={q} onChange={(e) => setQ(e.target.value)}
-            placeholder="ค้นหา MAT / PART NO. / ชื่อ / รุ่น" aria-label="ค้นหาพาร์ทในบอร์ด"
+            placeholder={tr('ค้นหา MAT / PART NO. / ชื่อ / รุ่น')} aria-label={tr('ค้นหาพาร์ทในบอร์ด')}
             style={{ paddingLeft: 30 }} />
-          {q ? <button type="button" className="search-clear" aria-label="ล้างคำค้น" onClick={() => setQ('')}>✕</button> : null}
+          {q ? <button type="button" className="search-clear" aria-label={tr('ล้างคำค้น')} onClick={() => setQ('')}>✕</button> : null}
         </div>
         {balKey ? (
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
             <input type="checkbox" checked={onlyProblem} onChange={(e) => setOnlyProblem(e.target.checked)} />
-            เฉพาะพาร์ทที่ของจะขาด
+            {tr('เฉพาะพาร์ทที่ของจะขาด')}
             {breaches.length ? <b style={{ color: 'var(--danger, #ef4444)' }}>({breaches.length})</b> : null}
           </label>
         ) : null}
         {canPage ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto', whiteSpace: 'nowrap' }}>
             <button type="button" onClick={() => setWinStart((s) => Math.max(0, s - (windowSize - 1)))}
-              disabled={winStart <= 0} aria-label="ย้อนช่วงวันที่">←</button>
+              disabled={winStart <= 0} aria-label={tr('ย้อนช่วงวันที่')}>←</button>
             <span style={{ color: 'var(--muted)' }}>
               {win.length > 1 ? `${periodHead(win[1].date, { today: todayKey }).bot} – ${periodHead(win[win.length - 1].date, { today: todayKey }).bot}` : ''}
               {` (จาก ${body.length} ช่วง)`}
             </span>
             <button type="button" onClick={() => setWinStart(homeStart)} disabled={winStart === homeStart}
-              title="กลับมาที่คอลัมน์วันนี้">วันนี้</button>
+              title={tr('กลับมาที่คอลัมน์วันนี้')}>{tr('วันนี้')}</button>
             <button type="button"
               onClick={() => setWinStart((s) => Math.min(Math.max(0, body.length - (windowSize - 1)), s + (windowSize - 1)))}
-              disabled={winStart >= body.length - (windowSize - 1)} aria-label="ช่วงวันที่ถัดไป">→</button>
+              disabled={winStart >= body.length - (windowSize - 1)} aria-label={tr('ช่วงวันที่ถัดไป')}>→</button>
           </div>
         ) : null}
       </div>
@@ -239,16 +240,16 @@ export default function MonitorBoardGrid({
         background: 'var(--bg2)',
       }}>
         {editable ? (
-          <>✏️ <b>แก้ตัวเลขได้เลย — คลิกที่ช่องแล้วพิมพ์ทับ</b>
+          <>✏️ <b>{tr('แก้ตัวเลขได้เลย — คลิกที่ช่องแล้วพิมพ์ทับ')}</b>
             <span style={{ color: 'var(--muted)' }}>
-              {' · '}<b>Enter</b> ลงช่องล่าง{' · '}<b>Tab</b> ไปช่องขวา{' · '}<b>Esc</b> ยกเลิก
-              {' · '}แถวที่ติดป้าย <b>ƒ สูตร</b> (พื้นเทา ตัวเอียง) ระบบคำนวณให้ พิมพ์ทับไม่ได้
+              {' · '}<b>Enter</b> {tr('ลงช่องล่าง')}{' · '}<b>Tab</b> {tr('ไปช่องขวา')}{' · '}<b>Esc</b> ยกเลิก
+              {' · '}{tr('แถวที่ติดป้าย')} <b>{tr('ƒ สูตร')}</b> (พื้นเทา ตัวเอียง) ระบบคำนวณให้ พิมพ์ทับไม่ได้
               {' · '}ค่าที่คนกรอกชนะค่าที่ระบบดึงเสมอ
             </span>
           </>
         ) : (
-          <>👁️ <b>อ่านอย่างเดียว</b>
-            <span style={{ color: 'var(--muted)' }}> — บัญชีนี้ยังไม่มีสิทธิ์ <code>monitoring:manage</code> จึงแก้ตัวเลขในบอร์ดไม่ได้ (ขอสิทธิ์ที่หน้า /permissions)</span>
+          <>👁️ <b>{tr('อ่านอย่างเดียว')}</b>
+            <span style={{ color: 'var(--muted)' }}> {tr('— บัญชีนี้ยังไม่มีสิทธิ์')} <code>monitoring:manage</code> {tr('จึงแก้ตัวเลขในบอร์ดไม่ได้ (ขอสิทธิ์ที่หน้า /permissions)')}</span>
           </>
         )}
       </div>
@@ -259,9 +260,9 @@ export default function MonitorBoardGrid({
           <thead>
             <tr>
               <th style={{ ...thSticky, width: HEAD_W, minWidth: HEAD_W, textAlign: 'left' }}>
-                พาร์ท <span style={{ color: 'var(--muted)', fontWeight: 400 }}>({shown.length}/{parts.length})</span>
+                {tr('พาร์ท')} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>({shown.length}/{parts.length})</span>
               </th>
-              <th style={{ ...thBase, minWidth: 108, textAlign: 'left' }}>แถว</th>
+              <th style={{ ...thBase, minWidth: 108, textAlign: 'left' }}>{tr('แถว')}</th>
               {win.map((p) => {
                 /* 🗓️ ป้าย + สี มาจาก utils/periodHead.js — ตัวเดียวกับตาราง Balance FG (RundownStock) */
                 const isSeed = p.key === seed?.key;
@@ -336,15 +337,15 @@ export default function MonitorBoardGrid({
                     ...tdBase, whiteSpace: 'nowrap', fontWeight: isCalc ? 400 : 700,
                     color: isCalc ? 'var(--muted)' : 'var(--text)',
                   }}>
-                    {row.label}
-                    {row.kind === 'system' ? <span title="ระบบดึงให้เอง — กรอกทับได้" style={{ color: 'var(--muted)' }}> ⚙</span> : null}
+                    {tr(row.label)}
+                    {row.kind === 'system' ? <span title={tr('ระบบดึงให้เอง — กรอกทับได้')} style={{ color: 'var(--muted)' }}> ⚙</span> : null}
                     {isCalc ? (
-                      <span title="ระบบคำนวณจากแถวอื่น — พิมพ์ทับไม่ได้"
+                      <span title={tr('ระบบคำนวณจากแถวอื่น — พิมพ์ทับไม่ได้')}
                         style={{
                           marginLeft: 6, fontSize: FS - 1.5, fontWeight: 800, padding: '0 5px',
                           borderRadius: 'var(--r-xs)', border: '1px solid var(--border2)',
                           background: 'var(--bg2)', color: 'var(--muted)', whiteSpace: 'nowrap',
-                        }}>ƒ สูตร</span>
+                        }}>{tr('ƒ สูตร')}</span>
                     ) : null}
                   </td>
                   {win.map((p, ci) => {
@@ -429,12 +430,12 @@ export default function MonitorBoardGrid({
 
       {/* ── ที่มาของตัวเลข (ต้องเขียนไว้ เพราะ 2 ชีทในไฟล์เดิมคิด Total SL คนละแบบ) ──── */}
       <div style={{ fontSize: FS, color: 'var(--muted)', lineHeight: 1.8 }}>
-        {showSl ? <><b>Total SL</b> ของบอร์ดนี้นับจากแถว <b>{rows.find((r) => r.key === (board.sl_row || 'out'))?.label || board.sl_row}</b>
-        {board.sl_includes_seed ? ' + ยอดยกมา' : ''} (ข้ามคอลัมน์ยอดยกมาในการรวม)</> : null}
-        {' · '}<b>ƒ สูตร</b> = แถวที่ระบบคำนวณจากคอลัมน์ก่อนหน้า (พื้นเทา · ตัวเอียง) พิมพ์ทับไม่ได้
+        {showSl ? <><b>Total SL</b> {tr('ของบอร์ดนี้นับจากแถว')} <b>{rows.find((r) => r.key === (board.sl_row || 'out'))?.label || board.sl_row}</b>
+        {board.sl_includes_seed ? ' + ยอดยกมา' : ''} {tr('(ข้ามคอลัมน์ยอดยกมาในการรวม)')}</> : null}
+        {' · '}<b>{tr('ƒ สูตร')}</b> = แถวที่ระบบคำนวณจากคอลัมน์ก่อนหน้า (พื้นเทา · ตัวเอียง) พิมพ์ทับไม่ได้
         {' · '}<b>⚙</b> = ระบบดึงจากใบผลิต/สต๊อกให้ กรอกทับได้ (ค่าที่คนกรอกชนะเสมอ)
         {' · '}<b>–</b> = ข้อมูลไม่พอให้คิด (ไม่ใช่ 0)
-        {!editable ? <> · <b>อ่านอย่างเดียว</b> (ไม่มีสิทธิ์แก้บอร์ดนี้)</> : null}
+        {!editable ? <> · <b>{tr('อ่านอย่างเดียว')}</b> {tr('(ไม่มีสิทธิ์แก้บอร์ดนี้)')}</> : null}
       </div>
     </div>
   );
@@ -472,23 +473,23 @@ function PartHead({ part, board, shortAt, racks = null, raw = null }) {
       ) : null}
       {sub.length ? <div style={{ color: 'var(--muted)', fontSize: FS - 1 }}>{sub.join(' · ')}</div> : null}
       {part.spec ? <div style={{ color: 'var(--muted)', fontSize: FS - 1 }} title={part.spec}>{String(part.spec).slice(0, 40)}</div> : null}
-      {part.mat_after ? <div style={{ color: 'var(--muted)', fontSize: FS - 1 }}>หลังชุบ: {part.mat_after}</div> : null}
-      {racks !== null ? <div style={{ color: 'var(--muted)', fontSize: FS - 1 }}>≈ {fmtN(racks, 1)} แร็ค</div> : null}
+      {part.mat_after ? <div style={{ color: 'var(--muted)', fontSize: FS - 1 }}>{tr('หลังชุบ:')} {part.mat_after}</div> : null}
+      {racks !== null ? <div style={{ color: 'var(--muted)', fontSize: FS - 1 }}>≈ {fmtN(racks, 1)} {tr('แร็ค')}</div> : null}
       {raw ? (
         <div style={{ fontSize: FS - 1, color: 'var(--muted)' }}>
           {raw.pieces === null
-            ? <span title="ไม่รู้อัตราใช้เหล็ก หรือยังไม่ลงยอดคงเหลือ ⇒ คิดเป็นชิ้นไม่ได้">ทำได้ – ชิ้น</span>
-            : <>ทำได้ ~{fmtN(raw.pieces)} ชิ้น</>}
+            ? <span title={tr('ไม่รู้อัตราใช้เหล็ก หรือยังไม่ลงยอดคงเหลือ ⇒ คิดเป็นชิ้นไม่ได้')}>{tr('ทำได้ – ชิ้น')}</span>
+            : <>{tr('ทำได้ ~')}{fmtN(raw.pieces)} {tr('ชิ้น')}</>}
           {raw.cover.enough === null
-            ? <span title="ข้อมูลไม่พอ — ห้ามตอบว่าพอหรือไม่พอ"> · เทียบงานท้ายไลน์ไม่ได้</span>
+            ? <span title={tr('ข้อมูลไม่พอ — ห้ามตอบว่าพอหรือไม่พอ')}> {tr('· เทียบงานท้ายไลน์ไม่ได้')}</span>
             : (raw.cover.enough
-              ? <span style={{ color: 'var(--accent)' }}> · เหล็กพอ (เหลือ {fmtN(raw.cover.diff, 1)} กก.)</span>
-              : <span style={{ color: '#f87171', fontWeight: 700 }}> · เหล็กขาด {fmtN(-raw.cover.diff, 1)} กก.</span>)}
+              ? <span style={{ color: 'var(--accent)' }}> {tr('· เหล็กพอ (เหลือ')} {fmtN(raw.cover.diff, 1)} กก.)</span>
+              : <span style={{ color: '#f87171', fontWeight: 700 }}> {tr('· เหล็กขาด')} {fmtN(-raw.cover.diff, 1)} {tr('กก.')}</span>)}
         </div>
       ) : null}
-      {shortAt ? <div style={{ color: '#f87171', fontWeight: 700, fontSize: FS - 0.5 }}>⚠ ของขาด {shortAt.slice(5)}</div> : null}
+      {shortAt ? <div style={{ color: '#f87171', fontWeight: 700, fontSize: FS - 0.5 }}>{tr('⚠ ของขาด')} {shortAt.slice(5)}</div> : null}
       {!part.in_registry && part.mat_no ? (
-        <div style={{ color: 'var(--accent2)', fontSize: FS - 1 }} title="พาร์ทนี้ยังไม่อยู่ในทะเบียนสินค้า (dr_products) ⇒ ระบบดึงยอดผลิต/CT ให้ไม่ได้">
+        <div style={{ color: 'var(--accent2)', fontSize: FS - 1 }} title={tr('พาร์ทนี้ยังไม่อยู่ในทะเบียนสินค้า (dr_products) ⇒ ระบบดึงยอดผลิต/CT ให้ไม่ได้')}>
           ⚠ ยังไม่อยู่ในทะเบียนสินค้า
         </div>
       ) : null}

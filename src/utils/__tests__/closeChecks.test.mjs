@@ -124,3 +124,27 @@ test('🔴 ไม่มีผล OEE = ไม่มีด่าน (ห้าม
   assert.deepEqual(buildCloseChecks({}), []);
   assert.deepEqual(buildCloseChecks({ oee: null }), []);
 });
+
+/* 🔍 ใบนอกแผนที่ปิดตรงเวลาเลิกกะ (13/11 · คำสั่ง user "ถ้านานจริง ผลิตก็ต้องรับผิดชอบ")
+   ที่มา: ไล่ใบ ต.ค. 6 ใบที่ซ่อมเสร็จแล้วปิดช้าสุด → ทั้ง 6 ใบปิดตรงเวลาเลิกกะเป๊ะ */
+test('ปิดกะ — ใบนอกแผนที่ปิดตรงเวลาเลิกกะ ต้องขึ้นด่านให้ติ๊ก (confirm ไม่ใช่ block)', () => {
+  const oee = { shiftMin: 600, totalProduced: 100, loggedDtMin: 60, pOver: false };
+  const r = buildCloseChecks({ oee, dtRowCount: 3, dtClosedAtShiftEnd: 2 });
+  const f = r.find(x => x.key === 'dt_closed_at_shift_end');
+  assert.ok(f, 'ต้องมีด่านนี้');
+  assert.equal(f.level, 'confirm', 'เตือนให้ติ๊ก ห้ามบล็อก — หยุดยาวถึงเลิกกะจริงก็มี');
+  assert.match(f.title, /2 ใบ/);
+  assert.match(f.detail, /%A/, 'ต้องบอกผลที่ตามมาทั้ง 2 ขา');
+  assert.match(f.detail, /%P/);
+  assert.ok(f.hint.length > 20, 'ต้องบอกว่าไปแก้ที่ไหน');
+});
+
+test('🔴 ไม่มีใบปิดตรงเลิกกะ = ไม่ขึ้นด่าน (ห้ามรบกวนทุกกะ)', () => {
+  const oee = { shiftMin: 600, totalProduced: 100, loggedDtMin: 60, pOver: false };
+  for (const v of [0, null, undefined, '']) {
+    assert.equal(buildCloseChecks({ oee, dtRowCount: 3, dtClosedAtShiftEnd: v })
+      .some(x => x.key === 'dt_closed_at_shift_end'), false, `ค่า ${v} ต้องไม่ขึ้นด่าน`);
+  }
+  /* ไม่ส่งพารามิเตอร์มาเลย = ของเดิมทำงานเหมือนเดิมเป๊ะ */
+  assert.equal(buildCloseChecks({ oee, dtRowCount: 3 }).some(x => x.key === 'dt_closed_at_shift_end'), false);
+});

@@ -1,3 +1,4 @@
+import { tr } from '../utils/i18n';
 /* ─────────────────────────────────────────────────────────────────────────────
    🧊 เสาสถานะบนผังโรงงานโหมด 3D (2.5D · 2026-10-14 · mockup)
    วาดเป็น "ลูก" ของผังที่ถูกเอียงด้วย MAP_3D_TRANSFORM — ใช้ CSS 3D transform ล้วน (ไม่มี WebGL)
@@ -37,7 +38,7 @@ function TopLabel({ it, H, lift, ok, x = 0, y = 0, cam }) {
         <div style={{ background: 'rgba(8,10,16,0.88)', border: `${it.group ? '2px dashed' : '1px solid'} ${it.color}`, borderBottom: `3px ${it.group ? 'dashed' : 'solid'} ${it.color}`, borderRadius: 'var(--r-md)', padding: `${Math.round(2 * k)}px ${Math.round(8 * k)}px ${Math.round(3 * k)}px`, textAlign: 'center', whiteSpace: 'nowrap', boxShadow: 'var(--shadow-float)' }}>
           <div style={{ fontSize: Math.round(12 * k), fontWeight: 800, color: '#fff', lineHeight: 1.25 }}>
             {it.blink && <span className="dt-alarm-icon" style={{ color: '#ef4444' }}>🔴 </span>}{it.group ? '▣ ' : ''}{it.name}
-            {it.group && it.kids > 0 && <span style={{ fontSize: Math.round(11 * k), fontWeight: 700, color: 'rgba(255,255,255,0.62)', marginLeft: 5 }}>{it.kids} ไลน์</span>}
+            {it.group && it.kids > 0 && <span style={{ fontSize: Math.round(11 * k), fontWeight: 700, color: 'rgba(255,255,255,0.62)', marginLeft: 5 }}>{it.kids} {tr('ไลน์')}</span>}
           </div>
           {it.text && <div style={{ fontSize: Math.round(11 * k), fontWeight: 800, color: it.color, lineHeight: 1.25, fontVariantNumeric: 'tabular-nums' }}>{it.text}</div>}
         </div>

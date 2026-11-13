@@ -2,6 +2,11 @@
 -- หยุด audit "การนำเข้าเป็นชุด" — เก็บสรุป 1 แถว แทน N แถว
 -- DR ("Product DB" · eyhclzkifitbhbljgoav)                             2026-11-13
 --
+-- ⏳🔴 **ยังไม่ได้ apply** (13/11 · รออนุมัติจาก user) — เช็คของจริงก่อนเชื่อไฟล์นี้:
+--      select to_regprocedure('public.fn_monitoring_orders_replace(jsonb,text)') is not null;
+--   ⇒ `src/components/MonitoringUpload.jsx` **ยังเป็นของเดิม (delete + insert แยกคำขอ)**
+--     apply เสร็จเมื่อไหร่ ต้องตามไปสลับหน้านั้นให้เรียก RPC ในคอมมิทเดียวกัน
+--
 -- ที่มา: `customer_shipping_orders` = **28.2% ของ audit_log ทั้งตาราง**
 --   (INSERT 17,640 ≈ DELETE 14,933 — เกือบเท่ากัน = ลบทั้งชุดแล้วเขียนใหม่)
 --   ต้นตอ: `src/components/MonitoringUpload.jsx` อัปโหลดไฟล์ Monitoring แล้วทำ

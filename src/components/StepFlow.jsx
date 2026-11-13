@@ -13,6 +13,7 @@
    ══════════════════════════════════════════════════════════════════════════ */
 import { statusColor } from '../utils/statusTone';
 
+import { tr } from '../utils/i18n';
 function dotStyle(s) {
   const tone = s.tone ? statusColor(s.tone) : null;
   if (s.state === 'done') return { background: tone || statusColor('good'), color: '#fff', border: `2px solid ${tone || statusColor('good')}` };
@@ -45,7 +46,7 @@ export default function StepFlow({ steps = [], waiting = null, unknown = false, 
                 <div style={{ fontSize: 11, marginTop: 4, lineHeight: 1.2, padding: '0 3px',
                   color: s.state === 'current' ? 'var(--text)' : s.state === 'done' ? (s.tone ? statusColor(s.tone) : 'var(--text2)') : s.state === 'skipped' ? statusColor('warn') : 'var(--muted)',
                   fontWeight: s.state === 'current' ? 800 : 600 }}>
-                  {s.label}{s.state === 'skipped' ? ' (ข้าม)' : ''}
+                  {tr(s.label)}{s.state === 'skipped' ? ' (ข้าม)' : ''}
                   {s.who && s.state === 'current' && <div style={{ fontWeight: 600, color: 'var(--muted)' }}>{s.who}</div>}
                 </div>
               )}
@@ -54,10 +55,10 @@ export default function StepFlow({ steps = [], waiting = null, unknown = false, 
         </div>
       </div>
       {unknown
-        ? <div style={{ fontSize: compact ? 11 : 12, marginTop: compact ? 3 : 6, color: statusColor('warn') }}>⚠️ สถานะนี้ระบบไม่รู้จัก — ตัดสินขั้นไม่ได้</div>
+        ? <div style={{ fontSize: compact ? 11 : 12, marginTop: compact ? 3 : 6, color: statusColor('warn') }}>{tr('⚠️ สถานะนี้ระบบไม่รู้จัก — ตัดสินขั้นไม่ได้')}</div>
         : waiting
-          ? <div style={{ fontSize: compact ? 11 : 12, marginTop: compact ? 3 : 6, color: 'var(--text2)' }}>⏳ รอ: {waiting}</div>
-          : compact ? null : <div style={{ fontSize: 12, marginTop: 6, color: 'var(--muted)' }}>✔ ไม่มีขั้นที่รอใครทำต่อ</div>}
+          ? <div style={{ fontSize: compact ? 11 : 12, marginTop: compact ? 3 : 6, color: 'var(--text2)' }}>{tr('⏳ รอ:')} {waiting}</div>
+          : compact ? null : <div style={{ fontSize: 12, marginTop: 6, color: 'var(--muted)' }}>{tr('✔ ไม่มีขั้นที่รอใครทำต่อ')}</div>}
     </div>
   );
 }

@@ -15,6 +15,7 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 import React from 'react';
 
+import { tr } from '../utils/i18n';
 const fmtHr = (h) => (h == null ? '—' : `${Number(h).toLocaleString('th-TH', { maximumFractionDigits: 1 })} ชม.`);
 
 /**
@@ -45,7 +46,7 @@ export default function LineStopBar({ total, parts = [], unknownHr = 0, unknownL
     <div style={{ fontSize: 11.5, lineHeight: 1.6 }}>
       {title && (
         <div style={{ fontWeight: 700, color: 'var(--text2)', marginBottom: 4 }}>
-          {title} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>· รวม {fmtHr(base)}</span>
+          {title} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>{tr('· รวม')} {fmtHr(base)}</span>
         </div>
       )}
       {/* แถบเดียว แตกเป็นช่วง — ความกว้างรวมกันได้ 100% ของยอดเต็มเสมอ */}
@@ -55,7 +56,7 @@ export default function LineStopBar({ total, parts = [], unknownHr = 0, unknownL
           const w = pct(r.hr);
           if (w <= 0) return null;
           return (
-            <div key={r.key} title={`${r.label} — ${fmtHr(r.hr)} (${w.toFixed(1)}%)`}
+            <div key={r.key} title={`${tr(r.label)} — ${fmtHr(r.hr)} (${w.toFixed(1)}%)`}
               style={{ width: `${w}%`, background: r.color,
                        borderRight: '1px solid var(--border)',
                        /* แถบ "ยังแบ่งไม่ได้" ต้องดูต่างจากช่วงที่รู้ชัด แต่ยังมองเห็น */
@@ -69,14 +70,14 @@ export default function LineStopBar({ total, parts = [], unknownHr = 0, unknownL
           <span key={r.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: r.dim ? 'var(--muted)' : 'var(--text2)' }}>
             <i style={{ width: 9, height: 9, borderRadius: 2, background: r.color, border: '1px solid var(--border)',
                         opacity: r.dim ? 0.55 : 1, display: 'inline-block' }} />
-            {r.label} <b style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtHr(r.hr)}</b>
+            {tr(r.label)} <b style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtHr(r.hr)}</b>
             <span style={{ color: 'var(--muted)' }}>({pct(r.hr).toFixed(1)}%)</span>
           </span>
         ))}
       </div>
       {mismatch && (
         <div style={{ color: 'var(--amber)', marginTop: 3 }}>
-          ⚠ ช่วงย่อยรวมได้ {fmtHr(sum)} ไม่เท่ากับยอดเต็ม {fmtHr(T)} — ข้อมูลขัดกัน ต้องไล่ที่ต้นทาง
+          ⚠ ช่วงย่อยรวมได้ {fmtHr(sum)} {tr('ไม่เท่ากับยอดเต็ม')} {fmtHr(T)} — ข้อมูลขัดกัน ต้องไล่ที่ต้นทาง
         </div>
       )}
       {note && <div style={{ color: 'var(--muted)', marginTop: 3 }}>{note}</div>}

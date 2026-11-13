@@ -31,6 +31,7 @@ import { positionLabel } from '../utils/positions';
 import { TAG_MAX_DAYS } from '../utils/qualityBin';
 import { notifyEvent } from '../utils/notifyEvent';
 
+import { tr } from '../utils/i18n';
 const num = v => (v === '' || v == null ? 0 : (Number(v) || 0));
 
 const BINS = [
@@ -184,21 +185,21 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
               {had > 0 && (
                 // เคยลงไปแล้ว = เตือนเสมอ ห้ามให้ลงซ้ำโดยไม่รู้ตัว (แต่ไม่บล็อก — ทยอยลงถังได้จริง)
                 <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 7 }}>
-                  ⚠ บันทึกงานเสียรายการนี้เคยลง{b.name}ไปแล้ว {had.toLocaleString('th-TH')} ชิ้น — ติ๊กใหม่ = ลงเพิ่มอีกใบ
+                  ⚠ บันทึกงานเสียรายการนี้เคยลง{b.name}{tr('ไปแล้ว')} {had.toLocaleString('th-TH')} ชิ้น — ติ๊กใหม่ = ลงเพิ่มอีกใบ
                 </div>
               )}
 
               {r.on && (
                 <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: 10, marginTop: 10 }}>
                   <div>
-                    <label style={lbl}>จำนวน (ชิ้น)</label>
+                    <label style={lbl}>{tr('จำนวน (ชิ้น)')}</label>
                     <input type="number" value={r.qty} onChange={e => set(b.key, { qty: e.target.value })} style={inp} />
                     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 3 }}>
                       ลงไว้ {b.fromLabel} {src.toLocaleString('th-TH')} ชิ้น
                     </div>
                   </div>
                   <div>
-                    <label style={lbl}>สาเหตุ</label>
+                    <label style={lbl}>{tr('สาเหตุ')}</label>
                     <input value={r.cause} onChange={e => set(b.key, { cause: e.target.value })} style={inp} />
                   </div>
                 </div>
@@ -222,35 +223,35 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
           <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 4 }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10, alignContent: 'start' }}>
               <div>
-                <label style={lbl}>ผู้แจ้ง</label>
+                <label style={lbl}>{tr('ผู้แจ้ง')}</label>
                 <PersonSelect value={reportedBy} source="both" history={reportedHist} inputStyle={inp}
                   onChange={({ name }) => setReportedBy(name)} />
               </div>
               <div>
-                <label style={lbl}>ผู้ตรวจสอบ (QA)</label>
+                <label style={lbl}>{tr('ผู้ตรวจสอบ (QA)')}</label>
                 <PersonSelect value={qaBy} source="both" roles={['qa']} history={qaByHist} inputStyle={inp}
-                  placeholder="ยังไม่รู้ = เว้นว่าง" onChange={({ name }) => setQaBy(name)} />
+                  placeholder={tr('ยังไม่รู้ = เว้นว่าง')} onChange={({ name }) => setQaBy(name)} />
               </div>
               {picked.some(b => b.key === 'red') && (<>
                 <div>
-                  <label style={lbl}>ผู้กำจัดทำลาย</label>
+                  <label style={lbl}>{tr('ผู้กำจัดทำลาย')}</label>
                   <PersonSelect value={disposedBy} source="both" history={disposedHist} inputStyle={inp}
-                    placeholder="ระดับหัวหน้ากลุ่มขึ้นไป"
+                    placeholder={tr('ระดับหัวหน้ากลุ่มขึ้นไป')}
                     onChange={({ name, position, opt }) => {
                       setDisposedBy(name);
                       if (opt && position) setDisposedPos(positionLabel(position) || position);
                     }} />
                 </div>
                 <div>
-                  <label style={lbl}>ตำแหน่ง</label>
+                  <label style={lbl}>{tr('ตำแหน่ง')}</label>
                   <input value={disposedPos} onChange={e => setDisposedPos(e.target.value)}
-                    placeholder="เติมให้อัตโนมัติเมื่อเลือกจากทะเบียน" style={inp} />
+                    placeholder={tr('เติมให้อัตโนมัติเมื่อเลือกจากทะเบียน')} style={inp} />
                 </div>
               </>)}
             </div>
             {/* ⏱️ อายุแท็กตาม WI-PD3-087 §5.6 — บอกตั้งแต่ตอนลงถัง ว่ามีเวลาเท่าไหร่ก่อนของค้าง */}
             <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 10, lineHeight: 1.5 }}>
-              ⏱️ อายุแท็กตาม WI: 🟡 เหลือง <b>{TAG_MAX_DAYS.yellow} วัน</b> · 🔴 แดง <b>{TAG_MAX_DAYS.red} วัน</b> นับจากวันที่ลงถัง —
+              ⏱️ อายุแท็กตาม WI: 🟡 เหลือง <b>{TAG_MAX_DAYS.yellow} {tr('วัน')}</b> {tr('· 🔴 แดง')} <b>{TAG_MAX_DAYS.red} {tr('วัน')}</b> นับจากวันที่ลงถัง —
               เกินแล้วจะขึ้นเตือนที่หน้า QA/QC → ถังเหลือง/ถังแดง
             </div>
           </div>
@@ -260,9 +261,9 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
         {created && (
           <div style={{ border: '1px solid rgba(34,197,94,0.45)', background: 'rgba(34,197,94,0.1)',
             borderRadius: 'var(--r-md)', padding: 14, fontSize: 12.5, color: 'var(--text)', lineHeight: 1.7 }}>
-            <b style={{ color: '#22c55e', fontSize: 13.5 }}>✅ ลงถังเรียบร้อย</b>
+            <b style={{ color: '#22c55e', fontSize: 13.5 }}>{tr('✅ ลงถังเรียบร้อย')}</b>
             {created.map(c => (
-              <div key={c.key}>{c.icon} {c.name} — {c.qty.toLocaleString('th-TH')} ชิ้น</div>
+              <div key={c.key}>{c.icon} {c.name} — {c.qty.toLocaleString('th-TH')} {tr('ชิ้น')}</div>
             ))}
             <div style={{ marginTop: 8, color: 'var(--muted)', fontSize: 11.5 }}>
               ช่องที่ยังไม่รู้ตอนนี้ (ผลพิจารณา QA · ผลการซ่อม OK/NG · วันนำกลับเข้ากระบวนการ)
@@ -279,7 +280,7 @@ export default function QualityBinLinkModal({ defect, session, actorName, existi
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
           <button onClick={onClose} style={{ padding: '8px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)',
             background: 'none', color: 'var(--muted)', fontSize: 13, cursor: 'pointer' }}>
-            {created ? 'ปิด' : 'ยกเลิก'}</button>
+            {created ? tr('ปิด') : tr('ยกเลิก')}</button>
           {!created && (
             <button onClick={save} disabled={saving || !picked.length} style={{
               padding: '8px 20px', borderRadius: 'var(--r-md)', border: 'none',

@@ -48,6 +48,7 @@ import TrialBookingModal from './TrialBookingModal';
 /* 🔨 ชุดแม่พิมพ์ทำได้ 2 MAT — ห้ามเทียบ mat_no ตรงๆ · กอง "ยังไม่ผูก MAT" ต้องเลือกได้ (เหตุผลในไฟล์นั้น) */
 import { dieSetMats, dieSetsForMat, matSlotFor } from '../utils/dieSetMats';
 
+import { tr } from '../utils/i18n';
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 8, padding: 12, boxShadow: 'var(--shadow-sm)' };
 const th = { padding: '5px 8px', borderBottom: '1px solid var(--border)', fontSize: 11, color: 'var(--muted)', whiteSpace: 'nowrap' };
 const td = { padding: '5px 8px', fontSize: 12, whiteSpace: 'nowrap' };
@@ -396,40 +397,40 @@ export default function ProdLotPlanner({
         <LineSelect lines={lines} value={lineName} onChange={setLineName} placeholder={null} />
         <input type="date" value={date} onChange={e => setDate(e.target.value)} />
         {/* 🔗 ไม่ใช่ "ดูกะไหน" อีกต่อไป — คิวไหลข้ามกะเอง ช่องนี้แค่บอกว่า**เริ่มวาง**ที่กะไหน */}
-        <Segmented value={shift} onChange={setShift} label="เริ่มที่" options={[
+        <Segmented value={shift} onChange={setShift} label={tr('เริ่มที่')} options={[
           { value: 'day', label: 'กะเช้า' }, { value: 'night', label: 'กะดึก' },
         ]} />
         <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}
-          title="คิวจะไหลต่อไปได้กี่กะ — ไม่พอก็ยืดเพิ่ม (งานที่ล้นเลยขอบเขตจะขึ้นเตือน ไม่ถูกยัดลงกะสุดท้าย)">
-          ไหลต่อได้
+          title={tr('คิวจะไหลต่อไปได้กี่กะ — ไม่พอก็ยืดเพิ่ม (งานที่ล้นเลยขอบเขตจะขึ้นเตือน ไม่ถูกยัดลงกะสุดท้าย)')}>
+          {tr('ไหลต่อได้')}
           <select value={segCount} onChange={e => setSegCount(Number(e.target.value))}>
-            <option value={2}>1 วัน (2 กะ)</option>
-            <option value={4}>2 วัน (4 กะ)</option>
-            <option value={6}>3 วัน (6 กะ)</option>
-            <option value={10}>5 วัน (10 กะ)</option>
-            <option value={14}>7 วัน (14 กะ)</option>
+            <option value={2}>{tr('1 วัน (2 กะ)')}</option>
+            <option value={4}>{tr('2 วัน (4 กะ)')}</option>
+            <option value={6}>{tr('3 วัน (6 กะ)')}</option>
+            <option value={10}>{tr('5 วัน (10 กะ)')}</option>
+            <option value={14}>{tr('7 วัน (14 กะ)')}</option>
           </select>
         </label>
         {/* 🔴 วันหยุด OT เปิดทำได้ แต่ต้องคนสั่ง — ระบบไม่เดาว่าจะเรียกคนมาทำวันหยุด */}
         <label style={{ fontSize: 12, color: 'var(--text2)', display: 'flex', alignItems: 'center', gap: 5 }}
-          title="วันหยุดแบบ OT (×1.5 / ×2) เรียกคนมาทำได้ — ติ๊กแล้วคิวจะไหลลงวันหยุดพวกนั้นด้วย · วันหยุด ม.75 ไม่เข้าข่าย">
+          title={tr('วันหยุดแบบ OT (×1.5 / ×2) เรียกคนมาทำได้ — ติ๊กแล้วคิวจะไหลลงวันหยุดพวกนั้นด้วย · วันหยุด ม.75 ไม่เข้าข่าย')}>
           <input type="checkbox" checked={useOtHoliday} onChange={e => setUseOtHoliday(e.target.checked)} />
-          ใช้วันหยุด OT
+          {tr('ใช้วันหยุด OT')}
         </label>
         <span className="spacer" />
         {mayWrite && (
           <>
             <button onClick={() => setTrialOpen(true)}
-              title="งาน new model ที่ขอเครื่องมาทดลอง — จองเวลาเครื่องให้เห็นบนไทม์ไลน์ (พาร์ทยังไม่ต้องมีในระบบ)">
-              จองเครื่องทดลอง
+              title={tr('งาน new model ที่ขอเครื่องมาทดลอง — จองเวลาเครื่องให้เห็นบนไทม์ไลน์ (พาร์ทยังไม่ต้องมีในระบบ)')}>
+              {tr('จองเครื่องทดลอง')}
             </button>
             <button onClick={() => { setLots(suggestSequence(lots, dieOf)); setDirty(true); }}
-              title="เรียงตามความสูงแม่พิมพ์ให้เสียเวลาเปลี่ยนรุ่นน้อยสุด — เป็นข้อเสนอ แก้ทับได้">
-              เสนอลำดับ
+              title={tr('เรียงตามความสูงแม่พิมพ์ให้เสียเวลาเปลี่ยนรุ่นน้อยสุด — เป็นข้อเสนอ แก้ทับได้')}>
+              {tr('เสนอลำดับ')}
             </button>
             <button onClick={save} disabled={saving || !dirty}
               style={{ background: dirty ? 'var(--accent)' : undefined, color: dirty ? 'var(--accent-ink)' : undefined, fontWeight: 800 }}>
-              {saving ? 'กำลังบันทึก…' : dirty ? '💾 บันทึกแผน' : 'บันทึกแล้ว'}
+              {saving ? tr('กำลังบันทึก…') : dirty ? tr('💾 บันทึกแผน') : tr('บันทึกแล้ว')}
             </button>
           </>
         )}
@@ -442,7 +443,7 @@ export default function ProdLotPlanner({
 
       {!mayWrite && (
         <div style={{ ...card, borderColor: '#f59e0b66', fontSize: 12.5, color: 'var(--text2)' }}>
-          👁️ <b>โหมดดูอย่างเดียว</b> — role ของคุณยังไม่มีสิทธิ์ <code>production_plan:write</code> (ปรับได้ที่หน้า /permissions)
+          👁️ <b>{tr('โหมดดูอย่างเดียว')}</b> {tr('— role ของคุณยังไม่มีสิทธิ์')} <code>production_plan:write</code> (ปรับได้ที่หน้า /permissions)
         </div>
       )}
 
@@ -450,39 +451,39 @@ export default function ProdLotPlanner({
           🔴 คำถามที่คนวางแผนถามจริงคือ **"งานกองนี้จบเมื่อไหร่ กินกี่กะ"** ไม่ใช่ "ใช้กี่ % ของกะ"
              (จอเดิมขึ้น "ใช้ 158% ของกะ" ซึ่งไม่ได้บอกว่าอีก 58% ไปตกที่ไหน — user แจ้ง 30/09) */}
       <div style={{ ...card, display: 'flex', flexWrap: 'wrap', gap: '6px 18px', alignItems: 'baseline' }}>
-        <span style={{ fontSize: 13, fontWeight: 800 }}>{summary.lotCount} ล็อต · {qtyText(summary.qtyPlan)} ชิ้น</span>
-        <span style={{ fontSize: 12.5, color: 'var(--text2)' }}>⏱️ เวลาผลิต <b>{fmtMin(summary.runMin)}</b></span>
+        <span style={{ fontSize: 13, fontWeight: 800 }}>{summary.lotCount} {tr('ล็อต ·')} {qtyText(summary.qtyPlan)} {tr('ชิ้น')}</span>
+        <span style={{ fontSize: 12.5, color: 'var(--text2)' }}>{tr('⏱️ เวลาผลิต')} <b>{fmtMin(summary.runMin)}</b></span>
         <span style={{ fontSize: 12.5, color: 'var(--text2)' }}
-          title={summary.setupNoDie ? 'ยังไม่ได้ระบุแม่พิมพ์ในล็อตไหนเลย — ประเมินเวลาเปลี่ยนรุ่นไม่ได้ (ไม่ใช่ "ไม่ต้องเปลี่ยน")' : ''}>
+          title={summary.setupNoDie ? tr('ยังไม่ได้ระบุแม่พิมพ์ในล็อตไหนเลย — ประเมินเวลาเปลี่ยนรุ่นไม่ได้ (ไม่ใช่ "ไม่ต้องเปลี่ยน")') : ''}>
           เปลี่ยนรุ่น <b>{summary.setupMin == null ? '—' : fmtMin(summary.setupMin)}</b>
           <span style={{ color: 'var(--muted)' }}> ({summary.setupNoDie ? 'ยังไม่ระบุแม่พิมพ์' : `${summary.changeCount} ครั้ง`})</span>
         </span>
         <span style={{ fontSize: 13, fontWeight: 800, color: overflowCount > 0 ? '#ef4444' : 'var(--text)' }}>
           คาดจบ <b>{hz.finishMs == null ? '—' : fmtDayTime(hz.finishMs)}</b>
-          {hz.shiftsUsed != null && <span style={{ fontWeight: 600, color: 'var(--text2)' }}> · กิน {hz.shiftsUsed} กะ
+          {hz.shiftsUsed != null && <span style={{ fontWeight: 600, color: 'var(--text2)' }}> {tr('· กิน')} {hz.shiftsUsed} กะ
             {hz.lastSegment && ` (ยาวถึง ${SHIFT_LABEL[hz.lastSegment.shift]} ${hz.lastSegment.workDate.slice(8)}/${hz.lastSegment.workDate.slice(5, 7)})`}</span>}
         </span>
         {summary.trialCount > 0 && (
           <span style={{ fontSize: 12.5, color: '#22d3ee', fontWeight: 700 }}
-            title="งาน new model ที่จองเครื่องมาทดลอง — กินเวลาเครื่องจริง แต่ไม่ใช่ยอดส่งลูกค้า">
-            ทดลอง {summary.trialCount} ใบ · {fmtMin(summary.trialMin)}
+            title={tr('งาน new model ที่จองเครื่องมาทดลอง — กินเวลาเครื่องจริง แต่ไม่ใช่ยอดส่งลูกค้า')}>
+            ทดลอง {summary.trialCount} {tr('ใบ ·')} {fmtMin(summary.trialMin)}
           </span>
         )}
-        {netMin && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>เวลาทำงานสุทธิ {netMin} นาที/กะ</span>}
-        {summary.started > 0 && <span style={{ fontSize: 12, color: 'var(--accent)' }}>▶ เริ่มแล้ว {summary.started} · ปิดแล้ว {summary.closed}</span>}
+        {netMin && <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('เวลาทำงานสุทธิ')} {netMin} {tr('นาที/กะ')}</span>}
+        {summary.started > 0 && <span style={{ fontSize: 12, color: 'var(--accent)' }}>{tr('▶ เริ่มแล้ว')} {summary.started} {tr('· ปิดแล้ว')} {summary.closed}</span>}
       </div>
 
       {/* 🔴 งานที่ยังหาที่ลงไม่ได้ / ยังจัดกะให้ไม่ได้ — 2 เรื่องคนละสาเหตุ ห้ามยุบรวม ห้ามซ่อน */}
       {(overflowCount > 0 || unsureCount > 0) && (
         <div style={{ ...card, borderColor: overflowCount > 0 ? '#ef444466' : '#f59e0b66', fontSize: 12, color: 'var(--text2)', display: 'grid', gap: 3 }}>
           {overflowCount > 0 && (
-            <div>🚨 <b style={{ color: '#ef4444' }}>{overflowCount} ล็อตล้นเลยขอบเขต {horizon.segments.length} กะ</b> —
+            <div>🚨 <b style={{ color: '#ef4444' }}>{overflowCount} {tr('ล็อตล้นเลยขอบเขต')} {horizon.segments.length} {tr('กะ')}</b> —
               งานยังไม่มีที่ลงจริง · ยืด "ไหลต่อได้" ให้ยาวขึ้น หรือลดงาน/เพิ่มกำลังผลิต
-              <b> ระบบไม่ยัดลงกะสุดท้ายให้</b></div>
+              <b> {tr('ระบบไม่ยัดลงกะสุดท้ายให้')}</b></div>
           )}
           {unsureCount > 0 && (
-            <div>⚠️ <b>{unsureCount} ล็อตยังจัดกะให้ไม่ได้</b> — เวลาเชื่อไม่ได้ (ไม่มี cycle time
-              หรือมีล็อตที่ไม่มี CT อยู่ก่อนหน้า) · <b>ล็อตพวกนี้จะคงกะเดิมไว้ตอนบันทึก ไม่ถูกย้าย</b></div>
+            <div>⚠️ <b>{unsureCount} {tr('ล็อตยังจัดกะให้ไม่ได้')}</b> — เวลาเชื่อไม่ได้ (ไม่มี cycle time
+              หรือมีล็อตที่ไม่มี CT อยู่ก่อนหน้า) · <b>{tr('ล็อตพวกนี้จะคงกะเดิมไว้ตอนบันทึก ไม่ถูกย้าย')}</b></div>
           )}
         </div>
       )}
@@ -491,22 +492,22 @@ export default function ProdLotPlanner({
       {(summary.noCtMats.length > 0 || summary.setupUnknown || noHeight > 0 || summary.noTimeLots > 0) && (
         <div style={{ ...card, borderColor: '#f59e0b66', fontSize: 12, color: 'var(--text2)', display: 'grid', gap: 3 }}>
           {summary.noTimeLots > 0 && (
-            <div>🧪 <b>{summary.noTimeLots} ใบทดลองยังไม่ได้ระบุเวลาที่ขอ</b> — วางบนไทม์ไลน์ไม่ได้
-              และทำให้เวลาของใบที่อยู่หลังจากนั้น<b>เชื่อไม่ได้ทั้งหมด</b> · แก้ที่ช่อง "ขอใช้เครื่อง"</div>
+            <div>🧪 <b>{summary.noTimeLots} {tr('ใบทดลองยังไม่ได้ระบุเวลาที่ขอ')}</b> — วางบนไทม์ไลน์ไม่ได้
+              และทำให้เวลาของใบที่อยู่หลังจากนั้น<b>{tr('เชื่อไม่ได้ทั้งหมด')}</b> · แก้ที่ช่อง "ขอใช้เครื่อง"</div>
           )}
           {summary.noCtMats.length > 0 && (
-            <div>⚠️ <b>{summary.noCtMats.length} พาร์ทยังไม่มี cycle time</b> ({summary.noCtMats.slice(0, 4).join(' · ')}{summary.noCtMats.length > 4 ? ' …' : ''})
-              — เวลาผลิตข้างบน<b>ต่ำกว่าจริง</b> · ไปกรอกที่ Product Master</div>
+            <div>⚠️ <b>{summary.noCtMats.length} {tr('พาร์ทยังไม่มี cycle time')}</b> ({summary.noCtMats.slice(0, 4).join(' · ')}{summary.noCtMats.length > 4 ? ' …' : ''})
+              — เวลาผลิตข้างบน<b>{tr('ต่ำกว่าจริง')}</b> {tr('· ไปกรอกที่ Product Master')}</div>
           )}
           {summary.setupUnknown && (
-            <div>⚠️ <b>ยังตอบเวลาเปลี่ยนรุ่นรวมไม่ได้</b> — {
+            <div>⚠️ <b>{tr('ยังตอบเวลาเปลี่ยนรุ่นรวมไม่ได้')}</b> — {
               summary.setupNoDie ? 'ยังไม่ได้ระบุแม่พิมพ์ในล็อตไหนเลย (ช่อง "แม่พิมพ์" ในตารางด้านล่าง)'
                 : rule ? 'ยังไม่ได้กรอกเวลาฐานยก-ลงแม่พิมพ์' : 'ยังไม่มีกฎเวลาเปลี่ยนรุ่นของไลน์นี้'}
-              {' '}(ตั้งที่ <code>/equipment?tab=die</code>) · <b>"—" แปลว่าไม่รู้ ไม่ใช่ 0</b></div>
+              {' '}{tr('(ตั้งที่')} <code>/equipment?tab=die</code>) · <b>"—" แปลว่าไม่รู้ ไม่ใช่ 0</b></div>
           )}
           {noHeight > 0 && (
-            <div>📏 <b>แม่พิมพ์ {noHeight} ตัวยังไม่ได้กรอกความสูง</b> — ระบบจึงเรียงลำดับให้ประหยัดเวลาเปลี่ยนรุ่นไม่ได้
-              (ตัวที่ไม่รู้ความสูงถูกต่อท้ายลำดับ <b>ไม่ได้ตัดทิ้ง</b>)</div>
+            <div>📏 <b>{tr('แม่พิมพ์')} {noHeight} {tr('ตัวยังไม่ได้กรอกความสูง')}</b> — ระบบจึงเรียงลำดับให้ประหยัดเวลาเปลี่ยนรุ่นไม่ได้
+              (ตัวที่ไม่รู้ความสูงถูกต่อท้ายลำดับ <b>{tr('ไม่ได้ตัดทิ้ง')}</b>)</div>
           )}
         </div>
       )}
@@ -528,7 +529,7 @@ export default function ProdLotPlanner({
           {/* 🔴 ปฏิทินยังไม่โหลด = ยังไม่ได้เช็ควันหยุด ต้องเขียนบนจอ ห้ามเงียบ */}
           {horizon.calendarUnknown && (
             <div style={{ fontSize: 11.5, color: '#f59e0b', marginTop: 5 }}>
-              ⚠️ ยังไม่ได้เช็คปฏิทินบริษัท — ขอบเขตนี้ใช้กติกา จ-ศ ไปก่อน <b>วันหยุดพิเศษอาจยังไม่ถูกข้าม</b>
+              ⚠️ ยังไม่ได้เช็คปฏิทินบริษัท — ขอบเขตนี้ใช้กติกา จ-ศ ไปก่อน <b>{tr('วันหยุดพิเศษอาจยังไม่ถูกข้าม')}</b>
             </div>
           )}
         </div>
@@ -540,20 +541,20 @@ export default function ProdLotPlanner({
           คิวงาน <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>
             (คอลัมน์ "ลงกะ" = กะที่ระบบคำนวณว่างานใบนี้ตกไปอยู่ — บันทึกแล้วหน้างานกะนั้นจะเห็น)</span>
         </div>
-        {loading ? <div style={{ color: 'var(--muted)', fontSize: 12.5, padding: 12 }}>กำลังโหลด…</div>
-          : rec.rows.length === 0 ? <div style={{ color: 'var(--muted)', fontSize: 12.5, padding: 12 }}>ยังไม่มีแผนของกะนี้ — เพิ่มจากรายการความต้องการด้านล่าง</div>
+        {loading ? <div style={{ color: 'var(--muted)', fontSize: 12.5, padding: 12 }}>{tr('กำลังโหลด…')}</div>
+          : rec.rows.length === 0 ? <div style={{ color: 'var(--muted)', fontSize: 12.5, padding: 12 }}>{tr('ยังไม่มีแผนของกะนี้ — เพิ่มจากรายการความต้องการด้านล่าง')}</div>
           : (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead><tr>
-              <th style={{ ...th, textAlign: 'center' }}>ลำดับ</th>
-              <th style={{ ...th, textAlign: 'left' }}>พาร์ท</th>
-              <th style={{ ...th, textAlign: 'right' }}>จำนวน</th>
-              <th style={{ ...th, textAlign: 'right' }}>เวลาผลิต</th>
-              <th style={{ ...th, textAlign: 'left' }}>ลงกะ</th>
-              <th style={{ ...th, textAlign: 'left' }}>เครื่อง</th>
-              <th style={{ ...th, textAlign: 'left' }}>แม่พิมพ์</th>
-              <th style={{ ...th, textAlign: 'left' }}>สถานะ</th>
-              {mayWrite && <th style={{ ...th, textAlign: 'center' }}>จัดการ</th>}
+              <th style={{ ...th, textAlign: 'center' }}>{tr('ลำดับ')}</th>
+              <th style={{ ...th, textAlign: 'left' }}>{tr('พาร์ท')}</th>
+              <th style={{ ...th, textAlign: 'right' }}>{tr('จำนวน')}</th>
+              <th style={{ ...th, textAlign: 'right' }}>{tr('เวลาผลิต')}</th>
+              <th style={{ ...th, textAlign: 'left' }}>{tr('ลงกะ')}</th>
+              <th style={{ ...th, textAlign: 'left' }}>{tr('เครื่อง')}</th>
+              <th style={{ ...th, textAlign: 'left' }}>{tr('แม่พิมพ์')}</th>
+              <th style={{ ...th, textAlign: 'left' }}>{tr('สถานะ')}</th>
+              {mayWrite && <th style={{ ...th, textAlign: 'center' }}>{tr('จัดการ')}</th>}
             </tr></thead>
             <tbody>
               {rec.rows.map((r, i) => {
@@ -567,7 +568,7 @@ export default function ProdLotPlanner({
                       {isTrialLot(l) ? (
                         <>
                           <span style={{ background: '#22d3ee22', border: '1px solid #22d3ee', borderRadius: 'var(--r-xs)',
-                            padding: '1px 5px', fontSize: 11, fontWeight: 800, color: '#22d3ee', marginRight: 5 }}>ทดลอง</span>
+                            padding: '1px 5px', fontSize: 11, fontWeight: 800, color: '#22d3ee', marginRight: 5 }}>{tr('ทดลอง')}</span>
                           <b style={{ fontFamily: 'monospace', fontSize: 12 }}>{lotKeyText(l)}</b>
                           {l.trial_part_name && l.trial_part_no && <span style={{ color: 'var(--text2)', fontSize: 11 }}> · {l.trial_part_name}</span>}
                           <div style={{ fontSize: 11, color: 'var(--muted)' }}>
@@ -591,7 +592,7 @@ export default function ProdLotPlanner({
                       {r.state !== 'pending' && r.state !== 'trial' && (
                         <div style={{ fontSize: 11, color: r.state === 'done' ? 'var(--accent)' : '#f59e0b' }}>
                           ทำได้ {qtyText(r.donePcs)}{r.pct != null ? ` · ${r.pct}%` : ''}
-                          {r.fromOrders > 0 && <span style={{ color: 'var(--muted)' }}> (จาก {r.fromOrders} ใบ)</span>}
+                          {r.fromOrders > 0 && <span style={{ color: 'var(--muted)' }}> {tr('(จาก')} {r.fromOrders} ใบ)</span>}
                         </div>
                       )}
                     </td>
@@ -599,14 +600,14 @@ export default function ProdLotPlanner({
                     <td style={{ ...td, textAlign: 'right', color: 'var(--text2)' }}>{(() => {
                       const ri = lotRunInfo(l, ctOf);
                       return ri.from === 'est'
-                        ? <span title="เวลาที่คนวางแผนขอไว้ — ไม่ได้คำนวณจาก cycle time">ขอ {fmtMin(ri.min)}</span>
+                        ? <span title={tr('เวลาที่คนวางแผนขอไว้ — ไม่ได้คำนวณจาก cycle time')}>{tr('ขอ')} {fmtMin(ri.min)}</span>
                         : fmtMin(ri.min);
                     })()}</td>
                     {/* 🔗 กะที่งานใบนี้ตกไปอยู่ — "—" = ยังตอบไม่ได้ **ไม่ใช่กะแรก** */}
                     <td style={td}>{(() => {
                       const at = landingOf[l.id];
-                      if (!at || at.overflow) return <span style={{ color: '#ef4444' }} title="งานล้นเลยขอบเขตที่วางแผนไว้ — ยังไม่มีที่ลง">ล้นขอบเขต</span>;
-                      if (!at.sure) return <span style={{ color: '#f59e0b' }} title="เวลาเชื่อไม่ได้ (ไม่มี CT หรือมีล็อตที่ไม่มี CT อยู่ก่อนหน้า) — บันทึกแล้วจะคงกะเดิมไว้">⚠ ยังจัดไม่ได้</span>;
+                      if (!at || at.overflow) return <span style={{ color: '#ef4444' }} title={tr('งานล้นเลยขอบเขตที่วางแผนไว้ — ยังไม่มีที่ลง')}>{tr('ล้นขอบเขต')}</span>;
+                      if (!at.sure) return <span style={{ color: '#f59e0b' }} title={tr('เวลาเชื่อไม่ได้ (ไม่มี CT หรือมีล็อตที่ไม่มี CT อยู่ก่อนหน้า) — บันทึกแล้วจะคงกะเดิมไว้')}>{tr('⚠ ยังจัดไม่ได้')}</span>;
                       const same = at.workDate === l.work_date && at.shift === l.shift;
                       return (
                         <span style={{ color: same ? 'var(--text2)' : 'var(--accent)' }}
@@ -627,10 +628,10 @@ export default function ProdLotPlanner({
                         const opt = dieOptsForMat(l.mat_no);
                         return (
                           <select value={l.die_no || ''} onChange={e => patch(l.id, { die_no: e.target.value || null })} style={{ fontSize: 12, maxWidth: 170 }}>
-                            <option value="">— ไม่ระบุ —</option>
+                            <option value="">{tr('— ไม่ระบุ —')}</option>
                             {opt.linked.length > 0 && (
                               <optgroup label={`ทะเบียนบอกว่าทำพาร์ทนี้ (${opt.linked.length})`}>
-                                {opt.linked.map(d => <option key={d.id} value={d.set_code}>{d.set_code}</option>)}
+                                {opt.linked.map(d => <option key={d.id} value={d.set_code}>{tr(d.set_code)}</option>)}
                               </optgroup>
                             )}
                             {/* 🔴 "ยังไม่ผูก MAT" = ยังไม่รู้ **ไม่ใช่ "ไม่ใช่ตัวนี้"** — ซ่อนกองนี้ = คนที่รู้ก็เลือกไม่ได้ */}
@@ -649,21 +650,21 @@ export default function ProdLotPlanner({
                       <DieMatLinkNote lot={l} dies={dies} role={role} mayWrite={mayWrite} onDone={load} />
                     </td>
                     <td style={td}>
-                      {l.status === 'cancelled' ? <span style={{ color: '#ef4444' }}>✕ ยกเลิก</span>
+                      {l.status === 'cancelled' ? <span style={{ color: '#ef4444' }}>{tr('✕ ยกเลิก')}</span>
                         /* 🧪 ไม่มีพาร์ทให้จับคู่ยอดจริง ⇒ บอกตรงๆ ว่า "จองเครื่องไว้" ห้ามขึ้น "รอคิว" ค้างตลอดกาล */
-                        : r.state === 'trial' ? <span style={{ color: '#22d3ee' }}>จองเครื่องไว้</span>
-                        : r.state === 'done' ? <span style={{ color: 'var(--accent)' }}>✓ ครบตามกรอบ</span>
-                        : r.state === 'partial' ? <span style={{ color: '#4d9fff' }}>▶ กำลังทำ</span>
-                        : <span style={{ color: 'var(--muted)' }}>ยังไม่เริ่ม</span>}
+                        : r.state === 'trial' ? <span style={{ color: '#22d3ee' }}>{tr('จองเครื่องไว้')}</span>
+                        : r.state === 'done' ? <span style={{ color: 'var(--accent)' }}>{tr('✓ ครบตามกรอบ')}</span>
+                        : r.state === 'partial' ? <span style={{ color: '#4d9fff' }}>{tr('▶ กำลังทำ')}</span>
+                        : <span style={{ color: 'var(--muted)' }}>{tr('ยังไม่เริ่ม')}</span>}
                       {l.cancel_reason && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{l.cancel_reason}</div>}
                     </td>
                     {mayWrite && (
                       <td style={{ ...td, textAlign: 'center' }}>
                         {l.status === 'planned' && (
                           <>
-                            <button onClick={() => { setLots(moveLot(lots, l.id, -1)); setDirty(true); }} disabled={i === 0} title="เลื่อนขึ้น">↑</button>
-                            <button onClick={() => { setLots(moveLot(lots, l.id, 1)); setDirty(true); }} disabled={i === rec.rows.length - 1} title="เลื่อนลง">↓</button>
-                            <button onClick={() => cancelLot(l)} title="ยกเลิกล็อตนี้ (เก็บเป็นประวัติ)">✕</button>
+                            <button onClick={() => { setLots(moveLot(lots, l.id, -1)); setDirty(true); }} disabled={i === 0} title={tr('เลื่อนขึ้น')}>↑</button>
+                            <button onClick={() => { setLots(moveLot(lots, l.id, 1)); setDirty(true); }} disabled={i === rec.rows.length - 1} title={tr('เลื่อนลง')}>↓</button>
+                            <button onClick={() => cancelLot(l)} title={tr('ยกเลิกล็อตนี้ (เก็บเป็นประวัติ)')}>✕</button>
                           </>
                         )}
                       </td>
@@ -687,13 +688,13 @@ export default function ProdLotPlanner({
               <span key={`${o.kind}-${o.mat_no}`} style={{ color: 'var(--text2)' }}>
                 {o.kind === 'over' ? '➕' : '🆕'} <MatLabel mat={o.mat_no} size={11.5} />{' '}
                 <span style={{ color: 'var(--muted)' }}>
-                  {qtyText(o.pcs)} ชิ้น · {o.orders} ใบ{o.kind === 'over' ? ' (เกินกรอบ)' : ' (ไม่มีในแผน)'}
+                  {qtyText(o.pcs)} {tr('ชิ้น ·')} {o.orders} {tr('ใบ')}{o.kind === 'over' ? ' (เกินกรอบ)' : ' (ไม่มีในแผน)'}
                 </span>
               </span>
             ))}
           </div>
           <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4 }}>
-            ➕ ทำเกินยอดที่วางไว้ · 🆕 พาร์ทที่ผลิตจริงแต่ไม่มีในแผน — <b>ไม่ใช่ความผิดของหน้างาน</b> แต่วางแผนต้องรู้
+            ➕ ทำเกินยอดที่วางไว้ · 🆕 พาร์ทที่ผลิตจริงแต่ไม่มีในแผน — <b>{tr('ไม่ใช่ความผิดของหน้างาน')}</b> แต่วางแผนต้องรู้
           </div>
         </div>
       )}
@@ -706,18 +707,18 @@ export default function ProdLotPlanner({
       {/* ── ความต้องการที่ยังไม่ได้วางแผน ── */}
       <div style={card}>
         <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 6 }}>
-          ความต้องการของไลน์นี้ที่ยังไม่ได้วางแผน <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>(ค้างส่ง + ถึงกำหนดภายใน {lastDate})</span>
+          ความต้องการของไลน์นี้ที่ยังไม่ได้วางแผน <span style={{ color: 'var(--muted)', fontWeight: 600, fontSize: 11.5 }}>{tr('(ค้างส่ง + ถึงกำหนดภายใน')} {lastDate})</span>
         </div>
         {unplanned.length === 0 ? (
-          <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>— วางแผนครบทุกพาร์ทที่มีความต้องการแล้ว —</div>
+          <div style={{ color: 'var(--muted)', fontSize: 12.5 }}>{tr('— วางแผนครบทุกพาร์ทที่มีความต้องการแล้ว —')}</div>
         ) : (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {unplanned.slice(0, 24).map(u => (
               <div key={u.mat} style={{ border: '1px solid var(--border2)', borderRadius: 'var(--r-md)', padding: '5px 9px', display: 'flex', alignItems: 'baseline', gap: 7 }}>
                 <MatLabel mat={u.mat} size={12} />
                 <b style={{ fontSize: 12 }}>{u.qty.toLocaleString()}</b>
-                <span style={{ fontSize: 11, color: 'var(--muted)' }}>ชิ้น</span>
-                {mayWrite && <button onClick={() => addLot(u.mat, u.qty)} style={{ fontSize: 11 }}>+ เข้าแผน</button>}
+                <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ชิ้น')}</span>
+                {mayWrite && <button onClick={() => addLot(u.mat, u.qty)} style={{ fontSize: 11 }}>{tr('+ เข้าแผน')}</button>}
               </div>
             ))}
           </div>
@@ -734,8 +735,8 @@ export default function ProdLotPlanner({
               {otherParts.map(p => (
                 <div key={p.mat} style={{ border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)', padding: '5px 9px', display: 'flex', alignItems: 'baseline', gap: 7 }}>
                   <MatLabel mat={p.mat} size={12} />
-                  {p.isOp && <span style={{ fontSize: 11, color: 'var(--muted)' }}>ต่อ Process</span>}
-                  {mayWrite && <button onClick={() => addLot(p.mat, 1)} style={{ fontSize: 11 }}>+ เข้าแผน</button>}
+                  {p.isOp && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ต่อ Process')}</span>}
+                  {mayWrite && <button onClick={() => addLot(p.mat, 1)} style={{ fontSize: 11 }}>{tr('+ เข้าแผน')}</button>}
                 </div>
               ))}
             </div>

@@ -1344,3 +1344,17 @@ toast หลังกด · **และข้อความใน ledger** (`no
 · **`wip_buffer_points` = ตารางอ่านประวัติเท่านั้น ห้ามมีจอไหนเขียน/เรียก `wip_point_add_qty` อีก** (มีด่าน)
 · ⚠️ **คนละตัวกับ `workstations` (จุดงาน = ที่ยืนของคน) และ `line_delivery_points` (ป้าย QR จุดส่ง = ที่อยู่ ไม่มียอด)** — 2 ตัวนี้ยังใช้อยู่
 📄 ตัวเลข + สิ่งที่ถอดออก + งานค้าง → `docs/modules/demand-flow-tower.md` §เลิกจุด WIP
+
+## 🚫 ไม่มี FG เข้าไลน์ — ใบเบิก-ส่งเข้าไลน์ห้ามเป็นเลข 1xx (2026-11-13 · คำสั่ง user)
+
+user: *"FG มันป้อนไลน์ประกอบไม่ได้ … สโตร์ = ของทั้งหมดที่ยังใช้ภายในบริษัท · คลังสินค้า (warehouse) เก็บแค่งานสำเร็จรูปพร้อมขาย
+หรืองานก่อนแพ็ครอ supplier มาแพ็คส่งต่างประเทศ … ไม่มี FG เข้าไลน์"*
+
+- กฎอยู่ `src/utils/storeOps.js` → `isFgMat()` + ข้อความ `FG_NO_LINE_REQUEST` (ตัดสินด้วย `storeOfMat` ตัวเดิม)
+- ใช้ครบ 3 ทางที่ insert `wip_replenish_requests` (Main):
+  ไลน์ขอเอง (`LinePartCallPanel.insertReq` → คืน error ให้ toast) · สโตร์ออกตามแผน (`HeijunkaKanban.createStoreRequests` → ข้าม + toast บอกจำนวน) ·
+  แตก BOM ตอนเปิดใบผลิต (`lib/lineDemandSync` → ขอตรง = error แบบเดียวกับ coil · มาจาก BOM = ข้าม + ขึ้นใน `syncSummaryText`/`planConfirmText` ว่าให้ PE ตรวจ BOM)
+- ด่าน `no-fg-line-request` (regressionGuards): ไฟล์ไหน insert ตารางนี้ต้องเรียก `isFgMat(` ในไฟล์เดียวกัน
+- ใบ 1xx เก่า (7 ใบ ณ 13/11 · ยกเลิก 5 · รับแล้ว 2) **ไม่แตะ** · ด่านกันแค่ใบใหม่ · ยังไม่มี trigger ฝั่ง DB (กันจาก client ทั้ง 3 ทาง)
+- ข้อมูลที่เจอตอนตรวจ: `bom_items` มีลูกเป็น 1xx 1 แถว — สินค้า `10101158 SUPT ASY RAD (FVL)` มีลูกเป็นตัวเอง (สร้าง 21/10) **ไม่ได้แก้ให้** (กฎ BOM) แจ้ง PE
+- ⚠️ ยังค้าง: ตู้ "Store FG" ในแท็บขาออกยังวาง **รอบส่งคัมบังเข้าไลน์** (ไม่ใช่ FG) — รอปรับโครงหน้า Stock Management

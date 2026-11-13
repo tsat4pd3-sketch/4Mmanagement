@@ -21,6 +21,7 @@ import {
 } from '../utils/capaEffect';
 import { ALL } from '../utils/filterLabels';
 
+import { tr } from '../utils/i18n';
 const inputSt = { width: '100%', padding: '6px 9px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)', fontSize: 12 };
 const btn = (bg, fg = '#08130a') => ({ padding: '5px 11px', borderRadius: 7, border: 'none', background: bg, color: fg, fontSize: 11.5, fontWeight: 700, cursor: 'pointer' });
 
@@ -49,7 +50,7 @@ function Bars({ m }) {
             <div style={{ width: `${Math.min(100, (perDay / max) * 100)}%`, height: '100%', background: color, borderRadius: 'var(--r-xs)', transition: 'width .4s' }} />
           </div>
           <span style={{ width: 170, textAlign: 'right', fontSize: 11.5, fontWeight: 800, color: 'var(--text)' }}>
-            {perDay.toFixed(1)} ชิ้น/วัน{' '}
+            {perDay.toFixed(1)} {tr('ชิ้น/วัน')}{' '}
             <span style={{ fontWeight: 600, color: 'var(--muted)' }}>({total} / {days} วันผลิต)</span>
           </span>
         </div>
@@ -222,14 +223,14 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
   return (
     <div style={{ marginTop: 14, border: '1px solid var(--border)', borderRadius: 'var(--r-md)', background: 'var(--bg2)' }}>
       <div style={{ padding: '9px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 12.5, fontWeight: 800 }}>ประสิทธิผลจากข้อมูลจริง</span>
-        <span style={{ fontSize: 11, color: 'var(--muted)' }}>ของเสียต่อวันผลิต ก่อน/หลังมาตรการมีผล</span>
+        <span style={{ fontSize: 12.5, fontWeight: 800 }}>{tr('ประสิทธิผลจากข้อมูลจริง')}</span>
+        <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('ของเสียต่อวันผลิต ก่อน/หลังมาตรการมีผล')}</span>
         {V && !loading && (
           <span style={{ marginLeft: 'auto', padding: '2px 9px', borderRadius: 'var(--r-pill)', fontSize: 11, fontWeight: 800, color: V.color, background: `${V.color}22`, border: `1px solid ${V.color}66` }}>
-            {V.short}
+            {tr(V.short)}
           </span>
         )}
-        {stamped && <span style={{ fontSize: 11, color: 'var(--muted)' }}>· ค่าที่บันทึกไว้ตอนปิดใบ</span>}
+        {stamped && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('· ค่าที่บันทึกไว้ตอนปิดใบ')}</span>}
       </div>
 
       <div style={{ padding: 12, display: 'grid', gap: 10 }}>
@@ -237,15 +238,15 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
         {!closed && (
           <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '160px 130px 1fr', gap: 10 }}>
             <label style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>
-              วันที่มาตรการมีผลจริง (D6) *
+              {tr('วันที่มาตรการมีผลจริง (D6) *')}
               <input type="date" style={{ ...inputSt, marginTop: 4 }} value={pivot} max={todayStr()} disabled={!canEdit}
                 onChange={(e) => onChange({ d6_effective_from: e.target.value || null })} />
             </label>
             <label style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>
-              หน้าต่างเทียบ
+              {tr('หน้าต่างเทียบ')}
               <select style={{ ...inputSt, marginTop: 4 }} value={win} disabled={!canEdit}
                 onChange={(e) => onChange({ eff_window_days: Number(e.target.value) })}>
-                {[14, 30, 60, 90].map((d) => <option key={d} value={d}>{d} วัน</option>)}
+                {[14, 30, 60, 90].map((d) => <option key={d} value={d}>{d} {tr('วัน')}</option>)}
               </select>
             </label>
             <label style={{ fontSize: 11, color: 'var(--muted)', fontWeight: 700 }}>
@@ -255,41 +256,41 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
                   const t = types.find((x) => x.id === e.target.value);
                   onChange({ eff_defect_type_id: e.target.value || null, eff_defect_type_label: t?.name_th || null });
                 }}>
-                <option value="">{ALL.type}</option>
-                {types.map((t) => <option key={t.id} value={t.id}>{t.name_th}</option>)}
+                <option value="">{tr(ALL.type)}</option>
+                {types.map((t) => <option key={t.id} value={t.id}>{tr(t.name_th)}</option>)}
               </select>
             </label>
           </div>
         )}
 
         {/* ── สิ่งที่ยังขาด — บอกตรงๆ ว่าต้องเติมอะไร ห้ามปล่อยจอว่าง ── */}
-        {!capa.line_name && <Note tone="warn">⚠️ ยังไม่ได้ระบุ <b>ไลน์ผลิต</b> — ระบบหาข้อมูลการผลิตไม่ได้ (กรอกช่อง "ไลน์ผลิต" ด้านบน)</Note>}
+        {!capa.line_name && <Note tone="warn">{tr('⚠️ ยังไม่ได้ระบุ')} <b>{tr('ไลน์ผลิต')}</b> — ระบบหาข้อมูลการผลิตไม่ได้ (กรอกช่อง "ไลน์ผลิต" ด้านบน)</Note>}
         {capa.line_name && !pivot && !closed && (
           <Note tone="warn">
-            ⚠️ ยังไม่ได้ระบุ <b>วันที่มาตรการมีผลจริง</b> — ระบบยังวัดไม่ได้<br />
+            ⚠️ ยังไม่ได้ระบุ <b>{tr('วันที่มาตรการมีผลจริง')}</b> {tr('— ระบบยังวัดไม่ได้')}<br />
             เป็นคนละวันกับวันปิดใบ: ใส่วันที่ของ D6 ที่มาตรการเริ่มใช้จริงหน้างาน
           </Note>
         )}
         {!capa.part_no && capa.line_name && pivot && (
-          <Note>ℹ️ ไม่ได้ระบุเลขพาร์ท — ระบบนับของเสียของ<b>ทั้งไลน์</b> อาจถูกรบกวนจากพาร์ทอื่น (กรอกเลขพาร์ทเพื่อให้แคบลง)</Note>
+          <Note>{tr('ℹ️ ไม่ได้ระบุเลขพาร์ท — ระบบนับของเสียของ')}<b>{tr('ทั้งไลน์')}</b> {tr('อาจถูกรบกวนจากพาร์ทอื่น (กรอกเลขพาร์ทเพื่อให้แคบลง)')}</Note>
         )}
 
         {/* ใบเก่าที่ปิดก่อนมีระบบวัด — ไม่มีค่า stamp ให้อ่าน ต้องบอกว่าเลขนี้คำนวณสด "ตอนนี้"
             ห้ามให้เข้าใจผิดว่าเป็นค่าที่บันทึกไว้ตอนปิดใบ */}
         {closed && !capa.eff_verdict && (
-          <Note>ℹ️ ใบนี้ปิดไปก่อนที่ระบบจะมีการวัดประสิทธิผล — {pivot ? <>ตัวเลขข้างล่าง<b>คำนวณสด ณ ตอนนี้</b> ไม่ใช่ค่าที่บันทึกไว้ตอนปิดใบ</> : <>และไม่ได้ระบุวันที่มาตรการมีผล จึงย้อนวัดให้ไม่ได้</>}</Note>
+          <Note>{tr('ℹ️ ใบนี้ปิดไปก่อนที่ระบบจะมีการวัดประสิทธิผล —')} {pivot ? <>{tr('ตัวเลขข้างล่าง')}<b>{tr('คำนวณสด ณ ตอนนี้')}</b> {tr('ไม่ใช่ค่าที่บันทึกไว้ตอนปิดใบ')}</> : <>{tr('และไม่ได้ระบุวันที่มาตรการมีผล จึงย้อนวัดให้ไม่ได้')}</>}</Note>
         )}
-        {typesErr && <Note tone="warn">⚠️ โหลดรายการ <b>ประเภทของเสีย</b> ไม่สำเร็จ — ตอนนี้วัดแบบ "ทุกประเภท" เลือกเจาะจงประเภทไม่ได้</Note>}
-        {noTrial && <Note tone="warn">⚠️ ฐานข้อมูลยังไม่มีธง <b>งานทดลอง (try-out)</b> — ตัวเลขนี้จึงรวมของเสียตอนลองแม่พิมพ์/ลองงานใหม่เข้ามาด้วย (apply migration 20260817_defect_trial_flag แล้วจะแยกให้อัตโนมัติ)</Note>}
-        {err && <Note tone="bad">🔴 โหลดข้อมูลไม่สำเร็จ — <b>ตัวเลขที่เห็นอาจไม่ครบ</b><br />{err}</Note>}
-        {loading && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>กำลังคำนวณ…</div>}
+        {typesErr && <Note tone="warn">{tr('⚠️ โหลดรายการ')} <b>{tr('ประเภทของเสีย')}</b> ไม่สำเร็จ — ตอนนี้วัดแบบ "ทุกประเภท" เลือกเจาะจงประเภทไม่ได้</Note>}
+        {noTrial && <Note tone="warn">{tr('⚠️ ฐานข้อมูลยังไม่มีธง')} <b>{tr('งานทดลอง (try-out)')}</b> {tr('— ตัวเลขนี้จึงรวมของเสียตอนลองแม่พิมพ์/ลองงานใหม่เข้ามาด้วย (apply migration 20260817_defect_trial_flag แล้วจะแยกให้อัตโนมัติ)')}</Note>}
+        {err && <Note tone="bad">{tr('🔴 โหลดข้อมูลไม่สำเร็จ —')} <b>{tr('ตัวเลขที่เห็นอาจไม่ครบ')}</b><br />{err}</Note>}
+        {loading && <div style={{ fontSize: 11.5, color: 'var(--muted)' }}>{tr('กำลังคำนวณ…')}</div>}
 
         {/* ── ผลลัพธ์ ── */}
         {m && judged && (
           <>
             <Bars m={m} />
             <div style={{ padding: '8px 11px', borderRadius: 'var(--r-md)', background: `${V.color}14`, border: `1px solid ${V.color}55`, fontSize: 12, color: V.color, fontWeight: 700, lineHeight: 1.6 }}>
-              {V.label}{judged.reason ? ` — ${judged.reason}` : ''}
+              {tr(V.label)}{judged.reason ? ` — ${judged.reason}` : ''}
               {judged.verdict === 'worse' || judged.verdict === 'not_effective' ? (
                 <div style={{ fontWeight: 600, marginTop: 3 }}>
                   ต้องกลับไปทบทวน D4 (สาเหตุราก) — สาเหตุที่ระบุอาจไม่ใช่ตัวจริง หรือมาตรการยังไม่ถูกทำจริงหน้างาน
@@ -298,7 +299,7 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
             </div>
             {m.afterTotal > 0 && judged.verdict !== 'too_early' && (
               <Note tone={judged.verdict === 'effective' ? 'muted' : 'warn'}>
-                {judged.verdict === 'effective' ? 'ℹ️' : '⚠️'} หลังมาตรการยัง<b>เกิดซ้ำ {m.afterTotal} ชิ้น</b> ({m.afterCount} ครั้ง)
+                {judged.verdict === 'effective' ? 'ℹ️' : '⚠️'} {tr('หลังมาตรการยัง')}<b>{tr('เกิดซ้ำ')} {m.afterTotal} {tr('ชิ้น')}</b> ({m.afterCount} ครั้ง)
                 {typeLabel ? ` ในประเภท "${typeLabel}"` : ''} — ถ้าเป็นอาการเดียวกับที่ลูกค้าเคลม ยังปิดไม่ได้จริง
               </Note>
             )}
@@ -308,33 +309,33 @@ export default function CapaEffectiveness({ capa, onChange, canEdit, canWriteRes
         {!stamped && data && !data.empty && capa.part_no && (
           data.matched === 0 && data.raw > 0 ? (
             <Note tone="bad">
-              🔴 เลขพาร์ท <b>{capa.part_no}</b> จับคู่กับใบงานในไลน์นี้<b>ไม่ได้เลย</b> (ของเสียทั้งไลน์มี {data.raw} รายการ แต่ตรงพาร์ทนี้ 0)
-              — ตัวเลขที่ว่างอาจเป็นเพราะ<b>กุญแจไม่ตรง</b> ไม่ใช่ไม่มีของเสีย
-              {data.pnRes?.status === 'none' && <> · เลขนี้ยังไม่ตั้ง p_no ใน Product Master → ตั้งแล้วระบบจะจับคู่ให้</>}
+              🔴 เลขพาร์ท <b>{capa.part_no}</b> {tr('จับคู่กับใบงานในไลน์นี้')}<b>{tr('ไม่ได้เลย')}</b> {tr('(ของเสียทั้งไลน์มี')} {data.raw} รายการ แต่ตรงพาร์ทนี้ 0)
+              — ตัวเลขที่ว่างอาจเป็นเพราะ<b>{tr('กุญแจไม่ตรง')}</b> ไม่ใช่ไม่มีของเสีย
+              {data.pnRes?.status === 'none' && <> {tr('· เลขนี้ยังไม่ตั้ง p_no ใน Product Master → ตั้งแล้วระบบจะจับคู่ให้')}</>}
             </Note>
           ) : data.matched < data.raw ? (
             <Note>
-              ℹ️ กรองเฉพาะพาร์ท {capa.part_no}: นับ <b>{data.matched}</b> จากของเสียทั้งไลน์ {data.raw} รายการ
-              {data.pnRes?.status === 'ambiguous' && <> · เลขนี้จับคู่ MAT SAP ได้หลายตัว ({data.pnRes.candidates.join(', ')}) — นับรวมทุกตัว (พาร์ทเดียวกันแยกเลขตามปลายทาง)</>}
-              {data.pnRes?.status === 'mapped' && <> · จับคู่เป็นเลข SAP {data.pnRes.mat}</>}
+              ℹ️ กรองเฉพาะพาร์ท {capa.part_no}{tr(': นับ')} <b>{data.matched}</b> {tr('จากของเสียทั้งไลน์')} {data.raw} รายการ
+              {data.pnRes?.status === 'ambiguous' && <> {tr('· เลขนี้จับคู่ MAT SAP ได้หลายตัว (')}{data.pnRes.candidates.join(', ')}{tr(') — นับรวมทุกตัว (พาร์ทเดียวกันแยกเลขตามปลายทาง)')}</>}
+              {data.pnRes?.status === 'mapped' && <> {tr('· จับคู่เป็นเลข SAP')} {data.pnRes.mat}</>}
             </Note>
           ) : null
         )}
-        {capped && m && <Note>⏳ หน้าต่างเทียบ {win} วัน<b>ยังเดินไม่ครบ</b> — ผลนี้เป็นค่าระหว่างทาง จะนิ่งขึ้นเมื่อครบหน้าต่าง</Note>}
-        {data?.empty && <Note tone="warn">⚠️ ไม่พบกะที่เปิดผลิตของไลน์ <b>{capa.line_name}</b> ในช่วงที่วัด — ตรวจว่าชื่อไลน์ตรงกับที่ใช้ใน Daily Report ไหม</Note>}
+        {capped && m && <Note>{tr('⏳ หน้าต่างเทียบ')} {win} {tr('วัน')}<b>{tr('ยังเดินไม่ครบ')}</b> {tr('— ผลนี้เป็นค่าระหว่างทาง จะนิ่งขึ้นเมื่อครบหน้าต่าง')}</Note>}
+        {data?.empty && <Note tone="warn">{tr('⚠️ ไม่พบกะที่เปิดผลิตของไลน์')} <b>{capa.line_name}</b> {tr('ในช่วงที่วัด — ตรวจว่าชื่อไลน์ตรงกับที่ใช้ใน Daily Report ไหม')}</Note>}
 
         {/* ── เติมผลลงช่องประสิทธิผล (คนแก้ต่อได้) ── */}
         {!closed && m && judged && canWriteResult && (
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <button style={btn('#4d9fff', '#fff')} onClick={() => onChange({
               effectiveness: [capa.effectiveness?.trim(), effectSummaryText(m, judged, { pivot, windowDays: win, typeLabel })].filter(Boolean).join('\n\n'),
-            })}>📌 เติมตัวเลขนี้ลงช่องประสิทธิผล</button>
+            })}>{tr('📌 เติมตัวเลขนี้ลงช่องประสิทธิผล')}</button>
           </div>
         )}
 
         <div style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.6, borderTop: '1px dashed var(--border2)', paddingTop: 8 }}>
-          หารด้วย <b>จำนวนวันที่ไลน์ผลิตจริง</b> ไม่ใช่วันปฏิทิน (ไลน์หยุด ของเสียเป็น 0 ไม่ได้แปลว่าได้ผล) ·
-          {noTrial ? '' : 'ไม่นับ'}<b>งานทดลอง</b>{noTrial ? ' ถูกนับรวมอยู่' : ' (try-out)'} · ตัวเลขนี้เป็น<b>สัญญาณ ไม่ใช่คำตัดสิน</b> — คนเป็นผู้สรุป
+          หารด้วย <b>{tr('จำนวนวันที่ไลน์ผลิตจริง')}</b> ไม่ใช่วันปฏิทิน (ไลน์หยุด ของเสียเป็น 0 ไม่ได้แปลว่าได้ผล) ·
+          {noTrial ? '' : 'ไม่นับ'}<b>{tr('งานทดลอง')}</b>{noTrial ? ' ถูกนับรวมอยู่' : ' (try-out)'} {tr('· ตัวเลขนี้เป็น')}<b>{tr('สัญญาณ ไม่ใช่คำตัดสิน')}</b> — คนเป็นผู้สรุป
         </div>
       </div>
     </div>

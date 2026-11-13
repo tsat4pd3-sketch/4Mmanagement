@@ -16,6 +16,7 @@ import { useState } from 'react';
 import { useProductionLinesState, invalidateProductionLines } from '../utils/useProductionLines';
 import { registryFailText } from '../utils/useMasterRows';
 
+import { tr } from '../utils/i18n';
 export default function LineRegistryAlert() {
   const { failed, stale, message, loading, reload } = useProductionLinesState();
   const [busy, setBusy] = useState(false);
@@ -39,15 +40,15 @@ export default function LineRegistryAlert() {
       <span style={{ flex: 1, minWidth: 220 }}>
         {registryFailText('ทะเบียนไลน์', stale)}
         <div style={{ fontWeight: 400, color: 'var(--text2)', marginTop: 2 }}>
-          ช่องเลือกไลน์ทุกหน้าจะว่างหรือไม่ครบ — <b>ไม่ใช่เรื่องสิทธิ์ และไม่ได้แปลว่าไลน์ถูกลบ</b>
-          {message ? <> · เหตุผลจากระบบ: {message}</> : null}
+          ช่องเลือกไลน์ทุกหน้าจะว่างหรือไม่ครบ — <b>{tr('ไม่ใช่เรื่องสิทธิ์ และไม่ได้แปลว่าไลน์ถูกลบ')}</b>
+          {message ? <> {tr('· เหตุผลจากระบบ:')} {message}</> : null}
         </div>
       </span>
       <button onClick={onReload} disabled={busy} style={{
         padding: '5px 11px', borderRadius: 'var(--r-md)', fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
         border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--text)',
         cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1,
-      }}>{busy ? 'กำลังโหลด…' : '🔄 โหลดทะเบียนไลน์ใหม่'}</button>
+      }}>{busy ? tr('กำลังโหลด…') : tr('🔄 โหลดทะเบียนไลน์ใหม่')}</button>
     </div>
   );
 }

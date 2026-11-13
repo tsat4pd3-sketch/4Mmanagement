@@ -15,6 +15,7 @@
 import { LIVE_STATUS } from '../lib/vsmLive';
 import { fmtMct, fmtMinSec } from '../lib/vsmModel';
 
+import { tr } from '../utils/i18n';
 export const PALETTE_LIGHT = {
   bg: '#ffffff', ink: '#111827', sub: '#4b5563', line: '#374151', faint: '#9ca3af',
   box: '#ffffff', boxHead: '#dbeafe', data: '#f9fafb', inv: '#fde68a', invInk: '#78350f',
@@ -152,7 +153,7 @@ const InvPoint = ({ cx, y, P, inv }) => {
   const isPull = !!inv?.kanban;
   return (
     <g>
-      {inv?.label && <text x={cx} y={y - 30} fontSize="9.5" fill={P.sub} textAnchor="middle">{inv.label}</text>}
+      {inv?.label && <text x={cx} y={y - 30} fontSize="9.5" fill={P.sub} textAnchor="middle">{tr(inv.label)}</text>}
       {isPull ? (
         <g>
           <rect x={cx - 21} y={y - 21} width="42" height="20" fill={P.box} stroke={P.line} strokeWidth="1.2" />
@@ -168,9 +169,9 @@ const InvPoint = ({ cx, y, P, inv }) => {
       <text x={cx} y={y + 39} fontSize="10" fontWeight="700" fill={P.ink} textAnchor="middle">
         {missing ? 'ยังไม่กรอก' : `${fmt(inv.qty)} ${inv.uom || 'pcs'}`}
       </text>
-      {inv?.days != null && <text x={cx} y={y + 51} fontSize="9.5" fill={P.sub} textAnchor="middle">{fmt(inv.days, 2)} วัน</text>}
+      {inv?.days != null && <text x={cx} y={y + 51} fontSize="9.5" fill={P.sub} textAnchor="middle">{fmt(inv.days, 2)} {tr('วัน')}</text>}
       {isPull && inv.kanban?.total_kanban != null && (
-        <text x={cx} y={y + 62} fontSize="9" fill={P.pull} textAnchor="middle">คัมบัง {fmt(inv.kanban.total_kanban)} ใบ</text>
+        <text x={cx} y={y + 62} fontSize="9" fill={P.pull} textAnchor="middle">{tr('คัมบัง')} {fmt(inv.kanban.total_kanban)} {tr('ใบ')}</text>
       )}
     </g>
   );
@@ -256,7 +257,7 @@ function ProcBox({ b, x, yProc, P, small = false, lv = null }) {
         <path d={`M${x + 9} ${yProc + 54} A6 6 0 0 1 ${x + 21} ${yProc + 54} Z`} fill={P.box} stroke={P.line} strokeWidth="1" />
         <text x={x + 27} y={yProc + 52} fontSize="10" fontWeight="700" fill={P.ink}>{fmt(b.operators)}</text>
       </>}
-      {!small && b.isFallback && <text x={x + w - 5} y={yProc + 50} fontSize="8.5" fill={P.nva} textAnchor="end">ยังไม่ลง routing</text>}
+      {!small && b.isFallback && <text x={x + w - 5} y={yProc + 50} fontSize="8.5" fill={P.nva} textAnchor="end">{tr('ยังไม่ลง routing')}</text>}
 
       {!small && <>
         <rect x={x} y={yProc + h} width={w} height={DATA_H} fill={P.data} stroke={P.line} strokeWidth="1.2" />
@@ -321,11 +322,11 @@ export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null,
 
       {/* ── แถวบน: ผู้ส่งมอบ (ทุกราย) · วางแผน · ลูกค้า ── */}
       {sups.length === 0
-        ? <Fact x={26} y={Y_TOP} P={P} title="SUPPLIER" sub="ไม่มีพาร์ทซื้อนอกใน BOM" />
+        ? <Fact x={26} y={Y_TOP} P={P} title="SUPPLIER" sub={tr('ไม่มีพาร์ทซื้อนอกใน BOM')} />
         : sups.slice(0, 3).map((s, i) => (
           <Fact key={s.matNo} x={26} y={Y_TOP + i * 78} P={P}
-            title={s.supplier || 'ยังไม่ระบุผู้ส่งมอบ'}
-            sub={s.deliveryPattern || 'รอบส่ง: ยังไม่กรอก'}
+            title={s.supplier || tr('ยังไม่ระบุผู้ส่งมอบ')}
+            sub={s.deliveryPattern || tr('รอบส่ง: ยังไม่กรอก')}
             sub2={s.qty != null ? `${fmt(s.qty)} pcs${s.days != null ? ` · ${fmt(s.days, 1)} วัน` : ''}` : null} />
         ))}
       {sups.length > 3 && (
@@ -365,7 +366,7 @@ export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null,
           {/* ── การไหลข้อมูล: ลูกค้า→วางแผน (electronic) · วางแผน→supplier (electronic) · วางแผน→ผลิต (manual) ── */}
           <InfoLine P={P} electronic pts={[[custX, Y_TOP + 28], [planX + PLAN_W, Y_TOP + 28]]} label={custLabel} />
           {/* ระบบยังไม่มีข้อมูลใบสั่งซื้อ supplier — บอกตรงๆ ห้ามแปะป้ายเหมือนมีข้อมูลจริง */}
-          <InfoLine P={P} electronic pts={[[planX, Y_TOP + 28], [26 + FACT_W, Y_TOP + 28]]} label="สั่งซื้อ (ยังไม่มีข้อมูลในระบบ)" />
+          <InfoLine P={P} electronic pts={[[planX, Y_TOP + 28], [26 + FACT_W, Y_TOP + 28]]} label={tr('สั่งซื้อ (ยังไม่มีข้อมูลในระบบ)')} />
           <InfoLine P={P} electronic={false} label={planLabel}
             labelPos={[(planCx + colX(0) + BOX_W / 2) / 2, Y_PROC - 40]}
             pts={[[planCx, Y_TOP + PLAN_H], [planCx, Y_PROC - 34], [colX(0) + BOX_W / 2, Y_PROC - 34], [colX(0) + BOX_W / 2, Y_PROC - 6]]} />
@@ -457,8 +458,8 @@ export default function VsmCanvas({ model, palette = PALETTE_DARK, width = null,
           </text>
         </g>;
       })}
-      <text x={26} y={Y_LAD + 2} fontSize="9" fill={P.nva}>NVA (รอ)</text>
-      <text x={26} y={Y_LAD + 26} fontSize="9" fill={P.va}>VA (ทำงาน)</text>
+      <text x={26} y={Y_LAD + 2} fontSize="9" fill={P.nva}>{tr('NVA (รอ)')}</text>
+      <text x={26} y={Y_LAD + 26} fontSize="9" fill={P.va}>{tr('VA (ทำงาน)')}</text>
 
       {/* ── สรุปมุมล่างขวา — MCT เป็น headline ตัวแดงใหญ่ ตามธรรมเนียมใบจริง TSAT
             (skill: vsm-tsat-reference — "MCT = 8.97 Days 4 min 17 second") ── */}
@@ -514,7 +515,7 @@ export function VsmLegend({ palette = PALETTE_DARK, compact = false }) {
       {SYMBOLS.map(s => (
         <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <svg width={compact ? 26 : 34} height={compact ? 20 : 26} viewBox="0 0 32 26" style={{ flexShrink: 0 }}><Symbol k={s.key} P={P} /></svg>
-          <span style={{ fontSize: compact ? 8.5 : 11, color: P.sub, lineHeight: 1.2 }}>{s.label}</span>
+          <span style={{ fontSize: compact ? 8.5 : 11, color: P.sub, lineHeight: 1.2 }}>{tr(s.label)}</span>
         </div>
       ))}
     </div>

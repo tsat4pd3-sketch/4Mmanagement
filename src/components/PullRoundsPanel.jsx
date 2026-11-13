@@ -12,6 +12,7 @@ import { toast } from './Toast';
 import { checkWrite } from '../utils/dbWrite';
 import { ALL } from '../utils/filterLabels';
 
+import { tr } from '../utils/i18n';
 const PATTERNS = [
   { key: 'normal',   label: 'ปกติ' },
   { key: 'ot_day',   label: 'OT กลางวัน' },
@@ -131,29 +132,29 @@ export default function PullRoundsPanel({ canEdit, shipToMap, fullName }) {
   return (
     <div style={{ marginTop: 18, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', padding: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
-        <div style={{ fontSize: 14, fontWeight: 800 }}>ตารางรอบรับของลูกค้า (milk-run)</div>
+        <div style={{ fontSize: 14, fontWeight: 800 }}>{tr('ตารางรอบรับของลูกค้า (milk-run)')}</div>
         {shipTos.length > 1 && (
           <select value={filterShipTo} onChange={e => setFilterShipTo(e.target.value)} style={{ ...inp, width: 'auto', maxWidth: 220 }}>
-            <option value="">{ALL.customer}</option>
+            <option value="">{tr(ALL.customer)}</option>
             {shipTos.map(c => <option key={c} value={c}>{shipToMap?.[c]?.customer_name || c}</option>)}
           </select>
         )}
         {canEdit && !missing && (
           <button onClick={() => setAdding({ ...BLANK, ship_to: filterShipTo || shipTos[0] || '' })}
-            style={{ ...btn('var(--accent)'), marginLeft: 'auto' }}>➕ เพิ่มรอบ</button>
+            style={{ ...btn('var(--accent)'), marginLeft: 'auto' }}>{tr('➕ เพิ่มรอบ')}</button>
         )}
       </div>
 
       <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 8, lineHeight: 1.6 }}>
-        e-SMART ใช้ตารางนี้หา <b>รอบที่รถลูกค้ามารับ</b> จากช่วงเวลาในไฟล์ — <b>ไม่ใช่สูตรคำนวณ</b>
+        e-SMART ใช้ตารางนี้หา <b>{tr('รอบที่รถลูกค้ามารับ')}</b> {tr('จากช่วงเวลาในไฟล์ —')} <b>{tr('ไม่ใช่สูตรคำนวณ')}</b>
         (ระยะจากปลายช่วงถึงเวลารับไม่คงที่ 1–6 ชม. แล้วแต่รอบ) · ช่วงไหนไม่มีในตาราง ระบบจะเดาด้วย
-        “ปลายช่วง + lead_min” <b>พร้อมขึ้นคำเตือนบนจออัพโหลด</b>
+        “ปลายช่วง + lead_min” <b>{tr('พร้อมขึ้นคำเตือนบนจออัพโหลด')}</b>
       </div>
 
       {missing && (
         <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 'var(--r-md)', padding: 10, fontSize: 12 }}>
           ⚠️ ยังไม่ได้สร้างตาราง <code>customer_pull_rounds</code> — รัน migration
-          <code> 20260909_customer_pull_rounds.sql</code> ที่ project <b>Product DB (DR)</b> ก่อน
+          <code> 20260909_customer_pull_rounds.sql</code> {tr('ที่ project')} <b>Product DB (DR)</b> ก่อน
           · ระหว่างนี้ระบบใช้สูตร lead_min เดารอบให้ และเตือนบนจออัพโหลดทุกครั้ง
         </div>
       )}
@@ -170,20 +171,20 @@ export default function PullRoundsPanel({ canEdit, shipToMap, fullName }) {
               <label key={k} style={{ fontSize: 11, color: 'var(--muted)' }}>{l}<br />
                 <input value={adding[k]} onChange={e => setAdding(a => ({ ...a, [k]: e.target.value }))} style={inp} /></label>
             ))}
-            <label style={{ fontSize: 11, color: 'var(--muted)' }}>รูปแบบ<br />
+            <label style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('รูปแบบ')}<br />
               <select value={adding.pattern} onChange={e => setAdding(a => ({ ...a, pattern: e.target.value }))} style={inp}>
-                {PATTERNS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+                {PATTERNS.map(p => <option key={p.key} value={p.key}>{tr(p.label)}</option>)}
               </select></label>
             {[['period_start', 'ช่วงดึง ต้น'], ['period_end', 'ช่วงดึง ปลาย'], ['prepare_from', 'เตรียม ต้น'],
               ['prepare_to', 'เตรียม ปลาย'], ['pickup_time', '⭐ รถมารับ'], ['delivery_time', 'ถึงลูกค้า']].map(([k, l]) => (
               <label key={k} style={{ fontSize: 11, color: 'var(--muted)' }}>{l}<br />
                 <input type="time" value={adding[k]} onChange={e => setAdding(a => ({ ...a, [k]: e.target.value }))} style={inp} /></label>
             ))}
-            <label style={{ fontSize: 11, color: 'var(--muted)' }}>รับ +วัน<br />
+            <label style={{ fontSize: 11, color: 'var(--muted)' }}>{tr('รับ +วัน')}<br />
               <input type="number" value={adding.pickup_day_offset}
                 onChange={e => setAdding(a => ({ ...a, pickup_day_offset: e.target.value }))} style={{ ...inp, width: 60 }} /></label>
-            <button onClick={addRow} disabled={busy === 'new'} style={btn('var(--accent)')}>บันทึก</button>
-            <button onClick={() => setAdding(null)} style={{ ...btn('var(--bg3)'), color: 'var(--text)' }}>ยกเลิก</button>
+            <button onClick={addRow} disabled={busy === 'new'} style={btn('var(--accent)')}>{tr('บันทึก')}</button>
+            <button onClick={() => setAdding(null)} style={{ ...btn('var(--bg3)'), color: 'var(--text)' }}>{tr('ยกเลิก')}</button>
           </div>
         </div>
       )}
@@ -198,9 +199,9 @@ export default function PullRoundsPanel({ canEdit, shipToMap, fullName }) {
           <div style={{ overflowX: 'auto' }}>
             <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 720 }}>
               <thead><tr>
-                <th style={th}>ช่วงดึง</th><th style={th}>เตรียมของ</th>
-                <th style={th}>⭐ รถมารับ</th><th style={th}>ถึงลูกค้า</th>
-                <th style={th}>หมายเหตุ</th>{canEdit && <th style={th} />}
+                <th style={th}>{tr('ช่วงดึง')}</th><th style={th}>{tr('เตรียมของ')}</th>
+                <th style={th}>{tr('⭐ รถมารับ')}</th><th style={th}>{tr('ถึงลูกค้า')}</th>
+                <th style={th}>{tr('หมายเหตุ')}</th>{canEdit && <th style={th} />}
               </tr></thead>
               <tbody>
                 {g.list.map(r => (
@@ -234,10 +235,10 @@ export default function PullRoundsPanel({ canEdit, shipToMap, fullName }) {
                     {canEdit && (
                       <td style={{ ...td, whiteSpace: 'nowrap' }}>
                         <button onClick={() => save(r)} disabled={!dirty(r.id) || busy === r.id}
-                          style={{ ...btn(dirty(r.id) ? 'var(--accent)' : 'var(--bg3)'), color: dirty(r.id) ? 'var(--accent-ink)' : 'var(--muted)' }}>บันทึก</button>
+                          style={{ ...btn(dirty(r.id) ? 'var(--accent)' : 'var(--bg3)'), color: dirty(r.id) ? 'var(--accent-ink)' : 'var(--muted)' }}>{tr('บันทึก')}</button>
                         {' '}
                         <button onClick={() => removeRow(r)} disabled={busy === r.id}
-                          style={{ ...btn('rgba(239,68,68,0.9)'), color: '#fff' }}>ลบ</button>
+                          style={{ ...btn('rgba(239,68,68,0.9)'), color: '#fff' }}>{tr('ลบ')}</button>
                       </td>
                     )}
                   </tr>
@@ -249,7 +250,7 @@ export default function PullRoundsPanel({ canEdit, shipToMap, fullName }) {
       ))}
 
       {!missing && !loadErr && !groups.length && (
-        <div style={{ fontSize: 12, color: 'var(--muted)' }}>ยังไม่มีรอบรับในทะเบียน — กด ➕ เพิ่มรอบ</div>
+        <div style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ยังไม่มีรอบรับในทะเบียน — กด ➕ เพิ่มรอบ')}</div>
       )}
     </div>
   );

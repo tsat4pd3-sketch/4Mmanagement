@@ -27,13 +27,14 @@ import { loadProductionLines } from '../utils/useProductionLines';
 import { OPEN_MO_STATUSES, actorSideOf } from '../utils/mtnStepPerm';
 import { isAmTeam } from '../utils/pmTeams';
 import { positionRank } from '../utils/positions';
-import { can as canPerm, isActionSeeded, canSeeded as canSeededPerm } from '../utils/permissions';
+import { can as canPerm, isActionSeeded, canSeeded as canSeededPerm, isSharedAccount } from '../utils/permissions';
 import { teamKeyOf } from '../utils/mtnTeams';
 import { pendingYellow } from '../utils/qualityBin';
 import {
   TIER, TIER_TITLE, EMPTY_TEXT, OLD_DAYS, buildQueue, badgeCount, capped,
 } from '../utils/myQueue';
 
+import { tr } from '../utils/i18n';
 /** ข้อมูลเก่ากว่านี้ = โหลดใหม่ตอนเปิดแผง (นาที) */
 const STALE_MIN = 5;
 /** เพดานแถวต่อคิวรี — คิวงานไม่ใช่รายงาน ไม่ต้องครบทุกแถวในโลก */
@@ -70,7 +71,7 @@ export async function loadMyQueue(me) {
   const ok = (r) => (r.error ? undefined : (r.data || []));
 
   const canLu = !!(me.canLevelUp || me.canLevelUp100);
-  const [moR, sesR, prR, fourR, actR, lines, luR, binR, binRedR, redPendR] = await Promise.all([
+  const [moR, sesR, prR, fourR, actR, lines, luR, binR, binRedR, redPendR, rfqAssessR] = await Promise.all([
     /* กรองด้วยสถานะที่ยังมีคนต้องทำต่อ — เดิม `.gt('current_step', 1)` ตัดใบ "รอจ่ายงาน" (current_step = 1)
        ทิ้งทั้งหมด และ `.is('approve_at', null)` ตัดใบ MTN ที่อนุมัติแล้วแต่ยังรอปิดใบ (ขั้น 8) */
     supabaseDR.from('mtn_orders').select(MO_COLS)
@@ -107,7 +108,13 @@ export async function loadMyQueue(me) {
     supabaseDR.from('quality_bin_records').select('id, work_date, line_name, qty')
       .eq('bin', 'red').eq('is_active', true).is('scrap_report_id', null)
       .order('work_date', { ascending: true }).limit(300),
+    /* 📐 RFQ ที่รอ IEC ประเมิน (เฟส 2a · 13/11) — โหลดเฉพาะคนที่มีสิทธิ์ rfq:assess (IEC ทั้งทีม) · Main project */
+    me.canRfqAssess
+      ? supabase.from('mkt_rfq_assessments').select('id, rfq_id, round, requested_at, mkt_rfqs!inner(rfq_no, customer, model, title, due_date, priority)')
+        .eq('status', 'draft').order('requested_at', { ascending: true }).limit(200)
+      : Promise.resolve({ data: null, error: null }),
   ]);
+  const rfqAssess = me.canRfqAssess ? ok(rfqAssessR)?.map(r => ({ id: r.id, rfq_id: r.rfq_id, round: r.round, requested_at: r.requested_at, ...(r.mkt_rfqs || {}) })) : undefined;
   const levelUps = canLu ? ok(luR)?.map(r => ({ id: r.id, to_level: r.to_level, requested_at: r.requested_at, section: r.employees?.section })) : undefined;
 
   /* `four_m_logs` ไม่มีคอลัมน์ส่วนงาน — เทียบขอบเขตผ่านทะเบียนไลน์ (ไลน์ → ส่วนงาน)
@@ -154,7 +161,7 @@ export async function loadMyQueue(me) {
      🔴 คิวรีล่ม = `mo` เป็น undefined ⇒ **ไม่ส่ง** `moAll` เพื่อให้ `countsCapped` ติดธง
         ห้ามส่ง [] (จะกลายเป็น "ทุกกองมี 0 ใบ" ทั้งที่ไม่รู้ · ลิสต์ว่าง 2 ความหมาย · กฎข้อ 12) */
   return buildQueue({ mo, moAll: mo, moAllCapped: moTruncated, moTruncated,
-    sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps, bins, binsTruncated, redBins, redBinsTruncated }, me);
+    sessions: ok(sesR), fourM, actions: ok(actR), summaries, levelUps, bins, binsTruncated, redBins, redBinsTruncated, rfqAssess }, me);
 }
 
 /* ── UI ชิ้นเล็ก ────────────────────────────────────────────────────────── */
@@ -179,7 +186,7 @@ function Row({ it, onGo }) {
           flexShrink: 0, fontSize: 11, fontWeight: 700, padding: '1px 6px', borderRadius: 'var(--r-pill)',
           color: old ? '#ef4444' : 'var(--muted)',
           background: old ? '#ef444418' : 'transparent',
-        }}>{it.age}ว</span>
+        }}>{it.age}{tr('ว')}</span>
       )}
       {it.count != null && (
         <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, color: 'var(--text2)' }}>
@@ -273,6 +280,7 @@ export function useMyQueue(open = false) {
              (actorSideOf + positionRank + สิทธิ์ mtn_repair) ⇒ ใบที่ขึ้นว่า "รอคุณเซ็น" = ใบที่กดเซ็นได้จริง */
           actorSide: actorSideOf({ mtnTeams: teams, role, sections: secs, isAm: isAmTeam }),
           posRank: positionRank(position),
+          isShared: isSharedAccount(),   // 🖥️ บัญชีกลางเซ็นช่องที่ล็อกตำแหน่งไม่ได้ (13/11) ⇒ ไม่ขึ้นว่า "รอคุณเซ็น"
           can: (a) => canPerm('mtn_repair', a, role),
           seeded: (a) => isActionSeeded('mtn_repair', a),
           hasTeams: teams.length > 0,
@@ -280,6 +288,8 @@ export function useMyQueue(open = false) {
           // ⬆️ คีย์เดียวกับปุ่มอนุมัติใน /operator?tab=levelup
           canLevelUp: canPerm('skills', 'approve_levelup', role),
           canLevelUp100: canPerm('skills', 'approve_levelup_100', role),
+          // 📐 RFQ รอ IEC ประเมิน — คีย์เดียวกับปุ่มในการ์ดประเมินของ /rfq
+          canRfqAssess: canPerm('rfq', 'assess', role),
           // 🔎 ถังเหลืองขั้น QA (ตัดสิน/ตรวจรับ) — คีย์เดียวกับปุ่มในหน้าถัง
           canBinDecide: canSeededPerm('qa', 'bin_decide', role),
         });
@@ -311,18 +321,18 @@ export default function MyQueuePanel({ q, busy, onGo }) {
     <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: 6, marginBottom: 6 }}>
       {q?.partial && (
         <div style={{ fontSize: 11, color: '#f59e0b', padding: '4px 8px', lineHeight: 1.4 }}>
-          ⚠️ โหลดข้อมูลไม่ครบ — รายการด้านล่าง<b>ไม่ใช่ทั้งหมด</b> อย่าเพิ่งสรุปว่าไม่มีงานค้าง
+          ⚠️ โหลดข้อมูลไม่ครบ — รายการด้านล่าง<b>{tr('ไม่ใช่ทั้งหมด')}</b> อย่าเพิ่งสรุปว่าไม่มีงานค้าง
         </div>
       )}
       {/* 🔴 แถวที่ระบุส่วนงานไม่ได้ = ตกจากคิวของ**ทุกคน** ⇒ ต้องเขียนบอก ไม่ใช่ `partial` (คิวรีไม่ได้ล่ม
           ข้อมูลไม่ครบที่ต้นทาง) · วัดจริง 06/10: ใบรอ QA 36 จาก 188 ใบ `dept_section` ว่าง */}
       {q && q.unattributed > 0 && (
         <div style={{ fontSize: 11, color: '#f59e0b', padding: '4px 8px', lineHeight: 1.4 }}>
-          ⚠️ อีก <b>{q.unattributed}</b> รายการ<b>ระบุส่วนงานไม่ได้</b> จึงไม่เข้าคิวของใครเลย —
+          ⚠️ อีก <b>{q.unattributed}</b> {tr('รายการ')}<b>{tr('ระบุส่วนงานไม่ได้')}</b> จึงไม่เข้าคิวของใครเลย —
           ต้องเติมส่วนงานในใบก่อน ถึงจะโผล่ในคิวของหน่วยงานที่รับผิดชอบ
         </div>
       )}
-      {!q && busy && <div style={{ fontSize: 11.5, color: 'var(--muted)', padding: '6px 8px' }}>กำลังดูคิวงาน…</div>}
+      {!q && busy && <div style={{ fontSize: 11.5, color: 'var(--muted)', padding: '6px 8px' }}>{tr('กำลังดูคิวงาน…')}</div>}
       {q && (<>
         <Group tier={TIER.MINE} items={q.mine} onGo={onGo} />
         <Group tier={TIER.UNIT} items={q.unit} onGo={onGo} />

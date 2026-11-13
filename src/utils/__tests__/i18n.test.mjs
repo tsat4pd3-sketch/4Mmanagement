@@ -88,8 +88,8 @@ test('🛡️ ชื่อหน้าแบบสตริงคงที่ใ
     if (!f.endsWith('.jsx')) continue;
     const code = readFileSync(join(dir, f), 'utf8');
     for (const m of code.matchAll(/<PageHeader\b([^>]*?)(?:\/>|>)/gs)) {
-      const t = m[1].match(/\btitle=(?:"([^"]+)"|'([^']+)'|\{\s*'([^']+)'\s*\})/);
-      if (t) titles.push(t[1] || t[2] || t[3]);
+      const t = m[1].match(/\btitle=(?:"([^"]+)"|'([^']+)'|\{\s*'([^']+)'\s*\}|\{\s*tr(?:I18n)?\('([^']+)'\)\s*\})/);   // 🌐 13/11: รอบ 3 ครอบ tr() แล้ว
+      if (t) titles.push(t[1] || t[2] || t[3] || t[4]);
     }
   }
   assert.ok(titles.length > 50, 'อ่าน title ของ PageHeader ไม่ออก');

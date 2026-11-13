@@ -11,6 +11,7 @@ import { isPlant, scopeKey, scopeCovers, scopePathText, sameScope, PLANT } from 
 import { rint, rnd } from '../utils/seededRandom';
 import { getWorkDate, addDaysStr } from '../utils/workDate';
 
+import { tr } from '../utils/i18n';
 /* ══ 📢 ประกาศ / ชี้แจงบริษัท — MOCKUP workflow (2026-10-29 · คำสั่ง user จากโน้ตลายมือ) ══════════
    โจทย์: "Workflow การรับประกาศของบริษัท"  Issue → Approve → Publish
      · ผู้แจ้งกรอก หัวข้อ · รายละเอียด · ผู้รับ (เลือกขอบเขตจากผังองค์กร) · Effective date
@@ -70,7 +71,7 @@ function Chip({ children, color = 'var(--muted)', onRemove }) {
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', borderRadius: 'var(--r-pill)',
       border: `1px solid ${color}`, color, fontSize: 12, background: 'var(--card)' }}>
       {children}
-      {onRemove && <button type="button" onClick={onRemove} aria-label="เอาออก"
+      {onRemove && <button type="button" onClick={onRemove} aria-label={tr('เอาออก')}
         style={{ border: 'none', background: 'none', color, cursor: 'pointer', fontSize: 13, padding: 0 }}>✕</button>}
     </span>
   );
@@ -78,7 +79,7 @@ function Chip({ children, color = 'var(--muted)', onRemove }) {
 
 function StatusChip({ st }) {
   const m = STATUS[st] || STATUS.pending;
-  return <Chip color={m.color}>{m.label}</Chip>;
+  return <Chip color={m.color}>{tr(m.label)}</Chip>;
 }
 
 /* แถบสถานะ 4 ขั้น (โน้ต user 29/10 "อยากให้แสดงว่าเอกสารนี้ถึงไหน") — วงกลมทึบ = ผ่านแล้ว · วงขอบหนา = อยู่ขั้นนี้
@@ -112,7 +113,7 @@ function FlowBar({ st, ack }) {
             <span style={{ fontSize: 11, color: 'var(--muted)' }}>{bad ? 'ถูกตีกลับ' : cur ? `ถึงขั้นนี้ · ${STEP_SUB[i]}` : STEP_SUB[i]}</span>
             {i === 3 && at === 3 && ack && (
               <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>
-                รับทราบ {ack.done} / {ack.total} คน{ack.total ? ` (${Math.round((ack.done / ack.total) * 100)}%)` : ''}
+                รับทราบ {ack.done} / {ack.total} {tr('คน')}{ack.total ? ` (${Math.round((ack.done / ack.total) * 100)}%)` : ''}
               </span>
             )}
           </div>
@@ -227,23 +228,23 @@ export default function AnnouncementMockup() {
       <div key={a.id} style={{ ...card, borderLeft: `4px solid ${(STATUS[st] || STATUS.pending).color}`, display: 'grid', gap: 8 }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <b style={{ fontSize: 14 }}>{a.topic}</b><StatusChip st={st} />
-          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>มีผล {fmtDate(a.effective)}</span>
+          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--muted)' }}>{tr('มีผล')} {fmtDate(a.effective)}</span>
         </div>
         <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{a.detail}</div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', fontSize: 12 }}>
-          <span style={{ color: 'var(--muted)' }}>ผู้รับ:</span>
+          <span style={{ color: 'var(--muted)' }}>{tr('ผู้รับ:')}</span>
           {a.scopes.map(sc => <Chip key={isPlant(sc) ? 'plant' : scopeKey(sc.kind, sc.value)}>{label(sc)}</Chip>)}
         </div>
         <FlowBar st={st} ack={ack} />
         {ackList && ack && ack.pending.length > 0 && (
           <details style={{ fontSize: 12 }}>
-            <summary style={{ cursor: 'pointer', color: 'var(--muted)' }}>ยังไม่รับทราบ {ack.pending.length} คน</summary>
+            <summary style={{ cursor: 'pointer', color: 'var(--muted)' }}>{tr('ยังไม่รับทราบ')} {ack.pending.length} {tr('คน')}</summary>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
               {ack.pending.map(e => <Chip key={e.id}>{e.name}</Chip>)}
             </div>
           </details>
         )}
-        {a.reject_reason && <div style={{ fontSize: 12, color: 'var(--red)' }}>เหตุผลที่ตีกลับ: {a.reject_reason}</div>}
+        {a.reject_reason && <div style={{ fontSize: 12, color: 'var(--red)' }}>{tr('เหตุผลที่ตีกลับ:')} {a.reject_reason}</div>}
         {children}
       </div>
     );
@@ -262,7 +263,7 @@ export default function AnnouncementMockup() {
               </div>
             ))}
           </div>
-        ) : <div style={{ fontSize: 13, color: 'var(--muted)' }}>ยังไม่มีแจ้งเตือน</div>}
+        ) : <div style={{ fontSize: 13, color: 'var(--muted)' }}>{tr('ยังไม่มีแจ้งเตือน')}</div>}
       </div>
     );
   };
@@ -270,17 +271,17 @@ export default function AnnouncementMockup() {
   return (
     <Page>
       <PageHeader
-        title="ประกาศ / ชี้แจงบริษัท"
+        title={tr('ประกาศ / ชี้แจงบริษัท')}
         icon="📢"
         sub={<span><b style={{ color: 'var(--amber)' }}>MOCKUP</b> · ข้อมูลจำลองในหน้านี้ ไม่บันทึกลงฐานข้อมูล (รีเฟรช = เริ่มใหม่)</span>}
         tabs={tabs} tab={tab} onTab={setTab}
         filters={(
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, color: 'var(--muted)' }}>วันที่จำลอง</span>
+            <span style={{ fontSize: 13, color: 'var(--muted)' }}>{tr('วันที่จำลอง')}</span>
             <button type="button" style={btnGhost} onClick={() => setToday(d => addDaysStr(d, -1))}>‹</button>
             <input type="date" value={today} onChange={e => e.target.value && setToday(e.target.value)} />
             <button type="button" style={btnGhost} onClick={() => setToday(d => addDaysStr(d, 1))}>›</button>
-            {today !== realToday && <button type="button" style={btnGhost} onClick={() => setToday(realToday)}>กลับวันนี้</button>}
+            {today !== realToday && <button type="button" style={btnGhost} onClick={() => setToday(realToday)}>{tr('กลับวันนี้')}</button>}
           </div>
         )}
       />
@@ -292,42 +293,42 @@ export default function AnnouncementMockup() {
           ระบบจริงต้องมีตารางประกาศ + สิทธิ์ + แจ้งเตือนในแอป (ยังไม่ได้ทำ)
         </InfoMore>
       </div>
-      {failed && <div style={{ ...card, borderColor: 'var(--red)', color: 'var(--red)', marginBottom: 12 }}>⚠ {failed} — ตัวเลือกผู้รับอาจไม่ครบ</div>}
+      {failed && <div style={{ ...card, borderColor: 'var(--red)', color: 'var(--red)', marginBottom: 12 }}>⚠ {failed} {tr('— ตัวเลือกผู้รับอาจไม่ครบ')}</div>}
 
       {tab === 'issue' && (
         <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', alignItems: 'start' }}>
           <div style={{ ...card, display: 'grid', gap: 10 }}>
-            <h3 style={{ ...h3, margin: 0 }}>ออกประกาศใหม่</h3>
-            <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>หัวข้อ (Topic)
-              <input value={form.topic} onChange={e => setForm(f => ({ ...f, topic: e.target.value }))} placeholder="เช่น ประกาศวันหยุด / ชี้แจงกฎความปลอดภัย" />
+            <h3 style={{ ...h3, margin: 0 }}>{tr('ออกประกาศใหม่')}</h3>
+            <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>{tr('หัวข้อ (Topic)')}
+              <input value={form.topic} onChange={e => setForm(f => ({ ...f, topic: e.target.value }))} placeholder={tr('เช่น ประกาศวันหยุด / ชี้แจงกฎความปลอดภัย')} />
             </label>
-            <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>รายละเอียด (Detail)
+            <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>{tr('รายละเอียด (Detail)')}
               <textarea rows={5} value={form.detail} onChange={e => setForm(f => ({ ...f, detail: e.target.value }))} />
             </label>
             <div style={{ display: 'grid', gap: 6, fontSize: 13 }}>ผู้รับ (Who's receive) — เลือกจากผังองค์กร
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                 <OrgScopePicker index={index} failed={failed} value={pick} onChange={setPick} costCenter={false} />
-                <button type="button" style={btnGhost} onClick={addScope}>+ เพิ่ม</button>
+                <button type="button" style={btnGhost} onClick={addScope}>{tr('+ เพิ่ม')}</button>
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {form.scopes.length
                   ? form.scopes.map((sc, i) => (
                     <Chip key={isPlant(sc) ? 'plant' : scopeKey(sc.kind, sc.value)} color="var(--accent)"
                       onRemove={() => setForm(f => ({ ...f, scopes: f.scopes.filter((_, j) => j !== i) }))}>{label(sc)}</Chip>))
-                  : <span style={{ color: 'var(--muted)', fontSize: 12 }}>ยังไม่ได้เลือก</span>}
+                  : <span style={{ color: 'var(--muted)', fontSize: 12 }}>{tr('ยังไม่ได้เลือก')}</span>}
               </div>
             </div>
-            <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>วันมีผล (Effective date)
+            <label style={{ display: 'grid', gap: 4, fontSize: 13 }}>{tr('วันมีผล (Effective date)')}
               <input type="date" value={form.effective} onChange={e => setForm(f => ({ ...f, effective: e.target.value }))} style={{ maxWidth: 200 }} />
             </label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <button type="button" style={btnPrimary} onClick={submit}>ส่งขออนุมัติ → EVP</button>
-              {missing.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)' }}>ยังขาด: {missing.join(' · ')}</span>}
+              <button type="button" style={btnPrimary} onClick={submit}>{tr('ส่งขออนุมัติ → EVP')}</button>
+              {missing.length > 0 && <span style={{ fontSize: 12, color: 'var(--muted)' }}>{tr('ยังขาด:')} {missing.join(' · ')}</span>}
             </div>
           </div>
           <div style={{ display: 'grid', gap: 12 }}>
-            {renderInbox({ to: 'issuer', title: 'แจ้งเตือนของผู้แจ้ง' })}
-            <h3 style={{ ...h3, margin: 0 }}>ประกาศที่ฉันออก ({items.length})</h3>
+            {renderInbox({ to: 'issuer', title: tr('แจ้งเตือนของผู้แจ้ง') })}
+            <h3 style={{ ...h3, margin: 0 }}>{tr('ประกาศที่ฉันออก (')}{items.length})</h3>
             {items.map(a => annRow({ a, ackList: true }))}
           </div>
         </div>
@@ -336,23 +337,23 @@ export default function AnnouncementMockup() {
       {tab === 'approve' && (
         <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', alignItems: 'start' }}>
           <div style={{ display: 'grid', gap: 12 }}>
-            <h3 style={{ ...h3, margin: 0 }}>รอ {APPROVER} อนุมัติ ({pending.length})</h3>
+            <h3 style={{ ...h3, margin: 0 }}>{tr('รอ')} {APPROVER} {tr('อนุมัติ (')}{pending.length})</h3>
             {pending.length ? pending.map(a => (
               annRow({ a, children: (<>
                 {rejectFor === a.id ? (
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <input value={reason} onChange={e => setReason(e.target.value)} placeholder="เหตุผลที่ตีกลับ (บังคับ)" style={{ flex: 1, minWidth: 200 }} />
-                    <button type="button" style={{ ...btnGhost, color: 'var(--red)' }} onClick={() => reject(a)}>ยืนยันตีกลับ</button>
-                    <button type="button" style={btnGhost} onClick={() => { setRejectFor(null); setReason(''); }}>ยกเลิก</button>
+                    <input value={reason} onChange={e => setReason(e.target.value)} placeholder={tr('เหตุผลที่ตีกลับ (บังคับ)')} style={{ flex: 1, minWidth: 200 }} />
+                    <button type="button" style={{ ...btnGhost, color: 'var(--red)' }} onClick={() => reject(a)}>{tr('ยืนยันตีกลับ')}</button>
+                    <button type="button" style={btnGhost} onClick={() => { setRejectFor(null); setReason(''); }}>{tr('ยกเลิก')}</button>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <button type="button" style={btnPrimary} onClick={() => approve(a)}>อนุมัติ</button>
-                    <button type="button" style={btnGhost} onClick={() => { setRejectFor(a.id); setReason(''); }}>ตีกลับ</button>
+                    <button type="button" style={btnPrimary} onClick={() => approve(a)}>{tr('อนุมัติ')}</button>
+                    <button type="button" style={btnGhost} onClick={() => { setRejectFor(a.id); setReason(''); }}>{tr('ตีกลับ')}</button>
                   </div>
                 )}
               </>) })
-            )) : <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>ไม่มีประกาศรออนุมัติ</div>}
+            )) : <div style={{ ...card, color: 'var(--muted)', fontSize: 13 }}>{tr('ไม่มีประกาศรออนุมัติ')}</div>}
           </div>
           {renderInbox({ to: 'evp', title: `แจ้งเตือนของ ${APPROVER}` })}
         </div>
@@ -361,11 +362,11 @@ export default function AnnouncementMockup() {
       {tab === 'board' && (
         <div style={{ display: 'grid', gap: 12 }}>
           <div style={{ ...card, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13 }}>ดูในฐานะพนักงานของ</span>
+            <span style={{ fontSize: 13 }}>{tr('ดูในฐานะพนักงานของ')}</span>
             <OrgScopePicker index={index} failed={failed} value={myUnit} onChange={(v) => { setMyUnit(v); setMeId(''); }} costCenter={false} plantLabel="— เลือกหน่วยงานของพนักงาน —" />
             <select value={meId} onChange={e => setMeId(e.target.value)} disabled={!myPeople.length} style={{ width: 240 }}>
-              <option value="">{myPeople.length ? '— ฉันคือ (รายชื่อจำลอง) —' : 'หน่วยนี้ไม่มีรายชื่อจำลอง'}</option>
-              {myPeople.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+              <option value="">{myPeople.length ? tr('— ฉันคือ (รายชื่อจำลอง) —') : tr('หน่วยนี้ไม่มีรายชื่อจำลอง')}</option>
+              {myPeople.map(e => <option key={e.id} value={e.id}>{tr(e.name)}</option>)}
             </select>
             <span style={{ fontSize: 12, color: 'var(--muted)' }}>
               ประกาศที่ขึ้น = อนุมัติแล้ว + ถึงวันมีผล ({fmtDate(today)}) + ผู้รับครอบหน่วยนี้
@@ -378,8 +379,8 @@ export default function AnnouncementMockup() {
               annRow({ a, children: (<>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   {at
-                    ? <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--green)' }}>✓ {me.name} รับทราบแล้ว ({fmtDate(at)})</span>
-                    : <button type="button" style={btnPrimary} disabled={!me} onClick={() => acknowledge(a)}>รับทราบ</button>}
+                    ? <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--green)' }}>✓ {me.name} {tr('รับทราบแล้ว (')}{fmtDate(at)})</span>
+                    : <button type="button" style={btnPrimary} disabled={!me} onClick={() => acknowledge(a)}>{tr('รับทราบ')}</button>}
                   {!me && <span style={{ fontSize: 12, color: 'var(--muted)' }}>เลือก "ฉันคือ" ก่อนจึงกดรับทราบได้</span>}
                 </div>
               </>) })

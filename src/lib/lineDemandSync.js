@@ -14,6 +14,7 @@ import { SESSION_STATUSES_LIVE } from '../utils/sessionStatus';
 import { madeHereMats } from '../utils/partRefStock';
 import { planLineRequest } from '../utils/packRound';
 import { isCoilUom } from '../utils/coilUom';
+import { isFgMat, FG_NO_LINE_REQUEST } from '../utils/storeOps';   // 🚫 ไม่มี FG เข้าไลน์ (13/11)
 import { planConfirmText } from '../utils/linePlanText';
 import { getActor } from '../utils/actorStamp';
 import { can } from '../utils/permissions';
@@ -192,8 +193,8 @@ export async function confirmAndSyncLineDemand({ lineName, role, extra = [], tit
   const dry = await syncLineOrderDemand({ lineName, role, extra, dryRun: true });
   if (dry.error) return dry;
   /* ไม่มีอะไรต้องคิด: ไม่มีใบผลิต = เงียบได้ · ใบผลิตไม่มี BOM = ต้องบอก (แตกไม่ได้ ไม่ใช่ "ของพอ") */
-  if (!dry.rows.length && !dry.noBom?.length && !dry.opUnset?.length) return dry;
-  const { text, sendCount } = planConfirmText(dry.rows, { title, focus, area: dry.area, noBom: dry.noBom, opUnset: dry.opUnset });
+  if (!dry.rows.length && !dry.noBom?.length && !dry.opUnset?.length && !dry.fgSkipped?.length) return dry;
+  const { text, sendCount } = planConfirmText(dry.rows, { title, focus, area: dry.area, noBom: dry.noBom, opUnset: dry.opUnset, fgSkipped: dry.fgSkipped });
   if (!sendCount) { alertFn(text); return { ...dry, nothingToSend: true }; }
   if (!confirmFn(text)) return { ...dry, cancelled: true };
   return syncLineOrderDemand({ lineName, role, extra });
@@ -232,6 +233,13 @@ export async function syncLineOrderDemand({ lineName, role, extra = [], dryRun =
   };
   od.need.forEach((v, m) => add(m, v.need, v.part_name, true));
   (extra || []).forEach(x => add(x.mat_no, Number(x.need) || 0, x.part_name, false, !x.viaBom));
+  /* 🚫 ไม่มี FG เข้าไลน์ (13/11 · utils/storeOps.js) — ขอตรง = ไม่เขียน + บอก (แบบเดียวกับ coil) ·
+     มาจาก BOM = ข้ามแล้วรายงาน (BOM ที่มีลูกเป็น 1xx = ข้อมูล BOM ผิด ให้ PE แก้ ห้ามแก้ bom_items ให้เอง) */
+  const fgMats = [...need.keys()].filter(m => isFgMat(m));
+  const fgDirect = fgMats.filter(m => need.get(m).direct);
+  if (fgDirect.length) return { ...empty, error: `${fgDirect.join(', ')} — ${FG_NO_LINE_REQUEST}` };
+  fgMats.forEach(m => need.delete(m));
+  empty.fgSkipped = fgMats;
   const mats = [...need.keys()];
   if (!mats.length) return { ...empty };   // area/orders/noBom ติดไปด้วย — จอต้องบอกได้ว่า "ไม่มีใบ" หรือ "ใบไม่มี BOM"
 
@@ -268,7 +276,7 @@ export async function syncLineOrderDemand({ lineName, role, extra = [], dryRun =
       pendPickQty: Number(p?.pick?.request_qty) || 0, pendPickLine: p?.pick?.line_name || null,
       ...planLineRequest({ need: n.need, onHand: onHand.get(m) ?? 0, pendingQty: p?.sum, pkg: pkgOf.get(m), coil: coil.has(m) }), uom: coil.has(m) ? 'KG' : null };
   });
-  const res = { rows, inserted: 0, raised: 0, dup: 0, raceSkipped: 0, writeErrors: [], area, orders: od.orders, noBom: od.noBom, opUnset: od.opUnset };
+  const res = { rows, inserted: 0, raised: 0, dup: 0, raceSkipped: 0, writeErrors: [], area, orders: od.orders, noBom: od.noBom, opUnset: od.opUnset, fgSkipped: fgMats };
   if (dryRun) return res;
   const who = getActor();
   for (const r of rows) {
@@ -310,6 +318,7 @@ export function syncSummaryText(r) {
   if (r.raceSkipped) parts.push(`${r.raceSkipped} พาร์ทไม่ได้เพิ่มยอด (ใบถูกแก้/หยิบไปก่อน) — กดซ้ำอีกครั้ง`);
   if (r.writeErrors.length) parts.push(`เขียนไม่สำเร็จ ${r.writeErrors.length}: ${r.writeErrors[0]}`);
   if (r.noBom?.length) parts.push(`${r.noBom.length} ใบผลิตไม่มีลูกใน BOM (${r.noBom.slice(0, 3).map(x => x.mat_no).join(', ')}) — แตกไม่ได้ แจ้ง PE ตั้ง BOM`);
+  if (r.fgSkipped?.length) parts.push(`${r.fgSkipped.length} พาร์ทใน BOM เป็นเลข FG 1xx (${r.fgSkipped.slice(0, 3).join(', ')}) — ไม่เบิกเข้าไลน์ แจ้ง PE ตรวจ BOM`);
   if (r.opUnset?.length) parts.push(`${r.opUnset.length} ใบขั้น OP ยังไม่ได้ผูกว่ากินอะไร (${r.opUnset.slice(0, 3).map(x => x.mat_no).join(', ')}) — ตั้งที่ /products แท็บ BOM ใบของแม่ → แผง 🔩 ขั้น OP`);
   return parts.join(' · ') || (r.orders === 0 ? 'ไม่มีใบผลิตเปิดอยู่ในพื้นที่นี้' : 'ของในพื้นที่พอ — ไม่ต้องเบิก');
 }

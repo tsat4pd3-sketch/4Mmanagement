@@ -12,6 +12,7 @@ import { teamsForUser } from '../utils/mtnTeams';
 import SparePartMaster from '../components/SparePartMaster';
 import RackMap from '../components/RackMap';
 
+import { tr } from '../utils/i18n';
 /* ══ 🧰 ศูนย์ทะเบียนอุปกรณ์ — รวม "ของที่ช่างดูแล" ไว้ที่เดียว ══════════════  2026-09-22
 
    ที่มา (คำสั่ง user): *"ลองเช็คฟังก์ชันของช่างที เหมือนไปกระจายอยู่หลายหน้า"*
@@ -77,7 +78,7 @@ function SparePanel({ view }) {
   // stale-response guard — สลับแท็บไปมาแล้วคำตอบเก่ากลับมาทีหลัง ต้องไม่เขียนทับ (กฎเหล็กข้อ 4)
   useEffect(() => { let alive = true; load().then(() => { if (!alive) return; }); return () => { alive = false; }; }, [load]);
 
-  if (loading) return <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>⏳ กำลังโหลดทะเบียนอะไหล่…</div>;
+  if (loading) return <div style={{ padding: 30, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>{tr('⏳ กำลังโหลดทะเบียนอะไหล่…')}</div>;
   return view === 'rack'
     /* ผังคลัง = ส่วนหนึ่งของทะเบียนอะไหล่ ⇒ `spare_master` แก้ได้ด้วย (14/10) */
     ? <RackMap parts={parts} canEdit={can('mtn_repair', 'manage_master', role) || can('mtn_repair', 'spare_master', role)} myTeams={userTeams} mySection={mySection} />
@@ -102,19 +103,19 @@ export default function EquipmentHub() {
   return (
     <Page>
         {/* หัว + แท็บ มาตรฐาน (UI §6.8) — เดิมวาดเอง ทำให้ 3 แท็บหน้าตาคนละแบบ (ภาพ user 22/09) */}
-        <PageHeader title="ทะเบียนอุปกรณ์ (ของที่ช่างดูแล)" icon="🧰"
-          sub={cur?.hint || 'เครื่องจักร · แม่พิมพ์ · JIG/Fixture · อะไหล่ — รวมไว้ที่เดียว'}
+        <PageHeader title={tr('ทะเบียนอุปกรณ์ (ของที่ช่างดูแล)')} icon="🧰"
+          sub={tr(cur?.hint) || tr('เครื่องจักร · แม่พิมพ์ · JIG/Fixture · อะไหล่ — รวมไว้ที่เดียว')}
           tabs={available.map(t => ({ key: t.key, label: t.label }))} tab={active} onTab={setActive} />
         {/* ไม่มีสิทธิ์สักแท็บ = ต้องบอกว่าทำไม ห้ามปล่อยจอว่าง (UI-CONVENTIONS §6.9) */}
         {!available.length && (
           <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 13, border: '1px dashed var(--border2)', borderRadius: 'var(--r-md)' }}>
             บัญชีนี้ยังไม่มีสิทธิ์เข้าทะเบียนอุปกรณ์ตัวไหนเลย — ให้ admin เปิดสิทธิ์หน้า
-            <b style={{ color: 'var(--text2)' }}> ฐานข้อมูลเครื่องจักร / ทะเบียนแม่พิมพ์ / Fixture / แจ้งซ่อม MTN </b>
+            <b style={{ color: 'var(--text2)' }}> {tr('ฐานข้อมูลเครื่องจักร / ทะเบียนแม่พิมพ์ / Fixture / แจ้งซ่อม MTN')} </b>
             ที่ <b style={{ color: 'var(--text2)' }}>/permissions</b>
           </div>
         )}
       <Hub>
-      <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลด…</div>}>
+      <Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>{tr('กำลังโหลด…')}</div>}>
         {active === 'machine' && <MachineDatabase />}
         {active === 'die' && <DieRegistry />}
         {active === 'jig' && <FixtureRegistry />}

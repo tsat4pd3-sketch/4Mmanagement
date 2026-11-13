@@ -19,6 +19,7 @@ import { usePolling } from '../utils/usePolling';
 import { RATE } from '../utils/refreshRates';
 import { statusColor } from '../utils/statusTone';
 
+import { tr } from '../utils/i18n';
 const card = { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: 14 };
 const SHOW = 6;   // จอ TV ไม่มีใครเลื่อน — เกินนี้พับเป็น "+ อีก N ไลน์" (บอกยอดที่ซ่อนเสมอ)
 const names = (arr, n = 3) => (arr.length > n ? `${arr.slice(0, n).join(', ')} +${arr.length - n}` : arr.join(', '));
@@ -107,15 +108,15 @@ export default function ProdRoutineCard({ data, navigate, big = 1 }) {
 
   return (<>
     <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-      <span style={{ fontSize: 13 * big, fontWeight: 900 }}>งานประจำกะที่ยังไม่ทำ</span>
-      {shift && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{shift.label} · {shift.workDateStr} · เฉพาะไลน์ที่เปิดกะ ({openInScope ?? 0})</span>}
+      <span style={{ fontSize: 13 * big, fontWeight: 900 }}>{tr('งานประจำกะที่ยังไม่ทำ')}</span>
+      {shift && <span style={{ fontSize: 11, color: 'var(--muted)' }}>{tr(shift.label)} · {shift.workDateStr} {tr('· เฉพาะไลน์ที่เปิดกะ (')}{openInScope ?? 0})</span>}
     </div>
     {errs.length > 0 && (
       <div style={{ ...card, borderColor: bad, color: bad, fontSize: 12.5 }}>
         ⚠ ดึงงานประจำกะไม่ครบ — รายการด้านล่างอาจไม่ครบ ({errs.join(' · ')})
       </div>
     )}
-    {!loaded && !errs.length && <div style={{ ...card, color: 'var(--muted)', fontSize: 12.5 }}>กำลังโหลดงานประจำกะ…</div>}
+    {!loaded && !errs.length && <div style={{ ...card, color: 'var(--muted)', fontSize: 12.5 }}>{tr('กำลังโหลดงานประจำกะ…')}</div>}
     {loaded && !errs.length && !rows.length && (
       <div style={{ ...card, textAlign: 'center', padding: 18, fontSize: 13 * big, fontWeight: 800, color: openInScope ? good : 'var(--muted)' }}>
         {openInScope ? '✅ ไลน์ที่เปิดกะทำงานประจำครบแล้ว' : 'ยังไม่มีไลน์ไหนเปิดกะ — ยังไม่ต้องทำงานประจำกะ'}
@@ -143,7 +144,7 @@ export default function ProdRoutineCard({ data, navigate, big = 1 }) {
     )}
     {counts && rows.length > 0 && (
       <div style={{ fontSize: 11, color: 'var(--muted)' }}>
-        รวม: AM ค้าง {counts.am} เครื่อง (เลยกรอบ {counts.amLate}) · Poka-Yoke ค้าง {counts.poka} จุด · LPA ค้าง {counts.lpa} ชั้น
+        รวม: AM ค้าง {counts.am} {tr('เครื่อง (เลยกรอบ')} {counts.amLate}) · Poka-Yoke ค้าง {counts.poka} {tr('จุด · LPA ค้าง')} {counts.lpa} ชั้น
       </div>
     )}
   </>);

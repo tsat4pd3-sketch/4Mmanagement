@@ -18,6 +18,7 @@ import { getPushState, subscribePush } from '../utils/webpush';
 import { pushPromptCopy, snoozeUntil, isSnoozed } from '../utils/pushPrompt';
 import { toast } from './Toast';
 
+import { tr } from '../utils/i18n';
 export default function MobilePushPrompt({ userId }) {
   const isMobile = useIsMobile();
   const [state, setState] = useState(null);
@@ -65,13 +66,13 @@ export default function MobilePushPrompt({ userId }) {
           <button onClick={enable} disabled={busy}
             style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--accent-ink)', background: 'var(--accent)',
                      border: 'none', borderRadius: 'var(--r-md)', padding: '5px 12px', cursor: busy ? 'default' : 'pointer' }}>
-            {busy ? 'กำลังเปิด…' : c.cta}
+            {busy ? tr('กำลังเปิด…') : c.cta}
           </button>
         )}
         <button onClick={snooze}
           style={{ fontSize: 11, color: 'var(--muted)', background: 'none', border: 'none',
                    cursor: 'pointer', padding: 0, textDecoration: 'underline', whiteSpace: 'nowrap' }}>
-          ไว้ก่อน
+          {tr('ไว้ก่อน')}
         </button>
       </span>
     </div>
