@@ -88,7 +88,7 @@ const PAGE_GROUPS = [
   {
     group: 'พนักงาน & ทักษะ',
     pages: [
-      { key: 'page:/register',      label: 'เพิ่มพนักงาน' },
+      { key: 'page:/register',      label: 'เพิ่มพนักงาน (แท็บ ➕ ใน ฐานข้อมูลพนักงาน — ต้องมี employees:register ด้วยจึงเห็นแท็บ)' },
       { key: 'page:/operator',      label: 'ฐานข้อมูลพนักงาน' },
       { key: 'page:/ojt-training',  label: 'อบรมสอนงาน OJT' },
       { key: 'page:/skills-report', label: 'Skill Matrix & ค่าฝีมือ' },

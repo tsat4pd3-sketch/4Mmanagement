@@ -65,6 +65,8 @@ const EN = {
   'บอร์ด New Model (IEC)': 'New Model Board (IEC)',
   'RFQ / เสนอราคา (Marketing)': 'RFQ / Quotation (Marketing)',
   'เพิ่มพนักงาน': 'Add Employee',
+  '➕ เพิ่มพนักงาน': '➕ Add Employee',
+  'เพิ่มพนักงาน (แท็บ ➕ ใน ฐานข้อมูลพนักงาน — ต้องมี employees:register ด้วยจึงเห็นแท็บ)': 'Add Employee (➕ tab in Employee Database — the tab also needs employees:register)',
   'ฐานข้อมูลพนักงาน': 'Employee Database',
   'อบรมสอนงาน OJT': 'OJT Training',
   'Skill Matrix & ค่าฝีมือ': 'Skill Matrix & Skill Pay',

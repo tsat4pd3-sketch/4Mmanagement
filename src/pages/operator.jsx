@@ -14,7 +14,7 @@ import { loadLinesRes, loadProductionLines } from '../utils/useProductionLines';
 import resizeImg from '../utils/resizeImage';
 import { fmtDateMedium } from '../utils/dateFormat';
 import ImageCropModal from '../components/ImageCropModal';
-import { can, isActionSeeded, canDelete as canDeleteUtil } from '../utils/permissions';
+import { can, isActionSeeded, canDelete as canDeleteUtil, hasPermission } from '../utils/permissions';
 import { canWriteUnit, writeBlockText } from '../utils/writeScope';   // 🔐 ชั้นที่ 3 — ทะเบียนนิยามสกิลเป็นของส่วนงาน (20/10)
 import {
   inSectionScope, ORPHAN_SECTION, ORPHAN_SECTION_LABEL,
@@ -30,7 +30,10 @@ import { costCenterOfNode } from '../utils/ccScope';   // กฎ "CC ของ�
 import { pickUnusedColor } from '../utils/colorPick';
 import { teamLabel } from '../utils/shiftAssign';
 import PageHeader from '../components/PageHeader';
-import Page from '../components/Page';
+import Page, { Hub } from '../components/Page';
+/* ➕ ฟอร์มเพิ่มพนักงาน = หน้า /register เดิม embed ทั้งดุ้น (pattern เดียวกับ /equipment · ไม่แก้ของเดิม)
+   13/11 · คำสั่ง user "ยุบละย้ายเพิ่มพนักงานเข้าไปในหน้าฐานข้อมูล" */
+import RegisterEmployeeForm from './Register';
 import FilterBar from '../components/FilterBar';
 import SearchInput from '../components/SearchInput';
 import { ALL, allOf } from '../utils/filterLabels';
@@ -84,7 +87,9 @@ const getEmpGrade = (code = '') => {
 };
 
 // ชื่อแท็บใน URL (?tab=) — index ต้องตรงกับที่เนื้อหาอ้าง tab === n
-const TAB_KEYS = ['employees', 'skills', 'levelup'];
+/* 🔴 ต่อท้ายเท่านั้น — เนื้อหาอ้าง `tab === n` ตรงๆ แทรกกลางคือสลับแท็บทั้งหน้า (QC audit 03/08)
+   'add' = แท็บ ➕ เพิ่มพนักงาน (ยุบหน้า /register เข้ามา 13/11) */
+const TAB_KEYS = ['employees', 'skills', 'levelup', 'add'];
 
 export default function Operator() {
   const { role, lineId: userLineId, section: userSection, sections: scopeSecs = [], fullName,
@@ -1055,6 +1060,10 @@ export default function Operator() {
           [0, '👥 พนักงาน', true],
           [1, '⚙️ กำหนดสกิล', can('skills', 'edit', role)],
           [2, '⬆️ Level Up', can('skills', 'approve_levelup', role) || can('skills', 'approve_levelup_100', role)],
+          /* ➕ โผล่ตามสิทธิ์หน้าเดิม `page:/register` **และ** ต้องกดบันทึกได้จริง (`employees:register`)
+             — เดิม role `qa` เห็นเมนู "เพิ่มพนักงาน" แต่กดบันทึกไม่ได้ (ฟอร์มบล็อก) = เมนูหลอก
+             คนที่ไม่มีสิทธิ์ย่อยไม่เห็นแท็บ ⇒ ไม่มีข้อมูลใหม่หลุดให้ใคร (เหมือน EquipmentHub) */
+          [3, '➕ เพิ่มพนักงาน', hasPermission('page:/register', role) && can('employees', 'register', role)],
         ].filter(([, , show]) => show).map(([i, t]) => ({
           key: TAB_KEYS[i], label: t,
           badge: i === 2 && levelUpRequests.length > 0 ? levelUpRequests.length : undefined,
@@ -1937,6 +1946,12 @@ export default function Operator() {
           )}
         </div>
       )}
+
+      {/* ➕ เพิ่มพนักงาน — หน้า /register เดิมทั้งดุ้น (13/11 · คำสั่ง user "ยุบละย้ายเข้าหน้าฐานข้อมูล")
+          แท็บนี้โผล่เฉพาะคนที่มีสิทธิ์หน้าเดิม + กดบันทึกได้จริง (เช็คที่แถวแท็บด้านบน)
+          ⚠️ ด่านจริงของการเขียน DB อยู่ในฟอร์มเอง (`can('employees','register')` + ขอบเขตส่วนงาน)
+             แท็บเป็นแค่ทางเข้า ห้ามถือว่าเห็นแท็บ = เขียนได้ */}
+      {tab === 3 && <Hub><RegisterEmployeeForm embedded onSaved={fetchEmployees} /></Hub>}
 
       {/* การ์ดสรุปทักษะรายบุคคล — component เดียวกับหน้า Skill Matrix (radar + พิมพ์ใบ F-PRS-P1-119) */}
       {radarEmp && (

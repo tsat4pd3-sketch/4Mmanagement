@@ -62,7 +62,6 @@ import { ROT_NAV_STATE, skipSplash, isTvShell } from './utils/displayRotation'; 
 const ImageCropModal = lazy(() => import('./components/ImageCropModal'));
 const ViewAsModal = lazy(() => import('./components/ViewAsModal')); // 🎭 admin จำลองมุมมอง role อื่น
 
-const Register     = lazy(() => import('./pages/Register'));
 const Checkin      = lazy(() => import('./pages/Checkin'));
 const Management   = lazy(() => import('./pages/Management'));
 const Dashboard    = lazy(() => import('./pages/Dashboard'));
@@ -258,7 +257,10 @@ export const NAV_ITEMS = [
 
   { to: '/report',        icon: '📋', label: 'รายงาน',            group: 'วิเคราะห์ & รายงาน' },
 
-  { to: '/register',   icon: '➕', label: 'เพิ่มพนักงาน',      group: 'พนักงาน & ทักษะ' },
+  /* ➕ "เพิ่มพนักงาน" ยุบเข้าเป็นแท็บใน /operator แล้ว (13/11 · คำสั่ง user "ยุบละย้ายเพิ่มพนักงาน
+     เข้าไปในหน้าฐานข้อมูล") — /operator ไม่มีทางเพิ่มคนเลย ส่วน /register เป็นฟอร์มเดียว
+     ⇒ "เพิ่มพนักงาน" คือปุ่มของ "ฐานข้อมูลพนักงาน" ไม่ใช่เมนูพี่น้อง · route เดิม redirect เข้าแท็บ
+     🔴 ห้ามเติมเมนูนี้กลับโดยไม่ถาม user */
   { to: '/operator',   icon: '👥', label: 'ฐานข้อมูลพนักงาน',  group: 'พนักงาน & ทักษะ' },
   { to: '/ojt-training', icon: '📖', label: 'อบรมสอนงาน OJT',   group: 'พนักงาน & ทักษะ' },
   { to: '/skills-report', icon: '🏅', label: 'Skill Matrix & ค่าฝีมือ', group: 'พนักงาน & ทักษะ' },
@@ -2197,9 +2199,7 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               <Route path="/workforce-insight" element={
                 <RoleRoute path="/workforce-insight" userRole={role}><WorkforceInsight /></RoleRoute>
               } />
-              <Route path="/register"   element={
-                <RoleRoute path="/register" userRole={role}><Register /></RoleRoute>
-              } />
+              <Route path="/register"   element={<LegacyTabRedirect to="/operator" tab="add" />} />
               <Route path="/operator"   element={
                 <RoleRoute path="/operator" userRole={role}><Operator /></RoleRoute>
               } />
