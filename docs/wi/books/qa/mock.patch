@@ -1,6 +1,6 @@
 --- a/mock.js
 +++ b/mock.js
-@@ -466,6 +466,8 @@
+@@ -501,6 +501,8 @@
      qty_received: i % 4 === 0 ? 55 : null, diff_reason: i % 4 === 0 ? 'ของเสีย 5' : null,
      received_by: i % 4 === 0 ? 'สมชาย ใจดี' : null, received_at: i % 4 === 0 ? new Date().toISOString() : null,
    }),
@@ -9,7 +9,7 @@
    child_lot_requests: (r, i) => ({
      ...r, source_line: FAM_LINE, child_mat_no: `1010${1001 + (i % 3)}`, seq_no: i,
      lot_qty: isNullish(r) ? null : 14,
-@@ -985,6 +987,47 @@
+@@ -1042,6 +1044,62 @@
     ไม่มีแถวนี้ = DisplayRotator ไม่ active ⇒ "พอดีจอ/แบ่งส่วน/รอหน้าย่อย" ไม่เคยถูกรันในฮาร์เนส
     ไม่ใส่ ?rot = พฤติกรรมเดิม (แถวกลาง ROWS → แผนไม่ active) */
  const ROT_PATHS = typeof location !== 'undefined' ? (new URLSearchParams(location.search).get('rot') || '') : ''
@@ -38,6 +38,21 @@
 +    issue_description: _ST(['เปลี่ยน Tip', 'Robot Alarm', 'ไฟดับ'], i), overall_status: _ST(['pending', 'in_progress', 'approved', 'in_progress'], i),
 +    cqi15_event_definitions: { event_no: (i % 6) + 1, category: _ST(['A', 'B', 'C'], i), name_th: _ST(['เปลี่ยน Tip/Cap', 'ซ่อม/ปรับ Fixture', 'ไฟดับ/ลมดับ'], i), name_en: 'Event' },
 +    cqi15_event_approvals: [{ role_key: 'O', status: 'approved' }, { role_key: 'QT', status: 'pending' }] }),
++  /* WI-QA: ถังเหลือง/แดง — คละขั้น 2/3/4/5 ของสายใบเหลือง (แบบใบ MO) ให้ปุ่มทุกขั้นโผล่ในคิว */
++  quality_bin_records: (r, i) => {
++    const K = { 1: ['yellow', null], 2: ['yellow', 'repair', 1], 3: ['yellow', 'repair'], 4: ['red'], 5: ['yellow', null], 6: ['yellow', 'scrap'],
++      7: ['yellow', 'good', 2], 8: ['yellow', 'use_as_is'], 9: ['red'], 10: ['yellow', null], 11: ['yellow', 'repair', 1], 12: ['red'],
++      13: ['yellow', null], 14: ['yellow', null], 15: ['yellow', 'good', 2] }[i] || ['yellow', null];
++    const [bin, dec, done] = K;
++    return { ...r, bin, is_active: true, line_name: _ST(_QL, i), part_no: _ST(['MB3B 16E060 CH', 'MB3B 16E061 CH', 'KB3B 8C306 BC'], i),
++      part_name: _ST(['PANEL ASSY-COWL SIDE INNER RH', 'PANEL ASSY-COWL SIDE INNER LH', 'BRKT-BUMPER REINF'], i), mat_no: `2005${7000 + i}`,
++      qty: i === 14 ? null : 10 + (i % 4) * 5, cause: _ST(['รูไม่ตรงตำแหน่ง', 'ครีบเกิน', 'งานยุบ', 'เชื่อมไม่ติด'], i), reported_by: 'สมชาย ใจดี',
++      work_date: _recentDay(i === 1 ? 7 : i % 4), qa_decision: bin === 'red' ? null : dec, qa_by: dec ? 'QA ทดสอบ' : null,
++      repair_date: done ? _recentDay(0) : null, repair_by: done ? 'สมชาย ใจดี' : null, repair_detail: done ? 'เจียครีบตาม WI-PD3-018' : null,
++      qty_ok: done === 1 ? 8 + (i % 4) * 5 : null, qty_ng: done === 1 ? 2 : null, return_date: done === 2 ? _recentDay(0) : null,
++      repair_reject_note: null, repair_reject_count: 0, special_use_doc_no: null, from_yellow_id: bin === 'red' && i === 9 ? 'id-99' : null,
++      scrap_report_id: bin === 'red' && i === 9 ? 'id-1' : null, defect_log_id: `id-${i}`, found_img: null, repair_img: null };
++  },
 +});
 +Object.assign(TABLE_FIXED, {
 +  qa_fme_obligations: ROWS.slice(0, 2).map((r, k) => ({ ...r, stage: k ? 'middle' : 'first', due_at: '2026-11-03T10:00:00+07:00', part_id: 'id-1', status: 'pending', seq: 1 })),
