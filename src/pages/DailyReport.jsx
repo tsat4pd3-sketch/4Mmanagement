@@ -3296,7 +3296,10 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
         ไม่มีทางรู้จักทีม และไฟล์ 57 KB แก้ผ่าน MCP ไม่ได้ (กฎใน docs/modules/edge-functions.md) */
   const handleCallMtn = async (d, team) => {
     if (d.call_mtn) return;
-    const teamKey = teamKeyOf(team) || 'maintenance';   // ว่าง = ไม่กรองทีม → กลับไปเด้งทั้งโรงงาน ห้ามปล่อย
+    /* 🔴 13/11 — ไม่เลือกทีม = ไม่เรียก (เดิมถอยไป 'maintenance' เงียบๆ ⇒ ส่งผิดทีมบ่อย
+       และตอนนี้ฐานเปิดใบ MO ตามทีมนี้ด้วย ⇒ ใบไปผิดคิวตามไปอีก) */
+    const teamKey = teamKeyOf(team);
+    if (!teamKey) { toast.error('เลือกทีมช่างก่อน — เรียกผิดทีมแล้วช่างที่ถูกไม่ได้รับแจ้ง'); return; }
     /* นับแถว — ถ้าเขียนไม่ติดแล้วยิงแจ้งเตือนต่อ ช่างจะมาโดยที่ใบไม่มีประวัติ "เรียกเมื่อไหร่/ใครเรียก"
        และปุ่มยังกดซ้ำได้เรื่อยๆ (กฎเขียน DB ข้อ 2) */
     const ok = checkWriteRows(await supabaseDR.from('downtime_logs').update({
@@ -4657,7 +4660,7 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                       {canScan && d.duration_min == null && !d.ended_at && d.dr_downtime_types?.category !== 'planned' && (
                         d.call_mtn
                           ? <span title={`เรียกช่างแล้ว${d.call_mtn_by ? ` โดย ${d.call_mtn_by}` : ''}`} style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', background: 'var(--green-dim)', border: '1px solid var(--green-line)', borderRadius: 'var(--r-pill)', padding: '3px 9px', whiteSpace: 'nowrap' }}>{tr('📞 เรียกช่างแล้ว')}</span>
-                          : <button onClick={() => setMoDtPick({ d, team: teamForMachine(d.machine_no, machines), mode: 'call' })} title={tr('แจ้งช่าง MTN ให้เข้าหน้างานทันที — เลือกทีมช่างก่อน')} style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: 'var(--red)', border: 'none', borderRadius: 'var(--r-md)', padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>{tr('เรียกช่าง')}</button>
+                          : <button onClick={() => setMoDtPick({ d, team: '', hint: teamForMachine(d.machine_no, machines) || '', mode: 'call' })} title={tr('แจ้งช่าง MTN ให้เข้าหน้างานทันที — เลือกทีมช่างก่อน')} style={{ fontSize: 11, fontWeight: 800, color: '#fff', background: 'var(--red)', border: 'none', borderRadius: 'var(--r-md)', padding: '4px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>{tr('เรียกช่าง')}</button>
                       )}
                       {/* เปิดใบแจ้งซ่อม MO จาก downtime — เฉพาะ "นอกแผน" (ในแผน เช่น Set up/รอ QA/5ส. ไม่ใช่เหตุเครื่องเสีย — คำสั่ง user 2026-07-24) */}
                       {canScan && can('mtn_repair', 'report', role) && d.dr_downtime_types?.category !== 'planned' && (
@@ -4808,6 +4811,12 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 {moDtPick.mode === 'call'
                   ? 'แจ้งเฉพาะช่างทีมที่เลือก + หัวหน้า/ผจก.ของส่วนงานนี้ (ทีมอื่นไม่ถูกรบกวน)'
                   : 'ใบซ่อมจะถูกส่งเข้าคิว + แจ้งเตือนของทีมที่เลือก'}
+                {/* 💡 ทีมที่ทะเบียนเครื่องบอก — บอกเฉยๆ **ไม่กดให้** (ต้องเลือกเองทุกครั้ง) */}
+                {moDtPick.hint && !moDtPick.team && (
+                  <div style={{ marginTop: 4, color: 'var(--amber)' }}>
+                    💡 {tr('ทะเบียนเครื่องนี้อยู่ทีม')} <b>{deptNameOf(moDtPick.hint)}</b> — {tr('ถ้าใช่ กดเลือกด้านล่าง')}
+                  </div>
+                )}
               </div>
               <div className="mgrid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: moDtPick.mode === 'call' ? 16 : 12 }}>
                 {MTN_TEAMS.map(t => (
@@ -4822,9 +4831,18 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => setMoDtPick(null)} style={{ flex: 1, padding: '10px 0', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg2)', color: 'var(--muted)', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>{tr('ยกเลิก')}</button>
                 {/* ป๊อปอัพนี้เหลือทาง "เรียกช่าง" ทางเดียว — เปิดใบซ่อมย้ายไปฟอร์มเต็ม MoReportFromDowntime (08/11) */}
-                <button disabled={moSaving} onClick={() => handleCallMtn(moDtPick.d, moDtPick.team)}
-                  style={{ flex: 2, padding: '10px 0', borderRadius: 'var(--r-md)', border: 'none', background: pickColor, color: '#fff', fontSize: 13, fontWeight: 800, cursor: moSaving ? 'wait' : 'pointer', opacity: moSaving ? 0.6 : 1 }}>
-                  {moSaving ? 'กำลังเปิดใบ…' : `${moDtPick.mode === 'call' ? 'เรียก' : 'เปิดใบซ่อม →'} ${deptNameOf(moDtPick.team)}`}
+                {/* 🔴 ยังไม่เลือกทีม = กดไม่ได้ (13/11 · คำสั่ง user "ให้บังคับต้องเลือก ไม่ออโต้ MTN")
+                    เดิมปุ่มกดได้เสมอ แล้ว handleCallMtn ถอยไป 'maintenance' เงียบๆ เมื่อเดาทีมไม่ออก
+                    ⇒ กดเร็วๆ = เรียก MTN ทั้งที่งานเป็นของ JIG/DIE · ตอนนี้ใบ MO ก็ถูกเปิดตามทีมนี้ด้วย */}
+                <button disabled={moSaving || !moDtPick.team} onClick={() => handleCallMtn(moDtPick.d, moDtPick.team)}
+                  style={{ flex: 2, padding: '10px 0', borderRadius: 'var(--r-md)', border: 'none',
+                           background: moDtPick.team ? pickColor : 'var(--bg2)',
+                           color: moDtPick.team ? '#fff' : 'var(--muted)', fontSize: 13, fontWeight: 800,
+                           cursor: moSaving ? 'wait' : (moDtPick.team ? 'pointer' : 'not-allowed'),
+                           opacity: moSaving ? 0.6 : 1 }}>
+                  {moSaving ? tr('กำลังเปิดใบ…')
+                    : !moDtPick.team ? tr('↑ เลือกทีมช่างก่อน')
+                    : `${moDtPick.mode === 'call' ? 'เรียก' : 'เปิดใบซ่อม →'} ${deptNameOf(moDtPick.team)}`}
                 </button>
               </div>
             </div>
