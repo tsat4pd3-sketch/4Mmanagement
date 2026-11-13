@@ -126,6 +126,11 @@
 
 ข้อจำกัดของการวัด: DR หลายตาราง (`mtn_orders`, `production_sessions`, `customer_shipping_orders`) ไม่ stamp `actor_uid` ใน `audit_log` → ใช้คอลัมน์ผู้เซ็นในตารางแทนเท่าที่มี · ตาราง CQI-15 ไม่มี audit trigger
 
+### ✅ ทำแล้ว 13/11 — ตัด 16 คีย์ที่เสนอ "ตัด" ออกจาก bucket
+user รัน SQL ใน Main เอง · ผลเช็ค 16 คีย์ `allowed=false` · สำรอง `archive.bk_dept_admin_bucket_20261113` (168 แถว) · migration `supabase/migrations/20261113_dept_admin_bucket_trim2_main.sql`
+คีย์ที่ระบุ **รอเคาะ** ในตารางบน ยังไม่แตะ · ผู้ถือ flag ต้อง login ใหม่สิทธิ์จึงมีผล
+⚠️ ตัดได้เฉพาะช่องทาง flag — supervisor/leader/mtn ยังได้ `employees:edit_all_sections`/`daily_report:*` จาก role ⇒ ยังต้องแก้ P1
+
 ### 4.2 บั๊กที่เจอระหว่างทาง (ฝากแก้)
 1. `skills:delete` ลบครึ่งเดียว — policy `skill_definitions` ต้อง `skills:edit` (`20261012_rls_round5…:148-150`) · `operator.jsx:794` เช็คแค่ `.error` ไม่นับแถว ⇒ ลบคะแนน/ข้อกำหนดไปแล้วแต่นิยามทักษะยังอยู่ ไม่มีอะไรเตือน (ขัดกฎ DB ข้อ 2)
 2. `line_setup:delete` ลบจุดงานไม่ได้ถ้าไม่มี `line_setup:edit` (`round8:56-58`)
@@ -141,6 +146,6 @@
 1. **P1-1** ย้าย `scope:all_units` เป็นรายคน — user ต้องเคาะรายชื่อ + เล่นซ้ำกับทะเบียนจริง (`scopeRegistryGate.test.mjs`)
 2. **P1-6** รวมแหล่ง "แก้หน่วยไหนได้" เป็นแหล่งเดียว ทั้ง JS (`writeUnitsOf`) และ SQL (`app_can_write_line`)
 3. **P1-2..5, P1-7** เดินทุกจุดผ่าน `canWriteUnit`/`canWriteLine`/`canWriteTeam` · ปิด policy เปิดโล่ง `four_m_logs`
-4. **§4** ตัดคีย์ใน bucket ตามที่ user เคาะ (SQL ร่างอยู่ในแชท 13/11 · ย้อนได้ด้วยตารางสำรองใน schema `archive`)
+4. **§4** ✅ ตัด 16 คีย์แล้ว 13/11 · เหลือคีย์ "รอเคาะ" + สร้าง bucket ใหม่จาก allow-list (§4.3)
 5. **§3** ยุบคีย์ที่ชื่อฝังขอบเขต · ปลด role `dept_scope` · แก้ป้าย `roleMeta.js` + `role-system.md`
 6. เพิ่มด่าน `regressionGuards`: ห้าม `role === 'manager'` ในตัวตัดสินขอบเขต · ห้ามคีย์ที่ชื่อฝังขอบเขตใหม่
