@@ -435,6 +435,22 @@ export function buildQueue(src = {}, me = {}, now = new Date()) {
   //    · โหลด/นับเฉพาะคนที่ **อนุมัติได้จริง** (`me.canLevelUp` < 100 · `me.canLevelUp100` ขั้น 100 — คีย์เดียวกับปุ่มใน /operator)
   //    · ชั้น `unit` **บรรทัดเดียวต่อขอบเขต** ห้ามแตกรายคำขอ (132 แถวท่วมคิว = ไม่มีใครอ่าน · บทเรียนกระดิ่ง)
   //    · ไม่ขึ้น badge (ไม่ใช่งานที่รอ "ตัวเรา" คนเดียว — หัวหน้าหลายคนกดได้)
+  /* ── 📐 RFQ รอ IEC ประเมินความเป็นไปได้ (เฟส 2a · 13/11) ─────────────────────────────
+     · ผู้รับ = ทุกคนที่มีสิทธิ์ rfq:assess (IEC ทั้งทีม · คำสั่ง user) ⇒ ชั้น `unit` รายใบ ไม่ขึ้น badge (ไม่ได้รอ "เรา" คนเดียว)
+     · RFQ ไม่มีส่วนงาน/ไลน์ ⇒ **ไม่ผ่าน keep()** โดยตั้งใจ (Marketing/IEC อยู่นอกผังส่วนงานผลิต) · อายุนับจากวันที่ MKT ส่งมา */
+  if (me.canRfqAssess) {
+    for (const r of need('rfqAssess', src.rfqAssess)) {
+      unit.push({
+        key: `rfqassess:${r.id}`, icon: '📐', tier: TIER.UNIT,
+        title: `RFQ ${r.rfq_no || '-'} — ${[r.customer, r.model].filter(Boolean).join(' ') || r.title || ''}`.trim(),
+        detail: `รอ IEC ประเมินความเป็นไปได้ (รอบ ${r.round ?? 1})${r.due_date ? ` · ส่งใบเสนอราคา ${r.due_date}` : ''}`,
+        age: ageDays(r.requested_at, now),
+        tag: r.priority === 'urgent' ? '🔴 ด่วน' : 'รอ IEC',
+        to: `/rfq?rfq=${r.rfq_id}`,
+      });
+    }
+  }
+
   if (me.canLevelUp || me.canLevelUp100) {
     const lu = need('levelUps', src.levelUps).filter(r => (Number(r.to_level) >= 100 ? me.canLevelUp100 : me.canLevelUp) && keep(r));
     if (lu.length) {

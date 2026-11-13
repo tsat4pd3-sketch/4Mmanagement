@@ -1,6 +1,6 @@
 # 💼 Marketing — Q-neX (E-Quotation) · ต้นน้ำของสายธาร Marketing → New Model → โรงงาน
 
-> **สถานะ: เฟส 1 ทำแล้ว 30/10 (§8) · เฟส 2-4 ยังไม่ลงมือ** · **user ตัดสินแล้ว (30/10): ESM = Q-neX เอง (โมดูลใน edition ก่อน SOP ร่วมกับ NM) · เริ่มเฟส 1 ตามที่เสนอ · Master Excel = `TS Cost Breakdown.xlsx`** (ตอบ §9 ข้อ 1 · 3)
+> **สถานะ: เฟส 1 ทำแล้ว 30/10 · เฟส 2a ทำแล้ว 13/11 (§8 · §10) · เฟส 2b-4 ยังไม่ลงมือ** · **user ตัดสินแล้ว (30/10): ESM = Q-neX เอง (โมดูลใน edition ก่อน SOP ร่วมกับ NM) · เริ่มเฟส 1 ตามที่เสนอ · Master Excel = `TS Cost Breakdown.xlsx`** (ตอบ §9 ข้อ 1 · 3)
 > ที่มา (user ส่ง 30/10 — *"ข้อมูลทั้งหมดที่ marketing ใช้งาน และจะทำงานร่วมกับ IEC"*):
 > 1. **POC for Q-neX Project** (เด็ค 22 หน้า ของฝ่าย Marketing) — 6 โมดูล + สูตรคำนวณ + test plan 12 ข้อ
 > 2. **Q-neX Project Flowchart 20261005** (`.mmd`/`.svg`/`.pdf`) — เก็บ source ไว้ที่ `docs/marketing/qnex-flowchart-20261005.mmd`
@@ -183,7 +183,8 @@
 | เฟส | ทำอะไร | ได้อะไร |
 |---|---|---|
 | **1 · ทะเบียน + รอยต่อ** ✅ **ทำแล้ว 30/10** | `mkt_rfqs`/`mkt_rfq_parts`/`mkt_awards` (ไฟล์ RFQ ยกไปเฟส 2) · หน้า `/rfq` (รายการ + ใบงาน) · CRD → สร้าง/ผูก NPI · Award → **ใบแจ้งจัดทำ F-MKT-001/002** · Model Report (won/lost) · role `marketing` · 📄 `docs/modules/mkt-rfq.md` | **สายธารต่อกันครบทั้ง 3 ข้อต่อเป็นครั้งแรก** — RFQ ↔ NPI ↔ ใบแจ้งจัดทำถึงโรงงาน · ปิด gap IEC §7.12 ด้วยฟอร์มจริง |
-| **2 · มอบงานแผนก + gate** | `mkt_rfq_tasks` · checklist gatekeeper · access matrix ต่อชนิดเอกสาร · คิวงานของฉัน + แจ้งเตือนในแอป | IEC/Purchasing เห็นงานในคิว · ขาดเอกสารบล็อก submit (TC-03/04) |
+| **2a · IEC มีของส่งกลับ** ✅ **ทำแล้ว 13/11** | เอกสารแนบ (`mkt_rfq_files` + bucket `mkt-files`) · model life · job type · ใบประเมิน IEC (`mkt_rfq_assessments`) · ด่านสถานะข้ามประเมินไม่ได้ · คิวงาน + แจ้งเตือน IEC (`rfq:assess` = engineer_nm) · 📄 `mkt-rfq.md` §5a | ตอบ feedback §10 ข้อ 1·3·5·6·7·8 — ขั้น "ประเมิน (IEC) ✗" กลายเป็น ✓ |
+| **2b · มอบงานแผนกอื่น + gate** | `mkt_rfq_tasks` · checklist gatekeeper · access matrix ต่อชนิดเอกสาร · คิวงานของฉัน + แจ้งเตือนในแอป | IEC/Purchasing เห็นงานในคิว · ขาดเอกสารบล็อก submit (TC-03/04) |
 | **3 · ต้นทุน + ใบเสนอราคา** | `mkt_rate_tables` · `mktCost.js` (①–⑤) · `mkt_cost_models` เวอร์ชัน · ใบเสนอราคา 2 ชั้นอนุมัติ · ส่งออกฟอร์ม OEM (Ford PP-P-F104c ก่อน) | TC-06..11 · ตรง Master Excel |
 | **4 · วัดย้อนกลับ** | KPI CSC "bidding vs actual" จาก RFQ ↔ พาร์ทจริง · ประมาณการ takt จากไลน์จริง | golden thread ที่ไม่มีระบบไหนในกลุ่มทำได้ |
 | ⛔ นอกกรอบ | OCR/auto-OEM · API ข้ามบริษัท · trigger SAP | รอ user สั่ง / รอสะพาน SAP |
@@ -205,3 +206,22 @@
 
 📄 เกี่ยวข้อง: `docs/IEC-NEW-MODEL-OBEYA-DESIGN.md` §7.12 (รอยต่อ NM→โรงงาน) · `docs/modules/nm-frontend-split.md` §4 (edition) ·
 `docs/modules/npi-apqp.md` · `docs/modules/doc-forms.md` · `docs/FINANCIAL-GAP-ANALYSIS.md` (ไม่มีสะพาน SAP)
+
+---
+
+## 10. Feedback จาก Marketing หลังทดลองใช้ `/rfq` (12/11 · โน้ตมือของ user — ถอดความ)
+
+| # | คอมเมนต์ (ถอดจากโน้ต) | สถานะวันนี้ | ไปอยู่เฟสไหน |
+|---|---|---|---|
+| 1 | ยังไม่มีที่แนบเอกสาร RFQ (แบบ/CAD/สเปค/จดหมายลูกค้า) | ❌ ไม่มี (ตั้งใจยกไปเฟส 2 ตั้งแต่ §8) | **2a** — bucket `mkt-files` + `mkt_rfq_files` (ชนิดเอกสาร × access matrix §6.4) |
+| 2 | ยังไม่มีระบบอัพโหลดเอกสารแล้วแปลงเป็นราคา (auto-cal) | ❌ | **3** — `mktCost.js` ①–⑤ จาก `TS Cost Breakdown.xlsx` (OCR/auto-OEM ยังนอกกรอบ) |
+| 3 | Model life (อายุรุ่น กี่ปี) | ❌ ไม่มีช่อง — มีแค่ volume/ปี + ที่มา | **2a** — `mkt_rfqs.model_life_years` · ยอดรวมตลอดอายุ = volume × model life (ตัวเลขที่ใช้คิดค่าแม่พิมพ์ต่อชิ้น) |
+| 4 | volume ต้องอ่านจากใบงานลูกค้า | ✅ มี `volume_source` (rfq/sales_estimate/model_report) — ต้องให้ Marketing เลือก `rfq` | — |
+| 5 | ราคาเป้าหมายลูกค้าเป็นไปได้ไหม (feasibility เทียบต้นทุน) | ⚠️ เก็บ `customer_target_price` แต่ไม่มีการเทียบ | **3** — ธง "ต่ำกว่าต้นทุน" หลังมี cost model · ระหว่างนี้ **2a** ให้ IEC/CSC ตอบในขั้นประเมิน (feasible / ไม่ / มีเงื่อนไข) |
+| 6 | สายงาน: Input (MKT) ✓ → **ประเมิน (IEC) ✗** → AutoCal (MKT) ? → Gen Quotation → APQP/PPAP (IEC) ✓ | ขั้น "ประเมิน" ยังเป็นแค่สถานะ `assessing` ไม่มีใบให้ IEC กรอก | **2a** — ใบประเมินความเป็นไปได้ (IEC/CSC): ผลิตได้ไหม · กระบวนการ · เครื่อง/ไลน์ · ความเสี่ยง · ราคาเป้าหมายเป็นไปได้ไหม · ส่งกลับ MKT = สถานะขยับเอง |
+| 7 | Flow setup ของแต่ละ product (ขั้นตอนผลิตต่อพาร์ท) | ❌ ใน RFQ — แต่ PE มี PFC อยู่แล้วหลังได้งาน | **2a/3** — ร่าง process flow ตอนประเมิน (ลำดับ OP + เครื่อง) = input ของ auto-cal · ได้งานแล้วส่งต่อเป็น PFC จริง (`/pe-docs`) ไม่ทำซ้ำ |
+| 8 | Make-to-print / Co-design | ❌ ไม่มีช่องชนิดงาน (Q-neX โมดูล 1 "job type") | **2a** — `mkt_rfqs.job_type` (`make_to_print` / `co_design`) — ตัวนี้ตัดสินว่า IEC ต้องออกแบบก่อนประเมินราคาไหม |
+
+ข้อ 6 คือ gap ใหญ่สุด: ตอนนี้ "ประเมิน" เป็นขั้นที่ Marketing กดเปลี่ยนสถานะเอง ไม่มีของที่ IEC ต้องส่งกลับ ⇒ ข้ามจาก received ไป quoted ได้โดยไม่มีใครประเมิน
+
+**อัปเดต 13/11 — เฟส 2a ปิดข้อ 1·3·5(บางส่วน)·6·7(ร่าง)·8 แล้ว** (user ตัดสิน: IEC = role `engineer_nm` ทั้งทีม) · ข้อ 2 + ตัวเลขจริงของข้อ 5 รอเฟส 3 · รายละเอียด `docs/modules/mkt-rfq.md` §5a

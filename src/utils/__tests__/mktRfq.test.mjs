@@ -105,3 +105,32 @@ test('rfqFlow — แถบขั้นตอน: ก่อนปัจจุบ
   assert.equal(u.known, false); assert.equal(u.waiting, null); assert.ok(u.steps.every(s => s.state === 'todo'));
   assert.deepEqual(MKT_PEOPLE_ROLES, ['marketing']);
 });
+
+test('เฟส 2a — lifetimeVolume ขาดตัวใดตัวหนึ่ง = null · ชนิดไฟล์ราคาเห็นเฉพาะ MKT · IEC แนบได้แค่ assessment', async () => {
+  const m = await import('../mktRfq.js');
+  assert.equal(m.lifetimeVolume(67387, 7), 471709);
+  assert.equal(m.lifetimeVolume(67387, null), null); assert.equal(m.lifetimeVolume('', 7), null);
+  assert.ok(!m.visibleFileKinds({ canEdit: false }).includes('cost'));
+  assert.ok(m.visibleFileKinds({ canEdit: true }).includes('quotation'));
+  assert.equal(m.canUploadKind('drawing', { canAssess: true }), false);
+  assert.equal(m.canUploadKind('assessment', { canAssess: true }), true);
+  assert.equal(m.canUploadKind('cost', { canEdit: true }), true);
+  assert.equal(m.canUploadKind('weird', { canEdit: true }), false);
+});
+
+test('เฟส 2a — assessmentGate: ข้ามขั้นประเมินไม่ได้ · declined/cancelled ผ่านได้ · ส่งผลแล้วจึงเดินต่อ', async () => {
+  const { assessmentGate, assessmentMissing, latestAssessment, nextAssessmentRound } = await import('../mktRfq.js');
+  assert.equal(assessmentGate('quoted', { assessments: [] }).ok, false);
+  assert.equal(assessmentGate('quoted', { assessments: [{ status: 'draft' }] }).ok, false);
+  assert.equal(assessmentGate('quoted', { assessments: [{ status: 'submitted' }] }).ok, true);
+  assert.equal(assessmentGate('assessing', { assessments: [] }).ok, true);
+  assert.equal(assessmentGate('declined', { assessments: [] }).ok, true);
+  assert.equal(assessmentGate('bogus', {}).ok, false);
+  // ช่องที่ขาดก่อนส่งผล
+  assert.deepEqual(assessmentMissing({}, {}), ['ผลิตได้ไหม']);
+  assert.deepEqual(assessmentMissing({ feasible: 'yes' }, { customer_target_price: 21.6 }), ['ไลน์อ้างอิง', 'ร่าง process flow อย่างน้อย 1 ขั้น', 'ราคาเป้าหมายลูกค้าเป็นไปได้ไหม']);
+  assert.deepEqual(assessmentMissing({ feasible: 'no' }, {}), ['เหตุผลที่ผลิตไม่ได้']);
+  assert.deepEqual(assessmentMissing({ feasible: 'yes', ref_line_name: 'L1', process_flow: [{ process: 'ปั๊ม' }], target_price_feasible: 'unknown' }, { customer_target_price: 1 }), []);
+  assert.equal(latestAssessment([{ round: 1 }, { round: 3 }, { round: 2 }]).round, 3);
+  assert.equal(nextAssessmentRound([]), 1); assert.equal(nextAssessmentRound([{ round: 2 }]), 3);
+});

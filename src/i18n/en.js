@@ -10340,6 +10340,14 @@ const EN = {
   '↑ เลือกทีมช่างก่อน': '↑ Pick a maintenance team first',
   'ทะเบียนเครื่องนี้อยู่ทีม': 'The registry puts this machine with',
   'ถ้าใช่ กดเลือกด้านล่าง': 'if that is right, tap it below',
+  /* ── 💼 RFQ เฟส 2a (13/11) — ใบประเมิน IEC · เอกสารแนบ · model life/job type ── */
+  'กระบวนการ *': 'Process *',
+  'CT (วิ)': 'CT (s)',
+  '+ ขั้น': '+ step',
+  'เช่น Blanking · Draw · Spot weld': 'e.g. Blanking · Draw · Spot weld',
+  'ยังไม่ระบุ — ตัวนี้บอกว่า IEC ต้องออกแบบก่อนคิดราคาไหม': 'Not set — tells whether IEC must design before costing',
+  'คิดยอดรวมไม่ได้ — ขาด volume/ปี': 'Cannot total — annual volume missing',
+  'ยังไม่ระบุ model life — ค่าแม่พิมพ์ต่อชิ้นคิดไม่ได้': 'Model life not set — tooling cost per piece cannot be computed',
 };
 
 export default EN;
