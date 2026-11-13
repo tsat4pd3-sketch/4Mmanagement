@@ -10275,3 +10275,28 @@ test('✍️ PMCheckData: ใบ PM อนุมัติต้องผ่า�
   assert.match(src, /can\('pm', 'approve', userRole\) && !!amVerdict\?\.ok/,
     '\n\n❌ ปุ่มยืนยันใบ PM ต้องเช็ค verdict ด้วย ไม่ใช่แค่ pm:approve\n')
 })
+
+/* ═══ 🔫 cross-close-auto-both-paths — 2026-11-13 · feedback หน้างาน ═══════════════════════
+   *"สแกนข้ามไลน์ เก็บ log พอ ไม่ต้องเด้งแจ้ง เพราะหน้างานใช้สแกนเนอร์ยิงบาร์โค้ดปิด order
+     ไม่ได้อยู่หน้าคอม กดคอนเฟิร์มไม่ได้"*
+   ของที่ user สั่งไว้ 03/11 ลงแค่ทางเดียว: เครื่องสแกนส่ง Enter ได้ **2 แบบ**
+     ① แทรก `\n` ลงในค่า → `handleCloseProdNoChange` (ส่ง auto แล้ว)
+     ② ส่งเป็น "คีย์" Enter  → `onKeyDown` ของช่อง  ← **ทางนี้ลืมส่ง auto** = ค้างรอกดปุ่ม
+   ⇒ เครื่องยิงส่วนใหญ่ใช้ทาง ② ⇒ ของที่สั่งไว้ไม่มีผลกับหน้างานเลย · การ์ดบนจอก็เขียนเองว่า
+     "สแกนด้วยเครื่องยิง = ปิดให้ทันทีไม่ต้องกดยืนยัน" = จอโกหก                                   */
+test('🔫 cross-close-auto-both-paths — ทางสแกนทั้ง 2 ทางต้องปิดใบข้ามไลน์ให้เอง', () => {
+  const bad = [];
+  const s = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  // ① ทาง \n ในค่า
+  if (!/hasEnter && !found && v\) crossLookup\(v, \{ auto: true \}\)/.test(s))
+    bad.push('ทาง `\\n` (handleCloseProdNoChange) ไม่ได้ส่ง { auto: true }');
+  // ② ทางคีย์ Enter — เครื่องยิงส่วนใหญ่มาทางนี้
+  // ⚠️ ไฟล์นี้มี onKeyDown Enter หลายช่อง — ยึดช่องที่เรียก crossLookup เท่านั้น
+  const kd = s.slice(Math.max(0, s.indexOf('crossLookup(closeProdNo') - 320), s.indexOf('crossLookup(closeProdNo') + 60);
+  if (!/if \(e\.key !== 'Enter'\) return;[\s\S]*crossLookup\(closeProdNo, \{ auto: true \}\)/.test(kd))
+    bad.push('ทางคีย์ Enter (onKeyDown ของช่องสแกน) ไม่ได้ส่ง { auto: true } — หน้างานกดยืนยันไม่ได้');
+  // ปุ่ม "ค้นทั้งโรงงาน" ที่คนพิมพ์มือกดเอง ต้องไม่ auto (คนอยู่หน้าจอ เลือกไลน์เองได้)
+  if (/onClick=\{\(\) => crossLookup\(closeProdNo, \{ auto: true \}\)\}/.test(s))
+    bad.push('ปุ่มค้นทั้งโรงงาน (พิมพ์มือ) กลายเป็น auto — คนพิมพ์มือต้องได้เลือกเอง');
+  assert.deepEqual(bad, [], bad.join('\n'));
+});

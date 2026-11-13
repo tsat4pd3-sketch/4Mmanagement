@@ -6352,13 +6352,19 @@ function LiveTab({ role, stale, onGoStale, focusSessionId, onFocusDone }) {
                 <input ref={closeProdInputRef} autoFocus value={closeProdNo}
                   inputMode={isMobile && !prodKbd ? 'none' : undefined}
                   onChange={e => handleCloseProdNoChange(e.target.value)}
-                  /* 🔫 เครื่องสแกนส่ง Enter เป็น "คีย์" ไม่ได้แทรก \n ลงในค่าเสมอ ⇒ ต้องรับที่นี่ด้วย
-                     (ทาง `\n` ใน handleCloseProdNoChange เป็นแค่ fallback ของเครื่องบางรุ่น)
-                     🔴 ไม่เจอในกะนี้ = ค้นทั้งโรงงาน **แต่ไม่ปิดให้เอง** ต้องให้คนกดยืนยัน */
+                  /* 🔫 เครื่องสแกนส่ง Enter เป็น "คีย์" ไม่ได้แทรก `\n` ลงในค่าเสมอ ⇒ **ทางนี้คือทางหลักของ
+                     เครื่องยิงจริง** (ทาง `\n` ใน handleCloseProdNoChange เป็น fallback ของบางรุ่นเท่านั้น)
+                     🔴 **ต้องส่ง `{ auto: true }` เหมือนกันทั้ง 2 ทาง** (13/11 · feedback หน้างาน)
+                        เดิมทางนี้เรียก `crossLookup(closeProdNo)` เปล่าๆ ⇒ ค้นเจอแล้ว**ค้างรอให้กดปุ่ม**
+                        ทั้งที่การ์ดบนจอเขียนไว้เองว่า "สแกนด้วยเครื่องยิง = ปิดให้ทันทีไม่ต้องกดยืนยัน"
+                        = ของที่ user สั่งไว้ 03/11 ลงแค่ทาง `\n` ทางเดียว ⇒ หน้างานที่ยิงบาร์โค้ด
+                        อยู่ข้างเครื่อง ไม่ได้อยู่หน้าคอม **กดยืนยันไม่ได้ = ปิดใบไม่ได้เลย**
+                     · ด่านที่แทนการกดยืนยันยังอยู่ครบใน `doCrossLineClose` (⓪manual ①เลขซ้ำ ②กะปิดแล้ว
+                       ③`canWriteLine`) + stamp `closed_from_line` ให้ trigger เขียน audit_log */
                   onKeyDown={e => {
                     if (e.key !== 'Enter') return;
                     if (closeMatch) handleScanCloseImmediate(closeMatch);
-                    else if (closeProdNo) crossLookup(closeProdNo);
+                    else if (closeProdNo) crossLookup(closeProdNo, { auto: true });
                   }}
                   placeholder="สแกน PROD.NO..."
                   style={{ ...inputStyle, fontFamily: 'monospace', fontWeight: 700, fontSize: 15 }} />
