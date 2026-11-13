@@ -25,6 +25,7 @@ export const NOTIFY_CATEGORY_LABEL = {
   logistic: '🚚 Logistic',
   safety: '🛡️ Safety',
   kpi: '📊 KPI / Obeya',
+  marketing: '💼 Marketing / RFQ',   // เฟส 2a (13/11) — rfq_assess_requested · rfq_assessed
 };
 export const notifyCategoryLabel = (c) => NOTIFY_CATEGORY_LABEL[c] ?? (c || 'อื่นๆ');
 
