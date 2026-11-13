@@ -8966,6 +8966,9 @@ const EN = {
   'ไม่ใช่ของช่าง': 'Not maintenance',
   'ไม่ใช่ของช่าง (คุณภาพ · ปรับตั้ง · รอของ)': 'Not maintenance (quality · setup · waiting parts)',
   'ยังไม่ระบุ': 'Not set',
+  'ของช่าง': 'Maintenance',
+  'ประเภทที่ยังไม่ติ๊กธง "ของช่างไหม"': 'Types not yet flagged as maintenance-owned',
+  'ติ๊กเพื่อแยกมุมมองใน KPI ช่าง — ประเภทในแผนไม่ต้องติ๊ก': 'Flag these to split the maintenance KPI view — planned types need no flag',
   'นับเข้า Machine Break Down ฝั่งช่าง เช่น Robot Alarm · Sensor · แม่พิมพ์ชำรุด':
     'Counted as maintenance Machine Break Down, e.g. robot alarm · sensor · damaged die',
   'ไลน์หยุดจริงแต่ไม่ใช่เครื่องเสีย เช่น แก้ไขปัญหาคุณภาพ · ปรับตั้ง · รอของ':

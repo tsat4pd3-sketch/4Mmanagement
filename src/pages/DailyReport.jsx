@@ -9730,6 +9730,22 @@ function DowntimeTypeSetup({ role }) {
         <div style={{ fontSize: 11, color: 'var(--muted)', background: item.category === 'unplanned' ? 'var(--red-dim)' : 'var(--blue-dim)', borderRadius: 'var(--r-xs)', padding: '2px 6px' }}>
           {item.category === 'unplanned' ? '⚠ นอกแผน' : '📋 ในแผน'}
         </div>
+        {/* 🔧 ธง "ของช่างไหม" (13/11) — ต้องเห็นจากลิสต์ ไม่ต้องเปิดทีละใบ
+            🔴 "ยังไม่ระบุ" ต้องเด่นกว่า 2 อันแรก เพราะมันคือ "งานที่ยังไม่ได้ทำ" ไม่ใช่ค่าปกติ
+            🔴 ประเภท `planned` ไม่เข้า KPI ช่างอยู่แล้ว ⇒ ไม่ต้องติ๊ก ไม่ต้องทวง */}
+        {item.category !== 'planned' && (() => {
+          const fl = mbFlagOf(item);
+          const meta = { yes: { ic: '🔧', bg: 'var(--red-dim)', fg: 'var(--red)' },
+                         no: { ic: '🚫', bg: 'var(--green-dim)', fg: 'var(--green)' },
+                         unset: { ic: '❓', bg: 'var(--amber-dim)', fg: 'var(--amber)' } }[fl];
+          return (
+            <div title={tr(mbFlagMeta(fl).hint)}
+              style={{ fontSize: 11, fontWeight: fl === 'unset' ? 800 : 600, color: meta.fg, background: meta.bg,
+                       borderRadius: 'var(--r-xs)', padding: '2px 6px', whiteSpace: 'nowrap' }}>
+              {meta.ic} {tr(mbFlagMeta(fl).short)}
+            </div>
+          );
+        })()}
         <div style={{ fontSize: 11, color: 'var(--muted)' }}>#{item.sort_order}</div>
         {canEdit && (
           <div style={{ display: 'flex', gap: 6 }}>
@@ -9744,7 +9760,23 @@ function DowntimeTypeSetup({ role }) {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <div style={{ fontSize: 14, color: 'var(--muted)' }}>{items.length} {tr('ประเภท')}</div>
+        <div style={{ fontSize: 14, color: 'var(--muted)' }}>
+          {items.length} {tr('ประเภท')}
+          {/* 🔧 ตัวนับงานที่ยังไม่ได้ทำ (13/11) — ธง "ของช่างไหม" ยังไม่ติ๊กกี่ประเภท
+              🔴 ประเภท `planned` ไม่เข้า KPI ช่าง ⇒ ไม่นับ ไม่ทวง
+              🔴 นับ 0 = ครบแล้ว ⇒ ไม่โชว์ป้ายเลย (ห้ามโชว์ป้ายเหลืองค้างไว้) */}
+          {(() => {
+            const todo = items.filter(i => i.category !== 'planned' && mbFlagOf(i) === 'unset').length;
+            if (!todo) return null;
+            return (
+              <span title={tr('ติ๊กเพื่อแยกมุมมองใน KPI ช่าง — ประเภทในแผนไม่ต้องติ๊ก')}
+                style={{ marginLeft: 8, fontSize: 11, fontWeight: 800, color: 'var(--amber)',
+                         background: 'var(--amber-dim)', borderRadius: 'var(--r-xs)', padding: '2px 7px' }}>
+                ❓ {todo} {tr('ประเภทที่ยังไม่ติ๊กธง "ของช่างไหม"')}
+              </span>
+            );
+          })()}
+        </div>
         {canEdit && <button onClick={() => openEdit()} style={saveBtnStyle}>{tr('+ เพิ่มประเภท')}</button>}
       </div>
 
