@@ -57,7 +57,7 @@ import { urlParam, urlPick, urlBool } from '../utils/urlInit';
 import { parseScopeKey } from '../utils/orgScope';
 import NoticeBar from '../components/NoticeBar';
 import StepFlow from '../components/StepFlow';
-import { fourMFlow } from '../utils/fourMFlow';
+import { fourMFlow, fourMSelfBlock } from '../utils/fourMFlow';
 import SectionScopeSelect from '../components/SectionScopeSelect';
 import { tr as trI18n } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
@@ -1560,6 +1560,13 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   const [qaImageFile,     setQaImageFile]     = useState(null);
   const [qaImagePreview,  setQaImagePreview]  = useState(null);
   const [isApprovingSaving, setIsApprovingSaving] = useState(false);
+  /* 🚫 ผู้ดูคือใคร — ใช้กันอนุมัติใบตัวเอง (`fourMSelfBlock` · คู่กับ trigger ฝั่ง DB · 13/11) */
+  const [myUid, setMyUid] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    supabase.auth.getSession().then(({ data }) => { if (alive) setMyUid(data?.session?.user?.id || null); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
   const [cpcMonth, setCpcMonth] = useState(today.slice(0, 7)); // YYYY-MM สำหรับ Export Changing Point Control
   const [cpcExporting, setCpcExporting] = useState(false);
   // มุมมองแท็บ 4M: 'table' รายการใบ · 'sheet' ใบ Changing Point บนจอ (ไม่ต้องกด Export) — 2026-11-05
@@ -1636,6 +1643,9 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
   };
 
   const handleApprove = async (log) => {
+    /* 🚫 กันอนุมัติใบตัวเอง — เช็คซ้ำตอนกดจริง (ไม่พึ่งแค่การซ่อนปุ่ม) */
+    const selfBlock = fourMSelfBlock(log, myUid);
+    if (selfBlock) { toast.error(selfBlock.text); return; }
     // QA step requires image confirmation — open modal instead
     if (log.status === 'pending_qa') {
       setQaApproveModal(log);
@@ -1689,6 +1699,8 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user?.id) { toast.error('เซสชันหมดอายุ — กรุณา login ใหม่'); return; }
+      const selfBlock = fourMSelfBlock(qaApproveModal, user.id);
+      if (selfBlock) { toast.error(selfBlock.text); return; }
 
       let qa_image_url = null;
       if (qaImageFile) {
@@ -2125,7 +2137,8 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                 const svName  = l.sv_approved_by ? (profileMap[l.sv_approved_by] || '...') : null;
                 const qaName  = l.approved_by    ? (profileMap[l.approved_by]    || '...') : null;
                 const needsQA = l.requires_qa !== false;
-                const userCanAct = canApproveLog(l);
+                const selfBlock = fourMSelfBlock(l, myUid);
+                const userCanAct = canApproveLog(l) && !selfBlock;
                 const isActionable = ['pending','pending_qa'].includes(l.status);
                 const isFocus = !!focus && l.id === focus;   // แถวที่ถูกเน้น (นิ่ง ไม่กระพริบ — ไม่ใช่ไฟ Andon)
                 return (
@@ -2185,8 +2198,9 @@ function FourMTab({ focusId = '', initStatus = '', initFrom = '' }) {
                             </button>
                           </div>
                         ) : (
-                          <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                          <span style={{ fontSize: 11, color: 'var(--muted)' }} title={selfBlock?.text || undefined}>
                             {l.status === 'pending_qa' ? 'รอ QA' : needsQA ? 'รอ SV → QA' : 'รอหัวหน้า'}
+                            {selfBlock && canApproveLog(l) && <><br /><span style={{ color: 'var(--amber)' }}>{selfBlock.code === 'own_log' ? 'ใบของคุณ — ให้คนอื่นอนุมัติ' : 'คุณเซ็น SV แล้ว — QA ต้องเป็นคนอื่น'}</span></>}
                           </span>
                         )
                       ) : (

@@ -154,6 +154,18 @@ const TOOL_FORM_STEPS = {
     ownTeam: true, byReporter: false, reporterSide: false, teamSide: true, side: 'mtn', minRank: 30,
     who: 'หัวหน้าแผนกช่าง / วิศวกร (ทีมที่ซ่อม)', whoShort: 'หัวหน้าแผนกช่าง',
   },
+  /* 🏁 ขั้น 7 ของใบ JIG/DIE = **ผจก. ฝ่ายที่แจ้ง** (minRank 60) — 2026-11-13 · คำสั่ง user
+     > *"ของ pd ทำได้ หัวหน้างานที่เซ็นขั้น6 เซ็น7แทนผจกได้ เพราะในส่วนงานไม่ได้ข้ามแผนก
+     >  แต่ jig die ขั้นสุดท้ายต้องเป็นผจกผู้แจ้ง"* (ยืนยันข้อเสนอ 13/11)
+     งาน JIG/DIE = ทีมเครื่องมือซ่อมให้ฝ่ายผลิต = **ข้ามหน่วยงาน** ⇒ ปิดใบต้องเป็นระดับส่วนงานของผู้แจ้ง
+     (กฎเดียวกับขั้น 8 ของฟอร์ม MTN) · 🔴 **ทีม PRODUCTION (`MTN_STEPS[7]`) คง minRank 50 ห้ามยกตาม**
+     — ซ่อมในไลน์ ไม่ข้ามแผนก หัวหน้าแผนกปิดเองได้
+     วัดก่อนเปลี่ยน (60 วัน): JIG 41/69 · DIE 21/31 ใบ ปิดโดยหัวหน้าแผนก ⇒ ต่อไปไปรอ ผจก. ฝ่ายผู้แจ้ง */
+  7: {
+    ...MTN_STEPS[7],
+    minRank: 60,
+    who: 'ผจก. ของฝ่ายที่แจ้ง', whoShort: 'ผจก.ฝ่ายผู้แจ้ง',
+  },
 };
 
 /** ขั้นสุดท้ายของใบ — MTN 8 ขั้น · ฟอร์มอื่น 7 ขั้น (ห้าม hardcode เลขขั้นในหน้าอีก) */
@@ -626,8 +638,27 @@ export const QA_SKIP_REASON_STEP4 = 'ขั้น 4 ระบุว่าไม�
  *     แต่จอต้องเขียนว่า "ไม่ได้ตรวจตำแหน่ง" (ดู `stepAssumptions`) */
 export const APPROVAL_MIN_RANK = MANAGER_SIGN_MIN_RANK;
 
+/** ✍️ ช่องเซ็น 4 ของฟอร์ม MTN — "ผู้อนุมัติ (ผจก.ส่วนซ่อมบำรุง) รับทราบ" (2026-11-13 · คำสั่ง user)
+ *  เดิมช่างที่จ่ายงานเลือกชื่อ ผจก. แล้วระบบลงชื่อ+วันที่ให้เลย = ช่องอนุมัติที่เจ้าตัวไม่ได้กด
+ *  ⇒ ตอนนี้ ผจก. ต้อง login มากดเอง · รับทราบแล้ว = `mo_ack_at` มีค่า (ไม่ใช่ `mo_approved_at` เดิม)
+ *  · เกณฑ์เดียวกับขั้น 7 ของฟอร์ม MTN (ผจก.ช่าง อนุมัติ): ฝั่งช่าง · ตำแหน่ง ≥ 60 · ทีมเดียวกับใบ
+ *  · ไม่รู้ตำแหน่ง/ไม่รู้ฝั่ง/ไม่ได้ตั้งทีม = ไม่บล็อก (กติกาเดียวกับ canDoStep · จอต้องเขียนบอก) */
+export const MTN_ACK_MIN_RANK = 60;
+function canAckMtnMgr(opts = {}) {
+  const { order = {}, fullName = '', can = () => false, posRank = null, actorSide = 'unknown', hasTeams = false, inOrderTeam = false } = opts;
+  if (order.mo_ack_at) return { ok: false, code: 'already_signed' };
+  if (posRank != null && posRank < MTN_ACK_MIN_RANK) return { ok: false, code: 'rank_too_low', needRank: MTN_ACK_MIN_RANK };
+  if (!sideAllows(actorSide, 'mtn')) return { ok: false, code: 'wrong_side' };
+  if (hasTeams && !inOrderTeam) return { ok: false, code: 'other_team' };
+  const me = norm(fullName);
+  if (me && norm(order.mo_approved_by) === me) return { ok: true, code: 'named' };
+  if (can('approve')) return { ok: true, code: 'approve' };
+  return { ok: false, code: 'denied' };
+}
+
 export function canSignMtnApproval(kind, opts = {}) {
   const { order = {}, fullName = '', can = () => false, posRank = null, inReporterScope = null } = opts;
+  if (kind === 'mtn_mgr') return canAckMtnMgr(opts);
   if (kind !== 'dept' && kind !== 'plant') return { ok: false, code: 'unknown_kind' };
   const signedAt = kind === 'dept' ? order.dept_manager_at : order.plant_manager_at;
   if (signedAt) return { ok: false, code: 'already_signed' };

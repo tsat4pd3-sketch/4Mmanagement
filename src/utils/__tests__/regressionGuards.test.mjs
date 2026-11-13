@@ -10384,3 +10384,30 @@ test('🛡️ DailyReport: ด่าน poka-yoke ตอนลงยอด + ก
   assert.match(stripComments(readFileSync(join(ROOT, 'src/utils/downtimeCarryRules.js'), 'utf8')),
     /export function decidedDtLogs\(/, '\n\n❌ decidedDtLogs ต้องอยู่ใน utils (pure) ไม่ใช่ในหน้า\n')
 })
+
+/* ═══ 🚫 4M ห้ามอนุมัติใบตัวเอง / ห้ามคนเดียวเซ็นทั้ง SV+QA (2026-11-13 · คำสั่ง user) ═════════
+   คู่กับ trigger `protect_four_m_status()` (20261113_four_m_no_self_approve_main.sql) */
+test('🛡️ 4M: ปุ่มอนุมัติต้องผ่าน fourMSelfBlock ทั้งขั้น SV และ QA', () => {
+  const rp = stripComments(readFileSync(join(ROOT, 'src/pages/Report.jsx'), 'utf8'))
+  assert.match(rp, /const selfBlock = fourMSelfBlock\(log, myUid\);\s*if \(selfBlock\)/,
+    '\n\n❌ handleApprove ต้องเช็ค fourMSelfBlock ก่อนอนุมัติ/เปิด modal QA\n')
+  assert.match(rp, /const selfBlock = fourMSelfBlock\(qaApproveModal, user\.id\);/,
+    '\n\n❌ ปุ่มยืนยัน QA ต้องเช็ค fourMSelfBlock ซ้ำตอนเขียนจริง\n')
+  assert.match(rp, /const userCanAct = canApproveLog\(l\) && !selfBlock;/,
+    '\n\n❌ ปุ่ม SV/QA Approve ในแถวต้องซ่อนเมื่อเป็นใบของตัวเอง\n')
+  const mig = readFileSync(join(ROOT, 'supabase/migrations/20261113_four_m_no_self_approve_main.sql'), 'utf8')
+  assert.match(mig, /cannot approve a 4M log you created/, '\n\n❌ trigger ฝั่ง DB ต้องกันอนุมัติใบตัวเอง\n')
+})
+
+/* ═══ ✍️ ใบ MO ฟอร์ม MTN ช่อง "ผจก.ส่วนซ่อมบำรุง" ต้องให้เจ้าตัวกดเอง (2026-11-13 · คำสั่ง user) ═══ */
+test('🛡️ MtnRepair: ขั้น 2 ห้ามลงเวลา/ลายเซ็นช่อง ผจก.ส่วนซ่อมบำรุงแทนเจ้าตัว', () => {
+  const mr = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'))
+  assert.doesNotMatch(mr, /mo_approved_at:\s*o\.mo_approved_at \|\|/,
+    '\n\n❌ ขั้นจ่ายงานห้ามเขียน mo_approved_at ให้ ผจก. (ช่องอนุมัติที่เจ้าตัวไม่ได้กด)\n')
+  assert.match(mr, /mo_ack_at: nowIso/, '\n\n❌ ปุ่มรับทราบของ ผจก. ต้อง stamp mo_ack_at\n')
+  assert.match(mr, /o\.mo_ack_at\s*\?\s*sg\('ผู้อนุมัติ \(ผจก\.ส่วนซ่อมบำรุง\)'/,
+    '\n\n❌ ใบพิมพ์ต้องโชว์ลายเซ็น/วันที่ช่องนี้เฉพาะเมื่อ ผจก. กดรับทราบแล้ว (mo_ack_at)\n')
+  const perm = readFileSync(join(ROOT, 'src/utils/mtnStepPerm.js'), 'utf8')
+  assert.match(perm, /7: \{\s*\.\.\.MTN_STEPS\[7\],\s*minRank: 60,/,
+    '\n\n❌ ขั้น 7 ใบ JIG/DIE ต้องเป็น ผจก.ฝ่ายผู้แจ้ง (minRank 60) — คำสั่ง user 13/11\n')
+})
