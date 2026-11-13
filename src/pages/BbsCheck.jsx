@@ -42,6 +42,7 @@ import NoticeBar from '../components/NoticeBar';
 import FilterBar from '../components/FilterBar';
 import { DeleteButton } from '../components/IconButton';
 import { tr } from '../utils/i18n';
+import { pickSignerPatch } from '../utils/selfSign';
 /* ⚠️ ห้าม import SHIFT_OPTIONS มาใช้ที่นี่ (เคยพลาดมาแล้ว — ดูหัวข้อ SHEET_SHIFT_OPTIONS ด้านล่าง) */
 
 const thisMonth = () => {
@@ -394,10 +395,15 @@ export default function BbsCheck() {
     // รหัสพนักงานเติมจากทะเบียน employees ที่ชื่อตรงกับโปรไฟล์ (profiles ไม่ผูก employee_id เสมอไป) — แก้เองได้ (2026-09-07)
     const norm = (v) => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase();
     const emp = p ? allEmps.find(e => norm(e.name) === norm(p.full_name)) : null;
+    /* ✍️ ลายเซ็นต้องเป็นของเจ้าตัว (13/11 · คำสั่ง user · utils/selfSign.js)
+       · เลือก "ตัวเอง" = ลายเซ็นโปรไฟล์ + รหัสพนักงานของตัวเองตามเดิม
+       · เลือก "คนอื่น" = **ไม่แปะลายเซ็น และล้างรหัสพนักงาน** — ผู้ตรวจตัวจริงต้องสแกนบัตรเอง (ทาง C1 · 03/11)
+         ไม่ล้างรหัส = ลายเซ็นจากฐานพนักงานของรหัสเดิม/รหัสที่ระบบเติมให้ ขึ้นแทนเจ้าตัวเงียบๆ */
+    const pk = pickSignerPatch(p?.full_name, { fullName, mySig: p?.signature_url || null });
     const patch = {
-      inspector_name: p?.full_name || null,
-      inspector_sig_url: p?.signature_url || null,
-      ...(emp?.employee_id_code ? { inspector_code: emp.employee_id_code } : {}),
+      inspector_name: pk.name,
+      inspector_sig_url: pk.sig,
+      ...(pk.self ? (emp?.employee_id_code ? { inspector_code: emp.employee_id_code } : {}) : { inspector_code: null }),
       updated_by_name: fullName || null,
     };
     const { data, error } = await supabase.from('bbs_sheets')
@@ -405,7 +411,7 @@ export default function BbsCheck() {
     if (error) return toast.error(`บันทึกผู้ตรวจไม่สำเร็จ: ${error.message}`);
     if (!data?.length) return toast.error('บันทึกไม่สำเร็จ — บัญชีนี้ไม่มีสิทธิ์แก้ใบนี้');
     setSheet(s => ({ ...s, ...patch }));
-    toast.success('บันทึกผู้ตรวจสอบแล้ว');
+    toast.success(pk.self || !pk.name ? 'บันทึกผู้ตรวจสอบแล้ว' : `บันทึกผู้ตรวจสอบแล้ว — ลายเซ็นจะขึ้นเมื่อ ${pk.name} สแกนบัตร/login มาเลือกตัวเอง`);
   };
 
   const setInspectorCode = async (code) => {

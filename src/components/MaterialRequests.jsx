@@ -41,6 +41,7 @@ import { buildUomIndex, normUom, uomOptions, DEFAULT_UOM } from '../utils/uom';
 import { registryFailText } from '../utils/useMasterRows.js';
 
 import { tr } from '../utils/i18n';
+import { pickSignerPatch, isSelfName } from '../utils/selfSign';
 const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -389,7 +390,7 @@ export default function MaterialRequests() {
       {editor && (
         <Editor
           editor={editor} setReq={setReq} setItem={setItem} addItem={addItem} delItem={delItem} uomIdx={uomIdx} uomState={uomState}
-          canRecord={canRecord} role={role} signers={signers} scopedLines={scopedLines} parts={parts}
+          canRecord={canRecord} role={role} signers={signers} scopedLines={scopedLines} parts={parts} fullName={fullName}
           onPick={(k) => setPicker({ itemKey: k })}
           onClose={() => setEditor(null)} onSave={save}
         />
@@ -423,7 +424,7 @@ export default function MaterialRequests() {
 }
 
 /* ── ฟอร์มใบเบิก ─────────────────────────────────────────────────────────── */
-function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, signers, scopedLines, parts = [], onPick, onClose, onSave, uomIdx, uomState }) {
+function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, signers, scopedLines, parts = [], onPick, onClose, onSave, uomIdx, uomState, fullName = '' }) {
   const { req, items } = editor;
   // 📜 ค่าที่เคยบันทึกใน material_requests (DR) — รหัสคลังที่ยังไม่ลง storage_locations / ผู้ขอที่ไม่มีบัญชี ยังเลือกซ้ำได้ ไม่หายเงียบ (2026-09-07)
   const destHist = useColumnHistory(supabaseDR, 'material_requests', 'dest_storage_location', { upper: true });
@@ -443,9 +444,13 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
     setReq({ kind: k, ...(ok ? {} : { move_code: movesFor(k)[0].code }) });
   };
 
+  /* ✍️ ลายเซ็นติดเฉพาะเจ้าตัว (13/11 · คำสั่ง user · utils/selfSign.js) — เลือกชื่อคนอื่นได้
+     แต่ช่องลายเซ็นว่าง ("รอเจ้าตัวเซ็น") จนกว่าเจ้าตัว login มากด "เซ็นช่องนี้" แล้วบันทึก */
+  const mySig = signers.find(x => isSelfName(x.full_name, fullName))?.signature_url || null;
   const pickSigner = (k, id) => {
     const p = signers.find(s => s.id === id);
-    setReq({ [`${k}_name`]: p?.full_name || null, [`${k}_sig_url`]: p?.signature_url || null });
+    const pk = pickSignerPatch(p?.full_name, { fullName, mySig });
+    setReq({ [`${k}_name`]: pk.name, [`${k}_sig_url`]: pk.sig });
   };
 
   return (
@@ -560,11 +565,16 @@ function Editor({ editor, setReq, setItem, addItem, delItem, canRecord, role, si
               onChange={e => setReq({ [`${s.k}_date`]: e.target.value || null })} style={{ ...inpSt, width: '100%', marginTop: 4 }} />
             {req[`${s.k}_sig_url`] &&
               <img src={req[`${s.k}_sig_url`]} alt="" style={{ height: 26, marginTop: 4, background: '#fff', borderRadius: 4, padding: 2 }} />}
+            {!req[`${s.k}_sig_url`] && req[`${s.k}_name`] && (isSelfName(req[`${s.k}_name`], fullName)
+              ? (mySig && !ro
+                  ? <button onClick={() => setReq({ [`${s.k}_sig_url`]: mySig })} style={{ ...btnSt(), marginTop: 4, fontSize: 11, padding: '3px 9px' }}>✍️ เซ็นช่องนี้</button>
+                  : <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>{mySig ? '' : 'โปรไฟล์ของคุณยังไม่มีลายเซ็น'}</div>)
+              : <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>รอ {req[`${s.k}_name`]} login มาเซ็นเอง</div>)}
           </div>
         ))}
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5 }}>
-        ลายเซ็นดึงจากโปรไฟล์ผู้ใช้ — ใครยังไม่มีให้ไปบันทึกที่เมนูโปรไฟล์ → จัดการลายเซ็น
+        ลายเซ็นดึงจากโปรไฟล์ของ<b>คนที่ login เท่านั้น</b> — เลือกชื่อคนอื่นได้ แต่เจ้าตัวต้องมากดเซ็นเอง · ใครยังไม่มีลายเซ็นให้ไปบันทึกที่เมนูโปรไฟล์ → จัดการลายเซ็น
       </div>
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>

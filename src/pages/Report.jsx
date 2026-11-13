@@ -58,6 +58,7 @@ import { parseScopeKey } from '../utils/orgScope';
 import NoticeBar from '../components/NoticeBar';
 import StepFlow from '../components/StepFlow';
 import { fourMFlow, fourMSelfBlock } from '../utils/fourMFlow';
+import { isSelfName } from '../utils/selfSign';
 import SectionScopeSelect from '../components/SectionScopeSelect';
 import { tr as trI18n } from '../utils/i18n';
 import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
@@ -2995,6 +2996,11 @@ function MultiSkillFormTab() {
   const [checkerSig,  setCheckerSig]  = useState(null);
   const [approverSig, setApproverSig] = useState(null);
 
+  /* ✍️ กฎคงที่ของ 3 ช่อง (13/11): ชื่อในช่องไม่ใช่คนที่ login = ช่องนั้นไม่มีลายเซ็น (ทุกทางที่เติมชื่อ — auto/เลือก/พิมพ์) */
+  useEffect(() => { if (maker && !isSelfName(maker, ctxFullName)) setMakerSig(null); }, [maker, ctxFullName]);
+  useEffect(() => { if (checker && !isSelfName(checker, ctxFullName)) setCheckerSig(null); }, [checker, ctxFullName]);
+  useEffect(() => { if (approver && !isSelfName(approver, ctxFullName)) setApproverSig(null); }, [approver, ctxFullName]);
+
   // Auto-fill current user's name + signature into the matching slot on load
   useEffect(() => {
     if (!ctxFullName && !ctxSigUrl) return;
@@ -3036,9 +3042,12 @@ function MultiSkillFormTab() {
         const sv  = data.find(p => p.role === 'supervisor');
         const ldr = data.find(p => p.role === 'leader');
         const mgr = data.find(p => p.role === 'manager');
-        if (ldr) { setMaker(ldr.full_name || ''); setMakerSig(ldr.signature_url || null); }
-        if (sv)  { setChecker(sv.full_name || ''); setCheckerSig(sv.signature_url || null); setHeadName(sv.full_name || ''); }
-        if (mgr) { setApprover(mgr.full_name || ''); setApproverSig(mgr.signature_url || null); }
+        /* ✍️ ชื่อเติมจากหัวหน้าประจำไลน์ได้ แต่ลายเซ็นติดเฉพาะคนที่ export เอง (13/11 · คำสั่ง user · utils/selfSign.js)
+           — เดิมดึงลายเซ็นของ leader/SV/manager ไปพิมพ์ทั้งที่เจ้าตัวไม่เคยเห็นใบ · ช่องคนอื่น = เซ็นมือบนกระดาษ */
+        const ownSig = (p) => (isSelfName(p?.full_name, ctxFullName) ? (p.signature_url || null) : null);
+        if (ldr) { setMaker(ldr.full_name || ''); setMakerSig(ownSig(ldr)); }
+        if (sv)  { setChecker(sv.full_name || ''); setCheckerSig(ownSig(sv)); setHeadName(sv.full_name || ''); }
+        if (mgr) { setApprover(mgr.full_name || ''); setApproverSig(ownSig(mgr)); }
       });
   }, [filterLine, lines]);
 
@@ -3221,12 +3230,17 @@ function MultiSkillFormTab() {
                   {/* 2026-09-07 เลือกจาก profiles (<PersonSelect>) — role ตามช่องขึ้นก่อน · เลือกแล้วลายเซ็นตามมาเอง (พิมพ์เองยังได้แต่ติดป้าย) */}
                   <PersonSelect value={name} roles={autoRole.split('/')} lineIds={filterLine ? [filterLine] : undefined} placeholder={trI18n('ชื่อ-นามสกุล')}
                     style={{ marginBottom: 6 }} inputStyle={{ padding: '5px 30px 5px 8px', fontSize: 12 }}
-                    onChange={({ name: nm, signature_url }) => { setName(nm); if (signature_url) setSig(signature_url); }} />
+                    onChange={({ name: nm, signature_url }) => { setName(nm); setSig(isSelfName(nm, ctxFullName) ? (signature_url || ctxSigUrl || null) : null); }} />
                   {sig ? (
                     <div style={{ position: 'relative' }}>
                       <img src={sig} alt="sig" style={{ width: '100%', height: 48, objectFit: 'contain', borderRadius: 4, background: '#fff', border: '1px solid var(--border2)' }} />
                       <button onClick={() => { if (sig?.startsWith('blob:')) URL.revokeObjectURL(sig); setSig(null); }}
                         style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.5)', border: 'none', color: '#fff', borderRadius: 'var(--r-md)', fontSize: 11, cursor: 'pointer', padding: '1px 5px' }}>✕</button>
+                    </div>
+                  ) : name && !isSelfName(name, ctxFullName) ? (
+                    /* ✍️ ช่องของคนอื่น — ห้ามอัปโหลดรูปลายเซ็นแทนเจ้าตัว · เว้นไว้เซ็นมือบนใบพิมพ์ */
+                    <div style={{ height: 48, border: '1px dashed var(--amber-line)', borderRadius: 'var(--r-xs)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: 'var(--amber)', textAlign: 'center', padding: '0 6px' }}>
+                      ลายเซ็นใส่ได้เฉพาะเจ้าตัว — ใบพิมพ์จะเว้นช่องให้ {name} เซ็นมือ
                     </div>
                   ) : (
                     <label style={{ display: 'block', cursor: 'pointer' }}>

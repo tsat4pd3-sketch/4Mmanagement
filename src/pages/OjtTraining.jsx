@@ -31,6 +31,7 @@ import StepFlow from '../components/StepFlow';
 import { ojtFlow } from '../utils/stepFlow';
 
 import { tr } from '../utils/i18n';
+import { pickSignerPatch, isSelfName } from '../utils/selfSign';
 /* ══════════════════════════════════════════════════════════════
    📖 OJT Training — ใบแจ้งการอบรมสอนงานโดยหัวหน้างาน (ON THE JOB TRAINING)
    Paperless ของฟอร์มกระดาษ FM-HRM-004: บันทึกการอบรมในระบบ + พนักงานเซ็นชื่อบนจอ
@@ -921,12 +922,20 @@ ${printImgs.map((f, i) => attachData[i] ? `<div style="page-break-before:always;
     );
   };
 
+  /* ✍️ ช่อง "ผู้จัดทำ" — เลือกชื่อใครก็ได้ แต่ลายเซ็นติดเฉพาะเจ้าตัว (13/11 · คำสั่ง user · utils/selfSign.js)
+     เลือกคนอื่น = ช่องลายเซ็นว่าง จนกว่าเจ้าตัว login มากด "เซ็นเป็นผู้จัดทำ" แล้วบันทึกใบ */
+  const mySigOjt = (profiles.find(p => isSelfName(p.full_name, fullName)) || {}).signature_url || null;
   const sigPicker = (label, nameKey, sigKey) => (
     <div>
       <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', marginBottom: 4 }}>{label}</div>
       <PersonSelect source="profiles" allowFree={false} value={editing[nameKey] || ''}
-        onChange={p => setEditing(prev => ({ ...prev, [nameKey]: p.name || '', [sigKey]: p.signature_url || null }))} />
+        onChange={p => setEditing(prev => ({ ...prev, [nameKey]: p.name || '', [sigKey]: pickSignerPatch(p.name, { fullName, mySig: mySigOjt }).sig }))} />
       {editing[sigKey] && <img src={editing[sigKey]} alt="" style={{ height: 30, marginTop: 4, background: '#fff', borderRadius: 4, padding: 2 }} />}
+      {!editing[sigKey] && editing[nameKey] && (isSelfName(editing[nameKey], fullName)
+        ? (mySigOjt
+            ? <button onClick={() => setEditing(prev => ({ ...prev, [sigKey]: mySigOjt }))} style={{ marginTop: 4, padding: '3px 9px', borderRadius: 'var(--r-md)', border: '1px solid var(--border2)', background: 'var(--bg3)', color: 'var(--text2)', cursor: 'pointer', fontSize: 11 }}>✍️ เซ็นเป็น{label}</button>
+            : <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>โปรไฟล์ของคุณยังไม่มีลายเซ็น — อัปโหลดที่เมนูโปรไฟล์ก่อน</div>)
+        : <div style={{ fontSize: 11, color: 'var(--amber)', marginTop: 3 }}>รอ {editing[nameKey]} login มาเซ็นเอง</div>)}
     </div>
   );
 

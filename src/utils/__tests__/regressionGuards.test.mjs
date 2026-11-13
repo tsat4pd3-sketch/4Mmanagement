@@ -10411,3 +10411,22 @@ test('🛡️ MtnRepair: ขั้น 2 ห้ามลงเวลา/ลาย
   assert.match(perm, /7: \{\s*\.\.\.MTN_STEPS\[7\],\s*minRank: 60,/,
     '\n\n❌ ขั้น 7 ใบ JIG/DIE ต้องเป็น ผจก.ฝ่ายผู้แจ้ง (minRank 60) — คำสั่ง user 13/11\n')
 })
+
+/* ═══ ✍️ ลายเซ็นต้องเป็นของเจ้าตัว — ห้ามก๊อป signature_url ของคนที่เลือกจาก picker (2026-11-13 · คำสั่ง user) ═══
+   ของกลาง `src/utils/selfSign.js` (pickSignerPatch / isSelfName) */
+test('🛡️ ฟอร์มที่มีช่องเลือกผู้เซ็น ห้ามแปะลายเซ็นของคนที่เลือก', () => {
+  const read = (f) => stripComments(readFileSync(join(ROOT, f), 'utf8'))
+  const lpa = read('src/pages/LayerProcessAudit.jsx')
+  assert.doesNotMatch(lpa, /auditor_sig_url:\s*r\.kind === 'free'/, '\n\n❌ LPA: ห้ามดึง r.signature_url ของผู้ตรวจที่เลือก\n')
+  assert.match(lpa, /pickSignerPatch\(r\.name/, '\n\n❌ LPA: ช่องผู้ตรวจต้องผ่าน pickSignerPatch\n')
+  const bbs = read('src/pages/BbsCheck.jsx')
+  assert.doesNotMatch(bbs, /inspector_sig_url:\s*p\?\.signature_url/, '\n\n❌ BBS: ห้ามแปะลายเซ็นของผู้ตรวจที่เลือก\n')
+  assert.match(bbs, /pickSignerPatch\(p\?\.full_name/, '\n\n❌ BBS: ต้องผ่าน pickSignerPatch\n')
+  const mr = read('src/components/MaterialRequests.jsx')
+  assert.doesNotMatch(mr, /_sig_url`\]:\s*p\?\.signature_url/, '\n\n❌ FM-STO-003: ห้ามแปะลายเซ็นของคนที่เลือก\n')
+  const ojt = read('src/pages/OjtTraining.jsx')
+  assert.doesNotMatch(ojt, /\[sigKey\]:\s*p\.signature_url/, '\n\n❌ OJT: ช่องผู้จัดทำห้ามแปะลายเซ็นของคนที่เลือก\n')
+  const rp = read('src/pages/Report.jsx')
+  assert.doesNotMatch(rp, /setMakerSig\(ldr\.signature_url|setCheckerSig\(sv\.signature_url|setApproverSig\(mgr\.signature_url/,
+    '\n\n❌ Multi-Skill: ห้ามดึงลายเซ็นหัวหน้าประจำไลน์มาพิมพ์อัตโนมัติ\n')
+})
