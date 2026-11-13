@@ -131,6 +131,8 @@ const PEDocs = lazy(() => import('./pages/PEDocs'));
 const NPI = lazy(() => import('./pages/NPI'));
 const NewModelBoard = lazy(() => import('./pages/NewModelBoard'));
 const Rfq = lazy(() => import('./pages/Rfq'));
+const Workflows = lazy(() => import('./pages/Workflows'));             // 🧩 e-Workflow ใบงานที่ user สร้างเอง (13/11)
+const WorkflowDesigner = lazy(() => import('./pages/WorkflowDesigner')); // 🧩 ออกแบบใบงาน (Key User → admin เผยแพร่)
 const ScrapReport = lazy(() => import('./pages/ScrapReport'));
 const NotificationConfig = lazy(() => import('./pages/NotificationConfig'));
 const Integrations = lazy(() => import('./pages/Integrations'));
@@ -171,6 +173,8 @@ export const NAV_ITEMS = [
      "งานค้างส่วนงาน ควรย้ายเป็น tab ใน หมวด OBEYA ไปเลย") — route เดิม redirect (LegacyTabRedirect) พา ?dept= มาด้วย
      · สิทธิ์ยังใช้คีย์ `page:/dept-dashboard` เดิม (แท็บโผล่ตามสิทธิ์ · /permissions ยังตั้งได้) ห้ามลบคีย์ */
   { to: '/obeya',       icon: '🏛️', label: 'OBEYA (KPI · SQDCM · งานค้าง)', group: 'ภาพรวม' },
+  /* 🧩 ใบงานออนไลน์ (e-Workflow · 13/11) — ใบที่ Key User ออกแบบเอง · เปิดใบ/อนุมัติของทุกฝ่าย = ของทุกคน */
+  { to: '/workflows',   icon: '✍️', label: 'ใบงานออนไลน์ (e-Workflow)', group: 'ภาพรวม' },
   /* 📦 อัพเดทโปรแกรม — รายการสิ่งที่เพิ่ม/แก้ไปในระบบ อ่านจากประวัติการแก้จริง (git) ไม่ใช่ลิสต์ที่พิมพ์มือ
        อยู่หมวดภาพรวมเพราะเป็นของทุกคน (ทีมงานอยากรู้ว่าของที่แจ้งไปแก้แล้วยัง · ผู้มาเยี่ยมชมอยากรู้ว่าระบบยังมีคนดูแล) */
   { to: '/program-update', icon: '📦', label: 'อัพเดทโปรแกรม',    group: 'ภาพรวม' },
@@ -299,6 +303,8 @@ export const NAV_ITEMS = [
   { to: '/add-user',    icon: '🔑', label: 'จัดการผู้ใช้งาน',     group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
   // 📺 ตั้งว่าบัญชีจอไหนเปิดหน้าอะไรวนบ้าง (2026-10-09) · ตัววนอยู่ที่ components/DisplayRotator.jsx
   { to: '/display-rotation', icon: '🔁', label: 'ตั้งค่าจอวนหน้า', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
+  // 🧩 e-Workflow (13/11) — Key User ออกแบบใบ → admin เผยแพร่ · 📄 docs/modules/e-workflow.md
+  { to: '/workflow-designer', icon: '🗂️', label: 'ออกแบบใบงาน (e-Workflow)', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
   { to: '/notification-config', icon: '🔔', label: 'ตั้งค่าการแจ้งเตือน', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
   // 🔌 ศูนย์เชื่อมต่อ Node-RED / เครื่องจักร (2026-11-11) · 📄 docs/modules/integration-hub.md
   { to: '/integrations', icon: '🔌', label: 'การเชื่อมต่อ Node-RED / เครื่องจักร', group: 'ตั้งค่าโปรแกรม,ฐานข้อมูล', sub: 'ตั้งค่าระบบ' },
@@ -2324,6 +2330,12 @@ function ProtectedLayout({ session, theme, onToggleTheme, userRole, realRole, vi
               } />
               <Route path="/rfq" element={
                 <RoleRoute path="/rfq" userRole={role}><Rfq /></RoleRoute>
+              } />
+              <Route path="/workflows" element={
+                <RoleRoute path="/workflows" userRole={role}><Workflows /></RoleRoute>
+              } />
+              <Route path="/workflow-designer" element={
+                <RoleRoute path="/workflow-designer" userRole={role}><WorkflowDesigner /></RoleRoute>
               } />
               <Route path="/products"   element={
                 <RoleRoute path="/products" userRole={role}><ProductMaster /></RoleRoute>

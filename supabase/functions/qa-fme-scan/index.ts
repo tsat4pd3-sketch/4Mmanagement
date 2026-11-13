@@ -73,7 +73,10 @@ function chatsFor(routes: Record<string, Route>, key: string): string[] | null {
   const r = routes[key];
   if (r && !r.enabled) return null;                       // ปิดที่ /notification-config = ไม่ส่ง
   if (r && r.chats.length) return r.chats;
-  return TELEGRAM_CHAT_ID ? [TELEGRAM_CHAT_ID] : [];      // ยังไม่ตั้งห้อง = ห้อง default
+  /* 🔔 มีกฎแต่ไม่ได้เลือกห้อง = ในแอปอย่างเดียว (13/11 · กฎ: แจ้งเตือนใหม่ = ในแอป ห้ามเพิ่มทาง Telegram)
+     เดิมถอยไปห้อง default ⇒ เปิดสวิตช์ FME แล้วข้อความเด้งเข้ากลุ่ม Telegram รวมโดยไม่มีใครตั้ง */
+  if (r) return [];
+  return TELEGRAM_CHAT_ID ? [TELEGRAM_CHAT_ID] : [];      // ไม่มีกฎเลย (ยังไม่ apply migration) = ห้อง default
 }
 /* ── 🔔 แจ้งเตือน "ในแอป" (กระดิ่ง + Web Push ผ่าน trigger trg_notify_push) ───────────────
    เดิมฟังก์ชันนี้ส่ง **Telegram ทางเดียว** — ถอด Telegram ออกเมื่อไหร่ การแจ้งเตือนหายสนิท
@@ -135,13 +138,22 @@ async function sendTelegram(message: string, chats: string[]): Promise<boolean> 
 }
 
 /* ── DR REST (คนละ project — ใช้ anon key ตาม convention ของ supabaseDR) ── */
-async function dr<T>(path: string): Promise<T[]> {
+/* ⚠️ PostgREST ตัดที่ 1000 แถว/คำขอเงียบๆ — อ่านทีละหน้าจนหมดเสมอ (13/11 · dry-run จริงเจอ
+   ใบผลิต 2 วัน = 1,011 ใบ แต่อ่านได้ 1,000 ⇒ รุ่นที่ตกไปไม่เกิดงาน First/End โดยไม่มีใครรู้)
+   `orderCol` = คอลัมน์ไม่ซ้ำที่ใช้เรียงให้หน้าไม่เหลื่อมกัน (ไม่เรียง = หน้าซ้อน/ข้ามแถวได้) */
+const DR_PAGE = 1000;
+async function dr<T>(path: string, orderCol = 'id'): Promise<T[]> {
   if (!DR_URL || !DR_KEY) return [];
-  const res = await fetch(`${DR_URL}/rest/v1/${path}`, {
-    headers: { apikey: DR_KEY, Authorization: `Bearer ${DR_KEY}` },
-  });
-  if (!res.ok) throw new Error(`DR ${path} → ${res.status} ${await res.text()}`);
-  return await res.json() as T[];
+  const out: T[] = [];
+  for (let off = 0; ; off += DR_PAGE) {
+    const url = `${DR_URL}/rest/v1/${path}${path.includes('?') ? '&' : '?'}order=${orderCol}&limit=${DR_PAGE}&offset=${off}`;
+    const res = await fetch(url, { headers: { apikey: DR_KEY, Authorization: `Bearer ${DR_KEY}` } });
+    if (!res.ok) throw new Error(`DR ${path} → ${res.status} ${await res.text()}`);
+    const rows = await res.json() as T[];
+    out.push(...rows);
+    if (rows.length < DR_PAGE) return out;
+    if (off >= 50 * DR_PAGE) throw new Error(`DR ${path} → เกิน ${50 * DR_PAGE} แถว (หยุดกันวนไม่จบ)`);
+  }
 }
 
 type Sess = { id: string; work_date: string; line_name: string; shift: string; status: string; closed_at: string | null };
@@ -201,11 +213,8 @@ Deno.serve(async (req) => {
     const orders = await dr<Ord>(
       `prod_orders?select=id,session_id,mat_no,part_name,status,opened_at,confirmed_at,qty,qty_ok,qty_actual&session_id=in.(${sIds.join(',')})`);
     const products = await dr<Prod>('dr_products?select=mat_no,pair_mat_no,name,p_no,is_operation,op_parent_mat');
-    /* ⚠️ PostgREST ตัดที่ 1000 แถวเงียบๆ (กฎ CLAUDE.md) — 2 master นี้ยังไม่ถึง แต่โตได้
-       ชนเพดานเมื่อไหร่ = พาร์ทที่หายไปจะไม่มี lot_size/pair/OP → ไม่มี Middle แบบไม่มีใครรู้
-       → ไม่แก้ให้เอง (ต้องไป paginate) แต่ **ต้องรายงานเสมอ ห้ามเงียบ** */
+    /* เพดาน 1000 แถว: `dr()` อ่านทีละหน้าจนหมดแล้ว (13/11) — `truncated` เหลือไว้ให้รูปคำตอบเดิมไม่เปลี่ยน */
     const truncated: string[] = [];
-    if (products.length >= 1000) truncated.push(`dr_products (${products.length})`);
     /* lot_size รายพาร์ท = ฐานของคาบตรวจ Middle (คำสั่ง user 2026-08-20)
        ⚠️ ไม่ตั้ง lot_size = ไม่เดา → พาร์ทนั้นไม่มี Middle แต่ต้องรายงานออกมา ห้ามเงียบ */
     /* ⚠️ kanban_standards ไม่มีคอลัมน์ line_name (เจอตอน dry-run 2026-08-21 → 42703)
@@ -214,7 +223,6 @@ Deno.serve(async (req) => {
                   qty_per_kanban: number | null; min_qty: number | null; max_qty: number | null };
     const kstd = await dr<Kstd>(
       'kanban_standards?select=mat_no,product_id,lot_size,qty_per_kanban,min_qty,max_qty&is_active=eq.true');
-    if (kstd.length >= 1000) truncated.push(`kanban_standards (${kstd.length})`);
     /* ⚠️ 1 mat มีได้หลายแถว (คนละไลน์/ปลายทาง) — เดิม `set()` ทับกันไปเรื่อยๆ แถวสุดท้ายชนะ
        = หยิบ lot_size มาแบบสุ่มโดยไม่มีใครรู้ · ถ้าค่าไม่ตรงกัน **ไม่เลือกให้เอง** ต้องรายงาน */
     const lotRows = new Map<string, Kstd[]>();
@@ -234,7 +242,7 @@ Deno.serve(async (req) => {
            → ออกมา 500-600 ชิ้นทุกตัว = ล็อตที่ตั้งใจตั้งไว้จริง ไม่ใช่ค่ามั่ว */
     type Kparam = { mat_no: string; calc_type: string | null; lot_qty: number | null;
                     lot_size: number | null; packaging: number | null };
-    const kparam = await dr<Kparam>('kanban_calc_params?select=mat_no,calc_type,lot_qty,lot_size,packaging');
+    const kparam = await dr<Kparam>('kanban_calc_params?select=mat_no,calc_type,lot_qty,lot_size,packaging', 'mat_no');
     const paramRows = new Map<string, Kparam>();
     for (const p of kparam) if (p.mat_no) paramRows.set(p.mat_no, p);
 

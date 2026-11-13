@@ -28,6 +28,7 @@
 | Deploy | `docs/modules/deploy.md` |
 | 🏷️ แยก frontend ของ New Model (2 เว็บจากโค้ดชุดเดียว · edition) | `docs/modules/nm-frontend-split.md` |
 | 💼 RFQ / เสนอราคา — Marketing (Q-neX เฟส 1 · `/rfq` · 2026-10-30) | `docs/modules/mkt-rfq.md` |
+| 🧩 e-Workflow — ใบงานที่ user สร้างเอง (`/workflows` · `/workflow-designer` · เฟส 1 2026-11-13) | `docs/modules/e-workflow.md` |
 | 🚨 ระบบล่ม 21/10 (ช่องต่อฐานข้อมูลเต็ม) + กฎ "ถอยเมื่อ 503" | `docs/modules/conn-outage-2026-10-21.md` |
 | Dashboard ส่วนงาน — 📋 `/dept-dashboard` (2026-08-06) | `docs/modules/dept-dashboard-tv.md` |
 | DIE MAINTENANCE — Layout & สถานะแม่พิมพ์ (2026-08-19) | `docs/modules/die-maintenance.md` |

@@ -88,6 +88,7 @@ node audit/crashsweep.mjs   # เปิดทุกหน้าที่ 1500px 
   เดิมไม่มีเลยสักแถว ⇒ โค้ดสายชั้นขั้นตอน (`collapseOps` · worklist OP ใน `/products` ·
   ปุ่ม 🧩 ระเบิดของเสียใน `/scrap-report` · ตัวกรอง OP ของ picker) **ไม่เคยถูกรันใน harness เลย**
   = บั๊กทั้งคลาสมองไม่เห็น · `i=4` ผูก parent+seq ครบ · `i=5` ยังไม่ผูก = เคส worklist เหลือง
+- **⚠️ `qa_inspection_items` (มี `qa_parts` embed) + `qa_inspection_results` (มี `values_json`/`qa_inspection_sheets` embed) ใน `TABLE_ROWS` ห้ามถอด** (2026-11-13) — ไม่มี = แท็บ SPC "จากใบตรวจ" เดินแต่สาขาว่าง ตารางสรุปจุด/กราฟ I-MR ไม่เคยถูกรัน
 - **⚠️ รอบ PM ใน `ROW()` + RPC `pm_usage_daily` ห้ามถอด** (2026-10-06)
   เดิม `ROW()` **ไม่มี `frequency`/`interval_days`/`cycle_basis` เลยสักคอลัมน์** ⇒ แผน PM ทั้ง 14 แถว
   ตกเป็น "ยังไม่ตั้งรอบ" ⇒ สายที่ **มีรอบจริง** ไม่เคยถูกวาดใน harness เลย (เกินกำหนด/ใกล้ครบ/ตามกำหนด ·

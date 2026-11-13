@@ -25,6 +25,7 @@ export const NOTIFY_CATEGORY_LABEL = {
   logistic: '🚚 Logistic',
   safety: '🛡️ Safety',
   kpi: '📊 KPI / Obeya',
+  workflow: '🧩 e-Workflow',
 };
 export const notifyCategoryLabel = (c) => NOTIFY_CATEGORY_LABEL[c] ?? (c || 'อื่นๆ');
 
