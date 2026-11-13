@@ -277,7 +277,7 @@ wf_act(instance_id, task_id, action, comment, expected_step_rev, data_patch?)  -
 | `page:/workflows` | เข้าหน้าใบงานของฉัน/กล่องรออนุมัติ |
 | `page:/workflow-designer` | เข้าหน้าออกแบบ |
 | `wf:design` | สร้าง/แก้ **ร่าง** นิยาม (ในหน่วยเจ้าของที่ตัวเองมีขอบเขต) · ให้ `admin` + **bucket `dept_admin`** (= key user · ดู §9.4) |
-| `wf:publish` | เผยแพร่/เลิกใช้นิยาม |
+| `wf:publish` | เผยแพร่/เลิกใช้นิยาม · **admin เท่านั้น** (user เคาะ 13/11 — key user สร้างเสร็จแล้ว "ส่งขอเผยแพร่" มาที่ admin) |
 | `wf:start:<key>` | เปิดใบชนิดนี้ (สร้างตอนเผยแพร่ · คนออกแบบเลือก role ที่ได้ · ไม่เลือก = เผยแพร่ไม่ได้ §14.1) |
 | `wf:view_all:<key>` | ดูใบชนิดนี้ทุกใบในขอบเขต (ไม่ใช่แค่ใบที่ตัวเองเกี่ยว) |
 
@@ -291,7 +291,15 @@ wf_act(instance_id, task_id, action, comment, expected_step_rev, data_patch?)  -
 - ขอบเขต: แก้นิยามได้เฉพาะหน่วยเจ้าของที่ `canWriteUnit(..., { unknownTarget:'block' })` ผ่าน (บ้านจริง `profiles.section`/CC)
 - 🔴 ตรวจฐานจริง 13/11: bucket มี 147 คีย์ (ก๊อปจาก manager ตอน 03/08) รวมคีย์ข้ามสายงาน เช่น `employees:edit_all_sections` · `org:manage_divisions` · `company_calendar:edit` · `shipping:config` · `skills:edit_high` · คนถือ flag 14 คน (supervisor 6 · mtn 5 · planner_store 1 · document_control 1 · manager 1) · marketing ยังไม่มีใครถือ
   ⇒ **การตัดคีย์ข้ามสายงานออกจาก bucket = รอ user ไล่ทีละคีย์** (14 คนอาจใช้อยู่) · ห้ามตัดแบบเหมา
-- `wf:publish` ให้ key user ด้วยไหม = รอ user ตอบ (§14)
+- **ขั้นเผยแพร่ (user เคาะ 13/11):** key user สร้าง/ทดลองรันเสร็จ → กด "ส่งขอเผยแพร่" (`wf_versions.status` = `draft` → `pending_publish`) → แจ้ง admin (event `wf.publish_requested` · ปิดไม่ได้) → admin กดเผยแพร่ หรือส่งกลับพร้อมเหตุผล (`draft`)
+  · admin เห็นผลทดลองรัน + diff กับเวอร์ชันก่อน ก่อนกด · ระหว่าง `pending_publish` key user แก้ร่างไม่ได้
+
+### 9.5 มอบอำนาจอนุมัติแทน (user เคาะ 13/11 "ดีนะ เหมือนมอบอำนาจ" · เฟส 2)
+- ตาราง `wf_delegations`: `from_profile_id` · `to_profile_id` · `starts_on` · `ends_on` (**บังคับมีวันจบ**) · `def_ids` (ว่าง = ทุกใบ) · `reason`
+- ต่างจาก `org_assignments` (รักษาการทั้งตำแหน่ง · ทุกระบบ) — อันนี้ **มอบเฉพาะการอนุมัติใน e-workflow** ช่วงสั้นๆ (ลา/ไปต่างประเทศ)
+- ผู้รับมอบต้องผ่านด่านขอบเขตเดียวกับผู้มอบ (`canWriteUnit` ของใบ) — มอบแล้วต้องไม่ทำให้คนนอกหน่วยอนุมัติได้ · ห้ามมอบต่อเป็นทอด · ห้ามมอบให้ผู้เปิดใบอนุมัติใบตัวเอง
+- resolver (§8.1) เช็คการมอบที่มีผลวันนี้ → สร้าง task ให้ผู้รับมอบ · `wf_actions.on_behalf_of` = ผู้มอบ · ใบพิมพ์เขียน "ลงนามแทน"
+- ผู้มอบยังกดเองได้ (ไม่ถูกตัดสิทธิ์) · แจ้งผู้มอบเมื่อมีการอนุมัติแทน
 
 ### 9.2 ใครเห็นใบไหน (RLS `wf_instances` select)
 ผู้เปิดใบ · คนที่มี/เคยมี task ในใบ · ถือ `wf:view_all:<key>` **และ** ใบอยู่ในขอบเขตที่เห็น (`sections`)
@@ -318,6 +326,7 @@ event ใหม่ใน `notification_rules`:
 | `wf.sla_warning` | assignee | ❌ |
 | `wf.escalated` | หัวหน้าชั้นถัดไปของ assignee | ❌ |
 | `wf.closed` | ผู้เปิดใบ | ✅ |
+| `wf.publish_requested` | admin (ถือ `wf:publish`) | ❌ |
 | `wf.resolver_failed` | เจ้าของนิยาม (คนถือ `wf:design` ในหน่วยเจ้าของ) | ❌ |
 🔴 ผู้รับต้องแคบ — **ห้ามยิงทั้ง role** (`docs/modules/notify-inapp-audit.md`)
 
@@ -358,7 +367,7 @@ event ใหม่ใน `notification_rules`:
 | เฟส | ของที่ได้ | เกณฑ์ผ่าน |
 |---|---|---|
 | **1** | ตาราง §5 · ช่องพื้นฐาน + picker ทะเบียน · ขั้น `approve`/`ack` เส้นตรง · resolver `creator_head`/`perm_in_unit`/`creator` · `wf_act()` · `/workflows` · `/workflow-designer` (form+flow แบบฟอร์มกรอก ยังไม่ลาก-วาง) · แถบขั้น · คิวงาน · แจ้งเตือน `wf.task_assigned`/`wf.closed` · ใบพิมพ์ | ใบนำร่อง (§14 ข้อ 1) เดินครบ เปิด→อนุมัติ→จบ / ตีกลับ / ส่งกลับแก้ บนข้อมูลจริง · ทดสอบ RLS ด้วย JWT จำลอง (เขียนตรงไม่ได้ · เห็นเฉพาะใบที่ควรเห็น) · `npm run build` + `crashsweep` 2 รอบ + `mobilesweep` ผ่าน |
-| **2** | `when` ข้ามขั้น · `parallel` · ช่อง `table` · SLA + `pg_cron` + escalation · เวอร์ชัน (แก้หลังเผยแพร่) · ทดลองรัน | ใบนำร่องตัวที่ 2 ที่มีขั้นขนาน · แก้ flow ระหว่างมีใบค้างแล้วใบค้างไม่เพี้ยน |
+| **2** | `when` ข้ามขั้น · `parallel` · ช่อง `table` · SLA + `pg_cron` + escalation · เวอร์ชัน (แก้หลังเผยแพร่) · ทดลองรัน · มอบอำนาจ (§9.5) | ใบนำร่องตัวที่ 2 ที่มีขั้นขนาน · แก้ flow ระหว่างมีใบค้างแล้วใบค้างไม่เพี้ยน |
 | **3** | รายงาน §12 · ตัวออกแบบแบบลาก-วาง | |
 | ถัดไป (ยังไม่ออกแบบ) | "action ที่ลงทะเบียนไว้" ให้ขั้นสุดท้ายเรียก เช่น เปิดใบ MO · ผูกกับ golden thread สาย 060/061 | ต้องออกแบบแยก + user สั่ง |
 
@@ -393,14 +402,15 @@ event ใหม่ใน `notification_rules`:
 | B | SLA นับแบบไหน | ข. ชั่วโมงทำงานตามกะ ข้ามวันหยุด | — |
 | C | เกิน SLA ทำอะไร | แจ้งหัวหน้า (§10.3) | — |
 | D | ใบนำร่อง | ใบเสนอราคา Marketing แบบผสม (§7.5) | — |
-| E | key user เผยแพร่ใบได้เอง (`wf:publish`) หรือต้องให้ admin กด | — | รอตอบ |
+| E | key user เผยแพร่ใบได้เอง หรือต้องให้ admin กด | **key user ส่งขอ → admin กดเผยแพร่** (§9.4) | — |
 | F | ตัดคีย์ข้ามสายงานออกจาก bucket `dept_admin` คีย์ไหน | — | รอไล่ทีละคีย์ (§9.4) |
-| G | ต้องมีฟีเจอร์ "ฝากอนุมัติแทนรายคน" นอกจาก `org_assignments` ไหม | — | รอตอบ |
-| H | เว็บ New Model เห็นหน้า `/workflows` ไหม (Marketing อยู่ใน edition NM) | — | รอตอบ |
+| G | ฝากอนุมัติแทนรายคน | **ทำ — มอบอำนาจ** (§9.5 · เฟส 2) | — |
+| H | เว็บ New Model เห็นหน้า `/workflows` ไหม | **ยังไม่ต้อง** — ไม่ใส่ `EDITION_PAGES` ของ NM (ใบเสนอราคาเปิดจากเว็บ ESM) | — |
 
 ## ประวัติ
 - 2026-11-13 ฉบับแรก (ออกแบบ · ยังไม่ลงมือ)
 - 2026-11-13 บันทึกคำตอบ user ข้อ 1 (Marketing) · 2 (admin + key user) · 5 (แจ้งหัวหน้า) ลง §14
 - 2026-11-13 บันทึกคำตอบข้อ 1 (ใบเสนอราคา) · 2 (key user — รอเคาะ flag vs role) · 4 (SLA แบบ ข.)
 - 2026-11-13 เคาะ: key user = flag เดิม (§9.4) · ใบเสนอราคาแบบผสม (§7.5)
+- 2026-11-13 เคาะ E (admin เผยแพร่) · G (มอบอำนาจ §9.5) · H (NM ยังไม่เห็น)
 - 2026-11-13 แยก §14 เป็น 14.1 (ตั้งในหน้าออกแบบ) / 14.2 (กติกาของระบบ) ตามที่ user ชี้
