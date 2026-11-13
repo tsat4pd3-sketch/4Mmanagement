@@ -257,6 +257,19 @@ const AM_TARGET = {
 const AM_INSP = { 2: 'fail', 5: 'pending', 8: 'pending', 12: 'pending', 13: 'pending', 14: 'pending' }
 
 const TABLE_ROWS = {
+  /* 📈 SPC จากใบตรวจ (13/11 · ห้ามถอด) — เดิมแถวกลางไม่มี `qa_parts` embed / `values_json`
+     ⇒ แท็บ SPC "จากใบตรวจ" เดินแต่สาขา "ชิ้นงานนี้ยังไม่มีจุดวัดค่า" · ตารางสรุปจุด/กราฟ I-MR ไม่เคยถูกรัน
+     รูปทรง = ของจริง: จุด variable ผูกพาร์ท · ผล 1 แถว = 1 รอบ × 1 จุด · มีค่าหลุด spec 1 ค่า + จุดที่กด "ข้าม" */
+  qa_inspection_items: (r, i) => isNullish(r) ? r : ({
+    ...r, id: `id-${i}`, part_id: i % 2 ? 'id-1' : 'id-2', item_type: 'variable', balloon_no: String(i),
+    characteristic: `ระยะรู ${i}`, unit: 'mm', nominal: 10, lsl: 9.9, usl: 10.1, is_active: true, calc: null,
+    qa_parts: { part_no: i % 2 ? 'P-TEST-001' : 'P-TEST-002', part_name: 'พาร์ททดสอบ', line_name: LINE_NAME(1) },
+  }),
+  qa_inspection_results: (r, i) => ({
+    ...r, item_id: `id-${(i % 5) * 2 + 1}`, item_type: 'variable', judgement: i === 4 ? 'na' : 'ok',
+    values_json: isNullish(r) ? null : [i === 9 ? 10.2 : 10 + ((i % 7) - 3) * 0.02],
+    qa_inspection_sheets: { part_id: 'id-1', work_date: _recentDay(i % 10), shift: i % 2 ? 'day' : 'night', round_no: (i % 3) + 1, inspector_name: 'QA ทดสอบ' },
+  }),
   /* 🔨 ผังจัดเก็บแม่พิมพ์ — ชื่อต้องไม่ชนชื่อไลน์ (2026-10-16 · ห้ามถอด)
      เดิมได้ `name` = LINE_NAME(i) เหมือนไลน์ผลิต ⇒ FactoryMap `openLine()` เข้าใจว่าทุกกรอบเป็นโซนแม่พิมพ์
      แล้ว navigate ทิ้ง ⇒ **กล่องรายละเอียดไลน์ (story modal) ไม่เคยถูกเรนเดอร์ใน harness เลย** */

@@ -10775,3 +10775,84 @@ test('⏳ mo-details-pending — เรียกช่าง = ต้องม�
     '\n\n❌ เอาธง details_pending ไปบล็อกขั้น/ปุ่ม — ใบที่รอเอกสารต้องยังรับงาน/ซ่อม/ปิดได้ตามปกติ\n'
     + '   (กฎโมดูล: "งานซ่อมกับบริการ แค่แจ้งให้ทราบ ไม่งั้นไลน์จะหยุดรอการอนุมัติ")\n');
 });
+
+test('🔍 dt-closed-at-shift-end — ใบที่ปิดตรงเวลาเลิกกะต้องถูกถาม (เตือน ไม่บล็อก)', () => {
+  /* 🔴 13/11 คำสั่ง user: *"พวกที่คืนไลน์นาน ค่อมช่วงเบรคด้วยรึป่าว และถ้านานจริง ผลิตก็ต้อง
+     รับผิดชอบ ว่าเกิดจากอะไร ต้องมีคำตอบ เพราะลงแบบนี้ A ตก P อาจจะ over และเราคิดแคพ 100%
+     เป็น poka-yoke ดัก OEE เกิน 100% ไว้ก็จะมีผล"*
+     วัดจริง ต.ค.: ใบที่ซ่อมเสร็จแล้วปิดช้าสุด 6 ใบ **ปิดตรงเวลาเลิกกะเป๊ะทั้ง 6 ใบ** ·
+       ค่อมเบรคทั้ง 6 ใบ (BD-08 94 นาที — เป็นเบรค 50 ⇒ ที่ต้องตอบจริง 44) ·
+       %P แตะเพดาน 100% ใน 194 จาก 783 กะ (24.8%)
+     กับดัก 4 ข้อที่ด่านนี้กัน:
+       ① ยกเป็นด่านห้ามบันทึก ⇒ หน้างานลงข้อมูลไม่ได้ตอนหยุดยาวจริง (user สั่ง "เตือนไม่บล็อก")
+       ② ลืมหักเวลาพัก ⇒ กล่าวหาเกินจริง (เบรคถูกกันออกจากฐาน %A อยู่แล้ว · dtMinOutsideBreaks)
+       ③ เขียนด่านปิดกะชุดที่ 2 แยกจาก `buildCloseChecks` ⇒ คนติ๊ก 2 ลิสต์ (เกือบทำรอบนี้)
+       ④ เตือนแต่ไม่บอกผลที่ตามมา ⇒ คนไม่รู้ว่าจะไปแก้อะไร
+     📄 src/utils/shiftDataSanity.js · src/utils/closeChecks.js */
+  const san = stripComments(readFileSync(join(ROOT, 'src/utils/shiftDataSanity.js'), 'utf8'));
+  /* ② ต้องรับช่วงพักและหักออก */
+  assert.match(san, /breakIntervals/,
+    '\n\n❌ ตัวตัดสินใบปิดตรงเลิกกะไม่รับช่วงพักแล้ว — เบรคถูกกันออกจากฐาน %A อยู่แล้ว\n'
+    + '   ไม่หัก = เตือนด้วยนาทีที่ไม่ได้กระทบ %A จริง (เคส BD-08: 94 นาที เป็นเบรค 50)\n');
+  assert.match(san, /answerMin/,
+    '\n\n❌ ต้องคืน "นาทีที่ต้องตอบ" (หักพักแล้ว) ไม่ใช่นาทีดิบ\n');
+  /* ③ ห้ามมีด่านปิดกะชุดที่ 2 */
+  assert.ok(!/export function shiftDataSanity\b/.test(san),
+    '\n\n❌ มี shiftDataSanity() กลับมา — ด่านปิดกะต้องอยู่ที่ `buildCloseChecks()` ลิสต์เดียว\n'
+    + '   (%P ทะลุเพดาน = `work_over_time` · DT เกินเวลากะ = `dt_over_shift` มีอยู่แล้ว)\n');
+
+  const cc = stripComments(readFileSync(join(ROOT, 'src/utils/closeChecks.js'), 'utf8'));
+  assert.match(cc, /key: 'dt_closed_at_shift_end'[\s\S]{0,200}?level: 'confirm'/,
+    '\n\n❌ ด่าน dt_closed_at_shift_end ต้องเป็น level `confirm`\n'
+    + '   `block` = ปิดกะไม่ได้ตอนหยุดยาวถึงเลิกกะจริง (คำสั่ง user: เตือนไม่บล็อก)\n');
+
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  /* ① ด่านรายใบต้องเป็น confirm ไม่ใช่ toast.error + return */
+  assert.match(dr, /checkDtClosedAtShiftEnd\(/,
+    '\n\n❌ หน้ารายงานผลิตไม่เรียก checkDtClosedAtShiftEnd() แล้ว — ใบที่ปิดตรงเลิกกะไม่ถูกถาม\n');
+  assert.match(dr, /dtEndChk && !window\.confirm\(/,
+    '\n\n❌ ด่านใบปิดตรงเลิกกะต้องเป็น window.confirm (เตือนแล้วไปต่อได้)\n'
+    + '   ใช้ toast.error + return = บล็อกการบันทึก ซึ่ง user สั่งว่าห้าม\n');
+  assert.match(dr, /dtClosedAtShiftEnd:/,
+    '\n\n❌ ไม่ได้ส่งตัวนับ dtClosedAtShiftEnd เข้า buildCloseChecks — ด่านตอนปิดกะไม่ขึ้นเลย\n');
+  /* ④ ต้องบอกผลที่ตามมา */
+  assert.ok(/%A/.test(san) && /%P/.test(san),
+    '\n\n❌ ข้อความเตือนไม่บอกผลต่อ %A/%P — คนอ่านไม่รู้ว่าต้องไปแก้อะไร\n');
+});
+
+test('🔴 mtn-team-must-be-picked — ทีมช่างห้ามมีค่าตั้งต้น ต้องเลือกเองทุกครั้ง', () => {
+  /* 🔴 13/11 หน้างานแจ้ง (ภาพหน้าจอ LINE): *"เปิดใบแจ้งซ่อม หัวข้อนี้แก้ไขเป็นตัวเลือกได้ไหมครับ
+     กันส่งไปผิดแผนก · ตอนนี้มันตั้งค่าเริ่มต้นเป็น MTN ครับ ส่งผิดแผนกบ่อยครับ"*
+     คำสั่ง user: *"ให้บังคับต้องเลือกนะ · ไม่ออโต้ MTN แน่นอน"* + *"บางทีกดไวไปเลย"*
+     กับดัก 3 ข้อที่ด่านนี้กัน:
+       ① `teamKeyOf(defaultDept) || 'maintenance'` — เดาทีมไม่ออก = ยัด MTN ให้เงียบๆ
+          แล้วคนกดเร็วก็ส่งผิดทีม ⇒ ใบต้องตีกลับ เสียเวลาทั้ง 2 ฝั่ง
+       ② ปุ่ม "เรียกช่าง" กดได้ทั้งที่ยังไม่เลือกทีม แล้ว handleCallMtn ถอยไป 'maintenance'
+          🔴 ตั้งแต่ 13/11 ฐานเปิดใบ MO ตามทีมที่เรียกด้วย ⇒ เรียกผิด = ใบไปผิดคิวตามไปอีก
+       ③ เอาทีมที่เดาจากทะเบียนมา **กดเลือกให้** แทนที่จะเป็นคำใบ้ = กลับไปปัญหาเดิม
+     📄 docs/modules/mtn-work-order.md */
+  const mr = stripComments(readFileSync(join(ROOT, 'src/pages/MtnRepair.jsx'), 'utf8'));
+  /* ① ค่าตั้งต้นต้องว่าง */
+  assert.ok(!/mtn_dept:\s*teamKeyOf\([^)]*\)\s*\|\|/.test(mr),
+    '\n\n❌ ฟอร์มแจ้งซ่อมกลับไปตั้งค่าทีมช่างให้เอง (`teamKeyOf(...) || ...`)\n'
+    + '   คำสั่ง user: ไม่ออโต้ MTN แน่นอน — ต้องเลือกเองทุกครั้ง\n');
+  assert.match(mr, /mtn_dept:\s*''/,
+    '\n\n❌ ค่าเริ่มต้นของ "แจ้งถึงทีมช่าง" ต้องเป็นค่าว่าง\n');
+  /* บังคับตอนบันทึก */
+  assert.match(mr, /if \(!teamKeyOf\(f\.mtn_dept\)\) return toast\.error/,
+    '\n\n❌ ฟอร์มแจ้งซ่อมไม่บล็อกตอนยังไม่เลือกทีมช่าง\n');
+  /* มี placeholder ให้เห็นว่ายังไม่ได้เลือก */
+  assert.match(mr, /<option value="">— \{trI18n\('เลือกทีมช่าง'\)\} —<\/option>/,
+    '\n\n❌ ช่องทีมช่างไม่มีตัวเลือก placeholder — คนเปิดมาเห็นทีมใดทีมหนึ่งค้างอยู่แล้วกดผ่าน\n');
+
+  const dr = stripComments(readFileSync(join(ROOT, 'src/pages/DailyReport.jsx'), 'utf8'));
+  /* ② ปุ่มเรียกช่างต้องกดไม่ได้จนเลือกทีม + ห้าม fallback */
+  assert.match(dr, /disabled=\{moSaving \|\| !moDtPick\.team\}/,
+    '\n\n❌ ปุ่มเรียกช่างกดได้ทั้งที่ยังไม่เลือกทีม — "บางทีกดไวไปเลย" (คำ user)\n');
+  assert.ok(!/teamKeyOf\(team\)\s*\|\|\s*'maintenance'/.test(dr),
+    '\n\n❌ handleCallMtn กลับไปถอยเป็น \'maintenance\' เมื่อไม่รู้ทีม\n'
+    + '   ⇒ เรียกผิดทีม และฐานจะเปิดใบ MO ไปผิดคิวตามด้วย (trigger 13/11)\n');
+  /* ③ ทีมที่เดาได้ต้องเป็นคำใบ้ ไม่ใช่ค่าที่เลือกให้ */
+  assert.match(dr, /team:\s*'',\s*hint:\s*teamForMachine\(/,
+    '\n\n❌ ป๊อปอัพเรียกช่างกลับไปเลือกทีมให้ล่วงหน้า — ต้องเป็นคำใบ้ (hint) เท่านั้น\n');
+});

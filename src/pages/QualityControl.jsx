@@ -64,7 +64,8 @@ import { ALL, allOf } from '../utils/filterLabels';
 import { shortTick, fmtAxis, CELL_BAR_FILL } from '../utils/chartAxis';
 import { DeleteButton } from '../components/IconButton';
 import { tr as trI18n } from '../utils/i18n';
-import { tint } from '../utils/statusTone';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
+import { tint } from '../utils/statusTone';
+import { itemAsChar, itemLabel, matchCharToItem, groupRowsByItem, POINT_FILTERS, pointPasses, sortPoints, CPK_OK } from '../utils/qaSpcSource';   // สี token ต่อ alpha-hex ไม่ได้ ⇒ ย่อยเป็น -dim/-line (UI §6.17)
 
 /* ตัวกรองสถานะใบ NCR / CAPA (UI-STANDARD 2026-09-24) — ค่า state เดิม 'all'/'active'/'closed' */
 const STATUS_SEG = [
@@ -614,6 +615,11 @@ function QualityDashboard() {
 /* ════════════════════════════════════════════════════════════════════════
    TAB 2 — SPC / Process Capability
    ════════════════════════════════════════════════════════════════════════ */
+/* แหล่งค่าวัดของแท็บ SPC (13/11) — ไทยเก็บที่นี่ แปลตอนวาด (i18n §รอบ 3c) */
+const SPC_SRC_SEG = [
+  { value: 'sheet', label: '📋 จากใบตรวจ (อัตโนมัติ)' },
+  { value: 'manual', label: '✍️ จุดควบคุมที่ตั้งเอง' },
+];
 const EMPTY_CHAR = { part_no: '', part_name: '', line_name: '', characteristic: '', unit: 'mm', nominal: '', usl: '', lsl: '', subgroup_size: 5, gauge: '', control_method: '' };
 
 function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [] }) {
@@ -635,9 +641,41 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
   const [readings, setReadings] = useState([]);  // ค่าที่กำลังกรอก
   const measBusyRef = useRef(false);              // กันแตะบันทึกเบิ้ล = subgroup ซ้ำ ⇒ Cp/Cpk เพี้ยน (audit handheld 2026-10-20)
   const [loading, setLoading] = useState(false);
+  /* 📋 แหล่งค่าวัด (13/11) — 'sheet' = ค่าที่ QA กรอกในใบตรวจ (อ่านตรง ไม่คัดลอก · utils/qaSpcSource)
+     'manual' = จุดควบคุมที่ตั้งเอง + กรอกค่าที่แท็บนี้ (qa_measurements · ของเดิม) */
+  const [src, setSrc] = useState('sheet');
+  const [items, setItems] = useState([]);
+  const [itemsErr, setItemsErr] = useState(null);
+  const [itemId, setItemId] = useState(null);
+  const [partId, setPartId] = useState(null);
+  const [partRes, setPartRes] = useState({ part: null, byItem: new Map(), err: null, loading: true });
+  const [pointQ, setPointQ] = useState('');
+  const [pointFilter, setPointFilter] = useState('all');
 
-  const sel = chars.find(c => c.id === selId) || null;
+  const selItem = items.find(i => i.id === itemId) || null;
+  const sel = src === 'sheet' ? itemAsChar(selItem) : (chars.find(c => c.id === selId) || null);
   const selWrite = canWriteLine(wctx, sel?.line_name, lineObjs);
+  const isSheet = src === 'sheet';
+  // จุดควบคุมที่ตั้งเองซ้ำกับจุดในใบตรวจ ⇒ ชี้ไปกราฟจากใบตรวจ (ค่าจริงอยู่ที่นั่น)
+  const matchedItem = !isSheet && sel ? matchCharToItem(sel, items) : null;
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { data, error } = await supabase.from('qa_inspection_items')
+        .select('id, part_id, balloon_no, characteristic, unit, nominal, lsl, usl, is_active, qa_parts(part_no, part_name, line_name)')
+        .eq('item_type', 'variable').eq('is_active', true).limit(1000);
+      if (!alive) return;
+      if (error) { setItemsErr(error.message); return; }
+      const list = (data || []).filter(i => i.qa_parts)
+        .sort((a, b) => (a.qa_parts.part_no || '').localeCompare(b.qa_parts.part_no || '')
+          || String(a.balloon_no || '').localeCompare(String(b.balloon_no || ''), undefined, { numeric: true }));
+      setItems(list);
+      setItemsErr((data || []).length >= 1000 ? 'จุดตรวจเกิน 1,000 จุด — ลิสต์อาจไม่ครบ' : null);
+      setPartId(prev => prev && list.some(i => i.part_id === prev) ? prev : (list[0]?.part_id ?? null));
+    })();
+    return () => { alive = false; };
+  }, []);
 
   const loadChars = useCallback(async () => {
     const { data } = await supabase.from('qa_characteristics').select('*').order('part_no').order('characteristic');
@@ -648,7 +686,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
 
   /* 🔴 stale-response: สลับค่าที่ควบคุมเร็วๆ แล้วคำตอบเก่ามาทีหลัง = กราฟของอีกตัวทับ (db-write-rules ข้อ 4) */
   const rowsReq = useRef(0);
-  const loadRows = useCallback(async (charId, n) => {
+  const loadRows = useCallback(async (source, charId, n) => {
     const req = ++rowsReq.current;
     if (!charId) { setRows([]); return; }
     setLoading(true);
@@ -662,7 +700,64 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
     setRows((data || []).reverse()); // เรียงเก่า→ใหม่สำหรับกราฟ
     setLoading(false);
   }, []);
-  useEffect(() => { loadRows(selId, limitN); }, [selId, limitN, loadRows]);
+  useEffect(() => { if (src === 'manual') loadRows('manual', selId, limitN); }, [src, selId, limitN, loadRows]);
+
+  /* 🎛️ ตัวกรอง (13/11 · user "ควรกรองชิ้นงานได้ และกรองจุด") — ชิ้นงาน → ตารางสรุปทุกจุดของชิ้นงานนั้น → กดจุดดูกราฟ */
+  const partOpts2 = useMemo(() => {
+    const m = new Map();
+    for (const i of items) {
+      const cur = m.get(i.part_id) || { id: i.part_id, p: i.qa_parts, n: 0 };
+      cur.n += 1; m.set(i.part_id, cur);
+    }
+    return [...m.values()].map(x => ({
+      id: x.id, label: x.p.part_no, lead: x.p.part_no, title: x.p.part_name || '',
+      sub: [x.p.line_name, `${x.n} จุดวัดค่า`].filter(Boolean).join(' · '),
+      keywords: `${x.p.part_no} ${x.p.part_name || ''} ${x.p.line_name || ''}`,
+    }));
+  }, [items]);
+  const partItems = useMemo(() => items.filter(i => i.part_id === partId), [items, partId]);
+  // ผลตรวจทั้งชิ้นงานโหลดครั้งเดียว (ทุกหน้า · ไม่ชนเพดาน 1000) แล้วแตกรายจุด — ตารางสรุปกับกราฟใช้ชุดเดียวกัน
+  useEffect(() => {
+    if (!partId) { setPartRes({ part: null, byItem: new Map(), err: null, loading: false }); return; }
+    let alive = true;
+    setPartRes({ part: partId, byItem: new Map(), err: null, loading: true });
+    (async () => {
+      const { rows, error, truncated } = await fetchAllPages(() => supabase.from('qa_inspection_results')
+        .select('id, item_id, values_json, judgement, recorded_by, recorded_at, qa_inspection_sheets!inner(part_id, work_date, shift, round_no, inspector_name)')
+        .eq('qa_inspection_sheets.part_id', partId).eq('item_type', 'variable'));
+      if (!alive) return;
+      setPartRes({ part: partId, byItem: groupRowsByItem(rows), loading: false,
+        err: error ? `โหลดค่าจากใบตรวจไม่สำเร็จ: ${error}` : truncated ? 'ค่าวัดของชิ้นงานนี้เยอะเกินเพดาน — แสดงไม่ครบ' : null });
+    })();
+    return () => { alive = false; };
+  }, [partId]);
+  const pointStats = useMemo(() => sortPoints(partItems.map(it => {
+    const rws = (partRes.byItem.get(it.id) || []).slice(-limitN);
+    const r = rws.length ? computeSPC(rws, itemAsChar(it)) : null;
+    const last = rws.length ? rws[rws.length - 1] : null;
+    return { it, balloon: it.balloon_no, n: rws.length, mean: r?.xbarbar ?? null, cpk: r?.cpk ?? null,
+      oos: r?.oos || 0, last: last?.readings?.[0] ?? null, lastDate: last?.work_date || null };
+  })), [partItems, partRes, limitN]);
+  const pointCounts = useMemo(() => Object.fromEntries(POINT_FILTERS.map(f => [f.value, pointStats.filter(s => pointPasses(s, f.value)).length])), [pointStats]);
+  const shownPoints = useMemo(() => {
+    const q = pointQ.trim().toLowerCase();
+    return pointStats.filter(s => pointPasses(s, pointFilter)
+      && (!q || `${s.it.balloon_no || ''} ${s.it.characteristic || ''}`.toLowerCase().includes(q)));
+  }, [pointStats, pointFilter, pointQ]);
+  // ชิ้นงานเปลี่ยน/จุดที่เลือกไม่อยู่ในชิ้นงาน ⇒ เลือกจุดที่แย่สุดที่มีค่าให้เอง (ตารางเรียงแย่สุดก่อนแล้ว)
+  useEffect(() => {
+    // ⚠️ รอผลของชิ้นงานนี้จริงก่อน — เลือกตอนยังโหลดไม่เสร็จ = ได้จุดแรกแทนจุดที่แย่สุด
+    if (!isSheet || partRes.loading || partRes.part !== partId) return;
+    if (itemId && partItems.some(i => i.id === itemId)) return;
+    setItemId((pointStats.find(s => s.n) || pointStats[0])?.it.id ?? null);
+  }, [isSheet, partRes.loading, partRes.part, partId, partItems, pointStats, itemId]);
+  // กราฟ/ตารางค่าของจุดที่เลือก = ชุดเดียวกับตารางสรุป (ไม่ยิงคิวรีซ้ำ)
+  useEffect(() => {
+    if (!isSheet) return;
+    rowsReq.current += 1;                       // ตัดคำตอบของโหมดตั้งเองที่ค้างอยู่
+    setRows((partRes.byItem.get(itemId) || []).slice(-limitN));
+    setLoading(partRes.loading);
+  }, [isSheet, itemId, partRes, limitN]);
 
   useEffect(() => {
     setReadings(Array(sel?.subgroup_size || 1).fill(''));
@@ -734,7 +829,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
     if (error) { toast.error(`บันทึกไม่สำเร็จ: ${error.message}`); return; }
     toast.success('บันทึกผลวัดแล้ว ✓');
     setReadings(Array(sel.subgroup_size).fill(''));
-    loadRows(sel.id, limitN);
+    loadRows('manual', sel.id, limitN);
   };
 
   const delMeasurement = async (id) => {
@@ -743,7 +838,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
     const { error } = await supabase.from('qa_measurements').delete().eq('id', id);
     if (error) { toast.error(error.message); return; }
     toast.success('ลบแล้ว');
-    loadRows(selId, limitN);
+    loadRows('manual', selId, limitN);
   };
 
   const dot = (key) => (props) => {
@@ -756,10 +851,20 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {/* เลือกจุดควบคุม */}
-      <div style={{ ...cardSt, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-        <Field label={trI18n('จุดควบคุม (Part / Characteristic)')}>
-          <select value={selId || ''} onChange={e => setSelId(e.target.value || null)} style={{ ...inputSt, minWidth: 'min(320px, 100%)' }}>
+      {/* 🎛️ แถบกรอง (13/11) — แหล่งค่าวัด → ชิ้นงาน → แสดงจุดแบบไหน → ค้นจุด · ตารางสรุปจุดอยู่ข้างล่าง */}
+      <FilterBar>
+        <Segmented label={trI18n('แหล่งค่าวัด')} value={src} onChange={setSrc} options={SPC_SRC_SEG} />
+        {isSheet ? (
+          <>
+            <SearchSelect value={partId || ''} placeholder={trI18n('ชิ้นงาน — ค้นเลขพาร์ท / ชื่อ / ไลน์')} style={{ minWidth: 'min(280px, 100%)' }}
+              options={partOpts2} loadFail={itemsErr || ''}
+              onChange={({ id }) => { if (id) { setPartId(id); setItemId(null); setPointQ(''); } }} />
+            <Segmented label={trI18n('แสดง')} value={pointFilter} onChange={setPointFilter}
+              options={POINT_FILTERS.map(f => ({ ...f, label: `${trI18n(f.label)} ${pointCounts[f.value] ?? 0}` }))} />
+            <SearchInput value={pointQ} onChange={setPointQ} fields="เลขบอลลูน / ชื่อจุด" />
+          </>
+        ) : (
+          <select value={selId || ''} onChange={e => setSelId(e.target.value || null)} aria-label={trI18n('จุดควบคุม')}>
             {chars.length === 0 && <option value="">{trI18n('— ยังไม่มีจุดควบคุม กด "+ เพิ่มจุดควบคุม" —')}</option>}
             {chars.map(c => (
               <option key={c.id} value={c.id}>
@@ -767,14 +872,13 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
               </option>
             ))}
           </select>
-        </Field>
-        <Field label={trI18n('ใช้ subgroup ล่าสุด')}>
-          <select value={limitN} onChange={e => setLimitN(Number(e.target.value))} style={inputSt}>
-            {[25, 50, 100].map(n => <option key={n} value={n}>{n} {trI18n('กลุ่ม')}</option>)}
-          </select>
-        </Field>
-        {canManage && (
-          <div style={{ display: 'flex', gap: 8 }}>
+        )}
+        <select value={limitN} onChange={e => setLimitN(Number(e.target.value))} aria-label={trI18n('จำนวนค่าล่าสุดที่ใช้คำนวณ')}>
+          {(isSheet ? [25, 50, 100, 200] : [25, 50, 100]).map(n => <option key={n} value={n}>{trI18n('ล่าสุด')} {n} {isSheet ? trI18n('ค่า') : trI18n('กลุ่ม')}</option>)}
+        </select>
+        <span className="spacer" />
+        {canManage && !isSheet && (
+          <>
             <button style={btnSt()} onClick={() => setCharModal({ ...EMPTY_CHAR })}>{trI18n('+ เพิ่มจุดควบคุม')}</button>
             {sel && <button style={ghostBtn} onClick={() => setCharModal({
               ...sel,
@@ -782,10 +886,65 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
               part_name: sel.part_name || '', line_name: sel.line_name || '', unit: sel.unit || '',
               gauge: sel.gauge || '', control_method: sel.control_method || '',
             })}>{trI18n('แก้ไข')}</button>}
-          </div>
+          </>
         )}
-      </div>
+      </FilterBar>
 
+      {/* 📋 ตารางสรุปทุกจุดของชิ้นงาน — เรียงแย่สุดก่อน · กดแถว = ดูกราฟจุดนั้น */}
+      {isSheet && (
+        <div style={{ ...cardSt, padding: 0 }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap', padding: '12px 14px 8px' }}>
+            <span style={{ fontWeight: 800, fontSize: 13.5 }}>📋 {trI18n('จุดวัดค่าของชิ้นงาน')} {partOpts2.find(o => o.id === partId)?.label || ''}</span>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>
+              {trI18n('แสดง')} {shownPoints.length}/{pointStats.length} {trI18n('จุด')} · {trI18n('คิดจากค่าล่าสุด')} {limitN} {trI18n('ค่าต่อจุด')} · {trI18n('เรียงจุดที่แย่สุดขึ้นก่อน · กดแถวเพื่อดูกราฟ')}
+            </span>
+            {partRes.loading && <span className="filter-count">{trI18n('กำลังโหลด…')}</span>}
+          </div>
+          {partRes.err && <div style={{ fontSize: 12, color: 'var(--red)', padding: '0 14px 8px' }}>⚠️ {partRes.err}</div>}
+          <div className="table-sticky" style={{ maxHeight: 320, overflow: 'auto' }}>
+            <table style={{ width: '100%', minWidth: 680, borderCollapse: 'collapse' }}>
+              <thead><tr>
+                <th style={thSt}>#</th><th style={thSt}>{trI18n('จุดวัด')}</th><th style={thSt}>Spec (LSL – USL)</th>
+                <th style={{ ...thSt, textAlign: 'right' }}>n</th><th style={{ ...thSt, textAlign: 'right' }}>Mean</th>
+                <th style={{ ...thSt, textAlign: 'right' }}>Cpk</th><th style={{ ...thSt, textAlign: 'right' }}>{trI18n('หลุด spec')}</th>
+                <th style={{ ...thSt, textAlign: 'right' }}>{trI18n('ค่าล่าสุด')}</th>
+              </tr></thead>
+              <tbody>
+                {shownPoints.map(st => {
+                  const on = st.it.id === itemId;
+                  return (
+                    <tr key={st.it.id} onClick={() => setItemId(st.it.id)} aria-selected={on}
+                      style={{ cursor: 'pointer', background: on ? 'var(--accent-dim)' : undefined, boxShadow: on ? 'inset 3px 0 0 var(--accent)' : undefined }}>
+                      <td style={{ ...tdSt, fontWeight: 700, whiteSpace: 'nowrap' }}>{st.it.balloon_no || '—'}</td>
+                      <td style={tdSt}>{st.it.characteristic}{st.it.unit ? ` (${st.it.unit})` : ''}</td>
+                      <td style={{ ...tdSt, whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 12 }}>{st.it.lsl ?? '—'} – {st.it.usl ?? '—'}</td>
+                      <td style={{ ...tdSt, textAlign: 'right' }}>{st.n || '—'}</td>
+                      <td style={{ ...tdSt, textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{fmtNum(st.mean)}</td>
+                      <td style={{ ...tdSt, textAlign: 'right', fontWeight: 800, color: cpkColor(st.cpk) }}
+                        title={st.cpk == null ? (st.n ? 'คิด Cpk ไม่ได้ (ค่าน้อยไป หรือค่าเท่ากันหมด หรือไม่มี spec)' : 'ยังไม่มีค่าในใบตรวจ') : (st.cpk < CPK_OK ? 'ต่ำกว่า 1.33' : '')}>{fmtNum(st.cpk, 2)}</td>
+                      <td style={{ ...tdSt, textAlign: 'right', fontWeight: st.oos ? 800 : 400, color: st.oos ? 'var(--red)' : 'var(--muted)' }}>{st.n ? st.oos : '—'}</td>
+                      <td style={{ ...tdSt, textAlign: 'right', fontFamily: 'monospace', fontSize: 12 }}>{st.last ?? '—'}{st.lastDate ? <span style={{ color: 'var(--muted)', marginLeft: 6 }}>{fmtD(st.lastDate)}</span> : null}</td>
+                    </tr>
+                  );
+                })}
+                {!partRes.loading && shownPoints.length === 0 && (
+                  <tr><td style={tdSt} colSpan={8}><span style={{ color: 'var(--muted)' }}>
+                    {pointStats.length ? trI18n('ไม่มีจุดที่ตรงตัวกรอง — ลองเปลี่ยน "แสดง" หรือคำค้น') : trI18n('ชิ้นงานนี้ยังไม่มีจุดวัดค่าแบบตัวเลข')}
+                  </span></td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+      {matchedItem && (
+        <div style={{ ...cardSt, borderColor: 'var(--blue-line)', background: 'var(--blue-dim)', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 12.5, flex: 1, minWidth: 220 }}>
+            📋 {trI18n('จุดนี้มีค่าวัดในใบตรวจอยู่แล้ว')} ({matchedItem.qa_parts.part_no} · {itemLabel(matchedItem)}) — {trI18n('ดูกราฟจากค่าจริงที่ QA กรอกได้เลย ไม่ต้องกรอกซ้ำ')}
+          </span>
+          <button style={btnSt()} onClick={() => { setItemId(matchedItem.id); setSrc('sheet'); }}>{trI18n('ดูกราฟจากใบตรวจ')}</button>
+        </div>
+      )}
       {sel && spcExcluded > 0 && (
         <div style={{ ...cardSt, borderColor: 'var(--amber-line)', background: 'var(--amber-dim)' }}>
           <div style={{ fontWeight: 800, fontSize: 13, color: 'var(--amber)', marginBottom: 4 }}>
@@ -801,6 +960,12 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
 
       {sel && (
         <>
+          {isSheet && (
+            <div style={{ fontWeight: 800, fontSize: 14, marginBottom: -4 }}>
+              📈 {sel.part_no} · {sel.balloon_no ? `#${sel.balloon_no} ` : ''}{sel.characteristic}{sel.unit ? ` (${sel.unit})` : ''}
+              <span style={{ fontWeight: 400, fontSize: 12, color: 'var(--muted)', marginLeft: 8 }}>{trI18n('กราฟ I-MR · 1 ค่า = 1 จุด · ค่าจากใบตรวจโดยตรง')}</span>
+            </div>
+          )}
           {/* สรุป spec + capability */}
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <KpiCard label="Spec" value={`${sel.lsl ?? '—'} / ${sel.nominal ?? '—'} / ${sel.usl ?? '—'}`} sub={`LSL / Nominal / USL ${sel.unit ? `(${sel.unit})` : ''} · n=${sel.subgroup_size}`} />
@@ -840,7 +1005,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
                     <ReferenceLine y={spc.lclX} stroke="var(--red)" strokeDasharray="5 3" label={{ value: `LCL ${fmtNum(spc.lclX)}`, fontSize: 11, fill: 'var(--red)', position: 'right' }} />
                     {spc.usl != null && <ReferenceLine y={spc.usl} stroke="var(--amber)" strokeDasharray="2 3" label={{ value: 'USL', fontSize: 11, fill: 'var(--amber)', position: 'right' }} />}
                     {spc.lsl != null && <ReferenceLine y={spc.lsl} stroke="var(--amber)" strokeDasharray="2 3" label={{ value: 'LSL', fontSize: 11, fill: 'var(--amber)', position: 'right' }} />}
-                    <Line type="monotone" dataKey="xbar" name={sel.subgroup_size === 1 ? 'X' : 'X̄'} stroke="var(--blue)" strokeWidth={2} dot={dot('xbar')} isAnimationActive={false} />
+                    <Line type="linear" dataKey="xbar" name={sel.subgroup_size === 1 ? 'X' : 'X̄'} stroke="var(--blue)" strokeWidth={2} dot={dot('xbar')} isAnimationActive={false} />
                   </LineChart>
                 </ResponsiveContainer>
               ) : <div style={{ color: 'var(--muted)', fontSize: 12, padding: 30, textAlign: 'center' }}>{loading ? trI18n('กำลังโหลด…') : trI18n('ยังไม่มีผลวัด')}</div>}
@@ -859,7 +1024,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
                       labelFormatter={i => `กลุ่ม #${i}`} />
                     {spc.uclR != null && <ReferenceLine y={spc.uclR} stroke="var(--red)" strokeDasharray="5 3" label={{ value: `UCL ${fmtNum(spc.uclR)}`, fontSize: 11, fill: 'var(--red)', position: 'right' }} />}
                     {spc.rbar != null && <ReferenceLine y={spc.rbar} stroke="var(--green)" label={{ value: `CL ${fmtNum(spc.rbar)}`, fontSize: 11, fill: 'var(--green)', position: 'right' }} />}
-                    <Line type="monotone" dataKey="range" name="R" stroke="var(--blue)" strokeWidth={2} dot={dot('range')} isAnimationActive={false} connectNulls />
+                    <Line type="linear" dataKey="range" name="R" stroke="var(--blue)" strokeWidth={2} dot={dot('range')} isAnimationActive={false} connectNulls />
                   </LineChart>
                 </ResponsiveContainer>
               ) : <div style={{ color: 'var(--muted)', fontSize: 12, padding: 30, textAlign: 'center' }}>—</div>}
@@ -890,6 +1055,36 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
 
             {/* บันทึกผลวัด + ตาราง */}
             <div style={cardSt}>
+              {isSheet ? (
+                <>
+                  <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 4 }}>📋 {trI18n('ค่าจากใบตรวจ')} ({rows.length} {trI18n('ค่าล่าสุด')})</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 10 }}>{trI18n('อ่านอย่างเดียว — แก้/เพิ่มค่าที่แท็บใบตรวจ (Check Sheet)')}</div>
+                  <div style={{ maxHeight: 290, overflowY: 'auto', overflowX: 'auto' }}>
+                    <table style={{ width: '100%', minWidth: 420, borderCollapse: 'collapse' }}>
+                      <thead><tr>
+                        <th style={thSt}>{trI18n('วันที่')}</th><th style={thSt}>{trI18n('กะ')}</th><th style={thSt}>{trI18n('รอบ/ชิ้น')}</th>
+                        <th style={thSt}>{trI18n('ค่าวัด')}</th><th style={thSt}>{trI18n('ผู้ตรวจ')}</th>
+                      </tr></thead>
+                      <tbody>
+                        {[...rows].reverse().map(r => {
+                          const v = r.readings[0];
+                          const out = (sel.usl != null && v > sel.usl) || (sel.lsl != null && v < sel.lsl);
+                          return (
+                            <tr key={r.id}>
+                              <td style={tdSt}>{fmtD(r.work_date)}</td>
+                              <td style={tdSt}>{r.shift === 'night' ? '🌙' : '☀️'}</td>
+                              <td style={tdSt}>{r.round_no ?? '—'}/{r.piece_no}</td>
+                              <td style={{ ...tdSt, fontFamily: 'monospace', fontWeight: 700, color: out ? 'var(--red)' : undefined }}>{v}</td>
+                              <td style={tdSt}>{r.operator_name || '—'}</td>
+                            </tr>
+                          );
+                        })}
+                        {rows.length === 0 && <tr><td style={tdSt} colSpan={5}><span style={{ color: 'var(--muted)' }}>{loading ? trI18n('กำลังโหลด…') : trI18n('จุดนี้ยังไม่มีค่าในใบตรวจ')}</span></td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (<>
               <div style={{ fontWeight: 800, fontSize: 13.5, marginBottom: 8 }}>✍️ บันทึกผลวัด (subgroup ใหม่ · n={sel.subgroup_size})</div>
               {canRecord ? (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
@@ -928,6 +1123,7 @@ function SPCTab({ lineObjs, canRecord, canManage, partOpts = [], instruments = [
                   </tbody>
                 </table>
               </div>
+              </>)}
             </div>
           </div>
         </>

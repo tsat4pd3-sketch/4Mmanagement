@@ -73,10 +73,12 @@ export const CLOSE_DT_OVER_SHIFT_TOL = 1.02;   // เวลาหยุดรว
  * @param {number} dtRowCount จำนวนแถว downtime ของกะ
  * @param {object|null} endTimeWarn ผลจาก `checkCloseTime` (ไม่ส่ง = ไม่ตรวจข้อนี้)
  * @param {number} suspectPending ของสงสัยที่ QA ยังไม่ตัดสิน (ชิ้น)
+ * @param {number} dtClosedAtShiftEnd จำนวนใบ downtime **นอกแผน** ที่ปิดตรงเวลาเลิกกะ
+ *   (หน้าเป็นคนนับ เพราะต้องรู้กรอบกะ · ตัดสินรายใบที่ `checkDtClosedAtShiftEnd()`)
  * @returns {Array<{key,level,title,detail,hint}>}
  */
 export function buildCloseChecks({ oee = null, session = null, dtRowCount = 0,
-  endTimeWarn = null, suspectPending = 0 } = {}) {
+  endTimeWarn = null, suspectPending = 0, dtClosedAtShiftEnd = 0 } = {}) {
   const out = [];
   if (!oee) return out;
   const n = (v) => Number(v) || 0;
@@ -106,6 +108,25 @@ export function buildCloseChecks({ oee = null, session = null, dtRowCount = 0,
       title: `เวลาหยุดรวม ${fmt(oee.loggedDtMin)} นาที มากกว่าเวลากะ ${fmt(shiftMin)} นาที`,
       detail: 'รวมนาทีของทุกใบ Downtime แล้วเกินความยาวของกะนี้',
       hint: 'มักเกิดจากใบที่ลืมปิดแล้วเวลาจบเพี้ยนไปทั้งกะ หรือใบซ้ำ 2 ใบของเหตุเดียวกัน — ไล่ดูตาราง Downtime',
+    });
+  }
+
+  /* 🔍 ใบนอกแผนที่ "ปิดตรงเวลาเลิกกะ" (13/11 · คำสั่ง user "ถ้านานจริง ผลิตก็ต้องรับผิดชอบ")
+     ที่มา: ไล่ใบ ต.ค. ที่ซ่อมเสร็จแล้วปิดช้าสุด 6 ใบ → **ทั้ง 6 ใบปิดตรงเวลาเลิกกะเป๊ะ**
+       (BD-08 ซ่อมเสร็จ 02:25 ปิดใบ 04:00 · LS-06 16:04 → 17:10 ฯลฯ) ⇒ เป็นแพทเทิร์น
+       ไม่ใช่ความบังเอิญ: ลงดาวไทม์แล้วไม่ปิดตอนไลน์กลับมาเดิน ปล่อยค้างจนจบกะ
+     🔴 `confirm` ไม่ใช่ `block` — หยุดยาวถึงเลิกกะจริงก็มี (คำสั่ง user: เตือนไม่บล็อก)
+     🔴 นับเฉพาะใบ**นอกแผน** — ลง "ไม่มีแผนผลิต" ถึงเลิกงาน = ถูกแล้ว ห้ามเตือน
+     🔴 ตัวนับมาจากหน้า (ต้องรู้กรอบกะ + ช่วงพัก) · กฎตัดสินรายใบอยู่ `utils/shiftDataSanity.js` */
+  if (n(dtClosedAtShiftEnd) > 0) {
+    out.push({
+      key: 'dt_closed_at_shift_end',
+      level: 'confirm',
+      title: `${fmt(dtClosedAtShiftEnd)} ใบ Downtime นอกแผน ปิดตรงเวลาเลิกกะพอดี`,
+      detail: 'ถ้าไลน์กลับมาเดินก่อนเลิกกะ เวลาที่เกินจะถูกนับเป็น "เครื่องหยุด" ⇒ %A ต่ำกว่าจริง '
+        + 'และยอดเท่าเดิมบนเวลาเดินที่น้อยลง ⇒ %P สูงกว่าจริง',
+      hint: 'ไล่ตาราง Downtime: ใบไหนที่ไลน์เดินก่อนเลิกกะ ให้แก้เวลาจบให้ตรงความจริง · '
+        + 'ใบที่หยุดยาวถึงเลิกกะจริง ให้เขียนเหตุผลในช่องรายละเอียด (รอของ / ไม่มีแผนต่อ / รอช่างรอบสอง)',
     });
   }
 
